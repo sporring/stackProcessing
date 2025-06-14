@@ -99,6 +99,370 @@ let addSlices (s1:ImageSlice) (s2:ImageSlice) : ImageSlice =
     { s1 with Image = filter.Execute (s1.Image, s2.Image) }
 
 /// <summary>
+/// Adds a constant to each pixel in the image.
+/// </summary>
+/// <param name="value">The constant value to add.</param>
+let addConst (value: float) : ImageSlice -> ImageSlice =
+    fun slice ->
+        let filter = new AddImageFilter()
+        { slice with Image = filter.Execute(slice.Image, value) }
+
+/// <summary>
+/// Adds each pixel of the input image to the corresponding pixel in another image.
+/// </summary>
+/// <param name="other">The second image.</param>
+let addImage (other: Image) : ImageSlice -> ImageSlice =
+    fun slice ->
+        let filter = new AddImageFilter()
+        { slice with Image = filter.Execute(slice.Image, other) }
+
+/// <summary>
+/// Subtracts a constant from each pixel in the image.
+/// </summary>
+/// <param name="value">The constant value to subtract.</param>
+let subtractConst (value: float) : ImageSlice -> ImageSlice =
+    fun slice ->
+        let filter = new SubtractImageFilter()
+        { slice with Image = filter.Execute(slice.Image, value) }
+
+/// <summary>
+/// Subtracts the corresponding pixel values in another image from the input image.
+/// </summary>
+/// <param name="other">The second image to subtract from the input.</param>
+let subtractImage (other: Image) : ImageSlice -> ImageSlice =
+    fun slice ->
+        let filter = new SubtractImageFilter()
+        { slice with Image = filter.Execute(slice.Image, other) }
+
+/// <summary>
+/// Divides each pixel in the image by a constant value.
+/// </summary>
+/// <param name="value">The constant divisor.</param>
+let divideConst (value: float) : ImageSlice -> ImageSlice =
+    fun slice ->
+        let filter = new DivideImageFilter()
+        { slice with Image = filter.Execute(slice.Image, value) }
+
+/// <summary>
+/// Divides each pixel in the input image by the corresponding pixel in another image.
+/// </summary>
+/// <param name="other">The divisor image.</param>
+let divideImage (other: Image) : ImageSlice -> ImageSlice =
+    fun slice ->
+        let filter = new DivideImageFilter()
+        { slice with Image = filter.Execute(slice.Image, other) }
+
+/// <summary>
+/// Returns a function that multiplies each pixel in the image slice by a constant value.
+/// </summary>
+/// <param name="value">The constant multiplier.</param>
+let multiplyConst (value: float) : ImageSlice -> ImageSlice =
+    fun slice ->
+        let filter = new MultiplyImageFilter()
+        { slice with Image = filter.Execute(slice.Image, value) }
+
+/// <summary>
+/// Returns a function that multiplies each pixel in the input image slice by the corresponding pixel in another image.
+/// </summary>
+/// <param name="other">The second image to multiply with.</param>
+let multiplyImage (other: Image) : ImageSlice -> ImageSlice =
+    fun slice ->
+        let filter = new MultiplyImageFilter()
+        { slice with Image = filter.Execute(slice.Image, other) }
+
+/// <summary>
+/// Returns a function that computes the pixel-wise modulus (remainder) of the image with respect to a constant integer value.
+/// </summary>
+/// <param name="value">The constant modulus divisor (must be a non-zero unsigned integer).</param>
+let modulusConst (value: uint) : ImageSlice -> ImageSlice =
+    fun slice ->
+        let filter = new ModulusImageFilter()
+        { slice with Image = filter.Execute(slice.Image, value) }
+
+/// <summary>
+/// Returns a function that computes the pixel-wise modulus of the image with respect to another image.
+/// </summary>
+/// <param name="other">The divisor image (modulo base).</param>
+let modulusImage (other: Image) : ImageSlice -> ImageSlice =
+    fun slice ->
+        let filter = new ModulusImageFilter()
+        { slice with Image = filter.Execute(slice.Image, other) }
+
+/// <summary>
+/// Returns a function that raises each pixel to the given constant power.
+/// </summary>
+/// <param name="exponent">The exponent to raise each pixel to.</param>
+let powConst (exponent: float) : ImageSlice -> ImageSlice =
+    fun slice ->
+        let filter = new PowImageFilter()
+        { slice with Image = filter.Execute(slice.Image, exponent) }
+
+/// <summary>
+/// Returns a function that raises each pixel in the image to the power of the corresponding pixel in another image.
+/// </summary>
+/// <param name="other">The exponent image.</param>
+let powImage (other: Image) : ImageSlice -> ImageSlice =
+    fun slice ->
+        let filter = new PowImageFilter()
+        { slice with Image = filter.Execute(slice.Image, other) }
+
+/// <summary>
+/// Returns a function that applies the GreaterEqualImageFilter with a constant threshold.
+/// Pixels in the input image that are greater than or equal to the constant will be set to 1; others to 0.
+/// </summary>
+/// <param name="value">The constant value to compare against each pixel.</param>
+let greaterEqualConst (value: float) : ImageSlice -> ImageSlice =
+    fun slice ->
+        let filter = new GreaterEqualImageFilter()
+        { slice with Image = filter.Execute(slice.Image, value) }
+
+/// <summary>
+/// Returns a function that applies the GreaterEqualImageFilter with another image.
+/// Pixels in the input image that are greater than or equal to the corresponding pixels in the second image will be set to 1; others to 0.
+/// </summary>
+/// <param name="other">The image to compare against.</param>
+let greaterEqualImage (other: Image) : ImageSlice -> ImageSlice =
+    fun slice ->
+        let filter = new GreaterEqualImageFilter()
+        { slice with Image = filter.Execute(slice.Image, other) }
+
+/// <summary>
+/// Returns a function that applies the GreaterImageFilter with a constant threshold.
+/// Pixels in the input image that are strictly greater than the constant will be set to 1; others to 0.
+/// </summary>
+/// <param name="value">The constant value to compare against each pixel.</param>
+let greaterConst (value: float) : ImageSlice -> ImageSlice =
+    fun slice ->
+        let filter = new GreaterImageFilter()
+        { slice with Image = filter.Execute(slice.Image, value) }
+
+/// <summary>
+/// Returns a function that applies the GreaterImageFilter with another image.
+/// Pixels in the input image that are strictly greater than the corresponding pixels in the second image will be set to 1; others to 0.
+/// </summary>
+/// <param name="other">The image to compare against.</param>
+let greaterImage (other: Image) : ImageSlice -> ImageSlice =
+    fun slice ->
+        let filter = new GreaterImageFilter()
+        { slice with Image = filter.Execute(slice.Image, other) }
+
+/// <summary>
+/// Returns a function that applies the EqualImageFilter with a constant.
+/// Pixels in the input image that are exactly equal to the constant will be set to 1; others to 0.
+/// </summary>
+/// <param name="value">The constant value to compare against each pixel.</param>
+let equalConst (value: float) : ImageSlice -> ImageSlice =
+    fun slice ->
+        let filter = new EqualImageFilter()
+        { slice with Image = filter.Execute(slice.Image, value) }
+
+/// <summary>
+/// Returns a function that applies the EqualImageFilter with another image.
+/// Pixels in the input image that are equal to the corresponding pixels in the second image will be set to 1; others to 0.
+/// </summary>
+/// <param name="other">The image to compare against.</param>
+let equalImage (other: Image) : ImageSlice -> ImageSlice =
+    fun slice ->
+        let filter = new EqualImageFilter()
+        { slice with Image = filter.Execute(slice.Image, other) }
+
+/// <summary>
+/// Returns a function that applies the NotEqualImageFilter with a constant.
+/// Pixels in the input image that are not equal to the constant will be set to 1; others to 0.
+/// </summary>
+/// <param name="value">The constant value to compare against each pixel.</param>
+let notEqualConst (value: float) : ImageSlice -> ImageSlice =
+    fun slice ->
+        let filter = new NotEqualImageFilter()
+        { slice with Image = filter.Execute(slice.Image,value) }
+
+/// <summary>
+/// Returns a function that applies the NotEqualImageFilter with another image.
+/// Pixels in the input image that are not equal to the corresponding pixels in the second image will be set to 1; others to 0.
+/// </summary>
+/// <param name="other">The image to compare against.</param>
+let notEqualImage (other: Image) : ImageSlice -> ImageSlice =
+    fun slice ->
+        let filter = new NotEqualImageFilter()
+        { slice with Image = filter.Execute(slice.Image, other) }
+
+/// <summary>
+/// Returns a function that applies the LessImageFilter with a constant threshold.
+/// Pixels in the input image that are strictly less than the constant will be set to 1; others to 0.
+/// </summary>
+/// <param name="value">The constant value to compare against each pixel.</param>
+let lessConst (value: float) : ImageSlice -> ImageSlice =
+    fun slice ->
+        let filter = new LessImageFilter()
+        { slice with Image = filter.Execute(slice.Image, value) }
+
+/// <summary>
+/// Returns a function that applies the LessImageFilter with another image.
+/// Pixels in the input image that are strictly less than the corresponding pixels in the second image will be set to 1; others to 0.
+/// </summary>
+/// <param name="other">The image to compare against.</param>
+let lessImage (other: Image) : ImageSlice -> ImageSlice =
+    fun slice ->
+        let filter = new LessImageFilter()
+        { slice with Image = filter.Execute(slice.Image, other) }
+
+/// <summary>
+/// Returns a function that applies the LessEqualImageFilter with a constant threshold.
+/// Pixels in the input image that are less than or equal to the constant will be set to 1; others to 0.
+/// </summary>
+/// <param name="value">The constant value to compare against each pixel.</param>
+let lessEqualConst (value: float) : ImageSlice -> ImageSlice =
+    fun slice ->
+        let filter = new LessEqualImageFilter()
+        { slice with Image = filter.Execute(slice.Image, value) }
+
+/// <summary>
+/// Returns a function that applies the LessEqualImageFilter with another image.
+/// Pixels in the input image that are less than or equal to the corresponding pixels in the second image will be set to 1; others to 0.
+/// </summary>
+/// <param name="other">The image to compare against.</param>
+let lessEqualImage (other: Image) : ImageSlice -> ImageSlice =
+    fun slice ->
+        let filter = new LessEqualImageFilter()
+        { slice with Image = filter.Execute(slice.Image, other) }
+
+/// <summary>
+/// Performs a bitwise AND between each pixel in the image and a constant integer value.
+/// </summary>
+/// <param name="value">The constant value to AND with each pixel.</param>
+/// <returns>An <c>ImageSlice</c> where each pixel is <c>pixel &amp; value</c>.</returns>
+let bitwiseAndConst (value: int) : ImageSlice -> ImageSlice =
+    fun slice ->
+        let filter = new AndImageFilter()
+        { slice with Image = filter.Execute(slice.Image, value) }
+
+/// <summary>
+/// Performs a pixel-wise bitwise AND between two images.
+/// </summary>
+/// <param name="other">The second image to AND with the input slice.</param>
+/// <returns>An <c>ImageSlice</c> where each pixel is <c>pixel1 &amp; pixel2</c>.</returns>
+let bitwiseAndImage (other: Image) : ImageSlice -> ImageSlice =
+    fun slice ->
+        let filter = new AndImageFilter()
+        { slice with Image = filter.Execute(slice.Image, other) }
+
+/// <summary>
+/// Performs a bitwise OR between each pixel in the image and a constant integer value.
+/// </summary>
+/// <param name="value">The constant value to OR with each pixel.</param>
+/// <returns>An <c>ImageSlice</c> where each pixel is <c>pixel | value</c>.</returns>
+let bitwiseOrConst (value: int) : ImageSlice -> ImageSlice =
+    fun slice ->
+        let filter = new OrImageFilter()
+        { slice with Image = filter.Execute(slice.Image, value) }
+
+/// <summary>
+/// Performs a pixel-wise bitwise OR between two images.
+/// </summary>
+/// <param name="other">The second image to OR with the input slice.</param>
+/// <returns>An <c>ImageSlice</c> where each pixel is <c>pixel1 | pixel2</c>.</returns>
+let bitwiseOrImage (other: Image) : ImageSlice -> ImageSlice =
+    fun slice ->
+        let filter = new OrImageFilter()
+        { slice with Image = filter.Execute(slice.Image, other) }
+
+/// <summary>
+/// Performs a bitwise XOR between each pixel in the image and a constant integer value.
+/// </summary>
+/// <param name="value">The constant value to XOR with each pixel.</param>
+/// <returns>An <c>ImageSlice</c> where each pixel is <c>pixel ^ value</c>.</returns>
+let bitwiseXorConst (value: int) : ImageSlice -> ImageSlice =
+    fun slice ->
+        let filter = new XorImageFilter()
+        { slice with Image = filter.Execute(slice.Image, value) }
+
+/// <summary>
+/// Performs a pixel-wise bitwise XOR between two images.
+/// </summary>
+/// <param name="other">The second image to XOR with the input slice.</param>
+/// <returns>An <c>ImageSlice</c> where each pixel is <c>pixel1 ^ pixel2</c>.</returns>
+let bitwiseXorImage (other: Image) : ImageSlice -> ImageSlice =
+    fun slice ->
+        let filter = new XorImageFilter()
+        { slice with Image = filter.Execute(slice.Image, other) }
+
+/// <summary>
+/// Inverts the intensity of each pixel (bitwise NOT for integers).
+/// </summary>
+/// <param name="maximum">The maximum intensity value (e.g. 255 for 8-bit).</param>
+let bitwiseNot (maximum: int) : ImageSlice -> ImageSlice =
+    fun slice ->
+        let filter = new InvertIntensityImageFilter()
+        filter.SetMaximum maximum
+        { slice with Image = filter.Execute(slice.Image) }
+
+/// <summary>
+/// Performs a left bitwise shift on each pixel by multiplying by 2ⁿ.
+/// </summary>
+/// <param name="shiftBits">The number of bits to shift left.</param>
+let bitwiseLeftShift (shiftBits: int) : ImageSlice -> ImageSlice =
+    fun slice ->
+        let filter = new ShiftScaleImageFilter()
+        filter.SetShift(0.0)
+        filter.SetScale(2.0 ** float shiftBits)
+        { slice with Image = filter.Execute(slice.Image) }
+
+/// <summary>
+/// Simulates right shift by dividing each pixel by 2ⁿ (approximation for unsigned integers).
+/// </summary>
+/// <param name="shiftBits">The number of bits to shift right.</param>
+let bitwiseRightShift (shiftBits: int) : ImageSlice -> ImageSlice =
+    fun slice ->
+        let divisor = 2.0 ** float shiftBits
+        let filter = new DivideImageFilter()
+        { slice with Image = filter.Execute(slice.Image, divisor) }
+
+/// <summary>
+/// Returns a function that computes the absolute value of each pixel in the image slice.
+/// </summary>
+/// <returns>An <c>ImageSlice</c> with pixel values set to <c>abs(pixel)</c>.</returns>
+let absImage : ImageSlice -> ImageSlice =
+    fun slice ->
+        let filter = new AbsImageFilter()
+        { slice with Image = filter.Execute(slice.Image) }
+
+/// <summary>
+/// Returns a function that computes the square root of each pixel in the image slice.
+/// </summary>
+/// <returns>An <c>ImageSlice</c> with pixel values set to <c>sqrt(pixel)</c>.</returns>
+/// <remarks>
+/// Input values must be non-negative; negative values will produce NaN.
+/// </remarks>
+let sqrtImage : ImageSlice -> ImageSlice =
+    fun slice ->
+        let filter = new SqrtImageFilter()
+        { slice with Image = filter.Execute(slice.Image) }
+
+/// <summary>
+/// Returns a function that computes the natural logarithm of each pixel in the image slice.
+/// </summary>
+/// <returns>An <c>ImageSlice</c> with pixel values set to <c>log(pixel)</c>.</returns>
+/// <remarks>
+/// Input values must be positive; zero or negative inputs will result in -inf or NaN.
+/// </remarks>
+let logImage : ImageSlice -> ImageSlice =
+    fun slice ->
+        let filter = new LogImageFilter()
+        { slice with Image = filter.Execute(slice.Image) }
+
+/// <summary>
+/// Returns a function that computes the exponential (e<sup>x</sup>) of each pixel in the image slice.
+/// </summary>
+/// <returns>An <c>ImageSlice</c> with pixel values set to <c>exp(pixel)</c>.</returns>
+/// <remarks>
+/// May overflow for large input values depending on the pixel type.
+/// </remarks>
+let expImage : ImageSlice -> ImageSlice =
+    fun slice ->
+        let filter = new ExpImageFilter()
+        { slice with Image = filter.Execute(slice.Image) }
+
+/// <summary>
 /// Applies a linear transformation to the pixel values of an image slice using shift and scale.
 /// </summary>
 /// <param name="delta">The value to shift (add to) each pixel.</param>

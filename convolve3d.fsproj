@@ -12,7 +12,7 @@
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="SmartImagePipeline\SmartImagePipeline.fsproj" />
+    <ProjectReference Include="StackPipeline\StackPipeline.fsproj" />
   </ItemGroup>
 
 </Project>

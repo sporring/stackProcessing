@@ -27,7 +27,7 @@
   </ItemGroup>
 
   <ItemGroup>
-    <Compile Include="SmartImagePipeline.fs" />
+    <Compile Include="StackPipeline.fs" />
   </ItemGroup>
 
 </Project>

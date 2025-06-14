@@ -1,6 +1,6 @@
 ﻿// To run, remember to:
-// export DYLD_LIBRARY_PATH=./SmartImagePipeline/lib:$(pwd)/bin/Debug/net8.0
-open SmartImagePipeline
+// export DYLD_LIBRARY_PATH=./StackPipeline/lib:$(pwd)/bin/Debug/net8.0
+open StackPipeline
 open Processing
 open pipelineIO
 

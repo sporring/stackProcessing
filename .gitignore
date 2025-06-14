@@ -25,3 +25,6 @@ simpleITKClasses.txt~
 /simpleITKWrappers/lib
 /pipelineIO/lib
 /CoreTypes/lib
+/StackPipeline/bin
+/StackPipeline/obj
+StackPipeline/lib/libSimpleITKCSharpNative.dylib
