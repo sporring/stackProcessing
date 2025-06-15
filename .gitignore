@@ -28,3 +28,4 @@ simpleITKClasses.txt~
 /StackPipeline/bin
 /StackPipeline/obj
 StackPipeline/lib/libSimpleITKCSharpNative.dylib
+/test
