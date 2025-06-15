@@ -19,7 +19,7 @@
 
   <ItemGroup>
     <Compile Include="ImageClass.fs" />
-    <Compile Include="ImageOps.fs" />
+    <Compile Include="ImageFunctions.fs" />
   </ItemGroup>
 
 </Project>

@@ -1,4 +1,4 @@
-module ImageTypes
+module ImageClass
 
 type PixelType =
     | UInt8

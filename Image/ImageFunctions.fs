@@ -1,5 +1,5 @@
-module ImageOps
-open ImageTypes
+module ImageFunctions
+open ImageClass
 
 // ----- basic mathematical functions -----
 let inline makeUnaryImageOperator
