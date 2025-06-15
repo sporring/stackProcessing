@@ -1,4 +1,5 @@
 module ImageClass
+open FSharp.Collections
 
 type PixelType =
     | UInt8
@@ -67,34 +68,46 @@ type Image(img: itk.simple.Image) =
     static let extractSlice (axis: int) (index: int) (img: Image) : Image =
         let roi = new itk.simple.RegionOfInterestImageFilter()
         let size = (img.Image :> itk.simple.Image).GetSize()
-        let start = [|0; 0; 0|]
-        let extent = [|0u; 0u; 0u|]
-        start.[axis] <- index
-        extent.[axis] <- 1u
+        let start = List.init 3 (fun i -> if i = axis then index else 0)
+        let extent = List.init 3 (fun i -> if i = axis then 1u else 0u)
 
-        roi.SetSize(extent |> List.ofArray |> toVectorUInt32)
-        roi.SetIndex(start |> List.ofArray |> toVectorInt32)
+        roi.SetSize(extent |> toVectorUInt32)
+        roi.SetIndex(start |> toVectorInt32)
         Image(roi.Execute(img.Image))
 
     static let concatAlongAxis (axis: int) (images: Image list) : Image =
         if List.isEmpty images then failwith "Empty image list"
 
-        // Create a copy of the first image to paste into
-        let mutable result = new itk.simple.Image(images.Head.Image)
-        let mutable offset = [| 0; 0; 0 |]
+        // Helper to convert offset array to vector
+        let offsetToVector offset = offset |> List.ofArray |> toVectorInt32
 
-        for img in images.Tail do
-            let size = img.Image.GetSize()
-            let paste = new itk.simple.PasteImageFilter()
-            paste.SetDestinationIndex(offset |> List.ofArray |> toVectorInt32)
-            paste.SetSourceSize(size)
-            paste.SetSourceIndex([| 0; 0; 0 |] |> List.ofArray |> toVectorInt32)
-            result <- paste.Execute(result, img.Image)
+        // Start with the first image and zero offset
+        let initialImage = new itk.simple.Image(images.Head.Image)
+        let initialOffset = [| 0; 0; 0 |]
 
-            // Update offset on the selected axis
-            offset.[axis] <- offset.[axis] + (int size.[axis])
+        // Fold over the tail, carrying (result image, offset) as state
+        let finalImage, _ =
+            images.Tail
+            |> List.fold (fun (result, offset) img ->
+                let size = img.Image.GetSize()
 
-        Image(result)
+                let paste = new itk.simple.PasteImageFilter()
+                paste.SetDestinationIndex(offsetToVector offset)
+                paste.SetSourceSize(size)
+                paste.SetSourceIndex(offsetToVector [| 0; 0; 0 |])
+
+                let newResult = paste.Execute(result, img.Image)
+
+                // Compute new offset immutably
+                let newOffset =
+                    offset
+                    |> Array.mapi (fun i v -> if i = axis then v + (int size.[i]) else v)
+
+                (newResult, newOffset)
+            ) (initialImage, initialOffset)
+
+        Image(finalImage)
+
 
     static let concatZ (images: Image list) : Image =
         if List.isEmpty images then failwith "Empty image list"
