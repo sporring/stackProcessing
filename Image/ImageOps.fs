@@ -1,23 +1,6 @@
-module ImageClass.ImageOps
-open ImageClass
+module ImageOps
+open ImageTypes
 
-/// Module with inline operator overloads for Image
-let toVectorUInt32 (lst: int list) =
-    let v = new itk.simple.VectorUInt32()
-    lst |> List.iter (uint32 >> v.Add)
-    v
-
-let toVectorDouble (lst: float list) =
-    let v = new itk.simple.VectorDouble()
-    lst |> List.iter v.Add
-    v
-
-let fromVectorUInt32 (v: itk.simple.VectorUInt32) : uint list =
-    v |> Seq.map uint |> Seq.toList
-
-let fromVectorDouble (v: itk.simple.VectorDouble) : float list =
-    v |> Seq.toList
-    
 // ----- basic mathematical functions -----
 let inline makeUnaryImageOperator
     (filter: 'Filter)

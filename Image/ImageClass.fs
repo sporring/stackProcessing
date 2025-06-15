@@ -1,4 +1,4 @@
-namespace ImageClass
+module ImageTypes
 
 type PixelType =
     | UInt8
@@ -37,7 +37,76 @@ type PixelType =
         | LabelUInt32   -> itk.simple.PixelIDValueEnum.sitkLabelUInt32
         | LabelUInt64   -> itk.simple.PixelIDValueEnum.sitkLabelUInt64
 
+/// Module with inline operator overloads for Image
+let toVectorUInt32 (lst: uint list) =
+    let v = new itk.simple.VectorUInt32()
+    lst |> List.iter v.Add
+    v
+
+let toVectorInt32 (lst: int list) =
+    let v = new itk.simple.VectorInt32()
+    lst |> List.iter v.Add
+    v
+
+let toVectorDouble (lst: float list) =
+    let v = new itk.simple.VectorDouble()
+    lst |> List.iter v.Add
+    v
+
+let fromVectorUInt32 (v: itk.simple.VectorUInt32) : uint list =
+    v |> Seq.map uint |> Seq.toList
+
+let fromVectorInt32 (v: itk.simple.VectorInt32) : int list =
+    v |> Seq.map int |> Seq.toList
+
+let fromVectorDouble (v: itk.simple.VectorDouble) : float list =
+    v |> Seq.toList
+
 type Image(img: itk.simple.Image) =
+
+    static let extractSlice (axis: int) (index: int) (img: Image) : Image =
+        let roi = new itk.simple.RegionOfInterestImageFilter()
+        let size = (img.Image :> itk.simple.Image).GetSize()
+        let start = [|0; 0; 0|]
+        let extent = [|0u; 0u; 0u|]
+        start.[axis] <- index
+        extent.[axis] <- 1u
+
+        roi.SetSize(extent |> List.ofArray |> toVectorUInt32)
+        roi.SetIndex(start |> List.ofArray |> toVectorInt32)
+        Image(roi.Execute(img.Image))
+
+    static let concatAlongAxis (axis: int) (images: Image list) : Image =
+        if List.isEmpty images then failwith "Empty image list"
+
+        // Create a copy of the first image to paste into
+        let mutable result = new itk.simple.Image(images.Head.Image)
+        let mutable offset = [| 0; 0; 0 |]
+
+        for img in images.Tail do
+            let size = img.Image.GetSize()
+            let paste = new itk.simple.PasteImageFilter()
+            paste.SetDestinationIndex(offset |> List.ofArray |> toVectorInt32)
+            paste.SetSourceSize(size)
+            paste.SetSourceIndex([| 0; 0; 0 |] |> List.ofArray |> toVectorInt32)
+            result <- paste.Execute(result, img.Image)
+
+            // Update offset on the selected axis
+            offset.[axis] <- offset.[axis] + (int size.[axis])
+
+        Image(result)
+
+    static let concatZ (images: Image list) : Image =
+        if List.isEmpty images then failwith "Empty image list"
+
+        let join = new itk.simple.JoinSeriesImageFilter()
+        join.SetOrigin(0.0)
+
+        let vector = new itk.simple.VectorOfImage()
+        images |> List.iter (fun img -> vector.Add(img.Image))
+
+        Image(join.Execute(vector))
+
 
     /// Underlying itk.simple image
     member this.Image = img
@@ -263,3 +332,19 @@ type Image(img: itk.simple.Image) =
     static member op_LogicalNot (f: Image) =
         let filter = new itk.simple.InvertIntensityImageFilter()
         Image(filter.Execute(f.Image))
+
+    /// Indexing
+    member this.Item
+        with get (x: int, y: int) =
+            this.Image.GetPixelAsFloat([|uint x; uint y|] |>List.ofArray |> toVectorUInt32)
+
+    member this.Item
+        with get (x: int, y: int, z: int) =
+            this.Image.GetPixelAsFloat([|uint x; uint y; uint z|] |> List.ofArray |> toVectorUInt32)
+
+    member this.Slice(axis: int, index: int) = extractSlice axis index this
+
+    // Concatenation
+    static member ConcatX(images: Image list) = concatAlongAxis 0 images
+    static member ConcatY(images: Image list) = concatAlongAxis 1 images
+    static member ConcatZ(images: Image list) = concatZ images
