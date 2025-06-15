@@ -1,0 +1,25 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Reference Include="SimpleITKCSharp">
+      <HintPath>lib/SimpleITKCSharpManaged.dll</HintPath>
+      <Private>true</Private>
+    </Reference>
+
+    <!-- Ensure native lib is copied -->
+    <None Update="lib/libSimpleITKCSharpNative.dylib">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+  </ItemGroup>
+
+  <ItemGroup>
+    <Compile Include="ImageClass.fs" />
+    <Compile Include="ImageOps.fs" />
+  </ItemGroup>
+
+</Project>

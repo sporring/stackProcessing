@@ -10,7 +10,6 @@ simpleITKClasses.txt~
 /AsyncSeqExtensions/obj
 /CoreTypes/bin
 /CoreTypes/obj
-/image
 /mask
 /pipelineIO/bin
 /pipelineIO/obj
@@ -29,3 +28,6 @@ simpleITKClasses.txt~
 /StackPipeline/obj
 StackPipeline/lib/libSimpleITKCSharpNative.dylib
 /test
+/Image/bin
+/Image/obj
+*.dylib
