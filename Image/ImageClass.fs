@@ -1,5 +1,4 @@
 namespace ImageClass
-open itk.simple
 
 type PixelType =
     | UInt8
@@ -21,24 +20,24 @@ type PixelType =
 
     member this.ToSimpleITK() =
         match this with
-        | UInt8         -> PixelIDValueEnum.sitkUInt8
-        | Int8          -> PixelIDValueEnum.sitkInt8
-        | UInt16        -> PixelIDValueEnum.sitkUInt16
-        | Int16         -> PixelIDValueEnum.sitkInt16
-        | UInt32        -> PixelIDValueEnum.sitkUInt32
-        | Int32         -> PixelIDValueEnum.sitkInt32
-        | UInt64        -> PixelIDValueEnum.sitkUInt64
-        | Int64         -> PixelIDValueEnum.sitkInt64
-        | Float32       -> PixelIDValueEnum.sitkFloat32
-        | Float64       -> PixelIDValueEnum.sitkFloat64
-        | VectorUInt8   -> PixelIDValueEnum.sitkVectorUInt8
-        | VectorFloat32 -> PixelIDValueEnum.sitkVectorFloat32
-        | LabelUInt8    -> PixelIDValueEnum.sitkLabelUInt8
-        | LabelUInt16   -> PixelIDValueEnum.sitkLabelUInt16
-        | LabelUInt32   -> PixelIDValueEnum.sitkLabelUInt32
-        | LabelUInt64   -> PixelIDValueEnum.sitkLabelUInt64
+        | UInt8         -> itk.simple.PixelIDValueEnum.sitkUInt8
+        | Int8          -> itk.simple.PixelIDValueEnum.sitkInt8
+        | UInt16        -> itk.simple.PixelIDValueEnum.sitkUInt16
+        | Int16         -> itk.simple.PixelIDValueEnum.sitkInt16
+        | UInt32        -> itk.simple.PixelIDValueEnum.sitkUInt32
+        | Int32         -> itk.simple.PixelIDValueEnum.sitkInt32
+        | UInt64        -> itk.simple.PixelIDValueEnum.sitkUInt64
+        | Int64         -> itk.simple.PixelIDValueEnum.sitkInt64
+        | Float32       -> itk.simple.PixelIDValueEnum.sitkFloat32
+        | Float64       -> itk.simple.PixelIDValueEnum.sitkFloat64
+        | VectorUInt8   -> itk.simple.PixelIDValueEnum.sitkVectorUInt8
+        | VectorFloat32 -> itk.simple.PixelIDValueEnum.sitkVectorFloat32
+        | LabelUInt8    -> itk.simple.PixelIDValueEnum.sitkLabelUInt8
+        | LabelUInt16   -> itk.simple.PixelIDValueEnum.sitkLabelUInt16
+        | LabelUInt32   -> itk.simple.PixelIDValueEnum.sitkLabelUInt32
+        | LabelUInt64   -> itk.simple.PixelIDValueEnum.sitkLabelUInt64
 
-type Raw(img: itk.simple.Image) =
+type Image(img: itk.simple.Image) =
 
     /// Underlying itk.simple image
     member this.Image = img
@@ -47,43 +46,220 @@ type Raw(img: itk.simple.Image) =
     override this.ToString() = img.ToString()
 
     /// generate images
-    static member FromSize(size: int list) : Raw =
-        let vec = new VectorUInt32()
+    static member FromSize(size: int list) : Image =
+        let vec = new itk.simple.VectorUInt32()
         size |> List.iter (uint32 >> vec.Add)
         let img = new itk.simple.Image(vec, PixelType.Float32.ToSimpleITK())
-        new Raw(img)
+        Image(img)
 
-    static member FromSizeAndType(size: int list, pixelType: PixelType) : Raw =
-        let vec = new VectorUInt32()
+    static member FromSizeAndType(size: int list, pixelType: PixelType) : Image =
+        let vec = new itk.simple.VectorUInt32()
         size |> List.iter (uint32 >> vec.Add)
         let img = new itk.simple.Image(vec, pixelType.ToSimpleITK())
-        new Raw(img)
+        Image(img)
 
-    static member FromConstant(size: int list, pixelType: PixelType, value: float) : Raw =
-        let vec = new VectorUInt32()
+    static member FromConstant(size: int list, pixelType: PixelType, value: float) : Image =
+        let vec = new itk.simple.VectorUInt32()
         size |> List.iter (uint32 >> vec.Add)
         let img = new itk.simple.Image(vec, pixelType.ToSimpleITK())
-        let scalarFilter = new ShiftScaleImageFilter()
+        let scalarFilter = new itk.simple.ShiftScaleImageFilter()
         scalarFilter.SetShift(value)
-        new Raw(scalarFilter.Execute(img))
+        Image(scalarFilter.Execute(img))
 
-    static member FromSimpleITK(img: itk.simple.Image) : Raw =
-        new Raw(img)
+    static member FromSimpleITK(img: itk.simple.Image) : Image =
+        Image(img)
 
-    static member FromFile(filename: string) : Raw =
-        let reader = new ImageFileReader()
+    static member FromFile(filename: string) : Image =
+        let reader = new itk.simple.ImageFileReader()
         reader.SetFileName(filename)
-        new Raw(reader.Execute())
+        Image(reader.Execute())
 
-    static member (+) (f1 : Raw, f2 : Raw) =
-        let filter = new AddImageFilter()
-        new Raw(filter.Execute(f1.Image, f2.Image))
+    static member (+) (f1 : Image, f2 : Image) =
+        let filter = new itk.simple.AddImageFilter()
+        Image(filter.Execute(f1.Image, f2.Image))
 
-    static member (+) (f1: Raw, i : float) =
-        let filter = new AddImageFilter()
-        new Raw(filter.Execute(f1.Image, i))
+    static member (+) (f1: Image, i : float) =
+        let filter = new itk.simple.AddImageFilter()
+        Image(filter.Execute(f1.Image, i))
 
-    static member (+) (i : float, f2: Raw) =
-        let filter = new AddImageFilter()
-        new Raw(filter.Execute(i, f2.Image))
+    static member (+) (i : float, f2: Image) =
+        let filter = new itk.simple.AddImageFilter()
+        Image(filter.Execute(i, f2.Image))
 
+    static member (-) (f1: Image, f2: Image) =
+        let filter = new itk.simple.SubtractImageFilter()
+        Image(filter.Execute(f1.Image, f2.Image))
+
+    static member (-) (f1: Image, i: float) =
+        let filter = new itk.simple.SubtractImageFilter()
+        Image(filter.Execute(f1.Image, i))
+
+    static member (-) (i: float, f2: Image) =
+        let filter = new itk.simple.SubtractImageFilter()
+        Image(filter.Execute(i, f2.Image))
+
+    static member (*) (f1: Image, f2: Image) =
+        let filter = new itk.simple.MultiplyImageFilter()
+        Image(filter.Execute(f1.Image, f2.Image))
+
+    static member (*) (f1: Image, i: float) =
+        let filter = new itk.simple.MultiplyImageFilter()
+        Image(filter.Execute(f1.Image, i))
+
+    static member (*) (i: float, f2: Image) =
+        let filter = new itk.simple.MultiplyImageFilter()
+        Image(filter.Execute(i, f2.Image))
+
+    static member (/) (f1: Image, f2: Image) =
+        let filter = new itk.simple.DivideImageFilter()
+        Image(filter.Execute(f1.Image, f2.Image))
+
+    static member (/) (f1: Image, i: float) =
+        let filter = new itk.simple.DivideImageFilter()
+        Image(filter.Execute(f1.Image, i))
+
+    static member (/) (i: float, f2: Image) =
+        let filter = new itk.simple.DivideImageFilter()
+        Image(filter.Execute(i, f2.Image))
+
+    static member op_Equality (f1: Image, f2: Image) =
+        let filter = new itk.simple.EqualImageFilter()
+        Image(filter.Execute(f1.Image, f2.Image))
+
+    static member op_Equality (f1: Image, i: float) =
+        let filter = new itk.simple.EqualImageFilter()
+        Image(filter.Execute(f1.Image, i))
+
+    static member op_Equality (i: float, f2: Image) =
+        let filter = new itk.simple.EqualImageFilter()
+        Image(filter.Execute(i, f2.Image))
+
+    static member op_Inequality (f1: Image, f2: Image) =
+        let filter = new itk.simple.NotEqualImageFilter()
+        Image(filter.Execute(f1.Image, f2.Image))
+
+    static member op_Inequality (f1: Image, i: float) =
+        let filter = new itk.simple.NotEqualImageFilter()
+        Image(filter.Execute(f1.Image, i))
+
+    static member op_Inequality (i: float, f2: Image) =
+        let filter = new itk.simple.NotEqualImageFilter()
+        Image(filter.Execute(i, f2.Image))
+
+    static member op_LessThan (f1: Image, f2: Image) =
+        let filter = new itk.simple.LessImageFilter()
+        Image(filter.Execute(f1.Image, f2.Image))
+
+    static member op_LessThan (f1: Image, i: float) =
+        let filter = new itk.simple.LessImageFilter()
+        Image(filter.Execute(f1.Image, i))
+
+    static member op_LessThan (i: float, f2: Image) =
+        let filter = new itk.simple.LessImageFilter()
+        Image(filter.Execute(i, f2.Image))
+
+    static member op_LessThanOrEqual (f1: Image, f2: Image) =
+        let filter = new itk.simple.LessEqualImageFilter()
+        Image(filter.Execute(f1.Image, f2.Image))
+
+    static member op_LessThanOrEqual (f1: Image, i: float) =
+        let filter = new itk.simple.LessEqualImageFilter()
+        Image(filter.Execute(f1.Image, i))
+
+    static member op_LessThanOrEqual (i: float, f2: Image) =
+        let filter = new itk.simple.LessEqualImageFilter()
+        Image(filter.Execute(i, f2.Image))
+
+    static member op_GreaterThan (f1: Image, f2: Image) =
+        let filter = new itk.simple.GreaterImageFilter()
+        Image(filter.Execute(f1.Image, f2.Image))
+
+    static member op_GreaterThan (f1: Image, i: float) =
+        let filter = new itk.simple.GreaterImageFilter()
+        Image(filter.Execute(f1.Image, i))
+
+    static member op_GreaterThan (i: float, f2: Image) =
+        let filter = new itk.simple.GreaterImageFilter()
+        Image(filter.Execute(i, f2.Image))
+
+    static member op_GreaterThanOrEqual (f1: Image, f2: Image) =
+        let filter = new itk.simple.GreaterEqualImageFilter()
+        Image(filter.Execute(f1.Image, f2.Image))
+
+    static member op_GreaterThanOrEqual (f1: Image, i: float) =
+        let filter = new itk.simple.GreaterEqualImageFilter()
+        Image(filter.Execute(f1.Image, i))
+
+    static member op_GreaterThanOrEqual (i: float, f2: Image) =
+        let filter = new itk.simple.GreaterEqualImageFilter()
+        Image(filter.Execute(i, f2.Image))
+
+    // Modulus ( % )
+    static member op_Modulus (f1: Image, f2: Image) =
+        let filter = new itk.simple.ModulusImageFilter()
+        Image(filter.Execute(f1.Image, f2.Image))
+
+    static member op_Modulus (f1: Image, i: uint) =
+        let filter = new itk.simple.ModulusImageFilter()
+        Image(filter.Execute(f1.Image, i))
+
+    static member op_Modulus (i: uint, f2: Image) =
+        let filter = new itk.simple.ModulusImageFilter()
+        Image(filter.Execute(i, f2.Image))
+
+    // Power (no direct operator for ** in .NET) - provide a named method instead
+    static member Pow (f1: Image, f2: Image) =
+        let filter = new itk.simple.PowImageFilter()
+        Image(filter.Execute(f1.Image, f2.Image))
+
+    static member Pow (f1: Image, i: float) =
+        let filter = new itk.simple.PowImageFilter()
+        Image(filter.Execute(f1.Image, i))
+
+    static member Pow (i: float, f2: Image) =
+        let filter = new itk.simple.PowImageFilter()
+        Image(filter.Execute(i, f2.Image))
+
+    // Bitwise AND ( &&& )
+    static member op_BitwiseAnd (f1: Image, f2: Image) =
+        let filter = new itk.simple.AndImageFilter()
+        Image(filter.Execute(f1.Image, f2.Image))
+
+    static member op_BitwiseAnd (f1: Image, i: int) =
+        let filter = new itk.simple.AndImageFilter()
+        Image(filter.Execute(f1.Image, i))
+
+    static member op_BitwiseAnd (i: int, f2: Image) =
+        let filter = new itk.simple.AndImageFilter()
+        Image(filter.Execute(i, f2.Image))
+
+    // Bitwise XOR ( ^^^ )
+    static member op_ExclusiveOr (f1: Image, f2: Image) =
+        let filter = new itk.simple.XorImageFilter()
+        Image(filter.Execute(f1.Image, f2.Image))
+
+    static member op_ExclusiveOr (f1: Image, i: int) =
+        let filter = new itk.simple.XorImageFilter()
+        Image(filter.Execute(f1.Image, i))
+
+    static member op_ExclusiveOr (i: int, f2: Image) =
+        let filter = new itk.simple.XorImageFilter()
+        Image(filter.Execute(i, f2.Image))
+
+    // Bitwise OR ( ||| )
+    static member op_BitwiseOr (f1: Image, f2: Image) =
+        let filter = new itk.simple.OrImageFilter()
+        Image(filter.Execute(f1.Image, f2.Image))
+
+    static member op_BitwiseOr (f1: Image, i: int) =
+        let filter = new itk.simple.OrImageFilter()
+        Image(filter.Execute(f1.Image, i))
+
+    static member op_BitwiseOr (i: int, f2: Image) =
+        let filter = new itk.simple.OrImageFilter()
+        Image(filter.Execute(i, f2.Image))
+
+    // Unary bitwise NOT ( ~~~ )
+    static member op_LogicalNot (f: Image) =
+        let filter = new itk.simple.InvertIntensityImageFilter()
+        Image(filter.Execute(f.Image))

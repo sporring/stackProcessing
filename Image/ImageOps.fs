@@ -1,392 +1,254 @@
 module ImageClass.ImageOps
 open ImageClass
-open itk.simple
 
 /// Module with inline operator overloads for Image
-let toVectorUInt32 (arr: int list) =
-    let v = new VectorUInt32()
-    arr |> List.iter (uint32 >> v.Add)
+let toVectorUInt32 (lst: int list) =
+    let v = new itk.simple.VectorUInt32()
+    lst |> List.iter (uint32 >> v.Add)
     v
 
-let toVectorDouble (arr: float list) =
-    let v = new VectorDouble()
-    arr |> List.iter v.Add
+let toVectorDouble (lst: float list) =
+    let v = new itk.simple.VectorDouble()
+    lst |> List.iter v.Add
     v
 
-// ----- Operator Overloads -----
+let fromVectorUInt32 (v: itk.simple.VectorUInt32) : uint list =
+    v |> Seq.map uint |> Seq.toList
 
-// operator overloading in F# is not easy. 
-//   (=) etc. must be inline and cannot be overloaded directly. 
-//   op_Equality etc. can but must return bools so cannot return Image of bools and cannot be curried directly
-//   when ^T : (static member op_Explicit : ^T -> double) can be used for type checking
-// Thus we settle for boxing:
-//   + Single function handles all needed combinations.
-//   + Allows generic numeric types: int, float, byte, etc.
-//   + Works naturally in F# functional code (List.map ((+) 5.0)).
-//   + Avoids F#'s restriction against multiple function/operator overloads.
-//   - Type resolution for Image vs scalar happens at runtime via box, not static dispatch.
-//   - You lose type-checking for "is this a scalar?" - but retain type-checking for Image.
-let inline makeBinaryImageOperator
-    (filter: 'Filter)
-    (invokeImageImage: 'Filter -> itk.simple.Image -> itk.simple.Image -> itk.simple.Image)
-    (invokeImageScalar: 'Filter -> itk.simple.Image -> double -> itk.simple.Image)
-    (invokeScalarImage: 'Filter -> double -> itk.simple.Image -> itk.simple.Image)
-    : (^A -> ^B -> Raw) 
-    when ^A: (static member op_Explicit: ^A -> double)
-     and ^B: (static member op_Explicit: ^B -> double) =
-    let inline apply (a: ^A) (b: ^B) =
-        match box a, box b with
-        | (:? Raw as ia), (:? Raw as ib) ->
-            Raw(invokeImageImage filter ia.Image ib.Image)
-        | (:? Raw as ia), _ ->
-            Raw(invokeImageScalar filter ia.Image (double b))
-        | _, (:? Raw as ib) ->
-            Raw(invokeScalarImage filter (double a) ib.Image)
-        | _ ->
-            failwithf "Invalid operands to image operator: %A and %A" typeof<^A> typeof<^B>
-    apply
-
-let inline makeBinaryUIntImageOperator
-    (filter: 'Filter)
-    (invokeImageImage: 'Filter -> itk.simple.Image -> itk.simple.Image -> itk.simple.Image)
-    (invokeImageScalar: 'Filter -> itk.simple.Image -> uint -> itk.simple.Image)
-    (invokeScalarImage: 'Filter -> uint -> itk.simple.Image -> itk.simple.Image)
-    : (^A -> ^B -> Raw) =
-    let inline apply (a: ^A) (b: ^B) =
-        match box a, box b with
-        | (:? Raw as ia), (:? Raw as ib) ->
-            Raw(invokeImageImage filter ia.Image ib.Image)
-        | (:? Raw as ia), _ ->
-            Raw(invokeImageScalar filter ia.Image (uint b))
-        | _, (:? Raw as ib) ->
-            Raw(invokeScalarImage filter (uint a) ib.Image)
-        | _ ->
-            failwithf "Invalid operands to image operator: %A and %A" typeof<^A> typeof<^B>
-    apply
-
-let inline makeBinaryIntImageOperator
-    (filter: 'Filter)
-    (invokeImageImage: 'Filter -> itk.simple.Image -> itk.simple.Image -> itk.simple.Image)
-    (invokeImageScalar: 'Filter -> itk.simple.Image -> int -> itk.simple.Image)
-    (invokeScalarImage: 'Filter -> int -> itk.simple.Image -> itk.simple.Image)
-    : (^A -> ^B -> Raw) =
-    let inline apply (a: ^A) (b: ^B) =
-        match box a, box b with
-        | (:? Raw as ia), (:? Raw as ib) ->
-            Raw(invokeImageImage filter ia.Image ib.Image)
-        | (:? Raw as ia), _ ->
-            Raw(invokeImageScalar filter ia.Image (int b))
-        | _, (:? Raw as ib) ->
-            Raw(invokeScalarImage filter (int a) ib.Image)
-        | _ ->
-            failwithf "Invalid operands to image operator: %A and %A" typeof<^A> typeof<^B>
-    apply
-
-// for static type checking, Execute for each combination of Image and
-// double needs triple mentions
-let inline (+.) a b =
-    makeBinaryImageOperator
-        (new AddImageFilter())
-        (fun f a b -> f.Execute(a, b))
-        (fun f a s -> f.Execute(a, s))
-        (fun f s b -> f.Execute(s, b))
-        a b
-
-let inline (-.) a b =
-    makeBinaryImageOperator
-        (new SubtractImageFilter())
-        (fun f a b -> f.Execute(a, b))
-        (fun f a s -> f.Execute(a, s))
-        (fun f s b -> f.Execute(s, b))
-        a b
-
-let inline ( *.) a b =
-    makeBinaryImageOperator
-        (new MultiplyImageFilter())
-        (fun f a b -> f.Execute(a, b))
-        (fun f a s -> f.Execute(a, s))
-        (fun f s b -> f.Execute(s, b))
-        a b
-
-let inline (/.) a b =
-    makeBinaryImageOperator
-        (new DivideImageFilter())
-        (fun f a b -> f.Execute(a, b))
-        (fun f a s -> f.Execute(a, s))
-        (fun f s b -> f.Execute(s, b))
-        a b
-let inline (===) a b =
-    makeBinaryImageOperator
-        (new EqualImageFilter())
-        (fun f a b -> f.Execute(a, b))
-        (fun f a s -> f.Execute(a, s))
-        (fun f s b -> f.Execute(s, b))
-        a b
-let inline (=/=) a b =
-    makeBinaryImageOperator
-        (new NotEqualImageFilter())
-        (fun f a b -> f.Execute(a, b))
-        (fun f a s -> f.Execute(a, s))
-        (fun f s b -> f.Execute(s, b))
-        a b
-let inline (<.) a b =
-    makeBinaryImageOperator
-        (new LessImageFilter())
-        (fun f a b -> f.Execute(a, b))
-        (fun f a s -> f.Execute(a, s))
-        (fun f s b -> f.Execute(s, b))
-        a b
-let inline (<=.) a b =
-    makeBinaryImageOperator
-        (new LessImageFilter())
-        (fun f a b -> f.Execute(a, b))
-        (fun f a s -> f.Execute(a, s))
-        (fun f s b -> f.Execute(s, b))
-        a b
-let inline (>.) a b =
-    makeBinaryImageOperator
-        (new GreaterImageFilter())
-        (fun f a b -> f.Execute(a, b))
-        (fun f a s -> f.Execute(a, s))
-        (fun f s b -> f.Execute(s, b))
-        a b
-let inline (>=.) a b =
-    makeBinaryImageOperator
-        (new GreaterEqualImageFilter())
-        (fun f a b -> f.Execute(a, b))
-        (fun f a s -> f.Execute(a, s))
-        (fun f s b -> f.Execute(s, b))
-        a b
-
-let inline ( %. ) a b =
-    makeBinaryUIntImageOperator
-        (new ModulusImageFilter())
-        (fun f a b -> f.Execute(a, b))
-        (fun f a s -> f.Execute(a, s))
-        (fun f s b -> f.Execute(s, b))
-        a b
-
-let inline ( **. ) a b =
-    makeBinaryImageOperator
-        (new PowImageFilter())
-        (fun f a b -> f.Execute(a, b))
-        (fun f a s -> f.Execute(a, s))
-        (fun f s b -> f.Execute(s, b))
-        a b
-
-let inline ( &&&. ) a b =
-    makeBinaryIntImageOperator
-        (new AndImageFilter())
-        (fun f a b -> f.Execute(a, b))
-        (fun f a s -> f.Execute(a, s))
-        (fun f s b -> f.Execute(s, b))
-        a b
-
-let inline ( ^^^. ) a b =
-    makeBinaryIntImageOperator
-        (new XorImageFilter())
-        (fun f a b -> f.Execute(a, b))
-        (fun f a s -> f.Execute(a, s))
-        (fun f s b -> f.Execute(s, b))
-        a b
-
-let inline ( |||. ) a b =
-    makeBinaryIntImageOperator
-        (new OrImageFilter())
-        (fun f a b -> f.Execute(a, b))
-        (fun f a s -> f.Execute(a, s))
-        (fun f s b -> f.Execute(s, b))
-        a b
-
-let inline ( ~~~ ) (img: Raw) =
-    let filter = new InvertIntensityImageFilter()
-    // Default maximum is 1.0, but you can expose it if needed
-    Raw(filter.Execute(img.Image))
-
+let fromVectorDouble (v: itk.simple.VectorDouble) : float list =
+    v |> Seq.toList
+    
 // ----- basic mathematical functions -----
 let inline makeUnaryImageOperator
     (filter: 'Filter)
     (invoke: 'Filter -> itk.simple.Image -> itk.simple.Image)
-    : Raw -> Raw =
-    fun (img: Raw) ->
-        Raw(invoke filter img.Image)
+    : Image -> Image =
+    fun (img: Image) ->
+        Image(invoke filter img.Image)
 
-let inline abs (img: Raw)    = makeUnaryImageOperator (new AbsImageFilter())    (fun f x -> f.Execute(x)) img
-let inline log (img: Raw)    = makeUnaryImageOperator (new LogImageFilter())    (fun f x -> f.Execute(x)) img
-let inline log10 (img: Raw)  = makeUnaryImageOperator (new Log10ImageFilter())  (fun f x -> f.Execute(x)) img
-let inline exp (img: Raw)    = makeUnaryImageOperator (new ExpImageFilter())    (fun f x -> f.Execute(x)) img
-let inline sqrt (img: Raw)   = makeUnaryImageOperator (new SqrtImageFilter())   (fun f x -> f.Execute(x)) img
-let inline square (img: Raw) = makeUnaryImageOperator (new SquareImageFilter()) (fun f x -> f.Execute(x)) img
-let inline sin (img: Raw)    = makeUnaryImageOperator (new SinImageFilter())    (fun f x -> f.Execute(x)) img
-let inline cos (img: Raw)    = makeUnaryImageOperator (new CosImageFilter())    (fun f x -> f.Execute(x)) img
-let inline tan (img: Raw)    = makeUnaryImageOperator (new TanImageFilter())    (fun f x -> f.Execute(x)) img
-let inline asin (img: Raw)   = makeUnaryImageOperator (new AsinImageFilter())   (fun f x -> f.Execute(x)) img
-let inline acos (img: Raw)   = makeUnaryImageOperator (new AcosImageFilter())   (fun f x -> f.Execute(x)) img
-let inline atan (img: Raw)   = makeUnaryImageOperator (new AtanImageFilter())   (fun f x -> f.Execute(x)) img
+let inline makeBinaryImageOperator
+    (filter: 'Filter)
+    (invoke: 'Filter -> itk.simple.Image -> itk.simple.Image -> itk.simple.Image)
+    : Image -> Image -> Image =
+    fun a b -> Image(invoke filter a.Image b.Image)
 
-let inline round (img: Raw)  = makeUnaryImageOperator (new RoundImageFilter())  (fun f x -> f.Execute(x)) img
-
+let inline abs (img: Image)    = makeUnaryImageOperator (new itk.simple.AbsImageFilter())    (fun f x -> f.Execute(x)) img
+let inline log (img: Image)    = makeUnaryImageOperator (new itk.simple.LogImageFilter())    (fun f x -> f.Execute(x)) img
+let inline log10 (img: Image)  = makeUnaryImageOperator (new itk.simple.Log10ImageFilter())  (fun f x -> f.Execute(x)) img
+let inline exp (img: Image)    = makeUnaryImageOperator (new itk.simple.ExpImageFilter())    (fun f x -> f.Execute(x)) img
+let inline sqrt (img: Image)   = makeUnaryImageOperator (new itk.simple.SqrtImageFilter())   (fun f x -> f.Execute(x)) img
+let inline square (img: Image) = makeUnaryImageOperator (new itk.simple.SquareImageFilter()) (fun f x -> f.Execute(x)) img
+let inline sin (img: Image)    = makeUnaryImageOperator (new itk.simple.SinImageFilter())    (fun f x -> f.Execute(x)) img
+let inline cos (img: Image)    = makeUnaryImageOperator (new itk.simple.CosImageFilter())    (fun f x -> f.Execute(x)) img
+let inline tan (img: Image)    = makeUnaryImageOperator (new itk.simple.TanImageFilter())    (fun f x -> f.Execute(x)) img
+let inline asin (img: Image)   = makeUnaryImageOperator (new itk.simple.AsinImageFilter())   (fun f x -> f.Execute(x)) img
+let inline acos (img: Image)   = makeUnaryImageOperator (new itk.simple.AcosImageFilter())   (fun f x -> f.Execute(x)) img
+let inline atan (img: Image)   = makeUnaryImageOperator (new itk.simple.AtanImageFilter())   (fun f x -> f.Execute(x)) img
+let inline round (img: Image)  = makeUnaryImageOperator (new itk.simple.RoundImageFilter())  (fun f x -> f.Execute(x)) img
 // ----- basic image analysis functions -----
-let fft3D (img: Raw) : Raw =
-    let filter = new ForwardFFTImageFilter()
-    Raw(filter.Execute(img.Image))
-
-let ifft3D (img: Raw) : Raw =
-    let filter = new InverseFFTImageFilter()
-    Raw(filter.Execute(img.Image))
-
-let real (img: Raw) : Raw =
-    let filter = new ComplexToRealImageFilter()
-    Raw(filter.Execute(img.Image))
-
-let imag (img: Raw) : Raw =
-    let filter = new ComplexToImaginaryImageFilter()
-    Raw(filter.Execute(img.Image))
-
-let cabs (img: Raw) : Raw =
-    let filter = new ComplexToModulusImageFilter()
-    Raw(filter.Execute(img.Image))
-
-let carg (img: Raw) : Raw =
-    let filter = new ComplexToPhaseImageFilter()
-    Raw(filter.Execute(img.Image))
-
-let convolve (kernel: Raw) (input: Raw) : Raw =
-    let filter = new ConvolutionImageFilter()
-    Raw(filter.Execute(input.Image, kernel.Image))
+let fft3D (img: Image)         = makeUnaryImageOperator (new itk.simple.ForwardFFTImageFilter()) (fun f x -> f.Execute(x)) img
+let ifft3D (img: Image)        = makeUnaryImageOperator (new itk.simple.InverseFFTImageFilter()) (fun f x -> f.Execute(x)) img
+let real (img: Image)          = makeUnaryImageOperator (new itk.simple.ComplexToRealImageFilter()) (fun f x -> f.Execute(x)) img
+let imag (img: Image)          = makeUnaryImageOperator (new itk.simple.ComplexToImaginaryImageFilter()) (fun f x -> f.Execute(x)) img
+let cabs (img: Image)          = makeUnaryImageOperator (new itk.simple.ComplexToModulusImageFilter()) (fun f x -> f.Execute(x)) img
+let carg (img: Image)          = makeUnaryImageOperator (new itk.simple.ComplexToPhaseImageFilter()) (fun f x -> f.Execute(x)) img
+let convolve (kern: Image) (img: Image)
+    = makeBinaryImageOperator (new itk.simple.ConvolutionImageFilter()) (fun f a b -> f.Execute(a, b)) kern img
 
 /// Gaussian kernel convolution
 /// Isotropic Discrete Gaussian blur
-let discreteGaussian (input: Raw) (sigma: float) : Raw =
-    let filter = new DiscreteGaussianImageFilter()
+let discreteGaussian (input: Image) (sigma: float) : Image =
+    let filter = new itk.simple.DiscreteGaussianImageFilter()
     filter.SetVariance(sigma * sigma)
-    Raw(filter.Execute(input.Image))
+    Image(filter.Execute(input.Image))
 
 /// Recursive Gaussian blur in a specific direction (0 = x, 1 = y, 2 = z)
-let recursiveGaussian (input: Raw) (sigma: float) (direction: uint) : Raw =
-    let filter = new RecursiveGaussianImageFilter()
+let recursiveGaussian (input: Image) (sigma: float) (direction: uint) : Image =
+    let filter = new itk.simple.RecursiveGaussianImageFilter()
     filter.SetSigma(sigma)
     filter.SetDirection(direction)
-    Raw(filter.Execute(input.Image))
+    Image(filter.Execute(input.Image))
 
 /// Laplacian of Gaussian convolution
-let laplacianConvolve (input: Raw) (sigma: float) : Raw =
-    let filter = new LaplacianRecursiveGaussianImageFilter()
+let laplacianConvolve (input: Image) (sigma: float) : Image =
+    let filter = new itk.simple.LaplacianRecursiveGaussianImageFilter()
     filter.SetSigma(sigma)
-    Raw(filter.Execute(input.Image))
+    Image(filter.Execute(input.Image))
 
 /// Gradient convolution using Derivative filter
-let gradientXConvolve (input: Raw) (order: uint32) : Raw =
-    let filter = new DerivativeImageFilter()
+let gradientXConvolve (input: Image) (order: uint32) : Image =
+    let filter = new itk.simple.DerivativeImageFilter()
     filter.SetDirection(0u) // X axis
     filter.SetOrder(order)
-    Raw(filter.Execute(input.Image))
+    Image(filter.Execute(input.Image))
 
-let gradientYConvolve (input: Raw) (order: uint32) : Raw =
-    let filter = new DerivativeImageFilter()
+let gradientYConvolve (input: Image) (order: uint32) : Image =
+    let filter = new itk.simple.DerivativeImageFilter()
     filter.SetDirection(1u) // Y axis
     filter.SetOrder(order)
-    Raw(filter.Execute(input.Image))
+    Image(filter.Execute(input.Image))
 
-let gradientZConvolve (input: Raw) (order: uint32) : Raw =
-    let filter = new DerivativeImageFilter()
+let gradientZConvolve (input: Image) (order: uint32) : Image =
+    let filter = new itk.simple.DerivativeImageFilter()
     filter.SetDirection(2u) // Z axis
     filter.SetOrder(order)
-    Raw(filter.Execute(input.Image))
+    Image(filter.Execute(input.Image))
 
 /// Image sources
 /// Create a grid pattern image
-let gridImage (size: int list) (spacing: float list) (origin: float list) : Raw =
-    let source = new GridImageSource()
-    source.SetSize(new VectorUInt32(size))
-    source.SetSpacing(new VectorDouble(spacing))
-    source.SetOrigin(new VectorDouble(origin))
-    Raw(source.Execute())
+let gridImage (size: int list) (spacing: float list) (origin: float list) : Image =
+    let source = new itk.simple.GridImageSource()
+    source.SetSize(new itk.simple.VectorUInt32(size))
+    source.SetSpacing(new itk.simple.VectorDouble(spacing))
+    source.SetOrigin(new itk.simple.VectorDouble(origin))
+    Image(source.Execute())
 
 /// Create a Gabor pattern image
-let gaborImage (size: int list) (sigma: float list) (frequency: float) : Raw =
-    let source = new GaborImageSource()
-    source.SetSize(new VectorUInt32(size))
-    source.SetSigma(new VectorDouble(sigma))
+let gaborImage (size: int list) (sigma: float list) (frequency: float) : Image =
+    let source = new itk.simple.GaborImageSource()
+    source.SetSize(new itk.simple.VectorUInt32(size))
+    source.SetSigma(new itk.simple.VectorDouble(sigma))
     source.SetFrequency(frequency)
-    Raw(source.Execute())
+    Image(source.Execute())
 
 /// Create a Gaussian pattern image
-let gaussianImage (size: int list) (sigma: float list) : Raw =
-    let source = new GaussianImageSource()
-    source.SetSize(new VectorUInt32(size))
-    source.SetSigma(new VectorDouble(sigma))
-    Raw(source.Execute())
+let gaussianImage (size: int list) (sigma: float list) : Image =
+    let source = new itk.simple.GaussianImageSource()
+    source.SetSize(new itk.simple.VectorUInt32(size))
+    source.SetSigma(new itk.simple.VectorDouble(sigma))
+    Image(source.Execute())
 
-let constantImage (size: int list) (value: float) : Raw =
-    let img = Raw.FromSize(size) 
+let constantImage (size: int list) (value: float) : Image =
+    let img = Image.FromSize(size) 
     img + value
 
 /// Mathematical morphology
 /// Binary erosion
-let binaryErode (radius: uint) (foreground: float) (img: Raw) : Raw =
-    let filter = new BinaryErodeImageFilter()
+let binaryErode (radius: uint) (foreground: float) (img: Image) : Image =
+    let filter = new itk.simple.BinaryErodeImageFilter()
     filter.SetKernelRadius(radius)
     filter.SetForegroundValue(foreground)
-    Raw(filter.Execute(img.Image))
+    Image(filter.Execute(img.Image))
 
 /// Binary dilation
-let binaryDilate (radius: uint) (foreground: float) (img: Raw) : Raw =
-    let filter = new BinaryDilateImageFilter()
+let binaryDilate (radius: uint) (foreground: float) (img: Image) : Image =
+    let filter = new itk.simple.BinaryDilateImageFilter()
     filter.SetKernelRadius(radius)
     filter.SetForegroundValue(foreground)
-    Raw(filter.Execute(img.Image))
+    Image(filter.Execute(img.Image))
 
 /// Binary opening (erode then dilate)
-let binaryOpening (radius: uint) (foreground: float) (img: Raw) : Raw =
-    let filter = new BinaryMorphologicalOpeningImageFilter()
+let binaryOpening (radius: uint) (foreground: float) (img: Image) : Image =
+    let filter = new itk.simple.BinaryMorphologicalOpeningImageFilter()
     filter.SetKernelRadius(radius)
     filter.SetForegroundValue(foreground)
-    Raw(filter.Execute(img.Image))
+    Image(filter.Execute(img.Image))
 
 /// Binary closing (dilate then erode)
-let binaryClosing (radius: uint) (foreground: float) (img: Raw) : Raw =
-    let filter = new BinaryMorphologicalClosingImageFilter()
+let binaryClosing (radius: uint) (foreground: float) (img: Image) : Image =
+    let filter = new itk.simple.BinaryMorphologicalClosingImageFilter()
     filter.SetKernelRadius(radius)
     filter.SetForegroundValue(foreground)
-    Raw(filter.Execute(img.Image))
+    Image(filter.Execute(img.Image))
 
 /// Fill holes in binary regions
-let binaryFillHoles (foreground: float) (img: Raw) : Raw =
-    let filter = new BinaryFillholeImageFilter()
+let binaryFillHoles (foreground: float) (img: Image) : Image =
+    let filter = new itk.simple.BinaryFillholeImageFilter()
     filter.SetForegroundValue(foreground)
-    Raw(filter.Execute(img.Image))
+    Image(filter.Execute(img.Image))
 
 /// Connected components labeling
-let connectedComponents (img: Raw) : Raw =
-    let filter = new ConnectedComponentImageFilter()
-    Raw(filter.Execute(img.Image))
+let connectedComponents (img: Image) : Image =
+    let filter = new itk.simple.ConnectedComponentImageFilter()
+    Image(filter.Execute(img.Image))
 
 /// Relabel components by size, optionally remove small objects
-let relabelComponents (minSize: uint) (img: Raw) : Raw =
-    let filter = new RelabelComponentImageFilter()
+let relabelComponents (minSize: uint) (img: Image) : Image =
+    let filter = new itk.simple.RelabelComponentImageFilter()
     filter.SetMinimumObjectSize(uint64 minSize)
-    Raw(filter.Execute(img.Image))
+    Image(filter.Execute(img.Image))
+
+type LabelShapeStatistics = {
+    Label: int64
+    PhysicalSize: float
+    Centroid: float list
+    BoundingBox: uint32 list
+    Elongation: float
+    Flatness: float
+    FeretDiameter: float
+    EquivalentEllipsoidDiameter: float list
+    EquivalentSphericalPerimeter: float
+    EquivalentSphericalRadius: float
+    Indexes: uint32 list
+    NumberOfPixels: uint64
+    NumberOfPixelsOnBorder: uint64
+    OrientedBoundingBoxDirection: float list
+    OrientedBoundingBoxOrigin: float list
+    OrientedBoundingBoxSize: float list
+    OrientedBoundingBoxVertices: float list
+    Perimeter: float
+    PerimeterOnBorder: float
+    PerimeterOnBorderRatio: float
+    PrincipalAxes: float list
+    PrincipalMoments: float list
+    Region: uint32 list
+    RLEIndexes: uint32 list
+    Roundness: float
+}
+
+let shapeStatsMap (filter: itk.simple.LabelShapeStatisticsImageFilter) : Map<int64, LabelShapeStatistics> =
+    filter.GetLabels()
+    |> Seq.map (fun label ->
+        let stats = {
+            Label = label
+            PhysicalSize = filter.GetPhysicalSize(label)
+            Centroid = filter.GetCentroid(label) |> fromVectorDouble
+            BoundingBox = filter.GetBoundingBox(label)|> fromVectorUInt32
+            Elongation = filter.GetElongation(label)
+            Flatness = filter.GetFlatness(label)
+            FeretDiameter = filter.GetFeretDiameter(label)
+            EquivalentEllipsoidDiameter = filter.GetEquivalentEllipsoidDiameter(label) |> fromVectorDouble
+            EquivalentSphericalPerimeter = filter.GetEquivalentSphericalPerimeter(label)
+            EquivalentSphericalRadius = filter.GetEquivalentSphericalRadius(label)
+            Indexes = filter.GetIndexes(label) |> fromVectorUInt32
+            NumberOfPixels = filter.GetNumberOfPixels(label)
+            NumberOfPixelsOnBorder = filter.GetNumberOfPixelsOnBorder(label)
+            OrientedBoundingBoxDirection = filter.GetOrientedBoundingBoxDirection(label) |> fromVectorDouble
+            OrientedBoundingBoxOrigin = filter.GetOrientedBoundingBoxOrigin(label) |> fromVectorDouble
+            OrientedBoundingBoxSize = filter.GetOrientedBoundingBoxSize(label) |> fromVectorDouble
+            OrientedBoundingBoxVertices = filter.GetOrientedBoundingBoxVertices(label) |> fromVectorDouble
+            Perimeter = filter.GetPerimeter(label)
+            PerimeterOnBorder = filter.GetPerimeterOnBorder(label)
+            PerimeterOnBorderRatio = filter.GetPerimeterOnBorderRatio(label)
+            PrincipalAxes = filter.GetPrincipalAxes(label) |> fromVectorDouble
+            PrincipalMoments = filter.GetPrincipalMoments(label) |> fromVectorDouble
+            Region = filter.GetRegion(label) |> fromVectorUInt32
+            RLEIndexes = filter.GetRLEIndexes(label) |> fromVectorUInt32
+            Roundness = filter.GetRoundness(label)
+        }
+        label, stats
+    )
+    |> Map.ofSeq
 
 /// Compute label shape statistics and return a dictionary of results
-let labelShapeStatistics (img: Raw) : LabelShapeStatisticsImageFilter =
-    let stats = new LabelShapeStatisticsImageFilter()
+let labelShapeStatistics (img: Image) : Map<int64, LabelShapeStatistics> =
+    let stats = new itk.simple.LabelShapeStatisticsImageFilter()
     stats.Execute(img.Image)
-    stats
+    shapeStatsMap(stats)
 
 /// Compute signed Maurer distance map (positive outside, negative inside)
-let signedDistanceMap (insideIsPositive: bool) (squaredDistance: bool) (img: Raw) : Raw =
-    let filter = new SignedMaurerDistanceMapImageFilter()
+let signedDistanceMap (insideIsPositive: bool) (squaredDistance: bool) (img: Image) : Image =
+    let filter = new itk.simple.SignedMaurerDistanceMapImageFilter()
     filter.SetInsideIsPositive(insideIsPositive)
     filter.SetSquaredDistance(squaredDistance)
-    Raw(filter.Execute(img.Image))
+    Image(filter.Execute(img.Image))
 
 /// Morphological watershed (binary or grayscale)
-let watershed (img: Raw) (level: float) (markWatershedLine: bool) : Raw =
-    let filter = new MorphologicalWatershedImageFilter()
+let watershed (img: Image) (level: float) (markWatershedLine: bool) : Image =
+    let filter = new itk.simple.MorphologicalWatershedImageFilter()
     filter.SetLevel(level)
     filter.SetMarkWatershedLine(markWatershedLine)
-    Raw(filter.Execute(img.Image))
+    Image(filter.Execute(img.Image))
 
 /// Histogram related functions
 type ImageStats =
@@ -399,8 +261,8 @@ type ImageStats =
         Variance: float 
     }
 
-let computeStats (img: Raw) : ImageStats =
-    let stats = new StatisticsImageFilter()
+let computeStats (img: Image) : ImageStats =
+    let stats = new itk.simple.StatisticsImageFilter()
     stats.Execute(img.Image)
     { 
         Mean = stats.GetMean()
@@ -412,28 +274,28 @@ let computeStats (img: Raw) : ImageStats =
     }
 
 /// Otsu threshold
-let otsuThreshold (img: Raw) : Raw =
-    let filter = new OtsuThresholdImageFilter()
+let otsuThreshold (img: Image) : Image =
+    let filter = new itk.simple.OtsuThresholdImageFilter()
     filter.SetInsideValue(0uy)
     filter.SetOutsideValue(1uy)
-    Raw(filter.Execute(img.Image))
+    Image(filter.Execute(img.Image))
 
 /// Otsu multiple thresholds (returns a label map)
-let otsuMultiThreshold (img: Raw) (numThresholds: byte) : Raw =
-    let filter = new OtsuMultipleThresholdsImageFilter()
+let otsuMultiThreshold (img: Image) (numThresholds: byte) : Image =
+    let filter = new itk.simple.OtsuMultipleThresholdsImageFilter()
     filter.SetNumberOfThresholds(numThresholds)
-    Raw(filter.Execute(img.Image))
+    Image(filter.Execute(img.Image))
 
 /// Entropy-based threshold
-let RenyiEntropyThreshold (img: Raw) : Raw =
-    let filter = new RenyiEntropyThresholdImageFilter()
+let RenyiEntropyThreshold (img: Image) : Image =
+    let filter = new itk.simple.RenyiEntropyThresholdImageFilter()
     filter.SetInsideValue(0uy)
     filter.SetOutsideValue(1uy)
-    Raw(filter.Execute(img.Image))
+    Image(filter.Execute(img.Image))
 
 /// Moments-based threshold
-let momentsThreshold (img: Raw) : Raw =
-    let filter = new MomentsThresholdImageFilter()
+let momentsThreshold (img: Image) : Image =
+    let filter = new itk.simple.MomentsThresholdImageFilter()
     filter.SetInsideValue(0uy)
     filter.SetOutsideValue(1uy)
-    Raw(filter.Execute(img.Image))
+    Image(filter.Execute(img.Image))
