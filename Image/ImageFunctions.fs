@@ -128,11 +128,6 @@ let gaussianImage (size: uint list) (sigma: float list) : Image =
             s.SetSigma(toVectorDouble sigma))
         (fun s -> s.Execute())
 
-
-let constantImage (size: int list) (value: float) : Image =
-    let img = Image.FromSize(size) 
-    img + value
-
 /// Mathematical morphology
 /// Binary erosion
 let binaryErode (radius: uint) (foreground: float) : Image -> Image =

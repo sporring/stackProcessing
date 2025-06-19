@@ -1,3 +1,4 @@
+
 module ImageClass
 open FSharp.Collections
 
@@ -113,7 +114,24 @@ let fromVectorInt32 (v: itk.simple.VectorInt32) : int list =
 let fromVectorDouble (v: itk.simple.VectorDouble) : float list =
     v |> Seq.toList
 
-type Image (img: itk.simple.Image) =
+let fromType<'T> : PixelType =
+    let t = typeof<'T>
+    if t = typeof<byte> then UInt8
+    elif t = typeof<sbyte> then Int8
+    elif t = typeof<uint16> then UInt16
+    elif t = typeof<int16> then Int16
+    elif t = typeof<uint32> then UInt32
+    elif t = typeof<int32> then Int32
+    elif t = typeof<uint64> then UInt64
+    elif t = typeof<int64> then Int64
+    elif t = typeof<float32> then Float32
+    elif t = typeof<float> then Float64
+    elif t = typeof<System.Numerics.Complex> then ComplexFloat64
+    elif t = typeof<float32[]> then VectorFloat32
+    elif t = typeof<float[]> then VectorFloat64
+    else failwithf "Unsupported pixel type: %O" t
+
+type Image<'T> (img: itk.simple.Image) =
     static let extractSlice (axis: int) (index: int) (img: Image) : Image =
         let roi = new itk.simple.RegionOfInterestImageFilter()
         let size = (img.Image :> itk.simple.Image).GetSize()
@@ -157,7 +175,6 @@ type Image (img: itk.simple.Image) =
 
         Image(finalImage)
 
-
     static let concatZ (images: Image list) : Image =
         if List.isEmpty images then failwith "Empty image list"
 
@@ -169,16 +186,26 @@ type Image (img: itk.simple.Image) =
 
         Image(join.Execute(vector))
 
-    /// Underlying itk.simple image
-    member this.Image = img
+    static member Create(size: int list, ?value: 'T) : Image<'T> =
+        let pt = fromType<'T>
+        let itkId = pt.ToSimpleITK()
+        let itkImage = new Image(List.map uint32 size |> List.toArray, itkId)
 
-    /// String representation
+        match value with
+        | Some v ->
+            let scalarFilter = new ShiftScaleImageFilter()
+            scalarFilter.SetShift(unbox<float>(box v))
+            Image(scalarFilter.Execute(itkImage))
+        | None ->
+            Image(itkImage)
+
+    member this.Image = img
+    member this.Width = img.GetSize().[0]
+    member this.Height = img.GetSize().[1]
+    member this.Dimensions = img.GetDimension()
     override this.ToString() = img.ToString()
 
     /// generate images
-    static member FromSimpleITK(img: itk.simple.Image) : Image =
-        Image(img)
-
     static member Create(size: uint list, ?pixelType: PixelType, ?value: obj) =
         let pt = defaultArg pixelType PixelType.UInt8
         let itkId = pt.ToSimpleITK()
@@ -191,7 +218,7 @@ type Image (img: itk.simple.Image) =
                 scalarFilter.Execute(img)
             | None ->
                 img
-        Image(imgFilled)
+        Image<pt>(imgFilled)
 
     static member Create(size: uint list, value: uint8)  = Image.Create(size, PixelType.UInt8,  box value)
     static member Create(size: uint list, value: int8)   = Image.Create(size, PixelType.Int8,   box value)
@@ -204,6 +231,23 @@ type Image (img: itk.simple.Image) =
     static member Create(size: uint list, value: float32)= Image.Create(size, PixelType.Float32, box value)
     static member Create(size: uint list, value: float)  = Image.Create(size, PixelType.Float64, box value)
     static member Create(size: uint list, value: System.Numerics.Complex) = Image.Create(size, PixelType.ComplexFloat64, box value)
+
+    let inline createTypedImageFromITK (image: itk.simple.Image) : obj =
+        match image.GetPixelID() with
+        | PixelIDValueEnum.sitkUInt8         -> Image<byte>(image) :> obj
+        | PixelIDValueEnum.sitkInt8          -> Image<sbyte>(image) :> obj
+        | PixelIDValueEnum.sitkUInt16        -> Image<uint16>(image) :> obj
+        | PixelIDValueEnum.sitkInt16         -> Image<int16>(image) :> obj
+        | PixelIDValueEnum.sitkUInt32        -> Image<uint32>(image) :> obj
+        | PixelIDValueEnum.sitkInt32         -> Image<int32>(image) :> obj
+        | PixelIDValueEnum.sitkUInt64        -> Image<uint64>(image) :> obj
+        | PixelIDValueEnum.sitkInt64         -> Image<int64>(image) :> obj
+        | PixelIDValueEnum.sitkFloat32       -> Image<float32>(image) :> obj
+        | PixelIDValueEnum.sitkFloat64       -> Image<float>(image) :> obj
+        | PixelIDValueEnum.sitkComplexFloat64-> Image<System.Numerics.Complex>(image) :> obj
+        | PixelIDValueEnum.sitkVectorFloat64 -> Image<float[]>(image) :> obj
+        | x -> failwithf "Unsupported pixel type: %A" x
+
 
     static member FromFile(filename: string) : Image =
         let reader = new itk.simple.ImageFileReader()
@@ -402,8 +446,9 @@ type Image (img: itk.simple.Image) =
 
     /// Indexing
     member this.Item
-        with get (x: int, y: int) =
-            this.Image.GetPixelAsFloat([uint x; uint y] |> toVectorUInt32)
+        with get (x: int, y: int) : 'T =
+            let coords = [uint x; uint y] toVectorUInt32
+            this.Image.GetPixel(coords) :?> 'T
 
     member this.Item
         with get (x: int, y: int, z: int) =
@@ -415,3 +460,4 @@ type Image (img: itk.simple.Image) =
     static member ConcatX(images: Image list) = concatAlongAxis 0 images
     static member ConcatY(images: Image list) = concatAlongAxis 1 images
     static member ConcatZ(images: Image list) = concatZ images
+
