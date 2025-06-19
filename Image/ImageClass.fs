@@ -435,39 +435,39 @@ type Image<'T> (img: itk.simple.Image) =
         let filter = new itk.simple.AndImageFilter()
         Image<'T>(filter.Execute(f1.Image, f2.Image))
 
-    static member op_BitwiseAnd (f1: Image<'T>, i: int) =
+    static member op_BitwiseAnd (f1: Image<int>, i: int) =
         let filter = new itk.simple.AndImageFilter()
-        Image<'T>(filter.Execute(f1.Image, i))
+        Image<int>(filter.Execute(f1.Image, i))
 
-    static member op_BitwiseAnd (i: int, f2: Image<'T>) =
+    static member op_BitwiseAnd (i: int, f2: Image<int>) =
         let filter = new itk.simple.AndImageFilter()
-        Image<'T>(filter.Execute(i, f2.Image))
+        Image<int>(filter.Execute(i, f2.Image))
 
     // Bitwise XOR ( ^^^ )
     static member op_ExclusiveOr (f1: Image<'T>, f2: Image<'T>) =
         let filter = new itk.simple.XorImageFilter()
         Image<'T>(filter.Execute(f1.Image, f2.Image))
 
-    static member op_ExclusiveOr (f1: Image<'T>, i: int) =
+    static member op_ExclusiveOr (f1: Image<int>, i: int) =
         let filter = new itk.simple.XorImageFilter()
-        Image<'T>(filter.Execute(f1.Image, i))
+        Image<int>(filter.Execute(f1.Image, i))
 
-    static member op_ExclusiveOr (i: int, f2: Image<'T>) =
+    static member op_ExclusiveOr (i: int, f2: Image<int>) =
         let filter = new itk.simple.XorImageFilter()
-        Image<'T>(filter.Execute(i, f2.Image))
+        Image<int>(filter.Execute(i, f2.Image))
 
     // Bitwise OR ( ||| )
     static member op_BitwiseOr (f1: Image<'T>, f2: Image<'T>) =
         let filter = new itk.simple.OrImageFilter()
         Image<'T>(filter.Execute(f1.Image, f2.Image))
 
-    static member op_BitwiseOr (f1: Image<'T>, i: int) =
+    static member op_BitwiseOr (f1: Image<int>, i: int) =
         let filter = new itk.simple.OrImageFilter()
-        Image<'T>(filter.Execute(f1.Image, i))
+        Image<int>(filter.Execute(f1.Image, i))
 
-    static member op_BitwiseOr (i: int, f2: Image<'T>) =
+    static member op_BitwiseOr (i: int, f2: Image<int>) =
         let filter = new itk.simple.OrImageFilter()
-        Image<'T>(filter.Execute(i, f2.Image))
+        Image<int>(filter.Execute(i, f2.Image))
 
     // Unary bitwise NOT ( ~~~ )
     static member op_LogicalNot (f: Image<'T>) =
