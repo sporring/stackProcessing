@@ -391,10 +391,43 @@ type Image<'T> (img: itk.simple.Image) =
             else failwithf "Unsupported pixel type: %O" t
         raw :?> 'T
 
+    member this.Set (coords: uint list, value: 'T) : unit =
+        let u = toVectorUInt32 coords
+        let t = typeof<'T>
+        if      t = typeof<uint8>                   then this.Image.SetPixelAsUInt8(u, unbox value)
+        elif    t = typeof<int8>                    then this.Image.SetPixelAsInt8(u, unbox value)
+        elif    t = typeof<uint16>                  then this.Image.SetPixelAsUInt16(u, unbox value)
+        elif    t = typeof<int16>                   then this.Image.SetPixelAsInt16(u, unbox value)
+        elif    t = typeof<uint32>                  then this.Image.SetPixelAsUInt32(u, unbox value)
+        elif    t = typeof<int32>                   then this.Image.SetPixelAsInt32(u, unbox value)
+        elif    t = typeof<uint64>                  then this.Image.SetPixelAsUInt64(u, unbox value)
+        elif    t = typeof<int64>                   then this.Image.SetPixelAsInt64(u, unbox value)
+        elif    t = typeof<float32>                 then this.Image.SetPixelAsFloat(u, unbox value)
+        elif    t = typeof<float>                   then this.Image.SetPixelAsDouble(u, unbox value)
+        elif    t = typeof<System.Numerics.Complex> then
+            let c = unbox<System.Numerics.Complex> value
+            let v = toVectorFloat64 [ c.Real; c.Imaginary ]
+            this.Image.SetPixelAsVectorFloat64(u, v)
+        elif    t = typeof<uint8 list>              then this.Image.SetPixelAsVectorUInt8(u, toVectorUInt8 (unbox value))
+        elif    t = typeof<int8 list>               then this.Image.SetPixelAsVectorInt8(u, toVectorInt8 (unbox value))
+        elif    t = typeof<uint16 list>             then this.Image.SetPixelAsVectorUInt16(u, toVectorUInt16 (unbox value))
+        elif    t = typeof<int16 list>              then this.Image.SetPixelAsVectorInt16(u, toVectorInt16 (unbox value))
+        elif    t = typeof<uint32 list>             then this.Image.SetPixelAsVectorUInt32(u, toVectorUInt32 (unbox value))
+        elif    t = typeof<int32 list>              then this.Image.SetPixelAsVectorInt32(u, toVectorInt32 (unbox value))
+        elif    t = typeof<uint64 list>             then this.Image.SetPixelAsVectorUInt64(u, toVectorUInt64 (unbox value))
+        elif    t = typeof<int64 list>              then this.Image.SetPixelAsVectorInt64(u, toVectorInt64 (unbox value))
+        elif    t = typeof<float32 list>            then this.Image.SetPixelAsVectorFloat32(u, toVectorFloat32 (unbox value))
+        elif    t = typeof<float list>              then this.Image.SetPixelAsVectorFloat64(u, toVectorFloat64 (unbox value))
+        else failwithf "Unsupported pixel type: %O" t
+
     member this.Item
         with get(x: int, y: int) : 'T =
-            this.Get([x;y]|>List.map uint)
+            this.Get([ uint x; uint y ])
+        and set(x: int, y: int) (value: 'T) : unit =
+            this.Set([ uint x; uint y ], value)
 
     member this.Item
         with get(x: int, y: int, z: int) : 'T =
-            this.Get([x;y;z]|>List.map uint)
+            this.Get([ uint x; uint y; uint z ])
+        and set(x: int, y: int, z: int) (value: 'T) : unit =
+            this.Set([ uint x; uint y; uint z ], value)
