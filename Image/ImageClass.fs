@@ -41,8 +41,8 @@ type PixelType =
         | Int64          -> itk.simple.PixelIDValueEnum.sitkInt64
         | Float32        -> itk.simple.PixelIDValueEnum.sitkFloat32
         | Float64        -> itk.simple.PixelIDValueEnum.sitkFloat64
-        | ComplexFloat32 -> itk.simple.PixelIDValueEnum.sitkComplexFloat32
-        | ComplexFloat64 -> itk.simple.PixelIDValueEnum.sitkComplexFloat64
+        | ComplexFloat32 -> itk.simple.PixelIDValueEnum.sitkVectorFloat32 // simple itk does not expose the complex type returned by sitkComplex*
+        | ComplexFloat64 -> itk.simple.PixelIDValueEnum.sitkVectorFloat64
         | VectorUInt8    -> itk.simple.PixelIDValueEnum.sitkVectorUInt8
         | VectorInt8     -> itk.simple.PixelIDValueEnum.sitkVectorInt8
         | VectorUInt16   -> itk.simple.PixelIDValueEnum.sitkVectorUInt16
@@ -89,29 +89,36 @@ type PixelType =
         | ComplexFloat64                      -> box (System.Numerics.Complex(1.0, 0.0))
 
 /// Module with inline operator overloads for Image
-let toVectorUInt32 (lst: uint list) =
-    let v = new itk.simple.VectorUInt32()
-    lst |> List.iter v.Add
-    v
+let inline toItkVector (createFilter: unit -> ^Filter when ^Filter :> System.IDisposable) =
+    fun lst ->
+        let v = createFilter()
+        lst |> List.iter (fun x -> (^Filter : (member Add : _ -> unit) (v, x)))
+        v
 
-let toVectorInt32 (lst: int list) =
-    let v = new itk.simple.VectorInt32()
-    lst |> List.iter v.Add
-    v
+let inline toVectorUInt8 lst = toItkVector (fun () -> new itk.simple.VectorUInt8()) lst
+let inline toVectorInt8 lst = toItkVector (fun () -> new itk.simple.VectorInt8()) lst
+let inline toVectorUInt16 lst = toItkVector (fun () -> new itk.simple.VectorUInt16()) lst
+let inline toVectorInt16 lst = toItkVector (fun () -> new itk.simple.VectorInt16()) lst
+let inline toVectorUInt32 lst = toItkVector (fun () -> new itk.simple.VectorUInt32()) lst
+let inline toVectorInt32 lst = toItkVector (fun () -> new itk.simple.VectorInt32()) lst
+let inline toVectorUInt64 lst = toItkVector (fun () -> new itk.simple.VectorUInt64()) lst
+let inline toVectorInt64 lst = toItkVector (fun () -> new itk.simple.VectorInt64()) lst
+let inline toVectorFloat32 lst = toItkVector (fun () -> new itk.simple.VectorFloat()) lst
+let inline toVectorFloat64 lst = toItkVector (fun () -> new itk.simple.VectorDouble()) lst
 
-let toVectorDouble (lst: float list) =
-    let v = new itk.simple.VectorDouble()
-    lst |> List.iter v.Add
-    v
+let inline fromItkVector f v = 
+    v |> Seq.map f |> Seq.toList
 
-let fromVectorUInt32 (v: itk.simple.VectorUInt32) : uint list =
-    v |> Seq.map uint |> Seq.toList
-
-let fromVectorInt32 (v: itk.simple.VectorInt32) : int list =
-    v |> Seq.map int |> Seq.toList
-
-let fromVectorDouble (v: itk.simple.VectorDouble) : float list =
-    v |> Seq.toList
+let inline fromVectorUInt8 (v: itk.simple.VectorUInt8) : uint8 list = fromItkVector uint8 v
+let inline fromVectorInt8 (v: itk.simple.VectorInt8) : int8 list = fromItkVector int8 v
+let inline fromVectorUInt16 (v: itk.simple.VectorUInt16) : uint16 list = fromItkVector uint16 v
+let inline fromVectorInt16 (v: itk.simple.VectorInt16) : int16 list = fromItkVector int16 v
+let inline fromVectorUInt32 (v: itk.simple.VectorUInt32) : uint list = fromItkVector uint v
+let inline fromVectorInt32 (v: itk.simple.VectorInt32) : int list = fromItkVector int v
+let inline fromVectorUInt64 (v: itk.simple.VectorUInt64) : uint64 list = fromItkVector uint64 v
+let inline fromVectorInt64 (v: itk.simple.VectorInt64) : int64 list = fromItkVector int64 v
+let inline fromVectorFloat32 (v: itk.simple.VectorFloat) : float32 list = fromItkVector float32 v
+let inline fromVectorFloat64 (v: itk.simple.VectorDouble) : float list = fromItkVector float v
 
 let fromType<'T> : PixelType =
     let t = typeof<'T>
@@ -126,15 +133,15 @@ let fromType<'T> : PixelType =
     elif t = typeof<float32> then Float32
     elif t = typeof<float> then Float64
     elif t = typeof<System.Numerics.Complex> then ComplexFloat64
-    elif t = typeof<int8[]> then VectorInt8
-    elif t = typeof<uint16[]> then VectorUInt16
-    elif t = typeof<int16[]> then VectorInt16
-    elif t = typeof<uint32[]> then VectorUInt32
-    elif t = typeof<int32[]> then VectorInt32
-    elif t = typeof<uint64[]> then VectorUInt64
-    elif t = typeof<int64[]> then VectorInt64
-    elif t = typeof<float32[]> then VectorFloat32
-    elif t = typeof<float[]> then VectorFloat64
+    elif t = typeof<int8 list> then VectorInt8
+    elif t = typeof<uint16 list> then VectorUInt16
+    elif t = typeof<int16 list> then VectorInt16
+    elif t = typeof<uint32 list> then VectorUInt32
+    elif t = typeof<int32 list> then VectorInt32
+    elif t = typeof<uint64 list> then VectorUInt64
+    elif t = typeof<int64 list> then VectorInt64
+    elif t = typeof<float32 list> then VectorFloat32
+    elif t = typeof<float list> then VectorFloat64
     else failwithf "Unsupported pixel type: %O" t
 
 type Image<'T> (img: itk.simple.Image) =
@@ -150,6 +157,7 @@ type Image<'T> (img: itk.simple.Image) =
             try fromType<'T>
             with _ -> failwithf "Unsupported pixel type: %O" typeof<'T>
         let itkId = pt.ToSimpleITK()
+        printfn "%A => %A" size (size |> toVectorUInt32)
         let img = new itk.simple.Image(size |> toVectorUInt32, itkId)
         let imgFilled =
             match value with
@@ -369,17 +377,17 @@ type Image<'T> (img: itk.simple.Image) =
             elif t = typeof<uint64>                  then box (img.GetPixelAsUInt64(u))
             elif t = typeof<int64>                   then box (img.GetPixelAsInt64(u))
             elif t = typeof<float32>                 then box (img.GetPixelAsFloat(u))
-            elif t = typeof<float>                   then box (img.GetPixelAsFloat(u))
-            elif t = typeof<System.Numerics.Complex> then box (img.GetPixelAsComplexFloat64(u))
-            elif t = typeof<int8 list>               then box (img.GetPixelAsVectorInt8(u))
-            elif t = typeof<uint16 list>             then box (img.GetPixelAsVectorUInt16(u))
-            elif t = typeof<int16 list>              then box (img.GetPixelAsVectorInt16(u))
-            elif t = typeof<uint32 list>             then box (img.GetPixelAsVectorUInt32(u))
-            elif t = typeof<int32 list>              then box (img.GetPixelAsVectorInt32(u))
-            elif t = typeof<uint64 list>             then box (img.GetPixelAsVectorUInt64(u))
-            elif t = typeof<int64 list>              then box (img.GetPixelAsVectorInt64(u))
-            elif t = typeof<float32 list>            then box (img.GetPixelAsVectorFloat32(u))
-            elif t = typeof<float list>              then box (img.GetPixelAsVectorFloat64(u))
+            elif t = typeof<float>                   then box (img.GetPixelAsDouble(u))
+            elif t = typeof<System.Numerics.Complex> then box (img.GetPixelAsVectorFloat64(u) |> fromVectorFloat64)
+            elif t = typeof<int8 list>               then box (img.GetPixelAsVectorInt8(u) |> fromVectorInt8)
+            elif t = typeof<uint16 list>             then box (img.GetPixelAsVectorUInt16(u) |> fromVectorUInt16)
+            elif t = typeof<int16 list>              then box (img.GetPixelAsVectorInt16(u) |> fromVectorInt16)
+            elif t = typeof<uint32 list>             then box (img.GetPixelAsVectorUInt32(u) |> fromVectorUInt32)
+            elif t = typeof<int32 list>              then box (img.GetPixelAsVectorInt32(u) |> fromVectorInt32)
+            elif t = typeof<uint64 list>             then box (img.GetPixelAsVectorUInt64(u) |> fromVectorUInt64)
+            elif t = typeof<int64 list>              then box (img.GetPixelAsVectorInt64(u) |> fromVectorInt64)
+            elif t = typeof<float32 list>            then box (img.GetPixelAsVectorFloat32(u) |> fromVectorFloat32)
+            elif t = typeof<float list>              then box (img.GetPixelAsVectorFloat64(u) |> fromVectorFloat64)
             else failwithf "Unsupported pixel type: %O" t
         raw :?> 'T
 

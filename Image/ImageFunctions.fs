@@ -104,8 +104,8 @@ let gridImage (size: uint list) (spacing: float list) (origin: float list) : Ima
         (fun () -> new itk.simple.GridImageSource())
         (fun s ->
             s.SetSize(toVectorUInt32 size)
-            s.SetSpacing(toVectorDouble spacing)
-            s.SetOrigin(toVectorDouble origin))
+            s.SetSpacing( toVectorFloat64 spacing)
+            s.SetOrigin( toVectorFloat64 origin))
         (fun s -> s.Execute())
 
 
@@ -115,7 +115,7 @@ let gaborImage (size: uint list) (sigma: float list) (frequency: float) : Image<
         (fun () -> new itk.simple.GaborImageSource())
         (fun s ->
             s.SetSize(toVectorUInt32 size)
-            s.SetSigma(toVectorDouble sigma)
+            s.SetSigma( toVectorFloat64 sigma)
             s.SetFrequency(frequency))
         (fun s -> s.Execute())
 
@@ -125,7 +125,7 @@ let gaussianImage (size: uint list) (sigma: float list) : Image<'T> =
         (fun () -> new itk.simple.GaussianImageSource())
         (fun s ->
             s.SetSize(toVectorUInt32 size)
-            s.SetSigma(toVectorDouble sigma))
+            s.SetSigma( toVectorFloat64 sigma))
         (fun s -> s.Execute())
 
 /// Mathematical morphology
@@ -220,26 +220,26 @@ let shapeStatsMap (filter: itk.simple.LabelShapeStatisticsImageFilter) : Map<int
         let stats = {
             Label = label
             PhysicalSize = filter.GetPhysicalSize(label)
-            Centroid = filter.GetCentroid(label) |> fromVectorDouble
+            Centroid = filter.GetCentroid(label) |>  fromVectorFloat64
             BoundingBox = filter.GetBoundingBox(label)|> fromVectorUInt32
             Elongation = filter.GetElongation(label)
             Flatness = filter.GetFlatness(label)
             FeretDiameter = filter.GetFeretDiameter(label)
-            EquivalentEllipsoidDiameter = filter.GetEquivalentEllipsoidDiameter(label) |> fromVectorDouble
+            EquivalentEllipsoidDiameter = filter.GetEquivalentEllipsoidDiameter(label) |>  fromVectorFloat64
             EquivalentSphericalPerimeter = filter.GetEquivalentSphericalPerimeter(label)
             EquivalentSphericalRadius = filter.GetEquivalentSphericalRadius(label)
             Indexes = filter.GetIndexes(label) |> fromVectorUInt32
             NumberOfPixels = filter.GetNumberOfPixels(label)
             NumberOfPixelsOnBorder = filter.GetNumberOfPixelsOnBorder(label)
-            OrientedBoundingBoxDirection = filter.GetOrientedBoundingBoxDirection(label) |> fromVectorDouble
-            OrientedBoundingBoxOrigin = filter.GetOrientedBoundingBoxOrigin(label) |> fromVectorDouble
-            OrientedBoundingBoxSize = filter.GetOrientedBoundingBoxSize(label) |> fromVectorDouble
-            OrientedBoundingBoxVertices = filter.GetOrientedBoundingBoxVertices(label) |> fromVectorDouble
+            OrientedBoundingBoxDirection = filter.GetOrientedBoundingBoxDirection(label) |>  fromVectorFloat64
+            OrientedBoundingBoxOrigin = filter.GetOrientedBoundingBoxOrigin(label) |>  fromVectorFloat64
+            OrientedBoundingBoxSize = filter.GetOrientedBoundingBoxSize(label) |>  fromVectorFloat64
+            OrientedBoundingBoxVertices = filter.GetOrientedBoundingBoxVertices(label) |>  fromVectorFloat64
             Perimeter = filter.GetPerimeter(label)
             PerimeterOnBorder = filter.GetPerimeterOnBorder(label)
             PerimeterOnBorderRatio = filter.GetPerimeterOnBorderRatio(label)
-            PrincipalAxes = filter.GetPrincipalAxes(label) |> fromVectorDouble
-            PrincipalMoments = filter.GetPrincipalMoments(label) |> fromVectorDouble
+            PrincipalAxes = filter.GetPrincipalAxes(label) |>  fromVectorFloat64
+            PrincipalMoments = filter.GetPrincipalMoments(label) |>  fromVectorFloat64
             Region = filter.GetRegion(label) |> fromVectorUInt32
             RLEIndexes = filter.GetRLEIndexes(label) |> fromVectorUInt32
             Roundness = filter.GetRoundness(label)
