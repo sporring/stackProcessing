@@ -10,7 +10,7 @@ let inline makeUnaryImageOperatorWith
     fun (img: Image<'T>) ->
         use filter = createFilter()
         setup filter
-        Image<'T>(invoke filter img.Image)
+        Image<'T>.ofSimpleITK(invoke filter img.Image)
 
 let inline makeUnaryImageOperator createFilter invoke = makeUnaryImageOperatorWith createFilter (fun _ -> ()) invoke
 (*
@@ -29,7 +29,7 @@ let inline makeImageSourceOperatorWith
     : Image<'T> =
     use source = createSource()
     setup source
-    Image<'T>(invoke source)
+    Image<'T>.ofSimpleITK(invoke source)
 
 let inline makeImageSourceOperator createSource invoke = makeImageSourceOperatorWith createSource (fun _ -> ()) invoke
 
@@ -37,7 +37,7 @@ let inline makeBinaryImageOperator
     (filter: 'Filter)
     (invoke: 'Filter -> itk.simple.Image -> itk.simple.Image -> itk.simple.Image)
     : Image<'T> -> Image<'T> -> Image<'T> =
-    fun a b -> Image<'T>(invoke filter a.Image b.Image)
+    fun a b -> Image<'T>.ofSimpleITK(invoke filter a.Image b.Image)
 
 let inline abs (img: Image<'T>)    = makeUnaryImageOperator (fun () -> new itk.simple.AbsImageFilter())    (fun f x -> f.Execute(x)) img
 let inline log (img: Image<'T>)    = makeUnaryImageOperator (fun () -> new itk.simple.LogImageFilter())    (fun f x -> f.Execute(x)) img
@@ -164,7 +164,7 @@ let binaryClosing (radius: uint) (foreground: float) (img: Image<'T>) : Image<'T
     use filter = new itk.simple.BinaryMorphologicalClosingImageFilter()
     filter.SetKernelRadius(radius)
     filter.SetForegroundValue(foreground)
-    Image<'T>(filter.Execute(img.Image))
+    Image<'T>.ofSimpleITK(filter.Execute(img.Image))
 
 /// Fill holes in binary regions
 let binaryFillHoles (foreground: float) : Image<'T> -> Image<'T> =
@@ -177,7 +177,7 @@ let binaryFillHoles (foreground: float) : Image<'T> -> Image<'T> =
 // Currying and generic arguments causes value restriction error
 let connectedComponents (img : Image<'T>) : Image<'T> =
     use filter = new itk.simple.ConnectedComponentImageFilter()
-    Image<'T>(filter.Execute(img.Image))
+    Image<'T>.ofSimpleITK(filter.Execute(img.Image))
 
 /// Relabel components by size, optionally remove small objects
 let relabelComponents (minSize: uint) : Image<'T> -> Image<'T> =
@@ -304,7 +304,7 @@ let otsuThreshold (img: Image<'T>) : Image<'T> =
     use filter = new itk.simple.OtsuThresholdImageFilter()
     filter.SetInsideValue(0uy)
     filter.SetOutsideValue(1uy)
-    Image<'T>(filter.Execute(img.Image))
+    Image<'T>.ofSimpleITK(filter.Execute(img.Image))
 
 
 /// Otsu multiple thresholds (returns a label map)
@@ -319,7 +319,7 @@ let renyiEntropyThreshold (img: Image<'T>) : Image<'T> =
     use filter = new itk.simple.RenyiEntropyThresholdImageFilter()
     filter.SetInsideValue(0uy)
     filter.SetOutsideValue(1uy)
-    Image<'T>(filter.Execute(img.Image))
+    Image<'T>.ofSimpleITK(filter.Execute(img.Image))
 
 
 /// Moments-based threshold
@@ -327,7 +327,7 @@ let momentsThreshold (img: Image<'T>) : Image<'T> =
     use filter = new itk.simple.MomentsThresholdImageFilter()
     filter.SetInsideValue(0uy)
     filter.SetOutsideValue(1uy)
-    Image<'T>(filter.Execute(img.Image))
+    Image<'T>.ofSimpleITK(filter.Execute(img.Image))
 
 /// Coordinate fields
 // Cannot get TransformToDisplacementFieldFilter to work, so making it by hand.
@@ -350,4 +350,4 @@ let generateCoordinateAxis (axis: int) (size: int list) : Image<uint32> =
         let idxVec = toVectorUInt32 (index |> List.map uint)
         image.SetPixelAsUInt32(idxVec, coord))
 
-    Image<uint32>(image)
+    Image<uint32>.ofSimpleITK(image)
