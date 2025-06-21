@@ -154,26 +154,30 @@ let forcePixelType<'T> (img: itk.simple.Image) : itk.simple.Image =
         cast.SetOutputPixelType(expectedId)
         cast.Execute(img)
 
-type Image<'T>(size: uint list, ?value: obj) =
-    let mutable img =
-        let pt =
-            try fromType<'T>
-            with _ -> failwithf "Unsupported pixel type: %O" typeof<'T>
-        let itkId = pt.ToSimpleITK()
-        let baseImg = new itk.simple.Image(size |> toVectorUInt32, itkId)
-        match value with
-        | Some v ->
-            let scalarFilter = new itk.simple.ShiftScaleImageFilter()
-            scalarFilter.SetShift(v |> unbox |> float)
-            scalarFilter.Execute(baseImg)
-        | None ->
-            baseImg
+[<StructuredFormatDisplay("{Display}")>] // Prevent fsi printing information about its members such as img
+type Image<'T>(sz: uint list, ?numberComp: uint) =
+    let pt =
+        try fromType<'T>
+        with _ -> failwithf "Unsupported pixel type: %O" typeof<'T>
+    let itkId = pt.ToSimpleITK()
+
+    // Is 'T a list type? (e.g., float list)
+    let isListType = typeof<'T>.IsGenericType && typeof<'T>.GetGenericTypeDefinition() = typedefof<list<_>>
+
+    let mutable img = 
+        match numberComp with 
+        | Some v when isListType && v < 2u ->
+            new itk.simple.Image(sz |> toVectorUInt32, itkId, 2u)
+        | Some v when not isListType && v > 1u ->
+            new itk.simple.Image(sz |> toVectorUInt32, itkId)
+        | Some v -> 
+            new itk.simple.Image(sz |> toVectorUInt32, itkId, v)
+        | None -> 
+            new itk.simple.Image(sz |> toVectorUInt32, itkId)
 
     member this.Image = img
     member private this.SetImg (itkImg: itk.simple.Image) : unit =
         img <- itkImg
-    override this.ToString() = img.ToString()
-
     member this.GetSize () = img.GetSize() |> fromVectorUInt32
     member this.GetDepth() = img.GetDepth()
     member this.GetDimension() = img.GetDimension()
@@ -181,16 +185,133 @@ type Image<'T>(size: uint list, ?value: obj) =
     member this.GetWidth() = img.GetWidth()
     member this.GetNumberOfComponentsPerPixel() = img.GetNumberOfComponentsPerPixel()
 
+    override this.ToString() = 
+        let sz = this.GetSize()
+        let szStr = List.fold (fun acc elm -> acc + $"x{elm}") (sz |> List.head |> string) (List.tail sz)
+        let comp = this.GetNumberOfComponentsPerPixel()
+        let vecStr = if comp = 1u then "Scalar" else sprintf $"{comp}-Vector "
+        sprintf "%s %s" szStr vecStr
+    member this.Display = this.ToString() // related to [<StructuredFormatDisplay>]
+
     static member ofSimpleITK (itkImg: itk.simple.Image) : Image<'T> =
         let itkImgCast = forcePixelType<'T> itkImg
         let img = Image<'T>([0u;0u])
         img.SetImg itkImgCast
         img
 
-    static member FromFile(filename: string) =
+    static member ofArray2D (arr: 'T[,]) : Image<'T> =
+        let pt =
+            try fromType<'T>
+            with _ -> failwithf "Unsupported pixel type: %O" typeof<'T>
+        let itkId = pt.ToSimpleITK()
+        let sz = [arr.GetLength(0); arr.GetLength(1)] |> List.map uint
+        let img = new itk.simple.Image(sz |> toVectorUInt32, itkId)
+
+        let t = typeof<'T>
+        arr
+        |> Array2D.mapi (fun x y value ->
+            let u = [ uint x; uint y ] |> toVectorUInt32
+            if      t = typeof<uint8>                   then img.SetPixelAsUInt8(u, unbox value)
+            elif    t = typeof<int8>                    then img.SetPixelAsInt8(u, unbox value)
+            elif    t = typeof<uint16>                  then img.SetPixelAsUInt16(u, unbox value)
+            elif    t = typeof<int16>                   then img.SetPixelAsInt16(u, unbox value)
+            elif    t = typeof<uint32>                  then img.SetPixelAsUInt32(u, unbox value)
+            elif    t = typeof<int32>                   then img.SetPixelAsInt32(u, unbox value)
+            elif    t = typeof<uint64>                  then img.SetPixelAsUInt64(u, unbox value)
+            elif    t = typeof<int64>                   then img.SetPixelAsInt64(u, unbox value)
+            elif    t = typeof<float32>                 then img.SetPixelAsFloat(u, unbox value)
+            elif    t = typeof<float>                   then img.SetPixelAsDouble(u, unbox value)
+            elif    t = typeof<System.Numerics.Complex> then
+                let c = unbox<System.Numerics.Complex> value
+                let v = toVectorFloat64 [ c.Real; c.Imaginary ]
+                img.SetPixelAsVectorFloat64(u, v)
+            elif    t = typeof<uint8 list>              then img.SetPixelAsVectorUInt8(u, toVectorUInt8 (unbox value))
+            elif    t = typeof<int8 list>               then img.SetPixelAsVectorInt8(u, toVectorInt8 (unbox value))
+            elif    t = typeof<uint16 list>             then img.SetPixelAsVectorUInt16(u, toVectorUInt16 (unbox value))
+            elif    t = typeof<int16 list>              then img.SetPixelAsVectorInt16(u, toVectorInt16 (unbox value))
+            elif    t = typeof<uint32 list>             then img.SetPixelAsVectorUInt32(u, toVectorUInt32 (unbox value))
+            elif    t = typeof<int32 list>              then img.SetPixelAsVectorInt32(u, toVectorInt32 (unbox value))
+            elif    t = typeof<uint64 list>             then img.SetPixelAsVectorUInt64(u, toVectorUInt64 (unbox value))
+            elif    t = typeof<int64 list>              then img.SetPixelAsVectorInt64(u, toVectorInt64 (unbox value))
+            elif    t = typeof<float32 list>            then img.SetPixelAsVectorFloat32(u, toVectorFloat32 (unbox value))
+            elif    t = typeof<float list>              then img.SetPixelAsVectorFloat64(u, toVectorFloat64 (unbox value))
+            else failwithf "Unsupported pixel type: %O" t
+        )
+        |> ignore
+        let wrapped = Image<'T>([0u;0u])
+        wrapped.SetImg img
+        wrapped
+
+    member this.toArray2D: 'T[,] =
+        let img = this.Image
+        let size = img.GetSize()
+        if size.Count <> 2 then
+            failwithf "toArray2D requires a 2D image, but got %dD" size.Count
+
+        let width, height = int size.[0], int size.[1]
+        let arr = Array2D.zeroCreate<'T> width height
+
+        let t = typeof<'T>
+        Array2D.mapi (fun x y _ ->
+            let idx = toVectorUInt32 [ uint x; uint y ]
+            let value =
+                if      t = typeof<uint8>                   then box (img.GetPixelAsUInt8(idx))
+                elif    t = typeof<int8>                    then box (img.GetPixelAsInt8(idx))
+                elif    t = typeof<uint16>                  then box (img.GetPixelAsUInt16(idx))
+                elif    t = typeof<int16>                   then box (img.GetPixelAsInt16(idx))
+                elif    t = typeof<uint32>                  then box (img.GetPixelAsUInt32(idx))
+                elif    t = typeof<int32>                   then box (img.GetPixelAsInt32(idx))
+                elif    t = typeof<uint64>                  then box (img.GetPixelAsUInt64(idx))
+                elif    t = typeof<int64>                   then box (img.GetPixelAsInt64(idx))
+                elif    t = typeof<float32>                 then box (img.GetPixelAsFloat(idx))
+                elif    t = typeof<float>                   then box (img.GetPixelAsDouble(idx))
+                elif    t = typeof<System.Numerics.Complex> then
+                    let v = img.GetPixelAsVectorFloat64(idx)
+                    box (System.Numerics.Complex(v.[0], v.[1]))
+                elif    t = typeof<uint8 list>              then box (img.GetPixelAsVectorUInt8(idx) |> fromVectorUInt8)
+                elif    t = typeof<int8 list>               then box (img.GetPixelAsVectorInt8(idx) |> fromVectorInt8)
+                elif    t = typeof<uint16 list>             then box (img.GetPixelAsVectorUInt16(idx) |> fromVectorUInt16)
+                elif    t = typeof<int16 list>              then box (img.GetPixelAsVectorInt16(idx) |> fromVectorInt16)
+                elif    t = typeof<uint32 list>             then box (img.GetPixelAsVectorUInt32(idx) |> fromVectorUInt32)
+                elif    t = typeof<int32 list>              then box (img.GetPixelAsVectorInt32(idx) |> fromVectorInt32)
+                elif    t = typeof<uint64 list>             then box (img.GetPixelAsVectorUInt64(idx) |> fromVectorUInt64)
+                elif    t = typeof<int64 list>              then box (img.GetPixelAsVectorInt64(idx) |> fromVectorInt64)
+                elif    t = typeof<float32 list>            then box (img.GetPixelAsVectorFloat32(idx) |> fromVectorFloat32)
+                elif    t = typeof<float list>              then box (img.GetPixelAsVectorFloat64(idx) |> fromVectorFloat64)
+                else failwithf "Unsupported pixel type: %O" t
+            arr.[x, y] <- unbox value
+            arr.[x, y]  // for mapi result (unused)
+        ) |> ignore
+
+        arr
+
+    static member FromFile(filename: string) : Image<'T> =
         let reader = new itk.simple.ImageFileReader()
         reader.SetFileName(filename)
-        Image<'T>.ofSimpleITK(reader.Execute())
+        let itkImg = reader.Execute()
+        let numComp = itkImg.GetNumberOfComponentsPerPixel()
+        let tType = typeof<'T>
+        let isVectorType =
+            (tType.IsGenericType && tType.GetGenericTypeDefinition() = typedefof<list<_>>)
+            || tType.IsArray
+
+        // Validate number of components matches expectations
+        match isVectorType, numComp with
+        | true, n when n < 2u ->
+            failwithf "Pixel type '%O' expects a vector (>=2 components), but image has %d component(s)." tType n
+        | false, n when n > 1u ->
+            failwithf "Pixel type '%O' expects a scalar (1 component), but image has %d component(s)." tType n
+        | _ ->
+            Image<'T>.ofSimpleITK(itkImg)
+
+    member this.ToFile(filename: string, ?format: string) =
+        let writer = new itk.simple.ImageFileWriter()
+        writer.SetFileName(filename)
+        match format with
+        | Some fmt -> writer.SetImageIO(fmt)
+        | None -> ()
+
+        writer.Execute(this.Image)
 
     // Float images
     static member inline (+) (f1: Image<float>, i: int) =

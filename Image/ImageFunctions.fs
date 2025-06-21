@@ -62,6 +62,50 @@ let carg (img: Image<'T>)          = makeUnaryImageOperator (fun () -> new itk.s
 let convolve (kern: Image<'T>) (img: Image<'T>)
     = makeBinaryImageOperator (new itk.simple.ConvolutionImageFilter()) (fun f a b -> f.Execute(a, b)) kern img
 
+// --- basic manipulations ---
+let squeeze (img: Image<'T>) : Image<'T> =
+    let filter =  new itk.simple.ExtractImageFilter()
+    let size = img.GetSize()
+    let squeezedSize = size |> List.map (fun dim -> if dim = 1u then 0u else dim)
+    filter.SetSize(squeezedSize |> toVectorUInt32)
+    Image<'T>.ofSimpleITK(filter.Execute(img.Image))
+
+let concatAlong (dim: uint) (a: Image<'T>) (b: Image<'T>) : Image<'T> =
+    if a.GetDimension() <> b.GetDimension() then
+        failwith "Images must have the same dimensionality."
+    if a.GetNumberOfComponentsPerPixel() <> b.GetNumberOfComponentsPerPixel() then
+        failwith "Images must have the same number of components."
+
+    let sizeA = a.GetSize()
+    let sizeB = b.GetSize()
+    let sizeZipped = List.concat [List.zip sizeA sizeB; List.replicate (max 0 ((int dim)-sizeA.Length+1)) (1u,1u)]
+    sizeZipped
+    |> List.iteri (fun i (da,db) -> 
+        if i <> int dim && da <> db then
+            failwithf "Image sizes differ at dimension %d: %d vs %d" i da db)
+    let newSize = 
+        sizeZipped |> List.mapi (fun i (a,b) -> if i <> int dim then a else a+b)
+
+    // Create output image
+    let pt = fromType<'T>
+    let itkId = pt.ToSimpleITK()
+    let outImg = new itk.simple.Image(newSize |> toVectorUInt32, itkId, a.GetNumberOfComponentsPerPixel())
+
+    let paste = new itk.simple.PasteImageFilter()
+    // Paste image A at origin
+    paste.SetDestinationIndex(List.replicate newSize.Length 0 |> toVectorInt32)
+    paste.SetSourceSize(a.GetSize() |> toVectorUInt32)
+    let outWithA = paste.Execute(outImg, a.Image)
+
+    // Paste image B at offset
+    let offset = 
+        sizeZipped |> List.mapi (fun i (a,b) -> if i <> int dim then 0 else int a)
+    paste.SetDestinationIndex(offset |> toVectorInt32)
+    paste.SetSourceSize(b.GetSize() |> toVectorUInt32)
+    let outWithBoth = paste.Execute(outWithA, b.Image)
+
+    Image<'T>.ofSimpleITK(outWithBoth)
+
 /// Gaussian kernel convolution
 /// Isotropic Discrete Gaussian blur
 let discreteGaussian (sigma: float) : Image<'T> -> Image<'T> =
