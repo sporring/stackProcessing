@@ -1,0 +1,12 @@
+{
+  "version": 2,
+  "dgSpecHash": "tTMK5749Noo=",
+  "success": true,
+  "projectFilePath": "/Users/jrh630/repositories/stackProcessing/ImageAnalysisLib.Tests/ImageAnalysisLib.Tests.fsproj",
+  "expectedPackageFiles": [
+    "/Users/jrh630/.nuget/packages/expecto/9.0.4/expecto.9.0.4.nupkg.sha512",
+    "/Users/jrh630/.nuget/packages/fsharp.core/8.0.401/fsharp.core.8.0.401.nupkg.sha512",
+    "/Users/jrh630/.nuget/packages/mono.cecil/0.11.3/mono.cecil.0.11.3.nupkg.sha512"
+  ],
+  "logs": []
+}
