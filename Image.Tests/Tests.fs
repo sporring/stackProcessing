@@ -563,7 +563,7 @@ let imageCoreTests =
       let arr = array2D [ [ 1.0f; 2.0f ]; [ 3.0f; 4.0f ] ]
       let img = Image<float32>.ofArray2D arr
       let s = img.ToString()
-      Expect.stringContains s "Size" "ToString should mention image size"
+      Expect.stringContains s "2x2" "ToString should mention image size"
 
     testCase "ofSimpleITK/toSimpleITK roundtrip" <| fun _ ->
       let arr = array2D [ [ 5.0f; 6.0f ]; [ 7.0f; 8.0f ] ]
@@ -583,7 +583,114 @@ let imageCoreTests =
       let tmp = System.IO.Path.GetTempFileName() + ".tiff"
       img.toFile tmp
       let reloaded = Image<float32>.ofFile tmp
-      Expect.equal (reloaded.toArray2D()) arr "Expected file I/O roundtrip"
+      Expect.equal (reloaded.toArray2D()) arr $"Expected file I/O roundtrip {tmp}"
+  ]
+
+let array2dZip (a: 'T[,]) (b: 'U[,]) : ('T * 'U)[,] =
+    let wA, hA = a.GetLength(0), a.GetLength(1)
+    let wB, hB = b.GetLength(0), b.GetLength(1)
+    if wA <> wB || hA <> hB then
+        invalidArg "b" $"Array dimensions must match: {wA}x{hA} vs {wB}x{hB}"
+    Array2D.init wA hA (fun x y -> a.[x, y], b.[x, y])
+
+[<Tests>]
+let imageOperatorTests =
+  testList "Image Operator Overloads" [
+    testCase "image + image" <| fun _ ->
+      let a = Image<float>.ofArray2D (array2D [ [1.0; 2.0]; [3.0; 4.0] ])
+      let b = Image<float>.ofArray2D (array2D [ [4.0; 3.0]; [2.0; 1.0] ])
+      let c = a + b
+      let expected = array2D [ [5.0; 5.0]; [5.0; 5.0] ]
+      array2dZip (c.toArray2D()) expected
+      |> Array2D.iter (fun (a,b)-> Expect.isLessThan (abs (a-b)) (1e-6) "image + image")
+
+    testCase "image - image" <| fun _ ->
+      let a = Image<float>.ofArray2D (array2D [ [5.0; 5.0]; [5.0; 5.0] ])
+      let b = Image<float>.ofArray2D (array2D [ [1.0; 2.0]; [3.0; 4.0] ])
+      let c = a - b
+      let expected = array2D [ [4.0; 3.0]; [2.0; 1.0] ]
+      array2dZip (c.toArray2D()) expected
+      |> Array2D.iter (fun (a,b)-> Expect.isLessThan (abs (a-b)) (1e-6) "image - image")
+
+    testCase "image * image" <| fun _ ->
+      let a = Image<float>.ofArray2D (array2D [ [5.0; 5.0]; [5.0; 5.0] ])
+      let b = Image<float>.ofArray2D (array2D [ [1.0; 2.0]; [3.0; 4.0] ])
+      let c = a * b
+      let expected = array2D [ [5.0; 10.0]; [15.0; 20.0] ]
+      array2dZip (c.toArray2D()) expected
+      |> Array2D.iter (fun (a,b)-> Expect.isLessThan (abs (a-b)) (1e-6) "image * image")
+
+    testCase "image / image" <| fun _ ->
+      let a = Image<float>.ofArray2D (array2D [ [5.0; 5.0]; [5.0; 5.0] ])
+      let b = Image<float>.ofArray2D (array2D [ [1.0; 2.0]; [3.0; 4.0] ])
+      let c = a / b
+      let expected = array2D [ [5.0/1.0; 5.0/2.0]; [5.0/3.0; 5.0/4.0] ]
+      array2dZip (c.toArray2D()) expected
+      |> Array2D.iter (fun (a,b)-> Expect.isLessThan (abs (a-b)) (1e-6) "image / image")
+
+    testCase "image + scalar" <| fun _ ->
+      let a = Image<float>.ofArray2D (array2D [ [1.0; 2.0]; [3.0; 4.0] ])
+      let b = 2.0
+      let c = a + b
+      let expected = array2D [ [3.0; 4.0]; [5.0; 6.0] ]
+      array2dZip (c.toArray2D()) expected
+      |> Array2D.iter (fun (a,b)-> Expect.isLessThan (abs (a-b)) (1e-6) "image + image")
+
+    testCase "image - scalar" <| fun _ ->
+      let a = Image<float>.ofArray2D (array2D [ [5.0; 4.0]; [3.0; 2.0] ])
+      let b = 2.0
+      let c = a - b
+      let expected = array2D [ [3.0; 2.0]; [1.0; 0.0] ]
+      array2dZip (c.toArray2D()) expected
+      |> Array2D.iter (fun (a,b)-> Expect.isLessThan (abs (a-b)) (1e-6) "image - image")
+
+    testCase "image * scalar" <| fun _ ->
+      let a = Image<float>.ofArray2D (array2D [ [1.0; 2.0]; [3.0; 4.0] ])
+      let b = 2.0
+      let c = a * b
+      let expected = array2D [ [2.0; 4.0]; [6.0; 8.0] ]
+      array2dZip (c.toArray2D()) expected
+      |> Array2D.iter (fun (a,b)-> Expect.isLessThan (abs (a-b)) (1e-6) "image * image")
+
+    testCase "image / scalar" <| fun _ ->
+      let a = Image<float>.ofArray2D (array2D [ [1.0; 2.0]; [3.0; 4.0] ])
+      let b = 2.0
+      let c = a / b
+      let expected = array2D [ [1.0/2.0; 2.0/2.0]; [3.0/2.0; 4.0/2.0] ]
+      array2dZip (c.toArray2D()) expected
+      |> Array2D.iter (fun (a,b)-> Expect.isLessThan (abs (a-b)) (1e-6) "image / image")
+
+    testCase "scalar + image" <| fun _ ->
+      let a = Image<float>.ofArray2D (array2D [ [1.0; 2.0]; [3.0; 4.0] ])
+      let b = 2.0
+      let c = b + a
+      let expected = array2D [ [3.0; 4.0]; [5.0; 6.0] ]
+      array2dZip (c.toArray2D()) expected
+      |> Array2D.iter (fun (a,b)-> Expect.isLessThan (abs (a-b)) (1e-6) "image + image")
+
+    testCase "scalar - image" <| fun _ ->
+      let a = Image<float>.ofArray2D (array2D [ [5.0; 4.0]; [3.0; 2.0] ])
+      let b = 2.0
+      let c = b - a
+      let expected = array2D [ [-3.0; -2.0]; [-1.0; -0.0] ]
+      array2dZip (c.toArray2D()) expected
+      |> Array2D.iter (fun (a,b)-> Expect.isLessThan (abs (a-b)) (1e-6) "image - image")
+
+    testCase "scalar * image" <| fun _ ->
+      let a = Image<float>.ofArray2D (array2D [ [1.0; 2.0]; [3.0; 4.0] ])
+      let b = 2.0
+      let c = b * a
+      let expected = array2D [ [2.0; 4.0]; [6.0; 8.0] ]
+      array2dZip (c.toArray2D()) expected
+      |> Array2D.iter (fun (a,b)-> Expect.isLessThan (abs (a-b)) (1e-6) "image * image")
+
+    testCase "scalar / image" <| fun _ ->
+      let a = Image<float>.ofArray2D (array2D [ [1.0; 2.0]; [3.0; 4.0] ])
+      let b = 2.0
+      let c = b / a
+      let expected = array2D [ [2.0; 1.0]; [2.0/3.0; 1.0/2.0] ]
+      array2dZip (c.toArray2D()) expected
+      |> Array2D.iter (fun (a,b)-> Expect.isLessThan (abs (a-b)) (1e-6) "image / image")
   ]
 
 [<EntryPoint>]
@@ -595,4 +702,5 @@ let main argv =
     ofCastItkTests 
     creationTests 
     imageCoreTests
+    imageOperatorTests
   ])
