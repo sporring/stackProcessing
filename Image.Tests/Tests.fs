@@ -571,10 +571,10 @@ let imageCoreTests =
       let roundtrip = Image<float32>.ofSimpleITK(orig.toSimpleITK())
       Expect.equal (roundtrip.toArray2D()) arr "Expected roundtrip to preserve array"
 
-    testCase "castTo converts image type" <| fun _ ->
+    testCase "cast converts image type" <| fun _ ->
       let arr = array2D [ [ 10.0f; 20.0f ]; [ 30.0f; 40.0f ] ]
       let imgF = Image<float32>.ofArray2D arr
-      let imgB = imgF.castTo<uint8>()
+      let imgB = imgF.cast<uint8>()
       Expect.equal (imgB.toArray2D()) (array2D [ [10uy; 20uy]; [30uy; 40uy] ]) "Expected image cast to byte"
 
     testCase "ofFile / toFile roundtrip" <| fun _ ->
@@ -585,13 +585,6 @@ let imageCoreTests =
       let reloaded = Image<float32>.ofFile tmp
       Expect.equal (reloaded.toArray2D()) arr $"Expected file I/O roundtrip {tmp}"
   ]
-
-let array2dZip (a: 'T[,]) (b: 'U[,]) : ('T * 'U)[,] =
-    let wA, hA = a.GetLength(0), a.GetLength(1)
-    let wB, hB = b.GetLength(0), b.GetLength(1)
-    if wA <> wB || hA <> hB then
-        invalidArg "b" $"Array dimensions must match: {wA}x{hA} vs {wB}x{hB}"
-    Array2D.init wA hA (fun x y -> a.[x, y], b.[x, y])
 
 [<Tests>]
 let imageOperatorTests =
@@ -727,7 +720,179 @@ let vectorImageCompositionTests =
       Expect.throws (fun () -> Image<float list>.ofImageList imgs |> ignore) "Too many images should throw"
   ]
 
+[<Tests>]
+let IsEqualTests =
+  testList "Image isEqual/op_Equality Tests" [
+    // int8
+    testCase "int8 image = image" <| fun _ ->
+        let arr = array2D [ [ 1y; 2y ]; [ 3y; 4y ] ]
+        let img1 = Image<int8>.ofArray2D arr 
+        let img2 = Image<int8>.ofArray2D arr 
+        Expect.isTrue (img1 = img2) "Expected images to be equal"
 
+    testCase "int8 image = scalar" <| fun _ ->
+        let arr = array2D [ [ 2y; 2y ]; [ 2y; 2y ] ]
+        let img = Image<int8>.ofArray2D arr 
+        Expect.isTrue (Image<int8>.eq(img,2y)) "Expected all pixels to match scalar"
+
+    testCase "scalar = int8 image" <| fun _ ->
+        let arr = array2D [ [ 3y; 3y ]; [ 3y; 3y ] ]
+        let img = Image<int8>.ofArray2D arr 
+        Expect.isTrue (Image<int8>.eq(3y, img)) "Expected scalar to equal all pixels"
+
+    // uint8
+    testCase "uint8 image = image" <| fun _ ->
+        let arr = array2D [ [ 1uy; 2uy ]; [ 3uy; 4uy ] ]
+        let img1 = Image<byte>.ofArray2D arr 
+        let img2 = Image<byte>.ofArray2D arr 
+        Expect.isTrue (img1 = img2) "Expected images to be equal"
+
+    testCase "uint8 image = scalar" <| fun _ ->
+        let arr = array2D [ [ 2uy; 2uy ]; [ 2uy; 2uy ] ]
+        let img = Image<byte>.ofArray2D arr 
+        Expect.isTrue (Image<byte>.eq(img, 2uy)) "Expected all pixels to match scalar"
+
+    testCase "scalar = uint8 image" <| fun _ ->
+        let arr = array2D [ [ 3uy; 3uy ]; [ 3uy; 3uy ] ]
+        let img = Image<byte>.ofArray2D arr 
+        Expect.isTrue (Image<byte>.eq(3uy, img)) "Expected scalar to equal all pixels"
+
+    // int16
+    testCase "int16 image = image" <| fun _ ->
+        let arr = array2D [ [ 1s; 2s ]; [ 3s; 4s ] ]
+        let img1 = Image<int16>.ofArray2D arr
+        let img2 = Image<int16>.ofArray2D arr 
+        Expect.isTrue (img1 = img2) "Expected images to be equal"
+
+    testCase "int16 image = scalar" <| fun _ ->
+        let arr = array2D [ [ 2s; 2s ]; [ 2s; 2s ] ]
+        let img = Image<int16>.ofArray2D arr 
+        Expect.isTrue (Image<int16>.eq(img, 2s)) "Expected all pixels to match scalar"
+
+    testCase "scalar = int16 image" <| fun _ ->
+        let arr = array2D [ [ 3s; 3s ]; [ 3s; 3s ] ]
+        let img = Image<int16>.ofArray2D arr 
+        Expect.isTrue (Image<int16>.eq(3s, img)) "Expected scalar to equal all pixels"
+
+    // uint16
+    testCase "uint16 image = image" <| fun _ ->
+        let arr = array2D [ [ 1us; 2us ]; [ 3us; 4us ] ]
+        let img1 = Image<uint16>.ofArray2D arr 
+        let img2 = Image<uint16>.ofArray2D arr 
+        Expect.isTrue (img1 = img2) "Expected images to be equal"
+
+    testCase "uint16 image = scalar" <| fun _ ->
+        let arr = array2D [ [ 2us; 2us ]; [ 2us; 2us ] ]
+        let img = Image<uint16>.ofArray2D arr 
+        Expect.isTrue (Image<uint16>.eq(img, 2us)) "Expected all pixels to match scalar"
+
+    testCase "scalar = uint16 image" <| fun _ ->
+        let arr = array2D [ [ 3us; 3us ]; [ 3us; 3us ] ]
+        let img = Image<uint16>.ofArray2D arr 
+        Expect.isTrue (Image<uint16>.eq(3us, img)) "Expected scalar to equal all pixels"
+
+    // int32
+    testCase "int32 image = image" <| fun _ ->
+        let arr = array2D [ [ 1; 2 ]; [ 3; 4 ] ]
+        let img1 = Image<int>.ofArray2D arr 
+        let img2 = Image<int>.ofArray2D arr 
+        Expect.isTrue (img1 = img2) "Expected images to be equal"
+
+    testCase "int32 image = scalar" <| fun _ ->
+        let arr = array2D [ [ 2; 2 ]; [ 2; 2 ] ]
+        let img = Image<int>.ofArray2D arr 
+        Expect.isTrue (Image<int>.eq(img, 2)) "Expected all pixels to match scalar"
+
+    testCase "scalar = int32 image" <| fun _ ->
+        let arr = array2D [ [ 3; 3 ]; [ 3; 3 ] ]
+        let img = Image<int>.ofArray2D arr 
+        Expect.isTrue (Image<int>.eq(3, img)) "Expected scalar to equal all pixels"
+
+    // uint32
+    testCase "uint32 image = image" <| fun _ ->
+        let arr = array2D [ [ 1u; 2u ]; [ 3u; 4u ] ]
+        let img1 = Image<uint32>.ofArray2D arr 
+        let img2 = Image<uint32>.ofArray2D arr 
+        Expect.isTrue (img1 = img2) "Expected images to be equal"
+
+    testCase "uint32 image = scalar" <| fun _ ->
+        let arr = array2D [ [ 2u; 2u ]; [ 2u; 2u ] ]
+        let img = Image<uint32>.ofArray2D arr 
+        Expect.isTrue (Image<uint32>.eq(img, 2u)) "Expected all pixels to match scalar"
+
+    testCase "scalar = uint32 image" <| fun _ ->
+        let arr = array2D [ [ 3u; 3u ]; [ 3u; 3u ] ]
+        let img = Image<uint32>.ofArray2D arr 
+        Expect.isTrue (Image<uint32>.eq(3u, img)) "Expected scalar to equal all pixels"
+
+    // int64
+    testCase "int64 image = image" <| fun _ ->
+        let arr = array2D [ [ 1L; 2L ]; [ 3L; 4L ] ]
+        let img1 = Image<int64>.ofArray2D arr 
+        let img2 = Image<int64>.ofArray2D arr 
+        Expect.isTrue (img1 = img2) "Expected images to be equal"
+
+    testCase "int64 image = scalar" <| fun _ ->
+        let arr = array2D [ [ 2L; 2L ]; [ 2L; 2L ] ]
+        let img = Image<int64>.ofArray2D arr 
+        Expect.isTrue (Image<int64>.eq(img, 2L)) "Expected all pixels to match scalar"
+
+    testCase "scalar = int64 image" <| fun _ ->
+        let arr = array2D [ [ 3L; 3L ]; [ 3L; 3L ] ]
+        let img = Image<int64>.ofArray2D arr 
+        Expect.isTrue (Image<int64>.eq(3L, img)) "Expected scalar to equal all pixels"
+
+    // uint64
+    testCase "uint64 image = image" <| fun _ ->
+        let arr = array2D [ [ 1UL; 2UL ]; [ 3UL; 4UL ] ]
+        let img1 = Image<uint64>.ofArray2D arr 
+        let img2 = Image<uint64>.ofArray2D arr 
+        Expect.isTrue (img1 = img2) "Expected images to be equal"
+
+    testCase "uint64 image = scalar" <| fun _ ->
+        let arr = array2D [ [ 2UL; 2UL ]; [ 2UL; 2UL ] ]
+        let img = Image<uint64>.ofArray2D arr 
+        Expect.isTrue (Image<uint64>.eq(img, 2UL)) "Expected all pixels to match scalar"
+
+    testCase "scalar = uint64 image" <| fun _ ->
+        let arr = array2D [ [ 3UL; 3UL ]; [ 3UL; 3UL ] ]
+        let img = Image<uint64>.ofArray2D arr 
+        Expect.isTrue (Image<uint64>.eq(3UL, img)) "Expected scalar to equal all pixels"
+
+    // float32
+    testCase "float32 image = image" <| fun _ ->
+        let arr = array2D [ [ 1.0f; 2.0f ]; [ 3.0f; 4.0f ] ]
+        let img1 = Image<float32>.ofArray2D arr 
+        let img2 = Image<float32>.ofArray2D arr 
+        Expect.isTrue (img1 = img2) "Expected images to be equal"
+
+    testCase "float32 image = scalar" <| fun _ ->
+        let arr = array2D [ [ 2.0f; 2.0f ]; [ 2.0f; 2.0f ] ]
+        let img = Image<float32>.ofArray2D arr 
+        Expect.isTrue (Image<float32>.eq(img, 2.0f)) "Expected all pixels to match scalar"
+
+    testCase "scalar = float32 image" <| fun _ ->
+        let arr = array2D [ [ 3.0f; 3.0f ]; [ 3.0f; 3.0f ] ]
+        let img = Image<float32>.ofArray2D arr 
+        Expect.isTrue (Image<float32>.eq(3.0f, img)) "Expected scalar to equal all pixels"
+
+    // float
+    testCase "float image = image" <| fun _ ->
+        let arr = array2D [ [ 1.0; 2.0 ]; [ 3.0; 4.0 ] ]
+        let img1 = Image<float>.ofArray2D arr 
+        let img2 = Image<float>.ofArray2D arr 
+        Expect.isTrue (img1 = img2) "Expected images to be equal"
+
+    testCase "float image = scalar" <| fun _ ->
+        let arr = array2D [ [ 2.0; 2.0 ]; [ 2.0; 2.0 ] ]
+        let img = Image<float>.ofArray2D arr 
+        Expect.isTrue (Image<float>.eq(img, 2.0)) "Expected all pixels to match scalar"
+
+    testCase "scalar = float image" <| fun _ ->
+        let arr = array2D [ [ 3.0; 3.0 ]; [ 3.0; 3.0 ] ]
+        let img = Image<float>.ofArray2D arr 
+        Expect.isTrue (Image<float>.eq(3.0, img)) "Expected scalar to equal all pixels"
+  ]
 
 [<EntryPoint>]
 let main argv =
@@ -740,4 +905,5 @@ let main argv =
     imageCoreTests
     imageOperatorTests
     vectorImageCompositionTests
+    IsEqualTests
   ])

@@ -98,10 +98,17 @@ module internal InternalHelpers =
             unbox value
         )
 
+    let array2dZip (a: 'T[,]) (b: 'U[,]) : ('T * 'U)[,] =
+        let wA, hA = a.GetLength(0), a.GetLength(1)
+        let wB, hB = b.GetLength(0), b.GetLength(1)
+        if wA <> wB || hA <> hB then
+            invalidArg "b" $"Array dimensions must match: {wA}x{hA} vs {wB}x{hB}"
+        Array2D.init wA hA (fun x y -> a.[x, y], b.[x, y])
+
 open InternalHelpers
 
 [<StructuredFormatDisplay("{Display}")>] // Prevent fsi printing information about its members such as img
-type Image<'T>(sz: uint list, ?numberComp: uint) =
+type Image<'T when 'T : equality>(sz: uint list, ?numberComp: uint) =
     let itkId = fromType<'T>
     let isListType = typeof<'T>.IsGenericType && typeof<'T>.GetGenericTypeDefinition() = typedefof<list<_>>
     let mutable img = 
@@ -114,6 +121,35 @@ type Image<'T>(sz: uint list, ?numberComp: uint) =
             new itk.simple.Image(sz |> toVectorUInt32, itkId, v)
         | None -> 
             new itk.simple.Image(sz |> toVectorUInt32, itkId)
+
+    interface System.IEquatable<Image<'T>> with
+        member this.Equals(other: Image<'T>) = Image<'T>.eq(this, other)
+
+    override this.Equals(obj: obj) = // For some reason, it's not enough with this.Equals(other: Image<'T>)
+        match obj with
+        | :? Image<'T> as other -> (this :> System.IEquatable<_>).Equals(other)
+        | _ -> false
+
+    override this.GetHashCode() =
+        hash (this.toArray2D())
+
+    interface System.IComparable<Image<'T>> with
+        member this.CompareTo(other: Image<'T>) =
+            let t = typeof<'T>
+            let pixels = (this - other).toArray2D() |> Seq.cast<'T>
+            let diff =
+                if      t = typeof<uint8>   then pixels |> Seq.cast<uint8>   |> Seq.sum |> box
+                elif    t = typeof<int8>    then pixels |> Seq.cast<int8>    |> Seq.sum |> box
+                elif    t = typeof<uint16>  then pixels |> Seq.cast<uint16>  |> Seq.sum |> box
+                elif    t = typeof<int16>   then pixels |> Seq.cast<int16>   |> Seq.sum |> box
+                elif    t = typeof<uint32>  then pixels |> Seq.cast<uint32>  |> Seq.sum |> box
+                elif    t = typeof<int32>   then pixels |> Seq.cast<int32>   |> Seq.sum |> box
+                elif    t = typeof<uint64>  then pixels |> Seq.cast<uint64>  |> Seq.sum |> box
+                elif    t = typeof<int64>   then pixels |> Seq.cast<int64>   |> Seq.sum |> box
+                elif    t = typeof<float32> then pixels |> Seq.cast<float32> |> Seq.sum |> box
+                elif    t = typeof<float>   then pixels |> Seq.cast<float>   |> Seq.sum |> box
+                else failwithf "Unsupported pixel type: %O" t
+            unbox diff |> int
 
     member this.Image = img
     member private this.SetImg (itkImg: itk.simple.Image) : unit =
@@ -142,7 +178,7 @@ type Image<'T>(sz: uint list, ?numberComp: uint) =
     member this.toSimpleITK () : itk.simple.Image =
         img
 
-    member this.castTo<'S> () : Image<'S> =
+    member this.cast<'S when 'S: equality> () : Image<'S> =
         Image<'S>.ofSimpleITK img
 
     static member ofArray2D (arr: 'T[,]) : Image<'T> =
@@ -241,389 +277,1075 @@ type Image<'T>(sz: uint list, ?numberComp: uint) =
         writer.Execute(this.Image)
 
     // Addition
-    static member (+) (f1: Image<'T>, f2: Image<'T>) =
+    static member (+) (f1: Image<'S>, f2: Image<'S>) =
         let filter = new itk.simple.AddImageFilter()
-        Image<'T>.ofSimpleITK(filter.Execute(f1.Image, f2.Image))
+        Image<'S>.ofSimpleITK(filter.Execute(f1.Image, f2.Image))
 
-    static member (+) (f1: Image<'T>, i: int8) =
+    static member (+) (f1: Image<'S>, i: int8) =
         let filter = new itk.simple.AddImageFilter()
-        Image<'T>.ofSimpleITK(filter.Execute(f1.Image, float i))
-    static member (+) (i: int8, f1: Image<'T>) = f1 + i
+        Image<'S>.ofSimpleITK(filter.Execute(f1.Image, float i))
+    static member (+) (i: int8, f1: Image<'S>) = f1 + i
 
-    static member (+) (f1: Image<'T>, i: uint8) =
+    static member (+) (f1: Image<'S>, i: uint8) =
         let filter = new itk.simple.AddImageFilter()
-        Image<'T>.ofSimpleITK(filter.Execute(f1.Image, float i))
-    static member (+) (i: uint8, f1: Image<'T>) = f1 + i
+        Image<'S>.ofSimpleITK(filter.Execute(f1.Image, float i))
+    static member (+) (i: uint8, f1: Image<'S>) = f1 + i
 
-    static member (+) (f1: Image<'T>, i: int16) =
+    static member (+) (f1: Image<'S>, i: int16) =
         let filter = new itk.simple.AddImageFilter()
-        Image<'T>.ofSimpleITK(filter.Execute(f1.Image, float i))
-    static member (+) (i: int16, f1: Image<'T>) = f1 + i
+        Image<'S>.ofSimpleITK(filter.Execute(f1.Image, float i))
+    static member (+) (i: int16, f1: Image<'S>) = f1 + i
 
-    static member (+) (f1: Image<'T>, i: uint16) =
+    static member (+) (f1: Image<'S>, i: uint16) =
         let filter = new itk.simple.AddImageFilter()
-        Image<'T>.ofSimpleITK(filter.Execute(f1.Image, float i))
-    static member (+) (i: uint16, f1: Image<'T>) = f1 + i
+        Image<'S>.ofSimpleITK(filter.Execute(f1.Image, float i))
+    static member (+) (i: uint16, f1: Image<'S>) = f1 + i
 
-    static member (+) (f1: Image<'T>, i: int32) =
+    static member (+) (f1: Image<'S>, i: int32) =
         let filter = new itk.simple.AddImageFilter()
-        Image<'T>.ofSimpleITK(filter.Execute(f1.Image, float i))
-    static member (+) (i: int32, f1: Image<'T>) = f1 + i
+        Image<'S>.ofSimpleITK(filter.Execute(f1.Image, float i))
+    static member (+) (i: int32, f1: Image<'S>) = f1 + i
 
-    static member (+) (f1: Image<'T>, i: uint32) =
+    static member (+) (f1: Image<'S>, i: uint32) =
         let filter = new itk.simple.AddImageFilter()
-        Image<'T>.ofSimpleITK(filter.Execute(f1.Image, float i))
-    static member (+) (i: uint32, f1: Image<'T>) = f1 + i
+        Image<'S>.ofSimpleITK(filter.Execute(f1.Image, float i))
+    static member (+) (i: uint32, f1: Image<'S>) = f1 + i
 
-    static member (+) (f1: Image<'T>, i: int64) =
+    static member (+) (f1: Image<'S>, i: int64) =
         let filter = new itk.simple.AddImageFilter()
-        Image<'T>.ofSimpleITK(filter.Execute(f1.Image, float i))
-    static member (+) (i: int64, f1: Image<'T>) = f1 + i
+        Image<'S>.ofSimpleITK(filter.Execute(f1.Image, float i))
+    static member (+) (i: int64, f1: Image<'S>) = f1 + i
 
-    static member (+) (f1: Image<'T>, i: uint64) =
+    static member (+) (f1: Image<'S>, i: uint64) =
         let filter = new itk.simple.AddImageFilter()
-        Image<'T>.ofSimpleITK(filter.Execute(f1.Image, float i))
-    static member (+) (i: uint64, f1: Image<'T>) = f1 + i
+        Image<'S>.ofSimpleITK(filter.Execute(f1.Image, float i))
+    static member (+) (i: uint64, f1: Image<'S>) = f1 + i
 
-    static member (+) (f1: Image<'T>, i: float32) =
+    static member (+) (f1: Image<'S>, i: float32) =
         let filter = new itk.simple.AddImageFilter()
-        Image<'T>.ofSimpleITK(filter.Execute(f1.Image, float i))
-    static member (+) (i: float32, f1: Image<'T>) = f1 + i
+        Image<'S>.ofSimpleITK(filter.Execute(f1.Image, float i))
+    static member (+) (i: float32, f1: Image<'S>) = f1 + i
 
-    static member (+) (f1: Image<'T>, i: float) =
+    static member (+) (f1: Image<'S>, i: float) =
         let filter = new itk.simple.AddImageFilter()
-        Image<'T>.ofSimpleITK(filter.Execute(f1.Image, float i))
-    static member (+) (i: float, f1: Image<'T>) = f1 + i
+        Image<'S>.ofSimpleITK(filter.Execute(f1.Image, float i))
+    static member (+) (i: float, f1: Image<'S>) = f1 + i
 
     // Subtraction
-    static member (-) (f1: Image<'T>, f2: Image<'T>) =
+    static member (-) (f1: Image<'S>, f2: Image<'S>) =
         let filter = new itk.simple.SubtractImageFilter()
-        Image<'T>.ofSimpleITK(filter.Execute(f1.Image, f2.Image))
+        Image<'S>.ofSimpleITK(filter.Execute(f1.Image, f2.Image))
 
-    static member (-) (f1: Image<'T>, i: int8) =
+    static member (-) (f1: Image<'S>, i: int8) =
         let filter = new itk.simple.SubtractImageFilter()
-        Image<'T>.ofSimpleITK(filter.Execute(f1.Image, float i))
-    static member (-) (i: int8, f1: Image<'T>) =
+        Image<'S>.ofSimpleITK(filter.Execute(f1.Image, float i))
+    static member (-) (i: int8, f1: Image<'S>) =
         let filter = new itk.simple.SubtractImageFilter()
-        Image<'T>.ofSimpleITK(filter.Execute(float i,f1.Image))
+        Image<'S>.ofSimpleITK(filter.Execute(float i,f1.Image))
 
-    static member (-) (f1: Image<'T>, i: uint8) =
+    static member (-) (f1: Image<'S>, i: uint8) =
         let filter = new itk.simple.SubtractImageFilter()
-        Image<'T>.ofSimpleITK(filter.Execute(f1.Image, float i))
-    static member (-) (i: uint8, f1: Image<'T>) =
+        Image<'S>.ofSimpleITK(filter.Execute(f1.Image, float i))
+    static member (-) (i: uint8, f1: Image<'S>) =
         let filter = new itk.simple.SubtractImageFilter()
-        Image<'T>.ofSimpleITK(filter.Execute(float i, f1.Image))
+        Image<'S>.ofSimpleITK(filter.Execute(float i, f1.Image))
 
-    static member (-) (f1: Image<'T>, i: int16) =
+    static member (-) (f1: Image<'S>, i: int16) =
         let filter = new itk.simple.SubtractImageFilter()
-        Image<'T>.ofSimpleITK(filter.Execute(f1.Image, float i))
-    static member (-) (i: int16, f1: Image<'T>) =
+        Image<'S>.ofSimpleITK(filter.Execute(f1.Image, float i))
+    static member (-) (i: int16, f1: Image<'S>) =
         let filter = new itk.simple.SubtractImageFilter()
-        Image<'T>.ofSimpleITK(filter.Execute(float i,f1.Image))
+        Image<'S>.ofSimpleITK(filter.Execute(float i,f1.Image))
 
-    static member (-) (f1: Image<'T>, i: uint16) =
+    static member (-) (f1: Image<'S>, i: uint16) =
         let filter = new itk.simple.SubtractImageFilter()
-        Image<'T>.ofSimpleITK(filter.Execute(f1.Image, float i))
-    static member (-) (i: uint16, f1: Image<'T>) =
+        Image<'S>.ofSimpleITK(filter.Execute(f1.Image, float i))
+    static member (-) (i: uint16, f1: Image<'S>) =
         let filter = new itk.simple.SubtractImageFilter()
-        Image<'T>.ofSimpleITK(filter.Execute(float i, f1.Image))
+        Image<'S>.ofSimpleITK(filter.Execute(float i, f1.Image))
 
-    static member (-) (f1: Image<'T>, i: int32) =
+    static member (-) (f1: Image<'S>, i: int32) =
         let filter = new itk.simple.SubtractImageFilter()
-        Image<'T>.ofSimpleITK(filter.Execute(f1.Image, float i))
-    static member (-) (i: int32, f1: Image<'T>) =
+        Image<'S>.ofSimpleITK(filter.Execute(f1.Image, float i))
+    static member (-) (i: int32, f1: Image<'S>) =
         let filter = new itk.simple.SubtractImageFilter()
-        Image<'T>.ofSimpleITK(filter.Execute(float i,f1.Image))
+        Image<'S>.ofSimpleITK(filter.Execute(float i,f1.Image))
 
-    static member (-) (f1: Image<'T>, i: uint32) =
+    static member (-) (f1: Image<'S>, i: uint32) =
         let filter = new itk.simple.SubtractImageFilter()
-        Image<'T>.ofSimpleITK(filter.Execute(f1.Image, float i))
-    static member (-) (i: uint32, f1: Image<'T>) =
+        Image<'S>.ofSimpleITK(filter.Execute(f1.Image, float i))
+    static member (-) (i: uint32, f1: Image<'S>) =
         let filter = new itk.simple.SubtractImageFilter()
-        Image<'T>.ofSimpleITK(filter.Execute(float i, f1.Image))
+        Image<'S>.ofSimpleITK(filter.Execute(float i, f1.Image))
 
-    static member (-) (f1: Image<'T>, i: int64) =
+    static member (-) (f1: Image<'S>, i: int64) =
         let filter = new itk.simple.SubtractImageFilter()
-        Image<'T>.ofSimpleITK(filter.Execute(f1.Image, float i))
-    static member (-) (i: int64, f1: Image<'T>) =
+        Image<'S>.ofSimpleITK(filter.Execute(f1.Image, float i))
+    static member (-) (i: int64, f1: Image<'S>) =
         let filter = new itk.simple.SubtractImageFilter()
-        Image<'T>.ofSimpleITK(filter.Execute(float i,f1.Image))
+        Image<'S>.ofSimpleITK(filter.Execute(float i,f1.Image))
 
-    static member (-) (f1: Image<'T>, i: uint64) =
+    static member (-) (f1: Image<'S>, i: uint64) =
         let filter = new itk.simple.SubtractImageFilter()
-        Image<'T>.ofSimpleITK(filter.Execute(f1.Image, float i))
-    static member (-) (i: uint64, f1: Image<'T>) =
+        Image<'S>.ofSimpleITK(filter.Execute(f1.Image, float i))
+    static member (-) (i: uint64, f1: Image<'S>) =
         let filter = new itk.simple.SubtractImageFilter()
-        Image<'T>.ofSimpleITK(filter.Execute(float i, f1.Image))
+        Image<'S>.ofSimpleITK(filter.Execute(float i, f1.Image))
 
-    static member (-) (f1: Image<'T>, i: float32) =
+    static member (-) (f1: Image<'S>, i: float32) =
         let filter = new itk.simple.SubtractImageFilter()
-        Image<'T>.ofSimpleITK(filter.Execute(f1.Image, float i))
-    static member (-) (i: float32, f1: Image<'T>) =
+        Image<'S>.ofSimpleITK(filter.Execute(f1.Image, float i))
+    static member (-) (i: float32, f1: Image<'S>) =
         let filter = new itk.simple.SubtractImageFilter()
-        Image<'T>.ofSimpleITK(filter.Execute(float i,f1.Image))
+        Image<'S>.ofSimpleITK(filter.Execute(float i,f1.Image))
 
-    static member (-) (f1: Image<'T>, i: float) =
+    static member (-) (f1: Image<'S>, i: float) =
         let filter = new itk.simple.SubtractImageFilter()
-        Image<'T>.ofSimpleITK(filter.Execute(f1.Image, float i))
-    static member (-) (i: float, f1: Image<'T>) =
+        Image<'S>.ofSimpleITK(filter.Execute(f1.Image, float i))
+    static member (-) (i: float, f1: Image<'S>) =
         let filter = new itk.simple.SubtractImageFilter()
-        Image<'T>.ofSimpleITK(filter.Execute(float i, f1.Image))
+        Image<'S>.ofSimpleITK(filter.Execute(float i, f1.Image))
 
     // Multiplication
-    static member (*) (f1: Image<'T>, f2: Image<'T>) =
+    static member (*) (f1: Image<'S>, f2: Image<'S>) =
         let filter = new itk.simple.MultiplyImageFilter()
-        Image<'T>.ofSimpleITK(filter.Execute(f1.Image, f2.Image))
+        Image<'S>.ofSimpleITK(filter.Execute(f1.Image, f2.Image))
 
-    static member (*) (f1: Image<'T>, i: int8) =
+    static member (*) (f1: Image<'S>, i: int8) =
         let filter = new itk.simple.MultiplyImageFilter()
-        Image<'T>.ofSimpleITK(filter.Execute(f1.Image, float i))
-    static member (*) (i: int8, f1: Image<'T>) = f1 * i
+        Image<'S>.ofSimpleITK(filter.Execute(f1.Image, float i))
+    static member (*) (i: int8, f1: Image<'S>) = f1 * i
 
-    static member (*) (f1: Image<'T>, i: uint8) =
+    static member (*) (f1: Image<'S>, i: uint8) =
         let filter = new itk.simple.MultiplyImageFilter()
-        Image<'T>.ofSimpleITK(filter.Execute(f1.Image, float i))
-    static member (*) (i: uint8, f1: Image<'T>) = f1 * i
+        Image<'S>.ofSimpleITK(filter.Execute(f1.Image, float i))
+    static member (*) (i: uint8, f1: Image<'S>) = f1 * i
 
-    static member (*) (f1: Image<'T>, i: int16) =
+    static member (*) (f1: Image<'S>, i: int16) =
         let filter = new itk.simple.MultiplyImageFilter()
-        Image<'T>.ofSimpleITK(filter.Execute(f1.Image, float i))
-    static member (*) (i: int16, f1: Image<'T>) = f1 * i
+        Image<'S>.ofSimpleITK(filter.Execute(f1.Image, float i))
+    static member (*) (i: int16, f1: Image<'S>) = f1 * i
 
-    static member (*) (f1: Image<'T>, i: uint16) =
+    static member (*) (f1: Image<'S>, i: uint16) =
         let filter = new itk.simple.MultiplyImageFilter()
-        Image<'T>.ofSimpleITK(filter.Execute(f1.Image, float i))
-    static member (*) (i: uint16, f1: Image<'T>) = f1 * i
+        Image<'S>.ofSimpleITK(filter.Execute(f1.Image, float i))
+    static member (*) (i: uint16, f1: Image<'S>) = f1 * i
 
-    static member (*) (f1: Image<'T>, i: int32) =
+    static member (*) (f1: Image<'S>, i: int32) =
         let filter = new itk.simple.MultiplyImageFilter()
-        Image<'T>.ofSimpleITK(filter.Execute(f1.Image, float i))
-    static member (*) (i: int32, f1: Image<'T>) = f1 * i
+        Image<'S>.ofSimpleITK(filter.Execute(f1.Image, float i))
+    static member (*) (i: int32, f1: Image<'S>) = f1 * i
 
-    static member (*) (f1: Image<'T>, i: uint32) =
+    static member (*) (f1: Image<'S>, i: uint32) =
         let filter = new itk.simple.MultiplyImageFilter()
-        Image<'T>.ofSimpleITK(filter.Execute(f1.Image, float i))
-    static member (*) (i: uint32, f1: Image<'T>) = f1 * i
+        Image<'S>.ofSimpleITK(filter.Execute(f1.Image, float i))
+    static member (*) (i: uint32, f1: Image<'S>) = f1 * i
 
-    static member (*) (f1: Image<'T>, i: int64) =
+    static member (*) (f1: Image<'S>, i: int64) =
         let filter = new itk.simple.MultiplyImageFilter()
-        Image<'T>.ofSimpleITK(filter.Execute(f1.Image, float i))
-    static member (*) (i: int64, f1: Image<'T>) = f1 * i
+        Image<'S>.ofSimpleITK(filter.Execute(f1.Image, float i))
+    static member (*) (i: int64, f1: Image<'S>) = f1 * i
 
-    static member (*) (f1: Image<'T>, i: uint64) =
+    static member (*) (f1: Image<'S>, i: uint64) =
         let filter = new itk.simple.MultiplyImageFilter()
-        Image<'T>.ofSimpleITK(filter.Execute(f1.Image, float i))
-    static member (*) (i: uint64, f1: Image<'T>) = f1 * i
+        Image<'S>.ofSimpleITK(filter.Execute(f1.Image, float i))
+    static member (*) (i: uint64, f1: Image<'S>) = f1 * i
 
-    static member (*) (f1: Image<'T>, i: float32) =
+    static member (*) (f1: Image<'S>, i: float32) =
         let filter = new itk.simple.MultiplyImageFilter()
-        Image<'T>.ofSimpleITK(filter.Execute(f1.Image, float i))
-    static member (*) (i: float32, f1: Image<'T>) = f1 * i
+        Image<'S>.ofSimpleITK(filter.Execute(f1.Image, float i))
+    static member (*) (i: float32, f1: Image<'S>) = f1 * i
 
-    static member (*) (f1: Image<'T>, i: float) =
+    static member (*) (f1: Image<'S>, i: float) =
         let filter = new itk.simple.MultiplyImageFilter()
-        Image<'T>.ofSimpleITK(filter.Execute(f1.Image, float i))
-    static member (*) (i: float, f1: Image<'T>) = f1 * i
+        Image<'S>.ofSimpleITK(filter.Execute(f1.Image, float i))
+    static member (*) (i: float, f1: Image<'S>) = f1 * i
 
     // Division
-    static member (/) (f1: Image<'T>, f2: Image<'T>) =
+    static member (/) (f1: Image<'S>, f2: Image<'S>) =
         let filter = new itk.simple.DivideImageFilter()
-        Image<'T>.ofSimpleITK(filter.Execute(f1.Image, f2.Image))
+        Image<'S>.ofSimpleITK(filter.Execute(f1.Image, f2.Image))
 
-    static member (/) (f1: Image<'T>, i: int8) =
+    static member (/) (f1: Image<'S>, i: int8) =
         let filter = new itk.simple.DivideImageFilter()
-        Image<'T>.ofSimpleITK(filter.Execute(f1.Image, float i))
-    static member (/) (i: int8, f1: Image<'T>) =
+        Image<'S>.ofSimpleITK(filter.Execute(f1.Image, float i))
+    static member (/) (i: int8, f1: Image<'S>) =
         let filter = new itk.simple.DivideImageFilter()
-        Image<'T>.ofSimpleITK(filter.Execute(float i,f1.Image))
+        Image<'S>.ofSimpleITK(filter.Execute(float i,f1.Image))
 
-    static member (/) (f1: Image<'T>, i: uint8) =
+    static member (/) (f1: Image<'S>, i: uint8) =
         let filter = new itk.simple.DivideImageFilter()
-        Image<'T>.ofSimpleITK(filter.Execute(f1.Image, float i))
-    static member (/) (i: uint8, f1: Image<'T>) =
+        Image<'S>.ofSimpleITK(filter.Execute(f1.Image, float i))
+    static member (/) (i: uint8, f1: Image<'S>) =
         let filter = new itk.simple.DivideImageFilter()
-        Image<'T>.ofSimpleITK(filter.Execute(float i, f1.Image))
+        Image<'S>.ofSimpleITK(filter.Execute(float i, f1.Image))
 
-    static member (/) (f1: Image<'T>, i: int16) =
+    static member (/) (f1: Image<'S>, i: int16) =
         let filter = new itk.simple.DivideImageFilter()
-        Image<'T>.ofSimpleITK(filter.Execute(f1.Image, float i))
-    static member (/) (i: int16, f1: Image<'T>) =
+        Image<'S>.ofSimpleITK(filter.Execute(f1.Image, float i))
+    static member (/) (i: int16, f1: Image<'S>) =
         let filter = new itk.simple.DivideImageFilter()
-        Image<'T>.ofSimpleITK(filter.Execute(float i,f1.Image))
+        Image<'S>.ofSimpleITK(filter.Execute(float i,f1.Image))
 
-    static member (/) (f1: Image<'T>, i: uint16) =
+    static member (/) (f1: Image<'S>, i: uint16) =
         let filter = new itk.simple.DivideImageFilter()
-        Image<'T>.ofSimpleITK(filter.Execute(f1.Image, float i))
-    static member (/) (i: uint16, f1: Image<'T>) =
+        Image<'S>.ofSimpleITK(filter.Execute(f1.Image, float i))
+    static member (/) (i: uint16, f1: Image<'S>) =
         let filter = new itk.simple.DivideImageFilter()
-        Image<'T>.ofSimpleITK(filter.Execute(float i, f1.Image))
+        Image<'S>.ofSimpleITK(filter.Execute(float i, f1.Image))
 
-    static member (/) (f1: Image<'T>, i: int32) =
+    static member (/) (f1: Image<'S>, i: int32) =
         let filter = new itk.simple.DivideImageFilter()
-        Image<'T>.ofSimpleITK(filter.Execute(f1.Image, float i))
-    static member (/) (i: int32, f1: Image<'T>) =
+        Image<'S>.ofSimpleITK(filter.Execute(f1.Image, float i))
+    static member (/) (i: int32, f1: Image<'S>) =
         let filter = new itk.simple.DivideImageFilter()
-        Image<'T>.ofSimpleITK(filter.Execute(float i,f1.Image))
+        Image<'S>.ofSimpleITK(filter.Execute(float i,f1.Image))
 
-    static member (/) (f1: Image<'T>, i: uint32) =
+    static member (/) (f1: Image<'S>, i: uint32) =
         let filter = new itk.simple.DivideImageFilter()
-        Image<'T>.ofSimpleITK(filter.Execute(f1.Image, float i))
-    static member (/) (i: uint32, f1: Image<'T>) =
+        Image<'S>.ofSimpleITK(filter.Execute(f1.Image, float i))
+    static member (/) (i: uint32, f1: Image<'S>) =
         let filter = new itk.simple.DivideImageFilter()
-        Image<'T>.ofSimpleITK(filter.Execute(float i, f1.Image))
+        Image<'S>.ofSimpleITK(filter.Execute(float i, f1.Image))
 
-    static member (/) (f1: Image<'T>, i: int64) =
+    static member (/) (f1: Image<'S>, i: int64) =
         let filter = new itk.simple.DivideImageFilter()
-        Image<'T>.ofSimpleITK(filter.Execute(f1.Image, float i))
-    static member (/) (i: int64, f1: Image<'T>) =
+        Image<'S>.ofSimpleITK(filter.Execute(f1.Image, float i))
+    static member (/) (i: int64, f1: Image<'S>) =
         let filter = new itk.simple.DivideImageFilter()
-        Image<'T>.ofSimpleITK(filter.Execute(float i,f1.Image))
+        Image<'S>.ofSimpleITK(filter.Execute(float i,f1.Image))
 
-    static member (/) (f1: Image<'T>, i: uint64) =
+    static member (/) (f1: Image<'S>, i: uint64) =
         let filter = new itk.simple.DivideImageFilter()
-        Image<'T>.ofSimpleITK(filter.Execute(f1.Image, float i))
-    static member (/) (i: uint64, f1: Image<'T>) =
+        Image<'S>.ofSimpleITK(filter.Execute(f1.Image, float i))
+    static member (/) (i: uint64, f1: Image<'S>) =
         let filter = new itk.simple.DivideImageFilter()
-        Image<'T>.ofSimpleITK(filter.Execute(float i, f1.Image))
+        Image<'S>.ofSimpleITK(filter.Execute(float i, f1.Image))
 
-    static member (/) (f1: Image<'T>, i: float32) =
+    static member (/) (f1: Image<'S>, i: float32) =
         let filter = new itk.simple.DivideImageFilter()
-        Image<'T>.ofSimpleITK(filter.Execute(f1.Image, float i))
-    static member (/) (i: float32, f1: Image<'T>) =
+        Image<'S>.ofSimpleITK(filter.Execute(f1.Image, float i))
+    static member (/) (i: float32, f1: Image<'S>) =
         let filter = new itk.simple.DivideImageFilter()
-        Image<'T>.ofSimpleITK(filter.Execute(float i,f1.Image))
+        Image<'S>.ofSimpleITK(filter.Execute(float i,f1.Image))
 
-    static member (/) (f1: Image<'T>, i: float) =
+    static member (/) (f1: Image<'S>, i: float) =
         let filter = new itk.simple.DivideImageFilter()
-        Image<'T>.ofSimpleITK(filter.Execute(f1.Image, float i))
-    static member (/) (i: float, f1: Image<'T>) =
+        Image<'S>.ofSimpleITK(filter.Execute(f1.Image, float i))
+    static member (/) (i: float, f1: Image<'S>) =
         let filter = new itk.simple.DivideImageFilter()
-        Image<'T>.ofSimpleITK(filter.Execute(float i, f1.Image))
+        Image<'S>.ofSimpleITK(filter.Execute(float i, f1.Image))
 
     // Comparision
-    static member op_Equality (f1: Image<'T>, f2: Image<'T>) =
+    member this.forAll () : bool =
+        let t = typeof<'T>
+        let pixels = this.toArray2D() |> Seq.cast<'T>
+        if      t = typeof<uint8>   then pixels |> Seq.cast<uint8>   |> Seq.forall ((=) 1uy)
+        elif    t = typeof<int8>    then pixels |> Seq.cast<int8>    |> Seq.forall ((=) 1y)
+        elif    t = typeof<uint16>  then pixels |> Seq.cast<uint16>  |> Seq.forall ((=) 1us)
+        elif    t = typeof<int16>   then pixels |> Seq.cast<int16>   |> Seq.forall ((=) 1s)
+        elif    t = typeof<uint32>  then pixels |> Seq.cast<uint32>  |> Seq.forall ((=) 1u)
+        elif    t = typeof<int32>   then pixels |> Seq.cast<int32>   |> Seq.forall ((=) 1)
+        elif    t = typeof<uint64>  then pixels |> Seq.cast<uint64>  |> Seq.forall ((=) 1UL)
+        elif    t = typeof<int64>   then pixels |> Seq.cast<int64>   |> Seq.forall ((=) 1L)
+        elif    t = typeof<float32> then pixels |> Seq.cast<float32> |> Seq.forall ((=) 1.0f)
+        elif    t = typeof<float>   then pixels |> Seq.cast<float>   |> Seq.forall ((=) 1.0)
+        else failwithf "Unsupported pixel type: %O" t
+
+    static member sum (img: Image<'T>) : 'T = 
+        let t = typeof<'T>
+        let pixels = img.toArray2D() |> Seq.cast<'T>
+        let s =
+            if      t = typeof<uint8>   then pixels |> Seq.cast<uint8>   |> Seq.sum |> box
+            elif    t = typeof<int8>    then pixels |> Seq.cast<int8>    |> Seq.sum |> box
+            elif    t = typeof<uint16>  then pixels |> Seq.cast<uint16>  |> Seq.sum |> box
+            elif    t = typeof<int16>   then pixels |> Seq.cast<int16>   |> Seq.sum |> box
+            elif    t = typeof<uint32>  then pixels |> Seq.cast<uint32>  |> Seq.sum |> box
+            elif    t = typeof<int32>   then pixels |> Seq.cast<int32>   |> Seq.sum |> box
+            elif    t = typeof<uint64>  then pixels |> Seq.cast<uint64>  |> Seq.sum |> box
+            elif    t = typeof<int64>   then pixels |> Seq.cast<int64>   |> Seq.sum |> box
+            elif    t = typeof<float32> then pixels |> Seq.cast<float32> |> Seq.sum |> box
+            elif    t = typeof<float>   then pixels |> Seq.cast<float>   |> Seq.sum |> box
+            else failwithf "Unsupported pixel type: %O" t
+        unbox<'T> s
+
+    member this.sum() = Image<'T>.sum this
+
+    // equal
+    static member isEqual (f1: Image<'S>, f2: Image<'S>) =
         let filter = new itk.simple.EqualImageFilter()
-        Image<'T>.ofSimpleITK(filter.Execute(f1.Image, f2.Image))
+        Image<'S>.ofSimpleITK(filter.Execute(f1.Image, f2.Image))
+    static member eq (f1: Image<'S>, f2: Image<'S>) =
+        (Image<'S>.isEqual(f1, f2)).forAll()
 
-    static member op_Equality (f1: Image<'T>, i: float) =
+    static member isEqual (f1: Image<int8>, i: int8) =
         let filter = new itk.simple.EqualImageFilter()
-        Image<'T>.ofSimpleITK(filter.Execute(f1.Image, i))
-
-    static member op_Equality (i: float, f2: Image<'T>) =
+        Image<int8>.ofSimpleITK(filter.Execute(f1.Image, float i))
+    static member eq (f1: Image<int8>, i: int8) =
+        (Image<int8>.isEqual(f1, i)).forAll()
+    static member isEqual (i: int8, f1: Image<int8>) =
         let filter = new itk.simple.EqualImageFilter()
-        Image<'T>.ofSimpleITK(filter.Execute(i, f2.Image))
+        Image<int8>.ofSimpleITK(filter.Execute(float i,f1.Image))
+    static member eq (i: int8, f1: Image<int8>) =
+        (Image<int8>.isEqual(i, f1)).forAll()
 
-    static member op_Inequality (f1: Image<'T>, f2: Image<'T>) =
+    static member isEqual (f1: Image<uint8>, i: uint8) =
+        let filter = new itk.simple.EqualImageFilter()
+        Image<uint8>.ofSimpleITK(filter.Execute(f1.Image, float i))
+    static member eq (f1: Image<uint8>, i: uint8) =
+        (Image<uint8>.isEqual(f1, i)).forAll()
+    static member isEqual (i: uint8, f1: Image<uint8>) =
+        let filter = new itk.simple.EqualImageFilter()
+        Image<uint8>.ofSimpleITK(filter.Execute(float i, f1.Image))
+    static member eq (i: uint8, f1: Image<uint8>) =
+        (Image<uint8>.isEqual(i, f1)).forAll()
+
+    static member isEqual (f1: Image<int16>, i: int16) =
+        let filter = new itk.simple.EqualImageFilter()
+        Image<int16>.ofSimpleITK(filter.Execute(f1.Image, float i))
+    static member eq (f1: Image<int16>, i: int16) =
+        (Image<int16>.isEqual(f1, i)).forAll()
+    static member isEqual (i: int16, f1: Image<int16>) =
+        let filter = new itk.simple.EqualImageFilter()
+        Image<int16>.ofSimpleITK(filter.Execute(float i,f1.Image))
+    static member eq (i: int16, f1: Image<int16>) =
+        (Image<int16>.isEqual(i, f1)).forAll()
+
+    static member isEqual (f1: Image<uint16>, i: uint16) =
+        let filter = new itk.simple.EqualImageFilter()
+        Image<uint16>.ofSimpleITK(filter.Execute(f1.Image, float i))
+    static member eq (f1: Image<uint16>, i: uint16) =
+        (Image<uint16>.isEqual(f1, i)).forAll()
+    static member isEqual (i: uint16, f1: Image<uint16>) =
+        let filter = new itk.simple.EqualImageFilter()
+        Image<uint16>.ofSimpleITK(filter.Execute(float i, f1.Image))
+    static member eq (i: uint16, f1: Image<uint16>) =
+        (Image<uint16>.isEqual(i, f1)).forAll()
+
+    static member isEqual (f1: Image<int32>, i: int32) =
+        let filter = new itk.simple.EqualImageFilter()
+        Image<int32>.ofSimpleITK(filter.Execute(f1.Image, float i))
+    static member eq (f1: Image<int32>, i: int32) =
+        (Image<int32>.isEqual(f1, i)).forAll()
+    static member isEqual (i: int32, f1: Image<int32>) =
+        let filter = new itk.simple.EqualImageFilter()
+        Image<int32>.ofSimpleITK(filter.Execute(float i,f1.Image))
+    static member eq (i: int32, f1: Image<int32>) =
+        (Image<int32>.isEqual(i, f1)).forAll()
+
+    static member isEqual (f1: Image<uint32>, i: uint32) =
+        let filter = new itk.simple.EqualImageFilter()
+        Image<uint32>.ofSimpleITK(filter.Execute(f1.Image, float i))
+    static member eq (f1: Image<uint32>, i: uint32) =
+        (Image<uint32>.isEqual(f1, i)).forAll()
+    static member isEqual (i: uint32, f1: Image<uint32>) =
+        let filter = new itk.simple.EqualImageFilter()
+        Image<uint32>.ofSimpleITK(filter.Execute(float i, f1.Image))
+    static member eq (i: uint32, f1: Image<uint32>) =
+        (Image<uint32>.isEqual(i, f1)).forAll()
+
+    static member isEqual (f1: Image<int64>, i: int64) =
+        let filter = new itk.simple.EqualImageFilter()
+        Image<int64>.ofSimpleITK(filter.Execute(f1.Image, float i))
+    static member eq (f1: Image<int64>, i: int64) =
+        (Image<int64>.isEqual(f1, i)).forAll()
+    static member isEqual (i: int64, f1: Image<int64>) =
+        let filter = new itk.simple.EqualImageFilter()
+        Image<int64>.ofSimpleITK(filter.Execute(float i,f1.Image))
+    static member eq (i: int64, f1: Image<int64>) =
+        (Image<int64>.isEqual(i, f1)).forAll()
+
+    static member isEqual (f1: Image<uint64>, i: uint64) =
+        let filter = new itk.simple.EqualImageFilter()
+        Image<uint64>.ofSimpleITK(filter.Execute(f1.Image, float i))
+    static member eq (f1: Image<uint64>, i: uint64) =
+        (Image<uint64>.isEqual(f1, i)).forAll()
+    static member isEqual (i: uint64, f1: Image<uint64>) =
+        let filter = new itk.simple.EqualImageFilter()
+        Image<uint64>.ofSimpleITK(filter.Execute(float i, f1.Image))
+    static member eq (i: uint64, f1: Image<uint64>) =
+        (Image<uint64>.isEqual(i, f1)).forAll()
+
+    static member isEqual (f1: Image<float32>, i: float32) =
+        let filter = new itk.simple.EqualImageFilter()
+        Image<float32>.ofSimpleITK(filter.Execute(f1.Image, float i))
+    static member eq (f1: Image<float32>, i: float32) =
+        (Image<float32>.isEqual(f1, i)).forAll()
+    static member isEqual (i: float32, f1: Image<float32>) =
+        let filter = new itk.simple.EqualImageFilter()
+        Image<float32>.ofSimpleITK(filter.Execute(float i,f1.Image))
+    static member eq (i: float32, f1: Image<float32>) =
+        (Image<float32>.isEqual(i, f1)).forAll()
+
+    static member isEqual (f1: Image<float>, i: float) =
+        let filter = new itk.simple.EqualImageFilter()
+        Image<float>.ofSimpleITK(filter.Execute(f1.Image, float i))
+    static member eq (f1: Image<float>, i: float) =
+        (Image<float>.isEqual(f1, i)).forAll()
+    static member isEqual (i: float, f1: Image<float>) =
+        let filter = new itk.simple.EqualImageFilter()
+        Image<float>.ofSimpleITK(filter.Execute(float i, f1.Image))
+    static member eq (i: float, f1: Image<float>) =
+        (Image<float>.isEqual(i, f1)).forAll()
+
+    // not equal
+    static member isNotEqual (f1: Image<'S>, f2: Image<'S>) =
         let filter = new itk.simple.NotEqualImageFilter()
-        Image<'T>.ofSimpleITK(filter.Execute(f1.Image, f2.Image))
+        Image<'S>.ofSimpleITK(filter.Execute(f1.Image, f2.Image))
+    static member op_Inequality (f1: Image<'S>, f2: Image<'S>) =
+        (Image<'S>.isNotEqual(f1, f2)).forAll()
 
-    static member op_Inequality (f1: Image<'T>, i: float) =
+    static member isNotEqual (f1: Image<int8>, i: int8) =
         let filter = new itk.simple.NotEqualImageFilter()
-        Image<'T>.ofSimpleITK(filter.Execute(f1.Image, i))
-
-    static member op_Inequality (i: float, f2: Image<'T>) =
+        Image<int8>.ofSimpleITK(filter.Execute(f1.Image, float i))
+    static member op_Inequality (f1: Image<int8>, i: int8) =
+        (Image<int8>.isNotEqual(f1, i)).forAll()
+    static member isNotEqual (i: int8, f1: Image<int8>) =
         let filter = new itk.simple.NotEqualImageFilter()
-        Image<'T>.ofSimpleITK(filter.Execute(i, f2.Image))
+        Image<int8>.ofSimpleITK(filter.Execute(float i,f1.Image))
+    static member op_Inequality (i: int8, f1: Image<int8>) =
+        (Image<int8>.isNotEqual(i, f1)).forAll()
 
-    static member op_LessThan (f1: Image<'T>, f2: Image<'T>) =
+    static member isNotEqual (f1: Image<uint8>, i: uint8) =
+        let filter = new itk.simple.NotEqualImageFilter()
+        Image<uint8>.ofSimpleITK(filter.Execute(f1.Image, float i))
+    static member op_Inequality (f1: Image<uint8>, i: uint8) =
+        (Image<uint8>.isNotEqual(f1, i)).forAll()
+    static member isNotEqual (i: uint8, f1: Image<uint8>) =
+        let filter = new itk.simple.NotEqualImageFilter()
+        Image<uint8>.ofSimpleITK(filter.Execute(float i, f1.Image))
+    static member op_Inequality (i: uint8, f1: Image<uint8>) =
+        (Image<uint8>.isNotEqual(i, f1)).forAll()
+
+    static member isNotEqual (f1: Image<int16>, i: int16) =
+        let filter = new itk.simple.NotEqualImageFilter()
+        Image<int16>.ofSimpleITK(filter.Execute(f1.Image, float i))
+    static member op_Inequality (f1: Image<int16>, i: int16) =
+        (Image<int16>.isNotEqual(f1, i)).forAll()
+    static member isNotEqual (i: int16, f1: Image<int16>) =
+        let filter = new itk.simple.NotEqualImageFilter()
+        Image<int16>.ofSimpleITK(filter.Execute(float i,f1.Image))
+    static member op_Inequality (i: int16, f1: Image<int16>) =
+        (Image<int16>.isNotEqual(i, f1)).forAll()
+
+    static member isNotEqual (f1: Image<uint16>, i: uint16) =
+        let filter = new itk.simple.NotEqualImageFilter()
+        Image<uint16>.ofSimpleITK(filter.Execute(f1.Image, float i))
+    static member op_Inequality (f1: Image<uint16>, i: uint16) =
+        (Image<uint16>.isNotEqual(f1, i)).forAll()
+    static member isNotEqual (i: uint16, f1: Image<uint16>) =
+        let filter = new itk.simple.NotEqualImageFilter()
+        Image<uint16>.ofSimpleITK(filter.Execute(float i, f1.Image))
+    static member op_Inequality (i: uint16, f1: Image<uint16>) =
+        (Image<uint16>.isNotEqual(i, f1)).forAll()
+
+    static member isNotEqual (f1: Image<int32>, i: int32) =
+        let filter = new itk.simple.NotEqualImageFilter()
+        Image<int32>.ofSimpleITK(filter.Execute(f1.Image, float i))
+    static member op_Inequality (f1: Image<int32>, i: int32) =
+        (Image<int32>.isNotEqual(f1, i)).forAll()
+    static member isNotEqual (i: int32, f1: Image<int32>) =
+        let filter = new itk.simple.NotEqualImageFilter()
+        Image<int32>.ofSimpleITK(filter.Execute(float i,f1.Image))
+    static member op_Inequality (i: int32, f1: Image<int32>) =
+        (Image<int32>.isNotEqual(i, f1)).forAll()
+
+    static member isNotEqual (f1: Image<uint32>, i: uint32) =
+        let filter = new itk.simple.NotEqualImageFilter()
+        Image<uint32>.ofSimpleITK(filter.Execute(f1.Image, float i))
+    static member op_Inequality (f1: Image<uint32>, i: uint32) =
+        (Image<uint32>.isNotEqual(f1, i)).forAll()
+    static member isNotEqual (i: uint32, f1: Image<uint32>) =
+        let filter = new itk.simple.NotEqualImageFilter()
+        Image<uint32>.ofSimpleITK(filter.Execute(float i, f1.Image))
+    static member op_Inequality (i: uint32, f1: Image<uint32>) =
+        (Image<uint32>.isNotEqual(i, f1)).forAll()
+
+    static member isNotEqual (f1: Image<int64>, i: int64) =
+        let filter = new itk.simple.NotEqualImageFilter()
+        Image<int64>.ofSimpleITK(filter.Execute(f1.Image, float i))
+    static member op_Inequality (f1: Image<int64>, i: int64) =
+        (Image<int64>.isNotEqual(f1, i)).forAll()
+    static member isNotEqual (i: int64, f1: Image<int64>) =
+        let filter = new itk.simple.NotEqualImageFilter()
+        Image<int64>.ofSimpleITK(filter.Execute(float i,f1.Image))
+    static member op_Inequality (i: int64, f1: Image<int64>) =
+        (Image<int64>.isNotEqual(i, f1)).forAll()
+
+    static member isNotEqual (f1: Image<uint64>, i: uint64) =
+        let filter = new itk.simple.NotEqualImageFilter()
+        Image<uint64>.ofSimpleITK(filter.Execute(f1.Image, float i))
+    static member op_Inequality (f1: Image<uint64>, i: uint64) =
+        (Image<uint64>.isNotEqual(f1, i)).forAll()
+    static member isNotEqual (i: uint64, f1: Image<uint64>) =
+        let filter = new itk.simple.NotEqualImageFilter()
+        Image<uint64>.ofSimpleITK(filter.Execute(float i, f1.Image))
+    static member op_Inequality (i: uint64, f1: Image<uint64>) =
+        (Image<uint64>.isNotEqual(i, f1)).forAll()
+
+    static member isNotEqual (f1: Image<float32>, i: float32) =
+        let filter = new itk.simple.NotEqualImageFilter()
+        Image<float32>.ofSimpleITK(filter.Execute(f1.Image, float i))
+    static member op_Inequality (f1: Image<float32>, i: float32) =
+        (Image<float32>.isNotEqual(f1, i)).forAll()
+    static member isNotEqual (i: float32, f1: Image<float32>) =
+        let filter = new itk.simple.NotEqualImageFilter()
+        Image<float32>.ofSimpleITK(filter.Execute(float i,f1.Image))
+    static member op_Inequality (i: float32, f1: Image<float32>) =
+        (Image<float32>.isNotEqual(i, f1)).forAll()
+
+    static member isNotEqual (f1: Image<float>, i: float) =
+        let filter = new itk.simple.NotEqualImageFilter()
+        Image<float>.ofSimpleITK(filter.Execute(f1.Image, float i))
+    static member op_Inequality (f1: Image<float>, i: float) =
+        (Image<float>.isNotEqual(f1, i)).forAll()
+    static member isNotEqual (i: float, f1: Image<float>) =
+        let filter = new itk.simple.NotEqualImageFilter()
+        Image<float>.ofSimpleITK(filter.Execute(float i, f1.Image))
+    static member op_Inequality (i: float, f1: Image<float>) =
+        (Image<float>.isNotEqual(i, f1)).forAll()
+
+    // less than
+    static member lessThan (f1: Image<'S>, f2: Image<'S>) =
         let filter = new itk.simple.LessImageFilter()
-        Image<'T>.ofSimpleITK(filter.Execute(f1.Image, f2.Image))
+        Image<'S>.ofSimpleITK(filter.Execute(f1.Image, f2.Image))
+    static member op_LessThan (f1: Image<'S>, f2: Image<'S>) =
+        (Image<'S>.lessThan(f1, f2)).forAll()
 
-    static member op_LessThan (f1: Image<'T>, i: float) =
+    static member lessThan (f1: Image<int8>, i: int8) =
         let filter = new itk.simple.LessImageFilter()
-        Image<'T>.ofSimpleITK(filter.Execute(f1.Image, i))
-
-    static member op_LessThan (i: float, f2: Image<'T>) =
+        Image<int8>.ofSimpleITK(filter.Execute(f1.Image, float i))
+    static member op_LessThan (f1: Image<int8>, i: int8) =
+        (Image<int8>.lessThan(f1, i)).forAll()
+    static member lessThan (i: int8, f1: Image<int8>) =
         let filter = new itk.simple.LessImageFilter()
-        Image<'T>.ofSimpleITK(filter.Execute(i, f2.Image))
+        Image<int8>.ofSimpleITK(filter.Execute(float i,f1.Image))
+    static member op_LessThan (i: int8, f1: Image<int8>) =
+        (Image<int8>.lessThan(i, f1)).forAll()
 
-    static member op_LessThanOrEqual (f1: Image<'T>, f2: Image<'T>) =
+    static member lessThan (f1: Image<uint8>, i: uint8) =
+        let filter = new itk.simple.LessImageFilter()
+        Image<uint8>.ofSimpleITK(filter.Execute(f1.Image, float i))
+    static member op_LessThan (f1: Image<uint8>, i: uint8) =
+        (Image<uint8>.lessThan(f1, i)).forAll()
+    static member lessThan (i: uint8, f1: Image<uint8>) =
+        let filter = new itk.simple.LessImageFilter()
+        Image<uint8>.ofSimpleITK(filter.Execute(float i, f1.Image))
+    static member op_LessThan (i: uint8, f1: Image<uint8>) =
+        (Image<uint8>.lessThan(i, f1)).forAll()
+
+    static member lessThan (f1: Image<int16>, i: int16) =
+        let filter = new itk.simple.LessImageFilter()
+        Image<int16>.ofSimpleITK(filter.Execute(f1.Image, float i))
+    static member op_LessThan (f1: Image<int16>, i: int16) =
+        (Image<int16>.lessThan(f1, i)).forAll()
+    static member lessThan (i: int16, f1: Image<int16>) =
+        let filter = new itk.simple.LessImageFilter()
+        Image<int16>.ofSimpleITK(filter.Execute(float i,f1.Image))
+    static member op_LessThan (i: int16, f1: Image<int16>) =
+        (Image<int16>.lessThan(i, f1)).forAll()
+
+    static member lessThan (f1: Image<uint16>, i: uint16) =
+        let filter = new itk.simple.LessImageFilter()
+        Image<uint16>.ofSimpleITK(filter.Execute(f1.Image, float i))
+    static member op_LessThan (f1: Image<uint16>, i: uint16) =
+        (Image<uint16>.lessThan(f1, i)).forAll()
+    static member lessThan (i: uint16, f1: Image<uint16>) =
+        let filter = new itk.simple.LessImageFilter()
+        Image<uint16>.ofSimpleITK(filter.Execute(float i, f1.Image))
+    static member op_LessThan (i: uint16, f1: Image<uint16>) =
+        (Image<uint16>.lessThan(i, f1)).forAll()
+
+    static member lessThan (f1: Image<int32>, i: int32) =
+        let filter = new itk.simple.LessImageFilter()
+        Image<int32>.ofSimpleITK(filter.Execute(f1.Image, float i))
+    static member op_LessThan (f1: Image<int32>, i: int32) =
+        (Image<int32>.lessThan(f1, i)).forAll()
+    static member lessThan (i: int32, f1: Image<int32>) =
+        let filter = new itk.simple.LessImageFilter()
+        Image<int32>.ofSimpleITK(filter.Execute(float i,f1.Image))
+    static member op_LessThan (i: int32, f1: Image<int32>) =
+        (Image<int32>.lessThan(i, f1)).forAll()
+
+    static member lessThan (f1: Image<uint32>, i: uint32) =
+        let filter = new itk.simple.LessImageFilter()
+        Image<uint32>.ofSimpleITK(filter.Execute(f1.Image, float i))
+    static member op_LessThan (f1: Image<uint32>, i: uint32) =
+        (Image<uint32>.lessThan(f1, i)).forAll()
+    static member lessThan (i: uint32, f1: Image<uint32>) =
+        let filter = new itk.simple.LessImageFilter()
+        Image<uint32>.ofSimpleITK(filter.Execute(float i, f1.Image))
+    static member op_LessThan (i: uint32, f1: Image<uint32>) =
+        (Image<uint32>.lessThan(i, f1)).forAll()
+
+    static member lessThan (f1: Image<int64>, i: int64) =
+        let filter = new itk.simple.LessImageFilter()
+        Image<int64>.ofSimpleITK(filter.Execute(f1.Image, float i))
+    static member op_LessThan (f1: Image<int64>, i: int64) =
+        (Image<int64>.lessThan(f1, i)).forAll()
+    static member lessThan (i: int64, f1: Image<int64>) =
+        let filter = new itk.simple.LessImageFilter()
+        Image<int64>.ofSimpleITK(filter.Execute(float i,f1.Image))
+    static member op_LessThan (i: int64, f1: Image<int64>) =
+        (Image<int64>.lessThan(i, f1)).forAll()
+
+    static member lessThan (f1: Image<uint64>, i: uint64) =
+        let filter = new itk.simple.LessImageFilter()
+        Image<uint64>.ofSimpleITK(filter.Execute(f1.Image, float i))
+    static member op_LessThan (f1: Image<uint64>, i: uint64) =
+        (Image<uint64>.lessThan(f1, i)).forAll()
+    static member lessThan (i: uint64, f1: Image<uint64>) =
+        let filter = new itk.simple.LessImageFilter()
+        Image<uint64>.ofSimpleITK(filter.Execute(float i, f1.Image))
+    static member op_LessThan (i: uint64, f1: Image<uint64>) =
+        (Image<uint64>.lessThan(i, f1)).forAll()
+
+    static member lessThan (f1: Image<float32>, i: float32) =
+        let filter = new itk.simple.LessImageFilter()
+        Image<float32>.ofSimpleITK(filter.Execute(f1.Image, float i))
+    static member op_LessThan (f1: Image<float32>, i: float32) =
+        (Image<float32>.lessThan(f1, i)).forAll()
+    static member lessThan (i: float32, f1: Image<float32>) =
+        let filter = new itk.simple.LessImageFilter()
+        Image<float32>.ofSimpleITK(filter.Execute(float i,f1.Image))
+    static member op_LessThan (i: float32, f1: Image<float32>) =
+        (Image<float32>.lessThan(i, f1)).forAll()
+
+    static member lessThan (f1: Image<float>, i: float) =
+        let filter = new itk.simple.LessImageFilter()
+        Image<float>.ofSimpleITK(filter.Execute(f1.Image, float i))
+    static member op_LessThan (f1: Image<float>, i: float) =
+        (Image<float>.lessThan(f1, i)).forAll()
+    static member lessThan (i: float, f1: Image<float>) =
+        let filter = new itk.simple.LessImageFilter()
+        Image<float>.ofSimpleITK(filter.Execute(float i, f1.Image))
+    static member op_LessThan (i: float, f1: Image<float>) =
+        (Image<float>.lessThan(i, f1)).forAll()
+
+    // less than or equal
+    static member isLessEqual (f1: Image<'S>, f2: Image<'S>) =
         let filter = new itk.simple.LessEqualImageFilter()
-        Image<'T>.ofSimpleITK(filter.Execute(f1.Image, f2.Image))
+        Image<'S>.ofSimpleITK(filter.Execute(f1.Image, f2.Image))
+    static member op_LessThanOrEqual (f1: Image<'S>, f2: Image<'S>) =
+        (Image<'S>.isLessEqual(f1, f2)).forAll()
 
-    static member op_LessThanOrEqual (f1: Image<'T>, i: float) =
+    static member isLessEqual (f1: Image<int8>, i: int8) =
         let filter = new itk.simple.LessEqualImageFilter()
-        Image<'T>.ofSimpleITK(filter.Execute(f1.Image, i))
-
-    static member op_LessThanOrEqual (i: float, f2: Image<'T>) =
+        Image<int8>.ofSimpleITK(filter.Execute(f1.Image, float i))
+    static member op_LessThanOrEqual (f1: Image<int8>, i: int8) =
+        (Image<int8>.isLessEqual(f1, i)).forAll()
+    static member isLessEqual (i: int8, f1: Image<int8>) =
         let filter = new itk.simple.LessEqualImageFilter()
-        Image<'T>.ofSimpleITK(filter.Execute(i, f2.Image))
+        Image<int8>.ofSimpleITK(filter.Execute(float i,f1.Image))
+    static member op_LessThanOrEqual (i: int8, f1: Image<int8>) =
+        (Image<int8>.isLessEqual(i, f1)).forAll()
 
-    static member op_GreaterThan (f1: Image<'T>, f2: Image<'T>) =
+    static member isLessEqual (f1: Image<uint8>, i: uint8) =
+        let filter = new itk.simple.LessEqualImageFilter()
+        Image<uint8>.ofSimpleITK(filter.Execute(f1.Image, float i))
+    static member op_LessThanOrEqual (f1: Image<uint8>, i: uint8) =
+        (Image<uint8>.isLessEqual(f1, i)).forAll()
+    static member isLessEqual (i: uint8, f1: Image<uint8>) =
+        let filter = new itk.simple.LessEqualImageFilter()
+        Image<uint8>.ofSimpleITK(filter.Execute(float i, f1.Image))
+    static member op_LessThanOrEqual (i: uint8, f1: Image<uint8>) =
+        (Image<uint8>.isLessEqual(i, f1)).forAll()
+
+    static member isLessEqual (f1: Image<int16>, i: int16) =
+        let filter = new itk.simple.LessEqualImageFilter()
+        Image<int16>.ofSimpleITK(filter.Execute(f1.Image, float i))
+    static member op_LessThanOrEqual (f1: Image<int16>, i: int16) =
+        (Image<int16>.isLessEqual(f1, i)).forAll()
+    static member isLessEqual (i: int16, f1: Image<int16>) =
+        let filter = new itk.simple.LessEqualImageFilter()
+        Image<int16>.ofSimpleITK(filter.Execute(float i,f1.Image))
+    static member op_LessThanOrEqual (i: int16, f1: Image<int16>) =
+        (Image<int16>.isLessEqual(i, f1)).forAll()
+
+    static member isLessEqual (f1: Image<uint16>, i: uint16) =
+        let filter = new itk.simple.LessEqualImageFilter()
+        Image<uint16>.ofSimpleITK(filter.Execute(f1.Image, float i))
+    static member op_LessThanOrEqual (f1: Image<uint16>, i: uint16) =
+        (Image<uint16>.isLessEqual(f1, i)).forAll()
+    static member isLessEqual (i: uint16, f1: Image<uint16>) =
+        let filter = new itk.simple.LessEqualImageFilter()
+        Image<uint16>.ofSimpleITK(filter.Execute(float i, f1.Image))
+    static member op_LessThanOrEqual (i: uint16, f1: Image<uint16>) =
+        (Image<uint16>.isLessEqual(i, f1)).forAll()
+
+    static member isLessEqual (f1: Image<int32>, i: int32) =
+        let filter = new itk.simple.LessEqualImageFilter()
+        Image<int32>.ofSimpleITK(filter.Execute(f1.Image, float i))
+    static member op_LessThanOrEqual (f1: Image<int32>, i: int32) =
+        (Image<int32>.isLessEqual(f1, i)).forAll()
+    static member isLessEqual (i: int32, f1: Image<int32>) =
+        let filter = new itk.simple.LessEqualImageFilter()
+        Image<int32>.ofSimpleITK(filter.Execute(float i,f1.Image))
+    static member op_LessThanOrEqual (i: int32, f1: Image<int32>) =
+        (Image<int32>.isLessEqual(i, f1)).forAll()
+
+    static member isLessEqual (f1: Image<uint32>, i: uint32) =
+        let filter = new itk.simple.LessEqualImageFilter()
+        Image<uint32>.ofSimpleITK(filter.Execute(f1.Image, float i))
+    static member op_LessThanOrEqual (f1: Image<uint32>, i: uint32) =
+        (Image<uint32>.isLessEqual(f1, i)).forAll()
+    static member isLessEqual (i: uint32, f1: Image<uint32>) =
+        let filter = new itk.simple.LessEqualImageFilter()
+        Image<uint32>.ofSimpleITK(filter.Execute(float i, f1.Image))
+    static member op_LessThanOrEqual (i: uint32, f1: Image<uint32>) =
+        (Image<uint32>.isLessEqual(i, f1)).forAll()
+
+    static member isLessEqual (f1: Image<int64>, i: int64) =
+        let filter = new itk.simple.LessEqualImageFilter()
+        Image<int64>.ofSimpleITK(filter.Execute(f1.Image, float i))
+    static member op_LessThanOrEqual (f1: Image<int64>, i: int64) =
+        (Image<int64>.isLessEqual(f1, i)).forAll()
+    static member isLessEqual (i: int64, f1: Image<int64>) =
+        let filter = new itk.simple.LessEqualImageFilter()
+        Image<int64>.ofSimpleITK(filter.Execute(float i,f1.Image))
+    static member op_LessThanOrEqual (i: int64, f1: Image<int64>) =
+        (Image<int64>.isLessEqual(i, f1)).forAll()
+
+    static member isLessEqual (f1: Image<uint64>, i: uint64) =
+        let filter = new itk.simple.LessEqualImageFilter()
+        Image<uint64>.ofSimpleITK(filter.Execute(f1.Image, float i))
+    static member op_LessThanOrEqual (f1: Image<uint64>, i: uint64) =
+        (Image<uint64>.isLessEqual(f1, i)).forAll()
+    static member isLessEqual (i: uint64, f1: Image<uint64>) =
+        let filter = new itk.simple.LessEqualImageFilter()
+        Image<uint64>.ofSimpleITK(filter.Execute(float i, f1.Image))
+    static member op_LessThanOrEqual (i: uint64, f1: Image<uint64>) =
+        (Image<uint64>.isLessEqual(i, f1)).forAll()
+
+    static member isLessEqual (f1: Image<float32>, i: float32) =
+        let filter = new itk.simple.LessEqualImageFilter()
+        Image<float32>.ofSimpleITK(filter.Execute(f1.Image, float i))
+    static member op_LessThanOrEqual (f1: Image<float32>, i: float32) =
+        (Image<float32>.isLessEqual(f1, i)).forAll()
+    static member isLessEqual (i: float32, f1: Image<float32>) =
+        let filter = new itk.simple.LessEqualImageFilter()
+        Image<float32>.ofSimpleITK(filter.Execute(float i,f1.Image))
+    static member op_LessThanOrEqual (i: float32, f1: Image<float32>) =
+        (Image<float32>.isLessEqual(i, f1)).forAll()
+
+    static member isLessEqual (f1: Image<float>, i: float) =
+        let filter = new itk.simple.LessEqualImageFilter()
+        Image<float>.ofSimpleITK(filter.Execute(f1.Image, float i))
+    static member op_LessThanOrEqual (f1: Image<float>, i: float) =
+        (Image<float>.isLessEqual(f1, i)).forAll()
+    static member isLessEqual (i: float, f1: Image<float>) =
+        let filter = new itk.simple.LessEqualImageFilter()
+        Image<float>.ofSimpleITK(filter.Execute(float i, f1.Image))
+    static member op_LessThanOrEqual (i: float, f1: Image<float>) =
+        (Image<float>.isLessEqual(i, f1)).forAll()
+
+    // greater than
+    static member isGreater (f1: Image<'S>, f2: Image<'S>) =
         let filter = new itk.simple.GreaterImageFilter()
-        Image<'T>.ofSimpleITK(filter.Execute(f1.Image, f2.Image))
+        Image<'S>.ofSimpleITK(filter.Execute(f1.Image, f2.Image))
+    static member op_GreaterThan (f1: Image<'S>, f2: Image<'S>) =
+        (Image<'S>.isGreater(f1, f2)).forAll()
 
-    static member op_GreaterThan (f1: Image<'T>, i: float) =
+    static member isGreater (f1: Image<int8>, i: int8) =
         let filter = new itk.simple.GreaterImageFilter()
-        Image<'T>.ofSimpleITK(filter.Execute(f1.Image, i))
-
-    static member op_GreaterThan (i: float, f2: Image<'T>) =
+        Image<int8>.ofSimpleITK(filter.Execute(f1.Image, float i))
+    static member op_GreaterThan (f1: Image<int8>, i: int8) =
+        (Image<int8>.isGreater(f1, i)).forAll()
+    static member isGreater (i: int8, f1: Image<int8>) =
         let filter = new itk.simple.GreaterImageFilter()
-        Image<'T>.ofSimpleITK(filter.Execute(i, f2.Image))
+        Image<int8>.ofSimpleITK(filter.Execute(float i,f1.Image))
+    static member op_GreaterThan (i: int8, f1: Image<int8>) =
+        (Image<int8>.isGreater(i, f1)).forAll()
 
-    static member op_GreaterThanOrEqual (f1: Image<'T>, f2: Image<'T>) =
-        let filter = new itk.simple.GreaterEqualImageFilter()
-        Image<'T>.ofSimpleITK(filter.Execute(f1.Image, f2.Image))
+    static member isGreater (f1: Image<uint8>, i: uint8) =
+        let filter = new itk.simple.GreaterImageFilter()
+        Image<uint8>.ofSimpleITK(filter.Execute(f1.Image, float i))
+    static member op_GreaterThan (f1: Image<uint8>, i: uint8) =
+        (Image<uint8>.isGreater(f1, i)).forAll()
+    static member isGreater (i: uint8, f1: Image<uint8>) =
+        let filter = new itk.simple.GreaterImageFilter()
+        Image<uint8>.ofSimpleITK(filter.Execute(float i, f1.Image))
+    static member op_GreaterThan (i: uint8, f1: Image<uint8>) =
+        (Image<uint8>.isGreater(i, f1)).forAll()
 
-    static member op_GreaterThanOrEqual (f1: Image<'T>, i: float) =
-        let filter = new itk.simple.GreaterEqualImageFilter()
-        Image<'T>.ofSimpleITK(filter.Execute(f1.Image, i))
+    static member isGreater (f1: Image<int16>, i: int16) =
+        let filter = new itk.simple.GreaterImageFilter()
+        Image<int16>.ofSimpleITK(filter.Execute(f1.Image, float i))
+    static member op_GreaterThan (f1: Image<int16>, i: int16) =
+        (Image<int16>.isGreater(f1, i)).forAll()
+    static member isGreater (i: int16, f1: Image<int16>) =
+        let filter = new itk.simple.GreaterImageFilter()
+        Image<int16>.ofSimpleITK(filter.Execute(float i,f1.Image))
+    static member op_GreaterThan (i: int16, f1: Image<int16>) =
+        (Image<int16>.isGreater(i, f1)).forAll()
 
-    static member op_GreaterThanOrEqual (i: float, f2: Image<'T>) =
+    static member isGreater (f1: Image<uint16>, i: uint16) =
+        let filter = new itk.simple.GreaterImageFilter()
+        Image<uint16>.ofSimpleITK(filter.Execute(f1.Image, float i))
+    static member op_GreaterThan (f1: Image<uint16>, i: uint16) =
+        (Image<uint16>.isGreater(f1, i)).forAll()
+    static member isGreater (i: uint16, f1: Image<uint16>) =
+        let filter = new itk.simple.GreaterImageFilter()
+        Image<uint16>.ofSimpleITK(filter.Execute(float i, f1.Image))
+    static member op_GreaterThan (i: uint16, f1: Image<uint16>) =
+        (Image<uint16>.isGreater(i, f1)).forAll()
+
+    static member isGreater (f1: Image<int32>, i: int32) =
+        let filter = new itk.simple.GreaterImageFilter()
+        Image<int32>.ofSimpleITK(filter.Execute(f1.Image, float i))
+    static member op_GreaterThan (f1: Image<int32>, i: int32) =
+        (Image<int32>.isGreater(f1, i)).forAll()
+    static member isGreater (i: int32, f1: Image<int32>) =
+        let filter = new itk.simple.GreaterImageFilter()
+        Image<int32>.ofSimpleITK(filter.Execute(float i,f1.Image))
+    static member op_GreaterThan (i: int32, f1: Image<int32>) =
+        (Image<int32>.isGreater(i, f1)).forAll()
+
+    static member isGreater (f1: Image<uint32>, i: uint32) =
+        let filter = new itk.simple.GreaterImageFilter()
+        Image<uint32>.ofSimpleITK(filter.Execute(f1.Image, float i))
+    static member op_GreaterThan (f1: Image<uint32>, i: uint32) =
+        (Image<uint32>.isGreater(f1, i)).forAll()
+    static member isGreater (i: uint32, f1: Image<uint32>) =
+        let filter = new itk.simple.GreaterImageFilter()
+        Image<uint32>.ofSimpleITK(filter.Execute(float i, f1.Image))
+    static member op_GreaterThan (i: uint32, f1: Image<uint32>) =
+        (Image<uint32>.isGreater(i, f1)).forAll()
+
+    static member isGreater (f1: Image<int64>, i: int64) =
+        let filter = new itk.simple.GreaterImageFilter()
+        Image<int64>.ofSimpleITK(filter.Execute(f1.Image, float i))
+    static member op_GreaterThan (f1: Image<int64>, i: int64) =
+        (Image<int64>.isGreater(f1, i)).forAll()
+    static member isGreater (i: int64, f1: Image<int64>) =
+        let filter = new itk.simple.GreaterImageFilter()
+        Image<int64>.ofSimpleITK(filter.Execute(float i,f1.Image))
+    static member op_GreaterThan (i: int64, f1: Image<int64>) =
+        (Image<int64>.isGreater(i, f1)).forAll()
+
+    static member isGreater (f1: Image<uint64>, i: uint64) =
+        let filter = new itk.simple.GreaterImageFilter()
+        Image<uint64>.ofSimpleITK(filter.Execute(f1.Image, float i))
+    static member op_GreaterThan (f1: Image<uint64>, i: uint64) =
+        (Image<uint64>.isGreater(f1, i)).forAll()
+    static member isGreater (i: uint64, f1: Image<uint64>) =
+        let filter = new itk.simple.GreaterImageFilter()
+        Image<uint64>.ofSimpleITK(filter.Execute(float i, f1.Image))
+    static member op_GreaterThan (i: uint64, f1: Image<uint64>) =
+        (Image<uint64>.isGreater(i, f1)).forAll()
+
+    static member isGreater (f1: Image<float32>, i: float32) =
+        let filter = new itk.simple.GreaterImageFilter()
+        Image<float32>.ofSimpleITK(filter.Execute(f1.Image, float i))
+    static member op_GreaterThan (f1: Image<float32>, i: float32) =
+        (Image<float32>.isGreater(f1, i)).forAll()
+    static member isGreater (i: float32, f1: Image<float32>) =
+        let filter = new itk.simple.GreaterImageFilter()
+        Image<float32>.ofSimpleITK(filter.Execute(float i,f1.Image))
+    static member op_GreaterThan (i: float32, f1: Image<float32>) =
+        (Image<float32>.isGreater(i, f1)).forAll()
+
+    static member isGreater (f1: Image<float>, i: float) =
+        let filter = new itk.simple.GreaterImageFilter()
+        Image<float>.ofSimpleITK(filter.Execute(f1.Image, float i))
+    static member op_GreaterThan (f1: Image<float>, i: float) =
+        (Image<float>.isGreater(f1, i)).forAll()
+    static member isGreater (i: float, f1: Image<float>) =
+        let filter = new itk.simple.GreaterImageFilter()
+        Image<float>.ofSimpleITK(filter.Execute(float i, f1.Image))
+    static member op_GreaterThan (i: float, f1: Image<float>) =
+        (Image<float>.isGreater(i, f1)).forAll()
+
+    // greater than or equal
+    static member isGreaterEqual (f1: Image<'S>, f2: Image<'S>) =
         let filter = new itk.simple.GreaterEqualImageFilter()
-        Image<'T>.ofSimpleITK(filter.Execute(i, f2.Image))
+        Image<'S>.ofSimpleITK(filter.Execute(f1.Image, f2.Image))
+    static member op_GreaterThanOrEqual (f1: Image<'S>, f2: Image<'S>) =
+        (Image<'S>.isGreaterEqual(f1, f2)).forAll()
+
+    static member isGreaterEqual (f1: Image<int8>, i: int8) =
+        let filter = new itk.simple.GreaterEqualImageFilter()
+        Image<int8>.ofSimpleITK(filter.Execute(f1.Image, float i))
+    static member op_GreaterThanOrEqual (f1: Image<int8>, i: int8) =
+        (Image<int8>.isGreaterEqual(f1, i)).forAll()
+    static member isGreaterEqual (i: int8, f1: Image<int8>) =
+        let filter = new itk.simple.GreaterEqualImageFilter()
+        Image<int8>.ofSimpleITK(filter.Execute(float i,f1.Image))
+    static member op_GreaterThanOrEqual (i: int8, f1: Image<int8>) =
+        (Image<int8>.isGreaterEqual(i, f1)).forAll()
+
+    static member isGreaterEqual (f1: Image<uint8>, i: uint8) =
+        let filter = new itk.simple.GreaterEqualImageFilter()
+        Image<uint8>.ofSimpleITK(filter.Execute(f1.Image, float i))
+    static member op_GreaterThanOrEqual (f1: Image<uint8>, i: uint8) =
+        (Image<uint8>.isGreaterEqual(f1, i)).forAll()
+    static member isGreaterEqual (i: uint8, f1: Image<uint8>) =
+        let filter = new itk.simple.GreaterEqualImageFilter()
+        Image<uint8>.ofSimpleITK(filter.Execute(float i, f1.Image))
+    static member op_GreaterThanOrEqual (i: uint8, f1: Image<uint8>) =
+        (Image<uint8>.isGreaterEqual(i, f1)).forAll()
+
+    static member isGreaterEqual (f1: Image<int16>, i: int16) =
+        let filter = new itk.simple.GreaterEqualImageFilter()
+        Image<int16>.ofSimpleITK(filter.Execute(f1.Image, float i))
+    static member op_GreaterThanOrEqual (f1: Image<int16>, i: int16) =
+        (Image<int16>.isGreaterEqual(f1, i)).forAll()
+    static member isGreaterEqual (i: int16, f1: Image<int16>) =
+        let filter = new itk.simple.GreaterEqualImageFilter()
+        Image<int16>.ofSimpleITK(filter.Execute(float i,f1.Image))
+    static member op_GreaterThanOrEqual (i: int16, f1: Image<int16>) =
+        (Image<int16>.isGreaterEqual(i, f1)).forAll()
+
+    static member isGreaterEqual (f1: Image<uint16>, i: uint16) =
+        let filter = new itk.simple.GreaterEqualImageFilter()
+        Image<uint16>.ofSimpleITK(filter.Execute(f1.Image, float i))
+    static member op_GreaterThanOrEqual (f1: Image<uint16>, i: uint16) =
+        (Image<uint16>.isGreaterEqual(f1, i)).forAll()
+    static member isGreaterEqual (i: uint16, f1: Image<uint16>) =
+        let filter = new itk.simple.GreaterEqualImageFilter()
+        Image<uint16>.ofSimpleITK(filter.Execute(float i, f1.Image))
+    static member op_GreaterThanOrEqual (i: uint16, f1: Image<uint16>) =
+        (Image<uint16>.isGreaterEqual(i, f1)).forAll()
+
+    static member isGreaterEqual (f1: Image<int32>, i: int32) =
+        let filter = new itk.simple.GreaterEqualImageFilter()
+        Image<int32>.ofSimpleITK(filter.Execute(f1.Image, float i))
+    static member op_GreaterThanOrEqual (f1: Image<int32>, i: int32) =
+        (Image<int32>.isGreaterEqual(f1, i)).forAll()
+    static member isGreaterEqual (i: int32, f1: Image<int32>) =
+        let filter = new itk.simple.GreaterEqualImageFilter()
+        Image<int32>.ofSimpleITK(filter.Execute(float i,f1.Image))
+    static member op_GreaterThanOrEqual (i: int32, f1: Image<int32>) =
+        (Image<int32>.isGreaterEqual(i, f1)).forAll()
+
+    static member isGreaterEqual (f1: Image<uint32>, i: uint32) =
+        let filter = new itk.simple.GreaterEqualImageFilter()
+        Image<uint32>.ofSimpleITK(filter.Execute(f1.Image, float i))
+    static member op_GreaterThanOrEqual (f1: Image<uint32>, i: uint32) =
+        (Image<uint32>.isGreaterEqual(f1, i)).forAll()
+    static member isGreaterEqual (i: uint32, f1: Image<uint32>) =
+        let filter = new itk.simple.GreaterEqualImageFilter()
+        Image<uint32>.ofSimpleITK(filter.Execute(float i, f1.Image))
+    static member op_GreaterThanOrEqual (i: uint32, f1: Image<uint32>) =
+        (Image<uint32>.isGreaterEqual(i, f1)).forAll()
+
+    static member isGreaterEqual (f1: Image<int64>, i: int64) =
+        let filter = new itk.simple.GreaterEqualImageFilter()
+        Image<int64>.ofSimpleITK(filter.Execute(f1.Image, float i))
+    static member op_GreaterThanOrEqual (f1: Image<int64>, i: int64) =
+        (Image<int64>.isGreaterEqual(f1, i)).forAll()
+    static member isGreaterEqual (i: int64, f1: Image<int64>) =
+        let filter = new itk.simple.GreaterEqualImageFilter()
+        Image<int64>.ofSimpleITK(filter.Execute(float i,f1.Image))
+    static member op_GreaterThanOrEqual (i: int64, f1: Image<int64>) =
+        (Image<int64>.isGreaterEqual(i, f1)).forAll()
+
+    static member isGreaterEqual (f1: Image<uint64>, i: uint64) =
+        let filter = new itk.simple.GreaterEqualImageFilter()
+        Image<uint64>.ofSimpleITK(filter.Execute(f1.Image, float i))
+    static member op_GreaterThanOrEqual (f1: Image<uint64>, i: uint64) =
+        (Image<uint64>.isGreaterEqual(f1, i)).forAll()
+    static member isGreaterEqual (i: uint64, f1: Image<uint64>) =
+        let filter = new itk.simple.GreaterEqualImageFilter()
+        Image<uint64>.ofSimpleITK(filter.Execute(float i, f1.Image))
+    static member op_GreaterThanOrEqual (i: uint64, f1: Image<uint64>) =
+        (Image<uint64>.isGreaterEqual(i, f1)).forAll()
+
+    static member isGreaterEqual (f1: Image<float32>, i: float32) =
+        let filter = new itk.simple.GreaterEqualImageFilter()
+        Image<float32>.ofSimpleITK(filter.Execute(f1.Image, float i))
+    static member op_GreaterThanOrEqual (f1: Image<float32>, i: float32) =
+        (Image<float32>.isGreaterEqual(f1, i)).forAll()
+    static member isGreaterEqual (i: float32, f1: Image<float32>) =
+        let filter = new itk.simple.GreaterEqualImageFilter()
+        Image<float32>.ofSimpleITK(filter.Execute(float i,f1.Image))
+    static member op_GreaterThanOrEqual (i: float32, f1: Image<float32>) =
+        (Image<float32>.isGreaterEqual(i, f1)).forAll()
+
+    static member isGreaterEqual (f1: Image<float>, i: float) =
+        let filter = new itk.simple.GreaterEqualImageFilter()
+        Image<float>.ofSimpleITK(filter.Execute(f1.Image, float i))
+    static member op_GreaterThanOrEqual (f1: Image<float>, i: float) =
+        (Image<float>.isGreaterEqual(f1, i)).forAll()
+    static member isGreaterEqual (i: float, f1: Image<float>) =
+        let filter = new itk.simple.GreaterEqualImageFilter()
+        Image<float>.ofSimpleITK(filter.Execute(float i, f1.Image))
+    static member op_GreaterThanOrEqual (i: float, f1: Image<float>) =
+        (Image<float>.isGreaterEqual(i, f1)).forAll()
 
     // Modulus ( % )
-    static member op_Modulus (f1: Image<'T>, f2: Image<'T>) =
+    static member op_Modulus (f1: Image<'S>, f2: Image<'S>) =
         let filter = new itk.simple.ModulusImageFilter()
-        Image<'T>.ofSimpleITK(filter.Execute(f1.Image, f2.Image))
+        Image<'S>.ofSimpleITK(filter.Execute(f1.Image, f2.Image))
 
-    static member op_Modulus (f1: Image<'T>, i: uint) =
+    static member op_Modulus (f1: Image<'S>, i: uint8) =
         let filter = new itk.simple.ModulusImageFilter()
-        Image<'T>.ofSimpleITK(filter.Execute(f1.Image, i))
+        Image<'S>.ofSimpleITK(filter.Execute(f1.Image, uint i))
+    static member op_Modulus (f1: Image<'S>, i: uint16) =
+        let filter = new itk.simple.ModulusImageFilter()
+        Image<'S>.ofSimpleITK(filter.Execute(f1.Image, uint i))
+    static member op_Modulus (f1: Image<'S>, i: uint32) =
+        let filter = new itk.simple.ModulusImageFilter()
+        Image<'S>.ofSimpleITK(filter.Execute(f1.Image, uint i))
 
-    static member op_Modulus (i: uint, f2: Image<'T>) =
+    static member op_Modulus (i: uint8, f2: Image<'S>) =
         let filter = new itk.simple.ModulusImageFilter()
-        Image<'T>.ofSimpleITK(filter.Execute(i, f2.Image))
+        Image<'S>.ofSimpleITK(filter.Execute(uint i, f2.Image))
+    static member op_Modulus (i: uint16, f2: Image<'S>) =
+        let filter = new itk.simple.ModulusImageFilter()
+        Image<'S>.ofSimpleITK(filter.Execute(uint i, f2.Image))
+    static member op_Modulus (i: uint32, f2: Image<'S>) =
+        let filter = new itk.simple.ModulusImageFilter()
+        Image<'S>.ofSimpleITK(filter.Execute(uint i, f2.Image))
 
     // Power (no direct operator for ** in .NET) - provide a named method instead
-    static member Pow (f1: Image<'T>, f2: Image<'T>) =
+    static member Pow (f1: Image<'S>, f2: Image<'S>) =
         let filter = new itk.simple.PowImageFilter()
-        Image<'T>.ofSimpleITK(filter.Execute(f1.Image, f2.Image))
+        Image<'S>.ofSimpleITK(filter.Execute(f1.Image, f2.Image))
 
-    static member Pow (f1: Image<'T>, i: float) =
+    static member Pow (f1: Image<'S>, i: float) =
         let filter = new itk.simple.PowImageFilter()
-        Image<float>.ofSimpleITK(filter.Execute(f1.Image, i))
+        Image<'S>.ofSimpleITK(filter.Execute(f1.Image, i))
+    static member Pow (f1: Image<'S>, i: uint8) = Image<'S>.Pow(f1, float i)
+    static member Pow (f1: Image<'S>, i: int8) = Image<'S>.Pow(f1, float i)
+    static member Pow (f1: Image<'S>, i: uint16) = Image<'S>.Pow(f1, float i)
+    static member Pow (f1: Image<'S>, i: int16) = Image<'S>.Pow(f1, float i)
+    static member Pow (f1: Image<'S>, i: uint32) = Image<'S>.Pow(f1, float i)
+    static member Pow (f1: Image<'S>, i: int32) = Image<'S>.Pow(f1, float i)
+    static member Pow (f1: Image<'S>, i: uint64) = Image<'S>.Pow(f1, float i)
+    static member Pow (f1: Image<'S>, i: int64) = Image<'S>.Pow(f1, float i)
+    static member Pow (f1: Image<'S>, i: float32) = Image<'S>.Pow(f1, float i)
 
-    static member Pow (f1: Image<'T>, i: int) =
+    static member Pow (i: float, f2: Image<'S>) =
         let filter = new itk.simple.PowImageFilter()
-        Image<'T>.ofSimpleITK(filter.Execute(f1.Image, i))
-
-    static member Pow (i: float, f2: Image<'T>) =
-        let filter = new itk.simple.PowImageFilter()
-        Image<float>.ofSimpleITK(filter.Execute(i, f2.Image))
-
-    static member Pow (i: int, f2: Image<'T>) =
-        let filter = new itk.simple.PowImageFilter()
-        Image<'T>.ofSimpleITK(filter.Execute(i, f2.Image))
+        Image<'S>.ofSimpleITK(filter.Execute(i, f2.Image))
+    static member Pow (i: int8, f2: Image<'S>) = Image<'S>.Pow(float i, f2)
+    static member Pow (i: uint8, f2: Image<'S>) = Image<'S>.Pow(float i, f2)
+    static member Pow (i: int16, f2: Image<'S>) = Image<'S>.Pow(float i, f2)
+    static member Pow (i: uint16, f2: Image<'S>) = Image<'S>.Pow(float i, f2)
+    static member Pow (i: int32, f2: Image<'S>) = Image<'S>.Pow(float i, f2)
+    static member Pow (i: uint32, f2: Image<'S>) = Image<'S>.Pow(float i, f2)
+    static member Pow (i: int64, f2: Image<'S>) = Image<'S>.Pow(float i, f2)
+    static member Pow (i: uint64, f2: Image<'S>) = Image<'S>.Pow(float i, f2)
+    static member Pow (i: float32, f2: Image<'S>) = Image<'S>.Pow(float i, f2)
 
     // Bitwise AND ( &&& )
-    static member op_BitwiseAnd (f1: Image<'T>, f2: Image<'T>) =
+    static member op_BitwiseAnd (f1: Image<'S>, f2: Image<'S>) =
         let filter = new itk.simple.AndImageFilter()
-        Image<'T>.ofSimpleITK(filter.Execute(f1.Image, f2.Image))
+        Image<'S>.ofSimpleITK(filter.Execute(f1.Image, f2.Image))
 
-    static member op_BitwiseAnd (f1: Image<int>, i: int) =
+    static member op_BitwiseAnd (f1: Image<int32>, i: int) =
         let filter = new itk.simple.AndImageFilter()
-        Image<int>.ofSimpleITK(filter.Execute(f1.Image, i))
+        Image<int32>.ofSimpleITK(filter.Execute(f1.Image, i))
 
     static member op_BitwiseAnd (i: int, f2: Image<int>) =
         let filter = new itk.simple.AndImageFilter()
         Image<int>.ofSimpleITK(filter.Execute(i, f2.Image))
 
     // Bitwise XOR ( ^^^ )
-    static member op_ExclusiveOr (f1: Image<'T>, f2: Image<'T>) =
+    static member op_ExclusiveOr (f1: Image<'S>, f2: Image<'S>) =
         let filter = new itk.simple.XorImageFilter()
-        Image<'T>.ofSimpleITK(filter.Execute(f1.Image, f2.Image))
+        Image<'S>.ofSimpleITK(filter.Execute(f1.Image, f2.Image))
 
     static member op_ExclusiveOr (f1: Image<int>, i: int) =
         let filter = new itk.simple.XorImageFilter()
@@ -634,9 +1356,9 @@ type Image<'T>(sz: uint list, ?numberComp: uint) =
         Image<int>.ofSimpleITK(filter.Execute(i, f2.Image))
 
     // Bitwise OR ( ||| )
-    static member op_BitwiseOr (f1: Image<'T>, f2: Image<'T>) =
+    static member op_BitwiseOr (f1: Image<'S>, f2: Image<'S>) =
         let filter = new itk.simple.OrImageFilter()
-        Image<'T>.ofSimpleITK(filter.Execute(f1.Image, f2.Image))
+        Image<'S>.ofSimpleITK(filter.Execute(f1.Image, f2.Image))
 
     static member op_BitwiseOr (f1: Image<int>, i: int) =
         let filter = new itk.simple.OrImageFilter()
@@ -647,9 +1369,9 @@ type Image<'T>(sz: uint list, ?numberComp: uint) =
         Image<int>.ofSimpleITK(filter.Execute(i, f2.Image))
 
     // Unary bitwise NOT ( ~~~ )
-    static member op_LogicalNot (f: Image<'T>) =
+    static member op_LogicalNot (f: Image<'S>) =
         let filter = new itk.simple.InvertIntensityImageFilter()
-        Image<'T>.ofSimpleITK(filter.Execute(f.Image))
+        Image<'S>.ofSimpleITK(filter.Execute(f.Image))
 
     member this.Get (coords: uint list) : 'T =
         let u = coords |> toVectorUInt32
