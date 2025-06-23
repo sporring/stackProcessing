@@ -187,6 +187,32 @@ type Image<'T>(sz: uint list, ?numberComp: uint) =
     member this.toArray2D (): 'T[,] =
         GetArrayFromImage this.Image
 
+    static member ofImageList (images: Image<'S> list) : Image<'S list> =
+        let itkImages = images |> List.map (fun img -> img.Image)
+        use filter = new itk.simple.ComposeImageFilter()
+        match itkImages with // seems no other way than unrolling them manually
+        | [i1; i2] ->
+            Image<'S list>.ofSimpleITK(filter.Execute(i1, i2))
+        | [i1; i2; i3] ->
+            Image<'S list>.ofSimpleITK(filter.Execute(i1, i2, i3))
+        | [i1; i2; i3; i4] ->
+            Image<'S list>.ofSimpleITK(filter.Execute(i1, i2, i3, i4))
+        | [i1; i2; i3; i4; i5] ->
+            Image<'S list>.ofSimpleITK(filter.Execute(i1, i2, i3, i4, i5))
+        | [] ->
+            invalidArg "images" "At least two images are required for ComposeImageFilter."
+        | _ ->
+            invalidArg "images" "ComposeImageFilter supports up to 10 images."
+
+    member this.toImageList () : Image<'S> list =
+        let filter = new itk.simple.VectorIndexSelectionCastImageFilter()
+        let n = this.Image.GetNumberOfComponentsPerPixel() |> int
+        List.init n (fun i ->
+            filter.SetIndex(uint i)
+            let scalarItk = filter.Execute(this.Image)
+            Image<'S>.ofSimpleITK scalarItk
+        )
+
     static member ofFile(filename: string) : Image<'T> =
         use reader = new itk.simple.ImageFileReader()
         reader.SetFileName(filename)

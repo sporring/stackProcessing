@@ -693,6 +693,42 @@ let imageOperatorTests =
       |> Array2D.iter (fun (a,b)-> Expect.isLessThan (abs (a-b)) (1e-6) "image / image")
   ]
 
+[<Tests>]
+let vectorImageCompositionTests =
+  testList "Vector image composition and decomposition" [
+
+    testCase "Compose 2 images and split back" <| fun _ ->
+      let a = Image<float32>.ofArray2D (array2D [ [ 1.0f; 2.0f ]; [ 3.0f; 4.0f ] ])
+      let b = Image<float32>.ofArray2D (array2D [ [ 5.0f; 6.0f ]; [ 7.0f; 8.0f ] ])
+      let composed = Image<float32 list>.ofImageList [ a; b ]
+      let split = composed.toImageList()
+
+      Expect.equal (split.Length) 2 "Should split into 2 images"
+      Expect.equal (split[0].toArray2D()) (a.toArray2D()) "First image should match original"
+      Expect.equal (split[1].toArray2D()) (b.toArray2D()) "Second image should match original"
+
+    testCase "Compose 3 images and split back" <| fun _ ->
+      let a = Image<uint8>.ofArray2D (array2D [ [ 10uy; 20uy ]; [ 30uy; 40uy ] ])
+      let b = Image<uint8>.ofArray2D (array2D [ [ 1uy; 2uy ]; [ 3uy; 4uy ] ])
+      let c = Image<uint8>.ofArray2D (array2D [ [ 9uy; 8uy ]; [ 7uy; 6uy ] ])
+      let composed = Image<uint8 list>.ofImageList [ a; b; c ]
+      let split = composed.toImageList()
+
+      Expect.equal split.Length 3 "Should split into 3 images"
+      Expect.equal (split.[0].toArray2D()) (a.toArray2D()) "Image 0 matches"
+      Expect.equal (split.[1].toArray2D()) (b.toArray2D()) "Image 1 matches"
+      Expect.equal (split.[2].toArray2D()) (c.toArray2D()) "Image 2 matches"
+
+    testCase "Empty image list throws" <| fun _ ->
+      Expect.throws (fun () -> Image<float list>.ofImageList [] |> ignore) "Empty list should throw"
+
+    testCase "Too many images throws" <| fun _ ->
+      let imgs = List.replicate 11 (Image<float>.ofArray2D (array2D [ [ 1.0 ] ]))
+      Expect.throws (fun () -> Image<float list>.ofImageList imgs |> ignore) "Too many images should throw"
+  ]
+
+
+
 [<EntryPoint>]
 let main argv =
   runTestsWithArgs defaultConfig argv (testList "All Tests" [
@@ -703,4 +739,5 @@ let main argv =
     creationTests 
     imageCoreTests
     imageOperatorTests
+    vectorImageCompositionTests
   ])
