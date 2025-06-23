@@ -6,6 +6,12 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <AssemblyAttribute Include="System.Runtime.CompilerServices.InternalsVisibleTo">
+      <_Parameter1>Image.Tests</_Parameter1>
+    </AssemblyAttribute>
+  </ItemGroup>
+
+  <ItemGroup>
     <Reference Include="SimpleITKCSharp">
       <HintPath>lib/SimpleITKCSharpManaged.dll</HintPath>
       <Private>true</Private>
@@ -22,7 +28,7 @@
   </ItemGroup>
 
   <ItemGroup>
-    <Compile Include="ImageClass.fs" />
+    <Compile Include="Image.fs" />
     <Compile Include="ImageFunctions.fs" />
   </ItemGroup>
 

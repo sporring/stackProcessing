@@ -22,7 +22,7 @@
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\Image\ImageClass.fsproj" />
+    <ProjectReference Include="..\Image\Image.fsproj" />
   </ItemGroup>
 
   <ItemGroup>

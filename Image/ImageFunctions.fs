@@ -1,5 +1,6 @@
 module ImageFunctions
-open ImageClass
+open Image
+open Image.InternalHelpers
 
 // ----- basic mathematical functions -----
 let inline makeUnaryImageOperatorWith
@@ -87,8 +88,7 @@ let concatAlong (dim: uint) (a: Image<'T>) (b: Image<'T>) : Image<'T> =
         sizeZipped |> List.mapi (fun i (a,b) -> if i <> int dim then a else a+b)
 
     // Create output image
-    let pt = fromType<'T>
-    let itkId = pt.ToSimpleITK()
+    let itkId = fromType<'T>
     let outImg = new itk.simple.Image(newSize |> toVectorUInt32, itkId, a.GetNumberOfComponentsPerPixel())
 
     let paste = new itk.simple.PasteImageFilter()

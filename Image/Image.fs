@@ -1,169 +1,72 @@
-module ImageClass
+module Image
 open FSharp.Collections
 
-type PixelType =
-    | UInt8
-    | Int8
-    | UInt16
-    | Int16
-    | UInt32
-    | Int32
-    | UInt64
-    | Int64
-    | Float32
-    | Float64
-    | ComplexFloat32
-    | ComplexFloat64
-    | VectorUInt8
-    | VectorInt8
-    | VectorUInt16
-    | VectorInt16
-    | VectorUInt32
-    | VectorInt32
-    | VectorUInt64
-    | VectorInt64
-    | VectorFloat32
-    | VectorFloat64
-    | LabelUInt8
-    | LabelUInt16
-    | LabelUInt32
-    | LabelUInt64
+module internal InternalHelpers =
+    let toVectorUInt8 (lst: uint8 list)     = new itk.simple.VectorUInt8(lst)
+    let toVectorInt8 (lst: int8 list)       = new itk.simple.VectorInt8(lst)
+    let toVectorUInt16 (lst: uint16 list)   = new itk.simple.VectorUInt16(lst)
+    let toVectorInt16 (lst: int16 list)     = new itk.simple.VectorInt16(lst)
+    let toVectorUInt32 (lst: uint32 list)   = new itk.simple.VectorUInt32(lst)
+    let toVectorInt32 (lst: int32 list)     = new itk.simple.VectorInt32(lst)
+    let toVectorUInt64 (lst: uint64 list)   = new itk.simple.VectorUInt64(lst)
+    let toVectorInt64 (lst: int64 list)     = new itk.simple.VectorInt64(lst)
+    let toVectorFloat32 (lst: float32 list) = new itk.simple.VectorFloat(lst)
+    let toVectorFloat64 (lst: float list) = new itk.simple.VectorDouble(lst)
 
-    member this.ToSimpleITK() =
-        match this with
-        | UInt8          -> itk.simple.PixelIDValueEnum.sitkUInt8
-        | Int8           -> itk.simple.PixelIDValueEnum.sitkInt8
-        | UInt16         -> itk.simple.PixelIDValueEnum.sitkUInt16
-        | Int16          -> itk.simple.PixelIDValueEnum.sitkInt16
-        | UInt32         -> itk.simple.PixelIDValueEnum.sitkUInt32
-        | Int32          -> itk.simple.PixelIDValueEnum.sitkInt32
-        | UInt64         -> itk.simple.PixelIDValueEnum.sitkUInt64
-        | Int64          -> itk.simple.PixelIDValueEnum.sitkInt64
-        | Float32        -> itk.simple.PixelIDValueEnum.sitkFloat32
-        | Float64        -> itk.simple.PixelIDValueEnum.sitkFloat64
-        | ComplexFloat32 -> itk.simple.PixelIDValueEnum.sitkVectorFloat32 // simple itk does not expose the complex type returned by sitkComplex*
-        | ComplexFloat64 -> itk.simple.PixelIDValueEnum.sitkVectorFloat64
-        | VectorUInt8    -> itk.simple.PixelIDValueEnum.sitkVectorUInt8
-        | VectorInt8     -> itk.simple.PixelIDValueEnum.sitkVectorInt8
-        | VectorUInt16   -> itk.simple.PixelIDValueEnum.sitkVectorUInt16
-        | VectorInt16    -> itk.simple.PixelIDValueEnum.sitkVectorInt16
-        | VectorUInt32   -> itk.simple.PixelIDValueEnum.sitkVectorUInt32
-        | VectorInt32    -> itk.simple.PixelIDValueEnum.sitkVectorInt32
-        | VectorUInt64   -> itk.simple.PixelIDValueEnum.sitkVectorUInt64
-        | VectorInt64    -> itk.simple.PixelIDValueEnum.sitkVectorInt64
-        | VectorFloat32  -> itk.simple.PixelIDValueEnum.sitkVectorFloat32
-        | VectorFloat64  -> itk.simple.PixelIDValueEnum.sitkVectorFloat64
-        | LabelUInt8     -> itk.simple.PixelIDValueEnum.sitkLabelUInt8
-        | LabelUInt16    -> itk.simple.PixelIDValueEnum.sitkLabelUInt16
-        | LabelUInt32    -> itk.simple.PixelIDValueEnum.sitkLabelUInt32
-        | LabelUInt64    -> itk.simple.PixelIDValueEnum.sitkLabelUInt64
+    let fromItkVector f v = 
+        v |> Seq.map f |> Seq.toList
 
-    member this.Zero() =
-        match this with
-        | UInt8 | VectorUInt8 | LabelUInt8    -> box 0uy
-        | Int8  | VectorInt8                  -> box 0y
-        | UInt16 | VectorUInt16 | LabelUInt16 -> box 0us
-        | Int16 | VectorInt16                 -> box 0s
-        | UInt32 | VectorUInt32 | LabelUInt32 -> box 0u
-        | Int32 | VectorInt32                 -> box 0
-        | UInt64 | VectorUInt64 | LabelUInt64 -> box 0UL
-        | Int64 | VectorInt64                 -> box 0L
-        | Float32 | VectorFloat32             -> box 0.0f
-        | Float64 | VectorFloat64             -> box 0.0
-        | ComplexFloat32                      -> box (System.Numerics.Complex(0.0, 0.0))
-        | ComplexFloat64                      -> box (System.Numerics.Complex(0.0, 0.0))
+    let fromVectorUInt8 (v: itk.simple.VectorUInt8) : uint8 list = fromItkVector uint8 v
+    let fromVectorInt8 (v: itk.simple.VectorInt8) : int8 list = fromItkVector int8 v
+    let fromVectorUInt16 (v: itk.simple.VectorUInt16) : uint16 list = fromItkVector uint16 v
+    let fromVectorInt16 (v: itk.simple.VectorInt16) : int16 list = fromItkVector int16 v
+    let fromVectorUInt32 (v: itk.simple.VectorUInt32) : uint list = fromItkVector uint v
+    let fromVectorInt32 (v: itk.simple.VectorInt32) : int list = fromItkVector int v
+    let fromVectorUInt64 (v: itk.simple.VectorUInt64) : uint64 list = fromItkVector uint64 v
+    let fromVectorInt64 (v: itk.simple.VectorInt64) : int64 list = fromItkVector int64 v
+    let fromVectorFloat32 (v: itk.simple.VectorFloat) : float32 list = fromItkVector float32 v
+    let fromVectorFloat64 (v: itk.simple.VectorDouble) : float list = fromItkVector float v
 
-    member this.One() =
-        match this with
-        | UInt8 | VectorUInt8 | LabelUInt8    -> box 1uy
-        | Int8  | VectorInt8                  -> box 1y
-        | UInt16 | VectorUInt16 | LabelUInt16 -> box 1us
-        | Int16 | VectorInt16                 -> box 1s
-        | UInt32 | VectorUInt32 | LabelUInt32 -> box 1u
-        | Int32 | VectorInt32                 -> box 1
-        | UInt64 | VectorUInt64 | LabelUInt64 -> box 1UL
-        | Int64 | VectorInt64                 -> box 1L
-        | Float32 | VectorFloat32             -> box 1.0f
-        | Float64 | VectorFloat64             -> box 1.0
-        | ComplexFloat32                      -> box (System.Numerics.Complex(1.0, 0.0))
-        | ComplexFloat64                      -> box (System.Numerics.Complex(1.0, 0.0))
+    let fromType<'T> =
+        let t = typeof<'T>
+        if t = typeof<uint8> then itk.simple.PixelIDValueEnum.sitkUInt8
+        elif t = typeof<int8> then itk.simple.PixelIDValueEnum.sitkInt8
+        elif t = typeof<uint16> then itk.simple.PixelIDValueEnum.sitkUInt16
+        elif t = typeof<int16> then itk.simple.PixelIDValueEnum.sitkInt16
+        elif t = typeof<uint32> then itk.simple.PixelIDValueEnum.sitkUInt32
+        elif t = typeof<int32> then itk.simple.PixelIDValueEnum.sitkInt32
+        elif t = typeof<uint64> then itk.simple.PixelIDValueEnum.sitkUInt64
+        elif t = typeof<int64> then itk.simple.PixelIDValueEnum.sitkInt64
+        elif t = typeof<float32> then itk.simple.PixelIDValueEnum.sitkFloat32
+        elif t = typeof<float> then itk.simple.PixelIDValueEnum.sitkFloat64
+        elif t = typeof<System.Numerics.Complex> then itk.simple.PixelIDValueEnum.sitkVectorFloat64
+        elif t = typeof<uint8 list> then itk.simple.PixelIDValueEnum.sitkVectorUInt8
+        elif t = typeof<int8 list> then itk.simple.PixelIDValueEnum.sitkVectorInt8
+        elif t = typeof<uint16 list> then itk.simple.PixelIDValueEnum.sitkVectorUInt16
+        elif t = typeof<int16 list> then itk.simple.PixelIDValueEnum.sitkVectorInt16
+        elif t = typeof<uint32 list> then itk.simple.PixelIDValueEnum.sitkVectorUInt32
+        elif t = typeof<int32 list> then itk.simple.PixelIDValueEnum.sitkVectorInt32
+        elif t = typeof<uint64 list> then itk.simple.PixelIDValueEnum.sitkVectorUInt64
+        elif t = typeof<int64 list> then itk.simple.PixelIDValueEnum.sitkVectorInt64
+        elif t = typeof<float32 list> then itk.simple.PixelIDValueEnum.sitkVectorFloat32
+        elif t = typeof<float list> then itk.simple.PixelIDValueEnum.sitkVectorFloat64
+        else failwithf "Unsupported pixel type: %O" t
 
-/// Module with inline operator overloads for Image
-let inline toItkVector (createFilter: unit -> ^Filter when ^Filter :> System.IDisposable) =
-    fun lst ->
-        let v = createFilter()
-        lst |> List.iter (fun x -> (^Filter : (member Add : _ -> unit) (v, x)))
-        v
+    let ofCastItk<'T> (img: itk.simple.Image) : itk.simple.Image =
+        let expectedId = fromType<'T>
+        if img.GetPixelID() = expectedId then
+            img // No casting needed
+        else
+            let cast = new itk.simple.CastImageFilter()
+            cast.SetOutputPixelType(expectedId)
+            cast.Execute(img)
 
-let inline toVectorUInt8 lst = toItkVector (fun () -> new itk.simple.VectorUInt8()) lst
-let inline toVectorInt8 lst = toItkVector (fun () -> new itk.simple.VectorInt8()) lst
-let inline toVectorUInt16 lst = toItkVector (fun () -> new itk.simple.VectorUInt16()) lst
-let inline toVectorInt16 lst = toItkVector (fun () -> new itk.simple.VectorInt16()) lst
-let inline toVectorUInt32 lst = toItkVector (fun () -> new itk.simple.VectorUInt32()) lst
-let inline toVectorInt32 lst = toItkVector (fun () -> new itk.simple.VectorInt32()) lst
-let inline toVectorUInt64 lst = toItkVector (fun () -> new itk.simple.VectorUInt64()) lst
-let inline toVectorInt64 lst = toItkVector (fun () -> new itk.simple.VectorInt64()) lst
-let inline toVectorFloat32 lst = toItkVector (fun () -> new itk.simple.VectorFloat()) lst
-let inline toVectorFloat64 lst = toItkVector (fun () -> new itk.simple.VectorDouble()) lst
-
-let inline fromItkVector f v = 
-    v |> Seq.map f |> Seq.toList
-
-let inline fromVectorUInt8 (v: itk.simple.VectorUInt8) : uint8 list = fromItkVector uint8 v
-let inline fromVectorInt8 (v: itk.simple.VectorInt8) : int8 list = fromItkVector int8 v
-let inline fromVectorUInt16 (v: itk.simple.VectorUInt16) : uint16 list = fromItkVector uint16 v
-let inline fromVectorInt16 (v: itk.simple.VectorInt16) : int16 list = fromItkVector int16 v
-let inline fromVectorUInt32 (v: itk.simple.VectorUInt32) : uint list = fromItkVector uint v
-let inline fromVectorInt32 (v: itk.simple.VectorInt32) : int list = fromItkVector int v
-let inline fromVectorUInt64 (v: itk.simple.VectorUInt64) : uint64 list = fromItkVector uint64 v
-let inline fromVectorInt64 (v: itk.simple.VectorInt64) : int64 list = fromItkVector int64 v
-let inline fromVectorFloat32 (v: itk.simple.VectorFloat) : float32 list = fromItkVector float32 v
-let inline fromVectorFloat64 (v: itk.simple.VectorDouble) : float list = fromItkVector float v
-
-let fromType<'T> : PixelType =
-    let t = typeof<'T>
-    if t = typeof<uint8> then UInt8
-    elif t = typeof<int8> then Int8
-    elif t = typeof<uint16> then UInt16
-    elif t = typeof<int16> then Int16
-    elif t = typeof<uint32> then UInt32
-    elif t = typeof<int32> then Int32
-    elif t = typeof<uint64> then UInt64
-    elif t = typeof<int64> then Int64
-    elif t = typeof<float32> then Float32
-    elif t = typeof<float> then Float64
-    elif t = typeof<System.Numerics.Complex> then ComplexFloat64
-    elif t = typeof<uint8 list> then VectorUInt8
-    elif t = typeof<int8 list> then VectorInt8
-    elif t = typeof<uint16 list> then VectorUInt16
-    elif t = typeof<int16 list> then VectorInt16
-    elif t = typeof<uint32 list> then VectorUInt32
-    elif t = typeof<int32 list> then VectorInt32
-    elif t = typeof<uint64 list> then VectorUInt64
-    elif t = typeof<int64 list> then VectorInt64
-    elif t = typeof<float32 list> then VectorFloat32
-    elif t = typeof<float list> then VectorFloat64
-    else failwithf "Unsupported pixel type: %O" t
-
-let forcePixelType<'T> (img: itk.simple.Image) : itk.simple.Image =
-    let expectedId = (fromType<'T>).ToSimpleITK()
-    if img.GetPixelID() = expectedId then
-        img // No casting needed
-    else
-        let cast = new itk.simple.CastImageFilter()
-        cast.SetOutputPixelType(expectedId)
-        cast.Execute(img)
+open InternalHelpers
 
 [<StructuredFormatDisplay("{Display}")>] // Prevent fsi printing information about its members such as img
 type Image<'T>(sz: uint list, ?numberComp: uint) =
-    let pt =
-        try fromType<'T>
-        with _ -> failwithf "Unsupported pixel type: %O" typeof<'T>
-    let itkId = pt.ToSimpleITK()
-
-    // Is 'T a list type? (e.g., float list)
+    let itkId = fromType<'T>
     let isListType = typeof<'T>.IsGenericType && typeof<'T>.GetGenericTypeDefinition() = typedefof<list<_>>
-
     let mutable img = 
         match numberComp with 
         | Some v when isListType && v < 2u ->
@@ -179,7 +82,7 @@ type Image<'T>(sz: uint list, ?numberComp: uint) =
     member private this.SetImg (itkImg: itk.simple.Image) : unit =
         img <- itkImg
     member this.GetSize () = img.GetSize() |> fromVectorUInt32
-    member this.GetDepth() = img.GetDepth()
+    member this.GetDepth() = max 1u (img.GetDepth()) // Non-vector images returns 0
     member this.GetDimension() = img.GetDimension()
     member this.GetHeight() = img.GetHeight()
     member this.GetWidth() = img.GetWidth()
@@ -194,16 +97,19 @@ type Image<'T>(sz: uint list, ?numberComp: uint) =
     member this.Display = this.ToString() // related to [<StructuredFormatDisplay>]
 
     static member ofSimpleITK (itkImg: itk.simple.Image) : Image<'T> =
-        let itkImgCast = forcePixelType<'T> itkImg
+        let itkImgCast = ofCastItk<'T> itkImg
         let img = Image<'T>([0u;0u])
         img.SetImg itkImgCast
         img
 
+    member this.toSimpleITK () : itk.simple.Image =
+        img
+
+    member this.castTo<'S> () : Image<'S> =
+        Image<'S>.ofSimpleITK img
+
     static member ofArray2D (arr: 'T[,]) : Image<'T> =
-        let pt =
-            try fromType<'T>
-            with _ -> failwithf "Unsupported pixel type: %O" typeof<'T>
-        let itkId = pt.ToSimpleITK()
+        let itkId = fromType<'T>
         let sz = [arr.GetLength(0); arr.GetLength(1)] |> List.map uint
         let img = new itk.simple.Image(sz |> toVectorUInt32, itkId)
 
@@ -242,7 +148,7 @@ type Image<'T>(sz: uint list, ?numberComp: uint) =
         wrapped.SetImg img
         wrapped
 
-    member this.toArray2D: 'T[,] =
+    member this.toArray2D (): 'T[,] =
         let img = this.Image
         let size = img.GetSize()
         if size.Count <> 2 then
@@ -285,8 +191,8 @@ type Image<'T>(sz: uint list, ?numberComp: uint) =
 
         arr
 
-    static member FromFile(filename: string) : Image<'T> =
-        let reader = new itk.simple.ImageFileReader()
+    static member ofFile(filename: string) : Image<'T> =
+        use reader = new itk.simple.ImageFileReader()
         reader.SetFileName(filename)
         let itkImg = reader.Execute()
         let numComp = itkImg.GetNumberOfComponentsPerPixel()
@@ -304,17 +210,16 @@ type Image<'T>(sz: uint list, ?numberComp: uint) =
         | _ ->
             Image<'T>.ofSimpleITK(itkImg)
 
-    member this.ToFile(filename: string, ?format: string) =
-        let writer = new itk.simple.ImageFileWriter()
+    member this.toFile(filename: string, ?format: string) =
+        use writer = new itk.simple.ImageFileWriter()
         writer.SetFileName(filename)
         match format with
         | Some fmt -> writer.SetImageIO(fmt)
         | None -> ()
-
         writer.Execute(this.Image)
 
     // Float images
-    static member inline (+) (f1: Image<float>, i: int) =
+    static member (+) (f1: Image<float>, i: int) =
         let filter = new itk.simple.AddImageFilter()
         Image<float>.ofSimpleITK(filter.Execute(f1.Image, float i))
 
@@ -346,7 +251,7 @@ type Image<'T>(sz: uint list, ?numberComp: uint) =
 
 
     // Float image - int scalar
-    static member inline (-) (f1: Image<float>, i: int) =
+    static member (-) (f1: Image<float>, i: int) =
         let filter = new itk.simple.SubtractImageFilter()
         Image<float>.ofSimpleITK(filter.Execute(f1.Image, float i))
 
@@ -388,7 +293,7 @@ type Image<'T>(sz: uint list, ?numberComp: uint) =
         Image<'T>.ofSimpleITK(filter.Execute(f1.Image, f2.Image))
 
     // Float image * int scalar
-    static member inline (*) (f1: Image<float>, i: int) =
+    static member (*) (f1: Image<float>, i: int) =
         let filter = new itk.simple.MultiplyImageFilter()
         Image<float>.ofSimpleITK(filter.Execute(f1.Image, float i))
 
@@ -422,7 +327,7 @@ type Image<'T>(sz: uint list, ?numberComp: uint) =
         Image<'T>.ofSimpleITK(filter.Execute(f1.Image, f2.Image))
 
     // Float image / int scalar
-    static member inline (/) (f1: Image<float>, i: int) =
+    static member (/) (f1: Image<float>, i: int) =
         let filter = new itk.simple.DivideImageFilter()
         Image<float>.ofSimpleITK(filter.Execute(f1.Image, float i))
 

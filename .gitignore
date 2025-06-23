@@ -31,3 +31,6 @@ StackPipeline/lib/libSimpleITKCSharpNative.dylib
 /Image/bin
 /Image/obj
 *.dylib
+/Image.Tests/bin
+/Image.Tests/obj
+*.fs~

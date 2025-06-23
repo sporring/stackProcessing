@@ -1,6 +1,6 @@
-#r "bin/Debug/net8.0/ImageClass.dll"            
+#r "bin/Debug/net8.0/Image.dll"            
 #r "bin/Debug/net8.0/SimpleITKCSharpManaged.dll"
-open ImageClass
+open Image
 let I = Image<int>([10u;12u])
 let J = Image<int list>([10u;12u])
 printfn "%A" I[1,2]
@@ -23,4 +23,8 @@ printfn "%A" N
 let P = ImageFunctions.concatAlong 2u I O
 printfn "%A" P
 let Q = ImageFunctions.concatAlong 3u I O
-printfn "%A" Q
+printfn "%A" Q;;
+
+let arr = array2D [ [ 10.0f; 20.0f ]; [ 30.0f; 40.0f ] ]
+let imgF = Image<float32>.ofArray2D arr
+let imgB = imgF.castTo<uint8>();;

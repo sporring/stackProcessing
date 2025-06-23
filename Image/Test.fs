@@ -2,7 +2,7 @@
 module Tests
 
 open Expecto
-open ImageClass // adjust to match actual namespace
+open Image // adjust to match actual namespace
 
 [<Tests>]
 let imageClassTests =
