@@ -27,4 +27,52 @@ printfn "%A" Q;;
 
 let arr = array2D [ [ 10.0f; 20.0f ]; [ 30.0f; 40.0f ] ]
 let imgF = Image<float32>.ofArray2D arr
-let imgB = imgF.castTo<uint8>();;
+let imgB = imgF.cast<uint8>();;
+
+let img = Image<float>.ofArray2D (array2D [ [ 1.0; 2.0 ]; [ 3.0; 4.0 ] ])
+let ker = Image<float>.ofArray2D (array2D [ [ 0.0; 0.0; 0.0 ]; [ 0.0; 1.0; 0.0 ]; [ 0.0; 0.0; 0.0 ] ])
+let result = ImageFunctions.conv img ker;;
+
+let arr = Array2D.init 5 5 (fun m n -> if m=2 && n=2 then 1.0 else 0.0)
+let img = Image<float>.ofArray2D arr
+let blurred = ImageFunctions.discreteGaussian 1.0 img;;
+
+let arr = Array2D.init 5 5 (fun m n -> if m=2 && n=2 then 1.0 else 0.0)
+let img = Image<float>.ofArray2D arr
+let blurred = ImageFunctions.recursiveGaussian 1.0 0u img;;
+
+let arr = Array2D.init 5 5 (fun m n -> if m=2 && n=2 then 1.0 else 0.0)
+let img = Image<float>.ofArray2D arr
+let lap = ImageFunctions.laplacianConvolve 1.0 img;;
+
+let arr = Array2D.init 5 5 (fun m n -> if m=2 && n=2 then 1.0 else 0.0)
+let img = Image<float>.ofArray2D arr
+let grad = ImageFunctions.gradientConvolve 0u 1u img;;
+
+let img = Image<int>.ofArray2D (array2D [[0;1;1;0]])
+let eroded = ImageFunctions.binaryErode 1u 1.0 img;;
+
+let img = Image<int>.ofArray2D (array2D [[0;1;0]])
+let dilated = ImageFunctions.binaryDilate 1u 1.0 img;;
+
+let img = Image<int>.ofArray2D (array2D [[0;1;0;1;0]])
+let opened = ImageFunctions.binaryOpening 1u 1.0 img;;
+
+let img = Image<int>.ofArray2D (array2D [[1;0;1]])
+let closed = ImageFunctions.binaryClosing 1u 1.0 img;;
+
+let img = Image<int>.ofArray2D (array2D [[1;1;1]; [1;0;1]; [1;1;1]])
+let filled = ImageFunctions.binaryFillHoles 1.0 img;;
+
+let img = Image<int>.ofArray2D (array2D [[1;0;1]])
+let cc = ImageFunctions.connectedComponents img;;
+
+let img = Image<int>.ofArray2D (array2D [[1;0;1]])
+let cc = ImageFunctions.connectedComponents img
+let relabeled = ImageFunctions.relabelComponents 2u cc;;
+
+let img = Image<int>.ofArray2D (array2D [[0;1;0]])
+let dmap = ImageFunctions.signedDistanceMap img;;
+
+let img = Image<int>.ofArray2D (array2D [[0;1;0;1;0]])
+let ws = ImageFunctions.watershed 0.0 img;;
