@@ -10,7 +10,7 @@ let squeeze (img: Image<'T>) : Image<'T> =
     filter.SetSize(squeezedSize |> toVectorUInt32)
     Image<'T>.ofSimpleITK(filter.Execute(img.Image))
 
-let expand (dim: int) (zero: 'S) (a: 'S list) = 
+let expand (dim: uint) (zero: 'S) (a: 'S list) = 
     List.concat [a; List.replicate (max 0 ((int dim)-a.Length)) zero]
 
 let concatAlong (dim: uint) (a: Image<'T>) (b: Image<'T>) : Image<'T> =
@@ -22,7 +22,7 @@ let concatAlong (dim: uint) (a: Image<'T>) (b: Image<'T>) : Image<'T> =
 
     let sizeA = a.GetSize()
     let sizeB = b.GetSize()
-    let sizeZipped = List.zip sizeA sizeB |> expand (int dim) (1u,1u)
+    let sizeZipped = List.zip sizeA sizeB |> expand dim (1u,1u)
 
     sizeZipped
     |> List.iteri (fun i (da,db) -> 
@@ -435,26 +435,32 @@ let stack (images: Image<'T> list) : Image<'T> =
     if (List.distinct cmp).Length > 1 then
         failwith "Images must have the same number of components."
 
-    let setSize (sz: uint list) (d: uint) = 
-        let pad = (int d) - sz.Length
-        List.concat [sz; List.replicate (max 0 pad) 1u]
-    let sizes = List.map (fun (img:Image<'T>) -> setSize (img.GetSize()) dim) images
-    let newSize = List.reduce (fun acc sz -> List.init (int dim) (fun i -> if i = 2 then acc[2]+sz[2] else acc[i])) sizes
+    let sizes = List.map (fun (img:Image<'T>) -> expand dim 1u (img.GetSize())) images
+    let sz0 = sizes[0]
+    List.iteri (
+        fun i szi -> (List.iteri (
+            fun j szij -> 
+                if j <> 2 && szij <> sz0[j] then
+                    failwith "All images must have same dimensions except along the 3rd axis")
+            sizes[i]))
+         sizes
+    let newSize = sizes |> List.reduce (fun acc sz -> List.init (int dim) (fun i -> if i = 2 then acc[2]+sz[2] else acc[i]))
     let itkId = fromType<'T>
 
     let paste = new itk.simple.PasteImageFilter()
-    let (_,img) =
-        images
-        |> List.map (fun (img: Image<'T>)->img.Image)   
-        |> List.fold 
-            (fun (i,(acc:itk.simple.Image)) (img:itk.simple.Image) -> 
-                let offset = List.init (int dim) (fun i -> if i = 2 then i else 0)
-                paste.SetDestinationIndex(offset |> toVectorInt32)
-                let szi = img.GetSize()
-                paste.SetSourceSize(szi)
-                (i+szi[2], paste.Execute(acc, img))) 
-            (0u, new itk.simple.Image(newSize |> toVectorUInt32, itkId, cmp[0]))
-    Image<'T>.ofSimpleITK(img)
+    let mutable sitkImg = new itk.simple.Image(newSize |> toVectorUInt32, itkId, cmp[0])
+    let sitkImages = images |> List.map (fun (img: Image<'T>)->img.Image)   
+    let mutable z = 0
+    List.iter 
+        (fun (img: itk.simple.Image) -> 
+            let offset = List.init (int dim) (fun i -> if i = 2 then z else 0)
+            let szi = img.GetSize() |> fromVectorUInt32 |> expand dim 1u |> toVectorUInt32
+            paste.SetDestinationIndex(offset |> toVectorInt32)
+            paste.SetSourceSize(szi)
+            sitkImg <- paste.Execute(sitkImg, img)
+            z <- z + (int szi[2]))
+        sitkImages
+    Image<'T>.ofSimpleITK(sitkImg)
 
 let extractSub (topLeft : uint list) (bottomRight: uint list) (img: Image<'T>) : Image<'T> =
     if topLeft.Length <> bottomRight.Length then
@@ -462,7 +468,7 @@ let extractSub (topLeft : uint list) (bottomRight: uint list) (img: Image<'T>) :
     if img.GetDimension() <> uint topLeft.Length then
         failwith $"extractSub: indices and image size does not match"
     let sz = List.zip topLeft bottomRight |> List.map (fun (a,b) -> b-a + 1u)
-    if List.exists ((<) 1u) sz then
+    if List.exists (fun a -> a <  1u) sz then
         failwith $"extractSub: no index of bottomRight must be smaller than topLeft  ({topLeft} vs {bottomRight})"
 
     let extractor = new itk.simple.ExtractImageFilter()
@@ -474,7 +480,7 @@ let extractSlice (z: uint) (img: Image<'T>) =
     if img.GetDimension() <> 3u then
         failwith $"extractSlice: image must be 3D"
     let sz = img.GetSize()
-    extractSub [0u; 0u; z] [sz[0]-1u; sz[1]-1u; 1u] img
+    extractSub [0u; 0u; z] [sz[0]-1u; sz[1]-1u; z] img |> squeeze
 
 type FileInfo = { dimensions: uint; size: uint64 list; componentType: string; numberOfComponents: uint}
 let getFileInfo (filename: string) : FileInfo =

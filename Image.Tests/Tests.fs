@@ -1505,10 +1505,18 @@ let ImageProcessingTests =
   testList "ImageFunctions advanced image operations" [
 
     // squeeze
-    testCase "squeeze removes singleton dimensions" <| fun _ ->
-        let img = Image<int list>([10u;1u;12u])
+    testCase "squeeze lowers dimensions" <| fun _ ->
+        let img = Image<int>([10u;1u;12u])
         let result = ImageFunctions.squeeze img
         Expect.equal (result.GetDimension()) 2u "Expected reduced dimensionality"
+
+    testCase "squeeze removes singleton dimensions" <| fun _ ->
+        let img = Image<int>([10u;1u;12u])
+        img[0,0,0] <- 1
+        img[9,0,11] <- 2
+        let sq = ImageFunctions.squeeze img
+        let result = sq.toArray2D()
+        Expect.equal ([result[0,0];result[9,11]]) [1;2] "Expected value"
 
     // concatAlong
     testCase "concatAlong concatenates along dim 0" <| fun _ ->
@@ -1759,6 +1767,120 @@ let generateCoordinateAxisTests =
     }
   ]
 
+let expandTests =
+  testList "expand" [
+
+    testCase "Expand list shorter than dim" <| fun _ ->
+      let result = expand 5u 0 [1; 2]
+      Expect.equal result [1; 2; 0; 0; 0] "Should pad with zeros to length 5"
+
+    testCase "Expand list equal to dim" <| fun _ ->
+      let result = expand 3u "-" ["a"; "b"; "c"]
+      Expect.equal result ["a"; "b"; "c"] "Should return unchanged list"
+
+    testCase "Expand list longer than dim" <| fun _ ->
+      let result = expand 2u 0 [1; 2; 3]
+      Expect.equal result [1; 2; 3] "Should return original list unchanged"
+
+    testCase "Expand empty list to length" <| fun _ ->
+      let result = expand 4u 'x' []
+      Expect.equal result ['x'; 'x'; 'x'; 'x'] "Should return list of four 'x'"
+  ]
+
+[<Tests>]
+let stackTests =
+  testList "ImageFunctions.stack" [
+
+    testCase "stack joins images along z-axis" <| fun _ ->
+      let img1 = Image.ofArray2D (array2D [[1;2];[3;4]])
+      let img2 = Image.ofArray2D (array2D [[5;6];[7;8]])
+      let stacked = stack [img1; img2]
+      Expect.equal (stacked.GetSize()) [2u; 2u; 2u] "Stacked size should be 2x2x2"
+
+    testCase "stack copies values" <| fun _ ->
+      let img1 = Image.ofArray2D (array2D [[1;2];[3;4]])
+      let img2 = Image.ofArray2D (array2D [[5;6];[7;8]])
+      let stacked = stack [img1; img2]
+      let result = stacked.toArray3D()
+      Expect.equal [result[1,0,0];result[0,0,1]] [3;5] "Stacked size should be 2x2x2"
+
+    testCase "Stacking 2D images results in 3D image along 3rd axis" <| fun _ ->
+      let img1 = Image.ofArray2D (array2D [[1; 2]; [3; 4]])
+      let img2 = Image.ofArray2D (array2D [[5; 6]; [7; 8]])
+      let stacked = stack [img1; img2]
+      Expect.equal (stacked.GetSize()) [2u; 2u; 2u] "Expected 2x2x2 (3D) image"
+
+    testCase "Stacking 3D images results in 3D image" <| fun _ ->
+      let img1 = Image.ofArray3D (Array3D.create 1 1 1 1) // size: 1x1x1
+      let img2 = Image.ofArray3D (Array3D.create 1 1 2 1) // size: 1x1x1
+      let stacked = stack [img1; img2]
+      Expect.equal (stacked.GetSize()) [1u; 1u; 3u] "Expected 1x1x3 (3D) image"
+
+    testCase "Stacking images with mismatched non-z dimensions fails" <| fun _ ->
+      let img1 = Image.ofArray2D (array2D [[1; 2]])
+      let img2 = Image.ofArray2D (array2D [[3; 4]; [5; 6]])
+      Expect.throws (fun () -> stack [img1; img2] |> ignore) "Should fail due to mismatched Y dimension"
+
+    testCase "Stacking single image still returns a valid image" <| fun _ ->
+      let img = Image.ofArray2D (array2D [[9; 9]; [9; 9]])
+      let stacked = stack [img]
+      Expect.equal (stacked.GetSize()) [2u; 2u; 1u] "Expected 2x2x1 image from single input"
+  ]
+
+[<Tests>]
+let imageFunctionTests =
+  testList "ImageFunctions" [
+
+    testCase "unique returns sorted distinct values" <| fun _ ->
+      let img = Image.ofArray2D (array2D [[1; 2; 3]; [3; 2; 1]])
+      let u = unique img
+      Expect.equal u [1; 2; 3] "Should return sorted distinct values"
+
+    testCase "histogram returns correct counts" <| fun _ ->
+      let img = Image.ofArray2D (array2D [[1; 2; 2]; [3; 3; 3]])
+      let hist = histogram img
+      Expect.equal hist.[1] 1UL "One 1"
+      Expect.equal hist.[2] 2UL "Two 2s"
+      Expect.equal hist.[3] 3UL "Three 3s"
+
+    testCase "addNormalNoise produces output of same size" <| fun _ ->
+      let img = Image.ofArray2D (array2D [[1.0; 1.0]; [1.0; 1.0]])
+      let noisy = addNormalNoise 0.0 1.0 img
+      Expect.equal (img.GetSize()) (noisy.GetSize()) "Noise should not change size"
+
+    testCase "threshold produces binary output" <| fun _ ->
+      let img = Image.ofArray2D (array2D [[0.5; 1.5]; [2.5; 3.5]])
+      let result = threshold 1.0 3.0 img
+      let arr = result.toArray2D()
+      Expect.equal arr.[0,0] 0.0 "Below lower threshold"
+      Expect.equal arr.[0,1] 1.0 "Within threshold"
+      Expect.equal arr.[1,0] 1.0 "Within threshold"
+      Expect.equal arr.[1,1] 0.0 "Above upper threshold"
+
+    testCase "extractSub extracts correct sub-region" <| fun _ ->
+      let img = Image.ofArray2D (array2D [[1;2;3];[4;5;6];[7;8;9]])
+      let sub = extractSub [1u;1u] [2u;2u] img
+      let arr = sub.toArray2D()
+      Expect.equal arr.[0,0] 5 "Top-left value"
+      Expect.equal arr.[1,1] 9 "Bottom-right value"
+
+    testCase "extractSlice extracts correct z slice" <| fun _ ->
+      let img1 = Image.ofArray2D (array2D [[1;1];[1;1]])
+      let img2 = Image.ofArray2D (array2D [[2;2];[2;2]])
+      let img = stack [img1; img2]
+      let slice = extractSlice 1u img
+      let arr = (slice |> squeeze).toArray2D()
+      Expect.equal arr.[0,0] 2 "Value from second slice"
+
+    testCase "extractSlice extracts correct first slice" <| fun _ ->
+      let img1 = Image.ofArray2D (array2D [[1;1];[1;1]])
+      let img2 = Image.ofArray2D (array2D [[2;2];[2;2]])
+      let img = stack [img1; img2]
+      let slice = extractSlice 0u img
+      let arr = (slice |> squeeze).toArray2D()
+      Expect.equal arr.[0,0] 1 "Value from second slice"
+  ]
+
 [<EntryPoint>]
 let main argv =
   runTestsWithArgs defaultConfig argv (testList "All Tests" [
@@ -1786,4 +1908,7 @@ let main argv =
     labelShapeStatisticsTests
     imageStatsAndThresholdTests
     generateCoordinateAxisTests
+    expandTests
+    stackTests
+    imageFunctionTests
   ])

@@ -1,6 +1,7 @@
 #r "bin/Debug/net8.0/Image.dll"            
 #r "bin/Debug/net8.0/SimpleITKCSharpManaged.dll"
 open Image
+open ImageFunctions
 let I = Image<int>([10u;12u])
 let J = Image<int list>([10u;12u])
 printfn "%A" I[1,2]
