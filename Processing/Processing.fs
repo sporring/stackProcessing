@@ -264,6 +264,19 @@ let create<'T when 'T: equality> (width: uint) (height: uint) (depth: uint) : St
             AsyncSeq.init (int depth) (fun i -> printfn "[create %d]" i; Slice.create<'T> width height 1u (uint i))
     }
 
+let readSlices<'T when 'T: equality> (inputDir: string) (suffix: string) : StackProcessor<unit, Slice<'T>> =
+    let filenames = Directory.GetFiles(inputDir, "*"+suffix) |> Array.sort
+    let depth = filenames.Length
+    {
+        Name = $"[readSlices {inputDir}]"
+        Profile = Streaming
+        Apply = fun _ ->
+            AsyncSeq.init (int depth) (fun i -> 
+                let fileName = filenames[int i]; 
+                printfn "[Read] Reading slice %d to %s" (uint i) fileName
+                readSlice<'T> (uint i) fileName)
+    }
+
 let addNormalNoise (mean: float) (stddev: float) : StackProcessor<Slice<'T> ,Slice<'T>> =
     printfn "[addNormalNoise]"
     mapSlices "addNormalNoise" Streaming (addNormalNoise mean stddev)

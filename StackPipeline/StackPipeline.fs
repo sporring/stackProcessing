@@ -87,6 +87,47 @@ type StackProcessor<'S,'T> = {
     Apply: AsyncSeq<'S> -> AsyncSeq<'T>
 }
 
+let singleton (x: 'In) : StackProcessor<'In, 'In> =
+    {
+        Name = "[singleton]"
+        Profile = Streaming
+        Apply = fun _ -> AsyncSeq.singleton x
+    }
+
+let join 
+    (f: 'A -> 'B -> 'C) 
+    (p1: StackProcessor<'In, 'A>) 
+    (p2: StackProcessor<'In, 'B>) 
+    (txt: string option) 
+    : StackProcessor<'In, 'C> =
+    match txt with 
+        Some t -> printfn "%s" t 
+        | None -> ()
+    {
+        Name = $"zipJoin({p1.Name}, {p2.Name})"
+        Profile = 
+            match p1.Profile, p2.Profile with
+            | Streaming, Streaming -> Streaming
+            | Sliding sz1, Sliding sz2 -> Sliding (max sz1 sz2)
+            | _ -> Buffered // conservative fallback
+
+        Apply = fun input ->
+            let a = p1.Apply input
+            let b = p2.Apply input
+            AsyncSeq.zip a b |> AsyncSeq.map (fun (x, y) -> f x y)
+    }
+
+/// Execute a *source* pipeline (`StackProcessor<unit,'T>`) and get its stream.
+let run (p : StackProcessor<unit,'T>) : AsyncSeq<'T> =
+    // one dummy `unit` value starts the source
+    p.Apply (AsyncSeq.singleton ())   
+
+let runNWriteSlices path suffix maker =
+    let stream = run maker
+    printfn "[runNWriteSlices]"
+    let stream = run maker
+    writeSlicesAsync path suffix stream |> Async.RunSynchronously
+
 // --- Pipeline computation expression ---
 /// <summary>
 /// Provides computation expression support for building memory-aware image processing pipelines.
