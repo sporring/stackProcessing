@@ -10,6 +10,9 @@ let squeeze (img: Image<'T>) : Image<'T> =
     filter.SetSize(squeezedSize |> toVectorUInt32)
     Image<'T>.ofSimpleITK(filter.Execute(img.Image))
 
+let expand (dim: int) (zero: 'S) (a: 'S list) = 
+    List.concat [a; List.replicate (max 0 ((int dim)-a.Length)) zero]
+
 let concatAlong (dim: uint) (a: Image<'T>) (b: Image<'T>) : Image<'T> =
     // perhaps use JoinSeriesImageFilter for speed.
     if a.GetDimension() <> b.GetDimension() then
@@ -19,7 +22,8 @@ let concatAlong (dim: uint) (a: Image<'T>) (b: Image<'T>) : Image<'T> =
 
     let sizeA = a.GetSize()
     let sizeB = b.GetSize()
-    let sizeZipped = List.concat [List.zip sizeA sizeB; List.replicate (max 0 ((int dim)-sizeA.Length+1)) (1u,1u)]
+    let sizeZipped = List.zip sizeA sizeB |> expand (int dim) (1u,1u)
+
     sizeZipped
     |> List.iteri (fun i (da,db) -> 
         if i <> int dim && da <> db then
@@ -471,3 +475,15 @@ let extractSlice (z: uint) (img: Image<'T>) =
         failwith $"extractSlice: image must be 3D"
     let sz = img.GetSize()
     extractSub [0u; 0u; z] [sz[0]-1u; sz[1]-1u; 1u] img
+
+type FileInfo = { dimensions: uint; size: uint64 list; componentType: string; numberOfComponents: uint}
+let getFileInfo (filename: string) : FileInfo =
+    use reader = new itk.simple.ImageFileReader()
+    reader.SetFileName(filename)
+    reader.ReadImageInformation()
+    {
+        dimensions = reader.GetDimension(); 
+        size = reader.GetSize() |> fromVectorUInt64; 
+        componentType = reader.GetPixelID() |> pixelIdToString
+        numberOfComponents = reader.GetNumberOfComponents()
+    }

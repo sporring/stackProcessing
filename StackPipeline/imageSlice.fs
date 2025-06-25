@@ -7,7 +7,7 @@ open Plotly.NET
 /// <summary>
 /// Represents a slice of a stack of 2d images. 
 /// </summary>
-type Slice<'T> = {
+type Slice<'T when 'T: equality> = {
     Index: uint
     Image: Image<'T>
 }
@@ -24,93 +24,95 @@ let liftUnary2 (f: 'a -> 'b -> Image<'T> -> Image<'T>) : 'a -> 'b -> Slice<'T> -
 let liftBinary (f: Image<'T> -> Image<'T> -> Image<'T>) : Slice<'T> -> Slice<'T> -> Slice<'T> =
     fun s1 s2 -> { s1 with Image = f s1.Image s2.Image }
 
+let liftBinary1 (f: 'a  -> Image<'T> -> Image<'T> -> Image<'T>) : 'a -> Slice<'T> -> Slice<'T> -> Slice<'T> =
+    fun a s1 s2 -> { s1 with Image = f a s1.Image s2.Image }
+
 let liftBinary2 (f: 'a -> 'b  -> Image<'T> -> Image<'T> -> Image<'T>) : 'a -> 'b -> Slice<'T> -> Slice<'T> -> Slice<'T> =
     fun a b s1 s2 -> { s1 with Image = f a b s1.Image s2.Image }
 
 let liftBinary3 (f: 'a -> 'b -> 'c -> Image<'T> -> Image<'T> -> Image<'T>) : 'a -> 'b -> 'c -> Slice<'T> -> Slice<'T> -> Slice<'T> =
     fun a b c s1 s2 -> { s1 with Image = f a b c s1.Image s2.Image }
 
-let abs = liftUnary ImageFunctions.abs
-let log = liftUnary ImageFunctions.log
-let log10 = liftUnary ImageFunctions.log10
-let exp = liftUnary ImageFunctions.exp
-let sqrt = liftUnary ImageFunctions.sqrt
-let square = liftUnary ImageFunctions.square
-let sin = liftUnary ImageFunctions.sin
-let cos = liftUnary ImageFunctions.cos
-let tan = liftUnary ImageFunctions.tan
-let asin = liftUnary ImageFunctions.asin
-let acos = liftUnary ImageFunctions.acos
-let atan = liftUnary ImageFunctions.atan
-let round = liftUnary ImageFunctions.round
+let liftBinaryOp (f: Image<'T> * Image<'T> -> Image<'T>) : Slice<'T> * Slice<'T> -> Slice<'T> =
+    fun (s1, s2) -> { s1 with Image = f (s1.Image, s2.Image) }
 
-let convolve = liftBinary3 convolve
-let conv = liftBinary conv 
-let discreteGaussian = liftUnary1 discreteGaussian
-let recursiveGaussian = liftUnary2 recursiveGaussian
-let laplacianConvolve = liftUnary1 laplacianConvolve
-let gradientConvolve = liftUnary2 gradientConvolve 
-let binaryErode = liftUnary2 binaryErode
-let binaryDilate = liftUnary2 binaryDilate
-let binaryOpening = liftUnary2 binaryOpening
-let binaryClosing = liftUnary2 binaryClosing
-let binaryFillHoles = liftUnary1 binaryFillHoles
+let liftBinaryCmp (f: Image<'T> * Image<'T> -> bool) : Slice<'T> * Slice<'T> -> bool =
+    fun (s1,s2) -> f (s1.Image, s2.Image)
 
-let squeeze = liftUnary squeeze
-let concatAlong = liftBinary1 concatAlong
-let computeStats (img: Image<'T>) : ImageStats =
+let abs (s: Slice<'T>) = liftUnary ImageFunctions.abs s
+let log (s: Slice<'T>) = liftUnary ImageFunctions.log s
+let log10 (s: Slice<'T>) = liftUnary ImageFunctions.log10 s
+let exp (s: Slice<'T>) = liftUnary ImageFunctions.exp s
+let sqrt (s: Slice<'T>) = liftUnary ImageFunctions.sqrt s
+let square (s: Slice<'T>) = liftUnary ImageFunctions.square s
+let sin (s: Slice<'T>) = liftUnary ImageFunctions.sin s
+let cos (s: Slice<'T>) = liftUnary ImageFunctions.cos s
+let tan (s: Slice<'T>) = liftUnary ImageFunctions.tan s
+let asin (s: Slice<'T>) = liftUnary ImageFunctions.asin s
+let acos (s: Slice<'T>) = liftUnary ImageFunctions.acos s
+let atan (s: Slice<'T>) = liftUnary ImageFunctions.atan s
+let round (s: Slice<'T>) = liftUnary ImageFunctions.round s
 
-let connectedComponents = liftUnary connectedComponents
-let relabelComponents = liftUnary1 relabelComponents
-let signedDistanceMap = liftUnary2 signedDistanceMap
-let watershed = liftUnary1 watershed
-let otsuThreshold = liftUnary otsuThreshold
-let otsuMultiThreshold = liftUnary1 otsuMultiThreshold
-let momentsThreshold = liftUnary momentsThreshold
+let convolve a b c (s: Slice<'T>) (t: Slice<'T>) = liftBinary3 convolve a b c s t
+let conv (s: Slice<'T>) (t: Slice<'T>) = liftBinary conv s t
+let discreteGaussian a (s: Slice<'T>) = liftUnary1 discreteGaussian a s
+let recursiveGaussian a b (s: Slice<'T>) = liftUnary2 recursiveGaussian a b s
+let laplacianConvolve a (s: Slice<'T>) = liftUnary1 laplacianConvolve a s
+let gradientConvolve a b (s: Slice<'T>) = liftUnary2 gradientConvolve 
+let binaryErode a b (s: Slice<'T>) = liftUnary2 binaryErode a b s
+let binaryDilate a b (s: Slice<'T>) = liftUnary2 binaryDilate a b s
+let binaryOpening a b (s: Slice<'T>) = liftUnary2 binaryOpening a b s
+let binaryClosing a b (s: Slice<'T>) = liftUnary2 binaryClosing a b s
+let binaryFillHoles a (s: Slice<'T>) = liftUnary1 binaryFillHoles a s
 
+let squeeze (s: Slice<'T>) = liftUnary squeeze s
+let concatAlong a (s: Slice<'T>) (t: Slice<'T>) = liftBinary1 concatAlong a s t
+
+let connectedComponents (s: Slice<'T>) = liftUnary connectedComponents s
+let relabelComponents a (s: Slice<'T>) = liftUnary1 relabelComponents a s
+let watershed a (s: Slice<'T>) = liftUnary1 watershed a s
+let otsuThreshold (s: Slice<'T>) = liftUnary otsuThreshold s
+let otsuMultiThreshold a (s: Slice<'T>) = liftUnary1 otsuMultiThreshold a s
+let momentsThreshold (s: Slice<'T>) = liftUnary momentsThreshold s
+
+let signedDistanceMap (inside: uint8) (outside: uint8) (img: Slice<uint8>) : Slice<float> =
+    {Index = img.Index; Image = ImageFunctions.signedDistanceMap inside outside img.Image}
 let generateCoordinateAxis (axis: int) (size: int list) : Slice<uint32> =
-    {Index = 0; Image = ImageFunctions.generateCoordinateAxis (axis: int) (size: int list)}
+    {Index = 0u; Image = ImageFunctions.generateCoordinateAxis (axis: int) (size: int list)}
 let unique (img: Slice<'T>) : 'T list when 'T : comparison =
     ImageFunctions.unique img.Image
 let labelShapeStatistics (img: Slice<'T>) : Map<int64, ImageFunctions.LabelShapeStatistics> =
     ImageFunctions.labelShapeStatistics img.Image
+let computeStats (img: Image<'T>) : ImageStats =
+    ImageFunctions.computeStats img
 let histogram (img: Image<'T>) : Map<'T, uint64> =
     ImageFunctions.histogram img
 
-let addConst = liftUnary1 (+)
-let add = liftBinary (+)
-let subConst = liftUnary1 (-) // Not symmetric, partner missing.
-let sub = liftBinary (-)
-let mulConst = liftUnary1 (*)
-let mul = liftBinary (*)
-let divConst = liftUnary1 (/) // Not symmetric, partner missing.
-let div = liftBinary (/)
-let modConst = liftUnary1 (%) // Not symmetric, partner missing.
-let mod = liftBinary (%)
-let powConst = liftUnary1 ImageFunctions.Pow // Not symmetric, partner missing.
-let pow = liftBinary ImageFunctions.Pow
-let gteConst = liftUnary1 (>=)
-let gte = liftBinary (>=)
-let gtConst = liftUnary1 (>)
-let ge = liftBinary (>)
-let eqConst = liftUnary1 (=)
-let eq = liftBinary (=)
-let neqConst = liftUnary (<>)
-let ne = liftBinary (<>)
-let ltConst = liftUnary1 (<)
-let lt = liftBinary (<)
-let lteConst = liftUnary1 (<=)
-let lt = liftBinary (<=)
-let andConst = liftUnary1 (&&&)
-let and = liftBinary (&&&)
-let orConst = liftUnary (|||)
-let or = liftBinary (|||)
-let xorConst = liftUnary1(^^^)
-let xor = liftBinary (^^^)
-let not = liftUnary (~~~) // Probably not a good idea...
+let add (a: Slice<'T>) (b: Slice<'T>) = liftBinaryOp Image<'T>.(+) (a,b) // types are a nuissance, for overload with constants, we need one variant per type, sigh
+let sub (a: Slice<'T>) (b: Slice<'T>) = liftBinaryOp Image<'T>.(-) (a,b)
+let mul (a: Slice<'T>) (b: Slice<'T>) = liftBinaryOp Image<'T>.(*) (a,b)
+let div (a: Slice<'T>) (b: Slice<'T>) = liftBinaryOp Image<'T>.(/) (a,b)
+let modulus (a: Slice<'T>) (b: Slice<'T>) = liftBinaryOp Image<'T>.(%) (a,b)
+let pow (a: Slice<'T>) (b: Slice<'T>) = liftBinaryOp Image<'T>.Pow (a,b)
+let isGreaterEqual (a: Slice<'T>) (b: Slice<'T>) = liftBinaryOp Image<'T>.isGreaterEqual (a,b)
+let gte (a: Slice<'T>) (b: Slice<'T>) = liftBinaryCmp Image<'T>.gte (a,b)
+let isGreater (a: Slice<'T>) (b: Slice<'T>) = liftBinaryOp Image<'T>.isGreater (a,b)
+let ge (a: Slice<'T>) (b: Slice<'T>) = liftBinaryCmp Image<'T>.gt (a,b)
+let isEqual (a: Slice<'T>) (b: Slice<'T>) = liftBinaryOp Image<'T>.isEqual (a,b)
+let eq (a: Slice<'T>) (b: Slice<'T>) = liftBinaryCmp Image<'T>.eq (a,b)
+let isNotEqual (a: Slice<'T>) (b: Slice<'T>) = liftBinaryOp Image<'T>.isNotEqual (a,b)
+let neq (a: Slice<'T>) (b: Slice<'T>) = liftBinaryCmp Image<'T>.neq (a,b)
+let isLessThanEqual (a: Slice<'T>) (b: Slice<'T>) = liftBinaryOp Image<'T>.isLessThanEqual (a,b)
+let lte (a: Slice<'T>) (b: Slice<'T>) = liftBinaryCmp Image<'T>.lte (a,b)
+let isLessThan (a: Slice<'T>) (b: Slice<'T>) = liftBinaryOp Image<'T>.isLessThan (a,b)
+let lt (a: Slice<'T>) (b: Slice<'T>) = liftBinaryCmp Image<'T>.lt (a,b)
+let sAnd (a: Slice<'T>) (b: Slice<'T>) = liftBinaryOp Image<'T>.(&&&) (a,b) // which I could think of better names...
+let sOr (a: Slice<'T>) (b: Slice<'T>) = liftBinaryOp Image<'T>.(|||) (a,b)
+let sXor (a: Slice<'T>) (b: Slice<'T>) = liftBinaryOp Image<'T>.(^^^) (a,b)
+let sNot (s: Slice<'T>) = liftUnary Image<'T>.(~~~) s
 
-let addNormalNoise = liftUnary2 ImageFunctions.addNormalNoise
-let threshold = liftUnary2 ImageFunctions.threshold
+let addNormalNoise a b (s: Slice<'T>) = liftUnary2 ImageFunctions.addNormalNoise a b s
+let threshold a b (s: Slice<'T>) = liftUnary2 ImageFunctions.threshold a b s
 
 let stack (slices: Slice<'T> list) : Slice<'T> =
     match slices with
@@ -119,7 +121,7 @@ let stack (slices: Slice<'T> list) : Slice<'T> =
             {elm with Image = ImageFunctions.stack images }
         | _ -> failwith "Can't stack an empty list"
 
-let extractSlice = liftUnary1 ImageFunctions.extractSlice
+let extractSlice a (s: Slice<'T>) = liftUnary1 ImageFunctions.extractSlice a s
 
 
 // IO stuff
@@ -131,36 +133,32 @@ let getVolumeSize (inputDir: string) (suffix: string): uint * uint * uint =
     let files = Directory.GetFiles(inputDir, suffix) |> Array.sort
     if files.Length = 0 then
         failwith $"No {suffix} files found in directory: {inputDir}"
+    let fi = getFileInfo(files[0]);
+    let sz = fi.size |> List.map uint
+    (sz[0], sz[1], sz[2])
 
-    let reader = new ImageFileReader()
-    reader.SetFileName(files[0])
-    let img = reader.Execute()
-    let size = img.GetSize()
-    let width = size[0] |> uint
-    let height = size[1] |> uint
-    let depth = files.Length |> uint
-    (width, height, depth)
-
-let readSlice<'T> (idx: uint) (filename: string) : Slice<'T> =
+let readSlice<'T when 'T: equality> (idx: uint) (filename: string) : Slice<'T> =
     {Index = idx; Image = Image<'T>.ofFile(filename)}
 
-let readRandomSlice<'T> (inputDir: string) (suffix: string): Slice<'T> =
-    let filename = Directory.GetFiles(inputDir, suffix) |> Array.randomChoices 1
-    readSlice<'T> 0u filename
+let readRandomSlice<'T when 'T: equality> (inputDir: string) (suffix: string): Slice<'T> =
+    let filename = Directory.GetFiles(inputDir, suffix) |> Array.randomChoices 1 |> Array.tryHead
+    match filename with
+        Some fn ->readSlice<'T> 0u fn
+        | _ -> failwith "No files in directory" // Here it would be better with a Slice structure with error handling
 
 let writeSlice (filename: string) (slice: Slice<'T>) : unit =
     slice.Image.toFile(filename)
 
-let plotSlice (slice: Slice<'T>) : unit =
+let inline plotSlice (slice: Slice<^T>) : unit  when ^T: (static member op_Explicit: ^T -> float) =
     let image = slice.Image
     let width = image.GetWidth() |> int
     let height = image.GetHeight() |> int
     let data =
         Seq.init height (fun y ->
             Seq.init width (fun x ->
-                getPixel3D image (uint x) (uint y) 0u |> float))
+                image[x, y] |> float))
     data |> Chart.Heatmap |> Chart.show
 
 let plotList (vec: float list) =
-    let idx = [1..vec.Lengthd-1]
-    Chart.Line(idx, values) |> Chart.show
+    let idx = [1..vec.Length-1]
+    Chart.Line(idx, vec) |> Chart.show

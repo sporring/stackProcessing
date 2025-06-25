@@ -983,7 +983,7 @@ let LessThanTests =
     testCase "int8 image < image" <| fun _ ->
         let img1 = Image<int8>.ofArray2D (array2D [| [| 1y; 2y |]; [| 3y; 4y |] |])
         let img2 = Image<int8>.ofArray2D (array2D [| [| 2y; 3y |]; [| 4y; 5y |] |])
-        Expect.isTrue (Image<int8>.op_LessThan(img1, img2)) "Expected img1 < img2"
+        Expect.isTrue (Image<int8>.lt(img1, img2)) "Expected img1 < img2"
 
     testCase "int8 image < scalar" <| fun _ ->
         let img = Image<int8>.ofArray2D (array2D [| [| 1y; 1y |]; [| 1y; 1y |] |])
@@ -996,7 +996,7 @@ let LessThanTests =
     testCase "int8 image < image (not true)" <| fun _ ->
         let img1 = Image<int8>.ofArray2D (array2D [| [| 5y; 6y |]; [| 7y; 8y |] |])
         let img2 = Image<int8>.ofArray2D (array2D [| [| 2y; 3y |]; [| 4y; 5y |] |])
-        Expect.isFalse (Image<int8>.op_LessThan(img1, img2)) "Expected img1 NOT < img2"
+        Expect.isFalse (Image<int8>.lt(img1, img2)) "Expected img1 NOT < img2"
 
     // uint8
     testCase "uint8 image < scalar" <| fun _ ->
@@ -1020,7 +1020,7 @@ let LessThanTests =
         let arr = array2D [| [| 3; 3 |]; [| 3; 3 |] |]
         let img1 = Image<int>.ofArray2D arr
         let img2 = Image<int>.ofArray2D arr
-        Expect.isFalse (Image<int>.op_LessThan(img1, img2)) "Expected img1 < img2 to be false for identical arrays"
+        Expect.isFalse (Image<int>.lt(img1, img2)) "Expected img1 < img2 to be false for identical arrays"
 
     // float
     testCase "float image < scalar" <| fun _ ->
@@ -1206,7 +1206,7 @@ let GreaterEqualTests =
 
 [<Tests>]
 let ModulusTests =
-  testList "Image op_Modulus (%) Tests" [
+  testList "Image modulus (%) Tests" [
 
     // Image % Image
     testCase "Image % Image (uint8)" <| fun _ ->

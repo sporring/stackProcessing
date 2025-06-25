@@ -18,17 +18,18 @@
   </ItemGroup>
 
   <ItemGroup>
-    <PackageReference Include="FSharp.Control.AsyncSeq" Version="3.*" />
-    <ProjectReference Include="..\AsyncSeqExtensions\AsyncSeqExtensions.fsproj" />
-    <ProjectReference Include="..\Vector\Vector.fsproj" />
-    <ProjectReference Include="..\CoreTypes\CoreTypes.fsproj" />
-    <ProjectReference Include="..\pipelineIO\pipelineIO.fsproj" />
-    <ProjectReference Include="..\simpleITKWrappers\simpleITKWrappers.fsproj" />
+    <PackageReference Include="Plotly.NET" Version="4.*" />
   </ItemGroup>
 
   <ItemGroup>
-    <Compile Include="imageSlice.fs">
-    <Compile Include="pipelineIO.fs">
-    <Compile Include="simpleITKWrappers.fs">
+    <PackageReference Include="FSharp.Control.AsyncSeq" Version="3.*" />
+    <!--<ProjectReference Include="..\AsyncSeqExtensions\AsyncSeqExtensions.fsproj" />
+    <ProjectReference Include="..\pipelineIO\pipelineIO.fsproj" />-->
+    <ProjectReference Include="..\Image\Image.fsproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Compile Include="imageSlice.fs" />
     <Compile Include="StackPipeline.fs" />
+  </ItemGroup>
 </Project>
