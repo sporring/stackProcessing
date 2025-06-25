@@ -1,6 +1,8 @@
 module Slice
 open Image
 open ImageFunctions
+open System.IO
+open Plotly.NET
 
 /// <summary>
 /// Represents a slice of a stack of 2d images. 
@@ -118,3 +120,47 @@ let stack (slices: Slice<'T> list) : Slice<'T> =
         | _ -> failwith "Can't stack an empty list"
 
 let extractSlice = liftUnary1 ImageFunctions.extractSlice
+
+
+// IO stuff
+let getDepth (inputDir: string) (suffix: string) : uint =
+    let files = Directory.GetFiles(inputDir, suffix) |> Array.sort
+    files.Length |> uint
+
+let getVolumeSize (inputDir: string) (suffix: string): uint * uint * uint =
+    let files = Directory.GetFiles(inputDir, suffix) |> Array.sort
+    if files.Length = 0 then
+        failwith $"No {suffix} files found in directory: {inputDir}"
+
+    let reader = new ImageFileReader()
+    reader.SetFileName(files[0])
+    let img = reader.Execute()
+    let size = img.GetSize()
+    let width = size[0] |> uint
+    let height = size[1] |> uint
+    let depth = files.Length |> uint
+    (width, height, depth)
+
+let readSlice<'T> (idx: uint) (filename: string) : Slice<'T> =
+    {Index = idx; Image = Image<'T>.ofFile(filename)}
+
+let readRandomSlice<'T> (inputDir: string) (suffix: string): Slice<'T> =
+    let filename = Directory.GetFiles(inputDir, suffix) |> Array.randomChoices 1
+    readSlice<'T> 0u filename
+
+let writeSlice (filename: string) (slice: Slice<'T>) : unit =
+    slice.Image.toFile(filename)
+
+let plotSlice (slice: Slice<'T>) : unit =
+    let image = slice.Image
+    let width = image.GetWidth() |> int
+    let height = image.GetHeight() |> int
+    let data =
+        Seq.init height (fun y ->
+            Seq.init width (fun x ->
+                getPixel3D image (uint x) (uint y) 0u |> float))
+    data |> Chart.Heatmap |> Chart.show
+
+let plotList (vec: float list) =
+    let idx = [1..vec.Lengthd-1]
+    Chart.Line(idx, values) |> Chart.show
