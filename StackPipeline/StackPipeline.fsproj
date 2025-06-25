@@ -27,7 +27,8 @@
   </ItemGroup>
 
   <ItemGroup>
+    <Compile Include="imageSlice.fs">
+    <Compile Include="pipelineIO.fs">
+    <Compile Include="simpleITKWrappers.fs">
     <Compile Include="StackPipeline.fs" />
-  </ItemGroup>
-
 </Project>

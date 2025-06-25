@@ -1606,13 +1606,24 @@ type Image<'T when 'T : equality>(sz: uint list, ?numberComp: uint) =
         else failwithf "Unsupported pixel type: %O" t
 
     member this.Item
-        with get(x: int, y: int) : 'T =
-            this.Get([ uint x; uint y ])
-        and set(x: int, y: int) (value: 'T) : unit =
-            this.Set([ uint x; uint y ], value)
-
+        with get(i0: int) : 'T =
+            this.Get([ uint i0 ])
+        and set(i0: int) (value: 'T) : unit =
+            this.Set([ uint i0 ], value)
     member this.Item
-        with get(x: int, y: int, z: int) : 'T =
-            this.Get([ uint x; uint y; uint z ])
-        and set(x: int, y: int, z: int) (value: 'T) : unit =
-            this.Set([ uint x; uint y; uint z ], value)
+        with get(i0: int, i1: int) : 'T =
+            this.Get([ uint i0; uint i1 ])
+        and set(i0: int, i1: int) (value: 'T) : unit =
+            this.Set([ uint i0; uint i1 ], value)
+    member this.Item
+        with get(i0: int, i1: int, i2: int) : 'T =
+            this.Get([ uint i0; uint i1; uint i2 ])
+        and set(i0: int, i1: int, i2: int) (value: 'T) : unit =
+            this.Set([ uint i0; uint i1; uint i2 ], value)
+    member this.Item
+        with get(i0: int, i1: int, i2: int, i3: int) : 'T =
+            this.Get([ uint i0; uint i1; uint i2; uint i3 ])
+        and set(i0: int, i1: int, i2: int, i3: int) (value: 'T) : unit =
+            this.Set([ uint i0; uint i1; uint i2; uint i3 ], value)
+
+// Slicing is available as https://learn.microsoft.com/en-us/dotnet/fsharp/language-reference/arrays

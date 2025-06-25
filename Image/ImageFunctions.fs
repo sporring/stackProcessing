@@ -11,6 +11,7 @@ let squeeze (img: Image<'T>) : Image<'T> =
     Image<'T>.ofSimpleITK(filter.Execute(img.Image))
 
 let concatAlong (dim: uint) (a: Image<'T>) (b: Image<'T>) : Image<'T> =
+    // perhaps use JoinSeriesImageFilter for speed.
     if a.GetDimension() <> b.GetDimension() then
         failwith "Images must have the same dimensionality."
     if a.GetNumberOfComponentsPerPixel() <> b.GetNumberOfComponentsPerPixel() then
@@ -368,3 +369,105 @@ let generateCoordinateAxis (axis: int) (size: int list) : Image<uint32> =
         image.SetPixelAsUInt32(idxVec, coord))
 
     Image<uint32>.ofSimpleITK(image)
+
+let histogram (image: Image<'T>) : Map<'T, uint64> =
+    let size = image.GetSize() |> List.map int
+    let dim = image.GetDimension()
+    let flat = 
+        match dim with
+            | 1u ->
+                seq { 
+                    for i0 in [0..(size[0] - 1)] do 
+                        yield image[i0] }
+            | 2u ->
+                seq { 
+                    for i0 in [0..(size[0] - 1)] do 
+                        for i1 in [0..(size[1] - 1)] do 
+                            yield image[i0,i1] }
+            | 3u ->
+                seq { 
+                    for i0 in [0..(size[0] - 1)] do 
+                        for i1 in [0..(size[1] - 1)] do 
+                            for i2 in [0..(size[2] - 1)] do 
+                               yield image[i0, i1, i2] }
+            | 4u ->
+                seq { 
+                    for i0 in [0..(size[0] - 1)] do 
+                        for i1 in [0..(size[1] - 1)] do 
+                            for i2 in [0..(size[2] - 1)] do 
+                                for i3 in [0..(size[2] - 1)] do 
+                                    yield image[i0, i1, i2, i3] }
+            | _ -> failwith $"Unsupported dimensionality {dim}"
+
+    flat 
+    |> Seq.fold 
+        (fun acc elm -> Map.change elm (fun vopt -> match vopt with Some v -> Some (v+1uL) | None -> Some (1uL)) acc)
+        Map.empty<'T, uint64>
+
+
+let addNormalNoise (mean: float) (stddev: float) : Image<'T> -> Image<'T> =
+    makeUnaryImageOperatorWith
+        (fun () -> new itk.simple.AdditiveGaussianNoiseImageFilter())
+        (fun f -> 
+            f.SetMean(mean)
+            f.SetStandardDeviation(stddev))
+        (fun f x -> f.Execute(x))
+
+let threshold (lower: float) (upper: float) : Image<'T> -> Image<'T> =
+    makeUnaryImageOperatorWith
+        (fun () -> new itk.simple.BinaryThresholdImageFilter())
+        (fun f -> 
+            f.SetLowerThreshold lower
+            f.SetUpperThreshold upper)
+        (fun f x -> f.Execute(x))
+
+let stack (images: Image<'T> list) : Image<'T> =
+    if images.Length = 0 then
+        failwith "stack: Cannot stack an empty list of image"
+    let dim = max 3u (List.fold (fun acc (img:Image<'T>) -> max 0u (img.GetDimension())) 0u images)
+    if dim = 0u then
+        failwith "stack: Cannot stack a list of empty image"
+    let cmp = List.map (fun (i:Image<'T>) -> i.GetNumberOfComponentsPerPixel()) images
+    if (List.distinct cmp).Length > 1 then
+        failwith "Images must have the same number of components."
+
+    let setSize (sz: uint list) (d: uint) = 
+        let pad = (int d) - sz.Length
+        List.concat [sz; List.replicate (max 0 pad) 1u]
+    let sizes = List.map (fun (img:Image<'T>) -> setSize (img.GetSize()) dim) images
+    let newSize = List.reduce (fun acc sz -> List.init (int dim) (fun i -> if i = 2 then acc[2]+sz[2] else acc[i])) sizes
+    let itkId = fromType<'T>
+
+    let paste = new itk.simple.PasteImageFilter()
+    let (_,img) =
+        images
+        |> List.map (fun (img: Image<'T>)->img.Image)   
+        |> List.fold 
+            (fun (i,(acc:itk.simple.Image)) (img:itk.simple.Image) -> 
+                let offset = List.init (int dim) (fun i -> if i = 2 then i else 0)
+                paste.SetDestinationIndex(offset |> toVectorInt32)
+                let szi = img.GetSize()
+                paste.SetSourceSize(szi)
+                (i+szi[2], paste.Execute(acc, img))) 
+            (0u, new itk.simple.Image(newSize |> toVectorUInt32, itkId, cmp[0]))
+    Image<'T>.ofSimpleITK(img)
+
+let extractSub (topLeft : uint list) (bottomRight: uint list) (img: Image<'T>) : Image<'T> =
+    if topLeft.Length <> bottomRight.Length then
+        failwith $"extractSub: topLeft and bottomRight lists must have equal lengths ({topLeft} vs {bottomRight})"
+    if img.GetDimension() <> uint topLeft.Length then
+        failwith $"extractSub: indices and image size does not match"
+    let sz = List.zip topLeft bottomRight |> List.map (fun (a,b) -> b-a + 1u)
+    if List.exists ((<) 1u) sz then
+        failwith $"extractSub: no index of bottomRight must be smaller than topLeft  ({topLeft} vs {bottomRight})"
+
+    let extractor = new itk.simple.ExtractImageFilter()
+    extractor.SetSize(sz |> toVectorUInt32)
+    extractor.SetIndex( topLeft |> List.map int |> toVectorInt32)
+    Image<'T>.ofSimpleITK(extractor.Execute(img.Image))
+
+let extractSlice (z: uint) (img: Image<'T>) =
+    if img.GetDimension() <> 3u then
+        failwith $"extractSlice: image must be 3D"
+    let sz = img.GetSize()
+    extractSub [0u; 0u; z] [sz[0]-1u; sz[1]-1u; 1u] img
