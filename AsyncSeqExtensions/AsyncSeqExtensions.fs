@@ -137,8 +137,16 @@ let chunkBySize (chunkSize: int) (source: AsyncSeq<'T>) : AsyncSeq<'T list> =
 /// </remarks>
 let zipJoin (combine: 'S -> 'T -> 'U) 
             (a: AsyncSeq<'S>) 
-            (b: AsyncSeq<'T>) : AsyncSeq<'U> =
-    AsyncSeq.zip a b |> AsyncSeq.map (fun (x, y) -> combine x y)
+            (b: AsyncSeq<'T>)
+            (txt: string option) 
+            : AsyncSeq<'U> =
+    AsyncSeq.zip a b 
+    |> AsyncSeq.map (
+        fun (x, y) -> 
+            match txt with 
+                Some t -> printfn "%s" t 
+                | None -> ()
+            combine x y)
 
 /// <summary>
 /// Converts an asynchronous computation of a single value into an asynchronous sequence containing one item.

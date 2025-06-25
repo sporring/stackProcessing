@@ -13,9 +13,7 @@ type Slice<'T when 'T: equality> = {
 }
 
 let create<'T when 'T: equality> (width: uint) (height: uint) (depth: uint) (idx: uint) : Slice<'T> =
-    let result = {Index= idx; Image=if depth > 1u then Image<'T>([width;height;depth]) else Image<'T>([width;height]) }
-    printfn "Created slice at index %d with dimension %d (%d,%d,%d)" idx (result.Image.GetDimension()) width height depth
-    result
+    {Index= idx; Image=if depth > 1u then Image<'T>([width;height;depth]) else Image<'T>([width;height]) }
 
 let liftUnary (f: Image<'T> -> Image<'T>) : Slice<'T> -> Slice<'T> =
     fun s -> { s with Image = f s.Image }
@@ -164,9 +162,7 @@ let getVolumeSize (inputDir: string) (suffix: string): uint * uint * uint =
     (sz[0], sz[1], uint files.Length)
 
 let readSlice<'T when 'T: equality> (idx: uint) (filename: string) : Slice<'T> =
-    let result = {Index = idx; Image = Image<'T>.ofFile(filename)}
-    printfn "Read slice at index %d with dimension %d" idx (result.Image.GetDimension())
-    result
+    {Index = idx; Image = Image<'T>.ofFile(filename)}
 
 let readRandomSlice<'T when 'T: equality> (inputDir: string) (suffix: string): Slice<'T> =
     let filename = Directory.GetFiles(inputDir, "*"+suffix) |> Array.randomChoices 1 |> Array.tryHead

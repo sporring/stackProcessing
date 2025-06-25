@@ -23,7 +23,7 @@ let addTo (other: AsyncSeq<Slice<'T>>) : StackProcessor<Slice<'T> ,Slice<'T>> =
         Name = "AddTo"
         Profile = Streaming
         Apply = fun input ->
-            zipJoin add input other
+            zipJoin add input other (Some "[addTo]")
     }
 
 let multiplyWith (other: AsyncSeq<Slice<'T>>) : StackProcessor<Slice<'T> ,Slice<'T>> =
@@ -33,7 +33,7 @@ let multiplyWith (other: AsyncSeq<Slice<'T>>) : StackProcessor<Slice<'T> ,Slice<
         Profile = Streaming
         Apply = fun input ->
             printfn "[multiplyWith]"
-            zipJoin mul input other
+            zipJoin mul input other (Some "[multiplyWith]")
     }
 
 let mapSlices (label: string) (profile: MemoryProfile) (f: 'S -> 'T) : StackProcessor<'S,'T> =
@@ -256,12 +256,12 @@ let histogram : StackProcessor<Slice<'T>, Map<'T, uint64>> =
     fromReducer "Histogram" Streaming histogramReducer
 *)
 let create<'T when 'T: equality> (width: uint) (height: uint) (depth: uint) : StackProcessor<unit, Slice<'T>> =
-    printfn "[constant]"
+    printfn "[create]"
     {
-        Name = "[constant]"
+        Name = "[create]"
         Profile = Streaming
         Apply = fun _ ->
-            AsyncSeq.init (int depth) (fun i -> Slice.create<'T> width height 1u (uint i))
+            AsyncSeq.init (int depth) (fun i -> printfn "[create %d]" i; Slice.create<'T> width height 1u (uint i))
     }
 
 let addNormalNoise (mean: float) (stddev: float) : StackProcessor<Slice<'T> ,Slice<'T>> =

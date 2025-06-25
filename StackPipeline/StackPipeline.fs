@@ -14,9 +14,9 @@ let writeSlicesAsync (outputDir: string) (suffix: string) (slices: AsyncSeq<Slic
     slices
     |> AsyncSeq.iterAsync (fun slice ->
         async {
-            let filename = Path.Combine(outputDir, sprintf "slice_%03d%s" slice.Index suffix)
-            slice.Image.toFile(filename)
-            printfn "[Write] Saved slice %d to %s" slice.Index filename
+            let fileName = Path.Combine(outputDir, sprintf "slice_%03d%s" slice.Index suffix)
+            slice.Image.toFile(fileName)
+            printfn "[Write] Saved slice %d to %s" slice.Index fileName
         })
 
 let writeSlices path suffix stream =
@@ -27,6 +27,7 @@ let readSlices<'T when 'T: equality> (inputDir: string) (suffix: string) : Async
     Directory.GetFiles(inputDir, "*"+suffix) |> Array.sort
     |> Array.mapi (fun i fileName ->
         async {
+            printfn "[Read] Reading slice %d to %s" (uint i) fileName
             return readSlice<'T> (uint i) fileName
         })
     |> Seq.ofArray
