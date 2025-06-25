@@ -1,4 +1,4 @@
-module StackPipeline
+module Processing
 
 open System
 open System.IO
@@ -6,7 +6,8 @@ open FSharp.Control
 open System.Collections.Generic
 open System.Collections.Concurrent
 open AsyncSeqExtensions
-open Slice<'T>
+open StackPipeline
+open Slice
 
 // --- Types ---
 /// <summary>
@@ -176,12 +177,7 @@ module Processing =
         let volume = slices.Image
         let size = volume.GetSize()
         let width, height, depth = size.[0], size.[1], size.[2]
-        let extractor = new ExtractImageFilter()
-        extractor.SetSize(new VectorUInt32([| width; height; 0u |]))
-        Seq.init (int depth) (fun z ->
-            extractor.SetIndex(new VectorInt32([| 0; 0; z |]))
-            let slice = extractor.Execute(volume)
-            { Index = baseIndex + uint z; Image = slice })
+        Seq.init (int depth) (fun z -> extractSlice (baseIndex+(uint z)) slices)
         |> AsyncSeq.ofSeq
 
     /// <summary>

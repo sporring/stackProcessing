@@ -164,3 +164,19 @@ let ofAsync (computation: Async<'T>) : AsyncSeq<'T> =
         let! result = computation
         yield result
     }
+
+let tee (source: AsyncSeq<'T>) : AsyncSeq<'T> * AsyncSeq<'T> =
+    let buffer = new System.Collections.Concurrent.BlockingCollection<'T>()
+    let copy =
+        asyncSeq {
+            for item in source do
+                buffer.Add(item)
+                yield item
+            buffer.CompleteAdding()
+        }
+    let duplicate =
+        asyncSeq {
+            for item in buffer.GetConsumingEnumerable() do
+                yield item
+        }
+    copy, duplicate

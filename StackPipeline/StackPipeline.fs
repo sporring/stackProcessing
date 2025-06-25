@@ -14,16 +14,20 @@ let writeSlicesAsync (outputDir: string) (suffix: string) (slices: AsyncSeq<Slic
     slices
     |> AsyncSeq.iterAsync (fun slice ->
         async {
-            let filename = Path.Combine(outputDir, sprintf "slice_%03d.%s" slice.Index suffix)
+            let filename = Path.Combine(outputDir, sprintf "slice_%03d%s" slice.Index suffix)
             slice.Image.toFile(filename)
             printfn "[Write] Saved slice %d to %s" slice.Index filename
         })
 
-let readSlices (inputDir: string) (suffix: string) : AsyncSeq<Slice<'T>> =
-    Directory.GetFiles(inputDir, suffix) |> Array.sort
+let writeSlices path suffix stream =
+    printfn "[writeSlices]"
+    writeSlicesAsync path suffix stream |> Async.RunSynchronously
+
+let readSlices<'T when 'T: equality> (inputDir: string) (suffix: string) : AsyncSeq<Slice<'T>> =
+    Directory.GetFiles(inputDir, "*"+suffix) |> Array.sort
     |> Array.mapi (fun i fileName ->
         async {
-            return readSlice (uint i) fileName
+            return readSlice<'T> (uint i) fileName
         })
     |> Seq.ofArray
     |> AsyncSeq.ofSeqAsync
@@ -101,6 +105,7 @@ type PipelineBuilder(availableMemory: uint64, width: uint, height: uint, depth: 
     /// <returns>A new <c>StackProcessor</c> that includes buffering if needed.</returns>
     member _.Bind(p: StackProcessor<'S,'T>, f: StackProcessor<'S,'T> -> StackProcessor<'S,'T>) : StackProcessor<'S,'T> =
         let composed = f p
+        (*
         let combinedProfile = composed.Profile
         if combinedProfile.RequiresBuffering availableMemory  width  height depth then
             printfn "[Memory] Exceeded memory limits. Splitting pipeline."
@@ -114,8 +119,8 @@ type PipelineBuilder(availableMemory: uint64, width: uint, height: uint, depth: 
                 readSlices tempDir ".tif"
 
             { Name = $"{composed.Name} {p.Name}"; Profile = Streaming; Apply = composed.Apply << intermediate } // The profile needs to be reset here. How to do that?
-        else
-            composed
+        else *)
+        composed
 
     /// <summary>
     /// Wraps a processor value for use in the pipeline computation expression.

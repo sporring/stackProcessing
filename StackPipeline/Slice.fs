@@ -12,6 +12,11 @@ type Slice<'T when 'T: equality> = {
     Image: Image<'T>
 }
 
+let create<'T when 'T: equality> (width: uint) (height: uint) (depth: uint) (idx: uint) : Slice<'T> =
+    let result = {Index= idx; Image=if depth > 1u then Image<'T>([width;height;depth]) else Image<'T>([width;height]) }
+    printfn "Created slice at index %d with dimension %d (%d,%d,%d)" idx (result.Image.GetDimension()) width height depth
+    result
+
 let liftUnary (f: Image<'T> -> Image<'T>) : Slice<'T> -> Slice<'T> =
     fun s -> { s with Image = f s.Image }
 
@@ -36,22 +41,29 @@ let liftBinary3 (f: 'a -> 'b -> 'c -> Image<'T> -> Image<'T> -> Image<'T>) : 'a 
 let liftBinaryOp (f: Image<'T> * Image<'T> -> Image<'T>) : Slice<'T> * Slice<'T> -> Slice<'T> =
     fun (s1, s2) -> { s1 with Image = f (s1.Image, s2.Image) }
 
+let liftBinaryOpInt (f: Image<int> * int -> Image<int>) : Slice<int> * int -> Slice<int> =
+    fun (s1, s2) -> { s1 with Image = f (s1.Image, s2) }
+let liftBinaryOpUInt8 (f: Image<uint8> * uint8 -> Image<uint8>) : Slice<uint8> * uint8 -> Slice<uint8> =
+    fun (s1, s2) -> { s1 with Image = f (s1.Image, s2) }
+let liftBinaryOpFloat (f: Image<float> * float -> Image<float>) : Slice<float> * float -> Slice<float> =
+    fun (s1, s2) -> { s1 with Image = f (s1.Image, s2) }
+
 let liftBinaryCmp (f: Image<'T> * Image<'T> -> bool) : Slice<'T> * Slice<'T> -> bool =
     fun (s1,s2) -> f (s1.Image, s2.Image)
 
-let abs (s: Slice<'T>) = liftUnary ImageFunctions.abs s
-let log (s: Slice<'T>) = liftUnary ImageFunctions.log s
-let log10 (s: Slice<'T>) = liftUnary ImageFunctions.log10 s
-let exp (s: Slice<'T>) = liftUnary ImageFunctions.exp s
-let sqrt (s: Slice<'T>) = liftUnary ImageFunctions.sqrt s
-let square (s: Slice<'T>) = liftUnary ImageFunctions.square s
-let sin (s: Slice<'T>) = liftUnary ImageFunctions.sin s
-let cos (s: Slice<'T>) = liftUnary ImageFunctions.cos s
-let tan (s: Slice<'T>) = liftUnary ImageFunctions.tan s
-let asin (s: Slice<'T>) = liftUnary ImageFunctions.asin s
-let acos (s: Slice<'T>) = liftUnary ImageFunctions.acos s
-let atan (s: Slice<'T>) = liftUnary ImageFunctions.atan s
-let round (s: Slice<'T>) = liftUnary ImageFunctions.round s
+let abs<'T when 'T: equality> (s: Slice<'T>) = liftUnary ImageFunctions.abs s
+let log<'T when 'T: equality> (s: Slice<'T>) = liftUnary ImageFunctions.log s
+let log10<'T when 'T: equality> (s: Slice<'T>) = liftUnary ImageFunctions.log10 s
+let exp<'T when 'T: equality> (s: Slice<'T>) = liftUnary ImageFunctions.exp s
+let sqrt<'T when 'T: equality> (s: Slice<'T>) = liftUnary ImageFunctions.sqrt s
+let square<'T when 'T: equality> (s: Slice<'T>) = liftUnary ImageFunctions.square s
+let sin<'T when 'T: equality> (s: Slice<'T>) = liftUnary ImageFunctions.sin s
+let cos<'T when 'T: equality> (s: Slice<'T>) = liftUnary ImageFunctions.cos s
+let tan<'T when 'T: equality> (s: Slice<'T>) = liftUnary ImageFunctions.tan s
+let asin<'T when 'T: equality> (s: Slice<'T>) = liftUnary ImageFunctions.asin s
+let acos<'T when 'T: equality> (s: Slice<'T>) = liftUnary ImageFunctions.acos s
+let atan<'T when 'T: equality> (s: Slice<'T>) = liftUnary ImageFunctions.atan s
+let round<'T when 'T: equality> (s: Slice<'T>) = liftUnary ImageFunctions.round s
 
 let convolve a b c (s: Slice<'T>) (t: Slice<'T>) = liftBinary3 convolve a b c s t
 let conv (s: Slice<'T>) (t: Slice<'T>) = liftBinary conv s t
@@ -88,10 +100,21 @@ let computeStats (img: Image<'T>) : ImageStats =
 let histogram (img: Image<'T>) : Map<'T, uint64> =
     ImageFunctions.histogram img
 
+let swap f a b = f b a
 let add (a: Slice<'T>) (b: Slice<'T>) = liftBinaryOp Image<'T>.(+) (a,b) // types are a nuissance, for overload with constants, we need one variant per type, sigh
+let addInt (a: Slice<int>) (b: int) = liftBinaryOpInt Image<int>.(+) (a,b)
+let addUInt8 (a: Slice<uint8>) (b: uint8) = liftBinaryOpUInt8 Image<uint8>.(+) (a,b)
+let addFloat (a: Slice<float>) (b: float) = liftBinaryOpFloat Image<float>.(+) (a,b)
 let sub (a: Slice<'T>) (b: Slice<'T>) = liftBinaryOp Image<'T>.(-) (a,b)
+let subInt (a: Slice<int>) (b: int) = liftBinaryOpInt Image<int>.(-) (a,b)
+let subFloat (a: Slice<float>) (b: float) = liftBinaryOpFloat Image<float>.(-) (a,b)
 let mul (a: Slice<'T>) (b: Slice<'T>) = liftBinaryOp Image<'T>.(*) (a,b)
+let mulInt (a: Slice<int>) (b: int) = liftBinaryOpInt Image<int>.(*) (a,b)
+let mulUInt8 (a: Slice<uint8>) (b: uint8) = liftBinaryOpUInt8 Image<uint8>.(*) (a,b)
+let mulFloat (a: Slice<float>) (b: float) = liftBinaryOpFloat Image<float>.(*) (a,b)
 let div (a: Slice<'T>) (b: Slice<'T>) = liftBinaryOp Image<'T>.(/) (a,b)
+let divInt (a: Slice<int>) (b: int) = liftBinaryOpInt Image<int>.(/) (a,b)
+let divFloat (a: Slice<float>) (b: float) = liftBinaryOpFloat Image<float>.(/) (a,b)
 let modulus (a: Slice<'T>) (b: Slice<'T>) = liftBinaryOp Image<'T>.(%) (a,b)
 let pow (a: Slice<'T>) (b: Slice<'T>) = liftBinaryOp Image<'T>.Pow (a,b)
 let isGreaterEqual (a: Slice<'T>) (b: Slice<'T>) = liftBinaryOp Image<'T>.isGreaterEqual (a,b)
@@ -126,24 +149,29 @@ let extractSlice a (s: Slice<'T>) = liftUnary1 ImageFunctions.extractSlice a s
 
 // IO stuff
 let getDepth (inputDir: string) (suffix: string) : uint =
-    let files = Directory.GetFiles(inputDir, suffix) |> Array.sort
+    let files = Directory.GetFiles(inputDir, "*"+suffix) |> Array.sort
     files.Length |> uint
 
+type FileInfo = ImageFunctions.FileInfo
+let getFileInfo(fname: string): FileInfo = getFileInfo(fname)
+
 let getVolumeSize (inputDir: string) (suffix: string): uint * uint * uint =
-    let files = Directory.GetFiles(inputDir, suffix) |> Array.sort
+    let files = Directory.GetFiles(inputDir, "*"+suffix) |> Array.sort
     if files.Length = 0 then
         failwith $"No {suffix} files found in directory: {inputDir}"
     let fi = getFileInfo(files[0]);
     let sz = fi.size |> List.map uint
-    (sz[0], sz[1], sz[2])
+    (sz[0], sz[1], uint files.Length)
 
 let readSlice<'T when 'T: equality> (idx: uint) (filename: string) : Slice<'T> =
-    {Index = idx; Image = Image<'T>.ofFile(filename)}
+    let result = {Index = idx; Image = Image<'T>.ofFile(filename)}
+    printfn "Read slice at index %d with dimension %d" idx (result.Image.GetDimension())
+    result
 
 let readRandomSlice<'T when 'T: equality> (inputDir: string) (suffix: string): Slice<'T> =
-    let filename = Directory.GetFiles(inputDir, suffix) |> Array.randomChoices 1 |> Array.tryHead
+    let filename = Directory.GetFiles(inputDir, "*"+suffix) |> Array.randomChoices 1 |> Array.tryHead
     match filename with
-        Some fn ->readSlice<'T> 0u fn
+        Some fn -> readSlice<'T> 0u fn
         | _ -> failwith "No files in directory" // Here it would be better with a Slice structure with error handling
 
 let writeSlice (filename: string) (slice: Slice<'T>) : unit =
