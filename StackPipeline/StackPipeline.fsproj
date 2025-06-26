@@ -18,7 +18,7 @@
   </ItemGroup>
 
   <ItemGroup>
-    <PackageReference Include="Plotly.NET" Version="4.*" />
+    <PackageReference Include="Plotly.NET" Version="5.*" />
   </ItemGroup>
 
   <ItemGroup>

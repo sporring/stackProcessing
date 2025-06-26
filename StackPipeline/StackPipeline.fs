@@ -9,17 +9,12 @@ open Slice
 open Plotly.NET
 
 // https://plotly.net/#For-applications-and-libraries
-type PlotStyle = Line | Points
-let plotListAsync (style: PlotStyle) (vectorSeq: AsyncSeq<(float*float) list>) =
+let plotListAsync (plt: (float list)->(float list)->unit) (vectorSeq: AsyncSeq<(float*float) list>) =
     vectorSeq
     |> AsyncSeq.iterAsync (fun points ->
         async {
-            let x,y = points |> Array.ofList |> Array.unzip
-            let chart = 
-                match style with
-                    Line -> Chart.Line(x,y) 
-                    | Points -> Chart.Point(x,y)
-            Chart.show chart
+            let x,y = points |> List.unzip
+            plt x y
         })
 
 let inline showSliceAsync<^T when ^T: (static member op_Explicit: ^T -> float) and ^T: equality> (slices: AsyncSeq<Slice<^T >>) : Async<unit> =
@@ -130,62 +125,6 @@ type StackProcessor<'S,'T> = {
     Apply: AsyncSeq<'S> -> AsyncSeq<'T>
 }
 
-let singleton (x: 'In) : StackProcessor<'In, 'In> =
-    {
-        Name = "[singleton]"
-        Profile = Streaming
-        Apply = fun _ -> AsyncSeq.singleton x
-    }
-
-let join 
-    (f: 'A -> 'B -> 'C) 
-    (p1: StackProcessor<'In, 'A>) 
-    (p2: StackProcessor<'In, 'B>) 
-    (txt: string option) 
-    : StackProcessor<'In, 'C> =
-    match txt with 
-        Some t -> printfn "%s" t 
-        | None -> ()
-    {
-        Name = $"zipJoin({p1.Name}, {p2.Name})"
-        Profile = 
-            match p1.Profile, p2.Profile with
-            | Streaming, Streaming -> Streaming
-            | Sliding sz1, Sliding sz2 -> Sliding (max sz1 sz2)
-            | _ -> Buffered // conservative fallback
-
-        Apply = fun input ->
-            let a = p1.Apply input
-            let b = p2.Apply input
-            AsyncSeq.zip a b |> AsyncSeq.map (fun (x, y) -> f x y)
-    }
-
-let runWith (input: AsyncSeq<'In>) (p: StackProcessor<'In,'T>) : AsyncSeq<'T> =
-    p.Apply input
-
-let run (p: StackProcessor<unit,'T>) : AsyncSeq<'T> =
-    runWith (AsyncSeq.singleton ()) p
-
-let runNWriteSlices path suffix maker =
-    printfn "[runNWriteSlices]"
-    let stream = run maker
-    writeSlicesAsync path suffix stream |> Async.RunSynchronously
-
-let inline runNShowSlice<^T when ^T: (static member op_Explicit: ^T -> float) and ^T: equality> maker =
-    printfn "[runNShowSlice]"
-    let stream = run maker
-    showSliceAsync<'T> stream |> Async.RunSynchronously
-
-let runNPrint maker =
-    printfn "[runNPrint]"
-    let stream = run maker
-    printAsync stream |> Async.RunSynchronously
-
-let inline runNPlotList style maker =
-    printfn "[runNPlotList]"
-    let stream = run maker
-    plotListAsync style stream |> Async.RunSynchronously
-
 // --- Pipeline computation expression ---
 /// <summary>
 /// Provides computation expression support for building memory-aware image processing pipelines.
@@ -284,66 +223,73 @@ let (>>=>) (p1: StackProcessor<'S,'T>) (p2: StackProcessor<'T,'U>) : StackProces
 /// </returns>
 let pipeline availableMemory width height depth = PipelineBuilder(availableMemory, width, height, depth)
 
-type Request<'T> = Left of AsyncReplyChannel<Option<'T>> | Right of AsyncReplyChannel<Option<'T>>
-let tee (p: StackProcessor<unit, 'T>) : StackProcessor<unit, 'T> * StackProcessor<unit, 'T> =
-    let leftRightStreams (input: AsyncSeq<unit>) : AsyncSeq<'T> * AsyncSeq<'T> =
-        let src = p.Apply input
-        let agent = MailboxProcessor.Start(fun inbox ->
-            async {
-                let enumerator = (AsyncSeq.toAsyncEnum src).GetAsyncEnumerator()
-                let mutable current : Option<'T> = None
-                let mutable consumed = (true, true)
-                let mutable finished = false
-                let rec loop () = async {
-                    if current.IsNone && not finished then
-                        let! hasNext = enumerator.MoveNextAsync().AsTask() |> Async.AwaitTask
-                        if hasNext then
-                            current <- Some enumerator.Current
-                            consumed <- (false, false)
-                        else
-                            finished <- true
-                    let! msg = inbox.Receive()
-                    match msg, current with
-                    | Left ch, Some v when not (fst consumed) ->
-                        ch.Reply(Some v)
-                        consumed <- (true, snd consumed)
-                    | Right ch, Some v when not (snd consumed) ->
-                        ch.Reply(Some v)
-                        consumed <- (fst consumed, true)
-                    | (Left ch | Right ch), None when finished ->
-                        ch.Reply(None)
-                    | _ -> ()
-                    if consumed = (true, true) then
-                        current <- None
-                    return! loop ()
-                }
-                do! loop ()
-            })
-        let mkTaggedStream tag =
-            asyncSeq {
-                let mutable done_ = false
-                while not done_ do
-                    let! vOpt = agent.PostAndAsyncReply(tag)
-                    match vOpt with
-                    | Some v -> yield v
-                    | None -> done_ <- true
-            }
-        mkTaggedStream Left, mkTaggedStream Right
-    let lazyStreams = lazy (leftRightStreams (AsyncSeq.singleton ()))
-    let mkSide name get =
-        {
-            Name = $"{p.Name}-{name}"
-            Profile = p.Profile
-            Apply = fun _ -> get lazyStreams.Value
-        }
-    mkSide "left" fst, mkSide "right" snd
+////////////////////////////////////////////////////////////////////////////////////////
+let singleton (x: 'In) : StackProcessor<'In, 'In> =
+    {
+        Name = "[singleton]"
+        Profile = Streaming
+        Apply = fun _ -> AsyncSeq.singleton x
+    }
+
+let runWith (input: AsyncSeq<'In>) (p: StackProcessor<'In,'T>) : AsyncSeq<'T> =
+    p.Apply input
+
+let run (p: StackProcessor<unit,'T>) : AsyncSeq<'T> =
+    runWith (AsyncSeq.singleton ()) p
+
+let runNWriteSlices path suffix maker =
+    printfn "[runNWriteSlices]"
+    let stream = run maker
+    writeSlicesAsync path suffix stream |> Async.RunSynchronously
+
+let inline runNShowSlice<^T when ^T: (static member op_Explicit: ^T -> float) and ^T: equality> maker =
+    printfn "[runNShowSlice]"
+    let stream = run maker
+    showSliceAsync<'T> stream |> Async.RunSynchronously
+
+let runNPrint maker =
+    printfn "[runNPrint]"
+    let stream = run maker
+    printAsync stream |> Async.RunSynchronously
+
+let inline runNPlotList plt maker =
+    printfn "[runNPlotList]"
+    let stream = run maker
+    plotListAsync plt stream |> Async.RunSynchronously
+
+let print p = printfn "[print]"; run p |> printAsync
+let plot plt p = printfn "[plot]"; run p |> plotListAsync plt
+
+/// Join two StackProcessors<'In, _> into one by zipping their outputs:
+///   • applies both processors to the same input stream
+///   • pairs each output and combines using the given function
+///   • assumes both sides produce values in lockstep
+let join (f: 'A -> 'B -> 'C) (p1: StackProcessor<'In, 'A>) (p2: StackProcessor<'In, 'B>) (txt: string option) : StackProcessor<'In, 'C> =
+    printfn "[join]"
+    match txt with 
+        Some t -> printfn "%s" t 
+        | None -> ()
+    {
+        Name = $"zipJoin({p1.Name}, {p2.Name})"
+        Profile = 
+            match p1.Profile, p2.Profile with
+            | Streaming, Streaming -> Streaming
+            | Sliding sz1, Sliding sz2 -> Sliding (max sz1 sz2)
+            | _ -> Buffered // conservative fallback
+
+        Apply = fun input ->
+            let a = p1.Apply input
+            let b = p2.Apply input
+            AsyncSeq.zip a b |> AsyncSeq.map (fun (x, y) -> f x y)
+    }
 
 /// Split a StackProcessor<'In,'T> into two branches that
 ///   • read the upstream only once
 ///   • keep at most one item in memory
 ///   • terminate correctly when both sides finish
-let tee2 (p : StackProcessor<'In,'T>)
-        : StackProcessor<'In,'T> * StackProcessor<'In,'T> =
+type Request<'T> = Left of AsyncReplyChannel<Option<'T>> | Right of AsyncReplyChannel<Option<'T>>
+let tee (p : StackProcessor<'In,'T>): StackProcessor<'In,'T> * StackProcessor<'In,'T> =
+    printfn "[tee]"
 
     // ---------- 1. Create the broadcaster exactly *once* per pipeline run ----------
     // We store it in a mutable cell that is initialised on first Apply().
@@ -428,11 +374,13 @@ let tee2 (p : StackProcessor<'In,'T>)
     mkSide "left"  fst,
     mkSide "right" snd
 
-let fanout
-    (p: StackProcessor<'In,'T>) 
-    (f1: StackProcessor<'T,'U>) 
-    (f2: StackProcessor<'T,'V>) : StackProcessor<'In, 'U * 'V> =
-    
+/// Fan out a StackProcessor<'In,'T> to two branches:
+///   • processes input once using tee
+///   • applies separate processors to each branch
+///   • zips outputs into a tuple
+let fanOut (p: StackProcessor<'In,'T>) (f1: StackProcessor<'T,'U>) (f2: StackProcessor<'T,'V>) : StackProcessor<'In, 'U * 'V> =
+    printfn "[fanOut]"
+
     let left, right = tee p
     {
         Name = $"fanout2 ({f1.Name}, {f2.Name})"
@@ -442,7 +390,9 @@ let fanout
             let rStream = right.Apply input |> f2.Apply
             AsyncSeq.zip lStream rStream
     }
-
+/// Run two StackProcessors<unit, _> in parallel:
+///   • executes each with its own consumer function
+///   • waits for both to finish before returning
 let runBoth (p1: StackProcessor<unit, 'T1>) (f1: StackProcessor<unit, 'T1> -> Async<unit>)
             (p2: StackProcessor<unit, 'T2>) (f2: StackProcessor<unit, 'T2> -> Async<unit>) : unit =
     async {
@@ -453,6 +403,3 @@ let runBoth (p1: StackProcessor<unit, 'T1>) (f1: StackProcessor<unit, 'T1> -> As
             ]
         return ()
     } |> Async.RunSynchronously
-
-let print p = run p |> printAsync
-let plot style p = run p |> plotListAsync style

@@ -105,10 +105,10 @@ let inline pairs2floats<^T, ^S when ^T : (static member op_Explicit : ^T -> floa
                                  and ^S : (static member op_Explicit : ^S -> float)>
                                  (pairs: (^T * ^S) list) : (float * float) list =
     ImageFunctions.pairs2floats pairs
-let inline pairs2int<^T, ^S when ^T : (static member op_Explicit : ^T -> int)
+let inline pairs2ints<^T, ^S when ^T : (static member op_Explicit : ^T -> int)
                                  and ^S : (static member op_Explicit : ^S -> int)>
                                  (pairs: (^T * ^S) list) : (int * int) list =
-    ImageFunctions.pairs2int pairs
+    ImageFunctions.pairs2ints pairs
 
 let swap f a b = f b a
 let add (a: Slice<'T>) (b: Slice<'T>) = liftBinaryOp Image<'T>.(+) (a,b) // types are a nuissance, for overload with constants, we need one variant per type, sigh

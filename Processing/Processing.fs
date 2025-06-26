@@ -273,8 +273,13 @@ let map2pairs<'T, 'S when 'T: comparison> : StackProcessor<Map<'T, 'S>,('T * 'S)
 
 let inline pairs2floats<^T, ^S when ^T : (static member op_Explicit : ^T -> float)
                                  and ^S : (static member op_Explicit : ^S -> float)> : StackProcessor<('T * 'S) list,(float * float) list> =
-    printfn "[map2pairs]"
-    mapSlices "map2pairs" Streaming Slice.pairs2floats
+    printfn "[pairs2floats]"
+    mapSlices "pairs2floats" Streaming Slice.pairs2floats
+
+let inline pairs2int<^T, ^S when ^T : (static member op_Explicit : ^T -> int)
+                                 and ^S : (static member op_Explicit : ^S -> int)> : StackProcessor<('T * 'S) list,(int * int) list> =
+    printfn "[pairs2int]"
+    mapSlices "pairs2int" Streaming Slice.pairs2ints
 
 let create<'T when 'T: equality> (width: uint) (height: uint) (depth: uint) : StackProcessor<unit, Slice<'T>> =
     printfn "[create]"

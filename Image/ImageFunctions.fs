@@ -434,7 +434,7 @@ let inline pairs2floats<^T, ^S when ^T : (static member op_Explicit : ^T -> floa
     // must be inline for not reducing 'T and 'S to ints
     pairs |> List.map (fun (k, v) -> (float k, float v)) 
 
-let inline pairs2int<^T, ^S when ^T : (static member op_Explicit : ^T -> int)
+let inline pairs2ints<^T, ^S when ^T : (static member op_Explicit : ^T -> int)
                                  and ^S : (static member op_Explicit : ^S -> int)>
                                  (pairs: (^T * ^S) list) : (int * int) list =
     // must be inline for not reducing 'T and 'S to ints
