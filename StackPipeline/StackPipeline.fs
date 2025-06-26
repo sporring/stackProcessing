@@ -7,6 +7,44 @@ open System.Collections.Concurrent
 open AsyncSeqExtensions
 open System.IO
 open Slice
+open Plotly.NET
+
+let plotListAsync (vectorSeq: AsyncSeq<int list>) =
+    vectorSeq
+    |> AsyncSeq.iterAsync (fun (values) ->
+        async {
+            let bins = List.mapi (fun i v -> i) values 
+            Chart.Line(Array.ofList bins, Array.ofList values) |> Chart.show
+        })
+
+let inline showSliceAsync<^T when ^T: (static member op_Explicit: ^T -> float) and ^T: equality> (slices: AsyncSeq<Slice<^T >>) : Async<unit> =
+    async {
+        let! maybeSlice =
+            slices
+            |> AsyncSeqExtensions.tryItem 0
+
+        match maybeSlice with
+        | Some slice ->
+            let image = slice.Image
+            let width = image.GetWidth() |> int
+            let height = image.GetHeight() |> int
+            printfn "[showSliceAsync] Showing first slice (%d x %d)" width height
+            let data = image.toArray2D()
+            let data =
+                Seq.init height (fun y ->
+                    Seq.init width (fun x ->
+                        image[x,y] |> float))
+            data |> Chart.Heatmap |> Chart.show
+        | None ->
+            printfn "No slice to show"
+    }
+
+let printAsync (slices: AsyncSeq<'T>) =
+    slices
+    |> AsyncSeq.iterAsync (fun data ->
+        async {
+            printfn "[Print] %A" data
+        })
 
 let writeSlicesAsync (outputDir: string) (suffix: string) (slices: AsyncSeq<Slice<'T>>) =
     if not (Directory.Exists(outputDir)) then
@@ -28,7 +66,7 @@ let readSlices<'T when 'T: equality> (inputDir: string) (suffix: string) : Async
     |> Array.mapi (fun i fileName ->
         async {
             printfn "[Read] Reading slice %d to %s" (uint i) fileName
-            return readSlice<'T> (uint i) fileName
+            return Slice.readSlice (uint i) fileName
         })
     |> Seq.ofArray
     |> AsyncSeq.ofSeqAsync
@@ -123,10 +161,24 @@ let run (p : StackProcessor<unit,'T>) : AsyncSeq<'T> =
     p.Apply (AsyncSeq.singleton ())   
 
 let runNWriteSlices path suffix maker =
-    let stream = run maker
     printfn "[runNWriteSlices]"
     let stream = run maker
     writeSlicesAsync path suffix stream |> Async.RunSynchronously
+
+let runNPrint maker =
+    printfn "[runNPrint]"
+    let stream = run maker
+    printAsync stream |> Async.RunSynchronously
+
+let inline runNShowSlice<^T when ^T: (static member op_Explicit: ^T -> float) and ^T: equality> maker =
+    printfn "[runNShowSlice]"
+    let stream = run maker
+    showSliceAsync<'T> stream |> Async.RunSynchronously
+
+let inline runNPlotList maker =
+    printfn "[runNPlotList]"
+    let stream = run maker
+    plotListAsync stream |> Async.RunSynchronously
 
 // --- Pipeline computation expression ---
 /// <summary>

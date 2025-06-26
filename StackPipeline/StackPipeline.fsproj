@@ -23,8 +23,8 @@
 
   <ItemGroup>
     <PackageReference Include="FSharp.Control.AsyncSeq" Version="3.*" />
-    <!--<ProjectReference Include="..\AsyncSeqExtensions\AsyncSeqExtensions.fsproj" />
-    <ProjectReference Include="..\pipelineIO\pipelineIO.fsproj" />-->
+    <ProjectReference Include="..\AsyncSeqExtensions\AsyncSeqExtensions.fsproj" />
+    <!--<ProjectReference Include="..\pipelineIO\pipelineIO.fsproj" />-->
     <ProjectReference Include="../Image/Image.fsproj" />
   </ItemGroup>
 

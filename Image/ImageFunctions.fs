@@ -405,9 +405,25 @@ let histogram (image: Image<'T>) : Map<'T, uint64> =
 
     flat 
     |> Seq.fold 
-        (fun acc elm -> Map.change elm (fun vopt -> match vopt with Some v -> Some (v+1uL) | None -> Some (1uL)) acc)
+        (fun acc elm -> 
+            Map.change elm (fun vopt -> 
+                match vopt with 
+                    Some v -> Some (v+1uL) 
+                    | None -> Some (1uL)) 
+                acc)
         Map.empty<'T, uint64>
 
+let addHistogram (h1: Map<'T, uint64>) (h2: Map<'T, uint64>) : Map<'T, uint64> =
+    Map.fold 
+        (fun acc k2 v2 -> 
+            Map.change 
+                k2 
+                (fun v1opt -> 
+                    match v1opt with 
+                        Some v1 -> Some (v1+v2) | None -> Some v2) 
+                acc)
+        h1
+        h2
 
 let addNormalNoise (mean: float) (stddev: float) : Image<'T> -> Image<'T> =
     makeUnaryImageOperatorWith

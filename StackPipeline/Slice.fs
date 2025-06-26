@@ -93,10 +93,12 @@ let unique (img: Slice<'T>) : 'T list when 'T : comparison =
     ImageFunctions.unique img.Image
 let labelShapeStatistics (img: Slice<'T>) : Map<int64, ImageFunctions.LabelShapeStatistics> =
     ImageFunctions.labelShapeStatistics img.Image
-let computeStats (img: Image<'T>) : ImageStats =
-    ImageFunctions.computeStats img
-let histogram (img: Image<'T>) : Map<'T, uint64> =
-    ImageFunctions.histogram img
+let computeStats (img: Slice<'T>) : ImageStats =
+    ImageFunctions.computeStats img.Image
+let histogram (img: Slice<'T>) : Map<'T, uint64> =
+    ImageFunctions.histogram img.Image
+let addHistogram (h1: Map<'T, uint64>) (h2: Map<'T, uint64>): Map<'T, uint64> =
+    ImageFunctions.addHistogram h1 h2
 
 let swap f a b = f b a
 let add (a: Slice<'T>) (b: Slice<'T>) = liftBinaryOp Image<'T>.(+) (a,b) // types are a nuissance, for overload with constants, we need one variant per type, sigh

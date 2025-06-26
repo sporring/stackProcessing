@@ -247,14 +247,14 @@ let exp<'T when 'T: equality> : StackProcessor<Slice<'T>, Slice<'T>> =
     printfn "[exp]"
     mapSlices "Exp" Streaming exp<'T>
 
-(*
-let histogram : StackProcessor<Slice<'T>, Map<'T, uint64>> =
+// let histogram (img: Image<'T>) : Map<'T, uint64> =
+let histogram<'T when 'T: comparison> : StackProcessor<Slice<'T>, Map<'T, uint64>> =
     let histogramReducer (slices: AsyncSeq<Slice<'T>>) =
         slices
-        |> AsyncSeq.map histogramSlice
-        |> AsyncSeqExtensions.fold Vector.add (Vector.zero 0 256)
+        |> AsyncSeq.map Slice.histogram
+        |> AsyncSeqExtensions.fold Slice.addHistogram (Map<'T,uint64> [])
     fromReducer "Histogram" Streaming histogramReducer
-*)
+
 let create<'T when 'T: equality> (width: uint) (height: uint) (depth: uint) : StackProcessor<unit, Slice<'T>> =
     printfn "[create]"
     {
@@ -265,6 +265,7 @@ let create<'T when 'T: equality> (width: uint) (height: uint) (depth: uint) : St
     }
 
 let readSlices<'T when 'T: equality> (inputDir: string) (suffix: string) : StackProcessor<unit, Slice<'T>> =
+    printfn "[readSlices]"
     let filenames = Directory.GetFiles(inputDir, "*"+suffix) |> Array.sort
     let depth = filenames.Length
     {
@@ -273,8 +274,37 @@ let readSlices<'T when 'T: equality> (inputDir: string) (suffix: string) : Stack
         Apply = fun _ ->
             AsyncSeq.init (int depth) (fun i -> 
                 let fileName = filenames[int i]; 
-                printfn "[Read] Reading slice %d to %s" (uint i) fileName
-                readSlice<'T> (uint i) fileName)
+                printfn "[readSlices] Reading slice %d to %s" (uint i) fileName
+                Slice.readSlice<'T> (uint i) fileName)
+    }
+
+let readSliceN<'T when 'T: equality> (idx: uint) (inputDir: string) (suffix: string) : StackProcessor<unit, Slice<'T>> =
+    printfn "[readSliceN]"
+    let fileNames = Directory.GetFiles(inputDir, "*"+suffix) |> Array.sort
+    if fileNames.Length <= (int idx) then
+        failwith "[readSliceN] Index out of bounds"
+    else
+    let fileName = fileNames[int idx]
+    {
+        Name = $"[readSliceN {fileName}]"
+        Profile = Streaming
+        Apply = fun _ ->
+            AsyncSeq.init 1 (fun i -> 
+                printfn "[readSliceN] Reading slice %d to %s" (uint idx) fileName
+                Slice.readSlice<'T> (uint idx) fileName)
+    }
+
+let readRandomSlices<'T when 'T: equality> (count: uint) (inputDir: string) (suffix: string) :StackProcessor<unit, Slice<'T>> =
+    printfn "[readRandomSlices]"
+    let fileNames = Directory.GetFiles(inputDir, "*"+suffix) |> Array.randomChoices (int count)
+    {
+        Name = $"[readRandomSlices {inputDir}]"
+        Profile = Streaming
+        Apply = fun _ ->
+            AsyncSeq.init (int count) (fun i -> 
+                let fileName = fileNames[int i]; 
+                printfn "[readRandomSlices] Reading slice %d to %s" (uint i) fileName
+                Slice.readSlice<'T> (uint i) fileName)
     }
 
 let addNormalNoise (mean: float) (stddev: float) : StackProcessor<Slice<'T> ,Slice<'T>> =
