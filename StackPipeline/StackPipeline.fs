@@ -306,46 +306,80 @@ let tee (p : StackProcessor<unit,'T>) : StackProcessor<unit,'T>*StackProcessor<u
         }
     ((fromStream left), (fromStream right))
 
-let teeProcessor (p : StackProcessor<unit,'T>) : StackProcessor<unit,'T> * StackProcessor<unit,'T> =
-    let fromStream (s: AsyncSeq<'T>) : StackProcessor<'S, 'T> =
+type Request<'T> = Left of AsyncReplyChannel<Option<'T>> | Right of AsyncReplyChannel<Option<'T>>
+
+let teeProcessor (p: StackProcessor<unit, 'T>) : StackProcessor<unit, 'T> * StackProcessor<unit, 'T> =
+
+    let fromStream (s: AsyncSeq<'T>) : StackProcessor<unit, 'T> =
         {
             Name = $"{p.Name}-tee"
             Profile = p.Profile
             Apply = fun _ -> s
         }
 
-    let leftRightStreams (input: AsyncSeq<'S>) : AsyncSeq<'T> * AsyncSeq<'T> =
+    let leftRightStreams (input: AsyncSeq<unit>) : AsyncSeq<'T> * AsyncSeq<'T> =
         let src = p.Apply input
+
         let agent = MailboxProcessor.Start(fun inbox ->
             async {
                 let enumerator = (AsyncSeq.toAsyncEnum src).GetAsyncEnumerator()
                 let mutable current : Option<'T> = None
-                let mutable doneReading = false
+                let mutable leftConsumed = true
+                let mutable rightConsumed = true
+                let mutable finished = false
 
-                while not doneReading do
-                    let! (tag, reply: AsyncReplyChannel<Option<'T>>) = inbox.Receive()
-                    match current with
-                    | Some v ->
-                        current <- None
-                        reply.Reply(Some v)
-                    | None ->
+                let rec loop () = async {
+                    if current.IsNone && not finished then
                         let! hasNext = enumerator.MoveNextAsync().AsTask() |> Async.AwaitTask
                         if hasNext then
                             current <- Some enumerator.Current
-                            if tag = "left" then
-                                reply.Reply(current)
-                            else
-                                reply.Reply(current)
+                            leftConsumed <- false
+                            rightConsumed <- false
                         else
-                            doneReading <- true
-                            reply.Reply(None)
+                            finished <- true
+
+                    let! msg = inbox.Receive()
+
+                    match msg, current with
+                    | Left ch, Some v ->
+                        if not leftConsumed then
+                            ch.Reply(Some v)
+                            leftConsumed <- true
+                        else
+                            ch.Reply(None)
+
+                    | Right ch, Some v ->
+                        if not rightConsumed then
+                            ch.Reply(Some v)
+                            rightConsumed <- true
+                        else
+                            ch.Reply(None)
+
+                    | (Left ch | Right ch), None when finished ->
+                        ch.Reply(None)
+
+                    | _ -> ()
+
+                    // If both have consumed, move to next element
+                    if leftConsumed && rightConsumed then
+                        current <- None
+
+                    return! loop ()
+                }
+
+                do! loop ()
             })
 
         let mkStream tag =
             asyncSeq {
                 let mutable finished = false
                 while not finished do
-                    let! vOpt = agent.PostAndAsyncReply(fun ch -> (tag, ch))
+                    let! vOpt =
+                        agent.PostAndAsyncReply(fun ch ->
+                            match tag with
+                            | "left" -> Left ch
+                            | "right" -> Right ch
+                            | _ -> failwith "Invalid tag")
                     match vOpt with
                     | Some v -> yield v
                     | None -> finished <- true
@@ -353,23 +387,23 @@ let teeProcessor (p : StackProcessor<unit,'T>) : StackProcessor<unit,'T> * Stack
 
         mkStream "left", mkStream "right"
 
-    // Return tee'd processors as new processors
-    let teeP : StackProcessor<'S, 'T> * StackProcessor<'S, 'T> =
-        let left, right =
-            let lazyLeftRight = lazy (leftRightStreams >> (fun (l, r) -> fromStream l, fromStream r))
-            (fun s -> fst (lazyLeftRight.Value s)), (fun s -> snd (lazyLeftRight.Value s))
+    let lazyStreams = lazy (leftRightStreams (AsyncSeq.singleton ()))
+
+    let left =
         {
             Name = $"{p.Name}-left"
             Profile = p.Profile
-            Apply = fun input -> (fst (leftRightStreams input))
-        },
+            Apply = fun _ -> fst lazyStreams.Value
+        }
+
+    let right =
         {
             Name = $"{p.Name}-right"
             Profile = p.Profile
-            Apply = fun input -> (snd (leftRightStreams input))
+            Apply = fun _ -> snd lazyStreams.Value
         }
 
-    teeP
+    left, right
 
 let fanout
     (p: StackProcessor<'In,'T>) 
