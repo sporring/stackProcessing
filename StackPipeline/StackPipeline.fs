@@ -308,105 +308,69 @@ let tee (p : StackProcessor<unit,'T>) : StackProcessor<unit,'T>*StackProcessor<u
     ((fromStream left), (fromStream right))
 
 let tee2 (p : StackProcessor<unit,'T>) : StackProcessor<unit,'T> * StackProcessor<unit,'T> =
-    let src = run p
-
-    let agent = MailboxProcessor.Start(fun inbox ->
-        async {
-            use e = src.GetEnumerator()
-            let mutable current : 'T option = None
-            let mutable finished = false
-
-            while not finished do
-                let! (msg, reply: AsyncReplyChannel<'T>) = inbox.Receive()
-                match msg with
-                | "left" ->
-                    match current with
-                    | Some v ->
-                        reply.Reply v
-                    | None ->
-                        let! vopt = e.MoveNext()
-                        match vopt with
-                        | Some v ->
-                            current <- Some v
-                            reply.Reply v
-                        | None ->
-                            finished <- true
-                | "right" ->
-                    match current with
-                    | Some v ->
-                        reply.Reply v
-                        current <- None
-                    | None ->
-                        let! vopt = e.MoveNext()
-                        match vopt with
-                        | Some v ->
-                            reply.Reply v
-                        | None ->
-                            finished <- true
-                | _ -> ()
-        })
-
-    let makeStream side =
-        asyncSeq {
-            while true do
-                let! item = agent.PostAndAsyncReply(fun ch -> (side, ch))
-                yield item
-        }
-
-    fromStream (makeStream "left"), fromStream (makeStream "right")
-
-// This does not work, since there most likely are race conditions. A Mailbox processor would be better, but i cannot make it work...
-let teeProcessor<'In, 'T> (p: StackProcessor<'In, 'T>) : StackProcessor<'In, 'T> * StackProcessor<'In, 'T> =
-    let fromStream name s =
+    let fromStream (s: AsyncSeq<'T>) : StackProcessor<'S, 'T> =
         {
-            Name = $"{p.Name}_{name}"
+            Name = $"{p.Name}-tee"
             Profile = p.Profile
             Apply = fun _ -> s
         }
 
-    let mutable initialized = false
-    let mutable leftStream = Unchecked.defaultof<AsyncSeq<'T>>
-    let mutable rightStream = Unchecked.defaultof<AsyncSeq<'T>>
+    let leftRightStreams (input: AsyncSeq<'S>) : AsyncSeq<'T> * AsyncSeq<'T> =
+        let src = p.Apply input
+        let agent = MailboxProcessor.Start(fun inbox ->
+            async {
+                use enumerator = AsyncSeq.toAsyncEnum src
+                let mutable current : Option<'T> = None
+                let mutable doneReading = false
 
-    let teeLogic (input: AsyncSeq<'In>) =
-        if not initialized then
-            initialized <- true
-            let shared = p.Apply input
-            let buffer = new System.Collections.Concurrent.BlockingCollection<'T>(boundedCapacity = 1)
+                while not doneReading do
+                    let! (tag, reply: AsyncReplyChannel<Option<'T>>) = inbox.Receive()
+                    match current with
+                    | Some v ->
+                        current <- None
+                        reply.Reply(Some v)
+                    | None ->
+                        let! hasNext = enumerator.MoveNext()
+                        if hasNext then
+                            current <- Some enumerator.Current
+                            if tag = "left" then
+                                reply.Reply(current)
+                            else
+                                reply.Reply(current)
+                        else
+                            doneReading <- true
+                            reply.Reply(None)
+            })
 
-            leftStream <-
-                asyncSeq {
-                    for x in shared do
-                        buffer.Add x
-                        yield x
-                    buffer.CompleteAdding()
-                }
+        let mkStream tag =
+            asyncSeq {
+                let mutable done = false
+                while not done do
+                    let! vOpt = agent.PostAndAsyncReply(fun ch -> (tag, ch))
+                    match vOpt with
+                    | Some v -> yield v
+                    | None -> done <- true
+            }
 
-            rightStream <-
-                asyncSeq {
-                    for x in buffer.GetConsumingEnumerable() do
-                        yield x
-                }
+        mkStream "left", mkStream "right"
 
-    let left =
+    // Return tee'd processors as new processors
+    let teeP : StackProcessor<'S, 'T> * StackProcessor<'S, 'T> =
+        let left, right =
+            let lazyLeftRight = lazy (leftRightStreams >> (fun (l, r) -> fromStream l, fromStream r))
+            (fun s -> fst (lazyLeftRight.Value s)), (fun s -> snd (lazyLeftRight.Value s))
         {
-            Name = $"{p.Name}_left"
+            Name = $"{p.Name}-left"
             Profile = p.Profile
-            Apply = fun input ->
-                teeLogic input
-                leftStream
+            Apply = fun input -> (fst (leftRightStreams input))
+        },
+        {
+            Name = $"{p.Name}-right"
+            Profile = p.Profile
+            Apply = fun input -> (snd (leftRightStreams input))
         }
 
-    let right =
-        {
-            Name = $"{p.Name}_right"
-            Profile = p.Profile
-            Apply = fun input ->
-                teeLogic input
-                rightStream
-        }
-
-    left, right
+    teeP
 
 let fanout
     (p: StackProcessor<'In,'T>) 
