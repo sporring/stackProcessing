@@ -284,11 +284,9 @@ let (>>=>) (p1: StackProcessor<'S,'T>) (p2: StackProcessor<'T,'U>) : StackProces
 /// </returns>
 let pipeline availableMemory width height depth = PipelineBuilder(availableMemory, width, height, depth)
 
-
-let fromStream<'In, 'T> (s: AsyncSeq<'T>) : StackProcessor<'In, 'T> =
-    { Name = "[stream]"; Profile = Streaming; Apply = fun (_: AsyncSeq<'In>) -> s }
-
 let tee (p : StackProcessor<unit,'T>) : StackProcessor<unit,'T>*StackProcessor<unit,'T> =
+    let fromStream (s: AsyncSeq<'T>) : StackProcessor<'In, 'T> =
+        { Name = "[stream]"; Profile = Streaming; Apply = fun (_: AsyncSeq<'In>) -> s }
 
     let src = run p                      // run only once
     let buf  = new System.Collections.Concurrent.BlockingCollection<'T>(boundedCapacity = 1)
@@ -307,19 +305,9 @@ let tee (p : StackProcessor<unit,'T>) : StackProcessor<unit,'T>*StackProcessor<u
     ((fromStream left), (fromStream right))
 
 type Request<'T> = Left of AsyncReplyChannel<Option<'T>> | Right of AsyncReplyChannel<Option<'T>>
-
 let teeProcessor (p: StackProcessor<unit, 'T>) : StackProcessor<unit, 'T> * StackProcessor<unit, 'T> =
-
-    let fromStream (s: AsyncSeq<'T>) : StackProcessor<unit, 'T> =
-        {
-            Name = $"{p.Name}-tee"
-            Profile = p.Profile
-            Apply = fun _ -> s
-        }
-
     let leftRightStreams (input: AsyncSeq<unit>) : AsyncSeq<'T> * AsyncSeq<'T> =
         let src = p.Apply input
-
         let agent = MailboxProcessor.Start(fun inbox ->
             async {
                 let enumerator = (AsyncSeq.toAsyncEnum src).GetAsyncEnumerator()
@@ -337,9 +325,7 @@ let teeProcessor (p: StackProcessor<unit, 'T>) : StackProcessor<unit, 'T> * Stac
                             rightConsumed <- false
                         else
                             finished <- true
-
                     let! msg = inbox.Receive()
-
                     match msg, current with
                     | Left ch, Some v ->
                         if not leftConsumed then
@@ -347,29 +333,22 @@ let teeProcessor (p: StackProcessor<unit, 'T>) : StackProcessor<unit, 'T> * Stac
                             leftConsumed <- true
                         else
                             ch.Reply(None)
-
                     | Right ch, Some v ->
                         if not rightConsumed then
                             ch.Reply(Some v)
                             rightConsumed <- true
                         else
                             ch.Reply(None)
-
                     | (Left ch | Right ch), None when finished ->
                         ch.Reply(None)
-
                     | _ -> ()
-
                     // If both have consumed, move to next element
                     if leftConsumed && rightConsumed then
                         current <- None
-
                     return! loop ()
                 }
-
                 do! loop ()
             })
-
         let mkStream tag =
             asyncSeq {
                 let mutable finished = false
@@ -384,25 +363,20 @@ let teeProcessor (p: StackProcessor<unit, 'T>) : StackProcessor<unit, 'T> * Stac
                     | Some v -> yield v
                     | None -> finished <- true
             }
-
         mkStream "left", mkStream "right"
-
     let lazyStreams = lazy (leftRightStreams (AsyncSeq.singleton ()))
-
     let left =
         {
             Name = $"{p.Name}-left"
             Profile = p.Profile
             Apply = fun _ -> fst lazyStreams.Value
         }
-
     let right =
         {
             Name = $"{p.Name}-right"
             Profile = p.Profile
             Apply = fun _ -> snd lazyStreams.Value
         }
-
     left, right
 
 let fanout
