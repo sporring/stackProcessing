@@ -2,7 +2,6 @@ module StackPipeline
 
 open System
 open FSharp.Control
-open System.Threading
 open System.Collections.Generic
 open AsyncSeqExtensions
 open System.IO
@@ -307,7 +306,7 @@ let tee (p : StackProcessor<unit,'T>) : StackProcessor<unit,'T>*StackProcessor<u
         }
     ((fromStream left), (fromStream right))
 
-let tee2 (p : StackProcessor<unit,'T>) : StackProcessor<unit,'T> * StackProcessor<unit,'T> =
+let teeProcessor (p : StackProcessor<unit,'T>) : StackProcessor<unit,'T> * StackProcessor<unit,'T> =
     let fromStream (s: AsyncSeq<'T>) : StackProcessor<'S, 'T> =
         {
             Name = $"{p.Name}-tee"
@@ -319,7 +318,7 @@ let tee2 (p : StackProcessor<unit,'T>) : StackProcessor<unit,'T> * StackProcesso
         let src = p.Apply input
         let agent = MailboxProcessor.Start(fun inbox ->
             async {
-                use enumerator = AsyncSeq.toAsyncEnum src
+                let enumerator = (AsyncSeq.toAsyncEnum src).GetAsyncEnumerator()
                 let mutable current : Option<'T> = None
                 let mutable doneReading = false
 
@@ -330,7 +329,7 @@ let tee2 (p : StackProcessor<unit,'T>) : StackProcessor<unit,'T> * StackProcesso
                         current <- None
                         reply.Reply(Some v)
                     | None ->
-                        let! hasNext = enumerator.MoveNext()
+                        let! hasNext = enumerator.MoveNextAsync().AsTask() |> Async.AwaitTask
                         if hasNext then
                             current <- Some enumerator.Current
                             if tag = "left" then
@@ -344,12 +343,12 @@ let tee2 (p : StackProcessor<unit,'T>) : StackProcessor<unit,'T> * StackProcesso
 
         let mkStream tag =
             asyncSeq {
-                let mutable done = false
-                while not done do
+                let mutable finished = false
+                while not finished do
                     let! vOpt = agent.PostAndAsyncReply(fun ch -> (tag, ch))
                     match vOpt with
                     | Some v -> yield v
-                    | None -> done <- true
+                    | None -> finished <- true
             }
 
         mkStream "left", mkStream "right"
