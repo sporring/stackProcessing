@@ -2,19 +2,25 @@ module StackPipeline
 
 open System
 open FSharp.Control
+open System.Threading
 open System.Collections.Generic
-open System.Collections.Concurrent
 open AsyncSeqExtensions
 open System.IO
 open Slice
 open Plotly.NET
 
-let plotListAsync (vectorSeq: AsyncSeq<int list>) =
+// https://plotly.net/#For-applications-and-libraries
+type PlotStyle = Line | Points
+let plotListAsync (style: PlotStyle) (vectorSeq: AsyncSeq<(float*float) list>) =
     vectorSeq
-    |> AsyncSeq.iterAsync (fun (values) ->
+    |> AsyncSeq.iterAsync (fun points ->
         async {
-            let bins = List.mapi (fun i v -> i) values 
-            Chart.Line(Array.ofList bins, Array.ofList values) |> Chart.show
+            let x,y = points |> Array.ofList |> Array.unzip
+            let chart = 
+                match style with
+                    Line -> Chart.Line(x,y) 
+                    | Points -> Chart.Point(x,y)
+            Chart.show chart
         })
 
 let inline showSliceAsync<^T when ^T: (static member op_Explicit: ^T -> float) and ^T: equality> (slices: AsyncSeq<Slice<^T >>) : Async<unit> =
@@ -155,30 +161,31 @@ let join
             AsyncSeq.zip a b |> AsyncSeq.map (fun (x, y) -> f x y)
     }
 
-/// Execute a *source* pipeline (`StackProcessor<unit,'T>`) and get its stream.
-let run (p : StackProcessor<unit,'T>) : AsyncSeq<'T> =
-    // one dummy `unit` value starts the source
-    p.Apply (AsyncSeq.singleton ())   
+let runWith (input: AsyncSeq<'In>) (p: StackProcessor<'In,'T>) : AsyncSeq<'T> =
+    p.Apply input
+
+let run (p: StackProcessor<unit,'T>) : AsyncSeq<'T> =
+    runWith (AsyncSeq.singleton ()) p
 
 let runNWriteSlices path suffix maker =
     printfn "[runNWriteSlices]"
     let stream = run maker
     writeSlicesAsync path suffix stream |> Async.RunSynchronously
 
-let runNPrint maker =
-    printfn "[runNPrint]"
-    let stream = run maker
-    printAsync stream |> Async.RunSynchronously
-
 let inline runNShowSlice<^T when ^T: (static member op_Explicit: ^T -> float) and ^T: equality> maker =
     printfn "[runNShowSlice]"
     let stream = run maker
     showSliceAsync<'T> stream |> Async.RunSynchronously
 
-let inline runNPlotList maker =
+let runNPrint maker =
+    printfn "[runNPrint]"
+    let stream = run maker
+    printAsync stream |> Async.RunSynchronously
+
+let inline runNPlotList style maker =
     printfn "[runNPlotList]"
     let stream = run maker
-    plotListAsync stream |> Async.RunSynchronously
+    plotListAsync style stream |> Async.RunSynchronously
 
 // --- Pipeline computation expression ---
 /// <summary>
@@ -277,3 +284,155 @@ let (>>=>) (p1: StackProcessor<'S,'T>) (p2: StackProcessor<'T,'U>) : StackProces
 /// A <c>PipelineBuilder</c> instance that supports memory-constrained pipeline composition using computation expressions.
 /// </returns>
 let pipeline availableMemory width height depth = PipelineBuilder(availableMemory, width, height, depth)
+
+
+let fromStream<'In, 'T> (s: AsyncSeq<'T>) : StackProcessor<'In, 'T> =
+    { Name = "[stream]"; Profile = Streaming; Apply = fun (_: AsyncSeq<'In>) -> s }
+
+let tee (p : StackProcessor<unit,'T>) : StackProcessor<unit,'T>*StackProcessor<unit,'T> =
+
+    let src = run p                      // run only once
+    let buf  = new System.Collections.Concurrent.BlockingCollection<'T>(boundedCapacity = 1)
+    let left =
+        asyncSeq {
+            for x in src do
+                buf.Add x
+                yield x
+            buf.CompleteAdding()
+        }
+    let right =
+        asyncSeq {
+            for x in buf.GetConsumingEnumerable() do
+                yield x
+        }
+    ((fromStream left), (fromStream right))
+
+let tee2 (p : StackProcessor<unit,'T>) : StackProcessor<unit,'T> * StackProcessor<unit,'T> =
+    let src = run p
+
+    let agent = MailboxProcessor.Start(fun inbox ->
+        async {
+            use e = src.GetEnumerator()
+            let mutable current : 'T option = None
+            let mutable finished = false
+
+            while not finished do
+                let! (msg, reply: AsyncReplyChannel<'T>) = inbox.Receive()
+                match msg with
+                | "left" ->
+                    match current with
+                    | Some v ->
+                        reply.Reply v
+                    | None ->
+                        let! vopt = e.MoveNext()
+                        match vopt with
+                        | Some v ->
+                            current <- Some v
+                            reply.Reply v
+                        | None ->
+                            finished <- true
+                | "right" ->
+                    match current with
+                    | Some v ->
+                        reply.Reply v
+                        current <- None
+                    | None ->
+                        let! vopt = e.MoveNext()
+                        match vopt with
+                        | Some v ->
+                            reply.Reply v
+                        | None ->
+                            finished <- true
+                | _ -> ()
+        })
+
+    let makeStream side =
+        asyncSeq {
+            while true do
+                let! item = agent.PostAndAsyncReply(fun ch -> (side, ch))
+                yield item
+        }
+
+    fromStream (makeStream "left"), fromStream (makeStream "right")
+
+// This does not work, since there most likely are race conditions. A Mailbox processor would be better, but i cannot make it work...
+let teeProcessor<'In, 'T> (p: StackProcessor<'In, 'T>) : StackProcessor<'In, 'T> * StackProcessor<'In, 'T> =
+    let fromStream name s =
+        {
+            Name = $"{p.Name}_{name}"
+            Profile = p.Profile
+            Apply = fun _ -> s
+        }
+
+    let mutable initialized = false
+    let mutable leftStream = Unchecked.defaultof<AsyncSeq<'T>>
+    let mutable rightStream = Unchecked.defaultof<AsyncSeq<'T>>
+
+    let teeLogic (input: AsyncSeq<'In>) =
+        if not initialized then
+            initialized <- true
+            let shared = p.Apply input
+            let buffer = new System.Collections.Concurrent.BlockingCollection<'T>(boundedCapacity = 1)
+
+            leftStream <-
+                asyncSeq {
+                    for x in shared do
+                        buffer.Add x
+                        yield x
+                    buffer.CompleteAdding()
+                }
+
+            rightStream <-
+                asyncSeq {
+                    for x in buffer.GetConsumingEnumerable() do
+                        yield x
+                }
+
+    let left =
+        {
+            Name = $"{p.Name}_left"
+            Profile = p.Profile
+            Apply = fun input ->
+                teeLogic input
+                leftStream
+        }
+
+    let right =
+        {
+            Name = $"{p.Name}_right"
+            Profile = p.Profile
+            Apply = fun input ->
+                teeLogic input
+                rightStream
+        }
+
+    left, right
+
+let fanout
+    (p: StackProcessor<'In,'T>) 
+    (f1: StackProcessor<'T,'U>) 
+    (f2: StackProcessor<'T,'V>) : StackProcessor<'In, 'U * 'V> =
+    
+    let left, right = teeProcessor p
+    {
+        Name = $"fanout2 ({f1.Name}, {f2.Name})"
+        Profile = Buffered
+        Apply = fun input ->
+            let lStream = left.Apply input |> f1.Apply
+            let rStream = right.Apply input |> f2.Apply
+            AsyncSeq.zip lStream rStream
+    }
+
+let runBoth (p1: StackProcessor<unit, 'T1>) (f1: StackProcessor<unit, 'T1> -> Async<unit>)
+            (p2: StackProcessor<unit, 'T2>) (f2: StackProcessor<unit, 'T2> -> Async<unit>) : unit =
+    async {
+        let! _ =
+            Async.Parallel [
+                async { do! f1 p1 }
+                async { do! f2 p2 }
+            ]
+        return ()
+    } |> Async.RunSynchronously
+
+let print p = run p |> printAsync
+let plot style p = run p |> plotListAsync style

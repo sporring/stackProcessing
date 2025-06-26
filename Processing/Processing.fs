@@ -248,12 +248,33 @@ let exp<'T when 'T: equality> : StackProcessor<Slice<'T>, Slice<'T>> =
     mapSlices "Exp" Streaming exp<'T>
 
 // let histogram (img: Image<'T>) : Map<'T, uint64> =
+(*let histogramPerSlice<'T when 'T: comparison> : StackProcessor<Slice<'T>, Map<'T, uint64>> =
+    printfn "[histogramPerSlice]"
+    mapSlices "HistogramPerSlice" Streaming Slice.histogram
+
+let histogramReducer<'T when 'T: comparison> : AsyncSeq<Map<'T, uint64>> -> Async<Map<'T, uint64>> =
+    fun hist ->
+        AsyncSeqExtensions.fold Slice.addHistogram Map.empty hist
+
+let histogram<'T when 'T: comparison> : StackProcessor<Map<'T, uint64>, Map<'T, uint64>> =
+    printfn "[histogramReduced]"
+    fromReducer "HistogramReduced" Streaming histogramReducer
+*)
 let histogram<'T when 'T: comparison> : StackProcessor<Slice<'T>, Map<'T, uint64>> =
     let histogramReducer (slices: AsyncSeq<Slice<'T>>) =
         slices
         |> AsyncSeq.map Slice.histogram
         |> AsyncSeqExtensions.fold Slice.addHistogram (Map<'T,uint64> [])
     fromReducer "Histogram" Streaming histogramReducer
+
+let map2pairs<'T, 'S when 'T: comparison> : StackProcessor<Map<'T, 'S>,('T * 'S) list> =
+    printfn "[map2pairs]"
+    mapSlices "map2pairs" Streaming Slice.map2pairs
+
+let inline pairs2floats<^T, ^S when ^T : (static member op_Explicit : ^T -> float)
+                                 and ^S : (static member op_Explicit : ^S -> float)> : StackProcessor<('T * 'S) list,(float * float) list> =
+    printfn "[map2pairs]"
+    mapSlices "map2pairs" Streaming Slice.pairs2floats
 
 let create<'T when 'T: equality> (width: uint) (height: uint) (depth: uint) : StackProcessor<unit, Slice<'T>> =
     printfn "[create]"

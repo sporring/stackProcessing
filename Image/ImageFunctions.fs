@@ -425,6 +425,21 @@ let addHistogram (h1: Map<'T, uint64>) (h2: Map<'T, uint64>) : Map<'T, uint64> =
         h1
         h2
 
+let map2pairs (map: Map<'T, 'S>): ('T * 'S) list =
+    map |> Map.toList
+
+let inline pairs2floats<^T, ^S when ^T : (static member op_Explicit : ^T -> float)
+                                 and ^S : (static member op_Explicit : ^S -> float)>
+                                 (pairs: (^T * ^S) list) : (float * float) list =
+    // must be inline for not reducing 'T and 'S to ints
+    pairs |> List.map (fun (k, v) -> (float k, float v)) 
+
+let inline pairs2int<^T, ^S when ^T : (static member op_Explicit : ^T -> int)
+                                 and ^S : (static member op_Explicit : ^S -> int)>
+                                 (pairs: (^T * ^S) list) : (int * int) list =
+    // must be inline for not reducing 'T and 'S to ints
+    pairs |> List.map (fun (k, v) -> (int k, int v)) 
+
 let addNormalNoise (mean: float) (stddev: float) : Image<'T> -> Image<'T> =
     makeUnaryImageOperatorWith
         (fun () -> new itk.simple.AdditiveGaussianNoiseImageFilter())

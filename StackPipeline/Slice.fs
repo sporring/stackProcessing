@@ -99,6 +99,16 @@ let histogram (img: Slice<'T>) : Map<'T, uint64> =
     ImageFunctions.histogram img.Image
 let addHistogram (h1: Map<'T, uint64>) (h2: Map<'T, uint64>): Map<'T, uint64> =
     ImageFunctions.addHistogram h1 h2
+let map2pairs (map: Map<'T, 'S>): ('T * 'S) list =
+    ImageFunctions.map2pairs map
+let inline pairs2floats<^T, ^S when ^T : (static member op_Explicit : ^T -> float)
+                                 and ^S : (static member op_Explicit : ^S -> float)>
+                                 (pairs: (^T * ^S) list) : (float * float) list =
+    ImageFunctions.pairs2floats pairs
+let inline pairs2int<^T, ^S when ^T : (static member op_Explicit : ^T -> int)
+                                 and ^S : (static member op_Explicit : ^S -> int)>
+                                 (pairs: (^T * ^S) list) : (int * int) list =
+    ImageFunctions.pairs2int pairs
 
 let swap f a b = f b a
 let add (a: Slice<'T>) (b: Slice<'T>) = liftBinaryOp Image<'T>.(+) (a,b) // types are a nuissance, for overload with constants, we need one variant per type, sigh
