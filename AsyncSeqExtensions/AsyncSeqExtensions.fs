@@ -188,3 +188,40 @@ let tee (source: AsyncSeq<'T>) : AsyncSeq<'T> * AsyncSeq<'T> =
                 yield item
         }
     copy, duplicate
+
+/// Simple version of AsyncSeq.share: broadcasts each element to multiple readers,
+/// only caching one element at a time.
+let share (input: AsyncSeq<'T>) : AsyncSeq<'T> =
+    let agent = MailboxProcessor.Start(fun inbox ->
+        async {
+            let enumerator = (AsyncSeq.toAsyncEnum input).GetAsyncEnumerator()
+            let mutable current: option<'T> = None
+            let mutable waiting = ResizeArray<AsyncReplyChannel<option<'T>>>()
+            let rec loop () = async {
+                if current.IsNone then
+                    let! hasNext = enumerator.MoveNextAsync().AsTask() |> Async.AwaitTask
+                    current <- if hasNext then Some enumerator.Current else None
+                while waiting.Count > 0 do
+                    let ch = waiting.[0]
+                    waiting.RemoveAt(0)
+                    ch.Reply(current)
+                if current.IsSome then
+                    current <- None
+                    return! loop ()
+                else
+                    ()
+            }
+            while true do
+                let! reply = inbox.Receive()
+                waiting.Add(reply)
+                if current.IsNone then
+                    do! loop ()
+        })
+    asyncSeq {
+        let mutable done_ = false
+        while not done_ do
+            let! v = agent.PostAndAsyncReply(id)
+            match v with
+            | Some x -> yield x
+            | None -> done_ <- true
+    }

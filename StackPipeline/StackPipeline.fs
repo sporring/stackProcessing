@@ -284,107 +284,156 @@ let (>>=>) (p1: StackProcessor<'S,'T>) (p2: StackProcessor<'T,'U>) : StackProces
 /// </returns>
 let pipeline availableMemory width height depth = PipelineBuilder(availableMemory, width, height, depth)
 
-let tee (p : StackProcessor<unit,'T>) : StackProcessor<unit,'T>*StackProcessor<unit,'T> =
-    let fromStream (s: AsyncSeq<'T>) : StackProcessor<'In, 'T> =
-        { Name = "[stream]"; Profile = Streaming; Apply = fun (_: AsyncSeq<'In>) -> s }
-
-    let src = run p                      // run only once
-    let buf  = new System.Collections.Concurrent.BlockingCollection<'T>(boundedCapacity = 1)
-    let left =
-        asyncSeq {
-            for x in src do
-                buf.Add x
-                yield x
-            buf.CompleteAdding()
-        }
-    let right =
-        asyncSeq {
-            for x in buf.GetConsumingEnumerable() do
-                yield x
-        }
-    ((fromStream left), (fromStream right))
-
 type Request<'T> = Left of AsyncReplyChannel<Option<'T>> | Right of AsyncReplyChannel<Option<'T>>
-let teeProcessor (p: StackProcessor<unit, 'T>) : StackProcessor<unit, 'T> * StackProcessor<unit, 'T> =
+let tee (p: StackProcessor<unit, 'T>) : StackProcessor<unit, 'T> * StackProcessor<unit, 'T> =
     let leftRightStreams (input: AsyncSeq<unit>) : AsyncSeq<'T> * AsyncSeq<'T> =
         let src = p.Apply input
         let agent = MailboxProcessor.Start(fun inbox ->
             async {
                 let enumerator = (AsyncSeq.toAsyncEnum src).GetAsyncEnumerator()
                 let mutable current : Option<'T> = None
-                let mutable leftConsumed = true
-                let mutable rightConsumed = true
+                let mutable consumed = (true, true)
                 let mutable finished = false
-
                 let rec loop () = async {
                     if current.IsNone && not finished then
                         let! hasNext = enumerator.MoveNextAsync().AsTask() |> Async.AwaitTask
                         if hasNext then
                             current <- Some enumerator.Current
-                            leftConsumed <- false
-                            rightConsumed <- false
+                            consumed <- (false, false)
                         else
                             finished <- true
                     let! msg = inbox.Receive()
                     match msg, current with
-                    | Left ch, Some v ->
-                        if not leftConsumed then
-                            ch.Reply(Some v)
-                            leftConsumed <- true
-                        else
-                            ch.Reply(None)
-                    | Right ch, Some v ->
-                        if not rightConsumed then
-                            ch.Reply(Some v)
-                            rightConsumed <- true
-                        else
-                            ch.Reply(None)
+                    | Left ch, Some v when not (fst consumed) ->
+                        ch.Reply(Some v)
+                        consumed <- (true, snd consumed)
+                    | Right ch, Some v when not (snd consumed) ->
+                        ch.Reply(Some v)
+                        consumed <- (fst consumed, true)
                     | (Left ch | Right ch), None when finished ->
                         ch.Reply(None)
                     | _ -> ()
-                    // If both have consumed, move to next element
-                    if leftConsumed && rightConsumed then
+                    if consumed = (true, true) then
                         current <- None
                     return! loop ()
                 }
                 do! loop ()
             })
-        let mkStream tag =
+        let mkTaggedStream tag =
             asyncSeq {
-                let mutable finished = false
-                while not finished do
-                    let! vOpt =
-                        agent.PostAndAsyncReply(fun ch ->
-                            match tag with
-                            | "left" -> Left ch
-                            | "right" -> Right ch
-                            | _ -> failwith "Invalid tag")
+                let mutable done_ = false
+                while not done_ do
+                    let! vOpt = agent.PostAndAsyncReply(tag)
                     match vOpt with
                     | Some v -> yield v
-                    | None -> finished <- true
+                    | None -> done_ <- true
             }
-        mkStream "left", mkStream "right"
+        mkTaggedStream Left, mkTaggedStream Right
     let lazyStreams = lazy (leftRightStreams (AsyncSeq.singleton ()))
-    let left =
+    let mkSide name get =
         {
-            Name = $"{p.Name}-left"
+            Name = $"{p.Name}-{name}"
             Profile = p.Profile
-            Apply = fun _ -> fst lazyStreams.Value
+            Apply = fun _ -> get lazyStreams.Value
         }
-    let right =
-        {
-            Name = $"{p.Name}-right"
-            Profile = p.Profile
-            Apply = fun _ -> snd lazyStreams.Value
-        }
-    left, right
+    mkSide "left" fst, mkSide "right" snd
+
+/// Split a StackProcessor<'In,'T> into two branches that
+///   • read the upstream only once
+///   • keep at most one item in memory
+///   • terminate correctly when both sides finish
+let tee2 (p : StackProcessor<'In,'T>)
+        : StackProcessor<'In,'T> * StackProcessor<'In,'T> =
+
+    // ---------- 1. Create the broadcaster exactly *once* per pipeline run ----------
+    // We store it in a mutable cell that is initialised on first Apply().
+    let mutable shared : Lazy<AsyncSeq<'T> * AsyncSeq<'T>> option = None
+    let syncRoot = obj()
+
+    let makeShared (input : AsyncSeq<'In>) =
+        let src = p.Apply input                        // drives upstream only ONCE
+        let agent = MailboxProcessor.Start(fun inbox ->
+            async {
+                let enum = (AsyncSeq.toAsyncEnum src).GetAsyncEnumerator()
+                let mutable current   : 'T option = None
+                let mutable consumed  = (true, true)
+                let mutable finished  = false
+
+                let rec loop () = async {
+                    // Pull next slice if needed
+                    if current.IsNone && not finished then
+                        let! hasNext = enum.MoveNextAsync().AsTask() |> Async.AwaitTask
+                        if hasNext then
+                            current  <- Some enum.Current
+                            consumed <- (false, false)
+                        else
+                            finished <- true
+
+                    // Serve whichever side is asking
+                    let! msg = inbox.Receive()
+                    match msg, current with
+                    | Left ch, Some v when not (fst consumed) ->
+                        ch.Reply(Some v)
+                        consumed <- (true, snd consumed)
+                    | Right ch, Some v when not (snd consumed) ->
+                        ch.Reply(Some v)
+                        consumed <- (fst consumed, true)
+                    | Left ch, None when finished ->
+                        ch.Reply(None)
+                    | Right ch, None when finished ->
+                        ch.Reply(None)
+                    | _ -> ()
+
+                    // Release the slice when both sides have seen it
+                    if consumed = (true, true) then current <- None
+                    return! loop ()
+                }
+                do! loop ()
+            })
+
+        // Helper to build one of the two consumer streams
+        let makeStream tag =
+            asyncSeq {
+                let mutable done_ = false
+                while not done_ do
+                    let! vOpt = agent.PostAndAsyncReply(tag)
+                    match vOpt with
+                    | Some v -> yield v
+                    | None   -> done_ <- true
+            }
+
+        makeStream Left, makeStream Right
+
+    // Thread‑safe initialisation-on-first-use
+    let getShared input =
+        match shared with
+        | Some lazyStreams -> lazyStreams.Value
+        | None ->
+            lock syncRoot (fun () ->
+                match shared with
+                | Some lazyStreams -> lazyStreams.Value
+                | None ->
+                    let lazyStreams = lazy (makeShared input)
+                    shared <- Some lazyStreams
+                    lazyStreams.Value)
+
+    // ---------- 2. Build the two outward‑facing StackProcessors ----------
+    let mkSide name pick =
+        { Name    = $"{p.Name}-{name}"
+          Profile = p.Profile
+          Apply   = fun input ->
+                        let left, right = getShared input
+                        pick (left, right) }
+
+    mkSide "left"  fst,
+    mkSide "right" snd
 
 let fanout
     (p: StackProcessor<'In,'T>) 
     (f1: StackProcessor<'T,'U>) 
     (f2: StackProcessor<'T,'V>) : StackProcessor<'In, 'U * 'V> =
     
-    let left, right = teeProcessor p
+    let left, right = tee p
     {
         Name = $"fanout2 ({f1.Name}, {f2.Name})"
         Profile = Buffered
