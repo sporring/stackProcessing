@@ -10,7 +10,7 @@ open StackPipeline
 open Slice
 
 // --- Processing Utilities ---
-let unstack (slices: Slice<'T>) : AsyncSeq<Slice<'T>> =
+let private unstack (slices: Slice<'T>) : AsyncSeq<Slice<'T>> =
     let baseIndex = slices.Index
     let volume = slices.Image
     let size = volume.GetSize()
@@ -18,6 +18,15 @@ let unstack (slices: Slice<'T>) : AsyncSeq<Slice<'T>> =
     Seq.init (int depth) (fun z -> extractSlice (baseIndex+(uint z)) slices)
     |> AsyncSeq.ofSeq
 
+let private fromReducer (name: string) (profile: MemoryProfile) (reducer: AsyncSeq<'In> -> Async<'Out>) : StackProcessor<'In, 'Out> =
+    {
+        Name = name
+        Profile = profile
+        Apply = fun input ->
+            reducer input |> ofAsync
+    }
+
+(*
 let addTo (other: AsyncSeq<Slice<'T>>) : StackProcessor<Slice<'T> ,Slice<'T>> =
     {   
         Name = "AddTo"
@@ -35,7 +44,7 @@ let multiplyWith (other: AsyncSeq<Slice<'T>>) : StackProcessor<Slice<'T> ,Slice<
             printfn "[multiplyWith]"
             zipJoin mul input other (Some "[multiplyWith]")
     }
-
+*)
 let mapSlices (label: string) (profile: MemoryProfile) (f: 'S -> 'T) : StackProcessor<'S,'T> =
     {
         Name = "mapSlices"; 
@@ -64,14 +73,6 @@ let mapSlicesChunked (label: string) (chunkSize: uint) (baseIndex: uint) (f: Sli
                     let volume = stack chunk
                     let result = f { volume with Index = baseIndex }
                     unstack result)
-    }
-
-let fromReducer (name: string) (profile: MemoryProfile) (reducer: AsyncSeq<'In> -> Async<'Out>) : StackProcessor<'In, 'Out> =
-    {
-        Name = name
-        Profile = profile
-        Apply = fun input ->
-            reducer input |> ofAsync
     }
 
 let addFloat (value: float) : StackProcessor<Slice<float>, Slice<float>> =
@@ -231,21 +232,21 @@ let bitwiseRightShift (shiftBits: int) : StackProcessor<Slice<'T>, Slice<'T>> =
     printfn "[bitwiseRightShift]"
     mapSlices "BitwiseRightShift" Streaming (bitwiseRightShift shiftBits)
 *)
-let abs<'T when 'T: equality> : StackProcessor<Slice<'T>, Slice<'T>> =
+let absProcess<'T when 'T: equality> : StackProcessor<Slice<'T>, Slice<'T>> =
     printfn "[abs]"
-    mapSlices "Abs" Streaming abs<'T>
+    mapSlices "Abs" Streaming absSlice<'T>
 
-let sqrt<'T when 'T: equality> : StackProcessor<Slice<'T>, Slice<'T>> =
+let sqrtProcess<'T when 'T: equality> : StackProcessor<Slice<'T>, Slice<'T>> =
     printfn "[sqrt]"
-    mapSlices "Sqrt" Streaming sqrt<'T>
+    mapSlices "Sqrt" Streaming sqrtSlice<'T>
 
-let log<'T when 'T: equality> : StackProcessor<Slice<'T>, Slice<'T>> =
+let logProcess<'T when 'T: equality> : StackProcessor<Slice<'T>, Slice<'T>> =
     printfn "[log]"
-    mapSlices "Log" Streaming log<'T>
+    mapSlices "Log" Streaming logSlice<'T>
 
-let exp<'T when 'T: equality> : StackProcessor<Slice<'T>, Slice<'T>> =
+let expProcess<'T when 'T: equality> : StackProcessor<Slice<'T>, Slice<'T>> =
     printfn "[exp]"
-    mapSlices "Exp" Streaming exp<'T>
+    mapSlices "Exp" Streaming expSlice<'T>
 
 // let histogram (img: Image<'T>) : Map<'T, uint64> =
 (*let histogramPerSlice<'T when 'T: comparison> : StackProcessor<Slice<'T>, Map<'T, uint64>> =
@@ -261,6 +262,7 @@ let histogram<'T when 'T: comparison> : StackProcessor<Map<'T, uint64>, Map<'T, 
     fromReducer "HistogramReduced" Streaming histogramReducer
 *)
 let histogram<'T when 'T: comparison> : StackProcessor<Slice<'T>, Map<'T, uint64>> =
+    printfn "[histogram]"
     let histogramReducer (slices: AsyncSeq<Slice<'T>>) =
         slices
         |> AsyncSeq.map Slice.histogram
@@ -349,3 +351,20 @@ let discreteGaussian (sigma: float) : StackProcessor<Slice<'T> ,Slice<'T>> =
 type FileInfo = Slice.FileInfo
 let getFileInfo(fname: string): FileInfo = Slice.getFileInfo(fname)
 let getVolumeSize (inputDir: string) (suffix: string) = Slice.getVolumeSize inputDir suffix
+
+type ImageStats = Slice.ImageStats
+let computeStats<'T when 'T : equality> : StackProcessor<Slice<'T>, ImageStats> =
+    printfn "[computeStats]"
+    let computeStatsReducer (slices: AsyncSeq<Slice<'T>>) =
+        let zeroStats: ImageStats = { 
+            NumPixels = 0u
+            Mean = 0.0
+            Std = 0.0
+            Min = infinity
+            Max = -infinity
+            Sum = 0.0
+            Var = 0.0}
+        slices
+        |> AsyncSeq.map Slice.computeStats
+        |> AsyncSeqExtensions.fold Slice.addComputeStats zeroStats
+    fromReducer "Compute Statistics" Streaming computeStatsReducer

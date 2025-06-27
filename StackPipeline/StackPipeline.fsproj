@@ -5,6 +5,18 @@
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
   </PropertyGroup>
 
+  <PropertyGroup>
+    <SigFile>$(MSBuildThisFileDirectory)StackPipeline.fsi</SigFile>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|AnyCPU'">
+    <DefineConstants>TRACE</DefineConstants>
+    <PlatformTarget>AnyCPU</PlatformTarget>
+    <OtherFlags>--sig:$(SigFile)</OtherFlags>
+  </PropertyGroup>   
+  <Target Name="CleanTextFile" AfterTargets="Build">
+    <Exec Command="grep -v '^[[:space:]]*$' '$(SigFile)' &gt; '$(SigFile).tmp' &amp;&amp; mv '$(SigFile).tmp' '$(SigFile)'"/>
+  </Target>
+
   <ItemGroup>
     <Reference Include="SimpleITKCSharp">
       <HintPath>lib/SimpleITKCSharpManaged.dll</HintPath>
@@ -26,10 +38,10 @@
     <ProjectReference Include="..\AsyncSeqExtensions\AsyncSeqExtensions.fsproj" />
     <!--<ProjectReference Include="..\pipelineIO\pipelineIO.fsproj" />-->
     <ProjectReference Include="../Image/Image.fsproj" />
+    <ProjectReference Include="../Slice/Slice.fsproj" />
   </ItemGroup>
 
   <ItemGroup>
-    <Compile Include="Slice.fs" />
     <Compile Include="StackPipeline.fs" />
   </ItemGroup>
 </Project>

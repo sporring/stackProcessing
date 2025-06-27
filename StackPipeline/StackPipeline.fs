@@ -9,7 +9,7 @@ open Slice
 open Plotly.NET
 
 // https://plotly.net/#For-applications-and-libraries
-let plotListAsync (plt: (float list)->(float list)->unit) (vectorSeq: AsyncSeq<(float*float) list>) =
+let private plotListAsync (plt: (float list)->(float list)->unit) (vectorSeq: AsyncSeq<(float*float) list>) =
     vectorSeq
     |> AsyncSeq.iterAsync (fun points ->
         async {
@@ -17,36 +17,23 @@ let plotListAsync (plt: (float list)->(float list)->unit) (vectorSeq: AsyncSeq<(
             plt x y
         })
 
-let inline showSliceAsync<^T when ^T: (static member op_Explicit: ^T -> float) and ^T: equality> (slices: AsyncSeq<Slice<^T >>) : Async<unit> =
-    async {
-        let! maybeSlice =
-            slices
-            |> AsyncSeqExtensions.tryItem 0
+let showSliceAsync (plt: (Slice<'T>->unit)) (slices : AsyncSeq<Slice<'T>>) =
+    slices
+    |> AsyncSeq.iterAsync (fun slice ->
+        async {
+            let width = slice |> GetWidth |> int
+            let height = slice |>GetHeight |> int
+            plt slice
+        })
 
-        match maybeSlice with
-        | Some slice ->
-            let image = slice.Image
-            let width = image.GetWidth() |> int
-            let height = image.GetHeight() |> int
-            printfn "[showSliceAsync] Showing first slice (%d x %d)" width height
-            let data = image.toArray2D()
-            let data =
-                Seq.init height (fun y ->
-                    Seq.init width (fun x ->
-                        image[x,y] |> float))
-            data |> Chart.Heatmap |> Chart.show
-        | None ->
-            printfn "No slice to show"
-    }
-
-let printAsync (slices: AsyncSeq<'T>) =
+let private printAsync (slices: AsyncSeq<'T>) =
     slices
     |> AsyncSeq.iterAsync (fun data ->
         async {
             printfn "[Print] %A" data
         })
 
-let writeSlicesAsync (outputDir: string) (suffix: string) (slices: AsyncSeq<Slice<'T>>) =
+let private writeSlicesAsync (outputDir: string) (suffix: string) (slices: AsyncSeq<Slice<'T>>) =
     if not (Directory.Exists(outputDir)) then
         Directory.CreateDirectory(outputDir) |> ignore
     slices
@@ -57,11 +44,7 @@ let writeSlicesAsync (outputDir: string) (suffix: string) (slices: AsyncSeq<Slic
             printfn "[Write] Saved slice %d to %s" slice.Index fileName
         })
 
-let writeSlices path suffix stream =
-    printfn "[writeSlices]"
-    writeSlicesAsync path suffix stream |> Async.RunSynchronously
-
-let readSlices<'T when 'T: equality> (inputDir: string) (suffix: string) : AsyncSeq<Slice<'T>> =
+let private readSlices<'T when 'T: equality> (inputDir: string) (suffix: string) : AsyncSeq<Slice<'T>> =
     Directory.GetFiles(inputDir, "*"+suffix) |> Array.sort
     |> Array.mapi (fun i fileName ->
         async {
@@ -71,21 +54,12 @@ let readSlices<'T when 'T: equality> (inputDir: string) (suffix: string) : Async
     |> Seq.ofArray
     |> AsyncSeq.ofSeqAsync
 
-// --- Types ---
-/// <summary>
-/// Represents memory usage strategies during image processing.
-/// </summary>
+/// The memory usage strategies during image processing.
 type MemoryProfile =
     | Streaming // Slice by slice independently
     | Sliding of uint // Sliding window of slices of depth
     | Buffered // All slices of depth
 
-    /// <summary>
-    /// Estimates the amount of memory required for the given dimensions.
-    /// </summary>
-    /// <param name="width">Image width in pixels</param>
-    /// <param name="height">Image height in pixels</param>
-    /// <param name="depth">Number of image slices</param>
     member this.EstimateUsage (width: uint) (height: uint) (depth: uint) : uint64 =
         let pixelSize = 1UL // Assume 1 byte per pixel for UInt8
         let sliceBytes = (uint64 width) * (uint64 height) * pixelSize
@@ -94,54 +68,20 @@ type MemoryProfile =
             | Sliding windowSize -> sliceBytes * uint64 windowSize
             | Buffered -> sliceBytes * uint64 depth
 
-    /// <summary>
-    /// Determines whether buffering is required based on available memory and image size.
-    /// </summary>
-    /// <param name="availableMemory">Memory available for processing</param>
-    /// <param name="width">Image width</param>
-    /// <param name="height">Image height</param>
-    /// <param name="depth">Image depth</param>
     member this.RequiresBuffering (availableMemory: uint64) (width: uint) (height: uint) (depth: uint) : bool =
         let usage = this.EstimateUsage width height depth
         usage > availableMemory
 
-/// <summary>
-/// Represents a configurable image processing step that operates on image slices.
-/// </summary>
+/// A configurable image processing step that operates on image slices.
 type StackProcessor<'S,'T> = {
-    /// <summary>
-    /// A name of this processor (e.g., "Thresholding").
-    /// </summary>
-    Name: string
-
-    /// <summary>
-    /// Defines the memory strategy used when applying this processor (e.g., streaming, buffered).
-    /// </summary>
+    Name: string // Name of the process
     Profile: MemoryProfile
-
-    /// <summary>
-    /// The function that processes a stream of image slices and returns a transformed stream.
-    /// </summary>
     Apply: AsyncSeq<'S> -> AsyncSeq<'T>
 }
 
-// --- Pipeline computation expression ---
-/// <summary>
-/// Provides computation expression support for building memory-aware image processing pipelines.
-/// Automatically inserts disk-based buffering when memory limits are exceeded.
-/// </summary>
-/// <param name="availableMemory">Maximum memory available for processing.</param>
-/// <param name="width">Width of each image slice.</param>
-/// <param name="height">Height of each image slice.</param>
-/// <param name="depth">Total number of image slices.</param>
+/// Pipeline computation expression
 type PipelineBuilder(availableMemory: uint64, width: uint, height: uint, depth: uint) =
-    /// <summary>
-    /// Chains two <c>StackProcessor</c> instances, optionally inserting intermediate disk I/O
-    /// if the combined profile exceeds available memory.
-    /// </summary>
-    /// <param name="p">The input processor.</param>
-    /// <param name="f">A function that transforms the processor.</param>
-    /// <returns>A new <c>StackProcessor</c> that includes buffering if needed.</returns>
+    /// Chain two <c>StackProcessor</c> instances, optionally inserting intermediate disk I/O
     member _.Bind(p: StackProcessor<'S,'T>, f: StackProcessor<'S,'T> -> StackProcessor<'S,'T>) : StackProcessor<'S,'T> =
         let composed = f p
         (*
@@ -161,39 +101,32 @@ type PipelineBuilder(availableMemory: uint64, width: uint, height: uint, depth: 
         else *)
         composed
 
-    /// <summary>
+    member _.Bind(p: StackProcessor<'S, 'T>, f: 'T -> StackProcessor<'S, 'U>) : StackProcessor<'S, 'U> =
+        {
+            Name = $"bindResult({p.Name})"
+            Profile = p.Profile // You could also recompute based on `f` if needed
+            Apply = fun input ->
+                asyncSeq {
+                    let! result = p.Apply input |> AsyncSeq.toListAsync
+                    match result with
+                    | [single] ->
+                        let nextProcessor = f single
+                        yield! nextProcessor.Apply input
+                    | _ ->
+                        failwithf "Expected reducer output to produce a single result, but got %d values." result.Length
+                }
+        }
+
     /// Wraps a processor value for use in the pipeline computation expression.
-    /// </summary>
     member _.Return(p: StackProcessor<'S,'T>) = p
 
-    /// <summary>
     /// Allows returning a processor directly from another computation expression.
-    /// </summary>
     member _.ReturnFrom(p: StackProcessor<'S,'T>) = p
 
-    /// <summary>
     /// Provides a default identity processor using streaming as the memory profile.
-    /// </summary>
     member _.Zero() = { Name=""; Profile = Streaming; Apply = id }
 
-/// <summary>
-/// Combines two <c>StackProcessor</c> instances into one by composing their memory profiles and transformation functions.
-/// </summary>
-/// <param name="p1">The first processor to apply.</param>
-/// <param name="p2">The second processor to apply.</param>
-/// <returns>
-/// A new <c>StackProcessor</c> whose memory profile is the more restrictive of the two,
-/// and whose apply function is the composition of the two processors' apply functions.
-/// </returns>
-/// <remarks>
-/// Memory profile resolution follows these rules:
-/// <list type="bullet">
-/// <item><description><c>Streaming + Streaming = Streaming</c></description></item>
-/// <item><description><c>Streaming + Sliding(sz) = Sliding(sz)</c></description></item>
-/// <item><description><c>Sliding(sz1) + Sliding(sz2) = Sliding(max sz1 sz2)</c></description></item>
-/// <item><description>Any combination involving <c>Buffered</c> results in <c>Buffered</c>.</description></item>
-/// </list>
-/// </remarks>
+/// Combine two <c>StackProcessor</c> instances into one by composing their memory profiles and transformation functions.
 let (>>=>) (p1: StackProcessor<'S,'T>) (p2: StackProcessor<'T,'U>) : StackProcessor<'S,'U> =
     {
         Name = $"{p2.Name} {p1.Name}"; 
@@ -211,19 +144,10 @@ let (>>=>) (p1: StackProcessor<'S,'T>) (p2: StackProcessor<'T,'U>) : StackProces
         Apply = fun input -> input |> p1.Apply |> p2.Apply
     }
 
-/// <summary>
-/// Initializes a memory-aware pipeline builder with the specified processing constraints.
-/// </summary>
-/// <param name="availableMemory">The total memory available for the pipeline in bytes.</param>
-/// <param name="width">The width of each image slice.</param>
-/// <param name="height">The height of each image slice.</param>
-/// <param name="depth">The total number of image slices (volume depth).</param>
-/// <returns>
-/// A <c>PipelineBuilder</c> instance that supports memory-constrained pipeline composition using computation expressions.
-/// </returns>
+/// A memory-aware pipeline builder with the specified processing constraints.
 let pipeline availableMemory width height depth = PipelineBuilder(availableMemory, width, height, depth)
 
-////////////////////////////////////////////////////////////////////////////////////////
+/// Pipeline helper functions
 let singleton (x: 'In) : StackProcessor<'In, 'In> =
     {
         Name = "[singleton]"
@@ -231,44 +155,97 @@ let singleton (x: 'In) : StackProcessor<'In, 'In> =
         Apply = fun _ -> AsyncSeq.singleton x
     }
 
-let runWith (input: AsyncSeq<'In>) (p: StackProcessor<'In,'T>) : AsyncSeq<'T> =
+let private runWith (input: AsyncSeq<'In>) (p: StackProcessor<'In,'T>) : AsyncSeq<'T> =
     p.Apply input
 
-let run (p: StackProcessor<unit,'T>) : AsyncSeq<'T> =
+let private run (p: StackProcessor<unit,'T>) : AsyncSeq<'T> =
     runWith (AsyncSeq.singleton ()) p
 
+(*
 let runNWriteSlices path suffix maker =
     printfn "[runNWriteSlices]"
     let stream = run maker
     writeSlicesAsync path suffix stream |> Async.RunSynchronously
 
-let inline runNShowSlice<^T when ^T: (static member op_Explicit: ^T -> float) and ^T: equality> maker =
+let runNShowSlice<'T> maker =
     printfn "[runNShowSlice]"
     let stream = run maker
-    showSliceAsync<'T> stream |> Async.RunSynchronously
+    showSliceAsync stream |> Async.RunSynchronously
 
 let runNPrint maker =
     printfn "[runNPrint]"
     let stream = run maker
     printAsync stream |> Async.RunSynchronously
 
-let inline runNPlotList plt maker =
+let runNPlotList plt maker =
     printfn "[runNPlotList]"
     let stream = run maker
     plotListAsync plt stream |> Async.RunSynchronously
+*)
 
-let print p = printfn "[print]"; run p |> printAsync
-let plot plt p = printfn "[plot]"; run p |> plotListAsync plt
+let fromReducer
+    (name    : string)
+    (profile : MemoryProfile)
+    (reducer : AsyncSeq<'In> -> Async<'Out>)
+    : StackProcessor<'In,'Out> =
+
+    {
+        Name    = name
+        Profile = profile
+        Apply   = fun input ->
+            asyncSeq {
+                let! res = reducer input   // Async<'Out>
+                yield res                  // emit a single value
+            }
+    }
+
+let fromConsumer
+        (name    : string)
+        (profile : MemoryProfile)
+        (consume : AsyncSeq<'T> -> Async<unit>)
+        : StackProcessor<'T, unit> =
+
+    let reducer (s : AsyncSeq<'T>) = consume s          // Async<unit>
+    fromReducer name profile reducer                    // gives AsyncSeq<unit>
+
+//let print p = printfn "[print]"; run p |> printAsync
+//let plot plt p = printfn "[plot]"; run p |> plotListAsync plt
+//let show plt p = printfn "[show]"; run p |> showSliceAsync plt
+
+let print<'T> : StackProcessor<'T, unit> =
+    fromConsumer "print" Streaming (fun stream ->
+        async {
+            printfn "[print]"
+            do! printAsync stream 
+        })
+
+let plot plt : StackProcessor<(float*float) list, unit> =
+    fromConsumer "plot" Streaming (fun stream ->
+        async {
+            printfn "[plot]"
+            do! (plotListAsync plt) stream 
+        })
+
+let show plt : StackProcessor<Slice<'a>, unit> =
+    fromConsumer "show" Streaming (fun stream ->
+        async {
+            printfn "[show]"
+            do! (showSliceAsync plt) stream
+        })
+
+let writeSlices path suffix : StackProcessor<Slice<'a>, unit> =
+    fromConsumer "show" Streaming (fun stream ->
+        async {
+            printfn "[show]"
+            do! (writeSlicesAsync path suffix) stream
+        })
 
 /// Join two StackProcessors<'In, _> into one by zipping their outputs:
 ///   • applies both processors to the same input stream
 ///   • pairs each output and combines using the given function
 ///   • assumes both sides produce values in lockstep
-let join (f: 'A -> 'B -> 'C) (p1: StackProcessor<'In, 'A>) (p2: StackProcessor<'In, 'B>) (txt: string option) : StackProcessor<'In, 'C> =
+let join (f: 'A -> 'B -> 'C) (p1: StackProcessor<'In, 'A>) (p2: StackProcessor<'In, 'B>) : StackProcessor<'In, 'C> =
     printfn "[join]"
-    match txt with 
-        Some t -> printfn "%s" t 
-        | None -> ()
     {
         Name = $"zipJoin({p1.Name}, {p2.Name})"
         Profile = 
@@ -287,7 +264,7 @@ let join (f: 'A -> 'B -> 'C) (p1: StackProcessor<'In, 'A>) (p2: StackProcessor<'
 ///   • read the upstream only once
 ///   • keep at most one item in memory
 ///   • terminate correctly when both sides finish
-type Request<'T> = Left of AsyncReplyChannel<Option<'T>> | Right of AsyncReplyChannel<Option<'T>>
+type private Request<'T> = Left of AsyncReplyChannel<Option<'T>> | Right of AsyncReplyChannel<Option<'T>>
 let tee (p : StackProcessor<'In,'T>): StackProcessor<'In,'T> * StackProcessor<'In,'T> =
     printfn "[tee]"
 
@@ -390,11 +367,14 @@ let fanOut (p: StackProcessor<'In,'T>) (f1: StackProcessor<'T,'U>) (f2: StackPro
             let rStream = right.Apply input |> f2.Apply
             AsyncSeq.zip lStream rStream
     }
+
 /// Run two StackProcessors<unit, _> in parallel:
 ///   • executes each with its own consumer function
 ///   • waits for both to finish before returning
-let runBoth (p1: StackProcessor<unit, 'T1>) (f1: StackProcessor<unit, 'T1> -> Async<unit>)
-            (p2: StackProcessor<unit, 'T2>) (f2: StackProcessor<unit, 'T2> -> Async<unit>) : unit =
+let runBoth2 
+    (p1: StackProcessor<unit, 'T1>) (f1: StackProcessor<unit, 'T1> -> Async<unit>)
+    (p2: StackProcessor<unit, 'T2>) (f2: StackProcessor<unit, 'T2> -> Async<unit>) 
+    : unit =
     async {
         let! _ =
             Async.Parallel [
@@ -403,3 +383,35 @@ let runBoth (p1: StackProcessor<unit, 'T1>) (f1: StackProcessor<unit, 'T1> -> As
             ]
         return ()
     } |> Async.RunSynchronously
+
+let sinkLst (processors: StackProcessor<unit, unit> list) : unit =
+    processors
+    |> List.map (fun p -> run p |> AsyncSeq.iterAsync (fun () -> async.Return()))
+    |> Async.Parallel
+    |> Async.Ignore
+    |> Async.RunSynchronously
+
+let sink (p: StackProcessor<unit, unit>) : unit = 
+    sinkLst [p]
+
+let sourceLst 
+    (availableMemory: uint64)
+    (width: uint)
+    (height: uint)
+    (depth: uint)
+    (processors: StackProcessor<unit,Slice.Slice<'T>> list) 
+    : StackProcessor<unit,Slice<'T>> list =
+    processors |>
+    List.map (fun p -> 
+        pipeline availableMemory width height depth {return p}
+    )
+
+let source
+    (availableMemory: uint64)
+    (width: uint)
+    (height: uint)
+    (depth: uint)
+    (p: StackProcessor<unit,Slice.Slice<'T>>) 
+    : StackProcessor<unit,Slice<'T>> =
+    let lst = sourceLst availableMemory width height depth [p]
+    List.head lst

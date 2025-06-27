@@ -6,7 +6,7 @@
   </PropertyGroup>
 
   <PropertyGroup>
-    <SigFile>$(MSBuildThisFileDirectory)AsyncSeqExtensions.fsi</SigFile>
+    <SigFile>$(MSBuildThisFileDirectory)Slice.fsi</SigFile>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|AnyCPU'">
     <DefineConstants>TRACE</DefineConstants>
@@ -18,11 +18,22 @@
   </Target>
 
   <ItemGroup>
-    <Compile Include="AsyncSeqExtensions.fs" />
+    <Reference Include="SimpleITKCSharp">
+      <HintPath>lib/SimpleITKCSharpManaged.dll</HintPath>
+      <Private>true</Private>
+    </Reference>
+
+    <!-- Ensure native lib is copied -->
+    <None Update="lib/libSimpleITKCSharpNative.dylib">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
   </ItemGroup>
 
   <ItemGroup>
-    <PackageReference Include="FSharp.Control.AsyncSeq" Version="3.*" />
+    <ProjectReference Include="../Image/Image.fsproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <Compile Include="Slice.fs" />
+  </ItemGroup>
 </Project>

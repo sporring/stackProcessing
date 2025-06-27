@@ -76,19 +76,19 @@ let inline makeBinaryImageOperatorWith
 let inline makeBinaryImageOperator createFilter invoke = makeBinaryImageOperatorWith createFilter (fun _ -> ()) invoke
 
 // Basic unary operators
-let inline abs (img: Image<'T>)    = makeUnaryImageOperator (fun () -> new itk.simple.AbsImageFilter())    (fun f x -> f.Execute(x)) img
-let inline log (img: Image<'T>)    = makeUnaryImageOperator (fun () -> new itk.simple.LogImageFilter())    (fun f x -> f.Execute(x)) img
-let inline log10 (img: Image<'T>)  = makeUnaryImageOperator (fun () -> new itk.simple.Log10ImageFilter())  (fun f x -> f.Execute(x)) img
-let inline exp (img: Image<'T>)    = makeUnaryImageOperator (fun () -> new itk.simple.ExpImageFilter())    (fun f x -> f.Execute(x)) img
-let inline sqrt (img: Image<'T>)   = makeUnaryImageOperator (fun () -> new itk.simple.SqrtImageFilter())   (fun f x -> f.Execute(x)) img
-let inline square (img: Image<'T>) = makeUnaryImageOperator (fun () -> new itk.simple.SquareImageFilter()) (fun f x -> f.Execute(x)) img
-let inline sin (img: Image<'T>)    = makeUnaryImageOperator (fun () -> new itk.simple.SinImageFilter())    (fun f x -> f.Execute(x)) img
-let inline cos (img: Image<'T>)    = makeUnaryImageOperator (fun () -> new itk.simple.CosImageFilter())    (fun f x -> f.Execute(x)) img
-let inline tan (img: Image<'T>)    = makeUnaryImageOperator (fun () -> new itk.simple.TanImageFilter())    (fun f x -> f.Execute(x)) img
-let inline asin (img: Image<'T>)   = makeUnaryImageOperator (fun () -> new itk.simple.AsinImageFilter())   (fun f x -> f.Execute(x)) img
-let inline acos (img: Image<'T>)   = makeUnaryImageOperator (fun () -> new itk.simple.AcosImageFilter())   (fun f x -> f.Execute(x)) img
-let inline atan (img: Image<'T>)   = makeUnaryImageOperator (fun () -> new itk.simple.AtanImageFilter())   (fun f x -> f.Execute(x)) img
-let inline round (img: Image<'T>)  = makeUnaryImageOperator (fun () -> new itk.simple.RoundImageFilter())  (fun f x -> f.Execute(x)) img
+let inline absImage (img: Image<'T>)    = makeUnaryImageOperator (fun () -> new itk.simple.AbsImageFilter())    (fun f x -> f.Execute(x)) img
+let inline logImage (img: Image<'T>)    = makeUnaryImageOperator (fun () -> new itk.simple.LogImageFilter())    (fun f x -> f.Execute(x)) img
+let inline log10Image (img: Image<'T>)  = makeUnaryImageOperator (fun () -> new itk.simple.Log10ImageFilter())  (fun f x -> f.Execute(x)) img
+let inline expImage (img: Image<'T>)    = makeUnaryImageOperator (fun () -> new itk.simple.ExpImageFilter())    (fun f x -> f.Execute(x)) img
+let inline sqrtImage (img: Image<'T>)   = makeUnaryImageOperator (fun () -> new itk.simple.SqrtImageFilter())   (fun f x -> f.Execute(x)) img
+let inline squareImage (img: Image<'T>) = makeUnaryImageOperator (fun () -> new itk.simple.SquareImageFilter()) (fun f x -> f.Execute(x)) img
+let inline sinImage (img: Image<'T>)    = makeUnaryImageOperator (fun () -> new itk.simple.SinImageFilter())    (fun f x -> f.Execute(x)) img
+let inline cosImage (img: Image<'T>)    = makeUnaryImageOperator (fun () -> new itk.simple.CosImageFilter())    (fun f x -> f.Execute(x)) img
+let inline tanImage (img: Image<'T>)    = makeUnaryImageOperator (fun () -> new itk.simple.TanImageFilter())    (fun f x -> f.Execute(x)) img
+let inline asinImage (img: Image<'T>)   = makeUnaryImageOperator (fun () -> new itk.simple.AsinImageFilter())   (fun f x -> f.Execute(x)) img
+let inline acosImage (img: Image<'T>)   = makeUnaryImageOperator (fun () -> new itk.simple.AcosImageFilter())   (fun f x -> f.Execute(x)) img
+let inline atanImage (img: Image<'T>)   = makeUnaryImageOperator (fun () -> new itk.simple.AtanImageFilter())   (fun f x -> f.Execute(x)) img
+let inline roundImage (img: Image<'T>)  = makeUnaryImageOperator (fun () -> new itk.simple.RoundImageFilter())  (fun f x -> f.Execute(x)) img
 
 // ----- basic image analysis functions -----
 (* // I'm waiting with proper support of complex values
@@ -302,25 +302,42 @@ let watershed (level: float) : Image<'T> -> Image<'T> =
 /// Histogram related functions
 type ImageStats =
     { 
+        NumPixels: uint
         Mean: float
-        StdDev: float
-        Minimum: float
-        Maximum: float
+        Std: float
+        Min: float
+        Max: float
         Sum: float
-        Variance: float 
+        Var: float 
     }
 
 let computeStats (img: Image<'T>) : ImageStats =
     use stats = new itk.simple.StatisticsImageFilter()
     stats.Execute(img.Image)
     { 
+        NumPixels = img.GetSize() |> List.reduce (*)
         Mean = stats.GetMean()
-        StdDev = stats.GetSigma()
-        Minimum = stats.GetMinimum()
-        Maximum = stats.GetMaximum()
+        Std = stats.GetSigma()
+        Min = stats.GetMinimum()
+        Max = stats.GetMaximum()
         Sum = stats.GetSum()
-        Variance = stats.GetVariance() 
+        Var = stats.GetVariance() 
     }
+
+let addComputeStats (s1: ImageStats) (s2: ImageStats): ImageStats =
+    let weighted a1 a2 = 
+        (a1*(float s1.NumPixels) + a2*(float s2.NumPixels))/(float (s1.NumPixels+s2.NumPixels))
+    let var = weighted s1.Var s2.Var
+    { 
+        NumPixels = s1.NumPixels+s2.NumPixels
+        Mean = weighted s1.Mean s2.Mean
+        Var = var
+        Sum = weighted s1.Sum s2.Sum
+        Std = sqrt(var)
+        Min = min s1.Min s2.Min
+        Max = max s1.Max s2.Max
+    }
+
 
 let unique (img: Image<'T>) : 'T list when 'T : comparison =
     img.toArray2D()            // 'T [,]

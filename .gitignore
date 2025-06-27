@@ -36,3 +36,7 @@ StackPipeline/lib/libSimpleITKCSharpNative.dylib
 *.fs~
 /Processing/bin
 /Processing/obj
+/old/Vector/bin
+/old/Vector/obj
+/Slice/obj
+/Slice/bin

@@ -2,7 +2,6 @@ module Slice
 open Image
 open ImageFunctions
 open System.IO
-open Plotly.NET
 
 /// <summary>
 /// Represents a slice of a stack of 2d images. 
@@ -15,53 +14,80 @@ type Slice<'T when 'T: equality> = {
 let create<'T when 'T: equality> (width: uint) (height: uint) (depth: uint) (idx: uint) : Slice<'T> =
     {Index= idx; Image=if depth > 1u then Image<'T>([width;height;depth]) else Image<'T>([width;height]) }
 
-let liftUnary (f: Image<'T> -> Image<'T>) : Slice<'T> -> Slice<'T> =
+let GetDepth (slice: Slice<'T>) = slice.Image.GetDepth()
+let GetDimension (slice: Slice<'T>) = slice.Image.GetDimension()
+let GetHeight (slice: Slice<'T>) = slice.Image.GetHeight()
+let GetWidth (slice: Slice<'T>) = slice.Image.GetWidth()
+let GetSize (slice: Slice<'T>) = slice.Image.GetSize()
+let ToString (slice: Slice<'T>) = slice.Image.ToString()
+let toArray2D (slice: Slice<'T>) = slice.Image.toArray2D()
+let toArray3D (slice: Slice<'T>) = slice.Image.toArray3D()
+let toArray4D (slice: Slice<'T>) = slice.Image.toArray4D()
+let cast<'S when 'S: equality> (slice: Slice<'T>) = slice.Image.cast<'S>()
+
+let toFloat (value: obj) =
+    match value with
+    | :? float   as f -> f
+    | :? float32 as f -> float f
+    | :? int     as i -> float i
+    | :? byte    as b -> float b
+    | :? int64   as l -> float l
+    | _ -> failwithf "Cannot convert value of type %s to float" (value.GetType().FullName)
+
+let toSeqSeq (slice: Slice<'T>): seq<seq<float>> =
+    let width = slice |> GetWidth |> int
+    let height = slice |> GetHeight |> int
+    Seq.init height (fun y ->
+        Seq.init width (fun x ->
+            slice.Image[x,y] |> box |> toFloat))
+
+let private liftUnary (f: Image<'T> -> Image<'T>) : Slice<'T> -> Slice<'T> =
     fun s -> { s with Image = f s.Image }
 
-let liftUnary1 (f: 'a -> Image<'T> -> Image<'T>) : 'a -> Slice<'T> -> Slice<'T> =
+let private liftUnary1 (f: 'a -> Image<'T> -> Image<'T>) : 'a -> Slice<'T> -> Slice<'T> =
     fun a s -> { s with Image = f a s.Image }
 
-let liftUnary2 (f: 'a -> 'b -> Image<'T> -> Image<'T>) : 'a -> 'b -> Slice<'T> -> Slice<'T> =
+let private liftUnary2 (f: 'a -> 'b -> Image<'T> -> Image<'T>) : 'a -> 'b -> Slice<'T> -> Slice<'T> =
     fun a b s -> { s with Image = f a b s.Image }
 
-let liftBinary (f: Image<'T> -> Image<'T> -> Image<'T>) : Slice<'T> -> Slice<'T> -> Slice<'T> =
+let private liftBinary (f: Image<'T> -> Image<'T> -> Image<'T>) : Slice<'T> -> Slice<'T> -> Slice<'T> =
     fun s1 s2 -> { s1 with Image = f s1.Image s2.Image }
 
-let liftBinary1 (f: 'a  -> Image<'T> -> Image<'T> -> Image<'T>) : 'a -> Slice<'T> -> Slice<'T> -> Slice<'T> =
+let private liftBinary1 (f: 'a  -> Image<'T> -> Image<'T> -> Image<'T>) : 'a -> Slice<'T> -> Slice<'T> -> Slice<'T> =
     fun a s1 s2 -> { s1 with Image = f a s1.Image s2.Image }
 
-let liftBinary2 (f: 'a -> 'b  -> Image<'T> -> Image<'T> -> Image<'T>) : 'a -> 'b -> Slice<'T> -> Slice<'T> -> Slice<'T> =
+let private liftBinary2 (f: 'a -> 'b  -> Image<'T> -> Image<'T> -> Image<'T>) : 'a -> 'b -> Slice<'T> -> Slice<'T> -> Slice<'T> =
     fun a b s1 s2 -> { s1 with Image = f a b s1.Image s2.Image }
 
-let liftBinary3 (f: 'a -> 'b -> 'c -> Image<'T> -> Image<'T> -> Image<'T>) : 'a -> 'b -> 'c -> Slice<'T> -> Slice<'T> -> Slice<'T> =
+let private liftBinary3 (f: 'a -> 'b -> 'c -> Image<'T> -> Image<'T> -> Image<'T>) : 'a -> 'b -> 'c -> Slice<'T> -> Slice<'T> -> Slice<'T> =
     fun a b c s1 s2 -> { s1 with Image = f a b c s1.Image s2.Image }
 
-let liftBinaryOp (f: Image<'T> * Image<'T> -> Image<'T>) : Slice<'T> * Slice<'T> -> Slice<'T> =
+let private liftBinaryOp (f: Image<'T> * Image<'T> -> Image<'T>) : Slice<'T> * Slice<'T> -> Slice<'T> =
     fun (s1, s2) -> { s1 with Image = f (s1.Image, s2.Image) }
 
-let liftBinaryOpInt (f: Image<int> * int -> Image<int>) : Slice<int> * int -> Slice<int> =
+let private liftBinaryOpInt (f: Image<int> * int -> Image<int>) : Slice<int> * int -> Slice<int> =
     fun (s1, s2) -> { s1 with Image = f (s1.Image, s2) }
-let liftBinaryOpUInt8 (f: Image<uint8> * uint8 -> Image<uint8>) : Slice<uint8> * uint8 -> Slice<uint8> =
+let private liftBinaryOpUInt8 (f: Image<uint8> * uint8 -> Image<uint8>) : Slice<uint8> * uint8 -> Slice<uint8> =
     fun (s1, s2) -> { s1 with Image = f (s1.Image, s2) }
-let liftBinaryOpFloat (f: Image<float> * float -> Image<float>) : Slice<float> * float -> Slice<float> =
+let private liftBinaryOpFloat (f: Image<float> * float -> Image<float>) : Slice<float> * float -> Slice<float> =
     fun (s1, s2) -> { s1 with Image = f (s1.Image, s2) }
 
-let liftBinaryCmp (f: Image<'T> * Image<'T> -> bool) : Slice<'T> * Slice<'T> -> bool =
+let private liftBinaryCmp (f: Image<'T> * Image<'T> -> bool) : Slice<'T> * Slice<'T> -> bool =
     fun (s1,s2) -> f (s1.Image, s2.Image)
 
-let abs<'T when 'T: equality> (s: Slice<'T>) = liftUnary ImageFunctions.abs s
-let log<'T when 'T: equality> (s: Slice<'T>) = liftUnary ImageFunctions.log s
-let log10<'T when 'T: equality> (s: Slice<'T>) = liftUnary ImageFunctions.log10 s
-let exp<'T when 'T: equality> (s: Slice<'T>) = liftUnary ImageFunctions.exp s
-let sqrt<'T when 'T: equality> (s: Slice<'T>) = liftUnary ImageFunctions.sqrt s
-let square<'T when 'T: equality> (s: Slice<'T>) = liftUnary ImageFunctions.square s
-let sin<'T when 'T: equality> (s: Slice<'T>) = liftUnary ImageFunctions.sin s
-let cos<'T when 'T: equality> (s: Slice<'T>) = liftUnary ImageFunctions.cos s
-let tan<'T when 'T: equality> (s: Slice<'T>) = liftUnary ImageFunctions.tan s
-let asin<'T when 'T: equality> (s: Slice<'T>) = liftUnary ImageFunctions.asin s
-let acos<'T when 'T: equality> (s: Slice<'T>) = liftUnary ImageFunctions.acos s
-let atan<'T when 'T: equality> (s: Slice<'T>) = liftUnary ImageFunctions.atan s
-let round<'T when 'T: equality> (s: Slice<'T>) = liftUnary ImageFunctions.round s
+let absSlice<'T when 'T: equality> (s: Slice<'T>) = liftUnary absImage s
+let logSlice<'T when 'T: equality> (s: Slice<'T>) = liftUnary logImage s
+let log10Slice<'T when 'T: equality> (s: Slice<'T>) = liftUnary log10Image s
+let expSlice<'T when 'T: equality> (s: Slice<'T>) = liftUnary expImage s
+let sqrtSlice<'T when 'T: equality> (s: Slice<'T>) = liftUnary sqrtImage s
+let squareSlice<'T when 'T: equality> (s: Slice<'T>) = liftUnary squareImage s
+let sinSlice<'T when 'T: equality> (s: Slice<'T>) = liftUnary sinImage s
+let cosSlice<'T when 'T: equality> (s: Slice<'T>) = liftUnary cosImage s
+let tanSlice<'T when 'T: equality> (s: Slice<'T>) = liftUnary tanImage s
+let asinSlice<'T when 'T: equality> (s: Slice<'T>) = liftUnary asinImage s
+let acosSlice<'T when 'T: equality> (s: Slice<'T>) = liftUnary acosImage s
+let atanSlice<'T when 'T: equality> (s: Slice<'T>) = liftUnary atanImage s
+let roundSlice<'T when 'T: equality> (s: Slice<'T>) = liftUnary roundImage s
 
 let convolve a b c (s: Slice<'T>) (t: Slice<'T>) = liftBinary3 convolve a b c s t
 let conv (s: Slice<'T>) (t: Slice<'T>) = liftBinary conv s t
@@ -93,8 +119,11 @@ let unique (img: Slice<'T>) : 'T list when 'T : comparison =
     ImageFunctions.unique img.Image
 let labelShapeStatistics (img: Slice<'T>) : Map<int64, ImageFunctions.LabelShapeStatistics> =
     ImageFunctions.labelShapeStatistics img.Image
+type ImageStats = ImageFunctions.ImageStats
 let computeStats (img: Slice<'T>) : ImageStats =
     ImageFunctions.computeStats img.Image
+let addComputeStats (s1: ImageStats) (s2: ImageStats): ImageStats =
+    ImageFunctions.addComputeStats s1 s2
 let histogram (img: Slice<'T>) : Map<'T, uint64> =
     ImageFunctions.histogram img.Image
 let addHistogram (h1: Map<'T, uint64>) (h2: Map<'T, uint64>): Map<'T, uint64> =
@@ -176,25 +205,5 @@ let getVolumeSize (inputDir: string) (suffix: string): uint * uint * uint =
 let readSlice<'T when 'T: equality> (idx: uint) (filename: string) : Slice<'T> =
     {Index = idx; Image = Image<'T>.ofFile(filename)}
 
-let readRandomSlice<'T when 'T: equality> (inputDir: string) (suffix: string): Slice<'T> =
-    let filename = Directory.GetFiles(inputDir, "*"+suffix) |> Array.randomChoices 1 |> Array.tryHead
-    match filename with
-        Some fn -> readSlice<'T> 0u fn
-        | _ -> failwith "No files in directory" // Here it would be better with a Slice structure with error handling
-
 let writeSlice (filename: string) (slice: Slice<'T>) : unit =
     slice.Image.toFile(filename)
-
-let inline plotSlice (slice: Slice<^T>) : unit  when ^T: (static member op_Explicit: ^T -> float) =
-    let image = slice.Image
-    let width = image.GetWidth() |> int
-    let height = image.GetHeight() |> int
-    let data =
-        Seq.init height (fun y ->
-            Seq.init width (fun x ->
-                image[x, y] |> float))
-    data |> Chart.Heatmap |> Chart.show
-
-let plotList (vec: float list) =
-    let idx = [1..vec.Length-1]
-    Chart.Line(idx, vec) |> Chart.show
