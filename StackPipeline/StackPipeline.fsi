@@ -1,21 +1,5 @@
 namespace FSharp
 module StackPipeline
-val private plotListAsync:
-  plt: (float list -> float list -> unit) ->
-    vectorSeq: FSharp.Control.AsyncSeq<(float * float) list> -> Async<unit>
-val showSliceAsync:
-  plt: (Slice.Slice<'T> -> unit) ->
-    slices: FSharp.Control.AsyncSeq<Slice.Slice<'T>> -> Async<unit>
-    when 'T: equality
-val private printAsync: slices: FSharp.Control.AsyncSeq<'T> -> Async<unit>
-val private writeSlicesAsync:
-  outputDir: string ->
-    suffix: string ->
-    slices: FSharp.Control.AsyncSeq<Slice.Slice<'T>> -> Async<unit>
-    when 'T: equality
-val private readSlices:
-  inputDir: string -> suffix: string -> FSharp.Control.AsyncSeq<Slice.Slice<'T>>
-    when 'T: equality
 /// The memory usage strategies during image processing.
 type MemoryProfile =
     | Streaming
@@ -32,6 +16,36 @@ type StackProcessor<'S,'T> =
       Profile: MemoryProfile
       Apply: (FSharp.Control.AsyncSeq<'S> -> FSharp.Control.AsyncSeq<'T>)
     }
+val private fromReducer:
+  name: string ->
+    profile: MemoryProfile ->
+    reducer: (FSharp.Control.AsyncSeq<'In> -> Async<'Out>) ->
+    StackProcessor<'In,'Out>
+val private fromConsumer:
+  name: string ->
+    profile: MemoryProfile ->
+    consume: (FSharp.Control.AsyncSeq<'T> -> Async<unit>) ->
+    StackProcessor<'T,unit>
+val fromMapper:
+  name: string ->
+    profile: MemoryProfile ->
+    f: ('In -> Async<'Out>) -> StackProcessor<'In,'Out>
+val private plotListAsync:
+  plt: (float list -> float list -> unit) ->
+    vectorSeq: FSharp.Control.AsyncSeq<(float * float) list> -> Async<unit>
+val showSliceAsync:
+  plt: (Slice.Slice<'T> -> unit) ->
+    slices: FSharp.Control.AsyncSeq<Slice.Slice<'T>> -> Async<unit>
+    when 'T: equality
+val private printAsync: slices: FSharp.Control.AsyncSeq<'T> -> Async<unit>
+val private writeSlicesAsync:
+  outputDir: string ->
+    suffix: string ->
+    slices: FSharp.Control.AsyncSeq<Slice.Slice<'T>> -> Async<unit>
+    when 'T: equality
+val private readSlices:
+  inputDir: string -> suffix: string -> FSharp.Control.AsyncSeq<Slice.Slice<'T>>
+    when 'T: equality
 /// Pipeline computation expression
 type PipelineBuilder =
     new: availableMemory: uint64 * width: uint * height: uint * depth: uint ->
@@ -64,16 +78,6 @@ val private runWith:
   input: FSharp.Control.AsyncSeq<'In> ->
     p: StackProcessor<'In,'T> -> FSharp.Control.AsyncSeq<'T>
 val private run: p: StackProcessor<unit,'T> -> FSharp.Control.AsyncSeq<'T>
-val fromReducer:
-  name: string ->
-    profile: MemoryProfile ->
-    reducer: (FSharp.Control.AsyncSeq<'In> -> Async<'Out>) ->
-    StackProcessor<'In,'Out>
-val fromConsumer:
-  name: string ->
-    profile: MemoryProfile ->
-    consume: (FSharp.Control.AsyncSeq<'T> -> Async<unit>) ->
-    StackProcessor<'T,unit>
 val print<'T> : StackProcessor<'T,unit>
 val plot:
   plt: (float list -> float list -> unit) ->
@@ -84,6 +88,7 @@ val show:
 val writeSlices:
   path: string -> suffix: string -> StackProcessor<Slice.Slice<'a>,unit>
     when 'a: equality
+val ignore<'T> : StackProcessor<'T,unit>
 /// Join two StackProcessors<'In, _> into one by zipping their outputs:
 ///   • applies both processors to the same input stream
 ///   • pairs each output and combines using the given function
@@ -92,6 +97,10 @@ val join:
   f: ('A -> 'B -> 'C) ->
     p1: StackProcessor<'In,'A> ->
     p2: StackProcessor<'In,'B> -> StackProcessor<'In,'C>
+val joinScalar:
+  f: ('A -> 'B -> 'C) ->
+    streamProc: StackProcessor<'In,'A> ->
+    scalarProc: StackProcessor<'In,'B> -> StackProcessor<'In,'C>
 /// Split a StackProcessor<'In,'T> into two branches that
 ///   • read the upstream only once
 ///   • keep at most one item in memory
@@ -101,6 +110,7 @@ type private Request<'T> =
     | Right of AsyncReplyChannel<Option<'T>>
 val tee:
   p: StackProcessor<'In,'T> -> StackProcessor<'In,'T> * StackProcessor<'In,'T>
+val tap: label: string -> StackProcessor<'T,'T>
 /// Fan out a StackProcessor<'In,'T> to two branches:
 ///   • processes input once using tee
 ///   • applies separate processors to each branch

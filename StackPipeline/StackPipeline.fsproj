@@ -35,7 +35,7 @@
 
   <ItemGroup>
     <PackageReference Include="FSharp.Control.AsyncSeq" Version="3.2.1" />
-    <ProjectReference Include="..\AsyncSeqExtensions\AsyncSeqExtensions.fsproj" />
+    <ProjectReference Include="../AsyncSeqExtensions/AsyncSeqExtensions.fsproj" />
     <!--<ProjectReference Include="..\pipelineIO\pipelineIO.fsproj" />-->
     <ProjectReference Include="../Image/Image.fsproj" />
     <ProjectReference Include="../Slice/Slice.fsproj" />

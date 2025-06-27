@@ -1,13 +1,13 @@
 namespace FSharp
 module Processing
-val private unstack:
-  slices: Slice.Slice<'T> -> FSharp.Control.AsyncSeq<Slice.Slice<'T>>
-    when 'T: equality
 val private fromReducer:
   name: string ->
     profile: StackPipeline.MemoryProfile ->
     reducer: (FSharp.Control.AsyncSeq<'In> -> Async<'Out>) ->
     StackPipeline.StackProcessor<'In,'Out>
+val private unstack:
+  slices: Slice.Slice<'T> -> FSharp.Control.AsyncSeq<Slice.Slice<'T>>
+    when 'T: equality
 val mapSlices:
   label: string ->
     profile: StackPipeline.MemoryProfile ->

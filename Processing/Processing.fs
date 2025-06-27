@@ -9,6 +9,15 @@ open AsyncSeqExtensions
 open StackPipeline
 open Slice
 
+//
+let private fromReducer (name: string) (profile: MemoryProfile) (reducer: AsyncSeq<'In> -> Async<'Out>) : StackProcessor<'In, 'Out> =
+    {
+        Name = name
+        Profile = profile
+        Apply = fun input ->
+            reducer input |> ofAsync
+    }
+
 // --- Processing Utilities ---
 let private unstack (slices: Slice<'T>) : AsyncSeq<Slice<'T>> =
     let baseIndex = slices.Index
@@ -17,14 +26,6 @@ let private unstack (slices: Slice<'T>) : AsyncSeq<Slice<'T>> =
     let width, height, depth = size.[0], size.[1], size.[2]
     Seq.init (int depth) (fun z -> extractSlice (baseIndex+(uint z)) slices)
     |> AsyncSeq.ofSeq
-
-let private fromReducer (name: string) (profile: MemoryProfile) (reducer: AsyncSeq<'In> -> Async<'Out>) : StackProcessor<'In, 'Out> =
-    {
-        Name = name
-        Profile = profile
-        Apply = fun input ->
-            reducer input |> ofAsync
-    }
 
 (*
 let addTo (other: AsyncSeq<Slice<'T>>) : StackProcessor<Slice<'T> ,Slice<'T>> =

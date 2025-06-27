@@ -8,6 +8,60 @@ open System.IO
 open Slice
 open Plotly.NET
 
+/// The memory usage strategies during image processing.
+type MemoryProfile =
+    | Streaming // Slice by slice independently
+    | Sliding of uint // Sliding window of slices of depth
+    | Buffered // All slices of depth
+
+    member this.EstimateUsage (width: uint) (height: uint) (depth: uint) : uint64 =
+        let pixelSize = 1UL // Assume 1 byte per pixel for UInt8
+        let sliceBytes = (uint64 width) * (uint64 height) * pixelSize
+        match this with
+            | Streaming -> sliceBytes
+            | Sliding windowSize -> sliceBytes * uint64 windowSize
+            | Buffered -> sliceBytes * uint64 depth
+
+    member this.RequiresBuffering (availableMemory: uint64) (width: uint) (height: uint) (depth: uint) : bool =
+        let usage = this.EstimateUsage width height depth
+        usage > availableMemory
+
+/// A configurable image processing step that operates on image slices.
+type StackProcessor<'S,'T> = {
+    Name: string // Name of the process
+    Profile: MemoryProfile
+    Apply: AsyncSeq<'S> -> AsyncSeq<'T>
+}
+
+let private fromReducer (name: string) (profile: MemoryProfile) (reducer: AsyncSeq<'In> -> Async<'Out>) : StackProcessor<'In, 'Out> =
+    {
+        Name = name
+        Profile = profile
+        Apply = fun input ->
+            reducer input |> ofAsync
+    }
+
+let private fromConsumer
+        (name    : string)
+        (profile : MemoryProfile)
+        (consume : AsyncSeq<'T> -> Async<unit>)
+        : StackProcessor<'T, unit> =
+
+    let reducer (s : AsyncSeq<'T>) = consume s          // Async<unit>
+    fromReducer name profile reducer                    // gives AsyncSeq<unit>
+
+let fromMapper
+    (name: string)
+    (profile: MemoryProfile)
+    (f: 'In -> Async<'Out>)
+    : StackProcessor<'In, 'Out> =
+    {
+        Name = name
+        Profile = profile
+        Apply = fun input ->
+            input |> AsyncSeq.mapAsync f
+    }
+
 // https://plotly.net/#For-applications-and-libraries
 let private plotListAsync (plt: (float list)->(float list)->unit) (vectorSeq: AsyncSeq<(float*float) list>) =
     vectorSeq
@@ -53,31 +107,6 @@ let private readSlices<'T when 'T: equality> (inputDir: string) (suffix: string)
         })
     |> Seq.ofArray
     |> AsyncSeq.ofSeqAsync
-
-/// The memory usage strategies during image processing.
-type MemoryProfile =
-    | Streaming // Slice by slice independently
-    | Sliding of uint // Sliding window of slices of depth
-    | Buffered // All slices of depth
-
-    member this.EstimateUsage (width: uint) (height: uint) (depth: uint) : uint64 =
-        let pixelSize = 1UL // Assume 1 byte per pixel for UInt8
-        let sliceBytes = (uint64 width) * (uint64 height) * pixelSize
-        match this with
-            | Streaming -> sliceBytes
-            | Sliding windowSize -> sliceBytes * uint64 windowSize
-            | Buffered -> sliceBytes * uint64 depth
-
-    member this.RequiresBuffering (availableMemory: uint64) (width: uint) (height: uint) (depth: uint) : bool =
-        let usage = this.EstimateUsage width height depth
-        usage > availableMemory
-
-/// A configurable image processing step that operates on image slices.
-type StackProcessor<'S,'T> = {
-    Name: string // Name of the process
-    Profile: MemoryProfile
-    Apply: AsyncSeq<'S> -> AsyncSeq<'T>
-}
 
 /// Pipeline computation expression
 type PipelineBuilder(availableMemory: uint64, width: uint, height: uint, depth: uint) =
@@ -183,31 +212,6 @@ let runNPlotList plt maker =
     plotListAsync plt stream |> Async.RunSynchronously
 *)
 
-let fromReducer
-    (name    : string)
-    (profile : MemoryProfile)
-    (reducer : AsyncSeq<'In> -> Async<'Out>)
-    : StackProcessor<'In,'Out> =
-
-    {
-        Name    = name
-        Profile = profile
-        Apply   = fun input ->
-            asyncSeq {
-                let! res = reducer input   // Async<'Out>
-                yield res                  // emit a single value
-            }
-    }
-
-let fromConsumer
-        (name    : string)
-        (profile : MemoryProfile)
-        (consume : AsyncSeq<'T> -> Async<unit>)
-        : StackProcessor<'T, unit> =
-
-    let reducer (s : AsyncSeq<'T>) = consume s          // Async<unit>
-    fromReducer name profile reducer                    // gives AsyncSeq<unit>
-
 //let print p = printfn "[print]"; run p |> printAsync
 //let plot plt p = printfn "[plot]"; run p |> plotListAsync plt
 //let show plt p = printfn "[show]"; run p |> showSliceAsync plt
@@ -234,12 +238,19 @@ let show plt : StackProcessor<Slice<'a>, unit> =
         })
 
 let writeSlices path suffix : StackProcessor<Slice<'a>, unit> =
-    fromConsumer "show" Streaming (fun stream ->
+    fromConsumer "write" Streaming (fun stream ->
         async {
             printfn "[show]"
             do! (writeSlicesAsync path suffix) stream
         })
 
+let ignore<'T> : StackProcessor<'T, unit> =
+    fromConsumer "ignore" Streaming (fun stream ->
+        async {
+            printfn "[ignore]"
+            do! stream |> AsyncSeq.iterAsync (fun _ -> async.Return())
+        })
+        
 /// Join two StackProcessors<'In, _> into one by zipping their outputs:
 ///   • applies both processors to the same input stream
 ///   • pairs each output and combines using the given function
@@ -258,6 +269,35 @@ let join (f: 'A -> 'B -> 'C) (p1: StackProcessor<'In, 'A>) (p2: StackProcessor<'
             let a = p1.Apply input
             let b = p2.Apply input
             AsyncSeq.zip a b |> AsyncSeq.map (fun (x, y) -> f x y)
+    }
+
+let joinScalar
+    (f: 'A -> 'B -> 'C)
+    (streamProc: StackProcessor<'In, 'A>)
+    (scalarProc: StackProcessor<'In, 'B>)
+    : StackProcessor<'In, 'C> =
+    printfn "[joinScalar]"
+    {
+        Name = $"joinScalar({streamProc.Name}, {scalarProc.Name})"
+        Profile =
+            match streamProc.Profile, scalarProc.Profile with
+            | Streaming, Streaming -> Streaming
+            | Sliding s1, Sliding s2 -> Sliding (max s1 s2)
+            | _ -> Buffered
+
+        Apply = fun input -> asyncSeq {
+            // Evaluate the scalar processor first
+            let! scalarValue =
+                scalarProc.Apply input
+                |> AsyncSeq.tryLast // could also use head, if only one expected
+                |> Async.map (function
+                    | Some v -> v
+                    | None   -> failwithf "[joinScalar] No value from scalar processor '%s'" scalarProc.Name)
+
+            // Now stream the input through streamProc
+            let stream = streamProc.Apply input
+            yield! stream |> AsyncSeq.map (fun a -> f a scalarValue)
+        }
     }
 
 /// Split a StackProcessor<'In,'T> into two branches that
@@ -350,6 +390,11 @@ let tee (p : StackProcessor<'In,'T>): StackProcessor<'In,'T> * StackProcessor<'I
 
     mkSide "left"  fst,
     mkSide "right" snd
+
+let tap label : StackProcessor<'T, 'T> =
+    fromMapper $"tap: {label}" Streaming (fun x ->
+        printfn "[%s] %A" label x
+        async.Return x)
 
 /// Fan out a StackProcessor<'In,'T> to two branches:
 ///   • processes input once using tee
