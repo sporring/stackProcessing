@@ -42,6 +42,8 @@
   </ItemGroup>
 
   <ItemGroup>
+    <Compile Include="Core.fs" />
+    <Compile Include="Routing.fs" />
     <Compile Include="StackPipeline.fs" />
   </ItemGroup>
 </Project>

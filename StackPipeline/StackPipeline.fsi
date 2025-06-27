@@ -1,7 +1,8 @@
 namespace FSharp
-module StackPipeline
+module Core
 /// The memory usage strategies during image processing.
 type MemoryProfile =
+    | Constant
     | Streaming
     | Sliding of uint
     | Buffered
@@ -9,27 +10,105 @@ type MemoryProfile =
     member
       RequiresBuffering: availableMemory: uint64 ->
                            width: uint -> height: uint -> depth: uint -> bool
+    member combineProfile: other: MemoryProfile -> MemoryProfile
 /// A configurable image processing step that operates on image slices.
-type StackProcessor<'S,'T> =
+type Pipe<'S,'T> =
     {
       Name: string
       Profile: MemoryProfile
       Apply: (FSharp.Control.AsyncSeq<'S> -> FSharp.Control.AsyncSeq<'T>)
     }
-val private fromReducer:
+val internal lift:
+  name: string ->
+    profile: MemoryProfile -> f: ('In -> Async<'Out>) -> Pipe<'In,'Out>
+val internal reduce:
   name: string ->
     profile: MemoryProfile ->
-    reducer: (FSharp.Control.AsyncSeq<'In> -> Async<'Out>) ->
-    StackProcessor<'In,'Out>
-val private fromConsumer:
+    reducer: (FSharp.Control.AsyncSeq<'In> -> Async<'Out>) -> Pipe<'In,'Out>
+val internal consumeWith:
   name: string ->
     profile: MemoryProfile ->
-    consume: (FSharp.Control.AsyncSeq<'T> -> Async<unit>) ->
-    StackProcessor<'T,unit>
-val fromMapper:
-  name: string ->
-    profile: MemoryProfile ->
-    f: ('In -> Async<'Out>) -> StackProcessor<'In,'Out>
+    consume: (FSharp.Control.AsyncSeq<'T> -> Async<unit>) -> Pipe<'T,unit>
+/// Pipeline computation expression
+type PipelineBuilder =
+    new: availableMemory: uint64 * width: uint * height: uint * depth: uint ->
+           PipelineBuilder
+    member Bind: p: Pipe<'S,'T> * f: ('T -> Pipe<'S,'U>) -> Pipe<'S,'U>
+    /// Chain two <c>Pipe</c> instances, optionally inserting intermediate disk I/O
+    member Bind: p: Pipe<'S,'T> * f: (Pipe<'S,'T> -> Pipe<'S,'T>) -> Pipe<'S,'T>
+    /// Wraps a processor value for use in the pipeline computation expression.
+    member Return: p: Pipe<'S,'T> -> Pipe<'S,'T>
+    /// Allows returning a processor directly from another computation expression.
+    member ReturnFrom: p: Pipe<'S,'T> -> Pipe<'S,'T>
+    /// Provides a default identity processor using streaming as the memory profile.
+    member Zero: unit -> Pipe<'a,'a>
+/// A memory-aware pipeline builder with the specified processing constraints.
+val pipeline:
+  availableMemory: uint64 ->
+    width: uint -> height: uint -> depth: uint -> PipelineBuilder
+module Helpers =
+    /// Pipeline helper functions
+    val singleton: x: 'In -> Pipe<'In,'In>
+module Routing
+val private runWith:
+  input: FSharp.Control.AsyncSeq<'In> ->
+    p: Core.Pipe<'In,'T> -> FSharp.Control.AsyncSeq<'T>
+val private run: p: Core.Pipe<unit,'T> -> FSharp.Control.AsyncSeq<'T>
+val sinkLst: processors: Core.Pipe<unit,unit> list -> unit
+val sink: p: Core.Pipe<unit,unit> -> unit
+val sourceLst:
+  availableMemory: uint64 ->
+    width: uint ->
+    height: uint ->
+    depth: uint ->
+    processors: Core.Pipe<unit,Slice.Slice<'T>> list ->
+    Core.Pipe<unit,Slice.Slice<'T>> list when 'T: equality
+val source:
+  availableMemory: uint64 ->
+    width: uint ->
+    height: uint ->
+    depth: uint ->
+    p: Core.Pipe<unit,Slice.Slice<'T>> -> Core.Pipe<unit,Slice.Slice<'T>>
+    when 'T: equality
+/// Split a Pipe<'In,'T> into two branches that
+///   • read the upstream only once
+///   • keep at most one item in memory
+///   • terminate correctly when both sides finish
+type private Request<'T> =
+    | Left of AsyncReplyChannel<Option<'T>>
+    | Right of AsyncReplyChannel<Option<'T>>
+val tee: p: Core.Pipe<'In,'T> -> Core.Pipe<'In,'T> * Core.Pipe<'In,'T>
+/// Fan out a Pipe<'In,'T> to two branches:
+///   • processes input once using tee
+///   • applies separate processors to each branch
+///   • zips outputs into a tuple
+val fanOut:
+  p: Core.Pipe<'In,'T> ->
+    f1: Core.Pipe<'T,'U> -> f2: Core.Pipe<'T,'V> -> Core.Pipe<'In,('U * 'V)>
+/// zipWith two Pipes<'In, _> into one by zipping their outputs:
+///   • applies both processors to the same input stream
+///   • pairs each output and combines using the given function
+///   • assumes both sides produce values in lockstep
+val zipWith:
+  f: ('A -> 'B -> 'C) ->
+    p1: Core.Pipe<'In,'A> -> p2: Core.Pipe<'In,'B> -> Core.Pipe<'In,'C>
+val cacheScalar: name: string -> p: Core.Pipe<unit,'T> -> Core.Pipe<'In,'T>
+val inject:
+  f: ('A -> 'B -> 'C) ->
+    scalarProc: Core.Pipe<'In,'A> ->
+    streamProc: Core.Pipe<'In,'B> -> Core.Pipe<'In,'C>
+val (>>~>) :
+  s: Core.Pipe<'a,'b> ->
+    f: ('c -> 'b -> 'd) * a: Core.Pipe<'a,'c> -> Core.Pipe<'a,'d>
+/// Combine two <c>Pipe</c> instances into one by composing their memory profiles and transformation functions.
+val composePipe:
+  p1: Core.Pipe<'S,'T> -> p2: Core.Pipe<'T,'U> -> Core.Pipe<'S,'U>
+val (>>=>) : p1: Core.Pipe<'a,'b> -> p2: Core.Pipe<'b,'c> -> Core.Pipe<'a,'c>
+val injectPipe:
+  streamProc: Core.Pipe<'In,'A> ->
+    f: ('B -> 'A -> 'C) * reducerProc: Core.Pipe<'In,'B> -> Core.Pipe<'In,'C>
+val tap: label: string -> Core.Pipe<'T,'T>
+module StackPipeline
 val private plotListAsync:
   plt: (float list -> float list -> unit) ->
     vectorSeq: FSharp.Control.AsyncSeq<(float * float) list> -> Async<unit>
@@ -46,100 +125,14 @@ val private writeSlicesAsync:
 val private readSlices:
   inputDir: string -> suffix: string -> FSharp.Control.AsyncSeq<Slice.Slice<'T>>
     when 'T: equality
-/// Pipeline computation expression
-type PipelineBuilder =
-    new: availableMemory: uint64 * width: uint * height: uint * depth: uint ->
-           PipelineBuilder
-    member
-      Bind: p: StackProcessor<'S,'T> * f: ('T -> StackProcessor<'S,'U>) ->
-              StackProcessor<'S,'U>
-    /// Chain two <c>StackProcessor</c> instances, optionally inserting intermediate disk I/O
-    member
-      Bind: p: StackProcessor<'S,'T> *
-            f: (StackProcessor<'S,'T> -> StackProcessor<'S,'T>) ->
-              StackProcessor<'S,'T>
-    /// Wraps a processor value for use in the pipeline computation expression.
-    member Return: p: StackProcessor<'S,'T> -> StackProcessor<'S,'T>
-    /// Allows returning a processor directly from another computation expression.
-    member ReturnFrom: p: StackProcessor<'S,'T> -> StackProcessor<'S,'T>
-    /// Provides a default identity processor using streaming as the memory profile.
-    member Zero: unit -> StackProcessor<'a,'a>
-/// Combine two <c>StackProcessor</c> instances into one by composing their memory profiles and transformation functions.
-val (>>=>) :
-  p1: StackProcessor<'S,'T> ->
-    p2: StackProcessor<'T,'U> -> StackProcessor<'S,'U>
-/// A memory-aware pipeline builder with the specified processing constraints.
-val pipeline:
-  availableMemory: uint64 ->
-    width: uint -> height: uint -> depth: uint -> PipelineBuilder
-/// Pipeline helper functions
-val singleton: x: 'In -> StackProcessor<'In,'In>
-val private runWith:
-  input: FSharp.Control.AsyncSeq<'In> ->
-    p: StackProcessor<'In,'T> -> FSharp.Control.AsyncSeq<'T>
-val private run: p: StackProcessor<unit,'T> -> FSharp.Control.AsyncSeq<'T>
-val print<'T> : StackProcessor<'T,unit>
+val print<'T> : Core.Pipe<'T,unit>
 val plot:
   plt: (float list -> float list -> unit) ->
-    StackProcessor<(float * float) list,unit>
+    Core.Pipe<(float * float) list,unit>
 val show:
-  plt: (Slice.Slice<'a> -> unit) -> StackProcessor<Slice.Slice<'a>,unit>
+  plt: (Slice.Slice<'a> -> unit) -> Core.Pipe<Slice.Slice<'a>,unit>
     when 'a: equality
 val writeSlices:
-  path: string -> suffix: string -> StackProcessor<Slice.Slice<'a>,unit>
+  path: string -> suffix: string -> Core.Pipe<Slice.Slice<'a>,unit>
     when 'a: equality
-val ignore<'T> : StackProcessor<'T,unit>
-/// Join two StackProcessors<'In, _> into one by zipping their outputs:
-///   • applies both processors to the same input stream
-///   • pairs each output and combines using the given function
-///   • assumes both sides produce values in lockstep
-val join:
-  f: ('A -> 'B -> 'C) ->
-    p1: StackProcessor<'In,'A> ->
-    p2: StackProcessor<'In,'B> -> StackProcessor<'In,'C>
-val joinScalar:
-  f: ('A -> 'B -> 'C) ->
-    streamProc: StackProcessor<'In,'A> ->
-    scalarProc: StackProcessor<'In,'B> -> StackProcessor<'In,'C>
-/// Split a StackProcessor<'In,'T> into two branches that
-///   • read the upstream only once
-///   • keep at most one item in memory
-///   • terminate correctly when both sides finish
-type private Request<'T> =
-    | Left of AsyncReplyChannel<Option<'T>>
-    | Right of AsyncReplyChannel<Option<'T>>
-val tee:
-  p: StackProcessor<'In,'T> -> StackProcessor<'In,'T> * StackProcessor<'In,'T>
-val tap: label: string -> StackProcessor<'T,'T>
-/// Fan out a StackProcessor<'In,'T> to two branches:
-///   • processes input once using tee
-///   • applies separate processors to each branch
-///   • zips outputs into a tuple
-val fanOut:
-  p: StackProcessor<'In,'T> ->
-    f1: StackProcessor<'T,'U> ->
-    f2: StackProcessor<'T,'V> -> StackProcessor<'In,('U * 'V)>
-/// Run two StackProcessors<unit, _> in parallel:
-///   • executes each with its own consumer function
-///   • waits for both to finish before returning
-val runBoth2:
-  p1: StackProcessor<unit,'T1> ->
-    f1: (StackProcessor<unit,'T1> -> Async<unit>) ->
-    p2: StackProcessor<unit,'T2> ->
-    f2: (StackProcessor<unit,'T2> -> Async<unit>) -> unit
-val sinkLst: processors: StackProcessor<unit,unit> list -> unit
-val sink: p: StackProcessor<unit,unit> -> unit
-val sourceLst:
-  availableMemory: uint64 ->
-    width: uint ->
-    height: uint ->
-    depth: uint ->
-    processors: StackProcessor<unit,Slice.Slice<'T>> list ->
-    StackProcessor<unit,Slice.Slice<'T>> list when 'T: equality
-val source:
-  availableMemory: uint64 ->
-    width: uint ->
-    height: uint ->
-    depth: uint ->
-    p: StackProcessor<unit,Slice.Slice<'T>> ->
-    StackProcessor<unit,Slice.Slice<'T>> when 'T: equality
+val ignore<'T> : Core.Pipe<'T,unit>
