@@ -559,7 +559,6 @@ val conv:
   img: Image.Image<'T> -> ker: Image.Image<'T> -> Image.Image<'T>
     when 'T: equality
 /// Gaussian kernel convolution
-/// Isotropic Discrete Gaussian blur
 val discreteGaussian:
   sigma: float -> (Image.Image<'T> -> Image.Image<'T>) when 'T: equality
 /// Recursive Gaussian blur in a specific direction (0 = x, 1 = y, 2 = z)

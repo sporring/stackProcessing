@@ -11,15 +11,6 @@ open Core
 open Core.Helpers
 open Slice
 
-//
-let private reduce (name: string) (profile: MemoryProfile) (reducer: AsyncSeq<'In> -> Async<'Out>) : Pipe<'In, 'Out> =
-    {
-        Name = name
-        Profile = profile
-        Apply = fun input ->
-            reducer input |> ofAsync
-    }
-
 // --- Processing Utilities ---
 let private explodeSlice (slices: Slice<'T>) : AsyncSeq<Slice<'T>> =
     let baseIndex = slices.Index
@@ -29,25 +20,21 @@ let private explodeSlice (slices: Slice<'T>) : AsyncSeq<Slice<'T>> =
     Seq.init (int depth) (fun z -> extractSlice (baseIndex+(uint z)) slices)
     |> AsyncSeq.ofSeq
 
-(*
-let addTo (other: AsyncSeq<Slice<'T>>) : Pipe<Slice<'T> ,Slice<'T>> =
-    {   
-        Name = "AddTo"
-        Profile = Streaming
+let private reduce (label: string) (profile: MemoryProfile) (reducer: AsyncSeq<'In> -> Async<'Out>) : Pipe<'In, 'Out> =
+    {
+        Name = label
+        Profile = profile
         Apply = fun input ->
-            zipJoin add input other (Some "[addTo]")
+            reducer input |> ofAsync
     }
 
-let multiplyWith (other: AsyncSeq<Slice<'T>>) : Pipe<Slice<'T> ,Slice<'T>> =
-    printfn "[multiplyWith]"
-    {
-        Name = "multiplyWith"
-        Profile = Streaming
-        Apply = fun input ->
-            printfn "[multiplyWith]"
-            zipJoin mul input other (Some "[multiplyWith]")
-    }
-*)
+let fold (label: string) (profile: MemoryProfile)  (folder: 'State -> 'In -> 'State) (state0: 'State) : Pipe<'In, 'State> =
+    reduce label profile (fun stream ->
+        async {
+            let! result = stream |> AsyncSeq.fold folder state0
+            return result
+        })
+
 let map (label: string) (profile: MemoryProfile) (f: 'S -> 'T) : Pipe<'S,'T> =
     {
         Name = "map"; 
@@ -57,13 +44,13 @@ let map (label: string) (profile: MemoryProfile) (f: 'S -> 'T) : Pipe<'S,'T> =
             |> AsyncSeq.map (fun slice -> f slice)
     }
 
-let mapWindowed (label: string) (depth: uint) (f: Slice<'T> -> Slice<'T>) : Pipe<Slice<'T>,Slice<'T>> =
-    { // Due to stack, this is Pipe<Slice<'T>,Slice<'T>>
+let mapWindowed (label: string) (depth: uint) (stride: uint) (f: 'S list -> 'T) : Pipe<'S,'T> =
+    {
         Name = "mapWindowed"; 
         Profile = Sliding depth
         Apply = fun input ->
-            AsyncSeqExtensions.windowed (int depth) input
-            |> AsyncSeq.map (fun window -> window |> stack |> f)
+            AsyncSeqExtensions.windowed depth stride input
+            |> AsyncSeq.map (fun window -> window |> f)
     }
 
 let mapChunked (label: string) (chunkSize: uint) (baseIndex: uint) (f: Slice<'T> -> Slice<'T>) : Pipe<Slice<'T>,Slice<'T>> =
@@ -251,19 +238,6 @@ let expProcess<'T when 'T: equality> : Pipe<Slice<'T>, Slice<'T>> =
     printfn "[exp]"
     map "Exp" Streaming expSlice<'T>
 
-// let histogram (img: Image<'T>) : Map<'T, uint64> =
-(*let histogramPerSlice<'T when 'T: comparison> : Pipe<Slice<'T>, Map<'T, uint64>> =
-    printfn "[histogramPerSlice]"
-    map "HistogramPerSlice" Streaming Slice.histogram
-
-let histogramReducer<'T when 'T: comparison> : AsyncSeq<Map<'T, uint64>> -> Async<Map<'T, uint64>> =
-    fun hist ->
-        AsyncSeqExtensions.fold Slice.addHistogram Map.empty hist
-
-let histogram<'T when 'T: comparison> : Pipe<Map<'T, uint64>, Map<'T, uint64>> =
-    printfn "[histogramReduced]"
-    reduce "HistogramReduced" Streaming histogramReducer
-*)
 let histogram<'T when 'T: comparison> : Pipe<Slice<'T>, Map<'T, uint64>> =
     printfn "[histogram]"
     let histogramReducer (slices: AsyncSeq<Slice<'T>>) =
@@ -286,58 +260,6 @@ let inline pairs2int<^T, ^S when ^T : (static member op_Explicit : ^T -> int)
     printfn "[pairs2int]"
     map "pairs2int" Streaming Slice.pairs2ints
 
-let create<'T when 'T: equality> (width: uint) (height: uint) (depth: uint) : Pipe<unit, Slice<'T>> =
-    printfn "[create]"
-    {
-        Name = "[create]"
-        Profile = Streaming
-        Apply = fun _ ->
-            AsyncSeq.init (int depth) (fun i -> printfn "[create %d]" i; Slice.create<'T> width height 1u (uint i))
-    }
-
-let readSlices<'T when 'T: equality> (inputDir: string) (suffix: string) : Pipe<unit, Slice<'T>> =
-    printfn "[readSlices]"
-    let filenames = Directory.GetFiles(inputDir, "*"+suffix) |> Array.sort
-    let depth = filenames.Length
-    {
-        Name = $"[readSlices {inputDir}]"
-        Profile = Streaming
-        Apply = fun _ ->
-            AsyncSeq.init (int depth) (fun i -> 
-                let fileName = filenames[int i]; 
-                printfn "[readSlices] Reading slice %d to %s" (uint i) fileName
-                Slice.readSlice<'T> (uint i) fileName)
-    }
-
-let readSliceN<'T when 'T: equality> (idx: uint) (inputDir: string) (suffix: string) : Pipe<unit, Slice<'T>> =
-    printfn "[readSliceN]"
-    let fileNames = Directory.GetFiles(inputDir, "*"+suffix) |> Array.sort
-    if fileNames.Length <= (int idx) then
-        failwith "[readSliceN] Index out of bounds"
-    else
-    let fileName = fileNames[int idx]
-    {
-        Name = $"[readSliceN {fileName}]"
-        Profile = Streaming
-        Apply = fun _ ->
-            AsyncSeq.init 1 (fun i -> 
-                printfn "[readSliceN] Reading slice %d to %s" (uint idx) fileName
-                Slice.readSlice<'T> (uint idx) fileName)
-    }
-
-let readRandomSlices<'T when 'T: equality> (count: uint) (inputDir: string) (suffix: string) :Pipe<unit, Slice<'T>> =
-    printfn "[readRandomSlices]"
-    let fileNames = Directory.GetFiles(inputDir, "*"+suffix) |> Array.randomChoices (int count)
-    {
-        Name = $"[readRandomSlices {inputDir}]"
-        Profile = Streaming
-        Apply = fun _ ->
-            AsyncSeq.init (int count) (fun i -> 
-                let fileName = fileNames[int i]; 
-                printfn "[readRandomSlices] Reading slice %d to %s" (uint i) fileName
-                Slice.readSlice<'T> (uint i) fileName)
-    }
-
 let addNormalNoise (mean: float) (stddev: float) : Pipe<Slice<'T> ,Slice<'T>> =
     printfn "[addNormalNoise]"
     map "addNormalNoise" Streaming (addNormalNoise mean stddev)
@@ -349,7 +271,8 @@ let threshold (lower: float) (upper: float) : Pipe<Slice<'T> ,Slice<'T>> =
 let discreteGaussian (sigma: float) : Pipe<Slice<'T> ,Slice<'T>> =
     printfn "[discreteGaussian]"
     let depth = 1u + 2u * uint (0.5 + sigma)
-    mapWindowed "discreteGaussian" depth (discreteGaussian sigma)
+    let stride = 1u
+    mapWindowed "discreteGaussian" depth stride (stack >> discreteGaussian sigma)
 
 type FileInfo = Slice.FileInfo
 let getFileInfo(fname: string): FileInfo = Slice.getFileInfo(fname)
@@ -371,3 +294,4 @@ let computeStats<'T when 'T : equality> : Pipe<Slice<'T>, ImageStats> =
         |> AsyncSeq.map Slice.computeStats
         |> AsyncSeqExtensions.fold Slice.addComputeStats zeroStats
     reduce "Compute Statistics" StreamingConstant computeStatsReducer
+

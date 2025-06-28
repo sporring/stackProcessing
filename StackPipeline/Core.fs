@@ -107,7 +107,7 @@ type PipelineBuilder(availableMemory: uint64, width: uint, height: uint, depth: 
                 writeSlicesAsync tempDir ".tif" input
                 |> Async.RunSynchronously
                 // Step 2: Read them back for next stage
-                readSlices tempDir ".tif"
+                readSlicesAsync tempDir ".tif"
 
             { Name = $"{composed.Name} {p.Name}"; Profile = Streaming; Apply = composed.Apply << intermediate } // The profile needs to be reset here. How to do that?
         else *)

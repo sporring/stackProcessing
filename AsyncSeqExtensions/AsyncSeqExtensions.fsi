@@ -9,9 +9,10 @@ val fold:
     state: 'State -> source: FSharp.Control.AsyncSeq<'T> -> Async<'State>
 /// Attempts to retrieve the item at the specified index from an asynchronous sequence.
 val tryItem: n: int -> source: FSharp.Control.AsyncSeq<'T> -> Async<'T option>
-/// Creates a sliding window over an asynchronous sequence, returning lists of elements of the specified window size.
+/// Windowed function with stride and optional padding.
 val windowed:
-  windowSize: int ->
+  windowSize: uint ->
+    stride: uint ->
     source: FSharp.Control.AsyncSeq<'T> -> FSharp.Control.AsyncSeq<'T list>
 /// Splits an asynchronous sequence into fixed-size chunks.
 val chunkBySize:

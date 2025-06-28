@@ -11,13 +11,13 @@ module Async =
 
 /// Applies a folder function over an asynchronous sequence, threading an accumulator through the sequence like <c>List.fold</c>.
 let fold (folder: 'State -> 'T -> 'State) (state: 'State) (source: AsyncSeq<'T>) : Async<'State> =
-    let acc = ref state
+    let mutable acc = state
     source
     |> AsyncSeq.iterAsync (fun item ->
         async {
-            acc := folder !acc item
+            acc <- folder acc item
         })
-    |> Async.map (fun () -> !acc)
+    |> Async.map (fun () -> acc)
 
 /// Attempts to retrieve the item at the specified index from an asynchronous sequence.
 let tryItem (n: int) (source: AsyncSeq<'T>) : Async<'T option> =
@@ -40,6 +40,7 @@ let tryItem (n: int) (source: AsyncSeq<'T>) : Async<'T option> =
         return result
     }
 
+(*
 /// Creates a sliding window over an asynchronous sequence, returning lists of elements of the specified window size.
 let windowed (windowSize: int) (source: AsyncSeq<'T>) : AsyncSeq<'T list> =
     if windowSize <= 0 then
@@ -51,6 +52,51 @@ let windowed (windowSize: int) (source: AsyncSeq<'T>) : AsyncSeq<'T list> =
             if queue.Count = windowSize then
                 yield queue |> Seq.toList
                 queue.Dequeue() |> ignore
+    }
+*)
+open FSharp.Control
+
+/// Windowed function with stride and optional padding.
+let windowed
+    (windowSize: uint)
+    (stride: uint)
+    (source: AsyncSeq<'T>)
+    : AsyncSeq<'T list> =
+    if windowSize = 0u then invalidArg "windowSize" "Must be > 0"
+    if stride = 0u then invalidArg "stride" "Must be > 0"
+
+    asyncSeq {
+        let enum = (AsyncSeq.toAsyncEnum source).GetAsyncEnumerator()
+        let buffer = ResizeArray<'T>()
+        let mutable finished = false
+        let mutable last: 'T option = None
+
+        let rec fillBuffer (n: uint) = async {
+            while uint buffer.Count < n && not finished do
+                let! hasNext = enum.MoveNextAsync().AsTask() |> Async.AwaitTask
+                if hasNext then
+                    let current = enum.Current
+                    buffer.Add(current)
+                    last <- Some current
+                else
+                    finished <- true
+        }
+
+        let rec yieldWindows () = asyncSeq {
+            do! fillBuffer windowSize
+
+            if buffer.Count > 0 then
+                if uint buffer.Count >= windowSize then
+                    yield buffer |> Seq.take (int windowSize) |> Seq.toList
+
+            // Drop stride elements
+            let dropCount = min stride (uint buffer.Count)
+            buffer.RemoveRange(0, int dropCount)
+            if buffer.Count > 0 || not finished then
+                yield! yieldWindows ()
+        }
+
+        yield! yieldWindows ()
     }
 
 /// Splits an asynchronous sequence into fixed-size chunks.

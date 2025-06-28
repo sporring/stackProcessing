@@ -55,9 +55,6 @@ module Helpers =
     /// Pipeline helper functions
     val singleton: x: 'In -> Pipe<'In,'In>
 module Routing
-val private runWith:
-  input: FSharp.Control.AsyncSeq<'In> ->
-    p: Core.Pipe<'In,'T> -> FSharp.Control.AsyncSeq<'T>
 val private run: p: Core.Pipe<unit,'T> -> FSharp.Control.AsyncSeq<'T>
 val sinkLst: processors: Core.Pipe<unit,unit> list -> unit
 val sink: p: Core.Pipe<unit,unit> -> unit
@@ -66,15 +63,11 @@ val sourceLst:
     width: uint ->
     height: uint ->
     depth: uint ->
-    processors: Core.Pipe<unit,Slice.Slice<'T>> list ->
-    Core.Pipe<unit,Slice.Slice<'T>> list when 'T: equality
+    processors: Core.Pipe<unit,'T> list -> Core.Pipe<unit,'T> list
 val source:
   availableMemory: uint64 ->
     width: uint ->
-    height: uint ->
-    depth: uint ->
-    p: Core.Pipe<unit,Slice.Slice<'T>> -> Core.Pipe<unit,Slice.Slice<'T>>
-    when 'T: equality
+    height: uint -> depth: uint -> p: Core.Pipe<unit,'T> -> Core.Pipe<unit,'T>
 /// Split a Pipe<'In,'T> into two branches that
 ///   • read the upstream only once
 ///   • keep at most one item in memory
@@ -83,13 +76,6 @@ type private Request<'T> =
     | Left of AsyncReplyChannel<Option<'T>>
     | Right of AsyncReplyChannel<Option<'T>>
 val tee: p: Core.Pipe<'In,'T> -> Core.Pipe<'In,'T> * Core.Pipe<'In,'T>
-/// Fan out a Pipe<'In,'T> to two branches:
-///   • processes input once using tee
-///   • applies separate processors to each branch
-///   • zips outputs into a tuple
-val fanOut:
-  p: Core.Pipe<'In,'T> ->
-    f1: Core.Pipe<'T,'U> -> f2: Core.Pipe<'T,'V> -> Core.Pipe<'In,('U * 'V)>
 /// zipWith two Pipes<'In, _> into one by zipping their outputs:
 ///   • applies both processors to the same input stream
 ///   • pairs each output and combines using the given function
@@ -98,38 +84,46 @@ val zipWith:
   f: ('A -> 'B -> 'C) ->
     p1: Core.Pipe<'In,'A> -> p2: Core.Pipe<'In,'B> -> Core.Pipe<'In,'C>
 val cacheScalar: name: string -> p: Core.Pipe<unit,'T> -> Core.Pipe<'In,'T>
-val inject:
-  f: ('A -> 'B -> 'C) ->
-    scalarProc: Core.Pipe<'In,'A> ->
-    streamProc: Core.Pipe<'In,'B> -> Core.Pipe<'In,'C>
-val (>>~>) :
-  s: Core.Pipe<'a,'b> ->
-    f: ('c -> 'b -> 'd) * a: Core.Pipe<'a,'c> -> Core.Pipe<'a,'d>
 /// Combine two <c>Pipe</c> instances into one by composing their memory profiles and transformation functions.
 val composePipe:
   p1: Core.Pipe<'S,'T> -> p2: Core.Pipe<'T,'U> -> Core.Pipe<'S,'U>
-val (>>=>) : p1: Core.Pipe<'a,'b> -> p2: Core.Pipe<'b,'c> -> Core.Pipe<'a,'c>
-val injectPipe:
-  streamProc: Core.Pipe<'In,'A> ->
-    f: ('B -> 'A -> 'C) * reducerProc: Core.Pipe<'In,'B> -> Core.Pipe<'In,'C>
+val (>=>) : p1: Core.Pipe<'a,'b> -> p2: Core.Pipe<'b,'c> -> Core.Pipe<'a,'c>
 val tap: label: string -> Core.Pipe<'T,'T>
 module StackPipeline
-val private plotListAsync:
-  plt: (float list -> float list -> unit) ->
-    vectorSeq: FSharp.Control.AsyncSeq<(float * float) list> -> Async<unit>
-val showSliceAsync:
-  plt: (Slice.Slice<'T> -> unit) ->
-    slices: FSharp.Control.AsyncSeq<Slice.Slice<'T>> -> Async<unit>
+module internal InternalHelpers =
+    val plotListAsync:
+      plt: (float list -> float list -> unit) ->
+        vectorSeq: FSharp.Control.AsyncSeq<(float * float) list> -> Async<unit>
+    val showSliceAsync:
+      plt: (Slice.Slice<'T> -> unit) ->
+        slices: FSharp.Control.AsyncSeq<Slice.Slice<'T>> -> Async<unit>
+        when 'T: equality
+    val printAsync: slices: FSharp.Control.AsyncSeq<'T> -> Async<unit>
+    val writeSlicesAsync:
+      outputDir: string ->
+        suffix: string ->
+        slices: FSharp.Control.AsyncSeq<Slice.Slice<'T>> -> Async<unit>
+        when 'T: equality
+    val readSlicesAsync:
+      inputDir: string ->
+        suffix: string -> FSharp.Control.AsyncSeq<Slice.Slice<'T>>
+        when 'T: equality
+/// Source parts
+val create:
+  width: uint -> height: uint -> depth: uint -> Core.Pipe<unit,Slice.Slice<'T>>
     when 'T: equality
-val private printAsync: slices: FSharp.Control.AsyncSeq<'T> -> Async<unit>
-val private writeSlicesAsync:
-  outputDir: string ->
-    suffix: string ->
-    slices: FSharp.Control.AsyncSeq<Slice.Slice<'T>> -> Async<unit>
+val readSlices:
+  inputDir: string -> suffix: string -> Core.Pipe<unit,Slice.Slice<'T>>
     when 'T: equality
-val private readSlices:
-  inputDir: string -> suffix: string -> FSharp.Control.AsyncSeq<Slice.Slice<'T>>
+val readSliceN:
+  idx: uint ->
+    inputDir: string -> suffix: string -> Core.Pipe<unit,Slice.Slice<'T>>
     when 'T: equality
+val readRandomSlices:
+  count: uint ->
+    inputDir: string -> suffix: string -> Core.Pipe<unit,Slice.Slice<'T>>
+    when 'T: equality
+/// Sink parts
 val print<'T> : Core.Pipe<'T,unit>
 val plot:
   plt: (float list -> float list -> unit) ->

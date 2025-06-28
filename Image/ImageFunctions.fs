@@ -59,7 +59,9 @@ let inline makeUnaryImageOperatorWith
         fun (img: Image<'T>) ->
             use filter = createFilter()
             setup filter
-            Image<'T>.ofSimpleITK(invoke filter img.Image)
+            let img = Image<'T>.ofSimpleITK(invoke filter img.Image)
+            printfn "%A" (img.GetSize())
+            img
 
 let inline makeUnaryImageOperator createFilter invoke = makeUnaryImageOperatorWith createFilter (fun _ -> ()) invoke
 
@@ -119,19 +121,22 @@ let convolve (outputRegion: OutputRegionMode) (boundaryCondition: BoundaryCondit
             f.SetNormalize (
                 match normalize with
                     | true -> true
-                    | _ -> false))
-        (fun (f : itk.simple.ConvolutionImageFilter) img ker -> f.Execute(img, ker))
+                    | _ -> false)) 
+        (fun (f : itk.simple.ConvolutionImageFilter) img ker -> 
+            f.Execute(img, ker))
 
 let conv (img: Image<'T>) (ker: Image<'T>) : Image<'T> = convolve SAME ZERO_PAD false img ker
 
 
 /// Gaussian kernel convolution
-/// Isotropic Discrete Gaussian blur
 let discreteGaussian (sigma: float) : Image<'T> -> Image<'T> =
-    makeUnaryImageOperatorWith
-        (fun () -> new itk.simple.DiscreteGaussianImageFilter())
-        (fun filter -> filter.SetVariance(sigma * sigma))
-        (fun filter input -> filter.Execute(input))
+    let filter = new itk.simple.GaussianImageSource()
+    let d = 2.0 * sigma + 1.0 + 0.5 |> uint 
+    filter.SetSize([d;d;d] |> toVectorUInt32)
+    filter.SetScale(1.0)
+    let kern = Image<'T>.ofSimpleITK(filter.Execute())
+    fun (input: Image<'T>) ->
+        convolve VALID ZERO_PAD false input kern
 
 /// Recursive Gaussian blur in a specific direction (0 = x, 1 = y, 2 = z)
 let recursiveGaussian (sigma: float) (direction: uint) : Image<'T> -> Image<'T> =

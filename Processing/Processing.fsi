@@ -1,21 +1,23 @@
 namespace FSharp
 module Processing
-val private reduce:
-  name: string ->
-    profile: Core.MemoryProfile ->
-    reducer: (FSharp.Control.AsyncSeq<'In> -> Async<'Out>) ->
-    Core.Pipe<'In,'Out>
 val private explodeSlice:
   slices: Slice.Slice<'T> -> FSharp.Control.AsyncSeq<Slice.Slice<'T>>
     when 'T: equality
+val private reduce:
+  label: string ->
+    profile: Core.MemoryProfile ->
+    reducer: (FSharp.Control.AsyncSeq<'In> -> Async<'Out>) ->
+    Core.Pipe<'In,'Out>
+val fold:
+  label: string ->
+    profile: Core.MemoryProfile ->
+    folder: ('State -> 'In -> 'State) -> state0: 'State -> Core.Pipe<'In,'State>
 val map:
   label: string ->
     profile: Core.MemoryProfile -> f: ('S -> 'T) -> Core.Pipe<'S,'T>
 val mapWindowed:
   label: string ->
-    depth: uint ->
-    f: (Slice.Slice<'T> -> Slice.Slice<'T>) ->
-    Core.Pipe<Slice.Slice<'T>,Slice.Slice<'T>> when 'T: equality
+    depth: uint -> stride: uint -> f: ('S list -> 'T) -> Core.Pipe<'S,'T>
 val mapChunked:
   label: string ->
     chunkSize: uint ->
@@ -68,20 +70,6 @@ val inline pairs2int<^T,^S
   Core.Pipe<(^T * ^S) list,(int * int) list>
     when ^T: (static member op_Explicit: ^T -> int) and
          ^S: (static member op_Explicit: ^S -> int)
-val create:
-  width: uint -> height: uint -> depth: uint -> Core.Pipe<unit,Slice.Slice<'T>>
-    when 'T: equality
-val readSlices:
-  inputDir: string -> suffix: string -> Core.Pipe<unit,Slice.Slice<'T>>
-    when 'T: equality
-val readSliceN:
-  idx: uint ->
-    inputDir: string -> suffix: string -> Core.Pipe<unit,Slice.Slice<'T>>
-    when 'T: equality
-val readRandomSlices:
-  count: uint ->
-    inputDir: string -> suffix: string -> Core.Pipe<unit,Slice.Slice<'T>>
-    when 'T: equality
 val addNormalNoise:
   mean: float -> stddev: float -> Core.Pipe<Slice.Slice<'T>,Slice.Slice<'T>>
     when 'T: equality

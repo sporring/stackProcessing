@@ -2,14 +2,10 @@ module Routing
 
 open FSharp.Control
 open AsyncSeqExtensions
-open Slice
 open Core
 
-let private runWith (input: AsyncSeq<'In>) (p: Pipe<'In,'T>) : AsyncSeq<'T> =
-    p.Apply input
-
 let private run (p: Pipe<unit,'T>) : AsyncSeq<'T> =
-    runWith (AsyncSeq.singleton ()) p
+    (AsyncSeq.singleton ()) |> p.Apply
 
 let sinkLst (processors: Pipe<unit, unit> list) : unit =
     processors
@@ -26,8 +22,8 @@ let sourceLst
     (width: uint)
     (height: uint)
     (depth: uint)
-    (processors: Pipe<unit,Slice.Slice<'T>> list) 
-    : Pipe<unit,Slice<'T>> list =
+    (processors: Pipe<unit,'T> list) 
+    : Pipe<unit,'T> list =
     processors |>
     List.map (fun p -> 
         pipeline availableMemory width height depth {return p}
@@ -38,8 +34,8 @@ let source
     (width: uint)
     (height: uint)
     (depth: uint)
-    (p: Pipe<unit,Slice.Slice<'T>>) 
-    : Pipe<unit,Slice<'T>> =
+    (p: Pipe<unit,'T>) 
+    : Pipe<unit,'T> =
     let lst = sourceLst availableMemory width height depth [p]
     List.head lst
 
@@ -135,39 +131,10 @@ let tee (p : Pipe<'In,'T>): Pipe<'In,'T> * Pipe<'In,'T> =
     mkSide "left"  fst,
     mkSide "right" snd
 
-/// Fan out a Pipe<'In,'T> to two branches:
-///   • processes input once using tee
-///   • applies separate processors to each branch
-///   • zips outputs into a tuple
-let fanOut (p: Pipe<'In,'T>) (f1: Pipe<'T,'U>) (f2: Pipe<'T,'V>) : Pipe<'In, 'U * 'V> =
-    printfn "[fanOut]"
-
-    let left, right = tee p
-    {
-        Name = $"fanout2 ({f1.Name}, {f2.Name})"
-        Profile = Buffered
-        Apply = fun input ->
-            let lStream = left.Apply input |> f1.Apply
-            let rStream = right.Apply input |> f2.Apply
-            AsyncSeq.zip lStream rStream
-    }
 /// zipWith two Pipes<'In, _> into one by zipping their outputs:
 ///   • applies both processors to the same input stream
 ///   • pairs each output and combines using the given function
 ///   • assumes both sides produce values in lockstep
-(*
-let zipWith (f: 'A -> 'B -> 'C) (p1: Pipe<'In, 'A>) (p2: Pipe<'In, 'B>) : Pipe<'In, 'C> =
-    printfn "[zipWith]"
-    {
-        Name = $"zipWith({p1.Name}, {p2.Name})"
-        Profile = p1.Profile.combineProfile p2.Profile
-        Apply = fun input ->
-            let a = p1.Apply input
-            let b = p2.Apply input
-            AsyncSeq.zip a b |> AsyncSeq.map (fun (x, y) -> f x y)
-    }
-
-*)
 let zipWith (f: 'A -> 'B -> 'C) (p1: Pipe<'In, 'A>) (p2: Pipe<'In, 'B>) : Pipe<'In, 'C> =
     printfn "[zipWith2]"
     let name = $"zipWith2({p1.Name}, {p2.Name})"
@@ -228,32 +195,6 @@ let cacheScalar (name: string) (p: Pipe<unit, 'T>) : Pipe<'In, 'T> =
 
     lift $"cacheScalar: {name}" Constant (fun _ -> async.Return result)
 
-let inject
-    (f: 'A -> 'B -> 'C)
-    (scalarProc: Pipe<'In, 'A>)
-    (streamProc: Pipe<'In, 'B>)
-    : Pipe<'In, 'C> =
-    printfn "[inject]"
-    {
-        Name = $"inject({streamProc.Name}, {scalarProc.Name})"
-        Profile = streamProc.Profile.combineProfile scalarProc.Profile
-        Apply = fun input -> asyncSeq {
-            // Evaluate the scalar processor first
-            let! scalar =
-                scalarProc.Apply input
-                |> AsyncSeq.tryLast // could also use head, if only one expected
-                |> Async.map (function
-                    | Some v -> v
-                    | None   -> failwithf "[inject] No value from scalar processor '%s'" scalarProc.Name)
-
-            // Now stream the input through streamProc
-            let stream = streamProc.Apply input
-            yield! stream |> AsyncSeq.map (fun s -> f scalar s)
-        }
-    }
-
-let (>>~>) s (f, a) = inject f a s
-
 /// Combine two <c>Pipe</c> instances into one by composing their memory profiles and transformation functions.
 let composePipe (p1: Pipe<'S,'T>) (p2: Pipe<'T,'U>) : Pipe<'S,'U> =
     printfn "[composePipe]"
@@ -263,13 +204,7 @@ let composePipe (p1: Pipe<'S,'T>) (p2: Pipe<'T,'U>) : Pipe<'S,'U> =
         Apply = fun input -> input |> p1.Apply |> p2.Apply
     }
 
-let (>>=>) p1 p2 = composePipe p1 p2
-
-let injectPipe
-    (streamProc: Pipe<'In, 'A>)
-    (f: 'B -> 'A -> 'C, reducerProc: Pipe<'In, 'B>)
-    : Pipe<'In, 'C> =
-    inject f reducerProc streamProc
+let (>=>) p1 p2 = composePipe p1 p2
 
 let tap label : Pipe<'T, 'T> =
     printfn "[tap]"
