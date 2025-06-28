@@ -155,6 +155,7 @@ let fanOut (p: Pipe<'In,'T>) (f1: Pipe<'T,'U>) (f2: Pipe<'T,'V>) : Pipe<'In, 'U 
 ///   • applies both processors to the same input stream
 ///   • pairs each output and combines using the given function
 ///   • assumes both sides produce values in lockstep
+(*
 let zipWith (f: 'A -> 'B -> 'C) (p1: Pipe<'In, 'A>) (p2: Pipe<'In, 'B>) : Pipe<'In, 'C> =
     printfn "[zipWith]"
     {
@@ -166,6 +167,55 @@ let zipWith (f: 'A -> 'B -> 'C) (p1: Pipe<'In, 'A>) (p2: Pipe<'In, 'B>) : Pipe<'
             AsyncSeq.zip a b |> AsyncSeq.map (fun (x, y) -> f x y)
     }
 
+*)
+let zipWith (f: 'A -> 'B -> 'C) (p1: Pipe<'In, 'A>) (p2: Pipe<'In, 'B>) : Pipe<'In, 'C> =
+    printfn "[zipWith2]"
+    let name = $"zipWith2({p1.Name}, {p2.Name})"
+    let profile = p1.Profile.combineProfile p2.Profile
+    {
+        Name = name
+        Profile = profile
+        Apply = fun input ->
+            let a = p1.Apply input
+            let b = p2.Apply input
+            match p1.Profile, p2.Profile with
+            | Buffered, Streaming | Streaming, Buffered ->
+                failwithf "[zipWith2] Mixing Buffered and Streaming is not supported: %s, %s"
+                          (p1.Profile.ToString()) (p2.Profile.ToString())
+            | Constant, _ 
+            | StreamingConstant, _
+            | SlidingConstant _, _
+            | BufferedConstant, _ ->
+                printfn "Sequential zipWith"
+                asyncSeq {
+                    let! constant =
+                        a
+                        |> AsyncSeq.tryLast
+                        |> Async.map (function
+                            | Some v -> v
+                            | None -> failwithf "[zipWith] Constant pipe '%s' returned no result." p1.Name)
+                    yield! b |> AsyncSeq.map (fun b -> f constant b)
+                }
+            | _, Constant
+            | _, StreamingConstant
+            | _, SlidingConstant _
+            | _, BufferedConstant ->
+                printfn "Sequential zipWith"
+                asyncSeq {
+                    let! constant =
+                        b
+                        |> AsyncSeq.tryLast
+                        |> Async.map (function
+                            | Some v -> v
+                            | None -> failwithf "[zipWith] Constant pipe '%s' returned no result." p2.Name)
+                    yield! a |> AsyncSeq.map (fun a -> f a constant)
+               }
+            | _ ->
+                printfn "parallel zipWith"
+                AsyncSeq.zip a b |> AsyncSeq.map (fun (x, y) -> f x y)
+    }
+
+ // Needs to be updated for *Constant MemoryProfiles
 let cacheScalar (name: string) (p: Pipe<unit, 'T>) : Pipe<'In, 'T> =
     printfn "[cacheScalar]"
     let result =

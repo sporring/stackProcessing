@@ -270,7 +270,7 @@ let histogram<'T when 'T: comparison> : Pipe<Slice<'T>, Map<'T, uint64>> =
         slices
         |> AsyncSeq.map Slice.histogram
         |> AsyncSeqExtensions.fold Slice.addHistogram (Map<'T,uint64> [])
-    reduce "Histogram" Constant histogramReducer
+    reduce "Histogram" StreamingConstant histogramReducer
 
 let map2pairs<'T, 'S when 'T: comparison> : Pipe<Map<'T, 'S>,('T * 'S) list> =
     printfn "[map2pairs]"
@@ -370,4 +370,4 @@ let computeStats<'T when 'T : equality> : Pipe<Slice<'T>, ImageStats> =
         slices
         |> AsyncSeq.map Slice.computeStats
         |> AsyncSeqExtensions.fold Slice.addComputeStats zeroStats
-    reduce "Compute Statistics" Constant computeStatsReducer
+    reduce "Compute Statistics" StreamingConstant computeStatsReducer

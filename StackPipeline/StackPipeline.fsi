@@ -3,8 +3,11 @@ module Core
 /// The memory usage strategies during image processing.
 type MemoryProfile =
     | Constant
+    | StreamingConstant
     | Streaming
+    | SlidingConstant of uint
     | Sliding of uint
+    | BufferedConstant
     | Buffered
     member EstimateUsage: width: uint -> height: uint -> depth: uint -> uint64
     member
@@ -18,6 +21,8 @@ type Pipe<'S,'T> =
       Profile: MemoryProfile
       Apply: (FSharp.Control.AsyncSeq<'S> -> FSharp.Control.AsyncSeq<'T>)
     }
+val internal isScalar: profile: MemoryProfile -> bool
+val internal requiresFullInput: profile: MemoryProfile -> bool
 val internal lift:
   name: string ->
     profile: MemoryProfile -> f: ('In -> Async<'Out>) -> Pipe<'In,'Out>
