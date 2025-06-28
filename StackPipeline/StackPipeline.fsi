@@ -15,6 +15,9 @@ type MemoryProfile =
                            width: uint -> height: uint -> depth: uint -> bool
     member combineProfile: other: MemoryProfile -> MemoryProfile
 /// A configurable image processing step that operates on image slices.
+/// A monadic layered transformer - a monadic morphism, to hide the underlying
+/// AsyncSeq<'T> Monad. This can, perhaps, be called a Kleisli category over
+/// Pipe<'S,'T> morphisms
 type Pipe<'S,'T> =
     {
       Name: string

@@ -251,7 +251,7 @@ type Image<'T when 'T : equality>(sz: uint list, ?numberComp: uint) =
         img <- itkImg
     member this.GetSize () = img.GetSize() |> fromVectorUInt32
     member this.GetDepth() = max 1u (img.GetDepth()) // Non-vector images returns 0
-    member this.GetDimension() = img.GetDimension()
+    member this.GetDimensions() = img.GetDimension()
     member this.GetHeight() = img.GetHeight()
     member this.GetWidth() = img.GetWidth()
     member this.GetNumberOfComponentsPerPixel() = img.GetNumberOfComponentsPerPixel()

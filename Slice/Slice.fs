@@ -15,7 +15,7 @@ let create<'T when 'T: equality> (width: uint) (height: uint) (depth: uint) (idx
     {Index= idx; Image=if depth > 1u then Image<'T>([width;height;depth]) else Image<'T>([width;height]) }
 
 let GetDepth (slice: Slice<'T>) = slice.Image.GetDepth()
-let GetDimension (slice: Slice<'T>) = slice.Image.GetDimension()
+let GetDimensions (slice: Slice<'T>) = slice.Image.GetDimension()
 let GetHeight (slice: Slice<'T>) = slice.Image.GetHeight()
 let GetWidth (slice: Slice<'T>) = slice.Image.GetWidth()
 let GetSize (slice: Slice<'T>) = slice.Image.GetSize()
@@ -183,18 +183,25 @@ let stack (slices: Slice<'T> list) : Slice<'T> =
             {elm with Image = ImageFunctions.stack images }
         | _ -> failwith "Can't stack an empty list"
 
-let extractSlice a (s: Slice<'T>) = liftUnary1 ImageFunctions.extractSlice a s
+let extractSlice a (s: Slice<'T>) : Slice<'T> = liftUnary1 ImageFunctions.extractSlice a s
 
+let unstack (slice: Slice<'T>): Slice<'T> list =
+    let dim = slice.GetDimensions()
+    if dim < 3 then
+        failwith $"Cannot unstack a {dim}-dimensional image along the 3rd axis"
+    let baseIndex = slice.Index
+    let depth = slice.GetDepth() |> int
+    List.initi depth (fun z -> extractSlice (baseIndex+uint i) slices)
 
 // IO stuff
-let getDepth (inputDir: string) (suffix: string) : uint =
+let getFileDepth (inputDir: string) (suffix: string) : uint =
     let files = Directory.GetFiles(inputDir, "*"+suffix) |> Array.sort
     files.Length |> uint
 
 type FileInfo = ImageFunctions.FileInfo
 let getFileInfo(fname: string): FileInfo = getFileInfo(fname)
 
-let getVolumeSize (inputDir: string) (suffix: string): uint * uint * uint =
+let getFileSize (inputDir: string) (suffix: string): uint * uint * uint =
     let files = Directory.GetFiles(inputDir, "*"+suffix) |> Array.sort
     if files.Length = 0 then
         failwith $"No {suffix} files found in directory: {inputDir}"
