@@ -10,12 +10,14 @@ type Slice<'T when 'T: equality> = {
     Index: uint
     Image: Image<'T>
 }
+with 
+    member this.EstimateUsage() = this.Image.memoryEstimate()
 
 let create<'T when 'T: equality> (width: uint) (height: uint) (depth: uint) (idx: uint) : Slice<'T> =
     {Index= idx; Image=if depth > 1u then Image<'T>([width;height;depth]) else Image<'T>([width;height]) }
 
 let GetDepth (slice: Slice<'T>) = slice.Image.GetDepth()
-let GetDimensions (slice: Slice<'T>) = slice.Image.GetDimension()
+let GetDimensions (slice: Slice<'T>) = slice.Image.GetDimensions()
 let GetHeight (slice: Slice<'T>) = slice.Image.GetHeight()
 let GetWidth (slice: Slice<'T>) = slice.Image.GetWidth()
 let GetSize (slice: Slice<'T>) = slice.Image.GetSize()
@@ -23,7 +25,9 @@ let ToString (slice: Slice<'T>) = slice.Image.ToString()
 let toArray2D (slice: Slice<'T>) = slice.Image.toArray2D()
 let toArray3D (slice: Slice<'T>) = slice.Image.toArray3D()
 let toArray4D (slice: Slice<'T>) = slice.Image.toArray4D()
-let cast<'S when 'S: equality> (slice: Slice<'T>) = slice.Image.cast<'S>()
+let cast<'T when 'T: equality> (slice: Slice<_>) = {Index = slice.Index; Image=slice.Image.cast<'T>()}
+let castUInt8ToFloat (slice: Slice<uint8>) : Slice<float> = {Index = slice.Index; Image=slice.Image.castUInt8ToFloat()} // slice with does not work, since this sets the type
+let castFloatToUInt8 (slice: Slice<float>) : Slice<uint8> = {Index = slice.Index; Image=slice.Image.castFloatToUInt8()} // slice with does not work, since this sets the type
 
 let toFloat (value: obj) =
     match value with
@@ -41,6 +45,15 @@ let toSeqSeq (slice: Slice<'T>): seq<seq<float>> =
         Seq.init width (fun x ->
             slice.Image[x,y] |> box |> toFloat))
 
+let private liftSource (f: unit -> Image<'T>) : unit -> Slice<'T> =
+    fun () -> {Index = 0u; Image = f () }
+
+let private liftSource1 (f: 'a -> Image<'T>) : 'a -> Slice<'T> =
+    fun a -> { Index = 0u;  Image = f a }
+
+let private liftSource2 (f: 'a -> 'b -> Image<'T>) : 'a -> 'b-> Slice<'T> =
+    fun a b -> { Index = 0u;  Image = f a b }
+
 let private liftUnary (f: Image<'T> -> Image<'T>) : Slice<'T> -> Slice<'T> =
     fun s -> { s with Image = f s.Image }
 
@@ -49,6 +62,12 @@ let private liftUnary1 (f: 'a -> Image<'T> -> Image<'T>) : 'a -> Slice<'T> -> Sl
 
 let private liftUnary2 (f: 'a -> 'b -> Image<'T> -> Image<'T>) : 'a -> 'b -> Slice<'T> -> Slice<'T> =
     fun a b s -> { s with Image = f a b s.Image }
+
+let private liftUnary3 (f: 'a -> 'b -> 'c -> Image<'T> -> Image<'T>) : 'a -> 'b -> 'c -> Slice<'T> -> Slice<'T> =
+    fun a b c s -> { s with Image = f a b c s.Image }
+
+let private liftUnary4 (f: 'a -> 'b -> 'c -> 'd -> Image<'T> -> Image<'T>) : 'a -> 'b -> 'c -> 'd -> Slice<'T> -> Slice<'T> =
+    fun a b c d s -> { s with Image = f a b c d s.Image }
 
 let private liftBinary (f: Image<'T> -> Image<'T> -> Image<'T>) : Slice<'T> -> Slice<'T> -> Slice<'T> =
     fun s1 s2 -> { s1 with Image = f s1.Image s2.Image }
@@ -89,17 +108,25 @@ let acosSlice<'T when 'T: equality> (s: Slice<'T>) = liftUnary acosImage s
 let atanSlice<'T when 'T: equality> (s: Slice<'T>) = liftUnary atanImage s
 let roundSlice<'T when 'T: equality> (s: Slice<'T>) = liftUnary roundImage s
 
-let convolve a b c (s: Slice<'T>) (t: Slice<'T>) = liftBinary3 convolve a b c s t
+type BoundaryCondition = ImageFunctions.BoundaryCondition
+type OutputRegionMode = ImageFunctions.OutputRegionMode
+
+let convolve a (s: Slice<'T>) (t: Slice<'T>) = liftBinary1 convolve a s t
 let conv (s: Slice<'T>) (t: Slice<'T>) = liftBinary conv s t
-let discreteGaussian a (s: Slice<'T>) = liftUnary1 discreteGaussian a s
-let recursiveGaussian a b (s: Slice<'T>) = liftUnary2 recursiveGaussian a b s
-let laplacianConvolve a (s: Slice<'T>) = liftUnary1 laplacianConvolve a s
+let discreteGaussian a b c (s: Slice<'T>) = liftUnary3 discreteGaussian a b c s
+
+let gauss (sigma: float) (kernelSize: uint option) : Slice<float> = liftSource2 gauss sigma kernelSize
+let finiteDiffFilter1D (order: uint) : Slice<float> = liftSource1 finiteDiffFilter1D order
+let finiteDiffFilter2D (direction: uint) (order: uint) : Slice<float> = liftSource2 finiteDiffFilter2D direction order
+let finiteDiffFilter3D (direction: uint) (order: uint) : Slice<float> = liftSource2 finiteDiffFilter3D direction order
+let finiteDiffFilter4D (direction: uint) (order: uint) : Slice<float> = liftSource2 finiteDiffFilter4D direction order
+
 let gradientConvolve a b (s: Slice<'T>) = liftUnary2 gradientConvolve 
-let binaryErode a b (s: Slice<'T>) = liftUnary2 binaryErode a b s
-let binaryDilate a b (s: Slice<'T>) = liftUnary2 binaryDilate a b s
-let binaryOpening a b (s: Slice<'T>) = liftUnary2 binaryOpening a b s
-let binaryClosing a b (s: Slice<'T>) = liftUnary2 binaryClosing a b s
-let binaryFillHoles a (s: Slice<'T>) = liftUnary1 binaryFillHoles a s
+let binaryErode a (s: Slice<'T>) = liftUnary1 binaryErode a s
+let binaryDilate a (s: Slice<'T>) = liftUnary1 binaryDilate a s
+let binaryOpening a (s: Slice<'T>) = liftUnary1 binaryOpening a s
+let binaryClosing a (s: Slice<'T>) = liftUnary1 binaryClosing a s
+let binaryFillHoles (s: Slice<'T>) = liftUnary binaryFillHoles s
 
 let squeeze (s: Slice<'T>) = liftUnary squeeze s
 let concatAlong a (s: Slice<'T>) (t: Slice<'T>) = liftBinary1 concatAlong a s t
@@ -179,38 +206,55 @@ let threshold a b (s: Slice<'T>) = liftUnary2 ImageFunctions.threshold a b s
 let stack (slices: Slice<'T> list) : Slice<'T> =
     match slices with
         elm :: rst ->
-            let images = slices |> List.map (fun s -> s.Image)
-            {elm with Image = ImageFunctions.stack images }
+            let imgLst = slices |> List.map (fun s -> s.Image)
+            {elm with Image = ImageFunctions.stack imgLst }
         | _ -> failwith "Can't stack an empty list"
 
 let extractSlice a (s: Slice<'T>) : Slice<'T> = liftUnary1 ImageFunctions.extractSlice a s
 
 let unstack (slice: Slice<'T>): Slice<'T> list =
-    let dim = slice.GetDimensions()
-    if dim < 3 then
+    let dim = slice |> GetDimensions
+    if dim < 2u then
         failwith $"Cannot unstack a {dim}-dimensional image along the 3rd axis"
+    let imgLst =
+        if dim = 2u then
+            [slice.Image]
+        else
+            ImageFunctions.unstack slice.Image
+    let idxLst = List.mapi (fun i _ -> uint i) imgLst
     let baseIndex = slice.Index
-    let depth = slice.GetDepth() |> int
-    List.initi depth (fun z -> extractSlice (baseIndex+uint i) slices)
+    List.zip idxLst imgLst |> List.map (fun (i,im) -> {Index = baseIndex + i; Image = im})
 
 // IO stuff
-let getFileDepth (inputDir: string) (suffix: string) : uint =
-    let files = Directory.GetFiles(inputDir, "*"+suffix) |> Array.sort
-    files.Length |> uint
-
 type FileInfo = ImageFunctions.FileInfo
-let getFileInfo(fname: string): FileInfo = getFileInfo(fname)
-
-let getFileSize (inputDir: string) (suffix: string): uint * uint * uint =
-    let files = Directory.GetFiles(inputDir, "*"+suffix) |> Array.sort
-    if files.Length = 0 then
-        failwith $"No {suffix} files found in directory: {inputDir}"
-    let fi = getFileInfo(files[0]);
-    let sz = fi.size |> List.map uint
-    (sz[0], sz[1], uint files.Length)
+let getFileInfo (filename: string) : FileInfo = ImageFunctions.getFileInfo filename
 
 let readSlice<'T when 'T: equality> (idx: uint) (filename: string) : Slice<'T> =
     {Index = idx; Image = Image<'T>.ofFile(filename)}
 
 let writeSlice (filename: string) (slice: Slice<'T>) : unit =
     slice.Image.toFile(filename)
+
+let getStackDepth (inputDir: string) (suffix: string) : uint =
+    let files = Directory.GetFiles(inputDir, "*"+suffix) |> Array.sort
+    files.Length |> uint
+
+let getStackInfo (inputDir: string) (suffix: string): FileInfo =
+    let files = Directory.GetFiles(inputDir, "*"+suffix) |> Array.sort
+    let depth = files.Length |> uint64
+    if depth = 0uL then
+        failwith $"No {suffix} files found in directory: {inputDir}"
+    let fi = ImageFunctions.getFileInfo(files[0])
+    {fi with dimensions = fi.dimensions+1u; size = fi.size @ [depth]}
+
+let getStackSize (inputDir: string) (suffix: string): uint64 list =
+    let fi = getStackInfo inputDir suffix
+    fi.size
+
+let getStackWidth (inputDir: string) (suffix: string): uint64 =
+    let fi = getStackInfo inputDir suffix
+    fi.size[0]
+
+let getStackHeight (inputDir: string) (suffix: string): uint64 =
+    let fi = getStackInfo inputDir suffix
+    fi.size[1]

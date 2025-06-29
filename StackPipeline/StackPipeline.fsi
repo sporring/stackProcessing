@@ -15,14 +15,34 @@ type MemoryProfile =
                            width: uint -> height: uint -> depth: uint -> bool
     member combineProfile: other: MemoryProfile -> MemoryProfile
 /// A configurable image processing step that operates on image slices.
-/// A monadic layered transformer - a monadic morphism, to hide the underlying
-/// AsyncSeq<'T> Monad. This can, perhaps, be called a Kleisli category over
-/// Pipe<'S,'T> morphisms
 type Pipe<'S,'T> =
     {
       Name: string
       Profile: MemoryProfile
       Apply: (FSharp.Control.AsyncSeq<'S> -> FSharp.Control.AsyncSeq<'T>)
+    }
+type SliceShape = uint list
+type MemoryTransition =
+    {
+      From: MemoryProfile
+      To: MemoryProfile
+      Check: (SliceShape -> bool)
+    }
+type Operation<'S,'T> =
+    {
+      Name: string
+      Transition: MemoryTransition
+      Pipe: Pipe<'S,'T>
+    }
+val defaultCheck: 'a -> bool
+val transition:
+  fromProfile: MemoryProfile -> toProfile: MemoryProfile -> MemoryTransition
+type WindowedProcessor<'S,'T when 'S: equality and 'T: equality> =
+    {
+      Name: string
+      Window: uint
+      Stride: uint
+      Process: (Slice.Slice<'S> -> Slice.Slice<'T>)
     }
 val internal isScalar: profile: MemoryProfile -> bool
 val internal requiresFullInput: profile: MemoryProfile -> bool
@@ -56,7 +76,18 @@ val pipeline:
     width: uint -> height: uint -> depth: uint -> PipelineBuilder
 module Helpers =
     /// Pipeline helper functions
-    val singleton: x: 'In -> Pipe<'In,'In>
+    val singletonPipe:
+      name: string -> seq: FSharp.Control.AsyncSeq<'T> -> Pipe<'S,'T>
+    val bindPipe: p: Pipe<'S,Pipe<'S,'T>> -> Pipe<'S,'T>
+    /// Operator and such
+    /// pull the runnable pipe out of an operation
+    val inline asPipe: op: Operation<'a,'b> -> Pipe<'a,'b>
+    /// quick constructor for Streaming→Streaming unary ops
+    val liftUnaryOp:
+      name: string ->
+        f: (Slice.Slice<'T> -> Slice.Slice<'T>) ->
+        Operation<Slice.Slice<'T>,Slice.Slice<'T>> when 'T: equality
+    val validate: op1: Operation<'a,'b> -> op2: Operation<'c,'d> -> bool
 module Routing
 val private run: p: Core.Pipe<unit,'T> -> FSharp.Control.AsyncSeq<'T>
 val sinkLst: processors: Core.Pipe<unit,unit> list -> unit
@@ -86,12 +117,16 @@ val tee: p: Core.Pipe<'In,'T> -> Core.Pipe<'In,'T> * Core.Pipe<'In,'T>
 val zipWith:
   f: ('A -> 'B -> 'C) ->
     p1: Core.Pipe<'In,'A> -> p2: Core.Pipe<'In,'B> -> Core.Pipe<'In,'C>
+val zipWithPipe:
+  f: ('A -> 'B -> Core.Pipe<'In,'C>) ->
+    pa: Core.Pipe<'In,'A> -> pb: Core.Pipe<'In,'B> -> Core.Pipe<'In,'C>
 val cacheScalar: name: string -> p: Core.Pipe<unit,'T> -> Core.Pipe<'In,'T>
 /// Combine two <c>Pipe</c> instances into one by composing their memory profiles and transformation functions.
 val composePipe:
   p1: Core.Pipe<'S,'T> -> p2: Core.Pipe<'T,'U> -> Core.Pipe<'S,'U>
 val (>=>) : p1: Core.Pipe<'a,'b> -> p2: Core.Pipe<'b,'c> -> Core.Pipe<'a,'c>
 val tap: label: string -> Core.Pipe<'T,'T>
+val validate: op1: Core.Operation<'a,'b> -> op2: Core.Operation<'c,'d> -> bool
 module StackPipeline
 module internal InternalHelpers =
     val plotListAsync:
@@ -126,6 +161,13 @@ val readRandomSlices:
   count: uint ->
     inputDir: string -> suffix: string -> Core.Pipe<unit,Slice.Slice<'T>>
     when 'T: equality
+val gauss:
+  sigma: float -> kernelSize: uint option -> Core.Pipe<unit,Slice.Slice<float>>
+val finiteDiffFilter1D: order: uint -> Core.Pipe<unit,Slice.Slice<float>>
+val finiteDiffFilter2D:
+  direction: uint -> order: uint -> Core.Pipe<unit,Slice.Slice<float>>
+val finiteDiffFilter3D:
+  direction: uint -> order: uint -> Core.Pipe<unit,Slice.Slice<float>>
 /// Sink parts
 val print<'T> : Core.Pipe<'T,unit>
 val plot:

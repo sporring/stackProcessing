@@ -264,6 +264,33 @@ type Image<'T when 'T : equality>(sz: uint list, ?numberComp: uint) =
         sprintf "%s %s" szStr vecStr
     member this.Display = this.ToString() // related to [<StructuredFormatDisplay>]
 
+    member this.memoryEstimate(): uint = // Intended to be mostly immutable, but better safe than sorry.
+        let t = typeof<'T>
+        let bytesPerComponent =
+            if t = typeof<uint8> then 1u
+            elif t = typeof<int8> then 1u
+            elif t = typeof<uint8 list> then 1u
+            elif t = typeof<int8 list> then 1u
+            elif t = typeof<uint16> then 2u
+            elif t = typeof<int16> then 2u
+            elif t = typeof<uint16 list> then 2u
+            elif t = typeof<int16 list> then 2u
+            elif t = typeof<uint32> then 4u
+            elif t = typeof<int32> then 4u
+            elif t = typeof<float32> then 4u
+            elif t = typeof<uint32 list> then 4u
+            elif t = typeof<int32 list> then 4u
+            elif t = typeof<float32 list> then 4u
+            elif t = typeof<uint64> then 8u
+            elif t = typeof<int64> then 8u
+            elif t = typeof<float> then 8u
+            elif t = typeof<uint64 list> then 8u
+            elif t = typeof<int64 list> then 8u
+            elif t = typeof<float list> then 8u
+            elif t = typeof<System.Numerics.Complex> then 16u
+            else 8u // guessing here
+        bytesPerComponent * this.GetNumberOfComponentsPerPixel() * (this.GetSize() |> List.reduce (*));
+
     static member ofSimpleITK (itkImg: itk.simple.Image) : Image<'T> =
         let itkImgCast = ofCastItk<'T> itkImg
         let img = Image<'T>([0u;0u])
@@ -273,8 +300,18 @@ type Image<'T when 'T : equality>(sz: uint list, ?numberComp: uint) =
     member this.toSimpleITK () : itk.simple.Image =
         img
 
-    member this.cast<'S when 'S: equality> () : Image<'S> =
-        Image<'S>.ofSimpleITK img
+    member this.cast<'T when 'T: equality> () : Image<'T> =
+        Image<'T>.ofSimpleITK img
+
+    member this.castUInt8ToFloat () : Image<float> =
+        Image<float>.ofSimpleITK img
+
+    member this.castFloatToUInt8 () : Image<uint8> =
+        Image<uint8>.ofSimpleITK img
+
+    static member ofArray (arr: 'T[]) : Image<'T> =
+        let arr2D = Array2D.init arr.Length 1 (fun i _ -> arr[i])
+        Image<'T>.ofArray2D arr2D
 
     static member ofArray2D (arr: 'T[,]) : Image<'T> =
         let itkId = fromType<'T>

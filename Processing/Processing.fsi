@@ -15,15 +15,17 @@ val fold:
 val map:
   label: string ->
     profile: Core.MemoryProfile -> f: ('S -> 'T) -> Core.Pipe<'S,'T>
+/// mapWindowed keeps a running window along the slice direction of depth images
+/// and processes them by f. The stepping size of the running window is stride.
+/// So if depth is 3 and stride is 1 then first image 0,1,2 is sent to f, then 1, 2, 3
+/// and so on. If depth is 3 and stride is 3, then it'll be image 0, 1, 2 followed by
+/// 3, 4, 5. It is also possible to use this for sampling, e.g., setting depth to 1
+/// and stride to 2 sends every second image to f.  
 val mapWindowed:
   label: string ->
-    depth: uint -> stride: uint -> f: ('S list -> 'T) -> Core.Pipe<'S,'T>
-val mapChunked:
-  label: string ->
-    chunkSize: uint ->
-    baseIndex: uint ->
-    f: (Slice.Slice<'T> -> Slice.Slice<'T>) ->
-    Core.Pipe<Slice.Slice<'T>,Slice.Slice<'T>> when 'T: equality
+    depth: uint -> stride: uint -> f: ('S list -> 'T list) -> Core.Pipe<'S,'T>
+val castUInt8ToFloat: Core.Pipe<Slice.Slice<uint8>,Slice.Slice<float>>
+val castFloatToUInt8: Core.Pipe<Slice.Slice<float>,Slice.Slice<uint8>>
 val addFloat: value: float -> Core.Pipe<Slice.Slice<float>,Slice.Slice<float>>
 val addInt: value: int -> Core.Pipe<Slice.Slice<int>,Slice.Slice<int>>
 val addUInt8: value: uint8 -> Core.Pipe<Slice.Slice<uint8>,Slice.Slice<uint8>>
@@ -76,11 +78,97 @@ val addNormalNoise:
 val threshold:
   lower: float -> upper: float -> Core.Pipe<Slice.Slice<'T>,Slice.Slice<'T>>
     when 'T: equality
+val zeroPad: ImageFunctions.BoundaryCondition
+val periodicPad: ImageFunctions.BoundaryCondition
+val zeroFluxNeumannPad: ImageFunctions.BoundaryCondition
+val valid: ImageFunctions.OutputRegionMode
+val same: ImageFunctions.OutputRegionMode
+val convolve:
+  kern: Slice.Slice<'T> ->
+    boundaryCondition: Slice.BoundaryCondition option ->
+    windowSize: uint option ->
+    stride: uint option -> Core.Pipe<Slice.Slice<'T>,Slice.Slice<'T>>
+    when 'T: equality
+val conv:
+  kern: Slice.Slice<'T> -> Core.Pipe<Slice.Slice<'T>,Slice.Slice<'T>>
+    when 'T: equality
+val convolveStreams:
+  kernelSrc: Core.Pipe<'S,Slice.Slice<'T>> ->
+    imageSrc: Core.Pipe<'S,Slice.Slice<'T>> -> Core.Pipe<'S,Slice.Slice<'T>>
+    when 'T: equality
 val discreteGaussian:
-  sigma: float -> Core.Pipe<Slice.Slice<'T>,Slice.Slice<'T>> when 'T: equality
+  sigma: float ->
+    kernelSize: uint option ->
+    boundaryCondition: Slice.BoundaryCondition option ->
+    windowSize: uint option ->
+    stride: uint option -> Core.Pipe<Slice.Slice<'T>,Slice.Slice<'T>>
+    when 'T: equality
+val convGauss:
+  sigma: float ->
+    boundaryCondition: Slice.BoundaryCondition option ->
+    Core.Pipe<Slice.Slice<'T>,Slice.Slice<'T>> when 'T: equality
+val skipFirstLast: n: int -> lst: 'a list -> 'a list
+val private binaryMathMorph:
+  name: string ->
+    f: (uint -> Slice.Slice<'T> -> Slice.Slice<'T>) ->
+    radius: uint ->
+    windowSize: uint option ->
+    stride: uint option -> Core.Pipe<Slice.Slice<'T>,Slice.Slice<'T>>
+    when 'T: equality
+val binaryErode:
+  radius: uint ->
+    windowSize: uint option ->
+    stride: uint option -> Core.Pipe<Slice.Slice<'T>,Slice.Slice<'T>>
+    when 'T: equality
+val binaryDilate:
+  radius: uint ->
+    windowSize: uint option ->
+    stride: uint option -> Core.Pipe<Slice.Slice<'T>,Slice.Slice<'T>>
+    when 'T: equality
+val binaryOpening:
+  radius: uint ->
+    windowSize: uint option ->
+    stride: uint option -> Core.Pipe<Slice.Slice<'T>,Slice.Slice<'T>>
+    when 'T: equality
+val binaryClosing:
+  radius: uint ->
+    windowSize: uint option ->
+    stride: uint option -> Core.Pipe<Slice.Slice<'T>,Slice.Slice<'T>>
+    when 'T: equality
+val piecewiseConnectedComponents:
+  windowSize: uint option -> Core.Pipe<Slice.Slice<'T>,Slice.Slice<'T>>
+    when 'T: equality
 type FileInfo = Slice.FileInfo
-val getFileInfo: fname: string -> FileInfo
-val getVolumeSize: inputDir: string -> suffix: string -> uint * uint * uint
+val getStackDepth: inputDir: string -> suffix: string -> uint
+val getStackInfo: inputDir: string -> suffix: string -> FileInfo
+val getStackSize: inputDir: string -> suffix: string -> uint64 list
+val getStackWidth: inputDir: string -> suffix: string -> uint64
+val getStackHeigth: inputDir: string -> suffix: string -> uint64
 type ImageStats = Slice.ImageStats
 val computeStats<'T when 'T: equality> :
   Core.Pipe<Slice.Slice<'T>,ImageStats> when 'T: equality
+val liftUnaryOp:
+  name: string ->
+    f: (Slice.Slice<'T> -> Slice.Slice<'T>) ->
+    Core.Operation<Slice.Slice<'T>,Slice.Slice<'T>> when 'T: equality
+val liftWindowedOp:
+  name: string ->
+    window: uint ->
+    stride: uint ->
+    f: (Slice.Slice<'S> -> Slice.Slice<'T>) ->
+    Core.Operation<Slice.Slice<'S>,Slice.Slice<'T>>
+    when 'S: equality and 'T: equality
+val roundFloatToUint: v: float -> uint
+val discreteGaussianOp:
+  name: string ->
+    sigma: float ->
+    bc: ImageFunctions.BoundaryCondition option ->
+    Core.Operation<Slice.Slice<float>,Slice.Slice<float>>
+val sqrtFloatOp:
+  name: string -> Core.Operation<Slice.Slice<float>,Slice.Slice<float>>
+module Ops =
+    val sqrtFloat: Core.Pipe<Slice.Slice<float>,Slice.Slice<float>>
+    val discreteGaussian:
+      sigma: float ->
+        boundaryCondition: ImageFunctions.BoundaryCondition option ->
+        Core.Pipe<Slice.Slice<float>,Slice.Slice<float>>

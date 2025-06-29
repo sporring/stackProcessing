@@ -3,6 +3,7 @@ module Routing
 open FSharp.Control
 open AsyncSeqExtensions
 open Core
+open Core.Helpers
 
 let private run (p: Pipe<unit,'T>) : AsyncSeq<'T> =
     (AsyncSeq.singleton ()) |> p.Apply
@@ -136,8 +137,8 @@ let tee (p : Pipe<'In,'T>): Pipe<'In,'T> * Pipe<'In,'T> =
 ///   • pairs each output and combines using the given function
 ///   • assumes both sides produce values in lockstep
 let zipWith (f: 'A -> 'B -> 'C) (p1: Pipe<'In, 'A>) (p2: Pipe<'In, 'B>) : Pipe<'In, 'C> =
-    printfn "[zipWith2]"
-    let name = $"zipWith2({p1.Name}, {p2.Name})"
+    printfn "[zipWith]"
+    let name = $"zipWith({p1.Name}, {p2.Name})"
     let profile = p1.Profile.combineProfile p2.Profile
     {
         Name = name
@@ -147,13 +148,13 @@ let zipWith (f: 'A -> 'B -> 'C) (p1: Pipe<'In, 'A>) (p2: Pipe<'In, 'B>) : Pipe<'
             let b = p2.Apply input
             match p1.Profile, p2.Profile with
             | Buffered, Streaming | Streaming, Buffered ->
-                failwithf "[zipWith2] Mixing Buffered and Streaming is not supported: %s, %s"
+                failwithf "[zipWith] Mixing Buffered and Streaming is not supported: %s, %s"
                           (p1.Profile.ToString()) (p2.Profile.ToString())
             | Constant, _ 
             | StreamingConstant, _
             | SlidingConstant _, _
             | BufferedConstant, _ ->
-                printfn "Sequential zipWith"
+                printfn "[Sequential zipWith]"
                 asyncSeq {
                     let! constant =
                         a
@@ -167,7 +168,7 @@ let zipWith (f: 'A -> 'B -> 'C) (p1: Pipe<'In, 'A>) (p2: Pipe<'In, 'B>) : Pipe<'
             | _, StreamingConstant
             | _, SlidingConstant _
             | _, BufferedConstant ->
-                printfn "Sequential zipWith"
+                printfn "[Sequential zipWith]"
                 asyncSeq {
                     let! constant =
                         b
@@ -178,9 +179,16 @@ let zipWith (f: 'A -> 'B -> 'C) (p1: Pipe<'In, 'A>) (p2: Pipe<'In, 'B>) : Pipe<'
                     yield! a |> AsyncSeq.map (fun a -> f a constant)
                }
             | _ ->
-                printfn "parallel zipWith"
+                printfn "[parallel zipWith]"
                 AsyncSeq.zip a b |> AsyncSeq.map (fun (x, y) -> f x y)
     }
+
+let zipWithPipe
+    (f: 'A -> 'B -> Pipe<'In, 'C>)
+    (pa: Pipe<'In, 'A>)
+    (pb: Pipe<'In, 'B>) : Pipe<'In, 'C> =
+
+    zipWith f pa pb |> bindPipe
 
  // Needs to be updated for *Constant MemoryProfiles
 let cacheScalar (name: string) (p: Pipe<unit, 'T>) : Pipe<'In, 'T> =
@@ -211,3 +219,10 @@ let tap label : Pipe<'T, 'T> =
     lift $"tap: {label}" Streaming (fun x ->
         printfn "[%s] %A" label x
         async.Return x)
+
+let validate op1 op2 =
+    if op1.Transition.To = op2.Transition.From then
+        true
+    else
+        failwithf "Memory transition mismatch: %A → %A" op1.Transition.To op2.Transition.From
+

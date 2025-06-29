@@ -2,6 +2,7 @@ module Core
 
 open FSharp.Control
 open AsyncSeqExtensions
+open Slice
 
 /// The memory usage strategies during image processing.
 type MemoryProfile =
@@ -45,12 +46,41 @@ type MemoryProfile =
         | _, BufferedConstant
         | Constant, Constant -> Constant
 
+
 /// A configurable image processing step that operates on image slices.
 type Pipe<'S,'T> = {
     Name: string // Name of the process
     Profile: MemoryProfile
     Apply: AsyncSeq<'S> -> AsyncSeq<'T>
 }
+
+type SliceShape = uint list
+
+type MemoryTransition =
+    { From  : MemoryProfile
+      To    : MemoryProfile
+      Check : SliceShape -> bool }
+
+type Operation<'S,'T> =
+    { Name       : string
+      Transition : MemoryTransition
+      Pipe       : Pipe<'S,'T> }            // <- the runnable pipeline
+
+let defaultCheck _ = true
+let transition (fromProfile: MemoryProfile) (toProfile: MemoryProfile) : MemoryTransition =
+    {
+        From = fromProfile
+        To   = toProfile
+        Check = defaultCheck
+    }
+
+type WindowedProcessor<'S, 'T when 'S: equality and 'T: equality > =
+    {
+        Name     : string
+        Window   : uint
+        Stride   : uint
+        Process  : Slice<'S> -> Slice<'T> // 3D images
+    }
 
 let internal isScalar profile =
     match profile with
@@ -142,10 +172,43 @@ type PipelineBuilder(availableMemory: uint64, width: uint, height: uint, depth: 
 let pipeline availableMemory width height depth = PipelineBuilder(availableMemory, width, height, depth)
 
 module Helpers =
+    // singletonPipe and bindPip was part of an experiment, will most likely be deleted
+
     /// Pipeline helper functions
-    let singleton (x: 'In) : Pipe<'In, 'In> =
+
+    let singletonPipe name (seq: AsyncSeq<'T>) : Pipe<'S, 'T> =
         {
-            Name = "[singleton]"
+            Name = name
             Profile = Constant
-            Apply = fun _ -> AsyncSeq.singleton x
+            Apply = fun (_: AsyncSeq<'S>) -> seq
         }
+
+    let bindPipe (p : Pipe<'S, Pipe<'S,'T>>) : Pipe<'S,'T> =
+        {
+            Name    = p.Name + " (bind)"
+            Profile = p.Profile
+            Apply   = fun (src : AsyncSeq<'S>) ->
+                p.Apply src                                // AsyncSeq<Pipe<'S,'T>>
+                |> AsyncSeq.collect (fun innerPipe ->
+                    innerPipe.Apply src)                // forward *same* src
+        }
+
+    /// Operator and such
+    /// pull the runnable pipe out of an operation
+    let inline asPipe (op : Operation<_,_>) = printfn $"[{op.Name}]"; op.Pipe
+
+    /// quick constructor for Streaming→Streaming unary ops
+    let liftUnaryOp name (f: Slice<'T> -> Slice<'T>) : Operation<Slice<'T>,Slice<'T>> =
+        { 
+            Name = name
+            Transition = transition Streaming Streaming
+            Pipe = { 
+                Name = name
+                Profile = Streaming
+                Apply = fun input -> input |> AsyncSeq.map f } 
+        }
+
+    let validate (op1 : Operation<_,_>) (op2 : Operation<_,_>) =
+        if op1.Transition.To = op2.Transition.From then true
+        else failwithf "Memory transition mismatch: %A → %A" op1.Name op2.Name
+

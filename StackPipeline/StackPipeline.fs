@@ -40,7 +40,7 @@ module internal InternalHelpers =
             async {
                 let fileName = Path.Combine(outputDir, sprintf "slice_%03d%s" slice.Index suffix)
                 slice.Image.toFile(fileName)
-                printfn "[Write] Saved slice %d to %s" slice.Index fileName
+                printfn "[Write] Saved slice %d to %s of size %A" slice.Index fileName (slice.Image.GetSize())
             })
 
     let readSlicesAsync<'T when 'T: equality> (inputDir: string) (suffix: string) : AsyncSeq<Slice<'T>> =
@@ -62,7 +62,10 @@ let create<'T when 'T: equality> (width: uint) (height: uint) (depth: uint) : Pi
         Name = "[create]"
         Profile = Streaming
         Apply = fun _ ->
-            AsyncSeq.init (int depth) (fun i -> printfn "[create %d]" i; Slice.create<'T> width height 1u (uint i))
+            AsyncSeq.init (int depth) (fun i -> 
+                let slice = Slice.create<'T> width height 1u (uint i)
+                printfn "[create] Created slice %d with size %A" i (slice.Image.GetSize()); 
+                slice)
     }
 
 let readSlices<'T when 'T: equality> (inputDir: string) (suffix: string) : Pipe<unit, Slice<'T>> =
@@ -75,8 +78,9 @@ let readSlices<'T when 'T: equality> (inputDir: string) (suffix: string) : Pipe<
         Apply = fun _ ->
             AsyncSeq.init (int depth) (fun i -> 
                 let fileName = filenames[int i]; 
-                printfn "[readSlices] Reading slice %d to %s" (uint i) fileName
-                Slice.readSlice<'T> (uint i) fileName)
+                let slice = Slice.readSlice<'T> (uint i) fileName
+                printfn "[readSlices] Reading slice %d from %s got %A" (uint i) fileName (slice.Image.GetSize())
+                slice)
     }
 
 let readSliceN<'T when 'T: equality> (idx: uint) (inputDir: string) (suffix: string) : Pipe<unit, Slice<'T>> =
@@ -108,6 +112,52 @@ let readRandomSlices<'T when 'T: equality> (count: uint) (inputDir: string) (suf
                 Slice.readSlice<'T> (uint i) fileName)
     }
 
+let gauss (sigma: float) (kernelSize: uint option) : Pipe<unit, Slice<float>> =
+    printfn "[gauss]"
+    {
+        Name = "[gauss]"
+        Profile = Streaming
+        Apply = fun _ ->
+            let img = gauss sigma kernelSize
+            printfn $"{img.Image.GetSize()}"
+            let imgLst = img |> unstack
+            printfn $"{imgLst.Length}"
+            imgLst |> AsyncSeq.ofSeq
+    }
+
+let finiteDiffFilter1D (order: uint) : Pipe<unit, Slice<float>> =
+    printfn "[finiteDiffFilter1D]"
+    {
+        Name = "[finiteDiffFilter1D]"
+        Profile = Streaming
+        Apply = fun _ ->
+            finiteDiffFilter1D order
+            |> unstack
+            |> AsyncSeq.ofSeq
+    }
+
+let finiteDiffFilter2D (direction: uint) (order: uint) : Pipe<unit, Slice<float>> =
+    printfn "[finiteDiffFilter2D]"
+    {
+        Name = "[finiteDiffFilter2D]"
+        Profile = Streaming
+        Apply = fun _ ->
+            finiteDiffFilter2D direction order
+            |> unstack
+            |> AsyncSeq.ofSeq
+    }
+
+let finiteDiffFilter3D (direction: uint) (order: uint) : Pipe<unit, Slice<float>> =
+    printfn "[finiteDiffFilter3D]"
+    {
+        Name = "[finiteDiffFilter3D]"
+        Profile = Streaming
+        Apply = fun _ ->
+            finiteDiffFilter3D direction order
+            |> unstack
+            |> AsyncSeq.ofSeq
+    }
+
 /// Sink parts
 let print<'T> : Pipe<'T, unit> =
     consumeWith "print" Streaming (fun stream ->
@@ -133,7 +183,7 @@ let show (plt: Slice.Slice<'a> -> unit) : Pipe<Slice<'a>, unit> =
 let writeSlices (path: string) (suffix: string) : Pipe<Slice<'a>, unit> =
     consumeWith "write" Streaming (fun stream ->
         async {
-            printfn "[show]"
+            printfn "[write]"
             do! (writeSlicesAsync path suffix) stream
         })
 

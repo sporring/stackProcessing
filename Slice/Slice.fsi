@@ -8,11 +8,12 @@ type Slice<'T when 'T: equality> =
       Index: uint
       Image: Image.Image<'T>
     }
+    member EstimateUsage: unit -> uint
 val create:
   width: uint -> height: uint -> depth: uint -> idx: uint -> Slice<'T>
     when 'T: equality
 val GetDepth: slice: Slice<'T> -> uint32 when 'T: equality
-val GetDimension: slice: Slice<'T> -> uint32 when 'T: equality
+val GetDimensions: slice: Slice<'T> -> uint32 when 'T: equality
 val GetHeight: slice: Slice<'T> -> uint32 when 'T: equality
 val GetWidth: slice: Slice<'T> -> uint32 when 'T: equality
 val GetSize: slice: Slice<'T> -> uint list when 'T: equality
@@ -20,9 +21,19 @@ val ToString: slice: Slice<'T> -> string when 'T: equality
 val toArray2D: slice: Slice<'T> -> 'T array2d when 'T: equality
 val toArray3D: slice: Slice<'T> -> 'T array3d when 'T: equality
 val toArray4D: slice: Slice<'T> -> 'T array4d when 'T: equality
-val cast: slice: Slice<obj> -> Image.Image<'S> when 'S: equality
+val cast<'T when 'T: equality> :
+  slice: Slice<obj> -> Slice<obj> when 'T: equality
+val castUInt8ToFloat: slice: Slice<uint8> -> Slice<float>
+val castFloatToUInt8: slice: Slice<float> -> Slice<uint8>
 val toFloat: value: obj -> float
 val toSeqSeq: slice: Slice<'T> -> float seq seq when 'T: equality
+val private liftSource:
+  f: (unit -> Image.Image<'T>) -> unit -> Slice<'T> when 'T: equality
+val private liftSource1:
+  f: ('a -> Image.Image<'T>) -> a: 'a -> Slice<'T> when 'T: equality
+val private liftSource2:
+  f: ('a -> 'b -> Image.Image<'T>) -> a: 'a -> b: 'b -> Slice<'T>
+    when 'T: equality
 val private liftUnary:
   f: (Image.Image<'T> -> Image.Image<'T>) -> s: Slice<'T> -> Slice<'T>
     when 'T: equality
@@ -32,6 +43,13 @@ val private liftUnary1:
 val private liftUnary2:
   f: ('a -> 'b -> Image.Image<'T> -> Image.Image<'T>) ->
     a: 'a -> b: 'b -> s: Slice<'T> -> Slice<'T> when 'T: equality
+val private liftUnary3:
+  f: ('a -> 'b -> 'c -> Image.Image<'T> -> Image.Image<'T>) ->
+    a: 'a -> b: 'b -> c: 'c -> s: Slice<'T> -> Slice<'T> when 'T: equality
+val private liftUnary4:
+  f: ('a -> 'b -> 'c -> 'd -> Image.Image<'T> -> Image.Image<'T>) ->
+    a: 'a -> b: 'b -> c: 'c -> d: 'd -> s: Slice<'T> -> Slice<'T>
+    when 'T: equality
 val private liftBinary:
   f: (Image.Image<'T> -> Image.Image<'T> -> Image.Image<'T>) ->
     s1: Slice<'T> -> s2: Slice<'T> -> Slice<'T> when 'T: equality
@@ -74,27 +92,30 @@ val asinSlice: s: Slice<'T> -> Slice<'T> when 'T: equality
 val acosSlice: s: Slice<'T> -> Slice<'T> when 'T: equality
 val atanSlice: s: Slice<'T> -> Slice<'T> when 'T: equality
 val roundSlice: s: Slice<'T> -> Slice<'T> when 'T: equality
+type BoundaryCondition = ImageFunctions.BoundaryCondition
+type OutputRegionMode = ImageFunctions.OutputRegionMode
 val convolve:
-  a: ImageFunctions.OutputRegionMode ->
-    b: ImageFunctions.BoundaryCondition ->
-    c: bool -> s: Slice<'T> -> t: Slice<'T> -> Slice<'T> when 'T: equality
+  a: ImageFunctions.BoundaryCondition option ->
+    s: Slice<'T> -> t: Slice<'T> -> Slice<'T> when 'T: equality
 val conv: s: Slice<'T> -> t: Slice<'T> -> Slice<'T> when 'T: equality
-val discreteGaussian: a: float -> s: Slice<'T> -> Slice<'T> when 'T: equality
-val recursiveGaussian:
-  a: float -> b: uint -> s: Slice<'T> -> Slice<'T> when 'T: equality
-val laplacianConvolve: a: float -> s: Slice<'T> -> Slice<'T> when 'T: equality
+val discreteGaussian:
+  a: float ->
+    b: uint option ->
+    c: ImageFunctions.BoundaryCondition option -> s: Slice<'T> -> Slice<'T>
+    when 'T: equality
+val gauss: sigma: float -> kernelSize: uint option -> Slice<float>
+val finiteDiffFilter1D: order: uint -> Slice<float>
+val finiteDiffFilter2D: direction: uint -> order: uint -> Slice<float>
+val finiteDiffFilter3D: direction: uint -> order: uint -> Slice<float>
+val finiteDiffFilter4D: direction: uint -> order: uint -> Slice<float>
 val gradientConvolve:
   a: 'a -> b: 'b -> s: Slice<'T> -> (uint -> uint32 -> Slice<'c> -> Slice<'c>)
     when 'T: equality and 'c: equality
-val binaryErode:
-  a: uint -> b: float -> s: Slice<'T> -> Slice<'T> when 'T: equality
-val binaryDilate:
-  a: uint -> b: float -> s: Slice<'T> -> Slice<'T> when 'T: equality
-val binaryOpening:
-  a: uint -> b: float -> s: Slice<'T> -> Slice<'T> when 'T: equality
-val binaryClosing:
-  a: uint -> b: float -> s: Slice<'T> -> Slice<'T> when 'T: equality
-val binaryFillHoles: a: float -> s: Slice<'T> -> Slice<'T> when 'T: equality
+val binaryErode: a: uint -> s: Slice<'T> -> Slice<'T> when 'T: equality
+val binaryDilate: a: uint -> s: Slice<'T> -> Slice<'T> when 'T: equality
+val binaryOpening: a: uint -> s: Slice<'T> -> Slice<'T> when 'T: equality
+val binaryClosing: a: uint -> s: Slice<'T> -> Slice<'T> when 'T: equality
+val binaryFillHoles: s: Slice<'T> -> Slice<'T> when 'T: equality
 val squeeze: s: Slice<'T> -> Slice<'T> when 'T: equality
 val concatAlong:
   a: uint -> s: Slice<'T> -> t: Slice<'T> -> Slice<'T> when 'T: equality
@@ -165,9 +186,13 @@ val threshold:
   a: float -> b: float -> s: Slice<'T> -> Slice<'T> when 'T: equality
 val stack: slices: Slice<'T> list -> Slice<'T> when 'T: equality
 val extractSlice: a: uint -> s: Slice<'T> -> Slice<'T> when 'T: equality
-val getDepth: inputDir: string -> suffix: string -> uint
+val unstack: slice: Slice<'T> -> Slice<'T> list when 'T: equality
 type FileInfo = ImageFunctions.FileInfo
-val getFileInfo: fname: string -> FileInfo
-val getVolumeSize: inputDir: string -> suffix: string -> uint * uint * uint
+val getFileInfo: filename: string -> FileInfo
 val readSlice: idx: uint -> filename: string -> Slice<'T> when 'T: equality
 val writeSlice: filename: string -> slice: Slice<'T> -> unit when 'T: equality
+val getStackDepth: inputDir: string -> suffix: string -> uint
+val getStackInfo: inputDir: string -> suffix: string -> FileInfo
+val getStackSize: inputDir: string -> suffix: string -> uint64 list
+val getStackWidth: inputDir: string -> suffix: string -> uint64
+val getStackHeight: inputDir: string -> suffix: string -> uint64

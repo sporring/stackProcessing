@@ -9,7 +9,9 @@ open AsyncSeqExtensions
 open StackPipeline
 open Core
 open Core.Helpers
+open Routing
 open Slice
+open Image
 
 // --- Processing Utilities ---
 let private explodeSlice (slices: Slice<'T>) : AsyncSeq<Slice<'T>> =
@@ -37,33 +39,48 @@ let fold (label: string) (profile: MemoryProfile)  (folder: 'State -> 'In -> 'St
 
 let map (label: string) (profile: MemoryProfile) (f: 'S -> 'T) : Pipe<'S,'T> =
     {
-        Name = "map"; 
+        Name = label; 
         Profile = profile
         Apply = fun input ->
             input
             |> AsyncSeq.map (fun slice -> f slice)
     }
 
-let mapWindowed (label: string) (depth: uint) (stride: uint) (f: 'S list -> 'T) : Pipe<'S,'T> =
+/// mapWindowed keeps a running window along the slice direction of depth images
+/// and processes them by f. The stepping size of the running window is stride.
+/// So if depth is 3 and stride is 1 then first image 0,1,2 is sent to f, then 1, 2, 3
+/// and so on. If depth is 3 and stride is 3, then it'll be image 0, 1, 2 followed by
+/// 3, 4, 5. It is also possible to use this for sampling, e.g., setting depth to 1
+/// and stride to 2 sends every second image to f.  
+let mapWindowed (label: string) (depth: uint) (stride: uint) (f: 'S list -> 'T list) : Pipe<'S,'T> =
     {
-        Name = "mapWindowed"; 
+        Name = label; 
         Profile = Sliding depth
         Apply = fun input ->
             AsyncSeqExtensions.windowed depth stride input
-            |> AsyncSeq.map (fun window -> window |> f)
+                |> AsyncSeq.collect (f  >> AsyncSeq.ofSeq)
     }
 
-let mapChunked (label: string) (chunkSize: uint) (baseIndex: uint) (f: Slice<'T> -> Slice<'T>) : Pipe<Slice<'T>,Slice<'T>> =
-    { // Due to stack, this is Pipe<Slice<'T>,Slice<'T>>
-        Name = "mapChunked"; 
-        Profile = Sliding chunkSize
+let castUInt8ToFloat : Pipe<Slice<uint8>, Slice<float>> =
+    printfn "[castUInt8ToFloat]"
+    {
+        Name = "castUInt8ToFloat"
+        Profile = Streaming
         Apply = fun input ->
-            AsyncSeqExtensions.chunkBySize (int chunkSize) input
-            |> AsyncSeq.collect (fun chunk ->
-                    let volume = stack chunk
-                    let result = f { volume with Index = baseIndex }
-                    explodeSlice result)
+            input
+            |> AsyncSeq.map (fun slice -> Slice.castUInt8ToFloat slice)
     }
+
+let castFloatToUInt8 : Pipe<Slice<float>, Slice<uint8>> =
+    printfn "[castFloatToUInt8]"
+    {
+        Name = "castFloatToUInt8"
+        Profile = Streaming
+        Apply = fun input ->
+            input
+            |> AsyncSeq.map (fun slice -> Slice.castFloatToUInt8 slice)
+    }
+
 
 let addFloat (value: float) : Pipe<Slice<float>, Slice<float>> =
     printfn "[addFloat]"
@@ -268,15 +285,86 @@ let threshold (lower: float) (upper: float) : Pipe<Slice<'T> ,Slice<'T>> =
     printfn "[threshold]"
     map "Threshold" Streaming (threshold lower upper)
 
-let discreteGaussian (sigma: float) : Pipe<Slice<'T> ,Slice<'T>> =
-    printfn "[discreteGaussian]"
-    let depth = 1u + 2u * uint (0.5 + sigma)
-    let stride = 1u
-    mapWindowed "discreteGaussian" depth stride (stack >> discreteGaussian sigma)
+// Chained type definitions do expose the originals
+let zeroPad = ImageFunctions.ZeroPad
+let periodicPad = ImageFunctions.PerodicPad
+let zeroFluxNeumannPad = ImageFunctions.ZeroFluxNeumannPad
+let valid = ImageFunctions.Valid
+let same = ImageFunctions.Same
+
+let convolve (kern: Slice<'T>) (boundaryCondition: BoundaryCondition option) (windowSize: uint option) (stride: uint option): Pipe<Slice<'T> ,Slice<'T>> =
+    printfn "[conv/convolve]"
+    let ksz = kern |> GetDepth |>  max 1u
+    let dpth = Option.defaultValue ksz windowSize |> max ksz
+    let strd = Option.defaultValue (1u+dpth-ksz) stride |> max 1u
+    printfn $"convolve: {ksz} {dpth} {strd}"
+    mapWindowed "discreteGaussian" dpth strd (stack >> convolve boundaryCondition kern >> unstack)
+
+let conv (kern: Slice<'T>): Pipe<Slice<'T> ,Slice<'T>> =
+    convolve kern None None None
+
+let convolveStreams
+    (kernelSrc : Pipe<'S, Slice<'T>>)
+    (imageSrc  : Pipe<'S, Slice<'T>>) : Pipe<'S, Slice<'T>> =
+
+    zipWith
+        (fun kernel image ->
+            let convPipe = conv kernel
+            image
+            |> AsyncSeq.singleton     // wrap image slice as stream
+            |> convPipe.Apply         // apply convolution
+            |> Helpers.singletonPipe $"conv({kernel.Index},{image.Index})"
+        )
+        kernelSrc
+        imageSrc
+    |> Helpers.bindPipe
+
+let discreteGaussian (sigma: float) (kernelSize: uint option) (boundaryCondition: BoundaryCondition option) (windowSize: uint option) (stride: uint option): Pipe<Slice<'T> ,Slice<'T>> =
+    printfn "[convGauss/discreteGaussian]"
+    let ksz = Option.defaultValue (1u + 2u * uint (0.5 + sigma)) kernelSize
+    let dpth = Option.defaultValue ksz windowSize |> max ksz
+    let minStride = 1u
+    let strd = Option.defaultValue (1u+dpth-ksz) stride |> max minStride
+    mapWindowed "convGauss/discreteGaussian" dpth strd (stack >> discreteGaussian sigma (Some ksz) boundaryCondition >> unstack)
+
+let convGauss (sigma: float) (boundaryCondition: BoundaryCondition option) : Pipe<Slice<'T> ,Slice<'T>> =
+    discreteGaussian sigma None boundaryCondition None None
+
+let skipFirstLast (n: int) (lst: 'a list) : 'a list =
+    let m = lst.Length - 2*n;
+    if m <= 0 then []
+    else lst |> List.skip n |> List.take m 
+
+let private binaryMathMorph (name: string) f (radius: uint) (windowSize: uint option) (stride: uint option) : Pipe<Slice<'T> ,Slice<'T>> =
+    printfn $"[{name}]"
+    let ksz = 1u+2u*radius
+    let dpth = Option.defaultValue ksz windowSize |> max ksz
+    let strd = Option.defaultValue (1u+dpth-ksz) stride |> max 1u
+    mapWindowed $"{name}" dpth strd (stack >> f radius  >> unstack >> skipFirstLast (int radius))
+
+let binaryErode (radius: uint) (windowSize: uint option) (stride: uint option) : Pipe<Slice<'T> ,Slice<'T>> =
+    binaryMathMorph "binaryErode" binaryErode radius windowSize stride
+
+let binaryDilate (radius: uint) (windowSize: uint option) (stride: uint option) : Pipe<Slice<'T> ,Slice<'T>> =
+    binaryMathMorph "binaryDilate" binaryDilate radius windowSize stride
+
+let binaryOpening (radius: uint) (windowSize: uint option) (stride: uint option) : Pipe<Slice<'T> ,Slice<'T>> =
+    binaryMathMorph "binaryOpening" binaryOpening radius windowSize stride
+
+let binaryClosing (radius: uint) (windowSize: uint option) (stride: uint option) : Pipe<Slice<'T> ,Slice<'T>> =
+    binaryMathMorph "binaryClosing" binaryClosing radius windowSize stride
+
+let piecewiseConnectedComponents (windowSize: uint option) : Pipe<Slice<'T> ,Slice<'T>> =
+    printfn "[connectedComponents]"
+    let dpth = Option.defaultValue 1u windowSize |> max 1u
+    mapWindowed "connectedComponents" dpth dpth (stack >> connectedComponents >> unstack)
 
 type FileInfo = Slice.FileInfo
-let getFileInfo(fname: string): FileInfo = Slice.getFileInfo(fname)
-let getVolumeSize (inputDir: string) (suffix: string) = Slice.getVolumeSize inputDir suffix
+let getStackDepth (inputDir: string) (suffix: string) : uint = Slice.getStackDepth inputDir suffix
+let getStackInfo (inputDir: string) (suffix: string): FileInfo = Slice.getStackInfo inputDir suffix
+let getStackSize (inputDir: string) (suffix: string) = Slice.getStackSize inputDir suffix
+let getStackWidth (inputDir: string) (suffix: string): uint64 = Slice.getStackWidth inputDir suffix
+let getStackHeigth (inputDir: string) (suffix: string): uint64 = Slice.getStackHeight inputDir suffix
 
 type ImageStats = Slice.ImageStats
 let computeStats<'T when 'T : equality> : Pipe<Slice<'T>, ImageStats> =
@@ -295,3 +383,42 @@ let computeStats<'T when 'T : equality> : Pipe<Slice<'T>, ImageStats> =
         |> AsyncSeqExtensions.fold Slice.addComputeStats zeroStats
     reduce "Compute Statistics" StreamingConstant computeStatsReducer
 
+
+/////////////////////////////////////////////////////////////////////
+// new experiement with Operator type and more
+let liftUnaryOp name (f: Slice<'T> -> Slice<'T>) : Operation<Slice<'T>,Slice<'T>> =
+    { 
+        Name = name
+        Transition = transition Streaming Streaming
+        Pipe = // This looks like overloading. Only new information is Apply
+        { 
+            Name = name
+            Profile = Streaming
+            Apply = fun input -> input |> AsyncSeq.map f 
+        } 
+    }
+
+let liftWindowedOp (name: string) (window: uint) (stride: uint) (f: Slice<'S> -> Slice<'T>) : Operation<Slice<'S>, Slice<'T>> =
+    {
+        Name = name
+        Transition = transition (Sliding window) Streaming
+        Pipe = mapWindowed name window stride (stack >> f >> unstack)
+    }
+
+let roundFloatToUint v = uint (v+0.5)
+
+let discreteGaussianOp (name:string) (sigma:float) (bc: ImageFunctions.BoundaryCondition option) : Operation<Slice<float>, Slice<float>> =
+    let ksz = 2.0 * sigma + 1.0
+    let win = max 7.0 ksz // max should be found by memory availability
+    let stride = 1.0 + (win - ksz) |> roundFloatToUint
+    liftWindowedOp name (win|> uint) stride (fun slices -> Slice.discreteGaussian sigma (ksz |> uint |> Some) bc slices)
+
+let sqrtFloatOp (name: string) : Operation<Slice<float>, Slice<float>> =
+    liftUnaryOp name (sqrtSlice<float>)
+
+// value exposed to users for composition
+module Ops = 
+    let sqrtFloat = 
+        asPipe (sqrtFloatOp "sqrt")
+    let discreteGaussian sigma boundaryCondition = 
+        asPipe (discreteGaussianOp "discreteGaussian" sigma boundaryCondition)

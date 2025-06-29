@@ -462,6 +462,7 @@ type Image<'T when 'T: equality> =
     static member neq: i: int8 * f1: Image<int8> -> bool
     static member neq: f1: Image<int8> * i: int8 -> bool
     static member neq: f1: Image<'S> * f2: Image<'S> -> bool when 'S: equality
+    static member ofArray: arr: 'T array -> Image<'T>
     static member ofArray2D: arr: 'T array2d -> Image<'T>
     static member ofArray3D: arr: 'T array3d -> Image<'T>
     static member ofArray4D: arr: 'T array4d -> Image<'T>
@@ -473,7 +474,7 @@ type Image<'T when 'T: equality> =
     override Equals: obj: obj -> bool
     member Get: coords: uint list -> 'T
     member GetDepth: unit -> uint32
-    member GetDimension: unit -> uint32
+    member GetDimensions: unit -> uint32
     override GetHashCode: unit -> int
     member GetHeight: unit -> uint32
     member GetNumberOfComponentsPerPixel: unit -> uint32
@@ -482,8 +483,11 @@ type Image<'T when 'T: equality> =
     member Set: coords: uint list * value: 'T -> unit
     member private SetImg: itkImg: itk.simple.Image -> unit
     override ToString: unit -> string
-    member cast: unit -> Image<'S> when 'S: equality
+    member cast<'T when 'T: equality> : unit -> Image<'T>
+    member castFloatToUInt8: unit -> Image<uint8>
+    member castUInt8ToFloat: unit -> Image<float>
     member forAll: unit -> bool
+    member memoryEstimate: unit -> uint
     member sum: unit -> 'T
     member toArray2D: unit -> 'T array2d
     member toArray3D: unit -> 'T array3d
@@ -544,30 +548,31 @@ val inline acosImage: img: Image.Image<'T> -> Image.Image<'T> when 'T: equality
 val inline atanImage: img: Image.Image<'T> -> Image.Image<'T> when 'T: equality
 val inline roundImage: img: Image.Image<'T> -> Image.Image<'T> when 'T: equality
 type BoundaryCondition =
-    | ZERO_PAD
-    | PERIODIC_PAD
-    | ZERO_FLUX_NEUMANN_PAD
+    | ZeroPad
+    | PerodicPad
+    | ZeroFluxNeumannPad
 type OutputRegionMode =
-    | VALID
-    | SAME
+    | Valid
+    | Same
 val convolve:
-  outputRegion: OutputRegionMode ->
-    boundaryCondition: BoundaryCondition ->
-    normalize: bool -> (Image.Image<'T> -> Image.Image<'T> -> Image.Image<'T>)
-    when 'T: equality
+  boundaryCondition: BoundaryCondition option ->
+    (Image.Image<'T> -> Image.Image<'T> -> Image.Image<'T>) when 'T: equality
 val conv:
   img: Image.Image<'T> -> ker: Image.Image<'T> -> Image.Image<'T>
     when 'T: equality
+val gauss:
+  sigma: float -> kernelSize: uint option -> Image.Image<'T> when 'T: equality
+val private stensil: order: uint32 -> float list
+val finiteDiffFilter1D: order: uint -> Image.Image<float>
+val finiteDiffFilter2D: direction: uint -> order: uint -> Image.Image<float>
+val finiteDiffFilter3D: direction: uint -> order: uint -> Image.Image<float>
+val finiteDiffFilter4D: direction: uint -> order: uint -> Image.Image<float>
 /// Gaussian kernel convolution
 val discreteGaussian:
-  sigma: float -> (Image.Image<'T> -> Image.Image<'T>) when 'T: equality
-/// Recursive Gaussian blur in a specific direction (0 = x, 1 = y, 2 = z)
-val recursiveGaussian:
-  sigma: float -> direction: uint -> (Image.Image<'T> -> Image.Image<'T>)
-    when 'T: equality
-/// Laplacian of Gaussian convolution
-val laplacianConvolve:
-  sigma: float -> (Image.Image<'T> -> Image.Image<'T>) when 'T: equality
+  sigma: float ->
+    kernelSize: uint option ->
+    boundaryCondition: BoundaryCondition option ->
+    (Image.Image<'T> -> Image.Image<'T>) when 'T: equality
 /// Gradient convolution using Derivative filter
 val gradientConvolve:
   direction: uint -> order: uint32 -> (Image.Image<'T> -> Image.Image<'T>)
@@ -575,23 +580,18 @@ val gradientConvolve:
 /// Mathematical morphology
 /// Binary erosion
 val binaryErode:
-  radius: uint -> foreground: float -> (Image.Image<'T> -> Image.Image<'T>)
-    when 'T: equality
+  radius: uint -> (Image.Image<'T> -> Image.Image<'T>) when 'T: equality
 /// Binary dilation
 val binaryDilate:
-  radius: uint -> foreground: float -> (Image.Image<'T> -> Image.Image<'T>)
-    when 'T: equality
+  radius: uint -> (Image.Image<'T> -> Image.Image<'T>) when 'T: equality
 /// Binary opening (erode then dilate)
 val binaryOpening:
-  radius: uint -> foreground: float -> (Image.Image<'T> -> Image.Image<'T>)
-    when 'T: equality
+  radius: uint -> (Image.Image<'T> -> Image.Image<'T>) when 'T: equality
 /// Binary closing (dilate then erode)
 val binaryClosing:
-  radius: uint -> foreground: float -> img: Image.Image<'T> -> Image.Image<'T>
-    when 'T: equality
+  radius: uint -> (Image.Image<'T> -> Image.Image<'T>) when 'T: equality
 /// Fill holes in binary regions
-val binaryFillHoles:
-  foreground: float -> (Image.Image<'T> -> Image.Image<'T>) when 'T: equality
+val binaryFillHoles: img: Image.Image<'T> -> Image.Image<'T> when 'T: equality
 /// Connected components labeling
 val connectedComponents:
   img: Image.Image<'T> -> Image.Image<'T> when 'T: equality
@@ -684,6 +684,7 @@ val extractSub:
     when 'T: equality
 val extractSlice:
   z: uint -> img: Image.Image<'T> -> Image.Image<'T> when 'T: equality
+val unstack: vol: Image.Image<'T> -> Image.Image<'T> list when 'T: equality
 type FileInfo =
     {
       dimensions: uint
