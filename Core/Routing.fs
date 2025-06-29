@@ -4,9 +4,11 @@ open FSharp.Control
 open AsyncSeqExtensions
 open Core
 open Core.Helpers
+open Slice
 
 let private run (p: Pipe<unit,'T>) : AsyncSeq<'T> =
     (AsyncSeq.singleton ()) |> p.Apply
+
 
 let sinkLst (processors: Pipe<unit, unit> list) : unit =
     processors
@@ -39,6 +41,20 @@ let source
     : Pipe<unit,'T> =
     let lst = sourceLst availableMemory width height depth [p]
     List.head lst
+
+
+/// Source parts
+let create<'T when 'T: equality> (width: uint) (height: uint) (depth: uint) : Pipe<unit, Slice<'T>> =
+    printfn "[create]"
+    {
+        Name = "[create]"
+        Profile = Streaming
+        Apply = fun _ ->
+            AsyncSeq.init (int depth) (fun i -> 
+                let slice = Slice.create<'T> width height 1u (uint i)
+                printfn "[create] Created slice %d with size %A" i (slice.Image.GetSize()); 
+                slice)
+    }
 
 /// Split a Pipe<'In,'T> into two branches that
 ///   • read the upstream only once

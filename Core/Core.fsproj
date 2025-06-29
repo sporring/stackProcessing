@@ -6,7 +6,7 @@
   </PropertyGroup>
 
   <PropertyGroup>
-    <SigFile>$(MSBuildThisFileDirectory)Processing.fsi</SigFile>
+    <SigFile>$(MSBuildThisFileDirectory)Core.fsi</SigFile>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|AnyCPU'">
     <DefineConstants>TRACE</DefineConstants>
@@ -30,18 +30,21 @@
   </ItemGroup>
 
   <ItemGroup>
-    <PackageReference Include="Expecto" Version="9.0.4" />
+    <PackageReference Include="Plotly.NET" Version="5.*" />
   </ItemGroup>
 
   <ItemGroup>
-    <PackageReference Include="FSharp.Control.AsyncSeq" Version="3.*" />
-    <ProjectReference Include="../StackPipeline/StackPipeline.fsproj" />
-    <ProjectReference Include="../Image/Image.fsproj" />
+    <PackageReference Include="FSharp.Control.AsyncSeq" Version="3.2.1" />
     <ProjectReference Include="../AsyncSeqExtensions/AsyncSeqExtensions.fsproj" />
+    <ProjectReference Include="../Image/Image.fsproj" />
+    <ProjectReference Include="../Slice/Slice.fsproj" />
   </ItemGroup>
 
   <ItemGroup>
+    <Compile Include="Core.fs" />
+    <Compile Include="Routing.fs" />
+    <Compile Include="SourceSink.fs" />
     <Compile Include="Processing.fs" />
+    <Compile Include="Ops.fs" />
   </ItemGroup>
-
 </Project>

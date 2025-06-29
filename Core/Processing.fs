@@ -6,7 +6,7 @@ open FSharp.Control
 open System.Collections.Generic
 open System.Collections.Concurrent
 open AsyncSeqExtensions
-open StackPipeline
+open SourceSink
 open Core
 open Core.Helpers
 open Routing
@@ -405,6 +405,15 @@ let liftWindowedOp (name: string) (window: uint) (stride: uint) (f: Slice<'S> ->
         Pipe = mapWindowed name window stride (stack >> f >> unstack)
     }
 
+let liftUnaryOpInt (name: string) (f: Slice<int> -> Slice<int>) =
+    liftUnaryOp name f
+
+let liftUnaryOpFloat32 (name: string) (f: Slice<float32> -> Slice<float32>) =
+    liftUnaryOp name f
+
+let liftUnaryOpFloat (name: string) (f: Slice<float> -> Slice<float>) =
+    liftUnaryOp name f
+
 let roundFloatToUint v = uint (v+0.5)
 
 let discreteGaussianOp (name:string) (sigma:float) (bc: ImageFunctions.BoundaryCondition option) : Operation<Slice<float>, Slice<float>> =
@@ -413,12 +422,32 @@ let discreteGaussianOp (name:string) (sigma:float) (bc: ImageFunctions.BoundaryC
     let stride = 1.0 + (win - ksz) |> roundFloatToUint
     liftWindowedOp name (win|> uint) stride (fun slices -> Slice.discreteGaussian sigma (ksz |> uint |> Some) bc slices)
 
-let sqrtFloatOp (name: string) : Operation<Slice<float>, Slice<float>> =
-    liftUnaryOp name (sqrtSlice<float>)
-
-// value exposed to users for composition
-module Ops = 
-    let sqrtFloat = 
-        asPipe (sqrtFloatOp "sqrt")
-    let discreteGaussian sigma boundaryCondition = 
-        asPipe (discreteGaussianOp "discreteGaussian" sigma boundaryCondition)
+let absIntOp       name = liftUnaryOpInt name absSlice
+let absFloat32Op   name = liftUnaryOpFloat32 name absSlice
+let absFloatOp     name = liftUnaryOpFloat name absSlice
+let logFloat32Op   name = liftUnaryOpFloat32 name logSlice
+let logFloatOp     name = liftUnaryOpFloat name logSlice
+let log10Float32Op name = liftUnaryOpFloat32 name log10Slice
+let log10FloatOp   name = liftUnaryOpFloat name log10Slice
+let expFloat32Op   name = liftUnaryOpFloat32 name expSlice
+let expFloatOp     name = liftUnaryOpFloat name expSlice
+let sqrtIntOp      name = liftUnaryOpInt name sqrtSlice
+let sqrtFloat32Op  name = liftUnaryOpFloat32 name sqrtSlice
+let sqrtFloatOp    name = liftUnaryOpFloat name sqrtSlice
+let squareIntOp    name = liftUnaryOpInt name squareSlice
+let squareFloat32Op name = liftUnaryOpFloat32 name squareSlice
+let squareFloatOp  name = liftUnaryOpFloat name squareSlice
+let sinFloat32Op   name = liftUnaryOpFloat32 name sinSlice
+let sinFloatOp     name = liftUnaryOpFloat name sinSlice
+let cosFloat32Op   name = liftUnaryOpFloat32 name cosSlice
+let cosFloatOp     name = liftUnaryOpFloat name cosSlice
+let tanFloat32Op   name = liftUnaryOpFloat32 name tanSlice
+let tanFloatOp     name = liftUnaryOpFloat name tanSlice
+let asinFloat32Op  name = liftUnaryOpFloat32 name asinSlice
+let asinFloatOp    name = liftUnaryOpFloat name asinSlice
+let acosFloat32Op  name = liftUnaryOpFloat32 name acosSlice
+let acosFloatOp    name = liftUnaryOpFloat name acosSlice
+let atanFloat32Op  name = liftUnaryOpFloat32 name atanSlice
+let atanFloatOp    name = liftUnaryOpFloat name atanSlice
+let roundFloat32Op name = liftUnaryOpFloat32 name roundSlice
+let roundFloatOp   name = liftUnaryOpFloat name roundSlice

@@ -40,3 +40,7 @@ StackPipeline/lib/libSimpleITKCSharpNative.dylib
 /old/Vector/obj
 /Slice/obj
 /Slice/bin
+/Core/bin
+/Core/obj
+/Pipeline/bin
+/Pipeline/obj

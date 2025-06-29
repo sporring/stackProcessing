@@ -1,5 +1,5 @@
 
-# 📦 Core Concepts in the Streaming Pipeline Framework
+# 📦 Key elements of the Streaming Pipeline Framework
 
 This document summarizes the foundational types and functions used in your memory-aware, streaming image processing system.
 

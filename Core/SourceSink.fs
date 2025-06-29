@@ -1,6 +1,7 @@
-module StackPipeline
+module SourceSink
 
 open FSharp.Control
+open AsyncSeqExtensions
 open System.IO
 open Slice
 open Core
@@ -54,19 +55,6 @@ module internal InternalHelpers =
         |> AsyncSeq.ofSeqAsync
 
 open InternalHelpers
-
-/// Source parts
-let create<'T when 'T: equality> (width: uint) (height: uint) (depth: uint) : Pipe<unit, Slice<'T>> =
-    printfn "[create]"
-    {
-        Name = "[create]"
-        Profile = Streaming
-        Apply = fun _ ->
-            AsyncSeq.init (int depth) (fun i -> 
-                let slice = Slice.create<'T> width height 1u (uint i)
-                printfn "[create] Created slice %d with size %A" i (slice.Image.GetSize()); 
-                slice)
-    }
 
 let readSlices<'T when 'T: equality> (inputDir: string) (suffix: string) : Pipe<unit, Slice<'T>> =
     printfn "[readSlices]"
