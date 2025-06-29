@@ -398,6 +398,15 @@ let liftUnaryOp name (f: Slice<'T> -> Slice<'T>) : Operation<Slice<'T>,Slice<'T>
         } 
     }
 
+let liftImageScalarOpInt (name : string) (scalar : int) (core : Slice<int> -> int -> Slice<int>) : Operation<Slice<int>,Slice<int>> =
+    liftUnaryOp name (fun s -> core s scalar)
+let liftImageScalarOpUInt8 (name : string) (scalar : uint8) (core : Slice<uint8> -> uint8 -> Slice<uint8>) : Operation<Slice<uint8>,Slice<uint8>> =
+    liftUnaryOp name (fun s -> core s scalar)
+let liftImageScalarOpFloat32 (name : string) (scalar : float32) (core : Slice<float32> -> float32 -> Slice<float32>) : Operation<Slice<float32>,Slice<float32>> =
+    liftUnaryOp name (fun s -> core s scalar)
+let liftImageScalarOpFloat (name : string) (scalar : float) (core : Slice<float> -> float -> Slice<float>) : Operation<Slice<float>,Slice<float>> =
+    liftUnaryOp name (fun s -> core s scalar)
+
 let liftWindowedOp (name: string) (window: uint) (stride: uint) (f: Slice<'S> -> Slice<'T>) : Operation<Slice<'S>, Slice<'T>> =
     {
         Name = name
@@ -429,6 +438,26 @@ let liftUnaryOpFloat32 (name: string) (f: Slice<float32> -> Slice<float32>) =
 
 let liftUnaryOpFloat (name: string) (f: Slice<float> -> Slice<float>) =
     liftUnaryOp name f
+
+let liftBinaryOp (name: string) (f: Slice<'T> -> Slice<'T> -> Slice<'T>) : Operation<Slice<'T> * Slice<'T>, Slice<'T>> =
+    {
+        Name = name
+        Transition = transition Streaming Streaming
+        Pipe =
+            {
+                Name = name
+                Profile = Streaming
+                Apply = fun input ->
+                    input
+                    |> AsyncSeq.map (fun (a, b) -> f a b)
+            }
+    }
+
+let liftBinaryOpFloat (name: string) (f: Slice<float> -> Slice<float> -> Slice<float>) =
+    liftBinaryOp name f
+
+let liftBinaryZipOp (name: string) (f: Slice<'T> -> Slice<'T> -> Slice<'T>) (p1: Pipe<'In, Slice<'T>>) (p2: Pipe<'In, Slice<'T>>) : Pipe<'In, Slice<'T>> =
+    zipWith f p1 p2
 
 let absIntOp       name = liftUnaryOpInt name absSlice
 let absFloat32Op   name = liftUnaryOpFloat32 name absSlice
@@ -505,15 +534,10 @@ let convolveOp (name: string) (kernel: Slice<'T>) (bc: BoundaryCondition option)
     let stride = win-ksz+1u
     liftWindowedOp name win stride (fun slices -> Slice.convolve bc slices kernel)
 
-let private makeMorphOp
-        (name:string)
-        (radius:uint)
-        (winSz: uint option)
-        (core: uint -> Slice<'T> -> Slice<'T>)   // SimpleITK 3‑D op
-        : Operation<Slice<'T>,Slice<'T>> when 'T: equality =
+let private makeMorphOp (name:string) (radius:uint) (winSz: uint option) (core: uint -> Slice<'T> -> Slice<'T>) : Operation<Slice<'T>,Slice<'T>> when 'T: equality =
     let winFromRadius (r:uint) = 2u * r + 1u
     let ksz   = winFromRadius radius
-    let win = Option.defaultValue ksz winSz |> min ksz // max should be found by memory availability
+    let win = Option.defaultValue ksz winSz |> min ksz
     let stride = win - ksz + 1u
     liftWindowedTrimOp name win stride radius (fun slices -> core radius slices)
 
@@ -521,3 +545,39 @@ let binaryErodeOp     name radius winSz = makeMorphOp name radius winSz Slice.bi
 let binaryDilateOp    name radius winSz = makeMorphOp name radius winSz Slice.binaryDilate
 let binaryOpeningOp   name radius winSz = makeMorphOp name radius winSz Slice.binaryOpening
 let binaryClosingOp   name radius winSz = makeMorphOp name radius winSz Slice.binaryClosing
+
+let addIntOp      name scalar = liftImageScalarOpInt     name scalar Slice.addInt
+let addUInt8Op    name scalar = liftImageScalarOpUInt8   name scalar Slice.addUInt8
+let addFloatOp    name scalar = liftImageScalarOpFloat   name scalar Slice.addFloat
+
+let subIntOp   name scalar = liftImageScalarOpInt   name scalar Slice.subInt
+let subFloatOp name scalar = liftImageScalarOpFloat name scalar Slice.subFloat
+
+(* Assymetry could be handled as
+let inline subFromScalarIntOp (name:string) (scalar:int) =
+    liftUnaryOp name (fun img -> subInt img scalar |> fun s -> s )
+let inline subFromScalarFloatOp (name:string) (scalar:float) =
+    liftUnaryOp name (fun img -> subFloat img scalar |> fun s -> s )
+*)
+
+let mulIntOp     name scalar = liftImageScalarOpInt     name scalar Slice.mulInt
+let mulUInt8Op   name scalar = liftImageScalarOpUInt8   name scalar Slice.mulUInt8
+let mulFloatOp   name scalar = liftImageScalarOpFloat   name scalar Slice.mulFloat
+
+let divIntOp   name scalar = liftImageScalarOpInt   name scalar Slice.divInt
+let divFloatOp name scalar = liftImageScalarOpFloat name scalar Slice.divFloat
+
+// ---------------------------------------------------------------------------
+// NOTE on image ⊕ image variants
+// ---------------------------------------------------------------------------
+// For image‑image versions (add, sub, mul, div that take two Slice<'T>),
+// simply create a `Pipe<'S,'T>` for each input image and use `zipWith`:
+//
+//    let addImgPipe  = asPipe (addOp  "addImg" )   // where addOp returns Operation<(Slice<'T>*Slice<'T>),Slice<'T>>
+//    let pipeline = zipWith add addSrcPipe bSrcPipe  // Routing.zipWith
+//
+// Those are not generated here because they require two distinct input streams.
+//
+// Alternatively
+let addOpFloat = liftBinaryOpFloat "add" Slice.add // src1 >=> addOp >=> next
+// Same goes for all Streaming pixelwise binary operators such as isGreaterEqual and xOr

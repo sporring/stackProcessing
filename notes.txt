@@ -1,0 +1,116 @@
+val gauss: sigma: float -> kernelSize: uint option -> Slice<float>
+
+val finiteDiffFilter1D: order: uint -> Slice<float>
+val finiteDiffFilter2D: direction: uint -> order: uint -> Slice<float>
+val finiteDiffFilter3D: direction: uint -> order: uint -> Slice<float>
+val finiteDiffFilter4D: direction: uint -> order: uint -> Slice<float>
+val gradientConvolve:
+  a: 'a -> b: 'b -> s: Slice<'T> -> (uint -> uint32 -> Slice<'c> -> Slice<'c>)
+    when 'T: equality and 'c: equality
+
+val binaryFillHoles: s: Slice<'T> -> Slice<'T> when 'T: equality
+
+
+
+
+val otsuThreshold: s: Slice<'T> -> Slice<'T> when 'T: equality
+val otsuMultiThreshold: a: byte -> s: Slice<'T> -> Slice<'T> when 'T: equality
+val momentsThreshold: s: Slice<'T> -> Slice<'T> when 'T: equality
+val connectedComponents: s: Slice<'T> -> Slice<'T> when 'T: equality
+val signedDistanceMap:
+  inside: uint8 -> outside: uint8 -> img: Slice<uint8> -> Slice<float>
+
+val computeStats: img: Slice<'T> -> ImageStats when 'T: equality
+val addComputeStats: s1: ImageStats -> s2: ImageStats -> ImageStats
+val histogram: img: Slice<'T> -> Map<'T,uint64> when 'T: comparison
+
+
+val add: a: Slice<'T> -> b: Slice<'T> -> Slice<'T> when 'T: equality
+val addInt: a: Slice<int> -> b: int -> Slice<int>
+val addUInt8: a: Slice<uint8> -> b: uint8 -> Slice<uint8>
+val addFloat: a: Slice<float> -> b: float -> Slice<float>
+val sub: a: Slice<'T> -> b: Slice<'T> -> Slice<'T> when 'T: equality
+val subInt: a: Slice<int> -> b: int -> Slice<int>
+val subFloat: a: Slice<float> -> b: float -> Slice<float>
+val mul: a: Slice<'T> -> b: Slice<'T> -> Slice<'T> when 'T: equality
+val mulInt: a: Slice<int> -> b: int -> Slice<int>
+val mulUInt8: a: Slice<uint8> -> b: uint8 -> Slice<uint8>
+val mulFloat: a: Slice<float> -> b: float -> Slice<float>
+val div: a: Slice<'T> -> b: Slice<'T> -> Slice<'T> when 'T: equality
+val divInt: a: Slice<int> -> b: int -> Slice<int>
+val divFloat: a: Slice<float> -> b: float -> Slice<float>
+val modulus: a: Slice<'T> -> b: Slice<'T> -> Slice<'T> when 'T: equality
+val pow: a: Slice<'T> -> b: Slice<'T> -> Slice<'T> when 'T: equality
+val isGreaterEqual: a: Slice<'T> -> b: Slice<'T> -> Slice<'T> when 'T: equality
+val gte: a: Slice<'T> -> b: Slice<'T> -> bool when 'T: equality
+val isGreater: a: Slice<'T> -> b: Slice<'T> -> Slice<'T> when 'T: equality
+val ge: a: Slice<'T> -> b: Slice<'T> -> bool when 'T: equality
+val isEqual: a: Slice<'T> -> b: Slice<'T> -> Slice<'T> when 'T: equality
+val eq: a: Slice<'T> -> b: Slice<'T> -> bool when 'T: equality
+val isNotEqual: a: Slice<'T> -> b: Slice<'T> -> Slice<'T> when 'T: equality
+val neq: a: Slice<'T> -> b: Slice<'T> -> bool when 'T: equality
+val isLessThanEqual: a: Slice<'T> -> b: Slice<'T> -> Slice<'T> when 'T: equality
+val lte: a: Slice<'T> -> b: Slice<'T> -> bool when 'T: equality
+val isLessThan: a: Slice<'T> -> b: Slice<'T> -> Slice<'T> when 'T: equality
+val lt: a: Slice<'T> -> b: Slice<'T> -> bool when 'T: equality
+val sAnd: a: Slice<'T> -> b: Slice<'T> -> Slice<'T> when 'T: equality
+val sOr: a: Slice<'T> -> b: Slice<'T> -> Slice<'T> when 'T: equality
+val sXor: a: Slice<'T> -> b: Slice<'T> -> Slice<'T> when 'T: equality
+val sNot: s: Slice<'T> -> Slice<'T> when 'T: equality
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+val squeeze: s: Slice<'T> -> Slice<'T> when 'T: equality
+val concatAlong:
+  a: uint -> s: Slice<'T> -> t: Slice<'T> -> Slice<'T> when 'T: equality
+val relabelComponents: a: uint -> s: Slice<'T> -> Slice<'T> when 'T: equality
+val watershed: a: float -> s: Slice<'T> -> Slice<'T> when 'T: equality
+val generateCoordinateAxis: axis: int -> size: int list -> Slice<uint32>
+val unique: img: Slice<'T> -> 'T list when 'T: comparison
+val labelShapeStatistics:
+  img: Slice<'T> -> Map<int64,ImageFunctions.LabelShapeStatistics>
+    when 'T: equality
+type ImageStats = ImageFunctions.ImageStats
+val addHistogram:
+  h1: Map<'T,uint64> -> h2: Map<'T,uint64> -> Map<'T,uint64> when 'T: comparison
+val map2pairs: map: Map<'T,'S> -> ('T * 'S) list when 'T: comparison
+val inline pairs2floats:
+  pairs: (^T * ^S) list -> (float * float) list
+    when ^T: (static member op_Explicit: ^T -> float) and
+         ^S: (static member op_Explicit: ^S -> float)
+val inline pairs2ints:
+  pairs: (^T * ^S) list -> (int * int) list
+    when ^T: (static member op_Explicit: ^T -> int) and
+         ^S: (static member op_Explicit: ^S -> int)
+val swap: f: ('a -> 'b -> 'c) -> a: 'b -> b: 'a -> 'c
+val addNormalNoise:
+  a: float -> b: float -> s: Slice<'T> -> Slice<'T> when 'T: equality
+val threshold:
+  a: float -> b: float -> s: Slice<'T> -> Slice<'T> when 'T: equality
+val stack: slices: Slice<'T> list -> Slice<'T> when 'T: equality
+val extractSlice: a: uint -> s: Slice<'T> -> Slice<'T> when 'T: equality
+val unstack: slice: Slice<'T> -> Slice<'T> list when 'T: equality
+type FileInfo = ImageFunctions.FileInfo
+val getFileInfo: filename: string -> FileInfo
+val readSlice: idx: uint -> filename: string -> Slice<'T> when 'T: equality
+val writeSlice: filename: string -> slice: Slice<'T> -> unit when 'T: equality
+val getStackDepth: inputDir: string -> suffix: string -> uint
+val getStackInfo: inputDir: string -> suffix: string -> FileInfo
+val getStackSize: inputDir: string -> suffix: string -> uint64 list
+val getStackWidth: inputDir: string -> suffix: string -> uint64
+val getStackHeight: inputDir: string -> suffix: string -> uint64

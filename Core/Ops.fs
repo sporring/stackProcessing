@@ -57,3 +57,18 @@ let binaryOpening    r winSz = asPipe (binaryOpeningOp "binaryOpening" r winSz)
 let opening          r       = asPipe (binaryOpeningOp "binaryOpening" r None)
 let binaryClosing    r winSz = asPipe (binaryClosingOp "binaryClosing" r winSz)
 let closing          r       = asPipe (binaryClosingOp "binaryClosing" r None)
+
+let addInt             scalar = asPipe (addIntOp     "addInt"     scalar)
+let addUInt8           scalar = asPipe (addUInt8Op   "addUInt8"   scalar)
+let addFloat           scalar = asPipe (addFloatOp   "addFloat"   scalar)
+
+let subInt             scalar = asPipe (subIntOp  "subInt"  scalar)
+let subFloat           scalar = asPipe (subFloatOp "subFloat" scalar)
+
+let mulInt             scalar = asPipe (mulIntOp    "mulInt"    scalar)
+let mulUInt8           scalar = asPipe (mulUInt8Op  "mulUInt8"  scalar)
+let mulFloat           scalar = asPipe (mulFloatOp  "mulFloat"  scalar)
+
+let divInt             scalar = asPipe (divIntOp  "divInt"  scalar)
+let divFloat           scalar = asPipe (divFloatOp "divFloat" scalar)
+
