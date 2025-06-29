@@ -71,6 +71,11 @@ let readSlices<'T when 'T: equality> (inputDir: string) (suffix: string) : Pipe<
                 slice)
     }
 
+//let read<'T when 'T: equality> (inputDir: string) (suffix: string) p = 
+//    readSlices<'T> inputDir suffix |> p
+let read<'T when 'T : equality> (inputDir : string) (suffix : string) transform : Core.Pipe<unit,Slice.Slice<'T>> =
+    readSlices<'T> inputDir suffix |> transform
+    
 let readSliceN<'T when 'T: equality> (idx: uint) (inputDir: string) (suffix: string) : Pipe<unit, Slice<'T>> =
     printfn "[readSliceN]"
     let fileNames = Directory.GetFiles(inputDir, "*"+suffix) |> Array.sort

@@ -405,6 +405,22 @@ let liftWindowedOp (name: string) (window: uint) (stride: uint) (f: Slice<'S> ->
         Pipe = mapWindowed name window stride (stack >> f >> unstack)
     }
 
+let liftWindowedTrimOp (name: string) (window: uint) (stride: uint) (trim: uint) (f: Slice<'S> -> Slice<'T>)
+    : Operation<Slice<'S>, Slice<'T>> =
+    {
+        Name = name
+        Transition = transition (Sliding window) Streaming
+        Pipe =
+            mapWindowed name window stride (fun windowSlices ->
+                windowSlices
+                |> stack
+                |> f
+                |> unstack
+                |> skipFirstLast (int trim)
+            )
+    }
+
+
 let liftUnaryOpInt (name: string) (f: Slice<int> -> Slice<int>) =
     liftUnaryOp name f
 
@@ -413,14 +429,6 @@ let liftUnaryOpFloat32 (name: string) (f: Slice<float32> -> Slice<float32>) =
 
 let liftUnaryOpFloat (name: string) (f: Slice<float> -> Slice<float>) =
     liftUnaryOp name f
-
-let roundFloatToUint v = uint (v+0.5)
-
-let discreteGaussianOp (name:string) (sigma:float) (bc: ImageFunctions.BoundaryCondition option) : Operation<Slice<float>, Slice<float>> =
-    let ksz = 2.0 * sigma + 1.0
-    let win = max 7.0 ksz // max should be found by memory availability
-    let stride = 1.0 + (win - ksz) |> roundFloatToUint
-    liftWindowedOp name (win|> uint) stride (fun slices -> Slice.discreteGaussian sigma (ksz |> uint |> Some) bc slices)
 
 let absIntOp       name = liftUnaryOpInt name absSlice
 let absFloat32Op   name = liftUnaryOpFloat32 name absSlice
@@ -451,3 +459,65 @@ let atanFloat32Op  name = liftUnaryOpFloat32 name atanSlice
 let atanFloatOp    name = liftUnaryOpFloat name atanSlice
 let roundFloat32Op name = liftUnaryOpFloat32 name roundSlice
 let roundFloatOp   name = liftUnaryOpFloat name roundSlice
+
+let roundFloatToUint v = uint (v+0.5)
+
+let discreteGaussianOp (name:string) (sigma:float) (bc: ImageFunctions.BoundaryCondition option) (winSz: uint option): Operation<Slice<float>, Slice<float>> =
+    let ksz = 2.0 * sigma + 1.0 |> roundFloatToUint
+    let win = Option.defaultValue ksz winSz |> min ksz // max should be found by memory availability
+    let stride = win - ksz + 1u
+    liftWindowedOp name win stride (fun slices -> Slice.discreteGaussian sigma (ksz |> Some) bc slices)
+
+let windowFromSlices (a: Slice<'T>) (b: Slice<'T>) : uint =
+    min (a |> Slice.GetDepth) (a |> Slice.GetDepth)
+
+let windowFromKernel (k: Slice<'T>) : uint =
+    max 3u (k |> Slice.GetDepth)
+
+// stride calculation example
+// ker = 3, win = 7
+// Image position:  2 1 0 1 2 3 4 5 6 7 8 9 
+// First window         * * * * * * *
+// Kern position1   * * *            
+//                    * * *         
+//                      * * * √        
+//                        * * * √      
+//                          * * * √   
+//                            * * * √    
+//                              * * * √   
+//                                * * *
+//                                  * * *
+//                                    * * *
+// Next window                    * * * * * * *
+// Kern                       * * *
+//                              * * *         
+//                                * * * √  
+//                                  * * * √   
+//                                    * * * √
+//.                                     * * * √
+//                                        * * * √
+//                                          * * *
+//                                            * * *
+
+let convolveOp (name: string) (kernel: Slice<'T>) (bc: BoundaryCondition option) (winSz: uint option): Operation<Slice<'T>, Slice<'T>> =
+    let ksz = windowFromKernel kernel
+    let win = Option.defaultValue ksz winSz |> min ksz
+    let stride = win-ksz+1u
+    liftWindowedOp name win stride (fun slices -> Slice.convolve bc slices kernel)
+
+let private makeMorphOp
+        (name:string)
+        (radius:uint)
+        (winSz: uint option)
+        (core: uint -> Slice<'T> -> Slice<'T>)   // SimpleITK 3‑D op
+        : Operation<Slice<'T>,Slice<'T>> when 'T: equality =
+    let winFromRadius (r:uint) = 2u * r + 1u
+    let ksz   = winFromRadius radius
+    let win = Option.defaultValue ksz winSz |> min ksz // max should be found by memory availability
+    let stride = win - ksz + 1u
+    liftWindowedTrimOp name win stride radius (fun slices -> core radius slices)
+
+let binaryErodeOp     name radius winSz = makeMorphOp name radius winSz Slice.binaryErode
+let binaryDilateOp    name radius winSz = makeMorphOp name radius winSz Slice.binaryDilate
+let binaryOpeningOp   name radius winSz = makeMorphOp name radius winSz Slice.binaryOpening
+let binaryClosingOp   name radius winSz = makeMorphOp name radius winSz Slice.binaryClosing

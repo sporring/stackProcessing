@@ -248,7 +248,7 @@ module Helpers =
 
     /// Operator and such
     /// pull the runnable pipe out of an operation
-    let inline asPipe (op : Operation<_,_>) = printfn $"[{op.Name}]"; op.Pipe
+    let inline asPipe (op : Operation<_,_>) = op.Pipe
 
     /// quick constructor for Streaming→Streaming unary ops
     let liftUnaryOp name (f: Slice<'T> -> Slice<'T>) : Operation<Slice<'T>,Slice<'T>> =

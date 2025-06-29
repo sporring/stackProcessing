@@ -25,11 +25,12 @@ type MemoryProfile = Core.MemoryProfile
 type MemoryTransition = Core.MemoryTransition
 
 let getStackSize = Slice.getStackSize
-let readSlices = SourceSink.readSlices
+let readSlices<'T when 'T: equality> = SourceSink.readSlices<'T>
 let writeSlices = SourceSink.writeSlices
 let source = Routing.source
 let sink = Routing.sink
 let (>=>) = Routing.composePipe
+let read<'T when 'T: equality> = SourceSink.read<'T>
 
 let zeroPad = Processing.zeroPad
 let periodicPad = Processing.periodicPad
@@ -37,12 +38,5 @@ let zeroFluxNeumannPad = Processing.zeroFluxNeumannPad
 let valid = Processing.valid
 let same = Processing.same
 let castFloatToUInt8 = Processing.castFloatToUInt8
-
-// Re-export useful types and functions
-(*
-module Ops = 
-    let sqrtFloat = Processing.Ops.sqrtFloat
-    let discreteGaussian = Processing.Ops.discreteGaussian
-*)
 
 module Ops = Ops

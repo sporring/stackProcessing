@@ -181,6 +181,12 @@ module internal InternalHelpers =
 val readSlices:
   inputDir: string -> suffix: string -> Core.Pipe<unit,Slice.Slice<'T>>
     when 'T: equality
+val read:
+  inputDir: string ->
+    suffix: string ->
+    transform: (Core.Pipe<unit,Slice.Slice<'T>> ->
+                  Core.Pipe<unit,Slice.Slice<'T>>) ->
+    Core.Pipe<unit,Slice.Slice<'T>> when 'T: equality
 val readSliceN:
   idx: uint ->
     inputDir: string -> suffix: string -> Core.Pipe<unit,Slice.Slice<'T>>
@@ -367,6 +373,14 @@ val liftWindowedOp:
     f: (Slice.Slice<'S> -> Slice.Slice<'T>) ->
     Core.Operation<Slice.Slice<'S>,Slice.Slice<'T>>
     when 'S: equality and 'T: equality
+val liftWindowedTrimOp:
+  name: string ->
+    window: uint ->
+    stride: uint ->
+    trim: uint ->
+    f: (Slice.Slice<'S> -> Slice.Slice<'T>) ->
+    Core.Operation<Slice.Slice<'S>,Slice.Slice<'T>>
+    when 'S: equality and 'T: equality
 val liftUnaryOpInt:
   name: string ->
     f: (Slice.Slice<int> -> Slice.Slice<int>) ->
@@ -378,12 +392,6 @@ val liftUnaryOpFloat32:
 val liftUnaryOpFloat:
   name: string ->
     f: (Slice.Slice<float> -> Slice.Slice<float>) ->
-    Core.Operation<Slice.Slice<float>,Slice.Slice<float>>
-val roundFloatToUint: v: float -> uint
-val discreteGaussianOp:
-  name: string ->
-    sigma: float ->
-    bc: ImageFunctions.BoundaryCondition option ->
     Core.Operation<Slice.Slice<float>,Slice.Slice<float>>
 val absIntOp: name: string -> Core.Operation<Slice.Slice<int>,Slice.Slice<int>>
 val absFloat32Op:
@@ -441,6 +449,47 @@ val roundFloat32Op:
   name: string -> Core.Operation<Slice.Slice<float32>,Slice.Slice<float32>>
 val roundFloatOp:
   name: string -> Core.Operation<Slice.Slice<float>,Slice.Slice<float>>
+val roundFloatToUint: v: float -> uint
+val discreteGaussianOp:
+  name: string ->
+    sigma: float ->
+    bc: ImageFunctions.BoundaryCondition option ->
+    winSz: uint option -> Core.Operation<Slice.Slice<float>,Slice.Slice<float>>
+val windowFromSlices:
+  a: Slice.Slice<'T> -> b: Slice.Slice<'T> -> uint when 'T: equality
+val windowFromKernel: k: Slice.Slice<'T> -> uint when 'T: equality
+val convolveOp:
+  name: string ->
+    kernel: Slice.Slice<'T> ->
+    bc: Slice.BoundaryCondition option ->
+    winSz: uint option -> Core.Operation<Slice.Slice<'T>,Slice.Slice<'T>>
+    when 'T: equality
+val private makeMorphOp:
+  name: string ->
+    radius: uint ->
+    winSz: uint option ->
+    core: (uint -> Slice.Slice<'T> -> Slice.Slice<'T>) ->
+    Core.Operation<Slice.Slice<'T>,Slice.Slice<'T>> when 'T: equality
+val binaryErodeOp:
+  name: string ->
+    radius: uint ->
+    winSz: uint option -> Core.Operation<Slice.Slice<'a>,Slice.Slice<'a>>
+    when 'a: equality
+val binaryDilateOp:
+  name: string ->
+    radius: uint ->
+    winSz: uint option -> Core.Operation<Slice.Slice<'a>,Slice.Slice<'a>>
+    when 'a: equality
+val binaryOpeningOp:
+  name: string ->
+    radius: uint ->
+    winSz: uint option -> Core.Operation<Slice.Slice<'a>,Slice.Slice<'a>>
+    when 'a: equality
+val binaryClosingOp:
+  name: string ->
+    radius: uint ->
+    winSz: uint option -> Core.Operation<Slice.Slice<'a>,Slice.Slice<'a>>
+    when 'a: equality
 module Ops
 val sqrtFloat: Core.Pipe<Slice.Slice<float>,Slice.Slice<float>>
 val absFloat: Core.Pipe<Slice.Slice<float>,Slice.Slice<float>>
@@ -474,4 +523,33 @@ val squareInt: Core.Pipe<Slice.Slice<int>,Slice.Slice<int>>
 val discreteGaussian:
   sigma: float ->
     boundaryCondition: ImageFunctions.BoundaryCondition option ->
-    Core.Pipe<Slice.Slice<float>,Slice.Slice<float>>
+    winSz: uint option -> Core.Pipe<Slice.Slice<float>,Slice.Slice<float>>
+val convGauss: sigma: float -> Core.Pipe<Slice.Slice<float>,Slice.Slice<float>>
+val convolve:
+  kernel: Slice.Slice<'a> ->
+    bc: Slice.BoundaryCondition option ->
+    winSz: uint option -> Core.Pipe<Slice.Slice<'a>,Slice.Slice<'a>>
+    when 'a: equality
+val conv:
+  kernel: Slice.Slice<'a> -> Core.Pipe<Slice.Slice<'a>,Slice.Slice<'a>>
+    when 'a: equality
+val binaryErode:
+  r: uint -> winSz: uint option -> Core.Pipe<Slice.Slice<'a>,Slice.Slice<'a>>
+    when 'a: equality
+val erode:
+  r: uint -> Core.Pipe<Slice.Slice<'a>,Slice.Slice<'a>> when 'a: equality
+val binaryDilate:
+  r: uint -> winSz: uint option -> Core.Pipe<Slice.Slice<'a>,Slice.Slice<'a>>
+    when 'a: equality
+val dilate:
+  r: uint -> Core.Pipe<Slice.Slice<'a>,Slice.Slice<'a>> when 'a: equality
+val binaryOpening:
+  r: uint -> winSz: uint option -> Core.Pipe<Slice.Slice<'a>,Slice.Slice<'a>>
+    when 'a: equality
+val opening:
+  r: uint -> Core.Pipe<Slice.Slice<'a>,Slice.Slice<'a>> when 'a: equality
+val binaryClosing:
+  r: uint -> winSz: uint option -> Core.Pipe<Slice.Slice<'a>,Slice.Slice<'a>>
+    when 'a: equality
+val closing:
+  r: uint -> Core.Pipe<Slice.Slice<'a>,Slice.Slice<'a>> when 'a: equality

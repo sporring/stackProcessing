@@ -37,7 +37,23 @@ let sqrtInt       = asPipe (sqrtIntOp "sqrt")
 let absInt        = asPipe (absIntOp "abs")
 let squareInt     = asPipe (squareIntOp "square")
 
-let discreteGaussian sigma boundaryCondition = 
-    asPipe (discreteGaussianOp "discreteGaussian" sigma boundaryCondition)
 
+let discreteGaussian sigma boundaryCondition winSz = 
+    asPipe (discreteGaussianOp "discreteGaussian" sigma boundaryCondition winSz)
+let convGauss sigma =
+    asPipe (discreteGaussianOp "convGauss" sigma None None)
 
+let convolve kernel bc winSz =
+    asPipe (convolveOp "convolve" kernel bc winSz)
+
+let conv kernel =
+    asPipe (convolveOp "conv" kernel None None)
+
+let binaryErode      r winSz = asPipe (binaryErodeOp   "binaryErode"   r winSz)
+let erode            r       = asPipe (binaryErodeOp   "binaryErode"   r None)
+let binaryDilate     r winSz = asPipe (binaryDilateOp  "binaryDilate"  r winSz)
+let dilate           r       = asPipe (binaryDilateOp  "binaryDilate"  r None)
+let binaryOpening    r winSz = asPipe (binaryOpeningOp "binaryOpening" r winSz)
+let opening          r       = asPipe (binaryOpeningOp "binaryOpening" r None)
+let binaryClosing    r winSz = asPipe (binaryClosingOp "binaryClosing" r winSz)
+let closing          r       = asPipe (binaryClosingOp "binaryClosing" r None)
