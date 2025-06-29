@@ -111,16 +111,16 @@ val finiteDiffFilter4D: direction: uint -> order: uint -> Slice<float>
 val gradientConvolve:
   a: 'a -> b: 'b -> s: Slice<'T> -> (uint -> uint32 -> Slice<'c> -> Slice<'c>)
     when 'T: equality and 'c: equality
-val binaryErode: a: uint -> s: Slice<'T> -> Slice<'T> when 'T: equality
-val binaryDilate: a: uint -> s: Slice<'T> -> Slice<'T> when 'T: equality
-val binaryOpening: a: uint -> s: Slice<'T> -> Slice<'T> when 'T: equality
-val binaryClosing: a: uint -> s: Slice<'T> -> Slice<'T> when 'T: equality
-val binaryFillHoles: s: Slice<'T> -> Slice<'T> when 'T: equality
+val binaryErode: a: uint -> s: Slice<uint8> -> Slice<uint8>
+val binaryDilate: a: uint -> s: Slice<uint8> -> Slice<uint8>
+val binaryOpening: a: uint -> s: Slice<uint8> -> Slice<uint8>
+val binaryClosing: a: uint -> s: Slice<uint8> -> Slice<uint8>
+val binaryFillHoles: s: Slice<uint8> -> Slice<uint8>
 val squeeze: s: Slice<'T> -> Slice<'T> when 'T: equality
 val concatAlong:
   a: uint -> s: Slice<'T> -> t: Slice<'T> -> Slice<'T> when 'T: equality
-val connectedComponents: s: Slice<'T> -> Slice<'T> when 'T: equality
-val relabelComponents: a: uint -> s: Slice<'T> -> Slice<'T> when 'T: equality
+val connectedComponents: s: Slice<uint8> -> Slice<uint64>
+val relabelComponents: a: uint -> s: Slice<uint64> -> Slice<uint64>
 val watershed: a: float -> s: Slice<'T> -> Slice<'T> when 'T: equality
 val otsuThreshold: s: Slice<'T> -> Slice<'T> when 'T: equality
 val otsuMultiThreshold: a: byte -> s: Slice<'T> -> Slice<'T> when 'T: equality

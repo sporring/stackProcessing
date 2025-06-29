@@ -207,43 +207,43 @@ let gradientConvolve (direction: uint) (order: uint32) : Image<'T> -> Image<'T> 
 
 /// Mathematical morphology
 /// Binary erosion
-let binaryErode (radius: uint) : Image<'T> -> Image<'T> =
+let binaryErode (radius: uint) : Image<uint8> -> Image<uint8> =
     makeUnaryImageOperatorWith
         (fun () -> new itk.simple.BinaryErodeImageFilter())
         (fun f -> f.SetKernelRadius(radius))
         (fun f x -> f.Execute(x))
 
 /// Binary dilation
-let binaryDilate (radius: uint) : Image<'T> -> Image<'T> =
+let binaryDilate (radius: uint) : Image<uint8> -> Image<uint8> =
     makeUnaryImageOperatorWith
         (fun () -> new itk.simple.BinaryDilateImageFilter())
         (fun f -> f.SetKernelRadius(radius))
         (fun f x -> f.Execute(x))
 
 /// Binary opening (erode then dilate)
-let binaryOpening (radius: uint) : Image<'T> -> Image<'T> =
+let binaryOpening (radius: uint) : Image<uint8> -> Image<uint8> =
     makeUnaryImageOperatorWith
         (fun () -> new itk.simple.BinaryMorphologicalOpeningImageFilter())
         (fun f -> f.SetKernelRadius(radius))
         (fun f x -> f.Execute(x))
 
 /// Binary closing (dilate then erode)
-let binaryClosing (radius: uint) : Image<'T> -> Image<'T> =
+let binaryClosing (radius: uint) : Image<uint8> -> Image<uint8> =
     makeUnaryImageOperatorWith
         (fun () -> new itk.simple.BinaryMorphologicalClosingImageFilter())
         (fun f -> f.SetKernelRadius(radius))
         (fun f x -> f.Execute(x))
 
 /// Fill holes in binary regions
-let binaryFillHoles (img : Image<'T>) : Image<'T> =
+let binaryFillHoles (img : Image<uint8>) : Image<uint8> =
     use filter = new itk.simple.BinaryFillholeImageFilter()
-    Image<'T>.ofSimpleITK(filter.Execute(img.Image))
+    Image<uint8>.ofSimpleITK(filter.Execute(img.Image))
 
 /// Connected components labeling
 // Currying and generic arguments causes value restriction error
-let connectedComponents (img : Image<'T>) : Image<'T> =
+let connectedComponents (img : Image<uint8>) : Image<uint64> =
     use filter = new itk.simple.ConnectedComponentImageFilter()
-    Image<'T>.ofSimpleITK(filter.Execute(img.Image))
+    Image<uint64>.ofSimpleITK(filter.Execute(img.Image))
 
 /// Relabel components by size, optionally remove small objects
 let relabelComponents (minObjectSize: uint) : Image<'T> -> Image<'T> =

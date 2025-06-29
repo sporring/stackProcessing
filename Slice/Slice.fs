@@ -122,19 +122,20 @@ let finiteDiffFilter3D (direction: uint) (order: uint) : Slice<float> = liftSour
 let finiteDiffFilter4D (direction: uint) (order: uint) : Slice<float> = liftSource2 finiteDiffFilter4D direction order
 
 let gradientConvolve a b (s: Slice<'T>) = liftUnary2 gradientConvolve 
-let binaryErode a (s: Slice<'T>) = liftUnary1 binaryErode a s
-let binaryDilate a (s: Slice<'T>) = liftUnary1 binaryDilate a s
-let binaryOpening a (s: Slice<'T>) = liftUnary1 binaryOpening a s
-let binaryClosing a (s: Slice<'T>) = liftUnary1 binaryClosing a s
-let binaryFillHoles (s: Slice<'T>) = liftUnary binaryFillHoles s
+let binaryErode a (s: Slice<uint8>) = liftUnary1 binaryErode a s
+let binaryDilate a (s: Slice<uint8>) = liftUnary1 binaryDilate a s
+let binaryOpening a (s: Slice<uint8>) = liftUnary1 binaryOpening a s
+let binaryClosing a (s: Slice<uint8>) = liftUnary1 binaryClosing a s
+let binaryFillHoles (s: Slice<uint8>) = liftUnary binaryFillHoles s
 
 let squeeze (s: Slice<'T>) = liftUnary squeeze s
 let concatAlong a (s: Slice<'T>) (t: Slice<'T>) = liftBinary1 concatAlong a s t
 
-let connectedComponents (s: Slice<'T>) = liftUnary connectedComponents s
-let relabelComponents a (s: Slice<'T>) = liftUnary1 relabelComponents a s
+let connectedComponents (s: Slice<uint8>) : Slice<uint64>= 
+    {Index = s.Index;  Image = (connectedComponents s.Image) }
+let relabelComponents a (s: Slice<uint64>) = liftUnary1 relabelComponents a s
 let watershed a (s: Slice<'T>) = liftUnary1 watershed a s
-let otsuThreshold (s: Slice<'T>) = liftUnary otsuThreshold s
+let otsuThreshold (s: Slice<'T>) : Slice<'T> = liftUnary otsuThreshold s
 let otsuMultiThreshold a (s: Slice<'T>) = liftUnary1 otsuMultiThreshold a s
 let momentsThreshold (s: Slice<'T>) = liftUnary momentsThreshold s
 

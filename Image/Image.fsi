@@ -579,22 +579,17 @@ val gradientConvolve:
     when 'T: equality
 /// Mathematical morphology
 /// Binary erosion
-val binaryErode:
-  radius: uint -> (Image.Image<'T> -> Image.Image<'T>) when 'T: equality
+val binaryErode: radius: uint -> (Image.Image<uint8> -> Image.Image<uint8>)
 /// Binary dilation
-val binaryDilate:
-  radius: uint -> (Image.Image<'T> -> Image.Image<'T>) when 'T: equality
+val binaryDilate: radius: uint -> (Image.Image<uint8> -> Image.Image<uint8>)
 /// Binary opening (erode then dilate)
-val binaryOpening:
-  radius: uint -> (Image.Image<'T> -> Image.Image<'T>) when 'T: equality
+val binaryOpening: radius: uint -> (Image.Image<uint8> -> Image.Image<uint8>)
 /// Binary closing (dilate then erode)
-val binaryClosing:
-  radius: uint -> (Image.Image<'T> -> Image.Image<'T>) when 'T: equality
+val binaryClosing: radius: uint -> (Image.Image<uint8> -> Image.Image<uint8>)
 /// Fill holes in binary regions
-val binaryFillHoles: img: Image.Image<'T> -> Image.Image<'T> when 'T: equality
+val binaryFillHoles: img: Image.Image<uint8> -> Image.Image<uint8>
 /// Connected components labeling
-val connectedComponents:
-  img: Image.Image<'T> -> Image.Image<'T> when 'T: equality
+val connectedComponents: img: Image.Image<uint8> -> Image.Image<uint64>
 /// Relabel components by size, optionally remove small objects
 val relabelComponents:
   minObjectSize: uint -> (Image.Image<'T> -> Image.Image<'T>) when 'T: equality

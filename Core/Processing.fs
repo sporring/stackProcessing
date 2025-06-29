@@ -335,36 +335,29 @@ let skipFirstLast (n: int) (lst: 'a list) : 'a list =
     if m <= 0 then []
     else lst |> List.skip n |> List.take m 
 
-let private binaryMathMorph (name: string) f (radius: uint) (windowSize: uint option) (stride: uint option) : Pipe<Slice<'T> ,Slice<'T>> =
+let private binaryMathMorph (name: string) f (radius: uint) (windowSize: uint option) (stride: uint option) : Pipe<Slice<uint8> ,Slice<uint8>> =
     printfn $"[{name}]"
     let ksz = 1u+2u*radius
     let dpth = Option.defaultValue ksz windowSize |> max ksz
     let strd = Option.defaultValue (1u+dpth-ksz) stride |> max 1u
     mapWindowed $"{name}" dpth strd (stack >> f radius  >> unstack >> skipFirstLast (int radius))
 
-let binaryErode (radius: uint) (windowSize: uint option) (stride: uint option) : Pipe<Slice<'T> ,Slice<'T>> =
+let binaryErode (radius: uint) (windowSize: uint option) (stride: uint option) : Pipe<Slice<uint8> ,Slice<uint8>> =
     binaryMathMorph "binaryErode" binaryErode radius windowSize stride
 
-let binaryDilate (radius: uint) (windowSize: uint option) (stride: uint option) : Pipe<Slice<'T> ,Slice<'T>> =
+let binaryDilate (radius: uint) (windowSize: uint option) (stride: uint option) : Pipe<Slice<uint8> ,Slice<uint8>> =
     binaryMathMorph "binaryDilate" binaryDilate radius windowSize stride
 
-let binaryOpening (radius: uint) (windowSize: uint option) (stride: uint option) : Pipe<Slice<'T> ,Slice<'T>> =
+let binaryOpening (radius: uint) (windowSize: uint option) (stride: uint option) : Pipe<Slice<uint8> ,Slice<uint8>> =
     binaryMathMorph "binaryOpening" binaryOpening radius windowSize stride
 
-let binaryClosing (radius: uint) (windowSize: uint option) (stride: uint option) : Pipe<Slice<'T> ,Slice<'T>> =
+let binaryClosing (radius: uint) (windowSize: uint option) (stride: uint option) : Pipe<Slice<uint8> ,Slice<uint8>> =
     binaryMathMorph "binaryClosing" binaryClosing radius windowSize stride
 
-let piecewiseConnectedComponents (windowSize: uint option) : Pipe<Slice<'T> ,Slice<'T>> =
+let piecewiseConnectedComponents (windowSize: uint option) : Pipe<Slice<uint8> ,Slice<uint64>> =
     printfn "[connectedComponents]"
     let dpth = Option.defaultValue 1u windowSize |> max 1u
     mapWindowed "connectedComponents" dpth dpth (stack >> connectedComponents >> unstack)
-
-type FileInfo = Slice.FileInfo
-let getStackDepth (inputDir: string) (suffix: string) : uint = Slice.getStackDepth inputDir suffix
-let getStackInfo (inputDir: string) (suffix: string): FileInfo = Slice.getStackInfo inputDir suffix
-let getStackSize (inputDir: string) (suffix: string) = Slice.getStackSize inputDir suffix
-let getStackWidth (inputDir: string) (suffix: string): uint64 = Slice.getStackWidth inputDir suffix
-let getStackHeigth (inputDir: string) (suffix: string): uint64 = Slice.getStackHeight inputDir suffix
 
 type ImageStats = Slice.ImageStats
 let computeStats<'T when 'T : equality> : Pipe<Slice<'T>, ImageStats> =
@@ -459,6 +452,49 @@ let liftBinaryOpFloat (name: string) (f: Slice<float> -> Slice<float> -> Slice<f
 let liftBinaryZipOp (name: string) (f: Slice<'T> -> Slice<'T> -> Slice<'T>) (p1: Pipe<'In, Slice<'T>>) (p2: Pipe<'In, Slice<'T>>) : Pipe<'In, Slice<'T>> =
     zipWith f p1 p2
 
+let liftFullOp
+    (name: string)
+    (f: Slice<'T> -> Slice<'T>)
+    : Operation<Slice<'T>, Slice<'T>> =
+    {
+        Name = name
+        Transition = transition Full Streaming
+        Pipe =
+            {
+                Name = name
+                Profile = Full
+                Apply = fun input ->
+                    asyncSeq {
+                        let! slices = input |> AsyncSeq.toListAsync
+                        let stack = Slice.stack slices
+                        let result = f stack
+                        yield! Slice.unstack result |> AsyncSeq.ofSeq
+                    }
+            }
+    }
+
+let liftFullParamOp
+    (name: string)
+    (f: 'P -> Slice<'T> -> Slice<'T>)
+    (param: 'P)
+    : Operation<Slice<'T>, Slice<'T>> =
+    {
+        Name = name
+        Transition = transition Full Streaming
+        Pipe =
+            {
+                Name = name
+                Profile = Full
+                Apply = fun input ->
+                    asyncSeq {
+                        let! slices = input |> AsyncSeq.toListAsync
+                        let stack = Slice.stack slices
+                        let result = f param stack
+                        yield! Slice.unstack result |> AsyncSeq.ofSeq
+                    }
+            }
+    }
+
 let absIntOp       name = liftUnaryOpInt name absSlice
 let absFloat32Op   name = liftUnaryOpFloat32 name absSlice
 let absFloatOp     name = liftUnaryOpFloat name absSlice
@@ -541,10 +577,29 @@ let private makeMorphOp (name:string) (radius:uint) (winSz: uint option) (core: 
     let stride = win - ksz + 1u
     liftWindowedTrimOp name win stride radius (fun slices -> core radius slices)
 
+// Only uint8
 let binaryErodeOp     name radius winSz = makeMorphOp name radius winSz Slice.binaryErode
 let binaryDilateOp    name radius winSz = makeMorphOp name radius winSz Slice.binaryDilate
 let binaryOpeningOp   name radius winSz = makeMorphOp name radius winSz Slice.binaryOpening
 let binaryClosingOp   name radius winSz = makeMorphOp name radius winSz Slice.binaryClosing
+let binaryFillHolesOp name = liftFullOp name Slice.binaryFillHoles
+let connectedComponentsOp (name: string) : Operation<Slice<uint8>, Slice<uint64>> =
+    {
+        Name = name
+        Transition = transition Full Streaming
+        Pipe =
+            {
+                Name = name
+                Profile = Full
+                Apply = fun input ->
+                    asyncSeq {
+                        let! slices = input |> AsyncSeq.toListAsync
+                        let stack = Slice.stack slices
+                        let result = Slice.connectedComponents stack
+                        yield! Slice.unstack result |> AsyncSeq.ofSeq
+                    }
+            }
+    }
 
 let addIntOp      name scalar = liftImageScalarOpInt     name scalar Slice.addInt
 let addUInt8Op    name scalar = liftImageScalarOpUInt8   name scalar Slice.addUInt8
@@ -581,3 +636,19 @@ let divFloatOp name scalar = liftImageScalarOpFloat name scalar Slice.divFloat
 // Alternatively
 let addOpFloat = liftBinaryOpFloat "add" Slice.add // src1 >=> addOp >=> next
 // Same goes for all Streaming pixelwise binary operators such as isGreaterEqual and xOr
+
+let sNotOp name = liftUnaryOpInt name Slice.sNot
+
+
+// Not Pipes nor Operators
+type FileInfo = Slice.FileInfo
+let getStackDepth = Slice.getStackDepth
+let getStackInfo  = Slice.getStackInfo
+let getStackSize = Slice.getStackSize
+let getStackWidth = Slice.getStackWidth
+let getStackHeight = Slice.getStackHeight
+
+
+let otsuThresholdOp name = liftFullOp name (Slice.otsuThreshold: Slice<'T> -> Slice<'T>) 
+let otsuMultiThresholdOp name n = liftFullParamOp name Slice.otsuMultiThreshold n
+let momentsThresholdOp name = liftFullOp name Slice.momentsThreshold

@@ -557,6 +557,7 @@ val divFloatOp:
     scalar: float -> Core.Operation<Slice.Slice<float>,Slice.Slice<float>>
 val addOpFloat:
   Core.Operation<(Slice.Slice<float> * Slice.Slice<float>),Slice.Slice<float>>
+val sNotOp: name: string -> Core.Operation<Slice.Slice<int>,Slice.Slice<int>>
 module Ops
 val sqrtFloat: Core.Pipe<Slice.Slice<float>,Slice.Slice<float>>
 val absFloat: Core.Pipe<Slice.Slice<float>,Slice.Slice<float>>
@@ -630,3 +631,43 @@ val mulUInt8: scalar: uint8 -> Core.Pipe<Slice.Slice<uint8>,Slice.Slice<uint8>>
 val mulFloat: scalar: float -> Core.Pipe<Slice.Slice<float>,Slice.Slice<float>>
 val divInt: scalar: int -> Core.Pipe<Slice.Slice<int>,Slice.Slice<int>>
 val divFloat: scalar: float -> Core.Pipe<Slice.Slice<float>,Slice.Slice<float>>
+val add:
+  im1: Slice.Slice<'T> -> im2: Slice.Slice<'T> -> Slice.Slice<'T>
+    when 'T: equality
+val sub:
+  im1: Slice.Slice<'T> -> im2: Slice.Slice<'T> -> Slice.Slice<'T>
+    when 'T: equality
+val mul:
+  im1: Slice.Slice<'T> -> im2: Slice.Slice<'T> -> Slice.Slice<'T>
+    when 'T: equality
+val div:
+  im1: Slice.Slice<'T> -> im2: Slice.Slice<'T> -> Slice.Slice<'T>
+    when 'T: equality
+val isGreaterEqual:
+  im1: Slice.Slice<'T> -> im2: Slice.Slice<'T> -> Slice.Slice<'T>
+    when 'T: equality
+val isGreater:
+  im1: Slice.Slice<'T> -> im2: Slice.Slice<'T> -> Slice.Slice<'T>
+    when 'T: equality
+val isEqual:
+  im1: Slice.Slice<'T> -> im2: Slice.Slice<'T> -> Slice.Slice<'T>
+    when 'T: equality
+val isNotEqual:
+  im1: Slice.Slice<'T> -> im2: Slice.Slice<'T> -> Slice.Slice<'T>
+    when 'T: equality
+val isLessThanEqual:
+  im1: Slice.Slice<'T> -> im2: Slice.Slice<'T> -> Slice.Slice<'T>
+    when 'T: equality
+val isLessThan:
+  im1: Slice.Slice<'T> -> im2: Slice.Slice<'T> -> Slice.Slice<'T>
+    when 'T: equality
+val sAnd:
+  im1: Slice.Slice<'T> -> im2: Slice.Slice<'T> -> Slice.Slice<'T>
+    when 'T: equality
+val sOr:
+  im1: Slice.Slice<'T> -> im2: Slice.Slice<'T> -> Slice.Slice<'T>
+    when 'T: equality
+val sXor:
+  im1: Slice.Slice<'T> -> im2: Slice.Slice<'T> -> Slice.Slice<'T>
+    when 'T: equality
+val sNot: unit -> Core.Pipe<Slice.Slice<int>,Slice.Slice<int>>
