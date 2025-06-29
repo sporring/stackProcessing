@@ -495,6 +495,42 @@ let liftFullParamOp
             }
     }
 
+let liftFullParam2Op
+    (name: string)
+    (f: 'P -> 'Q -> Slice<'T> -> Slice<'T>)
+    (param1: 'P)
+    (param2: 'Q)
+    : Operation<Slice<'T>, Slice<'T>> =
+    {
+        Name = name
+        Transition = transition Full Streaming
+        Pipe =
+            {
+                Name = name
+                Profile = Full
+                Apply = fun input ->
+                    asyncSeq {
+                        let! slices = input |> AsyncSeq.toListAsync
+                        let stack = Slice.stack slices
+                        let result = f param1 param2 stack
+                        yield! Slice.unstack result |> AsyncSeq.ofSeq
+                    }
+            }
+    }
+
+let liftMapOp<'T, 'U when 'T: equality and 'T: comparison> (name: string) (f: Slice<'T> -> 'U) : Operation<Slice<'T>, 'U> =
+    {
+        Name = name
+        Transition = transition Streaming Streaming
+        Pipe =
+            {
+                Name = name
+                Profile = Streaming
+                Apply = fun input -> input |> AsyncSeq.map f
+            }
+    }
+
+
 let absIntOp       name = liftUnaryOpInt name absSlice
 let absFloat32Op   name = liftUnaryOpFloat32 name absSlice
 let absFloatOp     name = liftUnaryOpFloat name absSlice
@@ -652,3 +688,30 @@ let getStackHeight = Slice.getStackHeight
 let otsuThresholdOp name = liftFullOp name (Slice.otsuThreshold: Slice<'T> -> Slice<'T>) 
 let otsuMultiThresholdOp name n = liftFullParamOp name Slice.otsuMultiThreshold n
 let momentsThresholdOp name = liftFullOp name Slice.momentsThreshold
+let signedDistanceMapOp name : Operation<Slice<uint8>, Slice<float>> =
+    {
+        Name = name
+        Transition = transition Full Streaming
+        Pipe =
+            {
+                Name = name
+                Profile = Full
+                Apply = fun input ->
+                    asyncSeq {
+                        let! slices = input |> AsyncSeq.toListAsync
+                        let stack = Slice.stack slices
+                        let result = Slice.signedDistanceMap 0uy 1uy stack
+                        yield! Slice.unstack result |> AsyncSeq.ofSeq
+                    }
+            }
+    }
+
+let watershedOp name a = liftFullParamOp name Slice.watershed a
+let thresholdOp name a b = liftFullParam2Op name Slice.threshold a b
+let addNormalNoiseOp name a b = liftFullParam2Op name Slice.addNormalNoise a b
+let relabelComponentsOp name a = liftFullParamOp name Slice.relabelComponents a
+
+let histogramOp<'T when 'T: equality and 'T: comparison> (name: string) : Operation<Slice<'T>, Map<'T, uint64>> =
+    liftMapOp name Slice.histogram
+let computeStatsOp<'T when 'T: equality and 'T: comparison> (name: string) : Operation<Slice<'T>, ImageStats> =
+    liftMapOp name Slice.computeStats

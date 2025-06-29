@@ -195,6 +195,13 @@ val readRandomSlices:
   count: uint ->
     inputDir: string -> suffix: string -> Core.Pipe<unit,Slice.Slice<'T>>
     when 'T: equality
+val liftImageSource:
+  name: string -> img: Slice.Slice<'T> -> Core.Pipe<unit,Slice.Slice<'T>>
+    when 'T: equality
+val gaussSource:
+  sigma: float -> kernelSize: uint option -> Core.Pipe<unit,Slice.Slice<float>>
+val axisSource:
+  axis: int -> size: int list -> Core.Pipe<unit,Slice.Slice<uint32>>
 val gauss:
   sigma: float -> kernelSize: uint option -> Core.Pipe<unit,Slice.Slice<float>>
 val finiteDiffFilter1D: order: uint -> Core.Pipe<unit,Slice.Slice<float>>
@@ -325,40 +332,28 @@ val convGauss:
 val skipFirstLast: n: int -> lst: 'a list -> 'a list
 val private binaryMathMorph:
   name: string ->
-    f: (uint -> Slice.Slice<'T> -> Slice.Slice<'T>) ->
+    f: (uint -> Slice.Slice<uint8> -> Slice.Slice<uint8>) ->
     radius: uint ->
     windowSize: uint option ->
-    stride: uint option -> Core.Pipe<Slice.Slice<'T>,Slice.Slice<'T>>
-    when 'T: equality
+    stride: uint option -> Core.Pipe<Slice.Slice<uint8>,Slice.Slice<uint8>>
 val binaryErode:
   radius: uint ->
     windowSize: uint option ->
-    stride: uint option -> Core.Pipe<Slice.Slice<'T>,Slice.Slice<'T>>
-    when 'T: equality
+    stride: uint option -> Core.Pipe<Slice.Slice<uint8>,Slice.Slice<uint8>>
 val binaryDilate:
   radius: uint ->
     windowSize: uint option ->
-    stride: uint option -> Core.Pipe<Slice.Slice<'T>,Slice.Slice<'T>>
-    when 'T: equality
+    stride: uint option -> Core.Pipe<Slice.Slice<uint8>,Slice.Slice<uint8>>
 val binaryOpening:
   radius: uint ->
     windowSize: uint option ->
-    stride: uint option -> Core.Pipe<Slice.Slice<'T>,Slice.Slice<'T>>
-    when 'T: equality
+    stride: uint option -> Core.Pipe<Slice.Slice<uint8>,Slice.Slice<uint8>>
 val binaryClosing:
   radius: uint ->
     windowSize: uint option ->
-    stride: uint option -> Core.Pipe<Slice.Slice<'T>,Slice.Slice<'T>>
-    when 'T: equality
+    stride: uint option -> Core.Pipe<Slice.Slice<uint8>,Slice.Slice<uint8>>
 val piecewiseConnectedComponents:
-  windowSize: uint option -> Core.Pipe<Slice.Slice<'T>,Slice.Slice<'T>>
-    when 'T: equality
-type FileInfo = Slice.FileInfo
-val getStackDepth: inputDir: string -> suffix: string -> uint
-val getStackInfo: inputDir: string -> suffix: string -> FileInfo
-val getStackSize: inputDir: string -> suffix: string -> uint64 list
-val getStackWidth: inputDir: string -> suffix: string -> uint64
-val getStackHeigth: inputDir: string -> suffix: string -> uint64
+  windowSize: uint option -> Core.Pipe<Slice.Slice<uint8>,Slice.Slice<uint64>>
 type ImageStats = Slice.ImageStats
 val computeStats<'T when 'T: equality> :
   Core.Pipe<Slice.Slice<'T>,ImageStats> when 'T: equality
@@ -428,6 +423,24 @@ val liftBinaryZipOp:
     p1: Core.Pipe<'In,Slice.Slice<'T>> ->
     p2: Core.Pipe<'In,Slice.Slice<'T>> -> Core.Pipe<'In,Slice.Slice<'T>>
     when 'T: equality
+val liftFullOp:
+  name: string ->
+    f: (Slice.Slice<'T> -> Slice.Slice<'T>) ->
+    Core.Operation<Slice.Slice<'T>,Slice.Slice<'T>> when 'T: equality
+val liftFullParamOp:
+  name: string ->
+    f: ('P -> Slice.Slice<'T> -> Slice.Slice<'T>) ->
+    param: 'P -> Core.Operation<Slice.Slice<'T>,Slice.Slice<'T>>
+    when 'T: equality
+val liftFullParam2Op:
+  name: string ->
+    f: ('P -> 'Q -> Slice.Slice<'T> -> Slice.Slice<'T>) ->
+    param1: 'P -> param2: 'Q -> Core.Operation<Slice.Slice<'T>,Slice.Slice<'T>>
+    when 'T: equality
+val liftMapOp:
+  name: string ->
+    f: (Slice.Slice<'T> -> 'U) -> Core.Operation<Slice.Slice<'T>,'U>
+    when 'T: comparison
 val absIntOp: name: string -> Core.Operation<Slice.Slice<int>,Slice.Slice<int>>
 val absFloat32Op:
   name: string -> Core.Operation<Slice.Slice<float32>,Slice.Slice<float32>>
@@ -508,23 +521,23 @@ val private makeMorphOp:
 val binaryErodeOp:
   name: string ->
     radius: uint ->
-    winSz: uint option -> Core.Operation<Slice.Slice<'a>,Slice.Slice<'a>>
-    when 'a: equality
+    winSz: uint option -> Core.Operation<Slice.Slice<uint8>,Slice.Slice<uint8>>
 val binaryDilateOp:
   name: string ->
     radius: uint ->
-    winSz: uint option -> Core.Operation<Slice.Slice<'a>,Slice.Slice<'a>>
-    when 'a: equality
+    winSz: uint option -> Core.Operation<Slice.Slice<uint8>,Slice.Slice<uint8>>
 val binaryOpeningOp:
   name: string ->
     radius: uint ->
-    winSz: uint option -> Core.Operation<Slice.Slice<'a>,Slice.Slice<'a>>
-    when 'a: equality
+    winSz: uint option -> Core.Operation<Slice.Slice<uint8>,Slice.Slice<uint8>>
 val binaryClosingOp:
   name: string ->
     radius: uint ->
-    winSz: uint option -> Core.Operation<Slice.Slice<'a>,Slice.Slice<'a>>
-    when 'a: equality
+    winSz: uint option -> Core.Operation<Slice.Slice<uint8>,Slice.Slice<uint8>>
+val binaryFillHolesOp:
+  name: string -> Core.Operation<Slice.Slice<uint8>,Slice.Slice<uint8>>
+val connectedComponentsOp:
+  name: string -> Core.Operation<Slice.Slice<uint8>,Slice.Slice<uint64>>
 val addIntOp:
   name: string ->
     scalar: int -> Core.Operation<Slice.Slice<int>,Slice.Slice<int>>
@@ -558,6 +571,42 @@ val divFloatOp:
 val addOpFloat:
   Core.Operation<(Slice.Slice<float> * Slice.Slice<float>),Slice.Slice<float>>
 val sNotOp: name: string -> Core.Operation<Slice.Slice<int>,Slice.Slice<int>>
+type FileInfo = Slice.FileInfo
+val getStackDepth: (string -> string -> uint)
+val getStackInfo: (string -> string -> Slice.FileInfo)
+val getStackSize: (string -> string -> uint64 list)
+val getStackWidth: (string -> string -> uint64)
+val getStackHeight: (string -> string -> uint64)
+val otsuThresholdOp:
+  name: string -> Core.Operation<Slice.Slice<'T>,Slice.Slice<'T>>
+    when 'T: equality
+val otsuMultiThresholdOp:
+  name: string -> n: byte -> Core.Operation<Slice.Slice<'a>,Slice.Slice<'a>>
+    when 'a: equality
+val momentsThresholdOp:
+  name: string -> Core.Operation<Slice.Slice<'a>,Slice.Slice<'a>>
+    when 'a: equality
+val signedDistanceMapOp:
+  name: string -> Core.Operation<Slice.Slice<uint8>,Slice.Slice<float>>
+val watershedOp:
+  name: string -> a: float -> Core.Operation<Slice.Slice<'a>,Slice.Slice<'a>>
+    when 'a: equality
+val thresholdOp:
+  name: string ->
+    a: float -> b: float -> Core.Operation<Slice.Slice<'a>,Slice.Slice<'a>>
+    when 'a: equality
+val addNormalNoiseOp:
+  name: string ->
+    a: float -> b: float -> Core.Operation<Slice.Slice<'a>,Slice.Slice<'a>>
+    when 'a: equality
+val relabelComponentsOp:
+  name: string ->
+    a: uint -> Core.Operation<Slice.Slice<uint64>,Slice.Slice<uint64>>
+val histogramOp:
+  name: string -> Core.Operation<Slice.Slice<'T>,Map<'T,uint64>>
+    when 'T: comparison
+val computeStatsOp:
+  name: string -> Core.Operation<Slice.Slice<'T>,ImageStats> when 'T: comparison
 module Ops
 val sqrtFloat: Core.Pipe<Slice.Slice<float>,Slice.Slice<float>>
 val absFloat: Core.Pipe<Slice.Slice<float>,Slice.Slice<float>>
@@ -601,26 +650,26 @@ val convolve:
 val conv:
   kernel: Slice.Slice<'a> -> Core.Pipe<Slice.Slice<'a>,Slice.Slice<'a>>
     when 'a: equality
+/// these only works on uint8
 val binaryErode:
-  r: uint -> winSz: uint option -> Core.Pipe<Slice.Slice<'a>,Slice.Slice<'a>>
-    when 'a: equality
-val erode:
-  r: uint -> Core.Pipe<Slice.Slice<'a>,Slice.Slice<'a>> when 'a: equality
+  r: uint ->
+    winSz: uint option -> Core.Pipe<Slice.Slice<uint8>,Slice.Slice<uint8>>
+val erode: r: uint -> Core.Pipe<Slice.Slice<uint8>,Slice.Slice<uint8>>
 val binaryDilate:
-  r: uint -> winSz: uint option -> Core.Pipe<Slice.Slice<'a>,Slice.Slice<'a>>
-    when 'a: equality
-val dilate:
-  r: uint -> Core.Pipe<Slice.Slice<'a>,Slice.Slice<'a>> when 'a: equality
+  r: uint ->
+    winSz: uint option -> Core.Pipe<Slice.Slice<uint8>,Slice.Slice<uint8>>
+val dilate: r: uint -> Core.Pipe<Slice.Slice<uint8>,Slice.Slice<uint8>>
 val binaryOpening:
-  r: uint -> winSz: uint option -> Core.Pipe<Slice.Slice<'a>,Slice.Slice<'a>>
-    when 'a: equality
-val opening:
-  r: uint -> Core.Pipe<Slice.Slice<'a>,Slice.Slice<'a>> when 'a: equality
+  r: uint ->
+    winSz: uint option -> Core.Pipe<Slice.Slice<uint8>,Slice.Slice<uint8>>
+val opening: r: uint -> Core.Pipe<Slice.Slice<uint8>,Slice.Slice<uint8>>
 val binaryClosing:
-  r: uint -> winSz: uint option -> Core.Pipe<Slice.Slice<'a>,Slice.Slice<'a>>
-    when 'a: equality
-val closing:
-  r: uint -> Core.Pipe<Slice.Slice<'a>,Slice.Slice<'a>> when 'a: equality
+  r: uint ->
+    winSz: uint option -> Core.Pipe<Slice.Slice<uint8>,Slice.Slice<uint8>>
+val closing: r: uint -> Core.Pipe<Slice.Slice<uint8>,Slice.Slice<uint8>>
+val binaryFillHoles: Core.Pipe<Slice.Slice<uint8>,Slice.Slice<uint8>>
+val connectedComponents: Core.Pipe<Slice.Slice<uint8>,Slice.Slice<uint64>>
+/// selected simple arithmatic operators
 val addInt: scalar: int -> Core.Pipe<Slice.Slice<int>,Slice.Slice<int>>
 val addUInt8: scalar: uint8 -> Core.Pipe<Slice.Slice<uint8>,Slice.Slice<uint8>>
 val addFloat: scalar: float -> Core.Pipe<Slice.Slice<float>,Slice.Slice<float>>
@@ -671,3 +720,30 @@ val sXor:
   im1: Slice.Slice<'T> -> im2: Slice.Slice<'T> -> Slice.Slice<'T>
     when 'T: equality
 val sNot: unit -> Core.Pipe<Slice.Slice<int>,Slice.Slice<int>>
+val modulus:
+  im1: Slice.Slice<'T> -> im2: Slice.Slice<'T> -> Slice.Slice<'T>
+    when 'T: equality
+val pow:
+  im1: Slice.Slice<'T> -> im2: Slice.Slice<'T> -> Slice.Slice<'T>
+    when 'T: equality
+val otsuThreshold<'T when 'T: equality> :
+  Core.Pipe<Slice.Slice<obj>,Slice.Slice<obj>> when 'T: equality
+val otsuMultiThreshold:
+  n: byte -> Core.Pipe<Slice.Slice<'a>,Slice.Slice<'a>> when 'a: equality
+val momentsThreshold<'T when 'T: equality> :
+  Core.Pipe<Slice.Slice<obj>,Slice.Slice<obj>> when 'T: equality
+val signedDistanceMap: Core.Pipe<Slice.Slice<uint8>,Slice.Slice<float>>
+val watershed:
+  a: float -> Core.Pipe<Slice.Slice<'a>,Slice.Slice<'a>> when 'a: equality
+val threshold:
+  a: float -> b: float -> Core.Pipe<Slice.Slice<'a>,Slice.Slice<'a>>
+    when 'a: equality
+val addNormalNoise:
+  a: float -> b: float -> Core.Pipe<Slice.Slice<'a>,Slice.Slice<'a>>
+    when 'a: equality
+val relabelComponents:
+  a: uint -> Core.Pipe<Slice.Slice<uint64>,Slice.Slice<uint64>>
+val histPipe: Core.Pipe<Slice.Slice<float>,Map<float,uint64>>
+type ImageStats = ImageFunctions.ImageStats
+val computeStats<'T when 'T: comparison> :
+  Core.Pipe<Slice.Slice<'T>,Processing.ImageStats> when 'T: comparison

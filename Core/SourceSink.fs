@@ -105,6 +105,22 @@ let readRandomSlices<'T when 'T: equality> (count: uint) (inputDir: string) (suf
                 Slice.readSlice<'T> (uint i) fileName)
     }
 
+
+let liftImageSource (name: string) (img: Slice<'T>) : Pipe<unit, Slice<'T>> =
+    {
+        Name = name
+        Profile = Streaming
+        Apply = fun _ -> img |> unstack |> AsyncSeq.ofSeq
+    }
+
+let gaussSource sigma kernelSize =
+    let img = Slice.gauss sigma kernelSize
+    liftImageSource "gauss" img
+
+let axisSource axis size =
+    let img = Slice.generateCoordinateAxis axis size
+    liftImageSource "axis" img
+
 let gauss (sigma: float) (kernelSize: uint option) : Pipe<unit, Slice<float>> =
     printfn "[gauss]"
     {

@@ -1,45 +1,11 @@
-val gauss: sigma: float -> kernelSize: uint option -> Slice<float>
-
 val finiteDiffFilter1D: order: uint -> Slice<float>
 val finiteDiffFilter2D: direction: uint -> order: uint -> Slice<float>
 val finiteDiffFilter3D: direction: uint -> order: uint -> Slice<float>
 val finiteDiffFilter4D: direction: uint -> order: uint -> Slice<float>
-val gradientConvolve:
-  a: 'a -> b: 'b -> s: Slice<'T> -> (uint -> uint32 -> Slice<'c> -> Slice<'c>)
-    when 'T: equality and 'c: equality
+val gradientConvolve:  a: 'a -> b: 'b -> s: Slice<'T> -> (uint -> uint32 -> Slice<'c> -> Slice<'c>) when 'T: equality and 'c: equality
 
-val binaryFillHoles: s: Slice<'T> -> Slice<'T> when 'T: equality
+val labelShapeStatistics: img: Slice<'T> -> Map<int64,ImageFunctions.LabelShapeStatistics> when 'T: equality
 
-
+val concatAlong: a: uint -> s: Slice<'T> -> t: Slice<'T> -> Slice<'T> when 'T: equality
 
 
-val otsuThreshold: s: Slice<'T> -> Slice<'T> when 'T: equality
-val otsuMultiThreshold: a: byte -> s: Slice<'T> -> Slice<'T> when 'T: equality
-val momentsThreshold: s: Slice<'T> -> Slice<'T> when 'T: equality
-val connectedComponents: s: Slice<'T> -> Slice<'T> when 'T: equality
-val signedDistanceMap:
-  inside: uint8 -> outside: uint8 -> img: Slice<uint8> -> Slice<float>
-
-val computeStats: img: Slice<'T> -> ImageStats when 'T: equality
-val addComputeStats: s1: ImageStats -> s2: ImageStats -> ImageStats
-val histogram: img: Slice<'T> -> Map<'T,uint64> when 'T: comparison
-
-
-
-val squeeze: s: Slice<'T> -> Slice<'T> when 'T: equality
-val concatAlong:
-  a: uint -> s: Slice<'T> -> t: Slice<'T> -> Slice<'T> when 'T: equality
-val relabelComponents: a: uint -> s: Slice<'T> -> Slice<'T> when 'T: equality
-val watershed: a: float -> s: Slice<'T> -> Slice<'T> when 'T: equality
-val generateCoordinateAxis: axis: int -> size: int list -> Slice<uint32>
-val unique: img: Slice<'T> -> 'T list when 'T: comparison
-val labelShapeStatistics:
-  img: Slice<'T> -> Map<int64,ImageFunctions.LabelShapeStatistics>
-    when 'T: equality
-type ImageStats = ImageFunctions.ImageStats
-val addHistogram:
-  h1: Map<'T,uint64> -> h2: Map<'T,uint64> -> Map<'T,uint64> when 'T: comparison
-val addNormalNoise:
-  a: float -> b: float -> s: Slice<'T> -> Slice<'T> when 'T: equality
-val threshold:
-  a: float -> b: float -> s: Slice<'T> -> Slice<'T> when 'T: equality

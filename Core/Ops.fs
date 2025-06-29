@@ -104,7 +104,17 @@ let modulus (im1: Slice<'T>) (im2: Slice<'T>) : Slice<'T> = Slice.modulus im1 im
 let pow (im1: Slice<'T>) (im2: Slice<'T>) : Slice<'T> = Slice.pow im1 im2
 // Add missing types
 
-let otsuThreshold = asPipe ((otsuThresholdOp "otsu"))
-let otsuMultiThreshold n = asPipe (otsuMultiThresholdOp "otsuMulti" n)
-let momentsThreshold = asPipe (momentsThresholdOp "moments")
+// Annoying F# value restriction requires explicit types here, sigh
+let otsuThreshold<'T when 'T: equality> = asPipe ((otsuThresholdOp "otsuThreshold"))
+let otsuMultiThreshold n = asPipe (otsuMultiThresholdOp "otsuMultiThreshold" n)
+let momentsThreshold<'T when 'T: equality> = asPipe (momentsThresholdOp "momentsThreshold")
+let signedDistanceMap = asPipe (signedDistanceMapOp "signedDistanceMap")
+let watershed a = asPipe (watershedOp "watershed" a)
+let threshold a b = asPipe (thresholdOp "threshold" a b)
+let addNormalNoise a b = asPipe (addNormalNoiseOp "addNormalNoise" a b)
+let relabelComponents a = asPipe (relabelComponentsOp "relabelComponents" a)
 
+let histPipe = asPipe (histogramOp<float> "hist")
+
+type ImageStats = ImageFunctions.ImageStats
+let computeStats<'T when 'T: equality and 'T: comparison> = asPipe (computeStatsOp<'T> "stats")
