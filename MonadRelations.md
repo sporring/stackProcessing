@@ -1,4 +1,4 @@
-# 🧠 F# Async Data Flow Cheatsheet
+# 🧠 F# Image Processing Pipelines: Core Types & Patterns
 
 We are working with asynchronous computation. 
 
@@ -211,6 +211,59 @@ myPipe >=> print |> sink
 | `Pipe<unit, 'T>` | **Source**    | Produces data without needing input |
 | `Pipe<'T, unit>` | **Sink**      | Consumes data, no further output    |
 | `Pipe<'A, 'B>`   | **Processor** | General stream transformer          |
+
+---
+
+### 🔧 `Operation<'S,'T>` – Pipeline Stage With Memory Profile Planning
+
+An `Operation<'S, 'T>` wraps a `Pipe<'S, 'T>` with **planning information**:
+
+```fsharp
+type Operation<'S,'T> =
+  { Name       : string
+    Transition : MemoryTransition
+    Pipe       : Pipe<'S,'T> }
+```
+
+Use it when:
+
+* You need to compose pipelines with **explicit control** over memory usage.
+* You want to check **transition compatibility** between stages (e.g. Sliding → Streaming).
+* You’re planning for **3D windowed operations** or full-buffer transforms.
+
+✅ It preserves the `Pipe` interface, but enables smart graph validation.
+
+---
+
+### 🔁 `MemoryTransition`
+
+Encapsulates how an operation **expects** memory to be shaped across the pipeline.
+
+```fsharp
+type MemoryTransition =
+  { From  : MemoryProfile
+    To    : MemoryProfile
+    Check : SliceShape -> bool }
+```
+
+Used to ensure compatibility between composed `Operation`s:
+
+```fsharp
+validate op1 op2
+```
+
+### Summary
+
+```markdown
+| Name              | Type                                    | Comment                                           |
+|-------------------|-----------------------------------------|--------------------------------------------------|
+| `Pipe`            | `Pipe<'S,'T>`                           | Stream processor with memory profile             |
+| `Operation`       | `Operation<'S,'T>`                      | A `Pipe` with input/output memory transitions    |
+| `MemoryProfile`   | `Constant | Streaming | Sliding ...`    | Describes memory layout needs                    |
+| `MemoryTransition`| `{ From; To; Check }`                   | Input/output profile and shape validation        |
+| `WindowedProcessor`| `{ Name; Window; Stride; Process }`    | 3D kernel logic over sliding windows             |
+| `SliceShape`      | `uint list`                             | Shape descriptor passed to transition checker    |
+```
 
 ---
 ## Data Relations

@@ -7,36 +7,60 @@ type MemoryProfile =
     | Streaming
     | SlidingConstant of uint
     | Sliding of uint
-    | BufferedConstant
-    | Buffered
+    | FullConstant
+    | Full
     member EstimateUsage: width: uint -> height: uint -> depth: uint -> uint64
     member
       RequiresBuffering: availableMemory: uint64 ->
                            width: uint -> height: uint -> depth: uint -> bool
     member combineProfile: other: MemoryProfile -> MemoryProfile
 /// A configurable image processing step that operates on image slices.
+/// Pipe describes *how* to do it:
+/// - Encapsulates the concrete execution logic
+/// - Defines memory usage behavior
+/// - Takes and returns AsyncSeq streams
+/// - Pipe + WindowedProcessor: How it’s computed 
 type Pipe<'S,'T> =
     {
       Name: string
       Profile: MemoryProfile
       Apply: (FSharp.Control.AsyncSeq<'S> -> FSharp.Control.AsyncSeq<'T>)
     }
+/// SliceShape describes the dimensions of a stacked slice.
+/// Conventionally: [width; height; depth]
+/// Used for validating if transitions are feasible (e.g., sliding window depth fits).
 type SliceShape = uint list
+/// MemoryTransition describes *how* memory layout is expected to change:
+/// - From: the input memory profile
+/// - To: the expected output memory profile
+/// - Check: a predicate on slice shape to validate if the transition is allowed
 type MemoryTransition =
     {
       From: MemoryProfile
       To: MemoryProfile
       Check: (SliceShape -> bool)
     }
+/// Operation describes *what* should be done:
+/// - Contains high-level metadata
+/// - Encodes memory transition intent
+/// - Suitable for planning, validation, and analysis
+/// - Operation + MemoryTransition: what happens
 type Operation<'S,'T> =
     {
       Name: string
       Transition: MemoryTransition
       Pipe: Pipe<'S,'T>
     }
+/// Creates a MemoryTransition record:
+/// - Describes expected memory layout before and after an operation
+/// - Default check always passes; can be replaced with shape-aware checks
 val defaultCheck: 'a -> bool
 val transition:
   fromProfile: MemoryProfile -> toProfile: MemoryProfile -> MemoryTransition
+/// Represents a 3D image processing operation:
+/// - Operates on a stacked 3D Slice built from a sliding window of 2D slices
+/// - Independent of streaming logic — only processes one 3D slice at a time
+/// - Typically wrapped via `fromWindowed` to integrate into a streaming pipeline
 type WindowedProcessor<'S,'T when 'S: equality and 'T: equality> =
     {
       Name: string
@@ -44,6 +68,10 @@ type WindowedProcessor<'S,'T when 'S: equality and 'T: equality> =
       Stride: uint
       Process: (Slice.Slice<'S> -> Slice.Slice<'T>)
     }
+val validate: op1: Operation<'A,'B> -> op2: Operation<'B,'C> -> unit
+val describeOp: op: Operation<'a,'b> -> string
+val plan: ops: Operation<'a,'b> list -> string
+val (>=>!) : op1: Operation<'A,'B> -> op2: Operation<'B,'C> -> Operation<'A,'C>
 val internal isScalar: profile: MemoryProfile -> bool
 val internal requiresFullInput: profile: MemoryProfile -> bool
 val internal lift:

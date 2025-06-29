@@ -11,8 +11,8 @@ type MemoryProfile =
     | Streaming // Slice by slice independently
     | SlidingConstant of uint // Sliding window of slices of depth
     | Sliding of uint // Sliding window of slices of depth
-    | BufferedConstant // All slices of depth
-    | Buffered // All slices of depth
+    | FullConstant // All slices of depth
+    | Full // All slices of depth
 
     member this.EstimateUsage (width: uint) (height: uint) (depth: uint) : uint64 =
         let pixelSize = 1UL // Assume 1 byte per pixel for UInt8
@@ -23,16 +23,16 @@ type MemoryProfile =
             | StreamingConstant -> sliceBytes
             | SlidingConstant windowSize
             | Sliding windowSize -> sliceBytes * uint64 windowSize
-            | BufferedConstant -> sliceBytes
-            | Buffered -> sliceBytes * uint64 depth
+            | FullConstant -> sliceBytes
+            | Full -> sliceBytes * uint64 depth
 
     member this.RequiresBuffering (availableMemory: uint64) (width: uint) (height: uint) (depth: uint) : bool =
         let usage = this.EstimateUsage width height depth
         usage > availableMemory
     member this.combineProfile (other: MemoryProfile): MemoryProfile  = 
         match this, other with
-        | Buffered, _ 
-        | _, Buffered -> Buffered // conservative fallback
+        | Full, _ 
+        | _, Full -> Full // conservative fallback
         | Sliding sz1, Sliding sz2 -> Sliding (max sz1 sz2)
         | Sliding sz, _ 
         | _, Sliding sz -> Sliding sz
@@ -42,30 +42,49 @@ type MemoryProfile =
         | _, StreamingConstant
         | SlidingConstant _, _
         | _, SlidingConstant _
-        | BufferedConstant, _
-        | _, BufferedConstant
+        | FullConstant, _
+        | _, FullConstant
         | Constant, Constant -> Constant
 
-
 /// A configurable image processing step that operates on image slices.
+/// Pipe describes *how* to do it:
+/// - Encapsulates the concrete execution logic
+/// - Defines memory usage behavior
+/// - Takes and returns AsyncSeq streams
+/// - Pipe + WindowedProcessor: How it’s computed 
 type Pipe<'S,'T> = {
     Name: string // Name of the process
     Profile: MemoryProfile
     Apply: AsyncSeq<'S> -> AsyncSeq<'T>
 }
 
+/// SliceShape describes the dimensions of a stacked slice.
+/// Conventionally: [width; height; depth]
+/// Used for validating if transitions are feasible (e.g., sliding window depth fits).
 type SliceShape = uint list
 
+/// MemoryTransition describes *how* memory layout is expected to change:
+/// - From: the input memory profile
+/// - To: the expected output memory profile
+/// - Check: a predicate on slice shape to validate if the transition is allowed
 type MemoryTransition =
     { From  : MemoryProfile
       To    : MemoryProfile
       Check : SliceShape -> bool }
 
+/// Operation describes *what* should be done:
+/// - Contains high-level metadata
+/// - Encodes memory transition intent
+/// - Suitable for planning, validation, and analysis
+/// - Operation + MemoryTransition: what happens
 type Operation<'S,'T> =
     { Name       : string
       Transition : MemoryTransition
       Pipe       : Pipe<'S,'T> }            // <- the runnable pipeline
 
+/// Creates a MemoryTransition record:
+/// - Describes expected memory layout before and after an operation
+/// - Default check always passes; can be replaced with shape-aware checks
 let defaultCheck _ = true
 let transition (fromProfile: MemoryProfile) (toProfile: MemoryProfile) : MemoryTransition =
     {
@@ -74,6 +93,10 @@ let transition (fromProfile: MemoryProfile) (toProfile: MemoryProfile) : MemoryT
         Check = defaultCheck
     }
 
+/// Represents a 3D image processing operation:
+/// - Operates on a stacked 3D Slice built from a sliding window of 2D slices
+/// - Independent of streaming logic — only processes one 3D slice at a time
+/// - Typically wrapped via `fromWindowed` to integrate into a streaming pipeline
 type WindowedProcessor<'S, 'T when 'S: equality and 'T: equality > =
     {
         Name     : string
@@ -82,6 +105,36 @@ type WindowedProcessor<'S, 'T when 'S: equality and 'T: equality > =
         Process  : Slice<'S> -> Slice<'T> // 3D images
     }
 
+let validate (op1: Operation<'A, 'B>) (op2: Operation<'B, 'C>) : unit =
+    if op1.Transition.To <> op2.Transition.From then
+        failwithf "Memory transition mismatch: %A → %A" op1.Transition.To op2.Transition.From
+
+let describeOp (op: Operation<_,_>) =
+    $"[{op.Name}]  {op.Transition.From} → {op.Transition.To}"
+
+let plan (ops: Operation<_,_> list) =
+    ops |> List.map describeOp |> String.concat "\n"
+
+let (>=>!) (op1: Operation<'A,'B>) (op2: Operation<'B,'C>) : Operation<'A,'C> =
+    validate op1 op2
+    {
+        Name = $"{op1.Name} >=> {op2.Name}"
+        Transition = {
+            From = op1.Transition.From
+            To = op2.Transition.To
+            Check = fun shape -> op1.Transition.Check shape && op2.Transition.Check shape
+        }
+        Pipe = 
+            {
+                Name = $"{op1.Name} >=> {op2.Name}"
+                Profile = op1.Pipe.Profile.combineProfile op2.Pipe.Profile
+                Apply = op1.Pipe.Apply >> op2.Pipe.Apply
+            }
+    }
+
+
+//////////////////////////////////////////////////////////////
+
 let internal isScalar profile =
     match profile with
     | Constant | StreamingConstant -> true
@@ -89,7 +142,7 @@ let internal isScalar profile =
 
 let internal requiresFullInput profile =
     match profile with
-    | Buffered | StreamingConstant -> true
+    | Full | StreamingConstant -> true
     | _ -> false
 
 let internal lift

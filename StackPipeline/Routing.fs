@@ -147,13 +147,13 @@ let zipWith (f: 'A -> 'B -> 'C) (p1: Pipe<'In, 'A>) (p2: Pipe<'In, 'B>) : Pipe<'
             let a = p1.Apply input
             let b = p2.Apply input
             match p1.Profile, p2.Profile with
-            | Buffered, Streaming | Streaming, Buffered ->
-                failwithf "[zipWith] Mixing Buffered and Streaming is not supported: %s, %s"
+            | Full, Streaming | Streaming, Full ->
+                failwithf "[zipWith] Mixing Full and Streaming is not supported: %s, %s"
                           (p1.Profile.ToString()) (p2.Profile.ToString())
             | Constant, _ 
             | StreamingConstant, _
             | SlidingConstant _, _
-            | BufferedConstant, _ ->
+            | FullConstant, _ ->
                 printfn "[Sequential zipWith]"
                 asyncSeq {
                     let! constant =
@@ -167,7 +167,7 @@ let zipWith (f: 'A -> 'B -> 'C) (p1: Pipe<'In, 'A>) (p2: Pipe<'In, 'B>) : Pipe<'
             | _, Constant
             | _, StreamingConstant
             | _, SlidingConstant _
-            | _, BufferedConstant ->
+            | _, FullConstant ->
                 printfn "[Sequential zipWith]"
                 asyncSeq {
                     let! constant =
