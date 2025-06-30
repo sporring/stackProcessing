@@ -42,20 +42,6 @@ let source
     let lst = sourceLst availableMemory width height depth [p]
     List.head lst
 
-
-/// Source parts
-let create<'T when 'T: equality> (width: uint) (height: uint) (depth: uint) : Pipe<unit, Slice<'T>> =
-    printfn "[create]"
-    {
-        Name = "[create]"
-        Profile = Streaming
-        Apply = fun _ ->
-            AsyncSeq.init (int depth) (fun i -> 
-                let slice = Slice.create<'T> width height 1u (uint i)
-                printfn "[create] Created slice %d with size %A" i (slice.Image.GetSize()); 
-                slice)
-    }
-
 /// Split a Pipe<'In,'T> into two branches that
 ///   • read the upstream only once
 ///   • keep at most one item in memory
@@ -229,6 +215,7 @@ let composePipe (p1: Pipe<'S,'T>) (p2: Pipe<'T,'U>) : Pipe<'S,'U> =
     }
 
 let (>=>) p1 p2 = composePipe p1 p2
+let (<=<) p1 p2 = composePipe p2 p1
 
 let tap label : Pipe<'T, 'T> =
     printfn "[tap]"
@@ -242,3 +229,13 @@ let validate op1 op2 =
     else
         failwithf "Memory transition mismatch: %A → %A" op1.Transition.To op2.Transition.From
 
+let sequentialJoin (p1: Pipe<'S, 'T>) (p2: Pipe<'S, 'T>) : Pipe<'S, 'T> =
+    {
+        Name = p1.Name + " ++ " + p2.Name
+        Profile = p1.Profile.combineProfile p2.Profile
+        Apply = fun input ->
+            asyncSeq {
+                yield! p1.Apply input
+                yield! p2.Apply input
+            }
+    }

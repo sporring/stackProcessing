@@ -105,6 +105,19 @@ let readRandomSlices<'T when 'T: equality> (count: uint) (inputDir: string) (suf
                 Slice.readSlice<'T> (uint i) fileName)
     }
 
+/// Source parts
+let create<'T when 'T: equality> (width: uint) (height: uint) (depth: uint) : Pipe<unit, Slice<'T>> =
+    printfn "[create]"
+    {
+        Name = "[create]"
+        Profile = Streaming
+        Apply = fun _ ->
+            AsyncSeq.init (int depth) (fun i -> 
+                let slice = Slice.create<'T> width height 1u (uint i)
+                printfn "[create] Created slice %d with size %A" i (slice.Image.GetSize()); 
+                slice)
+    }
+
 
 let liftImageSource (name: string) (img: Slice<'T>) : Pipe<unit, Slice<'T>> =
     {

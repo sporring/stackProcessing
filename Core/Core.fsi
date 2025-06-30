@@ -130,10 +130,6 @@ val source:
   availableMemory: uint64 ->
     width: uint ->
     height: uint -> depth: uint -> p: Core.Pipe<unit,'T> -> Core.Pipe<unit,'T>
-/// Source parts
-val create:
-  width: uint -> height: uint -> depth: uint -> Core.Pipe<unit,Slice.Slice<'T>>
-    when 'T: equality
 /// Split a Pipe<'In,'T> into two branches that
 ///   • read the upstream only once
 ///   • keep at most one item in memory
@@ -157,8 +153,11 @@ val cacheScalar: name: string -> p: Core.Pipe<unit,'T> -> Core.Pipe<'In,'T>
 val composePipe:
   p1: Core.Pipe<'S,'T> -> p2: Core.Pipe<'T,'U> -> Core.Pipe<'S,'U>
 val (>=>) : p1: Core.Pipe<'a,'b> -> p2: Core.Pipe<'b,'c> -> Core.Pipe<'a,'c>
+val (<=<) : p1: Core.Pipe<'a,'b> -> p2: Core.Pipe<'c,'a> -> Core.Pipe<'c,'b>
 val tap: label: string -> Core.Pipe<'T,'T>
 val validate: op1: Core.Operation<'a,'b> -> op2: Core.Operation<'c,'d> -> bool
+val sequentialJoin:
+  p1: Core.Pipe<'S,'T> -> p2: Core.Pipe<'S,'T> -> Core.Pipe<'S,'T>
 module SourceSink
 module internal InternalHelpers =
     val plotListAsync:
@@ -194,6 +193,10 @@ val readSliceN:
 val readRandomSlices:
   count: uint ->
     inputDir: string -> suffix: string -> Core.Pipe<unit,Slice.Slice<'T>>
+    when 'T: equality
+/// Source parts
+val create:
+  width: uint -> height: uint -> depth: uint -> Core.Pipe<unit,Slice.Slice<'T>>
     when 'T: equality
 val liftImageSource:
   name: string -> img: Slice.Slice<'T> -> Core.Pipe<unit,Slice.Slice<'T>>
