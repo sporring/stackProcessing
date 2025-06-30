@@ -20,7 +20,7 @@ let inline imageSubScalar<'S when ^S : equality
     Image<'S>.ofSimpleITK(filter.Execute(f1.toSimpleITK(), float i))
 let inline scalarSubImage<'S when ^S : equality
                              and  ^S : (static member op_Explicit : ^S -> float)
-                                 > (i: ^S) (f1: Image<'S>) =
+                             > (i: ^S) (f1: Image<'S>) =
     let filter = new itk.simple.SubtractImageFilter()
     Image<'S>.ofSimpleITK(filter.Execute(float i, f1.toSimpleITK()))
 let inline imageMulScalar<'S when ^S : equality
@@ -39,8 +39,21 @@ let inline imageDivScalar<'S when ^S : equality
     Image<'S>.ofSimpleITK(filter.Execute(f1.toSimpleITK(), float i))
 let inline scalarDivImage<'S when ^S : equality
                              and  ^S : (static member op_Explicit : ^S -> float)
-                                 > (i: ^S) (f1: Image<'S>) =
+                             > (i: ^S) (f1: Image<'S>) =
     let filter = new itk.simple.DivideImageFilter()
+    Image<'S>.ofSimpleITK(filter.Execute(float i, f1.toSimpleITK()))
+
+let inline imagePowScalar<'S when ^S : equality
+                  and  ^S : (static member op_Explicit : ^S -> float)
+                  > (f1: Image<'S>, i: 'S) =
+    let filter = new itk.simple.PowImageFilter()
+    Image<'S>.ofSimpleITK(filter.Execute(f1.toSimpleITK(), float i))
+
+
+let inline scalarPowImage<'S when ^S : equality
+                  and  ^S : (static member op_Explicit : ^S -> float)
+                  > (i: 'S, f1: Image<'S>) =
+    let filter = new itk.simple.PowImageFilter()
     Image<'S>.ofSimpleITK(filter.Execute(float i, f1.toSimpleITK()))
 
 // --- basic manipulations ---
@@ -181,12 +194,6 @@ let private stensil order =
     elif order = 5u then [1.0/2.0; -2.0; 5.0/2.0; 0.0; -5.0/2.0; 2.0; -1.0/2.0]
     elif order = 6u then [1.0; -6.0; 15.0; -20.0; 15.0; -6.0; 1.0]
     else failwith "[finiteDiffFilter] only implemented derivative order 1 <= order <= 6"
-
-let finiteDiffFilter1D (order: uint) : Image<float> =
-    let lst = stensil order
-    let n = lst.Length
-    List.toArray lst
-    |> Image<float>.ofArray
 
 let finiteDiffFilter2D (direction: uint) (order: uint) : Image<float> =
     let lst = stensil order
@@ -484,10 +491,6 @@ let histogram (image: Image<'T>) : Map<'T, uint64> =
     let dim = image.GetDimensions()
     let flat = 
         match dim with
-            | 1u ->
-                seq { 
-                    for i0 in [0..(size[0] - 1)] do 
-                        yield image[i0] }
             | 2u ->
                 seq { 
                     for i0 in [0..(size[0] - 1)] do 

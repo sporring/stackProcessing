@@ -39,7 +39,12 @@
   <ItemGroup>
     <Compile Include="VectorHelperTests.fs" />
     <Compile Include="ArrayHelpers.fs" />
+    <Compile Include="castingTests.fs" />
+    <Compile Include="indexingTests.fs" />
     <Compile Include="ArithmeticOps.fs" />
+    <Compile Include="memoryHelperTests.fs" />
+    <Compile Include="simpleFunctionTests.fs" />
+    <Compile Include="compareableTests.fs" />
     <Compile Include="Tests.fs" />
   </ItemGroup>
 
