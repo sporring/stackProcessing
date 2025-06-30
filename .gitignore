@@ -44,3 +44,6 @@ StackPipeline/lib/libSimpleITKCSharpNative.dylib
 /Core/obj
 /Pipeline/bin
 /Pipeline/obj
+/Image.Tests/coverage-report
+coverage/coverage.cobertura.xml
+Image.Tests/coverage.info

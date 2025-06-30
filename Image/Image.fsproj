@@ -5,11 +5,12 @@
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
   </PropertyGroup>
 
-  <ItemGroup>
-    <AssemblyAttribute Include="System.Runtime.CompilerServices.InternalsVisibleTo">
-      <_Parameter1>Image.Tests</_Parameter1>
-    </AssemblyAttribute>
-  </ItemGroup>
+  <PropertyGroup>
+    <DebugType>full</DebugType>
+    <DebugSymbols>true</DebugSymbols>
+    <Optimize>false</Optimize>
+    <PublishTrimmed>false</PublishTrimmed>
+  </PropertyGroup>
 
   <PropertyGroup>
     <SigFile>$(MSBuildThisFileDirectory)Image.fsi</SigFile>
@@ -36,12 +37,9 @@
   </ItemGroup>
 
   <ItemGroup>
-    <PackageReference Include="coverlet.collector" Version="6.0.4">
-      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
-      <PrivateAssets>all</PrivateAssets>
-    </PackageReference>
-    <PackageReference Include="Expecto" Version="9.0.4" />
-    <PackageReference Include="FSharp.Control.AsyncSeq" Version="3.2.1" />
+    <AssemblyAttribute Include="System.Runtime.CompilerServices.InternalsVisibleTo">
+      <_Parameter1>Image.Tests</_Parameter1>
+    </AssemblyAttribute>
   </ItemGroup>
 
   <ItemGroup>

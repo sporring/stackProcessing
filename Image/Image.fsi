@@ -23,10 +23,10 @@ module internal InternalHelpers =
     val fromVectorFloat32: v: itk.simple.VectorFloat -> float32 list
     val fromVectorFloat64: v: itk.simple.VectorDouble -> float list
     val fromType<'T> : itk.simple.PixelIDValueEnum
-    val ofCastItk<'T> : img: itk.simple.Image -> itk.simple.Image
-    val GetArray2DFromImage: img: itk.simple.Image -> 'T array2d
-    val GetArray3DFromImage: img: itk.simple.Image -> 'T array3d
-    val GetArray4DFromImage: img: itk.simple.Image -> 'T array4d
+    val ofCastItk<'T> : itkImg: itk.simple.Image -> itk.simple.Image
+    val GetArray2DFromImage: itkImg: itk.simple.Image -> 'T array2d
+    val GetArray3DFromImage: itkImg: itk.simple.Image -> 'T array3d
+    val GetArray4DFromImage: itkImg: itk.simple.Image -> 'T array4d
     val Array4Diteri:
       action: (int -> int -> int -> int -> 'T -> unit) ->
         arr: 'T array4d -> unit
