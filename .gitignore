@@ -47,3 +47,4 @@ StackPipeline/lib/libSimpleITKCSharpNative.dylib
 /Image.Tests/coverage-report
 coverage/coverage.cobertura.xml
 Image.Tests/coverage.info
+/Image.Tests/coverage
