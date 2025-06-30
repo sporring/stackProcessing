@@ -16,18 +16,20 @@ with
 let create<'T when 'T: equality> (width: uint) (height: uint) (depth: uint) (idx: uint) : Slice<'T> =
     {Index= idx; Image=if depth > 1u then Image<'T>([width;height;depth]) else Image<'T>([width;height]) }
 
-let GetDepth (slice: Slice<'T>) = slice.Image.GetDepth()
-let GetDimensions (slice: Slice<'T>) = slice.Image.GetDimensions()
-let GetHeight (slice: Slice<'T>) = slice.Image.GetHeight()
-let GetWidth (slice: Slice<'T>) = slice.Image.GetWidth()
-let GetSize (slice: Slice<'T>) = slice.Image.GetSize()
-let ToString (slice: Slice<'T>) = slice.Image.ToString()
-let toArray2D (slice: Slice<'T>) = slice.Image.toArray2D()
-let toArray3D (slice: Slice<'T>) = slice.Image.toArray3D()
-let toArray4D (slice: Slice<'T>) = slice.Image.toArray4D()
-let cast<'T when 'T: equality> (slice: Slice<_>) = {Index = slice.Index; Image=slice.Image.cast<'T>()}
-let castUInt8ToFloat (slice: Slice<uint8>) : Slice<float> = {Index = slice.Index; Image=slice.Image.castUInt8ToFloat()} // slice with does not work, since this sets the type
-let castFloatToUInt8 (slice: Slice<float>) : Slice<uint8> = {Index = slice.Index; Image=slice.Image.castFloatToUInt8()} // slice with does not work, since this sets the type
+let GetDepth (s: Slice<'T>) = s.Image.GetDepth()
+let GetDimensions (s: Slice<'T>) = s.Image.GetDimensions()
+let GetHeight (s: Slice<'T>) = s.Image.GetHeight()
+let GetWidth (s: Slice<'T>) = s.Image.GetWidth()
+let GetSize (s: Slice<'T>) = s.Image.GetSize()
+let ToString (s: Slice<'T>) = s.Image.ToString()
+let toArray2D (s: Slice<'T>) = s.Image.toArray2D()
+let toArray3D (s: Slice<'T>) = s.Image.toArray3D()
+let toArray4D (s: Slice<'T>) = s.Image.toArray4D()
+let toImage (s: Slice<'T>) = s.Image
+let toSimpleITK (s: Slice<'T>) = s.Image.toSimpleITK()
+let cast<'T when 'T: equality> (s: Slice<_>) = {Index = s.Index; Image=s.Image.cast<'T>()}
+let castUInt8ToFloat (s: Slice<uint8>) : Slice<float> = {Index = s.Index; Image=s.Image.castUInt8ToFloat()} // slice with does not work, since this sets the type
+let castFloatToUInt8 (s: Slice<float>) : Slice<uint8> = {Index = s.Index; Image=s.Image.castFloatToUInt8()} // slice with does not work, since this sets the type
 
 let toFloat (value: obj) =
     match value with
@@ -38,12 +40,12 @@ let toFloat (value: obj) =
     | :? int64   as l -> float l
     | _ -> failwithf "Cannot convert value of type %s to float" (value.GetType().FullName)
 
-let toSeqSeq (slice: Slice<'T>): seq<seq<float>> =
-    let width = slice |> GetWidth |> int
-    let height = slice |> GetHeight |> int
+let toSeqSeq (s: Slice<'T>): seq<seq<float>> =
+    let width = s |> GetWidth |> int
+    let height = s |> GetHeight |> int
     Seq.init height (fun y ->
         Seq.init width (fun x ->
-            slice.Image[x,y] |> box |> toFloat))
+            s.Image[x,y] |> box |> toFloat))
 
 let private liftSource (f: unit -> Image<'T>) : unit -> Slice<'T> =
     fun () -> {Index = 0u; Image = f () }
@@ -130,6 +132,7 @@ let binaryFillHoles (s: Slice<uint8>) = liftUnary binaryFillHoles s
 
 let squeeze (s: Slice<'T>) = liftUnary squeeze s
 let concatAlong a (s: Slice<'T>) (t: Slice<'T>) = liftBinary1 concatAlong a s t
+let constantPad2D<'T when 'T : equality> a b c (s: Slice<'T>): Slice<'T> = liftUnary3 constantPad2D a b c s
 
 let connectedComponents (s: Slice<uint8>) : Slice<uint64>= 
     {Index = s.Index;  Image = (connectedComponents s.Image) }
@@ -139,21 +142,21 @@ let otsuThreshold (s: Slice<'T>) : Slice<'T> = liftUnary otsuThreshold s
 let otsuMultiThreshold a (s: Slice<'T>) = liftUnary1 otsuMultiThreshold a s
 let momentsThreshold (s: Slice<'T>) = liftUnary momentsThreshold s
 
-let signedDistanceMap (inside: uint8) (outside: uint8) (img: Slice<uint8>) : Slice<float> =
-    {Index = img.Index; Image = ImageFunctions.signedDistanceMap inside outside img.Image}
+let signedDistanceMap (inside: uint8) (outside: uint8) (s: Slice<uint8>) : Slice<float> =
+    {Index = s.Index; Image = ImageFunctions.signedDistanceMap inside outside s.Image}
 let generateCoordinateAxis (axis: int) (size: int list) : Slice<uint32> =
     {Index = 0u; Image = ImageFunctions.generateCoordinateAxis (axis: int) (size: int list)}
-let unique (img: Slice<'T>) : 'T list when 'T : comparison =
-    ImageFunctions.unique img.Image
-let labelShapeStatistics (img: Slice<'T>) : Map<int64, ImageFunctions.LabelShapeStatistics> =
-    ImageFunctions.labelShapeStatistics img.Image
+let unique (s: Slice<'T>) : 'T list when 'T : comparison =
+    ImageFunctions.unique s.Image
+let labelShapeStatistics (s: Slice<'T>) : Map<int64, ImageFunctions.LabelShapeStatistics> =
+    ImageFunctions.labelShapeStatistics s.Image
 type ImageStats = ImageFunctions.ImageStats
-let computeStats (img: Slice<'T>) : ImageStats =
-    ImageFunctions.computeStats img.Image
+let computeStats (s: Slice<'T>) : ImageStats =
+    ImageFunctions.computeStats s.Image
 let addComputeStats (s1: ImageStats) (s2: ImageStats): ImageStats =
     ImageFunctions.addComputeStats s1 s2
-let histogram (img: Slice<'T>) : Map<'T, uint64> =
-    ImageFunctions.histogram img.Image
+let histogram (s: Slice<'T>) : Map<'T, uint64> =
+    ImageFunctions.histogram s.Image
 let addHistogram (h1: Map<'T, uint64>) (h2: Map<'T, uint64>): Map<'T, uint64> =
     ImageFunctions.addHistogram h1 h2
 let map2pairs (map: Map<'T, 'S>): ('T * 'S) list =
@@ -204,26 +207,26 @@ let sNot (s: Slice<'T>) = liftUnary Image<'T>.(~~~) s
 let addNormalNoise a b (s: Slice<'T>) = liftUnary2 ImageFunctions.addNormalNoise a b s
 let threshold a b (s: Slice<'T>) = liftUnary2 ImageFunctions.threshold a b s
 
-let stack (slices: Slice<'T> list) : Slice<'T> =
-    match slices with
+let stack (sLst: Slice<'T> list) : Slice<'T> =
+    match sLst with
         elm :: rst ->
-            let imgLst = slices |> List.map (fun s -> s.Image)
+            let imgLst = sLst |> List.map (fun s -> s.Image)
             {elm with Image = ImageFunctions.stack imgLst }
         | _ -> failwith "Can't stack an empty list"
 
 let extractSlice a (s: Slice<'T>) : Slice<'T> = liftUnary1 ImageFunctions.extractSlice a s
 
-let unstack (slice: Slice<'T>): Slice<'T> list =
-    let dim = slice |> GetDimensions
+let unstack (s: Slice<'T>): Slice<'T> list =
+    let dim = s |> GetDimensions
     if dim < 2u then
         failwith $"Cannot unstack a {dim}-dimensional image along the 3rd axis"
     let imgLst =
         if dim = 2u then
-            [slice.Image]
+            [s.Image]
         else
-            ImageFunctions.unstack slice.Image
+            ImageFunctions.unstack s.Image
     let idxLst = List.mapi (fun i _ -> uint i) imgLst
-    let baseIndex = slice.Index
+    let baseIndex = s.Index
     List.zip idxLst imgLst |> List.map (fun (i,im) -> {Index = baseIndex + i; Image = im})
 
 // IO stuff
@@ -233,8 +236,8 @@ let getFileInfo (filename: string) : FileInfo = ImageFunctions.getFileInfo filen
 let readSlice<'T when 'T: equality> (idx: uint) (filename: string) : Slice<'T> =
     {Index = idx; Image = Image<'T>.ofFile(filename)}
 
-let writeSlice (filename: string) (slice: Slice<'T>) : unit =
-    slice.Image.toFile(filename)
+let writeSlice (filename: string) (s: Slice<'T>) : unit =
+    s.Image.toFile(filename)
 
 let getStackDepth (inputDir: string) (suffix: string) : uint =
     let files = Directory.GetFiles(inputDir, "*"+suffix) |> Array.sort

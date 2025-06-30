@@ -610,6 +610,12 @@ val histogramOp:
     when 'T: comparison
 val computeStatsOp:
   name: string -> Core.Operation<Slice.Slice<'T>,ImageStats> when 'T: comparison
+val constantPad2DOp<'T when 'T: equality> :
+  name: string ->
+    padLower: uint list ->
+    padUpper: uint list ->
+    c: double -> Core.Operation<Slice.Slice<obj>,Slice.Slice<obj>>
+    when 'T: equality
 module Ops
 val sqrtFloat: Core.Pipe<Slice.Slice<float>,Slice.Slice<float>>
 val absFloat: Core.Pipe<Slice.Slice<float>,Slice.Slice<float>>
@@ -750,3 +756,7 @@ val histPipe: Core.Pipe<Slice.Slice<float>,Map<float,uint64>>
 type ImageStats = ImageFunctions.ImageStats
 val computeStats<'T when 'T: comparison> :
   Core.Pipe<Slice.Slice<'T>,Processing.ImageStats> when 'T: comparison
+val constantPad2D<'T when 'T: equality> :
+  padLower: uint list ->
+    padUpper: uint list ->
+    c: double -> Core.Pipe<Slice.Slice<obj>,Slice.Slice<obj>> when 'T: equality

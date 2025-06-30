@@ -118,3 +118,5 @@ let histPipe = asPipe (histogramOp<float> "hist")
 
 type ImageStats = ImageFunctions.ImageStats
 let computeStats<'T when 'T: equality and 'T: comparison> = asPipe (computeStatsOp<'T> "stats")
+
+let constantPad2D<'T when 'T : equality> padLower padUpper c = asPipe (constantPad2DOp "constantPad2D" padLower padUpper c)

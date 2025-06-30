@@ -6,10 +6,6 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <PackageReference Include="Expecto" Version="9.0.4" />
-  </ItemGroup>
-
-  <ItemGroup>
     <Reference Include="SimpleITKCSharp">
       <HintPath>lib/SimpleITKCSharpManaged.dll</HintPath>
       <Private>true</Private>
@@ -22,7 +18,19 @@
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="../Image/Image.fsproj" />
+    <PackageReference Include="Expecto" Version="9.0.4" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="coverlet.collector" Version="3.*" />
+  </ItemGroup>
+
+  <PropertyGroup>
+    <CollectCoverage>true</CollectCoverage>
+    <CoverletOutputFormat>lcov</CoverletOutputFormat> <!-- Or use cobertura, opencover -->
+  </PropertyGroup>
+  <ItemGroup>
+   <ProjectReference Include="../Image/Image.fsproj" />
   </ItemGroup>
 
   <ItemGroup>

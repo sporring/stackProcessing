@@ -488,7 +488,7 @@ let creationTests =
       let img = Image<int8>([w;h])
       let sz = img.GetSize()
       let dpt = img.GetDepth() // this returns 0. How can that make sense?
-      let dim = img.GetDimension()
+      let dim = img.GetDimensions()
       let height = img.GetHeight()
       let width = img.GetWidth()
       let comp = img.GetNumberOfComponentsPerPixel()
@@ -504,7 +504,7 @@ let creationTests =
       let img = Image<int8>([w;h;d])
       let sz = img.GetSize()
       let dpt = img.GetDepth() // this returns 0. How can that make sense?
-      let dim = img.GetDimension()
+      let dim = img.GetDimensions()
       let height = img.GetHeight()
       let width = img.GetWidth()
       let comp = img.GetNumberOfComponentsPerPixel()
@@ -520,7 +520,7 @@ let creationTests =
       let img = Image<int8>([w;h;d])
       let sz = img.GetSize()
       let dpt = img.GetDepth() // this returns 0. How can that make sense?
-      let dim = img.GetDimension()
+      let dim = img.GetDimensions()
       let height = img.GetHeight()
       let width = img.GetWidth()
       let comp = img.GetNumberOfComponentsPerPixel()
@@ -536,7 +536,7 @@ let creationTests =
       let img = Image<float list>([w;h],n)
       let sz = img.GetSize()
       let dpt = img.GetDepth() // this returns 0. How can that make sense?
-      let dim = img.GetDimension()
+      let dim = img.GetDimensions()
       let height = img.GetHeight()
       let width = img.GetWidth()
       let comp = img.GetNumberOfComponentsPerPixel()
@@ -573,7 +573,7 @@ let imageCoreTests =
     testCase "cast converts image type" <| fun _ ->
       let arr = array2D [| [| 10.0f; 20.0f |]; [| 30.0f; 40.0f |] |]
       let imgF = Image<float32>.ofArray2D arr
-      let imgB = imgF.cast<uint8>()
+      let imgB = imgF.castFloatToUInt8()
       Expect.equal (imgB.toArray2D()) (array2D [| [| 10uy; 20uy |]; [| 30uy; 40uy |] |]) "Expected image cast to byte"
 
     testCase "ofFile / toFile roundtrip" <| fun _ ->
@@ -1411,91 +1411,91 @@ let UnaryFunctionTests =
     // abs
     testCase "abs of negative and positive values" <| fun _ ->
         let img = Image<float>.ofArray2D (array2D [ [ -1.0; 0.0 ]; [ 1.5; -2.5 ] ])
-        let result = ImageFunctions.abs img
+        let result = ImageFunctions.absImage img
         let expected = array2D [ [ 1.0; 0.0 ]; [ 1.5; 2.5 ] ]
         Expect.equal (result.toArray2D()) expected "Expected absolute values"
 
     // log
     testCase "log of values > 0" <| fun _ ->
         let img = Image<float>.ofArray2D (array2D [ [ 1.0; System.Math.E ]; [ 10.0; 100.0 ] ])
-        let result = ImageFunctions.log img
+        let result = ImageFunctions.logImage img
         let expected = array2D [ [ 0.0; 1.0 ]; [ System.Math.Log 10.0; System.Math.Log 100.0 ] ]
         floatArray2DFloatClose (result.toArray2D()) expected 1e-10 "Expected natural log values"
 
     // log10
     testCase "log10 of powers of ten" <| fun _ ->
         let img = Image<float>.ofArray2D (array2D [ [ 1.0; 10.0 ]; [ 100.0; 1000.0 ] ])
-        let result = ImageFunctions.log10 img
+        let result = ImageFunctions.log10Image img
         let expected = array2D [ [ 0.0; 1.0 ]; [ 2.0; 3.0 ] ]
         floatArray2DFloatClose (result.toArray2D()) expected 1e-10 "Expected base-10 log values"
 
     // exp
     testCase "exp of small numbers" <| fun _ ->
         let img = Image<float>.ofArray2D (array2D [ [ 0.0; 1.0 ]; [ 2.0; 3.0 ] ])
-        let result = ImageFunctions.exp img
+        let result = ImageFunctions.expImage img
         let expected = array2D [ [ 1.0; System.Math.Exp 1.0 ]; [ System.Math.Exp 2.0; System.Math.Exp 3.0 ] ]
         floatArray2DFloatClose (result.toArray2D()) expected 1e-10 "Expected exponentials"
 
     // sqrt
     testCase "sqrt of perfect squares" <| fun _ ->
         let img = Image<float>.ofArray2D (array2D [ [ 0.0; 1.0 ]; [ 4.0; 9.0 ] ])
-        let result = ImageFunctions.sqrt img
+        let result = ImageFunctions.sqrtImage img
         let expected = array2D [ [ 0.0; 1.0 ]; [ 2.0; 3.0 ] ]
         floatArray2DFloatClose (result.toArray2D()) expected 1e-10 "Expected square roots"
 
     // square
     testCase "square values" <| fun _ ->
         let img = Image<float>.ofArray2D (array2D [ [ 2.0; -3.0 ]; [ 4.0; -5.0 ] ])
-        let result = ImageFunctions.square img
+        let result = ImageFunctions.squareImage img
         let expected = array2D [ [ 4.0; 9.0 ]; [ 16.0; 25.0 ] ]
         floatArray2DFloatClose (result.toArray2D()) expected 1e-10 "Expected squares"
 
     // sin
     testCase "sin of common angles" <| fun _ ->
         let img = Image<float>.ofArray2D (array2D [ [ 0.0; System.Math.PI / 2.0 ] ])
-        let result = ImageFunctions.sin img
+        let result = ImageFunctions.sinImage img
         let expected = array2D [ [ 0.0; 1.0 ] ]
         floatArray2DFloatClose (result.toArray2D()) expected 1e-10 "Expected sin values"
 
     // cos
     testCase "cos of common angles" <| fun _ ->
         let img = Image<float>.ofArray2D (array2D [ [ 0.0; System.Math.PI ] ])
-        let result = ImageFunctions.cos img
+        let result = ImageFunctions.cosImage img
         let expected = array2D [ [ 1.0; -1.0 ] ]
         floatArray2DFloatClose (result.toArray2D()) expected 1e-10 "Expected cos values"
 
     // tan
     testCase "tan of small angles" <| fun _ ->
         let img = Image<float>.ofArray2D (array2D [ [ 0.0; System.Math.PI / 4.0 ] ])
-        let result = ImageFunctions.tan img
+        let result = ImageFunctions.tanImage img
         let expected = array2D [ [ 0.0; 1.0 ] ]
         floatArray2DFloatClose (result.toArray2D()) expected 1e-10 "Expected tan values"
 
     // asin
     testCase "asin of valid inputs" <| fun _ ->
         let img = Image<float>.ofArray2D (array2D [ [ 0.0; 1.0 ] ])
-        let result = ImageFunctions.asin img
+        let result = ImageFunctions.asinImage img
         let expected = array2D [ [ 0.0; System.Math.PI / 2.0 ] ]
         floatArray2DFloatClose (result.toArray2D()) expected 1e-10 "Expected asin values"
 
     // acos
     testCase "acos of valid inputs" <| fun _ ->
         let img = Image<float>.ofArray2D (array2D [ [ 1.0; 0.0 ] ])
-        let result = ImageFunctions.acos img
+        let result = ImageFunctions.acosImage img
         let expected = array2D [ [ 0.0; System.Math.PI / 2.0 ] ]
         floatArray2DFloatClose (result.toArray2D()) expected 1e-10 "Expected acos values"
 
     // atan
     testCase "atan of known values" <| fun _ ->
         let img = Image<float>.ofArray2D (array2D [ [ 0.0; 1.0 ] ])
-        let result = ImageFunctions.atan img
+        let result = ImageFunctions.atanImage img
         let expected = array2D [ [ 0.0; System.Math.PI / 4.0 ] ]
         floatArray2DFloatClose (result.toArray2D()) expected 1e-10 "Expected atan values"
 
     // round
     testCase "round to nearest int" <| fun _ ->
         let img = Image<float>.ofArray2D (array2D [ [ 1.1; 2.5 ]; [ 3.9; 4.0 ] ])
-        let result = ImageFunctions.round img
+        let result = ImageFunctions.roundImage img
         let expected = array2D [ [ 1.0; 3.0 ]; [ 4.0; 4.0 ] ]
         floatArray2DFloatClose (result.toArray2D()) expected 1e-10 "Expected rounded values"
   ]
@@ -1508,7 +1508,7 @@ let ImageProcessingTests =
     testCase "squeeze lowers dimensions" <| fun _ ->
         let img = Image<int>([10u;1u;12u])
         let result = ImageFunctions.squeeze img
-        Expect.equal (result.GetDimension()) 2u "Expected reduced dimensionality"
+        Expect.equal (result.GetDimensions()) 2u "Expected reduced dimensionality"
 
     testCase "squeeze removes singleton dimensions" <| fun _ ->
         let img = Image<int>([10u;1u;12u])
@@ -1539,42 +1539,15 @@ let ImageProcessingTests =
     testCase "discreteGaussian smooths image" <| fun _ ->
         let arr = Array2D.init 5 5 (fun m n -> if m=2 && n=2 then 1.0 else 0.0)
         let img = Image<float>.ofArray2D arr
-        let blurred = ImageFunctions.discreteGaussian 1.0 img
+        let blurred = ImageFunctions.discreteGaussian 1.0 None None img
         Expect.isTrue (
-          blurred[2,2]< 1.0
+          blurred[2,2] < 1.0
           && blurred[2,2] > 0.0 
           && blurred[2,1] < blurred[2,2]
           && blurred[2,3] < blurred[2,2] 
           && blurred[1,2] < blurred[2,2] 
           && blurred[3,2] < blurred[2,2]
           ) "Expected smoothing at center"
-
-    // recursiveGaussian
-    testCase "recursiveGaussian blurs in x direction" <| fun _ ->
-        let arr = Array2D.init 5 5 (fun m n -> if m=2 && n=2 then 1.0 else 0.0)
-        let img = Image<float>.ofArray2D arr
-        let blurred = ImageFunctions.recursiveGaussian 1.0 0u img
-        Expect.isTrue (
-          blurred[2,2]< 1.0
-          && blurred[2,2] > 0.0 
-          && blurred[2,1] = 0.0
-          && blurred[2,3] = 0.0
-          && blurred[1,2] < blurred[2,2] 
-          && blurred[3,2] < blurred[2,2]
-          ) "Expected smoothing in x-direction"
-
-    // laplacianConvolve
-    testCase "laplacianConvolve highlights edges" <| fun _ ->
-        let arr = Array2D.init 5 5 (fun m n -> if m=2 && n=2 then 1.0 else 0.0)
-        let img = Image<float>.ofArray2D arr
-        let lap = ImageFunctions.laplacianConvolve 1.0 img
-        Expect.isTrue (
-          lap[2,2] < 0.0
-          && lap[2,1] > lap[2,2]
-          && lap[2,3] > lap[2,2]
-          && lap[1,2] > lap[2,2] 
-          && lap[3,2] > lap[2,2]
-          ) "Expected negative Laplacian at peak"
 
     // gradientConvolve
     testCase "gradientConvolve estimates gradient in x" <| fun _ ->
@@ -1592,40 +1565,40 @@ let MorphologyTests =
   testList "ImageFunctions morphology tests" [
 
     testCase "binaryErode reduces foreground area" <| fun _ ->
-      let img = Image<int>.ofArray2D (array2D [[0;1;1;0]])
-      let eroded = ImageFunctions.binaryErode 1u 1.0 img
-      Expect.isTrue(eroded[0,1] < 1 && eroded[0,2] < 1) "Foreground should shrink"
+      let img = Image<uint8>.ofArray2D (array2D [[0uy;1uy;1uy;0uy]])
+      let eroded = ImageFunctions.binaryErode 1u img
+      Expect.isTrue(eroded[0,1] < 1uy && eroded[0,2] < 1uy) "Foreground should shrink"
 
     testCase "binaryDilate expands foreground area" <| fun _ ->
-      let img = Image<int>.ofArray2D (array2D [[0;1;0]])
-      let dilated = ImageFunctions.binaryDilate 1u 1.0 img
-      Expect.isTrue(dilated[0,0] > 0 && dilated[0,2] > 0) "Foreground should grow"
+      let img = Image<uint8>.ofArray2D (array2D [[0uy;1uy;0uy]])
+      let dilated = ImageFunctions.binaryDilate 1u img
+      Expect.isTrue(dilated[0,0] > 0uy && dilated[0,2] > 0uy) "Foreground should grow"
 
     testCase "binaryOpening removes small regions" <| fun _ ->
-      let img = Image<int>.ofArray2D (array2D [[0;1;0;1;0]])
-      let opened = ImageFunctions.binaryOpening 1u 1.0 img
-      Expect.isTrue(opened[0,1] < 1 && opened[0,3] < 1) "Isolated pixels should be removed"
+      let img = Image<uint8>.ofArray2D (array2D [[0uy;1uy;0uy;1uy;0uy]])
+      let opened = ImageFunctions.binaryOpening 1u img
+      Expect.isTrue(opened[0,1] < 1uy && opened[0,3] < 1uy) "Isolated pixels should be removed"
 
     testCase "binaryClosing fills small gaps" <| fun _ ->
-      let img = Image<int>.ofArray2D (array2D [[1;0;1]])
-      let closed = ImageFunctions.binaryClosing 1u 1.0 img
-      Expect.isTrue(closed[0,1] > 0) "Gap should be filled"
+      let img = Image<uint8>.ofArray2D (array2D [[1uy;0uy;1uy]])
+      let closed = ImageFunctions.binaryClosing 1u img
+      Expect.isTrue(closed[0,1] > 0uy) "Gap should be filled"
 
     testCase "binaryFillHoles fills a hole" <| fun _ ->
-      let img = Image<int>.ofArray2D (array2D [[1;1;1]; [1;0;1]; [1;1;1]])
-      let filled = ImageFunctions.binaryFillHoles 1.0 img
-      Expect.isTrue(filled[1,1] > 0) "Hole should be filled"
+      let img = Image<uint8>.ofArray2D (array2D [[1uy;1uy;1uy]; [1uy;0uy;1uy]; [1uy;1uy;1uy]])
+      let filled = ImageFunctions.binaryFillHoles img
+      Expect.isTrue(filled[1,1] > 0uy) "Hole should be filled"
 
     testCase "connectedComponents labels two blobs" <| fun _ ->
-      let img = Image<int>.ofArray2D (array2D [[0;1;1;0;1]])
+      let img = Image<uint8>.ofArray2D (array2D [[0uy;1uy;1uy;0uy;1uy]])
       let cc = ImageFunctions.connectedComponents img
-      Expect.isTrue(cc[0,0] <> cc[0,2] && cc[0,3] = 0) "Should label blobs separately"
+      Expect.isTrue(cc[0,0] <> cc[0,2] && cc[0,3] = 0uL) "Should label blobs separately"
 
     testCase "relabelComponents removes small component" <| fun _ ->
-      let img = Image<int>.ofArray2D (array2D [[1;0;1]])
+      let img = Image<uint8>.ofArray2D (array2D [[1uy;0uy;1uy]])
       let cc = ImageFunctions.connectedComponents img
       let relabeled = ImageFunctions.relabelComponents 2u cc
-      Expect.isTrue(relabeled[0,0] = 0 || relabeled[0,2] = 0) "Small blobs should be removed"
+      Expect.isTrue(relabeled[0,0] = 0uL || relabeled[0,2] = 0uL) "Small blobs should be removed"
 
     testCase "signedDistanceMap outputs correct sign" <| fun _ ->
       let img = Image<uint8>.ofArray2D (array2D [[0uy;0uy;1uy;1uy; 1uy;0uy;0uy]])
@@ -1687,11 +1660,11 @@ let imageStatsAndThresholdTests =
         let stats = ImageFunctions.computeStats img
 
         Expect.floatClose Accuracy.low stats.Mean 3.5 "Mean"
-        Expect.floatClose Accuracy.low stats.StdDev 1.870828693 "Standard deviation"
-        Expect.floatClose Accuracy.low stats.Minimum 1.0 "Minimum"
-        Expect.floatClose Accuracy.low stats.Maximum 6.0 "Maximum"
+        Expect.floatClose Accuracy.low stats.Std 1.870828693 "Standard deviation"
+        Expect.floatClose Accuracy.low stats.Min 1.0 "Minimum"
+        Expect.floatClose Accuracy.low stats.Max 6.0 "Maximum"
         Expect.floatClose Accuracy.low stats.Sum 21.0 "Sum"
-        Expect.floatClose Accuracy.low stats.Variance 3.5 "Variance"
+        Expect.floatClose Accuracy.low stats.Var 3.5 "Variance"
     }
 
     test "Otsu threshold separates binary regions" {

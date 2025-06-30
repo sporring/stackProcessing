@@ -511,6 +511,10 @@ val expand: dim: uint -> zero: 'S -> a: 'S list -> 'S list
 val concatAlong:
   dim: uint -> a: Image.Image<'T> -> b: Image.Image<'T> -> Image.Image<'T>
     when 'T: equality
+val constantPad2D:
+  padLower: uint list ->
+    padUpper: uint list -> c: double -> img: Image.Image<'T> -> Image.Image<'T>
+    when 'T: equality
 val inline makeUnaryImageOperatorWith:
   createFilter: (unit -> 'Filter) ->
     setup: ('Filter -> unit) ->

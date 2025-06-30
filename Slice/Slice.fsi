@@ -12,21 +12,22 @@ type Slice<'T when 'T: equality> =
 val create:
   width: uint -> height: uint -> depth: uint -> idx: uint -> Slice<'T>
     when 'T: equality
-val GetDepth: slice: Slice<'T> -> uint32 when 'T: equality
-val GetDimensions: slice: Slice<'T> -> uint32 when 'T: equality
-val GetHeight: slice: Slice<'T> -> uint32 when 'T: equality
-val GetWidth: slice: Slice<'T> -> uint32 when 'T: equality
-val GetSize: slice: Slice<'T> -> uint list when 'T: equality
-val ToString: slice: Slice<'T> -> string when 'T: equality
-val toArray2D: slice: Slice<'T> -> 'T array2d when 'T: equality
-val toArray3D: slice: Slice<'T> -> 'T array3d when 'T: equality
-val toArray4D: slice: Slice<'T> -> 'T array4d when 'T: equality
-val cast<'T when 'T: equality> :
-  slice: Slice<obj> -> Slice<obj> when 'T: equality
-val castUInt8ToFloat: slice: Slice<uint8> -> Slice<float>
-val castFloatToUInt8: slice: Slice<float> -> Slice<uint8>
+val GetDepth: s: Slice<'T> -> uint32 when 'T: equality
+val GetDimensions: s: Slice<'T> -> uint32 when 'T: equality
+val GetHeight: s: Slice<'T> -> uint32 when 'T: equality
+val GetWidth: s: Slice<'T> -> uint32 when 'T: equality
+val GetSize: s: Slice<'T> -> uint list when 'T: equality
+val ToString: s: Slice<'T> -> string when 'T: equality
+val toArray2D: s: Slice<'T> -> 'T array2d when 'T: equality
+val toArray3D: s: Slice<'T> -> 'T array3d when 'T: equality
+val toArray4D: s: Slice<'T> -> 'T array4d when 'T: equality
+val toImage: s: Slice<'T> -> Image.Image<'T> when 'T: equality
+val toSimpleITK: s: Slice<'T> -> itk.simple.Image when 'T: equality
+val cast<'T when 'T: equality> : s: Slice<obj> -> Slice<obj> when 'T: equality
+val castUInt8ToFloat: s: Slice<uint8> -> Slice<float>
+val castFloatToUInt8: s: Slice<float> -> Slice<uint8>
 val toFloat: value: obj -> float
-val toSeqSeq: slice: Slice<'T> -> float seq seq when 'T: equality
+val toSeqSeq: s: Slice<'T> -> float seq seq when 'T: equality
 val private liftSource:
   f: (unit -> Image.Image<'T>) -> unit -> Slice<'T> when 'T: equality
 val private liftSource1:
@@ -119,6 +120,9 @@ val binaryFillHoles: s: Slice<uint8> -> Slice<uint8>
 val squeeze: s: Slice<'T> -> Slice<'T> when 'T: equality
 val concatAlong:
   a: uint -> s: Slice<'T> -> t: Slice<'T> -> Slice<'T> when 'T: equality
+val constantPad2D:
+  a: uint list -> b: uint list -> c: double -> s: Slice<'T> -> Slice<'T>
+    when 'T: equality
 val connectedComponents: s: Slice<uint8> -> Slice<uint64>
 val relabelComponents: a: uint -> s: Slice<uint64> -> Slice<uint64>
 val watershed: a: float -> s: Slice<'T> -> Slice<'T> when 'T: equality
@@ -126,16 +130,16 @@ val otsuThreshold: s: Slice<'T> -> Slice<'T> when 'T: equality
 val otsuMultiThreshold: a: byte -> s: Slice<'T> -> Slice<'T> when 'T: equality
 val momentsThreshold: s: Slice<'T> -> Slice<'T> when 'T: equality
 val signedDistanceMap:
-  inside: uint8 -> outside: uint8 -> img: Slice<uint8> -> Slice<float>
+  inside: uint8 -> outside: uint8 -> s: Slice<uint8> -> Slice<float>
 val generateCoordinateAxis: axis: int -> size: int list -> Slice<uint32>
-val unique: img: Slice<'T> -> 'T list when 'T: comparison
+val unique: s: Slice<'T> -> 'T list when 'T: comparison
 val labelShapeStatistics:
-  img: Slice<'T> -> Map<int64,ImageFunctions.LabelShapeStatistics>
+  s: Slice<'T> -> Map<int64,ImageFunctions.LabelShapeStatistics>
     when 'T: equality
 type ImageStats = ImageFunctions.ImageStats
-val computeStats: img: Slice<'T> -> ImageStats when 'T: equality
+val computeStats: s: Slice<'T> -> ImageStats when 'T: equality
 val addComputeStats: s1: ImageStats -> s2: ImageStats -> ImageStats
-val histogram: img: Slice<'T> -> Map<'T,uint64> when 'T: comparison
+val histogram: s: Slice<'T> -> Map<'T,uint64> when 'T: comparison
 val addHistogram:
   h1: Map<'T,uint64> -> h2: Map<'T,uint64> -> Map<'T,uint64> when 'T: comparison
 val map2pairs: map: Map<'T,'S> -> ('T * 'S) list when 'T: comparison
@@ -184,13 +188,13 @@ val addNormalNoise:
   a: float -> b: float -> s: Slice<'T> -> Slice<'T> when 'T: equality
 val threshold:
   a: float -> b: float -> s: Slice<'T> -> Slice<'T> when 'T: equality
-val stack: slices: Slice<'T> list -> Slice<'T> when 'T: equality
+val stack: sLst: Slice<'T> list -> Slice<'T> when 'T: equality
 val extractSlice: a: uint -> s: Slice<'T> -> Slice<'T> when 'T: equality
-val unstack: slice: Slice<'T> -> Slice<'T> list when 'T: equality
+val unstack: s: Slice<'T> -> Slice<'T> list when 'T: equality
 type FileInfo = ImageFunctions.FileInfo
 val getFileInfo: filename: string -> FileInfo
 val readSlice: idx: uint -> filename: string -> Slice<'T> when 'T: equality
-val writeSlice: filename: string -> slice: Slice<'T> -> unit when 'T: equality
+val writeSlice: filename: string -> s: Slice<'T> -> unit when 'T: equality
 val getStackDepth: inputDir: string -> suffix: string -> uint
 val getStackInfo: inputDir: string -> suffix: string -> FileInfo
 val getStackSize: inputDir: string -> suffix: string -> uint64 list

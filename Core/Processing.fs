@@ -16,7 +16,7 @@ open Image
 // --- Processing Utilities ---
 let private explodeSlice (slices: Slice<'T>) : AsyncSeq<Slice<'T>> =
     let baseIndex = slices.Index
-    let volume = slices.Image
+    let volume = slices |> Slice.toImage
     let size = volume.GetSize()
     let width, height, depth = size.[0], size.[1], size.[2]
     Seq.init (int depth) (fun z -> extractSlice (baseIndex+(uint z)) slices)
@@ -715,3 +715,6 @@ let histogramOp<'T when 'T: equality and 'T: comparison> (name: string) : Operat
     liftMapOp name Slice.histogram
 let computeStatsOp<'T when 'T: equality and 'T: comparison> (name: string) : Operation<Slice<'T>, ImageStats> =
     liftMapOp name Slice.computeStats
+
+let constantPad2DOp<'T when 'T : equality> (name: string) (padLower : uint list) (padUpper : uint list) (c : double) =
+    liftUnaryOp name (Slice.constantPad2D padLower padUpper c)
