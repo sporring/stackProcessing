@@ -2,6 +2,47 @@ module ImageFunctions
 open Image
 open Image.InternalHelpers
 
+// Image constant arithmetic operations
+
+let inline imageAddScalar<'S when ^S : equality
+                             and  ^S : (static member op_Explicit : ^S -> float)
+                             > (f1: Image<'S>) (i: ^S) =
+    let filter = new itk.simple.AddImageFilter()
+    Image<'S>.ofSimpleITK(filter.Execute(f1.toSimpleITK(), float i))
+let inline scalarAddImage<'S when ^S : equality
+                             and  ^S : (static member op_Explicit : ^S -> float)
+                             > (i: ^S) (f1: Image<'S>) =
+    imageAddScalar f1 i
+let inline imageSubScalar<'S when ^S : equality
+                             and  ^S : (static member op_Explicit : ^S -> float)
+                             > (f1: Image<'S>) (i: ^S) =
+    let filter = new itk.simple.SubtractImageFilter()
+    Image<'S>.ofSimpleITK(filter.Execute(f1.toSimpleITK(), float i))
+let inline scalarSubImage<'S when ^S : equality
+                             and  ^S : (static member op_Explicit : ^S -> float)
+                                 > (i: ^S) (f1: Image<'S>) =
+    let filter = new itk.simple.SubtractImageFilter()
+    Image<'S>.ofSimpleITK(filter.Execute(float i, f1.toSimpleITK()))
+let inline imageMulScalar<'S when ^S : equality
+                             and  ^S : (static member op_Explicit : ^S -> float)
+                             > (f1: Image<'S>) (i: ^S) =
+    let filter = new itk.simple.MultiplyImageFilter()
+    Image<'S>.ofSimpleITK(filter.Execute(f1.toSimpleITK(), float i))
+let inline scalarMulImage<'S when ^S : equality
+                             and  ^S : (static member op_Explicit : ^S -> float)
+                             > (i: ^S) (f1: Image<'S>) =
+    imageMulScalar f1 i
+let inline imageDivScalar<'S when ^S : equality
+                             and  ^S : (static member op_Explicit : ^S -> float)
+                             > (f1: Image<'S>) (i: ^S) =
+    let filter = new itk.simple.DivideImageFilter()
+    Image<'S>.ofSimpleITK(filter.Execute(f1.toSimpleITK(), float i))
+let inline scalarDivImage<'S when ^S : equality
+                             and  ^S : (static member op_Explicit : ^S -> float)
+                                 > (i: ^S) (f1: Image<'S>) =
+    let filter = new itk.simple.DivideImageFilter()
+    Image<'S>.ofSimpleITK(filter.Execute(float i, f1.toSimpleITK()))
+
 // --- basic manipulations ---
 let squeeze (img: Image<'T>) : Image<'T> =
     let filter =  new itk.simple.ExtractImageFilter()

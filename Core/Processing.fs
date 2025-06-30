@@ -82,61 +82,102 @@ let castFloatToUInt8 : Pipe<Slice<float>, Slice<uint8>> =
     }
 
 
-let addFloat (value: float) : Pipe<Slice<float>, Slice<float>> =
-    printfn "[addFloat]"
-    map "addFloat" Streaming (swap addFloat value)
-
-let addInt (value: int) : Pipe<Slice<int>, Slice<int>> =
-    printfn "[addInt]"
-    map "addInt" Streaming (swap addInt value)
-
-let addUInt8 (value: uint8) : Pipe<Slice<uint8>, Slice<uint8>> =
-    printfn "[addUInt8]"
-    map "addUInt8" Streaming (swap addUInt8 value)
-
-let add (image: Slice<'T>) : Pipe<Slice<'T>, Slice<'T>> =
+let add (slice: Slice<'T>) : Pipe<Slice<'T>, Slice<'T>> =
     printfn "[add]"
-    map "Add" Streaming (add image)
+    map "Add" Streaming (add slice)
 
-let subFloat (value: float) : Pipe<Slice<float>, Slice<float>> =
-    printfn "[subFloat]"
-    map "subFloat" Streaming (swap subFloat value)
+let inline scalarAddSlice<^T when ^T: equality and ^T: (static member op_Explicit: ^T -> float)> (i: ^T) : Pipe<Slice<^T>, Slice<^T>> =
+    printfn "[scalarAddSlice]"
+    {
+        Name = "scalarAddSlice" 
+        Profile = Streaming
+        Apply = fun input ->
+            input
+            |> AsyncSeq.map (fun s -> (Slice.scalarAddSlice<^T> i s))
+    }
 
-let subInt (value: int) : Pipe<Slice<int>, Slice<int>> =
-    printfn "[subInt]"
-    map "subInt" Streaming (swap subInt value)
+let inline sliceAddScalar<^T when ^T: equality and ^T: (static member op_Explicit: ^T -> float)> (i: ^T) : Pipe<Slice<^T>, Slice<^T>> =
+    printfn "[sliceAddScalar]"
+    {
+        Name = "sliceAddScalar" 
+        Profile = Streaming
+        Apply = fun input ->
+            input
+            |> AsyncSeq.map (fun s -> (Slice.sliceAddScalar<^T> s i))
+    }
 
-let sub (image: Slice<'T>) : Pipe<Slice<'T>, Slice<'T>> =
+let sub (slice: Slice<'T>) : Pipe<Slice<'T>, Slice<'T>> =
     printfn "[sub]"
-    map "sub" Streaming (sub image)
+    map "sub" Streaming (sub slice)
 
-let mulFloat (value: float) : Pipe<Slice<float>, Slice<float>> =
-    printfn "[mulFloat]"
-    map "mulFloat" Streaming (swap mulFloat value)
+let inline scalarSubSlice<^T when ^T: equality and ^T: (static member op_Explicit: ^T -> float)> (i: ^T) : Pipe<Slice<^T>, Slice<^T>> =
+    printfn "[scalarSubSlice]"
+    {
+        Name = "scalarSubSlice" 
+        Profile = Streaming
+        Apply = fun input ->
+            input
+            |> AsyncSeq.map (fun s -> (Slice.scalarSubSlice<^T> i s))
+    }
 
-let mulInt (value: int) : Pipe<Slice<int>, Slice<int>> =
-    printfn "[mulInt]"
-    map "mulInt" Streaming (swap mulInt value)
+let inline sliceSubScalar<^T when ^T: equality and ^T: (static member op_Explicit: ^T -> float)> (i: ^T) : Pipe<Slice<^T>, Slice<^T>> =
+    printfn "[sliceSubScalar]"
+    {
+        Name = "sliceSubScalar" 
+        Profile = Streaming
+        Apply = fun input ->
+            input
+            |> AsyncSeq.map (fun s -> (Slice.sliceSubScalar<^T> s i))
+    }
 
-let mulUInt8 (value: uint8) : Pipe<Slice<uint8>, Slice<uint8>> =
-    printfn "[mulUInt8]"
-    map "mulUInt8" Streaming (swap mulUInt8 value)
-
-let mul (image: Slice<'T>) : Pipe<Slice<'T>, Slice<'T>> =
+let mul (slice: Slice<'T>) : Pipe<Slice<'T>, Slice<'T>> =
     printfn "[mul]"
-    map "mul" Streaming (mul image)
+    map "mul" Streaming (mul slice)
 
-let divFloat (value: float) : Pipe<Slice<float>, Slice<float>> =
-    printfn "[divFloat]"
-    map "divFloat" Streaming (swap divFloat value)
+let inline scalarMulSlice<^T when ^T: equality and ^T: (static member op_Explicit: ^T -> float)> (i: ^T) : Pipe<Slice<^T>, Slice<^T>> =
+    printfn "[scalarMulSlice]"
+    {
+        Name = "scalarMulSlice" 
+        Profile = Streaming
+        Apply = fun input ->
+            input
+            |> AsyncSeq.map (fun s -> (Slice.scalarMulSlice<^T> i s))
+    }
 
-let divInt (value: int) : Pipe<Slice<int>, Slice<int>> =
-    printfn "[divInt]"
-    map "divInt" Streaming (swap divInt value)
+let inline sliceMulScalar<^T when ^T: equality and ^T: (static member op_Explicit: ^T -> float)> (i: ^T) : Pipe<Slice<^T>, Slice<^T>> =
+    printfn "[sliceMulScalar]"
+    {
+        Name = "sliceMulScalar" 
+        Profile = Streaming
+        Apply = fun input ->
+            input
+            |> AsyncSeq.map (fun s -> (Slice.sliceMulScalar<^T> s i))
+    }
 
-let div (image: Slice<'T>) : Pipe<Slice<'T>, Slice<'T>> =
+let div (slice: Slice<'T>) : Pipe<Slice<'T>, Slice<'T>> =
     printfn "[div]"
-    map "div" Streaming (div image)
+    map "div" Streaming (div slice)
+
+let inline scalarDivSlice<^T when ^T: equality and ^T: (static member op_Explicit: ^T -> float)> (i: ^T) : Pipe<Slice<^T>, Slice<^T>> =
+    printfn "[scalarDivSlice]"
+    {
+        Name = "scalarDivSlice" 
+        Profile = Streaming
+        Apply = fun input ->
+            input
+            |> AsyncSeq.map (fun s -> (Slice.scalarDivSlice<^T> i s))
+    }
+
+let inline sliceDivScalar<^T when ^T: equality and ^T: (static member op_Explicit: ^T -> float)> (i: ^T) : Pipe<Slice<^T>, Slice<^T>> =
+    printfn "[sliceDivScalar]"
+    {
+        Name = "sliceDivScalar" 
+        Profile = Streaming
+        Apply = fun input ->
+            input
+            |> AsyncSeq.map (fun s -> (Slice.sliceDivScalar<^T> s i))
+    }
+
 
 (*
 let modulus (value: uint) : Pipe<Slice<'T>, Slice<'T>> =
@@ -637,12 +678,12 @@ let connectedComponentsOp (name: string) : Operation<Slice<uint8>, Slice<uint64>
             }
     }
 
-let addIntOp      name scalar = liftImageScalarOpInt     name scalar Slice.addInt
-let addUInt8Op    name scalar = liftImageScalarOpUInt8   name scalar Slice.addUInt8
-let addFloatOp    name scalar = liftImageScalarOpFloat   name scalar Slice.addFloat
+let addIntOp      name scalar = liftImageScalarOpInt     name scalar Slice.sliceAddScalar
+let addUInt8Op    name scalar = liftImageScalarOpUInt8   name scalar Slice.sliceAddScalar
+let addFloatOp    name scalar = liftImageScalarOpFloat   name scalar Slice.sliceAddScalar
 
-let subIntOp   name scalar = liftImageScalarOpInt   name scalar Slice.subInt
-let subFloatOp name scalar = liftImageScalarOpFloat name scalar Slice.subFloat
+let subIntOp   name scalar = liftImageScalarOpInt   name scalar Slice.sliceSubScalar
+let subFloatOp name scalar = liftImageScalarOpFloat name scalar Slice.sliceSubScalar
 
 (* Assymetry could be handled as
 let inline subFromScalarIntOp (name:string) (scalar:int) =
@@ -651,12 +692,12 @@ let inline subFromScalarFloatOp (name:string) (scalar:float) =
     liftUnaryOp name (fun img -> subFloat img scalar |> fun s -> s )
 *)
 
-let mulIntOp     name scalar = liftImageScalarOpInt     name scalar Slice.mulInt
-let mulUInt8Op   name scalar = liftImageScalarOpUInt8   name scalar Slice.mulUInt8
-let mulFloatOp   name scalar = liftImageScalarOpFloat   name scalar Slice.mulFloat
+let mulIntOp     name scalar = liftImageScalarOpInt     name scalar Slice.sliceMulScalar
+let mulUInt8Op   name scalar = liftImageScalarOpUInt8   name scalar Slice.sliceMulScalar
+let mulFloatOp   name scalar = liftImageScalarOpFloat   name scalar Slice.sliceMulScalar
 
-let divIntOp   name scalar = liftImageScalarOpInt   name scalar Slice.divInt
-let divFloatOp name scalar = liftImageScalarOpFloat name scalar Slice.divFloat
+let divIntOp   name scalar = liftImageScalarOpInt   name scalar Slice.sliceDivScalar
+let divFloatOp name scalar = liftImageScalarOpFloat name scalar Slice.sliceDivScalar
 
 // ---------------------------------------------------------------------------
 // NOTE on image ⊕ image variants

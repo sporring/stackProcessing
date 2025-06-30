@@ -50,115 +50,11 @@ type Image<'T when 'T: equality> =
     static member
       (&&&) : f1: Image<'S> * f2: Image<'S> -> Image<'S> when 'S: equality
     static member
-      ( * ) : i: float * f1: Image<'S> -> Image<'S> when 'S: equality
-    static member
-      ( * ) : f1: Image<'S> * i: float -> Image<'S> when 'S: equality
-    static member
-      ( * ) : i: float32 * f1: Image<'S> -> Image<'S> when 'S: equality
-    static member
-      ( * ) : f1: Image<'S> * i: float32 -> Image<'S> when 'S: equality
-    static member
-      ( * ) : i: uint64 * f1: Image<'S> -> Image<'S> when 'S: equality
-    static member
-      ( * ) : f1: Image<'S> * i: uint64 -> Image<'S> when 'S: equality
-    static member
-      ( * ) : i: int64 * f1: Image<'S> -> Image<'S> when 'S: equality
-    static member
-      ( * ) : f1: Image<'S> * i: int64 -> Image<'S> when 'S: equality
-    static member
-      ( * ) : i: uint32 * f1: Image<'S> -> Image<'S> when 'S: equality
-    static member
-      ( * ) : f1: Image<'S> * i: uint32 -> Image<'S> when 'S: equality
-    static member
-      ( * ) : i: int32 * f1: Image<'S> -> Image<'S> when 'S: equality
-    static member
-      ( * ) : f1: Image<'S> * i: int32 -> Image<'S> when 'S: equality
-    static member
-      ( * ) : i: uint16 * f1: Image<'S> -> Image<'S> when 'S: equality
-    static member
-      ( * ) : f1: Image<'S> * i: uint16 -> Image<'S> when 'S: equality
-    static member
-      ( * ) : i: int16 * f1: Image<'S> -> Image<'S> when 'S: equality
-    static member
-      ( * ) : f1: Image<'S> * i: int16 -> Image<'S> when 'S: equality
-    static member
-      ( * ) : i: uint8 * f1: Image<'S> -> Image<'S> when 'S: equality
-    static member
-      ( * ) : f1: Image<'S> * i: uint8 -> Image<'S> when 'S: equality
-    static member ( * ) : i: int8 * f1: Image<'S> -> Image<'S> when 'S: equality
-    static member ( * ) : f1: Image<'S> * i: int8 -> Image<'S> when 'S: equality
-    static member
       ( * ) : f1: Image<'S> * f2: Image<'S> -> Image<'S> when 'S: equality
-    static member (+) : i: float * f1: Image<'S> -> Image<'S> when 'S: equality
-    static member (+) : f1: Image<'S> * i: float -> Image<'S> when 'S: equality
-    static member
-      (+) : i: float32 * f1: Image<'S> -> Image<'S> when 'S: equality
-    static member
-      (+) : f1: Image<'S> * i: float32 -> Image<'S> when 'S: equality
-    static member (+) : i: uint64 * f1: Image<'S> -> Image<'S> when 'S: equality
-    static member (+) : f1: Image<'S> * i: uint64 -> Image<'S> when 'S: equality
-    static member (+) : i: int64 * f1: Image<'S> -> Image<'S> when 'S: equality
-    static member (+) : f1: Image<'S> * i: int64 -> Image<'S> when 'S: equality
-    static member (+) : i: uint32 * f1: Image<'S> -> Image<'S> when 'S: equality
-    static member (+) : f1: Image<'S> * i: uint32 -> Image<'S> when 'S: equality
-    static member (+) : i: int32 * f1: Image<'S> -> Image<'S> when 'S: equality
-    static member (+) : f1: Image<'S> * i: int32 -> Image<'S> when 'S: equality
-    static member (+) : i: uint16 * f1: Image<'S> -> Image<'S> when 'S: equality
-    static member (+) : f1: Image<'S> * i: uint16 -> Image<'S> when 'S: equality
-    static member (+) : i: int16 * f1: Image<'S> -> Image<'S> when 'S: equality
-    static member (+) : f1: Image<'S> * i: int16 -> Image<'S> when 'S: equality
-    static member (+) : i: uint8 * f1: Image<'S> -> Image<'S> when 'S: equality
-    static member (+) : f1: Image<'S> * i: uint8 -> Image<'S> when 'S: equality
-    static member (+) : i: int8 * f1: Image<'S> -> Image<'S> when 'S: equality
-    static member (+) : f1: Image<'S> * i: int8 -> Image<'S> when 'S: equality
     static member
       (+) : f1: Image<'S> * f2: Image<'S> -> Image<'S> when 'S: equality
-    static member (-) : i: float * f1: Image<'S> -> Image<'S> when 'S: equality
-    static member (-) : f1: Image<'S> * i: float -> Image<'S> when 'S: equality
-    static member
-      (-) : i: float32 * f1: Image<'S> -> Image<'S> when 'S: equality
-    static member
-      (-) : f1: Image<'S> * i: float32 -> Image<'S> when 'S: equality
-    static member (-) : i: uint64 * f1: Image<'S> -> Image<'S> when 'S: equality
-    static member (-) : f1: Image<'S> * i: uint64 -> Image<'S> when 'S: equality
-    static member (-) : i: int64 * f1: Image<'S> -> Image<'S> when 'S: equality
-    static member (-) : f1: Image<'S> * i: int64 -> Image<'S> when 'S: equality
-    static member (-) : i: uint32 * f1: Image<'S> -> Image<'S> when 'S: equality
-    static member (-) : f1: Image<'S> * i: uint32 -> Image<'S> when 'S: equality
-    static member (-) : i: int32 * f1: Image<'S> -> Image<'S> when 'S: equality
-    static member (-) : f1: Image<'S> * i: int32 -> Image<'S> when 'S: equality
-    static member (-) : i: uint16 * f1: Image<'S> -> Image<'S> when 'S: equality
-    static member (-) : f1: Image<'S> * i: uint16 -> Image<'S> when 'S: equality
-    static member (-) : i: int16 * f1: Image<'S> -> Image<'S> when 'S: equality
-    static member (-) : f1: Image<'S> * i: int16 -> Image<'S> when 'S: equality
-    static member (-) : i: uint8 * f1: Image<'S> -> Image<'S> when 'S: equality
-    static member (-) : f1: Image<'S> * i: uint8 -> Image<'S> when 'S: equality
-    static member (-) : i: int8 * f1: Image<'S> -> Image<'S> when 'S: equality
-    static member (-) : f1: Image<'S> * i: int8 -> Image<'S> when 'S: equality
     static member
       (-) : f1: Image<'S> * f2: Image<'S> -> Image<'S> when 'S: equality
-    static member (/) : i: float * f1: Image<'S> -> Image<'S> when 'S: equality
-    static member (/) : f1: Image<'S> * i: float -> Image<'S> when 'S: equality
-    static member
-      (/) : i: float32 * f1: Image<'S> -> Image<'S> when 'S: equality
-    static member
-      (/) : f1: Image<'S> * i: float32 -> Image<'S> when 'S: equality
-    static member (/) : i: uint64 * f1: Image<'S> -> Image<'S> when 'S: equality
-    static member (/) : f1: Image<'S> * i: uint64 -> Image<'S> when 'S: equality
-    static member (/) : i: int64 * f1: Image<'S> -> Image<'S> when 'S: equality
-    static member (/) : f1: Image<'S> * i: int64 -> Image<'S> when 'S: equality
-    static member (/) : i: uint32 * f1: Image<'S> -> Image<'S> when 'S: equality
-    static member (/) : f1: Image<'S> * i: uint32 -> Image<'S> when 'S: equality
-    static member (/) : i: int32 * f1: Image<'S> -> Image<'S> when 'S: equality
-    static member (/) : f1: Image<'S> * i: int32 -> Image<'S> when 'S: equality
-    static member (/) : i: uint16 * f1: Image<'S> -> Image<'S> when 'S: equality
-    static member (/) : f1: Image<'S> * i: uint16 -> Image<'S> when 'S: equality
-    static member (/) : i: int16 * f1: Image<'S> -> Image<'S> when 'S: equality
-    static member (/) : f1: Image<'S> * i: int16 -> Image<'S> when 'S: equality
-    static member (/) : i: uint8 * f1: Image<'S> -> Image<'S> when 'S: equality
-    static member (/) : f1: Image<'S> * i: uint8 -> Image<'S> when 'S: equality
-    static member (/) : i: int8 * f1: Image<'S> -> Image<'S> when 'S: equality
-    static member (/) : f1: Image<'S> * i: int8 -> Image<'S> when 'S: equality
     static member
       (/) : f1: Image<'S> * f2: Image<'S> -> Image<'S> when 'S: equality
     static member (^^^) : i: int * f2: Image<int> -> Image<int>
@@ -506,6 +402,30 @@ type Image<'T when 'T: equality> =
     member Item: i0: int * i1: int * i2: int * i3: int -> 'T with get
     member Item: i0: int * i1: int * i2: int * i3: int -> 'T with set
 module ImageFunctions
+val inline imageAddScalar:
+  f1: Image.Image<^S> -> i: ^S -> Image.Image<^S>
+    when ^S: equality and ^S: (static member op_Explicit: ^S -> float)
+val inline scalarAddImage:
+  i: ^S -> f1: Image.Image<^S> -> Image.Image<^S>
+    when ^S: equality and ^S: (static member op_Explicit: ^S -> float)
+val inline imageSubScalar:
+  f1: Image.Image<^S> -> i: ^S -> Image.Image<^S>
+    when ^S: equality and ^S: (static member op_Explicit: ^S -> float)
+val inline scalarSubImage:
+  i: ^S -> f1: Image.Image<^S> -> Image.Image<^S>
+    when ^S: equality and ^S: (static member op_Explicit: ^S -> float)
+val inline imageMulScalar:
+  f1: Image.Image<^S> -> i: ^S -> Image.Image<^S>
+    when ^S: equality and ^S: (static member op_Explicit: ^S -> float)
+val inline scalarMulImage:
+  i: ^S -> f1: Image.Image<^S> -> Image.Image<^S>
+    when ^S: equality and ^S: (static member op_Explicit: ^S -> float)
+val inline imageDivScalar:
+  f1: Image.Image<^S> -> i: ^S -> Image.Image<^S>
+    when ^S: equality and ^S: (static member op_Explicit: ^S -> float)
+val inline scalarDivImage:
+  i: ^S -> f1: Image.Image<^S> -> Image.Image<^S>
+    when ^S: equality and ^S: (static member op_Explicit: ^S -> float)
 val squeeze: img: Image.Image<'T> -> Image.Image<'T> when 'T: equality
 val expand: dim: uint -> zero: 'S -> a: 'S list -> 'S list
 val concatAlong:

@@ -251,28 +251,42 @@ val mapWindowed:
     depth: uint -> stride: uint -> f: ('S list -> 'T list) -> Core.Pipe<'S,'T>
 val castUInt8ToFloat: Core.Pipe<Slice.Slice<uint8>,Slice.Slice<float>>
 val castFloatToUInt8: Core.Pipe<Slice.Slice<float>,Slice.Slice<uint8>>
-val addFloat: value: float -> Core.Pipe<Slice.Slice<float>,Slice.Slice<float>>
-val addInt: value: int -> Core.Pipe<Slice.Slice<int>,Slice.Slice<int>>
-val addUInt8: value: uint8 -> Core.Pipe<Slice.Slice<uint8>,Slice.Slice<uint8>>
 val add:
-  image: Slice.Slice<'T> -> Core.Pipe<Slice.Slice<'T>,Slice.Slice<'T>>
+  slice: Slice.Slice<'T> -> Core.Pipe<Slice.Slice<'T>,Slice.Slice<'T>>
     when 'T: equality
-val subFloat: value: float -> Core.Pipe<Slice.Slice<float>,Slice.Slice<float>>
-val subInt: value: int -> Core.Pipe<Slice.Slice<int>,Slice.Slice<int>>
+val inline scalarAddSlice:
+  i: ^T -> Core.Pipe<Slice.Slice<^T>,Slice.Slice<^T>>
+    when ^T: equality and ^T: (static member op_Explicit: ^T -> float)
+val inline sliceAddScalar:
+  i: ^T -> Core.Pipe<Slice.Slice<^T>,Slice.Slice<^T>>
+    when ^T: equality and ^T: (static member op_Explicit: ^T -> float)
 val sub:
-  image: Slice.Slice<'T> -> Core.Pipe<Slice.Slice<'T>,Slice.Slice<'T>>
+  slice: Slice.Slice<'T> -> Core.Pipe<Slice.Slice<'T>,Slice.Slice<'T>>
     when 'T: equality
-val mulFloat: value: float -> Core.Pipe<Slice.Slice<float>,Slice.Slice<float>>
-val mulInt: value: int -> Core.Pipe<Slice.Slice<int>,Slice.Slice<int>>
-val mulUInt8: value: uint8 -> Core.Pipe<Slice.Slice<uint8>,Slice.Slice<uint8>>
+val inline scalarSubSlice:
+  i: ^T -> Core.Pipe<Slice.Slice<^T>,Slice.Slice<^T>>
+    when ^T: equality and ^T: (static member op_Explicit: ^T -> float)
+val inline sliceSubScalar:
+  i: ^T -> Core.Pipe<Slice.Slice<^T>,Slice.Slice<^T>>
+    when ^T: equality and ^T: (static member op_Explicit: ^T -> float)
 val mul:
-  image: Slice.Slice<'T> -> Core.Pipe<Slice.Slice<'T>,Slice.Slice<'T>>
+  slice: Slice.Slice<'T> -> Core.Pipe<Slice.Slice<'T>,Slice.Slice<'T>>
     when 'T: equality
-val divFloat: value: float -> Core.Pipe<Slice.Slice<float>,Slice.Slice<float>>
-val divInt: value: int -> Core.Pipe<Slice.Slice<int>,Slice.Slice<int>>
+val inline scalarMulSlice:
+  i: ^T -> Core.Pipe<Slice.Slice<^T>,Slice.Slice<^T>>
+    when ^T: equality and ^T: (static member op_Explicit: ^T -> float)
+val inline sliceMulScalar:
+  i: ^T -> Core.Pipe<Slice.Slice<^T>,Slice.Slice<^T>>
+    when ^T: equality and ^T: (static member op_Explicit: ^T -> float)
 val div:
-  image: Slice.Slice<'T> -> Core.Pipe<Slice.Slice<'T>,Slice.Slice<'T>>
+  slice: Slice.Slice<'T> -> Core.Pipe<Slice.Slice<'T>,Slice.Slice<'T>>
     when 'T: equality
+val inline scalarDivSlice:
+  i: ^T -> Core.Pipe<Slice.Slice<^T>,Slice.Slice<^T>>
+    when ^T: equality and ^T: (static member op_Explicit: ^T -> float)
+val inline sliceDivScalar:
+  i: ^T -> Core.Pipe<Slice.Slice<^T>,Slice.Slice<^T>>
+    when ^T: equality and ^T: (static member op_Explicit: ^T -> float)
 val absProcess<'T when 'T: equality> :
   Core.Pipe<Slice.Slice<'T>,Slice.Slice<'T>> when 'T: equality
 val sqrtProcess<'T when 'T: equality> :

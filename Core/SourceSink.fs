@@ -127,7 +127,7 @@ let liftImageSource (name: string) (img: Slice<'T>) : Pipe<unit, Slice<'T>> =
     }
 
 let gaussSource sigma kernelSize =
-    let img = Slice.gauss sigma kernelSize
+    let img = Slice.gauss 3u sigma kernelSize
     liftImageSource "gauss" img
 
 let axisSource axis size =
@@ -140,10 +140,8 @@ let gauss (sigma: float) (kernelSize: uint option) : Pipe<unit, Slice<float>> =
         Name = "[gauss]"
         Profile = Streaming
         Apply = fun _ ->
-            let img = gauss sigma kernelSize
-            printfn $"{img.Image.GetSize()}"
+            let img = gauss 3u sigma kernelSize
             let imgLst = img |> unstack
-            printfn $"{imgLst.Length}"
             imgLst |> AsyncSeq.ofSeq
     }
 

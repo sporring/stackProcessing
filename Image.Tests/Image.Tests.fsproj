@@ -39,6 +39,7 @@
   <ItemGroup>
     <Compile Include="VectorHelperTests.fs" />
     <Compile Include="ArrayHelpers.fs" />
+    <Compile Include="ArithmeticOps.fs" />
     <Compile Include="Tests.fs" />
   </ItemGroup>
 

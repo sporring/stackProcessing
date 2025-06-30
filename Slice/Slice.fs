@@ -53,8 +53,11 @@ let private liftSource (f: unit -> Image<'T>) : unit -> Slice<'T> =
 let private liftSource1 (f: 'a -> Image<'T>) : 'a -> Slice<'T> =
     fun a -> { Index = 0u;  Image = f a }
 
-let private liftSource2 (f: 'a -> 'b -> Image<'T>) : 'a -> 'b-> Slice<'T> =
+let private liftSource2 (f: 'a -> 'b -> Image<'T>) : 'a -> 'b -> Slice<'T> =
     fun a b -> { Index = 0u;  Image = f a b }
+
+let private liftSource3 (f: 'a -> 'b -> 'c -> Image<'T>) : 'a -> 'b -> 'c -> Slice<'T> =
+    fun a b c -> { Index = 0u;  Image = f a b c}
 
 let private liftUnary (f: Image<'T> -> Image<'T>) : Slice<'T> -> Slice<'T> =
     fun s -> { s with Image = f s.Image }
@@ -93,6 +96,10 @@ let private liftBinaryOpUInt8 (f: Image<uint8> * uint8 -> Image<uint8>) : Slice<
 let private liftBinaryOpFloat (f: Image<float> * float -> Image<float>) : Slice<float> * float -> Slice<float> =
     fun (s1, s2) -> { s1 with Image = f (s1.Image, s2) }
 
+let private liftImageScalarOp (f: Image<'T> -> 'T -> Image<'T>) : Slice<'T> -> 'T -> Slice<'T> =
+    fun s i -> { s with Image = f s.Image i }
+
+
 let private liftBinaryCmp (f: Image<'T> * Image<'T> -> bool) : Slice<'T> * Slice<'T> -> bool =
     fun (s1,s2) -> f (s1.Image, s2.Image)
 
@@ -117,7 +124,7 @@ let convolve a (s: Slice<'T>) (t: Slice<'T>) = liftBinary1 convolve a s t
 let conv (s: Slice<'T>) (t: Slice<'T>) = liftBinary conv s t
 let discreteGaussian a b c (s: Slice<'T>) = liftUnary3 discreteGaussian a b c s
 
-let gauss (sigma: float) (kernelSize: uint option) : Slice<float> = liftSource2 gauss sigma kernelSize
+let gauss (dim: uint) (sigma: float) (kernelSize: uint option) : Slice<float> = liftSource3 gauss dim sigma kernelSize
 let finiteDiffFilter1D (order: uint) : Slice<float> = liftSource1 finiteDiffFilter1D order
 let finiteDiffFilter2D (direction: uint) (order: uint) : Slice<float> = liftSource2 finiteDiffFilter2D direction order
 let finiteDiffFilter3D (direction: uint) (order: uint) : Slice<float> = liftSource2 finiteDiffFilter3D direction order
@@ -172,19 +179,26 @@ let inline pairs2ints<^T, ^S when ^T : (static member op_Explicit : ^T -> int)
 
 let swap f a b = f b a
 let add (a: Slice<'T>) (b: Slice<'T>) = liftBinaryOp Image<'T>.(+) (a,b) // types are a nuissance, for overload with constants, we need one variant per type, sigh
-let addInt (a: Slice<int>) (b: int) = liftBinaryOpInt Image<int>.(+) (a,b)
-let addUInt8 (a: Slice<uint8>) (b: uint8) = liftBinaryOpUInt8 Image<uint8>.(+) (a,b)
-let addFloat (a: Slice<float>) (b: float) = liftBinaryOpFloat Image<float>.(+) (a,b)
+let inline sliceAddScalar<^T when ^T : equality and  ^T : (static member op_Explicit : ^T -> float)> (s: Slice<^T>) (i: ^T)  : Slice<^T> =
+    { s with Image = ImageFunctions.imageAddScalar<^T> s.Image i }
+let inline scalarAddSlice<^T when ^T : equality and  ^T : (static member op_Explicit : ^T -> float)> (i: ^T) (s: Slice<^T>)  : Slice<^T> =
+    { s with Image = ImageFunctions.scalarAddImage<^T> i s.Image }
 let sub (a: Slice<'T>) (b: Slice<'T>) = liftBinaryOp Image<'T>.(-) (a,b)
-let subInt (a: Slice<int>) (b: int) = liftBinaryOpInt Image<int>.(-) (a,b)
-let subFloat (a: Slice<float>) (b: float) = liftBinaryOpFloat Image<float>.(-) (a,b)
+let inline sliceSubScalar<^T when ^T : equality and  ^T : (static member op_Explicit : ^T -> float)> (s: Slice<^T>) (i: ^T)  : Slice<^T> =
+    { s with Image = ImageFunctions.imageSubScalar<^T> s.Image i }
+let inline scalarSubSlice<^T when ^T : equality and  ^T : (static member op_Explicit : ^T -> float)> (i: ^T) (s: Slice<^T>)  : Slice<^T> =
+    { s with Image = ImageFunctions.scalarSubImage<^T> i s.Image }
 let mul (a: Slice<'T>) (b: Slice<'T>) = liftBinaryOp Image<'T>.(*) (a,b)
-let mulInt (a: Slice<int>) (b: int) = liftBinaryOpInt Image<int>.(*) (a,b)
-let mulUInt8 (a: Slice<uint8>) (b: uint8) = liftBinaryOpUInt8 Image<uint8>.(*) (a,b)
-let mulFloat (a: Slice<float>) (b: float) = liftBinaryOpFloat Image<float>.(*) (a,b)
+let inline sliceMulScalar<^T when ^T : equality and  ^T : (static member op_Explicit : ^T -> float)> (s: Slice<^T>) (i: ^T)  : Slice<^T> =
+    { s with Image = ImageFunctions.imageMulScalar<^T> s.Image i }
+let inline scalarMulSlice<^T when ^T : equality and  ^T : (static member op_Explicit : ^T -> float)> (i: ^T) (s: Slice<^T>)  : Slice<^T> =
+    { s with Image = ImageFunctions.scalarMulImage<^T> i s.Image }
 let div (a: Slice<'T>) (b: Slice<'T>) = liftBinaryOp Image<'T>.(/) (a,b)
-let divInt (a: Slice<int>) (b: int) = liftBinaryOpInt Image<int>.(/) (a,b)
-let divFloat (a: Slice<float>) (b: float) = liftBinaryOpFloat Image<float>.(/) (a,b)
+let inline sliceDivScalar<^T when ^T : equality and  ^T : (static member op_Explicit : ^T -> float)> (s: Slice<^T>) (i: ^T)  : Slice<^T> =
+    { s with Image = ImageFunctions.imageDivScalar<^T> s.Image i }
+let inline scalarDivSlice<^T when ^T : equality and  ^T : (static member op_Explicit : ^T -> float)> (i: ^T) (s: Slice<^T>)  : Slice<^T> =
+    { s with Image = ImageFunctions.scalarDivImage<^T> i s.Image }
+
 let modulus (a: Slice<'T>) (b: Slice<'T>) = liftBinaryOp Image<'T>.(%) (a,b)
 let pow (a: Slice<'T>) (b: Slice<'T>) = liftBinaryOp Image<'T>.Pow (a,b)
 let isGreaterEqual (a: Slice<'T>) (b: Slice<'T>) = liftBinaryOp Image<'T>.isGreaterEqual (a,b)

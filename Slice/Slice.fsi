@@ -35,6 +35,9 @@ val private liftSource1:
 val private liftSource2:
   f: ('a -> 'b -> Image.Image<'T>) -> a: 'a -> b: 'b -> Slice<'T>
     when 'T: equality
+val private liftSource3:
+  f: ('a -> 'b -> 'c -> Image.Image<'T>) -> a: 'a -> b: 'b -> c: 'c -> Slice<'T>
+    when 'T: equality
 val private liftUnary:
   f: (Image.Image<'T> -> Image.Image<'T>) -> s: Slice<'T> -> Slice<'T>
     when 'T: equality
@@ -77,6 +80,9 @@ val private liftBinaryOpUInt8:
 val private liftBinaryOpFloat:
   f: (Image.Image<float> * float -> Image.Image<float>) ->
     s1: Slice<float> * s2: float -> Slice<float>
+val private liftImageScalarOp:
+  f: (Image.Image<'T> -> 'T -> Image.Image<'T>) ->
+    s: Slice<'T> -> i: 'T -> Slice<'T> when 'T: equality
 val private liftBinaryCmp:
   f: (Image.Image<'T> * Image.Image<'T> -> bool) ->
     s1: Slice<'T> * s2: Slice<'T> -> bool when 'T: equality
@@ -104,7 +110,7 @@ val discreteGaussian:
     b: uint option ->
     c: ImageFunctions.BoundaryCondition option -> s: Slice<'T> -> Slice<'T>
     when 'T: equality
-val gauss: sigma: float -> kernelSize: uint option -> Slice<float>
+val gauss: dim: uint -> sigma: float -> kernelSize: uint option -> Slice<float>
 val finiteDiffFilter1D: order: uint -> Slice<float>
 val finiteDiffFilter2D: direction: uint -> order: uint -> Slice<float>
 val finiteDiffFilter3D: direction: uint -> order: uint -> Slice<float>
@@ -153,19 +159,33 @@ val inline pairs2ints:
          ^S: (static member op_Explicit: ^S -> int)
 val swap: f: ('a -> 'b -> 'c) -> a: 'b -> b: 'a -> 'c
 val add: a: Slice<'T> -> b: Slice<'T> -> Slice<'T> when 'T: equality
-val addInt: a: Slice<int> -> b: int -> Slice<int>
-val addUInt8: a: Slice<uint8> -> b: uint8 -> Slice<uint8>
-val addFloat: a: Slice<float> -> b: float -> Slice<float>
+val inline sliceAddScalar:
+  s: Slice<^T> -> i: ^T -> Slice<^T>
+    when ^T: equality and ^T: (static member op_Explicit: ^T -> float)
+val inline scalarAddSlice:
+  i: ^T -> s: Slice<^T> -> Slice<^T>
+    when ^T: equality and ^T: (static member op_Explicit: ^T -> float)
 val sub: a: Slice<'T> -> b: Slice<'T> -> Slice<'T> when 'T: equality
-val subInt: a: Slice<int> -> b: int -> Slice<int>
-val subFloat: a: Slice<float> -> b: float -> Slice<float>
+val inline sliceSubScalar:
+  s: Slice<^T> -> i: ^T -> Slice<^T>
+    when ^T: equality and ^T: (static member op_Explicit: ^T -> float)
+val inline scalarSubSlice:
+  i: ^T -> s: Slice<^T> -> Slice<^T>
+    when ^T: equality and ^T: (static member op_Explicit: ^T -> float)
 val mul: a: Slice<'T> -> b: Slice<'T> -> Slice<'T> when 'T: equality
-val mulInt: a: Slice<int> -> b: int -> Slice<int>
-val mulUInt8: a: Slice<uint8> -> b: uint8 -> Slice<uint8>
-val mulFloat: a: Slice<float> -> b: float -> Slice<float>
+val inline sliceMulScalar:
+  s: Slice<^T> -> i: ^T -> Slice<^T>
+    when ^T: equality and ^T: (static member op_Explicit: ^T -> float)
+val inline scalarMulSlice:
+  i: ^T -> s: Slice<^T> -> Slice<^T>
+    when ^T: equality and ^T: (static member op_Explicit: ^T -> float)
 val div: a: Slice<'T> -> b: Slice<'T> -> Slice<'T> when 'T: equality
-val divInt: a: Slice<int> -> b: int -> Slice<int>
-val divFloat: a: Slice<float> -> b: float -> Slice<float>
+val inline sliceDivScalar:
+  s: Slice<^T> -> i: ^T -> Slice<^T>
+    when ^T: equality and ^T: (static member op_Explicit: ^T -> float)
+val inline scalarDivSlice:
+  i: ^T -> s: Slice<^T> -> Slice<^T>
+    when ^T: equality and ^T: (static member op_Explicit: ^T -> float)
 val modulus: a: Slice<'T> -> b: Slice<'T> -> Slice<'T> when 'T: equality
 val pow: a: Slice<'T> -> b: Slice<'T> -> Slice<'T> when 'T: equality
 val isGreaterEqual: a: Slice<'T> -> b: Slice<'T> -> Slice<'T> when 'T: equality
