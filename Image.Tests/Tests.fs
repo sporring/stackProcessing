@@ -3,6 +3,7 @@ module Tests
 open Expecto
 open Image 
 open Image.InternalHelpers
+open ImageFunctions
 open itk.simple
 
 [<Tests>]
@@ -1529,17 +1530,17 @@ let ImageProcessingTests =
     // conv
     testCase "conv with identity kernel" <| fun _ ->
         let img = Image<float>.ofArray2D (array2D [ [ 1.0; 2.0 ]; [ 3.0; 4.0 ] ])
-        let arr = Array2D.init 3 3 (fun m n -> if m=1 && n=1 then 1.0 else 0.0)
+        let arr = Array2D.init 1 1 (fun m n -> if m=0 && n=0 then 1.0 else 0.0)
         let ker = Image<float>.ofArray2D arr
         let result = ImageFunctions.conv img ker
         let expected = img.toArray2D()
         floatArray2DFloatClose (result.toArray2D()) expected 1e-10 "Expected convolution with identity kernel"
 
-    // discreteGaussian
-    testCase "discreteGaussian smooths image" <| fun _ ->
-        let arr = Array2D.init 5 5 (fun m n -> if m=2 && n=2 then 1.0 else 0.0)
+    // discreteGaussian2D
+    testCase "discreteGaussian2D smooths image" <| fun _ ->
+        let arr = Array2D.init 9 9 (fun m n -> if m=4 && n=4 then 1.0 else 0.0)
         let img = Image<float>.ofArray2D arr
-        let blurred = ImageFunctions.discreteGaussian 1.0 None None img
+        let blurred = ImageFunctions.discreteGaussian2D 1.0 None None img
         Expect.isTrue (
           blurred[2,2] < 1.0
           && blurred[2,2] > 0.0 
@@ -1854,9 +1855,9 @@ let imageFunctionTests =
       Expect.equal arr.[0,0] 1 "Value from second slice"
   ]
 
-[<EntryPoint>]
-let main argv =
-  runTestsWithArgs defaultConfig argv (testList "All Tests" [
+[<Tests>]
+let allTests = 
+  testList "All Tests" [
     ToVectorTests 
     FromVectorTests 
     FromTypeTests 
@@ -1884,4 +1885,10 @@ let main argv =
     expandTests
     stackTests
     imageFunctionTests
-  ])
+  ]
+
+
+[<EntryPoint>]
+let main argv =
+    printfn "Running tests!"   
+    runTestsWithCLIArgs [] argv allTests

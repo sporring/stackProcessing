@@ -564,15 +564,21 @@ val convolve:
 val conv:
   img: Image.Image<'T> -> ker: Image.Image<'T> -> Image.Image<'T>
     when 'T: equality
-val gauss:
-  sigma: float -> kernelSize: uint option -> Image.Image<'T> when 'T: equality
 val private stensil: order: uint32 -> float list
 val finiteDiffFilter1D: order: uint -> Image.Image<float>
 val finiteDiffFilter2D: direction: uint -> order: uint -> Image.Image<float>
 val finiteDiffFilter3D: direction: uint -> order: uint -> Image.Image<float>
 val finiteDiffFilter4D: direction: uint -> order: uint -> Image.Image<float>
 /// Gaussian kernel convolution
+val gauss:
+  dim: uint -> sigma: float -> kernelSize: uint option -> Image.Image<'T>
+    when 'T: equality
 val discreteGaussian:
+  sigma: float ->
+    kernelSize: uint option ->
+    boundaryCondition: BoundaryCondition option ->
+    (Image.Image<'T> -> Image.Image<'T>) when 'T: equality
+val discreteGaussian2D:
   sigma: float ->
     kernelSize: uint option ->
     boundaryCondition: BoundaryCondition option ->

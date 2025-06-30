@@ -115,6 +115,7 @@ let carg (img: Image<'T>) = makeUnaryImageOperator (fun () -> new itk.simple.Com
 type BoundaryCondition = ZeroPad | PerodicPad | ZeroFluxNeumannPad
 type OutputRegionMode = Valid | Same
 
+// Convolve sets size after the first argument, so convolve img kernel!
 let convolve (boundaryCondition: BoundaryCondition option) : Image<'T> -> Image<'T> -> Image<'T> =
     makeBinaryImageOperatorWith
         (fun () -> new itk.simple.ConvolutionImageFilter())
@@ -126,23 +127,9 @@ let convolve (boundaryCondition: BoundaryCondition option) : Image<'T> -> Image<
                     | Some PerodicPad -> itk.simple.ConvolutionImageFilter.BoundaryConditionType.PERIODIC_PAD 
                     | _ -> itk.simple.ConvolutionImageFilter.BoundaryConditionType.ZERO_PAD)) 
         (fun f img ker -> 
-            // itk simple shapes the result after the first arguments, so we flip for the larger
-            let imgSz = img.GetSize() |> fromVectorUInt32 |> List.reduce (*)
-            let kerSz = ker.GetSize() |> fromVectorUInt32 |> List.reduce (*)
-            if imgSz > kerSz then
-                f.Execute(img,ker)
-            else
-                f.Execute(ker,img)
-            )
+            f.Execute(img,ker))
 
 let conv (img: Image<'T>) (ker: Image<'T>) : Image<'T> = convolve None img ker
-
-let gauss (sigma: float) (kernelSize: uint option) : Image<'T> =
-    let f = new itk.simple.GaussianImageSource()
-    f.SetSigma(sigma)
-    let sz = Option.defaultValue ( 1u + 2u * uint (0.5 + sigma)) kernelSize
-    f.SetSize(List.replicate 3 sz |> toVectorUInt32)
-    Image<'T>.ofSimpleITK(f.Execute())
 
 let private stensil order = 
     // https://en.wikipedia.org/wiki/Finite_difference_coefficient 
@@ -196,14 +183,25 @@ let finiteDiffFilter4D (direction: uint) (order: uint) : Image<float> =
             Array4D.init 1 1 1 n (fun _ _ _ i -> lst[i])
     arr |> Image<float>.ofArray4D
 
-    /// Gaussian kernel convolution
-let discreteGaussian (sigma: float) (kernelSize: uint option) (boundaryCondition: BoundaryCondition option) : Image<'T> -> Image<'T> =
+/// Gaussian kernel convolution
+let gauss (dim: uint) (sigma: float) (kernelSize: uint option) : Image<'T> =
     let f = new itk.simple.GaussianImageSource()
+    let sz = Option.defaultValue (1u + 2u*2u * uint sigma) kernelSize
+    f.SetSize(List.replicate (int dim) sz |> toVectorUInt32)
     f.SetSigma(sigma)
-    let sz = Option.defaultValue ( 1u + 2u * uint (0.5 + sigma)) kernelSize
-    f.SetSize(List.replicate 3 sz |> toVectorUInt32)
+    // Image coords: [0 1] (mean = 0.5), [0 1 2] (mean = 1) => mean = (sz-1)/2
+    f.SetMean(List.replicate (int dim) ((float (sz-1u)) / 2.0) |> toVectorFloat64)
     f.SetScale(1.0)
-    let kern = Image<'T>.ofSimpleITK(f.Execute())
+    f.NormalizedOn()
+    Image<'T>.ofSimpleITK(f.Execute())
+
+let discreteGaussian (sigma: float) (kernelSize: uint option) (boundaryCondition: BoundaryCondition option) : Image<'T> -> Image<'T> =
+    let kern = gauss 3u sigma kernelSize
+    let bCond = Option.defaultValue ZeroPad boundaryCondition |> Some
+    fun (input: Image<'T>) -> convolve bCond input kern
+
+let discreteGaussian2D (sigma: float) (kernelSize: uint option) (boundaryCondition: BoundaryCondition option) : Image<'T> -> Image<'T> =
+    let kern = gauss 2u sigma kernelSize
     let bCond = Option.defaultValue ZeroPad boundaryCondition |> Some
     fun (input: Image<'T>) -> convolve bCond input kern
 
