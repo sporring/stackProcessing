@@ -32,6 +32,14 @@ module internal InternalHelpers =
         arr: 'T array4d -> unit
     val array2dZip: a: 'T array2d -> b: 'U array2d -> ('T * 'U) array2d
     val pixelIdToString: id: itk.simple.PixelIDValueEnum -> string
+    val flatIndices: size: uint list -> uint list seq
+    val setPixelAs:
+      sitkImg: itk.simple.Image ->
+        t: System.Type -> u: itk.simple.VectorUInt32 -> value: obj -> unit
+    val getPixelBoxed:
+      img: itk.simple.Image ->
+        t: System.Type -> u: itk.simple.VectorUInt32 -> obj
+val equalOne: v: 'T -> bool
 [<StructuredFormatDisplay ("{Display}")>]
 type Image<'T when 'T: equality> =
     interface System.IComparable
@@ -78,7 +86,6 @@ type Image<'T when 'T: equality> =
     static member
       ofImageList: images: Image<'S> list -> Image<'S list> when 'S: equality
     static member ofSimpleITK: itkImg: itk.simple.Image -> Image<'T>
-    static member sum: img: Image<'T> -> 'T
     member CompareTo: other: Image<'T> -> int
     override Equals: obj: obj -> bool
     member Get: coords: uint list -> 'T
@@ -89,12 +96,17 @@ type Image<'T when 'T: equality> =
     member GetNumberOfComponentsPerPixel: unit -> uint32
     member GetSize: unit -> uint list
     member GetWidth: unit -> uint32
-    member Set: coords: uint list * value: 'T -> unit
+    member Set: coords: uint list -> value: 'T -> unit
     member private SetImg: itkImg: itk.simple.Image -> unit
     override ToString: unit -> string
-    member forAll: unit -> bool
+    member fold: f: ('S -> 'T -> 'S) -> acc0: 'S -> 'S
+    member foldi: f: (uint list -> 'S -> 'T -> 'S) -> acc0: 'S -> 'S
+    member forAll: p: ('T -> bool) -> bool
+    member iter: f: ('T -> unit) -> unit
+    member iteri: f: (uint list -> 'T -> unit) -> unit
+    member map: f: ('T -> 'T) -> Image<'T>
+    member mapi: f: (uint list -> 'T -> 'T) -> Image<'T>
     member memoryEstimate: unit -> uint
-    member sum: unit -> 'T
     member toArray2D: unit -> 'T array2d
     member toArray3D: unit -> 'T array3d
     member toArray4D: unit -> 'T array4d

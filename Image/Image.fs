@@ -200,7 +200,100 @@ module internal InternalHelpers =
     let pixelIdToString (id: itk.simple.PixelIDValueEnum) : string =
         (id.ToString()).Substring(4)
 
+    let flatIndices (size: uint list): seq<uint list> = 
+        match size.Length with
+            | 2 ->
+                seq { 
+                    for i0 in [0..(int size[0] - 1)] do 
+                        for i1 in [0..(int size[1] - 1)] do 
+                            yield [uint i0; uint i1] }
+            | 3 ->
+                seq { 
+                    for i0 in [0..(int size[0] - 1)] do 
+                        for i1 in [0..(int size[1] - 1)] do 
+                            for i2 in [0..(int size[2] - 1)] do 
+                               yield [uint i0; uint i1; uint i2] }
+            | 4 ->
+                seq { 
+                    for i0 in [0..(int size[0] - 1)] do 
+                        for i1 in [0..(int size[1] - 1)] do 
+                            for i2 in [0..(int size[2] - 1)] do 
+                                for i3 in [0..(int size[3] - 1)] do 
+                                    yield [uint i0; uint i1; uint i2; uint i3] }
+            | _ -> failwith $"Unsupported dimensionality {size.Length}"
+
+    let setPixelAs (sitkImg: itk.simple.Image) (t: System.Type) (u: itk.simple.VectorUInt32) (value: obj) : unit =
+        if      t = typeof<uint8>                   then sitkImg.SetPixelAsUInt8(u, unbox value)
+        elif    t = typeof<int8>                    then sitkImg.SetPixelAsInt8(u, unbox value)
+        elif    t = typeof<uint16>                  then sitkImg.SetPixelAsUInt16(u, unbox value)
+        elif    t = typeof<int16>                   then sitkImg.SetPixelAsInt16(u, unbox value)
+        elif    t = typeof<uint32>                  then sitkImg.SetPixelAsUInt32(u, unbox value)
+        elif    t = typeof<int32>                  then sitkImg.SetPixelAsInt32(u, unbox value)
+        elif    t = typeof<uint64>                  then sitkImg.SetPixelAsUInt64(u, unbox value)
+        elif    t = typeof<int64>                  then sitkImg.SetPixelAsInt64(u, unbox value)
+        elif    t = typeof<float32>                 then sitkImg.SetPixelAsFloat(u, unbox value)
+        elif    t = typeof<float>                   then sitkImg.SetPixelAsDouble(u, unbox value)
+        elif    t = typeof<System.Numerics.Complex> then
+            let c = unbox<System.Numerics.Complex> value
+            let v = toVectorFloat64 [ c.Real; c.Imaginary ]
+            sitkImg.SetPixelAsVectorFloat64(u, v)
+        elif    t = typeof<uint8 list>              then sitkImg.SetPixelAsVectorUInt8(u, toVectorUInt8 (unbox value))
+        elif    t = typeof<int8 list>               then sitkImg.SetPixelAsVectorInt8(u, toVectorInt8 (unbox value))
+        elif    t = typeof<uint16 list>             then sitkImg.SetPixelAsVectorUInt16(u, toVectorUInt16 (unbox value))
+        elif    t = typeof<int16 list>              then sitkImg.SetPixelAsVectorInt16(u, toVectorInt16 (unbox value))
+        elif    t = typeof<uint32 list>             then sitkImg.SetPixelAsVectorUInt32(u, toVectorUInt32 (unbox value))
+        elif    t = typeof<int32 list>              then sitkImg.SetPixelAsVectorInt32(u, toVectorInt32 (unbox value))
+        elif    t = typeof<uint64 list>             then sitkImg.SetPixelAsVectorUInt64(u, toVectorUInt64 (unbox value))
+        elif    t = typeof<int64 list>              then sitkImg.SetPixelAsVectorInt64(u, toVectorInt64 (unbox value))
+        elif    t = typeof<float32 list>            then sitkImg.SetPixelAsVectorFloat32(u, toVectorFloat32 (unbox value))
+        elif    t = typeof<float list>              then sitkImg.SetPixelAsVectorFloat64(u, toVectorFloat64 (unbox value))
+        else failwithf "Unsupported pixel type: %O" t
+
+    let getPixelBoxed (img : itk.simple.Image) (t   : System.Type) (u   : itk.simple.VectorUInt32) : obj =
+
+        if      t = typeof<uint8>                   then box (img.GetPixelAsUInt8   u)
+        elif    t = typeof<int8>                    then box (img.GetPixelAsInt8    u)
+        elif    t = typeof<uint16>                  then box (img.GetPixelAsUInt16  u)
+        elif    t = typeof<int16>                   then box (img.GetPixelAsInt16   u)
+        elif    t = typeof<uint32>                  then box (img.GetPixelAsUInt32  u)
+        elif    t = typeof<int32>                   then box (img.GetPixelAsInt32   u)
+        elif    t = typeof<uint64>                  then box (img.GetPixelAsUInt64  u)
+        elif    t = typeof<int64>                   then box (img.GetPixelAsInt64   u)
+        elif    t = typeof<float32>                 then box (img.GetPixelAsFloat   u)
+        elif    t = typeof<float>                   then box (img.GetPixelAsDouble  u)
+        elif    t = typeof<System.Numerics.Complex>                 then
+            img.GetPixelAsVectorFloat64 u
+            |> fromVectorFloat64                    // float64 list → Complex
+            |> box
+        elif    t = typeof<uint8   list>            then box (img.GetPixelAsVectorUInt8   u |> fromVectorUInt8)
+        elif    t = typeof<int8    list>            then box (img.GetPixelAsVectorInt8    u |> fromVectorInt8)
+        elif    t = typeof<uint16  list>            then box (img.GetPixelAsVectorUInt16  u |> fromVectorUInt16)
+        elif    t = typeof<int16   list>            then box (img.GetPixelAsVectorInt16   u |> fromVectorInt16)
+        elif    t = typeof<uint32  list>            then box (img.GetPixelAsVectorUInt32  u |> fromVectorUInt32)
+        elif    t = typeof<int32   list>            then box (img.GetPixelAsVectorInt32   u |> fromVectorInt32)
+        elif    t = typeof<uint64  list>            then box (img.GetPixelAsVectorUInt64  u |> fromVectorUInt64)
+        elif    t = typeof<int64   list>            then box (img.GetPixelAsVectorInt64   u |> fromVectorInt64)
+        elif    t = typeof<float32 list>            then box (img.GetPixelAsVectorFloat32 u |> fromVectorFloat32)
+        elif    t = typeof<float   list>            then box (img.GetPixelAsVectorFloat64 u |> fromVectorFloat64)
+        else
+            failwithf "Unsupported pixel type: %O" t
+
+
 open InternalHelpers
+
+let equalOne (v : 'T) : bool =
+    match box v with
+    | :? uint8   as b -> b = 1uy
+    | :? int8    as b -> b = 1y
+    | :? uint16  as b -> b = 1us
+    | :? int16   as b -> b = 1s
+    | :? uint32  as b -> b = 1u
+    | :? int32   as b -> b = 1
+    | :? uint64  as b -> b = 1uL
+    | :? int64   as b -> b = 1L
+    | :? float32 as b -> b = 1.0f
+    | :? float   as b -> b = 1.0
+    | _ -> failwithf "Don't know the value of 1 for %A" (typeof<'T>)
 
 [<StructuredFormatDisplay("{Display}")>] // Prevent fsi printing information about its members such as img
 type Image<'T when 'T : equality>(sz: uint list, ?numberComp: uint) =
@@ -216,46 +309,6 @@ type Image<'T when 'T : equality>(sz: uint list, ?numberComp: uint) =
             new itk.simple.Image(sz |> toVectorUInt32, itkId, v)
         | None -> 
             new itk.simple.Image(sz |> toVectorUInt32, itkId)
-
-    interface System.IEquatable<Image<'T>> with
-        member this.Equals(other: Image<'T>) = Image<'T>.eq(this, other)
-
-    override this.Equals(obj: obj) = // For some reason, it's not enough with this.Equals(other: Image<'T>)
-        match obj with
-        | :? Image<'T> as other -> (this :> System.IEquatable<_>).Equals(other)
-        | _ -> false
-
-    override this.GetHashCode() =
-        let dim = this.GetDimensions()
-        if dim = 2u then
-            hash (this.toArray2D())
-        elif dim = 3u then
-            hash (this.toArray3D())
-        elif dim = 4u then
-            hash (this.toArray4D())
-        else
-            failwith "No hashcode defined for images with dimensions less than 2 or greater than 4"
-
-
-    member this.CompareTo(other: Image<'T>) =
-        let diff : Image<'T> = this - other
-        let pixels = diff.toArray2D() |> Seq.cast<obj>
-
-        let sum =
-            pixels
-            |> Seq.sumBy System.Convert.ToDouble
-
-        if sum < 0.0 then -1
-        elif sum > 0.0 then 1
-        else 0
-
-    interface System.IComparable with
-        member this.CompareTo(obj: obj) =
-            match obj with
-            | :? Image<'T> as other -> this.CompareTo(other)
-            | _ -> invalidArg "obj" "Expected Image<'T>"
-
-
 
     member this.Image = img
     member private this.SetImg (itkImg: itk.simple.Image) : unit =
@@ -274,6 +327,15 @@ type Image<'T when 'T : equality>(sz: uint list, ?numberComp: uint) =
         let vecStr = if comp = 1u then "Scalar" else sprintf $"{comp}-Vector "
         sprintf "%s %s" szStr vecStr
     member this.Display = this.ToString() // related to [<StructuredFormatDisplay>]
+
+    interface System.IEquatable<Image<'T>> with
+        member this.Equals(other: Image<'T>) = Image<'T>.eq(this, other)
+
+    interface System.IComparable with
+        member this.CompareTo(obj: obj) =
+            match obj with
+            | :? Image<'T> as other -> this.CompareTo(other)
+            | _ -> invalidArg "obj" "Expected Image<'T>"
 
     member this.memoryEstimate(): uint = // Intended to be mostly immutable, but better safe than sorry.
         let t = typeof<'T>
@@ -331,31 +393,7 @@ type Image<'T when 'T : equality>(sz: uint list, ?numberComp: uint) =
         arr
         |> Array2D.iteri (fun x y value ->
             let u = [ uint x; uint y ] |> toVectorUInt32
-            if      t = typeof<uint8>                   then img.SetPixelAsUInt8(u, unbox value)
-            elif    t = typeof<int8>                    then img.SetPixelAsInt8(u, unbox value)
-            elif    t = typeof<uint16>                  then img.SetPixelAsUInt16(u, unbox value)
-            elif    t = typeof<int16>                   then img.SetPixelAsInt16(u, unbox value)
-            elif    t = typeof<uint32>                  then img.SetPixelAsUInt32(u, unbox value)
-            elif    t = typeof<int32>                   then img.SetPixelAsInt32(u, unbox value)
-            elif    t = typeof<uint64>                  then img.SetPixelAsUInt64(u, unbox value)
-            elif    t = typeof<int64>                   then img.SetPixelAsInt64(u, unbox value)
-            elif    t = typeof<float32>                 then img.SetPixelAsFloat(u, unbox value)
-            elif    t = typeof<float>                   then img.SetPixelAsDouble(u, unbox value)
-            elif    t = typeof<System.Numerics.Complex> then
-                let c = unbox<System.Numerics.Complex> value
-                let v = toVectorFloat64 [ c.Real; c.Imaginary ]
-                img.SetPixelAsVectorFloat64(u, v)
-            elif    t = typeof<uint8 list>              then img.SetPixelAsVectorUInt8(u, toVectorUInt8 (unbox value))
-            elif    t = typeof<int8 list>               then img.SetPixelAsVectorInt8(u, toVectorInt8 (unbox value))
-            elif    t = typeof<uint16 list>             then img.SetPixelAsVectorUInt16(u, toVectorUInt16 (unbox value))
-            elif    t = typeof<int16 list>              then img.SetPixelAsVectorInt16(u, toVectorInt16 (unbox value))
-            elif    t = typeof<uint32 list>             then img.SetPixelAsVectorUInt32(u, toVectorUInt32 (unbox value))
-            elif    t = typeof<int32 list>              then img.SetPixelAsVectorInt32(u, toVectorInt32 (unbox value))
-            elif    t = typeof<uint64 list>             then img.SetPixelAsVectorUInt64(u, toVectorUInt64 (unbox value))
-            elif    t = typeof<int64 list>              then img.SetPixelAsVectorInt64(u, toVectorInt64 (unbox value))
-            elif    t = typeof<float32 list>            then img.SetPixelAsVectorFloat32(u, toVectorFloat32 (unbox value))
-            elif    t = typeof<float list>              then img.SetPixelAsVectorFloat64(u, toVectorFloat64 (unbox value))
-            else failwithf "Unsupported pixel type: %O" t
+            setPixelAs img t u value
         )
         let wrapped = Image<'T>([0u;0u])
         wrapped.SetImg img
@@ -370,31 +408,7 @@ type Image<'T when 'T : equality>(sz: uint list, ?numberComp: uint) =
         arr
         |> Array3D.iteri (fun x y z value ->
             let u = [ uint x; uint y; uint z ] |> toVectorUInt32
-            if      t = typeof<uint8>                   then img.SetPixelAsUInt8(u, unbox value)
-            elif    t = typeof<int8>                    then img.SetPixelAsInt8(u, unbox value)
-            elif    t = typeof<uint16>                  then img.SetPixelAsUInt16(u, unbox value)
-            elif    t = typeof<int16>                   then img.SetPixelAsInt16(u, unbox value)
-            elif    t = typeof<uint32>                  then img.SetPixelAsUInt32(u, unbox value)
-            elif    t = typeof<int32>                   then img.SetPixelAsInt32(u, unbox value)
-            elif    t = typeof<uint64>                  then img.SetPixelAsUInt64(u, unbox value)
-            elif    t = typeof<int64>                   then img.SetPixelAsInt64(u, unbox value)
-            elif    t = typeof<float32>                 then img.SetPixelAsFloat(u, unbox value)
-            elif    t = typeof<float>                   then img.SetPixelAsDouble(u, unbox value)
-            elif    t = typeof<System.Numerics.Complex> then
-                let c = unbox<System.Numerics.Complex> value
-                let v = toVectorFloat64 [ c.Real; c.Imaginary ]
-                img.SetPixelAsVectorFloat64(u, v)
-            elif    t = typeof<uint8 list>              then img.SetPixelAsVectorUInt8(u, toVectorUInt8 (unbox value))
-            elif    t = typeof<int8 list>               then img.SetPixelAsVectorInt8(u, toVectorInt8 (unbox value))
-            elif    t = typeof<uint16 list>             then img.SetPixelAsVectorUInt16(u, toVectorUInt16 (unbox value))
-            elif    t = typeof<int16 list>              then img.SetPixelAsVectorInt16(u, toVectorInt16 (unbox value))
-            elif    t = typeof<uint32 list>             then img.SetPixelAsVectorUInt32(u, toVectorUInt32 (unbox value))
-            elif    t = typeof<int32 list>              then img.SetPixelAsVectorInt32(u, toVectorInt32 (unbox value))
-            elif    t = typeof<uint64 list>             then img.SetPixelAsVectorUInt64(u, toVectorUInt64 (unbox value))
-            elif    t = typeof<int64 list>              then img.SetPixelAsVectorInt64(u, toVectorInt64 (unbox value))
-            elif    t = typeof<float32 list>            then img.SetPixelAsVectorFloat32(u, toVectorFloat32 (unbox value))
-            elif    t = typeof<float list>              then img.SetPixelAsVectorFloat64(u, toVectorFloat64 (unbox value))
-            else failwithf "Unsupported pixel type: %O" t
+            setPixelAs img t u value
         )
         let wrapped = Image<'T>([0u;0u;0u])
         wrapped.SetImg img
@@ -409,38 +423,16 @@ type Image<'T when 'T : equality>(sz: uint list, ?numberComp: uint) =
         arr
         |> Array4Diteri (fun x y z k value ->
             let u = [ uint x; uint y; uint z; uint k ] |> toVectorUInt32
-            if      t = typeof<uint8>                   then img.SetPixelAsUInt8(u, unbox value)
-            elif    t = typeof<int8>                    then img.SetPixelAsInt8(u, unbox value)
-            elif    t = typeof<uint16>                  then img.SetPixelAsUInt16(u, unbox value)
-            elif    t = typeof<int16>                   then img.SetPixelAsInt16(u, unbox value)
-            elif    t = typeof<uint32>                  then img.SetPixelAsUInt32(u, unbox value)
-            elif    t = typeof<int32>                   then img.SetPixelAsInt32(u, unbox value)
-            elif    t = typeof<uint64>                  then img.SetPixelAsUInt64(u, unbox value)
-            elif    t = typeof<int64>                   then img.SetPixelAsInt64(u, unbox value)
-            elif    t = typeof<float32>                 then img.SetPixelAsFloat(u, unbox value)
-            elif    t = typeof<float>                   then img.SetPixelAsDouble(u, unbox value)
-            elif    t = typeof<System.Numerics.Complex> then
-                let c = unbox<System.Numerics.Complex> value
-                let v = toVectorFloat64 [ c.Real; c.Imaginary ]
-                img.SetPixelAsVectorFloat64(u, v)
-            elif    t = typeof<uint8 list>              then img.SetPixelAsVectorUInt8(u, toVectorUInt8 (unbox value))
-            elif    t = typeof<int8 list>               then img.SetPixelAsVectorInt8(u, toVectorInt8 (unbox value))
-            elif    t = typeof<uint16 list>             then img.SetPixelAsVectorUInt16(u, toVectorUInt16 (unbox value))
-            elif    t = typeof<int16 list>              then img.SetPixelAsVectorInt16(u, toVectorInt16 (unbox value))
-            elif    t = typeof<uint32 list>             then img.SetPixelAsVectorUInt32(u, toVectorUInt32 (unbox value))
-            elif    t = typeof<int32 list>              then img.SetPixelAsVectorInt32(u, toVectorInt32 (unbox value))
-            elif    t = typeof<uint64 list>             then img.SetPixelAsVectorUInt64(u, toVectorUInt64 (unbox value))
-            elif    t = typeof<int64 list>              then img.SetPixelAsVectorInt64(u, toVectorInt64 (unbox value))
-            elif    t = typeof<float32 list>            then img.SetPixelAsVectorFloat32(u, toVectorFloat32 (unbox value))
-            elif    t = typeof<float list>              then img.SetPixelAsVectorFloat64(u, toVectorFloat64 (unbox value))
-            else failwithf "Unsupported pixel type: %O" t
+            setPixelAs img t u value
         )
         let wrapped = Image<'T>([0u;0u;0u;0u])
         wrapped.SetImg img
         wrapped
 
     member this.toArray2D (): 'T[,] =
-        GetArray2DFromImage this.Image
+        let sz = this.GetSize() |> List.map int
+        Array2D.init sz[0] sz[0] (fun i0 i1 -> this.Get([uint i0; uint i1]))
+        //GetArray2DFromImage this.Image
 
     member this.toArray3D (): 'T[,,] =
         GetArray3DFromImage this.Image
@@ -515,78 +507,151 @@ type Image<'T when 'T : equality>(sz: uint list, ?numberComp: uint) =
         let filter = new itk.simple.DivideImageFilter()
         Image<'T>.ofSimpleITK(filter.Execute(f1.toSimpleITK(), f2.toSimpleITK()))
 
-    // Comparision
-    member this.forAll () : bool =
-        let t = typeof<'T>
-        let pixels = this.toArray2D() |> Seq.cast<'T>
-        if      t = typeof<uint8>   then pixels |> Seq.cast<uint8>   |> Seq.forall ((=) 1uy)
-        elif    t = typeof<int8>    then pixels |> Seq.cast<int8>    |> Seq.forall ((=) 1y)
-        elif    t = typeof<uint16>  then pixels |> Seq.cast<uint16>  |> Seq.forall ((=) 1us)
-        elif    t = typeof<int16>   then pixels |> Seq.cast<int16>   |> Seq.forall ((=) 1s)
-        elif    t = typeof<uint32>  then pixels |> Seq.cast<uint32>  |> Seq.forall ((=) 1u)
-        elif    t = typeof<int32>   then pixels |> Seq.cast<int32>   |> Seq.forall ((=) 1)
-        elif    t = typeof<uint64>  then pixels |> Seq.cast<uint64>  |> Seq.forall ((=) 1UL)
-        elif    t = typeof<int64>   then pixels |> Seq.cast<int64>   |> Seq.forall ((=) 1L)
-        elif    t = typeof<float32> then pixels |> Seq.cast<float32> |> Seq.forall ((=) 1.0f)
-        elif    t = typeof<float>   then pixels |> Seq.cast<float>   |> Seq.forall ((=) 1.0)
-        else failwithf "Unsupported pixel type: %O" t
+    // Collection type
+    member this.map (f:'T->'T): Image<'T> =
+        let sz = this.GetSize()
+        let comp = this.GetNumberOfComponentsPerPixel()
+        let im = Image<'T>(sz,comp)
+        sz
+        |> flatIndices
+        |> Seq.iter (fun idx -> this.Get idx |> f |> (im.Set idx))
+        im
 
-    static member sum (img: Image<'T>) : 'T = 
-        let t = typeof<'T>
-        let pixels = img.toArray2D() |> Seq.cast<'T>
-        let s =
-            if      t = typeof<uint8>   then pixels |> Seq.cast<uint8>   |> Seq.sum |> box
-            elif    t = typeof<int8>    then pixels |> Seq.cast<int8>    |> Seq.sum |> box
-            elif    t = typeof<uint16>  then pixels |> Seq.cast<uint16>  |> Seq.sum |> box
-            elif    t = typeof<int16>   then pixels |> Seq.cast<int16>   |> Seq.sum |> box
-            elif    t = typeof<uint32>  then pixels |> Seq.cast<uint32>  |> Seq.sum |> box
-            elif    t = typeof<int32>   then pixels |> Seq.cast<int32>   |> Seq.sum |> box
-            elif    t = typeof<uint64>  then pixels |> Seq.cast<uint64>  |> Seq.sum |> box
-            elif    t = typeof<int64>   then pixels |> Seq.cast<int64>   |> Seq.sum |> box
-            elif    t = typeof<float32> then pixels |> Seq.cast<float32> |> Seq.sum |> box
-            elif    t = typeof<float>   then pixels |> Seq.cast<float>   |> Seq.sum |> box
-            else failwithf "Unsupported pixel type: %O" t
-        unbox<'T> s
+    member this.mapi (f:uint list->'T->'T): Image<'T> =
+        let sz = this.GetSize()
+        let comp = this.GetNumberOfComponentsPerPixel()
+        let im = Image<'T>(sz,comp)
+        sz
+        |> flatIndices
+        |> Seq.iter (fun idx -> this.Get idx |> f idx |> (im.Set idx))
+        im
 
-    member this.sum() = Image<'T>.sum this
+    member this.iter (f:'T->unit): unit =
+        let sz = this.GetSize()
+        sz
+        |> flatIndices
+        |> Seq.iter (fun idx -> this.Get idx |> f)
+
+    member this.iteri (f:uint list->'T->unit): unit =
+        let sz = this.GetSize()
+        sz
+        |> flatIndices
+        |> Seq.iter (fun idx -> this.Get idx |> f idx)
+
+    member this.fold (f:'S->'T->'S) (acc0:'S): 'S =
+        let sz = this.GetSize()
+        let comp = this.GetNumberOfComponentsPerPixel()
+        let im = Image<'T>(sz,comp)
+        sz
+        |> flatIndices
+        |> Seq.fold (fun acc idx -> this.Get idx |> f acc) acc0
+
+    member this.foldi (f:uint list->'S->'T->'S) (acc0:'S): 'S =
+        let sz = this.GetSize()
+        let comp = this.GetNumberOfComponentsPerPixel()
+        let im = Image<'T>(sz,comp)
+        sz
+        |> flatIndices
+        |> Seq.fold (fun acc idx -> this.Get idx |> f idx acc) acc0
+
+    member this.Get (coords: uint list) : 'T =
+        let u = coords |> toVectorUInt32
+        let t = typeof<'T>
+        let raw = getPixelBoxed this.Image t u
+        raw :?> 'T
+
+    member this.Set (coords: uint list) (value: 'T) : unit =
+        let u = toVectorUInt32 coords
+        let t = typeof<'T>
+        setPixelAs this.Image t u value
+
+    member this.Item
+        with get(i0: int, i1: int) : 'T =
+            this.Get([ uint i0; uint i1 ])
+        and set(i0: int, i1: int) (value: 'T) : unit =
+            this.Set [ uint i0; uint i1 ] value
+    member this.Item
+        with get(i0: int, i1: int, i2: int) : 'T =
+            this.Get([ uint i0; uint i1; uint i2 ])
+        and set(i0: int, i1: int, i2: int) (value: 'T) : unit =
+            this.Set [ uint i0; uint i1; uint i2 ] value
+    member this.Item
+        with get(i0: int, i1: int, i2: int, i3: int) : 'T =
+            this.Get([ uint i0; uint i1; uint i2; uint i3 ])
+        and set(i0: int, i1: int, i2: int, i3: int) (value: 'T) : unit =
+            this.Set [ uint i0; uint i1; uint i2; uint i3 ] value
+
+    // Slicing is available as https://learn.microsoft.com/en-us/dotnet/fsharp/language-reference/arrays
+
+
+    member this.forAll (p: 'T -> bool) : bool =
+        this.fold (fun acc elm -> acc && p elm) true
+
+    override this.Equals(obj: obj) = // For some reason, it's not enough with this.Equals(other: Image<'T>)
+        match obj with
+        | :? Image<'T> as other -> (this :> System.IEquatable<_>).Equals(other)
+        | _ -> false
+
+    override this.GetHashCode() =
+        let dim = this.GetDimensions()
+        if dim = 2u then
+            hash (this.toArray2D())
+        elif dim = 3u then
+            hash (this.toArray3D())
+        elif dim = 4u then
+            hash (this.toArray4D())
+        else
+            failwith "No hashcode defined for images with dimensions less than 2 or greater than 4"
+
+    member this.CompareTo(other: Image<'T>) =
+        let diff : Image<'T> = this - other
+        let pixels = diff.toArray2D() |> Seq.cast<obj>
+
+        let sum =
+            pixels
+            |> Seq.sumBy System.Convert.ToDouble
+
+        if sum < 0.0 then -1
+        elif sum > 0.0 then 1
+        else 0
 
     /// Comparison operators
     static member isEqual (f1: Image<'S>, f2: Image<'S>) = // Curried form confuses fsharp
         let filter = new itk.simple.EqualImageFilter()
         Image<'S>.ofSimpleITK(filter.Execute(f1.toSimpleITK(), f2.toSimpleITK()))
     static member eq (f1: Image<'S>, f2: Image<'S>) =
-        (Image<'S>.isEqual(f1, f2)).forAll()
+        (Image<'S>.isEqual(f1, f2)).forAll equalOne
 
     static member isNotEqual (f1: Image<'S>, f2: Image<'S>) =
         let filter = new itk.simple.NotEqualImageFilter()
         Image<'S>.ofSimpleITK(filter.Execute(f1.toSimpleITK(), f2.toSimpleITK()))
     static member neq (f1: Image<'S>, f2: Image<'S>) =
-        (Image<float>.isNotEqual(f1, f2)).forAll()
+        (Image<float>.isNotEqual(f1, f2)).forAll equalOne
 
     static member isLessThan (f1: Image<'S>, f2: Image<'S>) =
         let filter = new itk.simple.LessImageFilter()
         Image<'S>.ofSimpleITK(filter.Execute(f1.toSimpleITK(), f2.toSimpleITK()))
     static member lt (f1: Image<'S>, f2: Image<'S>) =
-        (Image<'S>.isLessThan(f1, f2)).forAll()
+        (Image<'S>.isLessThan(f1, f2)).forAll equalOne
 
     static member isLessThanEqual (f1: Image<'S>, f2: Image<'S>) =
         let filter = new itk.simple.LessEqualImageFilter()
         Image<'S>.ofSimpleITK(filter.Execute(f1.toSimpleITK(), f2.toSimpleITK()))
     static member lte (f1: Image<'S>, f2: Image<'S>) =
-        (Image<'S>.isLessThanEqual(f1, f2)).forAll()
+        (Image<'S>.isLessThanEqual(f1, f2)).forAll equalOne
 
     static member isGreater (f1: Image<'S>, f2: Image<'S>) =
         let filter = new itk.simple.GreaterImageFilter()
         Image<'S>.ofSimpleITK(filter.Execute(f1.toSimpleITK(), f2.toSimpleITK()))
     static member gt (f1: Image<'S>, f2: Image<'S>) =
-        (Image<'S>.isGreater(f1, f2)).forAll()
+        (Image<'S>.isGreater(f1, f2)).forAll equalOne
 
     // greater than or equal
     static member isGreaterEqual (f1: Image<'S>, f2: Image<'S>) =
         let filter = new itk.simple.GreaterEqualImageFilter()
         Image<'S>.ofSimpleITK(filter.Execute(f1.toSimpleITK(), f2.toSimpleITK()))
     static member gte (f1: Image<'S>, f2: Image<'S>) =
-        (Image<'S>.isGreaterEqual(f1, f2)).forAll()
+        (Image<'S>.isGreaterEqual(f1, f2)).forAll equalOne
 
     // Power (no direct operator for ** in .NET) - provide a named method instead
     static member Pow (f1: Image<'S>, f2: Image<'S>) =
@@ -612,77 +677,3 @@ type Image<'T when 'T : equality>(sz: uint list, ?numberComp: uint) =
     static member op_LogicalNot (f: Image<'S>) =
         let filter = new itk.simple.InvertIntensityImageFilter()
         Image<'S>.ofSimpleITK(filter.Execute(f.toSimpleITK()))
-
-    member this.Get (coords: uint list) : 'T =
-        let u = coords |> toVectorUInt32
-        let t = typeof<'T>
-        let raw =
-            if   t = typeof<uint8>                   then box (img.GetPixelAsUInt8(u))
-            elif t = typeof<int8>                    then box (img.GetPixelAsInt8(u))
-            elif t = typeof<uint16>                  then box (img.GetPixelAsUInt16(u))
-            elif t = typeof<int16>                   then box (img.GetPixelAsInt16(u))
-            elif t = typeof<uint32>                  then box (img.GetPixelAsUInt32(u))
-            elif t = typeof<int32>                   then box (img.GetPixelAsInt32(u))
-            elif t = typeof<uint64>                  then box (img.GetPixelAsUInt64(u))
-            elif t = typeof<int64>                   then box (img.GetPixelAsInt64(u))
-            elif t = typeof<float32>                 then box (img.GetPixelAsFloat(u))
-            elif t = typeof<float>                   then box (img.GetPixelAsDouble(u))
-            elif t = typeof<System.Numerics.Complex> then box (img.GetPixelAsVectorFloat64(u) |> fromVectorFloat64)
-            elif t = typeof<int8 list>               then box (img.GetPixelAsVectorInt8(u) |> fromVectorInt8)
-            elif t = typeof<uint16 list>             then box (img.GetPixelAsVectorUInt16(u) |> fromVectorUInt16)
-            elif t = typeof<int16 list>              then box (img.GetPixelAsVectorInt16(u) |> fromVectorInt16)
-            elif t = typeof<uint32 list>             then box (img.GetPixelAsVectorUInt32(u) |> fromVectorUInt32)
-            elif t = typeof<int32 list>              then box (img.GetPixelAsVectorInt32(u) |> fromVectorInt32)
-            elif t = typeof<uint64 list>             then box (img.GetPixelAsVectorUInt64(u) |> fromVectorUInt64)
-            elif t = typeof<int64 list>              then box (img.GetPixelAsVectorInt64(u) |> fromVectorInt64)
-            elif t = typeof<float32 list>            then box (img.GetPixelAsVectorFloat32(u) |> fromVectorFloat32)
-            elif t = typeof<float list>              then box (img.GetPixelAsVectorFloat64(u) |> fromVectorFloat64)
-            else failwithf "Unsupported pixel type: %O" t
-        raw :?> 'T
-
-    member this.Set (coords: uint list, value: 'T) : unit =
-        let u = toVectorUInt32 coords
-        let t = typeof<'T>
-        if      t = typeof<uint8>                   then this.Image.SetPixelAsUInt8(u, unbox value)
-        elif    t = typeof<int8>                    then this.Image.SetPixelAsInt8(u, unbox value)
-        elif    t = typeof<uint16>                  then this.Image.SetPixelAsUInt16(u, unbox value)
-        elif    t = typeof<int16>                   then this.Image.SetPixelAsInt16(u, unbox value)
-        elif    t = typeof<uint32>                  then this.Image.SetPixelAsUInt32(u, unbox value)
-        elif    t = typeof<int32>                   then this.Image.SetPixelAsInt32(u, unbox value)
-        elif    t = typeof<uint64>                  then this.Image.SetPixelAsUInt64(u, unbox value)
-        elif    t = typeof<int64>                   then this.Image.SetPixelAsInt64(u, unbox value)
-        elif    t = typeof<float32>                 then this.Image.SetPixelAsFloat(u, unbox value)
-        elif    t = typeof<float>                   then this.Image.SetPixelAsDouble(u, unbox value)
-        elif    t = typeof<System.Numerics.Complex> then
-            let c = unbox<System.Numerics.Complex> value
-            let v = toVectorFloat64 [ c.Real; c.Imaginary ]
-            this.Image.SetPixelAsVectorFloat64(u, v)
-        elif    t = typeof<uint8 list>              then this.Image.SetPixelAsVectorUInt8(u, toVectorUInt8 (unbox value))
-        elif    t = typeof<int8 list>               then this.Image.SetPixelAsVectorInt8(u, toVectorInt8 (unbox value))
-        elif    t = typeof<uint16 list>             then this.Image.SetPixelAsVectorUInt16(u, toVectorUInt16 (unbox value))
-        elif    t = typeof<int16 list>              then this.Image.SetPixelAsVectorInt16(u, toVectorInt16 (unbox value))
-        elif    t = typeof<uint32 list>             then this.Image.SetPixelAsVectorUInt32(u, toVectorUInt32 (unbox value))
-        elif    t = typeof<int32 list>              then this.Image.SetPixelAsVectorInt32(u, toVectorInt32 (unbox value))
-        elif    t = typeof<uint64 list>             then this.Image.SetPixelAsVectorUInt64(u, toVectorUInt64 (unbox value))
-        elif    t = typeof<int64 list>              then this.Image.SetPixelAsVectorInt64(u, toVectorInt64 (unbox value))
-        elif    t = typeof<float32 list>            then this.Image.SetPixelAsVectorFloat32(u, toVectorFloat32 (unbox value))
-        elif    t = typeof<float list>              then this.Image.SetPixelAsVectorFloat64(u, toVectorFloat64 (unbox value))
-        else failwithf "Unsupported pixel type: %O" t
-
-    member this.Item
-        with get(i0: int, i1: int) : 'T =
-            this.Get([ uint i0; uint i1 ])
-        and set(i0: int, i1: int) (value: 'T) : unit =
-            this.Set([ uint i0; uint i1 ], value)
-    member this.Item
-        with get(i0: int, i1: int, i2: int) : 'T =
-            this.Get([ uint i0; uint i1; uint i2 ])
-        and set(i0: int, i1: int, i2: int) (value: 'T) : unit =
-            this.Set([ uint i0; uint i1; uint i2 ], value)
-    member this.Item
-        with get(i0: int, i1: int, i2: int, i3: int) : 'T =
-            this.Get([ uint i0; uint i1; uint i2; uint i3 ])
-        and set(i0: int, i1: int, i2: int, i3: int) (value: 'T) : unit =
-            this.Set([ uint i0; uint i1; uint i2; uint i3 ], value)
-
-// Slicing is available as https://learn.microsoft.com/en-us/dotnet/fsharp/language-reference/arrays

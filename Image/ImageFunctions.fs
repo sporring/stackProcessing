@@ -487,33 +487,11 @@ let generateCoordinateAxis (axis: int) (size: int list) : Image<uint32> =
     Image<uint32>.ofSimpleITK(image)
 
 let histogram (image: Image<'T>) : Map<'T, uint64> =
-    let size = image.GetSize() |> List.map int
-    let dim = image.GetDimensions()
-    let flat = 
-        match dim with
-            | 2u ->
-                seq { 
-                    for i0 in [0..(size[0] - 1)] do 
-                        for i1 in [0..(size[1] - 1)] do 
-                            yield image[i0,i1] }
-            | 3u ->
-                seq { 
-                    for i0 in [0..(size[0] - 1)] do 
-                        for i1 in [0..(size[1] - 1)] do 
-                            for i2 in [0..(size[2] - 1)] do 
-                               yield image[i0, i1, i2] }
-            | 4u ->
-                seq { 
-                    for i0 in [0..(size[0] - 1)] do 
-                        for i1 in [0..(size[1] - 1)] do 
-                            for i2 in [0..(size[2] - 1)] do 
-                                for i3 in [0..(size[2] - 1)] do 
-                                    yield image[i0, i1, i2, i3] }
-            | _ -> failwith $"Unsupported dimensionality {dim}"
-
-    flat 
+    image.GetSize()
+    |> flatIndices
     |> Seq.fold 
-        (fun acc elm -> 
+        (fun acc idx ->
+            let elm = image.Get idx 
             Map.change elm (fun vopt -> 
                 match vopt with 
                     Some v -> Some (v+1uL) 
