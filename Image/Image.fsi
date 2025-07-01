@@ -24,9 +24,6 @@ module internal InternalHelpers =
     val fromVectorFloat64: v: itk.simple.VectorDouble -> float list
     val fromType<'T> : itk.simple.PixelIDValueEnum
     val ofCastItk<'T> : itkImg: itk.simple.Image -> itk.simple.Image
-    val GetArray2DFromImage: itkImg: itk.simple.Image -> 'T array2d
-    val GetArray3DFromImage: itkImg: itk.simple.Image -> 'T array3d
-    val GetArray4DFromImage: itkImg: itk.simple.Image -> 'T array4d
     val Array4Diteri:
       action: (int -> int -> int -> int -> 'T -> unit) ->
         arr: 'T array4d -> unit
@@ -39,6 +36,7 @@ module internal InternalHelpers =
     val getPixelBoxed:
       img: itk.simple.Image ->
         t: System.Type -> u: itk.simple.VectorUInt32 -> obj
+    val getBytesPerComponent: t: System.Type -> uint32
 val equalOne: v: 'T -> bool
 [<StructuredFormatDisplay ("{Display}")>]
 type Image<'T when 'T: equality> =

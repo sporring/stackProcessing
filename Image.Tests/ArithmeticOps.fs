@@ -23,7 +23,7 @@ let inline makeTestImage<^T when ^T: equality
   let four  : ^T = three + one
   Image< ^T>.ofArray2D (array2D [ [one; two]; [three; four] ])
 
-let inline testOps<'T when 'T: equality
+let inline testOps<^T when ^T: equality
                 and  ^T: (static member op_Explicit: ^T -> float)
                 and  ^T : (static member Zero : ^T)
                 and  ^T : (static member One  : ^T)

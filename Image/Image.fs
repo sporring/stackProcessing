@@ -61,114 +61,6 @@ module internal InternalHelpers =
             cast.SetOutputPixelType(expectedId)
             cast.Execute(itkImg)
 
-    let GetArray2DFromImage (itkImg: itk.simple.Image): 'T[,] =
-        let size = itkImg.GetSize()
-        if size.Count <> 2 then
-            failwithf "GetArray2DFromImage requires a 2D image, but got %dD" size.Count
-
-        let t = typeof<'T>
-        Array2D.init (int size[0]) (int size[1]) (fun x y ->
-            let idx = toVectorUInt32 [ uint x; uint y ]
-            let value =
-                if      t = typeof<uint8>                   then box (itkImg.GetPixelAsUInt8(idx))
-                elif    t = typeof<int8>                    then box (itkImg.GetPixelAsInt8(idx))
-                elif    t = typeof<uint16>                  then box (itkImg.GetPixelAsUInt16(idx))
-                elif    t = typeof<int16>                   then box (itkImg.GetPixelAsInt16(idx))
-                elif    t = typeof<uint32>                  then box (itkImg.GetPixelAsUInt32(idx))
-                elif    t = typeof<int32>                   then box (itkImg.GetPixelAsInt32(idx))
-                elif    t = typeof<uint64>                  then box (itkImg.GetPixelAsUInt64(idx))
-                elif    t = typeof<int64>                   then box (itkImg.GetPixelAsInt64(idx))
-                elif    t = typeof<float32>                 then box (itkImg.GetPixelAsFloat(idx))
-                elif    t = typeof<float>                   then box (itkImg.GetPixelAsDouble(idx))
-                elif    t = typeof<System.Numerics.Complex> then
-                    let v = itkImg.GetPixelAsVectorFloat64(idx)
-                    box (System.Numerics.Complex(v[0], v[1]))
-                elif    t = typeof<uint8 list>              then box (itkImg.GetPixelAsVectorUInt8(idx) |> fromVectorUInt8)
-                elif    t = typeof<int8 list>               then box (itkImg.GetPixelAsVectorInt8(idx) |> fromVectorInt8)
-                elif    t = typeof<uint16 list>             then box (itkImg.GetPixelAsVectorUInt16(idx) |> fromVectorUInt16)
-                elif    t = typeof<int16 list>              then box (itkImg.GetPixelAsVectorInt16(idx) |> fromVectorInt16)
-                elif    t = typeof<uint32 list>             then box (itkImg.GetPixelAsVectorUInt32(idx) |> fromVectorUInt32)
-                elif    t = typeof<int32 list>              then box (itkImg.GetPixelAsVectorInt32(idx) |> fromVectorInt32)
-                elif    t = typeof<uint64 list>             then box (itkImg.GetPixelAsVectorUInt64(idx) |> fromVectorUInt64)
-                elif    t = typeof<int64 list>              then box (itkImg.GetPixelAsVectorInt64(idx) |> fromVectorInt64)
-                elif    t = typeof<float32 list>            then box (itkImg.GetPixelAsVectorFloat32(idx) |> fromVectorFloat32)
-                elif    t = typeof<float list>              then box (itkImg.GetPixelAsVectorFloat64(idx) |> fromVectorFloat64)
-                else failwithf "Unsupported pixel type: %O" t
-            unbox value
-        )
-
-    let GetArray3DFromImage (itkImg: itk.simple.Image): 'T[,,] =
-        let size = itkImg.GetSize()
-        if size.Count <> 3 then
-            failwithf "GetArray3DFromImage requires a 3D image, but got %dD" size.Count
-
-        let t = typeof<'T>
-        Array3D.init (int size[0]) (int size[1]) (int size[2]) (fun x y z ->
-            let idx = toVectorUInt32 [ uint x; uint y; uint z]
-            let value =
-                if      t = typeof<uint8>                   then box (itkImg.GetPixelAsUInt8(idx))
-                elif    t = typeof<int8>                    then box (itkImg.GetPixelAsInt8(idx))
-                elif    t = typeof<uint16>                  then box (itkImg.GetPixelAsUInt16(idx))
-                elif    t = typeof<int16>                   then box (itkImg.GetPixelAsInt16(idx))
-                elif    t = typeof<uint32>                  then box (itkImg.GetPixelAsUInt32(idx))
-                elif    t = typeof<int32>                   then box (itkImg.GetPixelAsInt32(idx))
-                elif    t = typeof<uint64>                  then box (itkImg.GetPixelAsUInt64(idx))
-                elif    t = typeof<int64>                   then box (itkImg.GetPixelAsInt64(idx))
-                elif    t = typeof<float32>                 then box (itkImg.GetPixelAsFloat(idx))
-                elif    t = typeof<float>                   then box (itkImg.GetPixelAsDouble(idx))
-                elif    t = typeof<System.Numerics.Complex> then
-                    let v = itkImg.GetPixelAsVectorFloat64(idx)
-                    box (System.Numerics.Complex(v[0], v[1]))
-                elif    t = typeof<uint8 list>              then box (itkImg.GetPixelAsVectorUInt8(idx) |> fromVectorUInt8)
-                elif    t = typeof<int8 list>               then box (itkImg.GetPixelAsVectorInt8(idx) |> fromVectorInt8)
-                elif    t = typeof<uint16 list>             then box (itkImg.GetPixelAsVectorUInt16(idx) |> fromVectorUInt16)
-                elif    t = typeof<int16 list>              then box (itkImg.GetPixelAsVectorInt16(idx) |> fromVectorInt16)
-                elif    t = typeof<uint32 list>             then box (itkImg.GetPixelAsVectorUInt32(idx) |> fromVectorUInt32)
-                elif    t = typeof<int32 list>              then box (itkImg.GetPixelAsVectorInt32(idx) |> fromVectorInt32)
-                elif    t = typeof<uint64 list>             then box (itkImg.GetPixelAsVectorUInt64(idx) |> fromVectorUInt64)
-                elif    t = typeof<int64 list>              then box (itkImg.GetPixelAsVectorInt64(idx) |> fromVectorInt64)
-                elif    t = typeof<float32 list>            then box (itkImg.GetPixelAsVectorFloat32(idx) |> fromVectorFloat32)
-                elif    t = typeof<float list>              then box (itkImg.GetPixelAsVectorFloat64(idx) |> fromVectorFloat64)
-                else failwithf "Unsupported pixel type: %O" t
-            unbox value
-        )
-
-    let GetArray4DFromImage (itkImg: itk.simple.Image): 'T[,,,] =
-        let size = itkImg.GetSize()
-        if size.Count <> 4 then
-            failwithf "GetArray4DFromImage requires a 4D image, but got %dD" size.Count
-
-        let t = typeof<'T>
-        Array4D.init (int size[0]) (int size[1]) (int size[2]) (int size[3]) (fun x y z k ->
-            let idx = toVectorUInt32 [ uint x; uint y; uint z; uint k ]
-            let value =
-                if      t = typeof<uint8>                   then box (itkImg.GetPixelAsUInt8(idx))
-                elif    t = typeof<int8>                    then box (itkImg.GetPixelAsInt8(idx))
-                elif    t = typeof<uint16>                  then box (itkImg.GetPixelAsUInt16(idx))
-                elif    t = typeof<int16>                   then box (itkImg.GetPixelAsInt16(idx))
-                elif    t = typeof<uint32>                  then box (itkImg.GetPixelAsUInt32(idx))
-                elif    t = typeof<int32>                   then box (itkImg.GetPixelAsInt32(idx))
-                elif    t = typeof<uint64>                  then box (itkImg.GetPixelAsUInt64(idx))
-                elif    t = typeof<int64>                   then box (itkImg.GetPixelAsInt64(idx))
-                elif    t = typeof<float32>                 then box (itkImg.GetPixelAsFloat(idx))
-                elif    t = typeof<float>                   then box (itkImg.GetPixelAsDouble(idx))
-                elif    t = typeof<System.Numerics.Complex> then
-                    let v = itkImg.GetPixelAsVectorFloat64(idx)
-                    box (System.Numerics.Complex(v[0], v[1]))
-                elif    t = typeof<uint8 list>              then box (itkImg.GetPixelAsVectorUInt8(idx) |> fromVectorUInt8)
-                elif    t = typeof<int8 list>               then box (itkImg.GetPixelAsVectorInt8(idx) |> fromVectorInt8)
-                elif    t = typeof<uint16 list>             then box (itkImg.GetPixelAsVectorUInt16(idx) |> fromVectorUInt16)
-                elif    t = typeof<int16 list>              then box (itkImg.GetPixelAsVectorInt16(idx) |> fromVectorInt16)
-                elif    t = typeof<uint32 list>             then box (itkImg.GetPixelAsVectorUInt32(idx) |> fromVectorUInt32)
-                elif    t = typeof<int32 list>              then box (itkImg.GetPixelAsVectorInt32(idx) |> fromVectorInt32)
-                elif    t = typeof<uint64 list>             then box (itkImg.GetPixelAsVectorUInt64(idx) |> fromVectorUInt64)
-                elif    t = typeof<int64 list>              then box (itkImg.GetPixelAsVectorInt64(idx) |> fromVectorInt64)
-                elif    t = typeof<float32 list>            then box (itkImg.GetPixelAsVectorFloat32(idx) |> fromVectorFloat32)
-                elif    t = typeof<float list>              then box (itkImg.GetPixelAsVectorFloat64(idx) |> fromVectorFloat64)
-                else failwithf "Unsupported pixel type: %O" t
-            unbox value
-        )
-
     let Array4Diteri (action: int -> int -> int -> int -> 'T -> unit) (arr: 'T[,,,]) =
         let d1, d2, d3, d4 =
             arr.GetLength 0,
@@ -278,6 +170,31 @@ module internal InternalHelpers =
         else
             failwithf "Unsupported pixel type: %O" t
 
+    let getBytesPerComponent t =
+        if t = typeof<uint8> then 1u
+        elif t = typeof<int8> then 1u
+        elif t = typeof<uint8 list> then 1u
+        elif t = typeof<int8 list> then 1u
+        elif t = typeof<uint16> then 2u
+        elif t = typeof<int16> then 2u
+        elif t = typeof<uint16 list> then 2u
+        elif t = typeof<int16 list> then 2u
+        elif t = typeof<uint32> then 4u
+        elif t = typeof<int32> then 4u
+        elif t = typeof<float32> then 4u
+        elif t = typeof<uint32 list> then 4u
+        elif t = typeof<int32 list> then 4u
+        elif t = typeof<float32 list> then 4u
+        elif t = typeof<uint64> then 8u
+        elif t = typeof<int64> then 8u
+        elif t = typeof<float> then 8u
+        elif t = typeof<uint64 list> then 8u
+        elif t = typeof<int64 list> then 8u
+        elif t = typeof<float list> then 8u
+        elif t = typeof<System.Numerics.Complex> then 16u
+        else 8u // guessing here
+
+
 
 open InternalHelpers
 
@@ -339,29 +256,7 @@ type Image<'T when 'T : equality>(sz: uint list, ?numberComp: uint) =
 
     member this.memoryEstimate(): uint = // Intended to be mostly immutable, but better safe than sorry.
         let t = typeof<'T>
-        let bytesPerComponent =
-            if t = typeof<uint8> then 1u
-            elif t = typeof<int8> then 1u
-            elif t = typeof<uint8 list> then 1u
-            elif t = typeof<int8 list> then 1u
-            elif t = typeof<uint16> then 2u
-            elif t = typeof<int16> then 2u
-            elif t = typeof<uint16 list> then 2u
-            elif t = typeof<int16 list> then 2u
-            elif t = typeof<uint32> then 4u
-            elif t = typeof<int32> then 4u
-            elif t = typeof<float32> then 4u
-            elif t = typeof<uint32 list> then 4u
-            elif t = typeof<int32 list> then 4u
-            elif t = typeof<float32 list> then 4u
-            elif t = typeof<uint64> then 8u
-            elif t = typeof<int64> then 8u
-            elif t = typeof<float> then 8u
-            elif t = typeof<uint64 list> then 8u
-            elif t = typeof<int64 list> then 8u
-            elif t = typeof<float list> then 8u
-            elif t = typeof<System.Numerics.Complex> then 16u
-            else 8u // guessing here
+        let bytesPerComponent = getBytesPerComponent t
         bytesPerComponent * this.GetNumberOfComponentsPerPixel() * (this.GetSize() |> List.reduce (*));
 
     static member ofSimpleITK (itkImg: itk.simple.Image) : Image<'T> =
@@ -385,60 +280,34 @@ type Image<'T when 'T : equality>(sz: uint list, ?numberComp: uint) =
     member this.toFloat ()   : Image<float>   = Image<float>.ofSimpleITK img
 
     static member ofArray2D (arr: 'T[,]) : Image<'T> =
-        let itkId = fromType<'T>
         let sz = [arr.GetLength(0); arr.GetLength(1)] |> List.map uint
-        let img = new itk.simple.Image(sz |> toVectorUInt32, itkId)
-
-        let t = typeof<'T>
-        arr
-        |> Array2D.iteri (fun x y value ->
-            let u = [ uint x; uint y ] |> toVectorUInt32
-            setPixelAs img t u value
-        )
-        let wrapped = Image<'T>([0u;0u])
-        wrapped.SetImg img
-        wrapped
+        let img = Image<'T>(sz,1u)
+        img.iteri (fun idxLst _ -> img.Set idxLst arr[int idxLst[0],int idxLst[1]])
+        img
 
     static member ofArray3D (arr: 'T[,,]) : Image<'T> =
-        let itkId = fromType<'T>
         let sz = [arr.GetLength(0); arr.GetLength(1); arr.GetLength(2)] |> List.map uint
-        let img = new itk.simple.Image(sz |> toVectorUInt32, itkId)
-
-        let t = typeof<'T>
-        arr
-        |> Array3D.iteri (fun x y z value ->
-            let u = [ uint x; uint y; uint z ] |> toVectorUInt32
-            setPixelAs img t u value
-        )
-        let wrapped = Image<'T>([0u;0u;0u])
-        wrapped.SetImg img
-        wrapped
+        let img = Image<'T>(sz,1u)
+        img.iteri (fun idxLst _ -> img.Set idxLst arr[int idxLst[0],int idxLst[1],int idxLst[2]])
+        img
 
     static member ofArray4D (arr: 'T[,,,]) : Image<'T> =
-        let itkId = fromType<'T>
         let sz = [arr.GetLength(0); arr.GetLength(1); arr.GetLength(2); arr.GetLength(3)] |> List.map uint
-        let img = new itk.simple.Image(sz |> toVectorUInt32, itkId)
-
-        let t = typeof<'T>
-        arr
-        |> Array4Diteri (fun x y z k value ->
-            let u = [ uint x; uint y; uint z; uint k ] |> toVectorUInt32
-            setPixelAs img t u value
-        )
-        let wrapped = Image<'T>([0u;0u;0u;0u])
-        wrapped.SetImg img
-        wrapped
+        let img = Image<'T>(sz,1u)
+        img.iteri (fun idxLst _ -> img.Set idxLst arr[int idxLst[0],int idxLst[1],int idxLst[2],int idxLst[3]])
+        img
 
     member this.toArray2D (): 'T[,] =
         let sz = this.GetSize() |> List.map int
-        Array2D.init sz[0] sz[0] (fun i0 i1 -> this.Get([uint i0; uint i1]))
-        //GetArray2DFromImage this.Image
+        Array2D.init sz[0] sz[1] (fun i0 i1 -> this.Get([uint i0; uint i1]))
 
     member this.toArray3D (): 'T[,,] =
-        GetArray3DFromImage this.Image
+        let sz = this.GetSize() |> List.map int
+        Array3D.init sz[0] sz[1] sz[2] (fun i0 i1 i2 -> this.Get([uint i0; uint i1; uint i2]))
 
     member this.toArray4D (): 'T[,,,] =
-        GetArray4DFromImage this.Image
+        let sz = this.GetSize() |> List.map int
+        Array4D.init sz[0] sz[1] sz[2] sz[3] (fun i0 i1 i2 i3 -> this.Get([uint i0; uint i1; uint i2; uint i3]))
 
     static member ofImageList (images: Image<'S> list) : Image<'S list> =
         let itkImages = images |> List.map (fun img -> img.toSimpleITK())
