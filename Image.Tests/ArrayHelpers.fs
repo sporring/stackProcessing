@@ -29,41 +29,6 @@ let arrayAndTypeTests =
       let casted = ofCastItk<float32> (img.toSimpleITK())
       Expect.equal (casted.GetPixelID()) PixelIDValueEnum.sitkFloat32 "Pixel ID changed to float32"
 
-    // GetArray2DFromImage
-    testCase "GetArray2DFromImage basic" <| fun _ ->
-      let arr = Array2D.zeroCreate<uint8> 2 2
-      arr.[0,0] <- 1uy
-      arr.[1,1] <- 2uy
-      let img = Image<uint8>.ofArray2D arr
-      let out = GetArray2DFromImage (img.toSimpleITK())
-      Expect.equal out.[0,0] 1uy "Pixel 0,0"
-      Expect.equal out.[1,1] 2uy "Pixel 1,1"
-
-    // GetArray3DFromImage
-    testCase "GetArray3DFromImage basic" <| fun _ ->
-      let arr = Array3D.zeroCreate<uint16> 2 2 2
-      arr.[1,1,1] <- 42us
-      let img = Image<uint16>.ofArray3D arr
-      let out = GetArray3DFromImage (img.toSimpleITK())
-      Expect.equal out.[1,1,1] 42us "Pixel 1,1,1"
-
-    // GetArray4DFromImage
-    testCase "GetArray4DFromImage basic" <| fun _ ->
-      let arr = Array4D.zeroCreate<int8> 2 2 1 2
-      arr.[1,1,0,1] <- -5y
-      let img = Image<int8>.ofArray4D arr
-      let out = GetArray4DFromImage (img.toSimpleITK())
-      Expect.equal out.[1,1,0,1] -5y "Pixel 1,1,0,1"
-
-    // Array4Diteri
-    testCase "Array4Diteri summation" <| fun _ ->
-      let arr = Array4D.zeroCreate 2 2 1 2
-      arr.[0,0,0,0] <- 1
-      arr.[1,1,0,1] <- 3
-      let sum = ref 0
-      Array4Diteri (fun _ _ _ _ v -> sum := !sum + v) arr
-      Expect.equal !sum 4 "Sum over 4D array"
-
     // array2dZip
     testCase "array2dZip elementwise" <| fun _ ->
       let a = array2D [ [1; 2]; [3; 4] ]

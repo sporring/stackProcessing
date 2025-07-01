@@ -828,7 +828,7 @@ let IndexingTests =
 
     testCase "2D get/set using Get/Set (uint8)" <| fun _ ->
         let img = Image<uint8>.ofArray2D (array2D [ [ 1uy; 2uy ]; [ 3uy; 4uy ] ])
-        img.Set([0u; 0u], 99uy)
+        img.Set [0u; 0u] 99uy
         let v = img.Get([0u; 0u])
         Expect.equal v 99uy "Expected pixel at [0;0] to be 99"
 
@@ -849,7 +849,7 @@ let IndexingTests =
     testCase "3D set using Set, get using indexer (int16)" <| fun _ ->
         let data = Array3D.zeroCreate<int16> 2 2 2
         let img = Image<int16>.ofArray3D data
-        img.Set([1u; 0u; 1u], 77s)
+        img.Set [1u; 0u; 1u] 77s
         let v = img[1, 0, 1]
         Expect.equal v 77s "Expected voxel at (1,0,1) to be 77"
   ]

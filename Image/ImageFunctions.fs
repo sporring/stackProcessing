@@ -56,6 +56,20 @@ let inline scalarPowImage<'S when ^S : equality
     let filter = new itk.simple.PowImageFilter()
     Image<'S>.ofSimpleITK(filter.Execute(float i, f1.toSimpleITK()))
 
+let inline sum (img: Image<'T>) : ^T
+    when ^T : (static member ( + ) : ^T * ^T -> ^T)
+    and  ^T : (static member Zero : ^T) =
+    let zero  : ^T = LanguagePrimitives.GenericZero
+    img.fold (fun acc elm -> acc+elm) zero
+
+let inline prod (img: Image<'T>) : ^T
+    when ^T : (static member ( * ) : ^T * ^T -> ^T)
+    and  ^T : (static member Zero : ^T) =
+    let zero  : ^T = LanguagePrimitives.GenericZero
+    img.fold (fun acc elm -> acc*elm) zero
+
+
+
 // --- basic manipulations ---
 let squeeze (img: Image<'T>) : Image<'T> =
     let filter =  new itk.simple.ExtractImageFilter()

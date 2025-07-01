@@ -112,11 +112,14 @@ let inline arithmeticTests< ^T
       Expect.equal res.[1,1,1] (img.[1,1,1] + s) "3D add pixel ok"
 
     // ---- 4D -----------------------------------------------------------
+(* 4D is only supported in simple itk to a very limited extent
+
     testCase "4D arithmetic (spotcheck)" <| fun _ ->
       let img = make4D< ^T >()
       let s = u 2uy
       let res = imageMulScalar img s
       Expect.equal res.[1,1,0,1] (img.[1,1,0,1] * s) "4D mul pixel ok"
+*)
   ]
 
 // ---------- full suite over many concrete pixel types ----------

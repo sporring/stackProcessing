@@ -24,18 +24,16 @@ module internal InternalHelpers =
     val fromVectorFloat64: v: itk.simple.VectorDouble -> float list
     val fromType<'T> : itk.simple.PixelIDValueEnum
     val ofCastItk<'T> : itkImg: itk.simple.Image -> itk.simple.Image
-    val Array4Diteri:
-      action: (int -> int -> int -> int -> 'T -> unit) ->
-        arr: 'T array4d -> unit
     val array2dZip: a: 'T array2d -> b: 'U array2d -> ('T * 'U) array2d
     val pixelIdToString: id: itk.simple.PixelIDValueEnum -> string
     val flatIndices: size: uint list -> uint list seq
     val setPixelAs:
       sitkImg: itk.simple.Image ->
-        t: System.Type -> u: itk.simple.VectorUInt32 -> value: obj -> unit
+        t: itk.simple.PixelIDValueEnum ->
+        u: itk.simple.VectorUInt32 -> value: obj -> unit
     val getPixelBoxed:
       img: itk.simple.Image ->
-        t: System.Type -> u: itk.simple.VectorUInt32 -> obj
+        t: itk.simple.PixelIDValueEnum -> u: itk.simple.VectorUInt32 -> obj
     val getBytesPerComponent: t: System.Type -> uint32
 val equalOne: v: 'T -> bool
 [<StructuredFormatDisplay ("{Display}")>]
@@ -160,6 +158,14 @@ val inline imagePowScalar:
 val inline scalarPowImage:
   i: ^S * f1: Image.Image<^S> -> Image.Image<^S>
     when ^S: equality and ^S: (static member op_Explicit: ^S -> float)
+val inline sum:
+  img: Image.Image<^T> -> ^T
+    when ^T: equality and ^T: (static member (+) : ^T * ^T -> ^T) and
+         ^T: (static member Zero: ^T)
+val inline prod:
+  img: Image.Image<^T> -> ^T
+    when ^T: equality and ^T: (static member ( * ) : ^T * ^T -> ^T) and
+         ^T: (static member Zero: ^T)
 val squeeze: img: Image.Image<'T> -> Image.Image<'T> when 'T: equality
 val expand: dim: uint -> zero: 'S -> a: 'S list -> 'S list
 val concatAlong:

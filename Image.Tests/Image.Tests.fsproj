@@ -38,6 +38,8 @@
 
   <ItemGroup>
     <Compile Include="VectorHelperTests.fs" />
+    <Compile Include="PixelBoxingTests.fs" />
+    <Compile Include="IterationsTests.fs" />
     <Compile Include="ArrayHelpers.fs" />
     <Compile Include="castingTests.fs" />
     <Compile Include="indexingTests.fs" />
