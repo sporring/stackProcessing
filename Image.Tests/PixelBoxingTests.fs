@@ -18,7 +18,7 @@ let pixelSamplesMap = [
     (fromType<int64>     , box -12345678901234L)
     (fromType<float32>   , box 3.14f)
     (fromType<float>     , box 2.718)
-    (fromType<System.Numerics.Complex>, box (System.Numerics.Complex(1.0, -2.0)))
+//    (fromType<System.Numerics.Complex>, box (System.Numerics.Complex(1.0, -2.0)))
     (fromType<uint8 list>     , box [ 1uy; 2uy ])
     (fromType<int8 list>      , box [ -1y; -2y ])
     (fromType<uint16 list>    , box [ 100us; 200us ])

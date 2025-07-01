@@ -48,6 +48,7 @@
     <Compile Include="simpleFunctionTests.fs" />
     <Compile Include="compareableTests.fs" />
     <Compile Include="ArithmeticTests.fs" />
+    <Compile Include="ArithmeticSupportOpsTests.fs" />
     <Compile Include="Tests.fs" />
   </ItemGroup>
 

@@ -55,6 +55,10 @@ type Image<'T when 'T: equality> =
     static member
       Pow: f1: Image<'S> * f2: Image<'S> -> Image<'S> when 'S: equality
     static member eq: f1: Image<'S> * f2: Image<'S> -> bool when 'S: equality
+    static member fold: f: ('S -> 'T -> 'S) -> acc0: 'S -> im1: Image<'T> -> 'S
+    static member
+      foldi: f: (uint list -> 'S -> 'T -> 'S) ->
+               acc0: 'S -> im1: Image<'T> -> 'S
     static member gt: f1: Image<'S> * f2: Image<'S> -> bool when 'S: equality
     static member gte: f1: Image<'S> * f2: Image<'S> -> bool when 'S: equality
     /// Comparison operators
@@ -72,8 +76,13 @@ type Image<'T when 'T: equality> =
                          when 'S: equality
     static member
       isNotEqual: f1: Image<'S> * f2: Image<'S> -> Image<'S> when 'S: equality
+    static member iter: f: ('T -> unit) -> im1: Image<'T> -> unit
+    static member iteri: f: (uint list -> 'T -> unit) -> im1: Image<'T> -> unit
     static member lt: f1: Image<'S> * f2: Image<'S> -> bool when 'S: equality
     static member lte: f1: Image<'S> * f2: Image<'S> -> bool when 'S: equality
+    static member map: f: ('T -> 'T) -> im1: Image<'T> -> Image<'T>
+    static member
+      mapi: f: (uint list -> 'T -> 'T) -> im1: Image<'T> -> Image<'T>
     static member neq: f1: Image<'S> * f2: Image<'S> -> bool when 'S: equality
     static member ofArray2D: arr: 'T array2d -> Image<'T>
     static member ofArray3D: arr: 'T array3d -> Image<'T>
@@ -82,6 +91,8 @@ type Image<'T when 'T: equality> =
     static member
       ofImageList: images: Image<'S> list -> Image<'S list> when 'S: equality
     static member ofSimpleITK: itkImg: itk.simple.Image -> Image<'T>
+    static member unzip: im: Image<'T list> -> Image<'T> list
+    static member zip: imLst: Image<'T> list -> Image<'T list>
     member CompareTo: other: Image<'T> -> int
     override Equals: obj: obj -> bool
     member Get: coords: uint list -> 'T
@@ -95,13 +106,7 @@ type Image<'T when 'T: equality> =
     member Set: coords: uint list -> value: 'T -> unit
     member private SetImg: itkImg: itk.simple.Image -> unit
     override ToString: unit -> string
-    member fold: f: ('S -> 'T -> 'S) -> acc0: 'S -> 'S
-    member foldi: f: (uint list -> 'S -> 'T -> 'S) -> acc0: 'S -> 'S
     member forAll: p: ('T -> bool) -> bool
-    member iter: f: ('T -> unit) -> unit
-    member iteri: f: (uint list -> 'T -> unit) -> unit
-    member map: f: ('T -> 'T) -> Image<'T>
-    member mapi: f: (uint list -> 'T -> 'T) -> Image<'T>
     member memoryEstimate: unit -> uint
     member toArray2D: unit -> 'T array2d
     member toArray3D: unit -> 'T array3d
@@ -166,6 +171,7 @@ val inline prod:
   img: Image.Image<^T> -> ^T
     when ^T: equality and ^T: (static member ( * ) : ^T * ^T -> ^T) and
          ^T: (static member Zero: ^T)
+val dump: img: Image.Image<'T> -> string when 'T: equality
 val squeeze: img: Image.Image<'T> -> Image.Image<'T> when 'T: equality
 val expand: dim: uint -> zero: 'S -> a: 'S list -> 'S list
 val concatAlong:

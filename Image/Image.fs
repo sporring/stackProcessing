@@ -39,7 +39,7 @@ module internal InternalHelpers =
         elif t = typeof<int64> then itk.simple.PixelIDValueEnum.sitkInt64
         elif t = typeof<float32> then itk.simple.PixelIDValueEnum.sitkFloat32
         elif t = typeof<float> then itk.simple.PixelIDValueEnum.sitkFloat64
-        elif t = typeof<System.Numerics.Complex> then itk.simple.PixelIDValueEnum.sitkVectorFloat64
+//        elif t = typeof<System.Numerics.Complex> then itk.simple.PixelIDValueEnum.sitkVectorFloat64
         elif t = typeof<uint8 list> then itk.simple.PixelIDValueEnum.sitkVectorUInt8
         elif t = typeof<int8 list> then itk.simple.PixelIDValueEnum.sitkVectorInt8
         elif t = typeof<uint16 list> then itk.simple.PixelIDValueEnum.sitkVectorUInt16
@@ -104,10 +104,10 @@ module internal InternalHelpers =
         elif    t = fromType<int64>                  then sitkImg.SetPixelAsInt64(u, unbox value)
         elif    t = fromType<float32>                 then sitkImg.SetPixelAsFloat(u, unbox value)
         elif    t = fromType<float>                   then sitkImg.SetPixelAsDouble(u, unbox value)
-        elif    t = fromType<System.Numerics.Complex> then
-            let c = unbox<System.Numerics.Complex> value
-            let v = toVectorFloat64 [ c.Real; c.Imaginary ]
-            sitkImg.SetPixelAsVectorFloat64(u, v)
+//        elif    t = fromType<System.Numerics.Complex> then
+//            let c = unbox<System.Numerics.Complex> value
+//            let v = toVectorFloat64 [ c.Real; c.Imaginary ]
+//            sitkImg.SetPixelAsVectorFloat64(u, v)
         elif    t = fromType<uint8 list>              then sitkImg.SetPixelAsVectorUInt8(u, toVectorUInt8 (unbox value))
         elif    t = fromType<int8 list>               then sitkImg.SetPixelAsVectorInt8(u, toVectorInt8 (unbox value))
         elif    t = fromType<uint16 list>             then sitkImg.SetPixelAsVectorUInt16(u, toVectorUInt16 (unbox value))
@@ -132,10 +132,10 @@ module internal InternalHelpers =
         elif    t = fromType<int64>                   then box (img.GetPixelAsInt64   u)
         elif    t = fromType<float32>                 then box (img.GetPixelAsFloat   u)
         elif    t = fromType<float>                   then box (img.GetPixelAsDouble  u)
-        elif    t = fromType<System.Numerics.Complex>                 then
-            img.GetPixelAsVectorFloat64 u
-            |> fromVectorFloat64                    // float64 list → Complex
-            |> box
+//        elif    t = fromType<System.Numerics.Complex>                 then
+//            img.GetPixelAsVectorFloat64 u
+//            |> fromVectorFloat64                    // float64 list → Complex
+//            |> box
         elif    t = fromType<uint8   list>            then box (img.GetPixelAsVectorUInt8   u |> fromVectorUInt8)
         elif    t = fromType<int8    list>            then box (img.GetPixelAsVectorInt8    u |> fromVectorInt8)
         elif    t = fromType<uint16  list>            then box (img.GetPixelAsVectorUInt16  u |> fromVectorUInt16)
@@ -261,19 +261,19 @@ type Image<'T when 'T : equality>(sz: uint list, ?numberComp: uint) =
     static member ofArray2D (arr: 'T[,]) : Image<'T> =
         let sz = [arr.GetLength(0); arr.GetLength(1)] |> List.map uint
         let img = Image<'T>(sz,1u)
-        img.iteri (fun idxLst _ -> img.Set idxLst arr[int idxLst[0],int idxLst[1]])
+        img |> Image.iteri (fun idxLst _ -> img.Set idxLst arr[int idxLst[0],int idxLst[1]])
         img
 
     static member ofArray3D (arr: 'T[,,]) : Image<'T> =
         let sz = [arr.GetLength(0); arr.GetLength(1); arr.GetLength(2)] |> List.map uint
         let img = Image<'T>(sz,1u)
-        img.iteri (fun idxLst _ -> img.Set idxLst arr[int idxLst[0],int idxLst[1],int idxLst[2]])
+        img |> Image.iteri (fun idxLst _ -> img.Set idxLst arr[int idxLst[0],int idxLst[1],int idxLst[2]])
         img
 
     static member ofArray4D (arr: 'T[,,,]) : Image<'T> =
         let sz = [arr.GetLength(0); arr.GetLength(1); arr.GetLength(2); arr.GetLength(3)] |> List.map uint
         let img = Image<'T>(sz,1u)
-        img.iteri (fun idxLst _ -> img.Set idxLst arr[int idxLst[0],int idxLst[1],int idxLst[2],int idxLst[3]])
+        img |> Image.iteri (fun idxLst _ -> img.Set idxLst arr[int idxLst[0],int idxLst[1],int idxLst[2],int idxLst[3]])
         img
 
     member this.toArray2D (): 'T[,] =
@@ -356,51 +356,69 @@ type Image<'T when 'T : equality>(sz: uint list, ?numberComp: uint) =
         Image<'T>.ofSimpleITK(filter.Execute(f1.toSimpleITK(), f2.toSimpleITK()))
 
     // Collection type
-    member this.map (f:'T->'T): Image<'T> =
-        let sz = this.GetSize()
-        let comp = this.GetNumberOfComponentsPerPixel()
+    static member map (f:'T->'T) (im1: Image<'T>) : Image<'T> =
+        let sz = im1.GetSize()
+        let comp = im1.GetNumberOfComponentsPerPixel()
         let im = Image<'T>(sz,comp)
         sz
         |> flatIndices
-        |> Seq.iter (fun idx -> this.Get idx |> f |> (im.Set idx))
+        |> Seq.iter (fun idx -> im1.Get idx |> f |> (im.Set idx))
         im
 
-    member this.mapi (f:uint list->'T->'T): Image<'T> =
-        let sz = this.GetSize()
-        let comp = this.GetNumberOfComponentsPerPixel()
+    static member mapi (f:uint list->'T->'T) (im1: Image<'T>) : Image<'T> =
+        let sz = im1.GetSize()
+        let comp = im1.GetNumberOfComponentsPerPixel()
         let im = Image<'T>(sz,comp)
         sz
         |> flatIndices
-        |> Seq.iter (fun idx -> this.Get idx |> f idx |> (im.Set idx))
+        |> Seq.iter (fun idx -> im1.Get idx |> f idx |> (im.Set idx))
         im
 
-    member this.iter (f:'T->unit): unit =
-        let sz = this.GetSize()
+    static member iter (f:'T->unit) (im1: Image<'T>) : unit = 
+        let sz = im1.GetSize()
         sz
         |> flatIndices
-        |> Seq.iter (fun idx -> this.Get idx |> f)
+        |> Seq.iter (fun idx -> im1.Get idx |> f)
 
-    member this.iteri (f:uint list->'T->unit): unit =
-        let sz = this.GetSize()
+    static member iteri (f:uint list->'T->unit) (im1: Image<'T>) : unit = 
+        let sz = im1.GetSize()
         sz
         |> flatIndices
-        |> Seq.iter (fun idx -> this.Get idx |> f idx)
+        |> Seq.iter (fun idx -> im1.Get idx |> f idx)
 
-    member this.fold (f:'S->'T->'S) (acc0:'S): 'S =
-        let sz = this.GetSize()
-        let comp = this.GetNumberOfComponentsPerPixel()
-        let im = Image<'T>(sz,comp)
+    static member fold (f:'S->'T->'S) (acc0: 'S) (im1: Image<'T>) : 'S = 
+        let sz = im1.GetSize()
         sz
         |> flatIndices
-        |> Seq.fold (fun acc idx -> this.Get idx |> f acc) acc0
+        |> Seq.fold (fun acc idx -> im1.Get idx |> f acc) acc0
 
-    member this.foldi (f:uint list->'S->'T->'S) (acc0:'S): 'S =
-        let sz = this.GetSize()
-        let comp = this.GetNumberOfComponentsPerPixel()
-        let im = Image<'T>(sz,comp)
+    static member foldi (f:uint list->'S->'T->'S) (acc0: 'S) (im1: Image<'T>) : 'S =
+        let sz = im1.GetSize()
         sz
         |> flatIndices
-        |> Seq.fold (fun acc idx -> this.Get idx |> f idx acc) acc0
+        |> Seq.fold (fun acc idx -> im1.Get idx |> f idx acc) acc0
+
+    static member zip (imLst: Image<'T> list) : Image<'T list> =
+        let nComp = imLst.Length
+        if nComp < 2 then 
+            failwith "can't zip list of less than 2 elements"
+        else
+            let sz = imLst[0].GetSize()
+            let result = Image<'T list>(sz,uint nComp)
+            sz
+            |> flatIndices
+            |> Seq.iter (fun idxLst -> 
+                List.map (fun (im: Image<'T>) -> im.Get idxLst) imLst
+                |> result.Set idxLst)
+            result
+
+    static member unzip (im: Image<'T list>) : Image<'T> list =
+        let sz = im.GetSize()
+        let comp = im.GetNumberOfComponentsPerPixel()
+        let imLst = List.init (int comp) (fun i -> Image<'T>(sz,1u))
+        im |> Image.iteri (fun idxLst vLst ->
+            List.iteri (fun i v -> imLst[i].Set idxLst v) vLst )
+        imLst
 
     member this.Get (coords: uint list) : 'T =
         let u = coords |> toVectorUInt32
@@ -433,7 +451,7 @@ type Image<'T when 'T : equality>(sz: uint list, ?numberComp: uint) =
 
 
     member this.forAll (p: 'T -> bool) : bool =
-        this.fold (fun acc elm -> acc && p elm) true
+        this |> Image.fold (fun acc elm -> acc && p elm) true
 
     override this.Equals(obj: obj) = // For some reason, it's not enough with this.Equals(other: Image<'T>)
         match obj with

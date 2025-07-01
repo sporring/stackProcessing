@@ -177,9 +177,9 @@ let FromTypeTests =
       let result = fromType<float>
       Expect.equal result itk.simple.PixelIDValueEnum.sitkFloat64 $"Expected {itk.simple.PixelIDValueEnum.sitkFloat64}"
 
-    testCase "System.Numerics.Complex" <| fun _ ->
-      let result = fromType<System.Numerics.Complex>
-      Expect.equal result itk.simple.PixelIDValueEnum.sitkVectorFloat64 $"Expected {itk.simple.PixelIDValueEnum.sitkVectorFloat64}"
+//    testCase "System.Numerics.Complex" <| fun _ ->
+//      let result = fromType<System.Numerics.Complex>
+//      Expect.equal result itk.simple.PixelIDValueEnum.sitkVectorFloat64 $"Expected {itk.simple.PixelIDValueEnum.sitkVectorFloat64}"
 
     testCase "uint8 list" <| fun _ ->
       let result = fromType<uint8 list>
@@ -288,11 +288,11 @@ let ofCastItkTests =
       let expected = "64-bit float"
       Expect.equal result expected $"Got {result} expected {expected}"
 
-    testCase "int32->System.Numerics.Complex" <| fun _ ->
-      let cast = ofCastItk<System.Numerics.Complex> imgInt32
-      let result = cast.GetPixelIDTypeAsString()
-      let expected = "vector of 64-bit float"
-      Expect.equal result expected $"Got {result} expected {expected}"
+//    testCase "int32->System.Numerics.Complex" <| fun _ ->
+//      let cast = ofCastItk<System.Numerics.Complex> imgInt32
+//      let result = cast.GetPixelIDTypeAsString()
+//      let expected = "vector of 64-bit float"
+//      Expect.equal result expected $"Got {result} expected {expected}"
 
     testCase "int32->uint8 list" <| fun _ ->
       let cast = ofCastItk<uint8 list> imgInt32
@@ -414,11 +414,11 @@ let ofCastItkTests =
       let expected = "64-bit float"
       Expect.equal result expected $"Got {result} expected {expected}"
 
-    testCase "float->System.Numerics.Complex" <| fun _ ->
-      let cast = ofCastItk<System.Numerics.Complex> imgFloat64
-      let result = cast.GetPixelIDTypeAsString()
-      let expected = "vector of 64-bit float"
-      Expect.equal result expected $"Got {result} expected {expected}"
+//    testCase "float->System.Numerics.Complex" <| fun _ ->
+//      let cast = ofCastItk<System.Numerics.Complex> imgFloat64
+//      let result = cast.GetPixelIDTypeAsString()
+//      let expected = "vector of 64-bit float"
+//      Expect.equal result expected $"Got {result} expected {expected}"
 
     testCase "float->uint8 list" <| fun _ ->
       let cast = ofCastItk<uint8 list> imgFloat64

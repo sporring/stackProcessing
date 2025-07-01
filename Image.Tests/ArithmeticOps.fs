@@ -130,6 +130,11 @@ let inline testOps<^T when ^T: equality
 
     ]
 
+let isClose (im1: Image<float>) (im2: Image<float>): bool = (im1 - im2 |> absImage |> sum) < 1.0e-6
+let errorMsg img1 img2 result expected absDiff sum =
+  $"img1->{dump(img1)})\nimg2->{dump(img2)}\nresult->{dump(result)}\nexpected->{dump(expected)}\nabsDiff->{dump(absDiff)}\nsum->{sum}"
+
+
 [<Tests>]
 let arithmeticTests =
   testList "Arithmetic operations on Image<'T>" [
@@ -144,4 +149,41 @@ let arithmeticTests =
     testOps<int64> "int64 ops"
     testOps<float32> "float32 ops"
     testOps<float> "float64 ops"
+
+    testCase "signed image + image" <| fun _ ->
+      let img1 =     Image<float>.ofArray2D (array2D [ [-1.0; 2.0]; [-3.0; 4.0] ])
+      let img2 =     Image<float>.ofArray2D (array2D [ [ 2.0; 3.0]; [ 4.0; 1.0] ])
+      let expected = Image<float>.ofArray2D (array2D [ [ 1.0; 5.0]; [ 1.0; 5.0] ])
+      let result = img1 + img2
+      let diff = result - expected
+      let absDiff = diff |> ImageFunctions.absImage
+      let sum = absDiff |> ImageFunctions.sum
+      Expect.isTrue (isClose expected result) $"float negative and positive:\n{errorMsg img1 img2 result expected absDiff sum}"
+    testCase "signed image - image" <| fun _ ->
+      let img1 =     Image<float>.ofArray2D (array2D [ [-1.0; 2.0]; [-3.0; 4.0] ])
+      let img2 =     Image<float>.ofArray2D (array2D [ [ 2.0; 3.0]; [ 4.0; 1.0] ])
+      let expected = Image<float>.ofArray2D (array2D [ [-3.0;-1.0]; [-7.0; 3.0] ])
+      let result = img1 - img2
+      let diff = result - expected
+      let absDiff = diff |> ImageFunctions.absImage
+      let sum = absDiff |> ImageFunctions.sum
+      Expect.isTrue (isClose expected result) $"float negative and positive:\n{errorMsg img1 img2 result expected absDiff sum}"
+    testCase "signed image * image" <| fun _ ->
+      let img1 =     Image<float>.ofArray2D (array2D [ [-1.0; 2.0]; [-3.0; 4.0] ])
+      let img2 =     Image<float>.ofArray2D (array2D [ [ 2.0; 3.0]; [ 4.0; 1.0] ])
+      let expected = Image<float>.ofArray2D (array2D [ [-2.0; 6.0]; [-12.0; 4.0] ])
+      let result = img1 * img2
+      let diff = result - expected
+      let absDiff = diff |> ImageFunctions.absImage
+      let sum = absDiff |> ImageFunctions.sum
+      Expect.isTrue (isClose expected result) $"float negative and positive:\n{errorMsg img1 img2 result expected absDiff sum}"
+    testCase "signed image / image" <| fun _ ->
+      let img1 =     Image<float>.ofArray2D (array2D [ [-1.0; 2.0]; [-3.0; 4.0] ])
+      let img2 =     Image<float>.ofArray2D (array2D [ [ 2.0; 3.0]; [ 4.0; 1.0] ])
+      let expected = Image<float>.ofArray2D (array2D [ [-0.5; 2.0/3.0]; [-3.0/4.0; 4.0] ])
+      let result = img1 / img2
+      let diff = result - expected
+      let absDiff = diff |> ImageFunctions.absImage
+      let sum = absDiff |> ImageFunctions.sum
+      Expect.isTrue (isClose expected result) $"float negative and positive:\n{errorMsg img1 img2 result expected absDiff sum}"
   ]

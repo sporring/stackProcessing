@@ -60,13 +60,16 @@ let inline sum (img: Image<'T>) : ^T
     when ^T : (static member ( + ) : ^T * ^T -> ^T)
     and  ^T : (static member Zero : ^T) =
     let zero  : ^T = LanguagePrimitives.GenericZero
-    img.fold (fun acc elm -> acc+elm) zero
+    img |> Image.fold (fun acc elm -> acc+elm) zero
 
 let inline prod (img: Image<'T>) : ^T
     when ^T : (static member ( * ) : ^T * ^T -> ^T)
     and  ^T : (static member Zero : ^T) =
     let zero  : ^T = LanguagePrimitives.GenericZero
-    img.fold (fun acc elm -> acc*elm) zero
+    img |> Image.fold (fun acc elm -> acc*elm) zero
+
+let dump (img: Image<'T>) : string =
+    img |> Image.foldi (fun idxLst acc elm -> acc+(sprintf "%A -> %A; " idxLst elm)) ""
 
 
 

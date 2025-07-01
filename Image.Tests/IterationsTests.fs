@@ -45,32 +45,38 @@ let inline testOps<^T when ^T: equality
         Expect.isTrue allEqual $"forAll equal (x)"
 
         // fold: count pixels
-        let count = img.fold (fun acc _ -> acc + 1) 0
+        let count = img |> Image.fold (fun acc _ -> acc + 1) 0
         Expect.equal count 4 "fold count is 4"
 
         // foldi: collect indices
-        let indices = img.foldi (fun i acc _ -> i :: acc) []
+        let indices = img |> Image.foldi (fun i acc _ -> i :: acc) []
         Expect.equal (List.length indices) 4 "foldi index count is 4"
 
         // map: double each value
-        let doubled = img.map (fun v -> v+(unbox sample))
+        let doubled = img |> Image.map (fun v -> v+(unbox sample))
         let first = doubled.Get [0u; 0u]
         Expect.notEqual (box first) sample "map doubles value"
 
         // mapi: double each value
-        let doubled = img.mapi (fun i v -> v+(unbox sample))
+        let doubled = img |> Image.mapi (fun i v -> v+(unbox sample))
         let first = doubled.Get [0u; 0u]
         Expect.notEqual (box first) sample "map doubles value"
 
         // iter: side-effect counter
         let mutable seen = 0
-        img.iter (fun _ -> seen <- seen + 1)
+        img |> Image.iter (fun _ -> seen <- seen + 1)
         Expect.equal seen 4 "iter ran 4 times"
 
         // iteri: side-effect counter
         let mutable seen = 0
-        img.iteri (fun _ _ -> seen <- seen + 1)
+        img |> Image.iteri (fun _ _ -> seen <- seen + 1)
         Expect.equal seen 4 "iter ran 4 times"
+
+        // zip
+        let zipped = Image.zip [img; doubled]
+        let unzipLst = Image.unzip zipped
+        Expect.isTrue (Image.eq (unzipLst[0], img)) "unzip left equals original"
+        Expect.isTrue (Image.eq (unzipLst[1], doubled)) "unzip right equals mapped"
     ]
 
 [<Tests>]
