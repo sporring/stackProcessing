@@ -583,7 +583,7 @@ let floatArray2DFloatClose arr1 arr2 tol str =
   array2dZip arr1 arr2 
   |> Array2D.iter (fun (a,b)-> Expect.isLessThan (abs (a-b)) tol str)
 
-let array3DZip arr1 arr2 =
+let array3DZip (arr1: 'A array3d) (arr2: 'B array3d) : ('A*'B) array3d =
   Array3D.mapi (fun i j k v -> (v, arr2[i,j,k])) arr1
 
 let floatArray3DFloatClose arr1 arr2 tol str = 
@@ -982,16 +982,7 @@ let ImageProcessingTests =
         let expected = array2D [ [ 1.0; 2.0 ]; [ 3.0; 4.0 ] ]
         floatArray2DFloatClose (result.toArray2D()) expected 1e-10 "Expected vertical concatenation"
 
-    // conv
-    testCase "conv 2D with identity kernel" <| fun _ ->
-        let img = Image<float>.ofArray2D (array2D [ [ 1.0; 2.0 ]; [ 3.0; 4.0 ] ])
-        let arr = Array2D.init 1 1 (fun m n -> if m=0 && n=0 then 1.0 else 0.0)
-        let ker = Image<float>.ofArray2D arr
-        let result = ImageFunctions.conv img ker
-        let expected = img.toArray2D()
-        floatArray2DFloatClose (result.toArray2D()) expected 1e-10 "Expected convolution with identity kernel"
-
-    // conv
+    // convolve
     testCase "convolve 2D with identity kernel" <| fun _ ->
         let img = Image<float>.ofArray2D (array2D [ [ 1.0; 2.0 ]; [ 3.0; 4.0 ] ])
         let arr = Array2D.init 1 1 (fun m n -> if m=0 && n=0 then 1.0 else 0.0)
@@ -1008,6 +999,14 @@ let ImageProcessingTests =
         let expected = [2u; 2u]
         Expect.equal sz expected "Expected a smaller result"
 
+    testCase "convolve 2D Valid reverse order" <| fun _ ->
+        let img = Image<float>.ofArray2D (Array2D.create 3 3 1.0)
+        let ker = Image<float>.ofArray2D (Array2D.create 2 2 2.0)
+        let result = ImageFunctions.convolve (Some ImageFunctions.Valid) None ker img
+        let sz = result.GetSize()
+        let expected = [2u; 2u]
+        Expect.equal sz expected "Expected a smaller result"
+
     testCase "convolve 2D Odd size" <| fun _ ->
         let img = Image<float>.ofArray2D (Array2D.create 3 3 1.0)
         let ker = Image<float>.ofArray2D (Array2D.create 1 2 2.0)
@@ -1016,15 +1015,14 @@ let ImageProcessingTests =
         let expected = [3u; 2u]
         Expect.equal sz expected "Expected a non-symmetric smaller result"
 
-    testCase "convolve 2D Odd size reverse order" <| fun _ ->
-        let img = Image<float>.ofArray2D (Array2D.create 1 2 2.0)
-        let ker = Image<float>.ofArray2D (Array2D.create 3 3 1.0)
+    testCase "convolve 2D Odd singular dimensions" <| fun _ ->
+        let img = Image<float>.ofArray2D (Array2D.create 3 3 1.0)
+        let ker = Image<float>.ofArray2D (Array2D.create 2 1 2.0)
         let result = ImageFunctions.convolve None None img ker
         let sz = result.GetSize()
         let expected = [3u; 2u]
         Expect.equal sz expected "Expected a non-symmetric smaller result regardless of order"
-(*
-    // conv
+
     testCase "conv 3D with identity kernel" <| fun _ ->
         let img = Image<float>.ofArray3D (Array3D.init 2 2 2 (fun i j k -> float(k+2*j+4*i)))
         let arr = Array3D.init 1 1 1 (fun m n o -> if m=0 && n=0 && o=0 then 1.0 else 0.0)
@@ -1033,7 +1031,6 @@ let ImageProcessingTests =
         let expected = img.toArray3D()
         floatArray3DFloatClose (result.toArray3D()) expected 1e-10 "Expected conv with identity kernel"
 
-    // conv
     testCase "convolve 3D with identity kernel" <| fun _ ->
         let img = Image<float>.ofArray3D (Array3D.init 2 2 2 (fun i j k -> float(k+2*j+4*i)))
         let arr = Array3D.init 1 1 1 (fun m n o -> if m=0 && n=0 && o=0 then 1.0 else 0.0)
@@ -1041,7 +1038,7 @@ let ImageProcessingTests =
         let result = ImageFunctions.convolve None None img ker
         let expected = img.toArray3D()
         floatArray3DFloatClose (result.toArray3D()) expected 1e-10 "Expected convolution with identity kernel"
-*)
+
     testCase "convolve 3D Valid" <| fun _ ->
         let img = Image<float>.ofArray3D (Array3D.create 3 3 3 1.0)
         let ker = Image<float>.ofArray3D (Array3D.create 2 2 2 2.0)
@@ -1065,6 +1062,15 @@ let ImageProcessingTests =
         let sz = result.GetSize()
         let expected = [3u; 2u; 2u]
         Expect.equal sz expected "Expected a non-symmetric smaller result regardless of order"
+
+    // conv
+    testCase "conv 2D with identity kernel" <| fun _ ->
+        let img = Image<float>.ofArray2D (array2D [ [ 1.0; 2.0 ]; [ 3.0; 4.0 ] ])
+        let arr = Array2D.init 1 1 (fun m n -> if m=0 && n=0 then 1.0 else 0.0)
+        let ker = Image<float>.ofArray2D arr
+        let result = ImageFunctions.conv img ker
+        let expected = img.toArray2D()
+        floatArray2DFloatClose (result.toArray2D()) expected 1e-10 "Expected convolution with identity kernel"
 
     // discreteGaussian
     testCase "2D discreteGaussian smooths image" <| fun _ ->

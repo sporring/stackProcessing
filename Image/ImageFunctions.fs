@@ -201,12 +201,12 @@ let convolve (outputRegionMode: OutputRegionMode option) (boundaryCondition: Bou
                     | _ ->                       itk.simple.ConvolutionImageFilter.BoundaryConditionType.ZERO_PAD)) 
         (fun f img ker -> 
             // Convolve does not like kernels that are smaller than images. This is a pseudo-fix
-            let szImg = img.GetSize() |> fromVectorUInt32 |> List.reduce (*)
-            let szKer = img.GetSize() |> fromVectorUInt32 |> List.reduce (*)
-            if szImg > szKer then
+            //let szImg = img.GetSize() |> fromVectorUInt32 |> List.reduce (*)
+            //let szKer = img.GetSize() |> fromVectorUInt32 |> List.reduce (*)
+            //if szImg > szKer then
                 f.Execute(img,ker)
-            else
-                f.Execute(ker,img)
+            //else
+            //    f.Execute(ker,img)
             )
 
 let conv (img: Image<'T>) (ker: Image<'T>) : Image<'T> = convolve None None img ker
