@@ -1,4 +1,4 @@
-module Image.Tests.PixelBoxing
+module Tests.PixelBoxing
 
 open Expecto
 open System

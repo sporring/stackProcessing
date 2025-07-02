@@ -1,9 +1,4 @@
-/// <summary>
-/// Unit tests for array conversion and type utility functions from InternalHelpers.fs.
-/// Includes tests for pixel type mapping, casting, and n-dimensional array interoperability.
-/// </summary>
-
-module Image.Tests.memoryHelperTests
+module Tests.memoryHelper
 
 open Expecto
 open itk.simple

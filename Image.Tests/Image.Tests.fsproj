@@ -37,19 +37,20 @@
   </ItemGroup>
 
   <ItemGroup>
-    <Compile Include="VectorHelperTests.fs" />
-    <Compile Include="PixelBoxingTests.fs" />
-    <Compile Include="IterationsTests.fs" />
-    <Compile Include="ArrayHelpers.fs" />
-    <Compile Include="castingTests.fs" />
-    <Compile Include="indexingTests.fs" />
+    <Compile Include="Arithmetic.fs" />
     <Compile Include="ArithmeticOps.fs" />
-    <Compile Include="memoryHelperTests.fs" />
-    <Compile Include="simpleFunctionTests.fs" />
-    <Compile Include="compareableTests.fs" />
-    <Compile Include="ArithmeticTests.fs" />
-    <Compile Include="ArithmeticSupportOpsTests.fs" />
+    <Compile Include="ArithmeticSupportOps.fs" />
+    <Compile Include="ArrayHelpers.fs" />
+    <Compile Include="Iteration.fs" />
+    <Compile Include="PixelBoxing.fs" />
+    <Compile Include="VectorHelpers.fs" />
+    <Compile Include="assorted.fs" />
+    <Compile Include="casting.fs" />
+    <Compile Include="comparable.fs" />
+    <Compile Include="indexing.fs" />
+    <Compile Include="mathFunction.fs" />
+    <Compile Include="memoryHelper.fs" />
+    <Compile Include="simpleFunction.fs" />
     <Compile Include="Tests.fs" />
   </ItemGroup>
-
 </Project>

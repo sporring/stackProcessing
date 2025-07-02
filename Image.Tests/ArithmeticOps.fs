@@ -1,13 +1,7 @@
-/// <summary>
-/// Unit tests for arithmetic operator overloads on Image<'T>.
-/// Covers simple +, -, *, /, %, bitwise ops with scalars and images.
-/// </summary>
-
-module Image.Tests.ArithmeticOps
+module Tests.ArithmeticOps
 
 open Expecto
 open Image
-open ImageFunctions
 
 let inline makeTestImage<^T when ^T: equality
                             and  ^T : (static member Zero : ^T)
@@ -49,12 +43,12 @@ let inline testOps<^T when ^T: equality
     testList name [
       testCase "image + scalar" <| fun _ ->
         let img = makeTestImage<'T>()
-        let result = imageAddScalar<^T> img one
+        let result = ImageFunctions.imageAddScalar<^T> img one
         Expect.equal (result.toArray2D().[0,0]) (one + one) "1 + 1"
 
       testCase "scalar + image" <| fun _ ->
         let img = makeTestImage<'T>()
-        let result = scalarAddImage three img
+        let result = ImageFunctions.scalarAddImage three img
         Expect.equal (result.toArray2D().[1,1]) seven "3 + 4"
 
       testCase "image + image" <| fun _ ->
@@ -66,12 +60,12 @@ let inline testOps<^T when ^T: equality
       testCase "image - scalar" <| fun _ ->
         let img = makeTestImage<'T>()
         let one = LanguagePrimitives.GenericOne<'T>
-        let result = imageSubScalar img one
+        let result = ImageFunctions.imageSubScalar img one
         Expect.equal (result.toArray2D().[0,1]) one "2 - 1"
 
       testCase "scalar - image" <| fun _ ->
         let img = makeTestImage<'T>()
-        let result = scalarSubImage six img
+        let result = ImageFunctions.scalarSubImage six img
         Expect.equal (result.toArray2D().[1,1]) two "6 - 4"
 
       testCase "image - image" <| fun _ ->
@@ -81,12 +75,12 @@ let inline testOps<^T when ^T: equality
 
       testCase "image * scalar" <| fun _ ->
         let img = makeTestImage<'T>()
-        let result = imageMulScalar img two
+        let result = ImageFunctions.imageMulScalar img two
         Expect.equal (result.toArray2D().[0,1]) four "2 * 2"
 
       testCase "scalar * image" <| fun _ ->
         let img = makeTestImage<'T>()
-        let result = scalarMulImage three img
+        let result = ImageFunctions.scalarMulImage three img
         Expect.equal (result.toArray2D().[0,1]) six "2 * 3"
 
       testCase "image * image" <| fun _ ->
@@ -96,12 +90,12 @@ let inline testOps<^T when ^T: equality
 
       testCase "image / scalar" <| fun _ ->
         let img = makeTestImage<'T>()
-        let result = imageDivScalar img two
+        let result = ImageFunctions.imageDivScalar img two
         Expect.equal (result.toArray2D().[1,1]) two "4 / 2"
 
       testCase "scalar / image" <| fun _ ->
         let img = makeTestImage<'T>()
-        let result = scalarDivImage eight img
+        let result = ImageFunctions.scalarDivImage eight img
         Expect.equal (result.toArray2D().[0,1]) four "8 / 2"
 
       testCase "image / image" <| fun _ ->
@@ -111,13 +105,13 @@ let inline testOps<^T when ^T: equality
 
       testCase "Image ^ scalar" <| fun _ ->
           let baseImg = Image<'T>.ofArray2D (array2D [ [ one; three ]; [ four; five ] ])
-          let result = imagePowScalar(baseImg, two)
+          let result = ImageFunctions.imagePowScalar(baseImg, two)
           let expected = array2D [ [ one; nine ]; [ sixteen; twentyfive ] ]
           Expect.equal (result.toArray2D()) expected "Expected image ^ scalar result"
 
       testCase "scalar ^ Image" <| fun _ ->
           let baseImg = Image<'T>.ofArray2D (array2D [ [ one; two ]; [ three; four ] ])
-          let result = scalarPowImage(two, baseImg)
+          let result = ImageFunctions.scalarPowImage(two, baseImg)
           let expected = array2D [ [ two; four ]; [ eight; sixteen ] ]
           Expect.equal (result.toArray2D()) expected "Expected image ^ scalar result"
 
@@ -130,9 +124,9 @@ let inline testOps<^T when ^T: equality
 
     ]
 
-let isClose (im1: Image<float>) (im2: Image<float>): bool = (im1 - im2 |> absImage |> sum) < 1.0e-6
+let isClose (im1: Image<float>) (im2: Image<float>): bool = (im1 - im2 |> ImageFunctions.absImage |> ImageFunctions.sum) < 1.0e-6
 let errorMsg img1 img2 result expected absDiff sum =
-  $"img1->{dump(img1)})\nimg2->{dump(img2)}\nresult->{dump(result)}\nexpected->{dump(expected)}\nabsDiff->{dump(absDiff)}\nsum->{sum}"
+  $"img1->{ImageFunctions.dump(img1)})\nimg2->{ImageFunctions.dump(img2)}\nresult->{ImageFunctions.dump(result)}\nexpected->{ImageFunctions.dump(expected)}\nabsDiff->{ImageFunctions.dump(absDiff)}\nsum->{sum}"
 
 
 [<Tests>]

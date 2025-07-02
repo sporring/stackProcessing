@@ -1,11 +1,4 @@
-/// <summary>
-/// Tests for the Image<'T>.GetHashCode method.
-/// This verifies that images with identical contents hash the same,
-/// and images with different contents hash differently.
-/// Also includes tests for IComparable implementation.
-/// </summary>
-
-module Image.Tests.GetHashCode
+module Tests.comparable
 
 open Expecto
 open Image

@@ -1,13 +1,7 @@
-/// <summary>
-/// Unit tests for arithmetic operator overloads on Image<^T>.
-/// Covers simple +, -, *, /, %, bitwise ops with scalars and images.
-/// </summary>
-
-module Image.Tests.castingTests
+module Tests.casting
 
 open Expecto
 open Image
-open ImageFunctions
 
 let inline makeTestImage<^T when ^T: equality
                             and  ^T : (static member One  : ^T)

@@ -170,7 +170,7 @@ val inline sum:
 val inline prod:
   img: Image.Image<^T> -> ^T
     when ^T: equality and ^T: (static member ( * ) : ^T * ^T -> ^T) and
-         ^T: (static member Zero: ^T)
+         ^T: (static member One: ^T)
 val dump: img: Image.Image<'T> -> string when 'T: equality
 val squeeze: img: Image.Image<'T> -> Image.Image<'T> when 'T: equality
 val expand: dim: uint -> zero: 'S -> a: 'S list -> 'S list
@@ -198,25 +198,24 @@ val inline makeBinaryImageOperatorWith:
     invoke: ('Filter -> itk.simple.Image -> itk.simple.Image -> itk.simple.Image) ->
     a: Image.Image<'T> -> b: Image.Image<'T> -> Image.Image<'T>
     when 'Filter :> System.IDisposable and 'T: equality
-val inline makeBinaryImageOperator:
+val makeBinaryImageOperator:
   createFilter: (unit -> 'a) ->
     invoke: ('a -> itk.simple.Image -> itk.simple.Image -> itk.simple.Image) ->
     (Image.Image<'b> -> Image.Image<'b> -> Image.Image<'b>)
     when 'a :> System.IDisposable and 'b: equality
-val inline absImage: img: Image.Image<'T> -> Image.Image<'T> when 'T: equality
-val inline logImage: img: Image.Image<'T> -> Image.Image<'T> when 'T: equality
-val inline log10Image: img: Image.Image<'T> -> Image.Image<'T> when 'T: equality
-val inline expImage: img: Image.Image<'T> -> Image.Image<'T> when 'T: equality
-val inline sqrtImage: img: Image.Image<'T> -> Image.Image<'T> when 'T: equality
-val inline squareImage:
-  img: Image.Image<'T> -> Image.Image<'T> when 'T: equality
-val inline sinImage: img: Image.Image<'T> -> Image.Image<'T> when 'T: equality
-val inline cosImage: img: Image.Image<'T> -> Image.Image<'T> when 'T: equality
-val inline tanImage: img: Image.Image<'T> -> Image.Image<'T> when 'T: equality
-val inline asinImage: img: Image.Image<'T> -> Image.Image<'T> when 'T: equality
-val inline acosImage: img: Image.Image<'T> -> Image.Image<'T> when 'T: equality
-val inline atanImage: img: Image.Image<'T> -> Image.Image<'T> when 'T: equality
-val inline roundImage: img: Image.Image<'T> -> Image.Image<'T> when 'T: equality
+val absImage: img: Image.Image<'T> -> Image.Image<'T> when 'T: equality
+val logImage: img: Image.Image<'T> -> Image.Image<'T> when 'T: equality
+val log10Image: img: Image.Image<'T> -> Image.Image<'T> when 'T: equality
+val expImage: img: Image.Image<'T> -> Image.Image<'T> when 'T: equality
+val sqrtImage: img: Image.Image<'T> -> Image.Image<'T> when 'T: equality
+val squareImage: img: Image.Image<'T> -> Image.Image<'T> when 'T: equality
+val sinImage: img: Image.Image<'T> -> Image.Image<'T> when 'T: equality
+val cosImage: img: Image.Image<'T> -> Image.Image<'T> when 'T: equality
+val tanImage: img: Image.Image<'T> -> Image.Image<'T> when 'T: equality
+val asinImage: img: Image.Image<'T> -> Image.Image<'T> when 'T: equality
+val acosImage: img: Image.Image<'T> -> Image.Image<'T> when 'T: equality
+val atanImage: img: Image.Image<'T> -> Image.Image<'T> when 'T: equality
+val roundImage: img: Image.Image<'T> -> Image.Image<'T> when 'T: equality
 type BoundaryCondition =
     | ZeroPad
     | PerodicPad
@@ -225,7 +224,8 @@ type OutputRegionMode =
     | Valid
     | Same
 val convolve:
-  boundaryCondition: BoundaryCondition option ->
+  outputRegionMode: OutputRegionMode option ->
+    boundaryCondition: BoundaryCondition option ->
     (Image.Image<'T> -> Image.Image<'T> -> Image.Image<'T>) when 'T: equality
 val conv:
   img: Image.Image<'T> -> ker: Image.Image<'T> -> Image.Image<'T>
@@ -239,13 +239,10 @@ val gauss:
   dim: uint -> sigma: float -> kernelSize: uint option -> Image.Image<'T>
     when 'T: equality
 val discreteGaussian:
-  sigma: float ->
+  dim: uint ->
+    sigma: float ->
     kernelSize: uint option ->
-    boundaryCondition: BoundaryCondition option ->
-    (Image.Image<'T> -> Image.Image<'T>) when 'T: equality
-val discreteGaussian2D:
-  sigma: float ->
-    kernelSize: uint option ->
+    outputRegionMode: OutputRegionMode option ->
     boundaryCondition: BoundaryCondition option ->
     (Image.Image<'T> -> Image.Image<'T>) when 'T: equality
 /// Gradient convolution using Derivative filter

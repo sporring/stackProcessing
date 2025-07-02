@@ -1,14 +1,4 @@
-/// <summary>
-/// Exhaustive unit‑tests for the primitive helper functions defined in InternalHelpers.fs.
-/// They cover every public wrapper listed by the user, focusing on round‑trips,
-/// edge‑values and empty‑collections so that both line‑ and branch‑coverage reach ≈ 100 %.
-///
-/// Test framework: **Expecto**.
-/// Add this file to `Image.Tests.fsproj` and the tests will automatically
-/// be picked up by the YoloDev.Expecto adapter.
-/// </summary>
-
-module Image.Tests.VectorHelpers
+module Tests.VectorHelpers
 
 open Expecto
 open itk.simple

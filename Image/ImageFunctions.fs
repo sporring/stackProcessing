@@ -3,7 +3,6 @@ open Image
 open Image.InternalHelpers
 
 // Image constant arithmetic operations
-
 let inline imageAddScalar<'S when ^S : equality
                              and  ^S : (static member op_Explicit : ^S -> float)
                              > (f1: Image<'S>) (i: ^S) =
@@ -64,9 +63,9 @@ let inline sum (img: Image<'T>) : ^T
 
 let inline prod (img: Image<'T>) : ^T
     when ^T : (static member ( * ) : ^T * ^T -> ^T)
-    and  ^T : (static member Zero : ^T) =
-    let zero  : ^T = LanguagePrimitives.GenericZero
-    img |> Image.fold (fun acc elm -> acc*elm) zero
+    and  ^T : (static member One : ^T) =
+    let one  : ^T = LanguagePrimitives.GenericOne
+    img |> Image.fold (fun acc elm -> acc*elm) one
 
 let dump (img: Image<'T>) : string =
     img |> Image.foldi (fun idxLst acc elm -> acc+(sprintf "%A -> %A; " idxLst elm)) ""
@@ -156,22 +155,22 @@ let inline makeBinaryImageOperatorWith
         let img = Image<'T>.ofSimpleITK(invoke filter (a.toSimpleITK()) (b.toSimpleITK()))
         img
 
-let inline makeBinaryImageOperator createFilter invoke = makeBinaryImageOperatorWith createFilter (fun _ -> ()) invoke
+let makeBinaryImageOperator createFilter invoke = makeBinaryImageOperatorWith createFilter (fun _ -> ()) invoke
 
 // Basic unary operators
-let inline absImage (img: Image<'T>)    = makeUnaryImageOperator (fun () -> new itk.simple.AbsImageFilter())    (fun f x -> f.Execute(x)) img
-let inline logImage (img: Image<'T>)    = makeUnaryImageOperator (fun () -> new itk.simple.LogImageFilter())    (fun f x -> f.Execute(x)) img
-let inline log10Image (img: Image<'T>)  = makeUnaryImageOperator (fun () -> new itk.simple.Log10ImageFilter())  (fun f x -> f.Execute(x)) img
-let inline expImage (img: Image<'T>)    = makeUnaryImageOperator (fun () -> new itk.simple.ExpImageFilter())    (fun f x -> f.Execute(x)) img
-let inline sqrtImage (img: Image<'T>)   = makeUnaryImageOperator (fun () -> new itk.simple.SqrtImageFilter())   (fun f x -> f.Execute(x)) img
-let inline squareImage (img: Image<'T>) = makeUnaryImageOperator (fun () -> new itk.simple.SquareImageFilter()) (fun f x -> f.Execute(x)) img
-let inline sinImage (img: Image<'T>)    = makeUnaryImageOperator (fun () -> new itk.simple.SinImageFilter())    (fun f x -> f.Execute(x)) img
-let inline cosImage (img: Image<'T>)    = makeUnaryImageOperator (fun () -> new itk.simple.CosImageFilter())    (fun f x -> f.Execute(x)) img
-let inline tanImage (img: Image<'T>)    = makeUnaryImageOperator (fun () -> new itk.simple.TanImageFilter())    (fun f x -> f.Execute(x)) img
-let inline asinImage (img: Image<'T>)   = makeUnaryImageOperator (fun () -> new itk.simple.AsinImageFilter())   (fun f x -> f.Execute(x)) img
-let inline acosImage (img: Image<'T>)   = makeUnaryImageOperator (fun () -> new itk.simple.AcosImageFilter())   (fun f x -> f.Execute(x)) img
-let inline atanImage (img: Image<'T>)   = makeUnaryImageOperator (fun () -> new itk.simple.AtanImageFilter())   (fun f x -> f.Execute(x)) img
-let inline roundImage (img: Image<'T>)  = makeUnaryImageOperator (fun () -> new itk.simple.RoundImageFilter())  (fun f x -> f.Execute(x)) img
+let absImage (img: Image<'T>)    = makeUnaryImageOperator (fun () -> new itk.simple.AbsImageFilter())    (fun f x -> f.Execute(x)) img
+let logImage (img: Image<'T>)    = makeUnaryImageOperator (fun () -> new itk.simple.LogImageFilter())    (fun f x -> f.Execute(x)) img
+let log10Image (img: Image<'T>)  = makeUnaryImageOperator (fun () -> new itk.simple.Log10ImageFilter())  (fun f x -> f.Execute(x)) img
+let expImage (img: Image<'T>)    = makeUnaryImageOperator (fun () -> new itk.simple.ExpImageFilter())    (fun f x -> f.Execute(x)) img
+let sqrtImage (img: Image<'T>)   = makeUnaryImageOperator (fun () -> new itk.simple.SqrtImageFilter())   (fun f x -> f.Execute(x)) img
+let squareImage (img: Image<'T>) = makeUnaryImageOperator (fun () -> new itk.simple.SquareImageFilter()) (fun f x -> f.Execute(x)) img
+let sinImage (img: Image<'T>)    = makeUnaryImageOperator (fun () -> new itk.simple.SinImageFilter())    (fun f x -> f.Execute(x)) img
+let cosImage (img: Image<'T>)    = makeUnaryImageOperator (fun () -> new itk.simple.CosImageFilter())    (fun f x -> f.Execute(x)) img
+let tanImage (img: Image<'T>)    = makeUnaryImageOperator (fun () -> new itk.simple.TanImageFilter())    (fun f x -> f.Execute(x)) img
+let asinImage (img: Image<'T>)   = makeUnaryImageOperator (fun () -> new itk.simple.AsinImageFilter())   (fun f x -> f.Execute(x)) img
+let acosImage (img: Image<'T>)   = makeUnaryImageOperator (fun () -> new itk.simple.AcosImageFilter())   (fun f x -> f.Execute(x)) img
+let atanImage (img: Image<'T>)   = makeUnaryImageOperator (fun () -> new itk.simple.AtanImageFilter())   (fun f x -> f.Execute(x)) img
+let roundImage (img: Image<'T>)  = makeUnaryImageOperator (fun () -> new itk.simple.RoundImageFilter())  (fun f x -> f.Execute(x)) img
 
 // ----- basic image analysis functions -----
 (* // I'm waiting with proper support of complex values
@@ -187,20 +186,30 @@ type BoundaryCondition = ZeroPad | PerodicPad | ZeroFluxNeumannPad
 type OutputRegionMode = Valid | Same
 
 // Convolve sets size after the first argument, so convolve img kernel!
-let convolve (boundaryCondition: BoundaryCondition option) : Image<'T> -> Image<'T> -> Image<'T> =
+let convolve (outputRegionMode: OutputRegionMode option) (boundaryCondition: BoundaryCondition option) : Image<'T> -> Image<'T> -> Image<'T> =
     makeBinaryImageOperatorWith
         (fun () -> new itk.simple.ConvolutionImageFilter())
         (fun f ->
-            f.SetOutputRegionMode (itk.simple.ConvolutionImageFilter.OutputRegionModeType.VALID)
+            f.SetOutputRegionMode (
+                match outputRegionMode with
+                    | Some Same -> itk.simple.ConvolutionImageFilter.OutputRegionModeType.SAME
+                    | _ ->         itk.simple.ConvolutionImageFilter.OutputRegionModeType.VALID)
             f.SetBoundaryCondition (
                 match boundaryCondition with
                     | Some ZeroFluxNeumannPad -> itk.simple.ConvolutionImageFilter.BoundaryConditionType.ZERO_FLUX_NEUMANN_PAD
-                    | Some PerodicPad -> itk.simple.ConvolutionImageFilter.BoundaryConditionType.PERIODIC_PAD 
-                    | _ -> itk.simple.ConvolutionImageFilter.BoundaryConditionType.ZERO_PAD)) 
+                    | Some PerodicPad ->         itk.simple.ConvolutionImageFilter.BoundaryConditionType.PERIODIC_PAD 
+                    | _ ->                       itk.simple.ConvolutionImageFilter.BoundaryConditionType.ZERO_PAD)) 
         (fun f img ker -> 
-            f.Execute(img,ker))
+            // Convolve does not like kernels that are smaller than images. This is a pseudo-fix
+            let szImg = img.GetSize() |> fromVectorUInt32 |> List.reduce (*)
+            let szKer = img.GetSize() |> fromVectorUInt32 |> List.reduce (*)
+            if szImg > szKer then
+                f.Execute(img,ker)
+            else
+                f.Execute(ker,img)
+            )
 
-let conv (img: Image<'T>) (ker: Image<'T>) : Image<'T> = convolve None img ker
+let conv (img: Image<'T>) (ker: Image<'T>) : Image<'T> = convolve None None img ker
 
 let private stensil order = 
     // https://en.wikipedia.org/wiki/Finite_difference_coefficient 
@@ -260,15 +269,11 @@ let gauss (dim: uint) (sigma: float) (kernelSize: uint option) : Image<'T> =
     f.NormalizedOn()
     Image<'T>.ofSimpleITK(f.Execute())
 
-let discreteGaussian (sigma: float) (kernelSize: uint option) (boundaryCondition: BoundaryCondition option) : Image<'T> -> Image<'T> =
-    let kern = gauss 3u sigma kernelSize
+let discreteGaussian (dim: uint) (sigma: float) (kernelSize: uint option) (outputRegionMode: OutputRegionMode option) (boundaryCondition: BoundaryCondition option) : Image<'T> -> Image<'T> =
+    let kern = gauss dim sigma kernelSize
     let bCond = Option.defaultValue ZeroPad boundaryCondition |> Some
-    fun (input: Image<'T>) -> convolve bCond input kern
-
-let discreteGaussian2D (sigma: float) (kernelSize: uint option) (boundaryCondition: BoundaryCondition option) : Image<'T> -> Image<'T> =
-    let kern = gauss 2u sigma kernelSize
-    let bCond = Option.defaultValue ZeroPad boundaryCondition |> Some
-    fun (input: Image<'T>) -> convolve bCond input kern
+    let region = Option.defaultValue Valid outputRegionMode |> Some
+    fun (input: Image<'T>) -> convolve region bCond input kern
 
 /// Gradient convolution using Derivative filter
 let gradientConvolve (direction: uint) (order: uint32) : Image<'T> -> Image<'T> =
@@ -436,16 +441,21 @@ let computeStats (img: Image<'T>) : ImageStats =
         Var = stats.GetVariance() 
     }
 
+//var = 1/N sum_i (x_i-m)^2 = 1/N sum_i x_i^2-m^2
 let addComputeStats (s1: ImageStats) (s2: ImageStats): ImageStats =
-    let weighted a1 a2 = 
-        (a1*(float s1.NumPixels) + a2*(float s2.NumPixels))/(float (s1.NumPixels+s2.NumPixels))
-    let var = weighted s1.Var s2.Var
+    let n1, n2 = s1.NumPixels |> float, s2.NumPixels |> float
+    let m1, m2 = s1.Mean, s2.Mean
+    let v1, v2 = s1.Var, s2.Var
+    let s = v1*(n1-1.0)+m1**2.0*n1+v2*(n2-1.0)+m2**2.0*n2
+    let n = n1 + n2
+    let m = (s1.Sum+s2.Sum)/n
+    let v = (s-n*m**2.0)/(n-1.0)
     { 
-        NumPixels = s1.NumPixels+s2.NumPixels
-        Mean = weighted s1.Mean s2.Mean
-        Var = var
-        Sum = weighted s1.Sum s2.Sum
-        Std = sqrt(var)
+        NumPixels = n |> uint
+        Mean = m
+        Sum = s1.Sum+s2.Sum
+        Var = v
+        Std = sqrt(v)
         Min = min s1.Min s2.Min
         Max = max s1.Max s2.Max
     }

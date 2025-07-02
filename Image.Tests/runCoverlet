@@ -4,4 +4,3 @@ dotnet test Image.Tests.fsproj \
   /p:CollectCoverage=true \
   /p:CoverletOutputFormat=cobertura \
   /p:CoverletOutput="$(pwd)/coverage/" \
-  /p:Include="[Image]*"
