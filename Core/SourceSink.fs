@@ -88,6 +88,8 @@ let source<'T>
     List.head lst
 
 let sinkLst (processors: Pipe<unit, unit> list) : unit =
+    if processors.Length > 1 then
+        printfn "[Compile time analysis: sinkList parallel]"
     processors
     |> List.map (fun p -> run p |> AsyncSeq.iterAsync (fun () -> async.Return()))
     |> Async.Parallel

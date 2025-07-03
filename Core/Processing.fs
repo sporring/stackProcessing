@@ -57,6 +57,7 @@ let mapWindowed (label: string) (depth: uint) (stride: uint) (f: 'S list -> 'T l
         Name = label; 
         Profile = Sliding depth
         Apply = fun input ->
+            printfn "[Runtine analysis: Windowed analysis size]"
             AsyncSeqExtensions.windowed depth stride input
                 |> AsyncSeq.collect (f  >> AsyncSeq.ofSeq)
     }
