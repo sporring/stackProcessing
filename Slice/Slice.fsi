@@ -23,11 +23,79 @@ val toArray3D: s: Slice<'T> -> 'T array3d when 'T: equality
 val toArray4D: s: Slice<'T> -> 'T array4d when 'T: equality
 val toImage: s: Slice<'T> -> Image.Image<'T> when 'T: equality
 val toSimpleITK: s: Slice<'T> -> itk.simple.Image when 'T: equality
-val cast<'T when 'T: equality> : s: Slice<obj> -> Slice<obj> when 'T: equality
-val castUInt8ToFloat: s: Slice<uint8> -> Slice<float>
-val castFloatToUInt8: s: Slice<float> -> Slice<uint8>
-val toFloat: value: obj -> float
 val toSeqSeq: s: Slice<'T> -> float seq seq when 'T: equality
+val castUInt8ToInt8: s: Slice<uint8> -> Slice<int8>
+val castUInt8ToUInt16: s: Slice<uint8> -> Slice<uint16>
+val castUInt8ToInt16: s: Slice<uint8> -> Slice<int16>
+val castUInt8ToUInt: s: Slice<uint8> -> Slice<uint>
+val castUInt8ToInt: s: Slice<uint8> -> Slice<int>
+val castUInt8ToUInt64: s: Slice<uint8> -> Slice<uint64>
+val castUInt8ToInt64: s: Slice<uint8> -> Slice<int64>
+val castUInt8ToFloat32: s: Slice<uint8> -> Slice<float32>
+val castUInt8ToFloat: s: Slice<uint8> -> Slice<float>
+val castInt8ToUInt8: s: Slice<int8> -> Slice<uint8>
+val castInt8ToUInt16: s: Slice<int8> -> Slice<uint16>
+val castInt8ToInt16: s: Slice<int8> -> Slice<int16>
+val castInt8ToUInt: s: Slice<int8> -> Slice<uint>
+val castInt8ToInt: s: Slice<int8> -> Slice<int>
+val castInt8ToUInt64: s: Slice<int8> -> Slice<uint64>
+val castInt8ToInt64: s: Slice<int8> -> Slice<int64>
+val castInt8ToFloat32: s: Slice<int8> -> Slice<float32>
+val castInt8ToFloat: s: Slice<int8> -> Slice<float>
+val castUInt16ToUInt8: s: Slice<uint16> -> Slice<uint8>
+val castUInt16ToInt8: s: Slice<uint16> -> Slice<int8>
+val castUInt16ToInt16: s: Slice<uint16> -> Slice<int16>
+val castUInt16ToUInt: s: Slice<uint16> -> Slice<uint>
+val castUInt16ToInt: s: Slice<uint16> -> Slice<int>
+val castUInt16ToUInt64: s: Slice<uint16> -> Slice<uint64>
+val castUInt16ToInt64: s: Slice<uint16> -> Slice<int64>
+val castUInt16ToFloat32: s: Slice<uint16> -> Slice<float32>
+val castUInt16ToFloat: s: Slice<uint16> -> Slice<float>
+val castInt16ToUInt8: s: Slice<int16> -> Slice<uint8>
+val castInt16ToInt8: s: Slice<int16> -> Slice<int8>
+val castInt16ToUInt16: s: Slice<int16> -> Slice<uint16>
+val castInt16ToUInt: s: Slice<int16> -> Slice<uint>
+val castInt16ToInt: s: Slice<int16> -> Slice<int>
+val castInt16ToUInt64: s: Slice<int16> -> Slice<uint64>
+val castInt16ToInt64: s: Slice<int16> -> Slice<int64>
+val castInt16ToFloat32: s: Slice<int16> -> Slice<float32>
+val castInt16ToFloat: s: Slice<int16> -> Slice<float>
+val castUIntToUInt8: s: Slice<uint> -> Slice<uint8>
+val castUIntToInt8: s: Slice<uint> -> Slice<int8>
+val castUIntToUInt16: s: Slice<uint> -> Slice<uint16>
+val castUIntToInt16: s: Slice<uint> -> Slice<int16>
+val castUIntToInt: s: Slice<uint> -> Slice<int>
+val castUIntToUInt64: s: Slice<uint> -> Slice<uint64>
+val castUIntToInt64: s: Slice<uint> -> Slice<int64>
+val castUIntToFloat32: s: Slice<uint> -> Slice<float32>
+val castUIntToFloat: s: Slice<uint> -> Slice<float>
+val castIntToUInt8: s: Slice<int> -> Slice<uint8>
+val castIntToInt8: s: Slice<int> -> Slice<int8>
+val castIntToUInt16: s: Slice<int> -> Slice<uint16>
+val castIntToInt16: s: Slice<int> -> Slice<int16>
+val castIntToUInt: s: Slice<int> -> Slice<uint>
+val castIntToUInt64: s: Slice<int> -> Slice<uint64>
+val castIntToInt64: s: Slice<int> -> Slice<int64>
+val castIntToFloat32: s: Slice<int> -> Slice<float32>
+val castIntToFloat: s: Slice<int> -> Slice<float>
+val castFloat32ToUInt8: s: Slice<float32> -> Slice<uint8>
+val castFloat32ToInt8: s: Slice<float32> -> Slice<int8>
+val castFloat32ToUInt16: s: Slice<float32> -> Slice<uint16>
+val castFloat32ToInt16: s: Slice<float32> -> Slice<int16>
+val castFloat32ToUInt: s: Slice<float32> -> Slice<uint>
+val castFloat32ToInt: s: Slice<float32> -> Slice<int>
+val castFloat32ToUInt64: s: Slice<float32> -> Slice<uint64>
+val castFloat32ToInt64: s: Slice<float32> -> Slice<int64>
+val castFloat32Tofloat: s: Slice<float32> -> Slice<float>
+val castFloatToUInt8: s: Slice<float> -> Slice<uint8>
+val castFloatToInt8: s: Slice<float> -> Slice<int8>
+val castFloatToUInt16: s: Slice<float> -> Slice<uint16>
+val castFloatToInt16: s: Slice<float> -> Slice<int16>
+val castFloatToUInt: s: Slice<float> -> Slice<uint>
+val castFloatToInt: s: Slice<float> -> Slice<int>
+val castFloatToUIn64: s: Slice<float> -> Slice<uint64>
+val castFloatToInt64: s: Slice<float> -> Slice<int64>
+val castFloatToFloat32: s: Slice<float> -> Slice<float32>
 val private liftSource:
   f: (unit -> Image.Image<'T>) -> unit -> Slice<'T> when 'T: equality
 val private liftSource1:
@@ -53,6 +121,10 @@ val private liftUnary3:
 val private liftUnary4:
   f: ('a -> 'b -> 'c -> 'd -> Image.Image<'T> -> Image.Image<'T>) ->
     a: 'a -> b: 'b -> c: 'c -> d: 'd -> s: Slice<'T> -> Slice<'T>
+    when 'T: equality
+val private liftUnary5:
+  f: ('a -> 'b -> 'c -> 'd -> 'e -> Image.Image<'T> -> Image.Image<'T>) ->
+    a: 'a -> b: 'b -> c: 'c -> d: 'd -> e: 'e -> s: Slice<'T> -> Slice<'T>
     when 'T: equality
 val private liftBinary:
   f: (Image.Image<'T> -> Image.Image<'T> -> Image.Image<'T>) ->
@@ -102,16 +174,18 @@ val roundSlice: s: Slice<'T> -> Slice<'T> when 'T: equality
 type BoundaryCondition = ImageFunctions.BoundaryCondition
 type OutputRegionMode = ImageFunctions.OutputRegionMode
 val convolve:
-  a: ImageFunctions.BoundaryCondition option ->
+  a: ImageFunctions.OutputRegionMode option ->
+    b: ImageFunctions.BoundaryCondition option ->
     s: Slice<'T> -> t: Slice<'T> -> Slice<'T> when 'T: equality
 val conv: s: Slice<'T> -> t: Slice<'T> -> Slice<'T> when 'T: equality
 val discreteGaussian:
-  a: float ->
-    b: uint option ->
-    c: ImageFunctions.BoundaryCondition option -> s: Slice<'T> -> Slice<'T>
+  a: uint ->
+    b: float ->
+    c: uint option ->
+    d: ImageFunctions.OutputRegionMode option ->
+    e: ImageFunctions.BoundaryCondition option -> s: Slice<'T> -> Slice<'T>
     when 'T: equality
 val gauss: dim: uint -> sigma: float -> kernelSize: uint option -> Slice<float>
-val finiteDiffFilter1D: order: uint -> Slice<float>
 val finiteDiffFilter2D: direction: uint -> order: uint -> Slice<float>
 val finiteDiffFilter3D: direction: uint -> order: uint -> Slice<float>
 val finiteDiffFilter4D: direction: uint -> order: uint -> Slice<float>
@@ -137,7 +211,7 @@ val otsuMultiThreshold: a: byte -> s: Slice<'T> -> Slice<'T> when 'T: equality
 val momentsThreshold: s: Slice<'T> -> Slice<'T> when 'T: equality
 val signedDistanceMap:
   inside: uint8 -> outside: uint8 -> s: Slice<uint8> -> Slice<float>
-val generateCoordinateAxis: axis: int -> size: int list -> Slice<uint32>
+val generateCoordinateAxis: axis: int -> size: int list -> Slice<uint>
 val unique: s: Slice<'T> -> 'T list when 'T: comparison
 val labelShapeStatistics:
   s: Slice<'T> -> Map<int64,ImageFunctions.LabelShapeStatistics>
@@ -157,7 +231,6 @@ val inline pairs2ints:
   pairs: (^T * ^S) list -> (int * int) list
     when ^T: (static member op_Explicit: ^T -> int) and
          ^S: (static member op_Explicit: ^S -> int)
-val swap: f: ('a -> 'b -> 'c) -> a: 'b -> b: 'a -> 'c
 val add: a: Slice<'T> -> b: Slice<'T> -> Slice<'T> when 'T: equality
 val inline sliceAddScalar:
   s: Slice<^T> -> i: ^T -> Slice<^T>
@@ -186,7 +259,6 @@ val inline sliceDivScalar:
 val inline scalarDivSlice:
   i: ^T -> s: Slice<^T> -> Slice<^T>
     when ^T: equality and ^T: (static member op_Explicit: ^T -> float)
-val modulus: a: Slice<'T> -> b: Slice<'T> -> Slice<'T> when 'T: equality
 val pow: a: Slice<'T> -> b: Slice<'T> -> Slice<'T> when 'T: equality
 val isGreaterEqual: a: Slice<'T> -> b: Slice<'T> -> Slice<'T> when 'T: equality
 val gte: a: Slice<'T> -> b: Slice<'T> -> bool when 'T: equality
@@ -217,6 +289,6 @@ val readSlice: idx: uint -> filename: string -> Slice<'T> when 'T: equality
 val writeSlice: filename: string -> s: Slice<'T> -> unit when 'T: equality
 val getStackDepth: inputDir: string -> suffix: string -> uint
 val getStackInfo: inputDir: string -> suffix: string -> FileInfo
-val getStackSize: inputDir: string -> suffix: string -> uint64 list
+val getStackSize: inputDir: string -> suffix: string -> uint * uint * uint
 val getStackWidth: inputDir: string -> suffix: string -> uint64
 val getStackHeight: inputDir: string -> suffix: string -> uint64

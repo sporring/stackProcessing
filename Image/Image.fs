@@ -93,7 +93,7 @@ module internal InternalHelpers =
                                     yield [uint i0; uint i1; uint i2; uint i3] }
             | _ -> failwith $"Unsupported dimensionality {size.Length}"
 
-    let setPixelAs (sitkImg: itk.simple.Image) (t: itk.simple.PixelIDValueEnum) (u: itk.simple.VectorUInt32) (value: obj) : unit =
+    let setBoxedPixel (sitkImg: itk.simple.Image) (t: itk.simple.PixelIDValueEnum) (u: itk.simple.VectorUInt32) (value: obj) : unit =
         if      t = fromType<uint8>                   then sitkImg.SetPixelAsUInt8(u, unbox value)
         elif    t = fromType<int8>                    then sitkImg.SetPixelAsInt8(u, unbox value)
         elif    t = fromType<uint16>                  then sitkImg.SetPixelAsUInt16(u, unbox value)
@@ -120,7 +120,7 @@ module internal InternalHelpers =
         elif    t = fromType<float list>              then sitkImg.SetPixelAsVectorFloat64(u, toVectorFloat64 (unbox value))
         else failwithf "Unsupported pixel type: %O" t
 
-    let getPixelBoxed (img : itk.simple.Image) (t   : itk.simple.PixelIDValueEnum) (u   : itk.simple.VectorUInt32) : obj =
+    let getBoxedPixel (img : itk.simple.Image) (t   : itk.simple.PixelIDValueEnum) (u   : itk.simple.VectorUInt32) : obj =
 
         if      t = fromType<uint8>                   then box (img.GetPixelAsUInt8   u)
         elif    t = fromType<int8>                    then box (img.GetPixelAsInt8    u)
@@ -148,6 +148,49 @@ module internal InternalHelpers =
         elif    t = fromType<float   list>            then box (img.GetPixelAsVectorFloat64 u |> fromVectorFloat64)
         else
             failwithf "Unsupported pixel type: %O" t
+
+    let getBoxedZero (t : itk.simple.PixelIDValueEnum) (vSize: uint option) : obj =
+
+        let ncomp = match vSize with Some v -> int v | None -> 1
+        if      t = fromType<uint8>                   then box 0uy
+        elif    t = fromType<int8>                    then box 0y
+        elif    t = fromType<uint16>                  then box 0us
+        elif    t = fromType<int16>                   then box 0s
+        elif    t = fromType<uint32>                  then box 0u
+        elif    t = fromType<int32>                   then box 0
+        elif    t = fromType<uint64>                  then box 0uL
+        elif    t = fromType<int64>                   then box 0L
+        elif    t = fromType<float32>                 then box 0.0f
+        elif    t = fromType<float>                   then box 0.0
+//        elif    t = fromType<System.Numerics.Complex>                 then
+//            img.GetPixelAsVectorFloat64 u
+//            |> fromVectorFloat64                    // float64 list → Complex
+//            |> box
+        elif    t = fromType<uint8   list>            then box (List.replicate ncomp 0uy)
+        elif    t = fromType<int8    list>            then box (List.replicate ncomp 0u)
+        elif    t = fromType<uint16  list>            then box (List.replicate ncomp 0us)
+        elif    t = fromType<int16   list>            then box (List.replicate ncomp 0s)
+        elif    t = fromType<uint32  list>            then box (List.replicate ncomp 0u)
+        elif    t = fromType<int32   list>            then box (List.replicate ncomp 0)
+        elif    t = fromType<uint64  list>            then box (List.replicate ncomp 0uL)
+        elif    t = fromType<int64   list>            then box (List.replicate ncomp 0L)
+        elif    t = fromType<float32 list>            then box (List.replicate ncomp 0.0f)
+        elif    t = fromType<float   list>            then box (List.replicate ncomp 0.0)
+        else
+            failwithf "Unsupported pixel type: %O" t
+
+    let inline mulAdd (t : itk.simple.PixelIDValueEnum) (acc : obj) (k : obj) (p : obj) : obj =
+          //if      t = fromType<uint8>                   then box 0uy
+        //elif    t = fromType<int8>                    then box 0y
+        //elif    t = fromType<uint16>                  then box 0us
+        //elif    t = fromType<int16>                   then box 0s
+        //elif    t = fromType<uint32>                  then box 0u
+        if      t = fromType<int32>                   then box ((unbox acc : int)     + (unbox k : int)     * (unbox p : int))
+        //elif    t = fromType<uint64>                  then box 0uL
+        elif    t = fromType<int64>                   then box ((unbox acc : int64)   + (unbox k : int64)   * (unbox p : int64))
+        elif    t = fromType<float32>                 then box ((unbox acc : float32) + (unbox k : float32) * (unbox p : float32))
+        elif    t = fromType<float>                   then box ((unbox acc : float)   + (unbox k : float)   * (unbox p : float))
+        else failwithf "mulAdd: unsupported pixel type %A" id
 
     let getBytesPerComponent t =
         if t = typeof<uint8> then 1u
@@ -423,13 +466,13 @@ type Image<'T when 'T : equality>(sz: uint list, ?numberComp: uint) =
     member this.Get (coords: uint list) : 'T =
         let u = coords |> toVectorUInt32
         let t = fromType<'T>
-        let raw = getPixelBoxed this.Image t u
+        let raw = getBoxedPixel this.Image t u
         raw :?> 'T
 
     member this.Set (coords: uint list) (value: 'T) : unit =
         let u = toVectorUInt32 coords
         let t = fromType<'T>
-        setPixelAs this.Image t u value
+        setBoxedPixel this.Image t u value
 
     member this.Item
         with get(i0: int, i1: int) : 'T =

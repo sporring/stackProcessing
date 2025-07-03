@@ -63,24 +63,50 @@ let closing          r       = asPipe (binaryClosingOp "binaryClosing" r None)
 let binaryFillHoles = asPipe (binaryFillHolesOp "fillHoles")
 let connectedComponents = asPipe (connectedComponentsOp "components")
 
-/// selected simple arithmatic operators
-let addInt             scalar = asPipe (addIntOp     "addInt"     scalar)
-let addUInt8           scalar = asPipe (addUInt8Op   "addUInt8"   scalar)
-let addFloat           scalar = asPipe (addFloatOp   "addFloat"   scalar)
-// Add missing types
+/// simple one sided arithmatic operators
+let addUInt8   scalar = asPipe (addUInt8Op "addUInt8" scalar)
+let addInt8    scalar = asPipe (addInt8Op "addInt8" scalar)
+let addUInt16  scalar = asPipe (addUInt16Op "addUInt16" scalar)
+let addInt16   scalar = asPipe (addInt16Op "addInt16" scalar)
+let addUInt    scalar = asPipe (addUIntOp "addUInt" scalar)
+let addInt     scalar = asPipe (addIntOp "addInt" scalar)
+let addUInt64  scalar = asPipe (addUInt64Op "addUInt64" scalar)
+let addInt64   scalar = asPipe (addInt64Op "addInt64" scalar)
+let addFloat32 scalar = asPipe (addFloat32Op "addFloat32" scalar)
+let addFloat   scalar = asPipe (addFloatOp "addFloat" scalar)
 
-let subInt             scalar = asPipe (subIntOp  "subInt"  scalar)
-let subFloat           scalar = asPipe (subFloatOp "subFloat" scalar)
-// Add missing types
+let subUInt8   scalar = asPipe (subUInt8Op "subUInt8" scalar)
+let subInt8    scalar = asPipe (subInt8Op "subInt8" scalar)
+let subUInt16  scalar = asPipe (subUInt16Op "subUInt16" scalar)
+let subInt16   scalar = asPipe (subInt16Op "subInt16" scalar)
+let subUInt    scalar = asPipe (subUIntOp "subUInt" scalar)
+let subInt     scalar = asPipe (subIntOp "subInt" scalar)
+let subUInt64  scalar = asPipe (subUInt64Op "subUInt64" scalar)
+let subInt64   scalar = asPipe (subInt64Op "subInt64" scalar)
+let subFloat32 scalar = asPipe (subFloat32Op "subFloat32" scalar)
+let subFloat   scalar = asPipe (subFloatOp "subFloat" scalar)
 
-let mulInt             scalar = asPipe (mulIntOp    "mulInt"    scalar)
-let mulUInt8           scalar = asPipe (mulUInt8Op  "mulUInt8"  scalar)
-let mulFloat           scalar = asPipe (mulFloatOp  "mulFloat"  scalar)
-// Add missing types
+let mulUInt8   scalar = asPipe (mulUInt8Op "mulUInt8" scalar)
+let mulInt8    scalar = asPipe (mulInt8Op "mulInt8" scalar)
+let mulUInt16  scalar = asPipe (mulUInt16Op "mulUInt16" scalar)
+let mulInt16   scalar = asPipe (mulInt16Op "mulInt16" scalar)
+let mulUInt    scalar = asPipe (mulUIntOp "mulUInt" scalar)
+let mulInt     scalar = asPipe (mulIntOp "mulInt" scalar)
+let mulUInt64  scalar = asPipe (mulUInt64Op "mulUInt64" scalar)
+let mulInt64   scalar = asPipe (mulInt64Op "mulInt64" scalar)
+let mulFloat32 scalar = asPipe (mulFloat32Op "mulFloat32" scalar)
+let mulFloat   scalar = asPipe (mulFloatOp "mulFloat" scalar)
 
-let divInt             scalar = asPipe (divIntOp  "divInt"  scalar)
-let divFloat           scalar = asPipe (divFloatOp "divFloat" scalar)
-// Add missing types
+let divUInt8   scalar = asPipe (divUInt8Op "divUInt8" scalar)
+let divInt8    scalar = asPipe (divInt8Op "divInt8" scalar)
+let divUInt16  scalar = asPipe (divUInt16Op "divUInt16" scalar)
+let divInt16   scalar = asPipe (divInt16Op "divInt16" scalar)
+let divUInt    scalar = asPipe (divUIntOp "divUInt" scalar)
+let divInt     scalar = asPipe (divIntOp "divInt" scalar)
+let divUInt64  scalar = asPipe (divUInt64Op "divUInt64" scalar)
+let divInt64   scalar = asPipe (divInt64Op "divInt64" scalar)
+let divFloat32 scalar = asPipe (divFloat32Op "divFloat32" scalar)
+let divFloat   scalar = asPipe (divFloatOp "divFloat" scalar)
 
 let add (im1: Slice<'T>) (im2: Slice<'T>) : Slice<'T> = Slice.add im1 im2
 let sub (im1: Slice<'T>) (im2: Slice<'T>) : Slice<'T> = Slice.sub im1 im2
@@ -99,8 +125,6 @@ let sXor (im1: Slice<'T>) (im2: Slice<'T>) : Slice<'T> = Slice.sXor im1 im2
 
 let sNot () = asPipe (sNotOp  "divInt")
 
-let modulus (im1: Slice<'T>) (im2: Slice<'T>) : Slice<'T> = Slice.modulus im1 im2
-// Add missing types
 let pow (im1: Slice<'T>) (im2: Slice<'T>) : Slice<'T> = Slice.pow im1 im2
 // Add missing types
 

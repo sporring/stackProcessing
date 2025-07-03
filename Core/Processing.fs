@@ -61,26 +61,88 @@ let mapWindowed (label: string) (depth: uint) (stride: uint) (f: 'S list -> 'T l
                 |> AsyncSeq.collect (f  >> AsyncSeq.ofSeq)
     }
 
-let castUInt8ToFloat : Pipe<Slice<uint8>, Slice<float>> =
-    printfn "[castUInt8ToFloat]"
+let inline cast<'S,'T when 'S: equality and 'T: equality> label fct : Pipe<Slice<'S>, Slice<'T>> =
+    printfn "%s" label
     {
-        Name = "castUInt8ToFloat"
+        Name = label
         Profile = Streaming
         Apply = fun input ->
             input
-            |> AsyncSeq.map (fun slice -> Slice.castUInt8ToFloat slice)
+            |> AsyncSeq.map (fun slice -> fct slice)
     }
 
-let castFloatToUInt8 : Pipe<Slice<float>, Slice<uint8>> =
-    printfn "[castFloatToUInt8]"
-    {
-        Name = "castFloatToUInt8"
-        Profile = Streaming
-        Apply = fun input ->
-            input
-            |> AsyncSeq.map (fun slice -> Slice.castFloatToUInt8 slice)
-    }
-
+let castUInt8ToInt8 = cast "[castUInt8ToInt8]" Slice.castUInt8ToInt8
+let castUInt8ToUInt16 = cast "[castUInt8ToUInt16]" Slice.castUInt8ToUInt16
+let castUInt8ToInt16 = cast "[castUInt8ToInt16]" Slice.castUInt8ToInt16
+let castUInt8ToUInt = cast "[castUInt8ToUInt]" Slice.castUInt8ToUInt
+let castUInt8ToInt = cast "[castUInt8ToInt]" Slice.castUInt8ToInt
+let castUInt8ToUInt64 = cast "[castUInt8ToUInt64]" Slice.castUInt8ToUInt64
+let castUInt8ToInt64 = cast "[castUInt8ToInt64]" Slice.castUInt8ToInt64
+let castUInt8ToFloat32 = cast "[castUInt8ToFloat32]" Slice.castUInt8ToFloat32
+let castUInt8ToFloat = cast "[castUInt8ToFloat]" Slice.castUInt8ToFloat
+let castInt8ToUInt8 = cast "[castInt8ToUInt8]" Slice.castInt8ToUInt8
+let castInt8ToUInt16 = cast "[castInt8ToUInt16]" Slice.castInt8ToUInt16
+let castInt8ToInt16 = cast "[castInt8ToInt16]" Slice.castInt8ToInt16
+let castInt8ToUInt = cast "[castInt8ToUInt]" Slice.castInt8ToUInt
+let castInt8ToInt = cast "[castInt8ToInt]" Slice.castInt8ToInt
+let castInt8ToUInt64 = cast "[castInt8ToUInt64]" Slice.castInt8ToUInt64
+let castInt8ToInt64 = cast "[castInt8ToInt64]" Slice.castInt8ToInt64
+let castInt8ToFloat32 = cast "[castInt8ToFloat32]" Slice.castInt8ToFloat32
+let castInt8ToFloat = cast "[castInt8ToFloat]" Slice.castInt8ToFloat
+let castUInt16ToUInt8 = cast "[castUInt16ToUInt8]" Slice.castUInt16ToUInt8
+let castUInt16ToInt8 = cast "[castUInt16ToInt8]" Slice.castUInt16ToInt8
+let castUInt16ToInt16 = cast "[castUInt16ToInt16]" Slice.castUInt16ToInt16
+let castUInt16ToUInt = cast "[castUInt16ToUInt]" Slice.castUInt16ToUInt
+let castUInt16ToInt = cast "[castUInt16ToInt]" Slice.castUInt16ToInt
+let castUInt16ToUInt64 = cast "[castUInt16ToUInt64]" Slice.castUInt16ToUInt64
+let castUInt16ToInt64 = cast "[castUInt16ToInt64]" Slice.castUInt16ToInt64
+let castUInt16ToFloat32 = cast "[castUInt16ToFloat32]" Slice.castUInt16ToFloat32
+let castUInt16ToFloat = cast "[castUInt16ToFloat]" Slice.castUInt16ToFloat
+let castInt16ToUInt8 = cast "[castInt16ToUInt8]" Slice.castInt16ToUInt8
+let castInt16ToInt8 = cast "[castInt16ToInt8]" Slice.castInt16ToInt8
+let castInt16ToUInt16 = cast "[castInt16ToUInt16]" Slice.castInt16ToUInt16
+let castInt16ToUInt = cast "[castInt16ToUInt]" Slice.castInt16ToUInt
+let castInt16ToInt = cast "[castInt16ToInt]" Slice.castInt16ToInt
+let castInt16ToUInt64 = cast "[castInt16ToUInt64]" Slice.castInt16ToUInt64
+let castInt16ToInt64 = cast "[castInt16ToInt64]" Slice.castInt16ToInt64
+let castInt16ToFloat32 = cast "[castInt16ToFloat32]" Slice.castInt16ToFloat32
+let castInt16ToFloat = cast "[castInt16ToFloat]" Slice.castInt16ToFloat
+let castUIntToUInt8 = cast "[castUIntToUInt8]" Slice.castUIntToUInt8
+let castUIntToInt8 = cast "[castUIntToInt8]" Slice.castUIntToInt8
+let castUIntToUInt16 = cast "[castUIntToUInt16]" Slice.castUIntToUInt16
+let castUIntToInt16 = cast "[castUIntToInt16]" Slice.castUIntToInt16
+let castUIntToInt = cast "[castUIntToInt]" Slice.castUIntToInt
+let castUIntToUInt64 = cast "[castUIntToUInt64]" Slice.castUIntToUInt64
+let castUIntToInt64 = cast "[castUIntToInt64]" Slice.castUIntToInt64
+let castUIntToFloat32 = cast "[castUIntToFloat32]" Slice.castUIntToFloat32
+let castUIntToFloat = cast "[castUIntToFloat]" Slice.castUIntToFloat
+let castIntToUInt8 = cast "[castIntToUInt8]" Slice.castIntToUInt8
+let castIntToInt8 = cast "[castIntToInt8]" Slice.castIntToInt8
+let castIntToUInt16 = cast "[castIntToUInt16]" Slice.castIntToUInt16
+let castIntToInt16 = cast "[castIntToInt16]" Slice.castIntToInt16
+let castIntToUInt = cast "[castIntToUInt]" Slice.castIntToUInt
+let castIntToUInt64 = cast "[castIntToUInt64]" Slice.castIntToUInt64
+let castIntToInt64 = cast "[castIntToInt64]" Slice.castIntToInt64
+let castIntToFloat32 = cast "[castIntToFloat32]" Slice.castIntToFloat32
+let castIntToFloat = cast "[castIntToFloat]" Slice.castIntToFloat
+let castFloat32ToUInt8 = cast "[castFloat32ToUInt8]" Slice.castFloat32ToUInt8
+let castFloat32ToInt8 = cast "[castFloat32ToInt8]" Slice.castFloat32ToInt8
+let castFloat32ToUInt16 = cast "[castFloat32ToUInt16]" Slice.castFloat32ToUInt16
+let castFloat32ToInt16 = cast "[castFloat32ToInt16]" Slice.castFloat32ToInt16
+let castFloat32ToUInt = cast "[castFloat32ToUInt]" Slice.castFloat32ToUInt
+let castFloat32ToInt = cast "[castFloat32ToInt]" Slice.castFloat32ToInt
+let castFloat32ToUInt64 = cast "[castFloat32ToUInt64]" Slice.castFloat32ToUInt64
+let castFloat32ToInt64 = cast "[castFloat32ToInt64]" Slice.castFloat32ToInt64
+let castFloat32Tofloat = cast "[castFloat32Tofloat]" Slice.castFloat32Tofloat
+let castFloatToUInt8 = cast "[castFloatToUInt8]" Slice.castFloatToUInt8
+let castFloatToInt8 = cast "[castFloatToInt8]" Slice.castFloatToInt8
+let castFloatToUInt16 = cast "[castFloatToUInt16]" Slice.castFloatToUInt16
+let castFloatToInt16 = cast "[castFloatToInt16]" Slice.castFloatToInt16
+let castFloatToUInt = cast "[castFloatToUInt]" Slice.castFloatToUInt
+let castFloatToInt = cast "[castFloatToInt]" Slice.castFloatToInt
+let castFloatToUIn64 = cast "[castFloatToUIn64]" Slice.castFloatToUIn64
+let castFloatToInt64 = cast "[castFloatToInt64]" Slice.castFloatToInt64
+let castFloatToFloat32 = cast "[castFloatToFloat32]" Slice.castFloatToFloat32
 
 let add (slice: Slice<'T>) : Pipe<Slice<'T>, Slice<'T>> =
     printfn "[add]"
@@ -339,7 +401,7 @@ let convolve (kern: Slice<'T>) (boundaryCondition: BoundaryCondition option) (wi
     let dpth = Option.defaultValue ksz windowSize |> max ksz
     let strd = Option.defaultValue (1u+dpth-ksz) stride |> max 1u
     printfn $"convolve: {ksz} {dpth} {strd}"
-    mapWindowed "discreteGaussian" dpth strd (stack >> convolve boundaryCondition kern >> unstack)
+    mapWindowed "discreteGaussian" dpth strd (stack >> convolve (Some valid) boundaryCondition kern >> unstack)
 
 let conv (kern: Slice<'T>): Pipe<Slice<'T> ,Slice<'T>> =
     convolve kern None None None
@@ -366,7 +428,7 @@ let discreteGaussian (sigma: float) (kernelSize: uint option) (boundaryCondition
     let dpth = Option.defaultValue ksz windowSize |> max ksz
     let minStride = 1u
     let strd = Option.defaultValue (1u+dpth-ksz) stride |> max minStride
-    mapWindowed "convGauss/discreteGaussian" dpth strd (stack >> discreteGaussian sigma (Some ksz) boundaryCondition >> unstack)
+    mapWindowed "convGauss/discreteGaussian" dpth strd (stack >> discreteGaussian 3u sigma (Some ksz) (Some valid) boundaryCondition >> unstack)
 
 let convGauss (sigma: float) (boundaryCondition: BoundaryCondition option) : Pipe<Slice<'T> ,Slice<'T>> =
     discreteGaussian sigma None boundaryCondition None None
@@ -432,14 +494,48 @@ let liftUnaryOp name (f: Slice<'T> -> Slice<'T>) : Operation<Slice<'T>,Slice<'T>
         } 
     }
 
+let liftImageScalarOpUInt8 (name : string) (scalar : uint8) (core : Slice<uint8> -> uint8 -> Slice<uint8>) : Operation<Slice<uint8>,Slice<uint8>> =
+    liftUnaryOp name (fun s -> core s scalar)
+let liftImageScalarOpUInt16 (name : string) (scalar : uint16) (core : Slice<uint16> -> uint16 -> Slice<uint16>) : Operation<Slice<uint16>,Slice<uint16>> =
+    liftUnaryOp name (fun s -> core s scalar)
+let liftImageScalarOpUInt (name : string) (scalar : uint) (core : Slice<uint> -> uint -> Slice<uint>) : Operation<Slice<uint>,Slice<uint>> =
+    liftUnaryOp name (fun s -> core s scalar)
+let liftImageScalarOpUInt64 (name : string) (scalar : uint64) (core : Slice<uint64> -> uint64 -> Slice<uint64>) : Operation<Slice<uint64>,Slice<uint64>> =
+    liftUnaryOp name (fun s -> core s scalar)
+let liftImageScalarOpInt8 (name : string) (scalar : int8) (core : Slice<int8> -> int8 -> Slice<int8>) : Operation<Slice<int8>,Slice<int8>> =
+    liftUnaryOp name (fun s -> core s scalar)
+let liftImageScalarOpInt16 (name : string) (scalar : int16) (core : Slice<int16> -> int16 -> Slice<int16>) : Operation<Slice<int16>,Slice<int16>> =
+    liftUnaryOp name (fun s -> core s scalar)
 let liftImageScalarOpInt (name : string) (scalar : int) (core : Slice<int> -> int -> Slice<int>) : Operation<Slice<int>,Slice<int>> =
     liftUnaryOp name (fun s -> core s scalar)
-let liftImageScalarOpUInt8 (name : string) (scalar : uint8) (core : Slice<uint8> -> uint8 -> Slice<uint8>) : Operation<Slice<uint8>,Slice<uint8>> =
+let liftImageScalarOpInt64 (name : string) (scalar : int64) (core : Slice<int64> -> int64 -> Slice<int64>) : Operation<Slice<int64>,Slice<int64>> =
     liftUnaryOp name (fun s -> core s scalar)
 let liftImageScalarOpFloat32 (name : string) (scalar : float32) (core : Slice<float32> -> float32 -> Slice<float32>) : Operation<Slice<float32>,Slice<float32>> =
     liftUnaryOp name (fun s -> core s scalar)
 let liftImageScalarOpFloat (name : string) (scalar : float) (core : Slice<float> -> float -> Slice<float>) : Operation<Slice<float>,Slice<float>> =
     liftUnaryOp name (fun s -> core s scalar)
+
+let liftScalarImageOpUInt8 (name : string) (scalar : uint8) (core : uint8 -> Slice<uint8> -> Slice<uint8>) : Operation<Slice<uint8>,Slice<uint8>> =
+    liftUnaryOp name (fun s -> core s scalar)
+let liftScalarImageOpUInt16 (name : string) (scalar : uint16) (core : uint16 -> Slice<uint16> -> Slice<uint16>) : Operation<Slice<uint16>,Slice<uint16>> =
+    liftUnaryOp name (fun s -> core s scalar)
+let liftScalarImageOpUInt (name : string) (scalar : uint) (core : uint -> Slice<uint> -> Slice<uint>) : Operation<Slice<uint>,Slice<uint>> =
+    liftUnaryOp name (fun s -> core s scalar)
+let liftScalarImageOpUInt64 (name : string) (scalar : uint64) (core : uint64 -> Slice<uint64> -> Slice<uint64>) : Operation<Slice<uint64>,Slice<uint64>> =
+    liftUnaryOp name (fun s -> core s scalar)
+let liftScalarImageOpInt8 (name : string) (scalar : int8) (core : int8 -> Slice<int8> -> Slice<int8>) : Operation<Slice<int8>,Slice<int8>> =
+    liftUnaryOp name (fun s -> core s scalar)
+let liftScalarImageOpInt16 (name : string) (scalar : int16) (core : int16 -> Slice<int16> -> Slice<int16>) : Operation<Slice<int16>,Slice<int16>> =
+    liftUnaryOp name (fun s -> core s scalar)
+let liftScalarImageOpInt (name : string) (scalar : int) (core : int -> Slice<int> -> Slice<int>) : Operation<Slice<int>,Slice<int>> =
+    liftUnaryOp name (fun s -> core s scalar)
+let liftScalarImageOpInt64 (name : string) (scalar : int64) (core : int64 -> Slice<int64> -> Slice<int64>) : Operation<Slice<int64>,Slice<int64>> =
+    liftUnaryOp name (fun s -> core s scalar)
+let liftScalarImageOpFloat32 (name : string) (scalar : float32) (core : float32 -> Slice<float32> -> Slice<float32>) : Operation<Slice<float32>,Slice<float32>> =
+    liftUnaryOp name (fun s -> core s scalar)
+let liftScalarImageOpFloat (name : string) (scalar : float) (core : float -> Slice<float> -> Slice<float>) : Operation<Slice<float>,Slice<float>> =
+    liftUnaryOp name (fun s -> core s scalar)
+
 
 let liftWindowedOp (name: string) (window: uint) (stride: uint) (f: Slice<'S> -> Slice<'T>) : Operation<Slice<'S>, Slice<'T>> =
     {
@@ -608,7 +704,7 @@ let discreteGaussianOp (name:string) (sigma:float) (bc: ImageFunctions.BoundaryC
     let ksz = 2.0 * sigma + 1.0 |> roundFloatToUint
     let win = Option.defaultValue ksz winSz |> min ksz // max should be found by memory availability
     let stride = win - ksz + 1u
-    liftWindowedOp name win stride (fun slices -> Slice.discreteGaussian sigma (ksz |> Some) bc slices)
+    liftWindowedOp name win stride (fun slices -> Slice.discreteGaussian 3u sigma (ksz |> Some) (Some valid) bc slices)
 
 let windowFromSlices (a: Slice<'T>) (b: Slice<'T>) : uint =
     min (a |> Slice.GetDepth) (a |> Slice.GetDepth)
@@ -645,7 +741,7 @@ let convolveOp (name: string) (kernel: Slice<'T>) (bc: BoundaryCondition option)
     let ksz = windowFromKernel kernel
     let win = Option.defaultValue ksz winSz |> min ksz
     let stride = win-ksz+1u
-    liftWindowedOp name win stride (fun slices -> Slice.convolve bc slices kernel)
+    liftWindowedOp name win stride (fun slices -> Slice.convolve (Some valid) bc slices kernel)
 
 let private makeMorphOp (name:string) (radius:uint) (winSz: uint option) (core: uint -> Slice<'T> -> Slice<'T>) : Operation<Slice<'T>,Slice<'T>> when 'T: equality =
     let winFromRadius (r:uint) = 2u * r + 1u
@@ -678,13 +774,6 @@ let connectedComponentsOp (name: string) : Operation<Slice<uint8>, Slice<uint64>
             }
     }
 
-let addIntOp      name scalar = liftImageScalarOpInt     name scalar Slice.sliceAddScalar
-let addUInt8Op    name scalar = liftImageScalarOpUInt8   name scalar Slice.sliceAddScalar
-let addFloatOp    name scalar = liftImageScalarOpFloat   name scalar Slice.sliceAddScalar
-
-let subIntOp   name scalar = liftImageScalarOpInt   name scalar Slice.sliceSubScalar
-let subFloatOp name scalar = liftImageScalarOpFloat name scalar Slice.sliceSubScalar
-
 (* Assymetry could be handled as
 let inline subFromScalarIntOp (name:string) (scalar:int) =
     liftUnaryOp name (fun img -> subInt img scalar |> fun s -> s )
@@ -692,12 +781,49 @@ let inline subFromScalarFloatOp (name:string) (scalar:float) =
     liftUnaryOp name (fun img -> subFloat img scalar |> fun s -> s )
 *)
 
-let mulIntOp     name scalar = liftImageScalarOpInt     name scalar Slice.sliceMulScalar
-let mulUInt8Op   name scalar = liftImageScalarOpUInt8   name scalar Slice.sliceMulScalar
-let mulFloatOp   name scalar = liftImageScalarOpFloat   name scalar Slice.sliceMulScalar
+let addUInt8Op   name scalar = liftImageScalarOpUInt8    name scalar Slice.sliceAddScalar
+let addInt8Op    name scalar = liftImageScalarOpInt8     name scalar Slice.sliceAddScalar
+let addUInt16Op  name scalar = liftImageScalarOpUInt16   name scalar Slice.sliceAddScalar
+let addInt16Op   name scalar = liftImageScalarOpInt16    name scalar Slice.sliceAddScalar
+let addUIntOp    name scalar = liftImageScalarOpUInt     name scalar Slice.sliceAddScalar
+let addIntOp     name scalar = liftImageScalarOpInt      name scalar Slice.sliceAddScalar
+let addUInt64Op  name scalar = liftImageScalarOpUInt64   name scalar Slice.sliceAddScalar
+let addInt64Op   name scalar = liftImageScalarOpInt64    name scalar Slice.sliceAddScalar
+let addFloat32Op name scalar = liftImageScalarOpFloat32  name scalar Slice.sliceAddScalar
+let addFloatOp   name scalar = liftImageScalarOpFloat    name scalar Slice.sliceMulScalar
 
-let divIntOp   name scalar = liftImageScalarOpInt   name scalar Slice.sliceDivScalar
-let divFloatOp name scalar = liftImageScalarOpFloat name scalar Slice.sliceDivScalar
+let subUInt8Op   name scalar = liftImageScalarOpUInt8    name scalar Slice.sliceSubScalar
+let subInt8Op    name scalar = liftImageScalarOpInt8     name scalar Slice.sliceSubScalar
+let subUInt16Op  name scalar = liftImageScalarOpUInt16   name scalar Slice.sliceSubScalar
+let subInt16Op   name scalar = liftImageScalarOpInt16    name scalar Slice.sliceSubScalar
+let subUIntOp    name scalar = liftImageScalarOpUInt     name scalar Slice.sliceSubScalar
+let subIntOp     name scalar = liftImageScalarOpInt      name scalar Slice.sliceSubScalar
+let subUInt64Op  name scalar = liftImageScalarOpUInt64   name scalar Slice.sliceSubScalar
+let subInt64Op   name scalar = liftImageScalarOpInt64    name scalar Slice.sliceSubScalar
+let subFloat32Op name scalar = liftImageScalarOpFloat32  name scalar Slice.sliceSubScalar
+let subFloatOp   name scalar = liftImageScalarOpFloat    name scalar Slice.sliceSubScalar
+
+let mulUInt8Op   name scalar = liftImageScalarOpUInt8    name scalar Slice.sliceMulScalar
+let mulInt8Op    name scalar = liftImageScalarOpInt8     name scalar Slice.sliceMulScalar
+let mulUInt16Op  name scalar = liftImageScalarOpUInt16   name scalar Slice.sliceMulScalar
+let mulInt16Op   name scalar = liftImageScalarOpInt16    name scalar Slice.sliceMulScalar
+let mulUIntOp    name scalar = liftImageScalarOpUInt     name scalar Slice.sliceMulScalar
+let mulIntOp     name scalar = liftImageScalarOpInt      name scalar Slice.sliceMulScalar
+let mulUInt64Op  name scalar = liftImageScalarOpUInt64   name scalar Slice.sliceMulScalar
+let mulInt64Op   name scalar = liftImageScalarOpInt64    name scalar Slice.sliceMulScalar
+let mulFloat32Op name scalar = liftImageScalarOpFloat32  name scalar Slice.sliceMulScalar
+let mulFloatOp   name scalar = liftImageScalarOpFloat    name scalar Slice.sliceMulScalar
+
+let divUInt8Op   name scalar = liftImageScalarOpUInt8    name scalar Slice.sliceDivScalar
+let divInt8Op    name scalar = liftImageScalarOpInt8     name scalar Slice.sliceDivScalar
+let divUInt16Op  name scalar = liftImageScalarOpUInt16   name scalar Slice.sliceDivScalar
+let divInt16Op   name scalar = liftImageScalarOpInt16    name scalar Slice.sliceDivScalar
+let divUIntOp    name scalar = liftImageScalarOpUInt     name scalar Slice.sliceDivScalar
+let divIntOp     name scalar = liftImageScalarOpInt      name scalar Slice.sliceDivScalar
+let divUInt64Op  name scalar = liftImageScalarOpUInt64   name scalar Slice.sliceDivScalar
+let divInt64Op   name scalar = liftImageScalarOpInt64    name scalar Slice.sliceDivScalar
+let divFloat32Op name scalar = liftImageScalarOpFloat32  name scalar Slice.sliceDivScalar
+let divFloatOp   name scalar = liftImageScalarOpFloat    name scalar Slice.sliceDivScalar
 
 // ---------------------------------------------------------------------------
 // NOTE on image ⊕ image variants

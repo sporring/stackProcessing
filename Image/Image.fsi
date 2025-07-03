@@ -27,13 +27,17 @@ module internal InternalHelpers =
     val array2dZip: a: 'T array2d -> b: 'U array2d -> ('T * 'U) array2d
     val pixelIdToString: id: itk.simple.PixelIDValueEnum -> string
     val flatIndices: size: uint list -> uint list seq
-    val setPixelAs:
+    val setBoxedPixel:
       sitkImg: itk.simple.Image ->
         t: itk.simple.PixelIDValueEnum ->
         u: itk.simple.VectorUInt32 -> value: obj -> unit
-    val getPixelBoxed:
+    val getBoxedPixel:
       img: itk.simple.Image ->
         t: itk.simple.PixelIDValueEnum -> u: itk.simple.VectorUInt32 -> obj
+    val getBoxedZero:
+      t: itk.simple.PixelIDValueEnum -> vSize: uint option -> obj
+    val inline mulAdd:
+      t: itk.simple.PixelIDValueEnum -> acc: obj -> k: obj -> p: obj -> obj
     val getBytesPerComponent: t: System.Type -> uint32
 val equalOne: v: 'T -> bool
 [<StructuredFormatDisplay ("{Display}")>]

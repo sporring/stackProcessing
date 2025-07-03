@@ -200,13 +200,81 @@ let convolve (outputRegionMode: OutputRegionMode option) (boundaryCondition: Bou
                     | Some PerodicPad ->         itk.simple.ConvolutionImageFilter.BoundaryConditionType.PERIODIC_PAD 
                     | _ ->                       itk.simple.ConvolutionImageFilter.BoundaryConditionType.ZERO_PAD)) 
         (fun f img ker -> 
-            // Convolve does not like kernels that are smaller than images. This is a pseudo-fix
-            //let szImg = img.GetSize() |> fromVectorUInt32 |> List.reduce (*)
-            //let szKer = img.GetSize() |> fromVectorUInt32 |> List.reduce (*)
-            //if szImg > szKer then
-                f.Execute(img,ker)
-            //else
-            //    f.Execute(ker,img)
+            // Convolve does not like images with singular dimensions
+            let szImg = img.GetSize() |> fromVectorUInt32 |> List.map int
+            let szKer = ker.GetSize() |> fromVectorUInt32 |> List.map int
+            if img.GetNumberOfComponentsPerPixel() > 1u then
+                failwith "Can't convolve vector images"
+            else
+                let pairs = List.zip szImg szKer
+                if List.forall (fun (a,b) -> a > b && b > 1) pairs then
+                    f.Execute(img,ker)
+                elif List.forall (fun (a,b) -> a < b && a > 1) pairs then
+                    f.Execute(ker,img) // Simple itk relies on the first argument being the bigger
+                else
+                    let dim = img.GetDimension()
+                    let itkId = img.GetPixelID()
+                    let idKer = ker.GetPixelID()
+                    if itkId <> idKer then 
+                        failwith "image and kernels must be of the same type"
+                    else
+                        let szZip = List.zip szImg szKer
+                        let szMin = szZip |> List.map (fun (a,b) -> min a b)
+                        let szMax = szZip |> List.map (fun (a,b) -> max a b)
+
+                        let margin =
+                            match outputRegionMode with
+                                | Some Same -> List.replicate szKer.Length 0
+                                | _ ->         szMin |> List.map (fun v -> v-1)
+                        let szRes = (szMin,szMax) ||> List.map2 (fun a b -> int (b-a+1))
+                        //img*ker = sum_i sum_j sum_k sum_l ker[k,l]*img[i-k,j-l]
+                        let res = new itk.simple.Image(szRes |> List.map uint |> toVectorUInt32, itkId)
+                        if dim = 2u then
+                            for i0 in [margin[0]..szImg[0]-1-margin[0]] do
+                                for i1 in [margin[1]..szImg[1]-1-margin[1]] do
+                                    let m0m1 = [uint (i0-margin[0]); uint (i1-margin[1])]
+                                    let mutable s = getBoxedZero itkId None
+                                    for k0 in [0..szKer[0]-1] do
+                                        for k1 in [0..szKer[1]-1] do
+                                            let k0k1 = [uint k0; uint k1]
+                                            let i0i1k0k1 = [uint (i0-k0); uint (i1-k1)] 
+                                            let kerVal = getBoxedPixel ker idKer (k0k1|>toVectorUInt32)
+                                            let imgVal = 
+                                                let pairs = List.zip i0i1k0k1 (szImg|>List.map uint)
+                                                if List.forall (fun (a,b) -> a>=0u && a < b) pairs then
+                                                    getBoxedPixel img itkId (i0i1k0k1|>toVectorUInt32)
+                                                else
+                                                    match outputRegionMode with
+                                                        | Some Same -> getBoxedZero itkId None // This where boundary conditions are set, presently zero padding
+                                                        | _ ->  getBoxedZero itkId None // this should not be possible 
+                                            s <- mulAdd itkId s kerVal imgVal
+                                    setBoxedPixel res itkId (m0m1|>toVectorUInt32) s
+                            res
+                        elif dim = 3u then
+                            for i0 in [margin[0]..szImg[0]-1-margin[0]] do
+                                for i1 in [margin[1]..szImg[1]-1-margin[1]] do
+                                    for i2 in [margin[2]..szImg[2]-1-margin[2]] do
+                                        let m0m1m2 = [uint (i0-margin[0]); uint (i1-margin[1]); uint (i2-margin[2])]
+                                        let mutable s = getBoxedZero itkId None
+                                        for k0 in [0..szKer[0]-1] do
+                                            for k1 in [0..szKer[1]-1] do
+                                                for k2 in [0..szKer[2]-1] do
+                                                    let k0k1k2 = [uint k0; uint k1; uint k2]
+                                                    let i0i1i2k0k1k2 = [uint (i0-k0); uint (i1-k1); uint (i2-k2)] 
+                                                    let kerVal = getBoxedPixel ker idKer (k0k1k2|>toVectorUInt32)
+                                                    let imgVal = 
+                                                        let pairs = List.zip i0i1i2k0k1k2 (szImg|>List.map uint)
+                                                        if List.forall (fun (a,b) -> a>=0u && a < b) pairs then
+                                                                getBoxedPixel img itkId (i0i1i2k0k1k2|>toVectorUInt32)
+                                                            else
+                                                                match outputRegionMode with
+                                                                    | Some Same -> getBoxedZero itkId None // This where boundary conditions are set, presently zero padding
+                                                                    | _ ->  getBoxedZero itkId None // this should not be possible 
+                                                    s <- mulAdd itkId s kerVal imgVal
+                                        setBoxedPixel res itkId (m0m1m2|>toVectorUInt32) s
+                            res
+                        else
+                            failwith "Can't handle signular dimension for dimensions other than 2, yet."
             )
 
 let conv (img: Image<'T>) (ker: Image<'T>) : Image<'T> = convolve None None img ker

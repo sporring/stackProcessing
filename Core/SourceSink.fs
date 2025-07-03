@@ -105,8 +105,11 @@ let readRandomSlices<'T when 'T: equality> (count: uint) (inputDir: string) (suf
                 Slice.readSlice<'T> (uint i) fileName)
     }
 
+let readRandom<'T when 'T : equality> (count: uint) (inputDir : string) (suffix : string) transform : Core.Pipe<unit,Slice.Slice<'T>> =
+    readRandomSlices<'T> count inputDir suffix |> transform
+
 /// Source parts
-let create<'T when 'T: equality> (width: uint) (height: uint) (depth: uint) : Pipe<unit, Slice<'T>> =
+let createPipe<'T when 'T: equality> (width: uint) (height: uint) (depth: uint) : Pipe<unit, Slice<'T>> =
     printfn "[create]"
     {
         Name = "[create]"
@@ -117,6 +120,9 @@ let create<'T when 'T: equality> (width: uint) (height: uint) (depth: uint) : Pi
                 printfn "[create] Created slice %d with size %A" i (slice.Image.GetSize()); 
                 slice)
     }
+
+let create<'T when 'T: equality> (width: uint) (height: uint) (depth: uint) transform : Core.Pipe<unit,Slice.Slice<'T>> =
+    createPipe<'T> width height depth  |> transform
 
 
 let liftImageSource (name: string) (img: Slice<'T>) : Pipe<unit, Slice<'T>> =
@@ -143,17 +149,6 @@ let gauss (sigma: float) (kernelSize: uint option) : Pipe<unit, Slice<float>> =
             let img = gauss 3u sigma kernelSize
             let imgLst = img |> unstack
             imgLst |> AsyncSeq.ofSeq
-    }
-
-let finiteDiffFilter1D (order: uint) : Pipe<unit, Slice<float>> =
-    printfn "[finiteDiffFilter1D]"
-    {
-        Name = "[finiteDiffFilter1D]"
-        Profile = Streaming
-        Apply = fun _ ->
-            finiteDiffFilter1D order
-            |> unstack
-            |> AsyncSeq.ofSeq
     }
 
 let finiteDiffFilter2D (direction: uint) (order: uint) : Pipe<unit, Slice<float>> =

@@ -48,8 +48,8 @@ let inline testOps<^T when ^T: equality
         let t = fromType<'T>
         let img = makeImage t
         let sample = List.find (fun (a,b) -> a = fromType<'T>) pixelSamplesMap |> snd
-        setPixelAs img t pos sample
-        let result = getPixelBoxed img t pos 
+        setBoxedPixel img t pos sample
+        let result = getBoxedPixel img t pos 
         Expect.equal result sample $"Mismatch for type {t}"
     ]
 

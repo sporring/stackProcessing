@@ -21,31 +21,100 @@ let GetDimensions (s: Slice<'T>) = s.Image.GetDimensions()
 let GetHeight (s: Slice<'T>) = s.Image.GetHeight()
 let GetWidth (s: Slice<'T>) = s.Image.GetWidth()
 let GetSize (s: Slice<'T>) = s.Image.GetSize()
+
 let ToString (s: Slice<'T>) = s.Image.ToString()
 let toArray2D (s: Slice<'T>) = s.Image.toArray2D()
 let toArray3D (s: Slice<'T>) = s.Image.toArray3D()
 let toArray4D (s: Slice<'T>) = s.Image.toArray4D()
 let toImage (s: Slice<'T>) = s.Image
 let toSimpleITK (s: Slice<'T>) = s.Image.toSimpleITK()
-let cast<'T when 'T: equality> (s: Slice<_>) = {Index = s.Index; Image=s.Image.cast<'T>()}
-let castUInt8ToFloat (s: Slice<uint8>) : Slice<float> = {Index = s.Index; Image=s.Image.castUInt8ToFloat()} // slice with does not work, since this sets the type
-let castFloatToUInt8 (s: Slice<float>) : Slice<uint8> = {Index = s.Index; Image=s.Image.castFloatToUInt8()} // slice with does not work, since this sets the type
-
-let toFloat (value: obj) =
-    match value with
-    | :? float   as f -> f
-    | :? float32 as f -> float f
-    | :? int     as i -> float i
-    | :? byte    as b -> float b
-    | :? int64   as l -> float l
-    | _ -> failwithf "Cannot convert value of type %s to float" (value.GetType().FullName)
-
 let toSeqSeq (s: Slice<'T>): seq<seq<float>> =
+    let toFloat (value: obj) =
+        match value with
+        | :? float   as f -> f
+        | :? float32 as f -> float f
+        | :? int     as i -> float i
+        | :? byte    as b -> float b
+        | :? int64   as l -> float l
+        | _ -> failwithf "Cannot convert value of type %s to float" (value.GetType().FullName)
     let width = s |> GetWidth |> int
     let height = s |> GetHeight |> int
     Seq.init height (fun y ->
         Seq.init width (fun x ->
             s.Image[x,y] |> box |> toFloat))
+
+let castUInt8ToInt8     (s: Slice<uint8>)   : Slice<int8>    = { Index = s.Index; Image = s.Image.toInt8() }
+let castUInt8ToUInt16   (s: Slice<uint8>)   : Slice<uint16>  = { Index = s.Index; Image = s.Image.toUInt16() }
+let castUInt8ToInt16    (s: Slice<uint8>)   : Slice<int16>   = { Index = s.Index; Image = s.Image.toInt16() }
+let castUInt8ToUInt     (s: Slice<uint8>)   : Slice<uint>    = { Index = s.Index; Image = s.Image.toUInt() }
+let castUInt8ToInt      (s: Slice<uint8>)   : Slice<int>     = { Index = s.Index; Image = s.Image.toInt() }
+let castUInt8ToUInt64   (s: Slice<uint8>)   : Slice<uint64>  = { Index = s.Index; Image = s.Image.toUInt64() }
+let castUInt8ToInt64    (s: Slice<uint8>)   : Slice<int64>   = { Index = s.Index; Image = s.Image.toInt64() }
+let castUInt8ToFloat32  (s: Slice<uint8>)   : Slice<float32> = { Index = s.Index; Image = s.Image.toFloat32() }
+let castUInt8ToFloat    (s: Slice<uint8>)   : Slice<float>   = { Index = s.Index; Image = s.Image.toFloat() }
+let castInt8ToUInt8     (s: Slice<int8>)    : Slice<uint8>   = { Index = s.Index; Image = s.Image.toUInt8() }
+let castInt8ToUInt16    (s: Slice<int8>)    : Slice<uint16>  = { Index = s.Index; Image = s.Image.toUInt16() }
+let castInt8ToInt16     (s: Slice<int8>)    : Slice<int16>   = { Index = s.Index; Image = s.Image.toInt16() }
+let castInt8ToUInt      (s: Slice<int8>)    : Slice<uint>    = { Index = s.Index; Image = s.Image.toUInt() }
+let castInt8ToInt       (s: Slice<int8>)    : Slice<int>     = { Index = s.Index; Image = s.Image.toInt() }
+let castInt8ToUInt64    (s: Slice<int8>)    : Slice<uint64>  = { Index = s.Index; Image = s.Image.toUInt64() }
+let castInt8ToInt64     (s: Slice<int8>)    : Slice<int64>   = { Index = s.Index; Image = s.Image.toInt64() }
+let castInt8ToFloat32   (s: Slice<int8>)    : Slice<float32> = { Index = s.Index; Image = s.Image.toFloat32() }
+let castInt8ToFloat     (s: Slice<int8>)    : Slice<float>   = { Index = s.Index; Image = s.Image.toFloat() }
+let castUInt16ToUInt8   (s: Slice<uint16>)  : Slice<uint8>   = { Index = s.Index; Image = s.Image.toUInt8() }
+let castUInt16ToInt8    (s: Slice<uint16>)  : Slice<int8>    = { Index = s.Index; Image = s.Image.toInt8() }
+let castUInt16ToInt16   (s: Slice<uint16>)  : Slice<int16>   = { Index = s.Index; Image = s.Image.toInt16() }
+let castUInt16ToUInt    (s: Slice<uint16>)  : Slice<uint>    = { Index = s.Index; Image = s.Image.toUInt() }
+let castUInt16ToInt     (s: Slice<uint16>)  : Slice<int>     = { Index = s.Index; Image = s.Image.toInt() }
+let castUInt16ToUInt64  (s: Slice<uint16>)  : Slice<uint64>  = { Index = s.Index; Image = s.Image.toUInt64() }
+let castUInt16ToInt64   (s: Slice<uint16>)  : Slice<int64>   = { Index = s.Index; Image = s.Image.toInt64() }
+let castUInt16ToFloat32 (s: Slice<uint16>)  : Slice<float32> = { Index = s.Index; Image = s.Image.toFloat32() }
+let castUInt16ToFloat   (s: Slice<uint16>)  : Slice<float>   = { Index = s.Index; Image = s.Image.toFloat() }
+let castInt16ToUInt8    (s: Slice<int16>)   : Slice<uint8>   = { Index = s.Index; Image = s.Image.toUInt8() }
+let castInt16ToInt8     (s: Slice<int16>)   : Slice<int8>    = { Index = s.Index; Image = s.Image.toInt8() }
+let castInt16ToUInt16   (s: Slice<int16>)   : Slice<uint16>  = { Index = s.Index; Image = s.Image.toUInt16() }
+let castInt16ToUInt     (s: Slice<int16>)   : Slice<uint>    = { Index = s.Index; Image = s.Image.toUInt() }
+let castInt16ToInt      (s: Slice<int16>)   : Slice<int>     = { Index = s.Index; Image = s.Image.toInt() }
+let castInt16ToUInt64   (s: Slice<int16>)   : Slice<uint64>  = { Index = s.Index; Image = s.Image.toUInt64() }
+let castInt16ToInt64    (s: Slice<int16>)   : Slice<int64>   = { Index = s.Index; Image = s.Image.toInt64() }
+let castInt16ToFloat32  (s: Slice<int16>)   : Slice<float32> = { Index = s.Index; Image = s.Image.toFloat32() }
+let castInt16ToFloat    (s: Slice<int16>)   : Slice<float>   = { Index = s.Index; Image = s.Image.toFloat() }
+let castUIntToUInt8     (s: Slice<uint>)    : Slice<uint8>   = { Index = s.Index; Image = s.Image.toUInt8() }
+let castUIntToInt8      (s: Slice<uint>)    : Slice<int8>    = { Index = s.Index; Image = s.Image.toInt8() }
+let castUIntToUInt16    (s: Slice<uint>)    : Slice<uint16>  = { Index = s.Index; Image = s.Image.toUInt16() }
+let castUIntToInt16     (s: Slice<uint>)    : Slice<int16>   = { Index = s.Index; Image = s.Image.toInt16() }
+let castUIntToInt       (s: Slice<uint>)    : Slice<int>     = { Index = s.Index; Image = s.Image.toInt() }
+let castUIntToUInt64    (s: Slice<uint>)    : Slice<uint64>  = { Index = s.Index; Image = s.Image.toUInt64() }
+let castUIntToInt64     (s: Slice<uint>)    : Slice<int64>   = { Index = s.Index; Image = s.Image.toInt64() }
+let castUIntToFloat32   (s: Slice<uint>)    : Slice<float32> = { Index = s.Index; Image = s.Image.toFloat32() }
+let castUIntToFloat     (s: Slice<uint>)    : Slice<float>   = { Index = s.Index; Image = s.Image.toFloat() }
+let castIntToUInt8      (s: Slice<int>)     : Slice<uint8>   = { Index = s.Index; Image = s.Image.toUInt8() }
+let castIntToInt8       (s: Slice<int>)     : Slice<int8>    = { Index = s.Index; Image = s.Image.toInt8() }
+let castIntToUInt16     (s: Slice<int>)     : Slice<uint16>  = { Index = s.Index; Image = s.Image.toUInt16() }
+let castIntToInt16      (s: Slice<int>)     : Slice<int16>   = { Index = s.Index; Image = s.Image.toInt16() }
+let castIntToUInt       (s: Slice<int>)     : Slice<uint>    = { Index = s.Index; Image = s.Image.toUInt() }
+let castIntToUInt64     (s: Slice<int>)     : Slice<uint64>  = { Index = s.Index; Image = s.Image.toUInt64() }
+let castIntToInt64      (s: Slice<int>)     : Slice<int64>   = { Index = s.Index; Image = s.Image.toInt64() }
+let castIntToFloat32    (s: Slice<int>)     : Slice<float32> = { Index = s.Index; Image = s.Image.toFloat32() }
+let castIntToFloat      (s: Slice<int>)     : Slice<float>   = { Index = s.Index; Image = s.Image.toFloat() }
+let castFloat32ToUInt8  (s: Slice<float32>) : Slice<uint8>   = { Index = s.Index; Image = s.Image.toUInt8() }
+let castFloat32ToInt8   (s: Slice<float32>) : Slice<int8>    = { Index = s.Index; Image = s.Image.toInt8() }
+let castFloat32ToUInt16 (s: Slice<float32>) : Slice<uint16>  = { Index = s.Index; Image = s.Image.toUInt16() }
+let castFloat32ToInt16  (s: Slice<float32>) : Slice<int16>   = { Index = s.Index; Image = s.Image.toInt16() }
+let castFloat32ToUInt   (s: Slice<float32>) : Slice<uint>    = { Index = s.Index; Image = s.Image.toUInt() }
+let castFloat32ToInt    (s: Slice<float32>) : Slice<int>     = { Index = s.Index; Image = s.Image.toInt() }
+let castFloat32ToUInt64 (s: Slice<float32>) : Slice<uint64>  = { Index = s.Index; Image = s.Image.toUInt64() }
+let castFloat32ToInt64  (s: Slice<float32>) : Slice<int64>   = { Index = s.Index; Image = s.Image.toInt64() }
+let castFloat32Tofloat  (s: Slice<float32>) : Slice<float>   = { Index = s.Index; Image = s.Image.toFloat() }
+let castFloatToUInt8    (s: Slice<float>)   : Slice<uint8>   = { Index = s.Index; Image = s.Image.toUInt8() }
+let castFloatToInt8     (s: Slice<float>)   : Slice<int8>    = { Index = s.Index; Image = s.Image.toInt8() }
+let castFloatToUInt16   (s: Slice<float>)   : Slice<uint16>  = { Index = s.Index; Image = s.Image.toUInt16() }
+let castFloatToInt16    (s: Slice<float>)   : Slice<int16>   = { Index = s.Index; Image = s.Image.toInt16() }
+let castFloatToUInt     (s: Slice<float>)   : Slice<uint>    = { Index = s.Index; Image = s.Image.toUInt() }
+let castFloatToInt      (s: Slice<float>)   : Slice<int>     = { Index = s.Index; Image = s.Image.toInt() }
+let castFloatToUIn64    (s: Slice<float>)   : Slice<uint64>  = { Index = s.Index; Image = s.Image.toUInt64() }
+let castFloatToInt64    (s: Slice<float>)   : Slice<int64>   = { Index = s.Index; Image = s.Image.toInt64() }
+let castFloatToFloat32  (s: Slice<float>)   : Slice<float32> = { Index = s.Index; Image = s.Image.toFloat32() }
 
 let private liftSource (f: unit -> Image<'T>) : unit -> Slice<'T> =
     fun () -> {Index = 0u; Image = f () }
@@ -74,6 +143,9 @@ let private liftUnary3 (f: 'a -> 'b -> 'c -> Image<'T> -> Image<'T>) : 'a -> 'b 
 let private liftUnary4 (f: 'a -> 'b -> 'c -> 'd -> Image<'T> -> Image<'T>) : 'a -> 'b -> 'c -> 'd -> Slice<'T> -> Slice<'T> =
     fun a b c d s -> { s with Image = f a b c d s.Image }
 
+let private liftUnary5 (f: 'a -> 'b -> 'c -> 'd -> 'e -> Image<'T> -> Image<'T>) : 'a -> 'b -> 'c -> 'd -> 'e -> Slice<'T> -> Slice<'T> =
+    fun a b c d e s -> { s with Image = f a b c d e s.Image }
+
 let private liftBinary (f: Image<'T> -> Image<'T> -> Image<'T>) : Slice<'T> -> Slice<'T> -> Slice<'T> =
     fun s1 s2 -> { s1 with Image = f s1.Image s2.Image }
 
@@ -99,7 +171,6 @@ let private liftBinaryOpFloat (f: Image<float> * float -> Image<float>) : Slice<
 let private liftImageScalarOp (f: Image<'T> -> 'T -> Image<'T>) : Slice<'T> -> 'T -> Slice<'T> =
     fun s i -> { s with Image = f s.Image i }
 
-
 let private liftBinaryCmp (f: Image<'T> * Image<'T> -> bool) : Slice<'T> * Slice<'T> -> bool =
     fun (s1,s2) -> f (s1.Image, s2.Image)
 
@@ -120,12 +191,11 @@ let roundSlice<'T when 'T: equality> (s: Slice<'T>) = liftUnary roundImage s
 type BoundaryCondition = ImageFunctions.BoundaryCondition
 type OutputRegionMode = ImageFunctions.OutputRegionMode
 
-let convolve a (s: Slice<'T>) (t: Slice<'T>) = liftBinary1 convolve a s t
+let convolve a b (s: Slice<'T>) (t: Slice<'T>) = liftBinary2 convolve a b s t
 let conv (s: Slice<'T>) (t: Slice<'T>) = liftBinary conv s t
-let discreteGaussian a b c (s: Slice<'T>) = liftUnary3 discreteGaussian a b c s
+let discreteGaussian a b c d e (s: Slice<'T>) = liftUnary5 discreteGaussian a b c d e s
 
 let gauss (dim: uint) (sigma: float) (kernelSize: uint option) : Slice<float> = liftSource3 gauss dim sigma kernelSize
-let finiteDiffFilter1D (order: uint) : Slice<float> = liftSource1 finiteDiffFilter1D order
 let finiteDiffFilter2D (direction: uint) (order: uint) : Slice<float> = liftSource2 finiteDiffFilter2D direction order
 let finiteDiffFilter3D (direction: uint) (order: uint) : Slice<float> = liftSource2 finiteDiffFilter3D direction order
 let finiteDiffFilter4D (direction: uint) (order: uint) : Slice<float> = liftSource2 finiteDiffFilter4D direction order
@@ -151,7 +221,7 @@ let momentsThreshold (s: Slice<'T>) = liftUnary momentsThreshold s
 
 let signedDistanceMap (inside: uint8) (outside: uint8) (s: Slice<uint8>) : Slice<float> =
     {Index = s.Index; Image = ImageFunctions.signedDistanceMap inside outside s.Image}
-let generateCoordinateAxis (axis: int) (size: int list) : Slice<uint32> =
+let generateCoordinateAxis (axis: int) (size: int list) : Slice<uint> =
     {Index = 0u; Image = ImageFunctions.generateCoordinateAxis (axis: int) (size: int list)}
 let unique (s: Slice<'T>) : 'T list when 'T : comparison =
     ImageFunctions.unique s.Image
@@ -177,7 +247,6 @@ let inline pairs2ints<^T, ^S when ^T : (static member op_Explicit : ^T -> int)
                                  (pairs: (^T * ^S) list) : (int * int) list =
     ImageFunctions.pairs2ints pairs
 
-let swap f a b = f b a
 let add (a: Slice<'T>) (b: Slice<'T>) = liftBinaryOp Image<'T>.(+) (a,b) // types are a nuissance, for overload with constants, we need one variant per type, sigh
 let inline sliceAddScalar<^T when ^T : equality and  ^T : (static member op_Explicit : ^T -> float)> (s: Slice<^T>) (i: ^T)  : Slice<^T> =
     { s with Image = ImageFunctions.imageAddScalar<^T> s.Image i }
@@ -199,7 +268,6 @@ let inline sliceDivScalar<^T when ^T : equality and  ^T : (static member op_Expl
 let inline scalarDivSlice<^T when ^T : equality and  ^T : (static member op_Explicit : ^T -> float)> (i: ^T) (s: Slice<^T>)  : Slice<^T> =
     { s with Image = ImageFunctions.scalarDivImage<^T> i s.Image }
 
-let modulus (a: Slice<'T>) (b: Slice<'T>) = liftBinaryOp Image<'T>.(%) (a,b)
 let pow (a: Slice<'T>) (b: Slice<'T>) = liftBinaryOp Image<'T>.Pow (a,b)
 let isGreaterEqual (a: Slice<'T>) (b: Slice<'T>) = liftBinaryOp Image<'T>.isGreaterEqual (a,b)
 let gte (a: Slice<'T>) (b: Slice<'T>) = liftBinaryCmp Image<'T>.gte (a,b)
@@ -265,9 +333,9 @@ let getStackInfo (inputDir: string) (suffix: string): FileInfo =
     let fi = ImageFunctions.getFileInfo(files[0])
     {fi with dimensions = fi.dimensions+1u; size = fi.size @ [depth]}
 
-let getStackSize (inputDir: string) (suffix: string): uint64 list =
-    let fi = getStackInfo inputDir suffix
-    fi.size
+let getStackSize (inputDir: string) (suffix: string): uint*uint*uint =
+    let fi = getStackInfo inputDir suffix 
+    (uint fi.size[0],uint fi.size[1],uint fi.size[2])
 
 let getStackWidth (inputDir: string) (suffix: string): uint64 =
     let fi = getStackInfo inputDir suffix
