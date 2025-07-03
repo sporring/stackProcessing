@@ -168,10 +168,6 @@ val zipWithPipe:
   f: ('A -> 'B -> Core.Pipe<'In,'C>) ->
     pa: Core.Pipe<'In,'A> -> pb: Core.Pipe<'In,'B> -> Core.Pipe<'In,'C>
 val cacheScalar: name: string -> p: Core.Pipe<unit,'T> -> Core.Pipe<'In,'T>
-/// Combine two <c>Pipe</c> instances into one by composing their memory profiles and transformation functions.
-val composePipe:
-  p1: Core.Pipe<'S,'T> -> p2: Core.Pipe<'T,'U> -> Core.Pipe<'S,'U>
-val (>=>) : p1: Core.Pipe<'a,'b> -> p2: Core.Pipe<'b,'c> -> Core.Pipe<'a,'c>
 val tap: label: string -> Core.Pipe<'T,'T>
 val sequentialJoin:
   p1: Core.Pipe<'S,'T> -> p2: Core.Pipe<'S,'T> -> Core.Pipe<'S,'T>

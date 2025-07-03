@@ -29,7 +29,7 @@ let source<'T> = SourceSink.source<'T>
 let sourceLst<'T> = SourceSink.sourceLst<'T>
 let sink = SourceSink.sink
 let sinkLst = SourceSink.sinkLst
-let (>=>) = Routing.composePipe
+let (>=>) = Core.composePipe
 let tee = Routing.tee
 let zipWith = Routing.zipWith
 let cacheScalar = Routing.cacheScalar
