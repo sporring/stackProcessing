@@ -56,27 +56,12 @@ module internal InternalHelpers =
 
 open InternalHelpers
 
-let readSlices<'T when 'T: equality> (inputDir: string) (suffix: string) : Pipe<unit, Slice<'T>> =
-    printfn "[readSlices]"
-    let filenames = Directory.GetFiles(inputDir, "*"+suffix) |> Array.sort
-    let depth = filenames.Length
-    {
-        Name = $"[readSlices {inputDir}]"
-        Profile = Streaming
-        Apply = fun _ ->
-            AsyncSeq.init (int depth) (fun i -> 
-                let fileName = filenames[int i]; 
-                let slice = Slice.readSlice<'T> (uint i) fileName
-                printfn "[readSlices] Reading slice %d from %s" (uint i) fileName
-                slice)
-    }
-
 let sourceLst<'T>
     (availableMemory: uint64)
     (processors: Pipe<unit,'T> list) 
     : Pipe<unit,'T> list =
     processors |>
-    List.map (fun p -> 
+    List.map (fun p ->
         pipeline availableMemory {return p}
     )
 
@@ -98,6 +83,21 @@ let sinkLst (processors: Pipe<unit, unit> list) : unit =
 
 let sink (p: Pipe<unit, unit>) : unit = 
     sinkLst [p]
+
+let readSlices<'T when 'T: equality> (inputDir: string) (suffix: string) : Pipe<unit, Slice<'T>> =
+    printfn "[readSlices]"
+    let filenames = Directory.GetFiles(inputDir, "*"+suffix) |> Array.sort
+    let depth = filenames.Length
+    {
+        Name = $"[readSlices {inputDir}]"
+        Profile = Streaming
+        Apply = fun _ ->
+            AsyncSeq.init (int depth) (fun i -> 
+                let fileName = filenames[int i]; 
+                let slice = Slice.readSlice<'T> (uint i) fileName
+                printfn "[readSlices] Reading slice %d from %s" (uint i) fileName
+                slice)
+    }
 
 //let read<'T when 'T: equality> (inputDir: string) (suffix: string) p = 
 //    readSlices<'T> inputDir suffix |> p

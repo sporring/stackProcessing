@@ -176,25 +176,12 @@ let internal consumeWith
 
 /// Pipeline computation expression
 type PipelineBuilder(availableMemory: uint64) =
+    member _.availableMemory = availableMemory
+
+(*
     /// Chain two <c>Pipe</c> instances, optionally inserting intermediate disk I/O
     member _.Bind(p: Pipe<'S,'T>, f: Pipe<'S,'T> -> Pipe<'S,'T>) : Pipe<'S,'T> =
-        let composed = f p
-        (*
-        let combinedProfile = composed.Profile
-        if combinedProfile.RequiresBuffering availableMemory  width  height depth then
-            printfn "[Memory] Exceeded memory limits. Splitting pipeline."
-            let tempDir = Path.Combine(Path.GetTempPath(), Path.GetRandomFileName())
-            Directory.CreateDirectory(tempDir) |> ignore
-            let intermediate = fun input ->
-                // Step 1: Write intermediate slices to disk
-                writeSlicesAsync tempDir ".tif" input
-                |> Async.RunSynchronously
-                // Step 2: Read them back for next stage
-                readSlicesAsync tempDir ".tif"
-
-            { Name = $"{composed.Name} {p.Name}"; Profile = Streaming; Apply = composed.Apply << intermediate } // The profile needs to be reset here. How to do that?
-        else *)
-        composed
+        f p
 
     member _.Bind(p: Pipe<'S, 'T>, f: 'T -> Pipe<'S, 'U>) : Pipe<'S, 'U> =
         {
@@ -211,18 +198,30 @@ type PipelineBuilder(availableMemory: uint64) =
                         failwithf "Expected reducer output to produce a single result, but got %d values." result.Length
                 }
         }
-
+*)
     /// Wraps a processor value for use in the pipeline computation expression.
     member _.Return(p: Pipe<'S,'T>) = p
 
     /// Allows returning a processor directly from another computation expression.
-    member _.ReturnFrom(p: Pipe<'S,'T>) = p
+ //   member _.ReturnFrom(p: Pipe<'S,'T>) = p
 
     /// Provides a default identity processor using streaming as the memory profile.
-    member _.Zero() = { Name=""; Profile = Streaming; Apply = id }
+ //   member _.Zero() = { Name=""; Profile = Streaming; Apply = id }
 
 /// A memory-aware pipeline builder with the specified processing constraints.
 let pipeline availableMemory = PipelineBuilder(availableMemory)
+
+/// Combine two <c>Pipe</c> instances into one by composing their memory profiles and transformation functions.
+let composePipe (p1: Pipe<'S,'T>) (p2: Pipe<'T,'U>) : Pipe<'S,'U> =
+    printfn "[composePipe]"
+    {
+        Name = $"{p2.Name} {p1.Name}"; 
+        Profile = p1.Profile.combineProfile p2.Profile
+        Apply = fun input -> input |> p1.Apply |> p2.Apply
+    }
+
+// Pipe composition
+let (>=>) p1 p2 = composePipe p1 p2
 
 module Helpers =
     // singletonPipe and bindPip was part of an experiment, will most likely be deleted

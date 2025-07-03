@@ -6,6 +6,97 @@ open Core
 open Core.Helpers
 open Slice
 
+module internal Builder =
+
+    // ───── 1. the state monad ──────────────────────────────────────────────
+    type MemFlow<'S,'T> =
+         uint64 -> SliceShape option -> Operation<'S,'T> * uint64 * SliceShape option
+
+    // How many bytes does this pipe claim for one full slice?
+    let private memNeed (shape: uint list) (p : Pipe<_,_>) =
+        p.Profile.EstimateUsage shape[0] shape[1] shape[2]
+
+    /// Try to shrink a too‑hungry pipe to a cheaper profile.
+    /// *You* control the downgrade policy here.
+    let private shrinkProfile avail shape (p : Pipe<'S,'T>) =
+        let needed = memNeed shape p
+        if needed <= avail then p                              // fits as is
+        else
+            match p.Profile with
+            | FullConstant -> { p with Profile = StreamingConstant }
+            | Full         -> { p with Profile = Streaming }
+            | SlidingConstant w when w > 1u ->
+                { p with Profile = SlidingConstant (w/2u) }
+            | Sliding w when w > 1u ->
+                { p with Profile = Sliding (w/2u) }
+            | _ ->
+                failwith
+                    $"Stage “{p.Name}” needs {needed}s B but only {avail}s B are left."
+
+    let returnM (op : Operation<'S,'T>) : MemFlow<'S,'T> =
+        fun bytes shapeOpt ->
+            match shapeOpt with
+            | None      -> op, bytes, shapeOpt       // can’t check memory yet
+            | Some sh   ->
+                let p'     = shrinkProfile bytes sh op.Pipe
+                let need   = memNeed sh p'
+                { op with Pipe = p' }, bytes - need, shapeOpt
+
+    let composeOp (op1 : Operation<'S,'T>) (op2 : Operation<'T,'U>) : Operation<'S,'U> =
+        {
+            Name       = $"{op2.Name} ∘ {op1.Name}"
+            Transition = transition op1.Transition.From op2.Transition.To
+            Pipe       = composePipe (asPipe op1) (asPipe op2)
+        }
+
+    let bindM m k =
+        fun bytes shapeOpt ->
+            let op1, bytes', shapeOpt' = m bytes shapeOpt
+            let m2 = k op1
+            let op2, bytes'', shapeOpt'' = m2 bytes' shapeOpt'
+
+            // validate memory transition, if shape is known
+            shapeOpt
+            |> Option.iter (fun shape ->
+                if op1.Transition.To <> op2.Transition.From || not (op2.Transition.Check shape) then 
+                    failwith $"Invalid memory transition: {op1.Name} → {op2.Name}")
+
+            composeOp op1 op2, bytes'', shapeOpt''
+
+    // ───── 2. the builder wrapper ──────────────────────────────────────────
+    type Pipeline<'S,'T> =
+        { flow  : MemFlow<'S,'T>
+          mem   : uint64
+          shape : SliceShape option }
+
+    // source: only memory budget, shape = None
+    let source memBudget =
+        { flow  = fun _ _ -> failwith "pipeline not started yet"
+          mem   = memBudget
+          shape = None }
+
+    // attach the first stage that *discovers* the shape
+    let attachFirst ((op, probeShape) : Operation<unit,'T> * (unit -> SliceShape))
+                    (pl : Pipeline<unit,'T>) =
+        let shape = probeShape ()
+        { flow  = returnM op
+          mem   = pl.mem
+          shape = Some shape }
+
+    // later compositions Pipeline composition
+    let (>>=>) pl next =
+        { pl with flow = bindM pl.flow (fun _ -> returnM next) }
+
+    // sink
+    let sink (pl : Pipeline<'S,'T>) =
+        match pl.shape with
+        | None      -> failwith "No stage provided slice dimensions."
+        | Some sh ->
+            let op, rest, _ = pl.flow pl.mem pl.shape
+            printfn $"Pipeline built – {rest} B still free."
+            Helpers.asPipe op
+
+
 let run (p: Pipe<unit,'T>) : AsyncSeq<'T> =
     printfn "[run]"
     (AsyncSeq.singleton ()) |> p.Apply
@@ -173,29 +264,11 @@ let cacheScalar (name: string) (p: Pipe<unit, 'T>) : Pipe<'In, 'T> =
 
     lift $"cacheScalar: {name}" Constant (fun _ -> async.Return result)
 
-/// Combine two <c>Pipe</c> instances into one by composing their memory profiles and transformation functions.
-let composePipe (p1: Pipe<'S,'T>) (p2: Pipe<'T,'U>) : Pipe<'S,'U> =
-    printfn "[composePipe]"
-    {
-        Name = $"{p2.Name} {p1.Name}"; 
-        Profile = p1.Profile.combineProfile p2.Profile
-        Apply = fun input -> input |> p1.Apply |> p2.Apply
-    }
-
-let (>=>) p1 p2 = composePipe p1 p2
-let (<=<) p1 p2 = composePipe p2 p1
-
 let tap label : Pipe<'T, 'T> =
     printfn "[tap]"
     lift $"tap: {label}" Streaming (fun x ->
         printfn "[%s] %A" label x
         async.Return x)
-
-let validate op1 op2 =
-    if op1.Transition.To = op2.Transition.From then
-        true
-    else
-        failwithf "Memory transition mismatch: %A → %A" op1.Transition.To op2.Transition.From
 
 let sequentialJoin (p1: Pipe<'S, 'T>) (p2: Pipe<'S, 'T>) : Pipe<'S, 'T> =
     {

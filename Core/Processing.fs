@@ -680,7 +680,7 @@ let windowFromSlices (a: Slice<'T>) (b: Slice<'T>) : uint =
     min (a |> Slice.GetDepth) (a |> Slice.GetDepth)
 
 let windowFromKernel (k: Slice<'T>) : uint =
-    max 3u (k |> Slice.GetDepth)
+    max 1u (k |> Slice.GetDepth)
 
 // stride calculation example
 // ker = 3, win = 7

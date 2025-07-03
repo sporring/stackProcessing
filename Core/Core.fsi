@@ -88,17 +88,14 @@ val internal consumeWith:
 /// Pipeline computation expression
 type PipelineBuilder =
     new: availableMemory: uint64 -> PipelineBuilder
-    member Bind: p: Pipe<'S,'T> * f: ('T -> Pipe<'S,'U>) -> Pipe<'S,'U>
-    /// Chain two <c>Pipe</c> instances, optionally inserting intermediate disk I/O
-    member Bind: p: Pipe<'S,'T> * f: (Pipe<'S,'T> -> Pipe<'S,'T>) -> Pipe<'S,'T>
     /// Wraps a processor value for use in the pipeline computation expression.
     member Return: p: Pipe<'S,'T> -> Pipe<'S,'T>
-    /// Allows returning a processor directly from another computation expression.
-    member ReturnFrom: p: Pipe<'S,'T> -> Pipe<'S,'T>
-    /// Provides a default identity processor using streaming as the memory profile.
-    member Zero: unit -> Pipe<'a,'a>
+    member availableMemory: uint64
 /// A memory-aware pipeline builder with the specified processing constraints.
 val pipeline: availableMemory: uint64 -> PipelineBuilder
+/// Combine two <c>Pipe</c> instances into one by composing their memory profiles and transformation functions.
+val composePipe: p1: Pipe<'S,'T> -> p2: Pipe<'T,'U> -> Pipe<'S,'U>
+val (>=>) : p1: Pipe<'a,'b> -> p2: Pipe<'b,'c> -> Pipe<'a,'c>
 module Helpers =
     /// Pipeline helper functions
     val singletonPipe:
@@ -114,6 +111,43 @@ module Helpers =
         Operation<Slice.Slice<'T>,Slice.Slice<'T>> when 'T: equality
     val validate: op1: Operation<'a,'b> -> op2: Operation<'c,'d> -> bool
 module Routing
+module internal Builder =
+    type MemFlow<'S,'T> =
+        uint64 ->
+          Core.SliceShape option ->
+          Core.Operation<'S,'T> * uint64 * Core.SliceShape option
+    val private memNeed: shape: uint list -> p: Core.Pipe<'a,'b> -> uint64
+    /// Try to shrink a too‑hungry pipe to a cheaper profile.
+    /// *You* control the downgrade policy here.
+    val private shrinkProfile:
+      avail: uint64 ->
+        shape: uint list -> p: Core.Pipe<'S,'T> -> Core.Pipe<'S,'T>
+    val returnM:
+      op: Core.Operation<'S,'T> ->
+        bytes: uint64 ->
+        shapeOpt: Core.SliceShape option ->
+        Core.Operation<'S,'T> * uint64 * Core.SliceShape option
+    val composeOp:
+      op1: Core.Operation<'S,'T> ->
+        op2: Core.Operation<'T,'U> -> Core.Operation<'S,'U>
+    val bindM:
+      m: ('a -> Core.SliceShape option -> Core.Operation<'b,'c> * 'd * 'e) ->
+        k: (Core.Operation<'b,'c> -> 'd -> 'e -> Core.Operation<'c,'f> * 'g * 'h) ->
+        bytes: 'a ->
+        shapeOpt: Core.SliceShape option -> Core.Operation<'b,'f> * 'g * 'h
+    type Pipeline<'S,'T> =
+        {
+          flow: MemFlow<'S,'T>
+          mem: uint64
+          shape: Core.SliceShape option
+        }
+    val source: memBudget: uint64 -> Pipeline<'a,'b>
+    val attachFirst:
+      Core.Operation<unit,'T> * (unit -> Core.SliceShape) ->
+        pl: Pipeline<unit,'T> -> Pipeline<unit,'T>
+    val (>>=>) :
+      pl: Pipeline<'a,'b> -> next: Core.Operation<'b,'b> -> Pipeline<'a,'b>
+    val sink: pl: Pipeline<'S,'T> -> Core.Pipe<'S,'T>
 val run: p: Core.Pipe<unit,'T> -> FSharp.Control.AsyncSeq<'T>
 /// Split a Pipe<'In,'T> into two branches that
 ///   • read the upstream only once
@@ -138,9 +172,7 @@ val cacheScalar: name: string -> p: Core.Pipe<unit,'T> -> Core.Pipe<'In,'T>
 val composePipe:
   p1: Core.Pipe<'S,'T> -> p2: Core.Pipe<'T,'U> -> Core.Pipe<'S,'U>
 val (>=>) : p1: Core.Pipe<'a,'b> -> p2: Core.Pipe<'b,'c> -> Core.Pipe<'a,'c>
-val (<=<) : p1: Core.Pipe<'a,'b> -> p2: Core.Pipe<'c,'a> -> Core.Pipe<'c,'b>
 val tap: label: string -> Core.Pipe<'T,'T>
-val validate: op1: Core.Operation<'a,'b> -> op2: Core.Operation<'c,'d> -> bool
 val sequentialJoin:
   p1: Core.Pipe<'S,'T> -> p2: Core.Pipe<'S,'T> -> Core.Pipe<'S,'T>
 module SourceSink
@@ -162,9 +194,6 @@ module internal InternalHelpers =
       inputDir: string ->
         suffix: string -> FSharp.Control.AsyncSeq<Slice.Slice<'T>>
         when 'T: equality
-val readSlices:
-  inputDir: string -> suffix: string -> Core.Pipe<unit,Slice.Slice<'T>>
-    when 'T: equality
 val sourceLst:
   availableMemory: uint64 ->
     processors: Core.Pipe<unit,'T> list -> Core.Pipe<unit,'T> list
@@ -172,6 +201,9 @@ val source:
   availableMemory: uint64 -> p: Core.Pipe<unit,'T> -> Core.Pipe<unit,'T>
 val sinkLst: processors: Core.Pipe<unit,unit> list -> unit
 val sink: p: Core.Pipe<unit,unit> -> unit
+val readSlices:
+  inputDir: string -> suffix: string -> Core.Pipe<unit,Slice.Slice<'T>>
+    when 'T: equality
 val read:
   inputDir: string ->
     suffix: string ->
