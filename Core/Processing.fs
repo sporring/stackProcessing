@@ -14,7 +14,7 @@ open Slice
 open Image
 
 // --- Processing Utilities ---
-let private explodeSlice (slices: Slice<'T>) : AsyncSeq<Slice<'T>> =
+let internal explodeSlice (slices: Slice<'T>) : AsyncSeq<Slice<'T>> =
     let baseIndex = slices.Index
     let volume = slices |> Slice.toImage
     let size = volume.GetSize()
@@ -22,7 +22,7 @@ let private explodeSlice (slices: Slice<'T>) : AsyncSeq<Slice<'T>> =
     Seq.init (int depth) (fun z -> extractSlice (baseIndex+(uint z)) slices)
     |> AsyncSeq.ofSeq
 
-let private reduce (label: string) (profile: MemoryProfile) (reducer: AsyncSeq<'In> -> Async<'Out>) : Pipe<'In, 'Out> =
+let reduce (label: string) (profile: MemoryProfile) (reducer: AsyncSeq<'In> -> Async<'Out>) : Pipe<'In, 'Out> =
     {
         Name = label
         Profile = profile
@@ -46,13 +46,18 @@ let map (label: string) (profile: MemoryProfile) (f: 'S -> 'T) : Pipe<'S,'T> =
             |> AsyncSeq.map (fun slice -> f slice)
     }
 
+let skipFirstLast (n: int) (lst: 'a list) : 'a list =
+    let m = lst.Length - 2*n;
+    if m <= 0 then []
+    else lst |> List.skip n |> List.take m 
+
 /// mapWindowed keeps a running window along the slice direction of depth images
 /// and processes them by f. The stepping size of the running window is stride.
 /// So if depth is 3 and stride is 1 then first image 0,1,2 is sent to f, then 1, 2, 3
 /// and so on. If depth is 3 and stride is 3, then it'll be image 0, 1, 2 followed by
 /// 3, 4, 5. It is also possible to use this for sampling, e.g., setting depth to 1
 /// and stride to 2 sends every second image to f.  
-let mapWindowed (label: string) (depth: uint) (stride: uint) (f: 'S list -> 'T list) : Pipe<'S,'T> =
+let internal mapWindowed (label: string) (depth: uint) (stride: uint) (f: 'S list -> 'T list) : Pipe<'S,'T> =
     {
         Name = label; 
         Profile = Sliding depth
@@ -62,6 +67,147 @@ let mapWindowed (label: string) (depth: uint) (stride: uint) (f: 'S list -> 'T l
                 |> AsyncSeq.collect (f  >> AsyncSeq.ofSeq)
     }
 
+let internal liftWindowedOp (name: string) (window: uint) (stride: uint) (f: Slice<'S> -> Slice<'T>) : Operation<Slice<'S>, Slice<'T>> =
+    {
+        Name = name
+        Transition = transition (Sliding window) Streaming
+        Pipe = mapWindowed name window stride (stack >> f >> unstack)
+    }
+
+let internal liftWindowedTrimOp (name: string) (window: uint) (stride: uint) (trim: uint) (f: Slice<'S> -> Slice<'T>)
+    : Operation<Slice<'S>, Slice<'T>> =
+    {
+        Name = name
+        Transition = transition (Sliding window) Streaming
+        Pipe =
+            mapWindowed name window stride (fun windowSlices ->
+                windowSlices
+                |> stack
+                |> f
+                |> unstack
+                |> skipFirstLast (int trim)
+            )
+    }
+
+/// quick constructor for Streaming→Streaming unary ops
+let internal liftUnaryOp name (f: Slice<'T> -> Slice<'T>) : Operation<Slice<'T>,Slice<'T>> =
+    { 
+        Name = name
+        Transition = transition Streaming Streaming
+        Pipe = { 
+            Name = name
+            Profile = Streaming
+            Apply = fun input -> input |> AsyncSeq.map f } 
+    }
+
+let internal liftUnaryOpInt (name: string) (f: Slice<int> -> Slice<int>) =
+    liftUnaryOp name f
+
+let internal liftUnaryOpFloat32 (name: string) (f: Slice<float32> -> Slice<float32>) =
+    liftUnaryOp name f
+
+let internal liftUnaryOpFloat (name: string) (f: Slice<float> -> Slice<float>) =
+    liftUnaryOp name f
+
+let internal liftBinaryOp (name: string) (f: Slice<'T> -> Slice<'T> -> Slice<'T>) : Operation<Slice<'T> * Slice<'T>, Slice<'T>> =
+    {
+        Name = name
+        Transition = transition Streaming Streaming
+        Pipe =
+            {
+                Name = name
+                Profile = Streaming
+                Apply = fun input ->
+                    input
+                    |> AsyncSeq.map (fun (a, b) -> f a b)
+            }
+    }
+
+let internal liftBinaryOpFloat (name: string) (f: Slice<float> -> Slice<float> -> Slice<float>) =
+    liftBinaryOp name f
+
+let internal liftBinaryZipOp (name: string) (f: Slice<'T> -> Slice<'T> -> Slice<'T>) (p1: Pipe<'In, Slice<'T>>) (p2: Pipe<'In, Slice<'T>>) : Pipe<'In, Slice<'T>> =
+    zipWith f p1 p2
+
+let internal liftFullOp
+    (name: string)
+    (f: Slice<'T> -> Slice<'T>)
+    : Operation<Slice<'T>, Slice<'T>> =
+    {
+        Name = name
+        Transition = transition Full Streaming
+        Pipe =
+            {
+                Name = name
+                Profile = Full
+                Apply = fun input ->
+                    asyncSeq {
+                        let! slices = input |> AsyncSeq.toListAsync
+                        let stack = Slice.stack slices
+                        let result = f stack
+                        yield! Slice.unstack result |> AsyncSeq.ofSeq
+                    }
+            }
+    }
+
+let internal liftFullParamOp
+    (name: string)
+    (f: 'P -> Slice<'T> -> Slice<'T>)
+    (param: 'P)
+    : Operation<Slice<'T>, Slice<'T>> =
+    {
+        Name = name
+        Transition = transition Full Streaming
+        Pipe =
+            {
+                Name = name
+                Profile = Full
+                Apply = fun input ->
+                    asyncSeq {
+                        let! slices = input |> AsyncSeq.toListAsync
+                        let stack = Slice.stack slices
+                        let result = f param stack
+                        yield! Slice.unstack result |> AsyncSeq.ofSeq
+                    }
+            }
+    }
+
+let internal liftFullParam2Op
+    (name: string)
+    (f: 'P -> 'Q -> Slice<'T> -> Slice<'T>)
+    (param1: 'P)
+    (param2: 'Q)
+    : Operation<Slice<'T>, Slice<'T>> =
+    {
+        Name = name
+        Transition = transition Full Streaming
+        Pipe =
+            {
+                Name = name
+                Profile = Full
+                Apply = fun input ->
+                    asyncSeq {
+                        let! slices = input |> AsyncSeq.toListAsync
+                        let stack = Slice.stack slices
+                        let result = f param1 param2 stack
+                        yield! Slice.unstack result |> AsyncSeq.ofSeq
+                    }
+            }
+    }
+
+let internal liftMapOp<'T, 'U when 'T: equality and 'T: comparison> (name: string) (f: Slice<'T> -> 'U) : Operation<Slice<'T>, 'U> =
+    {
+        Name = name
+        Transition = transition Streaming Streaming
+        Pipe =
+            {
+                Name = name
+                Profile = Streaming
+                Apply = fun input -> input |> AsyncSeq.map f
+            }
+    }
+
+/////////////////////////////////////////////////////////////////////////////////////
 let inline cast<'S,'T when 'S: equality and 'T: equality> label fct : Pipe<Slice<'S>, Slice<'T>> =
     {
         Name = label
@@ -405,11 +551,6 @@ let discreteGaussian (sigma: float) (kernelSize: uint option) (boundaryCondition
 let convGauss (sigma: float) (boundaryCondition: BoundaryCondition option) : Pipe<Slice<'T> ,Slice<'T>> =
     discreteGaussian sigma None boundaryCondition None None
 
-let skipFirstLast (n: int) (lst: 'a list) : 'a list =
-    let m = lst.Length - 2*n;
-    if m <= 0 then []
-    else lst |> List.skip n |> List.take m 
-
 let private binaryMathMorph (name: string) f (radius: uint) (windowSize: uint option) (stride: uint option) : Pipe<Slice<uint8> ,Slice<uint8>> =
     let ksz = 1u+2u*radius
     let dpth = Option.defaultValue ksz windowSize |> max ksz
@@ -427,10 +568,6 @@ let binaryOpening (radius: uint) (windowSize: uint option) (stride: uint option)
 
 let binaryClosing (radius: uint) (windowSize: uint option) (stride: uint option) : Pipe<Slice<uint8> ,Slice<uint8>> =
     binaryMathMorph "binaryClosing" binaryClosing radius windowSize stride
-
-let piecewiseConnectedComponents (windowSize: uint option) : Pipe<Slice<uint8> ,Slice<uint64>> =
-    let dpth = Option.defaultValue 1u windowSize |> max 1u
-    mapWindowed "connectedComponents" dpth dpth (stack >> connectedComponents >> unstack)
 
 type ImageStats = Slice.ImageStats
 let computeStats<'T when 'T : equality> : Pipe<Slice<'T>, ImageStats> =
@@ -451,18 +588,6 @@ let computeStats<'T when 'T : equality> : Pipe<Slice<'T>, ImageStats> =
 
 /////////////////////////////////////////////////////////////////////
 // new experiement with Operator type and more
-let liftUnaryOp name (f: Slice<'T> -> Slice<'T>) : Operation<Slice<'T>,Slice<'T>> =
-    { 
-        Name = name
-        Transition = transition Streaming Streaming
-        Pipe = // This looks like overloading. Only new information is Apply
-        { 
-            Name = name
-            Profile = Streaming
-            Apply = fun input -> input |> AsyncSeq.map f 
-        } 
-    }
-
 (*
 let liftImageScalarOpUInt8 (name : string) (scalar : uint8) (core : Slice<uint8> -> uint8 -> Slice<uint8>) : Operation<Slice<uint8>,Slice<uint8>> =
     liftUnaryOp name (fun s -> core s scalar)
@@ -506,136 +631,6 @@ let liftScalarImageOpFloat32 (name : string) (scalar : float32) (core : float32 
 let liftScalarImageOpFloat (name : string) (scalar : float) (core : float -> Slice<float> -> Slice<float>) : Operation<Slice<float>,Slice<float>> =
     liftUnaryOp name (fun s -> core s scalar)
 *)
-
-let liftWindowedOp (name: string) (window: uint) (stride: uint) (f: Slice<'S> -> Slice<'T>) : Operation<Slice<'S>, Slice<'T>> =
-    {
-        Name = name
-        Transition = transition (Sliding window) Streaming
-        Pipe = mapWindowed name window stride (stack >> f >> unstack)
-    }
-
-let liftWindowedTrimOp (name: string) (window: uint) (stride: uint) (trim: uint) (f: Slice<'S> -> Slice<'T>)
-    : Operation<Slice<'S>, Slice<'T>> =
-    {
-        Name = name
-        Transition = transition (Sliding window) Streaming
-        Pipe =
-            mapWindowed name window stride (fun windowSlices ->
-                windowSlices
-                |> stack
-                |> f
-                |> unstack
-                |> skipFirstLast (int trim)
-            )
-    }
-
-
-let liftUnaryOpInt (name: string) (f: Slice<int> -> Slice<int>) =
-    liftUnaryOp name f
-
-let liftUnaryOpFloat32 (name: string) (f: Slice<float32> -> Slice<float32>) =
-    liftUnaryOp name f
-
-let liftUnaryOpFloat (name: string) (f: Slice<float> -> Slice<float>) =
-    liftUnaryOp name f
-
-let liftBinaryOp (name: string) (f: Slice<'T> -> Slice<'T> -> Slice<'T>) : Operation<Slice<'T> * Slice<'T>, Slice<'T>> =
-    {
-        Name = name
-        Transition = transition Streaming Streaming
-        Pipe =
-            {
-                Name = name
-                Profile = Streaming
-                Apply = fun input ->
-                    input
-                    |> AsyncSeq.map (fun (a, b) -> f a b)
-            }
-    }
-
-let liftBinaryOpFloat (name: string) (f: Slice<float> -> Slice<float> -> Slice<float>) =
-    liftBinaryOp name f
-
-let liftBinaryZipOp (name: string) (f: Slice<'T> -> Slice<'T> -> Slice<'T>) (p1: Pipe<'In, Slice<'T>>) (p2: Pipe<'In, Slice<'T>>) : Pipe<'In, Slice<'T>> =
-    zipWith f p1 p2
-
-let liftFullOp
-    (name: string)
-    (f: Slice<'T> -> Slice<'T>)
-    : Operation<Slice<'T>, Slice<'T>> =
-    {
-        Name = name
-        Transition = transition Full Streaming
-        Pipe =
-            {
-                Name = name
-                Profile = Full
-                Apply = fun input ->
-                    asyncSeq {
-                        let! slices = input |> AsyncSeq.toListAsync
-                        let stack = Slice.stack slices
-                        let result = f stack
-                        yield! Slice.unstack result |> AsyncSeq.ofSeq
-                    }
-            }
-    }
-
-let liftFullParamOp
-    (name: string)
-    (f: 'P -> Slice<'T> -> Slice<'T>)
-    (param: 'P)
-    : Operation<Slice<'T>, Slice<'T>> =
-    {
-        Name = name
-        Transition = transition Full Streaming
-        Pipe =
-            {
-                Name = name
-                Profile = Full
-                Apply = fun input ->
-                    asyncSeq {
-                        let! slices = input |> AsyncSeq.toListAsync
-                        let stack = Slice.stack slices
-                        let result = f param stack
-                        yield! Slice.unstack result |> AsyncSeq.ofSeq
-                    }
-            }
-    }
-
-let liftFullParam2Op
-    (name: string)
-    (f: 'P -> 'Q -> Slice<'T> -> Slice<'T>)
-    (param1: 'P)
-    (param2: 'Q)
-    : Operation<Slice<'T>, Slice<'T>> =
-    {
-        Name = name
-        Transition = transition Full Streaming
-        Pipe =
-            {
-                Name = name
-                Profile = Full
-                Apply = fun input ->
-                    asyncSeq {
-                        let! slices = input |> AsyncSeq.toListAsync
-                        let stack = Slice.stack slices
-                        let result = f param1 param2 stack
-                        yield! Slice.unstack result |> AsyncSeq.ofSeq
-                    }
-            }
-    }
-
-let liftMapOp<'T, 'U when 'T: equality and 'T: comparison> (name: string) (f: Slice<'T> -> 'U) : Operation<Slice<'T>, 'U> =
-    {
-        Name = name
-        Transition = transition Streaming Streaming
-        Pipe =
-            {
-                Name = name
-                Profile = Streaming
-                Apply = fun input -> input |> AsyncSeq.map f
-            }
-    }
 
 
 let absIntOp       name = liftUnaryOpInt name absSlice
@@ -727,7 +722,7 @@ let binaryOpeningOp   name radius winSz = makeMorphOp name radius winSz Slice.bi
 let binaryClosingOp   name radius winSz = makeMorphOp name radius winSz Slice.binaryClosing
 let binaryFillHolesOp name = liftFullOp name Slice.binaryFillHoles
 let connectedComponentsOp (name: string) : Operation<Slice<uint8>, Slice<uint64>> =
-    {
+    { // fsharp gets confused about the change of units, so we make the record by hand
         Name = name
         Transition = transition Full Streaming
         Pipe =
@@ -743,6 +738,10 @@ let connectedComponentsOp (name: string) : Operation<Slice<uint8>, Slice<uint64>
                     }
             }
     }
+
+let piecewiseConnectedComponentsOp (name:string) (windowSize: uint option): Operation<Slice<uint8>, Slice<uint64>> =
+    let dpth = Option.defaultValue 1u windowSize |> max 1u
+    liftWindowedOp name dpth dpth (fun slices -> Slice.connectedComponents slices)
 
 (* Assymetry could be handled as
 let inline subFromScalarIntOp (name:string) (scalar:int) =

@@ -249,17 +249,6 @@ module Helpers =
     /// pull the runnable pipe out of an operation
     let inline asPipe (op : Operation<_,_>) = op.Pipe
 
-    /// quick constructor for Streaming→Streaming unary ops
-    let liftUnaryOp name (f: Slice<'T> -> Slice<'T>) : Operation<Slice<'T>,Slice<'T>> =
-        { 
-            Name = name
-            Transition = transition Streaming Streaming
-            Pipe = { 
-                Name = name
-                Profile = Streaming
-                Apply = fun input -> input |> AsyncSeq.map f } 
-        }
-
     let validate (op1 : Operation<_,_>) (op2 : Operation<_,_>) =
         if op1.Transition.To = op2.Transition.From then true
         else failwithf "Memory transition mismatch: %A → %A" op1.Name op2.Name

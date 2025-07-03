@@ -149,14 +149,12 @@ val addNormalNoise:
     when 'a: equality
 val discreteGaussian:
   (float ->
-     uint option ->
-     Slice.BoundaryCondition option ->
-     uint option -> uint option -> Core.Pipe<Slice.Slice<'a>,Slice.Slice<'a>>)
-    when 'a: equality
+     ImageFunctions.BoundaryCondition option ->
+     uint option -> Core.Pipe<Slice.Slice<float>,Slice.Slice<float>>)
 val convGauss:
   (float ->
-     Slice.BoundaryCondition option ->
-     Core.Pipe<Slice.Slice<'a>,Slice.Slice<'a>>) when 'a: equality
+     ImageFunctions.BoundaryCondition option ->
+     Core.Pipe<Slice.Slice<float>,Slice.Slice<float>>)
 val inline addScalar:
   i: ^T -> Core.Pipe<Slice.Slice<^T>,Slice.Slice<^T>>
     when ^T: equality and ^T: (static member op_Explicit: ^T -> float)

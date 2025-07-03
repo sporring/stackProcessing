@@ -156,8 +156,8 @@ let castFloatToInt64 = Processing.castFloatToInt64
 let castFloatToFloat32 = Processing.castFloatToFloat32
 
 let addNormalNoise = Processing.addNormalNoise
-let discreteGaussian = Processing.discreteGaussian
-let convGauss = Processing.convGauss
+let discreteGaussian = Ops.discreteGaussian
+let convGauss = Ops.convGauss
 let inline addScalar
         (i : ^T)                             // ← just the scalar
         : Core.Pipe<Slice.Slice< ^T >,
@@ -201,7 +201,7 @@ let binaryErode = Processing.binaryErode
 let binaryDilate = Processing.binaryDilate
 let binaryOpening = Processing.binaryOpening
 let binaryClosing = Processing.binaryClosing
-let piecewiseConnectedComponents = Processing.piecewiseConnectedComponents
+let piecewiseConnectedComponents = Ops.piecewiseConnectedComponents
 
 let histogram<'T when 'T: comparison> : Core.Pipe<Slice.Slice<'T>,Map<'T,uint64>> when 'T: comparison = 
     Processing.histogram

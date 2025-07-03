@@ -104,11 +104,6 @@ module Helpers =
     /// Operator and such
     /// pull the runnable pipe out of an operation
     val inline asPipe: op: Operation<'a,'b> -> Pipe<'a,'b>
-    /// quick constructor for Streaming→Streaming unary ops
-    val liftUnaryOp:
-      name: string ->
-        f: (Slice.Slice<'T> -> Slice.Slice<'T>) ->
-        Operation<Slice.Slice<'T>,Slice.Slice<'T>> when 'T: equality
     val validate: op1: Operation<'a,'b> -> op2: Operation<'c,'d> -> bool
 module Routing
 module internal Builder =
@@ -257,10 +252,10 @@ val write:
     when 'a: equality
 val ignore<'T> : Core.Pipe<'T,unit>
 module Processing
-val private explodeSlice:
+val internal explodeSlice:
   slices: Slice.Slice<'T> -> FSharp.Control.AsyncSeq<Slice.Slice<'T>>
     when 'T: equality
-val private reduce:
+val reduce:
   label: string ->
     profile: Core.MemoryProfile ->
     reducer: (FSharp.Control.AsyncSeq<'In> -> Async<'Out>) ->
@@ -272,15 +267,81 @@ val fold:
 val map:
   label: string ->
     profile: Core.MemoryProfile -> f: ('S -> 'T) -> Core.Pipe<'S,'T>
+val skipFirstLast: n: int -> lst: 'a list -> 'a list
 /// mapWindowed keeps a running window along the slice direction of depth images
 /// and processes them by f. The stepping size of the running window is stride.
 /// So if depth is 3 and stride is 1 then first image 0,1,2 is sent to f, then 1, 2, 3
 /// and so on. If depth is 3 and stride is 3, then it'll be image 0, 1, 2 followed by
 /// 3, 4, 5. It is also possible to use this for sampling, e.g., setting depth to 1
 /// and stride to 2 sends every second image to f.  
-val mapWindowed:
+val internal mapWindowed:
   label: string ->
     depth: uint -> stride: uint -> f: ('S list -> 'T list) -> Core.Pipe<'S,'T>
+val internal liftWindowedOp:
+  name: string ->
+    window: uint ->
+    stride: uint ->
+    f: (Slice.Slice<'S> -> Slice.Slice<'T>) ->
+    Core.Operation<Slice.Slice<'S>,Slice.Slice<'T>>
+    when 'S: equality and 'T: equality
+val internal liftWindowedTrimOp:
+  name: string ->
+    window: uint ->
+    stride: uint ->
+    trim: uint ->
+    f: (Slice.Slice<'S> -> Slice.Slice<'T>) ->
+    Core.Operation<Slice.Slice<'S>,Slice.Slice<'T>>
+    when 'S: equality and 'T: equality
+/// quick constructor for Streaming→Streaming unary ops
+val internal liftUnaryOp:
+  name: string ->
+    f: (Slice.Slice<'T> -> Slice.Slice<'T>) ->
+    Core.Operation<Slice.Slice<'T>,Slice.Slice<'T>> when 'T: equality
+val internal liftUnaryOpInt:
+  name: string ->
+    f: (Slice.Slice<int> -> Slice.Slice<int>) ->
+    Core.Operation<Slice.Slice<int>,Slice.Slice<int>>
+val internal liftUnaryOpFloat32:
+  name: string ->
+    f: (Slice.Slice<float32> -> Slice.Slice<float32>) ->
+    Core.Operation<Slice.Slice<float32>,Slice.Slice<float32>>
+val internal liftUnaryOpFloat:
+  name: string ->
+    f: (Slice.Slice<float> -> Slice.Slice<float>) ->
+    Core.Operation<Slice.Slice<float>,Slice.Slice<float>>
+val internal liftBinaryOp:
+  name: string ->
+    f: (Slice.Slice<'T> -> Slice.Slice<'T> -> Slice.Slice<'T>) ->
+    Core.Operation<(Slice.Slice<'T> * Slice.Slice<'T>),Slice.Slice<'T>>
+    when 'T: equality
+val internal liftBinaryOpFloat:
+  name: string ->
+    f: (Slice.Slice<float> -> Slice.Slice<float> -> Slice.Slice<float>) ->
+    Core.Operation<(Slice.Slice<float> * Slice.Slice<float>),Slice.Slice<float>>
+val internal liftBinaryZipOp:
+  name: string ->
+    f: (Slice.Slice<'T> -> Slice.Slice<'T> -> Slice.Slice<'T>) ->
+    p1: Core.Pipe<'In,Slice.Slice<'T>> ->
+    p2: Core.Pipe<'In,Slice.Slice<'T>> -> Core.Pipe<'In,Slice.Slice<'T>>
+    when 'T: equality
+val internal liftFullOp:
+  name: string ->
+    f: (Slice.Slice<'T> -> Slice.Slice<'T>) ->
+    Core.Operation<Slice.Slice<'T>,Slice.Slice<'T>> when 'T: equality
+val internal liftFullParamOp:
+  name: string ->
+    f: ('P -> Slice.Slice<'T> -> Slice.Slice<'T>) ->
+    param: 'P -> Core.Operation<Slice.Slice<'T>,Slice.Slice<'T>>
+    when 'T: equality
+val internal liftFullParam2Op:
+  name: string ->
+    f: ('P -> 'Q -> Slice.Slice<'T> -> Slice.Slice<'T>) ->
+    param1: 'P -> param2: 'Q -> Core.Operation<Slice.Slice<'T>,Slice.Slice<'T>>
+    when 'T: equality
+val internal liftMapOp:
+  name: string ->
+    f: (Slice.Slice<'T> -> 'U) -> Core.Operation<Slice.Slice<'T>,'U>
+    when 'T: comparison
 val inline cast:
   label: string ->
     fct: (Slice.Slice<'S> -> Slice.Slice<'T>) ->
@@ -471,7 +532,6 @@ val convGauss:
   sigma: float ->
     boundaryCondition: Slice.BoundaryCondition option ->
     Core.Pipe<Slice.Slice<'T>,Slice.Slice<'T>> when 'T: equality
-val skipFirstLast: n: int -> lst: 'a list -> 'a list
 val private binaryMathMorph:
   name: string ->
     f: (uint -> Slice.Slice<uint8> -> Slice.Slice<uint8>) ->
@@ -494,75 +554,9 @@ val binaryClosing:
   radius: uint ->
     windowSize: uint option ->
     stride: uint option -> Core.Pipe<Slice.Slice<uint8>,Slice.Slice<uint8>>
-val piecewiseConnectedComponents:
-  windowSize: uint option -> Core.Pipe<Slice.Slice<uint8>,Slice.Slice<uint64>>
 type ImageStats = Slice.ImageStats
 val computeStats<'T when 'T: equality> :
   Core.Pipe<Slice.Slice<'T>,ImageStats> when 'T: equality
-val liftUnaryOp:
-  name: string ->
-    f: (Slice.Slice<'T> -> Slice.Slice<'T>) ->
-    Core.Operation<Slice.Slice<'T>,Slice.Slice<'T>> when 'T: equality
-val liftWindowedOp:
-  name: string ->
-    window: uint ->
-    stride: uint ->
-    f: (Slice.Slice<'S> -> Slice.Slice<'T>) ->
-    Core.Operation<Slice.Slice<'S>,Slice.Slice<'T>>
-    when 'S: equality and 'T: equality
-val liftWindowedTrimOp:
-  name: string ->
-    window: uint ->
-    stride: uint ->
-    trim: uint ->
-    f: (Slice.Slice<'S> -> Slice.Slice<'T>) ->
-    Core.Operation<Slice.Slice<'S>,Slice.Slice<'T>>
-    when 'S: equality and 'T: equality
-val liftUnaryOpInt:
-  name: string ->
-    f: (Slice.Slice<int> -> Slice.Slice<int>) ->
-    Core.Operation<Slice.Slice<int>,Slice.Slice<int>>
-val liftUnaryOpFloat32:
-  name: string ->
-    f: (Slice.Slice<float32> -> Slice.Slice<float32>) ->
-    Core.Operation<Slice.Slice<float32>,Slice.Slice<float32>>
-val liftUnaryOpFloat:
-  name: string ->
-    f: (Slice.Slice<float> -> Slice.Slice<float>) ->
-    Core.Operation<Slice.Slice<float>,Slice.Slice<float>>
-val liftBinaryOp:
-  name: string ->
-    f: (Slice.Slice<'T> -> Slice.Slice<'T> -> Slice.Slice<'T>) ->
-    Core.Operation<(Slice.Slice<'T> * Slice.Slice<'T>),Slice.Slice<'T>>
-    when 'T: equality
-val liftBinaryOpFloat:
-  name: string ->
-    f: (Slice.Slice<float> -> Slice.Slice<float> -> Slice.Slice<float>) ->
-    Core.Operation<(Slice.Slice<float> * Slice.Slice<float>),Slice.Slice<float>>
-val liftBinaryZipOp:
-  name: string ->
-    f: (Slice.Slice<'T> -> Slice.Slice<'T> -> Slice.Slice<'T>) ->
-    p1: Core.Pipe<'In,Slice.Slice<'T>> ->
-    p2: Core.Pipe<'In,Slice.Slice<'T>> -> Core.Pipe<'In,Slice.Slice<'T>>
-    when 'T: equality
-val liftFullOp:
-  name: string ->
-    f: (Slice.Slice<'T> -> Slice.Slice<'T>) ->
-    Core.Operation<Slice.Slice<'T>,Slice.Slice<'T>> when 'T: equality
-val liftFullParamOp:
-  name: string ->
-    f: ('P -> Slice.Slice<'T> -> Slice.Slice<'T>) ->
-    param: 'P -> Core.Operation<Slice.Slice<'T>,Slice.Slice<'T>>
-    when 'T: equality
-val liftFullParam2Op:
-  name: string ->
-    f: ('P -> 'Q -> Slice.Slice<'T> -> Slice.Slice<'T>) ->
-    param1: 'P -> param2: 'Q -> Core.Operation<Slice.Slice<'T>,Slice.Slice<'T>>
-    when 'T: equality
-val liftMapOp:
-  name: string ->
-    f: (Slice.Slice<'T> -> 'U) -> Core.Operation<Slice.Slice<'T>,'U>
-    when 'T: comparison
 val absIntOp: name: string -> Core.Operation<Slice.Slice<int>,Slice.Slice<int>>
 val absFloat32Op:
   name: string -> Core.Operation<Slice.Slice<float32>,Slice.Slice<float32>>
@@ -660,6 +654,10 @@ val binaryFillHolesOp:
   name: string -> Core.Operation<Slice.Slice<uint8>,Slice.Slice<uint8>>
 val connectedComponentsOp:
   name: string -> Core.Operation<Slice.Slice<uint8>,Slice.Slice<uint64>>
+val piecewiseConnectedComponentsOp:
+  name: string ->
+    windowSize: uint option ->
+    Core.Operation<Slice.Slice<uint8>,Slice.Slice<uint64>>
 val addOpFloat:
   Core.Operation<(Slice.Slice<float> * Slice.Slice<float>),Slice.Slice<float>>
 val sNotOp: name: string -> Core.Operation<Slice.Slice<int>,Slice.Slice<int>>
@@ -735,11 +733,15 @@ val roundFloat32: Core.Pipe<Slice.Slice<float32>,Slice.Slice<float32>>
 val sqrtInt: Core.Pipe<Slice.Slice<int>,Slice.Slice<int>>
 val absInt: Core.Pipe<Slice.Slice<int>,Slice.Slice<int>>
 val squareInt: Core.Pipe<Slice.Slice<int>,Slice.Slice<int>>
+/// Convolution like operators
 val discreteGaussian:
   sigma: float ->
-    boundaryCondition: ImageFunctions.BoundaryCondition option ->
+    bc: ImageFunctions.BoundaryCondition option ->
     winSz: uint option -> Core.Pipe<Slice.Slice<float>,Slice.Slice<float>>
-val convGauss: sigma: float -> Core.Pipe<Slice.Slice<float>,Slice.Slice<float>>
+val convGauss:
+  sigma: float ->
+    bc: ImageFunctions.BoundaryCondition option ->
+    Core.Pipe<Slice.Slice<float>,Slice.Slice<float>>
 val convolve:
   kernel: Slice.Slice<'a> ->
     bc: Slice.BoundaryCondition option ->
@@ -748,7 +750,6 @@ val convolve:
 val conv:
   kernel: Slice.Slice<'a> -> Core.Pipe<Slice.Slice<'a>,Slice.Slice<'a>>
     when 'a: equality
-/// these only works on uint8
 val binaryErode:
   r: uint ->
     winSz: uint option -> Core.Pipe<Slice.Slice<uint8>,Slice.Slice<uint8>>
@@ -765,8 +766,11 @@ val binaryClosing:
   r: uint ->
     winSz: uint option -> Core.Pipe<Slice.Slice<uint8>,Slice.Slice<uint8>>
 val closing: r: uint -> Core.Pipe<Slice.Slice<uint8>,Slice.Slice<uint8>>
+/// Full stack operators
 val binaryFillHoles: Core.Pipe<Slice.Slice<uint8>,Slice.Slice<uint8>>
 val connectedComponents: Core.Pipe<Slice.Slice<uint8>,Slice.Slice<uint64>>
+val piecewiseConnectedComponents:
+  wz: uint option -> Core.Pipe<Slice.Slice<uint8>,Slice.Slice<uint64>>
 val add:
   im1: Slice.Slice<'T> -> im2: Slice.Slice<'T> -> Slice.Slice<'T>
     when 'T: equality

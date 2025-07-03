@@ -39,19 +39,12 @@ let sqrtInt       = asPipe (sqrtIntOp "sqrt")
 let absInt        = asPipe (absIntOp "abs")
 let squareInt     = asPipe (squareIntOp "square")
 
-
-let discreteGaussian sigma boundaryCondition winSz = 
-    asPipe (discreteGaussianOp "discreteGaussian" sigma boundaryCondition winSz)
-let convGauss sigma =
-    asPipe (discreteGaussianOp "convGauss" sigma None None)
-
-let convolve kernel bc winSz =
-    asPipe (convolveOp "convolve" kernel bc winSz)
-
-let conv kernel =
-    asPipe (convolveOp "conv" kernel None None)
-
-/// these only works on uint8
+/// Convolution like operators
+let discreteGaussian sigma bc winSz =  asPipe (discreteGaussianOp "discreteGaussian" sigma bc winSz)
+let convGauss sigma bc = asPipe (discreteGaussianOp "convGauss" sigma bc None)
+let convolve kernel bc winSz =  asPipe (convolveOp "convolve" kernel bc winSz)
+let conv kernel = asPipe (convolveOp "conv" kernel None None)
+// these only works on uint8
 let binaryErode      r winSz = asPipe (binaryErodeOp   "binaryErode"   r winSz)
 let erode            r       = asPipe (binaryErodeOp   "binaryErode"   r None)
 let binaryDilate     r winSz = asPipe (binaryDilateOp  "binaryDilate"  r winSz)
@@ -60,8 +53,11 @@ let binaryOpening    r winSz = asPipe (binaryOpeningOp "binaryOpening" r winSz)
 let opening          r       = asPipe (binaryOpeningOp "binaryOpening" r None)
 let binaryClosing    r winSz = asPipe (binaryClosingOp "binaryClosing" r winSz)
 let closing          r       = asPipe (binaryClosingOp "binaryClosing" r None)
+
+/// Full stack operators
 let binaryFillHoles = asPipe (binaryFillHolesOp "fillHoles")
 let connectedComponents = asPipe (connectedComponentsOp "components")
+let piecewiseConnectedComponents wz = asPipe (piecewiseConnectedComponentsOp "piecewiseConnectedComponents" wz)
 
 (*
 /// simple one sided arithmatic operators
