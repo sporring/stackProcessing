@@ -80,7 +80,7 @@ type MemoryTransition =
 type Operation<'S,'T> =
     { Name       : string
       Transition : MemoryTransition
-      Pipe       : Pipe<'S,'T> }            // <- the runnable pipeline
+      Pipe       : Pipe<'S,'T> } 
 
 /// Creates a MemoryTransition record:
 /// - Describes expected memory layout before and after an operation
@@ -175,7 +175,7 @@ let internal consumeWith
     reduce name profile reducer                    // gives AsyncSeq<unit>
 
 /// Pipeline computation expression
-type PipelineBuilder(availableMemory: uint64, width: uint, height: uint, depth: uint) =
+type PipelineBuilder(availableMemory: uint64) =
     /// Chain two <c>Pipe</c> instances, optionally inserting intermediate disk I/O
     member _.Bind(p: Pipe<'S,'T>, f: Pipe<'S,'T> -> Pipe<'S,'T>) : Pipe<'S,'T> =
         let composed = f p
@@ -222,7 +222,7 @@ type PipelineBuilder(availableMemory: uint64, width: uint, height: uint, depth: 
     member _.Zero() = { Name=""; Profile = Streaming; Apply = id }
 
 /// A memory-aware pipeline builder with the specified processing constraints.
-let pipeline availableMemory width height depth = PipelineBuilder(availableMemory, width, height, depth)
+let pipeline availableMemory = PipelineBuilder(availableMemory)
 
 module Helpers =
     // singletonPipe and bindPip was part of an experiment, will most likely be deleted

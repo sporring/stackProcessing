@@ -6,41 +6,9 @@ open Core
 open Core.Helpers
 open Slice
 
-let private run (p: Pipe<unit,'T>) : AsyncSeq<'T> =
+let run (p: Pipe<unit,'T>) : AsyncSeq<'T> =
+    printfn "[run]"
     (AsyncSeq.singleton ()) |> p.Apply
-
-
-let sinkLst (processors: Pipe<unit, unit> list) : unit =
-    processors
-    |> List.map (fun p -> run p |> AsyncSeq.iterAsync (fun () -> async.Return()))
-    |> Async.Parallel
-    |> Async.Ignore
-    |> Async.RunSynchronously
-
-let sink (p: Pipe<unit, unit>) : unit = 
-    sinkLst [p]
-
-let sourceLst 
-    (availableMemory: uint64)
-    (width: uint)
-    (height: uint)
-    (depth: uint)
-    (processors: Pipe<unit,'T> list) 
-    : Pipe<unit,'T> list =
-    processors |>
-    List.map (fun p -> 
-        pipeline availableMemory width height depth {return p}
-    )
-
-let source<'T>
-    (availableMemory: uint64)
-    (width: uint)
-    (height: uint)
-    (depth: uint)
-    (p: Pipe<unit,'T>) 
-    : Pipe<unit,'T> =
-    let lst = sourceLst availableMemory width height depth [p]
-    List.head lst
 
 /// Split a Pipe<'In,'T> into two branches that
 ///   • read the upstream only once
@@ -156,7 +124,7 @@ let zipWith (f: 'A -> 'B -> 'C) (p1: Pipe<'In, 'A>) (p2: Pipe<'In, 'B>) : Pipe<'
             | StreamingConstant, _
             | SlidingConstant _, _
             | FullConstant, _ ->
-                printfn "[Sequential zipWith]"
+                printfn "[Runtine analysis: zipWith sequential]"
                 asyncSeq {
                     let! constant =
                         a
@@ -170,7 +138,7 @@ let zipWith (f: 'A -> 'B -> 'C) (p1: Pipe<'In, 'A>) (p2: Pipe<'In, 'B>) : Pipe<'
             | _, StreamingConstant
             | _, SlidingConstant _
             | _, FullConstant ->
-                printfn "[Sequential zipWith]"
+                printfn "[Runtine analysis: zipWith sequential]"
                 asyncSeq {
                     let! constant =
                         b
@@ -181,7 +149,7 @@ let zipWith (f: 'A -> 'B -> 'C) (p1: Pipe<'In, 'A>) (p2: Pipe<'In, 'B>) : Pipe<'
                     yield! a |> AsyncSeq.map (fun a -> f a constant)
                }
             | _ ->
-                printfn "[parallel zipWith]"
+                printfn "[Runtine analysis: zipWith parallel]"
                 AsyncSeq.zip a b |> AsyncSeq.map (fun (x, y) -> f x y)
     }
 

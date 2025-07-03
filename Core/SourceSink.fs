@@ -41,7 +41,7 @@ module internal InternalHelpers =
             async {
                 let fileName = Path.Combine(outputDir, sprintf "slice_%03d%s" slice.Index suffix)
                 slice.Image.toFile(fileName)
-                printfn "[Write] Saved slice %d to %s of size %A" slice.Index fileName (slice.Image.GetSize())
+                printfn "[Write] Saved slice %d to %s" slice.Index fileName
             })
 
     let readSlicesAsync<'T when 'T: equality> (inputDir: string) (suffix: string) : AsyncSeq<Slice<'T>> =
@@ -67,16 +67,44 @@ let readSlices<'T when 'T: equality> (inputDir: string) (suffix: string) : Pipe<
             AsyncSeq.init (int depth) (fun i -> 
                 let fileName = filenames[int i]; 
                 let slice = Slice.readSlice<'T> (uint i) fileName
-                printfn "[readSlices] Reading slice %d from %s got %A" (uint i) fileName (slice.Image.GetSize())
+                printfn "[readSlices] Reading slice %d from %s" (uint i) fileName
                 slice)
     }
+
+let sourceLst<'T>
+    (availableMemory: uint64)
+    (processors: Pipe<unit,'T> list) 
+    : Pipe<unit,'T> list =
+    processors |>
+    List.map (fun p -> 
+        pipeline availableMemory {return p}
+    )
+
+let source<'T>
+    (availableMemory: uint64)
+    (p: Pipe<unit,'T>) 
+    : Pipe<unit,'T> =
+    let lst = sourceLst<'T> availableMemory [p]
+    List.head lst
+
+let sinkLst (processors: Pipe<unit, unit> list) : unit =
+    processors
+    |> List.map (fun p -> run p |> AsyncSeq.iterAsync (fun () -> async.Return()))
+    |> Async.Parallel
+    |> Async.Ignore
+    |> Async.RunSynchronously
+
+let sink (p: Pipe<unit, unit>) : unit = 
+    sinkLst [p]
 
 //let read<'T when 'T: equality> (inputDir: string) (suffix: string) p = 
 //    readSlices<'T> inputDir suffix |> p
 let read<'T when 'T : equality> (inputDir : string) (suffix : string) transform : Core.Pipe<unit,Slice.Slice<'T>> =
+    printfn "[read]"
     readSlices<'T> inputDir suffix |> transform
     
 let readSliceN<'T when 'T: equality> (idx: uint) (inputDir: string) (suffix: string) : Pipe<unit, Slice<'T>> =
+    printfn "[readSliceN]"
     let fileNames = Directory.GetFiles(inputDir, "*"+suffix) |> Array.sort
     if fileNames.Length <= (int idx) then
         failwith "[readSliceN] Index out of bounds"
@@ -104,6 +132,7 @@ let readRandomSlices<'T when 'T: equality> (count: uint) (inputDir: string) (suf
     }
 
 let readRandom<'T when 'T : equality> (count: uint) (inputDir : string) (suffix : string) transform : Core.Pipe<unit,Slice.Slice<'T>> =
+    printfn "[readRandom]"
     readRandomSlices<'T> count inputDir suffix |> transform
 
 /// Source parts
@@ -114,13 +143,13 @@ let createPipe<'T when 'T: equality> (width: uint) (height: uint) (depth: uint) 
         Apply = fun _ ->
             AsyncSeq.init (int depth) (fun i -> 
                 let slice = Slice.create<'T> width height 1u (uint i)
-                printfn "[create] Created slice %d with size %A" i (slice.Image.GetSize()); 
+                printfn "[create] Created slice %d" i
                 slice)
     }
 
 let create<'T when 'T: equality> (width: uint) (height: uint) (depth: uint) transform : Core.Pipe<unit,Slice.Slice<'T>> =
+    printfn "[create]"
     createPipe<'T> width height depth  |> transform
-
 
 let liftImageSource (name: string) (img: Slice<'T>) : Pipe<unit, Slice<'T>> =
     {
@@ -169,30 +198,35 @@ let finiteDiffFilter3D (direction: uint) (order: uint) : Pipe<unit, Slice<float>
 
 /// Sink parts
 let print<'T> : Pipe<'T, unit> =
+    printfn "[print]"
     consumeWith "print" Streaming (fun stream ->
         async {
             do! printAsync stream 
         })
 
 let plot (plt: float list -> float list -> unit) : Pipe<(float*float) list, unit> =
+    printfn "[plot]"
     consumeWith "plot" Streaming (fun stream ->
         async {
             do! (plotListAsync plt) stream 
         })
 
 let show (plt: Slice.Slice<'a> -> unit) : Pipe<Slice<'a>, unit> =
+    printfn "[show]"
     consumeWith "show" Streaming (fun stream ->
         async {
             do! (showSliceAsync plt) stream
         })
 
 let write (path: string) (suffix: string) : Pipe<Slice<'a>, unit> =
+    printfn "[write]"
     consumeWith "write" Streaming (fun stream ->
         async {
             do! (writeSlicesAsync path suffix) stream
         })
 
 let ignore<'T> : Pipe<'T, unit> =
+    printfn "[ignore]"
     consumeWith "ignore" Streaming (fun stream ->
         async {
             do! stream |> AsyncSeq.iterAsync (fun _ -> async.Return())

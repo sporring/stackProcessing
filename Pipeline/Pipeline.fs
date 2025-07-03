@@ -23,10 +23,12 @@ type Pipe<'S,'T> = Core.Pipe<'S,'T>
 type Operation<'S,'T> = Core.Operation<'S,'T>
 type MemoryProfile = Core.MemoryProfile
 type MemoryTransition = Core.MemoryTransition
+type Slice<'S when 'S: equality> = Slice.Slice<'S>
 
-let source<'T> = Routing.source<'T>
-let sink = Routing.sink
-let sinkLst = Routing.sinkLst
+let source<'T> = SourceSink.source<'T>
+let sourceLst<'T> = SourceSink.sourceLst<'T>
+let sink = SourceSink.sink
+let sinkLst = SourceSink.sinkLst
 let (>=>) = Routing.composePipe
 let tee = Routing.tee
 let zipWith = Routing.zipWith

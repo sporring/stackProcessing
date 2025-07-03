@@ -4,8 +4,10 @@ type Pipe<'S,'T> = Core.Pipe<'S,'T>
 type Operation<'S,'T> = Core.Operation<'S,'T>
 type MemoryProfile = Core.MemoryProfile
 type MemoryTransition = Core.MemoryTransition
-val source<'T> :
-  (uint64 -> uint -> uint -> uint -> Core.Pipe<unit,'T> -> Core.Pipe<unit,'T>)
+type Slice<'S when 'S: equality> = Slice.Slice<'S>
+val source<'T> : (uint64 -> Core.Pipe<unit,'T> -> Core.Pipe<unit,'T>)
+val sourceLst<'T> :
+  (uint64 -> Core.Pipe<unit,'T> list -> Core.Pipe<unit,'T> list)
 val sink: (Core.Pipe<unit,unit> -> unit)
 val sinkLst: (Core.Pipe<unit,unit> list -> unit)
 val (>=>) : (Core.Pipe<'a,'b> -> Core.Pipe<'b,'c> -> Core.Pipe<'a,'c>)
