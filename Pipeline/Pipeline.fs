@@ -24,17 +24,19 @@ type Operation<'S,'T> = Core.Operation<'S,'T>
 type MemoryProfile = Core.MemoryProfile
 type MemoryTransition = Core.MemoryTransition
 
-let source = Routing.source
+let source<'T> = Routing.source<'T>
 let sink = Routing.sink
 let sinkLst = Routing.sinkLst
 let (>=>) = Routing.composePipe
 let tee = Routing.tee
 let zipWith = Routing.zipWith
+let cacheScalar = Routing.cacheScalar
+
 
 let create = SourceSink.create
-let write = SourceSink.writeSlices
-let read<'T when 'T: equality> = SourceSink.read<'T>
-let readRandom<'T when 'T: equality> = SourceSink.readRandom<'T>
+let read = SourceSink.read<'T>
+let readRandom = SourceSink.readRandom<'T>
+let write = SourceSink.write
 let print<'T> : Pipe<'T, unit> = SourceSink.print
 let plot = SourceSink.plot
 let show = SourceSink.show
@@ -55,6 +57,7 @@ let periodicPad = Processing.periodicPad
 let zeroFluxNeumannPad = Processing.zeroFluxNeumannPad
 let valid = Processing.valid
 let same = Processing.same
+
 let castUInt8ToInt8 = Processing.castUInt8ToInt8
 let castUInt8ToUInt16 = Processing.castUInt8ToUInt16
 let castUInt8ToInt16 = Processing.castUInt8ToInt16
@@ -73,6 +76,7 @@ let castInt8ToUInt64 = Processing.castInt8ToUInt64
 let castInt8ToInt64 = Processing.castInt8ToInt64
 let castInt8ToFloat32 = Processing.castInt8ToFloat32
 let castInt8ToFloat = Processing.castInt8ToFloat
+
 let castUInt16ToUInt8 = Processing.castUInt16ToUInt8
 let castUInt16ToInt8 = Processing.castUInt16ToInt8
 let castUInt16ToInt16 = Processing.castUInt16ToInt16
@@ -91,6 +95,7 @@ let castInt16ToUInt64 = Processing.castInt16ToUInt64
 let castInt16ToInt64 = Processing.castInt16ToInt64
 let castInt16ToFloat32 = Processing.castInt16ToFloat32
 let castInt16ToFloat = Processing.castInt16ToFloat
+
 let castUIntToUInt8 = Processing.castUIntToUInt8
 let castUIntToInt8 = Processing.castUIntToInt8
 let castUIntToUInt16 = Processing.castUIntToUInt16
@@ -109,6 +114,26 @@ let castIntToUInt64 = Processing.castIntToUInt64
 let castIntToInt64 = Processing.castIntToInt64
 let castIntToFloat32 = Processing.castIntToFloat32
 let castIntToFloat = Processing.castIntToFloat
+
+let castUInt64ToUInt8 = Processing.castUInt64ToUInt8
+let castUInt64ToInt8 = Processing.castUInt64ToInt8
+let castUInt64ToUInt16 = Processing.castUInt64ToUInt16
+let castUInt64ToInt16 = Processing.castUInt64ToInt16
+let castUInt64ToUInt = Processing.castUInt64ToUInt
+let castUInt64ToInt = Processing.castUInt64ToInt
+let castUInt64ToFloat32 = Processing.castUInt64ToFloat32
+let castUInt64ToInt64 = Processing.castUInt64ToInt64
+let castUInt64ToFloat = Processing.castUInt64ToFloat
+let castInt64ToUInt8 = Processing.castInt64ToUInt8
+let castInt64ToInt8 = Processing.castInt64ToInt8
+let castInt64ToUInt16 = Processing.castInt64ToUInt16
+let castInt64ToInt16 = Processing.castInt64ToInt16
+let castInt64ToUInt = Processing.castInt64ToUInt
+let castInt64ToInt = Processing.castInt64ToInt
+let castInt64ToUInt64 = Processing.castInt64ToUInt64
+let castInt64ToFloat32 = Processing.castFloatToFloat32
+let castInt64ToIntFloat = Processing.castInt64ToFloat
+
 let castFloat32ToUInt8 = Processing.castFloat32ToUInt8
 let castFloat32ToInt8 = Processing.castFloat32ToInt8
 let castFloat32ToUInt16 = Processing.castFloat32ToUInt16
@@ -117,7 +142,7 @@ let castFloat32ToUInt = Processing.castFloat32ToUInt
 let castFloat32ToInt = Processing.castFloat32ToInt
 let castFloat32ToUInt64 = Processing.castFloat32ToUInt64
 let castFloat32ToInt64 = Processing.castFloat32ToInt64
-let castFloat32Tofloat = Processing.castFloat32Tofloat
+let castFloat32ToFloat = Processing.castFloat32ToFloat
 let castFloatToUInt8 = Processing.castFloatToUInt8
 let castFloatToInt8 = Processing.castFloatToInt8
 let castFloatToUInt16 = Processing.castFloatToUInt16
@@ -159,6 +184,14 @@ let inline divScalar
     when ^T : equality
     and  ^T : (static member op_Explicit : ^T -> float) =
     Processing.sliceDivScalar i
+
+let add = Slice.add
+let sub = Slice.sub
+let mul = Slice.mul
+let div = Slice.div
+let computeStatistics<'T when 'T: comparison> :
+  Core.Pipe<Slice.Slice<'T>,Processing.ImageStats> when 'T: comparison = 
+  Processing.computeStats
 
 
 let threshold = Processing.threshold

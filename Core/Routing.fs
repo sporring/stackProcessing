@@ -32,7 +32,7 @@ let sourceLst
         pipeline availableMemory width height depth {return p}
     )
 
-let source
+let source<'T>
     (availableMemory: uint64)
     (width: uint)
     (height: uint)

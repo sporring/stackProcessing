@@ -232,7 +232,7 @@ val plot:
 val show:
   plt: (Slice.Slice<'a> -> unit) -> Core.Pipe<Slice.Slice<'a>,unit>
     when 'a: equality
-val writeSlices:
+val write:
   path: string -> suffix: string -> Core.Pipe<Slice.Slice<'a>,unit>
     when 'a: equality
 val ignore<'T> : Core.Pipe<'T,unit>
@@ -320,6 +320,24 @@ val castIntToUInt64: Core.Pipe<Slice.Slice<int>,Slice.Slice<uint64>>
 val castIntToInt64: Core.Pipe<Slice.Slice<int>,Slice.Slice<int64>>
 val castIntToFloat32: Core.Pipe<Slice.Slice<int>,Slice.Slice<float32>>
 val castIntToFloat: Core.Pipe<Slice.Slice<int>,Slice.Slice<float>>
+val castUInt64ToUInt8: Core.Pipe<Slice.Slice<uint64>,Slice.Slice<uint8>>
+val castUInt64ToInt8: Core.Pipe<Slice.Slice<uint64>,Slice.Slice<int8>>
+val castUInt64ToUInt16: Core.Pipe<Slice.Slice<uint64>,Slice.Slice<uint16>>
+val castUInt64ToInt16: Core.Pipe<Slice.Slice<uint64>,Slice.Slice<int16>>
+val castUInt64ToUInt: Core.Pipe<Slice.Slice<uint64>,Slice.Slice<uint>>
+val castUInt64ToInt: Core.Pipe<Slice.Slice<uint64>,Slice.Slice<int>>
+val castUInt64ToInt64: Core.Pipe<Slice.Slice<uint64>,Slice.Slice<int64>>
+val castUInt64ToFloat32: Core.Pipe<Slice.Slice<uint64>,Slice.Slice<float32>>
+val castUInt64ToFloat: Core.Pipe<Slice.Slice<uint64>,Slice.Slice<float>>
+val castInt64ToUInt8: Core.Pipe<Slice.Slice<int64>,Slice.Slice<uint8>>
+val castInt64ToInt8: Core.Pipe<Slice.Slice<int64>,Slice.Slice<int8>>
+val castInt64ToUInt16: Core.Pipe<Slice.Slice<int64>,Slice.Slice<uint16>>
+val castInt64ToInt16: Core.Pipe<Slice.Slice<int64>,Slice.Slice<int16>>
+val castInt64ToUInt: Core.Pipe<Slice.Slice<int64>,Slice.Slice<uint>>
+val castInt64ToInt: Core.Pipe<Slice.Slice<int64>,Slice.Slice<int>>
+val castInt64ToUInt64: Core.Pipe<Slice.Slice<int64>,Slice.Slice<uint64>>
+val castInt64ToFloat32: Core.Pipe<Slice.Slice<int64>,Slice.Slice<float32>>
+val castInt64ToFloat: Core.Pipe<Slice.Slice<int64>,Slice.Slice<float>>
 val castFloat32ToUInt8: Core.Pipe<Slice.Slice<float32>,Slice.Slice<uint8>>
 val castFloat32ToInt8: Core.Pipe<Slice.Slice<float32>,Slice.Slice<int8>>
 val castFloat32ToUInt16: Core.Pipe<Slice.Slice<float32>,Slice.Slice<uint16>>
@@ -328,7 +346,7 @@ val castFloat32ToUInt: Core.Pipe<Slice.Slice<float32>,Slice.Slice<uint>>
 val castFloat32ToInt: Core.Pipe<Slice.Slice<float32>,Slice.Slice<int>>
 val castFloat32ToUInt64: Core.Pipe<Slice.Slice<float32>,Slice.Slice<uint64>>
 val castFloat32ToInt64: Core.Pipe<Slice.Slice<float32>,Slice.Slice<int64>>
-val castFloat32Tofloat: Core.Pipe<Slice.Slice<float32>,Slice.Slice<float>>
+val castFloat32ToFloat: Core.Pipe<Slice.Slice<float32>,Slice.Slice<float>>
 val castFloatToUInt8: Core.Pipe<Slice.Slice<float>,Slice.Slice<uint8>>
 val castFloatToInt8: Core.Pipe<Slice.Slice<float>,Slice.Slice<int8>>
 val castFloatToUInt16: Core.Pipe<Slice.Slice<float>,Slice.Slice<uint16>>
@@ -465,26 +483,6 @@ val liftUnaryOp:
   name: string ->
     f: (Slice.Slice<'T> -> Slice.Slice<'T>) ->
     Core.Operation<Slice.Slice<'T>,Slice.Slice<'T>> when 'T: equality
-val liftImageScalarOpInt:
-  name: string ->
-    scalar: int ->
-    core: (Slice.Slice<int> -> int -> Slice.Slice<int>) ->
-    Core.Operation<Slice.Slice<int>,Slice.Slice<int>>
-val liftImageScalarOpUInt8:
-  name: string ->
-    scalar: uint8 ->
-    core: (Slice.Slice<uint8> -> uint8 -> Slice.Slice<uint8>) ->
-    Core.Operation<Slice.Slice<uint8>,Slice.Slice<uint8>>
-val liftImageScalarOpFloat32:
-  name: string ->
-    scalar: float32 ->
-    core: (Slice.Slice<float32> -> float32 -> Slice.Slice<float32>) ->
-    Core.Operation<Slice.Slice<float32>,Slice.Slice<float32>>
-val liftImageScalarOpFloat:
-  name: string ->
-    scalar: float ->
-    core: (Slice.Slice<float> -> float -> Slice.Slice<float>) ->
-    Core.Operation<Slice.Slice<float>,Slice.Slice<float>>
 val liftWindowedOp:
   name: string ->
     window: uint ->
@@ -642,36 +640,6 @@ val binaryFillHolesOp:
   name: string -> Core.Operation<Slice.Slice<uint8>,Slice.Slice<uint8>>
 val connectedComponentsOp:
   name: string -> Core.Operation<Slice.Slice<uint8>,Slice.Slice<uint64>>
-val addIntOp:
-  name: string ->
-    scalar: int -> Core.Operation<Slice.Slice<int>,Slice.Slice<int>>
-val addUInt8Op:
-  name: string ->
-    scalar: uint8 -> Core.Operation<Slice.Slice<uint8>,Slice.Slice<uint8>>
-val addFloatOp:
-  name: string ->
-    scalar: float -> Core.Operation<Slice.Slice<float>,Slice.Slice<float>>
-val subIntOp:
-  name: string ->
-    scalar: int -> Core.Operation<Slice.Slice<int>,Slice.Slice<int>>
-val subFloatOp:
-  name: string ->
-    scalar: float -> Core.Operation<Slice.Slice<float>,Slice.Slice<float>>
-val mulIntOp:
-  name: string ->
-    scalar: int -> Core.Operation<Slice.Slice<int>,Slice.Slice<int>>
-val mulUInt8Op:
-  name: string ->
-    scalar: uint8 -> Core.Operation<Slice.Slice<uint8>,Slice.Slice<uint8>>
-val mulFloatOp:
-  name: string ->
-    scalar: float -> Core.Operation<Slice.Slice<float>,Slice.Slice<float>>
-val divIntOp:
-  name: string ->
-    scalar: int -> Core.Operation<Slice.Slice<int>,Slice.Slice<int>>
-val divFloatOp:
-  name: string ->
-    scalar: float -> Core.Operation<Slice.Slice<float>,Slice.Slice<float>>
 val addOpFloat:
   Core.Operation<(Slice.Slice<float> * Slice.Slice<float>),Slice.Slice<float>>
 val sNotOp: name: string -> Core.Operation<Slice.Slice<int>,Slice.Slice<int>>
@@ -779,17 +747,6 @@ val binaryClosing:
 val closing: r: uint -> Core.Pipe<Slice.Slice<uint8>,Slice.Slice<uint8>>
 val binaryFillHoles: Core.Pipe<Slice.Slice<uint8>,Slice.Slice<uint8>>
 val connectedComponents: Core.Pipe<Slice.Slice<uint8>,Slice.Slice<uint64>>
-/// selected simple arithmatic operators
-val addInt: scalar: int -> Core.Pipe<Slice.Slice<int>,Slice.Slice<int>>
-val addUInt8: scalar: uint8 -> Core.Pipe<Slice.Slice<uint8>,Slice.Slice<uint8>>
-val addFloat: scalar: float -> Core.Pipe<Slice.Slice<float>,Slice.Slice<float>>
-val subInt: scalar: int -> Core.Pipe<Slice.Slice<int>,Slice.Slice<int>>
-val subFloat: scalar: float -> Core.Pipe<Slice.Slice<float>,Slice.Slice<float>>
-val mulInt: scalar: int -> Core.Pipe<Slice.Slice<int>,Slice.Slice<int>>
-val mulUInt8: scalar: uint8 -> Core.Pipe<Slice.Slice<uint8>,Slice.Slice<uint8>>
-val mulFloat: scalar: float -> Core.Pipe<Slice.Slice<float>,Slice.Slice<float>>
-val divInt: scalar: int -> Core.Pipe<Slice.Slice<int>,Slice.Slice<int>>
-val divFloat: scalar: float -> Core.Pipe<Slice.Slice<float>,Slice.Slice<float>>
 val add:
   im1: Slice.Slice<'T> -> im2: Slice.Slice<'T> -> Slice.Slice<'T>
     when 'T: equality

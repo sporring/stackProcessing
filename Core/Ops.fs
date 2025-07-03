@@ -63,6 +63,7 @@ let closing          r       = asPipe (binaryClosingOp "binaryClosing" r None)
 let binaryFillHoles = asPipe (binaryFillHolesOp "fillHoles")
 let connectedComponents = asPipe (connectedComponentsOp "components")
 
+(*
 /// simple one sided arithmatic operators
 let addUInt8   scalar = asPipe (addUInt8Op "addUInt8" scalar)
 let addInt8    scalar = asPipe (addInt8Op "addInt8" scalar)
@@ -107,6 +108,7 @@ let divUInt64  scalar = asPipe (divUInt64Op "divUInt64" scalar)
 let divInt64   scalar = asPipe (divInt64Op "divInt64" scalar)
 let divFloat32 scalar = asPipe (divFloat32Op "divFloat32" scalar)
 let divFloat   scalar = asPipe (divFloatOp "divFloat" scalar)
+*)
 
 let add (im1: Slice<'T>) (im2: Slice<'T>) : Slice<'T> = Slice.add im1 im2
 let sub (im1: Slice<'T>) (im2: Slice<'T>) : Slice<'T> = Slice.sub im1 im2

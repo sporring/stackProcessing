@@ -62,7 +62,6 @@ let mapWindowed (label: string) (depth: uint) (stride: uint) (f: 'S list -> 'T l
     }
 
 let inline cast<'S,'T when 'S: equality and 'T: equality> label fct : Pipe<Slice<'S>, Slice<'T>> =
-    printfn "%s" label
     {
         Name = label
         Profile = Streaming
@@ -89,6 +88,7 @@ let castInt8ToUInt64 = cast "[castInt8ToUInt64]" Slice.castInt8ToUInt64
 let castInt8ToInt64 = cast "[castInt8ToInt64]" Slice.castInt8ToInt64
 let castInt8ToFloat32 = cast "[castInt8ToFloat32]" Slice.castInt8ToFloat32
 let castInt8ToFloat = cast "[castInt8ToFloat]" Slice.castInt8ToFloat
+
 let castUInt16ToUInt8 = cast "[castUInt16ToUInt8]" Slice.castUInt16ToUInt8
 let castUInt16ToInt8 = cast "[castUInt16ToInt8]" Slice.castUInt16ToInt8
 let castUInt16ToInt16 = cast "[castUInt16ToInt16]" Slice.castUInt16ToInt16
@@ -107,6 +107,7 @@ let castInt16ToUInt64 = cast "[castInt16ToUInt64]" Slice.castInt16ToUInt64
 let castInt16ToInt64 = cast "[castInt16ToInt64]" Slice.castInt16ToInt64
 let castInt16ToFloat32 = cast "[castInt16ToFloat32]" Slice.castInt16ToFloat32
 let castInt16ToFloat = cast "[castInt16ToFloat]" Slice.castInt16ToFloat
+
 let castUIntToUInt8 = cast "[castUIntToUInt8]" Slice.castUIntToUInt8
 let castUIntToInt8 = cast "[castUIntToInt8]" Slice.castUIntToInt8
 let castUIntToUInt16 = cast "[castUIntToUInt16]" Slice.castUIntToUInt16
@@ -125,6 +126,26 @@ let castIntToUInt64 = cast "[castIntToUInt64]" Slice.castIntToUInt64
 let castIntToInt64 = cast "[castIntToInt64]" Slice.castIntToInt64
 let castIntToFloat32 = cast "[castIntToFloat32]" Slice.castIntToFloat32
 let castIntToFloat = cast "[castIntToFloat]" Slice.castIntToFloat
+
+let castUInt64ToUInt8 = cast "[castUInt64ToUInt8]" Slice.castUInt64ToUInt8
+let castUInt64ToInt8 = cast "[castUInt64ToInt8]" Slice.castUInt64ToInt8
+let castUInt64ToUInt16 = cast "[castUInt64ToUInt16]" Slice.castUInt64ToUInt16
+let castUInt64ToInt16 = cast "[castUInt64ToInt16]" Slice.castUInt64ToInt16
+let castUInt64ToUInt = cast "[castUInt64ToUInt]" Slice.castUInt64ToUInt
+let castUInt64ToInt = cast "[castUInt64ToInt]" Slice.castUInt64ToInt
+let castUInt64ToInt64 = cast "[castUInt64ToInt64]" Slice.castUInt64ToInt64
+let castUInt64ToFloat32 = cast "[castUInt64ToFloat32]" Slice.castUInt64ToFloat32
+let castUInt64ToFloat = cast "[castUInt64ToFloat]" Slice.castUInt64ToFloat
+let castInt64ToUInt8 = cast "[castInt64ToUInt8]" Slice.castInt64ToUInt8
+let castInt64ToInt8 = cast "[castInt64ToInt8]" Slice.castInt64ToInt8
+let castInt64ToUInt16 = cast "[castInt64ToUInt16]" Slice.castInt64ToUInt16
+let castInt64ToInt16 = cast "[castInt64ToInt16]" Slice.castInt64ToInt16
+let castInt64ToUInt = cast "[castInt64ToUInt]" Slice.castInt64ToUInt
+let castInt64ToInt = cast "[castInt64ToInt]" Slice.castInt64ToInt
+let castInt64ToUInt64 = cast "[castInt64ToUInt64]" Slice.castInt64ToUInt64
+let castInt64ToFloat32 = cast "[castInt64ToFloat32]" Slice.castInt64ToFloat32
+let castInt64ToFloat = cast "[castInt64ToFloat]" Slice.castInt64ToFloat
+
 let castFloat32ToUInt8 = cast "[castFloat32ToUInt8]" Slice.castFloat32ToUInt8
 let castFloat32ToInt8 = cast "[castFloat32ToInt8]" Slice.castFloat32ToInt8
 let castFloat32ToUInt16 = cast "[castFloat32ToUInt16]" Slice.castFloat32ToUInt16
@@ -133,7 +154,7 @@ let castFloat32ToUInt = cast "[castFloat32ToUInt]" Slice.castFloat32ToUInt
 let castFloat32ToInt = cast "[castFloat32ToInt]" Slice.castFloat32ToInt
 let castFloat32ToUInt64 = cast "[castFloat32ToUInt64]" Slice.castFloat32ToUInt64
 let castFloat32ToInt64 = cast "[castFloat32ToInt64]" Slice.castFloat32ToInt64
-let castFloat32Tofloat = cast "[castFloat32Tofloat]" Slice.castFloat32Tofloat
+let castFloat32ToFloat = cast "[castFloat32ToFloat]" Slice.castFloat32ToFloat
 let castFloatToUInt8 = cast "[castFloatToUInt8]" Slice.castFloatToUInt8
 let castFloatToInt8 = cast "[castFloatToInt8]" Slice.castFloatToInt8
 let castFloatToUInt16 = cast "[castFloatToUInt16]" Slice.castFloatToUInt16
@@ -145,11 +166,9 @@ let castFloatToInt64 = cast "[castFloatToInt64]" Slice.castFloatToInt64
 let castFloatToFloat32 = cast "[castFloatToFloat32]" Slice.castFloatToFloat32
 
 let add (slice: Slice<'T>) : Pipe<Slice<'T>, Slice<'T>> =
-    printfn "[add]"
     map "Add" Streaming (add slice)
 
 let inline scalarAddSlice<^T when ^T: equality and ^T: (static member op_Explicit: ^T -> float)> (i: ^T) : Pipe<Slice<^T>, Slice<^T>> =
-    printfn "[scalarAddSlice]"
     {
         Name = "scalarAddSlice" 
         Profile = Streaming
@@ -159,7 +178,6 @@ let inline scalarAddSlice<^T when ^T: equality and ^T: (static member op_Explici
     }
 
 let inline sliceAddScalar<^T when ^T: equality and ^T: (static member op_Explicit: ^T -> float)> (i: ^T) : Pipe<Slice<^T>, Slice<^T>> =
-    printfn "[sliceAddScalar]"
     {
         Name = "sliceAddScalar" 
         Profile = Streaming
@@ -169,11 +187,9 @@ let inline sliceAddScalar<^T when ^T: equality and ^T: (static member op_Explici
     }
 
 let sub (slice: Slice<'T>) : Pipe<Slice<'T>, Slice<'T>> =
-    printfn "[sub]"
     map "sub" Streaming (sub slice)
 
 let inline scalarSubSlice<^T when ^T: equality and ^T: (static member op_Explicit: ^T -> float)> (i: ^T) : Pipe<Slice<^T>, Slice<^T>> =
-    printfn "[scalarSubSlice]"
     {
         Name = "scalarSubSlice" 
         Profile = Streaming
@@ -183,7 +199,6 @@ let inline scalarSubSlice<^T when ^T: equality and ^T: (static member op_Explici
     }
 
 let inline sliceSubScalar<^T when ^T: equality and ^T: (static member op_Explicit: ^T -> float)> (i: ^T) : Pipe<Slice<^T>, Slice<^T>> =
-    printfn "[sliceSubScalar]"
     {
         Name = "sliceSubScalar" 
         Profile = Streaming
@@ -193,11 +208,9 @@ let inline sliceSubScalar<^T when ^T: equality and ^T: (static member op_Explici
     }
 
 let mul (slice: Slice<'T>) : Pipe<Slice<'T>, Slice<'T>> =
-    printfn "[mul]"
     map "mul" Streaming (mul slice)
 
 let inline scalarMulSlice<^T when ^T: equality and ^T: (static member op_Explicit: ^T -> float)> (i: ^T) : Pipe<Slice<^T>, Slice<^T>> =
-    printfn "[scalarMulSlice]"
     {
         Name = "scalarMulSlice" 
         Profile = Streaming
@@ -207,7 +220,6 @@ let inline scalarMulSlice<^T when ^T: equality and ^T: (static member op_Explici
     }
 
 let inline sliceMulScalar<^T when ^T: equality and ^T: (static member op_Explicit: ^T -> float)> (i: ^T) : Pipe<Slice<^T>, Slice<^T>> =
-    printfn "[sliceMulScalar]"
     {
         Name = "sliceMulScalar" 
         Profile = Streaming
@@ -217,11 +229,9 @@ let inline sliceMulScalar<^T when ^T: equality and ^T: (static member op_Explici
     }
 
 let div (slice: Slice<'T>) : Pipe<Slice<'T>, Slice<'T>> =
-    printfn "[div]"
     map "div" Streaming (div slice)
 
 let inline scalarDivSlice<^T when ^T: equality and ^T: (static member op_Explicit: ^T -> float)> (i: ^T) : Pipe<Slice<^T>, Slice<^T>> =
-    printfn "[scalarDivSlice]"
     {
         Name = "scalarDivSlice" 
         Profile = Streaming
@@ -231,7 +241,6 @@ let inline scalarDivSlice<^T when ^T: equality and ^T: (static member op_Explici
     }
 
 let inline sliceDivScalar<^T when ^T: equality and ^T: (static member op_Explicit: ^T -> float)> (i: ^T) : Pipe<Slice<^T>, Slice<^T>> =
-    printfn "[sliceDivScalar]"
     {
         Name = "sliceDivScalar" 
         Profile = Streaming
@@ -243,123 +252,93 @@ let inline sliceDivScalar<^T when ^T: equality and ^T: (static member op_Explici
 
 (*
 let modulus (value: uint) : Pipe<Slice<'T>, Slice<'T>> =
-    printfn "[modulus]"
     map "Modulus" Streaming (modulusConst value)
 
 let modulusWithImage (image: Image) : Pipe<Slice<'T>, Slice<'T>> =
-    printfn "[modulusWithImage]"
     map "ModulusImage" Streaming (modulusImage image)
 
 let pow (exponent: float) : Pipe<Slice<'T>, Slice<'T>> =
-    printfn "[pow]"
     map "Power" Streaming (powConst exponent)
 
 let powWithImage (image: Image) : Pipe<Slice<'T>, Slice<'T>> =
-    printfn "[powWithImage]"
     map "PowerImage" Streaming (powImage image)
 
 let greaterEqual (value: float) : Pipe<Slice<'T>, Slice<'T>> =
-    printfn "[greaterEqual]"
     map "GreaterEqual" Streaming (greaterEqualConst value)
 
 let greaterEqualWithImage (image: Image) : Pipe<Slice<'T>, Slice<'T>> =
-    printfn "[greaterEqualWithImage]"
     map "GreaterEqualImage" Streaming (greaterEqualImage image)
 
 let greater (value: float) : Pipe<Slice<'T>, Slice<'T>> =
-    printfn "[greater]"
     map "Greater" Streaming (greaterConst value)
 
 let greaterWithImage (image: Image) : Pipe<Slice<'T>, Slice<'T>> =
-    printfn "[greaterWithImage]"
     map "GreaterImage" Streaming (greaterImage image)
 
 let equal (value: float) : Pipe<Slice<'T>, Slice<'T>> =
-    printfn "[equal]"
     map "Equal" Streaming (equalConst value)
 
 let equalWithImage (image: Image) : Pipe<Slice<'T>, Slice<'T>> =
-    printfn "[equalWithImage]"
     map "EqualImage" Streaming (equalImage image)
 
 let notEqual (value: float) : Pipe<Slice<'T>, Slice<'T>> =
-    printfn "[notEqual]"
     map "NotEqual" Streaming (notEqualConst value)
 
 let notEqualWithImage (image: Image) : Pipe<Slice<'T>, Slice<'T>> =
-    printfn "[notEqualWithImage]"
     map "NotEqualImage" Streaming (notEqualImage image)
 
 let less (value: float) : Pipe<Slice<'T>, Slice<'T>> =
-    printfn "[less]"
     map "Less" Streaming (lessConst value)
 
 let lessWithImage (image: Image) : Pipe<Slice<'T>, Slice<'T>> =
-    printfn "[lessWithImage]"
     map "LessImage" Streaming (lessImage image)
 
 let lessEqual (value: float) : Pipe<Slice<'T>, Slice<'T>> =
-    printfn "[lessEqual]"
     map "LessEqual" Streaming (lessEqualConst value)
 
 let lessEqualWithImage (image: Image) : Pipe<Slice<'T>, Slice<'T>> =
-    printfn "[lessEqualWithImage]"
     map "LessEqualImage" Streaming (lessEqualImage image)
 
 let bitwiseAnd (value: int) : Pipe<Slice<'T>, Slice<'T>> =
-    printfn "[bitwiseAnd]"
     map "BitwiseAnd" Streaming (bitwiseAndConst value)
 
 let bitwiseAndWithImage (image: Image) : Pipe<Slice<'T>, Slice<'T>> =
-    printfn "[bitwiseAndWithImage]"
     map "BitwiseAndImage" Streaming (bitwiseAndImage image)
 
 let bitwiseOr (value: int) : Pipe<Slice<'T>, Slice<'T>> =
-    printfn "[bitwiseOr]"
     map "BitwiseOr" Streaming (bitwiseOrConst value)
 
 let bitwiseOrWithImage (image: Image) : Pipe<Slice<'T>, Slice<'T>> =
-    printfn "[bitwiseOrWithImage]"
     map "BitwiseOrImage" Streaming (bitwiseOrImage image)
 
 let bitwiseXor (value: int) : Pipe<Slice<'T>, Slice<'T>> =
-    printfn "[bitwiseXor]"
     map "BitwiseXor" Streaming (bitwiseXorConst value)
 
 let bitwiseXorWithImage (image: Image) : Pipe<Slice<'T>, Slice<'T>> =
-    printfn "[bitwiseXorWithImage]"
     map "BitwiseXorImage" Streaming (bitwiseXorImage image)
 
 let bitwiseNot (maximum: int) : Pipe<Slice<'T>, Slice<'T>> =
-    printfn "[bitwiseNot]"
     map "BitwiseNot" Streaming (bitwiseNot maximum)
 
 let bitwiseLeftShift (shiftBits: int) : Pipe<Slice<'T>, Slice<'T>> =
-    printfn "[bitwiseLeftShift]"
     map "BitwiseLeftShift" Streaming (bitwiseLeftShift shiftBits)
 
 let bitwiseRightShift (shiftBits: int) : Pipe<Slice<'T>, Slice<'T>> =
-    printfn "[bitwiseRightShift]"
     map "BitwiseRightShift" Streaming (bitwiseRightShift shiftBits)
 *)
 let absProcess<'T when 'T: equality> : Pipe<Slice<'T>, Slice<'T>> =
-    printfn "[abs]"
     map "Abs" Streaming absSlice<'T>
 
 let sqrtProcess<'T when 'T: equality> : Pipe<Slice<'T>, Slice<'T>> =
-    printfn "[sqrt]"
     map "Sqrt" Streaming sqrtSlice<'T>
 
 let logProcess<'T when 'T: equality> : Pipe<Slice<'T>, Slice<'T>> =
-    printfn "[log]"
     map "Log" Streaming logSlice<'T>
 
 let expProcess<'T when 'T: equality> : Pipe<Slice<'T>, Slice<'T>> =
-    printfn "[exp]"
     map "Exp" Streaming expSlice<'T>
 
 let histogram<'T when 'T: comparison> : Pipe<Slice<'T>, Map<'T, uint64>> =
-    printfn "[histogram]"
     let histogramReducer (slices: AsyncSeq<Slice<'T>>) =
         slices
         |> AsyncSeq.map Slice.histogram
@@ -367,25 +346,20 @@ let histogram<'T when 'T: comparison> : Pipe<Slice<'T>, Map<'T, uint64>> =
     reduce "Histogram" StreamingConstant histogramReducer
 
 let map2pairs<'T, 'S when 'T: comparison> : Pipe<Map<'T, 'S>,('T * 'S) list> =
-    printfn "[map2pairs]"
     map "map2pairs" Streaming Slice.map2pairs
 
 let inline pairs2floats<^T, ^S when ^T : (static member op_Explicit : ^T -> float)
                                  and ^S : (static member op_Explicit : ^S -> float)> : Pipe<('T * 'S) list,(float * float) list> =
-    printfn "[pairs2floats]"
     map "pairs2floats" Streaming Slice.pairs2floats
 
 let inline pairs2int<^T, ^S when ^T : (static member op_Explicit : ^T -> int)
                                  and ^S : (static member op_Explicit : ^S -> int)> : Pipe<('T * 'S) list,(int * int) list> =
-    printfn "[pairs2int]"
     map "pairs2int" Streaming Slice.pairs2ints
 
 let addNormalNoise (mean: float) (stddev: float) : Pipe<Slice<'T> ,Slice<'T>> =
-    printfn "[addNormalNoise]"
     map "addNormalNoise" Streaming (addNormalNoise mean stddev)
 
 let threshold (lower: float) (upper: float) : Pipe<Slice<'T> ,Slice<'T>> =
-    printfn "[threshold]"
     map "Threshold" Streaming (threshold lower upper)
 
 // Chained type definitions do expose the originals
@@ -396,11 +370,9 @@ let valid = ImageFunctions.Valid
 let same = ImageFunctions.Same
 
 let convolve (kern: Slice<'T>) (boundaryCondition: BoundaryCondition option) (windowSize: uint option) (stride: uint option): Pipe<Slice<'T> ,Slice<'T>> =
-    printfn "[conv/convolve]"
     let ksz = kern |> GetDepth |>  max 1u
     let dpth = Option.defaultValue ksz windowSize |> max ksz
     let strd = Option.defaultValue (1u+dpth-ksz) stride |> max 1u
-    printfn $"convolve: {ksz} {dpth} {strd}"
     mapWindowed "discreteGaussian" dpth strd (stack >> convolve (Some valid) boundaryCondition kern >> unstack)
 
 let conv (kern: Slice<'T>): Pipe<Slice<'T> ,Slice<'T>> =
@@ -423,7 +395,6 @@ let convolveStreams
     |> Helpers.bindPipe
 
 let discreteGaussian (sigma: float) (kernelSize: uint option) (boundaryCondition: BoundaryCondition option) (windowSize: uint option) (stride: uint option): Pipe<Slice<'T> ,Slice<'T>> =
-    printfn "[convGauss/discreteGaussian]"
     let ksz = Option.defaultValue (1u + 2u * uint (0.5 + sigma)) kernelSize
     let dpth = Option.defaultValue ksz windowSize |> max ksz
     let minStride = 1u
@@ -439,7 +410,6 @@ let skipFirstLast (n: int) (lst: 'a list) : 'a list =
     else lst |> List.skip n |> List.take m 
 
 let private binaryMathMorph (name: string) f (radius: uint) (windowSize: uint option) (stride: uint option) : Pipe<Slice<uint8> ,Slice<uint8>> =
-    printfn $"[{name}]"
     let ksz = 1u+2u*radius
     let dpth = Option.defaultValue ksz windowSize |> max ksz
     let strd = Option.defaultValue (1u+dpth-ksz) stride |> max 1u
@@ -458,13 +428,11 @@ let binaryClosing (radius: uint) (windowSize: uint option) (stride: uint option)
     binaryMathMorph "binaryClosing" binaryClosing radius windowSize stride
 
 let piecewiseConnectedComponents (windowSize: uint option) : Pipe<Slice<uint8> ,Slice<uint64>> =
-    printfn "[connectedComponents]"
     let dpth = Option.defaultValue 1u windowSize |> max 1u
     mapWindowed "connectedComponents" dpth dpth (stack >> connectedComponents >> unstack)
 
 type ImageStats = Slice.ImageStats
 let computeStats<'T when 'T : equality> : Pipe<Slice<'T>, ImageStats> =
-    printfn "[computeStats]"
     let computeStatsReducer (slices: AsyncSeq<Slice<'T>>) =
         let zeroStats: ImageStats = { 
             NumPixels = 0u
@@ -494,6 +462,7 @@ let liftUnaryOp name (f: Slice<'T> -> Slice<'T>) : Operation<Slice<'T>,Slice<'T>
         } 
     }
 
+(*
 let liftImageScalarOpUInt8 (name : string) (scalar : uint8) (core : Slice<uint8> -> uint8 -> Slice<uint8>) : Operation<Slice<uint8>,Slice<uint8>> =
     liftUnaryOp name (fun s -> core s scalar)
 let liftImageScalarOpUInt16 (name : string) (scalar : uint16) (core : Slice<uint16> -> uint16 -> Slice<uint16>) : Operation<Slice<uint16>,Slice<uint16>> =
@@ -535,7 +504,7 @@ let liftScalarImageOpFloat32 (name : string) (scalar : float32) (core : float32 
     liftUnaryOp name (fun s -> core s scalar)
 let liftScalarImageOpFloat (name : string) (scalar : float) (core : float -> Slice<float> -> Slice<float>) : Operation<Slice<float>,Slice<float>> =
     liftUnaryOp name (fun s -> core s scalar)
-
+*)
 
 let liftWindowedOp (name: string) (window: uint) (stride: uint) (f: Slice<'S> -> Slice<'T>) : Operation<Slice<'S>, Slice<'T>> =
     {
@@ -780,7 +749,7 @@ let inline subFromScalarIntOp (name:string) (scalar:int) =
 let inline subFromScalarFloatOp (name:string) (scalar:float) =
     liftUnaryOp name (fun img -> subFloat img scalar |> fun s -> s )
 *)
-
+(*
 let addUInt8Op   name scalar = liftImageScalarOpUInt8    name scalar Slice.sliceAddScalar
 let addInt8Op    name scalar = liftImageScalarOpInt8     name scalar Slice.sliceAddScalar
 let addUInt16Op  name scalar = liftImageScalarOpUInt16   name scalar Slice.sliceAddScalar
@@ -824,7 +793,7 @@ let divUInt64Op  name scalar = liftImageScalarOpUInt64   name scalar Slice.slice
 let divInt64Op   name scalar = liftImageScalarOpInt64    name scalar Slice.sliceDivScalar
 let divFloat32Op name scalar = liftImageScalarOpFloat32  name scalar Slice.sliceDivScalar
 let divFloatOp   name scalar = liftImageScalarOpFloat    name scalar Slice.sliceDivScalar
-
+*)
 // ---------------------------------------------------------------------------
 // NOTE on image ⊕ image variants
 // ---------------------------------------------------------------------------

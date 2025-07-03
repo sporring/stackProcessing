@@ -77,7 +77,6 @@ let read<'T when 'T : equality> (inputDir : string) (suffix : string) transform 
     readSlices<'T> inputDir suffix |> transform
     
 let readSliceN<'T when 'T: equality> (idx: uint) (inputDir: string) (suffix: string) : Pipe<unit, Slice<'T>> =
-    printfn "[readSliceN]"
     let fileNames = Directory.GetFiles(inputDir, "*"+suffix) |> Array.sort
     if fileNames.Length <= (int idx) then
         failwith "[readSliceN] Index out of bounds"
@@ -93,7 +92,6 @@ let readSliceN<'T when 'T: equality> (idx: uint) (inputDir: string) (suffix: str
     }
 
 let readRandomSlices<'T when 'T: equality> (count: uint) (inputDir: string) (suffix: string) :Pipe<unit, Slice<'T>> =
-    printfn "[readRandomSlices]"
     let fileNames = Directory.GetFiles(inputDir, "*"+suffix) |> Array.randomChoices (int count)
     {
         Name = $"[readRandomSlices {inputDir}]"
@@ -110,7 +108,6 @@ let readRandom<'T when 'T : equality> (count: uint) (inputDir : string) (suffix 
 
 /// Source parts
 let createPipe<'T when 'T: equality> (width: uint) (height: uint) (depth: uint) : Pipe<unit, Slice<'T>> =
-    printfn "[create]"
     {
         Name = "[create]"
         Profile = Streaming
@@ -141,7 +138,6 @@ let axisSource axis size =
     liftImageSource "axis" img
 
 let gauss (sigma: float) (kernelSize: uint option) : Pipe<unit, Slice<float>> =
-    printfn "[gauss]"
     {
         Name = "[gauss]"
         Profile = Streaming
@@ -152,7 +148,6 @@ let gauss (sigma: float) (kernelSize: uint option) : Pipe<unit, Slice<float>> =
     }
 
 let finiteDiffFilter2D (direction: uint) (order: uint) : Pipe<unit, Slice<float>> =
-    printfn "[finiteDiffFilter2D]"
     {
         Name = "[finiteDiffFilter2D]"
         Profile = Streaming
@@ -163,7 +158,6 @@ let finiteDiffFilter2D (direction: uint) (order: uint) : Pipe<unit, Slice<float>
     }
 
 let finiteDiffFilter3D (direction: uint) (order: uint) : Pipe<unit, Slice<float>> =
-    printfn "[finiteDiffFilter3D]"
     {
         Name = "[finiteDiffFilter3D]"
         Profile = Streaming
@@ -177,34 +171,29 @@ let finiteDiffFilter3D (direction: uint) (order: uint) : Pipe<unit, Slice<float>
 let print<'T> : Pipe<'T, unit> =
     consumeWith "print" Streaming (fun stream ->
         async {
-            printfn "[print]"
             do! printAsync stream 
         })
 
 let plot (plt: float list -> float list -> unit) : Pipe<(float*float) list, unit> =
     consumeWith "plot" Streaming (fun stream ->
         async {
-            printfn "[plot]"
             do! (plotListAsync plt) stream 
         })
 
 let show (plt: Slice.Slice<'a> -> unit) : Pipe<Slice<'a>, unit> =
     consumeWith "show" Streaming (fun stream ->
         async {
-            printfn "[show]"
             do! (showSliceAsync plt) stream
         })
 
-let writeSlices (path: string) (suffix: string) : Pipe<Slice<'a>, unit> =
+let write (path: string) (suffix: string) : Pipe<Slice<'a>, unit> =
     consumeWith "write" Streaming (fun stream ->
         async {
-            printfn "[write]"
             do! (writeSlicesAsync path suffix) stream
         })
 
 let ignore<'T> : Pipe<'T, unit> =
     consumeWith "ignore" Streaming (fun stream ->
         async {
-            printfn "[ignore]"
             do! stream |> AsyncSeq.iterAsync (fun _ -> async.Return())
         })
