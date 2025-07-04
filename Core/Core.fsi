@@ -3,11 +3,8 @@ module Core
 /// The memory usage strategies during image processing.
 type MemoryProfile =
     | Constant
-    | StreamingConstant
     | Streaming
-    | SlidingConstant of uint
     | Sliding of uint
-    | FullConstant
     | Full
     member EstimateUsage: width: uint -> height: uint -> depth: uint -> uint64
     member

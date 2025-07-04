@@ -65,7 +65,7 @@ let internal mapWindowed (label: string) (depth: uint) (stride: uint) (f: 'S lis
         Name = label; 
         Profile = Sliding depth
         Apply = fun input ->
-            printfn "[Runtine analysis: Windowed analysis size]"
+            printfn $"[Runtine analysis: Windowed analysis size {depth} {stride}]"
             AsyncSeqExtensions.windowed depth stride input
                 |> AsyncSeq.collect (f  >> AsyncSeq.ofSeq)
     }
@@ -84,12 +84,8 @@ let internal liftWindowedTrimOp (name: string) (window: uint) (stride: uint) (tr
         Name = name
         Transition = transition (Sliding window) Streaming
         Pipe =
-            mapWindowed name window stride (fun windowSlices ->
-                windowSlices
-                |> stack
-                |> f
-                |> unstack
-                |> skipFirstLast (int trim))
+            mapWindowed name window stride (
+                stack >> f >> unstack >> (skipFirstLast (int trim)))
     }
 
 /// quick constructor for Streaming→Streaming unary ops
@@ -409,8 +405,8 @@ let computeStatsOp<'T when 'T : equality> name
         |> AsyncSeqExtensions.fold Slice.addComputeStats zeroStats
     {
         Name = name
-        Transition = transition StreamingConstant Constant
-        Pipe = reduce name StreamingConstant computeStatsReducer
+        Transition = transition Streaming Constant
+        Pipe = reduce name Streaming computeStatsReducer
     }
 
 /// Convolution like operators
@@ -464,8 +460,7 @@ let convolveOp (name: string) (kernel: Slice<'T>) (bc: BoundaryCondition option)
     liftWindowedOp name win stride (fun slices -> Slice.convolve (Some valid) bc slices kernel)
 
 let private makeMorphOp (name:string) (radius:uint) (winSz: uint option) (core: uint -> Slice<'T> -> Slice<'T>) : Operation<Slice<'T>,Slice<'T>> when 'T: equality =
-    let winFromRadius (r:uint) = 2u * r + 1u
-    let ksz   = winFromRadius radius
+    let ksz   = 2u * radius + 1u
     let win = Option.defaultValue ksz winSz |> min ksz
     let stride = win - ksz + 1u
     liftWindowedTrimOp name win stride radius (fun slices -> core radius slices)
@@ -520,8 +515,8 @@ let signedDistanceMapOp name : Operation<Slice<uint8>, Slice<float>> =
     }
 
 let watershedOp name a = liftFullParamOp name Slice.watershed a
-let thresholdOp name a b = liftFullParam2Op name Slice.threshold a b
-let addNormalNoiseOp name a b = liftFullParam2Op name Slice.addNormalNoise a b
+let thresholdOp name a b = liftUnaryOp name (Slice.threshold a b)
+let addNormalNoiseOp name a b = liftUnaryOp name (Slice.addNormalNoise a b)
 let relabelComponentsOp name a = liftFullParamOp name Slice.relabelComponents a
 
 let constantPad2DOp<'T when 'T : equality> (name: string) (padLower : uint list) (padUpper : uint list) (c : double) =

@@ -164,10 +164,10 @@ let zeroFluxNeumannPad = Processing.zeroFluxNeumannPad
 let valid = Processing.valid
 let same = Processing.same
 
-let discreteGaussian sigma bc winSz =  asPipe (discreteGaussianOp "discreteGaussian" sigma bc winSz)
-let convGauss sigma bc = asPipe (discreteGaussianOp "convGauss" sigma bc None)
-let convolve kernel bc winSz =  asPipe (convolveOp "convolve" kernel bc winSz)
-let conv kernel = asPipe (convolveOp "conv" kernel None None)
+let discreteGaussian sigma bc winSz = asPipe (discreteGaussianOp "discreteGaussian" sigma bc winSz)
+let convGauss sigma bc       = asPipe (discreteGaussianOp "convGauss" sigma bc None)
+let convolve kernel bc winSz = asPipe (convolveOp "convolve" kernel bc winSz)
+let conv kernel              = asPipe (convolveOp "conv" kernel None None)
 // these only works on uint8
 let erode            r       = asPipe (binaryErodeOp   "binaryErode"   r None)
 let dilate           r       = asPipe (binaryDilateOp  "binaryDilate"  r None)

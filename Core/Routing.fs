@@ -23,10 +23,7 @@ module internal Builder =
         if needed <= avail then p                              // fits as is
         else
             match p.Profile with
-            | FullConstant -> { p with Profile = StreamingConstant }
             | Full         -> { p with Profile = Streaming }
-            | SlidingConstant w when w > 1u ->
-                { p with Profile = SlidingConstant (w/2u) }
             | Sliding w when w > 1u ->
                 { p with Profile = Sliding (w/2u) }
             | _ ->
@@ -211,10 +208,7 @@ let zipWith (f: 'A -> 'B -> 'C) (p1: Pipe<'In, 'A>) (p2: Pipe<'In, 'B>) : Pipe<'
             | Full, Streaming | Streaming, Full ->
                 failwithf "[zipWith] Mixing Full and Streaming is not supported: %s, %s"
                           (p1.Profile.ToString()) (p2.Profile.ToString())
-            | Constant, _ 
-            | StreamingConstant, _
-            | SlidingConstant _, _
-            | FullConstant, _ ->
+            | Constant, _ ->
                 printfn "[Runtine analysis: zipWith sequential]"
                 asyncSeq {
                     let! constant =
@@ -225,10 +219,7 @@ let zipWith (f: 'A -> 'B -> 'C) (p1: Pipe<'In, 'A>) (p2: Pipe<'In, 'B>) : Pipe<'
                             | None -> failwithf "[zipWith] Constant pipe '%s' returned no result." p1.Name)
                     yield! b |> AsyncSeq.map (fun b -> f constant b)
                 }
-            | _, Constant
-            | _, StreamingConstant
-            | _, SlidingConstant _
-            | _, FullConstant ->
+            | _, Constant ->
                 printfn "[Runtine analysis: zipWith sequential]"
                 asyncSeq {
                     let! constant =

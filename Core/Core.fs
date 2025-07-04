@@ -7,11 +7,8 @@ open Slice
 /// The memory usage strategies during image processing.
 type MemoryProfile =
     | Constant // Slice by slice independently
-    | StreamingConstant // We will probably need to transition to a TransitionProfile (MemoryProfile*MemoryProfile) at some point....
     | Streaming // Slice by slice independently
-    | SlidingConstant of uint // Sliding window of slices of depth
     | Sliding of uint // Sliding window of slices of depth
-    | FullConstant // All slices of depth
     | Full // All slices of depth
 
     member this.EstimateUsage (width: uint) (height: uint) (depth: uint) : uint64 =
@@ -19,11 +16,8 @@ type MemoryProfile =
         let sliceBytes = (uint64 width) * (uint64 height) * pixelSize
         match this with
             | Constant -> 0uL
-            | Streaming 
-            | StreamingConstant -> sliceBytes
-            | SlidingConstant windowSize
+            | Streaming -> sliceBytes
             | Sliding windowSize -> sliceBytes * uint64 windowSize
-            | FullConstant -> sliceBytes
             | Full -> sliceBytes * uint64 depth
 
     member this.RequiresBuffering (availableMemory: uint64) (width: uint) (height: uint) (depth: uint) : bool =
@@ -38,12 +32,6 @@ type MemoryProfile =
         | _, Sliding sz -> Sliding sz
         | Streaming, _
         | _, Streaming -> Streaming
-        | StreamingConstant, _
-        | _, StreamingConstant
-        | SlidingConstant _, _
-        | _, SlidingConstant _
-        | FullConstant, _
-        | _, FullConstant
         | Constant, Constant -> Constant
 
 /// A configurable image processing step that operates on image slices.
@@ -137,12 +125,12 @@ let (>=>!) (op1: Operation<'A,'B>) (op2: Operation<'B,'C>) : Operation<'A,'C> =
 
 let internal isScalar profile =
     match profile with
-    | Constant | StreamingConstant -> true
+    | Constant -> true
     | _ -> false
 
 let internal requiresFullInput profile =
     match profile with
-    | Full | StreamingConstant -> true
+    | Full -> true
     | _ -> false
 
 let internal lift
