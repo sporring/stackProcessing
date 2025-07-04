@@ -84,7 +84,7 @@ let sinkLst (processors: Pipe<unit, unit> list) : unit =
 let sink (p: Pipe<unit, unit>) : unit = 
     sinkLst [p]
 
-let readSlices<'T when 'T: equality> (inputDir: string) (suffix: string) : Pipe<unit, Slice<'T>> =
+let internal readSlices<'T when 'T: equality> (inputDir: string) (suffix: string) : Pipe<unit, Slice<'T>> =
     printfn "[readSlices]"
     let filenames = Directory.GetFiles(inputDir, "*"+suffix) |> Array.sort
     let depth = filenames.Length
@@ -105,7 +105,7 @@ let read<'T when 'T : equality> (inputDir : string) (suffix : string) transform 
     printfn "[read]"
     readSlices<'T> inputDir suffix |> transform
     
-let readSliceN<'T when 'T: equality> (idx: uint) (inputDir: string) (suffix: string) : Pipe<unit, Slice<'T>> =
+let readSliceN<'T when 'T: equality> (idx: uint) (inputDir: string) (suffix: string) transform : Pipe<unit, Slice<'T>> =
     printfn "[readSliceN]"
     let fileNames = Directory.GetFiles(inputDir, "*"+suffix) |> Array.sort
     if fileNames.Length <= (int idx) then
@@ -119,9 +119,10 @@ let readSliceN<'T when 'T: equality> (idx: uint) (inputDir: string) (suffix: str
             AsyncSeq.init 1 (fun i -> 
                 printfn "[readSliceN] Reading slice %d to %s" (uint idx) fileName
                 Slice.readSlice<'T> (uint idx) fileName)
-    }
+    } 
+    |> transform
 
-let readRandomSlices<'T when 'T: equality> (count: uint) (inputDir: string) (suffix: string) :Pipe<unit, Slice<'T>> =
+let internal readRandomSlices<'T when 'T: equality> (count: uint) (inputDir: string) (suffix: string) :Pipe<unit, Slice<'T>> =
     let fileNames = Directory.GetFiles(inputDir, "*"+suffix) |> Array.randomChoices (int count)
     {
         Name = $"[readRandomSlices {inputDir}]"
@@ -160,43 +161,21 @@ let liftImageSource (name: string) (img: Slice<'T>) : Pipe<unit, Slice<'T>> =
         Apply = fun _ -> img |> unstack |> AsyncSeq.ofSeq
     }
 
-let gaussSource sigma kernelSize =
+let gaussSource sigma kernelSize transform =
     let img = Slice.gauss 3u sigma kernelSize
-    liftImageSource "gauss" img
+    liftImageSource "gauss" img |> transform
 
-let axisSource axis size =
+let axisSource axis size transform =
     let img = Slice.generateCoordinateAxis axis size
-    liftImageSource "axis" img
+    liftImageSource "axis" img |> transform
 
-let gauss (sigma: float) (kernelSize: uint option) : Pipe<unit, Slice<float>> =
-    {
-        Name = "[gauss]"
-        Profile = Streaming
-        Apply = fun _ ->
-            let img = gauss 3u sigma kernelSize
-            let imgLst = img |> unstack
-            imgLst |> AsyncSeq.ofSeq
-    }
+let finiteDiffFilter2D (direction: uint) (order: uint) transform : Pipe<unit, Slice<float>> =
+        let img = finiteDiffFilter2D direction order
+        liftImageSource "finiteDiffFilter2D" img |> transform
 
-let finiteDiffFilter2D (direction: uint) (order: uint) : Pipe<unit, Slice<float>> =
-    {
-        Name = "[finiteDiffFilter2D]"
-        Profile = Streaming
-        Apply = fun _ ->
-            finiteDiffFilter2D direction order
-            |> unstack
-            |> AsyncSeq.ofSeq
-    }
-
-let finiteDiffFilter3D (direction: uint) (order: uint) : Pipe<unit, Slice<float>> =
-    {
-        Name = "[finiteDiffFilter3D]"
-        Profile = Streaming
-        Apply = fun _ ->
-            finiteDiffFilter3D direction order
-            |> unstack
-            |> AsyncSeq.ofSeq
-    }
+let finiteDiffFilter3D (direction: uint) (order: uint) transform : Pipe<unit, Slice<float>> =
+    let img = finiteDiffFilter3D direction order
+    liftImageSource "finiteDiffFilter3D" img |> transform
 
 /// Sink parts
 let print<'T> : Pipe<'T, unit> =
