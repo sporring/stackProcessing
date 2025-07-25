@@ -365,4 +365,5 @@ let getStackWidth (inputDir: string) (suffix: string): uint64 =
 
 let getStackHeight (inputDir: string) (suffix: string): uint64 =
     let fi = getStackInfo inputDir suffix
+    printfn "%A" fi
     fi.size[1]

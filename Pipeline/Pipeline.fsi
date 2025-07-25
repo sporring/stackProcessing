@@ -5,12 +5,19 @@ type Operation<'S,'T> = Core.Operation<'S,'T>
 type MemoryProfile = Core.MemoryProfile
 type MemoryTransition = Core.MemoryTransition
 type Slice<'S when 'S: equality> = Slice.Slice<'S>
+val sourceOp:
+  availableMemory: uint64 -> Core.Builder.Pipeline<unit,Slice<'T>>
+    when 'T: equality
 val source<'T> : (uint64 -> Core.Pipe<unit,'T> -> Core.Pipe<unit,'T>)
 val sourceLst<'T> :
   (uint64 -> Core.Pipe<unit,'T> list -> Core.Pipe<unit,'T> list)
+val sinkOp: pl: Core.Builder.Pipeline<unit,unit> -> unit
 val sink: (Core.Pipe<unit,unit> -> unit)
 val sinkLst: (Core.Pipe<unit,unit> list -> unit)
 val (>=>) : (Core.Pipe<'a,'b> -> Core.Pipe<'b,'c> -> Core.Pipe<'a,'c>)
+val (>>=>) :
+  (Core.Builder.Pipeline<'a,'b> ->
+     Core.Operation<'b,'c> -> Core.Builder.Pipeline<'a,'c>)
 val tee: (Core.Pipe<'a,'b> -> Core.Pipe<'a,'b> * Core.Pipe<'a,'b>)
 val zipWith:
   (('a -> 'b -> 'c) -> Core.Pipe<'d,'a> -> Core.Pipe<'d,'b> -> Core.Pipe<'d,'c>)
@@ -22,17 +29,19 @@ val create:
      uint ->
      (Core.Pipe<unit,Slice.Slice<'a>> -> Core.Pipe<unit,Slice.Slice<'a>>) ->
      Core.Pipe<unit,Slice.Slice<'a>>) when 'a: equality
-val read:
-  (string ->
-     string ->
-     (Core.Pipe<unit,Slice.Slice<'T>> -> Core.Pipe<unit,Slice.Slice<'T>>) ->
-     Core.Pipe<unit,Slice.Slice<'T>>) when 'T: equality
+val readOp:
+  inputDir: string ->
+    suffix: string ->
+    pl: Core.Builder.Pipeline<unit,Slice<'T>> ->
+    Core.Builder.Pipeline<unit,Slice.Slice<'T>> when 'T: equality
 val readRandom:
   (uint ->
      string ->
      string ->
      (Core.Pipe<unit,Slice.Slice<'T>> -> Core.Pipe<unit,Slice.Slice<'T>>) ->
      Core.Pipe<unit,Slice.Slice<'T>>) when 'T: equality
+val writeOp:
+  (string -> string -> Core.Operation<Slice.Slice<'a>,unit>) when 'a: equality
 val write:
   (string -> string -> Core.Pipe<Slice.Slice<'a>,unit>) when 'a: equality
 val print<'T> : Pipe<'T,unit>
@@ -145,6 +154,7 @@ val castFloatToInt: Core.Pipe<Slice.Slice<float>,Slice.Slice<int>>
 val castFloatToUIn64: Core.Pipe<Slice.Slice<float>,Slice.Slice<uint64>>
 val castFloatToInt64: Core.Pipe<Slice.Slice<float>,Slice.Slice<int64>>
 val castFloatToFloat32: Core.Pipe<Slice.Slice<float>,Slice.Slice<float32>>
+val castFloatToUInt8Op: Core.Operation<Slice.Slice<float>,Slice.Slice<uint8>>
 /// Basic arithmetic
 val add:
   (Slice.Slice<'a> -> Core.Pipe<Slice.Slice<'a>,Slice.Slice<'a>>)
@@ -259,6 +269,10 @@ val convolve:
 val conv:
   (Slice.Slice<'a> -> Core.Pipe<Slice.Slice<'a>,Slice.Slice<'a>>)
     when 'a: equality
+val convGaussOp:
+  (float ->
+     ImageFunctions.BoundaryCondition option ->
+     Core.Operation<Slice.Slice<float>,Slice.Slice<float>>)
 val erode: (uint -> Core.Pipe<Slice.Slice<uint8>,Slice.Slice<uint8>>)
 val dilate: (uint -> Core.Pipe<Slice.Slice<uint8>,Slice.Slice<uint8>>)
 val opening: (uint -> Core.Pipe<Slice.Slice<uint8>,Slice.Slice<uint8>>)

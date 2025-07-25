@@ -27,7 +27,6 @@ simpleITKClasses.txt~
 /StackPipeline/bin
 /StackPipeline/obj
 StackPipeline/lib/libSimpleITKCSharpNative.dylib
-/test
 /Image/bin
 /Image/obj
 *.dylib
@@ -48,3 +47,8 @@ StackPipeline/lib/libSimpleITKCSharpNative.dylib
 coverage/coverage.cobertura.xml
 Image.Tests/coverage.info
 /Image.Tests/coverage
+/test/bin
+/test/image
+/test/mask
+/test/obj
+/test/result

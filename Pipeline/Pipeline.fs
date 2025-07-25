@@ -25,19 +25,24 @@ type MemoryProfile = Core.MemoryProfile
 type MemoryTransition = Core.MemoryTransition
 type Slice<'S when 'S: equality> = Slice.Slice<'S>
 
+let sourceOp<'T when 'T: equality> (availableMemory: uint64) : Builder.Pipeline<unit,Slice<'T>> = Core.sourceOp<'T> availableMemory
 let source<'T> = SourceSink.source<'T>
 let sourceLst<'T> = SourceSink.sourceLst<'T>
+let sinkOp (pl: Builder.Pipeline<unit,unit>) : unit = Core.sinkOp pl
 let sink = SourceSink.sink
 let sinkLst = SourceSink.sinkLst
 let (>=>) = Core.composePipe
+let (>>=>) = Core.(>>=>)
 let tee = Routing.tee
 let zipWith = Routing.zipWith
 let cacheScalar = Routing.cacheScalar
 let tap = Routing.tap
 
 let create = SourceSink.create
-let read = SourceSink.read<'T>
+let readOp<'T when 'T : equality> (inputDir: string) (suffix: string) (pl: Core.Builder.Pipeline<unit, Slice<'T>>) =
+    SourceSink.readOp<'T> inputDir suffix pl
 let readRandom = SourceSink.readRandom<'T>
+let writeOp = SourceSink.writeOp
 let write = SourceSink.write
 let print<'T> : Pipe<'T, unit> = SourceSink.print
 let plot = SourceSink.plot
@@ -143,6 +148,8 @@ let castFloatToUIn64 = Ops.castFloatToUIn64
 let castFloatToInt64 = Ops.castFloatToInt64
 let castFloatToFloat32 = Ops.castFloatToFloat32
 
+let castFloatToUInt8Op = Ops.castFloatToUInt8Op
+
 /// Basic arithmetic
 let add = Ops.add
 let inline scalarAddSlice<^T when ^T: equality and ^T: (static member op_Explicit: ^T -> float)> (i: ^T) = Ops.scalarAddSlice i
@@ -211,6 +218,7 @@ let discreteGaussian = Ops.discreteGaussian
 let convGauss = Ops.convGauss
 let convolve =  Ops.convolve
 let conv = Ops.conv
+let convGaussOp = Ops.convGaussOp
 
 let erode = Ops.erode
 let dilate = Ops.dilate

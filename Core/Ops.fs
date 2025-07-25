@@ -100,6 +100,9 @@ let castFloatToUIn64 = asPipe (castFloatToUIn64Op "castFloatToUIn64")
 let castFloatToInt64 = asPipe (castFloatToInt64Op "castFloatToInt64")
 let castFloatToFloat32 = asPipe (castFloatToFloat32Op "castFloatToFloat32")
 
+let castFloatToUInt8Op = Processing.castFloatToUInt8Op "castFloatToUInt8"
+
+
 /// Basic arithmetic
 let add slice = asPipe (addOp "add" slice)
 let inline scalarAddSlice<^T when ^T: equality and ^T: (static member op_Explicit: ^T -> float)> (i: ^T) = asPipe (scalarAddSliceOp "scalarAddSlice" i)
@@ -168,6 +171,8 @@ let discreteGaussian sigma bc winSz = asPipe (discreteGaussianOp "discreteGaussi
 let convGauss sigma bc       = asPipe (discreteGaussianOp "convGauss" sigma bc None)
 let convolve kernel bc winSz = asPipe (convolveOp "convolve" kernel bc winSz)
 let conv kernel              = asPipe (convolveOp "conv" kernel None None)
+let convGaussOp sigma bc     = discreteGaussianOp "convGauss" sigma bc None
+
 // these only works on uint8
 let erode            r       = asPipe (binaryErodeOp   "binaryErode"   r None)
 let dilate           r       = asPipe (binaryDilateOp  "binaryDilate"  r None)

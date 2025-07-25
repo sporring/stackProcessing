@@ -208,9 +208,6 @@ let composePipe (p1: Pipe<'S,'T>) (p2: Pipe<'T,'U>) : Pipe<'S,'U> =
         Apply = fun input -> input |> p1.Apply |> p2.Apply
     }
 
-// Pipe composition
-let (>=>) p1 p2 = composePipe p1 p2
-
 module Helpers =
     // singletonPipe and bindPip was part of an experiment, will most likely be deleted
 
@@ -232,7 +229,6 @@ module Helpers =
                 |> AsyncSeq.collect (fun innerPipe ->
                     innerPipe.Apply src)                // forward *same* src
         }
-
     /// Operator and such
     /// pull the runnable pipe out of an operation
     let inline asPipe (op : Operation<_,_>) = op.Pipe
@@ -241,3 +237,121 @@ module Helpers =
         if op1.Transition.To = op2.Transition.From then true
         else failwithf "Memory transition mismatch: %A → %A" op1.Name op2.Name
 
+////////////////////////////////////////////////////////////
+module Builder =
+
+    // ───── 1. the state monad ──────────────────────────────────────────────
+    type MemFlow<'S,'T> =
+         uint64 -> SliceShape option -> Operation<'S,'T> * uint64 * SliceShape option
+
+    // How many bytes does this pipe claim for one full slice?
+    let private memNeed (shape: uint list) (p : Pipe<_,_>) =
+        p.Profile.EstimateUsage shape[0] shape[1] shape[2]
+
+    /// Try to shrink a too‑hungry pipe to a cheaper profile.
+    /// *You* control the downgrade policy here.
+    let private shrinkProfile avail shape (p : Pipe<'S,'T>) =
+        let needed = memNeed shape p
+        if needed <= avail then p                              // fits as is
+        else
+            match p.Profile with
+            | Full         -> { p with Profile = Streaming }
+            | Sliding w when w > 1u ->
+                { p with Profile = Sliding (w/2u) }
+            | _ ->
+                failwith
+                    $"Stage “{p.Name}” needs {needed}s B but only {avail}s B are left."
+
+    let returnM (op : Operation<'S,'T>) : MemFlow<'S,'T> =
+        fun bytes shapeOpt ->
+            match shapeOpt with
+            | None      -> op, bytes, shapeOpt       // can’t check memory yet
+            | Some sh   ->
+                let p'     = shrinkProfile bytes sh op.Pipe
+                let need   = memNeed sh p'
+                { op with Pipe = p' }, bytes - need, shapeOpt
+
+    let composeOp (op1 : Operation<'S,'T>) (op2 : Operation<'T,'U>) : Operation<'S,'U> =
+        {
+            Name       = $"{op2.Name} ∘ {op1.Name}"
+            Transition = transition op1.Transition.From op2.Transition.To
+            Pipe       = composePipe (Helpers.asPipe op1) (Helpers.asPipe op2)
+        }
+
+    let bindM m k =
+        fun bytes shapeOpt ->
+            let op1, bytes', shapeOpt' = m bytes shapeOpt
+            let m2 = k op1
+            let op2, bytes'', shapeOpt'' = m2 bytes' shapeOpt'
+
+            (* 2025/07/25 Is this step necessary? The processing is taking care of the interfacing...
+            // validate memory transition, if shape is known
+            shapeOpt
+            |> Option.iter (fun shape ->
+                if op1.Transition.To <> op2.Transition.From || not (op2.Transition.Check shape) then 
+                    failwith $"Invalid memory transition: {op1} → {op2}")
+            *)
+            composeOp op1 op2, bytes'', shapeOpt''
+
+    // ───── 2. the builder wrapper ──────────────────────────────────────────
+    type Pipeline<'S,'T> =
+        { flow  : MemFlow<'S,'T>
+          mem   : uint64
+          shape : SliceShape option }
+
+    // source: only memory budget, shape = None
+    let source<'T> (availableMemory: uint64) : Pipeline<unit,'T> =
+        { flow  = fun _ _ -> failwith "pipeline not started yet"
+          mem   = availableMemory
+          shape = None }
+
+    // attach the first stage that *discovers* the shape
+    let attachFirst ((op, probeShape) : Operation<unit,'T> * (unit -> SliceShape))
+                    (pl : Pipeline<unit,'T>) =
+        let shape = probeShape ()
+        { flow  = returnM op
+          mem   = pl.mem
+          shape = Some shape }
+
+    // later compositions Pipeline composition
+    let (>>=>) (pl: Pipeline<'a,'b>) (next: Operation<'b,'c>) : Pipeline<'a,'c> =
+        {
+            mem = pl.mem
+            shape = pl.shape
+            flow = bindM pl.flow (fun _op -> returnM next)
+        }
+
+    // sink
+    let sink (pl: Pipeline<unit, unit>) : unit =
+        match pl.shape with
+        | None -> failwith "No stage provided slice dimensions."
+
+        | Some sh ->
+            let op, rest, _ = pl.flow pl.mem pl.shape
+            printfn $"Pipeline built - {rest} B still free."
+
+            let pipe = Helpers.asPipe op
+            // Dummy source: feed a single unit input (can change later)
+            ()
+            |> AsyncSeq.singleton
+            |> pipe.Apply
+            |> AsyncSeq.iterAsync (fun () -> async.Return())
+            |> Async.RunSynchronously
+
+    let sinkList (plList: Pipeline<unit, unit> list) =
+        if plList.Length > 1 then
+            printfn "[Compile time analysis: sinkList parallel]"
+
+        plList
+        |> List.map sink
+        |> ignore    
+/////////////////////////////////
+
+let sourceOp<'T when 'T: equality> (availableMemory: uint64) : Builder.Pipeline<unit,Slice<'T>> = Builder.source availableMemory
+
+let sinkOp (pl: Builder.Pipeline<unit,unit>) : unit = Builder.sink pl
+
+// Pipe composition
+let (>=>) p1 p2 = composePipe p1 p2
+
+let (>>=>) = Builder.(>>=>)

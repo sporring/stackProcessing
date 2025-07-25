@@ -212,3 +212,38 @@ let ignore<'T> : Pipe<'T, unit> =
         async {
             do! stream |> AsyncSeq.iterAsync (fun _ -> async.Return())
         })
+
+let readOp<'T when 'T : equality>
+    (inputDir : string)
+    (suffix : string)
+    (pl : Builder.Pipeline<unit, Slice<'T>>) : Builder.Pipeline<unit, Slice<'T>> =
+
+    // Add shape from disk, and let this Operation carry a shape callback — but that's out of scope for now.
+    let (width,height,depth) = Slice.getStackSize inputDir suffix
+    let shape = Some [width;height;depth]
+
+    let op : Operation<unit, Slice<'T>> =
+        {
+            Name = $"read:{inputDir}"
+            Transition = transition Constant Streaming
+            Pipe = readSlices<'T> inputDir suffix
+        }
+
+    {
+        shape = shape
+        mem = pl.mem
+        flow = Builder.returnM op
+    }
+
+
+
+let writeOp (outputDir: string) (suffix: string) : Operation<Slice<'T>, unit> =
+    {
+        Name = $"write:{outputDir}"
+        Transition = transition Streaming Constant
+        Pipe =
+            consumeWith "write" Streaming (fun stream ->
+                async {
+                    do! writeSlicesAsync outputDir suffix stream
+                })
+    }

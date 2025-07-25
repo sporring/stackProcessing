@@ -92,7 +92,6 @@ type PipelineBuilder =
 val pipeline: availableMemory: uint64 -> PipelineBuilder
 /// Combine two <c>Pipe</c> instances into one by composing their memory profiles and transformation functions.
 val composePipe: p1: Pipe<'S,'T> -> p2: Pipe<'T,'U> -> Pipe<'S,'U>
-val (>=>) : p1: Pipe<'a,'b> -> p2: Pipe<'b,'c> -> Pipe<'a,'c>
 module Helpers =
     /// Pipeline helper functions
     val singletonPipe:
@@ -102,44 +101,48 @@ module Helpers =
     /// pull the runnable pipe out of an operation
     val inline asPipe: op: Operation<'a,'b> -> Pipe<'a,'b>
     val validate: op1: Operation<'a,'b> -> op2: Operation<'c,'d> -> bool
-module Routing
-module internal Builder =
+module Builder =
     type MemFlow<'S,'T> =
         uint64 ->
-          Core.SliceShape option ->
-          Core.Operation<'S,'T> * uint64 * Core.SliceShape option
-    val private memNeed: shape: uint list -> p: Core.Pipe<'a,'b> -> uint64
+          SliceShape option -> Operation<'S,'T> * uint64 * SliceShape option
+    val private memNeed: shape: uint list -> p: Pipe<'a,'b> -> uint64
     /// Try to shrink a too‑hungry pipe to a cheaper profile.
     /// *You* control the downgrade policy here.
     val private shrinkProfile:
-      avail: uint64 ->
-        shape: uint list -> p: Core.Pipe<'S,'T> -> Core.Pipe<'S,'T>
+      avail: uint64 -> shape: uint list -> p: Pipe<'S,'T> -> Pipe<'S,'T>
     val returnM:
-      op: Core.Operation<'S,'T> ->
+      op: Operation<'S,'T> ->
         bytes: uint64 ->
-        shapeOpt: Core.SliceShape option ->
-        Core.Operation<'S,'T> * uint64 * Core.SliceShape option
+        shapeOpt: SliceShape option ->
+        Operation<'S,'T> * uint64 * SliceShape option
     val composeOp:
-      op1: Core.Operation<'S,'T> ->
-        op2: Core.Operation<'T,'U> -> Core.Operation<'S,'U>
+      op1: Operation<'S,'T> -> op2: Operation<'T,'U> -> Operation<'S,'U>
     val bindM:
-      m: ('a -> Core.SliceShape option -> Core.Operation<'b,'c> * 'd * 'e) ->
-        k: (Core.Operation<'b,'c> -> 'd -> 'e -> Core.Operation<'c,'f> * 'g * 'h) ->
-        bytes: 'a ->
-        shapeOpt: Core.SliceShape option -> Core.Operation<'b,'f> * 'g * 'h
+      m: ('a -> 'b -> Operation<'c,'d> * 'e * 'f) ->
+        k: (Operation<'c,'d> -> 'e -> 'f -> Operation<'d,'g> * 'h * 'i) ->
+        bytes: 'a -> shapeOpt: 'b -> Operation<'c,'g> * 'h * 'i
     type Pipeline<'S,'T> =
         {
           flow: MemFlow<'S,'T>
           mem: uint64
-          shape: Core.SliceShape option
+          shape: SliceShape option
         }
-    val source: memBudget: uint64 -> Pipeline<'a,'b>
+    val source: availableMemory: uint64 -> Pipeline<unit,'T>
     val attachFirst:
-      Core.Operation<unit,'T> * (unit -> Core.SliceShape) ->
+      Operation<unit,'T> * (unit -> SliceShape) ->
         pl: Pipeline<unit,'T> -> Pipeline<unit,'T>
     val (>>=>) :
-      pl: Pipeline<'a,'b> -> next: Core.Operation<'b,'b> -> Pipeline<'a,'b>
-    val sink: pl: Pipeline<'S,'T> -> Core.Pipe<'S,'T>
+      pl: Pipeline<'a,'b> -> next: Operation<'b,'c> -> Pipeline<'a,'c>
+    val sink: pl: Pipeline<unit,unit> -> unit
+    val sinkList: plList: Pipeline<unit,unit> list -> unit
+val sourceOp:
+  availableMemory: uint64 -> Builder.Pipeline<unit,Slice.Slice<'T>>
+    when 'T: equality
+val sinkOp: pl: Builder.Pipeline<unit,unit> -> unit
+val (>=>) : p1: Pipe<'a,'b> -> p2: Pipe<'b,'c> -> Pipe<'a,'c>
+val (>>=>) :
+  (Builder.Pipeline<'a,'b> -> Operation<'b,'c> -> Builder.Pipeline<'a,'c>)
+module Routing
 val run: p: Core.Pipe<unit,'T> -> FSharp.Control.AsyncSeq<'T>
 /// Split a Pipe<'In,'T> into two branches that
 ///   • read the upstream only once
@@ -261,6 +264,14 @@ val write:
   path: string -> suffix: string -> Core.Pipe<Slice.Slice<'a>,unit>
     when 'a: equality
 val ignore<'T> : Core.Pipe<'T,unit>
+val readOp:
+  inputDir: string ->
+    suffix: string ->
+    pl: Core.Builder.Pipeline<unit,Slice.Slice<'T>> ->
+    Core.Builder.Pipeline<unit,Slice.Slice<'T>> when 'T: equality
+val writeOp:
+  outputDir: string -> suffix: string -> Core.Operation<Slice.Slice<'T>,unit>
+    when 'T: equality
 module Processing
 val internal explodeSlice:
   slices: Slice.Slice<'T> -> FSharp.Control.AsyncSeq<Slice.Slice<'T>>
@@ -827,6 +838,7 @@ val castFloatToInt: Core.Pipe<Slice.Slice<float>,Slice.Slice<int>>
 val castFloatToUIn64: Core.Pipe<Slice.Slice<float>,Slice.Slice<uint64>>
 val castFloatToInt64: Core.Pipe<Slice.Slice<float>,Slice.Slice<int64>>
 val castFloatToFloat32: Core.Pipe<Slice.Slice<float>,Slice.Slice<float32>>
+val castFloatToUInt8Op: Core.Operation<Slice.Slice<float>,Slice.Slice<uint8>>
 /// Basic arithmetic
 val add:
   slice: Slice.Slice<'a> -> Core.Pipe<Slice.Slice<'a>,Slice.Slice<'a>>
@@ -940,6 +952,10 @@ val convolve:
 val conv:
   kernel: Slice.Slice<'a> -> Core.Pipe<Slice.Slice<'a>,Slice.Slice<'a>>
     when 'a: equality
+val convGaussOp:
+  sigma: float ->
+    bc: ImageFunctions.BoundaryCondition option ->
+    Core.Operation<Slice.Slice<float>,Slice.Slice<float>>
 val erode: r: uint -> Core.Pipe<Slice.Slice<uint8>,Slice.Slice<uint8>>
 val dilate: r: uint -> Core.Pipe<Slice.Slice<uint8>,Slice.Slice<uint8>>
 val opening: r: uint -> Core.Pipe<Slice.Slice<uint8>,Slice.Slice<uint8>>
