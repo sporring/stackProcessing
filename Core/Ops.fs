@@ -100,9 +100,6 @@ let castFloatToUIn64 = asPipe (castFloatToUIn64Op "castFloatToUIn64")
 let castFloatToInt64 = asPipe (castFloatToInt64Op "castFloatToInt64")
 let castFloatToFloat32 = asPipe (castFloatToFloat32Op "castFloatToFloat32")
 
-let castFloatToUInt8Op = Processing.castFloatToUInt8Op "castFloatToUInt8"
-
-
 /// Basic arithmetic
 let add slice = asPipe (addOp "add" slice)
 let inline scalarAddSlice<^T when ^T: equality and ^T: (static member op_Explicit: ^T -> float)> (i: ^T) = asPipe (scalarAddSliceOp "scalarAddSlice" i)

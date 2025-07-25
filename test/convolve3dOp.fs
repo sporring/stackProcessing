@@ -10,7 +10,7 @@ let main _ =
     let availableMemory = 1024UL * 1024UL // 1MB for example
     let sigma = 1.0
 
-    sourceOp<float> availableMemory 
+    sourceOp<Slice<float>> availableMemory
     |> readOp "image" ".tiff"
     >>=> convGaussOp 1.0 None
     >>=> castFloatToUInt8Op

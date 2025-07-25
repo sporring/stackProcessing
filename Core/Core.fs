@@ -347,7 +347,7 @@ module Builder =
         |> ignore    
 /////////////////////////////////
 
-let sourceOp<'T when 'T: equality> (availableMemory: uint64) : Builder.Pipeline<unit,Slice<'T>> = Builder.source availableMemory
+let sourceOp<'T> (availableMemory: uint64) : Builder.Pipeline<unit,'T> = Builder.source<'T> availableMemory
 
 let sinkOp (pl: Builder.Pipeline<unit,unit>) : unit = Builder.sink pl
 

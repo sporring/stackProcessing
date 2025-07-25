@@ -135,9 +135,7 @@ module Builder =
       pl: Pipeline<'a,'b> -> next: Operation<'b,'c> -> Pipeline<'a,'c>
     val sink: pl: Pipeline<unit,unit> -> unit
     val sinkList: plList: Pipeline<unit,unit> list -> unit
-val sourceOp:
-  availableMemory: uint64 -> Builder.Pipeline<unit,Slice.Slice<'T>>
-    when 'T: equality
+val sourceOp: availableMemory: uint64 -> Builder.Pipeline<unit,'T>
 val sinkOp: pl: Builder.Pipeline<unit,unit> -> unit
 val (>=>) : p1: Pipe<'a,'b> -> p2: Pipe<'b,'c> -> Pipe<'a,'c>
 val (>>=>) :
@@ -838,7 +836,6 @@ val castFloatToInt: Core.Pipe<Slice.Slice<float>,Slice.Slice<int>>
 val castFloatToUIn64: Core.Pipe<Slice.Slice<float>,Slice.Slice<uint64>>
 val castFloatToInt64: Core.Pipe<Slice.Slice<float>,Slice.Slice<int64>>
 val castFloatToFloat32: Core.Pipe<Slice.Slice<float>,Slice.Slice<float32>>
-val castFloatToUInt8Op: Core.Operation<Slice.Slice<float>,Slice.Slice<uint8>>
 /// Basic arithmetic
 val add:
   slice: Slice.Slice<'a> -> Core.Pipe<Slice.Slice<'a>,Slice.Slice<'a>>

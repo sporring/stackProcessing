@@ -5,9 +5,7 @@ type Operation<'S,'T> = Core.Operation<'S,'T>
 type MemoryProfile = Core.MemoryProfile
 type MemoryTransition = Core.MemoryTransition
 type Slice<'S when 'S: equality> = Slice.Slice<'S>
-val sourceOp:
-  availableMemory: uint64 -> Core.Builder.Pipeline<unit,Slice<'T>>
-    when 'T: equality
+val sourceOp<'T> : (uint64 -> Core.Builder.Pipeline<unit,'T>)
 val source<'T> : (uint64 -> Core.Pipe<unit,'T> -> Core.Pipe<unit,'T>)
 val sourceLst<'T> :
   (uint64 -> Core.Pipe<unit,'T> list -> Core.Pipe<unit,'T> list)
@@ -155,6 +153,7 @@ val castFloatToUIn64: Core.Pipe<Slice.Slice<float>,Slice.Slice<uint64>>
 val castFloatToInt64: Core.Pipe<Slice.Slice<float>,Slice.Slice<int64>>
 val castFloatToFloat32: Core.Pipe<Slice.Slice<float>,Slice.Slice<float32>>
 val castFloatToUInt8Op: Core.Operation<Slice.Slice<float>,Slice.Slice<uint8>>
+val castInt16ToFloatOp: Core.Operation<Slice.Slice<int16>,Slice.Slice<float>>
 /// Basic arithmetic
 val add:
   (Slice.Slice<'a> -> Core.Pipe<Slice.Slice<'a>,Slice.Slice<'a>>)

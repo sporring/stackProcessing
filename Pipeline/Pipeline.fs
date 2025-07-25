@@ -10,6 +10,7 @@ open Routing
 open SourceSink
 
 // Common image operators
+open Processing
 open Ops
 
 // Image and slice types
@@ -25,7 +26,7 @@ type MemoryProfile = Core.MemoryProfile
 type MemoryTransition = Core.MemoryTransition
 type Slice<'S when 'S: equality> = Slice.Slice<'S>
 
-let sourceOp<'T when 'T: equality> (availableMemory: uint64) : Builder.Pipeline<unit,Slice<'T>> = Core.sourceOp<'T> availableMemory
+let sourceOp<'T> = Core.sourceOp<'T>
 let source<'T> = SourceSink.source<'T>
 let sourceLst<'T> = SourceSink.sourceLst<'T>
 let sinkOp (pl: Builder.Pipeline<unit,unit>) : unit = Core.sinkOp pl
@@ -39,8 +40,8 @@ let cacheScalar = Routing.cacheScalar
 let tap = Routing.tap
 
 let create = SourceSink.create
-let readOp<'T when 'T : equality> (inputDir: string) (suffix: string) (pl: Core.Builder.Pipeline<unit, Slice<'T>>) =
-    SourceSink.readOp<'T> inputDir suffix pl
+let readOp (inputDir: string) (suffix: string) (pl: Core.Builder.Pipeline<unit,Slice<'T>>) =
+    SourceSink.readOp inputDir suffix pl
 let readRandom = SourceSink.readRandom<'T>
 let writeOp = SourceSink.writeOp
 let write = SourceSink.write
@@ -148,7 +149,11 @@ let castFloatToUIn64 = Ops.castFloatToUIn64
 let castFloatToInt64 = Ops.castFloatToInt64
 let castFloatToFloat32 = Ops.castFloatToFloat32
 
-let castFloatToUInt8Op = Ops.castFloatToUInt8Op
+let castFloatToUInt8Op = Processing.castFloatToUInt8Op "castFloatToUInt8"
+let castInt16ToFloatOp = Processing.castInt16ToFloatOp "castInt16ToFloat"
+
+
+
 
 /// Basic arithmetic
 let add = Ops.add

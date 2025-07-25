@@ -213,7 +213,7 @@ let ignore<'T> : Pipe<'T, unit> =
             do! stream |> AsyncSeq.iterAsync (fun _ -> async.Return())
         })
 
-let readOp<'T when 'T : equality>
+let readOp
     (inputDir : string)
     (suffix : string)
     (pl : Builder.Pipeline<unit, Slice<'T>>) : Builder.Pipeline<unit, Slice<'T>> =

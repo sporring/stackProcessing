@@ -17,7 +17,6 @@
     <Target Name="CleanTextFile" AfterTargets="Build">
         <Exec Command="grep -v '^[[:space:]]*$' '$(SigFile)' &gt; '$(SigFile).tmp' &amp;&amp; mv '$(SigFile).tmp' '$(SigFile)'"/>
     </Target>
-
     <ItemGroup>
         <Reference Include="SimpleITKCSharp">
         <HintPath>lib/SimpleITKCSharpManaged.dll</HintPath>
