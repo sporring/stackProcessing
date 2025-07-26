@@ -5,9 +5,6 @@ open Plotly.NET
 
 [<EntryPoint>]
 let main _ =
-    let src = "image"
-    let trg = "result"
-    let w, h, d = getStackSize src ".tiff"
     let mem = 1024UL * 1024UL // 1MB for example
 
     // Plotly.Net plot function
@@ -19,15 +16,17 @@ let main _ =
         |> Chart.show
 
     let readHistogramMaker = 
-        source<Slice<uint8>> mem
-        |> read "image" ".tiff"
+        source mem
+        |> readAs<uint8> "image" ".tiff"
         >=> histogram
-
-    let left, right = tee readHistogramMaker
-    let path2 = right >=> map2pairs >=> pairs2floats
+    printfn "%A" histogram
+//    readHistogramMaker >=> tap "histogramMaker" |> sink
+    //let left, right = tee readHistogramMaker
+    //left >=> tap "left" |> sink
+    //let path2 = right >=> map2pairs >=> pairs2floats
     // compile time analysis:
-    [path2 >=> plot plt; left >=> print] |> sinkLst
+    //[path2 >=> tap "path2" >=> plot plt; left >=> tap "left" >=> print] |> sinkLst
     // runtime analysis:
-    //zipWith (fun _ _ -> ()) (path2 >=> plot plt) (left >=> print) |> sink
+//    zipWith (fun _ _ -> ()) (path2 >=> plot plt) (left >=> print) |> sink
 
     0

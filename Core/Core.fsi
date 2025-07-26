@@ -129,7 +129,7 @@ module Builder =
     val sinkList: plList: Pipeline<unit,unit> list -> unit
 val sourceOp: availableMemory: uint64 -> Builder.Pipeline<unit,unit>
 val sinkOp: pl: Builder.Pipeline<unit,unit> -> unit
-val (>=>) : p1: Pipe<'a,'b> -> p2: Pipe<'b,'c> -> Pipe<'a,'c>
+val sinkListOp: plLst: Builder.Pipeline<unit,unit> list -> unit
 val (>>=>) :
   (Builder.Pipeline<'a,'b> -> Operation<'b,'c> -> Builder.Pipeline<'a,'c>)
 module Routing
@@ -142,18 +142,51 @@ type private Request<'T> =
     | Left of AsyncReplyChannel<Option<'T>>
     | Right of AsyncReplyChannel<Option<'T>>
 val tee: p: Core.Pipe<'In,'T> -> Core.Pipe<'In,'T> * Core.Pipe<'In,'T>
+val teeOp:
+  op: Core.Operation<'In,'T> -> Core.Operation<'In,'T> * Core.Operation<'In,'T>
+val teePipeline:
+  pl: Core.Builder.Pipeline<'In,'T> ->
+    Core.Builder.Pipeline<'In,'T> * Core.Builder.Pipeline<'In,'T>
 /// zipWith two Pipes<'In, _> into one by zipping their outputs:
 ///   • applies both processors to the same input stream
 ///   • pairs each output and combines using the given function
 ///   • assumes both sides produce values in lockstep
-val zipWith:
+val zipWithOld:
   f: ('A -> 'B -> 'C) ->
     p1: Core.Pipe<'In,'A> -> p2: Core.Pipe<'In,'B> -> Core.Pipe<'In,'C>
-val zipWithPipe:
+val zipWithPipeOld:
   f: ('A -> 'B -> Core.Pipe<'In,'C>) ->
     pa: Core.Pipe<'In,'A> -> pb: Core.Pipe<'In,'B> -> Core.Pipe<'In,'C>
+val zipWithOp:
+  f: ('A -> 'B -> 'C) ->
+    op1: Core.Operation<'In,'A> ->
+    op2: Core.Operation<'In,'B> -> Core.Operation<'In,'C>
+val zipWith:
+  f: ('A -> 'B -> 'C) ->
+    p1: Core.Builder.Pipeline<'In,'A> ->
+    p2: Core.Builder.Pipeline<'In,'B> -> Core.Builder.Pipeline<'In,'C>
 val cacheScalar: name: string -> p: Core.Pipe<unit,'T> -> Core.Pipe<'In,'T>
+val cacheScalarOp:
+  name: string -> pl: Core.Builder.Pipeline<'In,'T> -> Core.Operation<'In,'T>
+val runToScalar:
+  name: 'a ->
+    reducer: (FSharp.Control.AsyncSeq<'T> -> Async<'R>) ->
+    pl: Core.Builder.Pipeline<'In,'T> -> 'R
+val drainSingle: name: 'a -> pl: Core.Builder.Pipeline<'b,'c> -> 'c
+val drainList: name: 'a -> pl: Core.Builder.Pipeline<'b,'c> -> 'c list
+val drainLast: name: 'a -> pl: Core.Builder.Pipeline<'b,'c> -> 'c
 val tap: label: string -> Core.Pipe<'T,'T>
+/// quick constructor for Streaming→Streaming unary ops
+val map:
+  label: string ->
+    profile: Core.MemoryProfile -> f: ('S -> 'T) -> Core.Pipe<'S,'T>
+val liftUnaryOp:
+  name: string ->
+    f: (Slice.Slice<'T> -> Slice.Slice<'T>) ->
+    Core.Operation<Slice.Slice<'T>,Slice.Slice<'T>> when 'T: equality
+val tapOp:
+  label: string -> Core.Operation<Slice.Slice<'a>,Slice.Slice<'a>>
+    when 'a: equality
 val sequentialJoin:
   p1: Core.Pipe<'S,'T> -> p2: Core.Pipe<'S,'T> -> Core.Pipe<'S,'T>
 module SourceSink
@@ -220,6 +253,11 @@ val gaussSource:
   sigma: float ->
     kernelSize: uint option ->
     transform: (Core.Pipe<unit,Slice.Slice<float>> -> 'a) -> 'a
+val gaussSourceOp:
+  sigma: float ->
+    kernelSize: uint option ->
+    pl: Core.Builder.Pipeline<unit,unit> ->
+    Core.Builder.Pipeline<unit,Slice.Slice<float>>
 val axisSource:
   axis: int ->
     size: int list -> transform: (Core.Pipe<unit,Slice.Slice<uint>> -> 'a) -> 'a
@@ -235,6 +273,11 @@ val finiteDiffFilter3D:
     transform: (Core.Pipe<unit,Slice.Slice<float>> ->
                   Core.Pipe<unit,Slice.Slice<float>>) ->
     Core.Pipe<unit,Slice.Slice<float>>
+val finiteDiffFilter3DOp:
+  direction: uint ->
+    order: uint ->
+    pl: Core.Builder.Pipeline<unit,unit> ->
+    Core.Builder.Pipeline<unit,Slice.Slice<float>>
 /// Sink parts
 val print<'T> : Core.Pipe<'T,unit>
 val plot:
@@ -253,8 +296,27 @@ val readOp:
     pl: Core.Builder.Pipeline<unit,unit> ->
     Core.Builder.Pipeline<unit,Slice.Slice<'T>> when 'T: equality
 val writeOp:
-  outputDir: string -> suffix: string -> Core.Operation<Slice.Slice<'T>,unit>
+  path: string -> suffix: string -> Core.Operation<Slice.Slice<'a>,unit>
+    when 'a: equality
+val showOp:
+  plt: (Slice.Slice<'T> -> unit) -> Core.Operation<Slice.Slice<'T>,unit>
     when 'T: equality
+val plotOp:
+  plt: (float list -> float list -> unit) ->
+    Core.Operation<(float * float) list,unit>
+val printOp: unit -> Core.Operation<(float * float) list,unit>
+val createOp:
+  width: uint ->
+    height: uint ->
+    depth: uint ->
+    pl: Core.Builder.Pipeline<unit,unit> ->
+    Core.Builder.Pipeline<unit,Slice.Slice<'T>> when 'T: equality
+val readRandomOp:
+  count: uint ->
+    inputDir: string ->
+    suffix: string ->
+    pl: Core.Builder.Pipeline<unit,unit> ->
+    Core.Builder.Pipeline<unit,Slice.Slice<'T>> when 'T: equality
 module Processing
 val internal explodeSlice:
   slices: Slice.Slice<'T> -> FSharp.Control.AsyncSeq<Slice.Slice<'T>>
@@ -268,9 +330,6 @@ val fold:
   label: string ->
     profile: Core.MemoryProfile ->
     folder: ('State -> 'In -> 'State) -> state0: 'State -> Core.Pipe<'In,'State>
-val map:
-  label: string ->
-    profile: Core.MemoryProfile -> f: ('S -> 'T) -> Core.Pipe<'S,'T>
 val skipFirstLast: n: int -> lst: 'a list -> 'a list
 /// mapWindowed keeps a running window along the slice direction of depth images
 /// and processes them by f. The stepping size of the running window is stride.
@@ -297,10 +356,6 @@ val internal liftWindowedTrimOp:
     Core.Operation<Slice.Slice<'S>,Slice.Slice<'T>>
     when 'S: equality and 'T: equality
 /// quick constructor for Streaming→Streaming unary ops
-val liftUnaryOp:
-  name: string ->
-    f: (Slice.Slice<'T> -> Slice.Slice<'T>) ->
-    Core.Operation<Slice.Slice<'T>,Slice.Slice<'T>> when 'T: equality
 val internal liftUnaryOpInt:
   name: string ->
     f: (Slice.Slice<int> -> Slice.Slice<int>) ->

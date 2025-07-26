@@ -4,19 +4,15 @@ open Pipeline
 
 [<EntryPoint>]
 let main _ =
-    let src = "image"
-    let trg = "result"
-    let width, height, depth =  getStackSize src ".tiff"
     let availableMemory = 1024UL * 1024UL // 1MB for example
+    let sigma = 1.0
 
-    let someKernel = Slice.gauss 3u 1.3 None
-
-    source<Slice<float>> availableMemory
-    |> read "image" ".tiff"
+    source availableMemory
+    |> readAs<float> "image" ".tiff"
     >=> sqrtFloat
-    >=> convGauss 1.0 None
+    >=> convGauss sigma None
     >=> sqrtFloat
-    >=> convGauss 1.0 None
+    >=> convGauss sigma None
     >=> castFloatToUInt8
     >=> write "result" ".tif"
     |> sink

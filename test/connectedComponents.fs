@@ -4,11 +4,11 @@ open Pipeline
 
 [<EntryPoint>]
 let main _ =
-    let trg = "result"
     let width, height, depth = 64u, 64u, 20u
     let availableMemory = 1024UL * 1024UL // 1MB for example
-    source<Slice<float>> availableMemory
-        |> create width height depth
+
+    source availableMemory
+        |> create<float> width height depth
         >=> addNormalNoise 128.0 50.0
         >=> threshold 128.0 infinity
         >=> castFloatToUInt8

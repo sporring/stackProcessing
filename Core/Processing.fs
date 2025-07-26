@@ -39,14 +39,6 @@ let fold (label: string) (profile: MemoryProfile)  (folder: 'State -> 'In -> 'St
             return result
         })
 
-let map (label: string) (profile: MemoryProfile) (f: 'S -> 'T) 
-    : Pipe<'S,'T> =
-    {
-        Name = label; 
-        Profile = profile
-        Apply = fun input -> input |> AsyncSeq.map f
-    }
-
 let skipFirstLast (n: int) (lst: 'a list) 
     : 'a list =
     let m = lst.Length - 2*n;
@@ -65,7 +57,7 @@ let internal mapWindowed (label: string) (depth: uint) (stride: uint) (f: 'S lis
         Name = label; 
         Profile = Sliding depth
         Apply = fun input ->
-            printfn $"[Runtine analysis: Windowed analysis size {depth} {stride}]"
+            printfn $"[Runtime analysis: Windowed analysis size {depth} {stride}]"
             AsyncSeqExtensions.windowed depth stride input
                 |> AsyncSeq.collect (f  >> AsyncSeq.ofSeq)
     }
@@ -89,14 +81,6 @@ let internal liftWindowedTrimOp (name: string) (window: uint) (stride: uint) (tr
     }
 
 /// quick constructor for Streaming→Streaming unary ops
-let liftUnaryOp name (f: Slice<'T> -> Slice<'T>) 
-    : Operation<Slice<'T>,Slice<'T>> =
-    { 
-        Name = name
-        Transition = transition Streaming Streaming
-        Pipe = map name Streaming f
-    }
-
 let internal liftUnaryOpInt (name: string) (f: Slice<int> -> Slice<int>)
     : Operation<Slice<int>,Slice<int>> =
     liftUnaryOp name f
@@ -128,7 +112,7 @@ let internal liftBinaryOpFloat (name: string) (f: Slice<float> -> Slice<float> -
 
 let internal liftBinaryZipOp (name: string) (f: Slice<'T> -> Slice<'T> -> Slice<'T>) (p1: Pipe<'In, Slice<'T>>) (p2: Pipe<'In, Slice<'T>>) 
     : Pipe<'In, Slice<'T>> =
-    zipWith f p1 p2
+    zipWithOld f p1 p2
 
 let internal liftFullOp (name: string) (f: Slice<'T> -> Slice<'T>)
     : Operation<Slice<'T>, Slice<'T>> =
@@ -388,8 +372,7 @@ let inline pairs2intsOp< ^T, ^S when ^T : (static member op_Explicit : ^T -> int
     }
 
 type ImageStats = Slice.ImageStats
-let computeStatsOp<'T when 'T : equality> name 
-    : Operation<Slice<'T>, ImageStats> =
+let computeStatsOp<'T when 'T : equality> name : Operation<Slice<'T>, ImageStats> =
     let computeStatsReducer (slices: AsyncSeq<Slice<'T>>) =
         let zeroStats: ImageStats = { 
             NumPixels = 0u

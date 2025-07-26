@@ -350,10 +350,6 @@ module Builder =
 /////////////////////////////////
 
 let sourceOp (availableMemory: uint64) : Builder.Pipeline<unit,unit> = Builder.source availableMemory
-
 let sinkOp (pl: Builder.Pipeline<unit,unit>) : unit = Builder.sink pl
-
-// Pipe composition
-let (>=>) p1 p2 = composePipe p1 p2
-
+let sinkListOp (plLst: Builder.Pipeline<unit,unit> list) : unit = Builder.sinkList plLst
 let (>>=>) = Builder.(>>=>)

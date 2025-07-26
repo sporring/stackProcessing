@@ -130,7 +130,7 @@ let internal readRandomSlices<'T when 'T: equality> (count: uint) (inputDir: str
         Apply = fun _ ->
             AsyncSeq.init (int count) (fun i -> 
                 let fileName = fileNames[int i]; 
-                printfn "[readRandomSlices] Reading slice %d to %s" (uint i) fileName
+                printfn "[readRandomSlices] Reading slice %d from %s" (uint i) fileName
                 Slice.readSlice<'T> (uint i) fileName)
     }
 
@@ -165,6 +165,24 @@ let gaussSource sigma kernelSize transform =
     let img = Slice.gauss 3u sigma kernelSize
     liftImageSource "gauss" img |> transform
 
+let gaussSourceOp // 20250726: This is not working, it seems
+    (sigma: float) 
+    (kernelSize: uint option)
+    (pl : Builder.Pipeline<unit, unit>) 
+    : Builder.Pipeline<unit, Slice<float>> =
+    let sz = Option.defaultValue (1u + 2u*2u * uint sigma) kernelSize
+    let op : Operation<unit, Slice<'T>> =
+        {
+            Name = $"gaussSource"
+            Transition = transition Constant Streaming
+            Pipe = Slice.gauss 3u sigma (Some sz) |> liftImageSource "gaussSource"
+        }
+    {
+        shape = Some [sz;sz;sz]
+        mem = pl.mem
+        flow = Builder.returnM op
+    }
+
 let axisSource axis size transform =
     let img = Slice.generateCoordinateAxis axis size
     liftImageSource "axis" img |> transform
@@ -176,6 +194,25 @@ let finiteDiffFilter2D (direction: uint) (order: uint) transform : Pipe<unit, Sl
 let finiteDiffFilter3D (direction: uint) (order: uint) transform : Pipe<unit, Slice<float>> =
     let img = finiteDiffFilter3D direction order
     liftImageSource "finiteDiffFilter3D" img |> transform
+
+let finiteDiffFilter3DOp 
+    (direction: uint) 
+    (order: uint)
+    (pl : Builder.Pipeline<unit, unit>) 
+    : Builder.Pipeline<unit, Slice<float>> =
+    let img = Slice.finiteDiffFilter3D direction order
+    let sz = GetSize img
+    let op : Operation<unit, Slice<'T>> =
+        {
+            Name = $"gaussSource"
+            Transition = transition Constant Streaming
+            Pipe = img |> liftImageSource "gaussSource"
+        }
+    {
+        shape = Some sz
+        mem = pl.mem
+        flow = Builder.returnM op
+    }
 
 /// Sink parts
 let print<'T> : Pipe<'T, unit> =
@@ -218,9 +255,7 @@ let readOp<'T when 'T: equality>
     (suffix : string)
     (pl : Builder.Pipeline<unit, unit>) : Builder.Pipeline<unit, Slice<'T>> =
 
-    // Add shape from disk, and let this Operation carry a shape callback — but that's out of scope for now.
     let (width,height,depth) = Slice.getStackSize inputDir suffix
-    let shape = Some [width;height;depth]
     let op : Operation<unit, Slice<'T>> =
         {
             Name = $"read:{inputDir}"
@@ -228,18 +263,77 @@ let readOp<'T when 'T: equality>
             Pipe = readSlices<'T> inputDir suffix
         }
     {
-        shape = shape
+        shape = Some [width;height;depth]
         mem = pl.mem
         flow = Builder.returnM op
     }
 
-let writeOp (outputDir: string) (suffix: string) : Operation<Slice<'T>, unit> =
+let writeOp (path: string) (suffix: string) : Operation<Slice<'a>, unit> =
+    let writeReducer stream = async { do! writeSlicesAsync path suffix stream }
     {
-        Name = $"write:{outputDir}"
+        Name = $"write:{path}"
         Transition = transition Streaming Constant
-        Pipe =
-            consumeWith "write" Streaming (fun stream ->
-                async {
-                    do! writeSlicesAsync outputDir suffix stream
-                })
+        Pipe = consumeWith "write" Streaming writeReducer
+    }
+
+let showOp (plt: Slice.Slice<'T> -> unit) : Operation<Slice<'T>, unit> =
+    let showReducer stream = async {do! showSliceAsync plt stream }
+    {
+        Name = "show"
+        Transition = transition Streaming Constant
+        Pipe = consumeWith "show" Streaming showReducer
+    }
+
+let plotOp (plt: float list -> float list -> unit) : Operation<(float * float) list, unit> =
+    let plotReducer stream = async { do! plotListAsync plt stream }
+    {
+        Name = "plot"
+        Transition = transition Streaming Streaming
+        Pipe = consumeWith "plot" Streaming plotReducer
+    }
+
+let printOp () : Operation<(float * float) list, unit> =
+    let printReducer stream = async { do! printAsync stream }
+    {
+        Name = "print"
+        Transition = transition Streaming Streaming
+        Pipe = consumeWith "print" Streaming printReducer
+    }
+
+let createOp<'T when 'T: equality> 
+    (width: uint) 
+    (height: uint) 
+    (depth: uint) 
+    (pl : Builder.Pipeline<unit, unit>) 
+    : Builder.Pipeline<unit, Slice<'T>> =
+
+    let op : Operation<unit, Slice<'T>> =
+        {
+            Name = "create"
+            Transition = transition Constant Streaming
+            Pipe = createPipe<'T> width height depth
+        }
+    {
+        shape = Some [width;height;depth]
+        mem = pl.mem
+        flow = Builder.returnM op
+    }
+
+let readRandomOp<'T when 'T: equality>
+    (count: uint) 
+    (inputDir : string) 
+    (suffix : string)
+    (pl : Builder.Pipeline<unit, unit>) : Builder.Pipeline<unit, Slice<'T>> =
+
+    let (width,height,depth) = Slice.getStackSize inputDir suffix
+    let op : Operation<unit, Slice<'T>> =
+        {
+            Name = $"readRandom:{inputDir}"
+            Transition = transition Constant Streaming
+            Pipe = readRandomSlices<'T> count inputDir suffix 
+        }
+    {
+        shape = Some [width;height;count]
+        mem = pl.mem
+        flow = Builder.returnM op
     }

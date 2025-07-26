@@ -14,24 +14,27 @@ type Slice<'S when 'S: equality> = Slice.Slice<'S>
 
 let source = Core.sourceOp
 let sink (pl: Builder.Pipeline<unit,unit>) : unit = Core.sinkOp pl
+let sinkList (plLst: Builder.Pipeline<unit,unit> list) : unit = Core.sinkListOp plLst
 let (>=>) = Core.(>>=>)
-let tee = Routing.tee
+let tee = Routing.teePipeline
 let zipWith = Routing.zipWith
-let cacheScalar = Routing.cacheScalar
-let tap = Routing.tap
+let drainSingle pl = Routing.drainSingle "drainSingle" pl
+let drainList pl = Routing.drainList "drainList" pl
+let drainLast pl = Routing.drainLast "drainLast" pl
+let tap = Routing.tapOp
+let liftUnary (f: Slice<'T> -> Slice<'T>) = Routing.liftUnaryOp "liftUnary" f
 
-let create = SourceSink.create
-let readAs<'T when 'T: equality> (inputDir: string) (suffix: string) (pl: Core.Builder.Pipeline<unit,unit>) =
-    SourceSink.readOp<'T> inputDir suffix pl
-let readRandom = SourceSink.readRandom<'T>
+let create<'T when 'T: equality> = SourceSink.createOp<'T>
+let readAs<'T when 'T: equality> = SourceSink.readOp<'T>
+let readRandomAs<'T when 'T: equality> = SourceSink.readRandomOp<'T>
 let write = SourceSink.writeOp
-let print<'T> : Pipe<'T, unit> = SourceSink.print
-let plot = SourceSink.plot
-let show = SourceSink.show
+let print = SourceSink.printOp
+let plot = SourceSink.plotOp
+let show = SourceSink.showOp
 
 let finiteDiffFilter2D = SourceSink.finiteDiffFilter2D
-let finiteDiffFilter3D = SourceSink.finiteDiffFilter3D
-let gaussSource = SourceSink.gaussSource
+let finiteDiffFilter3D = SourceSink.finiteDiffFilter3DOp
+let gaussSource = SourceSink.gaussSourceOp
 let axisSource = SourceSink.axisSource
 
 let castUInt8ToInt8 = castUInt8ToInt8Op "castUInt8ToInt8"
