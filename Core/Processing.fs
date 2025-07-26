@@ -8,12 +8,12 @@ open System.Collections.Concurrent
 open AsyncSeqExtensions
 open SourceSink
 open Core
-open Core.Helpers
 open Routing
 open Slice
 open Image
 
 // --- Processing Utilities ---
+(* // Not used. Needed?
 let internal explodeSlice (slices: Slice<'T>) 
     : AsyncSeq<Slice<'T>> =
     let baseIndex = slices.Index
@@ -22,22 +22,7 @@ let internal explodeSlice (slices: Slice<'T>)
     let width, height, depth = size.[0], size.[1], size.[2]
     Seq.init (int depth) (fun z -> extractSlice (baseIndex+(uint z)) slices)
     |> AsyncSeq.ofSeq
-
-let reduce (label: string) (profile: MemoryProfile) (reducer: AsyncSeq<'In> -> Async<'Out>) 
-    : Pipe<'In, 'Out> =
-    {
-        Name = label
-        Profile = profile
-        Apply = fun input -> reducer input |> ofAsync
-    }
-
-let fold (label: string) (profile: MemoryProfile)  (folder: 'State -> 'In -> 'State) (state0: 'State) 
-    : Pipe<'In, 'State> =
-    reduce label profile (fun stream ->
-        async {
-            let! result = stream |> AsyncSeq.fold folder state0
-            return result
-        })
+*) 
 
 let skipFirstLast (n: int) (lst: 'a list) 
     : 'a list =
@@ -110,10 +95,11 @@ let internal liftBinaryOpFloat (name: string) (f: Slice<float> -> Slice<float> -
     : Operation<Slice<float> * Slice<float>, Slice<float>> =
     liftBinaryOp name f
 
+(* zipWithOld no longer available. is this function used?
 let internal liftBinaryZipOp (name: string) (f: Slice<'T> -> Slice<'T> -> Slice<'T>) (p1: Pipe<'In, Slice<'T>>) (p2: Pipe<'In, Slice<'T>>) 
     : Pipe<'In, Slice<'T>> =
     zipWithOld f p1 p2
-
+*)
 let internal liftFullOp (name: string) (f: Slice<'T> -> Slice<'T>)
     : Operation<Slice<'T>, Slice<'T>> =
     {

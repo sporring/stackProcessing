@@ -23,6 +23,24 @@ type Pipe<'S,'T> =
       Profile: MemoryProfile
       Apply: (FSharp.Control.AsyncSeq<'S> -> FSharp.Control.AsyncSeq<'T>)
     }
+val internal lift:
+  name: string ->
+    profile: MemoryProfile -> f: ('In -> Async<'Out>) -> Pipe<'In,'Out>
+val map: label: string -> profile: MemoryProfile -> f: ('S -> 'T) -> Pipe<'S,'T>
+val internal reduce:
+  name: string ->
+    profile: MemoryProfile ->
+    reducer: (FSharp.Control.AsyncSeq<'In> -> Async<'Out>) -> Pipe<'In,'Out>
+val fold:
+  label: string ->
+    profile: MemoryProfile ->
+    folder: ('State -> 'In -> 'State) -> state0: 'State -> Pipe<'In,'State>
+val internal consumeWith:
+  name: string ->
+    profile: MemoryProfile ->
+    consume: (FSharp.Control.AsyncSeq<'T> -> Async<unit>) -> Pipe<'T,unit>
+/// Combine two <c>Pipe</c> instances into one by composing their memory profiles and transformation functions.
+val composePipe: p1: Pipe<'S,'T> -> p2: Pipe<'T,'U> -> Pipe<'S,'U>
 /// SliceShape describes the dimensions of a stacked slice.
 /// Conventionally: [width; height; depth]
 /// Used for validating if transitions are feasible (e.g., sliding window depth fits).
@@ -48,92 +66,41 @@ type Operation<'S,'T> =
       Transition: MemoryTransition
       Pipe: Pipe<'S,'T>
     }
-/// Creates a MemoryTransition record:
-/// - Describes expected memory layout before and after an operation
-/// - Default check always passes; can be replaced with shape-aware checks
 val defaultCheck: 'a -> bool
 val transition:
   fromProfile: MemoryProfile -> toProfile: MemoryProfile -> MemoryTransition
-/// Represents a 3D image processing operation:
-/// - Operates on a stacked 3D Slice built from a sliding window of 2D slices
-/// - Independent of streaming logic — only processes one 3D slice at a time
-/// - Typically wrapped via `fromWindowed` to integrate into a streaming pipeline
-type WindowedProcessor<'S,'T when 'S: equality and 'T: equality> =
+val inline asPipe: op: Operation<'a,'b> -> Pipe<'a,'b>
+type MemFlow<'S,'T> =
+    uint64 -> SliceShape option -> Operation<'S,'T> * uint64 * SliceShape option
+val private memNeed: shape: uint list -> p: Pipe<'a,'b> -> uint64
+/// Try to shrink a too‑hungry pipe to a cheaper profile.
+/// *You* control the downgrade policy here.
+val private shrinkProfile:
+  avail: uint64 -> shape: uint list -> p: Pipe<'S,'T> -> Pipe<'S,'T>
+val returnM:
+  op: Operation<'S,'T> ->
+    bytes: uint64 ->
+    shapeOpt: SliceShape option -> Operation<'S,'T> * uint64 * SliceShape option
+val composeOp:
+  op1: Operation<'S,'T> -> op2: Operation<'T,'U> -> Operation<'S,'U>
+val bindM:
+  m: ('a -> 'b -> Operation<'c,'d> * 'e * 'f) ->
+    k: (Operation<'c,'d> -> 'e -> 'f -> Operation<'d,'g> * 'h * 'i) ->
+    bytes: 'a -> shapeOpt: 'b -> Operation<'c,'g> * 'h * 'i
+type Pipeline<'S,'T> =
     {
-      Name: string
-      Window: uint
-      Stride: uint
-      Process: (Slice.Slice<'S> -> Slice.Slice<'T>)
+      flow: MemFlow<'S,'T>
+      mem: uint64
+      shape: SliceShape option
     }
-val validate: op1: Operation<'A,'B> -> op2: Operation<'B,'C> -> unit
-val describeOp: op: Operation<'a,'b> -> string
-val plan: ops: Operation<'a,'b> list -> string
-val (>=>!) : op1: Operation<'A,'B> -> op2: Operation<'B,'C> -> Operation<'A,'C>
-val internal isScalar: profile: MemoryProfile -> bool
-val internal requiresFullInput: profile: MemoryProfile -> bool
-val internal lift:
-  name: string ->
-    profile: MemoryProfile -> f: ('In -> Async<'Out>) -> Pipe<'In,'Out>
-val internal reduce:
-  name: string ->
-    profile: MemoryProfile ->
-    reducer: (FSharp.Control.AsyncSeq<'In> -> Async<'Out>) -> Pipe<'In,'Out>
-val internal consumeWith:
-  name: string ->
-    profile: MemoryProfile ->
-    consume: (FSharp.Control.AsyncSeq<'T> -> Async<unit>) -> Pipe<'T,unit>
-/// Combine two <c>Pipe</c> instances into one by composing their memory profiles and transformation functions.
-val composePipe: p1: Pipe<'S,'T> -> p2: Pipe<'T,'U> -> Pipe<'S,'U>
-module Helpers =
-    /// Pipeline helper functions
-    val singletonPipe:
-      name: string -> seq: FSharp.Control.AsyncSeq<'T> -> Pipe<'S,'T>
-    val bindPipe: p: Pipe<'S,Pipe<'S,'T>> -> Pipe<'S,'T>
-    /// Operator and such
-    /// pull the runnable pipe out of an operation
-    val inline asPipe: op: Operation<'a,'b> -> Pipe<'a,'b>
-    val validate: op1: Operation<'a,'b> -> op2: Operation<'c,'d> -> bool
-module Builder =
-    type MemFlow<'S,'T> =
-        uint64 ->
-          SliceShape option -> Operation<'S,'T> * uint64 * SliceShape option
-    val private memNeed: shape: uint list -> p: Pipe<'a,'b> -> uint64
-    /// Try to shrink a too‑hungry pipe to a cheaper profile.
-    /// *You* control the downgrade policy here.
-    val private shrinkProfile:
-      avail: uint64 -> shape: uint list -> p: Pipe<'S,'T> -> Pipe<'S,'T>
-    val returnM:
-      op: Operation<'S,'T> ->
-        bytes: uint64 ->
-        shapeOpt: SliceShape option ->
-        Operation<'S,'T> * uint64 * SliceShape option
-    val composeOp:
-      op1: Operation<'S,'T> -> op2: Operation<'T,'U> -> Operation<'S,'U>
-    val bindM:
-      m: ('a -> 'b -> Operation<'c,'d> * 'e * 'f) ->
-        k: (Operation<'c,'d> -> 'e -> 'f -> Operation<'d,'g> * 'h * 'i) ->
-        bytes: 'a -> shapeOpt: 'b -> Operation<'c,'g> * 'h * 'i
-    type Pipeline<'S,'T> =
-        {
-          flow: MemFlow<'S,'T>
-          mem: uint64
-          shape: SliceShape option
-        }
-    val source: availableMemory: uint64 -> Pipeline<unit,unit>
-    val attachFirst:
-      Operation<unit,'T> * (unit -> SliceShape) ->
-        pl: Pipeline<unit,'T> -> Pipeline<unit,'T>
-    val (>>=>) :
-      pl: Pipeline<'a,'b> -> next: Operation<'b,'c> -> Pipeline<'a,'c>
-    val sink: pl: Pipeline<unit,unit> -> unit
-    val sinkList: plList: Pipeline<unit,unit> list -> unit
-val sourceOp: availableMemory: uint64 -> Builder.Pipeline<unit,unit>
-val sinkOp: pl: Builder.Pipeline<unit,unit> -> unit
-val sinkListOp: plLst: Builder.Pipeline<unit,unit> list -> unit
-val (>>=>) :
-  (Builder.Pipeline<'a,'b> -> Operation<'b,'c> -> Builder.Pipeline<'a,'c>)
+val sourceOp: availableMemory: uint64 -> Pipeline<unit,unit>
+val attachFirst:
+  Operation<unit,'T> * (unit -> SliceShape) ->
+    pl: Pipeline<unit,'T> -> Pipeline<unit,'T>
+val (>=>) : pl: Pipeline<'a,'b> -> next: Operation<'b,'c> -> Pipeline<'a,'c>
+val sinkOp: pl: Pipeline<unit,unit> -> unit
+val sinkListOp: plList: Pipeline<unit,unit> list -> unit
 module Routing
-val run: p: Core.Pipe<unit,'T> -> FSharp.Control.AsyncSeq<'T>
 /// Split a Pipe<'In,'T> into two branches that
 ///   • read the upstream only once
 ///   • keep at most one item in memory
@@ -141,52 +108,37 @@ val run: p: Core.Pipe<unit,'T> -> FSharp.Control.AsyncSeq<'T>
 type private Request<'T> =
     | Left of AsyncReplyChannel<Option<'T>>
     | Right of AsyncReplyChannel<Option<'T>>
-val tee: p: Core.Pipe<'In,'T> -> Core.Pipe<'In,'T> * Core.Pipe<'In,'T>
-val teeOp:
+val internal tee: p: Core.Pipe<'In,'T> -> Core.Pipe<'In,'T> * Core.Pipe<'In,'T>
+val internal teeOp:
   op: Core.Operation<'In,'T> -> Core.Operation<'In,'T> * Core.Operation<'In,'T>
 val teePipeline:
-  pl: Core.Builder.Pipeline<'In,'T> ->
-    Core.Builder.Pipeline<'In,'T> * Core.Builder.Pipeline<'In,'T>
+  pl: Core.Pipeline<'In,'T> -> Core.Pipeline<'In,'T> * Core.Pipeline<'In,'T>
 /// zipWith two Pipes<'In, _> into one by zipping their outputs:
 ///   • applies both processors to the same input stream
 ///   • pairs each output and combines using the given function
 ///   • assumes both sides produce values in lockstep
-val zipWithOld:
-  f: ('A -> 'B -> 'C) ->
-    p1: Core.Pipe<'In,'A> -> p2: Core.Pipe<'In,'B> -> Core.Pipe<'In,'C>
-val zipWithPipeOld:
-  f: ('A -> 'B -> Core.Pipe<'In,'C>) ->
-    pa: Core.Pipe<'In,'A> -> pb: Core.Pipe<'In,'B> -> Core.Pipe<'In,'C>
-val zipWithOp:
+val internal zipWithOp:
   f: ('A -> 'B -> 'C) ->
     op1: Core.Operation<'In,'A> ->
     op2: Core.Operation<'In,'B> -> Core.Operation<'In,'C>
 val zipWith:
   f: ('A -> 'B -> 'C) ->
-    p1: Core.Builder.Pipeline<'In,'A> ->
-    p2: Core.Builder.Pipeline<'In,'B> -> Core.Builder.Pipeline<'In,'C>
-val cacheScalar: name: string -> p: Core.Pipe<unit,'T> -> Core.Pipe<'In,'T>
-val cacheScalarOp:
-  name: string -> pl: Core.Builder.Pipeline<'In,'T> -> Core.Operation<'In,'T>
+    p1: Core.Pipeline<'In,'A> ->
+    p2: Core.Pipeline<'In,'B> -> Core.Pipeline<'In,'C>
 val runToScalar:
   name: 'a ->
     reducer: (FSharp.Control.AsyncSeq<'T> -> Async<'R>) ->
-    pl: Core.Builder.Pipeline<'In,'T> -> 'R
-val drainSingle: name: 'a -> pl: Core.Builder.Pipeline<'b,'c> -> 'c
-val drainList: name: 'a -> pl: Core.Builder.Pipeline<'b,'c> -> 'c list
-val drainLast: name: 'a -> pl: Core.Builder.Pipeline<'b,'c> -> 'c
+    pl: Core.Pipeline<'In,'T> -> 'R
+val drainSingle: name: 'a -> pl: Core.Pipeline<'b,'c> -> 'c
+val drainList: name: 'a -> pl: Core.Pipeline<'b,'c> -> 'c list
+val drainLast: name: 'a -> pl: Core.Pipeline<'b,'c> -> 'c
 val tap: label: string -> Core.Pipe<'T,'T>
 /// quick constructor for Streaming→Streaming unary ops
-val map:
-  label: string ->
-    profile: Core.MemoryProfile -> f: ('S -> 'T) -> Core.Pipe<'S,'T>
 val liftUnaryOp:
   name: string ->
     f: (Slice.Slice<'T> -> Slice.Slice<'T>) ->
     Core.Operation<Slice.Slice<'T>,Slice.Slice<'T>> when 'T: equality
 val tapOp: label: string -> Core.Operation<'T,'T>
-val sequentialJoin:
-  p1: Core.Pipe<'S,'T> -> p2: Core.Pipe<'S,'T> -> Core.Pipe<'S,'T>
 module SourceSink
 module internal InternalHelpers =
     val plotListAsync:
@@ -206,93 +158,34 @@ module internal InternalHelpers =
       inputDir: string ->
         suffix: string -> FSharp.Control.AsyncSeq<Slice.Slice<'T>>
         when 'T: equality
-val internal readSlices:
-  inputDir: string -> suffix: string -> Core.Pipe<unit,Slice.Slice<'T>>
-    when 'T: equality
-val read:
-  inputDir: string ->
-    suffix: string ->
-    transform: (Core.Pipe<unit,Slice.Slice<'T>> ->
-                  Core.Pipe<unit,Slice.Slice<'T>>) ->
-    Core.Pipe<unit,Slice.Slice<'T>> when 'T: equality
-val readSliceN:
-  idx: uint ->
-    inputDir: string ->
-    suffix: string ->
-    transform: (Core.Pipe<obj,Slice.Slice<'T>> ->
-                  Core.Pipe<unit,Slice.Slice<'T>>) ->
-    Core.Pipe<unit,Slice.Slice<'T>> when 'T: equality
-val internal readRandomSlices:
-  count: uint ->
-    inputDir: string -> suffix: string -> Core.Pipe<unit,Slice.Slice<'T>>
-    when 'T: equality
-val readRandom:
-  count: uint ->
-    inputDir: string ->
-    suffix: string ->
-    transform: (Core.Pipe<unit,Slice.Slice<'T>> ->
-                  Core.Pipe<unit,Slice.Slice<'T>>) ->
-    Core.Pipe<unit,Slice.Slice<'T>> when 'T: equality
+    val readSlices:
+      inputDir: string -> suffix: string -> Core.Pipe<unit,Slice.Slice<'T>>
+        when 'T: equality
+    val readRandomSlices:
+      count: uint ->
+        inputDir: string -> suffix: string -> Core.Pipe<unit,Slice.Slice<'T>>
+        when 'T: equality
 /// Source parts
 val createPipe:
   width: uint -> height: uint -> depth: uint -> Core.Pipe<unit,Slice.Slice<'T>>
     when 'T: equality
-val create:
+val createOp:
   width: uint ->
     height: uint ->
     depth: uint ->
-    transform: (Core.Pipe<unit,Slice.Slice<'T>> ->
-                  Core.Pipe<unit,Slice.Slice<'T>>) ->
-    Core.Pipe<unit,Slice.Slice<'T>> when 'T: equality
-val liftImageSource:
-  name: string -> img: Slice.Slice<'T> -> Core.Pipe<unit,Slice.Slice<'T>>
+    pl: Core.Pipeline<unit,unit> -> Core.Pipeline<unit,Slice.Slice<'T>>
     when 'T: equality
-val gaussSource:
-  sigma: float ->
-    kernelSize: uint option ->
-    transform: (Core.Pipe<unit,Slice.Slice<float>> -> 'a) -> 'a
-val gaussSourceOp:
-  sigma: float ->
-    kernelSize: uint option ->
-    pl: Core.Builder.Pipeline<unit,unit> ->
-    Core.Builder.Pipeline<unit,Slice.Slice<float>>
-val axisSource:
-  axis: int ->
-    size: int list -> transform: (Core.Pipe<unit,Slice.Slice<uint>> -> 'a) -> 'a
-val finiteDiffFilter2D:
-  direction: uint ->
-    order: uint ->
-    transform: (Core.Pipe<unit,Slice.Slice<float>> ->
-                  Core.Pipe<unit,Slice.Slice<float>>) ->
-    Core.Pipe<unit,Slice.Slice<float>>
-val finiteDiffFilter3D:
-  direction: uint ->
-    order: uint ->
-    transform: (Core.Pipe<unit,Slice.Slice<float>> ->
-                  Core.Pipe<unit,Slice.Slice<float>>) ->
-    Core.Pipe<unit,Slice.Slice<float>>
-val finiteDiffFilter3DOp:
-  direction: uint ->
-    order: uint ->
-    pl: Core.Builder.Pipeline<unit,unit> ->
-    Core.Builder.Pipeline<unit,Slice.Slice<float>>
-/// Sink parts
-val print<'T> : Core.Pipe<'T,unit>
-val plot:
-  plt: (float list -> float list -> unit) ->
-    Core.Pipe<(float * float) list,unit>
-val show:
-  plt: (Slice.Slice<'a> -> unit) -> Core.Pipe<Slice.Slice<'a>,unit>
-    when 'a: equality
-val write:
-  path: string -> suffix: string -> Core.Pipe<Slice.Slice<'a>,unit>
-    when 'a: equality
-val ignore<'T> : Core.Pipe<'T,unit>
 val readOp:
   inputDir: string ->
     suffix: string ->
-    pl: Core.Builder.Pipeline<unit,unit> ->
-    Core.Builder.Pipeline<unit,Slice.Slice<'T>> when 'T: equality
+    pl: Core.Pipeline<unit,unit> -> Core.Pipeline<unit,Slice.Slice<'T>>
+    when 'T: equality
+val readRandomOp:
+  count: uint ->
+    inputDir: string ->
+    suffix: string ->
+    pl: Core.Pipeline<unit,unit> -> Core.Pipeline<unit,Slice.Slice<'T>>
+    when 'T: equality
 val writeOp:
   path: string -> suffix: string -> Core.Operation<Slice.Slice<'a>,unit>
     when 'a: equality
@@ -303,31 +196,18 @@ val plotOp:
   plt: (float list -> float list -> unit) ->
     Core.Operation<(float * float) list,unit>
 val printOp: unit -> Core.Operation<'T,unit>
-val createOp:
-  width: uint ->
-    height: uint ->
-    depth: uint ->
-    pl: Core.Builder.Pipeline<unit,unit> ->
-    Core.Builder.Pipeline<unit,Slice.Slice<'T>> when 'T: equality
-val readRandomOp:
-  count: uint ->
-    inputDir: string ->
-    suffix: string ->
-    pl: Core.Builder.Pipeline<unit,unit> ->
-    Core.Builder.Pipeline<unit,Slice.Slice<'T>> when 'T: equality
-module Processing
-val internal explodeSlice:
-  slices: Slice.Slice<'T> -> FSharp.Control.AsyncSeq<Slice.Slice<'T>>
+val liftImageSource:
+  name: string -> img: Slice.Slice<'T> -> Core.Pipe<unit,Slice.Slice<'T>>
     when 'T: equality
-val reduce:
-  label: string ->
-    profile: Core.MemoryProfile ->
-    reducer: (FSharp.Control.AsyncSeq<'In> -> Async<'Out>) ->
-    Core.Pipe<'In,'Out>
-val fold:
-  label: string ->
-    profile: Core.MemoryProfile ->
-    folder: ('State -> 'In -> 'State) -> state0: 'State -> Core.Pipe<'In,'State>
+val axisSourceOp:
+  axis: int ->
+    size: int list ->
+    pl: Core.Pipeline<unit,unit> -> Core.Pipeline<unit,Slice.Slice<uint>>
+val finiteDiffFilter3DOp:
+  direction: uint ->
+    order: uint ->
+    pl: Core.Pipeline<unit,unit> -> Core.Pipeline<unit,Slice.Slice<float>>
+module Processing
 val skipFirstLast: n: int -> lst: 'a list -> 'a list
 /// mapWindowed keeps a running window along the slice direction of depth images
 /// and processes them by f. The stepping size of the running window is stride.
@@ -375,12 +255,6 @@ val internal liftBinaryOpFloat:
   name: string ->
     f: (Slice.Slice<float> -> Slice.Slice<float> -> Slice.Slice<float>) ->
     Core.Operation<(Slice.Slice<float> * Slice.Slice<float>),Slice.Slice<float>>
-val internal liftBinaryZipOp:
-  name: string ->
-    f: (Slice.Slice<'T> -> Slice.Slice<'T> -> Slice.Slice<'T>) ->
-    p1: Core.Pipe<'In,Slice.Slice<'T>> ->
-    p2: Core.Pipe<'In,Slice.Slice<'T>> -> Core.Pipe<'In,Slice.Slice<'T>>
-    when 'T: equality
 val internal liftFullOp:
   name: string ->
     f: (Slice.Slice<'T> -> Slice.Slice<'T>) ->

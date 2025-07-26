@@ -3,19 +3,14 @@ module Routing
 open FSharp.Control
 open AsyncSeqExtensions
 open Core
-open Core.Helpers
 open Slice
-
-let run (p: Pipe<unit,'T>) : AsyncSeq<'T> =
-    printfn "[run]"
-    (AsyncSeq.singleton ()) |> p.Apply
 
 /// Split a Pipe<'In,'T> into two branches that
 ///   • read the upstream only once
 ///   • keep at most one item in memory
 ///   • terminate correctly when both sides finish
 type private Request<'T> = Left of AsyncReplyChannel<Option<'T>> | Right of AsyncReplyChannel<Option<'T>>
-let tee (p : Pipe<'In,'T>): Pipe<'In,'T> * Pipe<'In,'T> =
+let internal tee (p : Pipe<'In,'T>): Pipe<'In,'T> * Pipe<'In,'T> =
     printfn "[tee]"
 
     // ---------- 1. Create the broadcaster exactly *once* per pipeline run ----------
@@ -93,7 +88,7 @@ let tee (p : Pipe<'In,'T>): Pipe<'In,'T> * Pipe<'In,'T> =
     // ---------- 2. Build the two outward‑facing Pipes ----------
     let mkSide name pick =
         { 
-        Name  = $"{p.Name}-{name}"
+        Name  = $"{p.Name} - {name}"
         Profile = p.Profile
         Apply   = fun input ->
                         let left, right = getShared input
@@ -102,12 +97,12 @@ let tee (p : Pipe<'In,'T>): Pipe<'In,'T> * Pipe<'In,'T> =
     mkSide "left"  fst,
     mkSide "right" snd
 
-let teeOp (op: Operation<'In, 'T>) : Operation<'In, 'T> * Operation<'In, 'T> =
+let internal teeOp (op: Operation<'In, 'T>) : Operation<'In, 'T> * Operation<'In, 'T> =
     let leftPipe, rightPipe = tee op.Pipe
 
     let mk name pipe =
         {
-            Name = $"{op.Name} ⊣ {name}"
+            Name = $"{op.Name} - {name}"
             Transition = op.Transition  // preserve transition
             Pipe = pipe
         }
@@ -115,17 +110,18 @@ let teeOp (op: Operation<'In, 'T>) : Operation<'In, 'T> * Operation<'In, 'T> =
     mk "left" leftPipe,
     mk "right" rightPipe
 
-let teePipeline (pl: Builder.Pipeline<'In, 'T>) : Builder.Pipeline<'In, 'T> * Builder.Pipeline<'In, 'T> =
+let teePipeline (pl: Pipeline<'In, 'T>) : Pipeline<'In, 'T> * Pipeline<'In, 'T> =
     let op, mem', shape = pl.flow pl.mem pl.shape
     let leftOp, rightOp = teeOp op
-    let plLeft: Builder.Pipeline<'In, 'T>  = { flow = Builder.returnM leftOp; mem = mem'; shape = shape }
-    let plRight: Builder.Pipeline<'In, 'T> = { flow = Builder.returnM rightOp; mem = mem'; shape = shape }
+    let plLeft: Pipeline<'In, 'T>  = { flow = returnM leftOp; mem = mem'; shape = shape }
+    let plRight: Pipeline<'In, 'T> = { flow = returnM rightOp; mem = mem'; shape = shape }
     plLeft, plRight
 
 /// zipWith two Pipes<'In, _> into one by zipping their outputs:
 ///   • applies both processors to the same input stream
 ///   • pairs each output and combines using the given function
 ///   • assumes both sides produce values in lockstep
+(* // keep, new zipWithOp blocks, so some functionality probably needs to be taken from this old version
 let zipWithOld (f: 'A -> 'B -> 'C) (p1: Pipe<'In, 'A>) (p2: Pipe<'In, 'B>) : Pipe<'In, 'C> =
     printfn "[zipWith]"
     let name = $"zipWith({p1.Name}, {p2.Name})"
@@ -166,15 +162,8 @@ let zipWithOld (f: 'A -> 'B -> 'C) (p1: Pipe<'In, 'A>) (p2: Pipe<'In, 'B>) : Pip
                 printfn "[Runtime analysis: zipWith parallel]"
                 AsyncSeq.zip a b |> AsyncSeq.map (fun (x, y) -> f x y)
     }
-
-let zipWithPipeOld
-    (f: 'A -> 'B -> Pipe<'In, 'C>)
-    (pa: Pipe<'In, 'A>)
-    (pb: Pipe<'In, 'B>) : Pipe<'In, 'C> =
-
-    zipWithOld f pa pb |> bindPipe
-
-let zipWithOp (f: 'A -> 'B -> 'C)
+*)
+let internal zipWithOp (f: 'A -> 'B -> 'C)
               (op1: Operation<'In, 'A>)
               (op2: Operation<'In, 'B>) : Operation<'In, 'C> =
     let name = $"zipWith({op1.Name}, {op2.Name})"
@@ -211,8 +200,8 @@ let zipWithOp (f: 'A -> 'B -> 'C)
     }
 
 let zipWith (f: 'A -> 'B -> 'C)
-            (p1: Builder.Pipeline<'In, 'A>)
-            (p2: Builder.Pipeline<'In, 'B>) : Builder.Pipeline<'In, 'C> =
+            (p1: Pipeline<'In, 'A>)
+            (p2: Pipeline<'In, 'B>) : Pipeline<'In, 'C> =
     let flow (mem: uint64) (shape: SliceShape option) =
         let op1, mem1, shape1 = p1.flow mem shape
         let op2, mem2, shape2 = p2.flow mem1 shape1
@@ -225,42 +214,7 @@ let zipWith (f: 'A -> 'B -> 'C)
         flow = flow
     }
 
-// Needs to be updated for *Constant MemoryProfiles
-let cacheScalar (name: string) (p: Pipe<unit, 'T>) : Pipe<'In, 'T> =
-    printfn "[cacheScalar]"
-    let result =
-        run p
-        |> AsyncSeq.tryLast
-        |> Async.RunSynchronously
-        |> function
-           | Some x -> x
-           | None -> failwithf "[cacheScalar] No output from pipeline '%s'" p.Name
-
-    lift $"cacheScalar: {name}" Constant (fun _ -> async.Return result)
-
-let cacheScalarOp (name: string) (pl: Builder.Pipeline<'In, 'T>) : Operation<'In, 'T> =
-    let op, _, _ = pl.flow pl.mem pl.shape
-    let pipe = op.Pipe
-
-    // Run the pipe with dummy input to extract a single value
-    let dummyInput = AsyncSeq.singleton Unchecked.defaultof<'In>
-
-    let result =
-        pipe.Apply dummyInput
-        |> AsyncSeq.tryLast
-        |> Async.RunSynchronously
-        |> function
-           | Some value -> value
-           | None -> failwithf "[cacheScalar] No result from pipeline '%s'" pipe.Name
-
-    // Return new constant-producing operation
-    {
-        Name = $"cacheScalar({name})"
-        Transition = transition Constant Constant
-        Pipe = lift $"cacheScalar({name})" Constant (fun _ -> async.Return result)
-    }
-
-let runToScalar name (reducer: AsyncSeq<'T> -> Async<'R>) (pl: Builder.Pipeline<'In, 'T>) : 'R =
+let runToScalar name (reducer: AsyncSeq<'T> -> Async<'R>) (pl: Pipeline<'In, 'T>) : 'R =
     let op, _, _ = pl.flow pl.mem pl.shape
     let pipe = op.Pipe
     let input = AsyncSeq.singleton Unchecked.defaultof<'In>
@@ -289,14 +243,6 @@ let tap label : Pipe<'T, 'T> =
         async.Return x)
 
 /// quick constructor for Streaming→Streaming unary ops
-let map (label: string) (profile: MemoryProfile) (f: 'S -> 'T) 
-    : Pipe<'S,'T> =
-    {
-        Name = label; 
-        Profile = profile
-        Apply = fun input -> input |> AsyncSeq.map f
-    }
-
 let liftUnaryOp name (f: Slice<'T> -> Slice<'T>) 
     : Operation<Slice<'T>,Slice<'T>> =
     { 
@@ -315,6 +261,14 @@ let tapOp (label: string) : Operation<'T, 'T> =
         Pipe = map label Streaming _print
     }
 
+(*
+/////////////////////////////////////
+// Not yet transformed to Pipeline-operation version. Are they needed?
+
+let run (p: Pipe<unit,'T>) : AsyncSeq<'T> =
+    printfn "[run]"
+    (AsyncSeq.singleton ()) |> p.Apply
+
 let sequentialJoin (p1: Pipe<'S, 'T>) (p2: Pipe<'S, 'T>) : Pipe<'S, 'T> =
     {
         Name = p1.Name + " ++ " + p2.Name
@@ -325,3 +279,4 @@ let sequentialJoin (p1: Pipe<'S, 'T>) (p2: Pipe<'S, 'T>) : Pipe<'S, 'T> =
                 yield! p2.Apply input
             }
     }
+*)

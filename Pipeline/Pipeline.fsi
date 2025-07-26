@@ -5,22 +5,18 @@ type Operation<'S,'T> = Core.Operation<'S,'T>
 type MemoryProfile = Core.MemoryProfile
 type MemoryTransition = Core.MemoryTransition
 type Slice<'S when 'S: equality> = Slice.Slice<'S>
-val source: (uint64 -> Core.Builder.Pipeline<unit,unit>)
-val sink: pl: Core.Builder.Pipeline<unit,unit> -> unit
-val sinkList: plLst: Core.Builder.Pipeline<unit,unit> list -> unit
+val source: (uint64 -> Core.Pipeline<unit,unit>)
+val sink: pl: Core.Pipeline<unit,unit> -> unit
+val sinkList: plLst: Core.Pipeline<unit,unit> list -> unit
 val (>=>) :
-  (Core.Builder.Pipeline<'a,'b> ->
-     Core.Operation<'b,'c> -> Core.Builder.Pipeline<'a,'c>)
-val tee:
-  (Core.Builder.Pipeline<'a,'b> ->
-     Core.Builder.Pipeline<'a,'b> * Core.Builder.Pipeline<'a,'b>)
+  (Core.Pipeline<'a,'b> -> Core.Operation<'b,'c> -> Core.Pipeline<'a,'c>)
+val tee: (Core.Pipeline<'a,'b> -> Core.Pipeline<'a,'b> * Core.Pipeline<'a,'b>)
 val zipWith:
   (('a -> 'b -> 'c) ->
-     Core.Builder.Pipeline<'d,'a> ->
-     Core.Builder.Pipeline<'d,'b> -> Core.Builder.Pipeline<'d,'c>)
-val drainSingle: pl: Core.Builder.Pipeline<'a,'b> -> 'b
-val drainList: pl: Core.Builder.Pipeline<'a,'b> -> 'b list
-val drainLast: pl: Core.Builder.Pipeline<'a,'b> -> 'b
+     Core.Pipeline<'d,'a> -> Core.Pipeline<'d,'b> -> Core.Pipeline<'d,'c>)
+val drainSingle: pl: Core.Pipeline<'a,'b> -> 'b
+val drainList: pl: Core.Pipeline<'a,'b> -> 'b list
+val drainLast: pl: Core.Pipeline<'a,'b> -> 'b
 val tap: (string -> Core.Operation<'a,'a>)
 val liftUnary:
   f: (Slice<'T> -> Slice<'T>) -> Core.Operation<Slice.Slice<'T>,Slice.Slice<'T>>
@@ -28,20 +24,17 @@ val liftUnary:
 val create<'T when 'T: equality> :
   (uint ->
      uint ->
-     uint ->
-     Core.Builder.Pipeline<unit,unit> ->
-     Core.Builder.Pipeline<unit,Slice.Slice<'T>>) when 'T: equality
+     uint -> Core.Pipeline<unit,unit> -> Core.Pipeline<unit,Slice.Slice<'T>>)
+    when 'T: equality
 val readAs<'T when 'T: equality> :
   (string ->
-     string ->
-     Core.Builder.Pipeline<unit,unit> ->
-     Core.Builder.Pipeline<unit,Slice.Slice<'T>>) when 'T: equality
+     string -> Core.Pipeline<unit,unit> -> Core.Pipeline<unit,Slice.Slice<'T>>)
+    when 'T: equality
 val readRandomAs<'T when 'T: equality> :
   (uint ->
      string ->
-     string ->
-     Core.Builder.Pipeline<unit,unit> ->
-     Core.Builder.Pipeline<unit,Slice.Slice<'T>>) when 'T: equality
+     string -> Core.Pipeline<unit,unit> -> Core.Pipeline<unit,Slice.Slice<'T>>)
+    when 'T: equality
 val write:
   (string -> string -> Core.Operation<Slice.Slice<'a>,unit>) when 'a: equality
 val print: (unit -> Core.Operation<'a,unit>)
@@ -51,23 +44,13 @@ val plot:
 val show:
   ((Slice.Slice<'a> -> unit) -> Core.Operation<Slice.Slice<'a>,unit>)
     when 'a: equality
-val finiteDiffFilter2D:
-  (uint ->
-     uint ->
-     (Core.Pipe<unit,Slice.Slice<float>> -> Core.Pipe<unit,Slice.Slice<float>>) ->
-     Core.Pipe<unit,Slice.Slice<float>>)
 val finiteDiffFilter3D:
   (uint ->
-     uint ->
-     Core.Builder.Pipeline<unit,unit> ->
-     Core.Builder.Pipeline<unit,Slice.Slice<float>>)
-val gaussSource:
-  (float ->
-     uint option ->
-     Core.Builder.Pipeline<unit,unit> ->
-     Core.Builder.Pipeline<unit,Slice.Slice<float>>)
+     uint -> Core.Pipeline<unit,unit> -> Core.Pipeline<unit,Slice.Slice<float>>)
 val axisSource:
-  (int -> int list -> (Core.Pipe<unit,Slice.Slice<uint>> -> 'a) -> 'a)
+  (int ->
+     int list ->
+     Core.Pipeline<unit,unit> -> Core.Pipeline<unit,Slice.Slice<uint>>)
 val castUInt8ToInt8: Core.Operation<Slice.Slice<uint8>,Slice.Slice<int8>>
 val castUInt8ToUInt16: Core.Operation<Slice.Slice<uint8>,Slice.Slice<uint16>>
 val castUInt8ToInt16: Core.Operation<Slice.Slice<uint8>,Slice.Slice<int16>>

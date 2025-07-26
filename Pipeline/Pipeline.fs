@@ -13,9 +13,9 @@ type MemoryTransition = Core.MemoryTransition
 type Slice<'S when 'S: equality> = Slice.Slice<'S>
 
 let source = Core.sourceOp
-let sink (pl: Builder.Pipeline<unit,unit>) : unit = Core.sinkOp pl
-let sinkList (plLst: Builder.Pipeline<unit,unit> list) : unit = Core.sinkListOp plLst
-let (>=>) = Core.(>>=>)
+let sink (pl: Pipeline<unit,unit>) : unit = Core.sinkOp pl
+let sinkList (plLst: Pipeline<unit,unit> list) : unit = Core.sinkListOp plLst
+let (>=>) = Core.(>=>)
 let tee = Routing.teePipeline
 let zipWith = Routing.zipWith
 let drainSingle pl = Routing.drainSingle "drainSingle" pl
@@ -32,10 +32,8 @@ let print = SourceSink.printOp
 let plot = SourceSink.plotOp
 let show = SourceSink.showOp
 
-let finiteDiffFilter2D = SourceSink.finiteDiffFilter2D
 let finiteDiffFilter3D = SourceSink.finiteDiffFilter3DOp
-let gaussSource = SourceSink.gaussSourceOp
-let axisSource = SourceSink.axisSource
+let axisSource = SourceSink.axisSourceOp
 
 let castUInt8ToInt8 = castUInt8ToInt8Op "castUInt8ToInt8"
 let castUInt8ToUInt16 = castUInt8ToUInt16Op "castUInt8ToUInt16"
