@@ -19,14 +19,12 @@ let main _ =
         source mem
         |> readAs<uint8> "image" ".tiff"
         >=> histogram
-    printfn "%A" histogram
-//    readHistogramMaker >=> tap "histogramMaker" |> sink
-    //let left, right = tee readHistogramMaker
-    //left >=> tap "left" |> sink
-    //let path2 = right >=> map2pairs >=> pairs2floats
+
+    let left, right = tee readHistogramMaker
+    let path2 = right >=> map2pairs >=> pairs2floats
     // compile time analysis:
-    //[path2 >=> tap "path2" >=> plot plt; left >=> tap "left" >=> print] |> sinkLst
+    [path2 >=> tap "path2" >=> plot plt; left >=> tap "left" >=> print ()] |> sinkList
     // runtime analysis:
-//    zipWith (fun _ _ -> ()) (path2 >=> plot plt) (left >=> print) |> sink
+    // zipWith (fun _ _ -> ()) (path2 >=> plot plt) (left >=> print ()) |> sink
 
     0

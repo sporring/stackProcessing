@@ -184,9 +184,7 @@ val liftUnaryOp:
   name: string ->
     f: (Slice.Slice<'T> -> Slice.Slice<'T>) ->
     Core.Operation<Slice.Slice<'T>,Slice.Slice<'T>> when 'T: equality
-val tapOp:
-  label: string -> Core.Operation<Slice.Slice<'a>,Slice.Slice<'a>>
-    when 'a: equality
+val tapOp: label: string -> Core.Operation<'T,'T>
 val sequentialJoin:
   p1: Core.Pipe<'S,'T> -> p2: Core.Pipe<'S,'T> -> Core.Pipe<'S,'T>
 module SourceSink
@@ -304,7 +302,7 @@ val showOp:
 val plotOp:
   plt: (float list -> float list -> unit) ->
     Core.Operation<(float * float) list,unit>
-val printOp: unit -> Core.Operation<(float * float) list,unit>
+val printOp: unit -> Core.Operation<'T,unit>
 val createOp:
   width: uint ->
     height: uint ->

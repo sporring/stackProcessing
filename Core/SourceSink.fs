@@ -292,7 +292,7 @@ let plotOp (plt: float list -> float list -> unit) : Operation<(float * float) l
         Pipe = consumeWith "plot" Streaming plotReducer
     }
 
-let printOp () : Operation<(float * float) list, unit> =
+let printOp () : Operation<'T, unit> =
     let printReducer stream = async { do! printAsync stream }
     {
         Name = "print"

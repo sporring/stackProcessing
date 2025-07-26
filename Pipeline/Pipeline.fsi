@@ -21,8 +21,7 @@ val zipWith:
 val drainSingle: pl: Core.Builder.Pipeline<'a,'b> -> 'b
 val drainList: pl: Core.Builder.Pipeline<'a,'b> -> 'b list
 val drainLast: pl: Core.Builder.Pipeline<'a,'b> -> 'b
-val tap:
-  (string -> Core.Operation<Slice.Slice<'a>,Slice.Slice<'a>>) when 'a: equality
+val tap: (string -> Core.Operation<'a,'a>)
 val liftUnary:
   f: (Slice<'T> -> Slice<'T>) -> Core.Operation<Slice.Slice<'T>,Slice.Slice<'T>>
     when 'T: equality
@@ -45,7 +44,7 @@ val readRandomAs<'T when 'T: equality> :
      Core.Builder.Pipeline<unit,Slice.Slice<'T>>) when 'T: equality
 val write:
   (string -> string -> Core.Operation<Slice.Slice<'a>,unit>) when 'a: equality
-val print: (unit -> Core.Operation<(float * float) list,unit>)
+val print: (unit -> Core.Operation<'a,unit>)
 val plot:
   ((float list -> float list -> unit) ->
      Core.Operation<(float * float) list,unit>)

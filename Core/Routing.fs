@@ -306,9 +306,14 @@ let liftUnaryOp name (f: Slice<'T> -> Slice<'T>)
     }
 
 let tapOp (label: string) : Operation<'T, 'T> =
-    liftUnaryOp $"tap: {label}" (fun x ->
+    let _print x = 
         printfn "[%s] %A" label x
-        x)
+        x // return x such that Pipe below gets type of x
+    { 
+        Name = $"tap: {label}"
+        Transition = transition Streaming Streaming
+        Pipe = map label Streaming _print
+    }
 
 let sequentialJoin (p1: Pipe<'S, 'T>) (p2: Pipe<'S, 'T>) : Pipe<'S, 'T> =
     {
