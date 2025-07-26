@@ -162,6 +162,7 @@ let internal consumeWith
     let reducer (s : AsyncSeq<'T>) = consume s          // Async<unit>
     reduce name profile reducer                    // gives AsyncSeq<unit>
 
+(*
 /// Pipeline computation expression
 type PipelineBuilder(availableMemory: uint64) =
     member _.availableMemory = availableMemory
@@ -198,6 +199,7 @@ type PipelineBuilder(availableMemory: uint64) =
 
 /// A memory-aware pipeline builder with the specified processing constraints.
 let pipeline availableMemory = PipelineBuilder(availableMemory)
+*)
 
 /// Combine two <c>Pipe</c> instances into one by composing their memory profiles and transformation functions.
 let composePipe (p1: Pipe<'S,'T>) (p2: Pipe<'T,'U>) : Pipe<'S,'U> =
@@ -300,7 +302,7 @@ module Builder =
           shape : SliceShape option }
 
     // source: only memory budget, shape = None
-    let source<'T> (availableMemory: uint64) : Pipeline<unit,'T> =
+    let source (availableMemory: uint64) : Pipeline<unit,unit> =
         { flow  = fun _ _ -> failwith "pipeline not started yet"
           mem   = availableMemory
           shape = None }
@@ -347,7 +349,7 @@ module Builder =
         |> ignore    
 /////////////////////////////////
 
-let sourceOp<'T> (availableMemory: uint64) : Builder.Pipeline<unit,'T> = Builder.source<'T> availableMemory
+let sourceOp (availableMemory: uint64) : Builder.Pipeline<unit,unit> = Builder.source availableMemory
 
 let sinkOp (pl: Builder.Pipeline<unit,unit>) : unit = Builder.sink pl
 

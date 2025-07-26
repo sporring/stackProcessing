@@ -1,18 +1,15 @@
 ﻿// To run, remember to:
-// export DYLD_LIBRARY_PATH=./StackPipeline/lib:$(pwd)/bin/Debug/net8.0
+// export DYLD_LIBRARY_PATH=$(pwd)/lib 
 open Pipeline
 
 [<EntryPoint>]
 let main _ =
-    let src = "image"
-    let trg = "result"
-    let width, height, depth = getStackSize src ".tiff"
     let availableMemory = 1024UL * 1024UL // 1MB for example
     let sigma = 1.0
 
-    source<Slice<float>> availableMemory
-    |> read "image" ".tiff"
-    >=> convGauss 1.0 None
+    source availableMemory
+    |> readAs<float> "image" ".tiff"
+    >=> convGauss sigma None
     >=> castFloatToUInt8
     >=> write "result" ".tif"
     |> sink

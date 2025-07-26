@@ -56,6 +56,7 @@ module internal InternalHelpers =
 
 open InternalHelpers
 
+(*
 let sourceLst<'T>
     (availableMemory: uint64)
     (processors: Pipe<unit,'T> list) 
@@ -83,6 +84,7 @@ let sinkLst (processors: Pipe<unit, unit> list) : unit =
 
 let sink (p: Pipe<unit, unit>) : unit = 
     sinkLst [p]
+*)
 
 let internal readSlices<'T when 'T: equality> (inputDir: string) (suffix: string) : Pipe<unit, Slice<'T>> =
     printfn "[readSlices]"
@@ -99,9 +101,7 @@ let internal readSlices<'T when 'T: equality> (inputDir: string) (suffix: string
                 slice)
     }
 
-//let read<'T when 'T: equality> (inputDir: string) (suffix: string) p = 
-//    readSlices<'T> inputDir suffix |> p
-let read<'T when 'T : equality> (inputDir : string) (suffix : string) transform : Core.Pipe<unit,Slice.Slice<'T>> =
+let read<'T when 'T : equality> (inputDir : string) (suffix : string) transform : Core.Pipe<unit,Slice<'T>> =
     printfn "[read]"
     readSlices<'T> inputDir suffix |> transform
     
@@ -213,29 +213,25 @@ let ignore<'T> : Pipe<'T, unit> =
             do! stream |> AsyncSeq.iterAsync (fun _ -> async.Return())
         })
 
-let readOp
+let readOp<'T when 'T: equality>
     (inputDir : string)
     (suffix : string)
-    (pl : Builder.Pipeline<unit, Slice<'T>>) : Builder.Pipeline<unit, Slice<'T>> =
+    (pl : Builder.Pipeline<unit, unit>) : Builder.Pipeline<unit, Slice<'T>> =
 
     // Add shape from disk, and let this Operation carry a shape callback — but that's out of scope for now.
     let (width,height,depth) = Slice.getStackSize inputDir suffix
     let shape = Some [width;height;depth]
-
     let op : Operation<unit, Slice<'T>> =
         {
             Name = $"read:{inputDir}"
             Transition = transition Constant Streaming
             Pipe = readSlices<'T> inputDir suffix
         }
-
     {
         shape = shape
         mem = pl.mem
         flow = Builder.returnM op
     }
-
-
 
 let writeOp (outputDir: string) (suffix: string) : Operation<Slice<'T>, unit> =
     {
