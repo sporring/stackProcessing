@@ -9,8 +9,11 @@ open Slice
 ///   • read the upstream only once
 ///   • keep at most one item in memory
 ///   • terminate correctly when both sides finish
-type private Request<'T> = Left of AsyncReplyChannel<Option<'T>> | Right of AsyncReplyChannel<Option<'T>>
-let internal tee (p : Pipe<'In,'T>): Pipe<'In,'T> * Pipe<'In,'T> =
+type private Request<'T> =
+    | Left of AsyncReplyChannel<Option<'T>>
+    | Right of AsyncReplyChannel<Option<'T>>
+
+let internal tee (p : Pipe<'In,'T>): Pipe<'In, 'T> * Pipe<'In, 'T> =
     printfn "[tee]"
 
     // ---------- 1. Create the broadcaster exactly *once* per pipeline run ----------
@@ -86,83 +89,38 @@ let internal tee (p : Pipe<'In,'T>): Pipe<'In,'T> * Pipe<'In,'T> =
                     lazyStreams.Value)
 
     // ---------- 2. Build the two outward‑facing Pipes ----------
-    let mkSide name pick =
+    let mkPipe name pick =
         { 
         Name  = $"{p.Name} - {name}"
         Profile = p.Profile
-        Apply   = fun input ->
-                        let left, right = getShared input
-                        pick (left, right) }
+        Apply   = 
+            fun input ->
+                let left, right = getShared input
+                pick (left, right) 
+        }
 
-    mkSide "left"  fst,
-    mkSide "right" snd
+    mkPipe "left" fst, mkPipe "right" snd
 
 let internal teeOp (op: Operation<'In, 'T>) : Operation<'In, 'T> * Operation<'In, 'T> =
     let leftPipe, rightPipe = tee op.Pipe
-
-    let mk name pipe =
-        {
-            Name = $"{op.Name} - {name}"
-            Transition = op.Transition  // preserve transition
-            Pipe = pipe
-        }
-
+    let mk name pipe = 
+        {Name = $"{op.Name} - {name}";  Transition = op.Transition; Pipe = pipe }
     mk "left" leftPipe,
     mk "right" rightPipe
 
 let teePipeline (pl: Pipeline<'In, 'T>) : Pipeline<'In, 'T> * Pipeline<'In, 'T> =
-    let op, mem', shape = pl.flow pl.mem pl.shape
+    let op, mem, shape = pl.flow pl.mem pl.shape
     let leftOp, rightOp = teeOp op
-    let plLeft: Pipeline<'In, 'T>  = { flow = returnM leftOp; mem = mem'; shape = shape }
-    let plRight: Pipeline<'In, 'T> = { flow = returnM rightOp; mem = mem'; shape = shape }
+    let plLeft: Pipeline<'In, 'T>  = 
+        { flow = returnM leftOp; mem = mem; shape = shape }
+    let plRight: Pipeline<'In, 'T> = 
+        { flow = returnM rightOp; mem = mem; shape = shape }
     plLeft, plRight
 
 /// zipWith two Pipes<'In, _> into one by zipping their outputs:
 ///   • applies both processors to the same input stream
 ///   • pairs each output and combines using the given function
 ///   • assumes both sides produce values in lockstep
-(* // keep, new zipWithOp blocks, so some functionality probably needs to be taken from this old version
-let zipWithOld (f: 'A -> 'B -> 'C) (p1: Pipe<'In, 'A>) (p2: Pipe<'In, 'B>) : Pipe<'In, 'C> =
-    printfn "[zipWith]"
-    let name = $"zipWith({p1.Name}, {p2.Name})"
-    let profile = p1.Profile.combineProfile p2.Profile
-    {
-        Name = name
-        Profile = profile
-        Apply = fun input ->
-            let a = p1.Apply input
-            let b = p2.Apply input
-            match p1.Profile, p2.Profile with
-            | Full, Streaming | Streaming, Full ->
-                failwithf "[zipWith] Mixing Full and Streaming is not supported: %s, %s"
-                          (p1.Profile.ToString()) (p2.Profile.ToString())
-            | Constant, _ ->
-                printfn "[Runtime analysis: zipWith sequential]"
-                asyncSeq {
-                    let! constant =
-                        a
-                        |> AsyncSeq.tryLast
-                        |> Async.map (function
-                            | Some v -> v
-                            | None -> failwithf "[zipWith] Constant pipe '%s' returned no result." p1.Name)
-                    yield! b |> AsyncSeq.map (fun b -> f constant b)
-                }
-            | _, Constant ->
-                printfn "[Runtime analysis: zipWith sequential]"
-                asyncSeq {
-                    let! constant =
-                        b
-                        |> AsyncSeq.tryLast
-                        |> Async.map (function
-                            | Some v -> v
-                            | None -> failwithf "[zipWith] Constant pipe '%s' returned no result." p2.Name)
-                    yield! a |> AsyncSeq.map (fun a -> f a constant)
-               }
-            | _ ->
-                printfn "[Runtime analysis: zipWith parallel]"
-                AsyncSeq.zip a b |> AsyncSeq.map (fun (x, y) -> f x y)
-    }
-*)
 let internal zipWithOp (f: 'A -> 'B -> 'C)
               (op1: Operation<'In, 'A>)
               (op2: Operation<'In, 'B>) : Operation<'In, 'C> =
@@ -180,16 +138,25 @@ let internal zipWithOp (f: 'A -> 'B -> 'C)
                     failwithf "[zipWith] Mixing Full and Streaming not supported: %s, %s"
                               (op1.Pipe.Profile.ToString()) (op2.Pipe.Profile.ToString())
                 | Constant, _ ->
+                    printfn "[Runtime analysis: zipWith sequential]"
                     asyncSeq {
-                        let! constant = a |> AsyncSeq.tryLast |> Async.map (Option.defaultWith (fun () -> failwith $"No constant result from {op1.Name}"))
+                        let! constant = 
+                            a 
+                            |> AsyncSeq.tryLast 
+                            |> Async.map (Option.defaultWith (fun () -> failwith $"No constant result from {op1.Name}"))
                         yield! b |> AsyncSeq.map (fun b -> f constant b)
                     }
                 | _, Constant ->
+                    printfn "[Runtime analysis: zipWith sequential]"
                     asyncSeq {
-                        let! constant = b |> AsyncSeq.tryLast |> Async.map (Option.defaultWith (fun () -> failwith $"No constant result from {op2.Name}"))
+                        let! constant = 
+                            b 
+                            |> AsyncSeq.tryLast 
+                            |> Async.map (Option.defaultWith (fun () -> failwith $"No constant result from {op2.Name}"))
                         yield! a |> AsyncSeq.map (fun a -> f a constant)
                     }
                 | _ ->
+                    printfn "[Runtime analysis: zipWith parallel]"
                     AsyncSeq.zip a b |> AsyncSeq.map (fun (x, y) -> f x y)
         }
 
@@ -199,9 +166,7 @@ let internal zipWithOp (f: 'A -> 'B -> 'C)
         Pipe = pipe
     }
 
-let zipWith (f: 'A -> 'B -> 'C)
-            (p1: Pipeline<'In, 'A>)
-            (p2: Pipeline<'In, 'B>) : Pipeline<'In, 'C> =
+let zipWith (f: 'A -> 'B -> 'C) (p1: Pipeline<'In, 'A>) (p2: Pipeline<'In, 'B>) : Pipeline<'In, 'C> =
     let flow (mem: uint64) (shape: SliceShape option) =
         let op1, mem1, shape1 = p1.flow mem shape
         let op2, mem2, shape2 = p2.flow mem1 shape1
@@ -209,9 +174,9 @@ let zipWith (f: 'A -> 'B -> 'C)
         zipped, mem2, shape2
 
     {
+        flow = flow
         mem = min p1.mem p2.mem
         shape = p1.shape |> Option.orElse p2.shape
-        flow = flow
     }
 
 let runToScalar name (reducer: AsyncSeq<'T> -> Async<'R>) (pl: Pipeline<'In, 'T>) : 'R =
@@ -280,3 +245,89 @@ let sequentialJoin (p1: Pipe<'S, 'T>) (p2: Pipe<'S, 'T>) : Pipe<'S, 'T> =
             }
     }
 *)
+
+/// Represents a pipeline that has been shared (split into synchronized branches)
+type SharedPipeline<'T, 'U , 'V> = {
+    flow: uint64 -> SliceShape option -> (Operation<'T, 'U> * Operation<'T, 'V>) * uint64 * SliceShape option
+    branches: Operation<'T,'U> * Operation<'T,'V>
+    mem: uint64
+    shape: SliceShape option
+}
+
+(*
+/// Share a pipeline by exposing its underlying stream source
+let share (pl: Pipeline<'In, 'T>) : SharedPipeline<'In, 'T> =
+    let op, mem', shape' = pl.flow pl.mem pl.shape
+    { source = op.Pipe }
+*)
+
+/// parallel fanout with synchronization
+/// Synchronously split the shared stream into two parallel pipelines
+let (>=>>) (pl: Pipeline<'In, 'T>) (op1: Operation<'T, 'U>, op2: Operation<'T, 'V>) : SharedPipeline<'In, 'U, 'V> =
+    let flow mem shape =
+        let baseOp, mem', shape' = pl.flow mem shape
+        let pipe1, pipe2 = tee baseOp.Pipe
+        let op1' = composeOp { baseOp with Pipe = pipe1 } op1
+        let op2' = composeOp { baseOp with Pipe = pipe2 } op2
+        ((op1', op2'), mem', shape')
+
+    {
+        flow = flow
+        branches = flow pl.mem pl.shape |> (fun ((a, b), _, _) -> (a, b))
+        mem = pl.mem
+        shape = pl.shape
+    }
+
+let (>>=>>) 
+    (pl: SharedPipeline<'In, 'U, 'V>) 
+    (combine: (Pipeline<'In, 'U> * Pipeline<'In, 'V>) -> (Pipeline<'In, 'M> * Pipeline<'In, 'N>)) 
+    : SharedPipeline<'In, 'M, 'N> =
+
+    // Turn the current operations into full pipelines
+    let toPipeline op =
+        { flow = returnM op; mem = pl.mem; shape = pl.shape }
+
+    let p1 = toPipeline (fst pl.branches)
+    let p2 = toPipeline (snd pl.branches)
+
+    let p1', p2' = combine (p1, p2)
+
+    // Run the new pipelines to get composed operations
+    let composed1, _, _ = p1'.flow pl.mem pl.shape
+    let composed2, _, _ = p2'.flow pl.mem pl.shape
+
+    {
+        flow = pl.flow
+        branches = (composed1, composed2)
+        mem = pl.mem
+        shape = pl.shape
+    }
+
+let (>>=>)
+    (shared: SharedPipeline<'In, 'U, 'V>)
+    (combine: (Pipeline<'In, 'U> * Pipeline<'In, 'V>) -> Pipeline<'In, 'W>)
+    : Pipeline<'In, 'W> =
+
+    let opU, opV = shared.branches
+
+    let leftPipeline : Pipeline<'In, 'U> =
+        { flow = returnM opU; mem = shared.mem; shape = shared.shape }
+
+    let rightPipeline : Pipeline<'In, 'V> =
+        { flow = returnM opV; mem = shared.mem; shape = shared.shape }
+
+    combine (leftPipeline, rightPipeline)
+
+let unitPipeline<'T> () : Pipeline<'T, unit> =
+    let op : Operation<'T, unit> =
+        {
+            Name = "unit"
+            Transition = transition Streaming Streaming
+            Pipe = lift "unit" Streaming (fun _ -> async.Return ())
+        }
+    { flow = returnM op; mem = 0UL; shape = None }
+
+let combineIgnore (left: Pipeline<'In, 'U>, right: Pipeline<'In, 'V>) : Pipeline<'In, unit> =
+    let runBothAndIgnore =
+        zipWith (fun _ _ -> ()) left right
+    runBothAndIgnore

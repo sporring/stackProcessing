@@ -23,6 +23,7 @@ type Pipe<'S,'T> =
       Profile: MemoryProfile
       Apply: (FSharp.Control.AsyncSeq<'S> -> FSharp.Control.AsyncSeq<'T>)
     }
+val internal run: p: Pipe<'S,'T> -> FSharp.Control.AsyncSeq<'T>
 val internal lift:
   name: string ->
     profile: MemoryProfile -> f: ('In -> Async<'Out>) -> Pipe<'In,'Out>
@@ -69,7 +70,11 @@ type Operation<'S,'T> =
 val defaultCheck: 'a -> bool
 val transition:
   fromProfile: MemoryProfile -> toProfile: MemoryProfile -> MemoryTransition
+val idOp: unit -> Operation<'T,'T>
 val inline asPipe: op: Operation<'a,'b> -> Pipe<'a,'b>
+val pipe2Operation:
+  name: string ->
+    transition: MemoryTransition -> pipe: Pipe<'S,'T> -> Operation<'S,'T>
 type MemFlow<'S,'T> =
     uint64 -> SliceShape option -> Operation<'S,'T> * uint64 * SliceShape option
 val private memNeed: shape: uint list -> p: Pipe<'a,'b> -> uint64
@@ -87,19 +92,23 @@ val bindM:
   m: ('a -> 'b -> Operation<'c,'d> * 'e * 'f) ->
     k: (Operation<'c,'d> -> 'e -> 'f -> Operation<'d,'g> * 'h * 'i) ->
     bytes: 'a -> shapeOpt: 'b -> Operation<'c,'g> * 'h * 'i
+val (-->) : op1: Operation<'A,'B> -> op2: Operation<'B,'C> -> Operation<'A,'C>
 type Pipeline<'S,'T> =
     {
       flow: MemFlow<'S,'T>
       mem: uint64
       shape: SliceShape option
     }
+val operation2Pipeline:
+  op: Operation<'S,'T> ->
+    mem: uint64 -> shape: SliceShape option -> Pipeline<'S,'T>
 val sourceOp: availableMemory: uint64 -> Pipeline<unit,unit>
 val attachFirst:
   Operation<unit,'T> * (unit -> SliceShape) ->
     pl: Pipeline<unit,'T> -> Pipeline<unit,'T>
 val (>=>) : pl: Pipeline<'a,'b> -> next: Operation<'b,'c> -> Pipeline<'a,'c>
 val sinkOp: pl: Pipeline<unit,unit> -> unit
-val sinkListOp: plList: Pipeline<unit,unit> list -> unit
+val sinkListOp: pipelines: Pipeline<unit,unit> list -> unit
 module Routing
 /// Split a Pipe<'In,'T> into two branches that
 ///   • read the upstream only once
@@ -139,6 +148,37 @@ val liftUnaryOp:
     f: (Slice.Slice<'T> -> Slice.Slice<'T>) ->
     Core.Operation<Slice.Slice<'T>,Slice.Slice<'T>> when 'T: equality
 val tapOp: label: string -> Core.Operation<'T,'T>
+/// Represents a pipeline that has been shared (split into synchronized branches)
+type SharedPipeline<'T,'U,'V> =
+    {
+      flow:
+        (uint64 ->
+           Core.SliceShape option ->
+           (Core.Operation<'T,'U> * Core.Operation<'T,'V>) * uint64 *
+           Core.SliceShape option)
+      branches: Core.Operation<'T,'U> * Core.Operation<'T,'V>
+      mem: uint64
+      shape: Core.SliceShape option
+    }
+/// parallel fanout with synchronization
+/// Synchronously split the shared stream into two parallel pipelines
+val (>=>>) :
+  pl: Core.Pipeline<'In,'T> ->
+    op1: Core.Operation<'T,'U> * op2: Core.Operation<'T,'V> ->
+      SharedPipeline<'In,'U,'V>
+val (>>=>>) :
+  pl: SharedPipeline<'In,'U,'V> ->
+    combine: (Core.Pipeline<'In,'U> * Core.Pipeline<'In,'V> ->
+                Core.Pipeline<'In,'U> * Core.Pipeline<'In,'V>) ->
+    SharedPipeline<'In,'U,'V>
+val (>>=>) :
+  shared: SharedPipeline<'In,'U,'V> ->
+    combine: (Core.Pipeline<'In,'U> * Core.Pipeline<'In,'V> ->
+                Core.Pipeline<'In,'W>) -> Core.Pipeline<'In,'W>
+val unitPipeline: unit -> Core.Pipeline<'T,unit>
+val combineIgnore:
+  left: Core.Pipeline<'In,'U> * right: Core.Pipeline<'In,'V> ->
+    Core.Pipeline<'In,unit>
 module SourceSink
 module internal InternalHelpers =
     val plotListAsync:

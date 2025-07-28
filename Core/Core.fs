@@ -49,6 +49,10 @@ type Pipe<'S,'T> = {
     Apply: AsyncSeq<'S> -> AsyncSeq<'T>
 }
 
+let internal run (p: Pipe<'S,'T>) : AsyncSeq<'T> =
+    printfn "[run]"
+    AsyncSeq.singleton Unchecked.defaultof<'S> |> p.Apply
+
 let internal lift (name: string) (profile: MemoryProfile) (f: 'In -> Async<'Out>) : Pipe<'In, 'Out> =
     {
         Name = name
@@ -129,8 +133,17 @@ let transition (fromProfile: MemoryProfile) (toProfile: MemoryProfile) : MemoryT
         Check = defaultCheck
     }
 
+let idOp<'T> () : Operation<'T, 'T> =
+    {
+        Name = "id"
+        Transition = transition Streaming Streaming
+        Pipe = lift "id" Streaming (fun x -> async.Return x)
+    }
+
 let inline asPipe (op : Operation<_,_>) = op.Pipe
 
+let pipe2Operation name transition pipe : Operation<'S, 'T> =
+    { Name = name; Transition = transition; Pipe = pipe }
 
 ////////////////////////////////////////////////////////////
 // MemFlow state monad
@@ -186,12 +199,18 @@ let bindM m k =
         *)
         composeOp op1 op2, bytes'', shapeOpt''
 
+let (-->) (op1: Operation<'A, 'B>) (op2: Operation<'B, 'C>) : Operation<'A, 'C> =
+    composeOp op1 op2
+
 ////////////////////////////////////////////////////////////
 // Pipeline flow controler
 type Pipeline<'S,'T> = { 
     flow  : MemFlow<'S,'T>
     mem   : uint64
     shape : SliceShape option }
+
+let operation2Pipeline op mem shape : Pipeline<'S, 'T> =
+    { flow = returnM op; mem = mem; shape = shape }
 
 // source: only memory budget, shape = None
 let sourceOp (availableMemory: uint64) : Pipeline<unit,unit> =
@@ -236,6 +255,7 @@ let sinkOp (pl: Pipeline<unit, unit>) : unit =
         |> AsyncSeq.iterAsync (fun () -> async.Return())
         |> Async.RunSynchronously
 
+(*
 let sinkListOp (plList: Pipeline<unit, unit> list) =
     if plList.Length > 1 then
         printfn "[Compile time analysis: sinkList parallel]"
@@ -243,3 +263,25 @@ let sinkListOp (plList: Pipeline<unit, unit> list) =
     plList
     |> List.map sinkOp
     |> ignore    
+*)
+let sinkListOp (pipelines: Pipeline<unit, unit> list) : unit =
+    if pipelines.Length > 1 then
+        printfn "Compile time analysis: sinkList parallel"
+
+    let runs =
+        pipelines
+        |> List.map (fun pl ->
+            async {
+                let op, _, _ = pl.flow pl.mem pl.shape
+                let pipe = op.Pipe
+                do!
+                    AsyncSeq.singleton ()
+                    |> pipe.Apply
+                    |> AsyncSeq.iterAsync (fun () -> async.Return())
+            })
+
+    runs
+    |> Async.Parallel
+    |> Async.Ignore
+    |> Async.RunSynchronously
+

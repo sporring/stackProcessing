@@ -12,12 +12,17 @@ type MemoryProfile = Core.MemoryProfile
 type MemoryTransition = Core.MemoryTransition
 type Slice<'S when 'S: equality> = Slice.Slice<'S>
 
+let idOp = Core.idOp
+let (-->) = Core.(-->)
 let source = Core.sourceOp
 let sink (pl: Pipeline<unit,unit>) : unit = Core.sinkOp pl
 let sinkList (plLst: Pipeline<unit,unit> list) : unit = Core.sinkListOp plLst
 let (>=>) = Core.(>=>)
-let tee = Routing.teePipeline
-let zipWith = Routing.zipWith
+let (>=>>) = Routing.(>=>>)
+let (>>=>>) = Routing.(>>=>>)
+let (>>=>) = Routing.(>>=>)
+let unitPipeline = Routing.unitPipeline
+let combineIgnore = Routing.combineIgnore
 let drainSingle pl = Routing.drainSingle "drainSingle" pl
 let drainList pl = Routing.drainList "drainList" pl
 let drainLast pl = Routing.drainLast "drainLast" pl
