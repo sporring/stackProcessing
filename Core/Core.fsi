@@ -166,19 +166,14 @@ val (>=>>) :
   pl: Core.Pipeline<'In,'T> ->
     op1: Core.Operation<'T,'U> * op2: Core.Operation<'T,'V> ->
       SharedPipeline<'In,'U,'V>
-val (>>=>>) :
-  pl: SharedPipeline<'In,'U,'V> ->
-    combine: (Core.Pipeline<'In,'U> * Core.Pipeline<'In,'V> ->
-                Core.Pipeline<'In,'U> * Core.Pipeline<'In,'V>) ->
-    SharedPipeline<'In,'U,'V>
 val (>>=>) :
   shared: SharedPipeline<'In,'U,'V> ->
-    combine: (Core.Pipeline<'In,'U> * Core.Pipeline<'In,'V> ->
-                Core.Pipeline<'In,'W>) -> Core.Pipeline<'In,'W>
+    combine: (Core.Operation<'In,'U> * Core.Operation<'In,'V> ->
+                Core.Operation<'In,'W>) -> Core.Pipeline<'In,'W>
 val unitPipeline: unit -> Core.Pipeline<'T,unit>
 val combineIgnore:
-  left: Core.Pipeline<'In,'U> * right: Core.Pipeline<'In,'V> ->
-    Core.Pipeline<'In,unit>
+  op1: Core.Operation<'In,'U> * op2: Core.Operation<'In,'V> ->
+    Core.Operation<'In,unit>
 module SourceSink
 module internal InternalHelpers =
     val plotListAsync:

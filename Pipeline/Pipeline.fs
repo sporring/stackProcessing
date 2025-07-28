@@ -19,7 +19,7 @@ let sink (pl: Pipeline<unit,unit>) : unit = Core.sinkOp pl
 let sinkList (plLst: Pipeline<unit,unit> list) : unit = Core.sinkListOp plLst
 let (>=>) = Core.(>=>)
 let (>=>>) = Routing.(>=>>)
-let (>>=>>) = Routing.(>>=>>)
+//let (>>=>>) = Routing.(>>=>>)
 let (>>=>) = Routing.(>>=>)
 let unitPipeline = Routing.unitPipeline
 let combineIgnore = Routing.combineIgnore

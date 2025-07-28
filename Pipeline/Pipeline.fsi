@@ -17,18 +17,13 @@ val (>=>>) :
   (Core.Pipeline<'a,'b> ->
      Core.Operation<'b,'c> * Core.Operation<'b,'d> ->
        Routing.SharedPipeline<'a,'c,'d>)
-val (>>=>>) :
-  (Routing.SharedPipeline<'a,'b,'c> ->
-     (Core.Pipeline<'a,'b> * Core.Pipeline<'a,'c> ->
-        Core.Pipeline<'a,'b> * Core.Pipeline<'a,'c>) ->
-     Routing.SharedPipeline<'a,'b,'c>)
 val (>>=>) :
   (Routing.SharedPipeline<'a,'b,'c> ->
-     (Core.Pipeline<'a,'b> * Core.Pipeline<'a,'c> -> Core.Pipeline<'a,'d>) ->
+     (Core.Operation<'a,'b> * Core.Operation<'a,'c> -> Core.Operation<'a,'d>) ->
      Core.Pipeline<'a,'d>)
 val unitPipeline: (unit -> Core.Pipeline<'a,unit>)
 val combineIgnore:
-  (Core.Pipeline<'a,'b> * Core.Pipeline<'a,'c> -> Core.Pipeline<'a,unit>)
+  (Core.Operation<'a,'b> * Core.Operation<'a,'c> -> Core.Operation<'a,unit>)
 val drainSingle: pl: Core.Pipeline<'a,'b> -> 'b
 val drainList: pl: Core.Pipeline<'a,'b> -> 'b list
 val drainLast: pl: Core.Pipeline<'a,'b> -> 'b

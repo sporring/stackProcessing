@@ -18,13 +18,11 @@ let main _ =
     let readHistogramMaker = 
         source mem
         |> readAs<uint8> "image" ".tiff"
-        >=> histogram
+        >=> histogram // reduces stream to a constant
 
-    let left, right = tee readHistogramMaker
-    let path2 = right >=> map2pairs >=> pairs2floats
-    // compile time analysis:
-    [path2 >=> tap "path2" >=> plot plt; left >=> tap "left" >=> print ()] |> sinkList
-    // runtime analysis:
-    // zipWith (fun _ _ -> ()) (path2 >=> plot plt) (left >=> print ()) |> sink
+    readHistogramMaker 
+    >=>> (print (), map2pairs --> pairs2floats --> plot plt) // doubles readHistogramMaker into two streams with shared data. In this case, the stream has been reduced to a constant, which is detected and simulated as a stream of constants
+    >>=> combineIgnore // does nothing but collapses shared stream pair and ensures that it will be evaluated by sink
+    |> sink
 
     0

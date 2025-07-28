@@ -254,30 +254,66 @@ type SharedPipeline<'T, 'U , 'V> = {
     shape: SliceShape option
 }
 
-(*
-/// Share a pipeline by exposing its underlying stream source
-let share (pl: Pipeline<'In, 'T>) : SharedPipeline<'In, 'T> =
-    let op, mem', shape' = pl.flow pl.mem pl.shape
-    { source = op.Pipe }
-*)
-
 /// parallel fanout with synchronization
 /// Synchronously split the shared stream into two parallel pipelines
-let (>=>>) (pl: Pipeline<'In, 'T>) (op1: Operation<'T, 'U>, op2: Operation<'T, 'V>) : SharedPipeline<'In, 'U, 'V> =
-    let flow mem shape =
-        let baseOp, mem', shape' = pl.flow mem shape
-        let pipe1, pipe2 = tee baseOp.Pipe
-        let op1' = composeOp { baseOp with Pipe = pipe1 } op1
-        let op2' = composeOp { baseOp with Pipe = pipe2 } op2
-        ((op1', op2'), mem', shape')
+let (>=>>) 
+    (pl: Pipeline<'In, 'T>) 
+    (op1: Operation<'T, 'U>, op2: Operation<'T, 'V>) 
+    : SharedPipeline<'In, 'U, 'V> =
 
-    {
-        flow = flow
-        branches = flow pl.mem pl.shape |> (fun ((a, b), _, _) -> (a, b))
-        mem = pl.mem
-        shape = pl.shape
-    }
+    let opBase, mem', shape' = pl.flow pl.mem pl.shape
+    match opBase.Transition.To with
+    | Streaming ->
+        // Tee the stream and apply branches
+        let pipe1, pipe2 = tee opBase.Pipe
+        let op1' = composeOp { opBase with Pipe = pipe1 } op1
+        let op2' = composeOp { opBase with Pipe = pipe2 } op2
 
+        {
+            flow = fun _ _ -> ((op1', op2'), mem', shape')
+            branches = (op1', op2')
+            mem = mem'
+            shape = shape'
+        }
+
+    | Constant ->
+        // Evaluate once and share value
+        let cached = lazy (
+            let result =
+                AsyncSeq.singleton Unchecked.defaultof<'In>
+                |> opBase.Pipe.Apply
+                |> AsyncSeq.tryLast
+                |> Async.RunSynchronously
+            result |> Option.defaultWith (fun () -> failwithf "No constant result from pipeline: %s" opBase.Name)
+        )
+
+        let applyOp (op: Operation<'T, 'N>) (value: 'T) : 'N =
+            AsyncSeq.singleton value
+            |> op.Pipe.Apply
+            |> AsyncSeq.tryLast
+            |> Async.RunSynchronously
+            |> Option.defaultWith (fun () -> failwithf "applyOp: No output from %s" op.Name)
+
+        let makeConstOp (op: Operation<'T, 'N>) label =
+            {
+                Name = $"shared-const:{label}"
+                Transition = transition Constant Constant
+                Pipe = lift label Constant (fun _ ->
+                    async { return applyOp op (cached.Value) })
+            }
+
+        let op1' : Operation<'In, 'U> = makeConstOp op1 "left"
+        let op2' : Operation<'In, 'V> = makeConstOp op2 "right"
+
+        {
+            flow = fun _ _ -> ((op1', op2'), mem', shape')
+            branches = (op1', op2')
+            mem = mem'
+            shape = shape'
+        }
+    | _ -> failwith "Unsupported transition kind"
+
+(*
 let (>>=>>) 
     (pl: SharedPipeline<'In, 'U, 'V>) 
     (combine: (Pipeline<'In, 'U> * Pipeline<'In, 'V>) -> (Pipeline<'In, 'M> * Pipeline<'In, 'N>)) 
@@ -302,21 +338,16 @@ let (>>=>>)
         mem = pl.mem
         shape = pl.shape
     }
+*)
 
 let (>>=>)
     (shared: SharedPipeline<'In, 'U, 'V>)
-    (combine: (Pipeline<'In, 'U> * Pipeline<'In, 'V>) -> Pipeline<'In, 'W>)
+    (combine: Operation<'In, 'U> * Operation<'In, 'V> -> Operation<'In, 'W>)
     : Pipeline<'In, 'W> =
 
     let opU, opV = shared.branches
-
-    let leftPipeline : Pipeline<'In, 'U> =
-        { flow = returnM opU; mem = shared.mem; shape = shared.shape }
-
-    let rightPipeline : Pipeline<'In, 'V> =
-        { flow = returnM opV; mem = shared.mem; shape = shared.shape }
-
-    combine (leftPipeline, rightPipeline)
+    let op = combine (opU, opV)
+    { flow = returnM op; mem = shared.mem; shape = shared.shape }
 
 let unitPipeline<'T> () : Pipeline<'T, unit> =
     let op : Operation<'T, unit> =
@@ -327,7 +358,7 @@ let unitPipeline<'T> () : Pipeline<'T, unit> =
         }
     { flow = returnM op; mem = 0UL; shape = None }
 
-let combineIgnore (left: Pipeline<'In, 'U>, right: Pipeline<'In, 'V>) : Pipeline<'In, unit> =
-    let runBothAndIgnore =
-        zipWith (fun _ _ -> ()) left right
-    runBothAndIgnore
+let combineIgnore : Operation<'In, 'U> * Operation<'In, 'V> -> Operation<'In, unit> =
+    fun (op1, op2) ->
+        zipWithOp (fun _ _ -> ()) op1 op2
+
