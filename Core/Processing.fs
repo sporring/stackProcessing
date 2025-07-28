@@ -36,32 +36,32 @@ let skipFirstLast (n: int) (lst: 'a list)
 /// and so on. If depth is 3 and stride is 3, then it'll be image 0, 1, 2 followed by
 /// 3, 4, 5. It is also possible to use this for sampling, e.g., setting depth to 1
 /// and stride to 2 sends every second image to f.  
-let internal mapWindowed (label: string) (depth: uint) (stride: uint) (f: 'S list -> 'T list) 
+let internal mapWindowed (label: string) (depth: uint) (stride: uint) (emitStart: uint) (emitCount: uint) (f: 'S list -> 'T list) 
     : Pipe<'S,'T> =
     {
         Name = label; 
-        Profile = Sliding depth
+        Profile = Sliding (depth,stride,emitStart,emitCount)
         Apply = fun input ->
             printfn $"[Runtime analysis: Windowed analysis size {depth} {stride}]"
             AsyncSeqExtensions.windowed depth stride input
                 |> AsyncSeq.collect (f  >> AsyncSeq.ofSeq)
     }
 
-let internal liftWindowedOp (name: string) (window: uint) (stride: uint) (f: Slice<'S> -> Slice<'T>) 
+let internal liftWindowedOp (name: string) (window: uint) (stride: uint) (emitStart: uint) (emitCount: uint) (f: Slice<'S> -> Slice<'T>) 
     : Operation<Slice<'S>, Slice<'T>> =
     {
         Name = name
-        Transition = transition (Sliding window) Streaming
-        Pipe = mapWindowed name window stride (stack >> f >> unstack)
+        Transition = transition (Sliding (window,stride,emitStart,emitCount)) Streaming
+        Pipe = mapWindowed name window stride emitStart emitCount (stack >> f >> unstack)
     }
 
-let internal liftWindowedTrimOp (name: string) (window: uint) (stride: uint) (trim: uint) (f: Slice<'S> -> Slice<'T>)
+let internal liftWindowedTrimOp (name: string) (window: uint) (stride: uint) (emitStart: uint) (emitCount: uint) (trim: uint) (f: Slice<'S> -> Slice<'T>)
     : Operation<Slice<'S>, Slice<'T>> =
     {
         Name = name
-        Transition = transition (Sliding window) Streaming
+        Transition = transition (Sliding (window,stride,emitStart,emitCount)) Streaming
         Pipe =
-            mapWindowed name window stride (
+            mapWindowed name window stride emitStart emitCount (
                 stack >> f >> unstack >> (skipFirstLast (int trim)))
     }
 
@@ -392,7 +392,7 @@ let discreteGaussianOp (name:string) (sigma:float) (bc: ImageFunctions.BoundaryC
     let ksz = 2.0 * sigma + 1.0 |> roundFloatToUint
     let win = Option.defaultValue ksz winSz |> min ksz // max should be found by memory availability
     let stride = win - ksz + 1u
-    liftWindowedOp name win stride (fun slices -> Slice.discreteGaussian 3u sigma (ksz |> Some) (Some valid) bc slices)
+    liftWindowedOp name win stride (stride - 1u) stride (fun slices -> Slice.discreteGaussian 3u sigma (ksz |> Some) (Some valid) bc slices)
 
 
 // stride calculation example
@@ -426,13 +426,13 @@ let convolveOp (name: string) (kernel: Slice<'T>) (bc: BoundaryCondition option)
     let ksz = windowFromKernel kernel
     let win = Option.defaultValue ksz winSz |> min ksz
     let stride = win-ksz+1u
-    liftWindowedOp name win stride (fun slices -> Slice.convolve (Some valid) bc slices kernel)
+    liftWindowedOp name win stride (stride - 1u) stride (fun slices -> Slice.convolve (Some valid) bc slices kernel)
 
 let private makeMorphOp (name:string) (radius:uint) (winSz: uint option) (core: uint -> Slice<'T> -> Slice<'T>) : Operation<Slice<'T>,Slice<'T>> when 'T: equality =
     let ksz   = 2u * radius + 1u
     let win = Option.defaultValue ksz winSz |> min ksz
     let stride = win - ksz + 1u
-    liftWindowedTrimOp name win stride radius (fun slices -> core radius slices)
+    liftWindowedTrimOp name win stride (stride - 1u) stride radius (fun slices -> core radius slices)
 
 // Only uint8
 let binaryErodeOp     name radius winSz = makeMorphOp name radius winSz Slice.binaryErode
@@ -460,7 +460,7 @@ let connectedComponentsOp (name: string) : Operation<Slice<uint8>, Slice<uint64>
 
 let piecewiseConnectedComponentsOp (name:string) (windowSize: uint option): Operation<Slice<uint8>, Slice<uint64>> =
     let dpth = Option.defaultValue 1u windowSize |> max 1u
-    liftWindowedOp name dpth dpth (fun slices -> Slice.connectedComponents slices)
+    liftWindowedOp name dpth dpth 0u dpth (fun slices -> Slice.connectedComponents slices)
 
 let otsuThresholdOp name = liftFullOp name (Slice.otsuThreshold: Slice<'T> -> Slice<'T>) 
 let otsuMultiThresholdOp name n = liftFullParamOp name Slice.otsuMultiThreshold n

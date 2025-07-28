@@ -21,7 +21,6 @@ val (>>=>) :
   (Routing.SharedPipeline<'a,'b,'c> ->
      (Core.Operation<'a,'b> * Core.Operation<'a,'c> -> Core.Operation<'a,'d>) ->
      Core.Pipeline<'a,'d>)
-val unitPipeline: (unit -> Core.Pipeline<'a,unit>)
 val combineIgnore:
   (Core.Operation<'a,'b> * Core.Operation<'a,'c> -> Core.Operation<'a,unit>)
 val drainSingle: pl: Core.Pipeline<'a,'b> -> 'b

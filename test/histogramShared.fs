@@ -15,14 +15,14 @@ let main _ =
         |> Chart.withYAxisStyle ("count")
         |> Chart.show
 
-    let readHistogramMaker = 
+    let readMaker = 
         source mem
         |> readAs<uint8> "image" ".tiff"
-        >=> histogram // reduces stream to a constant
+    let plotHist = map2pairs --> pairs2floats --> plot plt
 
-    readHistogramMaker 
-    >=>> (print (), map2pairs --> pairs2floats --> plot plt) // doubles readHistogramMaker into two streams with shared data. In this case, the stream has been reduced to a constant, which is detected and simulated as a stream of constants
-    >>=> combineIgnore // does nothing but collapses shared stream pair and ensures that it will be evaluated by sink
+    readMaker 
+    >=>> (histogram --> plotHist, castUInt8ToFloat --> convGauss 1.0 None --> castFloatToUInt8 --> histogram --> plotHist)
+    >>=> combineIgnore
     |> sink
 
     0

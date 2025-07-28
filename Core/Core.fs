@@ -9,7 +9,7 @@ open Slice
 type MemoryProfile =
     | Constant // Slice by slice independently
     | Streaming // Slice by slice independently
-    | Sliding of uint // Sliding window of slices of depth
+    | Sliding of uint * uint * uint * uint  // (window, stride, emitStart, emitCount)
     | Full // All slices of depth
 
     member this.EstimateUsage (width: uint) (height: uint) (depth: uint) : uint64 =
@@ -18,7 +18,7 @@ type MemoryProfile =
         match this with
             | Constant -> 0uL
             | Streaming -> sliceBytes
-            | Sliding windowSize -> sliceBytes * uint64 windowSize
+            | Sliding (windowSize, _, _, _) -> sliceBytes * uint64 windowSize
             | Full -> sliceBytes * uint64 depth
 
     member this.RequiresBuffering (availableMemory: uint64) (width: uint) (height: uint) (depth: uint) : bool = // Not used yet...
@@ -29,9 +29,9 @@ type MemoryProfile =
         match this, other with
         | Full, _ 
         | _, Full -> Full // conservative fallback
-        | Sliding sz1, Sliding sz2 -> Sliding (max sz1 sz2)
-        | Sliding sz, _ 
-        | _, Sliding sz -> Sliding sz
+        | Sliding (sz1,str1,emitS1,emitN1), Sliding (sz2,str2,emitS2,emitN2) -> Sliding ((max sz1 sz2), min str1 str2, min emitS1 emitS2, max emitN1 emitN2) // don't really know what stride rule should be
+        | Sliding (sz,str,emitS,emitN), _ 
+        | _, Sliding (sz,str,emitS,emitN) -> Sliding (sz,str,emitS,emitN)
         | Streaming, _
         | _, Streaming -> Streaming
         | Constant, Constant -> Constant
@@ -162,8 +162,8 @@ let private shrinkProfile avail shape (p : Pipe<'S,'T>) =
     else
         match p.Profile with
         | Full         -> { p with Profile = Streaming }
-        | Sliding w when w > 1u ->
-            { p with Profile = Sliding (w/2u) }
+        | Sliding (w,s,es,ec) when w > 1u ->
+            { p with Profile = Sliding ((w/2u),s,es,ec) }
         | _ ->
             failwith
                 $"Stage “{p.Name}” needs {needed}s B but only {avail}s B are left."
@@ -285,3 +285,6 @@ let sinkListOp (pipelines: Pipeline<unit, unit> list) : unit =
     |> Async.Ignore
     |> Async.RunSynchronously
 
+let asOperation (pl: Pipeline<'In, 'Out>) : Operation<'In, 'Out> =
+    let op, _, _ = pl.flow pl.mem pl.shape
+    op

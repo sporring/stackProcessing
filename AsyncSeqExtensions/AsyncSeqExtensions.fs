@@ -40,22 +40,6 @@ let tryItem (n: int) (source: AsyncSeq<'T>) : Async<'T option> =
         return result
     }
 
-(*
-/// Creates a sliding window over an asynchronous sequence, returning lists of elements of the specified window size.
-let windowed (windowSize: int) (source: AsyncSeq<'T>) : AsyncSeq<'T list> =
-    if windowSize <= 0 then
-        invalidArg "windowSize" "Must be greater than 0"
-    asyncSeq {
-        let queue = System.Collections.Generic.Queue<'T>()
-        for awaitElem in source do
-            queue.Enqueue awaitElem
-            if queue.Count = windowSize then
-                yield queue |> Seq.toList
-                queue.Dequeue() |> ignore
-    }
-*)
-open FSharp.Control
-
 /// Windowed function with stride and optional padding.
 let windowed
     (windowSize: uint)

@@ -4,7 +4,7 @@ module Core
 type MemoryProfile =
     | Constant
     | Streaming
-    | Sliding of uint
+    | Sliding of uint * uint * uint * uint
     | Full
     member EstimateUsage: width: uint -> height: uint -> depth: uint -> uint64
     member
@@ -109,6 +109,7 @@ val attachFirst:
 val (>=>) : pl: Pipeline<'a,'b> -> next: Operation<'b,'c> -> Pipeline<'a,'c>
 val sinkOp: pl: Pipeline<unit,unit> -> unit
 val sinkListOp: pipelines: Pipeline<unit,unit> list -> unit
+val asOperation: pl: Pipeline<'In,'Out> -> Operation<'In,'Out>
 module Routing
 /// Split a Pipe<'In,'T> into two branches that
 ///   • read the upstream only once
@@ -252,11 +253,16 @@ val skipFirstLast: n: int -> lst: 'a list -> 'a list
 /// and stride to 2 sends every second image to f.  
 val internal mapWindowed:
   label: string ->
-    depth: uint -> stride: uint -> f: ('S list -> 'T list) -> Core.Pipe<'S,'T>
+    depth: uint ->
+    stride: uint ->
+    emitStart: uint ->
+    emitCount: uint -> f: ('S list -> 'T list) -> Core.Pipe<'S,'T>
 val internal liftWindowedOp:
   name: string ->
     window: uint ->
     stride: uint ->
+    emitStart: uint ->
+    emitCount: uint ->
     f: (Slice.Slice<'S> -> Slice.Slice<'T>) ->
     Core.Operation<Slice.Slice<'S>,Slice.Slice<'T>>
     when 'S: equality and 'T: equality
@@ -264,6 +270,8 @@ val internal liftWindowedTrimOp:
   name: string ->
     window: uint ->
     stride: uint ->
+    emitStart: uint ->
+    emitCount: uint ->
     trim: uint ->
     f: (Slice.Slice<'S> -> Slice.Slice<'T>) ->
     Core.Operation<Slice.Slice<'S>,Slice.Slice<'T>>
