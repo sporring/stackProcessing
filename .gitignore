@@ -1,13 +1,5 @@
 *.dll
-/bin
-/lib
-/obj
-/inputTest
-/output
 .DS_Store
-simpleITKClasses.txt~
-/mask
-/result
 *.dylib
 *.fs~
 /AsyncSeqExtensions/bin
@@ -26,4 +18,4 @@ simpleITKClasses.txt~
 /test/mask
 /test/obj
 /test/result
-/StackProcessing/obj
+notes/simpleITKClasses.txt~
