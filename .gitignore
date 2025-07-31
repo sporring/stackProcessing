@@ -52,3 +52,7 @@ Image.Tests/coverage.info
 /test/mask
 /test/obj
 /test/result
+/SlimPipeline/bin
+/SlimPipeline/bin
+/SlimPipeline/obj
+/StackProcessing/obj

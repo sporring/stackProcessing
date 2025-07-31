@@ -371,13 +371,13 @@ module Pipeline =
         create flow availableMemory None context false
 
     let debug<'Shape> (context: ShapeContext<'Shape>) (availableMemory: uint64) : Pipeline<unit, unit, 'Shape> =
-        printfn $"Preparing pipeline - {availableMemory}B available"
+        printfn $"Preparing pipeline - {availableMemory} B available"
         let flow = fun _ _ _ -> failwith "Pipeline not started yet"
         create flow availableMemory None context true
 
     // later compositions Pipeline composition
     let compose (pl: Pipeline<'a, 'b, 'Shape>) (next: Stage<'b, 'c, 'Shape>) : Pipeline<'a, 'c, 'Shape> =
-        if pl.debug then printfn "[>=>]"
+        if pl.debug then printfn $"[>=>] {next.Name}"
         let flow = MemFlow.bindM pl.flow (fun _ -> MemFlow.returnM next)
         create flow pl.mem pl.shape pl.context pl.debug
 
@@ -519,7 +519,7 @@ module Routing =
         (pl: Pipeline<'In, 'T, 'Shape>) 
         (op1: Stage<'T, 'U, 'Shape>, op2: Stage<'T, 'V, 'Shape>) 
         : SharedPipeline<'In, 'U, 'V, 'Shape> =
-        if pl.debug then printfn "[>=>>]"
+        if pl.debug then printfn $"[>=>>] ({op1.Name}, {op2.Name})"
         match pl.flow pl.mem pl.shape pl.context with
         | baseOp, mem', shape' ->
 
@@ -620,7 +620,9 @@ module Routing =
         (shared: SharedPipeline<'In, 'U, 'V, 'Shape>)
         (combineFn: 'U -> 'V -> 'W)
         : Pipeline<'In, 'W, 'Shape> =
-        if shared.debug then printfn "[>>=>]"
+        if shared.debug then 
+            let b1,b2 = shared.branches
+            printfn "[>>=>]"
         let stage = Stage.map2 ">>=>" combineFn shared.branches
         let flow = MemFlow.returnM stage
         Pipeline.create flow shared.mem shared.shape shared.context shared.debug

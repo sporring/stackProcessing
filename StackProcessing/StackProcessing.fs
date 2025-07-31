@@ -195,6 +195,7 @@ let getStackWidth = Slice.getStackWidth
 
 let createAs<'T when 'T: equality> (width: uint) (height: uint) (depth: uint) (pl : Pipeline<unit, unit, Shape>) : Pipeline<unit, Slice<'T>,Shape> =
     // width, heigth, depth should be replaced with shape and shapeUpdate, and mapper should be deferred to outside Core!!!
+    if pl.debug then printfn $"[createAs] {width}x{height}x{depth}"
     let mapper (i: uint) : Slice<'T> = 
         let slice = Slice.create<'T> width height 1u i
         if pl.debug then printfn "[create] Created slice %A" i
@@ -209,6 +210,7 @@ let createAs<'T when 'T: equality> (width: uint) (height: uint) (depth: uint) (p
 
 let readAs<'T when 'T: equality> (inputDir : string) (suffix : string) (pl : Pipeline<unit, unit, Shape>) : Pipeline<unit, Slice<'T>,Shape> =
     // much should be deferred to outside Core!!!
+    if pl.debug then printfn $"[readAs] {inputDir}/*{suffix}"
     let (width,height,depth) = Slice.getStackSize inputDir suffix
     let filenames = Directory.GetFiles(inputDir, "*"+suffix) |> Array.sort
     let depth = filenames.Length
@@ -226,6 +228,7 @@ let readAs<'T when 'T: equality> (inputDir : string) (suffix : string) (pl : Pip
     Pipeline.create flow pl.mem (Some shape) context pl.debug
 
 let readRandomAs<'T when 'T: equality> (count: uint) (inputDir : string) (suffix : string) (pl : Pipeline<unit, unit, Shape>) : Pipeline<unit, Slice<'T>,Shape> =
+    if pl.debug then printfn $"[readRandomAs] {count} slices from {inputDir}/*{suffix}"
     let (width,height,depth) = Slice.getStackSize inputDir suffix
     let filenames = Directory.GetFiles(inputDir, "*"+suffix) |> Array.randomChoices (int count)
     let depth = filenames.Length
