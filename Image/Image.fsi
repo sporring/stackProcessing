@@ -228,9 +228,10 @@ type OutputRegionMode =
     | Valid
     | Same
 val convolve:
-  outputRegionMode: OutputRegionMode option ->
+  xyOutputRegionMode: OutputRegionMode option ->
     boundaryCondition: BoundaryCondition option ->
-    (Image.Image<'T> -> Image.Image<'T> -> Image.Image<'T>) when 'T: equality
+    image: Image.Image<'T> -> kernel: Image.Image<'T> -> Image.Image<'T>
+    when 'T: equality
 val conv:
   img: Image.Image<'T> -> ker: Image.Image<'T> -> Image.Image<'T>
     when 'T: equality

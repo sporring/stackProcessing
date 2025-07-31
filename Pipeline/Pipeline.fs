@@ -12,19 +12,19 @@ type MemoryProfile = Core.MemoryProfile
 type MemoryTransition = Core.MemoryTransition
 type Slice<'S when 'S: equality> = Slice.Slice<'S>
 
-let idOp = Core.idOp
-let (-->) = Core.(-->)
-let source = Core.sourceOp
-let sink (pl: Pipeline<unit,unit>) : unit = Core.sinkOp pl
-let sinkList (plLst: Pipeline<unit,unit> list) : unit = Core.sinkListOp plLst
-let (>=>) = Core.(>=>)
+let idOp = Operation.id
+let (-->) = Operation.(-->)
+let source = Pipeline.source
+let sink (pl: Pipeline<unit,unit>) : unit = Pipeline.sink pl
+let sinkList (plLst: Pipeline<unit,unit> list) : unit = Pipeline.sinkList plLst
+let (>=>) = Pipeline.(>=>)
 let (>=>>) = Routing.(>=>>)
 let (>>=>) = Routing.(>>=>)
 let combineIgnore = Routing.combineIgnore
 let drainSingle pl = Routing.drainSingle "drainSingle" pl
 let drainList pl = Routing.drainList "drainList" pl
 let drainLast pl = Routing.drainLast "drainLast" pl
-let tap = Routing.tapOp
+let tap = Stage.tap
 let liftUnary (f: Slice<'T> -> Slice<'T>) = Routing.liftUnaryOp "liftUnary" f
 
 let create<'T when 'T: equality> = SourceSink.createOp<'T>
@@ -197,11 +197,10 @@ let zeroFluxNeumannPad = Processing.zeroFluxNeumannPad
 let valid = Processing.valid
 let same = Processing.same
 
-let discreteGaussian sigma bc winSz = discreteGaussianOp "discreteGaussian" sigma bc winSz
-let convGauss sigma bc       = discreteGaussianOp "convGauss" sigma bc None
-let convolve kernel bc winSz = convolveOp "convolve" kernel bc winSz
-let conv kernel              = convolveOp "conv" kernel None None
-let convGaussOp sigma bc     = discreteGaussianOp "convGauss" sigma bc None
+let discreteGaussian = discreteGaussianOp "discreteGaussian"
+let convGauss = convGaussOp "convGauss"
+let convolve kernel outputRegionMode boundaryCondition winSz = convolveOp "convolve" kernel outputRegionMode boundaryCondition winSz
+let conv kernel = convOp "conv" kernel
 
 // these only works on uint8
 let erode            r       = binaryErodeOp   "binaryErode"   r None

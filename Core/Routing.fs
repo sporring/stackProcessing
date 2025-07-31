@@ -5,127 +5,16 @@ open AsyncSeqExtensions
 open Core
 open Slice
 
-/// Split a Pipe<'In,'T> into two branches that
-///   • read the upstream only once
-///   • keep at most one item in memory
-///   • terminate correctly when both sides finish
-type private Request<'T> =
-    | Left of AsyncReplyChannel<Option<'T>>
-    | Right of AsyncReplyChannel<Option<'T>>
-
-let internal tee (p : Pipe<'In,'T>): Pipe<'In, 'T> * Pipe<'In, 'T> =
-    printfn "[tee]"
-
-    // ---------- 1. Create the broadcaster exactly *once* per pipeline run ----------
-    // We store it in a mutable cell that is initialised on first Apply().
-    let mutable shared : Lazy<AsyncSeq<'T> * AsyncSeq<'T>> option = None
-    let syncRoot = obj()
-
-    let makeShared (input : AsyncSeq<'In>) =
-        let src = p.Apply input                        // drives upstream only ONCE
-        let agent = MailboxProcessor.Start(fun inbox ->
-            async {
-                let enum = (AsyncSeq.toAsyncEnum src).GetAsyncEnumerator()
-                let mutable current   : 'T option = None
-                let mutable consumed  = (true, true)
-                let mutable finished  = false
-
-                let rec loop () = async {
-                    // Pull next slice if needed
-                    if current.IsNone && not finished then
-                        let! hasNext = enum.MoveNextAsync().AsTask() |> Async.AwaitTask
-                        if hasNext then
-                            current  <- Some enum.Current
-                            consumed <- (false, false)
-                        else
-                            finished <- true
-
-                    // Serve whichever side is asking
-                    let! msg = inbox.Receive()
-                    match msg, current with
-                    | Left ch, Some v when not (fst consumed) ->
-                        ch.Reply(Some v)
-                        consumed <- (true, snd consumed)
-                    | Right ch, Some v when not (snd consumed) ->
-                        ch.Reply(Some v)
-                        consumed <- (fst consumed, true)
-                    | Left ch, None when finished ->
-                        ch.Reply(None)
-                    | Right ch, None when finished ->
-                        ch.Reply(None)
-                    | _ -> ()
-
-                    // Release the slice when both sides have seen it
-                    if consumed = (true, true) then current <- None
-                    return! loop ()
-                }
-                do! loop ()
-            })
-
-        // Helper to build one of the two consumer streams
-        let makeStream tag =
-            asyncSeq {
-                let mutable done_ = false
-                while not done_ do
-                    let! vOpt = agent.PostAndAsyncReply(tag)
-                    match vOpt with
-                    | Some v -> yield v
-                    | None   -> done_ <- true
-            }
-
-        makeStream Left, makeStream Right
-
-    // Thread‑safe initialisation-on-first-use
-    let getShared input =
-        match shared with
-        | Some lazyStreams -> lazyStreams.Value
-        | None ->
-            lock syncRoot (fun () ->
-                match shared with
-                | Some lazyStreams -> lazyStreams.Value
-                | None ->
-                    let lazyStreams = lazy (makeShared input)
-                    shared <- Some lazyStreams
-                    lazyStreams.Value)
-
-    // ---------- 2. Build the two outward‑facing Pipes ----------
-    let mkPipe name pick =
-        { 
-        Name  = $"{p.Name} - {name}"
-        Profile = p.Profile
-        Apply   = 
-            fun input ->
-                let left, right = getShared input
-                pick (left, right) 
-        }
-
-    mkPipe "left" fst, mkPipe "right" snd
-
-let internal teeOp (op: Operation<'In, 'T>) : Operation<'In, 'T> * Operation<'In, 'T> =
-    let leftPipe, rightPipe = tee op.Pipe
-    let mk name pipe = 
-        {Name = $"{op.Name} - {name}";  Transition = op.Transition; Pipe = pipe }
-    mk "left" leftPipe,
-    mk "right" rightPipe
-
-let teePipeline (pl: Pipeline<'In, 'T>) : Pipeline<'In, 'T> * Pipeline<'In, 'T> =
-    let op, mem, shape = pl.flow pl.mem pl.shape
-    let leftOp, rightOp = teeOp op
-    let plLeft: Pipeline<'In, 'T>  = 
-        { flow = returnM leftOp; mem = mem; shape = shape }
-    let plRight: Pipeline<'In, 'T> = 
-        { flow = returnM rightOp; mem = mem; shape = shape }
-    plLeft, plRight
-
+(*
 /// zipWith two Pipes<'In, _> into one by zipping their outputs:
 ///   • applies both processors to the same input stream
 ///   • pairs each output and combines using the given function
 ///   • assumes both sides produce values in lockstep
 let internal zipWithOp (f: 'A -> 'B -> 'C)
-              (op1: Operation<'In, 'A>)
-              (op2: Operation<'In, 'B>) : Operation<'In, 'C> =
+              (op1: Stage<'In, 'A, 'Shape>)
+              (op2: Stage<'In, 'B, 'Shape>) : Stage<'In, 'C, 'Shape> =
     let name = $"zipWith({op1.Name}, {op2.Name})"
-    let profile = op1.Pipe.Profile.combineProfile op2.Pipe.Profile
+    let profile = MemoryProfile.combine op1.Pipe.Profile op2.Pipe.Profile
     let pipe =
         {
             Name = name
@@ -162,7 +51,7 @@ let internal zipWithOp (f: 'A -> 'B -> 'C)
 
     {
         Name = name
-        Transition = transition op1.Transition.From op2.Transition.To
+        Transition = Stage.transition op1.Transition.From op2.Transition.To
         Pipe = pipe
     }
 
@@ -178,9 +67,10 @@ let zipWith (f: 'A -> 'B -> 'C) (p1: Pipeline<'In, 'A>) (p2: Pipeline<'In, 'B>) 
         mem = min p1.mem p2.mem
         shape = p1.shape |> Option.orElse p2.shape
     }
+*)
 
-let runToScalar name (reducer: AsyncSeq<'T> -> Async<'R>) (pl: Pipeline<'In, 'T>) : 'R =
-    let op, _, _ = pl.flow pl.mem pl.shape
+let runToScalar name (reducer: AsyncSeq<'T> -> Async<'R>) (pl: Pipeline<'In, 'T,'Shape>) : 'R =
+    let op, _, _ = pl.flow pl.mem pl.shape pl.context
     let pipe = op.Pipe
     let input = AsyncSeq.singleton Unchecked.defaultof<'In>
     pipe.Apply input |> reducer |> Async.RunSynchronously
@@ -201,59 +91,33 @@ let drainLast name pl =
         | Some x -> x
         | None -> failwith $"[drainLast] No result from {name}"
 
-let tap label : Pipe<'T, 'T> =
-    printfn "[tap]"
-    lift $"tap: {label}" Streaming (fun x ->
-        printfn "[%s] %A" label x
-        async.Return x)
-
-/// quick constructor for Streaming→Streaming unary ops
-let liftUnaryOp name (f: Slice<'T> -> Slice<'T>) 
-    : Operation<Slice<'T>,Slice<'T>> =
-    { 
-        Name = name
-        Transition = transition Streaming Streaming
-        Pipe = map name Streaming f
-    }
-
-let tapOp (label: string) : Operation<'T, 'T> =
-    let _print x = 
-        printfn "[%s] %A" label x
-        x // return x such that Pipe below gets type of x
-    { 
-        Name = $"tap: {label}"
-        Transition = transition Streaming Streaming
-        Pipe = map label Streaming _print
-    }
-
 /// Represents a pipeline that has been shared (split into synchronized branches)
-type SharedPipeline<'T, 'U , 'V> = {
-    flow: uint64 -> SliceShape option -> (Operation<'T, 'U> * Operation<'T, 'V>) * uint64 * SliceShape option
-    branches: Operation<'T,'U> * Operation<'T,'V>
+type SharedPipeline<'T, 'U , 'V, 'Shape> = {
+    flow: MemFlow<'T,'V,'Shape>
+    branches: Stage<'T,'U,'Shape> * Stage<'T,'V,'Shape>
     mem: uint64
-    shape: SliceShape option
+    shape: 'Shape option
 }
 
 /// parallel fanout with synchronization
 /// Synchronously split the shared stream into two parallel pipelines
 let (>=>>) 
-    (pl: Pipeline<'In, 'T>) 
-    (op1: Operation<'T, 'U>, op2: Operation<'T, 'V>) 
-    : SharedPipeline<'In, 'U, 'V> =
+    (pl: Pipeline<'In, 'T, 'Shape>) 
+    (op1: Stage<'T, 'U, 'Shape>, op2: Stage<'T, 'V, 'Shape>) 
+    : SharedPipeline<'In, 'U, 'V, 'Shape> =
 
-    match pl.flow pl.mem pl.shape with
+    match pl.flow pl.mem pl.shape pl.context with
     | baseOp, mem', shape' when baseOp.Transition.To = Streaming ->
 
-        let flow mem shape =
-            let opBase, mem', shape' = pl.flow mem shape
-            let pipe1, pipe2 = tee opBase.Pipe
-            let op1' = composeOp { opBase with Pipe = pipe1 } op1
-            let op2' = composeOp { opBase with Pipe = pipe2 } op2
+        let flow mem shape context =
+            let opBase, mem', shape' = pl.flow mem shape context
+            let pipe1, pipe2 = Pipe.tee opBase.Pipe
+            let op1' = Stage.compose { opBase with Pipe = pipe1 } op1
+            let op2' = Stage.compose { opBase with Pipe = pipe2 } op2
             ((op1', op2'), mem', shape')
 
         // Construct branches using same logic to fill .branches field
-        let (op1b, op2b), _, _ = flow pl.mem pl.shape
-
+        let (op1b, op2b), _, _ = flow pl.mem pl.shape pl.context
         {
             flow = flow
             branches = (op1b, op2b)
@@ -272,18 +136,19 @@ let (>=>>)
             result |> Option.defaultWith (fun () -> failwithf "No constant result from %s" baseOp.Name)
         )
 
-        let applyOp (op: Operation<'T, 'X>) (value: 'T) : 'X =
+        let applyOp (op: Stage<'T, 'X, 'Shape>) (value: 'T) : 'X =
             AsyncSeq.singleton value
             |> op.Pipe.Apply
             |> AsyncSeq.tryLast
             |> Async.RunSynchronously
             |> Option.defaultWith (fun () -> failwithf "applyOp: No output from %s" op.Name)
 
-        let makeConstOp (op: Operation<'T, 'X>) label : Operation<'In, 'X> =
+        let makeConstOp (op: Stage<'T, 'X, 'Shape>) label : Stage<'In, 'X, 'Shape> =
             {
                 Name = $"shared-const:{label}"
-                Transition = transition Constant Constant
-                Pipe = lift label Constant (fun _ -> async { return applyOp op (cached.Value) })
+                Transition = Stage.transition Constant Constant
+                Pipe = Pipe.lift label Constant (fun _ -> async { return applyOp op (cached.Value) })
+                ShapeUpdate = fun s -> s // I don't know what this should be!!!!
             }
 
         let op1' = makeConstOp op1 "left"
@@ -299,32 +164,23 @@ let (>=>>)
     | _ -> failwith "Unsupported transition kind in >=>>"
 
 let (>>=>)
-    (shared: SharedPipeline<'In, 'U, 'V>)
-    (combine: Operation<'In, 'U> * Operation<'In, 'V> -> Operation<'In, 'W>)
-    : Pipeline<'In, 'W> =
+    (shared: SharedPipeline<'In, 'U, 'V, 'Shape>)
+    (combine: Stage<'In, 'U, 'Shape> * Stage<'In, 'V, 'Shape> -> Stage<'In, 'W, 'Shape>)
+    : Pipeline<'In, 'W, 'Shape> =
 
     let opU, opV = shared.branches
     let op = combine (opU, opV)
-    { flow = returnM op; mem = shared.mem; shape = shared.shape }
+    { flow = MemFlow.returnM op; mem = shared.mem; shape = shared.shape }
 
-let unitPipeline<'T> () : Pipeline<'T, unit> =
-    let op : Operation<'T, unit> =
-        {
-            Name = "unit"
-            Transition = transition Streaming Streaming
-            Pipe = lift "unit" Streaming (fun _ -> async.Return ())
-        }
-    { flow = returnM op; mem = 0UL; shape = None }
-
-let combineIgnore : Operation<'In, 'U> * Operation<'In, 'V> -> Operation<'In, unit> =
+let combineIgnore : Stage<'In, 'U, 'Shape> * Stage<'In, 'V, 'Shape> -> Stage<'In, unit, 'Shape> =
     fun (op1, op2) ->
         {
             Name = $"combineIgnore({op1.Name}, {op2.Name})"
-            Transition = transition op1.Transition.From op2.Transition.To
+            Transition = Stage.transition op1.Transition.From op2.Transition.To
             Pipe =
                 {
                     Name = "combineIgnore"
-                    Profile = op1.Pipe.Profile.combineProfile op2.Pipe.Profile
+                    Profile = MemoryProfile.combine op1.Pipe.Profile op2.Pipe.Profile
                     Apply = fun input ->
                         let out1 = op1.Pipe.Apply input |> AsyncSeq.iterAsync (fun _ -> async.Return())
                         let out2 = op2.Pipe.Apply input |> AsyncSeq.iterAsync (fun _ -> async.Return())

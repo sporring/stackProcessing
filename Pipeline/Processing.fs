@@ -11,6 +11,7 @@ open Core
 open Routing
 open Slice
 open Image
+open type ImageFunctions.OutputRegionMode // weird notation for exposing the discriminated union
 
 // --- Processing Utilities ---
 (* // Not used. Needed?
@@ -24,87 +25,61 @@ let internal explodeSlice (slices: Slice<'T>)
     |> AsyncSeq.ofSeq
 *) 
 
-let skipFirstLast (n: int) (lst: 'a list) 
-    : 'a list =
-    let m = lst.Length - 2*n;
-    if m <= 0 then []
-    else lst |> List.skip n |> List.take m 
+let skipNTakeM (n: uint) (m: uint) (lst: 'a list) : 'a list =
+    let m = uint lst.Length - 2u*n;
+    if m = 0u then []
+    else lst |> List.skip (int n) |> List.take (int m) 
 
-/// mapWindowed keeps a running window along the slice direction of depth images
-/// and processes them by f. The stepping size of the running window is stride.
-/// So if depth is 3 and stride is 1 then first image 0,1,2 is sent to f, then 1, 2, 3
-/// and so on. If depth is 3 and stride is 3, then it'll be image 0, 1, 2 followed by
-/// 3, 4, 5. It is also possible to use this for sampling, e.g., setting depth to 1
-/// and stride to 2 sends every second image to f.  
-let internal mapWindowed (label: string) (depth: uint) (stride: uint) (emitStart: uint) (emitCount: uint) (f: 'S list -> 'T list) 
-    : Pipe<'S,'T> =
-    {
-        Name = label; 
-        Profile = Sliding (depth,stride,emitStart,emitCount)
-        Apply = fun input ->
-            printfn $"[Runtime analysis: Windowed analysis size {depth} {stride}]"
-            AsyncSeqExtensions.windowed depth stride input
-                |> AsyncSeq.collect (f  >> AsyncSeq.ofSeq)
-    }
-
-let internal liftWindowedOp (name: string) (window: uint) (stride: uint) (emitStart: uint) (emitCount: uint) (f: Slice<'S> -> Slice<'T>) 
-    : Operation<Slice<'S>, Slice<'T>> =
+let internal liftWindowedOp (name: string) (window: uint) (pad: uint) (zeroMaker: Slice<'S>->Slice<'S>) (stride: uint) (emitStart: uint) (emitCount: uint) (f: Slice<'S> -> Slice<'T>) 
+    : Stage<Slice<'S>, Slice<'T>,'Shape> =
     {
         Name = name
-        Transition = transition (Sliding (window,stride,emitStart,emitCount)) Streaming
-        Pipe = mapWindowed name window stride emitStart emitCount (stack >> f >> unstack)
+        Pipe = Pipe.mapWindowed name window updateId pad zeroMaker stride emitStart emitCount (stack >> f >> unstack)
+        Transition = Stage.transition (Sliding (window,stride,emitStart,emitCount)) Streaming
+        ShapeUpdate = id
     }
 
-let internal liftWindowedTrimOp (name: string) (window: uint) (stride: uint) (emitStart: uint) (emitCount: uint) (trim: uint) (f: Slice<'S> -> Slice<'T>)
-    : Operation<Slice<'S>, Slice<'T>> =
+let internal liftWindowedTrimOp (name: string) (window: uint) (pad: uint) (zeroMaker: Slice<'S>->Slice<'S>) (stride: uint) (emitStart: uint) (emitCount: uint) (trim: uint) (f: Slice<'S> -> Slice<'T>)
+    : Stage<Slice<'S>, Slice<'T>,'Shape> =
     {
         Name = name
-        Transition = transition (Sliding (window,stride,emitStart,emitCount)) Streaming
+        Transition = Stage.transition (Sliding (window,stride,emitStart,emitCount)) Streaming
         Pipe =
-            mapWindowed name window stride emitStart emitCount (
-                stack >> f >> unstack >> (skipFirstLast (int trim)))
+            Pipe.mapWindowed name window updateId pad zeroMaker stride emitStart emitCount (
+                stack >> f >> unstack >> fun lst -> let m = uint lst.Length - 2u*trim in skipNTakeM trim m lst)
+        ShapeUpdate = id
     }
 
 /// quick constructor for Streaming→Streaming unary ops
-let internal liftUnaryOpInt (name: string) (f: Slice<int> -> Slice<int>)
-    : Operation<Slice<int>,Slice<int>> =
-    liftUnaryOp name f
+let internal liftUnaryOpInt (name: string) (f: Slice<int> -> Slice<int>) : Stage<Slice<int>,Slice<int>, 'Shape> =
+    Stage.liftUnary name f
 
-let internal liftUnaryOpFloat32 (name: string) (f: Slice<float32> -> Slice<float32>) 
-    : Operation<Slice<float32>,Slice<float32>> =
-    liftUnaryOp name f
+let internal liftUnaryOpFloat32 (name: string) (f: Slice<float32> -> Slice<float32>) : Stage<Slice<float32>,Slice<float32>, 'Shape> =
+    Stage.liftUnary name f
 
-let internal liftUnaryOpFloat (name: string) (f: Slice<float> -> Slice<float>) 
-    : Operation<Slice<float>,Slice<float>> =
-    liftUnaryOp name f
+let internal liftUnaryOpFloat (name: string) (f: Slice<float> -> Slice<float>) : Stage<Slice<float>,Slice<float>, 'Shape> =
+    Stage.liftUnary name f
 
-let internal liftBinaryOp (name: string) (f: Slice<'T> -> Slice<'T> -> Slice<'T>)
-    : Operation<Slice<'T> * Slice<'T>, Slice<'T>> =
+let internal liftBinaryOp (name: string) (f: Slice<'T> -> Slice<'T> -> Slice<'T>) : Stage<Slice<'T> * Slice<'T>, Slice<'T>, 'Shape> =
     {
         Name = name
-        Transition = transition Streaming Streaming
+        Transition = Stage.transition Streaming Streaming
         Pipe = {
             Name = name
             Profile = Streaming
             Apply = fun input ->
                 input
                 |> AsyncSeq.map (fun (a, b) -> f a b) }
+        ShapeUpdate = id
     }
 
-let internal liftBinaryOpFloat (name: string) (f: Slice<float> -> Slice<float> -> Slice<float>)
-    : Operation<Slice<float> * Slice<float>, Slice<float>> =
+let internal liftBinaryOpFloat (name: string) (f: Slice<float> -> Slice<float> -> Slice<float>) : Stage<Slice<float> * Slice<float>, Slice<float>, 'Shape> =
     liftBinaryOp name f
 
-(* zipWithOld no longer available. is this function used?
-let internal liftBinaryZipOp (name: string) (f: Slice<'T> -> Slice<'T> -> Slice<'T>) (p1: Pipe<'In, Slice<'T>>) (p2: Pipe<'In, Slice<'T>>) 
-    : Pipe<'In, Slice<'T>> =
-    zipWithOld f p1 p2
-*)
-let internal liftFullOp (name: string) (f: Slice<'T> -> Slice<'T>)
-    : Operation<Slice<'T>, Slice<'T>> =
+let internal liftFullOp (name: string) (f: Slice<'T> -> Slice<'T>) : Stage<Slice<'T>, Slice<'T>, 'Shape> =
     {
         Name = name
-        Transition = transition Full Streaming
+        Transition = Stage.transition Full Streaming
         Pipe = {
             Name = name
             Profile = Full
@@ -114,13 +89,13 @@ let internal liftFullOp (name: string) (f: Slice<'T> -> Slice<'T>)
                     let stack = Slice.stack slices
                     let result = f stack
                     yield! Slice.unstack result |> AsyncSeq.ofSeq } }
+        ShapeUpdate = id
     }
 
-let internal liftFullParamOp (name: string) (f: 'P -> Slice<'T> -> Slice<'T>) (param: 'P)
-    : Operation<Slice<'T>, Slice<'T>> =
+let internal liftFullParamOp (name: string) (f: 'P -> Slice<'T> -> Slice<'T>) (param: 'P) : Stage<Slice<'T>, Slice<'T>, 'Shape> =
     {
         Name = name
-        Transition = transition Full Streaming
+        Transition = Stage.transition Full Streaming
         Pipe = {
             Name = name
             Profile = Full
@@ -130,13 +105,13 @@ let internal liftFullParamOp (name: string) (f: 'P -> Slice<'T> -> Slice<'T>) (p
                     let stack = Slice.stack slices
                     let result = f param stack
                     yield! Slice.unstack result |> AsyncSeq.ofSeq } }
+        ShapeUpdate = id
     }
 
-let internal liftFullParam2Op (name: string) (f: 'P -> 'Q -> Slice<'T> -> Slice<'T>) (param1: 'P) (param2: 'Q)
-    : Operation<Slice<'T>, Slice<'T>> =
+let internal liftFullParam2Op (name: string) (f: 'P -> 'Q -> Slice<'T> -> Slice<'T>) (param1: 'P) (param2: 'Q) : Stage<Slice<'T>, Slice<'T>, 'Shape> =
     {
         Name = name
-        Transition = transition Full Streaming
+        Transition = Stage.transition Full Streaming
         Pipe = {
             Name = name
             Profile = Full
@@ -146,29 +121,30 @@ let internal liftFullParam2Op (name: string) (f: 'P -> 'Q -> Slice<'T> -> Slice<
                     let stack = Slice.stack slices
                     let result = f param1 param2 stack
                     yield! Slice.unstack result |> AsyncSeq.ofSeq } }
+        ShapeUpdate = id
     }
 
-let internal liftMapOp<'T, 'U when 'T: equality and 'T: comparison> (name: string) (f: Slice<'T> -> 'U) 
-    : Operation<Slice<'T>, 'U> =
+let internal liftMapOp<'T, 'U when 'T: equality and 'T: comparison> (name: string) (f: Slice<'T> -> 'U) : Stage<Slice<'T>, 'U, 'Shape> =
     {
         Name = name
-        Transition = transition Streaming Streaming
+        Transition = Stage.transition Streaming Streaming
         Pipe = {
             Name = name
             Profile = Streaming
             Apply = fun input -> input |> AsyncSeq.map f }
+        ShapeUpdate = id
     }
 
 /////////////////////////////////////////////////////////////////////////////////////
-let inline castOp<'S,'T when 'S: equality and 'T: equality> name f 
-    : Operation<Slice<'S>,Slice<'T>> =
+let inline castOp<'S,'T when 'S: equality and 'T: equality> name f : Stage<Slice<'S>,Slice<'T>, 'Shape> =
     { 
         Name = name
-        Transition = transition Streaming Streaming
+        Transition = Stage.transition Streaming Streaming
         Pipe = { 
             Name = name
             Profile = Streaming
             Apply = fun input -> input |> AsyncSeq.map f } 
+        ShapeUpdate = id
     }
 
 let castUInt8ToInt8Op name = castOp name Slice.castUInt8ToInt8
@@ -267,29 +243,29 @@ let castFloatToInt64Op name = castOp name Slice.castFloatToInt64
 let castFloatToFloat32Op name = castOp name Slice.castFloatToFloat32
 
 /// Basic arithmetic
-let addOp name slice = liftUnaryOp name (Slice.add slice)
+let addOp name slice = Stage.liftUnary name (Slice.add slice)
 let inline scalarAddSliceOp<^T when ^T: equality and ^T: (static member op_Explicit: ^T -> float)> (name:string) (i: ^T) = 
-    liftUnaryOp name (fun (s:Slice<'T>)->Slice.scalarAddSlice<^T> i s)
+    Stage.liftUnary name (fun (s:Slice<'T>)->Slice.scalarAddSlice<^T> i s)
 let inline sliceAddScalarOp<^T when ^T: equality and ^T: (static member op_Explicit: ^T -> float)> (name:string) (i: ^T) = 
-    liftUnaryOp name (fun (s:Slice<'T>)->Slice.sliceAddScalar<^T> s i)
+    Stage.liftUnary name (fun (s:Slice<'T>)->Slice.sliceAddScalar<^T> s i)
 
-let subOp name slice = liftUnaryOp name (Slice.sub slice)
+let subOp name slice = Stage.liftUnary name (Slice.sub slice)
 let inline scalarSubSliceOp<^T when ^T: equality and ^T: (static member op_Explicit: ^T -> float)> (name:string) (i: ^T) = 
-    liftUnaryOp name (fun (s:Slice<'T>)->Slice.scalarSubSlice<^T> i s)
+    Stage.liftUnary name (fun (s:Slice<'T>)->Slice.scalarSubSlice<^T> i s)
 let inline sliceSubScalarOp<^T when ^T: equality and ^T: (static member op_Explicit: ^T -> float)> (name:string) (i: ^T) = 
-    liftUnaryOp name (fun (s:Slice<'T>)->Slice.sliceSubScalar<^T> s i)
+    Stage.liftUnary name (fun (s:Slice<'T>)->Slice.sliceSubScalar<^T> s i)
 
-let mulOp name slice = liftUnaryOp name (Slice.mul slice)
+let mulOp name slice = Stage.liftUnary name (Slice.mul slice)
 let inline scalarMulSliceOp<^T when ^T: equality and ^T: (static member op_Explicit: ^T -> float)> (name:string) (i: ^T) = 
-    liftUnaryOp name (fun (s:Slice<'T>)->Slice.scalarMulSlice<^T> i s)
+    Stage.liftUnary name (fun (s:Slice<'T>)->Slice.scalarMulSlice<^T> i s)
 let inline sliceMulScalarOp<^T when ^T: equality and ^T: (static member op_Explicit: ^T -> float)> (name:string) (i: ^T) = 
-    liftUnaryOp name (fun (s:Slice<'T>)->Slice.sliceMulScalar<^T> s i)
+    Stage.liftUnary name (fun (s:Slice<'T>)->Slice.sliceMulScalar<^T> s i)
 
-let divOp name slice = liftUnaryOp name (Slice.div slice)
+let divOp name slice = Stage.liftUnary name (Slice.div slice)
 let inline scalarDivSliceOp<^T when ^T: equality and ^T: (static member op_Explicit: ^T -> float)> (name:string) (i: ^T) = 
-    liftUnaryOp name (fun (s:Slice<'T>)->Slice.scalarDivSlice<^T> i s)
+    Stage.liftUnary name (fun (s:Slice<'T>)->Slice.scalarDivSlice<^T> i s)
 let inline sliceDivScalarOp<^T when ^T: equality and ^T: (static member op_Explicit: ^T -> float)> (name:string) (i: ^T) = 
-    liftUnaryOp name (fun (s:Slice<'T>)->Slice.sliceDivScalar<^T> s i)
+    Stage.liftUnary name (fun (s:Slice<'T>)->Slice.sliceDivScalar<^T> s i)
 
 /// Simple functions
 let absFloat32Op   name = liftUnaryOpFloat32 name absSlice
@@ -323,42 +299,42 @@ let tanFloat32Op   name = liftUnaryOpFloat32 name tanSlice
 let tanFloatOp     name = liftUnaryOpFloat name tanSlice
 
 /// Histogram related functions
-let histogramOp<'T when 'T: comparison> name
-    : Operation<Slice<'T>, Map<'T, uint64>>  =
+let histogramOp<'T when 'T: comparison> name : Stage<Slice<'T>, Map<'T, uint64>, 'Shape>  =
     let histogramReducer (slices: AsyncSeq<Slice<'T>>) =
         slices
         |> AsyncSeq.map Slice.histogram
         |> AsyncSeqExtensions.fold Slice.addHistogram (Map<'T, uint64> [])
     {
         Name = name
-        Transition = transition Streaming Constant
-        Pipe = reduce name Streaming histogramReducer
+        Transition = Stage.transition Streaming Constant
+        Pipe = Pipe.reduce name Streaming histogramReducer
+        ShapeUpdate = id
     }
 
-let map2pairsOp<'T, 'S when 'T: comparison> name
-    : Operation<Map<'T, 'S>, ('T * 'S) list> =
+let map2pairsOp<'T, 'S when 'T: comparison> name : Stage<Map<'T, 'S>, ('T * 'S) list, 'Shape> =
     {
         Name = name
-        Transition = transition Streaming Streaming
-        Pipe = map name Streaming Slice.map2pairs
+        Transition = Stage.transition Streaming Streaming
+        Pipe = Pipe.map name Streaming Slice.map2pairs
+        ShapeUpdate = id
     }
-let inline pairs2floatsOp< ^T, ^S when ^T : (static member op_Explicit : ^T -> float) and  ^S : (static member op_Explicit : ^S -> float) > name
-    : Operation<(^T * ^S) list, (float * float) list> =
+let inline pairs2floatsOp< ^T, ^S when ^T : (static member op_Explicit : ^T -> float) and  ^S : (static member op_Explicit : ^S -> float) > name : Stage<(^T * ^S) list, (float * float) list, 'Shape> =
     {
         Name = name
-        Transition = transition Streaming Streaming
-        Pipe = map name Streaming Slice.pairs2floats
+        Transition = Stage.transition Streaming Streaming
+        Pipe = Pipe.map name Streaming Slice.pairs2floats
+        ShapeUpdate = id
     }
-let inline pairs2intsOp< ^T, ^S when ^T : (static member op_Explicit : ^T -> int) and  ^S : (static member op_Explicit : ^S -> int) > name
-    : Operation<(^T * ^S) list, (int * int) list> =
+let inline pairs2intsOp< ^T, ^S when ^T : (static member op_Explicit : ^T -> int) and  ^S : (static member op_Explicit : ^S -> int) > name : Stage<(^T * ^S) list, (int * int) list, 'Shape> =
     {
         Name = name
-        Transition = transition Streaming Streaming
-        Pipe = map name Streaming Slice.pairs2ints
+        Transition = Stage.transition Streaming Streaming
+        Pipe = Pipe.map name Streaming Slice.pairs2ints
+        ShapeUpdate = id
     }
 
 type ImageStats = Slice.ImageStats
-let computeStatsOp<'T when 'T : equality> name : Operation<Slice<'T>, ImageStats> =
+let computeStatsOp<'T when 'T : equality> name : Stage<Slice<'T>, ImageStats, 'Shape> =
     let computeStatsReducer (slices: AsyncSeq<Slice<'T>>) =
         let zeroStats: ImageStats = { 
             NumPixels = 0u
@@ -374,8 +350,9 @@ let computeStatsOp<'T when 'T : equality> name : Operation<Slice<'T>, ImageStats
         |> AsyncSeqExtensions.fold Slice.addComputeStats zeroStats
     {
         Name = name
-        Transition = transition Streaming Constant
-        Pipe = reduce name Streaming computeStatsReducer
+        Transition = Stage.transition Streaming Constant
+        Pipe = Pipe.reduce name Streaming computeStatsReducer
+        ShapeUpdate = id
     }
 
 /// Convolution like operators
@@ -385,15 +362,21 @@ let periodicPad = ImageFunctions.PerodicPad
 let zeroFluxNeumannPad = ImageFunctions.ZeroFluxNeumannPad
 let valid = ImageFunctions.Valid
 let same = ImageFunctions.Same
+let zeroMaker<'S when 'S: equality> (ex:Slice<'S>) : Slice<'S> = Slice.create<'S> (GetWidth ex) (GetHeight ex) 1u 0u
 
-let discreteGaussianOp (name:string) (sigma:float) (bc: ImageFunctions.BoundaryCondition option) (winSz: uint option): Operation<Slice<float>, Slice<float>> =
+let discreteGaussianOp (name:string) (sigma:float) (outputRegionMode: OutputRegionMode option) (boundaryCondition: ImageFunctions.BoundaryCondition option) (winSz: uint option): Stage<Slice<float>, Slice<float>, 'Shape> =
     let roundFloatToUint v = uint (v+0.5)
 
     let ksz = 2.0 * sigma + 1.0 |> roundFloatToUint
     let win = Option.defaultValue ksz winSz |> min ksz // max should be found by memory availability
     let stride = win - ksz + 1u
-    liftWindowedOp name win stride (stride - 1u) stride (fun slices -> Slice.discreteGaussian 3u sigma (ksz |> Some) (Some valid) bc slices)
+    let pad = 
+        match outputRegionMode with
+            | Some Valid -> 0u
+            | _ -> ksz/2u //floor
+    liftWindowedOp name win pad zeroMaker<float> stride (stride - 1u) stride (fun slices -> Slice.discreteGaussian 3u sigma (ksz |> Some) outputRegionMode boundaryCondition slices)
 
+let convGaussOp name sigma = discreteGaussianOp name sigma None None None
 
 // stride calculation example
 // ker = 3, win = 7
@@ -420,19 +403,25 @@ let discreteGaussianOp (name:string) (sigma:float) (bc: ImageFunctions.BoundaryC
 //                                          * * *
 //                                            * * *
 
-let convolveOp (name: string) (kernel: Slice<'T>) (bc: BoundaryCondition option) (winSz: uint option): Operation<Slice<'T>, Slice<'T>> =
+let convolveOp (name: string) (kernel: Slice<'T>) (outputRegionMode: OutputRegionMode option) (bc: BoundaryCondition option) (winSz: uint option): Stage<Slice<'T>, Slice<'T>, 'Shape> =
     let windowFromKernel (k: Slice<'T>) : uint =
         max 1u (k |> Slice.GetDepth)
     let ksz = windowFromKernel kernel
     let win = Option.defaultValue ksz winSz |> min ksz
     let stride = win-ksz+1u
-    liftWindowedOp name win stride (stride - 1u) stride (fun slices -> Slice.convolve (Some valid) bc slices kernel)
+    let pad = 
+        match outputRegionMode with
+            | Some Valid -> 0u
+            | _ -> ksz/2u //floor
+    liftWindowedOp name win pad zeroMaker<'T> stride (stride - 1u) stride (fun slices -> Slice.convolve outputRegionMode bc slices kernel)
 
-let private makeMorphOp (name:string) (radius:uint) (winSz: uint option) (core: uint -> Slice<'T> -> Slice<'T>) : Operation<Slice<'T>,Slice<'T>> when 'T: equality =
+let convOp name kernel = convolveOp name kernel None None
+
+let private makeMorphOp (name:string) (radius:uint) (winSz: uint option) (core: uint -> Slice<'T> -> Slice<'T>) : Stage<Slice<'T>,Slice<'T>, 'Shape> when 'T: equality =
     let ksz   = 2u * radius + 1u
     let win = Option.defaultValue ksz winSz |> min ksz
     let stride = win - ksz + 1u
-    liftWindowedTrimOp name win stride (stride - 1u) stride radius (fun slices -> core radius slices)
+    liftWindowedTrimOp name win 0u zeroMaker<'T> stride (stride - 1u) stride radius (fun slices -> core radius slices)
 
 // Only uint8
 let binaryErodeOp     name radius winSz = makeMorphOp name radius winSz Slice.binaryErode
@@ -440,10 +429,10 @@ let binaryDilateOp    name radius winSz = makeMorphOp name radius winSz Slice.bi
 let binaryOpeningOp   name radius winSz = makeMorphOp name radius winSz Slice.binaryOpening
 let binaryClosingOp   name radius winSz = makeMorphOp name radius winSz Slice.binaryClosing
 let binaryFillHolesOp name = liftFullOp name Slice.binaryFillHoles
-let connectedComponentsOp (name: string) : Operation<Slice<uint8>, Slice<uint64>> =
+let connectedComponentsOp (name: string) : Stage<Slice<uint8>, Slice<uint64>, 'Shape> =
     { // fsharp gets confused about the change of units, so we make the record by hand
         Name = name
-        Transition = transition Full Streaming
+        Transition = Stage.transition Full Streaming
         Pipe =
             {
                 Name = name
@@ -456,19 +445,20 @@ let connectedComponentsOp (name: string) : Operation<Slice<uint8>, Slice<uint64>
                         yield! Slice.unstack result |> AsyncSeq.ofSeq
                     }
             }
+        ShapeUpdate = id
     }
 
-let piecewiseConnectedComponentsOp (name:string) (windowSize: uint option): Operation<Slice<uint8>, Slice<uint64>> =
+let piecewiseConnectedComponentsOp (name:string) (windowSize: uint option): Stage<Slice<uint8>, Slice<uint64>, 'Shape> =
     let dpth = Option.defaultValue 1u windowSize |> max 1u
-    liftWindowedOp name dpth dpth 0u dpth (fun slices -> Slice.connectedComponents slices)
+    liftWindowedOp name dpth 0u zeroMaker<uint8> dpth 0u dpth (fun slices -> Slice.connectedComponents slices)
 
 let otsuThresholdOp name = liftFullOp name (Slice.otsuThreshold: Slice<'T> -> Slice<'T>) 
 let otsuMultiThresholdOp name n = liftFullParamOp name Slice.otsuMultiThreshold n
 let momentsThresholdOp name = liftFullOp name Slice.momentsThreshold
-let signedDistanceMapOp name : Operation<Slice<uint8>, Slice<float>> =
+let signedDistanceMapOp name : Stage<Slice<uint8>, Slice<float>, 'Shape> =
     {
         Name = name
-        Transition = transition Full Streaming
+        Transition = Stage.transition Full Streaming
         Pipe =
             {
                 Name = name
@@ -481,15 +471,16 @@ let signedDistanceMapOp name : Operation<Slice<uint8>, Slice<float>> =
                         yield! Slice.unstack result |> AsyncSeq.ofSeq
                     }
             }
+        ShapeUpdate = id
     }
 
 let watershedOp name a = liftFullParamOp name Slice.watershed a
-let thresholdOp name a b = liftUnaryOp name (Slice.threshold a b)
-let addNormalNoiseOp name a b = liftUnaryOp name (Slice.addNormalNoise a b)
+let thresholdOp name a b = Stage.liftUnary name (Slice.threshold a b)
+let addNormalNoiseOp name a b = Stage.liftUnary name (Slice.addNormalNoise a b)
 let relabelComponentsOp name a = liftFullParamOp name Slice.relabelComponents a
 
 let constantPad2DOp<'T when 'T : equality> (name: string) (padLower : uint list) (padUpper : uint list) (c : double) =
-    liftUnaryOp name (Slice.constantPad2D padLower padUpper c)
+    Stage.liftUnary name (Slice.constantPad2D padLower padUpper c)
 
 // Not Pipes nor Operators
 type FileInfo = Slice.FileInfo

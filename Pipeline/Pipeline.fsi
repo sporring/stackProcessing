@@ -26,7 +26,8 @@ val combineIgnore:
 val drainSingle: pl: Core.Pipeline<'a,'b> -> 'b
 val drainList: pl: Core.Pipeline<'a,'b> -> 'b list
 val drainLast: pl: Core.Pipeline<'a,'b> -> 'b
-val tap: (string -> Core.Operation<'a,'a>)
+val tap:
+  (string -> Core.Operation<Slice.Slice<'a>,Slice.Slice<'a>>) when 'a: equality
 val liftUnary:
   f: (Slice<'T> -> Slice<'T>) -> Core.Operation<Slice.Slice<'T>,Slice.Slice<'T>>
     when 'T: equality
@@ -252,25 +253,21 @@ val zeroFluxNeumannPad: ImageFunctions.BoundaryCondition
 val valid: ImageFunctions.OutputRegionMode
 val same: ImageFunctions.OutputRegionMode
 val discreteGaussian:
-  sigma: float ->
-    bc: ImageFunctions.BoundaryCondition option ->
-    winSz: uint option -> Core.Operation<Slice.Slice<float>,Slice.Slice<float>>
-val convGauss:
-  sigma: float ->
-    bc: ImageFunctions.BoundaryCondition option ->
-    Core.Operation<Slice.Slice<float>,Slice.Slice<float>>
+  (float ->
+     Slice.OutputRegionMode option ->
+     ImageFunctions.BoundaryCondition option ->
+     uint option -> Core.Operation<Slice.Slice<float>,Slice.Slice<float>>)
+val convGauss: (float -> Core.Operation<Slice.Slice<float>,Slice.Slice<float>>)
 val convolve:
   kernel: Slice.Slice<'a> ->
-    bc: Slice.BoundaryCondition option ->
+    outputRegionMode: Slice.OutputRegionMode option ->
+    boundaryCondition: Slice.BoundaryCondition option ->
     winSz: uint option -> Core.Operation<Slice.Slice<'a>,Slice.Slice<'a>>
     when 'a: equality
 val conv:
-  kernel: Slice.Slice<'a> -> Core.Operation<Slice.Slice<'a>,Slice.Slice<'a>>
+  kernel: Slice.Slice<'a> ->
+    (uint option -> Core.Operation<Slice.Slice<'a>,Slice.Slice<'a>>)
     when 'a: equality
-val convGaussOp:
-  sigma: float ->
-    bc: ImageFunctions.BoundaryCondition option ->
-    Core.Operation<Slice.Slice<float>,Slice.Slice<float>>
 val erode: r: uint -> Core.Operation<Slice.Slice<uint8>,Slice.Slice<uint8>>
 val dilate: r: uint -> Core.Operation<Slice.Slice<uint8>,Slice.Slice<uint8>>
 val opening: r: uint -> Core.Operation<Slice.Slice<uint8>,Slice.Slice<uint8>>

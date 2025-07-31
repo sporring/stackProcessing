@@ -6,11 +6,15 @@ type MemoryProfile =
     | Streaming
     | Sliding of uint * uint * uint * uint
     | Full
-    member EstimateUsage: width: uint -> height: uint -> depth: uint -> uint64
-    member
-      RequiresBuffering: availableMemory: uint64 ->
-                           width: uint -> height: uint -> depth: uint -> bool
-    member combineProfile: other: MemoryProfile -> MemoryProfile
+module MemoryProfile =
+    val estimateUsage:
+      profile: MemoryProfile ->
+        width: uint -> height: uint -> depth: uint -> uint64
+    val requiresBuffering:
+      profile: MemoryProfile ->
+        availableMemory: uint64 ->
+        width: uint -> height: uint -> depth: uint -> bool
+    val combine: prof1: MemoryProfile -> prof2: MemoryProfile -> MemoryProfile
 /// A configurable image processing step that operates on image slices.
 /// Pipe describes *how* to do it:
 /// - Encapsulates the concrete execution logic
@@ -23,25 +27,50 @@ type Pipe<'S,'T> =
       Profile: MemoryProfile
       Apply: (FSharp.Control.AsyncSeq<'S> -> FSharp.Control.AsyncSeq<'T>)
     }
-val internal run: p: Pipe<'S,'T> -> FSharp.Control.AsyncSeq<'T>
-val internal lift:
-  name: string ->
-    profile: MemoryProfile -> f: ('In -> Async<'Out>) -> Pipe<'In,'Out>
-val map: label: string -> profile: MemoryProfile -> f: ('S -> 'T) -> Pipe<'S,'T>
-val internal reduce:
-  name: string ->
-    profile: MemoryProfile ->
-    reducer: (FSharp.Control.AsyncSeq<'In> -> Async<'Out>) -> Pipe<'In,'Out>
-val fold:
-  label: string ->
-    profile: MemoryProfile ->
-    folder: ('State -> 'In -> 'State) -> state0: 'State -> Pipe<'In,'State>
-val internal consumeWith:
-  name: string ->
-    profile: MemoryProfile ->
-    consume: (FSharp.Control.AsyncSeq<'T> -> Async<unit>) -> Pipe<'T,unit>
-/// Combine two <c>Pipe</c> instances into one by composing their memory profiles and transformation functions.
-val composePipe: p1: Pipe<'S,'T> -> p2: Pipe<'T,'U> -> Pipe<'S,'U>
+module Pipe =
+    val run: p: Pipe<'S,'T> -> FSharp.Control.AsyncSeq<'T>
+    val lift:
+      label: string ->
+        profile: MemoryProfile -> f: ('In -> Async<'Out>) -> Pipe<'In,'Out>
+    val map:
+      label: string -> profile: MemoryProfile -> f: ('S -> 'T) -> Pipe<'S,'T>
+    val reduce:
+      label: string ->
+        profile: MemoryProfile ->
+        reducer: (FSharp.Control.AsyncSeq<'In> -> Async<'Out>) -> Pipe<'In,'Out>
+    val fold:
+      label: string ->
+        profile: MemoryProfile ->
+        folder: ('State -> 'In -> 'State) -> state0: 'State -> Pipe<'In,'State>
+    val concatenate:
+      label: string -> seqs: FSharp.Control.AsyncSeq<'T> list -> Pipe<'T,'T>
+    val consumeWith:
+      name: string ->
+        profile: MemoryProfile ->
+        consume: (FSharp.Control.AsyncSeq<'T> -> Async<unit>) -> Pipe<'T,unit>
+    /// Combine two <c>Pipe</c> instances into one by composing their memory profiles and transformation functions.
+    val compose: p1: Pipe<'S,'T> -> p2: Pipe<'T,'U> -> Pipe<'S,'U>
+    val memNeed: shape: uint list -> p: Pipe<'a,'b> -> uint64
+    /// Try to shrink a too‑hungry pipe to a cheaper profile.
+    /// *You* control the downgrade policy here.
+    val shrinkProfile:
+      avail: uint64 -> shape: uint list -> p: Pipe<'S,'T> -> Pipe<'S,'T>
+    /// mapWindowed keeps a running window along the slice direction of depth images
+    /// and processes them by f. The stepping size of the running window is stride.
+    /// So if depth is 3 and stride is 1 then first image 0,1,2 is sent to f, then 1, 2, 3
+    /// and so on. If depth is 3 and stride is 3, then it'll be image 0, 1, 2 followed by
+    /// 3, 4, 5. It is also possible to use this for sampling, e.g., setting depth to 1
+    /// and stride to 2 sends every second image to f.  
+    val internal mapWindowed:
+      label: string ->
+        depth: uint ->
+        updateId: (uint -> 'S -> 'S) ->
+        pad: uint ->
+        zeroMaker: ('S -> 'S) ->
+        stride: uint ->
+        emitStart: uint ->
+        emitCount: uint -> f: ('S list -> 'T list) -> Pipe<'S,'T>
+        when 'S: equality
 /// SliceShape describes the dimensions of a stacked slice.
 /// Conventionally: [width; height; depth]
 /// Used for validating if transitions are feasible (e.g., sliding window depth fits).
@@ -49,12 +78,10 @@ type SliceShape = uint list
 /// MemoryTransition describes *how* memory layout is expected to change:
 /// - From: the input memory profile
 /// - To: the expected output memory profile
-/// - Check: a predicate on slice shape to validate if the transition is allowed
 type MemoryTransition =
     {
       From: MemoryProfile
       To: MemoryProfile
-      Check: (SliceShape -> bool)
     }
 /// Operation describes *what* should be done:
 /// - Contains high-level metadata
@@ -67,49 +94,53 @@ type Operation<'S,'T> =
       Transition: MemoryTransition
       Pipe: Pipe<'S,'T>
     }
-val defaultCheck: 'a -> bool
-val transition:
-  fromProfile: MemoryProfile -> toProfile: MemoryProfile -> MemoryTransition
-val idOp: unit -> Operation<'T,'T>
-val inline asPipe: op: Operation<'a,'b> -> Pipe<'a,'b>
-val pipe2Operation:
-  name: string ->
-    transition: MemoryTransition -> pipe: Pipe<'S,'T> -> Operation<'S,'T>
+module Operation =
+    val transition:
+      fromProfile: MemoryProfile -> toProfile: MemoryProfile -> MemoryTransition
+    val id: unit -> Operation<'T,'T>
+    val toPipe: op: Operation<'a,'b> -> Pipe<'a,'b>
+    val fromPipe:
+      name: string ->
+        transition: MemoryTransition -> pipe: Pipe<'S,'T> -> Operation<'S,'T>
+    val concatenate:
+      label: string ->
+        pads: FSharp.Control.AsyncSeq<'T> list -> Operation<'T,'T>
+    val combine:
+      label: string -> ops: Operation<unit,'T> list -> Operation<unit,'T>
+    val compose:
+      op1: Operation<'S,'T> -> op2: Operation<'T,'U> -> Operation<'S,'U>
+    val (-->) :
+      op1: Operation<'A,'B> -> op2: Operation<'B,'C> -> Operation<'A,'C>
 type MemFlow<'S,'T> =
     uint64 -> SliceShape option -> Operation<'S,'T> * uint64 * SliceShape option
-val private memNeed: shape: uint list -> p: Pipe<'a,'b> -> uint64
-/// Try to shrink a too‑hungry pipe to a cheaper profile.
-/// *You* control the downgrade policy here.
-val private shrinkProfile:
-  avail: uint64 -> shape: uint list -> p: Pipe<'S,'T> -> Pipe<'S,'T>
-val returnM:
-  op: Operation<'S,'T> ->
-    bytes: uint64 ->
-    shapeOpt: SliceShape option -> Operation<'S,'T> * uint64 * SliceShape option
-val composeOp:
-  op1: Operation<'S,'T> -> op2: Operation<'T,'U> -> Operation<'S,'U>
-val bindM:
-  m: ('a -> 'b -> Operation<'c,'d> * 'e * 'f) ->
-    k: (Operation<'c,'d> -> 'e -> 'f -> Operation<'d,'g> * 'h * 'i) ->
-    bytes: 'a -> shapeOpt: 'b -> Operation<'c,'g> * 'h * 'i
-val (-->) : op1: Operation<'A,'B> -> op2: Operation<'B,'C> -> Operation<'A,'C>
+module MemFlow =
+    val returnM:
+      op: Operation<'S,'T> ->
+        bytes: uint64 ->
+        shapeOpt: SliceShape option ->
+        Operation<'S,'T> * uint64 * SliceShape option
+    val bindM:
+      m: ('a -> 'b -> Operation<'c,'d> * 'e * 'f) ->
+        k: (Operation<'c,'d> -> 'e -> 'f -> Operation<'d,'g> * 'h * 'i) ->
+        bytes: 'a -> shapeOpt: 'b -> Operation<'c,'g> * 'h * 'i
 type Pipeline<'S,'T> =
     {
       flow: MemFlow<'S,'T>
       mem: uint64
       shape: SliceShape option
     }
-val operation2Pipeline:
-  op: Operation<'S,'T> ->
-    mem: uint64 -> shape: SliceShape option -> Pipeline<'S,'T>
-val sourceOp: availableMemory: uint64 -> Pipeline<unit,unit>
-val attachFirst:
-  Operation<unit,'T> * (unit -> SliceShape) ->
-    pl: Pipeline<unit,'T> -> Pipeline<unit,'T>
-val (>=>) : pl: Pipeline<'a,'b> -> next: Operation<'b,'c> -> Pipeline<'a,'c>
-val sinkOp: pl: Pipeline<unit,unit> -> unit
-val sinkListOp: pipelines: Pipeline<unit,unit> list -> unit
-val asOperation: pl: Pipeline<'In,'Out> -> Operation<'In,'Out>
+module Pipeline =
+    val operation2Pipeline:
+      op: Operation<'S,'T> ->
+        mem: uint64 -> shape: SliceShape option -> Pipeline<'S,'T>
+    val source: availableMemory: uint64 -> Pipeline<unit,unit>
+    val attachFirst:
+      Operation<unit,'T> * (unit -> SliceShape) ->
+        pl: Pipeline<unit,'T> -> Pipeline<unit,'T>
+    val (>=>) : pl: Pipeline<'a,'b> -> next: Operation<'b,'c> -> Pipeline<'a,'c>
+    val sink: pl: Pipeline<unit,unit> -> unit
+    val sinkList: pipelines: Pipeline<unit,unit> list -> unit
+    val asOperation: pl: Pipeline<'In,'Out> -> Operation<'In,'Out>
 module Routing
 /// Split a Pipe<'In,'T> into two branches that
 ///   • read the upstream only once
@@ -148,7 +179,9 @@ val liftUnaryOp:
   name: string ->
     f: (Slice.Slice<'T> -> Slice.Slice<'T>) ->
     Core.Operation<Slice.Slice<'T>,Slice.Slice<'T>> when 'T: equality
-val tapOp: label: string -> Core.Operation<'T,'T>
+val tapOp:
+  label: string -> Core.Operation<Slice.Slice<'a>,Slice.Slice<'a>>
+    when 'a: equality
 /// Represents a pipeline that has been shared (split into synchronized branches)
 type SharedPipeline<'T,'U,'V> =
     {
@@ -244,22 +277,12 @@ val finiteDiffFilter3DOp:
     order: uint ->
     pl: Core.Pipeline<unit,unit> -> Core.Pipeline<unit,Slice.Slice<float>>
 module Processing
-val skipFirstLast: n: int -> lst: 'a list -> 'a list
-/// mapWindowed keeps a running window along the slice direction of depth images
-/// and processes them by f. The stepping size of the running window is stride.
-/// So if depth is 3 and stride is 1 then first image 0,1,2 is sent to f, then 1, 2, 3
-/// and so on. If depth is 3 and stride is 3, then it'll be image 0, 1, 2 followed by
-/// 3, 4, 5. It is also possible to use this for sampling, e.g., setting depth to 1
-/// and stride to 2 sends every second image to f.  
-val internal mapWindowed:
-  label: string ->
-    depth: uint ->
-    stride: uint ->
-    emitStart: uint ->
-    emitCount: uint -> f: ('S list -> 'T list) -> Core.Pipe<'S,'T>
+val skipNTakeM: n: uint -> m: uint -> lst: 'a list -> 'a list
 val internal liftWindowedOp:
   name: string ->
     window: uint ->
+    pad: uint ->
+    zeroMaker: (Slice.Slice<'S> -> Slice.Slice<'S>) ->
     stride: uint ->
     emitStart: uint ->
     emitCount: uint ->
@@ -269,6 +292,8 @@ val internal liftWindowedOp:
 val internal liftWindowedTrimOp:
   name: string ->
     window: uint ->
+    pad: uint ->
+    zeroMaker: (Slice.Slice<'S> -> Slice.Slice<'S>) ->
     stride: uint ->
     emitStart: uint ->
     emitCount: uint ->
@@ -622,17 +647,28 @@ val periodicPad: ImageFunctions.BoundaryCondition
 val zeroFluxNeumannPad: ImageFunctions.BoundaryCondition
 val valid: ImageFunctions.OutputRegionMode
 val same: ImageFunctions.OutputRegionMode
+val zeroMaker: ex: Slice.Slice<'S> -> Slice.Slice<'S> when 'S: equality
 val discreteGaussianOp:
   name: string ->
     sigma: float ->
-    bc: ImageFunctions.BoundaryCondition option ->
+    outputRegionMode: Slice.OutputRegionMode option ->
+    boundaryCondition: ImageFunctions.BoundaryCondition option ->
     winSz: uint option -> Core.Operation<Slice.Slice<float>,Slice.Slice<float>>
+val convGaussOp:
+  name: string ->
+    sigma: float -> Core.Operation<Slice.Slice<float>,Slice.Slice<float>>
 val convolveOp:
   name: string ->
     kernel: Slice.Slice<'T> ->
+    outputRegionMode: Slice.OutputRegionMode option ->
     bc: Slice.BoundaryCondition option ->
     winSz: uint option -> Core.Operation<Slice.Slice<'T>,Slice.Slice<'T>>
     when 'T: equality
+val convOp:
+  name: string ->
+    kernel: Slice.Slice<'a> ->
+    (uint option -> Core.Operation<Slice.Slice<'a>,Slice.Slice<'a>>)
+    when 'a: equality
 val private makeMorphOp:
   name: string ->
     radius: uint ->

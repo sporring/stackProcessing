@@ -36,6 +36,7 @@
     </ItemGroup>
 
     <ItemGroup>
+        <Compile Include="Processing.fs" />
         <Compile Include="Pipeline.fs" />
     </ItemGroup>
 

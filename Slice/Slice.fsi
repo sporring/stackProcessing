@@ -24,6 +24,7 @@ val toArray4D: s: Slice<'T> -> 'T array4d when 'T: equality
 val toImage: s: Slice<'T> -> Image.Image<'T> when 'T: equality
 val toSimpleITK: s: Slice<'T> -> itk.simple.Image when 'T: equality
 val toSeqSeq: s: Slice<'T> -> float seq seq when 'T: equality
+val updateId: id: uint -> s: Slice<'S> -> Slice<'S> when 'S: equality
 val castUInt8ToInt8: s: Slice<uint8> -> Slice<int8>
 val castUInt8ToUInt16: s: Slice<uint8> -> Slice<uint16>
 val castUInt8ToInt16: s: Slice<uint8> -> Slice<int16>

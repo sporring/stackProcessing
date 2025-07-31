@@ -186,14 +186,14 @@ type BoundaryCondition = ZeroPad | PerodicPad | ZeroFluxNeumannPad
 type OutputRegionMode = Valid | Same
 
 // Convolve sets size after the first argument, so convolve img kernel!
-let convolve (outputRegionMode: OutputRegionMode option) (boundaryCondition: BoundaryCondition option) : Image<'T> -> Image<'T> -> Image<'T> =
+(*let convolve (outputRegionMode: OutputRegionMode option) (boundaryCondition: BoundaryCondition option) : Image<'T> -> Image<'T> -> Image<'T> =
     makeBinaryImageOperatorWith
         (fun () -> new itk.simple.ConvolutionImageFilter())
         (fun f ->
             f.SetOutputRegionMode (
                 match outputRegionMode with
-                    | Some Same -> itk.simple.ConvolutionImageFilter.OutputRegionModeType.SAME
-                    | _ ->         itk.simple.ConvolutionImageFilter.OutputRegionModeType.VALID)
+                    | Some Valid -> itk.simple.ConvolutionImageFilter.OutputRegionModeType.VALID
+                    | _ ->         itk.simple.ConvolutionImageFilter.OutputRegionModeType.SAME)
             f.SetBoundaryCondition (
                 match boundaryCondition with
                     | Some ZeroFluxNeumannPad -> itk.simple.ConvolutionImageFilter.BoundaryConditionType.ZERO_FLUX_NEUMANN_PAD
@@ -213,9 +213,9 @@ let convolve (outputRegionMode: OutputRegionMode option) (boundaryCondition: Bou
                     f.Execute(ker,img) // Simple itk relies on the first argument being the bigger
                 else
                     let dim = img.GetDimension()
-                    let itkId = img.GetPixelID()
+                    let idImg = img.GetPixelID()
                     let idKer = ker.GetPixelID()
-                    if itkId <> idKer then 
+                    if idImg <> idKer then 
                         failwith "image and kernels must be of the same type"
                     else
                         let szZip = List.zip szImg szKer
@@ -224,38 +224,17 @@ let convolve (outputRegionMode: OutputRegionMode option) (boundaryCondition: Bou
 
                         let margin =
                             match outputRegionMode with
-                                | Some Same -> List.replicate szKer.Length 0
-                                | _ ->         szMin |> List.map (fun v -> v-1)
+                                | Some Valid -> szMin |> List.map (fun v -> v-1)
+                                | _          -> List.replicate szKer.Length 0
                         let szRes = (szMin,szMax) ||> List.map2 (fun a b -> int (b-a+1))
                         //img*ker = sum_i sum_j sum_k sum_l ker[k,l]*img[i-k,j-l]
-                        let res = new itk.simple.Image(szRes |> List.map uint |> toVectorUInt32, itkId)
-                        if dim = 2u then
-                            for i0 in [margin[0]..szImg[0]-1-margin[0]] do
-                                for i1 in [margin[1]..szImg[1]-1-margin[1]] do
-                                    let m0m1 = [uint (i0-margin[0]); uint (i1-margin[1])]
-                                    let mutable s = getBoxedZero itkId None
-                                    for k0 in [0..szKer[0]-1] do
-                                        for k1 in [0..szKer[1]-1] do
-                                            let k0k1 = [uint k0; uint k1]
-                                            let i0i1k0k1 = [uint (i0-k0); uint (i1-k1)] 
-                                            let kerVal = getBoxedPixel ker idKer (k0k1|>toVectorUInt32)
-                                            let imgVal = 
-                                                let pairs = List.zip i0i1k0k1 (szImg|>List.map uint)
-                                                if List.forall (fun (a,b) -> a>=0u && a < b) pairs then
-                                                    getBoxedPixel img itkId (i0i1k0k1|>toVectorUInt32)
-                                                else
-                                                    match outputRegionMode with
-                                                        | Some Same -> getBoxedZero itkId None // This where boundary conditions are set, presently zero padding
-                                                        | _ ->  getBoxedZero itkId None // this should not be possible 
-                                            s <- mulAdd itkId s kerVal imgVal
-                                    setBoxedPixel res itkId (m0m1|>toVectorUInt32) s
-                            res
-                        elif dim = 3u then
+                        let res = new itk.simple.Image(szRes |> List.map uint |> toVectorUInt32, idImg)
+                        if dim = 3u then
                             for i0 in [margin[0]..szImg[0]-1-margin[0]] do
                                 for i1 in [margin[1]..szImg[1]-1-margin[1]] do
                                     for i2 in [margin[2]..szImg[2]-1-margin[2]] do
                                         let m0m1m2 = [uint (i0-margin[0]); uint (i1-margin[1]); uint (i2-margin[2])]
-                                        let mutable s = getBoxedZero itkId None
+                                        let mutable s = getBoxedZero idImg None
                                         for k0 in [0..szKer[0]-1] do
                                             for k1 in [0..szKer[1]-1] do
                                                 for k2 in [0..szKer[2]-1] do
@@ -265,17 +244,110 @@ let convolve (outputRegionMode: OutputRegionMode option) (boundaryCondition: Bou
                                                     let imgVal = 
                                                         let pairs = List.zip i0i1i2k0k1k2 (szImg|>List.map uint)
                                                         if List.forall (fun (a,b) -> a>=0u && a < b) pairs then
-                                                                getBoxedPixel img itkId (i0i1i2k0k1k2|>toVectorUInt32)
-                                                            else
-                                                                match outputRegionMode with
-                                                                    | Some Same -> getBoxedZero itkId None // This where boundary conditions are set, presently zero padding
-                                                                    | _ ->  getBoxedZero itkId None // this should not be possible 
-                                                    s <- mulAdd itkId s kerVal imgVal
-                                        setBoxedPixel res itkId (m0m1m2|>toVectorUInt32) s
+                                                            getBoxedPixel img idImg (i0i1i2k0k1k2|>toVectorUInt32)
+                                                        else
+                                                            match outputRegionMode with
+                                                                | Some Same -> getBoxedZero idImg None // This where boundary conditions are set, presently zero padding
+                                                                | _ ->  getBoxedZero idImg None // this should not be possible 
+                                                    s <- mulAdd idImg s kerVal imgVal
+                                        printfn "%A" m0m1m2
+                                        setBoxedPixel res idImg (m0m1m2|>toVectorUInt32) s
                             res
                         else
-                            failwith "Can't handle signular dimension for dimensions other than 2, yet."
+                            failwith "Can't handle singular dimension for dimensions other than 2, yet."
             )
+*)
+let convolve (xyOutputRegionMode: OutputRegionMode option) (boundaryCondition: BoundaryCondition option) : Image<'T> -> Image<'T> -> Image<'T> =
+    // For sliding filter convolution, OutputRegionMode is the x-y coordinates, since z-coordinate output 
+    // region is handled outside this function, and therefore, the result is always Valid in the z-direction.
+    // The OutputRegionMode is relative to the first argument.
+    fun (image: Image<'T>) (kernel: Image<'T>) ->
+        let img = image.toSimpleITK()
+        let ker = kernel.toSimpleITK()
+        if img.GetNumberOfComponentsPerPixel() > 1u then
+            failwith "Can't convolve vector images"
+        let idImg = img.GetPixelID()
+        let idKer = ker.GetPixelID()
+        if idImg <> idKer then 
+            failwith $"image ({idImg}) and kernel ({idKer}) must be of the same type"
+        let dimImg = img.GetDimension()
+        let dimKer = img.GetDimension()
+        if dimImg <> dimKer then 
+            failwith $"image ({dimImg})and kernel({dimKer}) must have the same dimensions"
+        if dimImg < 2u || dimImg > 3u then
+            failwith "convolve is only implemented for 2D and 3D images"
+        let szImg = img.GetSize() |> fromVectorUInt32 |> List.map int
+        let szKer = ker.GetSize() |> fromVectorUInt32 |> List.map int
+        let pairs = List.zip szImg szKer
+        if List.exists (fun (a,b) -> a < b) pairs then
+            failwith $"all image axes ({szImg}) must be longer than the kernel axes ({szKer})"
+        let szRes =
+            match xyOutputRegionMode with
+                Some Valid -> pairs |> List.map (fun (a,b) -> int (a-b+1))
+                | _ -> szImg 
+        let res = 
+            if dimImg = 2u then
+                use f = new itk.simple.ConvolutionImageFilter()
+                f.SetOutputRegionMode (
+                    match xyOutputRegionMode with
+                        | Some Valid -> itk.simple.ConvolutionImageFilter.OutputRegionModeType.VALID
+                        | _ ->         itk.simple.ConvolutionImageFilter.OutputRegionModeType.SAME)
+                f.SetBoundaryCondition (
+                    match boundaryCondition with
+                        | Some ZeroFluxNeumannPad -> itk.simple.ConvolutionImageFilter.BoundaryConditionType.ZERO_FLUX_NEUMANN_PAD
+                        | Some PerodicPad ->         itk.simple.ConvolutionImageFilter.BoundaryConditionType.PERIODIC_PAD 
+                        | _ ->                       itk.simple.ConvolutionImageFilter.BoundaryConditionType.ZERO_PAD)
+                if List.forall (fun (a,b) -> a > b && b > 1) pairs then
+                    f.Execute(img,ker) // Simple itk relies on the first argument being the bigger
+                else
+                    printfn "Convolving 2D images %A * %A, output Region %A" szImg szKer xyOutputRegionMode
+                    let res = new itk.simple.Image(szRes |> List.map uint |> toVectorUInt32, idImg)
+
+                    for m0 in [0..szRes[0]-1] do
+                        for m1 in [0..szRes[1]-1] do
+                            let m0m1 = [uint m0; uint m1]
+                            let mutable s = getBoxedZero idImg None
+                            for k0 in [0..szKer[0]-1] do
+                                for k1 in [0..szKer[1]-1] do
+                                    let k0k1 = [uint k0; uint k1]
+                                    let kerVal = getBoxedPixel ker idKer (k0k1|>toVectorUInt32)
+                                    let i0i1k0k1 = [uint (szKer[0]-1+m0-k0); uint (szKer[1]-1+m1-k1)] 
+                                    let imgVal = 
+                                        let pairs = List.zip i0i1k0k1 (szImg|>List.map uint)
+                                        if List.forall (fun (a,b) -> a>=0u && a < b) pairs then
+                                            getBoxedPixel img idImg (i0i1k0k1|>toVectorUInt32)
+                                        else
+                                            getBoxedZero idImg None
+                                    s <- mulAdd idImg s kerVal imgVal
+                            printfn "%A: %A" szRes m0m1
+                            setBoxedPixel res idImg (m0m1|>toVectorUInt32) s
+                    res
+            else // dime = 3u
+                // taylored for sliding window convolution of image stacks, so z outputRegionMode is always valid
+                let szRes = [szRes[0];szRes[1];szImg[2]-szKer[2]+1] 
+                let res = new itk.simple.Image(szRes |> List.map uint |> toVectorUInt32, idImg)
+
+                for m0 in [0..szRes[0]-1] do
+                    for m1 in [0..szRes[1]-1] do
+                        for m2 in [0..szRes[2]-1] do
+                            let m0m1m2 = [uint m0; uint m1; uint m2]
+                            let mutable s = getBoxedZero idImg None
+                            for k0 in [0..szKer[0]-1] do
+                                for k1 in [0..szKer[1]-1] do
+                                    for k2 in [0..szKer[2]-1] do
+                                        let k0k1k2 = [uint k0; uint k1; uint k2]
+                                        let i0i1i2k0k1k2 = [uint (szKer[0]-1+m0-k0); uint (szKer[1]-1+m1-k1); uint (szKer[2]-1+m2-k2)] 
+                                        let kerVal = getBoxedPixel ker idKer (k0k1k2|>toVectorUInt32)
+                                        let imgVal = 
+                                            let pairs = List.zip i0i1i2k0k1k2 (szImg|>List.map uint)
+                                            if List.forall (fun (a,b) -> a>=0u && a < b) pairs then
+                                                getBoxedPixel img idImg (i0i1i2k0k1k2|>toVectorUInt32)
+                                            else
+                                                getBoxedZero idImg None
+                                        s <- mulAdd idImg s kerVal imgVal
+                            setBoxedPixel res idImg (m0m1m2|>toVectorUInt32) s
+                res
+        Image<'T>.ofSimpleITK(res)
 
 let conv (img: Image<'T>) (ker: Image<'T>) : Image<'T> = convolve None None img ker
 
@@ -339,9 +411,7 @@ let gauss (dim: uint) (sigma: float) (kernelSize: uint option) : Image<'T> =
 
 let discreteGaussian (dim: uint) (sigma: float) (kernelSize: uint option) (outputRegionMode: OutputRegionMode option) (boundaryCondition: BoundaryCondition option) : Image<'T> -> Image<'T> =
     let kern = gauss dim sigma kernelSize
-    let bCond = Option.defaultValue ZeroPad boundaryCondition |> Some
-    let region = Option.defaultValue Valid outputRegionMode |> Some
-    fun (input: Image<'T>) -> convolve region bCond input kern
+    fun (input: Image<'T>) -> convolve outputRegionMode boundaryCondition input kern
 
 /// Gradient convolution using Derivative filter
 let gradientConvolve (direction: uint) (order: uint32) : Image<'T> -> Image<'T> =

@@ -9,7 +9,7 @@ let main _ =
 
     source availableMemory
     |> readAs<float> "image" ".tiff"
-    >=> convGauss sigma None
+    >=> convGauss sigma
     >=> castFloatToUInt8
     >=> write "result" ".tif"
     |> sink

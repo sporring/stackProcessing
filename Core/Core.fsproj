@@ -44,6 +44,5 @@
     <Compile Include="Core.fs" />
     <Compile Include="Routing.fs" />
     <Compile Include="SourceSink.fs" />
-    <Compile Include="Processing.fs" />
   </ItemGroup>
 </Project>

@@ -83,6 +83,60 @@ let windowed
         yield! yieldWindows ()
     }
 
+let windowedWithPad
+    (windowSize: uint)
+    (updateId: uint->'T->'T)
+    (stride: uint)
+    (prePad: uint)
+    (postPad: uint)
+    (zeroMaker: 'T->'T)
+    (source: AsyncSeq<'T>)
+    : AsyncSeq<'T list> =
+
+    if windowSize = 0u then invalidArg "windowSize" "Must be > 0"
+    if stride = 0u then invalidArg "stride" "Must be > 0"
+
+    asyncSeq {
+        let enum = (AsyncSeq.toAsyncEnum source).GetAsyncEnumerator()
+        let buffer = ResizeArray<'T>()
+
+        let tryGetNext () = async {
+            let! hasNext = enum.MoveNextAsync().AsTask() |> Async.AwaitTask
+            let next = if hasNext then Some enum.Current else None
+            return next
+        }
+
+        let tryGetCurrent id prePad postPad zero current = async {
+            if prePad > 0u then
+                return (Option.map (updateId id) zero, prePad - 1u, postPad, current)
+            elif postPad > 0u then
+                return (Option.map (updateId id) zero, prePad, postPad - 1u, current)
+            else
+                let! next = tryGetNext ()
+                return (Option.map (updateId id) current, prePad, postPad, next)
+        }
+
+        let rec yieldWindows (id: uint) (prePad: uint) (postPad: uint) (zero: 'T option) (step: uint) (current: 'T option)= asyncSeq {
+            if postPad = 0u && current = None then ()
+            else
+                let! curr, nPrePad, nPostPad, next = tryGetCurrent id prePad postPad zero current
+                Option.iter buffer.Add curr
+                if step > 0u then
+                    if buffer.Count > 0 then buffer.RemoveAt 0
+                    yield! yieldWindows (id+1u)nPrePad nPostPad zero (step - 1u) next
+                elif uint buffer.Count >= windowSize then
+                    yield (buffer |> Seq.take (int windowSize) |> Seq.toList)
+                    let dropCount = min stride (uint buffer.Count)
+                    buffer.RemoveRange(0, int dropCount)
+                    yield! yieldWindows (id+1u) nPrePad nPostPad zero (stride-dropCount) next
+                else
+                    yield! yieldWindows (id+1u) nPrePad nPostPad zero step next
+        }
+        let! first = tryGetNext()
+        let zero = Option.map zeroMaker first
+        yield! yieldWindows 0u prePad postPad zero 0u first
+    }
+
 /// Splits an asynchronous sequence into fixed-size chunks.
 let chunkBySize (chunkSize: int) (source: AsyncSeq<'T>) : AsyncSeq<'T list> =
     if chunkSize <= 0 then

@@ -14,6 +14,15 @@ val windowed:
   windowSize: uint ->
     stride: uint ->
     source: FSharp.Control.AsyncSeq<'T> -> FSharp.Control.AsyncSeq<'T list>
+val windowedWithPad:
+  windowSize: uint ->
+    updateId: (uint -> 'T -> 'T) ->
+    stride: uint ->
+    prePad: uint ->
+    postPad: uint ->
+    zeroMaker: ('T -> 'T) ->
+    source: FSharp.Control.AsyncSeq<'T> -> FSharp.Control.AsyncSeq<'T list>
+    when 'T: equality
 /// Splits an asynchronous sequence into fixed-size chunks.
 val chunkBySize:
   chunkSize: int ->

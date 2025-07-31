@@ -44,7 +44,7 @@ module internal InternalHelpers =
                 printfn "[Write] Saved slice %d to %s" slice.Index fileName
             })
 
-    let readSlicesAsync<'T when 'T: equality> (inputDir: string) (suffix: string) : AsyncSeq<Slice<'T>> =
+    let readSlicesAsync<'T when 'T: equality> (inputDir: string) (suffix: string) : AsyncSeq<Slice<'T>> = // Not used
         Directory.GetFiles(inputDir, "*"+suffix) |> Array.sort
         |> Array.mapi (fun i fileName ->
             async {
@@ -54,7 +54,7 @@ module internal InternalHelpers =
         |> Seq.ofArray
         |> AsyncSeq.ofSeqAsync
 
-    let readSlices<'T when 'T: equality> (inputDir: string) (suffix: string) : Pipe<unit, Slice<'T>> =
+    let readSlices<'T when 'T: equality> (inputDir: string) (suffix: string) : Pipe<unit, Slice<'T>> = // Not used
         printfn "[readSlices]"
         let filenames = Directory.GetFiles(inputDir, "*"+suffix) |> Array.sort
         let depth = filenames.Length
@@ -69,7 +69,7 @@ module internal InternalHelpers =
                     slice)
         }
 
-    let readRandomSlices<'T when 'T: equality> (count: uint) (inputDir: string) (suffix: string) :Pipe<unit, Slice<'T>> =
+    let readRandomSlices<'T when 'T: equality> (count: uint) (inputDir: string) (suffix: string) :Pipe<unit, Slice<'T>> = // Not used
         let fileNames = Directory.GetFiles(inputDir, "*"+suffix) |> Array.randomChoices (int count)
         {
             Name = $"[readRandomSlices {inputDir}]"
@@ -84,103 +84,101 @@ module internal InternalHelpers =
 open InternalHelpers
 
 /// Source parts
-let createPipe<'T when 'T: equality> (width: uint) (height: uint) (depth: uint) : Pipe<unit, Slice<'T>> =
-    {
-        Name = "[create]"
-        Profile = Streaming
-        Apply = fun _ ->
-            AsyncSeq.init (int depth) (fun i -> 
-                let slice = Slice.create<'T> width height 1u (uint i)
-                printfn "[create] Created slice %d" i
-                slice)
-    }
-
-let createOp<'T when 'T: equality> 
-    (width: uint) 
-    (height: uint) 
-    (depth: uint) 
-    (pl : Pipeline<unit, unit>) 
-    : Pipeline<unit, Slice<'T>> =
-
-    let op : Operation<unit, Slice<'T>> =
-        {
-            Name = "create"
-            Transition = transition Constant Streaming
-            Pipe = createPipe<'T> width height depth
-        }
-    {
-        shape = Some [width;height;depth]
-        mem = pl.mem
-        flow = returnM op
-    }
+let createOp<'T,'Shape when 'T: equality> (width: uint) (height: uint) (depth: uint) (pl : Pipeline<unit, unit, 'Shape>) : Pipeline<unit, Slice<'T>,'Shape> =
+    // width, heigth, depth should be replaced with shape and shapeUpdate, and mapper should be deferred to outside Core!!!
+    let mapper (i: uint) : Slice<'T> = 
+        let slice = Slice.create<'T> width height 1u i
+        printfn "[create] Created slice %A" i
+        slice
+    let transition = Stage.transition Constant Streaming
+    let shapeUpdate = fun (s:'Shape) -> s
+    let stage = Stage.create "create" depth mapper transition shapeUpdate 
+    let flow = MemFlow.returnM stage
+    let shape = Some [width;height]
+    let context = MemFlow.create (fun _ -> width*height |> uint64) (fun _ -> depth)
+    Pipeline.create flow pl.mem pl.shape context
 
 let readOp<'T when 'T: equality>
     (inputDir : string)
     (suffix : string)
-    (pl : Pipeline<unit, unit>) : Pipeline<unit, Slice<'T>> =
-
+    (pl : Pipeline<unit, unit,'Shape>) : Pipeline<unit, Slice<'T>,'Shape> =
+    // much should be deferred to outside Core!!!
     let (width,height,depth) = Slice.getStackSize inputDir suffix
-    let op : Operation<unit, Slice<'T>> =
-        {
-            Name = $"read:{inputDir}"
-            Transition = transition Constant Streaming
-            Pipe = readSlices<'T> inputDir suffix
-        }
-    {
-        shape = Some [width;height;depth]
-        mem = pl.mem
-        flow = returnM op
-    }
+    let filenames = Directory.GetFiles(inputDir, "*"+suffix) |> Array.sort
+    let depth = filenames.Length
+    let mapper (i: uint) : Slice<'T> = 
+        let fileName = filenames[int i]; 
+        let slice = Slice.readSlice<'T> (uint i) fileName
+        printfn "[readSlices] Reading slice %A from %s" i fileName
+        slice
+    let transition = Stage.transition Constant Streaming
+    let shapeUpdate = fun (s:'Shape) -> s
+    let stage = Stage.create $"read: {inputDir}" (uint depth) mapper transition shapeUpdate 
+    let flow = MemFlow.returnM stage
+    let shape = Some [width;height]
+    let context = MemFlow.create (fun _ -> width*height |> uint64) (fun _ -> uint depth)
+    Pipeline.create flow pl.mem shape context
 
 let readRandomOp<'T when 'T: equality>
     (count: uint) 
     (inputDir : string) 
     (suffix : string)
-    (pl : Pipeline<unit, unit>) : Pipeline<unit, Slice<'T>> =
+    (pl : Pipeline<unit, unit,'Shape>) : Pipeline<unit, Slice<'T>,'Shape> =
 
     let (width,height,depth) = Slice.getStackSize inputDir suffix
-    let op : Operation<unit, Slice<'T>> =
-        {
-            Name = $"readRandom:{inputDir}"
-            Transition = transition Constant Streaming
-            Pipe = readRandomSlices<'T> count inputDir suffix 
-        }
-    {
-        shape = Some [width;height;count]
-        mem = pl.mem
-        flow = returnM op
-    }
+    let filenames = Directory.GetFiles(inputDir, "*"+suffix) |> Array.randomChoices (int count)
+    let depth = filenames.Length
+    let mapper (i: uint) : Slice<'T> = 
+        let fileName = filenames[int i]; 
+        let slice = Slice.readSlice<'T> (uint i) fileName
+        printfn "[readRandomSlices] Reading slice %A from %s" i fileName
+        slice
+    let transition = Stage.transition Constant Streaming
+    let shapeUpdate = fun (s:'Shape) -> s
+    let stage = Stage.create $"read: {inputDir}" (uint depth) mapper transition shapeUpdate 
+    let flow = MemFlow.returnM stage
+    let shape = Some [width;height]
+    let context = MemFlow.create (fun _ -> width*height |> uint64) (fun _ -> uint depth)
+    Pipeline.create flow pl.mem shape context
 
-let writeOp (path: string) (suffix: string) : Operation<Slice<'a>, unit> =
+let writeOp (path: string) (suffix: string) : Stage<Slice<'a>, unit, 'Shape> =
     let writeReducer stream = async { do! writeSlicesAsync path suffix stream }
+    let shapeUpdate = fun (s:'Shape) -> s
     {
         Name = $"write:{path}"
-        Transition = transition Streaming Constant
-        Pipe = consumeWith "write" Streaming writeReducer
+        Pipe = Pipe.consumeWith "write" Streaming writeReducer
+        Transition = Stage.transition Streaming Constant
+        ShapeUpdate = shapeUpdate
     }
 
-let showOp (plt: Slice.Slice<'T> -> unit) : Operation<Slice<'T>, unit> =
+let showOp (plt: Slice.Slice<'T> -> unit) : Stage<Slice<'T>, unit, 'Shape> =
     let showReducer stream = async {do! showSliceAsync plt stream }
+    let shapeUpdate = fun (s:'Shape) -> s
     {
         Name = "show"
-        Transition = transition Streaming Constant
-        Pipe = consumeWith "show" Streaming showReducer
+        Pipe = Pipe.consumeWith "show" Streaming showReducer
+        Transition = Stage.transition Streaming Constant
+        ShapeUpdate = shapeUpdate
     }
 
-let plotOp (plt: float list -> float list -> unit) : Operation<(float * float) list, unit> =
+let plotOp (plt: float list -> float list -> unit) : Stage<(float * float) list, unit, 'Shape> =
     let plotReducer stream = async { do! plotListAsync plt stream }
+    let shapeUpdate = fun (s:'Shape) -> s
     {
         Name = "plot"
-        Transition = transition Streaming Streaming
-        Pipe = consumeWith "plot" Streaming plotReducer
+        Pipe = Pipe.consumeWith "plot" Streaming plotReducer
+        Transition = Stage.transition Streaming Streaming
+        ShapeUpdate = shapeUpdate
     }
 
-let printOp () : Operation<'T, unit> =
+let printOp () : Stage<'T, unit,'Shape> =
     let printReducer stream = async { do! printAsync stream }
+    let shapeUpdate = fun (s:'Shape) -> s
     {
         Name = "print"
-        Transition = transition Streaming Streaming
-        Pipe = consumeWith "print" Streaming printReducer
+        Pipe = Pipe.consumeWith "print" Streaming printReducer
+        Transition = Stage.transition Streaming Streaming
+        ShapeUpdate = shapeUpdate
     }
 
 let liftImageSource (name: string) (img: Slice<'T>) : Pipe<unit, Slice<'T>> =
@@ -193,39 +191,49 @@ let liftImageSource (name: string) (img: Slice<'T>) : Pipe<unit, Slice<'T>> =
 let axisSourceOp 
     (axis: int) 
     (size: int list)
-    (pl : Pipeline<unit, unit>) 
-    : Pipeline<unit, Slice<uint>> =
+    (pl : Pipeline<unit, unit,'Shape>) 
+    : Pipeline<unit, Slice<uint>,'Shape> =
     let img = Slice.generateCoordinateAxis axis size
     let sz = GetSize img
-    let op : Operation<unit, Slice<uint>> =
+    let shapeUpdate = fun (s:'Shape) -> s
+    let op : Stage<unit, Slice<uint>,'Shape> =
         {
             Name = "axisSource"
-            Transition = transition Constant Streaming
             Pipe = img |> liftImageSource "axisSource"
+            Transition = Stage.transition Constant Streaming
+            ShapeUpdate = shapeUpdate
         }
+    let width, height, depth = sz[0], sz[1], sz[2]
+    let context = MemFlow.create (fun _ -> width*height |> uint64) (fun _ -> depth)
     {
-        shape = Some sz
+        flow = MemFlow.returnM op
         mem = pl.mem
-        flow = returnM op
+        shape = Some [width;height]
+        context = context
     }
 
 let finiteDiffFilter3DOp 
     (direction: uint) 
     (order: uint)
-    (pl : Pipeline<unit, unit>) 
-    : Pipeline<unit, Slice<float>> =
+    (pl : Pipeline<unit, unit,'Shape>) 
+    : Pipeline<unit, Slice<float>,'Shape> =
     let img = finiteDiffFilter3D direction order
     let sz = GetSize img
-    let op : Operation<unit, Slice<float>> =
+    let shapeUpdate = fun (s:'Shape) -> s
+    let op : Stage<unit, Slice<float>, 'Shape> =
         {
             Name = "gaussSource"
-            Transition = transition Constant Streaming
             Pipe = img |> liftImageSource "gaussSource"
+            Transition = Stage.transition Constant Streaming
+            ShapeUpdate = shapeUpdate
         }
+    let width, height, depth = sz[0], sz[1], sz[2]
+    let context = MemFlow.create (fun _ -> width*height |> uint64) (fun _ -> depth)
     {
-        shape = Some sz
+        flow = MemFlow.returnM op
         mem = pl.mem
-        flow = returnM op
+        shape = Some [width;height]
+        context = context
     }
 
 (*
@@ -249,7 +257,7 @@ let readSliceN<'T when 'T: equality> (idx: uint) (inputDir: string) (suffix: str
 
 let ignore<'T> : Pipe<'T, unit> = // Is this needed?
     printfn "[ignore]"
-    consumeWith "ignore" Streaming (fun stream ->
+    Pipe.consumeWith "ignore" Streaming (fun stream ->
         async {
             do! stream |> AsyncSeq.iterAsync (fun _ -> async.Return())
         })
