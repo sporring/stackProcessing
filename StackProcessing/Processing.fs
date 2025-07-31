@@ -6,8 +6,7 @@ open FSharp.Control
 open System.Collections.Generic
 open System.Collections.Concurrent
 open AsyncSeqExtensions
-open Core
-open Routing
+open SlimPipeline
 open Slice
 open Image
 open type ImageFunctions.OutputRegionMode // weird notation for exposing the discriminated union

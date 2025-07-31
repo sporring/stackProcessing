@@ -1,0 +1,56 @@
+<?xml version="1.0" encoding="utf-8"?>
+<doc>
+<assembly><name>StackProcessing</name></assembly>
+<members>
+<member name="T:Slice.Slice`1">
+ <summary>
+ Represents a slice of a stack of 2d images. 
+ </summary>
+</member>
+<member name="P:Processing.zeroPad">
+<summary>
+ Convolution like operators
+</summary>
+</member>
+<member name="M:Processing.histogramOp``2(System.String)">
+<summary>
+ Histogram related functions
+</summary>
+</member>
+<member name="M:Processing.addOp``2(System.String,Slice.Slice{``0})">
+<summary>
+ Basic arithmetic
+</summary>
+</member>
+<member name="M:Processing.liftUnaryOpInt``1(System.String,Microsoft.FSharp.Core.FSharpFunc{Slice.Slice{System.Int32},Slice.Slice{System.Int32}})">
+<summary>
+ quick constructor for Streaming→Streaming unary ops
+</summary>
+</member>
+<member name="M:Processing.writeOp``2(System.String,System.String)">
+<summary>
+ Source parts
+</summary>
+</member>
+<member name="P:StackProcessing.binaryFillHoles">
+<summary>
+ Full stack operators
+</summary>
+</member>
+<member name="P:StackProcessing.zeroPad">
+<summary>
+ Convolution like operators
+</summary>
+</member>
+<member name="P:StackProcessing.absFloat">
+<summary>
+ Simple functions
+</summary>
+</member>
+<member name="M:StackProcessing.add``2(Slice.Slice{``0})">
+<summary>
+ Basic arithmetic
+</summary>
+</member>
+</members>
+</doc>

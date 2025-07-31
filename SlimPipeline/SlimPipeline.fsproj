@@ -6,7 +6,7 @@
   </PropertyGroup>
 
   <PropertyGroup>
-    <SigFile>$(MSBuildThisFileDirectory)Core.fsi</SigFile>
+    <SigFile>$(MSBuildThisFileDirectory)SlimPipeline.fsi</SigFile>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|AnyCPU'">
     <DefineConstants>TRACE</DefineConstants>
@@ -18,27 +18,11 @@
   </Target>
 
   <ItemGroup>
-    <Reference Include="SimpleITKCSharp">
-      <HintPath>lib/SimpleITKCSharpManaged.dll</HintPath>
-      <Private>true</Private>
-    </Reference>
-
-    <!-- Ensure native lib is copied -->
-    <None Update="lib/libSimpleITKCSharpNative.dylib">
-      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-    </None>
-  </ItemGroup>
-
-  <ItemGroup>
-    <PackageReference Include="Plotly.NET" Version="5.*" />
-  </ItemGroup>
-
-  <ItemGroup>
     <PackageReference Include="FSharp.Control.AsyncSeq" Version="3.2.1" />
     <ProjectReference Include="../AsyncSeqExtensions/AsyncSeqExtensions.fsproj" />
   </ItemGroup>
 
   <ItemGroup>
-    <Compile Include="Core.fs" />
+    <Compile Include="SlimPipeline.fs" />
   </ItemGroup>
 </Project>

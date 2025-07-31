@@ -1,4 +1,4 @@
-module Core
+module SlimPipeline
 
 open FSharp.Control
 open AsyncSeqExtensions

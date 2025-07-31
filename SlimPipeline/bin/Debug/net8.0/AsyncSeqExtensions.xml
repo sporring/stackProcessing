@@ -1,0 +1,46 @@
+<?xml version="1.0" encoding="utf-8"?>
+<doc>
+<assembly><name>AsyncSeqExtensions</name></assembly>
+<members>
+<member name="M:AsyncSeqExtensions.share``1(FSharp.Control.IAsyncEnumerable{``0})">
+<summary>
+ Missing AsyncSeq.share: broadcasts each element to multiple readers, only caching one element at a time.
+</summary>
+</member>
+<member name="M:AsyncSeqExtensions.ofAsync``1(Microsoft.FSharp.Control.FSharpAsync{``0})">
+<summary>
+ Converts an asynchronous computation of a single value into an asynchronous sequence containing one item.
+</summary>
+</member>
+<member name="M:AsyncSeqExtensions.zipJoin``3(Microsoft.FSharp.Core.FSharpFunc{``0,Microsoft.FSharp.Core.FSharpFunc{``1,``2}},FSharp.Control.IAsyncEnumerable{``0},FSharp.Control.IAsyncEnumerable{``1},Microsoft.FSharp.Core.FSharpOption{System.String})">
+<summary>
+ Combines two asynchronous sequences of image slices element-wise using a user-defined function.
+</summary>
+</member>
+<member name="M:AsyncSeqExtensions.chunkBySize``1(System.Int32,FSharp.Control.IAsyncEnumerable{``0})">
+<summary>
+ Splits an asynchronous sequence into fixed-size chunks.
+</summary>
+</member>
+<member name="M:AsyncSeqExtensions.windowed``1(System.UInt32,System.UInt32,FSharp.Control.IAsyncEnumerable{``0})">
+<summary>
+ Windowed function with stride and optional padding.
+</summary>
+</member>
+<member name="M:AsyncSeqExtensions.tryItem``1(System.Int32,FSharp.Control.IAsyncEnumerable{``0})">
+<summary>
+ Attempts to retrieve the item at the specified index from an asynchronous sequence.
+</summary>
+</member>
+<member name="M:AsyncSeqExtensions.fold``2(Microsoft.FSharp.Core.FSharpFunc{``0,Microsoft.FSharp.Core.FSharpFunc{``1,``0}},``0,FSharp.Control.IAsyncEnumerable{``1})">
+<summary>
+ Applies a folder function over an asynchronous sequence, threading an accumulator through the sequence like &lt;c&gt;List.fold&lt;/c&gt;.
+</summary>
+</member>
+<member name="M:AsyncSeqExtensions.Async.map``2(Microsoft.FSharp.Core.FSharpFunc{``0,``1},Microsoft.FSharp.Control.FSharpAsync{``0})">
+<summary>
+ Transforms the result of an asynchronous computation using a pure function.
+</summary>
+</member>
+</members>
+</doc>

@@ -1,6 +1,6 @@
 ﻿// To run, remember to:
 // export DYLD_LIBRARY_PATH=$(pwd)/lib 
-open Pipeline
+open StackProcessing
 
 [<EntryPoint>]
 let main _ =

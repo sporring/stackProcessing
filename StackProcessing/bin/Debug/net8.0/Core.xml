@@ -1,0 +1,77 @@
+<?xml version="1.0" encoding="utf-8"?>
+<doc>
+<assembly><name>Core</name></assembly>
+<members>
+<member name="T:Core.SharedPipeline`4">
+<summary>
+ Represents a pipeline that has been shared (split into synchronized branches)
+</summary>
+</member>
+<member name="T:Core.Stage`3">
+<summary>
+ Stage describes *what* should be done:
+ - Contains high-level metadata
+ - Encodes memory transition intent
+ - Suitable for planning, validation, and analysis
+ - Stage + MemoryTransition: what happens
+</summary>
+</member>
+<member name="T:Core.MemoryTransition">
+<summary>
+ MemoryTransition describes *how* memory layout is expected to change:
+ - From: the input memory profile
+ - To: the expected output memory profile
+</summary>
+</member>
+<member name="T:Core.Pipe`2">
+<summary>
+ A configurable image processing step that operates on image slices.
+ Pipe describes *how* to do it:
+ - Encapsulates the concrete execution logic
+ - Defines memory usage behavior
+ - Takes and returns AsyncSeq streams
+ - Pipe + WindowedProcessor: How it’s computed 
+</summary>
+</member>
+<member name="T:Core.MemoryProfile">
+<summary>
+ The memory usage strategies during image processing.
+</summary>
+</member>
+<member name="M:Core.Routing.op_GreaterEqualsGreaterGreater``3(Core.Pipeline{``0,``0,``1},Core.Stage{``0,``0,``1},Core.Stage{``0,``2,``1})">
+<summary>
+ parallel fanout with synchronization
+ Synchronously split the shared stream into two parallel pipelines
+</summary>
+</member>
+<member name="T:Core.Pipe.Request`1">
+<summary>
+ Split a Pipe&lt;&apos;In,&apos;T&gt; into two branches that
+   • read the upstream only once
+   • keep at most one item in memory
+   • terminate correctly when both sides finish
+</summary>
+</member>
+<member name="M:Core.Pipe.mapWindowed``2(System.String,System.UInt32,Microsoft.FSharp.Core.FSharpFunc{System.UInt32,Microsoft.FSharp.Core.FSharpFunc{``0,``0}},System.UInt32,Microsoft.FSharp.Core.FSharpFunc{``0,``0},System.UInt32,System.UInt32,System.UInt32,Microsoft.FSharp.Core.FSharpFunc{Microsoft.FSharp.Collections.FSharpList{``0},Microsoft.FSharp.Collections.FSharpList{``1}})">
+<summary>
+ mapWindowed keeps a running window along the slice direction of depth images
+ and processes them by f. The stepping size of the running window is stride.
+ So if depth is 3 and stride is 1 then first image 0,1,2 is sent to f, then 1, 2, 3
+ and so on. If depth is 3 and stride is 3, then it&apos;ll be image 0, 1, 2 followed by
+ 3, 4, 5. It is also possible to use this for sampling, e.g., setting depth to 1
+ and stride to 2 sends every second image to f.  
+</summary>
+</member>
+<member name="M:Core.Pipe.shrinkProfile``2(System.UInt64,System.UInt64,System.UInt32,Core.Pipe{``0,``1})">
+<summary>
+ Try to shrink a too‑hungry pipe to a cheaper profile.
+ *You* control the downgrade policy here.
+</summary>
+</member>
+<member name="M:Core.Pipe.compose``3(Core.Pipe{``0,``1},Core.Pipe{``1,``2})">
+<summary>
+ Combine two &lt;c&gt;Pipe&lt;/c&gt; instances into one by composing their memory profiles and transformation functions.
+</summary>
+</member>
+</members>
+</doc>

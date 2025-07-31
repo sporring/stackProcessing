@@ -1,15 +1,14 @@
-module Pipeline
+module StackProcessing
 
-open Core // Core processing model
+open SlimPipeline // Core processing model
 open Routing // Combinators and routing logic
 open Processing // Common image operators
 open Slice // Image and slice types
 open System.IO
 
-type Pipe<'S,'T> = Core.Pipe<'S,'T>
-type Stage<'S,'T,'Shape> = Core.Stage<'S,'T,'Shape>
-type MemoryProfile = Core.MemoryProfile
-type MemoryTransition = Core.MemoryTransition
+type Stage<'S,'T,'Shape> = SlimPipeline.Stage<'S,'T,'Shape>
+type MemoryProfile = SlimPipeline.MemoryProfile
+type MemoryTransition = SlimPipeline.MemoryTransition
 type Slice<'S when 'S: equality> = Slice.Slice<'S>
 
 type Shape = Zero | Slice of uint*uint

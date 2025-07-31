@@ -1,5 +1,5 @@
 namespace FSharp
-module Core
+module SlimPipeline
 /// The memory usage strategies during image processing.
 type MemoryProfile =
     | Constant
