@@ -10,7 +10,7 @@ open System.Reflection
 [<assembly: System.Reflection.AssemblyCompanyAttribute("StackProcessing")>]
 [<assembly: System.Reflection.AssemblyConfigurationAttribute("Debug")>]
 [<assembly: System.Reflection.AssemblyFileVersionAttribute("1.0.0.0")>]
-[<assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+db0ae71fc7ac813bea016b68006b123554f50f2d")>]
+[<assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+c5352857260a70d7155f2a619a58632bdd4a088b")>]
 [<assembly: System.Reflection.AssemblyProductAttribute("StackProcessing")>]
 [<assembly: System.Reflection.AssemblyTitleAttribute("StackProcessing")>]
 [<assembly: System.Reflection.AssemblyVersionAttribute("1.0.0.0")>]

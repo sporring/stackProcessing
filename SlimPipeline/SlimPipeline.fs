@@ -47,8 +47,8 @@ type Pipe<'S,'T> = {
 }
 
 module Pipe =
-    let create<'T> (name: string) (depth: uint) (mapper: uint -> 'T) (profile: MemoryProfile) : Pipe<unit,'T> =
-        { Name = name; Apply = (fun _ -> AsyncSeq.init (int64 depth) (fun (i:int64) -> mapper (uint i))); Profile = profile }
+    let create (name: string) (apply: AsyncSeq<'S> -> AsyncSeq<'T>) (profile: MemoryProfile) : Pipe<'S,'T> =
+        { Name = name; Apply = apply; Profile = profile }
 
     let runWith (input: 'S) (pipe: Pipe<'S, 'T>) : Async<unit> =
         AsyncSeq.singleton input
@@ -58,19 +58,35 @@ module Pipe =
     let run (pipe: Pipe<unit, unit>) : unit =
         runWith () pipe |> Async.RunSynchronously
 
-    let lift (label: string) (profile: MemoryProfile) (f: 'In -> Async<'Out>) : Pipe<'In, 'Out> =
-        {
-            Name = label
-            Profile = profile
-            Apply = fun input ->
-                input |> AsyncSeq.mapAsync f
-        }
-
-    let map (label: string) (profile: MemoryProfile) (f: 'S -> 'T) : Pipe<'S,'T> =
+    let lift (label: string) (profile: MemoryProfile) (f: 'S -> 'T) : Pipe<'S,'T> =
         {
             Name = label; 
             Profile = profile
             Apply = fun input -> input |> AsyncSeq.map f
+        }
+
+    let init<'T> (name: string) (depth: uint) (mapper: uint -> 'T) (profile: MemoryProfile) : Pipe<unit,'T> =
+        { 
+            Name = name
+            Apply = (fun _ -> AsyncSeq.init (int64 depth) (fun (i:int64) -> mapper (uint i)))
+            Profile = profile 
+        }
+
+    let map (label: string) (f: 'U -> 'V) (pipe: Pipe<'In, 'U>) : Pipe<'In, 'V> =
+        {
+            Name = label
+            Profile = pipe.Profile
+            Apply = fun input -> pipe.Apply input |> AsyncSeq.map f
+        }
+
+    let map2 (label: string) (f: 'U -> 'V -> 'W) (pipe1: Pipe<'In, 'U>) (pipe2: Pipe<'In, 'V>) : Pipe<'In, 'W> =
+        {
+            Name = label
+            Profile = max pipe1.Profile pipe2.Profile
+            Apply = fun input ->
+                let stream1 = pipe1.Apply input
+                let stream2 = pipe2.Apply input
+                AsyncSeq.zip stream1 stream2 |> AsyncSeq.map (fun (u, v) -> f u v)
         }
 
     let reduce (label: string) (profile: MemoryProfile) (reducer: AsyncSeq<'In> -> Async<'Out>) : Pipe<'In, 'Out> =
@@ -148,7 +164,20 @@ module Pipe =
         printfn "[tap]"
         lift $"tap: {label}" Streaming (fun x ->
             printfn "[%s] %A" label x
-            async.Return x)
+            x)
+
+    let ignore : Pipe<'T, unit> =
+        {
+            Name = "ignore"
+            Profile = Constant
+            Apply = fun input ->
+                asyncSeq {
+                    // Consume the stream without doing anything
+                    do! AsyncSeq.iterAsync (fun _ -> async.Return()) input
+                    // Then emit one unit
+                    yield ()
+                }
+        }
 
     /// Split a Pipe<'In,'T> into two branches that
     ///   • read the upstream only once
@@ -268,8 +297,11 @@ type Stage<'S,'T,'Shape> =
       ShapeUpdate : 'Shape -> 'Shape (*A shape indication such as uint list -> uint list*) } 
 
 module Stage =
-    let create<'S,'T,'Shape> (name: string) (depth: uint) (mapper: uint -> 'T) (transition: MemoryTransition) (shapeUpdate: 'Shape->'Shape) =
-        let pipe = Pipe.create<'T> name depth mapper transition.From
+    let create<'S,'T,'Shape> (name: string) (pipe: Pipe<'S,'T>) (transition: MemoryTransition) (shapeUpdate: 'Shape->'Shape) =
+        { Name = name; Pipe = pipe; Transition = transition; ShapeUpdate = shapeUpdate}
+
+    let init<'S,'T,'Shape> (name: string) (depth: uint) (mapper: uint -> 'T) (transition: MemoryTransition) (shapeUpdate: 'Shape->'Shape) =
+        let pipe = Pipe.init name depth mapper transition.From
         { Name = name; Pipe = pipe; Transition = transition; ShapeUpdate = shapeUpdate}
 
     let transition (fromProfile: MemoryProfile) (toProfile: MemoryProfile) : MemoryTransition =
@@ -282,7 +314,7 @@ module Stage =
         {
             Name = "id"
             Transition = transition Streaming Streaming
-            Pipe = Pipe.lift "id" Streaming (fun x -> async.Return x)
+            Pipe = Pipe.lift "id" Streaming (fun x -> x)
             ShapeUpdate = id
         }
 
@@ -297,6 +329,7 @@ module Stage =
         }
 
     let compose (op1 : Stage<'S,'T,'Shape>) (op2 : Stage<'T,'U,'Shape>) : Stage<'S,'U,'Shape> =
+        printfn "Stage composing: %s -> %s -> %s" typeof<'S>.Name typeof<'T>.Name typeof<'U>.Name
         {
             Name       = $"{op2.Name} ∘ {op1.Name}"
             Transition = transition op1.Transition.From op2.Transition.To
@@ -306,12 +339,22 @@ module Stage =
 
     let (-->) = compose
 
+    let map (name: string) (f: 'U -> 'V) (stage: Stage<'In, 'U, 'Shape>) : Stage<'In, 'V, 'Shape> =
+        let pipe = Pipe.map name f stage.Pipe
+        let trans = transition Streaming Streaming
+        create name pipe trans (fun s -> s)
+
+    let map2 (name: string) (f: 'U -> 'V -> 'W) (stage1: Stage<'In, 'U, 'Shape>, stage2: Stage<'In, 'V, 'Shape>) : Stage<'In, 'W, 'Shape> =
+        let pipe = Pipe.map2 name f stage1.Pipe stage2.Pipe
+        let trans = transition Streaming Streaming
+        create name pipe trans (fun s -> s) 
+
     // this assumes too much: Streaming and identity ShapeUpdate!!!
     let liftUnary<'T,'Shape> (name: string) (f: 'T -> 'T) : Stage<'T, 'T, 'Shape> =
         {
             Name = name
             Transition = transition Streaming Streaming
-            Pipe = Pipe.map name Streaming f
+            Pipe = Pipe.lift name Streaming f
             ShapeUpdate = fun s -> s // shape unchanged
         }
 
@@ -328,6 +371,14 @@ module Stage =
                 ShapeUpdate = op.ShapeUpdate
             }
         mk "left" leftPipe, mk "right" rightPipe
+
+    let ignore<'T,'Shape> () : Stage<'T, unit, 'Shape> =
+        {
+            Name = "ignore"
+            Pipe = Pipe.ignore
+            Transition = transition Streaming Constant
+            ShapeUpdate = fun s -> s
+        }
 
 ////////////////////////////////////////////////////////////
 // MemFlow state monad
@@ -378,7 +429,7 @@ type Pipeline<'S,'T,'Shape> = {
     context : ShapeContext<'Shape>}
 
 module Pipeline =
-    let create<'T,'Shape when 'T: equality> (flow: MemFlow<unit,'T,'Shape>) (mem : uint64) (shape: 'Shape option) (context : ShapeContext<'Shape>): Pipeline<unit, 'T,'Shape> =
+    let create<'S,'T,'Shape when 'T: equality> (flow: MemFlow<'S,'T,'Shape>) (mem : uint64) (shape: 'Shape option) (context : ShapeContext<'Shape>): Pipeline<'S, 'T,'Shape> =
         { flow = flow; mem = mem; shape = shape; context = context}
 
     let stage2Pipeline (stage: Stage<'S, 'T, 'Shape>) (mem: uint64) (shape: 'Shape) (context: ShapeContext<'Shape>) : Pipeline<'S, 'T, 'Shape> =
@@ -548,57 +599,109 @@ module Routing =
         : SharedPipeline<'In, 'U, 'V, 'Shape> =
 
         match pl.flow pl.mem pl.shape pl.context with
-        | baseOp, mem', shape' when baseOp.Transition.To = Streaming ->
+        | baseOp, mem', shape' ->
 
-            let opBase, mem', shape' = pl.flow pl.mem pl.shape pl.context
-            let pipe1, pipe2 = Pipe.tee opBase.Pipe
-            let op1' = Stage.compose { opBase with Pipe = pipe1 } op1
-            let op2' = Stage.compose { opBase with Pipe = pipe2 } op2
-            SharedPipeline.create<'T,'U,'V,'Shape> pl.flow (op1', op2') pl.mem pl.shape pl.context
+            match (op1.Transition.From, op2.Transition.From) with
 
-        | baseOp, mem', shape' when baseOp.Transition.To = Constant ->
+            // === Both Streaming: no windowing needed ===
+            | Streaming, Streaming ->
+                let pipe1, pipe2 = Pipe.tee baseOp.Pipe
+                let op1': Stage<'In, 'U, 'Shape>  = Stage.compose { baseOp with Pipe = pipe1 } op1
+                let op2': Stage<'In, 'V, 'Shape>  = Stage.compose { baseOp with Pipe = pipe2 } op2
+                SharedPipeline.create pl.flow (op1', op2') mem' shape' pl.context
+            | _ -> failwith "Unsupported transition pattern"
 
-            let cached = lazy (
-                let result =
-                    AsyncSeq.singleton Unchecked.defaultof<'In>
-                    |> baseOp.Pipe.Apply
-                    |> AsyncSeq.tryLast
-                    |> Async.RunSynchronously
-                result |> Option.defaultWith (fun () -> failwithf "No constant result from %s" baseOp.Name)
-            )
+            (*
+            // === One or both Sliding: compute merged window ===
+            | Sliding (size1,stride1,start1,count1), Sliding (size2,stride2,start2,count2) ->
+                let winSize = max size1 size2
+                let stride = max stride1 stride2
+                let prePad = max start1 start2
+                let postPad = max (size1 - (start1 + count1)) (size2 - (start2 + count2))
 
-            let applyOp (op: Stage<'T, 'X, 'Shape>) (value: 'T) : 'X =
-                AsyncSeq.singleton value
-                |> op.Pipe.Apply
-                |> AsyncSeq.tryLast
-                |> Async.RunSynchronously
-                |> Option.defaultWith (fun () -> failwithf "applyOp: No output from %s" op.Name)
+                let windowedPipe =
+                    Pipe.lift "windowed" Streaming (fun source ->
+                        windowedWithPad
+                            (uint winSize)
+                            (fun _ x -> x)         // id updater
+                            (uint stride)
+                            (uint prePad)
+                            (uint postPad)
+                            id                      // zero-maker
+                            (baseOp.Pipe.Apply source)
+                    )
 
-            let makeConstOp (op: Stage<'T, 'X, 'Shape>) label : Stage<'In, 'X, 'Shape> =
-                {
-                    Name = $"shared-const:{label}"
-                    Transition = Stage.transition Constant Constant
-                    Pipe = Pipe.lift label Constant (fun _ -> async { return applyOp op (cached.Value) })
-                    ShapeUpdate = fun s -> s // I don't know what this should be!!!!
-                }
+                let opBase' =
+                    {
+                        baseOp with
+                            Pipe = windowedPipe
+                            Transition = Stage.transition Streaming Streaming
+                    }
 
-            let op1' = makeConstOp op1 "left"
-            let op2' = makeConstOp op2 "right"
-            SharedPipeline.create pl.flow (op1', op2') pl.mem pl.shape pl.context
+                // Compose tee and continue
+                let pipe1, pipe2 = Pipe.tee opBase'.Pipe
+                let op1' = Stage.compose { opBase' with Pipe = pipe1 } op1
+                let op2' = Stage.compose { opBase' with Pipe = pipe2 } op2
 
-        | _ -> failwith "Unsupported transition kind in >=>>"
+                SharedPipeline.create pl.flow (op1', op2') mem' shape' pl.context
+
+            // === Mixed: one Streaming, one Sliding ===
+            | Streaming, Sliding w2
+            | Sliding w2, Streaming ->
+
+                let winSize = w2.WindowSize
+                let stride = w2.Stride
+                let prePad = w2.EmitStart
+                let postPad = w2.WindowSize - (w2.EmitStart + w2.EmitCount)
+
+                let windowedPipe =
+                    Pipe.lift "windowed" Streaming (fun source ->
+                        windowedWithPad
+                            (uint winSize)
+                            (fun _ x -> x)
+                            (uint stride)
+                            (uint prePad)
+                            (uint postPad)
+                            id
+                            (baseOp.Pipe.Apply source)
+                    )
+
+                let opBase' =
+                    {
+                        baseOp with
+                            Pipe = windowedPipe
+                            Transition = Stage.transition Streaming Streaming
+                    }
+
+                let pipe1, pipe2 = Pipe.tee opBase'.Pipe
+
+                // Handle which side is sliding
+                let op1' =
+                    match op1.Transition.From with
+                    | Sliding _ -> Stage.compose { opBase' with Pipe = pipe1 } op1
+                    | _         -> Stage.compose { baseOp with Pipe = pipe1 } op1
+
+                let op2' =
+                    match op2.Transition.From with
+                    | Sliding _ -> Stage.compose { opBase' with Pipe = pipe2 } op2
+                    | _         -> Stage.compose { baseOp with Pipe = pipe2 } op2
+
+                SharedPipeline.create pl.flow (op1', op2') mem' shape' pl.context
+
+            // Constant handling unchanged
+            | Constant, Constant ->
+                // ... your existing constant logic here ...
+                failwith "Handle constants as before"
+*)
 
     let (>>=>)
         (shared: SharedPipeline<'In, 'U, 'V, 'Shape>)
-        (combine: Stage<'In, 'U, 'Shape> * Stage<'In, 'V, 'Shape> -> Stage<'In, 'W, 'Shape>)
+        (combineFn: 'U -> 'V -> 'W)
         : Pipeline<'In, 'W, 'Shape> =
 
-        let stage = combine shared.branches
+        let stage = Stage.map2 ">>=>" combineFn shared.branches
         let flow = MemFlow.returnM stage
-        let mem = shared.mem
-        let shape = shared.shape
-        let context = shared.context
-        Pipeline.create flow mem shape context
+        Pipeline.create flow shared.mem shared.shape shared.context
 
     let combineIgnore : Stage<'In, 'U, 'Shape> * Stage<'In, 'V, 'Shape> -> Stage<'In, unit, 'Shape> =
         fun (op1, op2) ->

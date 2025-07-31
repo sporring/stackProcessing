@@ -29,7 +29,7 @@
 </member>
 <member name="M:Processing.writeOp``2(System.String,System.String)">
 <summary>
- Source parts
+ Sink parts
 </summary>
 </member>
 <member name="P:StackProcessing.binaryFillHoles">

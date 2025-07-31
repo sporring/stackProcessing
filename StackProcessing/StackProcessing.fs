@@ -29,6 +29,7 @@ let drainSingle pl = Routing.drainSingle "drainSingle" pl
 let drainList pl = Routing.drainList "drainList" pl
 let drainLast pl = Routing.drainLast "drainLast" pl
 let tap = Stage.tap
+let ignoreAll = Stage.ignore<_,Shape>
 let liftUnary (f: Slice<'T> -> Slice<'T>) = Stage.liftUnary "liftUnary" f
 
 let write = Processing.writeOp
@@ -36,8 +37,53 @@ let print = Processing.printOp
 let plot = Processing.plotOp
 let show = Processing.showOp
 
-let finiteDiffFilter3D = Processing.finiteDiffFilter3DOp
-let axisSource = Processing.axisSourceOp
+let finiteDiffFilter3D 
+    (direction: uint) 
+    (order: uint)
+    (pl : Pipeline<unit, unit, Shape>) 
+    : Pipeline<unit, Slice<float>, Shape> =
+    let img = finiteDiffFilter3D direction order
+    let sz = GetSize img
+    let shapeUpdate = fun (s: Shape) -> s
+    let op : Stage<unit, Slice<float>, Shape> =
+        {
+            Name = "gaussSource"
+            Pipe = img |> liftImageSource "gaussSource"
+            Transition = Stage.transition Constant Streaming
+            ShapeUpdate = shapeUpdate
+        }
+    let width, height, depth = sz[0], sz[1], sz[2]
+    let context = MemFlow.create (fun _ -> width*height |> uint64) (fun _ -> depth)
+    {
+        flow = MemFlow.returnM op
+        mem = pl.mem
+        shape = Slice (width,height) |> Some
+        context = context
+    }
+
+let axisSource
+    (axis: int) 
+    (size: int list)
+    (pl : Pipeline<unit, unit, Shape>) 
+    : Pipeline<unit, Slice<uint>, Shape> =
+    let img = Slice.generateCoordinateAxis axis size
+    let sz = GetSize img
+    let shapeUpdate = fun (s: Shape) -> s
+    let op : Stage<unit, Slice<uint>, Shape> =
+        {
+            Name = "axisSource"
+            Pipe = img |> liftImageSource "axisSource"
+            Transition = Stage.transition Constant Streaming
+            ShapeUpdate = shapeUpdate
+        }
+    let width, height, depth = sz[0], sz[1], sz[2]
+    let context = MemFlow.create (fun _ -> width*height |> uint64) (fun _ -> depth)
+    {
+        flow = MemFlow.returnM op
+        mem = pl.mem
+        shape = Slice (width,height) |> Some
+        context = context
+    }
 
 (*
 let castUInt8ToInt8 = castUInt8ToInt8Op "castUInt8ToInt8"
@@ -138,11 +184,12 @@ let castFloatToUIn64 = castFloatToUIn64Op "castFloatToUIn64"
 let castFloatToInt64 = castFloatToInt64Op "castFloatToInt64"
 let castFloatToFloat32 = castFloatToFloat32Op "castFloatToFloat32"
 *)
+//let cast<'S,'T,Shape> = castOp<'S,'T,Shape> (sprintf "cast(%s->%s)" typeof<'S>.Name typeof<'T>.Name) Slice.cast<'S,'T>
 
 /// Basic arithmetic
 let add slice = addOp "add" slice
 let inline scalarAddSlice<^T when ^T: equality and ^T: (static member op_Explicit: ^T -> float)> (i: ^T) = scalarAddSliceOp "scalarAddSlice" i
-let inline sliceAddScalar<^T when ^T: equality and ^T: (static member op_Explicit: ^T -> float)> (i: ^T) = sliceAddScalarOp "sliceAddScalar" i
+let inline sliceAddScalar<^T when ^T: equality and ^T: (static member op_Explicit: ^T -> float)> (i: ^T) = sliceAddScalarOp<'T,Shape> "sliceAddScalar" i
 
 let sub slice = subOp "sub" slice
 let inline scalarSubSlice<^T when ^T: equality and ^T: (static member op_Explicit: ^T -> float)> (i: ^T) = scalarSubSliceOp "scalarSubSlice" i
@@ -248,7 +295,7 @@ let createAs<'T when 'T: equality> (width: uint) (height: uint) (depth: uint) (p
         slice
     let transition = Stage.transition Constant Streaming
     let shapeUpdate = id
-    let stage = Stage.create "create" depth mapper transition shapeUpdate 
+    let stage = Stage.init "create" depth mapper transition shapeUpdate 
     let flow = MemFlow.returnM stage
     let shape = Slice (width,height)
     let context = MemFlow.create (fun _ -> width*height |> uint64) (fun _ -> depth)
@@ -266,7 +313,7 @@ let readAs<'T when 'T: equality> (inputDir : string) (suffix : string) (pl : Pip
         slice
     let transition = Stage.transition Constant Streaming
     let shapeUpdate = id
-    let stage = Stage.create $"read: {inputDir}" (uint depth) mapper transition shapeUpdate 
+    let stage = Stage.init $"read: {inputDir}" (uint depth) mapper transition shapeUpdate 
     let flow = MemFlow.returnM stage
     let shape = Slice (width,height)
     let context = MemFlow.create (fun _ -> width*height |> uint64) (fun _ -> uint depth)
@@ -283,7 +330,7 @@ let readRandomAs<'T when 'T: equality> (count: uint) (inputDir : string) (suffix
         slice
     let transition = Stage.transition Constant Streaming
     let shapeUpdate = id
-    let stage = Stage.create $"read: {inputDir}" (uint depth) mapper transition shapeUpdate 
+    let stage = Stage.init $"read: {inputDir}" (uint depth) mapper transition shapeUpdate 
     let flow = MemFlow.returnM stage
     let shape = Slice (width,height)
     let context = MemFlow.create (fun _ -> width*height |> uint64) (fun _ -> uint depth)

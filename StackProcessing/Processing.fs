@@ -51,7 +51,7 @@ module internal InternalHelpers =
 
 open InternalHelpers
 
-/// Source parts
+/// Sink parts
 let writeOp (path: string) (suffix: string) : Stage<Slice<'a>, unit, 'Shape> =
     let writeReducer stream = async { do! writeSlicesAsync path suffix stream }
     let shapeUpdate = fun (s:'Shape) -> s
@@ -97,54 +97,6 @@ let liftImageSource (name: string) (img: Slice<'T>) : Pipe<unit, Slice<'T>> =
         Name = name
         Profile = Streaming
         Apply = fun _ -> img |> unstack |> AsyncSeq.ofSeq
-    }
-
-let axisSourceOp 
-    (axis: int) 
-    (size: int list)
-    (pl : Pipeline<unit, unit,'Shape>) 
-    : Pipeline<unit, Slice<uint>,'Shape> =
-    let img = Slice.generateCoordinateAxis axis size
-    let sz = GetSize img
-    let shapeUpdate = fun (s:'Shape) -> s
-    let op : Stage<unit, Slice<uint>,'Shape> =
-        {
-            Name = "axisSource"
-            Pipe = img |> liftImageSource "axisSource"
-            Transition = Stage.transition Constant Streaming
-            ShapeUpdate = shapeUpdate
-        }
-    let width, height, depth = sz[0], sz[1], sz[2]
-    let context = MemFlow.create (fun _ -> width*height |> uint64) (fun _ -> depth)
-    {
-        flow = MemFlow.returnM op
-        mem = pl.mem
-        shape = Some [width;height]
-        context = context
-    }
-
-let finiteDiffFilter3DOp 
-    (direction: uint) 
-    (order: uint)
-    (pl : Pipeline<unit, unit,'Shape>) 
-    : Pipeline<unit, Slice<float>,'Shape> =
-    let img = finiteDiffFilter3D direction order
-    let sz = GetSize img
-    let shapeUpdate = fun (s:'Shape) -> s
-    let op : Stage<unit, Slice<float>, 'Shape> =
-        {
-            Name = "gaussSource"
-            Pipe = img |> liftImageSource "gaussSource"
-            Transition = Stage.transition Constant Streaming
-            ShapeUpdate = shapeUpdate
-        }
-    let width, height, depth = sz[0], sz[1], sz[2]
-    let context = MemFlow.create (fun _ -> width*height |> uint64) (fun _ -> depth)
-    {
-        flow = MemFlow.returnM op
-        mem = pl.mem
-        shape = Some [width;height]
-        context = context
     }
 
 (*
@@ -396,27 +348,27 @@ let castFloatToFloat32Op name = castOp name Slice.castFloatToFloat32
 /// Basic arithmetic
 let addOp name slice = Stage.liftUnary name (Slice.add slice)
 let inline scalarAddSliceOp<^T when ^T: equality and ^T: (static member op_Explicit: ^T -> float)> (name:string) (i: ^T) = 
-    Stage.liftUnary name (fun (s:Slice<'T>)->Slice.scalarAddSlice<^T> i s)
-let inline sliceAddScalarOp<^T when ^T: equality and ^T: (static member op_Explicit: ^T -> float)> (name:string) (i: ^T) = 
-    Stage.liftUnary name (fun (s:Slice<'T>)->Slice.sliceAddScalar<^T> s i)
+    Stage.liftUnary name (fun (s:Slice<^T>)->Slice.scalarAddSlice<^T> i s)
+let inline sliceAddScalarOp<^T,^Shape when ^T: equality and ^T: (static member op_Explicit: ^T -> float)> (name:string) (i: ^T) = 
+    Stage.liftUnary<Slice<^T>,^Shape> name (fun (s:Slice<^T>)->Slice.sliceAddScalar<^T> s i)
 
 let subOp name slice = Stage.liftUnary name (Slice.sub slice)
 let inline scalarSubSliceOp<^T when ^T: equality and ^T: (static member op_Explicit: ^T -> float)> (name:string) (i: ^T) = 
-    Stage.liftUnary name (fun (s:Slice<'T>)->Slice.scalarSubSlice<^T> i s)
+    Stage.liftUnary name (fun (s:Slice<^T>)->Slice.scalarSubSlice<^T> i s)
 let inline sliceSubScalarOp<^T when ^T: equality and ^T: (static member op_Explicit: ^T -> float)> (name:string) (i: ^T) = 
-    Stage.liftUnary name (fun (s:Slice<'T>)->Slice.sliceSubScalar<^T> s i)
+    Stage.liftUnary name (fun (s:Slice<^T>)->Slice.sliceSubScalar<^T> s i)
 
 let mulOp name slice = Stage.liftUnary name (Slice.mul slice)
 let inline scalarMulSliceOp<^T when ^T: equality and ^T: (static member op_Explicit: ^T -> float)> (name:string) (i: ^T) = 
-    Stage.liftUnary name (fun (s:Slice<'T>)->Slice.scalarMulSlice<^T> i s)
+    Stage.liftUnary name (fun (s:Slice<^T>)->Slice.scalarMulSlice<^T> i s)
 let inline sliceMulScalarOp<^T when ^T: equality and ^T: (static member op_Explicit: ^T -> float)> (name:string) (i: ^T) = 
-    Stage.liftUnary name (fun (s:Slice<'T>)->Slice.sliceMulScalar<^T> s i)
+    Stage.liftUnary name (fun (s:Slice<^T>)->Slice.sliceMulScalar<^T> s i)
 
 let divOp name slice = Stage.liftUnary name (Slice.div slice)
 let inline scalarDivSliceOp<^T when ^T: equality and ^T: (static member op_Explicit: ^T -> float)> (name:string) (i: ^T) = 
-    Stage.liftUnary name (fun (s:Slice<'T>)->Slice.scalarDivSlice<^T> i s)
+    Stage.liftUnary name (fun (s:Slice<^T>)->Slice.scalarDivSlice<^T> i s)
 let inline sliceDivScalarOp<^T when ^T: equality and ^T: (static member op_Explicit: ^T -> float)> (name:string) (i: ^T) = 
-    Stage.liftUnary name (fun (s:Slice<'T>)->Slice.sliceDivScalar<^T> s i)
+    Stage.liftUnary name (fun (s:Slice<^T>)->Slice.sliceDivScalar<^T> s i)
 
 /// Histogram related functions
 let histogramOp<'T,'Shape when 'T: comparison> name : Stage<Slice<'T>, Map<'T, uint64>, 'Shape>  =
@@ -435,21 +387,21 @@ let map2pairsOp<'T,'S,'Shape when 'T: comparison> name : Stage<Map<'T, 'S>, ('T 
     {
         Name = name
         Transition = Stage.transition Streaming Streaming
-        Pipe = Pipe.map name Streaming Slice.map2pairs
+        Pipe = Pipe.lift name Streaming Slice.map2pairs
         ShapeUpdate = id
     }
 let inline pairs2floatsOp<^T,^S,^Shape when ^T : (static member op_Explicit : ^T -> float) and  ^S : (static member op_Explicit : ^S -> float) > name : Stage<(^T * ^S) list, (float * float) list, 'Shape> =
     {
         Name = name
         Transition = Stage.transition Streaming Streaming
-        Pipe = Pipe.map name Streaming Slice.pairs2floats
+        Pipe = Pipe.lift name Streaming Slice.pairs2floats
         ShapeUpdate = id
     }
 let inline pairs2intsOp<^T,^S,^Shape when ^T : (static member op_Explicit : ^T -> int) and  ^S : (static member op_Explicit : ^S -> int) > name : Stage<(^T * ^S) list, (int * int) list, 'Shape> =
     {
         Name = name
         Transition = Stage.transition Streaming Streaming
-        Pipe = Pipe.map name Streaming Slice.pairs2ints
+        Pipe = Pipe.lift name Streaming Slice.pairs2ints
         ShapeUpdate = id
     }
 

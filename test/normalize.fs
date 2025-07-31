@@ -1,6 +1,6 @@
 ﻿// To run, remember to:
 // export DYLD_LIBRARY_PATH=./StackPipeline/lib:$(pwd)/bin/Debug/net8.0
-open Pipeline
+open StackProcessing
 open Slice
 
 [<EntryPoint>]

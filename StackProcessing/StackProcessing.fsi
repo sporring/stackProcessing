@@ -327,7 +327,7 @@ module internal InternalHelpers =
         suffix: string ->
         slices: FSharp.Control.AsyncSeq<Slice.Slice<'T>> -> Async<unit>
         when 'T: equality
-/// Source parts
+/// Sink parts
 val writeOp:
   path: string ->
     suffix: string -> SlimPipeline.Stage<Slice.Slice<'a>,unit,'Shape>
@@ -343,16 +343,6 @@ val liftImageSource:
   name: string ->
     img: Slice.Slice<'T> -> SlimPipeline.Pipe<unit,Slice.Slice<'T>>
     when 'T: equality
-val axisSourceOp:
-  axis: int ->
-    size: int list ->
-    pl: SlimPipeline.Pipeline<unit,unit,uint list> ->
-    SlimPipeline.Pipeline<unit,Slice.Slice<uint>,uint list>
-val finiteDiffFilter3DOp:
-  direction: uint ->
-    order: uint ->
-    pl: SlimPipeline.Pipeline<unit,unit,uint list> ->
-    SlimPipeline.Pipeline<unit,Slice.Slice<float>,uint list>
 val skipNTakeM: n: uint -> m: uint -> lst: 'a list -> 'a list
 val internal liftWindowedOp:
   name: string ->
@@ -615,7 +605,7 @@ val inline scalarAddSliceOp:
     when ^T: equality and ^T: (static member op_Explicit: ^T -> float)
 val inline sliceAddScalarOp:
   name: string ->
-    i: ^T -> SlimPipeline.Stage<Slice.Slice<^T>,Slice.Slice<^T>,obj>
+    i: ^T -> SlimPipeline.Stage<Slice.Slice<^T>,Slice.Slice<^T>,^Shape>
     when ^T: equality and ^T: (static member op_Explicit: ^T -> float)
 val subOp:
   name: string ->
@@ -799,14 +789,12 @@ val (>=>) :
   (SlimPipeline.Pipeline<'a,'b,'c> ->
      SlimPipeline.Stage<'b,'d,'c> -> SlimPipeline.Pipeline<'a,'d,'c>)
 val (>=>>) :
-  (SlimPipeline.Pipeline<'a,'a,'b> ->
-     SlimPipeline.Stage<'a,'a,'b> * SlimPipeline.Stage<'a,'c,'b> ->
-       SlimPipeline.SharedPipeline<'a,'a,'c,'b>) when 'a: equality
+  (SlimPipeline.Pipeline<'a,'b,'c> ->
+     SlimPipeline.Stage<'b,'b,'c> * SlimPipeline.Stage<'b,'d,'c> ->
+       SlimPipeline.SharedPipeline<'a,'b,'d,'c>) when 'a: equality
 val (>>=>) :
-  (SlimPipeline.SharedPipeline<unit,'a,'b,'c> ->
-     (SlimPipeline.Stage<unit,'a,'c> * SlimPipeline.Stage<unit,'b,'c> ->
-        SlimPipeline.Stage<unit,'d,'c>) -> SlimPipeline.Pipeline<unit,'d,'c>)
-    when 'd: equality
+  (SlimPipeline.SharedPipeline<'a,'b,'c,'d> ->
+     ('b -> 'c -> 'e) -> SlimPipeline.Pipeline<'a,'e,'d>) when 'e: equality
 val combineIgnore:
   (SlimPipeline.Stage<'a,'b,'c> * SlimPipeline.Stage<'a,'d,'c> ->
      SlimPipeline.Stage<'a,unit,'c>)
@@ -814,6 +802,7 @@ val drainSingle: pl: SlimPipeline.Pipeline<'a,'b,'c> -> 'b
 val drainList: pl: SlimPipeline.Pipeline<'a,'b,'c> -> 'b list
 val drainLast: pl: SlimPipeline.Pipeline<'a,'b,'c> -> 'b
 val tap: (string -> SlimPipeline.Stage<'a,'a,'b>)
+val ignoreAll: (unit -> SlimPipeline.Stage<'a,unit,Shape>)
 val liftUnary:
   f: (Slice<'T> -> Slice<'T>) -> SlimPipeline.Stage<Slice<'T>,Slice<'T>,'a>
     when 'T: equality
@@ -828,15 +817,15 @@ val show:
   ((Slice.Slice<'a> -> unit) -> SlimPipeline.Stage<Slice.Slice<'a>,unit,'b>)
     when 'a: equality
 val finiteDiffFilter3D:
-  (uint ->
-     uint ->
-     SlimPipeline.Pipeline<unit,unit,uint list> ->
-     SlimPipeline.Pipeline<unit,Slice.Slice<float>,uint list>)
+  direction: uint ->
+    order: uint ->
+    pl: SlimPipeline.Pipeline<unit,unit,Shape> ->
+    SlimPipeline.Pipeline<unit,Slice<float>,Shape>
 val axisSource:
-  (int ->
-     int list ->
-     SlimPipeline.Pipeline<unit,unit,uint list> ->
-     SlimPipeline.Pipeline<unit,Slice.Slice<uint>,uint list>)
+  axis: int ->
+    size: int list ->
+    pl: SlimPipeline.Pipeline<unit,unit,Shape> ->
+    SlimPipeline.Pipeline<unit,Slice<uint>,Shape>
 val castFloatToUInt8:
   SlimPipeline.Stage<Slice.Slice<float>,Slice.Slice<uint8>,Shape>
 /// Basic arithmetic
@@ -847,7 +836,7 @@ val inline scalarAddSlice:
   i: ^T -> SlimPipeline.Stage<Slice.Slice<^T>,Slice.Slice<^T>,obj>
     when ^T: equality and ^T: (static member op_Explicit: ^T -> float)
 val inline sliceAddScalar:
-  i: ^T -> SlimPipeline.Stage<Slice.Slice<^T>,Slice.Slice<^T>,obj>
+  i: ^T -> SlimPipeline.Stage<Slice.Slice<^T>,Slice.Slice<^T>,Shape>
     when ^T: equality and ^T: (static member op_Explicit: ^T -> float)
 val sub:
   slice: Slice.Slice<'a> ->

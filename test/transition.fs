@@ -1,6 +1,6 @@
 ﻿// To run, remember to:
 // export DYLD_LIBRARY_PATH=../Core/lib:$(pwd)/bin/Debug/net8.0
-open Pipeline
+open StackProcessing
 
 [<EntryPoint>]
 let main _ =

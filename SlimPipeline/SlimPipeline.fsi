@@ -28,15 +28,22 @@ type Pipe<'S,'T> =
 module Pipe =
     val create:
       name: string ->
-        depth: uint ->
-        mapper: (uint -> 'T) -> profile: MemoryProfile -> Pipe<unit,'T>
+        apply: (FSharp.Control.AsyncSeq<'S> -> FSharp.Control.AsyncSeq<'T>) ->
+        profile: MemoryProfile -> Pipe<'S,'T>
     val runWith: input: 'S -> pipe: Pipe<'S,'T> -> Async<unit>
     val run: pipe: Pipe<unit,unit> -> unit
     val lift:
-      label: string ->
-        profile: MemoryProfile -> f: ('In -> Async<'Out>) -> Pipe<'In,'Out>
-    val map:
       label: string -> profile: MemoryProfile -> f: ('S -> 'T) -> Pipe<'S,'T>
+    val init:
+      name: string ->
+        depth: uint ->
+        mapper: (uint -> 'T) -> profile: MemoryProfile -> Pipe<unit,'T>
+    val map:
+      label: string -> f: ('U -> 'V) -> pipe: Pipe<'In,'U> -> Pipe<'In,'V>
+    val map2:
+      label: string ->
+        f: ('U -> 'V -> 'W) ->
+        pipe1: Pipe<'In,'U> -> pipe2: Pipe<'In,'V> -> Pipe<'In,'W>
     val reduce:
       label: string ->
         profile: MemoryProfile ->
@@ -77,6 +84,7 @@ module Pipe =
         emitCount: uint -> f: ('S list -> 'T list) -> Pipe<'S,'T>
         when 'S: equality
     val tap: label: string -> Pipe<'T,'T>
+    val ignore: Pipe<'T,unit>
     /// Split a Pipe<'In,'T> into two branches that
     ///   • read the upstream only once
     ///   • keep at most one item in memory
@@ -106,7 +114,12 @@ type Stage<'S,'T,'Shape> =
       ShapeUpdate: ('Shape -> 'Shape)
     }
 module Stage =
-    val create<'S,'T,'Shape> :
+    val create:
+      name: string ->
+        pipe: Pipe<'S,'T> ->
+        transition: MemoryTransition ->
+        shapeUpdate: ('Shape -> 'Shape) -> Stage<'S,'T,'Shape>
+    val init<'S,'T,'Shape> :
       name: string ->
         depth: uint ->
         mapper: (uint -> 'T) ->
@@ -125,10 +138,19 @@ module Stage =
       op1: Stage<'S,'T,'Shape> ->
         op2: Stage<'T,'U,'Shape> -> Stage<'S,'U,'Shape>
     val (-->) : (Stage<'a,'b,'c> -> Stage<'b,'d,'c> -> Stage<'a,'d,'c>)
+    val map:
+      name: string ->
+        f: ('U -> 'V) -> stage: Stage<'In,'U,'Shape> -> Stage<'In,'V,'Shape>
+    val map2:
+      name: string ->
+        f: ('U -> 'V -> 'W) ->
+        stage1: Stage<'In,'U,'Shape> * stage2: Stage<'In,'V,'Shape> ->
+          Stage<'In,'W,'Shape>
     val liftUnary: name: string -> f: ('T -> 'T) -> Stage<'T,'T,'Shape>
     val tap: label: string -> Stage<'T,'T,'Shape>
     val internal tee:
       op: Stage<'In,'T,'Shape> -> Stage<'In,'T,'Shape> * Stage<'In,'T,'Shape>
+    val ignore: unit -> Stage<'T,unit,'Shape>
 type ShapeContext<'S> =
     {
       memPerElement: ('S -> uint64)
@@ -167,10 +189,10 @@ type Pipeline<'S,'T,'Shape> =
     }
 module Pipeline =
     val create:
-      flow: MemFlow<unit,'T,'Shape> ->
+      flow: MemFlow<'S,'T,'Shape> ->
         mem: uint64 ->
         shape: 'Shape option ->
-        context: ShapeContext<'Shape> -> Pipeline<unit,'T,'Shape>
+        context: ShapeContext<'Shape> -> Pipeline<'S,'T,'Shape>
         when 'T: equality
     val stage2Pipeline:
       stage: Stage<'S,'T,'Shape> ->
@@ -217,14 +239,12 @@ module Routing =
     /// parallel fanout with synchronization
     /// Synchronously split the shared stream into two parallel pipelines
     val (>=>>) :
-      pl: Pipeline<'T,'T,'Shape> ->
+      pl: Pipeline<'In,'T,'Shape> ->
         op1: Stage<'T,'T,'Shape> * op2: Stage<'T,'V,'Shape> ->
-          SharedPipeline<'T,'T,'V,'Shape> when 'T: equality
+          SharedPipeline<'In,'T,'V,'Shape> when 'In: equality
     val (>>=>) :
-      shared: SharedPipeline<unit,'U,'V,'Shape> ->
-        combine: (Stage<unit,'U,'Shape> * Stage<unit,'V,'Shape> ->
-                    Stage<unit,'W,'Shape>) -> Pipeline<unit,'W,'Shape>
-        when 'W: equality
+      shared: SharedPipeline<'In,'U,'V,'Shape> ->
+        combineFn: ('U -> 'V -> 'W) -> Pipeline<'In,'W,'Shape> when 'W: equality
     val combineIgnore:
       op1: Stage<'In,'U,'Shape> * op2: Stage<'In,'V,'Shape> ->
         Stage<'In,unit,'Shape>
