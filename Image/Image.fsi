@@ -110,6 +110,7 @@ type Image<'T when 'T: equality> =
     member Set: coords: uint list -> value: 'T -> unit
     member private SetImg: itkImg: itk.simple.Image -> unit
     override ToString: unit -> string
+    member castTo: unit -> Image<'S> when 'S: equality
     member forAll: p: ('T -> bool) -> bool
     member memoryEstimate: unit -> uint
     member toArray2D: unit -> 'T array2d

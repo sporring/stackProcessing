@@ -6,12 +6,175 @@ open FSharp.Control
 open System.Collections.Generic
 open System.Collections.Concurrent
 open AsyncSeqExtensions
-open SourceSink
 open Core
 open Routing
 open Slice
 open Image
 open type ImageFunctions.OutputRegionMode // weird notation for exposing the discriminated union
+
+
+module internal InternalHelpers =
+    // https://plotly.net/#For-applications-and-libraries
+    let plotListAsync (plt: (float list)->(float list)->unit) (vectorSeq: AsyncSeq<(float*float) list>) =
+        vectorSeq
+        |> AsyncSeq.iterAsync (fun points ->
+            async {
+                let x,y = points |> List.unzip
+                plt x y
+            })
+
+    let showSliceAsync (plt: (Slice<'T>->unit)) (slices : AsyncSeq<Slice<'T>>) =
+        slices
+        |> AsyncSeq.iterAsync (fun slice ->
+            async {
+                let width = slice |> GetWidth |> int
+                let height = slice |>GetHeight |> int
+                plt slice
+            })
+
+    let printAsync (slices: AsyncSeq<'T>) =
+        slices
+        |> AsyncSeq.iterAsync (fun data ->
+            async {
+                printfn "[Print] %A" data
+            })
+
+    let writeSlicesAsync (outputDir: string) (suffix: string) (slices: AsyncSeq<Slice<'T>>) =
+        if not (Directory.Exists(outputDir)) then
+            Directory.CreateDirectory(outputDir) |> ignore
+        slices
+        |> AsyncSeq.iterAsync (fun slice ->
+            async {
+                let fileName = Path.Combine(outputDir, sprintf "slice_%03d%s" slice.Index suffix)
+                slice.Image.toFile(fileName)
+                printfn "[Write] Saved slice %d to %s" slice.Index fileName
+            })
+
+open InternalHelpers
+
+/// Source parts
+let writeOp (path: string) (suffix: string) : Stage<Slice<'a>, unit, 'Shape> =
+    let writeReducer stream = async { do! writeSlicesAsync path suffix stream }
+    let shapeUpdate = fun (s:'Shape) -> s
+    {
+        Name = $"write:{path}"
+        Pipe = Pipe.consumeWith "write" Streaming writeReducer
+        Transition = Stage.transition Streaming Constant
+        ShapeUpdate = shapeUpdate
+    }
+
+let showOp (plt: Slice.Slice<'T> -> unit) : Stage<Slice<'T>, unit, 'Shape> =
+    let showReducer stream = async {do! showSliceAsync plt stream }
+    let shapeUpdate = fun (s:'Shape) -> s
+    {
+        Name = "show"
+        Pipe = Pipe.consumeWith "show" Streaming showReducer
+        Transition = Stage.transition Streaming Constant
+        ShapeUpdate = shapeUpdate
+    }
+
+let plotOp (plt: float list -> float list -> unit) : Stage<(float * float) list, unit, 'Shape> =
+    let plotReducer stream = async { do! plotListAsync plt stream }
+    let shapeUpdate = fun (s:'Shape) -> s
+    {
+        Name = "plot"
+        Pipe = Pipe.consumeWith "plot" Streaming plotReducer
+        Transition = Stage.transition Streaming Streaming
+        ShapeUpdate = shapeUpdate
+    }
+
+let printOp () : Stage<'T, unit,'Shape> =
+    let printReducer stream = async { do! printAsync stream }
+    let shapeUpdate = fun (s:'Shape) -> s
+    {
+        Name = "print"
+        Pipe = Pipe.consumeWith "print" Streaming printReducer
+        Transition = Stage.transition Streaming Streaming
+        ShapeUpdate = shapeUpdate
+    }
+
+let liftImageSource (name: string) (img: Slice<'T>) : Pipe<unit, Slice<'T>> =
+    {
+        Name = name
+        Profile = Streaming
+        Apply = fun _ -> img |> unstack |> AsyncSeq.ofSeq
+    }
+
+let axisSourceOp 
+    (axis: int) 
+    (size: int list)
+    (pl : Pipeline<unit, unit,'Shape>) 
+    : Pipeline<unit, Slice<uint>,'Shape> =
+    let img = Slice.generateCoordinateAxis axis size
+    let sz = GetSize img
+    let shapeUpdate = fun (s:'Shape) -> s
+    let op : Stage<unit, Slice<uint>,'Shape> =
+        {
+            Name = "axisSource"
+            Pipe = img |> liftImageSource "axisSource"
+            Transition = Stage.transition Constant Streaming
+            ShapeUpdate = shapeUpdate
+        }
+    let width, height, depth = sz[0], sz[1], sz[2]
+    let context = MemFlow.create (fun _ -> width*height |> uint64) (fun _ -> depth)
+    {
+        flow = MemFlow.returnM op
+        mem = pl.mem
+        shape = Some [width;height]
+        context = context
+    }
+
+let finiteDiffFilter3DOp 
+    (direction: uint) 
+    (order: uint)
+    (pl : Pipeline<unit, unit,'Shape>) 
+    : Pipeline<unit, Slice<float>,'Shape> =
+    let img = finiteDiffFilter3D direction order
+    let sz = GetSize img
+    let shapeUpdate = fun (s:'Shape) -> s
+    let op : Stage<unit, Slice<float>, 'Shape> =
+        {
+            Name = "gaussSource"
+            Pipe = img |> liftImageSource "gaussSource"
+            Transition = Stage.transition Constant Streaming
+            ShapeUpdate = shapeUpdate
+        }
+    let width, height, depth = sz[0], sz[1], sz[2]
+    let context = MemFlow.create (fun _ -> width*height |> uint64) (fun _ -> depth)
+    {
+        flow = MemFlow.returnM op
+        mem = pl.mem
+        shape = Some [width;height]
+        context = context
+    }
+
+(*
+/// Yet to be moved into Pipeline-Operator version
+let readSliceN<'T when 'T: equality> (idx: uint) (inputDir: string) (suffix: string) transform : Pipe<unit, Slice<'T>> =
+    printfn "[readSliceN]"
+    let fileNames = Directory.GetFiles(inputDir, "*"+suffix) |> Array.sort
+    if fileNames.Length <= (int idx) then
+        failwith "[readSliceN] Index out of bounds"
+    else
+    let fileName = fileNames[int idx]
+    {
+        Name = $"[readSliceN {fileName}]"
+        Profile = Streaming
+        Apply = fun _ ->
+            AsyncSeq.init 1 (fun i -> 
+                printfn "[readSliceN] Reading slice %d to %s" (uint idx) fileName
+                Slice.readSlice<'T> (uint idx) fileName)
+    } 
+    |> transform
+
+let ignore<'T> : Pipe<'T, unit> = // Is this needed?
+    printfn "[ignore]"
+    Pipe.consumeWith "ignore" Streaming (fun stream ->
+        async {
+            do! stream |> AsyncSeq.iterAsync (fun _ -> async.Return())
+        })
+*)
+
 
 // --- Processing Utilities ---
 (* // Not used. Needed?
@@ -124,19 +287,8 @@ let internal liftFullParam2Op (name: string) (f: 'P -> 'Q -> Slice<'T> -> Slice<
         ShapeUpdate = id
     }
 
-let internal liftMapOp<'T, 'U when 'T: equality and 'T: comparison> (name: string) (f: Slice<'T> -> 'U) : Stage<Slice<'T>, 'U, 'Shape> =
-    {
-        Name = name
-        Transition = Stage.transition Streaming Streaming
-        Pipe = {
-            Name = name
-            Profile = Streaming
-            Apply = fun input -> input |> AsyncSeq.map f }
-        ShapeUpdate = id
-    }
-
 /////////////////////////////////////////////////////////////////////////////////////
-let inline castOp<'S,'T when 'S: equality and 'T: equality> name f : Stage<Slice<'S>,Slice<'T>, 'Shape> =
+let inline castOp<'S,'T,'Shape when 'S: equality and 'T: equality> name f : Stage<Slice<'S>,Slice<'T>, 'Shape> =
     { 
         Name = name
         Transition = Stage.transition Streaming Streaming
@@ -267,39 +419,8 @@ let inline scalarDivSliceOp<^T when ^T: equality and ^T: (static member op_Expli
 let inline sliceDivScalarOp<^T when ^T: equality and ^T: (static member op_Explicit: ^T -> float)> (name:string) (i: ^T) = 
     Stage.liftUnary name (fun (s:Slice<'T>)->Slice.sliceDivScalar<^T> s i)
 
-/// Simple functions
-let absFloat32Op   name = liftUnaryOpFloat32 name absSlice
-let absFloatOp     name = liftUnaryOpFloat name absSlice
-let absIntOp       name = liftUnaryOpInt name absSlice
-let acosFloat32Op  name = liftUnaryOpFloat32 name acosSlice
-let acosFloatOp    name = liftUnaryOpFloat name acosSlice
-let asinFloat32Op  name = liftUnaryOpFloat32 name asinSlice
-let asinFloatOp    name = liftUnaryOpFloat name asinSlice
-let atanFloat32Op  name = liftUnaryOpFloat32 name atanSlice
-let atanFloatOp    name = liftUnaryOpFloat name atanSlice
-let cosFloat32Op   name = liftUnaryOpFloat32 name cosSlice
-let cosFloatOp     name = liftUnaryOpFloat name cosSlice
-let expFloat32Op   name = liftUnaryOpFloat32 name expSlice
-let expFloatOp     name = liftUnaryOpFloat name expSlice
-let log10Float32Op name = liftUnaryOpFloat32 name log10Slice
-let log10FloatOp   name = liftUnaryOpFloat name log10Slice
-let logFloat32Op   name = liftUnaryOpFloat32 name logSlice
-let logFloatOp     name = liftUnaryOpFloat name logSlice
-let roundFloat32Op name = liftUnaryOpFloat32 name roundSlice
-let roundFloatOp   name = liftUnaryOpFloat name roundSlice
-let sinFloat32Op   name = liftUnaryOpFloat32 name sinSlice
-let sinFloatOp     name = liftUnaryOpFloat name sinSlice
-let sqrtFloat32Op  name = liftUnaryOpFloat32 name sqrtSlice
-let sqrtFloatOp    name = liftUnaryOpFloat name sqrtSlice
-let sqrtIntOp      name = liftUnaryOpInt name sqrtSlice
-let squareFloat32Op name = liftUnaryOpFloat32 name squareSlice
-let squareFloatOp  name = liftUnaryOpFloat name squareSlice
-let squareIntOp    name = liftUnaryOpInt name squareSlice
-let tanFloat32Op   name = liftUnaryOpFloat32 name tanSlice
-let tanFloatOp     name = liftUnaryOpFloat name tanSlice
-
 /// Histogram related functions
-let histogramOp<'T when 'T: comparison> name : Stage<Slice<'T>, Map<'T, uint64>, 'Shape>  =
+let histogramOp<'T,'Shape when 'T: comparison> name : Stage<Slice<'T>, Map<'T, uint64>, 'Shape>  =
     let histogramReducer (slices: AsyncSeq<Slice<'T>>) =
         slices
         |> AsyncSeq.map Slice.histogram
@@ -311,21 +432,21 @@ let histogramOp<'T when 'T: comparison> name : Stage<Slice<'T>, Map<'T, uint64>,
         ShapeUpdate = id
     }
 
-let map2pairsOp<'T, 'S when 'T: comparison> name : Stage<Map<'T, 'S>, ('T * 'S) list, 'Shape> =
+let map2pairsOp<'T,'S,'Shape when 'T: comparison> name : Stage<Map<'T, 'S>, ('T * 'S) list, 'Shape> =
     {
         Name = name
         Transition = Stage.transition Streaming Streaming
         Pipe = Pipe.map name Streaming Slice.map2pairs
         ShapeUpdate = id
     }
-let inline pairs2floatsOp< ^T, ^S when ^T : (static member op_Explicit : ^T -> float) and  ^S : (static member op_Explicit : ^S -> float) > name : Stage<(^T * ^S) list, (float * float) list, 'Shape> =
+let inline pairs2floatsOp<^T,^S,^Shape when ^T : (static member op_Explicit : ^T -> float) and  ^S : (static member op_Explicit : ^S -> float) > name : Stage<(^T * ^S) list, (float * float) list, 'Shape> =
     {
         Name = name
         Transition = Stage.transition Streaming Streaming
         Pipe = Pipe.map name Streaming Slice.pairs2floats
         ShapeUpdate = id
     }
-let inline pairs2intsOp< ^T, ^S when ^T : (static member op_Explicit : ^T -> int) and  ^S : (static member op_Explicit : ^S -> int) > name : Stage<(^T * ^S) list, (int * int) list, 'Shape> =
+let inline pairs2intsOp<^T,^S,^Shape when ^T : (static member op_Explicit : ^T -> int) and  ^S : (static member op_Explicit : ^S -> int) > name : Stage<(^T * ^S) list, (int * int) list, 'Shape> =
     {
         Name = name
         Transition = Stage.transition Streaming Streaming
@@ -334,7 +455,7 @@ let inline pairs2intsOp< ^T, ^S when ^T : (static member op_Explicit : ^T -> int
     }
 
 type ImageStats = Slice.ImageStats
-let computeStatsOp<'T when 'T : equality> name : Stage<Slice<'T>, ImageStats, 'Shape> =
+let computeStatsOp<'T,'Shape when 'T : equality> name : Stage<Slice<'T>, ImageStats, 'Shape> =
     let computeStatsReducer (slices: AsyncSeq<Slice<'T>>) =
         let zeroStats: ImageStats = { 
             NumPixels = 0u
@@ -364,7 +485,7 @@ let valid = ImageFunctions.Valid
 let same = ImageFunctions.Same
 let zeroMaker<'S when 'S: equality> (ex:Slice<'S>) : Slice<'S> = Slice.create<'S> (GetWidth ex) (GetHeight ex) 1u 0u
 
-let discreteGaussianOp (name:string) (sigma:float) (outputRegionMode: OutputRegionMode option) (boundaryCondition: ImageFunctions.BoundaryCondition option) (winSz: uint option): Stage<Slice<float>, Slice<float>, 'Shape> =
+let discreteGaussianOp<'Shape> (name:string) (sigma:float) (outputRegionMode: OutputRegionMode option) (boundaryCondition: ImageFunctions.BoundaryCondition option) (winSz: uint option): Stage<Slice<float>, Slice<float>, 'Shape> =
     let roundFloatToUint v = uint (v+0.5)
 
     let ksz = 2.0 * sigma + 1.0 |> roundFloatToUint
@@ -376,7 +497,7 @@ let discreteGaussianOp (name:string) (sigma:float) (outputRegionMode: OutputRegi
             | _ -> ksz/2u //floor
     liftWindowedOp name win pad zeroMaker<float> stride (stride - 1u) stride (fun slices -> Slice.discreteGaussian 3u sigma (ksz |> Some) outputRegionMode boundaryCondition slices)
 
-let convGaussOp name sigma = discreteGaussianOp name sigma None None None
+let convGaussOp<'Shape> name sigma = discreteGaussianOp<'Shape> name sigma None None None
 
 // stride calculation example
 // ker = 3, win = 7
@@ -428,8 +549,8 @@ let binaryErodeOp     name radius winSz = makeMorphOp name radius winSz Slice.bi
 let binaryDilateOp    name radius winSz = makeMorphOp name radius winSz Slice.binaryDilate
 let binaryOpeningOp   name radius winSz = makeMorphOp name radius winSz Slice.binaryOpening
 let binaryClosingOp   name radius winSz = makeMorphOp name radius winSz Slice.binaryClosing
-let binaryFillHolesOp name = liftFullOp name Slice.binaryFillHoles
-let connectedComponentsOp (name: string) : Stage<Slice<uint8>, Slice<uint64>, 'Shape> =
+let binaryFillHolesOp<'Shape> name = liftFullOp name Slice.binaryFillHoles
+let connectedComponentsOp<'Shape> (name: string) : Stage<Slice<uint8>, Slice<uint64>, 'Shape> =
     { // fsharp gets confused about the change of units, so we make the record by hand
         Name = name
         Transition = Stage.transition Full Streaming
@@ -455,7 +576,7 @@ let piecewiseConnectedComponentsOp (name:string) (windowSize: uint option): Stag
 let otsuThresholdOp name = liftFullOp name (Slice.otsuThreshold: Slice<'T> -> Slice<'T>) 
 let otsuMultiThresholdOp name n = liftFullParamOp name Slice.otsuMultiThreshold n
 let momentsThresholdOp name = liftFullOp name Slice.momentsThreshold
-let signedDistanceMapOp name : Stage<Slice<uint8>, Slice<float>, 'Shape> =
+let signedDistanceMapOp<'Shape> name : Stage<Slice<uint8>, Slice<float>, 'Shape> =
     {
         Name = name
         Transition = Stage.transition Full Streaming
@@ -489,3 +610,4 @@ let getStackInfo  = Slice.getStackInfo
 let getStackSize = Slice.getStackSize
 let getStackWidth = Slice.getStackWidth
 let getStackHeight = Slice.getStackHeight
+

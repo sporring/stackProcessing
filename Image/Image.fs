@@ -290,6 +290,7 @@ type Image<'T when 'T : equality>(sz: uint list, ?numberComp: uint) =
     member this.toSimpleITK () : itk.simple.Image =
         img
 
+    member this.castTo<'S when 'S: equality> () : Image<'S> = Image<'S>.ofSimpleITK img
     member this.toUInt8 ()   : Image<uint8>   = Image<uint8>.ofSimpleITK img
     member this.toInt8 ()    : Image<int8>    = Image<int8>.ofSimpleITK img
     member this.toUInt16 ()  : Image<uint16>  = Image<uint16>.ofSimpleITK img

@@ -2,7 +2,6 @@ module Core
 
 open FSharp.Control
 open AsyncSeqExtensions
-open Slice
 
 ////////////////////////////////////////////////////////////
 /// The memory usage strategies during image processing.
@@ -46,8 +45,6 @@ type Pipe<'S,'T> = {
     Apply: AsyncSeq<'S> -> AsyncSeq<'T>
     Profile: MemoryProfile
 }
-type ShapeProvider<'S,'Shape> = 'S -> 'Shape option
-type MemoryEstimator<'Shape> = 'Shape -> uint64
 
 module Pipe =
     let create<'T> (name: string) (depth: uint) (mapper: uint -> 'T) (profile: MemoryProfile) : Pipe<unit,'T> =
@@ -334,42 +331,43 @@ module Stage =
 
 ////////////////////////////////////////////////////////////
 // MemFlow state monad
-type ShapeContext<'S> = {
+type ShapeContext<'S> = { // Do these need to be functions or just a pair of numbers? Shape update, updates shape but could perhaps also update these?
     memPerElement : 'S -> uint64
     depth         : 'S -> uint
 }
 
 type MemFlow<'S,'T,'Shape> = // memory before, shape before, shapeContext before, Stage, memory after, shape after. 
-        uint64 -> 'Shape option -> ShapeContext<'Shape> -> Stage<'S,'T,'Shape> * uint64 * 'Shape option
+        uint64 -> 'Shape option -> ShapeContext<'Shape> -> Stage<'S,'T,'Shape> * uint64 * ('Shape option)
 
 module MemFlow =
     let create (memPerElement : 'S -> uint64) (depth : 'S -> uint) : ShapeContext<'S> =
         {memPerElement = memPerElement; depth = depth}
 
     let returnM (op : Stage<'S,'T,'Shape>) : MemFlow<'S,'T,'Shape> =
-        fun bytes shapeOpt shapeContext ->
-            match shapeOpt with
-            | None      -> op, bytes, shapeOpt       // can’t check memory yet
-            | Some sh   ->
-                let memPerElement = shapeContext.memPerElement sh
-                let depth = shapeContext.depth sh
-                let p'     = Pipe.shrinkProfile bytes memPerElement depth op.Pipe
-                let need   = Pipe.memNeed memPerElement depth p' // sh -> memPerElement depth
-                { op with Pipe = p' }, bytes - need, shapeOpt
+        fun bytes shape shapeContext ->
+            match shape with
+                None ->
+                    op, bytes, shape
+                | Some sh ->
+                    let memPerElement = shapeContext.memPerElement sh
+                    let depth = shapeContext.depth sh // Is this the right way, see ShapeContext!!!
+                    let p'     = Pipe.shrinkProfile bytes memPerElement depth op.Pipe
+                    let need   = Pipe.memNeed memPerElement depth p' // sh -> memPerElement depth
+                    { op with Pipe = p' }, bytes - need, shape
 
     let bindM (m: MemFlow<'A,'B,'Shape>) (k: Stage<'A,'B,'Shape> -> MemFlow<'B,'C,'Shape>) : MemFlow<'A,'C,'Shape> =
-        fun bytes shapeOpt shapeContext ->
-            let op1, bytes', shapeOpt' = m bytes shapeOpt shapeContext
+        fun bytes shape shapeContext ->
+            let op1, bytes', shape' = m bytes shape shapeContext
             let m2 = k op1
-            let op2, bytes'', shapeOpt'' = m2 bytes' shapeOpt' shapeContext
+            let op2, bytes'', shape'' = m2 bytes' shape' shapeContext
             (* 2025/07/25 Is this step necessary? The processing is taking care of the interfacing...
             // validate memory transition, if shape is known
-            shapeOpt
+            shape
             |> Option.iter (fun shape ->
                 if op1.Transition.To <> op2.Transition.From || not (op2.Transition.Check shape) then 
                     failwith $"Invalid memory transition: {op1} → {op2}")
             *)
-            Stage.compose op1 op2, bytes'', shapeOpt''
+            Stage.compose op1 op2, bytes'', shape''
 
 ////////////////////////////////////////////////////////////
 // Pipeline flow controler
@@ -383,16 +381,16 @@ module Pipeline =
     let create<'T,'Shape when 'T: equality> (flow: MemFlow<unit,'T,'Shape>) (mem : uint64) (shape: 'Shape option) (context : ShapeContext<'Shape>): Pipeline<unit, 'T,'Shape> =
         { flow = flow; mem = mem; shape = shape; context = context}
 
-    let stage2Pipeline (stage: Stage<'S, 'T, 'Shape>) (mem: uint64) (shape: 'Shape option) (context: ShapeContext<'Shape>) : Pipeline<'S, 'T, 'Shape> =
+    let stage2Pipeline (stage: Stage<'S, 'T, 'Shape>) (mem: uint64) (shape: 'Shape) (context: ShapeContext<'Shape>) : Pipeline<'S, 'T, 'Shape> =
         {
             flow = MemFlow.returnM stage
             mem = mem
-            shape = shape
+            shape = Some shape
             context = context
         }
 
     // source: only memory budget, shape = None
-    let source (availableMemory: uint64) (context: ShapeContext<'Shape>) : Pipeline<unit, unit, 'Shape> =
+    let source<'Shape> (context: ShapeContext<'Shape>) (availableMemory: uint64) : Pipeline<unit, unit, 'Shape> =
         {
             flow = fun _ _ _ -> failwith "Pipeline not started yet"
             mem = availableMemory
@@ -441,3 +439,184 @@ module Pipeline =
     let asStage (pl: Pipeline<'In, 'Out, 'Shape>) : Stage<'In, 'Out, 'Shape> =
         let stage, _, _ = pl.flow pl.mem pl.shape pl.context
         stage
+
+/// Represents a pipeline that has been shared (split into synchronized branches)
+type SharedPipeline<'T, 'U , 'V, 'Shape> = {
+    flow: MemFlow<'T,'U,'Shape> 
+    branches: Stage<'T,'U,'Shape> * Stage<'T,'V,'Shape>
+    mem: uint64
+    shape: 'Shape option
+    context: ShapeContext<'Shape>
+}
+
+module SharedPipeline =
+    let create<'T,'U,'V,'Shape when 'T: equality> (flow: MemFlow<'T,'U,'Shape>) (branches: Stage<'T,'U,'Shape> * Stage<'T,'V,'Shape>) (mem: uint64) (shape: 'Shape option) (context: ShapeContext<'Shape>) : SharedPipeline<'T, 'U , 'V, 'Shape> =
+        { flow = flow; branches = branches; mem = mem; shape = shape; context = context }
+
+module Routing =
+    (*
+    /// zipWith two Pipes<'In, _> into one by zipping their outputs:
+    ///   • applies both processors to the same input stream
+    ///   • pairs each output and combines using the given function
+    ///   • assumes both sides produce values in lockstep
+    let internal zipWithOp (f: 'A -> 'B -> 'C)
+                (op1: Stage<'In, 'A, 'Shape>)
+                (op2: Stage<'In, 'B, 'Shape>) : Stage<'In, 'C, 'Shape> =
+        let name = $"zipWith({op1.Name}, {op2.Name})"
+        let profile = MemoryProfile.combine op1.Pipe.Profile op2.Pipe.Profile
+        let pipe =
+            {
+                Name = name
+                Profile = profile
+                Apply = fun input ->
+                    let a = op1.Pipe.Apply input
+                    let b = op2.Pipe.Apply input
+                    match op1.Pipe.Profile, op2.Pipe.Profile with
+                    | Full, Streaming | Streaming, Full ->
+                        failwithf "[zipWith] Mixing Full and Streaming not supported: %s, %s"
+                                (op1.Pipe.Profile.ToString()) (op2.Pipe.Profile.ToString())
+                    | Constant, _ ->
+                        printfn "[Runtime analysis: zipWith sequential]"
+                        asyncSeq {
+                            let! constant = 
+                                a 
+                                |> AsyncSeq.tryLast 
+                                |> Async.map (Option.defaultWith (fun () -> failwith $"No constant result from {op1.Name}"))
+                            yield! b |> AsyncSeq.map (fun b -> f constant b)
+                        }
+                    | _, Constant ->
+                        printfn "[Runtime analysis: zipWith sequential]"
+                        asyncSeq {
+                            let! constant = 
+                                b 
+                                |> AsyncSeq.tryLast 
+                                |> Async.map (Option.defaultWith (fun () -> failwith $"No constant result from {op2.Name}"))
+                            yield! a |> AsyncSeq.map (fun a -> f a constant)
+                        }
+                    | _ ->
+                        printfn "[Runtime analysis: zipWith parallel]"
+                        AsyncSeq.zip a b |> AsyncSeq.map (fun (x, y) -> f x y)
+            }
+
+        {
+            Name = name
+            Transition = Stage.transition op1.Transition.From op2.Transition.To
+            Pipe = pipe
+        }
+
+    let zipWith (f: 'A -> 'B -> 'C) (p1: Pipeline<'In, 'A>) (p2: Pipeline<'In, 'B>) : Pipeline<'In, 'C> =
+        let flow (mem: uint64) (shape: SliceShape option) =
+            let op1, mem1, shape1 = p1.flow mem shape
+            let op2, mem2, shape2 = p2.flow mem1 shape1
+            let zipped = zipWithOp f op1 op2
+            zipped, mem2, shape2
+
+        {
+            flow = flow
+            mem = min p1.mem p2.mem
+            shape = p1.shape |> Option.orElse p2.shape
+        }
+    *)
+
+    let runToScalar name (reducer: AsyncSeq<'T> -> Async<'R>) (pl: Pipeline<'In, 'T,'Shape>) : 'R =
+        let op, _, _ = pl.flow pl.mem pl.shape pl.context
+        let pipe = op.Pipe
+        let input = AsyncSeq.singleton Unchecked.defaultof<'In>
+        pipe.Apply input |> reducer |> Async.RunSynchronously
+
+    let drainSingle name pl =
+        runToScalar name AsyncSeq.toListAsync pl
+        |> function
+            | [x] -> x
+            | []  -> failwith $"[drainSingle] No result from {name}"
+            | _   -> failwith $"[drainSingle] Multiple results from {name}, expected one."
+
+    let drainList name pl =
+        runToScalar name AsyncSeq.toListAsync pl
+
+    let drainLast name pl =
+        runToScalar name AsyncSeq.tryLast pl
+        |> function
+            | Some x -> x
+            | None -> failwith $"[drainLast] No result from {name}"
+
+    /// parallel fanout with synchronization
+    /// Synchronously split the shared stream into two parallel pipelines
+    let (>=>>) 
+        (pl: Pipeline<'In, 'T, 'Shape>) 
+        (op1: Stage<'T, 'U, 'Shape>, op2: Stage<'T, 'V, 'Shape>) 
+        : SharedPipeline<'In, 'U, 'V, 'Shape> =
+
+        match pl.flow pl.mem pl.shape pl.context with
+        | baseOp, mem', shape' when baseOp.Transition.To = Streaming ->
+
+            let opBase, mem', shape' = pl.flow pl.mem pl.shape pl.context
+            let pipe1, pipe2 = Pipe.tee opBase.Pipe
+            let op1' = Stage.compose { opBase with Pipe = pipe1 } op1
+            let op2' = Stage.compose { opBase with Pipe = pipe2 } op2
+            SharedPipeline.create<'T,'U,'V,'Shape> pl.flow (op1', op2') pl.mem pl.shape pl.context
+
+        | baseOp, mem', shape' when baseOp.Transition.To = Constant ->
+
+            let cached = lazy (
+                let result =
+                    AsyncSeq.singleton Unchecked.defaultof<'In>
+                    |> baseOp.Pipe.Apply
+                    |> AsyncSeq.tryLast
+                    |> Async.RunSynchronously
+                result |> Option.defaultWith (fun () -> failwithf "No constant result from %s" baseOp.Name)
+            )
+
+            let applyOp (op: Stage<'T, 'X, 'Shape>) (value: 'T) : 'X =
+                AsyncSeq.singleton value
+                |> op.Pipe.Apply
+                |> AsyncSeq.tryLast
+                |> Async.RunSynchronously
+                |> Option.defaultWith (fun () -> failwithf "applyOp: No output from %s" op.Name)
+
+            let makeConstOp (op: Stage<'T, 'X, 'Shape>) label : Stage<'In, 'X, 'Shape> =
+                {
+                    Name = $"shared-const:{label}"
+                    Transition = Stage.transition Constant Constant
+                    Pipe = Pipe.lift label Constant (fun _ -> async { return applyOp op (cached.Value) })
+                    ShapeUpdate = fun s -> s // I don't know what this should be!!!!
+                }
+
+            let op1' = makeConstOp op1 "left"
+            let op2' = makeConstOp op2 "right"
+            SharedPipeline.create pl.flow (op1', op2') pl.mem pl.shape pl.context
+
+        | _ -> failwith "Unsupported transition kind in >=>>"
+
+    let (>>=>)
+        (shared: SharedPipeline<'In, 'U, 'V, 'Shape>)
+        (combine: Stage<'In, 'U, 'Shape> * Stage<'In, 'V, 'Shape> -> Stage<'In, 'W, 'Shape>)
+        : Pipeline<'In, 'W, 'Shape> =
+
+        let stage = combine shared.branches
+        let flow = MemFlow.returnM stage
+        let mem = shared.mem
+        let shape = shared.shape
+        let context = shared.context
+        Pipeline.create flow mem shape context
+
+    let combineIgnore : Stage<'In, 'U, 'Shape> * Stage<'In, 'V, 'Shape> -> Stage<'In, unit, 'Shape> =
+        fun (op1, op2) ->
+            {
+                Name = $"combineIgnore({op1.Name}, {op2.Name})"
+                Transition = Stage.transition op1.Transition.From op2.Transition.To
+                ShapeUpdate = id
+                Pipe =
+                    {
+                        Name = "combineIgnore"
+                        Profile = MemoryProfile.combine op1.Pipe.Profile op2.Pipe.Profile
+                        Apply = fun input ->
+                            let out1 = op1.Pipe.Apply input |> AsyncSeq.iterAsync (fun _ -> async.Return())
+                            let out2 = op2.Pipe.Apply input |> AsyncSeq.iterAsync (fun _ -> async.Return())
+                            asyncSeq {
+                                do! Async.Parallel [ out1; out2 ] |> Async.Ignore
+                                yield ()
+                            }
+                    }
+            }
+

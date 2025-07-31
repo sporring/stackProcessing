@@ -44,6 +44,8 @@ let toSeqSeq (s: Slice<'T>): seq<seq<float>> =
             s.Image[x,y] |> box |> toFloat))
 let updateId (id:uint) (s:Slice<'S>) = {s with Index = id}
 
+let cast<'S,'T when 'S: equality and 'T: equality> (s:Slice<'S>) : Slice<'T> = { Index = s.Index; Image = s.Image.castTo<'T>() }
+
 let castUInt8ToInt8     (s: Slice<uint8>)   : Slice<int8>    = { Index = s.Index; Image = s.Image.toInt8() }
 let castUInt8ToUInt16   (s: Slice<uint8>)   : Slice<uint16>  = { Index = s.Index; Image = s.Image.toUInt16() }
 let castUInt8ToInt16    (s: Slice<uint8>)   : Slice<int16>   = { Index = s.Index; Image = s.Image.toInt16() }

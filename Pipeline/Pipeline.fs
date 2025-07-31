@@ -2,21 +2,26 @@ module Pipeline
 
 open Core // Core processing model
 open Routing // Combinators and routing logic
-open SourceSink // Sources and sinks (file IO, streaming)
 open Processing // Common image operators
 open Slice // Image and slice types
+open System.IO
 
 type Pipe<'S,'T> = Core.Pipe<'S,'T>
-type Operation<'S,'T> = Core.Operation<'S,'T>
+type Stage<'S,'T,'Shape> = Core.Stage<'S,'T,'Shape>
 type MemoryProfile = Core.MemoryProfile
 type MemoryTransition = Core.MemoryTransition
 type Slice<'S when 'S: equality> = Slice.Slice<'S>
 
-let idOp = Operation.id
-let (-->) = Operation.(-->)
-let source = Pipeline.source
-let sink (pl: Pipeline<unit,unit>) : unit = Pipeline.sink pl
-let sinkList (plLst: Pipeline<unit,unit> list) : unit = Pipeline.sinkList plLst
+type Shape = Zero | Slice of uint*uint
+let shapeContext = {
+    memPerElement = fun sh -> match sh with Zero -> 0UL | Slice (width,height) -> (uint64 width)*(uint64 height); 
+    depth = fun _ -> 0u}
+
+let idOp = Stage.id
+let (-->) = Stage.(-->)
+let source = Pipeline.source<Shape> shapeContext
+let sink (pl: Pipeline<unit,unit,'Shape>) : unit = Pipeline.sink pl
+let sinkList (plLst: Pipeline<unit,unit,'Shape> list) : unit = Pipeline.sinkList plLst
 let (>=>) = Pipeline.(>=>)
 let (>=>>) = Routing.(>=>>)
 let (>>=>) = Routing.(>>=>)
@@ -25,19 +30,17 @@ let drainSingle pl = Routing.drainSingle "drainSingle" pl
 let drainList pl = Routing.drainList "drainList" pl
 let drainLast pl = Routing.drainLast "drainLast" pl
 let tap = Stage.tap
-let liftUnary (f: Slice<'T> -> Slice<'T>) = Routing.liftUnaryOp "liftUnary" f
+let liftUnary (f: Slice<'T> -> Slice<'T>) = Stage.liftUnary "liftUnary" f
 
-let create<'T when 'T: equality> = SourceSink.createOp<'T>
-let readAs<'T when 'T: equality> = SourceSink.readOp<'T>
-let readRandomAs<'T when 'T: equality> = SourceSink.readRandomOp<'T>
-let write = SourceSink.writeOp
-let print = SourceSink.printOp
-let plot = SourceSink.plotOp
-let show = SourceSink.showOp
+let write = Processing.writeOp
+let print = Processing.printOp
+let plot = Processing.plotOp
+let show = Processing.showOp
 
-let finiteDiffFilter3D = SourceSink.finiteDiffFilter3DOp
-let axisSource = SourceSink.axisSourceOp
+let finiteDiffFilter3D = Processing.finiteDiffFilter3DOp
+let axisSource = Processing.axisSourceOp
 
+(*
 let castUInt8ToInt8 = castUInt8ToInt8Op "castUInt8ToInt8"
 let castUInt8ToUInt16 = castUInt8ToUInt16Op "castUInt8ToUInt16"
 let castUInt8ToInt16 = castUInt8ToInt16Op "castUInt8ToInt16"
@@ -123,7 +126,10 @@ let castFloat32ToInt = castFloat32ToIntOp "castFloat32ToInt"
 let castFloat32ToUInt64 = castFloat32ToUInt64Op "castFloat32ToUInt64"
 let castFloat32ToInt64 = castFloat32ToInt64Op "castFloat32ToInt64"
 let castFloat32ToFloat = castFloat32ToFloatOp "castFloat32ToFloat"
-let castFloatToUInt8 = castFloatToUInt8Op "castFloatToUInt8"
+*)
+//let castFloatToUInt8 = castFloatToUInt8Op "castFloatToUInt8"
+let castFloatToUInt8 = castOp<float,uint8,Shape> "castFloatToUInt8" Slice.cast<float,uint8>
+(*
 let castFloatToInt8 = castFloatToInt8Op "castFloatToInt8"
 let castFloatToUInt16 = castFloatToUInt16Op "castFloatToUInt16"
 let castFloatToInt16 = castFloatToInt16Op "castFloatToInt16"
@@ -132,6 +138,7 @@ let castFloatToInt = castFloatToIntOp "castFloatToInt"
 let castFloatToUIn64 = castFloatToUIn64Op "castFloatToUIn64"
 let castFloatToInt64 = castFloatToInt64Op "castFloatToInt64"
 let castFloatToFloat32 = castFloatToFloat32Op "castFloatToFloat32"
+*)
 
 /// Basic arithmetic
 let add slice = addOp "add" slice
@@ -151,43 +158,43 @@ let inline scalarDivSlice<^T when ^T: equality and ^T: (static member op_Explici
 let inline sliceDivScalar<^T when ^T: equality and ^T: (static member op_Explicit: ^T -> float)> (i: ^T) = sliceDivScalarOp "sliceDivScalar" i
 
 /// Simple functions
-let absFloat      = absFloatOp "abs"
-let absFloat32    = absFloat32Op "abs"
-let absInt        = absIntOp "abs"
-let acosFloat     = acosFloatOp "acos"
-let acosFloat32   = acosFloat32Op "acos"
-let asinFloat     = asinFloatOp "asin"
-let asinFloat32   = asinFloat32Op "asin"
-let atanFloat     = atanFloatOp "atan"
-let atanFloat32   = atanFloat32Op "atan"
-let cosFloat      = cosFloatOp "cos"
-let cosFloat32    = cosFloat32Op "cos"
-let expFloat      = expFloatOp "exp"
-let expFloat32    = expFloat32Op "exp"
-let log10Float    = log10FloatOp "log10"
-let log10Float32  = log10Float32Op "log10"
-let logFloat      = logFloatOp "log"
-let logFloat32    = logFloat32Op "log"
-let roundFloat    = roundFloatOp "round"
-let roundFloat32  = roundFloat32Op "round"
-let sinFloat      = sinFloatOp "sin"
-let sinFloat32    = sinFloat32Op "sin"
-let sqrtFloat     = sqrtFloatOp "sqrt"
-let sqrtFloat32   = sqrtFloat32Op "sqrt"
-let sqrtInt       = sqrtIntOp "sqrt"
-let squareFloat   = squareFloatOp "square"
-let squareFloat32 = squareFloat32Op "square"
-let squareInt     = squareIntOp "square"
-let tanFloat      = tanFloatOp "tan"
-let tanFloat32    = tanFloat32Op "tan"
+let absFloat      : Stage<Slice<float>,Slice<float>, Shape> =      Stage.liftUnary "abs"    absSlice
+let absFloat32    : Stage<Slice<float32>,Slice<float32>, Shape> =  Stage.liftUnary "abs"    absSlice
+let absInt        : Stage<Slice<int>,Slice<int>, Shape> =          Stage.liftUnary "abs"    absSlice
+let acosFloat     : Stage<Slice<float>,Slice<float>, Shape> =      Stage.liftUnary "acos"   acosSlice
+let acosFloat32   : Stage<Slice<float32>,Slice<float32>, Shape> =  Stage.liftUnary "acos"   acosSlice
+let asinFloat     : Stage<Slice<float>,Slice<float>, Shape> =      Stage.liftUnary "asin"   asinSlice
+let asinFloat32   : Stage<Slice<float32>,Slice<float32>, Shape> =  Stage.liftUnary "asin"   asinSlice
+let atanFloat     : Stage<Slice<float>,Slice<float>, Shape> =      Stage.liftUnary "atan"   atanSlice
+let atanFloat32   : Stage<Slice<float32>,Slice<float32>, Shape> =  Stage.liftUnary "atan"   atanSlice
+let cosFloat      : Stage<Slice<float>,Slice<float>, Shape> =      Stage.liftUnary "cos"    cosSlice
+let cosFloat32    : Stage<Slice<float32>,Slice<float32>, Shape> =  Stage.liftUnary "cos"    cosSlice
+let sinFloat      : Stage<Slice<float>,Slice<float>, Shape> =      Stage.liftUnary "sin"    sinSlice
+let sinFloat32    : Stage<Slice<float32>,Slice<float32>, Shape> =  Stage.liftUnary "sin"    sinSlice
+let tanFloat      : Stage<Slice<float>,Slice<float>, Shape> =      Stage.liftUnary "tan"    tanSlice
+let tanFloat32    : Stage<Slice<float32>,Slice<float32>, Shape> =  Stage.liftUnary "tan"    tanSlice
+let expFloat      : Stage<Slice<float>,Slice<float>, Shape> =      Stage.liftUnary "exp"    expSlice
+let expFloat32    : Stage<Slice<float32>,Slice<float32>, Shape> =  Stage.liftUnary "exp"    expSlice
+let log10Float    : Stage<Slice<float>,Slice<float>, Shape> =      Stage.liftUnary "log10"  log10Slice
+let log10Float32  : Stage<Slice<float32>,Slice<float32>, Shape> =  Stage.liftUnary "log10"  log10Slice
+let logFloat      : Stage<Slice<float>,Slice<float>, Shape> =      Stage.liftUnary "log"    logSlice
+let logFloat32    : Stage<Slice<float32>,Slice<float32>, Shape> =  Stage.liftUnary "log"    logSlice
+let roundFloat    : Stage<Slice<float>,Slice<float>, Shape> =      Stage.liftUnary "round"  roundSlice
+let roundFloat32  : Stage<Slice<float32>,Slice<float32>, Shape> =  Stage.liftUnary "round"  roundSlice
+let sqrtFloat     : Stage<Slice<float>,Slice<float>, Shape> =      Stage.liftUnary "sqrt"   sqrtSlice
+let sqrtFloat32   : Stage<Slice<float32>,Slice<float32>, Shape> =  Stage.liftUnary "sqrt"   sqrtSlice
+let sqrtInt       : Stage<Slice<int>,Slice<int>, Shape> =          Stage.liftUnary "sqrt"   sqrtSlice
+let squareFloat   : Stage<Slice<float>,Slice<float>, Shape> =      Stage.liftUnary "square" squareSlice
+let squareFloat32 : Stage<Slice<float32>,Slice<float32>, Shape> =  Stage.liftUnary "square" squareSlice
+let squareInt     : Stage<Slice<int>,Slice<int>, Shape> =          Stage.liftUnary "square" squareSlice
 
-let histogram<'T when 'T: comparison> = histogramOp<'T> "histogram"
-let inline map2pairs< ^T, ^S when ^T: comparison and ^T : (static member op_Explicit : ^T -> float) and  ^S : (static member op_Explicit : ^S -> float) > = map2pairsOp<'T,'S> "map2pairs"
-let inline pairs2floats< ^T, ^S when ^T : (static member op_Explicit : ^T -> float) and  ^S : (static member op_Explicit : ^S -> float) > = pairs2floatsOp<'T,'S> "pairs2floats"
-let inline pairs2ints< ^T, ^S when ^T : (static member op_Explicit : ^T -> int) and  ^S : (static member op_Explicit : ^S -> int) > = pairs2intsOp<'T,'S> "pairs2ints"
+let histogram<'T when 'T: comparison> = histogramOp<'T,Shape> "histogram"
+let inline map2pairs< ^T, ^S when ^T: comparison and ^T : (static member op_Explicit : ^T -> float) and  ^S : (static member op_Explicit : ^S -> float) > = map2pairsOp<'T,'S,Shape> "map2pairs"
+let inline pairs2floats< ^T, ^S when ^T : (static member op_Explicit : ^T -> float) and  ^S : (static member op_Explicit : ^S -> float) > = pairs2floatsOp<'T,'S,Shape> "pairs2floats"
+let inline pairs2ints< ^T, ^S when ^T : (static member op_Explicit : ^T -> int) and  ^S : (static member op_Explicit : ^S -> int) > = pairs2intsOp<'T,'S,Shape> "pairs2ints"
 
 type ImageStats = ImageFunctions.ImageStats
-let computeStats<'T when 'T: equality and 'T: comparison> = computeStatsOp<'T> "computeStats"
+let computeStats<'T when 'T: equality and 'T: comparison> = computeStatsOp<'T,Shape> "computeStats"
 
 /// Convolution like operators
 // Chained type definitions do expose the originals
@@ -197,8 +204,9 @@ let zeroFluxNeumannPad = Processing.zeroFluxNeumannPad
 let valid = Processing.valid
 let same = Processing.same
 
-let discreteGaussian = discreteGaussianOp "discreteGaussian"
-let convGauss = convGaussOp "convGauss"
+let discreteGaussian = discreteGaussianOp<Shape> "discreteGaussian"
+let convGauss = convGaussOp<Shape> "convGauss"
+
 let convolve kernel outputRegionMode boundaryCondition winSz = convolveOp "convolve" kernel outputRegionMode boundaryCondition winSz
 let conv kernel = convOp "conv" kernel
 
@@ -209,15 +217,15 @@ let opening          r       = binaryOpeningOp "binaryOpening" r None
 let closing          r       = binaryClosingOp "binaryClosing" r None
 
 /// Full stack operators
-let binaryFillHoles = binaryFillHolesOp "fillHoles"
-let connectedComponents = connectedComponentsOp "components"
+let binaryFillHoles = binaryFillHolesOp<Shape> "fillHoles"
+let connectedComponents = connectedComponentsOp<Shape> "components"
 let piecewiseConnectedComponents wz = piecewiseConnectedComponentsOp "piecewiseConnectedComponents" wz
 
 // Annoying F# value restriction requires explicit types here, sigh
 let otsuThreshold<'T when 'T: equality> = (otsuThresholdOp "otsuThreshold")
 let otsuMultiThreshold n = otsuMultiThresholdOp "otsuMultiThreshold" n
 let momentsThreshold<'T when 'T: equality> = momentsThresholdOp "momentsThreshold"
-let signedDistanceMap = signedDistanceMapOp "signedDistanceMap"
+let signedDistanceMap = signedDistanceMapOp<Shape> "signedDistanceMap"
 let watershed a = watershedOp "watershed" a
 let threshold a b = thresholdOp "threshold" a b
 let addNormalNoise a b = addNormalNoiseOp "addNormalNoise" a b
@@ -233,3 +241,51 @@ let getStackInfo = Slice.getStackInfo
 let getStackSize = Slice.getStackSize
 let getStackWidth = Slice.getStackWidth
 
+let createAs<'T when 'T: equality> (width: uint) (height: uint) (depth: uint) (pl : Pipeline<unit, unit, Shape>) : Pipeline<unit, Slice<'T>,Shape> =
+    // width, heigth, depth should be replaced with shape and shapeUpdate, and mapper should be deferred to outside Core!!!
+    let mapper (i: uint) : Slice<'T> = 
+        let slice = Slice.create<'T> width height 1u i
+        printfn "[create] Created slice %A" i
+        slice
+    let transition = Stage.transition Constant Streaming
+    let shapeUpdate = id
+    let stage = Stage.create "create" depth mapper transition shapeUpdate 
+    let flow = MemFlow.returnM stage
+    let shape = Slice (width,height)
+    let context = MemFlow.create (fun _ -> width*height |> uint64) (fun _ -> depth)
+    Pipeline.create flow pl.mem (Some shape) context
+
+let readAs<'T when 'T: equality> (inputDir : string) (suffix : string) (pl : Pipeline<unit, unit, Shape>) : Pipeline<unit, Slice<'T>,Shape> =
+    // much should be deferred to outside Core!!!
+    let (width,height,depth) = Slice.getStackSize inputDir suffix
+    let filenames = Directory.GetFiles(inputDir, "*"+suffix) |> Array.sort
+    let depth = filenames.Length
+    let mapper (i: uint) : Slice<'T> = 
+        let fileName = filenames[int i]; 
+        let slice = Slice.readSlice<'T> (uint i) fileName
+        printfn "[readSlices] Reading slice %A from %s" i fileName
+        slice
+    let transition = Stage.transition Constant Streaming
+    let shapeUpdate = id
+    let stage = Stage.create $"read: {inputDir}" (uint depth) mapper transition shapeUpdate 
+    let flow = MemFlow.returnM stage
+    let shape = Slice (width,height)
+    let context = MemFlow.create (fun _ -> width*height |> uint64) (fun _ -> uint depth)
+    Pipeline.create flow pl.mem (Some shape) context
+
+let readRandomAs<'T when 'T: equality> (count: uint) (inputDir : string) (suffix : string) (pl : Pipeline<unit, unit, Shape>) : Pipeline<unit, Slice<'T>,Shape> =
+    let (width,height,depth) = Slice.getStackSize inputDir suffix
+    let filenames = Directory.GetFiles(inputDir, "*"+suffix) |> Array.randomChoices (int count)
+    let depth = filenames.Length
+    let mapper (i: uint) : Slice<'T> = 
+        let fileName = filenames[int i]; 
+        let slice = Slice.readSlice<'T> (uint i) fileName
+        printfn "[readRandomSlices] Reading slice %A from %s" i fileName
+        slice
+    let transition = Stage.transition Constant Streaming
+    let shapeUpdate = id
+    let stage = Stage.create $"read: {inputDir}" (uint depth) mapper transition shapeUpdate 
+    let flow = MemFlow.returnM stage
+    let shape = Slice (width,height)
+    let context = MemFlow.create (fun _ -> width*height |> uint64) (fun _ -> uint depth)
+    Pipeline.create flow pl.mem (Some shape) context
