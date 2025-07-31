@@ -52,5 +52,10 @@
  Basic arithmetic
 </summary>
 </member>
+<member name="M:StackProcessing.cast``2">
+<summary>
+ Pixel type casting
+</summary>
+</member>
 </members>
 </doc>

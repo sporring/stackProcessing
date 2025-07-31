@@ -264,7 +264,7 @@ type Image<'T when 'T : equality>(sz: uint list, ?numberComp: uint) =
         let szStr = List.fold (fun acc elm -> acc + $"x{elm}") (sz |> List.head |> string) (List.tail sz)
         let comp = this.GetNumberOfComponentsPerPixel()
         let vecStr = if comp = 1u then "Scalar" else sprintf $"{comp}-Vector "
-        sprintf "%s %s" szStr vecStr
+        sprintf "%s %s<%s,%A>" szStr vecStr (typeof<'T>.Name) (img.GetPixelID())
     member this.Display = this.ToString() // related to [<StructuredFormatDisplay>]
 
     interface System.IEquatable<Image<'T>> with

@@ -19,16 +19,18 @@ let shapeContext = {
 let idOp = Stage.id
 let (-->) = Stage.(-->)
 let source = Pipeline.source<Shape> shapeContext
+let debug = Pipeline.debug<Shape> shapeContext
 let sink (pl: Pipeline<unit,unit,'Shape>) : unit = Pipeline.sink pl
 let sinkList (plLst: Pipeline<unit,unit,'Shape> list) : unit = Pipeline.sinkList plLst
 let (>=>) = Pipeline.(>=>)
 let (>=>>) = Routing.(>=>>)
 let (>>=>) = Routing.(>>=>)
-let combineIgnore = Routing.combineIgnore
+//let combineIgnore = Routing.combineIgnore
 let drainSingle pl = Routing.drainSingle "drainSingle" pl
 let drainList pl = Routing.drainList "drainList" pl
 let drainLast pl = Routing.drainLast "drainLast" pl
 let tap = Stage.tap
+let tapIt = Stage.tapIt
 let ignoreAll = Stage.ignore<_,Shape>
 let liftUnary (f: Slice<'T> -> Slice<'T>) = Stage.liftUnary "liftUnary" f
 
@@ -53,12 +55,13 @@ let finiteDiffFilter3D
             ShapeUpdate = shapeUpdate
         }
     let width, height, depth = sz[0], sz[1], sz[2]
-    let context = MemFlow.create (fun _ -> width*height |> uint64) (fun _ -> depth)
+    let context = ShapeContext.create (fun _ -> width*height |> uint64) (fun _ -> depth)
     {
         flow = MemFlow.returnM op
         mem = pl.mem
         shape = Slice (width,height) |> Some
         context = context
+        debug = pl.debug
     }
 
 let axisSource
@@ -77,114 +80,17 @@ let axisSource
             ShapeUpdate = shapeUpdate
         }
     let width, height, depth = sz[0], sz[1], sz[2]
-    let context = MemFlow.create (fun _ -> width*height |> uint64) (fun _ -> depth)
+    let context = ShapeContext.create (fun _ -> width*height |> uint64) (fun _ -> depth)
     {
         flow = MemFlow.returnM op
         mem = pl.mem
         shape = Slice (width,height) |> Some
         context = context
+        debug = pl.debug
     }
 
-(*
-let castUInt8ToInt8 = castUInt8ToInt8Op "castUInt8ToInt8"
-let castUInt8ToUInt16 = castUInt8ToUInt16Op "castUInt8ToUInt16"
-let castUInt8ToInt16 = castUInt8ToInt16Op "castUInt8ToInt16"
-let castUInt8ToUInt = castUInt8ToUIntOp "castUInt8ToUInt"
-let castUInt8ToInt = castUInt8ToIntOp "castUInt8ToInt"
-let castUInt8ToUInt64 = castUInt8ToUInt64Op "castUInt8ToUInt64"
-let castUInt8ToInt64 = castUInt8ToInt64Op "castUInt8ToInt64"
-let castUInt8ToFloat32 = castUInt8ToFloat32Op "castUInt8ToFloat32"
-let castUInt8ToFloat = castUInt8ToFloatOp "castUInt8ToFloat"
-let castInt8ToUInt8 = castInt8ToUInt8Op "castInt8ToUInt8"
-let castInt8ToUInt16 = castInt8ToUInt16Op "castInt8ToUInt16"
-let castInt8ToInt16 = castInt8ToInt16Op "castInt8ToInt16"
-let castInt8ToUInt = castInt8ToUIntOp "castInt8ToUInt"
-let castInt8ToInt = castInt8ToIntOp "castInt8ToInt"
-let castInt8ToUInt64 = castInt8ToUInt64Op "castInt8ToUInt64"
-let castInt8ToInt64 = castInt8ToInt64Op "castInt8ToInt64"
-let castInt8ToFloat32 = castInt8ToFloat32Op "castInt8ToFloat32"
-let castInt8ToFloat = castInt8ToFloatOp "castInt8ToFloat"
-
-let castUInt16ToUInt8 = castUInt16ToUInt8Op "castUInt16ToUInt8"
-let castUInt16ToInt8 = castUInt16ToInt8Op "castUInt16ToInt8"
-let castUInt16ToInt16 = castUInt16ToInt16Op "castUInt16ToInt16"
-let castUInt16ToUInt = castUInt16ToUIntOp "castUInt16ToUInt"
-let castUInt16ToInt = castUInt16ToIntOp "castUInt16ToInt"
-let castUInt16ToUInt64 = castUInt16ToUInt64Op "castUInt16ToUInt64"
-let castUInt16ToInt64 = castUInt16ToInt64Op "castUInt16ToInt64"
-let castUInt16ToFloat32 = castUInt16ToFloat32Op "castUInt16ToFloat32"
-let castUInt16ToFloat = castUInt16ToFloatOp "castUInt16ToFloat"
-let castInt16ToUInt8 = castInt16ToUInt8Op "castInt16ToUInt8"
-let castInt16ToInt8 = castInt16ToInt8Op "castInt16ToInt8"
-let castInt16ToUInt16 = castInt16ToUInt16Op "castInt16ToUInt16"
-let castInt16ToUInt = castInt16ToUIntOp "castInt16ToUInt"
-let castInt16ToInt = castInt16ToIntOp "castInt16ToInt"
-let castInt16ToUInt64 = castInt16ToUInt64Op "castInt16ToUInt64"
-let castInt16ToInt64 = castInt16ToInt64Op "castInt16ToInt64"
-let castInt16ToFloat32 = castInt16ToFloat32Op "castInt16ToFloat32"
-let castInt16ToFloat = castInt16ToFloatOp "castInt16ToFloat"
-
-let castUIntToUInt8 = castUIntToUInt8Op "castUIntToUInt8"
-let castUIntToInt8 = castUIntToInt8Op "castUIntToInt8"
-let castUIntToUInt16 = castUIntToUInt16Op "castUIntToUInt16"
-let castUIntToInt16 = castUIntToInt16Op "castUIntToInt16"
-let castUIntToInt = castUIntToIntOp "castUIntToInt"
-let castUIntToUInt64 = castUIntToUInt64Op "castUIntToUInt64"
-let castUIntToInt64 = castUIntToInt64Op "castUIntToInt64"
-let castUIntToFloat32 = castUIntToFloat32Op "castUIntToFloat32"
-let castUIntToFloat = castUIntToFloatOp "castUIntToFloat"
-let castIntToUInt8 = castIntToUInt8Op "castIntToUInt8"
-let castIntToInt8 = castIntToInt8Op "castIntToInt8"
-let castIntToUInt16 = castIntToUInt16Op "castIntToUInt16"
-let castIntToInt16 = castIntToInt16Op "castIntToInt16"
-let castIntToUInt = castIntToUIntOp "castIntToUInt"
-let castIntToUInt64 = castIntToUInt64Op "castIntToUInt64"
-let castIntToInt64 = castIntToInt64Op "castIntToInt64"
-let castIntToFloat32 = castIntToFloat32Op "castIntToFloat32"
-let castIntToFloat = castIntToFloatOp "castIntToFloat"
-
-let castUInt64ToUInt8 = castUInt64ToUInt8Op "castUInt64ToUInt8"
-let castUInt64ToInt8 = castUInt64ToInt8Op "castUInt64ToInt8"
-let castUInt64ToUInt16 = castUInt64ToUInt16Op "castUInt64ToUInt16"
-let castUInt64ToInt16 = castUInt64ToInt16Op "castUInt64ToInt16"
-let castUInt64ToUInt = castUInt64ToUIntOp "castUInt64ToUInt"
-let castUInt64ToInt = castUInt64ToIntOp "castUInt64ToInt"
-let castUInt64ToInt64 = castUInt64ToInt64Op "castUInt64ToInt64"
-let castUInt64ToFloat32 = castUInt64ToFloat32Op "castUInt64ToFloat32"
-let castUInt64ToFloat = castUInt64ToFloatOp "castUInt64ToFloat"
-let castInt64ToUInt8 = castInt64ToUInt8Op "castInt64ToUInt8"
-let castInt64ToInt8 = castInt64ToInt8Op "castInt64ToInt8"
-let castInt64ToUInt16 = castInt64ToUInt16Op "castInt64ToUInt16"
-let castInt64ToInt16 = castInt64ToInt16Op "castInt64ToInt16"
-let castInt64ToUInt = castInt64ToUIntOp "castInt64ToUInt"
-let castInt64ToInt = castInt64ToIntOp "castInt64ToInt"
-let castInt64ToUInt64 = castInt64ToUInt64Op "castInt64ToUInt64"
-let castInt64ToFloat32 = castInt64ToFloat32Op "castInt64ToFloat32"
-let castInt64ToFloat = castInt64ToFloatOp "castInt64ToFloat"
-
-let castFloat32ToUInt8 = castFloat32ToUInt8Op "castFloat32ToUInt8"
-let castFloat32ToInt8 = castFloat32ToInt8Op "castFloat32ToInt8"
-let castFloat32ToUInt16 = castFloat32ToUInt16Op "castFloat32ToUInt16"
-let castFloat32ToInt16 = castFloat32ToInt16Op "castFloat32ToInt16"
-let castFloat32ToUInt = castFloat32ToUIntOp "castFloat32ToUInt"
-let castFloat32ToInt = castFloat32ToIntOp "castFloat32ToInt"
-let castFloat32ToUInt64 = castFloat32ToUInt64Op "castFloat32ToUInt64"
-let castFloat32ToInt64 = castFloat32ToInt64Op "castFloat32ToInt64"
-let castFloat32ToFloat = castFloat32ToFloatOp "castFloat32ToFloat"
-*)
-//let castFloatToUInt8 = castFloatToUInt8Op "castFloatToUInt8"
-let castFloatToUInt8 = castOp<float,uint8,Shape> "castFloatToUInt8" Slice.cast<float,uint8>
-(*
-let castFloatToInt8 = castFloatToInt8Op "castFloatToInt8"
-let castFloatToUInt16 = castFloatToUInt16Op "castFloatToUInt16"
-let castFloatToInt16 = castFloatToInt16Op "castFloatToInt16"
-let castFloatToUInt = castFloatToUIntOp "castFloatToUInt"
-let castFloatToInt = castFloatToIntOp "castFloatToInt"
-let castFloatToUIn64 = castFloatToUIn64Op "castFloatToUIn64"
-let castFloatToInt64 = castFloatToInt64Op "castFloatToInt64"
-let castFloatToFloat32 = castFloatToFloat32Op "castFloatToFloat32"
-*)
-//let cast<'S,'T,Shape> = castOp<'S,'T,Shape> (sprintf "cast(%s->%s)" typeof<'S>.Name typeof<'T>.Name) Slice.cast<'S,'T>
+/// Pixel type casting
+let cast<'S,'T when 'S: equality and 'T: equality> = castOp<'S,'T,Shape> (sprintf "cast(%s->%s)" typeof<'S>.Name typeof<'T>.Name) Slice.cast<'S,'T>
 
 /// Basic arithmetic
 let add slice = addOp "add" slice
@@ -291,15 +197,15 @@ let createAs<'T when 'T: equality> (width: uint) (height: uint) (depth: uint) (p
     // width, heigth, depth should be replaced with shape and shapeUpdate, and mapper should be deferred to outside Core!!!
     let mapper (i: uint) : Slice<'T> = 
         let slice = Slice.create<'T> width height 1u i
-        printfn "[create] Created slice %A" i
+        if pl.debug then printfn "[create] Created slice %A" i
         slice
     let transition = Stage.transition Constant Streaming
     let shapeUpdate = id
     let stage = Stage.init "create" depth mapper transition shapeUpdate 
     let flow = MemFlow.returnM stage
     let shape = Slice (width,height)
-    let context = MemFlow.create (fun _ -> width*height |> uint64) (fun _ -> depth)
-    Pipeline.create flow pl.mem (Some shape) context
+    let context = ShapeContext.create (fun _ -> width*height |> uint64) (fun _ -> depth)
+    Pipeline.create flow pl.mem (Some shape) context pl.debug
 
 let readAs<'T when 'T: equality> (inputDir : string) (suffix : string) (pl : Pipeline<unit, unit, Shape>) : Pipeline<unit, Slice<'T>,Shape> =
     // much should be deferred to outside Core!!!
@@ -309,15 +215,15 @@ let readAs<'T when 'T: equality> (inputDir : string) (suffix : string) (pl : Pip
     let mapper (i: uint) : Slice<'T> = 
         let fileName = filenames[int i]; 
         let slice = Slice.readSlice<'T> (uint i) fileName
-        printfn "[readSlices] Reading slice %A from %s" i fileName
+        if pl.debug then printfn "[readSlices] Reading slice %A from %s" i fileName
         slice
     let transition = Stage.transition Constant Streaming
     let shapeUpdate = id
     let stage = Stage.init $"read: {inputDir}" (uint depth) mapper transition shapeUpdate 
     let flow = MemFlow.returnM stage
     let shape = Slice (width,height)
-    let context = MemFlow.create (fun _ -> width*height |> uint64) (fun _ -> uint depth)
-    Pipeline.create flow pl.mem (Some shape) context
+    let context = ShapeContext.create (fun _ -> width*height |> uint64) (fun _ -> uint depth)
+    Pipeline.create flow pl.mem (Some shape) context pl.debug
 
 let readRandomAs<'T when 'T: equality> (count: uint) (inputDir : string) (suffix : string) (pl : Pipeline<unit, unit, Shape>) : Pipeline<unit, Slice<'T>,Shape> =
     let (width,height,depth) = Slice.getStackSize inputDir suffix
@@ -326,12 +232,12 @@ let readRandomAs<'T when 'T: equality> (count: uint) (inputDir : string) (suffix
     let mapper (i: uint) : Slice<'T> = 
         let fileName = filenames[int i]; 
         let slice = Slice.readSlice<'T> (uint i) fileName
-        printfn "[readRandomSlices] Reading slice %A from %s" i fileName
+        if pl.debug then printfn "[readRandomSlices] Reading slice %A from %s" i fileName
         slice
     let transition = Stage.transition Constant Streaming
     let shapeUpdate = id
     let stage = Stage.init $"read: {inputDir}" (uint depth) mapper transition shapeUpdate 
     let flow = MemFlow.returnM stage
     let shape = Slice (width,height)
-    let context = MemFlow.create (fun _ -> width*height |> uint64) (fun _ -> uint depth)
-    Pipeline.create flow pl.mem (Some shape) context
+    let context = ShapeContext.create (fun _ -> width*height |> uint64) (fun _ -> uint depth)
+    Pipeline.create flow pl.mem (Some shape) context pl.debug

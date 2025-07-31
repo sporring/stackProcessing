@@ -57,7 +57,7 @@ let writeOp (path: string) (suffix: string) : Stage<Slice<'a>, unit, 'Shape> =
     let shapeUpdate = fun (s:'Shape) -> s
     {
         Name = $"write:{path}"
-        Pipe = Pipe.consumeWith "write" Streaming writeReducer
+        Pipe = Pipe.consumeWith "write" writeReducer Streaming
         Transition = Stage.transition Streaming Constant
         ShapeUpdate = shapeUpdate
     }
@@ -67,7 +67,7 @@ let showOp (plt: Slice.Slice<'T> -> unit) : Stage<Slice<'T>, unit, 'Shape> =
     let shapeUpdate = fun (s:'Shape) -> s
     {
         Name = "show"
-        Pipe = Pipe.consumeWith "show" Streaming showReducer
+        Pipe = Pipe.consumeWith "show" showReducer Streaming
         Transition = Stage.transition Streaming Constant
         ShapeUpdate = shapeUpdate
     }
@@ -77,7 +77,7 @@ let plotOp (plt: float list -> float list -> unit) : Stage<(float * float) list,
     let shapeUpdate = fun (s:'Shape) -> s
     {
         Name = "plot"
-        Pipe = Pipe.consumeWith "plot" Streaming plotReducer
+        Pipe = Pipe.consumeWith "plot" plotReducer Streaming
         Transition = Stage.transition Streaming Streaming
         ShapeUpdate = shapeUpdate
     }
@@ -87,7 +87,7 @@ let printOp () : Stage<'T, unit,'Shape> =
     let shapeUpdate = fun (s:'Shape) -> s
     {
         Name = "print"
-        Pipe = Pipe.consumeWith "print" Streaming printReducer
+        Pipe = Pipe.consumeWith "print" printReducer Streaming
         Transition = Stage.transition Streaming Streaming
         ShapeUpdate = shapeUpdate
     }
@@ -250,101 +250,6 @@ let inline castOp<'S,'T,'Shape when 'S: equality and 'T: equality> name f : Stag
         ShapeUpdate = id
     }
 
-let castUInt8ToInt8Op name = castOp name Slice.castUInt8ToInt8
-let castUInt8ToUInt16Op name = castOp name Slice.castUInt8ToUInt16
-let castUInt8ToInt16Op name = castOp name Slice.castUInt8ToInt16
-let castUInt8ToUIntOp name = castOp name Slice.castUInt8ToUInt
-let castUInt8ToIntOp name = castOp name Slice.castUInt8ToInt
-let castUInt8ToUInt64Op name = castOp name Slice.castUInt8ToUInt64
-let castUInt8ToInt64Op name = castOp name Slice.castUInt8ToInt64
-let castUInt8ToFloat32Op name = castOp name Slice.castUInt8ToFloat32
-let castUInt8ToFloatOp name = castOp name Slice.castUInt8ToFloat
-let castInt8ToUInt8Op name = castOp name Slice.castInt8ToUInt8
-let castInt8ToUInt16Op name = castOp name Slice.castInt8ToUInt16
-let castInt8ToInt16Op name = castOp name Slice.castInt8ToInt16
-let castInt8ToUIntOp name = castOp name Slice.castInt8ToUInt
-let castInt8ToIntOp name = castOp name Slice.castInt8ToInt
-let castInt8ToUInt64Op name = castOp name Slice.castInt8ToUInt64
-let castInt8ToInt64Op name = castOp name Slice.castInt8ToInt64
-let castInt8ToFloat32Op name = castOp name Slice.castInt8ToFloat32
-let castInt8ToFloatOp name = castOp name Slice.castInt8ToFloat
-
-let castUInt16ToUInt8Op name = castOp name Slice.castUInt16ToUInt8
-let castUInt16ToInt8Op name = castOp name Slice.castUInt16ToInt8
-let castUInt16ToInt16Op name = castOp name Slice.castUInt16ToInt16
-let castUInt16ToUIntOp name = castOp name Slice.castUInt16ToUInt
-let castUInt16ToIntOp name = castOp name Slice.castUInt16ToInt
-let castUInt16ToUInt64Op name = castOp name Slice.castUInt16ToUInt64
-let castUInt16ToInt64Op name = castOp name Slice.castUInt16ToInt64
-let castUInt16ToFloat32Op name = castOp name Slice.castUInt16ToFloat32
-let castUInt16ToFloatOp name = castOp name Slice.castUInt16ToFloat
-let castInt16ToUInt8Op name = castOp name Slice.castInt16ToUInt8
-let castInt16ToInt8Op name = castOp name Slice.castInt16ToInt8
-let castInt16ToUInt16Op name = castOp name Slice.castInt16ToUInt16
-let castInt16ToUIntOp name = castOp name Slice.castInt16ToUInt
-let castInt16ToIntOp name = castOp name Slice.castInt16ToInt
-let castInt16ToUInt64Op name = castOp name Slice.castInt16ToUInt64
-let castInt16ToInt64Op name = castOp name Slice.castInt16ToInt64
-let castInt16ToFloat32Op name = castOp name Slice.castInt16ToFloat32
-let castInt16ToFloatOp name = castOp name Slice.castInt16ToFloat
-
-let castUIntToUInt8Op name = castOp name Slice.castUIntToUInt8
-let castUIntToInt8Op name = castOp name Slice.castUIntToInt8
-let castUIntToUInt16Op name = castOp name Slice.castUIntToUInt16
-let castUIntToInt16Op name = castOp name Slice.castUIntToInt16
-let castUIntToIntOp name = castOp name Slice.castUIntToInt
-let castUIntToUInt64Op name = castOp name Slice.castUIntToUInt64
-let castUIntToInt64Op name = castOp name Slice.castUIntToInt64
-let castUIntToFloat32Op name = castOp name Slice.castUIntToFloat32
-let castUIntToFloatOp name = castOp name Slice.castUIntToFloat
-let castIntToUInt8Op name = castOp name Slice.castIntToUInt8
-let castIntToInt8Op name = castOp name Slice.castIntToInt8
-let castIntToUInt16Op name = castOp name Slice.castIntToUInt16
-let castIntToInt16Op name = castOp name Slice.castIntToInt16
-let castIntToUIntOp name = castOp name Slice.castIntToUInt
-let castIntToUInt64Op name = castOp name Slice.castIntToUInt64
-let castIntToInt64Op name = castOp name Slice.castIntToInt64
-let castIntToFloat32Op name = castOp name Slice.castIntToFloat32
-let castIntToFloatOp name = castOp name Slice.castIntToFloat
-
-let castUInt64ToUInt8Op name = castOp name Slice.castUInt64ToUInt8
-let castUInt64ToInt8Op name = castOp name Slice.castUInt64ToInt8
-let castUInt64ToUInt16Op name = castOp name Slice.castUInt64ToUInt16
-let castUInt64ToInt16Op name = castOp name Slice.castUInt64ToInt16
-let castUInt64ToUIntOp name = castOp name Slice.castUInt64ToUInt
-let castUInt64ToIntOp name = castOp name Slice.castUInt64ToInt
-let castUInt64ToInt64Op name = castOp name Slice.castUInt64ToInt64
-let castUInt64ToFloat32Op name = castOp name Slice.castUInt64ToFloat32
-let castUInt64ToFloatOp name = castOp name Slice.castUInt64ToFloat
-let castInt64ToUInt8Op name = castOp name Slice.castInt64ToUInt8
-let castInt64ToInt8Op name = castOp name Slice.castInt64ToInt8
-let castInt64ToUInt16Op name = castOp name Slice.castInt64ToUInt16
-let castInt64ToInt16Op name = castOp name Slice.castInt64ToInt16
-let castInt64ToUIntOp name = castOp name Slice.castInt64ToUInt
-let castInt64ToIntOp name = castOp name Slice.castInt64ToInt
-let castInt64ToUInt64Op name = castOp name Slice.castInt64ToUInt64
-let castInt64ToFloat32Op name = castOp name Slice.castInt64ToFloat32
-let castInt64ToFloatOp name = castOp name Slice.castInt64ToFloat
-
-let castFloat32ToUInt8Op name = castOp name Slice.castFloat32ToUInt8
-let castFloat32ToInt8Op name = castOp name Slice.castFloat32ToInt8
-let castFloat32ToUInt16Op name = castOp name Slice.castFloat32ToUInt16
-let castFloat32ToInt16Op name = castOp name Slice.castFloat32ToInt16
-let castFloat32ToUIntOp name = castOp name Slice.castFloat32ToUInt
-let castFloat32ToIntOp name = castOp name Slice.castFloat32ToInt
-let castFloat32ToUInt64Op name = castOp name Slice.castFloat32ToUInt64
-let castFloat32ToInt64Op name = castOp name Slice.castFloat32ToInt64
-let castFloat32ToFloatOp name = castOp name Slice.castFloat32ToFloat
-let castFloatToUInt8Op name = castOp name Slice.castFloatToUInt8
-let castFloatToInt8Op name = castOp name Slice.castFloatToInt8
-let castFloatToUInt16Op name = castOp name Slice.castFloatToUInt16
-let castFloatToInt16Op name = castOp name Slice.castFloatToInt16
-let castFloatToUIntOp name = castOp name Slice.castFloatToUInt
-let castFloatToIntOp name = castOp name Slice.castFloatToInt
-let castFloatToUIn64Op name = castOp name Slice.castFloatToUIn64
-let castFloatToInt64Op name = castOp name Slice.castFloatToInt64
-let castFloatToFloat32Op name = castOp name Slice.castFloatToFloat32
-
 /// Basic arithmetic
 let addOp name slice = Stage.liftUnary name (Slice.add slice)
 let inline scalarAddSliceOp<^T when ^T: equality and ^T: (static member op_Explicit: ^T -> float)> (name:string) (i: ^T) = 
@@ -379,7 +284,7 @@ let histogramOp<'T,'Shape when 'T: comparison> name : Stage<Slice<'T>, Map<'T, u
     {
         Name = name
         Transition = Stage.transition Streaming Constant
-        Pipe = Pipe.reduce name Streaming histogramReducer
+        Pipe = Pipe.reduce name histogramReducer Streaming 
         ShapeUpdate = id
     }
 
@@ -423,7 +328,7 @@ let computeStatsOp<'T,'Shape when 'T : equality> name : Stage<Slice<'T>, ImageSt
     {
         Name = name
         Transition = Stage.transition Streaming Constant
-        Pipe = Pipe.reduce name Streaming computeStatsReducer
+        Pipe = Pipe.reduce name computeStatsReducer Streaming
         ShapeUpdate = id
     }
 

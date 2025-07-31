@@ -26,96 +26,6 @@ val toSimpleITK: s: Slice<'T> -> itk.simple.Image when 'T: equality
 val toSeqSeq: s: Slice<'T> -> float seq seq when 'T: equality
 val updateId: id: uint -> s: Slice<'S> -> Slice<'S> when 'S: equality
 val cast: s: Slice<'S> -> Slice<'T> when 'S: equality and 'T: equality
-val castUInt8ToInt8: s: Slice<uint8> -> Slice<int8>
-val castUInt8ToUInt16: s: Slice<uint8> -> Slice<uint16>
-val castUInt8ToInt16: s: Slice<uint8> -> Slice<int16>
-val castUInt8ToUInt: s: Slice<uint8> -> Slice<uint>
-val castUInt8ToInt: s: Slice<uint8> -> Slice<int>
-val castUInt8ToUInt64: s: Slice<uint8> -> Slice<uint64>
-val castUInt8ToInt64: s: Slice<uint8> -> Slice<int64>
-val castUInt8ToFloat32: s: Slice<uint8> -> Slice<float32>
-val castUInt8ToFloat: s: Slice<uint8> -> Slice<float>
-val castInt8ToUInt8: s: Slice<int8> -> Slice<uint8>
-val castInt8ToUInt16: s: Slice<int8> -> Slice<uint16>
-val castInt8ToInt16: s: Slice<int8> -> Slice<int16>
-val castInt8ToUInt: s: Slice<int8> -> Slice<uint>
-val castInt8ToInt: s: Slice<int8> -> Slice<int>
-val castInt8ToUInt64: s: Slice<int8> -> Slice<uint64>
-val castInt8ToInt64: s: Slice<int8> -> Slice<int64>
-val castInt8ToFloat32: s: Slice<int8> -> Slice<float32>
-val castInt8ToFloat: s: Slice<int8> -> Slice<float>
-val castUInt16ToUInt8: s: Slice<uint16> -> Slice<uint8>
-val castUInt16ToInt8: s: Slice<uint16> -> Slice<int8>
-val castUInt16ToInt16: s: Slice<uint16> -> Slice<int16>
-val castUInt16ToUInt: s: Slice<uint16> -> Slice<uint>
-val castUInt16ToInt: s: Slice<uint16> -> Slice<int>
-val castUInt16ToUInt64: s: Slice<uint16> -> Slice<uint64>
-val castUInt16ToInt64: s: Slice<uint16> -> Slice<int64>
-val castUInt16ToFloat32: s: Slice<uint16> -> Slice<float32>
-val castUInt16ToFloat: s: Slice<uint16> -> Slice<float>
-val castInt16ToUInt8: s: Slice<int16> -> Slice<uint8>
-val castInt16ToInt8: s: Slice<int16> -> Slice<int8>
-val castInt16ToUInt16: s: Slice<int16> -> Slice<uint16>
-val castInt16ToUInt: s: Slice<int16> -> Slice<uint>
-val castInt16ToInt: s: Slice<int16> -> Slice<int>
-val castInt16ToUInt64: s: Slice<int16> -> Slice<uint64>
-val castInt16ToInt64: s: Slice<int16> -> Slice<int64>
-val castInt16ToFloat32: s: Slice<int16> -> Slice<float32>
-val castInt16ToFloat: s: Slice<int16> -> Slice<float>
-val castUIntToUInt8: s: Slice<uint> -> Slice<uint8>
-val castUIntToInt8: s: Slice<uint> -> Slice<int8>
-val castUIntToUInt16: s: Slice<uint> -> Slice<uint16>
-val castUIntToInt16: s: Slice<uint> -> Slice<int16>
-val castUIntToInt: s: Slice<uint> -> Slice<int>
-val castUIntToUInt64: s: Slice<uint> -> Slice<uint64>
-val castUIntToInt64: s: Slice<uint> -> Slice<int64>
-val castUIntToFloat32: s: Slice<uint> -> Slice<float32>
-val castUIntToFloat: s: Slice<uint> -> Slice<float>
-val castIntToUInt8: s: Slice<int> -> Slice<uint8>
-val castIntToInt8: s: Slice<int> -> Slice<int8>
-val castIntToUInt16: s: Slice<int> -> Slice<uint16>
-val castIntToInt16: s: Slice<int> -> Slice<int16>
-val castIntToUInt: s: Slice<int> -> Slice<uint>
-val castIntToUInt64: s: Slice<int> -> Slice<uint64>
-val castIntToInt64: s: Slice<int> -> Slice<int64>
-val castIntToFloat32: s: Slice<int> -> Slice<float32>
-val castIntToFloat: s: Slice<int> -> Slice<float>
-val castUInt64ToUInt8: s: Slice<uint64> -> Slice<uint8>
-val castUInt64ToInt8: s: Slice<uint64> -> Slice<int8>
-val castUInt64ToUInt16: s: Slice<uint64> -> Slice<uint16>
-val castUInt64ToInt16: s: Slice<uint64> -> Slice<int16>
-val castUInt64ToUInt: s: Slice<uint64> -> Slice<uint>
-val castUInt64ToInt: s: Slice<uint64> -> Slice<int>
-val castUInt64ToInt64: s: Slice<uint64> -> Slice<int64>
-val castUInt64ToFloat32: s: Slice<uint64> -> Slice<float32>
-val castUInt64ToFloat: s: Slice<uint64> -> Slice<float>
-val castInt64ToUInt8: s: Slice<int64> -> Slice<uint8>
-val castInt64ToInt8: s: Slice<int64> -> Slice<int8>
-val castInt64ToUInt16: s: Slice<int64> -> Slice<uint16>
-val castInt64ToInt16: s: Slice<int64> -> Slice<int16>
-val castInt64ToUInt: s: Slice<int64> -> Slice<uint>
-val castInt64ToInt: s: Slice<int64> -> Slice<int>
-val castInt64ToUInt64: s: Slice<int64> -> Slice<uint64>
-val castInt64ToFloat32: s: Slice<int64> -> Slice<float32>
-val castInt64ToFloat: s: Slice<int64> -> Slice<float>
-val castFloat32ToUInt8: s: Slice<float32> -> Slice<uint8>
-val castFloat32ToInt8: s: Slice<float32> -> Slice<int8>
-val castFloat32ToUInt16: s: Slice<float32> -> Slice<uint16>
-val castFloat32ToInt16: s: Slice<float32> -> Slice<int16>
-val castFloat32ToUInt: s: Slice<float32> -> Slice<uint>
-val castFloat32ToInt: s: Slice<float32> -> Slice<int>
-val castFloat32ToUInt64: s: Slice<float32> -> Slice<uint64>
-val castFloat32ToInt64: s: Slice<float32> -> Slice<int64>
-val castFloat32ToFloat: s: Slice<float32> -> Slice<float>
-val castFloatToUInt8: s: Slice<float> -> Slice<uint8>
-val castFloatToInt8: s: Slice<float> -> Slice<int8>
-val castFloatToUInt16: s: Slice<float> -> Slice<uint16>
-val castFloatToInt16: s: Slice<float> -> Slice<int16>
-val castFloatToUInt: s: Slice<float> -> Slice<uint>
-val castFloatToInt: s: Slice<float> -> Slice<int>
-val castFloatToUIn64: s: Slice<float> -> Slice<uint64>
-val castFloatToInt64: s: Slice<float> -> Slice<int64>
-val castFloatToFloat32: s: Slice<float> -> Slice<float32>
 val private liftSource:
   f: (unit -> Image.Image<'T>) -> unit -> Slice<'T> when 'T: equality
 val private liftSource1:
@@ -410,190 +320,6 @@ val inline castOp:
     f: (Slice.Slice<'S> -> Slice.Slice<'T>) ->
     SlimPipeline.Stage<Slice.Slice<'S>,Slice.Slice<'T>,'Shape>
     when 'S: equality and 'T: equality
-val castUInt8ToInt8Op:
-  name: string -> SlimPipeline.Stage<Slice.Slice<uint8>,Slice.Slice<int8>,'a>
-val castUInt8ToUInt16Op:
-  name: string -> SlimPipeline.Stage<Slice.Slice<uint8>,Slice.Slice<uint16>,'a>
-val castUInt8ToInt16Op:
-  name: string -> SlimPipeline.Stage<Slice.Slice<uint8>,Slice.Slice<int16>,'a>
-val castUInt8ToUIntOp:
-  name: string -> SlimPipeline.Stage<Slice.Slice<uint8>,Slice.Slice<uint>,'a>
-val castUInt8ToIntOp:
-  name: string -> SlimPipeline.Stage<Slice.Slice<uint8>,Slice.Slice<int>,'a>
-val castUInt8ToUInt64Op:
-  name: string -> SlimPipeline.Stage<Slice.Slice<uint8>,Slice.Slice<uint64>,'a>
-val castUInt8ToInt64Op:
-  name: string -> SlimPipeline.Stage<Slice.Slice<uint8>,Slice.Slice<int64>,'a>
-val castUInt8ToFloat32Op:
-  name: string -> SlimPipeline.Stage<Slice.Slice<uint8>,Slice.Slice<float32>,'a>
-val castUInt8ToFloatOp:
-  name: string -> SlimPipeline.Stage<Slice.Slice<uint8>,Slice.Slice<float>,'a>
-val castInt8ToUInt8Op:
-  name: string -> SlimPipeline.Stage<Slice.Slice<int8>,Slice.Slice<uint8>,'a>
-val castInt8ToUInt16Op:
-  name: string -> SlimPipeline.Stage<Slice.Slice<int8>,Slice.Slice<uint16>,'a>
-val castInt8ToInt16Op:
-  name: string -> SlimPipeline.Stage<Slice.Slice<int8>,Slice.Slice<int16>,'a>
-val castInt8ToUIntOp:
-  name: string -> SlimPipeline.Stage<Slice.Slice<int8>,Slice.Slice<uint>,'a>
-val castInt8ToIntOp:
-  name: string -> SlimPipeline.Stage<Slice.Slice<int8>,Slice.Slice<int>,'a>
-val castInt8ToUInt64Op:
-  name: string -> SlimPipeline.Stage<Slice.Slice<int8>,Slice.Slice<uint64>,'a>
-val castInt8ToInt64Op:
-  name: string -> SlimPipeline.Stage<Slice.Slice<int8>,Slice.Slice<int64>,'a>
-val castInt8ToFloat32Op:
-  name: string -> SlimPipeline.Stage<Slice.Slice<int8>,Slice.Slice<float32>,'a>
-val castInt8ToFloatOp:
-  name: string -> SlimPipeline.Stage<Slice.Slice<int8>,Slice.Slice<float>,'a>
-val castUInt16ToUInt8Op:
-  name: string -> SlimPipeline.Stage<Slice.Slice<uint16>,Slice.Slice<uint8>,'a>
-val castUInt16ToInt8Op:
-  name: string -> SlimPipeline.Stage<Slice.Slice<uint16>,Slice.Slice<int8>,'a>
-val castUInt16ToInt16Op:
-  name: string -> SlimPipeline.Stage<Slice.Slice<uint16>,Slice.Slice<int16>,'a>
-val castUInt16ToUIntOp:
-  name: string -> SlimPipeline.Stage<Slice.Slice<uint16>,Slice.Slice<uint>,'a>
-val castUInt16ToIntOp:
-  name: string -> SlimPipeline.Stage<Slice.Slice<uint16>,Slice.Slice<int>,'a>
-val castUInt16ToUInt64Op:
-  name: string -> SlimPipeline.Stage<Slice.Slice<uint16>,Slice.Slice<uint64>,'a>
-val castUInt16ToInt64Op:
-  name: string -> SlimPipeline.Stage<Slice.Slice<uint16>,Slice.Slice<int64>,'a>
-val castUInt16ToFloat32Op:
-  name: string ->
-    SlimPipeline.Stage<Slice.Slice<uint16>,Slice.Slice<float32>,'a>
-val castUInt16ToFloatOp:
-  name: string -> SlimPipeline.Stage<Slice.Slice<uint16>,Slice.Slice<float>,'a>
-val castInt16ToUInt8Op:
-  name: string -> SlimPipeline.Stage<Slice.Slice<int16>,Slice.Slice<uint8>,'a>
-val castInt16ToInt8Op:
-  name: string -> SlimPipeline.Stage<Slice.Slice<int16>,Slice.Slice<int8>,'a>
-val castInt16ToUInt16Op:
-  name: string -> SlimPipeline.Stage<Slice.Slice<int16>,Slice.Slice<uint16>,'a>
-val castInt16ToUIntOp:
-  name: string -> SlimPipeline.Stage<Slice.Slice<int16>,Slice.Slice<uint>,'a>
-val castInt16ToIntOp:
-  name: string -> SlimPipeline.Stage<Slice.Slice<int16>,Slice.Slice<int>,'a>
-val castInt16ToUInt64Op:
-  name: string -> SlimPipeline.Stage<Slice.Slice<int16>,Slice.Slice<uint64>,'a>
-val castInt16ToInt64Op:
-  name: string -> SlimPipeline.Stage<Slice.Slice<int16>,Slice.Slice<int64>,'a>
-val castInt16ToFloat32Op:
-  name: string -> SlimPipeline.Stage<Slice.Slice<int16>,Slice.Slice<float32>,'a>
-val castInt16ToFloatOp:
-  name: string -> SlimPipeline.Stage<Slice.Slice<int16>,Slice.Slice<float>,'a>
-val castUIntToUInt8Op:
-  name: string -> SlimPipeline.Stage<Slice.Slice<uint>,Slice.Slice<uint8>,'a>
-val castUIntToInt8Op:
-  name: string -> SlimPipeline.Stage<Slice.Slice<uint>,Slice.Slice<int8>,'a>
-val castUIntToUInt16Op:
-  name: string -> SlimPipeline.Stage<Slice.Slice<uint>,Slice.Slice<uint16>,'a>
-val castUIntToInt16Op:
-  name: string -> SlimPipeline.Stage<Slice.Slice<uint>,Slice.Slice<int16>,'a>
-val castUIntToIntOp:
-  name: string -> SlimPipeline.Stage<Slice.Slice<uint>,Slice.Slice<int>,'a>
-val castUIntToUInt64Op:
-  name: string -> SlimPipeline.Stage<Slice.Slice<uint>,Slice.Slice<uint64>,'a>
-val castUIntToInt64Op:
-  name: string -> SlimPipeline.Stage<Slice.Slice<uint>,Slice.Slice<int64>,'a>
-val castUIntToFloat32Op:
-  name: string -> SlimPipeline.Stage<Slice.Slice<uint>,Slice.Slice<float32>,'a>
-val castUIntToFloatOp:
-  name: string -> SlimPipeline.Stage<Slice.Slice<uint>,Slice.Slice<float>,'a>
-val castIntToUInt8Op:
-  name: string -> SlimPipeline.Stage<Slice.Slice<int>,Slice.Slice<uint8>,'a>
-val castIntToInt8Op:
-  name: string -> SlimPipeline.Stage<Slice.Slice<int>,Slice.Slice<int8>,'a>
-val castIntToUInt16Op:
-  name: string -> SlimPipeline.Stage<Slice.Slice<int>,Slice.Slice<uint16>,'a>
-val castIntToInt16Op:
-  name: string -> SlimPipeline.Stage<Slice.Slice<int>,Slice.Slice<int16>,'a>
-val castIntToUIntOp:
-  name: string -> SlimPipeline.Stage<Slice.Slice<int>,Slice.Slice<uint>,'a>
-val castIntToUInt64Op:
-  name: string -> SlimPipeline.Stage<Slice.Slice<int>,Slice.Slice<uint64>,'a>
-val castIntToInt64Op:
-  name: string -> SlimPipeline.Stage<Slice.Slice<int>,Slice.Slice<int64>,'a>
-val castIntToFloat32Op:
-  name: string -> SlimPipeline.Stage<Slice.Slice<int>,Slice.Slice<float32>,'a>
-val castIntToFloatOp:
-  name: string -> SlimPipeline.Stage<Slice.Slice<int>,Slice.Slice<float>,'a>
-val castUInt64ToUInt8Op:
-  name: string -> SlimPipeline.Stage<Slice.Slice<uint64>,Slice.Slice<uint8>,'a>
-val castUInt64ToInt8Op:
-  name: string -> SlimPipeline.Stage<Slice.Slice<uint64>,Slice.Slice<int8>,'a>
-val castUInt64ToUInt16Op:
-  name: string -> SlimPipeline.Stage<Slice.Slice<uint64>,Slice.Slice<uint16>,'a>
-val castUInt64ToInt16Op:
-  name: string -> SlimPipeline.Stage<Slice.Slice<uint64>,Slice.Slice<int16>,'a>
-val castUInt64ToUIntOp:
-  name: string -> SlimPipeline.Stage<Slice.Slice<uint64>,Slice.Slice<uint>,'a>
-val castUInt64ToIntOp:
-  name: string -> SlimPipeline.Stage<Slice.Slice<uint64>,Slice.Slice<int>,'a>
-val castUInt64ToInt64Op:
-  name: string -> SlimPipeline.Stage<Slice.Slice<uint64>,Slice.Slice<int64>,'a>
-val castUInt64ToFloat32Op:
-  name: string ->
-    SlimPipeline.Stage<Slice.Slice<uint64>,Slice.Slice<float32>,'a>
-val castUInt64ToFloatOp:
-  name: string -> SlimPipeline.Stage<Slice.Slice<uint64>,Slice.Slice<float>,'a>
-val castInt64ToUInt8Op:
-  name: string -> SlimPipeline.Stage<Slice.Slice<int64>,Slice.Slice<uint8>,'a>
-val castInt64ToInt8Op:
-  name: string -> SlimPipeline.Stage<Slice.Slice<int64>,Slice.Slice<int8>,'a>
-val castInt64ToUInt16Op:
-  name: string -> SlimPipeline.Stage<Slice.Slice<int64>,Slice.Slice<uint16>,'a>
-val castInt64ToInt16Op:
-  name: string -> SlimPipeline.Stage<Slice.Slice<int64>,Slice.Slice<int16>,'a>
-val castInt64ToUIntOp:
-  name: string -> SlimPipeline.Stage<Slice.Slice<int64>,Slice.Slice<uint>,'a>
-val castInt64ToIntOp:
-  name: string -> SlimPipeline.Stage<Slice.Slice<int64>,Slice.Slice<int>,'a>
-val castInt64ToUInt64Op:
-  name: string -> SlimPipeline.Stage<Slice.Slice<int64>,Slice.Slice<uint64>,'a>
-val castInt64ToFloat32Op:
-  name: string -> SlimPipeline.Stage<Slice.Slice<int64>,Slice.Slice<float32>,'a>
-val castInt64ToFloatOp:
-  name: string -> SlimPipeline.Stage<Slice.Slice<int64>,Slice.Slice<float>,'a>
-val castFloat32ToUInt8Op:
-  name: string -> SlimPipeline.Stage<Slice.Slice<float32>,Slice.Slice<uint8>,'a>
-val castFloat32ToInt8Op:
-  name: string -> SlimPipeline.Stage<Slice.Slice<float32>,Slice.Slice<int8>,'a>
-val castFloat32ToUInt16Op:
-  name: string ->
-    SlimPipeline.Stage<Slice.Slice<float32>,Slice.Slice<uint16>,'a>
-val castFloat32ToInt16Op:
-  name: string -> SlimPipeline.Stage<Slice.Slice<float32>,Slice.Slice<int16>,'a>
-val castFloat32ToUIntOp:
-  name: string -> SlimPipeline.Stage<Slice.Slice<float32>,Slice.Slice<uint>,'a>
-val castFloat32ToIntOp:
-  name: string -> SlimPipeline.Stage<Slice.Slice<float32>,Slice.Slice<int>,'a>
-val castFloat32ToUInt64Op:
-  name: string ->
-    SlimPipeline.Stage<Slice.Slice<float32>,Slice.Slice<uint64>,'a>
-val castFloat32ToInt64Op:
-  name: string -> SlimPipeline.Stage<Slice.Slice<float32>,Slice.Slice<int64>,'a>
-val castFloat32ToFloatOp:
-  name: string -> SlimPipeline.Stage<Slice.Slice<float32>,Slice.Slice<float>,'a>
-val castFloatToUInt8Op:
-  name: string -> SlimPipeline.Stage<Slice.Slice<float>,Slice.Slice<uint8>,'a>
-val castFloatToInt8Op:
-  name: string -> SlimPipeline.Stage<Slice.Slice<float>,Slice.Slice<int8>,'a>
-val castFloatToUInt16Op:
-  name: string -> SlimPipeline.Stage<Slice.Slice<float>,Slice.Slice<uint16>,'a>
-val castFloatToInt16Op:
-  name: string -> SlimPipeline.Stage<Slice.Slice<float>,Slice.Slice<int16>,'a>
-val castFloatToUIntOp:
-  name: string -> SlimPipeline.Stage<Slice.Slice<float>,Slice.Slice<uint>,'a>
-val castFloatToIntOp:
-  name: string -> SlimPipeline.Stage<Slice.Slice<float>,Slice.Slice<int>,'a>
-val castFloatToUIn64Op:
-  name: string -> SlimPipeline.Stage<Slice.Slice<float>,Slice.Slice<uint64>,'a>
-val castFloatToInt64Op:
-  name: string -> SlimPipeline.Stage<Slice.Slice<float>,Slice.Slice<int64>,'a>
-val castFloatToFloat32Op:
-  name: string -> SlimPipeline.Stage<Slice.Slice<float>,Slice.Slice<float32>,'a>
 /// Basic arithmetic
 val addOp:
   name: string ->
@@ -783,11 +509,13 @@ val (-->) :
   (SlimPipeline.Stage<'a,'b,'c> ->
      SlimPipeline.Stage<'b,'d,'c> -> SlimPipeline.Stage<'a,'d,'c>)
 val source: (uint64 -> SlimPipeline.Pipeline<unit,unit,Shape>)
+val debug: (uint64 -> SlimPipeline.Pipeline<unit,unit,Shape>)
 val sink: pl: SlimPipeline.Pipeline<unit,unit,'Shape> -> unit
 val sinkList: plLst: SlimPipeline.Pipeline<unit,unit,'Shape> list -> unit
 val (>=>) :
   (SlimPipeline.Pipeline<'a,'b,'c> ->
      SlimPipeline.Stage<'b,'d,'c> -> SlimPipeline.Pipeline<'a,'d,'c>)
+    when 'd: equality
 val (>=>>) :
   (SlimPipeline.Pipeline<'a,'b,'c> ->
      SlimPipeline.Stage<'b,'b,'c> * SlimPipeline.Stage<'b,'d,'c> ->
@@ -795,13 +523,11 @@ val (>=>>) :
 val (>>=>) :
   (SlimPipeline.SharedPipeline<'a,'b,'c,'d> ->
      ('b -> 'c -> 'e) -> SlimPipeline.Pipeline<'a,'e,'d>) when 'e: equality
-val combineIgnore:
-  (SlimPipeline.Stage<'a,'b,'c> * SlimPipeline.Stage<'a,'d,'c> ->
-     SlimPipeline.Stage<'a,unit,'c>)
 val drainSingle: pl: SlimPipeline.Pipeline<'a,'b,'c> -> 'b
 val drainList: pl: SlimPipeline.Pipeline<'a,'b,'c> -> 'b list
 val drainLast: pl: SlimPipeline.Pipeline<'a,'b,'c> -> 'b
 val tap: (string -> SlimPipeline.Stage<'a,'a,'b>)
+val tapIt: (('a -> string) -> SlimPipeline.Stage<'a,'a,'b>)
 val ignoreAll: (unit -> SlimPipeline.Stage<'a,unit,Shape>)
 val liftUnary:
   f: (Slice<'T> -> Slice<'T>) -> SlimPipeline.Stage<Slice<'T>,Slice<'T>,'a>
@@ -826,8 +552,10 @@ val axisSource:
     size: int list ->
     pl: SlimPipeline.Pipeline<unit,unit,Shape> ->
     SlimPipeline.Pipeline<unit,Slice<uint>,Shape>
-val castFloatToUInt8:
-  SlimPipeline.Stage<Slice.Slice<float>,Slice.Slice<uint8>,Shape>
+/// Pixel type casting
+val cast<'S,'T when 'S: equality and 'T: equality> :
+  SlimPipeline.Stage<Slice.Slice<'S>,Slice.Slice<'T>,Shape>
+    when 'S: equality and 'T: equality
 /// Basic arithmetic
 val add:
   slice: Slice.Slice<'a> ->
