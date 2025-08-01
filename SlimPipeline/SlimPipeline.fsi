@@ -44,13 +44,12 @@ module Pipe =
         f: ('U -> 'V -> 'W) ->
         pipe1: Pipe<'In,'U> -> pipe2: Pipe<'In,'V> -> Pipe<'In,'W>
     val reduce:
-      label: string ->
+      name: string ->
         reducer: (FSharp.Control.AsyncSeq<'In> -> Async<'Out>) ->
         profile: MemoryProfile -> Pipe<'In,'Out>
     val consumeWith:
       name: string ->
-        consume: (FSharp.Control.AsyncSeq<'T> -> Async<unit>) ->
-        profile: MemoryProfile -> Pipe<'T,unit>
+        consume: ('T -> unit) -> profile: MemoryProfile -> Pipe<'T,unit>
     /// Combine two <c>Pipe</c> instances into one by composing their memory profiles and transformation functions.
     val compose: p1: Pipe<'S,'T> -> p2: Pipe<'T,'U> -> Pipe<'S,'U>
     val memNeed:
@@ -67,7 +66,7 @@ module Pipe =
     /// 3, 4, 5. It is also possible to use this for sampling, e.g., setting depth to 1
     /// and stride to 2 sends every second image to f.  
     val mapWindowed:
-      label: string ->
+      name: string ->
         depth: uint ->
         updateId: (uint -> 'S -> 'S) ->
         pad: uint ->
@@ -138,12 +137,17 @@ module Stage =
         f: ('U -> 'V -> 'W) ->
         stage1: Stage<'In,'U,'Shape> * stage2: Stage<'In,'V,'Shape> ->
           Stage<'In,'W,'Shape>
-    val liftUnary: name: string -> f: ('T -> 'T) -> Stage<'T,'T,'Shape>
-    val tap: label: string -> Stage<'T,'T,'Shape>
+    val liftUnary: name: string -> f: ('S -> 'T) -> Stage<'S,'T,'Shape>
+    val tap: name: string -> Stage<'T,'T,'Shape>
     val tapIt: toString: ('T -> string) -> Stage<'T,'T,'Shape>
     val internal tee:
       op: Stage<'In,'T,'Shape> -> Stage<'In,'T,'Shape> * Stage<'In,'T,'Shape>
     val ignore: unit -> Stage<'T,unit,'Shape>
+    val consumeWith:
+      name: string -> consume: ('T -> unit) -> Stage<'T,unit,'Shape>
+    val cast:
+      name: string -> f: ('S -> 'T) -> Stage<'S,'T,'Shape>
+        when 'S: equality and 'T: equality
 type ShapeContext<'S> =
     {
       memPerElement: ('S -> uint64)

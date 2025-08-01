@@ -78,13 +78,21 @@ module Pipe =
         let profile = max pipe1.Profile pipe2.Profile
         create name apply profile
 
-    let reduce (label: string) (reducer: AsyncSeq<'In> -> Async<'Out>) (profile: MemoryProfile) : Pipe<'In, 'Out> =
+    let reduce (name: string) (reducer: AsyncSeq<'In> -> Async<'Out>) (profile: MemoryProfile) : Pipe<'In, 'Out> =
         let apply input = input |> reducer |> ofAsync
-        create label apply profile
+        create name apply profile
 
-    let consumeWith (name: string) (consume: AsyncSeq<'T> -> Async<unit>) (profile: MemoryProfile) : Pipe<'T, unit> =
-        let reducer (s : AsyncSeq<'T>) = consume s          // Async<unit>
-        reduce name reducer  profile              // gives AsyncSeq<unit>
+//    let consumeWith (name: string) (consume: AsyncSeq<'T> -> Async<unit>) (profile: MemoryProfile) : Pipe<'T, unit> =
+//        let reducer (s : AsyncSeq<'T>) = consume s          // Async<unit>
+//        reduce name reducer  profile              // gives AsyncSeq<unit>
+
+    let consumeWith (name: string) (consume: 'T -> unit) (profile: MemoryProfile) : Pipe<'T, unit> =
+        let apply input = 
+            asyncSeq {
+                do! AsyncSeq.iterAsync (fun x -> async { consume x }) input
+                yield ()
+            }
+        create name apply profile
 
     /// Combine two <c>Pipe</c> instances into one by composing their memory profiles and transformation functions.
     let compose (p1: Pipe<'S,'T>) (p2: Pipe<'T,'U>) : Pipe<'S,'U> =
@@ -116,13 +124,13 @@ module Pipe =
     /// and so on. If depth is 3 and stride is 3, then it'll be image 0, 1, 2 followed by
     /// 3, 4, 5. It is also possible to use this for sampling, e.g., setting depth to 1
     /// and stride to 2 sends every second image to f.  
-    let mapWindowed (label: string) (depth: uint) (updateId: uint->'S->'S) (pad: uint) (zeroMaker: 'S->'S) (stride: uint) (emitStart: uint) (emitCount: uint) (f: 'S list -> 'T list) : Pipe<'S,'T> =
+    let mapWindowed (name: string) (depth: uint) (updateId: uint->'S->'S) (pad: uint) (zeroMaker: 'S->'S) (stride: uint) (emitStart: uint) (emitCount: uint) (f: 'S list -> 'T list) : Pipe<'S,'T> =
         let apply input =
             // AsyncSeqExtensions.windowed depth stride input
             AsyncSeqExtensions.windowedWithPad depth updateId stride pad pad zeroMaker input
             |> AsyncSeq.collect (f >> AsyncSeq.ofSeq)
         let profile = Sliding (depth,stride,emitStart,emitCount)
-        create label apply profile
+        create name apply profile
 
     let ignore () : Pipe<'T, unit> =
         let apply input =
@@ -288,13 +296,13 @@ module Stage =
         create name pipe trans (fun s -> s) 
 
     // this assumes too much: Streaming and identity ShapeUpdate!!!
-    let liftUnary<'T,'Shape> (name: string) (f: 'T -> 'T) : Stage<'T, 'T, 'Shape> =
+    let liftUnary<'S,'T,'Shape> (name: string) (f: 'S -> 'T) : Stage<'S, 'T, 'Shape> =
         let transition = transition Streaming Streaming
         let pipe = Pipe.lift name Streaming f
         create name pipe transition (fun s -> s) 
 
-    let tap (label: string) : Stage<'T, 'T, 'Shape> =
-        liftUnary $"tap: {label}" (fun x -> printfn "[%s] %A" label x; x)
+    let tap (name: string) : Stage<'T, 'T, 'Shape> =
+        liftUnary $"tap: {name}" (fun x -> printfn "[%s] %A" name x; x)
 
     let tapIt (toString: 'T -> string) : Stage<'T, 'T, 'Shape> =
         liftUnary "tapIt" (fun x -> printfn "%s" (toString x); x)
@@ -310,6 +318,16 @@ module Stage =
         let transition = transition Streaming Constant
         create "ignore" pipe transition (fun s -> s)
 
+    let consumeWith (name: string) (consume: 'T -> unit) : Stage<'T, unit, 'Shape> =
+        let pipe = Pipe.consumeWith name consume Streaming
+        let transition = transition Streaming Constant
+        create name pipe transition (fun s -> s)
+
+    let cast<'S,'T,'Shape when 'S: equality and 'T: equality> name f : Stage<'S,'T, 'Shape> =
+        let apply input = input |> AsyncSeq.map f 
+        let pipe = Pipe.create name apply Streaming
+        let transition = transition Streaming Streaming
+        create name pipe transition (fun s -> s)
 
 ////////////////////////////////////////////////////////////
 // MemFlow state monad

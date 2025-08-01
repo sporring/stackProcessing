@@ -7,10 +7,10 @@ let main _ =
     let availableMemory = 1024UL * 1024UL // 1MB for example
     let sigma = 1.0
 
-    source availableMemory
+    debug availableMemory
     |> readAs<float> "image" ".tiff"
     >=> convGauss sigma
-    >=> castFloatToUInt8
+    >=> cast<float,uint8>
     >=> write "result" ".tif"
     |> sink
 

@@ -3,7 +3,7 @@ module StackProcessing
 open SlimPipeline // Core processing model
 open Routing // Combinators and routing logic
 open Processing // Common image operators
-open Slice // Image and slice types
+//open Slice // Image and slice types
 open System.IO
 
 type Stage<'S,'T,'Shape> = SlimPipeline.Stage<'S,'T,'Shape>
@@ -32,22 +32,50 @@ let drainLast pl = Routing.drainLast "drainLast" pl
 let tap = Stage.tap
 let tapIt = Stage.tapIt
 let ignoreAll = Stage.ignore<_,Shape>
-let liftUnary (f: Slice<'T> -> Slice<'T>) = Stage.liftUnary "liftUnary" f
+let liftUnary (f: Slice.Slice<'S> -> Slice.Slice<'T>) = Stage.liftUnary<Slice.Slice<'S>,Slice.Slice<'T>,Shape> "liftUnary" f
 
+let write (outputDir: string) (suffix: string) : Stage<Slice.Slice<'T>, unit, 'Shape> =
+    if not (Directory.Exists(outputDir)) then
+        Directory.CreateDirectory(outputDir) |> ignore
+    let consumer (slice:Slice.Slice<'T>) =
+        let fileName = Path.Combine(outputDir, sprintf "slice_%03d%s" slice.Index suffix)
+        slice.Image.toFile(fileName)
+        printfn "[Write] Saved slice %d to %s as %s" slice.Index fileName (typeof<'T>.Name) 
+    Stage.consumeWith $"write:{outputDir}" consumer 
+
+let show (plt: Slice.Slice<'T> -> unit) : Stage<Slice.Slice<'T>, unit, 'Shape> =
+    let consumer (slice:Slice.Slice<'T>) =
+        let width = slice |> Slice.GetWidth |> int
+        let height = slice |> Slice.GetHeight |> int
+        plt slice
+        printfn "[Show] Showing slice %d" slice.Index
+    Stage.consumeWith "show" consumer 
+
+let plot (plt: (float list)->(float list)->unit) : Stage<(float * float) list, unit, 'Shape> = // better be (float*float) list
+    let consumer (points: (float*float) list) =
+        let x,y = points |> List.unzip
+        plt x y
+        printfn "[Plot] Plotting {points.Length} 2D points"
+    Stage.consumeWith "plot" consumer 
+
+let print = tap
+
+(*
 let write = Processing.writeOp
 let print = Processing.printOp
 let plot = Processing.plotOp
 let show = Processing.showOp
+*)
 
 let finiteDiffFilter3D 
     (direction: uint) 
     (order: uint)
     (pl : Pipeline<unit, unit, Shape>) 
-    : Pipeline<unit, Slice<float>, Shape> =
-    let img = finiteDiffFilter3D direction order
-    let sz = GetSize img
+    : Pipeline<unit, Slice.Slice<float>, Shape> =
+    let img = Slice.finiteDiffFilter3D direction order
+    let sz = Slice.GetSize img
     let shapeUpdate = fun (s: Shape) -> s
-    let op : Stage<unit, Slice<float>, Shape> =
+    let op : Stage<unit, Slice.Slice<float>, Shape> =
         {
             Name = "gaussSource"
             Pipe = img |> liftImageSource "gaussSource"
@@ -68,11 +96,11 @@ let axisSource
     (axis: int) 
     (size: int list)
     (pl : Pipeline<unit, unit, Shape>) 
-    : Pipeline<unit, Slice<uint>, Shape> =
+    : Pipeline<unit, Slice.Slice<uint>, Shape> =
     let img = Slice.generateCoordinateAxis axis size
-    let sz = GetSize img
+    let sz = Slice.GetSize img
     let shapeUpdate = fun (s: Shape) -> s
-    let op : Stage<unit, Slice<uint>, Shape> =
+    let op : Stage<unit, Slice.Slice<uint>, Shape> =
         {
             Name = "axisSource"
             Pipe = img |> liftImageSource "axisSource"
@@ -90,60 +118,81 @@ let axisSource
     }
 
 /// Pixel type casting
-let cast<'S,'T when 'S: equality and 'T: equality> = castOp<'S,'T,Shape> (sprintf "cast(%s->%s)" typeof<'S>.Name typeof<'T>.Name) Slice.cast<'S,'T>
+let cast<'S,'T when 'S: equality and 'T: equality> = Stage.cast<Slice.Slice<'S>,Slice.Slice<'T>,Shape> (sprintf "cast(%s->%s)" typeof<'S>.Name typeof<'T>.Name) Slice.cast<'S,'T>
 
 /// Basic arithmetic
-let add slice = addOp "add" slice
-let inline scalarAddSlice<^T when ^T: equality and ^T: (static member op_Explicit: ^T -> float)> (i: ^T) = scalarAddSliceOp "scalarAddSlice" i
-let inline sliceAddScalar<^T when ^T: equality and ^T: (static member op_Explicit: ^T -> float)> (i: ^T) = sliceAddScalarOp<'T,Shape> "sliceAddScalar" i
+let add slice = 
+    Stage.liftUnary<Slice.Slice<'T>,Slice.Slice<'T>,Shape> "add" (Slice.add slice)
+let inline scalarAddSlice<^T when ^T: equality and ^T: (static member op_Explicit: ^T -> float)> (i: ^T) = 
+    Stage.liftUnary<Slice.Slice<'T>,Slice.Slice<'T>,Shape> "scalarAddSlice" (fun (s:Slice.Slice<^T>)->Slice.scalarAddSlice<^T> i s)
+let inline sliceAddScalar<^T when ^T: equality and ^T: (static member op_Explicit: ^T -> float)> (i: ^T) =
+    Stage.liftUnary<Slice.Slice<'T>,Slice.Slice<'T>,Shape> "sliceAddScalar" (fun (s:Slice.Slice<^T>)->Slice.sliceAddScalar<^T> s i)
 
-let sub slice = subOp "sub" slice
-let inline scalarSubSlice<^T when ^T: equality and ^T: (static member op_Explicit: ^T -> float)> (i: ^T) = scalarSubSliceOp "scalarSubSlice" i
-let inline sliceSubScalar<^T when ^T: equality and ^T: (static member op_Explicit: ^T -> float)> (i: ^T) = sliceSubScalarOp "sliceSubScalar" i
+let sub slice = 
+    Stage.liftUnary<Slice.Slice<'T>,Slice.Slice<'T>,Shape> "sub" (Slice.sub slice)
+let inline scalarSubSlice<^T when ^T: equality and ^T: (static member op_Explicit: ^T -> float)> (i: ^T) =
+    Stage.liftUnary<Slice.Slice<'T>,Slice.Slice<'T>,Shape> "scalarSubSlice" (fun (s:Slice.Slice<^T>)->Slice.scalarSubSlice<^T> i s)
+let inline sliceSubScalar<^T when ^T: equality and ^T: (static member op_Explicit: ^T -> float)> (i: ^T) =
+    Stage.liftUnary<Slice.Slice<'T>,Slice.Slice<'T>,Shape> "sliceSubScalar" (fun (s:Slice.Slice<^T>)->Slice.sliceSubScalar<^T> s i)
 
-let mul slice = mulOp "mul" slice
-let inline scalarMulSlice<^T when ^T: equality and ^T: (static member op_Explicit: ^T -> float)> (i: ^T) = scalarMulSliceOp "scalarMulSlice" i
-let inline sliceMulScalar<^T when ^T: equality and ^T: (static member op_Explicit: ^T -> float)> (i: ^T) = sliceMulScalarOp "sliceMulScalar" i
+let mul slice = Stage.liftUnary<Slice.Slice<'T>,Slice.Slice<'T>,Shape> "mul" (Slice.mul slice)
+let inline scalarMulSlice<^T when ^T: equality and ^T: (static member op_Explicit: ^T -> float)> (i: ^T) =
+    Stage.liftUnary<Slice.Slice<'T>,Slice.Slice<'T>,Shape> "scalarMulSlice" (fun (s:Slice.Slice<^T>)->Slice.scalarMulSlice<^T> i s)
+let inline sliceMulScalar<^T when ^T: equality and ^T: (static member op_Explicit: ^T -> float)> (i: ^T) =
+    Stage.liftUnary<Slice.Slice<'T>,Slice.Slice<'T>,Shape> "sliceMulScalar" (fun (s:Slice.Slice<^T>)->Slice.sliceMulScalar<^T> s i)
 
-let div slice = divOp "div" slice
-let inline scalarDivSlice<^T when ^T: equality and ^T: (static member op_Explicit: ^T -> float)> (i: ^T) = scalarDivSliceOp "scalarDivSlice" i
-let inline sliceDivScalar<^T when ^T: equality and ^T: (static member op_Explicit: ^T -> float)> (i: ^T) = sliceDivScalarOp "sliceDivScalar" i
+let div slice = Stage.liftUnary<Slice.Slice<'T>,Slice.Slice<'T>,Shape> "div" (Slice.div slice)
+let inline scalarDivSlice<^T when ^T: equality and ^T: (static member op_Explicit: ^T -> float)> (i: ^T) =
+    Stage.liftUnary<Slice.Slice<'T>,Slice.Slice<'T>,Shape> "scalarDivSlice" (fun (s:Slice.Slice<^T>)->Slice.scalarDivSlice<^T> i s)
+let inline sliceDivScalar<^T when ^T: equality and ^T: (static member op_Explicit: ^T -> float)> (i: ^T) =
+    Stage.liftUnary<Slice.Slice<'T>,Slice.Slice<'T>,Shape> "sliceDivScalar" (fun (s:Slice.Slice<^T>)->Slice.sliceDivScalar<^T> s i)
 
 /// Simple functions
-let absFloat      : Stage<Slice<float>,Slice<float>, Shape> =      Stage.liftUnary "abs"    absSlice
-let absFloat32    : Stage<Slice<float32>,Slice<float32>, Shape> =  Stage.liftUnary "abs"    absSlice
-let absInt        : Stage<Slice<int>,Slice<int>, Shape> =          Stage.liftUnary "abs"    absSlice
-let acosFloat     : Stage<Slice<float>,Slice<float>, Shape> =      Stage.liftUnary "acos"   acosSlice
-let acosFloat32   : Stage<Slice<float32>,Slice<float32>, Shape> =  Stage.liftUnary "acos"   acosSlice
-let asinFloat     : Stage<Slice<float>,Slice<float>, Shape> =      Stage.liftUnary "asin"   asinSlice
-let asinFloat32   : Stage<Slice<float32>,Slice<float32>, Shape> =  Stage.liftUnary "asin"   asinSlice
-let atanFloat     : Stage<Slice<float>,Slice<float>, Shape> =      Stage.liftUnary "atan"   atanSlice
-let atanFloat32   : Stage<Slice<float32>,Slice<float32>, Shape> =  Stage.liftUnary "atan"   atanSlice
-let cosFloat      : Stage<Slice<float>,Slice<float>, Shape> =      Stage.liftUnary "cos"    cosSlice
-let cosFloat32    : Stage<Slice<float32>,Slice<float32>, Shape> =  Stage.liftUnary "cos"    cosSlice
-let sinFloat      : Stage<Slice<float>,Slice<float>, Shape> =      Stage.liftUnary "sin"    sinSlice
-let sinFloat32    : Stage<Slice<float32>,Slice<float32>, Shape> =  Stage.liftUnary "sin"    sinSlice
-let tanFloat      : Stage<Slice<float>,Slice<float>, Shape> =      Stage.liftUnary "tan"    tanSlice
-let tanFloat32    : Stage<Slice<float32>,Slice<float32>, Shape> =  Stage.liftUnary "tan"    tanSlice
-let expFloat      : Stage<Slice<float>,Slice<float>, Shape> =      Stage.liftUnary "exp"    expSlice
-let expFloat32    : Stage<Slice<float32>,Slice<float32>, Shape> =  Stage.liftUnary "exp"    expSlice
-let log10Float    : Stage<Slice<float>,Slice<float>, Shape> =      Stage.liftUnary "log10"  log10Slice
-let log10Float32  : Stage<Slice<float32>,Slice<float32>, Shape> =  Stage.liftUnary "log10"  log10Slice
-let logFloat      : Stage<Slice<float>,Slice<float>, Shape> =      Stage.liftUnary "log"    logSlice
-let logFloat32    : Stage<Slice<float32>,Slice<float32>, Shape> =  Stage.liftUnary "log"    logSlice
-let roundFloat    : Stage<Slice<float>,Slice<float>, Shape> =      Stage.liftUnary "round"  roundSlice
-let roundFloat32  : Stage<Slice<float32>,Slice<float32>, Shape> =  Stage.liftUnary "round"  roundSlice
-let sqrtFloat     : Stage<Slice<float>,Slice<float>, Shape> =      Stage.liftUnary "sqrt"   sqrtSlice
-let sqrtFloat32   : Stage<Slice<float32>,Slice<float32>, Shape> =  Stage.liftUnary "sqrt"   sqrtSlice
-let sqrtInt       : Stage<Slice<int>,Slice<int>, Shape> =          Stage.liftUnary "sqrt"   sqrtSlice
-let squareFloat   : Stage<Slice<float>,Slice<float>, Shape> =      Stage.liftUnary "square" squareSlice
-let squareFloat32 : Stage<Slice<float32>,Slice<float32>, Shape> =  Stage.liftUnary "square" squareSlice
-let squareInt     : Stage<Slice<int>,Slice<int>, Shape> =          Stage.liftUnary "square" squareSlice
+let abs<'T when 'T: equality>      : Stage<Slice.Slice<'T>,Slice.Slice<'T>, Shape> =      Stage.liftUnary<Slice.Slice<'T>,Slice.Slice<'T>,Shape> "abs"    Slice.absSlice
+let absFloat      : Stage<Slice.Slice<float>,Slice.Slice<float>, Shape> =      Stage.liftUnary<Slice.Slice<float>,Slice.Slice<float>,Shape> "abs"    Slice.absSlice
+let absFloat32    : Stage<Slice.Slice<float32>,Slice.Slice<float32>, Shape> =  Stage.liftUnary<Slice.Slice<float32>,Slice.Slice<float32>,Shape> "abs"    Slice.absSlice
+let absInt        : Stage<Slice.Slice<int>,Slice.Slice<int>, Shape> =          Stage.liftUnary<Slice.Slice<int>,Slice.Slice<int>,Shape> "abs"    Slice.absSlice
+let acosFloat     : Stage<Slice.Slice<float>,Slice.Slice<float>, Shape> =      Stage.liftUnary<Slice.Slice<float>,Slice.Slice<float>,Shape> "acos"   Slice.acosSlice
+let acosFloat32   : Stage<Slice.Slice<float32>,Slice.Slice<float32>, Shape> =  Stage.liftUnary<Slice.Slice<float32>,Slice.Slice<float32>,Shape> "acos"   Slice.acosSlice
+let asinFloat     : Stage<Slice.Slice<float>,Slice.Slice<float>, Shape> =      Stage.liftUnary<Slice.Slice<float>,Slice.Slice<float>,Shape> "asin"   Slice.asinSlice
+let asinFloat32   : Stage<Slice.Slice<float32>,Slice.Slice<float32>, Shape> =  Stage.liftUnary<Slice.Slice<float32>,Slice.Slice<float32>,Shape> "asin"   Slice.asinSlice
+let atanFloat     : Stage<Slice.Slice<float>,Slice.Slice<float>, Shape> =      Stage.liftUnary<Slice.Slice<float>,Slice.Slice<float>,Shape> "atan"   Slice.atanSlice
+let atanFloat32   : Stage<Slice.Slice<float32>,Slice.Slice<float32>, Shape> =  Stage.liftUnary<Slice.Slice<float32>,Slice.Slice<float32>,Shape> "atan"   Slice.atanSlice
+let cosFloat      : Stage<Slice.Slice<float>,Slice.Slice<float>, Shape> =      Stage.liftUnary<Slice.Slice<float>,Slice.Slice<float>,Shape> "cos"    Slice.cosSlice
+let cosFloat32    : Stage<Slice.Slice<float32>,Slice.Slice<float32>, Shape> =  Stage.liftUnary<Slice.Slice<float32>,Slice.Slice<float32>,Shape> "cos"    Slice.cosSlice
+let sinFloat      : Stage<Slice.Slice<float>,Slice.Slice<float>, Shape> =      Stage.liftUnary<Slice.Slice<float>,Slice.Slice<float>,Shape> "sin"    Slice.sinSlice
+let sinFloat32    : Stage<Slice.Slice<float32>,Slice.Slice<float32>, Shape> =  Stage.liftUnary<Slice.Slice<float32>,Slice.Slice<float32>,Shape> "sin"    Slice.sinSlice
+let tanFloat      : Stage<Slice.Slice<float>,Slice.Slice<float>, Shape> =      Stage.liftUnary<Slice.Slice<float>,Slice.Slice<float>,Shape> "tan"    Slice.tanSlice
+let tanFloat32    : Stage<Slice.Slice<float32>,Slice.Slice<float32>, Shape> =  Stage.liftUnary<Slice.Slice<float32>,Slice.Slice<float32>,Shape> "tan"    Slice.tanSlice
+let expFloat      : Stage<Slice.Slice<float>,Slice.Slice<float>, Shape> =      Stage.liftUnary<Slice.Slice<float>,Slice.Slice<float>,Shape> "exp"    Slice.expSlice
+let expFloat32    : Stage<Slice.Slice<float32>,Slice.Slice<float32>, Shape> =  Stage.liftUnary<Slice.Slice<float32>,Slice.Slice<float32>,Shape> "exp"    Slice.expSlice
+let log10Float    : Stage<Slice.Slice<float>,Slice.Slice<float>, Shape> =      Stage.liftUnary<Slice.Slice<float>,Slice.Slice<float>,Shape> "log10"  Slice.log10Slice
+let log10Float32  : Stage<Slice.Slice<float32>,Slice.Slice<float32>, Shape> =  Stage.liftUnary<Slice.Slice<float32>,Slice.Slice<float32>,Shape> "log10"  Slice.log10Slice
+let logFloat      : Stage<Slice.Slice<float>,Slice.Slice<float>, Shape> =      Stage.liftUnary<Slice.Slice<float>,Slice.Slice<float>,Shape> "log"    Slice.logSlice
+let logFloat32    : Stage<Slice.Slice<float32>,Slice.Slice<float32>, Shape> =  Stage.liftUnary<Slice.Slice<float32>,Slice.Slice<float32>,Shape> "log"    Slice.logSlice
+let roundFloat    : Stage<Slice.Slice<float>,Slice.Slice<float>, Shape> =      Stage.liftUnary<Slice.Slice<float>,Slice.Slice<float>,Shape> "round"  Slice.roundSlice
+let roundFloat32  : Stage<Slice.Slice<float32>,Slice.Slice<float32>, Shape> =  Stage.liftUnary<Slice.Slice<float32>,Slice.Slice<float32>,Shape> "round"  Slice.roundSlice
+let sqrtFloat     : Stage<Slice.Slice<float>,Slice.Slice<float>, Shape> =      Stage.liftUnary<Slice.Slice<float>,Slice.Slice<float>,Shape> "sqrt"   Slice.sqrtSlice
+let sqrtFloat32   : Stage<Slice.Slice<float32>,Slice.Slice<float32>, Shape> =  Stage.liftUnary<Slice.Slice<float32>,Slice.Slice<float32>,Shape> "sqrt"   Slice.sqrtSlice
+let sqrtInt       : Stage<Slice.Slice<int>,Slice.Slice<int>, Shape> =          Stage.liftUnary<Slice.Slice<int>,Slice.Slice<int>,Shape> "sqrt"   Slice.sqrtSlice
+let squareFloat   : Stage<Slice.Slice<float>,Slice.Slice<float>, Shape> =      Stage.liftUnary<Slice.Slice<float>,Slice.Slice<float>,Shape> "square" Slice.squareSlice
+let squareFloat32 : Stage<Slice.Slice<float32>,Slice.Slice<float32>, Shape> =  Stage.liftUnary<Slice.Slice<float32>,Slice.Slice<float32>,Shape> "square" Slice.squareSlice
+let squareInt     : Stage<Slice.Slice<int>,Slice.Slice<int>, Shape> =          Stage.liftUnary<Slice.Slice<int>,Slice.Slice<int>,Shape> "square" Slice.squareSlice
 
 let histogram<'T when 'T: comparison> = histogramOp<'T,Shape> "histogram"
-let inline map2pairs< ^T, ^S when ^T: comparison and ^T : (static member op_Explicit : ^T -> float) and  ^S : (static member op_Explicit : ^S -> float) > = map2pairsOp<'T,'S,Shape> "map2pairs"
-let inline pairs2floats< ^T, ^S when ^T : (static member op_Explicit : ^T -> float) and  ^S : (static member op_Explicit : ^S -> float) > = pairs2floatsOp<'T,'S,Shape> "pairs2floats"
-let inline pairs2ints< ^T, ^S when ^T : (static member op_Explicit : ^T -> int) and  ^S : (static member op_Explicit : ^S -> int) > = pairs2intsOp<'T,'S,Shape> "pairs2ints"
+
+let inline map2pairs< ^T, ^S when ^T: comparison and ^T : (static member op_Explicit : ^T -> float) and  ^S : (static member op_Explicit : ^S -> float) > = 
+    let map2pairs (map: Map<'T, 'S>): ('T * 'S) list =
+        map |> Map.toList
+    Stage.liftUnary "map2pairs" map2pairs
+let inline pairs2floats< ^T, ^S when ^T : (static member op_Explicit : ^T -> float) and  ^S : (static member op_Explicit : ^S -> float) > = 
+    let pairs2floats (pairs: (^T * ^S) list) : (float * float) list =
+        pairs |> List.map (fun (k, v) -> (float k, float v)) 
+    Stage.liftUnary "pairs2floats" pairs2floats
+let inline pairs2ints< ^T, ^S when ^T : (static member op_Explicit : ^T -> int) and  ^S : (static member op_Explicit : ^S -> int) > = 
+    let pairs2ints (pairs: (^T * ^S) list) : (int * int) list =
+        pairs |> List.map (fun (k, v) -> (int k, int v)) 
+    Stage.liftUnary "pairs2ints" pairs2ints
 
 type ImageStats = ImageFunctions.ImageStats
 let computeStats<'T when 'T: equality and 'T: comparison> = computeStatsOp<'T,Shape> "computeStats"
@@ -193,10 +242,10 @@ let getStackInfo = Slice.getStackInfo
 let getStackSize = Slice.getStackSize
 let getStackWidth = Slice.getStackWidth
 
-let createAs<'T when 'T: equality> (width: uint) (height: uint) (depth: uint) (pl : Pipeline<unit, unit, Shape>) : Pipeline<unit, Slice<'T>,Shape> =
+let createAs<'T when 'T: equality> (width: uint) (height: uint) (depth: uint) (pl : Pipeline<unit, unit, Shape>) : Pipeline<unit, Slice.Slice<'T>,Shape> =
     // width, heigth, depth should be replaced with shape and shapeUpdate, and mapper should be deferred to outside Core!!!
     if pl.debug then printfn $"[createAs] {width}x{height}x{depth}"
-    let mapper (i: uint) : Slice<'T> = 
+    let mapper (i: uint) : Slice.Slice<'T> = 
         let slice = Slice.create<'T> width height 1u i
         if pl.debug then printfn "[create] Created slice %A" i
         slice
@@ -208,16 +257,16 @@ let createAs<'T when 'T: equality> (width: uint) (height: uint) (depth: uint) (p
     let context = ShapeContext.create (fun _ -> width*height |> uint64) (fun _ -> depth)
     Pipeline.create flow pl.mem (Some shape) context pl.debug
 
-let readAs<'T when 'T: equality> (inputDir : string) (suffix : string) (pl : Pipeline<unit, unit, Shape>) : Pipeline<unit, Slice<'T>,Shape> =
+let readAs<'T when 'T: equality> (inputDir : string) (suffix : string) (pl : Pipeline<unit, unit, Shape>) : Pipeline<unit, Slice.Slice<'T>,Shape> =
     // much should be deferred to outside Core!!!
     if pl.debug then printfn $"[readAs] {inputDir}/*{suffix}"
     let (width,height,depth) = Slice.getStackSize inputDir suffix
     let filenames = Directory.GetFiles(inputDir, "*"+suffix) |> Array.sort
     let depth = filenames.Length
-    let mapper (i: uint) : Slice<'T> = 
+    let mapper (i: uint) : Slice.Slice<'T> = 
         let fileName = filenames[int i]; 
         let slice = Slice.readSlice<'T> (uint i) fileName
-        if pl.debug then printfn "[readSlices] Reading slice %A from %s" i fileName
+        printfn "[readAs] Reading slice %A from %s as %s" i fileName (typeof<'T>.Name)
         slice
     let transition = Stage.transition Constant Streaming
     let shapeUpdate = id
@@ -227,12 +276,12 @@ let readAs<'T when 'T: equality> (inputDir : string) (suffix : string) (pl : Pip
     let context = ShapeContext.create (fun _ -> width*height |> uint64) (fun _ -> uint depth)
     Pipeline.create flow pl.mem (Some shape) context pl.debug
 
-let readRandomAs<'T when 'T: equality> (count: uint) (inputDir : string) (suffix : string) (pl : Pipeline<unit, unit, Shape>) : Pipeline<unit, Slice<'T>,Shape> =
+let readRandomAs<'T when 'T: equality> (count: uint) (inputDir : string) (suffix : string) (pl : Pipeline<unit, unit, Shape>) : Pipeline<unit, Slice.Slice<'T>,Shape> =
     if pl.debug then printfn $"[readRandomAs] {count} slices from {inputDir}/*{suffix}"
     let (width,height,depth) = Slice.getStackSize inputDir suffix
     let filenames = Directory.GetFiles(inputDir, "*"+suffix) |> Array.randomChoices (int count)
     let depth = filenames.Length
-    let mapper (i: uint) : Slice<'T> = 
+    let mapper (i: uint) : Slice.Slice<'T> = 
         let fileName = filenames[int i]; 
         let slice = Slice.readSlice<'T> (uint i) fileName
         if pl.debug then printfn "[readRandomSlices] Reading slice %A from %s" i fileName

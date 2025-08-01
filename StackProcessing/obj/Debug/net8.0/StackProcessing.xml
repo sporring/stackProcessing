@@ -17,19 +17,9 @@
  Histogram related functions
 </summary>
 </member>
-<member name="M:Processing.addOp``2(System.String,Slice.Slice{``0})">
-<summary>
- Basic arithmetic
-</summary>
-</member>
-<member name="M:Processing.liftUnaryOpInt``1(System.String,Microsoft.FSharp.Core.FSharpFunc{Slice.Slice{System.Int32},Slice.Slice{System.Int32}})">
+<member name="M:Processing.liftFullOp``2(System.String,Microsoft.FSharp.Core.FSharpFunc{Slice.Slice{``0},Slice.Slice{``0}})">
 <summary>
  quick constructor for Streaming→Streaming unary ops
-</summary>
-</member>
-<member name="M:Processing.writeOp``2(System.String,System.String)">
-<summary>
- Sink parts
 </summary>
 </member>
 <member name="P:StackProcessing.binaryFillHoles">
@@ -42,12 +32,12 @@
  Convolution like operators
 </summary>
 </member>
-<member name="P:StackProcessing.absFloat">
+<member name="M:StackProcessing.abs``1">
 <summary>
  Simple functions
 </summary>
 </member>
-<member name="M:StackProcessing.add``2(Slice.Slice{``0})">
+<member name="M:StackProcessing.add``1(Slice.Slice{``0})">
 <summary>
  Basic arithmetic
 </summary>
