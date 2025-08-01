@@ -1,9 +1,6 @@
 module StackProcessing
 
 open SlimPipeline // Core processing model
-open Routing // Combinators and routing logic
-//open Processing // Common image operators
-//open Slice // Image and slice types
 open System.IO
 
 type Stage<'S,'T,'Shape> = SlimPipeline.Stage<'S,'T,'Shape>
