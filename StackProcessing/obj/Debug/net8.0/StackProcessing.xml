@@ -7,29 +7,9 @@
  Represents a slice of a stack of 2d images. 
  </summary>
 </member>
-<member name="P:Processing.zeroPad">
-<summary>
- Convolution like operators
-</summary>
-</member>
-<member name="M:Processing.histogramOp``2(System.String)">
-<summary>
- Histogram related functions
-</summary>
-</member>
-<member name="M:Processing.liftFullOp``2(System.String,Microsoft.FSharp.Core.FSharpFunc{Slice.Slice{``0},Slice.Slice{``0}})">
-<summary>
- quick constructor for Streaming→Streaming unary ops
-</summary>
-</member>
-<member name="P:StackProcessing.binaryFillHoles">
+<member name="M:StackProcessing.binaryFillHoles(System.UInt32)">
 <summary>
  Full stack operators
-</summary>
-</member>
-<member name="P:StackProcessing.zeroPad">
-<summary>
- Convolution like operators
 </summary>
 </member>
 <member name="M:StackProcessing.abs``1">

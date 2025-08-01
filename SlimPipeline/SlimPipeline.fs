@@ -340,6 +340,11 @@ module Stage =
         let pipe = Pipe.lift name Streaming f
         create name pipe transition (fun s -> s) 
 
+    let liftWindowed<'S,'T,'Shape when 'S: equality and 'T: equality> (name: string) (updateId: uint->'S->'S) (window: uint) (pad: uint) (zeroMaker: 'S->'S) (stride: uint) (emitStart: uint) (emitCount: uint) (f: 'S list -> 'T list) : Stage<'S, 'T,'Shape> =
+        let transition = MemoryTransition.create (Sliding (window,stride,emitStart,emitCount)) Streaming
+        let pipe = Pipe.mapWindowed name window updateId pad zeroMaker stride emitStart emitCount f
+        create name pipe transition (fun s -> s)
+
     let tap (name: string) : Stage<'T, 'T, 'Shape> =
         liftUnary $"tap: {name}" (fun x -> printfn "[%s] %A" name x; x)
 

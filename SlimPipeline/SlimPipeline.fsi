@@ -158,6 +158,16 @@ module Stage =
         folder: ('State -> 'Mapped -> 'State) ->
         state: 'State -> profile: MemoryProfile -> Stage<'In,'State,'Shape>
     val liftUnary: name: string -> f: ('S -> 'T) -> Stage<'S,'T,'Shape>
+    val liftWindowed:
+      name: string ->
+        updateId: (uint -> 'S -> 'S) ->
+        window: uint ->
+        pad: uint ->
+        zeroMaker: ('S -> 'S) ->
+        stride: uint ->
+        emitStart: uint ->
+        emitCount: uint -> f: ('S list -> 'T list) -> Stage<'S,'T,'Shape>
+        when 'S: equality and 'T: equality
     val tap: name: string -> Stage<'T,'T,'Shape>
     val tapIt: toString: ('T -> string) -> Stage<'T,'T,'Shape>
     val internal tee:

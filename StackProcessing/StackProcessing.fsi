@@ -357,211 +357,6 @@ val getStackWidth: inputDir: string -> suffix: string -> uint64
 val getStackHeight: inputDir: string -> suffix: string -> uint64
 
 
-module Processing
-
-val liftImageSource:
-  name: string ->
-    img: Slice.Slice<'T> -> SlimPipeline.Pipe<unit,Slice.Slice<'T>>
-    when 'T: equality
-
-val skipNTakeM: n: uint -> m: uint -> lst: 'a list -> 'a list
-
-val internal liftWindowedOp:
-  name: string ->
-    window: uint ->
-    pad: uint ->
-    zeroMaker: (Slice.Slice<'S> -> Slice.Slice<'S>) ->
-    stride: uint ->
-    emitStart: uint ->
-    emitCount: uint ->
-    f: (Slice.Slice<'S> -> Slice.Slice<'T>) ->
-    SlimPipeline.Stage<Slice.Slice<'S>,Slice.Slice<'T>,'Shape>
-    when 'S: equality and 'T: equality
-
-val internal liftWindowedTrimOp:
-  name: string ->
-    window: uint ->
-    pad: uint ->
-    zeroMaker: (Slice.Slice<'S> -> Slice.Slice<'S>) ->
-    stride: uint ->
-    emitStart: uint ->
-    emitCount: uint ->
-    trim: uint ->
-    f: (Slice.Slice<'S> -> Slice.Slice<'T>) ->
-    SlimPipeline.Stage<Slice.Slice<'S>,Slice.Slice<'T>,'Shape>
-    when 'S: equality and 'T: equality
-
-/// quick constructor for Streaming→Streaming unary ops
-val internal liftFullOp:
-  name: string ->
-    f: (Slice.Slice<'T> -> Slice.Slice<'T>) ->
-    SlimPipeline.Stage<Slice.Slice<'T>,Slice.Slice<'T>,'Shape> when 'T: equality
-
-val internal liftFullParamOp:
-  name: string ->
-    f: ('P -> Slice.Slice<'T> -> Slice.Slice<'T>) ->
-    param: 'P -> SlimPipeline.Stage<Slice.Slice<'T>,Slice.Slice<'T>,'Shape>
-    when 'T: equality
-
-val internal liftFullParam2Op:
-  name: string ->
-    f: ('P -> 'Q -> Slice.Slice<'T> -> Slice.Slice<'T>) ->
-    param1: 'P ->
-    param2: 'Q -> SlimPipeline.Stage<Slice.Slice<'T>,Slice.Slice<'T>,'Shape>
-    when 'T: equality
-
-/// Histogram related functions
-val histogramOp:
-  name: string -> SlimPipeline.Stage<Slice.Slice<'T>,Map<'T,uint64>,'Shape>
-    when 'T: comparison
-
-type ImageStats = Slice.ImageStats
-
-val computeStatsOp:
-  name: string -> SlimPipeline.Stage<Slice.Slice<'T>,ImageStats,'Shape>
-    when 'T: equality
-
-/// Convolution like operators
-val zeroPad: ImageFunctions.BoundaryCondition
-
-val periodicPad: ImageFunctions.BoundaryCondition
-
-val zeroFluxNeumannPad: ImageFunctions.BoundaryCondition
-
-val valid: ImageFunctions.OutputRegionMode
-
-val same: ImageFunctions.OutputRegionMode
-
-val zeroMaker: ex: Slice.Slice<'S> -> Slice.Slice<'S> when 'S: equality
-
-val discreteGaussianOp:
-  name: string ->
-    sigma: float ->
-    outputRegionMode: Slice.OutputRegionMode option ->
-    boundaryCondition: ImageFunctions.BoundaryCondition option ->
-    winSz: uint option ->
-    SlimPipeline.Stage<Slice.Slice<float>,Slice.Slice<float>,'Shape>
-
-val convGaussOp:
-  name: string ->
-    sigma: float ->
-    SlimPipeline.Stage<Slice.Slice<float>,Slice.Slice<float>,'Shape>
-
-val convolveOp:
-  name: string ->
-    kernel: Slice.Slice<'T> ->
-    outputRegionMode: Slice.OutputRegionMode option ->
-    bc: Slice.BoundaryCondition option ->
-    winSz: uint option ->
-    SlimPipeline.Stage<Slice.Slice<'T>,Slice.Slice<'T>,'Shape> when 'T: equality
-
-val convOp:
-  name: string ->
-    kernel: Slice.Slice<'a> ->
-    (uint option -> SlimPipeline.Stage<Slice.Slice<'a>,Slice.Slice<'a>,'b>)
-    when 'a: equality
-
-val private makeMorphOp:
-  name: string ->
-    radius: uint ->
-    winSz: uint option ->
-    core: (uint -> Slice.Slice<'T> -> Slice.Slice<'T>) ->
-    SlimPipeline.Stage<Slice.Slice<'T>,Slice.Slice<'T>,'Shape> when 'T: equality
-
-val binaryErodeOp:
-  name: string ->
-    radius: uint ->
-    winSz: uint option ->
-    SlimPipeline.Stage<Slice.Slice<uint8>,Slice.Slice<uint8>,'a>
-
-val binaryDilateOp:
-  name: string ->
-    radius: uint ->
-    winSz: uint option ->
-    SlimPipeline.Stage<Slice.Slice<uint8>,Slice.Slice<uint8>,'a>
-
-val binaryOpeningOp:
-  name: string ->
-    radius: uint ->
-    winSz: uint option ->
-    SlimPipeline.Stage<Slice.Slice<uint8>,Slice.Slice<uint8>,'a>
-
-val binaryClosingOp:
-  name: string ->
-    radius: uint ->
-    winSz: uint option ->
-    SlimPipeline.Stage<Slice.Slice<uint8>,Slice.Slice<uint8>,'a>
-
-val binaryFillHolesOp<'Shape> :
-  name: string -> SlimPipeline.Stage<Slice.Slice<uint8>,Slice.Slice<uint8>,obj>
-
-val connectedComponentsOp:
-  name: string ->
-    SlimPipeline.Stage<Slice.Slice<uint8>,Slice.Slice<uint64>,'Shape>
-
-val piecewiseConnectedComponentsOp:
-  name: string ->
-    windowSize: uint option ->
-    SlimPipeline.Stage<Slice.Slice<uint8>,Slice.Slice<uint64>,'Shape>
-
-val otsuThresholdOp:
-  name: string -> SlimPipeline.Stage<Slice.Slice<'T>,Slice.Slice<'T>,'a>
-    when 'T: equality
-
-val otsuMultiThresholdOp:
-  name: string ->
-    n: byte -> SlimPipeline.Stage<Slice.Slice<'a>,Slice.Slice<'a>,'b>
-    when 'a: equality
-
-val momentsThresholdOp:
-  name: string -> SlimPipeline.Stage<Slice.Slice<'a>,Slice.Slice<'a>,'b>
-    when 'a: equality
-
-val signedDistanceMapOp:
-  name: string ->
-    SlimPipeline.Stage<Slice.Slice<uint8>,Slice.Slice<float>,'Shape>
-
-val watershedOp:
-  name: string ->
-    a: float -> SlimPipeline.Stage<Slice.Slice<'a>,Slice.Slice<'a>,'b>
-    when 'a: equality
-
-val thresholdOp:
-  name: string ->
-    a: float ->
-    b: float -> SlimPipeline.Stage<Slice.Slice<'a>,Slice.Slice<'a>,'b>
-    when 'a: equality
-
-val addNormalNoiseOp:
-  name: string ->
-    a: float ->
-    b: float -> SlimPipeline.Stage<Slice.Slice<'a>,Slice.Slice<'a>,'b>
-    when 'a: equality
-
-val relabelComponentsOp:
-  name: string ->
-    a: uint -> SlimPipeline.Stage<Slice.Slice<uint64>,Slice.Slice<uint64>,'a>
-
-val constantPad2DOp<'T when 'T: equality> :
-  name: string ->
-    padLower: uint list ->
-    padUpper: uint list ->
-    c: double -> SlimPipeline.Stage<Slice.Slice<obj>,Slice.Slice<obj>,obj>
-    when 'T: equality
-
-type FileInfo = Slice.FileInfo
-
-val getStackDepth: (string -> string -> uint)
-
-val getStackInfo: (string -> string -> Slice.FileInfo)
-
-val getStackSize: (string -> string -> uint * uint * uint)
-
-val getStackWidth: (string -> string -> uint64)
-
-val getStackHeight: (string -> string -> uint64)
-
-
 module StackProcessing
 
 type Stage<'S,'T,'Shape> = SlimPipeline.Stage<'S,'T,'Shape>
@@ -623,6 +418,21 @@ val liftUnary:
     SlimPipeline.Stage<Slice.Slice<'S>,Slice.Slice<'T>,Shape>
     when 'S: equality and 'T: equality
 
+val zeroMaker: ex: Slice.Slice<'S> -> Slice.Slice<'S> when 'S: equality
+
+val liftWindowed:
+  name: string ->
+    updateId: (uint -> Slice.Slice<'S> -> Slice.Slice<'S>) ->
+    window: uint ->
+    pad: uint ->
+    zeroMaker: (Slice.Slice<'S> -> Slice.Slice<'S>) ->
+    stride: uint ->
+    emitStart: uint ->
+    emitCount: uint ->
+    f: (Slice.Slice<'S> list -> Slice.Slice<'T> list) ->
+    Stage<Slice.Slice<'S>,Slice.Slice<'T>,Shape>
+    when 'S: equality and 'T: equality
+
 val write:
   outputDir: string -> suffix: string -> Stage<Slice.Slice<'T>,unit,Shape>
     when 'T: equality
@@ -636,18 +446,6 @@ val plot:
     Stage<(float * float) list,unit,Shape>
 
 val print: unit -> Stage<'T,unit,Shape>
-
-val finiteDiffFilter3D:
-  direction: uint ->
-    order: uint ->
-    pl: SlimPipeline.Pipeline<unit,unit,Shape> ->
-    SlimPipeline.Pipeline<unit,Slice.Slice<float>,Shape>
-
-val axisSource:
-  axis: int ->
-    size: int list ->
-    pl: SlimPipeline.Pipeline<unit,unit,Shape> ->
-    SlimPipeline.Pipeline<unit,Slice.Slice<uint>,Shape>
 
 /// Pixel type casting
 val cast<'S,'T when 'S: equality and 'T: equality> :
@@ -801,82 +599,99 @@ val inline pairs2ints<^T,^S
 
 type ImageStats = ImageFunctions.ImageStats
 
-val computeStats<'T when 'T: comparison> :
-  SlimPipeline.Stage<Slice.Slice<'T>,Processing.ImageStats,Shape>
-    when 'T: comparison
+val sliceComputeStats:
+  unit -> SlimPipeline.Stage<Slice.Slice<'T>,ImageStats,Shape> when 'T: equality
 
-/// Convolution like operators
-val zeroPad: ImageFunctions.BoundaryCondition
+val sliceComputeStatsFold:
+  unit -> SlimPipeline.Stage<ImageStats,ImageStats,Shape>
 
-val periodicPad: ImageFunctions.BoundaryCondition
+val computeStats:
+  unit -> SlimPipeline.Stage<Slice.Slice<'a>,ImageStats,Shape> when 'a: equality
 
-val zeroFluxNeumannPad: ImageFunctions.BoundaryCondition
+val stackFUnstack:
+  f: (Slice.Slice<'T> -> Slice.Slice<'a>) ->
+    slices: Slice.Slice<'T> list -> Slice.Slice<'a> list
+    when 'T: equality and 'a: equality
 
-val valid: ImageFunctions.OutputRegionMode
+val skipNTakeM: n: uint -> m: uint -> lst: 'a list -> 'a list
 
-val same: ImageFunctions.OutputRegionMode
+val stackFUnstackTrim:
+  trim: uint32 ->
+    f: (Slice.Slice<'T> -> Slice.Slice<'a>) ->
+    slices: Slice.Slice<'T> list -> Slice.Slice<'a> list
+    when 'T: equality and 'a: equality
+
+val discreteGaussianOp:
+  name: string ->
+    sigma: float ->
+    outputRegionMode: Slice.OutputRegionMode option ->
+    boundaryCondition: ImageFunctions.BoundaryCondition option ->
+    winSz: uint option -> Stage<Slice.Slice<float>,Slice.Slice<float>,Shape>
 
 val discreteGaussian:
   (float ->
      Slice.OutputRegionMode option ->
      ImageFunctions.BoundaryCondition option ->
-     uint option ->
-     SlimPipeline.Stage<Slice.Slice<float>,Slice.Slice<float>,Shape>)
+     uint option -> Stage<Slice.Slice<float>,Slice.Slice<float>,Shape>)
 
 val convGauss:
-  (float -> SlimPipeline.Stage<Slice.Slice<float>,Slice.Slice<float>,Shape>)
+  sigma: float -> Stage<Slice.Slice<float>,Slice.Slice<float>,Shape>
+
+val convolveOp:
+  name: string ->
+    kernel: Slice.Slice<'T> ->
+    outputRegionMode: Slice.OutputRegionMode option ->
+    bc: Slice.BoundaryCondition option ->
+    winSz: uint option -> Stage<Slice.Slice<'T>,Slice.Slice<'T>,Shape>
+    when 'T: equality
 
 val convolve:
   kernel: Slice.Slice<'a> ->
     outputRegionMode: Slice.OutputRegionMode option ->
     boundaryCondition: Slice.BoundaryCondition option ->
-    winSz: uint option -> SlimPipeline.Stage<Slice.Slice<'a>,Slice.Slice<'a>,'b>
+    winSz: uint option -> Stage<Slice.Slice<'a>,Slice.Slice<'a>,Shape>
     when 'a: equality
 
 val conv:
-  kernel: Slice.Slice<'a> ->
-    (uint option -> SlimPipeline.Stage<Slice.Slice<'a>,Slice.Slice<'a>,'b>)
+  kernel: Slice.Slice<'a> -> Stage<Slice.Slice<'a>,Slice.Slice<'a>,Shape>
     when 'a: equality
 
-val erode:
-  r: uint -> SlimPipeline.Stage<Slice.Slice<uint8>,Slice.Slice<uint8>,'a>
+val private makeMorphOp:
+  name: string ->
+    radius: uint ->
+    winSz: uint option ->
+    core: (uint -> Slice.Slice<'T> -> Slice.Slice<'T>) ->
+    Stage<Slice.Slice<'T>,Slice.Slice<'T>,Shape> when 'T: equality
 
-val dilate:
-  r: uint -> SlimPipeline.Stage<Slice.Slice<uint8>,Slice.Slice<uint8>,'a>
+val erode: radius: uint -> Stage<Slice.Slice<uint8>,Slice.Slice<uint8>,Shape>
 
-val opening:
-  r: uint -> SlimPipeline.Stage<Slice.Slice<uint8>,Slice.Slice<uint8>,'a>
+val dilate: radius: uint -> Stage<Slice.Slice<uint8>,Slice.Slice<uint8>,Shape>
 
-val closing:
-  r: uint -> SlimPipeline.Stage<Slice.Slice<uint8>,Slice.Slice<uint8>,'a>
+val opening: radius: uint -> Stage<Slice.Slice<uint8>,Slice.Slice<uint8>,Shape>
+
+val closing: radius: uint -> Stage<Slice.Slice<uint8>,Slice.Slice<uint8>,Shape>
 
 /// Full stack operators
 val binaryFillHoles:
-  SlimPipeline.Stage<Slice.Slice<uint8>,Slice.Slice<uint8>,obj>
+  winSz: uint -> Stage<Slice.Slice<uint8>,Slice.Slice<uint8>,Shape>
 
 val connectedComponents:
-  SlimPipeline.Stage<Slice.Slice<uint8>,Slice.Slice<uint64>,Shape>
+  winSz: uint -> Stage<Slice.Slice<uint8>,Slice.Slice<uint64>,Shape>
 
-val piecewiseConnectedComponents:
-  wz: uint option ->
-    SlimPipeline.Stage<Slice.Slice<uint8>,Slice.Slice<uint64>,'a>
-
-val otsuThreshold<'T when 'T: equality> :
-  SlimPipeline.Stage<Slice.Slice<obj>,Slice.Slice<obj>,obj> when 'T: equality
-
-val otsuMultiThreshold:
-  n: byte -> SlimPipeline.Stage<Slice.Slice<'a>,Slice.Slice<'a>,'b>
-    when 'a: equality
-
-val momentsThreshold<'T when 'T: equality> :
-  SlimPipeline.Stage<Slice.Slice<obj>,Slice.Slice<obj>,obj> when 'T: equality
-
-val signedDistanceMap:
-  SlimPipeline.Stage<Slice.Slice<uint8>,Slice.Slice<float>,Shape>
+val relabelComponents:
+  a: uint -> winSz: uint -> Stage<Slice.Slice<uint64>,Slice.Slice<uint64>,Shape>
 
 val watershed:
-  a: float -> SlimPipeline.Stage<Slice.Slice<'a>,Slice.Slice<'a>,'b>
-    when 'a: equality
+  a: float -> winSz: uint -> Stage<Slice.Slice<uint8>,Slice.Slice<uint8>,Shape>
+
+val signedDistanceMap:
+  winSz: uint -> Stage<Slice.Slice<uint8>,Slice.Slice<float>,Shape>
+
+val otsuThreshold:
+  winSz: uint -> Stage<Slice.Slice<uint8>,Slice.Slice<uint8>,Shape>
+
+val momentsThreshold:
+  winSz: uint -> Stage<Slice.Slice<uint8>,Slice.Slice<uint8>,Shape>
 
 val threshold:
   a: float -> b: float -> SlimPipeline.Stage<Slice.Slice<'a>,Slice.Slice<'a>,'b>
@@ -886,10 +701,7 @@ val addNormalNoise:
   a: float -> b: float -> SlimPipeline.Stage<Slice.Slice<'a>,Slice.Slice<'a>,'b>
     when 'a: equality
 
-val relabelComponents:
-  a: uint -> SlimPipeline.Stage<Slice.Slice<uint64>,Slice.Slice<uint64>,'a>
-
-val constantPad2D<'T when 'T: equality> :
+val SliceConstantPad<'T when 'T: equality> :
   padLower: uint list ->
     padUpper: uint list ->
     c: double -> SlimPipeline.Stage<Slice.Slice<obj>,Slice.Slice<obj>,obj>
