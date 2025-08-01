@@ -10,7 +10,7 @@ open System.Reflection
 [<assembly: System.Reflection.AssemblyCompanyAttribute("SlimPipeline")>]
 [<assembly: System.Reflection.AssemblyConfigurationAttribute("Debug")>]
 [<assembly: System.Reflection.AssemblyFileVersionAttribute("1.0.0.0")>]
-[<assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+d56a4f822c3b5cbd5da0dd91d0d22a32e2b72d33")>]
+[<assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+2a57eba6341eb27e779f3af201ed2e9caab79985")>]
 [<assembly: System.Reflection.AssemblyProductAttribute("SlimPipeline")>]
 [<assembly: System.Reflection.AssemblyTitleAttribute("SlimPipeline")>]
 [<assembly: System.Reflection.AssemblyVersionAttribute("1.0.0.0")>]

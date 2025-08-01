@@ -20,8 +20,8 @@ let idOp = Stage.id
 let (-->) = Stage.(-->)
 let source = Pipeline.source<Shape> shapeContext
 let debug = Pipeline.debug<Shape> shapeContext
-let sink (pl: Pipeline<unit,unit,'Shape>) : unit = Pipeline.sink pl
-let sinkList (plLst: Pipeline<unit,unit,'Shape> list) : unit = Pipeline.sinkList plLst
+let sink (pl: Pipeline<unit,unit,Shape>) : unit = Pipeline.sink pl
+let sinkList (plLst: Pipeline<unit,unit,Shape> list) : unit = Pipeline.sinkList plLst
 let (>=>) = Pipeline.(>=>)
 let (>=>>) = Routing.(>=>>)
 let (>>=>) = Routing.(>>=>)
@@ -34,7 +34,7 @@ let tapIt = Stage.tapIt
 let ignoreAll = Stage.ignore<_,Shape>
 let liftUnary (f: Slice.Slice<'S> -> Slice.Slice<'T>) = Stage.liftUnary<Slice.Slice<'S>,Slice.Slice<'T>,Shape> "liftUnary" f
 
-let write (outputDir: string) (suffix: string) : Stage<Slice.Slice<'T>, unit, 'Shape> =
+let write (outputDir: string) (suffix: string) : Stage<Slice.Slice<'T>, unit, Shape> =
     if not (Directory.Exists(outputDir)) then
         Directory.CreateDirectory(outputDir) |> ignore
     let consumer (slice:Slice.Slice<'T>) =
@@ -43,7 +43,7 @@ let write (outputDir: string) (suffix: string) : Stage<Slice.Slice<'T>, unit, 'S
         printfn "[Write] Saved slice %d to %s as %s" slice.Index fileName (typeof<'T>.Name) 
     Stage.consumeWith $"write:{outputDir}" consumer 
 
-let show (plt: Slice.Slice<'T> -> unit) : Stage<Slice.Slice<'T>, unit, 'Shape> =
+let show (plt: Slice.Slice<'T> -> unit) : Stage<Slice.Slice<'T>, unit, Shape> =
     let consumer (slice:Slice.Slice<'T>) =
         let width = slice |> Slice.GetWidth |> int
         let height = slice |> Slice.GetHeight |> int
@@ -51,14 +51,18 @@ let show (plt: Slice.Slice<'T> -> unit) : Stage<Slice.Slice<'T>, unit, 'Shape> =
         printfn "[Show] Showing slice %d" slice.Index
     Stage.consumeWith "show" consumer 
 
-let plot (plt: (float list)->(float list)->unit) : Stage<(float * float) list, unit, 'Shape> = // better be (float*float) list
+let plot (plt: (float list)->(float list)->unit) : Stage<(float * float) list, unit, Shape> = // better be (float*float) list
     let consumer (points: (float*float) list) =
         let x,y = points |> List.unzip
         plt x y
         printfn "[Plot] Plotting {points.Length} 2D points"
     Stage.consumeWith "plot" consumer 
 
-let print = tap
+let print () : Stage<'T, unit, Shape> =
+    let consumer (elm: 'T) =
+        printfn "%A" elm
+        printfn "[Plot] Plotting {points.Length} 2D points"
+    Stage.consumeWith "print" consumer 
 
 (*
 let write = Processing.writeOp
@@ -79,7 +83,7 @@ let finiteDiffFilter3D
         {
             Name = "gaussSource"
             Pipe = img |> liftImageSource "gaussSource"
-            Transition = Stage.transition Constant Streaming
+            Transition = MemoryTransition.create Constant Streaming
             ShapeUpdate = shapeUpdate
         }
     let width, height, depth = sz[0], sz[1], sz[2]
@@ -104,7 +108,7 @@ let axisSource
         {
             Name = "axisSource"
             Pipe = img |> liftImageSource "axisSource"
-            Transition = Stage.transition Constant Streaming
+            Transition = MemoryTransition.create Constant Streaming
             ShapeUpdate = shapeUpdate
         }
     let width, height, depth = sz[0], sz[1], sz[2]
@@ -179,20 +183,28 @@ let squareFloat   : Stage<Slice.Slice<float>,Slice.Slice<float>, Shape> =      S
 let squareFloat32 : Stage<Slice.Slice<float32>,Slice.Slice<float32>, Shape> =  Stage.liftUnary<Slice.Slice<float32>,Slice.Slice<float32>,Shape> "square" Slice.squareSlice
 let squareInt     : Stage<Slice.Slice<int>,Slice.Slice<int>, Shape> =          Stage.liftUnary<Slice.Slice<int>,Slice.Slice<int>,Shape> "square" Slice.squareSlice
 
-let histogram<'T when 'T: comparison> = histogramOp<'T,Shape> "histogram"
+//let histogram<'T when 'T: comparison> = histogramOp<'T,Shape> "histogram"
+let sliceHistogram () =
+    Stage.map<Slice.Slice<'T>,Map<'T,uint64>, Shape> "histogram:map" Slice.histogram
+
+let sliceHistogramFold () =
+    Stage.fold<Map<'T,uint64>, Map<'T,uint64>, Shape> "histogram:fold" Slice.addHistogram (Map.empty<'T, uint64>)
+
+let histogram () =
+    sliceHistogram () --> sliceHistogramFold ()
 
 let inline map2pairs< ^T, ^S when ^T: comparison and ^T : (static member op_Explicit : ^T -> float) and  ^S : (static member op_Explicit : ^S -> float) > = 
     let map2pairs (map: Map<'T, 'S>): ('T * 'S) list =
         map |> Map.toList
-    Stage.liftUnary "map2pairs" map2pairs
+    Stage.liftUnary<Map<^T, ^S>,(^T * ^S) list,Shape> "map2pairs" map2pairs
 let inline pairs2floats< ^T, ^S when ^T : (static member op_Explicit : ^T -> float) and  ^S : (static member op_Explicit : ^S -> float) > = 
     let pairs2floats (pairs: (^T * ^S) list) : (float * float) list =
         pairs |> List.map (fun (k, v) -> (float k, float v)) 
-    Stage.liftUnary "pairs2floats" pairs2floats
+    Stage.liftUnary<(^T * ^S) list,(float*float) list,Shape> "pairs2floats" pairs2floats
 let inline pairs2ints< ^T, ^S when ^T : (static member op_Explicit : ^T -> int) and  ^S : (static member op_Explicit : ^S -> int) > = 
     let pairs2ints (pairs: (^T * ^S) list) : (int * int) list =
         pairs |> List.map (fun (k, v) -> (int k, int v)) 
-    Stage.liftUnary "pairs2ints" pairs2ints
+    Stage.liftUnary<(^T * ^S) list,(int*int) list,Shape> "pairs2ints" pairs2ints
 
 type ImageStats = ImageFunctions.ImageStats
 let computeStats<'T when 'T: equality and 'T: comparison> = computeStatsOp<'T,Shape> "computeStats"
@@ -249,7 +261,7 @@ let createAs<'T when 'T: equality> (width: uint) (height: uint) (depth: uint) (p
         let slice = Slice.create<'T> width height 1u i
         if pl.debug then printfn "[create] Created slice %A" i
         slice
-    let transition = Stage.transition Constant Streaming
+    let transition = MemoryTransition.create Constant Streaming
     let shapeUpdate = id
     let stage = Stage.init "create" depth mapper transition shapeUpdate 
     let flow = MemFlow.returnM stage
@@ -268,7 +280,7 @@ let readAs<'T when 'T: equality> (inputDir : string) (suffix : string) (pl : Pip
         let slice = Slice.readSlice<'T> (uint i) fileName
         printfn "[readAs] Reading slice %A from %s as %s" i fileName (typeof<'T>.Name)
         slice
-    let transition = Stage.transition Constant Streaming
+    let transition = MemoryTransition.create Constant Streaming
     let shapeUpdate = id
     let stage = Stage.init $"read: {inputDir}" (uint depth) mapper transition shapeUpdate 
     let flow = MemFlow.returnM stage
@@ -286,7 +298,7 @@ let readRandomAs<'T when 'T: equality> (count: uint) (inputDir : string) (suffix
         let slice = Slice.readSlice<'T> (uint i) fileName
         if pl.debug then printfn "[readRandomSlices] Reading slice %A from %s" i fileName
         slice
-    let transition = Stage.transition Constant Streaming
+    let transition = MemoryTransition.create Constant Streaming
     let shapeUpdate = id
     let stage = Stage.init $"read: {inputDir}" (uint depth) mapper transition shapeUpdate 
     let flow = MemFlow.returnM stage

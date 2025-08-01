@@ -47,6 +47,15 @@ module Pipe =
       name: string ->
         reducer: (FSharp.Control.AsyncSeq<'In> -> Async<'Out>) ->
         profile: MemoryProfile -> Pipe<'In,'Out>
+    val fold:
+      name: string ->
+        folder: ('State -> 'In -> 'State) ->
+        initial: 'State -> profile: MemoryProfile -> Pipe<'In,'State>
+    val mapNFold:
+      name: string ->
+        mapFn: ('In -> 'Mapped) ->
+        folder: ('State -> 'Mapped -> 'State) ->
+        state: 'State -> profile: MemoryProfile -> Pipe<'In,'State>
     val consumeWith:
       name: string ->
         consume: ('T -> unit) -> profile: MemoryProfile -> Pipe<'T,unit>
@@ -92,6 +101,9 @@ type MemoryTransition =
       From: MemoryProfile
       To: MemoryProfile
     }
+module MemoryTransition =
+    val create:
+      fromProfile: MemoryProfile -> toProfile: MemoryProfile -> MemoryTransition
 /// Stage describes *what* should be done:
 /// - Contains high-level metadata
 /// - Encodes memory transition intent
@@ -116,8 +128,6 @@ module Stage =
         mapper: (uint -> 'T) ->
         transition: MemoryTransition ->
         shapeUpdate: ('Shape -> 'Shape) -> Stage<unit,'T,'Shape>
-    val transition:
-      fromProfile: MemoryProfile -> toProfile: MemoryProfile -> MemoryTransition
     val id: unit -> Stage<'T,'T,'Shape>
     val toPipe: op: Stage<'a,'b,'c> -> Pipe<'a,'b>
     val fromPipe:
@@ -129,14 +139,24 @@ module Stage =
       op1: Stage<'S,'T,'Shape> ->
         op2: Stage<'T,'U,'Shape> -> Stage<'S,'U,'Shape>
     val (-->) : (Stage<'a,'b,'c> -> Stage<'b,'d,'c> -> Stage<'a,'d,'c>)
-    val map:
-      name: string ->
-        f: ('U -> 'V) -> stage: Stage<'In,'U,'Shape> -> Stage<'In,'V,'Shape>
+    val map: name: string -> f: ('S -> 'T) -> Stage<'S,'T,'Shape>
     val map2:
       name: string ->
         f: ('U -> 'V -> 'W) ->
         stage1: Stage<'In,'U,'Shape> * stage2: Stage<'In,'V,'Shape> ->
           Stage<'In,'W,'Shape>
+    val reduce:
+      name: string ->
+        reducer: (FSharp.Control.AsyncSeq<'In> -> Async<'Out>) ->
+        profile: MemoryProfile -> Stage<'In,'Out,'Shape>
+    val fold:
+      name: string ->
+        folder: ('T -> 'S -> 'T) -> initial: 'T -> Stage<'S,'T,'Shape>
+    val mapNFold:
+      name: string ->
+        mapFn: ('In -> 'Mapped) ->
+        folder: ('State -> 'Mapped -> 'State) ->
+        state: 'State -> profile: MemoryProfile -> Stage<'In,'State,'Shape>
     val liftUnary: name: string -> f: ('S -> 'T) -> Stage<'S,'T,'Shape>
     val tap: name: string -> Stage<'T,'T,'Shape>
     val tapIt: toString: ('T -> string) -> Stage<'T,'T,'Shape>

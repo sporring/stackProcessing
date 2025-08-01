@@ -588,9 +588,9 @@ val source: (uint64 -> SlimPipeline.Pipeline<unit,unit,Shape>)
 
 val debug: (uint64 -> SlimPipeline.Pipeline<unit,unit,Shape>)
 
-val sink: pl: SlimPipeline.Pipeline<unit,unit,'Shape> -> unit
+val sink: pl: SlimPipeline.Pipeline<unit,unit,Shape> -> unit
 
-val sinkList: plLst: SlimPipeline.Pipeline<unit,unit,'Shape> list -> unit
+val sinkList: plLst: SlimPipeline.Pipeline<unit,unit,Shape> list -> unit
 
 val (>=>) :
   (SlimPipeline.Pipeline<'a,'b,'c> ->
@@ -624,18 +624,18 @@ val liftUnary:
     when 'S: equality and 'T: equality
 
 val write:
-  outputDir: string -> suffix: string -> Stage<Slice.Slice<'T>,unit,'Shape>
+  outputDir: string -> suffix: string -> Stage<Slice.Slice<'T>,unit,Shape>
     when 'T: equality
 
 val show:
-  plt: (Slice.Slice<'T> -> unit) -> Stage<Slice.Slice<'T>,unit,'Shape>
+  plt: (Slice.Slice<'T> -> unit) -> Stage<Slice.Slice<'T>,unit,Shape>
     when 'T: equality
 
 val plot:
   plt: (float list -> float list -> unit) ->
-    Stage<(float * float) list,unit,'Shape>
+    Stage<(float * float) list,unit,Shape>
 
-val print: (string -> SlimPipeline.Stage<'a,'a,'b>)
+val print: unit -> Stage<'T,unit,Shape>
 
 val finiteDiffFilter3D:
   direction: uint ->
@@ -765,28 +765,37 @@ val squareFloat32: Stage<Slice.Slice<float32>,Slice.Slice<float32>,Shape>
 
 val squareInt: Stage<Slice.Slice<int>,Slice.Slice<int>,Shape>
 
-val histogram<'T when 'T: comparison> :
-  SlimPipeline.Stage<Slice.Slice<'T>,Map<'T,uint64>,Shape> when 'T: comparison
+val sliceHistogram:
+  unit -> SlimPipeline.Stage<Slice.Slice<'T>,Map<'T,uint64>,Shape>
+    when 'T: comparison
+
+val sliceHistogramFold:
+  unit -> SlimPipeline.Stage<Map<'T,uint64>,Map<'T,uint64>,Shape>
+    when 'T: comparison
+
+val histogram:
+  unit -> SlimPipeline.Stage<Slice.Slice<'a>,Map<'a,uint64>,Shape>
+    when 'a: comparison
 
 val inline map2pairs<^T,^S
                        when ^T: comparison and
                             ^T: (static member op_Explicit: ^T -> float) and
                             ^S: (static member op_Explicit: ^S -> float)> :
-  SlimPipeline.Stage<Map<^T,^S>,(^T * ^S) list,obj>
+  SlimPipeline.Stage<Map<^T,^S>,(^T * ^S) list,Shape>
     when ^T: comparison and ^T: (static member op_Explicit: ^T -> float) and
          ^S: (static member op_Explicit: ^S -> float)
 
 val inline pairs2floats<^T,^S
                           when ^T: (static member op_Explicit: ^T -> float) and
                                ^S: (static member op_Explicit: ^S -> float)> :
-  SlimPipeline.Stage<(^T * ^S) list,(float * float) list,obj>
+  SlimPipeline.Stage<(^T * ^S) list,(float * float) list,Shape>
     when ^T: (static member op_Explicit: ^T -> float) and
          ^S: (static member op_Explicit: ^S -> float)
 
 val inline pairs2ints<^T,^S
                         when ^T: (static member op_Explicit: ^T -> int) and
                              ^S: (static member op_Explicit: ^S -> int)> :
-  SlimPipeline.Stage<(^T * ^S) list,(int * int) list,obj>
+  SlimPipeline.Stage<(^T * ^S) list,(int * int) list,Shape>
     when ^T: (static member op_Explicit: ^T -> int) and
          ^S: (static member op_Explicit: ^S -> int)
 

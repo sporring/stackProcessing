@@ -28,7 +28,7 @@ let internal liftWindowedOp (name: string) (window: uint) (pad: uint) (zeroMaker
     {
         Name = name
         Pipe = Pipe.mapWindowed name window Slice.updateId pad zeroMaker stride emitStart emitCount (Slice.stack >> f >> Slice.unstack)
-        Transition = Stage.transition (Sliding (window,stride,emitStart,emitCount)) Streaming
+        Transition = MemoryTransition.create (Sliding (window,stride,emitStart,emitCount)) Streaming
         ShapeUpdate = id
     }
 
@@ -36,7 +36,7 @@ let internal liftWindowedTrimOp (name: string) (window: uint) (pad: uint) (zeroM
     : Stage<Slice.Slice<'S>, Slice.Slice<'T>,'Shape> =
     {
         Name = name
-        Transition = Stage.transition (Sliding (window,stride,emitStart,emitCount)) Streaming
+        Transition = MemoryTransition.create (Sliding (window,stride,emitStart,emitCount)) Streaming
         Pipe =
             Pipe.mapWindowed name window Slice.updateId pad zeroMaker stride emitStart emitCount (
                 Slice.stack >> f >> Slice.unstack >> fun lst -> let m = uint lst.Length - 2u*trim in skipNTakeM trim m lst)
@@ -47,7 +47,7 @@ let internal liftWindowedTrimOp (name: string) (window: uint) (pad: uint) (zeroM
 let internal liftFullOp (name: string) (f: Slice.Slice<'T> -> Slice.Slice<'T>) : Stage<Slice.Slice<'T>, Slice.Slice<'T>, 'Shape> =
     {
         Name = name
-        Transition = Stage.transition Full Streaming
+        Transition = MemoryTransition.create Full Streaming
         Pipe = {
             Name = name
             Profile = Full
@@ -63,7 +63,7 @@ let internal liftFullOp (name: string) (f: Slice.Slice<'T> -> Slice.Slice<'T>) :
 let internal liftFullParamOp (name: string) (f: 'P -> Slice.Slice<'T> -> Slice.Slice<'T>) (param: 'P) : Stage<Slice.Slice<'T>, Slice.Slice<'T>, 'Shape> =
     {
         Name = name
-        Transition = Stage.transition Full Streaming
+        Transition = MemoryTransition.create Full Streaming
         Pipe = {
             Name = name
             Profile = Full
@@ -79,7 +79,7 @@ let internal liftFullParamOp (name: string) (f: 'P -> Slice.Slice<'T> -> Slice.S
 let internal liftFullParam2Op (name: string) (f: 'P -> 'Q -> Slice.Slice<'T> -> Slice.Slice<'T>) (param1: 'P) (param2: 'Q) : Stage<Slice.Slice<'T>, Slice.Slice<'T>, 'Shape> =
     {
         Name = name
-        Transition = Stage.transition Full Streaming
+        Transition = MemoryTransition.create Full Streaming
         Pipe = {
             Name = name
             Profile = Full
@@ -93,18 +93,6 @@ let internal liftFullParam2Op (name: string) (f: 'P -> 'Q -> Slice.Slice<'T> -> 
     }
 
 /// Histogram related functions
-let histogramOp<'T,'Shape when 'T: comparison> name : Stage<Slice.Slice<'T>, Map<'T, uint64>, 'Shape>  =
-    let histogramReducer (slices: AsyncSeq<Slice.Slice<'T>>) =
-        slices
-        |> AsyncSeq.map Slice.histogram
-        |> AsyncSeqExtensions.fold Slice.addHistogram (Map<'T, uint64> [])
-    {
-        Name = name
-        Transition = Stage.transition Streaming Constant
-        Pipe = Pipe.reduce name histogramReducer Streaming 
-        ShapeUpdate = id
-    }
-
 type ImageStats = Slice.ImageStats
 let computeStatsOp<'T,'Shape when 'T : equality> name : Stage<Slice.Slice<'T>, ImageStats, 'Shape> =
     let computeStatsReducer (slices: AsyncSeq<Slice.Slice<'T>>) =
@@ -122,7 +110,7 @@ let computeStatsOp<'T,'Shape when 'T : equality> name : Stage<Slice.Slice<'T>, I
         |> AsyncSeqExtensions.fold Slice.addComputeStats zeroStats
     {
         Name = name
-        Transition = Stage.transition Streaming Constant
+        Transition = MemoryTransition.create Streaming Constant
         Pipe = Pipe.reduce name computeStatsReducer Streaming
         ShapeUpdate = id
     }
@@ -204,7 +192,7 @@ let binaryFillHolesOp<'Shape> name = liftFullOp name Slice.binaryFillHoles
 let connectedComponentsOp<'Shape> (name: string) : Stage<Slice.Slice<uint8>, Slice.Slice<uint64>, 'Shape> =
     { // fsharp gets confused about the change of units, so we make the record by hand
         Name = name
-        Transition = Stage.transition Full Streaming
+        Transition = MemoryTransition.create Full Streaming
         Pipe =
             {
                 Name = name
@@ -230,7 +218,7 @@ let momentsThresholdOp name = liftFullOp name Slice.momentsThreshold
 let signedDistanceMapOp<'Shape> name : Stage<Slice.Slice<uint8>, Slice.Slice<float>, 'Shape> =
     {
         Name = name
-        Transition = Stage.transition Full Streaming
+        Transition = MemoryTransition.create Full Streaming
         Pipe =
             {
                 Name = name

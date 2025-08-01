@@ -82,6 +82,21 @@ module Pipe =
         let apply input = input |> reducer |> ofAsync
         create name apply profile
 
+    let fold (name: string) (folder: 'State -> 'In -> 'State) (initial: 'State) (profile: MemoryProfile) : Pipe<'In, 'State> =
+        let reducer (s: AsyncSeq<'In>) : Async<'State> =
+            AsyncSeqExtensions.fold folder initial s
+        reduce name reducer profile
+
+    let mapNFold (name: string) (mapFn: 'In -> 'Mapped) (folder: 'State -> 'Mapped -> 'State) (state: 'State) (profile: MemoryProfile)
+        : Pipe<'In, 'State> =
+        
+        let reducer (s: AsyncSeq<'In>) : Async<'State> =
+            s
+            |> AsyncSeq.map mapFn
+            |> AsyncSeqExtensions.fold folder state
+
+        reduce name reducer profile
+
 //    let consumeWith (name: string) (consume: AsyncSeq<'T> -> Async<unit>) (profile: MemoryProfile) : Pipe<'T, unit> =
 //        let reducer (s : AsyncSeq<'T>) = consume s          // Async<unit>
 //        reduce name reducer  profile              // gives AsyncSeq<unit>
@@ -242,6 +257,13 @@ type MemoryTransition =
     { From  : MemoryProfile
       To    : MemoryProfile }
 
+module MemoryTransition =
+    let create (fromProfile: MemoryProfile) (toProfile: MemoryProfile) : MemoryTransition =
+        {
+            From = fromProfile
+            To   = toProfile
+        }
+
 /// Stage describes *what* should be done:
 /// - Contains high-level metadata
 /// - Encodes memory transition intent
@@ -261,14 +283,8 @@ module Stage =
         let pipe = Pipe.init name depth mapper transition.From
         create name pipe transition shapeUpdate
 
-    let transition (fromProfile: MemoryProfile) (toProfile: MemoryProfile) : MemoryTransition =
-        {
-            From = fromProfile
-            To   = toProfile
-        }
-
     let id<'T,'Shape> () : Stage<'T, 'T, 'Shape> = // I don't think this is used
-        let transition = transition Streaming Streaming
+        let transition = MemoryTransition.create Streaming Streaming
         let pipe = Pipe.lift "id" Streaming (fun x -> x)
         create "id" pipe transition id
 
@@ -278,26 +294,49 @@ module Stage =
         create name pipe transition shapeUpdate
 
     let compose (op1 : Stage<'S,'T,'Shape>) (op2 : Stage<'T,'U,'Shape>) : Stage<'S,'U,'Shape> =
-        let transition  = transition op1.Transition.From op2.Transition.To
+        let transition  = MemoryTransition.create op1.Transition.From op2.Transition.To
         let pipe        = Pipe.compose op1.Pipe op2.Pipe
         let shapeUpdate = fun shape -> shape |>  op1.ShapeUpdate |> op2.ShapeUpdate
         create $"{op2.Name} ∘ {op1.Name}" pipe transition shapeUpdate
 
     let (-->) = compose
 
+    let map<'S,'T,'Shape> (name: string) (f: 'S -> 'T) : Stage<'S, 'T, 'Shape> =
+        let transition = MemoryTransition.create Streaming Streaming
+        let apply input = input |> AsyncSeq.map f
+        let pipe : Pipe<'S,'T> = Pipe.create name apply Streaming
+        create name pipe transition (fun s -> s)
+
+(*
     let map (name: string) (f: 'U -> 'V) (stage: Stage<'In, 'U, 'Shape>) : Stage<'In, 'V, 'Shape> =
         let pipe = Pipe.map name f stage.Pipe
-        let trans = transition Streaming Streaming
-        create name pipe trans (fun s -> s)
+        let transition = MemoryTransition.create Streaming Streaming
+        create name pipe transition (fun s -> s)
+*)
 
     let map2 (name: string) (f: 'U -> 'V -> 'W) (stage1: Stage<'In, 'U, 'Shape>, stage2: Stage<'In, 'V, 'Shape>) : Stage<'In, 'W, 'Shape> =
         let pipe = Pipe.map2 name f stage1.Pipe stage2.Pipe
-        let trans = transition Streaming Streaming
-        create name pipe trans (fun s -> s) 
+        let transition = MemoryTransition.create Streaming Streaming
+        create name pipe transition (fun s -> s) 
+
+    let reduce (name: string) (reducer: AsyncSeq<'In> -> Async<'Out>) (profile: MemoryProfile) : Stage<'In, 'Out, 'Shape> =
+        let transition = MemoryTransition.create Streaming Constant
+        let pipe = Pipe.reduce name reducer profile
+        create name pipe transition (fun s -> s)
+
+    let fold<'S,'T,'Shape> (name: string) (folder: 'T -> 'S -> 'T) (initial: 'T) : Stage<'S, 'T, 'Shape> =
+        let transition = MemoryTransition.create Streaming Constant
+        let pipe : Pipe<'S,'T> = Pipe.fold name folder initial Streaming
+        create name pipe transition (fun s -> s)
+
+    let mapNFold (name: string) (mapFn: 'In -> 'Mapped) (folder: 'State -> 'Mapped -> 'State) (state: 'State) (profile: MemoryProfile) : Stage<'In, 'State, 'Shape> =
+        let transition = MemoryTransition.create Streaming Constant
+        let pipe = Pipe.mapNFold name mapFn folder state profile
+        create name pipe transition (fun s -> s)
 
     // this assumes too much: Streaming and identity ShapeUpdate!!!
     let liftUnary<'S,'T,'Shape> (name: string) (f: 'S -> 'T) : Stage<'S, 'T, 'Shape> =
-        let transition = transition Streaming Streaming
+        let transition = MemoryTransition.create Streaming Streaming
         let pipe = Pipe.lift name Streaming f
         create name pipe transition (fun s -> s) 
 
@@ -315,18 +354,18 @@ module Stage =
 
     let ignore<'T,'Shape> () : Stage<'T, unit, 'Shape> =
         let pipe = Pipe.ignore ()
-        let transition = transition Streaming Constant
+        let transition = MemoryTransition.create Streaming Constant
         create "ignore" pipe transition (fun s -> s)
 
     let consumeWith (name: string) (consume: 'T -> unit) : Stage<'T, unit, 'Shape> =
         let pipe = Pipe.consumeWith name consume Streaming
-        let transition = transition Streaming Constant
+        let transition = MemoryTransition.create Streaming Constant
         create name pipe transition (fun s -> s)
 
     let cast<'S,'T,'Shape when 'S: equality and 'T: equality> name f : Stage<'S,'T, 'Shape> =
         let apply input = input |> AsyncSeq.map f 
         let pipe = Pipe.create name apply Streaming
-        let transition = transition Streaming Streaming
+        let transition = MemoryTransition.create Streaming Streaming
         create name pipe transition (fun s -> s)
 
 ////////////////////////////////////////////////////////////
