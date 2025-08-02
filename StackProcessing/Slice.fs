@@ -14,7 +14,7 @@ with
     member this.EstimateUsage() = this.Image.memoryEstimate()
 
 let create<'T when 'T: equality> (width: uint) (height: uint) (depth: uint) (idx: uint) : Slice<'T> =
-    {Index= idx; Image=if depth > 1u then Image<'T>([width;height;depth]) else Image<'T>([width;height]) }
+    {Index= idx; Image=if depth > 0u then Image<'T>([width;height;depth]) else failwith "Can only work with 3D images" }
 
 let GetDepth (s: Slice<'T>) = s.Image.GetDepth()
 let GetDimensions (s: Slice<'T>) = s.Image.GetDimensions()

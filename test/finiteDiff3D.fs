@@ -1,7 +1,6 @@
 ﻿// To run, remember to:
 // export DYLD_LIBRARY_PATH=./StackPipeline/lib:$(pwd)/bin/Debug/net8.0
 open StackProcessing
-open Slice
 
 [<EntryPoint>]
 let main _ =
@@ -9,14 +8,13 @@ let main _ =
     let availableMemory = 1024UL * 1024UL // 1MB for example
     let sigma = 2.0
 
-    let diffFilter = Slice.finiteDiffFilter3D 1u 2u;
-
     source availableMemory
     |> readAs<float> "image" ".tiff"
-    >=> convGauss sigma None
-    >=> Pipeline.conv diffFilter // fix naming shadowing!
-    >=> tap "tap: convolution"
-    >=> Pipeline.castFloatToUInt8 // fix naming shadowing!
+    >=> convGauss sigma
+    >=> tap "tap: convGauss"
+    >=> finiteDiff 1u 2u
+    >=> tap "tap: finiteDiff"
+    >=> cast<float,uint8>
     >=> write "result" ".tif"
     |> sink
 

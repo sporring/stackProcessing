@@ -73,31 +73,6 @@ let liftImageSource (name: string) (img: Slice.Slice<'T>) : Pipe<unit, Slice.Sli
         Apply = fun _ -> img |> Slice.unstack |> AsyncSeq.ofSeq
     }
 
-let finiteDiffFilter3D 
-    (direction: uint) 
-    (order: uint)
-    (pl : Pipeline<unit, unit, Shape>) 
-    : Pipeline<unit, Slice.Slice<float>, Shape> =
-    let img = Slice.finiteDiffFilter3D direction order
-    let sz = Slice.GetSize img
-    let shapeUpdate = fun (s: Shape) -> s
-    let op : Stage<unit, Slice.Slice<float>, Shape> =
-        {
-            Name = "gaussSource"
-            Pipe = img |> liftImageSource "gaussSource"
-            Transition = MemoryTransition.create Constant Streaming
-            ShapeUpdate = shapeUpdate
-        }
-    let width, height, depth = sz[0], sz[1], sz[2]
-    let context = ShapeContext.create (fun _ -> width*height |> uint64) (fun _ -> depth)
-    {
-        flow = MemFlow.returnM op
-        mem = pl.mem
-        shape = Slice (width,height) |> Some
-        context = context
-        debug = pl.debug
-    }
-
 let axisSource
     (axis: int) 
     (size: int list)
@@ -301,6 +276,10 @@ let convolveOp (name: string) (kernel: Slice.Slice<'T>) (outputRegionMode: Slice
 
 let convolve kernel outputRegionMode boundaryCondition winSz = convolveOp "convolve" kernel outputRegionMode boundaryCondition winSz
 let conv kernel = convolveOp "conv" kernel None None None
+
+let finiteDiff (direction: uint) (order: uint) =
+    let kernel = Slice.finiteDiffFilter3D direction order
+    convolveOp "finiteDiff" kernel None None None
 
 // these only works on uint8
 let private makeMorphOp (name:string) (radius:uint) (winSz: uint option) (core: uint -> Slice.Slice<'T> -> Slice.Slice<'T>) : Stage<Slice.Slice<'T>,Slice.Slice<'T>, Shape> when 'T: equality =

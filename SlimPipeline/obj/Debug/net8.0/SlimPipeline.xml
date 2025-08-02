@@ -38,7 +38,7 @@
  The memory usage strategies during image processing.
 </summary>
 </member>
-<member name="M:SlimPipeline.Routing.op_GreaterEqualsGreaterGreater``4(SlimPipeline.Pipeline{``0,``1,``2},SlimPipeline.Stage{``1,``1,``2},SlimPipeline.Stage{``1,``3,``2})">
+<member name="M:SlimPipeline.Routing.op_GreaterEqualsGreaterGreater``2(SlimPipeline.Pipeline{``0,Microsoft.FSharp.Core.Unit,``1},SlimPipeline.Stage{Microsoft.FSharp.Core.Unit,Microsoft.FSharp.Core.Unit,``1},SlimPipeline.Stage{Microsoft.FSharp.Core.Unit,Microsoft.FSharp.Core.Unit,``1})">
 <summary>
  parallel fanout with synchronization
  Synchronously split the shared stream into two parallel pipelines

@@ -656,6 +656,10 @@ val conv:
   kernel: Slice.Slice<'a> -> Stage<Slice.Slice<'a>,Slice.Slice<'a>,Shape>
     when 'a: equality
 
+val finiteDiff:
+  direction: uint ->
+    order: uint -> Stage<Slice.Slice<float>,Slice.Slice<float>,Shape>
+
 val private makeMorphOp:
   name: string ->
     radius: uint ->

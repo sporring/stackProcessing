@@ -9,7 +9,7 @@ type MemoryProfile =
     | Constant // Slice by slice independently
     | Streaming // Slice by slice independently
     | Sliding of uint * uint * uint * uint  // (window, stride, emitStart, emitCount)
-    | Full // All slices of depth
+//    | Full // All slices of depth // Full = Sliding depth 1 0 depth
 
 module MemoryProfile =
     let estimateUsage (profile: MemoryProfile) (memPerElement: uint64) (depth: uint) : uint64 =
@@ -17,15 +17,15 @@ module MemoryProfile =
             | Constant -> 0uL
             | Streaming -> memPerElement
             | Sliding (windowSize, _, _, _) -> memPerElement * uint64 windowSize
-            | Full -> memPerElement * uint64 depth
+//            | Full -> memPerElement * uint64 depth
 
     let requiresBuffering (profile: MemoryProfile) (availableMemory: uint64) (memPerElement: uint64) (depth: uint) : bool = // Not used yet...
         estimateUsage profile memPerElement depth > availableMemory
 
     let combine (prof1: MemoryProfile) (prof2: MemoryProfile): MemoryProfile  = 
         match prof1, prof2 with
-        | Full, _ 
-        | _, Full -> Full // conservative fallback
+//        | Full, _ 
+//        | _, Full -> Full // conservative fallback
         | Sliding (sz1,str1,emitS1,emitN1), Sliding (sz2,str2,emitS2,emitN2) -> Sliding ((max sz1 sz2), min str1 str2, min emitS1 emitS2, max emitN1 emitN2) // don't really know what stride rule should be
         | Sliding (sz,str,emitS,emitN), _ 
         | _, Sliding (sz,str,emitS,emitN) -> Sliding (sz,str,emitS,emitN)
@@ -46,7 +46,7 @@ type Pipe<'S,'T> = {
     Profile: MemoryProfile
 }
 
-module Pipe =
+module private Pipe =
     let create (name: string) (apply: AsyncSeq<'S> -> AsyncSeq<'T>) (profile: MemoryProfile) : Pipe<'S,'T> =
         { Name = name; Apply = apply; Profile = profile }
 
@@ -126,7 +126,7 @@ module Pipe =
         if needed <= avail then p                              // fits as is
         else
             match p.Profile with
-            | Full         -> { p with Profile = Streaming }
+//            | Full         -> { p with Profile = Streaming }
             | Sliding (w,s,es,ec) when w > 1u ->
                 { p with Profile = Sliding ((w/2u),s,es,ec) }
             | _ ->
@@ -373,6 +373,54 @@ module Stage =
         let transition = MemoryTransition.create Streaming Streaming
         create name pipe transition (fun s -> s)
 
+    let promoteConstantToStreaming (name: string) (depth: uint) (value: 'T) : Stage<unit, 'T, 'Shape> =
+        let transition = MemoryTransition.create Constant Streaming
+        let pipe = Pipe.init $"stream-of:{name}" depth (fun _ -> value) Streaming
+        create $"promote:{name}" pipe transition (fun s->s)
+
+    let promoteStreamingToSliding 
+        (name: string)
+        (depth: uint)
+        (updateId: uint -> 'T -> 'T)
+        (pad: uint)
+        (zeroMaker: 'T -> 'T)
+        (stride: uint)
+        (emitStart: uint)
+        (emitCount: uint)
+        : Stage<'T, 'T, 'Shape> =
+
+        let f (window: 'T list) =
+            window
+            |> List.skip (int emitStart)
+            |> List.take (int emitCount)
+
+        let pipe = Pipe.mapWindowed name depth updateId pad zeroMaker stride emitStart emitCount f
+        let transition = MemoryTransition.create Streaming Streaming
+
+        create $"promote:{name}" pipe transition (fun s -> s)
+
+    let promoteSlidingToSliding
+        (name: string)
+        (depth: uint)
+        (updateId: uint -> 'T -> 'T)
+        (pad: uint)
+        (zeroMaker: 'T -> 'T)
+        (stride: uint)
+        (emitStart: uint)
+        (emitCount: uint)
+        : Stage<'T, 'T, 'Shape> =
+
+        let f (window: 'T list) =
+            window
+            |> List.skip (int emitStart)
+            |> List.take (int emitCount)
+
+        let pipe = Pipe.mapWindowed name depth updateId pad zeroMaker stride emitStart emitCount f
+        let transition = MemoryTransition.create Streaming Streaming
+
+        create $"promote:{name}" pipe transition (fun s -> s)
+
+
 ////////////////////////////////////////////////////////////
 // MemFlow state monad
 type ShapeContext<'S> = { // Do these need to be functions or just a pair of numbers? Shape update, updates shape but could perhaps also update these?
@@ -438,9 +486,9 @@ module Pipeline =
         create flow availableMemory None context true
 
     // later compositions Pipeline composition
-    let compose (pl: Pipeline<'a, 'b, 'Shape>) (next: Stage<'b, 'c, 'Shape>) : Pipeline<'a, 'c, 'Shape> =
-        if pl.debug then printfn $"[>=>] {next.Name}"
-        let flow = MemFlow.bindM pl.flow (fun _ -> MemFlow.returnM next)
+    let compose (pl: Pipeline<'a, 'b, 'Shape>) (stage: Stage<'b, 'c, 'Shape>) : Pipeline<'a, 'c, 'Shape> =
+        if pl.debug then printfn $"[>=>] {stage.Name}"
+        let flow = MemFlow.bindM pl.flow (fun _ -> MemFlow.returnM stage)
         create flow pl.mem pl.shape pl.context pl.debug
 
     let (>=>) = compose
@@ -472,9 +520,9 @@ module Pipeline =
         stage
 
 /// Represents a pipeline that has been shared (split into synchronized branches)
-type SharedPipeline<'T, 'U , 'V, 'Shape> = {
-    flow: MemFlow<'T,'U,'Shape> 
-    branches: Stage<'T,'U,'Shape> * Stage<'T,'V,'Shape>
+type SharedPipeline<'T, 'U, 'V, 'Shape> = {
+    flow1: MemFlow<'T,'U,'Shape>
+    flow2: MemFlow<'T,'V,'Shape>
     mem: uint64
     shape: 'Shape option
     context: ShapeContext<'Shape>
@@ -482,8 +530,8 @@ type SharedPipeline<'T, 'U , 'V, 'Shape> = {
 }
 
 module SharedPipeline =
-    let create<'T,'U,'V,'Shape when 'T: equality> (flow: MemFlow<'T,'U,'Shape>) (branches: Stage<'T,'U,'Shape> * Stage<'T,'V,'Shape>) (mem: uint64) (shape: 'Shape option) (context: ShapeContext<'Shape>) (debug: bool): SharedPipeline<'T, 'U , 'V, 'Shape> =
-        { flow = flow; branches = branches; mem = mem; shape = shape; context = context; debug = debug}
+    let create<'T,'U,'V,'Shape when 'T: equality> (flow1: MemFlow<'T,'U,'Shape>) (flow2: MemFlow<'T,'V,'Shape>) (mem: uint64) (shape: 'Shape option) (context: ShapeContext<'Shape>) (debug: bool): SharedPipeline<'T, 'U , 'V, 'Shape> =
+        { flow1 = flow1; flow2 = flow2; mem = mem; shape = shape; context = context; debug = debug}
 
 module Routing =
     (*
@@ -577,23 +625,89 @@ module Routing =
 
     /// parallel fanout with synchronization
     /// Synchronously split the shared stream into two parallel pipelines
+
     let (>=>>) 
         (pl: Pipeline<'In, 'T, 'Shape>) 
-        (op1: Stage<'T, 'U, 'Shape>, op2: Stage<'T, 'V, 'Shape>) 
+        (stg1: Stage<'T, 'U, 'Shape>, stg2: Stage<'T, 'V, 'Shape>) 
         : SharedPipeline<'In, 'U, 'V, 'Shape> =
-        if pl.debug then printfn $"[>=>>] ({op1.Name}, {op2.Name})"
+
+        if pl.debug then printfn $"[>=>>] ({stg1.Name}, {stg2.Name})"
+
+        let context = pl.context
+        let shape = pl.shape
+        let depth =
+            match shape with
+            | Some s -> context.depth s
+            | None -> failwith "[>=>>] Shape required to determine depth"
+
+        // Customize per your data types (e.g. Slice)
+        let zeroMaker (x: 'T) = x  // Replace with actual zeroMaker if needed
+        let updateId (_: uint) (x: 'T) = x  // Replace with index tagging if needed
+
+        let promote stage =
+            match stage.Transition.From with
+            | Constant ->
+                let result =
+                    AsyncSeq.singleton Unchecked.defaultof<'T>
+                    |> stage.Pipe.Apply
+                    |> AsyncSeq.tryLast
+                    |> Async.RunSynchronously
+                    |> Option.defaultWith (fun () -> failwithf "[>=>>] Constant stage '%s' produced no output" stage.Name)
+                Stage.promoteConstantToStreaming stage.Name depth result :> Stage<'T, _, _>
+
+            | Streaming -> stage
+
+            | Sliding (win, stride, emitStart, emitCount) ->
+                Stage.promoteStreamingToSliding stage.Name win updateId emitStart zeroMaker stride emitStart emitCount :> Stage<'T, _, _>
+
+        let promotePair (stg1: Stage<'T, 'U, 'Shape>) (stg2: Stage<'T, 'V, 'Shape>) =
+            let promoted1, promoted2 =
+                match stg1.Transition.From, stg2.Transition.From with
+                | Streaming, Streaming -> stg1, stg2
+                | Constant, Constant ->
+                    let p1 = promote stg1
+                    let p2 = promote stg2
+                    p1, p2
+
+                | Constant, Streaming ->
+                    let p1 = promote stg1
+                    p1, stg2
+
+                | Streaming, Constant ->
+                    let p2 = promote stg2
+                    stg1, p2
+
+                | Sliding (w1,s1,e1,c1), Sliding (w2,s2,e2,c2) when (w1,s1,e1,c1) = (w2,s2,e2,c2) ->
+                    stg1, stg2
+
+                | Sliding (w1,s1,e1,c1), Sliding (w2,s2,e2,c2) ->
+                    let bigger = (w1,s1,e1,c1) |> fun a -> a |> max (w2,s2,e2,c2)
+                    let winSz = max w1 w2
+                    let p1 = Stage.promoteSlidingToSliding stg1.Name winSz updateId e1 zeroMaker s1 e1 c1
+                    let p2 = Stage.promoteSlidingToSliding stg2.Name winSz updateId e2 zeroMaker s2 e2 c2
+                    p1, p2
+
+                | Sliding _, _ ->
+                    let p2 = promote stg2
+                    let p1 = stg1
+                    p1, p2
+
+                | _, Sliding _ ->
+                    let p1 = promote stg1
+                    let p2 = stg2
+                    p1, p2
+
+            promoted1, promoted2
+
         match pl.flow pl.mem pl.shape pl.context with
-        | baseOp, mem', shape' ->
-
-            match (op1.Transition.From, op2.Transition.From) with
-
-            // === Both Streaming: no windowing needed ===
-            | Streaming, Streaming ->
-                let pipe1, pipe2 = Pipe.tee baseOp.Pipe
-                let op1': Stage<'In, 'U, 'Shape>  = Stage.compose { baseOp with Pipe = pipe1 } op1
-                let op2': Stage<'In, 'V, 'Shape>  = Stage.compose { baseOp with Pipe = pipe2 } op2
-                SharedPipeline.create pl.flow (op1', op2') mem' shape' pl.context pl.debug
-            | _ -> failwith "Unsupported transition pattern"
+        | baseStg, mem', shape' ->
+            let p1, p2 = promotePair stg1 stg2
+            let pipe1, pipe2 = Pipe.tee baseStg.Pipe
+            let b1 = Stage.compose { baseStg with Pipe = pipe1 } p1
+            let b2 = Stage.compose { baseStg with Pipe = pipe2 } p2
+            let flow1 = fun mem shape ctx -> b1, mem, shape
+            let flow2 = fun mem shape ctx -> b2, mem, shape
+            SharedPipeline.create flow1 flow2 mem' shape' context pl.debug
 
             (*
             // === One or both Sliding: compute merged window ===
@@ -682,12 +796,21 @@ module Routing =
         (shared: SharedPipeline<'In, 'U, 'V, 'Shape>)
         (combineFn: 'U -> 'V -> 'W)
         : Pipeline<'In, 'W, 'Shape> =
-        if shared.debug then 
-            let b1,b2 = shared.branches
-            printfn "[>>=>]"
-        let stage = Stage.map2 ">>=>" combineFn shared.branches
-        let flow = MemFlow.returnM stage
-        Pipeline.create flow shared.mem shared.shape shared.context shared.debug
+
+        if shared.debug then printfn "[>>=>] combining branches"
+
+        // Run each MemFlow to extract the resulting stages
+        let stageU, mem1, shape1 = shared.flow1 shared.mem shared.shape shared.context
+        let stageV, mem2, shape2 = shared.flow2 shared.mem shared.shape shared.context
+
+        // Combine the two output stages into a single stage using map2
+        let combinedStage = Stage.map2 ">>=>" combineFn (stageU, stageV)
+
+        // Wrap the combined stage back into a MemFlow
+        let flow : MemFlow<'In, 'W, 'Shape> = MemFlow.returnM combinedStage
+
+        // Construct the new pipeline
+        Pipeline.create flow mem2 shape2 shared.context shared.debug // Are mem and shape always the same?
 
 (*
     let combineIgnore : Stage<'In, 'U, 'Shape> * Stage<'In, 'V, 'Shape> -> Stage<'In, unit, 'Shape> =

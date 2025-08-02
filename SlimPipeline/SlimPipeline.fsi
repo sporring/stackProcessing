@@ -5,7 +5,6 @@ type MemoryProfile =
     | Constant
     | Streaming
     | Sliding of uint * uint * uint * uint
-    | Full
 module MemoryProfile =
     val estimateUsage:
       profile: MemoryProfile -> memPerElement: uint64 -> depth: uint -> uint64
@@ -25,7 +24,7 @@ type Pipe<'S,'T> =
       Apply: (FSharp.Control.AsyncSeq<'S> -> FSharp.Control.AsyncSeq<'T>)
       Profile: MemoryProfile
     }
-module Pipe =
+module private Pipe =
     val create:
       name: string ->
         apply: (FSharp.Control.AsyncSeq<'S> -> FSharp.Control.AsyncSeq<'T>) ->
@@ -89,10 +88,10 @@ module Pipe =
     ///   • read the upstream only once
     ///   • keep at most one item in memory
     ///   • terminate correctly when both sides finish
-    type private Request<'T> =
+    type Request<'T> =
         | Left of AsyncReplyChannel<Option<'T>>
         | Right of AsyncReplyChannel<Option<'T>>
-    val internal tee: p: Pipe<'In,'T> -> Pipe<'In,'T> * Pipe<'In,'T>
+    val tee: p: Pipe<'In,'T> -> Pipe<'In,'T> * Pipe<'In,'T>
 /// MemoryTransition describes *how* memory layout is expected to change:
 /// - From: the input memory profile
 /// - To: the expected output memory profile
@@ -178,6 +177,26 @@ module Stage =
     val cast:
       name: string -> f: ('S -> 'T) -> Stage<'S,'T,'Shape>
         when 'S: equality and 'T: equality
+    val promoteConstantToStreaming:
+      name: string -> depth: uint -> value: 'T -> Stage<unit,'T,'Shape>
+    val promoteStreamingToSliding:
+      name: string ->
+        depth: uint ->
+        updateId: (uint -> 'T -> 'T) ->
+        pad: uint ->
+        zeroMaker: ('T -> 'T) ->
+        stride: uint ->
+        emitStart: uint -> emitCount: uint -> Stage<'T,'T,'Shape>
+        when 'T: equality
+    val promoteSlidingToSliding:
+      name: string ->
+        depth: uint ->
+        updateId: (uint -> 'T -> 'T) ->
+        pad: uint ->
+        zeroMaker: ('T -> 'T) ->
+        stride: uint ->
+        emitStart: uint -> emitCount: uint -> Stage<'T,'T,'Shape>
+        when 'T: equality
 type ShapeContext<'S> =
     {
       memPerElement: ('S -> uint64)
@@ -231,7 +250,7 @@ module Pipeline =
         availableMemory: uint64 -> Pipeline<unit,unit,'Shape>
     val compose:
       pl: Pipeline<'a,'b,'Shape> ->
-        next: Stage<'b,'c,'Shape> -> Pipeline<'a,'c,'Shape> when 'c: equality
+        stage: Stage<'b,'c,'Shape> -> Pipeline<'a,'c,'Shape> when 'c: equality
     val (>=>) :
       (Pipeline<'a,'b,'c> -> Stage<'b,'d,'c> -> Pipeline<'a,'d,'c>)
         when 'd: equality
@@ -244,8 +263,8 @@ module Pipeline =
 /// Represents a pipeline that has been shared (split into synchronized branches)
 type SharedPipeline<'T,'U,'V,'Shape> =
     {
-      flow: MemFlow<'T,'U,'Shape>
-      branches: Stage<'T,'U,'Shape> * Stage<'T,'V,'Shape>
+      flow1: MemFlow<'T,'U,'Shape>
+      flow2: MemFlow<'T,'V,'Shape>
       mem: uint64
       shape: 'Shape option
       context: ShapeContext<'Shape>
@@ -253,12 +272,12 @@ type SharedPipeline<'T,'U,'V,'Shape> =
     }
 module SharedPipeline =
     val create<'T,'U,'V,'Shape when 'T: equality> :
-      flow: MemFlow<'T,'U,'Shape> ->
-        Stage<'T,'U,'Shape> * Stage<'T,'V,'Shape> ->
-          mem: uint64 ->
-          shape: 'Shape option ->
-          context: ShapeContext<'Shape> ->
-          debug: bool -> SharedPipeline<'T,'U,'V,'Shape> when 'T: equality
+      flow1: MemFlow<'T,'U,'Shape> ->
+        flow2: MemFlow<'T,'V,'Shape> ->
+        mem: uint64 ->
+        shape: 'Shape option ->
+        context: ShapeContext<'Shape> ->
+        debug: bool -> SharedPipeline<'T,'U,'V,'Shape> when 'T: equality
 module Routing =
     val runToScalar:
       name: string ->
@@ -270,9 +289,9 @@ module Routing =
     /// parallel fanout with synchronization
     /// Synchronously split the shared stream into two parallel pipelines
     val (>=>>) :
-      pl: Pipeline<'In,'T,'Shape> ->
-        op1: Stage<'T,'T,'Shape> * op2: Stage<'T,'V,'Shape> ->
-          SharedPipeline<'In,'T,'V,'Shape> when 'In: equality
+      pl: Pipeline<'In,unit,'Shape> ->
+        stg1: Stage<unit,unit,'Shape> * stg2: Stage<unit,unit,'Shape> ->
+          SharedPipeline<'In,unit,unit,'Shape> when 'In: equality
     val (>>=>) :
       shared: SharedPipeline<'In,'U,'V,'Shape> ->
         combineFn: ('U -> 'V -> 'W) -> Pipeline<'In,'W,'Shape> when 'W: equality
