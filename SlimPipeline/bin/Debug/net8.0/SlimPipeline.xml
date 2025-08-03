@@ -2,12 +2,7 @@
 <doc>
 <assembly><name>SlimPipeline</name></assembly>
 <members>
-<member name="T:SlimPipeline.SharedPipeline`4">
-<summary>
- Represents a pipeline that has been shared (split into synchronized branches)
-</summary>
-</member>
-<member name="T:SlimPipeline.Stage`3">
+<member name="T:SlimPipeline.Stage`4">
 <summary>
  Stage describes *what* should be done:
  - Contains high-level metadata
@@ -36,20 +31,6 @@
 <member name="T:SlimPipeline.MemoryProfile">
 <summary>
  The memory usage strategies during image processing.
-</summary>
-</member>
-<member name="M:SlimPipeline.Routing.op_GreaterEqualsGreaterGreater``2(SlimPipeline.Pipeline{``0,Microsoft.FSharp.Core.Unit,``1},SlimPipeline.Stage{Microsoft.FSharp.Core.Unit,Microsoft.FSharp.Core.Unit,``1},SlimPipeline.Stage{Microsoft.FSharp.Core.Unit,Microsoft.FSharp.Core.Unit,``1})">
-<summary>
- parallel fanout with synchronization
- Synchronously split the shared stream into two parallel pipelines
-</summary>
-</member>
-<member name="T:SlimPipeline.Pipe.Request`1">
-<summary>
- Split a Pipe&lt;&apos;In,&apos;T&gt; into two branches that
-   • read the upstream only once
-   • keep at most one item in memory
-   • terminate correctly when both sides finish
 </summary>
 </member>
 <member name="M:SlimPipeline.Pipe.mapWindowed``2(System.String,System.UInt32,Microsoft.FSharp.Core.FSharpFunc{System.UInt32,Microsoft.FSharp.Core.FSharpFunc{``0,``0}},System.UInt32,Microsoft.FSharp.Core.FSharpFunc{``0,``0},System.UInt32,System.UInt32,System.UInt32,Microsoft.FSharp.Core.FSharpFunc{Microsoft.FSharp.Collections.FSharpList{``0},Microsoft.FSharp.Collections.FSharpList{``1}})">
