@@ -563,35 +563,32 @@ module Routing =
             | Some x -> x
             | None -> failwith $"[drainLast] No result from {name}"
 
-(*
     /// parallel fanout with synchronization
     let (>=>>) 
-        (pl: Pipeline<'In, 'S, 'ShapeIn,'ShapeS>) 
-        (stg1: Stage<'S, 'U, 'ShapeS,'ShapeU>, stg2: Stage<'S, 'V, 'Shapes,'ShapeV>) 
+        (pl: Pipeline<'In, 'S, 'ShapeIn, 'ShapeS>) 
+        (stg1: Stage<'S, 'U, 'ShapeS, 'ShapeU>, stg2: Stage<'S, 'V, 'ShapeS, 'ShapeV>) 
         : Pipeline<'In, ('U * 'V), 'ShapeIn, 'ShapeTuple> =
 
         if pl.debug then printfn $"[>=>>] ({stg1.Name}, {stg2.Name})"
-
-        let mapTuple (name: string) (f: 'U -> 'V -> 'W) (shapeUpdate:'Shape->'ShapeW) (stage1: Stage<'In, 'U, 'ShapeIn,'ShapeU>, stage2: Stage<'In, 'V, 'ShapeIn,'ShapeV>) : Stage<'In, 'W, 'ShapeIn, 'ShapeW> =
-            let pipe = Pipe.map2 name f stage1.Pipe stage2.Pipe
-            let transition = MemoryTransition.create Streaming Streaming
-            Stage.create name pipe transition shapeUpdate
 
         match pl.flow pl.mem pl.shape pl.context with
         | baseStg, mem', shape' ->
 
             // Compose both stages with the base
-            let s1 = Stage.compose baseStg stg1
-            let s2 = Stage.compose baseStg stg2
+            let stage1 = Stage.compose baseStg stg1
+            let stage2 = Stage.compose baseStg stg2
 
             // Combine them
-            let stage = mapTuple ">=>>" (fun u v -> (u, v)) (s1, s2)
+            let shape1 sh = sh |> Option.map stage1.ShapeUpdate |> Option.defaultValue () // What should the default be? again, I need None
+            let shape2 sh = sh |> Option.map stage2.ShapeUpdate |> Option.defaultValue () // -"-
+            let shapeUpdate (sh : 'ShapeIn) = (shape1 (Some sh), shape2 (Some sh))
+            let stage = Stage.map2 ">=>>" (fun u v -> (u,v)) (stage1, stage2) shapeUpdate
 
             let flow = MemFlow.bindM pl.flow (fun _ -> MemFlow.returnM stage)
-            let shape'' = shape' |> Option.map stage.ShapeUpdate
+            //let shape'' = shape' |> Option.map stage.ShapeUpdate
 
-            Pipeline.create flow mem' shape'' pl.context pl.debug
-
+            Pipeline.create flow mem' pl.shape pl.context pl.debug
+(*
     let (>>=>) f pl stage = 
         Pipeline.(>=>) pl (Stage.map2 "zip2" f stage shapeUpdate)
 *)
