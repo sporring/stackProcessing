@@ -33,6 +33,11 @@
  The memory usage strategies during image processing.
 </summary>
 </member>
+<member name="M:SlimPipeline.Pipeline.op_GreaterEqualsGreaterGreater``8(SlimPipeline.Pipeline{``0,``1,``2,``3},SlimPipeline.Stage{``1,``4,``3,``5},SlimPipeline.Stage{``1,``6,``3,``7})">
+<summary>
+ parallel fanout with synchronization
+</summary>
+</member>
 <member name="M:SlimPipeline.Pipe.mapWindowed``2(System.String,System.UInt32,Microsoft.FSharp.Core.FSharpFunc{System.UInt32,Microsoft.FSharp.Core.FSharpFunc{``0,``0}},System.UInt32,Microsoft.FSharp.Core.FSharpFunc{``0,``0},System.UInt32,System.UInt32,System.UInt32,Microsoft.FSharp.Core.FSharpFunc{Microsoft.FSharp.Collections.FSharpList{``0},Microsoft.FSharp.Collections.FSharpList{``1}})">
 <summary>
  mapWindowed keeps a running window along the slice direction of depth images
