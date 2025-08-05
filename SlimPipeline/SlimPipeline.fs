@@ -156,96 +156,6 @@ module private Pipe =
                 yield ()
             }
         create "ignore" apply Constant
-(*
-    /// Split a Pipe<'In,'T> into two branches that
-    ///   • read the upstream only once
-    ///   • keep at most one item in memory
-    ///   • terminate correctly when both sides finish
-    type private Request<'T> =
-        | Left of AsyncReplyChannel<Option<'T>>
-        | Right of AsyncReplyChannel<Option<'T>>
-    let internal tee (p : Pipe<'In,'T>): Pipe<'In, 'T> * Pipe<'In, 'T> =
-        // ---------- 1. Create the broadcaster exactly *once* per pipeline run ----------
-        // We store it in a mutable cell that is initialised on first Apply().
-        let mutable shared : Lazy<AsyncSeq<'T> * AsyncSeq<'T>> option = None
-        let syncRoot = obj()
-
-        let makeShared (input : AsyncSeq<'In>) =
-            let src = p.Apply input                        // drives upstream only ONCE
-            let agent = MailboxProcessor.Start(fun inbox ->
-                async {
-                    let enum = (AsyncSeq.toAsyncEnum src).GetAsyncEnumerator()
-                    let mutable current   : 'T option = None
-                    let mutable consumed  = (true, true)
-                    let mutable finished  = false
-
-                    let rec loop () = async {
-                        // Pull next slice if needed
-                        if current.IsNone && not finished then
-                            let! hasNext = enum.MoveNextAsync().AsTask() |> Async.AwaitTask
-                            if hasNext then
-                                current  <- Some enum.Current
-                                consumed <- (false, false)
-                            else
-                                finished <- true
-
-                        // Serve whichever side is asking
-                        let! msg = inbox.Receive()
-                        match msg, current with
-                        | Left ch, Some v when not (fst consumed) ->
-                            ch.Reply(Some v)
-                            consumed <- (true, snd consumed)
-                        | Right ch, Some v when not (snd consumed) ->
-                            ch.Reply(Some v)
-                            consumed <- (fst consumed, true)
-                        | Left ch, None when finished ->
-                            ch.Reply(None)
-                        | Right ch, None when finished ->
-                            ch.Reply(None)
-                        | _ -> ()
-
-                        // Release the slice when both sides have seen it
-                        if consumed = (true, true) then current <- None
-                        return! loop ()
-                    }
-                    do! loop ()
-                })
-
-            // Helper to build one of the two consumer streams
-            let makeStream tag =
-                asyncSeq {
-                    let mutable done_ = false
-                    while not done_ do
-                        let! vOpt = agent.PostAndAsyncReply(tag)
-                        match vOpt with
-                        | Some v -> yield v
-                        | None   -> done_ <- true
-                }
-
-            makeStream Left, makeStream Right
-
-        // Thread‑safe initialisation-on-first-use
-        let getShared input =
-            match shared with
-            | Some lazyStreams -> lazyStreams.Value
-            | None ->
-                lock syncRoot (fun () ->
-                    match shared with
-                    | Some lazyStreams -> lazyStreams.Value
-                    | None ->
-                        let lazyStreams = lazy (makeShared input)
-                        shared <- Some lazyStreams
-                        lazyStreams.Value)
-
-        // ---------- 2. Build the two outward‑facing Pipes ----------
-        let mkPipe name pick =
-            let apply input =
-                let left, right = getShared input
-                pick (left, right) 
-            create $"{p.Name} - {name}" apply p.Profile
-
-        mkPipe "left" fst, mkPipe "right" snd
-*)
 
 ////////////////////////////////////////////////////////////
 // Stage between pipes
@@ -264,24 +174,29 @@ module ProfileTransition =
             To   = toProfile
         }
 
+type MemoryNeed = uint64 -> uint64 // nElems -> bytes
+type NElemsTransformation = uint64 -> uint64 // nElems -> bytes
+
 /// Stage describes *what* should be done:
 /// - Contains high-level metadata
 /// - Encodes memory transition intent
 /// - Suitable for planning, validation, and analysis
 /// - Stage + ProfileTransition: what happens
 type Stage<'S,'T> =
-    { Name        : string
-      Pipe        : Pipe<'S,'T> 
-      Transition  : ProfileTransition
-      SizeUpdate  : uint64 -> uint64 (*A shape indication such as uint list -> uint list*) } 
+    { Name       : string
+      Pipe       : Pipe<'S,'T> 
+      Transition : ProfileTransition
+      MemoryNeed : MemoryNeed
+      NElemsTransformation : NElemsTransformation
+      } 
 
 module Stage =
-    let create<'S,'T> (name: string) (pipe: Pipe<'S,'T>) (transition: ProfileTransition) (sizeUpdate: uint64 -> uint64) =
-        { Name = name; Pipe = pipe; Transition = transition; SizeUpdate = sizeUpdate}
+    let create<'S,'T> (name: string) (pipe: Pipe<'S,'T>) (transition: ProfileTransition) (memoryNeed: MemoryNeed) (nElemsTransformation: NElemsTransformation) =
+        { Name = name; Pipe = pipe; Transition = transition; MemoryNeed = memoryNeed; NElemsTransformation = nElemsTransformation}
 
-    let init<'S,'T> (name: string) (depth: uint) (mapper: uint -> 'T) (transition: ProfileTransition) (sizeUpdate: uint64 -> uint64) =
+    let init<'S,'T> (name: string) (depth: uint) (mapper: uint -> 'T) (transition: ProfileTransition) (memoryNeed: MemoryNeed) (nElemsTransformation: NElemsTransformation) =
         let pipe = Pipe.init name depth mapper transition.From
-        create name pipe transition sizeUpdate
+        create name pipe transition memoryNeed nElemsTransformation
 
 (*
     let id<'T> () : Stage<'T, 'T> = // I don't think this is used
@@ -292,32 +207,34 @@ module Stage =
 
     let toPipe (stage : Stage<_,_>) = stage.Pipe
 
-    let fromPipe (name: string) (transition: ProfileTransition) (sizeUpdate: uint64 -> uint64) (pipe: Pipe<'S, 'T>) : Stage<'S, 'T> =
-        create name pipe transition sizeUpdate
+    let fromPipe (name: string) (transition: ProfileTransition) (memoryNeed: MemoryNeed) (nElemsTransformation: NElemsTransformation) (pipe: Pipe<'S, 'T>) : Stage<'S, 'T> =
+        create name pipe transition memoryNeed nElemsTransformation
 
     let compose (stage1 : Stage<'S,'T>) (stage2 : Stage<'T,'U>) : Stage<'S,'U> =
         let transition = ProfileTransition.create stage1.Transition.From stage2.Transition.To
         let pipe = Pipe.compose stage1.Pipe stage2.Pipe
-        let sizeUpdate = stage1.SizeUpdate >> stage2.SizeUpdate
-        create $"{stage2.Name} ∘ {stage1.Name}" pipe transition sizeUpdate
+        let memoryNeed nElems = (stage1.MemoryNeed nElems) + (stage2.MemoryNeed nElems)
+        let nElemsTransformation = stage1.NElemsTransformation >> stage2.NElemsTransformation
+        create $"{stage2.Name} ∘ {stage1.Name}" pipe transition memoryNeed nElemsTransformation
 
     let (-->) = compose
 
-    let skip (name: string) (n:uint)  : Stage<'S, 'S> =
+    let skip (name: string) (n:uint) : Stage<'S, 'S> =
         let transition = ProfileTransition.create Streaming Streaming
         let pipe = Pipe.skip name n 
-        create name pipe transition id
+        create name pipe transition id id
 
-    let take (name: string) (n:uint)  : Stage<'S, 'S> =
+    let take (name: string) (n:uint) : Stage<'S, 'S> =
         let transition = ProfileTransition.create Streaming Streaming
         let pipe = Pipe.take name n 
-        create name pipe transition id
+        create name pipe transition id id
 
     let map<'S,'T> (name: string) (f: 'S -> 'T) (sizeUpdate: uint64 -> uint64) : Stage<'S, 'T> =
         let transition = ProfileTransition.create Streaming Streaming
         let apply input = input |> AsyncSeq.map f
         let pipe : Pipe<'S,'T> = Pipe.create name apply Streaming
-        create name pipe transition sizeUpdate
+        let memoryNeed nElems memPerElem = nElems*memPerElem
+        create name pipe transition id id // Not right!!!
 
 (*
     let map (name: string) (f: 'U -> 'V) (stage: Stage<'In, 'U>) : Stage<'In, 'V> =
@@ -326,42 +243,36 @@ module Stage =
         create name pipe transition (fun s -> s)
 *)
 
-    let map2 (name: string) (f: 'U -> 'V -> 'W) (stage1: Stage<'In, 'U>, stage2: Stage<'In, 'V>) (sizeUpdate: uint64 -> uint64): Stage<'In, 'W> =
+    let map2 (name: string) (f: 'U -> 'V -> 'W) (stage1: Stage<'In, 'U>, stage2: Stage<'In, 'V>) (memoryNeed: MemoryNeed) (nElemsTransformation: NElemsTransformation): Stage<'In, 'W> =
         let pipe = Pipe.map2 name f stage1.Pipe stage2.Pipe
         let transition = ProfileTransition.create Streaming Streaming
-        create name pipe transition sizeUpdate
+        create name pipe transition memoryNeed nElemsTransformation
 
     let reduce (name: string) (reducer: AsyncSeq<'In> -> Async<'Out>) (profile: Profile) (sizeUpdate: uint64 -> uint64): Stage<'In, 'Out> =
         let transition = ProfileTransition.create Streaming Constant
         let pipe = Pipe.reduce name reducer profile
-        create name pipe transition sizeUpdate
+        create name pipe transition id id // Check !!!
 
     let fold<'S,'T> (name: string) (folder: 'T -> 'S -> 'T) (initial: 'T) (sizeUpdate: uint64 -> uint64): Stage<'S, 'T> =
         let transition = ProfileTransition.create Streaming Constant
         let pipe : Pipe<'S,'T> = Pipe.fold name folder initial Streaming
-        create name pipe transition sizeUpdate
+        create name pipe transition id id // Check !!!
 
-    let mapNFold (name: string) (mapFn: 'In -> 'Mapped) (folder: 'State -> 'Mapped -> 'State) (state: 'State) (profile: Profile) (sizeUpdate: uint64 -> uint64) : Stage<'In, 'State> =
-        let transition = ProfileTransition.create Streaming Constant
-        let pipe = Pipe.mapNFold name mapFn folder state profile
-        create name pipe transition sizeUpdate
-
-    // this assumes too much: Streaming and identity sizeUpdate!!!
-    let liftUnary<'S,'T> (name: string) (f: 'S -> 'T) (sizeUpdate: uint64 -> uint64): Stage<'S, 'T> =
+    let liftUnary<'S,'T> (name: string) (f: 'S -> 'T) (memoryNeed: MemoryNeed) (nElemsTransformation: NElemsTransformation): Stage<'S, 'T> =
         let transition = ProfileTransition.create Streaming Streaming
         let pipe = Pipe.lift name Streaming f
-        create name pipe transition sizeUpdate
+        create name pipe transition memoryNeed nElemsTransformation
 
-    let liftWindowed<'S,'T when 'S: equality and 'T: equality> (name: string) (updateId: uint->'S->'S) (window: uint) (pad: uint) (zeroMaker: 'S->'S) (stride: uint) (emitStart: uint) (emitCount: uint) (f: 'S list -> 'T list) (sizeUpdate: uint64 -> uint64): Stage<'S, 'T> =
+    let liftWindowed<'S,'T when 'S: equality and 'T: equality> (name: string) (updateId: uint->'S->'S) (window: uint) (pad: uint) (zeroMaker: 'S->'S) (stride: uint) (emitStart: uint) (emitCount: uint) (f: 'S list -> 'T list) (memoryNeed: MemoryNeed) (nElemsTransformation: NElemsTransformation): Stage<'S, 'T> =
         let transition = ProfileTransition.create (Sliding (window,stride,emitStart,emitCount)) Streaming
         let pipe = Pipe.mapWindowed name window updateId pad zeroMaker stride emitStart emitCount f
-        create name pipe transition sizeUpdate
+        create name pipe transition memoryNeed nElemsTransformation
 
     let tap (name: string) : Stage<'T, 'T> =
-        liftUnary $"tap: {name}" (fun x -> printfn "[%s] %A" name x; x) (fun s->s)
+        liftUnary $"tap: {name}" (fun x -> printfn "[%s] %A" name x; x) id id
 
     let tapIt (toString: 'T -> string) : Stage<'T, 'T> =
-        liftUnary "tapIt" (fun x -> printfn "%s" (toString x); x) (fun s->s)
+        liftUnary "tapIt" (fun x -> printfn "%s" (toString x); x) id id
 
 (*
     let internal tee (op: Stage<'In, 'T>) : Stage<'In, 'T> * Stage<'In, 'T> =
@@ -373,23 +284,23 @@ module Stage =
     let ignore<'T> () : Stage<'T, unit> =
         let pipe = Pipe.ignore ()
         let transition = ProfileTransition.create Streaming Constant
-        create "ignore" pipe transition (fun s -> s)
+        create "ignore" pipe transition id id // check !!!!
 
     let consumeWith (name: string) (consume: 'T -> unit) : Stage<'T, unit> = 
         let pipe = Pipe.consumeWith name consume Streaming
         let transition = ProfileTransition.create Streaming Constant
-        create name pipe transition (fun s -> s)
+        create name pipe transition id id // Check !!!!
 
     let cast<'S,'T when 'S: equality and 'T: equality> name f : Stage<'S,'T> = // cast cannot change
         let apply input = input |> AsyncSeq.map f 
         let pipe = Pipe.create name apply Streaming
         let transition = ProfileTransition.create Streaming Streaming
-        create name pipe transition (fun s -> s)
+        create name pipe transition id id // Type calculation needs to be updated!!!!
 
     let promoteConstantToStreaming (name: string) (depth: uint) (value: 'T) : Stage<unit, 'T> =
         let transition = ProfileTransition.create Constant Streaming
         let pipe = Pipe.init $"stream-of:{name}" depth (fun _ -> value) Streaming
-        create $"promote:{name}" pipe transition (fun s->s)
+        create $"promote:{name}" pipe transition id id // probably not correct !!!!
 
     let promoteStreamingToSliding 
         (name: string)
@@ -410,7 +321,8 @@ module Stage =
         let pipe = Pipe.mapWindowed name winSz updateId pad zeroMaker stride emitStart emitCount f
         let transition = ProfileTransition.create Streaming Streaming
 
-        create $"promote:{name}" pipe transition (fun s -> s)
+        create $"promote:{name}" pipe transition id id // probably not correct !!!!
+
 
     let promoteSlidingToSliding
         (name: string)
@@ -431,140 +343,91 @@ module Stage =
         let pipe = Pipe.mapWindowed name winSz updateId pad zeroMaker stride emitStart emitCount f
         let transition = ProfileTransition.create Streaming Streaming
 
-        create $"promote:{name}" pipe transition (fun s -> s)
-
-////////////////////////////////////////////////////////////
-// Flow state monad
-type SizeUpdate = uint64 -> uint64
-type Flow<'S,'T> = // memory before, shape before, shapeContext before, Stage, memory after, shape after. 
-        uint64 -> uint64 -> SizeUpdate -> Stage<'S,'T> * uint64 * uint64
-
-module Flow =
-    let returnM (stage : Stage<'S,'T>) : Flow<'S,'T> =
-        fun memAvailable sizeS sizeUpdate ->
-            if sizeS = 0UL then 
-                stage, memAvailable, 0UL
-            else
-                let sizeT = sizeUpdate sizeS // Check again !!!!****!!!!*****!!!
-                //let p' = Pipe.shrinkProfile memAvailable memPerElement depth stage.Pipe
-                let memNeeded = Profile.estimateUsage stage.Pipe.Profile sizeT // sh -> memPerElement depth
-                let shapeT = stage.SizeUpdate sizeS
-                stage, memAvailable - memNeeded, shapeT
-
-    let bindM (k: Stage<'A,'B> -> Flow<'B,'C>) (flowAB: Flow<'A,'B>) : Flow<'A,'C> =
-        fun memAvailable shape shapeContextA ->
-            let stage1, memAvailable1, shape1 = flowAB memAvailable shape shapeContextA
-            let flowBC = k stage1
-            let shapeContextB = fun sz -> if sz = 0UL then 0UL else shapeContextA sz
-            let stage2, memAvailable2, shape2 = flowBC memAvailable1 shape1 shapeContextB
-            (* 2025/07/25 Is this step necessary? The processing is taking care of the interfacing...
-            // validate memory transition, if shape is known
-            shape
-            |> Option.iter (fun shape ->
-                if stage1.Transition.To <> stage2.Transition.From || not (stage2.Transition.Check shape) then 
-                    failwith $"Invalid memory transition: {stage1} → {stage2}")
-            *)
-            Stage.compose stage1 stage2, memAvailable2, shape2
+        create $"promote:{name}" pipe transition id id // probably not correct !!!!
 
 ////////////////////////////////////////////////////////////
 // Pipeline flow controler
 type Pipeline<'S,'T> = { 
-    flow    : Flow<'S,'T>
-    sizeUpdate : SizeUpdate // shape element's shape descriptor before transformation
-    elmSize : uint64 // elment size before transformation
-    nElems  : uint64  // number of elements before transformation
-    mem     : uint64 // memory available before
-    debug   : bool }
+    stage      : Stage<'S,'T> option
+    nElems     : uint64 // elment size before transformation
+    length     : uint64 // number of elements before transformation
+    memAvail   : uint64 // memory available before
+    debug      : bool }
 
 module Pipeline =
-    let create<'S,'T when 'T: equality> (flow: Flow<'S,'T>) (mem : uint64) (elmSize: uint64) (nElems: uint64) (sizeUpdate : SizeUpdate) (debug: bool): Pipeline<'S, 'T> =
-        { flow = flow; mem = mem; elmSize = elmSize; nElems = nElems; sizeUpdate = sizeUpdate; debug = debug }
-
-    let asStage (pl: Pipeline<'In, 'Out>) : Stage<'In, 'Out> =
-        let stage, _, _ = pl.flow pl.mem pl.elmSize pl.sizeUpdate
-        stage
+    let create<'S,'T when 'T: equality> (stage: Stage<'S,'T> option) (mem : uint64) (nElems: uint64) (length: uint64) (debug: bool): Pipeline<'S, 'T> =
+        { stage = stage; memAvail = mem; nElems = nElems; length = length; debug = debug }
 
     //////////////////////////////////////////////////
     /// Source type operators
-    let source (sizeUpdate: SizeUpdate) (availableMemory: uint64) : Pipeline<unit, unit> =
-        let flow = fun _ _ _ -> failwith "Pipeline not started yet"
-        create flow availableMemory 0UL 0UL sizeUpdate false
+    let source (availableMemory: uint64) : Pipeline<unit, unit> =
+        create None availableMemory 0UL 0UL false
 
-    let debug (sizeUpdate: SizeUpdate) (availableMemory: uint64) : Pipeline<unit, unit> =
+    let debug (availableMemory: uint64) : Pipeline<unit, unit> =
         printfn $"Preparing pipeline - {availableMemory} B available"
-        let flow = fun _ _ _ -> failwith "Pipeline not started yet"
-        create flow availableMemory 0UL 0UL sizeUpdate true
+        create None availableMemory 0UL 0UL true
 
     //////////////////////////////////////////////////////////////
     /// Composition operators
-    let compose (pl: Pipeline<'a, 'b>) (stage: Stage<'b, 'c>) : Pipeline<'a, 'c> =
+    let (>=>) (pl: Pipeline<'a, 'b>) (stage: Stage<'b, 'c>) : Pipeline<'a, 'c> =
         if pl.debug then printfn $"[>=>] {stage.Name}"
-        let flow = Flow.bindM (fun _ -> Flow.returnM stage) pl.flow 
-        let elmSize,nElems, sizeUpdate = pl.elmSize, pl.nElems, pl.sizeUpdate  // stage may change the elmSize and nElems, which is to job of sizeUpdate
-        create flow pl.mem elmSize nElems sizeUpdate pl.debug
-
-    let (>=>) = compose
-
-    //let shape' = pl.elmSize |> Option.map stage.SizeUpdate
-
-(*
-    let tee (pl: Pipeline<'In, 'T>) : Pipeline<'In, 'T> * Pipeline<'In, 'T> =
-        if pl.debug then printfn "tee"
-        let stage, mem, shape = pl.flow pl.mem pl.elmSize pl.sizeUpdate
-        let left, right = Stage.tee stage
-        let basePipeline pipe =
-            create (Flow.returnM pipe) mem shape pl.sizeUpdate pl.debug
-        basePipeline left, basePipeline right
-*)
+        let stage' = Option.map (fun stg -> Stage.compose stg stage) pl.stage
+        let memNeeded = stage.MemoryNeed pl.nElems
+        let nElems' = stage.NElemsTransformation pl.nElems
+        if memNeeded > pl.memAvail then
+            failwith $"Out of available memory: {stage.Name} requested {memNeeded} B but have only {pl.memAvail} B"
+        create stage' pl.memAvail nElems' pl.length pl.debug
 
     /// parallel fanout with synchronization
-    let (>=>>) 
-        (pl: Pipeline<'In, 'S>) 
-        (stg1: Stage<'S, 'U>, stg2: Stage<'S, 'V>) 
-        : Pipeline<'In, ('U * 'V)> =
+    let (>=>>) (pl: Pipeline<'In, 'S>) (stage1: Stage<'S, 'U>, stage2: Stage<'S, 'V>) : Pipeline<'In, ('U * 'V)> =
 
-        if pl.debug then printfn $"[>=>>] ({stg1.Name}, {stg2.Name})"
+        if pl.debug then printfn $"[>=>>] ({stage1.Name}, {stage2.Name})"
 
-        match pl.flow pl.mem pl.elmSize pl.sizeUpdate with
-        | baseStg, mem', shape' ->
+        let memoryNeed nElems = (stage1.MemoryNeed nElems) + (stage2.MemoryNeed nElems) // Runs in parallel
+        let memNeeded = memoryNeed pl.nElems
+        if memNeeded > pl.memAvail then
+            failwith $"[>=>>] Out of available memory: Parallel execution of {stage1.Name}+{stage2.Name} requested {memNeeded} B but have only {pl.memAvail} B"
 
-            // Compose both stages with the base
-            //let stage1 = Stage.compose baseStg stg1
-            //let stage2 = Stage.compose baseStg stg2
+        let nElemsTransformation = stage1.NElemsTransformation // must be identical with stage2.NElemsTransformation
+        let nElemsTransformation2 = stage2.NElemsTransformation 
+        let nElems = nElemsTransformation pl.nElems
+        let nElems2 = nElemsTransformation2 pl.nElems
+        if nElems <> nElems2 then
+            failwith $"[>=>>] Cannot fan out to different number of elements {nElems} vs {nElems2}"
+        let stage1' = Option.map (fun stg -> Stage.compose stg stage1) pl.stage
+        let stage2' = Option.map (fun stg -> Stage.compose stg stage2) pl.stage
+        let stage =
+            match stage1', stage2' with
+                Some stg1, Some stg2 -> 
+                    let pipe = Pipe.map2 ">=>>" (fun U V -> (U,V)) stg1.Pipe stg2.Pipe
+                    let transition = {From=Streaming; To=Streaming}
+                    let memoryNeed nElems = (stg1.MemoryNeed nElems) + (stg2.MemoryNeed nElems)
+                    Stage.create ">=>>" pipe transition memoryNeed nElemsTransformation |> Some
+                | _,_ -> None
+        create stage pl.memAvail nElems pl.length pl.debug
 
-            // Combine them
-            let sizeUpdate sh = (sh |> stg1.SizeUpdate) + (sh |> stg2.SizeUpdate)
-            let stage = Stage.map2 ">=>>" (fun u v -> (u,v)) (stg1, stg2) sizeUpdate
-
-            let flow = Flow.bindM (fun _ -> Flow.returnM stage) pl.flow // This seems wrong, why is input ignored?
-            //let shape'' = shape' |> Option.map stage.SizeUpdate
-
-            create flow pl.mem pl.elmSize pl.nElems pl.sizeUpdate pl.debug
-
-    let (>>=>) f pl stage sizeUpdate = 
-        (>=>) pl (Stage.map2 "zip2" f stage sizeUpdate)
+    let (>>=>) f pl stage  = 
+        (>=>) pl (Stage.map2 "zip2" f stage id id) // What should be done here !!!!
 
     ///////////////////////////////////////////
     /// sink type operators
     let sink (pl: Pipeline<unit, unit>) : unit =
         if pl.debug then printfn "sink"
-        if pl.elmSize = 0UL then 
-            failwith "No stage provided shape information."
-        else
-            let stage, rest, _ = pl.flow pl.mem pl.elmSize pl.sizeUpdate
-            if pl.debug then printfn $"Pipeline built - {rest} B still free\nRunning"
-            stage |> Stage.toPipe |> Pipe.run
-            if pl.debug then printfn "Done"
+        if pl.debug then printfn "Pipeline built\nRunning"
+        Option.map (Stage.toPipe >> Pipe.run) pl.stage |> ignore
+        if pl.debug then printfn "Done"
 
     let sinkList (pipelines: Pipeline<unit, unit> list) : unit = // shape of unit?
         pipelines |> List.iter sink
 
     let internal runToScalar (name:string) (reducer: AsyncSeq<'T> -> Async<'R>) (pl: Pipeline<'In, 'T>) : 'R =
         if pl.debug then printfn "[runToScalar]"
-        let stage, _, _ = pl.flow pl.mem pl.elmSize pl.sizeUpdate
-        let pipe = stage.Pipe
-        let input = AsyncSeq.singleton Unchecked.defaultof<'In>
-        pipe.Apply input |> reducer |> Async.RunSynchronously
+        let stage = pl.stage
+        match stage with
+            Some stg -> 
+                let input = AsyncSeq.singleton Unchecked.defaultof<'In>
+                input |> stg.Pipe.Apply |> reducer |> Async.RunSynchronously
+            | _ -> failwith "[internal runToScalar] Pipeline is empty"
 
     let drainSingle (name:string) (pl: Pipeline<'S, 'T>) =
         if pl.debug then printfn "[drainSingle]"

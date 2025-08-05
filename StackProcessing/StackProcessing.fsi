@@ -5,6 +5,8 @@ namespace FSharp
 
 module Slice
 
+val getBytesPerComponent: (System.Type -> uint32)
+
 /// <summary>
 /// Represents a slice of a stack of 2d images. 
 /// </summary>

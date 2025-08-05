@@ -87,6 +87,8 @@ type ProfileTransition =
     }
 module ProfileTransition =
     val create: fromProfile: Profile -> toProfile: Profile -> ProfileTransition
+type MemoryNeed = uint64 -> uint64
+type NElemsTransformation = uint64 -> uint64
 /// Stage describes *what* should be done:
 /// - Contains high-level metadata
 /// - Encodes memory transition intent
@@ -97,25 +99,30 @@ type Stage<'S,'T> =
       Name: string
       Pipe: Pipe<'S,'T>
       Transition: ProfileTransition
-      SizeUpdate: (uint64 -> uint64)
+      MemoryNeed: MemoryNeed
+      NElemsTransformation: NElemsTransformation
     }
 module Stage =
     val create:
       name: string ->
         pipe: Pipe<'S,'T> ->
         transition: ProfileTransition ->
-        sizeUpdate: (uint64 -> uint64) -> Stage<'S,'T>
+        memoryNeed: MemoryNeed ->
+        nElemsTransformation: NElemsTransformation -> Stage<'S,'T>
     val init<'S,'T> :
       name: string ->
         depth: uint ->
         mapper: (uint -> 'T) ->
         transition: ProfileTransition ->
-        sizeUpdate: (uint64 -> uint64) -> Stage<unit,'T>
+        memoryNeed: MemoryNeed ->
+        nElemsTransformation: NElemsTransformation -> Stage<unit,'T>
     val toPipe: stage: Stage<'a,'b> -> Pipe<'a,'b>
     val fromPipe:
       name: string ->
         transition: ProfileTransition ->
-        sizeUpdate: (uint64 -> uint64) -> pipe: Pipe<'S,'T> -> Stage<'S,'T>
+        memoryNeed: MemoryNeed ->
+        nElemsTransformation: NElemsTransformation ->
+        pipe: Pipe<'S,'T> -> Stage<'S,'T>
     val compose: stage1: Stage<'S,'T> -> stage2: Stage<'T,'U> -> Stage<'S,'U>
     val (-->) : (Stage<'a,'b> -> Stage<'b,'c> -> Stage<'a,'c>)
     val skip: name: string -> n: uint -> Stage<'S,'S>
@@ -127,7 +134,8 @@ module Stage =
       name: string ->
         f: ('U -> 'V -> 'W) ->
         stage1: Stage<'In,'U> * stage2: Stage<'In,'V> ->
-          sizeUpdate: (uint64 -> uint64) -> Stage<'In,'W>
+          memoryNeed: MemoryNeed ->
+          nElemsTransformation: NElemsTransformation -> Stage<'In,'W>
     val reduce:
       name: string ->
         reducer: (FSharp.Control.AsyncSeq<'In> -> Async<'Out>) ->
@@ -136,15 +144,11 @@ module Stage =
       name: string ->
         folder: ('T -> 'S -> 'T) ->
         initial: 'T -> sizeUpdate: (uint64 -> uint64) -> Stage<'S,'T>
-    val mapNFold:
-      name: string ->
-        mapFn: ('In -> 'Mapped) ->
-        folder: ('State -> 'Mapped -> 'State) ->
-        state: 'State ->
-        profile: Profile -> sizeUpdate: (uint64 -> uint64) -> Stage<'In,'State>
     val liftUnary:
       name: string ->
-        f: ('S -> 'T) -> sizeUpdate: (uint64 -> uint64) -> Stage<'S,'T>
+        f: ('S -> 'T) ->
+        memoryNeed: MemoryNeed ->
+        nElemsTransformation: NElemsTransformation -> Stage<'S,'T>
     val liftWindowed:
       name: string ->
         updateId: (uint -> 'S -> 'S) ->
@@ -155,7 +159,8 @@ module Stage =
         emitStart: uint ->
         emitCount: uint ->
         f: ('S list -> 'T list) ->
-        sizeUpdate: (uint64 -> uint64) -> Stage<'S,'T>
+        memoryNeed: MemoryNeed ->
+        nElemsTransformation: NElemsTransformation -> Stage<'S,'T>
         when 'S: equality and 'T: equality
     val tap: name: string -> Stage<'T,'T>
     val tapIt: toString: ('T -> string) -> Stage<'T,'T>
@@ -182,61 +187,36 @@ module Stage =
         zeroMaker: ('T -> 'T) ->
         stride: uint -> emitStart: uint -> emitCount: uint -> Stage<'T,'T>
         when 'T: equality
-type SizeUpdate = uint64 -> uint64
-type Flow<'S,'T> =
-    uint64 -> uint64 -> SizeUpdate -> Stage<'S,'T> * uint64 * uint64
-module Flow =
-    val returnM:
-      stage: Stage<'S,'T> ->
-        memAvailable: uint64 ->
-        sizeS: uint64 ->
-        sizeUpdate: SizeUpdate -> Stage<'S,'T> * uint64 * uint64
-    val bindM:
-      k: (Stage<'A,'B> ->
-            uint64 -> uint64 -> SizeUpdate -> Stage<'B,'C> * uint64 * uint64) ->
-        flowAB: Flow<'A,'B> ->
-        memAvailable: uint64 ->
-        shape: uint64 ->
-        shapeContextA: SizeUpdate -> Stage<'A,'C> * uint64 * uint64
 type Pipeline<'S,'T> =
     {
-      flow: Flow<'S,'T>
-      sizeUpdate: SizeUpdate
-      elmSize: uint64
+      stage: Stage<'S,'T> option
       nElems: uint64
-      mem: uint64
+      length: uint64
+      memAvail: uint64
       debug: bool
     }
 module Pipeline =
     val create:
-      flow: Flow<'S,'T> ->
+      stage: Stage<'S,'T> option ->
         mem: uint64 ->
-        elmSize: uint64 ->
-        nElems: uint64 ->
-        sizeUpdate: SizeUpdate -> debug: bool -> Pipeline<'S,'T>
+        nElems: uint64 -> length: uint64 -> debug: bool -> Pipeline<'S,'T>
         when 'T: equality
-    val asStage: pl: Pipeline<'In,'Out> -> Stage<'In,'Out>
     /// Source type operators
-    val source:
-      sizeUpdate: SizeUpdate -> availableMemory: uint64 -> Pipeline<unit,unit>
-    val debug:
-      sizeUpdate: SizeUpdate -> availableMemory: uint64 -> Pipeline<unit,unit>
+    val source: availableMemory: uint64 -> Pipeline<unit,unit>
+    val debug: availableMemory: uint64 -> Pipeline<unit,unit>
     /// Composition operators
-    val compose:
+    val (>=>) :
       pl: Pipeline<'a,'b> -> stage: Stage<'b,'c> -> Pipeline<'a,'c>
         when 'c: equality
-    val (>=>) :
-      (Pipeline<'a,'b> -> Stage<'b,'c> -> Pipeline<'a,'c>) when 'c: equality
     /// parallel fanout with synchronization
     val (>=>>) :
       pl: Pipeline<'In,'S> ->
-        stg1: Stage<'S,'U> * stg2: Stage<'S,'V> -> Pipeline<'In,('U * 'V)>
+        stage1: Stage<'S,'U> * stage2: Stage<'S,'V> -> Pipeline<'In,('U * 'V)>
         when 'U: equality and 'V: equality
     val (>>=>) :
       f: ('a -> 'b -> 'c) ->
-        pl: Pipeline<'d,'e> ->
-        Stage<'e,'a> * Stage<'e,'b> ->
-          sizeUpdate: (uint64 -> uint64) -> Pipeline<'d,'c> when 'c: equality
+        pl: Pipeline<'d,'e> -> Stage<'e,'a> * Stage<'e,'b> -> Pipeline<'d,'c>
+        when 'c: equality
     /// sink type operators
     val sink: pl: Pipeline<unit,unit> -> unit
     val sinkList: pipelines: Pipeline<unit,unit> list -> unit

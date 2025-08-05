@@ -192,33 +192,30 @@ module internal InternalHelpers =
         elif    t = fromType<float>                   then box ((unbox acc : float)   + (unbox k : float)   * (unbox p : float))
         else failwithf "mulAdd: unsupported pixel type %A" id
 
-    let getBytesPerComponent t =
-        if t = typeof<uint8> then 1u
-        elif t = typeof<int8> then 1u
-        elif t = typeof<uint8 list> then 1u
-        elif t = typeof<int8 list> then 1u
-        elif t = typeof<uint16> then 2u
-        elif t = typeof<int16> then 2u
-        elif t = typeof<uint16 list> then 2u
-        elif t = typeof<int16 list> then 2u
-        elif t = typeof<uint32> then 4u
-        elif t = typeof<int32> then 4u
-        elif t = typeof<float32> then 4u
-        elif t = typeof<uint32 list> then 4u
-        elif t = typeof<int32 list> then 4u
-        elif t = typeof<float32 list> then 4u
-        elif t = typeof<uint64> then 8u
-        elif t = typeof<int64> then 8u
-        elif t = typeof<float> then 8u
-        elif t = typeof<uint64 list> then 8u
-        elif t = typeof<int64 list> then 8u
-        elif t = typeof<float list> then 8u
-        elif t = typeof<System.Numerics.Complex> then 16u
-        else 8u // guessing here
-
-
-
 open InternalHelpers
+let getBytesPerComponent t =
+    if t = typeof<uint8> then 1u
+    elif t = typeof<int8> then 1u
+    elif t = typeof<uint8 list> then 1u
+    elif t = typeof<int8 list> then 1u
+    elif t = typeof<uint16> then 2u
+    elif t = typeof<int16> then 2u
+    elif t = typeof<uint16 list> then 2u
+    elif t = typeof<int16 list> then 2u
+    elif t = typeof<uint32> then 4u
+    elif t = typeof<int32> then 4u
+    elif t = typeof<float32> then 4u
+    elif t = typeof<uint32 list> then 4u
+    elif t = typeof<int32 list> then 4u
+    elif t = typeof<float32 list> then 4u
+    elif t = typeof<uint64> then 8u
+    elif t = typeof<int64> then 8u
+    elif t = typeof<float> then 8u
+    elif t = typeof<uint64 list> then 8u
+    elif t = typeof<int64 list> then 8u
+    elif t = typeof<float list> then 8u
+    elif t = typeof<System.Numerics.Complex> then 16u
+    else 8u // guessing here
 
 let equalOne (v : 'T) : bool =
     match box v with

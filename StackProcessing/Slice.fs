@@ -3,6 +3,8 @@ open Image
 open ImageFunctions
 open System.IO
 
+let getBytesPerComponent = Image.getBytesPerComponent
+
 /// <summary>
 /// Represents a slice of a stack of 2d images. 
 /// </summary>

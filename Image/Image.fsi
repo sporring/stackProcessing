@@ -38,7 +38,7 @@ module internal InternalHelpers =
       t: itk.simple.PixelIDValueEnum -> vSize: uint option -> obj
     val inline mulAdd:
       t: itk.simple.PixelIDValueEnum -> acc: obj -> k: obj -> p: obj -> obj
-    val getBytesPerComponent: t: System.Type -> uint32
+val getBytesPerComponent: t: System.Type -> uint32
 val equalOne: v: 'T -> bool
 [<StructuredFormatDisplay ("{Display}")>]
 type Image<'T when 'T: equality> =

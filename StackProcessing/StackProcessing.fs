@@ -28,6 +28,7 @@ let liftUnary (f: Slice.Slice<'S> -> Slice.Slice<'T>) =
 let zeroMaker<'S when 'S: equality> (ex:Slice.Slice<'S>) : Slice.Slice<'S> = Slice.create<'S> (Slice.GetWidth ex) (Slice.GetHeight ex) 1u 0u
 let liftWindowed (name: string) (updateId: uint->Slice.Slice<'S>->Slice.Slice<'S>) (window: uint) (pad: uint) (zeroMaker: Slice.Slice<'S>->Slice.Slice<'S>) (stride: uint) (emitStart: uint) (emitCount: uint) (f: Slice.Slice<'S> list -> Slice.Slice<'T> list) (shapeUpdate: uint64 -> uint64) : Stage<Slice.Slice<'S>, Slice.Slice<'T>> =
     Stage.liftWindowed<Slice.Slice<'S>,Slice.Slice<'T>> name updateId window pad zeroMaker stride emitStart emitCount f shapeUpdate
+let getBytesPerComponent<'T> = (typeof<'T> |> Image.getBytesPerComponent |> uint64)
 
 let write (outputDir: string) (suffix: string) : Stage<Slice.Slice<'T>, unit> =
     if not (Directory.Exists(outputDir)) then
@@ -86,7 +87,7 @@ let axisSource
     let context = ShapeContext.create (fun _ -> width*height |> uint64) (fun _ -> depth)
     {
         flow = Flow.returnM op
-        mem = pl.mem
+        mem = pl.memAvail
         shape = Slice (width,height) |> Some
         context = context
         debug = pl.debug
@@ -97,8 +98,9 @@ let axisSource
 let cast<'S,'T when 'S: equality and 'T: equality> = Stage.cast<Slice.Slice<'S>,Slice.Slice<'T>> (sprintf "cast(%s->%s)" typeof<'S>.Name typeof<'T>.Name) Slice.cast<'S,'T>
 
 /// Basic arithmetic
+let memNeeded<'T> nTimes nElems = nElems*nTimes*getBytesPerComponent<'T> // Assuming source and target in memory simultaneously
 let add slice = 
-    Stage.liftUnary<Slice.Slice<'T>,Slice.Slice<'T>> "add" (Slice.add slice) id
+    Stage.liftUnary<Slice.Slice<'T>,Slice.Slice<'T>> "add" (Slice.add slice) (memNeeded<'T> 2UL) id
 let inline scalarAddSlice<^T when ^T: equality and ^T: (static member op_Explicit: ^T -> float)> (i: ^T) = 
     Stage.liftUnary<Slice.Slice<'T>,Slice.Slice<'T>> "scalarAddSlice" (fun (s:Slice.Slice<^T>)->Slice.scalarAddSlice<^T> i s) id
 let inline sliceAddScalar<^T when ^T: equality and ^T: (static member op_Explicit: ^T -> float)> (i: ^T) =
@@ -197,7 +199,9 @@ let sliceComputeStatsFold () =
 let computeStats () =
     sliceComputeStats () --> sliceComputeStatsFold ()
 
+////////////////////////////////////////////////
 /// Convolution like operators
+
 // Chained type definitions do expose the originals
 open type ImageFunctions.OutputRegionMode
 open type ImageFunctions.BoundaryCondition
@@ -348,7 +352,7 @@ let createAs<'T when 'T: equality> (width: uint) (height: uint) (depth: uint) (p
     let flow = Flow.returnM stage
     let shape = (uint64 width) * (uint64 height)
     let context = id
-    Pipeline.create flow pl.mem shape (uint64 depth) context pl.debug
+    Pipeline.create flow pl.memAvail shape (uint64 depth) context pl.debug
 
 let readAs<'T when 'T: equality> (inputDir : string) (suffix : string) (pl : Pipeline<unit, unit>) : Pipeline<unit, Slice.Slice<'T>> =
     // much should be deferred to outside Core!!!
@@ -365,9 +369,9 @@ let readAs<'T when 'T: equality> (inputDir : string) (suffix : string) (pl : Pip
     let shapeUpdate = id
     let stage = Stage.init $"read: {inputDir}" (uint depth) mapper transition shapeUpdate 
     let flow = Flow.returnM stage
-    let shape = (uint64 width)*(uint64 height)
-    let context = id
-    Pipeline.create flow pl.mem shape (uint64 depth) context pl.debug
+    let memPerElem = (uint64 width)*(uint64 height)*(typeof<'T> |> getBytesPerComponent |> uint64)
+    let length = (uint64 depth)
+    Pipeline.create flow pl.memAvail memPerElem length context pl.debug
 
 let readRandomAs<'T when 'T: equality> (count: uint) (inputDir : string) (suffix : string) (pl : Pipeline<unit, unit>) : Pipeline<unit, Slice.Slice<'T>> =
     if pl.debug then printfn $"[readRandomAs] {count} slices from {inputDir}/*{suffix}"
@@ -385,4 +389,4 @@ let readRandomAs<'T when 'T: equality> (count: uint) (inputDir : string) (suffix
     let flow = Flow.returnM stage
     let shape = (uint64 width)*(uint64 height)
     let context = id
-    Pipeline.create flow pl.mem shape (uint64 count) context pl.debug
+    Pipeline.create flow pl.memAvail shape (uint64 count) context pl.debug

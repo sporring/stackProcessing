@@ -43,12 +43,12 @@
  parallel fanout with synchronization
 </summary>
 </member>
-<member name="M:SlimPipeline.Pipeline.compose``3(SlimPipeline.Pipeline{``0,``1},SlimPipeline.Stage{``1,``2})">
+<member name="M:SlimPipeline.Pipeline.op_GreaterEqualsGreater``3(SlimPipeline.Pipeline{``0,``1},SlimPipeline.Stage{``1,``2})">
 <summary>
  Composition operators
 </summary>
 </member>
-<member name="M:SlimPipeline.Pipeline.source(Microsoft.FSharp.Core.FSharpFunc{System.UInt64,System.UInt64},System.UInt64)">
+<member name="M:SlimPipeline.Pipeline.source(System.UInt64)">
 <summary>
  Source type operators
 </summary>
