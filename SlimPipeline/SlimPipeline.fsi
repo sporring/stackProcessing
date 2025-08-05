@@ -254,15 +254,17 @@ module Pipeline =
         shape: 'ShapeS option ->
         context: ShapeContext<'ShapeS> ->
         debug: bool -> Pipeline<'S,'T,'ShapeS,'ShapeT> when 'T: equality
+    val asStage:
+      pl: Pipeline<'In,'Out,'ShapeIn,'ShapeOut> ->
+        Stage<'In,'Out,'ShapeIn,'ShapeOut>
+    /// Source type operators
     val source:
       context: ShapeContext<'Shape> ->
         availableMemory: uint64 -> Pipeline<unit,unit,'Shape,'Shape>
     val debug:
       context: ShapeContext<'Shape> ->
         availableMemory: uint64 -> Pipeline<unit,unit,'Shape,'Shape>
-    val asStage:
-      pl: Pipeline<'In,'Out,'ShapeIn,'ShapeOut> ->
-        Stage<'In,'Out,'ShapeIn,'ShapeOut>
+    /// Composition operators
     val compose:
       pl: Pipeline<'a,'b,'Shapea,'Shapeb> ->
         stage: Stage<'b,'c,'Shapeb,'Shapec> -> Pipeline<'a,'c,'Shapea,'Shapec>
@@ -270,8 +272,6 @@ module Pipeline =
     val (>=>) :
       (Pipeline<'a,'b,'c,'d> -> Stage<'b,'e,'d,'f> -> Pipeline<'a,'e,'c,'f>)
         when 'e: equality
-    val sink: pl: Pipeline<unit,unit,'Shape,'Shape> -> unit
-    val sinkList: pipelines: Pipeline<unit,unit,'Shape,'Shape> list -> unit
     /// parallel fanout with synchronization
     val (>=>>) :
       pl: Pipeline<'In,'S,'ShapeIn,'ShapeS> ->
@@ -284,8 +284,10 @@ module Pipeline =
         Stage<'e,'a,'g,'h> * Stage<'e,'b,'g,'i> ->
           shapeUpdate: ('g option -> 'j option) -> Pipeline<'d,'c,'f,'j>
         when 'c: equality
-module Routing =
-    val runToScalar:
+    /// sink type operators
+    val sink: pl: Pipeline<unit,unit,'Shape,'Shape> -> unit
+    val sinkList: pipelines: Pipeline<unit,unit,'Shape,'Shape> list -> unit
+    val internal runToScalar:
       name: string ->
         reducer: (FSharp.Control.AsyncSeq<'T> -> Async<'R>) ->
         pl: Pipeline<'In,'T,'ShapeIn,'ShapeT> -> 'R

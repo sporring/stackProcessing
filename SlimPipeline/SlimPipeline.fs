@@ -452,7 +452,7 @@ module MemFlow =
                     let newShape = stage.ShapeUpdate shape
                     stage, bytes - need, newShape
 
-    let bindM (flowAB: MemFlow<'A,'B,'ShapeA,'ShapeB>) (k: Stage<'A,'B,'ShapeA,'ShapeB> -> MemFlow<'B,'C,'ShapeB,'ShapeC>) : MemFlow<'A,'C,'ShapeA,'ShapeC> =
+    let bindM (k: Stage<'A,'B,'ShapeA,'ShapeB> -> MemFlow<'B,'C,'ShapeB,'ShapeC>) (flowAB: MemFlow<'A,'B,'ShapeA,'ShapeB>) : MemFlow<'A,'C,'ShapeA,'ShapeC> =
         fun bytes shape shapeContextA ->
             let stage1, bytes', shape' = flowAB bytes shape shapeContextA
             let flowBC = k stage1
@@ -491,7 +491,12 @@ module Pipeline =
     let create<'S,'T,'ShapeS,'ShapeT when 'T: equality> (flow: MemFlow<'S,'T,'ShapeS,'ShapeT>) (mem : uint64) (shape: 'ShapeS option) (context : ShapeContext<'ShapeS>) (debug: bool): Pipeline<'S, 'T,'ShapeS,'ShapeT> =
         { flow = flow; mem = mem; shape = shape; context = context; debug = debug }
 
-    // source: only memory budget, shape = None
+    let asStage (pl: Pipeline<'In, 'Out, 'ShapeIn,'ShapeOut>) : Stage<'In, 'Out, 'ShapeIn,'ShapeOut> =
+        let stage, _, _ = pl.flow pl.mem pl.shape pl.context
+        stage
+
+    //////////////////////////////////////////////////
+    /// Source type operators
     let source<'Shape> (context: ShapeContext<'Shape>) (availableMemory: uint64) : Pipeline<unit, unit, 'Shape,'Shape> =
         let flow = fun _ _ _ -> failwith "Pipeline not started yet"
         create flow availableMemory None context false
@@ -501,32 +506,17 @@ module Pipeline =
         let flow = fun _ _ _ -> failwith "Pipeline not started yet"
         create flow availableMemory None context true
 
-    let asStage (pl: Pipeline<'In, 'Out, 'ShapeIn,'ShapeOut>) : Stage<'In, 'Out, 'ShapeIn,'ShapeOut> =
-        let stage, _, _ = pl.flow pl.mem pl.shape pl.context
-        stage
-
-    // later compositions Pipeline composition
+    //////////////////////////////////////////////////////////////
+    /// Composition operators
     let compose (pl: Pipeline<'a, 'b, 'Shapea, 'Shapeb>) (stage: Stage<'b, 'c, 'Shapeb, 'Shapec>) : Pipeline<'a, 'c, 'Shapea,'Shapec> =
         if pl.debug then printfn $"[>=>] {stage.Name}"
-        let flow = MemFlow.bindM pl.flow (fun _ -> MemFlow.returnM stage)  // This seems wrong. Why is the function ignoring input? 
-        //let shape' = pl.shape |> Option.map stage.ShapeUpdate
+        let flow = MemFlow.bindM (fun _ -> MemFlow.returnM stage) pl.flow  // This seems wrong. Why is the function ignoring input? 
         create flow pl.mem pl.shape pl.context pl.debug
 
     let (>=>) = compose
 
-    // sink
-    let sink (pl: Pipeline<unit, unit, 'Shape,'Shape>) : unit = // Shape of unit?
-        if pl.debug then printfn "sink"
-        match pl.shape with
-        | None -> failwith "No stage provided shape information."
-        | Some sh ->
-            let stage, rest, _ = pl.flow pl.mem pl.shape pl.context
-            if pl.debug then printfn $"Pipeline built - {rest} B still free\nRunning"
-            stage |> Stage.toPipe |> Pipe.run
-            if pl.debug then printfn "Done"
+    //let shape' = pl.shape |> Option.map stage.ShapeUpdate
 
-    let sinkList (pipelines: Pipeline<unit, unit, 'Shape, 'Shape> list) : unit = // shape of unit?
-        pipelines |> List.iter sink
 
 (*
     let tee (pl: Pipeline<'In, 'T, 'Shape>) : Pipeline<'In, 'T, 'Shape> * Pipeline<'In, 'T, 'Shape> =
@@ -562,7 +552,7 @@ module Pipeline =
                 | _ -> None
             let stage = Stage.map2 ">=>>" (fun u v -> (u,v)) (stg1, stg2) shapeUpdate
 
-            let flow = MemFlow.bindM pl.flow (fun _ -> MemFlow.returnM stage) // This seems wrong, why is input ignored?
+            let flow = MemFlow.bindM (fun _ -> MemFlow.returnM stage) pl.flow // This seems wrong, why is input ignored?
             //let shape'' = shape' |> Option.map stage.ShapeUpdate
 
             create flow pl.mem pl.shape pl.context pl.debug
@@ -570,11 +560,22 @@ module Pipeline =
     let (>>=>) f pl stage shapeUpdate = 
         (>=>) pl (Stage.map2 "zip2" f stage shapeUpdate)
 
+    ///////////////////////////////////////////
+    /// sink type operators
+    let sink (pl: Pipeline<unit, unit, 'Shape,'Shape>) : unit = // Shape of unit?
+        if pl.debug then printfn "sink"
+        match pl.shape with
+        | None -> failwith "No stage provided shape information."
+        | Some sh ->
+            let stage, rest, _ = pl.flow pl.mem pl.shape pl.context
+            if pl.debug then printfn $"Pipeline built - {rest} B still free\nRunning"
+            stage |> Stage.toPipe |> Pipe.run
+            if pl.debug then printfn "Done"
 
+    let sinkList (pipelines: Pipeline<unit, unit, 'Shape, 'Shape> list) : unit = // shape of unit?
+        pipelines |> List.iter sink
 
-
-module Routing =
-    let runToScalar (name:string) (reducer: AsyncSeq<'T> -> Async<'R>) (pl: Pipeline<'In, 'T,'ShapeIn,'ShapeT>) : 'R =
+    let internal runToScalar (name:string) (reducer: AsyncSeq<'T> -> Async<'R>) (pl: Pipeline<'In, 'T,'ShapeIn,'ShapeT>) : 'R =
         if pl.debug then printfn "[runToScalar]"
         let stage, _, _ = pl.flow pl.mem pl.shape pl.context
         let pipe = stage.Pipe
@@ -598,4 +599,3 @@ module Routing =
         |> function
             | Some x -> x
             | None -> failwith $"[drainLast] No result from {name}"
-
