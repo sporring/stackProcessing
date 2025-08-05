@@ -454,7 +454,7 @@ module MemFlow =
 
     let bindM (k: Stage<'A,'B,'ShapeA,'ShapeB> -> MemFlow<'B,'C,'ShapeB,'ShapeC>) (flowAB: MemFlow<'A,'B,'ShapeA,'ShapeB>) : MemFlow<'A,'C,'ShapeA,'ShapeC> =
         fun bytes shape shapeContextA ->
-            let stage1, bytes', shape' = flowAB bytes shape shapeContextA
+            let stage1, bytes1, shape1 = flowAB bytes shape shapeContextA
             let flowBC = k stage1
             let shapeContextB = // this is where shapeContext is updated. Return here to later!!!!
                 match shape with
@@ -468,7 +468,7 @@ module MemFlow =
                             memPerElement = fun (s2:'ShapeB)-> 0UL
                             depth = fun(s2:'ShapeB) -> 0u
                         }
-            let stage2, bytes'', shape'' = flowBC bytes' shape' shapeContextB
+            let stage2, bytes2, shape2 = flowBC bytes1 shape1 shapeContextB
             (* 2025/07/25 Is this step necessary? The processing is taking care of the interfacing...
             // validate memory transition, if shape is known
             shape
@@ -476,7 +476,7 @@ module MemFlow =
                 if stage1.Transition.To <> stage2.Transition.From || not (stage2.Transition.Check shape) then 
                     failwith $"Invalid memory transition: {stage1} → {stage2}")
             *)
-            Stage.compose stage1 stage2, bytes'', shape''
+            Stage.compose stage1 stage2, bytes2, shape2
 
 ////////////////////////////////////////////////////////////
 // Pipeline flow controler

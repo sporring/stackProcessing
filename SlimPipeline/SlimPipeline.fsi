@@ -229,12 +229,12 @@ module MemFlow =
         shapeContext: ShapeContext<'ShapeS> ->
         Stage<'S,'T,'ShapeS,'ShapeT> * uint64 * 'ShapeT option
     val bindM:
-      flowAB: MemFlow<'A,'B,'ShapeA,'ShapeB> ->
-        k: (Stage<'A,'B,'ShapeA,'ShapeB> ->
-              uint64 ->
-              'ShapeB option ->
-              ShapeContext<'ShapeB> ->
-              Stage<'B,'C,'ShapeB,'ShapeC> * uint64 * 'ShapeC option) ->
+      k: (Stage<'A,'B,'ShapeA,'ShapeB> ->
+            uint64 ->
+            'ShapeB option ->
+            ShapeContext<'ShapeB> ->
+            Stage<'B,'C,'ShapeB,'ShapeC> * uint64 * 'ShapeC option) ->
+        flowAB: MemFlow<'A,'B,'ShapeA,'ShapeB> ->
         bytes: uint64 ->
         shape: 'ShapeA option ->
         shapeContextA: ShapeContext<'ShapeA> ->
