@@ -222,6 +222,9 @@ let stackFUnstackTrim trim f (slices : Slice.Slice<'T> list) =
     let m = uint slices.Length - 2u*trim 
     slices |> Slice.stack |> f |> Slice.unstack |> skipNTakeM trim m
 
+let takeEveryNth (n: uint) = 
+    liftWindowed "nth" Slice.updateId 1u 0u zeroMaker<float> n 0u 100000u id id
+
 let discreteGaussianOp (name:string) (sigma:float) (outputRegionMode: Slice.OutputRegionMode option) (boundaryCondition: ImageFunctions.BoundaryCondition option) (winSz: uint option): Stage<Slice.Slice<float>, Slice.Slice<float>, Shape, Shape> =
     let roundFloatToUint v = uint (v+0.5)
 
@@ -353,14 +356,14 @@ let createAs<'T when 'T: equality> (width: uint) (height: uint) (depth: uint) (p
     let flow = MemFlow.returnM stage
     let shape = Slice (width,height)
     let context = ShapeContext.create (fun _ -> width*height |> uint64) (fun _ -> depth)
-    Pipeline.create flow pl.mem (Some shape) context pl.debug
+    Pipeline.create flow pl.mem (Some shape) (Some depth) context pl.debug
 
 let readAs<'T when 'T: equality> (inputDir : string) (suffix : string) (pl : Pipeline<unit, unit, Shape, Shape>) : Pipeline<unit, Slice.Slice<'T>,Shape,Shape> =
     // much should be deferred to outside Core!!!
     if pl.debug then printfn $"[readAs] {inputDir}/*{suffix}"
     let (width,height,depth) = Slice.getStackSize inputDir suffix
     let filenames = Directory.GetFiles(inputDir, "*"+suffix) |> Array.sort
-    let depth = filenames.Length
+    let depth = uint filenames.Length
     let mapper (i: uint) : Slice.Slice<'T> = 
         let fileName = filenames[int i]; 
         let slice = Slice.readSlice<'T> (uint i) fileName
@@ -372,7 +375,7 @@ let readAs<'T when 'T: equality> (inputDir : string) (suffix : string) (pl : Pip
     let flow = MemFlow.returnM stage
     let shape = Slice (width,height)
     let context = ShapeContext.create (fun _ -> width*height |> uint64) (fun _ -> uint depth)
-    Pipeline.create flow pl.mem (Some shape) context pl.debug
+    Pipeline.create flow pl.mem (Some shape) (Some depth) context pl.debug
 
 let readRandomAs<'T when 'T: equality> (count: uint) (inputDir : string) (suffix : string) (pl : Pipeline<unit, unit, Shape, Shape>) : Pipeline<unit, Slice.Slice<'T>,Shape,Shape> =
     if pl.debug then printfn $"[readRandomAs] {count} slices from {inputDir}/*{suffix}"
@@ -390,4 +393,4 @@ let readRandomAs<'T when 'T: equality> (count: uint) (inputDir : string) (suffix
     let flow = MemFlow.returnM stage
     let shape = Slice (width,height)
     let context = ShapeContext.create (fun _ -> width*height |> uint64) (fun _ -> uint depth)
-    Pipeline.create flow pl.mem (Some shape) context pl.debug
+    Pipeline.create flow pl.mem (Some shape) (Some count) context pl.debug

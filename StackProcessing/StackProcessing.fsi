@@ -655,6 +655,9 @@ val stackFUnstackTrim:
     slices: Slice.Slice<'T> list -> Slice.Slice<'a> list
     when 'T: equality and 'a: equality
 
+val takeEveryNth:
+  n: uint -> Stage<Slice.Slice<float>,Slice.Slice<float>,Shape,Shape>
+
 val discreteGaussianOp:
   name: string ->
     sigma: float ->

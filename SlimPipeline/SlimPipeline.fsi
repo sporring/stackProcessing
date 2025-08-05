@@ -6,11 +6,7 @@ type MemoryProfile =
     | Streaming
     | Sliding of uint * uint * uint * uint
 module MemoryProfile =
-    val estimateUsage:
-      profile: MemoryProfile -> memPerElement: uint64 -> depth: uint -> uint64
-    val requiresBuffering:
-      profile: MemoryProfile ->
-        availableMemory: uint64 -> memPerElement: uint64 -> depth: uint -> bool
+    val estimateUsage: profile: MemoryProfile -> memPerElement: uint64 -> uint64
     val combine: prof1: MemoryProfile -> prof2: MemoryProfile -> MemoryProfile
 /// A configurable image processing step that operates on image slices.
 /// Pipe describes *how* to do it:
@@ -37,6 +33,8 @@ module private Pipe =
       name: string ->
         depth: uint ->
         mapper: (uint -> 'T) -> profile: MemoryProfile -> Pipe<unit,'T>
+    val skip: name: string -> count: uint -> Pipe<'a,'a>
+    val take: name: string -> count: uint -> Pipe<'a,'a>
     val map: name: string -> f: ('U -> 'V) -> pipe: Pipe<'In,'U> -> Pipe<'In,'V>
     val map2:
       name: string ->
@@ -60,8 +58,6 @@ module private Pipe =
         consume: ('T -> unit) -> profile: MemoryProfile -> Pipe<'T,unit>
     /// Combine two <c>Pipe</c> instances into one by composing their memory profiles and transformation functions.
     val compose: p1: Pipe<'S,'T> -> p2: Pipe<'T,'U> -> Pipe<'S,'U>
-    val memNeed:
-      memPerElement: uint64 -> depth: uint -> p: Pipe<'a,'b> -> uint64
     /// Try to shrink a too‑hungry pipe to a cheaper profile.
     /// *You* control the downgrade policy here.
     val shrinkProfile:
@@ -75,7 +71,7 @@ module private Pipe =
     /// and stride to 2 sends every second image to f.  
     val mapWindowed:
       name: string ->
-        depth: uint ->
+        winSz: uint ->
         updateId: (uint -> 'S -> 'S) ->
         pad: uint ->
         zeroMaker: ('S -> 'S) ->
@@ -131,6 +127,8 @@ module Stage =
       stage1: Stage<'S,'T,'ShapeA,'ShapeB> ->
         stage2: Stage<'T,'U,'ShapeB,'ShapeC> -> Stage<'S,'U,'ShapeA,'ShapeC>
     val (-->) : (Stage<'a,'b,'c,'d> -> Stage<'b,'e,'d,'f> -> Stage<'a,'e,'c,'f>)
+    val skip: name: string -> n: uint -> Stage<'S,'S,'ShapeS,'ShapeS>
+    val take: name: string -> n: uint -> Stage<'S,'S,'ShapeS,'ShapeS>
     val map:
       name: string ->
         f: ('S -> 'T) ->
@@ -192,7 +190,7 @@ module Stage =
       name: string -> depth: uint -> value: 'T -> Stage<unit,'T,'Shape,'Shape>
     val promoteStreamingToSliding:
       name: string ->
-        depth: uint ->
+        winSz: uint ->
         updateId: (uint -> 'T -> 'T) ->
         pad: uint ->
         zeroMaker: ('T -> 'T) ->
@@ -201,7 +199,7 @@ module Stage =
         when 'T: equality
     val promoteSlidingToSliding:
       name: string ->
-        depth: uint ->
+        winSz: uint ->
         updateId: (uint -> 'T -> 'T) ->
         pad: uint ->
         zeroMaker: ('T -> 'T) ->
@@ -242,16 +240,18 @@ module MemFlow =
 type Pipeline<'S,'T,'ShapeS,'ShapeT> =
     {
       flow: MemFlow<'S,'T,'ShapeS,'ShapeT>
-      mem: uint64
-      shape: 'ShapeS option
+      size: 'ShapeS option
+      nElems: uint option
       context: ShapeContext<'ShapeS>
+      mem: uint64
       debug: bool
     }
 module Pipeline =
     val create:
       flow: MemFlow<'S,'T,'ShapeS,'ShapeT> ->
         mem: uint64 ->
-        shape: 'ShapeS option ->
+        size: 'ShapeS option ->
+        nElems: uint option ->
         context: ShapeContext<'ShapeS> ->
         debug: bool -> Pipeline<'S,'T,'ShapeS,'ShapeT> when 'T: equality
     val asStage:
