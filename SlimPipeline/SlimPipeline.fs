@@ -5,20 +5,20 @@ open AsyncSeqExtensions
 
 ////////////////////////////////////////////////////////////
 /// The memory usage strategies during image processing.
-type MemoryProfile =
+type Profile =
     | Constant // Slice by slice independently
     | Streaming // Slice by slice independently
     | Sliding of uint * uint * uint * uint  // (window, stride, emitStart, emitCount)
     // | Full // Full = Sliding depth 1 0 depth
 
-module MemoryProfile =
-    let estimateUsage (profile: MemoryProfile) (memPerElement: uint64) : uint64 =
+module Profile =
+    let estimateUsage (profile: Profile) (memPerElement: uint64) : uint64 =
         match profile with
             | Constant -> 0uL
             | Streaming -> memPerElement
             | Sliding (windowSize, _, _, _) -> memPerElement * uint64 windowSize
 
-    let combine (prof1: MemoryProfile) (prof2: MemoryProfile): MemoryProfile  = 
+    let combine (prof1: Profile) (prof2: Profile): Profile  = 
         match prof1, prof2 with
 //        | Full, _ 
 //        | _, Full -> Full // conservative fallback
@@ -39,11 +39,11 @@ module MemoryProfile =
 type Pipe<'S,'T> = {
     Name: string // Name of the process
     Apply: AsyncSeq<'S> -> AsyncSeq<'T>
-    Profile: MemoryProfile
+    Profile: Profile
 }
 
 module private Pipe =
-    let create (name: string) (apply: AsyncSeq<'S> -> AsyncSeq<'T>) (profile: MemoryProfile) : Pipe<'S,'T> =
+    let create (name: string) (apply: AsyncSeq<'S> -> AsyncSeq<'T>) (profile: Profile) : Pipe<'S,'T> =
         { Name = name; Apply = apply; Profile = profile }
 
     let runWith (input: 'S) (pipe: Pipe<'S, 'T>) : Async<unit> =
@@ -54,11 +54,11 @@ module private Pipe =
     let run (pipe: Pipe<unit, unit>) : unit =
         runWith () pipe |> Async.RunSynchronously
 
-    let lift (name: string) (profile: MemoryProfile) (f: 'S -> 'T) : Pipe<'S,'T> =
+    let lift (name: string) (profile: Profile) (f: 'S -> 'T) : Pipe<'S,'T> =
         let apply input = input |> AsyncSeq.map f
         create name apply profile
 
-    let init<'T> (name: string) (depth: uint) (mapper: uint -> 'T) (profile: MemoryProfile) : Pipe<unit,'T> =
+    let init<'T> (name: string) (depth: uint) (mapper: uint -> 'T) (profile: Profile) : Pipe<unit,'T> =
         let apply _ = AsyncSeq.init (int64 depth) (fun (i:int64) -> mapper (uint i))
         create name apply profile
 
@@ -82,16 +82,16 @@ module private Pipe =
         let profile = max pipe1.Profile pipe2.Profile
         create name apply profile
 
-    let reduce (name: string) (reducer: AsyncSeq<'In> -> Async<'Out>) (profile: MemoryProfile) : Pipe<'In, 'Out> =
+    let reduce (name: string) (reducer: AsyncSeq<'In> -> Async<'Out>) (profile: Profile) : Pipe<'In, 'Out> =
         let apply input = input |> reducer |> ofAsync
         create name apply profile
 
-    let fold (name: string) (folder: 'State -> 'In -> 'State) (initial: 'State) (profile: MemoryProfile) : Pipe<'In, 'State> =
+    let fold (name: string) (folder: 'State -> 'In -> 'State) (initial: 'State) (profile: Profile) : Pipe<'In, 'State> =
         let reducer (s: AsyncSeq<'In>) : Async<'State> =
             AsyncSeqExtensions.fold folder initial s
         reduce name reducer profile
 
-    let mapNFold (name: string) (mapFn: 'In -> 'Mapped) (folder: 'State -> 'Mapped -> 'State) (state: 'State) (profile: MemoryProfile)
+    let mapNFold (name: string) (mapFn: 'In -> 'Mapped) (folder: 'State -> 'Mapped -> 'State) (state: 'State) (profile: Profile)
         : Pipe<'In, 'State> =
         
         let reducer (s: AsyncSeq<'In>) : Async<'State> =
@@ -101,11 +101,11 @@ module private Pipe =
 
         reduce name reducer profile
 
-//    let consumeWith (name: string) (consume: AsyncSeq<'T> -> Async<unit>) (profile: MemoryProfile) : Pipe<'T, unit> =
+//    let consumeWith (name: string) (consume: AsyncSeq<'T> -> Async<unit>) (profile: Profile) : Pipe<'T, unit> =
 //        let reducer (s : AsyncSeq<'T>) = consume s          // Async<unit>
 //        reduce name reducer  profile              // gives AsyncSeq<unit>
 
-    let consumeWith (name: string) (consume: 'T -> unit) (profile: MemoryProfile) : Pipe<'T, unit> =
+    let consumeWith (name: string) (consume: 'T -> unit) (profile: Profile) : Pipe<'T, unit> =
         let apply input = 
             asyncSeq {
                 do! AsyncSeq.iterAsync (fun x -> async { consume x }) input
@@ -115,14 +115,14 @@ module private Pipe =
 
     /// Combine two <c>Pipe</c> instances into one by composing their memory profiles and transformation functions.
     let compose (p1: Pipe<'S,'T>) (p2: Pipe<'T,'U>) : Pipe<'S,'U> =
-        let profile = MemoryProfile.combine p1.Profile p2.Profile
+        let profile = Profile.combine p1.Profile p2.Profile
         let apply input = input |> p1.Apply |> p2.Apply
         create $"{p2.Name} {p1.Name}" apply profile
 
     /// Try to shrink a too‑hungry pipe to a cheaper profile.
     /// *You* control the downgrade policy here.
     let shrinkProfile (avail: uint64) (memPerElement: uint64) (depth: uint) (p : Pipe<'S,'T>) =
-        let needed = MemoryProfile.estimateUsage p.Profile memPerElement
+        let needed = Profile.estimateUsage p.Profile memPerElement
         if needed <= avail then p                              // fits as is
         else
             match p.Profile with
@@ -250,15 +250,15 @@ module private Pipe =
 ////////////////////////////////////////////////////////////
 // Stage between pipes
 
-/// MemoryTransition describes *how* memory layout is expected to change:
+/// ProfileTransition describes *how* memory layout is expected to change:
 /// - From: the input memory profile
 /// - To: the expected output memory profile
-type MemoryTransition =
-    { From  : MemoryProfile
-      To    : MemoryProfile }
+type ProfileTransition =
+    { From  : Profile
+      To    : Profile }
 
-module MemoryTransition =
-    let create (fromProfile: MemoryProfile) (toProfile: MemoryProfile) : MemoryTransition =
+module ProfileTransition =
+    let create (fromProfile: Profile) (toProfile: Profile) : ProfileTransition =
         {
             From = fromProfile
             To   = toProfile
@@ -268,126 +268,126 @@ module MemoryTransition =
 /// - Contains high-level metadata
 /// - Encodes memory transition intent
 /// - Suitable for planning, validation, and analysis
-/// - Stage + MemoryTransition: what happens
-type Stage<'S,'T,'ShapeS,'ShapeT> =
+/// - Stage + ProfileTransition: what happens
+type Stage<'S,'T> =
     { Name        : string
       Pipe        : Pipe<'S,'T> 
-      Transition  : MemoryTransition
-      ShapeUpdate : 'ShapeS option -> 'ShapeT option (*A shape indication such as uint list -> uint list*) } 
+      Transition  : ProfileTransition
+      SizeUpdate  : uint64 -> uint64 (*A shape indication such as uint list -> uint list*) } 
 
 module Stage =
-    let create<'S,'T,'ShapeS,'ShapeT> (name: string) (pipe: Pipe<'S,'T>) (transition: MemoryTransition) (shapeUpdate: 'ShapeS option -> 'ShapeT option) =
-        { Name = name; Pipe = pipe; Transition = transition; ShapeUpdate = shapeUpdate}
+    let create<'S,'T> (name: string) (pipe: Pipe<'S,'T>) (transition: ProfileTransition) (sizeUpdate: uint64 -> uint64) =
+        { Name = name; Pipe = pipe; Transition = transition; SizeUpdate = sizeUpdate}
 
-    let init<'S,'T,'ShapeS,'ShapeT> (name: string) (depth: uint) (mapper: uint -> 'T) (transition: MemoryTransition) (shapeUpdate: 'ShapeS option ->'ShapeT option) =
+    let init<'S,'T> (name: string) (depth: uint) (mapper: uint -> 'T) (transition: ProfileTransition) (sizeUpdate: uint64 -> uint64) =
         let pipe = Pipe.init name depth mapper transition.From
-        create name pipe transition shapeUpdate
+        create name pipe transition sizeUpdate
 
 (*
-    let id<'T,'ShapeA,'ShapeB> () : Stage<'T, 'T, 'ShapeA,'ShapeB> = // I don't think this is used
-        let transition = MemoryTransition.create Streaming Streaming
+    let id<'T> () : Stage<'T, 'T> = // I don't think this is used
+        let transition = ProfileTransition.create Streaming Streaming
         let pipe = Pipe.lift "id" Streaming (fun x -> x)
         create "id" pipe transition (fun s -> s)
 *)
 
-    let toPipe (stage : Stage<_,_,_,_>) = stage.Pipe
+    let toPipe (stage : Stage<_,_>) = stage.Pipe
 
-    let fromPipe (name: string) (transition: MemoryTransition) (shapeUpdate: 'ShapeA option -> 'ShapeB option) (pipe: Pipe<'S, 'T>) : Stage<'S, 'T, 'ShapeA, 'ShapeB> =
-        create name pipe transition shapeUpdate
+    let fromPipe (name: string) (transition: ProfileTransition) (sizeUpdate: uint64 -> uint64) (pipe: Pipe<'S, 'T>) : Stage<'S, 'T> =
+        create name pipe transition sizeUpdate
 
-    let compose (stage1 : Stage<'S,'T,'ShapeA,'ShapeB>) (stage2 : Stage<'T,'U,'ShapeB,'ShapeC>) : Stage<'S,'U,'ShapeA,'ShapeC> =
-        let transition = MemoryTransition.create stage1.Transition.From stage2.Transition.To
+    let compose (stage1 : Stage<'S,'T>) (stage2 : Stage<'T,'U>) : Stage<'S,'U> =
+        let transition = ProfileTransition.create stage1.Transition.From stage2.Transition.To
         let pipe = Pipe.compose stage1.Pipe stage2.Pipe
-        let shapeUpdate = stage1.ShapeUpdate >> stage2.ShapeUpdate
-        create $"{stage2.Name} ∘ {stage1.Name}" pipe transition shapeUpdate
+        let sizeUpdate = stage1.SizeUpdate >> stage2.SizeUpdate
+        create $"{stage2.Name} ∘ {stage1.Name}" pipe transition sizeUpdate
 
     let (-->) = compose
 
-    let skip (name: string) (n:uint)  : Stage<'S, 'S, 'ShapeS,'ShapeS> =
-        let transition = MemoryTransition.create Streaming Streaming
+    let skip (name: string) (n:uint)  : Stage<'S, 'S> =
+        let transition = ProfileTransition.create Streaming Streaming
         let pipe = Pipe.skip name n 
         create name pipe transition id
 
-    let take (name: string) (n:uint)  : Stage<'S, 'S, 'ShapeS,'ShapeS> =
-        let transition = MemoryTransition.create Streaming Streaming
+    let take (name: string) (n:uint)  : Stage<'S, 'S> =
+        let transition = ProfileTransition.create Streaming Streaming
         let pipe = Pipe.take name n 
         create name pipe transition id
 
-    let map<'S,'T,'ShapeS,'ShapeT> (name: string) (f: 'S -> 'T) (shapeUpdate: 'ShapeS option ->'ShapeT option) : Stage<'S, 'T, 'ShapeS,'ShapeT> =
-        let transition = MemoryTransition.create Streaming Streaming
+    let map<'S,'T> (name: string) (f: 'S -> 'T) (sizeUpdate: uint64 -> uint64) : Stage<'S, 'T> =
+        let transition = ProfileTransition.create Streaming Streaming
         let apply input = input |> AsyncSeq.map f
         let pipe : Pipe<'S,'T> = Pipe.create name apply Streaming
-        create name pipe transition shapeUpdate
+        create name pipe transition sizeUpdate
 
 (*
-    let map (name: string) (f: 'U -> 'V) (stage: Stage<'In, 'U, 'Shape>) : Stage<'In, 'V, 'Shape> =
+    let map (name: string) (f: 'U -> 'V) (stage: Stage<'In, 'U>) : Stage<'In, 'V> =
         let pipe = Pipe.map name f stage.Pipe
-        let transition = MemoryTransition.create Streaming Streaming
+        let transition = ProfileTransition.create Streaming Streaming
         create name pipe transition (fun s -> s)
 *)
 
-    let map2 (name: string) (f: 'U -> 'V -> 'W) (stage1: Stage<'In, 'U, 'ShapeIn,'ShapeU>, stage2: Stage<'In, 'V, 'ShapeIn,'ShapeV>) (shapeUpdate: 'ShapeIn option -> 'ShapeW option): Stage<'In, 'W, 'ShapeIn,'ShapeW> =
+    let map2 (name: string) (f: 'U -> 'V -> 'W) (stage1: Stage<'In, 'U>, stage2: Stage<'In, 'V>) (sizeUpdate: uint64 -> uint64): Stage<'In, 'W> =
         let pipe = Pipe.map2 name f stage1.Pipe stage2.Pipe
-        let transition = MemoryTransition.create Streaming Streaming
-        create name pipe transition shapeUpdate
+        let transition = ProfileTransition.create Streaming Streaming
+        create name pipe transition sizeUpdate
 
-    let reduce (name: string) (reducer: AsyncSeq<'In> -> Async<'Out>) (profile: MemoryProfile) (shapeUpdate:'ShapeIn option -> 'ShapeOut option): Stage<'In, 'Out, 'ShapeIn, 'ShapeOut> =
-        let transition = MemoryTransition.create Streaming Constant
+    let reduce (name: string) (reducer: AsyncSeq<'In> -> Async<'Out>) (profile: Profile) (sizeUpdate: uint64 -> uint64): Stage<'In, 'Out> =
+        let transition = ProfileTransition.create Streaming Constant
         let pipe = Pipe.reduce name reducer profile
-        create name pipe transition shapeUpdate
+        create name pipe transition sizeUpdate
 
-    let fold<'S,'T,'ShapeS,'ShapeT> (name: string) (folder: 'T -> 'S -> 'T) (initial: 'T) (shapeUpdate:'ShapeS option->'ShapeT option): Stage<'S, 'T, 'ShapeS, 'ShapeT> =
-        let transition = MemoryTransition.create Streaming Constant
+    let fold<'S,'T> (name: string) (folder: 'T -> 'S -> 'T) (initial: 'T) (sizeUpdate: uint64 -> uint64): Stage<'S, 'T> =
+        let transition = ProfileTransition.create Streaming Constant
         let pipe : Pipe<'S,'T> = Pipe.fold name folder initial Streaming
-        create name pipe transition shapeUpdate
+        create name pipe transition sizeUpdate
 
-    let mapNFold (name: string) (mapFn: 'In -> 'Mapped) (folder: 'State -> 'Mapped -> 'State) (state: 'State) (profile: MemoryProfile) (shapeUpdate:'ShapeIn option->'ShapeState option) : Stage<'In, 'State, 'ShapeIn,'ShapeState> =
-        let transition = MemoryTransition.create Streaming Constant
+    let mapNFold (name: string) (mapFn: 'In -> 'Mapped) (folder: 'State -> 'Mapped -> 'State) (state: 'State) (profile: Profile) (sizeUpdate: uint64 -> uint64) : Stage<'In, 'State> =
+        let transition = ProfileTransition.create Streaming Constant
         let pipe = Pipe.mapNFold name mapFn folder state profile
-        create name pipe transition shapeUpdate
+        create name pipe transition sizeUpdate
 
-    // this assumes too much: Streaming and identity ShapeUpdate!!!
-    let liftUnary<'S,'T,'ShapeS,'ShapeT> (name: string) (f: 'S -> 'T) (shapeUpdate: 'ShapeS option -> 'ShapeT option): Stage<'S, 'T, 'ShapeS,'ShapeT> =
-        let transition = MemoryTransition.create Streaming Streaming
+    // this assumes too much: Streaming and identity sizeUpdate!!!
+    let liftUnary<'S,'T> (name: string) (f: 'S -> 'T) (sizeUpdate: uint64 -> uint64): Stage<'S, 'T> =
+        let transition = ProfileTransition.create Streaming Streaming
         let pipe = Pipe.lift name Streaming f
-        create name pipe transition shapeUpdate
+        create name pipe transition sizeUpdate
 
-    let liftWindowed<'S,'T,'ShapeS,'ShapeT when 'S: equality and 'T: equality> (name: string) (updateId: uint->'S->'S) (window: uint) (pad: uint) (zeroMaker: 'S->'S) (stride: uint) (emitStart: uint) (emitCount: uint) (f: 'S list -> 'T list) (shapeUpdate: 'ShapeS option -> 'ShapeT option): Stage<'S, 'T,'ShapeS,'ShapeT> =
-        let transition = MemoryTransition.create (Sliding (window,stride,emitStart,emitCount)) Streaming
+    let liftWindowed<'S,'T when 'S: equality and 'T: equality> (name: string) (updateId: uint->'S->'S) (window: uint) (pad: uint) (zeroMaker: 'S->'S) (stride: uint) (emitStart: uint) (emitCount: uint) (f: 'S list -> 'T list) (sizeUpdate: uint64 -> uint64): Stage<'S, 'T> =
+        let transition = ProfileTransition.create (Sliding (window,stride,emitStart,emitCount)) Streaming
         let pipe = Pipe.mapWindowed name window updateId pad zeroMaker stride emitStart emitCount f
-        create name pipe transition shapeUpdate
+        create name pipe transition sizeUpdate
 
-    let tap (name: string) : Stage<'T, 'T, 'ShapeT,'ShapeT> =
+    let tap (name: string) : Stage<'T, 'T> =
         liftUnary $"tap: {name}" (fun x -> printfn "[%s] %A" name x; x) (fun s->s)
 
-    let tapIt (toString: 'T -> string) : Stage<'T, 'T, 'ShapeT, 'ShapeT> =
+    let tapIt (toString: 'T -> string) : Stage<'T, 'T> =
         liftUnary "tapIt" (fun x -> printfn "%s" (toString x); x) (fun s->s)
 
 (*
-    let internal tee (op: Stage<'In, 'T, 'Shape>) : Stage<'In, 'T, 'Shape> * Stage<'In, 'T, 'Shape> =
+    let internal tee (op: Stage<'In, 'T>) : Stage<'In, 'T> * Stage<'In, 'T> =
         let leftPipe, rightPipe = Pipe.tee op.Pipe
         let mk name pipe = 
-            create $"{op.Name} - {name}" pipe op.Transition op.ShapeUpdate
+            create $"{op.Name} - {name}" pipe op.Transition op.SizeUpdate
         mk "left" leftPipe, mk "right" rightPipe
 *)
-    let ignore<'T,'Shape> () : Stage<'T, unit, 'Shape, 'Shape> =
+    let ignore<'T> () : Stage<'T, unit> =
         let pipe = Pipe.ignore ()
-        let transition = MemoryTransition.create Streaming Constant
+        let transition = ProfileTransition.create Streaming Constant
         create "ignore" pipe transition (fun s -> s)
 
-    let consumeWith (name: string) (consume: 'T -> unit) : Stage<'T, unit, 'ShapeT, 'ShapeT> =  // Should this cause Shape to be option type, so we can pare unit with None?
+    let consumeWith (name: string) (consume: 'T -> unit) : Stage<'T, unit> = 
         let pipe = Pipe.consumeWith name consume Streaming
-        let transition = MemoryTransition.create Streaming Constant
+        let transition = ProfileTransition.create Streaming Constant
         create name pipe transition (fun s -> s)
 
-    let cast<'S,'T,'ShapeS when 'S: equality and 'T: equality> name f : Stage<'S,'T, 'ShapeS,'ShapeS> = // cast cannot change
+    let cast<'S,'T when 'S: equality and 'T: equality> name f : Stage<'S,'T> = // cast cannot change
         let apply input = input |> AsyncSeq.map f 
         let pipe = Pipe.create name apply Streaming
-        let transition = MemoryTransition.create Streaming Streaming
+        let transition = ProfileTransition.create Streaming Streaming
         create name pipe transition (fun s -> s)
 
-    let promoteConstantToStreaming (name: string) (depth: uint) (value: 'T) : Stage<unit, 'T, 'Shape, 'Shape> = // Does not change shape, and again, do we need a Shape for unit?
-        let transition = MemoryTransition.create Constant Streaming
+    let promoteConstantToStreaming (name: string) (depth: uint) (value: 'T) : Stage<unit, 'T> =
+        let transition = ProfileTransition.create Constant Streaming
         let pipe = Pipe.init $"stream-of:{name}" depth (fun _ -> value) Streaming
         create $"promote:{name}" pipe transition (fun s->s)
 
@@ -400,7 +400,7 @@ module Stage =
         (stride: uint)
         (emitStart: uint)
         (emitCount: uint)
-        : Stage<'T, 'T, 'Shape,'Shape> = // Does not change shape
+        : Stage<'T, 'T> = // Does not change shape
 
         let f (window: 'T list) =
             window
@@ -408,7 +408,7 @@ module Stage =
             |> List.take (int emitCount)
 
         let pipe = Pipe.mapWindowed name winSz updateId pad zeroMaker stride emitStart emitCount f
-        let transition = MemoryTransition.create Streaming Streaming
+        let transition = ProfileTransition.create Streaming Streaming
 
         create $"promote:{name}" pipe transition (fun s -> s)
 
@@ -421,7 +421,7 @@ module Stage =
         (stride: uint)
         (emitStart: uint)
         (emitCount: uint)
-        : Stage<'T, 'T, 'Shape,'Shape> = // Does not change shape
+        : Stage<'T, 'T> = // Does not change shape
 
         let f (window: 'T list) =
             window
@@ -429,81 +429,34 @@ module Stage =
             |> List.take (int emitCount)
 
         let pipe = Pipe.mapWindowed name winSz updateId pad zeroMaker stride emitStart emitCount f
-        let transition = MemoryTransition.create Streaming Streaming
+        let transition = ProfileTransition.create Streaming Streaming
 
         create $"promote:{name}" pipe transition (fun s -> s)
 
-
-(*
-type Flow<'S,'T,'ShapeS,'ShapeT> = 
-    {
-        stage : Stage<'S,'T,'ShapeS,'ShapeT>
-        getSize : 'S -> uint64
-        transform: uint64 -> uint64 // memory transformation by stage
-    }
+////////////////////////////////////////////////////////////
+// Flow state monad
+type SizeUpdate = uint64 -> uint64
+type Flow<'S,'T> = // memory before, shape before, shapeContext before, Stage, memory after, shape after. 
+        uint64 -> uint64 -> SizeUpdate -> Stage<'S,'T> * uint64 * uint64
 
 module Flow =
-    let create stage getSize transform = {stage = stage; getSize = getSize; transform=transform}
+    let returnM (stage : Stage<'S,'T>) : Flow<'S,'T> =
+        fun memAvailable sizeS sizeUpdate ->
+            if sizeS = 0UL then 
+                stage, memAvailable, 0UL
+            else
+                let sizeT = sizeUpdate sizeS // Check again !!!!****!!!!*****!!!
+                //let p' = Pipe.shrinkProfile memAvailable memPerElement depth stage.Pipe
+                let memNeeded = Profile.estimateUsage stage.Pipe.Profile sizeT // sh -> memPerElement depth
+                let shapeT = stage.SizeUpdate sizeS
+                stage, memAvailable - memNeeded, shapeT
 
-    let returnM (stage : Stage<'S,'T,'ShapeS,'ShapeT>) memPerElement : Flow<'S,'T,'ShapeS,'ShapeT> =
-        let newShape = stage.ShapeUpdate shape
-        let transform bytes shape =
-            match shape with
-                None ->
-                    stage, bytes, None
-                | Some sh ->
-                    //let p' = Pipe.shrinkProfile bytes memPerElement depth stage.Pipe
-                    let need = MemoryProfile.estimateUsage stage.Pipe.Profile memPerElement // sh -> memPerElement depth
-                    let newShape = stage.ShapeUpdate shape
-                    bytes - need
-        create stage getSize transform
-*)
-
-////////////////////////////////////////////////////////////
-// MemFlow state monad
-type ShapeContext<'S> = { // Do these need to be functions or just a pair of numbers? Shape update, updates shape but could perhaps also update these?
-    memPerElement : 'S -> uint64
-    depth         : 'S -> uint
-}
-
-module ShapeContext =
-    let create (memPerElement : 'S -> uint64) (depth : 'S -> uint) : ShapeContext<'S> =
-        {memPerElement = memPerElement; depth = depth}
-
-type MemFlow<'S,'T,'ShapeS,'ShapeT> = // memory before, shape before, shapeContext before, Stage, memory after, shape after. 
-        uint64 -> 'ShapeS option -> ShapeContext<'ShapeS> -> Stage<'S,'T,'ShapeS,'ShapeT> * uint64 * ('ShapeT option)
-
-module MemFlow =
-    let returnM (stage : Stage<'S,'T,'ShapeS,'ShapeT>) : MemFlow<'S,'T,'ShapeS,'ShapeT> =
-        fun bytes shape shapeContext ->
-            match shape with
-                None ->
-                    stage, bytes, None
-                | Some sh ->
-                    let memPerElement = shapeContext.memPerElement sh
-                    let depth = shapeContext.depth sh // Is this the right way, see ShapeContext!!!
-                    //let p' = Pipe.shrinkProfile bytes memPerElement depth stage.Pipe
-                    let need = MemoryProfile.estimateUsage stage.Pipe.Profile memPerElement // sh -> memPerElement depth
-                    let newShape = stage.ShapeUpdate shape
-                    stage, bytes - need, newShape
-
-    let bindM (k: Stage<'A,'B,'ShapeA,'ShapeB> -> MemFlow<'B,'C,'ShapeB,'ShapeC>) (flowAB: MemFlow<'A,'B,'ShapeA,'ShapeB>) : MemFlow<'A,'C,'ShapeA,'ShapeC> =
-        fun bytes shape shapeContextA ->
-            let stage1, bytes1, shape1 = flowAB bytes shape shapeContextA
+    let bindM (k: Stage<'A,'B> -> Flow<'B,'C>) (flowAB: Flow<'A,'B>) : Flow<'A,'C> =
+        fun memAvailable shape shapeContextA ->
+            let stage1, memAvailable1, shape1 = flowAB memAvailable shape shapeContextA
             let flowBC = k stage1
-            let shapeContextB = // this is where shapeContext is updated. Return here to later!!!!
-                match shape with
-                    | Some sh ->
-                        {
-                            memPerElement = fun (s2:'ShapeB)->shapeContextA.memPerElement sh
-                            depth = fun(s2:'ShapeB) -> shapeContextA.depth sh
-                        }
-                    | _ ->
-                        {
-                            memPerElement = fun (s2:'ShapeB)-> 0UL
-                            depth = fun(s2:'ShapeB) -> 0u
-                        }
-            let stage2, bytes2, shape2 = flowBC bytes1 shape1 shapeContextB
+            let shapeContextB = fun sz -> if sz = 0UL then 0UL else shapeContextA sz
+            let stage2, memAvailable2, shape2 = flowBC memAvailable1 shape1 shapeContextB
             (* 2025/07/25 Is this step necessary? The processing is taking care of the interfacing...
             // validate memory transition, if shape is known
             shape
@@ -511,68 +464,68 @@ module MemFlow =
                 if stage1.Transition.To <> stage2.Transition.From || not (stage2.Transition.Check shape) then 
                     failwith $"Invalid memory transition: {stage1} → {stage2}")
             *)
-            Stage.compose stage1 stage2, bytes2, shape2
+            Stage.compose stage1 stage2, memAvailable2, shape2
 
 ////////////////////////////////////////////////////////////
 // Pipeline flow controler
-type Pipeline<'S,'T,'ShapeS,'ShapeT> = { 
-    flow    : MemFlow<'S,'T,'ShapeS,'ShapeT>
-    size    : 'ShapeS option // shape before transformation
-    nElems  : uint option
-    context : ShapeContext<'ShapeS> // shape element's shape descriptor before transformation
+type Pipeline<'S,'T> = { 
+    flow    : Flow<'S,'T>
+    sizeUpdate : SizeUpdate // shape element's shape descriptor before transformation
+    elmSize : uint64 // elment size before transformation
+    nElems  : uint64  // number of elements before transformation
     mem     : uint64 // memory available before
     debug   : bool }
 
 module Pipeline =
-    let create<'S,'T,'ShapeS,'ShapeT when 'T: equality> (flow: MemFlow<'S,'T,'ShapeS,'ShapeT>) (mem : uint64) (size: 'ShapeS option) (nElems: uint option) (context : ShapeContext<'ShapeS>) (debug: bool): Pipeline<'S, 'T,'ShapeS,'ShapeT> =
-        { flow = flow; mem = mem; size = size; nElems = nElems; context = context; debug = debug }
+    let create<'S,'T when 'T: equality> (flow: Flow<'S,'T>) (mem : uint64) (elmSize: uint64) (nElems: uint64) (sizeUpdate : SizeUpdate) (debug: bool): Pipeline<'S, 'T> =
+        { flow = flow; mem = mem; elmSize = elmSize; nElems = nElems; sizeUpdate = sizeUpdate; debug = debug }
 
-    let asStage (pl: Pipeline<'In, 'Out, 'ShapeIn,'ShapeOut>) : Stage<'In, 'Out, 'ShapeIn,'ShapeOut> =
-        let stage, _, _ = pl.flow pl.mem pl.size pl.context
+    let asStage (pl: Pipeline<'In, 'Out>) : Stage<'In, 'Out> =
+        let stage, _, _ = pl.flow pl.mem pl.elmSize pl.sizeUpdate
         stage
 
     //////////////////////////////////////////////////
     /// Source type operators
-    let source<'Shape> (context: ShapeContext<'Shape>) (availableMemory: uint64) : Pipeline<unit, unit, 'Shape,'Shape> =
+    let source (sizeUpdate: SizeUpdate) (availableMemory: uint64) : Pipeline<unit, unit> =
         let flow = fun _ _ _ -> failwith "Pipeline not started yet"
-        create flow availableMemory None None context false
+        create flow availableMemory 0UL 0UL sizeUpdate false
 
-    let debug<'Shape> (context: ShapeContext<'Shape>) (availableMemory: uint64) : Pipeline<unit, unit, 'Shape,'Shape> =
+    let debug (sizeUpdate: SizeUpdate) (availableMemory: uint64) : Pipeline<unit, unit> =
         printfn $"Preparing pipeline - {availableMemory} B available"
         let flow = fun _ _ _ -> failwith "Pipeline not started yet"
-        create flow availableMemory None None context true
+        create flow availableMemory 0UL 0UL sizeUpdate true
 
     //////////////////////////////////////////////////////////////
     /// Composition operators
-    let compose (pl: Pipeline<'a, 'b, 'Shapea, 'Shapeb>) (stage: Stage<'b, 'c, 'Shapeb, 'Shapec>) : Pipeline<'a, 'c, 'Shapea,'Shapec> =
+    let compose (pl: Pipeline<'a, 'b>) (stage: Stage<'b, 'c>) : Pipeline<'a, 'c> =
         if pl.debug then printfn $"[>=>] {stage.Name}"
-        let flow = MemFlow.bindM (fun _ -> MemFlow.returnM stage) pl.flow 
-        let size,nElems, context = pl.size, pl.nElems, pl.context  // stage may change the size and nElems, which is to job of context
-        create flow pl.mem size nElems context pl.debug
+        let flow = Flow.bindM (fun _ -> Flow.returnM stage) pl.flow 
+        let elmSize,nElems, sizeUpdate = pl.elmSize, pl.nElems, pl.sizeUpdate  // stage may change the elmSize and nElems, which is to job of sizeUpdate
+        create flow pl.mem elmSize nElems sizeUpdate pl.debug
 
     let (>=>) = compose
 
-    //let shape' = pl.size |> Option.map stage.ShapeUpdate
+    //let shape' = pl.elmSize |> Option.map stage.SizeUpdate
 
 (*
-    let tee (pl: Pipeline<'In, 'T, 'Shape>) : Pipeline<'In, 'T, 'Shape> * Pipeline<'In, 'T, 'Shape> =
+    let tee (pl: Pipeline<'In, 'T>) : Pipeline<'In, 'T> * Pipeline<'In, 'T> =
         if pl.debug then printfn "tee"
-        let stage, mem, shape = pl.flow pl.mem pl.size pl.context
+        let stage, mem, shape = pl.flow pl.mem pl.elmSize pl.sizeUpdate
         let left, right = Stage.tee stage
         let basePipeline pipe =
-            create (MemFlow.returnM pipe) mem shape pl.context pl.debug
+            create (Flow.returnM pipe) mem shape pl.sizeUpdate pl.debug
         basePipeline left, basePipeline right
 *)
 
     /// parallel fanout with synchronization
     let (>=>>) 
-        (pl: Pipeline<'In, 'S, 'ShapeIn, 'ShapeS>) 
-        (stg1: Stage<'S, 'U, 'ShapeS, 'ShapeU>, stg2: Stage<'S, 'V, 'ShapeS, 'ShapeV>) 
-        : Pipeline<'In, ('U * 'V), 'ShapeIn, ('ShapeU * 'ShapeV)> =
+        (pl: Pipeline<'In, 'S>) 
+        (stg1: Stage<'S, 'U>, stg2: Stage<'S, 'V>) 
+        : Pipeline<'In, ('U * 'V)> =
 
         if pl.debug then printfn $"[>=>>] ({stg1.Name}, {stg2.Name})"
 
-        match pl.flow pl.mem pl.size pl.context with
+        match pl.flow pl.mem pl.elmSize pl.sizeUpdate with
         | baseStg, mem', shape' ->
 
             // Compose both stages with the base
@@ -580,45 +533,40 @@ module Pipeline =
             //let stage2 = Stage.compose baseStg stg2
 
             // Combine them
-            let shapeUpdate1 sh = sh |> stg1.ShapeUpdate
-            let shapeUpdate2 sh = sh |> stg2.ShapeUpdate
-            let shapeUpdate sh =
-                match shapeUpdate1 sh, shapeUpdate2 sh with
-                | Some sh1, Some sh2 -> Some (sh1,sh2)
-                | _ -> None
-            let stage = Stage.map2 ">=>>" (fun u v -> (u,v)) (stg1, stg2) shapeUpdate
+            let sizeUpdate sh = (sh |> stg1.SizeUpdate) + (sh |> stg2.SizeUpdate)
+            let stage = Stage.map2 ">=>>" (fun u v -> (u,v)) (stg1, stg2) sizeUpdate
 
-            let flow = MemFlow.bindM (fun _ -> MemFlow.returnM stage) pl.flow // This seems wrong, why is input ignored?
-            //let shape'' = shape' |> Option.map stage.ShapeUpdate
+            let flow = Flow.bindM (fun _ -> Flow.returnM stage) pl.flow // This seems wrong, why is input ignored?
+            //let shape'' = shape' |> Option.map stage.SizeUpdate
 
-            create flow pl.mem pl.size pl.nElems pl.context pl.debug
+            create flow pl.mem pl.elmSize pl.nElems pl.sizeUpdate pl.debug
 
-    let (>>=>) f pl stage shapeUpdate = 
-        (>=>) pl (Stage.map2 "zip2" f stage shapeUpdate)
+    let (>>=>) f pl stage sizeUpdate = 
+        (>=>) pl (Stage.map2 "zip2" f stage sizeUpdate)
 
     ///////////////////////////////////////////
     /// sink type operators
-    let sink (pl: Pipeline<unit, unit, 'Shape,'Shape>) : unit = // Shape of unit?
+    let sink (pl: Pipeline<unit, unit>) : unit =
         if pl.debug then printfn "sink"
-        match pl.size with
-        | None -> failwith "No stage provided shape information."
-        | Some sh ->
-            let stage, rest, _ = pl.flow pl.mem pl.size pl.context
+        if pl.elmSize = 0UL then 
+            failwith "No stage provided shape information."
+        else
+            let stage, rest, _ = pl.flow pl.mem pl.elmSize pl.sizeUpdate
             if pl.debug then printfn $"Pipeline built - {rest} B still free\nRunning"
             stage |> Stage.toPipe |> Pipe.run
             if pl.debug then printfn "Done"
 
-    let sinkList (pipelines: Pipeline<unit, unit, 'Shape, 'Shape> list) : unit = // shape of unit?
+    let sinkList (pipelines: Pipeline<unit, unit> list) : unit = // shape of unit?
         pipelines |> List.iter sink
 
-    let internal runToScalar (name:string) (reducer: AsyncSeq<'T> -> Async<'R>) (pl: Pipeline<'In, 'T,'ShapeIn,'ShapeT>) : 'R =
+    let internal runToScalar (name:string) (reducer: AsyncSeq<'T> -> Async<'R>) (pl: Pipeline<'In, 'T>) : 'R =
         if pl.debug then printfn "[runToScalar]"
-        let stage, _, _ = pl.flow pl.mem pl.size pl.context
+        let stage, _, _ = pl.flow pl.mem pl.elmSize pl.sizeUpdate
         let pipe = stage.Pipe
         let input = AsyncSeq.singleton Unchecked.defaultof<'In>
         pipe.Apply input |> reducer |> Async.RunSynchronously
 
-    let drainSingle (name:string) (pl: Pipeline<'S, 'T,'ShapeS,'ShapeT>) =
+    let drainSingle (name:string) (pl: Pipeline<'S, 'T>) =
         if pl.debug then printfn "[drainSingle]"
         runToScalar name AsyncSeq.toListAsync pl
         |> function
@@ -626,10 +574,10 @@ module Pipeline =
             | []  -> failwith $"[drainSingle] No result from {name}"
             | _   -> failwith $"[drainSingle] Multiple results from {name}, expected one."
 
-    let drainList (name:string) (pl: Pipeline<'S, 'T,'ShapeS,'ShapeT>) =
+    let drainList (name:string) (pl: Pipeline<'S, 'T>) =
         runToScalar name AsyncSeq.toListAsync pl
 
-    let drainLast (name:string) (pl: Pipeline<'S, 'T,'ShapeS,'ShapeT>) =
+    let drainLast (name:string) (pl: Pipeline<'S, 'T>) =
         if pl.debug then printfn "[drainLast]"
         runToScalar name AsyncSeq.tryLast pl
         |> function
