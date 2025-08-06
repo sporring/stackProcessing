@@ -129,7 +129,9 @@ module Stage =
     val take: name: string -> n: uint -> Stage<'S,'S>
     val map:
       name: string ->
-        f: ('S -> 'T) -> sizeUpdate: (uint64 -> uint64) -> Stage<'S,'T>
+        f: ('S -> 'T) ->
+        memoryNeed: MemoryNeed ->
+        nElemsTransformation: NElemsTransformation -> Stage<'S,'T>
     val map2:
       name: string ->
         f: ('U -> 'V -> 'W) ->
@@ -139,11 +141,15 @@ module Stage =
     val reduce:
       name: string ->
         reducer: (FSharp.Control.AsyncSeq<'In> -> Async<'Out>) ->
-        profile: Profile -> sizeUpdate: (uint64 -> uint64) -> Stage<'In,'Out>
+        profile: Profile ->
+        memoryNeed: MemoryNeed ->
+        nElemsTransformation: NElemsTransformation -> Stage<'In,'Out>
     val fold<'S,'T> :
       name: string ->
         folder: ('T -> 'S -> 'T) ->
-        initial: 'T -> sizeUpdate: (uint64 -> uint64) -> Stage<'S,'T>
+        initial: 'T ->
+        memoryNeed: MemoryNeed ->
+        nElemsTransformation: NElemsTransformation -> Stage<'S,'T>
     val liftUnary:
       name: string ->
         f: ('S -> 'T) ->

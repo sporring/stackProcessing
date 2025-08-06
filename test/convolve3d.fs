@@ -5,7 +5,7 @@ open StackProcessing
 [<EntryPoint>]
 let main _ =
     let availableMemory = 1024UL * 1024UL // 1MB for example
-    let sigma = 1.0
+    let sigma = 2.0
 
     debug availableMemory
     |> readAs<float> "image" ".tiff"

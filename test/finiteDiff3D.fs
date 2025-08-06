@@ -6,7 +6,7 @@ open StackProcessing
 let main _ =
     printfn "Setting up finite difference filter"
     let availableMemory = 1024UL * 1024UL // 1MB for example
-    let sigma = 2.0
+    let sigma = 1.0
 
     source availableMemory
     |> readAs<float> "image" ".tiff"

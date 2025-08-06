@@ -4,18 +4,14 @@ open StackProcessing
 
 [<EntryPoint>]
 let main _ =
-    let trg = "result"
-    let width, height, depth = 64u, 64u, 8u
+    let trg = "image"
+    let width, height, depth = 64u, 64u, 20u
     let availableMemory = 1024UL * 1024UL // 1MB for example
 
     debug availableMemory
-    |> createAs<float> width height depth
+    |> createAs<uint8> width height depth
     >=> addNormalNoise 128.0 50.0
-    >=> convGauss 2.0
-    >=> cast<float,uint8>
-    >=> threshold 128.0 infinity
-    >=> sliceMulScalar 255uy
-    >=> write "result" ".tif"
+    >=> write trg ".tiff"
     |> sink
 
     0

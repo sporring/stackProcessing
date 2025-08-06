@@ -140,6 +140,7 @@ module private Pipe =
     /// 3, 4, 5. It is also possible to use this for sampling, e.g., setting depth to 1
     /// and stride to 2 sends every second image to f.  
     let mapWindowed (name: string) (winSz: uint) (updateId: uint->'S->'S) (pad: uint) (zeroMaker: 'S->'S) (stride: uint) (emitStart: uint) (emitCount: uint) (f: 'S list -> 'T list) : Pipe<'S,'T> =
+        printfn "mapWindowed winSz=%A stride=%A pad=%A" winSz stride pad
         let apply input =
             // AsyncSeqExtensions.windowed depth stride input
             AsyncSeqExtensions.windowedWithPad winSz updateId stride pad pad zeroMaker input
@@ -229,12 +230,11 @@ module Stage =
         let pipe = Pipe.take name n 
         create name pipe transition id id
 
-    let map<'S,'T> (name: string) (f: 'S -> 'T) (sizeUpdate: uint64 -> uint64) : Stage<'S, 'T> =
+    let map<'S,'T> (name: string) (f: 'S -> 'T) (memoryNeed: MemoryNeed) (nElemsTransformation: NElemsTransformation) : Stage<'S, 'T> =
         let transition = ProfileTransition.create Streaming Streaming
         let apply input = input |> AsyncSeq.map f
         let pipe : Pipe<'S,'T> = Pipe.create name apply Streaming
-        let memoryNeed nElems memPerElem = nElems*memPerElem
-        create name pipe transition id id // Not right!!!
+        create name pipe transition memoryNeed nElemsTransformation // Not right!!!
 
 (*
     let map (name: string) (f: 'U -> 'V) (stage: Stage<'In, 'U>) : Stage<'In, 'V> =
@@ -248,15 +248,15 @@ module Stage =
         let transition = ProfileTransition.create Streaming Streaming
         create name pipe transition memoryNeed nElemsTransformation
 
-    let reduce (name: string) (reducer: AsyncSeq<'In> -> Async<'Out>) (profile: Profile) (sizeUpdate: uint64 -> uint64): Stage<'In, 'Out> =
+    let reduce (name: string) (reducer: AsyncSeq<'In> -> Async<'Out>) (profile: Profile) (memoryNeed: MemoryNeed) (nElemsTransformation: NElemsTransformation): Stage<'In, 'Out> =
         let transition = ProfileTransition.create Streaming Constant
         let pipe = Pipe.reduce name reducer profile
-        create name pipe transition id id // Check !!!
+        create name pipe transition memoryNeed nElemsTransformation // Check !!!
 
-    let fold<'S,'T> (name: string) (folder: 'T -> 'S -> 'T) (initial: 'T) (sizeUpdate: uint64 -> uint64): Stage<'S, 'T> =
+    let fold<'S,'T> (name: string) (folder: 'T -> 'S -> 'T) (initial: 'T) (memoryNeed: MemoryNeed) (nElemsTransformation: NElemsTransformation): Stage<'S, 'T> =
         let transition = ProfileTransition.create Streaming Constant
         let pipe : Pipe<'S,'T> = Pipe.fold name folder initial Streaming
-        create name pipe transition id id // Check !!!
+        create name pipe transition memoryNeed nElemsTransformation // Check !!!
 
     let liftUnary<'S,'T> (name: string) (f: 'S -> 'T) (memoryNeed: MemoryNeed) (nElemsTransformation: NElemsTransformation): Stage<'S, 'T> =
         let transition = ProfileTransition.create Streaming Streaming
@@ -412,7 +412,7 @@ module Pipeline =
     ///////////////////////////////////////////
     /// sink type operators
     let sink (pl: Pipeline<unit, unit>) : unit =
-        if pl.debug then printfn "sink"
+        if pl.debug then printfn "[sink]"
         if pl.debug then printfn "Pipeline built\nRunning"
         Option.map (Stage.toPipe >> Pipe.run) pl.stage |> ignore
         if pl.debug then printfn "Done"

@@ -10,7 +10,7 @@ let main _ =
     let radius = 1u
 
     source availableMemory
-        |> create<uint8> width height depth
+        |> createAs<uint8> width height depth
         >=> addNormalNoise 128.0 50.0
         >=> threshold 128.0 infinity
         >=> erode radius 

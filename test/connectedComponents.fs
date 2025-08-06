@@ -7,13 +7,13 @@ let main _ =
     let width, height, depth = 64u, 64u, 20u
     let availableMemory = 1024UL * 1024UL // 1MB for example
 
-    source availableMemory
-        |> create<float> width height depth
+    debug availableMemory
+        |> createAs<float> width height depth
         >=> addNormalNoise 128.0 50.0
         >=> threshold 128.0 infinity
-        >=> castFloatToUInt8
-        >=> piecewiseConnectedComponents (Some 5u)
-        >=> castUInt64ToUInt16
+        >=> cast<float,uint8>
+        >=> connectedComponents 5u
+        >=> cast<uint64,uint16>
         // Tiff supporst uint8, int8, uint16, int16, and float32
         >=> write "result" ".tif"
         |> sink

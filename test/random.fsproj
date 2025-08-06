@@ -24,7 +24,7 @@
   </ItemGroup>
 
   <ItemGroup>
-    <Compile Include="computeStats.fs" />
+    <Compile Include="random.fs" />
   </ItemGroup>
 
 </Project>

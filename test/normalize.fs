@@ -16,16 +16,16 @@ let main _ =
 
     let stats = 
         readMaker 
-        >=> Pipeline.computeStats // fix the naming conflict!!!
+        >=> StackProcessing.computeStats () // fix the naming conflict!!!
         |> drainSingle
     printfn "%A" stats
 
-    let normalizeWithOp = liftUnary (normalizeWith stats)
+    let normalizeWithOp = liftUnary (normalizeWith stats) id id
     let updatedStats = 
         readMaker
         >=> normalizeWithOp
-        >=> Pipeline.computeStats 
-        |> drainSingle
+        >=> StackProcessing.computeStats ()
+        |> drainSingle 
     printfn "%A" updatedStats
 
     0
