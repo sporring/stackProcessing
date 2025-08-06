@@ -17,7 +17,7 @@
  Simple functions
 </summary>
 </member>
-<member name="M:StackProcessing.add``1(Slice.Slice{``0})">
+<member name="M:StackProcessing.memNeeded``1(System.UInt64,System.UInt64)">
 <summary>
  Basic arithmetic
 </summary>

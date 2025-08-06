@@ -9,8 +9,8 @@ type ProfileTransition = SlimPipeline.ProfileTransition
 type Slice<'S when 'S: equality> = Slice.Slice<'S>
 
 let (-->) = Stage.(-->)
-let source = Pipeline.source (fun _ -> 0UL)
-let debug = Pipeline.debug (fun _ -> 0UL)
+let source = Pipeline.source 
+let debug = Pipeline.debug 
 let sink (pl: Pipeline<unit,unit>) : unit = Pipeline.sink pl
 let sinkList (plLst: Pipeline<unit,unit> list) : unit = Pipeline.sinkList plLst
 let (>=>) = Pipeline.(>=>)
@@ -27,7 +27,7 @@ let liftUnary (f: Slice.Slice<'S> -> Slice.Slice<'T>) =
     Stage.liftUnary<Slice.Slice<'S>,Slice.Slice<'T>> "liftUnary" f
 let zeroMaker<'S when 'S: equality> (ex:Slice.Slice<'S>) : Slice.Slice<'S> = Slice.create<'S> (Slice.GetWidth ex) (Slice.GetHeight ex) 1u 0u
 let liftWindowed (name: string) (updateId: uint->Slice.Slice<'S>->Slice.Slice<'S>) (window: uint) (pad: uint) (zeroMaker: Slice.Slice<'S>->Slice.Slice<'S>) (stride: uint) (emitStart: uint) (emitCount: uint) (f: Slice.Slice<'S> list -> Slice.Slice<'T> list) (shapeUpdate: uint64 -> uint64) : Stage<Slice.Slice<'S>, Slice.Slice<'T>> =
-    Stage.liftWindowed<Slice.Slice<'S>,Slice.Slice<'T>> name updateId window pad zeroMaker stride emitStart emitCount f shapeUpdate
+    Stage.liftWindowed<Slice.Slice<'S>,Slice.Slice<'T>> name updateId window pad zeroMaker stride emitStart emitCount f id id
 let getBytesPerComponent<'T> = (typeof<'T> |> Image.getBytesPerComponent |> uint64)
 
 let write (outputDir: string) (suffix: string) : Stage<Slice.Slice<'T>, unit> =
@@ -126,36 +126,36 @@ let inline sliceDivScalar<^T when ^T: equality and ^T: (static member op_Explici
     Stage.liftUnary<Slice.Slice<'T>,Slice.Slice<'T>> "sliceDivScalar" (fun (s:Slice.Slice<^T>)->Slice.sliceDivScalar<^T> s i) id
 
 /// Simple functions
-let abs<'T when 'T: equality> : Stage<Slice.Slice<'T>,Slice.Slice<'T>> =      Stage.liftUnary<Slice.Slice<'T>,Slice.Slice<'T>> "abs"    Slice.absSlice id
-let absFloat      : Stage<Slice.Slice<float>,Slice.Slice<float>> =      Stage.liftUnary<Slice.Slice<float>,Slice.Slice<float>> "abs"    Slice.absSlice id
-let absFloat32    : Stage<Slice.Slice<float32>,Slice.Slice<float32>> =  Stage.liftUnary<Slice.Slice<float32>,Slice.Slice<float32>> "abs"    Slice.absSlice id
-let absInt        : Stage<Slice.Slice<int>,Slice.Slice<int>> =          Stage.liftUnary<Slice.Slice<int>,Slice.Slice<int>> "abs"    Slice.absSlice id
-let acosFloat     : Stage<Slice.Slice<float>,Slice.Slice<float>> =      Stage.liftUnary<Slice.Slice<float>,Slice.Slice<float>> "acos"   Slice.acosSlice id
-let acosFloat32   : Stage<Slice.Slice<float32>,Slice.Slice<float32>> =  Stage.liftUnary<Slice.Slice<float32>,Slice.Slice<float32>> "acos"   Slice.acosSlice id
-let asinFloat     : Stage<Slice.Slice<float>,Slice.Slice<float>> =      Stage.liftUnary<Slice.Slice<float>,Slice.Slice<float>> "asin"   Slice.asinSlice id
-let asinFloat32   : Stage<Slice.Slice<float32>,Slice.Slice<float32>> =  Stage.liftUnary<Slice.Slice<float32>,Slice.Slice<float32>> "asin"   Slice.asinSlice id
-let atanFloat     : Stage<Slice.Slice<float>,Slice.Slice<float>> =      Stage.liftUnary<Slice.Slice<float>,Slice.Slice<float>> "atan"   Slice.atanSlice id
-let atanFloat32   : Stage<Slice.Slice<float32>,Slice.Slice<float32>> =  Stage.liftUnary<Slice.Slice<float32>,Slice.Slice<float32>> "atan"   Slice.atanSlice id
-let cosFloat      : Stage<Slice.Slice<float>,Slice.Slice<float>> =      Stage.liftUnary<Slice.Slice<float>,Slice.Slice<float>> "cos"    Slice.cosSlice id
-let cosFloat32    : Stage<Slice.Slice<float32>,Slice.Slice<float32>> =  Stage.liftUnary<Slice.Slice<float32>,Slice.Slice<float32>> "cos"    Slice.cosSlice id
-let sinFloat      : Stage<Slice.Slice<float>,Slice.Slice<float>> =      Stage.liftUnary<Slice.Slice<float>,Slice.Slice<float>> "sin"    Slice.sinSlice id
-let sinFloat32    : Stage<Slice.Slice<float32>,Slice.Slice<float32>> =  Stage.liftUnary<Slice.Slice<float32>,Slice.Slice<float32>> "sin"    Slice.sinSlice id
-let tanFloat      : Stage<Slice.Slice<float>,Slice.Slice<float>> =      Stage.liftUnary<Slice.Slice<float>,Slice.Slice<float>> "tan"    Slice.tanSlice id
-let tanFloat32    : Stage<Slice.Slice<float32>,Slice.Slice<float32>> =  Stage.liftUnary<Slice.Slice<float32>,Slice.Slice<float32>> "tan"    Slice.tanSlice id
-let expFloat      : Stage<Slice.Slice<float>,Slice.Slice<float>> =      Stage.liftUnary<Slice.Slice<float>,Slice.Slice<float>> "exp"    Slice.expSlice id
-let expFloat32    : Stage<Slice.Slice<float32>,Slice.Slice<float32>> =  Stage.liftUnary<Slice.Slice<float32>,Slice.Slice<float32>> "exp"    Slice.expSlice id
-let log10Float    : Stage<Slice.Slice<float>,Slice.Slice<float>> =      Stage.liftUnary<Slice.Slice<float>,Slice.Slice<float>> "log10"  Slice.log10Slice id
-let log10Float32  : Stage<Slice.Slice<float32>,Slice.Slice<float32>> =  Stage.liftUnary<Slice.Slice<float32>,Slice.Slice<float32>> "log10"  Slice.log10Slice id
-let logFloat      : Stage<Slice.Slice<float>,Slice.Slice<float>> =      Stage.liftUnary<Slice.Slice<float>,Slice.Slice<float>> "log"    Slice.logSlice id
-let logFloat32    : Stage<Slice.Slice<float32>,Slice.Slice<float32>> =  Stage.liftUnary<Slice.Slice<float32>,Slice.Slice<float32>> "log"    Slice.logSlice id
-let roundFloat    : Stage<Slice.Slice<float>,Slice.Slice<float>> =      Stage.liftUnary<Slice.Slice<float>,Slice.Slice<float>> "round"  Slice.roundSlice id
-let roundFloat32  : Stage<Slice.Slice<float32>,Slice.Slice<float32>> =  Stage.liftUnary<Slice.Slice<float32>,Slice.Slice<float32>> "round"  Slice.roundSlice id
-let sqrtFloat     : Stage<Slice.Slice<float>,Slice.Slice<float>> =      Stage.liftUnary<Slice.Slice<float>,Slice.Slice<float>> "sqrt"   Slice.sqrtSlice id
-let sqrtFloat32   : Stage<Slice.Slice<float32>,Slice.Slice<float32>> =  Stage.liftUnary<Slice.Slice<float32>,Slice.Slice<float32>> "sqrt"   Slice.sqrtSlice id
-let sqrtInt       : Stage<Slice.Slice<int>,Slice.Slice<int>> =          Stage.liftUnary<Slice.Slice<int>,Slice.Slice<int>> "sqrt"   Slice.sqrtSlice id
-let squareFloat   : Stage<Slice.Slice<float>,Slice.Slice<float>> =      Stage.liftUnary<Slice.Slice<float>,Slice.Slice<float>> "square" Slice.squareSlice id
-let squareFloat32 : Stage<Slice.Slice<float32>,Slice.Slice<float32>> =  Stage.liftUnary<Slice.Slice<float32>,Slice.Slice<float32>> "square" Slice.squareSlice id
-let squareInt     : Stage<Slice.Slice<int>,Slice.Slice<int>> =          Stage.liftUnary<Slice.Slice<int>,Slice.Slice<int>> "square" Slice.squareSlice id
+let abs<'T when 'T: equality> : Stage<Slice.Slice<'T>,Slice.Slice<'T>> =      Stage.liftUnary<Slice.Slice<'T>,Slice.Slice<'T>> "abs"    Slice.absSlice id id
+let absFloat      : Stage<Slice.Slice<float>,Slice.Slice<float>> =      Stage.liftUnary<Slice.Slice<float>,Slice.Slice<float>> "abs"    Slice.absSlice id id
+let absFloat32    : Stage<Slice.Slice<float32>,Slice.Slice<float32>> =  Stage.liftUnary<Slice.Slice<float32>,Slice.Slice<float32>> "abs"    Slice.absSlice id id
+let absInt        : Stage<Slice.Slice<int>,Slice.Slice<int>> =          Stage.liftUnary<Slice.Slice<int>,Slice.Slice<int>> "abs"    Slice.absSlice id id
+let acosFloat     : Stage<Slice.Slice<float>,Slice.Slice<float>> =      Stage.liftUnary<Slice.Slice<float>,Slice.Slice<float>> "acos"   Slice.acosSlice id id
+let acosFloat32   : Stage<Slice.Slice<float32>,Slice.Slice<float32>> =  Stage.liftUnary<Slice.Slice<float32>,Slice.Slice<float32>> "acos"   Slice.acosSlice id id
+let asinFloat     : Stage<Slice.Slice<float>,Slice.Slice<float>> =      Stage.liftUnary<Slice.Slice<float>,Slice.Slice<float>> "asin"   Slice.asinSlice id id
+let asinFloat32   : Stage<Slice.Slice<float32>,Slice.Slice<float32>> =  Stage.liftUnary<Slice.Slice<float32>,Slice.Slice<float32>> "asin"   Slice.asinSlice id id
+let atanFloat     : Stage<Slice.Slice<float>,Slice.Slice<float>> =      Stage.liftUnary<Slice.Slice<float>,Slice.Slice<float>> "atan"   Slice.atanSlice id id
+let atanFloat32   : Stage<Slice.Slice<float32>,Slice.Slice<float32>> =  Stage.liftUnary<Slice.Slice<float32>,Slice.Slice<float32>> "atan"   Slice.atanSlice id id
+let cosFloat      : Stage<Slice.Slice<float>,Slice.Slice<float>> =      Stage.liftUnary<Slice.Slice<float>,Slice.Slice<float>> "cos"    Slice.cosSlice id id
+let cosFloat32    : Stage<Slice.Slice<float32>,Slice.Slice<float32>> =  Stage.liftUnary<Slice.Slice<float32>,Slice.Slice<float32>> "cos"    Slice.cosSlice id id
+let sinFloat      : Stage<Slice.Slice<float>,Slice.Slice<float>> =      Stage.liftUnary<Slice.Slice<float>,Slice.Slice<float>> "sin"    Slice.sinSlice id id
+let sinFloat32    : Stage<Slice.Slice<float32>,Slice.Slice<float32>> =  Stage.liftUnary<Slice.Slice<float32>,Slice.Slice<float32>> "sin"    Slice.sinSlice id id
+let tanFloat      : Stage<Slice.Slice<float>,Slice.Slice<float>> =      Stage.liftUnary<Slice.Slice<float>,Slice.Slice<float>> "tan"    Slice.tanSlice id id
+let tanFloat32    : Stage<Slice.Slice<float32>,Slice.Slice<float32>> =  Stage.liftUnary<Slice.Slice<float32>,Slice.Slice<float32>> "tan"    Slice.tanSlice id id
+let expFloat      : Stage<Slice.Slice<float>,Slice.Slice<float>> =      Stage.liftUnary<Slice.Slice<float>,Slice.Slice<float>> "exp"    Slice.expSlice id id
+let expFloat32    : Stage<Slice.Slice<float32>,Slice.Slice<float32>> =  Stage.liftUnary<Slice.Slice<float32>,Slice.Slice<float32>> "exp"    Slice.expSlice id id
+let log10Float    : Stage<Slice.Slice<float>,Slice.Slice<float>> =      Stage.liftUnary<Slice.Slice<float>,Slice.Slice<float>> "log10"  Slice.log10Slice id id
+let log10Float32  : Stage<Slice.Slice<float32>,Slice.Slice<float32>> =  Stage.liftUnary<Slice.Slice<float32>,Slice.Slice<float32>> "log10"  Slice.log10Slice id id
+let logFloat      : Stage<Slice.Slice<float>,Slice.Slice<float>> =      Stage.liftUnary<Slice.Slice<float>,Slice.Slice<float>> "log"    Slice.logSlice id id
+let logFloat32    : Stage<Slice.Slice<float32>,Slice.Slice<float32>> =  Stage.liftUnary<Slice.Slice<float32>,Slice.Slice<float32>> "log"    Slice.logSlice id id
+let roundFloat    : Stage<Slice.Slice<float>,Slice.Slice<float>> =      Stage.liftUnary<Slice.Slice<float>,Slice.Slice<float>> "round"  Slice.roundSlice id id
+let roundFloat32  : Stage<Slice.Slice<float32>,Slice.Slice<float32>> =  Stage.liftUnary<Slice.Slice<float32>,Slice.Slice<float32>> "round"  Slice.roundSlice id id
+let sqrtFloat     : Stage<Slice.Slice<float>,Slice.Slice<float>> =      Stage.liftUnary<Slice.Slice<float>,Slice.Slice<float>> "sqrt"   Slice.sqrtSlice id id
+let sqrtFloat32   : Stage<Slice.Slice<float32>,Slice.Slice<float32>> =  Stage.liftUnary<Slice.Slice<float32>,Slice.Slice<float32>> "sqrt"   Slice.sqrtSlice id id
+let sqrtInt       : Stage<Slice.Slice<int>,Slice.Slice<int>> =          Stage.liftUnary<Slice.Slice<int>,Slice.Slice<int>> "sqrt"   Slice.sqrtSlice id id
+let squareFloat   : Stage<Slice.Slice<float>,Slice.Slice<float>> =      Stage.liftUnary<Slice.Slice<float>,Slice.Slice<float>> "square" Slice.squareSlice id id
+let squareFloat32 : Stage<Slice.Slice<float32>,Slice.Slice<float32>> =  Stage.liftUnary<Slice.Slice<float32>,Slice.Slice<float32>> "square" Slice.squareSlice id id
+let squareInt     : Stage<Slice.Slice<int>,Slice.Slice<int>> =          Stage.liftUnary<Slice.Slice<int>,Slice.Slice<int>> "square" Slice.squareSlice id id
 
 //let histogram<'T when 'T: comparison> = histogramOp<'T> "histogram"
 let sliceHistogram () =
@@ -348,11 +348,11 @@ let createAs<'T when 'T: equality> (width: uint) (height: uint) (depth: uint) (p
         slice
     let transition = ProfileTransition.create Constant Streaming
     let shapeUpdate = id
-    let stage = Stage.init "create" depth mapper transition shapeUpdate 
-    let flow = Flow.returnM stage
+    let stage = Stage.init "create" depth mapper transition id id |> Some
+    //let flow = Flow.returnM stage
     let shape = (uint64 width) * (uint64 height)
     let context = id
-    Pipeline.create flow pl.memAvail shape (uint64 depth) context pl.debug
+    Pipeline.create stage pl.memAvail shape (uint64 depth)  pl.debug
 
 let readAs<'T when 'T: equality> (inputDir : string) (suffix : string) (pl : Pipeline<unit, unit>) : Pipeline<unit, Slice.Slice<'T>> =
     // much should be deferred to outside Core!!!
@@ -367,11 +367,11 @@ let readAs<'T when 'T: equality> (inputDir : string) (suffix : string) (pl : Pip
         slice
     let transition = ProfileTransition.create Constant Streaming
     let shapeUpdate = id
-    let stage = Stage.init $"read: {inputDir}" (uint depth) mapper transition shapeUpdate 
-    let flow = Flow.returnM stage
-    let memPerElem = (uint64 width)*(uint64 height)*(typeof<'T> |> getBytesPerComponent |> uint64)
+    let stage = Stage.init $"read: {inputDir}" (uint depth) mapper transition id id |> Some
+    //let flow = Flow.returnM stage
+    let memPerElem = (uint64 width)*(uint64 height)*getBytesPerComponent<'T>
     let length = (uint64 depth)
-    Pipeline.create flow pl.memAvail memPerElem length context pl.debug
+    Pipeline.create stage pl.memAvail memPerElem length  pl.debug
 
 let readRandomAs<'T when 'T: equality> (count: uint) (inputDir : string) (suffix : string) (pl : Pipeline<unit, unit>) : Pipeline<unit, Slice.Slice<'T>> =
     if pl.debug then printfn $"[readRandomAs] {count} slices from {inputDir}/*{suffix}"
@@ -385,8 +385,8 @@ let readRandomAs<'T when 'T: equality> (count: uint) (inputDir : string) (suffix
         slice
     let transition = ProfileTransition.create Constant Streaming
     let shapeUpdate = id
-    let stage = Stage.init $"read: {inputDir}" (uint depth) mapper transition shapeUpdate 
-    let flow = Flow.returnM stage
+    let stage = Stage.init $"read: {inputDir}" (uint depth) mapper transition id id |> Some 
+    //let flow = Flow.returnM stage
     let shape = (uint64 width)*(uint64 height)
     let context = id
-    Pipeline.create flow pl.memAvail shape (uint64 count) context pl.debug
+    Pipeline.create stage pl.memAvail shape (uint64 count) pl.debug
