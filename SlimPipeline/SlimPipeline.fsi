@@ -1,5 +1,6 @@
 namespace FSharp
 module SlimPipeline
+val getMem: unit -> unit
 /// The memory usage strategies during image processing.
 type Profile =
     | Constant
@@ -36,9 +37,23 @@ module private Pipe =
     val skip: name: string -> count: uint -> Pipe<'a,'a>
     val take: name: string -> count: uint -> Pipe<'a,'a>
     val map:
-      name: string -> folder: ('U -> 'V) -> pipe: Pipe<'In,'U> -> Pipe<'In,'V>
+      name: string -> mapper: ('U -> 'V) -> pipe: Pipe<'In,'U> -> Pipe<'In,'V>
+    val tryDispose: debug: bool -> value: obj -> unit
+    type TeeMsg<'T> =
+        | Left of AsyncReplyChannel<'T option>
+        | Right of AsyncReplyChannel<'T option>
+    val tee: debug: bool -> p: Pipe<'In,'T> -> Pipe<'In,'T> * Pipe<'In,'T>
+    val id: name: string -> Pipe<'T,'T>
+    /// Combine two <c>Pipe</c> instances into one by composing their memory profiles and transformation functions.
+    val compose: p1: Pipe<'S,'T> -> p2: Pipe<'T,'U> -> Pipe<'S,'U>
+    val map2Sync:
+      name: string ->
+        debug: bool ->
+        f: ('U -> 'V -> 'W) ->
+        pipe1: Pipe<'In,'U> -> pipe2: Pipe<'In,'V> -> Pipe<'In,'W>
     val map2:
       name: string ->
+        debug: bool ->
         f: ('U -> 'V -> 'W) ->
         pipe1: Pipe<'In,'U> -> pipe2: Pipe<'In,'V> -> Pipe<'In,'W>
     val reduce:
@@ -53,8 +68,6 @@ module private Pipe =
       name: string ->
         consume: (bool -> int -> 'T -> unit) ->
         profile: Profile -> Pipe<'T,unit>
-    /// Combine two <c>Pipe</c> instances into one by composing their memory profiles and transformation functions.
-    val compose: p1: Pipe<'S,'T> -> p2: Pipe<'T,'U> -> Pipe<'S,'U>
     /// mapWindowed keeps a running window along the slice direction of depth images
     /// and processes them by f. The stepping size of the running window is stride.
     /// So if depth is 3 and stride is 1 then first image 0,1,2 is sent to f, then 1, 2, 3
@@ -134,10 +147,20 @@ module Stage =
         nElemsTransformation: NElemsTransformation -> Stage<'In,'V>
     val map2:
       name: string ->
+        debug: bool ->
         f: ('U -> 'V -> 'W) ->
-        stage1: Stage<'In,'U> * stage2: Stage<'In,'V> ->
-          memoryNeed: MemoryNeed ->
-          nElemsTransformation: NElemsTransformation -> Stage<'In,'W>
+        stage1: Stage<'In,'U> ->
+        stage2: Stage<'In,'V> ->
+        memoryNeed: MemoryNeed ->
+        nElemsTransformation: NElemsTransformation -> Stage<'In,'W>
+    val map2Sync:
+      name: string ->
+        debug: bool ->
+        f: ('U -> 'V -> 'W) ->
+        stage1: Stage<'In,'U> ->
+        stage2: Stage<'In,'V> ->
+        memoryNeed: MemoryNeed ->
+        nElemsTransformation: NElemsTransformation -> Stage<'In,'W>
     val reduce:
       name: string ->
         reducer: (bool -> FSharp.Control.AsyncSeq<'In> -> Async<'Out>) ->
@@ -210,21 +233,27 @@ module Pipeline =
     val source: availableMemory: uint64 -> Pipeline<unit,unit>
     val debug: availableMemory: uint64 -> Pipeline<unit,unit>
     /// Composition operators
+    val composeOp:
+      name: string ->
+        pl: Pipeline<'a,'b> -> stage: Stage<'b,'c> -> Pipeline<'a,'c>
+        when 'c: equality
     val (>=>) :
       pl: Pipeline<'a,'b> -> stage: Stage<'b,'c> -> Pipeline<'a,'c>
         when 'c: equality
-    /// parallel fanout with synchronization
     val internal map:
       name: string -> f: ('U -> 'V) -> pl: Pipeline<'In,'U> -> Pipeline<'In,'V>
         when 'V: equality
+    /// parallel execution of non-synchronised streams
     val internal zipOp:
       name: string ->
         pl1: Pipeline<'In,'U> ->
         pl2: Pipeline<'In,'V> -> Pipeline<'In,('U * 'V)>
         when 'U: equality and 'V: equality
+    /// parallel execution of non-synchronised streams
     val zip:
       pl1: Pipeline<'In,'U> -> pl2: Pipeline<'In,'V> -> Pipeline<'In,('U * 'V)>
         when 'U: equality and 'V: equality
+    /// parallel execution of synchronised streams
     val (>=>>) :
       pl: Pipeline<'In,'S> ->
         stage1: Stage<'S,'U> * stage2: Stage<'S,'V> -> Pipeline<'In,('U * 'V)>

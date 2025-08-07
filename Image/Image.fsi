@@ -44,6 +44,7 @@ val equalOne: v: 'T -> bool
 type Image<'T when 'T: equality> =
     interface System.IComparable
     interface System.IEquatable<Image<'T>>
+    interface System.IDisposable
     new: sz: uint list * ?numberComp: uint -> Image<'T>
     static member
       (&&&) : f1: Image<'S> * f2: Image<'S> -> Image<'S> when 'S: equality

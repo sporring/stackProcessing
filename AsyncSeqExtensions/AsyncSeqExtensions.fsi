@@ -3,10 +3,6 @@ module AsyncSeqExtensions
 module Async =
     /// Transforms the result of an asynchronous computation using a pure function.
     val map: f: ('a -> 'b) -> asyncVal: Async<'a> -> Async<'b>
-/// Applies a folder function over an asynchronous sequence, threading an accumulator through the sequence like <c>List.fold</c>.
-val fold:
-  folder: ('State -> 'T -> 'State) ->
-    state: 'State -> source: FSharp.Control.AsyncSeq<'T> -> Async<'State>
 /// Attempts to retrieve the item at the specified index from an asynchronous sequence.
 val tryItem: n: int -> source: FSharp.Control.AsyncSeq<'T> -> Async<'T option>
 /// Windowed function with stride and optional padding.

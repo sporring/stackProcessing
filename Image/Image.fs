@@ -245,6 +245,14 @@ type Image<'T when 'T : equality>(sz: uint list, ?numberComp: uint) =
             new itk.simple.Image(sz |> toVectorUInt32, itkId, v)
         | None -> 
             new itk.simple.Image(sz |> toVectorUInt32, itkId)
+    static let mutable totalImages = 0
+    do totalImages <- totalImages+1
+    do printfn "Image count: %d" totalImages
+
+    // 🧹 Decrement on disposal
+    interface System.IDisposable with
+        member _.Dispose() =
+            totalImages <- totalImages - 1
 
     member this.Image = img
     member private this.SetImg (itkImg: itk.simple.Image) : unit =
@@ -280,7 +288,7 @@ type Image<'T when 'T : equality>(sz: uint list, ?numberComp: uint) =
 
     static member ofSimpleITK (itkImg: itk.simple.Image) : Image<'T> =
         let itkImgCast = ofCastItk<'T> itkImg
-        let img = Image<'T>([0u;0u])
+        let img = new Image<'T>([0u;0u])
         img.SetImg itkImgCast
         img
 
@@ -301,19 +309,19 @@ type Image<'T when 'T : equality>(sz: uint list, ?numberComp: uint) =
 
     static member ofArray2D (arr: 'T[,]) : Image<'T> =
         let sz = [arr.GetLength(0); arr.GetLength(1)] |> List.map uint
-        let img = Image<'T>(sz,1u)
+        let img = new Image<'T>(sz,1u)
         img |> Image.iteri (fun idxLst _ -> img.Set idxLst arr[int idxLst[0],int idxLst[1]])
         img
 
     static member ofArray3D (arr: 'T[,,]) : Image<'T> =
         let sz = [arr.GetLength(0); arr.GetLength(1); arr.GetLength(2)] |> List.map uint
-        let img = Image<'T>(sz,1u)
+        let img = new Image<'T>(sz,1u)
         img |> Image.iteri (fun idxLst _ -> img.Set idxLst arr[int idxLst[0],int idxLst[1],int idxLst[2]])
         img
 
     static member ofArray4D (arr: 'T[,,,]) : Image<'T> =
         let sz = [arr.GetLength(0); arr.GetLength(1); arr.GetLength(2); arr.GetLength(3)] |> List.map uint
-        let img = Image<'T>(sz,1u)
+        let img = new Image<'T>(sz,1u)
         img |> Image.iteri (fun idxLst _ -> img.Set idxLst arr[int idxLst[0],int idxLst[1],int idxLst[2],int idxLst[3]])
         img
 
@@ -400,7 +408,7 @@ type Image<'T when 'T : equality>(sz: uint list, ?numberComp: uint) =
     static member map (f:'T->'T) (im1: Image<'T>) : Image<'T> =
         let sz = im1.GetSize()
         let comp = im1.GetNumberOfComponentsPerPixel()
-        let im = Image<'T>(sz,comp)
+        let im = new Image<'T>(sz,comp)
         sz
         |> flatIndices
         |> Seq.iter (fun idx -> im1.Get idx |> f |> (im.Set idx))
@@ -409,7 +417,7 @@ type Image<'T when 'T : equality>(sz: uint list, ?numberComp: uint) =
     static member mapi (f:uint list->'T->'T) (im1: Image<'T>) : Image<'T> =
         let sz = im1.GetSize()
         let comp = im1.GetNumberOfComponentsPerPixel()
-        let im = Image<'T>(sz,comp)
+        let im = new Image<'T>(sz,comp)
         sz
         |> flatIndices
         |> Seq.iter (fun idx -> im1.Get idx |> f idx |> (im.Set idx))
@@ -445,7 +453,7 @@ type Image<'T when 'T : equality>(sz: uint list, ?numberComp: uint) =
             failwith "can't zip list of less than 2 elements"
         else
             let sz = imLst[0].GetSize()
-            let result = Image<'T list>(sz,uint nComp)
+            let result = new Image<'T list>(sz,uint nComp)
             sz
             |> flatIndices
             |> Seq.iter (fun idxLst -> 
@@ -456,7 +464,7 @@ type Image<'T when 'T : equality>(sz: uint list, ?numberComp: uint) =
     static member unzip (im: Image<'T list>) : Image<'T> list =
         let sz = im.GetSize()
         let comp = im.GetNumberOfComponentsPerPixel()
-        let imLst = List.init (int comp) (fun i -> Image<'T>(sz,1u))
+        let imLst = List.init (int comp) (fun i -> new Image<'T>(sz,1u))
         im |> Image.iteri (fun idxLst vLst ->
             List.iteri (fun i v -> imLst[i].Set idxLst v) vLst )
         imLst

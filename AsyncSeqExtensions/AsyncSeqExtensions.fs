@@ -9,6 +9,7 @@ module Async =
         return f x
     }
 
+(*
 /// Applies a folder function over an asynchronous sequence, threading an accumulator through the sequence like <c>List.fold</c>.
 let fold (folder: 'State -> 'T -> 'State) (state: 'State) (source: AsyncSeq<'T>) : Async<'State> =
     let mutable acc = state
@@ -18,6 +19,7 @@ let fold (folder: 'State -> 'T -> 'State) (state: 'State) (source: AsyncSeq<'T>)
             acc <- folder acc item
         })
     |> Async.map (fun () -> acc)
+*)
 
 /// Attempts to retrieve the item at the specified index from an asynchronous sequence.
 let tryItem (n: int) (source: AsyncSeq<'T>) : Async<'T option> =

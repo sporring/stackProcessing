@@ -12,9 +12,13 @@ val getBytesPerComponent: (System.Type -> uint32)
 /// </summary>
 type Slice<'T when 'T: equality> =
     {
+      Name: string
       Index: uint
       Image: Image.Image<'T>
     }
+    interface System.IDisposable
+    
+    member Dispose: unit -> unit
     
     member EstimateUsage: unit -> uint
 
@@ -51,18 +55,18 @@ val updateId: id: uint -> s: Slice<'S> -> Slice<'S> when 'S: equality
 val cast: s: Slice<'S> -> Slice<'T> when 'S: equality and 'T: equality
 
 val private liftSource:
-  f: (unit -> Image.Image<'T>) -> unit -> Slice<'T> when 'T: equality
-
-val private liftSource1:
-  f: ('a -> Image.Image<'T>) -> a: 'a -> Slice<'T> when 'T: equality
+  name: string -> f: (unit -> Image.Image<'T>) -> unit -> Slice<'T>
+    when 'T: equality
 
 val private liftSource2:
-  f: ('a -> 'b -> Image.Image<'T>) -> a: 'a -> b: 'b -> Slice<'T>
+  name: string ->
+    f: ('a -> 'b -> Image.Image<'T>) -> a: 'a -> b: 'b -> Slice<'T>
     when 'T: equality
 
 val private liftSource3:
-  f: ('a -> 'b -> 'c -> Image.Image<'T>) -> a: 'a -> b: 'b -> c: 'c -> Slice<'T>
-    when 'T: equality
+  name: string ->
+    f: ('a -> 'b -> 'c -> Image.Image<'T>) ->
+    a: 'a -> b: 'b -> c: 'c -> Slice<'T> when 'T: equality
 
 val private liftUnary:
   f: (Image.Image<'T> -> Image.Image<'T>) -> s: Slice<'T> -> Slice<'T>
@@ -79,11 +83,6 @@ val private liftUnary2:
 val private liftUnary3:
   f: ('a -> 'b -> 'c -> Image.Image<'T> -> Image.Image<'T>) ->
     a: 'a -> b: 'b -> c: 'c -> s: Slice<'T> -> Slice<'T> when 'T: equality
-
-val private liftUnary4:
-  f: ('a -> 'b -> 'c -> 'd -> Image.Image<'T> -> Image.Image<'T>) ->
-    a: 'a -> b: 'b -> c: 'c -> d: 'd -> s: Slice<'T> -> Slice<'T>
-    when 'T: equality
 
 val private liftUnary5:
   f: ('a -> 'b -> 'c -> 'd -> 'e -> Image.Image<'T> -> Image.Image<'T>) ->
@@ -103,30 +102,9 @@ val private liftBinary2:
     a: 'a -> b: 'b -> s1: Slice<'T> -> s2: Slice<'T> -> Slice<'T>
     when 'T: equality
 
-val private liftBinary3:
-  f: ('a -> 'b -> 'c -> Image.Image<'T> -> Image.Image<'T> -> Image.Image<'T>) ->
-    a: 'a -> b: 'b -> c: 'c -> s1: Slice<'T> -> s2: Slice<'T> -> Slice<'T>
-    when 'T: equality
-
 val private liftBinaryOp:
   f: (Image.Image<'T> * Image.Image<'T> -> Image.Image<'T>) ->
     s1: Slice<'T> * s2: Slice<'T> -> Slice<'T> when 'T: equality
-
-val private liftBinaryOpInt:
-  f: (Image.Image<int> * int -> Image.Image<int>) ->
-    s1: Slice<int> * s2: int -> Slice<int>
-
-val private liftBinaryOpUInt8:
-  f: (Image.Image<uint8> * uint8 -> Image.Image<uint8>) ->
-    s1: Slice<uint8> * s2: uint8 -> Slice<uint8>
-
-val private liftBinaryOpFloat:
-  f: (Image.Image<float> * float -> Image.Image<float>) ->
-    s1: Slice<float> * s2: float -> Slice<float>
-
-val private liftImageScalarOp:
-  f: (Image.Image<'T> -> 'T -> Image.Image<'T>) ->
-    s: Slice<'T> -> i: 'T -> Slice<'T> when 'T: equality
 
 val private liftBinaryCmp:
   f: (Image.Image<'T> * Image.Image<'T> -> bool) ->
@@ -383,9 +361,8 @@ val zip:
     when 'b: equality and 'c: equality
 
 val (>=>) :
-  (SlimPipeline.Pipeline<'a,'b> ->
-     SlimPipeline.Stage<'b,'c> -> SlimPipeline.Pipeline<'a,'c>)
-    when 'c: equality
+  pl: SlimPipeline.Pipeline<'a,'b> ->
+    stage: Stage<'b,'c> -> SlimPipeline.Pipeline<'a,'c> when 'c: equality
 
 val (>=>>) :
   (SlimPipeline.Pipeline<'a,'b> ->

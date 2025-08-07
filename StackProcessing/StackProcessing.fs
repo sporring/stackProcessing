@@ -12,7 +12,7 @@ let (-->) = Stage.(-->)
 let source = Pipeline.source 
 let debug = Pipeline.debug 
 let zip = Pipeline.zip
-let (>=>) = Pipeline.(>=>)
+let (>=>) pl (stage: Stage<'b,'c>) = Pipeline.(>=>) pl stage //(stage |> disposeInputAfter "read+dispose" )
 let (>=>>) = Pipeline.(>=>>)
 let (>>=>) = Pipeline.(>>=>)
 let (>>=>>) = Pipeline.(>>=>>)
@@ -53,7 +53,7 @@ let write (outputDir: string) (suffix: string) : Stage<Slice.Slice<'T>, unit> =
         let fileName = Path.Combine(outputDir, sprintf "slice_%03d%s" idx suffix)
         if debug then printfn "[write] Saved slice %d to %s as %s" idx fileName (typeof<'T>.Name) 
         slice.Image.toFile(fileName)
-    Stage.consumeWith $"write to \"{outputDir}\"" consumer 
+    Stage.consumeWith $"write \"{outputDir}/*{suffix}\"" consumer 
 
 let show (plt: Slice.Slice<'T> -> unit) : Stage<Slice.Slice<'T>, unit> =
     let consumer (debug: bool) (idx: int) (slice:Slice.Slice<'T>) =
@@ -175,7 +175,7 @@ let squareInt     : Stage<Slice.Slice<int>,Slice.Slice<int>> =          Stage.li
 
 //let histogram<'T when 'T: comparison> = histogramOp<'T> "histogram"
 let sliceHistogram () =
-    Stage.map<Slice.Slice<'T>,Map<'T,uint64>> "histogram:map" Slice.histogram id id // Assumed max for uint8, can be done better
+    Stage.map<Slice.Slice<'T>,Map<'T,uint64>> "histogram:map" Slice.histogram id id// Assumed max for uint8, can be done better
 
 let sliceHistogramFold () =
     Stage.fold<Map<'T,uint64>, Map<'T,uint64>> "histogram:fold" Slice.addHistogram (Map.empty<'T, uint64>) id id
@@ -377,7 +377,7 @@ let zero<'T when 'T: equality>
 
 let readFilteredOp<'T when 'T: equality> (name:string) (inputDir : string) (suffix : string) (filter: string[]->string[]) (pl : Pipeline<unit, unit>) : Pipeline<unit, Slice.Slice<'T>> =
     // much should be deferred to outside Core!!!
-    if pl.debug then printfn $"[{name}] {inputDir}/*{suffix}"
+    if pl.debug then printfn $"[{name}]"
     let (width,height,depth) = Slice.getStackSize inputDir suffix
     let filenames = Directory.GetFiles(inputDir, "*"+suffix) |> filter
     let depth = uint filenames.Length
@@ -394,10 +394,10 @@ let readFilteredOp<'T when 'T: equality> (name:string) (inputDir : string) (suff
     Pipeline.create stage pl.memAvail memPerElem length  pl.debug
 
 let readFiltered<'T when 'T: equality> (inputDir : string) (suffix : string)  (filter: string[]->string[]) (pl : Pipeline<unit, unit>) : Pipeline<unit, Slice.Slice<'T>> =
-    readFilteredOp<'T> "filterReadAs" inputDir suffix filter pl
+    readFilteredOp<'T> $"readFiltered \"{inputDir}/*{suffix}\"" inputDir suffix filter pl
 
 let read<'T when 'T: equality> (inputDir : string) (suffix : string) (pl : Pipeline<unit, unit>) : Pipeline<unit, Slice.Slice<'T>> =
-    readFilteredOp<'T> "readAs" inputDir suffix Array.sort pl
+    readFilteredOp<'T> $"read \"{inputDir}/*{suffix}\"" inputDir suffix Array.sort pl
 
 let readRandom<'T when 'T: equality> (count: uint) (inputDir : string) (suffix : string) (pl : Pipeline<unit, unit>) : Pipeline<unit, Slice.Slice<'T>> =
-    readFilteredOp<'T> "readAs" inputDir suffix (Array.randomChoices (int count)) pl
+    readFilteredOp<'T> $"readRandom \"{inputDir}/*{suffix}\"" inputDir suffix (Array.randomChoices (int count)) pl

@@ -9,14 +9,20 @@ let getBytesPerComponent = Image.getBytesPerComponent
 /// Represents a slice of a stack of 2d images. 
 /// </summary>
 type Slice<'T when 'T: equality> = {
+    Name : string
     Index: uint
     Image: Image<'T>
 }
 with 
     member this.EstimateUsage() = this.Image.memoryEstimate()
+    member this.Dispose() = (this.Image :> System.IDisposable).Dispose()
+    interface System.IDisposable with
+        member this.Dispose() = 
+            printfn $"Disposing slice {this.Name}"
+            this.Dispose()
 
 let create<'T when 'T: equality> (width: uint) (height: uint) (depth: uint) (idx: uint) : Slice<'T> =
-    {Index= idx; Image=if depth > 0u then Image<'T>([width;height;depth]) else failwith "Can only work with 3D images" }
+    {Name = $"zero[{idx}]"; Index= idx; Image=if depth > 0u then new Image<'T>([width;height;depth]) else failwith "Can only work with 3D images" }
 
 let GetDepth (s: Slice<'T>) = s.Image.GetDepth()
 let GetDimensions (s: Slice<'T>) = s.Image.GetDimensions()
@@ -46,19 +52,16 @@ let toSeqSeq (s: Slice<'T>): seq<seq<float>> =
             s.Image[x,y] |> box |> toFloat))
 let updateId (id:uint) (s:Slice<'S>) = {s with Index = id}
 
-let cast<'S,'T when 'S: equality and 'T: equality> (s:Slice<'S>) : Slice<'T> = { Index = s.Index; Image = s.Image.castTo<'T>() }
+let cast<'S,'T when 'S: equality and 'T: equality> (s:Slice<'S>) : Slice<'T> = { Name = $"cast {s.Name} {typeof<'S>.Name} -> {typeof<'T>.Name}"; Index = s.Index; Image = s.Image.castTo<'T>() }
 
-let private liftSource (f: unit -> Image<'T>) : unit -> Slice<'T> =
-    fun () -> {Index = 0u; Image = f () }
+let private liftSource (name: string) (f: unit -> Image<'T>) : unit -> Slice<'T> =
+    fun () -> { Name = name; Index = 0u; Image = f () }
 
-let private liftSource1 (f: 'a -> Image<'T>) : 'a -> Slice<'T> =
-    fun a -> { Index = 0u;  Image = f a }
+let private liftSource2 (name: string) (f: 'a -> 'b -> Image<'T>) : 'a -> 'b -> Slice<'T> =
+    fun a b -> { Name = name; Index = 0u;  Image = f a b }
 
-let private liftSource2 (f: 'a -> 'b -> Image<'T>) : 'a -> 'b -> Slice<'T> =
-    fun a b -> { Index = 0u;  Image = f a b }
-
-let private liftSource3 (f: 'a -> 'b -> 'c -> Image<'T>) : 'a -> 'b -> 'c -> Slice<'T> =
-    fun a b c -> { Index = 0u;  Image = f a b c}
+let private liftSource3 (name: string) (f: 'a -> 'b -> 'c -> Image<'T>) : 'a -> 'b -> 'c -> Slice<'T> =
+    fun a b c ->  { Name = name; Index = 0u;  Image = f a b c}
 
 let private liftUnary (f: Image<'T> -> Image<'T>) : Slice<'T> -> Slice<'T> =
     fun s -> { s with Image = f s.Image }
@@ -72,36 +75,20 @@ let private liftUnary2 (f: 'a -> 'b -> Image<'T> -> Image<'T>) : 'a -> 'b -> Sli
 let private liftUnary3 (f: 'a -> 'b -> 'c -> Image<'T> -> Image<'T>) : 'a -> 'b -> 'c -> Slice<'T> -> Slice<'T> =
     fun a b c s -> { s with Image = f a b c s.Image }
 
-let private liftUnary4 (f: 'a -> 'b -> 'c -> 'd -> Image<'T> -> Image<'T>) : 'a -> 'b -> 'c -> 'd -> Slice<'T> -> Slice<'T> =
-    fun a b c d s -> { s with Image = f a b c d s.Image }
-
 let private liftUnary5 (f: 'a -> 'b -> 'c -> 'd -> 'e -> Image<'T> -> Image<'T>) : 'a -> 'b -> 'c -> 'd -> 'e -> Slice<'T> -> Slice<'T> =
     fun a b c d e s -> { s with Image = f a b c d e s.Image }
 
 let private liftBinary (f: Image<'T> -> Image<'T> -> Image<'T>) : Slice<'T> -> Slice<'T> -> Slice<'T> =
-    fun s1 s2 -> { s1 with Image = f s1.Image s2.Image }
+    fun s1 s2 -> { s1 with Name = $"({s1.Name}, {s2.Name})"; Image = f s1.Image s2.Image }
 
 let private liftBinary1 (f: 'a  -> Image<'T> -> Image<'T> -> Image<'T>) : 'a -> Slice<'T> -> Slice<'T> -> Slice<'T> =
-    fun a s1 s2 -> { s1 with Image = f a s1.Image s2.Image }
+    fun a s1 s2 -> { s1 with Name = $"({s1.Name}, {s2.Name})"; Image = f a s1.Image s2.Image }
 
 let private liftBinary2 (f: 'a -> 'b  -> Image<'T> -> Image<'T> -> Image<'T>) : 'a -> 'b -> Slice<'T> -> Slice<'T> -> Slice<'T> =
-    fun a b s1 s2 -> { s1 with Image = f a b s1.Image s2.Image }
-
-let private liftBinary3 (f: 'a -> 'b -> 'c -> Image<'T> -> Image<'T> -> Image<'T>) : 'a -> 'b -> 'c -> Slice<'T> -> Slice<'T> -> Slice<'T> =
-    fun a b c s1 s2 -> { s1 with Image = f a b c s1.Image s2.Image }
+    fun a b s1 s2 -> { s1 with Name = $"({s1.Name}, {s2.Name})"; Image = f a b s1.Image s2.Image }
 
 let private liftBinaryOp (f: Image<'T> * Image<'T> -> Image<'T>) : Slice<'T> * Slice<'T> -> Slice<'T> =
-    fun (s1, s2) -> { s1 with Image = f (s1.Image, s2.Image) }
-
-let private liftBinaryOpInt (f: Image<int> * int -> Image<int>) : Slice<int> * int -> Slice<int> =
-    fun (s1, s2) -> { s1 with Image = f (s1.Image, s2) }
-let private liftBinaryOpUInt8 (f: Image<uint8> * uint8 -> Image<uint8>) : Slice<uint8> * uint8 -> Slice<uint8> =
-    fun (s1, s2) -> { s1 with Image = f (s1.Image, s2) }
-let private liftBinaryOpFloat (f: Image<float> * float -> Image<float>) : Slice<float> * float -> Slice<float> =
-    fun (s1, s2) -> { s1 with Image = f (s1.Image, s2) }
-
-let private liftImageScalarOp (f: Image<'T> -> 'T -> Image<'T>) : Slice<'T> -> 'T -> Slice<'T> =
-    fun s i -> { s with Image = f s.Image i }
+    fun (s1, s2) -> { s1 with Name = $"({s1.Name}, {s2.Name})"; Image = f (s1.Image, s2.Image) }
 
 let private liftBinaryCmp (f: Image<'T> * Image<'T> -> bool) : Slice<'T> * Slice<'T> -> bool =
     fun (s1,s2) -> f (s1.Image, s2.Image)
@@ -127,10 +114,10 @@ let convolve a b (s: Slice<'T>) (t: Slice<'T>) = liftBinary2 convolve a b s t
 let conv (s: Slice<'T>) (t: Slice<'T>) = liftBinary conv s t
 let discreteGaussian a b c d e (s: Slice<'T>) = liftUnary5 discreteGaussian a b c d e s
 
-let gauss (dim: uint) (sigma: float) (kernelSize: uint option) : Slice<float> = liftSource3 gauss dim sigma kernelSize
-let finiteDiffFilter2D (direction: uint) (order: uint) : Slice<float> = liftSource2 finiteDiffFilter2D direction order
-let finiteDiffFilter3D (direction: uint) (order: uint) : Slice<float> = liftSource2 finiteDiffFilter3D direction order
-let finiteDiffFilter4D (direction: uint) (order: uint) : Slice<float> = liftSource2 finiteDiffFilter4D direction order
+let gauss (dim: uint) (sigma: float) (kernelSize: uint option) : Slice<float> = liftSource3 "gauss" gauss dim sigma kernelSize
+let finiteDiffFilter2D (direction: uint) (order: uint) : Slice<float> = liftSource2 "finiteDiffFilter2D" finiteDiffFilter2D direction order
+let finiteDiffFilter3D (direction: uint) (order: uint) : Slice<float> = liftSource2 "finiteDiffFilter3D" finiteDiffFilter3D direction order
+let finiteDiffFilter4D (direction: uint) (order: uint) : Slice<float> = liftSource2 "finiteDiffFilter4D" finiteDiffFilter4D direction order
 
 let gradientConvolve a b (s: Slice<'T>) = liftUnary2 gradientConvolve 
 let binaryErode a (s: Slice<uint8>) = liftUnary1 binaryErode a s
@@ -144,7 +131,7 @@ let concatAlong a (s: Slice<'T>) (t: Slice<'T>) = liftBinary1 concatAlong a s t
 let constantPad2D<'T when 'T : equality> a b c (s: Slice<'T>): Slice<'T> = liftUnary3 constantPad2D a b c s
 
 let connectedComponents (s: Slice<uint8>) : Slice<uint64>= 
-    {Index = s.Index;  Image = (connectedComponents s.Image) }
+    {Name = $"connectedComponents of {s.Name}"; Index = s.Index;  Image = (connectedComponents s.Image) }
 let relabelComponents a (s: Slice<uint64>) = liftUnary1 relabelComponents a s
 let watershed a (s: Slice<'T>) = liftUnary1 watershed a s
 let otsuThreshold (s: Slice<'T>) : Slice<'T> = liftUnary otsuThreshold s
@@ -152,9 +139,9 @@ let otsuMultiThreshold a (s: Slice<'T>) = liftUnary1 otsuMultiThreshold a s
 let momentsThreshold (s: Slice<'T>) = liftUnary momentsThreshold s
 
 let signedDistanceMap (inside: uint8) (outside: uint8) (s: Slice<uint8>) : Slice<float> =
-    {Index = s.Index; Image = ImageFunctions.signedDistanceMap inside outside s.Image}
+    {Name = $"signedDistanceMap[{s.Index}]"; Index = s.Index; Image = ImageFunctions.signedDistanceMap inside outside s.Image}
 let generateCoordinateAxis (axis: int) (size: int list) : Slice<uint> =
-    {Index = 0u; Image = ImageFunctions.generateCoordinateAxis (axis: int) (size: int list)}
+    {Name = $"generateCoordinateAxis[0]"; Index = 0u; Image = ImageFunctions.generateCoordinateAxis (axis: int) (size: int list)}
 let unique (s: Slice<'T>) : 'T list when 'T : comparison =
     ImageFunctions.unique s.Image
 let labelShapeStatistics (s: Slice<'T>) : Map<int64, ImageFunctions.LabelShapeStatistics> =
@@ -241,14 +228,14 @@ let unstack (s: Slice<'T>): Slice<'T> list =
             ImageFunctions.unstack s.Image
     let idxLst = List.mapi (fun i _ -> uint i) imgLst
     let baseIndex = s.Index
-    List.zip idxLst imgLst |> List.map (fun (i,im) -> {Index = baseIndex + i; Image = im})
+    List.zip idxLst imgLst |> List.map (fun (i,im) -> {Name = $"Unstack of {s.Name}[{baseIndex}+{i}]"; Index = baseIndex + i; Image = im})
 
 // IO stuff
 type FileInfo = ImageFunctions.FileInfo
 let getFileInfo (filename: string) : FileInfo = ImageFunctions.getFileInfo filename
 
 let readSlice<'T when 'T: equality> (idx: uint) (filename: string) : Slice<'T> =
-    {Index = idx; Image = Image<'T>.ofFile(filename)}
+    {Name = filename; Index = idx; Image = Image<'T>.ofFile(filename)}
 
 let writeSlice (filename: string) (s: Slice<'T>) : unit =
     s.Image.toFile(filename)

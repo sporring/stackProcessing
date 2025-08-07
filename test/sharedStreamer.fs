@@ -16,9 +16,9 @@ let main _ =
 //    >=> tapIt (fun s -> $"[cast<uint8,float>] {s.Index} -> Image {s.Image}")
     >=>> (sliceAddScalar 1.0, sliceAddScalar 2.0)
     >>=> Slice.mul
-    >=> cast<float,int>
+    >=> cast<float,int8>
 //    >=> tapIt (fun s -> $"[cast<float,int>] {s.Index} -> Image {s.Image}")
-    >=> ignoreAll ()
+    >=> write "result" ".tiff"
 //    >=> tapIt (fun s -> $"[ignoreAll] {s}")
     |> sink
 

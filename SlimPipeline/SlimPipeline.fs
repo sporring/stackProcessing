@@ -3,6 +3,11 @@ module SlimPipeline
 open FSharp.Control
 open AsyncSeqExtensions
 
+let getMem () =
+    System.GC.Collect()
+    System.GC.WaitForPendingFinalizers()
+    System.GC.Collect()
+
 ////////////////////////////////////////////////////////////
 /// The memory usage strategies during image processing.
 type Profile =
@@ -70,14 +75,140 @@ module private Pipe =
         let apply debug input = input |> AsyncSeq.take (int count)
         create name apply Streaming
 
-    let map (name: string) (folder: 'U -> 'V) (pipe: Pipe<'In, 'U>) : Pipe<'In, 'V> =
-        let apply debug input = input |> pipe.Apply debug |> AsyncSeq.map folder
+    let map (name: string) (mapper: 'U -> 'V) (pipe: Pipe<'In, 'U>) : Pipe<'In, 'V> =
+        (*
+        let mapperWDispose (u: 'U) : 'V =
+            let v = mapper u
+            match box v with
+                | :? System.IDisposable as d -> d.Dispose()
+                | _ -> ()
+            v
+        *)
+        let apply debug input = input |> pipe.Apply debug |> AsyncSeq.map mapper
         create name apply pipe.Profile
 
-    let map2 (name: string) (f: 'U -> 'V -> 'W) (pipe1: Pipe<'In, 'U>) (pipe2: Pipe<'In, 'V>) : Pipe<'In, 'W> =
+    let tryDispose (debug: bool) (value: obj) =
+        match value with
+        | :? System.IDisposable as d ->
+            if debug then printfn "[dispose] Disposing %s" (d.GetType().Name)
+            d.Dispose()
+        | _ -> 
+            if debug then printfn "[dispose] Couldn't dispose %s" (value.GetType().Name)
+            ()
+
+    type TeeMsg<'T> =
+        | Left of AsyncReplyChannel<'T option>
+        | Right of AsyncReplyChannel<'T option>
+
+    let tee (debug: bool) (p: Pipe<'In, 'T>) : Pipe<'In, 'T> * Pipe<'In, 'T> =
+        // Shared lazy value to ensure Apply is only triggered once
+        let mutable shared: Lazy<AsyncSeq<'T> * AsyncSeq<'T>> option = None
+        let syncRoot = obj()
+
+        let makeShared (input: AsyncSeq<'In>) =
+            let src = p.Apply debug input  // Only called once
+
+            let agent = MailboxProcessor.Start(fun inbox ->
+                async {
+                    let enum = (AsyncSeq.toAsyncEnum src).GetAsyncEnumerator()
+                    let mutable current: 'T option = None
+                    let mutable consumed = (true, true)
+                    let mutable finished = false
+
+                    let rec loop () = async {
+                        if current.IsNone && not finished then
+                            let! hasNext = enum.MoveNextAsync().AsTask() |> Async.AwaitTask
+                            if hasNext then
+                                current <- Some enum.Current
+                                consumed <- (false, false)
+                            else
+                                finished <- true
+
+                        let! msg = inbox.Receive()
+                        match msg, current with
+                        | Left reply, Some v when not (fst consumed) ->
+                            reply.Reply(Some v)
+                            consumed <- (true, snd consumed)
+                        | Right reply, Some v when not (snd consumed) ->
+                            reply.Reply(Some v)
+                            consumed <- (fst consumed, true)
+                        | Left reply, None when finished ->
+                            reply.Reply(None)
+                        | Right reply, None when finished ->
+                            reply.Reply(None)
+                        | _ -> ()  // Ignore duplicate requests
+
+                        if consumed = (true, true) then
+                            current <- None
+
+                        return! loop ()
+                    }
+
+                    do! loop ()
+                })
+
+            let makeStream tag =
+                asyncSeq {
+                    let mutable done_ = false
+                    while not done_ do
+                        let! vOpt = agent.PostAndAsyncReply(tag)
+                        match vOpt with
+                        | Some v -> yield v
+                        | None -> done_ <- true
+                }
+
+            makeStream Left, makeStream Right
+
+        let getShared input =
+            match shared with
+            | Some lazyStreams -> lazyStreams.Value
+            | None ->
+                lock syncRoot (fun () ->
+                    match shared with
+                    | Some lazyStreams -> lazyStreams.Value
+                    | None ->
+                        let lazyStreams = lazy (makeShared input)
+                        shared <- Some lazyStreams
+                        lazyStreams.Value
+                )
+
+        let makeTeePipe name pick =
+            let apply (debug: bool) input =
+                let left, right = getShared input
+                pick (left, right)
+            create $"{p.Name}-tee-{name}" apply p.Profile
+
+        makeTeePipe "left" fst, makeTeePipe "right" snd
+
+    let id (name: string) : Pipe<'T, 'T> =
+        let apply (debug: bool) input = input
+        create name apply Streaming  // or use profile passed as arg if you prefer
+
+    /// Combine two <c>Pipe</c> instances into one by composing their memory profiles and transformation functions.
+    let compose (p1: Pipe<'S,'T>) (p2: Pipe<'T,'U>) : Pipe<'S,'U> =
+        let profile = Profile.combine p1.Profile p2.Profile
+        let apply debug input = input |> p1.Apply debug |> p2.Apply debug 
+        create $"{p2.Name} {p1.Name}" apply profile
+
+    let map2Sync (name: string) (debug: bool) (f: 'U -> 'V -> 'W) (pipe1: Pipe<'In, 'U>) (pipe2: Pipe<'In, 'V>) : Pipe<'In, 'W> =
+        let teeBasePipe = id "tee" // Or take the upstream pipe shared by both
+        let shared1, shared2 = tee debug teeBasePipe
+
+        let composedPipe1 = compose shared1 pipe1
+        let composedPipe2 = compose shared2 pipe2
+
         let apply debug input =
-                let stream1 = pipe1.Apply debug input
-                let stream2 = pipe2.Apply debug input
+            let stream1 = composedPipe1.Apply debug input
+            let stream2 = composedPipe2.Apply debug input
+            AsyncSeq.zip stream1 stream2 |> AsyncSeq.map (fun (u, v) -> f u v)
+
+        let profile = max pipe1.Profile pipe2.Profile
+        create name apply profile
+
+    let map2 (name: string) (debug: bool) (f: 'U -> 'V -> 'W) (pipe1: Pipe<'In, 'U>) (pipe2: Pipe<'In, 'V>) : Pipe<'In, 'W> =
+        let apply debug input =
+                let stream1 = input |> pipe1.Apply debug
+                let stream2 = input |> pipe2.Apply debug
                 AsyncSeq.zip stream1 stream2 |> AsyncSeq.map (fun (u, v) -> f u v)
         let profile = max pipe1.Profile pipe2.Profile
         create name apply profile
@@ -88,7 +219,7 @@ module private Pipe =
 
     let fold (name: string) (folder: 'State -> 'In -> 'State) (initial: 'State) (profile: Profile) : Pipe<'In, 'State> =
         let reducer debug (s: AsyncSeq<'In>) : Async<'State> =
-            AsyncSeqExtensions.fold folder initial s
+            AsyncSeq.fold folder initial s
         reduce name reducer profile
 
     let consumeWith (name: string) (consume: bool -> int -> 'T -> unit) (profile: Profile) : Pipe<'T, unit> =
@@ -98,12 +229,6 @@ module private Pipe =
                 yield ()
             }
         create name apply profile
-
-    /// Combine two <c>Pipe</c> instances into one by composing their memory profiles and transformation functions.
-    let compose (p1: Pipe<'S,'T>) (p2: Pipe<'T,'U>) : Pipe<'S,'U> =
-        let profile = Profile.combine p1.Profile p2.Profile
-        let apply debug input = input |> p1.Apply debug |> p2.Apply debug 
-        create $"{p2.Name} {p1.Name}" apply profile
 
     /// mapWindowed keeps a running window along the slice direction of depth images
     /// and processes them by f. The stepping size of the running window is stride.
@@ -213,8 +338,13 @@ module Stage =
         let transition = ProfileTransition.create Streaming Streaming
         create name pipe transition memoryNeed nElemsTransformation
 
-    let map2 (name: string) (f: 'U -> 'V -> 'W) (stage1: Stage<'In, 'U>, stage2: Stage<'In, 'V>) (memoryNeed: MemoryNeed) (nElemsTransformation: NElemsTransformation): Stage<'In, 'W> =
-        let pipe = Pipe.map2 name f stage1.Pipe stage2.Pipe
+    let map2 (name: string) (debug: bool) (f: 'U -> 'V -> 'W) (stage1: Stage<'In, 'U>) (stage2: Stage<'In, 'V>) (memoryNeed: MemoryNeed) (nElemsTransformation: NElemsTransformation): Stage<'In, 'W> =
+        let pipe = Pipe.map2 name debug f stage1.Pipe stage2.Pipe
+        let transition = ProfileTransition.create Streaming Streaming
+        create name pipe transition memoryNeed nElemsTransformation
+
+    let map2Sync (name: string) (debug: bool) (f: 'U -> 'V -> 'W) (stage1: Stage<'In, 'U>) (stage2: Stage<'In, 'V>) (memoryNeed: MemoryNeed) (nElemsTransformation: NElemsTransformation): Stage<'In, 'W> =
+        let pipe = Pipe.map2Sync name debug f stage1.Pipe stage2.Pipe
         let transition = ProfileTransition.create Streaming Streaming
         create name pipe transition memoryNeed nElemsTransformation
 
@@ -340,52 +470,84 @@ module Pipeline =
 
     //////////////////////////////////////////////////////////////
     /// Composition operators
-    let (>=>) (pl: Pipeline<'a, 'b>) (stage: Stage<'b, 'c>) : Pipeline<'a, 'c> =
-        if pl.debug then printfn $"[>=>] {stage.Name}"
-        let stage' = Option.map (fun stg -> Stage.compose stg stage) pl.stage
+    let composeOp (name: string) (pl: Pipeline<'a, 'b>) (stage: Stage<'b, 'c>) : Pipeline<'a, 'c> =
+        if pl.debug then printfn $"[{name}] {stage.Name}"
+
         let memNeeded = stage.MemoryNeed pl.nElems
-        let nElems' = stage.NElemsTransformation pl.nElems
         if memNeeded > pl.memAvail then
             failwith $"Out of available memory: {stage.Name} requested {memNeeded} B but have only {pl.memAvail} B"
+
+        let stage' = Option.map (fun stg -> Stage.compose stg stage) pl.stage
+        let nElems' = stage.NElemsTransformation pl.nElems
         create stage' pl.memAvail nElems' pl.length pl.debug
 
-    /// parallel fanout with synchronization
+    let (>=>) (pl: Pipeline<'a, 'b>) (stage: Stage<'b, 'c>) : Pipeline<'a, 'c> =
+        composeOp $">=>" pl stage
 
     let internal map (name: string) (f: 'U->'V) (pl: Pipeline<'In,'U>) : Pipeline<'In,'V> =
-        let stage = Option.map (fun s -> Stage.map1 name f s id id) pl.stage
-        create stage pl.memAvail pl.nElems pl.length pl.debug
+        if pl.debug then printfn $"[{name}] unnamed function"
+        let stage =
+            match pl.stage with
+            | Some stg -> 
+                let memoryNeed m = 2UL*m // assuming simple transformation
+                Stage.map1 name f stg memoryNeed id // nElms is unchanged by map per definition 
+            | None -> failwith "Pipeline.map cannot map to empty stage"
+        let nElems' = stage.NElemsTransformation pl.nElems
+        create (Some stage) pl.memAvail nElems' pl.length pl.debug
         
+    /// parallel execution of non-synchronised streams
     let internal zipOp (name:string) (pl1: Pipeline<'In, 'U>) (pl2: Pipeline<'In, 'V>) : Pipeline<'In, ('U * 'V)> =
         match pl1.stage,pl2.stage with
             Some stage1, Some stage2 ->
-                if pl1.debug then printfn $"[{name}] ({stage1.Name}, {stage2.Name})"
+                let debug = (pl1.debug || pl2.debug)
+                if debug then printfn $"[{name}] ({stage1.Name}, {stage2.Name})"
 
-                let memoryNeed nElems = (stage1.MemoryNeed nElems) + (stage2.MemoryNeed nElems) // Runs in parallel
-                let memNeeded = memoryNeed pl1.nElems
-                if memNeeded > pl1.memAvail then
-                    failwith $"[{name}] Out of available memory: Parallel execution of {stage1.Name}+{stage2.Name} requested {memNeeded} B but have only {pl1.memAvail} B"
+                // Length of each Pipeline must be the same
+                if pl1.length <> pl2.length then
+                    failwith $"[{name}] pipelines to be ziped must be of equal lengths"
 
-                let nElemsTransformation = stage1.NElemsTransformation // must be identical with stage2.NElemsTransformation
+                // Check memory constraints for each individual stream
+                let memNeeded1 = stage1.MemoryNeed  pl1.nElems
+                let memNeeded2 = stage2.MemoryNeed  pl2.nElems
+                if memNeeded1 > pl1.memAvail || memNeeded2 > pl2.memAvail then
+                    failwith $"[{name}] Out of available memory: Parallel execution of {stage1.Name}+{stage2.Name} requested {memNeeded1}+{memNeeded2} B but have only {pl1.memAvail} B"
+
+                // Check resulting number of elements per stream. Must be the same to be ziped
+                let nElemsTransformation1 = stage1.NElemsTransformation 
                 let nElemsTransformation2 = stage2.NElemsTransformation 
-                let nElems = nElemsTransformation pl1.nElems
+                let nElems = nElemsTransformation1 pl1.nElems
                 let nElems2 = nElemsTransformation2 pl1.nElems
                 if nElems <> nElems2 then
                     failwith $"[{name}] Cannot zip pipelines with different number of elements {nElems} vs {nElems2}"
+
+                // Create a non-synced stage
+                let memoryNeed nElems = (stage1.MemoryNeed nElems) + (stage2.MemoryNeed nElems) // Runs in parallel
+                let nElemsTransformation = nElemsTransformation1 // Transformation of result equal to any of the input
                 let stage =
-                    let pipe = Pipe.map2 ">=>>" (fun U V -> (U,V)) stage1.Pipe stage2.Pipe
-                    let transition = {From=Streaming; To=Streaming}
-                    let memoryNeed nElems = (stage1.MemoryNeed nElems) + (stage2.MemoryNeed nElems)
-                    Stage.create ">=>>" pipe transition memoryNeed nElemsTransformation |> Some
-                create stage pl1.memAvail nElems pl1.length (pl1.debug || pl2.debug)
+                    Stage.map2 $"({stage1.Name},{stage2.Name})" debug (fun U V -> (U,V)) stage1 stage2 memoryNeed nElemsTransformation |> Some
+                create stage (pl1.memAvail+pl2.memAvail) nElems pl1.length debug
             | _,_ -> failwith $"[{name}] Cannot zip with an empty pipeline"
 
+    /// parallel execution of non-synchronised streams
     let zip (pl1: Pipeline<'In, 'U>) (pl2: Pipeline<'In, 'V>) : Pipeline<'In, ('U * 'V)> = zipOp "zip" pl1 pl2
 
-    let (>=>>) (pl: Pipeline<'In, 'S>) (stage1: Stage<'S, 'U>, stage2: Stage<'S, 'V>) : Pipeline<'In, ('U * 'V)> =
-        if pl.debug then printfn $"[>=>>] ({stage1.Name}, {stage2.Name})"
-        let pl1 = pl >=> stage1
-        let pl2 = pl >=> stage2
-        zipOp ">=>>" pl1 pl2
+    /// parallel execution of synchronised streams
+    let (>=>>) 
+        (pl: Pipeline<'In, 'S>) 
+        (stage1: Stage<'S, 'U>, stage2: Stage<'S, 'V>) 
+        : Pipeline<'In, 'U * 'V> =
+
+        let memoryNeed nElems = (stage1.MemoryNeed nElems) + (stage2.MemoryNeed nElems) // Runs in parallel
+        let nElemsTransformation = stage1.NElemsTransformation 
+        let nElemsTransformation2 = stage2.NElemsTransformation 
+        let nElems = nElemsTransformation pl.nElems
+        let nElems2 = nElemsTransformation2 pl.nElems
+        if nElems <> nElems2 then
+            failwith $"[>=>>] Cannot zip pipelines with different number of elements {nElems} vs {nElems2}"
+
+        // Combine both stages in a zip-like stage
+        let stage = Stage.map2Sync $"({stage1.Name},{stage2.Name})" pl.debug (fun u v -> (u, v)) stage1 stage2 memoryNeed nElemsTransformation
+        composeOp ">=>>" pl stage
 
     let (>>=>) (pl: Pipeline<'In,'U*'V>) (f: 'U -> 'V -> 'W) : Pipeline<'In,'W>  = 
         map ">>=>" (fun (u,v) -> f u v) pl
