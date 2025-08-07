@@ -17,49 +17,44 @@ module Profile =
 type Pipe<'S,'T> =
     {
       Name: string
-      Apply: (FSharp.Control.AsyncSeq<'S> -> FSharp.Control.AsyncSeq<'T>)
+      Apply:
+        (bool -> FSharp.Control.AsyncSeq<'S> -> FSharp.Control.AsyncSeq<'T>)
       Profile: Profile
     }
 module private Pipe =
     val create:
       name: string ->
-        apply: (FSharp.Control.AsyncSeq<'S> -> FSharp.Control.AsyncSeq<'T>) ->
+        apply: (bool ->
+                  FSharp.Control.AsyncSeq<'S> -> FSharp.Control.AsyncSeq<'T>) ->
         profile: Profile -> Pipe<'S,'T>
-    val runWith: input: 'S -> pipe: Pipe<'S,'T> -> Async<unit>
-    val run: pipe: Pipe<unit,unit> -> unit
+    val runWith: debug: bool -> input: 'S -> pipe: Pipe<'S,'T> -> Async<unit>
+    val run: debug: bool -> pipe: Pipe<unit,unit> -> unit
     val lift: name: string -> profile: Profile -> f: ('S -> 'T) -> Pipe<'S,'T>
     val init:
       name: string ->
         depth: uint -> mapper: (uint -> 'T) -> profile: Profile -> Pipe<unit,'T>
     val skip: name: string -> count: uint -> Pipe<'a,'a>
     val take: name: string -> count: uint -> Pipe<'a,'a>
-    val map: name: string -> f: ('U -> 'V) -> pipe: Pipe<'In,'U> -> Pipe<'In,'V>
+    val map:
+      name: string -> folder: ('U -> 'V) -> pipe: Pipe<'In,'U> -> Pipe<'In,'V>
     val map2:
       name: string ->
         f: ('U -> 'V -> 'W) ->
         pipe1: Pipe<'In,'U> -> pipe2: Pipe<'In,'V> -> Pipe<'In,'W>
     val reduce:
       name: string ->
-        reducer: (FSharp.Control.AsyncSeq<'In> -> Async<'Out>) ->
+        reducer: (bool -> FSharp.Control.AsyncSeq<'In> -> Async<'Out>) ->
         profile: Profile -> Pipe<'In,'Out>
     val fold:
       name: string ->
         folder: ('State -> 'In -> 'State) ->
         initial: 'State -> profile: Profile -> Pipe<'In,'State>
-    val mapNFold:
-      name: string ->
-        mapFn: ('In -> 'Mapped) ->
-        folder: ('State -> 'Mapped -> 'State) ->
-        state: 'State -> profile: Profile -> Pipe<'In,'State>
     val consumeWith:
-      name: string -> consume: ('T -> unit) -> profile: Profile -> Pipe<'T,unit>
+      name: string ->
+        consume: (bool -> int -> 'T -> unit) ->
+        profile: Profile -> Pipe<'T,unit>
     /// Combine two <c>Pipe</c> instances into one by composing their memory profiles and transformation functions.
     val compose: p1: Pipe<'S,'T> -> p2: Pipe<'T,'U> -> Pipe<'S,'U>
-    /// Try to shrink a too‑hungry pipe to a cheaper profile.
-    /// *You* control the downgrade policy here.
-    val shrinkProfile:
-      avail: uint64 ->
-        memPerElement: uint64 -> depth: uint -> p: Pipe<'S,'T> -> Pipe<'S,'T>
     /// mapWindowed keeps a running window along the slice direction of depth images
     /// and processes them by f. The stepping size of the running window is stride.
     /// So if depth is 3 and stride is 1 then first image 0,1,2 is sent to f, then 1, 2, 3
@@ -140,7 +135,7 @@ module Stage =
           nElemsTransformation: NElemsTransformation -> Stage<'In,'W>
     val reduce:
       name: string ->
-        reducer: (FSharp.Control.AsyncSeq<'In> -> Async<'Out>) ->
+        reducer: (bool -> FSharp.Control.AsyncSeq<'In> -> Async<'Out>) ->
         profile: Profile ->
         memoryNeed: MemoryNeed ->
         nElemsTransformation: NElemsTransformation -> Stage<'In,'Out>
@@ -168,10 +163,12 @@ module Stage =
         memoryNeed: MemoryNeed ->
         nElemsTransformation: NElemsTransformation -> Stage<'S,'T>
         when 'S: equality and 'T: equality
-    val tap: name: string -> Stage<'T,'T>
+    val tapItOp: name: string -> toString: ('T -> string) -> Stage<'T,'T>
     val tapIt: toString: ('T -> string) -> Stage<'T,'T>
+    val tap: name: string -> Stage<'T,'T>
     val ignore: unit -> Stage<'T,unit>
-    val consumeWith: name: string -> consume: ('T -> unit) -> Stage<'T,unit>
+    val consumeWith:
+      name: string -> consume: (bool -> int -> 'T -> unit) -> Stage<'T,unit>
     val cast:
       name: string -> f: ('S -> 'T) -> Stage<'S,'T>
         when 'S: equality and 'T: equality

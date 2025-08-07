@@ -16,7 +16,7 @@ let main _ =
         |> Chart.show
 
     debug mem
-    |> readAs<uint8> "image" ".tiff"
+    |> read<uint8> "image" ".tiff"
     >=> histogram () --> map2pairs --> pairs2floats --> plot plt
     |> sink
 

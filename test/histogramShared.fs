@@ -17,7 +17,7 @@ let main _ =
 
     let readMaker = 
         source mem
-        |> readAs<uint8> "image" ".tiff"
+        |> read<uint8> "image" ".tiff"
     let plotHist = map2pairs --> pairs2floats --> plot plt
 
     readMaker 

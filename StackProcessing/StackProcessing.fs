@@ -48,31 +48,31 @@ let getBytesPerComponent<'T> = (typeof<'T> |> Image.getBytesPerComponent |> uint
 let write (outputDir: string) (suffix: string) : Stage<Slice.Slice<'T>, unit> =
     if not (Directory.Exists(outputDir)) then
         Directory.CreateDirectory(outputDir) |> ignore
-    let consumer (slice:Slice.Slice<'T>) =
-        let fileName = Path.Combine(outputDir, sprintf "slice_%03d%s" slice.Index suffix)
+    let consumer (debug: bool) (idx: int) (slice:Slice.Slice<'T>) =
+        let fileName = Path.Combine(outputDir, sprintf "slice_%03d%s" idx suffix)
+        if debug then printfn "[write] Saved slice %d to %s as %s" idx fileName (typeof<'T>.Name) 
         slice.Image.toFile(fileName)
-        printfn "[Write] Saved slice %d to %s as %s" slice.Index fileName (typeof<'T>.Name) 
     Stage.consumeWith $"write to \"{outputDir}\"" consumer 
 
 let show (plt: Slice.Slice<'T> -> unit) : Stage<Slice.Slice<'T>, unit> =
-    let consumer (slice:Slice.Slice<'T>) =
+    let consumer (debug: bool) (idx: int) (slice:Slice.Slice<'T>) =
+        if debug then printfn "[show] Showing slice %d" idx
         let width = slice |> Slice.GetWidth |> int
         let height = slice |> Slice.GetHeight |> int
         plt slice
-        printfn "[Show] Showing slice %d" slice.Index
     Stage.consumeWith "show" consumer 
 
 let plot (plt: (float list)->(float list)->unit) : Stage<(float * float) list, unit> = // better be (float*float) list
-    let consumer (points: (float*float) list) =
+    let consumer (debug: bool) (idx: int) (points: (float*float) list) =
+        if debug then printfn "[plot] Plotting {points.Length} 2D points"
         let x,y = points |> List.unzip
         plt x y
-        printfn "[Plot] Plotting {points.Length} 2D points"
     Stage.consumeWith "plot" consumer 
 
 let print () : Stage<'T, unit> =
-    let consumer (elm: 'T) =
-        printfn "%A" elm
-        printfn "[Plot] Plotting {points.Length} 2D points"
+    let consumer (debug: bool) (idx: int) (elm: 'T) =
+        if debug then printfn "[print]"
+        printfn "%d -> %A" idx elm
     Stage.consumeWith "print" consumer 
 
 (*
@@ -355,7 +355,7 @@ let getStackInfo = Slice.getStackInfo
 let getStackSize = Slice.getStackSize
 let getStackWidth = Slice.getStackWidth
 
-let createAs<'T when 'T: equality> 
+let zero<'T when 'T: equality> 
     (width: uint) 
     (height: uint) 
     (depth: uint) 
@@ -375,39 +375,29 @@ let createAs<'T when 'T: equality>
     let context = id
     Pipeline.create stage pl.memAvail nElems (uint64 depth)  pl.debug
 
-let readAs<'T when 'T: equality> (inputDir : string) (suffix : string) (pl : Pipeline<unit, unit>) : Pipeline<unit, Slice.Slice<'T>> =
+let readFilteredOp<'T when 'T: equality> (name:string) (inputDir : string) (suffix : string) (filter: string[]->string[]) (pl : Pipeline<unit, unit>) : Pipeline<unit, Slice.Slice<'T>> =
     // much should be deferred to outside Core!!!
-    if pl.debug then printfn $"[readAs] {inputDir}/*{suffix}"
+    if pl.debug then printfn $"[{name}] {inputDir}/*{suffix}"
     let (width,height,depth) = Slice.getStackSize inputDir suffix
-    let filenames = Directory.GetFiles(inputDir, "*"+suffix) |> Array.sort
+    let filenames = Directory.GetFiles(inputDir, "*"+suffix) |> filter
     let depth = uint filenames.Length
     let mapper (i: uint) : Slice.Slice<'T> = 
         let fileName = filenames[int i]; 
         let slice = Slice.readSlice<'T> (uint i) fileName
-        printfn "[readAs] Reading slice %A from %s as %s" i fileName (typeof<'T>.Name)
+        if pl.debug then printfn "[%s] Reading slice %A from %s as %s" name i fileName (typeof<'T>.Name)
         slice
     let transition = ProfileTransition.create Constant Streaming
-    let shapeUpdate = id
-    let stage = Stage.init $"read: {inputDir}" (uint depth) mapper transition id id |> Some
+    let stage = Stage.init $"{name}" (uint depth) mapper transition id id |> Some
     //let flow = Flow.returnM stage
     let memPerElem = (uint64 width)*(uint64 height)*getBytesPerComponent<'T>
     let length = (uint64 depth)
     Pipeline.create stage pl.memAvail memPerElem length  pl.debug
 
-let readRandomAs<'T when 'T: equality> (count: uint) (inputDir : string) (suffix : string) (pl : Pipeline<unit, unit>) : Pipeline<unit, Slice.Slice<'T>> =
-    if pl.debug then printfn $"[readRandomAs] {count} slices from {inputDir}/*{suffix}"
-    let (width,height,depth) = Slice.getStackSize inputDir suffix
-    let filenames = Directory.GetFiles(inputDir, "*"+suffix) |> Array.randomChoices (int count)
-    let depth = filenames.Length
-    let mapper (i: uint) : Slice.Slice<'T> = 
-        let fileName = filenames[int i]; 
-        let slice = Slice.readSlice<'T> (uint i) fileName
-        if pl.debug then printfn "[readRandomSlices] Reading slice %A from %s" i fileName
-        slice
-    let transition = ProfileTransition.create Constant Streaming
-    let shapeUpdate = id
-    let stage = Stage.init $"read: {inputDir}" (uint depth) mapper transition id id |> Some 
-    //let flow = Flow.returnM stage
-    let nElems = (uint64 width)*(uint64 height)
-    let context = id
-    Pipeline.create stage pl.memAvail nElems (uint64 count) pl.debug
+let readFiltered<'T when 'T: equality> (inputDir : string) (suffix : string)  (filter: string[]->string[]) (pl : Pipeline<unit, unit>) : Pipeline<unit, Slice.Slice<'T>> =
+    readFilteredOp<'T> "filterReadAs" inputDir suffix filter pl
+
+let read<'T when 'T: equality> (inputDir : string) (suffix : string) (pl : Pipeline<unit, unit>) : Pipeline<unit, Slice.Slice<'T>> =
+    readFilteredOp<'T> "readAs" inputDir suffix Array.sort pl
+
+let readRandom<'T when 'T: equality> (count: uint) (inputDir : string) (suffix : string) (pl : Pipeline<unit, unit>) : Pipeline<unit, Slice.Slice<'T>> =
+    readFilteredOp<'T> "readAs" inputDir suffix (Array.randomChoices (int count)) pl

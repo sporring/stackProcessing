@@ -9,7 +9,7 @@ let main _ =
     let sigma = 1.0
 
     source availableMemory
-    |> readAs<float> "image" ".tiff"
+    |> read<float> "image" ".tiff"
     >=> convGauss sigma
     >=> tap "tap: convGauss"
     >=> finiteDiff 1u 2u

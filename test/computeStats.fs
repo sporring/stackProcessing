@@ -7,7 +7,7 @@ let main _ =
     let mem = 1024UL * 1024UL // 1MB for example
 
     debug mem
-    |> readAs<uint8> "image" ".tiff"
+    |> read<uint8> "image" ".tiff"
     >=> computeStats () --> print ()
     |> sink
 

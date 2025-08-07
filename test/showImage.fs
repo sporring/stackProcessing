@@ -15,8 +15,8 @@ let main _ =
         |> Chart.withTitle "An Image"
         |> Chart.show
 
-    source availableMemory
-    |> readRandomAs<uint8> 1u "image" ".tiff"
+    debug availableMemory
+    |> readRandom<uint8> 1u "image" ".tiff"
     >=> show plt 
     |> sink
 

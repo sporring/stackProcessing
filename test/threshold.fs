@@ -9,7 +9,7 @@ let main _ =
     let availableMemory = 1024UL * 1024UL // 1MB for example
 
     debug availableMemory
-    |> createAs<float> width height depth
+    |> zero<float> width height depth
     >=> addNormalNoise 128.0 50.0
     >=> convGauss 2.0
     >=> cast<float,uint8>

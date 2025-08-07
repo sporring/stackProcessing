@@ -12,7 +12,7 @@ let main _ =
 
     let readMaker =
         source mem
-        |> readAs<float> "image" ".tiff"
+        |> read<float> "image" ".tiff"
 
     let stats = 
         readMaker 

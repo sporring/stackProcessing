@@ -8,10 +8,10 @@ let main _ =
 
     let imageMaker =
         source availableMemory
-        |> readAs<uint8> "image" ".tiff"
+        |> read<uint8> "image" ".tiff"
     let maskMaker =
         source availableMemory
-        |> readAs<uint8> "mask" ".tiff"
+        |> read<uint8> "mask" ".tiff"
 
     zipWith Slice.mul imageMaker maskMaker
     >=> write "result" ".tif"

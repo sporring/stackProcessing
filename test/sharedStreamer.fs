@@ -8,7 +8,7 @@ let main _ =
 
     let readMaker = 
         debug mem
-        |> readAs<uint8> "image" ".tiff"
+        |> read<uint8> "image" ".tiff"
 //        >=> tapIt (fun s -> $"[readAs] {s.Index} -> Image {s.Image}")
 
     readMaker 

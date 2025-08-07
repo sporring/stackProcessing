@@ -722,20 +722,35 @@ val getStackSize: (string -> string -> uint * uint * uint)
 
 val getStackWidth: (string -> string -> uint64)
 
-val createAs:
+val zero:
   width: uint ->
     height: uint ->
     depth: uint ->
     pl: SlimPipeline.Pipeline<unit,unit> ->
     SlimPipeline.Pipeline<unit,Slice.Slice<'T>> when 'T: equality
 
-val readAs:
+val readFilteredOp:
+  name: string ->
+    inputDir: string ->
+    suffix: string ->
+    filter: (string array -> string array) ->
+    pl: SlimPipeline.Pipeline<unit,unit> ->
+    SlimPipeline.Pipeline<unit,Slice.Slice<'T>> when 'T: equality
+
+val readFiltered:
+  inputDir: string ->
+    suffix: string ->
+    filter: (string array -> string array) ->
+    pl: SlimPipeline.Pipeline<unit,unit> ->
+    SlimPipeline.Pipeline<unit,Slice.Slice<'T>> when 'T: equality
+
+val read:
   inputDir: string ->
     suffix: string ->
     pl: SlimPipeline.Pipeline<unit,unit> ->
     SlimPipeline.Pipeline<unit,Slice.Slice<'T>> when 'T: equality
 
-val readRandomAs:
+val readRandom:
   count: uint ->
     inputDir: string ->
     suffix: string ->

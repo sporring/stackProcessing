@@ -8,7 +8,7 @@ let main _ =
     let sigma = 1.0
 
     source availableMemory
-    |> readAs<float> "image" ".tiff"
+    |> read<float> "image" ".tiff"
     >=> sqrtFloat
     >=> convGauss sigma 
     >=> sqrtFloat

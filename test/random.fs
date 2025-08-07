@@ -9,7 +9,7 @@ let main _ =
     let availableMemory = 1024UL * 1024UL // 1MB for example
 
     debug availableMemory
-    |> createAs<uint8> width height depth
+    |> zero<uint8> width height depth
     >=> addNormalNoise 128.0 50.0
     >=> write trg ".tiff"
     |> sink

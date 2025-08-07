@@ -38,77 +38,63 @@ module Profile =
 /// - Pipe + WindowedProcessor: How it’s computed 
 type Pipe<'S,'T> = {
     Name: string // Name of the process
-    Apply: AsyncSeq<'S> -> AsyncSeq<'T>
+    Apply: bool -> AsyncSeq<'S> -> AsyncSeq<'T>
     Profile: Profile
 }
 
 module private Pipe =
-    let create (name: string) (apply: AsyncSeq<'S> -> AsyncSeq<'T>) (profile: Profile) : Pipe<'S,'T> =
+    let create (name: string) (apply: bool -> AsyncSeq<'S> -> AsyncSeq<'T>) (profile: Profile) : Pipe<'S,'T> =
         { Name = name; Apply = apply; Profile = profile }
 
-    let runWith (input: 'S) (pipe: Pipe<'S, 'T>) : Async<unit> =
+    let runWith (debug: bool) (input: 'S) (pipe: Pipe<'S, 'T>) : Async<unit> =
         AsyncSeq.singleton input
-        |> pipe.Apply
+        |> pipe.Apply debug
         |> AsyncSeq.iterAsync (fun _ -> async.Return())
 
-    let run (pipe: Pipe<unit, unit>) : unit =
-        runWith () pipe |> Async.RunSynchronously
+    let run (debug: bool) (pipe: Pipe<unit, unit>) : unit =
+        runWith debug () pipe |> Async.RunSynchronously
 
     let lift (name: string) (profile: Profile) (f: 'S -> 'T) : Pipe<'S,'T> =
-        let apply input = input |> AsyncSeq.map f
+        let apply debug  input = input |> AsyncSeq.map f
         create name apply profile
 
     let init<'T> (name: string) (depth: uint) (mapper: uint -> 'T) (profile: Profile) : Pipe<unit,'T> =
-        let apply _ = AsyncSeq.init (int64 depth) (fun (i:int64) -> mapper (uint i))
+        let apply debug _ = AsyncSeq.init (int64 depth) (fun (i:int64) -> mapper (uint i))
         create name apply profile
 
     let skip (name: string) (count: uint) =
-        let apply input = input |> AsyncSeq.skip (int count)
+        let apply debug input = input |> AsyncSeq.skip (int count)
         create "skip" apply (Sliding (2u, 2u, 0u, System.UInt32.MaxValue))
 
     let take (name: string) (count: uint) =
-        let apply input = input |> AsyncSeq.take (int count)
+        let apply debug input = input |> AsyncSeq.take (int count)
         create name apply Streaming
 
-    let map (name: string) (f: 'U -> 'V) (pipe: Pipe<'In, 'U>) : Pipe<'In, 'V> =
-        let apply input = input |> pipe.Apply |> AsyncSeq.map f
+    let map (name: string) (folder: 'U -> 'V) (pipe: Pipe<'In, 'U>) : Pipe<'In, 'V> =
+        let apply debug input = input |> pipe.Apply debug |> AsyncSeq.map folder
         create name apply pipe.Profile
 
     let map2 (name: string) (f: 'U -> 'V -> 'W) (pipe1: Pipe<'In, 'U>) (pipe2: Pipe<'In, 'V>) : Pipe<'In, 'W> =
-        let apply input =
-                let stream1 = pipe1.Apply input
-                let stream2 = pipe2.Apply input
+        let apply debug input =
+                let stream1 = pipe1.Apply debug input
+                let stream2 = pipe2.Apply debug input
                 AsyncSeq.zip stream1 stream2 |> AsyncSeq.map (fun (u, v) -> f u v)
         let profile = max pipe1.Profile pipe2.Profile
         create name apply profile
 
-    let reduce (name: string) (reducer: AsyncSeq<'In> -> Async<'Out>) (profile: Profile) : Pipe<'In, 'Out> =
-        let apply input = input |> reducer |> ofAsync
+    let reduce (name: string) (reducer: bool -> AsyncSeq<'In> -> Async<'Out>) (profile: Profile) : Pipe<'In, 'Out> =
+        let apply debug input = input |> reducer debug |> ofAsync
         create name apply profile
 
     let fold (name: string) (folder: 'State -> 'In -> 'State) (initial: 'State) (profile: Profile) : Pipe<'In, 'State> =
-        let reducer (s: AsyncSeq<'In>) : Async<'State> =
+        let reducer debug (s: AsyncSeq<'In>) : Async<'State> =
             AsyncSeqExtensions.fold folder initial s
         reduce name reducer profile
 
-    let mapNFold (name: string) (mapFn: 'In -> 'Mapped) (folder: 'State -> 'Mapped -> 'State) (state: 'State) (profile: Profile)
-        : Pipe<'In, 'State> =
-        
-        let reducer (s: AsyncSeq<'In>) : Async<'State> =
-            s
-            |> AsyncSeq.map mapFn
-            |> AsyncSeqExtensions.fold folder state
-
-        reduce name reducer profile
-
-//    let consumeWith (name: string) (consume: AsyncSeq<'T> -> Async<unit>) (profile: Profile) : Pipe<'T, unit> =
-//        let reducer (s : AsyncSeq<'T>) = consume s          // Async<unit>
-//        reduce name reducer  profile              // gives AsyncSeq<unit>
-
-    let consumeWith (name: string) (consume: 'T -> unit) (profile: Profile) : Pipe<'T, unit> =
-        let apply input = 
+    let consumeWith (name: string) (consume: bool -> int -> 'T -> unit) (profile: Profile) : Pipe<'T, unit> =
+        let apply debug input = 
             asyncSeq {
-                do! AsyncSeq.iterAsync (fun x -> async { consume x }) input
+                do! AsyncSeq.iteriAsync (fun i x -> async { consume debug i x }) input
                 yield ()
             }
         create name apply profile
@@ -116,22 +102,8 @@ module private Pipe =
     /// Combine two <c>Pipe</c> instances into one by composing their memory profiles and transformation functions.
     let compose (p1: Pipe<'S,'T>) (p2: Pipe<'T,'U>) : Pipe<'S,'U> =
         let profile = Profile.combine p1.Profile p2.Profile
-        let apply input = input |> p1.Apply |> p2.Apply
+        let apply debug input = input |> p1.Apply debug |> p2.Apply debug 
         create $"{p2.Name} {p1.Name}" apply profile
-
-    /// Try to shrink a too‑hungry pipe to a cheaper profile.
-    /// *You* control the downgrade policy here.
-    let shrinkProfile (avail: uint64) (memPerElement: uint64) (depth: uint) (p : Pipe<'S,'T>) =
-        let needed = Profile.estimateUsage p.Profile memPerElement
-        if needed <= avail then p                              // fits as is
-        else
-            match p.Profile with
-//            | Full         -> { p with Profile = Streaming }
-            | Sliding (w,s,es,ec) when w > 1u ->
-                { p with Profile = Sliding ((w/2u),s,es,ec) }
-            | _ ->
-                failwith
-                    $"Stage “{p.Name}” needs {needed}s B but only {avail}s B are left."
 
     /// mapWindowed keeps a running window along the slice direction of depth images
     /// and processes them by f. The stepping size of the running window is stride.
@@ -140,8 +112,8 @@ module private Pipe =
     /// 3, 4, 5. It is also possible to use this for sampling, e.g., setting depth to 1
     /// and stride to 2 sends every second image to f.  
     let mapWindowed (name: string) (winSz: uint) (updateId: uint->'S->'S) (pad: uint) (zeroMaker: 'S->'S) (stride: uint) (emitStart: uint) (emitCount: uint) (f: 'S list -> 'T list) : Pipe<'S,'T> =
-        printfn "mapWindowed winSz=%A stride=%A pad=%A" winSz stride pad
-        let apply input =
+        //printfn "mapWindowed winSz=%A stride=%A pad=%A" winSz stride pad
+        let apply debug input =
             // AsyncSeqExtensions.windowed depth stride input
             AsyncSeqExtensions.windowedWithPad winSz updateId stride pad pad zeroMaker input
             |> AsyncSeq.collect (f >> AsyncSeq.ofSeq)
@@ -149,7 +121,7 @@ module private Pipe =
         create name apply profile
 
     let ignore () : Pipe<'T, unit> =
-        let apply input =
+        let apply debug input =
             asyncSeq {
                 // Consume the stream without doing anything
                 do! AsyncSeq.iterAsync (fun _ -> async.Return()) input
@@ -232,7 +204,7 @@ module Stage =
 
     let map<'S,'T> (name: string) (f: 'S -> 'T) (memoryNeed: MemoryNeed) (nElemsTransformation: NElemsTransformation) : Stage<'S, 'T> =
         let transition = ProfileTransition.create Streaming Streaming
-        let apply input = input |> AsyncSeq.map f
+        let apply debug input = input |> AsyncSeq.map f
         let pipe : Pipe<'S,'T> = Pipe.create name apply Streaming
         create name pipe transition memoryNeed nElemsTransformation // Not right!!!
 
@@ -248,7 +220,7 @@ module Stage =
         let transition = ProfileTransition.create Streaming Streaming
         create name pipe transition memoryNeed nElemsTransformation
 
-    let reduce (name: string) (reducer: AsyncSeq<'In> -> Async<'Out>) (profile: Profile) (memoryNeed: MemoryNeed) (nElemsTransformation: NElemsTransformation): Stage<'In, 'Out> =
+    let reduce (name: string) (reducer: bool -> AsyncSeq<'In> -> Async<'Out>) (profile: Profile) (memoryNeed: MemoryNeed) (nElemsTransformation: NElemsTransformation): Stage<'In, 'Out> =
         let transition = ProfileTransition.create Streaming Constant
         let pipe = Pipe.reduce name reducer profile
         create name pipe transition memoryNeed nElemsTransformation // Check !!!
@@ -268,11 +240,14 @@ module Stage =
         let pipe = Pipe.mapWindowed name window updateId pad zeroMaker stride emitStart emitCount f
         create name pipe transition memoryNeed nElemsTransformation
 
-    let tap (name: string) : Stage<'T, 'T> =
-        liftUnary $"tap: {name}" (fun x -> printfn "[%s] %A" name x; x) id id
+    let tapItOp (name: string) (toString: 'T -> string) : Stage<'T, 'T> =
+        liftUnary name (fun x -> printfn "%s" (toString x); x) id id
 
     let tapIt (toString: 'T -> string) : Stage<'T, 'T> =
-        liftUnary "tapIt" (fun x -> printfn "%s" (toString x); x) id id
+        tapItOp "tapIt" toString
+
+    let tap (name: string) : Stage<'T, 'T> =
+        tapItOp $"tap: {name}" (fun x -> sprintf "[%s] %A" name x)
 
 (*
     let internal tee (op: Stage<'In, 'T>) : Stage<'In, 'T> * Stage<'In, 'T> =
@@ -286,13 +261,13 @@ module Stage =
         let transition = ProfileTransition.create Streaming Constant
         create "ignore" pipe transition id id // check !!!!
 
-    let consumeWith (name: string) (consume: 'T -> unit) : Stage<'T, unit> = 
+    let consumeWith (name: string) (consume: bool -> int -> 'T -> unit) : Stage<'T, unit> = 
         let pipe = Pipe.consumeWith name consume Streaming
         let transition = ProfileTransition.create Streaming Constant
         create name pipe transition id id // Check !!!!
 
     let cast<'S,'T when 'S: equality and 'T: equality> name f : Stage<'S,'T> = // cast cannot change
-        let apply input = input |> AsyncSeq.map f 
+        let apply debug input = input |> AsyncSeq.map f 
         let pipe = Pipe.create name apply Streaming
         let transition = ProfileTransition.create Streaming Streaming
         create name pipe transition id id // Type calculation needs to be updated!!!!
@@ -414,7 +389,7 @@ module Pipeline =
     let sink (pl: Pipeline<unit, unit>) : unit =
         if pl.debug then printfn "[sink]"
         if pl.debug then printfn "Pipeline built\nRunning"
-        Option.map (Stage.toPipe >> Pipe.run) pl.stage |> ignore
+        Option.map (fun stage -> stage |> Stage.toPipe |> Pipe.run pl.debug) pl.stage |> ignore
         if pl.debug then printfn "Done"
 
     let sinkList (pipelines: Pipeline<unit, unit> list) : unit = // shape of unit?
@@ -426,7 +401,7 @@ module Pipeline =
         match stage with
             Some stg -> 
                 let input = AsyncSeq.singleton Unchecked.defaultof<'In>
-                input |> stg.Pipe.Apply |> reducer |> Async.RunSynchronously
+                input |> stg.Pipe.Apply pl.debug |> reducer |> Async.RunSynchronously
             | _ -> failwith "[internal runToScalar] Pipeline is empty"
 
     let drainSingle (name:string) (pl: Pipeline<'S, 'T>) =

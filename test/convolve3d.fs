@@ -8,7 +8,7 @@ let main _ =
     let sigma = 2.0
 
     debug availableMemory
-    |> readAs<float> "image" ".tiff"
+    |> read<float> "image" ".tiff"
     >=> convGauss sigma
     >=> cast<float,uint8>
     >=> write "result" ".tif"
