@@ -111,11 +111,11 @@ module private Pipe =
     /// and so on. If depth is 3 and stride is 3, then it'll be image 0, 1, 2 followed by
     /// 3, 4, 5. It is also possible to use this for sampling, e.g., setting depth to 1
     /// and stride to 2 sends every second image to f.  
-    let mapWindowed (name: string) (winSz: uint) (updateId: uint->'S->'S) (pad: uint) (zeroMaker: 'S->'S) (stride: uint) (emitStart: uint) (emitCount: uint) (f: 'S list -> 'T list) : Pipe<'S,'T> =
+    let mapWindowed (name: string) (winSz: uint) (pad: uint) (zeroMaker: 'S->'S) (stride: uint) (emitStart: uint) (emitCount: uint) (f: 'S list -> 'T list) : Pipe<'S,'T> =
         //printfn "mapWindowed winSz=%A stride=%A pad=%A" winSz stride pad
         let apply debug input =
             // AsyncSeqExtensions.windowed depth stride input
-            AsyncSeqExtensions.windowedWithPad winSz updateId stride pad pad zeroMaker input
+            AsyncSeqExtensions.windowedWithPad winSz stride pad pad zeroMaker input
             |> AsyncSeq.collect (f >> AsyncSeq.ofSeq)
         let profile = Sliding (winSz,stride,emitStart,emitCount)
         create name apply profile
@@ -208,12 +208,10 @@ module Stage =
         let pipe : Pipe<'S,'T> = Pipe.create name apply Streaming
         create name pipe transition memoryNeed nElemsTransformation // Not right!!!
 
-(*
-    let map (name: string) (f: 'U -> 'V) (stage: Stage<'In, 'U>) : Stage<'In, 'V> =
+    let map1 (name: string) (f: 'U -> 'V) (stage: Stage<'In, 'U>) (memoryNeed: MemoryNeed) (nElemsTransformation: NElemsTransformation) : Stage<'In, 'V> =
         let pipe = Pipe.map name f stage.Pipe
         let transition = ProfileTransition.create Streaming Streaming
-        create name pipe transition (fun s -> s)
-*)
+        create name pipe transition memoryNeed nElemsTransformation
 
     let map2 (name: string) (f: 'U -> 'V -> 'W) (stage1: Stage<'In, 'U>, stage2: Stage<'In, 'V>) (memoryNeed: MemoryNeed) (nElemsTransformation: NElemsTransformation): Stage<'In, 'W> =
         let pipe = Pipe.map2 name f stage1.Pipe stage2.Pipe
@@ -235,9 +233,9 @@ module Stage =
         let pipe = Pipe.lift name Streaming f
         create name pipe transition memoryNeed nElemsTransformation
 
-    let liftWindowed<'S,'T when 'S: equality and 'T: equality> (name: string) (updateId: uint->'S->'S) (window: uint) (pad: uint) (zeroMaker: 'S->'S) (stride: uint) (emitStart: uint) (emitCount: uint) (f: 'S list -> 'T list) (memoryNeed: MemoryNeed) (nElemsTransformation: NElemsTransformation): Stage<'S, 'T> =
+    let liftWindowed<'S,'T when 'S: equality and 'T: equality> (name: string) (window: uint) (pad: uint) (zeroMaker: 'S->'S) (stride: uint) (emitStart: uint) (emitCount: uint) (f: 'S list -> 'T list) (memoryNeed: MemoryNeed) (nElemsTransformation: NElemsTransformation): Stage<'S, 'T> =
         let transition = ProfileTransition.create (Sliding (window,stride,emitStart,emitCount)) Streaming
-        let pipe = Pipe.mapWindowed name window updateId pad zeroMaker stride emitStart emitCount f
+        let pipe = Pipe.mapWindowed name window pad zeroMaker stride emitStart emitCount f
         create name pipe transition memoryNeed nElemsTransformation
 
     let tapItOp (name: string) (toString: 'T -> string) : Stage<'T, 'T> =
@@ -280,7 +278,6 @@ module Stage =
     let promoteStreamingToSliding 
         (name: string)
         (winSz: uint)
-        (updateId: uint -> 'T -> 'T)
         (pad: uint)
         (zeroMaker: 'T -> 'T)
         (stride: uint)
@@ -293,7 +290,7 @@ module Stage =
             |> List.skip (int emitStart)
             |> List.take (int emitCount)
 
-        let pipe = Pipe.mapWindowed name winSz updateId pad zeroMaker stride emitStart emitCount f
+        let pipe = Pipe.mapWindowed name winSz pad zeroMaker stride emitStart emitCount f
         let transition = ProfileTransition.create Streaming Streaming
 
         create $"promote:{name}" pipe transition id id // probably not correct !!!!
@@ -302,7 +299,6 @@ module Stage =
     let promoteSlidingToSliding
         (name: string)
         (winSz: uint)
-        (updateId: uint -> 'T -> 'T)
         (pad: uint)
         (zeroMaker: 'T -> 'T)
         (stride: uint)
@@ -315,7 +311,7 @@ module Stage =
             |> List.skip (int emitStart)
             |> List.take (int emitCount)
 
-        let pipe = Pipe.mapWindowed name winSz updateId pad zeroMaker stride emitStart emitCount f
+        let pipe = Pipe.mapWindowed name winSz pad zeroMaker stride emitStart emitCount f
         let transition = ProfileTransition.create Streaming Streaming
 
         create $"promote:{name}" pipe transition id id // probably not correct !!!!
@@ -354,35 +350,48 @@ module Pipeline =
         create stage' pl.memAvail nElems' pl.length pl.debug
 
     /// parallel fanout with synchronization
-    let (>=>>) (pl: Pipeline<'In, 'S>) (stage1: Stage<'S, 'U>, stage2: Stage<'S, 'V>) : Pipeline<'In, ('U * 'V)> =
 
-        if pl.debug then printfn $"[>=>>] ({stage1.Name}, {stage2.Name})"
+    let internal map (name: string) (f: 'U->'V) (pl: Pipeline<'In,'U>) : Pipeline<'In,'V> =
+        let stage = Option.map (fun s -> Stage.map1 name f s id id) pl.stage
+        create stage pl.memAvail pl.nElems pl.length pl.debug
+        
+    let internal zipOp (name:string) (pl1: Pipeline<'In, 'U>) (pl2: Pipeline<'In, 'V>) : Pipeline<'In, ('U * 'V)> =
+        match pl1.stage,pl2.stage with
+            Some stage1, Some stage2 ->
+                if pl1.debug then printfn $"[{name}] ({stage1.Name}, {stage2.Name})"
 
-        let memoryNeed nElems = (stage1.MemoryNeed nElems) + (stage2.MemoryNeed nElems) // Runs in parallel
-        let memNeeded = memoryNeed pl.nElems
-        if memNeeded > pl.memAvail then
-            failwith $"[>=>>] Out of available memory: Parallel execution of {stage1.Name}+{stage2.Name} requested {memNeeded} B but have only {pl.memAvail} B"
+                let memoryNeed nElems = (stage1.MemoryNeed nElems) + (stage2.MemoryNeed nElems) // Runs in parallel
+                let memNeeded = memoryNeed pl1.nElems
+                if memNeeded > pl1.memAvail then
+                    failwith $"[{name}] Out of available memory: Parallel execution of {stage1.Name}+{stage2.Name} requested {memNeeded} B but have only {pl1.memAvail} B"
 
-        let nElemsTransformation = stage1.NElemsTransformation // must be identical with stage2.NElemsTransformation
-        let nElemsTransformation2 = stage2.NElemsTransformation 
-        let nElems = nElemsTransformation pl.nElems
-        let nElems2 = nElemsTransformation2 pl.nElems
-        if nElems <> nElems2 then
-            failwith $"[>=>>] Cannot fan out to different number of elements {nElems} vs {nElems2}"
-        let stage1' = Option.map (fun stg -> Stage.compose stg stage1) pl.stage
-        let stage2' = Option.map (fun stg -> Stage.compose stg stage2) pl.stage
-        let stage =
-            match stage1', stage2' with
-                Some stg1, Some stg2 -> 
-                    let pipe = Pipe.map2 ">=>>" (fun U V -> (U,V)) stg1.Pipe stg2.Pipe
+                let nElemsTransformation = stage1.NElemsTransformation // must be identical with stage2.NElemsTransformation
+                let nElemsTransformation2 = stage2.NElemsTransformation 
+                let nElems = nElemsTransformation pl1.nElems
+                let nElems2 = nElemsTransformation2 pl1.nElems
+                if nElems <> nElems2 then
+                    failwith $"[{name}] Cannot zip pipelines with different number of elements {nElems} vs {nElems2}"
+                let stage =
+                    let pipe = Pipe.map2 ">=>>" (fun U V -> (U,V)) stage1.Pipe stage2.Pipe
                     let transition = {From=Streaming; To=Streaming}
-                    let memoryNeed nElems = (stg1.MemoryNeed nElems) + (stg2.MemoryNeed nElems)
+                    let memoryNeed nElems = (stage1.MemoryNeed nElems) + (stage2.MemoryNeed nElems)
                     Stage.create ">=>>" pipe transition memoryNeed nElemsTransformation |> Some
-                | _,_ -> None
-        create stage pl.memAvail nElems pl.length pl.debug
+                create stage pl1.memAvail nElems pl1.length (pl1.debug || pl2.debug)
+            | _,_ -> failwith $"[{name}] Cannot zip with an empty pipeline"
 
-    let (>>=>) f pl stage  = 
-        (>=>) pl (Stage.map2 "zip2" f stage id id) // What should be done here !!!!
+    let zip (pl1: Pipeline<'In, 'U>) (pl2: Pipeline<'In, 'V>) : Pipeline<'In, ('U * 'V)> = zipOp "zip" pl1 pl2
+
+    let (>=>>) (pl: Pipeline<'In, 'S>) (stage1: Stage<'S, 'U>, stage2: Stage<'S, 'V>) : Pipeline<'In, ('U * 'V)> =
+        if pl.debug then printfn $"[>=>>] ({stage1.Name}, {stage2.Name})"
+        let pl1 = pl >=> stage1
+        let pl2 = pl >=> stage2
+        zipOp ">=>>" pl1 pl2
+
+    let (>>=>) (pl: Pipeline<'In,'U*'V>) (f: 'U -> 'V -> 'W) : Pipeline<'In,'W>  = 
+        map ">>=>" (fun (u,v) -> f u v) pl
+
+    let (>>=>>) (f: ('U*'V) -> ('S*'T)) (pl: Pipeline<'In,'U*'V>) (stage: Stage<'U*'V,'S*'T>): Pipeline<'In,'S*'T>  = 
+        map ">>=>>" f pl 
 
     ///////////////////////////////////////////
     /// sink type operators

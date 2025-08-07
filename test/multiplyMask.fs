@@ -7,13 +7,14 @@ let main _ =
     let availableMemory = 1024UL * 1024UL // 1MB for example
 
     let imageMaker =
-        source availableMemory
+        debug availableMemory
         |> read<uint8> "image" ".tiff"
     let maskMaker =
         source availableMemory
         |> read<uint8> "mask" ".tiff"
 
-    zipWith Slice.mul imageMaker maskMaker
+    (imageMaker, maskMaker) ||> zip
+    >>=> Slice.mul
     >=> write "result" ".tif"
     |> sink
 

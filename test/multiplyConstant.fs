@@ -9,16 +9,17 @@ let main _ =
     let mem = 1024UL * 1024UL
 
     let maskMaker = 
-        source mem
+        debug mem
         |>  zero<uint8> w h d
         >=> sliceAddScalar 1uy
         >=> sliceMulScalar 2uy
 
     let readMaker =
-        source mem
+        debug mem
         |> zero<uint8> w h d
 
-    zipWith Slice.mul readMaker maskMaker
+    (readMaker, maskMaker) ||> zip 
+    >>=> Slice.mul
     >=> write "result" ".tif"
     |> sink
 

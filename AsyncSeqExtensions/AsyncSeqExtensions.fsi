@@ -16,7 +16,6 @@ val windowed:
     source: FSharp.Control.AsyncSeq<'T> -> FSharp.Control.AsyncSeq<'T list>
 val windowedWithPad:
   windowSize: uint ->
-    updateId: (uint -> 'T -> 'T) ->
     stride: uint ->
     prePad: uint ->
     postPad: uint ->

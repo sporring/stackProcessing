@@ -9,7 +9,7 @@ let main _ =
     let availableMemory = 1024UL * 1024UL // 1MB for example
     let radius = 1u
 
-    source availableMemory
+    debug availableMemory
         |> zero<uint8> width height depth
         >=> addNormalNoise 128.0 50.0
         >=> threshold 128.0 infinity

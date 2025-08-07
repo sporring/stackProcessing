@@ -7,7 +7,7 @@ let main _ =
     let availableMemory = 1024UL * 1024UL // 1MB for example
     let sigma = 1.0
 
-    source availableMemory
+    debug availableMemory
     |> read<float> "image" ".tiff"
     >=> sqrtFloat
     >=> convGauss sigma 

@@ -5,10 +5,11 @@ open StackProcessing
 [<EntryPoint>]
 let main _ =
     let availableMemory = 1024UL * 1024UL // 1MB for example
-    let sigma = 2.0
+    let sigma = 1.0
 
     debug availableMemory
     |> read<float> "image" ".tiff"
+    //>=> discreteGaussian sigma (Some Slice.OutputRegionMode.Same) None (Some 9u) // What's the rule for ligning up winSz and stream size, such that the output is also stream size?
     >=> convGauss sigma
     >=> cast<float,uint8>
     >=> write "result" ".tif"

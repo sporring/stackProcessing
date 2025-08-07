@@ -228,11 +228,14 @@ type BoundaryCondition =
 type OutputRegionMode =
     | Valid
     | Same
+val internal convolve3:
+  img: itk.simple.Image ->
+    ker: itk.simple.Image ->
+    outputRegionMode: OutputRegionMode option -> itk.simple.Image
 val convolve:
-  xyOutputRegionMode: OutputRegionMode option ->
+  outputRegionMode: OutputRegionMode option ->
     boundaryCondition: BoundaryCondition option ->
-    image: Image.Image<'T> -> kernel: Image.Image<'T> -> Image.Image<'T>
-    when 'T: equality
+    (Image.Image<'T> -> Image.Image<'T> -> Image.Image<'T>) when 'T: equality
 val conv:
   img: Image.Image<'T> -> ker: Image.Image<'T> -> Image.Image<'T>
     when 'T: equality

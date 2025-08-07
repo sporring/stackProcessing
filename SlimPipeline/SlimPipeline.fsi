@@ -64,7 +64,6 @@ module private Pipe =
     val mapWindowed:
       name: string ->
         winSz: uint ->
-        updateId: (uint -> 'S -> 'S) ->
         pad: uint ->
         zeroMaker: ('S -> 'S) ->
         stride: uint ->
@@ -127,6 +126,12 @@ module Stage =
         f: ('S -> 'T) ->
         memoryNeed: MemoryNeed ->
         nElemsTransformation: NElemsTransformation -> Stage<'S,'T>
+    val map1:
+      name: string ->
+        f: ('U -> 'V) ->
+        stage: Stage<'In,'U> ->
+        memoryNeed: MemoryNeed ->
+        nElemsTransformation: NElemsTransformation -> Stage<'In,'V>
     val map2:
       name: string ->
         f: ('U -> 'V -> 'W) ->
@@ -152,7 +157,6 @@ module Stage =
         nElemsTransformation: NElemsTransformation -> Stage<'S,'T>
     val liftWindowed:
       name: string ->
-        updateId: (uint -> 'S -> 'S) ->
         window: uint ->
         pad: uint ->
         zeroMaker: ('S -> 'S) ->
@@ -177,7 +181,6 @@ module Stage =
     val promoteStreamingToSliding:
       name: string ->
         winSz: uint ->
-        updateId: (uint -> 'T -> 'T) ->
         pad: uint ->
         zeroMaker: ('T -> 'T) ->
         stride: uint -> emitStart: uint -> emitCount: uint -> Stage<'T,'T>
@@ -185,7 +188,6 @@ module Stage =
     val promoteSlidingToSliding:
       name: string ->
         winSz: uint ->
-        updateId: (uint -> 'T -> 'T) ->
         pad: uint ->
         zeroMaker: ('T -> 'T) ->
         stride: uint -> emitStart: uint -> emitCount: uint -> Stage<'T,'T>
@@ -212,14 +214,29 @@ module Pipeline =
       pl: Pipeline<'a,'b> -> stage: Stage<'b,'c> -> Pipeline<'a,'c>
         when 'c: equality
     /// parallel fanout with synchronization
+    val internal map:
+      name: string -> f: ('U -> 'V) -> pl: Pipeline<'In,'U> -> Pipeline<'In,'V>
+        when 'V: equality
+    val internal zipOp:
+      name: string ->
+        pl1: Pipeline<'In,'U> ->
+        pl2: Pipeline<'In,'V> -> Pipeline<'In,('U * 'V)>
+        when 'U: equality and 'V: equality
+    val zip:
+      pl1: Pipeline<'In,'U> -> pl2: Pipeline<'In,'V> -> Pipeline<'In,('U * 'V)>
+        when 'U: equality and 'V: equality
     val (>=>>) :
       pl: Pipeline<'In,'S> ->
         stage1: Stage<'S,'U> * stage2: Stage<'S,'V> -> Pipeline<'In,('U * 'V)>
         when 'U: equality and 'V: equality
     val (>>=>) :
-      f: ('a -> 'b -> 'c) ->
-        pl: Pipeline<'d,'e> -> Stage<'e,'a> * Stage<'e,'b> -> Pipeline<'d,'c>
-        when 'c: equality
+      pl: Pipeline<'In,('U * 'V)> -> f: ('U -> 'V -> 'W) -> Pipeline<'In,'W>
+        when 'W: equality
+    val (>>=>>) :
+      f: ('U * 'V -> 'S * 'T) ->
+        pl: Pipeline<'In,('U * 'V)> ->
+        stage: Stage<('U * 'V),('S * 'T)> -> Pipeline<'In,('S * 'T)>
+        when 'S: equality and 'T: equality
     /// sink type operators
     val sink: pl: Pipeline<unit,unit> -> unit
     val sinkList: pipelines: Pipeline<unit,unit> list -> unit

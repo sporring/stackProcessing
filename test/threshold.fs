@@ -11,7 +11,7 @@ let main _ =
     debug availableMemory
     |> zero<float> width height depth
     >=> addNormalNoise 128.0 50.0
-    >=> convGauss 2.0
+    >=> convGauss 1.0
     >=> cast<float,uint8>
     >=> threshold 128.0 infinity
     >=> sliceMulScalar 255uy

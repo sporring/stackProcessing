@@ -11,7 +11,7 @@ let main _ =
         sliceDivScalar (sliceSubScalar slice stats.Mean) stats.Std
 
     let readMaker =
-        source mem
+        debug mem
         |> read<float> "image" ".tiff"
 
     let stats = 

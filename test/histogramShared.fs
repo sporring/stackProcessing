@@ -15,14 +15,13 @@ let main _ =
         |> Chart.withYAxisStyle ("count")
         |> Chart.show
 
-    let readMaker = 
-        source mem
+    let histogramMaker = 
+        debug mem
         |> read<uint8> "image" ".tiff"
-    let plotHist = map2pairs --> pairs2floats --> plot plt
-
-    readMaker 
-    >=>> (histogram --> plotHist, castUInt8ToFloat --> convGauss 1.0 None --> castFloatToUInt8 --> histogram --> plotHist)
-    >>=> combineIgnore
+        >=> histogram () --> map2pairs --> pairs2floats
+    histogramMaker 
+    >=>> (plot plt, print ())
+    >>=> (fun _ _ -> ())
     |> sink
 
     0

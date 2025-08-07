@@ -11,11 +11,13 @@ type Slice<'S when 'S: equality> = Slice.Slice<'S>
 let (-->) = Stage.(-->)
 let source = Pipeline.source 
 let debug = Pipeline.debug 
-let sink (pl: Pipeline<unit,unit>) : unit = Pipeline.sink pl
-let sinkList (plLst: Pipeline<unit,unit> list) : unit = Pipeline.sinkList plLst
+let zip = Pipeline.zip
 let (>=>) = Pipeline.(>=>)
 let (>=>>) = Pipeline.(>=>>)
 let (>>=>) = Pipeline.(>>=>)
+let (>>=>>) = Pipeline.(>>=>>)
+let sink (pl: Pipeline<unit,unit>) : unit = Pipeline.sink pl
+let sinkList (plLst: Pipeline<unit,unit> list) : unit = Pipeline.sinkList plLst
 //let combineIgnore = Pipeline.combineIgnore
 let drainSingle pl = Pipeline.drainSingle "drainSingle" pl
 let drainList pl = Pipeline.drainList "drainList" pl
@@ -31,7 +33,6 @@ let liftUnary
 let zeroMaker<'S when 'S: equality> (ex:Slice.Slice<'S>) : Slice.Slice<'S> = Slice.create<'S> (Slice.GetWidth ex) (Slice.GetHeight ex) 1u 0u
 let liftWindowed 
     (name: string) 
-    (updateId: uint->Slice.Slice<'S>->Slice.Slice<'S>) 
     (window: uint) 
     (pad: uint) 
     (zeroMaker: Slice.Slice<'S>->Slice.Slice<'S>) 
@@ -42,7 +43,7 @@ let liftWindowed
     (memoryNeed: MemoryNeed)
     (nElemsTransformation: NElemsTransformation)
     : Stage<Slice.Slice<'S>, Slice.Slice<'T>> =
-    Stage.liftWindowed<Slice.Slice<'S>,Slice.Slice<'T>> name updateId window pad zeroMaker stride emitStart emitCount f memoryNeed nElemsTransformation
+    Stage.liftWindowed<Slice.Slice<'S>,Slice.Slice<'T>> name window pad zeroMaker stride emitStart emitCount f memoryNeed nElemsTransformation
 let getBytesPerComponent<'T> = (typeof<'T> |> Image.getBytesPerComponent |> uint64)
 
 let write (outputDir: string) (suffix: string) : Stage<Slice.Slice<'T>, unit> =
@@ -234,21 +235,20 @@ let stackFUnstackTrim trim f (slices : Slice.Slice<'T> list) =
     slices |> Slice.stack |> f |> Slice.unstack |> skipNTakeM trim m
 
 let takeEveryNth (n: uint) = 
-    liftWindowed "nth" Slice.updateId 1u 0u zeroMaker<float> n 0u 100000u id id
+    liftWindowed "nth" 1u 0u zeroMaker<float> n 0u 100000u id id
 
 let discreteGaussianOp (name:string) (sigma:float) (outputRegionMode: Slice.OutputRegionMode option) (boundaryCondition: ImageFunctions.BoundaryCondition option) (winSz: uint option): Stage<Slice.Slice<float>, Slice.Slice<float>> =
     let roundFloatToUint v = uint (v+0.5)
 
     let ksz = 4.0 * sigma + 1.0 |> roundFloatToUint
-    let win = Option.defaultValue ksz winSz |> min ksz // max should be found by memory availability
+    let win = Option.defaultValue ksz winSz |> max ksz // max should be found by memory availability
     let stride = win - ksz + 1u
     let pad = 
         match outputRegionMode with
             | Some Valid -> 0u
             | _ -> ksz/2u //floor
-    printfn "discreteGaussianOp ksz=%A win=%A stride=%A pad=%A" ksz win stride pad
-    let f slices = slices |> stackFUnstack (fun slice3D -> Slice.discreteGaussian 3u sigma (ksz |> Some) outputRegionMode boundaryCondition slice3D)
-    liftWindowed name Slice.updateId win pad zeroMaker<float> stride (stride - 1u) stride f id id
+    let f slices = slices |> stackFUnstackTrim pad (fun slice3D -> Slice.discreteGaussian 3u sigma (ksz |> Some) outputRegionMode boundaryCondition slice3D)
+    liftWindowed name win pad zeroMaker<float> stride pad stride f id id
 
 let discreteGaussian = discreteGaussianOp "discreteGaussian"
 let convGauss sigma = discreteGaussianOp "convGauss" sigma None None None
@@ -288,8 +288,8 @@ let convolveOp (name: string) (kernel: Slice.Slice<'T>) (outputRegionMode: Slice
         match outputRegionMode with
             | Some Valid -> 0u
             | _ -> ksz/2u //floor
-    let f slices = slices |> stackFUnstack (fun slice3D -> Slice.convolve outputRegionMode bc slice3D kernel)
-    liftWindowed name Slice.updateId win pad zeroMaker<'T> stride (stride - 1u) stride f id id
+    let f slices = slices |> stackFUnstackTrim (ksz - 1u) (fun slice3D -> Slice.convolve outputRegionMode bc slice3D kernel)
+    liftWindowed name win pad zeroMaker<'T> stride (win-1u) (1u) f id id
 
 let convolve kernel outputRegionMode boundaryCondition winSz = convolveOp "convolve" kernel outputRegionMode boundaryCondition winSz
 let conv kernel = convolveOp "conv" kernel None None None
@@ -304,7 +304,7 @@ let private makeMorphOp (name:string) (radius:uint) (winSz: uint option) (core: 
     let win = Option.defaultValue ksz winSz |> min ksz
     let stride = win - ksz + 1u
     let f slices = slices |> stackFUnstackTrim radius (core radius)
-    liftWindowed name Slice.updateId win 0u zeroMaker<'T> stride (stride - 1u) stride f id id
+    liftWindowed name win 0u zeroMaker<'T> stride (stride - 1u) stride f id id
 
 let erode radius = makeMorphOp "binaryErode"  radius None Slice.binaryErode
 let dilate radius = makeMorphOp "binaryErode"  radius None Slice.binaryDilate
@@ -314,31 +314,31 @@ let closing radius = makeMorphOp "binaryErode"  radius None Slice.binaryClosing
 /// Full stack operators
 let binaryFillHoles (winSz: uint)= 
     let f slices = slices |> stackFUnstack Slice.binaryFillHoles
-    liftWindowed "fillHoles" Slice.updateId winSz 0u zeroMaker<uint8> winSz 0u winSz f id id
+    liftWindowed "fillHoles" winSz 0u zeroMaker<uint8> winSz 0u winSz f id id
 
 let connectedComponents (winSz: uint) = 
     let f slices = slices |> stackFUnstack Slice.connectedComponents
-    liftWindowed "connectedComponents" Slice.updateId winSz 0u zeroMaker<uint8> winSz 0u winSz f id id
+    liftWindowed "connectedComponents" winSz 0u zeroMaker<uint8> winSz 0u winSz f id id
 
 let relabelComponents a (winSz: uint) = 
     let f slices = slices |> stackFUnstack (Slice.relabelComponents a)
-    liftWindowed "relabelComponents" Slice.updateId winSz 0u zeroMaker<uint64> winSz 0u winSz f id id
+    liftWindowed "relabelComponents" winSz 0u zeroMaker<uint64> winSz 0u winSz f id id
 
 let watershed a (winSz: uint) =
     let f slices = slices |> stackFUnstack (Slice.watershed a)
-    liftWindowed "watershed" Slice.updateId winSz 0u zeroMaker<uint8> winSz 0u winSz f id id
+    liftWindowed "watershed" winSz 0u zeroMaker<uint8> winSz 0u winSz f id id
 
 let signedDistanceMap (winSz: uint) =
     let f slices = slices |> stackFUnstack (Slice.signedDistanceMap 0uy 1uy)
-    liftWindowed "signedDistanceMap" Slice.updateId winSz 0u zeroMaker<uint8> winSz 0u winSz f id id
+    liftWindowed "signedDistanceMap" winSz 0u zeroMaker<uint8> winSz 0u winSz f id id
 
 let otsuThreshold (winSz: uint) =
     let f slices = slices |> stackFUnstack (Slice.otsuThreshold)
-    liftWindowed "otsuThreshold" Slice.updateId winSz 0u zeroMaker<uint8> winSz 0u winSz f id id
+    liftWindowed "otsuThreshold" winSz 0u zeroMaker<uint8> winSz 0u winSz f id id
 
 let momentsThreshold (winSz: uint) =
     let f slices = slices |> stackFUnstack (Slice.momentsThreshold)
-    liftWindowed "momentsThreshold" Slice.updateId winSz 0u zeroMaker<uint8> winSz 0u winSz f id id
+    liftWindowed "momentsThreshold" winSz 0u zeroMaker<uint8> winSz 0u winSz f id id
 
 let threshold a b = Stage.liftUnary "threshold" (Slice.threshold a b) id id
 

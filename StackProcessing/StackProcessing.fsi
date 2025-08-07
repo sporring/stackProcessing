@@ -377,9 +377,10 @@ val source: (uint64 -> SlimPipeline.Pipeline<unit,unit>)
 
 val debug: (uint64 -> SlimPipeline.Pipeline<unit,unit>)
 
-val sink: pl: SlimPipeline.Pipeline<unit,unit> -> unit
-
-val sinkList: plLst: SlimPipeline.Pipeline<unit,unit> list -> unit
+val zip:
+  (SlimPipeline.Pipeline<'a,'b> ->
+     SlimPipeline.Pipeline<'a,'c> -> SlimPipeline.Pipeline<'a,('b * 'c)>)
+    when 'b: equality and 'c: equality
 
 val (>=>) :
   (SlimPipeline.Pipeline<'a,'b> ->
@@ -392,10 +393,18 @@ val (>=>>) :
        SlimPipeline.Pipeline<'a,('c * 'd)>) when 'c: equality and 'd: equality
 
 val (>>=>) :
-  (('a -> 'b -> 'c) ->
-     SlimPipeline.Pipeline<'d,'e> ->
-     SlimPipeline.Stage<'e,'a> * SlimPipeline.Stage<'e,'b> ->
-       SlimPipeline.Pipeline<'d,'c>) when 'c: equality
+  (SlimPipeline.Pipeline<'a,('b * 'c)> ->
+     ('b -> 'c -> 'd) -> SlimPipeline.Pipeline<'a,'d>) when 'd: equality
+
+val (>>=>>) :
+  (('a * 'b -> 'c * 'd) ->
+     SlimPipeline.Pipeline<'e,('a * 'b)> ->
+     SlimPipeline.Stage<('a * 'b),('c * 'd)> ->
+     SlimPipeline.Pipeline<'e,('c * 'd)>) when 'c: equality and 'd: equality
+
+val sink: pl: SlimPipeline.Pipeline<unit,unit> -> unit
+
+val sinkList: plLst: SlimPipeline.Pipeline<unit,unit> list -> unit
 
 val drainSingle: pl: SlimPipeline.Pipeline<'a,'b> -> 'b
 
@@ -420,7 +429,6 @@ val zeroMaker: ex: Slice.Slice<'S> -> Slice.Slice<'S> when 'S: equality
 
 val liftWindowed:
   name: string ->
-    updateId: (uint -> Slice.Slice<'S> -> Slice.Slice<'S>) ->
     window: uint ->
     pad: uint ->
     zeroMaker: (Slice.Slice<'S> -> Slice.Slice<'S>) ->
