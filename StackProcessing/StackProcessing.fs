@@ -8,6 +8,10 @@ type Profile = SlimPipeline.Profile
 type ProfileTransition = SlimPipeline.ProfileTransition
 //type Slice<'S when 'S: equality> = Slice.Slice<'S>
 type Image<'S when 'S: equality> = Image.Image<'S>
+let releaseAfter f (I:Image<'T>) = 
+        let v = f I
+        I.decRefCount()
+        v
 
 let (-->) = Stage.(-->)
 let source = Pipeline.source 
@@ -26,11 +30,12 @@ let drainLast pl = Pipeline.drainLast "drainLast" pl
 let tap = Stage.tap
 let tapIt = Stage.tapIt
 let ignoreAll = Stage.ignore<_>
-let liftUnary 
+let liftUnaryReleaseAfter 
+    (name: string)
     (f: Image<'S> -> Image<'T>)
     (memoryNeed: MemoryNeed)
     (nElemsTransformation: NElemsTransformation) = 
-    Stage.liftUnary<Image<'S>,Image<'T>> "liftUnary" f memoryNeed nElemsTransformation
+    Stage.liftUnary<Image<'S>,Image<'T>> name (releaseAfter f) memoryNeed nElemsTransformation
 let zeroMaker<'S when 'S: equality> (ex:Image<'S>) : Image<'S> = new Image<'S>(ex.GetSize(), 1u, "zero", 0u)
 let liftWindowed 
     (name: string) 
@@ -54,6 +59,7 @@ let write (outputDir: string) (suffix: string) : Stage<Image<'T>, unit> =
         let fileName = Path.Combine(outputDir, sprintf "image_%03d%s" idx suffix)
         if debug then printfn "[write] Saved image %d to %s as %s" idx fileName (typeof<'T>.Name) 
         image.toFile(fileName)
+        image.decRefCount()
     Stage.consumeWith $"write \"{outputDir}/*{suffix}\"" consumer 
 
 let show (plt: Image<'T> -> unit) : Stage<Image<'T>, unit> =
@@ -62,6 +68,7 @@ let show (plt: Image<'T> -> unit) : Stage<Image<'T>, unit> =
         let width = image.GetWidth() |> int
         let height = image.GetHeight() |> int
         plt image
+        image.decRefCount()
     Stage.consumeWith "show" consumer 
 
 let plot (plt: (float list)->(float list)->unit) : Stage<(float * float) list, unit> = // better be (float*float) list
@@ -117,66 +124,66 @@ let cast<'S,'T when 'S: equality and 'T: equality> = Stage.cast<Image<'S>,Image<
 /// Basic arithmetic
 let memNeeded<'T> nTimes nElems = nElems*nTimes*getBytesPerComponent<'T> // Assuming source and target in memory simultaneously
 let add (image: Image<'T>) = 
-    Stage.liftUnary<Image<'T>,Image<'T>> "add" ((+) image) id id
+    liftUnaryReleaseAfter "add" ((+) image) id id
 let inline scalarAddImage<^T when ^T: equality and ^T: (static member op_Explicit: ^T -> float)> (i: ^T) = 
-    Stage.liftUnary<Image<'T>,Image<'T>> "scalarAddImage" (fun (s:Image<^T>)->ImageFunctions.scalarAddImage<^T> i s) id id
+    liftUnaryReleaseAfter "scalarAddImage" (fun (s:Image<^T>)->ImageFunctions.scalarAddImage<^T> i s) id id
 let inline imageAddScalar<^T when ^T: equality and ^T: (static member op_Explicit: ^T -> float)> (i: ^T) =
-    Stage.liftUnary<Image<'T>,Image<'T>> "imageAddScalar" (fun (s:Image<^T>)->ImageFunctions.imageAddScalar<^T> s i) id id
+    liftUnaryReleaseAfter "imageAddScalar" (fun (s:Image<^T>)->ImageFunctions.imageAddScalar<^T> s i) id id
 
 let sub (image: Image<'T>) = 
-    Stage.liftUnary<Image<'T>,Image<'T>> "sub" ((-) image) id id
+    liftUnaryReleaseAfter "sub" ((-) image) id id
 let inline scalarSubImage<^T when ^T: equality and ^T: (static member op_Explicit: ^T -> float)> (i: ^T) =
-    Stage.liftUnary<Image<'T>,Image<'T>> "scalarSubImage" (fun (s:Image<^T>)->ImageFunctions.scalarSubImage<^T> i s) id id
+    liftUnaryReleaseAfter "scalarSubImage" (fun (s:Image<^T>)->ImageFunctions.scalarSubImage<^T> i s) id id
 let inline imageSubScalar<^T when ^T: equality and ^T: (static member op_Explicit: ^T -> float)> (i: ^T) =
-    Stage.liftUnary<Image<'T>,Image<'T>> "imageSubScalar" (fun (s:Image<^T>)->ImageFunctions.imageSubScalar<^T> s i) id id
+    liftUnaryReleaseAfter "imageSubScalar" (fun (s:Image<^T>)->ImageFunctions.imageSubScalar<^T> s i) id id
 
-let mul (image: Image<'T>) = Stage.liftUnary<Image<'T>,Image<'T>> "mul" (( * ) image) id id
+let mul (image: Image<'T>) = liftUnaryReleaseAfter "mul" (( * ) image) id id
 let inline scalarMulImage<^T when ^T: equality and ^T: (static member op_Explicit: ^T -> float)> (i: ^T) =
-    Stage.liftUnary<Image<'T>,Image<'T>> "scalarMulImage" (fun (s:Image<^T>)->ImageFunctions.scalarMulImage<^T> i s) id id
+    liftUnaryReleaseAfter "scalarMulImage" (fun (s:Image<^T>)->ImageFunctions.scalarMulImage<^T> i s) id id
 let inline imageMulScalar<^T when ^T: equality and ^T: (static member op_Explicit: ^T -> float)> (i: ^T) =
-    Stage.liftUnary<Image<'T>,Image<'T>> "imageMulScalar" (fun (s:Image<^T>)->ImageFunctions.imageMulScalar<^T> s i) id id
+    liftUnaryReleaseAfter "imageMulScalar" (fun (s:Image<^T>)->ImageFunctions.imageMulScalar<^T> s i) id id
 
-let div (image: Image<'T>) = Stage.liftUnary<Image<'T>,Image<'T>> "div" ((/) image) id id
+let div (image: Image<'T>) = liftUnaryReleaseAfter "div" ((/) image) id id
 let inline scalarDivImage<^T when ^T: equality and ^T: (static member op_Explicit: ^T -> float)> (i: ^T) =
-    Stage.liftUnary<Image<'T>,Image<'T>> "scalarDivImage" (fun (s:Image<^T>)->ImageFunctions.scalarDivImage<^T> i s) id id
+    liftUnaryReleaseAfter "scalarDivImage" (fun (s:Image<^T>)->ImageFunctions.scalarDivImage<^T> i s) id id
 let inline imageDivScalar<^T when ^T: equality and ^T: (static member op_Explicit: ^T -> float)> (i: ^T) =
-    Stage.liftUnary<Image<'T>,Image<'T>> "imageDivScalar" (fun (s:Image<^T>)->ImageFunctions.imageDivScalar<^T> s i) id id
+    liftUnaryReleaseAfter "imageDivScalar" (fun (s:Image<^T>)->ImageFunctions.imageDivScalar<^T> s i) id id
 
 /// Simple functions
-let abs<'T when 'T: equality> : Stage<Image<'T>,Image<'T>> =      Stage.liftUnary<Image<'T>,Image<'T>> "abs"    ImageFunctions.absImage id id
-let absFloat      : Stage<Image<float>,Image<float>> =      Stage.liftUnary<Image<float>,Image<float>> "abs"    ImageFunctions.absImage id id
-let absFloat32    : Stage<Image<float32>,Image<float32>> =  Stage.liftUnary<Image<float32>,Image<float32>> "abs"    ImageFunctions.absImage id id
-let absInt        : Stage<Image<int>,Image<int>> =          Stage.liftUnary<Image<int>,Image<int>> "abs"    ImageFunctions.absImage id id
-let acosFloat     : Stage<Image<float>,Image<float>> =      Stage.liftUnary<Image<float>,Image<float>> "acos"   ImageFunctions.acosImage id id
-let acosFloat32   : Stage<Image<float32>,Image<float32>> =  Stage.liftUnary<Image<float32>,Image<float32>> "acos"   ImageFunctions.acosImage id id
-let asinFloat     : Stage<Image<float>,Image<float>> =      Stage.liftUnary<Image<float>,Image<float>> "asin"   ImageFunctions.asinImage id id
-let asinFloat32   : Stage<Image<float32>,Image<float32>> =  Stage.liftUnary<Image<float32>,Image<float32>> "asin"   ImageFunctions.asinImage id id
-let atanFloat     : Stage<Image<float>,Image<float>> =      Stage.liftUnary<Image<float>,Image<float>> "atan"   ImageFunctions.atanImage id id
-let atanFloat32   : Stage<Image<float32>,Image<float32>> =  Stage.liftUnary<Image<float32>,Image<float32>> "atan"   ImageFunctions.atanImage id id
-let cosFloat      : Stage<Image<float>,Image<float>> =      Stage.liftUnary<Image<float>,Image<float>> "cos"    ImageFunctions.cosImage id id
-let cosFloat32    : Stage<Image<float32>,Image<float32>> =  Stage.liftUnary<Image<float32>,Image<float32>> "cos"    ImageFunctions.cosImage id id
-let sinFloat      : Stage<Image<float>,Image<float>> =      Stage.liftUnary<Image<float>,Image<float>> "sin"    ImageFunctions.sinImage id id
-let sinFloat32    : Stage<Image<float32>,Image<float32>> =  Stage.liftUnary<Image<float32>,Image<float32>> "sin"    ImageFunctions.sinImage id id
-let tanFloat      : Stage<Image<float>,Image<float>> =      Stage.liftUnary<Image<float>,Image<float>> "tan"    ImageFunctions.tanImage id id
-let tanFloat32    : Stage<Image<float32>,Image<float32>> =  Stage.liftUnary<Image<float32>,Image<float32>> "tan"    ImageFunctions.tanImage id id
-let expFloat      : Stage<Image<float>,Image<float>> =      Stage.liftUnary<Image<float>,Image<float>> "exp"    ImageFunctions.expImage id id
-let expFloat32    : Stage<Image<float32>,Image<float32>> =  Stage.liftUnary<Image<float32>,Image<float32>> "exp"    ImageFunctions.expImage id id
-let log10Float    : Stage<Image<float>,Image<float>> =      Stage.liftUnary<Image<float>,Image<float>> "log10"  ImageFunctions.log10Image id id
-let log10Float32  : Stage<Image<float32>,Image<float32>> =  Stage.liftUnary<Image<float32>,Image<float32>> "log10"  ImageFunctions.log10Image id id
-let logFloat      : Stage<Image<float>,Image<float>> =      Stage.liftUnary<Image<float>,Image<float>> "log"    ImageFunctions.logImage id id
-let logFloat32    : Stage<Image<float32>,Image<float32>> =  Stage.liftUnary<Image<float32>,Image<float32>> "log"    ImageFunctions.logImage id id
-let roundFloat    : Stage<Image<float>,Image<float>> =      Stage.liftUnary<Image<float>,Image<float>> "round"  ImageFunctions.roundImage id id
-let roundFloat32  : Stage<Image<float32>,Image<float32>> =  Stage.liftUnary<Image<float32>,Image<float32>> "round"  ImageFunctions.roundImage id id
-let sqrtFloat     : Stage<Image<float>,Image<float>> =      Stage.liftUnary<Image<float>,Image<float>> "sqrt"   ImageFunctions.sqrtImage id id
-let sqrtFloat32   : Stage<Image<float32>,Image<float32>> =  Stage.liftUnary<Image<float32>,Image<float32>> "sqrt"   ImageFunctions.sqrtImage id id
-let sqrtInt       : Stage<Image<int>,Image<int>> =          Stage.liftUnary<Image<int>,Image<int>> "sqrt"   ImageFunctions.sqrtImage id id
-let squareFloat   : Stage<Image<float>,Image<float>> =      Stage.liftUnary<Image<float>,Image<float>> "square" ImageFunctions.squareImage id id
-let squareFloat32 : Stage<Image<float32>,Image<float32>> =  Stage.liftUnary<Image<float32>,Image<float32>> "square" ImageFunctions.squareImage id id
-let squareInt     : Stage<Image<int>,Image<int>> =          Stage.liftUnary<Image<int>,Image<int>> "square" ImageFunctions.squareImage id id
+let abs<'T when 'T: equality> : Stage<Image<'T>,Image<'T>> = liftUnaryReleaseAfter "abs"    ImageFunctions.absImage id id
+let absFloat      : Stage<Image<float>,Image<float>> =      liftUnaryReleaseAfter "abs"    ImageFunctions.absImage id id
+let absFloat32    : Stage<Image<float32>,Image<float32>> =  liftUnaryReleaseAfter "abs"    ImageFunctions.absImage id id
+let absInt        : Stage<Image<int>,Image<int>> =          liftUnaryReleaseAfter "abs"    ImageFunctions.absImage id id
+let acosFloat     : Stage<Image<float>,Image<float>> =      liftUnaryReleaseAfter "acos"   ImageFunctions.acosImage id id
+let acosFloat32   : Stage<Image<float32>,Image<float32>> =  liftUnaryReleaseAfter "acos"   ImageFunctions.acosImage id id
+let asinFloat     : Stage<Image<float>,Image<float>> =      liftUnaryReleaseAfter "asin"   ImageFunctions.asinImage id id
+let asinFloat32   : Stage<Image<float32>,Image<float32>> =  liftUnaryReleaseAfter "asin"   ImageFunctions.asinImage id id
+let atanFloat     : Stage<Image<float>,Image<float>> =      liftUnaryReleaseAfter "atan"   ImageFunctions.atanImage id id
+let atanFloat32   : Stage<Image<float32>,Image<float32>> =  liftUnaryReleaseAfter "atan"   ImageFunctions.atanImage id id
+let cosFloat      : Stage<Image<float>,Image<float>> =      liftUnaryReleaseAfter "cos"    ImageFunctions.cosImage id id
+let cosFloat32    : Stage<Image<float32>,Image<float32>> =  liftUnaryReleaseAfter "cos"    ImageFunctions.cosImage id id
+let sinFloat      : Stage<Image<float>,Image<float>> =      liftUnaryReleaseAfter "sin"    ImageFunctions.sinImage id id
+let sinFloat32    : Stage<Image<float32>,Image<float32>> =  liftUnaryReleaseAfter "sin"    ImageFunctions.sinImage id id
+let tanFloat      : Stage<Image<float>,Image<float>> =      liftUnaryReleaseAfter "tan"    ImageFunctions.tanImage id id
+let tanFloat32    : Stage<Image<float32>,Image<float32>> =  liftUnaryReleaseAfter "tan"    ImageFunctions.tanImage id id
+let expFloat      : Stage<Image<float>,Image<float>> =      liftUnaryReleaseAfter "exp"    ImageFunctions.expImage id id
+let expFloat32    : Stage<Image<float32>,Image<float32>> =  liftUnaryReleaseAfter "exp"    ImageFunctions.expImage id id
+let log10Float    : Stage<Image<float>,Image<float>> =      liftUnaryReleaseAfter "log10"  ImageFunctions.log10Image id id
+let log10Float32  : Stage<Image<float32>,Image<float32>> =  liftUnaryReleaseAfter "log10"  ImageFunctions.log10Image id id
+let logFloat      : Stage<Image<float>,Image<float>> =      liftUnaryReleaseAfter "log"    ImageFunctions.logImage id id
+let logFloat32    : Stage<Image<float32>,Image<float32>> =  liftUnaryReleaseAfter "log"    ImageFunctions.logImage id id
+let roundFloat    : Stage<Image<float>,Image<float>> =      liftUnaryReleaseAfter "round"  ImageFunctions.roundImage id id
+let roundFloat32  : Stage<Image<float32>,Image<float32>> =  liftUnaryReleaseAfter "round"  ImageFunctions.roundImage id id
+let sqrtFloat     : Stage<Image<float>,Image<float>> =      liftUnaryReleaseAfter "sqrt"   ImageFunctions.sqrtImage id id
+let sqrtFloat32   : Stage<Image<float32>,Image<float32>> =  liftUnaryReleaseAfter "sqrt"   ImageFunctions.sqrtImage id id
+let sqrtInt       : Stage<Image<int>,Image<int>> =          liftUnaryReleaseAfter "sqrt"   ImageFunctions.sqrtImage id id
+let squareFloat   : Stage<Image<float>,Image<float>> =      liftUnaryReleaseAfter "square" ImageFunctions.squareImage id id
+let squareFloat32 : Stage<Image<float32>,Image<float32>> =  liftUnaryReleaseAfter "square" ImageFunctions.squareImage id id
+let squareInt     : Stage<Image<int>,Image<int>> =          liftUnaryReleaseAfter "square" ImageFunctions.squareImage id id
 
 //let histogram<'T when 'T: comparison> = histogramOp<'T> "histogram"
 let imageHistogram () =
-    Stage.map<Image<'T>,Map<'T,uint64>> "histogram:map" ImageFunctions.histogram id id// Assumed max for uint8, can be done better
+    Stage.map<Image<'T>,Map<'T,uint64>> "histogram:map" (releaseAfter ImageFunctions.histogram) id id// Assumed max for uint8, can be done better
 
 let imageHistogramFold () =
     Stage.fold<Map<'T,uint64>, Map<'T,uint64>> "histogram:fold" ImageFunctions.addHistogram (Map.empty<'T, uint64>) id id
@@ -199,7 +206,7 @@ let inline pairs2ints< ^T, ^S when ^T : (static member op_Explicit : ^T -> int) 
 
 type ImageStats = ImageFunctions.ImageStats
 let imageComputeStats () =
-    Stage.map<Image<'T>,ImageStats> "computeStats:map" ImageFunctions.computeStats id id
+    Stage.map<Image<'T>,ImageStats> "computeStats:map" (releaseAfter ImageFunctions.computeStats) id id
 
 let imageComputeStatsFold () =
     let zeroStats: ImageStats = { 
@@ -229,7 +236,7 @@ let stackFUnstack f (images : Image<'T> list) =
 let skipNTakeM (n: uint) (m: uint) (lst: 'a list) : 'a list =
     let m = uint lst.Length - 2u*n;
     if m = 0u then []
-    else lst |> List.skip (int n) |> List.take (int m) 
+    else lst |> List.skip (int n) |> List.take (int m) // This needs releaseAfter!!!
 
 let stackFUnstackTrim trim f (images : Image<'T> list) =
     let m = uint images.Length - 2u*trim 
@@ -341,12 +348,12 @@ let momentsThreshold (winSz: uint) =
     let f images = images |> stackFUnstack (ImageFunctions.momentsThreshold)
     liftWindowed "momentsThreshold" winSz 0u zeroMaker<uint8> winSz 0u winSz f id id
 
-let threshold a b = Stage.liftUnary "threshold" (ImageFunctions.threshold a b) id id
+let threshold a b = liftUnaryReleaseAfter "threshold" (ImageFunctions.threshold a b) id id
 
-let addNormalNoise a b = Stage.liftUnary "addNormalNoise" (ImageFunctions.addNormalNoise a b) id id
+let addNormalNoise a b = liftUnaryReleaseAfter "addNormalNoise" (ImageFunctions.addNormalNoise a b) id id
 
 let ImageConstantPad<'T when 'T : equality> (padLower : uint list) (padUpper : uint list) (c : double) =
-    Stage.liftUnary "constantPad2D" (ImageFunctions.constantPad2D padLower padUpper c) id id
+    liftUnaryReleaseAfter "constantPad2D" (ImageFunctions.constantPad2D padLower padUpper c) id id // Check that constantPad2D makes a new image!!!
 
 // Not Pipes nor Operators
 type FileInfo = ImageFunctions.FileInfo

@@ -245,21 +245,27 @@ type Image<'T when 'T : equality>(sz: uint list, ?numberComp: uint, ?name: strin
             new itk.simple.Image(sz |> toVectorUInt32, itkId, v)
         | None -> 
             new itk.simple.Image(sz |> toVectorUInt32, itkId)
+    // count how many references there is to this image.
+    let mutable nReferences = 1 
 
-    static let mutable totalImages = 0
-    do totalImages <- totalImages+1
+    static let mutable totalImages = 0 // count how many images with references > 0
+    do totalImages <- totalImages + 1
     do printfn "Image count: %d" totalImages
-
-    // 🧹 Decrement on disposal
-    interface System.IDisposable with
-        member _.Dispose() =
-            totalImages <- totalImages - 1
 
     member this.Image = img
     member val Name = (Option.defaultValue "" name) with get
     member val index = (Option.defaultValue 0u index) with get, set
     member private this.SetImg (itkImg: itk.simple.Image) : unit =
         img <- itkImg
+    // add a use of this image
+    member this.incRefCount() = nReferences<-nReferences+1
+    // release a use of this image
+    member this.decRefCount() = 
+        nReferences<-nReferences-1
+        if nReferences = 0 then
+            totalImages <- totalImages - 1
+            img.Dispose()
+
     member this.GetSize () = img.GetSize() |> fromVectorUInt32
     member this.GetDepth() = max 1u (img.GetDepth()) // Non-vector images returns 0
     member this.GetDimensions() = img.GetDimension()

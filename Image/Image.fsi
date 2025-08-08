@@ -44,7 +44,6 @@ val equalOne: v: 'T -> bool
 type Image<'T when 'T: equality> =
     interface System.IComparable
     interface System.IEquatable<Image<'T>>
-    interface System.IDisposable
     new: sz: uint list * ?numberComp: uint * ?name: string * ?index: uint ->
            Image<'T>
     static member
@@ -116,7 +115,9 @@ type Image<'T when 'T: equality> =
     member private SetImg: itkImg: itk.simple.Image -> unit
     override ToString: unit -> string
     member castTo: unit -> Image<'S> when 'S: equality
+    member decRefCount: unit -> unit
     member forAll: p: ('T -> bool) -> bool
+    member incRefCount: unit -> unit
     member memoryEstimate: unit -> uint
     member toArray2D: unit -> 'T array2d
     member toArray3D: unit -> 'T array3d

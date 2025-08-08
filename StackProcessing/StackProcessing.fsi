@@ -13,6 +13,8 @@ type ProfileTransition = SlimPipeline.ProfileTransition
 
 type Image<'S when 'S: equality> = Image.Image<'S>
 
+val releaseAfter: f: (Image<'T> -> 'a) -> I: Image<'T> -> 'a when 'T: equality
+
 val (-->) :
   (SlimPipeline.Stage<'a,'b> ->
      SlimPipeline.Stage<'b,'c> -> SlimPipeline.Stage<'a,'c>)
@@ -61,8 +63,9 @@ val tapIt: (('a -> string) -> SlimPipeline.Stage<'a,'a>)
 
 val ignoreAll: (unit -> SlimPipeline.Stage<'a,unit>)
 
-val liftUnary:
-  f: (Image<'S> -> Image<'T>) ->
+val liftUnaryReleaseAfter:
+  name: string ->
+    f: (Image<'S> -> Image<'T>) ->
     memoryNeed: SlimPipeline.MemoryNeed ->
     nElemsTransformation: SlimPipeline.NElemsTransformation ->
     SlimPipeline.Stage<Image<'S>,Image<'T>> when 'S: equality and 'T: equality
@@ -329,18 +332,17 @@ val otsuThreshold: winSz: uint -> Stage<Image<uint8>,Image<uint8>>
 val momentsThreshold: winSz: uint -> Stage<Image<uint8>,Image<uint8>>
 
 val threshold:
-  a: float -> b: float -> SlimPipeline.Stage<#Image.Image<'b>,Image.Image<'b>>
-    when 'b: equality
+  a: float -> b: float -> SlimPipeline.Stage<Image<'a>,Image<'a>>
+    when 'a: equality
 
 val addNormalNoise:
-  a: float -> b: float -> SlimPipeline.Stage<#Image.Image<'b>,Image.Image<'b>>
-    when 'b: equality
+  a: float -> b: float -> SlimPipeline.Stage<Image<'a>,Image<'a>>
+    when 'a: equality
 
 val ImageConstantPad<'T when 'T: equality> :
   padLower: uint list ->
     padUpper: uint list ->
-    c: double -> SlimPipeline.Stage<Image.Image<obj>,Image.Image<obj>>
-    when 'T: equality
+    c: double -> SlimPipeline.Stage<Image<obj>,Image<obj>> when 'T: equality
 
 type FileInfo = ImageFunctions.FileInfo
 
