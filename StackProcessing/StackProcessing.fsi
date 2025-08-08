@@ -13,7 +13,11 @@ type ProfileTransition = SlimPipeline.ProfileTransition
 
 type Image<'S when 'S: equality> = Image.Image<'S>
 
-val releaseAfter: f: (Image<'T> -> 'a) -> I: Image<'T> -> 'a when 'T: equality
+val releaseAfter: f: (Image<'S> -> 'T) -> I: Image<'S> -> 'T when 'S: equality
+
+val fReleaseNAfter:
+  n: int -> f: (Image<'S> list -> 'T list) -> sLst: Image<'S> list -> 'T list
+    when 'S: equality
 
 val (-->) :
   (SlimPipeline.Stage<'a,'b> ->
@@ -63,16 +67,35 @@ val tapIt: (('a -> string) -> SlimPipeline.Stage<'a,'a>)
 
 val ignoreAll: (unit -> SlimPipeline.Stage<'a,unit>)
 
+val zeroMaker: ex: Image<'S> -> Image<'S> when 'S: equality
+
+val liftUnary:
+  (string ->
+     ('a -> 'b) ->
+     SlimPipeline.MemoryNeed ->
+     SlimPipeline.NElemsTransformation -> SlimPipeline.Stage<'a,'b>)
+
 val liftUnaryReleaseAfter:
   name: string ->
     f: (Image<'S> -> Image<'T>) ->
     memoryNeed: SlimPipeline.MemoryNeed ->
     nElemsTransformation: SlimPipeline.NElemsTransformation ->
-    SlimPipeline.Stage<Image<'S>,Image<'T>> when 'S: equality and 'T: equality
-
-val zeroMaker: ex: Image<'S> -> Image<'S> when 'S: equality
+    SlimPipeline.Stage<#Image<'S>,Image<'T>> when 'S: equality and 'T: equality
 
 val liftWindowed:
+  (string ->
+     uint ->
+     uint ->
+     ('a -> 'a) ->
+     uint ->
+     uint ->
+     uint ->
+     ('a list -> 'b list) ->
+     SlimPipeline.MemoryNeed ->
+     SlimPipeline.NElemsTransformation -> SlimPipeline.Stage<'a,'b>)
+    when 'a: equality and 'b: equality
+
+val liftWindowedReleaseAfter:
   name: string ->
     window: uint ->
     pad: uint ->
@@ -105,7 +128,7 @@ val cast<'S,'T when 'S: equality and 'T: equality> :
 val memNeeded<'T> : nTimes: uint64 -> nElems: uint64 -> uint64
 
 val add:
-  image: Image<'T> -> SlimPipeline.Stage<Image<'T>,Image<'T>> when 'T: equality
+  image: Image<'T> -> SlimPipeline.Stage<#Image<'T>,Image<'T>> when 'T: equality
 
 val inline scalarAddImage:
   i: ^T -> SlimPipeline.Stage<Image<^T>,Image<^T>>
@@ -116,7 +139,7 @@ val inline imageAddScalar:
     when ^T: equality and ^T: (static member op_Explicit: ^T -> float)
 
 val sub:
-  image: Image<'T> -> SlimPipeline.Stage<Image<'T>,Image<'T>> when 'T: equality
+  image: Image<'T> -> SlimPipeline.Stage<#Image<'T>,Image<'T>> when 'T: equality
 
 val inline scalarSubImage:
   i: ^T -> SlimPipeline.Stage<Image<^T>,Image<^T>>
@@ -127,7 +150,7 @@ val inline imageSubScalar:
     when ^T: equality and ^T: (static member op_Explicit: ^T -> float)
 
 val mul:
-  image: Image<'T> -> SlimPipeline.Stage<Image<'T>,Image<'T>> when 'T: equality
+  image: Image<'T> -> SlimPipeline.Stage<#Image<'T>,Image<'T>> when 'T: equality
 
 val inline scalarMulImage:
   i: ^T -> SlimPipeline.Stage<Image<^T>,Image<^T>>
@@ -138,7 +161,7 @@ val inline imageMulScalar:
     when ^T: equality and ^T: (static member op_Explicit: ^T -> float)
 
 val div:
-  image: Image<'T> -> SlimPipeline.Stage<Image<'T>,Image<'T>> when 'T: equality
+  image: Image<'T> -> SlimPipeline.Stage<#Image<'T>,Image<'T>> when 'T: equality
 
 val inline scalarDivImage:
   i: ^T -> SlimPipeline.Stage<Image<^T>,Image<^T>>
@@ -251,7 +274,7 @@ val computeStats:
   unit -> SlimPipeline.Stage<Image<'a>,ImageStats> when 'a: equality
 
 val stackFUnstack:
-  f: (Image.Image<'T> -> #Image.Image<'b>) ->
+  f: (Image<'T> -> #Image.Image<'b>) ->
     images: Image<'T> list -> Image.Image<'b> list
     when 'T: equality and 'b: equality
 
@@ -262,10 +285,6 @@ val stackFUnstackTrim:
     f: (Image.Image<'T> -> #Image.Image<'b>) ->
     images: Image<'T> list -> Image.Image<'b> list
     when 'T: equality and 'b: equality
-
-val takeEveryNth:
-  n: uint ->
-    (SlimPipeline.NElemsTransformation -> Stage<Image<float>,Image<float>>)
 
 val discreteGaussianOp:
   name: string ->
@@ -316,28 +335,35 @@ val opening: radius: uint -> Stage<Image<uint8>,Image<uint8>>
 val closing: radius: uint -> Stage<Image<uint8>,Image<uint8>>
 
 /// Full stack operators
-val binaryFillHoles: winSz: uint -> Stage<Image<uint8>,Image<uint8>>
+val binaryFillHoles:
+  winSz: uint -> SlimPipeline.Stage<Image<uint8>,Image.Image<uint8>>
 
-val connectedComponents: winSz: uint -> Stage<Image<uint8>,Image<uint64>>
+val connectedComponents:
+  winSz: uint -> SlimPipeline.Stage<Image<uint8>,Image.Image<uint64>>
 
 val relabelComponents:
-  a: uint -> winSz: uint -> Stage<Image<uint64>,Image<uint64>>
+  a: uint ->
+    winSz: uint -> SlimPipeline.Stage<Image<uint64>,Image.Image<uint64>>
 
-val watershed: a: float -> winSz: uint -> Stage<Image<uint8>,Image<uint8>>
+val watershed:
+  a: float -> winSz: uint -> SlimPipeline.Stage<Image<uint8>,Image.Image<uint8>>
 
-val signedDistanceMap: winSz: uint -> Stage<Image<uint8>,Image<float>>
+val signedDistanceMap:
+  winSz: uint -> SlimPipeline.Stage<Image<uint8>,Image.Image<float>>
 
-val otsuThreshold: winSz: uint -> Stage<Image<uint8>,Image<uint8>>
+val otsuThreshold:
+  winSz: uint -> SlimPipeline.Stage<Image<uint8>,Image.Image<uint8>>
 
-val momentsThreshold: winSz: uint -> Stage<Image<uint8>,Image<uint8>>
+val momentsThreshold:
+  winSz: uint -> SlimPipeline.Stage<Image<uint8>,Image.Image<uint8>>
 
 val threshold:
-  a: float -> b: float -> SlimPipeline.Stage<Image<'a>,Image<'a>>
-    when 'a: equality
+  a: float -> b: float -> SlimPipeline.Stage<#Image<'b>,Image<'b>>
+    when 'b: equality
 
 val addNormalNoise:
-  a: float -> b: float -> SlimPipeline.Stage<Image<'a>,Image<'a>>
-    when 'a: equality
+  a: float -> b: float -> SlimPipeline.Stage<#Image<'b>,Image<'b>>
+    when 'b: equality
 
 val ImageConstantPad<'T when 'T: equality> :
   padLower: uint list ->

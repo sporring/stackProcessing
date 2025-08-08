@@ -8,10 +8,15 @@ type Profile = SlimPipeline.Profile
 type ProfileTransition = SlimPipeline.ProfileTransition
 //type Slice<'S when 'S: equality> = Slice.Slice<'S>
 type Image<'S when 'S: equality> = Image.Image<'S>
-let releaseAfter f (I:Image<'T>) = 
-        let v = f I
-        I.decRefCount()
-        v
+let releaseAfter (f: Image<'S>->'T) (I:Image<'S>) = 
+    let v = f I
+    I.decRefCount()
+    v
+
+let fReleaseNAfter (n: int) (f: Image<'S> list->'T list) (sLst: Image<'S> list) : 'T list =
+    let tLst = f sLst;
+    sLst |> List.take (int n) |> List.map (fun I -> I.decRefCount()) |> ignore
+    tLst 
 
 let (-->) = Stage.(-->)
 let source = Pipeline.source 
@@ -30,14 +35,18 @@ let drainLast pl = Pipeline.drainLast "drainLast" pl
 let tap = Stage.tap
 let tapIt = Stage.tapIt
 let ignoreAll = Stage.ignore<_>
+let zeroMaker<'S when 'S: equality> (ex:Image<'S>) : Image<'S> = new Image<'S>(ex.GetSize(), 1u, "zero", 0u)
+
+let liftUnary = Stage.liftUnary
 let liftUnaryReleaseAfter 
     (name: string)
     (f: Image<'S> -> Image<'T>)
     (memoryNeed: MemoryNeed)
     (nElemsTransformation: NElemsTransformation) = 
-    Stage.liftUnary<Image<'S>,Image<'T>> name (releaseAfter f) memoryNeed nElemsTransformation
-let zeroMaker<'S when 'S: equality> (ex:Image<'S>) : Image<'S> = new Image<'S>(ex.GetSize(), 1u, "zero", 0u)
-let liftWindowed 
+    liftUnary name (releaseAfter f) memoryNeed nElemsTransformation
+
+let liftWindowed = Stage.liftWindowed
+let liftWindowedReleaseAfter 
     (name: string) 
     (window: uint) 
     (pad: uint) 
@@ -49,7 +58,8 @@ let liftWindowed
     (memoryNeed: MemoryNeed)
     (nElemsTransformation: NElemsTransformation)
     : Stage<Image<'S>, Image<'T>> =
-    Stage.liftWindowed<Image<'S>,Image<'T>> name window pad zeroMaker stride emitStart emitCount f memoryNeed nElemsTransformation
+    Stage.liftWindowed<Image<'S>,Image<'T>> name window pad zeroMaker stride emitStart emitCount (fReleaseNAfter (int stride) f) memoryNeed nElemsTransformation
+
 let getBytesPerComponent<'T> = (typeof<'T> |> Image.getBytesPerComponent |> uint64)
 
 let write (outputDir: string) (suffix: string) : Stage<Image<'T>, unit> =
@@ -194,15 +204,15 @@ let histogram () =
 let inline map2pairs< ^T, ^S when ^T: comparison and ^T : (static member op_Explicit : ^T -> float) and  ^S : (static member op_Explicit : ^S -> float) > = 
     let map2pairs (map: Map<'T, 'S>): ('T * 'S) list =
         map |> Map.toList
-    Stage.liftUnary<Map<^T, ^S>,(^T * ^S) list> "map2pairs" map2pairs id id
+    liftUnary "map2pairs" map2pairs id id
 let inline pairs2floats< ^T, ^S when ^T : (static member op_Explicit : ^T -> float) and  ^S : (static member op_Explicit : ^S -> float) > = 
     let pairs2floats (pairs: (^T * ^S) list) : (float * float) list =
         pairs |> List.map (fun (k, v) -> (float k, float v)) 
-    Stage.liftUnary<(^T * ^S) list,(float*float) list> "pairs2floats" pairs2floats id id
+    liftUnary "pairs2floats" pairs2floats id id
 let inline pairs2ints< ^T, ^S when ^T : (static member op_Explicit : ^T -> int) and  ^S : (static member op_Explicit : ^S -> int) > = 
     let pairs2ints (pairs: (^T * ^S) list) : (int * int) list =
         pairs |> List.map (fun (k, v) -> (int k, int v)) 
-    Stage.liftUnary<(^T * ^S) list,(int*int) list> "pairs2ints" pairs2ints id id
+    liftUnary "pairs2ints" pairs2ints id id
 
 type ImageStats = ImageFunctions.ImageStats
 let imageComputeStats () =
@@ -231,7 +241,8 @@ open type ImageFunctions.OutputRegionMode
 open type ImageFunctions.BoundaryCondition
 
 let stackFUnstack f (images : Image<'T> list) =
-    images |> ImageFunctions.stack |> f |> ImageFunctions.unstack
+    let stck = images |> ImageFunctions.stack 
+    stck |> releaseAfter (f >> ImageFunctions.unstack)
 
 let skipNTakeM (n: uint) (m: uint) (lst: 'a list) : 'a list =
     let m = uint lst.Length - 2u*n;
@@ -240,10 +251,8 @@ let skipNTakeM (n: uint) (m: uint) (lst: 'a list) : 'a list =
 
 let stackFUnstackTrim trim f (images : Image<'T> list) =
     let m = uint images.Length - 2u*trim 
-    images |> ImageFunctions.stack |> f |> ImageFunctions.unstack |> skipNTakeM trim m
-
-let takeEveryNth (n: uint) = 
-    liftWindowed "nth" 1u 0u zeroMaker<float> n 0u 100000u id id
+    let stck = images |> ImageFunctions.stack 
+    stck |> (f >> ImageFunctions.unstack >> skipNTakeM trim m)
 
 let discreteGaussianOp (name:string) (sigma:float) (outputRegionMode: ImageFunctions.OutputRegionMode option) (boundaryCondition: ImageFunctions.BoundaryCondition option) (winSz: uint option): Stage<Image<float>, Image<float>> =
     let roundFloatToUint v = uint (v+0.5)
