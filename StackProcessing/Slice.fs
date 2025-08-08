@@ -36,21 +36,6 @@ let toArray3D (s: Slice<'T>) = s.Image.toArray3D()
 let toArray4D (s: Slice<'T>) = s.Image.toArray4D()
 let toImage (s: Slice<'T>) = s.Image
 let toSimpleITK (s: Slice<'T>) = s.Image.toSimpleITK()
-let toSeqSeq (s: Slice<'T>): seq<seq<float>> =
-    let toFloat (value: obj) =
-        match value with
-        | :? float   as f -> f
-        | :? float32 as f -> float f
-        | :? int     as i -> float i
-        | :? byte    as b -> float b
-        | :? int64   as l -> float l
-        | _ -> failwithf "Cannot convert value of type %s to float" (value.GetType().FullName)
-    let width = s |> GetWidth |> int
-    let height = s |> GetHeight |> int
-    Seq.init height (fun y ->
-        Seq.init width (fun x ->
-            s.Image[x,y] |> box |> toFloat))
-let updateId (id:uint) (s:Slice<'S>) = {s with Index = id}
 
 let cast<'S,'T when 'S: equality and 'T: equality> (s:Slice<'S>) : Slice<'T> = { Name = $"cast {s.Name} {typeof<'S>.Name} -> {typeof<'T>.Name}"; Index = s.Index; Image = s.Image.castTo<'T>() }
 
