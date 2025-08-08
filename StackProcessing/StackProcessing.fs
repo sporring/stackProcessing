@@ -8,12 +8,21 @@ type Profile = SlimPipeline.Profile
 type ProfileTransition = SlimPipeline.ProfileTransition
 //type Slice<'S when 'S: equality> = Slice.Slice<'S>
 type Image<'S when 'S: equality> = Image.Image<'S>
+
 let releaseAfter (f: Image<'S>->'T) (I:Image<'S>) = 
     let v = f I
     I.decRefCount()
     v
+(*
+let releaseAfterStage (debug: bool) (stage: Stage<'S, 'T>) : Stage<'S, 'T> = 
+    let f (I:Image<'T>): Image<'T> = 
+        let R = stage.Pipe.Apply debug I
+        I.decRefCount()
+        R
+    Stage.liftUnary 
+*)
 
-let fReleaseNAfter (n: int) (f: Image<'S> list->'T list) (sLst: Image<'S> list) : 'T list =
+let releaseNAfter (n: int) (f: Image<'S> list->'T list) (sLst: Image<'S> list) : 'T list =
     let tLst = f sLst;
     sLst |> List.take (int n) |> List.map (fun I -> I.decRefCount()) |> ignore
     tLst 
@@ -58,7 +67,7 @@ let liftWindowedReleaseAfter
     (memoryNeed: MemoryNeed)
     (nElemsTransformation: NElemsTransformation)
     : Stage<Image<'S>, Image<'T>> =
-    Stage.liftWindowed<Image<'S>,Image<'T>> name window pad zeroMaker stride emitStart emitCount (fReleaseNAfter (int stride) f) memoryNeed nElemsTransformation
+    Stage.liftWindowed<Image<'S>,Image<'T>> name window pad zeroMaker stride emitStart emitCount (releaseNAfter (int stride) f) memoryNeed nElemsTransformation
 
 let getBytesPerComponent<'T> = (typeof<'T> |> Image.getBytesPerComponent |> uint64)
 
@@ -265,7 +274,7 @@ let discreteGaussianOp (name:string) (sigma:float) (outputRegionMode: ImageFunct
             | Some Valid -> 0u
             | _ -> ksz/2u //floor
     let f images = images |> stackFUnstackTrim pad (fun image3D -> ImageFunctions.discreteGaussian 3u sigma (ksz |> Some) outputRegionMode boundaryCondition image3D)
-    liftWindowed name win pad zeroMaker<float> stride pad stride f id id
+    liftWindowedReleaseAfter name win pad zeroMaker<float> stride pad stride f id id
 
 let discreteGaussian = discreteGaussianOp "discreteGaussian"
 let convGauss sigma = discreteGaussianOp "convGauss" sigma None None None
@@ -306,7 +315,7 @@ let convolveOp (name: string) (kernel: Image<'T>) (outputRegionMode: ImageFuncti
             | Some Valid -> 0u
             | _ -> ksz/2u //floor
     let f images = images |> stackFUnstackTrim (ksz - 1u) (fun image3D -> ImageFunctions.convolve outputRegionMode bc image3D kernel)
-    liftWindowed name win pad zeroMaker<'T> stride (win-1u) (1u) f id id
+    liftWindowedReleaseAfter name win pad zeroMaker<'T> stride (win-1u) (1u) f id id
 
 let convolve kernel outputRegionMode boundaryCondition winSz = convolveOp "convolve" kernel outputRegionMode boundaryCondition winSz
 let conv kernel = convolveOp "conv" kernel None None None
@@ -321,7 +330,7 @@ let private makeMorphOp (name:string) (radius:uint) (winSz: uint option) (core: 
     let win = Option.defaultValue ksz winSz |> min ksz
     let stride = win - ksz + 1u
     let f images = images |> stackFUnstackTrim radius (core radius)
-    liftWindowed name win 0u zeroMaker<'T> stride (stride - 1u) stride f id id
+    liftWindowedReleaseAfter name win 0u zeroMaker<'T> stride (stride - 1u) stride f id id
 
 let erode radius = makeMorphOp "binaryErode"  radius None ImageFunctions.binaryErode
 let dilate radius = makeMorphOp "binaryErode"  radius None ImageFunctions.binaryDilate
@@ -331,31 +340,31 @@ let closing radius = makeMorphOp "binaryErode"  radius None ImageFunctions.binar
 /// Full stack operators
 let binaryFillHoles (winSz: uint)= 
     let f images = images |> stackFUnstack ImageFunctions.binaryFillHoles
-    liftWindowed "fillHoles" winSz 0u zeroMaker<uint8> winSz 0u winSz f id id
+    liftWindowedReleaseAfter "fillHoles" winSz 0u zeroMaker<uint8> winSz 0u winSz f id id
 
 let connectedComponents (winSz: uint) = 
     let f images = images |> stackFUnstack ImageFunctions.connectedComponents
-    liftWindowed "connectedComponents" winSz 0u zeroMaker<uint8> winSz 0u winSz f id id
+    liftWindowedReleaseAfter "connectedComponents" winSz 0u zeroMaker<uint8> winSz 0u winSz f id id
 
 let relabelComponents a (winSz: uint) = 
     let f images = images |> stackFUnstack (ImageFunctions.relabelComponents a)
-    liftWindowed "relabelComponents" winSz 0u zeroMaker<uint64> winSz 0u winSz f id id
+    liftWindowedReleaseAfter "relabelComponents" winSz 0u zeroMaker<uint64> winSz 0u winSz f id id
 
 let watershed a (winSz: uint) =
     let f images = images |> stackFUnstack (ImageFunctions.watershed a)
-    liftWindowed "watershed" winSz 0u zeroMaker<uint8> winSz 0u winSz f id id
+    liftWindowedReleaseAfter "watershed" winSz 0u zeroMaker<uint8> winSz 0u winSz f id id
 
 let signedDistanceMap (winSz: uint) =
     let f images = images |> stackFUnstack (ImageFunctions.signedDistanceMap 0uy 1uy)
-    liftWindowed "signedDistanceMap" winSz 0u zeroMaker<uint8> winSz 0u winSz f id id
+    liftWindowedReleaseAfter "signedDistanceMap" winSz 0u zeroMaker<uint8> winSz 0u winSz f id id
 
 let otsuThreshold (winSz: uint) =
     let f images = images |> stackFUnstack (ImageFunctions.otsuThreshold)
-    liftWindowed "otsuThreshold" winSz 0u zeroMaker<uint8> winSz 0u winSz f id id
+    liftWindowedReleaseAfter "otsuThreshold" winSz 0u zeroMaker<uint8> winSz 0u winSz f id id
 
 let momentsThreshold (winSz: uint) =
     let f images = images |> stackFUnstack (ImageFunctions.momentsThreshold)
-    liftWindowed "momentsThreshold" winSz 0u zeroMaker<uint8> winSz 0u winSz f id id
+    liftWindowedReleaseAfter "momentsThreshold" winSz 0u zeroMaker<uint8> winSz 0u winSz f id id
 
 let threshold a b = liftUnaryReleaseAfter "threshold" (ImageFunctions.threshold a b) id id
 
