@@ -3,340 +3,6 @@ namespace FSharp
 
 
 
-module Slice
-
-val getBytesPerComponent: (System.Type -> uint32)
-
-/// <summary>
-/// Represents a slice of a stack of 2d images. 
-/// </summary>
-type Slice<'T when 'T: equality> =
-    {
-      Name: string
-      Index: uint
-      Image: Image.Image<'T>
-    }
-    interface System.IDisposable
-    
-    member Dispose: unit -> unit
-    
-    member EstimateUsage: unit -> uint
-
-val create:
-  width: uint -> height: uint -> depth: uint -> idx: uint -> Slice<'T>
-    when 'T: equality
-
-val GetDepth: s: Slice<'T> -> uint32 when 'T: equality
-
-val GetDimensions: s: Slice<'T> -> uint32 when 'T: equality
-
-val GetHeight: s: Slice<'T> -> uint32 when 'T: equality
-
-val GetWidth: s: Slice<'T> -> uint32 when 'T: equality
-
-val GetSize: s: Slice<'T> -> uint list when 'T: equality
-
-val ToString: s: Slice<'T> -> string when 'T: equality
-
-val toArray2D: s: Slice<'T> -> 'T array2d when 'T: equality
-
-val toArray3D: s: Slice<'T> -> 'T array3d when 'T: equality
-
-val toArray4D: s: Slice<'T> -> 'T array4d when 'T: equality
-
-val toImage: s: Slice<'T> -> Image.Image<'T> when 'T: equality
-
-val toSimpleITK: s: Slice<'T> -> itk.simple.Image when 'T: equality
-
-val toSeqSeq: s: Slice<'T> -> float seq seq when 'T: equality
-
-val updateId: id: uint -> s: Slice<'S> -> Slice<'S> when 'S: equality
-
-val cast: s: Slice<'S> -> Slice<'T> when 'S: equality and 'T: equality
-
-val private liftSource:
-  name: string -> f: (unit -> Image.Image<'T>) -> unit -> Slice<'T>
-    when 'T: equality
-
-val private liftSource2:
-  name: string ->
-    f: ('a -> 'b -> Image.Image<'T>) -> a: 'a -> b: 'b -> Slice<'T>
-    when 'T: equality
-
-val private liftSource3:
-  name: string ->
-    f: ('a -> 'b -> 'c -> Image.Image<'T>) ->
-    a: 'a -> b: 'b -> c: 'c -> Slice<'T> when 'T: equality
-
-val private liftUnary:
-  f: (Image.Image<'T> -> Image.Image<'T>) -> s: Slice<'T> -> Slice<'T>
-    when 'T: equality
-
-val private liftUnary1:
-  f: ('a -> Image.Image<'T> -> Image.Image<'T>) ->
-    a: 'a -> s: Slice<'T> -> Slice<'T> when 'T: equality
-
-val private liftUnary2:
-  f: ('a -> 'b -> Image.Image<'T> -> Image.Image<'T>) ->
-    a: 'a -> b: 'b -> s: Slice<'T> -> Slice<'T> when 'T: equality
-
-val private liftUnary3:
-  f: ('a -> 'b -> 'c -> Image.Image<'T> -> Image.Image<'T>) ->
-    a: 'a -> b: 'b -> c: 'c -> s: Slice<'T> -> Slice<'T> when 'T: equality
-
-val private liftUnary5:
-  f: ('a -> 'b -> 'c -> 'd -> 'e -> Image.Image<'T> -> Image.Image<'T>) ->
-    a: 'a -> b: 'b -> c: 'c -> d: 'd -> e: 'e -> s: Slice<'T> -> Slice<'T>
-    when 'T: equality
-
-val private liftBinary:
-  f: (Image.Image<'T> -> Image.Image<'T> -> Image.Image<'T>) ->
-    s1: Slice<'T> -> s2: Slice<'T> -> Slice<'T> when 'T: equality
-
-val private liftBinary1:
-  f: ('a -> Image.Image<'T> -> Image.Image<'T> -> Image.Image<'T>) ->
-    a: 'a -> s1: Slice<'T> -> s2: Slice<'T> -> Slice<'T> when 'T: equality
-
-val private liftBinary2:
-  f: ('a -> 'b -> Image.Image<'T> -> Image.Image<'T> -> Image.Image<'T>) ->
-    a: 'a -> b: 'b -> s1: Slice<'T> -> s2: Slice<'T> -> Slice<'T>
-    when 'T: equality
-
-val private liftBinaryOp:
-  f: (Image.Image<'T> * Image.Image<'T> -> Image.Image<'T>) ->
-    s1: Slice<'T> * s2: Slice<'T> -> Slice<'T> when 'T: equality
-
-val private liftBinaryCmp:
-  f: (Image.Image<'T> * Image.Image<'T> -> bool) ->
-    s1: Slice<'T> * s2: Slice<'T> -> bool when 'T: equality
-
-val absSlice: s: Slice<'T> -> Slice<'T> when 'T: equality
-
-val logSlice: s: Slice<'T> -> Slice<'T> when 'T: equality
-
-val log10Slice: s: Slice<'T> -> Slice<'T> when 'T: equality
-
-val expSlice: s: Slice<'T> -> Slice<'T> when 'T: equality
-
-val sqrtSlice: s: Slice<'T> -> Slice<'T> when 'T: equality
-
-val squareSlice: s: Slice<'T> -> Slice<'T> when 'T: equality
-
-val sinSlice: s: Slice<'T> -> Slice<'T> when 'T: equality
-
-val cosSlice: s: Slice<'T> -> Slice<'T> when 'T: equality
-
-val tanSlice: s: Slice<'T> -> Slice<'T> when 'T: equality
-
-val asinSlice: s: Slice<'T> -> Slice<'T> when 'T: equality
-
-val acosSlice: s: Slice<'T> -> Slice<'T> when 'T: equality
-
-val atanSlice: s: Slice<'T> -> Slice<'T> when 'T: equality
-
-val roundSlice: s: Slice<'T> -> Slice<'T> when 'T: equality
-
-type BoundaryCondition = ImageFunctions.BoundaryCondition
-
-type OutputRegionMode = ImageFunctions.OutputRegionMode
-
-val convolve:
-  a: ImageFunctions.OutputRegionMode option ->
-    b: ImageFunctions.BoundaryCondition option ->
-    s: Slice<'T> -> t: Slice<'T> -> Slice<'T> when 'T: equality
-
-val conv: s: Slice<'T> -> t: Slice<'T> -> Slice<'T> when 'T: equality
-
-val discreteGaussian:
-  a: uint ->
-    b: float ->
-    c: uint option ->
-    d: ImageFunctions.OutputRegionMode option ->
-    e: ImageFunctions.BoundaryCondition option -> s: Slice<'T> -> Slice<'T>
-    when 'T: equality
-
-val gauss: dim: uint -> sigma: float -> kernelSize: uint option -> Slice<float>
-
-val finiteDiffFilter2D: direction: uint -> order: uint -> Slice<float>
-
-val finiteDiffFilter3D: direction: uint -> order: uint -> Slice<float>
-
-val finiteDiffFilter4D: direction: uint -> order: uint -> Slice<float>
-
-val gradientConvolve:
-  a: 'a -> b: 'b -> s: Slice<'T> -> (uint -> uint32 -> Slice<'c> -> Slice<'c>)
-    when 'T: equality and 'c: equality
-
-val binaryErode: a: uint -> s: Slice<uint8> -> Slice<uint8>
-
-val binaryDilate: a: uint -> s: Slice<uint8> -> Slice<uint8>
-
-val binaryOpening: a: uint -> s: Slice<uint8> -> Slice<uint8>
-
-val binaryClosing: a: uint -> s: Slice<uint8> -> Slice<uint8>
-
-val binaryFillHoles: s: Slice<uint8> -> Slice<uint8>
-
-val squeeze: s: Slice<'T> -> Slice<'T> when 'T: equality
-
-val concatAlong:
-  a: uint -> s: Slice<'T> -> t: Slice<'T> -> Slice<'T> when 'T: equality
-
-val constantPad2D:
-  a: uint list -> b: uint list -> c: double -> s: Slice<'T> -> Slice<'T>
-    when 'T: equality
-
-val connectedComponents: s: Slice<uint8> -> Slice<uint64>
-
-val relabelComponents: a: uint -> s: Slice<uint64> -> Slice<uint64>
-
-val watershed: a: float -> s: Slice<'T> -> Slice<'T> when 'T: equality
-
-val otsuThreshold: s: Slice<'T> -> Slice<'T> when 'T: equality
-
-val otsuMultiThreshold: a: byte -> s: Slice<'T> -> Slice<'T> when 'T: equality
-
-val momentsThreshold: s: Slice<'T> -> Slice<'T> when 'T: equality
-
-val signedDistanceMap:
-  inside: uint8 -> outside: uint8 -> s: Slice<uint8> -> Slice<float>
-
-val generateCoordinateAxis: axis: int -> size: int list -> Slice<uint>
-
-val unique: s: Slice<'T> -> 'T list when 'T: comparison
-
-val labelShapeStatistics:
-  s: Slice<'T> -> Map<int64,ImageFunctions.LabelShapeStatistics>
-    when 'T: equality
-
-type ImageStats = ImageFunctions.ImageStats
-
-val computeStats: s: Slice<'T> -> ImageStats when 'T: equality
-
-val addComputeStats: s1: ImageStats -> s2: ImageStats -> ImageStats
-
-val histogram: s: Slice<'T> -> Map<'T,uint64> when 'T: comparison
-
-val addHistogram:
-  h1: Map<'T,uint64> -> h2: Map<'T,uint64> -> Map<'T,uint64> when 'T: comparison
-
-val map2pairs: map: Map<'T,'S> -> ('T * 'S) list when 'T: comparison
-
-val inline pairs2floats:
-  pairs: (^T * ^S) list -> (float * float) list
-    when ^T: (static member op_Explicit: ^T -> float) and
-         ^S: (static member op_Explicit: ^S -> float)
-
-val inline pairs2ints:
-  pairs: (^T * ^S) list -> (int * int) list
-    when ^T: (static member op_Explicit: ^T -> int) and
-         ^S: (static member op_Explicit: ^S -> int)
-
-val add: a: Slice<'T> -> b: Slice<'T> -> Slice<'T> when 'T: equality
-
-val inline sliceAddScalar:
-  s: Slice<^T> -> i: ^T -> Slice<^T>
-    when ^T: equality and ^T: (static member op_Explicit: ^T -> float)
-
-val inline scalarAddSlice:
-  i: ^T -> s: Slice<^T> -> Slice<^T>
-    when ^T: equality and ^T: (static member op_Explicit: ^T -> float)
-
-val sub: a: Slice<'T> -> b: Slice<'T> -> Slice<'T> when 'T: equality
-
-val inline sliceSubScalar:
-  s: Slice<^T> -> i: ^T -> Slice<^T>
-    when ^T: equality and ^T: (static member op_Explicit: ^T -> float)
-
-val inline scalarSubSlice:
-  i: ^T -> s: Slice<^T> -> Slice<^T>
-    when ^T: equality and ^T: (static member op_Explicit: ^T -> float)
-
-val mul: a: Slice<'T> -> b: Slice<'T> -> Slice<'T> when 'T: equality
-
-val inline sliceMulScalar:
-  s: Slice<^T> -> i: ^T -> Slice<^T>
-    when ^T: equality and ^T: (static member op_Explicit: ^T -> float)
-
-val inline scalarMulSlice:
-  i: ^T -> s: Slice<^T> -> Slice<^T>
-    when ^T: equality and ^T: (static member op_Explicit: ^T -> float)
-
-val div: a: Slice<'T> -> b: Slice<'T> -> Slice<'T> when 'T: equality
-
-val inline sliceDivScalar:
-  s: Slice<^T> -> i: ^T -> Slice<^T>
-    when ^T: equality and ^T: (static member op_Explicit: ^T -> float)
-
-val inline scalarDivSlice:
-  i: ^T -> s: Slice<^T> -> Slice<^T>
-    when ^T: equality and ^T: (static member op_Explicit: ^T -> float)
-
-val pow: a: Slice<'T> -> b: Slice<'T> -> Slice<'T> when 'T: equality
-
-val isGreaterEqual: a: Slice<'T> -> b: Slice<'T> -> Slice<'T> when 'T: equality
-
-val gte: a: Slice<'T> -> b: Slice<'T> -> bool when 'T: equality
-
-val isGreater: a: Slice<'T> -> b: Slice<'T> -> Slice<'T> when 'T: equality
-
-val ge: a: Slice<'T> -> b: Slice<'T> -> bool when 'T: equality
-
-val isEqual: a: Slice<'T> -> b: Slice<'T> -> Slice<'T> when 'T: equality
-
-val eq: a: Slice<'T> -> b: Slice<'T> -> bool when 'T: equality
-
-val isNotEqual: a: Slice<'T> -> b: Slice<'T> -> Slice<'T> when 'T: equality
-
-val neq: a: Slice<'T> -> b: Slice<'T> -> bool when 'T: equality
-
-val isLessThanEqual: a: Slice<'T> -> b: Slice<'T> -> Slice<'T> when 'T: equality
-
-val lte: a: Slice<'T> -> b: Slice<'T> -> bool when 'T: equality
-
-val isLessThan: a: Slice<'T> -> b: Slice<'T> -> Slice<'T> when 'T: equality
-
-val lt: a: Slice<'T> -> b: Slice<'T> -> bool when 'T: equality
-
-val sAnd: a: Slice<'T> -> b: Slice<'T> -> Slice<'T> when 'T: equality
-
-val sOr: a: Slice<'T> -> b: Slice<'T> -> Slice<'T> when 'T: equality
-
-val sXor: a: Slice<'T> -> b: Slice<'T> -> Slice<'T> when 'T: equality
-
-val sNot: s: Slice<'T> -> Slice<'T> when 'T: equality
-
-val addNormalNoise:
-  a: float -> b: float -> s: Slice<'T> -> Slice<'T> when 'T: equality
-
-val threshold:
-  a: float -> b: float -> s: Slice<'T> -> Slice<'T> when 'T: equality
-
-val stack: sLst: Slice<'T> list -> Slice<'T> when 'T: equality
-
-val extractSlice: a: uint -> s: Slice<'T> -> Slice<'T> when 'T: equality
-
-val unstack: s: Slice<'T> -> Slice<'T> list when 'T: equality
-
-type FileInfo = ImageFunctions.FileInfo
-
-val getFileInfo: filename: string -> FileInfo
-
-val readSlice: idx: uint -> filename: string -> Slice<'T> when 'T: equality
-
-val writeSlice: filename: string -> s: Slice<'T> -> unit when 'T: equality
-
-val getStackDepth: inputDir: string -> suffix: string -> uint
-
-val getStackInfo: inputDir: string -> suffix: string -> FileInfo
-
-val getStackSize: inputDir: string -> suffix: string -> uint * uint * uint
-
-val getStackWidth: inputDir: string -> suffix: string -> uint64
-
-val getStackHeight: inputDir: string -> suffix: string -> uint64
-
-
 module StackProcessing
 
 type Stage<'S,'T> = SlimPipeline.Stage<'S,'T>
@@ -345,7 +11,7 @@ type Profile = SlimPipeline.Profile
 
 type ProfileTransition = SlimPipeline.ProfileTransition
 
-type Slice<'S when 'S: equality> = Slice.Slice<'S>
+type Image<'S when 'S: equality> = Image.Image<'S>
 
 val (-->) :
   (SlimPipeline.Stage<'a,'b> ->
@@ -396,36 +62,32 @@ val tapIt: (('a -> string) -> SlimPipeline.Stage<'a,'a>)
 val ignoreAll: (unit -> SlimPipeline.Stage<'a,unit>)
 
 val liftUnary:
-  f: (Slice.Slice<'S> -> Slice.Slice<'T>) ->
+  f: (Image<'S> -> Image<'T>) ->
     memoryNeed: SlimPipeline.MemoryNeed ->
     nElemsTransformation: SlimPipeline.NElemsTransformation ->
-    SlimPipeline.Stage<Slice.Slice<'S>,Slice.Slice<'T>>
-    when 'S: equality and 'T: equality
+    SlimPipeline.Stage<Image<'S>,Image<'T>> when 'S: equality and 'T: equality
 
-val zeroMaker: ex: Slice.Slice<'S> -> Slice.Slice<'S> when 'S: equality
+val zeroMaker: ex: Image<'S> -> Image<'S> when 'S: equality
 
 val liftWindowed:
   name: string ->
     window: uint ->
     pad: uint ->
-    zeroMaker: (Slice.Slice<'S> -> Slice.Slice<'S>) ->
+    zeroMaker: (Image<'S> -> Image<'S>) ->
     stride: uint ->
     emitStart: uint ->
     emitCount: uint ->
-    f: (Slice.Slice<'S> list -> Slice.Slice<'T> list) ->
+    f: (Image<'S> list -> Image<'T> list) ->
     memoryNeed: SlimPipeline.MemoryNeed ->
     nElemsTransformation: SlimPipeline.NElemsTransformation ->
-    Stage<Slice.Slice<'S>,Slice.Slice<'T>> when 'S: equality and 'T: equality
+    Stage<Image<'S>,Image<'T>> when 'S: equality and 'T: equality
 
 val getBytesPerComponent<'T> : uint64
 
 val write:
-  outputDir: string -> suffix: string -> Stage<Slice.Slice<'T>,unit>
-    when 'T: equality
+  outputDir: string -> suffix: string -> Stage<Image<'T>,unit> when 'T: equality
 
-val show:
-  plt: (Slice.Slice<'T> -> unit) -> Stage<Slice.Slice<'T>,unit>
-    when 'T: equality
+val show: plt: (Image<'T> -> unit) -> Stage<Image<'T>,unit> when 'T: equality
 
 val plot:
   plt: (float list -> float list -> unit) -> Stage<(float * float) list,unit>
@@ -434,130 +96,124 @@ val print: unit -> Stage<'T,unit>
 
 /// Pixel type casting
 val cast<'S,'T when 'S: equality and 'T: equality> :
-  SlimPipeline.Stage<Slice.Slice<'S>,Slice.Slice<'T>>
-    when 'S: equality and 'T: equality
+  SlimPipeline.Stage<Image<'S>,Image<'T>> when 'S: equality and 'T: equality
 
 /// Basic arithmetic
 val memNeeded<'T> : nTimes: uint64 -> nElems: uint64 -> uint64
 
 val add:
-  slice: Slice.Slice<'T> -> SlimPipeline.Stage<Slice.Slice<'T>,Slice.Slice<'T>>
-    when 'T: equality
+  image: Image<'T> -> SlimPipeline.Stage<Image<'T>,Image<'T>> when 'T: equality
 
-val inline scalarAddSlice:
-  i: ^T -> SlimPipeline.Stage<Slice.Slice<^T>,Slice.Slice<^T>>
+val inline scalarAddImage:
+  i: ^T -> SlimPipeline.Stage<Image<^T>,Image<^T>>
     when ^T: equality and ^T: (static member op_Explicit: ^T -> float)
 
-val inline sliceAddScalar:
-  i: ^T -> SlimPipeline.Stage<Slice.Slice<^T>,Slice.Slice<^T>>
+val inline imageAddScalar:
+  i: ^T -> SlimPipeline.Stage<Image<^T>,Image<^T>>
     when ^T: equality and ^T: (static member op_Explicit: ^T -> float)
 
 val sub:
-  slice: Slice.Slice<'T> -> SlimPipeline.Stage<Slice.Slice<'T>,Slice.Slice<'T>>
-    when 'T: equality
+  image: Image<'T> -> SlimPipeline.Stage<Image<'T>,Image<'T>> when 'T: equality
 
-val inline scalarSubSlice:
-  i: ^T -> SlimPipeline.Stage<Slice.Slice<^T>,Slice.Slice<^T>>
+val inline scalarSubImage:
+  i: ^T -> SlimPipeline.Stage<Image<^T>,Image<^T>>
     when ^T: equality and ^T: (static member op_Explicit: ^T -> float)
 
-val inline sliceSubScalar:
-  i: ^T -> SlimPipeline.Stage<Slice.Slice<^T>,Slice.Slice<^T>>
+val inline imageSubScalar:
+  i: ^T -> SlimPipeline.Stage<Image<^T>,Image<^T>>
     when ^T: equality and ^T: (static member op_Explicit: ^T -> float)
 
 val mul:
-  slice: Slice.Slice<'T> -> SlimPipeline.Stage<Slice.Slice<'T>,Slice.Slice<'T>>
-    when 'T: equality
+  image: Image<'T> -> SlimPipeline.Stage<Image<'T>,Image<'T>> when 'T: equality
 
-val inline scalarMulSlice:
-  i: ^T -> SlimPipeline.Stage<Slice.Slice<^T>,Slice.Slice<^T>>
+val inline scalarMulImage:
+  i: ^T -> SlimPipeline.Stage<Image<^T>,Image<^T>>
     when ^T: equality and ^T: (static member op_Explicit: ^T -> float)
 
-val inline sliceMulScalar:
-  i: ^T -> SlimPipeline.Stage<Slice.Slice<^T>,Slice.Slice<^T>>
+val inline imageMulScalar:
+  i: ^T -> SlimPipeline.Stage<Image<^T>,Image<^T>>
     when ^T: equality and ^T: (static member op_Explicit: ^T -> float)
 
 val div:
-  slice: Slice.Slice<'T> -> SlimPipeline.Stage<Slice.Slice<'T>,Slice.Slice<'T>>
-    when 'T: equality
+  image: Image<'T> -> SlimPipeline.Stage<Image<'T>,Image<'T>> when 'T: equality
 
-val inline scalarDivSlice:
-  i: ^T -> SlimPipeline.Stage<Slice.Slice<^T>,Slice.Slice<^T>>
+val inline scalarDivImage:
+  i: ^T -> SlimPipeline.Stage<Image<^T>,Image<^T>>
     when ^T: equality and ^T: (static member op_Explicit: ^T -> float)
 
-val inline sliceDivScalar:
-  i: ^T -> SlimPipeline.Stage<Slice.Slice<^T>,Slice.Slice<^T>>
+val inline imageDivScalar:
+  i: ^T -> SlimPipeline.Stage<Image<^T>,Image<^T>>
     when ^T: equality and ^T: (static member op_Explicit: ^T -> float)
 
 /// Simple functions
-val abs<'T when 'T: equality> :
-  Stage<Slice.Slice<'T>,Slice.Slice<'T>> when 'T: equality
+val abs<'T when 'T: equality> : Stage<Image<'T>,Image<'T>> when 'T: equality
 
-val absFloat: Stage<Slice.Slice<float>,Slice.Slice<float>>
+val absFloat: Stage<Image<float>,Image<float>>
 
-val absFloat32: Stage<Slice.Slice<float32>,Slice.Slice<float32>>
+val absFloat32: Stage<Image<float32>,Image<float32>>
 
-val absInt: Stage<Slice.Slice<int>,Slice.Slice<int>>
+val absInt: Stage<Image<int>,Image<int>>
 
-val acosFloat: Stage<Slice.Slice<float>,Slice.Slice<float>>
+val acosFloat: Stage<Image<float>,Image<float>>
 
-val acosFloat32: Stage<Slice.Slice<float32>,Slice.Slice<float32>>
+val acosFloat32: Stage<Image<float32>,Image<float32>>
 
-val asinFloat: Stage<Slice.Slice<float>,Slice.Slice<float>>
+val asinFloat: Stage<Image<float>,Image<float>>
 
-val asinFloat32: Stage<Slice.Slice<float32>,Slice.Slice<float32>>
+val asinFloat32: Stage<Image<float32>,Image<float32>>
 
-val atanFloat: Stage<Slice.Slice<float>,Slice.Slice<float>>
+val atanFloat: Stage<Image<float>,Image<float>>
 
-val atanFloat32: Stage<Slice.Slice<float32>,Slice.Slice<float32>>
+val atanFloat32: Stage<Image<float32>,Image<float32>>
 
-val cosFloat: Stage<Slice.Slice<float>,Slice.Slice<float>>
+val cosFloat: Stage<Image<float>,Image<float>>
 
-val cosFloat32: Stage<Slice.Slice<float32>,Slice.Slice<float32>>
+val cosFloat32: Stage<Image<float32>,Image<float32>>
 
-val sinFloat: Stage<Slice.Slice<float>,Slice.Slice<float>>
+val sinFloat: Stage<Image<float>,Image<float>>
 
-val sinFloat32: Stage<Slice.Slice<float32>,Slice.Slice<float32>>
+val sinFloat32: Stage<Image<float32>,Image<float32>>
 
-val tanFloat: Stage<Slice.Slice<float>,Slice.Slice<float>>
+val tanFloat: Stage<Image<float>,Image<float>>
 
-val tanFloat32: Stage<Slice.Slice<float32>,Slice.Slice<float32>>
+val tanFloat32: Stage<Image<float32>,Image<float32>>
 
-val expFloat: Stage<Slice.Slice<float>,Slice.Slice<float>>
+val expFloat: Stage<Image<float>,Image<float>>
 
-val expFloat32: Stage<Slice.Slice<float32>,Slice.Slice<float32>>
+val expFloat32: Stage<Image<float32>,Image<float32>>
 
-val log10Float: Stage<Slice.Slice<float>,Slice.Slice<float>>
+val log10Float: Stage<Image<float>,Image<float>>
 
-val log10Float32: Stage<Slice.Slice<float32>,Slice.Slice<float32>>
+val log10Float32: Stage<Image<float32>,Image<float32>>
 
-val logFloat: Stage<Slice.Slice<float>,Slice.Slice<float>>
+val logFloat: Stage<Image<float>,Image<float>>
 
-val logFloat32: Stage<Slice.Slice<float32>,Slice.Slice<float32>>
+val logFloat32: Stage<Image<float32>,Image<float32>>
 
-val roundFloat: Stage<Slice.Slice<float>,Slice.Slice<float>>
+val roundFloat: Stage<Image<float>,Image<float>>
 
-val roundFloat32: Stage<Slice.Slice<float32>,Slice.Slice<float32>>
+val roundFloat32: Stage<Image<float32>,Image<float32>>
 
-val sqrtFloat: Stage<Slice.Slice<float>,Slice.Slice<float>>
+val sqrtFloat: Stage<Image<float>,Image<float>>
 
-val sqrtFloat32: Stage<Slice.Slice<float32>,Slice.Slice<float32>>
+val sqrtFloat32: Stage<Image<float32>,Image<float32>>
 
-val sqrtInt: Stage<Slice.Slice<int>,Slice.Slice<int>>
+val sqrtInt: Stage<Image<int>,Image<int>>
 
-val squareFloat: Stage<Slice.Slice<float>,Slice.Slice<float>>
+val squareFloat: Stage<Image<float>,Image<float>>
 
-val squareFloat32: Stage<Slice.Slice<float32>,Slice.Slice<float32>>
+val squareFloat32: Stage<Image<float32>,Image<float32>>
 
-val squareInt: Stage<Slice.Slice<int>,Slice.Slice<int>>
+val squareInt: Stage<Image<int>,Image<int>>
 
-val sliceHistogram:
-  unit -> SlimPipeline.Stage<Slice.Slice<'T>,Map<'T,uint64>> when 'T: comparison
+val imageHistogram:
+  unit -> SlimPipeline.Stage<Image<'T>,Map<'T,uint64>> when 'T: comparison
 
-val sliceHistogramFold:
+val imageHistogramFold:
   unit -> SlimPipeline.Stage<Map<'T,uint64>,Map<'T,uint64>> when 'T: comparison
 
 val histogram:
-  unit -> SlimPipeline.Stage<Slice.Slice<'a>,Map<'a,uint64>> when 'a: comparison
+  unit -> SlimPipeline.Stage<Image<'a>,Map<'a,uint64>> when 'a: comparison
 
 val inline map2pairs<^T,^S
                        when ^T: comparison and
@@ -583,136 +239,127 @@ val inline pairs2ints<^T,^S
 
 type ImageStats = ImageFunctions.ImageStats
 
-val sliceComputeStats:
-  unit -> SlimPipeline.Stage<Slice.Slice<'T>,ImageStats> when 'T: equality
+val imageComputeStats:
+  unit -> SlimPipeline.Stage<Image<'T>,ImageStats> when 'T: equality
 
-val sliceComputeStatsFold: unit -> SlimPipeline.Stage<ImageStats,ImageStats>
+val imageComputeStatsFold: unit -> SlimPipeline.Stage<ImageStats,ImageStats>
 
 val computeStats:
-  unit -> SlimPipeline.Stage<Slice.Slice<'a>,ImageStats> when 'a: equality
+  unit -> SlimPipeline.Stage<Image<'a>,ImageStats> when 'a: equality
 
 val stackFUnstack:
-  f: (Slice.Slice<'T> -> Slice.Slice<'a>) ->
-    slices: Slice.Slice<'T> list -> Slice.Slice<'a> list
-    when 'T: equality and 'a: equality
+  f: (Image.Image<'T> -> #Image.Image<'b>) ->
+    images: Image<'T> list -> Image.Image<'b> list
+    when 'T: equality and 'b: equality
 
 val skipNTakeM: n: uint -> m: uint -> lst: 'a list -> 'a list
 
 val stackFUnstackTrim:
   trim: uint32 ->
-    f: (Slice.Slice<'T> -> Slice.Slice<'a>) ->
-    slices: Slice.Slice<'T> list -> Slice.Slice<'a> list
-    when 'T: equality and 'a: equality
+    f: (Image.Image<'T> -> #Image.Image<'b>) ->
+    images: Image<'T> list -> Image.Image<'b> list
+    when 'T: equality and 'b: equality
 
 val takeEveryNth:
   n: uint ->
-    (SlimPipeline.NElemsTransformation ->
-       Stage<Slice.Slice<float>,Slice.Slice<float>>)
+    (SlimPipeline.NElemsTransformation -> Stage<Image<float>,Image<float>>)
 
 val discreteGaussianOp:
   name: string ->
     sigma: float ->
-    outputRegionMode: Slice.OutputRegionMode option ->
+    outputRegionMode: ImageFunctions.OutputRegionMode option ->
     boundaryCondition: ImageFunctions.BoundaryCondition option ->
-    winSz: uint option -> Stage<Slice.Slice<float>,Slice.Slice<float>>
+    winSz: uint option -> Stage<Image<float>,Image<float>>
 
 val discreteGaussian:
   (float ->
-     Slice.OutputRegionMode option ->
+     ImageFunctions.OutputRegionMode option ->
      ImageFunctions.BoundaryCondition option ->
-     uint option -> Stage<Slice.Slice<float>,Slice.Slice<float>>)
+     uint option -> Stage<Image<float>,Image<float>>)
 
-val convGauss: sigma: float -> Stage<Slice.Slice<float>,Slice.Slice<float>>
+val convGauss: sigma: float -> Stage<Image<float>,Image<float>>
 
 val convolveOp:
   name: string ->
-    kernel: Slice.Slice<'T> ->
-    outputRegionMode: Slice.OutputRegionMode option ->
-    bc: Slice.BoundaryCondition option ->
-    winSz: uint option -> Stage<Slice.Slice<'T>,Slice.Slice<'T>>
-    when 'T: equality
+    kernel: Image<'T> ->
+    outputRegionMode: ImageFunctions.OutputRegionMode option ->
+    bc: ImageFunctions.BoundaryCondition option ->
+    winSz: uint option -> Stage<Image<'T>,Image<'T>> when 'T: equality
 
 val convolve:
-  kernel: Slice.Slice<'a> ->
-    outputRegionMode: Slice.OutputRegionMode option ->
-    boundaryCondition: Slice.BoundaryCondition option ->
-    winSz: uint option -> Stage<Slice.Slice<'a>,Slice.Slice<'a>>
-    when 'a: equality
+  kernel: Image<'a> ->
+    outputRegionMode: ImageFunctions.OutputRegionMode option ->
+    boundaryCondition: ImageFunctions.BoundaryCondition option ->
+    winSz: uint option -> Stage<Image<'a>,Image<'a>> when 'a: equality
 
-val conv:
-  kernel: Slice.Slice<'a> -> Stage<Slice.Slice<'a>,Slice.Slice<'a>>
-    when 'a: equality
+val conv: kernel: Image<'a> -> Stage<Image<'a>,Image<'a>> when 'a: equality
 
 val finiteDiff:
-  direction: uint -> order: uint -> Stage<Slice.Slice<float>,Slice.Slice<float>>
+  direction: uint -> order: uint -> Stage<Image<float>,Image<float>>
 
 val private makeMorphOp:
   name: string ->
     radius: uint ->
     winSz: uint option ->
-    core: (uint -> Slice.Slice<'T> -> Slice.Slice<'T>) ->
-    Stage<Slice.Slice<'T>,Slice.Slice<'T>> when 'T: equality
-
-val erode: radius: uint -> Stage<Slice.Slice<uint8>,Slice.Slice<uint8>>
-
-val dilate: radius: uint -> Stage<Slice.Slice<uint8>,Slice.Slice<uint8>>
-
-val opening: radius: uint -> Stage<Slice.Slice<uint8>,Slice.Slice<uint8>>
-
-val closing: radius: uint -> Stage<Slice.Slice<uint8>,Slice.Slice<uint8>>
-
-/// Full stack operators
-val binaryFillHoles: winSz: uint -> Stage<Slice.Slice<uint8>,Slice.Slice<uint8>>
-
-val connectedComponents:
-  winSz: uint -> Stage<Slice.Slice<uint8>,Slice.Slice<uint64>>
-
-val relabelComponents:
-  a: uint -> winSz: uint -> Stage<Slice.Slice<uint64>,Slice.Slice<uint64>>
-
-val watershed:
-  a: float -> winSz: uint -> Stage<Slice.Slice<uint8>,Slice.Slice<uint8>>
-
-val signedDistanceMap:
-  winSz: uint -> Stage<Slice.Slice<uint8>,Slice.Slice<float>>
-
-val otsuThreshold: winSz: uint -> Stage<Slice.Slice<uint8>,Slice.Slice<uint8>>
-
-val momentsThreshold:
-  winSz: uint -> Stage<Slice.Slice<uint8>,Slice.Slice<uint8>>
-
-val threshold:
-  a: float -> b: float -> SlimPipeline.Stage<Slice.Slice<'a>,Slice.Slice<'a>>
-    when 'a: equality
-
-val addNormalNoise:
-  a: float -> b: float -> SlimPipeline.Stage<Slice.Slice<'a>,Slice.Slice<'a>>
-    when 'a: equality
-
-val SliceConstantPad<'T when 'T: equality> :
-  padLower: uint list ->
-    padUpper: uint list ->
-    c: double -> SlimPipeline.Stage<Slice.Slice<obj>,Slice.Slice<obj>>
+    core: (uint -> Image<'T> -> Image<'T>) -> Stage<Image<'T>,Image<'T>>
     when 'T: equality
 
-type FileInfo = Slice.FileInfo
+val erode: radius: uint -> Stage<Image<uint8>,Image<uint8>>
 
-val getStackDepth: (string -> string -> uint)
+val dilate: radius: uint -> Stage<Image<uint8>,Image<uint8>>
 
-val getStackHeight: (string -> string -> uint64)
+val opening: radius: uint -> Stage<Image<uint8>,Image<uint8>>
 
-val getStackInfo: (string -> string -> Slice.FileInfo)
+val closing: radius: uint -> Stage<Image<uint8>,Image<uint8>>
 
-val getStackSize: (string -> string -> uint * uint * uint)
+/// Full stack operators
+val binaryFillHoles: winSz: uint -> Stage<Image<uint8>,Image<uint8>>
 
-val getStackWidth: (string -> string -> uint64)
+val connectedComponents: winSz: uint -> Stage<Image<uint8>,Image<uint64>>
+
+val relabelComponents:
+  a: uint -> winSz: uint -> Stage<Image<uint64>,Image<uint64>>
+
+val watershed: a: float -> winSz: uint -> Stage<Image<uint8>,Image<uint8>>
+
+val signedDistanceMap: winSz: uint -> Stage<Image<uint8>,Image<float>>
+
+val otsuThreshold: winSz: uint -> Stage<Image<uint8>,Image<uint8>>
+
+val momentsThreshold: winSz: uint -> Stage<Image<uint8>,Image<uint8>>
+
+val threshold:
+  a: float -> b: float -> SlimPipeline.Stage<#Image.Image<'b>,Image.Image<'b>>
+    when 'b: equality
+
+val addNormalNoise:
+  a: float -> b: float -> SlimPipeline.Stage<#Image.Image<'b>,Image.Image<'b>>
+    when 'b: equality
+
+val ImageConstantPad<'T when 'T: equality> :
+  padLower: uint list ->
+    padUpper: uint list ->
+    c: double -> SlimPipeline.Stage<Image.Image<obj>,Image.Image<obj>>
+    when 'T: equality
+
+type FileInfo = ImageFunctions.FileInfo
+
+val getStackDepth: inputDir: string -> suffix: string -> uint
+
+val getStackInfo: inputDir: string -> suffix: string -> FileInfo
+
+val getStackSize: inputDir: string -> suffix: string -> uint * uint * uint
+
+val getStackWidth: inputDir: string -> suffix: string -> uint64
+
+val getStackHeight: inputDir: string -> suffix: string -> uint64
 
 val zero:
   width: uint ->
     height: uint ->
     depth: uint ->
     pl: SlimPipeline.Pipeline<unit,unit> ->
-    SlimPipeline.Pipeline<unit,Slice.Slice<'T>> when 'T: equality
+    SlimPipeline.Pipeline<unit,Image<'T>> when 'T: equality
 
 val readFilteredOp:
   name: string ->
@@ -720,25 +367,25 @@ val readFilteredOp:
     suffix: string ->
     filter: (string array -> string array) ->
     pl: SlimPipeline.Pipeline<unit,unit> ->
-    SlimPipeline.Pipeline<unit,Slice.Slice<'T>> when 'T: equality
+    SlimPipeline.Pipeline<unit,Image<'T>> when 'T: equality
 
 val readFiltered:
   inputDir: string ->
     suffix: string ->
     filter: (string array -> string array) ->
     pl: SlimPipeline.Pipeline<unit,unit> ->
-    SlimPipeline.Pipeline<unit,Slice.Slice<'T>> when 'T: equality
+    SlimPipeline.Pipeline<unit,Image<'T>> when 'T: equality
 
 val read:
   inputDir: string ->
     suffix: string ->
     pl: SlimPipeline.Pipeline<unit,unit> ->
-    SlimPipeline.Pipeline<unit,Slice.Slice<'T>> when 'T: equality
+    SlimPipeline.Pipeline<unit,Image<'T>> when 'T: equality
 
 val readRandom:
   count: uint ->
     inputDir: string ->
     suffix: string ->
     pl: SlimPipeline.Pipeline<unit,unit> ->
-    SlimPipeline.Pipeline<unit,Slice.Slice<'T>> when 'T: equality
+    SlimPipeline.Pipeline<unit,Image<'T>> when 'T: equality
 

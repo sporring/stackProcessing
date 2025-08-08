@@ -38,7 +38,6 @@
     </ItemGroup>
 
     <ItemGroup>
-        <Compile Include="Slice.fs" />
         <Compile Include="StackProcessing.fs" />
     </ItemGroup>
 

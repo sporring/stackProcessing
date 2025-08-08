@@ -45,7 +45,8 @@ type Image<'T when 'T: equality> =
     interface System.IComparable
     interface System.IEquatable<Image<'T>>
     interface System.IDisposable
-    new: sz: uint list * ?numberComp: uint -> Image<'T>
+    new: sz: uint list * ?numberComp: uint * ?name: string * ?index: uint ->
+           Image<'T>
     static member
       (&&&) : f1: Image<'S> * f2: Image<'S> -> Image<'S> when 'S: equality
     static member ( * ) : f1: Image<'T> * f2: Image<'T> -> Image<'T>
@@ -92,10 +93,13 @@ type Image<'T when 'T: equality> =
     static member ofArray2D: arr: 'T array2d -> Image<'T>
     static member ofArray3D: arr: 'T array3d -> Image<'T>
     static member ofArray4D: arr: 'T array4d -> Image<'T>
-    static member ofFile: filename: string -> Image<'T>
+    static member
+      ofFile: filename: string * ?name: string * ?index: uint -> Image<'T>
     static member
       ofImageList: images: Image<'S> list -> Image<'S list> when 'S: equality
-    static member ofSimpleITK: itkImg: itk.simple.Image -> Image<'T>
+    static member
+      ofSimpleITK: itkImg: itk.simple.Image * ?name: string * ?index: uint ->
+                     Image<'T>
     static member unzip: im: Image<'T list> -> Image<'T> list
     static member zip: imLst: Image<'T> list -> Image<'T list>
     member CompareTo: other: Image<'T> -> int
@@ -138,6 +142,8 @@ type Image<'T when 'T: equality> =
     member Item: i0: int * i1: int * i2: int -> 'T with set
     member Item: i0: int * i1: int * i2: int * i3: int -> 'T with get
     member Item: i0: int * i1: int * i2: int * i3: int -> 'T with set
+    member Name: string
+    member index: uint32 with get, set
 module ImageFunctions
 val inline imageAddScalar:
   f1: Image.Image<^S> -> i: ^S -> Image.Image<^S>

@@ -232,7 +232,7 @@ let equalOne (v : 'T) : bool =
     | _ -> failwithf "Don't know the value of 1 for %A" (typeof<'T>)
 
 [<StructuredFormatDisplay("{Display}")>] // Prevent fsi printing information about its members such as img
-type Image<'T when 'T : equality>(sz: uint list, ?numberComp: uint) =
+type Image<'T when 'T : equality>(sz: uint list, ?numberComp: uint, ?name: string, ?index: uint) =
     let itkId = fromType<'T>
     let isListType = typeof<'T>.IsGenericType && typeof<'T>.GetGenericTypeDefinition() = typedefof<list<_>>
     let mutable img = 
@@ -245,6 +245,7 @@ type Image<'T when 'T : equality>(sz: uint list, ?numberComp: uint) =
             new itk.simple.Image(sz |> toVectorUInt32, itkId, v)
         | None -> 
             new itk.simple.Image(sz |> toVectorUInt32, itkId)
+
     static let mutable totalImages = 0
     do totalImages <- totalImages+1
     do printfn "Image count: %d" totalImages
@@ -255,6 +256,8 @@ type Image<'T when 'T : equality>(sz: uint list, ?numberComp: uint) =
             totalImages <- totalImages - 1
 
     member this.Image = img
+    member val Name = (Option.defaultValue "" name) with get
+    member val index = (Option.defaultValue 0u index) with get, set
     member private this.SetImg (itkImg: itk.simple.Image) : unit =
         img <- itkImg
     member this.GetSize () = img.GetSize() |> fromVectorUInt32
@@ -286,9 +289,9 @@ type Image<'T when 'T : equality>(sz: uint list, ?numberComp: uint) =
         let bytesPerComponent = getBytesPerComponent t
         bytesPerComponent * this.GetNumberOfComponentsPerPixel() * (this.GetSize() |> List.reduce (*));
 
-    static member ofSimpleITK (itkImg: itk.simple.Image) : Image<'T> =
+    static member ofSimpleITK (itkImg: itk.simple.Image, ?name: string, ?index: uint) : Image<'T> =
         let itkImgCast = ofCastItk<'T> itkImg
-        let img = new Image<'T>([0u;0u])
+        let img = new Image<'T>([0u;0u],itkImgCast.GetNumberOfComponentsPerPixel(),Option.defaultValue "" name,Option.defaultValue 0u index)
         img.SetImg itkImgCast
         img
 
@@ -363,7 +366,7 @@ type Image<'T when 'T : equality>(sz: uint list, ?numberComp: uint) =
             Image<'S>.ofSimpleITK scalarItk
         )
 
-    static member ofFile(filename: string) : Image<'T> =
+    static member ofFile(filename: string, ?name: string, ?index: uint) : Image<'T> =
         use reader = new itk.simple.ImageFileReader()
         reader.SetFileName(filename)
         let itkImg = reader.Execute()
@@ -380,7 +383,7 @@ type Image<'T when 'T : equality>(sz: uint list, ?numberComp: uint) =
         | false, n when n > 1u ->
             failwithf "Pixel type '%O' expects a scalar (1 component), but image has %d component(s)." tType n
         | _ ->
-            Image<'T>.ofSimpleITK(itkImg)
+            Image<'T>.ofSimpleITK(itkImg,Option.defaultValue "" name,Option.defaultValue 0u index)
 
     member this.toFile(filename: string, ?format: string) =
         use writer = new itk.simple.ImageFileWriter()
@@ -397,7 +400,7 @@ type Image<'T when 'T : equality>(sz: uint list, ?numberComp: uint) =
     static member (-) (f1: Image<'T>, f2: Image<'T>) =
         let filter = new itk.simple.SubtractImageFilter()
         Image<'T>.ofSimpleITK(filter.Execute(f1.toSimpleITK(), f2.toSimpleITK()))
-    static member (*) (f1: Image<'T>, f2: Image<'T>) =
+    static member ( * ) (f1: Image<'T>, f2: Image<'T>) =
         let filter = new itk.simple.MultiplyImageFilter()
         Image<'T>.ofSimpleITK(filter.Execute(f1.toSimpleITK(), f2.toSimpleITK()))
     static member (/) (f1: Image<'T>, f2: Image<'T>) =

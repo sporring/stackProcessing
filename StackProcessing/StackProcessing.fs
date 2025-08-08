@@ -6,7 +6,8 @@ open System.IO
 type Stage<'S,'T> = SlimPipeline.Stage<'S,'T>
 type Profile = SlimPipeline.Profile
 type ProfileTransition = SlimPipeline.ProfileTransition
-type Slice<'S when 'S: equality> = Slice.Slice<'S>
+//type Slice<'S when 'S: equality> = Slice.Slice<'S>
+type Image<'S when 'S: equality> = Image.Image<'S>
 
 let (-->) = Stage.(-->)
 let source = Pipeline.source 
@@ -26,41 +27,41 @@ let tap = Stage.tap
 let tapIt = Stage.tapIt
 let ignoreAll = Stage.ignore<_>
 let liftUnary 
-    (f: Slice.Slice<'S> -> Slice.Slice<'T>)
+    (f: Image<'S> -> Image<'T>)
     (memoryNeed: MemoryNeed)
     (nElemsTransformation: NElemsTransformation) = 
-    Stage.liftUnary<Slice.Slice<'S>,Slice.Slice<'T>> "liftUnary" f memoryNeed nElemsTransformation
-let zeroMaker<'S when 'S: equality> (ex:Slice.Slice<'S>) : Slice.Slice<'S> = Slice.create<'S> (Slice.GetWidth ex) (Slice.GetHeight ex) 1u 0u
+    Stage.liftUnary<Image<'S>,Image<'T>> "liftUnary" f memoryNeed nElemsTransformation
+let zeroMaker<'S when 'S: equality> (ex:Image<'S>) : Image<'S> = new Image<'S>(ex.GetSize(), 1u, "zero", 0u)
 let liftWindowed 
     (name: string) 
     (window: uint) 
     (pad: uint) 
-    (zeroMaker: Slice.Slice<'S>->Slice.Slice<'S>) 
+    (zeroMaker: Image<'S>->Image<'S>) 
     (stride: uint) 
     (emitStart: uint) 
     (emitCount: uint) 
-    (f: Slice.Slice<'S> list -> Slice.Slice<'T> list) 
+    (f: Image<'S> list -> Image<'T> list) 
     (memoryNeed: MemoryNeed)
     (nElemsTransformation: NElemsTransformation)
-    : Stage<Slice.Slice<'S>, Slice.Slice<'T>> =
-    Stage.liftWindowed<Slice.Slice<'S>,Slice.Slice<'T>> name window pad zeroMaker stride emitStart emitCount f memoryNeed nElemsTransformation
+    : Stage<Image<'S>, Image<'T>> =
+    Stage.liftWindowed<Image<'S>,Image<'T>> name window pad zeroMaker stride emitStart emitCount f memoryNeed nElemsTransformation
 let getBytesPerComponent<'T> = (typeof<'T> |> Image.getBytesPerComponent |> uint64)
 
-let write (outputDir: string) (suffix: string) : Stage<Slice.Slice<'T>, unit> =
+let write (outputDir: string) (suffix: string) : Stage<Image<'T>, unit> =
     if not (Directory.Exists(outputDir)) then
         Directory.CreateDirectory(outputDir) |> ignore
-    let consumer (debug: bool) (idx: int) (slice:Slice.Slice<'T>) =
-        let fileName = Path.Combine(outputDir, sprintf "slice_%03d%s" idx suffix)
-        if debug then printfn "[write] Saved slice %d to %s as %s" idx fileName (typeof<'T>.Name) 
-        slice.Image.toFile(fileName)
+    let consumer (debug: bool) (idx: int) (image:Image<'T>) =
+        let fileName = Path.Combine(outputDir, sprintf "image_%03d%s" idx suffix)
+        if debug then printfn "[write] Saved image %d to %s as %s" idx fileName (typeof<'T>.Name) 
+        image.toFile(fileName)
     Stage.consumeWith $"write \"{outputDir}/*{suffix}\"" consumer 
 
-let show (plt: Slice.Slice<'T> -> unit) : Stage<Slice.Slice<'T>, unit> =
-    let consumer (debug: bool) (idx: int) (slice:Slice.Slice<'T>) =
-        if debug then printfn "[show] Showing slice %d" idx
-        let width = slice |> Slice.GetWidth |> int
-        let height = slice |> Slice.GetHeight |> int
-        plt slice
+let show (plt: Image<'T> -> unit) : Stage<Image<'T>, unit> =
+    let consumer (debug: bool) (idx: int) (image:Image<'T>) =
+        if debug then printfn "[show] Showing image %d" idx
+        let width = image.GetWidth() |> int
+        let height = image.GetHeight() |> int
+        plt image
     Stage.consumeWith "show" consumer 
 
 let plot (plt: (float list)->(float list)->unit) : Stage<(float * float) list, unit> = // better be (float*float) list
@@ -77,22 +78,22 @@ let print () : Stage<'T, unit> =
     Stage.consumeWith "print" consumer 
 
 (*
-let liftImageSource (name: string) (img: Slice.Slice<'T>) : Pipe<unit, Slice.Slice<'T>> =
+let liftImageSource (name: string) (img: Image<'T>) : Pipe<unit, Image<'T>> =
     {
         Name = name
         Profile = Streaming
-        Apply = fun _ -> img |> Slice.unstack |> AsyncSeq.ofSeq
+        Apply = fun _ -> img |> Image.unstack |> AsyncSeq.ofSeq
     }
 
 let axisSource
     (axis: int) 
     (size: int list)
     (pl : Pipeline<unit, unit>) 
-    : Pipeline<unit, Slice.Slice<uint>> =
-    let img = Slice.generateCoordinateAxis axis size
-    let sz = Slice.GetSize img
+    : Pipeline<unit, Image<uint>> =
+    let img = Image.generateCoordinateAxis axis size
+    let sz = Image.GetSize img
     let shapeUpdate = fun (s: Shape) -> s
-    let op : Stage<unit, Slice.Slice<uint>> =
+    let op : Stage<unit, Image<uint>> =
         {
             Name = "axisSource"
             Pipe = img |> liftImageSource "axisSource"
@@ -111,77 +112,77 @@ let axisSource
 *)
 
 /// Pixel type casting
-let cast<'S,'T when 'S: equality and 'T: equality> = Stage.cast<Slice.Slice<'S>,Slice.Slice<'T>> (sprintf "cast(%s->%s)" typeof<'S>.Name typeof<'T>.Name) Slice.cast<'S,'T>
+let cast<'S,'T when 'S: equality and 'T: equality> = Stage.cast<Image<'S>,Image<'T>> (sprintf "cast(%s->%s)" typeof<'S>.Name typeof<'T>.Name) (fun (I: Image<'S>) -> I.castTo<'T> ())
 
 /// Basic arithmetic
 let memNeeded<'T> nTimes nElems = nElems*nTimes*getBytesPerComponent<'T> // Assuming source and target in memory simultaneously
-let add slice = 
-    Stage.liftUnary<Slice.Slice<'T>,Slice.Slice<'T>> "add" (Slice.add slice) id id
-let inline scalarAddSlice<^T when ^T: equality and ^T: (static member op_Explicit: ^T -> float)> (i: ^T) = 
-    Stage.liftUnary<Slice.Slice<'T>,Slice.Slice<'T>> "scalarAddSlice" (fun (s:Slice.Slice<^T>)->Slice.scalarAddSlice<^T> i s) id id
-let inline sliceAddScalar<^T when ^T: equality and ^T: (static member op_Explicit: ^T -> float)> (i: ^T) =
-    Stage.liftUnary<Slice.Slice<'T>,Slice.Slice<'T>> "sliceAddScalar" (fun (s:Slice.Slice<^T>)->Slice.sliceAddScalar<^T> s i) id id
+let add (image: Image<'T>) = 
+    Stage.liftUnary<Image<'T>,Image<'T>> "add" ((+) image) id id
+let inline scalarAddImage<^T when ^T: equality and ^T: (static member op_Explicit: ^T -> float)> (i: ^T) = 
+    Stage.liftUnary<Image<'T>,Image<'T>> "scalarAddImage" (fun (s:Image<^T>)->ImageFunctions.scalarAddImage<^T> i s) id id
+let inline imageAddScalar<^T when ^T: equality and ^T: (static member op_Explicit: ^T -> float)> (i: ^T) =
+    Stage.liftUnary<Image<'T>,Image<'T>> "imageAddScalar" (fun (s:Image<^T>)->ImageFunctions.imageAddScalar<^T> s i) id id
 
-let sub slice = 
-    Stage.liftUnary<Slice.Slice<'T>,Slice.Slice<'T>> "sub" (Slice.sub slice) id id
-let inline scalarSubSlice<^T when ^T: equality and ^T: (static member op_Explicit: ^T -> float)> (i: ^T) =
-    Stage.liftUnary<Slice.Slice<'T>,Slice.Slice<'T>> "scalarSubSlice" (fun (s:Slice.Slice<^T>)->Slice.scalarSubSlice<^T> i s) id id
-let inline sliceSubScalar<^T when ^T: equality and ^T: (static member op_Explicit: ^T -> float)> (i: ^T) =
-    Stage.liftUnary<Slice.Slice<'T>,Slice.Slice<'T>> "sliceSubScalar" (fun (s:Slice.Slice<^T>)->Slice.sliceSubScalar<^T> s i) id id
+let sub (image: Image<'T>) = 
+    Stage.liftUnary<Image<'T>,Image<'T>> "sub" ((-) image) id id
+let inline scalarSubImage<^T when ^T: equality and ^T: (static member op_Explicit: ^T -> float)> (i: ^T) =
+    Stage.liftUnary<Image<'T>,Image<'T>> "scalarSubImage" (fun (s:Image<^T>)->ImageFunctions.scalarSubImage<^T> i s) id id
+let inline imageSubScalar<^T when ^T: equality and ^T: (static member op_Explicit: ^T -> float)> (i: ^T) =
+    Stage.liftUnary<Image<'T>,Image<'T>> "imageSubScalar" (fun (s:Image<^T>)->ImageFunctions.imageSubScalar<^T> s i) id id
 
-let mul slice = Stage.liftUnary<Slice.Slice<'T>,Slice.Slice<'T>> "mul" (Slice.mul slice) id id
-let inline scalarMulSlice<^T when ^T: equality and ^T: (static member op_Explicit: ^T -> float)> (i: ^T) =
-    Stage.liftUnary<Slice.Slice<'T>,Slice.Slice<'T>> "scalarMulSlice" (fun (s:Slice.Slice<^T>)->Slice.scalarMulSlice<^T> i s) id id
-let inline sliceMulScalar<^T when ^T: equality and ^T: (static member op_Explicit: ^T -> float)> (i: ^T) =
-    Stage.liftUnary<Slice.Slice<'T>,Slice.Slice<'T>> "sliceMulScalar" (fun (s:Slice.Slice<^T>)->Slice.sliceMulScalar<^T> s i) id id
+let mul (image: Image<'T>) = Stage.liftUnary<Image<'T>,Image<'T>> "mul" (( * ) image) id id
+let inline scalarMulImage<^T when ^T: equality and ^T: (static member op_Explicit: ^T -> float)> (i: ^T) =
+    Stage.liftUnary<Image<'T>,Image<'T>> "scalarMulImage" (fun (s:Image<^T>)->ImageFunctions.scalarMulImage<^T> i s) id id
+let inline imageMulScalar<^T when ^T: equality and ^T: (static member op_Explicit: ^T -> float)> (i: ^T) =
+    Stage.liftUnary<Image<'T>,Image<'T>> "imageMulScalar" (fun (s:Image<^T>)->ImageFunctions.imageMulScalar<^T> s i) id id
 
-let div slice = Stage.liftUnary<Slice.Slice<'T>,Slice.Slice<'T>> "div" (Slice.div slice) id id
-let inline scalarDivSlice<^T when ^T: equality and ^T: (static member op_Explicit: ^T -> float)> (i: ^T) =
-    Stage.liftUnary<Slice.Slice<'T>,Slice.Slice<'T>> "scalarDivSlice" (fun (s:Slice.Slice<^T>)->Slice.scalarDivSlice<^T> i s) id id
-let inline sliceDivScalar<^T when ^T: equality and ^T: (static member op_Explicit: ^T -> float)> (i: ^T) =
-    Stage.liftUnary<Slice.Slice<'T>,Slice.Slice<'T>> "sliceDivScalar" (fun (s:Slice.Slice<^T>)->Slice.sliceDivScalar<^T> s i) id id
+let div (image: Image<'T>) = Stage.liftUnary<Image<'T>,Image<'T>> "div" ((/) image) id id
+let inline scalarDivImage<^T when ^T: equality and ^T: (static member op_Explicit: ^T -> float)> (i: ^T) =
+    Stage.liftUnary<Image<'T>,Image<'T>> "scalarDivImage" (fun (s:Image<^T>)->ImageFunctions.scalarDivImage<^T> i s) id id
+let inline imageDivScalar<^T when ^T: equality and ^T: (static member op_Explicit: ^T -> float)> (i: ^T) =
+    Stage.liftUnary<Image<'T>,Image<'T>> "imageDivScalar" (fun (s:Image<^T>)->ImageFunctions.imageDivScalar<^T> s i) id id
 
 /// Simple functions
-let abs<'T when 'T: equality> : Stage<Slice.Slice<'T>,Slice.Slice<'T>> =      Stage.liftUnary<Slice.Slice<'T>,Slice.Slice<'T>> "abs"    Slice.absSlice id id
-let absFloat      : Stage<Slice.Slice<float>,Slice.Slice<float>> =      Stage.liftUnary<Slice.Slice<float>,Slice.Slice<float>> "abs"    Slice.absSlice id id
-let absFloat32    : Stage<Slice.Slice<float32>,Slice.Slice<float32>> =  Stage.liftUnary<Slice.Slice<float32>,Slice.Slice<float32>> "abs"    Slice.absSlice id id
-let absInt        : Stage<Slice.Slice<int>,Slice.Slice<int>> =          Stage.liftUnary<Slice.Slice<int>,Slice.Slice<int>> "abs"    Slice.absSlice id id
-let acosFloat     : Stage<Slice.Slice<float>,Slice.Slice<float>> =      Stage.liftUnary<Slice.Slice<float>,Slice.Slice<float>> "acos"   Slice.acosSlice id id
-let acosFloat32   : Stage<Slice.Slice<float32>,Slice.Slice<float32>> =  Stage.liftUnary<Slice.Slice<float32>,Slice.Slice<float32>> "acos"   Slice.acosSlice id id
-let asinFloat     : Stage<Slice.Slice<float>,Slice.Slice<float>> =      Stage.liftUnary<Slice.Slice<float>,Slice.Slice<float>> "asin"   Slice.asinSlice id id
-let asinFloat32   : Stage<Slice.Slice<float32>,Slice.Slice<float32>> =  Stage.liftUnary<Slice.Slice<float32>,Slice.Slice<float32>> "asin"   Slice.asinSlice id id
-let atanFloat     : Stage<Slice.Slice<float>,Slice.Slice<float>> =      Stage.liftUnary<Slice.Slice<float>,Slice.Slice<float>> "atan"   Slice.atanSlice id id
-let atanFloat32   : Stage<Slice.Slice<float32>,Slice.Slice<float32>> =  Stage.liftUnary<Slice.Slice<float32>,Slice.Slice<float32>> "atan"   Slice.atanSlice id id
-let cosFloat      : Stage<Slice.Slice<float>,Slice.Slice<float>> =      Stage.liftUnary<Slice.Slice<float>,Slice.Slice<float>> "cos"    Slice.cosSlice id id
-let cosFloat32    : Stage<Slice.Slice<float32>,Slice.Slice<float32>> =  Stage.liftUnary<Slice.Slice<float32>,Slice.Slice<float32>> "cos"    Slice.cosSlice id id
-let sinFloat      : Stage<Slice.Slice<float>,Slice.Slice<float>> =      Stage.liftUnary<Slice.Slice<float>,Slice.Slice<float>> "sin"    Slice.sinSlice id id
-let sinFloat32    : Stage<Slice.Slice<float32>,Slice.Slice<float32>> =  Stage.liftUnary<Slice.Slice<float32>,Slice.Slice<float32>> "sin"    Slice.sinSlice id id
-let tanFloat      : Stage<Slice.Slice<float>,Slice.Slice<float>> =      Stage.liftUnary<Slice.Slice<float>,Slice.Slice<float>> "tan"    Slice.tanSlice id id
-let tanFloat32    : Stage<Slice.Slice<float32>,Slice.Slice<float32>> =  Stage.liftUnary<Slice.Slice<float32>,Slice.Slice<float32>> "tan"    Slice.tanSlice id id
-let expFloat      : Stage<Slice.Slice<float>,Slice.Slice<float>> =      Stage.liftUnary<Slice.Slice<float>,Slice.Slice<float>> "exp"    Slice.expSlice id id
-let expFloat32    : Stage<Slice.Slice<float32>,Slice.Slice<float32>> =  Stage.liftUnary<Slice.Slice<float32>,Slice.Slice<float32>> "exp"    Slice.expSlice id id
-let log10Float    : Stage<Slice.Slice<float>,Slice.Slice<float>> =      Stage.liftUnary<Slice.Slice<float>,Slice.Slice<float>> "log10"  Slice.log10Slice id id
-let log10Float32  : Stage<Slice.Slice<float32>,Slice.Slice<float32>> =  Stage.liftUnary<Slice.Slice<float32>,Slice.Slice<float32>> "log10"  Slice.log10Slice id id
-let logFloat      : Stage<Slice.Slice<float>,Slice.Slice<float>> =      Stage.liftUnary<Slice.Slice<float>,Slice.Slice<float>> "log"    Slice.logSlice id id
-let logFloat32    : Stage<Slice.Slice<float32>,Slice.Slice<float32>> =  Stage.liftUnary<Slice.Slice<float32>,Slice.Slice<float32>> "log"    Slice.logSlice id id
-let roundFloat    : Stage<Slice.Slice<float>,Slice.Slice<float>> =      Stage.liftUnary<Slice.Slice<float>,Slice.Slice<float>> "round"  Slice.roundSlice id id
-let roundFloat32  : Stage<Slice.Slice<float32>,Slice.Slice<float32>> =  Stage.liftUnary<Slice.Slice<float32>,Slice.Slice<float32>> "round"  Slice.roundSlice id id
-let sqrtFloat     : Stage<Slice.Slice<float>,Slice.Slice<float>> =      Stage.liftUnary<Slice.Slice<float>,Slice.Slice<float>> "sqrt"   Slice.sqrtSlice id id
-let sqrtFloat32   : Stage<Slice.Slice<float32>,Slice.Slice<float32>> =  Stage.liftUnary<Slice.Slice<float32>,Slice.Slice<float32>> "sqrt"   Slice.sqrtSlice id id
-let sqrtInt       : Stage<Slice.Slice<int>,Slice.Slice<int>> =          Stage.liftUnary<Slice.Slice<int>,Slice.Slice<int>> "sqrt"   Slice.sqrtSlice id id
-let squareFloat   : Stage<Slice.Slice<float>,Slice.Slice<float>> =      Stage.liftUnary<Slice.Slice<float>,Slice.Slice<float>> "square" Slice.squareSlice id id
-let squareFloat32 : Stage<Slice.Slice<float32>,Slice.Slice<float32>> =  Stage.liftUnary<Slice.Slice<float32>,Slice.Slice<float32>> "square" Slice.squareSlice id id
-let squareInt     : Stage<Slice.Slice<int>,Slice.Slice<int>> =          Stage.liftUnary<Slice.Slice<int>,Slice.Slice<int>> "square" Slice.squareSlice id id
+let abs<'T when 'T: equality> : Stage<Image<'T>,Image<'T>> =      Stage.liftUnary<Image<'T>,Image<'T>> "abs"    ImageFunctions.absImage id id
+let absFloat      : Stage<Image<float>,Image<float>> =      Stage.liftUnary<Image<float>,Image<float>> "abs"    ImageFunctions.absImage id id
+let absFloat32    : Stage<Image<float32>,Image<float32>> =  Stage.liftUnary<Image<float32>,Image<float32>> "abs"    ImageFunctions.absImage id id
+let absInt        : Stage<Image<int>,Image<int>> =          Stage.liftUnary<Image<int>,Image<int>> "abs"    ImageFunctions.absImage id id
+let acosFloat     : Stage<Image<float>,Image<float>> =      Stage.liftUnary<Image<float>,Image<float>> "acos"   ImageFunctions.acosImage id id
+let acosFloat32   : Stage<Image<float32>,Image<float32>> =  Stage.liftUnary<Image<float32>,Image<float32>> "acos"   ImageFunctions.acosImage id id
+let asinFloat     : Stage<Image<float>,Image<float>> =      Stage.liftUnary<Image<float>,Image<float>> "asin"   ImageFunctions.asinImage id id
+let asinFloat32   : Stage<Image<float32>,Image<float32>> =  Stage.liftUnary<Image<float32>,Image<float32>> "asin"   ImageFunctions.asinImage id id
+let atanFloat     : Stage<Image<float>,Image<float>> =      Stage.liftUnary<Image<float>,Image<float>> "atan"   ImageFunctions.atanImage id id
+let atanFloat32   : Stage<Image<float32>,Image<float32>> =  Stage.liftUnary<Image<float32>,Image<float32>> "atan"   ImageFunctions.atanImage id id
+let cosFloat      : Stage<Image<float>,Image<float>> =      Stage.liftUnary<Image<float>,Image<float>> "cos"    ImageFunctions.cosImage id id
+let cosFloat32    : Stage<Image<float32>,Image<float32>> =  Stage.liftUnary<Image<float32>,Image<float32>> "cos"    ImageFunctions.cosImage id id
+let sinFloat      : Stage<Image<float>,Image<float>> =      Stage.liftUnary<Image<float>,Image<float>> "sin"    ImageFunctions.sinImage id id
+let sinFloat32    : Stage<Image<float32>,Image<float32>> =  Stage.liftUnary<Image<float32>,Image<float32>> "sin"    ImageFunctions.sinImage id id
+let tanFloat      : Stage<Image<float>,Image<float>> =      Stage.liftUnary<Image<float>,Image<float>> "tan"    ImageFunctions.tanImage id id
+let tanFloat32    : Stage<Image<float32>,Image<float32>> =  Stage.liftUnary<Image<float32>,Image<float32>> "tan"    ImageFunctions.tanImage id id
+let expFloat      : Stage<Image<float>,Image<float>> =      Stage.liftUnary<Image<float>,Image<float>> "exp"    ImageFunctions.expImage id id
+let expFloat32    : Stage<Image<float32>,Image<float32>> =  Stage.liftUnary<Image<float32>,Image<float32>> "exp"    ImageFunctions.expImage id id
+let log10Float    : Stage<Image<float>,Image<float>> =      Stage.liftUnary<Image<float>,Image<float>> "log10"  ImageFunctions.log10Image id id
+let log10Float32  : Stage<Image<float32>,Image<float32>> =  Stage.liftUnary<Image<float32>,Image<float32>> "log10"  ImageFunctions.log10Image id id
+let logFloat      : Stage<Image<float>,Image<float>> =      Stage.liftUnary<Image<float>,Image<float>> "log"    ImageFunctions.logImage id id
+let logFloat32    : Stage<Image<float32>,Image<float32>> =  Stage.liftUnary<Image<float32>,Image<float32>> "log"    ImageFunctions.logImage id id
+let roundFloat    : Stage<Image<float>,Image<float>> =      Stage.liftUnary<Image<float>,Image<float>> "round"  ImageFunctions.roundImage id id
+let roundFloat32  : Stage<Image<float32>,Image<float32>> =  Stage.liftUnary<Image<float32>,Image<float32>> "round"  ImageFunctions.roundImage id id
+let sqrtFloat     : Stage<Image<float>,Image<float>> =      Stage.liftUnary<Image<float>,Image<float>> "sqrt"   ImageFunctions.sqrtImage id id
+let sqrtFloat32   : Stage<Image<float32>,Image<float32>> =  Stage.liftUnary<Image<float32>,Image<float32>> "sqrt"   ImageFunctions.sqrtImage id id
+let sqrtInt       : Stage<Image<int>,Image<int>> =          Stage.liftUnary<Image<int>,Image<int>> "sqrt"   ImageFunctions.sqrtImage id id
+let squareFloat   : Stage<Image<float>,Image<float>> =      Stage.liftUnary<Image<float>,Image<float>> "square" ImageFunctions.squareImage id id
+let squareFloat32 : Stage<Image<float32>,Image<float32>> =  Stage.liftUnary<Image<float32>,Image<float32>> "square" ImageFunctions.squareImage id id
+let squareInt     : Stage<Image<int>,Image<int>> =          Stage.liftUnary<Image<int>,Image<int>> "square" ImageFunctions.squareImage id id
 
 //let histogram<'T when 'T: comparison> = histogramOp<'T> "histogram"
-let sliceHistogram () =
-    Stage.map<Slice.Slice<'T>,Map<'T,uint64>> "histogram:map" Slice.histogram id id// Assumed max for uint8, can be done better
+let imageHistogram () =
+    Stage.map<Image<'T>,Map<'T,uint64>> "histogram:map" ImageFunctions.histogram id id// Assumed max for uint8, can be done better
 
-let sliceHistogramFold () =
-    Stage.fold<Map<'T,uint64>, Map<'T,uint64>> "histogram:fold" Slice.addHistogram (Map.empty<'T, uint64>) id id
+let imageHistogramFold () =
+    Stage.fold<Map<'T,uint64>, Map<'T,uint64>> "histogram:fold" ImageFunctions.addHistogram (Map.empty<'T, uint64>) id id
 
 let histogram () =
-    sliceHistogram () --> sliceHistogramFold ()
+    imageHistogram () --> imageHistogramFold ()
 
 let inline map2pairs< ^T, ^S when ^T: comparison and ^T : (static member op_Explicit : ^T -> float) and  ^S : (static member op_Explicit : ^S -> float) > = 
     let map2pairs (map: Map<'T, 'S>): ('T * 'S) list =
@@ -197,10 +198,10 @@ let inline pairs2ints< ^T, ^S when ^T : (static member op_Explicit : ^T -> int) 
     Stage.liftUnary<(^T * ^S) list,(int*int) list> "pairs2ints" pairs2ints id id
 
 type ImageStats = ImageFunctions.ImageStats
-let sliceComputeStats () =
-    Stage.map<Slice.Slice<'T>,ImageStats> "computeStats:map" Slice.computeStats id id
+let imageComputeStats () =
+    Stage.map<Image<'T>,ImageStats> "computeStats:map" ImageFunctions.computeStats id id
 
-let sliceComputeStatsFold () =
+let imageComputeStatsFold () =
     let zeroStats: ImageStats = { 
         NumPixels = 0u
         Mean = 0.0
@@ -210,10 +211,10 @@ let sliceComputeStatsFold () =
         Sum = 0.0
         Var = 0.0
     }
-    Stage.fold<ImageStats, ImageStats> "computeStats:fold" Slice.addComputeStats zeroStats id id
+    Stage.fold<ImageStats, ImageStats> "computeStats:fold" ImageFunctions.addComputeStats zeroStats id id
 
 let computeStats () =
-    sliceComputeStats () --> sliceComputeStatsFold ()
+    imageComputeStats () --> imageComputeStatsFold ()
 
 ////////////////////////////////////////////////
 /// Convolution like operators
@@ -222,22 +223,22 @@ let computeStats () =
 open type ImageFunctions.OutputRegionMode
 open type ImageFunctions.BoundaryCondition
 
-let stackFUnstack f (slices : Slice.Slice<'T> list) =
-    slices |> Slice.stack |> f |> Slice.unstack
+let stackFUnstack f (images : Image<'T> list) =
+    images |> ImageFunctions.stack |> f |> ImageFunctions.unstack
 
 let skipNTakeM (n: uint) (m: uint) (lst: 'a list) : 'a list =
     let m = uint lst.Length - 2u*n;
     if m = 0u then []
     else lst |> List.skip (int n) |> List.take (int m) 
 
-let stackFUnstackTrim trim f (slices : Slice.Slice<'T> list) =
-    let m = uint slices.Length - 2u*trim 
-    slices |> Slice.stack |> f |> Slice.unstack |> skipNTakeM trim m
+let stackFUnstackTrim trim f (images : Image<'T> list) =
+    let m = uint images.Length - 2u*trim 
+    images |> ImageFunctions.stack |> f |> ImageFunctions.unstack |> skipNTakeM trim m
 
 let takeEveryNth (n: uint) = 
     liftWindowed "nth" 1u 0u zeroMaker<float> n 0u 100000u id id
 
-let discreteGaussianOp (name:string) (sigma:float) (outputRegionMode: Slice.OutputRegionMode option) (boundaryCondition: ImageFunctions.BoundaryCondition option) (winSz: uint option): Stage<Slice.Slice<float>, Slice.Slice<float>> =
+let discreteGaussianOp (name:string) (sigma:float) (outputRegionMode: ImageFunctions.OutputRegionMode option) (boundaryCondition: ImageFunctions.BoundaryCondition option) (winSz: uint option): Stage<Image<float>, Image<float>> =
     let roundFloatToUint v = uint (v+0.5)
 
     let ksz = 4.0 * sigma + 1.0 |> roundFloatToUint
@@ -247,7 +248,7 @@ let discreteGaussianOp (name:string) (sigma:float) (outputRegionMode: Slice.Outp
         match outputRegionMode with
             | Some Valid -> 0u
             | _ -> ksz/2u //floor
-    let f slices = slices |> stackFUnstackTrim pad (fun slice3D -> Slice.discreteGaussian 3u sigma (ksz |> Some) outputRegionMode boundaryCondition slice3D)
+    let f images = images |> stackFUnstackTrim pad (fun image3D -> ImageFunctions.discreteGaussian 3u sigma (ksz |> Some) outputRegionMode boundaryCondition image3D)
     liftWindowed name win pad zeroMaker<float> stride pad stride f id id
 
 let discreteGaussian = discreteGaussianOp "discreteGaussian"
@@ -278,9 +279,9 @@ let convGauss sigma = discreteGaussianOp "convGauss" sigma None None None
 //                                          * * *
 //                                            * * *
 
-let convolveOp (name: string) (kernel: Slice.Slice<'T>) (outputRegionMode: Slice.OutputRegionMode option) (bc: Slice.BoundaryCondition option) (winSz: uint option): Stage<Slice.Slice<'T>, Slice.Slice<'T>> =
-    let windowFromKernel (k: Slice.Slice<'T>) : uint =
-        max 1u (k |> Slice.GetDepth)
+let convolveOp (name: string) (kernel: Image<'T>) (outputRegionMode: ImageFunctions.OutputRegionMode option) (bc: ImageFunctions.BoundaryCondition option) (winSz: uint option): Stage<Image<'T>, Image<'T>> =
+    let windowFromKernel (k: Image<'T>) : uint =
+        max 1u (k.GetDepth())
     let ksz = windowFromKernel kernel
     let win = Option.defaultValue ksz winSz |> min ksz
     let stride = win-ksz+1u
@@ -288,85 +289,104 @@ let convolveOp (name: string) (kernel: Slice.Slice<'T>) (outputRegionMode: Slice
         match outputRegionMode with
             | Some Valid -> 0u
             | _ -> ksz/2u //floor
-    let f slices = slices |> stackFUnstackTrim (ksz - 1u) (fun slice3D -> Slice.convolve outputRegionMode bc slice3D kernel)
+    let f images = images |> stackFUnstackTrim (ksz - 1u) (fun image3D -> ImageFunctions.convolve outputRegionMode bc image3D kernel)
     liftWindowed name win pad zeroMaker<'T> stride (win-1u) (1u) f id id
 
 let convolve kernel outputRegionMode boundaryCondition winSz = convolveOp "convolve" kernel outputRegionMode boundaryCondition winSz
 let conv kernel = convolveOp "conv" kernel None None None
 
 let finiteDiff (direction: uint) (order: uint) =
-    let kernel = Slice.finiteDiffFilter3D direction order
+    let kernel = ImageFunctions.finiteDiffFilter3D direction order
     convolveOp "finiteDiff" kernel None None None
 
 // these only works on uint8
-let private makeMorphOp (name:string) (radius:uint) (winSz: uint option) (core: uint -> Slice.Slice<'T> -> Slice.Slice<'T>) : Stage<Slice.Slice<'T>,Slice.Slice<'T>> when 'T: equality =
+let private makeMorphOp (name:string) (radius:uint) (winSz: uint option) (core: uint -> Image<'T> -> Image<'T>) : Stage<Image<'T>,Image<'T>> when 'T: equality =
     let ksz   = 2u * radius + 1u
     let win = Option.defaultValue ksz winSz |> min ksz
     let stride = win - ksz + 1u
-    let f slices = slices |> stackFUnstackTrim radius (core radius)
+    let f images = images |> stackFUnstackTrim radius (core radius)
     liftWindowed name win 0u zeroMaker<'T> stride (stride - 1u) stride f id id
 
-let erode radius = makeMorphOp "binaryErode"  radius None Slice.binaryErode
-let dilate radius = makeMorphOp "binaryErode"  radius None Slice.binaryDilate
-let opening radius = makeMorphOp "binaryErode"  radius None Slice.binaryOpening
-let closing radius = makeMorphOp "binaryErode"  radius None Slice.binaryClosing
+let erode radius = makeMorphOp "binaryErode"  radius None ImageFunctions.binaryErode
+let dilate radius = makeMorphOp "binaryErode"  radius None ImageFunctions.binaryDilate
+let opening radius = makeMorphOp "binaryErode"  radius None ImageFunctions.binaryOpening
+let closing radius = makeMorphOp "binaryErode"  radius None ImageFunctions.binaryClosing
 
 /// Full stack operators
 let binaryFillHoles (winSz: uint)= 
-    let f slices = slices |> stackFUnstack Slice.binaryFillHoles
+    let f images = images |> stackFUnstack ImageFunctions.binaryFillHoles
     liftWindowed "fillHoles" winSz 0u zeroMaker<uint8> winSz 0u winSz f id id
 
 let connectedComponents (winSz: uint) = 
-    let f slices = slices |> stackFUnstack Slice.connectedComponents
+    let f images = images |> stackFUnstack ImageFunctions.connectedComponents
     liftWindowed "connectedComponents" winSz 0u zeroMaker<uint8> winSz 0u winSz f id id
 
 let relabelComponents a (winSz: uint) = 
-    let f slices = slices |> stackFUnstack (Slice.relabelComponents a)
+    let f images = images |> stackFUnstack (ImageFunctions.relabelComponents a)
     liftWindowed "relabelComponents" winSz 0u zeroMaker<uint64> winSz 0u winSz f id id
 
 let watershed a (winSz: uint) =
-    let f slices = slices |> stackFUnstack (Slice.watershed a)
+    let f images = images |> stackFUnstack (ImageFunctions.watershed a)
     liftWindowed "watershed" winSz 0u zeroMaker<uint8> winSz 0u winSz f id id
 
 let signedDistanceMap (winSz: uint) =
-    let f slices = slices |> stackFUnstack (Slice.signedDistanceMap 0uy 1uy)
+    let f images = images |> stackFUnstack (ImageFunctions.signedDistanceMap 0uy 1uy)
     liftWindowed "signedDistanceMap" winSz 0u zeroMaker<uint8> winSz 0u winSz f id id
 
 let otsuThreshold (winSz: uint) =
-    let f slices = slices |> stackFUnstack (Slice.otsuThreshold)
+    let f images = images |> stackFUnstack (ImageFunctions.otsuThreshold)
     liftWindowed "otsuThreshold" winSz 0u zeroMaker<uint8> winSz 0u winSz f id id
 
 let momentsThreshold (winSz: uint) =
-    let f slices = slices |> stackFUnstack (Slice.momentsThreshold)
+    let f images = images |> stackFUnstack (ImageFunctions.momentsThreshold)
     liftWindowed "momentsThreshold" winSz 0u zeroMaker<uint8> winSz 0u winSz f id id
 
-let threshold a b = Stage.liftUnary "threshold" (Slice.threshold a b) id id
+let threshold a b = Stage.liftUnary "threshold" (ImageFunctions.threshold a b) id id
 
-let addNormalNoise a b = Stage.liftUnary "addNormalNoise" (Slice.addNormalNoise a b) id id
+let addNormalNoise a b = Stage.liftUnary "addNormalNoise" (ImageFunctions.addNormalNoise a b) id id
 
-let SliceConstantPad<'T when 'T : equality> (padLower : uint list) (padUpper : uint list) (c : double) =
-    Stage.liftUnary "constantPad2D" (Slice.constantPad2D padLower padUpper c) id id
+let ImageConstantPad<'T when 'T : equality> (padLower : uint list) (padUpper : uint list) (c : double) =
+    Stage.liftUnary "constantPad2D" (ImageFunctions.constantPad2D padLower padUpper c) id id
 
 // Not Pipes nor Operators
-type FileInfo = Slice.FileInfo
-let getStackDepth = Slice.getStackDepth
-let getStackHeight = Slice.getStackHeight
-let getStackInfo = Slice.getStackInfo
-let getStackSize = Slice.getStackSize
-let getStackWidth = Slice.getStackWidth
+type FileInfo = ImageFunctions.FileInfo
+let getStackDepth (inputDir: string) (suffix: string) : uint =
+    let files = Directory.GetFiles(inputDir, "*"+suffix) |> Array.sort
+    files.Length |> uint
+
+let getStackInfo (inputDir: string) (suffix: string): FileInfo =
+    let files = Directory.GetFiles(inputDir, "*"+suffix) |> Array.sort
+    let depth = files.Length |> uint64
+    if depth = 0uL then
+        failwith $"No {suffix} files found in directory: {inputDir}"
+    let fi = ImageFunctions.getFileInfo(files[0])
+    {fi with dimensions = fi.dimensions+1u; size = fi.size @ [depth]}
+
+let getStackSize (inputDir: string) (suffix: string): uint*uint*uint =
+    let fi = getStackInfo inputDir suffix 
+    (uint fi.size[0],uint fi.size[1],uint fi.size[2])
+
+let getStackWidth (inputDir: string) (suffix: string): uint64 =
+    let fi = getStackInfo inputDir suffix
+    fi.size[0]
+
+let getStackHeight (inputDir: string) (suffix: string): uint64 =
+    let fi = getStackInfo inputDir suffix
+    printfn "%A" fi
+    fi.size[1]
 
 let zero<'T when 'T: equality> 
     (width: uint) 
     (height: uint) 
     (depth: uint) 
     (pl : Pipeline<unit, unit>) 
-    : Pipeline<unit, Slice.Slice<'T>> =
+    : Pipeline<unit, Image<'T>> =
     // width, heigth, depth should be replaced with shape and shapeUpdate, and mapper should be deferred to outside Core!!!
     if pl.debug then printfn $"[createAs] {width}x{height}x{depth}"
-    let mapper (i: uint) : Slice.Slice<'T> = 
-        let slice = Slice.create<'T> width height 1u i
-        if pl.debug then printfn "[create] Created slice %A" i
-        slice
+    let mapper (i: uint) : Image<'T> = 
+        let image = new Image<'T>([width; height;1u], 1u,$"zero[{i}]", i)
+        if pl.debug then printfn "[create] Created image %A" i
+        image
     let transition = ProfileTransition.create Constant Streaming
     let shapeUpdate = id
     let stage = Stage.init "create" depth mapper transition id id |> Some
@@ -375,17 +395,17 @@ let zero<'T when 'T: equality>
     let context = id
     Pipeline.create stage pl.memAvail nElems (uint64 depth)  pl.debug
 
-let readFilteredOp<'T when 'T: equality> (name:string) (inputDir : string) (suffix : string) (filter: string[]->string[]) (pl : Pipeline<unit, unit>) : Pipeline<unit, Slice.Slice<'T>> =
+let readFilteredOp<'T when 'T: equality> (name:string) (inputDir : string) (suffix : string) (filter: string[]->string[]) (pl : Pipeline<unit, unit>) : Pipeline<unit, Image<'T>> =
     // much should be deferred to outside Core!!!
     if pl.debug then printfn $"[{name}]"
-    let (width,height,depth) = Slice.getStackSize inputDir suffix
+    let (width,height,depth) = getStackSize inputDir suffix
     let filenames = Directory.GetFiles(inputDir, "*"+suffix) |> filter
     let depth = uint filenames.Length
-    let mapper (i: uint) : Slice.Slice<'T> = 
+    let mapper (i: uint) : Image<'T> = 
         let fileName = filenames[int i]; 
-        let slice = Slice.readSlice<'T> (uint i) fileName
-        if pl.debug then printfn "[%s] Reading slice %A from %s as %s" name i fileName (typeof<'T>.Name)
-        slice
+        let image = Image<'T>.ofFile (fileName, fileName, uint i)
+        if pl.debug then printfn "[%s] Reading image %A from %s as %s" name i fileName (typeof<'T>.Name)
+        image
     let transition = ProfileTransition.create Constant Streaming
     let stage = Stage.init $"{name}" (uint depth) mapper transition id id |> Some
     //let flow = Flow.returnM stage
@@ -393,11 +413,11 @@ let readFilteredOp<'T when 'T: equality> (name:string) (inputDir : string) (suff
     let length = (uint64 depth)
     Pipeline.create stage pl.memAvail memPerElem length  pl.debug
 
-let readFiltered<'T when 'T: equality> (inputDir : string) (suffix : string)  (filter: string[]->string[]) (pl : Pipeline<unit, unit>) : Pipeline<unit, Slice.Slice<'T>> =
+let readFiltered<'T when 'T: equality> (inputDir : string) (suffix : string)  (filter: string[]->string[]) (pl : Pipeline<unit, unit>) : Pipeline<unit, Image<'T>> =
     readFilteredOp<'T> $"readFiltered \"{inputDir}/*{suffix}\"" inputDir suffix filter pl
 
-let read<'T when 'T: equality> (inputDir : string) (suffix : string) (pl : Pipeline<unit, unit>) : Pipeline<unit, Slice.Slice<'T>> =
+let read<'T when 'T: equality> (inputDir : string) (suffix : string) (pl : Pipeline<unit, unit>) : Pipeline<unit, Image<'T>> =
     readFilteredOp<'T> $"read \"{inputDir}/*{suffix}\"" inputDir suffix Array.sort pl
 
-let readRandom<'T when 'T: equality> (count: uint) (inputDir : string) (suffix : string) (pl : Pipeline<unit, unit>) : Pipeline<unit, Slice.Slice<'T>> =
+let readRandom<'T when 'T: equality> (count: uint) (inputDir : string) (suffix : string) (pl : Pipeline<unit, unit>) : Pipeline<unit, Image<'T>> =
     readFilteredOp<'T> $"readRandom \"{inputDir}/*{suffix}\"" inputDir suffix (Array.randomChoices (int count)) pl
