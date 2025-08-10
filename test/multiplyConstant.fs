@@ -19,7 +19,7 @@ let main _ =
         |> zero<uint8> w h d
 
     (readMaker, maskMaker) ||> zip 
-    >>=> Slice.mul
+    >>=> mul2
     >=> write "result" ".tif"
     |> sink
 

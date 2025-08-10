@@ -13,13 +13,15 @@ let main _ =
 
     readMaker 
     >=> cast<uint8,float>
-//    >=> tapIt (fun s -> $"[cast<uint8,float>] {s.Index} -> Image {s.Image}")
-    >=>> (sliceAddScalar 1.0, sliceAddScalar 2.0)
-    >>=> Slice.mul
+    >=> tap "cast"
+    >=>> (imageAddScalar 1.0, imageAddScalar 2.0)
+    >=> tap "fan out"
+    >>=> mul2
+    >=> tap "fan in"
     >=> cast<float,int8>
-//    >=> tapIt (fun s -> $"[cast<float,int>] {s.Index} -> Image {s.Image}")
+    >=> tap "cast"
     >=> write "result" ".tiff"
-//    >=> tapIt (fun s -> $"[ignoreAll] {s}")
+    >=> tap "write"
     |> sink
 
     0

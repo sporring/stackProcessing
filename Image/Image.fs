@@ -246,7 +246,7 @@ let equalOne (v : 'T) : bool =
 
 [<StructuredFormatDisplay("{Display}")>] // Prevent fsi printing information about its members such as img
 type Image<'T when 'T : equality>(sz: uint list, ?numberComp: uint, ?name: string, ?index: uint, ?permanent: bool) =
-    let debug = false
+    let debug = true
     let itkId = fromType<'T>
     let isListType = typeof<'T>.IsGenericType && typeof<'T>.GetGenericTypeDefinition() = typedefof<list<_>>
     let mutable img = 

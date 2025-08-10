@@ -14,7 +14,7 @@ let main _ =
         |> read<uint8> "mask" ".tiff"
 
     (imageMaker, maskMaker) ||> zip
-    >>=> Slice.mul
+    >>=> mul2
     //>=> tap "Slice.mul"
     >=> write "result" ".tif"
     |> sink

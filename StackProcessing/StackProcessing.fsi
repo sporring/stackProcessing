@@ -15,6 +15,10 @@ type Image<'S when 'S: equality> = Image.Image<'S>
 
 val releaseAfter: f: (Image<'S> -> 'T) -> I: Image<'S> -> 'T when 'S: equality
 
+val releaseAfter2:
+  f: (Image<'S> -> Image<'S> -> 'T) -> I: Image<'S> -> J: Image<'S> -> 'T
+    when 'S: equality
+
 val releaseNAfter:
   n: int -> f: (Image<'S> list -> 'T list) -> sLst: Image<'S> list -> 'T list
     when 'S: equality
@@ -150,6 +154,12 @@ val inline scalarSubImage:
 val inline imageSubScalar:
   i: ^T -> SlimPipeline.Stage<Image<^T>,Image<^T>>
     when ^T: equality and ^T: (static member op_Explicit: ^T -> float)
+
+val liftRelease2:
+  f: (Image<'a> -> Image<'a> -> 'b) -> I: Image<'a> -> J: Image<'a> -> 'b
+    when 'a: equality
+
+val mul2: I: Image<'a> -> J: Image<'a> -> Image.Image<'a> when 'a: equality
 
 val mul:
   image: Image<'T> -> SlimPipeline.Stage<#Image<'T>,Image<'T>> when 'T: equality

@@ -14,6 +14,12 @@ let releaseAfter (f: Image<'S>->'T) (I:Image<'S>) =
     I.decRefCount()
     v
 
+let releaseAfter2 (f: Image<'S>->Image<'S>->'T) (I:Image<'S>) (J:Image<'S>) = 
+    let v = f I J
+    I.decRefCount()
+    J.decRefCount()
+    v
+
 let releaseNAfter (n: int) (f: Image<'S> list->'T list) (sLst: Image<'S> list) : 'T list =
     let tLst = f sLst;
     sLst |> List.take (int n) |> List.map (fun I -> I.decRefCount()) |> ignore
@@ -24,7 +30,7 @@ let source = Pipeline.source
 let debug = Pipeline.debug 
 let zip = Pipeline.zip
 let (>=>) pl (stage: Stage<'b,'c>) = Pipeline.(>=>) pl stage //(stage |> disposeInputAfter "read+dispose" )
-let (>=>>) = Pipeline.(>=>>)
+let (>=>>) = Pipeline.(>=>>) 
 let (>>=>) = Pipeline.(>>=>)
 let (>>=>>) = Pipeline.(>>=>>)
 let sink (pl: Pipeline<unit,unit>) : unit = 
@@ -160,6 +166,10 @@ let inline scalarSubImage<^T when ^T: equality and ^T: (static member op_Explici
     liftUnaryReleaseAfter "scalarSubImage" (fun (s:Image<^T>)->ImageFunctions.scalarSubImage<^T> i s) id id
 let inline imageSubScalar<^T when ^T: equality and ^T: (static member op_Explicit: ^T -> float)> (i: ^T) =
     liftUnaryReleaseAfter "imageSubScalar" (fun (s:Image<^T>)->ImageFunctions.imageSubScalar<^T> s i) id id
+
+
+let liftRelease2 f I J = releaseAfter2 (fun a b -> f a b) I J
+let mul2 I J = liftRelease2 ( * ) I J
 
 let mul (image: Image<'T>) = liftUnaryReleaseAfter "mul" (( * ) image) id id
 let inline scalarMulImage<^T when ^T: equality and ^T: (static member op_Explicit: ^T -> float)> (i: ^T) =
