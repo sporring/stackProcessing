@@ -15,7 +15,7 @@ type Image<'S when 'S: equality> = Image.Image<'S>
 
 val releaseAfter: f: (Image<'S> -> 'T) -> I: Image<'S> -> 'T when 'S: equality
 
-val fReleaseNAfter:
+val releaseNAfter:
   n: int -> f: (Image<'S> list -> 'T list) -> sLst: Image<'S> list -> 'T list
     when 'S: equality
 
@@ -65,7 +65,9 @@ val tap: (string -> SlimPipeline.Stage<'a,'a>)
 
 val tapIt: (('a -> string) -> SlimPipeline.Stage<'a,'a>)
 
-val ignoreAll: (unit -> SlimPipeline.Stage<'a,unit>)
+val ignoreImages: unit -> Stage<Image<'a>,unit> when 'a: equality
+
+val ignoreAll: unit -> (('a -> unit) -> SlimPipeline.Stage<'a,unit>)
 
 val zeroMaker: ex: Image<'S> -> Image<'S> when 'S: equality
 
@@ -335,27 +337,20 @@ val opening: radius: uint -> Stage<Image<uint8>,Image<uint8>>
 val closing: radius: uint -> Stage<Image<uint8>,Image<uint8>>
 
 /// Full stack operators
-val binaryFillHoles:
-  winSz: uint -> SlimPipeline.Stage<Image<uint8>,Image.Image<uint8>>
+val binaryFillHoles: winSz: uint -> Stage<Image<uint8>,Image<uint8>>
 
-val connectedComponents:
-  winSz: uint -> SlimPipeline.Stage<Image<uint8>,Image.Image<uint64>>
+val connectedComponents: winSz: uint -> Stage<Image<uint8>,Image<uint64>>
 
 val relabelComponents:
-  a: uint ->
-    winSz: uint -> SlimPipeline.Stage<Image<uint64>,Image.Image<uint64>>
+  a: uint -> winSz: uint -> Stage<Image<uint64>,Image<uint64>>
 
-val watershed:
-  a: float -> winSz: uint -> SlimPipeline.Stage<Image<uint8>,Image.Image<uint8>>
+val watershed: a: float -> winSz: uint -> Stage<Image<uint8>,Image<uint8>>
 
-val signedDistanceMap:
-  winSz: uint -> SlimPipeline.Stage<Image<uint8>,Image.Image<float>>
+val signedDistanceMap: winSz: uint -> Stage<Image<uint8>,Image<float>>
 
-val otsuThreshold:
-  winSz: uint -> SlimPipeline.Stage<Image<uint8>,Image.Image<uint8>>
+val otsuThreshold: winSz: uint -> Stage<Image<uint8>,Image<uint8>>
 
-val momentsThreshold:
-  winSz: uint -> SlimPipeline.Stage<Image<uint8>,Image.Image<uint8>>
+val momentsThreshold: winSz: uint -> Stage<Image<uint8>,Image<uint8>>
 
 val threshold:
   a: float -> b: float -> SlimPipeline.Stage<#Image<'b>,Image<'b>>

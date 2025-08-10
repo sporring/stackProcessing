@@ -9,10 +9,11 @@ let main _ =
 
     debug availableMemory
     |> read<float> "image" ".tiff"
-    //>=> discreteGaussian sigma (Some Slice.OutputRegionMode.Same) None (Some 9u) // What's the rule for ligning up winSz and stream size, such that the output is also stream size?
-    >=> convGauss sigma
+    >=> discreteGaussian sigma None None (Some 7u) // What's the rule for ligning up winSz and stream size, such that the output is also stream size?
+    //>=> convGauss sigma
     >=> cast<float,uint8>
     >=> write "result" ".tif"
+    //>=> ignoreImages ()
     |> sink
 
     0

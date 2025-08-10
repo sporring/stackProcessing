@@ -13,14 +13,6 @@ let releaseAfter (f: Image<'S>->'T) (I:Image<'S>) =
     let v = f I
     I.decRefCount()
     v
-(*
-let releaseAfterStage (debug: bool) (stage: Stage<'S, 'T>) : Stage<'S, 'T> = 
-    let f (I:Image<'T>): Image<'T> = 
-        let R = stage.Pipe.Apply debug I
-        I.decRefCount()
-        R
-    Stage.liftUnary 
-*)
 
 let releaseNAfter (n: int) (f: Image<'S> list->'T list) (sLst: Image<'S> list) : 'T list =
     let tLst = f sLst;
@@ -35,7 +27,8 @@ let (>=>) pl (stage: Stage<'b,'c>) = Pipeline.(>=>) pl stage //(stage |> dispose
 let (>=>>) = Pipeline.(>=>>)
 let (>>=>) = Pipeline.(>>=>)
 let (>>=>>) = Pipeline.(>>=>>)
-let sink (pl: Pipeline<unit,unit>) : unit = Pipeline.sink pl
+let sink (pl: Pipeline<unit,unit>) : unit = 
+    Pipeline.sink pl
 let sinkList (plLst: Pipeline<unit,unit> list) : unit = Pipeline.sinkList plLst
 //let combineIgnore = Pipeline.combineIgnore
 let drainSingle pl = Pipeline.drainSingle "drainSingle" pl
@@ -43,8 +36,9 @@ let drainList pl = Pipeline.drainList "drainList" pl
 let drainLast pl = Pipeline.drainLast "drainLast" pl
 let tap = Stage.tap
 let tapIt = Stage.tapIt
-let ignoreAll = Stage.ignore<_>
-let zeroMaker<'S when 'S: equality> (ex:Image<'S>) : Image<'S> = new Image<'S>(ex.GetSize(), 1u, "zero", 0u)
+let ignoreImages () : Stage<Image<_>,unit> = Stage.ignore (fun (I:Image<_>)->I.decRefCount ())
+let ignoreAll () = Stage.ignore<_>
+let zeroMaker<'S when 'S: equality> (ex:Image<'S>) : Image<'S> = new Image<'S>(ex.GetSize(), 1u, "padding", 0u, true)
 
 let liftUnary = Stage.liftUnary
 let liftUnaryReleaseAfter 
@@ -67,7 +61,14 @@ let liftWindowedReleaseAfter
     (memoryNeed: MemoryNeed)
     (nElemsTransformation: NElemsTransformation)
     : Stage<Image<'S>, Image<'T>> =
-    Stage.liftWindowed<Image<'S>,Image<'T>> name window pad zeroMaker stride emitStart emitCount (releaseNAfter (int stride) f) memoryNeed nElemsTransformation
+    printfn $"liftWindowedReleaseAfter: window {window}, pad {pad}, stride {stride}, emitStart {emitStart}, emitCount {emitCount}"
+    let fReleaseAfter  input =
+        let result = f input
+        //input|>List.iter (fun I -> printfn $"{I.Name}")
+        //printfn $"fReleaseAfter: got {input.Length} releasing {stride} result {result.Length}"
+        input |> List.take (int stride) |> List.iter (fun I -> I.decRefCount())
+        result
+    Stage.liftWindowed<Image<'S>,Image<'T>> name window pad zeroMaker stride emitStart emitCount fReleaseAfter memoryNeed nElemsTransformation
 
 let getBytesPerComponent<'T> = (typeof<'T> |> Image.getBytesPerComponent |> uint64)
 
@@ -138,7 +139,11 @@ let axisSource
 *)
 
 /// Pixel type casting
-let cast<'S,'T when 'S: equality and 'T: equality> = Stage.cast<Image<'S>,Image<'T>> (sprintf "cast(%s->%s)" typeof<'S>.Name typeof<'T>.Name) (fun (I: Image<'S>) -> I.castTo<'T> ())
+let cast<'S,'T when 'S: equality and 'T: equality> = 
+    Stage.cast<Image<'S>,Image<'T>> (sprintf "cast(%s->%s)" typeof<'S>.Name typeof<'T>.Name) (fun (I: Image<'S>) -> 
+        let result = I.castTo<'T> ()
+        I.decRefCount()
+        result)
 
 /// Basic arithmetic
 let memNeeded<'T> nTimes nElems = nElems*nTimes*getBytesPerComponent<'T> // Assuming source and target in memory simultaneously
@@ -260,8 +265,24 @@ let skipNTakeM (n: uint) (m: uint) (lst: 'a list) : 'a list =
 
 let stackFUnstackTrim trim f (images : Image<'T> list) =
     let m = uint images.Length - 2u*trim 
+    //printfn $"stackFUnstackTrim: stacking"
     let stck = images |> ImageFunctions.stack 
-    stck |> (f >> ImageFunctions.unstack >> skipNTakeM trim m)
+    //printfn $"stackFUnstackTrim: applying f and ustacking"
+    //let result = stck |> (f >> ImageFunctions.unstack >> skipNTakeM trim m)
+    let result = 
+        //printfn $"applying function to stack"
+        let volRes = f stck
+        stck.decRefCount()
+        //printfn $"unstacking function result"
+        let imageLst = ImageFunctions.unstack volRes
+        volRes.decRefCount()
+        //printfn $"skipntakem"
+        let r = skipNTakeM trim m imageLst
+        imageLst |> List.iteri (fun i I -> if i < (int trim) || i >= (int (trim + m)) then I.decRefCount())
+        //printfn $"result ready"
+        r
+    //printfn $"stackFUnstackTrim: returning result"
+    result
 
 let discreteGaussianOp (name:string) (sigma:float) (outputRegionMode: ImageFunctions.OutputRegionMode option) (boundaryCondition: ImageFunctions.BoundaryCondition option) (winSz: uint option): Stage<Image<float>, Image<float>> =
     let roundFloatToUint v = uint (v+0.5)
@@ -273,6 +294,7 @@ let discreteGaussianOp (name:string) (sigma:float) (outputRegionMode: ImageFunct
         match outputRegionMode with
             | Some Valid -> 0u
             | _ -> ksz/2u //floor
+    printfn $"discreteGaussianOp: sigma {sigma}, ksz {ksz}, win {win}, stride {stride}, pad {pad}"
     let f images = images |> stackFUnstackTrim pad (fun image3D -> ImageFunctions.discreteGaussian 3u sigma (ksz |> Some) outputRegionMode boundaryCondition image3D)
     liftWindowedReleaseAfter name win pad zeroMaker<float> stride pad stride f id id
 
@@ -327,10 +349,11 @@ let finiteDiff (direction: uint) (order: uint) =
 // these only works on uint8
 let private makeMorphOp (name:string) (radius:uint) (winSz: uint option) (core: uint -> Image<'T> -> Image<'T>) : Stage<Image<'T>,Image<'T>> when 'T: equality =
     let ksz   = 2u * radius + 1u
+    let pad = ksz/2u
     let win = Option.defaultValue ksz winSz |> min ksz
     let stride = win - ksz + 1u
     let f images = images |> stackFUnstackTrim radius (core radius)
-    liftWindowedReleaseAfter name win 0u zeroMaker<'T> stride (stride - 1u) stride f id id
+    liftWindowedReleaseAfter name win pad zeroMaker<'T> stride (stride - 1u) stride f id id
 
 let erode radius = makeMorphOp "binaryErode"  radius None ImageFunctions.binaryErode
 let dilate radius = makeMorphOp "binaryErode"  radius None ImageFunctions.binaryDilate
@@ -397,7 +420,7 @@ let getStackWidth (inputDir: string) (suffix: string): uint64 =
 
 let getStackHeight (inputDir: string) (suffix: string): uint64 =
     let fi = getStackInfo inputDir suffix
-    printfn "%A" fi
+    //printfn "%A" fi
     fi.size[1]
 
 let zero<'T when 'T: equality> 
@@ -407,10 +430,10 @@ let zero<'T when 'T: equality>
     (pl : Pipeline<unit, unit>) 
     : Pipeline<unit, Image<'T>> =
     // width, heigth, depth should be replaced with shape and shapeUpdate, and mapper should be deferred to outside Core!!!
-    if pl.debug then printfn $"[createAs] {width}x{height}x{depth}"
+    if pl.debug then printfn $"[zero] {width}x{height}x{depth}"
     let mapper (i: uint) : Image<'T> = 
-        let image = new Image<'T>([width; height;1u], 1u,$"zero[{i}]", i)
-        if pl.debug then printfn "[create] Created image %A" i
+        let image = new Image<'T>([width; height], 1u,$"zero[{i}]", i)
+        if pl.debug then printfn "[zero] Created image %A" i
         image
     let transition = ProfileTransition.create Constant Streaming
     let shapeUpdate = id
@@ -425,7 +448,7 @@ let readFilteredOp<'T when 'T: equality> (name:string) (inputDir : string) (suff
     if pl.debug then printfn $"[{name}]"
     let (width,height,depth) = getStackSize inputDir suffix
     let filenames = Directory.GetFiles(inputDir, "*"+suffix) |> filter
-    let depth = uint filenames.Length
+    //let depth = uint filenames.Length
     let mapper (i: uint) : Image<'T> = 
         let fileName = filenames[int i]; 
         let image = Image<'T>.ofFile (fileName, fileName, uint i)
@@ -439,10 +462,10 @@ let readFilteredOp<'T when 'T: equality> (name:string) (inputDir : string) (suff
     Pipeline.create stage pl.memAvail memPerElem length  pl.debug
 
 let readFiltered<'T when 'T: equality> (inputDir : string) (suffix : string)  (filter: string[]->string[]) (pl : Pipeline<unit, unit>) : Pipeline<unit, Image<'T>> =
-    readFilteredOp<'T> $"readFiltered \"{inputDir}/*{suffix}\"" inputDir suffix filter pl
+    readFilteredOp<'T> $"readFiltered" inputDir suffix filter pl
 
 let read<'T when 'T: equality> (inputDir : string) (suffix : string) (pl : Pipeline<unit, unit>) : Pipeline<unit, Image<'T>> =
-    readFilteredOp<'T> $"read \"{inputDir}/*{suffix}\"" inputDir suffix Array.sort pl
+    readFilteredOp<'T> $"read" inputDir suffix Array.sort pl
 
 let readRandom<'T when 'T: equality> (count: uint) (inputDir : string) (suffix : string) (pl : Pipeline<unit, unit>) : Pipeline<unit, Image<'T>> =
-    readFilteredOp<'T> $"readRandom \"{inputDir}/*{suffix}\"" inputDir suffix (Array.randomChoices (int count)) pl
+    readFilteredOp<'T> $"readRandom" inputDir suffix (Array.randomChoices (int count)) pl

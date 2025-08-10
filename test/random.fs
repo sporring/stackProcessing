@@ -5,7 +5,7 @@ open StackProcessing
 [<EntryPoint>]
 let main _ =
     let trg = "image"
-    let width, height, depth = 64u, 64u, 20u
+    let width, height, depth = 64u, 64u, 22u
     let availableMemory = 1024UL * 1024UL // 1MB for example
 
     debug availableMemory

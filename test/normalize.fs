@@ -1,14 +1,11 @@
 ﻿// To run, remember to:
 // export DYLD_LIBRARY_PATH=./StackPipeline/lib:$(pwd)/bin/Debug/net8.0
 open StackProcessing
-open Slice
+open ImageFunctions
 
 [<EntryPoint>]
 let main _ =
     let mem = 1024UL * 1024UL // 1MB for example
-
-    let normalizeWith (stats: ImageStats) (slice: Slice<float>) =
-        sliceDivScalar (sliceSubScalar slice stats.Mean) stats.Std
 
     let readMaker =
         debug mem
@@ -20,7 +17,15 @@ let main _ =
         |> drainSingle
     printfn "%A" stats
 
-    let normalizeWithOp = liftUnary (normalizeWith stats) id id
+    let normalizeWith (stats: ImageStats) (image: Image<float>) =
+        let J = imageSubScalar image stats.Mean;
+        let K = imageDivScalar J stats.Std
+        J.decRefCount()
+        K
+
+    // normalizeWith can release image and normalizeWithOp use liftUnary. This saves storing 1 image per iteration
+    let normalizeWithOp = liftUnaryReleaseAfter "normalizeWithOp" (normalizeWith stats) id id
+
     let updatedStats = 
         readMaker
         >=> normalizeWithOp

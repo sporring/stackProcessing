@@ -9,12 +9,13 @@ let main _ =
     let availableMemory = 1024UL * 1024UL // 1MB for example
 
     debug availableMemory
-    |> zero<float> width height depth
+    |> zero<int8> width height depth
+    >=> cast<int8,float>
     >=> addNormalNoise 128.0 50.0
-    >=> convGauss 1.0
-    >=> cast<float,uint8>
     >=> threshold 128.0 infinity
-    >=> sliceMulScalar 255uy
+    >=> imageMulScalar 255.0
+    >=> cast<float,int8>
+    //>=> ignoreImages ()
     >=> write "result" ".tif"
     |> sink
 

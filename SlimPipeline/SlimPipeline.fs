@@ -241,15 +241,16 @@ module private Pipe =
         let apply debug input =
             // AsyncSeqExtensions.windowed depth stride input
             AsyncSeqExtensions.windowedWithPad winSz stride pad pad zeroMaker input
-            |> AsyncSeq.collect (f >> AsyncSeq.ofSeq)
+            |> AsyncSeq.collect (fun input -> 
+            input |> f |> AsyncSeq.ofSeq)
         let profile = Sliding (winSz,stride,emitStart,emitCount)
         create name apply profile
 
-    let ignore () : Pipe<'T, unit> =
+    let ignore clean : Pipe<'T, unit> =
         let apply debug input =
             asyncSeq {
                 // Consume the stream without doing anything
-                do! AsyncSeq.iterAsync (fun _ -> async.Return()) input
+                do! AsyncSeq.iterAsync (fun elm -> clean elm; async.Return()) input
                 // Then emit one unit
                 yield ()
             }
@@ -272,8 +273,8 @@ module ProfileTransition =
             To   = toProfile
         }
 
-type MemoryNeed = uint64 -> uint64 // nElems -> bytes
-type NElemsTransformation = uint64 -> uint64 // nElems -> bytes
+type MemoryNeed = uint64 -> uint64
+type NElemsTransformation = uint64 -> uint64
 
 /// Stage describes *what* should be done:
 /// - Contains high-level metadata
@@ -384,8 +385,8 @@ module Stage =
             create $"{op.Name} - {name}" pipe op.Transition op.SizeUpdate
         mk "left" leftPipe, mk "right" rightPipe
 *)
-    let ignore<'T> () : Stage<'T, unit> =
-        let pipe = Pipe.ignore ()
+    let ignore<'T> clean : Stage<'T, unit> =
+        let pipe = Pipe.ignore clean
         let transition = ProfileTransition.create Streaming Constant
         create "ignore" pipe transition id id // check !!!!
 
@@ -567,16 +568,15 @@ module Pipeline =
         pipelines |> List.iter sink
 
     let internal runToScalar (name:string) (reducer: AsyncSeq<'T> -> Async<'R>) (pl: Pipeline<'In, 'T>) : 'R =
-        if pl.debug then printfn "[runToScalar]"
+        if pl.debug then printfn $"[{name}]" 
         let stage = pl.stage
         match stage with
             Some stg -> 
                 let input = AsyncSeq.singleton Unchecked.defaultof<'In>
                 input |> stg.Pipe.Apply pl.debug |> reducer |> Async.RunSynchronously
-            | _ -> failwith "[internal runToScalar] Pipeline is empty"
+            | _ -> failwith $"[{name}] Pipeline is empty"
 
     let drainSingle (name:string) (pl: Pipeline<'S, 'T>) =
-        if pl.debug then printfn "[drainSingle]"
         runToScalar name AsyncSeq.toListAsync pl
         |> function
             | [x] -> x
@@ -587,7 +587,6 @@ module Pipeline =
         runToScalar name AsyncSeq.toListAsync pl
 
     let drainLast (name:string) (pl: Pipeline<'S, 'T>) =
-        if pl.debug then printfn "[drainLast]"
         runToScalar name AsyncSeq.tryLast pl
         |> function
             | Some x -> x

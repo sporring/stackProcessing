@@ -39,13 +39,14 @@ module internal InternalHelpers =
     val inline mulAdd:
       t: itk.simple.PixelIDValueEnum -> acc: obj -> k: obj -> p: obj -> obj
 val getBytesPerComponent: t: System.Type -> uint32
+val getBytesPerSItkComponent: t: itk.simple.PixelIDValueEnum -> uint32
 val equalOne: v: 'T -> bool
 [<StructuredFormatDisplay ("{Display}")>]
 type Image<'T when 'T: equality> =
     interface System.IComparable
     interface System.IEquatable<Image<'T>>
-    new: sz: uint list * ?numberComp: uint * ?name: string * ?index: uint ->
-           Image<'T>
+    new: sz: uint list * ?numberComp: uint * ?name: string * ?index: uint *
+         ?permanent: bool -> Image<'T>
     static member
       (&&&) : f1: Image<'S> * f2: Image<'S> -> Image<'S> when 'S: equality
     static member ( * ) : f1: Image<'T> * f2: Image<'T> -> Image<'T>
@@ -88,6 +89,7 @@ type Image<'T when 'T: equality> =
     static member map: f: ('T -> 'T) -> im1: Image<'T> -> Image<'T>
     static member
       mapi: f: (uint list -> 'T -> 'T) -> im1: Image<'T> -> Image<'T>
+    static member memoryEstimateSItk: sitk: itk.simple.Image -> uint32
     static member neq: f1: Image<'S> * f2: Image<'S> -> bool when 'S: equality
     static member ofArray2D: arr: 'T array2d -> Image<'T>
     static member ofArray3D: arr: 'T array3d -> Image<'T>
@@ -99,6 +101,7 @@ type Image<'T when 'T: equality> =
     static member
       ofSimpleITK: itkImg: itk.simple.Image * ?name: string * ?index: uint ->
                      Image<'T>
+    static member storageStatisticsToString: unit -> string
     static member unzip: im: Image<'T list> -> Image<'T> list
     static member zip: imLst: Image<'T> list -> Image<'T list>
     member CompareTo: other: Image<'T> -> int
@@ -117,8 +120,9 @@ type Image<'T when 'T: equality> =
     member castTo: unit -> Image<'S> when 'S: equality
     member decRefCount: unit -> unit
     member forAll: p: ('T -> bool) -> bool
+    member getNReferences: unit -> int
     member incRefCount: unit -> unit
-    member memoryEstimate: unit -> uint
+    member memoryEstimate: unit -> uint32
     member toArray2D: unit -> 'T array2d
     member toArray3D: unit -> 'T array3d
     member toArray4D: unit -> 'T array4d
@@ -145,6 +149,7 @@ type Image<'T when 'T: equality> =
     member Item: i0: int * i1: int * i2: int * i3: int -> 'T with set
     member Name: string
     member index: uint32 with get, set
+    static member storage: (itk.simple.Image * string option) list
 module ImageFunctions
 val inline imageAddScalar:
   f1: Image.Image<^S> -> i: ^S -> Image.Image<^S>
@@ -195,13 +200,15 @@ val constantPad2D:
     padUpper: uint list -> c: double -> img: Image.Image<'T> -> Image.Image<'T>
     when 'T: equality
 val inline makeUnaryImageOperatorWith:
-  createFilter: (unit -> 'Filter) ->
+  name: string ->
+    createFilter: (unit -> 'Filter) ->
     setup: ('Filter -> unit) ->
     invoke: ('Filter -> itk.simple.Image -> itk.simple.Image) ->
     img: Image.Image<'T> -> Image.Image<'T>
     when 'Filter :> System.IDisposable and 'T: equality
 val inline makeUnaryImageOperator:
-  createFilter: (unit -> 'a) ->
+  name: string ->
+    createFilter: (unit -> 'a) ->
     invoke: ('a -> itk.simple.Image -> itk.simple.Image) ->
     (Image.Image<'b> -> Image.Image<'b>)
     when 'a :> System.IDisposable and 'b: equality
@@ -361,7 +368,9 @@ val addNormalNoise:
 val threshold:
   lower: float -> upper: float -> (Image.Image<'T> -> Image.Image<'T>)
     when 'T: equality
+val toVectorOfImage: images: #itk.simple.Image seq -> itk.simple.VectorOfImage
 val stack: images: Image.Image<'T> list -> Image.Image<'T> when 'T: equality
+val stackOld: images: Image.Image<'T> list -> Image.Image<'T> when 'T: equality
 val extractSub:
   topLeft: uint list ->
     bottomRight: uint list -> img: Image.Image<'T> -> Image.Image<'T>
@@ -377,3 +386,4 @@ type FileInfo =
       numberOfComponents: uint
     }
 val getFileInfo: filename: string -> FileInfo
+val toSeqSeq: I: Image.Image<'T> -> float seq seq when 'T: equality

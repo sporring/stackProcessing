@@ -83,7 +83,7 @@ module private Pipe =
         emitStart: uint ->
         emitCount: uint -> f: ('S list -> 'T list) -> Pipe<'S,'T>
         when 'S: equality
-    val ignore: unit -> Pipe<'T,unit>
+    val ignore: clean: ('T -> unit) -> Pipe<'T,unit>
 /// ProfileTransition describes *how* memory layout is expected to change:
 /// - From: the input memory profile
 /// - To: the expected output memory profile
@@ -193,7 +193,7 @@ module Stage =
     val tapItOp: name: string -> toString: ('T -> string) -> Stage<'T,'T>
     val tapIt: toString: ('T -> string) -> Stage<'T,'T>
     val tap: name: string -> Stage<'T,'T>
-    val ignore: unit -> Stage<'T,unit>
+    val ignore: clean: ('T -> unit) -> Stage<'T,unit>
     val consumeWith:
       name: string -> consume: (bool -> int -> 'T -> unit) -> Stage<'T,unit>
     val cast:

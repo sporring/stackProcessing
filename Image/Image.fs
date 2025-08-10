@@ -217,6 +217,19 @@ let getBytesPerComponent t =
     elif t = typeof<System.Numerics.Complex> then 16u
     else 8u // guessing here
 
+let getBytesPerSItkComponent t =
+    if   t = itk.simple.PixelIDValueEnum.sitkVectorUInt8 then 1u
+    elif t = itk.simple.PixelIDValueEnum.sitkVectorInt8 then 1u
+    elif t = itk.simple.PixelIDValueEnum.sitkVectorUInt16 then 2u
+    elif t = itk.simple.PixelIDValueEnum.sitkVectorInt16 then 2u
+    elif t = itk.simple.PixelIDValueEnum.sitkVectorUInt32 then 4u
+    elif t = itk.simple.PixelIDValueEnum.sitkVectorInt32 then 4u
+    elif t = itk.simple.PixelIDValueEnum.sitkVectorFloat32 then 4u
+    elif t = itk.simple.PixelIDValueEnum.sitkVectorUInt64 then 8u
+    elif t = itk.simple.PixelIDValueEnum.sitkVectorInt64 then 8u
+    elif t = itk.simple.PixelIDValueEnum.sitkVectorFloat64 then 8u
+    else 8u // guessing here
+
 let equalOne (v : 'T) : bool =
     match box v with
     | :? uint8   as b -> b = 1uy
@@ -232,7 +245,8 @@ let equalOne (v : 'T) : bool =
     | _ -> failwithf "Don't know the value of 1 for %A" (typeof<'T>)
 
 [<StructuredFormatDisplay("{Display}")>] // Prevent fsi printing information about its members such as img
-type Image<'T when 'T : equality>(sz: uint list, ?numberComp: uint, ?name: string, ?index: uint) =
+type Image<'T when 'T : equality>(sz: uint list, ?numberComp: uint, ?name: string, ?index: uint, ?permanent: bool) =
+    let debug = false
     let itkId = fromType<'T>
     let isListType = typeof<'T>.IsGenericType && typeof<'T>.GetGenericTypeDefinition() = typedefof<list<_>>
     let mutable img = 
@@ -246,11 +260,15 @@ type Image<'T when 'T : equality>(sz: uint list, ?numberComp: uint, ?name: strin
         | None -> 
             new itk.simple.Image(sz |> toVectorUInt32, itkId)
     // count how many references there is to this image.
-    let mutable nReferences = 1 
 
+    let mutable nReferences = 1 
+    static let mutable _storage = []
     static let mutable totalImages = 0 // count how many images with references > 0
+
     do totalImages <- totalImages + 1
-    do printfn "Image count: %d" totalImages
+    do _storage <- (img,name)::_storage
+    do if debug then
+        do printfn "%s Created %A" (String.replicate totalImages "*") name
 
     member this.Image = img
     member val Name = (Option.defaultValue "" name) with get
@@ -258,14 +276,37 @@ type Image<'T when 'T : equality>(sz: uint list, ?numberComp: uint, ?name: strin
     member private this.SetImg (itkImg: itk.simple.Image) : unit =
         img <- itkImg
     // add a use of this image
+    member this.getNReferences() = nReferences
     member this.incRefCount() = nReferences<-nReferences+1
     // release a use of this image
     member this.decRefCount() = 
         nReferences<-nReferences-1
         if nReferences = 0 then
             totalImages <- totalImages - 1
-            img.Dispose()
+            if debug then
+                printfn "%s Disposed of %s" (String.replicate totalImages "*") this.Name
+            //let totalBefore = Image<_>.storage |> List.map fst |> List.map Image<_>.memoryEstimateSItk |> List.reduce (+)
+            //printfn $"Before {Image<_>.memoryEstimateSItk this.Image} Total: {totalBefore}"
+            if not (Option.defaultValue false permanent) then 
+                img.Dispose()
+                img <- new itk.simple.Image([0u;0u] |> toVectorUInt32, itkId)
+            //let totalAfter = Image<_>.storage |> List.map fst |> List.map Image<_>.memoryEstimateSItk |> List.reduce (+)
+            //printfn $"After {Image<_>.memoryEstimateSItk this.Image} Total: {totalAfter}"
 
+    static member storage = _storage
+    static member memoryEstimateSItk (sitk : itk.simple.Image) = 
+        let noComponent = sitk.GetNumberOfComponentsPerPixel()
+        let bytesPerComponent = getBytesPerSItkComponent (sitk.GetPixelID())
+        let size = sitk.GetSize() |> fromVectorUInt32
+        let res = bytesPerComponent * (size |> List.reduce ( * ));
+        res
+
+    static member storageStatisticsToString () =
+        (List.map snd _storage).ToString()
+(*        List.fold (fun (acc: uint, str:string) (f,name)-> 
+            let mem = f();
+            ((acc+mem),($"{str}: {mem}\n"))) (0ul,"") _storage 
+*)
     member this.GetSize () = img.GetSize() |> fromVectorUInt32
     member this.GetDepth() = max 1u (img.GetDepth()) // Non-vector images returns 0
     member this.GetDimensions() = img.GetDimension()
@@ -290,10 +331,12 @@ type Image<'T when 'T : equality>(sz: uint list, ?numberComp: uint, ?name: strin
             | :? Image<'T> as other -> this.CompareTo(other)
             | _ -> invalidArg "obj" "Expected Image<'T>"
 
-    member this.memoryEstimate(): uint = // Intended to be mostly immutable, but better safe than sorry.
+    member this.memoryEstimate () = 
         let t = typeof<'T>
         let bytesPerComponent = getBytesPerComponent t
-        bytesPerComponent * this.GetNumberOfComponentsPerPixel() * (this.GetSize() |> List.reduce (*));
+        let size = this.Image.GetSize() |> fromVectorUInt32
+        let res = bytesPerComponent * (Option.defaultValue 1u numberComp) * (size |> List.reduce ( * ));
+        res
 
     static member ofSimpleITK (itkImg: itk.simple.Image, ?name: string, ?index: uint) : Image<'T> =
         let itkImgCast = ofCastItk<'T> itkImg
