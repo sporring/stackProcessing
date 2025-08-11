@@ -9,7 +9,7 @@ let main _ =
 
     debug availableMemory
     |> read<float> "image" ".tiff"
-    >=> discreteGaussian sigma None None (Some 7u) // What's the rule for ligning up winSz and stream size, such that the output is also stream size?
+    >=> discreteGaussian sigma None None None // What's the rule for ligning up winSz and stream size, such that the output is also stream size?
     //>=> convGauss sigma
     >=> cast<float,uint8>
     >=> write "result" ".tif"

@@ -44,7 +44,7 @@ let tap = Stage.tap
 let tapIt = Stage.tapIt
 let ignoreImages () : Stage<Image<_>,unit> = Stage.ignore (fun (I:Image<_>)->I.decRefCount ())
 let ignoreAll () = Stage.ignore<_>
-let zeroMaker<'S when 'S: equality> (ex:Image<'S>) : Image<'S> = new Image<'S>(ex.GetSize(), 1u, "padding", 0u, true)
+let zeroMaker<'S when 'S: equality> (ex:Image<'S>) : Image<'S> = new Image<'S>(ex.GetSize(), 1u, "padding", 0u)
 
 let liftUnary = Stage.liftUnary
 let liftUnaryReleaseAfter 

@@ -41,12 +41,14 @@ module internal InternalHelpers =
 val getBytesPerComponent: t: System.Type -> uint32
 val getBytesPerSItkComponent: t: itk.simple.PixelIDValueEnum -> uint32
 val equalOne: v: 'T -> bool
+val mutable totalImages: int
+val mutable memUsed: uint32
 [<StructuredFormatDisplay ("{Display}")>]
 type Image<'T when 'T: equality> =
     interface System.IComparable
     interface System.IEquatable<Image<'T>>
     new: sz: uint list * ?numberComp: uint * ?name: string * ?index: uint *
-         ?permanent: bool -> Image<'T>
+         ?quiet: bool -> Image<'T>
     static member
       (&&&) : f1: Image<'S> * f2: Image<'S> -> Image<'S> when 'S: equality
     static member ( * ) : f1: Image<'T> * f2: Image<'T> -> Image<'T>
@@ -101,7 +103,6 @@ type Image<'T when 'T: equality> =
     static member
       ofSimpleITK: itkImg: itk.simple.Image * ?name: string * ?index: uint ->
                      Image<'T>
-    static member storageStatisticsToString: unit -> string
     static member unzip: im: Image<'T list> -> Image<'T> list
     static member zip: imLst: Image<'T> list -> Image<'T list>
     member CompareTo: other: Image<'T> -> int
@@ -149,7 +150,6 @@ type Image<'T when 'T: equality> =
     member Item: i0: int * i1: int * i2: int * i3: int -> 'T with set
     member Name: string
     member index: uint32 with get, set
-    static member storage: (itk.simple.Image * string option) list
 module ImageFunctions
 val inline imageAddScalar:
   f1: Image.Image<^S> -> i: ^S -> Image.Image<^S>
@@ -213,13 +213,15 @@ val inline makeUnaryImageOperator:
     (Image.Image<'b> -> Image.Image<'b>)
     when 'a :> System.IDisposable and 'b: equality
 val inline makeBinaryImageOperatorWith:
-  createFilter: (unit -> 'Filter) ->
+  name: string ->
+    createFilter: (unit -> 'Filter) ->
     setup: ('Filter -> unit) ->
     invoke: ('Filter -> itk.simple.Image -> itk.simple.Image -> itk.simple.Image) ->
     a: Image.Image<'T> -> b: Image.Image<'T> -> Image.Image<'T>
     when 'Filter :> System.IDisposable and 'T: equality
 val makeBinaryImageOperator:
-  createFilter: (unit -> 'a) ->
+  name: string ->
+    createFilter: (unit -> 'a) ->
     invoke: ('a -> itk.simple.Image -> itk.simple.Image -> itk.simple.Image) ->
     (Image.Image<'b> -> Image.Image<'b> -> Image.Image<'b>)
     when 'a :> System.IDisposable and 'b: equality
@@ -268,7 +270,7 @@ val discreteGaussian:
     kernelSize: uint option ->
     outputRegionMode: OutputRegionMode option ->
     boundaryCondition: BoundaryCondition option ->
-    (Image.Image<'T> -> Image.Image<'T>) when 'T: equality
+    input: Image.Image<'T> -> Image.Image<'T> when 'T: equality
 /// Gradient convolution using Derivative filter
 val gradientConvolve:
   direction: uint -> order: uint32 -> (Image.Image<'T> -> Image.Image<'T>)

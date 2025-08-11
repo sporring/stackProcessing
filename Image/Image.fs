@@ -244,9 +244,12 @@ let equalOne (v : 'T) : bool =
     | :? float   as b -> b = 1.0
     | _ -> failwithf "Don't know the value of 1 for %A" (typeof<'T>)
 
+let mutable totalImages = 0 // count how many images with references > 0, must be outside to be shared by all Image<*>
+let mutable memUsed = 0u 
+
 [<StructuredFormatDisplay("{Display}")>] // Prevent fsi printing information about its members such as img
-type Image<'T when 'T : equality>(sz: uint list, ?numberComp: uint, ?name: string, ?index: uint, ?permanent: bool) =
-    let debug = true
+type Image<'T when 'T : equality>(sz: uint list, ?numberComp: uint, ?name: string, ?index: uint, ?quiet: bool) =
+    static let debug = true
     let itkId = fromType<'T>
     let isListType = typeof<'T>.IsGenericType && typeof<'T>.GetGenericTypeDefinition() = typedefof<list<_>>
     let mutable img = 
@@ -259,16 +262,14 @@ type Image<'T when 'T : equality>(sz: uint list, ?numberComp: uint, ?name: strin
             new itk.simple.Image(sz |> toVectorUInt32, itkId, v)
         | None -> 
             new itk.simple.Image(sz |> toVectorUInt32, itkId)
+    do memUsed <- memUsed + Image<_>.memoryEstimateSItk img
     // count how many references there is to this image.
 
     let mutable nReferences = 1 
-    static let mutable _storage = []
-    static let mutable totalImages = 0 // count how many images with references > 0
-
+ 
     do totalImages <- totalImages + 1
-    do _storage <- (img,name)::_storage
-    do if debug then
-        do printfn "%s Created %A" (String.replicate totalImages "*") name
+    do if debug && not (quiet = Some true) then
+        do printfn "%6d KB %s Created %A" (memUsed/1024u) (String.replicate totalImages "*") name
 
     member this.Image = img
     member val Name = (Option.defaultValue "" name) with get
@@ -279,21 +280,21 @@ type Image<'T when 'T : equality>(sz: uint list, ?numberComp: uint, ?name: strin
     member this.getNReferences() = nReferences
     member this.incRefCount() = nReferences<-nReferences+1
     // release a use of this image
-    member this.decRefCount() = 
+    member this.decRefCount() =
         nReferences<-nReferences-1
         if nReferences = 0 then
             totalImages <- totalImages - 1
+            memUsed <- memUsed - Image<_>.memoryEstimateSItk img
             if debug then
-                printfn "%s Disposed of %s" (String.replicate totalImages "*") this.Name
+                printfn "%6d KB %s Disposed of %A" (memUsed/1024u) (String.replicate totalImages "*") this.Name
             //let totalBefore = Image<_>.storage |> List.map fst |> List.map Image<_>.memoryEstimateSItk |> List.reduce (+)
             //printfn $"Before {Image<_>.memoryEstimateSItk this.Image} Total: {totalBefore}"
-            if not (Option.defaultValue false permanent) then 
+            else
                 img.Dispose()
                 img <- new itk.simple.Image([0u;0u] |> toVectorUInt32, itkId)
             //let totalAfter = Image<_>.storage |> List.map fst |> List.map Image<_>.memoryEstimateSItk |> List.reduce (+)
             //printfn $"After {Image<_>.memoryEstimateSItk this.Image} Total: {totalAfter}"
 
-    static member storage = _storage
     static member memoryEstimateSItk (sitk : itk.simple.Image) = 
         let noComponent = sitk.GetNumberOfComponentsPerPixel()
         let bytesPerComponent = getBytesPerSItkComponent (sitk.GetPixelID())
@@ -301,12 +302,6 @@ type Image<'T when 'T : equality>(sz: uint list, ?numberComp: uint, ?name: strin
         let res = bytesPerComponent * (size |> List.reduce ( * ));
         res
 
-    static member storageStatisticsToString () =
-        (List.map snd _storage).ToString()
-(*        List.fold (fun (acc: uint, str:string) (f,name)-> 
-            let mem = f();
-            ((acc+mem),($"{str}: {mem}\n"))) (0ul,"") _storage 
-*)
     member this.GetSize () = img.GetSize() |> fromVectorUInt32
     member this.GetDepth() = max 1u (img.GetDepth()) // Non-vector images returns 0
     member this.GetDimensions() = img.GetDimension()
@@ -340,14 +335,18 @@ type Image<'T when 'T : equality>(sz: uint list, ?numberComp: uint, ?name: strin
 
     static member ofSimpleITK (itkImg: itk.simple.Image, ?name: string, ?index: uint) : Image<'T> =
         let itkImgCast = ofCastItk<'T> itkImg
-        let img = new Image<'T>([0u;0u],itkImgCast.GetNumberOfComponentsPerPixel(),Option.defaultValue "" name,Option.defaultValue 0u index)
+        let img = new Image<'T>([0u;0u],itkImgCast.GetNumberOfComponentsPerPixel(),Option.defaultValue "" name,Option.defaultValue 0u index, true)
+        memUsed <- memUsed - Image<_>.memoryEstimateSItk img.Image
         img.SetImg itkImgCast
+        memUsed <- memUsed + Image<_>.memoryEstimateSItk img.Image
+        if debug then
+            printfn "%6d KB %s Created %A" (memUsed/1024u) (String.replicate totalImages "*") name
         img
 
     member this.toSimpleITK () : itk.simple.Image =
         img
 
-    member this.castTo<'S when 'S: equality> () : Image<'S> = Image<'S>.ofSimpleITK img
+    member this.castTo<'S when 'S: equality> () : Image<'S> = Image<'S>.ofSimpleITK(img,"cast")
     member this.toUInt8 ()   : Image<uint8>   = Image<uint8>.ofSimpleITK img
     member this.toInt8 ()    : Image<int8>    = Image<int8>.ofSimpleITK img
     member this.toUInt16 ()  : Image<uint16>  = Image<uint16>.ofSimpleITK img

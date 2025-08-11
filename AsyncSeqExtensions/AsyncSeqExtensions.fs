@@ -68,46 +68,48 @@ let windowedWithPad
             return next
         }
 
-        let tryGetCurrent id prePad postPad zero current = async {
+        let tryGetCurrent id prePad postPad (zeroMaker: 'T->'T) current = async {
             if prePad > 0u then
                 //printfn "yieldWindows prePad"
+                let zero = Option.map zeroMaker current
                 return (zero, prePad - 1u, postPad, current)
             elif current <> None then
                 let! next = tryGetNext ()
                 return (current, prePad, postPad, next)
             elif postPad > 0u then
                 //printfn "yieldWindows postPad"
+                let zero = Option.map zeroMaker current
                 return (zero, prePad, postPad - 1u, current)
             else
+                let zero = Option.map zeroMaker current
                 return (zero, prePad, postPad, current)
         }
 
-        let rec yieldWindows (prePad: uint) (postPad: uint) (zero: 'T option) (step: uint) (current: 'T option)= asyncSeq {
+        let rec yieldWindows (prePad: uint) (postPad: uint) (zeroMaker: 'T->'T) (step: uint) (current: 'T option)= asyncSeq {
             //printfn "yieldWindows prePad=%A postPad=%A step=%A buffer.length=%A" prePad postPad step buffer.Count
             if postPad = 0u && current = None then 
                 //printfn "yieldWindows done"
                 ()
             else
-                let! curr, nPrePad, nPostPad, next = tryGetCurrent id prePad postPad zero current
+                let! curr, nPrePad, nPostPad, next = tryGetCurrent id prePad postPad zeroMaker current
                 Option.iter buffer.Add curr
                 if step > 0u then
                     if buffer.Count > 0 then buffer.RemoveAt 0
                     //printfn "yieldWindows stepping"
-                    yield! yieldWindows nPrePad nPostPad zero (step - 1u) next
+                    yield! yieldWindows nPrePad nPostPad zeroMaker (step - 1u) next
                 elif uint buffer.Count >= windowSize then
                     //printfn "yieldWindows release window buffer.length=%A" buffer.Count
                     yield (buffer |> Seq.take (int windowSize) |> Seq.toList)
                     let dropCount = min stride (uint buffer.Count)
                     buffer.RemoveRange(0, int dropCount)
                     //printfn "yieldWindows continuing"
-                    yield! yieldWindows nPrePad nPostPad zero (stride-dropCount) next
+                    yield! yieldWindows nPrePad nPostPad zeroMaker (stride-dropCount) next
                 else
                     //printfn "yieldWindows continuing"
-                    yield! yieldWindows nPrePad nPostPad zero step next
+                    yield! yieldWindows nPrePad nPostPad zeroMaker step next
         }
         let! first = tryGetNext()
-        let zero = Option.map zeroMaker first
-        yield! yieldWindows prePad postPad zero 0u first
+        yield! yieldWindows prePad postPad zeroMaker 0u first
     }
 
 /// Converts an asynchronous computation of a single value into an asynchronous sequence containing one item.
