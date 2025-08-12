@@ -832,7 +832,7 @@ let unstack (vol: Image<'T>): Image<'T> list =
     //printfn $"unstack: input {vol.GetSize()} {res.Length}"
     res
 
-let unstackFromLength (N:uint) (M:uint) (vol: Image<'T>): Image<'T> list =
+let unstackSkipNTakeM (N:uint) (M:uint) (vol: Image<'T>): Image<'T> list =
     let dim = vol.GetDimensions()
     if dim < 3u then
         failwith $"Cannot unstack a {dim}-dimensional image along the 3rd axis"

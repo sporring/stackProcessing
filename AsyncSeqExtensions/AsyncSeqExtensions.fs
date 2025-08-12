@@ -68,48 +68,64 @@ let windowedWithPad
             return next
         }
 
-        let tryGetCurrent id prePad postPad (zeroMaker: int->'T->'T) current = async {
+        let tryGetCurrent id prePad postPad (zeroMaker: int->'T->'T) prev current = async {
+            //printfn $"id {id}, prePad {prePad}, postPad {postPad}, buffer.Count {buffer.Count}, windowSize {windowSize}"
             if prePad > 0u then
-                //printfn "yieldWindows prePad"
+                //printfn "tryGetCurrent prePad"
                 let zero = Option.map (zeroMaker id) current
                 return (zero, prePad - 1u, postPad, current)
             elif current <> None then
+                //printfn "tryGetCurrent current"
                 let! next = tryGetNext ()
                 return (current, prePad, postPad, next)
-            elif postPad > 0u then
-                //printfn "yieldWindows postPad"
-                let zero = Option.map (zeroMaker id) current
+            else //elif postPad > 0u then
+                //printfn "tryGetCurrent postPad"
+                let zero = Option.map (zeroMaker id) prev
                 return (zero, prePad, postPad - 1u, current)
-            else
-                let zero = Option.map (zeroMaker id) current
-                return (zero, prePad, postPad, current)
+//            else
+//                printfn "tryGetCurrent default"
+//                let zero = Option.map (zeroMaker id) current
+//                return (zero, prePad, postPad, current)
         }
+        // kernesize 5
+        // index:     -2-1 0 1 2 3 4 5 6 7
+        // pad:        * *             * *
+        // winsize 7:  * * * * * * *
+        // valid:          * * *
+        // stride 3, ws 7:   * * * * * * *
+        // valid:                * * *
+        // stride 3, ws 7:         * * * * * * *
+        // valid:                      
+        // stride = windowSize-2*p
+        // m+2*pad = n*stride+windowSize
+        // n = (m+2*pad-windowSize)/stride
 
-        let rec yieldWindows (id: int) (prePad: uint) (postPad: uint) (zeroMaker: int->'T->'T) (step: uint) (current: 'T option)= asyncSeq {
+        let rec yieldWindows (id: int) (prePad: uint) (postPad: uint) (zeroMaker: int->'T->'T) (step: uint) (current: 'T option) (next: 'T option) = asyncSeq {
             //printfn "yieldWindows prePad=%A postPad=%A step=%A buffer.length=%A" prePad postPad step buffer.Count
-            if postPad = 0u && current = None then 
-                //printfn "yieldWindows done"
+            if postPad = 0u && next = None then // when postPad goes to zero, then we contiue padding until buffer is emptied a last time
                 ()
             else
-                let! curr, nPrePad, nPostPad, next = tryGetCurrent id prePad postPad zeroMaker current
+                //printfn $"Before {buffer.Count}"
+                let! curr, nPrePad, nPostPad, nxt = tryGetCurrent id prePad postPad zeroMaker current next
                 Option.iter buffer.Add curr
+                //printfn $"After {curr}, {nxt}, {buffer.Count}"
                 if step > 0u then
                     if buffer.Count > 0 then buffer.RemoveAt 0
                     //printfn "yieldWindows stepping"
-                    yield! yieldWindows (id+1) nPrePad nPostPad zeroMaker (step - 1u) next
+                    yield! yieldWindows (id+1) nPrePad nPostPad zeroMaker (step - 1u) curr nxt
                 elif uint buffer.Count >= windowSize then
                     //printfn "yieldWindows release window buffer.length=%A" buffer.Count
                     yield (buffer |> Seq.take (int windowSize) |> Seq.toList)
                     let dropCount = min stride (uint buffer.Count)
                     buffer.RemoveRange(0, int dropCount)
                     //printfn "yieldWindows continuing"
-                    yield! yieldWindows (id+1) nPrePad nPostPad zeroMaker (stride-dropCount) next
+                    yield! yieldWindows (id+1) nPrePad nPostPad zeroMaker (stride-dropCount) curr nxt
                 else
                     //printfn "yieldWindows continuing"
-                    yield! yieldWindows (id+1) nPrePad nPostPad zeroMaker step next
+                    yield! yieldWindows (id+1) nPrePad nPostPad zeroMaker step curr nxt
         }
         let! first = tryGetNext()
-        yield! yieldWindows (-(int prePad)) prePad postPad zeroMaker 0u first
+        yield! yieldWindows (-(int prePad)) prePad postPad zeroMaker 0u None first
     }
 
 /// Converts an asynchronous computation of a single value into an asynchronous sequence containing one item.

@@ -380,7 +380,7 @@ val extractSub:
 val extractSlice:
   z: int -> img: Image.Image<'T> -> Image.Image<'T> when 'T: equality
 val unstack: vol: Image.Image<'T> -> Image.Image<'T> list when 'T: equality
-val unstackFromLength:
+val unstackSkipNTakeM:
   N: uint -> M: uint -> vol: Image.Image<'T> -> Image.Image<'T> list
     when 'T: equality
 type FileInfo =

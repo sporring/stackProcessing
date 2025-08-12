@@ -294,9 +294,9 @@ val skipNTakeM: n: uint -> m: uint -> lst: 'a list -> 'a list
 
 val stackFUnstackTrim:
   trim: uint32 ->
-    f: (Image.Image<'T> -> #Image.Image<'b>) ->
-    images: Image<'T> list -> Image.Image<'b> list
-    when 'T: equality and 'b: equality
+    f: (Image<'T> -> Image<'S>) ->
+    images: Image<'T> list -> Image.Image<'S> list
+    when 'T: equality and 'S: equality
 
 val discreteGaussianOp:
   name: string ->

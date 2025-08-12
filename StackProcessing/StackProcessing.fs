@@ -273,8 +273,7 @@ let skipNTakeM (n: uint) (m: uint) (lst: 'a list) : 'a list =
     if m = 0u then []
     else lst |> List.skip (int n) |> List.take (int m) // This needs releaseAfter!!!
 
-let stackFUnstackTrim trim f (images : Image<'T> list) =
-    let m = uint images.Length - 2u*trim 
+let stackFUnstackTrim trim (f: Image<'T>->Image<'S>) (images : Image<'T> list) =
     //printfn $"stackFUnstackTrim: stacking"
     let stck = images |> ImageFunctions.stack 
     //printfn $"stackFUnstackTrim: applying f and ustacking"
@@ -285,7 +284,8 @@ let stackFUnstackTrim trim f (images : Image<'T> list) =
         stck.decRefCount()
         //printfn $"unstacking function result"
 //        let imageLst = ImageFunctions.unstack volRes
-        let imageLst = ImageFunctions.unstackFromLength trim m volRes
+        let m = uint images.Length - 2u*trim // last stack may be smaller if stride > 1
+        let imageLst = ImageFunctions.unstackSkipNTakeM trim m volRes
         volRes.decRefCount()
         imageLst
         //printfn $"skipntakem"
@@ -306,6 +306,11 @@ let discreteGaussianOp (name:string) (sigma:float) (outputRegionMode: ImageFunct
         match outputRegionMode with
             | Some Valid -> 0u
             | _ -> ksz/2u //floor
+    // length-2*pad = n*stride+windowSize
+    // stride = windowSize-2*pad
+    // => n = (windowSize-length-2*pad)/(2*pad-windowSize)
+    // e.g., integer solutions for 
+    // windowSize = 1, 6, 15, or 26, pad = 2, length = 22, => n = 21, 10, 1, or 0
     printfn $"discreteGaussianOp: sigma {sigma}, ksz {ksz}, win {win}, stride {stride}, pad {pad}"
     let f images = images |> stackFUnstackTrim pad (fun image3D -> ImageFunctions.discreteGaussian 3u sigma (ksz |> Some) outputRegionMode boundaryCondition image3D)
     liftWindowedReleaseAfter name win pad zeroMaker stride pad stride f id id

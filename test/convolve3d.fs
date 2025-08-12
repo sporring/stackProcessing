@@ -9,8 +9,10 @@ let main _ =
 
     debug availableMemory
     |> read<float> "image" ".tiff"
-    //>=> discreteGaussian sigma None None (Some 7u) // What's the rule for ligning up winSz and stream size, such that the output is also stream size?
-    >=> convGauss sigma
+    // sigma = 1 => pad=2, depth = 22 => integer solution for number of strides when:
+    // windowSize = 1, 6, 15, or 26, => n = 21, 10, 1, or 0
+    >=> discreteGaussian sigma None None (Some 26u) 
+    //>=> convGauss sigma
     >=> cast<float,uint8>
     >=> write "result" ".tif"
     //>=> ignoreImages ()
