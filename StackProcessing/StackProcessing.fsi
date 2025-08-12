@@ -73,7 +73,7 @@ val ignoreImages: unit -> Stage<Image<'a>,unit> when 'a: equality
 
 val ignoreAll: unit -> (('a -> unit) -> SlimPipeline.Stage<'a,unit>)
 
-val zeroMaker: ex: Image<'S> -> Image<'S> when 'S: equality
+val zeroMaker: index: int -> ex: Image<'S> -> Image<'S> when 'S: equality
 
 val liftUnary:
   (string ->
@@ -92,7 +92,7 @@ val liftWindowed:
   (string ->
      uint ->
      uint ->
-     ('a -> 'a) ->
+     (int -> 'a -> 'a) ->
      uint ->
      uint ->
      uint ->
@@ -105,7 +105,7 @@ val liftWindowedReleaseAfter:
   name: string ->
     window: uint ->
     pad: uint ->
-    zeroMaker: (Image<'S> -> Image<'S>) ->
+    zeroMaker: (int -> Image<'S> -> Image<'S>) ->
     stride: uint ->
     emitStart: uint ->
     emitCount: uint ->
@@ -352,15 +352,17 @@ val binaryFillHoles: winSz: uint -> Stage<Image<uint8>,Image<uint8>>
 val connectedComponents: winSz: uint -> Stage<Image<uint8>,Image<uint64>>
 
 val relabelComponents:
-  a: uint -> winSz: uint -> Stage<Image<uint64>,Image<uint64>>
+  a: uint -> winSz: uint -> Stage<Image<'a>,Image<'a>> when 'a: equality
 
-val watershed: a: float -> winSz: uint -> Stage<Image<uint8>,Image<uint8>>
+val watershed:
+  a: float -> winSz: uint -> Stage<Image<'a>,Image<'a>> when 'a: equality
 
 val signedDistanceMap: winSz: uint -> Stage<Image<uint8>,Image<float>>
 
-val otsuThreshold: winSz: uint -> Stage<Image<uint8>,Image<uint8>>
+val otsuThreshold: winSz: uint -> Stage<Image<'a>,Image<'a>> when 'a: equality
 
-val momentsThreshold: winSz: uint -> Stage<Image<uint8>,Image<uint8>>
+val momentsThreshold:
+  winSz: uint -> Stage<Image<'a>,Image<'a>> when 'a: equality
 
 val threshold:
   a: float -> b: float -> SlimPipeline.Stage<#Image<'b>,Image<'b>>

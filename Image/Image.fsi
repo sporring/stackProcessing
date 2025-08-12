@@ -47,7 +47,7 @@ val mutable memUsed: uint32
 type Image<'T when 'T: equality> =
     interface System.IComparable
     interface System.IEquatable<Image<'T>>
-    new: sz: uint list * ?numberComp: uint * ?name: string * ?index: uint *
+    new: sz: uint list * ?numberComp: uint * ?name: string * ?idx: int *
          ?quiet: bool -> Image<'T>
     static member
       (&&&) : f1: Image<'S> * f2: Image<'S> -> Image<'S> when 'S: equality
@@ -97,11 +97,11 @@ type Image<'T when 'T: equality> =
     static member ofArray3D: arr: 'T array3d -> Image<'T>
     static member ofArray4D: arr: 'T array4d -> Image<'T>
     static member
-      ofFile: filename: string * ?name: string * ?index: uint -> Image<'T>
+      ofFile: filename: string * ?name: string * ?index: int -> Image<'T>
     static member
       ofImageList: images: Image<'S> list -> Image<'S list> when 'S: equality
     static member
-      ofSimpleITK: itkImg: itk.simple.Image * ?name: string * ?index: uint ->
+      ofSimpleITK: itkImg: itk.simple.Image * ?name: string * ?index: int ->
                      Image<'T>
     static member unzip: im: Image<'T list> -> Image<'T> list
     static member zip: imLst: Image<'T> list -> Image<'T list>
@@ -149,7 +149,7 @@ type Image<'T when 'T: equality> =
     member Item: i0: int * i1: int * i2: int * i3: int -> 'T with get
     member Item: i0: int * i1: int * i2: int * i3: int -> 'T with set
     member Name: string
-    member index: uint32 with get, set
+    member index: int with get, set
 module ImageFunctions
 val inline imageAddScalar:
   f1: Image.Image<^S> -> i: ^S -> Image.Image<^S>
@@ -378,8 +378,11 @@ val extractSub:
     bottomRight: uint list -> img: Image.Image<'T> -> Image.Image<'T>
     when 'T: equality
 val extractSlice:
-  z: uint -> img: Image.Image<'T> -> Image.Image<'T> when 'T: equality
+  z: int -> img: Image.Image<'T> -> Image.Image<'T> when 'T: equality
 val unstack: vol: Image.Image<'T> -> Image.Image<'T> list when 'T: equality
+val unstackFromLength:
+  N: uint -> M: uint -> vol: Image.Image<'T> -> Image.Image<'T> list
+    when 'T: equality
 type FileInfo =
     {
       dimensions: uint

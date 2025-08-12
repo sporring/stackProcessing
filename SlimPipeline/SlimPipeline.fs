@@ -63,8 +63,8 @@ module private Pipe =
         let apply debug  input = input |> AsyncSeq.map f
         create name apply profile
 
-    let init<'T> (name: string) (depth: uint) (mapper: uint -> 'T) (profile: Profile) : Pipe<unit,'T> =
-        let apply debug _ = AsyncSeq.init (int64 depth) (fun (i:int64) -> mapper (uint i))
+    let init<'T> (name: string) (depth: uint) (mapper: int -> 'T) (profile: Profile) : Pipe<unit,'T> =
+        let apply debug _ = AsyncSeq.init (int64 depth) (fun (i:int64) -> mapper (int i))
         create name apply profile
 
     let skip (name: string) (count: uint) =
@@ -236,7 +236,7 @@ module private Pipe =
     /// and so on. If depth is 3 and stride is 3, then it'll be image 0, 1, 2 followed by
     /// 3, 4, 5. It is also possible to use this for sampling, e.g., setting depth to 1
     /// and stride to 2 sends every second image to f.  
-    let mapWindowed (name: string) (winSz: uint) (pad: uint) (zeroMaker: 'S->'S) (stride: uint) (emitStart: uint) (emitCount: uint) (f: 'S list -> 'T list) : Pipe<'S,'T> =
+    let mapWindowed (name: string) (winSz: uint) (pad: uint) (zeroMaker: int->'S->'S) (stride: uint) (emitStart: uint) (emitCount: uint) (f: 'S list -> 'T list) : Pipe<'S,'T> =
         //printfn "mapWindowed winSz=%A stride=%A pad=%A" winSz stride pad
         let apply debug input =
             // AsyncSeqExtensions.windowed depth stride input
@@ -293,7 +293,7 @@ module Stage =
     let create<'S,'T> (name: string) (pipe: Pipe<'S,'T>) (transition: ProfileTransition) (memoryNeed: MemoryNeed) (nElemsTransformation: NElemsTransformation) =
         { Name = name; Pipe = pipe; Transition = transition; MemoryNeed = memoryNeed; NElemsTransformation = nElemsTransformation}
 
-    let init<'S,'T> (name: string) (depth: uint) (mapper: uint -> 'T) (transition: ProfileTransition) (memoryNeed: MemoryNeed) (nElemsTransformation: NElemsTransformation) =
+    let init<'S,'T> (name: string) (depth: uint) (mapper: int -> 'T) (transition: ProfileTransition) (memoryNeed: MemoryNeed) (nElemsTransformation: NElemsTransformation) =
         let pipe = Pipe.init name depth mapper transition.From
         create name pipe transition memoryNeed nElemsTransformation
 
@@ -364,7 +364,7 @@ module Stage =
         let pipe = Pipe.lift name Streaming f
         create name pipe transition memoryNeed nElemsTransformation
 
-    let liftWindowed<'S,'T when 'S: equality and 'T: equality> (name: string) (window: uint) (pad: uint) (zeroMaker: 'S->'S) (stride: uint) (emitStart: uint) (emitCount: uint) (f: 'S list -> 'T list) (memoryNeed: MemoryNeed) (nElemsTransformation: NElemsTransformation): Stage<'S, 'T> =
+    let liftWindowed<'S,'T when 'S: equality and 'T: equality> (name: string) (window: uint) (pad: uint) (zeroMaker: int->'S->'S) (stride: uint) (emitStart: uint) (emitCount: uint) (f: 'S list -> 'T list) (memoryNeed: MemoryNeed) (nElemsTransformation: NElemsTransformation): Stage<'S, 'T> =
         let transition = ProfileTransition.create (Sliding (window,stride,emitStart,emitCount)) Streaming
         let pipe = Pipe.mapWindowed name window pad zeroMaker stride emitStart emitCount f
         create name pipe transition memoryNeed nElemsTransformation
@@ -410,7 +410,7 @@ module Stage =
         (name: string)
         (winSz: uint)
         (pad: uint)
-        (zeroMaker: 'T -> 'T)
+        (zeroMaker: int -> 'T -> 'T)
         (stride: uint)
         (emitStart: uint)
         (emitCount: uint)
@@ -431,7 +431,7 @@ module Stage =
         (name: string)
         (winSz: uint)
         (pad: uint)
-        (zeroMaker: 'T -> 'T)
+        (zeroMaker: int -> 'T -> 'T)
         (stride: uint)
         (emitStart: uint)
         (emitCount: uint)

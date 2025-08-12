@@ -248,7 +248,7 @@ let mutable totalImages = 0 // count how many images with references > 0, must b
 let mutable memUsed = 0u 
 
 [<StructuredFormatDisplay("{Display}")>] // Prevent fsi printing information about its members such as img
-type Image<'T when 'T : equality>(sz: uint list, ?numberComp: uint, ?name: string, ?index: uint, ?quiet: bool) =
+type Image<'T when 'T : equality>(sz: uint list, ?numberComp: uint, ?name: string, ?idx: int, ?quiet: bool) =
     static let debug = true
     let itkId = fromType<'T>
     let isListType = typeof<'T>.IsGenericType && typeof<'T>.GetGenericTypeDefinition() = typedefof<list<_>>
@@ -273,7 +273,7 @@ type Image<'T when 'T : equality>(sz: uint list, ?numberComp: uint, ?name: strin
 
     member this.Image = img
     member val Name = (Option.defaultValue "" name) with get
-    member val index = (Option.defaultValue 0u index) with get, set
+    member val index = (Option.defaultValue 0 idx) with get, set
     member private this.SetImg (itkImg: itk.simple.Image) : unit =
         img <- itkImg
     // add a use of this image
@@ -333,9 +333,9 @@ type Image<'T when 'T : equality>(sz: uint list, ?numberComp: uint, ?name: strin
         let res = bytesPerComponent * (Option.defaultValue 1u numberComp) * (size |> List.reduce ( * ));
         res
 
-    static member ofSimpleITK (itkImg: itk.simple.Image, ?name: string, ?index: uint) : Image<'T> =
+    static member ofSimpleITK (itkImg: itk.simple.Image, ?name: string, ?index: int) : Image<'T> =
         let itkImgCast = ofCastItk<'T> itkImg
-        let img = new Image<'T>([0u;0u],itkImgCast.GetNumberOfComponentsPerPixel(),Option.defaultValue "" name,Option.defaultValue 0u index, true)
+        let img = new Image<'T>([0u;0u],itkImgCast.GetNumberOfComponentsPerPixel(),Option.defaultValue "" name,Option.defaultValue 0 index, true)
         memUsed <- memUsed - Image<_>.memoryEstimateSItk img.Image
         img.SetImg itkImgCast
         memUsed <- memUsed + Image<_>.memoryEstimateSItk img.Image
@@ -414,7 +414,7 @@ type Image<'T when 'T : equality>(sz: uint list, ?numberComp: uint, ?name: strin
             Image<'S>.ofSimpleITK scalarItk
         )
 
-    static member ofFile(filename: string, ?name: string, ?index: uint) : Image<'T> =
+    static member ofFile(filename: string, ?name: string, ?index: int) : Image<'T> =
         use reader = new itk.simple.ImageFileReader()
         reader.SetFileName(filename)
         let itkImg = reader.Execute()
@@ -431,7 +431,7 @@ type Image<'T when 'T : equality>(sz: uint list, ?numberComp: uint, ?name: strin
         | false, n when n > 1u ->
             failwithf "Pixel type '%O' expects a scalar (1 component), but image has %d component(s)." tType n
         | _ ->
-            Image<'T>.ofSimpleITK(itkImg,Option.defaultValue "" name,Option.defaultValue 0u index)
+            Image<'T>.ofSimpleITK(itkImg,Option.defaultValue "" name,Option.defaultValue 0 index)
 
     member this.toFile(filename: string, ?format: string) =
         use writer = new itk.simple.ImageFileWriter()

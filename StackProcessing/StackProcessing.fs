@@ -44,7 +44,7 @@ let tap = Stage.tap
 let tapIt = Stage.tapIt
 let ignoreImages () : Stage<Image<_>,unit> = Stage.ignore (fun (I:Image<_>)->I.decRefCount ())
 let ignoreAll () = Stage.ignore<_>
-let zeroMaker<'S when 'S: equality> (ex:Image<'S>) : Image<'S> = new Image<'S>(ex.GetSize(), 1u, "padding", 0u)
+let zeroMaker (index:int) (ex:Image<'S>) : Image<'S> = new Image<'S>(ex.GetSize(), 1u, "padding", index)
 
 let liftUnary = Stage.liftUnary
 let liftUnaryReleaseAfter 
@@ -59,7 +59,7 @@ let liftWindowedReleaseAfter
     (name: string) 
     (window: uint) 
     (pad: uint) 
-    (zeroMaker: Image<'S>->Image<'S>) 
+    (zeroMaker: int->Image<'S>->Image<'S>) 
     (stride: uint) 
     (emitStart: uint) 
     (emitCount: uint) 
@@ -284,13 +284,15 @@ let stackFUnstackTrim trim f (images : Image<'T> list) =
         let volRes = f stck
         stck.decRefCount()
         //printfn $"unstacking function result"
-        let imageLst = ImageFunctions.unstack volRes
+//        let imageLst = ImageFunctions.unstack volRes
+        let imageLst = ImageFunctions.unstackFromLength trim m volRes
         volRes.decRefCount()
+        imageLst
         //printfn $"skipntakem"
-        let r = skipNTakeM trim m imageLst
-        imageLst |> List.iteri (fun i I -> if i < (int trim) || i >= (int (trim + m)) then I.decRefCount())
+        //let r = skipNTakeM trim m imageLst
+        //imageLst |> List.iteri (fun i I -> if i < (int trim) || i >= (int (trim + m)) then I.decRefCount())
         //printfn $"result ready"
-        r
+        //r
     //printfn $"stackFUnstackTrim: returning result"
     result
 
@@ -306,7 +308,7 @@ let discreteGaussianOp (name:string) (sigma:float) (outputRegionMode: ImageFunct
             | _ -> ksz/2u //floor
     printfn $"discreteGaussianOp: sigma {sigma}, ksz {ksz}, win {win}, stride {stride}, pad {pad}"
     let f images = images |> stackFUnstackTrim pad (fun image3D -> ImageFunctions.discreteGaussian 3u sigma (ksz |> Some) outputRegionMode boundaryCondition image3D)
-    liftWindowedReleaseAfter name win pad zeroMaker<float> stride pad stride f id id
+    liftWindowedReleaseAfter name win pad zeroMaker stride pad stride f id id
 
 let discreteGaussian = discreteGaussianOp "discreteGaussian"
 let convGauss sigma = discreteGaussianOp "convGauss" sigma None None None
@@ -347,7 +349,7 @@ let convolveOp (name: string) (kernel: Image<'T>) (outputRegionMode: ImageFuncti
             | Some Valid -> 0u
             | _ -> ksz/2u //floor
     let f images = images |> stackFUnstackTrim (ksz - 1u) (fun image3D -> ImageFunctions.convolve outputRegionMode bc image3D kernel)
-    liftWindowedReleaseAfter name win pad zeroMaker<'T> stride (win-1u) (1u) f id id
+    liftWindowedReleaseAfter name win pad zeroMaker stride (win-1u) (1u) f id id
 
 let convolve kernel outputRegionMode boundaryCondition winSz = convolveOp "convolve" kernel outputRegionMode boundaryCondition winSz
 let conv kernel = convolveOp "conv" kernel None None None
@@ -363,7 +365,7 @@ let private makeMorphOp (name:string) (radius:uint) (winSz: uint option) (core: 
     let win = Option.defaultValue ksz winSz |> min ksz
     let stride = win - ksz + 1u
     let f images = images |> stackFUnstackTrim radius (core radius)
-    liftWindowedReleaseAfter name win pad zeroMaker<'T> stride (stride - 1u) stride f id id
+    liftWindowedReleaseAfter name win pad zeroMaker stride (stride - 1u) stride f id id
 
 let erode radius = makeMorphOp "binaryErode"  radius None ImageFunctions.binaryErode
 let dilate radius = makeMorphOp "binaryErode"  radius None ImageFunctions.binaryDilate
@@ -373,31 +375,31 @@ let closing radius = makeMorphOp "binaryErode"  radius None ImageFunctions.binar
 /// Full stack operators
 let binaryFillHoles (winSz: uint)= 
     let f images = images |> stackFUnstack ImageFunctions.binaryFillHoles
-    liftWindowedReleaseAfter "fillHoles" winSz 0u zeroMaker<uint8> winSz 0u winSz f id id
+    liftWindowedReleaseAfter "fillHoles" winSz 0u zeroMaker winSz 0u winSz f id id
 
 let connectedComponents (winSz: uint) = 
     let f images = images |> stackFUnstack ImageFunctions.connectedComponents
-    liftWindowedReleaseAfter "connectedComponents" winSz 0u zeroMaker<uint8> winSz 0u winSz f id id
+    liftWindowedReleaseAfter "connectedComponents" winSz 0u zeroMaker winSz 0u winSz f id id
 
 let relabelComponents a (winSz: uint) = 
     let f images = images |> stackFUnstack (ImageFunctions.relabelComponents a)
-    liftWindowedReleaseAfter "relabelComponents" winSz 0u zeroMaker<uint64> winSz 0u winSz f id id
+    liftWindowedReleaseAfter "relabelComponents" winSz 0u zeroMaker winSz 0u winSz f id id
 
 let watershed a (winSz: uint) =
     let f images = images |> stackFUnstack (ImageFunctions.watershed a)
-    liftWindowedReleaseAfter "watershed" winSz 0u zeroMaker<uint8> winSz 0u winSz f id id
+    liftWindowedReleaseAfter "watershed" winSz 0u zeroMaker winSz 0u winSz f id id
 
 let signedDistanceMap (winSz: uint) =
     let f images = images |> stackFUnstack (ImageFunctions.signedDistanceMap 0uy 1uy)
-    liftWindowedReleaseAfter "signedDistanceMap" winSz 0u zeroMaker<uint8> winSz 0u winSz f id id
+    liftWindowedReleaseAfter "signedDistanceMap" winSz 0u zeroMaker winSz 0u winSz f id id
 
 let otsuThreshold (winSz: uint) =
     let f images = images |> stackFUnstack (ImageFunctions.otsuThreshold)
-    liftWindowedReleaseAfter "otsuThreshold" winSz 0u zeroMaker<uint8> winSz 0u winSz f id id
+    liftWindowedReleaseAfter "otsuThreshold" winSz 0u zeroMaker winSz 0u winSz f id id
 
 let momentsThreshold (winSz: uint) =
     let f images = images |> stackFUnstack (ImageFunctions.momentsThreshold)
-    liftWindowedReleaseAfter "momentsThreshold" winSz 0u zeroMaker<uint8> winSz 0u winSz f id id
+    liftWindowedReleaseAfter "momentsThreshold" winSz 0u zeroMaker winSz 0u winSz f id id
 
 let threshold a b = liftUnaryReleaseAfter "threshold" (ImageFunctions.threshold a b) id id
 
@@ -441,7 +443,7 @@ let zero<'T when 'T: equality>
     : Pipeline<unit, Image<'T>> =
     // width, heigth, depth should be replaced with shape and shapeUpdate, and mapper should be deferred to outside Core!!!
     if pl.debug then printfn $"[zero] {width}x{height}x{depth}"
-    let mapper (i: uint) : Image<'T> = 
+    let mapper (i: int) : Image<'T> = 
         let image = new Image<'T>([width; height], 1u,$"zero[{i}]", i)
         if pl.debug then printfn "[zero] Created image %A" i
         image
@@ -459,9 +461,9 @@ let readFilteredOp<'T when 'T: equality> (name:string) (inputDir : string) (suff
     let (width,height,depth) = getStackSize inputDir suffix
     let filenames = Directory.GetFiles(inputDir, "*"+suffix) |> filter
     //let depth = uint filenames.Length
-    let mapper (i: uint) : Image<'T> = 
+    let mapper (i: int) : Image<'T> = 
         let fileName = filenames[int i]; 
-        let image = Image<'T>.ofFile (fileName, fileName, uint i)
+        let image = Image<'T>.ofFile (fileName, fileName, i)
         if pl.debug then printfn "[%s] Reading image %A from %s as %s" name i fileName (typeof<'T>.Name)
         image
     let transition = ProfileTransition.create Constant Streaming

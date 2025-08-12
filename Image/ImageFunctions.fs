@@ -141,7 +141,7 @@ let inline makeUnaryImageOperatorWith
         fun (img: Image<'T>) ->
             use filter = createFilter()
             setup filter
-            Image<'T>.ofSimpleITK(invoke filter (img.toSimpleITK()),name,0u)
+            Image<'T>.ofSimpleITK(invoke filter (img.toSimpleITK()),name,0)
 
 let inline makeUnaryImageOperator name createFilter invoke = makeUnaryImageOperatorWith name createFilter (fun _ -> ()) invoke
 
@@ -750,7 +750,7 @@ let stack (images: Image<'T> list) : Image<'T> =
     //printfn ""
     let v = new itk.simple.VectorOfImage()
     images |> List.iter (fun (I:Image<'T>) -> v.Add (I.toSimpleITK()))
-    let res = v |> filter.Execute |> (fun sitk -> Image<'T>.ofSimpleITK(sitk,"stack",0u) )
+    let res = v |> filter.Execute |> (fun sitk -> Image<'T>.ofSimpleITK(sitk,"stack",0) )
     //printfn $"Stack: input {images.Length} {res.GetDepth()}"
     res
 
@@ -803,10 +803,10 @@ let extractSub (topLeft : uint list) (bottomRight: uint list) (img: Image<'T>) :
     let extractor = new itk.simple.ExtractImageFilter()
     extractor.SetSize(sz |> toVectorUInt32)
     extractor.SetIndex( topLeft |> List.map int |> toVectorInt32)
-    let res = Image<'T>.ofSimpleITK(extractor.Execute(img.toSimpleITK()),"extractSub",0u)
+    let res = Image<'T>.ofSimpleITK(extractor.Execute(img.toSimpleITK()),"extractSub",0)
     res
 
-let extractSlice (z: uint) (img: Image<'T>) =
+let extractSlice (z: int) (img: Image<'T>) =
     if img.GetDimensions() <> 3u then
         failwith $"extractSlice: image must be 3D"
     let sz = img.GetSize()
@@ -815,11 +815,11 @@ let extractSlice (z: uint) (img: Image<'T>) =
         let filter =  new itk.simple.ExtractImageFilter() 
         let remove3rdDim = (List.take 2 sz)@[0u]
         filter.SetSize(remove3rdDim |> toVectorUInt32)
-        Image<'T>.ofSimpleITK(filter.Execute(img.toSimpleITK()),"extractSlice",0u)
+        Image<'T>.ofSimpleITK(filter.Execute(img.toSimpleITK()),"extractSlice",0)
     else
         let extractor = new itk.simple.ExtractImageFilter()
         extractor.SetSize([sz[0];sz[1];0u] |> toVectorUInt32)
-        extractor.SetIndex( [0;0;int z] |> toVectorInt32)
+        extractor.SetIndex( [0;0;z] |> toVectorInt32)
         let res = Image<'T>.ofSimpleITK(extractor.Execute(img.toSimpleITK()),"extractSlice",z)
         res
 
@@ -828,7 +828,18 @@ let unstack (vol: Image<'T>): Image<'T> list =
     if dim < 3u then
         failwith $"Cannot unstack a {dim}-dimensional image along the 3rd axis"
     let depth = vol.GetDepth() |> int
-    let res = List.init depth (fun i -> extractSlice (uint i) vol)
+    let res = List.init depth (fun i -> extractSlice i vol)
+    //printfn $"unstack: input {vol.GetSize()} {res.Length}"
+    res
+
+let unstackFromLength (N:uint) (M:uint) (vol: Image<'T>): Image<'T> list =
+    let dim = vol.GetDimensions()
+    if dim < 3u then
+        failwith $"Cannot unstack a {dim}-dimensional image along the 3rd axis"
+    let depth = vol.GetDepth() |> int
+    if (N+M >= uint depth) then
+        failwith $"Cannot unstack from z={N} to z={N+M-1u} of a stack of depth {depth}"
+    let res = List.init (int M) (fun i -> extractSlice (i+int N) vol)
     //printfn $"unstack: input {vol.GetSize()} {res.Length}"
     res
 

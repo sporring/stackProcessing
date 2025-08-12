@@ -33,7 +33,7 @@ module private Pipe =
     val lift: name: string -> profile: Profile -> f: ('S -> 'T) -> Pipe<'S,'T>
     val init:
       name: string ->
-        depth: uint -> mapper: (uint -> 'T) -> profile: Profile -> Pipe<unit,'T>
+        depth: uint -> mapper: (int -> 'T) -> profile: Profile -> Pipe<unit,'T>
     val skip: name: string -> count: uint -> Pipe<'a,'a>
     val take: name: string -> count: uint -> Pipe<'a,'a>
     val map:
@@ -78,7 +78,7 @@ module private Pipe =
       name: string ->
         winSz: uint ->
         pad: uint ->
-        zeroMaker: ('S -> 'S) ->
+        zeroMaker: (int -> 'S -> 'S) ->
         stride: uint ->
         emitStart: uint ->
         emitCount: uint -> f: ('S list -> 'T list) -> Pipe<'S,'T>
@@ -119,7 +119,7 @@ module Stage =
     val init<'S,'T> :
       name: string ->
         depth: uint ->
-        mapper: (uint -> 'T) ->
+        mapper: (int -> 'T) ->
         transition: ProfileTransition ->
         memoryNeed: MemoryNeed ->
         nElemsTransformation: NElemsTransformation -> Stage<unit,'T>
@@ -182,7 +182,7 @@ module Stage =
       name: string ->
         window: uint ->
         pad: uint ->
-        zeroMaker: ('S -> 'S) ->
+        zeroMaker: (int -> 'S -> 'S) ->
         stride: uint ->
         emitStart: uint ->
         emitCount: uint ->
@@ -205,14 +205,14 @@ module Stage =
       name: string ->
         winSz: uint ->
         pad: uint ->
-        zeroMaker: ('T -> 'T) ->
+        zeroMaker: (int -> 'T -> 'T) ->
         stride: uint -> emitStart: uint -> emitCount: uint -> Stage<'T,'T>
         when 'T: equality
     val promoteSlidingToSliding:
       name: string ->
         winSz: uint ->
         pad: uint ->
-        zeroMaker: ('T -> 'T) ->
+        zeroMaker: (int -> 'T -> 'T) ->
         stride: uint -> emitStart: uint -> emitCount: uint -> Stage<'T,'T>
         when 'T: equality
 type Pipeline<'S,'T> =

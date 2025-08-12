@@ -10,7 +10,7 @@ val windowedWithPad:
     stride: uint ->
     prePad: uint ->
     postPad: uint ->
-    zeroMaker: ('T -> 'T) ->
+    zeroMaker: (int -> 'T -> 'T) ->
     source: FSharp.Control.AsyncSeq<'T> -> FSharp.Control.AsyncSeq<'T list>
     when 'T: equality
 /// Converts an asynchronous computation of a single value into an asynchronous sequence containing one item.
