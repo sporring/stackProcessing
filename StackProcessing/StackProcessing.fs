@@ -28,14 +28,32 @@ let releaseNAfter (n: int) (f: Image<'S> list->'T list) (sLst: Image<'S> list) :
 let incRefCountOp () =
     let incIfImage x =
         match box x with
-        | :? Image<_> as I -> I.incRefCount(); x   // or img.incNRefCount(1) if it takes an int
+        | :? Image<uint8> as I -> I.incRefCount(); x   // or img.incNRefCount(1) if it takes an int
+        | :? Image<int8> as I -> I.incRefCount(); x   // or img.incNRefCount(1) if it takes an int
+        | :? Image<uint16> as I -> I.incRefCount(); x   // or img.incNRefCount(1) if it takes an int
+        | :? Image<int16> as I -> I.incRefCount(); x   // or img.incNRefCount(1) if it takes an int
+        | :? Image<uint> as I -> I.incRefCount(); x   // or img.incNRefCount(1) if it takes an int
+        | :? Image<int> as I -> I.incRefCount(); x   // or img.incNRefCount(1) if it takes an int
+        | :? Image<uint64> as I -> I.incRefCount(); x   // or img.incNRefCount(1) if it takes an int
+        | :? Image<int64> as I -> I.incRefCount(); x   // or img.incNRefCount(1) if it takes an int
+        | :? Image<float32> as I -> I.incRefCount(); x   // or img.incNRefCount(1) if it takes an int
+        | :? Image<float> as I -> I.incRefCount(); x   // or img.incNRefCount(1) if it takes an int
         | _ -> x
     Stage.map "incRefCountOp" incIfImage id id
 
 let decRefCountOp () =
     let decRefCount x =
         match box x with
-        | :? Image<_> as I -> I.decRefCount(); x   // or img.incNRefCount(1) if it takes an int
+        | :? Image<uint8> as I -> I.decRefCount(); x   // or img.incNRefCount(1) if it takes an int
+        | :? Image<int8> as I -> I.decRefCount(); x   // or img.incNRefCount(1) if it takes an int
+        | :? Image<uint16> as I -> I.decRefCount(); x   // or img.incNRefCount(1) if it takes an int
+        | :? Image<int16> as I -> I.decRefCount(); x   // or img.incNRefCount(1) if it takes an int
+        | :? Image<uint> as I -> I.decRefCount(); x   // or img.incNRefCount(1) if it takes an int
+        | :? Image<int> as I -> I.decRefCount(); x   // or img.incNRefCount(1) if it takes an int
+        | :? Image<uint64> as I -> I.decRefCount(); x   // or img.incNRefCount(1) if it takes an int
+        | :? Image<int64> as I -> I.decRefCount(); x   // or img.incNRefCount(1) if it takes an int
+        | :? Image<float32> as I -> I.decRefCount(); x   // or img.incNRefCount(1) if it takes an int
+        | :? Image<float> as I -> I.decRefCount(); x   // or img.incNRefCount(1) if it takes an int
         | _ -> x
     Stage.map "decRefCountOp" decRefCount id id
 
@@ -48,6 +66,10 @@ let (>=>>) (pl: Pipeline<'In, 'S>) (stage1: Stage<'S, 'U>, stage2: Stage<'S, 'V>
     Pipeline.(>=>>) pl (incRefCountOp () --> stage1, stage2)
 let (>>=>) = Pipeline.(>>=>)
 let (>>=>>) = Pipeline.(>>=>>)
+let zeroMaker (index:int) (ex:Image<'S>) : Image<'S> = new Image<'S>(ex.GetSize(), 1u, "padding", index)
+let window windowSize pad stride= Stage.window "window" windowSize pad zeroMaker stride
+let collect () = Stage.collect "collect"
+let map f = Stage.map "map" f id id
 let sink (pl: Pipeline<unit,unit>) : unit = 
     Pipeline.sink pl
 let sinkList (plLst: Pipeline<unit,unit> list) : unit = Pipeline.sinkList plLst
@@ -55,11 +77,11 @@ let sinkList (plLst: Pipeline<unit,unit> list) : unit = Pipeline.sinkList plLst
 let drainSingle pl = Pipeline.drainSingle "drainSingle" pl
 let drainList pl = Pipeline.drainList "drainList" pl
 let drainLast pl = Pipeline.drainLast "drainLast" pl
-let tap = Stage.tap
+//let tap str = incRefCountOp () --> (Stage.tap str)
+let tap = Stage.tap // tap and tapIt neither realeases after nor increases number of references
 let tapIt = Stage.tapIt
 let ignoreImages () : Stage<Image<_>,unit> = Stage.ignore (fun (I:Image<_>)->I.decRefCount ())
 let ignoreAll () = Stage.ignore<_>
-let zeroMaker (index:int) (ex:Image<'S>) : Image<'S> = new Image<'S>(ex.GetSize(), 1u, "padding", index)
 
 let liftUnary = Stage.liftUnary
 let liftUnaryReleaseAfter 
@@ -477,14 +499,14 @@ let zero<'T when 'T: equality>
 
 let readFilteredOp<'T when 'T: equality> (name:string) (inputDir : string) (suffix : string) (filter: string[]->string[]) (pl : Pipeline<unit, unit>) : Pipeline<unit, Image<'T>> =
     // much should be deferred to outside Core!!!
-    if pl.debug then printfn $"[{name}]"
+    if pl.debug then printfn $"[{name} cast to {typeof<'T>.Name}]"
     let (width,height,depth) = getStackSize inputDir suffix
     let filenames = Directory.GetFiles(inputDir, "*"+suffix) |> filter
     //let depth = uint filenames.Length
     let mapper (i: int) : Image<'T> = 
-        let fileName = filenames[int i]; 
-        let image = Image<'T>.ofFile (fileName, fileName, i)
+        let fileName = filenames[i]; 
         if pl.debug then printfn "[%s] Reading image %A from %s as %s" name i fileName (typeof<'T>.Name)
+        let image = Image<'T>.ofFile (fileName, fileName, i)
         image
     let transition = ProfileTransition.create Constant Streaming
     let stage = Stage.init $"{name}" (uint depth) mapper transition id id |> Some

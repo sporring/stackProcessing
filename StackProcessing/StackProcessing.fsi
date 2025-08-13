@@ -59,6 +59,17 @@ val (>>=>>) :
      SlimPipeline.Stage<('a * 'b),('c * 'd)> ->
      SlimPipeline.Pipeline<'e,('c * 'd)>) when 'c: equality and 'd: equality
 
+val zeroMaker: index: int -> ex: Image<'S> -> Image<'S> when 'S: equality
+
+val window:
+  windowSize: uint ->
+    pad: uint -> stride: uint -> SlimPipeline.Stage<Image<'a>,Image<'a> list>
+    when 'a: equality
+
+val collect: unit -> SlimPipeline.Stage<'a list,'a>
+
+val map: f: ('a -> 'b) -> SlimPipeline.Stage<'a,'b>
+
 val sink: pl: SlimPipeline.Pipeline<unit,unit> -> unit
 
 val sinkList: plLst: SlimPipeline.Pipeline<unit,unit> list -> unit
@@ -76,8 +87,6 @@ val tapIt: (('a -> string) -> SlimPipeline.Stage<'a,'a>)
 val ignoreImages: unit -> Stage<Image<'a>,unit> when 'a: equality
 
 val ignoreAll: unit -> (('a -> unit) -> SlimPipeline.Stage<'a,unit>)
-
-val zeroMaker: index: int -> ex: Image<'S> -> Image<'S> when 'S: equality
 
 val liftUnary:
   (string ->

@@ -238,6 +238,28 @@ module private Pipe =
         let profile = Sliding (winSz,stride,emitStart,emitCount)
         create name apply profile
 
+    // window : wraps AsyncSeqExtensions.windowedWithPad
+    let window
+        (name       : string)
+        (winSz      : uint)
+        (pad        : uint)
+        (zeroMaker  : int -> 'T -> 'T)
+        (stride     : uint)
+        : Pipe<'T, 'T list> =
+
+        let apply _debug (input: AsyncSeq<'T>) : AsyncSeq<'T list> =
+            // Produces an AsyncSeq of windows (each window is a 'T list)
+            AsyncSeqExtensions.windowedWithPad winSz stride pad pad zeroMaker input
+        let profile = Sliding (winSz, stride, 0u, winSz)
+        create name apply profile
+
+    // collect : flattens an AsyncSeq<'T list> to AsyncSeq<'T>
+    let collect<'T> (name: string) : Pipe<'T list, 'T> =
+        let apply _debug (input: AsyncSeq<'T list>) : AsyncSeq<'T> =
+            input |> AsyncSeq.collect (fun (xs: 'T list) -> AsyncSeq.ofSeq xs)
+        let profile = Streaming
+        create name apply profile
+
     let ignore clean : Pipe<'T, unit> =
         let apply debug input =
             asyncSeq {
@@ -350,6 +372,22 @@ module Stage =
         let transition = ProfileTransition.create Streaming Constant
         let pipe : Pipe<'S,'T> = Pipe.fold name folder initial Streaming
         create name pipe transition memoryNeed nElemsTransformation // Check !!!
+
+    let window
+        (name       : string)
+        (winSz      : uint)
+        (pad        : uint)
+        (zeroMaker  : int -> 'T -> 'T)
+        (stride     : uint)
+        : Stage<'T, 'T list> =
+        let transition = ProfileTransition.create Streaming Streaming
+        let pipe = Pipe.window name winSz pad zeroMaker stride
+        fromPipe name transition id id pipe
+
+    let collect (name: string) : Stage<'T list, 'T> =
+        let transition = ProfileTransition.create Streaming Streaming
+        let pipe = Pipe.collect name 
+        fromPipe name transition id id pipe
 
     let liftUnary<'S,'T> (name: string) (f: 'S -> 'T) (memoryNeed: MemoryNeed) (nElemsTransformation: NElemsTransformation): Stage<'S, 'T> =
         let transition = ProfileTransition.create Streaming Streaming

@@ -43,12 +43,13 @@ val getBytesPerSItkComponent: t: itk.simple.PixelIDValueEnum -> uint32
 val equalOne: v: 'T -> bool
 val mutable totalImages: int
 val mutable memUsed: uint32
+val printDebugMessage: str: string -> unit
 [<StructuredFormatDisplay ("{Display}")>]
 type Image<'T when 'T: equality> =
     interface System.IComparable
     interface System.IEquatable<Image<'T>>
-    new: sz: uint list * ?numberComp: uint * ?name: string * ?idx: int *
-         ?quiet: bool -> Image<'T>
+    new: sz: uint list * ?optionalNumberComponents: uint * ?optionalName: string *
+         ?optionalIndex: int * ?optionalQuiet: bool -> Image<'T>
     static member
       (&&&) : f1: Image<'S> * f2: Image<'S> -> Image<'S> when 'S: equality
     static member ( * ) : f1: Image<'T> * f2: Image<'T> -> Image<'T>
@@ -97,12 +98,13 @@ type Image<'T when 'T: equality> =
     static member ofArray3D: arr: 'T array3d -> Image<'T>
     static member ofArray4D: arr: 'T array4d -> Image<'T>
     static member
-      ofFile: filename: string * ?name: string * ?index: int -> Image<'T>
+      ofFile: filename: string * ?optionalName: string * ?optionalIndex: int ->
+                Image<'T>
     static member
       ofImageList: images: Image<'S> list -> Image<'S list> when 'S: equality
     static member
-      ofSimpleITK: itkImg: itk.simple.Image * ?name: string * ?index: int ->
-                     Image<'T>
+      ofSimpleITK: itkImg: itk.simple.Image * ?optionalName: string *
+                   ?optionalIndex: int -> Image<'T>
     static member unzip: im: Image<'T list> -> Image<'T> list
     static member zip: imLst: Image<'T> list -> Image<'T list>
     member CompareTo: other: Image<'T> -> int
@@ -127,7 +129,7 @@ type Image<'T when 'T: equality> =
     member toArray2D: unit -> 'T array2d
     member toArray3D: unit -> 'T array3d
     member toArray4D: unit -> 'T array4d
-    member toFile: filename: string * ?format: string -> unit
+    member toFile: filename: string * ?optionalFormat: string -> unit
     member toFloat: unit -> Image<float>
     member toFloat32: unit -> Image<float32>
     member toImageList: unit -> Image<'S> list when 'S: equality

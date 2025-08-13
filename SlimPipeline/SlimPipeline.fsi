@@ -83,6 +83,13 @@ module private Pipe =
         emitStart: uint ->
         emitCount: uint -> f: ('S list -> 'T list) -> Pipe<'S,'T>
         when 'S: equality
+    val window:
+      name: string ->
+        winSz: uint ->
+        pad: uint ->
+        zeroMaker: (int -> 'T -> 'T) -> stride: uint -> Pipe<'T,'T list>
+        when 'T: equality
+    val collect: name: string -> Pipe<'T list,'T>
     val ignore: clean: ('T -> unit) -> Pipe<'T,unit>
 /// ProfileTransition describes *how* memory layout is expected to change:
 /// - From: the input memory profile
@@ -173,6 +180,13 @@ module Stage =
         initial: 'T ->
         memoryNeed: MemoryNeed ->
         nElemsTransformation: NElemsTransformation -> Stage<'S,'T>
+    val window:
+      name: string ->
+        winSz: uint ->
+        pad: uint ->
+        zeroMaker: (int -> 'T -> 'T) -> stride: uint -> Stage<'T,'T list>
+        when 'T: equality
+    val collect: name: string -> Stage<'T list,'T>
     val liftUnary:
       name: string ->
         f: ('S -> 'T) ->

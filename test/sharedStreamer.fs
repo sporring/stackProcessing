@@ -12,16 +12,16 @@ let main _ =
 //        >=> tapIt (fun s -> $"[readAs] {s.Index} -> Image {s.Image}")
 
     readMaker 
+    >=> tap "cast"
     >=> cast<uint8,float>
-    >=> tap "cast"
-    >=>> (imageAddScalar 1.0, imageAddScalar 2.0)
     >=> tap "fan out"
-    >>=> mul2
+    >=>> (imageAddScalar 1.0, imageAddScalar 2.0)
     >=> tap "fan in"
-    >=> cast<float,int8>
+    >>=> mul2
     >=> tap "cast"
-    >=> write "result" ".tiff"
+    >=> cast<float,int8>
     >=> tap "write"
+    >=> write "result" ".tiff"
     |> sink
 
     0

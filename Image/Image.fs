@@ -246,47 +246,55 @@ let equalOne (v : 'T) : bool =
 
 let mutable totalImages = 0 // count how many images with references > 0, must be outside to be shared by all Image<*>
 let mutable memUsed = 0u 
+let printDebugMessage str =
+    printfn "%6d KB %s %s" (memUsed/1024u) (String.replicate totalImages "*") str
+
 
 [<StructuredFormatDisplay("{Display}")>] // Prevent fsi printing information about its members such as img
-type Image<'T when 'T : equality>(sz: uint list, ?numberComp: uint, ?name: string, ?idx: int, ?quiet: bool) =
+type Image<'T when 'T : equality>(sz: uint list, ?optionalNumberComponents: uint, ?optionalName: string, ?optionalIndex: int, ?optionalQuiet: bool) =
+    let numberComp = defaultArg optionalNumberComponents 1u 
+    let now = System.DateTime.UtcNow.ToString("HH:mm:ss.ffffff")
+    let name = 
+        match optionalName with
+        | Some str -> $"{str} {now}"
+        | _ -> now
+    let idx = defaultArg optionalIndex 0 
+    let quiet = defaultArg optionalQuiet false
+
     static let debug = true
     let itkId = fromType<'T>
     let isListType = typeof<'T>.IsGenericType && typeof<'T>.GetGenericTypeDefinition() = typedefof<list<_>>
     let mutable img = 
-        match numberComp with 
-        | Some v when isListType && v < 2u ->
-            new itk.simple.Image(sz |> toVectorUInt32, itkId, 2u)
-        | Some v when not isListType && v > 1u ->
-            new itk.simple.Image(sz |> toVectorUInt32, itkId)
-        | Some v -> 
-            new itk.simple.Image(sz |> toVectorUInt32, itkId, v)
-        | None -> 
-            new itk.simple.Image(sz |> toVectorUInt32, itkId)
+        if isListType && numberComp < 2u then new itk.simple.Image(sz |> toVectorUInt32, itkId, 2u)
+        elif isListType && numberComp > 1u then  new itk.simple.Image(sz |> toVectorUInt32, itkId)
+        else new itk.simple.Image(sz |> toVectorUInt32, itkId, numberComp)
     do memUsed <- memUsed + Image<_>.memoryEstimateSItk img
     // count how many references there is to this image.
 
     let mutable nReferences = 1 
  
     do totalImages <- totalImages + 1
-    do if debug && not (quiet = Some true) then
-        do printfn "%6d KB %s Created %A" (memUsed/1024u) (String.replicate totalImages "*") name
+    do if debug && not quiet then printDebugMessage $"Created {name}"
+    let now = System.DateTime.UtcNow.ToString("HH:mm:ss.ffffff'Z'")
 
     member this.Image = img
-    member val Name = (Option.defaultValue "" name) with get
-    member val index = (Option.defaultValue 0 idx) with get, set
+    member this.Name = name
+    member val index = idx with get, set
     member private this.SetImg (itkImg: itk.simple.Image) : unit =
         img <- itkImg
     // add a use of this image
     member this.getNReferences() = nReferences
-    member this.incRefCount() = nReferences<-nReferences+1
+    member this.incRefCount() = 
+        if debug then printDebugMessage $"Increased reference to {this.Name}"
+        nReferences<-nReferences+1
     // release a use of this image
     member this.decRefCount() =
+        if debug then printDebugMessage $"Decreased reference to {this.Name}"
         nReferences<-nReferences-1
         if nReferences = 0 then
             totalImages <- totalImages - 1
             memUsed <- memUsed - Image<_>.memoryEstimateSItk img
-            if debug then
-                printfn "%6d KB %s Disposed of %A" (memUsed/1024u) (String.replicate totalImages "*") this.Name
+            if debug then printDebugMessage $"Disposed of {this.Name}"
             //let totalBefore = Image<_>.storage |> List.map fst |> List.map Image<_>.memoryEstimateSItk |> List.reduce (+)
             //printfn $"Before {Image<_>.memoryEstimateSItk this.Image} Total: {totalBefore}"
             else
@@ -314,7 +322,7 @@ type Image<'T when 'T : equality>(sz: uint list, ?numberComp: uint, ?name: strin
         let szStr = List.fold (fun acc elm -> acc + $"x{elm}") (sz |> List.head |> string) (List.tail sz)
         let comp = this.GetNumberOfComponentsPerPixel()
         let vecStr = if comp = 1u then "Scalar" else sprintf $"{comp}-Vector "
-        sprintf "%s %s<%s,%A>" szStr vecStr (typeof<'T>.Name) (img.GetPixelID())
+        sprintf "%s %s<%s=%A>" szStr vecStr (typeof<'T>.Name) (img.GetPixelID())
     member this.Display = this.ToString() // related to [<StructuredFormatDisplay>]
 
     interface System.IEquatable<Image<'T>> with
@@ -330,17 +338,19 @@ type Image<'T when 'T : equality>(sz: uint list, ?numberComp: uint, ?name: strin
         let t = typeof<'T>
         let bytesPerComponent = getBytesPerComponent t
         let size = this.Image.GetSize() |> fromVectorUInt32
-        let res = bytesPerComponent * (Option.defaultValue 1u numberComp) * (size |> List.reduce ( * ));
+        let res = bytesPerComponent * numberComp * (size |> List.reduce ( * ));
         res
 
-    static member ofSimpleITK (itkImg: itk.simple.Image, ?name: string, ?index: int) : Image<'T> =
+    static member ofSimpleITK (itkImg: itk.simple.Image, ?optionalName: string, ?optionalIndex: int) : Image<'T> =
+        let name = defaultArg optionalName ""
+        let index = defaultArg optionalIndex 0
+
         let itkImgCast = ofCastItk<'T> itkImg
-        let img = new Image<'T>([0u;0u],itkImgCast.GetNumberOfComponentsPerPixel(),Option.defaultValue "" name,Option.defaultValue 0 index, true)
+        let img = new Image<'T>([0u;0u],itkImgCast.GetNumberOfComponentsPerPixel(),name,index, true)
         memUsed <- memUsed - Image<_>.memoryEstimateSItk img.Image
         img.SetImg itkImgCast
         memUsed <- memUsed + Image<_>.memoryEstimateSItk img.Image
-        if debug then
-            printfn "%6d KB %s Created %A" (memUsed/1024u) (String.replicate totalImages "*") name
+        if debug then printDebugMessage $"Created {img.Name}"
         img
 
     member this.toSimpleITK () : itk.simple.Image =
@@ -414,7 +424,10 @@ type Image<'T when 'T : equality>(sz: uint list, ?numberComp: uint, ?name: strin
             Image<'S>.ofSimpleITK scalarItk
         )
 
-    static member ofFile(filename: string, ?name: string, ?index: int) : Image<'T> =
+    static member ofFile(filename: string, ?optionalName: string, ?optionalIndex: int) : Image<'T> =
+        let name = defaultArg optionalName ""
+        let index = defaultArg optionalIndex 0
+
         use reader = new itk.simple.ImageFileReader()
         reader.SetFileName(filename)
         let itkImg = reader.Execute()
@@ -431,12 +444,12 @@ type Image<'T when 'T : equality>(sz: uint list, ?numberComp: uint, ?name: strin
         | false, n when n > 1u ->
             failwithf "Pixel type '%O' expects a scalar (1 component), but image has %d component(s)." tType n
         | _ ->
-            Image<'T>.ofSimpleITK(itkImg,Option.defaultValue "" name,Option.defaultValue 0 index)
+            Image<'T>.ofSimpleITK(itkImg,name,index)
 
-    member this.toFile(filename: string, ?format: string) =
+    member this.toFile(filename: string, ?optionalFormat: string) =
         use writer = new itk.simple.ImageFileWriter()
         writer.SetFileName(filename)
-        match format with
+        match optionalFormat with
         | Some fmt -> writer.SetImageIO(fmt)
         | None -> ()
         writer.Execute(this.Image)
@@ -444,16 +457,16 @@ type Image<'T when 'T : equality>(sz: uint list, ?numberComp: uint, ?name: strin
     // Addition
     static member (+) (f1: Image<'T>, f2: Image<'T>) =
         let filter = new itk.simple.AddImageFilter()
-        Image<'T>.ofSimpleITK(filter.Execute(f1.toSimpleITK(), f2.toSimpleITK()))
+        Image<'T>.ofSimpleITK(filter.Execute(f1.toSimpleITK(), f2.toSimpleITK()), "add")
     static member (-) (f1: Image<'T>, f2: Image<'T>) =
         let filter = new itk.simple.SubtractImageFilter()
-        Image<'T>.ofSimpleITK(filter.Execute(f1.toSimpleITK(), f2.toSimpleITK()))
+        Image<'T>.ofSimpleITK(filter.Execute(f1.toSimpleITK(), f2.toSimpleITK()), "subtract")
     static member ( * ) (f1: Image<'T>, f2: Image<'T>) =
         let filter = new itk.simple.MultiplyImageFilter()
-        Image<'T>.ofSimpleITK(filter.Execute(f1.toSimpleITK(), f2.toSimpleITK()))
+        Image<'T>.ofSimpleITK(filter.Execute(f1.toSimpleITK(), f2.toSimpleITK()), "multiply")
     static member (/) (f1: Image<'T>, f2: Image<'T>) =
         let filter = new itk.simple.DivideImageFilter()
-        Image<'T>.ofSimpleITK(filter.Execute(f1.toSimpleITK(), f2.toSimpleITK()))
+        Image<'T>.ofSimpleITK(filter.Execute(f1.toSimpleITK(), f2.toSimpleITK()), "divide")
 
     // Collection type
     static member map (f:'T->'T) (im1: Image<'T>) : Image<'T> =
