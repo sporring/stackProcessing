@@ -25,12 +25,27 @@ let releaseNAfter (n: int) (f: Image<'S> list->'T list) (sLst: Image<'S> list) :
     sLst |> List.take (int n) |> List.map (fun I -> I.decRefCount()) |> ignore
     tLst 
 
+let incRefCountOp () =
+    let incIfImage x =
+        match box x with
+        | :? Image<_> as I -> I.incRefCount(); x   // or img.incNRefCount(1) if it takes an int
+        | _ -> x
+    Stage.map "incRefCountOp" incIfImage id id
+
+let decRefCountOp () =
+    let decRefCount x =
+        match box x with
+        | :? Image<_> as I -> I.decRefCount(); x   // or img.incNRefCount(1) if it takes an int
+        | _ -> x
+    Stage.map "decRefCountOp" decRefCount id id
+
 let (-->) = Stage.(-->)
 let source = Pipeline.source 
 let debug = Pipeline.debug 
 let zip = Pipeline.zip
 let (>=>) pl (stage: Stage<'b,'c>) = Pipeline.(>=>) pl stage //(stage |> disposeInputAfter "read+dispose" )
-let (>=>>) = Pipeline.(>=>>) 
+let (>=>>) (pl: Pipeline<'In, 'S>) (stage1: Stage<'S, 'U>, stage2: Stage<'S, 'V>) : Pipeline<'In, 'U * 'V> = 
+    Pipeline.(>=>>) pl (incRefCountOp () --> stage1, stage2)
 let (>>=>) = Pipeline.(>>=>)
 let (>>=>>) = Pipeline.(>>=>>)
 let sink (pl: Pipeline<unit,unit>) : unit = 

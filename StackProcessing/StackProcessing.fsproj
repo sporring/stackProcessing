@@ -34,6 +34,7 @@
     <ItemGroup>
         <!-- Reference the internal library -->
         <ProjectReference Include="../Image/Image.fsproj" />
+        <ProjectReference Include="../IRefCounting/IRefCounting.fsproj" />
         <ProjectReference Include="../SlimPipeline/SlimPipeline.fsproj" />
     </ItemGroup>
 

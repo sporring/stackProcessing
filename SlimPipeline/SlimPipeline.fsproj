@@ -20,6 +20,7 @@
   <ItemGroup>
     <PackageReference Include="FSharp.Control.AsyncSeq" Version="3.2.1" />
     <ProjectReference Include="../AsyncSeqExtensions/AsyncSeqExtensions.fsproj" />
+    <ProjectReference Include="../IRefCounting/IRefCounting.fsproj" />
   </ItemGroup>
 
   <ItemGroup>

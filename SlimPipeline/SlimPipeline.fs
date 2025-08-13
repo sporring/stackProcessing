@@ -76,14 +76,6 @@ module private Pipe =
         create name apply Streaming
 
     let map (name: string) (mapper: 'U -> 'V) (pipe: Pipe<'In, 'U>) : Pipe<'In, 'V> =
-        (*
-        let mapperWDispose (u: 'U) : 'V =
-            let v = mapper u
-            match box v with
-                | :? System.IDisposable as d -> d.Dispose()
-                | _ -> ()
-            v
-        *)
         let apply debug input = input |> pipe.Apply debug |> AsyncSeq.map mapper
         create name apply pipe.Profile
 
@@ -485,8 +477,8 @@ module Pipeline =
     let (>=>) (pl: Pipeline<'a, 'b>) (stage: Stage<'b, 'c>) : Pipeline<'a, 'c> =
         composeOp $">=>" pl stage
 
-    let internal map (name: string) (f: 'U->'V) (pl: Pipeline<'In,'U>) : Pipeline<'In,'V> =
-        if pl.debug then printfn $"[{name}] unnamed function"
+    let map (name: string) (f: 'U->'V) (pl: Pipeline<'In,'U>) : Pipeline<'In,'V> =
+        if pl.debug then printfn $"[{name}]"
         let stage =
             match pl.stage with
             | Some stg -> 

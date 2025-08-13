@@ -23,6 +23,10 @@ val releaseNAfter:
   n: int -> f: (Image<'S> list -> 'T list) -> sLst: Image<'S> list -> 'T list
     when 'S: equality
 
+val incRefCountOp: unit -> SlimPipeline.Stage<'a,'a>
+
+val decRefCountOp: unit -> SlimPipeline.Stage<'a,'a>
+
 val (-->) :
   (SlimPipeline.Stage<'a,'b> ->
      SlimPipeline.Stage<'b,'c> -> SlimPipeline.Stage<'a,'c>)
@@ -41,9 +45,9 @@ val (>=>) :
     stage: Stage<'b,'c> -> SlimPipeline.Pipeline<'a,'c> when 'c: equality
 
 val (>=>>) :
-  (SlimPipeline.Pipeline<'a,'b> ->
-     SlimPipeline.Stage<'b,'c> * SlimPipeline.Stage<'b,'d> ->
-       SlimPipeline.Pipeline<'a,('c * 'd)>) when 'c: equality and 'd: equality
+  pl: SlimPipeline.Pipeline<'In,'S> ->
+    stage1: Stage<'S,'U> * stage2: Stage<'S,'V> ->
+      SlimPipeline.Pipeline<'In,('U * 'V)> when 'U: equality and 'V: equality
 
 val (>>=>) :
   (SlimPipeline.Pipeline<'a,('b * 'c)> ->

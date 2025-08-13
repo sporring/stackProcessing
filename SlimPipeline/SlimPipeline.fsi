@@ -240,7 +240,7 @@ module Pipeline =
     val (>=>) :
       pl: Pipeline<'a,'b> -> stage: Stage<'b,'c> -> Pipeline<'a,'c>
         when 'c: equality
-    val internal map:
+    val map:
       name: string -> f: ('U -> 'V) -> pl: Pipeline<'In,'U> -> Pipeline<'In,'V>
         when 'V: equality
     /// parallel execution of non-synchronised streams
