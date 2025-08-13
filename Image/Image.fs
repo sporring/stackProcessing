@@ -244,11 +244,12 @@ let equalOne (v : 'T) : bool =
     | :? float   as b -> b = 1.0
     | _ -> failwithf "Don't know the value of 1 for %A" (typeof<'T>)
 
+let syncRoot = obj() // The following 3 names may be accessed in parallel, so lock when writing
 let mutable totalImages = 0 // count how many images with references > 0, must be outside to be shared by all Image<*>
 let mutable memUsed = 0u 
 let printDebugMessage str =
-    printfn "%6d KB %s %s" (memUsed/1024u) (String.replicate totalImages "*") str
-
+    lock syncRoot (fun () ->
+       printfn "%6d KB %s %s" (memUsed/1024u) (String.replicate totalImages "*") str)
 
 [<StructuredFormatDisplay("{Display}")>] // Prevent fsi printing information about its members such as img
 type Image<'T when 'T : equality>(sz: uint list, ?optionalNumberComponents: uint, ?optionalName: string, ?optionalIndex: int, ?optionalQuiet: bool) =
@@ -268,12 +269,12 @@ type Image<'T when 'T : equality>(sz: uint list, ?optionalNumberComponents: uint
         if isListType && numberComp < 2u then new itk.simple.Image(sz |> toVectorUInt32, itkId, 2u)
         elif isListType && numberComp > 1u then  new itk.simple.Image(sz |> toVectorUInt32, itkId)
         else new itk.simple.Image(sz |> toVectorUInt32, itkId, numberComp)
-    do memUsed <- memUsed + Image<_>.memoryEstimateSItk img
+    do lock syncRoot (fun () -> memUsed <- memUsed + Image<_>.memoryEstimateSItk img)
     // count how many references there is to this image.
 
     let mutable nReferences = 1 
  
-    do totalImages <- totalImages + 1
+    do lock syncRoot (fun () -> totalImages <- totalImages + 1)
     do if debug && not quiet then printDebugMessage $"Created {name}"
     let now = System.DateTime.UtcNow.ToString("HH:mm:ss.ffffff'Z'")
 
@@ -292,8 +293,8 @@ type Image<'T when 'T : equality>(sz: uint list, ?optionalNumberComponents: uint
         if debug then printDebugMessage $"Decreased reference to {this.Name}"
         nReferences<-nReferences-1
         if nReferences = 0 then
-            totalImages <- totalImages - 1
-            memUsed <- memUsed - Image<_>.memoryEstimateSItk img
+            lock syncRoot (fun () -> totalImages <- totalImages - 1)
+            lock syncRoot (fun () -> memUsed <- memUsed - Image<_>.memoryEstimateSItk img)
             if debug then printDebugMessage $"Disposed of {this.Name}"
             //let totalBefore = Image<_>.storage |> List.map fst |> List.map Image<_>.memoryEstimateSItk |> List.reduce (+)
             //printfn $"Before {Image<_>.memoryEstimateSItk this.Image} Total: {totalBefore}"
@@ -347,9 +348,9 @@ type Image<'T when 'T : equality>(sz: uint list, ?optionalNumberComponents: uint
 
         let itkImgCast = ofCastItk<'T> itkImg
         let img = new Image<'T>([0u;0u],itkImgCast.GetNumberOfComponentsPerPixel(),name,index, true)
-        memUsed <- memUsed - Image<_>.memoryEstimateSItk img.Image
+        lock syncRoot (fun () -> memUsed <- memUsed - Image<_>.memoryEstimateSItk img.Image)
         img.SetImg itkImgCast
-        memUsed <- memUsed + Image<_>.memoryEstimateSItk img.Image
+        lock syncRoot (fun () -> memUsed <- memUsed + Image<_>.memoryEstimateSItk img.Image)
         if debug then printDebugMessage $"Created {img.Name}"
         img
 

@@ -837,7 +837,7 @@ let unstackSkipNTakeM (N:uint) (M:uint) (vol: Image<'T>): Image<'T> list =
     if dim < 3u then
         failwith $"Cannot unstack a {dim}-dimensional image along the 3rd axis"
     let depth = vol.GetDepth() |> int
-    if (N+M >= uint depth) then
+    if (N+M > uint depth) then
         failwith $"Cannot unstack from z={N} to z={N+M-1u} of a stack of depth {depth}"
     let res = List.init (int M) (fun i -> extractSlice (i+int N) vol)
     //printfn $"unstack: input {vol.GetSize()} {res.Length}"

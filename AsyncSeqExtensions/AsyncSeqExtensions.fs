@@ -134,3 +134,24 @@ let ofAsync (computation: Async<'T>) : AsyncSeq<'T> =
         let! result = computation
         yield result
     }
+
+let zipConcurrent (s1: AsyncSeq<'U>) (s2: AsyncSeq<'V>) : AsyncSeq<'U * 'V> =
+    asyncSeq {
+        let e1 = (AsyncSeq.toAsyncEnum s1).GetAsyncEnumerator()
+        let e2 = (AsyncSeq.toAsyncEnum s2).GetAsyncEnumerator()
+
+        let rec loop () = asyncSeq {
+            // Start both MoveNextAsync calls concurrently
+            let! c1Child = e1.MoveNextAsync().AsTask() |> Async.AwaitTask |> Async.StartChild
+            let! c2Child = e2.MoveNextAsync().AsTask() |> Async.AwaitTask |> Async.StartChild
+            let! has1 = c1Child
+            let! has2 = c2Child
+            if has1 && has2 then
+                yield (e1.Current, e2.Current)
+                yield! loop ()
+            else
+                // end at the shorter stream
+                ()
+        }
+        yield! loop ()
+    }

@@ -91,6 +91,8 @@ module private Pipe =
         when 'T: equality
     val collect: name: string -> Pipe<'T list,'T>
     val ignore: clean: ('T -> unit) -> Pipe<'T,unit>
+    val ignorePairs:
+      cleanFst: ('S -> unit) * cleanSnd: ('T -> unit) -> Pipe<('S * 'T),unit>
 /// ProfileTransition describes *how* memory layout is expected to change:
 /// - From: the input memory profile
 /// - To: the expected output memory profile
@@ -130,6 +132,7 @@ module Stage =
         transition: ProfileTransition ->
         memoryNeed: MemoryNeed ->
         nElemsTransformation: NElemsTransformation -> Stage<unit,'T>
+    val idOp: unit -> Stage<'T,'T>
     val toPipe: stage: Stage<'a,'b> -> Pipe<'a,'b>
     val fromPipe:
       name: string ->
@@ -208,6 +211,8 @@ module Stage =
     val tapIt: toString: ('T -> string) -> Stage<'T,'T>
     val tap: name: string -> Stage<'T,'T>
     val ignore: clean: ('T -> unit) -> Stage<'T,unit>
+    val ignorePairs:
+      cleanFst: ('S -> unit) * cleanSnd: ('T -> unit) -> Stage<('S * 'T),unit>
     val consumeWith:
       name: string -> consume: (bool -> int -> 'T -> unit) -> Stage<'T,unit>
     val cast:
@@ -219,9 +224,9 @@ module Stage =
       name: string ->
         winSz: uint ->
         pad: uint ->
-        zeroMaker: (int -> 'T -> 'T) ->
-        stride: uint -> emitStart: uint -> emitCount: uint -> Stage<'T,'T>
-        when 'T: equality
+        stride: uint ->
+        emitStart: uint ->
+        emitCount: uint -> stage: Stage<'T,'S> -> Stage<'T,'S> when 'T: equality
     val promoteSlidingToSliding:
       name: string ->
         winSz: uint ->
@@ -270,8 +275,8 @@ module Pipeline =
     /// parallel execution of synchronised streams
     val (>=>>) :
       pl: Pipeline<'In,'S> ->
-        stage1: Stage<'S,'U> * stage2: Stage<'S,'V> -> Pipeline<'In,('U * 'V)>
-        when 'U: equality and 'V: equality
+        st1: Stage<'S,'U> * st2: Stage<'S,'V> -> Pipeline<'In,('U * 'V)>
+        when 'S: equality and 'U: equality and 'V: equality
     val (>>=>) :
       pl: Pipeline<'In,('U * 'V)> -> f: ('U -> 'V -> 'W) -> Pipeline<'In,'W>
         when 'W: equality

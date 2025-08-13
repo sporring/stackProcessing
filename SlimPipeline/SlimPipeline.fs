@@ -24,15 +24,18 @@ module Profile =
             | Sliding (windowSize, _, _, _) -> memPerElement * uint64 windowSize
 
     let combine (prof1: Profile) (prof2: Profile): Profile  = 
-        match prof1, prof2 with
-//        | Full, _ 
-//        | _, Full -> Full // conservative fallback
-        | Sliding (sz1,str1,emitS1,emitN1), Sliding (sz2,str2,emitS2,emitN2) -> Sliding ((max sz1 sz2), min str1 str2, min emitS1 emitS2, max emitN1 emitN2) // don't really know what stride rule should be
-        | Sliding (sz,str,emitS,emitN), _ 
-        | _, Sliding (sz,str,emitS,emitN) -> Sliding (sz,str,emitS,emitN)
-        | Streaming, _
-        | _, Streaming -> Streaming
-        | Constant, Constant -> Constant
+        let result =
+            match prof1, prof2 with
+    //        | Full, _ 
+    //        | _, Full -> Full // conservative fallback
+            | Sliding (sz1,str1,emitS1,emitN1), Sliding (sz2,str2,emitS2,emitN2) -> Sliding ((max sz1 sz2), min str1 str2, min emitS1 emitS2, max emitN1 emitN2) // don't really know what stride rule should be
+            | Sliding (sz,str,emitS,emitN), _ 
+            | _, Sliding (sz,str,emitS,emitN) -> Sliding (sz,str,emitS,emitN)
+            | Streaming, _
+            | _, Streaming -> Streaming
+            | Constant, Constant -> Constant
+
+        result
 
 ////////////////////////////////////////////////////////////
 /// A configurable image processing step that operates on image slices.
@@ -192,8 +195,11 @@ module private Pipe =
         let apply debug input =
             let stream1 = composedPipe1.Apply debug input
             let stream2 = composedPipe2.Apply debug input
-            AsyncSeq.zip stream1 stream2 |> AsyncSeq.map (fun (u, v) -> f u v)
-
+            AsyncSeqExtensions.zipConcurrent stream1 stream2 
+            |> AsyncSeq.map (fun (u, v) -> 
+                let result = f u v; 
+                result)
+            
         let profile = max pipe1.Profile pipe2.Profile
         create name apply profile
 
@@ -217,7 +223,7 @@ module private Pipe =
     let consumeWith (name: string) (consume: bool -> int -> 'T -> unit) (profile: Profile) : Pipe<'T, unit> =
         let apply debug input = 
             asyncSeq {
-                do! AsyncSeq.iteriAsync (fun i x -> async { consume debug i x }) input
+                do! AsyncSeq.iteriAsync (fun i x -> async { consume debug i x; }) input
                 yield ()
             }
         create name apply profile
@@ -270,6 +276,16 @@ module private Pipe =
             }
         create "ignore" apply Constant
 
+    let ignorePairs (cleanFst, cleanSnd) : Pipe<'S*'T, unit> =
+        let apply debug input =
+            asyncSeq {
+                // Consume the stream without doing anything
+                do! AsyncSeq.iterAsync (fun (a,b) -> cleanFst a; cleanSnd b; async.Return()) input
+                // Then emit one unit
+                yield ()
+            }
+        create "ignorePairs" apply Constant
+
 ////////////////////////////////////////////////////////////
 // Stage between pipes
 
@@ -311,12 +327,12 @@ module Stage =
         let pipe = Pipe.init name depth mapper transition.From
         create name pipe transition memoryNeed nElemsTransformation
 
-(*
-    let id<'T> () : Stage<'T, 'T> = // I don't think this is used
+
+    let idOp<'T> () : Stage<'T, 'T> = // I don't think this is used
         let transition = ProfileTransition.create Streaming Streaming
         let pipe = Pipe.lift "id" Streaming (fun x -> x)
-        create "id" pipe transition (fun s -> s)
-*)
+        create "id" pipe transition id id
+
 
     let toPipe (stage : Stage<_,_>) = stage.Pipe
 
@@ -420,6 +436,11 @@ module Stage =
         let transition = ProfileTransition.create Streaming Constant
         create "ignore" pipe transition id id // check !!!!
 
+    let ignorePairs<'S,'T> (cleanFst, cleanSnd) : Stage<'S*'T, unit> =
+        let pipe = Pipe.ignorePairs (cleanFst, cleanSnd)
+        let transition = ProfileTransition.create Streaming Constant
+        create "ignorePairs" pipe transition id id // check !!!!
+
     let consumeWith (name: string) (consume: bool -> int -> 'T -> unit) : Stage<'T, unit> = 
         let pipe = Pipe.consumeWith name consume Streaming
         let transition = ProfileTransition.create Streaming Constant
@@ -440,22 +461,16 @@ module Stage =
         (name: string)
         (winSz: uint)
         (pad: uint)
-        (zeroMaker: int -> 'T -> 'T)
         (stride: uint)
         (emitStart: uint)
         (emitCount: uint)
-        : Stage<'T, 'T> = // Does not change shape
-
-        let f (window: 'T list) =
-            window
-            |> List.skip (int emitStart)
-            |> List.take (int emitCount)
-
-        let pipe = Pipe.mapWindowed name winSz pad zeroMaker stride emitStart emitCount f
-        let transition = ProfileTransition.create Streaming Streaming
-
-        create $"promote:{name}" pipe transition id id // probably not correct !!!!
-
+        (stage: Stage<'T,'S>)
+        : Stage<'T, 'S> = // Does not change shape
+            let zeroMaker i = id
+            (window $"{name}:window" winSz pad zeroMaker stride) 
+            --> (map $"{name}:skip and take" (List.skip (int pad) >> List.take (int stride)) id id )
+            --> collect $"{name}:collect"
+            --> stage
 
     let promoteSlidingToSliding
         (name: string)
@@ -563,25 +578,43 @@ module Pipeline =
     let zip (pl1: Pipeline<'In, 'U>) (pl2: Pipeline<'In, 'V>) : Pipeline<'In, ('U * 'V)> = zipOp "zip" pl1 pl2
 
     /// parallel execution of synchronised streams
-    let (>=>>) 
+    let (>=>>)
         (pl: Pipeline<'In, 'S>) 
-        (stage1: Stage<'S, 'U>, stage2: Stage<'S, 'V>) 
+        (st1: Stage<'S, 'U>, st2: Stage<'S, 'V>) 
         : Pipeline<'In, 'U * 'V> =
+        let delay winSz pad stride (stg:Stage<'S,'T>): Stage<'S,'T> = 
+            stg |> Stage.promoteStreamingToSliding "testing" winSz pad stride 0u 1u
 
-        let memoryNeed nElems = (stage1.MemoryNeed nElems) + (stage2.MemoryNeed nElems) // Runs in parallel
-        let nElemsTransformation = stage1.NElemsTransformation 
-        let nElemsTransformation2 = stage2.NElemsTransformation 
+        let stg1,stg2 =
+            match st1.Pipe.Profile, st2.Pipe.Profile with
+            | Streaming, Streaming -> st1, st2
+            | Sliding (a1,b1,c1,d1), Sliding (a2,b2,c2,d2) when a1=a2 && b1=b2 && c1=c2 && d1=d2 -> st1, st2
+            | Streaming, Sliding (winSz, stride, emitStart, emitCount) -> 
+                delay winSz 2u stride st1, st2 
+            | Sliding (winSz, stride, emitStart, emitCount), Streaming -> 
+                st1, delay winSz 2u stride st2
+            | _,_ -> failwith $"Can't fan out to {st1.Pipe.Profile} and {st2.Pipe.Profile} profile pair "
+        printfn $"{stg1.Name}'s profile: {stg1.Pipe.Profile}"
+        printfn $"{stg2.Name}'s profile: {stg2.Pipe.Profile}"
+        let memoryNeed nElems = (stg1.MemoryNeed nElems) + (stg2.MemoryNeed nElems) // Runs in parallel
+        let nElemsTransformation = stg1.NElemsTransformation 
+        let nElemsTransformation2 = stg2.NElemsTransformation 
         let nElems = nElemsTransformation pl.nElems
         let nElems2 = nElemsTransformation2 pl.nElems
         if nElems <> nElems2 then
             failwith $"[>=>>] Cannot zip pipelines with different number of elements {nElems} vs {nElems2}"
 
         // Combine both stages in a zip-like stage
-        let stage = Stage.map2Sync $"({stage1.Name},{stage2.Name})" pl.debug (fun u v -> (u, v)) stage1 stage2 memoryNeed nElemsTransformation
+        let stage = Stage.map2Sync $"({stg1.Name},{stg2.Name})" pl.debug (fun u v -> (u, v)) stg1 stg2 memoryNeed nElemsTransformation
+        printfn $"{stage.Name}'s resulting profile {stage.Pipe.Profile}" 
+
         composeOp ">=>>" pl stage
 
     let (>>=>) (pl: Pipeline<'In,'U*'V>) (f: 'U -> 'V -> 'W) : Pipeline<'In,'W>  = 
-        map ">>=>" (fun (u,v) -> f u v) pl
+        map ">>=>" (fun (u,v) -> 
+            let res = f u v
+            res
+            ) pl
 
     let (>>=>>) (f: ('U*'V) -> ('S*'T)) (pl: Pipeline<'In,'U*'V>) (stage: Stage<'U*'V,'S*'T>): Pipeline<'In,'S*'T>  = 
         map ">>=>>" f pl 

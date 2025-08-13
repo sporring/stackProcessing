@@ -11,8 +11,8 @@ let main _ =
     let maskMaker = 
         debug mem
         |>  zero<uint8> w h d
-        >=> sliceAddScalar 1uy
-        >=> sliceMulScalar 2uy
+        >=> imageAddScalar 1uy
+        >=> imageMulScalar 2uy
 
     let readMaker =
         debug mem

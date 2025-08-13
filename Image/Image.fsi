@@ -41,6 +41,7 @@ module internal InternalHelpers =
 val getBytesPerComponent: t: System.Type -> uint32
 val getBytesPerSItkComponent: t: itk.simple.PixelIDValueEnum -> uint32
 val equalOne: v: 'T -> bool
+val syncRoot: obj
 val mutable totalImages: int
 val mutable memUsed: uint32
 val printDebugMessage: str: string -> unit

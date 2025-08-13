@@ -16,12 +16,14 @@ let main _ =
         |> Chart.show
 
     let histogramMaker = 
-        debug mem
+        source mem
         |> read<uint8> "image" ".tiff"
         >=> histogram () --> map2pairs --> pairs2floats
-    histogramMaker 
-    >=>> (plot plt, print ())
-    >>=> (fun _ _ -> ())
+    histogramMaker
+    >=>> (print (),plot plt)
+    //>=>> (tap "left", tap "right")
+    >>=> fun _ _ -> ()
+//    >>=> ignorePairs ()
     |> sink
 
     0
