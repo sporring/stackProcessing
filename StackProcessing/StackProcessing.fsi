@@ -23,9 +23,13 @@ val releaseNAfter:
   n: int -> f: (Image<'S> list -> 'T list) -> sLst: Image<'S> list -> 'T list
     when 'S: equality
 
-val incRefCountOp: unit -> SlimPipeline.Stage<'a,'a>
+val incIfImage: x: 'a -> 'a
 
-val decRefCountOp: unit -> SlimPipeline.Stage<'a,'a>
+val incRef: unit -> SlimPipeline.Stage<'a,'a>
+
+val decIfImage: x: 'a -> 'a
+
+val decRef: unit -> SlimPipeline.Stage<'a,'a>
 
 val (-->) :
   (SlimPipeline.Stage<'a,'b> ->
@@ -44,11 +48,14 @@ val (>=>) :
   pl: SlimPipeline.Pipeline<'a,'b> ->
     stage: Stage<'b,'c> -> SlimPipeline.Pipeline<'a,'c> when 'c: equality
 
+val wrapReleaseAfter:
+  stage: SlimPipeline.Stage<'a,'b> -> SlimPipeline.Stage<'a,'b>
+
+val (>=>!) :
+  pl: SlimPipeline.Pipeline<'a,'b> ->
+    stage: Stage<'b,'c> -> SlimPipeline.Pipeline<'a,'c> when 'c: equality
+
 val inline isExactlyImage<'T> : unit -> bool
-
-val decIfImage: x: 'a -> unit
-
-val incIfImage: x: 'a -> unit
 
 val promoteStreamingToSliding:
   name: string ->
@@ -99,9 +106,9 @@ val tap: (string -> SlimPipeline.Stage<'a,'a>)
 
 val tapIt: (('a -> string) -> SlimPipeline.Stage<'a,'a>)
 
-val ignoreAll: unit -> Stage<Image<'a>,unit> when 'a: equality
+val ignoreSingles: unit -> Stage<Image<'a>,unit> when 'a: equality
 
-val ignorePairs: unit -> Stage<(unit * unit),unit>
+val ignorePairs: unit -> Stage<('a * unit),unit>
 
 val idOp<'T> : (unit -> SlimPipeline.Stage<'T,'T>)
 
@@ -190,66 +197,38 @@ val inline imageDivScalar:
   i: ^T -> SlimPipeline.Stage<Image<^T>,Image<^T>>
     when ^T: equality and ^T: (static member op_Explicit: ^T -> float)
 
+val failTypeMismatch<'T> : name: string -> lst: System.Type list -> unit
+
 /// Simple functions
+val private floatNintTypes: System.Type list
+
+val private floatTypes: System.Type list
+
 val abs<'T when 'T: equality> : Stage<Image<'T>,Image<'T>> when 'T: equality
 
-val absFloat: Stage<Image<float>,Image<float>>
+val acos<'T when 'T: equality> : Stage<Image<'T>,Image<'T>> when 'T: equality
 
-val absFloat32: Stage<Image<float32>,Image<float32>>
+val asin<'T when 'T: equality> : Stage<Image<'T>,Image<'T>> when 'T: equality
 
-val absInt: Stage<Image<int>,Image<int>>
+val atan<'T when 'T: equality> : Stage<Image<'T>,Image<'T>> when 'T: equality
 
-val acosFloat: Stage<Image<float>,Image<float>>
+val cos<'T when 'T: equality> : Stage<Image<'T>,Image<'T>> when 'T: equality
 
-val acosFloat32: Stage<Image<float32>,Image<float32>>
+val sin<'T when 'T: equality> : Stage<Image<'T>,Image<'T>> when 'T: equality
 
-val asinFloat: Stage<Image<float>,Image<float>>
+val tan<'T when 'T: equality> : Stage<Image<'T>,Image<'T>> when 'T: equality
 
-val asinFloat32: Stage<Image<float32>,Image<float32>>
+val exp<'T when 'T: equality> : Stage<Image<'T>,Image<'T>> when 'T: equality
 
-val atanFloat: Stage<Image<float>,Image<float>>
+val log10<'T when 'T: equality> : Stage<Image<'T>,Image<'T>> when 'T: equality
 
-val atanFloat32: Stage<Image<float32>,Image<float32>>
+val log<'T when 'T: equality> : Stage<Image<'T>,Image<'T>> when 'T: equality
 
-val cosFloat: Stage<Image<float>,Image<float>>
+val round<'T when 'T: equality> : Stage<Image<'T>,Image<'T>> when 'T: equality
 
-val cosFloat32: Stage<Image<float32>,Image<float32>>
+val sqrt<'T when 'T: equality> : Stage<Image<'T>,Image<'T>> when 'T: equality
 
-val sinFloat: Stage<Image<float>,Image<float>>
-
-val sinFloat32: Stage<Image<float32>,Image<float32>>
-
-val tanFloat: Stage<Image<float>,Image<float>>
-
-val tanFloat32: Stage<Image<float32>,Image<float32>>
-
-val expFloat: Stage<Image<float>,Image<float>>
-
-val expFloat32: Stage<Image<float32>,Image<float32>>
-
-val log10Float: Stage<Image<float>,Image<float>>
-
-val log10Float32: Stage<Image<float32>,Image<float32>>
-
-val logFloat: Stage<Image<float>,Image<float>>
-
-val logFloat32: Stage<Image<float32>,Image<float32>>
-
-val roundFloat: Stage<Image<float>,Image<float>>
-
-val roundFloat32: Stage<Image<float32>,Image<float32>>
-
-val sqrtFloat: Stage<Image<float>,Image<float>>
-
-val sqrtFloat32: Stage<Image<float32>,Image<float32>>
-
-val sqrtInt: Stage<Image<int>,Image<int>>
-
-val squareFloat: Stage<Image<float>,Image<float>>
-
-val squareFloat32: Stage<Image<float32>,Image<float32>>
-
-val squareInt: Stage<Image<int>,Image<int>>
+val square<'T when 'T: equality> : Stage<Image<'T>,Image<'T>> when 'T: equality
 
 val imageHistogram:
   unit -> SlimPipeline.Stage<Image<'T>,Map<'T,uint64>> when 'T: comparison

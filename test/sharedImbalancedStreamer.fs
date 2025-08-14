@@ -21,11 +21,12 @@ let main _ =
     >=>> (imageAddScalar 1.0, convGauss 1.0)
     >=> tap "For >>=>"
     >>=> mul2
-    >=> tap "cast"
+    >=> tap "For cast"
     >=> cast<float,int8>
-    >=> tap "write"
+    >=> tap "For write"
     >=> write "result" ".tiff"
-//    >>=> fun a b -> decIfImage a; decIfImage b; ()
+    //>>=> fun a b -> decIfImage a; decIfImage b; () // consume but otherwise do nothing
+    //>>=> ignorePairs ()
     |> sink
 
     0

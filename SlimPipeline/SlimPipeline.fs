@@ -82,6 +82,12 @@ module private Pipe =
         let apply debug input = input |> pipe.Apply debug |> AsyncSeq.map mapper
         create name apply pipe.Profile
 
+    let wrap (name: string) (mapper: ('In * 'U) -> 'V) (pipe: Pipe<'In, 'U>) : Pipe<'In, 'V> =
+        let apply debug input = 
+            let output = input |> pipe.Apply debug
+            AsyncSeq.zip input output |> AsyncSeq.map mapper
+        create name apply pipe.Profile
+
     let tryDispose (debug: bool) (value: obj) =
         match value with
         | :? System.IDisposable as d ->
@@ -364,6 +370,11 @@ module Stage =
         let pipe : Pipe<'S,'T> = Pipe.create name apply Streaming
         create name pipe transition memoryNeed nElemsTransformation // Not right!!!
 
+    let wrap (name: string) (f: ('In * 'U) -> 'V) (stage: Stage<'In, 'U>) (memoryNeed: MemoryNeed) (nElemsTransformation: NElemsTransformation) : Stage<'In, 'V> =
+        let pipe = Pipe.wrap name f stage.Pipe
+        let transition = ProfileTransition.create Streaming Streaming
+        create name pipe transition memoryNeed nElemsTransformation
+
     let map1 (name: string) (f: 'U -> 'V) (stage: Stage<'In, 'U>) (memoryNeed: MemoryNeed) (nElemsTransformation: NElemsTransformation) : Stage<'In, 'V> =
         let pipe = Pipe.map name f stage.Pipe
         let transition = ProfileTransition.create Streaming Streaming
@@ -542,19 +553,6 @@ module Pipeline =
         (pl: Pipeline<'In, 'S>) 
         (stg1: Stage<'S, 'U>, stg2: Stage<'S, 'V>) 
         : Pipeline<'In, 'U * 'V> =
-(*
-        let delay winSz pad stride (stg:Stage<'S,'T>): Stage<'S,'T> = 
-            stg |> Stage.promoteStreamingToSliding "testing" winSz pad stride 0u 1u
-        let stg1,stg2 =
-            match st1.Pipe.Profile, st2.Pipe.Profile with
-            | Streaming, Streaming -> st1, st2
-            | Sliding (a1,b1,c1,d1), Sliding (a2,b2,c2,d2) when a1=a2 && b1=b2 && c1=c2 && d1=d2 -> st1, st2
-            | Streaming, Sliding (winSz, stride, emitStart, emitCount) -> 
-                delay winSz 2u stride st1, st2 
-            | Sliding (winSz, stride, emitStart, emitCount), Streaming -> 
-                st1, delay winSz 2u stride st2
-            | _,_ -> failwith $"Can't fan out to {st1.Pipe.Profile} and {st2.Pipe.Profile} profile pair "
-*)
         if stg1.Pipe.Profile <> stg2.Pipe.Profile then 
             failwith $"[>=>>] can only apply stages with the same streaming profile ({stg1.Pipe.Profile} <> {stg2.Pipe.Profile})"
 
@@ -571,11 +569,15 @@ module Pipeline =
 
         composeOp ">=>>" pl stage
 
-    let (>>=>) (pl: Pipeline<'In,'U*'V>) (f: 'U -> 'V -> 'W) : Pipeline<'In,'W>  = 
+    let (>>=>) (pl: Pipeline<'In,'U*'V>) ((f: 'U -> 'V -> 'W)) : Pipeline<'In,'W>  = 
         map ">>=>" (fun (u,v) -> 
             let res = f u v
             res
             ) pl
+(*
+    let (>>=>) (pl: Pipeline<'In,'U*'V>) (stage: Stage<'U*'V,'W>) : Pipeline<'In,'W>  = 
+        composeOp ">>=>" pl stage
+*)
 
     let (>>=>>) (f: ('U*'V) -> ('S*'T)) (pl: Pipeline<'In,'U*'V>) (stage: Stage<'U*'V,'S*'T>): Pipeline<'In,'S*'T>  = 
         map ">>=>>" f pl 

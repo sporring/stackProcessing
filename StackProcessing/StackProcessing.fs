@@ -25,71 +25,53 @@ let releaseNAfter (n: int) (f: Image<'S> list->'T list) (sLst: Image<'S> list) :
     sLst |> List.take (int n) |> List.map (fun I -> I.decRefCount()) |> ignore
     tLst 
 
-let incRefCountOp () =
-    let incIfImage x =
-        match box x with
-        | :? Image<uint8> as I -> I.incRefCount(); x   // or img.incNRefCount(1) if it takes an int
-        | :? Image<int8> as I -> I.incRefCount(); x   // or img.incNRefCount(1) if it takes an int
-        | :? Image<uint16> as I -> I.incRefCount(); x   // or img.incNRefCount(1) if it takes an int
-        | :? Image<int16> as I -> I.incRefCount(); x   // or img.incNRefCount(1) if it takes an int
-        | :? Image<uint> as I -> I.incRefCount(); x   // or img.incNRefCount(1) if it takes an int
-        | :? Image<int> as I -> I.incRefCount(); x   // or img.incNRefCount(1) if it takes an int
-        | :? Image<uint64> as I -> I.incRefCount(); x   // or img.incNRefCount(1) if it takes an int
-        | :? Image<int64> as I -> I.incRefCount(); x   // or img.incNRefCount(1) if it takes an int
-        | :? Image<float32> as I -> I.incRefCount(); x   // or img.incNRefCount(1) if it takes an int
-        | :? Image<float> as I -> I.incRefCount(); x   // or img.incNRefCount(1) if it takes an int
-        | _ -> x
+let incIfImage x =
+    match box x with
+    | :? Image<uint8> as I -> I.incRefCount()   // or img.incNRefCount(1) if it takes an int
+    | :? Image<int8> as I -> I.incRefCount()   // or img.incNRefCount(1) if it takes an int
+    | :? Image<uint16> as I -> I.incRefCount()   // or img.incNRefCount(1) if it takes an int
+    | :? Image<int16> as I -> I.incRefCount()   // or img.incNRefCount(1) if it takes an int
+    | :? Image<uint> as I -> I.incRefCount()   // or img.incNRefCount(1) if it takes an int
+    | :? Image<int> as I -> I.incRefCount()   // or img.incNRefCount(1) if it takes an int
+    | :? Image<uint64> as I -> I.incRefCount()   // or img.incNRefCount(1) if it takes an int
+    | :? Image<int64> as I -> I.incRefCount()   // or img.incNRefCount(1) if it takes an int
+    | :? Image<float32> as I -> I.incRefCount()   // or img.incNRefCount(1) if it takes an int
+    | :? Image<float> as I -> I.incRefCount()   // or img.incNRefCount(1) if it takes an int
+    | _ -> ()
+    x
+let incRef () =
     Stage.map "incRefCountOp" incIfImage id id
 
-let decRefCountOp () =
-    let decRefCount x =
-        match box x with
-        | :? Image<uint8> as I -> I.decRefCount(); x   // or img.incNRefCount(1) if it takes an int
-        | :? Image<int8> as I -> I.decRefCount(); x   // or img.incNRefCount(1) if it takes an int
-        | :? Image<uint16> as I -> I.decRefCount(); x   // or img.incNRefCount(1) if it takes an int
-        | :? Image<int16> as I -> I.decRefCount(); x   // or img.incNRefCount(1) if it takes an int
-        | :? Image<uint> as I -> I.decRefCount(); x   // or img.incNRefCount(1) if it takes an int
-        | :? Image<int> as I -> I.decRefCount(); x   // or img.incNRefCount(1) if it takes an int
-        | :? Image<uint64> as I -> I.decRefCount(); x   // or img.incNRefCount(1) if it takes an int
-        | :? Image<int64> as I -> I.decRefCount(); x   // or img.incNRefCount(1) if it takes an int
-        | :? Image<float32> as I -> I.decRefCount(); x   // or img.incNRefCount(1) if it takes an int
-        | :? Image<float> as I -> I.decRefCount(); x   // or img.incNRefCount(1) if it takes an int
-        | _ -> x
-    Stage.map "decRefCountOp" decRefCount id id
+let decIfImage x =
+    match box x with
+    | :? Image<uint8> as I -> I.decRefCount()   // or img.incNRefCount(1) if it takes an int
+    | :? Image<int8> as I -> I.decRefCount()   // or img.incNRefCount(1) if it takes an int
+    | :? Image<uint16> as I -> I.decRefCount()   // or img.incNRefCount(1) if it takes an int
+    | :? Image<int16> as I -> I.decRefCount()   // or img.incNRefCount(1) if it takes an int
+    | :? Image<uint> as I -> I.decRefCount()   // or img.incNRefCount(1) if it takes an int
+    | :? Image<int> as I -> I.decRefCount()   // or img.incNRefCount(1) if it takes an int
+    | :? Image<uint64> as I -> I.decRefCount()   // or img.incNRefCount(1) if it takes an int
+    | :? Image<int64> as I -> I.decRefCount()   // or img.incNRefCount(1) if it takes an int
+    | :? Image<float32> as I -> I.decRefCount()   // or img.incNRefCount(1) if it takes an int
+    | :? Image<float> as I -> I.decRefCount()   // or img.incNRefCount(1) if it takes an int
+    | _ -> ()
+    x
+let decRef () =
+    Stage.map "decRefCountOp" decIfImage id id
 
 let (-->) = Stage.(-->)
 let source = Pipeline.source 
 let debug = Pipeline.debug 
 let zip = Pipeline.zip
 let (>=>) pl (stage: Stage<'b,'c>) = Pipeline.(>=>) pl stage //(stage |> disposeInputAfter "read+dispose" )
+let wrapReleaseAfter stage =
+    let wrapper (input, output) = decIfImage input |> ignore; output
+    Stage.wrap "releaseAfter" wrapper stage id id
+let (>=>!) pl (stage: Stage<'b,'c>) = Pipeline.(>=>) pl (stage |> wrapReleaseAfter)
 
 let inline isExactlyImage<'T> () =
     let t = typeof<'T>
     t.IsGenericType && t.GetGenericTypeDefinition() = typedefof<Image<_>>
-
-let decIfImage x : unit =
-    match box x with
-    | :? Image<uint8> as img -> img.decRefCount()
-    | :? Image<int8> as img -> img.decRefCount()
-    | :? Image<uint16> as img -> img.decRefCount()
-    | :? Image<int16> as img -> img.decRefCount()
-    | :? Image<uint> as img -> img.decRefCount()
-    | :? Image<int> as img -> img.decRefCount()
-    | :? Image<float32> as img -> img.decRefCount()
-    | :? Image<float> as img -> img.decRefCount()
-    | _ -> ()
-
-let incIfImage x : unit =
-    match box x with
-    | :? Image<uint8> as img -> img.incRefCount()
-    | :? Image<int8> as img -> img.incRefCount()
-    | :? Image<uint16> as img -> img.incRefCount()
-    | :? Image<int16> as img -> img.incRefCount()
-    | :? Image<uint> as img -> img.incRefCount()
-    | :? Image<int> as img -> img.incRefCount()
-    | :? Image<float32> as img -> img.incRefCount()
-    | :? Image<float> as img -> img.incRefCount()
-    | _ -> ()
 
 let promoteStreamingToSliding 
     (name: string)
@@ -127,7 +109,7 @@ let (>=>>) (pl: Pipeline<'In, 'S>) (stage1: Stage<'S, 'U>, stage2: Stage<'S, 'V>
             stage1, stream2Sliding winSz pad stride stage2
         | _,_ -> failwith $"[>=>>] does not know how to combine the stage-profiles: {stage1.Pipe.Profile} vs {stage2.Pipe.Profile}"
 
-    Pipeline.(>=>>) (pl >=> incRefCountOp ()) (stg1, stg2)
+    Pipeline.(>=>>) (pl >=> incRef ()) (stg1, stg2)
 
 let (>>=>) = Pipeline.(>>=>)
 let (>>=>>) = Pipeline.(>>=>>)
@@ -143,10 +125,11 @@ let drainSingle pl = Pipeline.drainSingle "drainSingle" pl
 let drainList pl = Pipeline.drainList "drainList" pl
 let drainLast pl = Pipeline.drainLast "drainLast" pl
 //let tap str = incRefCountOp () --> (Stage.tap str)
-let tap = Stage.tap // tap and tapIt neither realeases after nor increases number of references
+let tap = Stage.tap
+//let tap str = Stage.tap str --> incRef()// tap and tapIt neither realeases after nor increases number of references
 let tapIt = Stage.tapIt
-let ignoreAll () : Stage<Image<_>,unit> = Stage.ignore decIfImage
-let ignorePairs () : Stage<_,unit> = Stage.ignorePairs<_,unit> (id,id)
+let ignoreSingles () : Stage<Image<_>,unit> = Stage.ignore (decIfImage>>ignore)
+let ignorePairs () : Stage<_,unit> = Stage.ignorePairs<_,unit> ((decIfImage>>ignore),(decIfImage>>ignore))
 let idOp<'T> = Stage.idOp<'T>
 
 let liftUnary = Stage.liftUnary
@@ -157,29 +140,6 @@ let liftUnaryReleaseAfter
     (nElemsTransformation: NElemsTransformation) = 
     liftUnary name (releaseAfter f) memoryNeed nElemsTransformation
 
-(*
-let liftWindowed = Stage.liftWindowed
-let liftWindowedReleaseAfter 
-    (name: string) 
-    (window: uint) 
-    (pad: uint) 
-    (zeroMaker: int->Image<'S>->Image<'S>) 
-    (stride: uint) 
-    (emitStart: uint) 
-    (emitCount: uint) 
-    (f: Image<'S> list -> Image<'T> list) 
-    (memoryNeed: MemoryNeed)
-    (nElemsTransformation: NElemsTransformation)
-    : Stage<Image<'S>, Image<'T>> =
-    printfn $"liftWindowedReleaseAfter: window {window}, pad {pad}, stride {stride}, emitStart {emitStart}, emitCount {emitCount}"
-    let fReleaseAfter  input =
-        let result = f input
-        //input|>List.iter (fun I -> printfn $"{I.Name}")
-        //printfn $"fReleaseAfter: got {input.Length} releasing {stride} result {result.Length}"
-        input |> List.take (int stride) |> List.iter (fun I -> I.decRefCount())
-        result
-    Stage.liftWindowed<Image<'S>,Image<'T>> name window pad zeroMaker stride emitStart emitCount fReleaseAfter memoryNeed nElemsTransformation
-*)
 let getBytesPerComponent<'T> = (typeof<'T> |> Image.getBytesPerComponent |> uint64)
 
 type System.String with // From https://stackoverflow.com/questions/1936767/f-case-insensitive-string-compare
@@ -295,37 +255,55 @@ let inline scalarDivImage<^T when ^T: equality and ^T: (static member op_Explici
 let inline imageDivScalar<^T when ^T: equality and ^T: (static member op_Explicit: ^T -> float)> (i: ^T) =
     liftUnaryReleaseAfter "imageDivScalar" (fun (s:Image<^T>)->ImageFunctions.imageDivScalar<^T> s i) id id
 
+
+let failTypeMismatch<'T> name lst =
+    let t = typeof<'T>
+    if lst |> List.exists ((=) t) |> not then
+        let names = List.map (fun (t: System.Type) -> t.Name) lst
+        failwith $"[{name}] wrong type. Type {t} must be one of {names}"
+
 /// Simple functions
-let abs<'T when 'T: equality> : Stage<Image<'T>,Image<'T>> = liftUnaryReleaseAfter "abs"    ImageFunctions.absImage id id
-let absFloat      : Stage<Image<float>,Image<float>> =      liftUnaryReleaseAfter "abs"    ImageFunctions.absImage id id
-let absFloat32    : Stage<Image<float32>,Image<float32>> =  liftUnaryReleaseAfter "abs"    ImageFunctions.absImage id id
-let absInt        : Stage<Image<int>,Image<int>> =          liftUnaryReleaseAfter "abs"    ImageFunctions.absImage id id
-let acosFloat     : Stage<Image<float>,Image<float>> =      liftUnaryReleaseAfter "acos"   ImageFunctions.acosImage id id
-let acosFloat32   : Stage<Image<float32>,Image<float32>> =  liftUnaryReleaseAfter "acos"   ImageFunctions.acosImage id id
-let asinFloat     : Stage<Image<float>,Image<float>> =      liftUnaryReleaseAfter "asin"   ImageFunctions.asinImage id id
-let asinFloat32   : Stage<Image<float32>,Image<float32>> =  liftUnaryReleaseAfter "asin"   ImageFunctions.asinImage id id
-let atanFloat     : Stage<Image<float>,Image<float>> =      liftUnaryReleaseAfter "atan"   ImageFunctions.atanImage id id
-let atanFloat32   : Stage<Image<float32>,Image<float32>> =  liftUnaryReleaseAfter "atan"   ImageFunctions.atanImage id id
-let cosFloat      : Stage<Image<float>,Image<float>> =      liftUnaryReleaseAfter "cos"    ImageFunctions.cosImage id id
-let cosFloat32    : Stage<Image<float32>,Image<float32>> =  liftUnaryReleaseAfter "cos"    ImageFunctions.cosImage id id
-let sinFloat      : Stage<Image<float>,Image<float>> =      liftUnaryReleaseAfter "sin"    ImageFunctions.sinImage id id
-let sinFloat32    : Stage<Image<float32>,Image<float32>> =  liftUnaryReleaseAfter "sin"    ImageFunctions.sinImage id id
-let tanFloat      : Stage<Image<float>,Image<float>> =      liftUnaryReleaseAfter "tan"    ImageFunctions.tanImage id id
-let tanFloat32    : Stage<Image<float32>,Image<float32>> =  liftUnaryReleaseAfter "tan"    ImageFunctions.tanImage id id
-let expFloat      : Stage<Image<float>,Image<float>> =      liftUnaryReleaseAfter "exp"    ImageFunctions.expImage id id
-let expFloat32    : Stage<Image<float32>,Image<float32>> =  liftUnaryReleaseAfter "exp"    ImageFunctions.expImage id id
-let log10Float    : Stage<Image<float>,Image<float>> =      liftUnaryReleaseAfter "log10"  ImageFunctions.log10Image id id
-let log10Float32  : Stage<Image<float32>,Image<float32>> =  liftUnaryReleaseAfter "log10"  ImageFunctions.log10Image id id
-let logFloat      : Stage<Image<float>,Image<float>> =      liftUnaryReleaseAfter "log"    ImageFunctions.logImage id id
-let logFloat32    : Stage<Image<float32>,Image<float32>> =  liftUnaryReleaseAfter "log"    ImageFunctions.logImage id id
-let roundFloat    : Stage<Image<float>,Image<float>> =      liftUnaryReleaseAfter "round"  ImageFunctions.roundImage id id
-let roundFloat32  : Stage<Image<float32>,Image<float32>> =  liftUnaryReleaseAfter "round"  ImageFunctions.roundImage id id
-let sqrtFloat     : Stage<Image<float>,Image<float>> =      liftUnaryReleaseAfter "sqrt"   ImageFunctions.sqrtImage id id
-let sqrtFloat32   : Stage<Image<float32>,Image<float32>> =  liftUnaryReleaseAfter "sqrt"   ImageFunctions.sqrtImage id id
-let sqrtInt       : Stage<Image<int>,Image<int>> =          liftUnaryReleaseAfter "sqrt"   ImageFunctions.sqrtImage id id
-let squareFloat   : Stage<Image<float>,Image<float>> =      liftUnaryReleaseAfter "square" ImageFunctions.squareImage id id
-let squareFloat32 : Stage<Image<float32>,Image<float32>> =  liftUnaryReleaseAfter "square" ImageFunctions.squareImage id id
-let squareInt     : Stage<Image<int>,Image<int>> =          liftUnaryReleaseAfter "square" ImageFunctions.squareImage id id
+let private floatNintTypes = [typeof<float>;typeof<float32>;typeof<int>]
+let private floatTypes = [typeof<float>;typeof<float32>]
+let abs<'T when 'T: equality> : Stage<Image<'T>,Image<'T>> = 
+    failTypeMismatch<'T> "abs" floatNintTypes
+    liftUnaryReleaseAfter "abs"    ImageFunctions.absImage id id
+let acos<'T when 'T: equality>     : Stage<Image<'T>,Image<'T>> =      
+    failTypeMismatch<'T> "acos" floatTypes
+    liftUnaryReleaseAfter "acos"   ImageFunctions.acosImage id id
+let asin<'T when 'T: equality>     : Stage<Image<'T>,Image<'T>> =      
+    failTypeMismatch<'T> "asin" floatTypes
+    liftUnaryReleaseAfter "asin"   ImageFunctions.asinImage id id
+let atan<'T when 'T: equality>     : Stage<Image<'T>,Image<'T>> =      
+    failTypeMismatch<'T> "atan" floatTypes
+    liftUnaryReleaseAfter "atan"   ImageFunctions.atanImage id id
+let cos<'T when 'T: equality>     : Stage<Image<'T>,Image<'T>> =      
+    failTypeMismatch<'T> "cos" floatTypes
+    liftUnaryReleaseAfter "cos"    ImageFunctions.cosImage id id
+let sin<'T when 'T: equality>     : Stage<Image<'T>,Image<'T>> =      
+    failTypeMismatch<'T> "sin" floatTypes
+    liftUnaryReleaseAfter "sin"    ImageFunctions.sinImage id id
+let tan<'T when 'T: equality>     : Stage<Image<'T>,Image<'T>> =      
+    failTypeMismatch<'T> "tan" floatTypes
+    liftUnaryReleaseAfter "tan"    ImageFunctions.tanImage id id
+let exp<'T when 'T: equality>     : Stage<Image<'T>,Image<'T>> =      
+    failTypeMismatch<'T> "exp" floatTypes
+    liftUnaryReleaseAfter "exp"    ImageFunctions.expImage id id
+let log10<'T when 'T: equality>     : Stage<Image<'T>,Image<'T>> =      
+    failTypeMismatch<'T> "log10" floatTypes
+    liftUnaryReleaseAfter "log10"  ImageFunctions.log10Image id id
+let log<'T when 'T: equality>     : Stage<Image<'T>,Image<'T>> =      
+    failTypeMismatch<'T> "log" floatTypes
+    liftUnaryReleaseAfter "log"    ImageFunctions.logImage id id
+let round<'T when 'T: equality>     : Stage<Image<'T>,Image<'T>> =      
+    failTypeMismatch<'T> "round" floatTypes
+    liftUnaryReleaseAfter "round"  ImageFunctions.roundImage id id
+let sqrt<'T when 'T: equality>     : Stage<Image<'T>,Image<'T>> =      
+    failTypeMismatch<'T> "sqrt" floatNintTypes
+    liftUnaryReleaseAfter "sqrt"   ImageFunctions.sqrtImage id id
+let square<'T when 'T: equality>     : Stage<Image<'T>,Image<'T>> =      
+    failTypeMismatch<'T> "square" floatNintTypes
+    liftUnaryReleaseAfter "square" ImageFunctions.squareImage id id
 
 //let histogram<'T when 'T: comparison> = histogramOp<'T> "histogram"
 let imageHistogram () =

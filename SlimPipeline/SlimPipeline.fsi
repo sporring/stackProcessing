@@ -38,6 +38,9 @@ module private Pipe =
     val take: name: string -> count: uint -> Pipe<'a,'a>
     val map:
       name: string -> mapper: ('U -> 'V) -> pipe: Pipe<'In,'U> -> Pipe<'In,'V>
+    val wrap:
+      name: string ->
+        mapper: ('In * 'U -> 'V) -> pipe: Pipe<'In,'U> -> Pipe<'In,'V>
     val tryDispose: debug: bool -> value: obj -> unit
     type TeeMsg<'T> =
         | Left of AsyncReplyChannel<'T option>
@@ -149,6 +152,12 @@ module Stage =
         f: ('S -> 'T) ->
         memoryNeed: MemoryNeed ->
         nElemsTransformation: NElemsTransformation -> Stage<'S,'T>
+    val wrap:
+      name: string ->
+        f: ('In * 'U -> 'V) ->
+        stage: Stage<'In,'U> ->
+        memoryNeed: MemoryNeed ->
+        nElemsTransformation: NElemsTransformation -> Stage<'In,'V>
     val map1:
       name: string ->
         f: ('U -> 'V) ->
