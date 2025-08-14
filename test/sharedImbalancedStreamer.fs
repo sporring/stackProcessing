@@ -18,18 +18,14 @@ let main _ =
 
     readMaker 
     >=> tap "For >=>>"
-    //>=>> (delay (idOp<Image<float>> ()), delay (idOp<Image<float>> ()))
-    //>=>> (delay (idOp<Image<float>> ()), convGauss 1.0)
-    >=>> (idOp<Image<float>> (), convGauss 1.0)
+    >=>> (imageAddScalar 1.0, convGauss 1.0)
     >=> tap "For >>=>"
-(*
     >>=> mul2
     >=> tap "cast"
     >=> cast<float,int8>
     >=> tap "write"
     >=> write "result" ".tiff"
-*)
-    >>=> fun _ _ -> ()
+//    >>=> fun a b -> decIfImage a; decIfImage b; ()
     |> sink
 
     0

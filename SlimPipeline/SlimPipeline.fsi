@@ -3,9 +3,9 @@ module SlimPipeline
 val getMem: unit -> unit
 /// The memory usage strategies during image processing.
 type Profile =
-    | Constant
+    | Unit
     | Streaming
-    | Sliding of uint * uint * uint * uint
+    | Sliding of uint * uint * uint * uint * uint
 module Profile =
     val estimateUsage: profile: Profile -> memPerElement: uint64 -> uint64
     val combine: prof1: Profile -> prof2: Profile -> Profile
@@ -218,22 +218,6 @@ module Stage =
     val cast:
       name: string -> f: ('S -> 'T) -> Stage<'S,'T>
         when 'S: equality and 'T: equality
-    val promoteConstantToStreaming:
-      name: string -> depth: uint -> value: 'T -> Stage<unit,'T>
-    val promoteStreamingToSliding:
-      name: string ->
-        winSz: uint ->
-        pad: uint ->
-        stride: uint ->
-        emitStart: uint ->
-        emitCount: uint -> stage: Stage<'T,'S> -> Stage<'T,'S> when 'T: equality
-    val promoteSlidingToSliding:
-      name: string ->
-        winSz: uint ->
-        pad: uint ->
-        zeroMaker: (int -> 'T -> 'T) ->
-        stride: uint -> emitStart: uint -> emitCount: uint -> Stage<'T,'T>
-        when 'T: equality
 type Pipeline<'S,'T> =
     {
       stage: Stage<'S,'T> option
@@ -275,8 +259,8 @@ module Pipeline =
     /// parallel execution of synchronised streams
     val (>=>>) :
       pl: Pipeline<'In,'S> ->
-        st1: Stage<'S,'U> * st2: Stage<'S,'V> -> Pipeline<'In,('U * 'V)>
-        when 'S: equality and 'U: equality and 'V: equality
+        stg1: Stage<'S,'U> * stg2: Stage<'S,'V> -> Pipeline<'In,('U * 'V)>
+        when 'U: equality and 'V: equality
     val (>>=>) :
       pl: Pipeline<'In,('U * 'V)> -> f: ('U -> 'V -> 'W) -> Pipeline<'In,'W>
         when 'W: equality

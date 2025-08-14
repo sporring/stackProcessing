@@ -62,8 +62,73 @@ let source = Pipeline.source
 let debug = Pipeline.debug 
 let zip = Pipeline.zip
 let (>=>) pl (stage: Stage<'b,'c>) = Pipeline.(>=>) pl stage //(stage |> disposeInputAfter "read+dispose" )
+
+let inline isExactlyImage<'T> () =
+    let t = typeof<'T>
+    t.IsGenericType && t.GetGenericTypeDefinition() = typedefof<Image<_>>
+
+let decIfImage x : unit =
+    match box x with
+    | :? Image<uint8> as img -> img.decRefCount()
+    | :? Image<int8> as img -> img.decRefCount()
+    | :? Image<uint16> as img -> img.decRefCount()
+    | :? Image<int16> as img -> img.decRefCount()
+    | :? Image<uint> as img -> img.decRefCount()
+    | :? Image<int> as img -> img.decRefCount()
+    | :? Image<float32> as img -> img.decRefCount()
+    | :? Image<float> as img -> img.decRefCount()
+    | _ -> ()
+
+let incIfImage x : unit =
+    match box x with
+    | :? Image<uint8> as img -> img.incRefCount()
+    | :? Image<int8> as img -> img.incRefCount()
+    | :? Image<uint16> as img -> img.incRefCount()
+    | :? Image<int16> as img -> img.incRefCount()
+    | :? Image<uint> as img -> img.incRefCount()
+    | :? Image<int> as img -> img.incRefCount()
+    | :? Image<float32> as img -> img.incRefCount()
+    | :? Image<float> as img -> img.incRefCount()
+    | _ -> ()
+
+let promoteStreamingToSliding 
+    (name: string)
+    (winSz: uint)
+    (pad: uint)
+    (stride: uint)
+    (emitStart: uint)
+    (emitCount: uint)
+    (stage: Stage<'T,'S>)
+    : Stage<'T, 'S> = // Does not change shape
+        let zeroMaker i = id
+        (Stage.window $"{name}:window" winSz pad zeroMaker stride) 
+        --> (Stage.map $"{name}:skip and take" (fun lst ->
+                let result = lst |> List.skip (int stride) |> List.take 1
+                printfn $"disposing of {stride} initial images"
+                lst |> List.take (int stride) |> List.map decIfImage |> ignore
+                result
+            ) id id )
+        --> Stage.collect $"{name}:collect"
+        --> stage
+
 let (>=>>) (pl: Pipeline<'In, 'S>) (stage1: Stage<'S, 'U>, stage2: Stage<'S, 'V>) : Pipeline<'In, 'U * 'V> = 
-    Pipeline.(>=>>) (pl >=> incRefCountOp ()) (stage1, stage2)
+    let stream2Sliding winSz pad stride stg = 
+        stg |> promoteStreamingToSliding "makeSliding" winSz pad stride 0u 1u
+
+    let stg1,stg2 =
+        match stage1.Pipe.Profile, stage2.Pipe.Profile with
+        | Streaming, Streaming -> stage1, stage2
+        | Sliding (a1,b1,c1,d1,e1), Sliding (a2,b2,c2,d2,e2) when a1=a2 && b1=b2 && c1=c2 && d1=d2 && e1=e2 -> stage1, stage2
+        | Streaming, Sliding (winSz, stride, pad, emitStart, emitCount) -> 
+            printfn "left is promoted"
+            stream2Sliding winSz pad stride stage1, stage2 
+        | Sliding (winSz, stride, pad, emitStart, emitCount), Streaming -> 
+            printfn "right is promoted"
+            stage1, stream2Sliding winSz pad stride stage2
+        | _,_ -> failwith $"[>=>>] does not know how to combine the stage-profiles: {stage1.Pipe.Profile} vs {stage2.Pipe.Profile}"
+
+    Pipeline.(>=>>) (pl >=> incRefCountOp ()) (stg1, stg2)
+
 let (>>=>) = Pipeline.(>>=>)
 let (>>=>>) = Pipeline.(>>=>>)
 let zeroMaker (index:int) (ex:Image<'S>) : Image<'S> = new Image<'S>(ex.GetSize(), 1u, "padding", index)
@@ -80,11 +145,9 @@ let drainLast pl = Pipeline.drainLast "drainLast" pl
 //let tap str = incRefCountOp () --> (Stage.tap str)
 let tap = Stage.tap // tap and tapIt neither realeases after nor increases number of references
 let tapIt = Stage.tapIt
-let ignoreImages () : Stage<Image<_>,unit> = Stage.ignore (fun (I:Image<_>)->I.decRefCount ())
-let ignoreAll () : Stage<_,unit> = Stage.ignore<_> id
+let ignoreAll () : Stage<Image<_>,unit> = Stage.ignore decIfImage
 let ignorePairs () : Stage<_,unit> = Stage.ignorePairs<_,unit> (id,id)
 let idOp<'T> = Stage.idOp<'T>
-let promoteStreamingToSliding = Stage.promoteStreamingToSliding
 
 let liftUnary = Stage.liftUnary
 let liftUnaryReleaseAfter 
@@ -119,7 +182,15 @@ let liftWindowedReleaseAfter
 *)
 let getBytesPerComponent<'T> = (typeof<'T> |> Image.getBytesPerComponent |> uint64)
 
+type System.String with // From https://stackoverflow.com/questions/1936767/f-case-insensitive-string-compare
+    member s1.icompare(s2: string) =
+        System.String.Equals(s1, s2, System.StringComparison.CurrentCultureIgnoreCase)
+
 let write (outputDir: string) (suffix: string) : Stage<Image<'T>, unit> =
+    let t = typeof<'T>
+    if (suffix.icompare ".tif" || suffix.icompare ".tiff") 
+        && not (t = typeof<uint8> || t = typeof<int8> || t = typeof<uint16> || t = typeof<int16> || t = typeof<float32>) then
+        failwith $"[write] tiff images only supports (u)int8, (u)int16 and float32 but was {t.Name}" 
     if not (Directory.Exists(outputDir)) then
         Directory.CreateDirectory(outputDir) |> ignore
     let consumer (debug: bool) (idx: int) (image:Image<'T>) =
@@ -171,7 +242,7 @@ let axisSource
         {
             Name = "axisSource"
             Pipe = img |> liftImageSource "axisSource"
-            Transition = ProfileTransition.create Constant Streaming
+            Transition = ProfileTransition.create Unit Streaming
             ShapeUpdate = shapeUpdate
         }
     let width, height, depth = sz[0], sz[1], sz[2]
@@ -540,7 +611,7 @@ let zero<'T when 'T: equality>
         let image = new Image<'T>([width; height], 1u,$"zero[{i}]", i)
         if pl.debug then printfn "[zero] Created image %A" i
         image
-    let transition = ProfileTransition.create Constant Streaming
+    let transition = ProfileTransition.create Unit Streaming
     let shapeUpdate = id
     let stage = Stage.init "create" depth mapper transition id id |> Some
     //let flow = Flow.returnM stage
@@ -559,7 +630,7 @@ let readFilteredOp<'T when 'T: equality> (name:string) (inputDir : string) (suff
         if pl.debug then printfn "[%s] Reading image %A from %s as %s" name i fileName (typeof<'T>.Name)
         let image = Image<'T>.ofFile (fileName, fileName, i)
         image
-    let transition = ProfileTransition.create Constant Streaming
+    let transition = ProfileTransition.create Unit Streaming
     let stage = Stage.init $"{name}" (uint depth) mapper transition id id |> Some
     //let flow = Flow.returnM stage
     let memPerElem = (uint64 width)*(uint64 height)*getBytesPerComponent<'T>

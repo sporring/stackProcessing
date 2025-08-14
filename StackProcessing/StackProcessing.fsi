@@ -44,6 +44,20 @@ val (>=>) :
   pl: SlimPipeline.Pipeline<'a,'b> ->
     stage: Stage<'b,'c> -> SlimPipeline.Pipeline<'a,'c> when 'c: equality
 
+val inline isExactlyImage<'T> : unit -> bool
+
+val decIfImage: x: 'a -> unit
+
+val incIfImage: x: 'a -> unit
+
+val promoteStreamingToSliding:
+  name: string ->
+    winSz: uint ->
+    pad: uint ->
+    stride: uint ->
+    emitStart: uint -> emitCount: uint -> stage: Stage<'T,'S> -> Stage<'T,'S>
+    when 'T: equality
+
 val (>=>>) :
   pl: SlimPipeline.Pipeline<'In,'S> ->
     stage1: Stage<'S,'U> * stage2: Stage<'S,'V> ->
@@ -85,21 +99,11 @@ val tap: (string -> SlimPipeline.Stage<'a,'a>)
 
 val tapIt: (('a -> string) -> SlimPipeline.Stage<'a,'a>)
 
-val ignoreImages: unit -> Stage<Image<'a>,unit> when 'a: equality
-
-val ignoreAll: unit -> Stage<unit,unit>
+val ignoreAll: unit -> Stage<Image<'a>,unit> when 'a: equality
 
 val ignorePairs: unit -> Stage<(unit * unit),unit>
 
 val idOp<'T> : (unit -> SlimPipeline.Stage<'T,'T>)
-
-val promoteStreamingToSliding:
-  (string ->
-     uint ->
-     uint ->
-     uint ->
-     uint -> uint -> SlimPipeline.Stage<'a,'b> -> SlimPipeline.Stage<'a,'b>)
-    when 'a: equality
 
 val liftUnary:
   (string ->
@@ -115,6 +119,9 @@ val liftUnaryReleaseAfter:
     SlimPipeline.Stage<#Image<'S>,Image<'T>> when 'S: equality and 'T: equality
 
 val getBytesPerComponent<'T> : uint64
+type System.String with
+    
+    member icompare: s2: string -> bool
 
 val write:
   outputDir: string -> suffix: string -> Stage<Image<'T>,unit> when 'T: equality
