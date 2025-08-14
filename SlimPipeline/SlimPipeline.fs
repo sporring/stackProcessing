@@ -70,6 +70,14 @@ module private Pipe =
         let apply debug _ = AsyncSeq.init (int64 depth) (fun (i:int64) -> mapper (int i))
         create name apply profile
 
+    let liftConsume (name: string) (profile: Profile) (release: 'S->unit) (f: 'S -> 'T) : Pipe<'S,'T> =
+        let folder input = 
+            let output = f input
+            release input
+            output
+        let apply debug  input = input |> AsyncSeq.map folder
+        create name apply profile
+
     let skip (name: string) (count: uint) =
         let apply debug input = input |> AsyncSeq.skip (int count)
         create "skip" apply (Sliding (2u, 2u, 0u, 0u, System.UInt32.MaxValue))
@@ -82,10 +90,17 @@ module private Pipe =
         let apply debug input = input |> pipe.Apply debug |> AsyncSeq.map mapper
         create name apply pipe.Profile
 
-    let wrap (name: string) (mapper: ('In * 'U) -> 'V) (pipe: Pipe<'In, 'U>) : Pipe<'In, 'V> =
+    let wrap (name: string) (wrapper: ('In * 'U) -> 'V) (pipe: Pipe<'In, 'U>) : Pipe<'In, 'V> =
         let apply debug input = 
+            printfn $"[Pipe.wrap] apply"
             let output = input |> pipe.Apply debug
-            AsyncSeq.zip input output |> AsyncSeq.map mapper
+            printfn $"[Pipe.wrap] zip"
+            let zipped = AsyncSeq.zip input output
+            printfn $"[Pipe.wrap] map"
+            let mapped = AsyncSeq.map wrapper zipped
+            printfn $"[Pipe.wrap] done"
+            mapped
+        printfn $"[Pipe.wrap] create"
         create name apply pipe.Profile
 
     let tryDispose (debug: bool) (value: obj) =
@@ -350,7 +365,7 @@ module Stage =
         let pipe = Pipe.compose stage1.Pipe stage2.Pipe
         let memoryNeed nElems = (stage1.MemoryNeed nElems) + (stage2.MemoryNeed nElems)
         let nElemsTransformation = stage1.NElemsTransformation >> stage2.NElemsTransformation
-        create $"{stage2.Name} ∘ {stage1.Name}" pipe transition memoryNeed nElemsTransformation
+        create $"{stage2.Name} o {stage1.Name}" pipe transition memoryNeed nElemsTransformation
 
     let (-->) = compose
 
@@ -419,6 +434,11 @@ module Stage =
     let liftUnary<'S,'T> (name: string) (f: 'S -> 'T) (memoryNeed: MemoryNeed) (nElemsTransformation: NElemsTransformation): Stage<'S, 'T> =
         let transition = ProfileTransition.create Streaming Streaming
         let pipe = Pipe.lift name Streaming f
+        create name pipe transition memoryNeed nElemsTransformation
+
+    let liftConsumeUnary<'S,'T> (name: string) (release: 'S->unit) (f: 'S -> 'T) (memoryNeed: MemoryNeed) (nElemsTransformation: NElemsTransformation): Stage<'S, 'T> =
+        let transition = ProfileTransition.create Streaming Streaming
+        let pipe = Pipe.liftConsume name Streaming release f
         create name pipe transition memoryNeed nElemsTransformation
 
     let liftWindowed<'S,'T when 'S: equality and 'T: equality> (name: string) (window: uint) (pad: uint) (zeroMaker: int->'S->'S) (stride: uint) (emitStart: uint) (emitCount: uint) (f: 'S list -> 'T list) (memoryNeed: MemoryNeed) (nElemsTransformation: NElemsTransformation): Stage<'S, 'T> =
@@ -491,7 +511,7 @@ module Pipeline =
         if pl.debug then printfn $"[{name}] {stage.Name}"
 
         let memNeeded = stage.MemoryNeed pl.nElems
-        if memNeeded > pl.memAvail then
+        if (not pl.debug) && memNeeded > pl.memAvail then
             failwith $"Out of available memory: {stage.Name} requested {memNeeded} B but have only {pl.memAvail} B"
 
         let stage' = Option.map (fun stg -> Stage.compose stg stage) pl.stage
@@ -526,7 +546,7 @@ module Pipeline =
                 // Check memory constraints for each individual stream
                 let memNeeded1 = stage1.MemoryNeed  pl1.nElems
                 let memNeeded2 = stage2.MemoryNeed  pl2.nElems
-                if memNeeded1 > pl1.memAvail || memNeeded2 > pl2.memAvail then
+                if not pl1.debug && (memNeeded1 > pl1.memAvail || memNeeded2 > pl2.memAvail) then
                     failwith $"[{name}] Out of available memory: Parallel execution of {stage1.Name}+{stage2.Name} requested {memNeeded1}+{memNeeded2} B but have only {pl1.memAvail} B"
 
                 // Check resulting number of elements per stream. Must be the same to be ziped

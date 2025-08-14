@@ -13,6 +13,14 @@ type ProfileTransition = SlimPipeline.ProfileTransition
 
 type Image<'S when 'S: equality> = Image.Image<'S>
 
+val incIfImage: x: 'a -> 'a
+
+val incRef: unit -> SlimPipeline.Stage<'a,'a>
+
+val decIfImage: x: 'a -> 'a
+
+val decRef: unit -> SlimPipeline.Stage<'a,'a>
+
 val releaseAfter: f: (Image<'S> -> 'T) -> I: Image<'S> -> 'T when 'S: equality
 
 val releaseAfter2:
@@ -23,13 +31,10 @@ val releaseNAfter:
   n: int -> f: (Image<'S> list -> 'T list) -> sLst: Image<'S> list -> 'T list
     when 'S: equality
 
-val incIfImage: x: 'a -> 'a
-
-val incRef: unit -> SlimPipeline.Stage<'a,'a>
-
-val decIfImage: x: 'a -> 'a
-
-val decRef: unit -> SlimPipeline.Stage<'a,'a>
+val (>=>) :
+  (SlimPipeline.Pipeline<'a,'b> ->
+     SlimPipeline.Stage<'b,'c> -> SlimPipeline.Pipeline<'a,'c>)
+    when 'c: equality
 
 val (-->) :
   (SlimPipeline.Stage<'a,'b> ->
@@ -43,17 +48,6 @@ val zip:
   (SlimPipeline.Pipeline<'a,'b> ->
      SlimPipeline.Pipeline<'a,'c> -> SlimPipeline.Pipeline<'a,('b * 'c)>)
     when 'b: equality and 'c: equality
-
-val (>=>) :
-  pl: SlimPipeline.Pipeline<'a,'b> ->
-    stage: Stage<'b,'c> -> SlimPipeline.Pipeline<'a,'c> when 'c: equality
-
-val wrapReleaseAfter:
-  stage: SlimPipeline.Stage<'a,'b> -> SlimPipeline.Stage<'a,'b>
-
-val (>=>!) :
-  pl: SlimPipeline.Pipeline<'a,'b> ->
-    stage: Stage<'b,'c> -> SlimPipeline.Pipeline<'a,'c> when 'c: equality
 
 val inline isExactlyImage<'T> : unit -> bool
 
@@ -113,10 +107,10 @@ val ignorePairs: unit -> Stage<('a * unit),unit>
 val idOp<'T> : (unit -> SlimPipeline.Stage<'T,'T>)
 
 val liftUnary:
-  (string ->
-     ('a -> 'b) ->
-     SlimPipeline.MemoryNeed ->
-     SlimPipeline.NElemsTransformation -> SlimPipeline.Stage<'a,'b>)
+  name: string ->
+    (('a -> 'b) ->
+       SlimPipeline.MemoryNeed ->
+       SlimPipeline.NElemsTransformation -> SlimPipeline.Stage<'a,'b>)
 
 val liftUnaryReleaseAfter:
   name: string ->

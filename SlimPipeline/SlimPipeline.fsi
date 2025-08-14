@@ -34,13 +34,17 @@ module private Pipe =
     val init:
       name: string ->
         depth: uint -> mapper: (int -> 'T) -> profile: Profile -> Pipe<unit,'T>
+    val liftConsume:
+      name: string ->
+        profile: Profile ->
+        release: ('S -> unit) -> f: ('S -> 'T) -> Pipe<'S,'T>
     val skip: name: string -> count: uint -> Pipe<'a,'a>
     val take: name: string -> count: uint -> Pipe<'a,'a>
     val map:
       name: string -> mapper: ('U -> 'V) -> pipe: Pipe<'In,'U> -> Pipe<'In,'V>
     val wrap:
       name: string ->
-        mapper: ('In * 'U -> 'V) -> pipe: Pipe<'In,'U> -> Pipe<'In,'V>
+        wrapper: ('In * 'U -> 'V) -> pipe: Pipe<'In,'U> -> Pipe<'In,'V>
     val tryDispose: debug: bool -> value: obj -> unit
     type TeeMsg<'T> =
         | Left of AsyncReplyChannel<'T option>
@@ -201,6 +205,12 @@ module Stage =
     val collect: name: string -> Stage<'T list,'T>
     val liftUnary:
       name: string ->
+        f: ('S -> 'T) ->
+        memoryNeed: MemoryNeed ->
+        nElemsTransformation: NElemsTransformation -> Stage<'S,'T>
+    val liftConsumeUnary:
+      name: string ->
+        release: ('S -> unit) ->
         f: ('S -> 'T) ->
         memoryNeed: MemoryNeed ->
         nElemsTransformation: NElemsTransformation -> Stage<'S,'T>

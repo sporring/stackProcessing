@@ -9,9 +9,9 @@ let main _ =
 
     debug availableMemory
     |> read<float> "image" ".tiff"
-    >=> sqrtFloat
+    >=> sqrt
     >=> convGauss sigma 
-    >=> sqrtFloat
+    >=> sqrt
     >=> convGauss sigma 
     >=> cast<float,uint8>
     >=> write "result" ".tif"

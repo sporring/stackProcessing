@@ -9,22 +9,6 @@ type ProfileTransition = SlimPipeline.ProfileTransition
 //type Slice<'S when 'S: equality> = Slice.Slice<'S>
 type Image<'S when 'S: equality> = Image.Image<'S>
 
-let releaseAfter (f: Image<'S>->'T) (I:Image<'S>) = 
-    let v = f I
-    I.decRefCount()
-    v
-
-let releaseAfter2 (f: Image<'S>->Image<'S>->'T) (I:Image<'S>) (J:Image<'S>) = 
-    let v = f I J
-    I.decRefCount()
-    J.decRefCount()
-    v
-
-let releaseNAfter (n: int) (f: Image<'S> list->'T list) (sLst: Image<'S> list) : 'T list =
-    let tLst = f sLst;
-    sLst |> List.take (int n) |> List.map (fun I -> I.decRefCount()) |> ignore
-    tLst 
-
 let incIfImage x =
     match box x with
     | :? Image<uint8> as I -> I.incRefCount()   // or img.incNRefCount(1) if it takes an int
@@ -41,7 +25,6 @@ let incIfImage x =
     x
 let incRef () =
     Stage.map "incRefCountOp" incIfImage id id
-
 let decIfImage x =
     match box x with
     | :? Image<uint8> as I -> I.decRefCount()   // or img.incNRefCount(1) if it takes an int
@@ -58,16 +41,27 @@ let decIfImage x =
     x
 let decRef () =
     Stage.map "decRefCountOp" decIfImage id id
+let releaseAfter (f: Image<'S>->'T) (I:Image<'S>) = 
+    let v = f I
+    printfn "releasing"
+    I.decRefCount()
+    v
+let releaseAfter2 (f: Image<'S>->Image<'S>->'T) (I:Image<'S>) (J:Image<'S>) = 
+    let v = f I J
+    decIfImage I |> ignore
+    decIfImage J |> ignore
+    v
+let releaseNAfter (n: int) (f: Image<'S> list->'T list) (sLst: Image<'S> list) : 'T list =
+    let tLst = f sLst;
+    sLst |> List.take (int n) |> List.map (decIfImage >> ignore) |> ignore
+    tLst 
 
+let (>=>) = Pipeline.(>=>)
 let (-->) = Stage.(-->)
 let source = Pipeline.source 
 let debug = Pipeline.debug 
 let zip = Pipeline.zip
-let (>=>) pl (stage: Stage<'b,'c>) = Pipeline.(>=>) pl stage //(stage |> disposeInputAfter "read+dispose" )
-let wrapReleaseAfter stage =
-    let wrapper (input, output) = decIfImage input |> ignore; output
-    Stage.wrap "releaseAfter" wrapper stage id id
-let (>=>!) pl (stage: Stage<'b,'c>) = Pipeline.(>=>) pl (stage |> wrapReleaseAfter)
+
 
 let inline isExactlyImage<'T> () =
     let t = typeof<'T>
@@ -132,13 +126,13 @@ let ignoreSingles () : Stage<Image<_>,unit> = Stage.ignore (decIfImage>>ignore)
 let ignorePairs () : Stage<_,unit> = Stage.ignorePairs<_,unit> ((decIfImage>>ignore),(decIfImage>>ignore))
 let idOp<'T> = Stage.idOp<'T>
 
-let liftUnary = Stage.liftUnary
+let liftUnary name  = Stage.liftConsumeUnary name ignore
 let liftUnaryReleaseAfter 
     (name: string)
     (f: Image<'S> -> Image<'T>)
     (memoryNeed: MemoryNeed)
     (nElemsTransformation: NElemsTransformation) = 
-    liftUnary name (releaseAfter f) memoryNeed nElemsTransformation
+    Stage.liftConsumeUnary name (decIfImage>>ignore) f memoryNeed nElemsTransformation
 
 let getBytesPerComponent<'T> = (typeof<'T> |> Image.getBytesPerComponent |> uint64)
 
@@ -602,7 +596,7 @@ let readFilteredOp<'T when 'T: equality> (name:string) (inputDir : string) (suff
     if pl.debug then printfn $"[{name} cast to {typeof<'T>.Name}]"
     let (width,height,depth) = getStackSize inputDir suffix
     let filenames = Directory.GetFiles(inputDir, "*"+suffix) |> filter
-    //let depth = uint filenames.Length
+    let depth = uint filenames.Length
     let mapper (i: int) : Image<'T> = 
         let fileName = filenames[i]; 
         if pl.debug then printfn "[%s] Reading image %A from %s as %s" name i fileName (typeof<'T>.Name)
