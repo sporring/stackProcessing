@@ -3,11 +3,6 @@ module SlimPipeline
 open FSharp.Control
 open AsyncSeqExtensions
 
-let getMem () =
-    System.GC.Collect()
-    System.GC.WaitForPendingFinalizers()
-    System.GC.Collect()
-
 ////////////////////////////////////////////////////////////
 /// The memory usage strategies during image processing.
 type Profile =
@@ -93,7 +88,7 @@ module private Pipe =
     let map (name: string) (mapper: 'U -> 'V) (pipe: Pipe<'In, 'U>) : Pipe<'In, 'V> =
         let apply debug input = input |> pipe.Apply debug |> AsyncSeq.map mapper
         create name apply pipe.Profile
-
+(*
     let wrap (name: string) (wrapper: ('In * 'U) -> 'V) (pipe: Pipe<'In, 'U>) : Pipe<'In, 'V> =
         let apply debug input = 
             let output = input |> pipe.Apply debug
@@ -101,7 +96,7 @@ module private Pipe =
             let mapped = AsyncSeq.map wrapper zipped
             mapped
         create name apply pipe.Profile
-
+*)
     type TeeMsg<'T> =
         | Left of AsyncReplyChannel<'T option>
         | Right of AsyncReplyChannel<'T option>
@@ -239,6 +234,7 @@ module private Pipe =
             }
         create name apply profile
 
+(*
     /// mapWindowed keeps a running window along the slice direction of depth images
     /// and processes them by f. The stepping size of the running window is stride.
     /// So if depth is 3 and stride is 1 then first image 0,1,2 is sent to f, then 1, 2, 3
@@ -254,6 +250,7 @@ module private Pipe =
             input |> f |> AsyncSeq.ofSeq)
         let profile = Sliding (winSz,stride,pad,emitStart,emitCount)
         create name apply profile
+*)
 
     // window : wraps AsyncSeqExtensions.windowedWithPad
     let window
@@ -378,11 +375,12 @@ module Stage =
         let pipe : Pipe<'S,'T> = Pipe.create name apply Streaming
         create name pipe transition memoryNeed nElemsTransformation // Not right!!!
 
+(*
     let wrap (name: string) (f: ('In * 'U) -> 'V) (stage: Stage<'In, 'U>) (memoryNeed: MemoryNeed) (nElemsTransformation: NElemsTransformation) : Stage<'In, 'V> =
         let pipe = Pipe.wrap name f stage.Pipe
         let transition = ProfileTransition.create Streaming Streaming
         create name pipe transition memoryNeed nElemsTransformation
-
+*)
     let map1 (name: string) (f: 'U -> 'V) (stage: Stage<'In, 'U>) (memoryNeed: MemoryNeed) (nElemsTransformation: NElemsTransformation) : Stage<'In, 'V> =
         let pipe = Pipe.map name f stage.Pipe
         let transition = ProfileTransition.create Streaming Streaming
@@ -433,12 +431,12 @@ module Stage =
         let transition = ProfileTransition.create Streaming Streaming
         let pipe = Pipe.liftConsume name Streaming release f
         create name pipe transition memoryNeed nElemsTransformation
-
+(*
     let liftWindowed<'S,'T when 'S: equality and 'T: equality> (name: string) (window: uint) (pad: uint) (zeroMaker: int->'S->'S) (stride: uint) (emitStart: uint) (emitCount: uint) (f: 'S list -> 'T list) (memoryNeed: MemoryNeed) (nElemsTransformation: NElemsTransformation): Stage<'S, 'T> =
         let transition = ProfileTransition.create (Sliding (window,stride,pad,emitStart,emitCount)) Streaming
         let pipe = Pipe.mapWindowed name window pad zeroMaker stride emitStart emitCount f
         create name pipe transition memoryNeed nElemsTransformation
-
+*)
     let tapItOp (name: string) (toString: 'T -> string) : Stage<'T, 'T> =
         liftUnary name (fun x -> printfn "%s" (toString x); x) id id
 

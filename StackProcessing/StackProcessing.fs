@@ -9,6 +9,11 @@ type ProfileTransition = SlimPipeline.ProfileTransition
 //type Slice<'S when 'S: equality> = Slice.Slice<'S>
 type Image<'S when 'S: equality> = Image.Image<'S>
 
+let getMem () =
+    System.GC.Collect()
+    System.GC.WaitForPendingFinalizers()
+    System.GC.Collect()
+
 let incIfImage x =
     match box x with
     | :? Image<uint8> as I -> I.incRefCount()   // or img.incNRefCount(1) if it takes an int
@@ -51,22 +56,23 @@ let releaseAfter2 (f: Image<'S>->Image<'S>->'T) (I:Image<'S>) (J:Image<'S>) =
     decIfImage I |> ignore
     decIfImage J |> ignore
     v
+(*
 let releaseNAfter (n: int) (f: Image<'S> list->'T list) (sLst: Image<'S> list) : 'T list =
     let tLst = f sLst;
     sLst |> List.take (int n) |> List.map (decIfImage >> ignore) |> ignore
     tLst 
-
+*)
 let (>=>) = Pipeline.(>=>)
 let (-->) = Stage.(-->)
 let source = Pipeline.source 
 let debug = Pipeline.debug 
 let zip = Pipeline.zip
 
-
+(*
 let inline isExactlyImage<'T> () =
     let t = typeof<'T>
     t.IsGenericType && t.GetGenericTypeDefinition() = typedefof<Image<_>>
-
+*)
 let promoteStreamingToSliding 
     (name: string)
     (winSz: uint)
@@ -382,7 +388,7 @@ let stackFUnstackTrim trim (f: Image<'T>->Image<'S>) (images : Image<'T> list) =
 
 let volFctToLstFctReleaseAfter (f:Image<'S>->Image<'T>) pad stride images =
     let stack = ImageFunctions.stack images 
-    images |> List.take (int stride) |> List.iter (fun I -> I.decRefCount())
+    //images |> List.take (int stride) |> List.iter (fun I -> I.decRefCount())
     let vol = f stack
     stack.decRefCount ()
     let result = ImageFunctions.unstackSkipNTakeM pad stride vol
@@ -447,8 +453,6 @@ let convolveOp (name: string) (kernel: Image<'T>) (outputRegionMode: ImageFuncti
         match outputRegionMode with
             | Some Valid -> 0u
             | _ -> ksz/2u //floor
-    //let f images = images |> stackFUnstackTrim (ksz - 1u) (fun image3D -> ImageFunctions.convolve outputRegionMode bc image3D kernel)
-    //liftWindowedReleaseAfter name win pad zeroMaker stride (win-1u) (1u) f id id
     let f = volFctToLstFctReleaseAfter (fun image3D -> ImageFunctions.convolve outputRegionMode bc image3D kernel) pad stride
     let stg = Stage.map name f id id
     (window win pad stride) --> stg --> collect ()
@@ -468,8 +472,6 @@ let private makeMorphOp (name:string) (radius:uint) (winSz: uint option) (core: 
     let pad = ksz/2u
     let win = Option.defaultValue ksz winSz |> min ksz
     let stride = win - ksz + 1u
-    //let f images = images |> stackFUnstackTrim radius (core radius)
-    //liftWindowedReleaseAfter name win pad zeroMaker stride (stride - 1u) stride f id id
 
     let f = volFctToLstFctReleaseAfter (core radius) pad stride
     let stg = Stage.map name f id id
@@ -483,8 +485,6 @@ let closing radius = makeMorphOp "binaryErode"  radius None ImageFunctions.binar
 
 /// Full stack operators
 let binaryFillHoles (winSz: uint)= 
-    //let f images = images |> stackFUnstack ImageFunctions.binaryFillHoles
-    //liftWindowedReleaseAfter "fillHoles" win 0u zeroMaker win 0u winSz f id id
     let pad, stride = 0u, winSz
     let f = volFctToLstFctReleaseAfter (ImageFunctions.binaryFillHoles) pad stride
     let stg = Stage.map "fillHoles" f id id
@@ -492,46 +492,34 @@ let binaryFillHoles (winSz: uint)=
 
 
 let connectedComponents (winSz: uint) = 
-    //let f images = images |> stackFUnstack ImageFunctions.connectedComponents
-    //liftWindowedReleaseAfter "connectedComponents" winSz 0u zeroMaker winSz 0u winSz f id id
     let pad, stride = 0u, winSz
     let f = volFctToLstFctReleaseAfter (ImageFunctions.connectedComponents) pad stride
     let stg = Stage.map "connectedComponents" f id id
     (window winSz pad stride) --> stg --> collect ()
 
 let relabelComponents a (winSz: uint) = 
-    //let f images = images |> stackFUnstack (ImageFunctions.relabelComponents a)
-    //liftWindowedReleaseAfter "relabelComponents" winSz 0u zeroMaker winSz 0u winSz f id id
     let pad, stride = 0u, winSz
     let f = volFctToLstFctReleaseAfter (ImageFunctions.relabelComponents a) pad stride
     let stg = Stage.map "relabelComponents" f id id
     (window winSz pad stride) --> stg --> collect ()
 
 let watershed a (winSz: uint) =
-    //let f images = images |> stackFUnstack (ImageFunctions.watershed a)
-    //liftWindowedReleaseAfter "watershed" winSz 0u zeroMaker winSz 0u winSz f id id
     let pad, stride = 0u, winSz
     let f = volFctToLstFctReleaseAfter (ImageFunctions.watershed a) pad stride
     let stg = Stage.map "watershed" f id id
     (window winSz pad stride) --> stg --> collect ()
 let signedDistanceMap (winSz: uint) =
-    //let f images = images |> stackFUnstack (ImageFunctions.signedDistanceMap 0uy 1uy)
-    //liftWindowedReleaseAfter "signedDistanceMap" winSz 0u zeroMaker winSz 0u winSz f id id
     let pad, stride = 0u, winSz
     let f = volFctToLstFctReleaseAfter (ImageFunctions.signedDistanceMap 0uy 1uy) pad stride
     let stg = Stage.map "signedDistanceMap" f id id
     (window winSz pad stride) --> stg --> collect ()
 let otsuThreshold (winSz: uint) =
-    //let f images = images |> stackFUnstack (ImageFunctions.otsuThreshold)
-    //liftWindowedReleaseAfter "otsuThreshold" winSz 0u zeroMaker winSz 0u winSz f id id
     let pad, stride = 0u, winSz
     let f = volFctToLstFctReleaseAfter (ImageFunctions.otsuThreshold) pad stride
     let stg = Stage.map "otsuThreshold" f id id
     (window winSz pad stride) --> stg --> collect ()
 
 let momentsThreshold (winSz: uint) =
-    //let f images = images |> stackFUnstack (ImageFunctions.momentsThreshold)
-    //liftWindowedReleaseAfter "momentsThreshold" winSz 0u zeroMaker winSz 0u winSz f id id
     let pad, stride = 0u, winSz
     let f = volFctToLstFctReleaseAfter (ImageFunctions.momentsThreshold) pad stride
     let stg = Stage.map "momentsThreshold" f id id

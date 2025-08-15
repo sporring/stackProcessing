@@ -13,6 +13,8 @@ type ProfileTransition = SlimPipeline.ProfileTransition
 
 type Image<'S when 'S: equality> = Image.Image<'S>
 
+val getMem: unit -> unit
+
 val incIfImage: x: 'a -> 'a
 
 val incRef: unit -> SlimPipeline.Stage<'a,'a>
@@ -25,10 +27,6 @@ val releaseAfter: f: (Image<'S> -> 'T) -> I: Image<'S> -> 'T when 'S: equality
 
 val releaseAfter2:
   f: (Image<'S> -> Image<'S> -> 'T) -> I: Image<'S> -> J: Image<'S> -> 'T
-    when 'S: equality
-
-val releaseNAfter:
-  n: int -> f: (Image<'S> list -> 'T list) -> sLst: Image<'S> list -> 'T list
     when 'S: equality
 
 val (>=>) :
@@ -48,8 +46,6 @@ val zip:
   (SlimPipeline.Pipeline<'a,'b> ->
      SlimPipeline.Pipeline<'a,'c> -> SlimPipeline.Pipeline<'a,('b * 'c)>)
     when 'b: equality and 'c: equality
-
-val inline isExactlyImage<'T> : unit -> bool
 
 val promoteStreamingToSliding:
   name: string ->

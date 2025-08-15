@@ -1,10 +1,5 @@
 namespace FSharp
 module AsyncSeqExtensions
-/// Windowed function with stride and optional padding.
-val windowed:
-  windowSize: uint ->
-    stride: uint ->
-    source: FSharp.Control.AsyncSeq<'T> -> FSharp.Control.AsyncSeq<'T list>
 val windowedWithPad:
   windowSize: uint ->
     stride: uint ->

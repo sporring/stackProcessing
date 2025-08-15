@@ -1,6 +1,5 @@
 namespace FSharp
 module SlimPipeline
-val getMem: unit -> unit
 /// The memory usage strategies during image processing.
 type Profile =
     | Unit
@@ -43,9 +42,6 @@ module private Pipe =
     val take: name: string -> count: uint -> Pipe<'a,'a>
     val map:
       name: string -> mapper: ('U -> 'V) -> pipe: Pipe<'In,'U> -> Pipe<'In,'V>
-    val wrap:
-      name: string ->
-        wrapper: ('In * 'U -> 'V) -> pipe: Pipe<'In,'U> -> Pipe<'In,'V>
     type TeeMsg<'T> =
         | Left of AsyncReplyChannel<'T option>
         | Right of AsyncReplyChannel<'T option>
@@ -75,21 +71,6 @@ module private Pipe =
       name: string ->
         consume: (bool -> int -> 'T -> unit) ->
         profile: Profile -> Pipe<'T,unit>
-    /// mapWindowed keeps a running window along the slice direction of depth images
-    /// and processes them by f. The stepping size of the running window is stride.
-    /// So if depth is 3 and stride is 1 then first image 0,1,2 is sent to f, then 1, 2, 3
-    /// and so on. If depth is 3 and stride is 3, then it'll be image 0, 1, 2 followed by
-    /// 3, 4, 5. It is also possible to use this for sampling, e.g., setting depth to 1
-    /// and stride to 2 sends every second image to f.  
-    val mapWindowed:
-      name: string ->
-        winSz: uint ->
-        pad: uint ->
-        zeroMaker: (int -> 'S -> 'S) ->
-        stride: uint ->
-        emitStart: uint ->
-        emitCount: uint -> f: ('S list -> 'T list) -> Pipe<'S,'T>
-        when 'S: equality
     val window:
       name: string ->
         winSz: uint ->
@@ -157,12 +138,6 @@ module Stage =
         f: ('S -> 'T) ->
         memoryNeed: MemoryNeed ->
         nElemsTransformation: NElemsTransformation -> Stage<'S,'T>
-    val wrap:
-      name: string ->
-        f: ('In * 'U -> 'V) ->
-        stage: Stage<'In,'U> ->
-        memoryNeed: MemoryNeed ->
-        nElemsTransformation: NElemsTransformation -> Stage<'In,'V>
     val map1:
       name: string ->
         f: ('U -> 'V) ->
@@ -215,18 +190,6 @@ module Stage =
         f: ('S -> 'T) ->
         memoryNeed: MemoryNeed ->
         nElemsTransformation: NElemsTransformation -> Stage<'S,'T>
-    val liftWindowed:
-      name: string ->
-        window: uint ->
-        pad: uint ->
-        zeroMaker: (int -> 'S -> 'S) ->
-        stride: uint ->
-        emitStart: uint ->
-        emitCount: uint ->
-        f: ('S list -> 'T list) ->
-        memoryNeed: MemoryNeed ->
-        nElemsTransformation: NElemsTransformation -> Stage<'S,'T>
-        when 'S: equality and 'T: equality
     val tapItOp: name: string -> toString: ('T -> string) -> Stage<'T,'T>
     val tapIt: toString: ('T -> string) -> Stage<'T,'T>
     val tap: name: string -> Stage<'T,'T>

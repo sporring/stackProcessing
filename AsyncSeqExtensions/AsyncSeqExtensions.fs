@@ -2,6 +2,7 @@
 
 open FSharp.Control
 
+(*
 /// Windowed function with stride and optional padding.
 let windowed
     (windowSize: uint)
@@ -44,7 +45,7 @@ let windowed
 
         yield! yieldWindows ()
     }
-
+*)
 let windowedWithPad
     (windowSize: uint)
     (stride: uint)
