@@ -271,6 +271,18 @@ let convolve (outputRegionMode: OutputRegionMode option) (boundaryCondition: Bou
 
 let conv (img: Image<'T>) (ker: Image<'T>) : Image<'T> = convolve None None img ker
 
+/// Gaussian kernel convolution
+let gauss (dim: uint) (sigma: float) (kernelSize: uint option) : Image<'T> =
+    let f = new itk.simple.GaussianImageSource()
+    let sz = Option.defaultValue (1u + 2u*2u * uint sigma) kernelSize
+    f.SetSize(List.replicate (int dim) sz |> toVectorUInt32)
+    f.SetSigma(sigma)
+    // Image coords: [0 1] (mean = 0.5), [0 1 2] (mean = 1) => mean = (sz-1)/2
+    f.SetMean(List.replicate (int dim) ((float (sz-1u)) / 2.0) |> toVectorFloat64)
+    f.SetScale(1.0)
+    f.NormalizedOn()
+    Image<'T>.ofSimpleITK(f.Execute(),"gauss")
+
 let private stensil order = 
     // https://en.wikipedia.org/wiki/Finite_difference_coefficient 
     if   order = 1u then [1.0/2.0; 0.0; -1.0/2.0]
@@ -289,9 +301,9 @@ let finiteDiffFilter2D (direction: uint) (order: uint) : Image<float> =
             Array2D.init n 1 (fun i _ -> lst[i])
         else
             Array2D.init 1 n (fun _ i -> lst[i])
-    arr |> Image<float>.ofArray2D
+    Image<float>.ofArray2D(arr, "stensil2D") 
 
-let finiteDiffFilter3D (direction: uint) (order: uint) : Image<float> =
+let finiteDiffFilter3D (sigma:float) (direction: uint) (order: uint) : Image<float> =
     let lst = stensil order
     let n = lst.Length
     let arr = 
@@ -301,7 +313,13 @@ let finiteDiffFilter3D (direction: uint) (order: uint) : Image<float> =
             Array3D.init 1 n 1 (fun _ i _ -> lst[i])
         else 
             Array3D.init 1 1 n (fun _ _ i -> lst[i])
-    arr |> Image<float>.ofArray3D
+    let stensil = Image<float>.ofArray3D(arr, "stensil3D") 
+    let sz = 1u + 2u*2u * uint sigma
+    let gauss = gauss 3u sigma (Some sz)
+    let kernel = convolve None None gauss stensil
+    stensil.decRefCount()
+    gauss.decRefCount()
+    kernel
 
 let finiteDiffFilter4D (direction: uint) (order: uint) : Image<float> =
     let lst = stensil order
@@ -315,19 +333,7 @@ let finiteDiffFilter4D (direction: uint) (order: uint) : Image<float> =
             Array4D.init 1 1 n 1 (fun _ _ i _ -> lst[i])
         else 
             Array4D.init 1 1 1 n (fun _ _ _ i -> lst[i])
-    arr |> Image<float>.ofArray4D
-
-/// Gaussian kernel convolution
-let gauss (dim: uint) (sigma: float) (kernelSize: uint option) : Image<'T> =
-    let f = new itk.simple.GaussianImageSource()
-    let sz = Option.defaultValue (1u + 2u*2u * uint sigma) kernelSize
-    f.SetSize(List.replicate (int dim) sz |> toVectorUInt32)
-    f.SetSigma(sigma)
-    // Image coords: [0 1] (mean = 0.5), [0 1 2] (mean = 1) => mean = (sz-1)/2
-    f.SetMean(List.replicate (int dim) ((float (sz-1u)) / 2.0) |> toVectorFloat64)
-    f.SetScale(1.0)
-    f.NormalizedOn()
-    Image<'T>.ofSimpleITK(f.Execute(),"gauss")
+    Image<float>.ofArray4D(arr, "stensil4D")
 
 let discreteGaussian (dim: uint) (sigma: float) (kernelSize: uint option) (outputRegionMode: OutputRegionMode option) (boundaryCondition: BoundaryCondition option) : Image<'T> -> Image<'T> =
     fun (input: Image<'T>) -> 

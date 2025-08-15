@@ -4,13 +4,10 @@ open StackProcessing
 
 [<EntryPoint>]
 let main _ =
-    let width, height, depth = 1024u, 1024u, 1024u
     let availableMemory = 2UL * 1024UL * 1024UL *1024UL // 1MB for example
 
     debug availableMemory
-    |> zero<uint8> width height depth
-    >=> addNormalNoise 128.0 50.0
-    >=> write "image" ".tiff"
+    |> empty
     |> sink
 
     0

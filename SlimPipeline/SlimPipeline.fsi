@@ -31,6 +31,7 @@ module private Pipe =
     val runWith: debug: bool -> input: 'S -> pipe: Pipe<'S,'T> -> Async<unit>
     val run: debug: bool -> pipe: Pipe<unit,unit> -> unit
     val lift: name: string -> profile: Profile -> f: ('S -> 'T) -> Pipe<'S,'T>
+    val empty: name: string -> Pipe<unit,unit>
     val init:
       name: string ->
         depth: uint -> mapper: (int -> 'T) -> profile: Profile -> Pipe<unit,'T>
@@ -45,7 +46,6 @@ module private Pipe =
     val wrap:
       name: string ->
         wrapper: ('In * 'U -> 'V) -> pipe: Pipe<'In,'U> -> Pipe<'In,'V>
-    val tryDispose: debug: bool -> value: obj -> unit
     type TeeMsg<'T> =
         | Left of AsyncReplyChannel<'T option>
         | Right of AsyncReplyChannel<'T option>
@@ -132,6 +132,7 @@ module Stage =
         transition: ProfileTransition ->
         memoryNeed: MemoryNeed ->
         nElemsTransformation: NElemsTransformation -> Stage<'S,'T>
+    val empty: name: string -> Stage<unit,unit>
     val init<'S,'T> :
       name: string ->
         depth: uint ->
@@ -139,7 +140,7 @@ module Stage =
         transition: ProfileTransition ->
         memoryNeed: MemoryNeed ->
         nElemsTransformation: NElemsTransformation -> Stage<unit,'T>
-    val idOp: unit -> Stage<'T,'T>
+    val idOp: name: string -> Stage<'T,'T>
     val toPipe: stage: Stage<'a,'b> -> Pipe<'a,'b>
     val fromPipe:
       name: string ->

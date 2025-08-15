@@ -104,7 +104,7 @@ val ignoreSingles: unit -> Stage<Image<'a>,unit> when 'a: equality
 
 val ignorePairs: unit -> Stage<('a * unit),unit>
 
-val idOp<'T> : (unit -> SlimPipeline.Stage<'T,'T>)
+val idOp<'T> : (string -> SlimPipeline.Stage<'T,'T>)
 
 val liftUnary:
   name: string ->
@@ -278,7 +278,7 @@ val stackFUnstackTrim:
     images: Image<'T> list -> Image.Image<'S> list
     when 'T: equality and 'S: equality
 
-val volFctToLstFct:
+val volFctToLstFctReleaseAfter:
   f: (Image<'S> -> Image<'T>) ->
     pad: uint ->
     stride: uint -> images: Image.Image<'S> list -> Image.Image<'T> list
@@ -315,7 +315,8 @@ val convolve:
 val conv: kernel: Image<'a> -> Stage<Image<'a>,Image<'a>> when 'a: equality
 
 val finiteDiff:
-  direction: uint -> order: uint -> Stage<Image<float>,Image<float>>
+  sigma: float ->
+    direction: uint -> order: uint -> Stage<Image<float>,Image<float>>
 
 val private makeMorphOp:
   name: string ->
@@ -415,4 +416,7 @@ val readRandom:
     suffix: string ->
     pl: SlimPipeline.Pipeline<unit,unit> ->
     SlimPipeline.Pipeline<unit,Image<'T>> when 'T: equality
+
+val empty:
+  pl: SlimPipeline.Pipeline<unit,unit> -> SlimPipeline.Pipeline<unit,unit>
 

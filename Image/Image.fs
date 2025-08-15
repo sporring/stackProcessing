@@ -369,21 +369,24 @@ type Image<'T when 'T : equality>(sz: uint list, ?optionalNumberComponents: uint
     member this.toFloat32 () : Image<float32> = Image<float32>.ofSimpleITK img
     member this.toFloat ()   : Image<float>   = Image<float>.ofSimpleITK img
 
-    static member ofArray2D (arr: 'T[,]) : Image<'T> =
+    static member ofArray2D (arr: 'T[,], ?name:string) : Image<'T> =
+        let _name = defaultArg name ""
         let sz = [arr.GetLength(0); arr.GetLength(1)] |> List.map uint
-        let img = new Image<'T>(sz,1u)
+        let img = new Image<'T>(sz,1u,_name)
         img |> Image.iteri (fun idxLst _ -> img.Set idxLst arr[int idxLst[0],int idxLst[1]])
         img
 
-    static member ofArray3D (arr: 'T[,,]) : Image<'T> =
+    static member ofArray3D (arr: 'T[,,], ?name:string) : Image<'T> =
+        let _name = defaultArg name ""
         let sz = [arr.GetLength(0); arr.GetLength(1); arr.GetLength(2)] |> List.map uint
-        let img = new Image<'T>(sz,1u)
+        let img = new Image<'T>(sz,1u,_name)
         img |> Image.iteri (fun idxLst _ -> img.Set idxLst arr[int idxLst[0],int idxLst[1],int idxLst[2]])
         img
 
-    static member ofArray4D (arr: 'T[,,,]) : Image<'T> =
+    static member ofArray4D (arr: 'T[,,,], ?name:string) : Image<'T> =
+        let _name = defaultArg name ""
         let sz = [arr.GetLength(0); arr.GetLength(1); arr.GetLength(2); arr.GetLength(3)] |> List.map uint
-        let img = new Image<'T>(sz,1u)
+        let img = new Image<'T>(sz,1u,_name)
         img |> Image.iteri (fun idxLst _ -> img.Set idxLst arr[int idxLst[0],int idxLst[1],int idxLst[2],int idxLst[3]])
         img
 

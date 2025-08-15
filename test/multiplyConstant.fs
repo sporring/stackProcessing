@@ -5,8 +5,8 @@ open StackProcessing
 [<EntryPoint>]
 let main _ =
     let trg = "result"
-    let w, h, d = 100u, 120u, 20u
-    let mem = 1024UL * 1024UL
+    let w, h, d = 1024u, 1024u, 1024u
+    let mem = 2UL * 1024UL * 1024UL *1024UL
 
     let maskMaker = 
         debug mem

@@ -95,9 +95,9 @@ type Image<'T when 'T: equality> =
       mapi: f: (uint list -> 'T -> 'T) -> im1: Image<'T> -> Image<'T>
     static member memoryEstimateSItk: sitk: itk.simple.Image -> uint32
     static member neq: f1: Image<'S> * f2: Image<'S> -> bool when 'S: equality
-    static member ofArray2D: arr: 'T array2d -> Image<'T>
-    static member ofArray3D: arr: 'T array3d -> Image<'T>
-    static member ofArray4D: arr: 'T array4d -> Image<'T>
+    static member ofArray2D: arr: 'T array2d * ?name: string -> Image<'T>
+    static member ofArray3D: arr: 'T array3d * ?name: string -> Image<'T>
+    static member ofArray4D: arr: 'T array4d * ?name: string -> Image<'T>
     static member
       ofFile: filename: string * ?optionalName: string * ?optionalIndex: int ->
                 Image<'T>
@@ -259,14 +259,15 @@ val convolve:
 val conv:
   img: Image.Image<'T> -> ker: Image.Image<'T> -> Image.Image<'T>
     when 'T: equality
-val private stensil: order: uint32 -> float list
-val finiteDiffFilter2D: direction: uint -> order: uint -> Image.Image<float>
-val finiteDiffFilter3D: direction: uint -> order: uint -> Image.Image<float>
-val finiteDiffFilter4D: direction: uint -> order: uint -> Image.Image<float>
 /// Gaussian kernel convolution
 val gauss:
   dim: uint -> sigma: float -> kernelSize: uint option -> Image.Image<'T>
     when 'T: equality
+val private stensil: order: uint32 -> float list
+val finiteDiffFilter2D: direction: uint -> order: uint -> Image.Image<float>
+val finiteDiffFilter3D:
+  sigma: float -> direction: uint -> order: uint -> Image.Image<float>
+val finiteDiffFilter4D: direction: uint -> order: uint -> Image.Image<float>
 val discreteGaussian:
   dim: uint ->
     sigma: float ->

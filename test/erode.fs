@@ -5,8 +5,8 @@ open StackProcessing
 [<EntryPoint>]
 let main _ =
     printfn "Setting up pipeline"
-    let width, height, depth = 64u, 64u, 20u
-    let availableMemory = 1024UL * 1024UL // 1MB for example
+    let width, height, depth = 1024u, 1024u, 1024u
+    let availableMemory = 2UL * 1024UL * 1024UL * 1024UL // 1MB for example
     let radius = 1u
 
     debug availableMemory

@@ -5,8 +5,8 @@ open StackProcessing
 [<EntryPoint>]
 let main _ =
     let trg = "result"
-    let width, height, depth = 64u, 64u, 8u
-    let availableMemory = 1024UL * 1024UL // 1MB for example
+    let width, height, depth = 1024u, 1024u, 1024u
+    let availableMemory = 2UL * 1024UL * 1024UL *1024UL // 1MB for example
 
     debug availableMemory
     |> zero<int8> width height depth

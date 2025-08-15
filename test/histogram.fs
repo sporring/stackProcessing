@@ -5,7 +5,7 @@ open Plotly.NET
 
 [<EntryPoint>]
 let main _ =
-    let mem = 1024UL * 1024UL // 1MB for example
+    let mem = 2UL * 1024UL * 1024UL *1024UL // 1MB for example
 
     // Plotly.Net plot function
     let plt (x:float list) (y:float list) = 

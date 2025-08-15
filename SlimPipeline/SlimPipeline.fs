@@ -66,8 +66,12 @@ module private Pipe =
         let apply debug  input = input |> AsyncSeq.map f
         create name apply profile
 
+    let empty (name: string) : Pipe<unit,unit> =
+        let apply debug input = AsyncSeq.empty
+        create name apply Streaming
+
     let init<'T> (name: string) (depth: uint) (mapper: int -> 'T) (profile: Profile) : Pipe<unit,'T> =
-        let apply debug _ = AsyncSeq.init (int64 depth) (fun (i:int64) -> mapper (int i))
+        let apply debug input = AsyncSeq.init (int64 depth) (fun (i:int64) -> mapper (int i))
         create name apply profile
 
     let liftConsume (name: string) (profile: Profile) (release: 'S->unit) (f: 'S -> 'T) : Pipe<'S,'T> =
@@ -92,25 +96,11 @@ module private Pipe =
 
     let wrap (name: string) (wrapper: ('In * 'U) -> 'V) (pipe: Pipe<'In, 'U>) : Pipe<'In, 'V> =
         let apply debug input = 
-            printfn $"[Pipe.wrap] apply"
             let output = input |> pipe.Apply debug
-            printfn $"[Pipe.wrap] zip"
             let zipped = AsyncSeq.zip input output
-            printfn $"[Pipe.wrap] map"
             let mapped = AsyncSeq.map wrapper zipped
-            printfn $"[Pipe.wrap] done"
             mapped
-        printfn $"[Pipe.wrap] create"
         create name apply pipe.Profile
-
-    let tryDispose (debug: bool) (value: obj) =
-        match value with
-        | :? System.IDisposable as d ->
-            if debug then printfn "[dispose] Disposing %s" (d.GetType().Name)
-            d.Dispose()
-        | _ -> 
-            if debug then printfn "[dispose] Couldn't dispose %s" (value.GetType().Name)
-            ()
 
     type TeeMsg<'T> =
         | Left of AsyncReplyChannel<'T option>
@@ -344,16 +334,19 @@ module Stage =
     let create<'S,'T> (name: string) (pipe: Pipe<'S,'T>) (transition: ProfileTransition) (memoryNeed: MemoryNeed) (nElemsTransformation: NElemsTransformation) =
         { Name = name; Pipe = pipe; Transition = transition; MemoryNeed = memoryNeed; NElemsTransformation = nElemsTransformation}
 
+    let empty (name: string) =
+        let pipe = Pipe.empty name
+        let transition = ProfileTransition.create Streaming Streaming
+        create name pipe transition id  id
+
     let init<'S,'T> (name: string) (depth: uint) (mapper: int -> 'T) (transition: ProfileTransition) (memoryNeed: MemoryNeed) (nElemsTransformation: NElemsTransformation) =
         let pipe = Pipe.init name depth mapper transition.From
         create name pipe transition memoryNeed nElemsTransformation
 
-
-    let idOp<'T> () : Stage<'T, 'T> = // I don't think this is used
+    let idOp<'T> (name: string) : Stage<'T, 'T> = // I don't think this is used
         let transition = ProfileTransition.create Streaming Streaming
-        let pipe = Pipe.lift "id" Streaming (fun x -> x)
+        let pipe = Pipe.id name
         create "id" pipe transition id id
-
 
     let toPipe (stage : Stage<_,_>) = stage.Pipe
 
@@ -502,8 +495,10 @@ module Pipeline =
         create None availableMemory 0UL 0UL false
 
     let debug (availableMemory: uint64) : Pipeline<unit, unit> =
-        printfn $"Preparing pipeline - {availableMemory} B available"
-        create None availableMemory 0UL 0UL true
+        printfn $"[debug] Preparing pipeline - {availableMemory} B available"
+        let result = create None availableMemory 0UL 0UL true
+        printfn $"[debug] Done"
+        result
 
     //////////////////////////////////////////////////////////////
     /// Composition operators
@@ -541,7 +536,7 @@ module Pipeline =
 
                 // Length of each Pipeline must be the same
                 if pl1.length <> pl2.length then
-                    failwith $"[{name}] pipelines to be ziped must be of equal lengths"
+                    failwith $"[{name}] pipelines to be ziped must be of equal lengths {pl1.length} <> {pl2.length}"
 
                 // Check memory constraints for each individual stream
                 let memNeeded1 = stage1.MemoryNeed  pl1.nElems
@@ -605,10 +600,9 @@ module Pipeline =
     ///////////////////////////////////////////
     /// sink type operators
     let sink (pl: Pipeline<unit, unit>) : unit =
-        if pl.debug then printfn "[sink]"
-        if pl.debug then printfn "Pipeline built\nRunning"
+        if pl.debug then printfn "[sink] Running"
         Option.map (fun stage -> stage |> Stage.toPipe |> Pipe.run pl.debug) pl.stage |> ignore
-        if pl.debug then printfn "Done"
+        if pl.debug then printfn "[sink] Done"
 
     let sinkList (pipelines: Pipeline<unit, unit> list) : unit = // shape of unit?
         pipelines |> List.iter sink

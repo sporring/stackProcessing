@@ -4,7 +4,7 @@ open StackProcessing
 
 [<EntryPoint>]
 let main _ =
-    let availableMemory = 1024UL * 1024UL // 1MB for example
+    let availableMemory = 2UL * 1024UL * 1024UL *1024UL // 1MB for example
 
     let imageMaker =
         debug (availableMemory/2UL)
@@ -14,8 +14,9 @@ let main _ =
         |> read<uint8> "mask" ".tiff"
 
     (imageMaker, maskMaker) ||> zip
+    >=> tap "[tab] For mul2"
     >>=> mul2
-    //>=> tap "Slice.mul"
+    >=> tap "[tab] For write"
     >=> write "result" ".tif"
     |> sink
 

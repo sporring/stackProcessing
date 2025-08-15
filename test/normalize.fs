@@ -5,7 +5,7 @@ open ImageFunctions
 
 [<EntryPoint>]
 let main _ =
-    let mem = 1024UL * 1024UL // 1MB for example
+    let mem = 2UL * 1024UL * 1024UL *1024UL // 1MB for example
 
     let readMaker =
         debug mem
