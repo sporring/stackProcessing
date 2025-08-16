@@ -5,10 +5,17 @@ open ImageFunctions
 
 [<EntryPoint>]
 let main _ =
-    let mem = 2UL * 1024UL * 1024UL *1024UL // 1MB for example
+    let availableMemory = 2UL * 1024UL * 1024UL *1024UL // 2GB for example
+
+    let src = 
+        if arg.Length > 0 && arg[0] = "debug" then
+            Image.Image<_>.setDebug true; 
+            debug availableMemory
+        else
+            source availableMemory
 
     let readMaker =
-        debug mem
+        src
         |> read<float> "image" ".tiff"
 
     let stats = 

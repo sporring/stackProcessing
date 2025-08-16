@@ -572,12 +572,14 @@ let zero<'T when 'T: equality>
         if pl.debug then printfn "[zero] Created image %A" i
         image
     let transition = ProfileTransition.create Unit Streaming
-    let shapeUpdate = id
-    let stage = Stage.init "create" depth mapper transition id id |> Some
+    let memPeak = Image<'T>.memoryEstimate width height 1u
+    let memoryNeed = fun _ -> memPeak
+    let nElemsTransformation = id
+    let stage = Stage.init "create" depth mapper transition memoryNeed nElemsTransformation |> Some
     //let flow = Flow.returnM stage
     let nElems = (uint64 width) * (uint64 height)
-    let context = id
-    Pipeline.create stage pl.memAvail nElems (uint64 depth)  pl.debug
+    let memPeak = Image<'T>.memoryEstimate width height 1u
+    Pipeline.create stage pl.memAvail memPeak nElems (uint64 depth)  pl.debug
 
 let readFilteredOp<'T when 'T: equality> (name:string) (inputDir : string) (suffix : string) (filter: string[]->string[]) (pl : Pipeline<unit, unit>) : Pipeline<unit, Image<'T>> =
     // much should be deferred to outside Core!!!
@@ -591,11 +593,14 @@ let readFilteredOp<'T when 'T: equality> (name:string) (inputDir : string) (suff
         let image = Image<'T>.ofFile (fileName, fileName, i)
         image
     let transition = ProfileTransition.create Unit Streaming
-    let stage = Stage.init $"{name}" (uint depth) mapper transition id id |> Some
+    let memPeak = Image<'T>.memoryEstimate width height 1u
+    let memoryNeed = fun _ -> memPeak
+    let nElemsTransformation = id
+    let stage = Stage.init $"{name}" (uint depth) mapper transition memoryNeed nElemsTransformation |> Some
     //let flow = Flow.returnM stage
     let memPerElem = (uint64 width)*(uint64 height)*getBytesPerComponent<'T>
     let length = (uint64 depth)
-    Pipeline.create stage pl.memAvail memPerElem length  pl.debug
+    Pipeline.create stage pl.memAvail memPeak memPerElem length  pl.debug
 
 let readFiltered<'T when 'T: equality> (inputDir : string) (suffix : string)  (filter: string[]->string[]) (pl : Pipeline<unit, unit>) : Pipeline<unit, Image<'T>> =
     readFilteredOp<'T> $"readFiltered" inputDir suffix filter pl
@@ -608,4 +613,4 @@ let readRandom<'T when 'T: equality> (count: uint) (inputDir : string) (suffix :
 
 let empty (pl : Pipeline<unit, unit>) : Pipeline<unit, unit> =
     let stage = "empty" |> Stage.empty |> Some
-    Pipeline.create stage pl.memAvail 0UL 0UL  pl.debug
+    Pipeline.create stage pl.memAvail 0UL 0UL 0UL  pl.debug

@@ -9,15 +9,22 @@ let main _ =
     let availableMemory = 2UL * 1024UL * 1024UL * 1024UL // 1MB for example
     let radius = 1u
 
-    debug availableMemory
-        |> zero<uint8> width height depth
-        >=> addNormalNoise 128.0 50.0
-        >=> threshold 128.0 infinity
-        >=> erode radius 
-        //>=> dilate radius
-        //>=> opening radius
-        //>=> closing radius
-        >=> write "result" ".tif"
-        |> sink
+    let src = 
+        if arg.Length > 0 && arg[0] = "debug" then
+            Image.Image<_>.setDebug true; 
+            debug availableMemory
+        else
+            source availableMemory
+
+    src
+    |> zero<uint8> width height depth
+    >=> addNormalNoise 128.0 50.0
+    >=> threshold 128.0 infinity
+    >=> erode radius 
+    //>=> dilate radius
+    //>=> opening radius
+    //>=> closing radius
+    >=> write "result" ".tif"
+    |> sink
 
     0

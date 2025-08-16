@@ -7,7 +7,14 @@ let main _ =
     let availableMemory = 2UL * 1024UL * 1024UL *1024UL // 1MB for example
     let sigma = 1.0
 
-    debug availableMemory
+    let src = 
+        if arg.Length > 0 && arg[0] = "debug" then
+            Image.Image<_>.setDebug true; 
+            debug availableMemory
+        else
+            source availableMemory
+
+    src
     |> read<float> "image" ".tiff"
     >=> sqrt
     >=> convGauss sigma 

@@ -3,10 +3,17 @@
 open StackProcessing
 
 [<EntryPoint>]
-let main _ =
-    let mem = 2UL * 1024UL * 1024UL *1024UL // 2GB for example
+let main arg =
+    let availableMemory = 2UL * 1024UL * 1024UL *1024UL // 2GB for example
 
-    debug mem
+    let src = 
+        if arg.Length > 0 && arg[0] = "debug" then
+            Image.Image<_>.setDebug true; 
+            debug availableMemory
+        else
+            source availableMemory
+
+    src
     |> read<uint8> "image" ".tiff"
     >=> computeStats () --> print ()
     |> sink

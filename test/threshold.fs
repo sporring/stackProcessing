@@ -6,9 +6,16 @@ open StackProcessing
 let main _ =
     let trg = "result"
     let width, height, depth = 1024u, 1024u, 1024u
-    let availableMemory = 2UL * 1024UL * 1024UL *1024UL // 1MB for example
+    let availableMemory = 2UL * 1024UL * 1024UL *1024UL // 2GB for example
 
-    debug availableMemory
+    let src = 
+        if arg.Length > 0 && arg[0] = "debug" then
+            Image.Image<_>.setDebug true; 
+            debug availableMemory
+        else
+            source availableMemory
+
+    src
     |> zero<int8> width height depth
     >=> cast<int8,float>
     >=> addNormalNoise 128.0 50.0

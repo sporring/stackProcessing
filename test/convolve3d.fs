@@ -7,7 +7,14 @@ let main _ =
     let availableMemory = 2UL * 1024UL * 1024UL *1024UL // 1MB for example
     let sigma = 1.0
 
-    debug availableMemory
+    let src = 
+        if arg.Length > 0 && arg[0] = "debug" then
+            Image.Image<_>.setDebug true; 
+            debug availableMemory
+        else
+            source availableMemory
+
+    src
     |> read<float> "image" ".tiff"
     // sigma = 1 => pad=2, depth = 22 => integer solution for number of strides when:
     // windowSize = 1, 6, 15, or 26, => n = 21, 10, 1, or 0

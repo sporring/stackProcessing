@@ -86,11 +86,11 @@ val sink: pl: SlimPipeline.Pipeline<unit,unit> -> unit
 
 val sinkList: plLst: SlimPipeline.Pipeline<unit,unit> list -> unit
 
-val drainSingle: pl: SlimPipeline.Pipeline<'a,'b> -> 'b
+val drainSingle: pl: SlimPipeline.Pipeline<unit,'a> -> 'a
 
-val drainList: pl: SlimPipeline.Pipeline<'a,'b> -> 'b list
+val drainList: pl: SlimPipeline.Pipeline<unit,'a> -> 'a list
 
-val drainLast: pl: SlimPipeline.Pipeline<'a,'b> -> 'b
+val drainLast: pl: SlimPipeline.Pipeline<unit,'a> -> 'a
 
 val tap: (string -> SlimPipeline.Stage<'a,'a>)
 

@@ -4,17 +4,19 @@ open StackProcessing
 
 [<EntryPoint>]
 let main _ =
-    let mem = 2UL * 1024UL * 1024UL *1024UL // 1MB for example
+    let availableMemory = 2UL * 1024UL * 1024UL *1024UL // 2GB for example
+
+    let src = 
+        if arg.Length > 0 && arg[0] = "debug" then
+            Image.Image<_>.setDebug true; 
+            debug availableMemory
+        else
+            source availableMemory
 
     let readMaker = 
-        debug mem
+        src
         |> read<float> "image" ".tiff"
-//        >=> tapIt (fun s -> $"[readAs] {s.Index} -> Image {s.Image}")
-
-    let zeroMaker i = id
-    let winSz,pad,stride = 5u,2u,1u
-    let delay (stg:Stage<'S,'T>): Stage<'S,'T> = 
-        stg |> promoteStreamingToSliding "testing" winSz pad stride 0u 1u
+        // >=> tapIt (fun s -> $"[readAs] {s.Index} -> Image {s.Image}")
 
     readMaker 
     >=> tap "For >=>>"
@@ -25,7 +27,6 @@ let main _ =
     >=> cast<float,int8>
     >=> tap "For write"
     >=> write "result" ".tiff"
-    //>>=> fun a b -> decIfImage a; decIfImage b; () // consume but otherwise do nothing
     //>>=> ignorePairs ()
     |> sink
 

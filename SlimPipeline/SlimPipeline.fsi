@@ -207,6 +207,7 @@ type Pipeline<'S,'T> =
       nElems: uint64
       length: uint64
       memAvail: uint64
+      memPeak: uint64
       debug: bool
     }
 module Pipeline =
@@ -258,7 +259,7 @@ module Pipeline =
     val internal runToScalar:
       name: string ->
         reducer: (FSharp.Control.AsyncSeq<'T> -> Async<'R>) ->
-        pl: Pipeline<'In,'T> -> 'R
-    val drainSingle: name: string -> pl: Pipeline<'S,'T> -> 'T
-    val drainList: name: string -> pl: Pipeline<'S,'T> -> 'T list
-    val drainLast: name: string -> pl: Pipeline<'S,'T> -> 'T
+        pl: Pipeline<unit,'T> -> 'R
+    val drainSingle: name: string -> pl: Pipeline<unit,'T> -> 'T
+    val drainList: name: string -> pl: Pipeline<unit,'T> -> 'T list
+    val drainLast: name: string -> pl: Pipeline<unit,'T> -> 'T

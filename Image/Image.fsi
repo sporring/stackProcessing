@@ -45,6 +45,7 @@ val syncRoot: obj
 val mutable totalImages: int
 val mutable memUsed: uint32
 val printDebugMessage: str: string -> unit
+val mutable debug: bool
 [<StructuredFormatDisplay ("{Display}")>]
 type Image<'T when 'T: equality> =
     interface System.IComparable
@@ -106,6 +107,7 @@ type Image<'T when 'T: equality> =
     static member
       ofSimpleITK: itkImg: itk.simple.Image * ?optionalName: string *
                    ?optionalIndex: int -> Image<'T>
+    static member setDebug: d: bool -> unit
     static member unzip: im: Image<'T list> -> Image<'T> list
     static member zip: imLst: Image<'T> list -> Image<'T list>
     member CompareTo: other: Image<'T> -> int

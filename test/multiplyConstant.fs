@@ -3,19 +3,25 @@
 open StackProcessing
 
 [<EntryPoint>]
-let main _ =
-    let trg = "result"
+let main arg =
     let w, h, d = 1024u, 1024u, 1024u
-    let mem = 2UL * 1024UL * 1024UL *1024UL
+    let availableMemory = 2UL * 1024UL * 1024UL *1024UL // 2GB for example
+
+    let src = 
+        if arg.Length > 0 && arg[0] = "debug" then
+            Image.Image<_>.setDebug true; 
+            debug availableMemory
+        else
+            source availableMemory
 
     let maskMaker = 
-        debug mem
+        src
         |>  zero<uint8> w h d
         >=> imageAddScalar 1uy
         >=> imageMulScalar 2uy
 
     let readMaker =
-        debug mem
+        src
         |> zero<uint8> w h d
 
     (readMaker, maskMaker) ||> zip 

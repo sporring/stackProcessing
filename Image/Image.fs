@@ -250,6 +250,7 @@ let mutable memUsed = 0u
 let printDebugMessage str =
     lock syncRoot (fun () ->
        printfn "%6d KB %s %s" (memUsed/1024u) (String.replicate totalImages "*") str)
+let mutable debug = false
 
 [<StructuredFormatDisplay("{Display}")>] // Prevent fsi printing information about its members such as img
 type Image<'T when 'T : equality>(sz: uint list, ?optionalNumberComponents: uint, ?optionalName: string, ?optionalIndex: int, ?optionalQuiet: bool) =
@@ -262,7 +263,6 @@ type Image<'T when 'T : equality>(sz: uint list, ?optionalNumberComponents: uint
     let idx = defaultArg optionalIndex 0 
     let quiet = defaultArg optionalQuiet false
 
-    static let debug = true
     let itkId = fromType<'T>
     let isListType = typeof<'T>.IsGenericType && typeof<'T>.GetGenericTypeDefinition() = typedefof<list<_>>
     let mutable img = 
@@ -278,6 +278,7 @@ type Image<'T when 'T : equality>(sz: uint list, ?optionalNumberComponents: uint
     do if debug && not quiet then printDebugMessage $"Created {name}"
     let now = System.DateTime.UtcNow.ToString("HH:mm:ss.ffffff'Z'")
 
+    static member setDebug d = printfn $"Setting debug mod to {d}"; debug <- d
     member this.Image = img
     member this.Name = name
     member val index = idx with get, set
@@ -308,8 +309,11 @@ type Image<'T when 'T : equality>(sz: uint list, ?optionalNumberComponents: uint
         let noComponent = sitk.GetNumberOfComponentsPerPixel()
         let bytesPerComponent = getBytesPerSItkComponent (sitk.GetPixelID())
         let size = sitk.GetSize() |> fromVectorUInt32
-        let res = bytesPerComponent * (size |> List.reduce ( * ));
-        res
+        bytesPerComponent * (size |> List.reduce ( * ));
+
+    static member memoryEstimate (width: uint) (height: uint) (noComponent: uint) =
+        let bytesPerComponent = getBytesPerSItkComponent (fromType<'T>)
+        uint64 (bytesPerComponent * width * height);
 
     member this.GetSize () = img.GetSize() |> fromVectorUInt32
     member this.GetDepth() = max 1u (img.GetDepth()) // Non-vector images returns 0
@@ -334,13 +338,6 @@ type Image<'T when 'T : equality>(sz: uint list, ?optionalNumberComponents: uint
             match obj with
             | :? Image<'T> as other -> this.CompareTo(other)
             | _ -> invalidArg "obj" "Expected Image<'T>"
-
-    member this.memoryEstimate () = 
-        let t = typeof<'T>
-        let bytesPerComponent = getBytesPerComponent t
-        let size = this.Image.GetSize() |> fromVectorUInt32
-        let res = bytesPerComponent * numberComp * (size |> List.reduce ( * ));
-        res
 
     static member ofSimpleITK (itkImg: itk.simple.Image, ?optionalName: string, ?optionalIndex: int) : Image<'T> =
         let name = defaultArg optionalName ""
