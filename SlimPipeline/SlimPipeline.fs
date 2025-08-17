@@ -44,7 +44,8 @@ module SingleOrPair =
 ////////////////////////////////////////////////////////////
 /// The memory usage strategies during image processing.
 type Profile =
-    | Unit // Slice by slice independently
+    | Unit // empty
+    | Constant // Slice by slice independently
     | Streaming // Slice by slice independently
     | Sliding of uint * uint * uint * uint * uint  // (window, stride, pad, emitStart, emitCount)
     // | Full // Full = Sliding depth 1 0 depth
@@ -53,6 +54,7 @@ module Profile =
     let estimateUsage (profile: Profile) (memPerElement: uint64) : uint64 =
         match profile with
             | Unit -> 0uL
+            | Constant -> memPerElement
             | Streaming -> memPerElement
             | Sliding (windowSize, _, _, _, _) -> memPerElement * uint64 windowSize
 
@@ -66,7 +68,10 @@ module Profile =
             | _, Sliding (sz,str,pad,emitS,emitN) -> Sliding (sz,str,pad,emitS,emitN)
             | Streaming, _
             | _, Streaming -> Streaming
-            | Unit, Unit -> Unit
+            | Constant, _
+            | _, Constant -> Constant
+            | Unit, _
+            | _, Unit -> Unit
 
         result
 
@@ -442,12 +447,12 @@ module Stage =
         createWrapped name pipe transition memoryNeed nElemsTransformation
 
     let reduce (name: string) (reducer: bool -> AsyncSeq<'In> -> Async<'Out>) (profile: Profile) (memoryNeed: MemoryNeed) (nElemsTransformation: NElemsTransformation): Stage<'In, 'Out> =
-        let transition = ProfileTransition.create Streaming Unit
+        let transition = ProfileTransition.create Streaming Constant
         let pipe = Pipe.reduce name reducer profile
         create name pipe transition memoryNeed nElemsTransformation // Check !!!
 
     let fold<'S,'T> (name: string) (folder: 'T -> 'S -> 'T) (initial: 'T) (memoryNeed: MemoryNeed) (nElemsTransformation: NElemsTransformation): Stage<'S, 'T> =
-        let transition = ProfileTransition.create Streaming Unit
+        let transition = ProfileTransition.create Streaming Constant
         let pipe : Pipe<'S,'T> = Pipe.fold name folder initial Streaming
         create name pipe transition memoryNeed nElemsTransformation // Check !!!
 
@@ -510,7 +515,7 @@ module Stage =
 
     let consumeWith (name: string) (consume: bool -> int -> 'T -> unit) (memoryNeed: MemoryNeed) : Stage<'T, unit> = 
         let pipe = Pipe.consumeWith name consume Streaming
-        let transition = ProfileTransition.create Streaming Unit
+        let transition = ProfileTransition.create Streaming Constant
         create name pipe transition memoryNeed (fun _ -> 0UL) // Check !!!!
 
     let cast<'S,'T when 'S: equality and 'T: equality> name f (memoryNeed: MemoryNeed): Stage<'S,'T> = // cast cannot change
