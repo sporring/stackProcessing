@@ -6,7 +6,7 @@ open ImageFunctions
 open Plotly.NET
 
 [<EntryPoint>]
-let main _ =
+let main arg =
     let availableMemory = 2UL * 1024UL * 1024UL *1024UL // 2GB for example
 
     let src = 

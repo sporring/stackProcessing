@@ -3,6 +3,44 @@ module SlimPipeline
 open FSharp.Control
 open AsyncSeqExtensions
 
+type SingleOrPair = Single of uint64 | Pair of uint64*uint64
+
+module SingleOrPair =
+    let isSingle v = 
+        match v with Single _ -> true | _ -> false
+
+    let map f v =
+        match v with
+            | Single elm -> Single (f elm)
+            | Pair (left,right) -> Pair (f left, f right)
+
+    let mapPair (f,g) v =
+        match v with
+            | Single elm -> Pair (f elm, g elm)
+            | Pair (left,right) -> Pair (f left, g right)
+
+    let fst v = 
+        match v with
+            | Single elm -> elm
+            | Pair (left,_) -> left
+
+    let snd v = 
+        match v with
+            | Single elm -> printfn "[SingleOrPair] internal warning: snd of Single"; elm
+            | Pair (_,right) -> right
+
+    let sum v =
+        match v with
+            | Single elm -> elm
+            | Pair (left,right) -> left+right
+
+    let add v w =
+        match v,w with
+            | Single elm1, Single elm2 -> Single (elm1+elm2)
+            | Single elm, Pair (left,right) 
+            | Pair (left,right), Single elm -> Pair (elm+left,elm+right)
+            | Pair (left1,right1), Pair (left2,right2) -> Pair (left1+left2,right1+right2)
+
 ////////////////////////////////////////////////////////////
 /// The memory usage strategies during image processing.
 type Profile =
@@ -311,7 +349,8 @@ module ProfileTransition =
             To   = toProfile
         }
 
-type MemoryNeed = uint64 -> uint64
+type MemoryNeed = uint64->uint64
+type MemoryNeedWrapped = SingleOrPair -> SingleOrPair
 type NElemsTransformation = uint64 -> uint64
 
 /// Stage describes *what* should be done:
@@ -323,18 +362,24 @@ type Stage<'S,'T> =
     { Name       : string
       Pipe       : Pipe<'S,'T> 
       Transition : ProfileTransition
-      MemoryNeed : MemoryNeed
+      MemoryNeed : MemoryNeedWrapped
       NElemsTransformation : NElemsTransformation
       } 
 
 module Stage =
     let create<'S,'T> (name: string) (pipe: Pipe<'S,'T>) (transition: ProfileTransition) (memoryNeed: MemoryNeed) (nElemsTransformation: NElemsTransformation) =
-        { Name = name; Pipe = pipe; Transition = transition; MemoryNeed = memoryNeed; NElemsTransformation = nElemsTransformation}
+        let wrapMemoryNeed = SingleOrPair.sum >> memoryNeed >> Single
+        { Name = name; Pipe = pipe; Transition = transition; MemoryNeed = wrapMemoryNeed; NElemsTransformation = nElemsTransformation}
+
+    let createWrapped<'S,'T> (name: string) (pipe: Pipe<'S,'T>) (transition: ProfileTransition) (wrapMemoryNeed: MemoryNeedWrapped) (nElemsTransformation: NElemsTransformation) =
+        { Name = name; Pipe = pipe; Transition = transition; MemoryNeed = wrapMemoryNeed; NElemsTransformation = nElemsTransformation}
 
     let empty (name: string) =
         let pipe = Pipe.empty name
         let transition = ProfileTransition.create Streaming Streaming
-        create name pipe transition id  id
+        let memoryNeed _ = 0UL
+        let NElemsTransformation = id
+        create name pipe transition memoryNeed  NElemsTransformation
 
     let init<'S,'T> (name: string) (depth: uint) (mapper: int -> 'T) (transition: ProfileTransition) (memoryNeed: MemoryNeed) (nElemsTransformation: NElemsTransformation) =
         let pipe = Pipe.init name depth mapper transition.From
@@ -353,9 +398,9 @@ module Stage =
     let compose (stage1 : Stage<'S,'T>) (stage2 : Stage<'T,'U>) : Stage<'S,'U> =
         let transition = ProfileTransition.create stage1.Transition.From stage2.Transition.To
         let pipe = Pipe.compose stage1.Pipe stage2.Pipe
-        let memoryNeed nElems = (stage1.MemoryNeed nElems) + (stage2.MemoryNeed nElems)
+        let memoryNeed nElems = SingleOrPair.add (stage1.MemoryNeed nElems) (stage2.MemoryNeed nElems)
         let nElemsTransformation = stage1.NElemsTransformation >> stage2.NElemsTransformation
-        create $"{stage2.Name} o {stage1.Name}" pipe transition memoryNeed nElemsTransformation
+        createWrapped $"{stage2.Name} o {stage1.Name}" pipe transition memoryNeed nElemsTransformation
 
     let (-->) = compose
 
@@ -386,15 +431,15 @@ module Stage =
         let transition = ProfileTransition.create Streaming Streaming
         create name pipe transition memoryNeed nElemsTransformation
 
-    let map2 (name: string) (debug: bool) (f: 'U -> 'V -> 'W) (stage1: Stage<'In, 'U>) (stage2: Stage<'In, 'V>) (memoryNeed: MemoryNeed) (nElemsTransformation: NElemsTransformation): Stage<'In, 'W> =
+    let map2 (name: string) (debug: bool) (f: 'U -> 'V -> 'W) (stage1: Stage<'In, 'U>) (stage2: Stage<'In, 'V>) (memoryNeed: MemoryNeedWrapped) (nElemsTransformation: NElemsTransformation): Stage<'In, 'W> =
         let pipe = Pipe.map2 name debug f stage1.Pipe stage2.Pipe
         let transition = ProfileTransition.create Streaming Streaming
-        create name pipe transition memoryNeed nElemsTransformation
+        createWrapped name pipe transition memoryNeed nElemsTransformation
 
-    let map2Sync (name: string) (debug: bool) (f: 'U -> 'V -> 'W) (stage1: Stage<'In, 'U>) (stage2: Stage<'In, 'V>) (memoryNeed: MemoryNeed) (nElemsTransformation: NElemsTransformation): Stage<'In, 'W> =
+    let map2Sync (name: string) (debug: bool) (f: 'U -> 'V -> 'W) (stage1: Stage<'In, 'U>) (stage2: Stage<'In, 'V>) (memoryNeed: MemoryNeedWrapped) (nElemsTransformation: NElemsTransformation): Stage<'In, 'W> =
         let pipe = Pipe.map2Sync name debug f stage1.Pipe stage2.Pipe
         let transition = ProfileTransition.create Streaming Streaming
-        create name pipe transition memoryNeed nElemsTransformation
+        createWrapped name pipe transition memoryNeed nElemsTransformation
 
     let reduce (name: string) (reducer: bool -> AsyncSeq<'In> -> Async<'Out>) (profile: Profile) (memoryNeed: MemoryNeed) (nElemsTransformation: NElemsTransformation): Stage<'In, 'Out> =
         let transition = ProfileTransition.create Streaming Unit
@@ -463,45 +508,22 @@ module Stage =
         let transition = ProfileTransition.create Streaming Unit
         create "ignorePairs" pipe transition id id // check !!!!
 
-    let consumeWith (name: string) (consume: bool -> int -> 'T -> unit) : Stage<'T, unit> = 
+    let consumeWith (name: string) (consume: bool -> int -> 'T -> unit) (memoryNeed: MemoryNeed) : Stage<'T, unit> = 
         let pipe = Pipe.consumeWith name consume Streaming
         let transition = ProfileTransition.create Streaming Unit
-        create name pipe transition id id // Check !!!!
+        create name pipe transition memoryNeed (fun _ -> 0UL) // Check !!!!
 
-    let cast<'S,'T when 'S: equality and 'T: equality> name f : Stage<'S,'T> = // cast cannot change
+    let cast<'S,'T when 'S: equality and 'T: equality> name f (memoryNeed: MemoryNeed): Stage<'S,'T> = // cast cannot change
         let apply debug input = input |> AsyncSeq.map f 
         let pipe = Pipe.create name apply Streaming
         let transition = ProfileTransition.create Streaming Streaming
-        create name pipe transition id id // Type calculation needs to be updated!!!!
-
-type SingleOrPair = Single of uint64 | Pair of uint64*uint64
-
-module SingleOrPair =
-    let map f v =
-        match v with
-            | Single elm -> Single (f elm)
-            | Pair (left,right) -> Pair (f left, f right)
-
-    let mapPair (f,g) v =
-        match v with
-            | Single elm -> Pair (f elm, g elm)
-            | Pair (left,right) -> Pair (f left, g right)
-
-    let fst v = 
-        match v with
-            | Single elm -> elm
-            | Pair (left,_) -> left
-
-    let snd v = 
-        match v with
-            | Single elm -> elm
-            | Pair (_,right) -> right
+        create name pipe transition memoryNeed id // Type calculation needs to be updated!!!!
 
 ////////////////////////////////////////////////////////////
 // Pipeline flow controler
 type Pipeline<'S,'T> = { 
     stage      : Stage<'S,'T> option // the function to be applied, when the pipeline is run
-    nElems     : uint64 // number of elments before transformation - this could be single or pair
+    nElems     : SingleOrPair // number of elments before transformation - this could be single or pair
     length     : uint64 // length of the sequence, the pipeline is applied to
     memAvail   : uint64 // memory available for the pipeline
     memPeak    : uint64 // the pipeline's estimated peak memory consumption
@@ -509,8 +531,10 @@ type Pipeline<'S,'T> = {
 
 module Pipeline =
     let create<'S,'T when 'T: equality> (stage: Stage<'S,'T> option) (memAvail : uint64) (memPeak: uint64) (nElems: uint64) (length: uint64) (debug: bool): Pipeline<'S, 'T> =
-        { stage = stage; memAvail = memAvail; memPeak = memPeak; nElems = nElems; length = length; debug = debug }
+        { stage = stage; memAvail = memAvail; memPeak = memPeak; nElems = Single nElems; length = length; debug = debug }
 
+    let createWrapped<'S,'T when 'T: equality> (stage: Stage<'S,'T> option) (memAvail : uint64) (memPeak: uint64) (nElems: SingleOrPair) (length: uint64) (debug: bool): Pipeline<'S, 'T> =
+        { stage = stage; memAvail = memAvail; memPeak = memPeak; nElems = nElems; length = length; debug = debug }
     //////////////////////////////////////////////////
     /// Source type operators
     let source (availableMemory: uint64) : Pipeline<unit, unit> =
@@ -527,14 +551,14 @@ module Pipeline =
     let composeOp (name: string) (pl: Pipeline<'a, 'b>) (stage: Stage<'b, 'c>) : Pipeline<'a, 'c> =
         if pl.debug then printfn $"[{name}] {stage.Name}"
 
-        let memNeeded = stage.MemoryNeed pl.nElems
+        let memNeeded = pl.nElems |> stage.MemoryNeed  |> SingleOrPair.sum // Stage.MemoryNeed must be updated as well
         let memPeak = max pl.memPeak memNeeded
         if (not pl.debug) && memPeak > pl.memAvail then
             failwith $"Out of available memory: {stage.Name} requested {memNeeded} B but have only {pl.memAvail} B"
 
         let stage' = Option.map (fun stg -> Stage.compose stg stage) pl.stage
-        let nElems' = stage.NElemsTransformation pl.nElems
-        create stage' pl.memAvail memPeak nElems' pl.length pl.debug
+        let nElems' = SingleOrPair.map stage.NElemsTransformation pl.nElems // Stage NElemsTransformation must be updated as well
+        createWrapped stage' pl.memAvail memPeak nElems' pl.length pl.debug
 
     let (>=>) (pl: Pipeline<'a, 'b>) (stage: Stage<'b, 'c>) : Pipeline<'a, 'c> =
         composeOp $">=>" pl stage
@@ -546,14 +570,14 @@ module Pipeline =
         let stage =
             match pl.stage with
             | Some stg -> 
-                Stage.map1 name f stg memoryNeed nElemsTransformation // nElms is unchanged by map per definition 
+                Stage.map1 name f stg memoryNeed nElemsTransformation // nElemsTransformation is unchanged by map per definition 
             | None -> failwith "Pipeline.map cannot map to empty stage"
-        let nElems' = stage.NElemsTransformation pl.nElems
-        let memNeeded = stage.MemoryNeed pl.nElems
+        let nElems' = SingleOrPair.map stage.NElemsTransformation pl.nElems
+        let memNeeded = pl.nElems |> stage.MemoryNeed  |> SingleOrPair.sum
         let memPeak = max pl.memPeak memNeeded
         if (not pl.debug) && memPeak > pl.memAvail then
             failwith $"Out of available memory: {stage.Name} requested {memoryNeed} B but have only {pl.memAvail} B"
-        create (Some stage) pl.memAvail memPeak nElems' pl.length pl.debug
+        createWrapped (Some stage) pl.memAvail memPeak nElems' pl.length pl.debug
         
     /// parallel execution of non-synchronised streams
     let internal zipOp (name:string) (pl1: Pipeline<'In, 'U>) (pl2: Pipeline<'In, 'V>) : Pipeline<'In, ('U * 'V)> =
@@ -563,31 +587,38 @@ module Pipeline =
                 if debug then printfn $"[{name}] ({stage1.Name}, {stage2.Name})"
 
                 if pl1.length <> pl2.length then
-                    failwith $"[{name}] pipelines to be ziped must be of equal lengths {pl1.length} <> {pl2.length}"
+                    failwith $"[{name}] pipelines to be ziped must be over sequences of equal lengths {pl1.length} <> {pl2.length}"
+
+                if pl1.nElems <> pl2.nElems then
+                    failwith $"[{name}] pipelines to be ziped must be of equal sized input {pl1.nElems} <> {pl2.nElems}"
+
+                let nElems = pl1.nElems
+                let nElemsTransformed1 = SingleOrPair.map stage1.NElemsTransformation  nElems
+                let nElemsTransformed2 = SingleOrPair.map stage2.NElemsTransformation  nElems
+
+                if nElemsTransformed1 <> nElemsTransformed2 then
+                    failwith $"[{name}] pipelines to be ziped must be of equal sized output {nElemsTransformed1|>SingleOrPair.sum} <> {nElemsTransformed2|>SingleOrPair.sum}"
+                if not (SingleOrPair.isSingle nElemsTransformed1) || not (SingleOrPair.isSingle nElemsTransformed2) then
+                    failwith $"[{name}] Can't (yet) zip pipeline-pairs (isSingle({stage1.Name})={SingleOrPair.isSingle nElemsTransformed1} and isSingle({stage2.Name})={SingleOrPair.isSingle nElemsTransformed2})"
 
                 // Create a non-synced stage
-                let memoryNeed nElems = (stage1.MemoryNeed nElems) + (stage2.MemoryNeed nElems) // Runs in parallel
-                let nElemsTransformation1 = stage1.NElemsTransformation 
-                let nElemsTransformation2 = stage2.NElemsTransformation 
-                let nElemsTransformation = nElemsTransformation1 // Transformation of result equal to any of the input
+                let memoryNeed nElems = 
+                    SingleOrPair.add 
+                        (nElems |> SingleOrPair.fst |> Single |> stage1.MemoryNeed) 
+                        (nElems |> SingleOrPair.snd |> Single |> stage2.MemoryNeed)
+                let nElemsTransformation = stage1.NElemsTransformation // Transformation of result equal to any of the input
                 let stage =
                     Stage.map2 $"({stage1.Name},{stage2.Name})" debug (fun U V -> (U,V)) stage1 stage2 memoryNeed nElemsTransformation
 
-                // Check resulting number of elements per stream. Must be the same to be ziped
-                let nElems = nElemsTransformation1 pl1.nElems
-                let nElems2 = nElemsTransformation2 pl1.nElems
-                // Here is a design issue: zipped pipelines could follow different nElems paths which could be handled by the >>=> operator in the end, but a single Pipeline.nElems cannot handle that.
-                if nElems <> nElems2 then
-                    failwith $"[{name}] Cannot zip pipelines with different number of elements {nElems} vs {nElems2}"
-
                 // Check memory constraints for each individual stream
-                let memNeeded1 = stage1.MemoryNeed pl1.nElems
-                let memNeeded2 = stage2.MemoryNeed pl2.nElems
-                let memPeak = memNeeded1+memNeeded2
-                if (not debug) && (memNeeded1 > pl1.memAvail || memNeeded2 > pl2.memAvail) then
-                    failwith $"Out of available memory: {stage.Name} requested {memNeeded1}+{memNeeded2} B but have only {pl1.memAvail} + {pl2.memAvail} B"
-
-                create (Some stage) (pl1.memAvail+pl2.memAvail) memPeak nElems pl1.length debug
+                let memNeeded = nElems |> memoryNeed
+                let maxMemPeak = max pl1.memPeak pl2.memPeak
+                let memPeak = max maxMemPeak (SingleOrPair.sum memNeeded)
+                let maxMemAvail = max pl1.memAvail pl2.memAvail
+                if (not debug) && (memPeak > maxMemAvail) then
+                    failwith $"Out of available memory: {stage.Name} requested {memNeeded|>SingleOrPair.fst}+{memNeeded|>SingleOrPair.snd}={memPeak} B but have only {maxMemAvail} B"
+ 
+                createWrapped (Some stage) maxMemAvail memPeak nElems pl1.length debug
             | _,_ -> failwith $"[{name}] Cannot zip with an empty pipeline"
 
     /// parallel execution of non-synchronised streams
@@ -601,11 +632,15 @@ module Pipeline =
         if stg1.Pipe.Profile <> stg2.Pipe.Profile then 
             failwith $"[>=>>] can only apply stages with the same streaming profile ({stg1.Pipe.Profile} <> {stg2.Pipe.Profile})"
 
-        let memoryNeed nElems = (stg1.MemoryNeed nElems) + (stg2.MemoryNeed nElems) // Runs in parallel
+        let memoryNeed nElems = 
+            SingleOrPair.add 
+                (nElems |> SingleOrPair.fst |> Single |> stg1.MemoryNeed) 
+                (nElems |> SingleOrPair.snd |> Single |> stg2.MemoryNeed)
+
         let nElemsTransformation = stg1.NElemsTransformation 
         let nElemsTransformation2 = stg2.NElemsTransformation 
-        let nElems = nElemsTransformation pl.nElems
-        let nElems2 = nElemsTransformation2 pl.nElems
+        let nElems = SingleOrPair.map nElemsTransformation pl.nElems
+        let nElems2 = SingleOrPair.map nElemsTransformation2 pl.nElems
         if nElems <> nElems2 then
             failwith $"[>=>>] Cannot zip pipelines with different number of elements {nElems} vs {nElems2}"
 
@@ -627,9 +662,9 @@ module Pipeline =
     ///////////////////////////////////////////
     /// sink type operators
     let sink (pl: Pipeline<unit, unit>) : unit =
-        if pl.memPeak > pl.memAvail then
+        if not pl.debug && (pl.memPeak > pl.memAvail) then
             failwith $"Not enough memory for the pipeline {pl.memPeak} > {pl.memAvail}"
-        if pl.debug then printfn $"[sink] Running pipeline with an estimated {pl.memPeak} / {pl.memAvail} memory use"
+        if pl.debug then printfn $"[sink] Running pipeline with an estimated {pl.memPeak/1024UL} / {pl.memAvail/1024UL} KB of memory use"
         Option.map (fun stage -> stage |> Stage.toPipe |> Pipe.run pl.debug) pl.stage |> ignore
         if pl.debug then printfn "[sink] Done"
 
@@ -639,7 +674,7 @@ module Pipeline =
     let internal runToScalar (name:string) (reducer: AsyncSeq<'T> -> Async<'R>) (pl: Pipeline<unit, 'T>) : 'R =
         if pl.memPeak > pl.memAvail then
             failwith $"Not enough memory for the pipeline {pl.memPeak} > {pl.memAvail}"
-        if pl.debug then printfn $"[{name}] Running pipeline with an estimated {pl.memPeak} / {pl.memAvail} memory use" 
+        if pl.debug then printfn $"[{name}] Running pipeline with an estimated {pl.memPeak/1024UL} / {pl.memAvail/1024UL} KB memory use" 
 
         let stage = pl.stage
         match stage with

@@ -3,7 +3,7 @@
 open StackProcessing
 
 [<EntryPoint>]
-let main _ =
+let main arg =
     let width, height, depth = 1024u, 1024u, 1024u
     let availableMemory = 2UL * 1024UL * 1024UL *1024UL // 2GB for example
 

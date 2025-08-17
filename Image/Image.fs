@@ -1,7 +1,7 @@
 module Image
 open FSharp.Collections
 
-module internal InternalHelpers =
+module InternalHelpers = // internal
     let toVectorUInt8 (lst: uint8 list)     = new itk.simple.VectorUInt8(lst)
     let toVectorInt8 (lst: int8 list)       = new itk.simple.VectorInt8(lst)
     let toVectorUInt16 (lst: uint16 list)   = new itk.simple.VectorUInt16(lst)
@@ -218,17 +218,18 @@ let getBytesPerComponent t =
     else 8u // guessing here
 
 let getBytesPerSItkComponent t =
-    if   t = itk.simple.PixelIDValueEnum.sitkVectorUInt8 then 1u
-    elif t = itk.simple.PixelIDValueEnum.sitkVectorInt8 then 1u
-    elif t = itk.simple.PixelIDValueEnum.sitkVectorUInt16 then 2u
-    elif t = itk.simple.PixelIDValueEnum.sitkVectorInt16 then 2u
-    elif t = itk.simple.PixelIDValueEnum.sitkVectorUInt32 then 4u
-    elif t = itk.simple.PixelIDValueEnum.sitkVectorInt32 then 4u
-    elif t = itk.simple.PixelIDValueEnum.sitkVectorFloat32 then 4u
-    elif t = itk.simple.PixelIDValueEnum.sitkVectorUInt64 then 8u
-    elif t = itk.simple.PixelIDValueEnum.sitkVectorInt64 then 8u
-    elif t = itk.simple.PixelIDValueEnum.sitkVectorFloat64 then 8u
+    if   t = itk.simple.PixelIDValueEnum.sitkUInt8 then 1u
+    elif t = itk.simple.PixelIDValueEnum.sitkInt8 then 1u
+    elif t = itk.simple.PixelIDValueEnum.sitkUInt16 then 2u
+    elif t = itk.simple.PixelIDValueEnum.sitkInt16 then 2u
+    elif t = itk.simple.PixelIDValueEnum.sitkUInt32 then 4u
+    elif t = itk.simple.PixelIDValueEnum.sitkInt32 then 4u
+    elif t = itk.simple.PixelIDValueEnum.sitkFloat32 then 4u
+    elif t = itk.simple.PixelIDValueEnum.sitkUInt64 then 8u
+    elif t = itk.simple.PixelIDValueEnum.sitkInt64 then 8u
+    elif t = itk.simple.PixelIDValueEnum.sitkFloat64 then 8u
     else 8u // guessing here
+    
 
 let equalOne (v : 'T) : bool =
     match box v with
@@ -249,7 +250,7 @@ let mutable totalImages = 0 // count how many images with references > 0, must b
 let mutable memUsed = 0u 
 let printDebugMessage str =
     lock syncRoot (fun () ->
-       printfn "%6d KB %s %s" (memUsed/1024u) (String.replicate totalImages "*") str)
+       printfn "%6d KB %3d Images %s" (memUsed/1024u) totalImages str) (*(String.replicate totalImages "*")*)
 let mutable debug = false
 
 [<StructuredFormatDisplay("{Display}")>] // Prevent fsi printing information about its members such as img
@@ -275,10 +276,10 @@ type Image<'T when 'T : equality>(sz: uint list, ?optionalNumberComponents: uint
     let mutable nReferences = 1 
  
     do lock syncRoot (fun () -> totalImages <- totalImages + 1)
-    do if debug && not quiet then printDebugMessage $"Created {name}"
+    do if debug && not quiet then printDebugMessage $"Created {name} ({img.GetSize()|> fromVectorUInt32}, {fromType<'T>} {img.GetPixelID()}, {img.GetNumberOfComponentsPerPixel()}->{Image<'T>.memoryEstimateSItk img})"
     let now = System.DateTime.UtcNow.ToString("HH:mm:ss.ffffff'Z'")
 
-    static member setDebug d = printfn $"Setting debug mod to {d}"; debug <- d
+    static member setDebug d = printfn $"Added debugging of Image class"; debug <- d
     member this.Image = img
     member this.Name = name
     member val index = idx with get, set
@@ -309,7 +310,8 @@ type Image<'T when 'T : equality>(sz: uint list, ?optionalNumberComponents: uint
         let noComponent = sitk.GetNumberOfComponentsPerPixel()
         let bytesPerComponent = getBytesPerSItkComponent (sitk.GetPixelID())
         let size = sitk.GetSize() |> fromVectorUInt32
-        bytesPerComponent * (size |> List.reduce ( * ));
+        let res = bytesPerComponent * (size |> List.reduce ( * ));
+        res
 
     static member memoryEstimate (width: uint) (height: uint) (noComponent: uint) =
         let bytesPerComponent = getBytesPerSItkComponent (fromType<'T>)
@@ -345,10 +347,10 @@ type Image<'T when 'T : equality>(sz: uint list, ?optionalNumberComponents: uint
 
         let itkImgCast = ofCastItk<'T> itkImg
         let img = new Image<'T>([0u;0u],itkImgCast.GetNumberOfComponentsPerPixel(),name,index, true)
-        lock syncRoot (fun () -> memUsed <- memUsed - Image<_>.memoryEstimateSItk img.Image)
+        lock syncRoot (fun () -> memUsed <- memUsed - Image<'T>.memoryEstimateSItk img.Image)
         img.SetImg itkImgCast
-        lock syncRoot (fun () -> memUsed <- memUsed + Image<_>.memoryEstimateSItk img.Image)
-        if debug then printDebugMessage $"Created {img.Name}"
+        lock syncRoot (fun () -> memUsed <- memUsed + Image<'T>.memoryEstimateSItk img.Image)
+        if debug then printDebugMessage $"Created {img.Name} ({itkImgCast.GetSize()|> fromVectorUInt32}, {fromType<'T>} {itkImgCast.GetPixelID()}, {itkImgCast.GetNumberOfComponentsPerPixel()}->{Image<'T>.memoryEstimateSItk itkImgCast})"
         img
 
     member this.toSimpleITK () : itk.simple.Image =

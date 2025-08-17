@@ -1,6 +1,6 @@
 namespace FSharp
 module Image
-module internal InternalHelpers =
+module InternalHelpers =
     val toVectorUInt8: lst: uint8 list -> itk.simple.VectorUInt8
     val toVectorInt8: lst: int8 list -> itk.simple.VectorInt8
     val toVectorUInt16: lst: uint16 list -> itk.simple.VectorUInt16
@@ -94,6 +94,8 @@ type Image<'T when 'T: equality> =
     static member map: f: ('T -> 'T) -> im1: Image<'T> -> Image<'T>
     static member
       mapi: f: (uint list -> 'T -> 'T) -> im1: Image<'T> -> Image<'T>
+    static member
+      memoryEstimate: width: uint -> height: uint -> noComponent: uint -> uint64
     static member memoryEstimateSItk: sitk: itk.simple.Image -> uint32
     static member neq: f1: Image<'S> * f2: Image<'S> -> bool when 'S: equality
     static member ofArray2D: arr: 'T array2d * ?name: string -> Image<'T>
@@ -128,7 +130,6 @@ type Image<'T when 'T: equality> =
     member forAll: p: ('T -> bool) -> bool
     member getNReferences: unit -> int
     member incRefCount: unit -> unit
-    member memoryEstimate: unit -> uint32
     member toArray2D: unit -> 'T array2d
     member toArray3D: unit -> 'T array3d
     member toArray4D: unit -> 'T array4d
@@ -209,14 +210,14 @@ val inline makeUnaryImageOperatorWith:
     createFilter: (unit -> 'Filter) ->
     setup: ('Filter -> unit) ->
     invoke: ('Filter -> itk.simple.Image -> itk.simple.Image) ->
-    img: Image.Image<'T> -> Image.Image<'T>
-    when 'Filter :> System.IDisposable and 'T: equality
+    img: Image.Image<'T> -> Image.Image<'S>
+    when 'Filter :> System.IDisposable and 'T: equality and 'S: equality
 val inline makeUnaryImageOperator:
   name: string ->
     createFilter: (unit -> 'a) ->
     invoke: ('a -> itk.simple.Image -> itk.simple.Image) ->
-    (Image.Image<'b> -> Image.Image<'b>)
-    when 'a :> System.IDisposable and 'b: equality
+    (Image.Image<'b> -> Image.Image<'c>)
+    when 'a :> System.IDisposable and 'b: equality and 'c: equality
 val inline makeBinaryImageOperatorWith:
   name: string ->
     createFilter: (unit -> 'Filter) ->
@@ -230,19 +231,32 @@ val makeBinaryImageOperator:
     invoke: ('a -> itk.simple.Image -> itk.simple.Image -> itk.simple.Image) ->
     (Image.Image<'b> -> Image.Image<'b> -> Image.Image<'b>)
     when 'a :> System.IDisposable and 'b: equality
-val absImage: img: Image.Image<'T> -> Image.Image<'T> when 'T: equality
-val logImage: img: Image.Image<'T> -> Image.Image<'T> when 'T: equality
-val log10Image: img: Image.Image<'T> -> Image.Image<'T> when 'T: equality
-val expImage: img: Image.Image<'T> -> Image.Image<'T> when 'T: equality
-val sqrtImage: img: Image.Image<'T> -> Image.Image<'T> when 'T: equality
-val squareImage: img: Image.Image<'T> -> Image.Image<'T> when 'T: equality
-val sinImage: img: Image.Image<'T> -> Image.Image<'T> when 'T: equality
-val cosImage: img: Image.Image<'T> -> Image.Image<'T> when 'T: equality
-val tanImage: img: Image.Image<'T> -> Image.Image<'T> when 'T: equality
-val asinImage: img: Image.Image<'T> -> Image.Image<'T> when 'T: equality
-val acosImage: img: Image.Image<'T> -> Image.Image<'T> when 'T: equality
-val atanImage: img: Image.Image<'T> -> Image.Image<'T> when 'T: equality
-val roundImage: img: Image.Image<'T> -> Image.Image<'T> when 'T: equality
+val absImage:
+  img: Image.Image<'T> -> Image.Image<'a> when 'T: equality and 'a: equality
+val logImage:
+  img: Image.Image<'T> -> Image.Image<'a> when 'T: equality and 'a: equality
+val log10Image:
+  img: Image.Image<'T> -> Image.Image<'a> when 'T: equality and 'a: equality
+val expImage:
+  img: Image.Image<'T> -> Image.Image<'a> when 'T: equality and 'a: equality
+val sqrtImage:
+  img: Image.Image<'T> -> Image.Image<'a> when 'T: equality and 'a: equality
+val squareImage:
+  img: Image.Image<'T> -> Image.Image<'a> when 'T: equality and 'a: equality
+val sinImage:
+  img: Image.Image<'T> -> Image.Image<'a> when 'T: equality and 'a: equality
+val cosImage:
+  img: Image.Image<'T> -> Image.Image<'a> when 'T: equality and 'a: equality
+val tanImage:
+  img: Image.Image<'T> -> Image.Image<'a> when 'T: equality and 'a: equality
+val asinImage:
+  img: Image.Image<'T> -> Image.Image<'a> when 'T: equality and 'a: equality
+val acosImage:
+  img: Image.Image<'T> -> Image.Image<'a> when 'T: equality and 'a: equality
+val atanImage:
+  img: Image.Image<'T> -> Image.Image<'a> when 'T: equality and 'a: equality
+val roundImage:
+  img: Image.Image<'T> -> Image.Image<'a> when 'T: equality and 'a: equality
 type BoundaryCondition =
     | ZeroPad
     | PerodicPad
@@ -261,6 +275,7 @@ val convolve:
 val conv:
   img: Image.Image<'T> -> ker: Image.Image<'T> -> Image.Image<'T>
     when 'T: equality
+val defaultGaussWindowSize: sigma: float -> uint
 /// Gaussian kernel convolution
 val gauss:
   dim: uint -> sigma: float -> kernelSize: uint option -> Image.Image<'T>
@@ -350,12 +365,14 @@ val computeStats: img: Image.Image<'T> -> ImageStats when 'T: equality
 val addComputeStats: s1: ImageStats -> s2: ImageStats -> ImageStats
 val unique: img: Image.Image<'T> -> 'T list when 'T: comparison
 /// Otsu threshold
-val otsuThreshold: img: Image.Image<'T> -> Image.Image<'T> when 'T: equality
+val otsuThreshold: img: Image.Image<'T> -> Image.Image<uint8> when 'T: equality
 /// Otsu multiple thresholds (returns a label map)
 val otsuMultiThreshold:
-  numThresholds: byte -> (Image.Image<'T> -> Image.Image<'T>) when 'T: equality
+  numThresholds: byte -> img: Image.Image<'T> -> Image.Image<uint8>
+    when 'T: equality
 /// Moments-based threshold
-val momentsThreshold: img: Image.Image<'T> -> Image.Image<'T> when 'T: equality
+val momentsThreshold:
+  img: Image.Image<'T> -> Image.Image<uint8> when 'T: equality
 /// Coordinate fields
 val generateCoordinateAxis: axis: int -> size: int list -> Image.Image<uint32>
 val histogram: image: Image.Image<'T> -> Map<'T,uint64> when 'T: comparison
@@ -374,7 +391,7 @@ val addNormalNoise:
   mean: float -> stddev: float -> (Image.Image<'T> -> Image.Image<'T>)
     when 'T: equality
 val threshold:
-  lower: float -> upper: float -> (Image.Image<'T> -> Image.Image<'T>)
+  lower: float -> upper: float -> img: Image.Image<'T> -> Image.Image<uint8>
     when 'T: equality
 val toVectorOfImage: images: #itk.simple.Image seq -> itk.simple.VectorOfImage
 val stack: images: Image.Image<'T> list -> Image.Image<'T> when 'T: equality

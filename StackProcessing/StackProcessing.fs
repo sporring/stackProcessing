@@ -158,7 +158,8 @@ let write (outputDir: string) (suffix: string) : Stage<Image<'T>, unit> =
         if debug then printfn "[write] Saved image %d to %s as %s" idx fileName (typeof<'T>.Name) 
         image.toFile(fileName)
         image.decRefCount()
-    Stage.consumeWith $"write \"{outputDir}/*{suffix}\"" consumer 
+    let memoryNeed = id
+    Stage.consumeWith $"write \"{outputDir}/*{suffix}\"" consumer memoryNeed
 
 let show (plt: Image<'T> -> unit) : Stage<Image<'T>, unit> =
     let consumer (debug: bool) (idx: int) (image:Image<'T>) =
@@ -167,20 +168,23 @@ let show (plt: Image<'T> -> unit) : Stage<Image<'T>, unit> =
         let height = image.GetHeight() |> int
         plt image
         image.decRefCount()
-    Stage.consumeWith "show" consumer 
+    let memoryNeed = id
+    Stage.consumeWith "show" consumer memoryNeed
 
 let plot (plt: (float list)->(float list)->unit) : Stage<(float * float) list, unit> = // better be (float*float) list
     let consumer (debug: bool) (idx: int) (points: (float*float) list) =
         if debug then printfn $"[plot] Plotting {points.Length} 2D points"
         let x,y = points |> List.unzip
         plt x y
-    Stage.consumeWith "plot" consumer 
+    let memoryNeed = id
+    Stage.consumeWith "plot" consumer memoryNeed
 
 let print () : Stage<'T, unit> =
     let consumer (debug: bool) (idx: int) (elm: 'T) =
         if debug then printfn "[print]"
         printfn "%d -> %A" idx elm
-    Stage.consumeWith "print" consumer 
+    let memoryNeed = id
+    Stage.consumeWith "print" consumer memoryNeed
 
 (*
 let liftImageSource (name: string) (img: Image<'T>) : Pipe<unit, Image<'T>> =
@@ -218,13 +222,15 @@ let axisSource
 
 /// Pixel type casting
 let cast<'S,'T when 'S: equality and 'T: equality> = 
-    Stage.cast<Image<'S>,Image<'T>> (sprintf "cast(%s->%s)" typeof<'S>.Name typeof<'T>.Name) (fun (I: Image<'S>) -> 
+    let name = sprintf "cast(%s->%s)" typeof<'S>.Name typeof<'T>.Name
+    let f (I: Image<'S>) = 
         let result = I.castTo<'T> ()
         I.decRefCount()
-        result)
+        result
+    Stage.cast<Image<'S>,Image<'T>> name f id
 
 /// Basic arithmetic
-let memNeeded<'T> nTimes nElems = nElems*nTimes*getBytesPerComponent<'T> // Assuming source and target in memory simultaneously
+let memNeeded<'T> nTimes nElems = 3UL*nElems*nTimes*getBytesPerComponent<'T> // We need input, output, and potentially a cast in between
 let add (image: Image<'T>) = 
     liftUnaryReleaseAfter "add" ((+) image) id id
 let inline scalarAddImage<^T when ^T: equality and ^T: (static member op_Explicit: ^T -> float)> (i: ^T) = 
@@ -388,7 +394,7 @@ let stackFUnstackTrim trim (f: Image<'T>->Image<'S>) (images : Image<'T> list) =
 
 let volFctToLstFctReleaseAfter (f:Image<'S>->Image<'T>) pad stride images =
     let stack = ImageFunctions.stack images 
-    //images |> List.take (int stride) |> List.iter (fun I -> I.decRefCount())
+    images |> List.take (int stride) |> List.iter (fun I -> I.decRefCount())
     let vol = f stack
     stack.decRefCount ()
     let result = ImageFunctions.unstackSkipNTakeM pad stride vol
@@ -412,7 +418,9 @@ let discreteGaussianOp (name:string) (sigma:float) (outputRegionMode: ImageFunct
     // windowSize = 1, 6, 15, or 26, pad = 2, length = 22, => n = 21, 10, 1, or 0
     printfn $"discreteGaussianOp: sigma {sigma}, ksz {ksz}, win {win}, stride {stride}, pad {pad}"
     let f = volFctToLstFctReleaseAfter (ImageFunctions.discreteGaussian 3u sigma (ksz |> Some) outputRegionMode boundaryCondition) pad stride
-    let stg = Stage.map name f id id
+    let memoryNeed nPixels = (2UL*nPixels*(uint64 win) + (uint64 ksz))*(typeof<float> |> Image.getBytesPerComponent |> uint64)
+    let nElemsTransformation nElems = nElems - 2UL*(uint64 pad) 
+    let stg = Stage.map name f memoryNeed nElemsTransformation // wrong for Valid, where the sequences becomes shorter
     (window win pad stride) --> stg --> collect ()
 
 let discreteGaussian = discreteGaussianOp "discreteGaussian"
@@ -454,7 +462,9 @@ let convolveOp (name: string) (kernel: Image<'T>) (outputRegionMode: ImageFuncti
             | Some Valid -> 0u
             | _ -> ksz/2u //floor
     let f = volFctToLstFctReleaseAfter (fun image3D -> ImageFunctions.convolve outputRegionMode bc image3D kernel) pad stride
-    let stg = Stage.map name f id id
+    let memoryNeed nPixels = (2UL*nPixels*(uint64 win) + (uint64 ksz))*(typeof<'T> |> Image.getBytesPerComponent |> uint64)
+    let nElemsTransformation nElems = nElems - 2UL*(uint64 pad) 
+    let stg = Stage.map name f memoryNeed nElemsTransformation
     (window win pad stride) --> stg --> collect ()
 
 
@@ -494,7 +504,25 @@ let binaryFillHoles (winSz: uint)=
 let connectedComponents (winSz: uint) = 
     let pad, stride = 0u, winSz
     let f = volFctToLstFctReleaseAfter (ImageFunctions.connectedComponents) pad stride
-    let stg = Stage.map "connectedComponents" f id id
+    let btUint8 = typeof<uint8>|>Image.getBytesPerComponent |> uint64
+    let btUint64 = typeof<uint64> |> Image.getBytesPerComponent |> uint64
+    // Sliding window applying f cost assuming f has no extra costs:
+    //   window takes winSz Image<uint8>:            nPixels*winSz*1
+    //   produces a stack of equal size in <uint8>:  2*nPixels*winSz*1
+    //   releases stride Image<uint8>:               nPixels*(2*winSz*1-*stride*1)
+    //   produces a stack of equal size in <uint64>: nPixels*(winSz*(2*1+8)-stride*1)
+    //   releases <uint8> stack:                     nPixels*(winSz*(1+8)-stride*1)
+    //   produces a stride list of Image<uint64>:    nPixels*(winSz*(1+8)+stride*(8-1))
+    //   releases <uint64> stack:                    nPixels*(winSz*1+stride*(8-1))
+    let memoryNeed nPixels = 
+        printfn $"memoryNeed: {nPixels}"
+        let bt8 = typeof<uint8>|>Image.getBytesPerComponent |> uint64
+        let bt64 = typeof<uint64> |> Image.getBytesPerComponent |> uint64
+        let wsz = uint64 winSz
+        let str = uint64 stride
+        max (nPixels*(wsz*(2UL*bt8+bt64)-str*bt8)) (nPixels*(wsz*(bt8+bt64)+str*(bt64-bt8)))
+    let nElemsTransformation = id
+    let stg = Stage.map "connectedComponents" f memoryNeed nElemsTransformation
     (window winSz pad stride) --> stg --> collect ()
 
 let relabelComponents a (winSz: uint) = 
@@ -573,6 +601,7 @@ let zero<'T when 'T: equality>
         image
     let transition = ProfileTransition.create Unit Streaming
     let memPeak = Image<'T>.memoryEstimate width height 1u
+    printfn $"[zero] {width} x {height} x 1 x {typeof<'T>} = {memPeak}"
     let memoryNeed = fun _ -> memPeak
     let nElemsTransformation = id
     let stage = Stage.init "create" depth mapper transition memoryNeed nElemsTransformation |> Some

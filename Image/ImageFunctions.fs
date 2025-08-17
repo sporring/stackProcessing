@@ -137,11 +137,11 @@ let inline makeUnaryImageOperatorWith
     (createFilter: unit -> 'Filter when 'Filter :> System.IDisposable)
     (setup: 'Filter -> unit)
     (invoke: 'Filter -> itk.simple.Image -> itk.simple.Image)
-    : (Image<'T> -> Image<'T>) =
+    : (Image<'T> -> Image<'S>) =
         fun (img: Image<'T>) ->
             use filter = createFilter()
             setup filter
-            Image<'T>.ofSimpleITK(invoke filter (img.toSimpleITK()),name,0)
+            Image<'S>.ofSimpleITK(invoke filter (img.toSimpleITK()),name,0)
 
 let inline makeUnaryImageOperator name createFilter invoke = makeUnaryImageOperatorWith name createFilter (fun _ -> ()) invoke
 
@@ -271,10 +271,12 @@ let convolve (outputRegionMode: OutputRegionMode option) (boundaryCondition: Bou
 
 let conv (img: Image<'T>) (ker: Image<'T>) : Image<'T> = convolve None None img ker
 
+let defaultGaussWindowSize (sigma: float) : uint = 1u + 2u*2u * uint sigma
 /// Gaussian kernel convolution
+
 let gauss (dim: uint) (sigma: float) (kernelSize: uint option) : Image<'T> =
     let f = new itk.simple.GaussianImageSource()
-    let sz = Option.defaultValue (1u + 2u*2u * uint sigma) kernelSize
+    let sz = Option.defaultValue (defaultGaussWindowSize sigma) kernelSize
     f.SetSize(List.replicate (int dim) sz |> toVectorUInt32)
     f.SetSigma(sigma)
     // Image coords: [0 1] (mean = 0.5), [0 1 2] (mean = 1) => mean = (sz-1)/2
@@ -314,7 +316,7 @@ let finiteDiffFilter3D (sigma:float) (direction: uint) (order: uint) : Image<flo
         else 
             Array3D.init 1 1 n (fun _ _ i -> lst[i])
     let stensil = Image<float>.ofArray3D(arr, "stensil3D") 
-    let sz = 1u + 2u*2u * uint sigma
+    let sz = defaultGaussWindowSize sigma
     let gauss = gauss 3u sigma (Some sz)
     let kernel = convolve None None gauss stensil
     stensil.decRefCount()
@@ -543,27 +545,24 @@ let unique (img: Image<'T>) : 'T list when 'T : comparison =
     
 /// Otsu threshold
 // Currying and generic arguments causes value restriction error
-let otsuThreshold (img: Image<'T>) : Image<'T> =
+let otsuThreshold (img: Image<'T>) : Image<uint8> =
     use filter = new itk.simple.OtsuThresholdImageFilter()
     filter.SetInsideValue(0uy)
     filter.SetOutsideValue(1uy)
-    Image<'T>.ofSimpleITK(filter.Execute(img.toSimpleITK()),"otsuThreshold")
-
+    Image<uint8>.ofSimpleITK(filter.Execute(img.toSimpleITK()),"otsuThreshold")
 
 /// Otsu multiple thresholds (returns a label map)
-let otsuMultiThreshold (numThresholds: byte) : Image<'T> -> Image<'T> =
-    makeUnaryImageOperatorWith
-        "otsuMultiThreshold"
-        (fun () -> new itk.simple.OtsuMultipleThresholdsImageFilter())
-        (fun f -> f.SetNumberOfThresholds(numThresholds))
-        (fun f x -> f.Execute(x))
+let otsuMultiThreshold (numThresholds: byte) (img: Image<'T>) : Image<uint8> =
+    use filter = new itk.simple.OtsuMultipleThresholdsImageFilter()
+    filter.SetNumberOfThresholds(numThresholds)
+    Image<uint8>.ofSimpleITK(filter.Execute(img.toSimpleITK()),"otsuMultiThreshold")
 
 /// Moments-based threshold
-let momentsThreshold (img: Image<'T>) : Image<'T> =
+let momentsThreshold (img: Image<'T>) : Image<uint8> =
     use filter = new itk.simple.MomentsThresholdImageFilter()
     filter.SetInsideValue(0uy)
     filter.SetOutsideValue(1uy)
-    Image<'T>.ofSimpleITK(filter.Execute(img.toSimpleITK()),"momentsThreshold")
+    Image<uint8>.ofSimpleITK(filter.Execute(img.toSimpleITK()),"momentsThreshold")
 
 /// Coordinate fields
 // Cannot get TransformToDisplacementFieldFilter to work, so making it by hand.
@@ -637,15 +636,12 @@ let addNormalNoise (mean: float) (stddev: float) : Image<'T> -> Image<'T> =
             f.SetStandardDeviation(stddev))
         (fun f x -> f.Execute(x))
 
-let threshold (lower: float) (upper: float) : Image<'T> -> Image<'T> =
-    makeUnaryImageOperatorWith
-        "threshold"
-        (fun () -> new itk.simple.BinaryThresholdImageFilter())
-        (fun f -> 
-            f.SetLowerThreshold lower
-            f.SetUpperThreshold upper)
-        (fun f x -> f.Execute(x))
-
+let threshold (lower: float) (upper: float) (img: Image<'T>) : Image<uint8> =
+    use filter = new itk.simple.BinaryThresholdImageFilter()
+    filter.SetLowerThreshold lower
+    filter.SetUpperThreshold upper
+    let res = filter.Execute(img.Image); 
+    Image<uint8>.ofSimpleITK(res,"threshold",0)
 
 let toVectorOfImage images =
     let v = new itk.simple.VectorOfImage()

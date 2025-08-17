@@ -348,13 +348,15 @@ val signedDistanceMap:
   winSz: uint -> SlimPipeline.Stage<Image<uint8>,Image.Image<float>>
 
 val otsuThreshold:
-  winSz: uint -> SlimPipeline.Stage<Image<'a>,Image.Image<'a>> when 'a: equality
+  winSz: uint -> SlimPipeline.Stage<Image<'a>,Image.Image<uint8>>
+    when 'a: equality
 
 val momentsThreshold:
-  winSz: uint -> SlimPipeline.Stage<Image<'a>,Image.Image<'a>> when 'a: equality
+  winSz: uint -> SlimPipeline.Stage<Image<'a>,Image.Image<uint8>>
+    when 'a: equality
 
 val threshold:
-  a: float -> b: float -> SlimPipeline.Stage<#Image<'b>,Image<'b>>
+  a: float -> b: float -> SlimPipeline.Stage<#Image<'b>,Image<uint8>>
     when 'b: equality
 
 val addNormalNoise:

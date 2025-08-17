@@ -3,7 +3,7 @@
 open StackProcessing
 
 [<EntryPoint>]
-let main _ =
+let main arg =
     printfn "Setting up finite difference filter"
     let availableMemory = 2UL * 1024UL * 1024UL *1024UL // 1MB for example
     let sigma = 1.0

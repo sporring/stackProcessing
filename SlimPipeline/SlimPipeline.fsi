@@ -1,5 +1,18 @@
 namespace FSharp
 module SlimPipeline
+type SingleOrPair =
+    | Single of uint64
+    | Pair of uint64 * uint64
+module SingleOrPair =
+    val isSingle: v: SingleOrPair -> bool
+    val map: f: (uint64 -> uint64) -> v: SingleOrPair -> SingleOrPair
+    val mapPair:
+      f: (uint64 -> uint64) * g: (uint64 -> uint64) ->
+        v: SingleOrPair -> SingleOrPair
+    val fst: v: SingleOrPair -> uint64
+    val snd: v: SingleOrPair -> uint64
+    val sum: v: SingleOrPair -> uint64
+    val add: v: SingleOrPair -> w: SingleOrPair -> SingleOrPair
 /// The memory usage strategies during image processing.
 type Profile =
     | Unit
@@ -92,6 +105,7 @@ type ProfileTransition =
 module ProfileTransition =
     val create: fromProfile: Profile -> toProfile: Profile -> ProfileTransition
 type MemoryNeed = uint64 -> uint64
+type MemoryNeedWrapped = SingleOrPair -> SingleOrPair
 type NElemsTransformation = uint64 -> uint64
 /// Stage describes *what* should be done:
 /// - Contains high-level metadata
@@ -103,7 +117,7 @@ type Stage<'S,'T> =
       Name: string
       Pipe: Pipe<'S,'T>
       Transition: ProfileTransition
-      MemoryNeed: MemoryNeed
+      MemoryNeed: MemoryNeedWrapped
       NElemsTransformation: NElemsTransformation
     }
 module Stage =
@@ -112,6 +126,12 @@ module Stage =
         pipe: Pipe<'S,'T> ->
         transition: ProfileTransition ->
         memoryNeed: MemoryNeed ->
+        nElemsTransformation: NElemsTransformation -> Stage<'S,'T>
+    val createWrapped:
+      name: string ->
+        pipe: Pipe<'S,'T> ->
+        transition: ProfileTransition ->
+        wrapMemoryNeed: MemoryNeedWrapped ->
         nElemsTransformation: NElemsTransformation -> Stage<'S,'T>
     val empty: name: string -> Stage<unit,unit>
     val init<'S,'T> :
@@ -150,7 +170,7 @@ module Stage =
         f: ('U -> 'V -> 'W) ->
         stage1: Stage<'In,'U> ->
         stage2: Stage<'In,'V> ->
-        memoryNeed: MemoryNeed ->
+        memoryNeed: MemoryNeedWrapped ->
         nElemsTransformation: NElemsTransformation -> Stage<'In,'W>
     val map2Sync:
       name: string ->
@@ -158,7 +178,7 @@ module Stage =
         f: ('U -> 'V -> 'W) ->
         stage1: Stage<'In,'U> ->
         stage2: Stage<'In,'V> ->
-        memoryNeed: MemoryNeed ->
+        memoryNeed: MemoryNeedWrapped ->
         nElemsTransformation: NElemsTransformation -> Stage<'In,'W>
     val reduce:
       name: string ->
@@ -197,14 +217,16 @@ module Stage =
     val ignorePairs:
       cleanFst: ('S -> unit) * cleanSnd: ('T -> unit) -> Stage<('S * 'T),unit>
     val consumeWith:
-      name: string -> consume: (bool -> int -> 'T -> unit) -> Stage<'T,unit>
+      name: string ->
+        consume: (bool -> int -> 'T -> unit) ->
+        memoryNeed: MemoryNeed -> Stage<'T,unit>
     val cast:
-      name: string -> f: ('S -> 'T) -> Stage<'S,'T>
+      name: string -> f: ('S -> 'T) -> memoryNeed: MemoryNeed -> Stage<'S,'T>
         when 'S: equality and 'T: equality
 type Pipeline<'S,'T> =
     {
       stage: Stage<'S,'T> option
-      nElems: uint64
+      nElems: SingleOrPair
       length: uint64
       memAvail: uint64
       memPeak: uint64
@@ -213,8 +235,15 @@ type Pipeline<'S,'T> =
 module Pipeline =
     val create:
       stage: Stage<'S,'T> option ->
-        mem: uint64 ->
+        memAvail: uint64 ->
+        memPeak: uint64 ->
         nElems: uint64 -> length: uint64 -> debug: bool -> Pipeline<'S,'T>
+        when 'T: equality
+    val createWrapped:
+      stage: Stage<'S,'T> option ->
+        memAvail: uint64 ->
+        memPeak: uint64 ->
+        nElems: SingleOrPair -> length: uint64 -> debug: bool -> Pipeline<'S,'T>
         when 'T: equality
     /// Source type operators
     val source: availableMemory: uint64 -> Pipeline<unit,unit>
