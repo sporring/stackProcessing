@@ -16,6 +16,7 @@ module SingleOrPair =
 /// The memory usage strategies during image processing.
 type Profile =
     | Unit
+    | Constant
     | Streaming
     | Sliding of uint * uint * uint * uint * uint
 module Profile =

@@ -41,11 +41,11 @@ module InternalHelpers =
 val getBytesPerComponent: t: System.Type -> uint32
 val getBytesPerSItkComponent: t: itk.simple.PixelIDValueEnum -> uint32
 val equalOne: v: 'T -> bool
-val syncRoot: obj
-val mutable totalImages: int
-val mutable memUsed: uint32
-val printDebugMessage: str: string -> unit
-val mutable debug: bool
+val private syncRoot: obj
+val mutable private totalImages: int
+val mutable private memUsed: uint32
+val private printDebugMessage: str: string -> unit
+val mutable private debug: bool
 [<StructuredFormatDisplay ("{Display}")>]
 type Image<'T when 'T: equality> =
     interface System.IComparable

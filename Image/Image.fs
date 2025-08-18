@@ -245,13 +245,13 @@ let equalOne (v : 'T) : bool =
     | :? float   as b -> b = 1.0
     | _ -> failwithf "Don't know the value of 1 for %A" (typeof<'T>)
 
-let syncRoot = obj() // The following 3 names may be accessed in parallel, so lock when writing
-let mutable totalImages = 0 // count how many images with references > 0, must be outside to be shared by all Image<*>
-let mutable memUsed = 0u 
-let printDebugMessage str =
+let private syncRoot = obj() // The following 3 names may be accessed in parallel, so lock when writing
+let mutable private totalImages = 0 // count how many images with references > 0, must be outside to be shared by all Image<*>
+let mutable private memUsed = 0u 
+let private printDebugMessage str =
     lock syncRoot (fun () ->
        printfn "%6d KB %3d Images %s" (memUsed/1024u) totalImages str) (*(String.replicate totalImages "*")*)
-let mutable debug = false
+let mutable private debug = false
 
 [<StructuredFormatDisplay("{Display}")>] // Prevent fsi printing information about its members such as img
 type Image<'T when 'T : equality>(sz: uint list, ?optionalNumberComponents: uint, ?optionalName: string, ?optionalIndex: int, ?optionalQuiet: bool) =

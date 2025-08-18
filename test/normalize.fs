@@ -1,7 +1,6 @@
 ﻿// To run, remember to:
 // export DYLD_LIBRARY_PATH=./StackPipeline/lib:$(pwd)/bin/Debug/net8.0
 open StackProcessing
-open ImageFunctions
 
 [<EntryPoint>]
 let main arg =
@@ -25,8 +24,8 @@ let main arg =
     printfn "%A" stats
 
     let normalizeWith (stats: ImageStats) (image: Image<float>) =
-        let J = imageSubScalar image stats.Mean;
-        let K = imageDivScalar J stats.Std
+        let J = ImageFunctions.imageSubScalar image stats.Mean;
+        let K = ImageFunctions.imageDivScalar J stats.Std
         J.decRefCount()
         K
 
