@@ -13,6 +13,11 @@ let main arg =
             debug availableMemory
         else
             source availableMemory
+    let input = 
+        if arg.Length > 1 then
+            $"image{arg[1]}"
+        else
+            "image18"
 
     // Plotly.Net plot function
     let plt (I: Image<uint8>) = 
@@ -22,7 +27,7 @@ let main arg =
         |> Chart.show
 
     src
-    |> readRandom<uint8> 1u "image" ".tiff"
+    |> readRandom<uint8> 1u input ".tiff"
     >=> show plt 
     |> sink
 

@@ -13,15 +13,20 @@ let main arg =
             debug availableMemory
         else
             source availableMemory
+    let input,output = 
+        if arg.Length > 1 then
+            $"image{arg[1]}", $"result{arg[1]}"
+        else
+            "image18", "result18"
 
     src
-    |> read<float> "image" ".tiff"
+    |> read<float> input ".tiff"
     >=> sqrt
     >=> convGauss sigma 
     >=> sqrt
     >=> convGauss sigma 
     >=> cast<float,uint8>
-    >=> write "result" ".tif"
+    >=> write output ".tiff"
     |> sink
 
 

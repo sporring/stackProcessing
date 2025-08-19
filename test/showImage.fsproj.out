@@ -1,29 +1,30 @@
+Added debugging of Image class
 [debug] Preparing pipeline - 2147483648 B available
 [debug] Done
 [readRandom cast to Byte]
 [>=>] show
-[sink] Running
-[readRandom] Reading image 0 from image/image_873.tiff as Byte
-  8192 KB * Created image/image_873.tiff 09.45.46.094405
+[sink] Running pipeline with an estimated 64 / 2097152 KB of memory use
+[readRandom] Reading image 0 from image24/image_182.tiff as Byte
+    64 KB   1 Images Created image24/image_182.tiff 14.58.29.476538 ([256; 256], sitkUInt8 sitkUInt8, 1->65536)
 [show] Showing image 0
-  8192 KB * Decreased reference to image/image_873.tiff 09.45.46.094405
-     0 KB  Disposed of image/image_873.tiff 09.45.46.094405
+    64 KB   1 Images Decreased reference to image24/image_182.tiff 14.58.29.476538
+     0 KB   0 Images Disposed of image24/image_182.tiff 14.58.29.476538
 [sink] Done
-        7.44 real         3.40 user         0.61 sys
-           211091456  maximum resident set size
+        3.24 real         1.39 user         0.39 sys
+           207994880  maximum resident set size
                    0  average shared memory size
                    0  average unshared data size
                    0  average unshared stack size
-               38740  page reclaims
-                 830  page faults
+               33190  page reclaims
+                1178  page faults
                    0  swaps
                    0  block input operations
                    0  block output operations
                  161  messages sent
-                 385  messages received
+                 386  messages received
                    2  signals received
-                  52  voluntary context switches
-               20254  involuntary context switches
-          9210870400  instructions retired
-          3980854810  cycles elapsed
-           166889984  peak memory footprint
+                  46  voluntary context switches
+               17492  involuntary context switches
+          8627009633  instructions retired
+          3833539530  cycles elapsed
+           164039104  peak memory footprint

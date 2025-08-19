@@ -4,5 +4,5 @@ for i in *.fsproj; do \
   dotnet clean --verbosity q $i && \
   dotnet build --verbosity q $i && \
   /usr/bin/time -l env DYLD_LIBRARY_PATH="$PWD/lib" \
-    dotnet run --verbosity q --project $i > $i.out 2>&1; \
+    dotnet run debug 24 --verbosity q --project $i > $i.out 2>&1; \
   done;

@@ -32,3 +32,6 @@ notes/simpleITKClasses.txt~
 /StackProcessing/obj
 /IRefCounting/obj
 /IRefCounting/bin
+/test/image30
+/test/mask30
+/test/result30

@@ -12,10 +12,15 @@ let main arg =
             debug availableMemory
         else
             source availableMemory
+    let input,output = 
+        if arg.Length > 1 then
+            $"image{arg[1]}", $"mask{arg[1]}"
+        else
+            "image18", "mask18"
 
     src
-    |> read<uint8> "image" ".tiff"
-    >=> write "result" ".tif"
+    |> read<uint8> input ".tiff"
+    >=> write output ".tiff"
     |> sink
 
     0
