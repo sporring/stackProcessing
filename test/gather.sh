@@ -1,5 +1,5 @@
 #!/bin/zsh
-echo "" > gather.csv
+echo "name, peakMemory, estimatedPeak, userTime" > gather.csv
 for i in *.fsproj.out; do \
   line=$(tail -n 1 $i)
   words=(${=line})
@@ -7,5 +7,8 @@ for i in *.fsproj.out; do \
   line="$(tail -n 18 -- "$i" | head -n 1)"
   words=(${=line})
   userTime=$words[3]
-  echo $i, $peakMemory, $userTime >> gather.csv
+  line=$(grep "Running pipeline" $i)
+  words=(${=line})
+  estimate=$words[7]
+  echo ${i%.fsproj.out}, $peakMemory, $estimate, $userTime >> gather.csv
   done;

@@ -13,7 +13,11 @@ let main arg =
             debug availableMemory
         else
             source availableMemory
-
+    let input,output = 
+        if arg.Length > 1 then
+            $"image{arg[1]}", $"result{arg[1]}"
+        else
+            "image18", "result18"
     // Plotly.Net plot function
     let plt (x:float list) (y:float list) = 
          Chart.Column(values = y, Keys = x)
@@ -23,7 +27,7 @@ let main arg =
         |> Chart.show
 
     src
-    |> read<uint8> "image" ".tiff" 
+    |> read<uint8> input ".tiff" 
     >=> histogram ()
     >=> map2pairs --> pairs2floats --> plot plt
     |> sink

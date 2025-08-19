@@ -12,10 +12,15 @@ let main arg =
             debug availableMemory
         else
             source availableMemory
+    let input,output = 
+        if arg.Length > 1 then
+            $"image{arg[1]}", $"result{arg[1]}"
+        else
+            "image18", "result18"
 
     let readMaker =
         src
-        |> read<float> "image" ".tiff"
+        |> read<float> input ".tiff"
 
     let stats = 
         readMaker 

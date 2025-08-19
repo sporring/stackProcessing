@@ -1,22 +1,23 @@
+Added debugging of Image class
 [debug] Preparing pipeline - 2147483648 B available
 [debug] Done
-[sink] Running
+[sink] Running pipeline with an estimated 0 / 2097152 KB of memory use
 [sink] Done
-        2.56 real         1.86 user         0.56 sys
-           205471744  maximum resident set size
+        1.63 real         1.05 user         0.36 sys
+           207699968  maximum resident set size
                    0  average shared memory size
                    0  average unshared data size
                    0  average unshared stack size
-               25464  page reclaims
-                   9  page faults
+               25707  page reclaims
+                  10  page faults
                    0  swaps
                    0  block input operations
                    0  block output operations
-                 161  messages sent
-                 385  messages received
+                 193  messages sent
+                 390  messages received
                    2  signals received
                   45  voluntary context switches
-               25924  involuntary context switches
-          9121787798  instructions retired
-          4136837826  cycles elapsed
-           161499712  peak memory footprint
+               19242  involuntary context switches
+          8714261296  instructions retired
+          3812774996  cycles elapsed
+           163695040  peak memory footprint

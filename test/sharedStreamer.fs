@@ -12,10 +12,16 @@ let main arg =
             debug availableMemory
         else
             source availableMemory
+    let input,output = 
+        if arg.Length > 1 then
+            $"image{arg[1]}", $"result{arg[1]}"
+        else
+            "image18", "result18"
+
 
     let readMaker = 
         src
-        |> read<uint8> "image" ".tiff"
+        |> read<uint8> input ".tiff"
         //>=> tapIt (fun s -> $"[readAs] {s.Index} -> Image {s.Image}")
 
     readMaker 
@@ -28,7 +34,7 @@ let main arg =
     >=> tap "cast"
     >=> cast<float,int8>
     >=> tap "write"
-    >=> write "result" ".tiff"
+    >=> write output ".tiff"
     |> sink
 
     0

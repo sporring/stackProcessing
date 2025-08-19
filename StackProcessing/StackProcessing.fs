@@ -419,7 +419,10 @@ let discreteGaussianOp (name:string) (sigma:float) (outputRegionMode: ImageFunct
     printfn $"discreteGaussianOp: sigma {sigma}, ksz {ksz}, win {win}, stride {stride}, pad {pad}"
     let f = volFctToLstFctReleaseAfter (ImageFunctions.discreteGaussian 3u sigma (ksz |> Some) outputRegionMode boundaryCondition) pad stride
     let memoryNeed nPixels = (2UL*nPixels*(uint64 win) + (uint64 ksz))*(typeof<float> |> Image.getBytesPerComponent |> uint64)
-    let nElemsTransformation nElems = nElems - 2UL*(uint64 pad) 
+    let nElemsTransformation nElems = 
+        match outputRegionMode with
+            | Some Valid -> nElems - 2UL * uint64 pad
+            |_ -> nElems
     let stg = Stage.map name f memoryNeed nElemsTransformation // wrong for Valid, where the sequences becomes shorter
     (window win pad stride) --> stg --> collect ()
 

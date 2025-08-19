@@ -14,15 +14,20 @@ let main arg =
             debug availableMemory
         else
             source availableMemory
+    let input,output = 
+        if arg.Length > 1 then
+            $"image{arg[1]}", $"result{arg[1]}"
+        else
+            "image18", "result18"
 
     src
-    |> read<float> "image" ".tiff"
+    |> read<float> input ".tiff"
     >=> tap "tap: For finiteDiff"
     >=> finiteDiff sigma 1u 2u
     >=> tap "tap: For cast"
     >=> cast<float,uint8>
     >=> tap "tap: For write"
-    >=> write "result" ".tif"
+    >=> write output ".tiff"
     |> sink
 
     0
