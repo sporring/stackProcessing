@@ -1,22 +1,29 @@
 ﻿// To run, remember to:
 // export DYLD_LIBRARY_PATH=./StackPipeline/lib:$(pwd)/bin/Debug/net8.0
-open Pipeline
+open StackProcessing
 
 [<EntryPoint>]
-let main _ =
-    let src = "image"
-    let trg = "result"
-    let width, height, depth = getStackSize src ".tiff"
-    let availableMemory = 1024UL * 1024UL // 1MB for example
+let main arg =
+    let availableMemory = 2UL * 1024UL * 1024UL *1024UL // 2GB for example
+
+    let src = 
+        if arg.Length > 0 && arg[0] = "debug" then
+            Image.Image<_>.setDebug true; 
+            debug availableMemory/2UL
+        else
+            source availableMemory/2UL
 
     let imageMaker =
-        source<Slice<uint8>> availableMemory
-        |> read "image" ".tiff"
+        src
+        |> read<uint8> "image" ".tiff"
     let maskMaker =
-        source<Slice<uint8>> availableMemory
-        |> read "mask" ".tiff"
+        src
+        |> read<uint8> "mask" ".tiff"
 
-    zipWith Slice.mul imageMaker maskMaker
+    (imageMaker, maskMaker) ||> zip
+    >=> tap "[tab] For mul2"
+    >>=> mul2
+    >=> tap "[tab] For write"
     >=> write "result" ".tif"
     |> sink
 

@@ -1,21 +1,27 @@
 ﻿// To run, remember to:
 // export DYLD_LIBRARY_PATH=./StackPipeline/lib:$(pwd)/bin/Debug/net8.0
-open Pipeline
+open StackProcessing
 
 [<EntryPoint>]
-let main _ =
-    let trg = "result"
-    let width, height, depth = 64u, 64u, 20u
-    let availableMemory = 1024UL * 1024UL // 1MB for example
-    source<Slice<float>> availableMemory
-        |> create width height depth
-        >=> addNormalNoise 128.0 50.0
-        >=> threshold 128.0 infinity
-        >=> castFloatToUInt8
-        >=> piecewiseConnectedComponents (Some 5u)
-        >=> castUInt64ToUInt16
-        // Tiff supporst uint8, int8, uint16, int16, and float32
-        >=> write "result" ".tif"
-        |> sink
+let main arg =
+    let width, height, depth = 1024u, 1024u, 1024u
+    let availableMemory = 2UL * 1024UL * 1024UL *1024UL // 1MB for example
+
+    let src = 
+        if arg.Length > 0 && arg[0] = "debug" then
+            Image.Image<_>.setDebug true; 
+            debug availableMemory
+        else
+            source availableMemory
+
+    src
+    |> zero<float> width height depth
+    >=> addNormalNoise 128.0 50.0
+    >=> threshold 128.0 infinity
+    >=> connectedComponents (1024u/8u)
+    >=> cast<uint64,uint16>
+    // Tiff supporst uint8, int8, uint16, int16, and float32
+    >=> write "result" ".tif"
+    |> sink
 
     0

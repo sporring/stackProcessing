@@ -1,29 +1,42 @@
 ﻿// To run, remember to:
 // export DYLD_LIBRARY_PATH=./StackPipeline/lib:$(pwd)/bin/Debug/net8.0
-open Pipeline
-open Slice
+open StackProcessing
 
 [<EntryPoint>]
-let main _ =
-    let src = "image"
-    let trg = "result"
-    let mem = 1024UL * 1024UL // 1MB for example
+let main arg =
+    let availableMemory = 2UL * 1024UL * 1024UL *1024UL // 2GB for example
 
-    let normalizeWith (stats: ImageStats) (slice: Slice<float>) =
-        sliceDivScalar (sliceSubScalar slice stats.Mean) stats.Std
+    let src = 
+        if arg.Length > 0 && arg[0] = "debug" then
+            Image.Image<_>.setDebug true; 
+            debug availableMemory
+        else
+            source availableMemory
 
     let readMaker =
-        source<Slice<float>> mem
-        |> read "image" ".tiff"
+        src
+        |> read<float> "image" ".tiff"
 
     let stats = 
-        readMaker >=> computeStats
-        |> cacheScalar "stats"
+        readMaker 
+        >=> StackProcessing.computeStats () // fix the naming conflict!!!
+        |> drainSingle
+    printfn "%A" stats
 
-    stats >=> print |> sink
+    let normalizeWith (stats: ImageStats) (image: Image<float>) =
+        let J = ImageFunctions.imageSubScalar image stats.Mean;
+        let K = ImageFunctions.imageDivScalar J stats.Std
+        J.decRefCount()
+        K
 
-    zipWith normalizeWith stats readMaker
-    >=> computeStats >=> print 
-    |> sink
+    // normalizeWith can release image and normalizeWithOp use liftUnary. This saves storing 1 image per iteration
+    let normalizeWithOp = liftUnaryReleaseAfter "normalizeWithOp" (normalizeWith stats) id id
+
+    let updatedStats = 
+        readMaker
+        >=> normalizeWithOp
+        >=> StackProcessing.computeStats ()
+        |> drainSingle 
+    printfn "%A" updatedStats
 
     0
