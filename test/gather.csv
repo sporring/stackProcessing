@@ -1,0 +1,19 @@
+
+computeStats.fsproj.out, 172018176, 20.80
+connectedComponents.fsproj.out, 164579776, 140.74
+convolve3d.fsproj.out, 163564160, 887.66
+copy.fsproj.out, 161876480, 4.15
+empty.fsproj.out, 161499712, 1.86
+erode.fsproj.out, 161745344, 402.38
+finiteDiff3D.fsproj.out, 170691200, 4828.67
+histogram.fsproj.out, 173755008, 967.27
+histogramShared.fsproj.out, 163400256, 874.23
+multiplyConstant.fsproj.out, 173492608, 17.12
+multiplyMask.fsproj.out, 164743552, 11.11
+normalize.fsproj.out, 166578560, 43.94
+random.fsproj.out, 165415424, 12.77
+sharedImbalancedStreamer.fsproj.out, 163777152, 4714.83
+sharedStreamer.fsproj.out, 164104832, 16.35
+showImage.fsproj.out, 166889984, 3.40
+threshold.fsproj.out, 164923840, 28.09
+transition.fsproj.out, 168036864, 9531.56
