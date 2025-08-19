@@ -1005,13 +1005,18 @@ let ImageProcessingTests =
         let expected = [2u; 2u]
         Expect.equal sz expected $"Expected a smaller result\nimg={ImageFunctions.dump(img)}\nker={ImageFunctions.dump(ker)}\nresult={ImageFunctions.dump(result)}\n"
 
+    testCase "convolve 2D Same" <| fun _ ->
+        let img = Image<float>.ofArray2D (Array2D.create 3 3 1.0)
+        let ker = Image<float>.ofArray2D (Array2D.create 2 2 2.0)
+        let result = ImageFunctions.convolve (Some ImageFunctions.Same) None img ker
+        let sz = result.GetSize()
+        let expected = [3u; 3u]
+        Expect.equal sz expected $"Expected a smaller result\nimg={ImageFunctions.dump(img)}\nker={ImageFunctions.dump(ker)}\nresult={ImageFunctions.dump(result)}\n"
+
     testCase "convolve 2D Valid reverse order" <| fun _ ->
         let img = Image<float>.ofArray2D (Array2D.create 3 3 1.0)
         let ker = Image<float>.ofArray2D (Array2D.create 2 2 2.0)
-        let result = ImageFunctions.convolve (Some ImageFunctions.Valid) None ker img
-        let sz = result.GetSize()
-        let expected = [2u; 2u]
-        Expect.equal sz expected $"Expected a smaller result\nimg={ImageFunctions.dump(img)}\nker={ImageFunctions.dump(ker)}\nresult={ImageFunctions.dump(result)}\n"
+        Expect.throws (fun _ -> ImageFunctions.convolve (Some ImageFunctions.Valid) None ker img |> ignore) $"Expected an exception for images ({ker.GetSize()}) smaller than the kernel ({img.GetSize()})\n"
 
     testCase "convolve 2D Odd size" <| fun _ ->
         let img = Image<float>.ofArray2D (Array2D.create 3 3 1.0)
@@ -1024,7 +1029,7 @@ let ImageProcessingTests =
     testCase "convolve 2D Odd singular dimensions" <| fun _ ->
         let img = Image<float>.ofArray2D (Array2D.create 3 3 1.0)
         let ker = Image<float>.ofArray2D (Array2D.create 2 1 2.0)
-        let result = ImageFunctions.convolve None None img ker
+        let result = ImageFunctions.convolve (Some ImageFunctions.Valid) None img ker
         let sz = result.GetSize()
         let expected = [2u; 3u]
         Expect.equal sz expected $"Expected a non-symmetric smaller result regardless of order\nimg={ImageFunctions.dump(img)}\nker={ImageFunctions.dump(ker)}\nresult={ImageFunctions.dump(result)}\n"
@@ -1045,6 +1050,14 @@ let ImageProcessingTests =
         let expected = [2u; 2u; 2u]
         Expect.equal sz expected $"Expected a smaller result\nimg={ImageFunctions.dump(img)}\nker={ImageFunctions.dump(ker)}\nresult={ImageFunctions.dump(result)}\n"
 
+    testCase "convolve 3D Same" <| fun _ ->
+        let img = Image<float>.ofArray3D (Array3D.create 3 3 3 1.0)
+        let ker = Image<float>.ofArray3D (Array3D.create 2 2 2 2.0)
+        let result = ImageFunctions.convolve (Some ImageFunctions.Same) None img ker
+        let sz = result.GetSize()
+        let expected = [3u; 3u; 2u]
+        Expect.equal sz expected $"Expected a result with equal size in x and y and smaller in z\nimg={ImageFunctions.dump(img)}\nker={ImageFunctions.dump(ker)}\nresult={ImageFunctions.dump(result)}\n"
+
     testCase "convolve 3D Odd size" <| fun _ ->
         let img = Image<float>.ofArray3D (Array3D.create 3 3 3 1.0)
         let ker = Image<float>.ofArray3D (Array3D.create 1 2 2 2.0)
@@ -1056,10 +1069,7 @@ let ImageProcessingTests =
     testCase "convolve 3D Odd size reverse order" <| fun _ ->
         let img = Image<float>.ofArray3D (Array3D.create 3 3 3 1.0)
         let ker = Image<float>.ofArray3D (Array3D.create 1 2 2 2.0)
-        let result = ImageFunctions.convolve None None ker img
-        let sz = result.GetSize()
-        let expected = [3u; 2u; 2u]
-        Expect.equal sz expected $"Expected a non-symmetric smaller result regardless of order\nimg={ImageFunctions.dump(img)}\nker={ImageFunctions.dump(ker)}\nresult={ImageFunctions.dump(result)}\n"
+        Expect.throws (fun _ -> ImageFunctions.convolve (Some ImageFunctions.Valid) None ker img |> ignore) $"Expected an exception for images ({ker.GetSize()}) smaller than the kernel ({img.GetSize()})\n"
 
     // conv
     testCase "conv 2D with identity kernel" <| fun _ ->
@@ -1070,7 +1080,6 @@ let ImageProcessingTests =
         let expected = img
         floatImage2DFloatClose result expected 1e-10 $"Expected convolution with identity kernel\nimg={ImageFunctions.dump(img)}\nker={ImageFunctions.dump(ker)}\nresult={ImageFunctions.dump(result)}\n"
 
-
     testCase "conv 3D with identity kernel" <| fun _ ->
         let img = Image<float>.ofArray3D (Array3D.init 2 2 2 (fun i j k -> float(k+2*j+4*i)))
         let arr = Array3D.create 1 1 1 1.0
@@ -1078,25 +1087,26 @@ let ImageProcessingTests =
         let result = ImageFunctions.conv img ker
         let expected = img.toArray3D()
         floatArray3DFloatClose (result.toArray3D()) expected 1e-10 $"Expected conv with identity kernel\nimg={ImageFunctions.dump(img)}\nker={ImageFunctions.dump(ker)}\nresult={ImageFunctions.dump(result)}\n"
+
     // discreteGaussian
     testCase "2D discreteGaussian smooths image" <| fun _ ->
         let arr = Array2D.init 9 9 (fun m n -> if m=4 && n=4 then 1.0 else 0.0)
         let img = Image<float>.ofArray2D arr
         let blurred = ImageFunctions.discreteGaussian 2u 1.0 None None None img
         Expect.isTrue (
-          blurred[2,2] < 1.0
-          && blurred[2,2] > 0.0 
-          && blurred[2,1] < blurred[2,2]
-          && blurred[2,3] < blurred[2,2] 
-          && blurred[1,2] < blurred[2,2] 
-          && blurred[3,2] < blurred[2,2]
-          ) "Expected smoothing at center"
+          blurred[4,4] < 1.0
+          && blurred[4,4] > 0.0 
+          && blurred[4,3] < blurred[4,4]
+          && blurred[4,5] < blurred[4,4] 
+          && blurred[3,4] < blurred[4,4] 
+          && blurred[5,4] < blurred[4,4]
+          ) $"Expected smoothing at center ({blurred.GetSize()}: {blurred[0,4]}, {blurred[1,4]}, {blurred[2,4]}, {blurred[3,4]}, {blurred[4,4]}, {blurred[5,4]}, {blurred[6,4]}, {blurred[7,4]}, {blurred[8,4]})"
 
     // discreteGaussian
     testCase "3D discreteGaussian smooths image" <| fun _ ->
         let arr = Array3D.init 9 9 9 (fun m n o -> if m=4 && n=4 && o=4 then 1.0 else 0.0)
         let img = Image<float>.ofArray3D arr
-        let blurred = ImageFunctions.discreteGaussian 3u 1.0 None None None img
+        let blurred = ImageFunctions.discreteGaussian 3u 1.0 None (Some ImageFunctions.Valid) None img
         Expect.isTrue (
           blurred[2,2,2] < 1.0
           && blurred[2,2,2] > 0.0 

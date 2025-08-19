@@ -2,60 +2,7 @@
 
 open FSharp.Control
 
-module Async =
-    /// Transforms the result of an asynchronous computation using a pure function.
-    let map f asyncVal = async {
-        let! x = asyncVal
-        return f x
-    }
-
-/// Applies a folder function over an asynchronous sequence, threading an accumulator through the sequence like <c>List.fold</c>.
-let fold (folder: 'State -> 'T -> 'State) (state: 'State) (source: AsyncSeq<'T>) : Async<'State> =
-    let mutable acc = state
-    source
-    |> AsyncSeq.iterAsync (fun item ->
-        async {
-            acc <- folder acc item
-        })
-    |> Async.map (fun () -> acc)
-
-/// Attempts to retrieve the item at the specified index from an asynchronous sequence.
-let tryItem (n: int) (source: AsyncSeq<'T>) : Async<'T option> =
-    async {
-        let mutable i = 0
-        let mutable result = None
-        use enumerator = source.GetEnumerator()
-        let rec loop () =
-            async {
-                match! enumerator.MoveNext() with
-                    | Some item ->
-                        if i = n then
-                            result <- Some item
-                        else
-                            i <- i + 1
-                            return! loop ()
-                    | None -> return ()
-            }
-        do! loop ()
-        return result
-    }
-
 (*
-/// Creates a sliding window over an asynchronous sequence, returning lists of elements of the specified window size.
-let windowed (windowSize: int) (source: AsyncSeq<'T>) : AsyncSeq<'T list> =
-    if windowSize <= 0 then
-        invalidArg "windowSize" "Must be greater than 0"
-    asyncSeq {
-        let queue = System.Collections.Generic.Queue<'T>()
-        for awaitElem in source do
-            queue.Enqueue awaitElem
-            if queue.Count = windowSize then
-                yield queue |> Seq.toList
-                queue.Dequeue() |> ignore
-    }
-*)
-open FSharp.Control
-
 /// Windowed function with stride and optional padding.
 let windowed
     (windowSize: uint)
@@ -98,37 +45,89 @@ let windowed
 
         yield! yieldWindows ()
     }
+*)
+let windowedWithPad
+    (windowSize: uint)
+    (stride: uint)
+    (prePad: uint)
+    (postPad: uint)
+    (zeroMaker: int->'T->'T)
+    (source: AsyncSeq<'T>)
+    : AsyncSeq<'T list> =
+    //printfn "windowedWithPad windowSize=%A stride=%A prePad=%A postPad=%A" windowSize stride prePad postPad
 
-/// Splits an asynchronous sequence into fixed-size chunks.
-let chunkBySize (chunkSize: int) (source: AsyncSeq<'T>) : AsyncSeq<'T list> =
-    if chunkSize <= 0 then
-        invalidArg "chunkSize" "Chunk size must be greater than 0"
+    if windowSize = 0u then invalidArg "windowSize" "Must be > 0"
+    if stride = 0u then invalidArg "stride" "Must be > 0"
+
     asyncSeq {
-        let buffer = ResizeArray<'T>(chunkSize)
-        for awaitElem in source do
-            buffer.Add(awaitElem)
-            if buffer.Count = chunkSize then
-                yield buffer |> Seq.toList
-                buffer.Clear()
-        // yield remaining items
-        if buffer.Count > 0 then
-            yield buffer |> Seq.toList
+        let enum = (AsyncSeq.toAsyncEnum source).GetAsyncEnumerator()
+        let buffer: ResizeArray<'T> = ResizeArray<'T>()
+
+        let tryGetNext () = async {
+            let! hasNext = enum.MoveNextAsync().AsTask() |> Async.AwaitTask
+            let next = if hasNext then Some enum.Current else None
+            return next
+        }
+
+        let tryGetCurrent id prePad postPad (zeroMaker: int->'T->'T) prev current = async {
+            //printfn $"id {id}, prePad {prePad}, postPad {postPad}, buffer.Count {buffer.Count}, windowSize {windowSize}"
+            if prePad > 0u then
+                //printfn "tryGetCurrent prePad"
+                let zero = Option.map (zeroMaker id) current
+                return (zero, prePad - 1u, postPad, current)
+            elif current <> None then
+                //printfn "tryGetCurrent current"
+                let! next = tryGetNext ()
+                return (current, prePad, postPad, next)
+            else //elif postPad > 0u then
+                //printfn "tryGetCurrent postPad"
+                let zero = Option.map (zeroMaker id) prev
+                return (zero, prePad, postPad - 1u, current)
+//            else
+//                printfn "tryGetCurrent default"
+//                let zero = Option.map (zeroMaker id) current
+//                return (zero, prePad, postPad, current)
+        }
+        // kernesize 5
+        // index:     -2-1 0 1 2 3 4 5 6 7
+        // pad:        * *             * *
+        // winsize 7:  * * * * * * *
+        // valid:          * * *
+        // stride 3, ws 7:   * * * * * * *
+        // valid:                * * *
+        // stride 3, ws 7:         * * * * * * *
+        // valid:                      
+        // stride = windowSize-2*p
+        // m+2*pad = n*stride+windowSize
+        // n = (m+2*pad-windowSize)/stride
+
+        let rec yieldWindows (id: int) (prePad: uint) (postPad: uint) (zeroMaker: int->'T->'T) (step: uint) (current: 'T option) (next: 'T option) = asyncSeq {
+            //printfn "yieldWindows prePad=%A postPad=%A step=%A buffer.length=%A" prePad postPad step buffer.Count
+            if postPad = 0u && next = None then // when postPad goes to zero, then we contiue padding until buffer is emptied a last time
+                ()
+            else
+                //printfn $"Before {buffer.Count}"
+                let! curr, nPrePad, nPostPad, nxt = tryGetCurrent id prePad postPad zeroMaker current next
+                Option.iter buffer.Add curr
+                //printfn $"After {curr}, {nxt}, {buffer.Count}"
+                if step > 0u then
+                    if buffer.Count > 0 then buffer.RemoveAt 0
+                    //printfn "yieldWindows stepping"
+                    yield! yieldWindows (id+1) nPrePad nPostPad zeroMaker (step - 1u) curr nxt
+                elif uint buffer.Count >= windowSize then
+                    //printfn "yieldWindows release window buffer.length=%A" buffer.Count
+                    yield (buffer |> Seq.take (int windowSize) |> Seq.toList)
+                    let dropCount = min stride (uint buffer.Count)
+                    buffer.RemoveRange(0, int dropCount)
+                    //printfn "yieldWindows continuing"
+                    yield! yieldWindows (id+1) nPrePad nPostPad zeroMaker (stride-dropCount) curr nxt
+                else
+                    //printfn "yieldWindows continuing"
+                    yield! yieldWindows (id+1) nPrePad nPostPad zeroMaker step curr nxt
+        }
+        let! first = tryGetNext()
+        yield! yieldWindows (-(int prePad)) prePad postPad zeroMaker 0u None first
     }
-
-
-/// Combines two asynchronous sequences of image slices element-wise using a user-defined function.
-let zipJoin (combine: 'S -> 'T -> 'U) 
-            (a: AsyncSeq<'S>) 
-            (b: AsyncSeq<'T>)
-            (txt: string option) 
-            : AsyncSeq<'U> =
-    AsyncSeq.zip a b 
-    |> AsyncSeq.map (
-        fun (x, y) -> 
-            match txt with 
-                Some t -> printfn "%s" t 
-                | None -> ()
-            combine x y)
 
 /// Converts an asynchronous computation of a single value into an asynchronous sequence containing one item.
 let ofAsync (computation: Async<'T>) : AsyncSeq<'T> =
@@ -137,38 +136,23 @@ let ofAsync (computation: Async<'T>) : AsyncSeq<'T> =
         yield result
     }
 
-/// Missing AsyncSeq.share: broadcasts each element to multiple readers, only caching one element at a time.
-let share (input: AsyncSeq<'T>) : AsyncSeq<'T> =
-    let agent = MailboxProcessor.Start(fun inbox ->
-        async {
-            let enumerator = (AsyncSeq.toAsyncEnum input).GetAsyncEnumerator()
-            let mutable current: option<'T> = None
-            let mutable waiting = ResizeArray<AsyncReplyChannel<option<'T>>>()
-            let rec loop () = async {
-                if current.IsNone then
-                    let! hasNext = enumerator.MoveNextAsync().AsTask() |> Async.AwaitTask
-                    current <- if hasNext then Some enumerator.Current else None
-                while waiting.Count > 0 do
-                    let ch = waiting.[0]
-                    waiting.RemoveAt(0)
-                    ch.Reply(current)
-                if current.IsSome then
-                    current <- None
-                    return! loop ()
-                else
-                    ()
-            }
-            while true do
-                let! reply = inbox.Receive()
-                waiting.Add(reply)
-                if current.IsNone then
-                    do! loop ()
-        })
+let zipConcurrent (s1: AsyncSeq<'U>) (s2: AsyncSeq<'V>) : AsyncSeq<'U * 'V> =
     asyncSeq {
-        let mutable done_ = false
-        while not done_ do
-            let! v = agent.PostAndAsyncReply(id)
-            match v with
-            | Some x -> yield x
-            | None -> done_ <- true
+        let e1 = (AsyncSeq.toAsyncEnum s1).GetAsyncEnumerator()
+        let e2 = (AsyncSeq.toAsyncEnum s2).GetAsyncEnumerator()
+
+        let rec loop () = asyncSeq {
+            // Start both MoveNextAsync calls concurrently
+            let! c1Child = e1.MoveNextAsync().AsTask() |> Async.AwaitTask |> Async.StartChild
+            let! c2Child = e2.MoveNextAsync().AsTask() |> Async.AwaitTask |> Async.StartChild
+            let! has1 = c1Child
+            let! has2 = c2Child
+            if has1 && has2 then
+                yield (e1.Current, e2.Current)
+                yield! loop ()
+            else
+                // end at the shorter stream
+                ()
+        }
+        yield! loop ()
     }

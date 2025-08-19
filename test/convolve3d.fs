@@ -1,20 +1,28 @@
 ﻿// To run, remember to:
-// export DYLD_LIBRARY_PATH=./StackPipeline/lib:$(pwd)/bin/Debug/net8.0
-open Pipeline
+// export DYLD_LIBRARY_PATH=$(pwd)/lib 
+open StackProcessing
 
 [<EntryPoint>]
-let main _ =
-    let src = "image"
-    let trg = "result"
-    let width, height, depth = getStackSize src ".tiff"
-    let availableMemory = 1024UL * 1024UL // 1MB for example
+let main arg =
+    let availableMemory = 2UL * 1024UL * 1024UL *1024UL // 1MB for example
     let sigma = 1.0
 
-    source<Slice<float>> availableMemory
-    |> read "image" ".tiff"
-    >=> convGauss 1.0 None
-    >=> castFloatToUInt8
+    let src = 
+        if arg.Length > 0 && arg[0] = "debug" then
+            Image.Image<_>.setDebug true; 
+            debug availableMemory
+        else
+            source availableMemory
+
+    src
+    |> read<float> "image" ".tiff"
+    // sigma = 1 => pad=2, depth = 22 => integer solution for number of strides when:
+    // windowSize = 1, 6, 15, or 26, => n = 21, 10, 1, or 0
+    >=> discreteGaussian sigma None None (Some 15u) 
+    //>=> convGauss sigma
+    >=> cast<float,uint8>
     >=> write "result" ".tif"
+    //>=> ignoreImages ()
     |> sink
 
     0
