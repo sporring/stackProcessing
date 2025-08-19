@@ -1,0 +1,22 @@
+[debug] Preparing pipeline - 2147483648 B available
+[debug] Done
+[sink] Running
+[sink] Done
+        2.56 real         1.86 user         0.56 sys
+           205471744  maximum resident set size
+                   0  average shared memory size
+                   0  average unshared data size
+                   0  average unshared stack size
+               25464  page reclaims
+                   9  page faults
+                   0  swaps
+                   0  block input operations
+                   0  block output operations
+                 161  messages sent
+                 385  messages received
+                   2  signals received
+                  45  voluntary context switches
+               25924  involuntary context switches
+          9121787798  instructions retired
+          4136837826  cycles elapsed
+           161499712  peak memory footprint

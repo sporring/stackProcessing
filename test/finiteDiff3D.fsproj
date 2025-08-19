@@ -20,7 +20,7 @@
     </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="../Pipeline/Pipeline.fsproj" />
+    <ProjectReference Include="../StackProcessing/StackProcessing.fsproj" />
   </ItemGroup>
 
   <ItemGroup>

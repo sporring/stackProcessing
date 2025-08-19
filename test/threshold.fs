@@ -1,20 +1,28 @@
 ﻿// To run, remember to:
 // export DYLD_LIBRARY_PATH=./StackPipeline/lib:$(pwd)/bin/Debug/net8.0
-open Pipeline
+open StackProcessing
 
 [<EntryPoint>]
-let main _ =
+let main arg =
     let trg = "result"
-    let width, height, depth = 64u, 64u, 8u
-    let availableMemory = 1024UL * 1024UL // 1MB for example
+    let width, height, depth = 1024u, 1024u, 1024u
+    let availableMemory = 2UL * 1024UL * 1024UL *1024UL // 2GB for example
 
-    source<Slice<float>> availableMemory
-    |> create width height depth
+    let src = 
+        if arg.Length > 0 && arg[0] = "debug" then
+            Image.Image<_>.setDebug true; 
+            debug availableMemory
+        else
+            source availableMemory
+
+    src
+    |> zero<int8> width height depth
+    >=> cast<int8,float>
     >=> addNormalNoise 128.0 50.0
-    >=> convGauss 2.0 None
-    >=> castFloatToUInt8
     >=> threshold 128.0 infinity
-    >=> sliceMulScalar 255uy
+    >=> imageMulScalar 255.0
+    >=> cast<float,int8>
+    //>=> ignoreImages ()
     >=> write "result" ".tif"
     |> sink
 
