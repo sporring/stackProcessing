@@ -3,28 +3,28 @@ Added debugging of Image class
 [debug] Done
 [readRandom cast to Byte]
 [>=>] show
-[sink] Running pipeline with an estimated 64 / 2097152 KB of memory use
-[readRandom] Reading image 0 from image24/image_182.tiff as Byte
-    64 KB   1 Images Created image24/image_182.tiff 14.58.29.476538 ([256; 256], sitkUInt8 sitkUInt8, 1->65536)
+[sink] Running pipeline with an estimated 1024 / 2097152 KB of memory use
+[readRandom] Reading image 0 from image30/image_386.tiff as Byte
+  1024 KB   1 Images Created image30/image_386.tiff 09.07.23.280996 ([1024; 1024], sitkUInt8 sitkUInt8, 1->1048576)
 [show] Showing image 0
-    64 KB   1 Images Decreased reference to image24/image_182.tiff 14.58.29.476538
-     0 KB   0 Images Disposed of image24/image_182.tiff 14.58.29.476538
+  1024 KB   1 Images Decreased reference to image30/image_386.tiff 09.07.23.280996
+     0 KB   0 Images Disposed of image30/image_386.tiff 09.07.23.280996
 [sink] Done
-        3.24 real         1.39 user         0.39 sys
-           207994880  maximum resident set size
+        4.06 real         2.24 user         0.46 sys
+           209829888  maximum resident set size
                    0  average shared memory size
                    0  average unshared data size
                    0  average unshared stack size
-               33190  page reclaims
-                1178  page faults
+               37978  page reclaims
+                1196  page faults
                    0  swaps
                    0  block input operations
                    0  block output operations
                  161  messages sent
-                 386  messages received
+                 384  messages received
                    2  signals received
-                  46  voluntary context switches
-               17492  involuntary context switches
-          8627009633  instructions retired
-          3833539530  cycles elapsed
-           164039104  peak memory footprint
+                  51  voluntary context switches
+               20117  involuntary context switches
+          9034763822  instructions retired
+          4019551200  cycles elapsed
+           165185920  peak memory footprint
