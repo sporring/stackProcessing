@@ -112,12 +112,12 @@ module private Pipe =
         let apply debug input = AsyncSeq.init (int64 depth) (fun (i:int64) -> mapper (int i))
         create name apply profile
 
-    let liftConsume (name: string) (profile: Profile) (release: 'S->unit) (f: 'S -> 'T) : Pipe<'S,'T> =
-        let folder input = 
+    let liftRelease (name: string) (profile: Profile) (release: 'S->unit) (f: 'S -> 'T) : Pipe<'S,'T> =
+        let mapper input = 
             let output = f input
             release input
             output
-        let apply debug  input = input |> AsyncSeq.map folder
+        let apply debug  input = input |> AsyncSeq.map mapper
         create name apply profile
 
     let skip (name: string) (count: uint) =
@@ -311,11 +311,22 @@ module private Pipe =
         create name apply profile
 
     // collect : flattens an AsyncSeq<'T list> to AsyncSeq<'T>
-    let collect<'T> (name: string) : Pipe<'T list, 'T> =
+    let collect (name: string) (mapper: 'S -> ('T list)): Pipe<'S, 'T> =
+        let apply _debug (input: AsyncSeq<'S>) : AsyncSeq<'T> =
+            input |> AsyncSeq.collect (mapper >> AsyncSeq.ofSeq)
+        let profile = Streaming
+        create name apply profile
+
+(*
+    let flattenAlt (name: string) : Pipe<'T list, 'T> =
         let apply _debug (input: AsyncSeq<'T list>) : AsyncSeq<'T> =
             input |> AsyncSeq.collect (fun (xs: 'T list) -> AsyncSeq.ofSeq xs)
         let profile = Streaming
         create name apply profile
+*)
+
+    let flatten (name: string) : Pipe<'T list, 'T> =
+        collect name (fun (lst:'T list)-> lst)
 
     let ignore clean : Pipe<'T, unit> =
         let apply debug input =
@@ -467,9 +478,9 @@ module Stage =
         let pipe = Pipe.window name winSz pad zeroMaker stride
         fromPipe name transition id id pipe
 
-    let collect (name: string) : Stage<'T list, 'T> =
+    let flatten (name: string) : Stage<'T list, 'T> =
         let transition = ProfileTransition.create Streaming Streaming
-        let pipe = Pipe.collect name 
+        let pipe = Pipe.flatten name 
         fromPipe name transition id id pipe
 
     let liftUnary<'S,'T> (name: string) (f: 'S -> 'T) (memoryNeed: MemoryNeed) (nElemsTransformation: NElemsTransformation): Stage<'S, 'T> =
@@ -477,9 +488,9 @@ module Stage =
         let pipe = Pipe.lift name Streaming f
         create name pipe transition memoryNeed nElemsTransformation
 
-    let liftConsumeUnary<'S,'T> (name: string) (release: 'S->unit) (f: 'S -> 'T) (memoryNeed: MemoryNeed) (nElemsTransformation: NElemsTransformation): Stage<'S, 'T> =
+    let liftReleaseUnary<'S,'T> (name: string) (release: 'S->unit) (f: 'S -> 'T) (memoryNeed: MemoryNeed) (nElemsTransformation: NElemsTransformation): Stage<'S, 'T> =
         let transition = ProfileTransition.create Streaming Streaming
-        let pipe = Pipe.liftConsume name Streaming release f
+        let pipe = Pipe.liftRelease name Streaming release f
         create name pipe transition memoryNeed nElemsTransformation
 (*
     let liftWindowed<'S,'T when 'S: equality and 'T: equality> (name: string) (window: uint) (pad: uint) (zeroMaker: int->'S->'S) (stride: uint) (emitStart: uint) (emitCount: uint) (f: 'S list -> 'T list) (memoryNeed: MemoryNeed) (nElemsTransformation: NElemsTransformation): Stage<'S, 'T> =

@@ -48,7 +48,7 @@ module private Pipe =
     val init:
       name: string ->
         depth: uint -> mapper: (int -> 'T) -> profile: Profile -> Pipe<unit,'T>
-    val liftConsume:
+    val liftRelease:
       name: string ->
         profile: Profile ->
         release: ('S -> unit) -> f: ('S -> 'T) -> Pipe<'S,'T>
@@ -91,7 +91,8 @@ module private Pipe =
         pad: uint ->
         zeroMaker: (int -> 'T -> 'T) -> stride: uint -> Pipe<'T,'T list>
         when 'T: equality
-    val collect: name: string -> Pipe<'T list,'T>
+    val collect: name: string -> mapper: ('S -> 'T list) -> Pipe<'S,'T>
+    val flatten: name: string -> Pipe<'T list,'T>
     val ignore: clean: ('T -> unit) -> Pipe<'T,unit>
     val ignorePairs:
       cleanFst: ('S -> unit) * cleanSnd: ('T -> unit) -> Pipe<('S * 'T),unit>
@@ -199,13 +200,13 @@ module Stage =
         pad: uint ->
         zeroMaker: (int -> 'T -> 'T) -> stride: uint -> Stage<'T,'T list>
         when 'T: equality
-    val collect: name: string -> Stage<'T list,'T>
+    val flatten: name: string -> Stage<'T list,'T>
     val liftUnary:
       name: string ->
         f: ('S -> 'T) ->
         memoryNeed: MemoryNeed ->
         nElemsTransformation: NElemsTransformation -> Stage<'S,'T>
-    val liftConsumeUnary:
+    val liftReleaseUnary:
       name: string ->
         release: ('S -> unit) ->
         f: ('S -> 'T) ->

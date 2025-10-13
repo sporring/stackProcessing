@@ -90,7 +90,7 @@ let promoteStreamingToSliding
                 lst |> List.take (int stride) |> List.map decIfImage |> ignore
                 result
             ) id id )
-        --> Stage.collect $"{name}:collect"
+        --> Stage.flatten $"{name}:flatten"
         --> stage
 
 let (>=>>) (pl: Pipeline<'In, 'S>) (stage1: Stage<'S, 'U>, stage2: Stage<'S, 'V>) : Pipeline<'In, 'U * 'V> = 
@@ -115,7 +115,7 @@ let (>>=>) = Pipeline.(>>=>)
 let (>>=>>) = Pipeline.(>>=>>)
 let zeroMaker (index:int) (ex:Image<'S>) : Image<'S> = new Image<'S>(ex.GetSize(), 1u, "padding", index)
 let window windowSize pad stride= Stage.window "window" windowSize pad zeroMaker stride
-let collect () = Stage.collect "collect"
+let flatten () = Stage.flatten "flatten"
 let map f = Stage.map "map" f id id
 let sink (pl: Pipeline<unit,unit>) : unit = 
     Pipeline.sink pl
@@ -132,13 +132,13 @@ let ignoreSingles () : Stage<Image<_>,unit> = Stage.ignore (decIfImage>>ignore)
 let ignorePairs () : Stage<_,unit> = Stage.ignorePairs<_,unit> ((decIfImage>>ignore),(decIfImage>>ignore))
 let idOp<'T> = Stage.idOp<'T>
 
-let liftUnary name  = Stage.liftConsumeUnary name ignore
+let liftUnary name  = Stage.liftReleaseUnary name ignore
 let liftUnaryReleaseAfter 
     (name: string)
     (f: Image<'S> -> Image<'T>)
     (memoryNeed: MemoryNeed)
     (nElemsTransformation: NElemsTransformation) = 
-    Stage.liftConsumeUnary name (decIfImage>>ignore) f memoryNeed nElemsTransformation
+    Stage.liftReleaseUnary name (decIfImage>>ignore) f memoryNeed nElemsTransformation
 
 let getBytesPerComponent<'T> = (typeof<'T> |> Image.getBytesPerComponent |> uint64)
 
@@ -424,7 +424,7 @@ let discreteGaussianOp (name:string) (sigma:float) (outputRegionMode: ImageFunct
             | Some Valid -> nElems - 2UL * uint64 pad
             |_ -> nElems
     let stg = Stage.map name f memoryNeed nElemsTransformation // wrong for Valid, where the sequences becomes shorter
-    (window win pad stride) --> stg --> collect ()
+    (window win pad stride) --> stg --> flatten ()
 
 let discreteGaussian = discreteGaussianOp "discreteGaussian"
 let convGauss sigma = discreteGaussianOp "convGauss" sigma None None None
@@ -468,7 +468,7 @@ let convolveOp (name: string) (kernel: Image<'T>) (outputRegionMode: ImageFuncti
     let memoryNeed nPixels = (2UL*nPixels*(uint64 win) + (uint64 ksz))*(typeof<'T> |> Image.getBytesPerComponent |> uint64)
     let nElemsTransformation nElems = nElems - 2UL*(uint64 pad) 
     let stg = Stage.map name f memoryNeed nElemsTransformation
-    (window win pad stride) --> stg --> collect ()
+    (window win pad stride) --> stg --> flatten ()
 
 
 
@@ -488,7 +488,7 @@ let private makeMorphOp (name:string) (radius:uint) (winSz: uint option) (core: 
 
     let f = volFctToLstFctReleaseAfter (core radius) pad stride
     let stg = Stage.map name f id id
-    (window win pad stride) --> stg --> collect ()
+    (window win pad stride) --> stg --> flatten ()
 
 
 let erode radius = makeMorphOp "binaryErode"  radius None ImageFunctions.binaryErode
@@ -501,7 +501,7 @@ let binaryFillHoles (winSz: uint)=
     let pad, stride = 0u, winSz
     let f = volFctToLstFctReleaseAfter (ImageFunctions.binaryFillHoles) pad stride
     let stg = Stage.map "fillHoles" f id id
-    (window winSz pad stride) --> stg --> collect ()
+    (window winSz pad stride) --> stg --> flatten ()
 
 
 let connectedComponents (winSz: uint) = 
@@ -526,35 +526,35 @@ let connectedComponents (winSz: uint) =
         max (nPixels*(wsz*(2UL*bt8+bt64)-str*bt8)) (nPixels*(wsz*(bt8+bt64)+str*(bt64-bt8)))
     let nElemsTransformation = id
     let stg = Stage.map "connectedComponents" f memoryNeed nElemsTransformation
-    (window winSz pad stride) --> stg --> collect ()
+    (window winSz pad stride) --> stg --> flatten ()
 
 let relabelComponents a (winSz: uint) = 
     let pad, stride = 0u, winSz
     let f = volFctToLstFctReleaseAfter (ImageFunctions.relabelComponents a) pad stride
     let stg = Stage.map "relabelComponents" f id id
-    (window winSz pad stride) --> stg --> collect ()
+    (window winSz pad stride) --> stg --> flatten ()
 
 let watershed a (winSz: uint) =
     let pad, stride = 0u, winSz
     let f = volFctToLstFctReleaseAfter (ImageFunctions.watershed a) pad stride
     let stg = Stage.map "watershed" f id id
-    (window winSz pad stride) --> stg --> collect ()
+    (window winSz pad stride) --> stg --> flatten ()
 let signedDistanceMap (winSz: uint) =
     let pad, stride = 0u, winSz
     let f = volFctToLstFctReleaseAfter (ImageFunctions.signedDistanceMap 0uy 1uy) pad stride
     let stg = Stage.map "signedDistanceMap" f id id
-    (window winSz pad stride) --> stg --> collect ()
+    (window winSz pad stride) --> stg --> flatten ()
 let otsuThreshold (winSz: uint) =
     let pad, stride = 0u, winSz
     let f = volFctToLstFctReleaseAfter (ImageFunctions.otsuThreshold) pad stride
     let stg = Stage.map "otsuThreshold" f id id
-    (window winSz pad stride) --> stg --> collect ()
+    (window winSz pad stride) --> stg --> flatten ()
 
 let momentsThreshold (winSz: uint) =
     let pad, stride = 0u, winSz
     let f = volFctToLstFctReleaseAfter (ImageFunctions.momentsThreshold) pad stride
     let stg = Stage.map "momentsThreshold" f id id
-    (window winSz pad stride) --> stg --> collect ()
+    (window winSz pad stride) --> stg --> flatten ()
 
 let threshold a b = liftUnaryReleaseAfter "threshold" (ImageFunctions.threshold a b) id id
 
