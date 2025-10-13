@@ -78,7 +78,7 @@ val window:
     pad: uint -> stride: uint -> SlimPipeline.Stage<Image<'a>,Image<'a> list>
     when 'a: equality
 
-val collect: unit -> SlimPipeline.Stage<'a list,'a>
+val flatten: unit -> SlimPipeline.Stage<'a list,'a>
 
 val map: f: ('a -> 'b) -> SlimPipeline.Stage<'a,'b>
 
