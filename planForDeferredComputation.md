@@ -8,7 +8,7 @@ We want to:
 
 Currently, `Stage` has already "baked in" the concrete `Pipe<'S,'T>`, so the opportunity to modify `Stage`'s behaviour based on later optimisations is lost.
 
----
+ 
 
 ## Option 1: Turn `Stage` into a deferred computation description
 
@@ -42,7 +42,7 @@ This allows:
 * Late binding of window parameters
 * Memory and profile estimation before execution
 
----
+ 
 
 ## Option 2: Keep `Stage` but abstract over memory and transformation computations
 
@@ -66,7 +66,7 @@ Now your pipeline composition does **not** create a `Pipe<'S,'U>` immediately, o
 
 This is a smaller change, but less flexible than `StageSpec`.
 
----
+ 
 
 ## Add Sliding Window Parameter Search
 
@@ -103,7 +103,7 @@ let realisePipeline (stages: Stage<_,'_> list) : Pipe<_,_> =
     |> List.reduce Pipe.compose
 ```
 
----
+ 
 
 ## Bonus: Add Profiling Metadata to `Pipeline`
 
@@ -123,7 +123,7 @@ type Pipeline<'S,'T> = {
 }
 ```
 
----
+ 
 
 ## Summary
 

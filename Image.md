@@ -5,7 +5,7 @@
 > **Module:** `Image`
 > **Purpose:** A functional F# wrapper around **SimpleITK** for efficient manipulation of large (possibly larger-than-memory) 3D and multidimensional images with minimal I/O overhead.
 
----
+ 
 
 ## Overview
 
@@ -16,7 +16,7 @@ The `Image` module provides a high-level F# interface to the [SimpleITK](https:/
 * Efficient pixel-level access, memory usage tracking, and safe interop with ITK data structures.
 * Handling large image datasets where both **memory** and **I/O bandwidth** are limiting factors.
 
----
+ 
 
 ## InternalHelpers Module
 
@@ -50,7 +50,7 @@ The `Image` module provides a high-level F# interface to the [SimpleITK](https:/
 | `getBoxedZero t vSize`          | Create a boxed zero value for a pixel type.         |
 | `mulAdd t acc k p`              | Multiply and add operation (used for accumulation). |
 
----
+ 
 
 ## Global Functions
 
@@ -61,7 +61,7 @@ The `Image` module provides a high-level F# interface to the [SimpleITK](https:/
 | `equalOne v`                 | Returns `true` if `v` equals one.                        |
 | `printDebugMessage str`      | Print internal debug output (when debugging is enabled). |
 
----
+ 
 
 ## Internal State
 
@@ -72,7 +72,7 @@ The `Image` module provides a high-level F# interface to the [SimpleITK](https:/
 | `memUsed`     | Tracks total allocated image memory.      |
 | `debug`       | Global debug flag.                        |
 
----
+ 
 
 ## Image<'T> Type
 
@@ -119,7 +119,7 @@ let img = Image<float>([256u; 256u; 128u], optionalName="BrainMRI")
 | `(-)`    | `Image<'T> * Image<'T> -> Image<'T>` | Elementwise subtraction.        |
 | `(/)`    | `Image<'T> * Image<'T> -> Image<'T>` | Elementwise division.           |
 
----
+ 
 
 ## Usage Example
 
@@ -138,7 +138,7 @@ let value = Image.InternalHelpers.getBoxedPixel a a.PixelType (itk.simple.Vector
 printfn "First pixel: %A" value
 ```
 
----
+ 
 
 ## Performance Notes
 

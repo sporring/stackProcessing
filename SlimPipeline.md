@@ -118,11 +118,11 @@ Conceptually:
 
 ```
 AsyncSeq<'S>
-   │
-   ▼
+   |
+   v
  [ Pipe<'S,'A> ] --> [ Pipe<'A,'B> ] --> [ Pipe<'B,'T> ]
-   │
-   ▼
+   |
+   v
 AsyncSeq<'T>
 ```
 
@@ -171,5 +171,3 @@ Each `Pipeline` is a composable unit. They can be chained into full pipelines us
 | `>=>>`   | Fan out a stream into a stream pair with Pipe.map2Sync synchronization. |
 | `>>=>`   | Fan in a stream of pairs into a stream of singles. |
 | `>>=>>`  | Functionally compose a Pipeline of pairs with a Stage for pairs. |
-
----
