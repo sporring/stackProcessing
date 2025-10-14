@@ -43,7 +43,13 @@ val getBytesPerSItkComponent: t: itk.simple.PixelIDValueEnum -> uint32
 val equalOne: v: 'T -> bool
 val private syncRoot: obj
 val mutable private totalImages: int
+val mutable private peakTotalImages: int
+val incTotalImages: unit -> unit
+val decTotalImages: unit -> unit
 val mutable private memUsed: uint32
+val mutable private peakMemUsed: uint32
+val private incMemUsed: mem: uint32 -> unit
+val private decMemUsed: mem: uint32 -> unit
 val private printDebugMessage: str: string -> unit
 val mutable private debug: bool
 [<StructuredFormatDisplay ("{Display}")>]

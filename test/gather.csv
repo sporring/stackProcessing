@@ -1,19 +1,19 @@
-name, peakMemory, estimatedPeak, userTime
-computeStats, 162728320, 192, 2.08
-connectedComponents, 162580864, 131200, 3.19
-convolve3d, 164628864, 123904, 7.81
-copy, 164481344, 64, 2.09
-empty, 163695040, 0, 1.05
-erode, 163514752, 192, 5.90
-finiteDiff3D, 185944640, 41984, 32.24
-histogram, 169347520, 192, 10.50
-histogramShared, 168331712, 256, 11.38
-multiplyConstant, 164137472, 256, 1.67
-multiplyMask, 164907584, 128, 2.05
-normalize, 171903424, 1024, 2.85
-random, 163252672, 64, 1.51
-sharedImbalancedStreamer, 165792128, 44032, 30.72
-sharedStreamer, 164579648, 128, 2.20
-showImage, 164039104, 64, 1.39
-threshold, 164170112, 512, 1.95
-transition, 165612096, 41984, 58.37
+name, estimatedPeakMemory, peakMemory, peakImages, userTime
+computeStats.out, 12, 4, 1, 4.12
+connectedComponents.out, 8200, 316, 65, 1.75
+convolve3d.out, 7744, 1120, 17, 1.84
+copy.out, 4, 4, 1, 1.67
+empty.out, 0, , , 1.14
+erode.out, 12, 36, 5, 1.91
+finiteDiff3D.out, 2624, 480, 8, 2.42
+histogram.out, 12, 4, 1, 2.05
+histogramShared.out, 16, 4, 1, 2.14
+multiplyConstant.out, 16, 12, 3, 1.67
+multiplyMask.out, 8, 12, 3, 1.82
+normalize.out, , 96, 3, 1.86
+random.out, 4, 8, 2, 1.49
+sharedImbalancedStreamer.out, , , , 0.83
+sharedStreamer.out, 8, 128, 4, 1.91
+showImage.out, 4, 4, 1, 1.77
+threshold.out, 32, 64, 2, 1.79
+transition.out, 2624, 640, 13, 2.98
