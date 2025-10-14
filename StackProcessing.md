@@ -5,7 +5,7 @@
 > **Module:** `StackProcessing`
 > **Purpose:** Memory-efficient, sequence-based 3D image processing pipelines built on top of `SlimPipeline`, connected seamlessly with the `Image` module.
 
----
+ 
 
 ## Overview
 
@@ -28,7 +28,7 @@ Each pipeline consists of:
 * A sequence of **stages** (`>=>` operator) transforming data,
 * A final **sink** that consumes or writes the processed results.
 
----
+ 
 
 ## Key Concepts
 
@@ -49,7 +49,7 @@ A complete dataflow, created from a source and extended via the composition oper
 * `-->`:  compose two stages
 * `|>`:   attach a source or a sink to a pipeline
 
----
+ 
 
 ## Pipeline Composition Operators
 
@@ -63,7 +63,7 @@ A complete dataflow, created from a source and extended via the composition oper
 
 These operators let users declaratively build complex, memory-aware workflows.
 
----
+ 
 
 ## Core Pipeline Components
 
@@ -81,7 +81,7 @@ Example:
 let src = source (2UL * 1024UL * 1024UL * 1024UL) // 2 GB
 ```
 
----
+ 
 
 ### `sink`
 
@@ -98,7 +98,7 @@ Example:
 pipeline |> sink
 ```
 
----
+ 
 
 ### `map`
 
@@ -115,7 +115,7 @@ Example:
 >=> map (fun img -> img * 2.0)
 ```
 
----
+ 
 
 ### `window`
 
@@ -136,7 +136,7 @@ Example:
 >=> window 5u 1u 1u
 ```
 
----
+ 
 
 ### `flatten`
 
@@ -146,7 +146,7 @@ val flatten : unit -> Stage<'a list,'a>
 
 Reverses `window` - flattens a list of items back into a single stream.
 
----
+ 
 
 ### `releaseAfter` and `releaseAfter2`
 
@@ -157,7 +157,7 @@ Automatically free image memory once a processing function completes, enabling e
 | `releaseAfter f img`        | Executes `f` on `img` and releases `img` afterward.     |
 | `releaseAfter2 f img1 img2` | Executes `f` on two images and releases both afterward. |
 
----
+ 
 
 ### `zip`
 
@@ -170,7 +170,7 @@ val zip :
 
 Combines two pipelines elementwise, yielding paired outputs - analogous to `Seq.zip` but for streaming image data.
 
----
+ 
 
 ### `promoteStreamingToSliding`
 
@@ -185,7 +185,7 @@ val promoteStreamingToSliding :
 Transforms a **streaming** stage into a **sliding-window** stage,
 enabling localized operations over streaming image stacks.
 
----
+ 
 
 ## Utility Stages
 
@@ -198,7 +198,7 @@ enabling localized operations over streaming image stacks.
 | `zeroMaker`     | Create a zero-filled image of the same size and type as a reference image. |
 | `idOp`          | Identity stage with a name — useful for profiling or marking stages.       |
 
----
+ 
 
 ## Example: Building a Gaussian Filter Pipeline
 
@@ -224,7 +224,7 @@ In this example:
 * The result is written back as a TIFF stack.
 * Memory never exceeds the specified budget.
 
----
+ 
 
 ## Advanced: Parallel and Combined Processing
 
@@ -246,7 +246,7 @@ Here:
 * Their results are combined pixel-wise,
 * The final image is written to disk - all streaming safely.
 
----
+ 
 
 ## Design Philosophy
 

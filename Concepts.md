@@ -23,7 +23,7 @@ No computation or delay involved.
 
 - Control flow (e.g. in loops or task pipelines).
 
----
+ 
 
 ###  2. `Async<'T>` - **Single Async Computation**
 
@@ -57,7 +57,7 @@ async { do! someSideEffect(); return () } : Async<unit>
 ```
 
 
----
+ 
 
 ###  3. `AsyncSeq<'T>` - **Sequence of Async Values**
 
@@ -120,7 +120,7 @@ run pipe : AsyncSeq<unit>
 
 This means: "run this pipeline - it has side effects, but no result values."
 
----
+ 
 
 ###  4. `Pipe<'S, 'T>` - **Stream Transformer Over Structured Async Data**
 
@@ -138,7 +138,7 @@ So it's **not just a function** - it's a *composable building block* that also c
 * A **memory profile** (Streaming, Sliding, Buffered, Constant),
 * An **execution model** via the `Apply` field.
 
----
+ 
 
 ####  Structure + Time + Context
 
@@ -168,7 +168,7 @@ It is analogous to:
 unit -> AsyncSeq<'T>
 ```
 
----
+ 
 
 ####  What is `Pipe<'T, unit>`?
 
@@ -190,10 +190,6 @@ But more semantically:
 | `Pipe<'T, unit>` | **Sink**        | `AsyncSeq<'T> -> Async<unit>` (after reducing) |
 | `Pipe<'A, 'B>`   | **Transformer** | `AsyncSeq<'A> -> AsyncSeq<'B>`                 |
 
----
-
-####  How is `Pipe<'T, unit>` used?
-
 Often, these are terminal operations in your pipeline:
 
 * `print : Pipe<'T, unit>`
@@ -212,11 +208,11 @@ myPipe >=> print |> sink
 | `Pipe<'T, unit>` | **Sink**      | Consumes data, no further output    |
 | `Pipe<'A, 'B>`   | **Processor** | General stream transformer          |
 
----
+ 
 
-###  `Operation<'S,'T>` - Pipeline Stage With Memory Profile Planning
+###  `Stage<'S,'T>` - Pipeline Stage With Memory Profile Planning
 
-An `Operation<'S, 'T>` wraps a `Pipe<'S, 'T>` with **planning information**:
+An `Stage<'S, 'T>` wraps a `Pipe<'S, 'T>` with **planning information**:
 
 ```fsharp
 type Stage<'S,'T> =
@@ -233,7 +229,7 @@ Use it when:
 
 It preserves the `Pipe` interface, but enables smart graph validation.
 
----
+ 
 
 ###  `MemoryTransition`
 
@@ -246,24 +242,51 @@ type MemoryTransition =
     Check : SliceShape -> bool }
 ```
 
-Used to ensure compatibility between composed `Operation`s:
+Used to ensure compatibility between composed `Stage`s:
 
 ```fsharp
 validate op1 op2
 ```
 
-### Summary
+## `Pipeline<'In,'Out>` - Structured Composition of Stages
 
-| Name              | Type                                    | Comment                                           |
-|-------------------|-----------------------------------------|--------------------------------------------------|
-| `Pipe`            | `Pipe<'S,'T>`                           | Stream processor with memory profile             |
-| `Operation`       | `Operation<'S,'T>`                      | A `Pipe` with input/output memory transitions    |
-| `MemoryProfile`   | `Constant | Streaming | Sliding ...`    | Describes memory layout needs                    |
-| `MemoryTransition`| `{ From; To; Check }`                   | Input/output profile and shape validation        |
-| `WindowedProcessor`| `{ Name; Window; Stride; Process }`    | 3D kernel logic over sliding windows             |
-| `SliceShape`      | `uint list`                             | Shape descriptor passed to transition checker    |
+A `Pipeline<'In,'Out>` represents a **composed execution graph** of multiple processing stages that operate on streaming asynchronous data.
+It's the **user-facing construct** built from `Stage<'S,'T>` components via composition operators like `>=>` and terminated by `sink`.
 
----
+```fsharp
+type Pipeline<'In,'Out> =
+  { Name: string
+    Memory: MemoryProfile
+    Run: AsyncSeq<'In> -> AsyncSeq<'Out>
+    Stages: StageList }
+```
+
+Conceptually:
+
+* A `Pipeline` is to `Stage` what a **program** is to an **instruction**.
+* Each stage contributes one transformation, memory transition, and potentially asynchronous or IO-bound computation.
+* The pipeline collects these stages into a connected, validated flow that can be **executed**, **analyzed**, or **parallelized**.
+
+ 
+
+### Relationship between `Pipeline<'S,'T>`, `Pipe<'S,'T>`, and `Stage<'S,'T>`
+
+| Type | Role | Description |
+| ---- | ---- | ----------- |
+| `Pipe<'S,'T>` | Core Transformer | A stream-to-stream computation (`AsyncSeq<'S> -> AsyncSeq<'T>`) with metadata |
+| `Stage<'S,'T>` | Planning Unit | A `Pipe` wrapped with memory transition information |
+| `Pipeline<'In,'Out>` | Execution Graph  | A composed, executable collection of stages forming a complete dataflow |
+
+So:
+
+```fsharp
+Pipe<'S,'T> -> Stage<'S,'T> -> Pipeline<'In,'Out>
+```
+
+You lift pure transformations to `Pipe`s, annotate them as `Stage`s with memory context, then compose them into full pipelines.
+
+ 
+
 ## Data Relations
 Async<'T> defines a Monad, AsyncSeq<'T> a stream of Monads, and Pipe<'S,'T> a stream transformer or a morphism. This may be called a Kleisli category over morphisms.
 
@@ -277,7 +300,7 @@ Async<'T> defines a Monad, AsyncSeq<'T> a stream of Monads, and Pipe<'S,'T> a st
 async.Return x  // 'T -> Async<'T>
 ```
 
----
+ 
 
 ###  `Async<'T> -> 'T`
 
@@ -289,7 +312,7 @@ async.Return x  // 'T -> Async<'T>
 Async.RunSynchronously : Async<'T> -> 'T
 ```
 
----
+ 
 
 ###  `'T -> Async<'U>`
 
@@ -308,7 +331,7 @@ let bind (f: 'T -> Async<'U>) (x: Async<'T>) : Async<'U> =
 
 *Think of this as a mapper with side effects or delayed computations.*
 
----
+ 
 
 ###  `Async<'T> -> 'U`
 
@@ -328,7 +351,7 @@ So:
 let asyncToValue : Async<int> -> int = Async.RunSynchronously
 ```
 
----
+ 
 
 ###  What does `Async<'U> -> AsyncSeq<'T>` mean?
 
@@ -337,7 +360,7 @@ It's a function that:
 * **Waits for an asynchronous result** of type `'U`,
 * And then **starts emitting a stream** of `'T` values.
 
----
+ 
 
 ####  Conceptually, it is:
 
@@ -349,7 +372,7 @@ It's a function that:
 | **"Unfolding"**       | Like `unfoldAsync` but with the seed coming from an async computation.            |
 | **Stream Builder**    | It transforms a future into a source of many values.                              |
 
----
+ 
 
 ####  Example Use Case
 
@@ -364,7 +387,7 @@ let fetchAndStream (asyncData: Async<string>) : AsyncSeq<char> =
 
 Here, we wait for a string to arrive (an `Async<string>`) and turn it into a stream of characters (`AsyncSeq<char>`).
 
----
+ 
 
 ####  Possible Names or Roles
 
@@ -377,14 +400,14 @@ Although no single canonical name exists, here are reasonable terms:
 * **AsyncExpander**
 * **StreamifyAsync** (in library naming)
 
----
+ 
 
 ####  Not a Kleisli Arrow
 
 * Kleisli arrows are of the form `'A -> M<'B>` for *some monad* `M`.
 * This is **not** such a form because `Async<'U>` is already inside a monad.
 
----
+ 
 
 
 ### What About `AsyncSeq<'T> -> Async<'U>`?
@@ -411,7 +434,7 @@ let computeMean (stream: AsyncSeq<float>) : Async<float> = async {
     return List.average items
 }
 ```
----
+ 
 
 ###  Why `'T -> AsyncSeq<'U>` is Special
 
@@ -420,7 +443,7 @@ let computeMean (stream: AsyncSeq<float>) : Async<float> = async {
 * This enables **dynamic expansion**: one slice in, many slices out.
 * Key for operations like `windowing`, `duplication`, or **scatter/gather**.
 
----
+ 
 
 ###  What is `AsyncSeq<'T> -> Pipe<'U, 'V>`?
 
@@ -456,7 +479,7 @@ So:
 >  `AsyncSeq<'T> -> Pipe<unit, 'T>`
 > is like a **stream source**.
 
----
+ 
 
 ###  And what is the inverse `Pipe<'U, 'V> -> AsyncSeq<'T>`?
 
@@ -477,7 +500,7 @@ So:
 
 If you have `Pipe<'U, 'V>`, then you must supply a stream of `'U` to get a stream of `'V`.
 
----
+ 
 ###  Core Relationship: `Pipe<'S,'T>` vs. `AsyncSeq<'T>`
 
 - `AsyncSeq<'T>` is a **value**
@@ -493,7 +516,7 @@ If you have `Pipe<'U, 'V>`, then you must supply a stream of `'U` to get a strea
               - A **memory profile**
               - An `Apply` function
 
----
+ 
 
 ###  Summary Table
 
@@ -505,7 +528,7 @@ If you have `Pipe<'U, 'V>`, then you must supply a stream of `'U` to get a strea
 | `AsyncSeq<'T> -> Pipe<'U,'V>`                  |  ill-defined in general | Would imply dynamic pipeline creation from stream |
 
 
----
+ 
 
 
 ###  Conceptual Interpretation
@@ -567,7 +590,7 @@ If you have `Pipe<'U, 'V>`, then you must supply a stream of `'U` to get a strea
         └────────────────────┘
 ```
 
----
+ 
 
 
 ##  `Pipe<'S,'T>` as a First-Class Computation and more
@@ -589,13 +612,13 @@ So it's:
 * But also **metadata-aware** (`Profile`) and **debuggable** (`Name`)
 * It's your system's **domain-specific Kleisli arrow**
 
----
+ 
 
 > The pipeline layer **abstracts the streaming context** and **enables composition**, in the same way a monad abstracts and controls effects.
 
----
+ 
 
-##  Example
+###  Example
 
 Let's say you have this:
 
@@ -618,7 +641,88 @@ source >=> normalize >=> filter >=> print
 
 All without seeing `AsyncSeq` - *it's hidden in the plumbing.*
 
----
+ 
+
+## Composition and Execution
+
+Pipelines are constructed using **monadic composition** (Kleisli-style bind):
+
+```fsharp
+val (>=>) :
+  Pipeline<'a,'b> -> Stage<'b,'c> -> Pipeline<'a,'c>
+```
+
+This operator links a stage to the end of a pipeline, producing a new pipeline.
+
+Example:
+
+```fsharp
+source memory
+|> read<float> "input" ".tiff"
+>=> discreteGaussian sigma None None (Some 15u)
+>=> cast<float,uint8>
+>=> write "output" ".tiff"
+|> sink
+```
+
+Each `>=>` adds a node to the execution graph, and `sink` **runs** the entire pipeline by evaluating its `Run` function.
+
+ 
+
+### Parallel Composition
+
+`Pipeline` also supports *fan-out* and *zip* operations:
+
+| Operator | Type                                                                           | Description                      |
+| -------- | ------------------------------------------------------------------------------ | -------------------------------- |
+| `>=>>`   | `Pipeline<'In,'S> -> (Stage<'S,'U> * Stage<'S,'V>) -> Pipeline<'In,('U * 'V)>` | Split a stream into two branches |
+| `>>=>`   | `Pipeline<'a,('b * 'c)> -> ('b -> 'c -> 'd) -> Pipeline<'a,'d>`                | Combine paired outputs           |
+| `zip`    | `Pipeline<'a,'b> -> Pipeline<'a,'c> -> Pipeline<'a,('b * 'c)>`                 | Merge outputs of two pipelines   |
+
+These let you define **branching and recombining flows** while maintaining streaming semantics and controlled memory use.
+
+ 
+
+### Memory Profile and Validation
+
+Each pipeline carries a `MemoryProfile` summarizing the resource expectations of its stages.
+During composition, transitions (`ProfileTransition`) are validated to ensure that, for example, a sliding-window stage can legally follow a streaming stage.
+
+This ensures **compile-time safety** for large-scale, memory-aware processing.
+
+ 
+
+### Execution Semantics
+
+Running a pipeline involves applying its `Run` function to a source stream (usually `AsyncSeq.singleton ()` for a source):
+
+```fsharp
+val run : Pipeline<unit,'T> -> AsyncSeq<'T>
+```
+
+The pipeline defines:
+
+* **When** each element is produced (asynchronous time),
+* **How** each element is transformed (functional structure),
+* **Where** data resides (memory profile / streaming model).
+
+ 
+
+### Summary
+
+| Aspect            | Description                                          |
+| ----------------- | ---------------------------------------------------- |
+| **Type**          | `Pipeline<'In,'Out>`                                 |
+| **Core Function** | `AsyncSeq<'In> -> AsyncSeq<'Out>`                    |
+| **Composition**   | Via `>=>`, `>=>>`, `>>=>`, etc.                      |
+| **Metadata**      | Includes name, memory profile, and validation info   |
+| **Purpose**       | Build and execute structured streaming dataflows     |
+| **User Role**     | Represents an *entire* workflow, from source to sink |
+
+> A `Pipeline<'In,'Out>` is the **orchestrated, executable stream processor** formed by chaining `Stage`s — it’s the top-level abstraction in the F# image processing architecture.
+
+
+ 
 
 ##  Summary
 
@@ -643,7 +747,7 @@ All without seeing `AsyncSeq` - *it's hidden in the plumbing.*
 | `Async<'T>`                      | Async result waiting to be run             | `Async.RunSynchronously`  |
 | `'T`                             | Final value                                | Concrete scalar result    |
 
----
+ 
 
 ##  Monad close terminology
 
@@ -674,5 +778,5 @@ Use
 | Pipe (stream proc) | `Pipe<'S, 'T>`                                    | Stream transformer, used in composition              |
 | Scalar Injector    | `Pipe<'In, 'A> -> Pipe<'In, 'B> -> Pipe<'In, 'C>` | Merges scalar and stream (e.g. via `zipWith`)        |
 
----
+ 
 
