@@ -1145,7 +1145,7 @@ let ImageProcessingTests =
         Expect.floatClose Accuracy.high diff 0.0 "All finite diff filters should sum to 0.0"
 
     testCase "finiteDiff 3D axis 0" <| fun _ ->
-        let imgLst = List.map (ImageFunctions.finiteDiffFilter3D 0u) [1u;2u;3u;4u;5u]
+        let imgLst = List.map (ImageFunctions.finiteDiffFilter3D 0.0 0u) [1u;2u;3u;4u;5u]
         let sumLst = List.map ImageFunctions.sum imgLst
         let expected = 0.0
         let diff = List.fold (fun acc elm -> abs(elm-expected)) 0.0 sumLst
@@ -1154,7 +1154,7 @@ let ImageProcessingTests =
         Expect.floatClose Accuracy.high diff 0.0 "All finite diff filters should sum to 0.0"
 
     testCase "finiteDiff 3D axis 1" <| fun _ ->
-        let imgLst = List.map (ImageFunctions.finiteDiffFilter3D 1u) [1u;2u;3u;4u;5u]
+        let imgLst = List.map (ImageFunctions.finiteDiffFilter3D 1.0 1u) [1u;2u;3u;4u;5u]
         let sumLst = List.map ImageFunctions.sum imgLst
         let expected = 0.0
         let diff = List.fold (fun acc elm -> abs(elm-expected)) 0.0 sumLst
@@ -1163,7 +1163,7 @@ let ImageProcessingTests =
         Expect.floatClose Accuracy.high diff 0.0 "All finite diff filters should sum to 0.0"
 
     testCase "finiteDiff 3D axis 2" <| fun _ ->
-        let imgLst = List.map (ImageFunctions.finiteDiffFilter3D 2u) [1u;2u;3u;4u;5u]
+        let imgLst = List.map (ImageFunctions.finiteDiffFilter3D 2.0 2u) [1u;2u;3u;4u;5u]
         let sumLst = List.map ImageFunctions.sum imgLst
         let expected = 0.0
         let diff = List.fold (fun acc elm -> abs(elm-expected)) 0.0 sumLst
@@ -1532,10 +1532,10 @@ let someImageFunctionTests =
       let img = Image.ofArray2D (array2D [[0.5; 1.5]; [2.5; 3.5]])
       let result = ImageFunctions.threshold 1.0 3.0 img
       let arr = result.toArray2D()
-      Expect.equal arr.[0,0] 0.0 "Below lower threshold"
-      Expect.equal arr.[0,1] 1.0 "Within threshold"
-      Expect.equal arr.[1,0] 1.0 "Within threshold"
-      Expect.equal arr.[1,1] 0.0 "Above upper threshold"
+      Expect.equal arr.[0,0] 0uy "Below lower threshold"
+      Expect.equal arr.[0,1] 1uy "Within threshold"
+      Expect.equal arr.[1,0] 1uy "Within threshold"
+      Expect.equal arr.[1,1] 0uy "Above upper threshold"
 
     testCase "extractSub extracts correct sub-region" <| fun _ ->
       let img = Image.ofArray2D (array2D [[1;2;3];[4;5;6];[7;8;9]])
@@ -1548,7 +1548,7 @@ let someImageFunctionTests =
       let img1 = Image.ofArray2D (array2D [[1;1];[1;1]])
       let img2 = Image.ofArray2D (array2D [[2;2];[2;2]])
       let img = ImageFunctions.stack [img1; img2]
-      let slice = ImageFunctions.extractSlice 1u img
+      let slice = ImageFunctions.extractSlice 1 img
       let arr = (slice |> ImageFunctions.squeeze).toArray2D()
       Expect.equal arr.[0,0] 2 "Value from second slice"
 
@@ -1556,7 +1556,7 @@ let someImageFunctionTests =
       let img1 = Image.ofArray2D (array2D [[1;1];[1;1]])
       let img2 = Image.ofArray2D (array2D [[2;2];[2;2]])
       let img = ImageFunctions.stack [img1; img2]
-      let slice = ImageFunctions.extractSlice 0u img
+      let slice = ImageFunctions.extractSlice 0 img
       let arr = (slice |> ImageFunctions.squeeze).toArray2D()
       Expect.equal arr.[0,0] 1 "Value from second slice"
   ]
