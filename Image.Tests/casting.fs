@@ -68,7 +68,7 @@ let inline testOps<^T when ^T: equality
       testCase "memoryEstimate for ^T 2x2 image with 1 component" <| fun _ ->
         let img = makeTestImage<^T>()
         let expectedSize = uint32 (2 * 2 * 1 * sizeof<^T>)
-        Expect.equal (img.memoryEstimate()) expectedSize "Memory estimate for 2x2 ^T"
+        Expect.equal (Image<_>.memoryEstimateSItk img.Image) expectedSize "Memory estimate for 2x2 ^T"
     ]
 
 [<Tests>]
