@@ -1,0 +1,31 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0</TargetFramework>
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <DocumentationFile>bin\Debug\net8.0\memoryAwarePipeline.xml</DocumentationFile>
+  </PropertyGroup>
+
+    <ItemGroup>
+        <Reference Include="SimpleITKCSharp">
+        <HintPath>lib/SimpleITKCSharpManaged.dll</HintPath>
+        <Private>true</Private>
+        </Reference>
+
+        <!-- Ensure native lib is copied -->
+        <None Update="lib/libSimpleITKCSharpNative.dylib">
+        <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+        </None>
+    </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="../../StackProcessing/StackProcessing.fsproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Compile Include="../SlimPipeline/SlimPipeline.fs" />
+    <Compile Include="sharedImbalancedStreamer.fs" />
+  </ItemGroup>
+
+</Project>
