@@ -20,16 +20,16 @@ let main arg =
 
     let imageMaker =
         src
-        |> read<uint8> input ".tiff"
+        |> read<uint8> ("../"+input) ".tiff"
     let maskMaker =
         src
-        |> read<uint8> mask ".tiff"
+        |> read<uint8> ("../"+mask) ".tiff"
 
     (imageMaker, maskMaker) ||> zip
     >=> tap "[tab] For mul2"
     >>=> mul2
     >=> tap "[tab] For write"
-    >=> write output ".tiff"
+    >=> write ("../"+output) ".tiff"
     |> sink
 
     0

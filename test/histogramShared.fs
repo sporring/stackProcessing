@@ -29,7 +29,7 @@ let main arg =
 
     let histogramMaker = 
         src
-        |> read<uint8> input ".tiff"
+        |> read<uint8> ("../"+input) ".tiff"
         >=> histogram () --> map2pairs --> pairs2floats
     histogramMaker
     >=>> (print (),plot plt)

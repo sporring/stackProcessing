@@ -26,7 +26,7 @@ let main arg =
     >=> threshold 128.0 infinity
     >=> imageMulScalar 255uy
     //>=> ignoreImages ()
-    >=> write output ".tiff"
+    >=> write ("../"+output) ".tiff"
     |> sink
 
     0

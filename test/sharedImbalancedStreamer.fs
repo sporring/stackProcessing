@@ -21,7 +21,7 @@ let main arg =
 
     let readMaker = 
         src
-        |> read<float> input ".tiff"
+        |> read<float> ("../"+input) ".tiff"
         // >=> tapIt (fun s -> $"[readAs] {s.Index} -> Image {s.Image}")
 
     readMaker 
@@ -32,7 +32,7 @@ let main arg =
     >=> tap "For cast"
     >=> cast<float,int8>
     >=> tap "For write"
-    >=> write output ".tiff"
+    >=> write ("../"+output) ".tiff"
     //>>=> ignorePairs ()
     |> sink
 

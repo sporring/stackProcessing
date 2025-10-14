@@ -23,7 +23,7 @@ let main arg =
     src
     |> zero<uint8> width height depth
     >=> addNormalNoise 128.0 50.0
-    >=> write output ".tiff"
+    >=> write ("../"+output) ".tiff"
     |> sink
 
     0

@@ -29,7 +29,7 @@ let main arg =
     //>=> dilate radius
     //>=> opening radius
     //>=> closing radius
-    >=> write output ".tiff"
+    >=> write ("../"+output) ".tiff"
     |> sink
 
     0

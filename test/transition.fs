@@ -20,13 +20,13 @@ let main arg =
             "image18", "result18"
 
     src
-    |> read<float> input ".tiff"
+    |> read<float> ("../"+input) ".tiff"
     >=> sqrt
     >=> convGauss sigma 
     >=> sqrt
     >=> convGauss sigma 
     >=> cast<float,uint8>
-    >=> write output ".tiff"
+    >=> write ("../"+output) ".tiff"
     |> sink
 
 

@@ -19,8 +19,8 @@ let main arg =
             "image18", "mask18"
 
     src
-    |> read<uint8> input ".tiff"
-    >=> write output ".tiff"
+    |> read<uint8> ("../"+input) ".tiff"
+    >=> write ("../"+output) ".tiff"
     |> sink
 
     0

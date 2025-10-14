@@ -25,7 +25,7 @@ let main arg =
     >=> connectedComponents (1024u/8u)
     >=> cast<uint64,uint16>
     // Tiff supporst uint8, int8, uint16, int16, and float32
-    >=> write output ".tiff"
+    >=> write ("../"+output) ".tiff"
     |> sink
 
     0

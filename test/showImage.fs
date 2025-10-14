@@ -27,7 +27,7 @@ let main arg =
         |> Chart.show
 
     src
-    |> readRandom<uint8> 1u input ".tiff"
+    |> readRandom<uint8> 1u ("../"+input) ".tiff"
     >=> show plt 
     |> sink
 

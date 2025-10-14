@@ -27,7 +27,7 @@ let main arg =
         |> Chart.show
 
     src
-    |> read<uint8> input ".tiff" 
+    |> read<uint8> ("../"+input) ".tiff" 
     >=> histogram ()
     >=> map2pairs --> pairs2floats --> plot plt
     |> sink
