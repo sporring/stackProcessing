@@ -20,7 +20,7 @@ let main arg =
 
     let readMaker =
         src
-        |> read<float> input ".tiff"
+        |> read<float> ("../"+input) ".tiff"
 
     let stats = 
         readMaker 

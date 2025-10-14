@@ -25,13 +25,13 @@ let main arg =
         >=> imageAddScalar 1uy
         >=> imageMulScalar 2uy
 
-    let readMaker =
+    let imageMaker =
         src
         |> zero<uint8> width height depth
 
-    (readMaker, maskMaker) ||> zip 
+    (imageMaker, maskMaker) ||> zip 
     >>=> mul2
-    >=> write output ".tiff"
+    >=> write ("../"+output) ".tiff"
     |> sink
 
     0

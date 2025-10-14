@@ -21,13 +21,13 @@ let main arg =
             "image18", "result18"
 
     src
-    |> read<float> input ".tiff"
+    |> read<float> ("../"+input) ".tiff"
     >=> tap "tap: For finiteDiff"
     >=> finiteDiff sigma 1u 2u
     >=> tap "tap: For cast"
     >=> cast<float,uint8>
     >=> tap "tap: For write"
-    >=> write output ".tiff"
+    >=> write ("../"+output) ".tiff"
     |> sink
 
     0

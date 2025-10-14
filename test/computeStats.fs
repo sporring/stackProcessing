@@ -19,7 +19,7 @@ let main arg =
             "image18", "result18"
 
     src
-    |> read<uint8> input ".tiff"
+    |> read<uint8> ("../"+input) ".tiff"
     >=> computeStats () --> print ()
     |> sink
 

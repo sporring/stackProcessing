@@ -20,13 +20,13 @@ let main arg =
             "image18", "result18"
 
     src
-    |> read<float> input ".tiff"
+    |> read<float> ("../"+input) ".tiff"
     // sigma = 1 => pad=2, depth = 22 => integer solution for number of strides when:
     // windowSize = 1, 6, 15, or 26, => n = 21, 10, 1, or 0
     >=> discreteGaussian sigma None None (Some 15u) 
     //>=> convGauss sigma
     >=> cast<float,uint8>
-    >=> write output ".tiff"
+    >=> write ("../"+output) ".tiff"
     //>=> ignoreImages ()
     |> sink
 
