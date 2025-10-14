@@ -1,10 +1,10 @@
-# 🧠 F# Image Processing Pipelines: Core Types & Patterns
+#  F# Image Processing Pipelines: Core Types & Patterns
 
 We are working with asynchronous computation. 
 
-## 📚 Data Abstraction Layers
+##  Data Abstraction Layers
 
-### 🔸 1. `'T` – **Concrete Value**
+###  1. `'T` - **Concrete Value**
 
 This is your ordinary value. For example:
 
@@ -15,7 +15,7 @@ let x: int = 42
 No computation or delay involved.
 
 #### What is unit?
-`'T = unit` means “no meaningful value” — like void in other languages. It’s used for:
+`'T = unit` means "no meaningful value" - like void in other languages. It's used for:
 
 - Indicating side effects,
 
@@ -25,7 +25,7 @@ No computation or delay involved.
 
 ---
 
-### 🔸 2. `Async<'T>` – **Single Async Computation**
+###  2. `Async<'T>` - **Single Async Computation**
 
 This represents a **computation** that *will eventually produce* a value of type `'T`.
 
@@ -59,10 +59,10 @@ async { do! someSideEffect(); return () } : Async<unit>
 
 ---
 
-### 🔸 3. `AsyncSeq<'T>` – **Sequence of Async Values**
+###  3. `AsyncSeq<'T>` - **Sequence of Async Values**
 
 Represents **a sequence of values over time**. This is like a lazy `seq<'T>`, but asynchronous.
-This models *both time and structure* — but in practice:
+This models *both time and structure* - but in practice:
 
 * The *structure* is the sequence (`[]`, `[x]`, `[x; y]`, …)
 * The *time* is when each value becomes available
@@ -70,8 +70,8 @@ This models *both time and structure* — but in practice:
 
 So for clarity:
 
-* ✅ `Async<'T>` → *time-only* (delayed single value)
-* ✅ `AsyncSeq<'T>` → *structured data arriving over time*
+*  `Async<'T>` -> *time-only* (delayed single value)
+*  `AsyncSeq<'T>` -> *structured data arriving over time*
 
 
 Example:
@@ -91,7 +91,7 @@ let nums: AsyncSeq<int> =
 > **A sequence of asynchronous steps**, each step producing a `unit`.
 > So it represents **a structured stream of side-effects**.
 
-Think of it like a pipeline where each item doesn't carry data — it's just there to represent *a step*, e.g.:
+Think of it like a pipeline where each item doesn't carry data - it's just there to represent *a step*, e.g.:
 
 ```fsharp
 asyncSeq {
@@ -118,11 +118,11 @@ In your context:
 run pipe : AsyncSeq<unit>
 ```
 
-This means: “run this pipeline — it has side effects, but no result values.”
+This means: "run this pipeline - it has side effects, but no result values."
 
 ---
 
-### 🔸 4. `Pipe<'S, 'T>` – **Stream Transformer Over Structured Async Data**
+###  4. `Pipe<'S, 'T>` - **Stream Transformer Over Structured Async Data**
 
 A `Pipe<'S, 'T>` represents a **stream processor** that transforms a sequence of type `'S` into a sequence of type `'T`, while preserving the asynchronous nature of the data.
 
@@ -132,7 +132,7 @@ It wraps the transformation:
 AsyncSeq<'S> -> AsyncSeq<'T>
 ```
 
-So it's **not just a function** — it’s a *composable building block* that also carries:
+So it's **not just a function** - it's a *composable building block* that also carries:
 
 * A **name** (for debugging / tracing),
 * A **memory profile** (Streaming, Sliding, Buffered, Constant),
@@ -140,25 +140,25 @@ So it's **not just a function** — it’s a *composable building block* that al
 
 ---
 
-#### 📦 Structure + Time + Context
+####  Structure + Time + Context
 
 We can think of a `Pipe<'S, 'T>` as a higher-level abstraction over `AsyncSeq<'S>`:
 
 | Aspect        | Meaning in `Pipe<'S, 'T>`                                                          |
 | ------------- | ---------------------------------------------------------------------------------- |
-| **Structure** | The transformation preserves or reshapes the stream — map, filter, windowing, etc. |
+| **Structure** | The transformation preserves or reshapes the stream - map, filter, windowing, etc. |
 | **Time**      | Each value in the stream may arrive asynchronously                                 |
 | **Context**   | The `Pipe` may manage memory profiles, disk IO, or composition                     |
 
 > `Pipe<'S, 'T>` transforms structured asynchronous data (`AsyncSeq<'S>`) into new structured asynchronous data (`AsyncSeq<'T>`), with added metadata and composition tools.
 
-It’s a **streaming computation**, aware of:
+It's a **streaming computation**, aware of:
 
 * **Timing** (via async values),
 * **Structure** (sequences over time),
 * **Resources** (via memory profiles).
 
-#### ✅ What is `Pipe<unit, 'T>`?
+####  What is `Pipe<unit, 'T>`?
 
 This is a pipeline that takes **no input**, and **produces** a stream of `'T`. It represents a **producer**, **generator**, or a **data source**.
 
@@ -170,9 +170,9 @@ unit -> AsyncSeq<'T>
 
 ---
 
-#### ❓ What is `Pipe<'T, unit>`?
+####  What is `Pipe<'T, unit>`?
 
-This is the **dual**: it takes a stream of `'T` and **produces nothing** — or more precisely, it **consumes** the input.
+This is the **dual**: it takes a stream of `'T` and **produces nothing** - or more precisely, it **consumes** the input.
 
 It corresponds to:
 
@@ -182,7 +182,7 @@ AsyncSeq<'T> -> AsyncSeq<unit>
 
 But more semantically:
 
-> 🔸 `Pipe<'T, unit>` is a **Sink** — a consumer.
+>  `Pipe<'T, unit>` is a **Sink** - a consumer.
 
 | Pipe Type        | Interpretation  | Analogous to                                   |
 | ---------------- | --------------- | ---------------------------------------------- |
@@ -192,7 +192,7 @@ But more semantically:
 
 ---
 
-#### 🔁 How is `Pipe<'T, unit>` used?
+####  How is `Pipe<'T, unit>` used?
 
 Often, these are terminal operations in your pipeline:
 
@@ -214,12 +214,12 @@ myPipe >=> print |> sink
 
 ---
 
-### 🔧 `Operation<'S,'T>` – Pipeline Stage With Memory Profile Planning
+###  `Operation<'S,'T>` - Pipeline Stage With Memory Profile Planning
 
 An `Operation<'S, 'T>` wraps a `Pipe<'S, 'T>` with **planning information**:
 
 ```fsharp
-type Operation<'S,'T> =
+type Stage<'S,'T> =
   { Name       : string
     Transition : MemoryTransition
     Pipe       : Pipe<'S,'T> }
@@ -228,14 +228,14 @@ type Operation<'S,'T> =
 Use it when:
 
 * You need to compose pipelines with **explicit control** over memory usage.
-* You want to check **transition compatibility** between stages (e.g. Sliding → Streaming).
-* You’re planning for **3D windowed operations** or full-buffer transforms.
+* You want to check **transition compatibility** between stages (e.g. Sliding -> Streaming).
+* You're planning for **3D windowed operations** or full-buffer transforms.
 
-✅ It preserves the `Pipe` interface, but enables smart graph validation.
+It preserves the `Pipe` interface, but enables smart graph validation.
 
 ---
 
-### 🔁 `MemoryTransition`
+###  `MemoryTransition`
 
 Encapsulates how an operation **expects** memory to be shaped across the pipeline.
 
@@ -254,7 +254,6 @@ validate op1 op2
 
 ### Summary
 
-```markdown
 | Name              | Type                                    | Comment                                           |
 |-------------------|-----------------------------------------|--------------------------------------------------|
 | `Pipe`            | `Pipe<'S,'T>`                           | Stream processor with memory profile             |
@@ -263,13 +262,12 @@ validate op1 op2
 | `MemoryTransition`| `{ From; To; Check }`                   | Input/output profile and shape validation        |
 | `WindowedProcessor`| `{ Name; Window; Stride; Process }`    | 3D kernel logic over sliding windows             |
 | `SliceShape`      | `uint list`                             | Shape descriptor passed to transition checker    |
-```
 
 ---
 ## Data Relations
 Async<'T> defines a Monad, AsyncSeq<'T> a stream of Monads, and Pipe<'S,'T> a stream transformer or a morphism. This may be called a Kleisli category over morphisms.
 
-### 🔹 `'T -> Async<'T>`
+###  `'T -> Async<'T>`
 
 * **Monad's `return` / `pure`**
 * Wraps a plain value in the minimal effect
@@ -281,7 +279,7 @@ async.Return x  // 'T -> Async<'T>
 
 ---
 
-### 🔹 `Async<'T> -> 'T`
+###  `Async<'T> -> 'T`
 
 * **Reducer / evaluator of async**
 * Extracts value from the effect
@@ -293,7 +291,7 @@ Async.RunSynchronously : Async<'T> -> 'T
 
 ---
 
-### 🔹 `'T -> Async<'U>`
+###  `'T -> Async<'U>`
 
 * **Effectful mapper / Kleisli arrow**
 * Applies a function *that introduces* asynchronous behavior or IO
@@ -308,21 +306,21 @@ let bind (f: 'T -> Async<'U>) (x: Async<'T>) : Async<'U> =
     }
 ```
 
-🔁 *Think of this as a mapper with side effects or delayed computations.*
+*Think of this as a mapper with side effects or delayed computations.*
 
 ---
 
-### 🔹 `Async<'T> -> 'U`
+###  `Async<'T> -> 'U`
 
-* ❗️This is **not a standard monadic construct**
+* This is **not a standard monadic construct**
 * Conceptually, this **breaks** the monad
-* You're running the async and extracting a value — it's *interpreting* the effect
+* You're running the async and extracting a value - it's *interpreting* the effect
 
 So:
 
 * It **looks like a reducer** of the monad.
-* But **unlike `reduce`**, it typically means you’re collapsing the async structure early.
-* It’s generally not composable (not pure) and ties you to evaluation strategies.
+* But **unlike `reduce`**, it typically means you're collapsing the async structure early.
+* It's generally not composable (not pure) and ties you to evaluation strategies.
 
 **Examples:**
 
@@ -332,28 +330,28 @@ let asyncToValue : Async<int> -> int = Async.RunSynchronously
 
 ---
 
-### 🧠 What does `Async<'U> -> AsyncSeq<'T>` mean?
+###  What does `Async<'U> -> AsyncSeq<'T>` mean?
 
-It’s a function that:
+It's a function that:
 
 * **Waits for an asynchronous result** of type `'U`,
 * And then **starts emitting a stream** of `'T` values.
 
 ---
 
-#### 🧩 Conceptually, it is:
+####  Conceptually, it is:
 
 | Perspective           | Interpretation                                                                    |
 | --------------------- | --------------------------------------------------------------------------------- |
-| **Monad Perspective** | A function *from a single promise to a stream* — it lifts time into structure.    |
+| **Monad Perspective** | A function *from a single promise to a stream* - it lifts time into structure.    |
 | **Producer**          | A stream **generator** based on the result of a one-time async computation.       |
 | **Dual to `reduce`**  | If `AsyncSeq<'T> -> Async<'U>` is a *reduction* (fold), then this is *expansion*. |
-| **“Unfolding”**       | Like `unfoldAsync` but with the seed coming from an async computation.            |
+| **"Unfolding"**       | Like `unfoldAsync` but with the seed coming from an async computation.            |
 | **Stream Builder**    | It transforms a future into a source of many values.                              |
 
 ---
 
-#### 🧪 Example Use Case
+####  Example Use Case
 
 ```fsharp
 let fetchAndStream (asyncData: Async<string>) : AsyncSeq<char> =
@@ -368,7 +366,7 @@ Here, we wait for a string to arrive (an `Async<string>`) and turn it into a str
 
 ---
 
-#### 🔖 Possible Names or Roles
+####  Possible Names or Roles
 
 Although no single canonical name exists, here are reasonable terms:
 
@@ -381,7 +379,7 @@ Although no single canonical name exists, here are reasonable terms:
 
 ---
 
-#### ⛔ Not a Kleisli Arrow
+####  Not a Kleisli Arrow
 
 * Kleisli arrows are of the form `'A -> M<'B>` for *some monad* `M`.
 * This is **not** such a form because `Async<'U>` is already inside a monad.
@@ -389,20 +387,18 @@ Although no single canonical name exists, here are reasonable terms:
 ---
 
 
-### 🌀 What About `AsyncSeq<'T> -> Async<'U>`?
+### What About `AsyncSeq<'T> -> Async<'U>`?
 
 This is a **structural reduction**:
 
-#### ✅ It's a **general consumption of the stream**:
+####  It's a **general consumption of the stream**:
 
 * Aggregation (`fold`, `reduce`)
 * Summarization (e.g., `mean`, `min`, `max`)
 * Exporting data (e.g., writing to disk)
 * Side-effectful execution (e.g., `printAsync`)
 
-**Why confusing?**
-
-Because it *looks* like you're mapping (`'T -> 'U`), but you're:
+**Why confusing?** Because it *looks* like you're mapping (`'T -> 'U`), but you're:
 
 * **consuming many items**
 * **producing a single result**
@@ -417,7 +413,7 @@ let computeMean (stream: AsyncSeq<float>) : Async<float> = async {
 ```
 ---
 
-### 💡 Why `'T -> AsyncSeq<'U>` is Special
+###  Why `'T -> AsyncSeq<'U>` is Special
 
 * It differs from `'T -> 'U` because it **produces multiple results** (zero or more), not just one.
 * In monad terms, it's equivalent to `flatMap` or `bind`.
@@ -426,15 +422,15 @@ let computeMean (stream: AsyncSeq<float>) : Async<float> = async {
 
 ---
 
-### 🔁 What is `AsyncSeq<'T> -> Pipe<'U, 'V>`?
+###  What is `AsyncSeq<'T> -> Pipe<'U, 'V>`?
 
-#### ❓What does this mean?
+#### What does this mean?
 
 This would be a function that, **given a stream**, constructs a `Pipe`.
 
-But this **doesn't make sense in general**, because a `Pipe` is **not built from a concrete stream** — it is a **function that transforms a stream**, not one constructed *from* a stream.
+But this **doesn't make sense in general**, because a `Pipe` is **not built from a concrete stream** - it is a **function that transforms a stream**, not one constructed *from* a stream.
 
-#### ✅ Valid Specialized Interpretation
+####  Valid Specialized Interpretation
 
 You could imagine something like:
 
@@ -442,7 +438,7 @@ You could imagine something like:
 let injectStream (external: AsyncSeq<'T>) : Pipe<unit, 'T>
 ```
 
-Which **wraps a fixed stream** as a pipeline — effectively a **source**.
+Which **wraps a fixed stream** as a pipeline - effectively a **source**.
 
 This is what your `source` and `lift` do:
 
@@ -457,14 +453,14 @@ let sourceFromStream name stream =
 
 So:
 
-> 🔸 `AsyncSeq<'T> -> Pipe<unit, 'T>`
+>  `AsyncSeq<'T> -> Pipe<unit, 'T>`
 > is like a **stream source**.
 
 ---
 
-### 🔁 And what is the inverse `Pipe<'U, 'V> -> AsyncSeq<'T>`?
+###  And what is the inverse `Pipe<'U, 'V> -> AsyncSeq<'T>`?
 
-#### ❓What does this mean?
+#### What does this mean?
 
 You have a stream transformer, and you want to turn it into an **actual stream**. This requires an **input stream**, i.e., `Pipe.Apply : AsyncSeq<'U> -> AsyncSeq<'V>`.
 
@@ -477,22 +473,21 @@ let run (p: Pipe<unit, 'T>) : AsyncSeq<'T> =
 
 So:
 
-> 🔸 `Pipe<unit, 'T> -> AsyncSeq<'T>`
-> is a **pipeline runner** for pipelines that take no stream input.
+> `Pipe<unit, 'T> -> AsyncSeq<'T>` is a **pipeline runner** for pipelines that take no stream input.
 
-If `Pipe<'U, 'V>`, then you must supply a stream of `'U` to get a stream of `'V`.
+If you have `Pipe<'U, 'V>`, then you must supply a stream of `'U` to get a stream of `'V`.
 
 ---
-### 🧱 Core Relationship: `Pipe<'S,'T>` vs. `AsyncSeq<'T>`
+###  Core Relationship: `Pipe<'S,'T>` vs. `AsyncSeq<'T>`
 
 - `AsyncSeq<'T>` is a **value**
 
        - A lazy, asynchronous sequence of elements of type `'T`
        - It's *data* in an effectful context
 
-- 🔹 `Pipe<'S,'T>` is a **computation**
+-  `Pipe<'S,'T>` is a **computation**
 
-       - A **transformer** from an `AsyncSeq<'S>` → `AsyncSeq<'T>`
+       - A **transformer** from an `AsyncSeq<'S>` -> `AsyncSeq<'T>`
        - Encapsulates:
               - A **name**
               - A **memory profile**
@@ -500,20 +495,20 @@ If `Pipe<'U, 'V>`, then you must supply a stream of `'U` to get a stream of `'V`
 
 ---
 
-### 🔃 Summary Table
+###  Summary Table
 
 | Signature                                      | Meaning/Role             | Notes                                             |
 | ---------------------------------------------- | ------------------------ | ------------------------------------------------- |
-| `AsyncSeq<'T> -> Pipe<unit, 'T>`               | Stream → Source          | Wraps a stream as a pipeline                      |
-| `Pipe<unit, 'T> -> AsyncSeq<'T>`               | Source → Stream          | Run pipeline with no input                        |
+| `AsyncSeq<'T> -> Pipe<unit, 'T>`               | Stream -> Source          | Wraps a stream as a pipeline                      |
+| `Pipe<unit, 'T> -> AsyncSeq<'T>`               | Source -> Stream          | Run pipeline with no input                        |
 | `Pipe<'U, 'V> -> AsyncSeq<'U> -> AsyncSeq<'V>` | General pipe application | Core of `Pipe.Apply`                              |
-| `AsyncSeq<'T> -> Pipe<'U,'V>`                  | ❌ ill-defined in general | Would imply dynamic pipeline creation from stream |
+| `AsyncSeq<'T> -> Pipe<'U,'V>`                  |  ill-defined in general | Would imply dynamic pipeline creation from stream |
 
 
 ---
 
 
-### ✅ Conceptual Interpretation
+###  Conceptual Interpretation
 
 | Layer          | Effect Kind      | Meaning                    |
 | -------------- | ---------------- | -------------------------- |
@@ -528,7 +523,7 @@ If `Pipe<'U, 'V>`, then you must supply a stream of `'U` to get a stream of `'V`
 > So, `AsyncSeq<'T> -> Async<'U>` is a **reduction over structure**, producing a **summary**.
 
 
-### 🧭 Graphical overview of relations
+###  Graphical overview of relations
 
 ```
        ┌───────────────┐
@@ -575,7 +570,7 @@ If `Pipe<'U, 'V>`, then you must supply a stream of `'U` to get a stream of `'V`
 ---
 
 
-## 📦 `Pipe<'S,'T>` as a First-Class Computation and more
+##  `Pipe<'S,'T>` as a First-Class Computation and more
 
 A `Pipe` is:
 
@@ -592,7 +587,7 @@ So it's:
 
 * A **wrapped function** from `AsyncSeq<'S>` to `AsyncSeq<'T>`
 * But also **metadata-aware** (`Profile`) and **debuggable** (`Name`)
-* It’s your system’s **domain-specific Kleisli arrow**
+* It's your system's **domain-specific Kleisli arrow**
 
 ---
 
@@ -600,9 +595,9 @@ So it's:
 
 ---
 
-## 🛠️ Example
+##  Example
 
-Let’s say you have this:
+Let's say you have this:
 
 ```fsharp
 let normalizeSlice (slice: Slice<float>) : Slice<float> = ...
@@ -621,11 +616,11 @@ Then you can compose:
 source >=> normalize >=> filter >=> print
 ```
 
-All without seeing `AsyncSeq` — *it's hidden in the plumbing.*
+All without seeing `AsyncSeq` - *it's hidden in the plumbing.*
 
 ---
 
-## ✅ Summary
+##  Summary
 
 | Concept        | Description                              | Signature / Example                              |
 | -------------- | ---------------------------------------- | ------------------------------------------------ |
@@ -636,7 +631,7 @@ All without seeing `AsyncSeq` — *it's hidden in the plumbing.*
 | `Pipe<'S,'T>`  | Transform from stream to stream          | `map`, `lift`, `reduce`, etc.                    |
 | `lift`         | Embed `T -> Async<'U>` into a pipeline   | `lift "name" profile f`                          |
 | `run`          | Turn `Pipe<unit,'T>` into `AsyncSeq<'T>` | Used at the start or sink of pipeline            |
-| `>=>`         | Compose `Pipe`s                          | Like monadic bind (`Pipe<'A,'B> -> Pipe<'B,'C>`) |
+| `>=>`         | Compose `Pipeline`s and `Pipe`s           | Like monadic bind (`Pipe<'A,'B> -> Pipe<'B,'C>`) |
 
 
 | Step                             | Description                                | Example Functions         |
@@ -650,12 +645,12 @@ All without seeing `AsyncSeq` — *it's hidden in the plumbing.*
 
 ---
 
-## 🔹 Monad close terminology
+##  Monad close terminology
 
 From a **monadic** perspective:
 
 * `Async<'T>` is a monad over time.
-* `AsyncSeq<'T>` is a monad over time *and* order — it's like `List` + `Async`.
+* `AsyncSeq<'T>` is a monad over time *and* order - it's like `List` + `Async`.
 
 Both allow you to:
 
