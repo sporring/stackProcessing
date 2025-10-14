@@ -16,5 +16,5 @@ for i in *.out; do \
   line=$(grep "Running pipeline" $i)
   words=(${=line})
   estimate=$words[7]
-  echo ${i%.fsproj.out}, $estimatedPeakMemory, $peakMemory, $peakImages, $userTime >> gather.csv
+  echo $i, $estimatedPeakMemory, $peakMemory, $peakImages, $userTime >> gather.csv
   done;
