@@ -7,14 +7,14 @@ This module is **type-agnostic** - it doesn't depend on image types, and can pro
 
 ## Overview
 
-A `SlimPipeline` consists of one or more **stages**, `Stage<'S,'T>`, which wraps **pipes**, `Pipe<'S,'T>`, which in turn wraps **asynchronous sequences**, `FSharp.Control.AsyncSeq`. Pipe has the option of explicit memory release via callback functions. A stage:
+A `SlimPipeline` consists of one or more **plans**, `Plan<'S,'T>`, which wraps **pipes**, `Pipe<'S,'T>`, which in turn wraps **asynchronous sequences**, `FSharp.Control.AsyncSeq`. Pipe has the option of explicit memory release via callback functions. A plan:
 
 * defines how a stream of elements is processed;
 * carries a **memory usage profile** describing its streaming behavior;
 * can be **composed** using intuitive operator syntax;
 * can be fanned in and out in a stream-synchronized manner
 
-Future versions will introduce **resource planning** through the `Stage` layer to automatically manage memory and buffering policies.
+Future versions will introduce **resource planning** through the `Plan` layer to automatically manage memory and buffering policies.
 
 
 ## Core Types
@@ -30,7 +30,7 @@ Represents one or two related numerical quantities.
 
 
 ### `Profile`
-The Profile type describes **how the elements in the connection between stages is streamed**. In F#, it is defined as:
+The Profile type describes **how the elements in the connection between plans is streamed**. In F#, it is defined as:
 
 ```fsharp
 type Profile =
@@ -51,7 +51,7 @@ which has the following meaning:
 
 ### `Pipe<'S,'T>`
 
-Encapsulates one transformation stage in the pipeline and wraps `FSharp.Core.AsyncSeq`. `AsyncSeq` is an asynchronous sequence of potentially (possibly infinite in length) with a promise of of evaluation in the future. A Pipe is sequence-function such as init, iter, map, and fold which creates, iterates over, maps functions on, and folds an accumulator over the asynchronous sequence. It's defined as:
+Encapsulates one transformation plan in the pipeline and wraps `FSharp.Core.AsyncSeq`. `AsyncSeq` is an asynchronous sequence of potentially (possibly infinite in length) with a promise of of evaluation in the future. A Pipe is sequence-function such as init, iter, map, and fold which creates, iterates over, maps functions on, and folds an accumulator over the asynchronous sequence. It's defined as:
 
 ```fsharp
 type Pipe<'S,'T> =
@@ -73,7 +73,7 @@ Each `Pipe` is a composable unit. They can be chained into full pipelines using 
 | ------------------ | ----------- |
 | `Pipe.create`      | Directly constructs a `Pipe` from name, function, and profile. |
 | `Pipe.run`         | Execute a pipeline. |
-| `Pipe.empty`       | No-op stage (identity on `unit`). |
+| `Pipe.empty`       | No-op plan (identity on `unit`). |
 | `Pipe.lift`        | Lifts a pure mapping function (`'S -> 'T`) into a `Pipe`. |
 | `Pipe.liftRelease` | Lifts a mapping function to a pipe and releases the input after its application via the callback function given. |
 | `Pipe.compose`     | Composes two pipes into a new pipe. |
@@ -93,15 +93,15 @@ In contrast to construction helpers, transformators call Pipe.Apply on the eleme
 | `Pipe.fold`        | Accumulates an iterative processing of a sequence. |
 | `Pipe.collect`     | Map a pure function (`'S -> 'T list`) and concatenate the result. |
 
-### `Stage<'S,'T>`
+### `Plan<'S,'T>`
 
-The `Stage` abstraction wraps `Pipe` and will evolve into a **resource management layer** coordinating:
+The `Plan` abstraction wraps `Pipe` and will evolve into a **resource management layer** coordinating:
 
 * Memory budgeting and preallocation;
 * Concurrency and buffer scheduling;
 * Streaming policy enforcement.
 
-At present, `Stage` acts as a **lightweight wrapper**, maintaining a clean interface boundary for future extensions without impacting the existing processing model.
+At present, `Plan` acts as a **lightweight wrapper**, maintaining a clean interface boundary for future extensions without impacting the existing processing model.
 
 Absolutely — here’s a **Markdown documentation section** you can drop directly into your `SlimPipeline.md` file.
 It matches the tone and structure of the earlier sections, focusing on the conceptual and practical aspects of the `Pipeline` type as built on `Pipe`.
@@ -110,9 +110,9 @@ It matches the tone and structure of the earlier sections, focusing on the conce
 
 A `Pipeline` defines **how** data moves from source to sink:
 
-* It binds multiple `Pipe` stages into a coherent flow.
+* It binds multiple `Pipe` plans into a coherent flow.
 * It exposes a single entry point for execution (`Apply`).
-* It aggregates **profiling information** from all constituent stages.
+* It aggregates **profiling information** from all constituent plans.
 
 Conceptually:
 
@@ -126,11 +126,11 @@ AsyncSeq<'S>
 AsyncSeq<'T>
 ```
 
-The `Pipeline` type represents a **fully composed processing chain** of `Pipe` stages operating on asynchronous streams. While `Pipe<'S,'T>` describes a *single* transformation from input stream to output stream, `Pipeline<'S,'T>` expresses the **end-to-end flow** of data through multiple stages - the executable form of a processing graph.
+The `Pipeline` type represents a **fully composed processing chain** of `Pipe` plans operating on asynchronous streams. While `Pipe<'S,'T>` describes a *single* transformation from input stream to output stream, `Pipeline<'S,'T>` expresses the **end-to-end flow** of data through multiple plans - the executable form of a processing graph.
 
 ```fsharp
 type Pipeline<'S,'T> = { 
-    stage      : Stage<'S,'T> option
+    plan      : Plan<'S,'T> option
     nElems     : SingleOrPair
     length     : uint64
     memAvail   : uint64
@@ -140,7 +140,7 @@ type Pipeline<'S,'T> = {
 
 where
 
-* **`stage`** - the function to be applied, when the pipeline is run.
+* **`plan`** - the function to be applied, when the pipeline is run.
 * **`nElems`** - the number of elments before transformation - this could be single or pair.
 * **`length`** - the length of the sequence, the pipeline is applied to.
 * **`memAvail`** - the memory available for the pipeline.
@@ -166,8 +166,8 @@ Each `Pipeline` is a composable unit. They can be chained into full pipelines us
 
 | Operator | Description |
 | -------- | ----------- |
-| `-->`    | Functionally compose two stages, hence Pipe.Apply's. |
-| `>=>`    | Functionally compose a pipeline and a stage returning a Pipeline. |
+| `-->`    | Functionally compose two plans, hence Pipe.Apply's. |
+| `>=>`    | Functionally compose a pipeline and a plan returning a Pipeline. |
 | `>=>>`   | Fan out a stream into a stream pair with Pipe.map2Sync synchronization. |
 | `>>=>`   | Fan in a stream of pairs into a stream of singles. |
-| `>>=>>`  | Functionally compose a Pipeline of pairs with a Stage for pairs. |
+| `>>=>>`  | Functionally compose a Pipeline of pairs with a Plan for pairs. |

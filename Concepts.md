@@ -210,12 +210,12 @@ myPipe >=> print |> sink
 
  
 
-###  `Stage<'S,'T>` - Pipeline Stage With Memory Profile Planning
+###  `Plan<'S,'T>` - Pipeline Plan With Memory Profile Planning
 
-An `Stage<'S, 'T>` wraps a `Pipe<'S, 'T>` with **planning information**:
+An `Plan<'S, 'T>` wraps a `Pipe<'S, 'T>` with **planning information**:
 
 ```fsharp
-type Stage<'S,'T> =
+type Plan<'S,'T> =
   { Name       : string
     Transition : MemoryTransition
     Pipe       : Pipe<'S,'T> }
@@ -224,7 +224,7 @@ type Stage<'S,'T> =
 Use it when:
 
 * You need to compose pipelines with **explicit control** over memory usage.
-* You want to check **transition compatibility** between stages (e.g. Sliding -> Streaming).
+* You want to check **transition compatibility** between plans (e.g. Sliding -> Streaming).
 * You're planning for **3D windowed operations** or full-buffer transforms.
 
 It preserves the `Pipe` interface, but enables smart graph validation.
@@ -242,48 +242,48 @@ type MemoryTransition =
     Check : SliceShape -> bool }
 ```
 
-Used to ensure compatibility between composed `Stage`s:
+Used to ensure compatibility between composed `Plan`s:
 
 ```fsharp
 validate op1 op2
 ```
 
-## `Pipeline<'In,'Out>` - Structured Composition of Stages
+## `Pipeline<'In,'Out>` - Structured Composition of Plans
 
-A `Pipeline<'In,'Out>` represents a **composed execution graph** of multiple processing stages that operate on streaming asynchronous data.
-It's the **user-facing construct** built from `Stage<'S,'T>` components via composition operators like `>=>` and terminated by `sink`.
+A `Pipeline<'In,'Out>` represents a **composed execution graph** of multiple processing plans that operate on streaming asynchronous data.
+It's the **user-facing construct** built from `Plan<'S,'T>` components via composition operators like `>=>` and terminated by `sink`.
 
 ```fsharp
 type Pipeline<'In,'Out> =
   { Name: string
     Memory: MemoryProfile
     Run: AsyncSeq<'In> -> AsyncSeq<'Out>
-    Stages: StageList }
+    Plans: PlanList }
 ```
 
 Conceptually:
 
-* A `Pipeline` is to `Stage` what a **program** is to an **instruction**.
-* Each stage contributes one transformation, memory transition, and potentially asynchronous or IO-bound computation.
-* The pipeline collects these stages into a connected, validated flow that can be **executed**, **analyzed**, or **parallelized**.
+* A `Pipeline` is to `Plan` what a **program** is to an **instruction**.
+* Each plan contributes one transformation, memory transition, and potentially asynchronous or IO-bound computation.
+* The pipeline collects these plans into a connected, validated flow that can be **executed**, **analyzed**, or **parallelized**.
 
  
 
-### Relationship between `Pipeline<'S,'T>`, `Pipe<'S,'T>`, and `Stage<'S,'T>`
+### Relationship between `Pipeline<'S,'T>`, `Pipe<'S,'T>`, and `Plan<'S,'T>`
 
 | Type | Role | Description |
 | ---- | ---- | ----------- |
 | `Pipe<'S,'T>` | Core Transformer | A stream-to-stream computation (`AsyncSeq<'S> -> AsyncSeq<'T>`) with metadata |
-| `Stage<'S,'T>` | Planning Unit | A `Pipe` wrapped with memory transition information |
-| `Pipeline<'In,'Out>` | Execution Graph  | A composed, executable collection of stages forming a complete dataflow |
+| `Plan<'S,'T>` | Planning Unit | A `Pipe` wrapped with memory transition information |
+| `Pipeline<'In,'Out>` | Execution Graph  | A composed, executable collection of plans forming a complete dataflow |
 
 So:
 
 ```fsharp
-Pipe<'S,'T> -> Stage<'S,'T> -> Pipeline<'In,'Out>
+Pipe<'S,'T> -> Plan<'S,'T> -> Pipeline<'In,'Out>
 ```
 
-You lift pure transformations to `Pipe`s, annotate them as `Stage`s with memory context, then compose them into full pipelines.
+You lift pure transformations to `Pipe`s, annotate them as `Plan`s with memory context, then compose them into full pipelines.
 
  
 
@@ -649,10 +649,10 @@ Pipelines are constructed using **monadic composition** (Kleisli-style bind):
 
 ```fsharp
 val (>=>) :
-  Pipeline<'a,'b> -> Stage<'b,'c> -> Pipeline<'a,'c>
+  Pipeline<'a,'b> -> Plan<'b,'c> -> Pipeline<'a,'c>
 ```
 
-This operator links a stage to the end of a pipeline, producing a new pipeline.
+This operator links a plan to the end of a pipeline, producing a new pipeline.
 
 Example:
 
@@ -675,7 +675,7 @@ Each `>=>` adds a node to the execution graph, and `sink` **runs** the entire pi
 
 | Operator | Type                                                                           | Description                      |
 | -------- | ------------------------------------------------------------------------------ | -------------------------------- |
-| `>=>>`   | `Pipeline<'In,'S> -> (Stage<'S,'U> * Stage<'S,'V>) -> Pipeline<'In,('U * 'V)>` | Split a stream into two branches |
+| `>=>>`   | `Pipeline<'In,'S> -> (Plan<'S,'U> * Plan<'S,'V>) -> Pipeline<'In,('U * 'V)>` | Split a stream into two branches |
 | `>>=>`   | `Pipeline<'a,('b * 'c)> -> ('b -> 'c -> 'd) -> Pipeline<'a,'d>`                | Combine paired outputs           |
 | `zip`    | `Pipeline<'a,'b> -> Pipeline<'a,'c> -> Pipeline<'a,('b * 'c)>`                 | Merge outputs of two pipelines   |
 
@@ -685,8 +685,8 @@ These let you define **branching and recombining flows** while maintaining strea
 
 ### Memory Profile and Validation
 
-Each pipeline carries a `MemoryProfile` summarizing the resource expectations of its stages.
-During composition, transitions (`ProfileTransition`) are validated to ensure that, for example, a sliding-window stage can legally follow a streaming stage.
+Each pipeline carries a `MemoryProfile` summarizing the resource expectations of its plans.
+During composition, transitions (`ProfileTransition`) are validated to ensure that, for example, a sliding-window plan can legally follow a streaming plan.
 
 This ensures **compile-time safety** for large-scale, memory-aware processing.
 
@@ -719,7 +719,7 @@ The pipeline defines:
 | **Purpose**       | Build and execute structured streaming dataflows     |
 | **User Role**     | Represents an *entire* workflow, from source to sink |
 
-> A `Pipeline<'In,'Out>` is the **orchestrated, executable stream processor** formed by chaining `Stage`s — it’s the top-level abstraction in the F# image processing architecture.
+> A `Pipeline<'In,'Out>` is the **orchestrated, executable stream processor** formed by chaining `Plan`s — it’s the top-level abstraction in the F# image processing architecture.
 
 
  
