@@ -65,7 +65,10 @@ let releaseNAfter (n: int) (f: Image<'S> list->'T list) (sLst: Image<'S> list) :
 let (>=>) = Pipeline.(>=>)
 let (-->) = Plan.(-->)
 let source = Pipeline.source 
-let debug = Pipeline.debug 
+let debug availableMemory = 
+    Image.Image<_>.setDebug true; 
+    Pipeline.debug availableMemory
+ 
 let zip = Pipeline.zip
 
 (*
