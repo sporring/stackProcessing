@@ -25,28 +25,28 @@ source availableMemory
 Each pipeline consists of:
 
 * A **source** of image data (typically a stack of TIFF slices),
-* A sequence of **stages** (`>=>` operator) transforming data,
+* A sequence of **plans** (`>=>` operator) transforming data,
 * A final **sink** that consumes or writes the processed results.
 
  
 
 ## Key Concepts
 
-### `Stage<'S, 'T>`
+### `Plan<'S, 'T>`
 
-A **stage** represents one processing step, transforming a stream of items of type `'S` into `'T`.
-Stages are composable, enabling streaming dataflow pipelines that minimize memory usage.
+A **plan** represents one processing step, transforming a stream of items of type `'S` into `'T`.
+Plans are composable, enabling streaming dataflow pipelines that minimize memory usage.
 
 ```fsharp
-type Stage<'S,'T> = SlimPipeline.Stage<'S,'T>
+type Plan<'S,'T> = SlimPipeline.Plan<'S,'T>
 ```
 
 ### `Pipeline<'In,'Out>`
 
 A complete dataflow, created from a source and extended via the composition operators:
 
-* `>=>`:  append a stage to a pipeline
-* `-->`:  compose two stages
+* `>=>`:  append a plan to a pipeline
+* `-->`:  compose two plans
 * `|>`:   attach a source or a sink to a pipeline
 
  
@@ -55,11 +55,11 @@ A complete dataflow, created from a source and extended via the composition oper
 
 | Operator | Description |
 | -------- | ----------- |
-| `>=>`    | Append a stage to an existing pipeline. (`Pipeline<'a,'b> -> Stage<'b,'c> -> Pipeline<'a,'c>`)                                           |
-| `-->`    | Compose two stages directly. (`Stage<'a,'b> -> Stage<'b,'c> -> Stage<'a,'c>`)                                                            |
-| `>=>>`   | Parallelize two branches from the same pipeline source. (`Pipeline<'In,'S> -> (Stage<'S,'U> * Stage<'S,'V>) -> Pipeline<'In,('U * 'V)>`) |
+| `>=>`    | Append a plan to an existing pipeline. (`Pipeline<'a,'b> -> Plan<'b,'c> -> Pipeline<'a,'c>`)                                           |
+| `-->`    | Compose two plans directly. (`Plan<'a,'b> -> Plan<'b,'c> -> Plan<'a,'c>`)                                                            |
+| `>=>>`   | Parallelize two branches from the same pipeline source. (`Pipeline<'In,'S> -> (Plan<'S,'U> * Plan<'S,'V>) -> Pipeline<'In,('U * 'V)>`) |
 | `>>=>`   | Combine paired results using a binary function. (`Pipeline<'a,('b * 'c)> -> ('b -> 'c -> 'd) -> Pipeline<'a,'d>`)                        |
-| `>>=>>`  | Combine a function producing pairs with another stage transforming pairs.                                                                |
+| `>>=>>`  | Combine a function producing pairs with another plan transforming pairs.                                                                |
 
 These operators let users declaratively build complex, memory-aware workflows.
 
@@ -89,7 +89,7 @@ let src = source (2UL * 1024UL * 1024UL * 1024UL) // 2 GB
 val sink : SlimPipeline.Pipeline<unit,unit> -> unit
 ```
 
-Executes the pipeline, pulling data from the source through all connected stages.
+Executes the pipeline, pulling data from the source through all connected plans.
 It is the terminal operator. Nothing is processed until the sink runs.
 
 Example:
@@ -103,7 +103,7 @@ pipeline |> sink
 ### `map`
 
 ```fsharp
-val map : f:('a -> 'b) -> Stage<'a,'b>
+val map : f:('a -> 'b) -> Plan<'a,'b>
 ```
 
 Applies a pure function to each element in the stream.
@@ -124,7 +124,7 @@ val window :
     windowSize:uint ->
     pad:uint ->
     stride:uint ->
-    Stage<Image<'a>, Image<'a> list>
+    Plan<Image<'a>, Image<'a> list>
 ```
 
 Converts a stream of 2D image slices into a **sliding window** of 3D image chunks.
@@ -141,7 +141,7 @@ Example:
 ### `flatten`
 
 ```fsharp
-val flatten : unit -> Stage<'a list,'a>
+val flatten : unit -> Plan<'a list,'a>
 ```
 
 Reverses `window` - flattens a list of items back into a single stream.
@@ -179,24 +179,24 @@ val promoteStreamingToSliding :
   name:string ->
   winSz:uint -> pad:uint -> stride:uint ->
   emitStart:uint -> emitCount:uint ->
-  stage:Stage<'T,'S> -> Stage<'T,'S>
+  plan:Plan<'T,'S> -> Plan<'T,'S>
 ```
 
-Transforms a **streaming** stage into a **sliding-window** stage,
+Transforms a **streaming** plan into a **sliding-window** plan,
 enabling localized operations over streaming image stacks.
 
  
 
-## Utility Stages
+## Utility Plans
 
 | Function        | Description                                                                |
 | --------------- | -------------------------------------------------------------------------- |
-| `tap name`      | Inject a debugging/logging stage that prints or inspects elements.         |
-| `tapIt f`       | Tap stage with a custom element-to-string converter.                       |
+| `tap name`      | Inject a debugging/logging plan that prints or inspects elements.         |
+| `tapIt f`       | Tap plan with a custom element-to-string converter.                       |
 | `ignoreSingles` | Discard single-image elements in the stream.                               |
 | `ignorePairs`   | Discard paired tuples in the stream.                                       |
 | `zeroMaker`     | Create a zero-filled image of the same size and type as a reference image. |
-| `idOp`          | Identity stage with a name — useful for profiling or marking stages.       |
+| `idOp`          | Identity plan with a name — useful for profiling or marking plans.       |
 
  
 
@@ -251,6 +251,6 @@ Here:
 ## Design Philosophy
 
 * **Functional composition:** pipelines are pure transformations of streams.
-* **Controlled memory footprint:** each stage releases data as soon as possible.
+* **Controlled memory footprint:** each plan releases data as soon as possible.
 * **Seamless IO:** TIFF stack reading/writing acts as the natural boundary between memory and disk.
 * **Hidden complexity:** the underlying `SlimPipeline` machinery is fully abstracted from the user.
