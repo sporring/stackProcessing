@@ -39,7 +39,7 @@ val (-->) :
 
 val source: (uint64 -> SlimPipeline.Pipeline<unit,unit>)
 
-val debug: (uint64 -> SlimPipeline.Pipeline<unit,unit>)
+val debug: availableMemory: uint64 -> SlimPipeline.Pipeline<unit,unit>
 
 val zip:
   (SlimPipeline.Pipeline<'a,'b> ->
