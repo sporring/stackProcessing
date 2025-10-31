@@ -283,14 +283,14 @@ The idea is:
 
 * Add a new `SlimPipeline.Planning` module that exports the **same DSL names/operators** (`source`, `Plan`, `>=>`, `>=>>`, `>>=>`, `sink`, `-->`) but they work on a lightweight **Plan** instead of immediately composing `Pipe`s.
 * In this first step there’s **no optimisation**: `sink` simply **lowers the Plan → Pipe** and runs it.
-* In StackProcessing.fs you only change which module you open (and ideally remove a few explicit type annotations if present). The pipeline code itself stays the same.
+* In StackProcessing.fs you only change which module you open (and ideally remove a few explicit type annotations if present). The plan code itself stays the same.
 
 Here’s the minimal refactor recipe.
 
 # 1) Add a thin Plan type
 
 ```fsharp
-type Plan<'S,'T> =
+type Stage<'S,'T> =
   { Build : unit -> Pipe<'S,'T>
     Name  : string option }
 ```
@@ -298,9 +298,9 @@ type Plan<'S,'T> =
 # 2) Lightweight lifters
 
 ```fsharp
-module Plan =
-  let ofPipe  (p: Pipe<'S,'T>)  : Plan<'S,'T> = { Build = (fun () -> p); Name = Some p.Name }
-  let ofPlan (s: Plan<'S,'T>) : Plan<'S,'T> = { Build = (fun () -> s.Pipe); Name = Some s.Name }
+module Stage =
+  let ofPipe  (p: Pipe<'S,'T>)  : Stage<'S,'T> = { Build = (fun () -> p); Name = Some p.Name }
+  let ofStage (s: Stage<'S,'T>) : Stage<'S,'T> = { Build = (fun () -> s.Pipe); Name = Some s.Name }
 ```
 
 # 3) Planning operators mirroring the existing DSL
@@ -310,28 +310,28 @@ Keep the exact operator names so StackProcessing code doesn’t change.
 ```fsharp
 module SlimPipeline.Planning =
   // aliases to make migration effortless
-  let Plan  (s: Plan<'S,'T>)  : Plan<'S,'T> = Plan.ofPlan s
-  let source (p: Pipe<'S,'T>)   : Plan<'S,'T> = Plan.ofPipe  p
-  let sink   (sinkPipe: Pipe<'T,unit>) (pl: Plan<'S,'T>) = async {
+  let Stage  (s: Stage<'S,'T>)  : Stage<'S,'T> = Stage.ofStage s
+  let source (p: Pipe<'S,'T>)   : Stage<'S,'T> = Stage.ofPipe  p
+  let sink   (sinkPipe: Pipe<'T,unit>) (pl: Stage<'S,'T>) = async {
       // Phase 1: no optimisation — just lower and run
       let exec = Pipe.compose (pl.Build()) sinkPipe
       do! Pipe.run exec
     }
 
   // linear comp
-  let (>=>) (a: Plan<'S,'T>) (b: Plan<'T,'U>) : Plan<'S,'U> =
+  let (>=>) (a: Stage<'S,'T>) (b: Stage<'T,'U>) : Stage<'S,'U> =
     { Build = fun () -> Pipe.compose (a.Build()) (b.Build())
       Name  = Some $"{b.Name |> Option.defaultValue "b"} ∘ {a.Name |> Option.defaultValue "a"}" }
 
   let (-->) = (>=>)
 
   // fan-out / fan-in simply delegate to your existing pipe-level impls
-  let (>=>>) (p: Plan<'S,'T>) (lr: Plan<'T,'U> * Plan<'T,'V>) : Plan<'S,'U * 'V> =
+  let (>=>>) (p: Stage<'S,'T>) (lr: Stage<'T,'U> * Stage<'T,'V>) : Stage<'S,'U * 'V> =
     let (l,r) = lr
     { Build = fun () -> Pipe.fanOut (p.Build()) (l.Build(), r.Build())
       Name  = Some "fanOut" }
 
-  let (>>=>) (pr: Plan<'S,'T * 'U>) (j: Plan<'T * 'U,'V>) : Plan<'S,'V> =
+  let (>>=>) (pr: Stage<'S,'T * 'U>) (j: Stage<'T * 'U,'V>) : Stage<'S,'V> =
     { Build = fun () -> Pipe.fanIn (pr.Build()) (j.Build())
       Name  = Some "fanIn" }
 ```
@@ -342,40 +342,40 @@ module SlimPipeline.Planning =
 
 **Best case** (no explicit type annotations):
 
-* Keep pipeline code the same:
+* Keep plan code the same:
 
   ```fsharp
-  let readMaker = source mem |> Plan (readAs<uint8> "image" ".tiff")
-  let plotHist  = Plan map2pairs --> Plan pairs2floats --> Plan (plot plt)
+  let readMaker = source mem |> Stage (readAs<uint8> "image" ".tiff")
+  let plotHist  = Stage map2pairs --> Stage pairs2floats --> Stage (plot plt)
 
   readMaker
-  >=>> ( Plan histogram --> plotHist
-       , Plan (cast<uint8,float>) --> Plan (convGauss 1.0 None) --> Plan (cast<float,uint8>)
-         --> Plan histogram --> plotHist )
-  >>=> Plan combineIgnore
+  >=>> ( Stage histogram --> plotHist
+       , Stage (cast<uint8,float>) --> Stage (convGauss 1.0 None) --> Stage (cast<float,uint8>)
+         --> Stage histogram --> plotHist )
+  >>=> Stage combineIgnore
   |> sink sinkPipe
   ```
 
-**If you have explicit types** like `let p: Pipe<_,_> = ...`, remove or relax them (let inference infer `Plan<_,_>`), or flip them to `Plan<_,_>` in a handful of places.
+**If you have explicit types** like `let p: Pipe<_,_> = ...`, remove or relax them (let inference infer `Stage<_,_>`), or flip them to `Stage<_,_>` in a handful of places.
 
 # 5) Why this minimizes churn
 
 * **No API break** for callers: the names and operator shapes are the same.
 * StackProcessing doesn’t need to know about DAGs or optimisation yet.
-* You can later evolve `Plan` into a true DAG (nodes/edges, resource models) **without touching StackProcessing again**:
+* You can later evolve `Stage` into a true DAG (nodes/edges, resource models) **without touching StackProcessing again**:
 
-  * Enrich `Plan`’s internals to record a graph instead of a single `Build`.
+  * Enrich `Stage`’s internals to record a graph instead of a single `Build`.
   * Make `sink` do: `analyse → optimise → lower → run`.
   * Keep the same operators/DSL at call sites.
 
 # 6) When you’re ready to optimise
 
-Inside `SlimPipeline.Planning.sink` change:
+Inside `SlimPipeline.Stagening.sink` change:
 
 ```fsharp
-let planGraph = /* materialise DAG from the composed plans */
-let params    = Optimiser.solve planGraph availableMemory
-let pipe      = Lowering.toPipe planGraph params
+let stageGraph = /* materialise DAG from the composed stages */
+let params    = Optimiser.solve stageGraph availableMemory
+let pipe      = Lowering.toPipe stageGraph params
 do! Pipe.run (Pipe.compose pipe sinkPipe)
 ```
 

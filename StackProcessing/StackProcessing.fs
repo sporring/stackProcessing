@@ -3,7 +3,7 @@ module StackProcessing
 open SlimPipeline // Core processing model
 open System.IO
 
-type Plan<'S,'T> = SlimPipeline.Plan<'S,'T>
+type Stage<'S,'T> = SlimPipeline.Stage<'S,'T>
 type Profile = SlimPipeline.Profile
 type ProfileTransition = SlimPipeline.ProfileTransition
 //type Slice<'S when 'S: equality> = Slice.Slice<'S>
@@ -29,7 +29,7 @@ let incIfImage x =
     | _ -> ()
     x
 let incRef () =
-    Plan.map "incRefCountOp" incIfImage id id
+    Stage.map "incRefCountOp" incIfImage id id
 let decIfImage x =
     match box x with
     | :? Image<uint8> as I -> I.decRefCount()   // or img.incNRefCount(1) if it takes an int
@@ -45,7 +45,7 @@ let decIfImage x =
     | _ -> ()
     x
 let decRef () =
-    Plan.map "decRefCountOp" decIfImage id id
+    Stage.map "decRefCountOp" decIfImage id id
 let releaseAfter (f: Image<'S>->'T) (I:Image<'S>) = 
     let v = f I
     printfn "releasing"
@@ -62,14 +62,14 @@ let releaseNAfter (n: int) (f: Image<'S> list->'T list) (sLst: Image<'S> list) :
     sLst |> List.take (int n) |> List.map (decIfImage >> ignore) |> ignore
     tLst 
 *)
-let (>=>) = Pipeline.(>=>)
-let (-->) = Plan.(-->)
-let source = Pipeline.source 
+let (>=>) = Plan.(>=>)
+let (-->) = Stage.(-->)
+let source = Plan.source 
 let debug availableMemory = 
     Image.Image<_>.setDebug true; 
-    Pipeline.debug availableMemory
+    Plan.debug availableMemory
  
-let zip = Pipeline.zip
+let zip = Plan.zip
 
 (*
 let inline isExactlyImage<'T> () =
@@ -83,65 +83,65 @@ let promoteStreamingToSliding
     (stride: uint)
     (emitStart: uint)
     (emitCount: uint)
-    (plan: Plan<'T,'S>)
-    : Plan<'T, 'S> = // Does not change shape
+    (stage: Stage<'T,'S>)
+    : Stage<'T, 'S> = // Does not change shape
         let zeroMaker i = id
-        (Plan.window $"{name}:window" winSz pad zeroMaker stride) 
-        --> (Plan.map $"{name}:skip and take" (fun lst ->
+        (Stage.window $"{name}:window" winSz pad zeroMaker stride) 
+        --> (Stage.map $"{name}:skip and take" (fun lst ->
                 let result = lst |> List.skip (int stride) |> List.take 1
                 printfn $"disposing of {stride} initial images"
                 lst |> List.take (int stride) |> List.map decIfImage |> ignore
                 result
             ) id id )
-        --> Plan.flatten $"{name}:flatten"
-        --> plan
+        --> Stage.flatten $"{name}:flatten"
+        --> stage
 
-let (>=>>) (pl: Pipeline<'In, 'S>) (plan1: Plan<'S, 'U>, plan2: Plan<'S, 'V>) : Pipeline<'In, 'U * 'V> = 
+let (>=>>) (pl: Plan<'In, 'S>) (stage1: Stage<'S, 'U>, stage2: Stage<'S, 'V>) : Plan<'In, 'U * 'V> = 
     let stream2Sliding winSz pad stride stg = 
         stg |> promoteStreamingToSliding "makeSliding" winSz pad stride 0u 1u
 
     let stg1,stg2 =
-        match plan1.Pipe.Profile, plan2.Pipe.Profile with
-        | Streaming, Streaming -> plan1, plan2
-        | Sliding (a1,b1,c1,d1,e1), Sliding (a2,b2,c2,d2,e2) when a1=a2 && b1=b2 && c1=c2 && d1=d2 && e1=e2 -> plan1, plan2
+        match stage1.Transition.From, stage2.Transition.From with
+        | Streaming, Streaming -> stage1, stage2
+        | Sliding (a1,b1,c1,d1,e1), Sliding (a2,b2,c2,d2,e2) when a1=a2 && b1=b2 && c1=c2 && d1=d2 && e1=e2 -> stage1, stage2
         | Streaming, Sliding (winSz, stride, pad, emitStart, emitCount) -> 
             printfn "left is promoted"
-            stream2Sliding winSz pad stride plan1, plan2 
+            stream2Sliding winSz pad stride stage1, stage2 
         | Sliding (winSz, stride, pad, emitStart, emitCount), Streaming -> 
             printfn "right is promoted"
-            plan1, stream2Sliding winSz pad stride plan2
-        | _,_ -> failwith $"[>=>>] does not know how to combine the plan-profiles: {plan1.Pipe.Profile} vs {plan2.Pipe.Profile}"
+            stage1, stream2Sliding winSz pad stride stage2
+        | _,_ -> failwith $"[>=>>] does not know how to combine the stage-profiles: {stage1.Transition.From} vs {stage2.Transition.From}"
 
-    Pipeline.(>=>>) (pl >=> incRef ()) (stg1, stg2)
+    Plan.(>=>>) (pl >=> incRef ()) (stg1, stg2)
 
-let (>>=>) = Pipeline.(>>=>)
-let (>>=>>) = Pipeline.(>>=>>)
+let (>>=>) = Plan.(>>=>)
+let (>>=>>) = Plan.(>>=>>)
 let zeroMaker (index:int) (ex:Image<'S>) : Image<'S> = new Image<'S>(ex.GetSize(), 1u, "padding", index)
-let window windowSize pad stride= Plan.window "window" windowSize pad zeroMaker stride
-let flatten () = Plan.flatten "flatten"
-let map f = Plan.map "map" f id id
-let sink (pl: Pipeline<unit,unit>) : unit = 
-    Pipeline.sink pl
-let sinkList (plLst: Pipeline<unit,unit> list) : unit = Pipeline.sinkList plLst
-//let combineIgnore = Pipeline.combineIgnore
-let drainSingle pl = Pipeline.drainSingle "drainSingle" pl
-let drainList pl = Pipeline.drainList "drainList" pl
-let drainLast pl = Pipeline.drainLast "drainLast" pl
-//let tap str = incRefCountOp () --> (Plan.tap str)
-let tap = Plan.tap
-//let tap str = Plan.tap str --> incRef()// tap and tapIt neither realeases after nor increases number of references
-let tapIt = Plan.tapIt
-let ignoreSingles () : Plan<Image<_>,unit> = Plan.ignore (decIfImage>>ignore)
-let ignorePairs () : Plan<_,unit> = Plan.ignorePairs<_,unit> ((decIfImage>>ignore),(decIfImage>>ignore))
-let idOp<'T> = Plan.idOp<'T>
+let window windowSize pad stride= Stage.window "window" windowSize pad zeroMaker stride
+let flatten () = Stage.flatten "flatten"
+let map f = Stage.map "map" f id id
+let sink (pl: Plan<unit,unit>) : unit = 
+    Plan.sink pl
+let sinkList (plLst: Plan<unit,unit> list) : unit = Plan.sinkList plLst
+//let combineIgnore = Plan.combineIgnore
+let drainSingle pl = Plan.drainSingle "drainSingle" pl
+let drainList pl = Plan.drainList "drainList" pl
+let drainLast pl = Plan.drainLast "drainLast" pl
+//let tap str = incRefCountOp () --> (Stage.tap str)
+let tap = Stage.tap
+//let tap str = Stage.tap str --> incRef()// tap and tapIt neither realeases after nor increases number of references
+let tapIt = Stage.tapIt
+let ignoreSingles () : Stage<Image<_>,unit> = Stage.ignore (decIfImage>>ignore)
+let ignorePairs () : Stage<_,unit> = Stage.ignorePairs<_,unit> ((decIfImage>>ignore),(decIfImage>>ignore))
+let idOp<'T> = Stage.idOp<'T>
 
-let liftUnary name  = Plan.liftReleaseUnary name ignore
+let liftUnary name  = Stage.liftReleaseUnary name ignore
 let liftUnaryReleaseAfter 
     (name: string)
     (f: Image<'S> -> Image<'T>)
     (memoryNeed: MemoryNeed)
     (nElemsTransformation: NElemsTransformation) = 
-    Plan.liftReleaseUnary name (decIfImage>>ignore) f memoryNeed nElemsTransformation
+    Stage.liftReleaseUnary name (decIfImage>>ignore) f memoryNeed nElemsTransformation
 
 let getBytesPerComponent<'T> = (typeof<'T> |> Image.getBytesPerComponent |> uint64)
 
@@ -149,7 +149,7 @@ type System.String with // From https://stackoverflow.com/questions/1936767/f-ca
     member s1.icompare(s2: string) =
         System.String.Equals(s1, s2, System.StringComparison.CurrentCultureIgnoreCase)
 
-let write (outputDir: string) (suffix: string) : Plan<Image<'T>, unit> =
+let write (outputDir: string) (suffix: string) : Stage<Image<'T>, unit> =
     let t = typeof<'T>
     if (suffix.icompare ".tif" || suffix.icompare ".tiff") 
         && not (t = typeof<uint8> || t = typeof<int8> || t = typeof<uint16> || t = typeof<int16> || t = typeof<float32>) then
@@ -162,9 +162,9 @@ let write (outputDir: string) (suffix: string) : Plan<Image<'T>, unit> =
         image.toFile(fileName)
         image.decRefCount()
     let memoryNeed = id
-    Plan.consumeWith $"write \"{outputDir}/*{suffix}\"" consumer memoryNeed
+    Stage.consumeWith $"write \"{outputDir}/*{suffix}\"" consumer memoryNeed
 
-let show (plt: Image<'T> -> unit) : Plan<Image<'T>, unit> =
+let show (plt: Image<'T> -> unit) : Stage<Image<'T>, unit> =
     let consumer (debug: bool) (idx: int) (image:Image<'T>) =
         if debug then printfn "[show] Showing image %d" idx
         let width = image.GetWidth() |> int
@@ -172,22 +172,22 @@ let show (plt: Image<'T> -> unit) : Plan<Image<'T>, unit> =
         plt image
         image.decRefCount()
     let memoryNeed = id
-    Plan.consumeWith "show" consumer memoryNeed
+    Stage.consumeWith "show" consumer memoryNeed
 
-let plot (plt: (float list)->(float list)->unit) : Plan<(float * float) list, unit> = // better be (float*float) list
+let plot (plt: (float list)->(float list)->unit) : Stage<(float * float) list, unit> = // better be (float*float) list
     let consumer (debug: bool) (idx: int) (points: (float*float) list) =
         if debug then printfn $"[plot] Plotting {points.Length} 2D points"
         let x,y = points |> List.unzip
         plt x y
     let memoryNeed = id
-    Plan.consumeWith "plot" consumer memoryNeed
+    Stage.consumeWith "plot" consumer memoryNeed
 
-let print () : Plan<'T, unit> =
+let print () : Stage<'T, unit> =
     let consumer (debug: bool) (idx: int) (elm: 'T) =
         if debug then printfn "[print]"
         printfn "%d -> %A" idx elm
     let memoryNeed = id
-    Plan.consumeWith "print" consumer memoryNeed
+    Stage.consumeWith "print" consumer memoryNeed
 
 (*
 let liftImageSource (name: string) (img: Image<'T>) : Pipe<unit, Image<'T>> =
@@ -200,12 +200,12 @@ let liftImageSource (name: string) (img: Image<'T>) : Pipe<unit, Image<'T>> =
 let axisSource
     (axis: int) 
     (size: int list)
-    (pl : Pipeline<unit, unit>) 
-    : Pipeline<unit, Image<uint>> =
+    (pl : Plan<unit, unit>) 
+    : Plan<unit, Image<uint>> =
     let img = Image.generateCoordinateAxis axis size
     let sz = Image.GetSize img
     let shapeUpdate = fun (s: Shape) -> s
-    let op : Plan<unit, Image<uint>> =
+    let op : Stage<unit, Image<uint>> =
         {
             Name = "axisSource"
             Pipe = img |> liftImageSource "axisSource"
@@ -230,7 +230,7 @@ let cast<'S,'T when 'S: equality and 'T: equality> =
         let result = I.castTo<'T> ()
         I.decRefCount()
         result
-    Plan.cast<Image<'S>,Image<'T>> name f id
+    Stage.cast<Image<'S>,Image<'T>> name f id
 
 /// Basic arithmetic
 let memNeeded<'T> nTimes nElems = 3UL*nElems*nTimes*getBytesPerComponent<'T> // We need input, output, and potentially a cast in between
@@ -274,52 +274,52 @@ let failTypeMismatch<'T> name lst =
 /// Simple functions
 let private floatNintTypes = [typeof<float>;typeof<float32>;typeof<int>]
 let private floatTypes = [typeof<float>;typeof<float32>]
-let abs<'T when 'T: equality> : Plan<Image<'T>,Image<'T>> = 
+let abs<'T when 'T: equality> : Stage<Image<'T>,Image<'T>> = 
     failTypeMismatch<'T> "abs" floatNintTypes
     liftUnaryReleaseAfter "abs"    ImageFunctions.absImage id id
-let acos<'T when 'T: equality>     : Plan<Image<'T>,Image<'T>> =      
+let acos<'T when 'T: equality>     : Stage<Image<'T>,Image<'T>> =      
     failTypeMismatch<'T> "acos" floatTypes
     liftUnaryReleaseAfter "acos"   ImageFunctions.acosImage id id
-let asin<'T when 'T: equality>     : Plan<Image<'T>,Image<'T>> =      
+let asin<'T when 'T: equality>     : Stage<Image<'T>,Image<'T>> =      
     failTypeMismatch<'T> "asin" floatTypes
     liftUnaryReleaseAfter "asin"   ImageFunctions.asinImage id id
-let atan<'T when 'T: equality>     : Plan<Image<'T>,Image<'T>> =      
+let atan<'T when 'T: equality>     : Stage<Image<'T>,Image<'T>> =      
     failTypeMismatch<'T> "atan" floatTypes
     liftUnaryReleaseAfter "atan"   ImageFunctions.atanImage id id
-let cos<'T when 'T: equality>     : Plan<Image<'T>,Image<'T>> =      
+let cos<'T when 'T: equality>     : Stage<Image<'T>,Image<'T>> =      
     failTypeMismatch<'T> "cos" floatTypes
     liftUnaryReleaseAfter "cos"    ImageFunctions.cosImage id id
-let sin<'T when 'T: equality>     : Plan<Image<'T>,Image<'T>> =      
+let sin<'T when 'T: equality>     : Stage<Image<'T>,Image<'T>> =      
     failTypeMismatch<'T> "sin" floatTypes
     liftUnaryReleaseAfter "sin"    ImageFunctions.sinImage id id
-let tan<'T when 'T: equality>     : Plan<Image<'T>,Image<'T>> =      
+let tan<'T when 'T: equality>     : Stage<Image<'T>,Image<'T>> =      
     failTypeMismatch<'T> "tan" floatTypes
     liftUnaryReleaseAfter "tan"    ImageFunctions.tanImage id id
-let exp<'T when 'T: equality>     : Plan<Image<'T>,Image<'T>> =      
+let exp<'T when 'T: equality>     : Stage<Image<'T>,Image<'T>> =      
     failTypeMismatch<'T> "exp" floatTypes
     liftUnaryReleaseAfter "exp"    ImageFunctions.expImage id id
-let log10<'T when 'T: equality>     : Plan<Image<'T>,Image<'T>> =      
+let log10<'T when 'T: equality>     : Stage<Image<'T>,Image<'T>> =      
     failTypeMismatch<'T> "log10" floatTypes
     liftUnaryReleaseAfter "log10"  ImageFunctions.log10Image id id
-let log<'T when 'T: equality>     : Plan<Image<'T>,Image<'T>> =      
+let log<'T when 'T: equality>     : Stage<Image<'T>,Image<'T>> =      
     failTypeMismatch<'T> "log" floatTypes
     liftUnaryReleaseAfter "log"    ImageFunctions.logImage id id
-let round<'T when 'T: equality>     : Plan<Image<'T>,Image<'T>> =      
+let round<'T when 'T: equality>     : Stage<Image<'T>,Image<'T>> =      
     failTypeMismatch<'T> "round" floatTypes
     liftUnaryReleaseAfter "round"  ImageFunctions.roundImage id id
-let sqrt<'T when 'T: equality>     : Plan<Image<'T>,Image<'T>> =      
+let sqrt<'T when 'T: equality>     : Stage<Image<'T>,Image<'T>> =      
     failTypeMismatch<'T> "sqrt" floatNintTypes
     liftUnaryReleaseAfter "sqrt"   ImageFunctions.sqrtImage id id
-let square<'T when 'T: equality>     : Plan<Image<'T>,Image<'T>> =      
+let square<'T when 'T: equality>     : Stage<Image<'T>,Image<'T>> =      
     failTypeMismatch<'T> "square" floatNintTypes
     liftUnaryReleaseAfter "square" ImageFunctions.squareImage id id
 
 //let histogram<'T when 'T: comparison> = histogramOp<'T> "histogram"
 let imageHistogram () =
-    Plan.map<Image<'T>,Map<'T,uint64>> "histogram:map" (releaseAfter ImageFunctions.histogram) id id// Assumed max for uint8, can be done better
+    Stage.map<Image<'T>,Map<'T,uint64>> "histogram:map" (releaseAfter ImageFunctions.histogram) id id// Assumed max for uint8, can be done better
 
 let imageHistogramFold () =
-    Plan.fold<Map<'T,uint64>, Map<'T,uint64>> "histogram:fold" ImageFunctions.addHistogram (Map.empty<'T, uint64>) id id
+    Stage.fold<Map<'T,uint64>, Map<'T,uint64>> "histogram:fold" ImageFunctions.addHistogram (Map.empty<'T, uint64>) id id
 
 let histogram () =
     imageHistogram () --> imageHistogramFold ()
@@ -339,7 +339,7 @@ let inline pairs2ints< ^T, ^S when ^T : (static member op_Explicit : ^T -> int) 
 
 type ImageStats = ImageFunctions.ImageStats
 let imageComputeStats () =
-    Plan.map<Image<'T>,ImageStats> "computeStats:map" (releaseAfter ImageFunctions.computeStats) id id
+    Stage.map<Image<'T>,ImageStats> "computeStats:map" (releaseAfter ImageFunctions.computeStats) id id
 
 let imageComputeStatsFold () =
     let zeroStats: ImageStats = { 
@@ -351,7 +351,7 @@ let imageComputeStatsFold () =
         Sum = 0.0
         Var = 0.0
     }
-    Plan.fold<ImageStats, ImageStats> "computeStats:fold" ImageFunctions.addComputeStats zeroStats id id
+    Stage.fold<ImageStats, ImageStats> "computeStats:fold" ImageFunctions.addComputeStats zeroStats id id
 
 let computeStats () =
     imageComputeStats () --> imageComputeStatsFold ()
@@ -404,7 +404,7 @@ let volFctToLstFctReleaseAfter (f:Image<'S>->Image<'T>) pad stride images =
     vol.decRefCount ()
     result
 
-let discreteGaussianOp (name:string) (sigma:float) (outputRegionMode: ImageFunctions.OutputRegionMode option) (boundaryCondition: ImageFunctions.BoundaryCondition option) (winSz: uint option): Plan<Image<float>, Image<float>> =
+let discreteGaussianOp (name:string) (sigma:float) (outputRegionMode: ImageFunctions.OutputRegionMode option) (boundaryCondition: ImageFunctions.BoundaryCondition option) (winSz: uint option): Stage<Image<float>, Image<float>> =
     let roundFloatToUint v = uint (v+0.5)
 
     let ksz = 4.0 * sigma + 1.0 |> roundFloatToUint
@@ -426,7 +426,7 @@ let discreteGaussianOp (name:string) (sigma:float) (outputRegionMode: ImageFunct
         match outputRegionMode with
             | Some Valid -> nElems - 2UL * uint64 pad
             |_ -> nElems
-    let stg = Plan.map name f memoryNeed nElemsTransformation // wrong for Valid, where the sequences becomes shorter
+    let stg = Stage.map name f memoryNeed nElemsTransformation // wrong for Valid, where the sequences becomes shorter
     (window win pad stride) --> stg --> flatten ()
 
 let discreteGaussian = discreteGaussianOp "discreteGaussian"
@@ -457,7 +457,7 @@ let convGauss sigma = discreteGaussianOp "convGauss" sigma None None None
 //                                          * * *
 //                                            * * *
 
-let convolveOp (name: string) (kernel: Image<'T>) (outputRegionMode: ImageFunctions.OutputRegionMode option) (bc: ImageFunctions.BoundaryCondition option) (winSz: uint option): Plan<Image<'T>, Image<'T>> =
+let convolveOp (name: string) (kernel: Image<'T>) (outputRegionMode: ImageFunctions.OutputRegionMode option) (bc: ImageFunctions.BoundaryCondition option) (winSz: uint option): Stage<Image<'T>, Image<'T>> =
     let windowFromKernel (k: Image<'T>) : uint =
         max 1u (k.GetDepth())
     let ksz = windowFromKernel kernel
@@ -470,7 +470,7 @@ let convolveOp (name: string) (kernel: Image<'T>) (outputRegionMode: ImageFuncti
     let f = volFctToLstFctReleaseAfter (fun image3D -> ImageFunctions.convolve outputRegionMode bc image3D kernel) pad stride
     let memoryNeed nPixels = (2UL*nPixels*(uint64 win) + (uint64 ksz))*(typeof<'T> |> Image.getBytesPerComponent |> uint64)
     let nElemsTransformation nElems = nElems - 2UL*(uint64 pad) 
-    let stg = Plan.map name f memoryNeed nElemsTransformation
+    let stg = Stage.map name f memoryNeed nElemsTransformation
     (window win pad stride) --> stg --> flatten ()
 
 
@@ -483,14 +483,14 @@ let finiteDiff (sigma: float) (direction: uint) (order: uint) =
     convolveOp "finiteDiff" kernel None None None
 
 // these only works on uint8
-let private makeMorphOp (name:string) (radius:uint) (winSz: uint option) (core: uint -> Image<'T> -> Image<'T>) : Plan<Image<'T>,Image<'T>> when 'T: equality =
+let private makeMorphOp (name:string) (radius:uint) (winSz: uint option) (core: uint -> Image<'T> -> Image<'T>) : Stage<Image<'T>,Image<'T>> when 'T: equality =
     let ksz   = 2u * radius + 1u
     let pad = ksz/2u
     let win = Option.defaultValue ksz winSz |> min ksz
     let stride = win - ksz + 1u
 
     let f = volFctToLstFctReleaseAfter (core radius) pad stride
-    let stg = Plan.map name f id id
+    let stg = Stage.map name f id id
     (window win pad stride) --> stg --> flatten ()
 
 
@@ -503,7 +503,7 @@ let closing radius = makeMorphOp "binaryErode"  radius None ImageFunctions.binar
 let binaryFillHoles (winSz: uint)= 
     let pad, stride = 0u, winSz
     let f = volFctToLstFctReleaseAfter (ImageFunctions.binaryFillHoles) pad stride
-    let stg = Plan.map "fillHoles" f id id
+    let stg = Stage.map "fillHoles" f id id
     (window winSz pad stride) --> stg --> flatten ()
 
 
@@ -528,35 +528,35 @@ let connectedComponents (winSz: uint) =
         let str = uint64 stride
         max (nPixels*(wsz*(2UL*bt8+bt64)-str*bt8)) (nPixels*(wsz*(bt8+bt64)+str*(bt64-bt8)))
     let nElemsTransformation = id
-    let stg = Plan.map "connectedComponents" f memoryNeed nElemsTransformation
+    let stg = Stage.map "connectedComponents" f memoryNeed nElemsTransformation
     (window winSz pad stride) --> stg --> flatten ()
 
 let relabelComponents a (winSz: uint) = 
     let pad, stride = 0u, winSz
     let f = volFctToLstFctReleaseAfter (ImageFunctions.relabelComponents a) pad stride
-    let stg = Plan.map "relabelComponents" f id id
+    let stg = Stage.map "relabelComponents" f id id
     (window winSz pad stride) --> stg --> flatten ()
 
 let watershed a (winSz: uint) =
     let pad, stride = 0u, winSz
     let f = volFctToLstFctReleaseAfter (ImageFunctions.watershed a) pad stride
-    let stg = Plan.map "watershed" f id id
+    let stg = Stage.map "watershed" f id id
     (window winSz pad stride) --> stg --> flatten ()
 let signedDistanceMap (winSz: uint) =
     let pad, stride = 0u, winSz
     let f = volFctToLstFctReleaseAfter (ImageFunctions.signedDistanceMap 0uy 1uy) pad stride
-    let stg = Plan.map "signedDistanceMap" f id id
+    let stg = Stage.map "signedDistanceMap" f id id
     (window winSz pad stride) --> stg --> flatten ()
 let otsuThreshold (winSz: uint) =
     let pad, stride = 0u, winSz
     let f = volFctToLstFctReleaseAfter (ImageFunctions.otsuThreshold) pad stride
-    let stg = Plan.map "otsuThreshold" f id id
+    let stg = Stage.map "otsuThreshold" f id id
     (window winSz pad stride) --> stg --> flatten ()
 
 let momentsThreshold (winSz: uint) =
     let pad, stride = 0u, winSz
     let f = volFctToLstFctReleaseAfter (ImageFunctions.momentsThreshold) pad stride
-    let stg = Plan.map "momentsThreshold" f id id
+    let stg = Stage.map "momentsThreshold" f id id
     (window winSz pad stride) --> stg --> flatten ()
 
 let threshold a b = liftUnaryReleaseAfter "threshold" (ImageFunctions.threshold a b) id id
@@ -597,8 +597,8 @@ let zero<'T when 'T: equality>
     (width: uint) 
     (height: uint) 
     (depth: uint) 
-    (pl : Pipeline<unit, unit>) 
-    : Pipeline<unit, Image<'T>> =
+    (pl : Plan<unit, unit>) 
+    : Plan<unit, Image<'T>> =
     // width, heigth, depth should be replaced with shape and shapeUpdate, and mapper should be deferred to outside Core!!!
     if pl.debug then printfn $"[zero] {width}x{height}x{depth}"
     let mapper (i: int) : Image<'T> = 
@@ -609,13 +609,13 @@ let zero<'T when 'T: equality>
     let memPeak = Image<'T>.memoryEstimate width height 1u
     let memoryNeed = fun _ -> memPeak
     let nElemsTransformation = id
-    let plan = Plan.init "create" depth mapper transition memoryNeed nElemsTransformation |> Some
-    //let flow = Flow.returnM plan
+    let stage = Stage.init "create" depth mapper transition memoryNeed nElemsTransformation |> Some
+    //let flow = Flow.returnM stage
     let nElems = (uint64 width) * (uint64 height)
     let memPeak = Image<'T>.memoryEstimate width height 1u
-    Pipeline.create plan pl.memAvail memPeak nElems (uint64 depth)  pl.debug
+    Plan.create stage pl.memAvail memPeak nElems (uint64 depth)  pl.debug
 
-let readFilteredOp<'T when 'T: equality> (name:string) (inputDir : string) (suffix : string) (filter: string[]->string[]) (pl : Pipeline<unit, unit>) : Pipeline<unit, Image<'T>> =
+let readFilteredOp<'T when 'T: equality> (name:string) (inputDir : string) (suffix : string) (filter: string[]->string[]) (pl : Plan<unit, unit>) : Plan<unit, Image<'T>> =
     // much should be deferred to outside Core!!!
     if pl.debug then printfn $"[{name} cast to {typeof<'T>.Name}]"
     let (width,height,depth) = getStackSize inputDir suffix
@@ -630,21 +630,21 @@ let readFilteredOp<'T when 'T: equality> (name:string) (inputDir : string) (suff
     let memPeak = Image<'T>.memoryEstimate width height 1u
     let memoryNeed = fun _ -> memPeak
     let nElemsTransformation = id
-    let plan = Plan.init $"{name}" (uint depth) mapper transition memoryNeed nElemsTransformation |> Some
-    //let flow = Flow.returnM plan
+    let stage = Stage.init $"{name}" (uint depth) mapper transition memoryNeed nElemsTransformation |> Some
+    //let flow = Flow.returnM stage
     let memPerElem = (uint64 width)*(uint64 height)*getBytesPerComponent<'T>
     let length = (uint64 depth)
-    Pipeline.create plan pl.memAvail memPeak memPerElem length  pl.debug
+    Plan.create stage pl.memAvail memPeak memPerElem length  pl.debug
 
-let readFiltered<'T when 'T: equality> (inputDir : string) (suffix : string)  (filter: string[]->string[]) (pl : Pipeline<unit, unit>) : Pipeline<unit, Image<'T>> =
+let readFiltered<'T when 'T: equality> (inputDir : string) (suffix : string)  (filter: string[]->string[]) (pl : Plan<unit, unit>) : Plan<unit, Image<'T>> =
     readFilteredOp<'T> $"readFiltered" inputDir suffix filter pl
 
-let read<'T when 'T: equality> (inputDir : string) (suffix : string) (pl : Pipeline<unit, unit>) : Pipeline<unit, Image<'T>> =
+let read<'T when 'T: equality> (inputDir : string) (suffix : string) (pl : Plan<unit, unit>) : Plan<unit, Image<'T>> =
     readFilteredOp<'T> $"read" inputDir suffix Array.sort pl
 
-let readRandom<'T when 'T: equality> (count: uint) (inputDir : string) (suffix : string) (pl : Pipeline<unit, unit>) : Pipeline<unit, Image<'T>> =
+let readRandom<'T when 'T: equality> (count: uint) (inputDir : string) (suffix : string) (pl : Plan<unit, unit>) : Plan<unit, Image<'T>> =
     readFilteredOp<'T> $"readRandom" inputDir suffix (Array.randomChoices (int count)) pl
 
-let empty (pl : Pipeline<unit, unit>) : Pipeline<unit, unit> =
-    let plan = "empty" |> Plan.empty |> Some
-    Pipeline.create plan pl.memAvail 0UL 0UL 0UL  pl.debug
+let empty (pl : Plan<unit, unit>) : Plan<unit, unit> =
+    let stage = "empty" |> Stage.empty |> Some
+    Plan.create stage pl.memAvail 0UL 0UL 0UL  pl.debug
