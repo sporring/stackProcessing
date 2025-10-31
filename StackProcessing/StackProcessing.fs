@@ -76,7 +76,7 @@ let inline isExactlyImage<'T> () =
     let t = typeof<'T>
     t.IsGenericType && t.GetGenericTypeDefinition() = typedefof<Image<_>>
 *)
-let promoteStreamingToSliding 
+let promoteStreamingToWindow 
     (name: string)
     (winSz: uint)
     (pad: uint)
@@ -97,19 +97,19 @@ let promoteStreamingToSliding
         --> stage
 
 let (>=>>) (pl: Plan<'In, 'S>) (stage1: Stage<'S, 'U>, stage2: Stage<'S, 'V>) : Plan<'In, 'U * 'V> = 
-    let stream2Sliding winSz pad stride stg = 
-        stg |> promoteStreamingToSliding "makeSliding" winSz pad stride 0u 1u
+    let stream2Window winSz pad stride stg = 
+        stg |> promoteStreamingToWindow "makeWindow" winSz pad stride 0u 1u
 
     let stg1,stg2 =
         match stage1.Transition.From, stage2.Transition.From with
         | Streaming, Streaming -> stage1, stage2
-        | Sliding (a1,b1,c1,d1,e1), Sliding (a2,b2,c2,d2,e2) when a1=a2 && b1=b2 && c1=c2 && d1=d2 && e1=e2 -> stage1, stage2
-        | Streaming, Sliding (winSz, stride, pad, emitStart, emitCount) -> 
+        | Window (a1,b1,c1,d1,e1), Window (a2,b2,c2,d2,e2) when a1=a2 && b1=b2 && c1=c2 && d1=d2 && e1=e2 -> stage1, stage2
+        | Streaming, Window (winSz, stride, pad, emitStart, emitCount) -> 
             printfn "left is promoted"
-            stream2Sliding winSz pad stride stage1, stage2 
-        | Sliding (winSz, stride, pad, emitStart, emitCount), Streaming -> 
+            stream2Window winSz pad stride stage1, stage2 
+        | Window (winSz, stride, pad, emitStart, emitCount), Streaming -> 
             printfn "right is promoted"
-            stage1, stream2Sliding winSz pad stride stage2
+            stage1, stream2Window winSz pad stride stage2
         | _,_ -> failwith $"[>=>>] does not know how to combine the stage-profiles: {stage1.Transition.From} vs {stage2.Transition.From}"
 
     Plan.(>=>>) (pl >=> incRef ()) (stg1, stg2)
@@ -140,8 +140,8 @@ let liftUnaryReleaseAfter
     (name: string)
     (f: Image<'S> -> Image<'T>)
     (memoryNeed: MemoryNeed)
-    (nElemsTransformation: NElemsTransformation) = 
-    Stage.liftReleaseUnary name (decIfImage>>ignore) f memoryNeed nElemsTransformation
+    (lengthTransformation: LengthTransformation) = 
+    Stage.liftReleaseUnary name (decIfImage>>ignore) f memoryNeed lengthTransformation
 
 let getBytesPerComponent<'T> = (typeof<'T> |> Image.getBytesPerComponent |> uint64)
 
@@ -422,11 +422,11 @@ let discreteGaussianOp (name:string) (sigma:float) (outputRegionMode: ImageFunct
     printfn $"discreteGaussianOp: sigma {sigma}, ksz {ksz}, win {win}, stride {stride}, pad {pad}"
     let f = volFctToLstFctReleaseAfter (ImageFunctions.discreteGaussian 3u sigma (ksz |> Some) outputRegionMode boundaryCondition) pad stride
     let memoryNeed nPixels = (2UL*nPixels*(uint64 win) + (uint64 ksz))*(typeof<float> |> Image.getBytesPerComponent |> uint64)
-    let nElemsTransformation nElems = 
+    let lengthTransformation nElems = 
         match outputRegionMode with
             | Some Valid -> nElems - 2UL * uint64 pad
             |_ -> nElems
-    let stg = Stage.map name f memoryNeed nElemsTransformation // wrong for Valid, where the sequences becomes shorter
+    let stg = Stage.map name f memoryNeed lengthTransformation // wrong for Valid, where the sequences becomes shorter
     (window win pad stride) --> stg --> flatten ()
 
 let discreteGaussian = discreteGaussianOp "discreteGaussian"
@@ -469,8 +469,8 @@ let convolveOp (name: string) (kernel: Image<'T>) (outputRegionMode: ImageFuncti
             | _ -> ksz/2u //floor
     let f = volFctToLstFctReleaseAfter (fun image3D -> ImageFunctions.convolve outputRegionMode bc image3D kernel) pad stride
     let memoryNeed nPixels = (2UL*nPixels*(uint64 win) + (uint64 ksz))*(typeof<'T> |> Image.getBytesPerComponent |> uint64)
-    let nElemsTransformation nElems = nElems - 2UL*(uint64 pad) 
-    let stg = Stage.map name f memoryNeed nElemsTransformation
+    let lengthTransformation nElems = nElems - 2UL*(uint64 pad) 
+    let stg = Stage.map name f memoryNeed lengthTransformation
     (window win pad stride) --> stg --> flatten ()
 
 
@@ -527,8 +527,8 @@ let connectedComponents (winSz: uint) =
         let wsz = uint64 winSz
         let str = uint64 stride
         max (nPixels*(wsz*(2UL*bt8+bt64)-str*bt8)) (nPixels*(wsz*(bt8+bt64)+str*(bt64-bt8)))
-    let nElemsTransformation = id
-    let stg = Stage.map "connectedComponents" f memoryNeed nElemsTransformation
+    let lengthTransformation = id
+    let stg = Stage.map "connectedComponents" f memoryNeed lengthTransformation
     (window winSz pad stride) --> stg --> flatten ()
 
 let relabelComponents a (winSz: uint) = 
@@ -608,8 +608,8 @@ let zero<'T when 'T: equality>
     let transition = ProfileTransition.create Unit Streaming
     let memPeak = Image<'T>.memoryEstimate width height 1u
     let memoryNeed = fun _ -> memPeak
-    let nElemsTransformation = id
-    let stage = Stage.init "create" depth mapper transition memoryNeed nElemsTransformation |> Some
+    let lengthTransformation = id
+    let stage = Stage.init "create" depth mapper transition memoryNeed lengthTransformation |> Some
     //let flow = Flow.returnM stage
     let nElems = (uint64 width) * (uint64 height)
     let memPeak = Image<'T>.memoryEstimate width height 1u
@@ -629,8 +629,8 @@ let readFilteredOp<'T when 'T: equality> (name:string) (inputDir : string) (suff
     let transition = ProfileTransition.create Unit Streaming
     let memPeak = Image<'T>.memoryEstimate width height 1u
     let memoryNeed = fun _ -> memPeak
-    let nElemsTransformation = id
-    let stage = Stage.init $"{name}" (uint depth) mapper transition memoryNeed nElemsTransformation |> Some
+    let lengthTransformation = id
+    let stage = Stage.init $"{name}" (uint depth) mapper transition memoryNeed lengthTransformation |> Some
     //let flow = Flow.returnM stage
     let memPerElem = (uint64 width)*(uint64 height)*getBytesPerComponent<'T>
     let length = (uint64 depth)

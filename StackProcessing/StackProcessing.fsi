@@ -46,7 +46,7 @@ val zip:
      SlimPipeline.Plan<'a,'c> -> SlimPipeline.Plan<'a,('b * 'c)>)
     when 'b: equality and 'c: equality
 
-val promoteStreamingToSliding:
+val promoteStreamingToWindow:
   name: string ->
     winSz: uint ->
     pad: uint ->
@@ -105,13 +105,13 @@ val liftUnary:
   name: string ->
     (('a -> 'b) ->
        SlimPipeline.MemoryNeed ->
-       SlimPipeline.NElemsTransformation -> SlimPipeline.Stage<'a,'b>)
+       SlimPipeline.LengthTransformation -> SlimPipeline.Stage<'a,'b>)
 
 val liftUnaryReleaseAfter:
   name: string ->
     f: (Image<'S> -> Image<'T>) ->
     memoryNeed: SlimPipeline.MemoryNeed ->
-    nElemsTransformation: SlimPipeline.NElemsTransformation ->
+    lengthTransformation: SlimPipeline.LengthTransformation ->
     SlimPipeline.Stage<#Image<'S>,Image<'T>> when 'S: equality and 'T: equality
 
 val getBytesPerComponent<'T> : uint64
