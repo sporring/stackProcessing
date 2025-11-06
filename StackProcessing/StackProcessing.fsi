@@ -294,6 +294,9 @@ val discreteGaussian:
 
 val convGauss: sigma: float -> Stage<Image<float>,Image<float>>
 
+val createPadding:
+  name: 'a -> pad: uint -> Stage<unit,Image<'S>> when 'S: equality
+
 val convolveOp:
   name: string ->
     kernel: Image<'T> ->

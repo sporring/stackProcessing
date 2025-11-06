@@ -62,17 +62,21 @@ module private Pipe =
       name: string ->
         profile: Profile ->
         release: ('S -> unit) -> f: ('S -> 'T) -> Pipe<'S,'T>
+    /// Combine two <c>Pipe</c> instances into one by composing their memory profiles and transformation functions.
+    val compose: p1: Pipe<'S,'T> -> p2: Pipe<'T,'U> -> Pipe<'S,'U>
     val skip: name: string -> count: uint -> Pipe<'a,'a>
     val take: name: string -> count: uint -> Pipe<'a,'a>
     val map:
       name: string -> mapper: ('U -> 'V) -> pipe: Pipe<'In,'U> -> Pipe<'In,'V>
+    /// Prepend a sequence produced by a Pipe<unit,'S> to the input stream.
+    val prepend: name: string -> pre: Pipe<unit,'S> -> Pipe<'S,'S>
+    /// Append a sequence produced by a Pipe<unit,'S> to the input stream.
+    val append: name: string -> post: Pipe<unit,'S> -> Pipe<'S,'S>
     type TeeMsg<'T> =
         | Left of AsyncReplyChannel<'T option>
         | Right of AsyncReplyChannel<'T option>
     val tee: debug: bool -> p: Pipe<'In,'T> -> Pipe<'In,'T> * Pipe<'In,'T>
     val id: name: string -> Pipe<'T,'T>
-    /// Combine two <c>Pipe</c> instances into one by composing their memory profiles and transformation functions.
-    val compose: p1: Pipe<'S,'T> -> p2: Pipe<'T,'U> -> Pipe<'S,'U>
     val map2Sync:
       name: string ->
         debug: bool ->
@@ -131,8 +135,6 @@ module Stage =
         transition: ProfileTransition ->
         wrapMemoryNeed: MemoryNeedWrapped ->
         lengthTransformation: LengthTransformation -> Stage<'S,'T>
-    val compose: stage1: Stage<'S,'T> -> stage2: Stage<'T,'U> -> Stage<'S,'U>
-    val (-->) : (Stage<'a,'b> -> Stage<'b,'c> -> Stage<'a,'c>)
     val empty: name: string -> Stage<unit,unit>
     val init<'S,'T> :
       name: string ->
@@ -141,6 +143,10 @@ module Stage =
         transition: ProfileTransition ->
         memoryNeed: MemoryNeed ->
         lengthTransformation: LengthTransformation -> Stage<unit,'T>
+    val compose: stage1: Stage<'S,'T> -> stage2: Stage<'T,'U> -> Stage<'S,'U>
+    val (-->) : (Stage<'a,'b> -> Stage<'b,'c> -> Stage<'a,'c>)
+    val prepend: name: string -> pre: Stage<unit,'S> -> Stage<'S,'S>
+    val append: name: string -> app: Stage<unit,'S> -> Stage<'S,'S>
     val idOp: name: string -> Stage<'T,'T>
     val toPipe: stage: Stage<'a,'b> -> (unit -> Pipe<'a,'b>)
     val fromPipe:

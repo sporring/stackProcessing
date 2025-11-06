@@ -457,6 +457,13 @@ let convGauss sigma = discreteGaussianOp "convGauss" sigma None None None
 //                                          * * *
 //                                            * * *
 
+let createPadding name pad : Stage<unit,Image<'S>>=
+    let transition = ProfileTransition.create Streaming Streaming
+    let memoryNeed nPixels = nPixels*(typeof<'S> |> Image.getBytesPerComponent |> uint64)
+    let lengthTransformation nElems = nElems + (uint64 pad)
+    let zeroMaker i = Image<'S>([0u;0u],1u,"Padding",i)
+    Stage.init "padding" pad zeroMaker transition memoryNeed lengthTransformation
+
 let convolveOp (name: string) (kernel: Image<'T>) (outputRegionMode: ImageFunctions.OutputRegionMode option) (bc: ImageFunctions.BoundaryCondition option) (winSz: uint option): Stage<Image<'T>, Image<'T>> =
     let windowFromKernel (k: Image<'T>) : uint =
         max 1u (k.GetDepth())
@@ -471,9 +478,8 @@ let convolveOp (name: string) (kernel: Image<'T>) (outputRegionMode: ImageFuncti
     let memoryNeed nPixels = (2UL*nPixels*(uint64 win) + (uint64 ksz))*(typeof<'T> |> Image.getBytesPerComponent |> uint64)
     let lengthTransformation nElems = nElems - 2UL*(uint64 pad) 
     let stg = Stage.map name f memoryNeed lengthTransformation
-    (window win pad stride) --> stg --> flatten ()
-
-
+    let padding = createPadding "padding" pad 
+    (Stage.prepend "prepend" padding) --> (Stage.append "append" padding) --> (window win 0u stride) --> stg --> flatten ()
 
 let convolve kernel outputRegionMode boundaryCondition winSz = convolveOp "convolve" kernel outputRegionMode boundaryCondition winSz
 let conv kernel = convolveOp "conv" kernel None None None

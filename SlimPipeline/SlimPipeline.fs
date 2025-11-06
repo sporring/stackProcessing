@@ -134,6 +134,12 @@ module private Pipe =
         let apply debug  input = input |> AsyncSeq.map mapper
         create name apply profile
 
+    /// Combine two <c>Pipe</c> instances into one by composing their memory profiles and transformation functions.
+    let compose (p1: Pipe<'S,'T>) (p2: Pipe<'T,'U>) : Pipe<'S,'U> =
+        let profile = Profile.combine p1.Profile p2.Profile
+        let apply debug input = input |> p1.Apply debug |> p2.Apply debug 
+        create $"{p2.Name} {p1.Name}" apply profile
+
     let skip (name: string) (count: uint) =
         let apply debug input = input |> AsyncSeq.skip (int count)
         create "skip" apply (Window (2u, 2u, 0u, 0u, System.UInt32.MaxValue))
@@ -145,6 +151,21 @@ module private Pipe =
     let map (name: string) (mapper: 'U -> 'V) (pipe: Pipe<'In, 'U>) : Pipe<'In, 'V> =
         let apply debug input = input |> pipe.Apply debug |> AsyncSeq.map mapper
         create name apply pipe.Profile
+
+    /// Prepend a sequence produced by a Pipe<unit,'S> to the input stream.
+    let prepend (name: string) (pre: Pipe<unit,'S>) : Pipe<'S,'S> =
+        let apply debug (input: AsyncSeq<'S>) =
+            let preSeq = pre.Apply debug (AsyncSeq.singleton ())
+            AsyncSeq.append preSeq input
+        create name apply Streaming
+
+    /// Append a sequence produced by a Pipe<unit,'S> to the input stream.
+    let append (name: string) (post: Pipe<unit,'S>) : Pipe<'S,'S> =
+        let apply debug (input: AsyncSeq<'S>) =
+            let postSeq = post.Apply debug (AsyncSeq.singleton ())
+            AsyncSeq.append input postSeq
+        create name apply Streaming
+
 (*
     let wrap (name: string) (wrapper: ('In * 'U) -> 'V) (pipe: Pipe<'In, 'U>) : Pipe<'In, 'V> =
         let apply debug input = 
@@ -242,12 +263,6 @@ module private Pipe =
     let id (name: string) : Pipe<'T, 'T> =
         let apply (debug: bool) input = input
         create name apply Streaming  // or use profile passed as arg if you prefer
-
-    /// Combine two <c>Pipe</c> instances into one by composing their memory profiles and transformation functions.
-    let compose (p1: Pipe<'S,'T>) (p2: Pipe<'T,'U>) : Pipe<'S,'U> =
-        let profile = Profile.combine p1.Profile p2.Profile
-        let apply debug input = input |> p1.Apply debug |> p2.Apply debug 
-        create $"{p2.Name} {p1.Name}" apply profile
 
     let map2Sync (name: string) (debug: bool) (f: 'U -> 'V -> 'W) (pipe1: Pipe<'In, 'U>) (pipe2: Pipe<'In, 'V>) : Pipe<'In, 'W> =
         let teeBasePipe = id "tee" // Or take the upstream pipe shared by both
@@ -403,6 +418,17 @@ module Stage =
     let createWrapped<'S,'T> (name: string) (build: unit->Pipe<'S,'T>) (transition: ProfileTransition) (wrapMemoryNeed: MemoryNeedWrapped) (lengthTransformation: LengthTransformation) =
         { Name = name; Build = build; Transition = transition; MemoryNeed = wrapMemoryNeed; LengthTransformation = lengthTransformation}
 
+    let empty (name: string) =
+        let build () = Pipe.empty name
+        let transition = ProfileTransition.create Streaming Streaming
+        let memoryNeed _ = 0UL
+        let lengthTransformation = id
+        create name build transition memoryNeed  lengthTransformation
+
+    let init<'S,'T> (name: string) (depth: uint) (mapper: int -> 'T) (transition: ProfileTransition) (memoryNeed: MemoryNeed) (lengthTransformation: LengthTransformation) =
+        let build () = Pipe.init name depth mapper transition.From
+        create name build transition memoryNeed lengthTransformation
+
     let compose (stage1 : Stage<'S,'T>) (stage2 : Stage<'T,'U>) : Stage<'S,'U> =
         let build () = Pipe.compose (stage1.Build ()) (stage2.Build ())
         let transition = ProfileTransition.create stage1.Transition.From stage2.Transition.To
@@ -412,16 +438,15 @@ module Stage =
 
     let (-->) = compose
 
-    let empty (name: string) =
-        let build () = Pipe.empty name
+    let prepend (name: string) (pre: Stage<unit,'S>): Stage<'S,'S> =
+        let build () = Pipe.prepend name (pre.Build ())
         let transition = ProfileTransition.create Streaming Streaming
-        let memoryNeed _ = 0UL
-        let LengthTransformation = id
-        create name build transition memoryNeed  LengthTransformation
+        createWrapped name build transition pre.MemoryNeed pre.LengthTransformation
 
-    let init<'S,'T> (name: string) (depth: uint) (mapper: int -> 'T) (transition: ProfileTransition) (memoryNeed: MemoryNeed) (lengthTransformation: LengthTransformation) =
-        let build () = Pipe.init name depth mapper transition.From
-        create name build transition memoryNeed lengthTransformation
+    let append (name: string) (app: Stage<unit,'S>): Stage<'S,'S> =
+        let build () = Pipe.append name (app.Build ())
+        let transition = ProfileTransition.create Streaming Streaming
+        createWrapped name build transition app.MemoryNeed app.LengthTransformation
 
     let idOp<'T> (name: string) : Stage<'T, 'T> = // I don't think this is used
         let build () = Pipe.id name
