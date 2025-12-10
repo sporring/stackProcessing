@@ -28,6 +28,7 @@
 
   <ItemGroup>
     <Compile Include="Services/MyNodeFactory.fs" />
+    <Compile Include="Views/MainView.axaml.fs" />
     <Compile Include="ViewModels/ViewModelBase.fs" />
     <Compile Include="ViewModels/MainWindowViewModel.fs" />
     <Compile Include="Views/MainWindow.axaml.fs" />
