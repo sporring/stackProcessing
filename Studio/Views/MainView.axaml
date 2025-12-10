@@ -1,0 +1,11 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:Studio.ViewModels"
+             x:Class="Studio.Views.MainView"
+             x:DataType="vm:MainWindowViewModel">
+
+  <!-- Temporary placeholder so you know the view is loaded -->
+  <TextBlock Text="MainView loaded"
+             HorizontalAlignment="Center"
+             VerticalAlignment="Center"/>
+</UserControl>
