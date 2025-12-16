@@ -85,7 +85,7 @@ val sink: pl: SlimPipeline.Plan<unit,unit> -> unit
 
 val sinkList: plLst: SlimPipeline.Plan<unit,unit> list -> unit
 
-val drainSingle: pl: SlimPipeline.Plan<unit,'a> -> 'a
+val drain: pl: SlimPipeline.Plan<unit,'a> -> 'a
 
 val drainList: pl: SlimPipeline.Plan<unit,'a> -> 'a list
 
@@ -407,6 +407,11 @@ val createByEuler2DTransform:
     transform: (uint -> (float * float * float) * (float * float)) ->
     pl: SlimPipeline.Plan<unit,unit> -> SlimPipeline.Plan<unit,Image<'T>>
     when 'T: equality
+
+val getFilenames:
+  inputDir: string ->
+    suffix: string ->
+    pl: SlimPipeline.Plan<unit,unit> -> SlimPipeline.Plan<unit,string>
 
 val readFilteredOp:
   name: string ->

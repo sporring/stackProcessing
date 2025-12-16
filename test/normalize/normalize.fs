@@ -24,7 +24,7 @@ let main arg =
     let stats = 
         readMaker 
         >=> StackProcessing.computeStats () // fix the naming conflict!!!
-        |> drainSingle
+        |> drain
     printfn "%A" stats
 
     let normalizeWith (stats: ImageStats) (image: Image<float>) =

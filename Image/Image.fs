@@ -530,6 +530,14 @@ type Image<'T when 'T : equality>(sz: uint list, ?optionalNumberComponents: uint
         |> flatIndices
         |> Seq.fold (fun acc idx -> im1.Get idx |> f acc) acc0
 
+    static member fold2 (f:'S->'T->'T->'S) (acc0: 'S) (im1: Image<'T>) (im2: Image<'T>) : 'S = 
+        let sz1 = im1.GetSize()
+        let sz2 = im2.GetSize()
+        if List.exists2 (<>) sz1 sz2 then failwith "[Image.fold2] cannot fold over 2 images of unequal sizes"
+        sz1
+        |> flatIndices
+        |> Seq.fold (fun acc idx -> (im1.Get idx, im2.Get idx) ||> f acc) acc0
+
     static member foldi (f:uint list->'S->'T->'S) (acc0: 'S) (im1: Image<'T>) : 'S =
         let sz = im1.GetSize()
         sz
