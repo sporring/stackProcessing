@@ -196,6 +196,8 @@ val maxOfPair: I: Image<'a> -> J: Image<'a> -> Image.Image<'a> when 'a: equality
 
 val minOfPair: I: Image<'a> -> J: Image<'a> -> Image.Image<'a> when 'a: equality
 
+val getMinMax: I: Image<'a> -> float * float when 'a: equality
+
 val failTypeMismatch<'T> : name: string -> lst: System.Type list -> unit
 
 /// Simple functions

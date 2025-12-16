@@ -18,11 +18,14 @@ let main arg =
         else
             64u, 64u, 64u, "image18", "result18"
     src
-    |> zero<float> width height depth
-    >=> addNormalNoise 128.0 50.0
-    >=> threshold 128.0 infinity
-    >=> connectedComponents (1024u/8u)
-    >=> cast<uint64,uint16>
+    |> read<uint8> ("../"+input) ".tiff"
+    >=> imageDivScalar 255uy
+//    >=> tapIt (getMinMax >> sprintf "After mul 255: %A")
+    >=> connectedComponents depth
+//    >=> tapIt (getMinMax >> sprintf "After connectedComponents: %A")
+    >=> scalarMulImage<uint64> 127UL
+//    >=> tapIt (getMinMax >> sprintf "after mul 127: %A")
+    >=> cast<uint64,uint8>
     // Tiff supporst uint8, int8, uint16, int16, and float32
     >=> write ("../"+output) ".tiff"
     |> sink

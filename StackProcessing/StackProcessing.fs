@@ -48,7 +48,6 @@ let decRef () =
     Stage.map "decRefCountOp" decIfImage id id
 let releaseAfter (f: Image<'S>->'T) (I:Image<'S>) = 
     let v = f I
-    printfn "releasing"
     I.decRefCount()
     v
 let releaseAfter2 (f: Image<'S>->Image<'S>->'T) (I:Image<'S>) (J:Image<'S>) = 
@@ -271,6 +270,7 @@ let inline imageDivScalar<^T when ^T: equality and ^T: (static member op_Explici
 let maxOfPair I J = liftRelease2 Image.maximumImage I J
 
 let minOfPair I J = liftRelease2 Image.minimumImage I J
+let getMinMax I = releaseAfter Image.getMinMax I;
 
 let failTypeMismatch<'T> name lst =
     let t = typeof<'T>
@@ -535,7 +535,6 @@ let connectedComponents (winSz: uint) =
     //   produces a stride list of Image<uint64>:    nPixels*(winSz*(1+8)+stride*(8-1))
     //   releases <uint64> stack:                    nPixels*(winSz*1+stride*(8-1))
     let memoryNeed nPixels = 
-        printfn $"memoryNeed: {nPixels}"
         let bt8 = typeof<uint8>|>Image.getBytesPerComponent |> uint64
         let bt64 = typeof<uint64> |> Image.getBytesPerComponent |> uint64
         let wsz = uint64 winSz

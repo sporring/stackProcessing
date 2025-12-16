@@ -76,6 +76,7 @@ type Image<'T when 'T: equality> =
     static member
       foldi: f: (uint list -> 'S -> 'T -> 'S) ->
                acc0: 'S -> im1: Image<'T> -> 'S
+    static member getMinMax: img: Image<'T> -> float * float
     static member gt: f1: Image<'S> * f2: Image<'S> -> bool when 'S: equality
     static member gte: f1: Image<'S> * f2: Image<'S> -> bool when 'S: equality
     /// Comparison operators
