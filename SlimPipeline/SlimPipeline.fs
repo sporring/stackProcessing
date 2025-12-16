@@ -580,19 +580,19 @@ module Stage =
 ////////////////////////////////////////////////////////////
 // Plan flow controler
 type Plan<'S,'T> = { 
-    stage      : Stage<'S,'T> option // the function to be applied, when the plan is run
-    nElems     : SingleOrPair // number of elments before transformation - this could be single or pair
-    length     : uint64 // length of the sequence, the plan is applied to
-    memAvail   : uint64 // memory available for the plan
-    memPeak    : uint64 // the plan's estimated peak memory consumption
-    debug      : bool }
+    stage          : Stage<'S,'T> option // the function to be applied, when the plan is run
+    nElemsPerSlice : SingleOrPair // number of elments (pixels) before transformation - this could be single or pair
+    length         : uint64 // length of the sequence, the plan is applied to
+    memAvail       : uint64 // memory available for the plan
+    memPeak        : uint64 // the plan's estimated peak memory consumption
+    debug          : bool }
 
 module Plan =
-    let create<'S,'T when 'T: equality> (stage: Stage<'S,'T> option) (memAvail : uint64) (memPeak: uint64) (nElems: uint64) (length: uint64) (debug: bool): Plan<'S, 'T> =
-        { stage = stage; memAvail = memAvail; memPeak = memPeak; nElems = Single nElems; length = length; debug = debug }
+    let create<'S,'T when 'T: equality> (stage: Stage<'S,'T> option) (memAvail : uint64) (memPeak: uint64) (nElemsPerSlice: uint64) (length: uint64) (debug: bool): Plan<'S, 'T> =
+        { stage = stage; memAvail = memAvail; memPeak = memPeak; nElemsPerSlice = Single nElemsPerSlice; length = length; debug = debug }
 
-    let createWrapped<'S,'T when 'T: equality> (stage: Stage<'S,'T> option) (memAvail : uint64) (memPeak: uint64) (nElems: SingleOrPair) (length: uint64) (debug: bool): Plan<'S, 'T> =
-        { stage = stage; memAvail = memAvail; memPeak = memPeak; nElems = nElems; length = length; debug = debug }
+    let createWrapped<'S,'T when 'T: equality> (stage: Stage<'S,'T> option) (memAvail : uint64) (memPeak: uint64) (nElemsPerSlice: SingleOrPair) (length: uint64) (debug: bool): Plan<'S, 'T> =
+        { stage = stage; memAvail = memAvail; memPeak = memPeak; nElemsPerSlice = nElemsPerSlice; length = length; debug = debug }
     //////////////////////////////////////////////////
     /// Source type operators
     let source (availableMemory: uint64) : Plan<unit, unit> =
@@ -610,12 +610,12 @@ module Plan =
         if pl.debug then printfn $"[{name}] {stage.Name}"
 
         let stage' = Option.map (fun stg -> Stage.compose stg stage) pl.stage
-        let memNeeded = pl.nElems |> stage.MemoryNeed  |> SingleOrPair.sum // Stage.MemoryNeed must be updated as well
+        let memNeeded = pl.nElemsPerSlice |> stage.MemoryNeed  |> SingleOrPair.sum // Stage.MemoryNeed must be updated as well
         let memPeak = max pl.memPeak memNeeded
         if (not pl.debug) && memPeak > pl.memAvail then
             failwith $"Out of available memory: {stage.Name} requested {memNeeded} B but have only {pl.memAvail} B"
-        let nElems' = SingleOrPair.map stage.LengthTransformation pl.nElems // Stage LengthTransformation must be updated as well
-        createWrapped stage' pl.memAvail memPeak nElems' pl.length pl.debug
+        let nElemsPerSlice' = SingleOrPair.map stage.LengthTransformation pl.nElemsPerSlice // Stage LengthTransformation must be updated as well
+        createWrapped stage' pl.memAvail memPeak nElemsPerSlice' pl.length pl.debug
 
     let (>=>) (pl: Plan<'a, 'b>) (stage: Stage<'b, 'c>) : Plan<'a, 'c> =
         composeOp $">=>" pl stage
@@ -629,12 +629,12 @@ module Plan =
             | Some stg -> 
                 Stage.map1 name f stg memoryNeed lengthTransformation // lengthTransformation is unchanged by map per definition 
             | None -> failwith "Plan.map cannot map to empty stage"
-        let nElems' = SingleOrPair.map stage.LengthTransformation pl.nElems
-        let memNeeded = pl.nElems |> stage.MemoryNeed  |> SingleOrPair.sum
+        let nElemsPerSlice' = SingleOrPair.map stage.LengthTransformation pl.nElemsPerSlice
+        let memNeeded = pl.nElemsPerSlice |> stage.MemoryNeed  |> SingleOrPair.sum
         let memPeak = max pl.memPeak memNeeded
         if (not pl.debug) && memPeak > pl.memAvail then
             failwith $"Out of available memory: {stage.Name} requested {memoryNeed} B but have only {pl.memAvail} B"
-        createWrapped (Some stage) pl.memAvail memPeak nElems' pl.length pl.debug
+        createWrapped (Some stage) pl.memAvail memPeak nElemsPerSlice' pl.length pl.debug
         
     /// parallel execution of non-synchronised streams
     let internal zipOp (name:string) (pl1: Plan<'In, 'U>) (pl2: Plan<'In, 'V>) : Plan<'In, ('U * 'V)> =
@@ -646,12 +646,12 @@ module Plan =
                 if pl1.length <> pl2.length then
                     failwith $"[{name}] plans to be ziped must be over sequences of equal lengths {pl1.length} <> {pl2.length}"
 
-                if pl1.nElems <> pl2.nElems then
-                    failwith $"[{name}] plans to be ziped must be of equal sized input {pl1.nElems} <> {pl2.nElems}"
+                if pl1.nElemsPerSlice <> pl2.nElemsPerSlice then
+                    failwith $"[{name}] plans to be ziped must be of equal sized input {pl1.nElemsPerSlice} <> {pl2.nElemsPerSlice}"
 
-                let nElems = pl1.nElems
-                let nElemsTransformed1 = SingleOrPair.map stage1.LengthTransformation  nElems
-                let nElemsTransformed2 = SingleOrPair.map stage2.LengthTransformation  nElems
+                let nElemsPerSlice = pl1.nElemsPerSlice // SingleOrPair.isSingle pl1.nElemsPerSlice && pl1.nElemsPerSlice = pl2.nElemsPerSlice
+                let nElemsTransformed1 = SingleOrPair.map stage1.LengthTransformation nElemsPerSlice
+                let nElemsTransformed2 = SingleOrPair.map stage2.LengthTransformation nElemsPerSlice
 
                 if nElemsTransformed1 <> nElemsTransformed2 then
                     failwith $"[{name}] plans to be ziped must be of equal sized output {nElemsTransformed1|>SingleOrPair.sum} <> {nElemsTransformed2|>SingleOrPair.sum}"
@@ -659,23 +659,22 @@ module Plan =
                     failwith $"[{name}] Can't (yet) zip plan-pairs (isSingle({stage1.Name})={SingleOrPair.isSingle nElemsTransformed1} and isSingle({stage2.Name})={SingleOrPair.isSingle nElemsTransformed2})"
 
                 // Create a non-synced stage
-                let memoryNeed nElems = 
-                    SingleOrPair.add 
-                        (nElems |> SingleOrPair.fst |> Single |> stage1.MemoryNeed) 
-                        (nElems |> SingleOrPair.snd |> Single |> stage2.MemoryNeed)
+                let memoryNeed nElemsPerSlice = // this gives a warning on SingleOrPair.snd, don't know why
+                    // nElemsPerSlice is always Singel
+                    SingleOrPair.add (nElemsPerSlice |> stage1.MemoryNeed) (nElemsPerSlice |> stage2.MemoryNeed)
                 let lengthTransformation = stage1.LengthTransformation // Transformation of result equal to any of the input
                 let stage =
                     Stage.map2 $"({stage1.Name},{stage2.Name})" debug (fun U V -> (U,V)) stage1 stage2 memoryNeed lengthTransformation
 
                 // Check memory constraints for each individual stream
-                let memNeeded = nElems |> memoryNeed
+                let memNeeded = nElemsPerSlice |> memoryNeed
                 let maxMemPeak = max pl1.memPeak pl2.memPeak
                 let memPeak = max maxMemPeak (SingleOrPair.sum memNeeded)
                 let maxMemAvail = max pl1.memAvail pl2.memAvail
                 if (not debug) && (memPeak > maxMemAvail) then
                     failwith $"Out of available memory: {stage.Name} requested {memNeeded|>SingleOrPair.fst}+{memNeeded|>SingleOrPair.snd}={memPeak} B but have only {maxMemAvail} B"
  
-                createWrapped (Some stage) maxMemAvail memPeak nElems pl1.length debug
+                createWrapped (Some stage) maxMemAvail memPeak nElemsPerSlice pl1.length debug
             | _,_ -> failwith $"[{name}] Cannot zip with an empty plan"
 
     /// parallel execution of non-synchronised streams
@@ -684,25 +683,24 @@ module Plan =
     /// parallel execution of synchronised streams
     let (>=>>)
         (pl: Plan<'In, 'S>) 
-        (stg1: Stage<'S, 'U>, stg2: Stage<'S, 'V>) 
+        (stage1: Stage<'S, 'U>, stage2: Stage<'S, 'V>) 
         : Plan<'In, 'U * 'V> =
-        if stg1.Transition.From <> stg2.Transition.From then 
-            failwith $"[>=>>] can only apply stages with the same streaming profile ({stg1.Transition.From} <> {stg2.Transition.From})"
+        if stage1.Transition.From <> stage2.Transition.From then 
+            failwith $"[>=>>] can only apply stages with the same streaming profile ({stage1.Transition.From} <> {stage2.Transition.From})"
 
-        let memoryNeed nElems = 
-            SingleOrPair.add 
-                (nElems |> SingleOrPair.fst |> Single |> stg1.MemoryNeed) 
-                (nElems |> SingleOrPair.snd |> Single |> stg2.MemoryNeed)
+        let memoryNeed nElemsPerSlice = 
+            // nElemsPerSlice is always Singel
+            SingleOrPair.add (nElemsPerSlice |> stage1.MemoryNeed) (nElemsPerSlice |> stage2.MemoryNeed)
 
-        let lengthTransformation = stg1.LengthTransformation 
-        let lengthTransformation2 = stg2.LengthTransformation 
-        let nElems = SingleOrPair.map lengthTransformation pl.nElems
-        let nElems2 = SingleOrPair.map lengthTransformation2 pl.nElems
+        let lengthTransformation = stage1.LengthTransformation 
+        let lengthTransformation2 = stage2.LengthTransformation 
+        let nElems = SingleOrPair.map lengthTransformation pl.nElemsPerSlice
+        let nElems2 = SingleOrPair.map lengthTransformation2 pl.nElemsPerSlice
         if nElems <> nElems2 then
             failwith $"[>=>>] Cannot zip plans with different number of elements {nElems} vs {nElems2}"
 
         // Combine both stages in a zip-like stage
-        let stage = Stage.map2Sync $"({stg1.Name},{stg2.Name})" pl.debug (fun u v -> (u, v)) stg1 stg2 memoryNeed lengthTransformation
+        let stage = Stage.map2Sync $"({stage1.Name},{stage2.Name})" pl.debug (fun u v -> (u, v)) stage1 stage2 memoryNeed lengthTransformation
 
         composeOp ">=>>" pl stage
 

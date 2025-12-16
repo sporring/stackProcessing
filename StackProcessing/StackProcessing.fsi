@@ -134,10 +134,16 @@ val cast<'S,'T when 'S: equality and 'T: equality> :
   SlimPipeline.Stage<Image<'S>,Image<'T>> when 'S: equality and 'T: equality
 
 /// Basic arithmetic
+val liftRelease2:
+  f: (Image<'a> -> Image<'a> -> 'b) -> I: Image<'a> -> J: Image<'a> -> 'b
+    when 'a: equality
+
 val memNeeded<'T> : nTimes: uint64 -> nElems: uint64 -> uint64
 
 val add:
   image: Image<'T> -> SlimPipeline.Stage<#Image<'T>,Image<'T>> when 'T: equality
+
+val addPair: I: Image<'a> -> J: Image<'a> -> Image.Image<'a> when 'a: equality
 
 val inline scalarAddImage:
   i: ^T -> SlimPipeline.Stage<Image<^T>,Image<^T>>
@@ -150,6 +156,8 @@ val inline imageAddScalar:
 val sub:
   image: Image<'T> -> SlimPipeline.Stage<#Image<'T>,Image<'T>> when 'T: equality
 
+val subPair: I: Image<'a> -> J: Image<'a> -> Image.Image<'a> when 'a: equality
+
 val inline scalarSubImage:
   i: ^T -> SlimPipeline.Stage<Image<^T>,Image<^T>>
     when ^T: equality and ^T: (static member op_Explicit: ^T -> float)
@@ -158,14 +166,10 @@ val inline imageSubScalar:
   i: ^T -> SlimPipeline.Stage<Image<^T>,Image<^T>>
     when ^T: equality and ^T: (static member op_Explicit: ^T -> float)
 
-val liftRelease2:
-  f: (Image<'a> -> Image<'a> -> 'b) -> I: Image<'a> -> J: Image<'a> -> 'b
-    when 'a: equality
-
-val mul2: I: Image<'a> -> J: Image<'a> -> Image.Image<'a> when 'a: equality
-
 val mul:
   image: Image<'T> -> SlimPipeline.Stage<#Image<'T>,Image<'T>> when 'T: equality
+
+val mulPair: I: Image<'a> -> J: Image<'a> -> Image.Image<'a> when 'a: equality
 
 val inline scalarMulImage:
   i: ^T -> SlimPipeline.Stage<Image<^T>,Image<^T>>
@@ -178,6 +182,8 @@ val inline imageMulScalar:
 val div:
   image: Image<'T> -> SlimPipeline.Stage<#Image<'T>,Image<'T>> when 'T: equality
 
+val divPair: I: Image<'a> -> J: Image<'a> -> Image.Image<'a> when 'a: equality
+
 val inline scalarDivImage:
   i: ^T -> SlimPipeline.Stage<Image<^T>,Image<^T>>
     when ^T: equality and ^T: (static member op_Explicit: ^T -> float)
@@ -185,6 +191,10 @@ val inline scalarDivImage:
 val inline imageDivScalar:
   i: ^T -> SlimPipeline.Stage<Image<^T>,Image<^T>>
     when ^T: equality and ^T: (static member op_Explicit: ^T -> float)
+
+val maxOfPair: I: Image<'a> -> J: Image<'a> -> Image.Image<'a> when 'a: equality
+
+val minOfPair: I: Image<'a> -> J: Image<'a> -> Image.Image<'a> when 'a: equality
 
 val failTypeMismatch<'T> : name: string -> lst: System.Type list -> unit
 
@@ -386,6 +396,13 @@ val zero:
   width: uint ->
     height: uint ->
     depth: uint ->
+    pl: SlimPipeline.Plan<unit,unit> -> SlimPipeline.Plan<unit,Image<'T>>
+    when 'T: equality
+
+val createByEuler2DTransform:
+  img: Image<'T> ->
+    depth: uint ->
+    transform: (uint -> (float * float * float) * (float * float)) ->
     pl: SlimPipeline.Plan<unit,unit> -> SlimPipeline.Plan<unit,Image<'T>>
     when 'T: equality
 

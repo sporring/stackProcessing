@@ -230,7 +230,7 @@ module Stage =
 type Plan<'S,'T> =
     {
       stage: Stage<'S,'T> option
-      nElems: SingleOrPair
+      nElemsPerSlice: SingleOrPair
       length: uint64
       memAvail: uint64
       memPeak: uint64
@@ -241,14 +241,14 @@ module Plan =
       stage: Stage<'S,'T> option ->
         memAvail: uint64 ->
         memPeak: uint64 ->
-        nElems: uint64 -> length: uint64 -> debug: bool -> Plan<'S,'T>
+        nElemsPerSlice: uint64 -> length: uint64 -> debug: bool -> Plan<'S,'T>
         when 'T: equality
     val createWrapped:
       stage: Stage<'S,'T> option ->
         memAvail: uint64 ->
         memPeak: uint64 ->
-        nElems: SingleOrPair -> length: uint64 -> debug: bool -> Plan<'S,'T>
-        when 'T: equality
+        nElemsPerSlice: SingleOrPair ->
+        length: uint64 -> debug: bool -> Plan<'S,'T> when 'T: equality
     /// Source type operators
     val source: availableMemory: uint64 -> Plan<unit,unit>
     val debug: availableMemory: uint64 -> Plan<unit,unit>
@@ -273,7 +273,7 @@ module Plan =
     /// parallel execution of synchronised streams
     val (>=>>) :
       pl: Plan<'In,'S> ->
-        stg1: Stage<'S,'U> * stg2: Stage<'S,'V> -> Plan<'In,('U * 'V)>
+        stage1: Stage<'S,'U> * stage2: Stage<'S,'V> -> Plan<'In,('U * 'V)>
         when 'U: equality and 'V: equality
     val (>>=>) :
       pl: Plan<'In,('U * 'V)> -> f: ('U -> 'V -> 'W) -> Plan<'In,'W>

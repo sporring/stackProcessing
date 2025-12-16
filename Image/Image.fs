@@ -471,7 +471,7 @@ type Image<'T when 'T : equality>(sz: uint list, ?optionalNumberComponents: uint
         | None -> ()
         writer.Execute(this.Image)
 
-    // Addition
+    // Arithmatic
     static member (+) (f1: Image<'T>, f2: Image<'T>) =
         let filter = new itk.simple.AddImageFilter()
         Image<'T>.ofSimpleITK(filter.Execute(f1.toSimpleITK(), f2.toSimpleITK()), "add")
@@ -484,6 +484,14 @@ type Image<'T when 'T : equality>(sz: uint list, ?optionalNumberComponents: uint
     static member (/) (f1: Image<'T>, f2: Image<'T>) =
         let filter = new itk.simple.DivideImageFilter()
         Image<'T>.ofSimpleITK(filter.Execute(f1.toSimpleITK(), f2.toSimpleITK()), "divide")
+
+    static member maximumImage (f1: Image<'T>) (f2: Image<'T>) =
+        let filter = new itk.simple.MaximumImageFilter()
+        Image<'T>.ofSimpleITK(filter.Execute(f1.toSimpleITK(), f2.toSimpleITK()), "maximumImage")
+
+    static member minimumImage (f1: Image<'T>) (f2: Image<'T>) =
+        let filter = new itk.simple.MinimumImageFilter()
+        Image<'T>.ofSimpleITK(filter.Execute(f1.toSimpleITK(), f2.toSimpleITK()), "minimumImage")
 
     // Collection type
     static member map (f:'T->'T) (im1: Image<'T>) : Image<'T> =

@@ -185,6 +185,32 @@ let carg (img: Image<'T>) = makeUnaryImageOperator (fun () -> new itk.simple.Com
 *)
 
 
+// Basic transformations
+let euler2DTransform (img: Image<'T>) (cx:float,cy:float,a:float) (dx:float,dy:float): Image<'T> =
+    let t = new itk.simple.Euler2DTransform()
+    t.SetAngle(a)
+    t.SetCenter([ cx; cy ] |> toVectorFloat64)
+    t.SetTranslation([ dx; dy ] |> toVectorFloat64)
+
+    let f = new itk.simple.ResampleImageFilter()
+    f.SetReferenceImage(img.Image)
+    f.SetInterpolator(itk.simple.InterpolatorEnum.sitkLinear) // sitkNearestNeighbor, sitkLinear, sitkBSpline
+    f.SetDefaultPixelValue(0.0) // This will probably break for vector valued functions...
+    f.SetTransform(t.GetInverse()) 
+    Image<'T>.ofSimpleITK(f.Execute img.Image,"2DTranslate")
+
+let euler2DRotate (img: Image<'T>) (cx:float,cy:float) (a:float): Image<'T> =
+    let t = new itk.simple.Euler2DTransform()
+    t.SetAngle(a)
+    t.SetCenter([ cx; cy ] |> toVectorFloat64)
+
+    let f = new itk.simple.ResampleImageFilter()
+    f.SetReferenceImage(img.Image)
+    f.SetInterpolator(itk.simple.InterpolatorEnum.sitkLinear)
+    f.SetDefaultPixelValue(0.0) // This will probably break for vector valued functions...
+    f.SetTransform(t) 
+    Image<'T>.ofSimpleITK(f.Execute img.Image,"2DRotate")
+
 type BoundaryCondition = ZeroPad | PerodicPad | ZeroFluxNeumannPad
 type OutputRegionMode = Valid | Same
 
