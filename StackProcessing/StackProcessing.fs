@@ -123,7 +123,7 @@ let sink (pl: Plan<unit,unit>) : unit =
     Plan.sink pl
 let sinkList (plLst: Plan<unit,unit> list) : unit = Plan.sinkList plLst
 //let combineIgnore = Plan.combineIgnore
-let drainSingle pl = Plan.drainSingle "drainSingle" pl
+let drain pl = Plan.drainSingle "drainSingle" pl
 let drainList pl = Plan.drainList "drainList" pl
 let drainLast pl = Plan.drainLast "drainLast" pl
 //let tap str = incRefCountOp () --> (Stage.tap str)
@@ -520,7 +520,6 @@ let binaryFillHoles (winSz: uint)=
     let stg = Stage.map "fillHoles" f id id
     (window winSz pad stride) --> stg --> flatten ()
 
-
 let connectedComponents (winSz: uint) = 
     let pad, stride = 0u, winSz
     let f = volFctToLstFctReleaseAfter (ImageFunctions.connectedComponents) pad stride
@@ -653,36 +652,79 @@ let createByEuler2DTransform<'T when 'T: equality>
     let memPeak = Image<'T>.memoryEstimate width height 1u
     Plan.create stage pl.memAvail memPeak nElems (uint64 depth)  pl.debug
 
-let readFilteredOp<'T when 'T: equality> (name:string) (inputDir : string) (suffix : string) (filter: string[]->string[]) (pl : Plan<unit, unit>) : Plan<unit, Image<'T>> =
-    // much should be deferred to outside Core!!!
-    if pl.debug then printfn $"[{name} cast to {typeof<'T>.Name}]"
-    let (width,height,depth) = getStackSize inputDir suffix
+let getFilteredFilenames (inputDir : string) (suffix : string) (filter: string[]->'a[]) =
+    let (width,height,_) = getStackSize inputDir suffix
     let filenames = Directory.GetFiles(inputDir, "*"+suffix) |> filter
-    let depth = uint filenames.Length
-    let mapper (i: int) : Image<'T> = 
-        let fileName = filenames[i]; 
-        if pl.debug then printfn "[%s] Reading image %A from %s as %s" name i fileName (typeof<'T>.Name)
-        let image = Image<'T>.ofFile (fileName, fileName, i)
+    filenames, width, height, filenames.Length
+
+let readFilteredPlan<'T when 'T: equality> (name:string) (inputDir : string) (suffix : string) (filter: string[]->string[]) (pl : Plan<unit, unit>) : Plan<unit, Image<'T>> =
+    if pl.debug then printfn $"[{name} cast to {typeof<'T>.Name}]"
+    let filenames, width, height, depth = getFilteredFilenames inputDir suffix filter
+    let mapper (i:int) : Image<'T> = 
+        let fileName = filenames[i]
+        if pl.debug then printfn "[%s] Reading image %A named %s as %s" name i fileName (typeof<'T>.Name)
+        let image = Image<'T>.ofFile (fileName, fileName, int i)
         image
     let transition = ProfileTransition.create Unit Streaming
     let memPeak = Image<'T>.memoryEstimate width height 1u
     let memoryNeed = fun _ -> memPeak
     let lengthTransformation = id
     let stage = Stage.init $"{name}" (uint depth) mapper transition memoryNeed lengthTransformation |> Some
-    //let flow = Flow.returnM stage
     let memPerElem = (uint64 width)*(uint64 height)*getBytesPerComponent<'T>
     let length = (uint64 depth)
-    Plan.create stage pl.memAvail memPeak memPerElem length  pl.debug
+    Plan.create stage pl.memAvail memPeak memPerElem length pl.debug
 
-let readFiltered<'T when 'T: equality> (inputDir : string) (suffix : string)  (filter: string[]->string[]) (pl : Plan<unit, unit>) : Plan<unit, Image<'T>> =
-    readFilteredOp<'T> $"readFiltered" inputDir suffix filter pl
+let readFiltered<'T when 'T: equality> (inputDir : string) (suffix : string) (filter: string[]->string[]) (pl : Plan<unit, unit>) : Plan<unit, Image<'T>> =
+    readFilteredPlan<'T> $"readFiltered" inputDir suffix filter pl
 
 let read<'T when 'T: equality> (inputDir : string) (suffix : string) (pl : Plan<unit, unit>) : Plan<unit, Image<'T>> =
-    readFilteredOp<'T> $"read" inputDir suffix Array.sort pl
+    readFilteredPlan<'T> $"read" inputDir suffix Array.sort pl
 
 let readRandom<'T when 'T: equality> (count: uint) (inputDir : string) (suffix : string) (pl : Plan<unit, unit>) : Plan<unit, Image<'T>> =
-    readFilteredOp<'T> $"readRandom" inputDir suffix (Array.randomChoices (int count)) pl
+    readFilteredPlan<'T> $"readRandom" inputDir suffix (Array.randomChoices (int count)) pl
 
 let empty (pl : Plan<unit, unit>) : Plan<unit, unit> =
     let stage = "empty" |> Stage.empty |> Some
     Plan.create stage pl.memAvail 0UL 0UL 0UL  pl.debug
+
+(*
+let analyzeConnectedChunks (inputDir : string) (suffix : string) (winSz: uint) (zero: 'T) (pl : Plan<unit, unit>) : Plan<unit, simpleGraph.Graph<uint*'T>> = 
+    let name = "analyzeConnectedChunks"
+    if pl.debug then printfn $"[{name} cast to {typeof<'T>.Name}]"
+
+    let filter (arr: string []) : string [] []=
+        let res =
+            arr 
+            |> Array.windowed 2
+            |> Array.zip [|0u..uint arr.Length-1u|]
+            |> Array.filter (fun (i,pair) -> (i+1u)/winSz = 0u)
+            |> Array.map snd
+        printfn "Pairs of filenames to analyze: %A" res
+        res
+
+    let enumeratedFilenamePairs, width, height, depth = getFilteredFilenames inputDir suffix filter
+
+    let folder (acc: uint*(simpleGraph.Graph<uint*'T>)) (pair: string []) : uint*simpleGraph.Graph<uint*'T> = 
+        let i, graph = acc
+        let fileName1 = pair[0]
+        let fileName2 = pair[1]
+        if pl.debug then printfn "[%s] Reading image %A and %A as %s" name fileName1 fileName2 (typeof<'T>.Name)
+        let image1 = Image<'T>.ofFile (fileName1)
+        let image2 = Image<'T>.ofFile (fileName2)
+        let sliceFolder (i:uint) (g:simpleGraph.Grap<uint*'T>) (p1:'T) (p2:'T) : simpleGraph.Grap<uint*uint> =
+            if p1 <> zero && p2 <> zero then
+                simpleGraph.addEdge (i,p1) (i+1,p2) g
+            else
+                g
+        (i+1u,Image.fold2 (sliceFolder i) graph image1 image2)
+
+    let memPeak = 2UL * Image<'T>.memoryEstimate width height 1u
+    let memoryNeed = fun _ -> memPeak
+    let lengthTransformation = fun _ -> 1UL
+    let init = (0u,simpleGraph.Graph<uint*'T>.Empty)
+    let stage = Stage.fold $"{name}" folder init memoryNeed lengthTransformation
+
+    let memPerElem = (uint64 width)*(uint64 height)*getBytesPerComponent<'T>
+    let length = 1UL
+    Plan.create stage pl.memAvail memPeak memPerElem length pl.debug
+*)

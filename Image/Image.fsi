@@ -74,6 +74,9 @@ type Image<'T when 'T: equality> =
     static member eq: f1: Image<'S> * f2: Image<'S> -> bool when 'S: equality
     static member fold: f: ('S -> 'T -> 'S) -> acc0: 'S -> im1: Image<'T> -> 'S
     static member
+      fold2: f: ('S -> 'T -> 'T -> 'S) ->
+               acc0: 'S -> im1: Image<'T> -> im2: Image<'T> -> 'S
+    static member
       foldi: f: (uint list -> 'S -> 'T -> 'S) ->
                acc0: 'S -> im1: Image<'T> -> 'S
     static member getMinMax: img: Image<'T> -> float * float

@@ -17,17 +17,28 @@ let main arg =
             n, n, n, $"image{arg[1]}", $"result{arg[1]}"
         else
             64u, 64u, 64u, "image18", "result18"
+    let tmp = "tmp"
+
+
     src
     |> read<uint8> ("../"+input) ".tiff"
     >=> imageDivScalar 255uy
-//    >=> tapIt (getMinMax >> sprintf "After mul 255: %A")
-    >=> connectedComponents depth
-//    >=> tapIt (getMinMax >> sprintf "After connectedComponents: %A")
-    >=> scalarMulImage<uint64> 127UL
-//    >=> tapIt (getMinMax >> sprintf "after mul 127: %A")
+    >=> connectedComponents (depth/8u)
+    >=> scalarMulImage<uint64> (255UL/3UL)
     >=> cast<uint64,uint8>
     // Tiff supporst uint8, int8, uint16, int16, and float32
-    >=> write ("../"+output) ".tiff"
+    >=> write ("../"+tmp) ".tiff"
     |> sink
 
+(*
+    let graph = 
+        src
+        |> analyzeConnectedChunks ("../"+tmp) ".tiff" (depth/8u)
+        |> drain
+
+    src
+    |> relabelConnectedChunks ("../"+tmp) ".tiff" (depth/8u) graph
+    >=> write ("../"+output) ".tiff"
+    |> sink
+*)
     0
