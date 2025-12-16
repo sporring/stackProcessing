@@ -4,8 +4,34 @@
              x:Class="Studio.Views.MainView"
              x:DataType="vm:MainWindowViewModel">
 
-  <!-- Temporary placeholder so you know the view is loaded -->
-  <TextBlock Text="MainView loaded"
-             HorizontalAlignment="Center"
-             VerticalAlignment="Center"/>
+    <ScrollViewer Grid.Column="0">
+    <ItemsControl ItemsSource="{Binding Editor.Templates}">
+        <ItemsControl.ItemsPanel>
+        <ItemsPanelTemplate>
+            <WrapPanel />
+        </ItemsPanelTemplate>
+        </ItemsControl.ItemsPanel>
+
+        <ItemsControl.ItemTemplate>
+        <DataTemplate>
+            <Border Width="72" Height="72"
+                    Margin="6"
+                    CornerRadius="8"
+                    Background="#060606ff"
+                    BorderBrush="#b73333ff"
+                    BorderThickness="1">
+            <Grid>
+                <!-- You can show an icon, or a simplified preview -->
+                <TextBlock Text="{Binding Title}"
+                        TextWrapping="Wrap"
+                        FontSize="10"
+                        HorizontalAlignment="Center"
+                        VerticalAlignment="Center"/>
+            </Grid>
+            </Border>
+        </DataTemplate>
+        </ItemsControl.ItemTemplate>
+    </ItemsControl>
+    </ScrollViewer>
+
 </UserControl>

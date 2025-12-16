@@ -16,32 +16,32 @@ let getMem () =
 
 let incIfImage x =
     match box x with
-    | :? Image<uint8> as I -> I.incRefCount()   // or img.incNRefCount(1) if it takes an int
-    | :? Image<int8> as I -> I.incRefCount()   // or img.incNRefCount(1) if it takes an int
-    | :? Image<uint16> as I -> I.incRefCount()   // or img.incNRefCount(1) if it takes an int
-    | :? Image<int16> as I -> I.incRefCount()   // or img.incNRefCount(1) if it takes an int
-    | :? Image<uint> as I -> I.incRefCount()   // or img.incNRefCount(1) if it takes an int
-    | :? Image<int> as I -> I.incRefCount()   // or img.incNRefCount(1) if it takes an int
-    | :? Image<uint64> as I -> I.incRefCount()   // or img.incNRefCount(1) if it takes an int
-    | :? Image<int64> as I -> I.incRefCount()   // or img.incNRefCount(1) if it takes an int
-    | :? Image<float32> as I -> I.incRefCount()   // or img.incNRefCount(1) if it takes an int
-    | :? Image<float> as I -> I.incRefCount()   // or img.incNRefCount(1) if it takes an int
+    | :? Image<uint8> as im -> im.incRefCount()   // or img.incNRefCount(1) if it takes an int
+    | :? Image<int8> as im -> im.incRefCount()   // or img.incNRefCount(1) if it takes an int
+    | :? Image<uint16> as im -> im.incRefCount()   // or img.incNRefCount(1) if it takes an int
+    | :? Image<int16> as im -> im.incRefCount()   // or img.incNRefCount(1) if it takes an int
+    | :? Image<uint> as im -> im.incRefCount()   // or img.incNRefCount(1) if it takes an int
+    | :? Image<int> as im -> im.incRefCount()   // or img.incNRefCount(1) if it takes an int
+    | :? Image<uint64> as im -> im.incRefCount()   // or img.incNRefCount(1) if it takes an int
+    | :? Image<int64> as im -> im.incRefCount()   // or img.incNRefCount(1) if it takes an int
+    | :? Image<float32> as im -> im.incRefCount()   // or img.incNRefCount(1) if it takes an int
+    | :? Image<float> as im -> im.incRefCount()   // or img.incNRefCount(1) if it takes an int
     | _ -> ()
     x
 let incRef () =
     Stage.map "incRefCountOp" incIfImage id id
 let decIfImage x =
     match box x with
-    | :? Image<uint8> as I -> I.decRefCount()   // or img.incNRefCount(1) if it takes an int
-    | :? Image<int8> as I -> I.decRefCount()   // or img.incNRefCount(1) if it takes an int
-    | :? Image<uint16> as I -> I.decRefCount()   // or img.incNRefCount(1) if it takes an int
-    | :? Image<int16> as I -> I.decRefCount()   // or img.incNRefCount(1) if it takes an int
-    | :? Image<uint> as I -> I.decRefCount()   // or img.incNRefCount(1) if it takes an int
-    | :? Image<int> as I -> I.decRefCount()   // or img.incNRefCount(1) if it takes an int
-    | :? Image<uint64> as I -> I.decRefCount()   // or img.incNRefCount(1) if it takes an int
-    | :? Image<int64> as I -> I.decRefCount()   // or img.incNRefCount(1) if it takes an int
-    | :? Image<float32> as I -> I.decRefCount()   // or img.incNRefCount(1) if it takes an int
-    | :? Image<float> as I -> I.decRefCount()   // or img.incNRefCount(1) if it takes an int
+    | :? Image<uint8> as im -> im.decRefCount()   // or img.incNRefCount(1) if it takes an int
+    | :? Image<int8> as im -> im.decRefCount()   // or img.incNRefCount(1) if it takes an int
+    | :? Image<uint16> as im -> im.decRefCount()   // or img.incNRefCount(1) if it takes an int
+    | :? Image<int16> as im -> im.decRefCount()   // or img.incNRefCount(1) if it takes an int
+    | :? Image<uint> as im -> im.decRefCount()   // or img.incNRefCount(1) if it takes an int
+    | :? Image<int> as im -> im.decRefCount()   // or img.incNRefCount(1) if it takes an int
+    | :? Image<uint64> as im -> im.decRefCount()   // or img.incNRefCount(1) if it takes an int
+    | :? Image<int64> as im -> im.decRefCount()   // or img.incNRefCount(1) if it takes an int
+    | :? Image<float32> as im -> im.decRefCount()   // or img.incNRefCount(1) if it takes an int
+    | :? Image<float> as im -> im.decRefCount()   // or img.incNRefCount(1) if it takes an int
     | _ -> ()
     x
 let decRef () =
@@ -233,9 +233,12 @@ let cast<'S,'T when 'S: equality and 'T: equality> =
     Stage.cast<Image<'S>,Image<'T>> name f id
 
 /// Basic arithmetic
+let liftRelease2 f I J = releaseAfter2 (fun a b -> f a b) I J
+
 let memNeeded<'T> nTimes nElems = 3UL*nElems*nTimes*getBytesPerComponent<'T> // We need input, output, and potentially a cast in between
 let add (image: Image<'T>) = 
     liftUnaryReleaseAfter "add" ((+) image) id id
+let addPair I J = liftRelease2 ( + ) I J
 let inline scalarAddImage<^T when ^T: equality and ^T: (static member op_Explicit: ^T -> float)> (i: ^T) = 
     liftUnaryReleaseAfter "scalarAddImage" (fun (s:Image<^T>)->ImageFunctions.scalarAddImage<^T> i s) id id
 let inline imageAddScalar<^T when ^T: equality and ^T: (static member op_Explicit: ^T -> float)> (i: ^T) =
@@ -243,27 +246,31 @@ let inline imageAddScalar<^T when ^T: equality and ^T: (static member op_Explici
 
 let sub (image: Image<'T>) = 
     liftUnaryReleaseAfter "sub" ((-) image) id id
+
+let subPair I J = liftRelease2 ( - ) I J
 let inline scalarSubImage<^T when ^T: equality and ^T: (static member op_Explicit: ^T -> float)> (i: ^T) =
     liftUnaryReleaseAfter "scalarSubImage" (fun (s:Image<^T>)->ImageFunctions.scalarSubImage<^T> i s) id id
 let inline imageSubScalar<^T when ^T: equality and ^T: (static member op_Explicit: ^T -> float)> (i: ^T) =
     liftUnaryReleaseAfter "imageSubScalar" (fun (s:Image<^T>)->ImageFunctions.imageSubScalar<^T> s i) id id
 
-
-let liftRelease2 f I J = releaseAfter2 (fun a b -> f a b) I J
-let mul2 I J = liftRelease2 ( * ) I J
-
 let mul (image: Image<'T>) = liftUnaryReleaseAfter "mul" (( * ) image) id id
+let mulPair I J = liftRelease2 ( * ) I J
 let inline scalarMulImage<^T when ^T: equality and ^T: (static member op_Explicit: ^T -> float)> (i: ^T) =
     liftUnaryReleaseAfter "scalarMulImage" (fun (s:Image<^T>)->ImageFunctions.scalarMulImage<^T> i s) id id
 let inline imageMulScalar<^T when ^T: equality and ^T: (static member op_Explicit: ^T -> float)> (i: ^T) =
     liftUnaryReleaseAfter "imageMulScalar" (fun (s:Image<^T>)->ImageFunctions.imageMulScalar<^T> s i) id id
 
 let div (image: Image<'T>) = liftUnaryReleaseAfter "div" ((/) image) id id
+
+let divPair I J = liftRelease2 ( / ) I J
 let inline scalarDivImage<^T when ^T: equality and ^T: (static member op_Explicit: ^T -> float)> (i: ^T) =
     liftUnaryReleaseAfter "scalarDivImage" (fun (s:Image<^T>)->ImageFunctions.scalarDivImage<^T> i s) id id
 let inline imageDivScalar<^T when ^T: equality and ^T: (static member op_Explicit: ^T -> float)> (i: ^T) =
     liftUnaryReleaseAfter "imageDivScalar" (fun (s:Image<^T>)->ImageFunctions.imageDivScalar<^T> s i) id id
 
+let maxOfPair I J = liftRelease2 Image.maximumImage I J
+
+let minOfPair I J = liftRelease2 Image.minimumImage I J
 
 let failTypeMismatch<'T> name lst =
     let t = typeof<'T>
@@ -403,6 +410,7 @@ let volFctToLstFctReleaseAfter (f:Image<'S>->Image<'T>) pad stride images =
     let result = ImageFunctions.unstackSkipNTakeM pad stride vol
     vol.decRefCount ()
     result
+
 
 let discreteGaussianOp (name:string) (sigma:float) (outputRegionMode: ImageFunctions.OutputRegionMode option) (boundaryCondition: ImageFunctions.BoundaryCondition option) (winSz: uint option): Stage<Image<float>, Image<float>> =
     let roundFloatToUint v = uint (v+0.5)
@@ -610,6 +618,31 @@ let zero<'T when 'T: equality>
     let mapper (i: int) : Image<'T> = 
         let image = new Image<'T>([width; height], 1u,$"zero[{i}]", i)
         if pl.debug then printfn "[zero] Created image %A" i
+        image
+    let transition = ProfileTransition.create Unit Streaming
+    let memPeak = Image<'T>.memoryEstimate width height 1u
+    let memoryNeed = fun _ -> memPeak
+    let lengthTransformation = id
+    let stage = Stage.init "create" depth mapper transition memoryNeed lengthTransformation |> Some
+    //let flow = Flow.returnM stage
+    let nElems = (uint64 width) * (uint64 height)
+    let memPeak = Image<'T>.memoryEstimate width height 1u
+    Plan.create stage pl.memAvail memPeak nElems (uint64 depth)  pl.debug
+
+let createByEuler2DTransform<'T when 'T: equality> 
+    (img: Image<'T>) 
+    (depth: uint) 
+    (transform: uint -> (float*float*float) * (float*float))
+    (pl : Plan<unit, unit>) 
+    : Plan<unit, Image<'T>> =
+    // width, heigth, depth should be replaced with shape and shapeUpdate, and mapper should be deferred to outside Core!!!
+    let width= img.GetWidth()
+    let height = img.GetHeight()
+    if pl.debug then printfn $"[createByTranslation] {width}x{height}x{depth}"
+    let mapper (i: int) : Image<'T> =
+        let rot, trans = transform (uint i)
+        let image = ImageFunctions.euler2DTransform img rot trans
+        if pl.debug then printfn "[createByTranslation] Created image %A" i
         image
     let transition = ProfileTransition.create Unit Streaming
     let memPeak = Image<'T>.memoryEstimate width height 1u
