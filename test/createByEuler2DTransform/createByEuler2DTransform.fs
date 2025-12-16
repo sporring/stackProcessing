@@ -30,7 +30,8 @@ let main arg =
         let dx = float i
         let a = 2.0*3.141592*(float i)/(float depth)
         let offset = (float boxSz)/2.0-0.5
-        (offset,offset,a),(dx-offset,dx-offset)
+        //(offset,offset,a),(dx-offset,dx-offset)
+        (offset,offset,a),(0.0,0.0)
 
     let transFctAntiDiag (i:uint) : (float*float*float)*(float*float) =
         let dx = float i
