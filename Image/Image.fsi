@@ -105,8 +105,7 @@ type Image<'T when 'T: equality> =
     static member
       mapi: f: (uint list -> 'T -> 'T) -> im1: Image<'T> -> Image<'T>
     static member maximumImage: f1: Image<'T> -> f2: Image<'T> -> Image<'T>
-    static member
-      memoryEstimate: width: uint -> height: uint -> noComponent: uint -> uint64
+    static member memoryEstimate: width: uint -> height: uint -> uint64
     static member memoryEstimateSItk: sitk: itk.simple.Image -> uint32
     static member minimumImage: f1: Image<'T> -> f2: Image<'T> -> Image<'T>
     static member neq: f1: Image<'S> * f2: Image<'S> -> bool when 'S: equality

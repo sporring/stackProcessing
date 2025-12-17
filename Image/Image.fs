@@ -322,7 +322,7 @@ type Image<'T when 'T : equality>(sz: uint list, ?optionalNumberComponents: uint
         let res = bytesPerComponent * (size |> List.reduce ( * ));
         res
 
-    static member memoryEstimate (width: uint) (height: uint) (noComponent: uint) =
+    static member memoryEstimate (width: uint) (height: uint) =
         let bytesPerComponent = getBytesPerSItkComponent (fromType<'T>)
         uint64 (bytesPerComponent * width * height);
 

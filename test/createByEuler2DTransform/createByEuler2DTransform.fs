@@ -58,8 +58,8 @@ let main arg =
         |> createByEuler2DTransform<uint8> img depth transFctAntiDiag
 
     (
-        (diagonal, topDown) ||> zip >>=> maxOfPair,
-        antiDiagonal
+        (diagonal, topDown) ||> zip >>=> maxOfPair >=> tap "first",
+        antiDiagonal >=> tap "second"
     ) ||> zip >>=> maxOfPair
     >=> write ("../"+output) ".tiff"
     |> sink
