@@ -32,11 +32,15 @@
     </ItemGroup>
     
     <ItemGroup>
+<!--
         <PackageReference Include="DIKU.Graph" Version="1.0.0" />
+-->
         <!-- Reference the internal library -->
+        <ProjectReference Include="../Image/Image.fsproj" />
         <ProjectReference Include="../Image/Image.fsproj" />
         <ProjectReference Include="../IRefCounting/IRefCounting.fsproj" />
         <ProjectReference Include="../SlimPipeline/SlimPipeline.fsproj" />
+        <ProjectReference Include="../../diku-graph/graph/graph.fsproj" />
     </ItemGroup>
 
     <ItemGroup>

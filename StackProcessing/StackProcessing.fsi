@@ -95,7 +95,7 @@ val tap: (string -> SlimPipeline.Stage<'a,'a>)
 
 val tapIt: (('a -> string) -> SlimPipeline.Stage<'a,'a>)
 
-val ignoreSingles: unit -> Stage<Image<'a>,unit> when 'a: equality
+val ignoreSingles: unit -> Stage<'a,unit>
 
 val ignorePairs: unit -> Stage<('a * unit),unit>
 
@@ -384,6 +384,10 @@ val ImageConstantPad<'T when 'T: equality> :
 
 val readFiles: debug: bool -> Stage<string,Image<'T>> when 'T: equality
 
+val readFilePairs:
+  debug: bool -> Stage<(string * string),(Image<'T> * Image<'T>)>
+    when 'T: equality
+
 type FileInfo = ImageFunctions.FileInfo
 
 val getStackDepth: inputDir: string -> suffix: string -> uint
@@ -454,4 +458,21 @@ val readRandom:
     when 'T: equality
 
 val empty: pl: SlimPipeline.Plan<unit,unit> -> SlimPipeline.Plan<unit,unit>
+
+val getConnectedChunkNeighbours:
+  inputDir: string ->
+    suffix: string ->
+    winSz: uint ->
+    pl: SlimPipeline.Plan<unit,unit> ->
+    SlimPipeline.Plan<unit,(string * string)>
+
+val makeAdjacencyGraph:
+  unit ->
+    Stage<(Image<uint64> * Image<uint64>),
+          (uint * simpleGraph.Graph<uint * uint64>)>
+
+val makeTranslationTable:
+  unit ->
+    Stage<(uint * simpleGraph.Graph<uint * uint64>),
+          (uint * uint64 * uint64) list>
 
