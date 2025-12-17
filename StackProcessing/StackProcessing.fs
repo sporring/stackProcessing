@@ -120,7 +120,7 @@ let drainLast pl = Plan.drainLast "drainLast" pl
 let tap = Stage.tap
 //let tap str = Stage.tap str --> incRef()// tap and tapIt neither realeases after nor increases number of references
 let tapIt = Stage.tapIt
-let ignoreSingles () : Stage<Image<_>,unit> = Stage.ignore (decIfImage>>ignore)
+let ignoreSingles () : Stage<_,unit> = Stage.ignore (decIfImage>>ignore)
 let ignorePairs () : Stage<_,unit> = Stage.ignorePairs<_,unit> ((decIfImage>>ignore),(decIfImage>>ignore))
 let idStage<'T> = Stage.idStage<'T>
 
@@ -312,7 +312,7 @@ let imageHistogram () =
     Stage.map<Image<'T>,Map<'T,uint64>> "histogram: map" (releaseAfter ImageFunctions.histogram) id id// Assumed max for uint8, can be done better
 
 let imageHistogramFold () =
-    Stage.fold<Map<'T,uint64>, Map<'T,uint64>> "histogram: fold" ImageFunctions.addHistogram (Map.empty<'T, uint64>) id id
+    Stage.fold<Map<'T,uint64>, Map<'T,uint64>> "histogram: fold" ImageFunctions.addHistogram (Map.empty<'T, uint64>) id (fun _ -> 1UL)
 
 let histogram () =
     imageHistogram () --> imageHistogramFold ()
@@ -581,6 +581,27 @@ let readFiles<'T when 'T: equality> (debug: bool) : Stage<string, Image<'T>> =
 
     Stage.map name mapper memoryNeed lengthTransformation
 
+let readFilePairs<'T when 'T: equality> (debug: bool) : Stage<string*string, Image<'T>*Image<'T>> =
+    let name = "readFilePairs"
+    if debug then printfn $"[{name} cast to {typeof<'T>.Name}]"
+    let mutable width = 0u // We need to read the first image in order to find its size
+    let mutable height = 0u
+
+    let mapper (fileName1: string, fileName2:string) : Image<'T>*Image<'T> = 
+        if debug then printfn "[%s] Reading image named %s as %s" name fileName1 (typeof<'T>.Name)
+        let image1 = Image<'T>.ofFile fileName1
+        if debug then printfn "[%s] Reading image named %s as %s" name fileName2 (typeof<'T>.Name)
+        let image2 = Image<'T>.ofFile fileName2
+        if width = 0u then
+            width <- image1.GetWidth()
+            height <- image1.GetHeight()
+        image1, image2
+
+    let memoryNeed = fun _ -> 2UL*Image<'T>.memoryEstimate width height
+    let lengthTransformation = id
+
+    Stage.map name mapper memoryNeed lengthTransformation
+
 // Not Pipes nor Operators
 type FileInfo = ImageFunctions.FileInfo
 let getStackDepth (inputDir: string) (suffix: string) : uint =
@@ -673,44 +694,66 @@ let empty (pl: Plan<unit, unit>) : Plan<unit, unit> =
     let stage = "empty" |> Stage.empty |> Some
     Plan.create stage pl.memAvail 0UL 0UL 0UL  pl.debug
 
-(*
-let analyzeConnectedChunks (inputDir: string) (suffix: string) (winSz: uint) (zero: 'T) (pl: Plan<unit, unit>) : Plan<unit, simpleGraph.Graph<uint*'T>> = 
-    let name = "analyzeConnectedChunks"
-    if pl.debug then printfn $"[{name} cast to {typeof<'T>.Name}]"
+let getConnectedChunkNeighbours (inputDir: string) (suffix: string) (winSz: uint) (pl: Plan<unit, unit>) : Plan<unit, string*string> =
+    let name = "getConnectedChunkNeighbours"
+    let filenames = Directory.GetFiles(inputDir, "*"+suffix) |> Array.sort
+    let depth = (uint64 filenames.Length) / (uint64 winSz) - 1UL
 
-    let filter (arr: string []) : string [] []=
-        let res =
-            arr 
-            |> Array.windowed 2
-            |> Array.zip [|0u..uint arr.Length-1u|]
-            |> Array.filter (fun (i,pair) -> (i+1u)/winSz = 0u)
-            |> Array.map snd
-        printfn "Pairs of filenames to analyze: %A" res
-        res
+    let mapper (i: int) : string*string = 
+        let j = (i + 1)*(int winSz)
+        filenames[j - 1], filenames[j]
 
-    let enumeratedFilenamePairs, width, height, depth = getFilteredFilenames inputDir suffix filter
+    let transition = ProfileTransition.create Unit Streaming
+    let memPeak = 2*sizeof<uint> |> uint64
+    let memoryNeed = fun _ -> 2*sizeof<uint> |> uint64
+    let lengthTransformation = fun _ -> depth
+    let stage = Stage.init "getConnectedChunkNeighbours" (uint depth) mapper transition memoryNeed lengthTransformation |> Some
 
-    let folder (acc: uint*(simpleGraph.Graph<uint*'T>)) (pair: string []) : uint*simpleGraph.Graph<uint*'T> = 
-        let i, graph = acc
-        let fileName1 = pair[0]
-        let fileName2 = pair[1]
-        if pl.debug then printfn "[%s] Reading image %A and %A as %s" name fileName1 fileName2 (typeof<'T>.Name)
-        let image1 = Image<'T>.ofFile (fileName1)
-        let image2 = Image<'T>.ofFile (fileName2)
-        let sliceFolder (i: uint) (g: simpleGraph.Grap<uint*'T>) (p1: 'T) (p2: 'T) : simpleGraph.Grap<uint*uint> =
-            if p1 <> zero && p2 <> zero then
-                simpleGraph.addEdge (i,p1) (i+1,p2) g
+    let memPerElem = 256UL // surrugate string length
+    let length = depth
+    Plan.create stage pl.memAvail memPeak memPerElem length pl.debug
+
+let makeAdjacencyGraph (): Stage<Image<uint64>*Image<uint64>,uint*simpleGraph.Graph<uint*uint64>> =
+    let name = "makeAdjacencyGraph"
+    let folder (i: uint, graph:simpleGraph.Graph<uint*uint64>) (image1: Image<uint64>, image2: Image<uint64>) : uint*simpleGraph.Graph<uint*uint64> = 
+        let sliceFolder (i: uint) (g: simpleGraph.Graph<uint*uint64>) (p1: uint64) (p2: uint64) : simpleGraph.Graph<uint*uint64> =
+            if p1 <> 0UL && p2 <> 0UL then
+                simpleGraph.addEdge (i,p1) (i+1u,p2) g
             else
                 g
         (i+1u,Image.fold2 (sliceFolder i) graph image1 image2)
 
-    let memPeak = 2UL * Image<'T>.memoryEstimate width height 1u
-    let memoryNeed = fun _ -> memPeak
+    let memoryNeed = id
     let lengthTransformation = fun _ -> 1UL
-    let init = (0u,simpleGraph.Graph<uint*'T>.Empty)
-    let stage = Stage.fold $"{name}" folder init memoryNeed lengthTransformation
+    let init = (0u, simpleGraph.empty)
+    Stage.fold $"{name}" folder init memoryNeed lengthTransformation
 
-    let memPerElem = (uint64 width)*(uint64 height)*getBytesPerComponent<'T>
-    let length = 1UL
-    Plan.create stage pl.memAvail memPeak memPerElem length pl.debug
-*)
+let makeTranslationTable () : Stage<uint*simpleGraph.Graph<uint*uint64>,(uint*uint64*uint64) list> =
+    let name = "makeAdjacencyGraph"
+    let mapper (i: uint, graph:simpleGraph.Graph<uint*uint64>) = 
+        let cc = simpleGraph.connectedComponents graph
+        List.zip cc [1UL .. uint64 cc.Length]
+        |> List.collect (fun ( nodeLst, newVal) -> List.map (fun (chunk, oldVal) -> (chunk, oldVal, newVal)) nodeLst)
+        |> List.sort
+
+    let memoryNeed = id
+    let lengthTransformation = fun _ -> 1UL
+    let init = (0u, simpleGraph.empty)
+    Stage.map $"{name}" mapper memoryNeed lengthTransformation
+
+let trd (_,_,c) = c
+
+let updateConnectedComponents (winSz: uint) (translationTable: (uint*uint64*uint64) list) : Stage<Image<uint64>,Image<uint64>> =
+    let name = "updateConnectedComponents"
+    let translationTableChunked = List.groupBy (fun (c,_,_) -> c) translationTable
+
+    let mapper (image: Image<uint64>) : Image<uint64> = 
+        let chunk = image.index/int winSz
+        let _,trans = translationTableChunked[chunk]
+        Image.map (fun v -> trans |> List.find (fun (_,w,_) -> v = w) |> trd) image
+
+    let transition = ProfileTransition.create Unit Streaming
+    let memPeak = 2*sizeof<uint> |> uint64
+    let memoryNeed = fun _ -> 2*sizeof<uint> |> uint64
+    let lengthTransformation = id
+    Stage.map "updateConnectedComponents" mapper memoryNeed lengthTransformation
