@@ -19,13 +19,14 @@ let main arg =
             64u, 64u, 64u, "image18", "result18"
     let tmp = "tmp"
 
-    let wsz = (depth/4u)
+    let wsz = (depth/8u)
 
     src
     |> read<uint8> ("../"+input) ".tiff"
     >=> imageDivScalar 255uy
     >=> connectedComponents wsz
     >=> cast<uint64,uint8>
+    >=> scalarMulImage (255uy/3uy)
     // Tiff supporst uint8, int8, uint16, int16, and float32
     >=> write ("../"+tmp) ".tiff"
     |> sink
@@ -41,8 +42,10 @@ let main arg =
     printfn "Translation Table drain:\n%A" transTbl
     
     src
-    |> getFilenames ("../"+tmp) ".tiff" Array.sort
+    |> read<uint64> ("../"+tmp) ".tiff"
     >=> updateConnectedComponents wsz transTbl
+    >=> cast<uint64,uint8>
+    >=> scalarMulImage (255uy/3uy)
     >=> write ("../"+output) ".tiff"
     |> sink
 

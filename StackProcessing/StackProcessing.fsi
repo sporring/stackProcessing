@@ -476,3 +476,10 @@ val makeTranslationTable:
     Stage<(uint * simpleGraph.Graph<uint * uint64>),
           (uint * uint64 * uint64) list>
 
+val trd: 'a * 'b * c: 'c -> 'c
+
+val updateConnectedComponents:
+  winSz: uint ->
+    translationTable: (uint * uint64 * uint64) list ->
+    Stage<Image<uint64>,Image<uint64>>
+

@@ -750,7 +750,7 @@ let updateConnectedComponents (winSz: uint) (translationTable: (uint*uint64*uint
     let mapper (image: Image<uint64>) : Image<uint64> = 
         let chunk = image.index/int winSz
         let _,trans = translationTableChunked[chunk]
-        Image.map (fun v -> trans |> List.find (fun (_,w,_) -> v = w) |> trd) image
+        Image.map (fun v -> if v=0UL then 0UL else trans |> List.find (fun (_,w,_) -> v = w) |> trd) image
 
     let transition = ProfileTransition.create Unit Streaming
     let memPeak = 2*sizeof<uint> |> uint64
