@@ -19,11 +19,20 @@ module SingleOrPair =
             | Single elm -> Pair (f elm, g elm)
             | Pair (left,right) -> Pair (f left, g right)
 
+    let index1 v = 
+        match v with
+            | Single elm -> Single elm
+            | Pair (left,_) -> Single left
+
+    let index2 v = 
+        match v with
+            | Single elm -> Single elm
+            | Pair (_,right) -> Single right
+
     let fst v = 
         match v with
             | Single elm -> elm
             | Pair (left,_) -> left
-
     let snd v = 
         match v with
             | Single elm -> printfn "[SingleOrPair] internal warning: snd of Single"; elm
@@ -31,8 +40,8 @@ module SingleOrPair =
 
     let sum v =
         match v with
-            | Single elm -> elm
-            | Pair (left,right) -> left+right
+            | Pair (left,right) -> left+right |> Single
+            | _ -> v
 
     let add v w =
         match v,w with
@@ -58,7 +67,7 @@ module Profile =
             | Streaming -> memPerElement
             | Window (windowSize, _, _, _, _) -> memPerElement * uint64 windowSize
 
-    let combine (prof1: Profile) (prof2: Profile): Profile  = 
+    let combine (prof1: Profile) (prof2: Profile) : Profile  = 
         let result =
             match prof1, prof2 with
     //        | Full, _ 
@@ -75,7 +84,7 @@ module Profile =
 
         result
 
-/// ProfileTransition describes *how* memory layout is expected to change:
+/// ProfileTransition describes *how* memory layout is expected to change: 
 /// - From: the input memory profile
 /// - To: the expected output memory profile
 type ProfileTransition =
@@ -91,7 +100,7 @@ module ProfileTransition =
 
 ////////////////////////////////////////////////////////////
 /// A configurable image processing step that operates on image slices.
-/// Pipe describes *how* to do it:
+/// Pipe describes *how* to do it: 
 /// - Encapsulates the concrete execution logic
 /// - Defines memory usage behavior
 /// - Takes and returns AsyncSeq streams
@@ -123,7 +132,7 @@ module private Pipe =
         create name apply Streaming
 
     let init<'T> (name: string) (depth: uint) (mapper: int -> 'T) (profile: Profile) : Pipe<unit,'T> =
-        let apply debug input = AsyncSeq.init (int64 depth) (fun (i:int64) -> mapper (int i))
+        let apply debug input = AsyncSeq.init (int64 depth) (fun (i: int64) -> mapper (int i))
         create name apply profile
 
     let liftRelease (name: string) (profile: Profile) (release: 'S->unit) (f: 'S -> 'T) : Pipe<'S,'T> =
@@ -326,13 +335,7 @@ module private Pipe =
 *)
 
     // window : wraps AsyncSeqExtensions.windowedWithPad
-    let window
-        (name       : string)
-        (winSz      : uint)
-        (pad        : uint)
-        (zeroMaker  : int -> 'T -> 'T)
-        (stride     : uint)
-        : Pipe<'T, 'T list> =
+    let window (name: string) (winSz: uint) (pad: uint) (zeroMaker: int -> 'T -> 'T) (stride: uint) : Pipe<'T, 'T list> =
 
         let apply _debug (input: AsyncSeq<'T>) : AsyncSeq<'T list> =
             // Produces an AsyncSeq of windows (each window is a 'T list)
@@ -341,7 +344,7 @@ module private Pipe =
         create name apply profile
 
     // collect : flattens an AsyncSeq<'T list> to AsyncSeq<'T>
-    let collect (name: string) (mapper: 'S -> ('T list)): Pipe<'S, 'T> =
+    let collect (name: string) (mapper: 'S -> ('T list)) : Pipe<'S, 'T> =
         let apply _debug (input: AsyncSeq<'S>) : AsyncSeq<'T> =
             input |> AsyncSeq.collect (mapper >> AsyncSeq.ofSeq)
         let profile = Streaming
@@ -356,7 +359,7 @@ module private Pipe =
 *)
 
     let flatten (name: string) : Pipe<'T list, 'T> =
-        collect name (fun (lst:'T list)-> lst)
+        collect name (fun (lst: 'T list)-> lst)
 
     let ignore clean : Pipe<'T, unit> =
         let apply debug input =
@@ -385,7 +388,7 @@ type MemoryNeed = uint64->uint64
 type MemoryNeedWrapped = SingleOrPair -> SingleOrPair
 type LengthTransformation = uint64 -> uint64
 
-/// Stage describes *what* should be done:
+/// Stage describes *what* should be done: 
 type Stage<'S,'T> =
     { Name       : string
       Build      : unit -> Pipe<'S,'T> // the pipe creator function
@@ -412,7 +415,7 @@ module Stage =
 *)
 
     let create<'S,'T> (name: string) (build: unit->Pipe<'S,'T>) (transition: ProfileTransition) (memoryNeed: MemoryNeed) (lengthTransformation: LengthTransformation) =
-        let wrapMemoryNeed = SingleOrPair.sum >> memoryNeed >> Single
+        let wrapMemoryNeed = SingleOrPair.sum >> SingleOrPair.fst >> memoryNeed >> Single
         { Name = name; Build = build; Transition = transition; MemoryNeed = wrapMemoryNeed; LengthTransformation = lengthTransformation}
 
     let createWrapped<'S,'T> (name: string) (build: unit->Pipe<'S,'T>) (transition: ProfileTransition) (wrapMemoryNeed: MemoryNeedWrapped) (lengthTransformation: LengthTransformation) =
@@ -438,17 +441,17 @@ module Stage =
 
     let (-->) = compose
 
-    let prepend (name: string) (pre: Stage<unit,'S>): Stage<'S,'S> =
+    let prepend (name: string) (pre: Stage<unit,'S>) : Stage<'S,'S> =
         let build () = Pipe.prepend name (pre.Build ())
         let transition = ProfileTransition.create Streaming Streaming
         createWrapped name build transition pre.MemoryNeed pre.LengthTransformation
 
-    let append (name: string) (app: Stage<unit,'S>): Stage<'S,'S> =
+    let append (name: string) (app: Stage<unit,'S>) : Stage<'S,'S> =
         let build () = Pipe.append name (app.Build ())
         let transition = ProfileTransition.create Streaming Streaming
         createWrapped name build transition app.MemoryNeed app.LengthTransformation
 
-    let idOp<'T> (name: string) : Stage<'T, 'T> = // I don't think this is used
+    let idStage<'T> (name: string) : Stage<'T, 'T> = // I don't think this is used
         let build () = Pipe.id name
         let transition = ProfileTransition.create Streaming Streaming
         create "id" build transition id id
@@ -458,12 +461,12 @@ module Stage =
     let fromPipe (name: string) (transition: ProfileTransition) (memoryNeed: MemoryNeed) (lengthTransformation: LengthTransformation) (pipe: Pipe<'S, 'T>) : Stage<'S, 'T> =
         create name (fun () -> pipe) transition memoryNeed lengthTransformation
 
-    let skip (name: string) (n:uint) : Stage<'S, 'S> =
+    let skip (name: string) (n: uint) : Stage<'S, 'S> =
         let build () = Pipe.skip name n 
         let transition = ProfileTransition.create Streaming Streaming
         create name build transition id id
 
-    let take (name: string) (n:uint) : Stage<'S, 'S> =
+    let take (name: string) (n: uint) : Stage<'S, 'S> =
         let build () = Pipe.take name n 
         let transition = ProfileTransition.create Streaming Streaming
         create name build transition id id
@@ -486,33 +489,27 @@ module Stage =
         let transition = ProfileTransition.create Streaming Streaming
         create name build transition memoryNeed lengthTransformation
 
-    let map2 (name: string) (debug: bool) (f: 'U -> 'V -> 'W) (stage1: Stage<'In, 'U>) (stage2: Stage<'In, 'V>) (memoryNeed: MemoryNeedWrapped) (lengthTransformation: LengthTransformation): Stage<'In, 'W> =
+    let map2 (name: string) (debug: bool) (f: 'U -> 'V -> 'W) (stage1: Stage<'In, 'U>) (stage2: Stage<'In, 'V>) (memoryNeed: MemoryNeedWrapped) (lengthTransformation: LengthTransformation) : Stage<'In, 'W> =
         let build () = Pipe.map2 name debug f (stage1.Build ()) (stage2.Build ())
         let transition = ProfileTransition.create Streaming Streaming
         createWrapped name build transition memoryNeed lengthTransformation
 
-    let map2Sync (name: string) (debug: bool) (f: 'U -> 'V -> 'W) (stage1: Stage<'In, 'U>) (stage2: Stage<'In, 'V>) (memoryNeed: MemoryNeedWrapped) (lengthTransformation: LengthTransformation): Stage<'In, 'W> =
+    let map2Sync (name: string) (debug: bool) (f: 'U -> 'V -> 'W) (stage1: Stage<'In, 'U>) (stage2: Stage<'In, 'V>) (memoryNeed: MemoryNeedWrapped) (lengthTransformation: LengthTransformation) : Stage<'In, 'W> =
         let build () = Pipe.map2Sync name debug f (stage1.Build ()) (stage2.Build ())
         let transition = ProfileTransition.create Streaming Streaming
         createWrapped name build transition memoryNeed lengthTransformation
 
-    let reduce (name: string) (reducer: bool -> AsyncSeq<'In> -> Async<'Out>) (profile: Profile) (memoryNeed: MemoryNeed) (lengthTransformation: LengthTransformation): Stage<'In, 'Out> =
+    let reduce (name: string) (reducer: bool -> AsyncSeq<'In> -> Async<'Out>) (profile: Profile) (memoryNeed: MemoryNeed) (lengthTransformation: LengthTransformation) : Stage<'In, 'Out> =
         let build () = Pipe.reduce name reducer profile
         let transition = ProfileTransition.create Streaming Constant
         create name build transition memoryNeed lengthTransformation // Check !!!
 
-    let fold<'S,'T> (name: string) (folder: 'T -> 'S -> 'T) (initial: 'T) (memoryNeed: MemoryNeed) (lengthTransformation: LengthTransformation): Stage<'S, 'T> =
+    let fold<'S,'T> (name: string) (folder: 'T -> 'S -> 'T) (initial: 'T) (memoryNeed: MemoryNeed) (lengthTransformation: LengthTransformation) : Stage<'S, 'T> =
         let build () : Pipe<'S,'T> = Pipe.fold name folder initial Streaming
         let transition = ProfileTransition.create Streaming Constant
         create name build transition memoryNeed lengthTransformation // Check !!!
 
-    let window
-        (name       : string)
-        (winSz      : uint)
-        (pad        : uint)
-        (zeroMaker  : int -> 'T -> 'T)
-        (stride     : uint)
-        : Stage<'T, 'T list> =
+    let window (name: string) (winSz: uint) (pad: uint) (zeroMaker: int -> 'T -> 'T) (stride: uint) : Stage<'T, 'T list> =
         let pipe = Pipe.window name winSz pad zeroMaker stride
         let transition = ProfileTransition.create Streaming Streaming
         fromPipe name transition id id pipe
@@ -522,31 +519,31 @@ module Stage =
         let transition = ProfileTransition.create Streaming Streaming
         fromPipe name transition id id pipe
 
-    let liftUnary<'S,'T> (name: string) (f: 'S -> 'T) (memoryNeed: MemoryNeed) (lengthTransformation: LengthTransformation): Stage<'S, 'T> =
+    let liftUnary<'S,'T> (name: string) (f: 'S -> 'T) (memoryNeed: MemoryNeed) (lengthTransformation: LengthTransformation) : Stage<'S, 'T> =
         let build () = Pipe.lift name Streaming f
         let transition = ProfileTransition.create Streaming Streaming
         create name build transition memoryNeed lengthTransformation
 
-    let liftReleaseUnary<'S,'T> (name: string) (release: 'S->unit) (f: 'S -> 'T) (memoryNeed: MemoryNeed) (lengthTransformation: LengthTransformation): Stage<'S, 'T> =
+    let liftReleaseUnary<'S,'T> (name: string) (release: 'S->unit) (f: 'S -> 'T) (memoryNeed: MemoryNeed) (lengthTransformation: LengthTransformation) : Stage<'S, 'T> =
         let build ()= Pipe.liftRelease name Streaming release f
         let transition = ProfileTransition.create Streaming Streaming
         create name build transition memoryNeed lengthTransformation
 
 (*
-    let liftWindowed<'S,'T when 'S: equality and 'T: equality> (name: string) (window: uint) (pad: uint) (zeroMaker: int->'S->'S) (stride: uint) (emitStart: uint) (emitCount: uint) (f: 'S list -> 'T list) (memoryNeed: MemoryNeed) (lengthTransformation: LengthTransformation): Stage<'S, 'T> =
+    let liftWindowed<'S,'T when 'S: equality and 'T: equality> (name: string) (window: uint) (pad: uint) (zeroMaker: int->'S->'S) (stride: uint) (emitStart: uint) (emitCount: uint) (f: 'S list -> 'T list) (memoryNeed: MemoryNeed) (lengthTransformation: LengthTransformation) : Stage<'S, 'T> =
         let transition = ProfileTransition.create (Window (window,stride,pad,emitStart,emitCount)) Streaming
         let build = Pipe.mapWindowed name window pad zeroMaker stride emitStart emitCount f
         create name build transition memoryNeed lengthTransformation
 *)
 
-    let tapItOp (name: string) (toString: 'T -> string) : Stage<'T, 'T> =
-        liftUnary name (fun x -> printfn "%s" (toString x); x) id id
+    let tapItStage (name: string) (toString: 'T -> string) : Stage<'T, 'T> =
+        liftUnary name (fun x -> printfn "%s" (toString x); x) (fun _ -> 0UL) id
 
     let tapIt (toString: 'T -> string) : Stage<'T, 'T> =
-        tapItOp "tapIt" toString
+        tapItStage "tapIt" toString
 
     let tap (name: string) : Stage<'T, 'T> =
-        tapItOp $"tap: {name}" (fun x -> sprintf "[%s] %A" name x)
+        tapItStage $"tap: {name}" (fun x -> sprintf "[%s] %A" name x)
 
 (*
     let internal tee (op: Stage<'In, 'T>) : Stage<'In, 'T> * Stage<'In, 'T> =
@@ -571,7 +568,7 @@ module Stage =
         let transition = ProfileTransition.create Streaming Constant
         create name build transition memoryNeed (fun _ -> 0UL) // Check !!!!
 
-    let cast<'S,'T when 'S: equality and 'T: equality> name f (memoryNeed: MemoryNeed): Stage<'S,'T> = // cast cannot change
+    let cast<'S,'T when 'S: equality and 'T: equality> name f (memoryNeed: MemoryNeed) : Stage<'S,'T> = // cast cannot change
         let apply debug input = input |> AsyncSeq.map f 
         let build () = Pipe.create name apply Streaming
         let transition = ProfileTransition.create Streaming Streaming
@@ -588,10 +585,10 @@ type Plan<'S,'T> = {
     debug          : bool }
 
 module Plan =
-    let create<'S,'T when 'T: equality> (stage: Stage<'S,'T> option) (memAvail : uint64) (memPeak: uint64) (nElemsPerSlice: uint64) (length: uint64) (debug: bool): Plan<'S, 'T> =
+    let create<'S,'T when 'T: equality> (stage: Stage<'S,'T> option) (memAvail : uint64) (memPeak: uint64) (nElemsPerSlice: uint64) (length: uint64) (debug: bool) : Plan<'S, 'T> =
         { stage = stage; memAvail = memAvail; memPeak = memPeak; nElemsPerSlice = Single nElemsPerSlice; length = length; debug = debug }
 
-    let createWrapped<'S,'T when 'T: equality> (stage: Stage<'S,'T> option) (memAvail : uint64) (memPeak: uint64) (nElemsPerSlice: SingleOrPair) (length: uint64) (debug: bool): Plan<'S, 'T> =
+    let createWrapped<'S,'T when 'T: equality> (stage: Stage<'S,'T> option) (memAvail : uint64) (memPeak: uint64) (nElemsPerSlice: SingleOrPair) (length: uint64) (debug: bool) : Plan<'S, 'T> =
         { stage = stage; memAvail = memAvail; memPeak = memPeak; nElemsPerSlice = nElemsPerSlice; length = length; debug = debug }
     //////////////////////////////////////////////////
     /// Source type operators
@@ -606,11 +603,11 @@ module Plan =
 
     //////////////////////////////////////////////////////////////
     /// Composition operators
-    let composeOp (name: string) (pl: Plan<'a, 'b>) (stage: Stage<'b, 'c>) : Plan<'a, 'c> =
+    let composePlan (name: string) (pl: Plan<'a, 'b>) (stage: Stage<'b, 'c>) : Plan<'a, 'c> =
         if pl.debug then printfn $"[{name}] {stage.Name}"
 
         let stage' = Option.map (fun stg -> Stage.compose stg stage) pl.stage
-        let memNeeded = pl.nElemsPerSlice |> stage.MemoryNeed  |> SingleOrPair.sum // Stage.MemoryNeed must be updated as well
+        let memNeeded = pl.nElemsPerSlice |> stage.MemoryNeed  |> SingleOrPair.sum |> SingleOrPair.fst// Stage.MemoryNeed must be updated as well
         let memPeak = max pl.memPeak memNeeded
         if (not pl.debug) && memPeak > pl.memAvail then
             failwith $"Out of available memory: {stage.Name} requested {memNeeded} B but have only {pl.memAvail} B"
@@ -618,7 +615,7 @@ module Plan =
         createWrapped stage' pl.memAvail memPeak nElemsPerSlice' pl.length pl.debug
 
     let (>=>) (pl: Plan<'a, 'b>) (stage: Stage<'b, 'c>) : Plan<'a, 'c> =
-        composeOp $">=>" pl stage
+        composePlan $">=>" pl stage
 
     let map (name: string) (f: 'U->'V) (pl: Plan<'In,'U>) : Plan<'In,'V> =
         if pl.debug then printfn $"[{name}]"
@@ -630,14 +627,14 @@ module Plan =
                 Stage.map1 name f stg memoryNeed lengthTransformation // lengthTransformation is unchanged by map per definition 
             | None -> failwith "Plan.map cannot map to empty stage"
         let nElemsPerSlice' = SingleOrPair.map stage.LengthTransformation pl.nElemsPerSlice
-        let memNeeded = pl.nElemsPerSlice |> stage.MemoryNeed  |> SingleOrPair.sum
+        let memNeeded = pl.nElemsPerSlice |> stage.MemoryNeed  |> SingleOrPair.sum |> SingleOrPair.fst
         let memPeak = max pl.memPeak memNeeded
         if (not pl.debug) && memPeak > pl.memAvail then
             failwith $"Out of available memory: {stage.Name} requested {memoryNeed} B but have only {pl.memAvail} B"
         createWrapped (Some stage) pl.memAvail memPeak nElemsPerSlice' pl.length pl.debug
         
     /// parallel execution of non-synchronised streams
-    let internal zipOp (name:string) (pl1: Plan<'In, 'U>) (pl2: Plan<'In, 'V>) : Plan<'In, ('U * 'V)> =
+    let internal zipPlan (name: string) (pl1: Plan<'In, 'U>) (pl2: Plan<'In, 'V>) : Plan<'In, ('U * 'V)> =
         match pl1.stage,pl2.stage with
             Some stage1, Some stage2 ->
                 let debug = (pl1.debug || pl2.debug)
@@ -646,45 +643,30 @@ module Plan =
                 if pl1.length <> pl2.length then
                     failwith $"[{name}] plans to be ziped must be over sequences of equal lengths {pl1.length} <> {pl2.length}"
 
-                if pl1.nElemsPerSlice <> pl2.nElemsPerSlice then
-                    failwith $"[{name}] plans to be ziped must be of equal sized input {pl1.nElemsPerSlice} <> {pl2.nElemsPerSlice}"
-
-                let nElemsPerSlice = pl1.nElemsPerSlice // SingleOrPair.isSingle pl1.nElemsPerSlice && pl1.nElemsPerSlice = pl2.nElemsPerSlice
-                let nElemsTransformed1 = SingleOrPair.map stage1.LengthTransformation nElemsPerSlice
-                let nElemsTransformed2 = SingleOrPair.map stage2.LengthTransformation nElemsPerSlice
-
-                if nElemsTransformed1 <> nElemsTransformed2 then
-                    failwith $"[{name}] plans to be ziped must be of equal sized output {nElemsTransformed1|>SingleOrPair.sum} <> {nElemsTransformed2|>SingleOrPair.sum}"
-                if not (SingleOrPair.isSingle nElemsTransformed1) || not (SingleOrPair.isSingle nElemsTransformed2) then
-                    failwith $"[{name}] Can't (yet) zip plan-pairs (isSingle({stage1.Name})={SingleOrPair.isSingle nElemsTransformed1} and isSingle({stage2.Name})={SingleOrPair.isSingle nElemsTransformed2})"
-
-                // Create a non-synced stage
-                let memoryNeed nElemsPerSlice = // this gives a warning on SingleOrPair.snd, don't know why
-                    // nElemsPerSlice is always Singel
-                    SingleOrPair.add (nElemsPerSlice |> stage1.MemoryNeed) (nElemsPerSlice |> stage2.MemoryNeed)
-                let lengthTransformation = stage1.LengthTransformation // Transformation of result equal to any of the input
+                let nElemsPerSlice = Pair (SingleOrPair.fst pl1.nElemsPerSlice, SingleOrPair.fst pl2.nElemsPerSlice)  // SingleOrPair.isSingle pl1.nElemsPerSlice && pl1.nElemsPerSlice = pl2.nElemsPerSlice
+                let memoryNeed nElemsPerSlice = // Should SingleOrPair be a tree?
+                    let nElemsPerSlice1 = SingleOrPair.index1 nElemsPerSlice
+                    let nElemsPerSlice2 = SingleOrPair.index2 nElemsPerSlice
+                    SingleOrPair.add (nElemsPerSlice1 |> stage1.MemoryNeed) (nElemsPerSlice2 |> stage2.MemoryNeed) // SingleOrPair.add (nElemsPerSlice |> SingleOrPair.index1 |> stage1.MemoryNeed) (nElemsPerSlice |> SingleOrPair.index2 |> stage2.MemoryNeed)
+                let lengthTransformation = id // Transformation of result equal to any of the input
                 let stage =
                     Stage.map2 $"({stage1.Name},{stage2.Name})" debug (fun U V -> (U,V)) stage1 stage2 memoryNeed lengthTransformation
 
-                // Check memory constraints for each individual stream
-                let memNeeded = nElemsPerSlice |> memoryNeed
+                // Check memory constraints for the zipped stream
+                let memNeeded = SingleOrPair.add (nElemsPerSlice |> stage1.MemoryNeed) (nElemsPerSlice |> stage2.MemoryNeed)
                 let maxMemPeak = max pl1.memPeak pl2.memPeak
-                let memPeak = max maxMemPeak (SingleOrPair.sum memNeeded)
-                let maxMemAvail = max pl1.memAvail pl2.memAvail
+                let memPeak = max maxMemPeak (nElemsPerSlice |> memoryNeed |> SingleOrPair.fst)
+                let maxMemAvail = max pl1.memAvail pl2.memAvail // Should we max or sum? What would the most natural usage be for src?
                 if (not debug) && (memPeak > maxMemAvail) then
                     failwith $"Out of available memory: {stage.Name} requested {memNeeded|>SingleOrPair.fst}+{memNeeded|>SingleOrPair.snd}={memPeak} B but have only {maxMemAvail} B"
- 
                 createWrapped (Some stage) maxMemAvail memPeak nElemsPerSlice pl1.length debug
             | _,_ -> failwith $"[{name}] Cannot zip with an empty plan"
 
     /// parallel execution of non-synchronised streams
-    let zip (pl1: Plan<'In, 'U>) (pl2: Plan<'In, 'V>) : Plan<'In, ('U * 'V)> = zipOp "zip" pl1 pl2
+    let zip (pl1: Plan<'In, 'U>) (pl2: Plan<'In, 'V>) : Plan<'In, ('U * 'V)> = zipPlan "zip" pl1 pl2
 
     /// parallel execution of synchronised streams
-    let (>=>>)
-        (pl: Plan<'In, 'S>) 
-        (stage1: Stage<'S, 'U>, stage2: Stage<'S, 'V>) 
-        : Plan<'In, 'U * 'V> =
+    let (>=>>) (pl: Plan<'In, 'S>) (stage1: Stage<'S, 'U>, stage2: Stage<'S, 'V>) : Plan<'In, 'U * 'V> =
         if stage1.Transition.From <> stage2.Transition.From then 
             failwith $"[>=>>] can only apply stages with the same streaming profile ({stage1.Transition.From} <> {stage2.Transition.From})"
 
@@ -702,16 +684,16 @@ module Plan =
         // Combine both stages in a zip-like stage
         let stage = Stage.map2Sync $"({stage1.Name},{stage2.Name})" pl.debug (fun u v -> (u, v)) stage1 stage2 memoryNeed lengthTransformation
 
-        composeOp ">=>>" pl stage
+        composePlan ">=>>" pl stage
 
     let (>>=>) (pl: Plan<'In,'U*'V>) ((f: 'U -> 'V -> 'W)) : Plan<'In,'W>  = 
         map ">>=>" (fun (u,v) -> f u v) pl
 (*
     let (>>=>) (pl: Plan<'In,'U*'V>) (stage: Stage<'U*'V,'W>) : Plan<'In,'W>  = 
-        composeOp ">>=>" pl stage
+        composePlan ">>=>" pl stage
 *)
 
-    let (>>=>>) (f: ('U*'V) -> ('S*'T)) (pl: Plan<'In,'U*'V>) (stage: Stage<'U*'V,'S*'T>): Plan<'In,'S*'T>  = 
+    let (>>=>>) (f: ('U*'V) -> ('S*'T)) (pl: Plan<'In,'U*'V>) (stage: Stage<'U*'V,'S*'T>) : Plan<'In,'S*'T>  = 
         map ">>=>>" f pl 
 
     ///////////////////////////////////////////
@@ -728,7 +710,7 @@ module Plan =
     let sinkList (plans: Plan<unit, unit> list) : unit = // shape of unit?
         plans |> List.iter sink
 
-    let internal runToScalar (name:string) (reducer: AsyncSeq<'T> -> Async<'R>) (pl: Plan<unit, 'T>) : 'R =
+    let internal runToScalar (name: string) (reducer: AsyncSeq<'T> -> Async<'R>) (pl: Plan<unit, 'T>) : 'R =
         if pl.memPeak > pl.memAvail then
             failwith $"Not enough memory for the plan {pl.memPeak} > {pl.memAvail}"
 
@@ -741,17 +723,17 @@ module Plan =
                 AsyncSeq.singleton () |> pipeline.Apply pl.debug |> reducer |> Async.RunSynchronously
             | _ -> failwith $"[{name}] Plan is empty"
 
-    let drainSingle (name:string) (pl: Plan<unit, 'T>) =
+    let drainSingle (name: string) (pl: Plan<unit, 'T>) =
         runToScalar name AsyncSeq.toListAsync pl
         |> function
             | [x] -> x
             | []  -> failwith $"[drainSingle] No result from {name}"
             | _   -> failwith $"[drainSingle] Multiple results from {name}, expected one."
 
-    let drainList (name:string) (pl: Plan<unit, 'T>) =
+    let drainList (name: string) (pl: Plan<unit, 'T>) =
         runToScalar name AsyncSeq.toListAsync pl
 
-    let drainLast (name:string) (pl: Plan<unit, 'T>) =
+    let drainLast (name: string) (pl: Plan<unit, 'T>) =
         runToScalar name AsyncSeq.tryLast pl
         |> function
             | Some x -> x

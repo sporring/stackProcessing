@@ -99,7 +99,7 @@ val ignoreSingles: unit -> Stage<Image<'a>,unit> when 'a: equality
 
 val ignorePairs: unit -> Stage<('a * unit),unit>
 
-val idOp<'T> : (string -> SlimPipeline.Stage<'T,'T>)
+val idStage<'T> : (string -> SlimPipeline.Stage<'T,'T>)
 
 val liftUnary:
   name: string ->
@@ -382,6 +382,8 @@ val ImageConstantPad<'T when 'T: equality> :
     padUpper: uint list ->
     c: double -> SlimPipeline.Stage<Image<obj>,Image<obj>> when 'T: equality
 
+val readFiles: debug: bool -> Stage<string,Image<'T>> when 'T: equality
+
 type FileInfo = ImageFunctions.FileInfo
 
 val getStackDepth: inputDir: string -> suffix: string -> uint
@@ -393,6 +395,23 @@ val getStackSize: inputDir: string -> suffix: string -> uint * uint * uint
 val getStackWidth: inputDir: string -> suffix: string -> uint64
 
 val getStackHeight: inputDir: string -> suffix: string -> uint64
+
+val srcStage:
+  name: string ->
+    width: uint ->
+    height: uint ->
+    depth: uint ->
+    mapper: (int -> Image<'T>) -> SlimPipeline.Stage<unit,Image<'T>>
+    when 'T: equality
+
+val srcPlan:
+  debug: bool ->
+    memAvail: uint64 ->
+    width: uint ->
+    height: uint ->
+    depth: uint ->
+    stage: Stage<unit,Image<'T>> option -> SlimPipeline.Plan<unit,Image<'T>>
+    when 'T: equality
 
 val zero:
   width: uint ->
@@ -411,15 +430,8 @@ val createByEuler2DTransform:
 val getFilenames:
   inputDir: string ->
     suffix: string ->
-    pl: SlimPipeline.Plan<unit,unit> -> SlimPipeline.Plan<unit,string>
-
-val readFilteredOp:
-  name: string ->
-    inputDir: string ->
-    suffix: string ->
     filter: (string array -> string array) ->
-    pl: SlimPipeline.Plan<unit,unit> -> SlimPipeline.Plan<unit,Image<'T>>
-    when 'T: equality
+    pl: SlimPipeline.Plan<unit,unit> -> SlimPipeline.Plan<unit,string>
 
 val readFiltered:
   inputDir: string ->

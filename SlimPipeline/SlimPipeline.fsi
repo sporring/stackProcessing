@@ -9,9 +9,11 @@ module SingleOrPair =
     val mapPair:
       f: (uint64 -> uint64) * g: (uint64 -> uint64) ->
         v: SingleOrPair -> SingleOrPair
+    val index1: v: SingleOrPair -> SingleOrPair
+    val index2: v: SingleOrPair -> SingleOrPair
     val fst: v: SingleOrPair -> uint64
     val snd: v: SingleOrPair -> uint64
-    val sum: v: SingleOrPair -> uint64
+    val sum: v: SingleOrPair -> SingleOrPair
     val add: v: SingleOrPair -> w: SingleOrPair -> SingleOrPair
 /// The memory usage strategies during image processing.
 type Profile =
@@ -22,7 +24,7 @@ type Profile =
 module Profile =
     val estimateUsage: profile: Profile -> memPerElement: uint64 -> uint64
     val combine: prof1: Profile -> prof2: Profile -> Profile
-/// ProfileTransition describes *how* memory layout is expected to change:
+/// ProfileTransition describes *how* memory layout is expected to change: 
 /// - From: the input memory profile
 /// - To: the expected output memory profile
 type ProfileTransition =
@@ -33,7 +35,7 @@ type ProfileTransition =
 module ProfileTransition =
     val create: fromProfile: Profile -> toProfile: Profile -> ProfileTransition
 /// A configurable image processing step that operates on image slices.
-/// Pipe describes *how* to do it:
+/// Pipe describes *how* to do it: 
 /// - Encapsulates the concrete execution logic
 /// - Defines memory usage behavior
 /// - Takes and returns AsyncSeq streams
@@ -113,7 +115,7 @@ module private Pipe =
 type MemoryNeed = uint64 -> uint64
 type MemoryNeedWrapped = SingleOrPair -> SingleOrPair
 type LengthTransformation = uint64 -> uint64
-/// Stage describes *what* should be done:
+/// Stage describes *what* should be done: 
 type Stage<'S,'T> =
     {
       Name: string
@@ -147,7 +149,7 @@ module Stage =
     val (-->) : (Stage<'a,'b> -> Stage<'b,'c> -> Stage<'a,'c>)
     val prepend: name: string -> pre: Stage<unit,'S> -> Stage<'S,'S>
     val append: name: string -> app: Stage<unit,'S> -> Stage<'S,'S>
-    val idOp: name: string -> Stage<'T,'T>
+    val idStage: name: string -> Stage<'T,'T>
     val toPipe: stage: Stage<'a,'b> -> (unit -> Pipe<'a,'b>)
     val fromPipe:
       name: string ->
@@ -214,7 +216,7 @@ module Stage =
         f: ('S -> 'T) ->
         memoryNeed: MemoryNeed ->
         lengthTransformation: LengthTransformation -> Stage<'S,'T>
-    val tapItOp: name: string -> toString: ('T -> string) -> Stage<'T,'T>
+    val tapItStage: name: string -> toString: ('T -> string) -> Stage<'T,'T>
     val tapIt: toString: ('T -> string) -> Stage<'T,'T>
     val tap: name: string -> Stage<'T,'T>
     val ignore: clean: ('T -> unit) -> Stage<'T,unit>
@@ -253,7 +255,7 @@ module Plan =
     val source: availableMemory: uint64 -> Plan<unit,unit>
     val debug: availableMemory: uint64 -> Plan<unit,unit>
     /// Composition operators
-    val composeOp:
+    val composePlan:
       name: string -> pl: Plan<'a,'b> -> stage: Stage<'b,'c> -> Plan<'a,'c>
         when 'c: equality
     val (>=>) :
@@ -262,7 +264,7 @@ module Plan =
       name: string -> f: ('U -> 'V) -> pl: Plan<'In,'U> -> Plan<'In,'V>
         when 'V: equality
     /// parallel execution of non-synchronised streams
-    val internal zipOp:
+    val internal zipPlan:
       name: string ->
         pl1: Plan<'In,'U> -> pl2: Plan<'In,'V> -> Plan<'In,('U * 'V)>
         when 'U: equality and 'V: equality
