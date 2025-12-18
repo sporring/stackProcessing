@@ -27,7 +27,7 @@ let main arg =
     >=> connectedComponents wsz
     >=> cast<uint64,uint8>
     >=> scalarMulImage (255uy/3uy)
-    // Tiff supporst uint8, int8, uint16, int16, and float32
+    // Tiff supports uint8, int8, uint16, int16, and float32
     >=> write ("../"+tmp) ".tiff"
     |> sink
 
@@ -36,7 +36,7 @@ let main arg =
         |> getConnectedChunkNeighbours ("../"+tmp) ".tiff" wsz
         >=> readFilePairs<uint64> true 
         >=> makeAdjacencyGraph ()
-        >=> tapIt (fun (i,g) -> sprintf "Vertices\n%A\nEdges\n%A\n" (g|>simpleGraph.vertices|>Set.toList|>List.sort) (g|>simpleGraph.edges|>Set.toList|>List.sort))
+        //>=> tapIt (fun (i,g) -> sprintf "Vertices\n%A\nEdges\n%A\n" (g|>simpleGraph.vertices|>Set.toList|>List.sort) (g|>simpleGraph.edges|>Set.toList|>List.sort))
         >=> makeTranslationTable ()
         |> drain
     printfn "Translation Table drain:\n%A" transTbl
