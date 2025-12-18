@@ -1,0 +1,29 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net9.0</TargetFramework>
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+  </PropertyGroup>
+
+  <PropertyGroup>
+    <SigFile>$(MSBuildThisFileDirectory)SlimPipeline.fsi</SigFile>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|AnyCPU'">
+    <DefineConstants>TRACE</DefineConstants>
+    <PlatformTarget>AnyCPU</PlatformTarget>
+    <OtherFlags>--sig:"$(SigFile)"</OtherFlags>
+  </PropertyGroup>   
+  <Target Name="CleanTextFile" AfterTargets="Build">
+    <Exec Command="grep -v '^[[:space:]]*$' '$(SigFile)' &gt; '$(SigFile).tmp' &amp;&amp; mv '$(SigFile).tmp' '$(SigFile)'"/>
+  </Target>
+
+  <ItemGroup>
+    <PackageReference Include="FSharp.Control.AsyncSeq" Version="3.2.1" />
+    <ProjectReference Include="../AsyncSeqExtensions/AsyncSeqExtensions.fsproj" />
+    <ProjectReference Include="../IRefCounting/IRefCounting.fsproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Compile Include="SlimPipeline.fs" />
+  </ItemGroup>
+</Project>

@@ -1,0 +1,28 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net9.0</TargetFramework>
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+  </PropertyGroup>
+
+  <PropertyGroup>
+    <SigFile>$(MSBuildThisFileDirectory)AsyncSeqExtensions.fsi</SigFile>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|AnyCPU'">
+    <DefineConstants>TRACE</DefineConstants>
+    <PlatformTarget>AnyCPU</PlatformTarget>
+    <OtherFlags>--sig:"$(SigFile)"</OtherFlags>
+  </PropertyGroup>   
+  <Target Name="CleanTextFile" AfterTargets="Build">
+    <Exec Command="grep -v '^[[:space:]]*$' '$(SigFile)' &gt; '$(SigFile).tmp' &amp;&amp; mv '$(SigFile).tmp' '$(SigFile)'"/>
+  </Target>
+
+  <ItemGroup>
+    <Compile Include="AsyncSeqExtensions.fs" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="FSharp.Control.AsyncSeq" Version="3.*" />
+  </ItemGroup>
+
+</Project>
