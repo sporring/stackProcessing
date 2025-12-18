@@ -19,16 +19,30 @@
         <Exec Command="grep -v '^[[:space:]]*$' '$(SigFile)' &gt; '$(SigFile).tmp' &amp;&amp; mv '$(SigFile).tmp' '$(SigFile)'"/>
     </Target>
 -->
-    <ItemGroup>
-        <Reference Include="SimpleITKCSharp">
-        <HintPath>lib/SimpleITKCSharpManaged.dll</HintPath>
-        <Private>true</Private>
-        </Reference>
 
-        <!-- Ensure native lib is copied -->
-        <None Update="lib/libSimpleITKCSharpNative.dylib">
+    <!-- We want to copy the Managed library regardless of platform -->
+    <ItemGroup>
+      <Reference Include="SimpleITKCSharp">
+      <HintPath>../../lib/SimpleITKCSharpManaged.dll</HintPath>
+      <Private>true</Private>
+      </Reference>
+    </ItemGroup>
+
+    <ItemGroup Condition="$([MSBuild]::IsOSPlatform('Windows'))">
+      <None Include="../../lib/SimpleITKCSharpNative.dll">
         <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-        </None>
+        <TargetPath>libSimpleITKCSharpNative.dll</TargetPath>
+      </None>
+    </ItemGroup>
+    
+    <ItemGroup Condition="$([MSBuild]::IsOSPlatform('Linux'))">
+      <None Include="../../lib/libSimpleITKCSharpNative.so"
+        CopyToOutputDirectory="PreserveNewest" />
+    </ItemGroup>
+
+    <ItemGroup Condition="$([MSBuild]::IsOSPlatform('OSX'))">
+      <None Include="../../lib/libSimpleITKCSharpNative.dylib"
+        CopyToOutputDirectory="PreserveNewest" />
     </ItemGroup>
     
     <ItemGroup>
