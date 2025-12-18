@@ -464,7 +464,7 @@ val getConnectedChunkNeighbours:
     suffix: string ->
     winSz: uint ->
     pl: SlimPipeline.Plan<unit,unit> ->
-    SlimPipeline.Plan<unit,(string * string)>
+    SlimPipeline.Plan<unit,(Image<uint64> * Image<uint64>)>
 
 val makeAdjacencyGraph:
   unit ->

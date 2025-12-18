@@ -694,7 +694,7 @@ let empty (pl: Plan<unit, unit>) : Plan<unit, unit> =
     let stage = "empty" |> Stage.empty |> Some
     Plan.create stage pl.memAvail 0UL 0UL 0UL  pl.debug
 
-let getConnectedChunkNeighbours (inputDir: string) (suffix: string) (winSz: uint) (pl: Plan<unit, unit>) : Plan<unit, string*string> =
+let getConnectedChunkNeighbours (inputDir: string) (suffix: string) (winSz: uint) (pl: Plan<unit, unit>) : Plan<unit, Image<uint64>*Image<uint64>> =
     let name = "getConnectedChunkNeighbours"
     let filenames = Directory.GetFiles(inputDir, "*"+suffix) |> Array.sort
     let depth = (uint64 filenames.Length) / (uint64 winSz) - 1UL
@@ -712,6 +712,7 @@ let getConnectedChunkNeighbours (inputDir: string) (suffix: string) (winSz: uint
     let memPerElem = 256UL // surrugate string length
     let length = depth
     Plan.create stage pl.memAvail memPeak memPerElem length pl.debug
+    >=> readFilePairs<uint64> pl.debug
 
 let makeAdjacencyGraph (): Stage<Image<uint64>*Image<uint64>,uint*simpleGraph.Graph<uint*uint64>> =
     let name = "makeAdjacencyGraph"

@@ -6,11 +6,11 @@ open StackProcessing
 let main arg =
     let availableMemory = 2UL * 1024UL * 1024UL *1024UL // 1MB for example
 
-    let src, debugFlag = 
+    let src = 
         if arg.Length > 0 && arg[0] = "debug" then
-            debug availableMemory, true
+            debug availableMemory
         else
-            source availableMemory, false
+            source availableMemory
     let width, height, depth, input, output = 
         if arg.Length > 1 then
             let n = (int arg[1]) / 3 |> pown 2 |> uint 
@@ -34,7 +34,6 @@ let main arg =
     let transTbl =
         src
         |> getConnectedChunkNeighbours ("../"+tmp) ".tiff" wsz
-        >=> readFilePairs<uint64> debugFlag 
         >=> makeAdjacencyGraph ()
         //>=> tapIt (fun (i,g) -> sprintf "Vertices\n%A\nEdges\n%A\n" (g|>simpleGraph.vertices|>Set.toList|>List.sort) (g|>simpleGraph.edges|>Set.toList|>List.sort))
         >=> makeTranslationTable ()
