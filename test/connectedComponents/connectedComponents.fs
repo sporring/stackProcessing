@@ -39,7 +39,7 @@ let main arg =
         >=> makeTranslationTable ()
         |> drain
     printfn "Translation Table drain:\n%A" transTbl
-    
+
     src
     |> read<uint64> ("../"+tmp) ".tiff"
     >=> updateConnectedComponents wsz transTbl
