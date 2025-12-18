@@ -1,0 +1,56 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net9.0</TargetFramework>
+    <GenerateProgramFile>false</GenerateProgramFile>
+    <CollectCoverage>true</CollectCoverage>
+    <CoverletOutputFormat>lcov</CoverletOutputFormat>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Reference Include="SimpleITKCSharp">
+      <HintPath>lib/SimpleITKCSharpManaged.dll</HintPath>
+      <Private>true</Private>
+    </Reference>
+    <None Update="lib/libSimpleITKCSharpNative.dylib">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+  </ItemGroup>
+
+  <PropertyGroup>
+    <GenerateProgramFile>false</GenerateProgramFile>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="coverlet.msbuild" Version="6.0.4">
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+      <PrivateAssets>all</PrivateAssets>
+    </PackageReference>
+    <PackageReference Include="Expecto" Version="10.*" />
+    <PackageReference Include="YoloDev.Expecto.TestSdk" Version="0.15.3" />
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.14.1" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="../../src/Image/Image.fsproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Compile Include="Arithmetic.fs" />
+    <Compile Include="ArithmeticOps.fs" />
+    <Compile Include="ArithmeticSupportOps.fs" />
+    <Compile Include="ArrayHelpers.fs" />
+    <Compile Include="Iteration.fs" />
+    <Compile Include="PixelBoxing.fs" />
+    <Compile Include="VectorHelpers.fs" />
+    <Compile Include="assorted.fs" />
+    <Compile Include="casting.fs" />
+    <Compile Include="comparable.fs" />
+    <Compile Include="indexing.fs" />
+    <Compile Include="mathFunction.fs" />
+    <Compile Include="memoryHelper.fs" />
+    <Compile Include="simpleFunction.fs" />
+    <Compile Include="Tests.fs" />
+  </ItemGroup>
+</Project>
