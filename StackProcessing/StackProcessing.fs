@@ -721,7 +721,10 @@ let makeAdjacencyGraph (): Stage<Image<uint64>*Image<uint64>,uint*simpleGraph.Gr
                 simpleGraph.addEdge (i,p1) (i+1u,p2) g
             else
                 g
-        (i+1u,Image.fold2 (sliceFolder i) graph image1 image2)
+        let res = (i+1u,Image.fold2 (sliceFolder i) graph image1 image2)
+        image1.decRefCount()
+        image2.decRefCount()
+        res
 
     let memoryNeed = id
     let lengthTransformation = fun _ -> 1UL
@@ -729,7 +732,7 @@ let makeAdjacencyGraph (): Stage<Image<uint64>*Image<uint64>,uint*simpleGraph.Gr
     Stage.fold $"{name}" folder init memoryNeed lengthTransformation
 
 let makeTranslationTable () : Stage<uint*simpleGraph.Graph<uint*uint64>,(uint*uint64*uint64) list> =
-    let name = "makeAdjacencyGraph"
+    let name = "makeTranslationTable"
     let mapper (i: uint, graph:simpleGraph.Graph<uint*uint64>) = 
         let cc = simpleGraph.connectedComponents graph
         List.zip cc [1UL .. uint64 cc.Length]
@@ -746,14 +749,20 @@ let trd (_,_,c) = c
 let updateConnectedComponents (winSz: uint) (translationTable: (uint*uint64*uint64) list) : Stage<Image<uint64>,Image<uint64>> =
     let name = "updateConnectedComponents"
     let translationTableChunked = List.groupBy (fun (c,_,_) -> c) translationTable
+    let translationMap = List.map (fun (_,lst) -> (0u,0UL,0UL)::lst |> List.map (fun (_,i,j)->(i,j)) |> Map.ofList) translationTableChunked
 
     let mapper (image: Image<uint64>) : Image<uint64> = 
         let chunk = image.index/int winSz
-        let _,trans = translationTableChunked[chunk]
-        Image.map (fun v -> if v=0UL then 0UL else trans |> List.find (fun (_,w,_) -> v = w) |> trd) image
+        //let _,trans = translationTableChunked[chunk]
+        //let res = Image.map (fun v -> if v=0UL then 0UL else trans |> List.find (fun (_,w,_) -> v = w) |> trd) image
+        let trans = translationMap[chunk]
+        let res = Image.map (fun v -> trans[v]) image
+        image.decRefCount()
+        res
 
     let transition = ProfileTransition.create Unit Streaming
     let memPeak = 2*sizeof<uint> |> uint64
     let memoryNeed = fun _ -> 2*sizeof<uint> |> uint64
     let lengthTransformation = id
     Stage.map "updateConnectedComponents" mapper memoryNeed lengthTransformation
+
