@@ -185,6 +185,32 @@ let carg (img: Image<'T>) = makeUnaryImageOperator (fun () -> new itk.simple.Com
 *)
 
 
+// Basic transformations
+let euler2DTransform (img: Image<'T>) (cx:float,cy:float,a:float) (dx:float,dy:float): Image<'T> =
+    let t = new itk.simple.Euler2DTransform()
+    t.SetAngle(a)
+    t.SetCenter([ cx; cy ] |> toVectorFloat64)
+    t.SetTranslation([ dx; dy ] |> toVectorFloat64)
+
+    let f = new itk.simple.ResampleImageFilter()
+    f.SetReferenceImage(img.toSimpleITK())
+    f.SetInterpolator(itk.simple.InterpolatorEnum.sitkLinear) // sitkNearestNeighbor, sitkLinear, sitkBSpline
+    f.SetDefaultPixelValue(0.0) // This will probably break for vector valued functions...
+    f.SetTransform(t.GetInverse()) 
+    Image<'T>.ofSimpleITK(f.Execute (img.toSimpleITK()),"2DTranslate")
+
+let euler2DRotate (img: Image<'T>) (cx:float,cy:float) (a:float): Image<'T> =
+    let t = new itk.simple.Euler2DTransform()
+    t.SetAngle(a)
+    t.SetCenter([ cx; cy ] |> toVectorFloat64)
+
+    let f = new itk.simple.ResampleImageFilter()
+    f.SetReferenceImage(img.toSimpleITK())
+    f.SetInterpolator(itk.simple.InterpolatorEnum.sitkLinear)
+    f.SetDefaultPixelValue(0.0) // This will probably break for vector valued functions...
+    f.SetTransform(t) 
+    Image<'T>.ofSimpleITK(f.Execute (img.toSimpleITK()),"2DRotate")
+
 type BoundaryCondition = ZeroPad | PerodicPad | ZeroFluxNeumannPad
 type OutputRegionMode = Valid | Same
 
@@ -396,7 +422,7 @@ let binaryFillHoles (img : Image<uint8>) : Image<uint8> =
 // Currying and generic arguments causes value restriction error
 let connectedComponents (img : Image<uint8>) : Image<uint64> =
     use filter = new itk.simple.ConnectedComponentImageFilter()
-    Image<uint64>.ofSimpleITK(filter.Execute(img.toSimpleITK()),"connectedComponents")
+    Image<uint64>.ofSimpleITK(filter.Execute(img.toSimpleITK()), "connectedComponents")
 
 /// Relabel components by size, optionally remove small objects
 let relabelComponents (minObjectSize: uint) : Image<'T> -> Image<'T> =
@@ -640,7 +666,7 @@ let threshold (lower: float) (upper: float) (img: Image<'T>) : Image<uint8> =
     use filter = new itk.simple.BinaryThresholdImageFilter()
     filter.SetLowerThreshold lower
     filter.SetUpperThreshold upper
-    let res = filter.Execute(img.Image); 
+    let res = filter.Execute(img.toSimpleITK()); 
     Image<uint8>.ofSimpleITK(res,"threshold",0)
 
 let toVectorOfImage images =

@@ -312,13 +312,8 @@ type Image<'T when 'T : equality>(sz: uint list, ?optionalNumberComponents: uint
             decTotalImages()
             decMemUsed (Image<_>.memoryEstimateSItk img)
             if debug then printDebugMessage $"Disposed of {this.Name}"
-            //let totalBefore = Image<_>.storage |> List.map fst |> List.map Image<_>.memoryEstimateSItk |> List.reduce (+)
-            //printfn $"Before {Image<_>.memoryEstimateSItk this.Image} Total: {totalBefore}"
-            else
-                img.Dispose()
-                img <- new itk.simple.Image([0u;0u] |> toVectorUInt32, itkId)
-            //let totalAfter = Image<_>.storage |> List.map fst |> List.map Image<_>.memoryEstimateSItk |> List.reduce (+)
-            //printfn $"After {Image<_>.memoryEstimateSItk this.Image} Total: {totalAfter}"
+            img.Dispose()
+            img <- new itk.simple.Image([0u;0u] |> toVectorUInt32, itkId)
 
     static member memoryEstimateSItk (sitk : itk.simple.Image) = 
         let noComponent = sitk.GetNumberOfComponentsPerPixel()
@@ -327,7 +322,7 @@ type Image<'T when 'T : equality>(sz: uint list, ?optionalNumberComponents: uint
         let res = bytesPerComponent * (size |> List.reduce ( * ));
         res
 
-    static member memoryEstimate (width: uint) (height: uint) (noComponent: uint) =
+    static member memoryEstimate (width: uint) (height: uint) =
         let bytesPerComponent = getBytesPerSItkComponent (fromType<'T>)
         uint64 (bytesPerComponent * width * height);
 
@@ -471,7 +466,7 @@ type Image<'T when 'T : equality>(sz: uint list, ?optionalNumberComponents: uint
         | None -> ()
         writer.Execute(this.Image)
 
-    // Addition
+    // Arithmatic
     static member (+) (f1: Image<'T>, f2: Image<'T>) =
         let filter = new itk.simple.AddImageFilter()
         Image<'T>.ofSimpleITK(filter.Execute(f1.toSimpleITK(), f2.toSimpleITK()), "add")
@@ -484,6 +479,19 @@ type Image<'T when 'T : equality>(sz: uint list, ?optionalNumberComponents: uint
     static member (/) (f1: Image<'T>, f2: Image<'T>) =
         let filter = new itk.simple.DivideImageFilter()
         Image<'T>.ofSimpleITK(filter.Execute(f1.toSimpleITK(), f2.toSimpleITK()), "divide")
+
+    static member maximumImage (f1: Image<'T>) (f2: Image<'T>) =
+        let filter = new itk.simple.MaximumImageFilter()
+        Image<'T>.ofSimpleITK(filter.Execute(f1.toSimpleITK(), f2.toSimpleITK()), "maximumImage")
+
+    static member minimumImage (f1: Image<'T>) (f2: Image<'T>) =
+        let filter = new itk.simple.MinimumImageFilter()
+        Image<'T>.ofSimpleITK(filter.Execute(f1.toSimpleITK(), f2.toSimpleITK()), "minimumImage")
+
+    static member getMinMax (img: Image<'T>) =
+        let filter = new itk.simple.MinimumMaximumImageFilter()
+        filter.Execute (img.toSimpleITK())
+        (filter.GetMinimum(),filter.GetMaximum())
 
     // Collection type
     static member map (f:'T->'T) (im1: Image<'T>) : Image<'T> =
@@ -521,6 +529,14 @@ type Image<'T when 'T : equality>(sz: uint list, ?optionalNumberComponents: uint
         sz
         |> flatIndices
         |> Seq.fold (fun acc idx -> im1.Get idx |> f acc) acc0
+
+    static member fold2 (f:'S->'T->'T->'S) (acc0: 'S) (im1: Image<'T>) (im2: Image<'T>) : 'S = 
+        let sz1 = im1.GetSize()
+        let sz2 = im2.GetSize()
+        if List.exists2 (<>) sz1 sz2 then failwith "[Image.fold2] cannot fold over 2 images of unequal sizes"
+        sz1
+        |> flatIndices
+        |> Seq.fold (fun acc idx -> (im1.Get idx, im2.Get idx) ||> f acc) acc0
 
     static member foldi (f:uint list->'S->'T->'S) (acc0: 'S) (im1: Image<'T>) : 'S =
         let sz = im1.GetSize()
