@@ -9,21 +9,33 @@ module SingleOrPair =
     val mapPair:
       f: (uint64 -> uint64) * g: (uint64 -> uint64) ->
         v: SingleOrPair -> SingleOrPair
+    val index1: v: SingleOrPair -> SingleOrPair
+    val index2: v: SingleOrPair -> SingleOrPair
     val fst: v: SingleOrPair -> uint64
     val snd: v: SingleOrPair -> uint64
-    val sum: v: SingleOrPair -> uint64
+    val sum: v: SingleOrPair -> SingleOrPair
     val add: v: SingleOrPair -> w: SingleOrPair -> SingleOrPair
 /// The memory usage strategies during image processing.
 type Profile =
     | Unit
     | Constant
     | Streaming
-    | Sliding of uint * uint * uint * uint * uint
+    | Window of uint * uint * uint * uint * uint
 module Profile =
     val estimateUsage: profile: Profile -> memPerElement: uint64 -> uint64
     val combine: prof1: Profile -> prof2: Profile -> Profile
+/// ProfileTransition describes *how* memory layout is expected to change: 
+/// - From: the input memory profile
+/// - To: the expected output memory profile
+type ProfileTransition =
+    {
+      From: Profile
+      To: Profile
+    }
+module ProfileTransition =
+    val create: fromProfile: Profile -> toProfile: Profile -> ProfileTransition
 /// A configurable image processing step that operates on image slices.
-/// Pipe describes *how* to do it:
+/// Pipe describes *how* to do it: 
 /// - Encapsulates the concrete execution logic
 /// - Defines memory usage behavior
 /// - Takes and returns AsyncSeq streams
@@ -52,17 +64,21 @@ module private Pipe =
       name: string ->
         profile: Profile ->
         release: ('S -> unit) -> f: ('S -> 'T) -> Pipe<'S,'T>
+    /// Combine two <c>Pipe</c> instances into one by composing their memory profiles and transformation functions.
+    val compose: p1: Pipe<'S,'T> -> p2: Pipe<'T,'U> -> Pipe<'S,'U>
     val skip: name: string -> count: uint -> Pipe<'a,'a>
     val take: name: string -> count: uint -> Pipe<'a,'a>
     val map:
       name: string -> mapper: ('U -> 'V) -> pipe: Pipe<'In,'U> -> Pipe<'In,'V>
+    /// Prepend a sequence produced by a Pipe<unit,'S> to the input stream.
+    val prepend: name: string -> pre: Pipe<unit,'S> -> Pipe<'S,'S>
+    /// Append a sequence produced by a Pipe<unit,'S> to the input stream.
+    val append: name: string -> post: Pipe<unit,'S> -> Pipe<'S,'S>
     type TeeMsg<'T> =
         | Left of AsyncReplyChannel<'T option>
         | Right of AsyncReplyChannel<'T option>
     val tee: debug: bool -> p: Pipe<'In,'T> -> Pipe<'In,'T> * Pipe<'In,'T>
     val id: name: string -> Pipe<'T,'T>
-    /// Combine two <c>Pipe</c> instances into one by composing their memory profiles and transformation functions.
-    val compose: p1: Pipe<'S,'T> -> p2: Pipe<'T,'U> -> Pipe<'S,'U>
     val map2Sync:
       name: string ->
         debug: bool ->
@@ -96,201 +112,186 @@ module private Pipe =
     val ignore: clean: ('T -> unit) -> Pipe<'T,unit>
     val ignorePairs:
       cleanFst: ('S -> unit) * cleanSnd: ('T -> unit) -> Pipe<('S * 'T),unit>
-/// ProfileTransition describes *how* memory layout is expected to change:
-/// - From: the input memory profile
-/// - To: the expected output memory profile
-type ProfileTransition =
-    {
-      From: Profile
-      To: Profile
-    }
-module ProfileTransition =
-    val create: fromProfile: Profile -> toProfile: Profile -> ProfileTransition
 type MemoryNeed = uint64 -> uint64
 type MemoryNeedWrapped = SingleOrPair -> SingleOrPair
-type NElemsTransformation = uint64 -> uint64
-/// Plan describes *what* should be done:
-/// - Contains high-level metadata
-/// - Encodes memory transition intent
-/// - Suitable for planning, validation, and analysis
-/// - Plan + ProfileTransition: what happens
-type Plan<'S,'T> =
+type LengthTransformation = uint64 -> uint64
+/// Stage describes *what* should be done: 
+type Stage<'S,'T> =
     {
       Name: string
-      Pipe: Pipe<'S,'T>
+      Build: (unit -> Pipe<'S,'T>)
       Transition: ProfileTransition
       MemoryNeed: MemoryNeedWrapped
-      NElemsTransformation: NElemsTransformation
+      LengthTransformation: LengthTransformation
     }
-module Plan =
+module Stage =
     val create:
       name: string ->
-        pipe: Pipe<'S,'T> ->
+        build: (unit -> Pipe<'S,'T>) ->
         transition: ProfileTransition ->
         memoryNeed: MemoryNeed ->
-        nElemsTransformation: NElemsTransformation -> Plan<'S,'T>
+        lengthTransformation: LengthTransformation -> Stage<'S,'T>
     val createWrapped:
       name: string ->
-        pipe: Pipe<'S,'T> ->
+        build: (unit -> Pipe<'S,'T>) ->
         transition: ProfileTransition ->
         wrapMemoryNeed: MemoryNeedWrapped ->
-        nElemsTransformation: NElemsTransformation -> Plan<'S,'T>
-    val empty: name: string -> Plan<unit,unit>
+        lengthTransformation: LengthTransformation -> Stage<'S,'T>
+    val empty: name: string -> Stage<unit,unit>
     val init<'S,'T> :
       name: string ->
         depth: uint ->
         mapper: (int -> 'T) ->
         transition: ProfileTransition ->
         memoryNeed: MemoryNeed ->
-        nElemsTransformation: NElemsTransformation -> Plan<unit,'T>
-    val idOp: name: string -> Plan<'T,'T>
-    val toPipe: plan: Plan<'a,'b> -> Pipe<'a,'b>
+        lengthTransformation: LengthTransformation -> Stage<unit,'T>
+    val compose: stage1: Stage<'S,'T> -> stage2: Stage<'T,'U> -> Stage<'S,'U>
+    val (-->) : (Stage<'a,'b> -> Stage<'b,'c> -> Stage<'a,'c>)
+    val prepend: name: string -> pre: Stage<unit,'S> -> Stage<'S,'S>
+    val append: name: string -> app: Stage<unit,'S> -> Stage<'S,'S>
+    val idStage: name: string -> Stage<'T,'T>
+    val toPipe: stage: Stage<'a,'b> -> (unit -> Pipe<'a,'b>)
     val fromPipe:
       name: string ->
         transition: ProfileTransition ->
         memoryNeed: MemoryNeed ->
-        nElemsTransformation: NElemsTransformation ->
-        pipe: Pipe<'S,'T> -> Plan<'S,'T>
-    val compose: plan1: Plan<'S,'T> -> plan2: Plan<'T,'U> -> Plan<'S,'U>
-    val (-->) : (Plan<'a,'b> -> Plan<'b,'c> -> Plan<'a,'c>)
-    val skip: name: string -> n: uint -> Plan<'S,'S>
-    val take: name: string -> n: uint -> Plan<'S,'S>
+        lengthTransformation: LengthTransformation ->
+        pipe: Pipe<'S,'T> -> Stage<'S,'T>
+    val skip: name: string -> n: uint -> Stage<'S,'S>
+    val take: name: string -> n: uint -> Stage<'S,'S>
     val map:
       name: string ->
         f: ('S -> 'T) ->
         memoryNeed: MemoryNeed ->
-        nElemsTransformation: NElemsTransformation -> Plan<'S,'T>
+        lengthTransformation: LengthTransformation -> Stage<'S,'T>
     val map1:
       name: string ->
         f: ('U -> 'V) ->
-        plan: Plan<'In,'U> ->
+        stage: Stage<'In,'U> ->
         memoryNeed: MemoryNeed ->
-        nElemsTransformation: NElemsTransformation -> Plan<'In,'V>
+        lengthTransformation: LengthTransformation -> Stage<'In,'V>
     val map2:
       name: string ->
         debug: bool ->
         f: ('U -> 'V -> 'W) ->
-        plan1: Plan<'In,'U> ->
-        plan2: Plan<'In,'V> ->
+        stage1: Stage<'In,'U> ->
+        stage2: Stage<'In,'V> ->
         memoryNeed: MemoryNeedWrapped ->
-        nElemsTransformation: NElemsTransformation -> Plan<'In,'W>
+        lengthTransformation: LengthTransformation -> Stage<'In,'W>
     val map2Sync:
       name: string ->
         debug: bool ->
         f: ('U -> 'V -> 'W) ->
-        plan1: Plan<'In,'U> ->
-        plan2: Plan<'In,'V> ->
+        stage1: Stage<'In,'U> ->
+        stage2: Stage<'In,'V> ->
         memoryNeed: MemoryNeedWrapped ->
-        nElemsTransformation: NElemsTransformation -> Plan<'In,'W>
+        lengthTransformation: LengthTransformation -> Stage<'In,'W>
     val reduce:
       name: string ->
         reducer: (bool -> FSharp.Control.AsyncSeq<'In> -> Async<'Out>) ->
         profile: Profile ->
         memoryNeed: MemoryNeed ->
-        nElemsTransformation: NElemsTransformation -> Plan<'In,'Out>
+        lengthTransformation: LengthTransformation -> Stage<'In,'Out>
     val fold<'S,'T> :
       name: string ->
         folder: ('T -> 'S -> 'T) ->
         initial: 'T ->
         memoryNeed: MemoryNeed ->
-        nElemsTransformation: NElemsTransformation -> Plan<'S,'T>
+        lengthTransformation: LengthTransformation -> Stage<'S,'T>
     val window:
       name: string ->
         winSz: uint ->
         pad: uint ->
-        zeroMaker: (int -> 'T -> 'T) -> stride: uint -> Plan<'T,'T list>
+        zeroMaker: (int -> 'T -> 'T) -> stride: uint -> Stage<'T,'T list>
         when 'T: equality
-    val flatten: name: string -> Plan<'T list,'T>
+    val flatten: name: string -> Stage<'T list,'T>
     val liftUnary:
       name: string ->
         f: ('S -> 'T) ->
         memoryNeed: MemoryNeed ->
-        nElemsTransformation: NElemsTransformation -> Plan<'S,'T>
+        lengthTransformation: LengthTransformation -> Stage<'S,'T>
     val liftReleaseUnary:
       name: string ->
         release: ('S -> unit) ->
         f: ('S -> 'T) ->
         memoryNeed: MemoryNeed ->
-        nElemsTransformation: NElemsTransformation -> Plan<'S,'T>
-    val tapItOp: name: string -> toString: ('T -> string) -> Plan<'T,'T>
-    val tapIt: toString: ('T -> string) -> Plan<'T,'T>
-    val tap: name: string -> Plan<'T,'T>
-    val ignore: clean: ('T -> unit) -> Plan<'T,unit>
+        lengthTransformation: LengthTransformation -> Stage<'S,'T>
+    val tapItStage: name: string -> toString: ('T -> string) -> Stage<'T,'T>
+    val tapIt: toString: ('T -> string) -> Stage<'T,'T>
+    val tap: name: string -> Stage<'T,'T>
+    val ignore: clean: ('T -> unit) -> Stage<'T,unit>
     val ignorePairs:
-      cleanFst: ('S -> unit) * cleanSnd: ('T -> unit) -> Plan<('S * 'T),unit>
+      cleanFst: ('S -> unit) * cleanSnd: ('T -> unit) -> Stage<('S * 'T),unit>
     val consumeWith:
       name: string ->
         consume: (bool -> int -> 'T -> unit) ->
-        memoryNeed: MemoryNeed -> Plan<'T,unit>
+        memoryNeed: MemoryNeed -> Stage<'T,unit>
     val cast:
-      name: string -> f: ('S -> 'T) -> memoryNeed: MemoryNeed -> Plan<'S,'T>
+      name: string -> f: ('S -> 'T) -> memoryNeed: MemoryNeed -> Stage<'S,'T>
         when 'S: equality and 'T: equality
-type Pipeline<'S,'T> =
+type Plan<'S,'T> =
     {
-      plan: Plan<'S,'T> option
-      nElems: SingleOrPair
+      stage: Stage<'S,'T> option
+      nElemsPerSlice: SingleOrPair
       length: uint64
       memAvail: uint64
       memPeak: uint64
       debug: bool
     }
-module Pipeline =
+module Plan =
     val create:
-      plan: Plan<'S,'T> option ->
+      stage: Stage<'S,'T> option ->
         memAvail: uint64 ->
         memPeak: uint64 ->
-        nElems: uint64 -> length: uint64 -> debug: bool -> Pipeline<'S,'T>
+        nElemsPerSlice: uint64 -> length: uint64 -> debug: bool -> Plan<'S,'T>
         when 'T: equality
     val createWrapped:
-      plan: Plan<'S,'T> option ->
+      stage: Stage<'S,'T> option ->
         memAvail: uint64 ->
         memPeak: uint64 ->
-        nElems: SingleOrPair -> length: uint64 -> debug: bool -> Pipeline<'S,'T>
-        when 'T: equality
+        nElemsPerSlice: SingleOrPair ->
+        length: uint64 -> debug: bool -> Plan<'S,'T> when 'T: equality
     /// Source type operators
-    val source: availableMemory: uint64 -> Pipeline<unit,unit>
-    val debug: availableMemory: uint64 -> Pipeline<unit,unit>
+    val source: availableMemory: uint64 -> Plan<unit,unit>
+    val debug: availableMemory: uint64 -> Plan<unit,unit>
     /// Composition operators
-    val composeOp:
-      name: string ->
-        pl: Pipeline<'a,'b> -> plan: Plan<'b,'c> -> Pipeline<'a,'c>
+    val composePlan:
+      name: string -> pl: Plan<'a,'b> -> stage: Stage<'b,'c> -> Plan<'a,'c>
         when 'c: equality
     val (>=>) :
-      pl: Pipeline<'a,'b> -> plan: Plan<'b,'c> -> Pipeline<'a,'c>
-        when 'c: equality
+      pl: Plan<'a,'b> -> stage: Stage<'b,'c> -> Plan<'a,'c> when 'c: equality
     val map:
-      name: string -> f: ('U -> 'V) -> pl: Pipeline<'In,'U> -> Pipeline<'In,'V>
+      name: string -> f: ('U -> 'V) -> pl: Plan<'In,'U> -> Plan<'In,'V>
         when 'V: equality
     /// parallel execution of non-synchronised streams
-    val internal zipOp:
+    val internal zipPlan:
       name: string ->
-        pl1: Pipeline<'In,'U> ->
-        pl2: Pipeline<'In,'V> -> Pipeline<'In,('U * 'V)>
+        pl1: Plan<'In,'U> -> pl2: Plan<'In,'V> -> Plan<'In,('U * 'V)>
         when 'U: equality and 'V: equality
     /// parallel execution of non-synchronised streams
     val zip:
-      pl1: Pipeline<'In,'U> -> pl2: Pipeline<'In,'V> -> Pipeline<'In,('U * 'V)>
+      pl1: Plan<'In,'U> -> pl2: Plan<'In,'V> -> Plan<'In,('U * 'V)>
         when 'U: equality and 'V: equality
     /// parallel execution of synchronised streams
     val (>=>>) :
-      pl: Pipeline<'In,'S> ->
-        stg1: Plan<'S,'U> * stg2: Plan<'S,'V> -> Pipeline<'In,('U * 'V)>
+      pl: Plan<'In,'S> ->
+        stage1: Stage<'S,'U> * stage2: Stage<'S,'V> -> Plan<'In,('U * 'V)>
         when 'U: equality and 'V: equality
     val (>>=>) :
-      pl: Pipeline<'In,('U * 'V)> -> f: ('U -> 'V -> 'W) -> Pipeline<'In,'W>
+      pl: Plan<'In,('U * 'V)> -> f: ('U -> 'V -> 'W) -> Plan<'In,'W>
         when 'W: equality
     val (>>=>>) :
       f: ('U * 'V -> 'S * 'T) ->
-        pl: Pipeline<'In,('U * 'V)> ->
-        plan: Plan<('U * 'V),('S * 'T)> -> Pipeline<'In,('S * 'T)>
+        pl: Plan<'In,('U * 'V)> ->
+        stage: Stage<('U * 'V),('S * 'T)> -> Plan<'In,('S * 'T)>
         when 'S: equality and 'T: equality
     /// sink type operators
-    val sink: pl: Pipeline<unit,unit> -> unit
-    val sinkList: pipelines: Pipeline<unit,unit> list -> unit
+    val sink: pl: Plan<unit,unit> -> unit
+    val sinkList: plans: Plan<unit,unit> list -> unit
     val internal runToScalar:
       name: string ->
         reducer: (FSharp.Control.AsyncSeq<'T> -> Async<'R>) ->
-        pl: Pipeline<unit,'T> -> 'R
-    val drainSingle: name: string -> pl: Pipeline<unit,'T> -> 'T
-    val drainList: name: string -> pl: Pipeline<unit,'T> -> 'T list
-    val drainLast: name: string -> pl: Pipeline<unit,'T> -> 'T
+        pl: Plan<unit,'T> -> 'R
+    val drainSingle: name: string -> pl: Plan<unit,'T> -> 'T
+    val drainList: name: string -> pl: Plan<unit,'T> -> 'T list
+    val drainLast: name: string -> pl: Plan<unit,'T> -> 'T

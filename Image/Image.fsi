@@ -74,8 +74,12 @@ type Image<'T when 'T: equality> =
     static member eq: f1: Image<'S> * f2: Image<'S> -> bool when 'S: equality
     static member fold: f: ('S -> 'T -> 'S) -> acc0: 'S -> im1: Image<'T> -> 'S
     static member
+      fold2: f: ('S -> 'T -> 'T -> 'S) ->
+               acc0: 'S -> im1: Image<'T> -> im2: Image<'T> -> 'S
+    static member
       foldi: f: (uint list -> 'S -> 'T -> 'S) ->
                acc0: 'S -> im1: Image<'T> -> 'S
+    static member getMinMax: img: Image<'T> -> float * float
     static member gt: f1: Image<'S> * f2: Image<'S> -> bool when 'S: equality
     static member gte: f1: Image<'S> * f2: Image<'S> -> bool when 'S: equality
     /// Comparison operators
@@ -100,9 +104,10 @@ type Image<'T when 'T: equality> =
     static member map: f: ('T -> 'T) -> im1: Image<'T> -> Image<'T>
     static member
       mapi: f: (uint list -> 'T -> 'T) -> im1: Image<'T> -> Image<'T>
-    static member
-      memoryEstimate: width: uint -> height: uint -> noComponent: uint -> uint64
+    static member maximumImage: f1: Image<'T> -> f2: Image<'T> -> Image<'T>
+    static member memoryEstimate: width: uint -> height: uint -> uint64
     static member memoryEstimateSItk: sitk: itk.simple.Image -> uint32
+    static member minimumImage: f1: Image<'T> -> f2: Image<'T> -> Image<'T>
     static member neq: f1: Image<'S> * f2: Image<'S> -> bool when 'S: equality
     static member ofArray2D: arr: 'T array2d * ?name: string -> Image<'T>
     static member ofArray3D: arr: 'T array3d * ?name: string -> Image<'T>
@@ -263,6 +268,13 @@ val atanImage:
   img: Image.Image<'T> -> Image.Image<'a> when 'T: equality and 'a: equality
 val roundImage:
   img: Image.Image<'T> -> Image.Image<'a> when 'T: equality and 'a: equality
+val euler2DTransform:
+  img: Image.Image<'T> ->
+    cx: float * cy: float * a: float -> dx: float * dy: float -> Image.Image<'T>
+    when 'T: equality
+val euler2DRotate:
+  img: Image.Image<'T> -> cx: float * cy: float -> a: float -> Image.Image<'T>
+    when 'T: equality
 type BoundaryCondition =
     | ZeroPad
     | PerodicPad

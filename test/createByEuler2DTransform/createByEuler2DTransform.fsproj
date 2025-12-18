@@ -24,7 +24,7 @@
   </ItemGroup>
 
   <ItemGroup>
-    <Compile Include="connectedComponents.fs" />
+    <Compile Include="createByEuler2DTransform.fs" />
   </ItemGroup>
 
 </Project>
