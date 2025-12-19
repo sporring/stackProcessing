@@ -132,9 +132,17 @@ type Image<'T when 'T: equality> =
     member GetHeight: unit -> uint32
     member GetNumberOfComponentsPerPixel: unit -> uint32
     member GetSize: unit -> uint list
+    member
+      GetSlice: start1: int option * stop1: int option * start2: int option *
+                stop2: int option * start3: int option * stop3: int option ->
+                  Image<'T>
     member GetWidth: unit -> uint32
     member Set: coords: uint list -> value: 'T -> unit
     member private SetImg: itkImg: itk.simple.Image -> unit
+    member
+      SetSlice: start1: int option * stop1: int option * start2: int option *
+                stop2: int option * start3: int option * stop3: int option ->
+                  src: Image<'T> -> Image<'T>
     override ToString: unit -> string
     member castTo: unit -> Image<'S> when 'S: equality
     member decRefCount: unit -> unit

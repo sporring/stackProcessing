@@ -471,8 +471,14 @@ module Stage =
         let transition = ProfileTransition.create Streaming Streaming
         create name build transition id id
 
-    let map<'S,'T> (name: string) (f: 'S -> 'T) (memoryNeed: MemoryNeed) (lengthTransformation: LengthTransformation) : Stage<'S, 'T> =
-        let apply debug input = input |> AsyncSeq.map f
+    let map<'S,'T> (name: string) (f: bool -> 'S -> 'T) (memoryNeed: MemoryNeed) (lengthTransformation: LengthTransformation) : Stage<'S, 'T> =
+        let apply debug input = input |> AsyncSeq.map (f debug)
+        let build () : Pipe<'S,'T> = Pipe.create name apply Streaming
+        let transition = ProfileTransition.create Streaming Streaming
+        create name build transition memoryNeed lengthTransformation // Not right!!!
+
+    let mapi<'S,'T> (name: string) (f: bool -> int64 -> 'S -> 'T) (memoryNeed: MemoryNeed) (lengthTransformation: LengthTransformation) : Stage<'S, 'T> =
+        let apply debug input = input |> AsyncSeq.mapi (f debug)
         let build () : Pipe<'S,'T> = Pipe.create name apply Streaming
         let transition = ProfileTransition.create Streaming Streaming
         create name build transition memoryNeed lengthTransformation // Not right!!!

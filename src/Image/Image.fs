@@ -287,6 +287,14 @@ type Image<'T when 'T : equality>(sz: uint list, ?optionalNumberComponents: uint
     do incMemUsed (Image<_>.memoryEstimateSItk img)
     // count how many references there is to this image.
 
+    let clampStartStop (img: Image<'T>) start1 stop1 start2 stop2 start3 stop3 = 
+        let x0 = [start1; start2; start3] |> List.map (Option.defaultValue 0)
+        let x1 =
+            (img.GetSize(), [stop1; stop2; stop3]) 
+            ||> List.zip 
+            |> List.map (fun (sz, v) -> (Option.defaultValue (int sz)) v) 
+        x0,x1
+
     let mutable nReferences = 1 
  
     do incTotalImages()
@@ -572,10 +580,28 @@ type Image<'T when 'T : equality>(sz: uint list, ?optionalNumberComponents: uint
         let raw = getBoxedPixel this.Image t u
         raw :?> 'T
 
+    member this.GetSlice (start1: int option, stop1: int option, start2: int option, stop2: int option, start3: int option, stop3: int option) : Image<'T> =
+        let filter = new itk.simple.SliceImageFilter()
+        let x0, x1 = clampStartStop this start1 stop1 start2 stop2 start3 stop3
+        filter.SetStart(x0 |> toVectorInt32)
+        filter.SetStop(x1 |> toVectorInt32)
+        let img = filter.Execute (this.toSimpleITK())
+        Image<'T>.ofSimpleITK(img)
+
     member this.Set (coords: uint list) (value: 'T) : unit =
         let u = toVectorUInt32 coords
         let t = fromType<'T>
         setBoxedPixel this.Image t u value
+
+    member this.SetSlice (start1: int option, stop1: int option, start2: int option, stop2: int option, start3: int option, stop3: int option) (src: Image<'T>): Image<'T> =
+        let filter = new itk.simple.PasteImageFilter()
+        let x0, x1 = clampStartStop this start1 stop1 start2 stop2 start3 stop3
+        let sz = (x0,x1) ||> List.zip |> List.map (fun (a,b) -> b-a+1 |> uint)
+        filter.SetDestinationIndex(x0 |> toVectorInt32)
+        filter.SetSourceIndex([0;0;0] |> toVectorInt32)
+        filter.SetSourceSize(sz |> toVectorUInt32)
+        let img = filter.Execute (this.toSimpleITK(),src.toSimpleITK())
+        Image<'T>.ofSimpleITK(img)
 
     member this.Item
         with get(i0: int, i1: int) : 'T =

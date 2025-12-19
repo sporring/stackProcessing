@@ -161,7 +161,12 @@ module Stage =
     val take: name: string -> n: uint -> Stage<'S,'S>
     val map:
       name: string ->
-        f: ('S -> 'T) ->
+        f: (bool -> 'S -> 'T) ->
+        memoryNeed: MemoryNeed ->
+        lengthTransformation: LengthTransformation -> Stage<'S,'T>
+    val mapi:
+      name: string ->
+        f: (bool -> int64 -> 'S -> 'T) ->
         memoryNeed: MemoryNeed ->
         lengthTransformation: LengthTransformation -> Stage<'S,'T>
     val map1:

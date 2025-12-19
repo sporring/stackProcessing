@@ -2,6 +2,7 @@ module StackProcessing
 
 open SlimPipeline // Core processing model
 open System.IO
+open System.Text.RegularExpressions
 
 type Stage<'S,'T> = SlimPipeline.Stage<'S,'T>
 type Profile = SlimPipeline.Profile
@@ -28,7 +29,7 @@ let incIfImage x =
     | _ -> ()
     x
 let incRef () =
-    Stage.map "incRefCountOp" incIfImage id id
+    Stage.map "incRefCountOp" (fun _ -> incIfImage) id id
 let decIfImage x =
     match box x with
     | :? Image<uint8> as im -> im.decRefCount()   // or img.incNRefCount(1) if it takes an int
@@ -44,7 +45,7 @@ let decIfImage x =
     | _ -> ()
     x
 let decRef () =
-    Stage.map "decRefCountOp" decIfImage id id
+    Stage.map "decRefCountOp" (fun _ -> decIfImage) id id
 let releaseAfter (f: Image<'S>->'T) (I: Image<'S>) = 
     let v = f I
     I.decRefCount()
@@ -77,7 +78,7 @@ let inline isExactlyImage<'T> () =
 let promoteStreamingToWindow (name: string) (winSz: uint) (pad: uint) (stride: uint) (emitStart: uint) (emitCount: uint) (stage: Stage<'T,'S>) : Stage<'T, 'S> = // Does not change shape
         let zeroMaker i = id
         (Stage.window $"{name}: window" winSz pad zeroMaker stride) 
-        --> (Stage.map $"{name}: skip and take" (fun lst ->
+        --> (Stage.map $"{name}: skip and take" (fun _ lst ->
                 let result = lst |> List.skip (int stride) |> List.take 1
                 printfn $"disposing of {stride} initial images"
                 lst |> List.take (int stride) |> List.map decIfImage |> ignore
@@ -105,12 +106,16 @@ let (>=>>) (pl: Plan<'In, 'S>) (stage1: Stage<'S, 'U>, stage2: Stage<'S, 'V>) : 
     Plan.(>=>>) (pl >=> incRef ()) (stg1, stg2)
 let (>>=>) = Plan.(>>=>)
 let (>>=>>) = Plan.(>>=>>)
+let ignoreSingles () : Stage<_,unit> = Stage.ignore (decIfImage>>ignore)
+let ignorePairs () : Stage<_,unit> = Stage.ignorePairs<_,unit> ((decIfImage>>ignore),(decIfImage>>ignore))
 let zeroMaker (index: int) (ex: Image<'S>) : Image<'S> = new Image<'S>(ex.GetSize(), 1u, "padding", index)
 let window windowSize pad stride = Stage.window "window" windowSize pad zeroMaker stride
 let flatten () = Stage.flatten "flatten"
 let map f = Stage.map "map" f id id
-let sink (pl: Plan<unit,unit>) : unit = 
+let sinkOp (pl: Plan<unit,unit>) : unit = 
     Plan.sink pl
+let sink (pl: Plan<unit,'T>) : unit =
+    pl >=> ignoreSingles () |> Plan.sink
 let sinkList (plLst: Plan<unit,unit> list) : unit = Plan.sinkList plLst
 //let combineIgnore = Plan.combineIgnore
 let drain pl = Plan.drainSingle "drainSingle" pl
@@ -120,8 +125,6 @@ let drainLast pl = Plan.drainLast "drainLast" pl
 let tap = Stage.tap
 //let tap str = Stage.tap str --> incRef()// tap and tapIt neither realeases after nor increases number of references
 let tapIt = Stage.tapIt
-let ignoreSingles () : Stage<_,unit> = Stage.ignore (decIfImage>>ignore)
-let ignorePairs () : Stage<_,unit> = Stage.ignorePairs<_,unit> ((decIfImage>>ignore),(decIfImage>>ignore))
 let idStage<'T> = Stage.idStage<'T>
 
 let liftUnary name  = Stage.liftReleaseUnary name ignore
@@ -133,46 +136,6 @@ let getBytesPerComponent<'T> = (typeof<'T> |> Image.getBytesPerComponent |> uint
 type System.String with // From https: //stackoverflow.com/questions/1936767/f-case-insensitive-string-compare
     member s1.icompare(s2: string) =
         System.String.Equals(s1, s2, System.StringComparison.CurrentCultureIgnoreCase)
-
-let write (outputDir: string) (suffix: string) : Stage<Image<'T>, unit> =
-    let t = typeof<'T>
-    if (suffix.icompare ".tif" || suffix.icompare ".tiff") 
-        && not (t = typeof<uint8> || t = typeof<int8> || t = typeof<uint16> || t = typeof<int16> || t = typeof<float32>) then
-        failwith $"[write] tiff images only supports (u)int8, (u)int16 and float32 but was {t.Name}" 
-    if not (Directory.Exists(outputDir)) then
-        Directory.CreateDirectory(outputDir) |> ignore
-    let consumer (debug: bool) (idx: int) (image: Image<'T>) =
-        let fileName = Path.Combine(outputDir, sprintf "image_%03d%s" idx suffix)
-        if debug then printfn "[write] Saved image %d to %s as %s" idx fileName (typeof<'T>.Name) 
-        image.toFile(fileName)
-        image.decRefCount()
-    let memoryNeed = id
-    Stage.consumeWith $"write \"{outputDir}/*{suffix}\"" consumer memoryNeed
-
-let show (plt: Image<'T> -> unit) : Stage<Image<'T>, unit> =
-    let consumer (debug: bool) (idx: int) (image: Image<'T>) =
-        if debug then printfn "[show] Showing image %d" idx
-        let width = image.GetWidth() |> int
-        let height = image.GetHeight() |> int
-        plt image
-        image.decRefCount()
-    let memoryNeed = id
-    Stage.consumeWith "show" consumer memoryNeed
-
-let plot (plt: (float list)->(float list)->unit) : Stage<(float * float) list, unit> = // better be (float*float) list
-    let consumer (debug: bool) (idx: int) (points: (float*float) list) =
-        if debug then printfn $"[plot] Plotting {points.Length} 2D points"
-        let x,y = points |> List.unzip
-        plt x y
-    let memoryNeed = id
-    Stage.consumeWith "plot" consumer memoryNeed
-
-let print () : Stage<'T, unit> =
-    let consumer (debug: bool) (idx: int) (elm: 'T) =
-        if debug then printfn "[print]"
-        printfn "%d -> %A" idx elm
-    let memoryNeed = id
-    Stage.consumeWith "print" consumer memoryNeed
 
 (*
 let liftImageSource (name: string) (img: Image<'T>) : Pipe<unit, Image<'T>> =
@@ -309,7 +272,7 @@ let square<'T when 'T: equality> : Stage<Image<'T>,Image<'T>> =
 
 //let histogram<'T when 'T: comparison> = histogramOp<'T> "histogram"
 let imageHistogram () =
-    Stage.map<Image<'T>,Map<'T,uint64>> "histogram: map" (releaseAfter ImageFunctions.histogram) id id// Assumed max for uint8, can be done better
+    Stage.map<Image<'T>,Map<'T,uint64>> "histogram: map" (fun _ -> releaseAfter ImageFunctions.histogram) id id// Assumed max for uint8, can be done better
 
 let imageHistogramFold () =
     Stage.fold<Map<'T,uint64>, Map<'T,uint64>> "histogram: fold" ImageFunctions.addHistogram (Map.empty<'T, uint64>) id (fun _ -> 1UL)
@@ -332,7 +295,7 @@ let inline pairs2ints< ^T, ^S when ^T: (static member op_Explicit: ^T -> int) an
 
 type ImageStats = ImageFunctions.ImageStats
 let imageComputeStats () =
-    Stage.map<Image<'T>,ImageStats> "computeStats: map" (releaseAfter ImageFunctions.computeStats) id id
+    Stage.map<Image<'T>,ImageStats> "computeStats: map" (fun _ -> releaseAfter ImageFunctions.computeStats) id id
 
 let imageComputeStatsFold () =
     let zeroStats: ImageStats = { 
@@ -412,8 +375,9 @@ let discreteGaussianOp (name: string) (sigma: float) (outputRegionMode: ImageFun
     // => n = (windowSize-length-2*pad)/(2*pad-windowSize)
     // e.g., integer solutions for 
     // windowSize = 1, 6, 15, or 26, pad = 2, length = 22, => n = 21, 10, 1, or 0
-    printfn $"discreteGaussianOp: sigma {sigma}, ksz {ksz}, win {win}, stride {stride}, pad {pad}"
-    let f = volFctToLstFctReleaseAfter (ImageFunctions.discreteGaussian 3u sigma (ksz |> Some) outputRegionMode boundaryCondition) pad stride
+    let f debug = 
+        if debug then printfn $"discreteGaussianOp: sigma {sigma}, ksz {ksz}, win {win}, stride {stride}, pad {pad}"
+        volFctToLstFctReleaseAfter (ImageFunctions.discreteGaussian 3u sigma (ksz |> Some) outputRegionMode boundaryCondition) pad stride
     let memoryNeed nPixels = (2UL*nPixels*(uint64 win) + (uint64 ksz))*(typeof<float> |> Image.getBytesPerComponent |> uint64)
     let lengthTransformation nElems = 
         match outputRegionMode with
@@ -467,7 +431,7 @@ let convolveOp (name: string) (kernel: Image<'T>) (outputRegionMode: ImageFuncti
         match outputRegionMode with
             | Some Valid -> 0u
             | _ -> ksz/2u //floor
-    let f = volFctToLstFctReleaseAfter (fun image3D -> ImageFunctions.convolve outputRegionMode bc image3D kernel) pad stride
+    let f debug =  volFctToLstFctReleaseAfter (fun image3D -> ImageFunctions.convolve outputRegionMode bc image3D kernel) pad stride
     let memoryNeed nPixels = (2UL*nPixels*(uint64 win) + (uint64 ksz))*(typeof<'T> |> Image.getBytesPerComponent |> uint64)
     let lengthTransformation nElems = nElems - 2UL*(uint64 pad) 
     let stg = Stage.map name f memoryNeed lengthTransformation
@@ -488,7 +452,7 @@ let private makeMorphOp (name: string) (radius: uint) (winSz: uint option) (core
     let win = Option.defaultValue ksz winSz |> min ksz
     let stride = win - ksz + 1u
 
-    let f = volFctToLstFctReleaseAfter (core radius) pad stride
+    let f debug = volFctToLstFctReleaseAfter (core radius) pad stride
     let stg = Stage.map name f id id
     (window win pad stride) --> stg --> flatten ()
 
@@ -500,13 +464,13 @@ let closing radius = makeMorphOp "binaryErode"  radius None ImageFunctions.binar
 /// Full stack operators
 let binaryFillHoles (winSz: uint)= 
     let pad, stride = 0u, winSz
-    let f = volFctToLstFctReleaseAfter (ImageFunctions.binaryFillHoles) pad stride
+    let f debug = volFctToLstFctReleaseAfter (ImageFunctions.binaryFillHoles) pad stride
     let stg = Stage.map "fillHoles" f id id
     (window winSz pad stride) --> stg --> flatten ()
 
 let connectedComponents (winSz: uint) = 
     let pad, stride = 0u, winSz
-    let f = volFctToLstFctReleaseAfter (ImageFunctions.connectedComponents) pad stride
+    let mapper debug = volFctToLstFctReleaseAfter (ImageFunctions.connectedComponents) pad stride
     let btUint8 = typeof<uint8>|>Image.getBytesPerComponent |> uint64
     let btUint64 = typeof<uint64> |> Image.getBytesPerComponent |> uint64
     // Sliding window applying f cost assuming f has no extra costs: 
@@ -524,34 +488,34 @@ let connectedComponents (winSz: uint) =
         let str = uint64 stride
         max (nPixels*(wsz*(2UL*bt8+bt64)-str*bt8)) (nPixels*(wsz*(bt8+bt64)+str*(bt64-bt8)))
     let lengthTransformation = id
-    let stg = Stage.map "connectedComponents" f memoryNeed lengthTransformation
+    let stg = Stage.map "connectedComponents" mapper memoryNeed lengthTransformation
     (window winSz pad stride) --> stg --> flatten ()
 
 let relabelComponents a (winSz: uint) = 
     let pad, stride = 0u, winSz
-    let f = volFctToLstFctReleaseAfter (ImageFunctions.relabelComponents a) pad stride
+    let f debug = volFctToLstFctReleaseAfter (ImageFunctions.relabelComponents a) pad stride
     let stg = Stage.map "relabelComponents" f id id
     (window winSz pad stride) --> stg --> flatten ()
 
 let watershed a (winSz: uint) =
     let pad, stride = 0u, winSz
-    let f = volFctToLstFctReleaseAfter (ImageFunctions.watershed a) pad stride
+    let f debug = volFctToLstFctReleaseAfter (ImageFunctions.watershed a) pad stride
     let stg = Stage.map "watershed" f id id
     (window winSz pad stride) --> stg --> flatten ()
 let signedDistanceMap (winSz: uint) =
     let pad, stride = 0u, winSz
-    let f = volFctToLstFctReleaseAfter (ImageFunctions.signedDistanceMap 0uy 1uy) pad stride
+    let f debug = volFctToLstFctReleaseAfter (ImageFunctions.signedDistanceMap 0uy 1uy) pad stride
     let stg = Stage.map "signedDistanceMap" f id id
     (window winSz pad stride) --> stg --> flatten ()
 let otsuThreshold (winSz: uint) =
     let pad, stride = 0u, winSz
-    let f = volFctToLstFctReleaseAfter (ImageFunctions.otsuThreshold) pad stride
+    let f debug = volFctToLstFctReleaseAfter (ImageFunctions.otsuThreshold) pad stride
     let stg = Stage.map "otsuThreshold" f id id
     (window winSz pad stride) --> stg --> flatten ()
 
 let momentsThreshold (winSz: uint) =
     let pad, stride = 0u, winSz
-    let f = volFctToLstFctReleaseAfter (ImageFunctions.momentsThreshold) pad stride
+    let f debug = volFctToLstFctReleaseAfter (ImageFunctions.momentsThreshold) pad stride
     let stg = Stage.map "momentsThreshold" f id id
     (window winSz pad stride) --> stg --> flatten ()
 
@@ -562,45 +526,102 @@ let addNormalNoise a b = liftUnaryReleaseAfter "addNormalNoise" (ImageFunctions.
 let ImageConstantPad<'T when 'T: equality> (padLower: uint list) (padUpper: uint list) (c: double) =
     liftUnaryReleaseAfter "constantPad2D" (ImageFunctions.constantPad2D padLower padUpper c) id id // Check that constantPad2D makes a new image!!!
 
-let readFiles<'T when 'T: equality> (debug: bool) : Stage<string, Image<'T>> =
-    let name = "readFiles"
-    if debug then printfn $"[{name} cast to {typeof<'T>.Name}]"
-    let mutable width = 0u // We need to read the first image in order to find its size
-    let mutable height = 0u
+(*
+let writeOld (outputDir: string) (suffix: string) : Stage<Image<'T>, unit> =
+    let t = typeof<'T>
+    if (suffix.icompare ".tif" || suffix.icompare ".tiff") 
+        && not (t = typeof<uint8> || t = typeof<int8> || t = typeof<uint16> || t = typeof<int16> || t = typeof<float32>) then
+        failwith $"[write] tiff images only supports (u)int8, (u)int16 and float32 but was {t.Name}" 
+    if not (Directory.Exists(outputDir)) then
+        Directory.CreateDirectory(outputDir) |> ignore
+    let consumer (debug: bool) (idx: int) (image: Image<'T>) =
+        let fileName = Path.Combine(outputDir, sprintf "image_%03d%s" idx suffix)
+        if debug then printfn "[write] Saved image %d to %s as %s" idx fileName (typeof<'T>.Name) 
+        image.toFile(fileName)
+        image.decRefCount()
+    let memoryNeed = id
+    Stage.consumeWith $"write \"{outputDir}/*{suffix}\"" consumer memoryNeed
+*)
 
-    let mapper (fileName: string) : Image<'T> = 
-        if debug then printfn "[%s] Reading image named %s as %s" name fileName (typeof<'T>.Name)
-        let image = Image<'T>.ofFile fileName
-        if width = 0u then
-            width <- image.GetWidth()
-            height <- image.GetHeight()
+let write (outputDir: string) (suffix: string) : Stage<Image<'T>, Image<'T>> =
+    let t = typeof<'T>
+    if (suffix.icompare ".tif" || suffix.icompare ".tiff") 
+        && not (t = typeof<uint8> || t = typeof<int8> || t = typeof<uint16> || t = typeof<int16> || t = typeof<float32>) then
+        failwith $"[write] tiff images only supports (u)int8, (u)int16 and float32 but was {t.Name}" 
+    if not (Directory.Exists(outputDir)) then
+        Directory.CreateDirectory(outputDir) |> ignore
+    let mapper (debug: bool) (idx: int64) (image: Image<'T>) =
+        let fileName = Path.Combine(outputDir, sprintf "image_%03d%s" idx suffix)
+        if debug then printfn "[write] Saved image %d to %s as %s" idx fileName (typeof<'T>.Name) 
+        image.toFile(fileName)
         image
+    let memoryNeed = id
+    Stage.mapi $"write \"{outputDir}/*{suffix}\"" mapper memoryNeed id
 
-    let memoryNeed = fun _ -> Image<'T>.memoryEstimate width height
+let getChunkFilename (path: string) (suffix: string) (i: int) (j: int) (k: int) =
+    Path.Combine(path, sprintf "chunk%d_%d_%d%s" i j k suffix)
+
+let writeInChunks (outputDir: string) (suffix: string) (width:uint) (height:uint) (winSz:uint) : Stage<Image<'T>, Image<'T>> =
+    let t = typeof<'T>
+    if (suffix.icompare ".tif" || suffix.icompare ".tiff") 
+        && not (t = typeof<uint8> || t = typeof<int8> || t = typeof<uint16> || t = typeof<int16> || t = typeof<float32>) then
+        failwith $"[write] tiff images only supports (u)int8, (u)int16 and float32 but was {t.Name}" 
+    if not (Directory.Exists(outputDir)) then
+        Directory.CreateDirectory(outputDir) |> ignore
+
+    let pad, stride = 0u, winSz
+    let f (debug: bool) (k: int64) (stack: Image<'T>) = 
+        for i in [0u..stack.GetWidth()/width-1u] do
+            for j in [0u..stack.GetHeight()/height-1u] do
+                let fileName = getChunkFilename outputDir suffix (int i) (int j) (int k)
+                if debug then printfn "[write] Saved chunk %d %d %d to %s as %s" i j k fileName (typeof<'T>.Name) 
+                let x00 = i*width |> int
+                let x01 = ((i+1u)*width-1u |> int, stack.GetWidth()-1u |> int) ||> min
+                let x10 = j*height |> int
+                let x11 = ((j+1u)*height |> int, stack.GetHeight()-1u |> int) ||> min
+                let x20 = 0
+                let x21 = winSz-1u |> int
+                let chunck = stack.[x00 .. x01, x10 .. x11 , x20 .. x21]
+                chunck.toFile(fileName)
+                chunck.decRefCount()
+        stack
+    let mapper (debug: bool) (idx: int64)= volFctToLstFctReleaseAfter (f debug idx) pad stride
+    let btUint8 = typeof<uint8>|>Image.getBytesPerComponent |> uint64
+    let btUint64 = typeof<uint64> |> Image.getBytesPerComponent |> uint64
+    let memoryNeed nPixels = 
+        let bt8 = typeof<uint8>|>Image.getBytesPerComponent |> uint64
+        let bt64 = typeof<uint64> |> Image.getBytesPerComponent |> uint64
+        let wsz = uint64 winSz
+        let str = uint64 stride
+        max (nPixels*(wsz*(2UL*bt8+bt64)-str*bt8)) (nPixels*(wsz*(bt8+bt64)+str*(bt64-bt8)))
     let lengthTransformation = id
+    let stg = Stage.mapi "writeInChunks" mapper memoryNeed lengthTransformation
+    (window winSz pad stride) --> stg --> flatten ()
 
-    Stage.map name mapper memoryNeed lengthTransformation
+let show (plt: Image<'T> -> unit) : Stage<Image<'T>, unit> =
+    let consumer (debug: bool) (idx: int) (image: Image<'T>) =
+        if debug then printfn "[show] Showing image %d" idx
+        let width = image.GetWidth() |> int
+        let height = image.GetHeight() |> int
+        plt image
+        image.decRefCount()
+    let memoryNeed = id
+    Stage.consumeWith "show" consumer memoryNeed
 
-let readFilePairs<'T when 'T: equality> (debug: bool) : Stage<string*string, Image<'T>*Image<'T>> =
-    let name = "readFilePairs"
-    if debug then printfn $"[{name} cast to {typeof<'T>.Name}]"
-    let mutable width = 0u // We need to read the first image in order to find its size
-    let mutable height = 0u
+let plot (plt: (float list)->(float list)->unit) : Stage<(float * float) list, unit> = // better be (float*float) list
+    let consumer (debug: bool) (idx: int) (points: (float*float) list) =
+        if debug then printfn $"[plot] Plotting {points.Length} 2D points"
+        let x,y = points |> List.unzip
+        plt x y
+    let memoryNeed = id
+    Stage.consumeWith "plot" consumer memoryNeed
 
-    let mapper (fileName1: string, fileName2:string) : Image<'T>*Image<'T> = 
-        if debug then printfn "[%s] Reading image named %s as %s" name fileName1 (typeof<'T>.Name)
-        let image1 = Image<'T>.ofFile fileName1
-        if debug then printfn "[%s] Reading image named %s as %s" name fileName2 (typeof<'T>.Name)
-        let image2 = Image<'T>.ofFile fileName2
-        if width = 0u then
-            width <- image1.GetWidth()
-            height <- image1.GetHeight()
-        image1, image2
-
-    let memoryNeed = fun _ -> 2UL*Image<'T>.memoryEstimate width height
-    let lengthTransformation = id
-
-    Stage.map name mapper memoryNeed lengthTransformation
+let print () : Stage<'T, unit> =
+    let consumer (debug: bool) (idx: int) (elm: 'T) =
+        if debug then printfn "[print]"
+        printfn "%d -> %A" idx elm
+    let memoryNeed = id
+    Stage.consumeWith "print" consumer memoryNeed
 
 // Not Pipes nor Operators
 type FileInfo = ImageFunctions.FileInfo
@@ -628,6 +649,40 @@ let getStackHeight (inputDir: string) (suffix: string) : uint64 =
     let fi = getStackInfo inputDir suffix
     //printfn "%A" fi
     fi.size[1]
+
+type ChunkInfo = { chunks: int list; stackInfo: FileInfo}
+let getChunkInfo (inputDir: string) (suffix: string) : ChunkInfo =
+    let (|IJK|_|) (s: string) =
+        let rx = Regex(@"chunk(\d+)_(\d+)_(\d+)(.*)$", RegexOptions.Compiled)
+        let m = rx.Match s
+        if m.Success then
+            Some (
+                //m.Groups[1].Value,   // prefix
+                int m.Groups[2].Value, // i
+                int m.Groups[3].Value, // j
+                int m.Groups[4].Value  // k
+                //m.Groups[5].Value    // suffix
+            )
+        else None    
+    let files = Directory.GetFiles(inputDir, "*"+suffix)
+    let maxI, maxJ, maxK, topLeft, bottomRight = 
+        Array.fold
+            (fun (maxI: int, maxJ: int, maxK: int, tl: string, br: string) (str: string) -> 
+                match str with 
+                    IJK (i, j, k) when i >= maxI && j >= maxJ && k >= maxK -> (i,j,k,tl,str)
+                    | IJK (i, j, k) when i = 0 && j = 0 && k = 0 -> (i,j,k,str,br)
+                    | _ -> failwith "Error parsing chunk names!"
+            ) (System.Int32.MinValue, System.Int32.MinValue, System.Int32.MinValue, "", "") files
+    let topLeftFi = ImageFunctions.getFileInfo topLeft
+    let bottomRightFi = ImageFunctions.getFileInfo bottomRight
+
+    let stackSize = 
+        [
+            (uint64 maxI - 1UL) * topLeftFi.size[0] + bottomRightFi.size[0];
+            (uint64 maxJ - 1UL) * topLeftFi.size[1] + bottomRightFi.size[1];
+            (uint64 maxK - 1UL) * topLeftFi.size[2] + bottomRightFi.size[2];
+        ]
+    { chunks = [maxI+1;maxJ+1;maxK+1]; stackInfo = {topLeftFi with size = stackSize} }
 
 let srcStage (name: string) (width: uint) (height: uint) (depth: uint) (mapper: int->Image<'T>) =
     let transition = ProfileTransition.create Unit Streaming
@@ -681,6 +736,46 @@ let getFilenames (inputDir: string) (suffix: string) (filter: string[]->string[]
     let length = depth
     Plan.create stage pl.memAvail memPeak memPerElem length pl.debug
 
+let readFiles<'T when 'T: equality> (debug: bool) : Stage<string, Image<'T>> =
+    let name = "readFiles"
+    if debug then printfn $"[{name} cast to {typeof<'T>.Name}]"
+    let mutable width = 0u // We need to read the first image in order to find its size
+    let mutable height = 0u
+
+    let mapper (debug: bool) (fileName: string) : Image<'T> = 
+        if debug then printfn "[%s] Reading image named %s as %s" name fileName (typeof<'T>.Name)
+        let image = Image<'T>.ofFile fileName
+        if width = 0u then
+            width <- image.GetWidth()
+            height <- image.GetHeight()
+        image
+
+    let memoryNeed = fun _ -> Image<'T>.memoryEstimate width height
+    let lengthTransformation = id
+
+    Stage.map name mapper memoryNeed lengthTransformation
+
+let readFilePairs<'T when 'T: equality> (debug: bool) : Stage<string*string, Image<'T>*Image<'T>> =
+    let name = "readFilePairs"
+    if debug then printfn $"[{name} cast to {typeof<'T>.Name}]"
+    let mutable width = 0u // We need to read the first image in order to find its size
+    let mutable height = 0u
+
+    let mapper (debug: bool) (fileName1: string, fileName2:string) : Image<'T>*Image<'T> = 
+        if debug then printfn "[%s] Reading image named %s as %s" name fileName1 (typeof<'T>.Name)
+        let image1 = Image<'T>.ofFile fileName1
+        if debug then printfn "[%s] Reading image named %s as %s" name fileName2 (typeof<'T>.Name)
+        let image2 = Image<'T>.ofFile fileName2
+        if width = 0u then
+            width <- image1.GetWidth()
+            height <- image1.GetHeight()
+        image1, image2
+
+    let memoryNeed = fun _ -> 2UL*Image<'T>.memoryEstimate width height
+    let lengthTransformation = id
+
+    Stage.map name mapper memoryNeed lengthTransformation
+
 let readFiltered<'T when 'T: equality> (inputDir: string) (suffix: string) (filter: string[]->string[]) (pl: Plan<unit, unit>) : Plan<unit, Image<'T>> =
     pl |> getFilenames inputDir suffix filter >=> readFiles pl.debug
 
@@ -689,6 +784,45 @@ let read<'T when 'T: equality> (inputDir: string) (suffix: string) (pl: Plan<uni
 
 let readRandom<'T when 'T: equality> (count: uint) (inputDir: string) (suffix: string) (pl: Plan<unit, unit>) : Plan<unit, Image<'T>> =
     readFiltered<'T> inputDir suffix (Array.randomChoices (int count)) pl
+
+let readChunksAsWindows<'T when 'T: equality> (inputDir: string) (suffix: string) (pl: Plan<unit, unit>) : Plan<unit, Image<'T> list> =
+    let name = "readChunks"
+    let chunkInfo = getChunkInfo inputDir suffix
+    let depth = uint64 chunkInfo.chunks[2] // we will read chunks_*_*_i* as windows
+    let chunkWidth = int chunkInfo.stackInfo.size[0]/chunkInfo.chunks[0]
+    let chunkHeight = int chunkInfo.stackInfo.size[1]/chunkInfo.chunks[1]
+    let chunkDepth = int chunkInfo.stackInfo.size[2]/chunkInfo.chunks[2]
+
+    let mapper (k: int) : Image<'T> list = 
+        let chunkSlice = Image<'T>(chunkInfo.stackInfo.size|>List.map uint,chunkInfo.stackInfo.numberOfComponents)
+        for i in [0 .. chunkInfo.chunks[0]-1] do
+            for j in [0 .. chunkInfo.chunks[1]-1] do
+                let fileName = getChunkFilename inputDir suffix i j k
+                let img = Image<'T>.ofFile fileName
+                let start1 = i*chunkWidth|>Some
+                let stop1 = i*chunkWidth+(img.GetWidth()|>int)-1|>Some
+                let start2 = j*chunkHeight|>Some
+                let stop2 = j*chunkHeight+(img.GetHeight()|>int)-1|>Some
+                let start3 = k*chunkDepth|>Some
+                let stop3 = k*chunkDepth+(img.GetDepth()|>int)-1|>Some
+                chunkSlice.SetSlice (start1, stop1, start2, stop2, start3, stop3) (img) |> ignore
+                img.decRefCount()
+        let res = chunkSlice |> ImageFunctions.unstack
+        chunkSlice.decRefCount()
+        res
+
+    let transition = ProfileTransition.create Unit Streaming
+    let memPeak = 256UL // surrugate string length
+    let memoryNeed = fun _ -> memPeak
+    let lengthTransformation = fun _ -> depth
+    let stage = Stage.init $"{name}" (uint depth) mapper transition memoryNeed lengthTransformation |> Some
+
+    let memPerElem = 256UL // surrugate string length
+    let length = depth
+    Plan.create stage pl.memAvail memPeak memPerElem depth pl.debug
+
+let readChunks<'T when 'T: equality> (inputDir: string) (suffix: string) (pl: Plan<unit, unit>) : Plan<unit, Image<'T>> =
+    pl |> readChunksAsWindows inputDir suffix >=> flatten ()
 
 let empty (pl: Plan<unit, unit>) : Plan<unit, unit> =
     let stage = "empty" |> Stage.empty |> Some
@@ -734,7 +868,7 @@ let makeAdjacencyGraph (): Stage<Image<uint64>*Image<uint64>,uint*simpleGraph.Gr
 
 let makeTranslationTable () : Stage<uint*simpleGraph.Graph<uint*uint64>,(uint*uint64*uint64) list> =
     let name = "makeTranslationTable"
-    let mapper (i: uint, graph:simpleGraph.Graph<uint*uint64>) = 
+    let mapper (debug: bool) (i: uint, graph:simpleGraph.Graph<uint*uint64>) = 
         let cc = simpleGraph.connectedComponents graph
         List.zip cc [1UL .. uint64 cc.Length]
         |> List.collect (fun ( nodeLst, newVal) -> List.map (fun (chunk, oldVal) -> (chunk, oldVal, newVal)) nodeLst)
@@ -752,7 +886,7 @@ let updateConnectedComponents (winSz: uint) (translationTable: (uint*uint64*uint
     let translationTableChunked = List.groupBy (fun (c,_,_) -> c) translationTable
     let translationMap = List.map (fun (_,lst) -> (0u,0UL,0UL)::lst |> List.map (fun (_,i,j)->(i,j)) |> Map.ofList) translationTableChunked
 
-    let mapper (image: Image<uint64>) : Image<uint64> = 
+    let mapper (debug: bool) (image: Image<uint64>) : Image<uint64> = 
         let chunk = image.index/int winSz
         //let _,trans = translationTableChunked[chunk]
         //let res = Image.map (fun v -> if v=0UL then 0UL else trans |> List.find (fun (_,w,_) -> v = w) |> trd) image
@@ -767,3 +901,14 @@ let updateConnectedComponents (winSz: uint) (translationTable: (uint*uint64*uint
     let lengthTransformation = id
     Stage.map "updateConnectedComponents" mapper memoryNeed lengthTransformation
 
+(*
+let permuteAxes (order: uint list): Stage<Image<'T>,Image<'T>> =
+    if order.Length <> 3 then
+        failwith "Can only work with 3-dimensional images"
+    elif order[0] = order[1] || order[0] = order[2] || order[1] = order[2] then
+        failwith "Order must be a permuation of [0u;1u;2u]"
+    elif order[0] = 1u && order[1] = 0u then
+        // permute 01 with itk.Simpel.PermuteAxesImageFilter 
+    else
+        // writechunks and reread in permuted order
+*)
