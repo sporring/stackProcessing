@@ -70,6 +70,10 @@ val (>>=>>) :
      SlimPipeline.Stage<('a * 'b),('c * 'd)> -> SlimPipeline.Plan<'e,('c * 'd)>)
     when 'c: equality and 'd: equality
 
+val ignoreSingles: unit -> Stage<'a,unit>
+
+val ignorePairs: unit -> Stage<('a * unit),unit>
+
 val zeroMaker: index: int -> ex: Image<'S> -> Image<'S> when 'S: equality
 
 val window:
@@ -79,9 +83,11 @@ val window:
 
 val flatten: unit -> SlimPipeline.Stage<'a list,'a>
 
-val map: f: ('a -> 'b) -> SlimPipeline.Stage<'a,'b>
+val map: f: (bool -> 'a -> 'b) -> SlimPipeline.Stage<'a,'b>
 
-val sink: pl: SlimPipeline.Plan<unit,unit> -> unit
+val sinkOp: pl: SlimPipeline.Plan<unit,unit> -> unit
+
+val sink: pl: SlimPipeline.Plan<unit,'T> -> unit
 
 val sinkList: plLst: SlimPipeline.Plan<unit,unit> list -> unit
 
@@ -94,10 +100,6 @@ val drainLast: pl: SlimPipeline.Plan<unit,'a> -> 'a
 val tap: (string -> SlimPipeline.Stage<'a,'a>)
 
 val tapIt: (('a -> string) -> SlimPipeline.Stage<'a,'a>)
-
-val ignoreSingles: unit -> Stage<'a,unit>
-
-val ignorePairs: unit -> Stage<('a * unit),unit>
 
 val idStage<'T> : (string -> SlimPipeline.Stage<'T,'T>)
 
@@ -118,16 +120,6 @@ val getBytesPerComponent<'T> : uint64
 type System.String with
     
     member icompare: s2: string -> bool
-
-val write:
-  outputDir: string -> suffix: string -> Stage<Image<'T>,unit> when 'T: equality
-
-val show: plt: (Image<'T> -> unit) -> Stage<Image<'T>,unit> when 'T: equality
-
-val plot:
-  plt: (float list -> float list -> unit) -> Stage<(float * float) list,unit>
-
-val print: unit -> Stage<'T,unit>
 
 /// Pixel type casting
 val cast<'S,'T when 'S: equality and 'T: equality> :
@@ -382,11 +374,25 @@ val ImageConstantPad<'T when 'T: equality> :
     padUpper: uint list ->
     c: double -> SlimPipeline.Stage<Image<obj>,Image<obj>> when 'T: equality
 
-val readFiles: debug: bool -> Stage<string,Image<'T>> when 'T: equality
-
-val readFilePairs:
-  debug: bool -> Stage<(string * string),(Image<'T> * Image<'T>)>
+val write:
+  outputDir: string -> suffix: string -> Stage<Image<'T>,Image<'T>>
     when 'T: equality
+
+val getChunkFilename:
+  path: string -> suffix: string -> i: int -> j: int -> k: int -> string
+
+val writeInChunks:
+  outputDir: string ->
+    suffix: string ->
+    width: uint -> height: uint -> winSz: uint -> Stage<Image<'T>,Image<'T>>
+    when 'T: equality
+
+val show: plt: (Image<'T> -> unit) -> Stage<Image<'T>,unit> when 'T: equality
+
+val plot:
+  plt: (float list -> float list -> unit) -> Stage<(float * float) list,unit>
+
+val print: unit -> Stage<'T,unit>
 
 type FileInfo = ImageFunctions.FileInfo
 
@@ -399,6 +405,14 @@ val getStackSize: inputDir: string -> suffix: string -> uint * uint * uint
 val getStackWidth: inputDir: string -> suffix: string -> uint64
 
 val getStackHeight: inputDir: string -> suffix: string -> uint64
+
+type ChunkInfo =
+    {
+      chunks: int list
+      stackInfo: FileInfo
+    }
+
+val getChunkInfo: inputDir: string -> suffix: string -> ChunkInfo
 
 val srcStage:
   name: string ->
@@ -437,6 +451,12 @@ val getFilenames:
     filter: (string array -> string array) ->
     pl: SlimPipeline.Plan<unit,unit> -> SlimPipeline.Plan<unit,string>
 
+val readFiles: debug: bool -> Stage<string,Image<'T>> when 'T: equality
+
+val readFilePairs:
+  debug: bool -> Stage<(string * string),(Image<'T> * Image<'T>)>
+    when 'T: equality
+
 val readFiltered:
   inputDir: string ->
     suffix: string ->
@@ -453,6 +473,18 @@ val read:
 val readRandom:
   count: uint ->
     inputDir: string ->
+    suffix: string ->
+    pl: SlimPipeline.Plan<unit,unit> -> SlimPipeline.Plan<unit,Image<'T>>
+    when 'T: equality
+
+val readChunksAsWindows:
+  inputDir: string ->
+    suffix: string ->
+    pl: SlimPipeline.Plan<unit,unit> -> SlimPipeline.Plan<unit,Image<'T> list>
+    when 'T: equality
+
+val readChunks:
+  inputDir: string ->
     suffix: string ->
     pl: SlimPipeline.Plan<unit,unit> -> SlimPipeline.Plan<unit,Image<'T>>
     when 'T: equality
