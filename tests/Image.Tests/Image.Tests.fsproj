@@ -8,16 +8,31 @@
     <CoverletOutputFormat>lcov</CoverletOutputFormat>
   </PropertyGroup>
 
+  <!-- We want to copy the Managed library regardless of platform -->
   <ItemGroup>
     <Reference Include="SimpleITKCSharp">
-      <HintPath>lib/SimpleITKCSharpManaged.dll</HintPath>
-      <Private>true</Private>
+    <HintPath>../../lib/SimpleITKCSharpManaged.dll</HintPath>
+    <Private>true</Private>
     </Reference>
-    <None Update="lib/libSimpleITKCSharpNative.dylib">
-      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-    </None>
   </ItemGroup>
 
+  <ItemGroup Condition="$([MSBuild]::IsOSPlatform('Windows'))">
+    <None Include="../../lib/SimpleITKCSharpNative.dll">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <TargetPath>libSimpleITKCSharpNative.dll</TargetPath>
+    </None>
+  </ItemGroup>
+  
+  <ItemGroup Condition="$([MSBuild]::IsOSPlatform('Linux'))">
+    <None Include="../../lib/libSimpleITKCSharpNative.so"
+      CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
+  <ItemGroup Condition="$([MSBuild]::IsOSPlatform('OSX'))">
+    <None Include="../../lib/libSimpleITKCSharpNative.dylib"
+      CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+	
   <PropertyGroup>
     <GenerateProgramFile>false</GenerateProgramFile>
   </PropertyGroup>
