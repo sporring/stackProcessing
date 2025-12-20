@@ -515,3 +515,6 @@ val updateConnectedComponents:
     translationTable: (uint * uint64 * uint64) list ->
     Stage<Image<uint64>,Image<uint64>>
 
+val permuteAxes:
+  i: uint * j: uint * k: uint -> Stage<Image<'T>,Image<'T>> when 'T: equality
+
