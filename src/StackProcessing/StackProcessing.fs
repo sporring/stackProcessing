@@ -895,20 +895,18 @@ let updateConnectedComponents (winSz: uint) (translationTable: (uint*uint64*uint
         image.decRefCount()
         res
 
-    let transition = ProfileTransition.create Unit Streaming
-    let memPeak = 2*sizeof<uint> |> uint64
     let memoryNeed = fun _ -> 2*sizeof<uint> |> uint64
     let lengthTransformation = id
     Stage.map "updateConnectedComponents" mapper memoryNeed lengthTransformation
 
-(*
-let permuteAxes (order: uint list): Stage<Image<'T>,Image<'T>> =
-    if order.Length <> 3 then
-        failwith "Can only work with 3-dimensional images"
-    elif order[0] = order[1] || order[0] = order[2] || order[1] = order[2] then
+let permuteAxes (i: uint,j: uint,k: uint): Stage<Image<'T>,Image<'T>> =
+    if i = j || i = k || j = k then
         failwith "Order must be a permuation of [0u;1u;2u]"
-    elif order[0] = 1u && order[1] = 0u then
+    elif i = 1u && j = 0u then
         // permute 01 with itk.Simpel.PermuteAxesImageFilter 
+        let memoryNeed = fun _ -> 2*sizeof<uint> |> uint64
+        let lengthTransformation = id
+        Stage.map "permuteAxes" (fun _ -> ImageFunctions.permuteAxes [i;j;k]) memoryNeed lengthTransformation
     else
         // writechunks and reread in permuted order
-*)
+        failwith "Not implemented yet"

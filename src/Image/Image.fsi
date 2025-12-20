@@ -177,34 +177,34 @@ type Image<'T when 'T: equality> =
     member index: int with get, set
 module ImageFunctions
 val inline imageAddScalar:
-  f1: Image.Image<^S> -> i: ^S -> Image.Image<^S>
+  img: Image.Image<^S> -> i: ^S -> Image.Image<^S>
     when ^S: equality and ^S: (static member op_Explicit: ^S -> float)
 val inline scalarAddImage:
-  i: ^S -> f1: Image.Image<^S> -> Image.Image<^S>
+  i: ^S -> img: Image.Image<^S> -> Image.Image<^S>
     when ^S: equality and ^S: (static member op_Explicit: ^S -> float)
 val inline imageSubScalar:
-  f1: Image.Image<^S> -> i: ^S -> Image.Image<^S>
+  img: Image.Image<^S> -> i: ^S -> Image.Image<^S>
     when ^S: equality and ^S: (static member op_Explicit: ^S -> float)
 val inline scalarSubImage:
-  i: ^S -> f1: Image.Image<^S> -> Image.Image<^S>
+  i: ^S -> img: Image.Image<^S> -> Image.Image<^S>
     when ^S: equality and ^S: (static member op_Explicit: ^S -> float)
 val inline imageMulScalar:
-  f1: Image.Image<^S> -> i: ^S -> Image.Image<^S>
+  img: Image.Image<^S> -> i: ^S -> Image.Image<^S>
     when ^S: equality and ^S: (static member op_Explicit: ^S -> float)
 val inline scalarMulImage:
-  i: ^S -> f1: Image.Image<^S> -> Image.Image<^S>
+  i: ^S -> img: Image.Image<^S> -> Image.Image<^S>
     when ^S: equality and ^S: (static member op_Explicit: ^S -> float)
 val inline imageDivScalar:
-  f1: Image.Image<^S> -> i: ^S -> Image.Image<^S>
+  img: Image.Image<^S> -> i: ^S -> Image.Image<^S>
     when ^S: equality and ^S: (static member op_Explicit: ^S -> float)
 val inline scalarDivImage:
-  i: ^S -> f1: Image.Image<^S> -> Image.Image<^S>
+  i: ^S -> img: Image.Image<^S> -> Image.Image<^S>
     when ^S: equality and ^S: (static member op_Explicit: ^S -> float)
 val inline imagePowScalar:
-  f1: Image.Image<^S> * i: ^S -> Image.Image<^S>
+  img: Image.Image<^S> * i: ^S -> Image.Image<^S>
     when ^S: equality and ^S: (static member op_Explicit: ^S -> float)
 val inline scalarPowImage:
-  i: ^S * f1: Image.Image<^S> -> Image.Image<^S>
+  i: ^S * img: Image.Image<^S> -> Image.Image<^S>
     when ^S: equality and ^S: (static member op_Explicit: ^S -> float)
 val inline sum:
   img: Image.Image<^T> -> ^T
@@ -401,7 +401,7 @@ val momentsThreshold:
   img: Image.Image<'T> -> Image.Image<uint8> when 'T: equality
 /// Coordinate fields
 val generateCoordinateAxis: axis: int -> size: int list -> Image.Image<uint32>
-val histogram: image: Image.Image<'T> -> Map<'T,uint64> when 'T: comparison
+val histogram: img: Image.Image<'T> -> Map<'T,uint64> when 'T: comparison
 val addHistogram:
   h1: Map<'T,uint64> -> h2: Map<'T,uint64> -> Map<'T,uint64> when 'T: comparison
 val map2pairs: map: Map<'T,'S> -> ('T * 'S) list when 'T: comparison
@@ -421,7 +421,6 @@ val threshold:
     when 'T: equality
 val toVectorOfImage: images: #itk.simple.Image seq -> itk.simple.VectorOfImage
 val stack: images: Image.Image<'T> list -> Image.Image<'T> when 'T: equality
-val stackOld: images: Image.Image<'T> list -> Image.Image<'T> when 'T: equality
 val extractSub:
   topLeft: uint list ->
     bottomRight: uint list -> img: Image.Image<'T> -> Image.Image<'T>
@@ -441,3 +440,6 @@ type FileInfo =
     }
 val getFileInfo: filename: string -> FileInfo
 val toSeqSeq: I: Image.Image<'T> -> float seq seq when 'T: equality
+val permuteAxes:
+  order: uint list -> img: Image.Image<'T> -> Image.Image<'S>
+    when 'T: equality and 'S: equality

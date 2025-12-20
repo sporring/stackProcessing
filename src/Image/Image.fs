@@ -373,17 +373,17 @@ type Image<'T when 'T : equality>(sz: uint list, ?optionalNumberComponents: uint
     member this.toSimpleITK () : itk.simple.Image =
         img
 
-    member this.castTo<'S when 'S: equality> () : Image<'S> = Image<'S>.ofSimpleITK(img,"cast")
-    member this.toUInt8 ()   : Image<uint8>   = Image<uint8>.ofSimpleITK img
-    member this.toInt8 ()    : Image<int8>    = Image<int8>.ofSimpleITK img
-    member this.toUInt16 ()  : Image<uint16>  = Image<uint16>.ofSimpleITK img
-    member this.toInt16 ()   : Image<int16>   = Image<int16>.ofSimpleITK img
-    member this.toUInt ()    : Image<uint>    = Image<uint>.ofSimpleITK img
-    member this.toInt ()     : Image<int>     = Image<int>.ofSimpleITK img
-    member this.toUInt64 ()  : Image<uint64>  = Image<uint64>.ofSimpleITK img
-    member this.toInt64 ()   : Image<int64>   = Image<int64>.ofSimpleITK img
-    member this.toFloat32 () : Image<float32> = Image<float32>.ofSimpleITK img
-    member this.toFloat ()   : Image<float>   = Image<float>.ofSimpleITK img
+    member this.castTo<'S when 'S: equality> () : Image<'S> = Image<'S>.ofSimpleITK(this.toSimpleITK(),"cast",this.index)
+    member this.toUInt8 ()   : Image<uint8>   = Image<uint8>.ofSimpleITK(this.toSimpleITK(),"toUInt8",this.index)
+    member this.toInt8 ()    : Image<int8>    = Image<int8>.ofSimpleITK(this.toSimpleITK(),"toInt8",this.index)
+    member this.toUInt16 ()  : Image<uint16>  = Image<uint16>.ofSimpleITK(this.toSimpleITK(),"toUInt16",this.index)
+    member this.toInt16 ()   : Image<int16>   = Image<int16>.ofSimpleITK(this.toSimpleITK(),"toInt16",this.index)
+    member this.toUInt ()    : Image<uint>    = Image<uint>.ofSimpleITK(this.toSimpleITK(),"toUInt",this.index)
+    member this.toInt ()     : Image<int>     = Image<int>.ofSimpleITK(this.toSimpleITK(),"toInt",this.index)
+    member this.toUInt64 ()  : Image<uint64>  = Image<uint64>.ofSimpleITK(this.toSimpleITK(),"toUInt64",this.index)
+    member this.toInt64 ()   : Image<int64>   = Image<int64>.ofSimpleITK(this.toSimpleITK(),"toInt64",this.index)
+    member this.toFloat32 () : Image<float32> = Image<float32>.ofSimpleITK(this.toSimpleITK(),"toFloat32",this.index)
+    member this.toFloat ()   : Image<float>   = Image<float>.ofSimpleITK(this.toSimpleITK(),"toFloat",this.index)
 
     static member ofArray2D (arr: 'T[,], ?name:string) : Image<'T> =
         let _name = defaultArg name ""
@@ -418,22 +418,23 @@ type Image<'T when 'T : equality>(sz: uint list, ?optionalNumberComponents: uint
         let sz = this.GetSize() |> List.map int
         Array4D.init sz[0] sz[1] sz[2] sz[3] (fun i0 i1 i2 i3 -> this.Get([uint i0; uint i1; uint i2; uint i3]))
 
+    // Make a multicomponent image of a list
     static member ofImageList (images: Image<'S> list) : Image<'S list> =
         let itkImages = images |> List.map (fun img -> img.toSimpleITK())
         use filter = new itk.simple.ComposeImageFilter()
         match itkImages with // seems no other way than unrolling them manually
         | [i1; i2] ->
-            Image<'S list>.ofSimpleITK(filter.Execute(i1, i2))
+            Image<'S list>.ofSimpleITK(filter.Execute(i1, i2),"ofImageList",images[0].index)
         | [i1; i2; i3] ->
-            Image<'S list>.ofSimpleITK(filter.Execute(i1, i2, i3))
+            Image<'S list>.ofSimpleITK(filter.Execute(i1, i2, i3),"ofImageList",images[0].index)
         | [i1; i2; i3; i4] ->
-            Image<'S list>.ofSimpleITK(filter.Execute(i1, i2, i3, i4))
+            Image<'S list>.ofSimpleITK(filter.Execute(i1, i2, i3, i4),"ofImageList",images[0].index)
         | [i1; i2; i3; i4; i5] ->
-            Image<'S list>.ofSimpleITK(filter.Execute(i1, i2, i3, i4, i5))
+            Image<'S list>.ofSimpleITK(filter.Execute(i1, i2, i3, i4, i5),"ofImageList",images[0].index)
         | [] ->
             invalidArg "images" "At least two images are required for ComposeImageFilter."
         | _ ->
-            invalidArg "images" "ComposeImageFilter supports up to 10 images."
+            invalidArg "images" "ofImageList supports up to 5 images."
 
     member this.toImageList () : Image<'S> list =
         let filter = new itk.simple.VectorIndexSelectionCastImageFilter()
@@ -441,7 +442,7 @@ type Image<'T when 'T : equality>(sz: uint list, ?optionalNumberComponents: uint
         List.init n (fun i ->
             filter.SetIndex(uint i)
             let scalarItk = filter.Execute(this.Image)
-            Image<'S>.ofSimpleITK scalarItk
+            Image<'S>.ofSimpleITK(scalarItk,"toImageList",this.index+i)
         )
 
     static member ofFile(filename: string, ?optionalName: string, ?optionalIndex: int) : Image<'T> =
@@ -580,13 +581,14 @@ type Image<'T when 'T : equality>(sz: uint list, ?optionalNumberComponents: uint
         let raw = getBoxedPixel this.Image t u
         raw :?> 'T
 
+    // Slicing is available as https://learn.microsoft.com/en-us/dotnet/fsharp/language-reference/arrays
     member this.GetSlice (start1: int option, stop1: int option, start2: int option, stop2: int option, start3: int option, stop3: int option) : Image<'T> =
         let filter = new itk.simple.SliceImageFilter()
         let x0, x1 = clampStartStop this start1 stop1 start2 stop2 start3 stop3
         filter.SetStart(x0 |> toVectorInt32)
         filter.SetStop(x1 |> toVectorInt32)
         let img = filter.Execute (this.toSimpleITK())
-        Image<'T>.ofSimpleITK(img)
+        Image<'T>.ofSimpleITK(img,"GetSlice")
 
     member this.Set (coords: uint list) (value: 'T) : unit =
         let u = toVectorUInt32 coords
@@ -601,7 +603,7 @@ type Image<'T when 'T : equality>(sz: uint list, ?optionalNumberComponents: uint
         filter.SetSourceIndex([0;0;0] |> toVectorInt32)
         filter.SetSourceSize(sz |> toVectorUInt32)
         let img = filter.Execute (this.toSimpleITK(),src.toSimpleITK())
-        Image<'T>.ofSimpleITK(img)
+        Image<'T>.ofSimpleITK(img,"SetSlice")
 
     member this.Item
         with get(i0: int, i1: int) : 'T =
@@ -618,9 +620,6 @@ type Image<'T when 'T : equality>(sz: uint list, ?optionalNumberComponents: uint
             this.Get([ uint i0; uint i1; uint i2; uint i3 ])
         and set(i0: int, i1: int, i2: int, i3: int) (value: 'T) : unit =
             this.Set [ uint i0; uint i1; uint i2; uint i3 ] value
-
-    // Slicing is available as https://learn.microsoft.com/en-us/dotnet/fsharp/language-reference/arrays
-
 
     member this.forAll (p: 'T -> bool) : bool =
         this |> Image.fold (fun acc elm -> acc && p elm) true
@@ -656,62 +655,62 @@ type Image<'T when 'T : equality>(sz: uint list, ?optionalNumberComponents: uint
     /// Comparison operators
     static member isEqual (f1: Image<'S>, f2: Image<'S>) = // Curried form confuses fsharp
         let filter = new itk.simple.EqualImageFilter()
-        Image<'S>.ofSimpleITK(filter.Execute(f1.toSimpleITK(), f2.toSimpleITK()))
+        Image<'S>.ofSimpleITK(filter.Execute(f1.toSimpleITK(), f2.toSimpleITK()),"isEqual")
     static member eq (f1: Image<'S>, f2: Image<'S>) =
         (Image<'S>.isEqual(f1, f2)).forAll equalOne
 
     static member isNotEqual (f1: Image<'S>, f2: Image<'S>) =
         let filter = new itk.simple.NotEqualImageFilter()
-        Image<'S>.ofSimpleITK(filter.Execute(f1.toSimpleITK(), f2.toSimpleITK()))
+        Image<'S>.ofSimpleITK(filter.Execute(f1.toSimpleITK(), f2.toSimpleITK()),"isNotEqual")
     static member neq (f1: Image<'S>, f2: Image<'S>) =
         (Image<float>.isNotEqual(f1, f2)).forAll equalOne
 
     static member isLessThan (f1: Image<'S>, f2: Image<'S>) =
         let filter = new itk.simple.LessImageFilter()
-        Image<'S>.ofSimpleITK(filter.Execute(f1.toSimpleITK(), f2.toSimpleITK()))
+        Image<'S>.ofSimpleITK(filter.Execute(f1.toSimpleITK(), f2.toSimpleITK()),"isLessThan")
     static member lt (f1: Image<'S>, f2: Image<'S>) =
         (Image<'S>.isLessThan(f1, f2)).forAll equalOne
 
     static member isLessThanEqual (f1: Image<'S>, f2: Image<'S>) =
         let filter = new itk.simple.LessEqualImageFilter()
-        Image<'S>.ofSimpleITK(filter.Execute(f1.toSimpleITK(), f2.toSimpleITK()))
+        Image<'S>.ofSimpleITK(filter.Execute(f1.toSimpleITK(), f2.toSimpleITK()),"isLessThanEqual")
     static member lte (f1: Image<'S>, f2: Image<'S>) =
         (Image<'S>.isLessThanEqual(f1, f2)).forAll equalOne
 
     static member isGreater (f1: Image<'S>, f2: Image<'S>) =
         let filter = new itk.simple.GreaterImageFilter()
-        Image<'S>.ofSimpleITK(filter.Execute(f1.toSimpleITK(), f2.toSimpleITK()))
+        Image<'S>.ofSimpleITK(filter.Execute(f1.toSimpleITK(), f2.toSimpleITK()),"isGreater")
     static member gt (f1: Image<'S>, f2: Image<'S>) =
         (Image<'S>.isGreater(f1, f2)).forAll equalOne
 
     // greater than or equal
     static member isGreaterEqual (f1: Image<'S>, f2: Image<'S>) =
         let filter = new itk.simple.GreaterEqualImageFilter()
-        Image<'S>.ofSimpleITK(filter.Execute(f1.toSimpleITK(), f2.toSimpleITK()))
+        Image<'S>.ofSimpleITK(filter.Execute(f1.toSimpleITK(), f2.toSimpleITK()),"isGreaterEqual")
     static member gte (f1: Image<'S>, f2: Image<'S>) =
         (Image<'S>.isGreaterEqual(f1, f2)).forAll equalOne
 
     // Power (no direct operator for ** in .NET) - provide a named method instead
     static member Pow (f1: Image<'S>, f2: Image<'S>) =
         let filter = new itk.simple.PowImageFilter()
-        Image<'S>.ofSimpleITK(filter.Execute(f1.toSimpleITK(), f2.toSimpleITK()))
+        Image<'S>.ofSimpleITK(filter.Execute(f1.toSimpleITK(), f2.toSimpleITK()),"Pow")
 
     // Bitwise AND ( &&& )
     static member op_BitwiseAnd (f1: Image<'S>, f2: Image<'S>) =
         let filter = new itk.simple.AndImageFilter()
-        Image<'S>.ofSimpleITK(filter.Execute(f1.toSimpleITK(), f2.toSimpleITK()))
+        Image<'S>.ofSimpleITK(filter.Execute(f1.toSimpleITK(), f2.toSimpleITK()),"op_BitwiseAnd")
 
     // Bitwise XOR ( ^^^ )
     static member op_ExclusiveOr (f1: Image<'S>, f2: Image<'S>) =
         let filter = new itk.simple.XorImageFilter()
-        Image<'S>.ofSimpleITK(filter.Execute(f1.toSimpleITK(), f2.toSimpleITK()))
+        Image<'S>.ofSimpleITK(filter.Execute(f1.toSimpleITK(), f2.toSimpleITK()),"op_ExclusiveOr")
 
     // Bitwise OR ( ||| )
     static member op_BitwiseOr (f1: Image<'S>, f2: Image<'S>) =
         let filter = new itk.simple.OrImageFilter()
-        Image<'S>.ofSimpleITK(filter.Execute(f1.toSimpleITK(), f2.toSimpleITK()))
+        Image<'S>.ofSimpleITK(filter.Execute(f1.toSimpleITK(), f2.toSimpleITK()),"op_BitwiseOr")
 
     // Unary bitwise NOT ( ~~~ )
     static member op_LogicalNot (f: Image<'S>) =
         let filter = new itk.simple.InvertIntensityImageFilter()
-        Image<'S>.ofSimpleITK(filter.Execute(f.toSimpleITK()))
+        Image<'S>.ofSimpleITK(filter.Execute(f.toSimpleITK()),"op_LogicalNot")
