@@ -561,7 +561,25 @@ let write (outputDir: string) (suffix: string) : Stage<Image<'T>, Image<'T>> =
 let getChunkFilename (path: string) (suffix: string) (i: int) (j: int) (k: int) =
     Path.Combine(path, sprintf "chunk%d_%d_%d%s" i j k suffix)
 
-let writeInChunks (outputDir: string) (suffix: string) (width:uint) (height:uint) (winSz:uint) : Stage<Image<'T>, Image<'T>> =
+let private _writeChunkSlice (debug: bool) (outputDir: string) (suffix: string) (width: uint) (height: uint) (winSz: uint) (k: int) (stack: Image<'T>) =
+    for i in [0u..stack.GetWidth()/width-1u] do
+        for j in [0u..stack.GetHeight()/height-1u] do
+            let fileName = getChunkFilename outputDir suffix (int i) (int j) (int k)
+            if debug then printfn "[write] Saved chunk %d %d %d to %s as %s" i j k fileName (typeof<'T>.Name) 
+            let x00 = i*width |> int
+            let x01 = ((i+1u)*width-1u |> int, stack.GetWidth()-1u |> int) ||> min
+            let x10 = j*height |> int
+            let x11 = ((j+1u)*height |> int, stack.GetHeight()-1u |> int) ||> min
+            let x20 = 0
+            let x21 = winSz-1u |> int
+            let chunck = stack.[x00 .. x01, x10 .. x11 , x20 .. x21]
+            chunck.toFile(fileName)
+            chunck.decRefCount()
+
+let private _writeChunks (debug: bool) (outputDir: string) (suffix: string) (width: uint) (height: uint) (winSz: uint) (stack: Image<'T>) =
+    ()
+
+let writeInChunks (outputDir: string) (suffix: string) (width: uint) (height: uint) (winSz: uint) : Stage<Image<'T>, Image<'T>> =
     let t = typeof<'T>
     if (suffix.icompare ".tif" || suffix.icompare ".tiff") 
         && not (t = typeof<uint8> || t = typeof<int8> || t = typeof<uint16> || t = typeof<int16> || t = typeof<float32>) then
@@ -571,21 +589,9 @@ let writeInChunks (outputDir: string) (suffix: string) (width:uint) (height:uint
 
     let pad, stride = 0u, winSz
     let f (debug: bool) (k: int64) (stack: Image<'T>) = 
-        for i in [0u..stack.GetWidth()/width-1u] do
-            for j in [0u..stack.GetHeight()/height-1u] do
-                let fileName = getChunkFilename outputDir suffix (int i) (int j) (int k)
-                if debug then printfn "[write] Saved chunk %d %d %d to %s as %s" i j k fileName (typeof<'T>.Name) 
-                let x00 = i*width |> int
-                let x01 = ((i+1u)*width-1u |> int, stack.GetWidth()-1u |> int) ||> min
-                let x10 = j*height |> int
-                let x11 = ((j+1u)*height |> int, stack.GetHeight()-1u |> int) ||> min
-                let x20 = 0
-                let x21 = winSz-1u |> int
-                let chunck = stack.[x00 .. x01, x10 .. x11 , x20 .. x21]
-                chunck.toFile(fileName)
-                chunck.decRefCount()
+        _writeChunkSlice debug outputDir suffix width height winSz (int k) stack
         stack
-    let mapper (debug: bool) (idx: int64)= volFctToLstFctReleaseAfter (f debug idx) pad stride
+    let mapper (debug: bool) (idx: int64) = volFctToLstFctReleaseAfter (f debug idx) pad stride
     let btUint8 = typeof<uint8>|>Image.getBytesPerComponent |> uint64
     let btUint64 = typeof<uint64> |> Image.getBytesPerComponent |> uint64
     let memoryNeed nPixels = 
@@ -785,19 +791,28 @@ let read<'T when 'T: equality> (inputDir: string) (suffix: string) (pl: Plan<uni
 let readRandom<'T when 'T: equality> (count: uint) (inputDir: string) (suffix: string) (pl: Plan<unit, unit>) : Plan<unit, Image<'T>> =
     readFiltered<'T> inputDir suffix (Array.randomChoices (int count)) pl
 
-let readChunksAsWindows<'T when 'T: equality> (inputDir: string) (suffix: string) (pl: Plan<unit, unit>) : Plan<unit, Image<'T> list> =
-    let name = "readChunks"
-    let chunkInfo = getChunkInfo inputDir suffix
+let private _readChunkSlice (inputDir: string) (suffix: string) (chunkInfo: ChunkInfo) (dir: uint) (idx: int) =
     let depth = uint64 chunkInfo.chunks[2] // we will read chunks_*_*_i* as windows
     let chunkWidth = int chunkInfo.stackInfo.size[0]/chunkInfo.chunks[0]
     let chunkHeight = int chunkInfo.stackInfo.size[1]/chunkInfo.chunks[1]
     let chunkDepth = int chunkInfo.stackInfo.size[2]/chunkInfo.chunks[2]
 
-    let mapper (k: int) : Image<'T> list = 
-        let chunkSlice = Image<'T>(chunkInfo.stackInfo.size|>List.map uint,chunkInfo.stackInfo.numberOfComponents)
-        for i in [0 .. chunkInfo.chunks[0]-1] do
-            for j in [0 .. chunkInfo.chunks[1]-1] do
-                let fileName = getChunkFilename inputDir suffix i j k
+    let sz, nChunks = 
+        if dir = 0u then
+            [depth; chunkInfo.stackInfo.size[1]; chunkInfo.stackInfo.size[2]], [0; chunkInfo.chunks[1]; chunkInfo.chunks[2]]
+        elif dir = 1u then
+            [chunkInfo.stackInfo.size[0]; depth; chunkInfo.stackInfo.size[1]], [chunkInfo.chunks[0]; 0; chunkInfo.chunks[2]]
+        else
+            [chunkInfo.stackInfo.size[0]; chunkInfo.stackInfo.size[1]; depth], [chunkInfo.chunks[0]; chunkInfo.chunks[1]; 0]
+        
+    let chunkSlice = Image<'T>(sz |> List.map uint, chunkInfo.stackInfo.numberOfComponents)
+    for i in [0 .. nChunks[0]-1] do
+        for j in [0 .. nChunks[1]-1] do
+            for k in [0 .. nChunks[2]-1] do
+                let fileName = 
+                    if dir = 0u then   getChunkFilename inputDir suffix idx j k
+                    elif dir = 1u then getChunkFilename inputDir suffix i idx k
+                    else               getChunkFilename inputDir suffix i j idx
                 let img = Image<'T>.ofFile fileName
                 let start1 = i*chunkWidth|>Some
                 let stop1 = i*chunkWidth+(img.GetWidth()|>int)-1|>Some
@@ -807,6 +822,16 @@ let readChunksAsWindows<'T when 'T: equality> (inputDir: string) (suffix: string
                 let stop3 = k*chunkDepth+(img.GetDepth()|>int)-1|>Some
                 chunkSlice.SetSlice (start1, stop1, start2, stop2, start3, stop3) (img) |> ignore
                 img.decRefCount()
+    chunkSlice
+
+
+let readChunksAsWindows<'T when 'T: equality> (inputDir: string) (suffix: string) (pl: Plan<unit, unit>) : Plan<unit, Image<'T> list> =
+    let name = "readChunks"
+    let chunkInfo = getChunkInfo inputDir suffix
+    let depth = uint64 chunkInfo.chunks[2] // we will read chunks_*_*_i* as windows
+
+    let mapper (k: int) : Image<'T> list = 
+        let chunkSlice = _readChunkSlice inputDir suffix chunkInfo 2u k
         let res = chunkSlice |> ImageFunctions.unstack
         chunkSlice.decRefCount()
         res
@@ -899,14 +924,40 @@ let updateConnectedComponents (winSz: uint) (translationTable: (uint*uint64*uint
     let lengthTransformation = id
     Stage.map "updateConnectedComponents" mapper memoryNeed lengthTransformation
 
-let permuteAxes (i: uint,j: uint,k: uint): Stage<Image<'T>,Image<'T>> =
+let permuteAxes (i: uint, j: uint, k: uint) (winSz: uint): Stage<Image<'T>,Image<'T>> =
+    let name = "permuteAxes"
+    // There are the following 6 possible combinations: 0 1 2; 0 2 1; 1 0 2; 1 2 0; 2 1 0; 2 0 1
     if i = j || i = k || j = k then
         failwith "Order must be a permuation of [0u;1u;2u]"
-    elif i = 1u && j = 0u then
-        // permute 01 with itk.Simpel.PermuteAxesImageFilter 
+    elif i = 0u && j = 1u then // k = 2u
+        Stage.idStage<Image<'T>> name
+    elif i = 1u && j = 0u then // k = 2u
+        // permute 0 1 does not require chunking
         let memoryNeed = fun _ -> 2*sizeof<uint> |> uint64
         let lengthTransformation = id
-        Stage.map "permuteAxes" (fun _ -> ImageFunctions.permuteAxes [i;j;k]) memoryNeed lengthTransformation
-    else
+        Stage.map name (fun _ -> ImageFunctions.permuteAxes [i;j;k]) memoryNeed lengthTransformation
+    else // k neq 2u
         // writechunks and reread in permuted order
-        failwith "Not implemented yet"
+        let tmpDir = "tmp"
+        let tmpSuffix = ".tiff"
+
+        let mapper (chunkInfo: ChunkInfo) (debug: bool) (idx: int): Image<'T> list = 
+            let chunkSlice = _readChunkSlice tmpDir tmpSuffix chunkInfo k (int idx)
+            let res = chunkSlice |> ImageFunctions.permuteAxes [i;j;k] |> ImageFunctions.unstack
+            chunkSlice.decRefCount()
+            res
+
+        let mutable chunkInfo : ChunkInfo = {chunks = [0;0;0] ; stackInfo = {dimensions = 0u; size = [0UL;0UL;0UL]; componentType = ""; numberOfComponents = 0u}}
+        let memPeak = 256UL // surrugate string length
+        let memoryNeed = fun _ -> memPeak
+        let lengthTransformation = fun _ -> chunkInfo.chunks[int k] |> uint64
+
+        let sideEffect (debug: bool) () = chunkInfo <- getChunkInfo tmpDir tmpSuffix // returns ()
+
+        (writeInChunks tmpDir tmpSuffix winSz winSz winSz)
+        --> Stage.fold name (fun acc _ -> ()) () memoryNeed lengthTransformation // force calculation of full stream
+        --> Stage.map name sideEffect memoryNeed lengthTransformation // insert side-effect
+        --> Stage.map name (fun _ _ -> [0..chunkInfo.chunks[int k]]) memoryNeed lengthTransformation
+        --> flatten () // expand to a new, non-empty stream
+        --> Stage.map name (mapper chunkInfo) memoryNeed lengthTransformation
+        --> flatten ()
