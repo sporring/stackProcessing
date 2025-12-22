@@ -443,7 +443,7 @@ type LabelShapeStatistics = {
     EquivalentEllipsoidDiameter: float list
     EquivalentSphericalPerimeter: float
     EquivalentSphericalRadius: float
-    Indexes: uint32 list
+    //Indexes: uint32 list
     NumberOfPixels: uint64
     NumberOfPixelsOnBorder: uint64
     OrientedBoundingBoxDirection: float list
@@ -456,7 +456,7 @@ type LabelShapeStatistics = {
     PrincipalAxes: float list
     PrincipalMoments: float list
     Region: uint32 list
-    RLEIndexes: uint32 list
+    //RLEIndexes: uint32 list
     Roundness: float
 }
 
@@ -477,7 +477,7 @@ let labelShapeStatistics (img: Image<'T>) : Map<int64, LabelShapeStatistics> =
             EquivalentEllipsoidDiameter = stats.GetEquivalentEllipsoidDiameter(label) |>  fromVectorFloat64
             EquivalentSphericalPerimeter = stats.GetEquivalentSphericalPerimeter(label)
             EquivalentSphericalRadius = stats.GetEquivalentSphericalRadius(label)
-            Indexes = stats.GetIndexes(label) |> fromVectorUInt32
+            //Indexes = stats.GetIndexes(label) |> fromVectorUInt32
             NumberOfPixels = stats.GetNumberOfPixels(label)
             NumberOfPixelsOnBorder = stats.GetNumberOfPixelsOnBorder(label)
             OrientedBoundingBoxDirection = stats.GetOrientedBoundingBoxDirection(label) |>  fromVectorFloat64
@@ -490,7 +490,7 @@ let labelShapeStatistics (img: Image<'T>) : Map<int64, LabelShapeStatistics> =
             PrincipalAxes = stats.GetPrincipalAxes(label) |>  fromVectorFloat64
             PrincipalMoments = stats.GetPrincipalMoments(label) |>  fromVectorFloat64
             Region = stats.GetRegion(label) |> fromVectorUInt32
-            RLEIndexes = stats.GetRLEIndexes(label) |> fromVectorUInt32
+            //RLEIndexes = stats.GetRLEIndexes(label) |> fromVectorUInt32
             Roundness = stats.GetRoundness(label)
         }
         label, stats

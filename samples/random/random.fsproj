@@ -8,7 +8,7 @@
   </PropertyGroup>
 
   <!-- We want to copy the Managed library regardless of platform -->
-  <ItemGroup>
+ <ItemGroup>
     <Reference Include="SimpleITKCSharp">
     <HintPath>../../lib/SimpleITKCSharpManaged.dll</HintPath>
     <Private>true</Private>
@@ -31,7 +31,7 @@
     <None Include="../../lib/libSimpleITKCSharpNative.dylib"
       CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
-  
+
   <ItemGroup>
     <ProjectReference Include="../../src/StackProcessing/StackProcessing.fsproj" />
   </ItemGroup>
