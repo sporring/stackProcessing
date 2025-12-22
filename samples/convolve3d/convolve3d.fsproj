@@ -31,7 +31,7 @@
     <None Include="../../lib/libSimpleITKCSharpNative.dylib"
       CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
-  
+
   <ItemGroup>
     <ProjectReference Include="../../src/StackProcessing/StackProcessing.fsproj" />
   </ItemGroup>

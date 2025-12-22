@@ -381,6 +381,21 @@ val write:
 val getChunkFilename:
   path: string -> suffix: string -> i: int -> j: int -> k: int -> string
 
+val private _writeChunkSlice:
+  debug: bool ->
+    outputDir: string ->
+    suffix: string ->
+    width: uint ->
+    height: uint -> winSz: uint -> k: int -> stack: Image<'T> -> unit
+    when 'T: equality
+
+val private _writeChunks:
+  debug: bool ->
+    outputDir: string ->
+    suffix: string ->
+    width: uint -> height: uint -> winSz: uint -> stack: Image<'T> -> unit
+    when 'T: equality
+
 val writeInChunks:
   outputDir: string ->
     suffix: string ->
@@ -477,6 +492,11 @@ val readRandom:
     pl: SlimPipeline.Plan<unit,unit> -> SlimPipeline.Plan<unit,Image<'T>>
     when 'T: equality
 
+val private _readChunkSlice:
+  inputDir: string ->
+    suffix: string -> chunkInfo: ChunkInfo -> dir: uint -> idx: int -> Image<'T>
+    when 'T: equality
+
 val readChunksAsWindows:
   inputDir: string ->
     suffix: string ->
@@ -516,5 +536,6 @@ val updateConnectedComponents:
     Stage<Image<uint64>,Image<uint64>>
 
 val permuteAxes:
-  i: uint * j: uint * k: uint -> Stage<Image<'T>,Image<'T>> when 'T: equality
+  i: uint * j: uint * k: uint -> winSz: uint -> Stage<Image<'T>,Image<'T>>
+    when 'T: equality
 
