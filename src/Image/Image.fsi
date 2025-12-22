@@ -424,8 +424,10 @@ val extractSub:
     bottomRight: uint list -> img: Image.Image<'T> -> Image.Image<'T>
     when 'T: equality
 val extractSlice:
-  z: int -> img: Image.Image<'T> -> Image.Image<'T> when 'T: equality
-val unstack: vol: Image.Image<'T> -> Image.Image<'T> list when 'T: equality
+  dir: uint -> z: int -> img: Image.Image<'T> -> Image.Image<'T>
+    when 'T: equality
+val unstack:
+  dir: uint -> vol: Image.Image<'T> -> Image.Image<'T> list when 'T: equality
 val unstackSkipNTakeM:
   N: uint -> M: uint -> vol: Image.Image<'T> -> Image.Image<'T> list
     when 'T: equality

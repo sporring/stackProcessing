@@ -3,6 +3,130 @@ namespace FSharp
 
 
 
+module TinyLinAlg
+
+[<Struct>]
+type V3 =
+    {
+      x: float
+      y: float
+      z: float
+    }
+
+[<Struct>]
+type M3 =
+    {
+      m00: float
+      m01: float
+      m02: float
+      m10: float
+      m11: float
+      m12: float
+      m20: float
+      m21: float
+      m22: float
+    }
+
+val inline v3: x: float -> y: float -> z: float -> V3
+
+val inline add: a: V3 -> b: V3 -> V3
+
+val inline sub: a: V3 -> b: V3 -> V3
+
+val inline scale: s: float -> a: V3 -> V3
+
+val inline mulMV: m: M3 -> v: V3 -> V3
+
+val inline det3: m: M3 -> float
+
+val inv3: m: M3 -> M3
+
+
+module ChunkedAffineResampler
+
+val inline floorToInt: x: float -> int
+
+type ImageGeom =
+    {
+      W: int
+      H: int
+      D: int
+      Origin: TinyLinAlg.V3
+      Spacing: TinyLinAlg.V3
+      Direction: TinyLinAlg.M3
+    }
+
+val indexToPhysical: g: ImageGeom -> i: int -> j: int -> k: int -> TinyLinAlg.V3
+
+val physicalToContIndex:
+  g: ImageGeom -> invDir: TinyLinAlg.M3 -> p: TinyLinAlg.V3 -> TinyLinAlg.V3
+
+type Affine =
+    {
+      A: TinyLinAlg.M3
+      T: TinyLinAlg.V3
+      C: TinyLinAlg.V3
+    }
+
+val affinePoint: a: Affine -> p: TinyLinAlg.V3 -> TinyLinAlg.V3
+
+type Chunk =
+    {
+      Data: float32 array
+      SX: int
+      SY: int
+      SZ: int
+    }
+
+type IChunkSource =
+    
+    abstract LoadChunk: cx: int * cy: int * cz: int -> Chunk
+
+val inline clamp: lo: int -> hi: int -> v: int -> int
+
+val inline packKey: cx: int -> cy: int -> cz: int -> int64
+
+type ChunkCache =
+    
+    new: winsz: int * source: IChunkSource -> ChunkCache
+    
+    member
+      Ensure: required: (int * int * int) seq ->
+                System.Collections.Generic.HashSet<int64>
+    
+    member Get: cx: int * cy: int * cz: int -> Chunk
+    
+    member KeepOnly: required: System.Collections.Generic.HashSet<int64> -> unit
+    
+    member TryGet: cx: int * cy: int * cz: int -> Chunk voption
+
+val getVoxelFloat32:
+  winsz: int ->
+    W: int ->
+    H: int ->
+    D: int -> cache: ChunkCache -> x: int -> y: int -> z: int -> float32
+
+val trilinearSample:
+  winsz: int ->
+    W: int ->
+    H: int ->
+    D: int ->
+    cache: ChunkCache -> background: float32 -> c: TinyLinAlg.V3 -> float32
+
+val requiredChunksForSliceTrilinear:
+  winsz: int ->
+    inG: ImageGeom ->
+    outG: ImageGeom -> affOutToIn: Affine -> k: int -> (int * int * int) seq
+
+val resampleAffineTrilinearSlices:
+  winsz: int ->
+    inG: ImageGeom ->
+    outG: ImageGeom ->
+    affOutToIn: Affine ->
+    chunkSource: IChunkSource ->
+    background: float32 -> (int * float32 array) seq
+
+
 module StackProcessing
 
 type Stage<'S,'T> = SlimPipeline.Stage<'S,'T>
@@ -265,9 +389,9 @@ val computeStats:
   unit -> SlimPipeline.Stage<Image<'a>,ImageStats> when 'a: equality
 
 val stackFUnstack:
-  f: (Image<'T> -> #Image.Image<'b>) ->
-    images: Image<'T> list -> Image.Image<'b> list
-    when 'T: equality and 'b: equality
+  f: (Image<'T> -> uint) ->
+    images: Image<'T> list -> (Image.Image<'a> -> Image.Image<'a> list)
+    when 'T: equality and 'a: equality
 
 val skipNTakeM: n: uint -> m: uint -> lst: 'a list -> 'a list
 
