@@ -679,9 +679,6 @@ let stack (images: Image<'T> list) : Image<'T> =
     let filter = new itk.simple.JoinSeriesImageFilter ()
     filter.SetOrigin(0.0) |> ignore
     filter.SetSpacing(1.0) |> ignore
-    //printfn "Stacking"
-    //images |> List.iter (fun (I:Image<'T>) -> printf $"{I.Name}, ")
-    //printfn ""
     let v = new itk.simple.VectorOfImage()
     images |> List.iter (fun (I:Image<'T>) -> v.Add (I.toSimpleITK()))
     let res = v |> filter.Execute |> (fun sitk -> Image<'T>.ofSimpleITK(sitk,"stack",images[0].index) )
@@ -703,30 +700,33 @@ let extractSub (topLeft : uint list) (bottomRight: uint list) (img: Image<'T>) :
     let res = Image<'T>.ofSimpleITK(extractor.Execute(img.toSimpleITK()),"extractSub",img.index)
     res
 
-let extractSlice (z: int) (img: Image<'T>) =
+let extractSlice (dir: uint) (z: int) (img: Image<'T>) =
     if img.GetDimensions() <> 3u then
         failwith $"extractSlice: image must be 3D"
-    let sz = img.GetSize()
-    if sz[2] = 1u then
+    let size = img.GetSize()
+    if size[2] = 1u then
         // Should make a function for this...
         let filter =  new itk.simple.ExtractImageFilter() 
-        let remove3rdDim = (List.take 2 sz)@[0u]
+        let remove3rdDim = (List.take 2 size)@[0u]
         filter.SetSize(remove3rdDim |> toVectorUInt32)
         Image<'T>.ofSimpleITK(filter.Execute(img.toSimpleITK()),"extractSlice",img.index)
     else
         let extractor = new itk.simple.ExtractImageFilter()
-        extractor.SetSize([sz[0];sz[1];0u] |> toVectorUInt32)
-        extractor.SetIndex( [0;0;z] |> toVectorInt32)
+        let sz, idx =
+            if dir = 0u then   [0u; size[1]; size[2]], [z; 0; 0]
+            elif dir = 1u then [size[0]; 0u; size[2]], [0; z; 0] 
+            else               [size[0]; size[1]; 0u], [0; 0; z]
+        extractor.SetSize( sz |> toVectorUInt32)
+        extractor.SetIndex( idx |> toVectorInt32)
         let res = Image<'T>.ofSimpleITK(extractor.Execute(img.toSimpleITK()),"extractSlice",z)
         res
 
-let unstack (vol: Image<'T>): Image<'T> list =
+let unstack (dir: uint) (vol: Image<'T>): Image<'T> list =
     let dim = vol.GetDimensions()
     if dim < 3u then
         failwith $"Cannot unstack a {dim}-dimensional image along the 3rd axis"
     let depth = vol.GetDepth() |> int
-    let res = List.init depth (fun i -> extractSlice i vol)
-    //printfn $"unstack: input {vol.GetSize()} {res.Length}"
+    let res = List.init depth (fun i -> extractSlice dir i vol)
     res
 
 let unstackSkipNTakeM (N:uint) (M:uint) (vol: Image<'T>): Image<'T> list =
@@ -736,8 +736,7 @@ let unstackSkipNTakeM (N:uint) (M:uint) (vol: Image<'T>): Image<'T> list =
     let depth = vol.GetDepth() |> int
     if (N+M > uint depth) then
         failwith $"Cannot unstack from z={N} to z={N+M-1u} of a stack of depth {depth}"
-    let res = List.init (int M) (fun i -> extractSlice (i+int N) vol)
-    //printfn $"unstack: input {vol.GetSize()} {res.Length}"
+    let res = List.init (int M) (fun i -> extractSlice 2u (i+int N) vol)
     res
 
 type FileInfo = { dimensions: uint; size: uint64 list; componentType: string; numberOfComponents: uint}

@@ -1493,7 +1493,7 @@ let stackTests =
       let img1 = Image.ofArray2D (array2D [[1;2];[3;4]])
       let img2 = Image.ofArray2D (array2D [[5;6];[7;8]])
       let stacked = ImageFunctions.stack [img1; img2]
-      let unstacked = ImageFunctions.unstack stacked
+      let unstacked = ImageFunctions.unstack 2u stacked
       Expect.isTrue ((Image.eq (img1, unstacked[0])) && (Image.eq (img2, unstacked[1]))) "Stacking and unstacking are each other's inverse"
   ]
 
@@ -1548,7 +1548,7 @@ let someImageFunctionTests =
       let img1 = Image.ofArray2D (array2D [[1;1];[1;1]])
       let img2 = Image.ofArray2D (array2D [[2;2];[2;2]])
       let img = ImageFunctions.stack [img1; img2]
-      let slice = ImageFunctions.extractSlice 1 img
+      let slice = ImageFunctions.extractSlice 2u 1 img
       let arr = (slice |> ImageFunctions.squeeze).toArray2D()
       Expect.equal arr.[0,0] 2 "Value from second slice"
 
@@ -1556,7 +1556,7 @@ let someImageFunctionTests =
       let img1 = Image.ofArray2D (array2D [[1;1];[1;1]])
       let img2 = Image.ofArray2D (array2D [[2;2];[2;2]])
       let img = ImageFunctions.stack [img1; img2]
-      let slice = ImageFunctions.extractSlice 0 img
+      let slice = ImageFunctions.extractSlice 2u 0 img
       let arr = (slice |> ImageFunctions.squeeze).toArray2D()
       Expect.equal arr.[0,0] 1 "Value from second slice"
   ]
