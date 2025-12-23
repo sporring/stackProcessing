@@ -41,3 +41,15 @@ let inv3 (m:M3) =
       m20 =  (m.m10*m.m21 - m.m11*m.m20) * invDet
       m21 = -(m.m00*m.m21 - m.m01*m.m20) * invDet
       m22 =  (m.m00*m.m11 - m.m01*m.m10) * invDet }
+
+// -------------------------
+// Affine transform (output -> input)
+// SimpleITK's AffineTransform uses center: p' = A*(p - c) + t + c
+// -------------------------
+type Affine =
+    { A: M3
+      T: V3
+      C: V3 } // center
+
+let affinePoint (a:Affine) (p:V3) : V3 =
+    add (add (mulMV a.A (sub p a.C)) a.T) a.C

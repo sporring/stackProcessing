@@ -130,3 +130,8 @@ let drain pl = Plan.drainSingle "drainSingle" pl
 let drainList pl = Plan.drainList "drainList" pl
 let drainLast pl = Plan.drainLast "drainLast" pl
 //let tap str = incRefCountOp () --> (Stage.tap str)
+
+let tap = Stage.tap
+//let tap str = Stage.tap str --> incRef()// tap and tapIt neither realeases after nor increases number of references
+let tapIt = Stage.tapIt
+let idStage<'T> = Stage.idStage<'T>

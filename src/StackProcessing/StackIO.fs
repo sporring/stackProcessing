@@ -33,9 +33,12 @@ let getStackHeight (inputDir: string) (suffix: string) : uint64 =
     //printfn "%A" fi
     fi.size[1]
 
+let _getFilenames (inputDir: string) (suffix: string) (filter: string[]->string[]) =
+    System.IO.Directory.GetFiles(inputDir, "*"+suffix) |> filter
+
 let getFilenames (inputDir: string) (suffix: string) (filter: string[]->string[]) (pl: Plan<unit, unit>) : Plan<unit, string> =
     let name = "getFilenames"
-    let filenames = Directory.GetFiles(inputDir, "*"+suffix) |> filter
+    let filenames = _getFilenames inputDir ("*"+suffix) filter
     let depth = uint64 filenames.Length
 
     let mapper (i: int) : string = 
@@ -137,6 +140,9 @@ let getChunkInfo (inputDir: string) (suffix: string) : ChunkInfo =
 let getChunkFilename (path: string) (suffix: string) (i: int) (j: int) (k: int) =
     Path.Combine(path, sprintf "chunk%d_%d_%d%s" i j k suffix)
 
+let _readChunk (inputDir: string) (suffix: string) i j k = 
+    let filename = getChunkFilename inputDir suffix i j k
+    Image<'T>.ofFile filename
 
 let _readChunkSlice (inputDir: string) (suffix: string) (chunkInfo: ChunkInfo) (dir: uint) (idx: int) =
     let depth = uint64 chunkInfo.chunks[2] // we will read chunks_*_*_i* as windows
@@ -156,11 +162,10 @@ let _readChunkSlice (inputDir: string) (suffix: string) (chunkInfo: ChunkInfo) (
     for i in [0 .. nChunks[0]-1] do
         for j in [0 .. nChunks[1]-1] do
             for k in [0 .. nChunks[2]-1] do
-                let fileName = 
-                    if dir = 0u then   getChunkFilename inputDir suffix idx j k
-                    elif dir = 1u then getChunkFilename inputDir suffix i idx k
-                    else               getChunkFilename inputDir suffix i j idx
-                let img = Image<'T>.ofFile fileName
+                let img = 
+                    if dir = 0u then   _readChunk inputDir suffix idx j k
+                    elif dir = 1u then _readChunk inputDir suffix i idx k
+                    else               _readChunk inputDir suffix i j idx
                 let start1 = i*chunkWidth|>Some
                 let stop1 = i*chunkWidth+(img.GetWidth()|>int)-1|>Some
                 let start2 = j*chunkHeight|>Some
