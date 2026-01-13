@@ -165,7 +165,8 @@ type FileInfo = ImageFunctions.FileInfo
 type ChunkInfo =
     {
       chunks: int list
-      stackInfo: FileInfo
+      size: uint64 list
+      topLeftInfo: FileInfo
     }
 
 val getStackDepth: inputDir: string -> suffix: string -> uint

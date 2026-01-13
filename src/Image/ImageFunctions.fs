@@ -729,11 +729,12 @@ let unstack (dir: uint) (vol: Image<'T>): Image<'T> list =
     let res = List.init depth (fun i -> extractSlice dir i vol)
     res
 
-let unstackSkipNTakeM (N:uint) (M:uint) (vol: Image<'T>): Image<'T> list =
+let unstackSkipNTakeM (N:uint) (mWish:uint) (vol: Image<'T>): Image<'T> list =
     let dim = vol.GetDimensions()
     if dim < 3u then
         failwith $"Cannot unstack a {dim}-dimensional image along the 3rd axis"
     let depth = vol.GetDepth() |> int
+    let M = min (uint depth - N) mWish
     if (N+M > uint depth) then
         failwith $"Cannot unstack from z={N} to z={N+M-1u} of a stack of depth {depth}"
     let res = List.init (int M) (fun i -> extractSlice 2u (i+int N) vol)

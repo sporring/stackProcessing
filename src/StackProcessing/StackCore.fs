@@ -62,7 +62,7 @@ let releaseNAfter (n: int) (f: Image<'S> list->'T list) (sLst: Image<'S> list) :
 
 let volFctToLstFctReleaseAfter (f: Image<'S>->Image<'T>) pad stride images =
     let stack = ImageFunctions.stack images 
-    images |> List.take (int stride) |> List.iter (fun I -> I.decRefCount())
+    images |> List.take (min (int stride) images.Length) |> List.iter (fun I -> I.decRefCount())
     let vol = f stack
     stack.decRefCount ()
     let result = ImageFunctions.unstackSkipNTakeM pad stride vol

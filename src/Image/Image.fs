@@ -287,10 +287,10 @@ type Image<'T when 'T : equality>(sz: uint list, ?optionalNumberComponents: uint
     do incMemUsed (Image<_>.memoryEstimateSItk img)
     // count how many references there is to this image.
 
-    let clampStartStop (img: Image<'T>) start1 stop1 start2 stop2 start3 stop3 = 
-        let x0 = [start1; start2; start3] |> List.map (Option.defaultValue 0)
+    let clampStartStop (img: Image<'T>) start0 stop0 start1 stop1 start2 stop2 = 
+        let x0 = [start0; start1; start2] |> List.map (Option.defaultValue 0)
         let x1 =
-            (img.GetSize(), [stop1; stop2; stop3]) 
+            (img.GetSize(), [stop0; stop1; stop2]) 
             ||> List.zip 
             |> List.map (fun (sz, v) -> (Option.defaultValue (int sz)) v) 
         x0,x1
@@ -582,28 +582,29 @@ type Image<'T when 'T : equality>(sz: uint list, ?optionalNumberComponents: uint
         raw :?> 'T
 
     // Slicing is available as https://learn.microsoft.com/en-us/dotnet/fsharp/language-reference/arrays
-    member this.GetSlice (start1: int option, stop1: int option, start2: int option, stop2: int option, start3: int option, stop3: int option) : Image<'T> =
+    member this.GetSlice (start0: int option, stop0: int option, start1: int option, stop1: int option, start2: int option, stop2: int option) : Image<'T> =
         let filter = new itk.simple.SliceImageFilter()
-        let x0, x1 = clampStartStop this start1 stop1 start2 stop2 start3 stop3
+        let x0, x1Inner = clampStartStop this start0 stop0 start1 stop1 start2 stop2
+        let x1 = List.map ((+) 1) x1Inner // SetStop does not include coordinates
         filter.SetStart(x0 |> toVectorInt32)
         filter.SetStop(x1 |> toVectorInt32)
         let img = filter.Execute (this.toSimpleITK())
-        Image<'T>.ofSimpleITK(img,"GetSlice")
+        let res = Image<'T>.ofSimpleITK(img,"GetSlice")
+        res
 
     member this.Set (coords: uint list) (value: 'T) : unit =
         let u = toVectorUInt32 coords
         let t = fromType<'T>
         setBoxedPixel this.Image t u value
 
-    member this.SetSlice (start1: int option, stop1: int option, start2: int option, stop2: int option, start3: int option, stop3: int option) (src: Image<'T>): Image<'T> =
+    member this.SetSlice (start0: int option, stop0: int option, start1: int option, stop1: int option, start2: int option, stop2: int option) (src: Image<'T>): unit=
         let filter = new itk.simple.PasteImageFilter()
-        let x0, x1 = clampStartStop this start1 stop1 start2 stop2 start3 stop3
+        let x0, x1 = clampStartStop this start0 stop0 start1 stop1 start2 stop2
         let sz = (x0,x1) ||> List.zip |> List.map (fun (a,b) -> b-a+1 |> uint)
         filter.SetDestinationIndex(x0 |> toVectorInt32)
         filter.SetSourceIndex([0;0;0] |> toVectorInt32)
         filter.SetSourceSize(sz |> toVectorUInt32)
-        let img = filter.Execute (this.toSimpleITK(),src.toSimpleITK())
-        Image<'T>.ofSimpleITK(img,"SetSlice")
+        img <- filter.Execute (img,src.toSimpleITK())
 
     member this.Item
         with get(i0: int, i1: int) : 'T =

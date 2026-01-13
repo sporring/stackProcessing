@@ -574,7 +574,7 @@ let permuteAxes (i: uint, j: uint, k: uint) (winSz: uint): Stage<Image<'T>,Image
             chunkSlice.decRefCount()
             res
 
-        let mutable chunkInfo : ChunkInfo = {chunks = [0;0;0] ; stackInfo = {dimensions = 0u; size = [0UL;0UL;0UL]; componentType = ""; numberOfComponents = 0u}}
+        let mutable chunkInfo : ChunkInfo = {chunks = [0;0;0] ; size = [0UL;0UL;0UL]; topLeftInfo = {dimensions = 0u; size = [0UL;0UL;0UL]; componentType = ""; numberOfComponents = 0u}}
         let memPeak = 256UL // surrugate string length
         let memoryNeed = fun _ -> memPeak
         let lengthTransformation = fun _ -> chunkInfo.chunks[int k] |> uint64

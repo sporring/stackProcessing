@@ -13,5 +13,5 @@ libSimpleITKCSharpNative.dylib
 [WINDOWS]
 SimpleITKCSharpNative.dll
 
-
-
+On MACOS (e.g., https://github.com/SimpleITK/SimpleITK/releases/tag/v2.5.3), you probably have to move the library out of quarantine by:
+xattr -dr com.apple.quarantine libSimpleITKCSharpNative.dylib

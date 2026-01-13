@@ -6,7 +6,7 @@ open System.Text.RegularExpressions
 open StackCore
 
 type FileInfo = ImageFunctions.FileInfo
-type ChunkInfo = { chunks: int list; stackInfo: FileInfo}
+type ChunkInfo = { chunks: int list; size: uint64 list; topLeftInfo: FileInfo}
 
 let getStackDepth (inputDir: string) (suffix: string) : uint =
     let files = Directory.GetFiles(inputDir, "*"+suffix) |> Array.sort
@@ -30,7 +30,6 @@ let getStackWidth (inputDir: string) (suffix: string) : uint64 =
 
 let getStackHeight (inputDir: string) (suffix: string) : uint64 =
     let fi = getStackInfo inputDir suffix
-    //printfn "%A" fi
     fi.size[1]
 
 let _getFilenames (inputDir: string) (suffix: string) (filter: string[]->string[]) =
@@ -110,55 +109,61 @@ let getChunkInfo (inputDir: string) (suffix: string) : ChunkInfo =
         let m = rx.Match s
         if m.Success then
             Some (
-                //m.Groups[1].Value,   // prefix
-                int m.Groups[2].Value, // i
-                int m.Groups[3].Value, // j
-                int m.Groups[4].Value  // k
-                //m.Groups[5].Value    // suffix
+                //int m.Groups[0].Value,   // s
+                int m.Groups[1].Value,   // i
+                int m.Groups[2].Value, // j
+                int m.Groups[3].Value // k
+                //m.Groups[4].Value    // suffix
             )
         else None    
     let files = Directory.GetFiles(inputDir, "*"+suffix)
     let maxI, maxJ, maxK, topLeft, bottomRight = 
         Array.fold
             (fun (maxI: int, maxJ: int, maxK: int, tl: string, br: string) (str: string) -> 
-                match str with 
-                    IJK (i, j, k) when i >= maxI && j >= maxJ && k >= maxK -> (i,j,k,tl,str)
-                    | IJK (i, j, k) when i = 0 && j = 0 && k = 0 -> (i,j,k,str,br)
-                    | _ -> failwith "Error parsing chunk names!"
+                let res = 
+                    match str with 
+                        IJK (i, j, k) when i >= maxI && j >= maxJ && k >= maxK -> (i,j,k,tl,str)
+                        | IJK (i, j, k) when i = 0 && j = 0 && k = 0 -> (maxI,maxJ,maxK,str,br)
+                        | _ -> (maxI, maxJ, maxK, tl, br)
+                res
             ) (System.Int32.MinValue, System.Int32.MinValue, System.Int32.MinValue, "", "") files
     let topLeftFi = ImageFunctions.getFileInfo topLeft
     let bottomRightFi = ImageFunctions.getFileInfo bottomRight
 
     let stackSize = 
         [
-            (uint64 maxI - 1UL) * topLeftFi.size[0] + bottomRightFi.size[0];
-            (uint64 maxJ - 1UL) * topLeftFi.size[1] + bottomRightFi.size[1];
-            (uint64 maxK - 1UL) * topLeftFi.size[2] + bottomRightFi.size[2];
+            (uint64 maxI) * topLeftFi.size[0] + bottomRightFi.size[0];
+            (uint64 maxJ) * topLeftFi.size[1] + bottomRightFi.size[1];
+            (uint64 maxK) * topLeftFi.size[2] + bottomRightFi.size[2];
         ]
-    { chunks = [maxI+1;maxJ+1;maxK+1]; stackInfo = {topLeftFi with size = stackSize} }
+    { chunks = [maxI+1;maxJ+1;maxK+1]; topLeftInfo = topLeftFi; size = stackSize }
 
 let getChunkFilename (path: string) (suffix: string) (i: int) (j: int) (k: int) =
     Path.Combine(path, sprintf "chunk%d_%d_%d%s" i j k suffix)
 
 let _readChunk (inputDir: string) (suffix: string) i j k = 
     let filename = getChunkFilename inputDir suffix i j k
-    Image<'T>.ofFile filename
+    let res = Image<'T>.ofFile filename
+    res
 
 let _readChunkSlice (inputDir: string) (suffix: string) (chunkInfo: ChunkInfo) (dir: uint) (idx: int) =
     let depth = uint64 chunkInfo.chunks[2] // we will read chunks_*_*_i* as windows
-    let chunkWidth = int chunkInfo.stackInfo.size[0]/chunkInfo.chunks[0]
-    let chunkHeight = int chunkInfo.stackInfo.size[1]/chunkInfo.chunks[1]
-    let chunkDepth = int chunkInfo.stackInfo.size[2]/chunkInfo.chunks[2]
-
+    let chunkWidth = int chunkInfo.topLeftInfo.size[0]
+    let chunkHeight = int chunkInfo.topLeftInfo.size[1]
+    let chunkDepth = 
+        if idx < chunkInfo.chunks[2]-1 then
+           int chunkInfo.topLeftInfo.size[2]
+        else
+           chunkInfo.size[2] % chunkInfo.topLeftInfo.size[2] |> int
     let sz, nChunks = 
         if dir = 0u then
-            [depth; chunkInfo.stackInfo.size[1]; chunkInfo.stackInfo.size[2]], [0; chunkInfo.chunks[1]; chunkInfo.chunks[2]]
+            [chunkWidth |> uint64; chunkInfo.size[1]; chunkInfo.size[2]], [1; chunkInfo.chunks[1]; chunkInfo.chunks[2]]
         elif dir = 1u then
-            [chunkInfo.stackInfo.size[0]; depth; chunkInfo.stackInfo.size[1]], [chunkInfo.chunks[0]; 0; chunkInfo.chunks[2]]
+            [chunkInfo.size[0]; chunkHeight |> uint64; chunkInfo.size[1]], [chunkInfo.chunks[0]; 1; chunkInfo.chunks[2]]
         else
-            [chunkInfo.stackInfo.size[0]; chunkInfo.stackInfo.size[1]; depth], [chunkInfo.chunks[0]; chunkInfo.chunks[1]; 0]
+            [chunkInfo.size[0]; chunkInfo.size[1]; chunkDepth |> uint64], [chunkInfo.chunks[0]; chunkInfo.chunks[1]; 1]
         
-    let chunkSlice = Image<'T>(sz |> List.map uint, chunkInfo.stackInfo.numberOfComponents)
+    let chunkSlice = Image<'T>(sz |> List.map uint, chunkInfo.topLeftInfo.numberOfComponents)
     for i in [0 .. nChunks[0]-1] do
         for j in [0 .. nChunks[1]-1] do
             for k in [0 .. nChunks[2]-1] do
@@ -166,13 +171,13 @@ let _readChunkSlice (inputDir: string) (suffix: string) (chunkInfo: ChunkInfo) (
                     if dir = 0u then   _readChunk inputDir suffix idx j k
                     elif dir = 1u then _readChunk inputDir suffix i idx k
                     else               _readChunk inputDir suffix i j idx
-                let start1 = i*chunkWidth|>Some
-                let stop1 = i*chunkWidth+(img.GetWidth()|>int)-1|>Some
-                let start2 = j*chunkHeight|>Some
-                let stop2 = j*chunkHeight+(img.GetHeight()|>int)-1|>Some
-                let start3 = k*chunkDepth|>Some
-                let stop3 = k*chunkDepth+(img.GetDepth()|>int)-1|>Some
-                chunkSlice.SetSlice (start1, stop1, start2, stop2, start3, stop3) (img) |> ignore
+                let start0 = i*chunkWidth|>Some
+                let stop0 = i*chunkWidth+(img.GetWidth()|>int)-1|>Some
+                let start1 = j*chunkHeight|>Some
+                let stop1 = j*chunkHeight+(img.GetHeight()|>int)-1|>Some
+                let start2 = k*chunkDepth|>Some
+                let stop2 = k*chunkDepth+(img.GetDepth()|>int)-1|>Some
+                chunkSlice.SetSlice (start0, stop0, start1, stop1, start2, stop2) img |> ignore
                 img.decRefCount()
     chunkSlice
 
@@ -219,19 +224,20 @@ let write (outputDir: string) (suffix: string) : Stage<Image<'T>, Image<'T>> =
     Stage.mapi $"write \"{outputDir}/*{suffix}\"" mapper memoryNeed id
 
 let _writeChunkSlice (debug: bool) (outputDir: string) (suffix: string) (width: uint) (height: uint) (winSz: uint) (k: int) (stack: Image<'T>) =
-    for i in [0u..stack.GetWidth()/width-1u] do
-        for j in [0u..stack.GetHeight()/height-1u] do
+    for i in [0u..stack.GetWidth()/width] do
+        for j in [0u..stack.GetHeight()/height] do
             let fileName = getChunkFilename outputDir suffix (int i) (int j) (int k)
             if debug then printfn "[write] Saved chunk %d %d %d to %s as %s" i j k fileName (typeof<'T>.Name) 
             let x00 = i*width |> int
             let x01 = ((i+1u)*width-1u |> int, stack.GetWidth()-1u |> int) ||> min
             let x10 = j*height |> int
-            let x11 = ((j+1u)*height |> int, stack.GetHeight()-1u |> int) ||> min
+            let x11 = ((j+1u)*height-1u |> int, stack.GetHeight()-1u |> int) ||> min
             let x20 = 0
             let x21 = winSz-1u |> int
-            let chunck = stack.[x00 .. x01, x10 .. x11 , x20 .. x21]
-            chunck.toFile(fileName)
-            chunck.decRefCount()
+            if x00<=x01 && x10<=x11 && x20<=x21 then
+                let chunck = stack.[x00 .. x01, x10 .. x11 , x20 .. x21]
+                chunck.toFile(fileName)
+                chunck.decRefCount()
 
 let _writeChunks (debug: bool) (outputDir: string) (suffix: string) (width: uint) (height: uint) (winSz: uint) (stack: Image<'T>) =
     ()
@@ -247,8 +253,10 @@ let writeInChunks (outputDir: string) (suffix: string) (width: uint) (height: ui
     let pad, stride = 0u, winSz
     let f (debug: bool) (k: int64) (stack: Image<'T>) = 
         _writeChunkSlice debug outputDir suffix width height winSz (int k) stack
+        stack.incRefCount()
         stack
     let mapper (debug: bool) (idx: int64) = volFctToLstFctReleaseAfter (f debug idx) pad stride
+    //let mapper (debug: bool) (idx: int64) = fun stack -> _writeChunkSlice debug outputDir suffix width height winSz (int idx) stack; stack
     let btUint8 = typeof<uint8>|>Image.getBytesPerComponent |> uint64
     let btUint64 = typeof<uint64> |> Image.getBytesPerComponent |> uint64
     let memoryNeed nPixels = 
