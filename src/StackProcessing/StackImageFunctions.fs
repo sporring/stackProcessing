@@ -564,13 +564,17 @@ let permuteAxes (i: uint, j: uint, k: uint) (winSz: uint): Stage<Image<'T>,Image
         let tmpSuffix = ".tiff"
 
         let mapper (chunkInfo: ChunkInfo) (debug: bool) (idx: int): Image<'T> list = 
-            let chunkSlice = _readChunkSlice tmpDir tmpSuffix chunkInfo k (int idx)
+            printfn $"mapper: {chunkInfo}\n{debug}\n{idx}"
+            let chunkSlice = _readChunkSlice<'T> tmpDir tmpSuffix chunkInfo k (int idx)
+            chunkSlice.toFile $"test{idx}.tiff"
             let sz = chunkSlice.GetSize ()
+            (*
             let mapper (img: Image<'T>) =
                 let res = ImageFunctions.permuteAxes [i;j;k] img
                 img.decRefCount()
                 res
-            let res = chunkSlice |> ImageFunctions.unstack k |> List.map mapper
+            *)
+            let res = chunkSlice |> ImageFunctions.unstack k// |> List.map mapper
             chunkSlice.decRefCount()
             res
 
@@ -579,12 +583,16 @@ let permuteAxes (i: uint, j: uint, k: uint) (winSz: uint): Stage<Image<'T>,Image
         let memoryNeed = fun _ -> memPeak
         let lengthTransformation = fun _ -> chunkInfo.chunks[int k] |> uint64
 
-        let sideEffect (debug: bool) () = chunkInfo <- getChunkInfo tmpDir tmpSuffix // returns ()
+        let sideEffect (dir: string) (suffix: string) (debug: bool) () = chunkInfo <- getChunkInfo dir suffix // returns ()
 
         (writeInChunks tmpDir tmpSuffix winSz winSz winSz)
-        --> Stage.fold name (fun acc _ -> ()) () memoryNeed lengthTransformation // force calculation of full stream
-        --> Stage.map name sideEffect memoryNeed lengthTransformation // insert side-effect
-        --> Stage.map name (fun _ _ -> [0..chunkInfo.chunks[int k]]) memoryNeed lengthTransformation
+        --> StackCore.ignoreSingles () // force calculation of full stream and decrease references
+        --> tap "Chunks written, pipeline flushed"
+        --> Stage.map name (fun _ _ -> chunkInfo <- getChunkInfo tmpDir tmpSuffix) memoryNeed lengthTransformation // insert side-effect
+        --> Stage.tapIt (fun elm -> $"sideEffect: {elm}\n{chunkInfo}")
+        --> Stage.map name (fun _ _ -> [0..(chunkInfo.chunks[int k]-1)]) memoryNeed lengthTransformation
+        --> Stage.tapIt (fun elm -> $"map-shortcircuit: {elm}\n{chunkInfo}")
         --> flatten () // expand to a new, non-empty stream
-        --> Stage.map name (mapper chunkInfo) memoryNeed lengthTransformation
+        --> Stage.tapIt (fun elm -> $"flatten: {elm}\n{chunkInfo}")
+        --> Stage.map name (fun debug idx -> mapper chunkInfo debug idx) memoryNeed lengthTransformation // mapper chunkInfo does not work, since argument is copied at compile time
         --> flatten ()
