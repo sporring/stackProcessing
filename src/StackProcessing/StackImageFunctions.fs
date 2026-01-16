@@ -568,22 +568,23 @@ let permuteAxes (i: uint, j: uint, k: uint) (winSz: uint): Stage<Image<'T>,Image
             let chunkSlice = _readChunkSlice<'T> tmpDir tmpSuffix chunkInfo k (int idx)
             chunkSlice.toFile $"test{idx}.tiff"
             let sz = chunkSlice.GetSize ()
-            (*
-            let mapper (img: Image<'T>) =
-                let res = ImageFunctions.permuteAxes [i;j;k] img
-                img.decRefCount()
-                res
-            *)
-            let res = chunkSlice |> ImageFunctions.unstack k// |> List.map mapper
+            let stack =  ImageFunctions.unstack k chunkSlice
             chunkSlice.decRefCount()
+            let res = 
+                if j < i then // since we use unstack, we need to transpose some
+                    stack 
+                    |> List.map (fun im -> 
+                        let trnsp = ImageFunctions.permuteAxes [1u;0u;2u] im
+                        im.decRefCount()
+                        trnsp)
+                else
+                    stack
             res
 
         let mutable chunkInfo : ChunkInfo = {chunks = [0;0;0] ; size = [0UL;0UL;0UL]; topLeftInfo = {dimensions = 0u; size = [0UL;0UL;0UL]; componentType = ""; numberOfComponents = 0u}}
         let memPeak = 256UL // surrugate string length
         let memoryNeed = fun _ -> memPeak
         let lengthTransformation = fun _ -> chunkInfo.chunks[int k] |> uint64
-
-        let sideEffect (dir: string) (suffix: string) (debug: bool) () = chunkInfo <- getChunkInfo dir suffix // returns ()
 
         (writeInChunks tmpDir tmpSuffix winSz winSz winSz)
         --> StackCore.ignoreSingles () // force calculation of full stream and decrease references
