@@ -206,26 +206,14 @@ let skipNTakeM (n: uint) (m: uint) (lst: 'a list) : 'a list =
     else lst |> List.skip (int n) |> List.take (int m) // This needs releaseAfter!!!
 
 let stackFUnstackTrim trim (f: Image<'T>->Image<'S>) (images: Image<'T> list) =
-    //printfn $"stackFUnstackTrim: stacking"
     let stck = images |> ImageFunctions.stack 
-    //printfn $"stackFUnstackTrim: applying f and ustacking"
-    //let result = stck |> (f >> ImageFunctions.unstack >> skipNTakeM trim m)
     let result = 
-        //printfn $"applying function to stack"
         let volRes = f stck
         stck.decRefCount()
-        //printfn $"unstacking function result"
-//        let imageLst = ImageFunctions.unstack volRes
         let m = uint images.Length - 2u*trim // last stack may be smaller if stride > 1
         let imageLst = ImageFunctions.unstackSkipNTakeM trim m volRes
         volRes.decRefCount()
         imageLst
-        //printfn $"skipntakem"
-        //let r = skipNTakeM trim m imageLst
-        //imageLst |> List.iteri (fun i I -> if i < (int trim) || i >= (int (trim + m)) then I.decRefCount())
-        //printfn $"result ready"
-        //r
-    //printfn $"stackFUnstackTrim: returning result"
     result
 
 let discreteGaussianOp (name: string) (sigma: float) (outputRegionMode: ImageFunctions.OutputRegionMode option) (boundaryCondition: ImageFunctions.BoundaryCondition option) (winSz: uint option) : Stage<Image<float>, Image<float>> =
@@ -394,23 +382,6 @@ let addNormalNoise a b = liftUnaryReleaseAfter "addNormalNoise" (ImageFunctions.
 let ImageConstantPad<'T when 'T: equality> (padLower: uint list) (padUpper: uint list) (c: double) =
     liftUnaryReleaseAfter "constantPad2D" (ImageFunctions.constantPad2D padLower padUpper c) id id // Check that constantPad2D makes a new image!!!
 
-(*
-let writeOld (outputDir: string) (suffix: string) : Stage<Image<'T>, unit> =
-    let t = typeof<'T>
-    if (suffix.icompare ".tif" || suffix.icompare ".tiff") 
-        && not (t = typeof<uint8> || t = typeof<int8> || t = typeof<uint16> || t = typeof<int16> || t = typeof<float32>) then
-        failwith $"[write] tiff images only supports (u)int8, (u)int16 and float32 but was {t.Name}" 
-    if not (Directory.Exists(outputDir)) then
-        Directory.CreateDirectory(outputDir) |> ignore
-    let consumer (debug: bool) (idx: int) (image: Image<'T>) =
-        let fileName = Path.Combine(outputDir, sprintf "image_%03d%s" idx suffix)
-        if debug then printfn "[write] Saved image %d to %s as %s" idx fileName (typeof<'T>.Name) 
-        image.toFile(fileName)
-        image.decRefCount()
-    let memoryNeed = id
-    Stage.consumeWith $"write \"{outputDir}/*{suffix}\"" consumer memoryNeed
-*)
-
 let show (plt: Image<'T> -> unit) : Stage<Image<'T>, unit> =
     let consumer (debug: bool) (idx: int) (image: Image<'T>) =
         if debug then printfn "[show] Showing image %d" idx
@@ -564,9 +535,7 @@ let permuteAxes (i: uint, j: uint, k: uint) (winSz: uint): Stage<Image<'T>,Image
         let tmpSuffix = ".tiff"
 
         let mapper (chunkInfo: ChunkInfo) (debug: bool) (idx: int): Image<'T> list = 
-            printfn $"mapper: {chunkInfo}\n{debug}\n{idx}"
             let chunkSlice = _readChunkSlice<'T> tmpDir tmpSuffix chunkInfo k (int idx)
-            chunkSlice.toFile $"test{idx}.tiff"
             let sz = chunkSlice.GetSize ()
             let stack =  ImageFunctions.unstack k chunkSlice
             chunkSlice.decRefCount()
@@ -587,13 +556,16 @@ let permuteAxes (i: uint, j: uint, k: uint) (winSz: uint): Stage<Image<'T>,Image
         let lengthTransformation = fun _ -> chunkInfo.chunks[int k] |> uint64
 
         (writeInChunks tmpDir tmpSuffix winSz winSz winSz)
+        --> tap "writeInChunks"
         --> StackCore.ignoreSingles () // force calculation of full stream and decrease references
-        --> tap "Chunks written, pipeline flushed"
+        --> tap "ignoreSingles"
         --> Stage.map name (fun _ _ -> chunkInfo <- getChunkInfo tmpDir tmpSuffix) memoryNeed lengthTransformation // insert side-effect
-        --> Stage.tapIt (fun elm -> $"sideEffect: {elm}\n{chunkInfo}")
+        --> tap "sideEffect"
         --> Stage.map name (fun _ _ -> [0..(chunkInfo.chunks[int k]-1)]) memoryNeed lengthTransformation
-        --> Stage.tapIt (fun elm -> $"map-shortcircuit: {elm}\n{chunkInfo}")
+        --> tapIt (fun elm -> sprintf $"reinitialize\n{chunkInfo}")
         --> flatten () // expand to a new, non-empty stream
-        --> Stage.tapIt (fun elm -> $"flatten: {elm}\n{chunkInfo}")
+        --> tap "flatten 1"
         --> Stage.map name (fun debug idx -> mapper chunkInfo debug idx) memoryNeed lengthTransformation // mapper chunkInfo does not work, since argument is copied at compile time
+        --> tap "mapper"
         --> flatten ()
+        --> tap "flatten 2"

@@ -127,7 +127,6 @@ let getChunkInfo (inputDir: string) (suffix: string) : ChunkInfo =
                         | _ -> (maxI, maxJ, maxK, tl, br)
                 res
             ) (System.Int32.MinValue, System.Int32.MinValue, System.Int32.MinValue, files[0], files[0]) files
-    printfn $"getChunkInfo: {topLeft} {bottomRight}"
     let topLeftFi = ImageFunctions.getFileInfo topLeft
     let bottomRightFi = ImageFunctions.getFileInfo bottomRight
 
@@ -144,12 +143,10 @@ let getChunkFilename (path: string) (suffix: string) (i: int) (j: int) (k: int) 
 
 let _readChunk<'T when 'T: equality>  (inputDir: string) (suffix: string) i j k = 
     let filename = getChunkFilename inputDir suffix i j k
-    printfn $"_readChunk:{filename}"
     let res = Image<'T>.ofFile filename
     res
 
 let _readChunkSlice<'T when 'T: equality>  (inputDir: string) (suffix: string) (chunkInfo: ChunkInfo) (dir: uint) (idx: int) =
-    printfn $"_readChunkSlice:\n{inputDir: string}\n{suffix}\n{chunkInfo}\n{dir}\n{idx}"
     //let depth = uint64 chunkInfo.chunks[2] // we will read chunks_*_*_i* as windows
     let chunkWidth = int chunkInfo.topLeftInfo.size[0]
     let chunkHeight = int chunkInfo.topLeftInfo.size[1]
@@ -167,7 +164,6 @@ let _readChunkSlice<'T when 'T: equality>  (inputDir: string) (suffix: string) (
             [chunkInfo.size[0]; chunkHeight |> uint64; chunkInfo.size[1]], [chunkInfo.chunks[0]; 1; chunkInfo.chunks[2]]
         else
             [chunkInfo.size[0]; chunkInfo.size[1]; chunkDepth |> uint64], [chunkInfo.chunks[0]; chunkInfo.chunks[1]; 1]
-    printfn $"after sz:\n{chunkWidth}\n{chunkHeight}\n{chunkDepth}\n{sz}\n{nChunks}"
     let chunkSlice = Image<'T>(sz |> List.map uint, chunkInfo.topLeftInfo.numberOfComponents)
     for i in [0 .. nChunks[0]-1] do
         for j in [0 .. nChunks[1]-1] do
@@ -218,8 +214,9 @@ let write (outputDir: string) (suffix: string) : Stage<Image<'T>, Image<'T>> =
     if (icompare suffix ".tif" || icompare suffix ".tiff") 
         && not (t = typeof<uint8> || t = typeof<int8> || t = typeof<uint16> || t = typeof<int16> || t = typeof<float32>) then
         failwith $"[write] tiff images only supports (u)int8, (u)int16 and float32 but was {t.Name}" 
-    if not (Directory.Exists(outputDir)) then
-        Directory.CreateDirectory(outputDir) |> ignore
+    if Directory.Exists(outputDir) then
+        failwith $"Directory \"{outputDir}\" exists - will not delete!"
+    Directory.CreateDirectory(outputDir) |> ignore
     let mapper (debug: bool) (idx: int64) (image: Image<'T>) =
         let fileName = Path.Combine(outputDir, sprintf "image_%03d%s" idx suffix)
         if debug then printfn "[write] Saved image %d to %s as %s" idx fileName (typeof<'T>.Name) 
@@ -257,7 +254,6 @@ let writeInChunks (outputDir: string) (suffix: string) (width: uint) (height: ui
 
     let pad, stride = 0u, winSz
     let f (debug: bool) (k: int64) (stack: Image<'T>) = 
-        printfn $"_writeChunks-f: {stack.GetSize()}"
         _writeChunkSlice debug outputDir suffix width height winSz (int k) stack
         stack.incRefCount() //to make sure volFctToLstFctReleaseAfter doesn't release it.
         stack

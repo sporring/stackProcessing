@@ -286,12 +286,9 @@ let convolve (outputRegionMode: OutputRegionMode option) (boundaryCondition: Bou
             let szZip = List.zip szImg szKer
             let res =
                 if List.forall (fun (a,b) -> a >= b && b > 1) szZip then
-                    //printfn $"Using simple itk to convolve {img.GetSize()|>fromVectorUInt32} {ker.GetSize()|>fromVectorUInt32}"
                     f.Execute(img,ker)
                 else
-                    //printfn $"Using convolve3 to convolve {img.GetSize()} {ker.GetSize()}"
                     convolve3 img ker outputRegionMode
-            //printfn "convolve done"
             res
         )
 
@@ -682,7 +679,6 @@ let stack (images: Image<'T> list) : Image<'T> =
     let v = new itk.simple.VectorOfImage()
     images |> List.iter (fun (I:Image<'T>) -> v.Add (I.toSimpleITK()))
     let res = v |> filter.Execute |> (fun sitk -> Image<'T>.ofSimpleITK(sitk,"stack",images[0].index) )
-    //printfn $"Stack: input {images.Length} {res.GetDepth()}"
     res
 
 let extractSub (topLeft : uint list) (bottomRight: uint list) (img: Image<'T>) : Image<'T> =
@@ -709,7 +705,6 @@ let extractSlice (dir: uint) (i: int) (img: Image<'T>) =
         if dir = 0u then   [0u; size[1]; size[2]], [i; 0; 0] // Has extractSlice confused x-y and i-j?
         elif dir = 1u then [size[0]; 0u; size[2]], [0; i; 0] 
         else               [size[0]; size[1]; 0u], [0; 0; i]
-    printfn $"extractSlice: {img.GetSize()} {sz} {idx}"
     extractor.SetSize( sz |> toVectorUInt32)
     extractor.SetIndex( idx |> toVectorInt32)
     extractor.SetDirectionCollapseToStrategy(itk.simple.ExtractImageFilter.DirectionCollapseToStrategyType.DIRECTIONCOLLAPSETOIDENTITY)
@@ -761,7 +756,6 @@ let toSeqSeq (I: Image<'T>): seq<seq<float>> =
             I[x,y] |> box |> toFloat))
 
 let permuteAxes (order: uint list) (img: Image<'T>) = 
-    printfn $"permuteAxes:\n{order}\n{img.GetSize()}"
     let filter = new itk.simple.PermuteAxesImageFilter()
     filter.SetOrder(order|>toVectorUInt32)
     Image<'S>.ofSimpleITK(filter.Execute(img.toSimpleITK()),"permuteAxes",img.index)

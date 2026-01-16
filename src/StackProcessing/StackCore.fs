@@ -88,7 +88,6 @@ let promoteStreamingToWindow (name: string) (winSz: uint) (pad: uint) (stride: u
         (Stage.window $"{name}: window" winSz pad zeroMaker stride) 
         --> (Stage.map $"{name}: skip and take" (fun _ lst ->
                 let result = lst |> List.skip (int stride) |> List.take 1
-                printfn $"disposing of {stride} initial images"
                 lst |> List.take (int stride) |> List.map decIfImage |> ignore
                 result
             ) id id )
