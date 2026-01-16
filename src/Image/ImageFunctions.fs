@@ -700,26 +700,23 @@ let extractSub (topLeft : uint list) (bottomRight: uint list) (img: Image<'T>) :
     let res = Image<'T>.ofSimpleITK(extractor.Execute(img.toSimpleITK()),"extractSub",img.index)
     res
 
-let extractSlice (dir: uint) (z: int) (img: Image<'T>) =
+let extractSlice (dir: uint) (i: int) (img: Image<'T>) =
     if img.GetDimensions() <> 3u then
         failwith $"extractSlice: image must be 3D"
     let size = img.GetSize()
     let extractor = new itk.simple.ExtractImageFilter()
     let sz, idx =
-        if dir = 0u then   [0u; size[1]; size[2]], [z; 0; 0]
-        elif dir = 1u then [size[0]; 0u; size[2]], [0; z; 0] 
-        else               [size[0]; size[1]; 0u], [0; 0; z]
+        if dir = 0u then   [0u; size[1]; size[2]], [i; 0; 0] // Has extractSlice confused x-y and i-j?
+        elif dir = 1u then [size[0]; 0u; size[2]], [0; i; 0] 
+        else               [size[0]; size[1]; 0u], [0; 0; i]
     printfn $"extractSlice: {img.GetSize()} {sz} {idx}"
     extractor.SetSize( sz |> toVectorUInt32)
     extractor.SetIndex( idx |> toVectorInt32)
     extractor.SetDirectionCollapseToStrategy(itk.simple.ExtractImageFilter.DirectionCollapseToStrategyType.DIRECTIONCOLLAPSETOIDENTITY)
-    let res = Image<'T>.ofSimpleITK(extractor.Execute(img.toSimpleITK()),"extractSlice",z)
+    let res = Image<'T>.ofSimpleITK(extractor.Execute(img.toSimpleITK()),"extractSlice",i)
     res
 
 let unstack (dir: uint) (vol: Image<'T>): Image<'T> list =
-    let dim = vol.GetDimensions()
-    if dim < 3u then
-        failwith $"Cannot unstack a {dim}-dimensional image along the 3rd axis"
     let sz = vol.GetSize()
     let depth = sz[int dir] |> int
     let res = List.init depth (fun i -> extractSlice dir i vol)

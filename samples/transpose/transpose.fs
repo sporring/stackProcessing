@@ -48,11 +48,11 @@ let main arg =
     >=> permuteAxes (2u,1u,0u) 64u
     >=> write ("../"+output+"210") ".tiff"
     |> sink
-(*
+
     src
-    |> read<uint8> ("../"+output) ".tiff"
-    >=> permuteAxes (1u,2u,0u) 64u
+    |> read<uint8> ("../"+output+"021") ".tiff"
+    >=> permuteAxes (0u,2u,1u) 32u
     >=> write ("../"+input+"b") ".tiff"
     |> sink
-*)
+
     0
