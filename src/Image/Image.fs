@@ -446,7 +446,7 @@ type Image<'T when 'T : equality>(sz: uint list, ?optionalNumberComponents: uint
         )
 
     static member ofFile(filename: string, ?optionalName: string, ?optionalIndex: int) : Image<'T> =
-        let name = defaultArg optionalName ""
+        let name = defaultArg optionalName filename
         let index = defaultArg optionalIndex 0
 
         use reader = new itk.simple.ImageFileReader()

@@ -17,17 +17,24 @@ let main arg =
         else
             "image18", "result18"
 
+    (*
     src
     |> read<uint8> ("../"+input) ".tiff"
     >=> permuteAxes (0u,1u,2u) 64u
     >=> write ("../"+output+"012") ".tiff"
     |> sink
-
+*)
+    let fname021 = output+"021"
+    if System.IO.Directory.Exists("../"+fname021) then System.IO.Directory.Delete("../"+fname021,true)
     src
     |> read<uint8> ("../"+input) ".tiff"
-    >=> permuteAxes (0u,2u,1u) 64u
-    >=> write ("../"+output+"021") ".tiff"
+    >=> tapIt (fun elm -> $"Read {elm.Name}")
+    >=> permuteAxes (0u,2u,1u) 32u
+    >=> write ("../"+fname021) ".tiff"
     |> sink
+    if System.IO.Directory.Exists("tmp") then System.IO.Directory.Delete("tmp",true)
+
+(*
     src
     |> read<uint8> ("../"+input) ".tiff"
     >=> permuteAxes (1u,0u,2u) 64u
@@ -48,11 +55,15 @@ let main arg =
     >=> permuteAxes (2u,1u,0u) 64u
     >=> write ("../"+output+"210") ".tiff"
     |> sink
+*)
 
+    let fname021021 = input+"b"
+    if System.IO.Directory.Exists("../"+fname021021) then System.IO.Directory.Delete("../"+fname021021,true)
     src
-    |> read<uint8> ("../"+output+"021") ".tiff"
-    >=> permuteAxes (0u,2u,1u) 32u
-    >=> write ("../"+input+"b") ".tiff"
+    |> read<uint8> ("../"+fname021) ".tiff"
+    >=> permuteAxes (0u,2u,1u) 64u
+    >=> write ("../"+fname021021) ".tiff"
     |> sink
+    if System.IO.Directory.Exists("tmp") then System.IO.Directory.Delete("tmp",true)
 
     0
