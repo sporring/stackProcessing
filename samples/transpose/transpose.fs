@@ -27,7 +27,7 @@ let main arg =
     let fname021 = output+"021"
     deleteIfExists fname021
     src
-    |> read<uint8> (input) ".tiff"
+    |> read<uint8> input ".tiff"
     >=> tapIt (fun elm -> $"Read {elm.Name}")
     >=> permuteAxes (0u,2u,1u) 32u
     >=> write fname021 ".tiff"
@@ -59,7 +59,7 @@ let main arg =
     let fname021021 = input+"b"
     deleteIfExists fname021021
     src
-    |> read<uint8> (fname021) ".tiff"
+    |> read<uint8> fname021 ".tiff"
     >=> permuteAxes (0u,2u,1u) 64u
     >=> write fname021021 ".tiff"
     |> sink

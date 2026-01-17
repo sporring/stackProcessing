@@ -16,7 +16,7 @@ let main arg =
             let n = (int arg[1]) / 3 |> pown 2 |> uint 
             n, n, n, $"image{arg[1]}"
         else
-            64u, 64u, 64u, "image18"
+            64u, 64u, 64u, "../image18"
 
 
     src
@@ -25,7 +25,7 @@ let main arg =
     >=> threshold 128.0 infinity
     >=> imageMulScalar 255uy
     //>=> ignoreImages ()
-    >=> write ("../"+output) ".tiff"
+    >=> write output ".tiff"
     |> sink
 
     0
