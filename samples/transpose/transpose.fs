@@ -15,55 +15,53 @@ let main arg =
         if arg.Length > 1 then
             $"image{arg[1]}", $"result{arg[1]}"
         else
-            "image18", "result18"
+            "../image18", "../result18"
 
     (*
     src
-    |> read<uint8> ("../"+input) ".tiff"
+    |> read<uint8> (input) ".tiff"
     >=> permuteAxes (0u,1u,2u) 64u
-    >=> write ("../"+output+"012") ".tiff"
+    >=> write (output+"012") ".tiff"
     |> sink
 *)
     let fname021 = output+"021"
-    if System.IO.Directory.Exists("../"+fname021) then System.IO.Directory.Delete("../"+fname021,true)
+    deleteIfExists fname021
     src
-    |> read<uint8> ("../"+input) ".tiff"
+    |> read<uint8> (input) ".tiff"
     >=> tapIt (fun elm -> $"Read {elm.Name}")
     >=> permuteAxes (0u,2u,1u) 32u
-    >=> write ("../"+fname021) ".tiff"
+    >=> write fname021 ".tiff"
     |> sink
-    if System.IO.Directory.Exists("tmp") then System.IO.Directory.Delete("tmp",true)
 
 (*
     src
-    |> read<uint8> ("../"+input) ".tiff"
+    |> read<uint8> (input) ".tiff"
     >=> permuteAxes (1u,0u,2u) 64u
-    >=> write ("../"+output+"102") ".tiff"
+    >=> write (output+"102") ".tiff"
     |> sink
     src
-    |> read<uint8> ("../"+input) ".tiff"
+    |> read<uint8> (input) ".tiff"
     >=> permuteAxes (1u,2u,0u) 64u
-    >=> write ("../"+output+"120") ".tiff"
+    >=> write (output+"120") ".tiff"
     |> sink
     src
-    |> read<uint8> ("../"+input) ".tiff"
+    |> read<uint8> (input) ".tiff"
     >=> permuteAxes (2u,0u,1u) 64u
-    >=> write ("../"+output+"201") ".tiff"
+    >=> write (output+"201") ".tiff"
     |> sink
     src
-    |> read<uint8> ("../"+input) ".tiff"
+    |> read<uint8> (input) ".tiff"
     >=> permuteAxes (2u,1u,0u) 64u
-    >=> write ("../"+output+"210") ".tiff"
+    >=> write (output+"210") ".tiff"
     |> sink
 *)
 
     let fname021021 = input+"b"
-    if System.IO.Directory.Exists("../"+fname021021) then System.IO.Directory.Delete("../"+fname021021,true)
+    deleteIfExists fname021021
     src
-    |> read<uint8> ("../"+fname021) ".tiff"
+    |> read<uint8> (fname021) ".tiff"
     >=> permuteAxes (0u,2u,1u) 64u
-    >=> write ("../"+fname021021) ".tiff"
+    >=> write fname021021 ".tiff"
     |> sink
-    if System.IO.Directory.Exists("tmp") then System.IO.Directory.Delete("tmp",true)
 
     0

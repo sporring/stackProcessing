@@ -62,6 +62,8 @@ let getChunkFilename = StackIO.getChunkFilename
 let readChunksAsWindows<'T when 'T: equality> = StackIO.readChunksAsWindows<'T>
 let readChunks<'T when 'T: equality> = StackIO.readChunks<'T>
 let icompare = StackIO.icompare
+
+let deleteIfExists = StackIO.deleteIfExists
 let write = StackIO.write
 let writeInChunks = StackIO.writeInChunks
 

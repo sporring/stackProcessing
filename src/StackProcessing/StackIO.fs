@@ -209,6 +209,17 @@ let readChunks<'T when 'T: equality> (inputDir: string) (suffix: string) (pl: Pl
 let icompare s1 s2  = 
     System.String.Equals(s1, s2, System.StringComparison.CurrentCultureIgnoreCase)
 
+let rnd = new System.Random()
+let rec getUnusedDirectoryName dir =
+    if not (Directory.Exists(dir)) then
+        dir
+    else
+        getUnusedDirectoryName (dir + string (rnd.Next(9)))
+
+let deleteIfExists dir =
+    if System.IO.Directory.Exists(dir) then 
+        System.IO.Directory.Delete(dir,true)
+
 let write (outputDir: string) (suffix: string) : Stage<Image<'T>, Image<'T>> =
     let t = typeof<'T>
     if (icompare suffix ".tif" || icompare suffix ".tiff") 
