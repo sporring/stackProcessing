@@ -15,13 +15,13 @@ let main arg =
         if arg.Length > 1 then
             $"image{arg[1]}", $"mask{arg[1]}"
         else
-            "image18", "mask18"
+            "../image18", "../mask18"
 
     src
-    |> read<uint8> ("../"+input) ".tiff"
-    //|> getFilenames ("../"+input) ".tiff" Array.sort
+    |> read<uint8> input ".tiff"
+    //|> getFilenames (input) ".tiff" Array.sort
     //>=> readFiles<uint8>
-    >=> write ("../"+output) ".tiff"
+    >=> write output ".tiff"
     |> sink
 
     0

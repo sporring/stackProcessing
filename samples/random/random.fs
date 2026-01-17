@@ -17,12 +17,12 @@ let main arg =
             let n = (int arg[1]) / 3 |> pown 2 |> uint 
             n, n, n, $"image{arg[1]}"
         else
-            64u, 64u, 64u, "image18"
+            64u, 64u, 64u, "../image18"
             
     src
     |> zero<uint8> width height depth
     >=> addNormalNoise 128.0 50.0
-    >=> write ("../"+output) ".tiff"
+    >=> write output ".tiff"
     |> sink
 
     0
