@@ -248,6 +248,12 @@ val readChunks:
 
 val icompare: s1: string -> s2: string -> bool
 
+val rnd: System.Random
+
+val getUnusedDirectoryName: dir: string -> string
+
+val deleteIfExists: dir: string -> unit
+
 val write:
   outputDir: string ->
     suffix: string -> StackCore.Stage<StackCore.Image<'T>,StackCore.Image<'T>>
@@ -937,6 +943,8 @@ val readChunks<'T when 'T: equality> :
     when 'T: equality
 
 val icompare: (string -> string -> bool)
+
+val deleteIfExists: (string -> unit)
 
 val write:
   (string -> string -> StackCore.Stage<StackCore.Image<'a>,StackCore.Image<'a>>)

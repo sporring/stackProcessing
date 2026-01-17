@@ -123,6 +123,7 @@ type Stage<'S,'T> =
       Transition: ProfileTransition
       MemoryNeed: MemoryNeedWrapped
       LengthTransformation: LengthTransformation
+      Cleaning: (unit -> unit) list
     }
 module Stage =
     val create:
@@ -130,13 +131,15 @@ module Stage =
         build: (unit -> Pipe<'S,'T>) ->
         transition: ProfileTransition ->
         memoryNeed: MemoryNeed ->
-        lengthTransformation: LengthTransformation -> Stage<'S,'T>
+        lengthTransformation: LengthTransformation ->
+        cleaning: (unit -> unit) list -> Stage<'S,'T>
     val createWrapped:
       name: string ->
         build: (unit -> Pipe<'S,'T>) ->
         transition: ProfileTransition ->
         wrapMemoryNeed: MemoryNeedWrapped ->
-        lengthTransformation: LengthTransformation -> Stage<'S,'T>
+        lengthTransformation: LengthTransformation ->
+        cleaning: (unit -> unit) list -> Stage<'S,'T>
     val empty: name: string -> Stage<unit,unit>
     val init<'S,'T> :
       name: string ->
@@ -150,6 +153,7 @@ module Stage =
     val prepend: name: string -> pre: Stage<unit,'S> -> Stage<'S,'S>
     val append: name: string -> app: Stage<unit,'S> -> Stage<'S,'S>
     val idStage: name: string -> Stage<'T,'T>
+    val clean: name: string -> fct: (unit -> unit) -> Stage<'T,'T>
     val toPipe: stage: Stage<'a,'b> -> (unit -> Pipe<'a,'b>)
     val fromPipe:
       name: string ->
@@ -291,6 +295,7 @@ module Plan =
         stage: Stage<('U * 'V),('S * 'T)> -> Plan<'In,('S * 'T)>
         when 'S: equality and 'T: equality
     /// sink type operators
+    val doCleaning: pl: Plan<'a,'b> -> unit option
     val sink: pl: Plan<unit,unit> -> unit
     val sinkList: plans: Plan<unit,unit> list -> unit
     val internal runToScalar:

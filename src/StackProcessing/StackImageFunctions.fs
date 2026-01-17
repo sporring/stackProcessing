@@ -531,7 +531,7 @@ let permuteAxes (i: uint, j: uint, k: uint) (winSz: uint): Stage<Image<'T>,Image
         Stage.map name (fun _ -> ImageFunctions.permuteAxes [i;j;k]) memoryNeed lengthTransformation
     else // k neq 2u
         // writechunks and reread in permuted order
-        let tmpDir = "tmp"
+        let tmpDir = getUnusedDirectoryName "tmp"
         let tmpSuffix = ".tiff"
 
         let mapper (chunkInfo: ChunkInfo) (debug: bool) (idx: int): Image<'T> list = 
@@ -557,6 +557,10 @@ let permuteAxes (i: uint, j: uint, k: uint) (winSz: uint): Stage<Image<'T>,Image
 
         (writeInChunks tmpDir tmpSuffix winSz winSz winSz)
         --> tap "writeInChunks"
+        --> Stage.clean name (fun () -> printfn "******** going to delete ***********") 
+        --> Stage.clean name (fun () -> StackIO.deleteIfExists tmpDir) 
+        --> Stage.clean name (fun () -> printfn "******** deleted it ***********") 
+        --> tap "cleaning added"
         --> StackCore.ignoreSingles () // force calculation of full stream and decrease references
         --> tap "ignoreSingles"
         --> Stage.map name (fun _ _ -> chunkInfo <- getChunkInfo tmpDir tmpSuffix) memoryNeed lengthTransformation // insert side-effect

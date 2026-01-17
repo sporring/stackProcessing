@@ -395,125 +395,109 @@ type Stage<'S,'T> =
       Transition : ProfileTransition // The transformation of the transition profile
       MemoryNeed : MemoryNeedWrapped // calculate the memory needed to process a specified number of element
       LengthTransformation : LengthTransformation // the transformation of the length of the sequence of elements
+      Cleaning: (unit->unit) list // Functions to be called at sink/drain/flush
       } 
 
 module Stage =
-(*
-    let create<'S,'T> (name: string) (pipe: Pipe<'S,'T>) (transition: ProfileTransition) (memoryNeed: MemoryNeed) (lengthTransformation: LengthTransformation) =
-        let wrapMemoryNeed = SingleOrPair.sum >> memoryNeed >> Single
-        { Name = name; Pipe = pipe; Build = (fun () -> pipe); Transition = transition; MemoryNeed = wrapMemoryNeed; LengthTransformation = lengthTransformation}
 
-    let createWrapped<'S,'T> (name: string) (pipe: Pipe<'S,'T>) (transition: ProfileTransition) (wrapMemoryNeed: MemoryNeedWrapped) (lengthTransformation: LengthTransformation) =
-        { Name = name; Pipe = pipe; Build = (fun () -> pipe); Transition = transition; MemoryNeed = wrapMemoryNeed; LengthTransformation = lengthTransformation}
-
-    let compose (stage1 : Stage<'S,'T>) (stage2 : Stage<'T,'U>) : Stage<'S,'U> =
-        let pipe = Pipe.compose stage1.Pipe stage2.Pipe
-        let transition = ProfileTransition.create stage1.Transition.From stage2.Transition.To
-        let memoryNeed nElems = SingleOrPair.add (stage1.MemoryNeed nElems) (stage2.MemoryNeed nElems)
-        let lengthTransformation = stage1.LengthTransformation >> stage2.LengthTransformation
-        createWrapped $"{stage2.Name} o {stage1.Name}" pipe transition memoryNeed lengthTransformation
-*)
-
-    let create<'S,'T> (name: string) (build: unit->Pipe<'S,'T>) (transition: ProfileTransition) (memoryNeed: MemoryNeed) (lengthTransformation: LengthTransformation) =
+    let create<'S,'T> (name: string) (build: unit->Pipe<'S,'T>) (transition: ProfileTransition) (memoryNeed: MemoryNeed) (lengthTransformation: LengthTransformation) (cleaning: (unit->unit) list) =
         let wrapMemoryNeed = SingleOrPair.sum >> SingleOrPair.fst >> memoryNeed >> Single
-        { Name = name; Build = build; Transition = transition; MemoryNeed = wrapMemoryNeed; LengthTransformation = lengthTransformation}
+        { Name = name; Build = build; Transition = transition; MemoryNeed = wrapMemoryNeed; LengthTransformation = lengthTransformation; Cleaning = cleaning}
 
-    let createWrapped<'S,'T> (name: string) (build: unit->Pipe<'S,'T>) (transition: ProfileTransition) (wrapMemoryNeed: MemoryNeedWrapped) (lengthTransformation: LengthTransformation) =
-        { Name = name; Build = build; Transition = transition; MemoryNeed = wrapMemoryNeed; LengthTransformation = lengthTransformation}
+    let createWrapped<'S,'T> (name: string) (build: unit->Pipe<'S,'T>) (transition: ProfileTransition) (wrapMemoryNeed: MemoryNeedWrapped) (lengthTransformation: LengthTransformation) (cleaning: (unit->unit) list) =
+        { Name = name; Build = build; Transition = transition; MemoryNeed = wrapMemoryNeed; LengthTransformation = lengthTransformation; Cleaning = cleaning}
 
     let empty (name: string) =
         let build () = Pipe.empty name
         let transition = ProfileTransition.create Streaming Streaming
         let memoryNeed _ = 0UL
         let lengthTransformation = id
-        create name build transition memoryNeed  lengthTransformation
+        create name build transition memoryNeed  lengthTransformation []
 
     let init<'S,'T> (name: string) (depth: uint) (mapper: int -> 'T) (transition: ProfileTransition) (memoryNeed: MemoryNeed) (lengthTransformation: LengthTransformation) =
         let build () = Pipe.init name depth mapper transition.From
-        create name build transition memoryNeed lengthTransformation
+        create name build transition memoryNeed lengthTransformation []
 
     let compose (stage1 : Stage<'S,'T>) (stage2 : Stage<'T,'U>) : Stage<'S,'U> =
         let build () = Pipe.compose (stage1.Build ()) (stage2.Build ())
         let transition = ProfileTransition.create stage1.Transition.From stage2.Transition.To
         let memoryNeed nElems = SingleOrPair.add (stage1.MemoryNeed nElems) (stage2.MemoryNeed nElems)
         let lengthTransformation = stage1.LengthTransformation >> stage2.LengthTransformation
-        createWrapped $"{stage2.Name} o {stage1.Name}" build transition memoryNeed lengthTransformation
+        createWrapped $"{stage2.Name} o {stage1.Name}" build transition memoryNeed lengthTransformation (stage2.Cleaning@stage1.Cleaning)
 
     let (-->) = compose
 
     let prepend (name: string) (pre: Stage<unit,'S>) : Stage<'S,'S> =
         let build () = Pipe.prepend name (pre.Build ())
         let transition = ProfileTransition.create Streaming Streaming
-        createWrapped name build transition pre.MemoryNeed pre.LengthTransformation
+        createWrapped name build transition pre.MemoryNeed pre.LengthTransformation pre.Cleaning
 
     let append (name: string) (app: Stage<unit,'S>) : Stage<'S,'S> =
         let build () = Pipe.append name (app.Build ())
         let transition = ProfileTransition.create Streaming Streaming
-        createWrapped name build transition app.MemoryNeed app.LengthTransformation
+        createWrapped name build transition app.MemoryNeed app.LengthTransformation app.Cleaning
 
     let idStage<'T> (name: string) : Stage<'T, 'T> = // I don't think this is used
         let build () = Pipe.id name
         let transition = ProfileTransition.create Streaming Streaming
-        create "id" build transition id id
+        create "id" build transition id id []
+
+    let clean<'T> (name: string) fct : Stage<'T, 'T> = // I don't think this is used
+        let build () = Pipe.id name
+        let transition = ProfileTransition.create Streaming Streaming
+        create "id" build transition id id [fct]
 
     let toPipe (stage : Stage<_,_>) = stage.Build
 
     let fromPipe (name: string) (transition: ProfileTransition) (memoryNeed: MemoryNeed) (lengthTransformation: LengthTransformation) (pipe: Pipe<'S, 'T>) : Stage<'S, 'T> =
-        create name (fun () -> pipe) transition memoryNeed lengthTransformation
+        create name (fun () -> pipe) transition memoryNeed lengthTransformation []
 
     let skip (name: string) (n: uint) : Stage<'S, 'S> =
         let build () = Pipe.skip name n 
         let transition = ProfileTransition.create Streaming Streaming
-        create name build transition id id
+        create name build transition id id []
 
     let take (name: string) (n: uint) : Stage<'S, 'S> =
         let build () = Pipe.take name n 
         let transition = ProfileTransition.create Streaming Streaming
-        create name build transition id id
+        create name build transition id id []
 
     let map<'S,'T> (name: string) (f: bool -> 'S -> 'T) (memoryNeed: MemoryNeed) (lengthTransformation: LengthTransformation) : Stage<'S, 'T> =
         let apply debug input = input |> AsyncSeq.map (f debug)
         let build () : Pipe<'S,'T> = Pipe.create name apply Streaming
         let transition = ProfileTransition.create Streaming Streaming
-        create name build transition memoryNeed lengthTransformation // Not right!!!
+        create name build transition memoryNeed lengthTransformation []// Not right!!!
 
     let mapi<'S,'T> (name: string) (f: bool -> int64 -> 'S -> 'T) (memoryNeed: MemoryNeed) (lengthTransformation: LengthTransformation) : Stage<'S, 'T> =
         let apply debug input = input |> AsyncSeq.mapi (f debug)
         let build () : Pipe<'S,'T> = Pipe.create name apply Streaming
         let transition = ProfileTransition.create Streaming Streaming
-        create name build transition memoryNeed lengthTransformation // Not right!!!
-
-(*
-    let wrap (name: string) (f: ('In * 'U) -> 'V) (stage: Stage<'In, 'U>) (memoryNeed: MemoryNeed) (lengthTransformation: LengthTransformation) : Stage<'In, 'V> =
-        let build () = Pipe.wrap name f stage.Pipe
-        let transition = ProfileTransition.create Streaming Streaming
-        create name build transition memoryNeed lengthTransformation
-*)
+        create name build transition memoryNeed lengthTransformation []// Not right!!!
 
     let map1 (name: string) (f: 'U -> 'V) (stage: Stage<'In, 'U>) (memoryNeed: MemoryNeed) (lengthTransformation: LengthTransformation) : Stage<'In, 'V> =
         let build () = Pipe.map name f (stage.Build())
         let transition = ProfileTransition.create Streaming Streaming
-        create name build transition memoryNeed lengthTransformation
+        create name build transition memoryNeed lengthTransformation []
 
     let map2 (name: string) (debug: bool) (f: 'U -> 'V -> 'W) (stage1: Stage<'In, 'U>) (stage2: Stage<'In, 'V>) (memoryNeed: MemoryNeedWrapped) (lengthTransformation: LengthTransformation) : Stage<'In, 'W> =
         let build () = Pipe.map2 name debug f (stage1.Build ()) (stage2.Build ())
         let transition = ProfileTransition.create Streaming Streaming
-        createWrapped name build transition memoryNeed lengthTransformation
+        createWrapped name build transition memoryNeed lengthTransformation (stage1.Cleaning@stage2.Cleaning)
 
     let map2Sync (name: string) (debug: bool) (f: 'U -> 'V -> 'W) (stage1: Stage<'In, 'U>) (stage2: Stage<'In, 'V>) (memoryNeed: MemoryNeedWrapped) (lengthTransformation: LengthTransformation) : Stage<'In, 'W> =
         let build () = Pipe.map2Sync name debug f (stage1.Build ()) (stage2.Build ())
         let transition = ProfileTransition.create Streaming Streaming
-        createWrapped name build transition memoryNeed lengthTransformation
+        createWrapped name build transition memoryNeed lengthTransformation (stage1.Cleaning@stage2.Cleaning)
 
     let reduce (name: string) (reducer: bool -> AsyncSeq<'In> -> Async<'Out>) (profile: Profile) (memoryNeed: MemoryNeed) (lengthTransformation: LengthTransformation) : Stage<'In, 'Out> =
         let build () = Pipe.reduce name reducer profile
         let transition = ProfileTransition.create Streaming Constant
-        create name build transition memoryNeed lengthTransformation // Check !!!
+        create name build transition memoryNeed lengthTransformation []// Check !!!
 
     let fold<'S,'T> (name: string) (folder: 'T -> 'S -> 'T) (initial: 'T) (memoryNeed: MemoryNeed) (lengthTransformation: LengthTransformation) : Stage<'S, 'T> =
         let build () : Pipe<'S,'T> = Pipe.fold name folder initial Streaming
         let transition = ProfileTransition.create Streaming Constant
-        create name build transition memoryNeed lengthTransformation // Check !!!
+        create name build transition memoryNeed lengthTransformation [] // Check !!!
 
     let window (name: string) (winSz: uint) (pad: uint) (zeroMaker: int -> 'T -> 'T) (stride: uint) : Stage<'T, 'T list> =
         let pipe = Pipe.window name winSz pad zeroMaker stride
@@ -528,12 +512,12 @@ module Stage =
     let liftUnary<'S,'T> (name: string) (f: 'S -> 'T) (memoryNeed: MemoryNeed) (lengthTransformation: LengthTransformation) : Stage<'S, 'T> =
         let build () = Pipe.lift name Streaming f
         let transition = ProfileTransition.create Streaming Streaming
-        create name build transition memoryNeed lengthTransformation
+        create name build transition memoryNeed lengthTransformation []
 
     let liftReleaseUnary<'S,'T> (name: string) (release: 'S->unit) (f: 'S -> 'T) (memoryNeed: MemoryNeed) (lengthTransformation: LengthTransformation) : Stage<'S, 'T> =
         let build ()= Pipe.liftRelease name Streaming release f
         let transition = ProfileTransition.create Streaming Streaming
-        create name build transition memoryNeed lengthTransformation
+        create name build transition memoryNeed lengthTransformation []
 
 (*
     let liftWindowed<'S,'T when 'S: equality and 'T: equality> (name: string) (window: uint) (pad: uint) (zeroMaker: int->'S->'S) (stride: uint) (emitStart: uint) (emitCount: uint) (f: 'S list -> 'T list) (memoryNeed: MemoryNeed) (lengthTransformation: LengthTransformation) : Stage<'S, 'T> =
@@ -562,23 +546,23 @@ module Stage =
     let ignore<'T> clean : Stage<'T, unit> =
         let build () = Pipe.ignore clean
         let transition = ProfileTransition.create Streaming Unit
-        create "ignore" build transition id id // check !!!!
+        create "ignore" build transition id id []// check !!!!
 
     let ignorePairs<'S,'T> (cleanFst, cleanSnd) : Stage<'S*'T, unit> =
         let build () = Pipe.ignorePairs (cleanFst, cleanSnd)
         let transition = ProfileTransition.create Streaming Unit
-        create "ignorePairs" build transition id id // check !!!!
+        create "ignorePairs" build transition id id []// check !!!!
 
     let consumeWith (name: string) (consume: bool -> int -> 'T -> unit) (memoryNeed: MemoryNeed) : Stage<'T, unit> = 
         let build () = Pipe.consumeWith name consume Streaming
         let transition = ProfileTransition.create Streaming Constant
-        create name build transition memoryNeed (fun _ -> 0UL) // Check !!!!
+        create name build transition memoryNeed (fun _ -> 0UL) []// Check !!!!
 
     let cast<'S,'T when 'S: equality and 'T: equality> name f (memoryNeed: MemoryNeed) : Stage<'S,'T> = // cast cannot change
         let apply debug input = input |> AsyncSeq.map f 
         let build () = Pipe.create name apply Streaming
         let transition = ProfileTransition.create Streaming Streaming
-        create name build transition memoryNeed id // Type calculation needs to be updated!!!!
+        create name build transition memoryNeed id []// Type calculation needs to be updated!!!!
 
 ////////////////////////////////////////////////////////////
 // Plan flow controler
@@ -596,6 +580,7 @@ module Plan =
 
     let createWrapped<'S,'T when 'T: equality> (stage: Stage<'S,'T> option) (memAvail : uint64) (memPeak: uint64) (nElemsPerSlice: SingleOrPair) (length: uint64) (debug: bool) : Plan<'S, 'T> =
         { stage = stage; memAvail = memAvail; memPeak = memPeak; nElemsPerSlice = nElemsPerSlice; length = length; debug = debug }
+
     //////////////////////////////////////////////////
     /// Source type operators
     let source (availableMemory: uint64) : Plan<unit, unit> =
@@ -704,6 +689,9 @@ module Plan =
 
     ///////////////////////////////////////////
     /// sink type operators
+    let doCleaning pl = 
+        Option.map (fun stg -> stg.Cleaning |> List.rev |> List.iter (fun fct -> fct ())) pl.stage
+
     let sink (pl: Plan<unit, unit>) : unit =
         if not pl.debug && (pl.memPeak > pl.memAvail) then
             failwith $"Not enough memory for the plan {pl.memPeak} > {pl.memAvail}"
@@ -711,6 +699,8 @@ module Plan =
         let pipeline = Option.map (fun stage -> Stage.toPipe stage ()) pl.stage
         if pl.debug then printfn $"[sink] Running pipeline with an estimated {pl.memPeak/1024UL} / {pl.memAvail/1024UL} KB of memory use"
         Option.map (Pipe.run pl.debug) pipeline |> ignore
+        if pl.debug then printfn "[sink] Cleaning"
+        doCleaning pl |> ignore
         if pl.debug then printfn "[sink] Done"
 
     let sinkList (plans: Plan<unit, unit> list) : unit = // shape of unit?
@@ -721,18 +711,22 @@ module Plan =
             failwith $"Not enough memory for the plan {pl.memPeak} > {pl.memAvail}"
 
         let stage = pl.stage
-        match stage with
-            Some stg -> 
-                if pl.debug then printfn $"[{name}] Transform plan to pipeline"
-                let pipeline = stg.Build ()
-                if pl.debug then printfn $"[{name}] Running pipeline with an estimated {pl.memPeak/1024UL} / {pl.memAvail/1024UL} KB memory use" 
-                AsyncSeq.singleton () |> pipeline.Apply pl.debug |> reducer |> Async.RunSynchronously
-            | _ -> failwith $"[{name}] Plan is empty"
+        let res = 
+            match stage with
+                Some stg -> 
+                    if pl.debug then printfn $"[{name}] Transform plan to pipeline"
+                    let pipeline = stg.Build ()
+                    if pl.debug then printfn $"[{name}] Running pipeline with an estimated {pl.memPeak/1024UL} / {pl.memAvail/1024UL} KB memory use" 
+                    AsyncSeq.singleton () |> pipeline.Apply pl.debug |> reducer |> Async.RunSynchronously
+                | _ -> failwith $"[{name}] Plan is empty"
+        doCleaning pl |> ignore
+        res
 
     let drainSingle (name: string) (pl: Plan<unit, 'T>) =
         runToScalar name AsyncSeq.toListAsync pl
         |> function
-            | [x] -> x
+            | [x] -> 
+                x
             | []  -> failwith $"[drainSingle] No result from {name}"
             | _   -> failwith $"[drainSingle] Multiple results from {name}, expected one."
 
