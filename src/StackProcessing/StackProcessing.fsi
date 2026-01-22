@@ -231,7 +231,7 @@ val _readChunk:
 val _readChunkSlice:
   inputDir: string ->
     suffix: string ->
-    chunkInfo: ChunkInfo -> dir: uint -> idx: int -> StackCore.Image<'T>
+    chunkInfo: ChunkInfo -> udir: uint -> idx: int -> StackCore.Image<'T>
     when 'T: equality
 
 val readChunksAsWindows:

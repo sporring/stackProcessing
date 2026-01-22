@@ -556,20 +556,10 @@ let permuteAxes (i: uint, j: uint, k: uint) (winSz: uint): Stage<Image<'T>,Image
         let lengthTransformation = fun _ -> chunkInfo.chunks[int k] |> uint64
 
         (writeInChunks tmpDir tmpSuffix winSz winSz winSz)
-        --> tap "writeInChunks"
-        --> Stage.clean name (fun () -> printfn "******** going to delete ***********") 
         --> Stage.clean name (fun () -> StackIO.deleteIfExists tmpDir) 
-        --> Stage.clean name (fun () -> printfn "******** deleted it ***********") 
-        --> tap "cleaning added"
         --> StackCore.ignoreSingles () // force calculation of full stream and decrease references
-        --> tap "ignoreSingles"
         --> Stage.map name (fun _ _ -> chunkInfo <- getChunkInfo tmpDir tmpSuffix) memoryNeed lengthTransformation // insert side-effect
-        --> tap "sideEffect"
         --> Stage.map name (fun _ _ -> [0..(chunkInfo.chunks[int k]-1)]) memoryNeed lengthTransformation
-        --> tapIt (fun elm -> sprintf $"reinitialize\n{chunkInfo}")
         --> flatten () // expand to a new, non-empty stream
-        --> tap "flatten 1"
         --> Stage.map name (fun debug idx -> mapper chunkInfo debug idx) memoryNeed lengthTransformation // mapper chunkInfo does not work, since argument is copied at compile time
-        --> tap "mapper"
         --> flatten ()
-        --> tap "flatten 2"
