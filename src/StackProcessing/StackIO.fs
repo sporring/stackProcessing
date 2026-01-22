@@ -146,32 +146,33 @@ let _readChunk<'T when 'T: equality>  (inputDir: string) (suffix: string) i j k 
     let res = Image<'T>.ofFile filename
     res
 
-let _readChunkSlice<'T when 'T: equality>  (inputDir: string) (suffix: string) (chunkInfo: ChunkInfo) (dir: uint) (idx: int) =
-    //let depth = uint64 chunkInfo.chunks[2] // we will read chunks_*_*_i* as windows
+let _readChunkSlice<'T when 'T: equality>  (inputDir: string) (suffix: string) (chunkInfo: ChunkInfo) (udir: uint) (idx: int) =
+    let dir = int udir
     let chunkWidth = int chunkInfo.topLeftInfo.size[0]
     let chunkHeight = int chunkInfo.topLeftInfo.size[1]
     let chunkDepth = int chunkInfo.topLeftInfo.size[2]
-(*    let chunkDepth = 
-        if idx < chunkInfo.chunks[2]-1 then
-           int chunkInfo.topLeftInfo.size[2]
-        else
-           chunkInfo.size[2] % chunkInfo.topLeftInfo.size[2] |> int
-*)
+
+    let lastSz = 
+        let lastIdx =  chunkInfo.size[dir]/chunkInfo.topLeftInfo.size[dir] |> int
+        let slicesLeft = chunkInfo.size[dir] % chunkInfo.topLeftInfo.size[dir]
+        if idx = lastIdx then slicesLeft else chunkInfo.topLeftInfo.size[dir]
+
     let sz, nChunks = 
-        if dir = 0u then
-            [chunkWidth |> uint64; chunkInfo.size[1]; chunkInfo.size[2]], [1; chunkInfo.chunks[1]; chunkInfo.chunks[2]]
-        elif dir = 1u then
-            [chunkInfo.size[0]; chunkHeight |> uint64; chunkInfo.size[1]], [chunkInfo.chunks[0]; 1; chunkInfo.chunks[2]]
+        if dir = 0 then
+            [lastSz; chunkInfo.size[1]; chunkInfo.size[2]], [1; chunkInfo.chunks[1]; chunkInfo.chunks[2]]
+        elif dir = 1 then
+            [chunkInfo.size[0]; lastSz; chunkInfo.size[2]], [chunkInfo.chunks[0]; 1; chunkInfo.chunks[2]]
         else
-            [chunkInfo.size[0]; chunkInfo.size[1]; chunkDepth |> uint64], [chunkInfo.chunks[0]; chunkInfo.chunks[1]; 1]
+            [chunkInfo.size[0]; chunkInfo.size[1]; lastSz], [chunkInfo.chunks[0]; chunkInfo.chunks[1]; 1]
+
     let chunkSlice = Image<'T>(sz |> List.map uint, chunkInfo.topLeftInfo.numberOfComponents)
     for i in [0 .. nChunks[0]-1] do
         for j in [0 .. nChunks[1]-1] do
             for k in [0 .. nChunks[2]-1] do
                 let img = 
-                    if dir = 0u then   _readChunk<'T> inputDir suffix idx j k
-                    elif dir = 1u then _readChunk<'T> inputDir suffix i idx k
-                    else               _readChunk<'T> inputDir suffix i j idx
+                    if dir = 0 then   _readChunk<'T> inputDir suffix idx j k
+                    elif dir = 1 then _readChunk<'T> inputDir suffix i idx k
+                    else              _readChunk<'T> inputDir suffix i j idx
                 let start0 = i*chunkWidth|>Some
                 let stop0 = i*chunkWidth+(img.GetWidth()|>int)-1|>Some
                 let start1 = j*chunkHeight|>Some
