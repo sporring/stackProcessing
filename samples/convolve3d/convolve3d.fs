@@ -12,20 +12,20 @@ let main arg =
             debug availableMemory
         else
             source availableMemory
-    let input,output = 
+    let input, output = 
         if arg.Length > 1 then
             $"image{arg[1]}", $"result{arg[1]}"
         else
-            "image18", "result18"
+            "../image18", "../result18"
 
     src
-    |> read<float> ("../"+input) ".tiff"
+    |> read<float> input ".tiff"
     // sigma = 1 => pad=2, depth = 22 => integer solution for number of strides when:
     // windowSize = 1, 6, 15, or 26, => n = 21, 10, 1, or 0
     >=> discreteGaussian sigma None None (Some 15u) 
     //>=> convGauss sigma
     >=> cast<float,uint8>
-    >=> write ("../"+output) ".tiff"
+    >=> write output ".tiff"
     //>=> ignoreImages ()
     |> sink
 

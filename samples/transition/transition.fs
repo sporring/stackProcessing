@@ -16,16 +16,16 @@ let main arg =
         if arg.Length > 1 then
             $"image{arg[1]}", $"result{arg[1]}"
         else
-            "image18", "result18"
+            "../image18", "../result18"
 
     src
-    |> read<float> ("../"+input) ".tiff"
+    |> read<float> input ".tiff"
     >=> sqrt
     >=> convGauss sigma 
     >=> sqrt
     >=> convGauss sigma 
     >=> cast<float,uint8>
-    >=> write ("../"+output) ".tiff"
+    >=> write output ".tiff"
     |> sink
 
 

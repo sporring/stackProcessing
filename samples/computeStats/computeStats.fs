@@ -11,14 +11,14 @@ let main arg =
             debug availableMemory
         else
             source availableMemory
-    let input,output = 
+    let input = 
         if arg.Length > 1 then
-            $"image{arg[1]}", $"result{arg[1]}"
+            $"image{arg[1]}"
         else
-            "image18", "result18"
+            "../image18"
 
     src
-    |> read<uint8> ("../"+input) ".tiff"
+    |> read<uint8> input ".tiff"
     >=> computeStats () --> print ()
     |> sink
 

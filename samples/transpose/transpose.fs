@@ -1,0 +1,67 @@
+﻿// To run, remember to:
+// export DYLD_LIBRARY_PATH=./StackPipeline/lib:$(pwd)/bin/Debug/net8.0
+open StackProcessing
+
+[<EntryPoint>]
+let main arg =
+    let availableMemory = 2UL * 1024UL * 1024UL *1024UL // 2GB for example
+
+    let src = 
+        if arg.Length > 0 && arg[0] = "debug" then
+            debug availableMemory
+        else
+            source availableMemory
+    let input,output = 
+        if arg.Length > 1 then
+            $"image{arg[1]}", $"result{arg[1]}"
+        else
+            "../image18", "../result18"
+
+    (*
+    src
+    |> read<uint8> (input) ".tiff"
+    >=> permuteAxes (0u,1u,2u) 64u
+    >=> write (output+"012") ".tiff"
+    |> sink
+*)
+    let fname021 = output+"021"
+    deleteIfExists fname021
+    src
+    |> read<uint8> input ".tiff"
+    >=> tapIt (fun elm -> $"Read {elm.Name}")
+    >=> permuteAxes (0u,2u,1u) 32u
+    >=> write fname021 ".tiff"
+    |> sink
+
+(*
+    src
+    |> read<uint8> (input) ".tiff"
+    >=> permuteAxes (1u,0u,2u) 64u
+    >=> write (output+"102") ".tiff"
+    |> sink
+    src
+    |> read<uint8> (input) ".tiff"
+    >=> permuteAxes (1u,2u,0u) 64u
+    >=> write (output+"120") ".tiff"
+    |> sink
+    src
+    |> read<uint8> (input) ".tiff"
+    >=> permuteAxes (2u,0u,1u) 64u
+    >=> write (output+"201") ".tiff"
+    |> sink
+    src
+    |> read<uint8> (input) ".tiff"
+    >=> permuteAxes (2u,1u,0u) 64u
+    >=> write (output+"210") ".tiff"
+    |> sink
+*)
+
+    let fname021021 = input+"b"
+    deleteIfExists fname021021
+    src
+    |> read<uint8> fname021 ".tiff"
+    >=> permuteAxes (0u,2u,1u) 64u
+    >=> write fname021021 ".tiff"
+    |> sink
+
+    0

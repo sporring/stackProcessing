@@ -17,7 +17,7 @@ let main arg =
             let n = (int arg[1]) / 3 |> pown 2 |> uint 
             n, n, n, $"image{arg[1]}"
         else
-            64u, 64u, 64u, "image18"
+            64u, 64u, 64u, "../image18"
 
     let boxSz = 16;
 
@@ -61,7 +61,7 @@ let main arg =
         (diagonal, topDown) ||> zip >>=> maxOfPair >=> tap "first",
         antiDiagonal >=> tap "second"
     ) ||> zip >>=> maxOfPair
-    >=> write ("../"+output) ".tiff"
+    >=> write output ".tiff"
     |> sink
 
     0
