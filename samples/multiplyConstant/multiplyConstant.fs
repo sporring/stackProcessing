@@ -11,12 +11,12 @@ let main arg =
             debug availableMemory
         else
             source availableMemory
-    let width, height, depth, input,output = 
+    let width, height, depth, output = 
         if arg.Length > 1 then
             let n = (int arg[1]) / 3 |> pown 2 |> uint 
-            n, n, n, $"image{arg[1]}", $"result{arg[1]}"
+            n, n, n, $"result{arg[1]}"
         else
-            64u, 64u, 64u, "image18", "result18"
+            64u, 64u, 64u, "../result18"
 
     let maskMaker = 
         src
@@ -30,7 +30,7 @@ let main arg =
 
     (imageMaker, maskMaker) ||> zip 
     >>=> mulPair
-    >=> write ("../"+output) ".tiff"
+    >=> write output ".tiff"
     |> sink
 
     0

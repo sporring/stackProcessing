@@ -103,7 +103,10 @@ let windowedWithPad
 
         let rec yieldWindows (id: int) (prePad: uint) (postPad: uint) (zeroMaker: int->'T->'T) (step: uint) (current: 'T option) (next: 'T option) = asyncSeq {
             //printfn "yieldWindows prePad=%A postPad=%A step=%A buffer.length=%A" prePad postPad step buffer.Count
-            if postPad = 0u && next = None then // when postPad goes to zero, then we contiue padding until buffer is emptied a last time
+            if postPad = 0u && next = None then // when postPad goes to zero, then we continue padding until buffer is emptied a last time
+                if buffer.Count > 0 then
+                    yield (buffer |> Seq.toList)
+                    buffer.Clear()
                 ()
             else
                 //printfn $"Before {buffer.Count}"

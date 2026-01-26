@@ -31,7 +31,7 @@
     <None Include="../../lib/libSimpleITKCSharpNative.dylib"
       CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
-  
+
   <ItemGroup>
     <PackageReference Include="Plotly.NET" Version="5.0.0" />
     <ProjectReference Include="../../src/StackProcessing/StackProcessing.fsproj" />

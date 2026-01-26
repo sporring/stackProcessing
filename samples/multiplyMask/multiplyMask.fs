@@ -15,20 +15,20 @@ let main arg =
         if arg.Length > 1 then
             $"image{arg[1]}", $"mask{arg[1]}", $"result{arg[1]}"
         else
-            "image18", "mask18", "result18"
+            "../image18", "../mask18", "../result18"
 
     let imageMaker =
         src
-        |> read<uint8> ("../"+input) ".tiff"
+        |> read<uint8> input ".tiff"
     let maskMaker =
         src
-        |> read<uint8> ("../"+mask) ".tiff"
+        |> read<uint8> mask ".tiff"
 
     (imageMaker, maskMaker) ||> zip
     >=> tap "[tab] For mul2"
     >>=> mulPair
     >=> tap "[tab] For write"
-    >=> write ("../"+output) ".tiff"
+    >=> write output ".tiff"
     |> sink
 
     0
