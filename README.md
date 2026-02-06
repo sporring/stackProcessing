@@ -254,3 +254,6 @@ Here:
 * **Controlled memory footprint:** each plan releases data as soon as possible.
 * **Seamless IO:** TIFF stack reading/writing acts as the natural boundary between memory and disk.
 * **Hidden complexity:** the underlying `SlimPipeline` machinery is fully abstracted from the user.
+
+## How to Cite
+* Sporring, J and Stansby, D; Larger than memory image processing, January 2026, [https://arxiv.org/abs/2601.18407](https://arxiv.org/abs/2601.18407)
