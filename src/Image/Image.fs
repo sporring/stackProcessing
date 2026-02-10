@@ -449,12 +449,12 @@ type Image<'T when 'T : equality>(sz: uint list, ?optionalNumberComponents: uint
         img |> Image.iteri (fun idxLst _ -> img.Set idxLst arr[int idxLst[0],int idxLst[1],int idxLst[2]])
         img
 
-    static member ofArray3DVector (arr: 'T[,,], ?name:string) : Image<'T list> =
+    static member ofArray3DVector (arr: 'S[,,], ?name:string) : Image<'S list> =
         let _name = defaultArg name ""
         let w = arr.GetLength(0)
         let h = arr.GetLength(1)
         let c = arr.GetLength(2)
-        let img = new Image<'T list>([uint w; uint h], uint c, _name)
+        let img = new Image<'S list>([uint w; uint h], uint c, _name)
         for i0 in 0 .. w - 1 do
             for i1 in 0 .. h - 1 do
                 let comps = [ for k in 0 .. c - 1 -> arr[i0, i1, k] ]
@@ -481,13 +481,13 @@ type Image<'T when 'T : equality>(sz: uint list, ?optionalNumberComponents: uint
         img |> Image.iteri (fun idxLst _ -> img.Set idxLst arr[int idxLst[0],int idxLst[1],int idxLst[2],int idxLst[3]])
         img
 
-    static member ofArray4DVector (arr: 'T[,,,], ?name:string) : Image<'T list> =
+    static member ofArray4DVector (arr: 'S[,,,], ?name:string) : Image<'S list> =
         let _name = defaultArg name ""
         let w = arr.GetLength(0)
         let h = arr.GetLength(1)
         let d = arr.GetLength(2)
         let c = arr.GetLength(3)
-        let img = new Image<'T list>([uint w; uint h; uint d], uint c, _name)
+        let img = new Image<'S list>([uint w; uint h; uint d], uint c, _name)
         for i0 in 0 .. w - 1 do
             for i1 in 0 .. h - 1 do
                 for i2 in 0 .. d - 1 do
@@ -514,6 +514,15 @@ type Image<'T when 'T : equality>(sz: uint list, ?optionalNumberComponents: uint
         let sz = this.GetSize() |> List.map int
         Array2D.init sz[0] sz[1] (fun i0 i1 -> this.Get([uint i0; uint i1]))
 
+    static member toArray3DVector<'S when 'S: equality> (img: Image<'S list>) : 'S[,,] =
+        if img.GetDimensions() <> 2u then
+            failwith $"toArray3DVector: image must be 2D, got {img.GetDimensions()}D"
+        let sz = img.GetSize() |> List.map int
+        let comps = img.GetNumberOfComponentsPerPixel() |> int
+        Array3D.init sz[0] sz[1] comps (fun i0 i1 k ->
+            let lst = img.Get([uint i0; uint i1])
+            lst[k])
+
     member this.toArray3D (): 'T[,,] =
         let sz = this.GetSize() |> List.map int
         Array3D.init sz[0] sz[1] sz[2] (fun i0 i1 i2 -> this.Get([uint i0; uint i1; uint i2]))
@@ -521,6 +530,15 @@ type Image<'T when 'T : equality>(sz: uint list, ?optionalNumberComponents: uint
     member this.toArray4D (): 'T[,,,] =
         let sz = this.GetSize() |> List.map int
         Array4D.init sz[0] sz[1] sz[2] sz[3] (fun i0 i1 i2 i3 -> this.Get([uint i0; uint i1; uint i2; uint i3]))
+
+    static member toArray4DVector<'S when 'S: equality> (img: Image<'S list>) : 'S[,,,] =
+        if img.GetDimensions() <> 3u then
+            failwith $"toArray4DVector: image must be 3D, got {img.GetDimensions()}D"
+        let sz = img.GetSize() |> List.map int
+        let comps = img.GetNumberOfComponentsPerPixel() |> int
+        Array4D.init sz[0] sz[1] sz[2] comps (fun i0 i1 i2 k ->
+            let lst = img.Get([uint i0; uint i1; uint i2])
+            lst[k])
 
     // Make a multicomponent image of a list
     static member ofImageList (images: Image<'S> list) : Image<'S list> =

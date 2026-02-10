@@ -63,6 +63,8 @@
     <Compile Include="casting.fs" />
     <Compile Include="comparable.fs" />
     <Compile Include="indexing.fs" />
+    <Compile Include="complex.fs" />
+    <Compile Include="vector.fs" />
     <Compile Include="mathFunction.fs" />
     <Compile Include="memoryHelper.fs" />
     <Compile Include="simpleFunction.fs" />
