@@ -11,6 +11,8 @@ module InternalHelpers =
     val toVectorInt64: lst: int64 list -> itk.simple.VectorInt64
     val toVectorFloat32: lst: float32 list -> itk.simple.VectorFloat
     val toVectorFloat64: lst: float list -> itk.simple.VectorDouble
+    val toComplexFloat32: lst: float32 list -> System.Numerics.Complex
+    val toComplexFloat64: lst: float list -> System.Numerics.Complex
     val fromItkVector: f: ('a -> 'b) -> v: 'a seq -> 'b list
     val fromVectorUInt8: v: itk.simple.VectorUInt8 -> uint8 list
     val fromVectorInt8: v: itk.simple.VectorInt8 -> int8 list
@@ -22,6 +24,8 @@ module InternalHelpers =
     val fromVectorInt64: v: itk.simple.VectorInt64 -> int64 list
     val fromVectorFloat32: v: itk.simple.VectorFloat -> float32 list
     val fromVectorFloat64: v: itk.simple.VectorDouble -> float list
+    val fromComplexFloat32: c: System.Numerics.Complex -> float32 list
+    val fromComplexFloat64: c: System.Numerics.Complex -> float list
     val fromType<'T> : itk.simple.PixelIDValueEnum
     val ofCastItk<'T> : itkImg: itk.simple.Image -> itk.simple.Image
     val array2dZip: a: 'T array2d -> b: 'U array2d -> ('T * 'U) array2d
@@ -111,12 +115,32 @@ type Image<'T when 'T: equality> =
     static member neq: f1: Image<'S> * f2: Image<'S> -> bool when 'S: equality
     static member ofArray2D: arr: 'T array2d * ?name: string -> Image<'T>
     static member ofArray3D: arr: 'T array3d * ?name: string -> Image<'T>
+    static member
+      ofArray3DComplex: arr: float array3d * ?name: string ->
+                          Image<System.Numerics.Complex>
+    static member
+      ofArray3DVector: arr: 'T array3d * ?name: string -> Image<'T list>
     static member ofArray4D: arr: 'T array4d * ?name: string -> Image<'T>
+    static member
+      ofArray4DComplex: arr: float array4d * ?name: string ->
+                          Image<System.Numerics.Complex>
+    static member
+      ofArray4DVector: arr: 'T array4d * ?name: string -> Image<'T list>
     static member
       ofFile: filename: string * ?optionalName: string * ?optionalIndex: int ->
                 Image<'T>
     static member
+      ofFileComplex: filename: string * ?optionalName: string *
+                     ?optionalIndex: int -> Image<System.Numerics.Complex>
+    static member
+      ofFileVector: filename: string * ?optionalName: string *
+                    ?optionalIndex: int -> Image<'S list> when 'S: equality
+    static member
       ofImageList: images: Image<'S> list -> Image<'S list> when 'S: equality
+    static member
+      ofImagePairToComplex: realImg: Image<float> ->
+                              imagImg: Image<float> ->
+                              Image<System.Numerics.Complex>
     static member
       ofSimpleITK: itkImg: itk.simple.Image * ?optionalName: string *
                    ?optionalIndex: int -> Image<'T>
@@ -152,7 +176,10 @@ type Image<'T when 'T: equality> =
     member toArray2D: unit -> 'T array2d
     member toArray3D: unit -> 'T array3d
     member toArray4D: unit -> 'T array4d
+    member toComplex: unit -> Image<System.Numerics.Complex>
     member toFile: filename: string * ?optionalFormat: string -> unit
+    member toFileComplex: filename: string * ?optionalFormat: string -> unit
+    member toFileVector: filename: string * ?optionalFormat: string -> unit
     member toFloat: unit -> Image<float>
     member toFloat32: unit -> Image<float32>
     member toImageList: unit -> Image<'S> list when 'S: equality
@@ -165,6 +192,16 @@ type Image<'T when 'T: equality> =
     member toUInt16: unit -> Image<uint16>
     member toUInt64: unit -> Image<uint64>
     member toUInt8: unit -> Image<uint8>
+    member toVectorFloat32: unit -> Image<float32 list>
+    member toVectorFloat64: unit -> Image<float list>
+    member toVectorInt16: unit -> Image<int16 list>
+    member toVectorInt32: unit -> Image<int32 list>
+    member toVectorInt64: unit -> Image<int64 list>
+    member toVectorInt8: unit -> Image<int8 list>
+    member toVectorUInt16: unit -> Image<uint16 list>
+    member toVectorUInt32: unit -> Image<uint32 list>
+    member toVectorUInt64: unit -> Image<uint64 list>
+    member toVectorUInt8: unit -> Image<uint8 list>
     member Display: string
     member Image: itk.simple.Image
     member Item: i0: int * i1: int -> 'T with get
@@ -443,3 +480,7 @@ val toSeqSeq: I: Image.Image<'T> -> float seq seq when 'T: equality
 val permuteAxes:
   order: uint list -> img: Image.Image<'T> -> Image.Image<'S>
     when 'T: equality and 'S: equality
+val FFTXY: image: Image.Image<'T> -> Image.Image<float list> when 'T: equality
+val directionalFFT:
+  dir: uint -> image: Image.Image<'T> -> Image.Image<float list>
+    when 'T: equality
