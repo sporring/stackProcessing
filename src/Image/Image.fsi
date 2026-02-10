@@ -119,13 +119,15 @@ type Image<'T when 'T: equality> =
       ofArray3DComplex: arr: float array3d * ?name: string ->
                           Image<System.Numerics.Complex>
     static member
-      ofArray3DVector: arr: 'T array3d * ?name: string -> Image<'T list>
+      ofArray3DVector: arr: 'S array3d * ?name: string -> Image<'S list>
+                         when 'S: equality
     static member ofArray4D: arr: 'T array4d * ?name: string -> Image<'T>
     static member
       ofArray4DComplex: arr: float array4d * ?name: string ->
                           Image<System.Numerics.Complex>
     static member
-      ofArray4DVector: arr: 'T array4d * ?name: string -> Image<'T list>
+      ofArray4DVector: arr: 'S array4d * ?name: string -> Image<'S list>
+                         when 'S: equality
     static member
       ofFile: filename: string * ?optionalName: string * ?optionalIndex: int ->
                 Image<'T>
@@ -145,6 +147,10 @@ type Image<'T when 'T: equality> =
       ofSimpleITK: itkImg: itk.simple.Image * ?optionalName: string *
                    ?optionalIndex: int -> Image<'T>
     static member setDebug: d: bool -> unit
+    static member
+      toArray3DVector: img: Image<'S list> -> 'S array3d when 'S: equality
+    static member
+      toArray4DVector: img: Image<'S list> -> 'S array4d when 'S: equality
     static member unzip: im: Image<'T list> -> Image<'T> list
     static member zip: imLst: Image<'T> list -> Image<'T list>
     member CompareTo: other: Image<'T> -> int

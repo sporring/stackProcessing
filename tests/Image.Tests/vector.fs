@@ -1,0 +1,23 @@
+module Tests.vector
+
+open Expecto
+open Image   // open the namespace that defines Image<'T>
+
+[<Tests>]
+let vectorSuite =
+  testList "Vector image support" [
+
+    testCase "ofArray3DVector roundtrip" <| fun _ ->
+      let arr = Array3D.init 2 2 3 (fun x y k -> x + 10*y + 100*k)
+      let img = Image<int list>.ofArray3DVector arr
+      Expect.equal img.[1,0] [1; 101; 201] "Vector value at (1,0) mismatch"
+      let arr2 = Image<int>.toArray3DVector img
+      Expect.equal arr2 arr "Roundtrip array mismatch"
+
+    testCase "ofArray4DVector roundtrip" <| fun _ ->
+      let arr = Array4D.init 2 2 2 2 (fun x y z k -> x + 10*y + 100*z + 1000*k)
+      let img = Image<int list>.ofArray4DVector arr
+      Expect.equal img.[1,1,0] [11; 1011] "Vector value at (1,1,0) mismatch"
+      let arr2 = Image<int>.toArray4DVector img
+      Expect.equal arr2 arr "Roundtrip array mismatch"
+  ]
