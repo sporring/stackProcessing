@@ -759,3 +759,72 @@ let permuteAxes (order: uint list) (img: Image<'T>) =
     let filter = new itk.simple.PermuteAxesImageFilter()
     filter.SetOrder(order|>toVectorUInt32)
     Image<'S>.ofSimpleITK(filter.Execute(img.toSimpleITK()),"permuteAxes",img.index)
+
+// Fourier transform a 2d image
+let FFTXY (image: Image<'T>) : Image<float list> =
+    if image.GetDimensions() <> 2u then
+        failwith $"FFTXY: image must be 2D, got {image.GetDimensions()}D"
+    let input = ofCastItk<float> (image.toSimpleITK())
+    use fft = new itk.simple.ForwardFFTImageFilter()
+    let complexImg = fft.Execute(input)
+    use realF = new itk.simple.ComplexToRealImageFilter()
+    use imagF = new itk.simple.ComplexToImaginaryImageFilter()
+    let realImg = realF.Execute(complexImg)
+    let imagImg = imagF.Execute(complexImg)
+    let real = Image<float>.ofSimpleITK(realImg, "FFTXY.Real", image.index)
+    let imag = Image<float>.ofSimpleITK(imagImg, "FFTXY.Imag", image.index)
+    let size = image.GetSize()
+    let output = new Image<float list>(size, 2u, "FFTXY", image.index, true)
+    size
+    |> flatIndices
+    |> Seq.iter (fun idx -> output.Set idx [real.Get idx; imag.Get idx])
+    output
+
+// Fourier transform a 3d image along a specified axis direction
+let directionalFFT (dir: uint) (image: Image<'T>) : Image<float list> =
+    let dims = image.GetDimensions()
+    if dir >= dims then
+        failwith $"directionalFFT: dir={dir} is out of range for {dims}D image"
+    let size = image.GetSize()
+    let input = ofCastItk<float> (image.toSimpleITK())
+
+    let output = new Image<float list>(size, 2u, "directionalFFT", image.index, true)
+
+    use extractor = new itk.simple.ExtractImageFilter()
+    let szExtract =
+        size |> List.mapi (fun i s -> if uint i = dir then 0u else s) |> toVectorUInt32
+    extractor.SetSize(szExtract)
+    extractor.SetDirectionCollapseToStrategy(itk.simple.ExtractImageFilter.DirectionCollapseToStrategyType.DIRECTIONCOLLAPSETOIDENTITY)
+
+    use fft = new itk.simple.ForwardFFTImageFilter()
+    use realF = new itk.simple.ComplexToRealImageFilter()
+    use imagF = new itk.simple.ComplexToImaginaryImageFilter()
+    use compose = new itk.simple.ComposeImageFilter()
+
+    let dimInt = int dims
+    let rec baseCoords i acc =
+        if i = dimInt then
+            [List.rev acc]
+        else
+            if uint i = dir then
+                baseCoords (i + 1) (0u :: acc)
+            else
+                [0u .. size[i] - 1u]
+                |> List.collect (fun v -> baseCoords (i + 1) (v :: acc))
+
+    let lineLength = size[int dir] |> int
+    for baseCoord in baseCoords 0 [] do
+        let idx = baseCoord |> List.map int |> toVectorInt32
+        extractor.SetIndex(idx)
+        let line = extractor.Execute(input)
+        let complexLine = fft.Execute(line)
+        let realLine = realF.Execute(complexLine)
+        let imagLine = imagF.Execute(complexLine)
+        let vecLine = compose.Execute(realLine, imagLine)
+        let lineImg = Image<float list>.ofSimpleITK(vecLine, "directionalFFTLine", image.index)
+        for k in 0 .. lineLength - 1 do
+            let value = lineImg.Get([uint k])
+            let coord = baseCoord |> List.mapi (fun i v -> if uint i = dir then uint k else v)
+            output.Set coord value
+
+    output

@@ -12,6 +12,18 @@ module InternalHelpers = // internal
     let toVectorInt64 (lst: int64 list)     = new itk.simple.VectorInt64(lst)
     let toVectorFloat32 (lst: float32 list) = new itk.simple.VectorFloat(lst)
     let toVectorFloat64 (lst: float list) = new itk.simple.VectorDouble(lst)
+    let toComplexFloat32 (lst: float32 list) =
+        match lst with
+        | [re; im] -> System.Numerics.Complex(float re, float im)
+        | [re] -> System.Numerics.Complex(float re, 0.0)
+        | [] -> System.Numerics.Complex(0.0, 0.0)
+        | _ -> invalidArg "lst" "Expected 0, 1, or 2 elements for complex value."
+    let toComplexFloat64 (lst: float list) =
+        match lst with
+        | [re; im] -> System.Numerics.Complex(re, im)
+        | [re] -> System.Numerics.Complex(re, 0.0)
+        | [] -> System.Numerics.Complex(0.0, 0.0)
+        | _ -> invalidArg "lst" "Expected 0, 1, or 2 elements for complex value."
 
     let fromItkVector f v = 
         v |> Seq.map f |> Seq.toList
@@ -26,6 +38,10 @@ module InternalHelpers = // internal
     let fromVectorInt64 (v: itk.simple.VectorInt64) : int64 list = fromItkVector int64 v
     let fromVectorFloat32 (v: itk.simple.VectorFloat) : float32 list = fromItkVector float32 v
     let fromVectorFloat64 (v: itk.simple.VectorDouble) : float list = fromItkVector float v
+    let fromComplexFloat32 (c: System.Numerics.Complex) : float32 list =
+        [float32 c.Real; float32 c.Imaginary]
+    let fromComplexFloat64 (c: System.Numerics.Complex) : float list =
+        [c.Real; c.Imaginary]
 
     let fromType<'T> =
         let t = typeof<'T>
@@ -39,7 +55,7 @@ module InternalHelpers = // internal
         elif t = typeof<int64> then itk.simple.PixelIDValueEnum.sitkInt64
         elif t = typeof<float32> then itk.simple.PixelIDValueEnum.sitkFloat32
         elif t = typeof<float> then itk.simple.PixelIDValueEnum.sitkFloat64
-//        elif t = typeof<System.Numerics.Complex> then itk.simple.PixelIDValueEnum.sitkVectorFloat64
+        elif t = typeof<System.Numerics.Complex> then itk.simple.PixelIDValueEnum.sitkVectorFloat64
         elif t = typeof<uint8 list> then itk.simple.PixelIDValueEnum.sitkVectorUInt8
         elif t = typeof<int8 list> then itk.simple.PixelIDValueEnum.sitkVectorInt8
         elif t = typeof<uint16 list> then itk.simple.PixelIDValueEnum.sitkVectorUInt16
@@ -104,10 +120,10 @@ module InternalHelpers = // internal
         elif    t = fromType<int64>                  then sitkImg.SetPixelAsInt64(u, unbox value)
         elif    t = fromType<float32>                 then sitkImg.SetPixelAsFloat(u, unbox value)
         elif    t = fromType<float>                   then sitkImg.SetPixelAsDouble(u, unbox value)
-//        elif    t = fromType<System.Numerics.Complex> then
-//            let c = unbox<System.Numerics.Complex> value
-//            let v = toVectorFloat64 [ c.Real; c.Imaginary ]
-//            sitkImg.SetPixelAsVectorFloat64(u, v)
+        elif    t = fromType<System.Numerics.Complex> then
+            let c = unbox<System.Numerics.Complex> value
+            let v = toVectorFloat64 [ c.Real; c.Imaginary ]
+            sitkImg.SetPixelAsVectorFloat64(u, v)
         elif    t = fromType<uint8 list>              then sitkImg.SetPixelAsVectorUInt8(u, toVectorUInt8 (unbox value))
         elif    t = fromType<int8 list>               then sitkImg.SetPixelAsVectorInt8(u, toVectorInt8 (unbox value))
         elif    t = fromType<uint16 list>             then sitkImg.SetPixelAsVectorUInt16(u, toVectorUInt16 (unbox value))
@@ -132,10 +148,11 @@ module InternalHelpers = // internal
         elif    t = fromType<int64>                   then box (img.GetPixelAsInt64   u)
         elif    t = fromType<float32>                 then box (img.GetPixelAsFloat   u)
         elif    t = fromType<float>                   then box (img.GetPixelAsDouble  u)
-//        elif    t = fromType<System.Numerics.Complex>                 then
-//            img.GetPixelAsVectorFloat64 u
-//            |> fromVectorFloat64                    // float64 list → Complex
-//            |> box
+        elif    t = fromType<System.Numerics.Complex>                 then
+            img.GetPixelAsVectorFloat64 u
+            |> fromVectorFloat64
+            |> toComplexFloat64
+            |> box
         elif    t = fromType<uint8   list>            then box (img.GetPixelAsVectorUInt8   u |> fromVectorUInt8)
         elif    t = fromType<int8    list>            then box (img.GetPixelAsVectorInt8    u |> fromVectorInt8)
         elif    t = fromType<uint16  list>            then box (img.GetPixelAsVectorUInt16  u |> fromVectorUInt16)
@@ -162,10 +179,7 @@ module InternalHelpers = // internal
         elif    t = fromType<int64>                   then box 0L
         elif    t = fromType<float32>                 then box 0.0f
         elif    t = fromType<float>                   then box 0.0
-//        elif    t = fromType<System.Numerics.Complex>                 then
-//            img.GetPixelAsVectorFloat64 u
-//            |> fromVectorFloat64                    // float64 list → Complex
-//            |> box
+        elif    t = fromType<System.Numerics.Complex> then box (System.Numerics.Complex(0.0, 0.0))
         elif    t = fromType<uint8   list>            then box (List.replicate ncomp 0uy)
         elif    t = fromType<int8    list>            then box (List.replicate ncomp 0u)
         elif    t = fromType<uint16  list>            then box (List.replicate ncomp 0us)
@@ -190,7 +204,8 @@ module InternalHelpers = // internal
         elif    t = fromType<int64>                   then box ((unbox acc : int64)   + (unbox k : int64)   * (unbox p : int64))
         elif    t = fromType<float32>                 then box ((unbox acc : float32) + (unbox k : float32) * (unbox p : float32))
         elif    t = fromType<float>                   then box ((unbox acc : float)   + (unbox k : float)   * (unbox p : float))
-        else failwithf "mulAdd: unsupported pixel type %A" id
+        elif    t = fromType<System.Numerics.Complex> then box ((unbox acc : System.Numerics.Complex) + (unbox k : System.Numerics.Complex) * (unbox p : System.Numerics.Complex))
+        else failwithf "mulAdd: unsupported pixel type %A" t
 
 open InternalHelpers
 let getBytesPerComponent t =
@@ -220,14 +235,30 @@ let getBytesPerComponent t =
 let getBytesPerSItkComponent t =
     if   t = itk.simple.PixelIDValueEnum.sitkUInt8 then 1u
     elif t = itk.simple.PixelIDValueEnum.sitkInt8 then 1u
+    elif t = itk.simple.PixelIDValueEnum.sitkVectorUInt8 then 1u
+    elif t = itk.simple.PixelIDValueEnum.sitkVectorInt8 then 1u
     elif t = itk.simple.PixelIDValueEnum.sitkUInt16 then 2u
     elif t = itk.simple.PixelIDValueEnum.sitkInt16 then 2u
+    elif t = itk.simple.PixelIDValueEnum.sitkVectorUInt16 then 2u
+    elif t = itk.simple.PixelIDValueEnum.sitkVectorInt16 then 2u
     elif t = itk.simple.PixelIDValueEnum.sitkUInt32 then 4u
     elif t = itk.simple.PixelIDValueEnum.sitkInt32 then 4u
     elif t = itk.simple.PixelIDValueEnum.sitkFloat32 then 4u
+    elif t = itk.simple.PixelIDValueEnum.sitkVectorUInt32 then 4u
+    elif t = itk.simple.PixelIDValueEnum.sitkVectorInt32 then 4u
+    elif t = itk.simple.PixelIDValueEnum.sitkVectorFloat32 then 4u
+    elif t = itk.simple.PixelIDValueEnum.sitkComplexFloat32 then 8u
     elif t = itk.simple.PixelIDValueEnum.sitkUInt64 then 8u
     elif t = itk.simple.PixelIDValueEnum.sitkInt64 then 8u
     elif t = itk.simple.PixelIDValueEnum.sitkFloat64 then 8u
+    elif t = itk.simple.PixelIDValueEnum.sitkVectorUInt64 then 8u
+    elif t = itk.simple.PixelIDValueEnum.sitkVectorInt64 then 8u
+    elif t = itk.simple.PixelIDValueEnum.sitkVectorFloat64 then 8u
+    elif t = itk.simple.PixelIDValueEnum.sitkComplexFloat64 then 16u
+    elif t = itk.simple.PixelIDValueEnum.sitkLabelUInt8 then 1u
+    elif t = itk.simple.PixelIDValueEnum.sitkLabelUInt16 then 2u
+    elif t = itk.simple.PixelIDValueEnum.sitkLabelUInt32 then 4u
+    elif t = itk.simple.PixelIDValueEnum.sitkLabelUInt64 then 8u
     else 8u // guessing here
     
 
@@ -243,6 +274,7 @@ let equalOne (v : 'T) : bool =
     | :? int64   as b -> b = 1L
     | :? float32 as b -> b = 1.0f
     | :? float   as b -> b = 1.0
+    | :? System.Numerics.Complex as c -> c.Real = 1.0 && c.Imaginary = 0.0
     | _ -> failwithf "Don't know the value of 1 for %A" (typeof<'T>)
 
 let private syncRoot = obj() // The following 3 names may be accessed in parallel, so lock when writing
@@ -269,7 +301,10 @@ let mutable private debug = false
 
 [<StructuredFormatDisplay("{Display}")>] // Prevent fsi printing information about its members such as img
 type Image<'T when 'T : equality>(sz: uint list, ?optionalNumberComponents: uint, ?optionalName: string, ?optionalIndex: int, ?optionalQuiet: bool) =
-    let numberComp = defaultArg optionalNumberComponents 1u 
+    let isComplexType = typeof<'T> = typeof<System.Numerics.Complex>
+    let numberCompDefault = if isComplexType then 2u else 1u
+    let numberComp = defaultArg optionalNumberComponents numberCompDefault
+    do if isComplexType && numberComp <> 2u then invalidArg "optionalNumberComponents" "Complex pixel type requires 2 components."
     let now = System.DateTime.UtcNow.ToString("HH:mm:ss.ffffff")
     let name = 
         match optionalName with
@@ -363,6 +398,8 @@ type Image<'T when 'T : equality>(sz: uint list, ?optionalNumberComponents: uint
         let index = defaultArg optionalIndex 0
 
         let itkImgCast = ofCastItk<'T> itkImg
+        if typeof<'T> = typeof<System.Numerics.Complex> && itkImgCast.GetNumberOfComponentsPerPixel() <> 2u then
+            invalidArg "itkImg" "Complex pixel type requires 2 components per pixel."
         let img = new Image<'T>([0u;0u],itkImgCast.GetNumberOfComponentsPerPixel(),name,index, true)
 
         img.SetImg itkImgCast
@@ -371,6 +408,8 @@ type Image<'T when 'T : equality>(sz: uint list, ?optionalNumberComponents: uint
         img
 
     member this.toSimpleITK () : itk.simple.Image =
+        if typeof<'T> = typeof<System.Numerics.Complex> && img.GetNumberOfComponentsPerPixel() <> 2u then
+            invalidOp "Complex pixel type requires 2 components per pixel."
         img
 
     member this.castTo<'S when 'S: equality> () : Image<'S> = Image<'S>.ofSimpleITK(this.toSimpleITK(),"cast",this.index)
@@ -384,6 +423,17 @@ type Image<'T when 'T : equality>(sz: uint list, ?optionalNumberComponents: uint
     member this.toInt64 ()   : Image<int64>   = Image<int64>.ofSimpleITK(this.toSimpleITK(),"toInt64",this.index)
     member this.toFloat32 () : Image<float32> = Image<float32>.ofSimpleITK(this.toSimpleITK(),"toFloat32",this.index)
     member this.toFloat ()   : Image<float>   = Image<float>.ofSimpleITK(this.toSimpleITK(),"toFloat",this.index)
+    member this.toComplex () : Image<System.Numerics.Complex> = Image<System.Numerics.Complex>.ofSimpleITK(this.toSimpleITK(),"toComplex",this.index)
+    member this.toVectorUInt8 ()   : Image<uint8 list>   = Image<uint8 list>.ofSimpleITK(this.toSimpleITK(),"toVectorUInt8",this.index)
+    member this.toVectorInt8 ()    : Image<int8 list>    = Image<int8 list>.ofSimpleITK(this.toSimpleITK(),"toVectorInt8",this.index)
+    member this.toVectorUInt16 ()  : Image<uint16 list>  = Image<uint16 list>.ofSimpleITK(this.toSimpleITK(),"toVectorUInt16",this.index)
+    member this.toVectorInt16 ()   : Image<int16 list>   = Image<int16 list>.ofSimpleITK(this.toSimpleITK(),"toVectorInt16",this.index)
+    member this.toVectorUInt32 ()  : Image<uint32 list>  = Image<uint32 list>.ofSimpleITK(this.toSimpleITK(),"toVectorUInt32",this.index)
+    member this.toVectorInt32 ()   : Image<int32 list>   = Image<int32 list>.ofSimpleITK(this.toSimpleITK(),"toVectorInt32",this.index)
+    member this.toVectorUInt64 ()  : Image<uint64 list>  = Image<uint64 list>.ofSimpleITK(this.toSimpleITK(),"toVectorUInt64",this.index)
+    member this.toVectorInt64 ()   : Image<int64 list>   = Image<int64 list>.ofSimpleITK(this.toSimpleITK(),"toVectorInt64",this.index)
+    member this.toVectorFloat32 () : Image<float32 list> = Image<float32 list>.ofSimpleITK(this.toSimpleITK(),"toVectorFloat32",this.index)
+    member this.toVectorFloat64 () : Image<float list>   = Image<float list>.ofSimpleITK(this.toSimpleITK(),"toVectorFloat64",this.index)
 
     static member ofArray2D (arr: 'T[,], ?name:string) : Image<'T> =
         let _name = defaultArg name ""
@@ -399,11 +449,65 @@ type Image<'T when 'T : equality>(sz: uint list, ?optionalNumberComponents: uint
         img |> Image.iteri (fun idxLst _ -> img.Set idxLst arr[int idxLst[0],int idxLst[1],int idxLst[2]])
         img
 
+    static member ofArray3DVector (arr: 'T[,,], ?name:string) : Image<'T list> =
+        let _name = defaultArg name ""
+        let w = arr.GetLength(0)
+        let h = arr.GetLength(1)
+        let c = arr.GetLength(2)
+        let img = new Image<'T list>([uint w; uint h], uint c, _name)
+        for i0 in 0 .. w - 1 do
+            for i1 in 0 .. h - 1 do
+                let comps = [ for k in 0 .. c - 1 -> arr[i0, i1, k] ]
+                img.Set [uint i0; uint i1] comps
+        img
+
+    static member ofArray3DComplex (arr: float[,,], ?name:string) : Image<System.Numerics.Complex> =
+        let _name = defaultArg name ""
+        let w = arr.GetLength(0)
+        let h = arr.GetLength(1)
+        let c = arr.GetLength(2)
+        if c <> 2 then invalidArg "arr" "ofArray3DComplex expects last dimension size 2 (real, imag)."
+        let img = new Image<System.Numerics.Complex>([uint w; uint h], 2u, _name)
+        for i0 in 0 .. w - 1 do
+            for i1 in 0 .. h - 1 do
+                let cplx = toComplexFloat64 [arr[i0, i1, 0]; arr[i0, i1, 1]]
+                img.Set [uint i0; uint i1] cplx
+        img
+
     static member ofArray4D (arr: 'T[,,,], ?name:string) : Image<'T> =
         let _name = defaultArg name ""
         let sz = [arr.GetLength(0); arr.GetLength(1); arr.GetLength(2); arr.GetLength(3)] |> List.map uint
         let img = new Image<'T>(sz,1u,_name)
         img |> Image.iteri (fun idxLst _ -> img.Set idxLst arr[int idxLst[0],int idxLst[1],int idxLst[2],int idxLst[3]])
+        img
+
+    static member ofArray4DVector (arr: 'T[,,,], ?name:string) : Image<'T list> =
+        let _name = defaultArg name ""
+        let w = arr.GetLength(0)
+        let h = arr.GetLength(1)
+        let d = arr.GetLength(2)
+        let c = arr.GetLength(3)
+        let img = new Image<'T list>([uint w; uint h; uint d], uint c, _name)
+        for i0 in 0 .. w - 1 do
+            for i1 in 0 .. h - 1 do
+                for i2 in 0 .. d - 1 do
+                    let comps = [ for k in 0 .. c - 1 -> arr[i0, i1, i2, k] ]
+                    img.Set [uint i0; uint i1; uint i2] comps
+        img
+
+    static member ofArray4DComplex (arr: float[,,,], ?name:string) : Image<System.Numerics.Complex> =
+        let _name = defaultArg name ""
+        let w = arr.GetLength(0)
+        let h = arr.GetLength(1)
+        let d = arr.GetLength(2)
+        let c = arr.GetLength(3)
+        if c <> 2 then invalidArg "arr" "ofArray4DComplex expects last dimension size 2 (real, imag)."
+        let img = new Image<System.Numerics.Complex>([uint w; uint h; uint d], 2u, _name)
+        for i0 in 0 .. w - 1 do
+            for i1 in 0 .. h - 1 do
+                for i2 in 0 .. d - 1 do
+                    let cplx = toComplexFloat64 [arr[i0, i1, i2, 0]; arr[i0, i1, i2, 1]]
+                    img.Set [uint i0; uint i1; uint i2] cplx
         img
 
     member this.toArray2D (): 'T[,] =
@@ -436,6 +540,10 @@ type Image<'T when 'T : equality>(sz: uint list, ?optionalNumberComponents: uint
         | _ ->
             invalidArg "images" "ofImageList supports up to 5 images."
 
+    static member ofImagePairToComplex (realImg: Image<float>) (imagImg: Image<float>) : Image<System.Numerics.Complex> =
+        let vec = Image<float list>.ofImageList [realImg; imagImg]
+        Image<System.Numerics.Complex>.ofSimpleITK(vec.toSimpleITK(), "ofImagePairToComplex", realImg.index)
+
     member this.toImageList () : Image<'S> list =
         let filter = new itk.simple.VectorIndexSelectionCastImageFilter()
         let n = this.Image.GetNumberOfComponentsPerPixel() |> int
@@ -467,6 +575,30 @@ type Image<'T when 'T : equality>(sz: uint list, ?optionalNumberComponents: uint
         | _ ->
             Image<'T>.ofSimpleITK(itkImg,name,index)
 
+    static member ofFileVector<'S when 'S: equality> (filename: string, ?optionalName: string, ?optionalIndex: int) : Image<'S list> =
+        let name = defaultArg optionalName filename
+        let index = defaultArg optionalIndex 0
+
+        use reader = new itk.simple.ImageFileReader()
+        reader.SetFileName(filename)
+        let itkImg = reader.Execute()
+        let numComp = itkImg.GetNumberOfComponentsPerPixel()
+        if numComp < 2u then
+            failwithf "Vector pixel type expects >=2 components, but image has %d component(s)." numComp
+        Image<'S list>.ofSimpleITK(itkImg, name, index)
+
+    static member ofFileComplex (filename: string, ?optionalName: string, ?optionalIndex: int) : Image<System.Numerics.Complex> =
+        let name = defaultArg optionalName filename
+        let index = defaultArg optionalIndex 0
+
+        use reader = new itk.simple.ImageFileReader()
+        reader.SetFileName(filename)
+        let itkImg = reader.Execute()
+        let numComp = itkImg.GetNumberOfComponentsPerPixel()
+        if numComp <> 2u then
+            failwithf "Complex pixel type expects 2 components, but image has %d component(s)." numComp
+        Image<System.Numerics.Complex>.ofSimpleITK(itkImg, name, index)
+
     member this.toFile(filename: string, ?optionalFormat: string) =
         use writer = new itk.simple.ImageFileWriter()
         writer.SetFileName(filename)
@@ -474,6 +606,21 @@ type Image<'T when 'T : equality>(sz: uint list, ?optionalNumberComponents: uint
         | Some fmt -> writer.SetImageIO(fmt)
         | None -> ()
         writer.Execute(this.Image)
+
+    member this.toFileVector(filename: string, ?optionalFormat: string) =
+        let isListType = typeof<'T>.IsGenericType && typeof<'T>.GetGenericTypeDefinition() = typedefof<list<_>>
+        if not isListType then
+            failwith "toFileVector: image pixel type must be a list for vector components."
+        if this.GetNumberOfComponentsPerPixel() < 2u then
+            failwithf "toFileVector: expected >=2 components per pixel, got %d." (this.GetNumberOfComponentsPerPixel())
+        this.toFile(filename, ?optionalFormat = optionalFormat)
+
+    member this.toFileComplex(filename: string, ?optionalFormat: string) =
+        if typeof<'T> <> typeof<System.Numerics.Complex> then
+            failwith "toFileComplex: image pixel type must be System.Numerics.Complex."
+        if this.GetNumberOfComponentsPerPixel() <> 2u then
+            failwithf "toFileComplex: expected 2 components per pixel, got %d." (this.GetNumberOfComponentsPerPixel())
+        this.toFile(filename, ?optionalFormat = optionalFormat)
 
     // Arithmatic
     static member (+) (f1: Image<'T>, f2: Image<'T>) =
@@ -577,9 +724,25 @@ type Image<'T when 'T : equality>(sz: uint list, ?optionalNumberComponents: uint
 
     member this.Get (coords: uint list) : 'T =
         let u = coords |> toVectorUInt32
-        let t = fromType<'T>
-        let raw = getBoxedPixel this.Image t u
-        raw :?> 'T
+        if typeof<'T> = typeof<System.Numerics.Complex> then
+            let pid = this.Image.GetPixelID()
+            let c =
+                if pid = itk.simple.PixelIDValueEnum.sitkVectorFloat32 then
+                    this.Image.GetPixelAsVectorFloat32(u) |> fromVectorFloat32 |> toComplexFloat32
+                elif pid = itk.simple.PixelIDValueEnum.sitkVectorFloat64 then
+                    this.Image.GetPixelAsVectorFloat64(u) |> fromVectorFloat64 |> toComplexFloat64
+                elif pid = itk.simple.PixelIDValueEnum.sitkComplexFloat32 then
+                    this.Image.GetPixelAsVectorFloat32(u) |> fromVectorFloat32 |> toComplexFloat32
+                elif pid = itk.simple.PixelIDValueEnum.sitkComplexFloat64 then
+                    this.Image.GetPixelAsVectorFloat64(u) |> fromVectorFloat64 |> toComplexFloat64
+                else
+                    let t = fromType<'T>
+                    getBoxedPixel this.Image t u :?> System.Numerics.Complex
+            unbox<'T> c
+        else
+            let t = fromType<'T>
+            let raw = getBoxedPixel this.Image t u
+            raw :?> 'T
 
     // Slicing is available as https://learn.microsoft.com/en-us/dotnet/fsharp/language-reference/arrays
     member this.GetSlice (start0: int option, stop0: int option, start1: int option, stop1: int option, start2: int option, stop2: int option) : Image<'T> =
