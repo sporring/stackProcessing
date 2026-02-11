@@ -2,7 +2,9 @@ module Tests.complex
 
 open Expecto
 open Image   // open the namespace that defines Image<'T>
+open ImageFunctions
 open System.Numerics
+open itk.simple
 
 let private c (re: float) (im: float) = Complex(re, im)
 
@@ -39,4 +41,36 @@ let complexSuite =
       let vecImg = Image<float list>.ofArray3DVector arr
       let cImg = vecImg.toComplex()
       Expect.equal cImg.[1,0] (c 3.0 12.0) "toComplex conversion mismatch"
+
+    testCase "FFTXY returns Complex image with vector-2 storage and expected values" <| fun _ ->
+      let src = Image<float>.ofArray2D (array2D [ [1.0; 0.0]; [0.0; 0.0] ])
+      let out = FFTXY src
+
+      Expect.equal (out.GetNumberOfComponentsPerPixel()) 2u "Complex output should have 2 components per pixel"
+      Expect.equal (out.toSimpleITK().GetPixelID()) PixelIDValueEnum.sitkVectorFloat64 "Complex output should use VectorFloat64 backing"
+
+      Expect.floatClose Accuracy.high out.[0,0].Real 1.0 "FFT(impulse) real at (0,0)"
+      Expect.floatClose Accuracy.high out.[1,0].Real 1.0 "FFT(impulse) real at (1,0)"
+      Expect.floatClose Accuracy.high out.[0,1].Real 1.0 "FFT(impulse) real at (0,1)"
+      Expect.floatClose Accuracy.high out.[1,1].Real 1.0 "FFT(impulse) real at (1,1)"
+      Expect.floatClose Accuracy.high out.[0,0].Imaginary 0.0 "FFT(impulse) imag at (0,0)"
+      Expect.floatClose Accuracy.high out.[1,0].Imaginary 0.0 "FFT(impulse) imag at (1,0)"
+      Expect.floatClose Accuracy.high out.[0,1].Imaginary 0.0 "FFT(impulse) imag at (0,1)"
+      Expect.floatClose Accuracy.high out.[1,1].Imaginary 0.0 "FFT(impulse) imag at (1,1)"
+
+    testCase "directionalFFT returns Complex output with expected 1D FFT values" <| fun _ ->
+      let src = Image<float>.ofArray2D (array2D [ [1.0; 0.0]; [0.0; 0.0] ])
+      let out = directionalFFT 0u src
+
+      Expect.equal (out.GetNumberOfComponentsPerPixel()) 2u "Complex output should have 2 components per pixel"
+      Expect.equal (out.toSimpleITK().GetPixelID()) PixelIDValueEnum.sitkVectorFloat64 "Complex output should use VectorFloat64 backing"
+
+      Expect.floatClose Accuracy.high out.[0,0].Real 1.0 "dirFFT real at (0,0)"
+      Expect.floatClose Accuracy.high out.[1,0].Real 1.0 "dirFFT real at (1,0)"
+      Expect.floatClose Accuracy.high out.[0,1].Real 0.0 "dirFFT real at (0,1)"
+      Expect.floatClose Accuracy.high out.[1,1].Real 0.0 "dirFFT real at (1,1)"
+      Expect.floatClose Accuracy.high out.[0,0].Imaginary 0.0 "dirFFT imag at (0,0)"
+      Expect.floatClose Accuracy.high out.[1,0].Imaginary 0.0 "dirFFT imag at (1,0)"
+      Expect.floatClose Accuracy.high out.[0,1].Imaginary 0.0 "dirFFT imag at (0,1)"
+      Expect.floatClose Accuracy.high out.[1,1].Imaginary 0.0 "dirFFT imag at (1,1)"
   ]
