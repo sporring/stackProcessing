@@ -486,7 +486,9 @@ val toSeqSeq: I: Image.Image<'T> -> float seq seq when 'T: equality
 val permuteAxes:
   order: uint list -> img: Image.Image<'T> -> Image.Image<'S>
     when 'T: equality and 'S: equality
-val FFTXY: image: Image.Image<'T> -> Image.Image<float list> when 'T: equality
+val FFTXY:
+  image: Image.Image<'T> -> Image.Image<System.Numerics.Complex>
+    when 'T: equality
 val directionalFFT:
-  dir: uint -> image: Image.Image<'T> -> Image.Image<float list>
+  dir: uint -> image: Image.Image<'T> -> Image.Image<System.Numerics.Complex>
     when 'T: equality
