@@ -281,7 +281,7 @@ let convolveOp (name: string) (kernel: Image<'T>) (outputRegionMode: ImageFuncti
     let windowFromKernel (k: Image<'T>) : uint =
         max 1u (k.GetDepth())
     let ksz = windowFromKernel kernel
-    let win = Option.defaultValue ksz winSz |> min ksz
+    let win = Option.defaultValue ksz winSz |> max ksz
     let stride = win-ksz+1u
     let pad = 
         match outputRegionMode with
