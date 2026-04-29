@@ -8,14 +8,12 @@
 
     <UserControl.DataTemplates>
         <DataTemplate DataType="models:PipelineNodeContent">
-            <Button Width="110"
+            <Border Width="110"
                     Height="48"
                     Background="#EAF3FF"
                     BorderBrush="#2F80ED"
                     BorderThickness="2"
-                    CornerRadius="6"
-                    Padding="0"
-                    Click="PipelineNodeClicked">
+                    CornerRadius="6">
                 <TextBlock Text="{Binding Label}"
                            HorizontalAlignment="Center"
                            VerticalAlignment="Center"
@@ -23,7 +21,7 @@
                            FontWeight="SemiBold"
                            TextTrimming="CharacterEllipsis"
                            Foreground="#102A43" />
-            </Button>
+            </Border>
         </DataTemplate>
     </UserControl.DataTemplates>
 
@@ -39,17 +37,17 @@
                 Padding="10">
             <DockPanel LastChildFill="True">
                 <Button DockPanel.Dock="Right"
-                        MinWidth="96"
+                        Width="76"
                         Command="{Binding RunCommand}"
                         Content="Run" />
 
                 <WrapPanel Orientation="Horizontal">
-                    <Button Margin="0,0,8,0" Command="{Binding AddSourceCommand}" Content="+ source" />
-                    <Button Margin="0,0,8,0" Command="{Binding AddReadCommand}" Content="+ read" />
-                    <Button Margin="0,0,8,0" Command="{Binding AddGaussianCommand}" Content="+ gaussian" />
-                    <Button Margin="0,0,8,0" Command="{Binding AddCastCommand}" Content="+ cast" />
-                    <Button Margin="0,0,8,0" Command="{Binding AddWriteCommand}" Content="+ write" />
-                    <Button Margin="0,0,8,0" Command="{Binding AddSinkCommand}" Content="+ sink" />
+                    <Button Margin="0,0,6,0" Command="{Binding AddSourceCommand}" Content="+ source" Tag="Source" PointerMoved="PaletteElementPointerMoved" />
+                    <Button Margin="0,0,6,0" Command="{Binding AddReadCommand}" Content="+ read" Tag="Read" PointerMoved="PaletteElementPointerMoved" />
+                    <Button Margin="0,0,6,0" Command="{Binding AddGaussianCommand}" Content="+ gaussian" Tag="DiscreteGaussian" PointerMoved="PaletteElementPointerMoved" />
+                    <Button Margin="0,0,6,0" Command="{Binding AddCastCommand}" Content="+ cast" Tag="Cast" PointerMoved="PaletteElementPointerMoved" />
+                    <Button Margin="0,0,6,0" Command="{Binding AddWriteCommand}" Content="+ write" Tag="Write" PointerMoved="PaletteElementPointerMoved" />
+                    <Button Margin="0,0,6,0" Command="{Binding AddSinkCommand}" Content="+ sink" Tag="Sink" PointerMoved="PaletteElementPointerMoved" />
                     <Button Command="{Binding DeleteSelectedCommand}"
                             IsEnabled="{Binding HasSelectedElement}"
                             Content="Delete" />
@@ -57,11 +55,50 @@
             </DockPanel>
         </Border>
 
-        <ne:Editor x:Name="PipelineEditor"
-                   Grid.Row="1"
-                   Grid.Column="0"
-                   DrawingSource="{Binding Editor.Drawing}"
-                   Background="#FFFFFF" />
+        <Grid x:Name="GraphHost"
+              Grid.Row="1"
+              Grid.Column="0"
+              ClipToBounds="True"
+              Background="#FFFFFF"
+              DragDrop.AllowDrop="True"
+              DragDrop.DragOver="PipelineEditorDragOver"
+              DragDrop.Drop="PipelineEditorDrop">
+            <ne:Editor x:Name="PipelineEditor"
+                       DrawingSource="{Binding Editor.Drawing}"
+                       DragDrop.AllowDrop="True"
+                       DragDrop.DragOver="PipelineEditorDragOver"
+                       DragDrop.Drop="PipelineEditorDrop"
+                       Background="#FFFFFF" />
+
+            <Canvas IsHitTestVisible="False">
+                <Line x:Name="ConnectionPreview"
+                      IsVisible="False"
+                      Stroke="#D32F2F"
+                      StrokeThickness="3"
+                      StartPoint="0,0"
+                      EndPoint="0,0" />
+            </Canvas>
+
+            <Border x:Name="GraphTrash"
+                    Width="86"
+                    Height="42"
+                    HorizontalAlignment="Right"
+                    VerticalAlignment="Bottom"
+                    Margin="0,0,12,12"
+                    Background="#FFF1F0"
+                    BorderBrush="#C62828"
+                    BorderThickness="1"
+                    CornerRadius="6"
+                    DragDrop.AllowDrop="True"
+                    DragDrop.DragOver="TrashDragOver"
+                    DragDrop.Drop="TrashDrop">
+                <TextBlock Text="Trash"
+                           HorizontalAlignment="Center"
+                           VerticalAlignment="Center"
+                           FontWeight="SemiBold"
+                           Foreground="#8E1B1B" />
+            </Border>
+        </Grid>
 
         <Border Grid.Row="1"
                 Grid.Column="1"
