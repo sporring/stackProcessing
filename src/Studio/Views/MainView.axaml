@@ -1,37 +1,122 @@
 <UserControl xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:ne="clr-namespace:NodeEditor.Controls;assembly=NodeEditorAvalonia"
              xmlns:vm="using:Studio.ViewModels"
+             xmlns:models="using:Studio.Models"
              x:Class="Studio.Views.MainView"
              x:DataType="vm:MainWindowViewModel">
 
-    <ScrollViewer Grid.Column="0">
-    <ItemsControl ItemsSource="{Binding Editor.Templates}">
-        <ItemsControl.ItemsPanel>
-        <ItemsPanelTemplate>
-            <WrapPanel />
-        </ItemsPanelTemplate>
-        </ItemsControl.ItemsPanel>
-
-        <ItemsControl.ItemTemplate>
-        <DataTemplate>
-            <Border Width="72" Height="72"
-                    Margin="6"
-                    CornerRadius="8"
-                    Background="#060606ff"
-                    BorderBrush="#b73333ff"
-                    BorderThickness="1">
-            <Grid>
-                <!-- You can show an icon, or a simplified preview -->
-                <TextBlock Text="{Binding Title}"
-                        TextWrapping="Wrap"
-                        FontSize="10"
-                        HorizontalAlignment="Center"
-                        VerticalAlignment="Center"/>
-            </Grid>
-            </Border>
+    <UserControl.DataTemplates>
+        <DataTemplate DataType="models:PipelineNodeContent">
+            <Button Width="110"
+                    Height="48"
+                    Background="#EAF3FF"
+                    BorderBrush="#2F80ED"
+                    BorderThickness="2"
+                    CornerRadius="6"
+                    Padding="0"
+                    Click="PipelineNodeClicked">
+                <TextBlock Text="{Binding Label}"
+                           HorizontalAlignment="Center"
+                           VerticalAlignment="Center"
+                           FontSize="11"
+                           FontWeight="SemiBold"
+                           TextTrimming="CharacterEllipsis"
+                           Foreground="#102A43" />
+            </Button>
         </DataTemplate>
-        </ItemsControl.ItemTemplate>
-    </ItemsControl>
-    </ScrollViewer>
+    </UserControl.DataTemplates>
 
+    <Grid RowDefinitions="Auto,*,220"
+          ColumnDefinitions="*,340"
+          Background="#FFFFFF">
+
+        <Border Grid.Row="0"
+                Grid.ColumnSpan="2"
+                Background="#F4F6F8"
+                BorderBrush="#D7DDE5"
+                BorderThickness="0,0,0,1"
+                Padding="10">
+            <DockPanel LastChildFill="True">
+                <Button DockPanel.Dock="Right"
+                        MinWidth="96"
+                        Command="{Binding RunCommand}"
+                        Content="Run" />
+
+                <WrapPanel Orientation="Horizontal">
+                    <Button Margin="0,0,8,0" Command="{Binding AddSourceCommand}" Content="+ source" />
+                    <Button Margin="0,0,8,0" Command="{Binding AddReadCommand}" Content="+ read" />
+                    <Button Margin="0,0,8,0" Command="{Binding AddGaussianCommand}" Content="+ gaussian" />
+                    <Button Margin="0,0,8,0" Command="{Binding AddCastCommand}" Content="+ cast" />
+                    <Button Margin="0,0,8,0" Command="{Binding AddWriteCommand}" Content="+ write" />
+                    <Button Margin="0,0,8,0" Command="{Binding AddSinkCommand}" Content="+ sink" />
+                    <Button Command="{Binding DeleteSelectedCommand}"
+                            IsEnabled="{Binding HasSelectedElement}"
+                            Content="Delete" />
+                </WrapPanel>
+            </DockPanel>
+        </Border>
+
+        <ne:Editor x:Name="PipelineEditor"
+                   Grid.Row="1"
+                   Grid.Column="0"
+                   DrawingSource="{Binding Editor.Drawing}"
+                   Background="#FFFFFF" />
+
+        <Border Grid.Row="1"
+                Grid.Column="1"
+                Background="#FAFBFC"
+                BorderBrush="#D7DDE5"
+                BorderThickness="1,0,0,0"
+                Padding="10">
+            <Grid RowDefinitions="Auto,*">
+                <TextBlock Text="Parameters"
+                           FontSize="14"
+                           FontWeight="SemiBold"
+                           Margin="0,0,0,8" />
+
+                <ScrollViewer Grid.Row="1">
+                    <ItemsControl ItemsSource="{Binding SelectedElement.Parameters}">
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate x:DataType="models:PipelineParameterViewModel">
+                                <Grid ColumnDefinitions="120,*"
+                                      Margin="0,0,0,10">
+                                    <TextBlock Text="{Binding Label}"
+                                               VerticalAlignment="Center"
+                                               FontSize="12" />
+                                    <TextBox Grid.Column="1"
+                                             Text="{Binding Value, Mode=TwoWay}"
+                                             MinHeight="30" />
+                                </Grid>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                </ScrollViewer>
+            </Grid>
+        </Border>
+
+        <Border Grid.Row="2"
+                Grid.ColumnSpan="2"
+                Background="#FFFFFF"
+                BorderBrush="#D7DDE5"
+                BorderThickness="0,1,0,0"
+                Padding="10">
+            <Grid RowDefinitions="Auto,*">
+                <TextBlock Text="Generated F#"
+                           FontSize="14"
+                           FontWeight="SemiBold"
+                           Margin="0,0,0,8" />
+
+                <TextBox Grid.Row="1"
+                         Text="{Binding GeneratedProgram}"
+                         FontFamily="Consolas, Menlo, monospace"
+                         FontSize="13"
+                         IsReadOnly="True"
+                         AcceptsReturn="True"
+                         TextWrapping="NoWrap"
+                         Background="#FFFFFF"
+                         BorderBrush="#D7DDE5" />
+            </Grid>
+        </Border>
+    </Grid>
 </UserControl>

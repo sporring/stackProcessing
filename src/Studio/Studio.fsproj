@@ -27,10 +27,12 @@
   </ItemGroup>
 
   <ItemGroup>
+    <Compile Include="Models/PipelineDesigner.fs" />
+    <Compile Include="Services/PipelineCodeGenerator.fs" />
     <Compile Include="Services/MyNodeFactory.fs" />
-    <Compile Include="Views/MainView.axaml.fs" />
     <Compile Include="ViewModels/ViewModelBase.fs" />
     <Compile Include="ViewModels/MainWindowViewModel.fs" />
+    <Compile Include="Views/MainView.axaml.fs" />
     <Compile Include="Views/MainWindow.axaml.fs" />
     <Compile Include="ViewLocator.fs" />
     <Compile Include="App.axaml.fs" />

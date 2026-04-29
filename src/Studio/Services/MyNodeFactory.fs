@@ -7,18 +7,18 @@ open NodeEditor.Mvvm
 
 type MyNodeFactory() =
 
-    let createSimpleNode () =
+    let createSimpleNode title =
         let node = NodeViewModel()
-        node.Name <- "HELLO"
+        node.Name <- title
         node.X <- 0
         node.Y <- 0
-        node.Width <- 160
-        node.Height <- 60
+        node.Width <- 110
+        node.Height <- 48
         node.Pins <- ObservableCollection<IPin>()
 
         // one input on left, one output on right
-        node.AddPin(0., 30., 10., 10., PinAlignment.Left, "IN") |> ignore
-        node.AddPin(160., 30., 10., 10., PinAlignment.Right, "OUT") |> ignore
+        node.AddPin(0., 24., 10., 10., PinAlignment.Left, "IN") |> ignore
+        node.AddPin(110., 24., 10., 10., PinAlignment.Right, "OUT") |> ignore
 
         node :> INode
 
@@ -30,7 +30,7 @@ type MyNodeFactory() =
             settings.EnableSnap <- true
             settings.SnapX <- 15.
             settings.SnapY <- 15.
-            settings.EnableGrid <- true
+            settings.EnableGrid <- false
             settings.GridCellWidth <- 15.
             settings.GridCellHeight <- 15.
 
@@ -39,16 +39,25 @@ type MyNodeFactory() =
             drawing.Name <- name
             drawing.X <- 0.
             drawing.Y <- 0.
-            drawing.Width <- 1200.
-            drawing.Height <- 800.
+            drawing.Width <- 760.
+            drawing.Height <- 180.
             drawing.Nodes <- ObservableCollection<INode>()
             drawing.Connectors <- ObservableCollection<IConnector>()
             drawing :> IDrawingNode
 
         member _.CreateTemplates() =
-            let node = createSimpleNode()
-            let template = NodeTemplateViewModel()
-            template.Title <- "Hello Node"
-            template.Template <- node
-            template.Preview <- createSimpleNode()
-            ObservableCollection<INodeTemplate>([ template :> INodeTemplate ]) :> IList<INodeTemplate>
+            let template title =
+                let template = NodeTemplateViewModel()
+                template.Title <- title
+                template.Template <- createSimpleNode title
+                template.Preview <- createSimpleNode title
+                template :> INodeTemplate
+
+            ObservableCollection<INodeTemplate>(
+                [ template "source"
+                  template "read"
+                  template "discreteGaussian"
+                  template "cast"
+                  template "write"
+                  template "sink" ])
+            :> IList<INodeTemplate>
