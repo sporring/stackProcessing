@@ -35,6 +35,11 @@ type PipelineElementViewModel(kind: PipelineElementKind, title: string, paramete
         with get () = title
         and set v = this.SetProperty(&title, v) |> ignore
 
-type PipelineNodeContent(label: string, select: unit -> unit) =
+type PipelineNodeContent(label: string, element: PipelineElementViewModel, select: unit -> unit) =
     member _.Label = label
+    member _.Element = element
     member _.Select() = select()
+
+type IGraphWindowController =
+    abstract member SetDrawingSize: width: float -> height: float -> unit
+    abstract member DeleteSelectedElementIfInTrashZone: trashWidth: float -> trashHeight: float -> margin: float -> unit

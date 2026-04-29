@@ -19,14 +19,29 @@ type private SimpleCommand(execute: obj -> unit, canExecute: obj -> bool) =
         [<CLIEvent>]
         member _.CanExecuteChanged = canExecuteChanged.Publish
 
-type private PipelineNodeViewModel(element: PipelineElementViewModel, selectElement: PipelineElementViewModel -> unit) =
+type private PipelineNodeViewModel(
+    element: PipelineElementViewModel,
+    selectElement: PipelineElementViewModel -> unit,
+    getDrawingSize: unit -> float * float) =
     inherit NodeViewModel()
 
     member _.Element = element
 
+    member this.ClampToDrawing() =
+        let drawingWidth, drawingHeight = getDrawingSize()
+        let maxX = max 0. (drawingWidth - this.Width)
+        let maxY = max 0. (drawingHeight - this.Height)
+
+        this.X <- min maxX (max 0. this.X)
+        this.Y <- min maxY (max 0. this.Y)
+
     override this.OnSelected() =
         base.OnSelected()
         selectElement element
+
+    override this.OnMoved() =
+        base.OnMoved()
+        this.ClampToDrawing()
 
 type MainWindowViewModel() as this =
     inherit ViewModelBase()
@@ -88,9 +103,7 @@ type MainWindowViewModel() as this =
 
     let subscribeElement (this: MainWindowViewModel) (element: PipelineElementViewModel) =
         let handler =
-            PropertyChangedEventHandler(fun _ _ ->
-                generatedProgram <- PipelineCodeGenerator.generate elements
-                this.RaiseGeneratedProgramChanged())
+            PropertyChangedEventHandler(fun _ _ -> ())
 
         for parameter in element.Parameters do
             parameter.PropertyChanged.AddHandler(handler)
@@ -101,9 +114,13 @@ type MainWindowViewModel() as this =
                     parameter.PropertyChanged.RemoveHandler(handler) }
 
     let makeNode (index: int) (element: PipelineElementViewModel) =
-        let node = PipelineNodeViewModel(element, fun selected -> this.SelectedElement <- selected)
+        let node =
+            PipelineNodeViewModel(
+                element,
+                (fun selected -> this.SelectedElement <- selected),
+                (fun () -> drawing.Width, drawing.Height))
         node.Name <- element.Title
-        node.Content <- PipelineNodeContent(element.Title, fun () -> this.SelectedElement <- element)
+        node.Content <- PipelineNodeContent(element.Title, element, fun () -> this.SelectedElement <- element)
         node.X <- float (24 + index * 118)
         node.Y <- 66.
         node.Width <- 110.
@@ -116,6 +133,7 @@ type MainWindowViewModel() as this =
         if element.Kind <> PipelineElementKind.Sink then
             node.AddPin(110., 24., 10., 10., PinAlignment.Right, "OUT") |> ignore
 
+        node.ClampToDrawing()
         node
 
     let tryPin alignment (node: NodeViewModel) =
@@ -146,8 +164,6 @@ type MainWindowViewModel() as this =
                 drawing.Connectors.Add(connector :> IConnector)
             | _ -> ())
 
-        generatedProgram <- PipelineCodeGenerator.generate elements
-
     do
         let seed =
             [ PipelineElementKind.Source
@@ -163,7 +179,7 @@ type MainWindowViewModel() as this =
 
         refreshDrawing ()
 
-        elements.CollectionChanged.Add(fun args ->
+        elements.CollectionChanged.Add(fun _ ->
             for subscription in parameterSubscriptions do
                 subscription.Dispose()
 
@@ -171,9 +187,7 @@ type MainWindowViewModel() as this =
 
             for element in elements do
                 parameterSubscriptions.Add(subscribeElement this element)
-
-            refreshDrawing ()
-            this.RaiseGeneratedProgramChanged())
+            ())
 
         for element in elements do
             parameterSubscriptions.Add(subscribeElement this element)
@@ -213,23 +227,16 @@ type MainWindowViewModel() as this =
         SimpleCommand((fun _ -> this.AddElement(PipelineElementKind.Sink)), (fun _ -> true)) :> ICommand
 
     member this.DeleteSelectedCommand =
-        SimpleCommand(
-            (fun _ ->
-                if not (isNull selectedElement) then
-                    let nextIndex = max 0 (elements.IndexOf(selectedElement) - 1)
-                    elements.Remove(selectedElement) |> ignore
-                    if elements.Count > 0 then
-                        this.SelectedElement <- elements[min nextIndex (elements.Count - 1)]
-                    else
-                        this.SelectedElement <- null),
-            (fun _ -> not (isNull selectedElement)))
+        SimpleCommand((fun _ -> this.DeleteSelectedElement()), (fun _ -> not (isNull selectedElement)))
         :> ICommand
 
     member this.RunCommand =
         SimpleCommand(
             (fun _ ->
-                generatedProgram <- PipelineCodeGenerator.generate elements
-                refreshDrawing ()
+                match this.ValidateGraph() with
+                | Ok () -> generatedProgram <- PipelineCodeGenerator.generate elements
+                | Error message -> generatedProgram <- message
+
                 this.RaiseGeneratedProgramChanged()),
             (fun _ -> true))
         :> ICommand
@@ -242,7 +249,101 @@ type MainWindowViewModel() as this =
             |> Option.defaultValue elements.Count
 
         elements.Insert(insertIndex, element)
+
+        let node = makeNode insertIndex element
+        node.X <- min (max 0. (drawing.Width - node.Width)) (24. + float (drawing.Nodes.Count % 6) * 118.)
+        node.Y <- min (max 0. (drawing.Height - node.Height)) (24. + float (drawing.Nodes.Count / 6) * 72.)
+        drawing.Nodes.Add(node :> INode)
+
         this.SelectedElement <- element
+
+    member this.DeleteSelectedElement() =
+        if not (isNull selectedElement) then
+            let nextIndex = max 0 (elements.IndexOf(selectedElement) - 1)
+            let nodesToRemove =
+                drawing.Nodes
+                |> Seq.filter (fun node ->
+                    match node with
+                    | :? PipelineNodeViewModel as pipelineNode -> Object.ReferenceEquals(pipelineNode.Element, selectedElement)
+                    | _ -> false)
+                |> Seq.toArray
+
+            let pinsToRemove =
+                nodesToRemove
+                |> Seq.collect _.Pins
+                |> Seq.toArray
+
+            let connectorsToRemove =
+                drawing.Connectors
+                |> Seq.filter (fun connector ->
+                    pinsToRemove |> Array.exists (fun pin -> Object.ReferenceEquals(pin, connector.Start) || Object.ReferenceEquals(pin, connector.End)))
+                |> Seq.toArray
+
+            for connector in connectorsToRemove do
+                drawing.Connectors.Remove(connector) |> ignore
+
+            for node in nodesToRemove do
+                drawing.Nodes.Remove(node) |> ignore
+
+            elements.Remove(selectedElement) |> ignore
+
+            if elements.Count > 0 then
+                this.SelectedElement <- elements[min nextIndex (elements.Count - 1)]
+            else
+                this.SelectedElement <- null
+
+    member _.ValidateGraph() =
+        let missingPins =
+            drawing.Nodes
+            |> Seq.collect (fun node ->
+                node.Pins
+                |> Seq.filter (fun pin -> not (drawing.IsPinConnected(pin)))
+                |> Seq.map (fun pin -> $"{node.Name}.{pin.Name}"))
+            |> Seq.toArray
+
+        if missingPins.Length = 0 then
+            Ok ()
+        else
+            let message =
+                missingPins
+                |> Seq.map (fun pin -> $"// - {pin}")
+                |> String.concat Environment.NewLine
+
+            Error($"// Cannot generate F# yet. Connect every input and output pin first.{Environment.NewLine}{message}")
+
+    member _.SetDrawingSize(width: float, height: float) =
+        if width > 0. && height > 0. then
+            drawing.Width <- width
+            drawing.Height <- height
+
+            drawing.Nodes
+            |> Seq.iter (fun node ->
+                match node with
+                | :? PipelineNodeViewModel as pipelineNode -> pipelineNode.ClampToDrawing()
+                | _ -> ())
+
+    member this.DeleteSelectedElementIfInTrashZone(trashWidth: float, trashHeight: float, margin: float) =
+        if not (isNull selectedElement) then
+            drawing.Nodes
+            |> Seq.tryFind (fun node ->
+                match node with
+                | :? PipelineNodeViewModel as pipelineNode -> Object.ReferenceEquals(pipelineNode.Element, selectedElement)
+                | _ -> false)
+            |> Option.iter (fun node ->
+                let trashLeft = max 0. (drawing.Width - trashWidth - margin)
+                let trashTop = max 0. (drawing.Height - trashHeight - margin)
+                let nodeRight = node.X + node.Width
+                let nodeBottom = node.Y + node.Height
+
+                if nodeRight >= trashLeft && nodeBottom >= trashTop then
+                    this.DeleteSelectedElement())
+
+    interface IGraphWindowController with
+        member this.SetDrawingSize width height =
+            this.SetDrawingSize(width, height)
+
+        member this.DeleteSelectedElementIfInTrashZone trashWidth trashHeight margin =
+            this.DeleteSelectedElementIfInTrashZone(trashWidth, trashHeight, margin)
 
     member private this.RaiseGeneratedProgramChanged() =
         this.OnPropertyChanged(PropertyChangedEventArgs(nameof this.GeneratedProgram))
