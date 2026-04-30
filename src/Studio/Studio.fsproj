@@ -27,6 +27,10 @@
   </ItemGroup>
 
   <ItemGroup>
+    <ProjectReference Include="../Graph/Graph.fsproj" />
+  </ItemGroup>
+
+  <ItemGroup>
     <Compile Include="Models/PipelineDesigner.fs" />
     <Compile Include="Services/PipelineCodeGenerator.fs" />
     <Compile Include="Services/MyNodeFactory.fs" />

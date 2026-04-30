@@ -16,10 +16,6 @@ type MyNodeFactory() =
         node.Height <- 48
         node.Pins <- ObservableCollection<IPin>()
 
-        // one input on left, one output on right
-        node.AddPin(0., 24., 10., 10., PinAlignment.Left, "IN") |> ignore
-        node.AddPin(110., 24., 10., 10., PinAlignment.Right, "OUT") |> ignore
-
         node :> INode
 
     interface INodeFactory with

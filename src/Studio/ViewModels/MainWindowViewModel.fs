@@ -4,6 +4,7 @@ open System
 open System.Collections.ObjectModel
 open System.ComponentModel
 open System.Windows.Input
+open Graph
 open NodeEditor.Mvvm
 open NodeEditor.Model
 open Studio.Models
@@ -19,13 +20,61 @@ type private SimpleCommand(execute: obj -> unit, canExecute: obj -> bool) =
         [<CLIEvent>]
         member _.CanExecuteChanged = canExecuteChanged.Publish
 
-type private PipelineNodeViewModel(
-    element: PipelineElementViewModel,
-    selectElement: PipelineElementViewModel -> unit,
-    getDrawingSize: unit -> float * float) =
+type PipelinePinViewModel(alignment: PinAlignment) =
+    inherit PinViewModel()
+
+    member _.TrianglePoints =
+        match alignment with
+        | PinAlignment.Left -> "0,0 14,7 0,14"
+        | PinAlignment.Right -> "0,0 14,7 0,14"
+        | _ -> "0,0 14,7 0,14"
+
+[<AllowNullLiteral>]
+type PipelineNodeViewModel(
+    state: PipelineNodeState,
+    selectNode: PipelineNodeViewModel -> unit,
+    getDrawingSize: unit -> float * float) as this =
     inherit NodeViewModel()
 
-    member _.Element = element
+    let addPipelinePin x y alignment name =
+        let pin = PipelinePinViewModel(alignment)
+        pin.Name <- name
+        pin.Parent <- this
+        pin.X <- x
+        pin.Y <- y
+        pin.Width <- 14.
+        pin.Height <- 14.
+        pin.Alignment <- alignment
+        this.Pins.Add(pin :> IPin)
+
+    let nodeHeight =
+        let portCount = max state.Definition.Inputs.Length state.Definition.Outputs.Length
+        max 48. (20. + 22. * float (max 1 portCount))
+
+    let verticalPinPosition index count =
+        if count <= 1 then
+            nodeHeight / 2.
+        else
+            let spacing = 22.
+            let totalHeight = spacing * float (count - 1)
+            (nodeHeight - totalHeight) / 2. + spacing * float index
+
+    do
+        this.Name <- state.Title
+        this.Content <- PipelineNodeContent(state.Title, state, fun () -> selectNode this)
+        this.Width <- 110.
+        this.Height <- nodeHeight
+        this.Pins <- ObservableCollection<IPin>()
+
+        state.Definition.Inputs
+        |> List.iteri (fun portIndex port ->
+            addPipelinePin 0. (verticalPinPosition portIndex state.Definition.Inputs.Length) PinAlignment.Left port.Name)
+
+        state.Definition.Outputs
+        |> List.iteri (fun portIndex port ->
+            addPipelinePin 110. (verticalPinPosition portIndex state.Definition.Outputs.Length) PinAlignment.Right port.Name)
+
+    member _.State = state
 
     member this.ClampToDrawing() =
         let drawingWidth, drawingHeight = getDrawingSize()
@@ -37,121 +86,19 @@ type private PipelineNodeViewModel(
 
     override this.OnSelected() =
         base.OnSelected()
-        selectElement element
+        selectNode this
 
     override this.OnMoved() =
         base.OnMoved()
         this.ClampToDrawing()
 
-type PipelinePinViewModel(alignment: PinAlignment) =
-    inherit PinViewModel()
-
-    member _.TrianglePoints =
-        match alignment with
-        | PinAlignment.Left -> "0,0 14,7 0,14"
-        | PinAlignment.Right -> "0,0 14,7 0,14"
-        | _ -> "0,0 14,7 0,14"
-
 type MainWindowViewModel() as this =
     inherit ViewModelBase()
 
-    let elements = ObservableCollection<PipelineElementViewModel>()
     let paletteGroups = ObservableCollection<PaletteGroupViewModel>()
-    let mutable selectedElement: PipelineElementViewModel = null
+    let mutable selectedNode: PipelineNodeViewModel = null
     let mutable generatedProgram = ""
     let mutable paletteSearch = ""
-
-    let paletteFunctions =
-        [ PaletteFunctionViewModel(
-              PipelineElementKind.Source,
-              "source",
-              "Sources / Sinks",
-              "Begin a streaming StackProcessing pipeline with available memory.",
-              [ "availableMemory"; "start"; "input" ])
-          PaletteFunctionViewModel(
-              PipelineElementKind.Sink,
-              "sink",
-              "Sources / Sinks",
-              "Run the built pipeline.",
-              [ "execute"; "run"; "terminal" ])
-          PaletteFunctionViewModel(
-              PipelineElementKind.Read,
-              "read",
-              "IO",
-              "Read a stack from chunked image files.",
-              [ "input"; "load"; "tiff"; "file" ])
-          PaletteFunctionViewModel(
-              PipelineElementKind.Write,
-              "write",
-              "IO",
-              "Write a processed stack to image files.",
-              [ "output"; "save"; "tiff"; "file" ])
-          PaletteFunctionViewModel(
-              PipelineElementKind.DiscreteGaussian,
-              "discreteGaussian",
-              "Filters",
-              "Apply a Gaussian smoothing filter.",
-              [ "gaussian"; "smooth"; "blur"; "filter" ])
-          PaletteFunctionViewModel(
-              PipelineElementKind.Cast,
-              "cast",
-              "Type conversions",
-              "Convert stream element type.",
-              [ "convert"; "uint8"; "float"; "type" ]) ]
-
-    let updatePaletteGroups () =
-        paletteGroups.Clear()
-
-        let matchingFunctions =
-            paletteFunctions
-            |> List.filter (fun paletteFunction -> paletteFunction.Matches(paletteSearch))
-
-        let expandedByDefault =
-            not (String.IsNullOrWhiteSpace paletteSearch)
-
-        matchingFunctions
-        |> Seq.groupBy _.Category
-        |> Seq.iter (fun (category, functions) ->
-            paletteGroups.Add(PaletteGroupViewModel(category, functions, expandedByDefault || category = "Sources / Sinks")))
-
-    let createElement kind =
-        match kind with
-        | PipelineElementKind.Source ->
-            PipelineElementViewModel(
-                kind,
-                "source",
-                [ PipelineParameterViewModel("Available memory", "availableMemory", "availableMemory") ])
-        | PipelineElementKind.Read ->
-            PipelineElementViewModel(
-                kind,
-                "read",
-                [ PipelineParameterViewModel("Pixel type", "pixelType", "float")
-                  PipelineParameterViewModel("Input", "input", "input")
-                  PipelineParameterViewModel("Suffix", "suffix", ".tiff") ])
-        | PipelineElementKind.DiscreteGaussian ->
-            PipelineElementViewModel(
-                kind,
-                "discreteGaussian",
-                [ PipelineParameterViewModel("Sigma", "sigma", "1.0")
-                  PipelineParameterViewModel("Output region", "outputRegionMode", "None")
-                  PipelineParameterViewModel("Boundary", "boundaryCondition", "None")
-                  PipelineParameterViewModel("Window size", "windowSize", "15") ])
-        | PipelineElementKind.Cast ->
-            PipelineElementViewModel(
-                kind,
-                "cast",
-                [ PipelineParameterViewModel("Source type", "sourceType", "float")
-                  PipelineParameterViewModel("Target type", "targetType", "uint8") ])
-        | PipelineElementKind.Write ->
-            PipelineElementViewModel(
-                kind,
-                "write",
-                [ PipelineParameterViewModel("Output", "output", "output")
-                  PipelineParameterViewModel("Suffix", "suffix", ".tiff") ])
-        | PipelineElementKind.Sink ->
-            PipelineElementViewModel(kind, "sink", [])
-        | _ ->
-            PipelineElementViewModel(kind, "unknown", [])
 
     let editor =
         let editor = EditorViewModel()
@@ -163,66 +110,68 @@ type MainWindowViewModel() as this =
     let drawing =
         editor.Drawing :?> DrawingNodeViewModel
 
-    let parameterSubscriptions = ResizeArray<IDisposable>()
+    let updatePaletteGroups () =
+        paletteGroups.Clear()
 
-    let subscribeElement (this: MainWindowViewModel) (element: PipelineElementViewModel) =
-        let handler =
-            PropertyChangedEventHandler(fun _ _ -> ())
+        let matchingFunctions =
+            BuiltInCatalog.orderedFunctions
+            |> List.filter (FunctionDefinition.matches paletteSearch)
 
-        for parameter in element.Parameters do
-            parameter.PropertyChanged.AddHandler(handler)
+        let expandedByDefault =
+            not (String.IsNullOrWhiteSpace paletteSearch)
 
-        { new IDisposable with
-            member _.Dispose() =
-                for parameter in element.Parameters do
-                    parameter.PropertyChanged.RemoveHandler(handler) }
+        matchingFunctions
+        |> Seq.groupBy _.Category
+        |> Seq.iter (fun (category, functions) ->
+            paletteGroups.Add(PaletteGroupViewModel(category, functions, expandedByDefault)))
 
-    let makeNode (index: int) (element: PipelineElementViewModel) =
-        let addPipelinePin (node: NodeViewModel) x y alignment name =
-            let pin = PipelinePinViewModel(alignment)
-            pin.Name <- name
-            pin.Parent <- node
-            pin.X <- x
-            pin.Y <- y
-            pin.Width <- 14.
-            pin.Height <- 14.
-            pin.Alignment <- alignment
-            node.Pins.Add(pin :> IPin)
+    let createState functionId =
+        let definition = BuiltInCatalog.find functionId
 
-        let node =
-            PipelineNodeViewModel(
-                element,
-                (fun selected -> this.SelectedElement <- selected),
-                (fun () -> drawing.Width, drawing.Height))
-        node.Name <- element.Title
-        node.Content <- PipelineNodeContent(element.Title, element, fun () -> this.SelectedElement <- element)
-        node.X <- float (24 + index * 118)
-        node.Y <- 66.
-        node.Width <- 110.
-        node.Height <- 48.
-        node.Pins <- ObservableCollection<IPin>()
+        let parameters =
+            definition.Parameters
+            |> List.map (fun parameter ->
+                PipelineParameterViewModel(parameter.Label, parameter.Key, parameter.DefaultValue))
 
-        if element.Kind <> PipelineElementKind.Source then
-            addPipelinePin node -14. 17. PinAlignment.Left "IN"
+        PipelineNodeState(definition, parameters)
 
-        if element.Kind <> PipelineElementKind.Sink then
-            addPipelinePin node 110. 17. PinAlignment.Right "OUT"
+    let pipelineNodes () =
+        drawing.Nodes
+        |> Seq.choose (function
+            | :? PipelineNodeViewModel as node -> Some node
+            | _ -> None)
 
-        node.ClampToDrawing()
-        node
+    let pipelineStates () =
+        pipelineNodes ()
+        |> Seq.map _.State
 
-    let tryPin alignment (node: NodeViewModel) =
+    let tryPin alignment (node: INode) =
         node.Pins
         |> Seq.tryFind (fun pin -> pin.Alignment = alignment)
 
-    let refreshDrawing () =
-        drawing.Nodes.Clear()
-        drawing.Connectors.Clear()
+    let createNode index functionId =
+        let node =
+            PipelineNodeViewModel(
+                createState functionId,
+                (fun node -> this.SelectedNode <- node),
+                (fun () -> drawing.Width, drawing.Height))
 
+        node.X <- float (24 + index * 118)
+        node.Y <- 66.
+        node.ClampToDrawing()
+        node
+
+    let addConnector startPin endPin =
+        let connector = ConnectorViewModel()
+        connector.Start <- startPin
+        connector.End <- endPin
+        connector.Orientation <- ConnectorOrientation.Horizontal
+        drawing.Connectors.Add(connector :> IConnector)
+
+    let addSeedPipeline () =
         let nodes =
-            elements
-            |> Seq.mapi makeNode
-            |> Seq.toArray
+            [ "Source"; "Read"; "DiscreteGaussian"; "Cast"; "Write"; "Sink" ]
+            |> List.mapi createNode
 
         for node in nodes do
             drawing.Nodes.Add(node :> INode)
@@ -231,45 +180,14 @@ type MainWindowViewModel() as this =
         |> Seq.pairwise
         |> Seq.iter (fun (left, right) ->
             match tryPin PinAlignment.Right left, tryPin PinAlignment.Left right with
-            | Some startPin, Some endPin ->
-                let connector = ConnectorViewModel()
-                connector.Start <- startPin
-                connector.End <- endPin
-                connector.Orientation <- ConnectorOrientation.Horizontal
-                drawing.Connectors.Add(connector :> IConnector)
+            | Some startPin, Some endPin -> addConnector startPin endPin
             | _ -> ())
 
     do
-        let seed =
-            [ PipelineElementKind.Source
-              PipelineElementKind.Read
-              PipelineElementKind.DiscreteGaussian
-              PipelineElementKind.Cast
-              PipelineElementKind.Write
-              PipelineElementKind.Sink ]
-            |> List.map createElement
-
-        for element in seed do
-            elements.Add element
-
         updatePaletteGroups()
-        refreshDrawing ()
+        addSeedPipeline()
 
-        elements.CollectionChanged.Add(fun _ ->
-            for subscription in parameterSubscriptions do
-                subscription.Dispose()
-
-            parameterSubscriptions.Clear()
-
-            for element in elements do
-                parameterSubscriptions.Add(subscribeElement this element)
-            ())
-
-        for element in elements do
-            parameterSubscriptions.Add(subscribeElement this element)
-
-    member this.Editor = editor
-    member this.Elements = elements
+    member _.Editor = editor
     member _.PaletteGroups = paletteGroups
 
     member this.PaletteSearch
@@ -278,115 +196,98 @@ type MainWindowViewModel() as this =
             if this.SetProperty(&paletteSearch, value) then
                 updatePaletteGroups()
 
-    member this.SelectedElement
-        with get () = selectedElement
+    member this.SelectedNode
+        with get () = selectedNode
         and set value =
-            if this.SetProperty(&selectedElement, value) then
+            if this.SetProperty(&selectedNode, value) then
                 this.OnPropertyChanged(PropertyChangedEventArgs(nameof this.HasSelectedElement))
 
-    member _.HasSelectedElement = not (isNull selectedElement)
+    member this.SelectedElement
+        with get () = selectedNode
+        and set value = this.SelectedNode <- value
+
+    member _.HasSelectedElement = not (isNull selectedNode)
 
     member _.GeneratedProgram = generatedProgram
 
-    member this.SelectElement(element: PipelineElementViewModel) =
-        this.SelectedElement <- element
-
     member this.AddSourceCommand =
-        SimpleCommand((fun _ -> this.AddElement(PipelineElementKind.Source)), (fun _ -> true)) :> ICommand
+        SimpleCommand((fun _ -> this.AddElement("Source")), (fun _ -> true)) :> ICommand
 
     member this.AddReadCommand =
-        SimpleCommand((fun _ -> this.AddElement(PipelineElementKind.Read)), (fun _ -> true)) :> ICommand
+        SimpleCommand((fun _ -> this.AddElement("Read")), (fun _ -> true)) :> ICommand
 
     member this.AddGaussianCommand =
-        SimpleCommand((fun _ -> this.AddElement(PipelineElementKind.DiscreteGaussian)), (fun _ -> true)) :> ICommand
+        SimpleCommand((fun _ -> this.AddElement("DiscreteGaussian")), (fun _ -> true)) :> ICommand
 
     member this.AddCastCommand =
-        SimpleCommand((fun _ -> this.AddElement(PipelineElementKind.Cast)), (fun _ -> true)) :> ICommand
+        SimpleCommand((fun _ -> this.AddElement("Cast")), (fun _ -> true)) :> ICommand
 
     member this.AddWriteCommand =
-        SimpleCommand((fun _ -> this.AddElement(PipelineElementKind.Write)), (fun _ -> true)) :> ICommand
+        SimpleCommand((fun _ -> this.AddElement("Write")), (fun _ -> true)) :> ICommand
 
     member this.AddSinkCommand =
-        SimpleCommand((fun _ -> this.AddElement(PipelineElementKind.Sink)), (fun _ -> true)) :> ICommand
+        SimpleCommand((fun _ -> this.AddElement("Sink")), (fun _ -> true)) :> ICommand
 
     member this.AddPaletteElementCommand =
         SimpleCommand(
             (fun parameter ->
                 match parameter with
-                | :? PipelineElementKind as kind -> this.AddElement(kind)
-                | :? string as kindName ->
-                    match Enum.TryParse<PipelineElementKind>(kindName) with
-                    | true, kind -> this.AddElement(kind)
-                    | _ -> ()
+                | :? FunctionDefinition as definition -> this.AddElement(definition.Id)
+                | :? string as functionId -> this.AddElement(functionId)
                 | _ -> ()),
             (fun _ -> true))
         :> ICommand
 
     member this.DeleteSelectedCommand =
-        SimpleCommand((fun _ -> this.DeleteSelectedElement()), (fun _ -> not (isNull selectedElement)))
+        SimpleCommand((fun _ -> this.DeleteSelectedElement()), (fun _ -> not (isNull selectedNode)))
         :> ICommand
 
     member this.RunCommand =
         SimpleCommand(
             (fun _ ->
                 match this.ValidateGraph() with
-                | Ok () -> generatedProgram <- PipelineCodeGenerator.generate elements
+                | Ok () -> generatedProgram <- PipelineCodeGenerator.generate (pipelineStates ())
                 | Error message -> generatedProgram <- message
 
                 this.RaiseGeneratedProgramChanged()),
             (fun _ -> true))
         :> ICommand
 
-    member this.AddElement(kind: PipelineElementKind) =
-        let element = createElement kind
-        let insertIndex =
-            elements
-            |> Seq.tryFindIndex (fun item -> item.Kind = PipelineElementKind.Sink)
-            |> Option.defaultValue elements.Count
-
-        elements.Insert(insertIndex, element)
-
-        let node = makeNode insertIndex element
+    member this.AddElement(functionId: string) =
+        let node = createNode drawing.Nodes.Count functionId
         node.X <- min (max 0. (drawing.Width - node.Width)) (24. + float (drawing.Nodes.Count % 6) * 118.)
         node.Y <- min (max 0. (drawing.Height - node.Height)) (24. + float (drawing.Nodes.Count / 6) * 72.)
-        drawing.Nodes.Add(node :> INode)
 
-        this.SelectedElement <- element
+        drawing.Nodes.Add(node :> INode)
+        this.SelectedNode <- node
 
     member this.DeleteSelectedElement() =
-        if not (isNull selectedElement) then
-            let nextIndex = max 0 (elements.IndexOf(selectedElement) - 1)
-            let nodesToRemove =
-                drawing.Nodes
-                |> Seq.filter (fun node ->
-                    match node with
-                    | :? PipelineNodeViewModel as pipelineNode -> Object.ReferenceEquals(pipelineNode.Element, selectedElement)
-                    | _ -> false)
-                |> Seq.toArray
+        if not (isNull selectedNode) then
+            let nodes = pipelineNodes () |> Seq.toArray
+            let currentIndex =
+                nodes
+                |> Array.tryFindIndex (fun node -> Object.ReferenceEquals(node, selectedNode))
+                |> Option.defaultValue 0
 
-            let pinsToRemove =
-                nodesToRemove
-                |> Seq.collect _.Pins
-                |> Seq.toArray
+            let pinsToRemove = selectedNode.Pins |> Seq.toArray
 
             let connectorsToRemove =
                 drawing.Connectors
                 |> Seq.filter (fun connector ->
-                    pinsToRemove |> Array.exists (fun pin -> Object.ReferenceEquals(pin, connector.Start) || Object.ReferenceEquals(pin, connector.End)))
+                    pinsToRemove
+                    |> Array.exists (fun pin -> Object.ReferenceEquals(pin, connector.Start) || Object.ReferenceEquals(pin, connector.End)))
                 |> Seq.toArray
 
             for connector in connectorsToRemove do
                 drawing.Connectors.Remove(connector) |> ignore
 
-            for node in nodesToRemove do
-                drawing.Nodes.Remove(node) |> ignore
+            drawing.Nodes.Remove(selectedNode) |> ignore
 
-            elements.Remove(selectedElement) |> ignore
-
-            if elements.Count > 0 then
-                this.SelectedElement <- elements[min nextIndex (elements.Count - 1)]
+            let remaining = pipelineNodes () |> Seq.toArray
+            if remaining.Length > 0 then
+                this.SelectedNode <- remaining[min currentIndex (remaining.Length - 1)]
             else
-                this.SelectedElement <- null
+                this.SelectedNode <- null
 
     member _.ValidateGraph() =
         let missingPins =
@@ -412,27 +313,16 @@ type MainWindowViewModel() as this =
             drawing.Width <- width
             drawing.Height <- height
 
-            drawing.Nodes
-            |> Seq.iter (fun node ->
-                match node with
-                | :? PipelineNodeViewModel as pipelineNode -> pipelineNode.ClampToDrawing()
-                | _ -> ())
+            pipelineNodes ()
+            |> Seq.iter _.ClampToDrawing()
 
     member this.DeleteSelectedElementIfInTrashZone(trashWidth: float, trashHeight: float, margin: float) =
-        if not (isNull selectedElement) then
-            drawing.Nodes
-            |> Seq.tryFind (fun node ->
-                match node with
-                | :? PipelineNodeViewModel as pipelineNode -> Object.ReferenceEquals(pipelineNode.Element, selectedElement)
-                | _ -> false)
-            |> Option.iter (fun node ->
-                let trashLeft = max 0. (drawing.Width - trashWidth - margin)
-                let trashTop = max 0. (drawing.Height - trashHeight - margin)
-                let nodeRight = node.X + node.Width
-                let nodeBottom = node.Y + node.Height
+        if not (isNull selectedNode) then
+            let trashLeft = max 0. (drawing.Width - trashWidth - margin)
+            let trashTop = max 0. (drawing.Height - trashHeight - margin)
 
-                if nodeRight >= trashLeft && nodeBottom >= trashTop then
-                    this.DeleteSelectedElement())
+            if selectedNode.X + selectedNode.Width >= trashLeft && selectedNode.Y + selectedNode.Height >= trashTop then
+                this.DeleteSelectedElement()
 
     interface IGraphWindowController with
         member this.SetDrawingSize width height =

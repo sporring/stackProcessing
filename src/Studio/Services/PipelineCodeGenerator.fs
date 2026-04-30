@@ -1,14 +1,13 @@
 namespace Studio.Services
 
 open System
-open System.Collections.ObjectModel
 open System.Text
 open Studio.Models
 
 module PipelineCodeGenerator =
 
-    let private paramValue key (element: PipelineElementViewModel) =
-        element.Parameters
+    let private paramValue key (state: PipelineNodeState) =
+        state.Parameters
         |> Seq.tryFind (fun p -> p.Key = key)
         |> Option.map _.Value
         |> Option.defaultValue ""
@@ -34,43 +33,43 @@ module PipelineCodeGenerator =
         else
             $"(Some {trimmed})"
 
-    let private elementLine (element: PipelineElementViewModel) =
-        match element.Kind with
+    let private elementLine (state: PipelineNodeState) =
+        match state.Kind with
         | PipelineElementKind.Source ->
-            let availableMemory = paramValue "availableMemory" element
+            let availableMemory = paramValue "availableMemory" state
             $"source {availableMemory}"
         | PipelineElementKind.Read ->
-            let pixelType = paramValue "pixelType" element
-            let input = paramValue "input" element |> quote
-            let suffix = paramValue "suffix" element |> quote
+            let pixelType = paramValue "pixelType" state
+            let input = paramValue "input" state |> quote
+            let suffix = paramValue "suffix" state |> quote
             $"|> read<{pixelType}> {input} {suffix}"
         | PipelineElementKind.DiscreteGaussian ->
-            let sigma = paramValue "sigma" element
-            let outputRegionMode = paramValue "outputRegionMode" element |> optionRaw
-            let boundaryCondition = paramValue "boundaryCondition" element |> optionRaw
-            let windowSize = paramValue "windowSize" element |> optionUInt
+            let sigma = paramValue "sigma" state
+            let outputRegionMode = paramValue "outputRegionMode" state |> optionRaw
+            let boundaryCondition = paramValue "boundaryCondition" state |> optionRaw
+            let windowSize = paramValue "windowSize" state |> optionUInt
             $">=> discreteGaussian {sigma} {outputRegionMode} {boundaryCondition} {windowSize}"
         | PipelineElementKind.Cast ->
-            let sourceType = paramValue "sourceType" element
-            let targetType = paramValue "targetType" element
+            let sourceType = paramValue "sourceType" state
+            let targetType = paramValue "targetType" state
             $">=> cast<{sourceType},{targetType}>"
         | PipelineElementKind.Write ->
-            let output = paramValue "output" element |> quote
-            let suffix = paramValue "suffix" element |> quote
+            let output = paramValue "output" state |> quote
+            let suffix = paramValue "suffix" state |> quote
             $">=> write {output} {suffix}"
         | PipelineElementKind.Sink ->
             "|> sink"
         | _ ->
-            $"// Unsupported element: {element.Title}"
+            $"// Unsupported element: {state.Title}"
 
-    let generate (elements: ObservableCollection<PipelineElementViewModel>) =
+    let generate (states: PipelineNodeState seq) =
         let builder = StringBuilder()
         builder.AppendLine("open StackProcessing") |> ignore
         builder.AppendLine() |> ignore
         builder.AppendLine("let availableMemory = 8UL * 1024UL * 1024UL * 1024UL") |> ignore
         builder.AppendLine() |> ignore
 
-        elements
+        states
         |> Seq.map elementLine
         |> Seq.iter (fun line -> builder.AppendLine(line) |> ignore)
 

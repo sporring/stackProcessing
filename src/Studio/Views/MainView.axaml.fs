@@ -278,42 +278,10 @@ type MainView() as this =
                     node.Y <- min (max 0. (height - node.Height)) (max 0. node.Y))
 
     let deleteSelectedNodeIfOverTrash () =
-        let editor = this.FindControl<Editor>("PipelineEditor")
-
-        let deleteSelectedElement () =
-            if not (isNull this.DataContext) then
-                let methodInfo = this.DataContext.GetType().GetMethod("DeleteSelectedElement")
-                if not (isNull methodInfo) then
-                    methodInfo.Invoke(this.DataContext, Array.empty) |> ignore
-
-        if not (isNull editor) then
-            match editor.DrawingSource, this.DataContext with
-            | :? DrawingNodeViewModel as drawing, _ ->
-                if not (isNull this.DataContext) then
-                    let selectedElementProperty = this.DataContext.GetType().GetProperty("SelectedElement")
-                    let selectedElement =
-                        if isNull selectedElementProperty then
-                            null
-                        else
-                            selectedElementProperty.GetValue(this.DataContext)
-
-                    if not (isNull selectedElement) then
-                        drawing.Nodes
-                        |> Seq.tryFind (fun node ->
-                            match node.Content with
-                            | :? PipelineNodeContent as nodeContent ->
-                                let nodeContentType = nodeContent.GetType()
-                                let elementProperty = nodeContentType.GetProperty("Element")
-                                not (isNull elementProperty)
-                                && Object.ReferenceEquals(elementProperty.GetValue(nodeContent), selectedElement)
-                            | _ -> false)
-                        |> Option.iter (fun node ->
-                            let trashLeft = max 0. (drawing.Width - 86. - 12.)
-                            let trashTop = max 0. (drawing.Height - 42. - 12.)
-
-                            if node.X + node.Width >= trashLeft && node.Y + node.Height >= trashTop then
-                                deleteSelectedElement())
-            | _ -> ()
+        match this.DataContext with
+        | :? IGraphWindowController as controller ->
+            controller.DeleteSelectedElementIfInTrashZone 86. 42. 12.
+        | _ -> ()
 
     let clearNativeNodeSelection () =
         let editor = this.FindControl<Editor>("PipelineEditor")
@@ -393,7 +361,8 @@ type MainView() as this =
                                         if not (isNull graphHost) then
                                             showConnectionPreview pin (args.GetPosition(graphHost))
 
-                                        args.Handled <- false
+                                        args.PreventGestureRecognition()
+                                        args.Handled <- true
                                 | None, Some connector when point.Properties.IsRightButtonPressed ->
                                     resetConnectionGesture()
                                     deleteConnector connector |> ignore
@@ -472,14 +441,11 @@ type MainView() as this =
         match sender with
         | :? Control as control ->
             match control.Tag with
-            | :? string as kind ->
-                match Enum.TryParse<PipelineElementKind>(kind) with
-                | true, elementKind ->
-                    match this.DataContext with
-                    | :? MainWindowViewModel as viewModel ->
-                        viewModel.AddElement(elementKind)
-                        args.Handled <- true
-                    | _ -> ()
+            | :? string as functionId ->
+                match this.DataContext with
+                | :? MainWindowViewModel as viewModel ->
+                    viewModel.AddElement(functionId)
+                    args.Handled <- true
                 | _ -> ()
             | _ -> ()
         | _ -> ()
@@ -518,14 +484,11 @@ type MainView() as this =
     member _.PipelineEditorDrop(_sender: obj, args: DragEventArgs) =
         if not (isNull args.DataTransfer) && args.DataTransfer.Contains(pipelineKindFormat) then
             match args.DataTransfer.TryGetValue(pipelineKindFormat) with
-            | kind when not (String.IsNullOrWhiteSpace kind) ->
-                match Enum.TryParse<PipelineElementKind>(kind) with
-                | true, elementKind ->
-                    match this.DataContext with
-                    | :? MainWindowViewModel as viewModel ->
-                        viewModel.AddElement(elementKind)
-                        args.Handled <- true
-                    | _ -> ()
+            | functionId when not (String.IsNullOrWhiteSpace functionId) ->
+                match this.DataContext with
+                | :? MainWindowViewModel as viewModel ->
+                    viewModel.AddElement(functionId)
+                    args.Handled <- true
                 | _ -> ()
             | _ -> ()
 
