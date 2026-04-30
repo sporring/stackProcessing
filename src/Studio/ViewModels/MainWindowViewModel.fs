@@ -14,12 +14,12 @@ open Studio.Models
 open Studio.Services
 
 [<CLIMutable>]
-type private SavedParameter =
+type SavedParameter =
     { Key: string
       Value: string }
 
 [<CLIMutable>]
-type private SavedNode =
+type SavedNode =
     { Id: string
       FunctionId: string
       X: float
@@ -27,14 +27,14 @@ type private SavedNode =
       Parameters: SavedParameter array }
 
 [<CLIMutable>]
-type private SavedEdge =
+type SavedEdge =
     { FromNode: string
       FromPort: int
       ToNode: string
       ToPort: int }
 
 [<CLIMutable>]
-type private SavedGraph =
+type SavedGraph =
     { Version: int
       Nodes: SavedNode array
       Edges: SavedEdge array }
