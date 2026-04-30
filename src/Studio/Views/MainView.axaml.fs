@@ -671,8 +671,10 @@ type MainView() as this =
                 if not (isNull file) then
                     let! stream = file.OpenWriteAsync()
                     use stream = stream
+                    stream.SetLength(0L)
                     use writer = new StreamWriter(stream)
                     do! writer.WriteAsync(viewModel.ExportGraphJson())
+                    do! writer.FlushAsync()
             | _ -> ()
         }
         |> ignore
