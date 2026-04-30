@@ -3,11 +3,18 @@
              xmlns:ne="clr-namespace:NodeEditor.Controls;assembly=NodeEditorAvalonia"
              xmlns:vm="using:Studio.ViewModels"
              xmlns:models="using:Studio.Models"
+             xmlns:graph="using:Graph"
              x:Class="Studio.Views.MainView"
              x:Name="Root"
              x:DataType="vm:MainWindowViewModel">
 
     <UserControl.Styles>
+        <Style Selector="ne|Connector">
+            <Setter Property="Stroke" Value="#D32F2F" />
+            <Setter Property="StrokeThickness" Value="3" />
+            <Setter Property="Fill" Value="Transparent" />
+        </Style>
+
         <Style Selector="ne|Pin">
             <Setter Property="Template">
                 <ControlTemplate TargetType="ne:Pin">
@@ -23,7 +30,7 @@
     </UserControl.Styles>
 
     <UserControl.DataTemplates>
-        <DataTemplate x:DataType="models:PaletteFunctionViewModel">
+        <DataTemplate x:DataType="graph:FunctionDefinition">
             <Button Margin="0,0,0,6"
                     Padding="8,6"
                     HorizontalAlignment="Stretch"
@@ -32,11 +39,11 @@
                     BorderBrush="#D7DDE5"
                     BorderThickness="1"
                     CornerRadius="4"
-                    Tag="{Binding KindName}"
+                    Tag="{Binding Id}"
                     Click="PaletteElementClicked"
                     PointerMoved="PaletteElementPointerMoved">
                 <StackPanel Spacing="2">
-                    <TextBlock Text="{Binding Name}"
+                    <TextBlock Text="{Binding DisplayName}"
                                FontSize="12"
                                FontWeight="SemiBold"
                                Foreground="#102A43" />
@@ -180,7 +187,7 @@
                            Margin="0,0,0,8" />
 
                 <ScrollViewer Grid.Row="1">
-                    <ItemsControl ItemsSource="{Binding SelectedElement.Parameters}">
+                    <ItemsControl ItemsSource="{Binding SelectedNode.State.Parameters}">
                         <ItemsControl.ItemTemplate>
                             <DataTemplate x:DataType="models:PipelineParameterViewModel">
                                 <Grid ColumnDefinitions="120,*"

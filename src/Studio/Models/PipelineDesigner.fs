@@ -1,6 +1,7 @@
 namespace Studio.Models
 
 open CommunityToolkit.Mvvm.ComponentModel
+open Graph
 open System.Collections.ObjectModel
 
 type PipelineElementKind =
@@ -24,44 +25,31 @@ type PipelineParameterViewModel(label: string, key: string, value: string) =
         and set v = this.SetProperty(&value, v) |> ignore
 
 [<AllowNullLiteral>]
-type PipelineElementViewModel(kind: PipelineElementKind, title: string, parameters: PipelineParameterViewModel list) =
+type PipelineNodeState(definition: FunctionDefinition, parameters: PipelineParameterViewModel list) =
     inherit ObservableObject()
 
-    let mutable title = title
+    let mutable title = definition.DisplayName
 
-    member _.Kind = kind
+    member _.Kind =
+        match System.Enum.TryParse<PipelineElementKind>(definition.Id) with
+        | true, kind -> kind
+        | _ -> invalidOp $"Unsupported legacy pipeline element kind: {definition.Id}"
+
+    member _.Definition = definition
     member _.Parameters = System.Collections.ObjectModel.ObservableCollection<PipelineParameterViewModel>(parameters)
 
     member this.Title
         with get () = title
         and set v = this.SetProperty(&title, v) |> ignore
 
-type PipelineNodeContent(label: string, element: PipelineElementViewModel, select: unit -> unit) =
+type PipelineNodeContent(label: string, state: PipelineNodeState, select: unit -> unit) =
     member _.Label = label
-    member _.Element = element
+    member _.State = state
     member _.Select() = select()
 
-type PaletteFunctionViewModel(kind: PipelineElementKind, name: string, category: string, description: string, aliases: string list) =
-    member _.Kind = kind
-    member _.KindName = kind.ToString()
-    member _.Name = name
-    member _.Category = category
-    member _.Description = description
-    member _.Aliases = aliases
-
-    member this.Matches(searchText: string) =
-        let contains (value: string) =
-            value.Contains(searchText, System.StringComparison.OrdinalIgnoreCase)
-
-        System.String.IsNullOrWhiteSpace(searchText)
-        || contains this.Name
-        || contains this.Category
-        || contains this.Description
-        || (this.Aliases |> List.exists contains)
-
-type PaletteGroupViewModel(title: string, functions: PaletteFunctionViewModel seq, isExpanded: bool) =
+type PaletteGroupViewModel(title: string, functions: FunctionDefinition seq, isExpanded: bool) =
     member _.Title = title
-    member _.Functions = ObservableCollection<PaletteFunctionViewModel>(functions)
+    member _.Functions = ObservableCollection<FunctionDefinition>(functions)
     member _.IsExpanded = isExpanded
 
 type IGraphWindowController =
