@@ -1,16 +1,9 @@
 namespace Studio.Models
 
+open Avalonia.Media
 open CommunityToolkit.Mvvm.ComponentModel
 open Graph
 open System.Collections.ObjectModel
-
-type PipelineElementKind =
-    | Source = 0
-    | Read = 1
-    | DiscreteGaussian = 2
-    | Cast = 3
-    | Write = 4
-    | Sink = 5
 
 type PipelineParameterViewModel(label: string, key: string, value: string) =
     inherit ObservableObject()
@@ -25,15 +18,11 @@ type PipelineParameterViewModel(label: string, key: string, value: string) =
         and set v = this.SetProperty(&value, v) |> ignore
 
 [<AllowNullLiteral>]
-type PipelineNodeState(definition: FunctionDefinition, parameters: PipelineParameterViewModel list) =
+type PipelineNodeState(definition: Function, parameters: PipelineParameterViewModel list) =
     inherit ObservableObject()
 
     let mutable title = definition.DisplayName
-
-    member _.Kind =
-        match System.Enum.TryParse<PipelineElementKind>(definition.Id) with
-        | true, kind -> kind
-        | _ -> invalidOp $"Unsupported legacy pipeline element kind: {definition.Id}"
+    let mutable isPaletteDragOutside = false
 
     member _.Definition = definition
     member _.Parameters = System.Collections.ObjectModel.ObservableCollection<PipelineParameterViewModel>(parameters)
@@ -42,14 +31,37 @@ type PipelineNodeState(definition: FunctionDefinition, parameters: PipelineParam
         with get () = title
         and set v = this.SetProperty(&title, v) |> ignore
 
+    member this.IsPaletteDragOutside
+        with get () = isPaletteDragOutside
+        and set v =
+            if this.SetProperty(&isPaletteDragOutside, v) then
+                this.OnPropertyChanged(nameof this.NodeBackground)
+                this.OnPropertyChanged(nameof this.NodeBorderBrush)
+                this.OnPropertyChanged(nameof this.NodeOpacity)
+
+    member this.NodeBackground =
+        if isPaletteDragOutside then
+            SolidColorBrush.Parse("#FFF8E1") :> IBrush
+        else
+            SolidColorBrush.Parse("#EAF3FF") :> IBrush
+
+    member this.NodeBorderBrush =
+        if isPaletteDragOutside then
+            SolidColorBrush.Parse("#F2A900") :> IBrush
+        else
+            SolidColorBrush.Parse("#2F80ED") :> IBrush
+
+    member this.NodeOpacity =
+        if isPaletteDragOutside then 0.0 else 1.0
+
 type PipelineNodeContent(label: string, state: PipelineNodeState, select: unit -> unit) =
     member _.Label = label
     member _.State = state
     member _.Select() = select()
 
-type PaletteGroupViewModel(title: string, functions: FunctionDefinition seq, isExpanded: bool) =
+type PaletteGroupViewModel(title: string, functions: Function seq, isExpanded: bool) =
     member _.Title = title
-    member _.Functions = ObservableCollection<FunctionDefinition>(functions)
+    member _.Functions = ObservableCollection<Function>(functions)
     member _.IsExpanded = isExpanded
 
 type IGraphWindowController =
