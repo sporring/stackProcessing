@@ -1,83 +1,115 @@
 namespace Graph
 
-type PixelType =
+type NumericType =
+    | Number
     | UInt8
+    | Int8
+    | UInt16
+    | Int16
+    | UInt32
+    | Int32
+    | UInt64
+    | Int64
     | Float32
     | Float64
+    | Complex
 
-type Dimensionality =
-    | D2
-    | D3
+module NumericType = 
+  let toString (tp:NumericType) : string = 
+      match tp with
+      | Number -> "Number"
+      | UInt8 -> "UInt8"
+      | Int8 -> "Int8"
+      | UInt16 -> "UInt16"
+      | Int16 -> "Int16"
+      | UInt32 -> "UInt32"
+      | Int32 -> "Int32"
+      | UInt64 -> "UInt64"
+      | Int64 -> "Int64"
+      | Float32 -> "Float32"
+      | Float64 -> "Float64"
+      | Complex -> "Complex"
 
-type ScalarType =
-    | Int
-    | Float
+
+type BasicType = 
+    | Numeric of NumericType
     | Bool
     | String
-
-type PortType =
-    | Image of PixelType * Dimensionality
-    | Scalar of ScalarType
-    | Tuple of PortType list
     | Unit
 
-type PortDirection =
-    | Input
-    | Output
+type PortType = // all but unit are lists
+    | Image of NumericType
+    | Scalar of BasicType
+    | Tuple of PortType * PortType
+    | Source
+    | Sink
+    | Unit
 
-type PortDefinition =
+type Port =
     { Name: string
-      Type: PortType
-      Direction: PortDirection }
+      Type: PortType }
 
-type ParameterDefinition =
+module PortType =
+    let numericToImage (tp:NumericType) : PortType = 
+        match tp with
+        | Number -> PortType.Image(NumericType.Float64)
+        | UInt8 -> PortType.Image(NumericType.UInt8)
+        | Int8 -> PortType.Image(NumericType.Int8)
+        | UInt16 -> PortType.Image(NumericType.UInt16)
+        | Int16 -> PortType.Image(NumericType.Int16)
+        | UInt32 -> PortType.Image(NumericType.UInt32)
+        | Int32 -> PortType.Image(NumericType.Int32)
+        | UInt64 -> PortType.Image(NumericType.UInt64)
+        | Int64 -> PortType.Image(NumericType.Int64)
+        | Float32 -> PortType.Image(NumericType.Float32)
+        | Float64 -> PortType.Image(NumericType.Float64)
+        | Complex -> PortType.Image(NumericType.Complex)
+
+    let canConnect (outputType: PortType) (inputType: PortType) =
+        match outputType, inputType with
+        | Image _, Image Number -> true
+        | _ -> outputType = inputType
+
+type Parameter =
     { Key: string
       Label: string
       DefaultValue: string
-      Type: ScalarType }
+      Type: BasicType }
 
-type Streamability =
-    | Source
-    | Sink
-    | Local
-    | Global
-    | Structural
-
-type FunctionDefinition =
+type Function =
     { Id: string
       DisplayName: string
       Category: string
       Description: string
       Aliases: string list
-      Inputs: PortDefinition list
-      Outputs: PortDefinition list
-      Parameters: ParameterDefinition list
-      Streamability: Streamability
-      Properties: Map<string, string> }
+      Inputs: Port list
+      Outputs: Port list
+      Parameters: Parameter list }
 
-type GraphPosition =
+type Position =
     { X: float
       Y: float }
 
-type GraphNode =
+type Node =
     { Id: string
-      FunctionId: string
-      Parameters: Map<string, string>
-      Position: GraphPosition option }
+      Function: Function
+      ParameterValues: Map<string, string>
+      Position: Position option }
 
 type Edge =
-    { FromNode: string
-      FromPort: int
-      ToNode: string
-      ToPort: int }
+    { FromNode: Node
+      FromPort: int // index into GraphNode.FunctionDefinition.Inputs
+      ToNode: Node
+      ToPort: int  // index into GraphNode.FunctionDefinition.Outputs
+      }
 
 type PipelineGraph =
     { Version: int
-      Nodes: GraphNode list
+      Nodes: Node list
       Edges: Edge list }
 
 module FunctionDefinition =
-    let matches (searchText: string) (definition: FunctionDefinition) =
+    let matches (searchText: string) (definition: Function) =
         let contains (value: string) =
             value.Contains(searchText, System.StringComparison.OrdinalIgnoreCase)
 
@@ -86,4 +118,3 @@ module FunctionDefinition =
         || contains definition.Category
         || contains definition.Description
         || (definition.Aliases |> List.exists contains)
-

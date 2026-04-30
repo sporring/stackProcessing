@@ -30,18 +30,16 @@
     </UserControl.Styles>
 
     <UserControl.DataTemplates>
-        <DataTemplate x:DataType="graph:FunctionDefinition">
-            <Button Margin="0,0,0,6"
+        <DataTemplate x:DataType="graph:Function">
+            <Border Margin="0,0,0,6"
                     Padding="8,6"
                     HorizontalAlignment="Stretch"
-                    HorizontalContentAlignment="Left"
                     Background="#FFFFFF"
                     BorderBrush="#D7DDE5"
                     BorderThickness="1"
                     CornerRadius="4"
                     Tag="{Binding Id}"
-                    Click="PaletteElementClicked"
-                    PointerMoved="PaletteElementPointerMoved">
+                    PointerPressed="PaletteElementPointerPressed">
                 <StackPanel Spacing="2">
                     <TextBlock Text="{Binding DisplayName}"
                                FontSize="12"
@@ -52,23 +50,26 @@
                                Foreground="#52616B"
                                TextWrapping="Wrap" />
                 </StackPanel>
-            </Button>
+            </Border>
         </DataTemplate>
 
         <DataTemplate x:DataType="models:PaletteGroupViewModel">
             <Expander Header="{Binding Title}"
                       IsExpanded="{Binding IsExpanded, Mode=OneWay}"
+                      HorizontalAlignment="Stretch"
                       Margin="0,0,0,6">
-                <ItemsControl ItemsSource="{Binding Functions}" />
+                <ItemsControl ItemsSource="{Binding Functions}"
+                              HorizontalAlignment="Stretch" />
             </Expander>
         </DataTemplate>
 
         <DataTemplate DataType="models:PipelineNodeContent">
             <Border Width="110"
                     Height="48"
-                    Background="#EAF3FF"
-                    BorderBrush="#2F80ED"
+                    Background="{Binding State.NodeBackground}"
+                    BorderBrush="{Binding State.NodeBorderBrush}"
                     BorderThickness="2"
+                    Opacity="{Binding State.NodeOpacity}"
                     CornerRadius="6">
                 <TextBlock Text="{Binding Label}"
                            HorizontalAlignment="Center"
@@ -92,10 +93,19 @@
                 BorderThickness="0,0,0,1"
                 Padding="10">
             <DockPanel LastChildFill="True">
-                <Button DockPanel.Dock="Right"
-                        Width="76"
-                        Command="{Binding RunCommand}"
-                        Content="Run" />
+                <StackPanel DockPanel.Dock="Right"
+                            Orientation="Horizontal"
+                            Spacing="8">
+                    <Button Width="76"
+                            Click="SaveGraphClicked"
+                            Content="Save" />
+                    <Button Width="76"
+                            Click="LoadGraphClicked"
+                            Content="Load" />
+                    <Button Width="76"
+                            Command="{Binding RunCommand}"
+                            Content="Run" />
+                </StackPanel>
 
                 <TextBlock Text="StackProcessing Studio"
                            VerticalAlignment="Center"
@@ -124,7 +134,8 @@
                          MinHeight="30" />
 
                 <ScrollViewer Grid.Row="2">
-                    <ItemsControl ItemsSource="{Binding PaletteGroups}" />
+                    <ItemsControl ItemsSource="{Binding PaletteGroups}"
+                                  HorizontalAlignment="Stretch" />
                 </ScrollViewer>
             </Grid>
         </Border>
@@ -229,5 +240,29 @@
                          BorderBrush="#D7DDE5" />
             </Grid>
         </Border>
+
+        <Canvas x:Name="PaletteDragOverlay"
+                Grid.RowSpan="3"
+                Grid.ColumnSpan="3"
+                Panel.ZIndex="1000"
+                IsHitTestVisible="False">
+            <Border x:Name="PaletteDragPreview"
+                    Width="110"
+                    Height="48"
+                    IsVisible="False"
+                    Background="#FFF8E1"
+                    BorderBrush="#F2A900"
+                    BorderThickness="2"
+                    Opacity="0.86"
+                    CornerRadius="6">
+                <TextBlock x:Name="PaletteDragPreviewLabel"
+                           HorizontalAlignment="Center"
+                           VerticalAlignment="Center"
+                           FontSize="11"
+                           FontWeight="SemiBold"
+                           TextTrimming="CharacterEllipsis"
+                           Foreground="#102A43" />
+            </Border>
+        </Canvas>
     </Grid>
 </UserControl>

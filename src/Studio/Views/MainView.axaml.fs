@@ -1,6 +1,8 @@
 namespace Studio.Views
 
 open System
+open System.IO
+open System.Threading.Tasks
 open Avalonia
 open Avalonia.Controls
 open Avalonia.Controls.Primitives
@@ -10,7 +12,10 @@ open Avalonia.Threading
 open Avalonia.Markup.Xaml
 open Avalonia.Media
 open Avalonia.Controls.Shapes
+open Avalonia.Layout
+open Avalonia.Platform.Storage
 open Avalonia.VisualTree
+open Graph
 open NodeEditor.Controls
 open NodeEditor.Model
 open NodeEditor.Mvvm
@@ -22,6 +27,7 @@ type MainView() as this =
 
     let pipelineKindFormat = DataFormat.CreateStringApplicationFormat("stackprocessing-pipeline-kind")
     let mutable paletteDragInProgress = false
+    let mutable paletteDragFunctionId: string option = None
     let mutable pendingPin: IPin option = None
     let mutable draggingPin: IPin option = None
 
@@ -30,6 +36,55 @@ type MainView() as this =
             Point(pin.X + pin.Width / 2., pin.Y + pin.Height / 2.)
         else
             Point(pin.Parent.X + pin.X + pin.Width / 2., pin.Parent.Y + pin.Y + pin.Height / 2.)
+
+    let jsonFileType () =
+        let fileType = FilePickerFileType("Pipeline JSON")
+        fileType.Patterns <- [ "*.json" ]
+        fileType.MimeTypes <- [ "application/json" ]
+        fileType.AppleUniformTypeIdentifiers <- [ "public.json" ]
+        fileType
+
+    let parentWindow () =
+        match TopLevel.GetTopLevel(this) with
+        | :? Window as window -> window
+        | _ -> null
+
+    let showLoadErrorAsync (message: string) =
+        task {
+            let dialog = Window()
+            dialog.Title <- "Could not load graph"
+            dialog.Width <- 460.
+            dialog.Height <- 180.
+            dialog.WindowStartupLocation <- WindowStartupLocation.CenterOwner
+            dialog.CanResize <- false
+
+            let text =
+                TextBlock(
+                    Text = message,
+                    TextWrapping = TextWrapping.Wrap,
+                    Margin = Thickness(16.))
+
+            let ok =
+                Button(
+                    Content = "OK",
+                    Width = 88.,
+                    HorizontalAlignment = HorizontalAlignment.Right,
+                    Margin = Thickness(16., 0., 16., 16.))
+
+            ok.Click.Add(fun _ -> dialog.Close())
+
+            let panel = DockPanel(LastChildFill = true)
+            DockPanel.SetDock(ok, Dock.Bottom)
+            panel.Children.Add(ok)
+            panel.Children.Add(text)
+            dialog.Content <- panel
+
+            match parentWindow () with
+            | null ->
+                dialog.Show()
+            | owner ->
+                do! dialog.ShowDialog(owner)
+        }
 
     let showConnectionPreview (pin: IPin) (pointer: Point) =
         let preview = this.FindControl<Line>("ConnectionPreview")
@@ -53,13 +108,36 @@ type MainView() as this =
             preview.IsVisible <- false
 
     let canConnectPins (first: IPin) (second: IPin) =
-        let oppositeSides =
+        let outputPin, inputPin =
             match first.Alignment, second.Alignment with
-            | PinAlignment.Right, PinAlignment.Left
-            | PinAlignment.Left, PinAlignment.Right -> true
+            | PinAlignment.Right, PinAlignment.Left -> Some first, Some second
+            | PinAlignment.Left, PinAlignment.Right -> Some second, Some first
+            | _ -> None, None
+
+        let compatiblePortTypes (outputPin: IPin) (inputPin: IPin) =
+            match outputPin, inputPin with
+            | :? PipelinePinViewModel as outputPin, (:? PipelinePinViewModel as inputPin) ->
+                PortType.canConnect outputPin.Port.Type inputPin.Port.Type
             | _ -> false
 
-        oppositeSides && not (Object.ReferenceEquals(first.Parent, second.Parent))
+        match outputPin, inputPin with
+        | Some outputPin, Some inputPin ->
+            not (Object.ReferenceEquals(outputPin.Parent, inputPin.Parent))
+            && compatiblePortTypes outputPin inputPin
+        | _ -> false
+
+    let inputPinIsFree (pin: IPin) =
+        let editor = this.FindControl<Editor>("PipelineEditor")
+
+        if isNull editor then
+            false
+        else
+            match editor.DrawingSource with
+            | :? DrawingNodeViewModel as drawing ->
+                drawing.Connectors
+                |> Seq.exists (fun connector -> Object.ReferenceEquals(connector.End, pin))
+                |> not
+            | _ -> false
 
     let setCompatiblePinHighlight (candidate: IPin option) =
         let editor = this.FindControl<Editor>("PipelineEditor")
@@ -72,6 +150,12 @@ type MainView() as this =
                     | :? IPin as pin ->
                         control.Opacity <-
                             match draggingPin, candidate with
+                            | Some firstPin, _
+                                when firstPin.Alignment = PinAlignment.Right
+                                     && pin.Alignment = PinAlignment.Left
+                                     && inputPinIsFree pin
+                                     && canConnectPins firstPin pin ->
+                                1.0
                             | Some firstPin, Some candidatePin
                                 when Object.ReferenceEquals(pin, candidatePin) && canConnectPins firstPin candidatePin ->
                                 1.0
@@ -234,7 +318,7 @@ type MainView() as this =
                     | _ -> None, None
 
                 match outputPin, inputPin with
-                | Some outputPin, Some inputPin when not (Object.ReferenceEquals(outputPin.Parent, inputPin.Parent)) ->
+                | Some outputPin, Some inputPin when canConnectPins outputPin inputPin ->
                     let alreadyConnected =
                         drawing.Connectors
                         |> Seq.exists (fun connector ->
@@ -291,8 +375,95 @@ type MainView() as this =
             | :? DrawingNodeViewModel as drawing -> drawing.DeselectAllNodes()
             | _ -> ()
 
+    let isInsideGraphHost (point: Point) (graphHost: Grid) =
+        point.X >= 0.
+        && point.Y >= 0.
+        && point.X <= graphHost.Bounds.Width
+        && point.Y <= graphHost.Bounds.Height
+
+    let showPaletteDragPreview functionId (rootPoint: Point) =
+        let preview = this.FindControl<Border>("PaletteDragPreview")
+        let label = this.FindControl<TextBlock>("PaletteDragPreviewLabel")
+
+        if not (isNull preview) then
+            Canvas.SetLeft(preview, rootPoint.X - preview.Width / 2.)
+            Canvas.SetTop(preview, rootPoint.Y - preview.Height / 2.)
+            preview.IsVisible <- true
+
+        if not (isNull label) then
+            let text =
+                match BuiltInCatalog.tryFind functionId with
+                | Some definition -> definition.DisplayName
+                | None -> functionId
+
+            label.Text <- text
+
+    let hidePaletteDragPreview () =
+        let preview = this.FindControl<Border>("PaletteDragPreview")
+
+        if not (isNull preview) then
+            preview.IsVisible <- false
+
+    let movePaletteDragNode (args: PointerEventArgs) =
+        match paletteDragFunctionId with
+        | Some functionId ->
+            let graphHost = this.FindControl<Grid>("GraphHost")
+
+            if not (isNull graphHost) then
+                let point = args.GetPosition(graphHost)
+                let isOutsideGraph = not (isInsideGraphHost point graphHost)
+
+                match this.DataContext with
+                | :? MainWindowViewModel as viewModel ->
+                    viewModel.MoveSelectedElementTo(point.X, point.Y, false, isOutsideGraph)
+                | _ -> ()
+
+                if isOutsideGraph then
+                    showPaletteDragPreview functionId (args.GetPosition(this))
+                else
+                    hidePaletteDragPreview()
+
+            args.Handled <- true
+        | None -> ()
+
+    let finishPaletteDrag (args: PointerReleasedEventArgs) =
+        match paletteDragFunctionId with
+        | Some _ ->
+            paletteDragFunctionId <- None
+            paletteDragInProgress <- false
+            hidePaletteDragPreview()
+            args.Pointer.Capture(null) |> ignore
+
+            let graphHost = this.FindControl<Grid>("GraphHost")
+
+            if not (isNull graphHost) then
+                let dropPoint = args.GetPosition(graphHost)
+
+                match this.DataContext with
+                | :? MainWindowViewModel as viewModel ->
+                    if isInsideGraphHost dropPoint graphHost then
+                        viewModel.MoveSelectedElementTo(dropPoint.X, dropPoint.Y, true, false)
+                    else
+                        viewModel.DeleteSelectedElement()
+                | _ -> ()
+
+            args.Handled <- true
+        | None -> ()
+
     do
         this.InitializeComponent()
+        this.AddHandler(
+            InputElement.PointerMovedEvent,
+            EventHandler<PointerEventArgs>(fun _ args -> movePaletteDragNode args),
+            RoutingStrategies.Tunnel,
+            true)
+
+        this.AddHandler(
+            InputElement.PointerReleasedEvent,
+            EventHandler<PointerReleasedEventArgs>(fun _ args -> finishPaletteDrag args),
+            RoutingStrategies.Tunnel,
+            true)
+
         this.Loaded.Add(fun _ ->
             Dispatcher.UIThread.Post(fun () ->
                 let graphHost = this.FindControl<Grid>("GraphHost")
@@ -304,10 +475,34 @@ type MainView() as this =
 
                     syncGraphWindowSize()
 
+                    graphHost.AddHandler(
+                        DragDrop.DragOverEvent,
+                        EventHandler<DragEventArgs>(fun _ args -> this.PipelineEditorDragOver(graphHost, args)),
+                        RoutingStrategies.Tunnel,
+                        true)
+
+                    graphHost.AddHandler(
+                        DragDrop.DropEvent,
+                        EventHandler<DragEventArgs>(fun _ args -> this.PipelineEditorDrop(graphHost, args)),
+                        RoutingStrategies.Tunnel,
+                        true)
+
                 if not (isNull editor) && not (isNull editor.ZoomControl) then
                     editor.ZoomControl.ResetZoomCommand()
 
                 if not (isNull editor) then
+                    editor.AddHandler(
+                        DragDrop.DragOverEvent,
+                        EventHandler<DragEventArgs>(fun _ args -> this.PipelineEditorDragOver(editor, args)),
+                        RoutingStrategies.Tunnel,
+                        true)
+
+                    editor.AddHandler(
+                        DragDrop.DropEvent,
+                        EventHandler<DragEventArgs>(fun _ args -> this.PipelineEditorDrop(editor, args)),
+                        RoutingStrategies.Tunnel,
+                        true)
+
                     let selectFromPointerSource (args: PointerEventArgs) =
                         match args.Source with
                         | :? Avalonia.Controls.Control as sourceControl ->
@@ -432,23 +627,15 @@ type MainView() as this =
                             scrollViewer.VerticalScrollBarVisibility <- ScrollBarVisibility.Disabled
                         | :? ScrollBar as scrollBar ->
                             scrollBar.IsVisible <- false
-                        | _ -> ())))
+                        | _ -> ())
+
+                    match this.DataContext with
+                    | :? MainWindowViewModel as viewModel ->
+                        Dispatcher.UIThread.Post(fun () -> viewModel.ConnectSeedPipeline())
+                    | _ -> ()))
 
     member private this.InitializeComponent() =
         AvaloniaXamlLoader.Load(this)
-
-    member _.PaletteElementClicked(sender: obj, args: RoutedEventArgs) =
-        match sender with
-        | :? Control as control ->
-            match control.Tag with
-            | :? string as functionId ->
-                match this.DataContext with
-                | :? MainWindowViewModel as viewModel ->
-                    viewModel.AddElement(functionId)
-                    args.Handled <- true
-                | _ -> ()
-            | _ -> ()
-        | _ -> ()
 
     member _.PipelineNodeClicked(sender: obj, args: RoutedEventArgs) =
         match sender with
@@ -460,21 +647,98 @@ type MainView() as this =
             | _ -> ()
         | _ -> ()
 
-    member _.PaletteElementPointerMoved(sender: obj, args: PointerEventArgs) =
-        if not paletteDragInProgress then
-            match sender with
-            | :? Control as control when args.GetCurrentPoint(control).Properties.IsLeftButtonPressed ->
-                match control.Tag with
-                | :? string as kind ->
-                    paletteDragInProgress <- true
-                    let data = new DataTransfer()
-                    data.Add(DataTransferItem.Create(pipelineKindFormat, kind))
+    member _.SaveGraphClicked(_sender: obj, args: RoutedEventArgs) =
+        task {
+            args.Handled <- true
 
-                    DragDrop.DoDragDropAsync(args, data, DragDropEffects.Copy)
-                    |> _.ContinueWith(Action<Threading.Tasks.Task<DragDropEffects>>(fun _ -> paletteDragInProgress <- false))
-                    |> ignore
-                | _ -> ()
+            match TopLevel.GetTopLevel(this), this.DataContext with
+            | null, _ -> ()
+            | _, (:? MainWindowViewModel as viewModel) ->
+                let topLevel = TopLevel.GetTopLevel(this)
+                let jsonType = jsonFileType()
+
+                let options =
+                    FilePickerSaveOptions(
+                        Title = "Save pipeline graph",
+                        SuggestedFileName = "pipeline.json",
+                        DefaultExtension = "json",
+                        ShowOverwritePrompt = true,
+                        FileTypeChoices = [ jsonType ],
+                        SuggestedFileType = jsonType)
+
+                let! file = topLevel.StorageProvider.SaveFilePickerAsync(options)
+
+                if not (isNull file) then
+                    let! stream = file.OpenWriteAsync()
+                    use stream = stream
+                    use writer = new StreamWriter(stream)
+                    do! writer.WriteAsync(viewModel.ExportGraphJson())
             | _ -> ()
+        }
+        |> ignore
+
+    member _.LoadGraphClicked(_sender: obj, args: RoutedEventArgs) =
+        task {
+            args.Handled <- true
+
+            match TopLevel.GetTopLevel(this), this.DataContext with
+            | null, _ -> ()
+            | _, (:? MainWindowViewModel as viewModel) ->
+                let topLevel = TopLevel.GetTopLevel(this)
+                let jsonType = jsonFileType()
+
+                let options =
+                    FilePickerOpenOptions(
+                        Title = "Load pipeline graph",
+                        AllowMultiple = false,
+                        FileTypeFilter = [ jsonType ],
+                        SuggestedFileType = jsonType)
+
+                let! files = topLevel.StorageProvider.OpenFilePickerAsync(options)
+
+                match files |> Seq.tryHead with
+                | Some file ->
+                    try
+                        let! stream = file.OpenReadAsync()
+                        use stream = stream
+                        use reader = new StreamReader(stream)
+                        let! json = reader.ReadToEndAsync()
+                        viewModel.ImportGraphJson(json)
+                    with ex ->
+                        do! showLoadErrorAsync ex.Message
+                | None -> ()
+            | _ -> ()
+        }
+        |> ignore
+
+    member _.PaletteElementPointerPressed(sender: obj, args: PointerPressedEventArgs) =
+        match sender with
+        | :? Control as control when not paletteDragInProgress && args.GetCurrentPoint(control).Properties.IsLeftButtonPressed ->
+            match control.Tag with
+            | :? string as functionId ->
+                paletteDragInProgress <- true
+                paletteDragFunctionId <- Some functionId
+                args.PreventGestureRecognition()
+                args.Handled <- true
+                args.Pointer.Capture(this) |> ignore
+
+                let graphHost = this.FindControl<Grid>("GraphHost")
+
+                if not (isNull graphHost) then
+                    let point = args.GetPosition(graphHost)
+                    let isOutsideGraph = not (isInsideGraphHost point graphHost)
+
+                    match this.DataContext with
+                    | :? MainWindowViewModel as viewModel ->
+                        viewModel.AddPaletteDragElementAt(functionId, point.X, point.Y, isOutsideGraph)
+                    | _ -> ()
+
+                    if isOutsideGraph then
+                        showPaletteDragPreview functionId (args.GetPosition(this))
+                    else
+                        hidePaletteDragPreview()
+            | _ -> ()
+        | _ -> ()
 
     member _.PipelineEditorDragOver(_sender: obj, args: DragEventArgs) =
         if not (isNull args.DataTransfer) && args.DataTransfer.Contains(pipelineKindFormat) then
@@ -487,7 +751,14 @@ type MainView() as this =
             | functionId when not (String.IsNullOrWhiteSpace functionId) ->
                 match this.DataContext with
                 | :? MainWindowViewModel as viewModel ->
-                    viewModel.AddElement(functionId)
+                    let graphHost = this.FindControl<Grid>("GraphHost")
+                    let dropPoint =
+                        if isNull graphHost then
+                            Point()
+                        else
+                            args.GetPosition(graphHost)
+
+                    viewModel.AddElementAt(functionId, dropPoint.X, dropPoint.Y)
                     args.Handled <- true
                 | _ -> ()
             | _ -> ()

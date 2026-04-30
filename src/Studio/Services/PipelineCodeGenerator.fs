@@ -34,39 +34,37 @@ module PipelineCodeGenerator =
             $"(Some {trimmed})"
 
     let private elementLine (state: PipelineNodeState) =
-        match state.Kind with
-        | PipelineElementKind.Source ->
+        match state.Definition.Id with
+        | "Source" ->
             let availableMemory = paramValue "availableMemory" state
             $"source {availableMemory}"
-        | PipelineElementKind.Read ->
-            let pixelType = paramValue "pixelType" state
+        | id when id.StartsWith("Read", StringComparison.Ordinal) ->
+            let pixelType = paramValue "NumericType" state
             let input = paramValue "input" state |> quote
             let suffix = paramValue "suffix" state |> quote
             $"|> read<{pixelType}> {input} {suffix}"
-        | PipelineElementKind.DiscreteGaussian ->
+        | "DiscreteGaussian" ->
             let sigma = paramValue "sigma" state
             let outputRegionMode = paramValue "outputRegionMode" state |> optionRaw
             let boundaryCondition = paramValue "boundaryCondition" state |> optionRaw
             let windowSize = paramValue "windowSize" state |> optionUInt
             $">=> discreteGaussian {sigma} {outputRegionMode} {boundaryCondition} {windowSize}"
-        | PipelineElementKind.Cast ->
+        | id when id.StartsWith("Cast", StringComparison.Ordinal) ->
             let sourceType = paramValue "sourceType" state
             let targetType = paramValue "targetType" state
             $">=> cast<{sourceType},{targetType}>"
-        | PipelineElementKind.Write ->
+        | "Write" ->
             let output = paramValue "output" state |> quote
             let suffix = paramValue "suffix" state |> quote
             $">=> write {output} {suffix}"
-        | PipelineElementKind.Sink ->
+        | "Sink" ->
             "|> sink"
-        | _ ->
+        | id ->
             $"// Unsupported element: {state.Title}"
 
     let generate (states: PipelineNodeState seq) =
         let builder = StringBuilder()
         builder.AppendLine("open StackProcessing") |> ignore
-        builder.AppendLine() |> ignore
-        builder.AppendLine("let availableMemory = 8UL * 1024UL * 1024UL * 1024UL") |> ignore
         builder.AppendLine() |> ignore
 
         states

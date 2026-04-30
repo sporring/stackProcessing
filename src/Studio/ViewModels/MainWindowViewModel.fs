@@ -1,14 +1,43 @@
 namespace Studio.ViewModels
 
 open System
+open System.Collections.Generic
 open System.Collections.ObjectModel
 open System.ComponentModel
+open System.IO
+open System.Text.Json
 open System.Windows.Input
 open Graph
 open NodeEditor.Mvvm
 open NodeEditor.Model
 open Studio.Models
 open Studio.Services
+
+[<CLIMutable>]
+type private SavedParameter =
+    { Key: string
+      Value: string }
+
+[<CLIMutable>]
+type private SavedNode =
+    { Id: string
+      FunctionId: string
+      X: float
+      Y: float
+      Parameters: SavedParameter array }
+
+[<CLIMutable>]
+type private SavedEdge =
+    { FromNode: string
+      FromPort: int
+      ToNode: string
+      ToPort: int }
+
+[<CLIMutable>]
+type private SavedGraph =
+    { Version: int
+      Nodes: SavedNode array
+      Edges: SavedEdge array }
 
 type private SimpleCommand(execute: obj -> unit, canExecute: obj -> bool) =
     let canExecuteChanged = Event<EventHandler, EventArgs>()
@@ -20,8 +49,10 @@ type private SimpleCommand(execute: obj -> unit, canExecute: obj -> bool) =
         [<CLIEvent>]
         member _.CanExecuteChanged = canExecuteChanged.Publish
 
-type PipelinePinViewModel(alignment: PinAlignment) =
+type PipelinePinViewModel(alignment: PinAlignment, port: Port) =
     inherit PinViewModel()
+
+    member _.Port = port
 
     member _.TrianglePoints =
         match alignment with
@@ -36,9 +67,9 @@ type PipelineNodeViewModel(
     getDrawingSize: unit -> float * float) as this =
     inherit NodeViewModel()
 
-    let addPipelinePin x y alignment name =
-        let pin = PipelinePinViewModel(alignment)
-        pin.Name <- name
+    let addPipelinePin x y alignment (port: Port) =
+        let pin = PipelinePinViewModel(alignment, port)
+        pin.Name <- port.Name
         pin.Parent <- this
         pin.X <- x
         pin.Y <- y
@@ -68,11 +99,11 @@ type PipelineNodeViewModel(
 
         state.Definition.Inputs
         |> List.iteri (fun portIndex port ->
-            addPipelinePin 0. (verticalPinPosition portIndex state.Definition.Inputs.Length) PinAlignment.Left port.Name)
+            addPipelinePin 0. (verticalPinPosition portIndex state.Definition.Inputs.Length) PinAlignment.Left port)
 
         state.Definition.Outputs
         |> List.iteri (fun portIndex port ->
-            addPipelinePin 110. (verticalPinPosition portIndex state.Definition.Outputs.Length) PinAlignment.Right port.Name)
+            addPipelinePin 110. (verticalPinPosition portIndex state.Definition.Outputs.Length) PinAlignment.Right port)
 
     member _.State = state
 
@@ -110,6 +141,9 @@ type MainWindowViewModel() as this =
     let drawing =
         editor.Drawing :?> DrawingNodeViewModel
 
+    let jsonOptions =
+        JsonSerializerOptions(WriteIndented = true, PropertyNamingPolicy = JsonNamingPolicy.CamelCase)
+
     let updatePaletteGroups () =
         paletteGroups.Clear()
 
@@ -145,9 +179,46 @@ type MainWindowViewModel() as this =
         pipelineNodes ()
         |> Seq.map _.State
 
+    let parameterValues (state: PipelineNodeState) =
+        state.Parameters
+        |> Seq.map (fun parameter ->
+            { Key = parameter.Key
+              Value = parameter.Value })
+        |> Seq.toArray
+
+    let setParameterValues (state: PipelineNodeState) (parameters: SavedParameter array) =
+        let values =
+            parameters
+            |> Seq.map (fun parameter -> parameter.Key, parameter.Value)
+            |> Map.ofSeq
+
+        for parameter in state.Parameters do
+            match values |> Map.tryFind parameter.Key with
+            | Some value -> parameter.Value <- value
+            | None -> ()
+
     let tryPin alignment (node: INode) =
         node.Pins
         |> Seq.tryFind (fun pin -> pin.Alignment = alignment)
+
+    let pinByIndex alignment index (node: PipelineNodeViewModel) =
+        node.Pins
+        |> Seq.filter (fun pin -> pin.Alignment = alignment)
+        |> Seq.tryItem index
+
+    let pinIndex alignment (pin: IPin) (node: PipelineNodeViewModel) =
+        node.Pins
+        |> Seq.filter (fun candidate -> candidate.Alignment = alignment)
+        |> Seq.mapi (fun index candidate -> index, candidate)
+        |> Seq.tryFind (fun (_, candidate) -> Object.ReferenceEquals(candidate, pin))
+        |> Option.map fst
+
+    let canConnectPins (startPin: IPin) (endPin: IPin) =
+        match startPin, endPin with
+        | :? PipelinePinViewModel as outputPin, (:? PipelinePinViewModel as inputPin)
+            when startPin.Alignment = PinAlignment.Right && endPin.Alignment = PinAlignment.Left ->
+            PortType.canConnect outputPin.Port.Type inputPin.Port.Type
+        | _ -> false
 
     let createNode index functionId =
         let node =
@@ -168,24 +239,18 @@ type MainWindowViewModel() as this =
         connector.Orientation <- ConnectorOrientation.Horizontal
         drawing.Connectors.Add(connector :> IConnector)
 
-    let addSeedPipeline () =
+    (*
+    let addSeedNodes () =
         let nodes =
-            [ "Source"; "Read"; "DiscreteGaussian"; "Cast"; "Write"; "Sink" ]
+            [ "Source"; "ReadFloat64"; "DiscreteGaussian"; "CastUInt8"; "Write"; "Sink" ]
             |> List.mapi createNode
 
         for node in nodes do
             drawing.Nodes.Add(node :> INode)
-
-        nodes
-        |> Seq.pairwise
-        |> Seq.iter (fun (left, right) ->
-            match tryPin PinAlignment.Right left, tryPin PinAlignment.Left right with
-            | Some startPin, Some endPin -> addConnector startPin endPin
-            | _ -> ())
-
+    *)
     do
         updatePaletteGroups()
-        addSeedPipeline()
+        //addSeedNodes()
 
     member _.Editor = editor
     member _.PaletteGroups = paletteGroups
@@ -210,17 +275,27 @@ type MainWindowViewModel() as this =
 
     member _.GeneratedProgram = generatedProgram
 
+    member _.ConnectSeedPipeline() =
+        if drawing.Connectors.Count = 0 then
+            pipelineNodes ()
+            |> Seq.pairwise
+            |> Seq.iter (fun (left, right) ->
+                match tryPin PinAlignment.Right left, tryPin PinAlignment.Left right with
+                | Some startPin, Some endPin when canConnectPins startPin endPin ->
+                    addConnector startPin endPin
+                | _ -> ())
+
     member this.AddSourceCommand =
         SimpleCommand((fun _ -> this.AddElement("Source")), (fun _ -> true)) :> ICommand
 
     member this.AddReadCommand =
-        SimpleCommand((fun _ -> this.AddElement("Read")), (fun _ -> true)) :> ICommand
+        SimpleCommand((fun _ -> this.AddElement("ReadFloat64")), (fun _ -> true)) :> ICommand
 
     member this.AddGaussianCommand =
         SimpleCommand((fun _ -> this.AddElement("DiscreteGaussian")), (fun _ -> true)) :> ICommand
 
     member this.AddCastCommand =
-        SimpleCommand((fun _ -> this.AddElement("Cast")), (fun _ -> true)) :> ICommand
+        SimpleCommand((fun _ -> this.AddElement("CastUInt8")), (fun _ -> true)) :> ICommand
 
     member this.AddWriteCommand =
         SimpleCommand((fun _ -> this.AddElement("Write")), (fun _ -> true)) :> ICommand
@@ -232,7 +307,7 @@ type MainWindowViewModel() as this =
         SimpleCommand(
             (fun parameter ->
                 match parameter with
-                | :? FunctionDefinition as definition -> this.AddElement(definition.Id)
+                | :? Function as definition -> this.AddElement(definition.Id)
                 | :? string as functionId -> this.AddElement(functionId)
                 | _ -> ()),
             (fun _ -> true))
@@ -253,6 +328,96 @@ type MainWindowViewModel() as this =
             (fun _ -> true))
         :> ICommand
 
+    member _.ExportGraphJson() =
+        let nodes = pipelineNodes () |> Seq.toArray
+
+        let nodeIds =
+            let ids = Dictionary<PipelineNodeViewModel, string>()
+
+            nodes
+            |> Array.iteri (fun index node -> ids.Add(node, $"node-{index + 1}"))
+
+            ids
+
+        let savedNodes =
+            nodes
+            |> Array.map (fun node ->
+                { Id = nodeIds[node]
+                  FunctionId = node.State.Definition.Id
+                  X = node.X
+                  Y = node.Y
+                  Parameters = parameterValues node.State })
+
+        let savedEdges =
+            drawing.Connectors
+            |> Seq.choose (fun connector ->
+                match connector.Start, connector.End with
+                | (:? PipelinePinViewModel as startPin), (:? PipelinePinViewModel as endPin) ->
+                    match startPin.Parent, endPin.Parent with
+                    | (:? PipelineNodeViewModel as startNode), (:? PipelineNodeViewModel as endNode) ->
+                        match pinIndex PinAlignment.Right startPin startNode, pinIndex PinAlignment.Left endPin endNode with
+                        | Some fromPort, Some toPort ->
+                            Some
+                                { FromNode = nodeIds[startNode]
+                                  FromPort = fromPort
+                                  ToNode = nodeIds[endNode]
+                                  ToPort = toPort }
+                        | _ -> None
+                    | _ -> None
+                | _ -> None)
+            |> Seq.toArray
+
+        let savedGraph =
+            { Version = 1
+              Nodes = savedNodes
+              Edges = savedEdges }
+
+        JsonSerializer.Serialize(savedGraph, jsonOptions)
+
+    member this.SaveGraph(path: string) =
+        File.WriteAllText(path, this.ExportGraphJson())
+
+    member this.ImportGraphJson(json: string) =
+        let savedGraph = JsonSerializer.Deserialize<SavedGraph>(json, jsonOptions)
+
+        if isNull (box savedGraph) then
+            invalidOp "The selected file did not contain a pipeline graph."
+
+        drawing.Connectors.Clear()
+        drawing.Nodes.Clear()
+        this.SelectedNode <- null
+
+        let loadedNodes =
+            savedGraph.Nodes
+            |> Array.map (fun savedNode ->
+                match BuiltInCatalog.tryFind savedNode.FunctionId with
+                | None -> invalidOp $"Unknown function id in saved graph: {savedNode.FunctionId}"
+                | Some _ ->
+                    let node = PipelineNodeViewModel(createState savedNode.FunctionId, (fun node -> this.SelectedNode <- node), (fun () -> drawing.Width, drawing.Height))
+                    node.X <- savedNode.X
+                    node.Y <- savedNode.Y
+                    node.ClampToDrawing()
+                    setParameterValues node.State savedNode.Parameters
+                    drawing.Nodes.Add(node :> INode)
+                    savedNode.Id, node)
+            |> Map.ofArray
+
+        for edge in savedGraph.Edges do
+            match loadedNodes |> Map.tryFind edge.FromNode, loadedNodes |> Map.tryFind edge.ToNode with
+            | Some fromNode, Some toNode ->
+                match pinByIndex PinAlignment.Right edge.FromPort fromNode, pinByIndex PinAlignment.Left edge.ToPort toNode with
+                | Some startPin, Some endPin when canConnectPins startPin endPin ->
+                    addConnector startPin endPin
+                | Some _, Some _ ->
+                    invalidOp $"Saved edge has incompatible port types: {edge.FromNode}[{edge.FromPort}] -> {edge.ToNode}[{edge.ToPort}]"
+                | _ ->
+                    invalidOp $"Saved edge refers to a missing port: {edge.FromNode}[{edge.FromPort}] -> {edge.ToNode}[{edge.ToPort}]"
+            | _ ->
+                invalidOp $"Saved edge refers to a missing node: {edge.FromNode} -> {edge.ToNode}"
+
+    member this.LoadGraph(path: string) =
+        this.ImportGraphJson(File.ReadAllText(path))
+
     member this.AddElement(functionId: string) =
         let node = createNode drawing.Nodes.Count functionId
         node.X <- min (max 0. (drawing.Width - node.Width)) (24. + float (drawing.Nodes.Count % 6) * 118.)
@@ -260,6 +425,33 @@ type MainWindowViewModel() as this =
 
         drawing.Nodes.Add(node :> INode)
         this.SelectedNode <- node
+
+    member this.AddElementAt(functionId: string, x: float, y: float) =
+        let node = createNode drawing.Nodes.Count functionId
+        node.X <- x - node.Width / 2.
+        node.Y <- y - node.Height / 2.
+        node.ClampToDrawing()
+
+        drawing.Nodes.Add(node :> INode)
+        this.SelectedNode <- node
+
+    member this.AddPaletteDragElementAt(functionId: string, x: float, y: float, isOutsideGraph: bool) =
+        let node = createNode drawing.Nodes.Count functionId
+        node.State.IsPaletteDragOutside <- isOutsideGraph
+        node.X <- x - node.Width / 2.
+        node.Y <- y - node.Height / 2.
+
+        drawing.Nodes.Add(node :> INode)
+        this.SelectedNode <- node
+
+    member _.MoveSelectedElementTo(x: float, y: float, shouldClamp: bool, isPaletteDragOutside: bool) =
+        if not (isNull selectedNode) then
+            selectedNode.State.IsPaletteDragOutside <- isPaletteDragOutside
+            selectedNode.X <- x - selectedNode.Width / 2.
+            selectedNode.Y <- y - selectedNode.Height / 2.
+
+            if shouldClamp then
+                selectedNode.ClampToDrawing()
 
     member this.DeleteSelectedElement() =
         if not (isNull selectedNode) then
