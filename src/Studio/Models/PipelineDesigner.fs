@@ -1,6 +1,7 @@
 namespace Studio.Models
 
 open CommunityToolkit.Mvvm.ComponentModel
+open System.Collections.ObjectModel
 
 type PipelineElementKind =
     | Source = 0
@@ -39,6 +40,29 @@ type PipelineNodeContent(label: string, element: PipelineElementViewModel, selec
     member _.Label = label
     member _.Element = element
     member _.Select() = select()
+
+type PaletteFunctionViewModel(kind: PipelineElementKind, name: string, category: string, description: string, aliases: string list) =
+    member _.Kind = kind
+    member _.KindName = kind.ToString()
+    member _.Name = name
+    member _.Category = category
+    member _.Description = description
+    member _.Aliases = aliases
+
+    member this.Matches(searchText: string) =
+        let contains (value: string) =
+            value.Contains(searchText, System.StringComparison.OrdinalIgnoreCase)
+
+        System.String.IsNullOrWhiteSpace(searchText)
+        || contains this.Name
+        || contains this.Category
+        || contains this.Description
+        || (this.Aliases |> List.exists contains)
+
+type PaletteGroupViewModel(title: string, functions: PaletteFunctionViewModel seq, isExpanded: bool) =
+    member _.Title = title
+    member _.Functions = ObservableCollection<PaletteFunctionViewModel>(functions)
+    member _.IsExpanded = isExpanded
 
 type IGraphWindowController =
     abstract member SetDrawingSize: width: float -> height: float -> unit

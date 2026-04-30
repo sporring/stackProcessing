@@ -4,6 +4,7 @@
              xmlns:vm="using:Studio.ViewModels"
              xmlns:models="using:Studio.Models"
              x:Class="Studio.Views.MainView"
+             x:Name="Root"
              x:DataType="vm:MainWindowViewModel">
 
     <UserControl.Styles>
@@ -22,6 +23,39 @@
     </UserControl.Styles>
 
     <UserControl.DataTemplates>
+        <DataTemplate x:DataType="models:PaletteFunctionViewModel">
+            <Button Margin="0,0,0,6"
+                    Padding="8,6"
+                    HorizontalAlignment="Stretch"
+                    HorizontalContentAlignment="Left"
+                    Background="#FFFFFF"
+                    BorderBrush="#D7DDE5"
+                    BorderThickness="1"
+                    CornerRadius="4"
+                    Tag="{Binding KindName}"
+                    Click="PaletteElementClicked"
+                    PointerMoved="PaletteElementPointerMoved">
+                <StackPanel Spacing="2">
+                    <TextBlock Text="{Binding Name}"
+                               FontSize="12"
+                               FontWeight="SemiBold"
+                               Foreground="#102A43" />
+                    <TextBlock Text="{Binding Description}"
+                               FontSize="10"
+                               Foreground="#52616B"
+                               TextWrapping="Wrap" />
+                </StackPanel>
+            </Button>
+        </DataTemplate>
+
+        <DataTemplate x:DataType="models:PaletteGroupViewModel">
+            <Expander Header="{Binding Title}"
+                      IsExpanded="{Binding IsExpanded, Mode=OneWay}"
+                      Margin="0,0,0,6">
+                <ItemsControl ItemsSource="{Binding Functions}" />
+            </Expander>
+        </DataTemplate>
+
         <DataTemplate DataType="models:PipelineNodeContent">
             <Border Width="110"
                     Height="48"
@@ -41,11 +75,11 @@
     </UserControl.DataTemplates>
 
     <Grid RowDefinitions="Auto,*,220"
-          ColumnDefinitions="*,340"
+          ColumnDefinitions="260,*,340"
           Background="#FFFFFF">
 
         <Border Grid.Row="0"
-                Grid.ColumnSpan="2"
+                Grid.ColumnSpan="3"
                 Background="#F4F6F8"
                 BorderBrush="#D7DDE5"
                 BorderThickness="0,0,0,1"
@@ -56,20 +90,41 @@
                         Command="{Binding RunCommand}"
                         Content="Run" />
 
-                <WrapPanel Orientation="Horizontal">
-                    <Button Margin="0,0,6,0" Command="{Binding AddSourceCommand}" Content="+ source" Tag="Source" PointerMoved="PaletteElementPointerMoved" />
-                    <Button Margin="0,0,6,0" Command="{Binding AddReadCommand}" Content="+ read" Tag="Read" PointerMoved="PaletteElementPointerMoved" />
-                    <Button Margin="0,0,6,0" Command="{Binding AddGaussianCommand}" Content="+ gaussian" Tag="DiscreteGaussian" PointerMoved="PaletteElementPointerMoved" />
-                    <Button Margin="0,0,6,0" Command="{Binding AddCastCommand}" Content="+ cast" Tag="Cast" PointerMoved="PaletteElementPointerMoved" />
-                    <Button Margin="0,0,6,0" Command="{Binding AddWriteCommand}" Content="+ write" Tag="Write" PointerMoved="PaletteElementPointerMoved" />
-                    <Button Margin="0,0,6,0" Command="{Binding AddSinkCommand}" Content="+ sink" Tag="Sink" PointerMoved="PaletteElementPointerMoved" />
-                </WrapPanel>
+                <TextBlock Text="StackProcessing Studio"
+                           VerticalAlignment="Center"
+                           FontSize="14"
+                           FontWeight="SemiBold"
+                           Foreground="#102A43" />
             </DockPanel>
+        </Border>
+
+        <Border Grid.Row="1"
+                Grid.Column="0"
+                Background="#FAFBFC"
+                BorderBrush="#D7DDE5"
+                BorderThickness="0,0,1,0"
+                Padding="10">
+            <Grid RowDefinitions="Auto,Auto,*">
+                <TextBlock Text="Functions"
+                           FontSize="14"
+                           FontWeight="SemiBold"
+                           Margin="0,0,0,8" />
+
+                <TextBox Grid.Row="1"
+                         Watermark="Search functions"
+                         Text="{Binding PaletteSearch, Mode=TwoWay}"
+                         Margin="0,0,0,10"
+                         MinHeight="30" />
+
+                <ScrollViewer Grid.Row="2">
+                    <ItemsControl ItemsSource="{Binding PaletteGroups}" />
+                </ScrollViewer>
+            </Grid>
         </Border>
 
         <Grid x:Name="GraphHost"
               Grid.Row="1"
-              Grid.Column="0"
+              Grid.Column="1"
               ClipToBounds="True"
               Background="#FFFFFF"
               DragDrop.AllowDrop="True"
@@ -113,7 +168,7 @@
         </Grid>
 
         <Border Grid.Row="1"
-                Grid.Column="1"
+                Grid.Column="2"
                 Background="#FAFBFC"
                 BorderBrush="#D7DDE5"
                 BorderThickness="1,0,0,0"
@@ -145,7 +200,7 @@
         </Border>
 
         <Border Grid.Row="2"
-                Grid.ColumnSpan="2"
+                Grid.ColumnSpan="3"
                 Background="#FFFFFF"
                 BorderBrush="#D7DDE5"
                 BorderThickness="0,1,0,0"

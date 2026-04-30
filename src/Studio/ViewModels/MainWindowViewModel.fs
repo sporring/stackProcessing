@@ -56,8 +56,63 @@ type MainWindowViewModel() as this =
     inherit ViewModelBase()
 
     let elements = ObservableCollection<PipelineElementViewModel>()
+    let paletteGroups = ObservableCollection<PaletteGroupViewModel>()
     let mutable selectedElement: PipelineElementViewModel = null
     let mutable generatedProgram = ""
+    let mutable paletteSearch = ""
+
+    let paletteFunctions =
+        [ PaletteFunctionViewModel(
+              PipelineElementKind.Source,
+              "source",
+              "Sources / Sinks",
+              "Begin a streaming StackProcessing pipeline with available memory.",
+              [ "availableMemory"; "start"; "input" ])
+          PaletteFunctionViewModel(
+              PipelineElementKind.Sink,
+              "sink",
+              "Sources / Sinks",
+              "Run the built pipeline.",
+              [ "execute"; "run"; "terminal" ])
+          PaletteFunctionViewModel(
+              PipelineElementKind.Read,
+              "read",
+              "IO",
+              "Read a stack from chunked image files.",
+              [ "input"; "load"; "tiff"; "file" ])
+          PaletteFunctionViewModel(
+              PipelineElementKind.Write,
+              "write",
+              "IO",
+              "Write a processed stack to image files.",
+              [ "output"; "save"; "tiff"; "file" ])
+          PaletteFunctionViewModel(
+              PipelineElementKind.DiscreteGaussian,
+              "discreteGaussian",
+              "Filters",
+              "Apply a Gaussian smoothing filter.",
+              [ "gaussian"; "smooth"; "blur"; "filter" ])
+          PaletteFunctionViewModel(
+              PipelineElementKind.Cast,
+              "cast",
+              "Type conversions",
+              "Convert stream element type.",
+              [ "convert"; "uint8"; "float"; "type" ]) ]
+
+    let updatePaletteGroups () =
+        paletteGroups.Clear()
+
+        let matchingFunctions =
+            paletteFunctions
+            |> List.filter (fun paletteFunction -> paletteFunction.Matches(paletteSearch))
+
+        let expandedByDefault =
+            not (String.IsNullOrWhiteSpace paletteSearch)
+
+        matchingFunctions
+        |> Seq.groupBy _.Category
+        |> Seq.iter (fun (category, functions) ->
+            paletteGroups.Add(PaletteGroupViewModel(category, functions, expandedByDefault || category = "Sources / Sinks")))
 
     let createElement kind =
         match kind with
@@ -148,10 +203,10 @@ type MainWindowViewModel() as this =
         node.Pins <- ObservableCollection<IPin>()
 
         if element.Kind <> PipelineElementKind.Source then
-            addPipelinePin node 0. 24. PinAlignment.Left "IN"
+            addPipelinePin node -14. 17. PinAlignment.Left "IN"
 
         if element.Kind <> PipelineElementKind.Sink then
-            addPipelinePin node 110. 24. PinAlignment.Right "OUT"
+            addPipelinePin node 110. 17. PinAlignment.Right "OUT"
 
         node.ClampToDrawing()
         node
@@ -197,6 +252,7 @@ type MainWindowViewModel() as this =
         for element in seed do
             elements.Add element
 
+        updatePaletteGroups()
         refreshDrawing ()
 
         elements.CollectionChanged.Add(fun _ ->
@@ -214,6 +270,13 @@ type MainWindowViewModel() as this =
 
     member this.Editor = editor
     member this.Elements = elements
+    member _.PaletteGroups = paletteGroups
+
+    member this.PaletteSearch
+        with get () = paletteSearch
+        and set value =
+            if this.SetProperty(&paletteSearch, value) then
+                updatePaletteGroups()
 
     member this.SelectedElement
         with get () = selectedElement
@@ -245,6 +308,19 @@ type MainWindowViewModel() as this =
 
     member this.AddSinkCommand =
         SimpleCommand((fun _ -> this.AddElement(PipelineElementKind.Sink)), (fun _ -> true)) :> ICommand
+
+    member this.AddPaletteElementCommand =
+        SimpleCommand(
+            (fun parameter ->
+                match parameter with
+                | :? PipelineElementKind as kind -> this.AddElement(kind)
+                | :? string as kindName ->
+                    match Enum.TryParse<PipelineElementKind>(kindName) with
+                    | true, kind -> this.AddElement(kind)
+                    | _ -> ()
+                | _ -> ()),
+            (fun _ -> true))
+        :> ICommand
 
     member this.DeleteSelectedCommand =
         SimpleCommand((fun _ -> this.DeleteSelectedElement()), (fun _ -> not (isNull selectedElement)))
