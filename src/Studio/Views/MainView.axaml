@@ -6,6 +6,21 @@
              x:Class="Studio.Views.MainView"
              x:DataType="vm:MainWindowViewModel">
 
+    <UserControl.Styles>
+        <Style Selector="ne|Pin">
+            <Setter Property="Template">
+                <ControlTemplate TargetType="ne:Pin">
+                    <Polygon Width="{TemplateBinding Width}"
+                             Height="{TemplateBinding Height}"
+                             Points="0,0 14,7 0,14"
+                             Fill="#FFFFFF"
+                             Stroke="#111111"
+                             StrokeThickness="2" />
+                </ControlTemplate>
+            </Setter>
+        </Style>
+    </UserControl.Styles>
+
     <UserControl.DataTemplates>
         <DataTemplate DataType="models:PipelineNodeContent">
             <Border Width="110"

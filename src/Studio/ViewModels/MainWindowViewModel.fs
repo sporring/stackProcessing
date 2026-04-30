@@ -43,6 +43,15 @@ type private PipelineNodeViewModel(
         base.OnMoved()
         this.ClampToDrawing()
 
+type PipelinePinViewModel(alignment: PinAlignment) =
+    inherit PinViewModel()
+
+    member _.TrianglePoints =
+        match alignment with
+        | PinAlignment.Left -> "0,0 14,7 0,14"
+        | PinAlignment.Right -> "0,0 14,7 0,14"
+        | _ -> "0,0 14,7 0,14"
+
 type MainWindowViewModel() as this =
     inherit ViewModelBase()
 
@@ -114,6 +123,17 @@ type MainWindowViewModel() as this =
                     parameter.PropertyChanged.RemoveHandler(handler) }
 
     let makeNode (index: int) (element: PipelineElementViewModel) =
+        let addPipelinePin (node: NodeViewModel) x y alignment name =
+            let pin = PipelinePinViewModel(alignment)
+            pin.Name <- name
+            pin.Parent <- node
+            pin.X <- x
+            pin.Y <- y
+            pin.Width <- 14.
+            pin.Height <- 14.
+            pin.Alignment <- alignment
+            node.Pins.Add(pin :> IPin)
+
         let node =
             PipelineNodeViewModel(
                 element,
@@ -128,10 +148,10 @@ type MainWindowViewModel() as this =
         node.Pins <- ObservableCollection<IPin>()
 
         if element.Kind <> PipelineElementKind.Source then
-            node.AddPin(0., 24., 10., 10., PinAlignment.Left, "IN") |> ignore
+            addPipelinePin node 0. 24. PinAlignment.Left "IN"
 
         if element.Kind <> PipelineElementKind.Sink then
-            node.AddPin(110., 24., 10., 10., PinAlignment.Right, "OUT") |> ignore
+            addPipelinePin node 110. 24. PinAlignment.Right "OUT"
 
         node.ClampToDrawing()
         node
