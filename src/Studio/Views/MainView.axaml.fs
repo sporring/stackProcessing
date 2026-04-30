@@ -468,6 +468,22 @@ type MainView() as this =
     member private this.InitializeComponent() =
         AvaloniaXamlLoader.Load(this)
 
+    member _.PaletteElementClicked(sender: obj, args: RoutedEventArgs) =
+        match sender with
+        | :? Control as control ->
+            match control.Tag with
+            | :? string as kind ->
+                match Enum.TryParse<PipelineElementKind>(kind) with
+                | true, elementKind ->
+                    match this.DataContext with
+                    | :? MainWindowViewModel as viewModel ->
+                        viewModel.AddElement(elementKind)
+                        args.Handled <- true
+                    | _ -> ()
+                | _ -> ()
+            | _ -> ()
+        | _ -> ()
+
     member _.PipelineNodeClicked(sender: obj, args: RoutedEventArgs) =
         match sender with
         | :? Control as control ->
