@@ -53,39 +53,61 @@
                 </ControlTemplate>
             </Setter>
         </Style>
+
+        <Style Selector="Expander.paletteCategory">
+            <Setter Property="FontSize" Value="12" />
+            <Setter Property="Padding" Value="0" />
+        </Style>
+
+        <Style Selector="Expander.paletteCategory /template/ ToggleButton">
+            <Setter Property="MinHeight" Value="22" />
+            <Setter Property="Padding" Value="6,1" />
+        </Style>
+
+        <Style Selector="Expander.paletteCategory /template/ ContentPresenter">
+            <Setter Property="Margin" Value="0" />
+        </Style>
+
+        <Style Selector="Border.paletteFunction">
+            <Setter Property="Background" Value="#FFFFFF" />
+            <Setter Property="BorderBrush" Value="#D7DDE5" />
+        </Style>
+
+        <Style Selector="Border.paletteFunction:pointerover">
+            <Setter Property="Background" Value="#EAF3FF" />
+            <Setter Property="BorderBrush" Value="#2F80ED" />
+        </Style>
     </UserControl.Styles>
 
     <UserControl.DataTemplates>
         <DataTemplate x:DataType="graph:Function">
-            <Border Margin="0,0,0,6"
-                    Padding="8,6"
+            <Border Margin="0,0,0,2"
+                    Padding="8,2"
+                    Classes="paletteFunction"
                     HorizontalAlignment="Stretch"
-                    Background="#FFFFFF"
-                    BorderBrush="#D7DDE5"
                     BorderThickness="1"
                     CornerRadius="4"
+                    ToolTip.Tip="{Binding Description}"
                     Tag="{Binding Id}"
                     PointerPressed="PaletteElementPointerPressed">
-                <StackPanel Spacing="2">
-                    <TextBlock Text="{Binding DisplayName}"
-                               FontSize="12"
-                               FontWeight="SemiBold"
-                               Foreground="#102A43" />
-                    <TextBlock Text="{Binding Description}"
-                               FontSize="10"
-                               Foreground="#52616B"
-                               TextWrapping="Wrap" />
-                </StackPanel>
+                <TextBlock Text="{Binding DisplayName}"
+                           FontSize="12"
+                           FontWeight="SemiBold"
+                           Foreground="#102A43"
+                           TextTrimming="CharacterEllipsis" />
             </Border>
         </DataTemplate>
 
         <DataTemplate x:DataType="models:PaletteGroupViewModel">
             <Expander Header="{Binding Title}"
+                      Classes="paletteCategory"
                       IsExpanded="{Binding IsExpanded, Mode=OneWay}"
                       HorizontalAlignment="Stretch"
-                      Margin="0,0,0,6">
+                      Margin="0,0,0,1"
+                      Padding="0">
                 <ItemsControl ItemsSource="{Binding Functions}"
-                              HorizontalAlignment="Stretch" />
+                              HorizontalAlignment="Stretch"
+                              Margin="0" />
             </Expander>
         </DataTemplate>
 
