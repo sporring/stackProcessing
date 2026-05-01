@@ -116,9 +116,11 @@ type MainView() as this =
 
     let canConnectPins (first: IPin) (second: IPin) =
         let outputPin, inputPin =
-            match first.Alignment, second.Alignment with
-            | PinAlignment.Right, PinAlignment.Left -> Some first, Some second
-            | PinAlignment.Left, PinAlignment.Right -> Some second, Some first
+            match first, second with
+            | (:? PipelinePinViewModel as firstPin), (:? PipelinePinViewModel as secondPin) when firstPin.IsOutput && secondPin.IsInput ->
+                Some first, Some second
+            | (:? PipelinePinViewModel as firstPin), (:? PipelinePinViewModel as secondPin) when firstPin.IsInput && secondPin.IsOutput ->
+                Some second, Some first
             | _ -> None, None
 
         let compatiblePortTypes (outputPin: IPin) (inputPin: IPin) =
@@ -128,10 +130,20 @@ type MainView() as this =
             | _ -> false
 
         match outputPin, inputPin with
-        | Some outputPin, Some inputPin ->
+        | Some (:? PipelinePinViewModel as outputPin), Some (:? PipelinePinViewModel as inputPin) ->
             not (Object.ReferenceEquals(outputPin.Parent, inputPin.Parent))
+            && outputPin.IsActive
+            && inputPin.IsActive
             && compatiblePortTypes outputPin inputPin
         | _ -> false
+
+    let connectorOrientation (startPin: IPin) (endPin: IPin) =
+        match startPin, endPin with
+        | (:? PipelinePinViewModel as outputPin), (:? PipelinePinViewModel as inputPin)
+            when outputPin.Kind = ScalarOutput || inputPin.Kind = ParameterInput ->
+            ConnectorOrientation.Vertical
+        | _ ->
+            ConnectorOrientation.Horizontal
 
     let inputPinIsFree (pin: IPin) =
         let editor = this.FindControl<Editor>("PipelineEditor")
@@ -157,16 +169,11 @@ type MainView() as this =
                     | :? IPin as pin ->
                         control.Opacity <-
                             match draggingPin, candidate with
-                            | Some firstPin, _
-                                when firstPin.Alignment = PinAlignment.Right
-                                     && pin.Alignment = PinAlignment.Left
-                                     && inputPinIsFree pin
-                                     && canConnectPins firstPin pin ->
-                                1.0
-                            | Some firstPin, Some candidatePin
-                                when Object.ReferenceEquals(pin, candidatePin) && canConnectPins firstPin candidatePin ->
-                                1.0
-                            | Some _, _ -> 0.55
+                            | Some firstPin, _ ->
+                                match pin with
+                                | :? PipelinePinViewModel as pinViewModel when pinViewModel.IsInput && pinViewModel.IsActive && inputPinIsFree pin && canConnectPins firstPin pin ->
+                                    1.0
+                                | _ -> 0.55
                             | _ -> 1.0
                     | _ -> ()
                 | _ -> ()
@@ -319,9 +326,11 @@ type MainView() as this =
             match editor.DrawingSource with
             | :? DrawingNodeViewModel as drawing ->
                 let outputPin, inputPin =
-                    match first.Alignment, second.Alignment with
-                    | PinAlignment.Right, PinAlignment.Left -> Some first, Some second
-                    | PinAlignment.Left, PinAlignment.Right -> Some second, Some first
+                    match first, second with
+                    | (:? PipelinePinViewModel as firstPin), (:? PipelinePinViewModel as secondPin) when firstPin.IsOutput && secondPin.IsInput ->
+                        Some first, Some second
+                    | (:? PipelinePinViewModel as firstPin), (:? PipelinePinViewModel as secondPin) when firstPin.IsInput && secondPin.IsOutput ->
+                        Some second, Some first
                     | _ -> None, None
 
                 match outputPin, inputPin with
@@ -344,8 +353,11 @@ type MainView() as this =
                         let connector = ConnectorViewModel()
                         connector.Start <- outputPin
                         connector.End <- inputPin
-                        connector.Orientation <- ConnectorOrientation.Horizontal
-                        drawing.Connectors.Add(connector :> IConnector)
+                        connector.Orientation <- connectorOrientation outputPin inputPin
+
+                        Dispatcher.UIThread.Post(
+                            (fun () -> drawing.Connectors.Add(connector :> IConnector)),
+                            DispatcherPriority.Background)
 
                     true
                 | _ -> false

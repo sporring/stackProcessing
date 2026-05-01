@@ -5,17 +5,27 @@ open CommunityToolkit.Mvvm.ComponentModel
 open Graph
 open System.Collections.ObjectModel
 
-type PipelineParameterViewModel(label: string, key: string, value: string) =
+type PipelineParameterViewModel(label: string, key: string, value: string, parameterType: BasicType) =
     inherit ObservableObject()
 
     let mutable value = value
+    let mutable useInput = false
 
     member _.Label = label
     member _.Key = key
+    member _.ParameterType = parameterType
 
     member this.Value
         with get () = value
         and set v = this.SetProperty(&value, v) |> ignore
+
+    member this.UseInput
+        with get () = useInput
+        and set v =
+            if this.SetProperty(&useInput, v) then
+                this.OnPropertyChanged(nameof this.IsValueEditable)
+
+    member _.IsValueEditable = not useInput
 
 [<AllowNullLiteral>]
 type PipelineNodeState(definition: Function, parameters: PipelineParameterViewModel list) =

@@ -24,6 +24,25 @@ module BuiltInCatalog =
         DefaultValue = defaultValue
         Type = parameterType }
 
+  let private scalarDefaultValue tp =
+      match tp with
+      | BasicType.Bool -> "true"
+      | BasicType.String -> "value"
+      | BasicType.Unit -> "()"
+      | BasicType.Numeric _ -> "1.0"
+
+  let makeScalar (tp: BasicType) =
+    let str = BasicType.toString tp
+    { Id = "Scalar" + str
+      DisplayName = str
+      Category = "Scalars"
+      Description = "Bind a scalar value for graph parameters."
+      Aliases = [ "value"; "parameter"; "constant"; "let" ]
+      Inputs = []
+      Outputs = [ makePort "Value" (Scalar tp) ]
+      Parameters =
+          [ makeParameter "value" "Value" (scalarDefaultValue tp) tp ] }
+
   let makeRead (tp: NumericType) =
     let str = NumericType.toString tp
     let pt = PortType.numericToImage tp
@@ -35,8 +54,7 @@ module BuiltInCatalog =
       Inputs = [ makePort "FromSource" Source ]
       Outputs = [ makePort "OUT" pt ]
       Parameters =
-          [ makeParameter "NumericType" "Pixel type" "float" BasicType.String
-            makeParameter "input" "Input" "input" BasicType.String
+          [ makeParameter "input" "Input" "input" BasicType.String
             makeParameter "suffix" "Suffix" ".tiff" BasicType.String ] }
 
   let makeCast (tp: NumericType) =
@@ -71,6 +89,19 @@ module BuiltInCatalog =
           Inputs = [ makePort "Sink" Sink ]
           Outputs = []
           Parameters = [] }
+
+        makeScalar (Numeric UInt8)
+        makeScalar (Numeric Int8)
+        makeScalar (Numeric UInt16)
+        makeScalar (Numeric Int16)
+        makeScalar (Numeric UInt32)
+        makeScalar (Numeric Int32)
+        makeScalar (Numeric UInt64)
+        makeScalar (Numeric Int64)
+        makeScalar (Numeric Float32)
+        makeScalar (Numeric Float64)
+        makeScalar Bool
+        makeScalar String
 
         makeRead UInt8
         makeRead Int8

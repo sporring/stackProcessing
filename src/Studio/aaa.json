@@ -1,0 +1,113 @@
+﻿{
+  "version": 1,
+  "nodes": [
+    {
+      "id": "node-1",
+      "functionId": "Source",
+      "x": 13.10546875,
+      "y": 141.75390625,
+      "parameters": [
+        {
+          "key": "availableMemory",
+          "value": "availableMemory",
+          "useInput": false
+        }
+      ]
+    },
+    {
+      "id": "node-2",
+      "functionId": "Sink",
+      "x": 348,
+      "y": 91.28515625,
+      "parameters": []
+    },
+    {
+      "id": "node-3",
+      "functionId": "Write",
+      "x": 323.87890625,
+      "y": 256.38671875,
+      "parameters": [
+        {
+          "key": "output",
+          "value": "output",
+          "useInput": false
+        },
+        {
+          "key": "suffix",
+          "value": ".tiff",
+          "useInput": false
+        }
+      ]
+    },
+    {
+      "id": "node-4",
+      "functionId": "ScalarString",
+      "x": 132.9921875,
+      "y": 36.875,
+      "parameters": [
+        {
+          "key": "name",
+          "value": "input",
+          "useInput": false
+        },
+        {
+          "key": "value",
+          "value": "test",
+          "useInput": false
+        }
+      ]
+    },
+    {
+      "id": "node-5",
+      "functionId": "ReadUInt8",
+      "x": 161.875,
+      "y": 252.0078125,
+      "parameters": [
+        {
+          "key": "input",
+          "value": "input",
+          "useInput": true
+        },
+        {
+          "key": "suffix",
+          "value": ".tiff",
+          "useInput": false
+        }
+      ]
+    }
+  ],
+  "edges": [
+    {
+      "fromNode": "node-3",
+      "fromKind": "dataOutput",
+      "fromPort": 0,
+      "toNode": "node-2",
+      "toKind": "dataInput",
+      "toPort": 0
+    },
+    {
+      "fromNode": "node-1",
+      "fromKind": "dataOutput",
+      "fromPort": 0,
+      "toNode": "node-5",
+      "toKind": "dataInput",
+      "toPort": 0
+    },
+    {
+      "fromNode": "node-5",
+      "fromKind": "dataOutput",
+      "fromPort": 0,
+      "toNode": "node-3",
+      "toKind": "dataInput",
+      "toPort": 0
+    },
+    {
+      "fromNode": "node-4",
+      "fromKind": "scalarOutput",
+      "fromPort": 0,
+      "toNode": "node-5",
+      "toKind": "parameterInput",
+      "toPort": 0
+    }
+  ]
+}
