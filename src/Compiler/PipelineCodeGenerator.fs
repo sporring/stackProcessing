@@ -1,20 +1,13 @@
-namespace Studio.Services
+namespace Compiler
 
 open System
 open System.Text
 open Graph
-open Studio.Models
 
 module PipelineCodeGenerator =
     type private ParameterExpression =
         { Value: string
           IsLinked: bool }
-
-    let private paramValue key (state: PipelineNodeState) =
-        state.Parameters
-        |> Seq.tryFind (fun p -> p.Key = key)
-        |> Option.map _.Value
-        |> Option.defaultValue ""
 
     let private savedParamValue key (node: SavedNode) =
         node.Parameters
@@ -74,114 +67,6 @@ module PipelineCodeGenerator =
 
     let private sourcePrefix availableMemory line =
         $"source {availableMemory}{Environment.NewLine}{line}"
-
-    let private elementLine (state: PipelineNodeState) =
-        match state.Definition.Id with
-        | id when id.StartsWith("Zero", StringComparison.Ordinal) ->
-            let availableMemory = paramValue "availableMemory" state
-            let pixelType = pixelTypeNameFromId "Zero" id
-            let width = paramValue "width" state
-            let height = paramValue "height" state
-            let depth = paramValue "depth" state
-            $"|> zero<{pixelType}> {width} {height} {depth}" |> sourcePrefix availableMemory
-        | id when id.StartsWith("ReadRandom", StringComparison.Ordinal) ->
-            let availableMemory = paramValue "availableMemory" state
-            let pixelType = pixelTypeNameFromId "ReadRandom" id
-            let depth = paramValue "depth" state
-            let input = paramValue "input" state |> quote
-            let suffix = paramValue "suffix" state |> quote
-            $"|> readRandom<{pixelType}> {depth} {input} {suffix}" |> sourcePrefix availableMemory
-        | id when id.StartsWith("ReadChunks", StringComparison.Ordinal) ->
-            let availableMemory = paramValue "availableMemory" state
-            let pixelType = pixelTypeNameFromId "ReadChunks" id
-            let input = paramValue "input" state |> quote
-            let suffix = paramValue "suffix" state |> quote
-            $"|> readChunks<{pixelType}> {input} {suffix}" |> sourcePrefix availableMemory
-        | id when id.StartsWith("Read", StringComparison.Ordinal) ->
-            let availableMemory = paramValue "availableMemory" state
-            let pixelType = pixelTypeNameFromId "Read" id
-            let input = paramValue "input" state |> quote
-            let suffix = paramValue "suffix" state |> quote
-            $"|> read<{pixelType}> {input} {suffix}" |> sourcePrefix availableMemory
-        | "WriteInChunks" ->
-            let output = paramValue "output" state |> quote
-            let suffix = paramValue "suffix" state |> quote
-            let chunkX = paramValue "chunkX" state
-            let chunkY = paramValue "chunkY" state
-            let chunkZ = paramValue "chunkZ" state
-            $">=> writeInChunks {output} {suffix} {chunkX} {chunkY} {chunkZ}"
-        | "SqrtFloat64" ->
-            ">=> sqrt"
-        | id when id.StartsWith("ImageAddScalar", StringComparison.Ordinal) ->
-            let value = paramValue "value" state
-            $">=> imageAddScalar {value}"
-        | id when id.StartsWith("ImageMulScalar", StringComparison.Ordinal) ->
-            let value = paramValue "value" state
-            $">=> imageMulScalar {value}"
-        | id when id.StartsWith("ImageDivScalar", StringComparison.Ordinal) ->
-            let value = paramValue "value" state
-            $">=> imageDivScalar {value}"
-        | id when id.StartsWith("ScalarMulImage", StringComparison.Ordinal) ->
-            let value = paramValue "value" state
-            $">=> scalarMulImage {value}"
-        | id when id.StartsWith("MulPair", StringComparison.Ordinal) ->
-            ">>=> mulPair"
-        | "DiscreteGaussian" ->
-            let sigma = paramValue "sigma" state
-            let outputRegionMode = paramValue "outputRegionMode" state |> optionRaw
-            let boundaryCondition = paramValue "boundaryCondition" state |> optionRaw
-            let windowSize = paramValue "windowSize" state |> optionUInt
-            $">=> discreteGaussian {sigma} {outputRegionMode} {boundaryCondition} {windowSize}"
-        | "ConvGauss" ->
-            let sigma = paramValue "sigma" state
-            $">=> convGauss {sigma}"
-        | "FiniteDiff" ->
-            let sigma = paramValue "sigma" state
-            let axis1 = paramValue "axis1" state
-            let axis2 = paramValue "axis2" state
-            $">=> finiteDiff {sigma} {axis1} {axis2}"
-        | id when id.StartsWith("AddNormalNoise", StringComparison.Ordinal) ->
-            let mean = paramValue "mean" state
-            let std = paramValue "std" state
-            $">=> addNormalNoise {mean} {std}"
-        | "Threshold" ->
-            let lower = paramValue "lower" state
-            let upper = paramValue "upper" state
-            $">=> threshold {lower} {upper}"
-        | "Erode" ->
-            let radius = paramValue "radius" state
-            $">=> erode {radius}"
-        | "Dilate" ->
-            let radius = paramValue "radius" state
-            $">=> dilate {radius}"
-        | "Opening" ->
-            let radius = paramValue "radius" state
-            $">=> opening {radius}"
-        | "Closing" ->
-            let radius = paramValue "radius" state
-            $">=> closing {radius}"
-        | "ConnectedComponents" ->
-            let windowSize = paramValue "windowSize" state
-            $">=> connectedComponents {windowSize}"
-        | "PermuteAxes" ->
-            let axes = paramValue "axes" state
-            let tileSize = paramValue "tileSize" state
-            $">=> permuteAxes {axes} {tileSize}"
-        | id when id.StartsWith("Cast", StringComparison.Ordinal) ->
-            let sourceType = paramValue "sourceType" state
-            let configuredTargetType = paramValue "targetType" state
-            let targetType =
-                if String.IsNullOrWhiteSpace configuredTargetType then
-                    pixelTypeNameFromId "Cast" id
-                else
-                    configuredTargetType
-            $">=> cast<{sourceType},{targetType}>"
-        | "Write" ->
-            let output = paramValue "output" state |> quote
-            let suffix = paramValue "suffix" state |> quote
-            $">=> write {output} {suffix}"
-        | id ->
-            $"// Unsupported element: {state.Title}"
 
     let private scalarTypeName (node: SavedNode) =
         node.FunctionId.Substring("Scalar".Length)
@@ -336,17 +221,6 @@ module PipelineCodeGenerator =
             $">=> write {output} {suffix}"
         | _ ->
             $"// Unsupported element: {node.FunctionId}"
-
-    let generate (states: PipelineNodeState seq) =
-        let builder = StringBuilder()
-        builder.AppendLine("open StackProcessing") |> ignore
-        builder.AppendLine() |> ignore
-
-        states
-        |> Seq.map elementLine
-        |> Seq.iter (fun line -> builder.AppendLine(line) |> ignore)
-
-        builder.ToString().TrimEnd()
 
     let generateSavedGraph (graph: SavedGraph) =
         let builder = StringBuilder()
