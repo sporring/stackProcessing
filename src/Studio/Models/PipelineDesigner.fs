@@ -5,27 +5,57 @@ open CommunityToolkit.Mvvm.ComponentModel
 open Graph
 open System.Collections.ObjectModel
 
-type PipelineParameterViewModel(label: string, key: string, value: string, parameterType: BasicType) =
+[<AllowNullLiteral>]
+type ParameterOptionViewModel(label: string, value: string, isEnabled: bool) =
+    inherit ObservableObject()
+
+    let mutable isEnabled = isEnabled
+
+    member _.Label = label
+    member _.Value = value
+
+    member this.IsEnabled
+        with get () = isEnabled
+        and set v = this.SetProperty(&isEnabled, v) |> ignore
+
+type PipelineParameterViewModel(label: string, key: string, value: string, parameterType: BasicType, ?options: ParameterOptionViewModel list, ?canUseInput: bool) =
     inherit ObservableObject()
 
     let mutable value = value
     let mutable useInput = false
+    let options = ObservableCollection<ParameterOptionViewModel>(defaultArg options [])
+    let canUseInput = defaultArg canUseInput true
 
     member _.Label = label
     member _.Key = key
     member _.ParameterType = parameterType
+    member _.Options = options
+    member _.HasOptions = options.Count > 0
+    member _.CanUseInput = canUseInput
 
     member this.Value
         with get () = value
-        and set v = this.SetProperty(&value, v) |> ignore
+        and set v =
+            if this.SetProperty(&value, v) then
+                this.OnPropertyChanged(nameof this.SelectedOption)
 
     member this.UseInput
         with get () = useInput
         and set v =
-            if this.SetProperty(&useInput, v) then
+            let next = canUseInput && v
+            if this.SetProperty(&useInput, next) then
                 this.OnPropertyChanged(nameof this.IsValueEditable)
 
-    member _.IsValueEditable = not useInput
+    member _.IsValueEditable = canUseInput && not useInput
+
+    member this.SelectedOption
+        with get () =
+            options
+            |> Seq.tryFind (fun option -> option.Value = value)
+            |> Option.toObj
+        and set (option: ParameterOptionViewModel) =
+            if not (isNull option) && option.IsEnabled then
+                this.Value <- option.Value
 
 [<AllowNullLiteral>]
 type PipelineNodeState(definition: Function, parameters: PipelineParameterViewModel list) =

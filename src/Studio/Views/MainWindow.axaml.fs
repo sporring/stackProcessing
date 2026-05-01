@@ -13,7 +13,7 @@ type MainWindow () as this =
     do this.InitializeComponent()
        this.Closing.Add(fun args ->
            match this.DataContext with
-           | :? MainWindowViewModel as viewModel when viewModel.IsGraphDirty && not closeConfirmed ->
+           | :? MainWindowViewModel as viewModel when viewModel.HasGraph && viewModel.IsGraphDirty && not closeConfirmed ->
                args.Cancel <- true
 
                task {

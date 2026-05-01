@@ -28,20 +28,7 @@
             </Setter>
         </Style>
 
-        <Style Selector="ne|Pin[Id=__ParameterInput]">
-            <Setter Property="Template">
-                <ControlTemplate TargetType="ne:Pin">
-                    <Polygon Width="{TemplateBinding Width}"
-                             Height="{TemplateBinding Height}"
-                             Points="0,0 14,0 7,14"
-                             Fill="#8A5A22"
-                             Stroke="#111111"
-                             StrokeThickness="2" />
-                </ControlTemplate>
-            </Setter>
-        </Style>
-
-        <Style Selector="ne|Pin[Id=__ScalarOutput]">
+        <Style Selector="ne|Pin[Alignment=Top], ne|Pin[Alignment=Bottom]">
             <Setter Property="Template">
                 <ControlTemplate TargetType="ne:Pin">
                     <Polygon Width="{TemplateBinding Width}"
@@ -260,12 +247,31 @@
                                     <CheckBox Grid.Column="1"
                                               Content="Graph"
                                               IsChecked="{Binding UseInput, Mode=TwoWay}"
+                                              IsEnabled="{Binding CanUseInput}"
                                               VerticalAlignment="Center"
                                               FontSize="11" />
                                     <TextBox Grid.Column="2"
                                              Text="{Binding Value, Mode=TwoWay}"
                                              IsEnabled="{Binding IsValueEditable}"
+                                             IsVisible="{Binding !HasOptions}"
                                              MinHeight="30" />
+                                    <ComboBox Grid.Column="2"
+                                              ItemsSource="{Binding Options}"
+                                              SelectedItem="{Binding SelectedOption, Mode=TwoWay}"
+                                              IsVisible="{Binding HasOptions}"
+                                              MinHeight="30">
+                                        <ComboBox.Styles>
+                                            <Style Selector="ComboBoxItem"
+                                                   x:DataType="models:ParameterOptionViewModel">
+                                                <Setter Property="IsEnabled" Value="{Binding IsEnabled}" />
+                                            </Style>
+                                        </ComboBox.Styles>
+                                        <ComboBox.ItemTemplate>
+                                            <DataTemplate x:DataType="models:ParameterOptionViewModel">
+                                                <TextBlock Text="{Binding Label}" />
+                                            </DataTemplate>
+                                        </ComboBox.ItemTemplate>
+                                    </ComboBox>
                                 </Grid>
                             </DataTemplate>
                         </ItemsControl.ItemTemplate>
