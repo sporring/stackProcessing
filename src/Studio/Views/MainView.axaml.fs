@@ -39,8 +39,6 @@ type MainView() as this =
     let jsonFileType () =
         let fileType = FilePickerFileType("Pipeline JSON")
         fileType.Patterns <- [ "*.json" ]
-        fileType.MimeTypes <- [ "application/json" ]
-        fileType.AppleUniformTypeIdentifiers <- [ "public.json" ]
         fileType
 
     let parentWindow () =
@@ -88,6 +86,14 @@ type MainView() as this =
     let confirmIfGraphIsNonEmptyAsync (viewModel: MainWindowViewModel) title message =
         task {
             if viewModel.HasGraph then
+                return! ConfirmationDialogs.confirmAsync (parentWindow()) title message
+            else
+                return true
+        }
+
+    let confirmIfGraphIsDirtyAsync (viewModel: MainWindowViewModel) title message =
+        task {
+            if viewModel.HasGraph && viewModel.IsGraphDirty then
                 return! ConfirmationDialogs.confirmAsync (parentWindow()) title message
             else
                 return true
@@ -161,6 +167,14 @@ type MainView() as this =
     let setCompatiblePinHighlight (candidate: IPin option) =
         let editor = this.FindControl<Editor>("PipelineEditor")
 
+        let isCompatibleHighlight (firstPin: IPin) (candidatePin: IPin) =
+            match firstPin, candidatePin with
+            | (:? PipelinePinViewModel as firstPin), (:? PipelinePinViewModel as candidatePin) ->
+                candidatePin.IsActive
+                && canConnectPins firstPin candidatePin
+                && (if candidatePin.IsInput then inputPinIsFree candidatePin else true)
+            | _ -> false
+
         if not (isNull editor) then
             for visual in editor.GetVisualDescendants() do
                 match visual with
@@ -171,7 +185,7 @@ type MainView() as this =
                             match draggingPin, candidate with
                             | Some firstPin, _ ->
                                 match pin with
-                                | :? PipelinePinViewModel as pinViewModel when pinViewModel.IsInput && pinViewModel.IsActive && inputPinIsFree pin && canConnectPins firstPin pin ->
+                                | :? PipelinePinViewModel when isCompatibleHighlight firstPin pin ->
                                     1.0
                                 | _ -> 0.55
                             | _ -> 1.0
@@ -704,10 +718,10 @@ type MainView() as this =
             | null, _ -> ()
             | _, (:? MainWindowViewModel as viewModel) ->
                 let! confirmed =
-                    confirmIfGraphIsNonEmptyAsync
+                    confirmIfGraphIsDirtyAsync
                         viewModel
                         "Load graph?"
-                        "Loading a graph will replace the graph currently in memory. Continue?"
+                        "Loading a graph will replace the unsaved graph currently in memory. Continue?"
 
                 if confirmed then
                     let topLevel = TopLevel.GetTopLevel(this)
@@ -717,7 +731,7 @@ type MainView() as this =
                         FilePickerOpenOptions(
                             Title = "Load pipeline graph",
                             AllowMultiple = false,
-                            FileTypeFilter = [ jsonType ],
+                            FileTypeFilter = [ jsonType; FilePickerFileTypes.All ],
                             SuggestedFileType = jsonType)
 
                     let! files = topLevel.StorageProvider.OpenFilePickerAsync(options)
@@ -743,10 +757,10 @@ type MainView() as this =
             match this.DataContext with
             | :? MainWindowViewModel as viewModel ->
                 let! confirmed =
-                    confirmIfGraphIsNonEmptyAsync
+                    confirmIfGraphIsDirtyAsync
                         viewModel
                         "Clear graph?"
-                        "Clearing will delete the graph currently in memory. Continue?"
+                        "Clearing will delete the unsaved graph currently in memory. Continue?"
 
                 if confirmed then
                     viewModel.ClearGraph()

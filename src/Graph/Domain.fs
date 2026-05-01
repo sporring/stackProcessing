@@ -30,6 +30,22 @@ module NumericType =
       | Float64 -> "Float64"
       | Complex -> "Complex"
 
+  let tryParse (value: string) =
+      match value with
+      | "Number" -> Some Number
+      | "UInt8" -> Some UInt8
+      | "Int8" -> Some Int8
+      | "UInt16" -> Some UInt16
+      | "Int16" -> Some Int16
+      | "UInt32" -> Some UInt32
+      | "Int32" -> Some Int32
+      | "UInt64" -> Some UInt64
+      | "Int64" -> Some Int64
+      | "Float32" -> Some Float32
+      | "Float64" -> Some Float64
+      | "Complex" -> Some Complex
+      | _ -> None
+
 
 type BasicType = 
     | Numeric of NumericType
@@ -56,9 +72,29 @@ module BasicType =
       | String -> "String"
       | Unit -> "Unit"
 
+  let tryParse (value: string) =
+      match value with
+      | "Number" -> Some(Numeric Number)
+      | "UInt8" -> Some(Numeric UInt8)
+      | "Int8" -> Some(Numeric Int8)
+      | "UInt16" -> Some(Numeric UInt16)
+      | "Int16" -> Some(Numeric Int16)
+      | "UInt32" -> Some(Numeric UInt32)
+      | "Int32" -> Some(Numeric Int32)
+      | "UInt64" -> Some(Numeric UInt64)
+      | "Int64" -> Some(Numeric Int64)
+      | "Float32" -> Some(Numeric Float32)
+      | "Float64" -> Some(Numeric Float64)
+      | "Complex" -> Some(Numeric Complex)
+      | "Bool" -> Some Bool
+      | "String" -> Some String
+      | "Unit" -> Some Unit
+      | _ -> None
+
 type PortType = // all but unit are lists
     | Image of NumericType
     | Scalar of BasicType
+    | ImageStats
     | Tuple of PortType * PortType
     | Source
     | Sink

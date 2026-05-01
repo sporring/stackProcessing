@@ -2,6 +2,7 @@ namespace Graph
 
 module BuiltInCatalog =
   let imageAny = PortType.Image NumericType.Number
+  let imageStats = PortType.ImageStats
   let imageUInt8 = PortType.Image NumericType.UInt8
   let imageInt8 = PortType.Image NumericType.Int8
   let imageUInt16 = PortType.Image NumericType.UInt16
@@ -29,27 +30,6 @@ module BuiltInCatalog =
   let private concreteNumericTypes =
       standardNumericTypes @ [ Complex ]
 
-  let private scalarBasicTypes =
-      (standardNumericTypes |> List.map BasicType.Numeric) @ [ Bool; String ]
-
-  let private readRandomTypes =
-      [ UInt8; Float64 ]
-
-  let private readChunksTypes =
-      [ UInt8 ]
-
-  let private zeroTypes =
-      [ UInt8; Float64 ]
-
-  let private scalarImageFunctionTypes =
-      [ UInt8; Float64 ]
-
-  let private scalarImageFunctions =
-      [ "ImageAddScalar", "imageAddScalar", "Arithmetic"
-        "ImageMulScalar", "imageMulScalar", "Arithmetic"
-        "ImageDivScalar", "imageDivScalar", "Arithmetic"
-        "ScalarMulImage", "scalarMulImage", "Arithmetic" ]
-
   let private makePort name portType =
       { Name = name
         Type = portType }
@@ -62,21 +42,6 @@ module BuiltInCatalog =
 
   let private availableMemoryParameter =
       makeParameter "availableMemory" "Available memory" (string (pown 2 30)) BasicType.String
-
-  let private fsharpTypeName tp =
-      match tp with
-      | UInt8 -> "uint8"
-      | Int8 -> "int8"
-      | UInt16 -> "uint16"
-      | Int16 -> "int16"
-      | UInt32 -> "uint32"
-      | Int32 -> "int32"
-      | UInt64 -> "uint64"
-      | Int64 -> "int64"
-      | Float32 -> "float32"
-      | Float64 -> "float"
-      | Complex -> "System.Numerics.Complex"
-      | Number -> "float"
 
   let private numericDefaultValue tp =
       match tp with
@@ -100,135 +65,149 @@ module BuiltInCatalog =
       | BasicType.Unit -> "()"
       | BasicType.Numeric numericType -> numericDefaultValue numericType
 
-  let makeScalar (tp: BasicType) =
-    let str = BasicType.toString tp
-    { Id = "Scalar" + str
-      DisplayName = str
-      Category = "Scalars"
+  let makeGenericScalar () =
+    { Id = "Scalar"
+      DisplayName = "Scalar"
+      Category = "Sources / Sinks"
       Description = "Bind a scalar value for graph parameters."
-      Aliases = [ "value"; "parameter"; "constant"; "let" ]
+      Aliases = [ "value"; "parameter"; "constant"; "let"; "UInt8"; "Float64"; "String"; "Bool" ]
       Inputs = []
-      Outputs = [ makePort "Value" (Scalar tp) ]
+      Outputs = [ makePort "Value" (Scalar(Numeric Float64)) ]
       Parameters =
-          [ makeParameter "value" "Value" (scalarDefaultValue tp) tp ] }
+          [ makeParameter "type" "Type" "Float64" BasicType.String
+            makeParameter "value" "Value" (scalarDefaultValue (Numeric Float64)) (Numeric Float64) ] }
 
-  let makeRead (tp: NumericType) =
-    let str = NumericType.toString tp
-    let pt = PortType.numericToImage tp
-    { Id = "Read" + str
-      DisplayName = "read" + str
+  let makeGenericRead () =
+    { Id = "Read"
+      DisplayName = "read"
       Category = "Sources / Sinks"
       Description = "Read a stack from chunked image files."
-      Aliases = [ "input"; "load"; "tiff"; "file" ]
+      Aliases = [ "input"; "load"; "tiff"; "file"; "UInt8"; "Float64"; "type" ]
       Inputs = []
-      Outputs = [ makePort "OUT" pt ]
+      Outputs = [ makePort "Float64" imageFloat64 ]
       Parameters =
           [ availableMemoryParameter
+            makeParameter "type" "Type" "Float64" BasicType.String
             makeParameter "input" "Input" "input" BasicType.String
             makeParameter "suffix" "Suffix" ".tiff" BasicType.String ] }
 
-  let makeCast (tp: NumericType) =
-    let str = NumericType.toString tp
-    let pt = PortType.numericToImage tp
-    { Id = "Cast" + str
-      DisplayName = "cast" + str
-      Category = "Type conversions"
-      Description = "Convert stream element type."
-      Aliases = [ "convert"; "uint8"; "float"; "type" ]
-      Inputs = [ makePort "IN" imageAny ]
-      Outputs = [ makePort "OUT" pt ]
-      Parameters =
-          [ makeParameter "sourceType" "Source type" "float" BasicType.String
-            makeParameter "targetType" "Target type" (fsharpTypeName tp) BasicType.String ] }
-
-  let makeZero (tp: NumericType) =
-    let str = NumericType.toString tp
-    let pt = PortType.numericToImage tp
-    { Id = "Zero" + str
-      DisplayName = "zero" + str
-      Category = "Sources / Sinks"
-      Description = "Create a zero-valued synthetic stack."
-      Aliases = [ "empty"; "synthetic"; "source" ]
-      Inputs = []
-      Outputs = [ makePort "OUT" pt ]
-      Parameters =
-          [ availableMemoryParameter
-            makeParameter "width" "Width" "64u" (BasicType.Numeric UInt32)
-            makeParameter "height" "Height" "64u" (BasicType.Numeric UInt32)
-            makeParameter "depth" "Depth" "1u" (BasicType.Numeric UInt32) ] }
-
-  let makeReadRandom (tp: NumericType) =
-    let str = NumericType.toString tp
-    let pt = PortType.numericToImage tp
-    { Id = "ReadRandom" + str
-      DisplayName = "readRandom" + str
+  let makeGenericReadRandom () =
+    { Id = "ReadRandom"
+      DisplayName = "readRandom"
       Category = "Sources / Sinks"
       Description = "Read a randomized subset of stack files."
-      Aliases = [ "random"; "input"; "tiff"; "file" ]
+      Aliases = [ "random"; "input"; "tiff"; "file"; "UInt8"; "Float64"; "type" ]
       Inputs = []
-      Outputs = [ makePort "OUT" pt ]
+      Outputs = [ makePort "Float64" imageFloat64 ]
       Parameters =
           [ availableMemoryParameter
+            makeParameter "type" "Type" "Float64" BasicType.String
             makeParameter "depth" "Depth" "1u" (BasicType.Numeric UInt32)
             makeParameter "input" "Input" "input" BasicType.String
             makeParameter "suffix" "Suffix" ".tiff" BasicType.String ] }
 
-  let makeReadChunks (tp: NumericType) =
-    let str = NumericType.toString tp
-    let pt = PortType.numericToImage tp
-    { Id = "ReadChunks" + str
-      DisplayName = "readChunks" + str
+  let makeGenericReadChunks () =
+    { Id = "ReadChunks"
+      DisplayName = "readChunks"
       Category = "Sources / Sinks"
       Description = "Read stack chunks from image files."
-      Aliases = [ "chunks"; "input"; "tiff"; "file" ]
+      Aliases = [ "chunks"; "input"; "tiff"; "file"; "UInt8"; "Float64"; "type" ]
       Inputs = []
-      Outputs = [ makePort "OUT" pt ]
+      Outputs = [ makePort "Float64" imageFloat64 ]
       Parameters =
           [ availableMemoryParameter
+            makeParameter "type" "Type" "Float64" BasicType.String
             makeParameter "input" "Input" "input" BasicType.String
             makeParameter "suffix" "Suffix" ".tiff" BasicType.String ] }
 
-  let makeScalarImageFunction operation displayName category tp =
-    let str = NumericType.toString tp
-    let pt = PortType.numericToImage tp
-    { Id = operation + str
-      DisplayName = displayName + str
-      Category = category
-      Description = "Apply a scalar arithmetic operation to each image."
-      Aliases = [ "scalar"; "arithmetic"; displayName ]
-      Inputs = [ makePort "IN" pt ]
-      Outputs = [ makePort "OUT" pt ]
-      Parameters = [ makeParameter "value" "Value" (numericDefaultValue tp) (BasicType.Numeric tp) ] }
+  let makeGenericCast () =
+    { Id = "Cast"
+      DisplayName = "cast"
+      Category = "Type conversions"
+      Description = "Convert stream element type."
+      Aliases = [ "convert"; "uint8"; "float"; "type"; "UInt8"; "Float64" ]
+      Inputs = [ makePort "Float64" imageFloat64 ]
+      Outputs = [ makePort "Float64" imageFloat64 ]
+      Parameters =
+          [ makeParameter "sourceType" "Source type" "Float64" BasicType.String
+            makeParameter "targetType" "Target type" "Float64" BasicType.String ] }
 
-  let makeMulPair tp =
-    let str = NumericType.toString tp
-    let pt = PortType.numericToImage tp
-    { Id = if tp = UInt8 then "MulPair" else "MulPair" + str
-      DisplayName = "mulPair" + str
+  let makeGenericZero () =
+    { Id = "Zero"
+      DisplayName = "zero"
+      Category = "Sources / Sinks"
+      Description = "Create a zero-valued synthetic stack."
+      Aliases = [ "empty"; "synthetic"; "source"; "UInt8"; "Float64"; "type" ]
+      Inputs = []
+      Outputs = [ makePort "Float64" imageFloat64 ]
+      Parameters =
+          [ availableMemoryParameter
+            makeParameter "type" "Type" "Float64" BasicType.String
+            makeParameter "width" "Width" "64u" (BasicType.Numeric UInt32)
+            makeParameter "height" "Height" "64u" (BasicType.Numeric UInt32)
+            makeParameter "depth" "Depth" "1u" (BasicType.Numeric UInt32) ] }
+
+  let makeScalarImageOperation id displayName description aliases =
+    { Id = id
+      DisplayName = displayName
       Category = "Arithmetic"
-      Description = "Multiply two image streams of the same numeric type pairwise. Code generation inserts zip or shared fan-out as needed."
-      Aliases = [ "multiply"; "mask"; "pair"; "zip"; fsharpTypeName tp; str ]
-      Inputs = [ makePort "A" pt; makePort "B" pt ]
-      Outputs = [ makePort "OUT" pt ]
-      Parameters = [] }
+      Description = description
+      Aliases = aliases @ [ "scalar"; "arithmetic"; "UInt8"; "Float64"; "type" ]
+      Inputs = [ makePort "Float64" imageFloat64 ]
+      Outputs = [ makePort "Float64" imageFloat64 ]
+      Parameters =
+          [ makeParameter "type" "Type" "Float64" BasicType.String
+            makeParameter "value" "Value" (numericDefaultValue Float64) (BasicType.Numeric Float64) ] }
+
+  let makeGenericAddNormalNoise () =
+    { Id = "AddNormalNoise"
+      DisplayName = "addNormalNoise"
+      Category = "Statistics"
+      Description = "Add normally distributed noise to each image."
+      Aliases = [ "noise"; "random"; "normal"; "statistics"; "UInt8"; "Float64"; "type" ]
+      Inputs = [ makePort "Float64" imageFloat64 ]
+      Outputs = [ makePort "Float64" imageFloat64 ]
+      Parameters =
+          [ makeParameter "type" "Type" "Float64" BasicType.String
+            makeParameter "mean" "Mean" "128.0" (BasicType.Numeric Float64)
+            makeParameter "std" "Std" "50.0" (BasicType.Numeric Float64) ] }
+
+  let makePairOperation id displayName description aliases =
+    { Id = id
+      DisplayName = displayName
+      Category = "Arithmetic"
+      Description = description
+      Aliases = aliases @ [ "pair"; "zip"; "UInt8"; "Float64"; "type" ]
+      Inputs = [ makePort "Float64 A" imageFloat64; makePort "Float64 B" imageFloat64 ]
+      Outputs = [ makePort "Float64" imageFloat64 ]
+      Parameters = [ makeParameter "type" "Type" "Float64" BasicType.String ] }
 
   let orderedFunctions =
-      [ yield! (scalarBasicTypes |> List.map makeScalar)
+      [ makeGenericScalar()
 
-        yield! (standardNumericTypes |> List.map makeRead)
+        makeGenericRead()
 
-        yield! (readRandomTypes |> List.map makeReadRandom)
+        makeGenericReadRandom()
 
-        yield! (readChunksTypes |> List.map makeReadChunks)
+        makeGenericReadChunks()
 
-        yield! (zeroTypes |> List.map makeZero)
+        makeGenericZero()
+
+        { Id = "ComputeStats"
+          DisplayName = "computeStats"
+          Category = "Statistics"
+          Description = "Reduce an image stream to aggregate image statistics."
+          Aliases = [ "statistics"; "stats"; "mean"; "std"; "min"; "max"; "reducer" ]
+          Inputs = [ makePort "Number" imageAny ]
+          Outputs = [ makePort "ImageStats" imageStats ]
+          Parameters = [] }
 
         { Id = "Write"
           DisplayName = "write"
           Category = "Sources / Sinks"
           Description = "Write a processed stack to image files."
           Aliases = [ "output"; "save"; "tiff"; "file" ]
-          Inputs = [ makePort "IN" imageAny ]
+          Inputs = [ makePort "Number" imageAny ]
           Outputs = []
           Parameters =
               [ makeParameter "output" "Output" "output" BasicType.String
@@ -239,7 +218,7 @@ module BuiltInCatalog =
           Category = "Sources / Sinks"
           Description = "Write a stack to image files split into chunks."
           Aliases = [ "output"; "save"; "chunks"; "tiff"; "file" ]
-          Inputs = [ makePort "IN" imageAny ]
+          Inputs = [ makePort "Number" imageAny ]
           Outputs = []
           Parameters =
               [ makeParameter "output" "Output" "output" BasicType.String
@@ -257,21 +236,57 @@ module BuiltInCatalog =
           Outputs = [ makePort "OUT" imageFloat64 ]
           Parameters = [] }
 
-        yield!
-            (scalarImageFunctions
-             |> List.collect (fun (operation, displayName, category) ->
-                 scalarImageFunctionTypes
-                 |> List.map (makeScalarImageFunction operation displayName category)))
+        makeScalarImageOperation
+            "AddScalar"
+            "addScalar"
+            "Add a scalar value to each image."
+            [ "add"; "sum" ]
 
-        yield! (concreteNumericTypes |> List.map makeMulPair)
+        makeScalarImageOperation
+            "MulScalar"
+            "mulScalar"
+            "Multiply each image by a scalar value."
+            [ "multiply"; "scale" ]
+
+        makeScalarImageOperation
+            "DivScalar"
+            "divScalar"
+            "Divide each image by a scalar value."
+            [ "divide" ]
+
+        makeScalarImageOperation
+            "ScalarDiv"
+            "scalarDiv"
+            "Divide a scalar value by each image."
+            [ "divide"; "inverse" ]
+
+        makeGenericAddNormalNoise()
+
+        makePairOperation
+            "AddPair"
+            "addPair"
+            "Add two image streams of the same numeric type pairwise. Code generation inserts zip or shared fan-out as needed."
+            [ "add"; "sum"; "arithmetic" ]
+
+        makePairOperation
+            "MulPair"
+            "mulPair"
+            "Multiply two image streams of the same numeric type pairwise. Code generation inserts zip or shared fan-out as needed."
+            [ "multiply"; "mask"; "arithmetic" ]
+
+        makePairOperation
+            "DivPair"
+            "divPair"
+            "Divide two image streams of the same numeric type pairwise. Code generation inserts zip or shared fan-out as needed."
+            [ "divide"; "ratio"; "arithmetic" ]
 
         { Id = "DiscreteGaussian"
           DisplayName = "discreteGaussian"
           Category = "Filters"
           Description = "Apply a Gaussian smoothing filter."
           Aliases = [ "gaussian"; "smooth"; "blur"; "filter" ]
-          Inputs = [ makePort "IN" imageFloat64 ]
-          Outputs = [ makePort "OUT" imageFloat64 ]
+          Inputs = [ makePort "Float64" imageFloat64 ]
+          Outputs = [ makePort "Float64" imageFloat64 ]
           Parameters =
               [ makeParameter "sigma" "Sigma" "1.0" (BasicType.Numeric Float64)
                 makeParameter "outputRegionMode" "Output region" "None" BasicType.String
@@ -283,8 +298,8 @@ module BuiltInCatalog =
           Category = "Filters"
           Description = "Apply Gaussian convolution."
           Aliases = [ "gaussian"; "smooth"; "blur"; "filter" ]
-          Inputs = [ makePort "IN" imageFloat64 ]
-          Outputs = [ makePort "OUT" imageFloat64 ]
+          Inputs = [ makePort "Float64" imageFloat64 ]
+          Outputs = [ makePort "Float64" imageFloat64 ]
           Parameters = [ makeParameter "sigma" "Sigma" "1.0" (BasicType.Numeric Float64) ] }
 
         { Id = "FiniteDiff"
@@ -292,44 +307,23 @@ module BuiltInCatalog =
           Category = "Filters"
           Description = "Apply finite difference derivative filters."
           Aliases = [ "derivative"; "difference"; "filter" ]
-          Inputs = [ makePort "IN" imageFloat64 ]
-          Outputs = [ makePort "OUT" imageFloat64 ]
+          Inputs = [ makePort "Float64" imageFloat64 ]
+          Outputs = [ makePort "Float64" imageFloat64 ]
           Parameters =
               [ makeParameter "sigma" "Sigma" "1.0" (BasicType.Numeric Float64)
                 makeParameter "axis1" "Axis 1" "1u" (BasicType.Numeric UInt32)
                 makeParameter "axis2" "Axis 2" "2u" (BasicType.Numeric UInt32) ] }
 
-        { Id = "AddNormalNoiseUInt8"
-          DisplayName = "addNormalNoiseUInt8"
-          Category = "Filters"
-          Description = "Add normally distributed noise to each image."
-          Aliases = [ "noise"; "random"; "normal" ]
-          Inputs = [ makePort "IN" imageUInt8 ]
-          Outputs = [ makePort "OUT" imageUInt8 ]
-          Parameters =
-              [ makeParameter "mean" "Mean" "128.0" (BasicType.Numeric Float64)
-                makeParameter "std" "Std" "50.0" (BasicType.Numeric Float64) ] }
-
-        { Id = "AddNormalNoiseFloat64"
-          DisplayName = "addNormalNoiseFloat64"
-          Category = "Filters"
-          Description = "Add normally distributed noise to each image."
-          Aliases = [ "noise"; "random"; "normal" ]
-          Inputs = [ makePort "IN" imageFloat64 ]
-          Outputs = [ makePort "OUT" imageFloat64 ]
-          Parameters =
-              [ makeParameter "mean" "Mean" "128.0" (BasicType.Numeric Float64)
-                makeParameter "std" "Std" "50.0" (BasicType.Numeric Float64) ] }
-
         { Id = "Threshold"
           DisplayName = "threshold"
           Category = "Segmentation"
           Description = "Threshold an image into a binary UInt8 image."
-          Aliases = [ "binary"; "mask"; "segment" ]
-          Inputs = [ makePort "IN" imageAny ]
-          Outputs = [ makePort "OUT" imageUInt8 ]
+          Aliases = [ "binary"; "mask"; "segment"; "UInt8"; "Float64"; "type" ]
+          Inputs = [ makePort "Float64" imageFloat64 ]
+          Outputs = [ makePort "UInt8" imageUInt8 ]
           Parameters =
-              [ makeParameter "lower" "Lower" "128.0" (BasicType.Numeric Float64)
+              [ makeParameter "type" "Type" "Float64" BasicType.String
+                makeParameter "lower" "Lower" "128.0" (BasicType.Numeric Float64)
                 makeParameter "upper" "Upper" "infinity" (BasicType.Numeric Float64) ] }
 
         { Id = "Erode"
@@ -337,8 +331,8 @@ module BuiltInCatalog =
           Category = "Morphology"
           Description = "Erode a binary UInt8 image."
           Aliases = [ "morphology"; "binary"; "mask" ]
-          Inputs = [ makePort "IN" imageUInt8 ]
-          Outputs = [ makePort "OUT" imageUInt8 ]
+          Inputs = [ makePort "UInt8" imageUInt8 ]
+          Outputs = [ makePort "UInt8" imageUInt8 ]
           Parameters = [ makeParameter "radius" "Radius" "1u" (BasicType.Numeric UInt32) ] }
 
         { Id = "Dilate"
@@ -346,8 +340,8 @@ module BuiltInCatalog =
           Category = "Morphology"
           Description = "Dilate a binary UInt8 image."
           Aliases = [ "morphology"; "binary"; "mask" ]
-          Inputs = [ makePort "IN" imageUInt8 ]
-          Outputs = [ makePort "OUT" imageUInt8 ]
+          Inputs = [ makePort "UInt8" imageUInt8 ]
+          Outputs = [ makePort "UInt8" imageUInt8 ]
           Parameters = [ makeParameter "radius" "Radius" "1u" (BasicType.Numeric UInt32) ] }
 
         { Id = "Opening"
@@ -355,8 +349,8 @@ module BuiltInCatalog =
           Category = "Morphology"
           Description = "Apply morphological opening to a binary UInt8 image."
           Aliases = [ "morphology"; "binary"; "mask" ]
-          Inputs = [ makePort "IN" imageUInt8 ]
-          Outputs = [ makePort "OUT" imageUInt8 ]
+          Inputs = [ makePort "UInt8" imageUInt8 ]
+          Outputs = [ makePort "UInt8" imageUInt8 ]
           Parameters = [ makeParameter "radius" "Radius" "1u" (BasicType.Numeric UInt32) ] }
 
         { Id = "Closing"
@@ -364,8 +358,8 @@ module BuiltInCatalog =
           Category = "Morphology"
           Description = "Apply morphological closing to a binary UInt8 image."
           Aliases = [ "morphology"; "binary"; "mask" ]
-          Inputs = [ makePort "IN" imageUInt8 ]
-          Outputs = [ makePort "OUT" imageUInt8 ]
+          Inputs = [ makePort "UInt8" imageUInt8 ]
+          Outputs = [ makePort "UInt8" imageUInt8 ]
           Parameters = [ makeParameter "radius" "Radius" "1u" (BasicType.Numeric UInt32) ] }
 
         { Id = "ConnectedComponents"
@@ -373,8 +367,8 @@ module BuiltInCatalog =
           Category = "Segmentation"
           Description = "Label connected binary components."
           Aliases = [ "components"; "labels"; "segmentation" ]
-          Inputs = [ makePort "IN" imageUInt8 ]
-          Outputs = [ makePort "OUT" imageUInt64 ]
+          Inputs = [ makePort "UInt8" imageUInt8 ]
+          Outputs = [ makePort "UInt64" imageUInt64 ]
           Parameters = [ makeParameter "windowSize" "Window size" "3u" (BasicType.Numeric UInt32) ] }
 
         { Id = "PermuteAxes"
@@ -382,13 +376,13 @@ module BuiltInCatalog =
           Category = "Geometry"
           Description = "Transpose stack axes."
           Aliases = [ "transpose"; "axes"; "permute" ]
-          Inputs = [ makePort "IN" imageAny ]
-          Outputs = [ makePort "OUT" imageAny ]
+          Inputs = [ makePort "Number" imageAny ]
+          Outputs = [ makePort "Number" imageAny ]
           Parameters =
               [ makeParameter "axes" "Axes" "(0u,1u,2u)" BasicType.String
                 makeParameter "tileSize" "Tile size" "64u" (BasicType.Numeric UInt32) ] }
 
-        yield! (standardNumericTypes |> List.map makeCast) ]
+        makeGenericCast() ]
 
   let functions =
       orderedFunctions
