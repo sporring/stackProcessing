@@ -14,6 +14,42 @@ module BuiltInCatalog =
   let imageFloat64 = PortType.Image NumericType.Float64
   let imageComplex = PortType.Image NumericType.Complex
 
+  let private standardNumericTypes =
+      [ UInt8
+        Int8
+        UInt16
+        Int16
+        UInt32
+        Int32
+        UInt64
+        Int64
+        Float32
+        Float64 ]
+
+  let private concreteNumericTypes =
+      standardNumericTypes @ [ Complex ]
+
+  let private scalarBasicTypes =
+      (standardNumericTypes |> List.map BasicType.Numeric) @ [ Bool; String ]
+
+  let private readRandomTypes =
+      [ UInt8; Float64 ]
+
+  let private readChunksTypes =
+      [ UInt8 ]
+
+  let private zeroTypes =
+      [ UInt8; Float64 ]
+
+  let private scalarImageFunctionTypes =
+      [ UInt8; Float64 ]
+
+  let private scalarImageFunctions =
+      [ "ImageAddScalar", "imageAddScalar", "Arithmetic"
+        "ImageMulScalar", "imageMulScalar", "Arithmetic"
+        "ImageDivScalar", "imageDivScalar", "Arithmetic"
+        "ScalarMulImage", "scalarMulImage", "Arithmetic" ]
+
   let private makePort name portType =
       { Name = name
         Type = portType }
@@ -23,6 +59,9 @@ module BuiltInCatalog =
         Label = label
         DefaultValue = defaultValue
         Type = parameterType }
+
+  let private availableMemoryParameter =
+      makeParameter "availableMemory" "Available memory" (string (pown 2 30)) BasicType.String
 
   let private fsharpTypeName tp =
       match tp with
@@ -78,13 +117,14 @@ module BuiltInCatalog =
     let pt = PortType.numericToImage tp
     { Id = "Read" + str
       DisplayName = "read" + str
-      Category = "IO"
+      Category = "Sources / Sinks"
       Description = "Read a stack from chunked image files."
       Aliases = [ "input"; "load"; "tiff"; "file" ]
-      Inputs = [ makePort "FromSource" Source ]
+      Inputs = []
       Outputs = [ makePort "OUT" pt ]
       Parameters =
-          [ makeParameter "input" "Input" "input" BasicType.String
+          [ availableMemoryParameter
+            makeParameter "input" "Input" "input" BasicType.String
             makeParameter "suffix" "Suffix" ".tiff" BasicType.String ] }
 
   let makeCast (tp: NumericType) =
@@ -106,13 +146,14 @@ module BuiltInCatalog =
     let pt = PortType.numericToImage tp
     { Id = "Zero" + str
       DisplayName = "zero" + str
-      Category = "Sources"
+      Category = "Sources / Sinks"
       Description = "Create a zero-valued synthetic stack."
       Aliases = [ "empty"; "synthetic"; "source" ]
-      Inputs = [ makePort "FromSource" Source ]
+      Inputs = []
       Outputs = [ makePort "OUT" pt ]
       Parameters =
-          [ makeParameter "width" "Width" "64u" (BasicType.Numeric UInt32)
+          [ availableMemoryParameter
+            makeParameter "width" "Width" "64u" (BasicType.Numeric UInt32)
             makeParameter "height" "Height" "64u" (BasicType.Numeric UInt32)
             makeParameter "depth" "Depth" "1u" (BasicType.Numeric UInt32) ] }
 
@@ -121,13 +162,14 @@ module BuiltInCatalog =
     let pt = PortType.numericToImage tp
     { Id = "ReadRandom" + str
       DisplayName = "readRandom" + str
-      Category = "IO"
+      Category = "Sources / Sinks"
       Description = "Read a randomized subset of stack files."
       Aliases = [ "random"; "input"; "tiff"; "file" ]
-      Inputs = [ makePort "FromSource" Source ]
+      Inputs = []
       Outputs = [ makePort "OUT" pt ]
       Parameters =
-          [ makeParameter "depth" "Depth" "1u" (BasicType.Numeric UInt32)
+          [ availableMemoryParameter
+            makeParameter "depth" "Depth" "1u" (BasicType.Numeric UInt32)
             makeParameter "input" "Input" "input" BasicType.String
             makeParameter "suffix" "Suffix" ".tiff" BasicType.String ] }
 
@@ -136,13 +178,14 @@ module BuiltInCatalog =
     let pt = PortType.numericToImage tp
     { Id = "ReadChunks" + str
       DisplayName = "readChunks" + str
-      Category = "IO"
+      Category = "Sources / Sinks"
       Description = "Read stack chunks from image files."
       Aliases = [ "chunks"; "input"; "tiff"; "file" ]
-      Inputs = [ makePort "FromSource" Source ]
+      Inputs = []
       Outputs = [ makePort "OUT" pt ]
       Parameters =
-          [ makeParameter "input" "Input" "input" BasicType.String
+          [ availableMemoryParameter
+            makeParameter "input" "Input" "input" BasicType.String
             makeParameter "suffix" "Suffix" ".tiff" BasicType.String ] }
 
   let makeScalarImageFunction operation displayName category tp =
@@ -157,75 +200,47 @@ module BuiltInCatalog =
       Outputs = [ makePort "OUT" pt ]
       Parameters = [ makeParameter "value" "Value" (numericDefaultValue tp) (BasicType.Numeric tp) ] }
 
+  let makeMulPair tp =
+    let str = NumericType.toString tp
+    let pt = PortType.numericToImage tp
+    { Id = if tp = UInt8 then "MulPair" else "MulPair" + str
+      DisplayName = "mulPair" + str
+      Category = "Arithmetic"
+      Description = "Multiply two image streams of the same numeric type pairwise. Code generation inserts zip or shared fan-out as needed."
+      Aliases = [ "multiply"; "mask"; "pair"; "zip"; fsharpTypeName tp; str ]
+      Inputs = [ makePort "A" pt; makePort "B" pt ]
+      Outputs = [ makePort "OUT" pt ]
+      Parameters = [] }
+
   let orderedFunctions =
-      [ { Id = "Source"
-          DisplayName = "source"
-          Category = "Sources / Sinks"
-          Description = "Begin a streaming StackProcessing pipeline with available memory."
-          Aliases = [ "availableMemory"; "start"; "input" ]
-          Inputs = []
-          Outputs = [ makePort "Source" Source ]
-          Parameters = [ makeParameter "availableMemory" "Available memory" "availableMemory" BasicType.String ] }
+      [ yield! (scalarBasicTypes |> List.map makeScalar)
 
-        { Id = "Sink"
-          DisplayName = "sink"
-          Category = "Sources / Sinks"
-          Description = "Run the built pipeline."
-          Aliases = [ "execute"; "run"; "terminal" ]
-          Inputs = [ makePort "Sink" Sink ]
-          Outputs = []
-          Parameters = [] }
+        yield! (standardNumericTypes |> List.map makeRead)
 
-        makeScalar (Numeric UInt8)
-        makeScalar (Numeric Int8)
-        makeScalar (Numeric UInt16)
-        makeScalar (Numeric Int16)
-        makeScalar (Numeric UInt32)
-        makeScalar (Numeric Int32)
-        makeScalar (Numeric UInt64)
-        makeScalar (Numeric Int64)
-        makeScalar (Numeric Float32)
-        makeScalar (Numeric Float64)
-        makeScalar Bool
-        makeScalar String
+        yield! (readRandomTypes |> List.map makeReadRandom)
 
-        makeRead UInt8
-        makeRead Int8
-        makeRead UInt16
-        makeRead Int16
-        makeRead UInt32
-        makeRead Int32
-        makeRead UInt64
-        makeRead Int64
-        makeRead Float32
-        makeRead Float64
+        yield! (readChunksTypes |> List.map makeReadChunks)
 
-        makeReadRandom UInt8
-        makeReadRandom Float64
-
-        makeReadChunks UInt8
-
-        makeZero UInt8
-        makeZero Float64
+        yield! (zeroTypes |> List.map makeZero)
 
         { Id = "Write"
           DisplayName = "write"
-          Category = "IO"
+          Category = "Sources / Sinks"
           Description = "Write a processed stack to image files."
           Aliases = [ "output"; "save"; "tiff"; "file" ]
           Inputs = [ makePort "IN" imageAny ]
-          Outputs = [ makePort "ToSink" Sink ]
+          Outputs = []
           Parameters =
               [ makeParameter "output" "Output" "output" BasicType.String
                 makeParameter "suffix" "Suffix" ".tiff" BasicType.String ] }
 
         { Id = "WriteInChunks"
           DisplayName = "writeInChunks"
-          Category = "IO"
+          Category = "Sources / Sinks"
           Description = "Write a stack to image files split into chunks."
           Aliases = [ "output"; "save"; "chunks"; "tiff"; "file" ]
           Inputs = [ makePort "IN" imageAny ]
-          Outputs = [ makePort "ToSink" Sink ]
+          Outputs = []
           Parameters =
               [ makeParameter "output" "Output" "output" BasicType.String
                 makeParameter "suffix" "Suffix" ".tiff" BasicType.String
@@ -242,14 +257,13 @@ module BuiltInCatalog =
           Outputs = [ makePort "OUT" imageFloat64 ]
           Parameters = [] }
 
-        makeScalarImageFunction "ImageAddScalar" "imageAddScalar" "Arithmetic" UInt8
-        makeScalarImageFunction "ImageAddScalar" "imageAddScalar" "Arithmetic" Float64
-        makeScalarImageFunction "ImageMulScalar" "imageMulScalar" "Arithmetic" UInt8
-        makeScalarImageFunction "ImageMulScalar" "imageMulScalar" "Arithmetic" Float64
-        makeScalarImageFunction "ImageDivScalar" "imageDivScalar" "Arithmetic" UInt8
-        makeScalarImageFunction "ImageDivScalar" "imageDivScalar" "Arithmetic" Float64
-        makeScalarImageFunction "ScalarMulImage" "scalarMulImage" "Arithmetic" UInt8
-        makeScalarImageFunction "ScalarMulImage" "scalarMulImage" "Arithmetic" Float64
+        yield!
+            (scalarImageFunctions
+             |> List.collect (fun (operation, displayName, category) ->
+                 scalarImageFunctionTypes
+                 |> List.map (makeScalarImageFunction operation displayName category)))
+
+        yield! (concreteNumericTypes |> List.map makeMulPair)
 
         { Id = "DiscreteGaussian"
           DisplayName = "discreteGaussian"
@@ -374,16 +388,7 @@ module BuiltInCatalog =
               [ makeParameter "axes" "Axes" "(0u,1u,2u)" BasicType.String
                 makeParameter "tileSize" "Tile size" "64u" (BasicType.Numeric UInt32) ] }
 
-        makeCast UInt8
-        makeCast Int8
-        makeCast UInt16
-        makeCast Int16
-        makeCast UInt32
-        makeCast Int32
-        makeCast UInt64
-        makeCast Int64
-        makeCast Float32
-        makeCast Float64 ]
+        yield! (standardNumericTypes |> List.map makeCast) ]
 
   let functions =
       orderedFunctions
