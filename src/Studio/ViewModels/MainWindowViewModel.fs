@@ -7,6 +7,7 @@ open System.Collections.Specialized
 open System.ComponentModel
 open System.Windows.Input
 open Avalonia.Threading
+open Compiler
 open Graph
 open NodeEditor.Mvvm
 open NodeEditor.Model

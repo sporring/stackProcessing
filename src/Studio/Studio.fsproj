@@ -28,11 +28,11 @@
 
   <ItemGroup>
     <ProjectReference Include="../Graph/Graph.fsproj" />
+    <ProjectReference Include="../Compiler/Compiler.fsproj" />
   </ItemGroup>
 
   <ItemGroup>
     <Compile Include="Models/PipelineDesigner.fs" />
-    <Compile Include="Services/PipelineCodeGenerator.fs" />
     <Compile Include="Services/MyNodeFactory.fs" />
     <Compile Include="ViewModels/ViewModelBase.fs" />
     <Compile Include="ViewModels/MainWindowViewModel.fs" />
