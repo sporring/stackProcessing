@@ -53,25 +53,122 @@ module PipelineCodeGenerator =
         else
             $"(Some {trimmed})"
 
+    let private pixelTypeNameFromSuffix suffix =
+        match suffix with
+        | "UInt8" -> "uint8"
+        | "Int8" -> "int8"
+        | "UInt16" -> "uint16"
+        | "Int16" -> "int16"
+        | "UInt32" -> "uint32"
+        | "Int32" -> "int32"
+        | "UInt64" -> "uint64"
+        | "Int64" -> "int64"
+        | "Float32" -> "float32"
+        | "Float64" -> "float"
+        | "Complex" -> "System.Numerics.Complex"
+        | _ -> suffix
+
+    let private pixelTypeNameFromId (prefix: string) (id: string) =
+        id.Substring(prefix.Length)
+        |> pixelTypeNameFromSuffix
+
     let private elementLine (state: PipelineNodeState) =
         match state.Definition.Id with
         | "Source" ->
             let availableMemory = paramValue "availableMemory" state
             $"source {availableMemory}"
+        | id when id.StartsWith("Zero", StringComparison.Ordinal) ->
+            let pixelType = pixelTypeNameFromId "Zero" id
+            let width = paramValue "width" state
+            let height = paramValue "height" state
+            let depth = paramValue "depth" state
+            $"|> zero<{pixelType}> {width} {height} {depth}"
+        | id when id.StartsWith("ReadRandom", StringComparison.Ordinal) ->
+            let pixelType = pixelTypeNameFromId "ReadRandom" id
+            let depth = paramValue "depth" state
+            let input = paramValue "input" state |> quote
+            let suffix = paramValue "suffix" state |> quote
+            $"|> readRandom<{pixelType}> {depth} {input} {suffix}"
+        | id when id.StartsWith("ReadChunks", StringComparison.Ordinal) ->
+            let pixelType = pixelTypeNameFromId "ReadChunks" id
+            let input = paramValue "input" state |> quote
+            let suffix = paramValue "suffix" state |> quote
+            $"|> readChunks<{pixelType}> {input} {suffix}"
         | id when id.StartsWith("Read", StringComparison.Ordinal) ->
-            let pixelType = paramValue "NumericType" state
+            let pixelType = pixelTypeNameFromId "Read" id
             let input = paramValue "input" state |> quote
             let suffix = paramValue "suffix" state |> quote
             $"|> read<{pixelType}> {input} {suffix}"
+        | "WriteInChunks" ->
+            let output = paramValue "output" state |> quote
+            let suffix = paramValue "suffix" state |> quote
+            let chunkX = paramValue "chunkX" state
+            let chunkY = paramValue "chunkY" state
+            let chunkZ = paramValue "chunkZ" state
+            $">=> writeInChunks {output} {suffix} {chunkX} {chunkY} {chunkZ}"
+        | "SqrtFloat64" ->
+            ">=> sqrt"
+        | id when id.StartsWith("ImageAddScalar", StringComparison.Ordinal) ->
+            let value = paramValue "value" state
+            $">=> imageAddScalar {value}"
+        | id when id.StartsWith("ImageMulScalar", StringComparison.Ordinal) ->
+            let value = paramValue "value" state
+            $">=> imageMulScalar {value}"
+        | id when id.StartsWith("ImageDivScalar", StringComparison.Ordinal) ->
+            let value = paramValue "value" state
+            $">=> imageDivScalar {value}"
+        | id when id.StartsWith("ScalarMulImage", StringComparison.Ordinal) ->
+            let value = paramValue "value" state
+            $">=> scalarMulImage {value}"
         | "DiscreteGaussian" ->
             let sigma = paramValue "sigma" state
             let outputRegionMode = paramValue "outputRegionMode" state |> optionRaw
             let boundaryCondition = paramValue "boundaryCondition" state |> optionRaw
             let windowSize = paramValue "windowSize" state |> optionUInt
             $">=> discreteGaussian {sigma} {outputRegionMode} {boundaryCondition} {windowSize}"
+        | "ConvGauss" ->
+            let sigma = paramValue "sigma" state
+            $">=> convGauss {sigma}"
+        | "FiniteDiff" ->
+            let sigma = paramValue "sigma" state
+            let axis1 = paramValue "axis1" state
+            let axis2 = paramValue "axis2" state
+            $">=> finiteDiff {sigma} {axis1} {axis2}"
+        | id when id.StartsWith("AddNormalNoise", StringComparison.Ordinal) ->
+            let mean = paramValue "mean" state
+            let std = paramValue "std" state
+            $">=> addNormalNoise {mean} {std}"
+        | "Threshold" ->
+            let lower = paramValue "lower" state
+            let upper = paramValue "upper" state
+            $">=> threshold {lower} {upper}"
+        | "Erode" ->
+            let radius = paramValue "radius" state
+            $">=> erode {radius}"
+        | "Dilate" ->
+            let radius = paramValue "radius" state
+            $">=> dilate {radius}"
+        | "Opening" ->
+            let radius = paramValue "radius" state
+            $">=> opening {radius}"
+        | "Closing" ->
+            let radius = paramValue "radius" state
+            $">=> closing {radius}"
+        | "ConnectedComponents" ->
+            let windowSize = paramValue "windowSize" state
+            $">=> connectedComponents {windowSize}"
+        | "PermuteAxes" ->
+            let axes = paramValue "axes" state
+            let tileSize = paramValue "tileSize" state
+            $">=> permuteAxes {axes} {tileSize}"
         | id when id.StartsWith("Cast", StringComparison.Ordinal) ->
             let sourceType = paramValue "sourceType" state
-            let targetType = paramValue "targetType" state
+            let configuredTargetType = paramValue "targetType" state
+            let targetType =
+                if String.IsNullOrWhiteSpace configuredTargetType then
+                    pixelTypeNameFromId "Cast" id
+                else
+                    configuredTargetType
             $">=> cast<{sourceType},{targetType}>"
         | "Write" ->
             let output = paramValue "output" state |> quote
@@ -133,20 +230,98 @@ module PipelineCodeGenerator =
         | "Source" ->
             let availableMemory = parameterValue "availableMemory"
             $"source {availableMemory}"
+        | id when id.StartsWith("Zero", StringComparison.Ordinal) ->
+            let pixelType = pixelTypeNameFromId "Zero" id
+            let width = parameterValue "width"
+            let height = parameterValue "height"
+            let depth = parameterValue "depth"
+            $"|> zero<{pixelType}> {width} {height} {depth}"
+        | id when id.StartsWith("ReadRandom", StringComparison.Ordinal) ->
+            let pixelType = pixelTypeNameFromId "ReadRandom" id
+            let depth = parameterValue "depth"
+            let input = quotedParameter "input"
+            let suffix = quotedParameter "suffix"
+            $"|> readRandom<{pixelType}> {depth} {input} {suffix}"
+        | id when id.StartsWith("ReadChunks", StringComparison.Ordinal) ->
+            let pixelType = pixelTypeNameFromId "ReadChunks" id
+            let input = quotedParameter "input"
+            let suffix = quotedParameter "suffix"
+            $"|> readChunks<{pixelType}> {input} {suffix}"
         | id when id.StartsWith("Read", StringComparison.Ordinal) ->
-            let pixelType = parameterValue "NumericType"
+            let pixelType = pixelTypeNameFromId "Read" id
             let input = quotedParameter "input"
             let suffix = quotedParameter "suffix"
             $"|> read<{pixelType}> {input} {suffix}"
+        | "WriteInChunks" ->
+            let output = quotedParameter "output"
+            let suffix = quotedParameter "suffix"
+            let chunkX = parameterValue "chunkX"
+            let chunkY = parameterValue "chunkY"
+            let chunkZ = parameterValue "chunkZ"
+            $">=> writeInChunks {output} {suffix} {chunkX} {chunkY} {chunkZ}"
+        | "SqrtFloat64" ->
+            ">=> sqrt"
+        | id when id.StartsWith("ImageAddScalar", StringComparison.Ordinal) ->
+            let value = parameterValue "value"
+            $">=> imageAddScalar {value}"
+        | id when id.StartsWith("ImageMulScalar", StringComparison.Ordinal) ->
+            let value = parameterValue "value"
+            $">=> imageMulScalar {value}"
+        | id when id.StartsWith("ImageDivScalar", StringComparison.Ordinal) ->
+            let value = parameterValue "value"
+            $">=> imageDivScalar {value}"
+        | id when id.StartsWith("ScalarMulImage", StringComparison.Ordinal) ->
+            let value = parameterValue "value"
+            $">=> scalarMulImage {value}"
         | "DiscreteGaussian" ->
             let sigma = parameterValue "sigma"
             let outputRegionMode = parameterValue "outputRegionMode" |> optionRaw
             let boundaryCondition = parameterValue "boundaryCondition" |> optionRaw
             let windowSize = parameterValue "windowSize" |> optionUInt
             $">=> discreteGaussian {sigma} {outputRegionMode} {boundaryCondition} {windowSize}"
+        | "ConvGauss" ->
+            let sigma = parameterValue "sigma"
+            $">=> convGauss {sigma}"
+        | "FiniteDiff" ->
+            let sigma = parameterValue "sigma"
+            let axis1 = parameterValue "axis1"
+            let axis2 = parameterValue "axis2"
+            $">=> finiteDiff {sigma} {axis1} {axis2}"
+        | id when id.StartsWith("AddNormalNoise", StringComparison.Ordinal) ->
+            let mean = parameterValue "mean"
+            let std = parameterValue "std"
+            $">=> addNormalNoise {mean} {std}"
+        | "Threshold" ->
+            let lower = parameterValue "lower"
+            let upper = parameterValue "upper"
+            $">=> threshold {lower} {upper}"
+        | "Erode" ->
+            let radius = parameterValue "radius"
+            $">=> erode {radius}"
+        | "Dilate" ->
+            let radius = parameterValue "radius"
+            $">=> dilate {radius}"
+        | "Opening" ->
+            let radius = parameterValue "radius"
+            $">=> opening {radius}"
+        | "Closing" ->
+            let radius = parameterValue "radius"
+            $">=> closing {radius}"
+        | "ConnectedComponents" ->
+            let windowSize = parameterValue "windowSize"
+            $">=> connectedComponents {windowSize}"
+        | "PermuteAxes" ->
+            let axes = parameterValue "axes"
+            let tileSize = parameterValue "tileSize"
+            $">=> permuteAxes {axes} {tileSize}"
         | id when id.StartsWith("Cast", StringComparison.Ordinal) ->
             let sourceType = parameterValue "sourceType"
-            let targetType = parameterValue "targetType"
+            let configuredTargetType = parameterValue "targetType"
+            let targetType =
+                if String.IsNullOrWhiteSpace configuredTargetType then
+                    pixelTypeNameFromId "Cast" id
+                else
+                    configuredTargetType
             $">=> cast<{sourceType},{targetType}>"
         | "Write" ->
             let output = quotedParameter "output"
