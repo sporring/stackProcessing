@@ -108,6 +108,32 @@ type PipelineGraph =
       Nodes: Node list
       Edges: Edge list }
 
+[<CLIMutable>]
+type SavedParameter =
+    { Key: string
+      Value: string }
+
+[<CLIMutable>]
+type SavedNode =
+    { Id: string
+      FunctionId: string
+      X: float
+      Y: float
+      Parameters: SavedParameter array }
+
+[<CLIMutable>]
+type SavedEdge =
+    { FromNode: string
+      FromPort: int
+      ToNode: string
+      ToPort: int }
+
+[<CLIMutable>]
+type SavedGraph =
+    { Version: int
+      Nodes: SavedNode array
+      Edges: SavedEdge array }
+
 module FunctionDefinition =
     let matches (searchText: string) (definition: Function) =
         let contains (value: string) =

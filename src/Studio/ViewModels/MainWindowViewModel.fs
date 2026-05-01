@@ -3,41 +3,14 @@ namespace Studio.ViewModels
 open System
 open System.Collections.Generic
 open System.Collections.ObjectModel
+open System.Collections.Specialized
 open System.ComponentModel
-open System.IO
-open System.Text.Json
 open System.Windows.Input
 open Graph
 open NodeEditor.Mvvm
 open NodeEditor.Model
 open Studio.Models
 open Studio.Services
-
-[<CLIMutable>]
-type SavedParameter =
-    { Key: string
-      Value: string }
-
-[<CLIMutable>]
-type SavedNode =
-    { Id: string
-      FunctionId: string
-      X: float
-      Y: float
-      Parameters: SavedParameter array }
-
-[<CLIMutable>]
-type SavedEdge =
-    { FromNode: string
-      FromPort: int
-      ToNode: string
-      ToPort: int }
-
-[<CLIMutable>]
-type SavedGraph =
-    { Version: int
-      Nodes: SavedNode array
-      Edges: SavedEdge array }
 
 type private SimpleCommand(execute: obj -> unit, canExecute: obj -> bool) =
     let canExecuteChanged = Event<EventHandler, EventArgs>()
@@ -64,7 +37,8 @@ type PipelinePinViewModel(alignment: PinAlignment, port: Port) =
 type PipelineNodeViewModel(
     state: PipelineNodeState,
     selectNode: PipelineNodeViewModel -> unit,
-    getDrawingSize: unit -> float * float) as this =
+    getDrawingSize: unit -> float * float,
+    markGraphDirty: unit -> unit) as this =
     inherit NodeViewModel()
 
     let addPipelinePin x y alignment (port: Port) =
@@ -122,6 +96,7 @@ type PipelineNodeViewModel(
     override this.OnMoved() =
         base.OnMoved()
         this.ClampToDrawing()
+        markGraphDirty()
 
 type MainWindowViewModel() as this =
     inherit ViewModelBase()
@@ -130,6 +105,7 @@ type MainWindowViewModel() as this =
     let mutable selectedNode: PipelineNodeViewModel = null
     let mutable generatedProgram = ""
     let mutable paletteSearch = ""
+    let mutable graphDirty = false
 
     let editor =
         let editor = EditorViewModel()
@@ -140,9 +116,6 @@ type MainWindowViewModel() as this =
 
     let drawing =
         editor.Drawing :?> DrawingNodeViewModel
-
-    let jsonOptions =
-        JsonSerializerOptions(WriteIndented = true, PropertyNamingPolicy = JsonNamingPolicy.CamelCase)
 
     let updatePaletteGroups () =
         paletteGroups.Clear()
@@ -168,6 +141,11 @@ type MainWindowViewModel() as this =
                 PipelineParameterViewModel(parameter.Label, parameter.Key, parameter.DefaultValue))
 
         PipelineNodeState(definition, parameters)
+
+    let watchState (state: PipelineNodeState) =
+        state.Parameters
+        |> Seq.iter (fun parameter ->
+            parameter.PropertyChanged.Add(fun _ -> this.MarkGraphDirty()))
 
     let pipelineNodes () =
         drawing.Nodes
@@ -225,7 +203,10 @@ type MainWindowViewModel() as this =
             PipelineNodeViewModel(
                 createState functionId,
                 (fun node -> this.SelectedNode <- node),
-                (fun () -> drawing.Width, drawing.Height))
+                (fun () -> drawing.Width, drawing.Height),
+                (fun () -> this.MarkGraphDirty()))
+
+        watchState node.State
 
         node.X <- float (24 + index * 118)
         node.Y <- 66.
@@ -238,6 +219,7 @@ type MainWindowViewModel() as this =
         connector.End <- endPin
         connector.Orientation <- ConnectorOrientation.Horizontal
         drawing.Connectors.Add(connector :> IConnector)
+        this.MarkGraphDirty()
 
     (*
     let addSeedNodes () =
@@ -250,6 +232,15 @@ type MainWindowViewModel() as this =
     *)
     do
         updatePaletteGroups()
+
+        match drawing.Nodes with
+        | :? INotifyCollectionChanged as nodes -> nodes.CollectionChanged.Add(fun _ -> this.MarkGraphDirty())
+        | _ -> ()
+
+        match drawing.Connectors with
+        | :? INotifyCollectionChanged as connectors -> connectors.CollectionChanged.Add(fun _ -> this.MarkGraphDirty())
+        | _ -> ()
+
         //addSeedNodes()
 
     member _.Editor = editor
@@ -328,7 +319,7 @@ type MainWindowViewModel() as this =
             (fun _ -> true))
         :> ICommand
 
-    member _.ExportGraphJson() =
+    member _.ExportGraph() =
         let nodes = pipelineNodes () |> Seq.toArray
 
         let nodeIds =
@@ -372,17 +363,16 @@ type MainWindowViewModel() as this =
               Nodes = savedNodes
               Edges = savedEdges }
 
-        JsonSerializer.Serialize(savedGraph, jsonOptions)
+        savedGraph
+
+    member this.ExportGraphJson() =
+        this.ExportGraph() |> PipelineGraphStorage.serialize
 
     member this.SaveGraph(path: string) =
-        File.WriteAllText(path, this.ExportGraphJson())
+        this.ExportGraph() |> PipelineGraphStorage.save path
+        this.MarkGraphSaved()
 
-    member this.ImportGraphJson(json: string) =
-        let savedGraph = JsonSerializer.Deserialize<SavedGraph>(json, jsonOptions)
-
-        if isNull (box savedGraph) then
-            invalidOp "The selected file did not contain a pipeline graph."
-
+    member this.ImportGraph(savedGraph: SavedGraph) =
         drawing.Connectors.Clear()
         drawing.Nodes.Clear()
         this.SelectedNode <- null
@@ -393,7 +383,14 @@ type MainWindowViewModel() as this =
                 match BuiltInCatalog.tryFind savedNode.FunctionId with
                 | None -> invalidOp $"Unknown function id in saved graph: {savedNode.FunctionId}"
                 | Some _ ->
-                    let node = PipelineNodeViewModel(createState savedNode.FunctionId, (fun node -> this.SelectedNode <- node), (fun () -> drawing.Width, drawing.Height))
+                    let node =
+                        PipelineNodeViewModel(
+                            createState savedNode.FunctionId,
+                            (fun node -> this.SelectedNode <- node),
+                            (fun () -> drawing.Width, drawing.Height),
+                            (fun () -> this.MarkGraphDirty()))
+
+                    watchState node.State
                     node.X <- savedNode.X
                     node.Y <- savedNode.Y
                     node.ClampToDrawing()
@@ -415,8 +412,39 @@ type MainWindowViewModel() as this =
             | _ ->
                 invalidOp $"Saved edge refers to a missing node: {edge.FromNode} -> {edge.ToNode}"
 
+        this.MarkGraphSaved()
+
+    member this.ImportGraphJson(json: string) =
+        json |> PipelineGraphStorage.deserialize |> this.ImportGraph
+
     member this.LoadGraph(path: string) =
-        this.ImportGraphJson(File.ReadAllText(path))
+        path |> PipelineGraphStorage.load |> this.ImportGraph
+
+    member _.HasGraph =
+        drawing.Nodes.Count > 0 || drawing.Connectors.Count > 0
+
+    member _.IsGraphDirty = graphDirty
+
+    member this.MarkGraphDirty() =
+        if not graphDirty then
+            graphDirty <- true
+            this.OnPropertyChanged(PropertyChangedEventArgs(nameof this.IsGraphDirty))
+
+    member this.MarkGraphSaved() =
+        if graphDirty then
+            graphDirty <- false
+            this.OnPropertyChanged(PropertyChangedEventArgs(nameof this.IsGraphDirty))
+
+    member this.ClearGraph() =
+        let shouldMarkDirty = this.HasGraph || graphDirty
+        drawing.Connectors.Clear()
+        drawing.Nodes.Clear()
+        this.SelectedNode <- null
+        generatedProgram <- ""
+        this.RaiseGeneratedProgramChanged()
+
+        if shouldMarkDirty then
+            this.MarkGraphDirty()
 
     member this.AddElement(functionId: string) =
         let node = createNode drawing.Nodes.Count functionId
@@ -425,6 +453,7 @@ type MainWindowViewModel() as this =
 
         drawing.Nodes.Add(node :> INode)
         this.SelectedNode <- node
+        this.MarkGraphDirty()
 
     member this.AddElementAt(functionId: string, x: float, y: float) =
         let node = createNode drawing.Nodes.Count functionId
@@ -434,6 +463,7 @@ type MainWindowViewModel() as this =
 
         drawing.Nodes.Add(node :> INode)
         this.SelectedNode <- node
+        this.MarkGraphDirty()
 
     member this.AddPaletteDragElementAt(functionId: string, x: float, y: float, isOutsideGraph: bool) =
         let node = createNode drawing.Nodes.Count functionId
@@ -443,8 +473,9 @@ type MainWindowViewModel() as this =
 
         drawing.Nodes.Add(node :> INode)
         this.SelectedNode <- node
+        this.MarkGraphDirty()
 
-    member _.MoveSelectedElementTo(x: float, y: float, shouldClamp: bool, isPaletteDragOutside: bool) =
+    member this.MoveSelectedElementTo(x: float, y: float, shouldClamp: bool, isPaletteDragOutside: bool) =
         if not (isNull selectedNode) then
             selectedNode.State.IsPaletteDragOutside <- isPaletteDragOutside
             selectedNode.X <- x - selectedNode.Width / 2.
@@ -452,6 +483,8 @@ type MainWindowViewModel() as this =
 
             if shouldClamp then
                 selectedNode.ClampToDrawing()
+
+            this.MarkGraphDirty()
 
     member this.DeleteSelectedElement() =
         if not (isNull selectedNode) then
@@ -480,6 +513,8 @@ type MainWindowViewModel() as this =
                 this.SelectedNode <- remaining[min currentIndex (remaining.Length - 1)]
             else
                 this.SelectedNode <- null
+
+            this.MarkGraphDirty()
 
     member _.ValidateGraph() =
         let missingPins =

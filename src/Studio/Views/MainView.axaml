@@ -103,6 +103,9 @@
                             Click="LoadGraphClicked"
                             Content="Load" />
                     <Button Width="76"
+                            Click="ClearGraphClicked"
+                            Content="Clear" />
+                    <Button Width="76"
                             Command="{Binding RunCommand}"
                             Content="Run" />
                 </StackPanel>

@@ -1,0 +1,80 @@
+﻿{
+  "version": 1,
+  "nodes": [
+    {
+      "id": "node-1",
+      "functionId": "Source",
+      "x": 13.10546875,
+      "y": 96.75390625,
+      "parameters": [
+        {
+          "key": "availableMemory",
+          "value": "availableMemory"
+        }
+      ]
+    },
+    {
+      "id": "node-2",
+      "functionId": "ReadUInt8",
+      "x": 201.61328125,
+      "y": 261.45703125,
+      "parameters": [
+        {
+          "key": "NumericType",
+          "value": "float"
+        },
+        {
+          "key": "input",
+          "value": "input"
+        },
+        {
+          "key": "suffix",
+          "value": ".tiff"
+        }
+      ]
+    },
+    {
+      "id": "node-3",
+      "functionId": "Sink",
+      "x": 440.12109375,
+      "y": 91.28515625,
+      "parameters": []
+    },
+    {
+      "id": "node-4",
+      "functionId": "Write",
+      "x": 308.87890625,
+      "y": 181.38671875,
+      "parameters": [
+        {
+          "key": "output",
+          "value": "output"
+        },
+        {
+          "key": "suffix",
+          "value": ".tiff"
+        }
+      ]
+    }
+  ],
+  "edges": [
+    {
+      "fromNode": "node-1",
+      "fromPort": 0,
+      "toNode": "node-2",
+      "toPort": 0
+    },
+    {
+      "fromNode": "node-2",
+      "fromPort": 0,
+      "toNode": "node-4",
+      "toPort": 0
+    },
+    {
+      "fromNode": "node-4",
+      "fromPort": 0,
+      "toNode": "node-3",
+      "toPort": 0
+    }
+  ]
+}
