@@ -72,33 +72,37 @@ module PipelineCodeGenerator =
         id.Substring(prefix.Length)
         |> pixelTypeNameFromSuffix
 
+    let private sourcePrefix availableMemory line =
+        $"source {availableMemory}{Environment.NewLine}{line}"
+
     let private elementLine (state: PipelineNodeState) =
         match state.Definition.Id with
-        | "Source" ->
-            let availableMemory = paramValue "availableMemory" state
-            $"source {availableMemory}"
         | id when id.StartsWith("Zero", StringComparison.Ordinal) ->
+            let availableMemory = paramValue "availableMemory" state
             let pixelType = pixelTypeNameFromId "Zero" id
             let width = paramValue "width" state
             let height = paramValue "height" state
             let depth = paramValue "depth" state
-            $"|> zero<{pixelType}> {width} {height} {depth}"
+            $"|> zero<{pixelType}> {width} {height} {depth}" |> sourcePrefix availableMemory
         | id when id.StartsWith("ReadRandom", StringComparison.Ordinal) ->
+            let availableMemory = paramValue "availableMemory" state
             let pixelType = pixelTypeNameFromId "ReadRandom" id
             let depth = paramValue "depth" state
             let input = paramValue "input" state |> quote
             let suffix = paramValue "suffix" state |> quote
-            $"|> readRandom<{pixelType}> {depth} {input} {suffix}"
+            $"|> readRandom<{pixelType}> {depth} {input} {suffix}" |> sourcePrefix availableMemory
         | id when id.StartsWith("ReadChunks", StringComparison.Ordinal) ->
+            let availableMemory = paramValue "availableMemory" state
             let pixelType = pixelTypeNameFromId "ReadChunks" id
             let input = paramValue "input" state |> quote
             let suffix = paramValue "suffix" state |> quote
-            $"|> readChunks<{pixelType}> {input} {suffix}"
+            $"|> readChunks<{pixelType}> {input} {suffix}" |> sourcePrefix availableMemory
         | id when id.StartsWith("Read", StringComparison.Ordinal) ->
+            let availableMemory = paramValue "availableMemory" state
             let pixelType = pixelTypeNameFromId "Read" id
             let input = paramValue "input" state |> quote
             let suffix = paramValue "suffix" state |> quote
-            $"|> read<{pixelType}> {input} {suffix}"
+            $"|> read<{pixelType}> {input} {suffix}" |> sourcePrefix availableMemory
         | "WriteInChunks" ->
             let output = paramValue "output" state |> quote
             let suffix = paramValue "suffix" state |> quote
@@ -120,6 +124,8 @@ module PipelineCodeGenerator =
         | id when id.StartsWith("ScalarMulImage", StringComparison.Ordinal) ->
             let value = paramValue "value" state
             $">=> scalarMulImage {value}"
+        | id when id.StartsWith("MulPair", StringComparison.Ordinal) ->
+            ">>=> mulPair"
         | "DiscreteGaussian" ->
             let sigma = paramValue "sigma" state
             let outputRegionMode = paramValue "outputRegionMode" state |> optionRaw
@@ -174,8 +180,6 @@ module PipelineCodeGenerator =
             let output = paramValue "output" state |> quote
             let suffix = paramValue "suffix" state |> quote
             $">=> write {output} {suffix}"
-        | "Sink" ->
-            "|> sink"
         | id ->
             $"// Unsupported element: {state.Title}"
 
@@ -227,31 +231,32 @@ module PipelineCodeGenerator =
             if expression.IsLinked then expression.Value else quote expression.Value
 
         match node.FunctionId with
-        | "Source" ->
-            let availableMemory = parameterValue "availableMemory"
-            $"source {availableMemory}"
         | id when id.StartsWith("Zero", StringComparison.Ordinal) ->
+            let availableMemory = parameterValue "availableMemory"
             let pixelType = pixelTypeNameFromId "Zero" id
             let width = parameterValue "width"
             let height = parameterValue "height"
             let depth = parameterValue "depth"
-            $"|> zero<{pixelType}> {width} {height} {depth}"
+            $"|> zero<{pixelType}> {width} {height} {depth}" |> sourcePrefix availableMemory
         | id when id.StartsWith("ReadRandom", StringComparison.Ordinal) ->
+            let availableMemory = parameterValue "availableMemory"
             let pixelType = pixelTypeNameFromId "ReadRandom" id
             let depth = parameterValue "depth"
             let input = quotedParameter "input"
             let suffix = quotedParameter "suffix"
-            $"|> readRandom<{pixelType}> {depth} {input} {suffix}"
+            $"|> readRandom<{pixelType}> {depth} {input} {suffix}" |> sourcePrefix availableMemory
         | id when id.StartsWith("ReadChunks", StringComparison.Ordinal) ->
+            let availableMemory = parameterValue "availableMemory"
             let pixelType = pixelTypeNameFromId "ReadChunks" id
             let input = quotedParameter "input"
             let suffix = quotedParameter "suffix"
-            $"|> readChunks<{pixelType}> {input} {suffix}"
+            $"|> readChunks<{pixelType}> {input} {suffix}" |> sourcePrefix availableMemory
         | id when id.StartsWith("Read", StringComparison.Ordinal) ->
+            let availableMemory = parameterValue "availableMemory"
             let pixelType = pixelTypeNameFromId "Read" id
             let input = quotedParameter "input"
             let suffix = quotedParameter "suffix"
-            $"|> read<{pixelType}> {input} {suffix}"
+            $"|> read<{pixelType}> {input} {suffix}" |> sourcePrefix availableMemory
         | "WriteInChunks" ->
             let output = quotedParameter "output"
             let suffix = quotedParameter "suffix"
@@ -273,6 +278,8 @@ module PipelineCodeGenerator =
         | id when id.StartsWith("ScalarMulImage", StringComparison.Ordinal) ->
             let value = parameterValue "value"
             $">=> scalarMulImage {value}"
+        | id when id.StartsWith("MulPair", StringComparison.Ordinal) ->
+            ">>=> mulPair"
         | "DiscreteGaussian" ->
             let sigma = parameterValue "sigma"
             let outputRegionMode = parameterValue "outputRegionMode" |> optionRaw
@@ -327,8 +334,6 @@ module PipelineCodeGenerator =
             let output = quotedParameter "output"
             let suffix = quotedParameter "suffix"
             $">=> write {output} {suffix}"
-        | "Sink" ->
-            "|> sink"
         | _ ->
             $"// Unsupported element: {node.FunctionId}"
 
@@ -348,41 +353,145 @@ module PipelineCodeGenerator =
         let nodesById = graph.Nodes |> Seq.map (fun node -> node.Id, node) |> Map.ofSeq
         let scalarNodes = graph.Nodes |> Array.filter (fun node -> node.FunctionId.StartsWith("Scalar", StringComparison.Ordinal))
         let scalarNamesByNodeId = scalarNames scalarNodes
+        let newLine = Environment.NewLine
 
         let dataEdges =
             graph.Edges
             |> Array.filter (fun edge -> edge.FromKind <> "scalarOutput" && edge.ToKind <> "parameterInput")
 
-        let nextDataNodeId nodeId =
+        let indentBlock spaces (text: string) =
+            let prefix = String.replicate spaces " "
+
+            text.Split([| newLine |], StringSplitOptions.None)
+            |> Array.map (fun line -> if String.IsNullOrWhiteSpace line then line else prefix + line)
+            |> String.concat newLine
+
+        let parenthesizeBlock (text: string) =
+            $"({newLine}{indentBlock 4 text}{newLine})"
+
+        let incomingDataEdge nodeId port =
             dataEdges
-            |> Array.tryFind (fun edge -> edge.FromNode = nodeId)
-            |> Option.map _.ToNode
+            |> Array.tryFind (fun edge -> edge.ToNode = nodeId && edge.ToPort = port)
 
-        let orderedPipelineNodes =
-            let rec walk visited nodeId =
-                if Set.contains nodeId visited then
-                    []
-                else
-                    match nodesById |> Map.tryFind nodeId with
-                    | Some node when not (node.FunctionId.StartsWith("Scalar", StringComparison.Ordinal)) ->
-                        node :: (nextDataNodeId nodeId |> Option.map (walk (Set.add nodeId visited)) |> Option.defaultValue [])
-                    | _ -> []
+        let sameOutputEdge (left: SavedEdge) (right: SavedEdge) =
+            left.FromNode = right.FromNode
+            && left.FromPort = right.FromPort
+            && left.FromKind = right.FromKind
 
-            let sourceNodes =
-                graph.Nodes
-                |> Array.filter (fun node -> node.FunctionId = "Source")
+        let stageCall (node: SavedNode) =
+            let line = savedElementLine graph nodesById scalarNamesByNodeId node
 
-            let walked =
-                sourceNodes
-                |> Array.toList
-                |> List.collect (fun source -> walk Set.empty source.Id)
-
-            if walked.Length > 0 then
-                walked
+            if line.StartsWith(">=> ", StringComparison.Ordinal) then
+                Some(line.Substring(4))
+            elif line.StartsWith(">>=> ", StringComparison.Ordinal) then
+                Some(line.Substring(5))
             else
+                None
+
+        let composeStages (left: string) (right: string) =
+            $"{left}{newLine}>=> {right}"
+
+        let formatStageTuple (left: string) (right: string) =
+            if left.Contains(newLine, StringComparison.Ordinal) || right.Contains(newLine, StringComparison.Ordinal) then
+                $">=>> ({newLine}{indentBlock 4 left},{newLine}{indentBlock 4 right}{newLine})"
+            else
+                $">=>> ({left}, {right})"
+
+        let rec pipelineExpression visited (node: SavedNode) =
+            if visited |> Set.contains node.Id then
+                $"// Cannot generate F#: cycle detected at {node.FunctionId}"
+            else
+                let visited = visited |> Set.add node.Id
+
+                let inputExpression port =
+                    match incomingDataEdge node.Id port with
+                    | Some edge ->
+                        match nodesById |> Map.tryFind edge.FromNode with
+                        | Some upstream -> pipelineExpression visited upstream
+                        | None -> $"// Cannot generate F#: missing upstream node {edge.FromNode}"
+                    | None -> $"// Cannot generate F#: missing input {port} for {node.FunctionId}"
+
+                let rec branchStageExpression commonInputEdge visited (node: SavedNode) =
+                    if visited |> Set.contains node.Id then
+                        None
+                    else
+                        let visited = visited |> Set.add node.Id
+
+                        match incomingDataEdge node.Id 0, stageCall node with
+                        | Some incoming, Some call when sameOutputEdge incoming commonInputEdge ->
+                            Some call
+                        | Some incoming, Some call ->
+                            nodesById
+                            |> Map.tryFind incoming.FromNode
+                            |> Option.bind (branchStageExpression commonInputEdge visited)
+                            |> Option.map (fun upstream -> composeStages upstream call)
+                        | _ ->
+                            None
+
+                let sharedFanOutExpression () =
+                    match incomingDataEdge node.Id 0, incomingDataEdge node.Id 1 with
+                    | Some leftEdge, Some rightEdge when sameOutputEdge leftEdge rightEdge ->
+                        nodesById
+                        |> Map.tryFind leftEdge.FromNode
+                        |> Option.map (fun sharedNode ->
+                            let shared = pipelineExpression visited sharedNode
+                            let fanOut = formatStageTuple "idStage \"left\"" "idStage \"right\""
+                            $"{shared}{newLine}{fanOut}{newLine}>>=> mulPair")
+                    | Some leftEdge, Some rightEdge ->
+                        match nodesById |> Map.tryFind leftEdge.FromNode, nodesById |> Map.tryFind rightEdge.FromNode with
+                        | Some leftNode, Some rightNode ->
+                            match incomingDataEdge leftNode.Id 0, incomingDataEdge rightNode.Id 0 with
+                            | Some leftInput, Some rightInput when sameOutputEdge leftInput rightInput ->
+                                match nodesById |> Map.tryFind leftInput.FromNode with
+                                | Some sharedNode ->
+                                    match branchStageExpression leftInput Set.empty leftNode, branchStageExpression leftInput Set.empty rightNode with
+                                    | Some leftStage, Some rightStage ->
+                                        let shared = pipelineExpression visited sharedNode
+                                        Some $"{shared}{newLine}{formatStageTuple leftStage rightStage}{newLine}>>=> mulPair"
+                                    | _ -> None
+                                | None -> None
+                            | _ -> None
+                        | _ -> None
+                    | _ -> None
+
+                match node.FunctionId with
+                | id when id.StartsWith("MulPair", StringComparison.Ordinal) ->
+                    match sharedFanOutExpression () with
+                    | Some expression ->
+                        expression
+                    | None ->
+                        let left = inputExpression 0
+                        let right = inputExpression 1
+                        let left = parenthesizeBlock left
+                        let right = parenthesizeBlock right
+                        $"({newLine}{indentBlock 4 left},{newLine}{indentBlock 4 right}{newLine}){newLine}||> zip{newLine}>>=> mulPair"
+                | _ ->
+                    let line = savedElementLine graph nodesById scalarNamesByNodeId node
+
+                    match incomingDataEdge node.Id 0 with
+                    | Some _ ->
+                        let input = inputExpression 0
+                        $"{input}{newLine}{line}"
+                    | None ->
+                        line
+
+        let generatedPipelines =
+            let appendSinkIfTerminalWrite (node: SavedNode) expression =
+                match node.FunctionId with
+                | "Write"
+                | "WriteInChunks" ->
+                    $"{expression}{newLine}|> sink"
+                | _ ->
+                    expression
+
+            let terminalNodes =
                 graph.Nodes
-                |> Array.filter (fun node -> not (node.FunctionId.StartsWith("Scalar", StringComparison.Ordinal)))
-                |> Array.toList
+                |> Array.filter (fun node ->
+                    not (node.FunctionId.StartsWith("Scalar", StringComparison.Ordinal))
+                    && not (dataEdges |> Array.exists (fun edge -> edge.FromNode = node.Id)))
+
+            terminalNodes
+            |> Array.map (fun node -> pipelineExpression Set.empty node |> appendSinkIfTerminalWrite node)
 
         builder.AppendLine("open StackProcessing") |> ignore
         builder.AppendLine() |> ignore
@@ -395,8 +504,11 @@ module PipelineCodeGenerator =
 
             builder.AppendLine() |> ignore
 
-        orderedPipelineNodes
-        |> Seq.map (savedElementLine graph nodesById scalarNamesByNodeId)
-        |> Seq.iter (fun line -> builder.AppendLine(line) |> ignore)
+        generatedPipelines
+        |> Seq.iteri (fun index expression ->
+            if index > 0 then
+                builder.AppendLine() |> ignore
+
+            builder.AppendLine(expression) |> ignore)
 
         builder.ToString().TrimEnd()

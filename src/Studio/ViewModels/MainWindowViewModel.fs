@@ -444,15 +444,6 @@ type MainWindowViewModel() as this =
         drawing.Connectors.Add(connector :> IConnector)
         this.MarkGraphDirty()
 
-    (*
-    let addSeedNodes () =
-        let nodes =
-            [ "Source"; "ReadFloat64"; "DiscreteGaussian"; "CastUInt8"; "Write"; "Sink" ]
-            |> List.mapi createNode
-
-        for node in nodes do
-            drawing.Nodes.Add(node :> INode)
-    *)
     do
         updatePaletteGroups()
 
@@ -499,9 +490,6 @@ type MainWindowViewModel() as this =
                     addConnector startPin endPin
                 | _ -> ())
 
-    member this.AddSourceCommand =
-        SimpleCommand((fun _ -> this.AddElement("Source")), (fun _ -> true)) :> ICommand
-
     member this.AddReadCommand =
         SimpleCommand((fun _ -> this.AddElement("ReadFloat64")), (fun _ -> true)) :> ICommand
 
@@ -513,9 +501,6 @@ type MainWindowViewModel() as this =
 
     member this.AddWriteCommand =
         SimpleCommand((fun _ -> this.AddElement("Write")), (fun _ -> true)) :> ICommand
-
-    member this.AddSinkCommand =
-        SimpleCommand((fun _ -> this.AddElement("Sink")), (fun _ -> true)) :> ICommand
 
     member this.AddPaletteElementCommand =
         SimpleCommand(
