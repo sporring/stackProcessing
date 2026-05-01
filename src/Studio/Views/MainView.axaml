@@ -27,6 +27,32 @@
                 </ControlTemplate>
             </Setter>
         </Style>
+
+        <Style Selector="ne|Pin[Id=__ParameterInput]">
+            <Setter Property="Template">
+                <ControlTemplate TargetType="ne:Pin">
+                    <Polygon Width="{TemplateBinding Width}"
+                             Height="{TemplateBinding Height}"
+                             Points="0,0 14,0 7,14"
+                             Fill="#8A5A22"
+                             Stroke="#111111"
+                             StrokeThickness="2" />
+                </ControlTemplate>
+            </Setter>
+        </Style>
+
+        <Style Selector="ne|Pin[Id=__ScalarOutput]">
+            <Setter Property="Template">
+                <ControlTemplate TargetType="ne:Pin">
+                    <Polygon Width="{TemplateBinding Width}"
+                             Height="{TemplateBinding Height}"
+                             Points="0,0 14,0 7,14"
+                             Fill="#8A5A22"
+                             Stroke="#111111"
+                             StrokeThickness="2" />
+                </ControlTemplate>
+            </Setter>
+        </Style>
     </UserControl.Styles>
 
     <UserControl.DataTemplates>
@@ -204,13 +230,19 @@
                     <ItemsControl ItemsSource="{Binding SelectedNode.State.Parameters}">
                         <ItemsControl.ItemTemplate>
                             <DataTemplate x:DataType="models:PipelineParameterViewModel">
-                                <Grid ColumnDefinitions="120,*"
+                                <Grid ColumnDefinitions="92,72,*"
                                       Margin="0,0,0,10">
                                     <TextBlock Text="{Binding Label}"
                                                VerticalAlignment="Center"
                                                FontSize="12" />
-                                    <TextBox Grid.Column="1"
+                                    <CheckBox Grid.Column="1"
+                                              Content="Graph"
+                                              IsChecked="{Binding UseInput, Mode=TwoWay}"
+                                              VerticalAlignment="Center"
+                                              FontSize="11" />
+                                    <TextBox Grid.Column="2"
                                              Text="{Binding Value, Mode=TwoWay}"
+                                             IsEnabled="{Binding IsValueEditable}"
                                              MinHeight="30" />
                                 </Grid>
                             </DataTemplate>

@@ -37,6 +37,25 @@ type BasicType =
     | String
     | Unit
 
+module BasicType = 
+  let toString (tp:BasicType) : string = 
+      match tp with
+      | Numeric Number -> "Number"
+      | Numeric UInt8 -> "UInt8"
+      | Numeric Int8 -> "Int8"
+      | Numeric UInt16 -> "UInt16"
+      | Numeric Int16 -> "Int16"
+      | Numeric UInt32 -> "UInt32"
+      | Numeric Int32 -> "Int32"
+      | Numeric UInt64 -> "UInt64"
+      | Numeric Int64 -> "Int64"
+      | Numeric Float32 -> "Float32"
+      | Numeric Float64 -> "Float64"
+      | Numeric Complex -> "Complex"
+      | Bool -> "Bool"
+      | String -> "String"
+      | Unit -> "Unit"
+
 type PortType = // all but unit are lists
     | Image of NumericType
     | Scalar of BasicType
@@ -111,7 +130,8 @@ type PipelineGraph =
 [<CLIMutable>]
 type SavedParameter =
     { Key: string
-      Value: string }
+      Value: string
+      UseInput: bool }
 
 [<CLIMutable>]
 type SavedNode =
@@ -124,8 +144,10 @@ type SavedNode =
 [<CLIMutable>]
 type SavedEdge =
     { FromNode: string
+      FromKind: string
       FromPort: int
       ToNode: string
+      ToKind: string
       ToPort: int }
 
 [<CLIMutable>]

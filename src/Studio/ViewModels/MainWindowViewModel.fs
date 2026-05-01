@@ -6,6 +6,7 @@ open System.Collections.ObjectModel
 open System.Collections.Specialized
 open System.ComponentModel
 open System.Windows.Input
+open Avalonia.Threading
 open Graph
 open NodeEditor.Mvvm
 open NodeEditor.Model
@@ -22,28 +23,96 @@ type private SimpleCommand(execute: obj -> unit, canExecute: obj -> bool) =
         [<CLIEvent>]
         member _.CanExecuteChanged = canExecuteChanged.Publish
 
-type PipelinePinViewModel(alignment: PinAlignment, port: Port) =
+type PipelinePinKind =
+    | DataInput
+    | DataOutput
+    | ParameterInput
+    | ScalarOutput
+
+module PipelinePinKind =
+    let toString kind =
+        match kind with
+        | DataInput -> "dataInput"
+        | DataOutput -> "dataOutput"
+        | ParameterInput -> "parameterInput"
+        | ScalarOutput -> "scalarOutput"
+
+    let ofString value =
+        match value with
+        | "parameterInput" -> ParameterInput
+        | "scalarOutput" -> ScalarOutput
+        | "dataOutput" -> DataOutput
+        | _ -> DataInput
+
+    let isInput kind =
+        match kind with
+        | DataInput
+        | ParameterInput -> true
+        | DataOutput
+        | ScalarOutput -> false
+
+    let isOutput kind = not (isInput kind)
+
+type PipelinePinViewModel(alignment: PinAlignment, port: Port, kind: PipelinePinKind, ?parameterKey: string) =
     inherit PinViewModel()
 
+    let mutable isActive = kind <> ParameterInput
+
     member _.Port = port
+    member _.Kind = kind
+    member _.ParameterKey = defaultArg parameterKey ""
+    member _.IsActive = isActive
+
+    member _.PinOpacity =
+        if kind = ParameterInput && not isActive then 0.0 else 1.0
+
+    member this.SetActive(value: bool) =
+        if isActive <> value then
+            isActive <- value
+            this.OnPropertyChanged(nameof this.IsActive)
+            this.OnPropertyChanged(nameof this.PinOpacity)
+
+    member _.PinBrush =
+        match kind with
+        | ParameterInput
+        | ScalarOutput -> "#8A5A22"
+        | DataInput
+        | DataOutput -> "#FFFFFF"
 
     member _.TrianglePoints =
-        match alignment with
-        | PinAlignment.Left -> "0,0 14,7 0,14"
-        | PinAlignment.Right -> "0,0 14,7 0,14"
-        | _ -> "0,0 14,7 0,14"
+        match kind with
+        | ParameterInput
+        | ScalarOutput -> "0,0 14,0 7,14"
+        | DataInput -> "14,0 0,7 14,14"
+        | DataOutput -> "0,0 14,7 0,14"
+
+    member _.IsInput = PipelinePinKind.isInput kind
+    member _.IsOutput = PipelinePinKind.isOutput kind
+
+module private PortMapping =
+    let parameterPort (parameter: PipelineParameterViewModel) =
+        { Name = parameter.Label
+          Type = Scalar parameter.ParameterType }
 
 [<AllowNullLiteral>]
 type PipelineNodeViewModel(
     state: PipelineNodeState,
     selectNode: PipelineNodeViewModel -> unit,
     getDrawingSize: unit -> float * float,
-    markGraphDirty: unit -> unit) as this =
+    markGraphDirty: unit -> unit,
+    removePinConnections: IPin seq -> unit,
+    refreshNodePins: PipelineNodeViewModel -> unit) as this =
     inherit NodeViewModel()
 
-    let addPipelinePin x y alignment (port: Port) =
-        let pin = PipelinePinViewModel(alignment, port)
-        pin.Name <- port.Name
+    let addPipelinePin x y alignment kind parameterKey (port: Port) =
+        let pin = PipelinePinViewModel(alignment, port, kind, ?parameterKey = parameterKey)
+        pin.Name <-
+            match kind with
+            | ParameterInput -> "__ParameterInput"
+            | ScalarOutput -> "__ScalarOutput"
+            | DataInput
+            | DataOutput -> port.Name
+
         pin.Parent <- this
         pin.X <- x
         pin.Y <- y
@@ -51,6 +120,7 @@ type PipelineNodeViewModel(
         pin.Height <- 14.
         pin.Alignment <- alignment
         this.Pins.Add(pin :> IPin)
+        pin :> IPin
 
     let nodeHeight =
         let portCount = max state.Definition.Inputs.Length state.Definition.Outputs.Length
@@ -71,13 +141,97 @@ type PipelineNodeViewModel(
         this.Height <- nodeHeight
         this.Pins <- ObservableCollection<IPin>()
 
+        state.Parameters
+        |> Seq.iter (fun parameter ->
+            parameter.PropertyChanged.Add(fun args ->
+                if args.PropertyName = nameof parameter.UseInput then
+                    this.SyncParameterPinVisibility()
+                    refreshNodePins this
+                    markGraphDirty()))
+
+        this.InitializePins()
+
+    member private this.RemoveConnectionsForPin(pin: IPin) =
+        removePinConnections [ pin ]
+
+    member private this.TryFindParameterPin(parameterKey: string) =
+        this.Pins
+        |> Seq.tryPick (function
+            | :? PipelinePinViewModel as pin when pin.Kind = ParameterInput && pin.ParameterKey = parameterKey ->
+                Some(pin :> IPin)
+            | _ -> None)
+
+    member private this.SetParameterPinVisibility(parameter: PipelineParameterViewModel, pin: IPin) =
+        if parameter.UseInput then
+            pin.Width <- 14.
+            pin.Height <- 14.
+
+            match pin with
+            | :? PipelinePinViewModel as parameterPin -> parameterPin.SetActive(true)
+            | _ -> ()
+        else
+            this.RemoveConnectionsForPin(pin)
+            pin.X <- -10000.
+            pin.Y <- -10000.
+            pin.Width <- 0.
+            pin.Height <- 0.
+
+            match pin with
+            | :? PipelinePinViewModel as parameterPin -> parameterPin.SetActive(false)
+            | _ -> ()
+
+    member private this.AddParameterPin(index: int, count: int, parameter: PipelineParameterViewModel) =
+        let spacing = this.Width / float (count + 1)
+        let x = spacing * float (index + 1) - 7.
+        let pin = addPipelinePin x 0. PinAlignment.Top ParameterInput (Some parameter.Key) (PortMapping.parameterPort parameter)
+        this.SetParameterPinVisibility(parameter, pin)
+
+        this.TryFindParameterPin(parameter.Key)
+        |> Option.iter (fun pin -> this.SetParameterPinVisibility(parameter, pin))
+
+    member private this.SyncParameterPinVisibility() =
+        let parameters = state.Parameters |> Seq.toList
+
+        parameters
+        |> List.iteri (fun index parameter ->
+            match this.TryFindParameterPin(parameter.Key) with
+            | Some pin ->
+                let spacing = this.Width / float (parameters.Length + 1)
+                pin.X <- spacing * float (index + 1) - 7.
+                pin.Y <- 0.
+                this.SetParameterPinVisibility(parameter, pin)
+            | None ->
+                this.AddParameterPin(index, parameters.Length, parameter))
+
+    member private this.InitializePins() =
+        this.Pins.Clear()
+
         state.Definition.Inputs
         |> List.iteri (fun portIndex port ->
-            addPipelinePin 0. (verticalPinPosition portIndex state.Definition.Inputs.Length) PinAlignment.Left port)
+            addPipelinePin 0. (verticalPinPosition portIndex state.Definition.Inputs.Length) PinAlignment.Left DataInput None port |> ignore)
 
         state.Definition.Outputs
         |> List.iteri (fun portIndex port ->
-            addPipelinePin 110. (verticalPinPosition portIndex state.Definition.Outputs.Length) PinAlignment.Right port)
+            let kind =
+                if state.Definition.Id.StartsWith("Scalar", StringComparison.Ordinal) then ScalarOutput else DataOutput
+
+            let alignment =
+                if kind = ScalarOutput then PinAlignment.Bottom else PinAlignment.Right
+
+            let x =
+                if kind = ScalarOutput then this.Width / 2. - 7. else 110.
+
+            let y =
+                if kind = ScalarOutput then nodeHeight else verticalPinPosition portIndex state.Definition.Outputs.Length
+
+            addPipelinePin x y alignment kind None port |> ignore)
+
+        let parameters = state.Parameters |> Seq.toList
+
+        parameters
+        |> List.iteri (fun index parameter -> this.AddParameterPin(index, parameters.Length, parameter))
+
+        this.SyncParameterPinVisibility()
 
     member _.State = state
 
@@ -138,7 +292,7 @@ type MainWindowViewModel() as this =
         let parameters =
             definition.Parameters
             |> List.map (fun parameter ->
-                PipelineParameterViewModel(parameter.Label, parameter.Key, parameter.DefaultValue))
+                PipelineParameterViewModel(parameter.Label, parameter.Key, parameter.DefaultValue, parameter.Type))
 
         PipelineNodeState(definition, parameters)
 
@@ -161,42 +315,109 @@ type MainWindowViewModel() as this =
         state.Parameters
         |> Seq.map (fun parameter ->
             { Key = parameter.Key
-              Value = parameter.Value })
+              Value = parameter.Value
+              UseInput = parameter.UseInput })
         |> Seq.toArray
 
     let setParameterValues (state: PipelineNodeState) (parameters: SavedParameter array) =
         let values =
             parameters
-            |> Seq.map (fun parameter -> parameter.Key, parameter.Value)
+            |> Seq.map (fun parameter -> parameter.Key, parameter)
             |> Map.ofSeq
 
         for parameter in state.Parameters do
             match values |> Map.tryFind parameter.Key with
-            | Some value -> parameter.Value <- value
+            | Some savedParameter ->
+                parameter.Value <- savedParameter.Value
+                parameter.UseInput <- savedParameter.UseInput
             | None -> ()
 
     let tryPin alignment (node: INode) =
         node.Pins
         |> Seq.tryFind (fun pin -> pin.Alignment = alignment)
 
-    let pinByIndex alignment index (node: PipelineNodeViewModel) =
-        node.Pins
-        |> Seq.filter (fun pin -> pin.Alignment = alignment)
-        |> Seq.tryItem index
+    let pinByKindIndex kind index (node: PipelineNodeViewModel) =
+        if kind = ParameterInput then
+            node.State.Parameters
+            |> Seq.tryItem index
+            |> Option.bind (fun parameter ->
+                node.Pins
+                |> Seq.choose (function
+                    | :? PipelinePinViewModel as pin when pin.Kind = ParameterInput && pin.ParameterKey = parameter.Key -> Some pin
+                    | _ -> None)
+                |> Seq.tryHead)
+        else
+            node.Pins
+            |> Seq.choose (function
+                | :? PipelinePinViewModel as pin when pin.Kind = kind -> Some pin
+                | _ -> None)
+            |> Seq.tryItem index
 
-    let pinIndex alignment (pin: IPin) (node: PipelineNodeViewModel) =
-        node.Pins
-        |> Seq.filter (fun candidate -> candidate.Alignment = alignment)
-        |> Seq.mapi (fun index candidate -> index, candidate)
-        |> Seq.tryFind (fun (_, candidate) -> Object.ReferenceEquals(candidate, pin))
-        |> Option.map fst
+    let pinIndexByKind kind (pin: IPin) (node: PipelineNodeViewModel) =
+        match pin with
+        | :? PipelinePinViewModel as parameterPin when kind = ParameterInput ->
+            node.State.Parameters
+            |> Seq.tryFindIndex (fun parameter -> parameter.Key = parameterPin.ParameterKey)
+        | _ ->
+            node.Pins
+            |> Seq.choose (function
+                | :? PipelinePinViewModel as candidate when candidate.Kind = kind -> Some candidate
+                | _ -> None)
+            |> Seq.mapi (fun index candidate -> index, candidate)
+            |> Seq.tryFind (fun (_, candidate) -> Object.ReferenceEquals(candidate, pin))
+            |> Option.map fst
 
     let canConnectPins (startPin: IPin) (endPin: IPin) =
         match startPin, endPin with
         | :? PipelinePinViewModel as outputPin, (:? PipelinePinViewModel as inputPin)
-            when startPin.Alignment = PinAlignment.Right && endPin.Alignment = PinAlignment.Left ->
+            when outputPin.IsOutput && outputPin.IsActive && inputPin.IsInput && inputPin.IsActive ->
             PortType.canConnect outputPin.Port.Type inputPin.Port.Type
         | _ -> false
+
+    let connectorOrientation (startPin: IPin) (endPin: IPin) =
+        match startPin, endPin with
+        | (:? PipelinePinViewModel as outputPin), (:? PipelinePinViewModel as inputPin)
+            when outputPin.Kind = ScalarOutput || inputPin.Kind = ParameterInput ->
+            ConnectorOrientation.Vertical
+        | _ ->
+            ConnectorOrientation.Horizontal
+
+    let removePinConnections (pins: IPin seq) =
+        let pins = pins |> Seq.toArray
+
+        let connectors =
+            drawing.Connectors
+            |> Seq.filter (fun connector ->
+                pins
+                |> Array.exists (fun pin -> Object.ReferenceEquals(pin, connector.Start) || Object.ReferenceEquals(pin, connector.End)))
+            |> Seq.toArray
+
+        for connector in connectors do
+            drawing.Connectors.Remove(connector) |> ignore
+
+    let refreshNodePins (node: PipelineNodeViewModel) =
+        if drawing.Nodes.Contains(node :> INode) then
+            let connectors =
+                drawing.Connectors
+                |> Seq.filter (fun connector -> Object.ReferenceEquals(connector.Start.Parent, node) || Object.ReferenceEquals(connector.End.Parent, node))
+                |> Seq.toArray
+
+            for connector in connectors do
+                drawing.Connectors.Remove(connector) |> ignore
+
+            let index =
+                drawing.Nodes
+                |> Seq.tryFindIndex (fun candidate -> Object.ReferenceEquals(candidate, node))
+                |> Option.defaultValue (drawing.Nodes.Count - 1)
+
+            drawing.Nodes.Remove(node :> INode) |> ignore
+            drawing.Nodes.Insert(index, node :> INode)
+
+            Dispatcher.UIThread.Post(
+                (fun () ->
+                    for connector in connectors do
+                        drawing.Connectors.Add(connector) |> ignore),
+                DispatcherPriority.Background)
 
     let createNode index functionId =
         let node =
@@ -204,7 +425,9 @@ type MainWindowViewModel() as this =
                 createState functionId,
                 (fun node -> this.SelectedNode <- node),
                 (fun () -> drawing.Width, drawing.Height),
-                (fun () -> this.MarkGraphDirty()))
+                (fun () -> this.MarkGraphDirty()),
+                removePinConnections,
+                refreshNodePins)
 
         watchState node.State
 
@@ -217,7 +440,7 @@ type MainWindowViewModel() as this =
         let connector = ConnectorViewModel()
         connector.Start <- startPin
         connector.End <- endPin
-        connector.Orientation <- ConnectorOrientation.Horizontal
+        connector.Orientation <- connectorOrientation startPin endPin
         drawing.Connectors.Add(connector :> IConnector)
         this.MarkGraphDirty()
 
@@ -312,7 +535,7 @@ type MainWindowViewModel() as this =
         SimpleCommand(
             (fun _ ->
                 match this.ValidateGraph() with
-                | Ok () -> generatedProgram <- PipelineCodeGenerator.generate (pipelineStates ())
+                | Ok () -> generatedProgram <- PipelineCodeGenerator.generateSavedGraph (this.ExportGraph())
                 | Error message -> generatedProgram <- message
 
                 this.RaiseGeneratedProgramChanged()),
@@ -346,12 +569,14 @@ type MainWindowViewModel() as this =
                 | (:? PipelinePinViewModel as startPin), (:? PipelinePinViewModel as endPin) ->
                     match startPin.Parent, endPin.Parent with
                     | (:? PipelineNodeViewModel as startNode), (:? PipelineNodeViewModel as endNode) ->
-                        match pinIndex PinAlignment.Right startPin startNode, pinIndex PinAlignment.Left endPin endNode with
+                        match pinIndexByKind startPin.Kind startPin startNode, pinIndexByKind endPin.Kind endPin endNode with
                         | Some fromPort, Some toPort ->
                             Some
                                 { FromNode = nodeIds[startNode]
+                                  FromKind = PipelinePinKind.toString startPin.Kind
                                   FromPort = fromPort
                                   ToNode = nodeIds[endNode]
+                                  ToKind = PipelinePinKind.toString endPin.Kind
                                   ToPort = toPort }
                         | _ -> None
                     | _ -> None
@@ -388,7 +613,9 @@ type MainWindowViewModel() as this =
                             createState savedNode.FunctionId,
                             (fun node -> this.SelectedNode <- node),
                             (fun () -> drawing.Width, drawing.Height),
-                            (fun () -> this.MarkGraphDirty()))
+                            (fun () -> this.MarkGraphDirty()),
+                            removePinConnections,
+                            refreshNodePins)
 
                     watchState node.State
                     node.X <- savedNode.X
@@ -402,7 +629,13 @@ type MainWindowViewModel() as this =
         for edge in savedGraph.Edges do
             match loadedNodes |> Map.tryFind edge.FromNode, loadedNodes |> Map.tryFind edge.ToNode with
             | Some fromNode, Some toNode ->
-                match pinByIndex PinAlignment.Right edge.FromPort fromNode, pinByIndex PinAlignment.Left edge.ToPort toNode with
+                let fromKind =
+                    if String.IsNullOrWhiteSpace edge.FromKind then DataOutput else PipelinePinKind.ofString edge.FromKind
+
+                let toKind =
+                    if String.IsNullOrWhiteSpace edge.ToKind then DataInput else PipelinePinKind.ofString edge.ToKind
+
+                match pinByKindIndex fromKind edge.FromPort fromNode, pinByKindIndex toKind edge.ToPort toNode with
                 | Some startPin, Some endPin when canConnectPins startPin endPin ->
                     addConnector startPin endPin
                 | Some _, Some _ ->
@@ -517,11 +750,21 @@ type MainWindowViewModel() as this =
             this.MarkGraphDirty()
 
     member _.ValidateGraph() =
+        let shouldRequirePin (pin: IPin) =
+            match pin with
+            | :? PipelinePinViewModel as pipelinePin ->
+                match pipelinePin.Kind with
+                | ParameterInput -> pipelinePin.IsActive
+                | ScalarOutput -> drawing.IsPinConnected(pin)
+                | DataInput
+                | DataOutput -> true
+            | _ -> true
+
         let missingPins =
             drawing.Nodes
             |> Seq.collect (fun node ->
                 node.Pins
-                |> Seq.filter (fun pin -> not (drawing.IsPinConnected(pin)))
+                |> Seq.filter (fun pin -> shouldRequirePin pin && not (drawing.IsPinConnected(pin)))
                 |> Seq.map (fun pin -> $"{node.Name}.{pin.Name}"))
             |> Seq.toArray
 
