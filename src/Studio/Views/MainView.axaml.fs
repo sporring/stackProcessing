@@ -1,7 +1,6 @@
 namespace Studio.Views
 
 open System
-open System.IO
 open System.Threading.Tasks
 open Avalonia
 open Avalonia.Controls
@@ -84,6 +83,14 @@ type MainView() as this =
                 dialog.Show()
             | owner ->
                 do! dialog.ShowDialog(owner)
+        }
+
+    let confirmIfGraphIsNonEmptyAsync (viewModel: MainWindowViewModel) title message =
+        task {
+            if viewModel.HasGraph then
+                return! ConfirmationDialogs.confirmAsync (parentWindow()) title message
+            else
+                return true
         }
 
     let showConnectionPreview (pin: IPin) (pointer: Point) =
@@ -671,10 +678,8 @@ type MainView() as this =
                 if not (isNull file) then
                     let! stream = file.OpenWriteAsync()
                     use stream = stream
-                    stream.SetLength(0L)
-                    use writer = new StreamWriter(stream)
-                    do! writer.WriteAsync(viewModel.ExportGraphJson())
-                    do! writer.FlushAsync()
+                    do! PipelineGraphStorage.writeJsonAsync stream (viewModel.ExportGraph())
+                    viewModel.MarkGraphSaved()
             | _ -> ()
         }
         |> ignore
@@ -686,29 +691,53 @@ type MainView() as this =
             match TopLevel.GetTopLevel(this), this.DataContext with
             | null, _ -> ()
             | _, (:? MainWindowViewModel as viewModel) ->
-                let topLevel = TopLevel.GetTopLevel(this)
-                let jsonType = jsonFileType()
+                let! confirmed =
+                    confirmIfGraphIsNonEmptyAsync
+                        viewModel
+                        "Load graph?"
+                        "Loading a graph will replace the graph currently in memory. Continue?"
 
-                let options =
-                    FilePickerOpenOptions(
-                        Title = "Load pipeline graph",
-                        AllowMultiple = false,
-                        FileTypeFilter = [ jsonType ],
-                        SuggestedFileType = jsonType)
+                if confirmed then
+                    let topLevel = TopLevel.GetTopLevel(this)
+                    let jsonType = jsonFileType()
 
-                let! files = topLevel.StorageProvider.OpenFilePickerAsync(options)
+                    let options =
+                        FilePickerOpenOptions(
+                            Title = "Load pipeline graph",
+                            AllowMultiple = false,
+                            FileTypeFilter = [ jsonType ],
+                            SuggestedFileType = jsonType)
 
-                match files |> Seq.tryHead with
-                | Some file ->
-                    try
-                        let! stream = file.OpenReadAsync()
-                        use stream = stream
-                        use reader = new StreamReader(stream)
-                        let! json = reader.ReadToEndAsync()
-                        viewModel.ImportGraphJson(json)
-                    with ex ->
-                        do! showLoadErrorAsync ex.Message
-                | None -> ()
+                    let! files = topLevel.StorageProvider.OpenFilePickerAsync(options)
+
+                    match files |> Seq.tryHead with
+                    | Some file ->
+                        try
+                            let! stream = file.OpenReadAsync()
+                            use stream = stream
+                            let! graph = PipelineGraphStorage.readJsonAsync stream
+                            viewModel.ImportGraph(graph)
+                        with ex ->
+                            do! showLoadErrorAsync ex.Message
+                    | None -> ()
+            | _ -> ()
+        }
+        |> ignore
+
+    member _.ClearGraphClicked(_sender: obj, args: RoutedEventArgs) =
+        task {
+            args.Handled <- true
+
+            match this.DataContext with
+            | :? MainWindowViewModel as viewModel ->
+                let! confirmed =
+                    confirmIfGraphIsNonEmptyAsync
+                        viewModel
+                        "Clear graph?"
+                        "Clearing will delete the graph currently in memory. Continue?"
+
+                if confirmed then
+                    viewModel.ClearGraph()
             | _ -> ()
         }
         |> ignore
