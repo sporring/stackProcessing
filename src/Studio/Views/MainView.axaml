@@ -99,14 +99,14 @@
         </DataTemplate>
 
         <DataTemplate DataType="models:PipelineNodeContent">
-            <Border Width="110"
-                    Height="48"
+            <Border Width="{Binding Width}"
+                    Height="{Binding Height}"
                     Background="{Binding State.NodeBackground}"
                     BorderBrush="{Binding State.NodeBorderBrush}"
                     BorderThickness="2"
                     Opacity="{Binding State.NodeOpacity}"
                     CornerRadius="6">
-                <TextBlock Text="{Binding Label}"
+                <TextBlock Text="{Binding State.Title}"
                            HorizontalAlignment="Center"
                            VerticalAlignment="Center"
                            FontSize="11"
@@ -133,15 +133,22 @@
                             Spacing="8">
                     <Button Width="76"
                             Click="SaveGraphClicked"
+                            IsEnabled="{Binding CanSaveGraph}"
                             Content="Save" />
+                    <Button Width="76"
+                            Click="SaveGraphAsClicked"
+                            IsEnabled="{Binding CanSaveGraphAs}"
+                            Content="Save As" />
                     <Button Width="76"
                             Click="LoadGraphClicked"
                             Content="Load" />
                     <Button Width="76"
                             Click="ClearGraphClicked"
+                            IsEnabled="{Binding CanClearGraph}"
                             Content="Clear" />
                     <Button Width="76"
                             Command="{Binding RunCommand}"
+                            IsEnabled="{Binding CanRunGraph}"
                             Content="Run" />
                 </StackPanel>
 

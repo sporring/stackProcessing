@@ -82,21 +82,27 @@ type PipelineNodeState(definition: Function, parameters: PipelineParameterViewMo
     member this.NodeBackground =
         if isPaletteDragOutside then
             SolidColorBrush.Parse("#FFF8E1") :> IBrush
+        elif definition.Id = "ComputeStats" then
+            SolidColorBrush.Parse("#F3E0C3") :> IBrush
         else
             SolidColorBrush.Parse("#EAF3FF") :> IBrush
 
     member this.NodeBorderBrush =
         if isPaletteDragOutside then
             SolidColorBrush.Parse("#F2A900") :> IBrush
+        elif definition.Id = "ComputeStats" then
+            SolidColorBrush.Parse("#B7791F") :> IBrush
         else
             SolidColorBrush.Parse("#2F80ED") :> IBrush
 
     member this.NodeOpacity =
         if isPaletteDragOutside then 0.0 else 1.0
 
-type PipelineNodeContent(label: string, state: PipelineNodeState, select: unit -> unit) =
+type PipelineNodeContent(label: string, state: PipelineNodeState, width: float, height: float, select: unit -> unit) =
     member _.Label = label
     member _.State = state
+    member _.Width = width
+    member _.Height = height
     member _.Select() = select()
 
 type PaletteGroupViewModel(title: string, functions: Function seq, isExpanded: bool) =

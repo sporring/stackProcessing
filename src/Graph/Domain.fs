@@ -94,7 +94,6 @@ module BasicType =
 type PortType = // all but unit are lists
     | Image of NumericType
     | Scalar of BasicType
-    | ImageStats
     | Tuple of PortType * PortType
     | Source
     | Sink

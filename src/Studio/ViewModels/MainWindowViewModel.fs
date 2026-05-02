@@ -5,6 +5,8 @@ open System.Collections.Generic
 open System.Collections.ObjectModel
 open System.Collections.Specialized
 open System.ComponentModel
+open System.Globalization
+open System.IO
 open System.Windows.Input
 open Avalonia.Threading
 open Compiler
@@ -108,6 +110,10 @@ module private PortMapping =
         { Name = $"{parameter.Key}: {basicTypeLabel parameter.ParameterType}"
           Type = Scalar parameter.ParameterType }
 
+module private NodeTitle =
+    let quotedString (value: string) =
+        "\"" + value.Replace("\\", "\\\\").Replace("\"", "\\\"") + "\""
+
 module private ScalarNode =
     let typeOptions =
         [ Numeric UInt8
@@ -135,7 +141,138 @@ module private ScalarNode =
         { Name = "Value"
           Type = Scalar(selectedType state) }
 
+    let defaultValue scalarType =
+        match scalarType with
+        | BasicType.Bool -> "true"
+        | BasicType.String -> "value"
+        | BasicType.Unit -> "()"
+        | BasicType.Numeric numericType ->
+            match numericType with
+            | Float32
+            | Float64
+            | Number
+            | Complex -> "1.0"
+            | UInt8
+            | Int8
+            | UInt16
+            | Int16
+            | UInt32
+            | Int32
+            | UInt64
+            | Int64 -> "1"
+
+    let private isInteger (value: string) =
+        let mutable parsed = 0L
+        Int64.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, &parsed)
+
+    let private isUnsignedInteger (value: string) =
+        let mutable parsed = 0UL
+        UInt64.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, &parsed)
+
+    let private isFloat (value: string) =
+        let mutable parsed = 0.0
+        Double.TryParse(value, NumberStyles.Float, CultureInfo.InvariantCulture, &parsed)
+
+    let isValidValue scalarType (value: string) =
+        let trimmed = value.Trim()
+
+        match scalarType with
+        | BasicType.Bool ->
+            String.Equals(trimmed, "true", StringComparison.OrdinalIgnoreCase)
+            || String.Equals(trimmed, "false", StringComparison.OrdinalIgnoreCase)
+        | BasicType.String ->
+            true
+        | BasicType.Unit ->
+            trimmed = "()"
+        | BasicType.Numeric numericType ->
+            match numericType with
+            | UInt8
+            | UInt16
+            | UInt32
+            | UInt64 -> isUnsignedInteger trimmed
+            | Int8
+            | Int16
+            | Int32
+            | Int64 -> isInteger trimmed
+            | Float32
+            | Float64
+            | Number
+            | Complex -> isFloat trimmed
+
+    let ensureValueMatchesType (state: PipelineNodeState) =
+        let selectedType = selectedType state
+
+        state.Parameters
+        |> Seq.tryFind (fun parameter -> parameter.Key = "value")
+        |> Option.iter (fun parameter ->
+            if not (isValidValue selectedType parameter.Value) then
+                parameter.Value <- defaultValue selectedType)
+
+    let title (state: PipelineNodeState) =
+        let value =
+            state.Parameters
+            |> Seq.tryFind (fun parameter -> parameter.Key = "value")
+            |> Option.map (fun parameter -> parameter.Value.Trim())
+            |> Option.filter (String.IsNullOrWhiteSpace >> not)
+
+        match selectedType state, value with
+        | BasicType.String, Some value -> NodeTitle.quotedString value
+        | _, Some value -> value
+        | _ -> state.Definition.DisplayName
+
+module private ScalarOpNode =
+    let typeOptions =
+        [ Numeric UInt8
+          Numeric Int8
+          Numeric UInt16
+          Numeric Int16
+          Numeric UInt32
+          Numeric Int32
+          Numeric UInt64
+          Numeric Int64
+          Numeric Float32
+          Numeric Float64
+          Numeric Complex ]
+        |> List.map BasicType.toString
+
+    let operationOptions = [ "+"; "-"; "*"; "/" ]
+
+    let selectedType (state: PipelineNodeState) =
+        state.Parameters
+        |> Seq.tryFind (fun parameter -> parameter.Key = "type")
+        |> Option.bind (fun parameter -> BasicType.tryParse parameter.Value)
+        |> Option.defaultValue (Numeric Float64)
+
+    let scalarPort (label: string) (state: PipelineNodeState) =
+        let selectedType = selectedType state
+        let label = label.ToLowerInvariant()
+
+        { Name = $"{label}: {BasicType.toString selectedType}"
+          Type = Scalar selectedType }
+
+    let outputPort (state: PipelineNodeState) =
+        let selectedType = selectedType state
+
+        { Name = BasicType.toString selectedType
+          Type = Scalar selectedType }
+
+    let title (state: PipelineNodeState) =
+        let operation =
+            state.Parameters
+            |> Seq.tryFind (fun parameter -> parameter.Key = "operation")
+            |> Option.map _.Value
+            |> Option.filter (fun value -> operationOptions |> List.contains value)
+            |> Option.defaultValue "*"
+
+        $"a {operation} b"
+
 module private SourceImageNode =
+    let hasInputTitle functionId =
+        functionId = "Read" || functionId = "ReadRandom" || functionId = "ReadChunks"
+
+    let hasOutputTitle functionId =
+        functionId = "Write" || functionId = "WriteInChunks"
+
     let typeOptions =
         [ UInt8
           Int8
@@ -161,6 +298,27 @@ module private SourceImageNode =
 
         { Name = NumericType.toString selectedType
           Type = PortType.numericToImage selectedType }
+
+    let private parameterTitle parameterKey fallback (state: PipelineNodeState) =
+        state.Parameters
+        |> Seq.tryFind (fun parameter -> parameter.Key = parameterKey)
+        |> Option.map (fun parameter ->
+            if parameter.UseInput then
+                parameter.Key
+            else
+                parameter.Value.Trim() |> NodeTitle.quotedString)
+        |> Option.filter (String.IsNullOrWhiteSpace >> not)
+        |> Option.defaultValue (NodeTitle.quotedString fallback)
+
+    let title (state: PipelineNodeState) =
+        let parameterText =
+            state.Parameters
+            |> Seq.exists (fun parameter -> parameter.Key = "input")
+            |> function
+                | true -> parameterTitle "input" "input" state
+                | false -> parameterTitle "output" "output" state
+
+        $"{state.Definition.DisplayName} {parameterText}"
 
 module private PairOperationNode =
     let typeOptions =
@@ -218,11 +376,11 @@ module private CastNode =
 module private ScalarImageOperationNode =
     let typeOptions = SourceImageNode.typeOptions
 
+    let operationOptions = [ "+"; "-"; "*"; "/" ]
+
     let isOperation functionId =
-        functionId = "AddScalar"
-        || functionId = "MulScalar"
-        || functionId = "DivScalar"
-        || functionId = "ScalarDiv"
+        functionId = "ImageOpScalar"
+        || functionId = "ScalarOpImage"
         || functionId = "AddNormalNoise"
 
     let selectedType (state: PipelineNodeState) =
@@ -244,8 +402,23 @@ module private ScalarImageOperationNode =
     let valuePort (state: PipelineNodeState) =
         let selectedType = selectedType state
 
-        { Name = $"value: {NumericType.toString selectedType}"
+        { Name = $"a: {NumericType.toString selectedType}"
           Type = Scalar(BasicType.Numeric selectedType) }
+
+    let title (state: PipelineNodeState) =
+        let operation =
+            state.Parameters
+            |> Seq.tryFind (fun parameter -> parameter.Key = "operation")
+            |> Option.map _.Value
+            |> Option.filter (fun value -> operationOptions |> List.contains value)
+            |> Option.defaultValue "*"
+
+        let elementwiseOperation = "." + operation
+
+        match state.Definition.Id with
+        | "ImageOpScalar" -> $"I {elementwiseOperation} a"
+        | "ScalarOpImage" -> $"a {elementwiseOperation} I"
+        | _ -> state.Definition.DisplayName
 
 module private ThresholdNode =
     let typeOptions = SourceImageNode.typeOptions
@@ -298,7 +471,12 @@ type PipelineNodeViewModel(
         pin :> IPin
 
     let nodeHeight =
-        let portCount = max state.Definition.Inputs.Length state.Definition.Outputs.Length
+        let portCount =
+            if state.Definition.Id = "ComputeStats" then
+                state.Definition.Inputs.Length
+            else
+                max state.Definition.Inputs.Length state.Definition.Outputs.Length
+
         max 48. (20. + 22. * float (max 1 portCount))
 
     let verticalPinPosition index count =
@@ -311,9 +489,9 @@ type PipelineNodeViewModel(
 
     do
         this.Name <- state.Title
-        this.Content <- PipelineNodeContent(state.Title, state, fun () -> selectNode this)
-        this.Width <- 110.
+        this.Width <- if state.Definition.Id = "ComputeStats" then 170. else 110.
         this.Height <- nodeHeight
+        this.Content <- PipelineNodeContent(state.Title, state, this.Width, this.Height, fun () -> selectNode this)
         this.Pins <- ObservableCollection<IPin>()
 
         state.Parameters
@@ -321,9 +499,39 @@ type PipelineNodeViewModel(
             parameter.PropertyChanged.Add(fun args ->
                 if args.PropertyName = nameof parameter.UseInput then
                     this.SyncParameterPinVisibility()
+                    if (SourceImageNode.hasInputTitle state.Definition.Id && parameter.Key = "input")
+                       || (SourceImageNode.hasOutputTitle state.Definition.Id && parameter.Key = "output") then
+                        state.Title <- SourceImageNode.title state
+                        this.Name <- state.Title
+
                     refreshNodePins this
                     markGraphDirty()
-                elif (state.Definition.Id = "Scalar" || state.Definition.Id = "Read" || state.Definition.Id = "ReadRandom" || state.Definition.Id = "ReadChunks" || state.Definition.Id = "Zero" || state.Definition.Id = "Threshold" || state.Definition.Id = "AddPair" || state.Definition.Id = "MulPair" || state.Definition.Id = "DivPair" || ScalarImageOperationNode.isOperation state.Definition.Id) && parameter.Key = "type" && args.PropertyName = nameof parameter.Value then
+                elif state.Definition.Id = "Scalar" && parameter.Key = "value" && args.PropertyName = nameof parameter.Value then
+                    state.Title <- ScalarNode.title state
+                    this.Name <- state.Title
+                    markGraphDirty()
+                elif SourceImageNode.hasInputTitle state.Definition.Id && parameter.Key = "input" && args.PropertyName = nameof parameter.Value then
+                    state.Title <- SourceImageNode.title state
+                    this.Name <- state.Title
+                    markGraphDirty()
+                elif SourceImageNode.hasOutputTitle state.Definition.Id && parameter.Key = "output" && args.PropertyName = nameof parameter.Value then
+                    state.Title <- SourceImageNode.title state
+                    this.Name <- state.Title
+                    markGraphDirty()
+                elif state.Definition.Id = "ScalarOp" && parameter.Key = "operation" && args.PropertyName = nameof parameter.Value then
+                    state.Title <- ScalarOpNode.title state
+                    this.Name <- state.Title
+                    markGraphDirty()
+                elif ScalarImageOperationNode.isOperation state.Definition.Id && parameter.Key = "operation" && args.PropertyName = nameof parameter.Value then
+                    state.Title <- ScalarImageOperationNode.title state
+                    this.Name <- state.Title
+                    markGraphDirty()
+                elif (state.Definition.Id = "Scalar" || state.Definition.Id = "ScalarOp" || state.Definition.Id = "Read" || state.Definition.Id = "ReadRandom" || state.Definition.Id = "ReadChunks" || state.Definition.Id = "Zero" || state.Definition.Id = "Threshold" || state.Definition.Id = "AddPair" || state.Definition.Id = "MulPair" || state.Definition.Id = "DivPair" || ScalarImageOperationNode.isOperation state.Definition.Id) && parameter.Key = "type" && args.PropertyName = nameof parameter.Value then
+                    if state.Definition.Id = "Scalar" then
+                        ScalarNode.ensureValueMatchesType state
+                        state.Title <- ScalarNode.title state
+                        this.Name <- state.Title
+
                     this.RebuildPins()
                     refreshNodePins this
                     markGraphDirty()
@@ -367,7 +575,9 @@ type PipelineNodeViewModel(
         let spacing = this.Width / float (count + 1)
         let x = spacing * float (index + 1) - 7.
         let port =
-            if ScalarImageOperationNode.isOperation state.Definition.Id && parameter.Key = "value" then
+            if state.Definition.Id = "ScalarOp" && (parameter.Key = "a" || parameter.Key = "b") then
+                ScalarOpNode.scalarPort parameter.Key state
+            elif ScalarImageOperationNode.isOperation state.Definition.Id && parameter.Key = "value" then
                 ScalarImageOperationNode.valuePort state
             else
                 PortMapping.parameterPort parameter
@@ -398,6 +608,7 @@ type PipelineNodeViewModel(
         let inputs, outputs =
             match state.Definition.Id with
             | "Scalar" -> state.Definition.Inputs, [ ScalarNode.outputPort state ]
+            | "ScalarOp" -> state.Definition.Inputs, [ ScalarOpNode.outputPort state ]
             | "Read"
             | "ReadRandom"
             | "ReadChunks"
@@ -418,7 +629,8 @@ type PipelineNodeViewModel(
         |> List.iteri (fun portIndex port ->
             let kind =
                 match state.Definition.Id with
-                | "Scalar" -> ScalarOutput
+                | "Scalar"
+                | "ScalarOp" -> ScalarOutput
                 | "ComputeStats" -> ReducerOutput
                 | _ -> DataOutput
 
@@ -426,7 +638,13 @@ type PipelineNodeViewModel(
                 if kind = ScalarOutput || kind = ReducerOutput then PinAlignment.Bottom else PinAlignment.Right
 
             let x =
-                if kind = ScalarOutput || kind = ReducerOutput then this.Width / 2. - 7. else 110.
+                if kind = ReducerOutput then
+                    let spacing = this.Width / float (outputs.Length + 1)
+                    spacing * float (portIndex + 1) - 7.
+                elif kind = ScalarOutput then
+                    this.Width / 2. - 7.
+                else
+                    110.
 
             let y =
                 if kind = ScalarOutput || kind = ReducerOutput then nodeHeight else verticalPinPosition portIndex outputs.Length
@@ -470,6 +688,7 @@ type MainWindowViewModel() as this =
     let mutable generatedProgram = ""
     let mutable paletteSearch = ""
     let mutable graphDirty = false
+    let mutable currentGraphPath: string option = None
 
     let editor =
         let editor = EditorViewModel()
@@ -509,6 +728,18 @@ type MainWindowViewModel() as this =
                         |> List.map (fun value -> ParameterOptionViewModel(value, value, true))
 
                     PipelineParameterViewModel(parameter.Label, parameter.Key, parameter.DefaultValue, parameter.Type, options, false)
+                | "ScalarOp", "operation" ->
+                    let options =
+                        ScalarOpNode.operationOptions
+                        |> List.map (fun value -> ParameterOptionViewModel(value, value, true))
+
+                    PipelineParameterViewModel(parameter.Label, parameter.Key, parameter.DefaultValue, parameter.Type, options, false)
+                | "ScalarOp", "type" ->
+                    let options =
+                        ScalarOpNode.typeOptions
+                        |> List.map (fun value -> ParameterOptionViewModel(value, value, true))
+
+                    PipelineParameterViewModel(parameter.Label, parameter.Key, parameter.DefaultValue, parameter.Type, options, false)
                 | ("Read" | "ReadRandom" | "ReadChunks" | "Zero"), "type" ->
                     let options =
                         SourceImageNode.typeOptions
@@ -527,6 +758,12 @@ type MainWindowViewModel() as this =
                         |> List.map (fun value -> ParameterOptionViewModel(value, value, true))
 
                     PipelineParameterViewModel(parameter.Label, parameter.Key, parameter.DefaultValue, parameter.Type, options, false)
+                | functionId, "operation" when ScalarImageOperationNode.isOperation functionId ->
+                    let options =
+                        ScalarImageOperationNode.operationOptions
+                        |> List.map (fun value -> ParameterOptionViewModel(value, value, true))
+
+                    PipelineParameterViewModel(parameter.Label, parameter.Key, parameter.DefaultValue, parameter.Type, options, false)
                 | functionId, "type" when ScalarImageOperationNode.isOperation functionId ->
                     let options =
                         ScalarImageOperationNode.typeOptions
@@ -542,7 +779,20 @@ type MainWindowViewModel() as this =
                 | _ ->
                     PipelineParameterViewModel(parameter.Label, parameter.Key, parameter.DefaultValue, parameter.Type))
 
-        PipelineNodeState(definition, parameters)
+        let state = PipelineNodeState(definition, parameters)
+
+        if definition.Id = "Scalar" then
+            state.Title <- ScalarNode.title state
+        elif definition.Id = "ScalarOp" then
+            state.Title <- ScalarOpNode.title state
+        elif SourceImageNode.hasInputTitle definition.Id then
+            state.Title <- SourceImageNode.title state
+        elif SourceImageNode.hasOutputTitle definition.Id then
+            state.Title <- SourceImageNode.title state
+        elif definition.Id = "ImageOpScalar" || definition.Id = "ScalarOpImage" then
+            state.Title <- ScalarImageOperationNode.title state
+
+        state
 
     let watchState (state: PipelineNodeState) =
         state.Parameters
@@ -595,6 +845,51 @@ type MainWindowViewModel() as this =
 
         pipelineNodes ()
         |> Seq.filter (fun node -> node.State.Definition.Id = "Scalar")
+        |> Seq.iter (fun node ->
+            let allowedType = connectedScalarType node
+
+            node.State.Parameters
+            |> Seq.tryFind (fun parameter -> parameter.Key = "type")
+            |> Option.iter (fun parameter ->
+                for option in parameter.Options do
+                    option.IsEnabled <-
+                        match allowedType with
+                        | Some allowed -> option.Value = allowed
+                        | None -> true
+
+                match allowedType with
+                | Some allowed when parameter.Value <> allowed ->
+                    parameter.Value <- allowed
+                | _ -> ()))
+
+    let refreshScalarOpTypeOptions () =
+        let connectedScalarType (node: PipelineNodeViewModel) =
+            node.Pins
+            |> Seq.tryPick (function
+                | :? PipelinePinViewModel as pin when pin.Kind = ScalarOutput ->
+                    drawing.Connectors
+                    |> Seq.tryFind (fun connector -> Object.ReferenceEquals(connector.Start, pin))
+                    |> Option.bind (fun connector ->
+                        match connector.End with
+                        | :? PipelinePinViewModel as endPin ->
+                            match endPin.Port.Type with
+                            | Scalar basicType -> Some(BasicType.toString basicType)
+                            | _ -> None
+                        | _ -> None)
+                | :? PipelinePinViewModel as pin when pin.Kind = ParameterInput && (pin.ParameterKey = "a" || pin.ParameterKey = "b") ->
+                    drawing.Connectors
+                    |> Seq.tryFind (fun connector -> Object.ReferenceEquals(connector.End, pin))
+                    |> Option.bind (fun connector ->
+                        match connector.Start with
+                        | :? PipelinePinViewModel as startPin ->
+                            match startPin.Port.Type with
+                            | Scalar basicType -> Some(BasicType.toString basicType)
+                            | _ -> None
+                        | _ -> None)
+                | _ -> None)
+
+        pipelineNodes ()
+        |> Seq.filter (fun node -> node.State.Definition.Id = "ScalarOp")
         |> Seq.iter (fun node ->
             let allowedType = connectedScalarType node
 
@@ -728,6 +1023,35 @@ type MainWindowViewModel() as this =
               UseInput = parameter.UseInput })
         |> Seq.toArray
 
+    let stripFSharpNumericLiteralSuffix (value: string) =
+        let trimmed = value.Trim()
+
+        let isNumericBody (body: string) =
+            not (String.IsNullOrWhiteSpace body)
+            && body |> Seq.forall (fun c -> Char.IsDigit c || c = '.' || c = '-' || c = '+')
+
+        let suffixes = [ "uy"; "us"; "ul"; "y"; "s"; "u"; "l"; "f" ]
+
+        suffixes
+        |> List.tryFind (fun suffix ->
+            trimmed.EndsWith(suffix, StringComparison.OrdinalIgnoreCase)
+            && isNumericBody (trimmed.Substring(0, trimmed.Length - suffix.Length)))
+        |> Option.map (fun suffix -> trimmed.Substring(0, trimmed.Length - suffix.Length))
+        |> Option.defaultValue (
+            if String.Equals(trimmed, "System.Numerics.Complex.One", StringComparison.Ordinal) then
+                "1.0"
+            else
+                value)
+
+    let userFacingSavedValue (state: PipelineNodeState) (parameter: PipelineParameterViewModel) (savedValue: string) =
+        match parameter.ParameterType with
+        | BasicType.Numeric _ ->
+            stripFSharpNumericLiteralSuffix savedValue
+        | BasicType.String when state.Definition.Id = "PermuteAxes" && parameter.Key = "axes" ->
+            savedValue.Replace("u", "").Replace("U", "")
+        | _ ->
+            savedValue
+
     let setParameterValues (state: PipelineNodeState) (parameters: SavedParameter array) =
         let values =
             parameters
@@ -737,7 +1061,7 @@ type MainWindowViewModel() as this =
         for parameter in state.Parameters do
             match values |> Map.tryFind parameter.Key with
             | Some savedParameter ->
-                parameter.Value <- savedParameter.Value
+                parameter.Value <- userFacingSavedValue state parameter savedParameter.Value
                 parameter.UseInput <- savedParameter.UseInput
             | None -> ()
 
@@ -893,18 +1217,23 @@ type MainWindowViewModel() as this =
         updatePaletteGroups()
 
         match drawing.Nodes with
-        | :? INotifyCollectionChanged as nodes -> nodes.CollectionChanged.Add(fun _ -> this.MarkGraphDirty())
+        | :? INotifyCollectionChanged as nodes ->
+            nodes.CollectionChanged.Add(fun _ ->
+                this.RaiseGraphStateChanged()
+                this.MarkGraphDirty())
         | _ -> ()
 
         match drawing.Connectors with
         | :? INotifyCollectionChanged as connectors ->
             connectors.CollectionChanged.Add(fun _ ->
                 refreshScalarTypeOptions()
+                refreshScalarOpTypeOptions()
                 refreshSourceImageTypeOptions()
                 refreshCastTypeOptions()
                 refreshPairOperationTypeOptions()
                 refreshScalarImageOperationTypeOptions()
                 refreshThresholdTypeOptions()
+                this.RaiseGraphStateChanged()
                 this.MarkGraphDirty())
         | _ -> ()
 
@@ -1033,7 +1362,9 @@ type MainWindowViewModel() as this =
 
     member this.SaveGraph(path: string) =
         this.ExportGraph() |> PipelineGraphStorage.save path
+        currentGraphPath <- Some path
         this.MarkGraphSaved()
+        this.RaiseGraphStateChanged()
 
     member this.ImportGraph(savedGraph: SavedGraph) =
         drawing.Connectors.Clear()
@@ -1084,27 +1415,67 @@ type MainWindowViewModel() as this =
                 invalidOp $"Saved edge refers to a missing node: {edge.FromNode} -> {edge.ToNode}"
 
         this.MarkGraphSaved()
+        this.RaiseGraphStateChanged()
 
     member this.ImportGraphJson(json: string) =
         json |> PipelineGraphStorage.deserialize |> this.ImportGraph
 
     member this.LoadGraph(path: string) =
         path |> PipelineGraphStorage.load |> this.ImportGraph
+        currentGraphPath <- Some path
+        this.RaiseGraphStateChanged()
 
     member _.HasGraph =
         drawing.Nodes.Count > 0 || drawing.Connectors.Count > 0
 
     member _.IsGraphDirty = graphDirty
 
+    member _.CurrentGraphPath = currentGraphPath
+
+    member _.HasGraphFile = currentGraphPath.IsSome
+
+    member this.CanSaveGraph = this.HasGraph && this.HasGraphFile && this.IsGraphDirty
+
+    member this.CanSaveGraphAs = this.HasGraph
+
+    member this.CanClearGraph = this.HasGraph
+
+    member this.CanRunGraph = this.HasGraph
+
+    member _.SuggestedGraphFileName =
+        currentGraphPath
+        |> Option.map Path.GetFileName
+        |> Option.defaultValue "pipeline.json"
+
+    member this.SetCurrentGraphPath(path: string) =
+        currentGraphPath <- Some path
+        this.RaiseGraphStateChanged()
+
+    member this.ClearCurrentGraphPath() =
+        currentGraphPath <- None
+        this.RaiseGraphStateChanged()
+
+    member this.RaiseGraphStateChanged() =
+        this.OnPropertyChanged(PropertyChangedEventArgs(nameof this.HasGraph))
+        this.OnPropertyChanged(PropertyChangedEventArgs(nameof this.CurrentGraphPath))
+        this.OnPropertyChanged(PropertyChangedEventArgs(nameof this.HasGraphFile))
+        this.OnPropertyChanged(PropertyChangedEventArgs(nameof this.CanSaveGraph))
+        this.OnPropertyChanged(PropertyChangedEventArgs(nameof this.CanSaveGraphAs))
+        this.OnPropertyChanged(PropertyChangedEventArgs(nameof this.CanClearGraph))
+        this.OnPropertyChanged(PropertyChangedEventArgs(nameof this.CanRunGraph))
+        this.OnPropertyChanged(PropertyChangedEventArgs(nameof this.SuggestedGraphFileName))
+
     member this.MarkGraphDirty() =
         if not graphDirty then
             graphDirty <- true
             this.OnPropertyChanged(PropertyChangedEventArgs(nameof this.IsGraphDirty))
+            this.RaiseGraphStateChanged()
 
     member this.MarkGraphSaved() =
         if graphDirty then
             graphDirty <- false
             this.OnPropertyChanged(PropertyChangedEventArgs(nameof this.IsGraphDirty))
+            this.RaiseGraphStateChanged()
 
     member this.ClearGraph() =
         let shouldMarkDirty = this.HasGraph || graphDirty
@@ -1112,7 +1483,9 @@ type MainWindowViewModel() as this =
         drawing.Nodes.Clear()
         this.SelectedNode <- null
         generatedProgram <- ""
+        currentGraphPath <- None
         this.RaiseGeneratedProgramChanged()
+        this.RaiseGraphStateChanged()
 
         if shouldMarkDirty then
             this.MarkGraphDirty()
@@ -1193,7 +1566,7 @@ type MainWindowViewModel() as this =
             | :? PipelinePinViewModel as pipelinePin ->
                 match pipelinePin.Kind with
                 | ParameterInput -> pipelinePin.IsActive
-                | ScalarOutput -> drawing.IsPinConnected(pin)
+                | ScalarOutput -> false
                 | ReducerOutput -> false
                 | DataInput
                 | DataOutput -> true

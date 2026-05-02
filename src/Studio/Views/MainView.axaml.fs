@@ -38,8 +38,16 @@ type MainView() as this =
 
     let jsonFileType () =
         let fileType = FilePickerFileType("Pipeline JSON")
-        fileType.Patterns <- [ "*.json" ]
+        fileType.Patterns <- [ "*.json"; "*.JSON" ]
+        fileType.MimeTypes <- [ "application/json"; "text/json"; "text/plain" ]
+        fileType.AppleUniformTypeIdentifiers <- [ "public.json"; "public.text" ]
         fileType
+
+    let localPath (file: IStorageFile) =
+        if file.Path.IsFile then
+            Some file.Path.LocalPath
+        else
+            None
 
     let parentWindow () =
         match TopLevel.GetTopLevel(this) with
@@ -684,6 +692,19 @@ type MainView() as this =
         task {
             args.Handled <- true
 
+            match this.DataContext with
+            | :? MainWindowViewModel as viewModel ->
+                match viewModel.CurrentGraphPath with
+                | Some path when viewModel.HasGraph ->
+                    viewModel.SaveGraph(path)
+                | _ ->
+                    do! this.SaveGraphAsAsync()
+            | _ -> ()
+        }
+        |> ignore
+
+    member this.SaveGraphAsAsync() =
+        task {
             match TopLevel.GetTopLevel(this), this.DataContext with
             | null, _ -> ()
             | _, (:? MainWindowViewModel as viewModel) ->
@@ -693,7 +714,7 @@ type MainView() as this =
                 let options =
                     FilePickerSaveOptions(
                         Title = "Save pipeline graph",
-                        SuggestedFileName = "pipeline.json",
+                        SuggestedFileName = viewModel.SuggestedGraphFileName,
                         DefaultExtension = "json",
                         ShowOverwritePrompt = true,
                         FileTypeChoices = [ jsonType ],
@@ -705,8 +726,15 @@ type MainView() as this =
                     let! stream = file.OpenWriteAsync()
                     use stream = stream
                     do! PipelineGraphStorage.writeJsonAsync stream (viewModel.ExportGraph())
+                    file |> localPath |> Option.iter viewModel.SetCurrentGraphPath
                     viewModel.MarkGraphSaved()
             | _ -> ()
+        }
+
+    member this.SaveGraphAsClicked(_sender: obj, args: RoutedEventArgs) =
+        task {
+            args.Handled <- true
+            do! this.SaveGraphAsAsync()
         }
         |> ignore
 
@@ -731,8 +759,7 @@ type MainView() as this =
                         FilePickerOpenOptions(
                             Title = "Load pipeline graph",
                             AllowMultiple = false,
-                            FileTypeFilter = [ jsonType; FilePickerFileTypes.All ],
-                            SuggestedFileType = jsonType)
+                            FileTypeFilter = [ jsonType; FilePickerFileTypes.All ])
 
                     let! files = topLevel.StorageProvider.OpenFilePickerAsync(options)
 
@@ -743,6 +770,7 @@ type MainView() as this =
                             use stream = stream
                             let! graph = PipelineGraphStorage.readJsonAsync stream
                             viewModel.ImportGraph(graph)
+                            file |> localPath |> Option.iter viewModel.SetCurrentGraphPath
                         with ex ->
                             do! showLoadErrorAsync ex.Message
                     | None -> ()
