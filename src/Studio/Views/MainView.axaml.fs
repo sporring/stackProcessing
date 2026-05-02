@@ -706,6 +706,12 @@ type MainView() as this =
                     syncGraphWindowSize()
 
                     graphHost.AddHandler(
+                        InputElement.PointerWheelChangedEvent,
+                        EventHandler<PointerWheelEventArgs>(fun _ args -> args.Handled <- true),
+                        RoutingStrategies.Tunnel,
+                        true)
+
+                    graphHost.AddHandler(
                         DragDrop.DragOverEvent,
                         EventHandler<DragEventArgs>(fun _ args -> this.PipelineEditorDragOver(graphHost, args)),
                         RoutingStrategies.Tunnel,
@@ -721,6 +727,12 @@ type MainView() as this =
                     editor.ZoomControl.ResetZoomCommand()
 
                 if not (isNull editor) then
+                    editor.AddHandler(
+                        InputElement.PointerWheelChangedEvent,
+                        EventHandler<PointerWheelEventArgs>(fun _ args -> args.Handled <- true),
+                        RoutingStrategies.Tunnel,
+                        true)
+
                     editor.AddHandler(
                         DragDrop.DragOverEvent,
                         EventHandler<DragEventArgs>(fun _ args -> this.PipelineEditorDragOver(editor, args)),
