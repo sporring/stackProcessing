@@ -1,6 +1,7 @@
 namespace Compiler
 
 open System
+open System.Collections.Generic
 open System.Text
 open Graph
 
@@ -8,6 +9,11 @@ module PipelineCodeGenerator =
     type private ParameterExpression =
         { Value: string
           IsLinked: bool }
+
+    type private NamedBinding =
+        { Name: string
+          Dependencies: Set<string>
+          Text: string }
 
     let private savedParamValue key (node: SavedNode) =
         node.Parameters
@@ -18,6 +24,63 @@ module PipelineCodeGenerator =
     let private quote (value: string) =
         "\"" + value.Replace("\\", "\\\\").Replace("\"", "\\\"") + "\""
 
+    let private hasSuffix suffixes (value: string) =
+        suffixes
+        |> List.exists (fun suffix -> value.EndsWith(suffix, StringComparison.OrdinalIgnoreCase))
+
+    let private float64Literal (value: string) =
+        let trimmed = value.Trim()
+        let lower = trimmed.ToLowerInvariant()
+
+        if String.IsNullOrWhiteSpace trimmed
+           || trimmed.Contains(".", StringComparison.Ordinal)
+           || trimmed.Contains("e", StringComparison.OrdinalIgnoreCase)
+           || lower = "nan"
+           || lower = "infinity"
+           || lower = "-infinity" then
+            trimmed
+        else
+            $"{trimmed}.0"
+
+    let private numericLiteral numericType (value: string) =
+        let trimmed = value.Trim()
+
+        match numericType with
+        | UInt8 ->
+            if hasSuffix [ "uy" ] trimmed then trimmed else $"{trimmed}uy"
+        | Int8 ->
+            if hasSuffix [ "y" ] trimmed then trimmed else $"{trimmed}y"
+        | UInt16 ->
+            if hasSuffix [ "us" ] trimmed then trimmed else $"{trimmed}us"
+        | Int16 ->
+            if hasSuffix [ "s" ] trimmed then trimmed else $"{trimmed}s"
+        | UInt32 ->
+            if hasSuffix [ "u" ] trimmed then trimmed else $"{trimmed}u"
+        | Int32 ->
+            trimmed
+        | UInt64 ->
+            if hasSuffix [ "ul" ] trimmed then trimmed else $"{trimmed}UL"
+        | Int64 ->
+            if hasSuffix [ "l" ] trimmed then trimmed else $"{trimmed}L"
+        | Float32 ->
+            if hasSuffix [ "f" ] trimmed then trimmed else $"{float64Literal trimmed}f"
+        | Float64
+        | Number ->
+            float64Literal trimmed
+        | Complex ->
+            if trimmed.StartsWith("System.Numerics.Complex", StringComparison.Ordinal)
+               || trimmed.StartsWith("Complex", StringComparison.Ordinal) then
+                trimmed
+            else
+                $"System.Numerics.Complex({float64Literal trimmed}, 0.0)"
+
+    let private literalValue basicType value =
+        match basicType with
+        | BasicType.Numeric numericType -> numericLiteral numericType value
+        | BasicType.Bool -> value.Trim().ToLowerInvariant()
+        | BasicType.String -> quote value
+        | BasicType.Unit -> "()"
+
     let private scalarValueLiteral (node: SavedNode) =
         let value = savedParamValue "value" node
 
@@ -26,7 +89,7 @@ module PipelineCodeGenerator =
             |> BasicType.tryParse
 
         match scalarType with
-        | Some BasicType.String -> quote value
+        | Some basicType -> literalValue basicType value
         | _ -> value
 
     let private optionUInt (value: string) =
@@ -80,13 +143,28 @@ module PipelineCodeGenerator =
         | "DivPair" -> Some "divPair"
         | _ -> None
 
-    let private scalarImageFunctionName functionId =
-        match functionId with
-        | "AddScalar" -> Some "imageAddScalar"
-        | "MulScalar" -> Some "imageMulScalar"
-        | "DivScalar" -> Some "imageDivScalar"
-        | "ScalarDiv" -> Some "scalarDivImage"
+    let private scalarImageFunctionName (node: SavedNode) =
+        let operation =
+            match savedParamValue "operation" node with
+            | "+"
+            | "-"
+            | "*"
+            | "/" as operation -> operation
+            | _ -> "*"
+
+        match node.FunctionId, operation with
+        | "ImageOpScalar", "+" -> Some "imageAddScalar"
+        | "ImageOpScalar", "-" -> Some "imageSubScalar"
+        | "ImageOpScalar", "*" -> Some "imageMulScalar"
+        | "ImageOpScalar", "/" -> Some "imageDivScalar"
+        | "ScalarOpImage", "+" -> Some "scalarAddImage"
+        | "ScalarOpImage", "-" -> Some "scalarSubImage"
+        | "ScalarOpImage", "*" -> Some "scalarMulImage"
+        | "ScalarOpImage", "/" -> Some "scalarDivImage"
         | _ -> None
+
+    let private isScalarImageFunction functionId =
+        functionId = "ImageOpScalar" || functionId = "ScalarOpImage"
 
     let private scalarTypeName (node: SavedNode) =
         savedParamValue "type" node
@@ -99,37 +177,114 @@ module PipelineCodeGenerator =
             |> Array.mapi (fun index node -> node.Id, $"{typeName}{index}"))
         |> Map.ofArray
 
-    let private scalarBinding (namesByNodeId: Map<string, string>) (node: SavedNode) =
-        let name = namesByNodeId |> Map.find node.Id
-        let value = scalarValueLiteral node
-        name, $"let {name} = {value}"
+    let private computeStatsFieldName portIndex =
+        [| "NumPixels"; "Mean"; "Std"; "Min"; "Max"; "Sum"; "Var" |]
+        |> Array.tryItem portIndex
 
-    let private parameterExpression (graph: SavedGraph) (nodesById: Map<string, SavedNode>) (scalarNamesByNodeId: Map<string, string>) (node: SavedNode) parameterIndex key =
-        let fromLinkedScalar =
+    let private parameterExpression (graph: SavedGraph) (nodesById: Map<string, SavedNode>) (scalarNamesByNodeId: Map<string, string>) (statsNamesByNodeId: Map<string, string>) (node: SavedNode) parameterIndex key =
+        let linkedExpression =
             graph.Edges
             |> Seq.tryFind (fun edge ->
                 edge.ToNode = node.Id
                 && edge.ToKind = "parameterInput"
                 && edge.ToPort = parameterIndex)
-            |> Option.bind (fun edge -> scalarNamesByNodeId |> Map.tryFind edge.FromNode)
+            |> Option.bind (fun edge ->
+                match edge.FromKind with
+                | "scalarOutput" ->
+                    scalarNamesByNodeId |> Map.tryFind edge.FromNode
+                | "reducerOutput" ->
+                    match statsNamesByNodeId |> Map.tryFind edge.FromNode, computeStatsFieldName edge.FromPort with
+                    | Some statsName, Some fieldName -> Some $"{statsName}.{fieldName}"
+                    | _ -> None
+                | _ ->
+                    None)
 
-        match fromLinkedScalar with
-        | Some scalarName ->
-            { Value = scalarName
+        match linkedExpression with
+        | Some expression ->
+            { Value = expression
               IsLinked = true }
         | None ->
             { Value = savedParamValue key node
               IsLinked = false }
 
-    let private savedElementLine (graph: SavedGraph) (nodesById: Map<string, SavedNode>) (scalarNamesByNodeId: Map<string, string>) (node: SavedNode) =
+    let private scalarBinding (graph: SavedGraph) (nodesById: Map<string, SavedNode>) (scalarNamesByNodeId: Map<string, string>) (statsNamesByNodeId: Map<string, string>) (node: SavedNode) =
+        let name = scalarNamesByNodeId |> Map.find node.Id
+
+        let value =
+            match node.FunctionId with
+            | "ScalarOp" ->
+                let parameterExpression key =
+                    node.Parameters
+                    |> Seq.tryFindIndex (fun parameter -> parameter.Key = key)
+                    |> Option.map (fun index -> parameterExpression graph nodesById scalarNamesByNodeId statsNamesByNodeId node index key)
+                    |> Option.defaultValue { Value = ""; IsLinked = false }
+
+                let operation =
+                    match savedParamValue "operation" node with
+                    | "+"
+                    | "-"
+                    | "*"
+                    | "/" as operation -> operation
+                    | _ -> "*"
+
+                let scalarType =
+                    savedParamValue "type" node
+                    |> BasicType.tryParse
+                    |> Option.defaultValue (BasicType.Numeric Float64)
+
+                let typedParameter key =
+                    let expression = parameterExpression key
+                    if expression.IsLinked then expression.Value else literalValue scalarType expression.Value
+
+                let left = typedParameter "a"
+                let right = typedParameter "b"
+                $"({left} {operation} {right})"
+            | _ ->
+                scalarValueLiteral node
+
+        name, $"let {name} = {value}"
+
+    let private savedElementLine (graph: SavedGraph) (nodesById: Map<string, SavedNode>) (scalarNamesByNodeId: Map<string, string>) (statsNamesByNodeId: Map<string, string>) (node: SavedNode) =
         let parameterExpression key =
             node.Parameters
             |> Seq.tryFindIndex (fun parameter -> parameter.Key = key)
-            |> Option.map (fun index -> parameterExpression graph nodesById scalarNamesByNodeId node index key)
+            |> Option.map (fun index -> parameterExpression graph nodesById scalarNamesByNodeId statsNamesByNodeId node index key)
             |> Option.defaultValue { Value = ""; IsLinked = false }
 
+        let dynamicParameterType key =
+            let configuredNumericType () =
+                savedParamValue "type" node
+                |> NumericType.tryParse
+                |> Option.map BasicType.Numeric
+
+            match node.FunctionId, key with
+            | "ScalarOp", ("a" | "b") ->
+                configuredNumericType ()
+            | id, "value" when isScalarImageFunction id ->
+                configuredNumericType ()
+            | _ ->
+                BuiltInCatalog.tryFind node.FunctionId
+                |> Option.bind (fun definition ->
+                    definition.Parameters
+                    |> Seq.tryFind (fun parameter -> parameter.Key = key)
+                    |> Option.map _.Type)
+
         let parameterValue key =
-            (parameterExpression key).Value
+            let expression = parameterExpression key
+
+            if expression.IsLinked then
+                expression.Value
+            else
+                match dynamicParameterType key with
+                | Some(BasicType.Numeric numericType) ->
+                    numericLiteral numericType expression.Value
+                | Some BasicType.Bool ->
+                    expression.Value.Trim().ToLowerInvariant()
+                | Some BasicType.Unit ->
+                    "()"
+                | Some BasicType.String
+                | None ->
+                    expression.Value
 
         let quotedParameter key =
             let expression = parameterExpression key
@@ -171,9 +326,9 @@ module PipelineCodeGenerator =
             $">=> writeInChunks {output} {suffix} {chunkX} {chunkY} {chunkZ}"
         | "SqrtFloat64" ->
             ">=> sqrt"
-        | id when scalarImageFunctionName id |> Option.isSome ->
+        | id when isScalarImageFunction id ->
             let value = parameterValue "value"
-            $">=> {scalarImageFunctionName id |> Option.get} {value}"
+            $">=> {scalarImageFunctionName node |> Option.get} {value}"
         | id when pairFunctionName id |> Option.isSome ->
             $">>=> {pairFunctionName id |> Option.get}"
         | "DiscreteGaussian" ->
@@ -233,13 +388,65 @@ module PipelineCodeGenerator =
     let generateSavedGraph (graph: SavedGraph) =
         let builder = StringBuilder()
         let nodesById = graph.Nodes |> Seq.map (fun node -> node.Id, node) |> Map.ofSeq
-        let scalarNodes = graph.Nodes |> Array.filter (fun node -> node.FunctionId = "Scalar")
+        let scalarNodes =
+            graph.Nodes
+            |> Array.filter (fun node -> node.FunctionId = "Scalar" || node.FunctionId = "ScalarOp")
+
         let scalarNamesByNodeId = scalarNames scalarNodes
+        let statsNodesWithLinkedFields =
+            graph.Edges
+            |> Array.choose (fun edge ->
+                if edge.FromKind = "reducerOutput" && edge.ToKind = "parameterInput" then
+                    nodesById |> Map.tryFind edge.FromNode
+                else
+                    None)
+            |> Array.filter (fun node -> node.FunctionId = "ComputeStats")
+            |> Array.distinctBy _.Id
+
+        let statsNamesByNodeId =
+            statsNodesWithLinkedFields
+            |> Array.mapi (fun index node -> node.Id, $"ImageStats{index}")
+            |> Map.ofArray
+
         let newLine = Environment.NewLine
 
         let dataEdges =
             graph.Edges
             |> Array.filter (fun edge -> edge.FromKind <> "scalarOutput" && edge.ToKind <> "parameterInput")
+
+        let bindingNameForOutput edge =
+            match edge.FromKind with
+            | "scalarOutput" ->
+                scalarNamesByNodeId |> Map.tryFind edge.FromNode
+            | "reducerOutput" ->
+                statsNamesByNodeId |> Map.tryFind edge.FromNode
+            | _ ->
+                None
+
+        let parameterBindingDependencies (node: SavedNode) =
+            graph.Edges
+            |> Array.choose (fun edge ->
+                if edge.ToNode = node.Id && edge.ToKind = "parameterInput" then
+                    bindingNameForOutput edge
+                else
+                    None)
+            |> Set.ofArray
+
+        let rec pipelineBindingDependencies visited (node: SavedNode) =
+            if visited |> Set.contains node.Id then
+                Set.empty
+            else
+                let visited = visited |> Set.add node.Id
+                let parameterDependencies = parameterBindingDependencies node
+
+                let upstreamDependencies =
+                    dataEdges
+                    |> Array.filter (fun edge -> edge.ToNode = node.Id)
+                    |> Array.choose (fun edge -> nodesById |> Map.tryFind edge.FromNode)
+                    |> Array.map (pipelineBindingDependencies visited)
+                    |> Set.unionMany
+
+                Set.union parameterDependencies upstreamDependencies
 
         let indentBlock spaces (text: string) =
             let prefix = String.replicate spaces " "
@@ -261,7 +468,7 @@ module PipelineCodeGenerator =
             && left.FromKind = right.FromKind
 
         let stageCall (node: SavedNode) =
-            let line = savedElementLine graph nodesById scalarNamesByNodeId node
+            let line = savedElementLine graph nodesById scalarNamesByNodeId statsNamesByNodeId node
 
             if line.StartsWith(">=> ", StringComparison.Ordinal) then
                 Some(line.Substring(4))
@@ -351,7 +558,7 @@ module PipelineCodeGenerator =
                         let right = parenthesizeBlock right
                         $"({newLine}{indentBlock 4 left},{newLine}{indentBlock 4 right}{newLine}){newLine}||> zip{newLine}>>=> {pairFunction}"
                 | _ ->
-                    let line = savedElementLine graph nodesById scalarNamesByNodeId node
+                    let line = savedElementLine graph nodesById scalarNamesByNodeId statsNamesByNodeId node
 
                     match incomingDataEdge node.Id 0 with
                     | Some _ ->
@@ -375,20 +582,58 @@ module PipelineCodeGenerator =
                 graph.Nodes
                 |> Array.filter (fun node ->
                     node.FunctionId <> "Scalar"
+                    && node.FunctionId <> "ScalarOp"
+                    && not (statsNamesByNodeId |> Map.containsKey node.Id)
                     && not (dataEdges |> Array.exists (fun edge -> edge.FromNode = node.Id)))
 
             terminalNodes
             |> Array.map (fun node -> pipelineExpression Set.empty node |> appendSinkIfTerminalWrite node)
 
+        let orderedBindings () =
+            let statsBindings =
+                statsNodesWithLinkedFields
+                |> Array.map (fun node ->
+                    let name = statsNamesByNodeId |> Map.find node.Id
+                    let expression = pipelineExpression Set.empty node
+                    let body = indentBlock 4 $"{expression}{newLine}|> drain"
+
+                    { Name = name
+                      Dependencies = pipelineBindingDependencies Set.empty node |> Set.remove name
+                      Text = $"let {name} ={newLine}{body}" })
+
+            let scalarBindings =
+                scalarNodes
+                |> Array.map (fun node ->
+                    let name, text = scalarBinding graph nodesById scalarNamesByNodeId statsNamesByNodeId node
+
+                    { Name = name
+                      Dependencies = parameterBindingDependencies node |> Set.remove name
+                      Text = text })
+
+            let bindings = Array.append scalarBindings statsBindings
+            let bindingsByName = bindings |> Array.map (fun binding -> binding.Name, binding) |> Map.ofArray
+            let visited = HashSet<string>()
+            let ordered = ResizeArray<NamedBinding>()
+
+            let rec visit (binding: NamedBinding) =
+                if visited.Add binding.Name then
+                    binding.Dependencies
+                    |> Seq.choose (fun dependency -> bindingsByName |> Map.tryFind dependency)
+                    |> Seq.iter visit
+
+                    ordered.Add binding
+
+            bindings |> Array.iter visit
+            ordered |> Seq.toArray
+
         builder.AppendLine("open StackProcessing") |> ignore
         builder.AppendLine() |> ignore
 
-        if scalarNodes.Length > 0 then
-            scalarNodes
-            |> Array.map (scalarBinding scalarNamesByNodeId)
-            |> Array.map snd
-            |> Array.iter (fun line -> builder.AppendLine(line) |> ignore)
+        let bindings = orderedBindings ()
 
+        if bindings.Length > 0 then
+            bindings
+            |> Array.iter (fun binding -> builder.AppendLine(binding.Text) |> ignore)
             builder.AppendLine() |> ignore
 
         generatedPipelines

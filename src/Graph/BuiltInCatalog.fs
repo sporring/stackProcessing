@@ -2,7 +2,6 @@ namespace Graph
 
 module BuiltInCatalog =
   let imageAny = PortType.Image NumericType.Number
-  let imageStats = PortType.ImageStats
   let imageUInt8 = PortType.Image NumericType.UInt8
   let imageInt8 = PortType.Image NumericType.Int8
   let imageUInt16 = PortType.Image NumericType.UInt16
@@ -45,18 +44,18 @@ module BuiltInCatalog =
 
   let private numericDefaultValue tp =
       match tp with
-      | UInt8 -> "1uy"
-      | Int8 -> "1y"
-      | UInt16 -> "1us"
-      | Int16 -> "1s"
-      | UInt32 -> "1u"
+      | UInt8
+      | Int8
+      | UInt16
+      | Int16
+      | UInt32
       | Int32 -> "1"
-      | UInt64 -> "1UL"
-      | Int64 -> "1L"
-      | Float32 -> "1.0f"
+      | UInt64
+      | Int64 -> "1"
+      | Float32 -> "1.0"
       | Float64
       | Number -> "1.0"
-      | Complex -> "System.Numerics.Complex.One"
+      | Complex -> "1.0"
 
   let private scalarDefaultValue tp =
       match tp with
@@ -67,7 +66,7 @@ module BuiltInCatalog =
 
   let makeGenericScalar () =
     { Id = "Scalar"
-      DisplayName = "Scalar"
+      DisplayName = "scalar"
       Category = "Sources / Sinks"
       Description = "Bind a scalar value for graph parameters."
       Aliases = [ "value"; "parameter"; "constant"; "let"; "UInt8"; "Float64"; "String"; "Bool" ]
@@ -76,6 +75,20 @@ module BuiltInCatalog =
       Parameters =
           [ makeParameter "type" "Type" "Float64" BasicType.String
             makeParameter "value" "Value" (scalarDefaultValue (Numeric Float64)) (Numeric Float64) ] }
+
+  let makeScalarOp () =
+    { Id = "ScalarOp"
+      DisplayName = "scalarOp"
+      Category = "Arithmetic"
+      Description = "Combine two scalar values with an arithmetic operation."
+      Aliases = [ "scalar"; "arithmetic"; "add"; "subtract"; "multiply"; "divide"; "+"; "-"; "*"; "/" ]
+      Inputs = []
+      Outputs = [ makePort "Float64" (Scalar(BasicType.Numeric Float64)) ]
+      Parameters =
+          [ makeParameter "operation" "Operation" "*" BasicType.String
+            makeParameter "type" "Type" "Float64" BasicType.String
+            makeParameter "a" "A" (numericDefaultValue Float64) (BasicType.Numeric Float64)
+            makeParameter "b" "B" (numericDefaultValue Float64) (BasicType.Numeric Float64) ] }
 
   let makeGenericRead () =
     { Id = "Read"
@@ -102,7 +115,7 @@ module BuiltInCatalog =
       Parameters =
           [ availableMemoryParameter
             makeParameter "type" "Type" "Float64" BasicType.String
-            makeParameter "depth" "Depth" "1u" (BasicType.Numeric UInt32)
+            makeParameter "depth" "Depth" "1" (BasicType.Numeric UInt32)
             makeParameter "input" "Input" "input" BasicType.String
             makeParameter "suffix" "Suffix" ".tiff" BasicType.String ] }
 
@@ -143,9 +156,9 @@ module BuiltInCatalog =
       Parameters =
           [ availableMemoryParameter
             makeParameter "type" "Type" "Float64" BasicType.String
-            makeParameter "width" "Width" "64u" (BasicType.Numeric UInt32)
-            makeParameter "height" "Height" "64u" (BasicType.Numeric UInt32)
-            makeParameter "depth" "Depth" "1u" (BasicType.Numeric UInt32) ] }
+            makeParameter "width" "Width" "64" (BasicType.Numeric UInt32)
+            makeParameter "height" "Height" "64" (BasicType.Numeric UInt32)
+            makeParameter "depth" "Depth" "1" (BasicType.Numeric UInt32) ] }
 
   let makeScalarImageOperation id displayName description aliases =
     { Id = id
@@ -156,7 +169,8 @@ module BuiltInCatalog =
       Inputs = [ makePort "Float64" imageFloat64 ]
       Outputs = [ makePort "Float64" imageFloat64 ]
       Parameters =
-          [ makeParameter "type" "Type" "Float64" BasicType.String
+          [ makeParameter "operation" "Operation" "*" BasicType.String
+            makeParameter "type" "Type" "Float64" BasicType.String
             makeParameter "value" "Value" (numericDefaultValue Float64) (BasicType.Numeric Float64) ] }
 
   let makeGenericAddNormalNoise () =
@@ -185,6 +199,8 @@ module BuiltInCatalog =
   let orderedFunctions =
       [ makeGenericScalar()
 
+        makeScalarOp()
+
         makeGenericRead()
 
         makeGenericReadRandom()
@@ -199,7 +215,14 @@ module BuiltInCatalog =
           Description = "Reduce an image stream to aggregate image statistics."
           Aliases = [ "statistics"; "stats"; "mean"; "std"; "min"; "max"; "reducer" ]
           Inputs = [ makePort "Number" imageAny ]
-          Outputs = [ makePort "ImageStats" imageStats ]
+          Outputs =
+              [ makePort "NumPixels: UInt32" (Scalar(BasicType.Numeric UInt32))
+                makePort "Mean: Float64" (Scalar(BasicType.Numeric Float64))
+                makePort "Std: Float64" (Scalar(BasicType.Numeric Float64))
+                makePort "Min: Float64" (Scalar(BasicType.Numeric Float64))
+                makePort "Max: Float64" (Scalar(BasicType.Numeric Float64))
+                makePort "Sum: Float64" (Scalar(BasicType.Numeric Float64))
+                makePort "Var: Float64" (Scalar(BasicType.Numeric Float64)) ]
           Parameters = [] }
 
         { Id = "Write"
@@ -223,9 +246,9 @@ module BuiltInCatalog =
           Parameters =
               [ makeParameter "output" "Output" "output" BasicType.String
                 makeParameter "suffix" "Suffix" ".tiff" BasicType.String
-                makeParameter "chunkX" "Chunk X" "12u" (BasicType.Numeric UInt32)
-                makeParameter "chunkY" "Chunk Y" "13u" (BasicType.Numeric UInt32)
-                makeParameter "chunkZ" "Chunk Z" "14u" (BasicType.Numeric UInt32) ] }
+                makeParameter "chunkX" "Chunk X" "12" (BasicType.Numeric UInt32)
+                makeParameter "chunkY" "Chunk Y" "13" (BasicType.Numeric UInt32)
+                makeParameter "chunkZ" "Chunk Z" "14" (BasicType.Numeric UInt32) ] }
 
         { Id = "SqrtFloat64"
           DisplayName = "sqrt"
@@ -237,28 +260,16 @@ module BuiltInCatalog =
           Parameters = [] }
 
         makeScalarImageOperation
-            "AddScalar"
-            "addScalar"
-            "Add a scalar value to each image."
-            [ "add"; "sum" ]
+            "ImageOpScalar"
+            "imageOpScalar"
+            "Apply an arithmetic operation with the image on the left and a scalar on the right."
+            [ "add"; "subtract"; "multiply"; "divide"; "image"; "value"; "scale"; "+"; "-"; "*"; "/" ]
 
         makeScalarImageOperation
-            "MulScalar"
-            "mulScalar"
-            "Multiply each image by a scalar value."
-            [ "multiply"; "scale" ]
-
-        makeScalarImageOperation
-            "DivScalar"
-            "divScalar"
-            "Divide each image by a scalar value."
-            [ "divide" ]
-
-        makeScalarImageOperation
-            "ScalarDiv"
-            "scalarDiv"
-            "Divide a scalar value by each image."
-            [ "divide"; "inverse" ]
+            "ScalarOpImage"
+            "scalarOpImage"
+            "Apply an arithmetic operation with a scalar on the left and the image on the right."
+            [ "add"; "subtract"; "multiply"; "divide"; "inverse"; "value"; "image"; "+"; "-"; "*"; "/" ]
 
         makeGenericAddNormalNoise()
 
@@ -311,8 +322,8 @@ module BuiltInCatalog =
           Outputs = [ makePort "Float64" imageFloat64 ]
           Parameters =
               [ makeParameter "sigma" "Sigma" "1.0" (BasicType.Numeric Float64)
-                makeParameter "axis1" "Axis 1" "1u" (BasicType.Numeric UInt32)
-                makeParameter "axis2" "Axis 2" "2u" (BasicType.Numeric UInt32) ] }
+                makeParameter "axis1" "Axis 1" "1" (BasicType.Numeric UInt32)
+                makeParameter "axis2" "Axis 2" "2" (BasicType.Numeric UInt32) ] }
 
         { Id = "Threshold"
           DisplayName = "threshold"
@@ -333,7 +344,7 @@ module BuiltInCatalog =
           Aliases = [ "morphology"; "binary"; "mask" ]
           Inputs = [ makePort "UInt8" imageUInt8 ]
           Outputs = [ makePort "UInt8" imageUInt8 ]
-          Parameters = [ makeParameter "radius" "Radius" "1u" (BasicType.Numeric UInt32) ] }
+          Parameters = [ makeParameter "radius" "Radius" "1" (BasicType.Numeric UInt32) ] }
 
         { Id = "Dilate"
           DisplayName = "dilate"
@@ -342,7 +353,7 @@ module BuiltInCatalog =
           Aliases = [ "morphology"; "binary"; "mask" ]
           Inputs = [ makePort "UInt8" imageUInt8 ]
           Outputs = [ makePort "UInt8" imageUInt8 ]
-          Parameters = [ makeParameter "radius" "Radius" "1u" (BasicType.Numeric UInt32) ] }
+          Parameters = [ makeParameter "radius" "Radius" "1" (BasicType.Numeric UInt32) ] }
 
         { Id = "Opening"
           DisplayName = "opening"
@@ -351,7 +362,7 @@ module BuiltInCatalog =
           Aliases = [ "morphology"; "binary"; "mask" ]
           Inputs = [ makePort "UInt8" imageUInt8 ]
           Outputs = [ makePort "UInt8" imageUInt8 ]
-          Parameters = [ makeParameter "radius" "Radius" "1u" (BasicType.Numeric UInt32) ] }
+          Parameters = [ makeParameter "radius" "Radius" "1" (BasicType.Numeric UInt32) ] }
 
         { Id = "Closing"
           DisplayName = "closing"
@@ -360,7 +371,7 @@ module BuiltInCatalog =
           Aliases = [ "morphology"; "binary"; "mask" ]
           Inputs = [ makePort "UInt8" imageUInt8 ]
           Outputs = [ makePort "UInt8" imageUInt8 ]
-          Parameters = [ makeParameter "radius" "Radius" "1u" (BasicType.Numeric UInt32) ] }
+          Parameters = [ makeParameter "radius" "Radius" "1" (BasicType.Numeric UInt32) ] }
 
         { Id = "ConnectedComponents"
           DisplayName = "connectedComponents"
@@ -369,7 +380,7 @@ module BuiltInCatalog =
           Aliases = [ "components"; "labels"; "segmentation" ]
           Inputs = [ makePort "UInt8" imageUInt8 ]
           Outputs = [ makePort "UInt64" imageUInt64 ]
-          Parameters = [ makeParameter "windowSize" "Window size" "3u" (BasicType.Numeric UInt32) ] }
+          Parameters = [ makeParameter "windowSize" "Window size" "3" (BasicType.Numeric UInt32) ] }
 
         { Id = "PermuteAxes"
           DisplayName = "permuteAxes"
@@ -379,8 +390,8 @@ module BuiltInCatalog =
           Inputs = [ makePort "Number" imageAny ]
           Outputs = [ makePort "Number" imageAny ]
           Parameters =
-              [ makeParameter "axes" "Axes" "(0u,1u,2u)" BasicType.String
-                makeParameter "tileSize" "Tile size" "64u" (BasicType.Numeric UInt32) ] }
+              [ makeParameter "axes" "Axes" "(0,1,2)" BasicType.String
+                makeParameter "tileSize" "Tile size" "64" (BasicType.Numeric UInt32) ] }
 
         makeGenericCast() ]
 
