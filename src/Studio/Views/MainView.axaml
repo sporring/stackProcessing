@@ -147,6 +147,10 @@
                             IsEnabled="{Binding CanClearGraph}"
                             Content="Clear" />
                     <Button Width="76"
+                            Command="{Binding ArrangeGraphCommand}"
+                            IsEnabled="{Binding HasGraph}"
+                            Content="Arrange" />
+                    <Button Width="76"
                             Command="{Binding RunCommand}"
                             IsEnabled="{Binding CanRunGraph}"
                             Content="Run" />

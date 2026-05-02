@@ -1294,8 +1294,133 @@ type MainWindowViewModel() as this =
             (fun _ -> true))
         :> ICommand
 
+    member this.ArrangeGraph() =
+        let nodes = pipelineNodes () |> Seq.toArray
+
+        if nodes.Length > 0 then
+            let connectorEdges =
+                drawing.Connectors
+                |> Seq.choose (fun connector ->
+                    match connector.Start, connector.End with
+                    | (:? PipelinePinViewModel as startPin), (:? PipelinePinViewModel as endPin) ->
+                        match startPin.Parent, endPin.Parent with
+                        | (:? PipelineNodeViewModel as startNode), (:? PipelineNodeViewModel as endNode)
+                            when not (Object.ReferenceEquals(startNode, endNode)) ->
+                            Some(startNode, endNode)
+                        | _ -> None
+                    | _ -> None)
+                |> Seq.toArray
+
+            let depths = Dictionary<PipelineNodeViewModel, int>()
+            nodes |> Array.iter (fun node -> depths[node] <- 0)
+
+            for _ in 1 .. nodes.Length do
+                for startNode, endNode in connectorEdges do
+                    let nextDepth = depths[startNode] + 1
+                    if nextDepth > depths[endNode] then
+                        depths[endNode] <- nextDepth
+
+            let maxDepth =
+                depths.Values
+                |> Seq.fold max 0
+
+            let layers =
+                Dictionary<int, PipelineNodeViewModel array>(
+                    [ for depth in 0 .. maxDepth ->
+                        let layerNodes =
+                            nodes
+                            |> Array.filter (fun node -> depths[node] = depth)
+                            |> Array.sortBy (fun node -> node.Y, node.X, node.State.Title)
+
+                        KeyValuePair(depth, layerNodes) ])
+
+            let layerOrder = Dictionary<PipelineNodeViewModel, int>()
+
+            let refreshOrder () =
+                layerOrder.Clear()
+                for KeyValue(_, layerNodes) in layers do
+                    layerNodes
+                    |> Array.iteri (fun index node -> layerOrder[node] <- index)
+
+            let averageNeighborOrder fallback neighbors =
+                let indexed =
+                    neighbors
+                    |> Array.choose (fun node ->
+                        match layerOrder.TryGetValue node with
+                        | true, index -> Some(float index)
+                        | _ -> None)
+
+                if indexed.Length = 0 then fallback else Array.average indexed
+
+            refreshOrder()
+
+            for _ in 1 .. 4 do
+                for depth in 1 .. maxDepth do
+                    let layerNodes = layers[depth]
+                    layers[depth] <-
+                        layerNodes
+                        |> Array.mapi (fun index node ->
+                            let predecessors =
+                                connectorEdges
+                                |> Array.choose (fun (startNode, endNode) ->
+                                    if Object.ReferenceEquals(endNode, node) then Some startNode else None)
+
+                            averageNeighborOrder (float index) predecessors, node)
+                        |> Array.sortBy fst
+                        |> Array.map snd
+
+                    refreshOrder()
+
+                for depth in maxDepth - 1 .. -1 .. 0 do
+                    let layerNodes = layers[depth]
+                    layers[depth] <-
+                        layerNodes
+                        |> Array.mapi (fun index node ->
+                            let successors =
+                                connectorEdges
+                                |> Array.choose (fun (startNode, endNode) ->
+                                    if Object.ReferenceEquals(startNode, node) then Some endNode else None)
+
+                            averageNeighborOrder (float index) successors, node)
+                        |> Array.sortBy fst
+                        |> Array.map snd
+
+                    refreshOrder()
+
+            let columnSpacing = 180.
+            let rowSpacing = 92.
+            let leftMargin = 32.
+            let topMargin = 32.
+
+            for KeyValue(depth, layerNodes) in layers do
+                let x = leftMargin + float depth * columnSpacing
+
+                layerNodes
+                |> Array.iteri (fun index node ->
+                    node.X <- x
+                    node.Y <- topMargin + float index * rowSpacing)
+
+            let right =
+                nodes
+                |> Array.map (fun node -> node.X + node.Width)
+                |> Array.max
+
+            let bottom =
+                nodes
+                |> Array.map (fun node -> node.Y + node.Height)
+                |> Array.max
+
+            drawing.Width <- max drawing.Width (right + leftMargin)
+            drawing.Height <- max drawing.Height (bottom + topMargin)
+            nodes |> Array.iter _.ClampToDrawing()
+            this.MarkGraphDirty()
+
     member this.DeleteSelectedCommand =
         SimpleCommand((fun _ -> this.DeleteSelectedElement()), (fun _ -> not (isNull selectedNode)))
+        :> ICommand
+
+    member this.ArrangeGraphCommand =
+        SimpleCommand((fun _ -> this.ArrangeGraph()), (fun _ -> true))
         :> ICommand
 
     member this.RunCommand =

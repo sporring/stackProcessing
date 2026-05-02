@@ -1,6 +1,8 @@
 namespace Studio.Views
 
 open System
+open System.Collections.Generic
+open System.Runtime.CompilerServices
 open System.Threading.Tasks
 open Avalonia
 open Avalonia.Controls
@@ -128,6 +130,148 @@ type MainView() as this =
         if not (isNull preview) then
             preview.IsVisible <- false
 
+    let currentDrawing () =
+        let editor = this.FindControl<Editor>("PipelineEditor")
+
+        if isNull editor then
+            None
+        else
+            match editor.DrawingSource with
+            | :? DrawingNodeViewModel as drawing -> Some drawing
+            | _ -> None
+
+    let isDataConnector (connector: IConnector) =
+        match connector.Start, connector.End with
+        | (:? PipelinePinViewModel as startPin), (:? PipelinePinViewModel as endPin) ->
+            startPin.Kind = DataOutput && endPin.Kind = DataInput
+        | _ ->
+            false
+
+    let isReducerNode (node: INode) =
+        match node with
+        | :? PipelineNodeViewModel as pipelineNode -> pipelineNode.State.Definition.Id = "ComputeStats"
+        | _ -> false
+
+    let isDataNode (node: INode) =
+        match node with
+        | :? PipelineNodeViewModel as pipelineNode -> pipelineNode.State.Definition.Inputs.Length > 0
+        | _ -> false
+
+    let candidateIsDataConnector (outputPin: PipelinePinViewModel) (inputPin: PipelinePinViewModel) =
+        outputPin.Kind = DataOutput && inputPin.Kind = DataInput
+
+    let candidateIsParameterConnector (outputPin: PipelinePinViewModel) (inputPin: PipelinePinViewModel) =
+        (outputPin.Kind = ScalarOutput || outputPin.Kind = ReducerOutput) && inputPin.Kind = ParameterInput
+
+    let isCandidateDataConnector (candidate: (PipelinePinViewModel * PipelinePinViewModel) option) connectorEndParent =
+        match candidate with
+        | Some(outputPin: PipelinePinViewModel, inputPin: PipelinePinViewModel) ->
+            candidateIsDataConnector outputPin inputPin
+            && Object.ReferenceEquals(inputPin.Parent, connectorEndParent)
+        | None ->
+            false
+
+    let dataAncestors (drawing: DrawingNodeViewModel) (candidate: (PipelinePinViewModel * PipelinePinViewModel) option) (node: INode) =
+        let visited = HashSet<INode>(HashIdentity.Reference)
+
+        let rec visit (node: INode) =
+            if visited.Add node then
+                drawing.Connectors
+                |> Seq.filter (fun connector ->
+                    isDataConnector connector
+                    && Object.ReferenceEquals(connector.End.Parent, node))
+                |> Seq.iter (fun connector -> visit connector.Start.Parent)
+
+                match candidate with
+                | Some(outputPin: PipelinePinViewModel, inputPin: PipelinePinViewModel) when isCandidateDataConnector candidate node ->
+                    visit outputPin.Parent
+                | _ ->
+                    ()
+
+        visit node
+        visited
+
+    let shareDataAncestor (drawing: DrawingNodeViewModel) (candidate: (PipelinePinViewModel * PipelinePinViewModel) option) left right =
+        let leftAncestors = dataAncestors drawing candidate left
+        let rightAncestors = dataAncestors drawing candidate right
+        leftAncestors |> Seq.exists rightAncestors.Contains
+
+    let sharedDataSources drawing candidate left right =
+        let leftAncestors = dataAncestors drawing candidate left
+        let rightAncestors = dataAncestors drawing candidate right
+
+        let commonAncestors =
+            leftAncestors
+            |> Seq.filter rightAncestors.Contains
+            |> Seq.toArray
+
+        let hasIncomingData (node: INode) =
+            drawing.Connectors
+            |> Seq.exists (fun connector ->
+                isDataConnector connector
+                && Object.ReferenceEquals(connector.End.Parent, node))
+
+        let sourceAncestors =
+            commonAncestors
+            |> Array.filter (hasIncomingData >> not)
+
+        if sourceAncestors.Length > 0 then sourceAncestors else commonAncestors
+
+    let parameterTargetsFrom (drawing: DrawingNodeViewModel) (candidate: (PipelinePinViewModel * PipelinePinViewModel) option) (node: INode) =
+        seq {
+            yield!
+                drawing.Connectors
+                |> Seq.choose (fun connector ->
+                    match connector.Start, connector.End with
+                    | (:? PipelinePinViewModel as startPin), (:? PipelinePinViewModel as endPin)
+                        when (startPin.Kind = ScalarOutput || startPin.Kind = ReducerOutput)
+                             && endPin.Kind = ParameterInput
+                             && Object.ReferenceEquals(startPin.Parent, node) ->
+                        Some endPin.Parent
+                    | _ ->
+                        None)
+
+            match candidate with
+            | Some(outputPin: PipelinePinViewModel, inputPin: PipelinePinViewModel)
+                when candidateIsParameterConnector outputPin inputPin
+                     && Object.ReferenceEquals(outputPin.Parent, node) ->
+                yield inputPin.Parent
+            | _ ->
+                ()
+        }
+
+    let nodesDependingOnReducerOutput (drawing: DrawingNodeViewModel) (candidate: (PipelinePinViewModel * PipelinePinViewModel) option) reducerNode =
+        let visited = HashSet<INode>(HashIdentity.Reference)
+        let dependents = ResizeArray<INode>()
+
+        let rec visit node =
+            parameterTargetsFrom drawing candidate node
+            |> Seq.iter (fun target ->
+                if visited.Add target then
+                    dependents.Add target
+                    visit target)
+
+        visit reducerNode
+        dependents |> Seq.toArray
+
+    let reducerMapDependencySources (drawing: DrawingNodeViewModel) (outputPin: PipelinePinViewModel) (inputPin: PipelinePinViewModel) : INode array =
+        let candidate = Some(outputPin, inputPin)
+
+        drawing.Nodes
+        |> Seq.filter isReducerNode
+        |> Seq.collect (fun reducerNode ->
+            nodesDependingOnReducerOutput drawing candidate reducerNode
+            |> Seq.collect (fun dependentNode ->
+                if isDataNode dependentNode && not (isReducerNode dependentNode) then
+                    sharedDataSources drawing candidate reducerNode dependentNode
+                else
+                    Array.empty))
+        |> Seq.distinctBy RuntimeHelpers.GetHashCode
+        |> Seq.toArray
+
+    let wouldCreateReducerMapDependency (drawing: DrawingNodeViewModel) (outputPin: PipelinePinViewModel) (inputPin: PipelinePinViewModel) =
+        reducerMapDependencySources drawing outputPin inputPin |> Array.isEmpty |> not
+
     let canConnectPins (first: IPin) (second: IPin) =
         let outputPin, inputPin =
             match first, second with
@@ -149,6 +293,9 @@ type MainView() as this =
             && outputPin.IsActive
             && inputPin.IsActive
             && compatiblePortTypes outputPin inputPin
+            && (currentDrawing ()
+                |> Option.map (fun drawing -> not (wouldCreateReducerMapDependency drawing outputPin inputPin))
+                |> Option.defaultValue true)
         | _ -> false
 
     let connectorOrientation (startPin: IPin) (endPin: IPin) =
@@ -175,6 +322,46 @@ type MainView() as this =
     let setCompatiblePinHighlight (candidate: IPin option) =
         let editor = this.FindControl<Editor>("PipelineEditor")
 
+        let clearProblemHighlights () =
+            currentDrawing ()
+            |> Option.iter (fun drawing ->
+                drawing.Nodes
+                |> Seq.choose (function
+                    | :? PipelineNodeViewModel as node -> Some node
+                    | _ -> None)
+                |> Seq.iter (fun node -> node.State.IsProblemHighlighted <- false))
+
+        let candidatePins (first: IPin) (second: IPin) =
+            match first, second with
+            | (:? PipelinePinViewModel as firstPin), (:? PipelinePinViewModel as secondPin) when firstPin.IsOutput && secondPin.IsInput ->
+                Some(firstPin, secondPin)
+            | (:? PipelinePinViewModel as firstPin), (:? PipelinePinViewModel as secondPin) when firstPin.IsInput && secondPin.IsOutput ->
+                Some(secondPin, firstPin)
+            | _ ->
+                None
+
+        let isBaseCompatible (outputPin: PipelinePinViewModel) (inputPin: PipelinePinViewModel) =
+            not (Object.ReferenceEquals(outputPin.Parent, inputPin.Parent))
+            && outputPin.IsActive
+            && inputPin.IsActive
+            && PortType.canConnect outputPin.Port.Type inputPin.Port.Type
+            && (if inputPin.IsInput then inputPinIsFree inputPin else true)
+
+        let highlightSemanticProblemSources () =
+            clearProblemHighlights()
+
+            match draggingPin, candidate, currentDrawing () with
+            | Some firstPin, Some candidatePin, Some drawing ->
+                match candidatePins firstPin candidatePin with
+                | Some(outputPin, inputPin) when isBaseCompatible outputPin inputPin ->
+                    reducerMapDependencySources drawing outputPin inputPin
+                    |> Array.choose (function
+                        | :? PipelineNodeViewModel as node -> Some(node: PipelineNodeViewModel)
+                        | _ -> None)
+                    |> Array.iter (fun node -> node.State.IsProblemHighlighted <- true)
+                | _ -> ()
+            | _ -> ()
+
         let isCompatibleHighlight (firstPin: IPin) (candidatePin: IPin) =
             match firstPin, candidatePin with
             | (:? PipelinePinViewModel as firstPin), (:? PipelinePinViewModel as candidatePin) ->
@@ -182,6 +369,8 @@ type MainView() as this =
                 && canConnectPins firstPin candidatePin
                 && (if candidatePin.IsInput then inputPinIsFree candidatePin else true)
             | _ -> false
+
+        highlightSemanticProblemSources()
 
         if not (isNull editor) then
             for visual in editor.GetVisualDescendants() do
