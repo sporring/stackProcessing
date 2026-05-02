@@ -63,6 +63,7 @@ type PipelineNodeState(definition: Function, parameters: PipelineParameterViewMo
 
     let mutable title = definition.DisplayName
     let mutable isPaletteDragOutside = false
+    let mutable isProblemHighlighted = false
 
     member _.Definition = definition
     member _.Parameters = System.Collections.ObjectModel.ObservableCollection<PipelineParameterViewModel>(parameters)
@@ -79,9 +80,18 @@ type PipelineNodeState(definition: Function, parameters: PipelineParameterViewMo
                 this.OnPropertyChanged(nameof this.NodeBorderBrush)
                 this.OnPropertyChanged(nameof this.NodeOpacity)
 
+    member this.IsProblemHighlighted
+        with get () = isProblemHighlighted
+        and set v =
+            if this.SetProperty(&isProblemHighlighted, v) then
+                this.OnPropertyChanged(nameof this.NodeBackground)
+                this.OnPropertyChanged(nameof this.NodeBorderBrush)
+
     member this.NodeBackground =
         if isPaletteDragOutside then
             SolidColorBrush.Parse("#FFF8E1") :> IBrush
+        elif isProblemHighlighted then
+            SolidColorBrush.Parse("#FFE5E5") :> IBrush
         elif definition.Id = "ComputeStats" then
             SolidColorBrush.Parse("#F3E0C3") :> IBrush
         else
@@ -90,6 +100,8 @@ type PipelineNodeState(definition: Function, parameters: PipelineParameterViewMo
     member this.NodeBorderBrush =
         if isPaletteDragOutside then
             SolidColorBrush.Parse("#F2A900") :> IBrush
+        elif isProblemHighlighted then
+            SolidColorBrush.Parse("#D64545") :> IBrush
         elif definition.Id = "ComputeStats" then
             SolidColorBrush.Parse("#B7791F") :> IBrush
         else
