@@ -1,6 +1,6 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
-    <TargetFramework>net9.0</TargetFramework>
+    <TargetFramework>net10.0</TargetFramework>
     <AssemblyName>Avalonia.Controls.PanAndZoom</AssemblyName>
     <RootNamespace>Avalonia.Controls.PanAndZoom.Compat</RootNamespace>
     <Version>11.3.0</Version>

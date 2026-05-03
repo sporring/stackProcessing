@@ -1,6 +1,6 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
-    <TargetFramework>net9.0</TargetFramework>
+    <TargetFramework>net10.0</TargetFramework>
     <AssemblyName>Avalonia.Xaml.Interactivity</AssemblyName>
     <RootNamespace>Avalonia.Xaml.Interactivity.Compat</RootNamespace>
     <Version>11.3.0.6</Version>
