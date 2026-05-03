@@ -321,18 +321,21 @@
                 BorderThickness="0,1,0,0"
                 Padding="10">
             <Grid RowDefinitions="Auto,*">
-                <TextBlock Text="Generated F#"
+                <TextBlock Text="Output"
                            FontSize="14"
                            FontWeight="SemiBold"
                            Margin="0,0,0,8" />
 
-                <TextBox Grid.Row="1"
-                         Text="{Binding GeneratedProgram}"
+                <TextBox x:Name="GraphOutputTextBox"
+                         Grid.Row="1"
+                         Text="{Binding GraphOutput}"
                          FontFamily="Consolas, Menlo, monospace"
                          FontSize="13"
                          IsReadOnly="True"
                          AcceptsReturn="True"
                          TextWrapping="NoWrap"
+                         ScrollViewer.HorizontalScrollBarVisibility="Auto"
+                         ScrollViewer.VerticalScrollBarVisibility="Auto"
                          Background="#FFFFFF"
                          BorderBrush="#D7DDE5" />
             </Grid>

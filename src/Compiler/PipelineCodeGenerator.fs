@@ -324,6 +324,11 @@ module PipelineCodeGenerator =
             let chunkY = parameterValue "chunkY"
             let chunkZ = parameterValue "chunkZ"
             $">=> writeInChunks {output} {suffix} {chunkX} {chunkY} {chunkZ}"
+        | "Tap" ->
+            ">=> tap \"tap\""
+        | "Print" ->
+            let input = quotedParameter "input"
+            "printfn \"%A\" " + input
         | "SqrtFloat64" ->
             ">=> sqrt"
         | id when isScalarImageFunction id ->

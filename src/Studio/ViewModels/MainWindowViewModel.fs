@@ -558,7 +558,7 @@ type PipelineNodeViewModel(
             | _ -> None)
 
     member private this.SetParameterPinVisibility(parameter: PipelineParameterViewModel, pin: IPin) =
-        if parameter.UseInput then
+        if parameter.UseInput || state.Definition.Id = "Print" then
             pin.Width <- 14.
             pin.Height <- 14.
 
@@ -711,7 +711,7 @@ type MainWindowViewModel() as this =
     let paletteGroups = ObservableCollection<PaletteGroupViewModel>()
     let mutable selectedNode: PipelineNodeViewModel = null
     let selectedNodes = HashSet<PipelineNodeViewModel>(HashIdentity.Reference)
-    let mutable generatedProgram = ""
+    let mutable graphOutput = ""
     let mutable paletteSearch = ""
     let mutable graphDirty = false
     let mutable currentGraphPath: string option = None
@@ -1198,7 +1198,17 @@ type MainWindowViewModel() as this =
         match startPin, endPin with
         | :? PipelinePinViewModel as outputPin, (:? PipelinePinViewModel as inputPin)
             when outputPin.IsOutput && outputPin.IsActive && inputPin.IsInput && inputPin.IsActive ->
-            PortType.canConnect outputPin.Port.Type inputPin.Port.Type
+            let isPrintParameter =
+                match inputPin.Parent with
+                | :? PipelineNodeViewModel as node ->
+                    node.State.Definition.Id = "Print" && inputPin.Kind = ParameterInput
+                | _ ->
+                    false
+
+            if isPrintParameter && (outputPin.Kind = ScalarOutput || outputPin.Kind = ReducerOutput) then
+                true
+            else
+                PortType.canConnect outputPin.Port.Type inputPin.Port.Type
         | _ -> false
 
     let connectorOrientation (startPin: IPin) (endPin: IPin) =
@@ -1422,7 +1432,31 @@ type MainWindowViewModel() as this =
             let clampedDx, clampedDy = clampSelectionDelta selected dx dy
             applySelectionDelta selected clampedDx clampedDy
 
-    member _.GeneratedProgram = generatedProgram
+    member _.GraphOutput = graphOutput
+
+    member _.GeneratedProgram = graphOutput
+
+    member private this.SetGraphOutput(text: string) =
+        graphOutput <- text
+        this.RaiseGraphOutputChanged()
+
+    member this.AppendGraphOutput(text: string) =
+        let separator =
+            if String.IsNullOrEmpty graphOutput || text.StartsWith(Environment.NewLine, StringComparison.Ordinal) then
+                ""
+            else
+                Environment.NewLine
+
+        graphOutput <- graphOutput + separator + text
+        this.RaiseGraphOutputChanged()
+
+    member this.AppendGraphOutputLine(text: string) =
+        this.AppendGraphOutput(text + Environment.NewLine)
+
+    member private this.AppendGeneratedProgram(text: string) =
+        let timestamp = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss")
+        let block = $"Program generated {timestamp}{Environment.NewLine}{text}"
+        this.AppendGraphOutput(block)
 
     member _.ConnectSeedPipeline() =
         if drawing.Connectors.Count = 0 then
@@ -1673,10 +1707,8 @@ type MainWindowViewModel() as this =
         SimpleCommand(
             (fun _ ->
                 match this.ValidateGraph() with
-                | Ok () -> generatedProgram <- PipelineCodeGenerator.generateSavedGraph (this.ExportGraph())
-                | Error message -> generatedProgram <- message
-
-                this.RaiseGeneratedProgramChanged()),
+                | Ok () -> this.AppendGeneratedProgram(PipelineCodeGenerator.generateSavedGraph (this.ExportGraph()))
+                | Error message -> this.AppendGeneratedProgram(message)),
             (fun _ -> true))
         :> ICommand
 
@@ -1855,9 +1887,9 @@ type MainWindowViewModel() as this =
         drawing.Connectors.Clear()
         drawing.Nodes.Clear()
         this.SelectedNode <- null
-        generatedProgram <- ""
+        graphOutput <- ""
         currentGraphPath <- None
-        this.RaiseGeneratedProgramChanged()
+        this.RaiseGraphOutputChanged()
         this.RaiseGraphStateChanged()
 
         if shouldMarkDirty then
@@ -1993,5 +2025,6 @@ type MainWindowViewModel() as this =
         member this.DeleteSelectedElementIfInTrashZone trashWidth trashHeight margin =
             this.DeleteSelectedElementIfInTrashZone(trashWidth, trashHeight, margin)
 
-    member private this.RaiseGeneratedProgramChanged() =
+    member private this.RaiseGraphOutputChanged() =
+        this.OnPropertyChanged(PropertyChangedEventArgs(nameof this.GraphOutput))
         this.OnPropertyChanged(PropertyChangedEventArgs(nameof this.GeneratedProgram))
