@@ -442,11 +442,16 @@ module private ThresholdNode =
 type PipelineNodeViewModel(
     state: PipelineNodeState,
     selectNode: PipelineNodeViewModel -> unit,
+    moveSelectedNodesBy: PipelineNodeViewModel -> float -> float -> unit,
     getDrawingSize: unit -> float * float,
     markGraphDirty: unit -> unit,
     removePinConnections: IPin seq -> unit,
     refreshNodePins: PipelineNodeViewModel -> unit) as this =
     inherit NodeViewModel()
+
+    let mutable lastX = 0.
+    let mutable lastY = 0.
+    let mutable suppressGroupMove = false
 
     let addPipelinePin x y alignment kind parameterKey (port: Port) =
         let pin = PipelinePinViewModel(alignment, port, kind, ?parameterKey = parameterKey)
@@ -663,6 +668,14 @@ type PipelineNodeViewModel(
 
     member _.State = state
 
+    member this.SuppressGroupMove
+        with get () = suppressGroupMove
+        and set value = suppressGroupMove <- value
+
+    member this.SyncMoveOrigin() =
+        lastX <- this.X
+        lastY <- this.Y
+
     member this.ClampToDrawing() =
         let drawingWidth, drawingHeight = getDrawingSize()
         let maxX = max 0. (drawingWidth - this.Width)
@@ -678,6 +691,16 @@ type PipelineNodeViewModel(
     override this.OnMoved() =
         base.OnMoved()
         this.ClampToDrawing()
+
+        let dx = this.X - lastX
+        let dy = this.Y - lastY
+
+        lastX <- this.X
+        lastY <- this.Y
+
+        if not suppressGroupMove && (dx <> 0. || dy <> 0.) then
+            moveSelectedNodesBy this dx dy
+
         markGraphDirty()
 
 type MainWindowViewModel() as this =
@@ -685,6 +708,7 @@ type MainWindowViewModel() as this =
 
     let paletteGroups = ObservableCollection<PaletteGroupViewModel>()
     let mutable selectedNode: PipelineNodeViewModel = null
+    let selectedNodes = HashSet<PipelineNodeViewModel>(HashIdentity.Reference)
     let mutable generatedProgram = ""
     let mutable paletteSearch = ""
     let mutable graphDirty = false
@@ -808,6 +832,41 @@ type MainWindowViewModel() as this =
     let pipelineStates () =
         pipelineNodes ()
         |> Seq.map _.State
+
+    let clearSelectedNodes () =
+        selectedNodes
+        |> Seq.toArray
+        |> Array.iter (fun node -> node.State.IsSelected <- false)
+
+        selectedNodes.Clear()
+
+    let addSelectedNode (node: PipelineNodeViewModel) =
+        if not (isNull node) && selectedNodes.Add node then
+            node.State.IsSelected <- true
+
+    let selectOnlyNode (node: PipelineNodeViewModel) =
+        clearSelectedNodes()
+
+        if not (isNull node) then
+            addSelectedNode node
+
+    let moveSelectedNodesBy (movedNode: PipelineNodeViewModel) dx dy =
+        if selectedNodes.Contains movedNode && selectedNodes.Count > 1 then
+            selectedNodes
+            |> Seq.toArray
+            |> Array.filter (fun node -> not (Object.ReferenceEquals(node, movedNode)))
+            |> Array.iter (fun node ->
+                node.SuppressGroupMove <- true
+
+                try
+                    node.X <- node.X + dx
+                    node.Y <- node.Y + dy
+                    node.ClampToDrawing()
+                    node.SyncMoveOrigin()
+                finally
+                    node.SuppressGroupMove <- false)
+
+            this.MarkGraphDirty()
 
     let isNumberImagePin (pin: IPin) =
         match pin with
@@ -1192,7 +1251,8 @@ type MainWindowViewModel() as this =
         let node =
             PipelineNodeViewModel(
                 createState functionId,
-                (fun node -> this.SelectedNode <- node),
+                (fun node -> this.SelectNodeFromEditor node),
+                moveSelectedNodesBy,
                 (fun () -> drawing.Width, drawing.Height),
                 (fun () -> this.MarkGraphDirty()),
                 removePinConnections,
@@ -1203,6 +1263,7 @@ type MainWindowViewModel() as this =
         node.X <- float (24 + index * 118)
         node.Y <- 66.
         node.ClampToDrawing()
+        node.SyncMoveOrigin()
         node
 
     let addConnector startPin endPin =
@@ -1252,6 +1313,7 @@ type MainWindowViewModel() as this =
         with get () = selectedNode
         and set value =
             if this.SetProperty(&selectedNode, value) then
+                selectOnlyNode value
                 this.OnPropertyChanged(PropertyChangedEventArgs(nameof this.HasSelectedElement))
 
     member this.SelectedElement
@@ -1259,6 +1321,82 @@ type MainWindowViewModel() as this =
         and set value = this.SelectedNode <- value
 
     member _.HasSelectedElement = not (isNull selectedNode)
+
+    member this.ClearSelection() =
+        if selectedNodes.Count > 0 || not (isNull selectedNode) then
+            clearSelectedNodes()
+            selectedNode <- null
+            this.OnPropertyChanged(PropertyChangedEventArgs(nameof this.SelectedNode))
+            this.OnPropertyChanged(PropertyChangedEventArgs(nameof this.SelectedElement))
+            this.OnPropertyChanged(PropertyChangedEventArgs(nameof this.HasSelectedElement))
+
+    member this.SelectSingleNode(node: PipelineNodeViewModel) =
+        this.SelectedNode <- node
+
+    member this.SelectNodeFromEditor(node: PipelineNodeViewModel) =
+        if not (isNull node) && node.State.IsSelected && selectedNodes.Count > 1 then
+            selectedNode <- node
+            this.OnPropertyChanged(PropertyChangedEventArgs(nameof this.SelectedNode))
+            this.OnPropertyChanged(PropertyChangedEventArgs(nameof this.SelectedElement))
+            this.OnPropertyChanged(PropertyChangedEventArgs(nameof this.HasSelectedElement))
+        else
+            this.SelectedNode <- node
+
+    member this.ToggleNodeSelection(node: PipelineNodeViewModel) =
+        if not (isNull node) then
+            if selectedNodes.Contains node then
+                selectedNodes.Remove node |> ignore
+                node.State.IsSelected <- false
+
+                if Object.ReferenceEquals(selectedNode, node) then
+                    selectedNode <-
+                        selectedNodes
+                        |> Seq.tryHead
+                        |> Option.toObj
+
+                    this.OnPropertyChanged(PropertyChangedEventArgs(nameof this.SelectedNode))
+                    this.OnPropertyChanged(PropertyChangedEventArgs(nameof this.SelectedElement))
+                    this.OnPropertyChanged(PropertyChangedEventArgs(nameof this.HasSelectedElement))
+            else
+                addSelectedNode node
+                selectedNode <- node
+                this.OnPropertyChanged(PropertyChangedEventArgs(nameof this.SelectedNode))
+                this.OnPropertyChanged(PropertyChangedEventArgs(nameof this.SelectedElement))
+                this.OnPropertyChanged(PropertyChangedEventArgs(nameof this.HasSelectedElement))
+
+    member this.SelectNodes(nodes: PipelineNodeViewModel seq) =
+        clearSelectedNodes()
+
+        let selected = nodes |> Seq.toArray
+
+        selected |> Array.iter addSelectedNode
+
+        selectedNode <-
+            selected
+            |> Array.tryLast
+            |> Option.toObj
+
+        this.OnPropertyChanged(PropertyChangedEventArgs(nameof this.SelectedNode))
+        this.OnPropertyChanged(PropertyChangedEventArgs(nameof this.SelectedElement))
+        this.OnPropertyChanged(PropertyChangedEventArgs(nameof this.HasSelectedElement))
+
+    member this.MoveSelectionBy(dx: float, dy: float) =
+        let selected = selectedNodes |> Seq.toArray
+
+        if selected.Length > 0 && (dx <> 0. || dy <> 0.) then
+            selected
+            |> Array.iter (fun node ->
+                node.SuppressGroupMove <- true
+
+                try
+                    node.X <- node.X + dx
+                    node.Y <- node.Y + dy
+                    node.ClampToDrawing()
+                    node.SyncMoveOrigin()
+                finally
+                    node.SuppressGroupMove <- false)
+
+            this.MarkGraphDirty()
 
     member _.GeneratedProgram = generatedProgram
 
@@ -1528,7 +1666,8 @@ type MainWindowViewModel() as this =
                     let node =
                         PipelineNodeViewModel(
                             createState savedNode.FunctionId,
-                            (fun node -> this.SelectedNode <- node),
+                            (fun node -> this.SelectNodeFromEditor node),
+                            moveSelectedNodesBy,
                             (fun () -> drawing.Width, drawing.Height),
                             (fun () -> this.MarkGraphDirty()),
                             removePinConnections,
@@ -1538,6 +1677,7 @@ type MainWindowViewModel() as this =
                     node.X <- savedNode.X
                     node.Y <- savedNode.Y
                     node.ClampToDrawing()
+                    node.SyncMoveOrigin()
                     setParameterValues node.State savedNode.Parameters
                     drawing.Nodes.Add(node :> INode)
                     savedNode.Id, node)
@@ -1642,6 +1782,7 @@ type MainWindowViewModel() as this =
         let node = createNode drawing.Nodes.Count functionId
         node.X <- min (max 0. (drawing.Width - node.Width)) (24. + float (drawing.Nodes.Count % 6) * 118.)
         node.Y <- min (max 0. (drawing.Height - node.Height)) (24. + float (drawing.Nodes.Count / 6) * 72.)
+        node.SyncMoveOrigin()
 
         drawing.Nodes.Add(node :> INode)
         this.SelectedNode <- node
@@ -1652,6 +1793,7 @@ type MainWindowViewModel() as this =
         node.X <- x - node.Width / 2.
         node.Y <- y - node.Height / 2.
         node.ClampToDrawing()
+        node.SyncMoveOrigin()
 
         drawing.Nodes.Add(node :> INode)
         this.SelectedNode <- node
@@ -1662,6 +1804,7 @@ type MainWindowViewModel() as this =
         node.State.IsPaletteDragOutside <- isOutsideGraph
         node.X <- x - node.Width / 2.
         node.Y <- y - node.Height / 2.
+        node.SyncMoveOrigin()
 
         drawing.Nodes.Add(node :> INode)
         this.SelectedNode <- node
@@ -1676,6 +1819,7 @@ type MainWindowViewModel() as this =
             if shouldClamp then
                 selectedNode.ClampToDrawing()
 
+            selectedNode.SyncMoveOrigin()
             this.MarkGraphDirty()
 
     member this.DeleteSelectedElement() =
@@ -1757,6 +1901,9 @@ type MainWindowViewModel() as this =
     interface IGraphWindowController with
         member this.SetDrawingSize width height =
             this.SetDrawingSize(width, height)
+
+        member this.MoveSelectionBy dx dy =
+            this.MoveSelectionBy(dx, dy)
 
         member this.DeleteSelectedElementIfInTrashZone trashWidth trashHeight margin =
             this.DeleteSelectedElementIfInTrashZone(trashWidth, trashHeight, margin)

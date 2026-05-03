@@ -32,6 +32,7 @@ type MainView() as this =
     let mutable pendingPin: IPin option = None
     let mutable draggingPin: IPin option = None
     let mutable highlightedConnectionTarget: IPin option = None
+    let mutable groupDragLastPoint: Point option = None
 
     let pinCenter (pin: IPin) =
         if isNull pin.Parent then
@@ -456,6 +457,34 @@ type MainView() as this =
                 |> Seq.tryHead
         | _ -> None
 
+    let tryFindPipelineNodeFromContent (content: PipelineNodeContent) =
+        currentDrawing ()
+        |> Option.bind (fun drawing ->
+            drawing.Nodes
+            |> Seq.choose (function
+                | :? PipelineNodeViewModel as node when Object.ReferenceEquals(node.State, content.State) -> Some node
+                | _ -> None)
+            |> Seq.tryHead)
+
+    let tryFindPipelineNodeFromSource (source: obj) =
+        let nodeFromControl (control: Control) =
+            match control.DataContext with
+            | :? PipelineNodeViewModel as node -> Some node
+            | :? PipelineNodeContent as content -> tryFindPipelineNodeFromContent content
+            | _ -> None
+
+        match source with
+        | :? Control as sourceControl ->
+            match nodeFromControl sourceControl with
+            | Some node -> Some node
+            | None ->
+                sourceControl.GetVisualAncestors()
+                |> Seq.choose (function
+                    | :? Control as control -> nodeFromControl control
+                    | _ -> None)
+                |> Seq.tryHead
+        | _ -> None
+
     let deleteConnector (connector: IConnector) =
         let editor = this.FindControl<Editor>("PipelineEditor")
 
@@ -667,6 +696,25 @@ type MainView() as this =
             | :? DrawingNodeViewModel as drawing -> drawing.DeselectAllNodes()
             | _ -> ()
 
+    let syncSelectionFromNative () =
+        match this.DataContext, currentDrawing () with
+        | :? MainWindowViewModel as viewModel, Some drawing ->
+            let selected =
+                let nativeSelection = drawing.GetSelectedNodes()
+
+                if isNull nativeSelection then
+                    Seq.empty
+                else
+                    nativeSelection
+                |> Seq.choose (function
+                    | :? PipelineNodeViewModel as node -> Some node
+                    | _ -> None)
+                |> Seq.toArray
+
+            if selected.Length > 0 then
+                viewModel.SelectNodes selected
+        | _ -> ()
+
     let isInsideGraphHost (point: Point) (graphHost: Grid) =
         point.X >= 0.
         && point.Y >= 0.
@@ -718,6 +766,37 @@ type MainView() as this =
             args.Handled <- true
         | None -> ()
 
+    let moveGroupDrag (args: PointerEventArgs) =
+        match groupDragLastPoint with
+        | Some previousPoint ->
+            let graphHost = this.FindControl<Grid>("GraphHost")
+
+            if not (isNull graphHost) then
+                let point = args.GetPosition(graphHost)
+                let dx = point.X - previousPoint.X
+                let dy = point.Y - previousPoint.Y
+
+                if dx <> 0. || dy <> 0. then
+                    match this.DataContext with
+                    | :? IGraphWindowController as controller -> controller.MoveSelectionBy dx dy
+                    | _ -> ()
+
+                groupDragLastPoint <- Some point
+                args.Handled <- true
+        | None ->
+            ()
+
+    let finishGroupDrag (args: PointerReleasedEventArgs) =
+        match groupDragLastPoint with
+        | Some _ ->
+            groupDragLastPoint <- None
+            args.Pointer.Capture(null) |> ignore
+            args.PreventGestureRecognition()
+            args.Handled <- true
+            true
+        | None ->
+            false
+
     let updateConnectionDrag (args: PointerEventArgs) =
         match draggingPin with
         | Some _ ->
@@ -762,7 +841,10 @@ type MainView() as this =
         this.AddHandler(
             InputElement.PointerMovedEvent,
             EventHandler<PointerEventArgs>(fun _ args ->
-                updateConnectionDrag args
+                moveGroupDrag args
+
+                if not args.Handled then
+                    updateConnectionDrag args
 
                 if not args.Handled then
                     movePaletteDragNode args),
@@ -772,7 +854,7 @@ type MainView() as this =
         this.AddHandler(
             InputElement.PointerReleasedEvent,
             EventHandler<PointerReleasedEventArgs>(fun _ args ->
-                if not (finishConnectionDrag args) then
+                if not (finishGroupDrag args) && not (finishConnectionDrag args) then
                     finishPaletteDrag args),
             RoutingStrategies.Tunnel,
             true)
@@ -826,22 +908,28 @@ type MainView() as this =
                         true)
 
                     let selectFromPointerSource (args: PointerEventArgs) =
-                        match args.Source with
-                        | :? Avalonia.Controls.Control as sourceControl ->
-                            match sourceControl.DataContext with
-                            | :? PipelineNodeContent as nodeContent ->
-                                nodeContent.Select()
-                            | _ ->
-                                sourceControl.GetVisualAncestors()
-                                |> Seq.choose (fun visual ->
-                                    match visual with
-                                    | :? Avalonia.Controls.Control as control ->
-                                        match control.DataContext with
-                                        | :? PipelineNodeContent as nodeContent -> Some nodeContent
-                                        | _ -> None
-                                    | _ -> None)
-                                |> Seq.tryHead
-                                |> Option.iter (fun nodeContent -> nodeContent.Select())
+                        match this.DataContext with
+                        | :? MainWindowViewModel as viewModel ->
+                            let isCtrlPressed = args.KeyModifiers.HasFlag KeyModifiers.Control
+
+                            match tryFindPipelineNodeFromSource args.Source with
+                            | Some node when isCtrlPressed ->
+                                let wasSelected = node.State.IsSelected
+                                viewModel.ToggleNodeSelection node
+
+                                if wasSelected then
+                                    args.PreventGestureRecognition()
+                                    args.Handled <- true
+                                elif not (isNull graphHost) then
+                                    groupDragLastPoint <- Some(args.GetPosition(graphHost))
+                                    args.Pointer.Capture(this) |> ignore
+                                    args.PreventGestureRecognition()
+                                    args.Handled <- true
+                            | Some node ->
+                                if not node.State.IsSelected then
+                                    viewModel.SelectSingleNode node
+                            | None ->
+                                viewModel.ClearSelection()
                         | _ -> ()
 
                     editor.AddHandler(
@@ -916,6 +1004,7 @@ type MainView() as this =
                                 finishConnectionDrag args |> ignore
 
                                 Dispatcher.UIThread.Post(fun () ->
+                                    syncSelectionFromNative()
                                     deleteSelectedNodeIfOverTrash()
                                     clearNativeNodeSelection())),
                         RoutingStrategies.Bubble,
