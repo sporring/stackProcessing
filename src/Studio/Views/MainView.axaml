@@ -148,9 +148,13 @@
                             IsEnabled="{Binding CanClearGraph}"
                             Content="Clear" />
                     <Button Width="76"
-                            Command="{Binding ArrangeGraphCommand}"
+                            Click="ArrangeGraphClicked"
                             IsEnabled="{Binding HasGraph}"
                             Content="Arrange" />
+                    <Button Width="76"
+                            Click="FitGraphClicked"
+                            IsEnabled="{Binding HasGraph}"
+                            Content="Fit" />
                     <Button Width="76"
                             Command="{Binding RunCommand}"
                             IsEnabled="{Binding CanRunGraph}"
@@ -202,11 +206,13 @@
                              ClipToBounds="True"
                              Background="#FFFFFF"
                              EnablePan="True"
-                             EnableZoom="True"
+                             EnableZoom="False"
                              EnableKeyboardNavigation="True"
                              KeyboardPanStep="64"
                              PanButton="Middle"
-                             BoundsMode="Unrestricted"
+                             BoundsMode="FillViewport"
+                             AutoCalculateMinZoom="True"
+                             WheelBehavior="None"
                              Stretch="None"
                              HorizontalAlignment="Stretch"
                              VerticalAlignment="Stretch">
@@ -230,21 +236,22 @@
             </Canvas>
 
             <Border x:Name="GraphTrash"
-                    Width="86"
-                    Height="42"
+                    Width="44"
+                    Height="44"
                     HorizontalAlignment="Right"
                     VerticalAlignment="Bottom"
                     Margin="0,0,12,12"
                     Background="#FFF1F0"
                     BorderBrush="#C62828"
-                    BorderThickness="1"
-                    CornerRadius="6"
+                    BorderThickness="2"
+                    CornerRadius="4"
                     DragDrop.AllowDrop="True"
                     DragDrop.DragOver="TrashDragOver"
                     DragDrop.Drop="TrashDrop">
-                <TextBlock Text="Trash"
+                <TextBlock Text="×"
                            HorizontalAlignment="Center"
                            VerticalAlignment="Center"
+                           FontSize="24"
                            FontWeight="SemiBold"
                            Foreground="#8E1B1B" />
             </Border>
