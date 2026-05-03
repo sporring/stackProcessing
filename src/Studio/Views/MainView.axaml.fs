@@ -954,13 +954,12 @@ type MainView() as this =
 
                 if confirmed then
                     let topLevel = TopLevel.GetTopLevel(this)
-                    let jsonType = jsonFileType()
 
                     let options =
                         FilePickerOpenOptions(
                             Title = "Load pipeline graph",
                             AllowMultiple = false,
-                            FileTypeFilter = [ jsonType; FilePickerFileTypes.All ])
+                            FileTypeFilter = [ FilePickerFileTypes.All ])
 
                     let! files = topLevel.StorageProvider.OpenFilePickerAsync(options)
 
