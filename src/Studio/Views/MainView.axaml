@@ -1,6 +1,7 @@
 <UserControl xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:ne="clr-namespace:NodeEditor.Controls;assembly=NodeEditorAvalonia"
+             xmlns:paz="using:Avalonia.Controls.PanAndZoom"
              xmlns:vm="using:Studio.ViewModels"
              xmlns:models="using:Studio.Models"
              xmlns:graph="using:Graph"
@@ -197,12 +198,27 @@
               DragDrop.AllowDrop="True"
               DragDrop.DragOver="PipelineEditorDragOver"
               DragDrop.Drop="PipelineEditorDrop">
-            <ne:Editor x:Name="PipelineEditor"
-                       DrawingSource="{Binding Editor.Drawing}"
-                       DragDrop.AllowDrop="True"
-                       DragDrop.DragOver="PipelineEditorDragOver"
-                       DragDrop.Drop="PipelineEditorDrop"
-                       Background="#FFFFFF" />
+            <paz:ZoomBorder x:Name="GraphZoomBorder"
+                             ClipToBounds="True"
+                             Background="#FFFFFF"
+                             EnablePan="True"
+                             EnableZoom="True"
+                             EnableKeyboardNavigation="True"
+                             KeyboardPanStep="64"
+                             PanButton="Middle"
+                             BoundsMode="Unrestricted"
+                             Stretch="None"
+                             HorizontalAlignment="Stretch"
+                             VerticalAlignment="Stretch">
+                <ne:Editor x:Name="PipelineEditor"
+                           Width="{Binding Editor.Drawing.Width}"
+                           Height="{Binding Editor.Drawing.Height}"
+                           DrawingSource="{Binding Editor.Drawing}"
+                           DragDrop.AllowDrop="True"
+                           DragDrop.DragOver="PipelineEditorDragOver"
+                           DragDrop.Drop="PipelineEditorDrop"
+                           Background="#FFFFFF" />
+            </paz:ZoomBorder>
 
             <Canvas IsHitTestVisible="False">
                 <Line x:Name="ConnectionPreview"

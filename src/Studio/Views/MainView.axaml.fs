@@ -16,6 +16,7 @@ open Avalonia.Controls.Shapes
 open Avalonia.Layout
 open Avalonia.Platform.Storage
 open Avalonia.VisualTree
+open Avalonia.Controls.PanAndZoom
 open Graph
 open NodeEditor.Controls
 open NodeEditor.Model
@@ -33,6 +34,8 @@ type MainView() as this =
     let mutable draggingPin: IPin option = None
     let mutable highlightedConnectionTarget: IPin option = None
     let mutable groupDragLastPoint: Point option = None
+    let minGraphWidth = 3000.
+    let minGraphHeight = 2000.
 
     let pinCenter (pin: IPin) =
         if isNull pin.Parent then
@@ -65,6 +68,17 @@ type MainView() as this =
 
     let pinCenterInGraphHost (pin: IPin) =
         tryPinControlCenter pin |> Option.defaultWith (fun () -> pinCenter pin)
+
+    let graphZoomBorder () =
+        this.FindControl<ZoomBorder>("GraphZoomBorder")
+
+    let viewportToGraphContent (point: Point) =
+        let zoomBorder = graphZoomBorder ()
+
+        if isNull zoomBorder then
+            point
+        else
+            zoomBorder.ViewportToContent(point)
 
     let jsonFileType () =
         let fileType = FilePickerFileType("Pipeline JSON")
@@ -674,13 +688,13 @@ type MainView() as this =
             let height = graphHost.Bounds.Height
 
             if width > 0. && height > 0. then
-                editor.DrawingSource.Width <- width
-                editor.DrawingSource.Height <- height
+                editor.DrawingSource.Width <- max editor.DrawingSource.Width (max minGraphWidth width)
+                editor.DrawingSource.Height <- max editor.DrawingSource.Height (max minGraphHeight height)
 
                 editor.DrawingSource.Nodes
                 |> Seq.iter (fun node ->
-                    node.X <- min (max 0. (width - node.Width)) (max 0. node.X)
-                    node.Y <- min (max 0. (height - node.Height)) (max 0. node.Y))
+                    node.X <- min (max 0. (editor.DrawingSource.Width - node.Width)) (max 0. node.X)
+                    node.Y <- min (max 0. (editor.DrawingSource.Height - node.Height)) (max 0. node.Y))
 
     let deleteSelectedNodeIfOverTrash () =
         match this.DataContext with
@@ -750,8 +764,9 @@ type MainView() as this =
             let graphHost = this.FindControl<Grid>("GraphHost")
 
             if not (isNull graphHost) then
-                let point = args.GetPosition(graphHost)
-                let isOutsideGraph = not (isInsideGraphHost point graphHost)
+                let viewportPoint = args.GetPosition(graphHost)
+                let point = viewportToGraphContent viewportPoint
+                let isOutsideGraph = not (isInsideGraphHost viewportPoint graphHost)
 
                 match this.DataContext with
                 | :? MainWindowViewModel as viewModel ->
@@ -772,7 +787,7 @@ type MainView() as this =
             let graphHost = this.FindControl<Grid>("GraphHost")
 
             if not (isNull graphHost) then
-                let point = args.GetPosition(graphHost)
+                let point = viewportToGraphContent (args.GetPosition(graphHost))
                 let dx = point.X - previousPoint.X
                 let dy = point.Y - previousPoint.Y
 
@@ -824,11 +839,12 @@ type MainView() as this =
 
             if not (isNull graphHost) then
                 let dropPoint = args.GetPosition(graphHost)
+                let graphPoint = viewportToGraphContent dropPoint
 
                 match this.DataContext with
                 | :? MainWindowViewModel as viewModel ->
                     if isInsideGraphHost dropPoint graphHost then
-                        viewModel.MoveSelectedElementTo(dropPoint.X, dropPoint.Y, true, false)
+                        viewModel.MoveSelectedElementTo(graphPoint.X, graphPoint.Y, true, false)
                     else
                         viewModel.DeleteSelectedElement()
                 | _ -> ()
@@ -836,8 +852,40 @@ type MainView() as this =
             args.Handled <- true
         | None -> ()
 
+    let panGraphWithArrowKey (args: KeyEventArgs) =
+        let zoomBorder = graphZoomBorder ()
+
+        if not (isNull zoomBorder) then
+            let baseStep = 64.
+            let step =
+                if args.KeyModifiers.HasFlag KeyModifiers.Shift then
+                    baseStep * 4.
+                else
+                    baseStep
+
+            let delta =
+                match args.Key with
+                | Key.Left -> Some(step, 0.)
+                | Key.Right -> Some(-step, 0.)
+                | Key.Up -> Some(0., step)
+                | Key.Down -> Some(0., -step)
+                | _ -> None
+
+            match delta with
+            | Some(dx, dy) ->
+                zoomBorder.PanDelta(dx, dy, true)
+                args.Handled <- true
+            | None ->
+                ()
+
     do
         this.InitializeComponent()
+        this.AddHandler(
+            InputElement.KeyDownEvent,
+            EventHandler<KeyEventArgs>(fun _ args -> panGraphWithArrowKey args),
+            RoutingStrategies.Tunnel,
+            true)
+
         this.AddHandler(
             InputElement.PointerMovedEvent,
             EventHandler<PointerEventArgs>(fun _ args ->
@@ -863,18 +911,13 @@ type MainView() as this =
             Dispatcher.UIThread.Post(fun () ->
                 let graphHost = this.FindControl<Grid>("GraphHost")
                 let editor = this.FindControl<Editor>("PipelineEditor")
+                let zoomBorder = graphZoomBorder ()
 
                 if not (isNull graphHost) then
                     graphHost.SizeChanged.Add(fun _ ->
                         Dispatcher.UIThread.Post(syncGraphWindowSize))
 
                     syncGraphWindowSize()
-
-                    graphHost.AddHandler(
-                        InputElement.PointerWheelChangedEvent,
-                        EventHandler<PointerWheelEventArgs>(fun _ args -> args.Handled <- true),
-                        RoutingStrategies.Tunnel,
-                        true)
 
                     graphHost.AddHandler(
                         DragDrop.DragOverEvent,
@@ -888,13 +931,15 @@ type MainView() as this =
                         RoutingStrategies.Tunnel,
                         true)
 
-                if not (isNull editor) then
-                    editor.AddHandler(
-                        InputElement.PointerWheelChangedEvent,
-                        EventHandler<PointerWheelEventArgs>(fun _ args -> args.Handled <- true),
+                    graphHost.AddHandler(
+                        InputElement.PointerPressedEvent,
+                        EventHandler<PointerPressedEventArgs>(fun _ _ ->
+                            if not (isNull zoomBorder) then
+                                zoomBorder.Focus() |> ignore),
                         RoutingStrategies.Tunnel,
                         true)
 
+                if not (isNull editor) then
                     editor.AddHandler(
                         DragDrop.DragOverEvent,
                         EventHandler<DragEventArgs>(fun _ args -> this.PipelineEditorDragOver(editor, args)),
@@ -921,7 +966,7 @@ type MainView() as this =
                                     args.PreventGestureRecognition()
                                     args.Handled <- true
                                 elif not (isNull graphHost) then
-                                    groupDragLastPoint <- Some(args.GetPosition(graphHost))
+                                    groupDragLastPoint <- Some(viewportToGraphContent (args.GetPosition(graphHost)))
                                     args.Pointer.Capture(this) |> ignore
                                     args.PreventGestureRecognition()
                                     args.Handled <- true
@@ -1159,8 +1204,9 @@ type MainView() as this =
                 let graphHost = this.FindControl<Grid>("GraphHost")
 
                 if not (isNull graphHost) then
-                    let point = args.GetPosition(graphHost)
-                    let isOutsideGraph = not (isInsideGraphHost point graphHost)
+                    let viewportPoint = args.GetPosition(graphHost)
+                    let point = viewportToGraphContent viewportPoint
+                    let isOutsideGraph = not (isInsideGraphHost viewportPoint graphHost)
 
                     match this.DataContext with
                     | :? MainWindowViewModel as viewModel ->
@@ -1190,7 +1236,7 @@ type MainView() as this =
                         if isNull graphHost then
                             Point()
                         else
-                            args.GetPosition(graphHost)
+                            args.GetPosition(graphHost) |> viewportToGraphContent
 
                     viewModel.AddElementAt(functionId, dropPoint.X, dropPoint.Y)
                     args.Handled <- true
