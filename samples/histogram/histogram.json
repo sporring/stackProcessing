@@ -1,0 +1,50 @@
+{
+  "version": 1,
+  "nodes": [
+    {
+      "id": "n1",
+      "functionId": "Read",
+      "x": 40.0,
+      "y": 120.0,
+      "parameters": [
+        {
+          "key": "availableMemory",
+          "value": "2147483648UL",
+          "useInput": false
+        },
+        {
+          "key": "type",
+          "value": "UInt8",
+          "useInput": false
+        },
+        {
+          "key": "input",
+          "value": "../image18",
+          "useInput": false
+        },
+        {
+          "key": "suffix",
+          "value": ".tiff",
+          "useInput": false
+        }
+      ]
+    },
+    {
+      "id": "n2",
+      "functionId": "Histogram",
+      "x": 260.0,
+      "y": 120.0,
+      "parameters": []
+    }
+  ],
+  "edges": [
+    {
+      "fromNode": "n1",
+      "fromKind": "dataOutput",
+      "fromPort": 0,
+      "toNode": "n2",
+      "toKind": "dataInput",
+      "toPort": 0
+    }
+  ]
+}

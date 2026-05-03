@@ -1,0 +1,133 @@
+{
+  "version": 1,
+  "nodes": [
+    {
+      "id": "n1",
+      "functionId": "Read",
+      "x": 40.0,
+      "y": 80.0,
+      "parameters": [
+        {
+          "key": "availableMemory",
+          "value": "2147483648UL",
+          "useInput": false
+        },
+        {
+          "key": "type",
+          "value": "UInt8",
+          "useInput": false
+        },
+        {
+          "key": "input",
+          "value": "../image18",
+          "useInput": false
+        },
+        {
+          "key": "suffix",
+          "value": ".tiff",
+          "useInput": false
+        }
+      ]
+    },
+    {
+      "id": "n2",
+      "functionId": "Read",
+      "x": 40.0,
+      "y": 220.0,
+      "parameters": [
+        {
+          "key": "availableMemory",
+          "value": "2147483648UL",
+          "useInput": false
+        },
+        {
+          "key": "type",
+          "value": "UInt8",
+          "useInput": false
+        },
+        {
+          "key": "input",
+          "value": "../mask18",
+          "useInput": false
+        },
+        {
+          "key": "suffix",
+          "value": ".tiff",
+          "useInput": false
+        }
+      ]
+    },
+    {
+      "id": "n3",
+      "functionId": "MulPair",
+      "x": 300.0,
+      "y": 150.0,
+      "parameters": [
+        {
+          "key": "type",
+          "value": "UInt8",
+          "useInput": false
+        }
+      ]
+    },
+    {
+      "id": "n4",
+      "functionId": "Tap",
+      "x": 520.0,
+      "y": 150.0,
+      "parameters": []
+    },
+    {
+      "id": "n5",
+      "functionId": "Write",
+      "x": 740.0,
+      "y": 150.0,
+      "parameters": [
+        {
+          "key": "output",
+          "value": "../result18",
+          "useInput": false
+        },
+        {
+          "key": "suffix",
+          "value": ".tiff",
+          "useInput": false
+        }
+      ]
+    }
+  ],
+  "edges": [
+    {
+      "fromNode": "n1",
+      "fromKind": "dataOutput",
+      "fromPort": 0,
+      "toNode": "n3",
+      "toKind": "dataInput",
+      "toPort": 0
+    },
+    {
+      "fromNode": "n2",
+      "fromKind": "dataOutput",
+      "fromPort": 0,
+      "toNode": "n3",
+      "toKind": "dataInput",
+      "toPort": 1
+    },
+    {
+      "fromNode": "n3",
+      "fromKind": "dataOutput",
+      "fromPort": 0,
+      "toNode": "n4",
+      "toKind": "dataInput",
+      "toPort": 0
+    },
+    {
+      "fromNode": "n4",
+      "fromKind": "dataOutput",
+      "fromPort": 0,
+      "toNode": "n5",
+      "toKind": "dataInput",
+      "toPort": 0
+    }
+  ]
+}

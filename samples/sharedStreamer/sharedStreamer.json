@@ -1,0 +1,234 @@
+{
+  "version": 1,
+  "nodes": [
+    {
+      "id": "n1",
+      "functionId": "Read",
+      "x": 40.0,
+      "y": 150.0,
+      "parameters": [
+        {
+          "key": "availableMemory",
+          "value": "2147483648UL",
+          "useInput": false
+        },
+        {
+          "key": "type",
+          "value": "UInt8",
+          "useInput": false
+        },
+        {
+          "key": "input",
+          "value": "../image18",
+          "useInput": false
+        },
+        {
+          "key": "suffix",
+          "value": ".tiff",
+          "useInput": false
+        }
+      ]
+    },
+    {
+      "id": "n2",
+      "functionId": "Tap",
+      "x": 240.0,
+      "y": 150.0,
+      "parameters": []
+    },
+    {
+      "id": "n3",
+      "functionId": "Cast",
+      "x": 440.0,
+      "y": 150.0,
+      "parameters": [
+        {
+          "key": "sourceType",
+          "value": "UInt8",
+          "useInput": false
+        },
+        {
+          "key": "targetType",
+          "value": "Float64",
+          "useInput": false
+        }
+      ]
+    },
+    {
+      "id": "n4",
+      "functionId": "Tap",
+      "x": 640.0,
+      "y": 150.0,
+      "parameters": []
+    },
+    {
+      "id": "n5",
+      "functionId": "ImageOpScalar",
+      "x": 840.0,
+      "y": 80.0,
+      "parameters": [
+        {
+          "key": "operation",
+          "value": "+",
+          "useInput": false
+        },
+        {
+          "key": "type",
+          "value": "Float64",
+          "useInput": false
+        },
+        {
+          "key": "value",
+          "value": "1.0",
+          "useInput": false
+        }
+      ]
+    },
+    {
+      "id": "n6",
+      "functionId": "ImageOpScalar",
+      "x": 840.0,
+      "y": 220.0,
+      "parameters": [
+        {
+          "key": "operation",
+          "value": "+",
+          "useInput": false
+        },
+        {
+          "key": "type",
+          "value": "Float64",
+          "useInput": false
+        },
+        {
+          "key": "value",
+          "value": "2.0",
+          "useInput": false
+        }
+      ]
+    },
+    {
+      "id": "n7",
+      "functionId": "MulPair",
+      "x": 1060.0,
+      "y": 150.0,
+      "parameters": [
+        {
+          "key": "type",
+          "value": "Float64",
+          "useInput": false
+        }
+      ]
+    },
+    {
+      "id": "n8",
+      "functionId": "Cast",
+      "x": 1280.0,
+      "y": 150.0,
+      "parameters": [
+        {
+          "key": "sourceType",
+          "value": "Float64",
+          "useInput": false
+        },
+        {
+          "key": "targetType",
+          "value": "Int8",
+          "useInput": false
+        }
+      ]
+    },
+    {
+      "id": "n9",
+      "functionId": "Write",
+      "x": 1500.0,
+      "y": 150.0,
+      "parameters": [
+        {
+          "key": "output",
+          "value": "../result18",
+          "useInput": false
+        },
+        {
+          "key": "suffix",
+          "value": ".tiff",
+          "useInput": false
+        }
+      ]
+    }
+  ],
+  "edges": [
+    {
+      "fromNode": "n1",
+      "fromKind": "dataOutput",
+      "fromPort": 0,
+      "toNode": "n2",
+      "toKind": "dataInput",
+      "toPort": 0
+    },
+    {
+      "fromNode": "n2",
+      "fromKind": "dataOutput",
+      "fromPort": 0,
+      "toNode": "n3",
+      "toKind": "dataInput",
+      "toPort": 0
+    },
+    {
+      "fromNode": "n3",
+      "fromKind": "dataOutput",
+      "fromPort": 0,
+      "toNode": "n4",
+      "toKind": "dataInput",
+      "toPort": 0
+    },
+    {
+      "fromNode": "n4",
+      "fromKind": "dataOutput",
+      "fromPort": 0,
+      "toNode": "n5",
+      "toKind": "dataInput",
+      "toPort": 0
+    },
+    {
+      "fromNode": "n4",
+      "fromKind": "dataOutput",
+      "fromPort": 0,
+      "toNode": "n6",
+      "toKind": "dataInput",
+      "toPort": 0
+    },
+    {
+      "fromNode": "n5",
+      "fromKind": "dataOutput",
+      "fromPort": 0,
+      "toNode": "n7",
+      "toKind": "dataInput",
+      "toPort": 0
+    },
+    {
+      "fromNode": "n6",
+      "fromKind": "dataOutput",
+      "fromPort": 0,
+      "toNode": "n7",
+      "toKind": "dataInput",
+      "toPort": 1
+    },
+    {
+      "fromNode": "n7",
+      "fromKind": "dataOutput",
+      "fromPort": 0,
+      "toNode": "n8",
+      "toKind": "dataInput",
+      "toPort": 0
+    },
+    {
+      "fromNode": "n8",
+      "fromKind": "dataOutput",
+      "fromPort": 0,
+      "toNode": "n9",
+      "toKind": "dataInput",
+      "toPort": 0
+    }
+  ]
+}
