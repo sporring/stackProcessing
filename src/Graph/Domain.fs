@@ -95,8 +95,7 @@ type PortType = // all but unit are lists
     | Image of NumericType
     | Scalar of BasicType
     | Tuple of PortType * PortType
-    | Source
-    | Sink
+    | Any
     | Unit
 
 type Port =
@@ -121,6 +120,8 @@ module PortType =
 
     let canConnect (outputType: PortType) (inputType: PortType) =
         match outputType, inputType with
+        | Any, _
+        | _, Any -> true
         | Image _, Image Number -> true
         | _ -> outputType = inputType
 
