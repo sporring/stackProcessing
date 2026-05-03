@@ -213,6 +213,102 @@ type MainView() as this =
     let candidateIsParameterConnector (outputPin: PipelinePinViewModel) (inputPin: PipelinePinViewModel) =
         (outputPin.Kind = ScalarOutput || outputPin.Kind = ReducerOutput) && inputPin.Kind = ParameterInput
 
+    let concreteImageType (portType: PortType) =
+        match portType with
+        | Image Number -> None
+        | Image numericType -> Some numericType
+        | _ -> None
+
+    let tapConcreteTypes (drawing: DrawingNodeViewModel) (tapNode: INode) =
+        drawing.Connectors
+        |> Seq.choose (fun connector ->
+            match connector.Start, connector.End with
+            | (:? PipelinePinViewModel as startPin), (:? PipelinePinViewModel as endPin)
+                when Object.ReferenceEquals(startPin.Parent, tapNode)
+                     && startPin.Kind = DataOutput ->
+                concreteImageType endPin.Port.Type
+            | (:? PipelinePinViewModel as startPin), (:? PipelinePinViewModel as endPin)
+                when Object.ReferenceEquals(endPin.Parent, tapNode)
+                     && endPin.Kind = DataInput ->
+                concreteImageType startPin.Port.Type
+            | _ ->
+                None)
+        |> Seq.distinct
+        |> Seq.toArray
+
+    let updateTapPinNames (drawing: DrawingNodeViewModel) =
+        drawing.Nodes
+        |> Seq.choose (function
+            | :? PipelineNodeViewModel as node when node.State.Definition.Id = "Tap" -> Some node
+            | _ -> None)
+        |> Seq.iter (fun node ->
+            let name =
+                match tapConcreteTypes drawing node with
+                | [| numericType |] -> NumericType.toString numericType
+                | _ -> "Number"
+
+            node.Pins
+            |> Seq.choose (function
+                | :? PipelinePinViewModel as pin when pin.Kind = DataInput || pin.Kind = DataOutput -> Some pin
+                | _ -> None)
+            |> Seq.iter (fun pin -> pin.Name <- name))
+
+    let compatiblePortTypes (outputPin: PipelinePinViewModel) (inputPin: PipelinePinViewModel) =
+        let isPrintParameter =
+            match inputPin.Parent with
+            | :? PipelineNodeViewModel as node ->
+                node.State.Definition.Id = "Print" && inputPin.Kind = ParameterInput
+            | _ ->
+                false
+
+        if isPrintParameter && (outputPin.Kind = ScalarOutput || outputPin.Kind = ReducerOutput) then
+            true
+        elif outputPin.Kind = DataOutput && inputPin.Kind = DataInput then
+            let baseCompatible = PortType.canConnect outputPin.Port.Type inputPin.Port.Type
+
+            let isTapNode (node: INode) =
+                match node with
+                | :? PipelineNodeViewModel as pipelineNode -> pipelineNode.State.Definition.Id = "Tap"
+                | _ -> false
+
+            let candidateTypesForTap tapNode =
+                seq {
+                    match currentDrawing () with
+                    | Some drawing ->
+                        yield! tapConcreteTypes drawing tapNode
+                    | None ->
+                        ()
+
+                    if Object.ReferenceEquals(outputPin.Parent, tapNode) then
+                        match concreteImageType inputPin.Port.Type with
+                        | Some numericType -> yield numericType
+                        | None -> ()
+
+                    if Object.ReferenceEquals(inputPin.Parent, tapNode) then
+                        match concreteImageType outputPin.Port.Type with
+                        | Some numericType -> yield numericType
+                        | None -> ()
+                }
+                |> Seq.distinct
+                |> Seq.toArray
+
+            let tapTypesAreConsistent =
+                [| outputPin.Parent; inputPin.Parent |]
+                |> Array.filter isTapNode
+                |> Array.distinctBy RuntimeHelpers.GetHashCode
+                |> Array.forall (fun tapNode -> (candidateTypesForTap tapNode).Length <= 1)
+
+            let hasTapEndpoint = isTapNode outputPin.Parent || isTapNode inputPin.Parent
+
+            if hasTapEndpoint then
+                tapTypesAreConsistent
+            else
+                baseCompatible
+        elif candidateIsParameterConnector outputPin inputPin then
+            PortType.canConnect outputPin.Port.Type inputPin.Port.Type
+        else
+            false
+
     let isCandidateDataConnector (candidate: (PipelinePinViewModel * PipelinePinViewModel) option) connectorEndParent =
         match candidate with
         | Some(outputPin: PipelinePinViewModel, inputPin: PipelinePinViewModel) ->
@@ -220,6 +316,41 @@ type MainView() as this =
             && Object.ReferenceEquals(inputPin.Parent, connectorEndParent)
         | None ->
             false
+
+    let cycleNodesForCandidate (drawing: DrawingNodeViewModel) (outputPin: PipelinePinViewModel) (inputPin: PipelinePinViewModel) =
+        let startNode = outputPin.Parent
+        let targetNode = inputPin.Parent
+        let visited = HashSet<INode>(HashIdentity.Reference)
+
+        let outgoingNodes node =
+            drawing.Connectors
+            |> Seq.choose (fun connector ->
+                match connector.Start, connector.End with
+                | (:? PipelinePinViewModel as startPin), (:? PipelinePinViewModel as endPin)
+                    when startPin.IsOutput
+                         && endPin.IsInput
+                         && Object.ReferenceEquals(startPin.Parent, node) ->
+                    Some endPin.Parent
+                | _ ->
+                    None)
+
+        let rec tryFindPath node =
+            if Object.ReferenceEquals(node, startNode) then
+                Some [ node ]
+            elif visited.Add node then
+                outgoingNodes node
+                |> Seq.tryPick (fun nextNode ->
+                    tryFindPath nextNode
+                    |> Option.map (fun path -> node :: path))
+            else
+                None
+
+        tryFindPath targetNode
+        |> Option.map (fun path -> path |> List.toArray)
+        |> Option.defaultValue Array.empty
+
+    let wouldCreateCycle drawing outputPin inputPin =
+        cycleNodesForCandidate drawing outputPin inputPin |> Array.isEmpty |> not
 
     let dataAncestors (drawing: DrawingNodeViewModel) (candidate: (PipelinePinViewModel * PipelinePinViewModel) option) (node: INode) =
         let visited = HashSet<INode>(HashIdentity.Reference)
@@ -331,12 +462,6 @@ type MainView() as this =
                 Some second, Some first
             | _ -> None, None
 
-        let compatiblePortTypes (outputPin: IPin) (inputPin: IPin) =
-            match outputPin, inputPin with
-            | :? PipelinePinViewModel as outputPin, (:? PipelinePinViewModel as inputPin) ->
-                PortType.canConnect outputPin.Port.Type inputPin.Port.Type
-            | _ -> false
-
         match outputPin, inputPin with
         | Some (:? PipelinePinViewModel as outputPin), Some (:? PipelinePinViewModel as inputPin) ->
             not (Object.ReferenceEquals(outputPin.Parent, inputPin.Parent))
@@ -344,7 +469,9 @@ type MainView() as this =
             && inputPin.IsActive
             && compatiblePortTypes outputPin inputPin
             && (currentDrawing ()
-                |> Option.map (fun drawing -> not (wouldCreateReducerMapDependency drawing outputPin inputPin))
+                |> Option.map (fun drawing ->
+                    not (wouldCreateReducerMapDependency drawing outputPin inputPin)
+                    && not (wouldCreateCycle drawing outputPin inputPin))
                 |> Option.defaultValue true)
         | _ -> false
 
@@ -394,7 +521,7 @@ type MainView() as this =
             not (Object.ReferenceEquals(outputPin.Parent, inputPin.Parent))
             && outputPin.IsActive
             && inputPin.IsActive
-            && PortType.canConnect outputPin.Port.Type inputPin.Port.Type
+            && compatiblePortTypes outputPin inputPin
             && (if inputPin.IsInput then inputPinIsFree inputPin else true)
 
         let highlightSemanticProblemSources () =
@@ -404,7 +531,15 @@ type MainView() as this =
             | Some firstPin, Some candidatePin, Some drawing ->
                 match candidatePins firstPin candidatePin with
                 | Some(outputPin, inputPin) when isBaseCompatible outputPin inputPin ->
-                    reducerMapDependencySources drawing outputPin inputPin
+                    let problemNodes =
+                        let cycleNodes = cycleNodesForCandidate drawing outputPin inputPin
+
+                        if cycleNodes.Length > 0 then
+                            cycleNodes
+                        else
+                            reducerMapDependencySources drawing outputPin inputPin
+
+                    problemNodes
                     |> Array.choose (function
                         | :? PipelineNodeViewModel as node -> Some(node: PipelineNodeViewModel)
                         | _ -> None)
@@ -514,7 +649,10 @@ type MainView() as this =
             false
         else
             match editor.DrawingSource with
-            | :? DrawingNodeViewModel as drawing -> drawing.Connectors.Remove(connector)
+            | :? DrawingNodeViewModel as drawing ->
+                let removed = drawing.Connectors.Remove(connector)
+                updateTapPinNames drawing
+                removed
             | _ -> false
 
     let distanceToSegment (point: Point) (startPoint: Point) (endPoint: Point) =
@@ -575,6 +713,7 @@ type MainView() as this =
                 for connector in connectors do
                     drawing.Connectors.Remove(connector) |> ignore
 
+                updateTapPinNames drawing
                 connectors.Length > 0
             | _ -> false
 
@@ -646,7 +785,9 @@ type MainView() as this =
                         connector.Orientation <- connectorOrientation outputPin inputPin
 
                         Dispatcher.UIThread.Post(
-                            (fun () -> drawing.Connectors.Add(connector :> IConnector)),
+                            (fun () ->
+                                drawing.Connectors.Add(connector :> IConnector)
+                                updateTapPinNames drawing),
                             DispatcherPriority.Background)
 
                     true
@@ -909,6 +1050,73 @@ type MainView() as this =
         | _ ->
             ()
 
+    let updateMiniMap () =
+        let miniMap = this.FindControl<Canvas>("MiniMapCanvas")
+        let zoomBorder = graphZoomBorder ()
+
+        match currentDrawing () with
+        | Some drawing when not (isNull miniMap) && drawing.Width > 0. && drawing.Height > 0. ->
+            miniMap.Children.Clear()
+
+            let mapWidth = miniMap.Bounds.Width
+            let mapHeight = miniMap.Bounds.Height
+
+            if mapWidth > 0. && mapHeight > 0. then
+                let scale = min (mapWidth / drawing.Width) (mapHeight / drawing.Height)
+                let offsetX = (mapWidth - drawing.Width * scale) / 2.
+                let offsetY = (mapHeight - drawing.Height * scale) / 2.
+
+                let mapPoint (point: Point) =
+                    Point(offsetX + point.X * scale, offsetY + point.Y * scale)
+
+                drawing.Connectors
+                |> Seq.iter (fun connector ->
+                    let start = pinCenter connector.Start |> mapPoint
+                    let finish = pinCenter connector.End |> mapPoint
+                    let line =
+                        Line(
+                            StartPoint = start,
+                            EndPoint = finish,
+                            Stroke = SolidColorBrush.Parse("#D32F2F"),
+                            StrokeThickness = 1.)
+
+                    miniMap.Children.Add(line) |> ignore)
+
+                drawing.Nodes
+                |> Seq.iter (fun node ->
+                    let point = mapPoint (Point(node.X, node.Y))
+                    let rectangle =
+                        Rectangle(
+                            Width = max 3. (node.Width * scale),
+                            Height = max 3. (node.Height * scale),
+                            Fill = SolidColorBrush.Parse("#DCEEFF"),
+                            Stroke = SolidColorBrush.Parse("#0B7DE3"),
+                            StrokeThickness = 1.)
+
+                    Canvas.SetLeft(rectangle, point.X)
+                    Canvas.SetTop(rectangle, point.Y)
+                    miniMap.Children.Add(rectangle) |> ignore)
+
+                if not (isNull zoomBorder) then
+                    let visible = zoomBorder.GetVisibleContentBounds()
+
+                    if visible.Width > 0. && visible.Height > 0. then
+                        let topLeft = mapPoint (Point(visible.Left, visible.Top))
+                        let viewport =
+                            Rectangle(
+                                Width = max 4. (visible.Width * scale),
+                                Height = max 4. (visible.Height * scale),
+                                Fill = SolidColorBrush.Parse("#1A111111"),
+                                Stroke = SolidColorBrush.Parse("#111111"),
+                                StrokeThickness = 1.5)
+
+                        Canvas.SetLeft(viewport, topLeft.X)
+                        Canvas.SetTop(viewport, topLeft.Y)
+                        miniMap.Children.Add(viewport) |> ignore
+        | _ ->
+            if not (isNull miniMap) then
+                miniMap.Children.Clear()
+
     let zoomGraphWithWheel (args: PointerWheelEventArgs) =
         let zoomBorder = graphZoomBorder ()
         let graphHost = this.FindControl<Grid>("GraphHost")
@@ -961,6 +1169,7 @@ type MainView() as this =
 
                     zoomBorder.ZoomToRectangle(target, Nullable(Thickness(0.)), false)
                     zoomBorder.Focus() |> ignore
+                    updateMiniMap()
 
                 args.Handled <- true
         | _ ->
@@ -988,6 +1197,7 @@ type MainView() as this =
             match delta with
             | Some(dx, dy) ->
                 zoomBorder.PanDelta(dx, dy, true)
+                updateMiniMap()
                 args.Handled <- true
             | None ->
                 ()
@@ -1009,7 +1219,9 @@ type MainView() as this =
                     updateConnectionDrag args
 
                 if not args.Handled then
-                    movePaletteDragNode args),
+                    movePaletteDragNode args
+
+                updateMiniMap()),
             RoutingStrategies.Tunnel,
             true)
 
@@ -1032,6 +1244,7 @@ type MainView() as this =
                         Dispatcher.UIThread.Post(syncGraphWindowSize))
 
                     syncGraphWindowSize()
+                    updateMiniMap()
 
                     graphHost.AddHandler(
                         DragDrop.DragOverEvent,
@@ -1049,7 +1262,9 @@ type MainView() as this =
                         InputElement.PointerPressedEvent,
                         EventHandler<PointerPressedEventArgs>(fun _ _ ->
                             if not (isNull zoomBorder) then
-                                zoomBorder.Focus() |> ignore),
+                                zoomBorder.Focus() |> ignore
+
+                            updateMiniMap()),
                         RoutingStrategies.Tunnel,
                         true)
 
@@ -1171,7 +1386,8 @@ type MainView() as this =
                                 Dispatcher.UIThread.Post(fun () ->
                                     syncSelectionFromNative()
                                     deleteSelectedNodeIfOverTrash()
-                                    clearNativeNodeSelection())),
+                                    clearNativeNodeSelection()
+                                    updateMiniMap())),
                         RoutingStrategies.Bubble,
                         true)
 
@@ -1295,7 +1511,9 @@ type MainView() as this =
                             let! graph = PipelineGraphStorage.readJsonAsync stream
                             viewModel.ImportGraph(graph)
                             file |> localPath |> Option.iter viewModel.SetCurrentGraphPath
-                            Dispatcher.UIThread.Post((fun () -> fitGraphToViewport()), DispatcherPriority.Background)
+                            Dispatcher.UIThread.Post((fun () ->
+                                fitGraphToViewport()
+                                updateMiniMap()), DispatcherPriority.Background)
                         with ex ->
                             do! showLoadErrorAsync ex.Message
                     | None -> ()
@@ -1317,6 +1535,7 @@ type MainView() as this =
 
                 if confirmed then
                     viewModel.ClearGraph()
+                    updateMiniMap()
             | _ -> ()
         }
         |> ignore
@@ -1324,6 +1543,10 @@ type MainView() as this =
     member _.FitGraphClicked(_sender: obj, args: RoutedEventArgs) =
         args.Handled <- true
         fitGraphToViewport()
+        updateMiniMap()
+
+    member _.MiniMapSizeChanged(_sender: obj, _args: SizeChangedEventArgs) =
+        updateMiniMap()
 
     member _.ArrangeGraphClicked(_sender: obj, args: RoutedEventArgs) =
         args.Handled <- true
@@ -1331,7 +1554,9 @@ type MainView() as this =
         match this.DataContext with
         | :? MainWindowViewModel as viewModel ->
             viewModel.ArrangeGraph()
-            Dispatcher.UIThread.Post((fun () -> fitGraphToViewport()), DispatcherPriority.Background)
+            Dispatcher.UIThread.Post((fun () ->
+                fitGraphToViewport()
+                updateMiniMap()), DispatcherPriority.Background)
         | _ -> ()
 
     member _.PaletteElementPointerPressed(sender: obj, args: PointerPressedEventArgs) =
@@ -1383,6 +1608,7 @@ type MainView() as this =
                             args.GetPosition(graphHost) |> viewportToGraphContent
 
                     viewModel.AddElementAt(functionId, dropPoint.X, dropPoint.Y)
+                    updateMiniMap()
                     args.Handled <- true
                 | _ -> ()
             | _ -> ()

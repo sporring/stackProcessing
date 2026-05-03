@@ -141,7 +141,17 @@ module PipelineCodeGenerator =
         | "AddPair" -> Some "addPair"
         | "MulPair" -> Some "mulPair"
         | "DivPair" -> Some "divPair"
+        | "MaxOfPair" -> Some "maxOfPair"
+        | "MinOfPair" -> Some "minOfPair"
         | _ -> None
+
+    let private safeIdentifier (value: string) =
+        let chars =
+            value
+            |> Seq.map (fun c -> if Char.IsLetterOrDigit c then c else '_')
+            |> Seq.toArray
+
+        new String(chars)
 
     let private scalarImageFunctionName (node: SavedNode) =
         let operation =
@@ -298,6 +308,46 @@ module PipelineCodeGenerator =
             let height = parameterValue "height"
             let depth = parameterValue "depth"
             $"|> zero<{pixelType}> {width} {height} {depth}" |> sourcePrefix availableMemory
+        | "CreateByEuler2DTransform" ->
+            let availableMemory = parameterValue "availableMemory"
+            let pixelType = pixelTypeNameFromParameter "type" "UInt8" node
+            let width = parameterValue "width"
+            let height = parameterValue "height"
+            let depth = parameterValue "depth"
+            let boxSize = parameterValue "boxSize"
+            let transform = savedParamValue "transform" node
+            let suffix = safeIdentifier node.Id
+            let imageName = $"eulerImage_{suffix}"
+            let transformName = $"eulerTransform_{suffix}"
+            let transformBody =
+                match transform.Trim().ToLowerInvariant() with
+                | "antidiagonal"
+                | "anti diagonal"
+                | "anti-diagonal" ->
+                    $"(offset, offset, a), (float width - dx - offset, dx - offset)"
+                | "topdown"
+                | "top down"
+                | "top-down" ->
+                    $"(offset, offset, a), (float width / 2.0 - offset, dx - offset)"
+                | _ ->
+                    $"(offset, offset, a), (0.0, 0.0)"
+
+            String.concat Environment.NewLine
+                [ $"let width = {width}"
+                  $"let height = {height}"
+                  $"let depth = {depth}"
+                  $"let boxSize = int {boxSize}"
+                  $"let {imageName} = Image<{pixelType}>([width; height])"
+                  $"for i in [0..boxSize-1] do"
+                  $"    for j in [0..boxSize-1] do"
+                  $"        {imageName}[i,j] <- LanguagePrimitives.GenericOne"
+                  $"let {transformName} (i: uint) : (float * float * float) * (float * float) ="
+                  $"    let dx = float i"
+                  $"    let a = 2.0 * System.Math.PI * float i / float depth"
+                  $"    let offset = float boxSize / 2.0 - 0.5"
+                  $"    {transformBody}"
+                  $"source {availableMemory}"
+                  $"|> createByEuler2DTransform<{pixelType}> {imageName} depth {transformName}" ]
         | "ReadRandom" ->
             let availableMemory = parameterValue "availableMemory"
             let pixelType = pixelTypeNameFromParameter "type" "Float64" node
@@ -329,6 +379,10 @@ module PipelineCodeGenerator =
         | "Print" ->
             let input = quotedParameter "input"
             "printfn \"%A\" " + input
+        | "Histogram" ->
+            ">=> histogram () >=> map2pairs --> pairs2floats --> plot histogramPlot"
+        | "ShowImage" ->
+            ">=> show showImagePlot"
         | "SqrtFloat64" ->
             ">=> sqrt"
         | id when isScalarImageFunction id ->
@@ -576,7 +630,9 @@ module PipelineCodeGenerator =
             let appendSinkIfTerminalWrite (node: SavedNode) expression =
                 match node.FunctionId with
                 | "Write"
-                | "WriteInChunks" ->
+                | "WriteInChunks"
+                | "Histogram"
+                | "ShowImage" ->
                     $"{expression}{newLine}|> sink"
                 | "ComputeStats" ->
                     $"{expression}{newLine}|> drain"
@@ -631,8 +687,33 @@ module PipelineCodeGenerator =
             bindings |> Array.iter visit
             ordered |> Seq.toArray
 
+        let hasHistogram =
+            graph.Nodes |> Array.exists (fun node -> node.FunctionId = "Histogram")
+
+        let hasShowImage =
+            graph.Nodes |> Array.exists (fun node -> node.FunctionId = "ShowImage")
+
+        let hasVisualization = hasHistogram || hasShowImage
+
         builder.AppendLine("open StackProcessing") |> ignore
+
+        if hasVisualization then
+            builder.AppendLine("open Plotly.NET") |> ignore
+
         builder.AppendLine() |> ignore
+
+        if hasHistogram then
+            builder.AppendLine("let histogramPlot (x: float list) (y: float list) =") |> ignore
+            builder.AppendLine("    Chart.Column(values = y, Keys = x)") |> ignore
+            builder.AppendLine("    |> Chart.show") |> ignore
+            builder.AppendLine() |> ignore
+
+        if hasShowImage then
+            builder.AppendLine("let showImagePlot image =") |> ignore
+            builder.AppendLine("    ImageFunctions.toSeqSeq image") |> ignore
+            builder.AppendLine("    |> Chart.Heatmap") |> ignore
+            builder.AppendLine("    |> Chart.show") |> ignore
+            builder.AppendLine() |> ignore
 
         let bindings = orderedBindings ()
 

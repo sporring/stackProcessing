@@ -315,7 +315,32 @@
         </Border>
 
         <Border Grid.Row="2"
-                Grid.ColumnSpan="3"
+                Grid.Column="0"
+                Background="#FAFBFC"
+                BorderBrush="#D7DDE5"
+                BorderThickness="0,1,1,0"
+                Padding="10">
+            <Grid RowDefinitions="Auto,*">
+                <TextBlock Text="Canvas"
+                           FontSize="14"
+                           FontWeight="SemiBold"
+                           Margin="0,0,0,8" />
+
+                <Border Grid.Row="1"
+                        Background="#FFFFFF"
+                        BorderBrush="#D7DDE5"
+                        BorderThickness="1"
+                        ClipToBounds="True">
+                    <Canvas x:Name="MiniMapCanvas"
+                            Background="#FFFFFF"
+                            SizeChanged="MiniMapSizeChanged" />
+                </Border>
+            </Grid>
+        </Border>
+
+        <Border Grid.Row="2"
+                Grid.Column="1"
+                Grid.ColumnSpan="2"
                 Background="#FFFFFF"
                 BorderBrush="#D7DDE5"
                 BorderThickness="0,1,0,0"

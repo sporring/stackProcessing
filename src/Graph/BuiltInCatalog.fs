@@ -1,6 +1,7 @@
 namespace Graph
 
 module BuiltInCatalog =
+  let any = PortType.Any
   let imageAny = PortType.Image NumericType.Number
   let imageUInt8 = PortType.Image NumericType.UInt8
   let imageInt8 = PortType.Image NumericType.Int8
@@ -160,6 +161,23 @@ module BuiltInCatalog =
             makeParameter "height" "Height" "64" (BasicType.Numeric UInt32)
             makeParameter "depth" "Depth" "1" (BasicType.Numeric UInt32) ] }
 
+  let makeGenericCreateByEuler2DTransform () =
+    { Id = "CreateByEuler2DTransform"
+      DisplayName = "createByEuler2DTransform"
+      Category = "Sources / Sinks"
+      Description = "Create a synthetic stack by applying an Euler 2D transform to a seed image."
+      Aliases = [ "synthetic"; "source"; "euler"; "transform"; "rotation"; "UInt8"; "Float64"; "type" ]
+      Inputs = []
+      Outputs = [ makePort "Float64" imageFloat64 ]
+      Parameters =
+          [ availableMemoryParameter
+            makeParameter "type" "Type" "UInt8" BasicType.String
+            makeParameter "width" "Width" "64" (BasicType.Numeric UInt32)
+            makeParameter "height" "Height" "64" (BasicType.Numeric UInt32)
+            makeParameter "depth" "Depth" "64" (BasicType.Numeric UInt32)
+            makeParameter "boxSize" "Box size" "16" (BasicType.Numeric UInt32)
+            makeParameter "transform" "Transform" "Diagonal" BasicType.String ] }
+
   let makeScalarImageOperation id displayName description aliases =
     { Id = id
       DisplayName = displayName
@@ -209,6 +227,8 @@ module BuiltInCatalog =
 
         makeGenericZero()
 
+        makeGenericCreateByEuler2DTransform()
+
         { Id = "ComputeStats"
           DisplayName = "computeStats"
           Category = "Statistics"
@@ -255,8 +275,8 @@ module BuiltInCatalog =
           Category = "Debug"
           Description = "Print each streamed value and pass it through unchanged."
           Aliases = [ "debug"; "trace"; "log"; "inspect" ]
-          Inputs = [ makePort "Number" imageAny ]
-          Outputs = [ makePort "Number" imageAny ]
+          Inputs = [ makePort "Any" any ]
+          Outputs = [ makePort "Any" any ]
           Parameters = [] }
 
         { Id = "Print"
@@ -267,6 +287,24 @@ module BuiltInCatalog =
           Inputs = []
           Outputs = []
           Parameters = [ makeParameter "input" "Input" "input" BasicType.String ] }
+
+        { Id = "Histogram"
+          DisplayName = "histogram"
+          Category = "Visualization"
+          Description = "Compute and show an image histogram."
+          Aliases = [ "plot"; "chart"; "histogram"; "visualize"; "show" ]
+          Inputs = [ makePort "Number" imageAny ]
+          Outputs = []
+          Parameters = [] }
+
+        { Id = "ShowImage"
+          DisplayName = "showImage"
+          Category = "Visualization"
+          Description = "Show each image as a heatmap."
+          Aliases = [ "plot"; "image"; "heatmap"; "visualize"; "show" ]
+          Inputs = [ makePort "Number" imageAny ]
+          Outputs = []
+          Parameters = [] }
 
         { Id = "SqrtFloat64"
           DisplayName = "sqrt"
@@ -308,6 +346,18 @@ module BuiltInCatalog =
             "divPair"
             "Divide two image streams of the same numeric type pairwise. Code generation inserts zip or shared fan-out as needed."
             [ "divide"; "ratio"; "arithmetic" ]
+
+        makePairOperation
+            "MaxOfPair"
+            "maxOfPair"
+            "Take the pixelwise maximum of two image streams of the same numeric type pairwise. Code generation inserts zip or shared fan-out as needed."
+            [ "maximum"; "max"; "pair"; "arithmetic" ]
+
+        makePairOperation
+            "MinOfPair"
+            "minOfPair"
+            "Take the pixelwise minimum of two image streams of the same numeric type pairwise. Code generation inserts zip or shared fan-out as needed."
+            [ "minimum"; "min"; "pair"; "arithmetic" ]
 
         { Id = "DiscreteGaussian"
           DisplayName = "discreteGaussian"

@@ -7,6 +7,7 @@ open System.Collections.Specialized
 open System.ComponentModel
 open System.Globalization
 open System.IO
+open System.Runtime.CompilerServices
 open System.Windows.Input
 open Avalonia.Threading
 open Compiler
@@ -531,7 +532,7 @@ type PipelineNodeViewModel(
                     state.Title <- ScalarImageOperationNode.title state
                     this.Name <- state.Title
                     markGraphDirty()
-                elif (state.Definition.Id = "Scalar" || state.Definition.Id = "ScalarOp" || state.Definition.Id = "Read" || state.Definition.Id = "ReadRandom" || state.Definition.Id = "ReadChunks" || state.Definition.Id = "Zero" || state.Definition.Id = "Threshold" || state.Definition.Id = "AddPair" || state.Definition.Id = "MulPair" || state.Definition.Id = "DivPair" || ScalarImageOperationNode.isOperation state.Definition.Id) && parameter.Key = "type" && args.PropertyName = nameof parameter.Value then
+                elif (state.Definition.Id = "Scalar" || state.Definition.Id = "ScalarOp" || state.Definition.Id = "Read" || state.Definition.Id = "ReadRandom" || state.Definition.Id = "ReadChunks" || state.Definition.Id = "Zero" || state.Definition.Id = "CreateByEuler2DTransform" || state.Definition.Id = "Threshold" || state.Definition.Id = "AddPair" || state.Definition.Id = "MulPair" || state.Definition.Id = "DivPair" || state.Definition.Id = "MaxOfPair" || state.Definition.Id = "MinOfPair" || ScalarImageOperationNode.isOperation state.Definition.Id) && parameter.Key = "type" && args.PropertyName = nameof parameter.Value then
                     if state.Definition.Id = "Scalar" then
                         ScalarNode.ensureValueMatchesType state
                         state.Title <- ScalarNode.title state
@@ -617,10 +618,13 @@ type PipelineNodeViewModel(
             | "Read"
             | "ReadRandom"
             | "ReadChunks"
-            | "Zero" -> state.Definition.Inputs, [ SourceImageNode.outputPort state ]
+            | "Zero"
+            | "CreateByEuler2DTransform" -> state.Definition.Inputs, [ SourceImageNode.outputPort state ]
             | "AddPair"
             | "MulPair"
-            | "DivPair" -> PairOperationNode.ports state
+            | "DivPair"
+            | "MaxOfPair"
+            | "MinOfPair" -> PairOperationNode.ports state
             | "Cast" -> CastNode.ports state
             | functionId when ScalarImageOperationNode.isOperation functionId -> ScalarImageOperationNode.ports state
             | "Threshold" -> ThresholdNode.ports state
@@ -766,7 +770,7 @@ type MainWindowViewModel() as this =
                         |> List.map (fun value -> ParameterOptionViewModel(value, value, true))
 
                     PipelineParameterViewModel(parameter.Label, parameter.Key, parameter.DefaultValue, parameter.Type, options, false)
-                | ("Read" | "ReadRandom" | "ReadChunks" | "Zero"), "type" ->
+                | ("Read" | "ReadRandom" | "ReadChunks" | "Zero" | "CreateByEuler2DTransform"), "type" ->
                     let options =
                         SourceImageNode.typeOptions
                         |> List.map (fun value -> ParameterOptionViewModel(value, value, true))
@@ -778,7 +782,7 @@ type MainWindowViewModel() as this =
                         |> List.map (fun value -> ParameterOptionViewModel(value, value, true))
 
                     PipelineParameterViewModel(parameter.Label, parameter.Key, parameter.DefaultValue, parameter.Type, options, false)
-                | ("AddPair" | "MulPair" | "DivPair"), "type" ->
+                | ("AddPair" | "MulPair" | "DivPair" | "MaxOfPair" | "MinOfPair"), "type" ->
                     let options =
                         PairOperationNode.typeOptions
                         |> List.map (fun value -> ParameterOptionViewModel(value, value, true))
@@ -907,6 +911,8 @@ type MainWindowViewModel() as this =
         match pin with
         | :? PipelinePinViewModel as pipelinePin ->
             match pipelinePin.Port.Type with
+            | Any ->
+                true
             | Image Number -> true
             | _ -> false
         | _ -> false
@@ -1007,7 +1013,8 @@ type MainWindowViewModel() as this =
             node.State.Definition.Id = "Read"
             || node.State.Definition.Id = "ReadRandom"
             || node.State.Definition.Id = "ReadChunks"
-            || node.State.Definition.Id = "Zero")
+            || node.State.Definition.Id = "Zero"
+            || node.State.Definition.Id = "CreateByEuler2DTransform")
         |> Seq.iter (fun node ->
             let isConnected = hasConnectionRequiringFixedDataOutput node
 
@@ -1059,7 +1066,9 @@ type MainWindowViewModel() as this =
         |> Seq.filter (fun node ->
             node.State.Definition.Id = "AddPair"
             || node.State.Definition.Id = "MulPair"
-            || node.State.Definition.Id = "DivPair")
+            || node.State.Definition.Id = "DivPair"
+            || node.State.Definition.Id = "MaxOfPair"
+            || node.State.Definition.Id = "MinOfPair")
         |> Seq.iter (fun node ->
             let isConnected = hasConnection node || hasConnectionRequiringFixedDataOutput node
 
@@ -1195,6 +1204,29 @@ type MainWindowViewModel() as this =
             |> Option.map fst
 
     let canConnectPins (startPin: IPin) (endPin: IPin) =
+        let concreteImageType (portType: PortType) =
+            match portType with
+            | Image Number -> None
+            | Image numericType -> Some numericType
+            | _ -> None
+
+        let tapConcreteTypes (tapNode: INode) =
+            drawing.Connectors
+            |> Seq.choose (fun connector ->
+                match connector.Start, connector.End with
+                | (:? PipelinePinViewModel as startPin), (:? PipelinePinViewModel as endPin)
+                    when Object.ReferenceEquals(startPin.Parent, tapNode)
+                         && startPin.Kind = DataOutput ->
+                    concreteImageType endPin.Port.Type
+                | (:? PipelinePinViewModel as startPin), (:? PipelinePinViewModel as endPin)
+                    when Object.ReferenceEquals(endPin.Parent, tapNode)
+                         && endPin.Kind = DataInput ->
+                    concreteImageType startPin.Port.Type
+                | _ ->
+                    None)
+            |> Seq.distinct
+            |> Seq.toArray
+
         match startPin, endPin with
         | :? PipelinePinViewModel as outputPin, (:? PipelinePinViewModel as inputPin)
             when outputPin.IsOutput && outputPin.IsActive && inputPin.IsInput && inputPin.IsActive ->
@@ -1207,8 +1239,44 @@ type MainWindowViewModel() as this =
 
             if isPrintParameter && (outputPin.Kind = ScalarOutput || outputPin.Kind = ReducerOutput) then
                 true
-            else
+            elif outputPin.Kind = DataOutput && inputPin.Kind = DataInput then
+                let baseCompatible = PortType.canConnect outputPin.Port.Type inputPin.Port.Type
+
+                let isTapNode (node: INode) =
+                    match node with
+                    | :? PipelineNodeViewModel as pipelineNode -> pipelineNode.State.Definition.Id = "Tap"
+                    | _ -> false
+
+                let candidateTypesForTap tapNode =
+                    seq {
+                        yield! tapConcreteTypes tapNode
+
+                        if Object.ReferenceEquals(outputPin.Parent, tapNode) then
+                            match concreteImageType inputPin.Port.Type with
+                            | Some numericType -> yield numericType
+                            | None -> ()
+
+                        if Object.ReferenceEquals(inputPin.Parent, tapNode) then
+                            match concreteImageType outputPin.Port.Type with
+                            | Some numericType -> yield numericType
+                            | None -> ()
+                    }
+                    |> Seq.distinct
+                    |> Seq.toArray
+
+                let hasTapEndpoint = isTapNode outputPin.Parent || isTapNode inputPin.Parent
+
+                if hasTapEndpoint then
+                    [| outputPin.Parent; inputPin.Parent |]
+                    |> Array.filter isTapNode
+                    |> Array.distinctBy RuntimeHelpers.GetHashCode
+                    |> Array.forall (fun tapNode -> (candidateTypesForTap tapNode).Length <= 1)
+                else
+                    baseCompatible
+            elif (outputPin.Kind = ScalarOutput || outputPin.Kind = ReducerOutput) && inputPin.Kind = ParameterInput then
                 PortType.canConnect outputPin.Port.Type inputPin.Port.Type
+            else
+                false
         | _ -> false
 
     let connectorOrientation (startPin: IPin) (endPin: IPin) =
