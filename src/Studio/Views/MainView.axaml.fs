@@ -928,7 +928,7 @@ type MainView() as this =
                 let viewportSize = graphHost.Bounds.Size
 
                 if visible.Width > 0. && visible.Height > 0. && viewportSize.Width > 0. && viewportSize.Height > 0. then
-                    let zoomFactor = if delta > 0. then 1.15 else 1. / 1.15
+                    let zoomFactor = if delta > 0. then 1.025 else 1. / 1.025
                     let mutable targetWidth = visible.Width / zoomFactor
                     let mutable targetHeight = visible.Height / zoomFactor
 
@@ -1001,12 +1001,6 @@ type MainView() as this =
             true)
 
         this.AddHandler(
-            InputElement.PointerWheelChangedEvent,
-            EventHandler<PointerWheelEventArgs>(fun _ args -> zoomGraphWithWheel args),
-            RoutingStrategies.Tunnel,
-            true)
-
-        this.AddHandler(
             InputElement.PointerMovedEvent,
             EventHandler<PointerEventArgs>(fun _ args ->
                 moveGroupDrag args
@@ -1056,6 +1050,12 @@ type MainView() as this =
                         EventHandler<PointerPressedEventArgs>(fun _ _ ->
                             if not (isNull zoomBorder) then
                                 zoomBorder.Focus() |> ignore),
+                        RoutingStrategies.Tunnel,
+                        true)
+
+                    graphHost.AddHandler(
+                        InputElement.PointerWheelChangedEvent,
+                        EventHandler<PointerWheelEventArgs>(fun _ args -> zoomGraphWithWheel args),
                         RoutingStrategies.Tunnel,
                         true)
 
@@ -1188,7 +1188,17 @@ type MainView() as this =
                     match this.DataContext with
                     | :? MainWindowViewModel as viewModel ->
                         Dispatcher.UIThread.Post(fun () -> viewModel.ConnectSeedPipeline())
-                    | _ -> ()))
+                    | _ -> ()
+
+                let graphOutputTextBox = this.FindControl<TextBox>("GraphOutputTextBox")
+
+                if not (isNull graphOutputTextBox) then
+                    graphOutputTextBox.TextChanged.Add(fun _ ->
+                        Dispatcher.UIThread.Post(
+                            (fun () ->
+                                let text = graphOutputTextBox.Text
+                                graphOutputTextBox.CaretIndex <- if isNull text then 0 else text.Length),
+                            DispatcherPriority.Background))))
 
     member private this.InitializeComponent() =
         AvaloniaXamlLoader.Load(this)

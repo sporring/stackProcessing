@@ -250,6 +250,24 @@ module BuiltInCatalog =
                 makeParameter "chunkY" "Chunk Y" "13" (BasicType.Numeric UInt32)
                 makeParameter "chunkZ" "Chunk Z" "14" (BasicType.Numeric UInt32) ] }
 
+        { Id = "Tap"
+          DisplayName = "tap"
+          Category = "Debug"
+          Description = "Print each streamed value and pass it through unchanged."
+          Aliases = [ "debug"; "trace"; "log"; "inspect" ]
+          Inputs = [ makePort "Number" imageAny ]
+          Outputs = [ makePort "Number" imageAny ]
+          Parameters = [] }
+
+        { Id = "Print"
+          DisplayName = "print"
+          Category = "Sources / Sinks"
+          Description = "Print a scalar value in the generated program."
+          Aliases = [ "debug"; "trace"; "log"; "sink"; "inspect"; "printfn" ]
+          Inputs = []
+          Outputs = []
+          Parameters = [ makeParameter "input" "Input" "input" BasicType.String ] }
+
         { Id = "SqrtFloat64"
           DisplayName = "sqrt"
           Category = "Arithmetic"
