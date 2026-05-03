@@ -31,12 +31,39 @@ type MainView() as this =
     let mutable paletteDragFunctionId: string option = None
     let mutable pendingPin: IPin option = None
     let mutable draggingPin: IPin option = None
+    let mutable highlightedConnectionTarget: IPin option = None
 
     let pinCenter (pin: IPin) =
         if isNull pin.Parent then
             Point(pin.X + pin.Width / 2., pin.Y + pin.Height / 2.)
         else
             Point(pin.Parent.X + pin.X + pin.Width / 2., pin.Parent.Y + pin.Y + pin.Height / 2.)
+
+    let tryPinControlCenter (pin: IPin) =
+        let graphHost = this.FindControl<Grid>("GraphHost")
+        let editor = this.FindControl<Editor>("PipelineEditor")
+
+        if isNull graphHost || isNull editor then
+            None
+        else
+            editor.GetVisualDescendants()
+            |> Seq.choose (fun visual ->
+                match visual with
+                | :? Control as control ->
+                    match control.DataContext with
+                    | :? IPin as candidate when Object.ReferenceEquals(candidate, pin) ->
+                        let localCenter = Point(control.Bounds.Width / 2., control.Bounds.Height / 2.)
+                        let translated = control.TranslatePoint(localCenter, graphHost)
+
+                        if translated.HasValue then Some translated.Value else None
+                    | _ ->
+                        None
+                | _ ->
+                    None)
+            |> Seq.tryHead
+
+    let pinCenterInGraphHost (pin: IPin) =
+        tryPinControlCenter pin |> Option.defaultWith (fun () -> pinCenter pin)
 
     let jsonFileType () =
         let fileType = FilePickerFileType("Pipeline JSON")
@@ -113,7 +140,7 @@ type MainView() as this =
         let preview = this.FindControl<Line>("ConnectionPreview")
 
         if not (isNull preview) then
-            let start = pinCenter pin
+            let start = pinCenterInGraphHost pin
             preview.StartPoint <- start
             preview.EndPoint <- pointer
             preview.IsVisible <- true
@@ -472,7 +499,7 @@ type MainView() as this =
                     if isNull connector.Start || isNull connector.End then
                         None
                     else
-                        let distance = distanceToSegment point (pinCenter connector.Start) (pinCenter connector.End)
+                        let distance = distanceToSegment point (pinCenterInGraphHost connector.Start) (pinCenterInGraphHost connector.End)
                         if distance <= 10. then Some(connector, distance) else None)
                 |> Seq.sortBy snd
                 |> Seq.tryHead
@@ -503,6 +530,7 @@ type MainView() as this =
     let resetConnectionGesture () =
         pendingPin <- None
         draggingPin <- None
+        highlightedConnectionTarget <- None
         hideConnectionPreview()
         setCompatiblePinHighlight None
 
@@ -517,7 +545,7 @@ type MainView() as this =
                 drawing.Nodes
                 |> Seq.collect _.Pins
                 |> Seq.choose (fun pin ->
-                    let center = pinCenter pin
+                    let center = pinCenterInGraphHost pin
                     let dx = center.X - point.X
                     let dy = center.Y - point.Y
                     let distance = Math.Sqrt(dx * dx + dy * dy)
@@ -573,6 +601,40 @@ type MainView() as this =
                     true
                 | _ -> false
             | _ -> false
+
+    let finishConnectionDrag (args: PointerReleasedEventArgs) =
+        match draggingPin with
+        | None ->
+            false
+        | Some firstPin ->
+            let graphHost = this.FindControl<Grid>("GraphHost")
+
+            let targetPin =
+                if isNull graphHost then
+                    tryFindPinFromSource args.Source
+                else
+                    match tryFindPinFromSource args.Source with
+                    | Some pin -> Some pin
+                    | None ->
+                        match highlightedConnectionTarget with
+                        | Some pin -> Some pin
+                        | None -> tryFindPinAtPoint (args.GetPosition(graphHost))
+
+            match targetPin with
+            | Some secondPin when tryConnectPins firstPin secondPin ->
+                pendingPin <- None
+                draggingPin <- None
+                highlightedConnectionTarget <- None
+            | _ ->
+                draggingPin <- None
+                highlightedConnectionTarget <- None
+
+            args.Pointer.Capture(null) |> ignore
+            hideConnectionPreview()
+            setCompatiblePinHighlight None
+            args.PreventGestureRecognition()
+            args.Handled <- true
+            true
 
     let syncGraphWindowSize () =
         let graphHost = this.FindControl<Grid>("GraphHost")
@@ -656,6 +718,21 @@ type MainView() as this =
             args.Handled <- true
         | None -> ()
 
+    let updateConnectionDrag (args: PointerEventArgs) =
+        match draggingPin with
+        | Some _ ->
+            let graphHost = this.FindControl<Grid>("GraphHost")
+
+            if not (isNull graphHost) then
+                let pointer = args.GetPosition(graphHost)
+                let candidate = tryFindPinAtPoint pointer
+                updateConnectionPreview pointer
+                highlightedConnectionTarget <- candidate
+                setCompatiblePinHighlight candidate
+                args.Handled <- true
+        | None ->
+            ()
+
     let finishPaletteDrag (args: PointerReleasedEventArgs) =
         match paletteDragFunctionId with
         | Some _ ->
@@ -684,13 +761,19 @@ type MainView() as this =
         this.InitializeComponent()
         this.AddHandler(
             InputElement.PointerMovedEvent,
-            EventHandler<PointerEventArgs>(fun _ args -> movePaletteDragNode args),
+            EventHandler<PointerEventArgs>(fun _ args ->
+                updateConnectionDrag args
+
+                if not args.Handled then
+                    movePaletteDragNode args),
             RoutingStrategies.Tunnel,
             true)
 
         this.AddHandler(
             InputElement.PointerReleasedEvent,
-            EventHandler<PointerReleasedEventArgs>(fun _ args -> finishPaletteDrag args),
+            EventHandler<PointerReleasedEventArgs>(fun _ args ->
+                if not (finishConnectionDrag args) then
+                    finishPaletteDrag args),
             RoutingStrategies.Tunnel,
             true)
 
@@ -722,9 +805,6 @@ type MainView() as this =
                         EventHandler<DragEventArgs>(fun _ args -> this.PipelineEditorDrop(graphHost, args)),
                         RoutingStrategies.Tunnel,
                         true)
-
-                if not (isNull editor) && not (isNull editor.ZoomControl) then
-                    editor.ZoomControl.ResetZoomCommand()
 
                 if not (isNull editor) then
                     editor.AddHandler(
@@ -798,6 +878,7 @@ type MainView() as this =
                                         if not (isNull graphHost) then
                                             showConnectionPreview pin (args.GetPosition(graphHost))
 
+                                        args.Pointer.Capture(this) |> ignore
                                         args.PreventGestureRecognition()
                                         args.Handled <- true
                                 | None, Some connector when point.Properties.IsRightButtonPressed ->
@@ -818,13 +899,7 @@ type MainView() as this =
 
                     editor.AddHandler(
                         InputElement.PointerMovedEvent,
-                        EventHandler<PointerEventArgs>(fun _ args ->
-                            match draggingPin with
-                            | Some _ when not (isNull graphHost) ->
-                                let pointer = args.GetPosition(graphHost)
-                                updateConnectionPreview pointer
-                                setCompatiblePinHighlight (tryFindPinAtPoint pointer)
-                            | _ -> ()),
+                        EventHandler<PointerEventArgs>(fun _ args -> updateConnectionDrag args),
                         RoutingStrategies.Bubble,
                         true)
 
@@ -838,22 +913,7 @@ type MainView() as this =
                                 args.PreventGestureRecognition()
                                 args.Handled <- true
                             else
-                                let targetPin =
-                                    if isNull graphHost then
-                                        tryFindPinFromSource args.Source
-                                    else
-                                        tryFindPinAtPoint (args.GetPosition(graphHost))
-
-                                match draggingPin, targetPin with
-                                | Some firstPin, Some secondPin when tryConnectPins firstPin secondPin ->
-                                    pendingPin <- None
-                                    draggingPin <- None
-                                | Some _, _ ->
-                                    draggingPin <- None
-                                | None, _ -> ()
-
-                                hideConnectionPreview()
-                                setCompatiblePinHighlight None
+                                finishConnectionDrag args |> ignore
 
                                 Dispatcher.UIThread.Post(fun () ->
                                     deleteSelectedNodeIfOverTrash()

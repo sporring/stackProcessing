@@ -177,7 +177,7 @@
                            Margin="0,0,0,8" />
 
                 <TextBox Grid.Row="1"
-                         Watermark="Search functions"
+                         PlaceholderText="Search functions"
                          Text="{Binding PaletteSearch, Mode=TwoWay}"
                          Margin="0,0,0,10"
                          MinHeight="30" />
