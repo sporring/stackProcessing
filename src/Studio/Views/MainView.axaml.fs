@@ -80,6 +80,14 @@ type MainView() as this =
         else
             zoomBorder.ViewportToContent(point)
 
+    let graphContentToViewport (point: Point) =
+        let zoomBorder = graphZoomBorder ()
+
+        if isNull zoomBorder then
+            point
+        else
+            zoomBorder.ContentToViewport(point)
+
     let jsonFileType () =
         let fileType = FilePickerFileType("Pipeline JSON")
         fileType.Patterns <- [ "*.json"; "*.JSON" ]
@@ -697,9 +705,28 @@ type MainView() as this =
                     node.Y <- min (max 0. (editor.DrawingSource.Height - node.Height)) (max 0. node.Y))
 
     let deleteSelectedNodeIfOverTrash () =
+        let graphHost = this.FindControl<Grid>("GraphHost")
+        let trash = this.FindControl<Border>("GraphTrash")
+
         match this.DataContext with
-        | :? IGraphWindowController as controller ->
-            controller.DeleteSelectedElementIfInTrashZone 86. 42. 12.
+        | :? MainWindowViewModel as viewModel when not (isNull graphHost) && not (isNull trash) && not (isNull viewModel.SelectedNode) ->
+            let node = viewModel.SelectedNode
+            let nodeTopLeft = Point(node.X, node.Y) |> graphContentToViewport
+            let nodeBottomRight = Point(node.X + node.Width, node.Y + node.Height) |> graphContentToViewport
+            let nodeBounds =
+                Rect(
+                    min nodeTopLeft.X nodeBottomRight.X,
+                    min nodeTopLeft.Y nodeBottomRight.Y,
+                    abs (nodeBottomRight.X - nodeTopLeft.X),
+                    abs (nodeBottomRight.Y - nodeTopLeft.Y))
+
+            let trashTopLeft = trash.TranslatePoint(Point(0., 0.), graphHost)
+
+            if trashTopLeft.HasValue then
+                let trashBounds = Rect(trashTopLeft.Value, trash.Bounds.Size)
+
+                if nodeBounds.Intersects trashBounds then
+                    viewModel.DeleteSelectedElement()
         | _ -> ()
 
     let clearNativeNodeSelection () =
@@ -852,11 +879,98 @@ type MainView() as this =
             args.Handled <- true
         | None -> ()
 
+    let fitGraphToViewport () =
+        let zoomBorder = graphZoomBorder ()
+        let graphHost = this.FindControl<Grid>("GraphHost")
+        let trash = this.FindControl<Border>("GraphTrash")
+
+        match currentDrawing () with
+        | Some drawing when not (isNull zoomBorder) && not (isNull graphHost) && drawing.Nodes.Count > 0 ->
+            let left = drawing.Nodes |> Seq.map _.X |> Seq.min
+            let top = drawing.Nodes |> Seq.map _.Y |> Seq.min
+            let right = drawing.Nodes |> Seq.map (fun node -> node.X + node.Width) |> Seq.max
+            let bottom = drawing.Nodes |> Seq.map (fun node -> node.Y + node.Height) |> Seq.max
+            let bounds = Rect(left, top, right - left, bottom - top)
+            let fitPadding = 32.
+            let rightPadding =
+                if isNull trash then
+                    fitPadding
+                else
+                    trash.Bounds.Width + 12. + fitPadding
+
+            let bottomPadding =
+                if isNull trash then
+                    fitPadding
+                else
+                    trash.Bounds.Height + 12. + fitPadding
+
+            zoomBorder.ZoomToRectangle(bounds, Nullable(Thickness(fitPadding, fitPadding, rightPadding, bottomPadding)), false)
+            zoomBorder.Focus() |> ignore
+        | _ ->
+            ()
+
+    let zoomGraphWithWheel (args: PointerWheelEventArgs) =
+        let zoomBorder = graphZoomBorder ()
+        let graphHost = this.FindControl<Grid>("GraphHost")
+
+        let clamp low high value =
+            if high <= low then
+                low
+            else
+                min high (max low value)
+
+        match currentDrawing () with
+        | Some drawing when not (isNull zoomBorder) && not (isNull graphHost) && drawing.Width > 0. && drawing.Height > 0. ->
+            let delta = args.Delta.Y
+
+            if delta <> 0. then
+                let visible = zoomBorder.GetVisibleContentBounds()
+                let viewportSize = graphHost.Bounds.Size
+
+                if visible.Width > 0. && visible.Height > 0. && viewportSize.Width > 0. && viewportSize.Height > 0. then
+                    let zoomFactor = if delta > 0. then 1.15 else 1. / 1.15
+                    let mutable targetWidth = visible.Width / zoomFactor
+                    let mutable targetHeight = visible.Height / zoomFactor
+
+                    let fitInsideCanvas =
+                        min (drawing.Width / targetWidth) (drawing.Height / targetHeight)
+
+                    if fitInsideCanvas < 1. then
+                        targetWidth <- targetWidth * fitInsideCanvas
+                        targetHeight <- targetHeight * fitInsideCanvas
+
+                    let minVisibleWidth = min drawing.Width 80.
+                    let minVisibleHeight = min drawing.Height 80.
+
+                    if targetWidth < minVisibleWidth || targetHeight < minVisibleHeight then
+                        let growToMinimum =
+                            max (minVisibleWidth / targetWidth) (minVisibleHeight / targetHeight)
+
+                        targetWidth <- min drawing.Width (targetWidth * growToMinimum)
+                        targetHeight <- min drawing.Height (targetHeight * growToMinimum)
+
+                    let pointerInViewport = args.GetPosition(graphHost)
+                    let pointerInContent = viewportToGraphContent pointerInViewport
+                    let anchorX = clamp 0. 1. (pointerInViewport.X / viewportSize.Width)
+                    let anchorY = clamp 0. 1. (pointerInViewport.Y / viewportSize.Height)
+                    let left = pointerInContent.X - targetWidth * anchorX
+                    let top = pointerInContent.Y - targetHeight * anchorY
+                    let maxLeft = max 0. (drawing.Width - targetWidth)
+                    let maxTop = max 0. (drawing.Height - targetHeight)
+                    let target = Rect(clamp 0. maxLeft left, clamp 0. maxTop top, targetWidth, targetHeight)
+
+                    zoomBorder.ZoomToRectangle(target, Nullable(Thickness(0.)), false)
+                    zoomBorder.Focus() |> ignore
+
+                args.Handled <- true
+        | _ ->
+            ()
+
     let panGraphWithArrowKey (args: KeyEventArgs) =
         let zoomBorder = graphZoomBorder ()
 
         if not (isNull zoomBorder) then
-            let baseStep = 64.
+            let baseStep = 24.
             let step =
                 if args.KeyModifiers.HasFlag KeyModifiers.Shift then
                     baseStep * 4.
@@ -883,6 +997,12 @@ type MainView() as this =
         this.AddHandler(
             InputElement.KeyDownEvent,
             EventHandler<KeyEventArgs>(fun _ args -> panGraphWithArrowKey args),
+            RoutingStrategies.Tunnel,
+            true)
+
+        this.AddHandler(
+            InputElement.PointerWheelChangedEvent,
+            EventHandler<PointerWheelEventArgs>(fun _ args -> zoomGraphWithWheel args),
             RoutingStrategies.Tunnel,
             true)
 
@@ -1165,6 +1285,7 @@ type MainView() as this =
                             let! graph = PipelineGraphStorage.readJsonAsync stream
                             viewModel.ImportGraph(graph)
                             file |> localPath |> Option.iter viewModel.SetCurrentGraphPath
+                            Dispatcher.UIThread.Post((fun () -> fitGraphToViewport()), DispatcherPriority.Background)
                         with ex ->
                             do! showLoadErrorAsync ex.Message
                     | None -> ()
@@ -1189,6 +1310,19 @@ type MainView() as this =
             | _ -> ()
         }
         |> ignore
+
+    member _.FitGraphClicked(_sender: obj, args: RoutedEventArgs) =
+        args.Handled <- true
+        fitGraphToViewport()
+
+    member _.ArrangeGraphClicked(_sender: obj, args: RoutedEventArgs) =
+        args.Handled <- true
+
+        match this.DataContext with
+        | :? MainWindowViewModel as viewModel ->
+            viewModel.ArrangeGraph()
+            Dispatcher.UIThread.Post((fun () -> fitGraphToViewport()), DispatcherPriority.Background)
+        | _ -> ()
 
     member _.PaletteElementPointerPressed(sender: obj, args: PointerPressedEventArgs) =
         match sender with

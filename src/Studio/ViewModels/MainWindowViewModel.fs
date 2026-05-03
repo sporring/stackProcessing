@@ -442,7 +442,7 @@ module private ThresholdNode =
 type PipelineNodeViewModel(
     state: PipelineNodeState,
     selectNode: PipelineNodeViewModel -> unit,
-    moveSelectedNodesBy: PipelineNodeViewModel -> float -> float -> unit,
+    moveSelectedNodesBy: PipelineNodeViewModel -> float -> float -> float -> float -> unit,
     getDrawingSize: unit -> float * float,
     markGraphDirty: unit -> unit,
     removePinConnections: IPin seq -> unit,
@@ -692,14 +692,16 @@ type PipelineNodeViewModel(
         base.OnMoved()
         this.ClampToDrawing()
 
-        let dx = this.X - lastX
-        let dy = this.Y - lastY
+        let previousX = lastX
+        let previousY = lastY
+        let dx = this.X - previousX
+        let dy = this.Y - previousY
+
+        if not suppressGroupMove && (dx <> 0. || dy <> 0.) then
+            moveSelectedNodesBy this previousX previousY dx dy
 
         lastX <- this.X
         lastY <- this.Y
-
-        if not suppressGroupMove && (dx <> 0. || dy <> 0.) then
-            moveSelectedNodesBy this dx dy
 
         markGraphDirty()
 
@@ -850,23 +852,56 @@ type MainWindowViewModel() as this =
         if not (isNull node) then
             addSelectedNode node
 
-    let moveSelectedNodesBy (movedNode: PipelineNodeViewModel) dx dy =
-        if selectedNodes.Contains movedNode && selectedNodes.Count > 1 then
-            selectedNodes
-            |> Seq.toArray
-            |> Array.filter (fun node -> not (Object.ReferenceEquals(node, movedNode)))
+    let clampSelectionDelta (selected: PipelineNodeViewModel array) dx dy =
+        if selected.Length = 0 then
+            0., 0.
+        else
+            let left = selected |> Array.map _.X |> Array.min
+            let top = selected |> Array.map _.Y |> Array.min
+            let right = selected |> Array.map (fun node -> node.X + node.Width) |> Array.max
+            let bottom = selected |> Array.map (fun node -> node.Y + node.Height) |> Array.max
+
+            let minDx = -left
+            let maxDx = drawing.Width - right
+            let minDy = -top
+            let maxDy = drawing.Height - bottom
+
+            let clampDelta minDelta maxDelta delta =
+                if maxDelta < minDelta then
+                    0.
+                else
+                    min maxDelta (max minDelta delta)
+
+            clampDelta minDx maxDx dx, clampDelta minDy maxDy dy
+
+    let applySelectionDelta (selected: PipelineNodeViewModel array) dx dy =
+        if selected.Length > 0 && (dx <> 0. || dy <> 0.) then
+            selected
             |> Array.iter (fun node ->
                 node.SuppressGroupMove <- true
 
                 try
                     node.X <- node.X + dx
                     node.Y <- node.Y + dy
-                    node.ClampToDrawing()
                     node.SyncMoveOrigin()
                 finally
                     node.SuppressGroupMove <- false)
 
             this.MarkGraphDirty()
+
+    let moveSelectedNodesBy (movedNode: PipelineNodeViewModel) previousX previousY dx dy =
+        if selectedNodes.Contains movedNode && selectedNodes.Count > 1 then
+            movedNode.SuppressGroupMove <- true
+
+            try
+                movedNode.X <- previousX
+                movedNode.Y <- previousY
+
+                let selected = selectedNodes |> Seq.toArray
+                let clampedDx, clampedDy = clampSelectionDelta selected dx dy
+                applySelectionDelta selected clampedDx clampedDy
+            finally
+                movedNode.SuppressGroupMove <- false
 
     let isNumberImagePin (pin: IPin) =
         match pin with
@@ -1384,19 +1419,8 @@ type MainWindowViewModel() as this =
         let selected = selectedNodes |> Seq.toArray
 
         if selected.Length > 0 && (dx <> 0. || dy <> 0.) then
-            selected
-            |> Array.iter (fun node ->
-                node.SuppressGroupMove <- true
-
-                try
-                    node.X <- node.X + dx
-                    node.Y <- node.Y + dy
-                    node.ClampToDrawing()
-                    node.SyncMoveOrigin()
-                finally
-                    node.SuppressGroupMove <- false)
-
-            this.MarkGraphDirty()
+            let clampedDx, clampedDy = clampSelectionDelta selected dx dy
+            applySelectionDelta selected clampedDx clampedDy
 
     member _.GeneratedProgram = generatedProgram
 
@@ -1455,8 +1479,8 @@ type MainWindowViewModel() as this =
                     | :? PipelinePinViewModel as pin -> pin.Kind = DataInput || pin.Kind = DataOutput
                     | _ -> false)
 
-            let columnSpacing = 200.
-            let rowSpacing = 96.
+            let columnSpacing = 190.
+            let rowSpacing = 108.
             let leftMargin = 32.
             let topMargin = 32.
 
@@ -1482,15 +1506,9 @@ type MainWindowViewModel() as this =
 
             for _ in 1 .. nodes.Length do
                 for startPin, endPin, startNode, endNode in connectorEdges do
-                    if isDataEdge startPin endPin then
+                    if isDataEdge startPin endPin || isParameterEdge startPin endPin then
                         updateRank xRanks startNode endNode 1
-                    elif isParameterEdge startPin endPin then
-                        let startHasData = hasDataPin startNode
-                        let endHasData = hasDataPin endNode
-
-                        if startHasData || not endHasData then
-                            updateRank xRanks startNode endNode 1
-
+                    if isParameterEdge startPin endPin then
                         updateRank yRanks startNode endNode 1
 
             let incomingCount node =
@@ -1503,15 +1521,46 @@ type MainWindowViewModel() as this =
                 |> Array.sumBy (fun (_, _, startNode, _) ->
                     if Object.ReferenceEquals(startNode, node) then 1 else 0)
 
+            let predecessors node =
+                connectorEdges
+                |> Array.choose (fun (startPin, endPin, startNode, endNode) ->
+                    if (isDataEdge startPin endPin || isParameterEdge startPin endPin)
+                       && Object.ReferenceEquals(endNode, node) then
+                        Some startNode
+                    else
+                        None)
+
+            let incomingEdges node =
+                connectorEdges
+                |> Array.filter (fun (_, _, _, endNode) -> Object.ReferenceEquals(endNode, node))
+
             let columns =
                 nodes
                 |> Array.groupBy (fun node -> xRanks[node])
+                |> Array.sortBy fst
+
+            let rowHints = Dictionary<PipelineNodeViewModel, float>()
 
             for depth, columnNodes in columns do
                 let ordered =
                     columnNodes
                     |> Array.sortBy (fun node ->
+                        let predecessorRows =
+                            predecessors node
+                            |> Array.choose (fun predecessor ->
+                                match rowHints.TryGetValue predecessor with
+                                | true, row -> Some row
+                                | _ -> None)
+
+                        let predecessorRow =
+                            if predecessorRows.Length = 0 then
+                                node.Y / rowSpacing
+                            else
+                                predecessorRows |> Array.average
+
+                        predecessorRow,
                         yRanks[node],
+                        incomingEdges node |> Array.exists (fun (startPin, endPin, _, _) -> isParameterEdge startPin endPin),
                         incomingCount node,
                         -outgoingCount node,
                         node.Y,
@@ -1521,7 +1570,8 @@ type MainWindowViewModel() as this =
                 ordered
                 |> Array.iteri (fun index node ->
                     node.X <- leftMargin + float depth * columnSpacing
-                    node.Y <- topMargin + float index * rowSpacing)
+                    node.Y <- topMargin + float index * rowSpacing
+                    rowHints[node] <- float index)
 
             let settleColumnCollisions () =
                 columns
@@ -1541,12 +1591,10 @@ type MainWindowViewModel() as this =
             for _ in 1 .. max 1 nodes.Length do
                 for startPin, endPin, startNode, endNode in connectorEdges do
                     if isParameterEdge startPin endPin then
-                        let minimumY = startNode.Y + startNode.Height + 42.
+                        let minimumY = startNode.Y + startNode.Height + 48.
 
                         if endNode.Y < minimumY then
                             endNode.Y <- minimumY
-                    elif isDataEdge startPin endPin && endNode.Y < startNode.Y then
-                        endNode.Y <- startNode.Y
 
                 settleColumnCollisions()
 
@@ -1571,9 +1619,46 @@ type MainWindowViewModel() as this =
                 |> Array.map (fun node -> node.Y + node.Height)
                 |> Array.max
 
-            drawing.Width <- max drawing.Width (right + leftMargin)
-            drawing.Height <- max drawing.Height (bottom + topMargin)
+            let requiredWidth = right + leftMargin
+            let requiredHeight = bottom + topMargin
+
+            drawing.Width <- max drawing.Width requiredWidth
+            drawing.Height <- max drawing.Height requiredHeight
+
+            let shiftInsideCanvas () =
+                let minX = nodes |> Array.map _.X |> Array.min
+                let minY = nodes |> Array.map _.Y |> Array.min
+
+                if minX < leftMargin then
+                    let shift = leftMargin - minX
+                    nodes |> Array.iter (fun node -> node.X <- node.X + shift)
+
+                if minY < topMargin then
+                    let shift = topMargin - minY
+                    nodes |> Array.iter (fun node -> node.Y <- node.Y + shift)
+
+                let overflowX =
+                    nodes
+                    |> Array.map (fun node -> node.X + node.Width)
+                    |> Array.max
+                    |> fun right -> right + leftMargin - drawing.Width
+
+                let overflowY =
+                    nodes
+                    |> Array.map (fun node -> node.Y + node.Height)
+                    |> Array.max
+                    |> fun bottom -> bottom + topMargin - drawing.Height
+
+                if overflowX > 0. then
+                    drawing.Width <- drawing.Width + overflowX
+
+                if overflowY > 0. then
+                    drawing.Height <- drawing.Height + overflowY
+
+            shiftInsideCanvas()
+
             nodes |> Array.iter _.ClampToDrawing()
+            shiftInsideCanvas()
             this.MarkGraphDirty()
 
     member this.DeleteSelectedCommand =
