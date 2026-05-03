@@ -64,6 +64,7 @@ type PipelineNodeState(definition: Function, parameters: PipelineParameterViewMo
     let mutable title = definition.DisplayName
     let mutable isPaletteDragOutside = false
     let mutable isProblemHighlighted = false
+    let mutable isSelected = false
 
     member _.Definition = definition
     member _.Parameters = System.Collections.ObjectModel.ObservableCollection<PipelineParameterViewModel>(parameters)
@@ -87,6 +88,12 @@ type PipelineNodeState(definition: Function, parameters: PipelineParameterViewMo
                 this.OnPropertyChanged(nameof this.NodeBackground)
                 this.OnPropertyChanged(nameof this.NodeBorderBrush)
 
+    member this.IsSelected
+        with get () = isSelected
+        and set v =
+            if this.SetProperty(&isSelected, v) then
+                this.OnPropertyChanged(nameof this.NodeBorderBrush)
+
     member this.NodeBackground =
         if isPaletteDragOutside then
             SolidColorBrush.Parse("#FFF8E1") :> IBrush
@@ -98,7 +105,9 @@ type PipelineNodeState(definition: Function, parameters: PipelineParameterViewMo
             SolidColorBrush.Parse("#EAF3FF") :> IBrush
 
     member this.NodeBorderBrush =
-        if isPaletteDragOutside then
+        if isSelected then
+            SolidColorBrush.Parse("#0B5CAD") :> IBrush
+        elif isPaletteDragOutside then
             SolidColorBrush.Parse("#F2A900") :> IBrush
         elif isProblemHighlighted then
             SolidColorBrush.Parse("#D64545") :> IBrush
@@ -124,4 +133,5 @@ type PaletteGroupViewModel(title: string, functions: Function seq, isExpanded: b
 
 type IGraphWindowController =
     abstract member SetDrawingSize: width: float -> height: float -> unit
+    abstract member MoveSelectionBy: dx: float -> dy: float -> unit
     abstract member DeleteSelectedElementIfInTrashZone: trashWidth: float -> trashHeight: float -> margin: float -> unit
