@@ -1311,161 +1311,106 @@ type MainWindowViewModel() as this =
                     | _ -> None)
                 |> Seq.toArray
 
-            let dataEdges =
-                connectorEdges
-                |> Array.choose (fun (startPin, endPin, startNode, endNode) ->
-                    if startPin.Kind = DataOutput && endPin.Kind = DataInput then
-                        Some(startNode, endNode)
-                    else
-                        None)
-
-            let parameterEdges =
-                connectorEdges
-                |> Array.choose (fun (startPin, endPin, startNode, endNode) ->
-                    if (startPin.Kind = ScalarOutput || startPin.Kind = ReducerOutput) && endPin.Kind = ParameterInput then
-                        Some(startNode, endNode)
-                    else
-                        None)
-
             let hasDataPin (node: PipelineNodeViewModel) =
                 node.Pins
                 |> Seq.exists (function
                     | :? PipelinePinViewModel as pin -> pin.Kind = DataInput || pin.Kind = DataOutput
                     | _ -> false)
 
-            let parameterTargets node =
-                parameterEdges
-                |> Array.choose (fun (startNode, endNode) ->
-                    if Object.ReferenceEquals(startNode, node) then Some endNode else None)
-
-            let supportNodes =
-                nodes
-                |> Array.filter (fun node -> not (hasDataPin node) && (parameterTargets node).Length > 0)
-
-            let layoutNodes =
-                nodes
-                |> Array.filter (fun node ->
-                    hasDataPin node
-                    || not (supportNodes |> Array.exists (fun supportNode -> Object.ReferenceEquals(supportNode, node))))
-
-            let depths = Dictionary<PipelineNodeViewModel, int>()
-            layoutNodes |> Array.iter (fun node -> depths[node] <- 0)
-
-            for _ in 1 .. layoutNodes.Length do
-                for startNode, endNode in dataEdges do
-                    if depths.ContainsKey startNode && depths.ContainsKey endNode then
-                        let candidateDepth = depths[startNode] + 1
-                        if candidateDepth > depths[endNode] then
-                            depths[endNode] <- candidateDepth
-
-            let maxDepth =
-                if depths.Count = 0 then 0 else depths.Values |> Seq.fold max 0
-
-            let layers =
-                Dictionary<int, PipelineNodeViewModel array>(
-                    [ for depth in 0 .. maxDepth ->
-                        let layerNodes =
-                            layoutNodes
-                            |> Array.filter (fun node -> depths[node] = depth)
-                            |> Array.sortBy (fun node -> node.Y, node.X, node.State.Title)
-
-                        KeyValuePair(depth, layerNodes) ])
-
-            let layerOrder = Dictionary<PipelineNodeViewModel, int>()
-
-            let refreshOrder () =
-                layerOrder.Clear()
-                for KeyValue(_, layerNodes) in layers do
-                    layerNodes
-                    |> Array.iteri (fun index node -> layerOrder[node] <- index)
-
-            let averageNeighborOrder fallback neighbors =
-                let indexed =
-                    neighbors
-                    |> Array.choose (fun node ->
-                        match layerOrder.TryGetValue node with
-                        | true, index -> Some(float index)
-                        | _ -> None)
-
-                if indexed.Length = 0 then fallback else Array.average indexed
-
-            let neighborsOf node =
-                let predecessors =
-                    dataEdges
-                    |> Array.choose (fun (startNode, endNode) ->
-                        if Object.ReferenceEquals(endNode, node) then Some startNode else None)
-
-                let successors =
-                    dataEdges
-                    |> Array.choose (fun (startNode, endNode) ->
-                        if Object.ReferenceEquals(startNode, node) then Some endNode else None)
-
-                Array.append predecessors successors
-
-            refreshOrder()
-
-            for _ in 1 .. 6 do
-                for depth in 0 .. maxDepth do
-                    let layerNodes = layers[depth]
-                    layers[depth] <-
-                        layerNodes
-                        |> Array.mapi (fun index node ->
-                            let targetOrder = averageNeighborOrder (float index) (neighborsOf node)
-                            targetOrder, node)
-                        |> Array.sortBy fst
-                        |> Array.map snd
-
-                    refreshOrder()
-
             let columnSpacing = 200.
             let rowSpacing = 96.
             let leftMargin = 32.
             let topMargin = 32.
 
-            for KeyValue(depth, layerNodes) in layers do
-                let x = leftMargin + float depth * columnSpacing
+            let isParameterEdge (startPin: PipelinePinViewModel) (endPin: PipelinePinViewModel) =
+                (startPin.Kind = ScalarOutput || startPin.Kind = ReducerOutput) && endPin.Kind = ParameterInput
 
-                layerNodes
+            let isDataEdge (startPin: PipelinePinViewModel) (endPin: PipelinePinViewModel) =
+                startPin.Kind = DataOutput && endPin.Kind = DataInput
+
+            let xRanks = Dictionary<PipelineNodeViewModel, int>()
+            let yRanks = Dictionary<PipelineNodeViewModel, int>()
+
+            nodes
+            |> Array.iter (fun node ->
+                xRanks[node] <- 0
+                yRanks[node] <- 0)
+
+            let updateRank (ranks: Dictionary<PipelineNodeViewModel, int>) startNode endNode delta =
+                let candidate = ranks[startNode] + delta
+
+                if candidate > ranks[endNode] then
+                    ranks[endNode] <- candidate
+
+            for _ in 1 .. nodes.Length do
+                for startPin, endPin, startNode, endNode in connectorEdges do
+                    if isDataEdge startPin endPin then
+                        updateRank xRanks startNode endNode 1
+                    elif isParameterEdge startPin endPin then
+                        let startHasData = hasDataPin startNode
+                        let endHasData = hasDataPin endNode
+
+                        if startHasData || not endHasData then
+                            updateRank xRanks startNode endNode 1
+
+                        updateRank yRanks startNode endNode 1
+
+            let incomingCount node =
+                connectorEdges
+                |> Array.sumBy (fun (_, _, _, endNode) ->
+                    if Object.ReferenceEquals(endNode, node) then 1 else 0)
+
+            let outgoingCount node =
+                connectorEdges
+                |> Array.sumBy (fun (_, _, startNode, _) ->
+                    if Object.ReferenceEquals(startNode, node) then 1 else 0)
+
+            let columns =
+                nodes
+                |> Array.groupBy (fun node -> xRanks[node])
+
+            for depth, columnNodes in columns do
+                let ordered =
+                    columnNodes
+                    |> Array.sortBy (fun node ->
+                        yRanks[node],
+                        incomingCount node,
+                        -outgoingCount node,
+                        node.Y,
+                        node.X,
+                        node.State.Title)
+
+                ordered
                 |> Array.iteri (fun index node ->
-                    node.X <- x
+                    node.X <- leftMargin + float depth * columnSpacing
                     node.Y <- topMargin + float index * rowSpacing)
 
-            let supportSlots = Dictionary<PipelineNodeViewModel, int>()
-            let supportBaseOffset = 80.
+            let settleColumnCollisions () =
+                columns
+                |> Array.iter (fun (_, columnNodes) ->
+                    let mutable previousBottom = Double.NegativeInfinity
 
-            supportNodes
-            |> Array.sortBy (fun node ->
-                let targets = parameterTargets node
-                if targets.Length = 0 then 0. else targets |> Array.averageBy (fun target -> target.X))
-            |> Array.iter (fun node ->
-                let targets = parameterTargets node
+                    columnNodes
+                    |> Array.sortBy (fun node -> node.Y, node.X, node.State.Title)
+                    |> Array.iter (fun node ->
+                        let minimumY = previousBottom + 32.
 
-                if targets.Length > 0 then
-                    let anchor =
-                        targets
-                        |> Array.sortBy (fun target -> target.Y, target.X)
-                        |> Array.head
+                        if node.Y < minimumY then
+                            node.Y <- minimumY
 
-                    let slot =
-                        match supportSlots.TryGetValue anchor with
-                        | true, count ->
-                            supportSlots[anchor] <- count + 1
-                            count
-                        | _ ->
-                            supportSlots[anchor] <- 1
-                            0
+                        previousBottom <- node.Y + node.Height))
 
-                    let targetCenterX =
-                        targets
-                        |> Array.averageBy (fun target -> target.X + target.Width / 2.)
+            for _ in 1 .. max 1 nodes.Length do
+                for startPin, endPin, startNode, endNode in connectorEdges do
+                    if isParameterEdge startPin endPin then
+                        let minimumY = startNode.Y + startNode.Height + 42.
 
-                    let targetTop =
-                        targets
-                        |> Array.minBy (fun target -> target.Y)
-                        |> fun target -> target.Y
+                        if endNode.Y < minimumY then
+                            endNode.Y <- minimumY
+                    elif isDataEdge startPin endPin && endNode.Y < startNode.Y then
+                        endNode.Y <- startNode.Y
 
-                    node.X <- targetCenterX - node.Width / 2.
-                    node.Y <- targetTop - supportBaseOffset - float slot * rowSpacing)
+                settleColumnCollisions()
 
             let minX = nodes |> Array.map _.X |> Array.min
             let minY = nodes |> Array.map _.Y |> Array.min
