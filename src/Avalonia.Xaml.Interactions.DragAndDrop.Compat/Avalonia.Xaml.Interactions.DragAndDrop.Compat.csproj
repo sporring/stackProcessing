@@ -1,6 +1,6 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
-    <TargetFramework>net9.0</TargetFramework>
+    <TargetFramework>net10.0</TargetFramework>
     <AssemblyName>Avalonia.Xaml.Interactions.DragAndDrop</AssemblyName>
     <RootNamespace>Avalonia.Xaml.Interactions.DragAndDrop.Compat</RootNamespace>
     <Version>11.3.0.6</Version>

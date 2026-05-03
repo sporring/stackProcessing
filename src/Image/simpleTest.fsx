@@ -1,5 +1,5 @@
-#r "bin/Debug/net8.0/Image.dll"            
-#r "bin/Debug/net8.0/SimpleITKCSharpManaged.dll"
+#r "bin/Debug/net10.0/Image.dll"            
+#r "bin/Debug/net10.0/SimpleITKCSharpManaged.dll"
 open Image
 open ImageFunctions
 let I = Image<int>([10u;12u])
