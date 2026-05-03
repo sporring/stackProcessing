@@ -35,3 +35,4 @@ samples/transpose/test1.tiff
 /samples/result18201
 /samples/result18210
 *.json
+!/samples/*/*.json
