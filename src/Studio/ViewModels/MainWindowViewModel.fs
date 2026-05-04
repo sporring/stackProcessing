@@ -5,9 +5,11 @@ open System.Collections.Generic
 open System.Collections.ObjectModel
 open System.Collections.Specialized
 open System.ComponentModel
+open System.Diagnostics
 open System.Globalization
 open System.IO
 open System.Runtime.CompilerServices
+open System.Text
 open System.Text.RegularExpressions
 open System.Windows.Input
 open Avalonia.Threading
@@ -937,6 +939,16 @@ type MainWindowViewModel() as this =
     let mutable selectedNode: PipelineNodeViewModel = null
     let selectedNodes = HashSet<PipelineNodeViewModel>(HashIdentity.Reference)
     let mutable graphOutput = ""
+    let mutable isRunInProgress = false
+    let runProjectDirectory =
+        let tempRoot =
+            if Directory.Exists("/private/tmp") then
+                "/private/tmp"
+            else
+                Path.GetTempPath()
+
+        Path.Combine(tempRoot, "StackProcessingStudioRun", string Environment.ProcessId)
+    let studioWorkingDirectory = Directory.GetCurrentDirectory()
     let mutable paletteSearch = ""
     let mutable graphDirty = false
     let mutable currentGraphPath: string option = None
@@ -1779,6 +1791,165 @@ type MainWindowViewModel() as this =
         let block = $"Program generated {timestamp}{Environment.NewLine}{text}"
         this.AppendGraphOutput(block)
 
+    member private this.AppendGraphOutputLineOnUi(text: string) =
+        Dispatcher.UIThread.Post(fun () -> this.AppendGraphOutputLine(text))
+
+    member private this.SetRunInProgress(value: bool) =
+        if Dispatcher.UIThread.CheckAccess() then
+            if isRunInProgress <> value then
+                isRunInProgress <- value
+                this.OnPropertyChanged(PropertyChangedEventArgs(nameof this.CanRunGraph))
+        else
+            Dispatcher.UIThread.Post(fun () -> this.SetRunInProgress(value))
+
+    member private _.FindRepositoryRoot() =
+        let rec search (directory: DirectoryInfo) =
+            let stackProcessingProject =
+                Path.Combine(directory.FullName, "src", "StackProcessing", "StackProcessing.fsproj")
+
+            if File.Exists stackProcessingProject then
+                Some directory.FullName
+            elif isNull directory.Parent then
+                None
+            else
+                search directory.Parent
+
+        let start =
+            DirectoryInfo(AppContext.BaseDirectory)
+
+        search start
+        |> Option.defaultWith (fun () -> Directory.GetCurrentDirectory())
+
+    member private this.DotnetExecutable() =
+        let macInstall = "/usr/local/share/dotnet/dotnet"
+
+        if File.Exists macInstall then
+            macInstall
+        else
+            "dotnet"
+
+    member private this.EnsureRunProject(includePlotly: bool) =
+        Directory.CreateDirectory(runProjectDirectory) |> ignore
+
+        let repositoryRoot = this.FindRepositoryRoot()
+        let stackProcessingProject = Path.Combine(repositoryRoot, "src", "StackProcessing", "StackProcessing.fsproj")
+        let projectPath = Path.Combine(runProjectDirectory, "StudioRun.fsproj")
+
+        let plotlyReference =
+            if includePlotly then
+                """    <PackageReference Include="Plotly.NET" Version="5.1.0" />
+"""
+            else
+                ""
+
+        let projectFile =
+            $"""<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="{stackProcessingProject}" />
+{plotlyReference}
+  </ItemGroup>
+  <ItemGroup>
+    <Compile Include="Program.fs" />
+  </ItemGroup>
+</Project>
+"""
+
+        if not (File.Exists projectPath) || File.ReadAllText(projectPath) <> projectFile then
+            File.WriteAllText(projectPath, projectFile)
+
+        projectPath
+
+    member private this.WriteRunProgram(generatedProgram: string) =
+        let programPath = Path.Combine(runProjectDirectory, "Program.fs")
+        File.WriteAllText(programPath, generatedProgram, Encoding.UTF8)
+
+    member private this.RunProcess(phase: string) (fileName: string) (arguments: string list) (workingDirectory: string) =
+        async {
+            this.AppendGraphOutputLineOnUi(phase)
+
+            let startInfo = ProcessStartInfo()
+            startInfo.FileName <- fileName
+            startInfo.WorkingDirectory <- workingDirectory
+            startInfo.UseShellExecute <- false
+            startInfo.RedirectStandardOutput <- true
+            startInfo.RedirectStandardError <- true
+            startInfo.CreateNoWindow <- true
+
+            arguments
+            |> List.iter startInfo.ArgumentList.Add
+
+            use proc = new Process()
+            proc.StartInfo <- startInfo
+            proc.EnableRaisingEvents <- true
+
+            let readLines (reader: StreamReader) =
+                async {
+                    let mutable keepReading = true
+
+                    while keepReading do
+                        let! line = reader.ReadLineAsync() |> Async.AwaitTask
+
+                        if isNull line then
+                            keepReading <- false
+                        else
+                            this.AppendGraphOutputLineOnUi(line)
+                }
+
+            if not (proc.Start()) then
+                return -1
+            else
+                let! output = readLines proc.StandardOutput |> Async.StartChild
+                let! error = readLines proc.StandardError |> Async.StartChild
+
+                do! proc.WaitForExitAsync() |> Async.AwaitTask
+                do! output
+                do! error
+
+                return proc.ExitCode
+        }
+
+    member private this.BuildAndRunGeneratedProgram(generatedProgram: string) =
+        async {
+            try
+                this.SetRunInProgress(true)
+                this.AppendGraphOutputLineOnUi("Compiling")
+
+                let projectPath = this.EnsureRunProject(generatedProgram.Contains("open Plotly.NET", StringComparison.Ordinal))
+                this.WriteRunProgram(generatedProgram)
+
+                let dotnet = this.DotnetExecutable()
+
+                let! buildExitCode =
+                    this.RunProcess
+                        "Building"
+                        dotnet
+                        [ "build"; projectPath; "--configuration"; "Release"; "--nologo"; "--verbosity"; "minimal" ]
+                        runProjectDirectory
+
+                if buildExitCode = 0 then
+                    let! runExitCode =
+                        this.RunProcess
+                            "Run"
+                            dotnet
+                            [ "run"; "--configuration"; "Release"; "--no-build"; "--project"; projectPath ]
+                            studioWorkingDirectory
+
+                    if runExitCode = 0 then
+                        this.AppendGraphOutputLineOnUi("Completed")
+                    else
+                        this.AppendGraphOutputLineOnUi($"Run failed with exit code {runExitCode}")
+                else
+                    this.AppendGraphOutputLineOnUi($"Build failed with exit code {buildExitCode}")
+            with ex ->
+                this.AppendGraphOutputLineOnUi($"Run setup failed: {ex.Message}")
+
+            this.SetRunInProgress(false)
+        }
+
     member _.ConnectSeedPipeline() =
         if drawing.Connectors.Count = 0 then
             pipelineNodes ()
@@ -2028,7 +2199,13 @@ type MainWindowViewModel() as this =
         SimpleCommand(
             (fun _ ->
                 match this.ValidateGraph() with
-                | Ok () -> this.AppendGeneratedProgram(PipelineCodeGenerator.generateSavedGraph (this.ExportGraph()))
+                | Ok () ->
+                    let generatedProgram = PipelineCodeGenerator.generateSavedGraph (this.ExportGraph())
+                    this.SetRunInProgress(true)
+                    this.AppendGeneratedProgram(generatedProgram)
+                    generatedProgram
+                    |> this.BuildAndRunGeneratedProgram
+                    |> Async.Start
                 | Error message -> this.AppendGeneratedProgram(message)),
             (fun _ -> true))
         :> ICommand
@@ -2179,7 +2356,7 @@ type MainWindowViewModel() as this =
 
     member this.CanClearGraph = this.HasGraph
 
-    member this.CanRunGraph = this.HasGraph
+    member this.CanRunGraph = this.HasGraph && not isRunInProgress
 
     member _.SuggestedGraphFileName =
         currentGraphPath

@@ -19,7 +19,7 @@
         },
         {
           "key": "input",
-          "value": "../image18",
+          "value": "../../samples/image18",
           "useInput": false
         },
         {
@@ -44,7 +44,7 @@
       "parameters": [
         {
           "key": "format",
-          "value": "{NumPixels} {Mean} {Std} {Min} {Max} {Sum} {Var}",
+          "value": "Number pixels: {NumPixels}\\nMean value: {Mean}\\nStandard deviation:  {Std}\\nMinimum value:  {Min}\\nMaximum value: {Max}\\nSum: {Sum}\\nVariance: {Var}",
           "useInput": false
         },
         {

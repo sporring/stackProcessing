@@ -388,6 +388,12 @@ module PipelineCodeGenerator =
 
             let escapeText (value: string) =
                 value
+                    .Replace("\\\\", "\u0000")
+                    .Replace("\\n", "\n")
+                    .Replace("\\r", "\r")
+                    .Replace("\\t", "\t")
+                    .Replace("\\\"", "\"")
+                    .Replace("\u0000", "\\")
                     .Replace("\\", "\\\\")
                     .Replace("\"", "\\\"")
                     .Replace("{", "{{")
