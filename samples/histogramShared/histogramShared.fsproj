@@ -23,17 +23,15 @@
   </ItemGroup>
   
   <ItemGroup Condition="$([MSBuild]::IsOSPlatform('Linux'))">
-    <None Include="../../lib/libSimpleITKCSharpNative.so"
-      CopyToOutputDirectory="PreserveNewest" />
+    <None Include="../../lib/libSimpleITKCSharpNative.so" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 
   <ItemGroup Condition="$([MSBuild]::IsOSPlatform('OSX'))">
-    <None Include="../../lib/libSimpleITKCSharpNative.dylib"
-      CopyToOutputDirectory="PreserveNewest" />
+    <None Include="../../lib/libSimpleITKCSharpNative.dylib" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
  
   <ItemGroup>
-    <PackageReference Include="Plotly.NET" Version="5.0.0" />
+    <PackageReference Include="Plotly.NET" Version="5.1.0" />
     <ProjectReference Include="../../src/StackProcessing/StackProcessing.fsproj" />
   </ItemGroup>
 

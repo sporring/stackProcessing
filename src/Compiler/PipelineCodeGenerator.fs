@@ -3,6 +3,7 @@ namespace Compiler
 open System
 open System.Collections.Generic
 open System.Text
+open System.Text.RegularExpressions
 open Graph
 
 module PipelineCodeGenerator =
@@ -321,6 +322,80 @@ module PipelineCodeGenerator =
             let expression = parameterExpression key
             if expression.IsLinked then expression.Value else quote expression.Value
 
+        let printInputName key index =
+            graph.Edges
+            |> Seq.tryFind (fun edge ->
+                edge.ToNode = node.Id
+                && edge.ToKind = "parameterInput"
+                && edge.ToPort = index)
+            |> Option.bind (fun edge ->
+                match edge.FromKind with
+                | "reducerOutput" ->
+                    computeStatsFieldName edge.FromPort
+                    |> Option.orElseWith (fun () ->
+                        nodesById
+                        |> Map.tryFind edge.FromNode
+                        |> Option.bind (fun sourceNode ->
+                            BuiltInCatalog.tryFind sourceNode.FunctionId
+                            |> Option.bind (fun definition ->
+                                definition.Outputs
+                                |> List.tryItem edge.FromPort
+                                |> Option.map _.Name)))
+                | "scalarOutput" ->
+                    nodesById
+                    |> Map.tryFind edge.FromNode
+                    |> Option.map (fun sourceNode ->
+                        if sourceNode.FunctionId = "Scalar" then
+                            savedParamValue "type" sourceNode
+                        else
+                            sourceNode.FunctionId)
+                | _ ->
+                    None)
+            |> Option.map (fun name ->
+                let index = name.IndexOf(':')
+
+                if index > 0 then
+                    name.Substring(0, index).Trim()
+                else
+                    name.Trim())
+            |> Option.filter (String.IsNullOrWhiteSpace >> not)
+            |> Option.defaultValue key
+
+        let interpolatedStringExpression (format: string) (inputs: (string * string * string) list) =
+            let byName =
+                inputs
+                |> List.collect (fun (key, name, expression) -> [ key, expression; name, expression ])
+                |> Map.ofList
+
+            let escapeText (value: string) =
+                value
+                    .Replace("\\", "\\\\")
+                    .Replace("\"", "\\\"")
+                    .Replace("{", "{{")
+                    .Replace("}", "}}")
+
+            let builder = StringBuilder()
+            let mutable offset = 0
+
+            for m in Regex.Matches(format, @"\{([^{}]+)\}") do
+                if m.Index > offset then
+                    builder.Append(escapeText (format.Substring(offset, m.Index - offset))) |> ignore
+
+                let name = m.Groups[1].Value.Trim()
+
+                match byName |> Map.tryFind name with
+                | Some expression ->
+                    builder.Append("{").Append(expression).Append("}") |> ignore
+                | None ->
+                    builder.Append(escapeText m.Value) |> ignore
+
+                offset <- m.Index + m.Length
+
+            if offset < format.Length then
+                builder.Append(escapeText (format.Substring offset)) |> ignore
+
+            "$\"" + builder.ToString() + "\""
+
         match node.FunctionId with
         | "Zero" ->
             let availableMemory = parameterValue "availableMemory"
@@ -402,8 +477,20 @@ module PipelineCodeGenerator =
         | "Tap" ->
             ">=> tap \"tap\""
         | "Print" ->
-            let input = quotedParameter "input"
-            "printfn \"%A\" " + input
+            let inputs =
+                node.Parameters
+                |> Seq.mapi (fun index parameter -> index, parameter)
+                |> Seq.choose (fun (parameterIndex, parameter) ->
+                    if parameter.Key.StartsWith("input", StringComparison.Ordinal) && parameter.UseInput then
+                        Some(parameter.Key, printInputName parameter.Key parameterIndex, parameterValue parameter.Key)
+                    else
+                        None)
+                |> Seq.toList
+
+
+            let format = interpolatedStringExpression (savedParamValue "format" node) inputs
+
+            $"printfn {format}"
         | "Histogram" ->
             ">=> histogram () >=> map2pairs --> pairs2floats --> plot (showChart \"Column\")"
         | "HistogramData" ->

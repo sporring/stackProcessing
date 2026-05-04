@@ -43,9 +43,14 @@
       "y": 80.0,
       "parameters": [
         {
-          "key": "input",
-          "value": "input",
+          "key": "format",
+          "value": "{input1}",
           "useInput": false
+        },
+        {
+          "key": "input1",
+          "value": "input1",
+          "useInput": true
         }
       ]
     },
@@ -83,7 +88,7 @@
       "fromPort": 0,
       "toNode": "node-3",
       "toKind": "parameterInput",
-      "toPort": 0
+      "toPort": 1
     },
     {
       "fromNode": "node-2",

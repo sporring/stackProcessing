@@ -8,6 +8,7 @@ open System.ComponentModel
 open System.Globalization
 open System.IO
 open System.Runtime.CompilerServices
+open System.Text.RegularExpressions
 open System.Windows.Input
 open Avalonia.Threading
 open Compiler
@@ -496,6 +497,85 @@ module private ChartNode =
         |> Option.filter (fun value -> kindOptions |> List.contains value)
         |> Option.defaultValue "Column"
 
+module private PrintNode =
+    let maxInputs = 8
+
+    let inputKey index =
+        $"input{index}"
+
+    let isInputKey (key: string) =
+        key.StartsWith("input", StringComparison.Ordinal)
+
+    let inputIndex (key: string) =
+        if isInputKey key then
+            let suffix = key.Substring("input".Length)
+            let mutable parsed = 0
+
+            if Int32.TryParse(suffix, &parsed) && parsed >= 1 && parsed <= maxInputs then
+                Some parsed
+            else
+                None
+        else
+            None
+
+    let inputIsVisible (state: PipelineNodeState) key =
+        state.Parameters
+        |> Seq.exists (fun parameter -> parameter.Key = key && parameter.UseInput)
+
+    let activeInputIndexes (state: PipelineNodeState) =
+        state.Parameters
+        |> Seq.choose (fun parameter ->
+            inputIndex parameter.Key
+            |> Option.filter (fun _ -> parameter.UseInput))
+        |> Seq.sort
+        |> Seq.toList
+
+    let placeholderForInput (state: PipelineNodeState) index =
+        let inputKey = inputKey index
+
+        state.Parameters
+        |> Seq.tryFind (fun parameter -> parameter.Key = inputKey)
+        |> Option.map _.Value
+        |> Option.filter (String.IsNullOrWhiteSpace >> not)
+        |> Option.defaultValue inputKey
+        |> fun name -> $"{{{name}}}"
+
+    let syncFormatPlaceholders (state: PipelineNodeState) (format: string) =
+        let activeInputIndexes = activeInputIndexes state
+        let activeInputIndexSet = activeInputIndexes |> Set.ofList
+
+        let inactivePlaceholders =
+            [ 1..maxInputs ]
+            |> List.filter (fun index -> not (activeInputIndexSet.Contains index))
+            |> List.map (placeholderForInput state)
+            |> Set.ofList
+
+        let activePlaceholders =
+            activeInputIndexes |> List.map (placeholderForInput state)
+
+        let withoutInactive =
+            Regex.Replace(
+                format,
+                @"\s*\{[^{}]+\}",
+                MatchEvaluator(fun m ->
+                    if inactivePlaceholders |> Set.contains (m.Value.Trim()) then
+                        ""
+                    else
+                        m.Value))
+                .Trim()
+
+        let missing =
+            activePlaceholders
+            |> List.filter (fun placeholder -> not (withoutInactive.Contains(placeholder, StringComparison.Ordinal)))
+
+        match missing with
+        | [] ->
+            withoutInactive
+        | _ when String.IsNullOrWhiteSpace withoutInactive ->
+            String.concat " " missing
+        | _ ->
+            withoutInactive + " " + String.concat " " missing
+
 [<AllowNullLiteral>]
 type PipelineNodeViewModel(
     state: PipelineNodeState,
@@ -569,6 +649,12 @@ type PipelineNodeViewModel(
             parameter.PropertyChanged.Add(fun args ->
                 if args.PropertyName = nameof parameter.UseInput then
                     this.SyncParameterPinVisibility()
+                    if state.Definition.Id = "Print" && PrintNode.isInputKey parameter.Key then
+                        state.Parameters
+                        |> Seq.tryFind (fun parameter -> parameter.Key = "format")
+                        |> Option.iter (fun formatParameter ->
+                            formatParameter.Value <- PrintNode.syncFormatPlaceholders state formatParameter.Value)
+
                     if (SourceImageNode.hasInputTitle state.Definition.Id && parameter.Key = "input")
                        || (SourceImageNode.hasOutputTitle state.Definition.Id && parameter.Key = "output") then
                         state.Title <- SourceImageNode.title state
@@ -639,10 +725,15 @@ type PipelineNodeViewModel(
 
     member private _.ParameterPinIsVisible(parameter: PipelineParameterViewModel) =
         parameter.UseInput
+        && (state.Definition.Id <> "Print" || PrintNode.inputIsVisible state parameter.Key)
         || (state.Definition.Id = "CollapseComponentLabels" && parameter.Key = "translationTable")
 
     member private this.SetParameterPinVisibility(parameter: PipelineParameterViewModel, pin: IPin) =
-        if this.ParameterPinIsVisible parameter then
+        let isVisible = this.ParameterPinIsVisible parameter
+
+        parameter.IsValueEnabled <- state.Definition.Id <> "Print" || not (PrintNode.isInputKey parameter.Key) || isVisible
+
+        if isVisible then
             pin.Width <- pinSize
             pin.Height <- pinSize
 
@@ -673,7 +764,7 @@ type PipelineNodeViewModel(
                 ScalarImageOperationNode.valuePort state
             elif state.Definition.Id = "CollapseComponentLabels" && parameter.Key = "translationTable" then
                 PortMapping.customParameterPort parameter.Key "TranslationTable"
-            elif state.Definition.Id = "Print" && parameter.Key = "input" then
+            elif state.Definition.Id = "Print" && PrintNode.isInputKey parameter.Key then
                 PortMapping.anyParameterPort parameter.Key
             else
                 PortMapping.parameterPort parameter
@@ -921,7 +1012,11 @@ type MainWindowViewModel() as this =
                         |> List.map (fun value -> ParameterOptionViewModel(value, value, true))
 
                     PipelineParameterViewModel(parameter.Label, parameter.Key, parameter.DefaultValue, parameter.Type, options, false)
-                | ("Print" | "Chart"), "input" ->
+                | "Print", "format" ->
+                    PipelineParameterViewModel(parameter.Label, parameter.Key, parameter.DefaultValue, parameter.Type, canUseInput = false)
+                | "Print", key when PrintNode.isInputKey key ->
+                    PipelineParameterViewModel(parameter.Label, parameter.Key, parameter.DefaultValue, parameter.Type, initialUseInput = (key = "input1"))
+                | "Chart", "input" ->
                     PipelineParameterViewModel(parameter.Label, parameter.Key, parameter.DefaultValue, parameter.Type, forceUseInput = true)
                 | _ ->
                     PipelineParameterViewModel(parameter.Label, parameter.Key, parameter.DefaultValue, parameter.Type))
@@ -1973,15 +2068,22 @@ type MainWindowViewModel() as this =
         drawing.Nodes.Clear()
         this.SelectedNode <- null
 
+        let canonicalFunctionId functionId =
+            match functionId with
+            | "Plot" -> "Chart"
+            | _ -> functionId
+
         let loadedNodes =
             savedGraph.Nodes
             |> Array.map (fun savedNode ->
-                match BuiltInCatalog.tryFind savedNode.FunctionId with
+                let functionId = canonicalFunctionId savedNode.FunctionId
+
+                match BuiltInCatalog.tryFind functionId with
                 | None -> invalidOp $"Unknown function id in saved graph: {savedNode.FunctionId}"
                 | Some _ ->
                     let node =
                         PipelineNodeViewModel(
-                            createState savedNode.FunctionId,
+                            createState functionId,
                             (fun node -> this.SelectNodeFromEditor node),
                             moveSelectedNodesBy,
                             (fun () -> drawing.Width, drawing.Height),
@@ -2008,13 +2110,19 @@ type MainWindowViewModel() as this =
                 let toKind =
                     if String.IsNullOrWhiteSpace edge.ToKind then DataInput else PipelinePinKind.ofString edge.ToKind
 
-                match pinByKindIndex fromKind edge.FromPort fromNode, pinByKindIndex toKind edge.ToPort toNode with
+                let toPort =
+                    if toKind = ParameterInput && toNode.State.Definition.Id = "Chart" && edge.ToPort = 0 then
+                        1
+                    else
+                        edge.ToPort
+
+                match pinByKindIndex fromKind edge.FromPort fromNode, pinByKindIndex toKind toPort toNode with
                 | Some startPin, Some endPin when canConnectPins startPin endPin ->
                     addConnector startPin endPin
                 | Some _, Some _ ->
-                    invalidOp $"Saved edge has incompatible port types: {edge.FromNode}[{edge.FromPort}] -> {edge.ToNode}[{edge.ToPort}]"
+                    invalidOp $"Saved edge has incompatible port types: {edge.FromNode}[{edge.FromPort}] -> {edge.ToNode}[{toPort}]"
                 | _ ->
-                    invalidOp $"Saved edge refers to a missing port: {edge.FromNode}[{edge.FromPort}] -> {edge.ToNode}[{edge.ToPort}]"
+                    invalidOp $"Saved edge refers to a missing port: {edge.FromNode}[{edge.FromPort}] -> {edge.ToNode}[{toPort}]"
             | _ ->
                 invalidOp $"Saved edge refers to a missing node: {edge.FromNode} -> {edge.ToNode}"
 

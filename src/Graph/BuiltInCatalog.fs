@@ -280,11 +280,20 @@ module BuiltInCatalog =
         { Id = "Print"
           DisplayName = "print"
           Category = "Visualization"
-          Description = "Print a scalar value in the generated program."
+          Description = "Print one or more scalar values in the generated program."
           Aliases = [ "debug"; "trace"; "log"; "sink"; "inspect"; "printfn" ]
           Inputs = []
           Outputs = []
-          Parameters = [ makeParameter "input" "Input" "input" BasicType.String ] }
+          Parameters =
+              [ makeParameter "format" "Format" "{input1}" BasicType.String
+                makeParameter "input1" "Input 1" "input1" BasicType.String
+                makeParameter "input2" "Input 2" "input2" BasicType.String
+                makeParameter "input3" "Input 3" "input3" BasicType.String
+                makeParameter "input4" "Input 4" "input4" BasicType.String
+                makeParameter "input5" "Input 5" "input5" BasicType.String
+                makeParameter "input6" "Input 6" "input6" BasicType.String
+                makeParameter "input7" "Input 7" "input7" BasicType.String
+                makeParameter "input8" "Input 8" "input8" BasicType.String ] }
 
         { Id = "Histogram"
           DisplayName = "histogram"
