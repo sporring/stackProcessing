@@ -287,7 +287,8 @@
                                               FontSize="11" />
                                     <TextBox Grid.Column="2"
                                              Text="{Binding Value, Mode=TwoWay}"
-                                             IsEnabled="{Binding IsValueEditable}"
+                                             IsEnabled="{Binding IsValueEnabled}"
+                                             IsReadOnly="{Binding IsValueReadOnly}"
                                              IsVisible="{Binding !HasOptions}"
                                              MinHeight="30" />
                                     <ComboBox Grid.Column="2"

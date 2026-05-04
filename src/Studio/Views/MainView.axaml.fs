@@ -259,6 +259,27 @@ type MainView() as this =
             else
                 None)
 
+    let assignedParameterInputSourceName (drawing: DrawingNodeViewModel) (inputPin: PipelinePinViewModel) =
+        let beforeColon (value: string) =
+            let index = value.IndexOf(':')
+
+            if index > 0 then
+                value.Substring(0, index).Trim()
+            else
+                value.Trim()
+
+        drawing.Connectors
+        |> Seq.tryPick (fun connector ->
+            if Object.ReferenceEquals(connector.End, inputPin) then
+                match connector.Start with
+                | :? PipelinePinViewModel as startPin ->
+                    let name = beforeColon startPin.Port.Name
+                    if String.IsNullOrWhiteSpace name then None else Some name
+                | _ ->
+                    None
+            else
+                None)
+
     let updateTapPinNames (drawing: DrawingNodeViewModel) =
         drawing.Nodes
         |> Seq.choose (function
@@ -283,15 +304,28 @@ type MainView() as this =
         |> Seq.iter (fun node ->
             node.Pins
             |> Seq.choose (function
-                | :? PipelinePinViewModel as pin when pin.Kind = ParameterInput && pin.ParameterKey = "input" -> Some pin
+                | :? PipelinePinViewModel as pin when pin.Kind = ParameterInput && pin.IsActive && pin.ParameterKey.StartsWith("input", StringComparison.Ordinal) -> Some pin
                 | _ -> None)
             |> Seq.iter (fun pin ->
                 let name =
-                    assignedParameterInputType drawing pin
-                    |> Option.map portTypeLabel
-                    |> Option.defaultValue "Any"
+                    assignedParameterInputSourceName drawing pin
+                    |> Option.defaultValue pin.ParameterKey
 
-                pin.Name <- $"input: {name}"))
+                pin.Name <- name
+
+                node.State.Parameters
+                |> Seq.tryFind (fun parameter -> parameter.Key = pin.ParameterKey)
+                |> Option.iter (fun parameter ->
+                    let oldName = parameter.Value
+                    parameter.Value <- name
+
+                    if not (String.Equals(oldName, name, StringComparison.Ordinal)) then
+                        node.State.Parameters
+                        |> Seq.tryFind (fun parameter -> parameter.Key = "format")
+                        |> Option.iter (fun formatParameter ->
+                            let oldPlaceholder = $"{{{oldName}}}"
+                            let newPlaceholder = $"{{{name}}}"
+                            formatParameter.Value <- formatParameter.Value.Replace(oldPlaceholder, newPlaceholder)))))
 
     let compatiblePortTypes (outputPin: PipelinePinViewModel) (inputPin: PipelinePinViewModel) =
         let isPrintParameter =

@@ -18,16 +18,20 @@ type ParameterOptionViewModel(label: string, value: string, isEnabled: bool) =
         with get () = isEnabled
         and set v = this.SetProperty(&isEnabled, v) |> ignore
 
-type PipelineParameterViewModel(label: string, key: string, value: string, parameterType: BasicType, ?options: ParameterOptionViewModel list, ?canUseInput: bool, ?forceUseInput: bool) =
+type PipelineParameterViewModel(label: string, key: string, value: string, parameterType: BasicType, ?options: ParameterOptionViewModel list, ?canUseInput: bool, ?forceUseInput: bool, ?initialUseInput: bool) =
     inherit ObservableObject()
 
     let mutable value = value
+    let mutable label = label
     let forceUseInput = defaultArg forceUseInput false
-    let mutable useInput = forceUseInput
+    let mutable useInput = forceUseInput || defaultArg initialUseInput false
+    let mutable isValueEnabled = true
     let options = ObservableCollection<ParameterOptionViewModel>(defaultArg options [])
     let canUseInput = defaultArg canUseInput true
 
-    member _.Label = label
+    member this.Label
+        with get () = label
+        and set v = this.SetProperty(&label, v) |> ignore
     member _.Key = key
     member _.ParameterType = parameterType
     member _.Options = options
@@ -46,8 +50,14 @@ type PipelineParameterViewModel(label: string, key: string, value: string, param
             let next = forceUseInput || (canUseInput && v)
             if this.SetProperty(&useInput, next) then
                 this.OnPropertyChanged(nameof this.IsValueEditable)
+                this.OnPropertyChanged(nameof this.IsValueReadOnly)
 
-    member _.IsValueEditable = canUseInput && not useInput && not forceUseInput
+    member _.IsValueEditable = not useInput && not forceUseInput
+    member this.IsValueReadOnly = not this.IsValueEditable
+
+    member this.IsValueEnabled
+        with get () = isValueEnabled
+        and set v = this.SetProperty(&isValueEnabled, v) |> ignore
 
     member this.SelectedOption
         with get () =
