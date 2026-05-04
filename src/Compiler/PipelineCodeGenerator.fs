@@ -79,6 +79,7 @@ module PipelineCodeGenerator =
         | BasicType.Numeric numericType -> numericLiteral numericType value
         | BasicType.Bool -> value.Trim().ToLowerInvariant()
         | BasicType.String -> quote value
+        | BasicType.Map -> value.Trim()
         | BasicType.Unit -> "()"
 
     let private scalarValueLiteral (node: SavedNode) =
@@ -138,12 +139,21 @@ module PipelineCodeGenerator =
 
     let private pairFunctionName functionId =
         match functionId with
-        | "AddPair" -> Some "addPair"
-        | "MulPair" -> Some "mulPair"
-        | "DivPair" -> Some "divPair"
         | "MaxOfPair" -> Some "maxOfPair"
         | "MinOfPair" -> Some "minOfPair"
         | _ -> None
+
+    let private imageOpImageFunctionName (node: SavedNode) =
+        match savedParamValue "operation" node with
+        | "+" -> "addPair"
+        | "-" -> "subPair"
+        | "/" -> "divPair"
+        | _ -> "mulPair"
+
+    let private pairStageFunctionName (node: SavedNode) =
+        match node.FunctionId with
+        | "ImageOpImage" -> Some(imageOpImageFunctionName node)
+        | _ -> pairFunctionName node.FunctionId
 
     let private safeIdentifier (value: string) =
         let chars =
@@ -191,7 +201,13 @@ module PipelineCodeGenerator =
         [| "NumPixels"; "Mean"; "Std"; "Min"; "Max"; "Sum"; "Var" |]
         |> Array.tryItem portIndex
 
-    let private parameterExpression (graph: SavedGraph) (nodesById: Map<string, SavedNode>) (scalarNamesByNodeId: Map<string, string>) (statsNamesByNodeId: Map<string, string>) (node: SavedNode) parameterIndex key =
+    let private isTranslationTableNode (node: SavedNode) =
+        node.FunctionId = "ComponentTranslationTable"
+
+    let private isHistogramDataNode (node: SavedNode) =
+        node.FunctionId = "HistogramData"
+
+    let private parameterExpression (graph: SavedGraph) (nodesById: Map<string, SavedNode>) (scalarNamesByNodeId: Map<string, string>) (statsNamesByNodeId: Map<string, string>) (translationTableNamesByNodeId: Map<string, string>) (histogramNamesByNodeId: Map<string, string>) (node: SavedNode) parameterIndex key =
         let linkedExpression =
             graph.Edges
             |> Seq.tryFind (fun edge ->
@@ -205,7 +221,10 @@ module PipelineCodeGenerator =
                 | "reducerOutput" ->
                     match statsNamesByNodeId |> Map.tryFind edge.FromNode, computeStatsFieldName edge.FromPort with
                     | Some statsName, Some fieldName -> Some $"{statsName}.{fieldName}"
-                    | _ -> None
+                    | _ ->
+                        match translationTableNamesByNodeId |> Map.tryFind edge.FromNode with
+                        | Some name -> Some name
+                        | None -> histogramNamesByNodeId |> Map.tryFind edge.FromNode
                 | _ ->
                     None)
 
@@ -217,7 +236,7 @@ module PipelineCodeGenerator =
             { Value = savedParamValue key node
               IsLinked = false }
 
-    let private scalarBinding (graph: SavedGraph) (nodesById: Map<string, SavedNode>) (scalarNamesByNodeId: Map<string, string>) (statsNamesByNodeId: Map<string, string>) (node: SavedNode) =
+    let private scalarBinding (graph: SavedGraph) (nodesById: Map<string, SavedNode>) (scalarNamesByNodeId: Map<string, string>) (statsNamesByNodeId: Map<string, string>) (translationTableNamesByNodeId: Map<string, string>) (histogramNamesByNodeId: Map<string, string>) (node: SavedNode) =
         let name = scalarNamesByNodeId |> Map.find node.Id
 
         let value =
@@ -226,7 +245,7 @@ module PipelineCodeGenerator =
                 let parameterExpression key =
                     node.Parameters
                     |> Seq.tryFindIndex (fun parameter -> parameter.Key = key)
-                    |> Option.map (fun index -> parameterExpression graph nodesById scalarNamesByNodeId statsNamesByNodeId node index key)
+                    |> Option.map (fun index -> parameterExpression graph nodesById scalarNamesByNodeId statsNamesByNodeId translationTableNamesByNodeId histogramNamesByNodeId node index key)
                     |> Option.defaultValue { Value = ""; IsLinked = false }
 
                 let operation =
@@ -254,11 +273,11 @@ module PipelineCodeGenerator =
 
         name, $"let {name} = {value}"
 
-    let private savedElementLine (graph: SavedGraph) (nodesById: Map<string, SavedNode>) (scalarNamesByNodeId: Map<string, string>) (statsNamesByNodeId: Map<string, string>) (node: SavedNode) =
+    let private savedElementLine (graph: SavedGraph) (nodesById: Map<string, SavedNode>) (scalarNamesByNodeId: Map<string, string>) (statsNamesByNodeId: Map<string, string>) (translationTableNamesByNodeId: Map<string, string>) (histogramNamesByNodeId: Map<string, string>) (node: SavedNode) =
         let parameterExpression key =
             node.Parameters
             |> Seq.tryFindIndex (fun parameter -> parameter.Key = key)
-            |> Option.map (fun index -> parameterExpression graph nodesById scalarNamesByNodeId statsNamesByNodeId node index key)
+            |> Option.map (fun index -> parameterExpression graph nodesById scalarNamesByNodeId statsNamesByNodeId translationTableNamesByNodeId histogramNamesByNodeId node index key)
             |> Option.defaultValue { Value = ""; IsLinked = false }
 
         let dynamicParameterType key =
@@ -292,6 +311,8 @@ module PipelineCodeGenerator =
                     expression.Value.Trim().ToLowerInvariant()
                 | Some BasicType.Unit ->
                     "()"
+                | Some BasicType.Map ->
+                    expression.Value
                 | Some BasicType.String
                 | None ->
                     expression.Value
@@ -374,13 +395,23 @@ module PipelineCodeGenerator =
             let chunkY = parameterValue "chunkY"
             let chunkZ = parameterValue "chunkZ"
             $">=> writeInChunks {output} {suffix} {chunkX} {chunkY} {chunkZ}"
+        | "WriteThrough" ->
+            let output = quotedParameter "output"
+            let suffix = quotedParameter "suffix"
+            $">=> write {output} {suffix}"
         | "Tap" ->
             ">=> tap \"tap\""
         | "Print" ->
             let input = quotedParameter "input"
             "printfn \"%A\" " + input
         | "Histogram" ->
-            ">=> histogram () >=> map2pairs --> pairs2floats --> plot histogramPlot"
+            ">=> histogram () >=> map2pairs --> pairs2floats --> plot (showChart \"Column\")"
+        | "HistogramData" ->
+            ">=> histogram () >=> map2pairs --> pairs2floats"
+        | "Chart" ->
+            let values = parameterValue "input"
+            let kind = savedParamValue "kind" node
+            $"showChart \"{kind}\" {values}"
         | "ShowImage" ->
             ">=> show showImagePlot"
         | "SqrtFloat64" ->
@@ -388,8 +419,8 @@ module PipelineCodeGenerator =
         | id when isScalarImageFunction id ->
             let value = parameterValue "value"
             $">=> {scalarImageFunctionName node |> Option.get} {value}"
-        | id when pairFunctionName id |> Option.isSome ->
-            $">>=> {pairFunctionName id |> Option.get}"
+        | id when pairStageFunctionName node |> Option.isSome ->
+            $">>=> {pairStageFunctionName node |> Option.get}"
         | "DiscreteGaussian" ->
             let sigma = parameterValue "sigma"
             let outputRegionMode = parameterValue "outputRegionMode" |> optionRaw
@@ -429,6 +460,13 @@ module PipelineCodeGenerator =
         | "ConnectedComponents" ->
             let windowSize = parameterValue "windowSize"
             $">=> connectedComponents {windowSize}"
+        | "ComponentTranslationTable" ->
+            let windowSize = parameterValue "windowSize"
+            $">=> connectedComponentTranslationTable {windowSize}"
+        | "CollapseComponentLabels" ->
+            let windowSize = parameterValue "windowSize"
+            let translationTable = parameterValue "translationTable"
+            $">=> updateConnectedComponents {windowSize} {translationTable}"
         | "PermuteAxes" ->
             let axes = parameterValue "axes"
             let tileSize = parameterValue "tileSize"
@@ -467,6 +505,36 @@ module PipelineCodeGenerator =
             |> Array.mapi (fun index node -> node.Id, $"ImageStats{index}")
             |> Map.ofArray
 
+        let translationTableNodesWithLinkedOutputs =
+            graph.Edges
+            |> Array.choose (fun edge ->
+                if edge.FromKind = "reducerOutput" && edge.ToKind = "parameterInput" then
+                    nodesById |> Map.tryFind edge.FromNode
+                else
+                    None)
+            |> Array.filter isTranslationTableNode
+            |> Array.distinctBy _.Id
+
+        let translationTableNamesByNodeId =
+            translationTableNodesWithLinkedOutputs
+            |> Array.mapi (fun index node -> node.Id, $"TranslationTable{index}")
+            |> Map.ofArray
+
+        let histogramNodesWithLinkedOutputs =
+            graph.Edges
+            |> Array.choose (fun edge ->
+                if edge.FromKind = "reducerOutput" && edge.ToKind = "parameterInput" then
+                    nodesById |> Map.tryFind edge.FromNode
+                else
+                    None)
+            |> Array.filter isHistogramDataNode
+            |> Array.distinctBy _.Id
+
+        let histogramNamesByNodeId =
+            histogramNodesWithLinkedOutputs
+            |> Array.mapi (fun index node -> node.Id, $"Histogram{index}")
+            |> Map.ofArray
+
         let newLine = Environment.NewLine
 
         let dataEdges =
@@ -478,7 +546,12 @@ module PipelineCodeGenerator =
             | "scalarOutput" ->
                 scalarNamesByNodeId |> Map.tryFind edge.FromNode
             | "reducerOutput" ->
-                statsNamesByNodeId |> Map.tryFind edge.FromNode
+                match statsNamesByNodeId |> Map.tryFind edge.FromNode with
+                | Some name -> Some name
+                | None ->
+                    match translationTableNamesByNodeId |> Map.tryFind edge.FromNode with
+                    | Some name -> Some name
+                    | None -> histogramNamesByNodeId |> Map.tryFind edge.FromNode
             | _ ->
                 None
 
@@ -527,7 +600,7 @@ module PipelineCodeGenerator =
             && left.FromKind = right.FromKind
 
         let stageCall (node: SavedNode) =
-            let line = savedElementLine graph nodesById scalarNamesByNodeId statsNamesByNodeId node
+            let line = savedElementLine graph nodesById scalarNamesByNodeId statsNamesByNodeId translationTableNamesByNodeId histogramNamesByNodeId node
 
             if line.StartsWith(">=> ", StringComparison.Ordinal) then
                 Some(line.Substring(4))
@@ -584,7 +657,7 @@ module PipelineCodeGenerator =
                         |> Option.bind (fun sharedNode ->
                             let shared = pipelineExpression visited sharedNode
                             let fanOut = formatStageTuple "idStage \"left\"" "idStage \"right\""
-                            pairFunctionName node.FunctionId
+                            pairStageFunctionName node
                             |> Option.map (fun pairFunction -> $"{shared}{newLine}{fanOut}{newLine}>>=> {pairFunction}"))
                     | Some leftEdge, Some rightEdge ->
                         match nodesById |> Map.tryFind leftEdge.FromNode, nodesById |> Map.tryFind rightEdge.FromNode with
@@ -596,7 +669,7 @@ module PipelineCodeGenerator =
                                     match branchStageExpression leftInput Set.empty leftNode, branchStageExpression leftInput Set.empty rightNode with
                                     | Some leftStage, Some rightStage ->
                                         let shared = pipelineExpression visited sharedNode
-                                        pairFunctionName node.FunctionId
+                                        pairStageFunctionName node
                                         |> Option.map (fun pairFunction -> $"{shared}{newLine}{formatStageTuple leftStage rightStage}{newLine}>>=> {pairFunction}")
                                     | _ -> None
                                 | None -> None
@@ -605,19 +678,19 @@ module PipelineCodeGenerator =
                     | _ -> None
 
                 match node.FunctionId with
-                | id when pairFunctionName id |> Option.isSome ->
+                | id when pairStageFunctionName node |> Option.isSome ->
                     match sharedFanOutExpression () with
                     | Some expression ->
                         expression
                     | None ->
-                        let pairFunction = pairFunctionName id |> Option.get
+                        let pairFunction = pairStageFunctionName node |> Option.get
                         let left = inputExpression 0
                         let right = inputExpression 1
                         let left = parenthesizeBlock left
                         let right = parenthesizeBlock right
                         $"({newLine}{indentBlock 4 left},{newLine}{indentBlock 4 right}{newLine}){newLine}||> zip{newLine}>>=> {pairFunction}"
                 | _ ->
-                    let line = savedElementLine graph nodesById scalarNamesByNodeId statsNamesByNodeId node
+                    let line = savedElementLine graph nodesById scalarNamesByNodeId statsNamesByNodeId translationTableNamesByNodeId histogramNamesByNodeId node
 
                     match incomingDataEdge node.Id 0 with
                     | Some _ ->
@@ -630,11 +703,16 @@ module PipelineCodeGenerator =
             let appendSinkIfTerminalWrite (node: SavedNode) expression =
                 match node.FunctionId with
                 | "Write"
+                | "WriteThrough"
                 | "WriteInChunks"
                 | "Histogram"
                 | "ShowImage" ->
                     $"{expression}{newLine}|> sink"
                 | "ComputeStats" ->
+                    $"{expression}{newLine}|> drain"
+                | "ComponentTranslationTable" ->
+                    $"{expression}{newLine}|> drain"
+                | "HistogramData" ->
                     $"{expression}{newLine}|> drain"
                 | _ ->
                     expression
@@ -645,6 +723,8 @@ module PipelineCodeGenerator =
                     node.FunctionId <> "Scalar"
                     && node.FunctionId <> "ScalarOp"
                     && not (statsNamesByNodeId |> Map.containsKey node.Id)
+                    && not (translationTableNamesByNodeId |> Map.containsKey node.Id)
+                    && not (histogramNamesByNodeId |> Map.containsKey node.Id)
                     && not (dataEdges |> Array.exists (fun edge -> edge.FromNode = node.Id)))
 
             terminalNodes
@@ -665,13 +745,35 @@ module PipelineCodeGenerator =
             let scalarBindings =
                 scalarNodes
                 |> Array.map (fun node ->
-                    let name, text = scalarBinding graph nodesById scalarNamesByNodeId statsNamesByNodeId node
+                    let name, text = scalarBinding graph nodesById scalarNamesByNodeId statsNamesByNodeId translationTableNamesByNodeId histogramNamesByNodeId node
 
                     { Name = name
                       Dependencies = parameterBindingDependencies node |> Set.remove name
                       Text = text })
 
-            let bindings = Array.append scalarBindings statsBindings
+            let translationTableBindings =
+                translationTableNodesWithLinkedOutputs
+                |> Array.map (fun node ->
+                    let name = translationTableNamesByNodeId |> Map.find node.Id
+                    let expression = pipelineExpression Set.empty node
+                    let body = indentBlock 4 $"{expression}{newLine}|> drain"
+
+                    { Name = name
+                      Dependencies = pipelineBindingDependencies Set.empty node |> Set.remove name
+                      Text = $"let {name} ={newLine}{body}" })
+
+            let histogramBindings =
+                histogramNodesWithLinkedOutputs
+                |> Array.map (fun node ->
+                    let name = histogramNamesByNodeId |> Map.find node.Id
+                    let expression = pipelineExpression Set.empty node
+                    let body = indentBlock 4 $"{expression}{newLine}|> drain"
+
+                    { Name = name
+                      Dependencies = pipelineBindingDependencies Set.empty node |> Set.remove name
+                      Text = $"let {name} ={newLine}{body}" })
+
+            let bindings = Array.concat [ scalarBindings; statsBindings; translationTableBindings; histogramBindings ]
             let bindingsByName = bindings |> Array.map (fun binding -> binding.Name, binding) |> Map.ofArray
             let visited = HashSet<string>()
             let ordered = ResizeArray<NamedBinding>()
@@ -687,13 +789,13 @@ module PipelineCodeGenerator =
             bindings |> Array.iter visit
             ordered |> Seq.toArray
 
-        let hasHistogram =
-            graph.Nodes |> Array.exists (fun node -> node.FunctionId = "Histogram")
+        let hasChart =
+            graph.Nodes |> Array.exists (fun node -> node.FunctionId = "Histogram" || node.FunctionId = "Chart")
 
         let hasShowImage =
             graph.Nodes |> Array.exists (fun node -> node.FunctionId = "ShowImage")
 
-        let hasVisualization = hasHistogram || hasShowImage
+        let hasVisualization = hasChart || hasShowImage
 
         builder.AppendLine("open StackProcessing") |> ignore
 
@@ -702,9 +804,17 @@ module PipelineCodeGenerator =
 
         builder.AppendLine() |> ignore
 
-        if hasHistogram then
-            builder.AppendLine("let histogramPlot (x: float list) (y: float list) =") |> ignore
-            builder.AppendLine("    Chart.Column(values = y, Keys = x)") |> ignore
+        if hasChart then
+            builder.AppendLine("let showChart kind points =") |> ignore
+            builder.AppendLine("    let x, y = points |> List.unzip") |> ignore
+            builder.AppendLine("    match kind with") |> ignore
+            builder.AppendLine("    | \"Scatter\" -> Chart.Scatter(x = x, y = y, mode = StyleParam.Mode.Markers)") |> ignore
+            builder.AppendLine("    | \"Line\" -> Chart.Line(x = x, y = y)") |> ignore
+            builder.AppendLine("    | \"Bar\" -> Chart.Bar(values = y, Keys = x)") |> ignore
+            builder.AppendLine("    | \"Area\" -> Chart.Area(x = x, y = y)") |> ignore
+            builder.AppendLine("    | \"Pie\" -> Chart.Pie(values = y, Labels = x)") |> ignore
+            builder.AppendLine("    | \"Doughnut\" -> Chart.Doughnut(values = y, Labels = x)") |> ignore
+            builder.AppendLine("    | _ -> Chart.Column(values = y, Keys = x)") |> ignore
             builder.AppendLine("    |> Chart.show") |> ignore
             builder.AppendLine() |> ignore
 

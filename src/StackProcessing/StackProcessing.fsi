@@ -658,6 +658,11 @@ val getConnectedChunkNeighbours:
     pl: SlimPipeline.Plan<unit,unit> ->
     SlimPipeline.Plan<unit,(StackCore.Image<uint64> * StackCore.Image<uint64>)>
 
+val connectedChunkNeighbours:
+  winSz: uint ->
+    StackCore.Stage<StackCore.Image<uint64>,
+                    (StackCore.Image<uint64> * StackCore.Image<uint64>)>
+
 val makeAdjacencyGraph:
   unit ->
     StackCore.Stage<(StackCore.Image<uint64> * StackCore.Image<uint64>),
@@ -667,6 +672,10 @@ val makeTranslationTable:
   unit ->
     StackCore.Stage<(uint * simpleGraph.Graph<uint * uint64>),
                     (uint * uint64 * uint64) list>
+
+val connectedComponentTranslationTable:
+  winSz: uint ->
+    StackCore.Stage<StackCore.Image<uint64>,(uint * uint64 * uint64) list>
 
 val trd: 'a * 'b * c: 'c -> 'c
 
@@ -1341,6 +1350,11 @@ val getConnectedChunkNeighbours:
      SlimPipeline.Plan<unit,unit> ->
      SlimPipeline.Plan<unit,(StackCore.Image<uint64> * StackCore.Image<uint64>)>)
 
+val connectedChunkNeighbours:
+  (uint ->
+     StackCore.Stage<StackCore.Image<uint64>,
+                     (StackCore.Image<uint64> * StackCore.Image<uint64>)>)
+
 val makeAdjacencyGraph:
   (unit ->
      StackCore.Stage<(StackCore.Image<uint64> * StackCore.Image<uint64>),
@@ -1350,6 +1364,10 @@ val makeTranslationTable:
   (unit ->
      StackCore.Stage<(uint * simpleGraph.Graph<uint * uint64>),
                      (uint * uint64 * uint64) list>)
+
+val connectedComponentTranslationTable:
+  (uint ->
+     StackCore.Stage<StackCore.Image<uint64>,(uint * uint64 * uint64) list>)
 
 val trd: ('a * 'b * 'c -> 'c)
 

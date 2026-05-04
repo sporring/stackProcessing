@@ -14,21 +14,7 @@ module BuiltInCatalog =
   let imageFloat32 = PortType.Image NumericType.Float32
   let imageFloat64 = PortType.Image NumericType.Float64
   let imageComplex = PortType.Image NumericType.Complex
-
-  let private standardNumericTypes =
-      [ UInt8
-        Int8
-        UInt16
-        Int16
-        UInt32
-        Int32
-        UInt64
-        Int64
-        Float32
-        Float64 ]
-
-  let private concreteNumericTypes =
-      standardNumericTypes @ [ Complex ]
+  let translationTable = PortType.Custom "TranslationTable"
 
   let private makePort name portType =
       { Name = name
@@ -62,6 +48,7 @@ module BuiltInCatalog =
       match tp with
       | BasicType.Bool -> "true"
       | BasicType.String -> "value"
+      | BasicType.Map -> "map"
       | BasicType.Unit -> "()"
       | BasicType.Numeric numericType -> numericDefaultValue numericType
 
@@ -204,15 +191,15 @@ module BuiltInCatalog =
             makeParameter "mean" "Mean" "128.0" (BasicType.Numeric Float64)
             makeParameter "std" "Std" "50.0" (BasicType.Numeric Float64) ] }
 
-  let makePairOperation id displayName description aliases =
+  let makePairOperation id displayName description aliases parameters =
     { Id = id
       DisplayName = displayName
       Category = "Arithmetic"
       Description = description
       Aliases = aliases @ [ "pair"; "zip"; "UInt8"; "Float64"; "type" ]
-      Inputs = [ makePort "Float64 A" imageFloat64; makePort "Float64 B" imageFloat64 ]
+      Inputs = [ makePort "I: Float64" imageFloat64; makePort "J: Float64" imageFloat64 ]
       Outputs = [ makePort "Float64" imageFloat64 ]
-      Parameters = [ makeParameter "type" "Type" "Float64" BasicType.String ] }
+      Parameters = parameters }
 
   let orderedFunctions =
       [ makeGenericScalar()
@@ -256,6 +243,17 @@ module BuiltInCatalog =
               [ makeParameter "output" "Output" "output" BasicType.String
                 makeParameter "suffix" "Suffix" ".tiff" BasicType.String ] }
 
+        { Id = "WriteThrough"
+          DisplayName = "writeThrough"
+          Category = "Sources / Sinks"
+          Description = "Write a processed stack to image files and pass it through unchanged."
+          Aliases = [ "output"; "save"; "tiff"; "file"; "through"; "side effect" ]
+          Inputs = [ makePort "Number" imageAny ]
+          Outputs = [ makePort "Number" imageAny ]
+          Parameters =
+              [ makeParameter "output" "Output" "output" BasicType.String
+                makeParameter "suffix" "Suffix" ".tiff" BasicType.String ] }
+
         { Id = "WriteInChunks"
           DisplayName = "writeInChunks"
           Category = "Sources / Sinks"
@@ -281,7 +279,7 @@ module BuiltInCatalog =
 
         { Id = "Print"
           DisplayName = "print"
-          Category = "Sources / Sinks"
+          Category = "Visualization"
           Description = "Print a scalar value in the generated program."
           Aliases = [ "debug"; "trace"; "log"; "sink"; "inspect"; "printfn" ]
           Inputs = []
@@ -296,6 +294,26 @@ module BuiltInCatalog =
           Inputs = [ makePort "Number" imageAny ]
           Outputs = []
           Parameters = [] }
+
+        { Id = "HistogramData"
+          DisplayName = "histogramData"
+          Category = "Visualization"
+          Description = "Reduce an image stream to histogram points that can be printed or plotted."
+          Aliases = [ "plot"; "chart"; "histogram"; "points"; "reducer" ]
+          Inputs = [ makePort "Number" imageAny ]
+          Outputs = [ makePort "Map" (Scalar BasicType.Map) ]
+          Parameters = [] }
+
+        { Id = "Chart"
+          DisplayName = "chart"
+          Category = "Visualization"
+          Description = "Render map-like x/y or key/value data as a Plotly.NET chart."
+          Aliases = [ "plot"; "chart"; "histogram"; "visualize"; "show"; "scatter"; "line"; "bar"; "column"; "area"; "pie"; "doughnut" ]
+          Inputs = []
+          Outputs = []
+          Parameters =
+              [ makeParameter "kind" "Kind" "Column" BasicType.String
+                makeParameter "input" "Input" "map" BasicType.Map ] }
 
         { Id = "ShowImage"
           DisplayName = "showImage"
@@ -330,34 +348,26 @@ module BuiltInCatalog =
         makeGenericAddNormalNoise()
 
         makePairOperation
-            "AddPair"
-            "addPair"
-            "Add two image streams of the same numeric type pairwise. Code generation inserts zip or shared fan-out as needed."
-            [ "add"; "sum"; "arithmetic" ]
-
-        makePairOperation
-            "MulPair"
-            "mulPair"
-            "Multiply two image streams of the same numeric type pairwise. Code generation inserts zip or shared fan-out as needed."
-            [ "multiply"; "mask"; "arithmetic" ]
-
-        makePairOperation
-            "DivPair"
-            "divPair"
-            "Divide two image streams of the same numeric type pairwise. Code generation inserts zip or shared fan-out as needed."
-            [ "divide"; "ratio"; "arithmetic" ]
+            "ImageOpImage"
+            "imageOpImage"
+            "Combine two image streams of the same numeric type pairwise with an arithmetic operation. Code generation inserts zip or shared fan-out as needed."
+            [ "add"; "sum"; "subtract"; "multiply"; "mask"; "divide"; "ratio"; "arithmetic"; "+"; "-"; "*"; "/" ]
+            [ makeParameter "operation" "Operation" "*" BasicType.String
+              makeParameter "type" "Type" "Float64" BasicType.String ]
 
         makePairOperation
             "MaxOfPair"
             "maxOfPair"
             "Take the pixelwise maximum of two image streams of the same numeric type pairwise. Code generation inserts zip or shared fan-out as needed."
             [ "maximum"; "max"; "pair"; "arithmetic" ]
+            [ makeParameter "type" "Type" "Float64" BasicType.String ]
 
         makePairOperation
             "MinOfPair"
             "minOfPair"
             "Take the pixelwise minimum of two image streams of the same numeric type pairwise. Code generation inserts zip or shared fan-out as needed."
             [ "minimum"; "min"; "pair"; "arithmetic" ]
+            [ makeParameter "type" "Type" "Float64" BasicType.String ]
 
         { Id = "DiscreteGaussian"
           DisplayName = "discreteGaussian"
@@ -449,6 +459,26 @@ module BuiltInCatalog =
           Inputs = [ makePort "UInt8" imageUInt8 ]
           Outputs = [ makePort "UInt64" imageUInt64 ]
           Parameters = [ makeParameter "windowSize" "Window size" "3" (BasicType.Numeric UInt32) ] }
+
+        { Id = "ComponentTranslationTable"
+          DisplayName = "componentTranslationTable"
+          Category = "Segmentation"
+          Description = "Reduce a UInt64 connected-component label stream to a chunk translation table."
+          Aliases = [ "connected"; "components"; "translation"; "table"; "reducer"; "labels" ]
+          Inputs = [ makePort "UInt64" imageUInt64 ]
+          Outputs = [ makePort "TranslationTable" translationTable ]
+          Parameters = [ makeParameter "windowSize" "Window size" "3" (BasicType.Numeric UInt32) ] }
+
+        { Id = "CollapseComponentLabels"
+          DisplayName = "collapseComponentLabels"
+          Category = "Segmentation"
+          Description = "Collapse chunk-local component labels using a translation table."
+          Aliases = [ "connected"; "components"; "translation"; "table"; "update"; "labels" ]
+          Inputs = [ makePort "UInt64" imageUInt64 ]
+          Outputs = [ makePort "UInt64" imageUInt64 ]
+          Parameters =
+              [ makeParameter "windowSize" "Window size" "3" (BasicType.Numeric UInt32)
+                makeParameter "translationTable" "Translation table" "" BasicType.String ] }
 
         { Id = "PermuteAxes"
           DisplayName = "permuteAxes"

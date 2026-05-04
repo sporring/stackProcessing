@@ -34,6 +34,7 @@ type MainView() as this =
     let mutable draggingPin: IPin option = None
     let mutable highlightedConnectionTarget: IPin option = None
     let mutable groupDragLastPoint: Point option = None
+    let mutable suppressGraphWheelUntil = DateTime.MinValue
     let minGraphWidth = 3000.
     let minGraphHeight = 2000.
 
@@ -199,7 +200,10 @@ type MainView() as this =
 
     let isReducerNode (node: INode) =
         match node with
-        | :? PipelineNodeViewModel as pipelineNode -> pipelineNode.State.Definition.Id = "ComputeStats"
+        | :? PipelineNodeViewModel as pipelineNode ->
+            pipelineNode.State.Definition.Id = "ComputeStats"
+            || pipelineNode.State.Definition.Id = "ComponentTranslationTable"
+            || pipelineNode.State.Definition.Id = "HistogramData"
         | _ -> false
 
     let isDataNode (node: INode) =
@@ -236,6 +240,25 @@ type MainView() as this =
         |> Seq.distinct
         |> Seq.toArray
 
+    let portTypeLabel portType =
+        match portType with
+        | Scalar basicType -> BasicType.toString basicType
+        | Image numericType -> NumericType.toString numericType
+        | Custom label -> label
+        | Tuple _ -> "Tuple"
+        | Any -> "Any"
+        | Unit -> "Unit"
+
+    let assignedParameterInputType (drawing: DrawingNodeViewModel) (inputPin: PipelinePinViewModel) =
+        drawing.Connectors
+        |> Seq.tryPick (fun connector ->
+            if Object.ReferenceEquals(connector.End, inputPin) then
+                match connector.Start with
+                | :? PipelinePinViewModel as startPin -> Some startPin.Port.Type
+                | _ -> None
+            else
+                None)
+
     let updateTapPinNames (drawing: DrawingNodeViewModel) =
         drawing.Nodes
         |> Seq.choose (function
@@ -253,6 +276,23 @@ type MainView() as this =
                 | _ -> None)
             |> Seq.iter (fun pin -> pin.Name <- name))
 
+        drawing.Nodes
+        |> Seq.choose (function
+            | :? PipelineNodeViewModel as node when node.State.Definition.Id = "Print" -> Some node
+            | _ -> None)
+        |> Seq.iter (fun node ->
+            node.Pins
+            |> Seq.choose (function
+                | :? PipelinePinViewModel as pin when pin.Kind = ParameterInput && pin.ParameterKey = "input" -> Some pin
+                | _ -> None)
+            |> Seq.iter (fun pin ->
+                let name =
+                    assignedParameterInputType drawing pin
+                    |> Option.map portTypeLabel
+                    |> Option.defaultValue "Any"
+
+                pin.Name <- $"input: {name}"))
+
     let compatiblePortTypes (outputPin: PipelinePinViewModel) (inputPin: PipelinePinViewModel) =
         let isPrintParameter =
             match inputPin.Parent with
@@ -262,7 +302,12 @@ type MainView() as this =
                 false
 
         if isPrintParameter && (outputPin.Kind = ScalarOutput || outputPin.Kind = ReducerOutput) then
-            true
+            match currentDrawing () with
+            | Some drawing ->
+                assignedParameterInputType drawing inputPin
+                |> Option.forall (PortType.canConnect outputPin.Port.Type)
+            | None ->
+                true
         elif outputPin.Kind = DataOutput && inputPin.Kind = DataInput then
             let baseCompatible = PortType.canConnect outputPin.Port.Type inputPin.Port.Type
 
@@ -903,6 +948,24 @@ type MainView() as this =
         && point.X <= graphHost.Bounds.Width
         && point.Y <= graphHost.Bounds.Height
 
+    let eventSourceIsInside (control: Control) (source: obj) =
+        match control, source with
+        | null, _ ->
+            false
+        | _, (:? Visual as visual) when Object.ReferenceEquals(visual, control) ->
+            true
+        | _, (:? Visual as visual) ->
+            visual.GetVisualAncestors()
+            |> Seq.exists (fun ancestor -> Object.ReferenceEquals(ancestor, control))
+        | _ ->
+            false
+
+    let noteWheelSource (args: PointerWheelEventArgs) =
+        let graphHost = this.FindControl<Grid>("GraphHost")
+
+        if not (eventSourceIsInside graphHost args.Source) then
+            suppressGraphWheelUntil <- DateTime.UtcNow.AddMilliseconds(450.)
+
     let showPaletteDragPreview functionId (rootPoint: Point) =
         let preview = this.FindControl<Border>("PaletteDragPreview")
         let label = this.FindControl<TextBlock>("PaletteDragPreviewLabel")
@@ -1120,6 +1183,7 @@ type MainView() as this =
     let zoomGraphWithWheel (args: PointerWheelEventArgs) =
         let zoomBorder = graphZoomBorder ()
         let graphHost = this.FindControl<Grid>("GraphHost")
+        let eventStartedInGraphHost = eventSourceIsInside graphHost args.Source
 
         let clamp low high value =
             if high <= low then
@@ -1128,48 +1192,54 @@ type MainView() as this =
                 min high (max low value)
 
         match currentDrawing () with
+        | _ when not eventStartedInGraphHost ->
+            ()
+        | _ when DateTime.UtcNow < suppressGraphWheelUntil ->
+            args.Handled <- true
         | Some drawing when not (isNull zoomBorder) && not (isNull graphHost) && drawing.Width > 0. && drawing.Height > 0. ->
             let delta = args.Delta.Y
 
             if delta <> 0. then
-                let visible = zoomBorder.GetVisibleContentBounds()
-                let viewportSize = graphHost.Bounds.Size
+                let pointerInViewport = args.GetPosition(graphHost)
 
-                if visible.Width > 0. && visible.Height > 0. && viewportSize.Width > 0. && viewportSize.Height > 0. then
-                    let zoomFactor = if delta > 0. then 1.025 else 1. / 1.025
-                    let mutable targetWidth = visible.Width / zoomFactor
-                    let mutable targetHeight = visible.Height / zoomFactor
+                if isInsideGraphHost pointerInViewport graphHost then
+                    let visible = zoomBorder.GetVisibleContentBounds()
+                    let viewportSize = graphHost.Bounds.Size
 
-                    let fitInsideCanvas =
-                        min (drawing.Width / targetWidth) (drawing.Height / targetHeight)
+                    if visible.Width > 0. && visible.Height > 0. && viewportSize.Width > 0. && viewportSize.Height > 0. then
+                        let zoomFactor = if delta > 0. then 1.025 else 1. / 1.025
+                        let mutable targetWidth = visible.Width / zoomFactor
+                        let mutable targetHeight = visible.Height / zoomFactor
 
-                    if fitInsideCanvas < 1. then
-                        targetWidth <- targetWidth * fitInsideCanvas
-                        targetHeight <- targetHeight * fitInsideCanvas
+                        let fitInsideCanvas =
+                            min (drawing.Width / targetWidth) (drawing.Height / targetHeight)
 
-                    let minVisibleWidth = min drawing.Width 80.
-                    let minVisibleHeight = min drawing.Height 80.
+                        if fitInsideCanvas < 1. then
+                            targetWidth <- targetWidth * fitInsideCanvas
+                            targetHeight <- targetHeight * fitInsideCanvas
 
-                    if targetWidth < minVisibleWidth || targetHeight < minVisibleHeight then
-                        let growToMinimum =
-                            max (minVisibleWidth / targetWidth) (minVisibleHeight / targetHeight)
+                        let minVisibleWidth = min drawing.Width 80.
+                        let minVisibleHeight = min drawing.Height 80.
 
-                        targetWidth <- min drawing.Width (targetWidth * growToMinimum)
-                        targetHeight <- min drawing.Height (targetHeight * growToMinimum)
+                        if targetWidth < minVisibleWidth || targetHeight < minVisibleHeight then
+                            let growToMinimum =
+                                max (minVisibleWidth / targetWidth) (minVisibleHeight / targetHeight)
 
-                    let pointerInViewport = args.GetPosition(graphHost)
-                    let pointerInContent = viewportToGraphContent pointerInViewport
-                    let anchorX = clamp 0. 1. (pointerInViewport.X / viewportSize.Width)
-                    let anchorY = clamp 0. 1. (pointerInViewport.Y / viewportSize.Height)
-                    let left = pointerInContent.X - targetWidth * anchorX
-                    let top = pointerInContent.Y - targetHeight * anchorY
-                    let maxLeft = max 0. (drawing.Width - targetWidth)
-                    let maxTop = max 0. (drawing.Height - targetHeight)
-                    let target = Rect(clamp 0. maxLeft left, clamp 0. maxTop top, targetWidth, targetHeight)
+                            targetWidth <- min drawing.Width (targetWidth * growToMinimum)
+                            targetHeight <- min drawing.Height (targetHeight * growToMinimum)
 
-                    zoomBorder.ZoomToRectangle(target, Nullable(Thickness(0.)), false)
-                    zoomBorder.Focus() |> ignore
-                    updateMiniMap()
+                        let pointerInContent = viewportToGraphContent pointerInViewport
+                        let anchorX = clamp 0. 1. (pointerInViewport.X / viewportSize.Width)
+                        let anchorY = clamp 0. 1. (pointerInViewport.Y / viewportSize.Height)
+                        let left = pointerInContent.X - targetWidth * anchorX
+                        let top = pointerInContent.Y - targetHeight * anchorY
+                        let maxLeft = max 0. (drawing.Width - targetWidth)
+                        let maxTop = max 0. (drawing.Height - targetHeight)
+                        let target = Rect(clamp 0. maxLeft left, clamp 0. maxTop top, targetWidth, targetHeight)
+
+                        zoomBorder.ZoomToRectangle(target, Nullable(Thickness(0.)), false)
+                        zoomBorder.Focus() |> ignore
+                        updateMiniMap()
 
                 args.Handled <- true
         | _ ->
@@ -1177,8 +1247,11 @@ type MainView() as this =
 
     let panGraphWithArrowKey (args: KeyEventArgs) =
         let zoomBorder = graphZoomBorder ()
+        let graphHost = this.FindControl<Grid>("GraphHost")
 
-        if not (isNull zoomBorder) then
+        let eventStartedInGraphHost = eventSourceIsInside graphHost args.Source
+
+        if not (isNull zoomBorder) && eventStartedInGraphHost then
             let baseStep = 24.
             let step =
                 if args.KeyModifiers.HasFlag KeyModifiers.Shift then
@@ -1207,6 +1280,12 @@ type MainView() as this =
         this.AddHandler(
             InputElement.KeyDownEvent,
             EventHandler<KeyEventArgs>(fun _ args -> panGraphWithArrowKey args),
+            RoutingStrategies.Tunnel,
+            true)
+
+        this.AddHandler(
+            InputElement.PointerWheelChangedEvent,
+            EventHandler<PointerWheelEventArgs>(fun _ args -> noteWheelSource args),
             RoutingStrategies.Tunnel,
             true)
 
@@ -1275,6 +1354,19 @@ type MainView() as this =
                         true)
 
                 if not (isNull editor) then
+                    match editor.DrawingSource with
+                    | :? DrawingNodeViewModel as drawing ->
+                        match drawing.Connectors with
+                        | :? System.Collections.Specialized.INotifyCollectionChanged as connectors ->
+                            connectors.CollectionChanged.Add(fun _ ->
+                                Dispatcher.UIThread.Post(
+                                    (fun () -> updateTapPinNames drawing),
+                                    DispatcherPriority.Background))
+                        | _ ->
+                            ()
+                    | _ ->
+                        ()
+
                     editor.AddHandler(
                         DragDrop.DragOverEvent,
                         EventHandler<DragEventArgs>(fun _ args -> this.PipelineEditorDragOver(editor, args)),

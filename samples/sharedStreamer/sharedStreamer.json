@@ -109,10 +109,15 @@
     },
     {
       "id": "n7",
-      "functionId": "MulPair",
+      "functionId": "ImageOpImage",
       "x": 1060.0,
       "y": 150.0,
       "parameters": [
+        {
+          "key": "operation",
+          "value": "*",
+          "useInput": false
+        },
         {
           "key": "type",
           "value": "Float64",

@@ -226,8 +226,6 @@ let write (outputDir: string) (suffix: string) : Stage<Image<'T>, Image<'T>> =
     if (icompare suffix ".tif" || icompare suffix ".tiff") 
         && not (t = typeof<uint8> || t = typeof<int8> || t = typeof<uint16> || t = typeof<int16> || t = typeof<float32>) then
         failwith $"[write] tiff images only supports (u)int8, (u)int16 and float32 but was {t.Name}" 
-    if Directory.Exists(outputDir) then
-        failwith $"Directory \"{outputDir}\" exists - will not delete!"
     Directory.CreateDirectory(outputDir) |> ignore
     let mapper (debug: bool) (idx: int64) (image: Image<'T>) =
         let fileName = Path.Combine(outputDir, sprintf "image_%03d%s" idx suffix)
