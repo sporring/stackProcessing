@@ -5,6 +5,7 @@ open SlimPipeline // Core processing model
 type Stage<'S,'T> = SlimPipeline.Stage<'S,'T>
 type Profile = SlimPipeline.Profile
 type ProfileTransition = SlimPipeline.ProfileTransition
+type ResourceOps<'T> = SlimPipeline.ResourceOps<'T>
 //type Slice<'S when 'S: equality> = Slice.Slice<'S>
 type Image<'S when 'S: equality> = Image.Image<'S>
 
@@ -12,6 +13,18 @@ let getMem () =
     System.GC.Collect()
     System.GC.WaitForPendingFinalizers()
     System.GC.Collect()
+
+let imageResourceOps<'S when 'S: equality> : ResourceOps<Image<'S>> =
+    { Retain = fun image -> image.incRefCount()
+      Release = fun image -> image.decRefCount()
+      MemoryOf = fun image -> Image<'S>.memoryEstimateSItk image.Image |> uint64 |> Some }
+
+let releaseAfterWith (ops: ResourceOps<'S>) (f: 'S -> 'T) (value: 'S) =
+    try
+        f value
+    finally
+        ops.Release value
+
 let incIfImage x =
     match box x with
     | :? Image<uint8> as im -> im.incRefCount()   // or img.incNRefCount(1) if it takes an int
@@ -45,14 +58,13 @@ let decIfImage x =
 let decRef () =
     Stage.map "decRefCountOp" (fun _ -> decIfImage) id id
 let releaseAfter (f: Image<'S>->'T) (I: Image<'S>) = 
-    let v = f I
-    I.decRefCount()
-    v
+    releaseAfterWith imageResourceOps f I
 let releaseAfter2 (f: Image<'S>->Image<'S>->'T) (I: Image<'S>) (J: Image<'S>) = 
-    let v = f I J
-    decIfImage I |> ignore
-    decIfImage J |> ignore
-    v
+    try
+        f I J
+    finally
+        imageResourceOps.Release I
+        imageResourceOps.Release J
 (*
 let releaseNAfter (n: int) (f: Image<'S> list->'T list) (sLst: Image<'S> list) : 'T list =
     let tLst = f sLst;

@@ -115,6 +115,17 @@ module private Pipe =
 type MemoryNeed = uint64 -> uint64
 type MemoryNeedWrapped = SingleOrPair -> SingleOrPair
 type LengthTransformation = uint64 -> uint64
+type ResourceOps<'T> =
+    {
+      Retain: ('T -> unit)
+      Release: ('T -> unit)
+      MemoryOf: ('T -> uint64 option)
+    }
+module ResourceOps =
+    val none<'T> : ResourceOps<'T>
+    val retainAndReturn: ops: ResourceOps<'T> -> value: 'T -> 'T
+    val release: ops: ResourceOps<'T> -> value: 'T -> unit
+    val memoryOf: ops: ResourceOps<'T> -> value: 'T -> uint64 option
 /// Stage describes *what* should be done: 
 type Stage<'S,'T> =
     {
@@ -222,6 +233,14 @@ module Stage =
     val liftReleaseUnary:
       name: string ->
         release: ('S -> unit) ->
+        f: ('S -> 'T) ->
+        memoryNeed: MemoryNeed ->
+        lengthTransformation: LengthTransformation -> Stage<'S,'T>
+    val retainWith: name: string -> ops: ResourceOps<'T> -> Stage<'T,'T>
+    val releaseWith: name: string -> ops: ResourceOps<'T> -> Stage<'T,unit>
+    val liftResourceUnary:
+      name: string ->
+        ops: ResourceOps<'S> ->
         f: ('S -> 'T) ->
         memoryNeed: MemoryNeed ->
         lengthTransformation: LengthTransformation -> Stage<'S,'T>
