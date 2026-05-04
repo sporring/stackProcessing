@@ -18,11 +18,12 @@ type ParameterOptionViewModel(label: string, value: string, isEnabled: bool) =
         with get () = isEnabled
         and set v = this.SetProperty(&isEnabled, v) |> ignore
 
-type PipelineParameterViewModel(label: string, key: string, value: string, parameterType: BasicType, ?options: ParameterOptionViewModel list, ?canUseInput: bool) =
+type PipelineParameterViewModel(label: string, key: string, value: string, parameterType: BasicType, ?options: ParameterOptionViewModel list, ?canUseInput: bool, ?forceUseInput: bool) =
     inherit ObservableObject()
 
     let mutable value = value
-    let mutable useInput = false
+    let forceUseInput = defaultArg forceUseInput false
+    let mutable useInput = forceUseInput
     let options = ObservableCollection<ParameterOptionViewModel>(defaultArg options [])
     let canUseInput = defaultArg canUseInput true
 
@@ -31,7 +32,7 @@ type PipelineParameterViewModel(label: string, key: string, value: string, param
     member _.ParameterType = parameterType
     member _.Options = options
     member _.HasOptions = options.Count > 0
-    member _.CanUseInput = canUseInput
+    member _.CanUseInput = canUseInput && not forceUseInput
 
     member this.Value
         with get () = value
@@ -42,11 +43,11 @@ type PipelineParameterViewModel(label: string, key: string, value: string, param
     member this.UseInput
         with get () = useInput
         and set v =
-            let next = canUseInput && v
+            let next = forceUseInput || (canUseInput && v)
             if this.SetProperty(&useInput, next) then
                 this.OnPropertyChanged(nameof this.IsValueEditable)
 
-    member _.IsValueEditable = canUseInput && not useInput
+    member _.IsValueEditable = canUseInput && not useInput && not forceUseInput
 
     member this.SelectedOption
         with get () =
@@ -99,7 +100,7 @@ type PipelineNodeState(definition: Function, parameters: PipelineParameterViewMo
             SolidColorBrush.Parse("#FFF8E1") :> IBrush
         elif isProblemHighlighted then
             SolidColorBrush.Parse("#FFE5E5") :> IBrush
-        elif definition.Id = "ComputeStats" then
+        elif definition.Id = "ComputeStats" || definition.Id = "ComponentTranslationTable" || definition.Id = "HistogramData" then
             SolidColorBrush.Parse("#F3E0C3") :> IBrush
         else
             SolidColorBrush.Parse("#EAF3FF") :> IBrush
@@ -111,7 +112,7 @@ type PipelineNodeState(definition: Function, parameters: PipelineParameterViewMo
             SolidColorBrush.Parse("#F2A900") :> IBrush
         elif isProblemHighlighted then
             SolidColorBrush.Parse("#D64545") :> IBrush
-        elif definition.Id = "ComputeStats" then
+        elif definition.Id = "ComputeStats" || definition.Id = "ComponentTranslationTable" || definition.Id = "HistogramData" then
             SolidColorBrush.Parse("#B7791F") :> IBrush
         else
             SolidColorBrush.Parse("#2F80ED") :> IBrush

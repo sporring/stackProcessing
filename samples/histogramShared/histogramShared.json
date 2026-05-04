@@ -1,0 +1,97 @@
+{
+  "version": 1,
+  "nodes": [
+    {
+      "id": "node-1",
+      "functionId": "Read",
+      "x": 40.0,
+      "y": 160.0,
+      "parameters": [
+        {
+          "key": "availableMemory",
+          "value": "2147483648UL",
+          "useInput": false
+        },
+        {
+          "key": "type",
+          "value": "UInt8",
+          "useInput": false
+        },
+        {
+          "key": "input",
+          "value": "../image18",
+          "useInput": false
+        },
+        {
+          "key": "suffix",
+          "value": ".tiff",
+          "useInput": false
+        }
+      ]
+    },
+    {
+      "id": "node-2",
+      "functionId": "HistogramData",
+      "x": 280.0,
+      "y": 160.0,
+      "parameters": []
+    },
+    {
+      "id": "node-3",
+      "functionId": "Print",
+      "x": 540.0,
+      "y": 80.0,
+      "parameters": [
+        {
+          "key": "input",
+          "value": "input",
+          "useInput": false
+        }
+      ]
+    },
+    {
+      "id": "node-4",
+      "functionId": "Chart",
+      "x": 540.0,
+      "y": 240.0,
+      "parameters": [
+        {
+          "key": "kind",
+          "value": "Column",
+          "useInput": false
+        },
+        {
+          "key": "input",
+          "value": "map",
+          "useInput": false
+        }
+      ]
+    }
+  ],
+  "edges": [
+    {
+      "fromNode": "node-1",
+      "fromKind": "dataOutput",
+      "fromPort": 0,
+      "toNode": "node-2",
+      "toKind": "dataInput",
+      "toPort": 0
+    },
+    {
+      "fromNode": "node-2",
+      "fromKind": "reducerOutput",
+      "fromPort": 0,
+      "toNode": "node-3",
+      "toKind": "parameterInput",
+      "toPort": 0
+    },
+    {
+      "fromNode": "node-2",
+      "fromKind": "reducerOutput",
+      "fromPort": 0,
+      "toNode": "node-4",
+      "toKind": "parameterInput",
+      "toPort": 1
+    }
+  ]
+}

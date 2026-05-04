@@ -104,12 +104,21 @@ module private PortMapping =
         match basicType with
         | BasicType.String -> "string"
         | BasicType.Bool -> "bool"
+        | BasicType.Map -> "Map"
         | BasicType.Unit -> "unit"
         | BasicType.Numeric numericType -> NumericType.toString numericType
+
+    let customParameterPort key label =
+        { Name = $"{key}: {label}"
+          Type = Custom label }
 
     let parameterPort (parameter: PipelineParameterViewModel) =
         { Name = $"{parameter.Key}: {basicTypeLabel parameter.ParameterType}"
           Type = Scalar parameter.ParameterType }
+
+    let anyParameterPort key =
+        { Name = $"{key}: Any"
+          Type = Any }
 
 module private NodeTitle =
     let quotedString (value: string) =
@@ -146,6 +155,7 @@ module private ScalarNode =
         match scalarType with
         | BasicType.Bool -> "true"
         | BasicType.String -> "value"
+        | BasicType.Map -> "map"
         | BasicType.Unit -> "()"
         | BasicType.Numeric numericType ->
             match numericType with
@@ -183,6 +193,8 @@ module private ScalarNode =
             || String.Equals(trimmed, "false", StringComparison.OrdinalIgnoreCase)
         | BasicType.String ->
             true
+        | BasicType.Map ->
+            not (String.IsNullOrWhiteSpace trimmed)
         | BasicType.Unit ->
             trimmed = "()"
         | BasicType.Numeric numericType ->
@@ -272,7 +284,7 @@ module private SourceImageNode =
         functionId = "Read" || functionId = "ReadRandom" || functionId = "ReadChunks"
 
     let hasOutputTitle functionId =
-        functionId = "Write" || functionId = "WriteInChunks"
+        functionId = "Write" || functionId = "WriteThrough" || functionId = "WriteInChunks"
 
     let typeOptions =
         [ UInt8
@@ -322,6 +334,16 @@ module private SourceImageNode =
         $"{state.Definition.DisplayName} {parameterText}"
 
 module private PairOperationNode =
+    let inputLabels = [| "I"; "J"; "K"; "L" |]
+
+    let inputName index typeName =
+        let label =
+            inputLabels
+            |> Array.tryItem index
+            |> Option.defaultValue $"I{index + 1}"
+
+        $"{label}: {typeName}"
+
     let typeOptions =
         [ UInt8
           Int8
@@ -336,20 +358,34 @@ module private PairOperationNode =
           Complex ]
         |> List.map NumericType.toString
 
+    let operationOptions = [ "+"; "-"; "*"; "/" ]
+
     let selectedType (state: PipelineNodeState) =
         state.Parameters
         |> Seq.tryFind (fun parameter -> parameter.Key = "type")
         |> Option.bind (fun parameter -> NumericType.tryParse parameter.Value)
         |> Option.defaultValue Float64
 
+    let title (state: PipelineNodeState) =
+        let operation =
+            state.Parameters
+            |> Seq.tryFind (fun parameter -> parameter.Key = "operation")
+            |> Option.map _.Value
+            |> Option.filter (fun value -> operationOptions |> List.contains value)
+            |> Option.defaultValue "*"
+
+        match state.Definition.Id with
+        | "ImageOpImage" -> $"I .{operation} J"
+        | _ -> state.Definition.DisplayName
+
     let ports (state: PipelineNodeState) =
         let selectedType = selectedType state
         let typeName = NumericType.toString selectedType
         let portType = PortType.numericToImage selectedType
 
-        [ { Name = $"{typeName} A"
+        [ { Name = inputName 0 typeName
             Type = portType }
-          { Name = $"{typeName} B"
+          { Name = inputName 1 typeName
             Type = portType } ],
         [ { Name = typeName
             Type = portType } ]
@@ -415,10 +451,20 @@ module private ScalarImageOperationNode =
             |> Option.defaultValue "*"
 
         let elementwiseOperation = "." + operation
+        let valueText =
+            state.Parameters
+            |> Seq.tryFind (fun parameter -> parameter.Key = "value")
+            |> Option.map (fun parameter ->
+                if parameter.UseInput then
+                    "a"
+                else
+                    parameter.Value.Trim())
+            |> Option.filter (String.IsNullOrWhiteSpace >> not)
+            |> Option.defaultValue "a"
 
         match state.Definition.Id with
-        | "ImageOpScalar" -> $"I {elementwiseOperation} a"
-        | "ScalarOpImage" -> $"a {elementwiseOperation} I"
+        | "ImageOpScalar" -> $"I {elementwiseOperation} {valueText}"
+        | "ScalarOpImage" -> $"{valueText} {elementwiseOperation} I"
         | _ -> state.Definition.DisplayName
 
 module private ThresholdNode =
@@ -439,6 +485,17 @@ module private ThresholdNode =
         [ { Name = "UInt8"
             Type = PortType.Image UInt8 } ]
 
+module private ChartNode =
+    let kindOptions =
+        [ "Scatter"; "Line"; "Bar"; "Column"; "Area"; "Pie"; "Doughnut" ]
+
+    let title (state: PipelineNodeState) =
+        state.Parameters
+        |> Seq.tryFind (fun parameter -> parameter.Key = "kind")
+        |> Option.map _.Value
+        |> Option.filter (fun value -> kindOptions |> List.contains value)
+        |> Option.defaultValue "Column"
+
 [<AllowNullLiteral>]
 type PipelineNodeViewModel(
     state: PipelineNodeState,
@@ -453,6 +510,8 @@ type PipelineNodeViewModel(
     let mutable lastX = 0.
     let mutable lastY = 0.
     let mutable suppressGroupMove = false
+    let pinSize = 14.
+    let pinHalfSize = pinSize / 2.
 
     let addPipelinePin x y alignment kind parameterKey (port: Port) =
         let pin = PipelinePinViewModel(alignment, port, kind, ?parameterKey = parameterKey)
@@ -470,15 +529,15 @@ type PipelineNodeViewModel(
         pin.Parent <- this
         pin.X <- x
         pin.Y <- y
-        pin.Width <- 14.
-        pin.Height <- 14.
+        pin.Width <- pinSize
+        pin.Height <- pinSize
         pin.Alignment <- alignment
         this.Pins.Add(pin :> IPin)
         pin :> IPin
 
     let nodeHeight =
         let portCount =
-            if state.Definition.Id = "ComputeStats" then
+            if state.Definition.Id = "ComputeStats" || state.Definition.Id = "ComponentTranslationTable" then
                 state.Definition.Inputs.Length
             else
                 max state.Definition.Inputs.Length state.Definition.Outputs.Length
@@ -495,7 +554,12 @@ type PipelineNodeViewModel(
 
     do
         this.Name <- state.Title
-        this.Width <- if state.Definition.Id = "ComputeStats" then 170. else 110.
+        this.Width <-
+            match state.Definition.Id with
+            | "ComputeStats" -> 170.
+            | "ComponentTranslationTable"
+            | "CollapseComponentLabels" -> 180.
+            | _ -> 110.
         this.Height <- nodeHeight
         this.Content <- PipelineNodeContent(state.Title, state, this.Width, this.Height, fun () -> selectNode this)
         this.Pins <- ObservableCollection<IPin>()
@@ -508,6 +572,9 @@ type PipelineNodeViewModel(
                     if (SourceImageNode.hasInputTitle state.Definition.Id && parameter.Key = "input")
                        || (SourceImageNode.hasOutputTitle state.Definition.Id && parameter.Key = "output") then
                         state.Title <- SourceImageNode.title state
+                        this.Name <- state.Title
+                    elif ScalarImageOperationNode.isOperation state.Definition.Id && parameter.Key = "value" then
+                        state.Title <- ScalarImageOperationNode.title state
                         this.Name <- state.Title
 
                     refreshNodePins this
@@ -528,11 +595,23 @@ type PipelineNodeViewModel(
                     state.Title <- ScalarOpNode.title state
                     this.Name <- state.Title
                     markGraphDirty()
+                elif state.Definition.Id = "ImageOpImage" && parameter.Key = "operation" && args.PropertyName = nameof parameter.Value then
+                    state.Title <- PairOperationNode.title state
+                    this.Name <- state.Title
+                    markGraphDirty()
+                elif state.Definition.Id = "Chart" && parameter.Key = "kind" && args.PropertyName = nameof parameter.Value then
+                    state.Title <- ChartNode.title state
+                    this.Name <- state.Title
+                    markGraphDirty()
                 elif ScalarImageOperationNode.isOperation state.Definition.Id && parameter.Key = "operation" && args.PropertyName = nameof parameter.Value then
                     state.Title <- ScalarImageOperationNode.title state
                     this.Name <- state.Title
                     markGraphDirty()
-                elif (state.Definition.Id = "Scalar" || state.Definition.Id = "ScalarOp" || state.Definition.Id = "Read" || state.Definition.Id = "ReadRandom" || state.Definition.Id = "ReadChunks" || state.Definition.Id = "Zero" || state.Definition.Id = "CreateByEuler2DTransform" || state.Definition.Id = "Threshold" || state.Definition.Id = "AddPair" || state.Definition.Id = "MulPair" || state.Definition.Id = "DivPair" || state.Definition.Id = "MaxOfPair" || state.Definition.Id = "MinOfPair" || ScalarImageOperationNode.isOperation state.Definition.Id) && parameter.Key = "type" && args.PropertyName = nameof parameter.Value then
+                elif ScalarImageOperationNode.isOperation state.Definition.Id && parameter.Key = "value" && args.PropertyName = nameof parameter.Value then
+                    state.Title <- ScalarImageOperationNode.title state
+                    this.Name <- state.Title
+                    markGraphDirty()
+                elif (state.Definition.Id = "Scalar" || state.Definition.Id = "ScalarOp" || state.Definition.Id = "Read" || state.Definition.Id = "ReadRandom" || state.Definition.Id = "ReadChunks" || state.Definition.Id = "Zero" || state.Definition.Id = "CreateByEuler2DTransform" || state.Definition.Id = "Threshold" || state.Definition.Id = "ImageOpImage" || state.Definition.Id = "MaxOfPair" || state.Definition.Id = "MinOfPair" || ScalarImageOperationNode.isOperation state.Definition.Id) && parameter.Key = "type" && args.PropertyName = nameof parameter.Value then
                     if state.Definition.Id = "Scalar" then
                         ScalarNode.ensureValueMatchesType state
                         state.Title <- ScalarNode.title state
@@ -558,10 +637,14 @@ type PipelineNodeViewModel(
                 Some(pin :> IPin)
             | _ -> None)
 
+    member private _.ParameterPinIsVisible(parameter: PipelineParameterViewModel) =
+        parameter.UseInput
+        || (state.Definition.Id = "CollapseComponentLabels" && parameter.Key = "translationTable")
+
     member private this.SetParameterPinVisibility(parameter: PipelineParameterViewModel, pin: IPin) =
-        if parameter.UseInput || state.Definition.Id = "Print" then
-            pin.Width <- 14.
-            pin.Height <- 14.
+        if this.ParameterPinIsVisible parameter then
+            pin.Width <- pinSize
+            pin.Height <- pinSize
 
             match pin with
             | :? PipelinePinViewModel as parameterPin -> parameterPin.SetActive(true)
@@ -577,14 +660,21 @@ type PipelineNodeViewModel(
             | :? PipelinePinViewModel as parameterPin -> parameterPin.SetActive(false)
             | _ -> ()
 
+    member private this.ParameterPinX(index: int, count: int) =
+        let n = float (index + 1)
+        n * this.Width / float (count + 1)
+
     member private this.AddParameterPin(index: int, count: int, parameter: PipelineParameterViewModel) =
-        let spacing = this.Width / float (count + 1)
-        let x = spacing * float (index + 1) - 7.
+        let x = this.ParameterPinX(index, count)
         let port =
             if state.Definition.Id = "ScalarOp" && (parameter.Key = "a" || parameter.Key = "b") then
                 ScalarOpNode.scalarPort parameter.Key state
             elif ScalarImageOperationNode.isOperation state.Definition.Id && parameter.Key = "value" then
                 ScalarImageOperationNode.valuePort state
+            elif state.Definition.Id = "CollapseComponentLabels" && parameter.Key = "translationTable" then
+                PortMapping.customParameterPort parameter.Key "TranslationTable"
+            elif state.Definition.Id = "Print" && parameter.Key = "input" then
+                PortMapping.anyParameterPort parameter.Key
             else
                 PortMapping.parameterPort parameter
 
@@ -596,17 +686,27 @@ type PipelineNodeViewModel(
 
     member private this.SyncParameterPinVisibility() =
         let parameters = state.Parameters |> Seq.toList
+        let visibleParameterIndexes =
+            parameters
+            |> List.indexed
+            |> List.filter (fun (_, parameter) -> this.ParameterPinIsVisible parameter)
+            |> List.map fst
+            |> Set.ofList
 
         parameters
         |> List.iteri (fun index parameter ->
             match this.TryFindParameterPin(parameter.Key) with
             | Some pin ->
-                let spacing = this.Width / float (parameters.Length + 1)
-                pin.X <- spacing * float (index + 1) - 7.
-                pin.Y <- 0.
+                match visibleParameterIndexes |> Set.toList |> List.tryFindIndex ((=) index) with
+                | Some visibleIndex ->
+                    pin.X <- this.ParameterPinX(visibleIndex, visibleParameterIndexes.Count)
+                    pin.Y <- 0.
+                | None ->
+                    ()
+
                 this.SetParameterPinVisibility(parameter, pin)
             | None ->
-                this.AddParameterPin(index, parameters.Length, parameter))
+                this.AddParameterPin(0, 1, parameter))
 
     member private this.InitializePins() =
         this.Pins.Clear()
@@ -620,9 +720,7 @@ type PipelineNodeViewModel(
             | "ReadChunks"
             | "Zero"
             | "CreateByEuler2DTransform" -> state.Definition.Inputs, [ SourceImageNode.outputPort state ]
-            | "AddPair"
-            | "MulPair"
-            | "DivPair"
+            | "ImageOpImage"
             | "MaxOfPair"
             | "MinOfPair" -> PairOperationNode.ports state
             | "Cast" -> CastNode.ports state
@@ -640,7 +738,9 @@ type PipelineNodeViewModel(
                 match state.Definition.Id with
                 | "Scalar"
                 | "ScalarOp" -> ScalarOutput
-                | "ComputeStats" -> ReducerOutput
+                | "ComputeStats"
+                | "ComponentTranslationTable"
+                | "HistogramData" -> ReducerOutput
                 | _ -> DataOutput
 
             let alignment =
@@ -649,14 +749,17 @@ type PipelineNodeViewModel(
             let x =
                 if kind = ReducerOutput then
                     let spacing = this.Width / float (outputs.Length + 1)
-                    spacing * float (portIndex + 1) - 7.
+                    spacing * float (portIndex + 1)
                 elif kind = ScalarOutput then
-                    this.Width / 2. - 7.
+                    this.Width / 2.
                 else
-                    110.
+                    this.Width
 
             let y =
-                if kind = ScalarOutput || kind = ReducerOutput then nodeHeight else verticalPinPosition portIndex outputs.Length
+                if kind = ScalarOutput || kind = ReducerOutput then
+                    nodeHeight
+                else
+                    verticalPinPosition portIndex outputs.Length
 
             addPipelinePin x y alignment kind None port |> ignore)
 
@@ -782,9 +885,15 @@ type MainWindowViewModel() as this =
                         |> List.map (fun value -> ParameterOptionViewModel(value, value, true))
 
                     PipelineParameterViewModel(parameter.Label, parameter.Key, parameter.DefaultValue, parameter.Type, options, false)
-                | ("AddPair" | "MulPair" | "DivPair" | "MaxOfPair" | "MinOfPair"), "type" ->
+                | ("ImageOpImage" | "MaxOfPair" | "MinOfPair"), "type" ->
                     let options =
                         PairOperationNode.typeOptions
+                        |> List.map (fun value -> ParameterOptionViewModel(value, value, true))
+
+                    PipelineParameterViewModel(parameter.Label, parameter.Key, parameter.DefaultValue, parameter.Type, options, false)
+                | "ImageOpImage", "operation" ->
+                    let options =
+                        PairOperationNode.operationOptions
                         |> List.map (fun value -> ParameterOptionViewModel(value, value, true))
 
                     PipelineParameterViewModel(parameter.Label, parameter.Key, parameter.DefaultValue, parameter.Type, options, false)
@@ -806,6 +915,14 @@ type MainWindowViewModel() as this =
                         |> List.map (fun value -> ParameterOptionViewModel(value, value, true))
 
                     PipelineParameterViewModel(parameter.Label, parameter.Key, parameter.DefaultValue, parameter.Type, options, false)
+                | "Chart", "kind" ->
+                    let options =
+                        ChartNode.kindOptions
+                        |> List.map (fun value -> ParameterOptionViewModel(value, value, true))
+
+                    PipelineParameterViewModel(parameter.Label, parameter.Key, parameter.DefaultValue, parameter.Type, options, false)
+                | ("Print" | "Chart"), "input" ->
+                    PipelineParameterViewModel(parameter.Label, parameter.Key, parameter.DefaultValue, parameter.Type, forceUseInput = true)
                 | _ ->
                     PipelineParameterViewModel(parameter.Label, parameter.Key, parameter.DefaultValue, parameter.Type))
 
@@ -819,6 +936,10 @@ type MainWindowViewModel() as this =
             state.Title <- SourceImageNode.title state
         elif SourceImageNode.hasOutputTitle definition.Id then
             state.Title <- SourceImageNode.title state
+        elif definition.Id = "ImageOpImage" then
+            state.Title <- PairOperationNode.title state
+        elif definition.Id = "Chart" then
+            state.Title <- ChartNode.title state
         elif definition.Id = "ImageOpScalar" || definition.Id = "ScalarOpImage" then
             state.Title <- ScalarImageOperationNode.title state
 
@@ -1064,9 +1185,7 @@ type MainWindowViewModel() as this =
 
         pipelineNodes ()
         |> Seq.filter (fun node ->
-            node.State.Definition.Id = "AddPair"
-            || node.State.Definition.Id = "MulPair"
-            || node.State.Definition.Id = "DivPair"
+            node.State.Definition.Id = "ImageOpImage"
             || node.State.Definition.Id = "MaxOfPair"
             || node.State.Definition.Id = "MinOfPair")
         |> Seq.iter (fun node ->
@@ -1210,6 +1329,16 @@ type MainWindowViewModel() as this =
             | Image numericType -> Some numericType
             | _ -> None
 
+        let assignedParameterInputType (inputPin: PipelinePinViewModel) =
+            drawing.Connectors
+            |> Seq.tryPick (fun connector ->
+                if Object.ReferenceEquals(connector.End, inputPin) then
+                    match connector.Start with
+                    | :? PipelinePinViewModel as startPin -> Some startPin.Port.Type
+                    | _ -> None
+                else
+                    None)
+
         let tapConcreteTypes (tapNode: INode) =
             drawing.Connectors
             |> Seq.choose (fun connector ->
@@ -1238,7 +1367,8 @@ type MainWindowViewModel() as this =
                     false
 
             if isPrintParameter && (outputPin.Kind = ScalarOutput || outputPin.Kind = ReducerOutput) then
-                true
+                assignedParameterInputType inputPin
+                |> Option.forall (PortType.canConnect outputPin.Port.Type)
             elif outputPin.Kind = DataOutput && inputPin.Kind = DataInput then
                 let baseCompatible = PortType.canConnect outputPin.Port.Type inputPin.Port.Type
 
@@ -1309,10 +1439,11 @@ type MainWindowViewModel() as this =
                     |> Seq.tryFindIndex (fun parameter -> parameter.Key = pin.ParameterKey)
                 | DataInput
                 | DataOutput ->
-                    if pin.Port.Name.EndsWith(" B", StringComparison.Ordinal) then
-                        Some 1
-                    else
-                        Some 0
+                    match pin.Kind, pin.Port.Name with
+                    | DataInput, name when name.StartsWith("J:", StringComparison.Ordinal) -> Some 1
+                    | DataInput, name when name.StartsWith("K:", StringComparison.Ordinal) -> Some 2
+                    | DataInput, name when name.StartsWith("L:", StringComparison.Ordinal) -> Some 3
+                    | _ -> Some 0
                 | ScalarOutput ->
                     Some 0
                 | ReducerOutput ->

@@ -51,6 +51,7 @@ type BasicType =
     | Numeric of NumericType
     | Bool
     | String
+    | Map
     | Unit
 
 module BasicType = 
@@ -70,6 +71,7 @@ module BasicType =
       | Numeric Complex -> "Complex"
       | Bool -> "Bool"
       | String -> "String"
+      | Map -> "Map"
       | Unit -> "Unit"
 
   let tryParse (value: string) =
@@ -88,6 +90,8 @@ module BasicType =
       | "Complex" -> Some(Numeric Complex)
       | "Bool" -> Some Bool
       | "String" -> Some String
+      | "Map"
+      | "Histogram" -> Some Map
       | "Unit" -> Some Unit
       | _ -> None
 
@@ -95,6 +99,7 @@ type PortType = // all but unit are lists
     | Image of NumericType
     | Scalar of BasicType
     | Tuple of PortType * PortType
+    | Custom of string
     | Any
     | Unit
 
@@ -123,6 +128,7 @@ module PortType =
         | Any, _
         | _, Any -> true
         | Image _, Image Number -> true
+        | Image Number, Image _ -> true
         | _ -> outputType = inputType
 
 type Parameter =

@@ -466,6 +466,32 @@ let getConnectedChunkNeighbours (inputDir: string) (suffix: string) (winSz: uint
     Plan.create stage pl.memAvail memPeak memPerElem length pl.debug
     >=> readFilePairs<uint64> pl.debug
 
+let connectedChunkNeighbours (winSz: uint) : Stage<Image<uint64>, Image<uint64>*Image<uint64>> =
+    let name = "connectedChunkNeighbours"
+    let windowSize = winSz + 1u
+    let boundaryIndex = int winSz - 1
+    let nextIndex = int winSz
+
+    let mapper (_debug: bool) (images: Image<uint64> list) : Image<uint64>*Image<uint64> =
+        let first = images[boundaryIndex]
+        let second = images[nextIndex]
+
+        images
+        |> List.iteri (fun index image ->
+            if index <> boundaryIndex && index <> nextIndex then
+                image.decRefCount())
+
+        first, second
+
+    let memoryNeed nPixels =
+        nPixels * uint64 windowSize * uint64 sizeof<uint64>
+
+    let lengthTransformation length =
+        if length <= uint64 winSz then 0UL else length / uint64 winSz - 1UL
+
+    (window windowSize 0u winSz)
+    --> Stage.map name mapper memoryNeed lengthTransformation
+
 let makeAdjacencyGraph (): Stage<Image<uint64>*Image<uint64>,uint*simpleGraph.Graph<uint*uint64>> =
     let name = "makeAdjacencyGraph"
     let folder (i: uint, graph:simpleGraph.Graph<uint*uint64>) (image1: Image<uint64>, image2: Image<uint64>) : uint*simpleGraph.Graph<uint*uint64> = 
@@ -496,6 +522,11 @@ let makeTranslationTable () : Stage<uint*simpleGraph.Graph<uint*uint64>,(uint*ui
     let lengthTransformation = fun _ -> 1UL
     let init = (0u, simpleGraph.empty)
     Stage.map $"{name}" mapper memoryNeed lengthTransformation
+
+let connectedComponentTranslationTable (winSz: uint) : Stage<Image<uint64>, (uint*uint64*uint64) list> =
+    connectedChunkNeighbours winSz
+    --> makeAdjacencyGraph ()
+    --> makeTranslationTable ()
 
 let trd (_,_,c) = c
 

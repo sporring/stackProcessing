@@ -59,10 +59,15 @@
     },
     {
       "id": "n3",
-      "functionId": "MulPair",
+      "functionId": "ImageOpImage",
       "x": 300.0,
       "y": 150.0,
       "parameters": [
+        {
+          "key": "operation",
+          "value": "*",
+          "useInput": false
+        },
         {
           "key": "type",
           "value": "UInt8",
