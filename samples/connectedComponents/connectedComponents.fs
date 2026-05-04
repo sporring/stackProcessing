@@ -18,30 +18,22 @@ let main arg =
         else
             64u, 64u, 64u, "../image18", "../result18"
     let tmp = "tmp"
+    let tmpSuffix = ".mha"
 
     let wsz = (depth/8u)
 
-    src
-    |> read<uint8> input ".tiff"
-    >=> imageDivScalar 255uy
-    >=> connectedComponents wsz
-    >=> cast<uint64,uint8>
-    >=> scalarMulImage (255uy/3uy)
-    // Tiff supports uint8, int8, uint16, int16, and float32
-    >=> write (tmp) ".tiff"
-    |> sink
-
     let transTbl =
         src
-        |> getConnectedChunkNeighbours tmp ".tiff" wsz
-        >=> makeAdjacencyGraph ()
-        //>=> tapIt (fun (i,g) -> sprintf "Vertices\n%A\nEdges\n%A\n" (g|>simpleGraph.vertices|>Set.toList|>List.sort) (g|>simpleGraph.edges|>Set.toList|>List.sort))
-        >=> makeTranslationTable ()
+        |> read<uint8> input ".tiff"
+        >=> threshold 128.0 infinity
+        >=> connectedComponents wsz
+        >=> teeFst (writeChunkSlices tmp tmpSuffix wsz)
+        >=> makeConnectedComponentTranslationTable wsz
         |> drain
     printfn "Translation Table drain:\n%A" transTbl
 
     src
-    |> read<uint64> (tmp) ".tiff"
+    |> read<uint64> tmp tmpSuffix
     >=> updateConnectedComponents wsz transTbl
     >=> cast<uint64,uint8>
     >=> scalarMulImage (255uy/3uy)

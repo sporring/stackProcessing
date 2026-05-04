@@ -66,10 +66,10 @@ let img = Image<int>.ofArray2D (array2D [[1;1;1]; [1;0;1]; [1;1;1]])
 let filled = ImageFunctions.binaryFillHoles 1.0 img;;
 
 let img = Image<int>.ofArray2D (array2D [[1;0;1]])
-let cc = ImageFunctions.connectedComponents img;;
+let cc = (ImageFunctions.connectedComponents img).Labels;;
 
 let img = Image<int>.ofArray2D (array2D [[1;0;1]])
-let cc = ImageFunctions.connectedComponents img
+let cc = (ImageFunctions.connectedComponents img).Labels
 let relabeled = ImageFunctions.relabelComponents 2u cc;;
 
 let img = Image<int>.ofArray2D (array2D [[0;1;0]])

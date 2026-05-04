@@ -415,11 +415,16 @@ let binaryFillHoles (img : Image<uint8>) : Image<uint8> =
     use filter = new itk.simple.BinaryFillholeImageFilter()
     Image<uint8>.ofSimpleITK(filter.Execute(img.toSimpleITK()),"binaryFillHoles",img.index)
 
+type ConnectedComponentsResult =
+    { Labels : Image<uint64>
+      ObjectCount : uint64 }
+
 /// Connected components labeling
 // Currying and generic arguments causes value restriction error
-let connectedComponents (img : Image<uint8>) : Image<uint64> =
+let connectedComponents (img : Image<uint8>) : ConnectedComponentsResult =
     use filter = new itk.simple.ConnectedComponentImageFilter()
-    Image<uint64>.ofSimpleITK(filter.Execute(img.toSimpleITK()), "connectedComponents",img.index)
+    { Labels = Image<uint64>.ofSimpleITK(filter.Execute(img.toSimpleITK()), "connectedComponents",img.index)
+      ObjectCount = uint64 (filter.GetObjectCount()) }
 
 /// Relabel components by size, optionally remove small objects
 let relabelComponents (minObjectSize: uint) : Image<'T> -> Image<'T> =

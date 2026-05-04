@@ -511,6 +511,64 @@ module Stage =
         let transition = ProfileTransition.create Streaming Streaming
         createWrapped name build transition memoryNeed lengthTransformation (stage1.Cleaning@stage2.Cleaning)
 
+    let teeFst (stage: Stage<'A, 'A>) : Stage<'A * 'B, 'A * 'B> =
+        if stage.Transition.From <> Streaming || stage.Transition.To <> Streaming then
+            invalidArg (nameof stage) $"teeFst expects a streaming identity stage, got {stage.Transition.From} -> {stage.Transition.To}"
+
+        let build () =
+            let stagePipe = stage.Build ()
+
+            let apply debug input =
+                let leftPipe, rightPipe = Pipe.tee debug (Pipe.id "teeFst-input")
+                let left =
+                    input
+                    |> leftPipe.Apply debug
+                    |> AsyncSeq.map fst
+                    |> stagePipe.Apply debug
+                let right =
+                    input
+                    |> rightPipe.Apply debug
+                    |> AsyncSeq.map snd
+
+                AsyncSeq.zip left right
+
+            Pipe.create $"teeFst ({stage.Name})" apply Streaming
+
+        let memoryNeed nElems =
+            let leftNeed = stage.MemoryNeed (SingleOrPair.index1 nElems) |> SingleOrPair.fst
+            Pair(leftNeed, 0UL)
+
+        createWrapped $"teeFst ({stage.Name})" build (ProfileTransition.create Streaming Streaming) memoryNeed id stage.Cleaning
+
+    let teeSnd (stage: Stage<'B, 'B>) : Stage<'A * 'B, 'A * 'B> =
+        if stage.Transition.From <> Streaming || stage.Transition.To <> Streaming then
+            invalidArg (nameof stage) $"teeSnd expects a streaming identity stage, got {stage.Transition.From} -> {stage.Transition.To}"
+
+        let build () =
+            let stagePipe = stage.Build ()
+
+            let apply debug input =
+                let leftPipe, rightPipe = Pipe.tee debug (Pipe.id "teeSnd-input")
+                let left =
+                    input
+                    |> leftPipe.Apply debug
+                    |> AsyncSeq.map fst
+                let right =
+                    input
+                    |> rightPipe.Apply debug
+                    |> AsyncSeq.map snd
+                    |> stagePipe.Apply debug
+
+                AsyncSeq.zip left right
+
+            Pipe.create $"teeSnd ({stage.Name})" apply Streaming
+
+        let memoryNeed nElems =
+            let rightNeed = stage.MemoryNeed (SingleOrPair.index2 nElems) |> SingleOrPair.fst
+            Pair(0UL, rightNeed)
+
+        createWrapped $"teeSnd ({stage.Name})" build (ProfileTransition.create Streaming Streaming) memoryNeed id stage.Cleaning
+
     let reduce (name: string) (reducer: bool -> AsyncSeq<'In> -> Async<'Out>) (profile: Profile) (memoryNeed: MemoryNeed) (lengthTransformation: LengthTransformation) : Stage<'In, 'Out> =
         let build () = Pipe.reduce name reducer profile
         let transition = ProfileTransition.create Streaming Constant

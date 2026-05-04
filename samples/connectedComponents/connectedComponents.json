@@ -31,23 +31,23 @@
     },
     {
       "id": "node-2",
-      "functionId": "ImageOpScalar",
+      "functionId": "Threshold",
       "x": 409.1599864130435,
       "y": 195.6514945652172,
       "parameters": [
-        {
-          "key": "operation",
-          "value": "/",
-          "useInput": false
-        },
         {
           "key": "type",
           "value": "UInt8",
           "useInput": false
         },
         {
-          "key": "value",
-          "value": "255",
+          "key": "lower",
+          "value": "128.0",
+          "useInput": false
+        },
+        {
+          "key": "upper",
+          "value": "infinity",
           "useInput": false
         }
       ]
@@ -67,19 +67,24 @@
     },
     {
       "id": "node-4",
-      "functionId": "WriteThrough",
+      "functionId": "WriteChunkSlices",
       "x": 760.296535326087,
       "y": 195.6514945652172,
       "parameters": [
         {
           "key": "output",
-          "value": "../result18_components_tmp",
-          "useInput": true
+          "value": "tmp",
+          "useInput": false
         },
         {
           "key": "suffix",
-          "value": ".tiff",
-          "useInput": true
+          "value": ".mha",
+          "useInput": false
+        },
+        {
+          "key": "windowSize",
+          "value": "8",
+          "useInput": false
         }
       ]
     },
@@ -114,13 +119,13 @@
         },
         {
           "key": "input",
-          "value": "../result18_components_tmp",
-          "useInput": true
+          "value": "tmp",
+          "useInput": false
         },
         {
           "key": "suffix",
           "value": ".mha",
-          "useInput": true
+          "useInput": false
         }
       ]
     },
@@ -298,14 +303,6 @@
       "toPort": 0
     },
     {
-      "fromNode": "node-11",
-      "fromKind": "scalarOutput",
-      "fromPort": 0,
-      "toNode": "node-6",
-      "toKind": "parameterInput",
-      "toPort": 2
-    },
-    {
       "fromNode": "node-1",
       "fromKind": "dataOutput",
       "fromPort": 0,
@@ -354,36 +351,12 @@
       "toPort": 0
     },
     {
-      "fromNode": "node-12",
-      "fromKind": "scalarOutput",
-      "fromPort": 0,
-      "toNode": "node-4",
-      "toKind": "parameterInput",
-      "toPort": 0
-    },
-    {
       "fromNode": "node-13",
       "fromKind": "scalarOutput",
       "fromPort": 0,
       "toNode": "node-1",
       "toKind": "parameterInput",
       "toPort": 3
-    },
-    {
-      "fromNode": "node-13",
-      "fromKind": "scalarOutput",
-      "fromPort": 0,
-      "toNode": "node-6",
-      "toKind": "parameterInput",
-      "toPort": 3
-    },
-    {
-      "fromNode": "node-13",
-      "fromKind": "scalarOutput",
-      "fromPort": 0,
-      "toNode": "node-4",
-      "toKind": "parameterInput",
-      "toPort": 1
     },
     {
       "fromNode": "node-13",

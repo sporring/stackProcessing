@@ -1,5 +1,6 @@
 module StackImageFunctions
 
+open FSharp.Control
 open SlimPipeline // Core processing model
 open StackCore
 open StackIO
@@ -324,9 +325,8 @@ let binaryFillHoles (winSz: uint)=
     let stg = Stage.map "fillHoles" f id id
     (window winSz pad stride) --> stg --> flatten ()
 
-let connectedComponents (winSz: uint) = 
+let connectedComponents (winSz: uint) =
     let pad, stride = 0u, winSz
-    let mapper debug = volFctToLstFctReleaseAfter (ImageFunctions.connectedComponents) pad stride
     let btUint8 = typeof<uint8>|>Image.getBytesPerComponent |> uint64
     let btUint64 = typeof<uint64> |> Image.getBytesPerComponent |> uint64
     // Sliding window applying f cost assuming f has no extra costs: 
@@ -343,9 +343,16 @@ let connectedComponents (winSz: uint) =
         let wsz = uint64 winSz
         let str = uint64 stride
         max (nPixels*(wsz*(2UL*bt8+bt64)-str*bt8)) (nPixels*(wsz*(bt8+bt64)+str*(bt64-bt8)))
-    let lengthTransformation = id
-    let stg = Stage.map "connectedComponents" mapper memoryNeed lengthTransformation
-    (window winSz pad stride) --> stg --> flatten ()
+
+    let mapper (_debug: bool) (chunkIndex: int64) (images: Image<uint8> list) : Image<uint64> * uint64 =
+        let stack = ImageFunctions.stack images
+        images |> List.take (min (int stride) images.Length) |> List.iter (fun image -> image.decRefCount())
+        let result = ImageFunctions.connectedComponents stack
+        stack.decRefCount()
+        result.Labels.index <- int chunkIndex * int stride
+        result.Labels, result.ObjectCount
+
+    (window winSz pad stride) --> Stage.mapi "connectedComponents" mapper memoryNeed id
 
 let relabelComponents a (winSz: uint) = 
     let pad, stride = 0u, winSz
@@ -446,107 +453,147 @@ let empty (pl: Plan<unit, unit>) : Plan<unit, unit> =
     let stage = "empty" |> Stage.empty |> Some
     Plan.create stage pl.memAvail 0UL 0UL 0UL  pl.debug
 
-let getConnectedChunkNeighbours (inputDir: string) (suffix: string) (winSz: uint) (pl: Plan<unit, unit>) : Plan<unit, Image<uint64>*Image<uint64>> =
-    let name = "getConnectedChunkNeighbours"
-    let filenames = _getFilenames inputDir ("*"+suffix) Array.sort
-    let depth = (uint64 filenames.Length) / (uint64 winSz) - 1UL
+let writeChunkSlices (outputDir: string) (suffix: string) (winSz: uint) : Stage<Image<'T>, Image<'T>> =
+    if (outputDir |> System.IO.Directory.Exists) |> not then
+        System.IO.Directory.CreateDirectory(outputDir) |> ignore
 
-    let mapper (i: int) : string*string = 
-        let j = (i + 1)*(int winSz)
-        filenames[j - 1], filenames[j]
+    let mapper (debug: bool) (_idx: int64) (labelChunk: Image<'T>) =
+        let slices = ImageFunctions.unstack 2u labelChunk
+        slices
+        |> List.iteri (fun localIndex slice ->
+            let globalIndex = labelChunk.index + localIndex
+            let fileName = System.IO.Path.Combine(outputDir, sprintf "image_%03d%s" globalIndex suffix)
+            if debug then printfn "[writeChunkSlices] Saved image %d to %s as %s" globalIndex fileName (typeof<'T>.Name)
+            slice.toFile(fileName)
+            slice.decRefCount())
+        labelChunk
 
-    let transition = ProfileTransition.create Unit Streaming
-    let memPeak = 2*sizeof<uint> |> uint64
-    let memoryNeed = fun _ -> 2*sizeof<uint> |> uint64
-    let lengthTransformation = fun _ -> depth
-    let stage = Stage.init "getConnectedChunkNeighbours" (uint depth) mapper transition memoryNeed lengthTransformation |> Some
+    Stage.mapi $"writeChunkSlices \"{outputDir}/*{suffix}\"" mapper id id
 
-    let memPerElem = 256UL // surrugate string length
-    let length = depth
-    Plan.create stage pl.memAvail memPeak memPerElem length pl.debug
-    >=> readFilePairs<uint64> pl.debug
+let makeConnectedComponentTranslationTable (winSz: uint) : Stage<Image<uint64> * uint64,(uint*uint64*uint64) list> =
+    let name = "makeConnectedComponentTranslationTable"
 
-let connectedChunkNeighbours (winSz: uint) : Stage<Image<uint64>, Image<uint64>*Image<uint64>> =
-    let name = "connectedChunkNeighbours"
-    let windowSize = winSz + 1u
-    let boundaryIndex = int winSz - 1
-    let nextIndex = int winSz
+    let addBoundaryEdges graph previousChunk (previous: Image<uint64>) (current: Image<uint64>) =
+        Image.fold2
+            (fun g p1 p2 ->
+                if p1 <> 0UL && p2 <> 0UL then
+                    simpleGraph.addEdge (previousChunk,p1) (previousChunk+1u,p2) g
+                else
+                    g)
+            graph
+            previous
+            current
 
-    let mapper (_debug: bool) (images: Image<uint64> list) : Image<uint64>*Image<uint64> =
-        let first = images[boundaryIndex]
-        let second = images[nextIndex]
+    let makeBaseMap chunkCounts =
+        chunkCounts
+        |> Map.toList
+        |> List.sortBy fst
+        |> List.scan
+            (fun (_, nextLabel, _) (chunk, objectCount) ->
+                let labels =
+                    if objectCount = 0UL then
+                        [ (chunk, 0UL), 0UL ]
+                    else
+                        [ yield (chunk, 0UL), 0UL
+                          for label in 1UL .. objectCount do
+                              yield (chunk, label), nextLabel + label - 1UL ]
+                chunk, nextLabel + objectCount, labels)
+            (0u, 1UL, [])
+        |> List.collect (fun (_, _, labels) -> labels)
+        |> Map.ofList
 
-        images
-        |> List.iteri (fun index image ->
-            if index <> boundaryIndex && index <> nextIndex then
-                image.decRefCount())
+    let collapseTouchingComponents graph baseMap =
+        simpleGraph.connectedComponents graph
+        |> List.fold
+            (fun translation componentNodes ->
+                let target =
+                    componentNodes
+                    |> List.choose (fun key -> translation |> Map.tryFind key)
+                    |> function
+                        | [] -> 0UL
+                        | values -> List.min values
 
-        first, second
+                componentNodes
+                |> List.fold (fun acc key -> acc |> Map.add key target) translation)
+            baseMap
 
-    let memoryNeed nPixels =
-        nPixels * uint64 windowSize * uint64 sizeof<uint64>
-
-    let lengthTransformation length =
-        if length <= uint64 winSz then 0UL else length / uint64 winSz - 1UL
-
-    (window windowSize 0u winSz)
-    --> Stage.map name mapper memoryNeed lengthTransformation
-
-let makeAdjacencyGraph (): Stage<Image<uint64>*Image<uint64>,uint*simpleGraph.Graph<uint*uint64>> =
-    let name = "makeAdjacencyGraph"
-    let folder (i: uint, graph:simpleGraph.Graph<uint*uint64>) (image1: Image<uint64>, image2: Image<uint64>) : uint*simpleGraph.Graph<uint*uint64> = 
-        let sliceFolder (i: uint) (g: simpleGraph.Graph<uint*uint64>) (p1: uint64) (p2: uint64) : simpleGraph.Graph<uint*uint64> =
-            if p1 <> 0UL && p2 <> 0UL then
-                simpleGraph.addEdge (i,p1) (i+1u,p2) g
-            else
-                g
-        let res = (i+1u,Image.fold2 (sliceFolder i) graph image1 image2)
-        image1.decRefCount()
-        image2.decRefCount()
-        res
-
-    let memoryNeed = id
-    let lengthTransformation = fun _ -> 1UL
-    let init = (0u, simpleGraph.empty)
-    Stage.fold $"{name}" folder init memoryNeed lengthTransformation
-
-let makeTranslationTable () : Stage<uint*simpleGraph.Graph<uint*uint64>,(uint*uint64*uint64) list> =
-    let name = "makeTranslationTable"
-    let mapper (debug: bool) (i: uint, graph:simpleGraph.Graph<uint*uint64>) = 
-        let cc = simpleGraph.connectedComponents graph
-        List.zip cc [1UL .. uint64 cc.Length]
-        |> List.collect (fun ( nodeLst, newVal) -> List.map (fun (chunk, oldVal) -> (chunk, oldVal, newVal)) nodeLst)
+    let toTranslationList translation =
+        translation
+        |> Map.toList
+        |> List.map (fun ((chunk, oldLabel), newLabel) -> chunk, oldLabel, newLabel)
         |> List.sort
 
-    let memoryNeed = id
-    let lengthTransformation = fun _ -> 1UL
-    let init = (0u, simpleGraph.empty)
-    Stage.map $"{name}" mapper memoryNeed lengthTransformation
+    let reducer (debug: bool) (input: AsyncSeq<Image<uint64> * uint64>) =
+        async {
+            let mutable previousBoundary : (uint * Image<uint64>) option = None
+            let mutable graph = simpleGraph.empty
+            let mutable chunkCounts = Map.empty<uint,uint64>
 
-let connectedComponentTranslationTable (winSz: uint) : Stage<Image<uint64>, (uint*uint64*uint64) list> =
-    connectedChunkNeighbours winSz
-    --> makeAdjacencyGraph ()
-    --> makeTranslationTable ()
+            do!
+                input
+                |> AsyncSeq.iterAsync (fun (labelChunk, objectCount) ->
+                    async {
+                        let chunk = uint (labelChunk.index / int winSz)
+                        chunkCounts <- chunkCounts |> Map.add chunk objectCount
+
+                        let firstSlice = ImageFunctions.extractSlice 2u 0 labelChunk
+
+                        match previousBoundary with
+                        | Some (previousChunk, previousSlice) when chunk = previousChunk + 1u ->
+                            graph <- addBoundaryEdges graph previousChunk previousSlice firstSlice
+                            previousSlice.decRefCount()
+                        | Some (_, previousSlice) ->
+                            previousSlice.decRefCount()
+                        | None -> ()
+
+                        firstSlice.decRefCount()
+
+                        let depth = labelChunk.GetDepth() |> int
+                        let lastSlice = ImageFunctions.extractSlice 2u (depth - 1) labelChunk
+                        labelChunk.decRefCount()
+                        previousBoundary <- Some (chunk, lastSlice)
+                    })
+
+            previousBoundary |> Option.iter (fun (_, image) -> image.decRefCount())
+
+            return
+                chunkCounts
+                |> makeBaseMap
+                |> collapseTouchingComponents graph
+                |> toTranslationList
+        }
+
+    let memoryNeed nPixels = 2UL * nPixels * uint64 sizeof<uint64>
+    let lengthTransformation = fun _ -> 1UL
+    Stage.reduce name reducer Streaming memoryNeed lengthTransformation
 
 let trd (_,_,c) = c
 
 let updateConnectedComponents (winSz: uint) (translationTable: (uint*uint64*uint64) list) : Stage<Image<uint64>,Image<uint64>> =
     let name = "updateConnectedComponents"
     let translationTableChunked = List.groupBy (fun (c,_,_) -> c) translationTable
-    let translationMap = List.map (fun (_,lst) -> (0u,0UL,0UL)::lst |> List.map (fun (_,i,j)->(i,j)) |> Map.ofList) translationTableChunked
+    let translationMap =
+        translationTableChunked
+        |> List.map (fun (chunk,lst) ->
+            let chunkTranslation =
+                (0u,0UL,0UL)::lst
+                |> List.map (fun (_,i,j)->(i,j))
+                |> Map.ofList
+            chunk, chunkTranslation)
+        |> Map.ofList
 
-    let mapper (debug: bool) (image: Image<uint64>) : Image<uint64> = 
-        let chunk = image.index/int winSz
+    let mapper (debug: bool) (sliceIndex: int64) (image: Image<uint64>) : Image<uint64> = 
+        let chunk = int sliceIndex / int winSz
         //let _,trans = translationTableChunked[chunk]
         //let res = Image.map (fun v -> if v=0UL then 0UL else trans |> List.find (fun (_,w,_) -> v = w) |> trd) image
-        let trans = translationMap[chunk]
-        let res = Image.map (fun v -> trans[v]) image
+        let trans = translationMap |> Map.tryFind (uint chunk) |> Option.defaultValue (Map.ofList [(0UL,0UL)])
+        let res = Image.map (fun v -> Map.find v trans) image
         image.decRefCount()
         res
 
     let memoryNeed = fun _ -> 2*sizeof<uint> |> uint64
     let lengthTransformation = id
-    Stage.map "updateConnectedComponents" mapper memoryNeed lengthTransformation
+    Stage.mapi "updateConnectedComponents" mapper memoryNeed lengthTransformation
 
 let permuteAxes (i: uint, j: uint, k: uint) (winSz: uint): Stage<Image<'T>,Image<'T>> =
     let name = "permuteAxes"

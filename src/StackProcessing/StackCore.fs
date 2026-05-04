@@ -125,6 +125,8 @@ let (>=>>) (pl: Plan<'In, 'S>) (stage1: Stage<'S, 'U>, stage2: Stage<'S, 'V>) : 
     Plan.(>=>>) (pl >=> incRef ()) (stg1, stg2)
 let (>>=>) = Plan.(>>=>)
 let (>>=>>) = Plan.(>>=>>)
+let teeFst = Stage.teeFst
+let teeSnd = Stage.teeSnd
 let ignoreSingles () : Stage<_,unit> = Stage.ignore (decIfImage>>ignore)
 let ignorePairs () : Stage<_,unit> = Stage.ignorePairs<_,unit> ((decIfImage>>ignore),(decIfImage>>ignore))
 let zeroMaker (index: int) (ex: Image<'S>) : Image<'S> = new Image<'S>(ex.GetSize(), 1u, "padding", index)

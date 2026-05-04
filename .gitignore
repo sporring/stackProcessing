@@ -36,3 +36,5 @@ samples/transpose/test1.tiff
 /samples/result18210
 *.json
 !/samples/*/*.json
+/samples/connectedComponents/tmp
+/samples/mask18
