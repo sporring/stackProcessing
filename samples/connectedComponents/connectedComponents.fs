@@ -36,7 +36,6 @@ let main arg =
     |> read<uint64> tmp tmpSuffix
     >=> updateConnectedComponents wsz transTbl
     >=> cast<uint64,uint8>
-    >=> scalarMulImage (255uy/3uy)
     >=> write output ".tiff"
     |> sink
 
