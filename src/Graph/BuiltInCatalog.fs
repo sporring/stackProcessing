@@ -275,7 +275,7 @@ module BuiltInCatalog =
           Aliases = [ "debug"; "trace"; "log"; "inspect" ]
           Inputs = [ makePort "Any" any ]
           Outputs = [ makePort "Any" any ]
-          Parameters = [] }
+          Parameters = [ makeParameter "label" "Label" "tap" BasicType.String ] }
 
         { Id = "Print"
           DisplayName = "print"

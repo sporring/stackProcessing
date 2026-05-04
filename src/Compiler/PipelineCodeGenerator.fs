@@ -275,37 +275,40 @@ module PipelineCodeGenerator =
         name, $"let {name} = {value}"
 
     let private savedElementLine (graph: SavedGraph) (nodesById: Map<string, SavedNode>) (scalarNamesByNodeId: Map<string, string>) (statsNamesByNodeId: Map<string, string>) (translationTableNamesByNodeId: Map<string, string>) (histogramNamesByNodeId: Map<string, string>) (node: SavedNode) =
-        let parameterExpression key =
-            node.Parameters
+        let parameterExpressionForNode (targetNode: SavedNode) key =
+            targetNode.Parameters
             |> Seq.tryFindIndex (fun parameter -> parameter.Key = key)
-            |> Option.map (fun index -> parameterExpression graph nodesById scalarNamesByNodeId statsNamesByNodeId translationTableNamesByNodeId histogramNamesByNodeId node index key)
+            |> Option.map (fun index -> parameterExpression graph nodesById scalarNamesByNodeId statsNamesByNodeId translationTableNamesByNodeId histogramNamesByNodeId targetNode index key)
             |> Option.defaultValue { Value = ""; IsLinked = false }
 
-        let dynamicParameterType key =
+        let parameterExpression key =
+            parameterExpressionForNode node key
+
+        let dynamicParameterTypeForNode (targetNode: SavedNode) key =
             let configuredNumericType () =
-                savedParamValue "type" node
+                savedParamValue "type" targetNode
                 |> NumericType.tryParse
                 |> Option.map BasicType.Numeric
 
-            match node.FunctionId, key with
+            match targetNode.FunctionId, key with
             | "ScalarOp", ("a" | "b") ->
                 configuredNumericType ()
             | id, "value" when isScalarImageFunction id ->
                 configuredNumericType ()
             | _ ->
-                BuiltInCatalog.tryFind node.FunctionId
+                BuiltInCatalog.tryFind targetNode.FunctionId
                 |> Option.bind (fun definition ->
                     definition.Parameters
                     |> Seq.tryFind (fun parameter -> parameter.Key = key)
                     |> Option.map _.Type)
 
-        let parameterValue key =
-            let expression = parameterExpression key
+        let parameterValueForNode targetNode key =
+            let expression = parameterExpressionForNode targetNode key
 
             if expression.IsLinked then
                 expression.Value
             else
-                match dynamicParameterType key with
+                match dynamicParameterTypeForNode targetNode key with
                 | Some(BasicType.Numeric numericType) ->
                     numericLiteral numericType expression.Value
                 | Some BasicType.Bool ->
@@ -318,14 +321,21 @@ module PipelineCodeGenerator =
                 | None ->
                     expression.Value
 
+        let parameterValue key =
+            parameterValueForNode node key
+
         let quotedParameter key =
             let expression = parameterExpression key
             if expression.IsLinked then expression.Value else quote expression.Value
 
-        let printInputName key index =
+        let stringParameter key =
+            let expression = parameterExpression key
+            if expression.IsLinked then $"(string {expression.Value})" else quote expression.Value
+
+        let printInputNameForNode (printNode: SavedNode) key index =
             graph.Edges
             |> Seq.tryFind (fun edge ->
-                edge.ToNode = node.Id
+                edge.ToNode = printNode.Id
                 && edge.ToKind = "parameterInput"
                 && edge.ToPort = index)
             |> Option.bind (fun edge ->
@@ -345,12 +355,18 @@ module PipelineCodeGenerator =
                     nodesById
                     |> Map.tryFind edge.FromNode
                     |> Option.map (fun sourceNode ->
-                        if sourceNode.FunctionId = "Scalar" then
+                        if sourceNode.FunctionId = "Tap" then
+                            "I"
+                        elif sourceNode.FunctionId = "Scalar" then
                             savedParamValue "type" sourceNode
                         else
                             sourceNode.FunctionId)
                 | _ ->
                     None)
+            |> Option.orElseWith (fun () ->
+                printNode.Parameters
+                |> Seq.tryFind (fun parameter -> parameter.Key = key)
+                |> Option.map _.Value)
             |> Option.map (fun name ->
                 let index = name.IndexOf(':')
 
@@ -360,6 +376,9 @@ module PipelineCodeGenerator =
                     name.Trim())
             |> Option.filter (String.IsNullOrWhiteSpace >> not)
             |> Option.defaultValue key
+
+        let printInputName key index =
+            printInputNameForNode node key index
 
         let interpolatedStringExpression (format: string) (inputs: (string * string * string) list) =
             let byName =
@@ -475,7 +494,69 @@ module PipelineCodeGenerator =
             let suffix = quotedParameter "suffix"
             $">=> write {output} {suffix}"
         | "Tap" ->
-            ">=> tap \"tap\""
+            let tapPrintNode =
+                graph.Edges
+                |> Array.choose (fun edge ->
+                    if edge.FromNode = node.Id
+                       && edge.FromKind = "scalarOutput"
+                       && edge.ToKind = "parameterInput" then
+                        nodesById |> Map.tryFind edge.ToNode
+                    else
+                        None)
+                |> Array.filter (fun candidate -> candidate.FunctionId = "Print")
+                |> Array.distinctBy _.Id
+                |> Array.tryHead
+
+            match tapPrintNode with
+            | Some printNode ->
+                let tapInputName =
+                    printNode.Parameters
+                    |> Seq.mapi (fun index parameter -> index, parameter)
+                    |> Seq.tryPick (fun (parameterIndex, parameter) ->
+                        if parameter.Key.StartsWith("input", StringComparison.Ordinal)
+                           && parameter.UseInput
+                           && graph.Edges
+                              |> Array.exists (fun edge ->
+                                  edge.ToNode = printNode.Id
+                                  && edge.ToKind = "parameterInput"
+                                  && edge.ToPort = parameterIndex
+                                  && edge.FromNode = node.Id
+                                  && edge.FromKind = "scalarOutput") then
+                            Some(printInputNameForNode printNode parameter.Key parameterIndex)
+                        else
+                            None)
+                    |> Option.defaultValue "I"
+
+                let tapVariable = safeIdentifier tapInputName
+
+                let inputs =
+                    printNode.Parameters
+                    |> Seq.mapi (fun index parameter -> index, parameter)
+                    |> Seq.choose (fun (parameterIndex, parameter) ->
+                        if parameter.Key.StartsWith("input", StringComparison.Ordinal) && parameter.UseInput then
+                            let expression =
+                                graph.Edges
+                                |> Array.tryFind (fun edge ->
+                                    edge.ToNode = printNode.Id
+                                    && edge.ToKind = "parameterInput"
+                                    && edge.ToPort = parameterIndex)
+                                |> Option.bind (fun edge ->
+                                    if edge.FromNode = node.Id && edge.FromKind = "scalarOutput" then
+                                        Some tapVariable
+                                    else
+                                        Some(parameterValueForNode printNode parameter.Key))
+                                |> Option.defaultValue (parameterValueForNode printNode parameter.Key)
+
+                            Some(parameter.Key, printInputNameForNode printNode parameter.Key parameterIndex, expression)
+                        else
+                            None)
+                    |> Seq.toList
+
+                let format = interpolatedStringExpression (savedParamValue "format" printNode) inputs
+                $">=> tapIt (fun {tapVariable} -> {format})"
+            | None ->
+                let label = stringParameter "label"
+                $">=> tap {label}"
         | "Print" ->
             let inputs =
                 node.Parameters
@@ -627,6 +708,19 @@ module PipelineCodeGenerator =
         let dataEdges =
             graph.Edges
             |> Array.filter (fun edge -> edge.FromKind <> "scalarOutput" && edge.ToKind <> "parameterInput")
+
+        let printNodesUsedByTap =
+            graph.Edges
+            |> Array.choose (fun edge ->
+                if edge.FromKind = "scalarOutput" && edge.ToKind = "parameterInput" then
+                    match nodesById |> Map.tryFind edge.FromNode, nodesById |> Map.tryFind edge.ToNode with
+                    | Some sourceNode, Some targetNode when sourceNode.FunctionId = "Tap" && targetNode.FunctionId = "Print" ->
+                        Some targetNode.Id
+                    | _ ->
+                        None
+                else
+                    None)
+            |> Set.ofArray
 
         let bindingNameForOutput edge =
             match edge.FromKind with
@@ -809,6 +903,7 @@ module PipelineCodeGenerator =
                 |> Array.filter (fun node ->
                     node.FunctionId <> "Scalar"
                     && node.FunctionId <> "ScalarOp"
+                    && not (printNodesUsedByTap |> Set.contains node.Id)
                     && not (statsNamesByNodeId |> Map.containsKey node.Id)
                     && not (translationTableNamesByNodeId |> Map.containsKey node.Id)
                     && not (histogramNamesByNodeId |> Map.containsKey node.Id)

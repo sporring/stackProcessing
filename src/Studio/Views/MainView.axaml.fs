@@ -260,20 +260,26 @@ type MainView() as this =
                 None)
 
     let assignedParameterInputSourceName (drawing: DrawingNodeViewModel) (inputPin: PipelinePinViewModel) =
-        let beforeColon (value: string) =
+        let sourceName (value: string) =
             let index = value.IndexOf(':')
 
             if index > 0 then
                 value.Substring(0, index).Trim()
             else
-                value.Trim()
+                let trimmed = value.Trim()
+                let spaceIndex = trimmed.IndexOf(' ')
+
+                if spaceIndex > 0 then
+                    trimmed.Substring(0, spaceIndex).Trim()
+                else
+                    trimmed
 
         drawing.Connectors
         |> Seq.tryPick (fun connector ->
             if Object.ReferenceEquals(connector.End, inputPin) then
                 match connector.Start with
                 | :? PipelinePinViewModel as startPin ->
-                    let name = beforeColon startPin.Port.Name
+                    let name = sourceName startPin.Name
                     if String.IsNullOrWhiteSpace name then None else Some name
                 | _ ->
                     None
@@ -291,11 +297,27 @@ type MainView() as this =
                 | [| numericType |] -> NumericType.toString numericType
                 | _ -> "Number"
 
+            let streamName = $"I: {name}"
+
             node.Pins
             |> Seq.choose (function
-                | :? PipelinePinViewModel as pin when pin.Kind = DataInput || pin.Kind = DataOutput -> Some pin
+                | :? PipelinePinViewModel as pin when pin.Kind = DataInput || pin.Kind = DataOutput || pin.Kind = ScalarOutput -> Some pin
                 | _ -> None)
-            |> Seq.iter (fun pin -> pin.Name <- name))
+            |> Seq.iter (fun pin -> pin.Name <- streamName)
+
+            let hasTapItOutputConnection =
+                drawing.Connectors
+                |> Seq.exists (fun connector ->
+                    match connector.Start with
+                    | :? PipelinePinViewModel as startPin ->
+                        Object.ReferenceEquals(startPin.Parent, node)
+                        && startPin.Kind = ScalarOutput
+                    | _ ->
+                        false)
+
+            node.State.Parameters
+            |> Seq.tryFind (fun parameter -> parameter.Key = "label")
+            |> Option.iter (fun parameter -> parameter.IsValueEnabled <- not hasTapItOutputConnection))
 
         drawing.Nodes
         |> Seq.choose (function

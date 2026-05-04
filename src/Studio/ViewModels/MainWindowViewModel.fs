@@ -121,6 +121,18 @@ module private PortMapping =
         { Name = $"{key}: Any"
           Type = Any }
 
+    let portTypeLabel portType =
+        match portType with
+        | Scalar basicType -> BasicType.toString basicType
+        | Image numericType -> NumericType.toString numericType
+        | Custom label -> label
+        | Tuple _ -> "Tuple"
+        | Any -> "Any"
+        | Unit -> "Unit"
+
+    let streamValueName portType =
+        $"I: {portTypeLabel portType}"
+
 module private NodeTitle =
     let quotedString (value: string) =
         "\"" + value.Replace("\\", "\\\\").Replace("\"", "\\\"") + "\""
@@ -599,8 +611,10 @@ type PipelineNodeViewModel(
             match kind, port.Type with
             | ParameterInput, _ -> port.Name
             | ScalarOutput, Scalar basicType -> BasicType.toString basicType
+            | ScalarOutput, _ when state.Definition.Id = "Tap" -> PortMapping.streamValueName port.Type
             | ScalarOutput, _ -> port.Name
             | ReducerOutput, _ -> port.Name
+            | DataOutput, Image _ -> PortMapping.streamValueName port.Type
             | DataInput, _
             | DataOutput, _ -> port.Name
 
@@ -766,6 +780,8 @@ type PipelineNodeViewModel(
                 PortMapping.customParameterPort parameter.Key "TranslationTable"
             elif state.Definition.Id = "Print" && PrintNode.isInputKey parameter.Key then
                 PortMapping.anyParameterPort parameter.Key
+            elif state.Definition.Id = "Tap" && parameter.Key = "label" then
+                PortMapping.anyParameterPort parameter.Key
             else
                 PortMapping.parameterPort parameter
 
@@ -853,6 +869,17 @@ type PipelineNodeViewModel(
                     verticalPinPosition portIndex outputs.Length
 
             addPipelinePin x y alignment kind None port |> ignore)
+
+        if state.Definition.Id = "Tap" then
+            addPipelinePin
+                (this.Width / 2.)
+                nodeHeight
+                PinAlignment.Bottom
+                ScalarOutput
+                None
+                { Name = "Number"
+                  Type = Any }
+            |> ignore
 
         let parameters = state.Parameters |> Seq.toList
 
