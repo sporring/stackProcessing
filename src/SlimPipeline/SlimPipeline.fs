@@ -410,6 +410,91 @@ module ResourceOps =
     let memoryOf (ops: ResourceOps<'T>) (value: 'T) =
         ops.MemoryOf value
 
+type PipelineGraphNode =
+    { Id: int
+      Name: string
+      Transition: ProfileTransition }
+
+type PipelineGraphEdge =
+    { From: int
+      To: int
+      Label: string }
+
+type PipelineGraph =
+    { Nodes: PipelineGraphNode list
+      Edges: PipelineGraphEdge list
+      Entries: int list
+      Exits: int list }
+
+module PipelineGraph =
+    let private nextNodeId =
+        let mutable current = 0
+        fun () ->
+            current <- current + 1
+            current
+
+    let empty =
+        { Nodes = []
+          Edges = []
+          Entries = []
+          Exits = [] }
+
+    let singleton name transition =
+        let id = nextNodeId()
+        { Nodes =
+            [ { Id = id
+                Name = name
+                Transition = transition } ]
+          Edges = []
+          Entries = [ id ]
+          Exits = [ id ] }
+
+    let merge left right =
+        { Nodes = left.Nodes @ right.Nodes
+          Edges = left.Edges @ right.Edges
+          Entries =
+            match left.Entries, right.Entries with
+            | [], entries -> entries
+            | entries, [] -> entries
+            | entries, _ -> entries
+          Exits =
+            match right.Exits, left.Exits with
+            | [], exits -> exits
+            | exits, [] -> exits
+            | exits, _ -> exits }
+
+    let connect label left right =
+        let connectorEdges =
+            [ for fromNode in left.Exits do
+                for toNode in right.Entries do
+                    yield { From = fromNode; To = toNode; Label = label } ]
+
+        { Nodes = left.Nodes @ right.Nodes
+          Edges = left.Edges @ connectorEdges @ right.Edges
+          Entries =
+            if left.Entries.IsEmpty then right.Entries else left.Entries
+          Exits =
+            if right.Exits.IsEmpty then left.Exits else right.Exits }
+
+    let appendNode label name transition graph =
+        connect label graph (singleton name transition)
+
+    let compose left right =
+        connect ">=>" left right
+
+    let parallelJoin label left right =
+        let merged = merge left right
+        let join = singleton label (ProfileTransition.create Streaming Streaming)
+        let connectorEdges =
+            [ for fromNode in merged.Exits do
+                for toNode in join.Entries do
+                    yield { From = fromNode; To = toNode; Label = label } ]
+
+        { Nodes = merged.Nodes @ join.Nodes
+          Edges = merged.Edges @ connectorEdges @ join.Edges
+          Entries = merged.Entries
+          Exits = join.Exits }
+
 /// Stage describes *what* should be done: 
 type Stage<'S,'T> =
     { Name       : string
@@ -417,6 +502,7 @@ type Stage<'S,'T> =
       Transition : ProfileTransition // The transformation of the transition profile
       MemoryNeed : MemoryNeedWrapped // calculate the memory needed to process a specified number of element
       LengthTransformation : LengthTransformation // the transformation of the length of the sequence of elements
+      Graph: PipelineGraph
       Cleaning: (unit->unit) list // Functions to be called at sink/drain/flush
       } 
 
@@ -424,10 +510,25 @@ module Stage =
 
     let create<'S,'T> (name: string) (build: unit->Pipe<'S,'T>) (transition: ProfileTransition) (memoryNeed: MemoryNeed) (lengthTransformation: LengthTransformation) (cleaning: (unit->unit) list) =
         let wrapMemoryNeed = SingleOrPair.sum >> SingleOrPair.fst >> memoryNeed >> Single
-        { Name = name; Build = build; Transition = transition; MemoryNeed = wrapMemoryNeed; LengthTransformation = lengthTransformation; Cleaning = cleaning}
+        { Name = name
+          Build = build
+          Transition = transition
+          MemoryNeed = wrapMemoryNeed
+          LengthTransformation = lengthTransformation
+          Graph = PipelineGraph.singleton name transition
+          Cleaning = cleaning}
 
     let createWrapped<'S,'T> (name: string) (build: unit->Pipe<'S,'T>) (transition: ProfileTransition) (wrapMemoryNeed: MemoryNeedWrapped) (lengthTransformation: LengthTransformation) (cleaning: (unit->unit) list) =
-        { Name = name; Build = build; Transition = transition; MemoryNeed = wrapMemoryNeed; LengthTransformation = lengthTransformation; Cleaning = cleaning}
+        { Name = name
+          Build = build
+          Transition = transition
+          MemoryNeed = wrapMemoryNeed
+          LengthTransformation = lengthTransformation
+          Graph = PipelineGraph.singleton name transition
+          Cleaning = cleaning}
+
+    let private withGraph graph stage =
+        { stage with Graph = graph }
 
     let empty (name: string) =
         let build () = Pipe.empty name
@@ -446,6 +547,7 @@ module Stage =
         let memoryNeed nElems = SingleOrPair.add (stage1.MemoryNeed nElems) (stage2.MemoryNeed nElems)
         let lengthTransformation = stage1.LengthTransformation >> stage2.LengthTransformation
         createWrapped $"{stage2.Name} o {stage1.Name}" build transition memoryNeed lengthTransformation (stage2.Cleaning@stage1.Cleaning)
+        |> withGraph (PipelineGraph.compose stage1.Graph stage2.Graph)
 
     let (-->) = compose
 
@@ -453,11 +555,13 @@ module Stage =
         let build () = Pipe.prepend name (pre.Build ())
         let transition = ProfileTransition.create Streaming Streaming
         createWrapped name build transition pre.MemoryNeed pre.LengthTransformation pre.Cleaning
+        |> withGraph (PipelineGraph.appendNode "prepend" name transition pre.Graph)
 
     let append (name: string) (app: Stage<unit,'S>) : Stage<'S,'S> =
         let build () = Pipe.append name (app.Build ())
         let transition = ProfileTransition.create Streaming Streaming
         createWrapped name build transition app.MemoryNeed app.LengthTransformation app.Cleaning
+        |> withGraph (PipelineGraph.appendNode "append" name transition app.Graph)
 
     let idStage<'T> (name: string) : Stage<'T, 'T> = // I don't think this is used
         let build () = Pipe.id name
@@ -500,16 +604,19 @@ module Stage =
         let build () = Pipe.map name f (stage.Build())
         let transition = ProfileTransition.create Streaming Streaming
         create name build transition memoryNeed lengthTransformation []
+        |> withGraph (PipelineGraph.appendNode "map" name transition stage.Graph)
 
     let map2 (name: string) (debug: bool) (f: 'U -> 'V -> 'W) (stage1: Stage<'In, 'U>) (stage2: Stage<'In, 'V>) (memoryNeed: MemoryNeedWrapped) (lengthTransformation: LengthTransformation) : Stage<'In, 'W> =
         let build () = Pipe.map2 name debug f (stage1.Build ()) (stage2.Build ())
         let transition = ProfileTransition.create Streaming Streaming
         createWrapped name build transition memoryNeed lengthTransformation (stage1.Cleaning@stage2.Cleaning)
+        |> withGraph (PipelineGraph.parallelJoin name stage1.Graph stage2.Graph)
 
     let map2Sync (name: string) (debug: bool) (f: 'U -> 'V -> 'W) (stage1: Stage<'In, 'U>) (stage2: Stage<'In, 'V>) (memoryNeed: MemoryNeedWrapped) (lengthTransformation: LengthTransformation) : Stage<'In, 'W> =
         let build () = Pipe.map2Sync name debug f (stage1.Build ()) (stage2.Build ())
         let transition = ProfileTransition.create Streaming Streaming
         createWrapped name build transition memoryNeed lengthTransformation (stage1.Cleaning@stage2.Cleaning)
+        |> withGraph (PipelineGraph.parallelJoin name stage1.Graph stage2.Graph)
 
     let teeFst (stage: Stage<'A, 'A>) : Stage<'A * 'B, 'A * 'B> =
         if stage.Transition.From <> Streaming || stage.Transition.To <> Streaming then
@@ -539,6 +646,7 @@ module Stage =
             Pair(leftNeed, 0UL)
 
         createWrapped $"teeFst ({stage.Name})" build (ProfileTransition.create Streaming Streaming) memoryNeed id stage.Cleaning
+        |> withGraph (PipelineGraph.appendNode "teeFst" $"teeFst ({stage.Name})" (ProfileTransition.create Streaming Streaming) stage.Graph)
 
     let teeSnd (stage: Stage<'B, 'B>) : Stage<'A * 'B, 'A * 'B> =
         if stage.Transition.From <> Streaming || stage.Transition.To <> Streaming then
@@ -568,6 +676,7 @@ module Stage =
             Pair(0UL, rightNeed)
 
         createWrapped $"teeSnd ({stage.Name})" build (ProfileTransition.create Streaming Streaming) memoryNeed id stage.Cleaning
+        |> withGraph (PipelineGraph.appendNode "teeSnd" $"teeSnd ({stage.Name})" (ProfileTransition.create Streaming Streaming) stage.Graph)
 
     let reduce (name: string) (reducer: bool -> AsyncSeq<'In> -> Async<'Out>) (profile: Profile) (memoryNeed: MemoryNeed) (lengthTransformation: LengthTransformation) : Stage<'In, 'Out> =
         let build () = Pipe.reduce name reducer profile
@@ -659,6 +768,7 @@ module Stage =
 // Plan flow controler
 type Plan<'S,'T> = { 
     stage          : Stage<'S,'T> option // the function to be applied, when the plan is run
+    graph          : PipelineGraph // the analyzable graph built while the DSL is composed
     nElemsPerSlice : SingleOrPair // number of elments (pixels) before transformation - this could be single or pair
     length         : uint64 // length of the sequence, the plan is applied to
     memAvail       : uint64 // memory available for the plan
@@ -666,11 +776,17 @@ type Plan<'S,'T> = {
     debug          : bool }
 
 module Plan =
+    let private graphOfStage stage =
+        stage |> Option.map (fun stg -> stg.Graph) |> Option.defaultValue PipelineGraph.empty
+
     let create<'S,'T when 'T: equality> (stage: Stage<'S,'T> option) (memAvail : uint64) (memPeak: uint64) (nElemsPerSlice: uint64) (length: uint64) (debug: bool) : Plan<'S, 'T> =
-        { stage = stage; memAvail = memAvail; memPeak = memPeak; nElemsPerSlice = Single nElemsPerSlice; length = length; debug = debug }
+        { stage = stage; graph = graphOfStage stage; memAvail = memAvail; memPeak = memPeak; nElemsPerSlice = Single nElemsPerSlice; length = length; debug = debug }
 
     let createWrapped<'S,'T when 'T: equality> (stage: Stage<'S,'T> option) (memAvail : uint64) (memPeak: uint64) (nElemsPerSlice: SingleOrPair) (length: uint64) (debug: bool) : Plan<'S, 'T> =
-        { stage = stage; memAvail = memAvail; memPeak = memPeak; nElemsPerSlice = nElemsPerSlice; length = length; debug = debug }
+        { stage = stage; graph = graphOfStage stage; memAvail = memAvail; memPeak = memPeak; nElemsPerSlice = nElemsPerSlice; length = length; debug = debug }
+
+    let graph (pl: Plan<'S,'T>) =
+        pl.graph
 
     //////////////////////////////////////////////////
     /// Source type operators
@@ -786,7 +902,7 @@ module Plan =
     let sink (pl: Plan<unit, unit>) : unit =
         if not pl.debug && (pl.memPeak > pl.memAvail) then
             failwith $"Not enough memory for the plan {pl.memPeak} > {pl.memAvail}"
-        if pl.debug then printfn $"[sink] Transform plan to pipeline"
+        if pl.debug then printfn $"[sink] Transform plan graph with {pl.graph.Nodes.Length} nodes / {pl.graph.Edges.Length} edges to pipeline"
         let pipeline = Option.map (fun stage -> Stage.toPipe stage ()) pl.stage
         if pl.debug then printfn $"[sink] Running pipeline with an estimated {pl.memPeak/1024UL} / {pl.memAvail/1024UL} KB of memory use"
         Option.map (Pipe.run pl.debug) pipeline |> ignore
@@ -805,7 +921,7 @@ module Plan =
         let res = 
             match stage with
                 Some stg -> 
-                    if pl.debug then printfn $"[{name}] Transform plan to pipeline"
+                    if pl.debug then printfn $"[{name}] Transform plan graph with {pl.graph.Nodes.Length} nodes / {pl.graph.Edges.Length} edges to pipeline"
                     let pipeline = stg.Build ()
                     if pl.debug then printfn $"[{name}] Running pipeline with an estimated {pl.memPeak/1024UL} / {pl.memAvail/1024UL} KB memory use" 
                     AsyncSeq.singleton () |> pipeline.Apply pl.debug |> reducer |> Async.RunSynchronously
