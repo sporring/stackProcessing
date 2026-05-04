@@ -60,9 +60,16 @@ type Profile = SlimPipeline.Profile
 
 type ProfileTransition = SlimPipeline.ProfileTransition
 
+type ResourceOps<'T> = SlimPipeline.ResourceOps<'T>
+
 type Image<'S when 'S: equality> = Image.Image<'S>
 
 val getMem: unit -> unit
+
+val imageResourceOps<'S when 'S: equality> :
+  ResourceOps<Image<'S>> when 'S: equality
+
+val releaseAfterWith: ops: ResourceOps<'S> -> f: ('S -> 'T) -> value: 'S -> 'T
 
 val incIfImage: x: 'a -> 'a
 
@@ -298,7 +305,7 @@ val liftUnaryReleaseAfter:
     f: (StackCore.Image<'S> -> StackCore.Image<'T>) ->
     memoryNeed: SlimPipeline.MemoryNeed ->
     lengthTransformation: SlimPipeline.LengthTransformation ->
-    SlimPipeline.Stage<#StackCore.Image<'S>,StackCore.Image<'T>>
+    SlimPipeline.Stage<StackCore.Image<'S>,StackCore.Image<'T>>
     when 'S: equality and 'T: equality
 
 val getBytesPerComponent<'T> : uint64
@@ -320,7 +327,7 @@ val memNeeded<'T> : nTimes: uint64 -> nElems: uint64 -> uint64
 
 val add:
   image: StackCore.Image<'T> ->
-    SlimPipeline.Stage<#StackCore.Image<'T>,StackCore.Image<'T>>
+    SlimPipeline.Stage<StackCore.Image<'T>,StackCore.Image<'T>>
     when 'T: equality
 
 val addPair:
@@ -337,7 +344,7 @@ val inline imageAddScalar:
 
 val sub:
   image: StackCore.Image<'T> ->
-    SlimPipeline.Stage<#StackCore.Image<'T>,StackCore.Image<'T>>
+    SlimPipeline.Stage<StackCore.Image<'T>,StackCore.Image<'T>>
     when 'T: equality
 
 val subPair:
@@ -354,7 +361,7 @@ val inline imageSubScalar:
 
 val mul:
   image: StackCore.Image<'T> ->
-    SlimPipeline.Stage<#StackCore.Image<'T>,StackCore.Image<'T>>
+    SlimPipeline.Stage<StackCore.Image<'T>,StackCore.Image<'T>>
     when 'T: equality
 
 val mulPair:
@@ -371,7 +378,7 @@ val inline imageMulScalar:
 
 val div:
   image: StackCore.Image<'T> ->
-    SlimPipeline.Stage<#StackCore.Image<'T>,StackCore.Image<'T>>
+    SlimPipeline.Stage<StackCore.Image<'T>,StackCore.Image<'T>>
     when 'T: equality
 
 val divPair:
@@ -594,13 +601,13 @@ val momentsThreshold:
 
 val threshold:
   a: float ->
-    b: float -> SlimPipeline.Stage<#StackCore.Image<'b>,StackCore.Image<uint8>>
-    when 'b: equality
+    b: float -> SlimPipeline.Stage<StackCore.Image<'a>,StackCore.Image<uint8>>
+    when 'a: equality
 
 val addNormalNoise:
   a: float ->
-    b: float -> SlimPipeline.Stage<#StackCore.Image<'b>,StackCore.Image<'b>>
-    when 'b: equality
+    b: float -> SlimPipeline.Stage<StackCore.Image<'a>,StackCore.Image<'a>>
+    when 'a: equality
 
 val ImageConstantPad<'T when 'T: equality> :
   padLower: uint list ->
@@ -788,9 +795,16 @@ type Profile = SlimPipeline.Profile
 
 type ProfileTransition = SlimPipeline.ProfileTransition
 
+type ResourceOps<'T> = SlimPipeline.ResourceOps<'T>
+
 type Image<'S when 'S: equality> = Image.Image<'S>
 
 val getMem: (unit -> unit)
+
+val imageResourceOps<'S when 'S: equality> :
+  StackCore.ResourceOps<StackCore.Image<'S>> when 'S: equality
+
+val releaseAfterWith: (StackCore.ResourceOps<'a> -> ('a -> 'b) -> 'a -> 'b)
 
 val incIfImage: ('a -> 'a)
 
@@ -990,7 +1004,7 @@ val liftUnaryReleaseAfter:
      (StackCore.Image<'a> -> StackCore.Image<'b>) ->
      SlimPipeline.MemoryNeed ->
      SlimPipeline.LengthTransformation ->
-     SlimPipeline.Stage<#StackCore.Image<'a>,StackCore.Image<'b>>)
+     SlimPipeline.Stage<StackCore.Image<'a>,StackCore.Image<'b>>)
     when 'a: equality and 'b: equality
 
 val getBytesPerComponent<'T> : uint64
@@ -1007,7 +1021,7 @@ val memNeeded<'T> : (uint64 -> uint64 -> uint64)
 
 val add:
   (StackCore.Image<'a> ->
-     SlimPipeline.Stage<#StackCore.Image<'a>,StackCore.Image<'a>>)
+     SlimPipeline.Stage<StackCore.Image<'a>,StackCore.Image<'a>>)
     when 'a: equality
 
 val addPair:
@@ -1028,7 +1042,7 @@ val inline imageAddScalar<^T
 
 val sub:
   (StackCore.Image<'a> ->
-     SlimPipeline.Stage<#StackCore.Image<'a>,StackCore.Image<'a>>)
+     SlimPipeline.Stage<StackCore.Image<'a>,StackCore.Image<'a>>)
     when 'a: equality
 
 val subPair:
@@ -1049,7 +1063,7 @@ val inline imageSubScalar<^T
 
 val mul:
   (StackCore.Image<'a> ->
-     SlimPipeline.Stage<#StackCore.Image<'a>,StackCore.Image<'a>>)
+     SlimPipeline.Stage<StackCore.Image<'a>,StackCore.Image<'a>>)
     when 'a: equality
 
 val mulPair:
@@ -1070,7 +1084,7 @@ val inline imageMulScalar<^T
 
 val div:
   (StackCore.Image<'a> ->
-     SlimPipeline.Stage<#StackCore.Image<'a>,StackCore.Image<'a>>)
+     SlimPipeline.Stage<StackCore.Image<'a>,StackCore.Image<'a>>)
     when 'a: equality
 
 val divPair:
@@ -1286,13 +1300,12 @@ val momentsThreshold:
 
 val threshold:
   (float ->
-     float -> SlimPipeline.Stage<#StackCore.Image<'b>,StackCore.Image<uint8>>)
-    when 'b: equality
+     float -> SlimPipeline.Stage<StackCore.Image<'a>,StackCore.Image<uint8>>)
+    when 'a: equality
 
 val addNormalNoise:
-  (float ->
-     float -> SlimPipeline.Stage<#StackCore.Image<'b>,StackCore.Image<'b>>)
-    when 'b: equality
+  (float -> float -> SlimPipeline.Stage<StackCore.Image<'a>,StackCore.Image<'a>>)
+    when 'a: equality
 
 val ImageConstantPad<'T when 'T: equality> :
   (uint list ->

@@ -6,10 +6,13 @@ open StackCore
 type Stage<'S,'T> = SlimPipeline.Stage<'S,'T>
 type Profile = SlimPipeline.Profile
 type ProfileTransition = SlimPipeline.ProfileTransition
+type ResourceOps<'T> = SlimPipeline.ResourceOps<'T>
 //type Slice<'S when 'S: equality> = Slice.Slice<'S>
 type Image<'S when 'S: equality> = Image.Image<'S>
 
 let getMem = StackCore.getMem
+let imageResourceOps<'S when 'S: equality> = StackCore.imageResourceOps<'S>
+let releaseAfterWith = StackCore.releaseAfterWith
 let incIfImage = StackCore.incIfImage
 let incRef = StackCore.incRef
 let decIfImage = StackCore.decIfImage

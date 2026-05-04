@@ -388,6 +388,28 @@ type MemoryNeed = uint64->uint64
 type MemoryNeedWrapped = SingleOrPair -> SingleOrPair
 type LengthTransformation = uint64 -> uint64
 
+type ResourceOps<'T> =
+    { Retain : 'T -> unit
+      Release : 'T -> unit
+      MemoryOf : 'T -> uint64 option }
+
+module ResourceOps =
+
+    let none<'T> : ResourceOps<'T> =
+        { Retain = fun (_: 'T) -> ()
+          Release = fun (_: 'T) -> ()
+          MemoryOf = fun (_: 'T) -> None }
+
+    let retainAndReturn (ops: ResourceOps<'T>) (value: 'T) =
+        ops.Retain value
+        value
+
+    let release (ops: ResourceOps<'T>) (value: 'T) =
+        ops.Release value
+
+    let memoryOf (ops: ResourceOps<'T>) (value: 'T) =
+        ops.MemoryOf value
+
 /// Stage describes *what* should be done: 
 type Stage<'S,'T> =
     { Name       : string
@@ -518,6 +540,17 @@ module Stage =
         let build ()= Pipe.liftRelease name Streaming release f
         let transition = ProfileTransition.create Streaming Streaming
         create name build transition memoryNeed lengthTransformation []
+
+    let retainWith<'T> (name: string) (ops: ResourceOps<'T>) : Stage<'T, 'T> =
+        liftUnary name (ResourceOps.retainAndReturn ops) (fun _ -> 0UL) id
+
+    let releaseWith<'T> (name: string) (ops: ResourceOps<'T>) : Stage<'T, unit> =
+        let build () = Pipe.ignore (ResourceOps.release ops)
+        let transition = ProfileTransition.create Streaming Unit
+        create name build transition id id []
+
+    let liftResourceUnary<'S,'T> (name: string) (ops: ResourceOps<'S>) (f: 'S -> 'T) (memoryNeed: MemoryNeed) (lengthTransformation: LengthTransformation) : Stage<'S, 'T> =
+        liftReleaseUnary name (ResourceOps.release ops) f memoryNeed lengthTransformation
 
 (*
     let liftWindowed<'S,'T when 'S: equality and 'T: equality> (name: string) (window: uint) (pad: uint) (zeroMaker: int->'S->'S) (stride: uint) (emitStart: uint) (emitCount: uint) (f: 'S list -> 'T list) (memoryNeed: MemoryNeed) (lengthTransformation: LengthTransformation) : Stage<'S, 'T> =

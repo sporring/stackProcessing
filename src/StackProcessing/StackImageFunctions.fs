@@ -6,7 +6,7 @@ open StackIO
 
 let liftUnary name  = Stage.liftReleaseUnary name ignore
 let liftUnaryReleaseAfter (name: string) (f: Image<'S> -> Image<'T>) (memoryNeed: MemoryNeed) (lengthTransformation: LengthTransformation) = 
-    Stage.liftReleaseUnary name (decIfImage>>ignore) f memoryNeed lengthTransformation
+    Stage.liftResourceUnary name imageResourceOps f memoryNeed lengthTransformation
 
 let getBytesPerComponent<'T> = (typeof<'T> |> Image.getBytesPerComponent |> uint64)
 
