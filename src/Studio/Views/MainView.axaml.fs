@@ -17,7 +17,7 @@ open Avalonia.Layout
 open Avalonia.Platform.Storage
 open Avalonia.VisualTree
 open Avalonia.Controls.PanAndZoom
-open Graph
+open Studio.Graph
 open NodeEditor.Controls
 open NodeEditor.Model
 open NodeEditor.Mvvm

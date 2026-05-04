@@ -4,7 +4,7 @@
              xmlns:paz="using:Avalonia.Controls.PanAndZoom"
              xmlns:vm="using:Studio.ViewModels"
              xmlns:models="using:Studio.Models"
-             xmlns:graph="using:Graph"
+             xmlns:graph="using:Studio.Graph"
              x:Class="Studio.Views.MainView"
              x:Name="Root"
              x:DataType="vm:MainWindowViewModel">
@@ -208,12 +208,7 @@
                              Background="#FFFFFF"
                              EnablePan="True"
                              EnableZoom="False"
-                             EnableKeyboardNavigation="True"
-                             KeyboardPanStep="64"
                              PanButton="Middle"
-                             BoundsMode="FillViewport"
-                             AutoCalculateMinZoom="True"
-                             WheelBehavior="None"
                              Stretch="None"
                              HorizontalAlignment="Stretch"
                              VerticalAlignment="Stretch">

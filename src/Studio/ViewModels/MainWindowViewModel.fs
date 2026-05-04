@@ -11,8 +11,8 @@ open System.Runtime.CompilerServices
 open System.Text.RegularExpressions
 open System.Windows.Input
 open Avalonia.Threading
-open Compiler
-open Graph
+open Studio.Compiler
+open Studio.Graph
 open NodeEditor.Mvvm
 open NodeEditor.Model
 open Studio.Models

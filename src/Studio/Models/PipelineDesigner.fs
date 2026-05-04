@@ -2,7 +2,7 @@ namespace Studio.Models
 
 open Avalonia.Media
 open CommunityToolkit.Mvvm.ComponentModel
-open Graph
+open Studio.Graph
 open System.Collections.ObjectModel
 
 [<AllowNullLiteral>]

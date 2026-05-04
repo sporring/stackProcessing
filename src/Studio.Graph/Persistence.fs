@@ -1,4 +1,4 @@
-namespace Graph
+namespace Studio.Graph
 
 open System.IO
 open System.Text
