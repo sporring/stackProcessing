@@ -206,6 +206,8 @@ module Stage =
         stage2: Stage<'In,'V> ->
         memoryNeed: MemoryNeedWrapped ->
         lengthTransformation: LengthTransformation -> Stage<'In,'W>
+    val teeFst: stage: Stage<'A,'A> -> Stage<('A * 'B),('A * 'B)>
+    val teeSnd: stage: Stage<'B,'B> -> Stage<('A * 'B),('A * 'B)>
     val reduce:
       name: string ->
         reducer: (bool -> FSharp.Control.AsyncSeq<'In> -> Async<'Out>) ->

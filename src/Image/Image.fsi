@@ -376,8 +376,13 @@ val binaryOpening: radius: uint -> (Image.Image<uint8> -> Image.Image<uint8>)
 val binaryClosing: radius: uint -> (Image.Image<uint8> -> Image.Image<uint8>)
 /// Fill holes in binary regions
 val binaryFillHoles: img: Image.Image<uint8> -> Image.Image<uint8>
+type ConnectedComponentsResult =
+    {
+      Labels: Image.Image<uint64>
+      ObjectCount: uint64
+    }
 /// Connected components labeling
-val connectedComponents: img: Image.Image<uint8> -> Image.Image<uint64>
+val connectedComponents: img: Image.Image<uint8> -> ConnectedComponentsResult
 /// Relabel components by size, optionally remove small objects
 val relabelComponents:
   minObjectSize: uint -> (Image.Image<'T> -> Image.Image<'T>) when 'T: equality

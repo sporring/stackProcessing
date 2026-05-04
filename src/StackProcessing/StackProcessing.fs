@@ -29,6 +29,8 @@ let promoteStreamingToWindow = StackCore.promoteStreamingToWindow
 let (>=>>) = StackCore.(>=>>)
 let (>>=>) = StackCore.(>>=>)
 let (>>=>>) = StackCore.(>>=>>)
+let teeFst = StackCore.teeFst
+let teeSnd = StackCore.teeSnd
 let ignoreSingles = StackCore.ignoreSingles
 let ignorePairs = StackCore.ignorePairs
 let zeroMaker = StackCore.zeroMaker
@@ -157,11 +159,8 @@ let srcPlan = StackImageFunctions.srcPlan
 let zero<'T when 'T: equality>= StackImageFunctions.zero<'T>
 let createByEuler2DTransform<'T when 'T: equality>= StackImageFunctions.createByEuler2DTransform<'T>
 let empty = StackImageFunctions.empty
-let getConnectedChunkNeighbours = StackImageFunctions.getConnectedChunkNeighbours
-let connectedChunkNeighbours = StackImageFunctions.connectedChunkNeighbours
-let makeAdjacencyGraph = StackImageFunctions.makeAdjacencyGraph
-let makeTranslationTable = StackImageFunctions.makeTranslationTable
-let connectedComponentTranslationTable = StackImageFunctions.connectedComponentTranslationTable
+let writeChunkSlices = StackImageFunctions.writeChunkSlices
+let makeConnectedComponentTranslationTable = StackImageFunctions.makeConnectedComponentTranslationTable
 let trd = StackImageFunctions.trd
 let updateConnectedComponents = StackImageFunctions.updateConnectedComponents
 let permuteAxes = StackImageFunctions.permuteAxes

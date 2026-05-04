@@ -15,6 +15,7 @@ module BuiltInCatalog =
   let imageFloat64 = PortType.Image NumericType.Float64
   let imageComplex = PortType.Image NumericType.Complex
   let translationTable = PortType.Custom "TranslationTable"
+  let connectedComponentLabels = PortType.Tuple(imageUInt64, PortType.Scalar(BasicType.Numeric UInt64))
 
   let private makePort name portType =
       { Name = name
@@ -254,6 +255,18 @@ module BuiltInCatalog =
               [ makeParameter "output" "Output" "output" BasicType.String
                 makeParameter "suffix" "Suffix" ".tiff" BasicType.String ] }
 
+        { Id = "WriteChunkSlices"
+          DisplayName = "writeChunkSlices"
+          Category = "Sources / Sinks"
+          Description = "Write connected-component label chunks slice-by-slice and pass labels plus object counts through unchanged."
+          Aliases = [ "output"; "save"; "chunks"; "labels"; "connected"; "components"; "side effect" ]
+          Inputs = [ makePort "Labels + count" connectedComponentLabels ]
+          Outputs = [ makePort "Labels + count" connectedComponentLabels ]
+          Parameters =
+              [ makeParameter "output" "Output" "tmp" BasicType.String
+                makeParameter "suffix" "Suffix" ".mha" BasicType.String
+                makeParameter "windowSize" "Window size" "8" (BasicType.Numeric UInt32) ] }
+
         { Id = "WriteInChunks"
           DisplayName = "writeInChunks"
           Category = "Sources / Sinks"
@@ -466,15 +479,15 @@ module BuiltInCatalog =
           Description = "Label connected binary components."
           Aliases = [ "components"; "labels"; "segmentation" ]
           Inputs = [ makePort "UInt8" imageUInt8 ]
-          Outputs = [ makePort "UInt64" imageUInt64 ]
+          Outputs = [ makePort "Labels + count" connectedComponentLabels ]
           Parameters = [ makeParameter "windowSize" "Window size" "3" (BasicType.Numeric UInt32) ] }
 
         { Id = "ComponentTranslationTable"
           DisplayName = "componentTranslationTable"
           Category = "Segmentation"
-          Description = "Reduce a UInt64 connected-component label stream to a chunk translation table."
+          Description = "Reduce connected-component label chunks plus object counts to a chunk translation table."
           Aliases = [ "connected"; "components"; "translation"; "table"; "reducer"; "labels" ]
-          Inputs = [ makePort "UInt64" imageUInt64 ]
+          Inputs = [ makePort "Labels + count" connectedComponentLabels ]
           Outputs = [ makePort "TranslationTable" translationTable ]
           Parameters = [ makeParameter "windowSize" "Window size" "3" (BasicType.Numeric UInt32) ] }
 

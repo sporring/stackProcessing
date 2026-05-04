@@ -493,6 +493,11 @@ module PipelineCodeGenerator =
             let output = quotedParameter "output"
             let suffix = quotedParameter "suffix"
             $">=> write {output} {suffix}"
+        | "WriteChunkSlices" ->
+            let output = quotedParameter "output"
+            let suffix = quotedParameter "suffix"
+            let windowSize = parameterValue "windowSize"
+            $">=> teeFst (writeChunkSlices {output} {suffix} {windowSize})"
         | "Tap" ->
             let tapPrintNode =
                 graph.Edges
@@ -630,7 +635,7 @@ module PipelineCodeGenerator =
             $">=> connectedComponents {windowSize}"
         | "ComponentTranslationTable" ->
             let windowSize = parameterValue "windowSize"
-            $">=> connectedComponentTranslationTable {windowSize}"
+            $">=> makeConnectedComponentTranslationTable {windowSize}"
         | "CollapseComponentLabels" ->
             let windowSize = parameterValue "windowSize"
             let translationTable = parameterValue "translationTable"

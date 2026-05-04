@@ -132,6 +132,12 @@ val (>>=>>) :
      SlimPipeline.Stage<('a * 'b),('c * 'd)> -> SlimPipeline.Plan<'e,('c * 'd)>)
     when 'c: equality and 'd: equality
 
+val teeFst:
+  (SlimPipeline.Stage<'a,'a> -> SlimPipeline.Stage<('a * 'b),('a * 'b)>)
+
+val teeSnd:
+  (SlimPipeline.Stage<'a,'a> -> SlimPipeline.Stage<('b * 'a),('b * 'a)>)
+
 val ignoreSingles: unit -> Stage<'a,unit>
 
 val ignorePairs: unit -> Stage<('a * unit),unit>
@@ -576,7 +582,8 @@ val binaryFillHoles:
   winSz: uint -> SlimPipeline.Stage<StackCore.Image<uint8>,Image.Image<uint8>>
 
 val connectedComponents:
-  winSz: uint -> SlimPipeline.Stage<StackCore.Image<uint8>,Image.Image<uint64>>
+  winSz: uint ->
+    SlimPipeline.Stage<StackCore.Image<uint8>,(StackCore.Image<uint64> * uint64)>
 
 val relabelComponents:
   a: uint ->
@@ -658,31 +665,16 @@ val createByEuler2DTransform:
 
 val empty: pl: SlimPipeline.Plan<unit,unit> -> SlimPipeline.Plan<unit,unit>
 
-val getConnectedChunkNeighbours:
-  inputDir: string ->
+val writeChunkSlices:
+  outputDir: string ->
     suffix: string ->
-    winSz: uint ->
-    pl: SlimPipeline.Plan<unit,unit> ->
-    SlimPipeline.Plan<unit,(StackCore.Image<uint64> * StackCore.Image<uint64>)>
+    winSz: uint -> StackCore.Stage<StackCore.Image<'T>,StackCore.Image<'T>>
+    when 'T: equality
 
-val connectedChunkNeighbours:
+val makeConnectedComponentTranslationTable:
   winSz: uint ->
-    StackCore.Stage<StackCore.Image<uint64>,
-                    (StackCore.Image<uint64> * StackCore.Image<uint64>)>
-
-val makeAdjacencyGraph:
-  unit ->
-    StackCore.Stage<(StackCore.Image<uint64> * StackCore.Image<uint64>),
-                    (uint * simpleGraph.Graph<uint * uint64>)>
-
-val makeTranslationTable:
-  unit ->
-    StackCore.Stage<(uint * simpleGraph.Graph<uint * uint64>),
+    StackCore.Stage<(StackCore.Image<uint64> * uint64),
                     (uint * uint64 * uint64) list>
-
-val connectedComponentTranslationTable:
-  winSz: uint ->
-    StackCore.Stage<StackCore.Image<uint64>,(uint * uint64 * uint64) list>
 
 val trd: 'a * 'b * c: 'c -> 'c
 
@@ -865,6 +857,12 @@ val (>>=>>) :
      SlimPipeline.Plan<'e,('a * 'b)> ->
      SlimPipeline.Stage<('a * 'b),('c * 'd)> -> SlimPipeline.Plan<'e,('c * 'd)>)
     when 'c: equality and 'd: equality
+
+val teeFst:
+  (SlimPipeline.Stage<'a,'a> -> SlimPipeline.Stage<('a * 'b),('a * 'b)>)
+
+val teeSnd:
+  (SlimPipeline.Stage<'a,'a> -> SlimPipeline.Stage<('b * 'a),('b * 'a)>)
 
 val ignoreSingles: (unit -> StackCore.Stage<'a,unit>)
 
@@ -1277,7 +1275,9 @@ val binaryFillHoles:
   (uint -> SlimPipeline.Stage<StackCore.Image<uint8>,Image.Image<uint8>>)
 
 val connectedComponents:
-  (uint -> SlimPipeline.Stage<StackCore.Image<uint8>,Image.Image<uint64>>)
+  (uint ->
+     SlimPipeline.Stage<StackCore.Image<uint8>,
+                        (StackCore.Image<uint64> * uint64)>)
 
 val relabelComponents:
   (uint -> uint -> SlimPipeline.Stage<StackCore.Image<'a>,Image.Image<'a>>)
@@ -1356,31 +1356,15 @@ val createByEuler2DTransform<'T when 'T: equality> :
 
 val empty: (SlimPipeline.Plan<unit,unit> -> SlimPipeline.Plan<unit,unit>)
 
-val getConnectedChunkNeighbours:
+val writeChunkSlices:
   (string ->
-     string ->
-     uint ->
-     SlimPipeline.Plan<unit,unit> ->
-     SlimPipeline.Plan<unit,(StackCore.Image<uint64> * StackCore.Image<uint64>)>)
+     string -> uint -> StackCore.Stage<StackCore.Image<'a>,StackCore.Image<'a>>)
+    when 'a: equality
 
-val connectedChunkNeighbours:
+val makeConnectedComponentTranslationTable:
   (uint ->
-     StackCore.Stage<StackCore.Image<uint64>,
-                     (StackCore.Image<uint64> * StackCore.Image<uint64>)>)
-
-val makeAdjacencyGraph:
-  (unit ->
-     StackCore.Stage<(StackCore.Image<uint64> * StackCore.Image<uint64>),
-                     (uint * simpleGraph.Graph<uint * uint64>)>)
-
-val makeTranslationTable:
-  (unit ->
-     StackCore.Stage<(uint * simpleGraph.Graph<uint * uint64>),
+     StackCore.Stage<(StackCore.Image<uint64> * uint64),
                      (uint * uint64 * uint64) list>)
-
-val connectedComponentTranslationTable:
-  (uint ->
-     StackCore.Stage<StackCore.Image<uint64>,(uint * uint64 * uint64) list>)
 
 val trd: ('a * 'b * 'c -> 'c)
 
