@@ -1,259 +1,468 @@
-
 # FSharp.StackProcessing
 
-> **Namespace:** `FSharp`
-> **Module:** `StackProcessing`
-> **Purpose:** Memory-efficient, sequence-based 3D image processing pipelines built on top of `SlimPipeline`, connected seamlessly with the `Image` module.
+`StackProcessing` is a toolkit for larger-than-memory image processing in F#.
+It combines a streaming execution core (`SlimPipeline`), image-stack operations
+(`StackProcessing` and `Image`), and a visual graph editor (`Studio`).
 
- 
-
-## Overview
-
-`StackProcessing` provides a **functional, streaming abstraction** for constructing large-scale image processing pipelines.
-
-It allows users to define a flow like:
+The central idea is simple: describe an image-processing workflow as a graph or
+pipeline, then execute it slice by slice or chunk by chunk so that memory use
+stays bounded.
 
 ```fsharp
+open StackProcessing
+
+let availableMemory = 2UL * 1024UL * 1024UL * 1024UL
+
 source availableMemory
-|> read<float> "input" ".tiff"
+|> read<float> "image18" ".tiff"
 >=> discreteGaussian 1.0 None None (Some 15u)
 >=> cast<float,uint8>
->=> write "output" ".tiff"
+>=> write "result18" ".tiff"
 |> sink
 ```
 
-Each pipeline consists of:
+Nothing runs while the pipeline is being built. Execution starts only when
+`sink`, `drain`, or another terminal operation is called.
 
-* A **source** of image data (typically a stack of TIFF slices),
-* A sequence of **plans** (`>=>` operator) transforming data,
-* A final **sink** that consumes or writes the processed results.
+## Projects
 
- 
+| Project | Role |
+| ------- | ---- |
+| `Image` | Thin F# image abstraction over SimpleITK, including typed pixel access and image functions. |
+| `AsyncSeqExtensions` | Streaming helpers used by the pipeline engine. |
+| `SlimPipeline` | Element-agnostic streaming pipeline model, graph metadata, memory estimates, and execution. |
+| `StackProcessing` | Image-stack implementation of `SlimPipeline`: read, write, filters, reducers, visualization helpers. |
+| `Studio.Graph` | Pure graph domain model, built-in function catalog, and JSON persistence for Studio. |
+| `Studio.Compiler` | Compiler from Studio graph JSON to executable StackProcessing F# DSL code. |
+| `Studio` | Avalonia visual editor for building, saving, arranging, compiling, and running processing graphs. |
 
-## Key Concepts
+## Studio For Users
 
-### `Plan<'S, 'T>`
+Studio is the visual way to build StackProcessing programs. It is intended to
+let a user compose useful larger-than-memory image workflows without writing F#
+by hand.
 
-A **plan** represents one processing step, transforming a stream of items of type `'S` into `'T`.
-Plans are composable, enabling streaming dataflow pipelines that minimize memory usage.
+From the user's point of view, a Studio graph is a recipe: boxes describe where
+data comes from, what processing should happen, what scalar values or statistics
+are used as parameters, and where results should be written, printed, or shown.
+
+The main screen contains:
+
+| Area | Purpose |
+| ---- | ------- |
+| Palette | Searchable list of available boxes grouped by category. |
+| Graph | The workspace where boxes are connected into a pipeline. |
+| Parameters | Settings for the selected box. Many parameters can be supplied either as typed values or from graph input pins. |
+| Output | Generated program text, build output, run output, and debug messages. |
+| Overview | Small minimap of the graph canvas and current viewport. |
+
+### Basic Workflow
+
+1. Drag boxes from the Palette into the Graph.
+2. Connect compatible triangle pins.
+3. Select a box and adjust its Parameters.
+4. Use `Save As` or `Save` to store the graph as JSON.
+5. Press `Run` to generate F#, build it in a temporary run area, execute it, and stream output back to the Output panel.
+
+`Load`, `Clear`, and window closing warn before discarding unsaved work. `Save`
+is enabled only after a filename has been supplied by `Load` or `Save As`, and
+only when the graph is dirty.
+
+### Boxes And Pins
+
+Studio distinguishes between data streams and scalar parameters.
+
+| Pin kind | Direction | Meaning |
+| -------- | --------- | ------- |
+| Left/right white triangles | horizontal | Streaming image or tuple data. |
+| Top brown triangles | downward into a box | Parameter inputs, such as filenames, sigma, thresholds, or scalar operands. |
+| Bottom brown triangles | downward out of a box | Scalar or reducer outputs, such as constants, statistics fields, or translation tables. |
+
+Parameter pins are optional unless a box declares them as always-on. If a
+parameter is connected from the graph, its text field is disabled and the
+generated code uses the connected value.
+
+### Common Box Categories
+
+| Category | Examples |
+| -------- | -------- |
+| Sources / Sinks | `read`, `readRandom`, `zero`, `write`, `writeThrough`, `scalar` |
+| Arithmetic | `scalarOp`, `imageOpScalar`, `scalarOpImage`, `imageOpImage`, `maxOfPair`, `minOfPair` |
+| Filters | `discreteGaussian`, `convGauss`, `finiteDiff` |
+| Segmentation | `threshold`, morphology, connected-component stages |
+| Statistics | `computeStats`, `addNormalNoise` |
+| Visualization | `histogram`, `chart`, `showImage` |
+| Debug | `tap`, `print` |
+
+Many boxes are generic: for example `read` has a type dropdown instead of one
+separate box per pixel type. When a box is connected, Studio restricts type
+choices to values compatible with the existing connection.
+
+Studio also tries to catch structural mistakes while the graph is being built.
+It rejects incompatible pin types, cycles, and reducer/streaming combinations
+that would require holding a full image stream in memory before a downstream
+streaming path can continue.
+
+### Run Output
+
+Pressing `Run` currently:
+
+1. Shows `Compiling` while the graph is translated to F# DSL text.
+2. Creates or reuses a temporary build directory.
+3. Shows `Building` while a small runner project is built.
+4. Shows `Run` while the generated program executes.
+5. Shows `Completed` when execution exits successfully.
+6. Appends generated code, build logs, and program output to the Output panel.
+
+This keeps the generated program visible for debugging while making Studio a
+one-button path from graph to execution.
+
+## Studio Design
+
+Studio is deliberately split into three layers.
+
+### `Studio.Graph`
+
+`Studio.Graph` is the pure model used by Studio. It has no Avalonia dependency.
+It defines:
 
 ```fsharp
-type Plan<'S,'T> = SlimPipeline.Plan<'S,'T>
+type NumericType =
+    | Number | UInt8 | Int8 | UInt16 | Int16
+    | UInt32 | Int32 | UInt64 | Int64
+    | Float32 | Float64 | Complex
+
+type BasicType =
+    | Numeric of NumericType
+    | Bool
+    | String
+    | Map
+    | Unit
+
+type PortType =
+    | Image of NumericType
+    | Scalar of BasicType
+    | Tuple of PortType * PortType
+    | Custom of string
+    | Any
+    | Unit
 ```
 
-### `Pipeline<'In,'Out>`
+The catalog in `BuiltInCatalog.fs` describes all boxes available in the Palette:
+their ids, display names, categories, ports, parameters, aliases, and defaults.
 
-A complete dataflow, created from a source and extended via the composition operators:
-
-* `>=>`:  append a plan to a pipeline
-* `-->`:  compose two plans
-* `|>`:   attach a source or a sink to a pipeline
-
- 
-
-## Pipeline Composition Operators
-
-| Operator | Description |
-| -------- | ----------- |
-| `>=>`    | Append a plan to an existing pipeline. (`Pipeline<'a,'b> -> Plan<'b,'c> -> Pipeline<'a,'c>`)                                           |
-| `-->`    | Compose two plans directly. (`Plan<'a,'b> -> Plan<'b,'c> -> Plan<'a,'c>`)                                                            |
-| `>=>>`   | Parallelize two branches from the same pipeline source. (`Pipeline<'In,'S> -> (Plan<'S,'U> * Plan<'S,'V>) -> Pipeline<'In,('U * 'V)>`) |
-| `>>=>`   | Combine paired results using a binary function. (`Pipeline<'a,('b * 'c)> -> ('b -> 'c -> 'd) -> Pipeline<'a,'d>`)                        |
-| `>>=>>`  | Combine a function producing pairs with another plan transforming pairs.                                                                |
-
-These operators let users declaratively build complex, memory-aware workflows.
-
- 
-
-## Core Pipeline Components
-
-### `source`
+The persistence model is intentionally separate from the runtime view model:
 
 ```fsharp
-val source : (uint64 -> SlimPipeline.Pipeline<unit, unit>)
+type SavedNode =
+    { Id: string
+      FunctionId: string
+      X: float
+      Y: float
+      Parameters: SavedParameter array }
+
+type SavedEdge =
+    { FromNode: string
+      FromKind: string
+      FromPort: int
+      ToNode: string
+      ToKind: string
+      ToPort: int }
+
+type SavedGraph =
+    { Version: int
+      Nodes: SavedNode array
+      Edges: SavedEdge array }
 ```
 
-Creates a pipeline source with the specified **memory budget** (in bytes).
+This JSON format is the stable boundary between Studio's UI and the compiler.
 
-Example:
+### `Studio.Compiler`
+
+`Studio.Compiler` turns a `SavedGraph` into StackProcessing F# code. It resolves:
+
+* box ids to StackProcessing functions,
+* graph edges to pipeline composition,
+* scalar boxes to `let` bindings,
+* reducer outputs such as `ImageStats0.Mean`,
+* linked parameter pins,
+* branch and pair syntax such as `>=>>`, `zip`, and `>>=>`,
+* print and tap formatting,
+* terminal `sink` or `drain` calls.
+
+The compiler also orders generated `let` bindings so that F# lexical scope is
+respected. For example, if a string scalar is used by both `read` and
+`readRandom`, its binding is emitted before either dependent pipeline.
+
+The compiler is also where compact visual boxes are expanded back to the lower
+level DSL. For example, an `imageOpImage` box with operator `*` becomes the
+corresponding pair operation in generated F#, and a chart box expands to the
+Plotly.NET helper code needed for the selected chart kind.
+
+### `Studio`
+
+The Avalonia project is responsible for interaction:
+
+* Palette search and drag creation.
+* Node selection and multi-selection.
+* Group movement with canvas-boundary clamping.
+* Type-aware connection highlighting.
+* Connection guards, including cycle detection and reducer-stream misuse.
+* Arrange and fit-view commands.
+* Save/load/dirty-state workflow.
+* Pan, zoom, minimap, and Output panel behavior.
+* Running the compiler and external `dotnet` build/run process.
+
+Studio's UI code should stay a shell around `Studio.Graph` and
+`Studio.Compiler`; graph semantics and code generation should not live in
+Avalonia view code.
+
+## SlimPipeline Design
+
+`SlimPipeline` is the element-agnostic streaming engine. It does not know about
+images, SimpleITK, TIFF files, or Studio. Its job is to model and execute typed
+streams with bounded memory.
+
+### `Pipe<'S,'T>`
+
+A `Pipe` is the executable form:
 
 ```fsharp
-let src = source (2UL * 1024UL * 1024UL * 1024UL) // 2 GB
+type Pipe<'S,'T> =
+    { Name: string
+      Apply: bool -> AsyncSeq<'S> -> AsyncSeq<'T>
+      Profile: Profile }
 ```
 
- 
+It contains the actual function that transforms an `AsyncSeq<'S>` into an
+`AsyncSeq<'T>`.
 
-### `sink`
+### `Stage<'S,'T>`
+
+A `Stage` is the abstract description used while building the DSL:
 
 ```fsharp
-val sink : SlimPipeline.Pipeline<unit,unit> -> unit
+type Stage<'S,'T> =
+    { Name: string
+      Build: unit -> Pipe<'S,'T>
+      Transition: ProfileTransition
+      MemoryNeed: MemoryNeedWrapped
+      LengthTransformation: uint64 -> uint64
+      Graph: PipelineGraph
+      Cleaning: (unit -> unit) list }
 ```
 
-Executes the pipeline, pulling data from the source through all connected plans.
-It is the terminal operator. Nothing is processed until the sink runs.
+The distinction matters:
 
-Example:
+* `Stage` is analyzable and composable.
+* `Pipe` is executable.
+* `sink` and `drain` transform a `Stage` into a `Pipe` and run it.
+
+This separation prepares the codebase for future optimization passes over the
+abstract graph before execution.
+
+### Pipeline Graph Metadata
+
+As the DSL is composed, SlimPipeline now builds a graph:
 
 ```fsharp
-pipeline |> sink
+type PipelineGraphNode =
+    { Id: int
+      Name: string
+      Transition: ProfileTransition }
+
+type PipelineGraphEdge =
+    { From: int
+      To: int
+      Label: string }
+
+type PipelineGraph =
+    { Nodes: PipelineGraphNode list
+      Edges: PipelineGraphEdge list
+      Entries: int list
+      Exits: int list }
 ```
 
- 
+This graph is not yet the final optimizer, but it is the foundation for one.
+It records composition, branching, joining, and stage boundaries while keeping
+the runtime `Pipe` path intact.
 
-### `map`
+### Profiles And Memory
+
+`Profile` describes how much stream context a stage needs:
 
 ```fsharp
-val map : f:('a -> 'b) -> Plan<'a,'b>
+type Profile =
+    | Unit
+    | Constant
+    | Streaming
+    | Window of uint * uint * uint * uint * uint
 ```
 
-Applies a pure function to each element in the stream.
-Acts as the functional `map` lifted to a streaming context.
+`Streaming` means an element can be processed independently. `Window` means
+neighbouring elements must be held together. Reducers move from streaming input
+to constant output.
 
-Example:
+Each stage also has:
+
+* `MemoryNeed`: estimate of required memory for a slice or pair of slices.
+* `LengthTransformation`: estimate of stream length after the stage.
+* `Cleaning`: delayed cleanup actions run after terminal operations.
+
+### `ResourceOps<'T>`
+
+Memory release is explicit because larger-than-memory image processing cannot
+wait for the .NET GC to notice that large native images are no longer useful.
 
 ```fsharp
->=> map (fun img -> img * 2.0)
+type ResourceOps<'T> =
+    { Retain: 'T -> unit
+      Release: 'T -> unit
+      MemoryOf: 'T -> uint64 option }
 ```
 
- 
+`SlimPipeline` stays functional: resource behavior is passed as a record of
+functions, not through an inheritance hierarchy. `StackProcessing` supplies
+image-specific operations that increment and decrement image reference counts.
 
-### `window`
+### `Plan<'S,'T>`
+
+A `Plan` is the user's partially built pipeline:
 
 ```fsharp
-val window :
-    windowSize:uint ->
-    pad:uint ->
-    stride:uint ->
-    Plan<Image<'a>, Image<'a> list>
+type Plan<'S,'T> =
+    { stage: Stage<'S,'T> option
+      graph: PipelineGraph
+      nElemsPerSlice: SingleOrPair
+      length: uint64
+      memAvail: uint64
+      memPeak: uint64
+      debug: bool }
 ```
 
-Converts a stream of 2D image slices into a **sliding window** of 3D image chunks.
-Useful for localized processing (e.g., convolution or denoising across slices).
+The source creates an empty plan. Composition operators add stages. Terminal
+operators build and execute the final pipe.
 
-Example:
+### SlimPipeline Operators
+
+| Operator | Purpose |
+| -------- | ------- |
+| `>=>` | Append a stage to a plan. |
+| `-->` | Compose two stages directly. |
+| `>=>>` | Split one stream into two synchronized branches. |
+| `zip` | Combine two compatible plans elementwise. |
+| `>>=>` | Combine paired results with a function. |
+| `teeFst` / `teeSnd` | Apply a side-effecting identity stage to one side of a pair. |
+
+`>>=>>` exists as an older synchronization idea, but current connected-component
+work prefers explicit tuple streams with `teeFst` and `teeSnd`.
+
+## StackProcessing Design
+
+`StackProcessing` specializes `SlimPipeline` for image stacks. It provides the
+user-facing F# DSL and binds generic stream operations to image operations.
+
+### Sources And Sinks
+
+Typical sources:
 
 ```fsharp
->=> window 5u 1u 1u
+read<'T> inputDir suffix
+readRandom<'T> depth inputDir suffix
+readChunks<'T> inputDir suffix
+zero<'T> width height depth
 ```
 
- 
-
-### `flatten`
+Typical sinks:
 
 ```fsharp
-val flatten : unit -> Plan<'a list,'a>
+write outputDir suffix
+writeInChunks outputDir suffix chunkX chunkY chunkZ
+sink
+drain
 ```
 
-Reverses `window` - flattens a list of items back into a single stream.
+`write` is a stage with the side effect of writing images. This allows variants
+such as write-through processing, where a value is written and still passed
+downstream.
 
- 
+### Image Stages
 
-### `releaseAfter` and `releaseAfter2`
+StackProcessing wraps image functions as `Stage`s:
 
-Automatically free image memory once a processing function completes, enabling efficient out-of-core computation.
+* image-image arithmetic: `addPair`, `subPair`, `mulPair`, `divPair`,
+* scalar-image operations: `imageAddScalar`, `imageMulScalar`,
+  `scalarDivImage`, etc.,
+* filters: `discreteGaussian`, `convGauss`, `finiteDiff`,
+* segmentation: `threshold`, morphology, connected components,
+* reducers: `computeStats`, histograms, connected-component translation tables,
+* debug and visualization: `tap`, `tapIt`, `print`, `show`, chart helpers.
 
-| Function                    | Description                                             |
-| --------------------------- | ------------------------------------------------------- |
-| `releaseAfter f img`        | Executes `f` on `img` and releases `img` afterward.     |
-| `releaseAfter2 f img1 img2` | Executes `f` on two images and releases both afterward. |
+Studio may present several of these concrete functions as one generic box with
+an operator or type dropdown. The generated code still targets the concrete
+StackProcessing DSL functions.
 
- 
+### Larger-Than-Memory Connected Components
 
-### `zip`
-
-```fsharp
-val zip :
-  (SlimPipeline.Pipeline<'a,'b> ->
-   SlimPipeline.Pipeline<'a,'c> ->
-   SlimPipeline.Pipeline<'a,('b * 'c)>)
-```
-
-Combines two pipelines elementwise, yielding paired outputs - analogous to `Seq.zip` but for streaming image data.
-
- 
-
-### `promoteStreamingToSliding`
+Connected components require two passes for large stacks. The current design is
+a linear tuple stream:
 
 ```fsharp
-val promoteStreamingToSliding :
-  name:string ->
-  winSz:uint -> pad:uint -> stride:uint ->
-  emitStart:uint -> emitCount:uint ->
-  plan:Plan<'T,'S> -> Plan<'T,'S>
-```
-
-Transforms a **streaming** plan into a **sliding-window** plan,
-enabling localized operations over streaming image stacks.
-
- 
-
-## Utility Plans
-
-| Function        | Description                                                                |
-| --------------- | -------------------------------------------------------------------------- |
-| `tap name`      | Inject a debugging/logging plan that prints or inspects elements.         |
-| `tapIt f`       | Tap plan with a custom element-to-string converter.                       |
-| `ignoreSingles` | Discard single-image elements in the stream.                               |
-| `ignorePairs`   | Discard paired tuples in the stream.                                       |
-| `zeroMaker`     | Create a zero-filled image of the same size and type as a reference image. |
-| `idOp`          | Identity plan with a name — useful for profiling or marking plans.       |
-
- 
-
-## Example: Building a Gaussian Filter Pipeline
-
-```fsharp
-open FSharp.StackProcessing
-
-let availableMemory = 2UL * 1024UL * 1024UL * 1024UL // 2 GB
-let sigma = 1.0
-let input, output = "image18", "result18"
+let transTbl =
+    source availableMemory
+    |> read<uint8> input ".tiff"
+    >=> threshold 128.0 infinity
+    >=> connectedComponents wsz
+    >=> teeFst (writeChunkSlices tmp ".mha" wsz)
+    >=> makeConnectedComponentTranslationTable wsz
+    |> drain
 
 source availableMemory
-|> read<float> input ".tiff"
->=> discreteGaussian sigma None None (Some 15u)
->=> cast<float,uint8>
+|> read<uint64> tmp ".mha"
+>=> updateConnectedComponents wsz transTbl
+>=> cast<uint64,uint8>
 >=> write output ".tiff"
 |> sink
 ```
 
-In this example:
+`connectedComponents` returns label chunks paired with object counts. The
+translation-table reducer uses chunk counts and boundary comparisons to build a
+total mapping. Temporary labels are stored losslessly, for example as `.mha`,
+before the second pass collapses labels and writes displayable output.
 
-* The input image is streamed slice by slice from disk.
-* Each slice is processed through a Gaussian filter.
-* The result is written back as a TIFF stack.
-* Memory never exceeds the specified budget.
+## Development And Tests
 
- 
+Test projects are split by layer:
 
-## Advanced: Parallel and Combined Processing
+| Test project | Focus |
+| ------------ | ----- |
+| `AsyncSeqExtensions.Tests` | Async sequence helpers. |
+| `SlimPipeline.Tests` | Profiles, resource ops, graph metadata, and basic execution. |
+| `Image.Tests` | Image abstraction and image functions. |
+| `Studio.Graph.Tests` | Graph domain, catalog, and persistence. |
+| `Studio.Compiler.Tests` | Graph-to-F# code generation. |
 
-You can branch and recombine pipelines:
+Useful commands:
 
-```fsharp
-source availableMemory
-|> read<float> input ".tiff"
->=>> (discreteGaussian sigma None None (Some 15u),
-      medianFilter 3u)
->>=> (fun gauss med -> gauss - med)
->=> write output ".tiff"
-|> sink
+```bash
+dotnet build StackProcessing.sln
+dotnet test tests/AsyncSeqExtensions.Tests/AsyncSeqExtensions.Tests.fsproj
+dotnet test tests/SlimPipeline.Tests/SlimPipeline.Tests.fsproj
+dotnet test tests/Studio.Graph.Tests/Studio.Graph.Tests.fsproj
+dotnet test tests/Studio.Compiler.Tests/Studio.Compiler.Tests.fsproj
+dotnet test tests/Image.Tests/Image.Tests.fsproj
 ```
-
-Here:
-
-* The input stream is split into two branches (Gaussian and Median filtering),
-* Their results are combined pixel-wise,
-* The final image is written to disk - all streaming safely.
-
- 
 
 ## Design Philosophy
 
-* **Functional composition:** pipelines are pure transformations of streams.
-* **Controlled memory footprint:** each plan releases data as soon as possible.
-* **Seamless IO:** TIFF stack reading/writing acts as the natural boundary between memory and disk.
-* **Hidden complexity:** the underlying `SlimPipeline` machinery is fully abstracted from the user.
+* Build pipelines as typed, composable descriptions before execution.
+* Keep `SlimPipeline` independent of images and UI.
+* Keep Studio's graph model and compiler independent of Avalonia.
+* Make memory ownership explicit for large native resources.
+* Prefer streaming and chunked algorithms over full-volume materialization.
+* Let users choose between visual programming in Studio and direct F# DSL code.
 
-## How to Cite
-* Sporring, J and Stansby, D; Larger than memory image processing, January 2026, [https://arxiv.org/abs/2601.18407](https://arxiv.org/abs/2601.18407)
+## How To Cite
+
+Sporring, J. and Stansby, D. Larger than memory image processing, January 2026,
+[https://arxiv.org/abs/2601.18407](https://arxiv.org/abs/2601.18407)
