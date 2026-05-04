@@ -33,7 +33,7 @@ let main arg =
 
     let transTbl =
         src
-        |> getConnectedChunkNeighbours (tmp) ".tiff" wsz
+        |> getConnectedChunkNeighbours tmp ".tiff" wsz
         >=> makeAdjacencyGraph ()
         //>=> tapIt (fun (i,g) -> sprintf "Vertices\n%A\nEdges\n%A\n" (g|>simpleGraph.vertices|>Set.toList|>List.sort) (g|>simpleGraph.edges|>Set.toList|>List.sort))
         >=> makeTranslationTable ()
