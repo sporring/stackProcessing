@@ -279,16 +279,16 @@ let convolve (outputRegionMode: OutputRegionMode option) (boundaryCondition: Bou
             let dimKer = ker.GetDimension()
             if dimImg <> dimKer then
                 failwith "Image and kernels must have the same number of dimensions"
-            if dimImg <> 3u then
-                failwith "Image must be 3-dimensional"
             let szImg = img.GetSize() |> fromVectorUInt32 |> List.map int
             let szKer = ker.GetSize() |> fromVectorUInt32 |> List.map int
             let szZip = List.zip szImg szKer
             let res =
                 if List.forall (fun (a,b) -> a >= b && b > 1) szZip then
                     f.Execute(img,ker)
-                else
+                elif dimImg = 3u then
                     convolve3 img ker outputRegionMode
+                else
+                    f.Execute(img,ker)
             res
         )
 

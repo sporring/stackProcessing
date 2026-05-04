@@ -110,31 +110,29 @@ module InternalHelpers = // internal
             | _ -> failwith $"Unsupported dimensionality {size.Length}"
 
     let setBoxedPixel (sitkImg: itk.simple.Image) (t: itk.simple.PixelIDValueEnum) (u: itk.simple.VectorUInt32) (value: obj) : unit =
-        if      t = fromType<uint8>                   then sitkImg.SetPixelAsUInt8(u, unbox value)
-        elif    t = fromType<int8>                    then sitkImg.SetPixelAsInt8(u, unbox value)
-        elif    t = fromType<uint16>                  then sitkImg.SetPixelAsUInt16(u, unbox value)
-        elif    t = fromType<int16>                   then sitkImg.SetPixelAsInt16(u, unbox value)
-        elif    t = fromType<uint32>                  then sitkImg.SetPixelAsUInt32(u, unbox value)
-        elif    t = fromType<int32>                  then sitkImg.SetPixelAsInt32(u, unbox value)
-        elif    t = fromType<uint64>                  then sitkImg.SetPixelAsUInt64(u, unbox value)
-        elif    t = fromType<int64>                  then sitkImg.SetPixelAsInt64(u, unbox value)
-        elif    t = fromType<float32>                 then sitkImg.SetPixelAsFloat(u, unbox value)
-        elif    t = fromType<float>                   then sitkImg.SetPixelAsDouble(u, unbox value)
-        elif    t = fromType<System.Numerics.Complex> then
-            let c = unbox<System.Numerics.Complex> value
-            let v = toVectorFloat64 [ c.Real; c.Imaginary ]
-            sitkImg.SetPixelAsVectorFloat64(u, v)
-        elif    t = fromType<uint8 list>              then sitkImg.SetPixelAsVectorUInt8(u, toVectorUInt8 (unbox value))
-        elif    t = fromType<int8 list>               then sitkImg.SetPixelAsVectorInt8(u, toVectorInt8 (unbox value))
-        elif    t = fromType<uint16 list>             then sitkImg.SetPixelAsVectorUInt16(u, toVectorUInt16 (unbox value))
-        elif    t = fromType<int16 list>              then sitkImg.SetPixelAsVectorInt16(u, toVectorInt16 (unbox value))
-        elif    t = fromType<uint32 list>             then sitkImg.SetPixelAsVectorUInt32(u, toVectorUInt32 (unbox value))
-        elif    t = fromType<int32 list>              then sitkImg.SetPixelAsVectorInt32(u, toVectorInt32 (unbox value))
-        elif    t = fromType<uint64 list>             then sitkImg.SetPixelAsVectorUInt64(u, toVectorUInt64 (unbox value))
-        elif    t = fromType<int64 list>              then sitkImg.SetPixelAsVectorInt64(u, toVectorInt64 (unbox value))
-        elif    t = fromType<float32 list>            then sitkImg.SetPixelAsVectorFloat32(u, toVectorFloat32 (unbox value))
-        elif    t = fromType<float list>              then sitkImg.SetPixelAsVectorFloat64(u, toVectorFloat64 (unbox value))
-        else failwithf "Unsupported pixel type: %O" t
+        match value with
+        | :? (uint8 list) as v -> sitkImg.SetPixelAsVectorUInt8(u, toVectorUInt8 v)
+        | :? (int8 list) as v -> sitkImg.SetPixelAsVectorInt8(u, toVectorInt8 v)
+        | :? (uint16 list) as v -> sitkImg.SetPixelAsVectorUInt16(u, toVectorUInt16 v)
+        | :? (int16 list) as v -> sitkImg.SetPixelAsVectorInt16(u, toVectorInt16 v)
+        | :? (uint32 list) as v -> sitkImg.SetPixelAsVectorUInt32(u, toVectorUInt32 v)
+        | :? (int32 list) as v -> sitkImg.SetPixelAsVectorInt32(u, toVectorInt32 v)
+        | :? (uint64 list) as v -> sitkImg.SetPixelAsVectorUInt64(u, toVectorUInt64 v)
+        | :? (int64 list) as v -> sitkImg.SetPixelAsVectorInt64(u, toVectorInt64 v)
+        | :? (float32 list) as v -> sitkImg.SetPixelAsVectorFloat32(u, toVectorFloat32 v)
+        | :? (float list) as v -> sitkImg.SetPixelAsVectorFloat64(u, toVectorFloat64 v)
+        | _ ->
+            if      t = fromType<uint8>                   then sitkImg.SetPixelAsUInt8(u, unbox value)
+            elif    t = fromType<int8>                    then sitkImg.SetPixelAsInt8(u, unbox value)
+            elif    t = fromType<uint16>                  then sitkImg.SetPixelAsUInt16(u, unbox value)
+            elif    t = fromType<int16>                   then sitkImg.SetPixelAsInt16(u, unbox value)
+            elif    t = fromType<uint32>                  then sitkImg.SetPixelAsUInt32(u, unbox value)
+            elif    t = fromType<int32>                  then sitkImg.SetPixelAsInt32(u, unbox value)
+            elif    t = fromType<uint64>                  then sitkImg.SetPixelAsUInt64(u, unbox value)
+            elif    t = fromType<int64>                  then sitkImg.SetPixelAsInt64(u, unbox value)
+            elif    t = fromType<float32>                 then sitkImg.SetPixelAsFloat(u, unbox value)
+            elif    t = fromType<float>                   then sitkImg.SetPixelAsDouble(u, unbox value)
+            else failwithf "Unsupported pixel type: %O" t
 
     let getBoxedPixel (img : itk.simple.Image) (t   : itk.simple.PixelIDValueEnum) (u   : itk.simple.VectorUInt32) : obj =
 
@@ -757,6 +755,26 @@ type Image<'T when 'T : equality>(sz: uint list, ?optionalNumberComponents: uint
                     let t = fromType<'T>
                     getBoxedPixel this.Image t u :?> System.Numerics.Complex
             unbox<'T> c
+        elif typeof<'T> = typeof<uint8 list> then
+            this.Image.GetPixelAsVectorUInt8(u) |> fromVectorUInt8 |> box :?> 'T
+        elif typeof<'T> = typeof<int8 list> then
+            this.Image.GetPixelAsVectorInt8(u) |> fromVectorInt8 |> box :?> 'T
+        elif typeof<'T> = typeof<uint16 list> then
+            this.Image.GetPixelAsVectorUInt16(u) |> fromVectorUInt16 |> box :?> 'T
+        elif typeof<'T> = typeof<int16 list> then
+            this.Image.GetPixelAsVectorInt16(u) |> fromVectorInt16 |> box :?> 'T
+        elif typeof<'T> = typeof<uint32 list> then
+            this.Image.GetPixelAsVectorUInt32(u) |> fromVectorUInt32 |> box :?> 'T
+        elif typeof<'T> = typeof<int32 list> then
+            this.Image.GetPixelAsVectorInt32(u) |> fromVectorInt32 |> box :?> 'T
+        elif typeof<'T> = typeof<uint64 list> then
+            this.Image.GetPixelAsVectorUInt64(u) |> fromVectorUInt64 |> box :?> 'T
+        elif typeof<'T> = typeof<int64 list> then
+            this.Image.GetPixelAsVectorInt64(u) |> fromVectorInt64 |> box :?> 'T
+        elif typeof<'T> = typeof<float32 list> then
+            this.Image.GetPixelAsVectorFloat32(u) |> fromVectorFloat32 |> box :?> 'T
+        elif typeof<'T> = typeof<float list> then
+            this.Image.GetPixelAsVectorFloat64(u) |> fromVectorFloat64 |> box :?> 'T
         else
             let t = fromType<'T>
             let raw = getBoxedPixel this.Image t u
@@ -775,8 +793,13 @@ type Image<'T when 'T : equality>(sz: uint list, ?optionalNumberComponents: uint
 
     member this.Set (coords: uint list) (value: 'T) : unit =
         let u = toVectorUInt32 coords
-        let t = fromType<'T>
-        setBoxedPixel this.Image t u value
+        if typeof<'T> = typeof<System.Numerics.Complex> then
+            let c = unbox<System.Numerics.Complex> value
+            let v = toVectorFloat64 [ c.Real; c.Imaginary ]
+            this.Image.SetPixelAsVectorFloat64(u, v)
+        else
+            let t = fromType<'T>
+            setBoxedPixel this.Image t u value
 
     member this.SetSlice (start0: int option, stop0: int option, start1: int option, stop1: int option, start2: int option, stop2: int option) (src: Image<'T>): unit=
         let filter = new itk.simple.PasteImageFilter()
