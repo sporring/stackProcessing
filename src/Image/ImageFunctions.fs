@@ -781,16 +781,9 @@ let directionalFFT (dir: uint) (image: Image<'T>) : Image<System.Numerics.Comple
         failwith $"directionalFFT: dir={dir} is out of range for {dims}D image"
     let size = image.GetSize()
     let input = ofCastItk<float> (image.toSimpleITK())
-
-    let output = new Image<System.Numerics.Complex>(size, 2u, "directionalFFT", image.index, true)
-
-    use extractor = new itk.simple.ExtractImageFilter()
-    let szExtract =
-        size |> List.mapi (fun i s -> if uint i = dir then 0u else s) |> toVectorUInt32
-    extractor.SetSize(szExtract)
-    extractor.SetDirectionCollapseToStrategy(itk.simple.ExtractImageFilter.DirectionCollapseToStrategyType.DIRECTIONCOLLAPSETOIDENTITY)
-
-    use fft = new itk.simple.ForwardFFTImageFilter()
+    let inputImage = Image<float>.ofSimpleITK(input, "directionalFFTInput", image.index)
+    let outputReal = new Image<float>(size, 1u, "directionalFFTReal", image.index, true)
+    let outputImag = new Image<float>(size, 1u, "directionalFFTImag", image.index, true)
 
     let dimInt = int dims
     let rec baseCoords i acc =
@@ -804,15 +797,22 @@ let directionalFFT (dir: uint) (image: Image<'T>) : Image<System.Numerics.Comple
                 |> List.collect (fun v -> baseCoords (i + 1) (v :: acc))
 
     let lineLength = size[int dir] |> int
+    let lineLengthFloat = float lineLength
     for baseCoord in baseCoords 0 [] do
-        let idx = baseCoord |> List.map int |> toVectorInt32
-        extractor.SetIndex(idx)
-        let line = extractor.Execute(input)
-        let complexLine = fft.Execute(line)
-        let lineImg = Image<System.Numerics.Complex>.ofSimpleITK(complexLine, "directionalFFTLine", image.index)
-        for k in 0 .. lineLength - 1 do
-            let value = lineImg.Get([uint k])
-            let coord = baseCoord |> List.mapi (fun i v -> if uint i = dir then uint k else v)
-            output.Set coord value
+        let line =
+            [| for n in 0 .. lineLength - 1 ->
+                let coord = baseCoord |> List.mapi (fun i v -> if uint i = dir then uint n else v)
+                inputImage.Get coord |]
 
-    output
+        for k in 0 .. lineLength - 1 do
+            let mutable re = 0.0
+            let mutable im = 0.0
+            for n in 0 .. lineLength - 1 do
+                let theta = -2.0 * System.Math.PI * float (k * n) / lineLengthFloat
+                re <- re + line[n] * cos theta
+                im <- im + line[n] * sin theta
+            let coord = baseCoord |> List.mapi (fun i v -> if uint i = dir then uint k else v)
+            outputReal.Set coord re
+            outputImag.Set coord im
+
+    Image<float>.ofImagePairToComplex outputReal outputImag

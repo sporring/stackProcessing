@@ -24,9 +24,9 @@ module InternalHelpers =
     val fromVectorInt64: v: itk.simple.VectorInt64 -> int64 list
     val fromVectorFloat32: v: itk.simple.VectorFloat -> float32 list
     val fromVectorFloat64: v: itk.simple.VectorDouble -> float list
-    val fromComplexFloat32: c: System.Numerics.Complex -> float32 list
-    val fromComplexFloat64: c: System.Numerics.Complex -> float list
     val fromType<'T> : itk.simple.PixelIDValueEnum
+    val isComplexPixelId: pid: itk.simple.PixelIDValueEnum -> bool
+    val isComplexCompatibleImage: itkImg: itk.simple.Image -> bool
     val ofCastItk<'T> : itkImg: itk.simple.Image -> itk.simple.Image
     val array2dZip: a: 'T array2d -> b: 'U array2d -> ('T * 'U) array2d
     val pixelIdToString: id: itk.simple.PixelIDValueEnum -> string
@@ -40,6 +40,11 @@ module InternalHelpers =
         t: itk.simple.PixelIDValueEnum -> u: itk.simple.VectorUInt32 -> obj
     val getBoxedZero:
       t: itk.simple.PixelIDValueEnum -> vSize: uint option -> obj
+    val getFloatPixel:
+      img: itk.simple.Image -> u: itk.simple.VectorUInt32 -> float
+    val setFloatPixel:
+      img: itk.simple.Image ->
+        u: itk.simple.VectorUInt32 -> value: float -> unit
     val inline mulAdd:
       t: itk.simple.PixelIDValueEnum -> acc: obj -> k: obj -> p: obj -> obj
 val getBytesPerComponent: t: System.Type -> uint32
