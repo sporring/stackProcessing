@@ -1,4 +1,4 @@
-namespace Graph
+namespace Studio.Graph
 
 module BuiltInCatalog =
   let any = PortType.Any

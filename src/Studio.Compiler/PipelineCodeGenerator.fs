@@ -1,10 +1,10 @@
-namespace Compiler
+namespace Studio.Compiler
 
 open System
 open System.Collections.Generic
 open System.Text
 open System.Text.RegularExpressions
-open Graph
+open Studio.Graph
 
 module PipelineCodeGenerator =
     type private ParameterExpression =

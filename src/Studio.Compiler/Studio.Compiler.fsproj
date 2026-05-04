@@ -5,7 +5,7 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <ProjectReference Include="../Graph/Graph.fsproj" />
+    <ProjectReference Include="../Studio.Graph/Studio.Graph.fsproj" />
   </ItemGroup>
 
   <ItemGroup>

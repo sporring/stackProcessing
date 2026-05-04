@@ -1,4 +1,4 @@
-namespace Graph
+namespace Studio.Graph
 
 type NumericType =
     | Number
