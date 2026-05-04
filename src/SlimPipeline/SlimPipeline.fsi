@@ -126,6 +126,42 @@ module ResourceOps =
     val retainAndReturn: ops: ResourceOps<'T> -> value: 'T -> 'T
     val release: ops: ResourceOps<'T> -> value: 'T -> unit
     val memoryOf: ops: ResourceOps<'T> -> value: 'T -> uint64 option
+type PipelineGraphNode =
+    {
+      Id: int
+      Name: string
+      Transition: ProfileTransition
+    }
+type PipelineGraphEdge =
+    {
+      From: int
+      To: int
+      Label: string
+    }
+type PipelineGraph =
+    {
+      Nodes: PipelineGraphNode list
+      Edges: PipelineGraphEdge list
+      Entries: int list
+      Exits: int list
+    }
+module PipelineGraph =
+    val private nextNodeId: (unit -> int)
+    val empty: PipelineGraph
+    val singleton:
+      name: string -> transition: ProfileTransition -> PipelineGraph
+    val merge: left: PipelineGraph -> right: PipelineGraph -> PipelineGraph
+    val connect:
+      label: string ->
+        left: PipelineGraph -> right: PipelineGraph -> PipelineGraph
+    val appendNode:
+      label: string ->
+        name: string ->
+        transition: ProfileTransition -> graph: PipelineGraph -> PipelineGraph
+    val compose: left: PipelineGraph -> right: PipelineGraph -> PipelineGraph
+    val parallelJoin:
+      label: string ->
+        left: PipelineGraph -> right: PipelineGraph -> PipelineGraph
 /// Stage describes *what* should be done: 
 type Stage<'S,'T> =
     {
@@ -134,6 +170,7 @@ type Stage<'S,'T> =
       Transition: ProfileTransition
       MemoryNeed: MemoryNeedWrapped
       LengthTransformation: LengthTransformation
+      Graph: PipelineGraph
       Cleaning: (unit -> unit) list
     }
 module Stage =
@@ -151,6 +188,8 @@ module Stage =
         wrapMemoryNeed: MemoryNeedWrapped ->
         lengthTransformation: LengthTransformation ->
         cleaning: (unit -> unit) list -> Stage<'S,'T>
+    val private withGraph:
+      graph: PipelineGraph -> stage: Stage<'a,'b> -> Stage<'a,'b>
     val empty: name: string -> Stage<unit,unit>
     val init<'S,'T> :
       name: string ->
@@ -262,6 +301,7 @@ module Stage =
 type Plan<'S,'T> =
     {
       stage: Stage<'S,'T> option
+      graph: PipelineGraph
       nElemsPerSlice: SingleOrPair
       length: uint64
       memAvail: uint64
@@ -269,6 +309,7 @@ type Plan<'S,'T> =
       debug: bool
     }
 module Plan =
+    val private graphOfStage: stage: Stage<'a,'b> option -> PipelineGraph
     val create:
       stage: Stage<'S,'T> option ->
         memAvail: uint64 ->
@@ -281,6 +322,7 @@ module Plan =
         memPeak: uint64 ->
         nElemsPerSlice: SingleOrPair ->
         length: uint64 -> debug: bool -> Plan<'S,'T> when 'T: equality
+    val graph: pl: Plan<'S,'T> -> PipelineGraph
     /// Source type operators
     val source: availableMemory: uint64 -> Plan<unit,unit>
     val debug: availableMemory: uint64 -> Plan<unit,unit>
