@@ -4,8 +4,8 @@
     {
       "id": "node-1",
       "functionId": "Read",
-      "x": 40,
-      "y": 160,
+      "x": 28.86688232421875,
+      "y": 112,
       "parameters": [
         {
           "key": "availableMemory",
@@ -32,15 +32,15 @@
     {
       "id": "node-2",
       "functionId": "ComputeStats",
-      "x": 280,
-      "y": 160,
+      "x": 350,
+      "y": 199,
       "parameters": []
     },
     {
       "id": "node-3",
       "functionId": "Print",
-      "x": 280,
-      "y": 322.0643310546875,
+      "x": 380,
+      "y": 335.185546875,
       "parameters": [
         {
           "key": "format",
@@ -88,17 +88,75 @@
           "useInput": false
         }
       ]
+    },
+    {
+      "id": "node-4",
+      "functionId": "Tap",
+      "x": 168.86688232421875,
+      "y": 199,
+      "parameters": [
+        {
+          "key": "label",
+          "value": "testing",
+          "useInput": false
+        }
+      ]
+    },
+    {
+      "id": "node-5",
+      "functionId": "Print",
+      "x": 168.86688232421875,
+      "y": 349.3423636083803,
+      "parameters": [
+        {
+          "key": "format",
+          "value": "{I}",
+          "useInput": false
+        },
+        {
+          "key": "input1",
+          "value": "I",
+          "useInput": true
+        },
+        {
+          "key": "input2",
+          "value": "input2",
+          "useInput": false
+        },
+        {
+          "key": "input3",
+          "value": "input3",
+          "useInput": false
+        },
+        {
+          "key": "input4",
+          "value": "input4",
+          "useInput": false
+        },
+        {
+          "key": "input5",
+          "value": "input5",
+          "useInput": false
+        },
+        {
+          "key": "input6",
+          "value": "input6",
+          "useInput": false
+        },
+        {
+          "key": "input7",
+          "value": "input7",
+          "useInput": false
+        },
+        {
+          "key": "input8",
+          "value": "input8",
+          "useInput": false
+        }
+      ]
     }
   ],
   "edges": [
-    {
-      "fromNode": "node-1",
-      "fromKind": "dataOutput",
-      "fromPort": 0,
-      "toNode": "node-2",
-      "toKind": "dataInput",
-      "toPort": 0
-    },
     {
       "fromNode": "node-2",
       "fromKind": "reducerOutput",
@@ -154,6 +212,30 @@
       "toNode": "node-3",
       "toKind": "parameterInput",
       "toPort": 7
+    },
+    {
+      "fromNode": "node-1",
+      "fromKind": "dataOutput",
+      "fromPort": 0,
+      "toNode": "node-4",
+      "toKind": "dataInput",
+      "toPort": 0
+    },
+    {
+      "fromNode": "node-4",
+      "fromKind": "dataOutput",
+      "fromPort": 0,
+      "toNode": "node-2",
+      "toKind": "dataInput",
+      "toPort": 0
+    },
+    {
+      "fromNode": "node-4",
+      "fromKind": "scalarOutput",
+      "fromPort": 0,
+      "toNode": "node-5",
+      "toKind": "parameterInput",
+      "toPort": 1
     }
   ]
 }
