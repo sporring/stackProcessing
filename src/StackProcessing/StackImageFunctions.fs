@@ -10,15 +10,14 @@ let liftUnaryReleaseAfter (name: string) (f: Image<'S> -> Image<'T>) (memoryNeed
     Stage.liftResourceUnary name imageResourceOps f memoryNeed lengthTransformation
 
 let getBytesPerComponent<'T> = (typeof<'T> |> Image.getBytesPerComponent |> uint64)
+let getImageFacts<'T when 'T: equality> (image: Image<'T>) = image.GetFacts()
+let imageBytes<'T> nVoxels = StackProcessingCost.imageBytes<'T> nVoxels
 
 let private inputValue input =
     input |> SingleOrPair.sum |> SingleOrPair.fst
 
 let private withCostModel costModel stage =
-    { stage with
-        CostModel = costModel
-        MemoryModel = costModel.Memory
-        MemoryNeed = StageCostModel.memoryNeed costModel }
+    StackProcessingCost.withCostModel costModel stage
 
 let private nativeImageStageCost name memoryModel workUnits =
     StageCostModel.create
@@ -249,7 +248,7 @@ let discreteGaussianOp (name: string) (sigma: float) (outputRegionMode: ImageFun
     let f debug = 
         if debug then printfn $"discreteGaussianOp: sigma {sigma}, ksz {ksz}, win {win}, stride {stride}, pad {pad}"
         volFctToLstFctReleaseAfterDebug debug (ImageFunctions.discreteGaussian 3u sigma (ksz |> Some) outputRegionMode boundaryCondition) pad stride
-    let memoryNeed nPixels = (2UL*nPixels*(uint64 win) + (uint64 ksz))*(typeof<float> |> Image.getBytesPerComponent |> uint64)
+    let memoryNeed nPixels = (2UL*nPixels*(uint64 win) + (uint64 ksz))*getBytesPerComponent<float>
     let lengthTransformation nElems = 
         match outputRegionMode with
             | Some Valid -> nElems - 2UL * uint64 pad
@@ -293,7 +292,7 @@ let convGauss sigma = discreteGaussianOp "convGauss" sigma None None None
 
 let createPadding name pad: Stage<unit,Image<'S>>=
     let transition = ProfileTransition.create Streaming Streaming
-    let memoryNeed nPixels = nPixels*(typeof<'S> |> Image.getBytesPerComponent |> uint64)
+    let memoryNeed nPixels = nPixels*getBytesPerComponent<'S>
     let lengthTransformation nElems = nElems + (uint64 pad)
     let zeroMaker i = Image<'S>([0u;0u],1u,"Padding",i)
     Stage.init "padding" pad zeroMaker transition memoryNeed lengthTransformation
@@ -309,7 +308,7 @@ let convolveOp (name: string) (kernel: Image<'T>) (outputRegionMode: ImageFuncti
             | Some Valid -> 0u
             | _ -> ksz/2u //floor
     let f debug =  volFctToLstFctReleaseAfterDebug debug (fun image3D -> ImageFunctions.convolve outputRegionMode bc image3D kernel) pad stride
-    let memoryNeed nPixels = (2UL*nPixels*(uint64 win) + (uint64 ksz))*(typeof<'T> |> Image.getBytesPerComponent |> uint64)
+    let memoryNeed nPixels = (2UL*nPixels*(uint64 win) + (uint64 ksz))*getBytesPerComponent<'T>
     let lengthTransformation nElems = nElems - 2UL*(uint64 pad) 
     let memoryModel = StageMemoryModel.fromSinglePeak Map memoryNeed
     let workUnits input =

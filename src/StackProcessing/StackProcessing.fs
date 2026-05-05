@@ -10,10 +10,13 @@ type ResourceOps<'T> = SlimPipeline.ResourceOps<'T>
 type StageCostCoefficients = SlimPipeline.StageCostCoefficients
 //type Slice<'S when 'S: equality> = Slice.Slice<'S>
 type Image<'S when 'S: equality> = Image.Image<'S>
+type ImageFacts = Image.ImageFacts
 
 let loadCostCalibration = SlimPipeline.StageCostCalibration.loadJson
 let clearCostCalibration = SlimPipeline.StageCostCalibration.clear
 let registerCostCalibration = SlimPipeline.StageCostCalibration.register
+let tryLoadCostCalibration = StackProcessingCost.tryLoadCostCalibration
+let tryLoadFirstCostCalibration = StackProcessingCost.tryLoadFirstCostCalibration
 
 let getMem = StackCore.getMem
 let imageResourceOps<'S when 'S: equality> = StackCore.imageResourceOps<'S>
@@ -88,6 +91,8 @@ type ImageStats = ImageFunctions.ImageStats
 let liftUnary = StackImageFunctions.liftUnary
 let liftUnaryReleaseAfter = StackImageFunctions.liftUnaryReleaseAfter
 let getBytesPerComponent<'T> = StackImageFunctions.getBytesPerComponent<'T>
+let getImageFacts<'T when 'T: equality> = StackImageFunctions.getImageFacts<'T>
+let imageBytes<'T> = StackImageFunctions.imageBytes<'T>
 let cast<'S,'T when 'S: equality and 'T: equality> = StackImageFunctions.cast<'S,'T>
 let liftRelease2 = StackImageFunctions.liftRelease2
 let memNeeded<'T> = StackImageFunctions.memNeeded<'T>

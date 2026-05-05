@@ -533,6 +533,10 @@ type OptimizationResult<'S,'T> =
       Decisions: OptimizationDecision list
     }
 module Optimizer =
+    val private workScore: pressure: StageWorkPressure -> float
+    val private compareAccepted:
+      _leftCandidate: 'a * leftDecision: OptimizationDecision ->
+        _rightCandidate: 'b * rightDecision: OptimizationDecision -> int
     val chooseStage:
       availableMemory: uint64 ->
         inputShape: SingleOrPair ->
@@ -576,6 +580,11 @@ module Plan =
     val private mergeCostPeak:
       current: StageCostPressure option ->
         candidate: StageCostPressure -> StageCostPressure option
+    val private workScore: pressure: StageWorkPressure -> float
+    val private trySumEstimatedMilliseconds:
+      observations: StageCostPressure list -> float option
+    val private totalWorkScore: observations: StageCostPressure list -> float
+    val private printOptimizationSummary: label: 'a -> pl: Plan<'S,'T> -> unit
     val graph: pl: Plan<'S,'T> -> PipelineGraph
     /// Source type operators
     val source: availableMemory: uint64 -> Plan<unit,unit>

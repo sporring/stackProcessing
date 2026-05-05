@@ -59,6 +59,7 @@
     <ItemGroup>
         <Compile Include="TinyLinAlg.fs" />
         <Compile Include="StackCore.fs" />
+        <Compile Include="StackProcessingCost.fs" />
         <Compile Include="StackIO.fs" />
         <Compile Include="StackImageFunctions.fs" />
         <Compile Include="ChunkedAffineResampler.fs" />
