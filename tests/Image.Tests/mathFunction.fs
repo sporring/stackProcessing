@@ -11,7 +11,7 @@ let inline makeImage<'T when 'T : equality> (values: 'T list) : Image<'T> =
 
 let inline expectImageEqual (expected: Image<'T>) (actual: Image<'T>) (label: string) =
     let zipped = Image.zip [expected; actual]
-    let eq = zipped.forAll (fun vList -> vList[0] = vList[0])
+    let eq = zipped.forAll (fun vList -> vList[0] = vList[1])
     Expect.isTrue eq label
 
 [<Tests>]

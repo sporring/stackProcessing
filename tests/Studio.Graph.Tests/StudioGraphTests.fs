@@ -37,11 +37,18 @@ let domainSuite =
             Expect.isTrue (PortType.canConnect (Image Number) (Image Float64)) "Number image should connect to concrete image input."
             Expect.isFalse (PortType.canConnect (Scalar String) (Scalar(BasicType.Numeric Float64))) "Different concrete scalar types should not connect."
 
-        testCase "FunctionDefinition.matches searches display category description and aliases" <| fun _ ->
+        testCase "FunctionDefinition.matches searches display category summary description and aliases" <| fun _ ->
             let read = BuiltInCatalog.find "Read"
             Expect.isTrue (FunctionDefinition.matches "read" read) "Display name should match."
             Expect.isTrue (FunctionDefinition.matches "Sources" read) "Category should match."
-            Expect.isTrue (FunctionDefinition.matches "chunked" read) "Description should match."
+            Expect.isTrue (FunctionDefinition.matches "chunked" read) "Summary should match."
+
+            let withDescription =
+                { read with
+                    Summary = ""
+                    Description = "Detailed text for unusually specific matching." }
+
+            Expect.isTrue (FunctionDefinition.matches "unusually specific" withDescription) "Description should match."
             Expect.isTrue (FunctionDefinition.matches "tiff" read) "Alias should match."
             Expect.isFalse (FunctionDefinition.matches "definitely-not-here" read) "Unrelated search should not match."
     ]
@@ -52,6 +59,30 @@ let catalogSuite =
         testCase "catalog exposes expected generic functions" <| fun _ ->
             let ids = BuiltInCatalog.orderedFunctions |> List.map _.Id
             Expect.containsAll ids ["Scalar"; "Read"; "Write"; "ImageOpImage"; "ComputeStats"; "Chart"] "Important Studio functions should be in the palette catalog."
+
+        testCase "catalog entries have palette summaries and detailed descriptions can be empty" <| fun _ ->
+            let functions = BuiltInCatalog.orderedFunctions
+            Expect.isNonEmpty functions "The built-in catalog should not be empty."
+            Expect.isTrue (functions |> List.forall (fun f -> not (System.String.IsNullOrWhiteSpace f.Summary))) "Every palette entry should have hover summary text."
+            Expect.isTrue (functions |> List.exists (fun f -> f.Description = "")) "Detailed descriptions are optional while the field is rolled out."
+
+        testCase "debug and visualization functions expose parameter input ports" <| fun _ ->
+            let print = BuiltInCatalog.find "Print"
+            let chart = BuiltInCatalog.find "Chart"
+
+            Expect.equal (print.Parameters |> List.filter (fun p -> p.Key.StartsWith("input")) |> List.length) 8 "Print should expose eight activatable inputs."
+            Expect.equal print.Outputs [] "Print is a side-effecting scalar sink."
+            Expect.equal chart.Inputs [] "Chart receives map data through an always-on parameter port."
+            Expect.equal chart.Parameters.[0].Key "kind" "Chart should expose the chart kind first."
+            Expect.equal chart.Parameters.[1].Type BasicType.Map "Chart input should be map-like histogram data."
+
+        testCase "connected component catalog uses pair and reducer types" <| fun _ ->
+            let connected = BuiltInCatalog.find "ConnectedComponents"
+            let table = BuiltInCatalog.find "ComponentTranslationTable"
+
+            Expect.equal connected.Outputs.[0].Type (Tuple(Image UInt64, Scalar(BasicType.Numeric UInt64))) "Connected components should stream labels with object counts."
+            Expect.equal table.Inputs.[0].Type (Tuple(Image UInt64, Scalar(BasicType.Numeric UInt64))) "Translation-table reducer should consume connected-component pairs."
+            Expect.equal table.Outputs.[0].Type (Custom "TranslationTable") "Translation-table output should be a custom parameter value."
 
         testCase "find fails clearly for missing function" <| fun _ ->
             Expect.throws (fun () -> BuiltInCatalog.find "MissingFunction" |> ignore) "Missing function lookup should fail."

@@ -23,5 +23,18 @@ let memoryHelperTests =
       Expect.equal facts.ComponentBytes 2UL "UInt16 should use two bytes per component."
       Expect.equal facts.ComponentsPerPixel 1UL "Scalar UInt16 should have one component per pixel."
       Expect.equal facts.MemoryBytes 12UL "Memory bytes should be voxel count times component bytes."
+
+    testCase "ImageFacts accounts for vector component count" <| fun _ ->
+      let arr = Array3D.init 2 3 4 (fun x y k -> x + y + k)
+      let img = Image<int list>.ofArray3DVector arr
+      let facts = img.GetFacts()
+      Expect.equal facts.Size [2UL; 3UL] "Vector images should report spatial dimensions, not the component axis."
+      Expect.equal facts.VoxelCount 6UL "Voxel count should only include spatial positions."
+      Expect.equal facts.ComponentsPerPixel 4UL "Vector component count should be part of the memory facts."
+      Expect.equal facts.MemoryBytes (6UL * 4UL * facts.ComponentBytes) "Memory bytes should include every component per pixel."
+
+    testCase "ImageFacts can estimate typed image memory without an allocated image" <| fun _ ->
+      Expect.equal (ImageFacts.memoryBytesForType<float> 6UL 2u) 96UL "Six two-component float64 pixels should use 96 bytes."
+      Expect.equal (ImageFacts.sliceBytesForType<uint16> 4u 5u) 40UL "A 4x5 UInt16 slice should use 40 bytes."
   ]
   
