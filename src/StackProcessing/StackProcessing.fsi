@@ -211,6 +211,21 @@ type ChunkInfo =
       topLeftInfo: FileInfo
     }
 
+val private inputValue: input: SlimPipeline.SingleOrPair -> uint64
+
+val private imageBytes<'T> : nPixels: uint64 -> uint64
+
+val private imageIoCost<'T> :
+  kind: string ->
+    evaluation: SlimPipeline.StageEvaluation ->
+    calibrationKey: string ->
+    bytes: (SlimPipeline.SingleOrPair -> uint64) ->
+    ops: (SlimPipeline.SingleOrPair -> uint64) -> SlimPipeline.StageWorkModel
+
+val private withCostModel:
+  costModel: SlimPipeline.StageCostModel ->
+    stage: SlimPipeline.Stage<'a,'b> -> SlimPipeline.Stage<'a,'b>
+
 val getStackDepth: inputDir: string -> suffix: string -> uint
 
 val getStackInfo: inputDir: string -> suffix: string -> FileInfo
@@ -348,6 +363,18 @@ val liftUnaryReleaseAfter:
     when 'S: equality and 'T: equality
 
 val getBytesPerComponent<'T> : uint64
+
+val private inputValue: input: SlimPipeline.SingleOrPair -> uint64
+
+val private withCostModel:
+  costModel: SlimPipeline.StageCostModel ->
+    stage: SlimPipeline.Stage<'a,'b> -> SlimPipeline.Stage<'a,'b>
+
+val private nativeImageStageCost:
+  name: string ->
+    memoryModel: SlimPipeline.StageMemoryModel ->
+    workUnits: (SlimPipeline.SingleOrPair -> float) ->
+    SlimPipeline.StageCostModel
 type System.String with
     
     member icompare: s2: string -> bool
@@ -822,7 +849,16 @@ type ProfileTransition = SlimPipeline.ProfileTransition
 
 type ResourceOps<'T> = SlimPipeline.ResourceOps<'T>
 
+type StageCostCoefficients = SlimPipeline.StageCostCoefficients
+
 type Image<'S when 'S: equality> = Image.Image<'S>
+
+val loadCostCalibration: (string -> bool)
+
+val clearCostCalibration: (unit -> unit)
+
+val registerCostCalibration:
+  (string -> SlimPipeline.StageCostCoefficients -> unit)
 
 val getMem: (unit -> unit)
 

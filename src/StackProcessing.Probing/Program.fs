@@ -29,6 +29,16 @@ type ProbeIterationJson =
       elapsedMilliseconds: int64 }
 
 [<CLIMutable>]
+type ProbeWorkJson =
+    { calibrationKey: string
+      cpuWorkUnits: float
+      nativeWorkUnits: float
+      ioReadBytes: uint64
+      ioWriteBytes: uint64
+      ioReadOps: uint64
+      ioWriteOps: uint64 }
+
+[<CLIMutable>]
 type ProbeResultJson =
     { name: string
       description: string
@@ -46,6 +56,8 @@ type ProbeResultJson =
       warmupCount: int
       repetitionCount: int
       source: ProbeSourceJson
+      costPeakWork: ProbeWorkJson option
+      costWorks: ProbeWorkJson array
       iterations: ProbeIterationJson array }
 
 [<CLIMutable>]
@@ -60,6 +72,7 @@ type ProbeReportJson =
       repetitionCount: int
       workingDirectory: string
       tempDirectory: string
+      calibrations: Dictionary<string, StageCostCoefficients>
       probes: ProbeResultJson array }
 
 let private availableMemory = 2UL * 1024UL * 1024UL * 1024UL
@@ -97,6 +110,32 @@ let private median (values: uint64 array) =
     else
         let sorted = Array.sort values
         sorted[sorted.Length / 2]
+
+let private workToJson (work: StageWorkPressure) =
+    work.CalibrationKey
+    |> Option.map (fun key ->
+        { calibrationKey = key
+          cpuWorkUnits = work.CpuWorkUnits
+          nativeWorkUnits = work.NativeWorkUnits
+          ioReadBytes = work.IoReadBytes
+          ioWriteBytes = work.IoWriteBytes
+          ioReadOps = work.IoReadOps
+          ioWriteOps = work.IoWriteOps })
+
+let private coefficientsFromWork elapsedMilliseconds (work: StageWorkPressure) =
+    let elapsed = float elapsedMilliseconds
+    { CpuMillisecondsPerUnit =
+        if work.CpuWorkUnits > 0.0 then elapsed / work.CpuWorkUnits else 0.0
+      NativeMillisecondsPerUnit =
+        if work.NativeWorkUnits > 0.0 then elapsed / work.NativeWorkUnits else 0.0
+      IoReadMillisecondsPerByte =
+        if work.IoReadBytes > 0UL then elapsed / float work.IoReadBytes else 0.0
+      IoWriteMillisecondsPerByte =
+        if work.IoWriteBytes > 0UL then elapsed / float work.IoWriteBytes else 0.0
+      IoReadMillisecondsPerOp =
+        if work.IoReadBytes = 0UL && work.IoReadOps > 0UL then elapsed / float work.IoReadOps else 0.0
+      IoWriteMillisecondsPerOp =
+        if work.IoWriteBytes = 0UL && work.IoWriteOps > 0UL then elapsed / float work.IoWriteOps else 0.0 }
 
 let private runProbe name description execute (planFactory: unit -> Plan<unit, _>) =
     printfn "Probing %s" name
@@ -149,6 +188,12 @@ let private runProbe name description execute (planFactory: unit -> Plan<unit, _
                     medianRetained - iteration.rssRetainedDeltaBytes
             deltaDistance + retainedDistance)
         |> Array.head
+    let costPeakWork = metadataPlan.costPeak |> Option.bind (fun cost -> workToJson cost.Work)
+    let costWorks =
+        metadataPlan.costObservations
+        |> List.rev
+        |> List.choose (fun cost -> workToJson cost.Work)
+        |> List.toArray
 
     { name = name
       description = description
@@ -166,6 +211,8 @@ let private runProbe name description execute (planFactory: unit -> Plan<unit, _
       warmupCount = warmupCount
       repetitionCount = repetitionCount
       source = sourceToJson metadataPlan.sourcePeek
+      costPeakWork = costPeakWork
+      costWorks = costWorks
       iterations = iterations }
 
 let private runSinkProbe name description (planFactory: unit -> Plan<unit, _>) =
@@ -233,8 +280,16 @@ let main args =
                    >=> write (outputDir "add-normal-noise-uint8-write") ".tiff")
 
            runSinkProbe
+               "read-uint8-ignore"
+               "Read UInt8 TIFF stack and consume it without writing."
+               (fun () ->
+                   source availableMemory
+                   |> read<uint8> inputDir ".tiff"
+                   >=> ignoreSingles ())
+
+           runSinkProbe
                "read-uint8-write"
-               "Read UInt8 TIFF stack and write it through."
+               "Copy-style UInt8 read and write pipeline."
                (fun () ->
                    source availableMemory
                    |> read<uint8> inputDir ".tiff"
@@ -269,6 +324,21 @@ let main args =
                    |> read<float> inputDir ".tiff"
                    >=> computeStats ()) |]
 
+    let calibrations = Dictionary<string, StageCostCoefficients>()
+    for probe in probes do
+        match probe.costWorks with
+        | [| work |] ->
+            let pressure =
+                { CpuWorkUnits = work.cpuWorkUnits
+                  NativeWorkUnits = work.nativeWorkUnits
+                  IoReadBytes = work.ioReadBytes
+                  IoWriteBytes = work.ioWriteBytes
+                  IoReadOps = work.ioReadOps
+                  IoWriteOps = work.ioWriteOps
+                  CalibrationKey = Some work.calibrationKey }
+            calibrations[work.calibrationKey] <- coefficientsFromWork probe.elapsedMilliseconds pressure
+        | _ -> ()
+
     let report =
         { generatedUtc = DateTimeOffset.UtcNow.ToString("O")
           osDescription = RuntimeInformation.OSDescription
@@ -280,6 +350,7 @@ let main args =
           repetitionCount = repetitionCount
           workingDirectory = Environment.CurrentDirectory
           tempDirectory = tempRoot
+          calibrations = calibrations
           probes = probes }
 
     let options = JsonSerializerOptions(WriteIndented = true)

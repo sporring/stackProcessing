@@ -160,6 +160,108 @@ module StageMemoryModel =
       accumulatorBytes: MemoryNeed -> workBytes: MemoryNeed -> StageMemoryModel
     val memoryNeed:
       model: StageMemoryModel -> input: SingleOrPair -> SingleOrPair
+type StageCostKind =
+    | Cpu
+    | Native
+    | Io
+    | Mixed
+type StageWorkPressure =
+    {
+      CpuWorkUnits: float
+      NativeWorkUnits: float
+      IoReadBytes: uint64
+      IoWriteBytes: uint64
+      IoReadOps: uint64
+      IoWriteOps: uint64
+      CalibrationKey: string option
+    }
+module StageWorkPressure =
+    val zero: StageWorkPressure
+    val create:
+      cpuWorkUnits: float ->
+        nativeWorkUnits: float ->
+        ioReadBytes: uint64 ->
+        ioWriteBytes: uint64 ->
+        ioReadOps: uint64 ->
+        ioWriteOps: uint64 -> calibrationKey: string option -> StageWorkPressure
+    val add:
+      left: StageWorkPressure -> right: StageWorkPressure -> StageWorkPressure
+type StageWorkModel =
+    {
+      Kind: StageCostKind
+      Evaluation: StageEvaluation
+      Estimate: (SingleOrPair -> StageWorkPressure)
+    }
+type StageCostCoefficients =
+    {
+      CpuMillisecondsPerUnit: float
+      NativeMillisecondsPerUnit: float
+      IoReadMillisecondsPerByte: float
+      IoWriteMillisecondsPerByte: float
+      IoReadMillisecondsPerOp: float
+      IoWriteMillisecondsPerOp: float
+    }
+module StageCostCoefficients =
+    val zero: StageCostCoefficients
+    val estimateMilliseconds:
+      coefficients: StageCostCoefficients ->
+        pressure: StageWorkPressure -> float
+module StageCostCalibration =
+    val mutable private coefficientsByKey: Map<string,StageCostCoefficients>
+    val clear: unit -> unit
+    val register: key: string -> coefficients: StageCostCoefficients -> unit
+    val tryFind: key: string -> StageCostCoefficients option
+    val estimateMilliseconds: pressure: StageWorkPressure -> float option
+    val private propertyDouble:
+      name: string -> element: System.Text.Json.JsonElement -> float
+    val loadJson: path: string -> bool
+module StageWorkModel =
+    val private elementCount: input: SingleOrPair -> float
+    val zero: evaluation: StageEvaluation -> StageWorkModel
+    val cpu:
+      evaluation: StageEvaluation ->
+        calibrationKey: string option ->
+        workUnits: (SingleOrPair -> float) -> StageWorkModel
+    val native:
+      evaluation: StageEvaluation ->
+        calibrationKey: string option ->
+        workUnits: (SingleOrPair -> float) -> StageWorkModel
+    val ioRead:
+      evaluation: StageEvaluation ->
+        calibrationKey: string option ->
+        bytes: (SingleOrPair -> uint64) ->
+        ops: (SingleOrPair -> uint64) -> StageWorkModel
+    val ioWrite:
+      evaluation: StageEvaluation ->
+        calibrationKey: string option ->
+        bytes: (SingleOrPair -> uint64) ->
+        ops: (SingleOrPair -> uint64) -> StageWorkModel
+    val fromEvaluation:
+      evaluation: StageEvaluation ->
+        calibrationKey: string option -> StageWorkModel
+type StageCostPressure =
+    {
+      Memory: StageMemoryPressure
+      Work: StageWorkPressure
+    }
+module StageCostPressure =
+    val add:
+      left: StageCostPressure -> right: StageCostPressure -> StageCostPressure
+type StageCostModel =
+    {
+      Memory: StageMemoryModel
+      Work: StageWorkModel
+    }
+module StageCostModel =
+    val create:
+      memory: StageMemoryModel -> work: StageWorkModel -> StageCostModel
+    val fromMemory: memory: StageMemoryModel -> StageCostModel
+    val estimate:
+      model: StageCostModel -> input: SingleOrPair -> StageCostPressure
+    val memoryNeed: model: StageCostModel -> input: SingleOrPair -> SingleOrPair
+    val combine:
+      evaluation: StageEvaluation ->
+        left: StageCostModel -> right: StageCostModel -> StageCostModel
 type SourcePeek =
     {
       Name: string
@@ -252,11 +354,19 @@ type Stage<'S,'T> =
       Transition: ProfileTransition
       MemoryNeed: MemoryNeedWrapped
       MemoryModel: StageMemoryModel
+      CostModel: StageCostModel
       LengthTransformation: LengthTransformation
       Graph: PipelineGraph
       Cleaning: (unit -> unit) list
     }
 module Stage =
+    val createWithCostModel:
+      name: string ->
+        build: (unit -> Pipe<'S,'T>) ->
+        transition: ProfileTransition ->
+        costModel: StageCostModel ->
+        lengthTransformation: LengthTransformation ->
+        cleaning: (unit -> unit) list -> Stage<'S,'T>
     val createWithModel:
       name: string ->
         build: (unit -> Pipe<'S,'T>) ->
@@ -283,6 +393,13 @@ module Stage =
         build: (unit -> Pipe<'S,'T>) ->
         transition: ProfileTransition ->
         memoryModel: StageMemoryModel ->
+        lengthTransformation: LengthTransformation ->
+        cleaning: (unit -> unit) list -> Stage<'S,'T>
+    val createWrappedWithCostModel:
+      name: string ->
+        build: (unit -> Pipe<'S,'T>) ->
+        transition: ProfileTransition ->
+        costModel: StageCostModel ->
         lengthTransformation: LengthTransformation ->
         cleaning: (unit -> unit) list -> Stage<'S,'T>
     val private withGraph:
@@ -400,6 +517,8 @@ type Plan<'S,'T> =
       stage: Stage<'S,'T> option
       graph: PipelineGraph
       sourcePeek: SourcePeek option
+      costPeak: StageCostPressure option
+      costObservations: StageCostPressure list
       nElemsPerSlice: SingleOrPair
       length: uint64
       memAvail: uint64
@@ -423,6 +542,9 @@ module Plan =
         nElemsPerSlice: SingleOrPair ->
         length: uint64 -> debug: bool -> Plan<'S,'T> when 'T: equality
     val withSourcePeek: sourcePeek: SourcePeek -> pl: Plan<'S,'T> -> Plan<'S,'T>
+    val private mergeCostPeak:
+      current: StageCostPressure option ->
+        candidate: StageCostPressure -> StageCostPressure option
     val graph: pl: Plan<'S,'T> -> PipelineGraph
     /// Source type operators
     val source: availableMemory: uint64 -> Plan<unit,unit>
