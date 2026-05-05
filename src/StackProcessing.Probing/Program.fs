@@ -19,6 +19,16 @@ type ProbeSourceJson =
       shape: Dictionary<string, string> }
 
 [<CLIMutable>]
+type ProbeIterationJson =
+    { iteration: int
+      rssBaselineBytes: uint64
+      rssPeakBytes: uint64
+      rssDeltaBytes: uint64
+      rssPostGcBytes: uint64
+      rssRetainedDeltaBytes: uint64
+      elapsedMilliseconds: int64 }
+
+[<CLIMutable>]
 type ProbeResultJson =
     { name: string
       description: string
@@ -26,8 +36,17 @@ type ProbeResultJson =
       rssBaselineBytes: uint64
       rssPeakBytes: uint64
       rssDeltaBytes: uint64
+      rssDeltaMinBytes: uint64
+      rssDeltaMedianBytes: uint64
+      rssDeltaMaxBytes: uint64
+      rssRetainedDeltaMinBytes: uint64
+      rssRetainedDeltaMedianBytes: uint64
+      rssRetainedDeltaMaxBytes: uint64
       elapsedMilliseconds: int64
-      source: ProbeSourceJson }
+      warmupCount: int
+      repetitionCount: int
+      source: ProbeSourceJson
+      iterations: ProbeIterationJson array }
 
 [<CLIMutable>]
 type ProbeReportJson =
@@ -37,6 +56,8 @@ type ProbeReportJson =
       frameworkDescription: string
       configuration: string
       sampleIntervalMilliseconds: int
+      warmupCount: int
+      repetitionCount: int
       workingDirectory: string
       tempDirectory: string
       probes: ProbeResultJson array }
@@ -46,6 +67,8 @@ let private width = 64u
 let private height = 64u
 let private depth = 64u
 let private sampleIntervalMs = 10
+let private warmupCount = 1
+let private repetitionCount = 5
 
 let private forceFullGc () =
     GC.Collect()
@@ -69,39 +92,89 @@ let private sourceToJson (peek: SourcePeek option) =
           length = 0UL
           shape = Dictionary<string, string>() }
 
-let private runSinkProbe name description (planFactory: unit -> Plan<unit, _>) =
-    forceFullGc()
-    let plan = planFactory()
-    let stopwatch = Stopwatch.StartNew()
-    let _, snapshot =
-        MemoryProbe.measure sampleIntervalMs (fun () ->
-            sink plan)
-    stopwatch.Stop()
+let private median (values: uint64 array) =
+    if values.Length = 0 then 0UL
+    else
+        let sorted = Array.sort values
+        sorted[sorted.Length / 2]
+
+let private runProbe name description execute (planFactory: unit -> Plan<unit, _>) =
+    printfn "Probing %s" name
+    let metadataPlan = planFactory()
+
+    for _ in 1..warmupCount do
+        forceFullGc()
+        planFactory() |> execute
+        forceFullGc()
+
+    let iterations =
+        [| for i in 1..repetitionCount do
+               forceFullGc()
+               let plan = planFactory()
+               let stopwatch = Stopwatch.StartNew()
+               let _, snapshot =
+                   MemoryProbe.measure sampleIntervalMs (fun () ->
+                       execute plan)
+               stopwatch.Stop()
+               forceFullGc()
+               let postGcRss = MemoryProbe.currentRssBytes()
+               let retained =
+                   if postGcRss > snapshot.Baseline then
+                       postGcRss - snapshot.Baseline
+                   else
+                       0UL
+
+               { iteration = i
+                 rssBaselineBytes = snapshot.Baseline
+                 rssPeakBytes = snapshot.Peak
+                 rssDeltaBytes = snapshot.Delta
+                 rssPostGcBytes = postGcRss
+                 rssRetainedDeltaBytes = retained
+                 elapsedMilliseconds = stopwatch.ElapsedMilliseconds } |]
+
+    let medianDelta = iterations |> Array.map _.rssDeltaBytes |> median
+    let medianRetained = iterations |> Array.map _.rssRetainedDeltaBytes |> median
+    let medianIteration =
+        iterations
+        |> Array.sortBy (fun iteration ->
+            let deltaDistance =
+                if iteration.rssDeltaBytes > medianDelta then
+                    iteration.rssDeltaBytes - medianDelta
+                else
+                    medianDelta - iteration.rssDeltaBytes
+            let retainedDistance =
+                if iteration.rssRetainedDeltaBytes > medianRetained then
+                    iteration.rssRetainedDeltaBytes - medianRetained
+                else
+                    medianRetained - iteration.rssRetainedDeltaBytes
+            deltaDistance + retainedDistance)
+        |> Array.head
+
     { name = name
       description = description
-      predictedImagePeakBytes = plan.memPeak
-      rssBaselineBytes = snapshot.Baseline
-      rssPeakBytes = snapshot.Peak
-      rssDeltaBytes = snapshot.Delta
-      elapsedMilliseconds = stopwatch.ElapsedMilliseconds
-      source = sourceToJson plan.sourcePeek }
+      predictedImagePeakBytes = metadataPlan.memPeak
+      rssBaselineBytes = medianIteration.rssBaselineBytes
+      rssPeakBytes = medianIteration.rssPeakBytes
+      rssDeltaBytes = medianIteration.rssDeltaBytes
+      rssDeltaMinBytes = iterations |> Array.map _.rssDeltaBytes |> Array.min
+      rssDeltaMedianBytes = medianDelta
+      rssDeltaMaxBytes = iterations |> Array.map _.rssDeltaBytes |> Array.max
+      rssRetainedDeltaMinBytes = iterations |> Array.map _.rssRetainedDeltaBytes |> Array.min
+      rssRetainedDeltaMedianBytes = medianRetained
+      rssRetainedDeltaMaxBytes = iterations |> Array.map _.rssRetainedDeltaBytes |> Array.max
+      elapsedMilliseconds = medianIteration.elapsedMilliseconds
+      warmupCount = warmupCount
+      repetitionCount = repetitionCount
+      source = sourceToJson metadataPlan.sourcePeek
+      iterations = iterations }
+
+let private runSinkProbe name description (planFactory: unit -> Plan<unit, _>) =
+    let execute plan = sink plan
+    runProbe name description execute planFactory
 
 let private runDrainProbe name description (planFactory: unit -> Plan<unit, _>) =
-    forceFullGc()
-    let plan = planFactory()
-    let stopwatch = Stopwatch.StartNew()
-    let _, snapshot =
-        MemoryProbe.measure sampleIntervalMs (fun () ->
-            drain plan |> ignore)
-    stopwatch.Stop()
-    { name = name
-      description = description
-      predictedImagePeakBytes = plan.memPeak
-      rssBaselineBytes = snapshot.Baseline
-      rssPeakBytes = snapshot.Peak
-      rssDeltaBytes = snapshot.Delta
-      elapsedMilliseconds = stopwatch.ElapsedMilliseconds
-      source = sourceToJson plan.sourcePeek }
+    let execute plan = drain plan |> ignore
+    runProbe name description execute planFactory
 
 let private createInputStack inputDir =
     Directory.CreateDirectory(inputDir) |> ignore
@@ -203,6 +276,8 @@ let main args =
           frameworkDescription = RuntimeInformation.FrameworkDescription
           configuration = "Default"
           sampleIntervalMilliseconds = sampleIntervalMs
+          warmupCount = warmupCount
+          repetitionCount = repetitionCount
           workingDirectory = Environment.CurrentDirectory
           tempDirectory = tempRoot
           probes = probes }
