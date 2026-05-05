@@ -33,6 +33,7 @@
   <ItemGroup>
     <PackageReference Include="Plotly.NET" Version="5.1.0" />
     <ProjectReference Include="../../src/StackProcessing/StackProcessing.fsproj" />
+    <ProjectReference Include="../../src/StackProcessing.Core/StackProcessing.Core.fsproj" />
   </ItemGroup>
 
   <ItemGroup>

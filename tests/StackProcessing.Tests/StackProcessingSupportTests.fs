@@ -6,8 +6,6 @@ open Expecto
 open Image
 open SlimPipeline
 open StackProcessing
-open TinyLinAlg
-open ChunkedAffineResampler
 
 let private tempDirectory name =
     let path = Path.Combine(Path.GetTempPath(), $"stackprocessing-{name}-{Guid.NewGuid():N}")
@@ -55,62 +53,12 @@ let private testCase name body =
             GC.WaitForPendingFinalizers()
             GC.Collect())
 
-let private identityDirection =
-    { m00 = 1.0; m01 = 0.0; m02 = 0.0
-      m10 = 0.0; m11 = 1.0; m12 = 0.0
-      m20 = 0.0; m21 = 0.0; m22 = 1.0 }
-
-let private unitGeometry w h d =
-    { W = w
-      H = h
-      D = d
-      Origin = v3 0.0 0.0 0.0
-      Spacing = v3 1.0 1.0 1.0
-      Direction = identityDirection }
-
 let stackProcessingSupportSuite =
     testSequenced <| testList "StackProcessing support coverage" [
-        testCase "TinyLinAlg computes affine identity and inverse" <| fun _ ->
-            let m =
-                { m00 = 2.0; m01 = 0.0; m02 = 0.0
-                  m10 = 0.0; m11 = 4.0; m12 = 0.0
-                  m20 = 0.0; m21 = 0.0; m22 = 5.0 }
-            let inv = inv3 m
-            let p = v3 8.0 12.0 15.0
-            let roundTrip = mulMV inv (mulMV m p)
-            Expect.floatClose Accuracy.high roundTrip.x p.x "x should roundtrip through matrix inverse"
-            Expect.floatClose Accuracy.high roundTrip.y p.y "y should roundtrip through matrix inverse"
-            Expect.floatClose Accuracy.high roundTrip.z p.z "z should roundtrip through matrix inverse"
-
-            let affine = { A = m; T = v3 1.0 2.0 3.0; C = v3 0.0 0.0 0.0 }
-            let moved = affinePoint affine (v3 1.0 1.0 1.0)
-            Expect.equal moved (v3 3.0 6.0 8.0) "Affine point should apply A*p + T."
-
-        testCase "StackProcessingCost exposes image byte and calibration helpers" <| fun _ ->
-            Expect.equal (StackProcessingCost.imageBytes<float32> 10UL) 40UL "float32 image bytes should be voxels times four."
-            Expect.equal (StackProcessingCost.sliceBytes<uint16> 3u 4u) 24UL "uint16 slice bytes should be width*height*two."
-            Expect.equal (StackProcessingCost.pixelTypeName<uint8>) "Byte" "Pixel type name should use the CLR type name."
-            let memory = StackProcessingCost.imageStageMemory<float32> Map { InputImages = 1UL; OutputImages = 1UL; WorkImages = 2UL; RetainedImages = 0UL }
-            let pressure = memory.Estimate (Single 10UL)
-            Expect.equal pressure.InputLive 40UL "Memory model should account for input image bytes."
-            Expect.equal pressure.WorkLive 80UL "Memory model should account for work image bytes."
-            Expect.isFalse (tryLoadCostCalibration "/tmp/definitely-not-a-stackprocessing-calibration.json") "Missing calibration files should be ignored."
-            Expect.isFalse (tryLoadFirstCostCalibration [ "/tmp/missing-a.json"; "/tmp/missing-b.json" ]) "Missing calibration candidates should be ignored."
-
-        testCase "StackCore command line source and helpers retain/release images" <| fun _ ->
+        testCase "command line source parses non-debug arguments" <| fun _ ->
             let plan, rest = commandLineSource 1024UL [| "alpha"; "beta" |]
             Expect.isFalse plan.debug "commandLineSource should leave debug off without -d."
             Expect.equal (rest |> Array.toList) [ "alpha"; "beta" ] "commandLineSource should return non-debug arguments."
-
-            let image = makeSlice 2 2 0
-            try
-                let before = image.getNReferences()
-                incIfImage image |> ignore
-                Expect.equal (image.getNReferences()) (before + 1) "incIfImage should retain images."
-                decIfImage image |> ignore
-                Expect.equal (image.getNReferences()) before "decIfImage should release images."
-            finally
-                image.decRefCount()
 
         testCase "window and flatten expose padded windows for stack slices" <| fun _ ->
             let images = [ for z in 0 .. 2 -> makeSlice 3 3 z ]
@@ -332,57 +280,4 @@ let stackProcessingSupportSuite =
                 deleteDirectory inputDir
                 deleteDirectory labelDir
 
-        testCase "ChunkedAffineResampler samples chunked identity geometry" <| fun _ ->
-            let chunkDir = tempDirectory "affine-chunks"
-            let suffix = ".mha"
-            let chunk =
-                Array3D.init 2 2 2 (fun x y z -> float32 (x + 10 * y + 100 * z))
-                |> Image<float32>.ofArray3D
-
-            try
-                chunk.toFile(getChunkFilename chunkDir suffix 0 0 0)
-
-                let cache = ChunkCache.create<float32> ()
-                let voxel = getVoxel chunkDir suffix 2 2 2 2 -1.0f cache 1 1 1 cache
-                Expect.equal voxel 111.0f "getVoxel should fetch the local voxel from the correct chunk."
-
-                let sampled =
-                    trilinearSample
-                        chunkDir
-                        suffix
-                        2
-                        2
-                        2
-                        2
-                        -1.0f
-                        (fun a b t -> a + (b - a) * t)
-                        (v3 0.5 0.5 0.5)
-                        cache
-                Expect.floatClose Accuracy.medium (float sampled) 55.5 "trilinearSample should interpolate the 2x2x2 chunk center."
-
-                let geom = unitGeometry 2 2 2
-                let affine = { A = identityDirection; T = v3 0.0 0.0 0.0; C = v3 0.0 0.0 0.0 }
-                let required = requiredChunksForSliceTrilinear 2 geom geom affine 0 |> Seq.toList
-                Expect.equal required [ 0, 0, 0 ] "Identity slice should require the single available chunk."
-
-                let slices =
-                    resampleAffineTrilinearSlices
-                        chunkDir
-                        suffix
-                        (fun a b t -> a + (b - a) * t)
-                        2
-                        geom
-                        geom
-                        affine
-                        -1.0f
-                    |> Seq.toList
-
-                try
-                    Expect.equal slices.Length 2 "Identity affine resampling should produce every output slice."
-                    Expect.equal ((snd slices[0]).GetSize()) [ 2u; 2u ] "Resampled slices should have output geometry dimensions."
-                finally
-                    slices |> List.iter (fun (_, image) -> image.decRefCount())
-            finally
-                chunk.decRefCount()
-                deleteDirectory chunkDir
     ]

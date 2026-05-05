@@ -12,29 +12,13 @@ type StageCostCoefficients = SlimPipeline.StageCostCoefficients
 type Image<'S when 'S: equality> = Image.Image<'S>
 type ImageFacts = Image.ImageFacts
 
-let loadCostCalibration = SlimPipeline.StageCostCalibration.loadJson
-let clearCostCalibration = SlimPipeline.StageCostCalibration.clear
-let registerCostCalibration = SlimPipeline.StageCostCalibration.register
-let tryLoadCostCalibration = StackProcessingCost.tryLoadCostCalibration
-let tryLoadFirstCostCalibration = StackProcessingCost.tryLoadFirstCostCalibration
-
-let getMem = StackCore.getMem
-let imageResourceOps<'S when 'S: equality> = StackCore.imageResourceOps<'S>
-let releaseAfterWith = StackCore.releaseAfterWith
-let incIfImage = StackCore.incIfImage
-let incRef = StackCore.incRef
-let decIfImage = StackCore.decIfImage
-let decRef = StackCore.decRef
-let releaseAfter = StackCore.releaseAfter
-let releaseAfter2 = StackCore.releaseAfter2
-let volFctToLstFctReleaseAfter = StackCore.volFctToLstFctReleaseAfter
-let (>=>) = StackCore.(>=>)
-let (-->) = StackCore.(-->)
 let source = StackCore.source
 let debug = StackCore.debug
 let commandLineSource = StackCore.commandLineSource
 let zip = StackCore.zip
 let promoteStreamingToWindow = StackCore.promoteStreamingToWindow
+let (>=>) = StackCore.(>=>)
+let (-->) = StackCore.(-->)
 let (>=>>) = StackCore.(>=>>)
 let (>>=>) = StackCore.(>>=>)
 let (>>=>>) = StackCore.(>>=>>)
