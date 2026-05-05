@@ -66,6 +66,19 @@ module BuiltInCatalog =
           [ makeParameter "type" "Type" "Float64" BasicType.String
             makeParameter "value" "Value" (scalarDefaultValue (Numeric Float64)) (Numeric Float64) ] }
 
+  let makeFileDirectory () =
+    { Id = "FileDirectory"
+      DisplayName = "file/directory"
+      Category = "Sources / Sinks"
+      Summary = "Ask for a file or directory when the graph is run and emit its path as a string."
+      Description = "When Run is pressed, Studio highlights each File/Directory box and opens the corresponding picker. Run stops if the user cancels one of the prompts."
+      Aliases = [ "file"; "directory"; "folder"; "path"; "input"; "output"; "String" ]
+      Inputs = []
+      Outputs = [ makePort "Value" (Scalar BasicType.String) ]
+      Parameters =
+          [ makeParameter "kind" "Kind" "Directory" BasicType.String
+            makeParameter "value" "Value" "" BasicType.String ] }
+
   let makeScalarOp () =
     { Id = "ScalarOp"
       DisplayName = "scalarOp"
@@ -216,6 +229,8 @@ module BuiltInCatalog =
   let orderedFunctions =
       [ makeGenericScalar()
 
+        makeFileDirectory()
+    
         makeScalarOp()
 
         makeGenericRead()

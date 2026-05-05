@@ -48,7 +48,7 @@ let generatorSuite =
                 |> PipelineCodeGenerator.generateSavedGraph
 
             Expect.stringContains code "open StackProcessing" "Generated code should open StackProcessing."
-            Expect.stringContains code "source 1073741824" "Read node should generate source with available memory."
+            Expect.stringContains code "source 1073741824UL" "Read node should generate source with uint64 available memory."
             Expect.stringContains code "|> read<uint8> \"input\" \".tiff\"" "Read node should generate typed read."
             Expect.stringContains code ">=> write \"output\" \".tiff\"" "Write node should generate write stage."
             Expect.stringContains code "|> sink" "Terminal write should be sunk."
@@ -81,6 +81,35 @@ let generatorSuite =
             Expect.stringContains code "let String0 = \"input\"" "String scalar should be bound."
             Expect.stringContains code "|> read<uint8> String0 \".tiff\"" "Linked scalar should be used as an identifier, not a string literal."
             Expect.isLessThan (code.IndexOf("let String0")) (code.IndexOf("|> read<uint8>")) "Scalar binding should appear before dependent pipeline."
+
+        testCase "file directory source is emitted as string binding before dependent read" <| fun _ ->
+            let fileDirectory =
+                node "path" "FileDirectory"
+                    [ p "kind" "Directory" false
+                      p "value" "../image18" false ]
+
+            let read =
+                node "read" "Read"
+                    [ p "availableMemory" "1024" false
+                      p "type" "UInt8" false
+                      p "input" "" true
+                      p "suffix" ".tiff" false ]
+
+            let write =
+                node "write" "Write"
+                    [ p "output" "output" false
+                      p "suffix" ".tiff" false ]
+
+            let code =
+                graph
+                    [ fileDirectory; read; write ]
+                    [ edge "path" "scalarOutput" 0 "read" "parameterInput" 2
+                      edge "read" "output" 0 "write" "input" 0 ]
+                |> PipelineCodeGenerator.generateSavedGraph
+
+            Expect.stringContains code "let String0 = \"../image18\"" "File/directory source should be stored as a string binding."
+            Expect.stringContains code "|> read<uint8> String0 \".tiff\"" "Read should consume the selected path binding."
+            Expect.isLessThan (code.IndexOf("let String0")) (code.IndexOf("|> read<uint8>")) "The selected path should be bound before dependent read."
 
         testCase "scalar operation binding follows dependency order" <| fun _ ->
             let scalar =
