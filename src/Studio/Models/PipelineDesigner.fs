@@ -79,6 +79,9 @@ type PipelineNodeState(definition: Function, parameters: PipelineParameterViewMo
 
     member _.Definition = definition
     member _.Parameters = System.Collections.ObjectModel.ObservableCollection<PipelineParameterViewModel>(parameters)
+    member _.Summary = definition.Summary
+    member _.Description = definition.Description
+    member _.HasDescription = not (System.String.IsNullOrWhiteSpace definition.Description)
 
     member this.Title
         with get () = title

@@ -6,14 +6,10 @@ open StackProcessing
 let main arg =
     let availableMemory = 2UL * 1024UL * 1024UL *1024UL // 2GB for example
 
-    let src = 
-        if arg.Length > 0 && arg[0] = "debug" then
-            debug availableMemory
-        else
-            source availableMemory
+    let src, arg = commandLineSource availableMemory arg
     let input = 
-        if arg.Length > 1 then
-            $"../image{arg[1]}"
+        if arg.Length > 0 then
+            $"../image{arg[0]}"
         else
             "../image18"
 

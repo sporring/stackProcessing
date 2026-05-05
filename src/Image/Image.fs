@@ -333,6 +333,7 @@ let private currentRssBytes () =
 
 let mutable private rssBaselineBytes = 0UL
 let mutable private peakRssDeltaBytes = 0UL
+let mutable private debugLevel = 0u
 
 let private resetRssProbe () =
     let current = currentRssBytes()
@@ -351,8 +352,11 @@ let private sampleRssDeltaBytes () =
 
 let private printDebugMessage str =
     lock syncRoot (fun () ->
-       let rssDelta, rssPeakDelta = sampleRssDeltaBytes()
-       printfn "%8d KB / %8d KB RSS %8d KB / %8d KB %3d / %3d Images %s" (memUsed/1024u) (peakMemUsed/1024u) (rssDelta/1024UL) (rssPeakDelta/1024UL) totalImages peakTotalImages str) (*(String.replicate totalImages "*")*)
+       if debugLevel >= 2u then
+           let rssDelta, rssPeakDelta = sampleRssDeltaBytes()
+           printfn "%8d KB / %8d KB RSS %8d KB / %8d KB %3d / %3d Images %s" (memUsed/1024u) (peakMemUsed/1024u) (rssDelta/1024UL) (rssPeakDelta/1024UL) totalImages peakTotalImages str
+       else
+           printfn "%8d KB / %8d KB %3d / %3d Images %s" (memUsed/1024u) (peakMemUsed/1024u) totalImages peakTotalImages str) (*(String.replicate totalImages "*")*)
 let mutable private debug = false
 
 [<StructuredFormatDisplay("{Display}")>] // Prevent fsi printing information about its members such as img
@@ -392,10 +396,13 @@ type Image<'T when 'T : equality>(sz: uint list, ?optionalNumberComponents: uint
     do if debug && not quiet then printDebugMessage $"Created {name} ({img.GetSize()|> fromVectorUInt32}, {fromType<'T>} {img.GetPixelID()}, {img.GetNumberOfComponentsPerPixel()}->{Image<'T>.memoryEstimateSItk img})"
     let now = System.DateTime.UtcNow.ToString("HH:mm:ss.ffffff'Z'")
 
-    static member setDebug d =
-        if d then resetRssProbe()
+    static member setDebugLevel level =
+        debugLevel <- level
+        if level >= 2u then resetRssProbe()
         printfn $"Added debugging of Image class"
-        debug <- d
+        debug <- level > 0u
+    static member setDebug d =
+        Image<'T>.setDebugLevel(if d then 1u else 0u)
     member this.Image = img
     member this.Name = name
     member val index = idx with get, set

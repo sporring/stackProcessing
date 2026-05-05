@@ -141,6 +141,7 @@ type Function =
     { Id: string
       DisplayName: string
       Category: string
+      Summary: string
       Description: string
       Aliases: string list
       Inputs: Port list
@@ -206,5 +207,6 @@ module FunctionDefinition =
         System.String.IsNullOrWhiteSpace(searchText)
         || contains definition.DisplayName
         || contains definition.Category
+        || contains definition.Summary
         || contains definition.Description
         || (definition.Aliases |> List.exists contains)

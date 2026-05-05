@@ -566,6 +566,17 @@ module ResourceOps =
     let memoryOf (ops: ResourceOps<'T>) (value: 'T) =
         ops.MemoryOf value
 
+module DebugLevel =
+    let mutable private level = 0u
+    let set value =
+        level <- value
+    let current () =
+        level
+    let isEnabled () =
+        level > 0u
+    let rssEnabled () =
+        level >= 2u
+
 type PipelineGraphNode =
     { Id: int
       Name: string
@@ -956,17 +967,21 @@ type Plan<'S,'T> = {
     length         : uint64 // length of the sequence, the plan is applied to
     memAvail       : uint64 // memory available for the plan
     memPeak        : uint64 // the plan's estimated peak memory consumption
-    debug          : bool }
+    debug          : bool
+    debugLevel     : uint }
 
 module Plan =
     let private graphOfStage stage =
         stage |> Option.map (fun stg -> stg.Graph) |> Option.defaultValue PipelineGraph.empty
 
+    let private levelOf debug =
+        if debug then DebugLevel.current() |> max 1u else 0u
+
     let create<'S,'T when 'T: equality> (stage: Stage<'S,'T> option) (memAvail : uint64) (memPeak: uint64) (nElemsPerSlice: uint64) (length: uint64) (debug: bool) : Plan<'S, 'T> =
-        { stage = stage; graph = graphOfStage stage; sourcePeek = None; memAvail = memAvail; memPeak = memPeak; nElemsPerSlice = Single nElemsPerSlice; length = length; debug = debug }
+        { stage = stage; graph = graphOfStage stage; sourcePeek = None; memAvail = memAvail; memPeak = memPeak; nElemsPerSlice = Single nElemsPerSlice; length = length; debug = debug; debugLevel = levelOf debug }
 
     let createWrapped<'S,'T when 'T: equality> (stage: Stage<'S,'T> option) (memAvail : uint64) (memPeak: uint64) (nElemsPerSlice: SingleOrPair) (length: uint64) (debug: bool) : Plan<'S, 'T> =
-        { stage = stage; graph = graphOfStage stage; sourcePeek = None; memAvail = memAvail; memPeak = memPeak; nElemsPerSlice = nElemsPerSlice; length = length; debug = debug }
+        { stage = stage; graph = graphOfStage stage; sourcePeek = None; memAvail = memAvail; memPeak = memPeak; nElemsPerSlice = nElemsPerSlice; length = length; debug = debug; debugLevel = levelOf debug }
 
     let withSourcePeek (sourcePeek: SourcePeek) (pl: Plan<'S,'T>) =
         { pl with sourcePeek = Some sourcePeek }
@@ -977,10 +992,13 @@ module Plan =
     //////////////////////////////////////////////////
     /// Source type operators
     let source (availableMemory: uint64) : Plan<unit, unit> =
+        DebugLevel.set 0u
         create None availableMemory 0UL 0UL 0UL false
 
-    let debug (availableMemory: uint64) : Plan<unit, unit> =
-        printfn $"[debug] Preparing plan - {availableMemory} B available"
+    let debug (level: uint) (availableMemory: uint64) : Plan<unit, unit> =
+        let level = max 1u level
+        DebugLevel.set level
+        printfn $"[debug] Preparing plan - {availableMemory} B available, level {level}"
         let result = create None availableMemory 0UL 0UL 0UL true
         printfn $"[debug] Done"
         result
@@ -1022,6 +1040,7 @@ module Plan =
         match pl1.stage,pl2.stage with
             Some stage1, Some stage2 ->
                 let debug = (pl1.debug || pl2.debug)
+                if debug then DebugLevel.set (max pl1.debugLevel pl2.debugLevel)
                 if debug then printfn $"[{name}] ({stage1.Name}, {stage2.Name})"
 
                 if pl1.length <> pl2.length then
@@ -1091,7 +1110,7 @@ module Plan =
         if pl.debug then printfn $"[sink] Transform plan graph with {pl.graph.Nodes.Length} nodes / {pl.graph.Edges.Length} edges to pipeline"
         let pipeline = Option.map (fun stage -> Stage.toPipe stage ()) pl.stage
         if pl.debug then printfn $"[sink] Running pipeline with an estimated {pl.memPeak/1024UL} / {pl.memAvail/1024UL} KB of memory use"
-        if pl.debug then
+        if pl.debug && pl.debugLevel >= 2u then
             let _, snapshot =
                 MemoryProbe.measure 10 (fun () ->
                     Option.map (Pipe.run pl.debug) pipeline |> ignore)
@@ -1116,7 +1135,7 @@ module Plan =
                     if pl.debug then printfn $"[{name}] Transform plan graph with {pl.graph.Nodes.Length} nodes / {pl.graph.Edges.Length} edges to pipeline"
                     let pipeline = stg.Build ()
                     if pl.debug then printfn $"[{name}] Running pipeline with an estimated {pl.memPeak/1024UL} / {pl.memAvail/1024UL} KB memory use" 
-                    if pl.debug then
+                    if pl.debug && pl.debugLevel >= 2u then
                         let result, snapshot =
                             MemoryProbe.measure 10 (fun () ->
                                 AsyncSeq.singleton () |> pipeline.Apply pl.debug |> reducer |> Async.RunSynchronously)

@@ -87,8 +87,19 @@ val releaseAfter2:
 
 val private rssKb: unit -> uint64
 
-val private printVolRssProbe:
-  enabled: bool -> label: 'a -> startKb: uint64 -> previousKb: uint64 -> uint64
+val private sampleVolRssProbe:
+  enabled: bool ->
+    label: 'a -> startKb: uint64 -> previousKb: uint64 -> uint64 * int64
+
+val private printVolRssSummary:
+  enabled: bool ->
+    startKb: uint64 ->
+    finalKb: uint64 ->
+    stackDelta: int64 ->
+    releaseInputsDelta: int64 ->
+    volumeFunctionDelta: int64 ->
+    disposeStackDelta: int64 ->
+    unstackDelta: int64 -> disposeVolumeDelta: int64 -> unit
 
 val volFctToLstFctReleaseAfterDebug:
   debug: bool ->
@@ -113,7 +124,12 @@ val (-->) :
 
 val source: (uint64 -> SlimPipeline.Plan<unit,unit>)
 
-val debug: availableMemory: uint64 -> SlimPipeline.Plan<unit,unit>
+val debug:
+  level: uint32 -> availableMemory: uint64 -> SlimPipeline.Plan<unit,unit>
+
+val commandLineSource:
+  availableMemory: uint64 ->
+    args: string array -> SlimPipeline.Plan<unit,unit> * string array
 
 val zip:
   (SlimPipeline.Plan<'a,'b> ->
@@ -845,7 +861,10 @@ val (-->) :
 
 val source: (uint64 -> SlimPipeline.Plan<unit,unit>)
 
-val debug: (uint64 -> SlimPipeline.Plan<unit,unit>)
+val debug: (uint32 -> uint64 -> SlimPipeline.Plan<unit,unit>)
+
+val commandLineSource:
+  (uint64 -> string array -> SlimPipeline.Plan<unit,unit> * string array)
 
 val zip:
   (SlimPipeline.Plan<'a,'b> ->

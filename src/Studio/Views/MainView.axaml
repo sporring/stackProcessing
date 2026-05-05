@@ -76,7 +76,7 @@
                     HorizontalAlignment="Stretch"
                     BorderThickness="1"
                     CornerRadius="4"
-                    ToolTip.Tip="{Binding Description}"
+                    ToolTip.Tip="{Binding Summary}"
                     Tag="{Binding Id}"
                     PointerPressed="PaletteElementPointerPressed">
                 <TextBlock Text="{Binding DisplayName}"
@@ -259,13 +259,28 @@
                 BorderBrush="#D7DDE5"
                 BorderThickness="1,0,0,0"
                 Padding="10">
-            <Grid RowDefinitions="Auto,*">
-                <TextBlock Text="Parameters"
+            <Grid RowDefinitions="Auto,Auto,*,Auto">
+                <StackPanel IsVisible="{Binding HasSelectedElement}"
+                            Margin="0,0,0,12">
+                    <TextBlock Text="{Binding SelectedNode.State.Definition.DisplayName}"
+                               FontSize="14"
+                               FontWeight="SemiBold"
+                               Foreground="#102A43"
+                               TextWrapping="Wrap" />
+                    <TextBlock Text="{Binding SelectedNode.State.Summary}"
+                               Margin="0,4,0,0"
+                               FontSize="12"
+                               Foreground="#52616B"
+                               TextWrapping="Wrap" />
+                </StackPanel>
+
+                <TextBlock Grid.Row="1"
+                           Text="Parameters"
                            FontSize="14"
                            FontWeight="SemiBold"
                            Margin="0,0,0,8" />
 
-                <ScrollViewer Grid.Row="1">
+                <ScrollViewer Grid.Row="2">
                     <ItemsControl ItemsSource="{Binding SelectedNode.State.Parameters}">
                         <ItemsControl.ItemTemplate>
                             <DataTemplate x:DataType="models:PipelineParameterViewModel">
@@ -308,6 +323,14 @@
                         </ItemsControl.ItemTemplate>
                     </ItemsControl>
                 </ScrollViewer>
+
+                <TextBlock Grid.Row="3"
+                           Text="{Binding SelectedNode.State.Description}"
+                           IsVisible="{Binding SelectedNode.State.HasDescription}"
+                           Margin="0,12,0,0"
+                           FontSize="12"
+                           Foreground="#52616B"
+                           TextWrapping="Wrap" />
             </Grid>
         </Border>
 

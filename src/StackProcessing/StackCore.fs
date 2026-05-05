@@ -75,31 +75,44 @@ let releaseNAfter (n: int) (f: Image<'S> list->'T list) (sLst: Image<'S> list) :
 let private rssKb () =
     MemoryProbe.currentRssBytes() / 1024UL
 
-let private printVolRssProbe enabled label startKb previousKb =
+let private sampleVolRssProbe enabled label startKb previousKb =
     if enabled then
         let currentKb = rssKb()
         let stepDelta = int64 currentKb - int64 previousKb
         let totalDelta = int64 currentKb - int64 startKb
         printfn $"[rss:vol] {label}: RSS {currentKb} KB, step %+d{stepDelta} KB, total %+d{totalDelta} KB"
-        currentKb
+        currentKb, stepDelta
     else
-        previousKb
+        previousKb, 0L
+
+let private printVolRssSummary enabled startKb finalKb stackDelta releaseInputsDelta volumeFunctionDelta disposeStackDelta unstackDelta disposeVolumeDelta =
+    if enabled then
+        let totalDelta = int64 finalKb - int64 startKb
+        printfn $"[rss:vol-summary] stack %+d{stackDelta} KB, releaseInputs %+d{releaseInputsDelta} KB, volumeFunction %+d{volumeFunctionDelta} KB, disposeStack %+d{disposeStackDelta} KB, unstack %+d{unstackDelta} KB, disposeVolume %+d{disposeVolumeDelta} KB, total %+d{totalDelta} KB"
 
 let volFctToLstFctReleaseAfterDebug debug (f: Image<'S>->Image<'T>) pad stride images =
-    let startKb = if debug then rssKb() else 0UL
-    let mutable previousKb = printVolRssProbe debug "start" startKb startKb
+    let rssDebug = debug && DebugLevel.rssEnabled()
+    let startKb = if rssDebug then rssKb() else 0UL
+    let mutable previousKb, _ = sampleVolRssProbe rssDebug "start" startKb startKb
     let stack = ImageFunctions.stack images 
-    previousKb <- printVolRssProbe debug "after stack" startKb previousKb
+    let currentKb, stackDelta = sampleVolRssProbe rssDebug "after stack" startKb previousKb
+    previousKb <- currentKb
     images |> List.take (min (int stride) images.Length) |> List.iter (fun I -> I.decRefCount())
-    previousKb <- printVolRssProbe debug "after release input slices" startKb previousKb
+    let currentKb, releaseInputsDelta = sampleVolRssProbe rssDebug "after release input slices" startKb previousKb
+    previousKb <- currentKb
     let vol = f stack
-    previousKb <- printVolRssProbe debug "after volume function" startKb previousKb
+    let currentKb, volumeFunctionDelta = sampleVolRssProbe rssDebug "after volume function" startKb previousKb
+    previousKb <- currentKb
     stack.decRefCount ()
-    previousKb <- printVolRssProbe debug "after dispose stack" startKb previousKb
+    let currentKb, disposeStackDelta = sampleVolRssProbe rssDebug "after dispose stack" startKb previousKb
+    previousKb <- currentKb
     let result = ImageFunctions.unstackSkipNTakeM pad stride vol
-    previousKb <- printVolRssProbe debug "after unstack" startKb previousKb
+    let currentKb, unstackDelta = sampleVolRssProbe rssDebug "after unstack" startKb previousKb
+    previousKb <- currentKb
     vol.decRefCount ()
-    previousKb <- printVolRssProbe debug "after dispose volume" startKb previousKb
+    let currentKb, disposeVolumeDelta = sampleVolRssProbe rssDebug "after dispose volume" startKb previousKb
+    previousKb <- currentKb
+    printVolRssSummary rssDebug startKb previousKb stackDelta releaseInputsDelta volumeFunctionDelta disposeStackDelta unstackDelta disposeVolumeDelta
     result
 
 let volFctToLstFctReleaseAfter (f: Image<'S>->Image<'T>) pad stride images =
@@ -108,9 +121,19 @@ let volFctToLstFctReleaseAfter (f: Image<'S>->Image<'T>) pad stride images =
 let (>=>) = Plan.(>=>)
 let (-->) = Stage.(-->)
 let source = Plan.source 
-let debug availableMemory = 
-    Image.Image<_>.setDebug true; 
-    Plan.debug availableMemory
+let debug level availableMemory = 
+    let level = max 1u level
+    Image.Image<_>.setDebugLevel level
+    Plan.debug level availableMemory
+let commandLineSource availableMemory (args: string array) =
+    if args.Length >= 2 && args[0] = "-d" then
+        let level =
+            match System.UInt32.TryParse(args[1]) with
+            | true, value -> value
+            | false, _ -> failwith $"Expected unsigned integer debug level after -d, got '{args[1]}'"
+        debug level availableMemory, args |> Array.skip 2
+    else
+        source availableMemory, args
  
 let zip = Plan.zip
 

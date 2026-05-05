@@ -62,6 +62,7 @@ val private decMemUsed: mem: uint32 -> unit
 val private currentRssBytes: unit -> uint64
 val mutable private rssBaselineBytes: uint64
 val mutable private peakRssDeltaBytes: uint64
+val mutable private debugLevel: uint32
 val private resetRssProbe: unit -> unit
 val private rssDeltaBytes: unit -> uint64
 val private sampleRssDeltaBytes: unit -> uint64 * uint64
@@ -158,6 +159,7 @@ type Image<'T when 'T: equality> =
       ofSimpleITK: itkImg: itk.simple.Image * ?optionalName: string *
                    ?optionalIndex: int -> Image<'T>
     static member setDebug: d: bool -> unit
+    static member setDebugLevel: level: uint32 -> unit
     static member
       toArray3DVector: img: Image<'S list> -> 'S array3d when 'S: equality
     static member

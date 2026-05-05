@@ -24,6 +24,7 @@ let (>=>) = StackCore.(>=>)
 let (-->) = StackCore.(-->)
 let source = StackCore.source
 let debug = StackCore.debug
+let commandLineSource = StackCore.commandLineSource
 let zip = StackCore.zip
 let promoteStreamingToWindow = StackCore.promoteStreamingToWindow
 let (>=>>) = StackCore.(>=>>)
