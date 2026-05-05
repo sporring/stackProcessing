@@ -49,6 +49,7 @@
   </ItemGroup>
 
   <ItemGroup>
+    <Compile Include="StackProcessingSupportTests.fs" />
     <Compile Include="StackProcessingCorrectnessTests.fs" />
     <Compile Include="Tests.fs" />
   </ItemGroup>

@@ -1052,8 +1052,8 @@ FN:360,System.Void Image::incTotalImages()
 FNDA:2598,System.Void Image::incTotalImages()
 DA:361,2598
 DA:362,2598
-BRDA:362,75,0,1297
-BRDA:362,75,1,2
+BRDA:362,75,0,1293
+BRDA:362,75,1,6
 FN:363,System.Void Image::decTotalImages()
 FNDA:4,System.Void Image::decTotalImages()
 DA:364,4
@@ -1061,8 +1061,8 @@ FN:368,System.Void Image::incMemUsed(System.UInt32)
 FNDA:3784,System.Void Image::incMemUsed(System.UInt32)
 DA:369,3784
 DA:370,3784
-BRDA:370,75,0,1278
-BRDA:370,75,1,614
+BRDA:370,75,0,1277
+BRDA:370,75,1,615
 FN:371,System.Void Image::decMemUsed(System.UInt32)
 FNDA:4,System.Void Image::decMemUsed(System.UInt32)
 DA:372,4

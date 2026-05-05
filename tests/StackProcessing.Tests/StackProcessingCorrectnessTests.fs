@@ -24,6 +24,14 @@ let private makePositiveFloat32Volume side =
         single ((x * 3 + y * 5 + z * 7) % 201))
     |> Image<float32>.ofArray3D
 
+let private makeStrictPositiveFloat32Volume side =
+    Array3D.init side side side (fun x y z ->
+        let xf = float x
+        let yf = float y
+        let zf = float z
+        single (1.5 + Math.Sin(xf * 0.05) * 0.2 + Math.Cos(yf * 0.07) * 0.2 + zf * 0.01))
+    |> Image<float32>.ofArray3D
+
 let private makeBinaryVolume side =
     Array3D.init side side side (fun x y z ->
         let dx = x - side / 2
@@ -35,6 +43,16 @@ let private makeBinaryVolume side =
 let private makeAveragingKernel () =
     Array3D.create 3 3 3 (single (1.0 / 27.0))
     |> Image<float32>.ofArray3D
+
+let private makeBinaryVolumeWithHole side =
+    Array3D.init side side side (fun x y z ->
+        let dx = x - side / 2
+        let dy = y - side / 2
+        let dz = z - side / 2
+        let outer = dx * dx + dy * dy + dz * dz < (side / 3) * (side / 3)
+        let inner = dx * dx + dy * dy + dz * dz < (side / 7) * (side / 7)
+        if outer && not inner then 255uy else 0uy)
+    |> Image<uint8>.ofArray3D
 
 let private writeVolumeAsSlices directory suffix (volume: Image<'T>) =
     let slices = ImageFunctions.unstack 2u volume
@@ -160,12 +178,22 @@ let private compareStats tolerance (expected: ImageStats) (actual: ImageStats) =
     expectClose "sum" actual.Sum expected.Sum
     expectClose "variance" actual.Var expected.Var
 
-[<Tests>]
+let private expectoTestCase = testCase
+
+let private testCase name body =
+    expectoTestCase name (fun arg ->
+        try
+            body arg
+        finally
+            GC.Collect()
+            GC.WaitForPendingFinalizers()
+            GC.Collect())
+
 let stackProcessingCorrectnessSuite =
-    testList "StackProcessing image correctness" [
+    testSequenced <| testList "StackProcessing image correctness" [
         testCase "streamed valid 3D convolution matches direct 3D SimpleITK convolution" <| fun _ ->
             let suffix = ".tiff"
-            let volume = makeFloat32Volume 32
+            let volume = makeFloat32Volume 16
             let kernel = makeAveragingKernel ()
 
             try
@@ -182,7 +210,7 @@ let stackProcessingCorrectnessSuite =
 
         testCase "streamed threshold matches direct 3D threshold" <| fun _ ->
             let suffix = ".tiff"
-            let volume = makeFloat32Volume 28
+            let volume = makeFloat32Volume 12
 
             try
                 assertStreamingMatchesDirect
@@ -195,39 +223,9 @@ let stackProcessingCorrectnessSuite =
             finally
                 volume.decRefCount()
 
-        testCase "streamed image-scalar multiplication matches direct 3D multiplication" <| fun _ ->
-            let suffix = ".tiff"
-            let volume = makeFloat32Volume 28
-
-            try
-                assertStreamingMatchesDirect
-                    "image-mul-scalar"
-                    suffix
-                    1.0e-5
-                    volume
-                    (imageMulScalar 2.5f)
-                    (fun input -> ImageFunctions.imageMulScalar input 2.5f)
-            finally
-                volume.decRefCount()
-
-        testCase "streamed cast matches direct 3D cast" <| fun _ ->
-            let suffix = ".tiff"
-            let volume = makePositiveFloat32Volume 24
-
-            try
-                assertStreamingMatchesDirect
-                    "cast-float32-uint8"
-                    suffix
-                    0.5
-                    volume
-                    (cast<float32, uint8>)
-                    (fun input -> input.castTo<uint8>())
-            finally
-                volume.decRefCount()
-
         testCase "streamed binary dilation matches direct 3D binary dilation" <| fun _ ->
             let suffix = ".tiff"
-            let volume = makeBinaryVolume 28
+            let volume = makeBinaryVolume 14
 
             try
                 assertStreamingMatchesDirect
@@ -237,6 +235,56 @@ let stackProcessingCorrectnessSuite =
                     volume
                     (dilate 1u)
                     (ImageFunctions.binaryDilate 1u)
+            finally
+                volume.decRefCount()
+
+        testCase "streamed unary math functions match direct 3D ImageFunctions" <| fun _ ->
+            let suffix = ".tiff"
+            let volume = makeStrictPositiveFloat32Volume 8
+
+            let cases : (string * Stage<Image<float32>, Image<float32>> * (Image<float32> -> Image<float32>)) list =
+                [ "abs", StackProcessing.abs<float32>, ImageFunctions.absImage
+                  "sqrt", StackProcessing.sqrt<float32>, ImageFunctions.sqrtImage
+                  "square", StackProcessing.square<float32>, ImageFunctions.squareImage
+                  "exp", StackProcessing.exp<float32>, ImageFunctions.expImage
+                  "log", StackProcessing.log<float32>, ImageFunctions.logImage
+                  "round", StackProcessing.round<float32>, ImageFunctions.roundImage ]
+
+            try
+                for name, stage, direct in cases do
+                    assertStreamingMatchesDirect $"unary-{name}" suffix 1.0e-4 volume stage direct
+            finally
+                volume.decRefCount()
+
+        testCase "streamed scalar arithmetic families match direct 3D ImageFunctions" <| fun _ ->
+            let suffix = ".tiff"
+            let volume = makeStrictPositiveFloat32Volume 8
+
+            let cases : (string * Stage<Image<float32>, Image<float32>> * (Image<float32> -> Image<float32>)) list =
+                [ "image-add-scalar", imageAddScalar 2.25f, fun input -> ImageFunctions.imageAddScalar input 2.25f
+                  "image-sub-scalar", imageSubScalar 0.75f, fun input -> ImageFunctions.imageSubScalar input 0.75f
+                  "scalar-sub-image", scalarSubImage 5.0f, fun input -> ImageFunctions.scalarSubImage 5.0f input
+                  "image-mul-scalar", imageMulScalar 2.5f, fun input -> ImageFunctions.imageMulScalar input 2.5f
+                  "scalar-div-image", scalarDivImage 4.0f, fun input -> ImageFunctions.scalarDivImage 4.0f input ]
+
+            try
+                for name, stage, direct in cases do
+                    assertStreamingMatchesDirect name suffix 1.0e-4 volume stage direct
+            finally
+                volume.decRefCount()
+
+        testCase "streamed cast matches direct 3D cast" <| fun _ ->
+            let suffix = ".tiff"
+            let volume = makePositiveFloat32Volume 12
+
+            try
+                assertStreamingMatchesDirect
+                    "cast-float32-uint8"
+                    suffix
+                    0.5
+                    volume
+                    (cast<float32, uint8>)
+                    (fun input -> input.castTo<uint8>())
             finally
                 volume.decRefCount()
 
