@@ -565,10 +565,13 @@ type Image<'T when 'T : equality>(sz: uint list, ?optionalNumberComponents: uint
         let w = arr.GetLength(0)
         let h = arr.GetLength(1)
         let c = arr.GetLength(2)
-        let img = new Image<'S list>([uint w; uint h], uint c, _name)
+        let componentCount = max 2 c
+        let img = new Image<'S list>([uint w; uint h], uint componentCount, _name)
         for i0 in 0 .. w - 1 do
             for i1 in 0 .. h - 1 do
-                let comps = [ for k in 0 .. c - 1 -> arr[i0, i1, k] ]
+                let comps =
+                    [ for k in 0 .. componentCount - 1 ->
+                          if k < c then arr[i0, i1, k] else Unchecked.defaultof<'S> ]
                 img.Set [uint i0; uint i1] comps
         img
 
@@ -598,11 +601,14 @@ type Image<'T when 'T : equality>(sz: uint list, ?optionalNumberComponents: uint
         let h = arr.GetLength(1)
         let d = arr.GetLength(2)
         let c = arr.GetLength(3)
-        let img = new Image<'S list>([uint w; uint h; uint d], uint c, _name)
+        let componentCount = max 2 c
+        let img = new Image<'S list>([uint w; uint h; uint d], uint componentCount, _name)
         for i0 in 0 .. w - 1 do
             for i1 in 0 .. h - 1 do
                 for i2 in 0 .. d - 1 do
-                    let comps = [ for k in 0 .. c - 1 -> arr[i0, i1, i2, k] ]
+                    let comps =
+                        [ for k in 0 .. componentCount - 1 ->
+                              if k < c then arr[i0, i1, i2, k] else Unchecked.defaultof<'S> ]
                     img.Set [uint i0; uint i1; uint i2] comps
         img
 

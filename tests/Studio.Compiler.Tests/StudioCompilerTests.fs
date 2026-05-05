@@ -134,4 +134,125 @@ let generatorSuite =
             Expect.stringContains code "{ImageStats0.NumPixels}" "Format placeholder should map to NumPixels expression."
             Expect.stringContains code "{ImageStats0.Mean}" "Format placeholder should map to Mean expression."
             Expect.stringContains code $"Pixels: {{ImageStats0.NumPixels}}{System.Environment.NewLine}Mean: {{ImageStats0.Mean}}" "Generated F# string should contain a literal newline."
+
+        testCase "image op image lowers selected operation to pair stage" <| fun _ ->
+            let readA =
+                node "readA" "Read"
+                    [ p "availableMemory" "1024" false
+                      p "type" "UInt8" false
+                      p "input" "a" false
+                      p "suffix" ".tiff" false ]
+
+            let readB =
+                node "readB" "Read"
+                    [ p "availableMemory" "1024" false
+                      p "type" "UInt8" false
+                      p "input" "b" false
+                      p "suffix" ".tiff" false ]
+
+            let op =
+                node "op" "ImageOpImage"
+                    [ p "operation" "-" false
+                      p "type" "UInt8" false ]
+
+            let write =
+                node "write" "Write"
+                    [ p "output" "out" false
+                      p "suffix" ".tiff" false ]
+
+            let code =
+                graph
+                    [ readA; readB; op; write ]
+                    [ edge "readA" "output" 0 "op" "input" 0
+                      edge "readB" "output" 0 "op" "input" 1
+                      edge "op" "output" 0 "write" "input" 0 ]
+                |> PipelineCodeGenerator.generateSavedGraph
+
+            Expect.stringContains code "||> zip" "Independent image inputs should be zipped."
+            Expect.stringContains code ">>=> subPair" "The selected subtraction operation should lower to subPair."
+
+        testCase "connected component pair stream writes chunk labels through teeFst before reducing" <| fun _ ->
+            let read =
+                node "read" "Read"
+                    [ p "availableMemory" "1024" false
+                      p "type" "UInt8" false
+                      p "input" "input" false
+                      p "suffix" ".tiff" false ]
+
+            let connected =
+                node "connected" "ConnectedComponents" [ p "windowSize" "15" false ]
+
+            let writeChunks =
+                node "writeChunks" "WriteChunkSlices"
+                    [ p "output" "tmp" false
+                      p "suffix" ".mha" false
+                      p "windowSize" "15" false ]
+
+            let table =
+                node "table" "ComponentTranslationTable" [ p "windowSize" "15" false ]
+
+            let code =
+                graph
+                    [ read; connected; writeChunks; table ]
+                    [ edge "read" "output" 0 "connected" "input" 0
+                      edge "connected" "output" 0 "writeChunks" "input" 0
+                      edge "writeChunks" "output" 0 "table" "input" 0 ]
+                |> PipelineCodeGenerator.generateSavedGraph
+
+            Expect.stringContains code ">=> connectedComponents 15u" "Connected components should produce label/count pairs."
+            Expect.stringContains code ">=> teeFst (writeChunkSlices \"tmp\" \".mha\" 15u)" "Chunk writing should be an explicit tee over the first tuple element."
+            Expect.stringContains code ">=> makeConnectedComponentTranslationTable 15u" "Translation table should consume the pair stream."
+            Expect.stringContains code "|> drain" "The reducer should be drained."
+
+        testCase "tap connected to print becomes tapIt lambda with stream value name" <| fun _ ->
+            let read =
+                node "read" "Read"
+                    [ p "availableMemory" "1024" false
+                      p "type" "UInt8" false
+                      p "input" "input" false
+                      p "suffix" ".tiff" false ]
+
+            let tap =
+                node "tap" "Tap" [ p "label" "debug" false ]
+
+            let print =
+                node "print" "Print"
+                    [ p "format" "Image: {I}" false
+                      p "input1" "" true ]
+
+            let write =
+                node "write" "Write"
+                    [ p "output" "output" false
+                      p "suffix" ".tiff" false ]
+
+            let code =
+                graph
+                    [ read; tap; print; write ]
+                    [ edge "read" "output" 0 "tap" "input" 0
+                      edge "tap" "scalarOutput" 0 "print" "parameterInput" 1
+                      edge "tap" "output" 0 "write" "input" 0 ]
+                |> PipelineCodeGenerator.generateSavedGraph
+
+            Expect.stringContains code ">=> tapIt (fun I -> $\"Image: {I}\")" "Tap should absorb the print format as a lambda."
+            Expect.isFalse (code.Contains("printfn $\"Image:")) "The helper print node should not also be emitted as a terminal program."
+
+        testCase "chart over histogram data emits visualization helper and bound histogram" <| fun _ ->
+            let histogram =
+                node "histogram" "HistogramData" []
+
+            let chart =
+                node "chart" "Chart"
+                    [ p "kind" "Line" false
+                      p "input" "" true ]
+
+            let code =
+                graph
+                    [ histogram; chart ]
+                    [ edge "histogram" "reducerOutput" 0 "chart" "parameterInput" 1 ]
+                |> PipelineCodeGenerator.generateSavedGraph
+
+            Expect.stringContains code "open Plotly.NET" "Charts need Plotly.NET."
+            Expect.stringContains code "let showChart kind points =" "Chart helper should be emitted once."
+            Expect.stringContains code "let Histogram0 =" "Linked histogram data should be bound before use."
+            Expect.stringContains code "showChart \"Line\" Histogram0" "Chart should use the selected chart kind and linked histogram value."
     ]

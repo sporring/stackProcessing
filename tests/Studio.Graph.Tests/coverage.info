@@ -205,15 +205,15 @@ DA:212,3
 DA:213,3
 DA:214,3
 FN:558,Microsoft.FSharp.Core.FSharpOption`1<Studio.Graph.Function> Studio.Graph.BuiltInCatalog::tryFind(System.String)
-FNDA:2,Microsoft.FSharp.Core.FSharpOption`1<Studio.Graph.Function> Studio.Graph.BuiltInCatalog::tryFind(System.String)
-DA:559,2
-DA:560,2
+FNDA:6,Microsoft.FSharp.Core.FSharpOption`1<Studio.Graph.Function> Studio.Graph.BuiltInCatalog::tryFind(System.String)
+DA:559,6
+DA:560,6
 FN:562,Studio.Graph.Function Studio.Graph.BuiltInCatalog::find(System.String)
-FNDA:2,Studio.Graph.Function Studio.Graph.BuiltInCatalog::find(System.String)
-DA:563,2
-DA:564,1
+FNDA:6,Studio.Graph.Function Studio.Graph.BuiltInCatalog::find(System.String)
+DA:563,6
+DA:564,5
 DA:565,1
-BRDA:563,8,1,1
+BRDA:563,8,1,5
 BRDA:563,8,0,1
 FN:554,System.Tuple`2<System.String,Studio.Graph.Function> Studio.Graph.BuiltInCatalog/Pipe #1 stage #1 at line 555@555::Invoke(Studio.Graph.Function)
 FNDA:39,System.Tuple`2<System.String,Studio.Graph.Function> Studio.Graph.BuiltInCatalog/Pipe #1 stage #1 at line 555@555::Invoke(Studio.Graph.Function)
@@ -672,26 +672,26 @@ FNH:6
 end_of_record
 SF:/Users/jrh630/repositories/stackProcessing/src/Studio.Graph/Domain.fs
 FN:206,System.Boolean Studio.Graph.FunctionDefinition::matches(System.String,Studio.Graph.Function)
-FNDA:5,System.Boolean Studio.Graph.FunctionDefinition::matches(System.String,Studio.Graph.Function)
-DA:207,5
-DA:208,5
-DA:209,4
-DA:210,3
-DA:211,2
+FNDA:6,System.Boolean Studio.Graph.FunctionDefinition::matches(System.String,Studio.Graph.Function)
+DA:207,6
+DA:208,6
+DA:209,5
+DA:210,4
+DA:211,3
 DA:212,4
 BRDA:207,13,0,0
-BRDA:207,13,1,5
+BRDA:207,13,1,6
 BRDA:208,32,0,1
-BRDA:208,32,1,4
+BRDA:208,32,1,5
 BRDA:209,51,0,2
-BRDA:209,51,1,3
+BRDA:209,51,1,4
 BRDA:210,70,0,3
-BRDA:210,70,1,2
-BRDA:211,89,0,3
+BRDA:210,70,1,3
+BRDA:211,89,0,4
 BRDA:211,89,1,2
 FN:204,System.Boolean Studio.Graph.FunctionDefinition/contains@205::Invoke(System.String)
-FNDA:24,System.Boolean Studio.Graph.FunctionDefinition/contains@205::Invoke(System.String)
-DA:205,24
+FNDA:28,System.Boolean Studio.Graph.FunctionDefinition/contains@205::Invoke(System.String)
+DA:205,28
 FN:111,Studio.Graph.PortType Studio.Graph.PortTypeModule::numericToImage(Studio.Graph.NumericType)
 FNDA:0,Studio.Graph.PortType Studio.Graph.PortTypeModule::numericToImage(Studio.Graph.NumericType)
 DA:112,0

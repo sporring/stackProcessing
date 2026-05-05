@@ -1,5 +1,6 @@
 module Tests.SlimPipelineTests
 
+open System.IO
 open Expecto
 open SlimPipeline
 
@@ -58,6 +59,53 @@ let profileSuite =
             Expect.equal (Profile.combine Unit Streaming) Streaming "Streaming should dominate Unit."
             Expect.equal (Profile.combine Constant Streaming) Streaming "Streaming should dominate Constant."
             Expect.equal (Profile.combine (Window(3u, 2u, 1u, 0u, 1u)) Streaming) (Window(3u, 2u, 1u, 0u, 1u)) "Window should dominate Streaming."
+    ]
+
+[<Tests>]
+let costModelSuite =
+    testList "Stage cost model" [
+        testCase "memory model mapLike accounts for input output and work buffers" <| fun _ ->
+            let model = StageMemoryModel.mapLike ((*) 2UL) ((*) 3UL)
+            let pressure = model.Estimate (Single 10UL)
+
+            Expect.equal pressure.InputLive 10UL "Map stages keep the input live while computing."
+            Expect.equal pressure.OutputLive 20UL "Output bytes should be estimated from the supplied function."
+            Expect.equal pressure.WorkLive 30UL "Temporary work bytes should be estimated from the supplied function."
+            Expect.equal pressure.Peak 60UL "Peak should include input, output, work, and retained bytes."
+            Expect.equal (StageMemoryModel.memoryNeed model (Single 10UL)) (Single 60UL) "Legacy memory need should be derived from the peak."
+
+        testCase "work pressures add cpu native and io components" <| fun _ ->
+            let left = StageWorkPressure.create 1.0 2.0 3UL 4UL 5UL 6UL (Some "left")
+            let right = StageWorkPressure.create 10.0 20.0 30UL 40UL 50UL 60UL None
+            let combined = StageWorkPressure.add left right
+
+            Expect.equal combined.CpuWorkUnits 11.0 "CPU units should add."
+            Expect.equal combined.NativeWorkUnits 22.0 "Native units should add."
+            Expect.equal combined.IoReadBytes 33UL "Read bytes should add."
+            Expect.equal combined.IoWriteBytes 44UL "Write bytes should add."
+            Expect.equal combined.IoReadOps 55UL "Read ops should add."
+            Expect.equal combined.IoWriteOps 66UL "Write ops should add."
+            Expect.equal combined.CalibrationKey None "Combined work from multiple stages should not pretend to have a single calibration key."
+
+        testCase "calibration json is optional and supports camelCase coefficients" <| fun _ ->
+            StageCostCalibration.clear()
+            let path = Path.Combine(Path.GetTempPath(), $"slimpipeline-cost-{System.Guid.NewGuid():N}.json")
+            File.WriteAllText(path, """{"calibrations":{"stage":{"cpuMillisecondsPerUnit":2.0,"ioReadMillisecondsPerByte":0.5,"ioWriteMillisecondsPerOp":3.0}}}""")
+
+            try
+                Expect.isTrue (StageCostCalibration.loadJson path) "Calibration JSON should load when the file exists and has a calibrations object."
+                let pressure = StageWorkPressure.create 4.0 0.0 10UL 0UL 0UL 2UL (Some "stage")
+                Expect.equal (StageCostCalibration.estimateMilliseconds pressure) (Some 19.0) "Registered coefficients should estimate elapsed milliseconds."
+                Expect.isFalse (StageCostCalibration.loadJson (path + ".missing")) "Missing calibration files should be ignored cleanly."
+            finally
+                StageCostCalibration.clear()
+                if File.Exists path then File.Delete path
+
+        testCase "source peek stores source metadata for optimizers" <| fun _ ->
+            let peek = SourcePeek.create "read" 8UL (Some 12UL) (Map.ofList ["width", "64"; "height", "32"])
+            let plan = Plan.source 1024UL |> Plan.withSourcePeek peek
+
+            Expect.equal plan.sourcePeek (Some peek) "Plan should retain source metadata for later optimization."
     ]
 
 [<Tests>]
