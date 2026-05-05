@@ -200,6 +200,57 @@ val tapIt: (('a -> string) -> SlimPipeline.Stage<'a,'a>)
 val idStage<'T> : (string -> SlimPipeline.Stage<'T,'T>)
 
 
+module StackProcessingCost
+
+type ImageStageShape =
+    {
+      InputImages: uint64
+      OutputImages: uint64
+      WorkImages: uint64
+      RetainedImages: uint64
+    }
+
+module ImageStageShape =
+    
+    val mapLike: ImageStageShape
+    
+    val iterLike: ImageStageShape
+    
+    val windowLike: windowSize: int -> ImageStageShape
+
+val inputVoxels: input: SlimPipeline.SingleOrPair -> uint64
+
+val pixelTypeName<'T> : string
+
+val imageBytes<'T> : nVoxels: uint64 -> uint64
+
+val sliceBytes<'T> : width: uint -> height: uint -> uint64
+
+val imageStageMemory<'T> :
+  evaluation: SlimPipeline.StageEvaluation ->
+    shape: ImageStageShape -> SlimPipeline.StageMemoryModel
+
+val imageMapCost<'T> :
+  calibrationKey: string ->
+    workUnits: (SlimPipeline.SingleOrPair -> float) ->
+    SlimPipeline.StageCostModel
+
+val imageIoCost<'T> :
+  kind: string ->
+    evaluation: SlimPipeline.StageEvaluation ->
+    calibrationKey: string ->
+    bytes: (SlimPipeline.SingleOrPair -> uint64) ->
+    ops: (SlimPipeline.SingleOrPair -> uint64) -> SlimPipeline.StageWorkModel
+
+val withCostModel:
+  costModel: SlimPipeline.StageCostModel ->
+    stage: SlimPipeline.Stage<'a,'b> -> SlimPipeline.Stage<'a,'b>
+
+val tryLoadCostCalibration: path: string -> bool
+
+val tryLoadFirstCostCalibration: paths: string list -> bool
+
+
 module StackIO
 
 type FileInfo = ImageFunctions.FileInfo
@@ -363,6 +414,11 @@ val liftUnaryReleaseAfter:
     when 'S: equality and 'T: equality
 
 val getBytesPerComponent<'T> : uint64
+
+val getImageFacts:
+  image: StackCore.Image<'T> -> Image.ImageFacts when 'T: equality
+
+val imageBytes<'T> : nVoxels: uint64 -> uint64
 
 val private inputValue: input: SlimPipeline.SingleOrPair -> uint64
 
@@ -853,12 +909,18 @@ type StageCostCoefficients = SlimPipeline.StageCostCoefficients
 
 type Image<'S when 'S: equality> = Image.Image<'S>
 
+type ImageFacts = Image.ImageFacts
+
 val loadCostCalibration: (string -> bool)
 
 val clearCostCalibration: (unit -> unit)
 
 val registerCostCalibration:
   (string -> SlimPipeline.StageCostCoefficients -> unit)
+
+val tryLoadCostCalibration: (string -> bool)
+
+val tryLoadFirstCostCalibration: (string list -> bool)
 
 val getMem: (unit -> unit)
 
@@ -1082,6 +1144,11 @@ val liftUnaryReleaseAfter:
     when 'a: equality and 'b: equality
 
 val getBytesPerComponent<'T> : uint64
+
+val getImageFacts<'T when 'T: equality> :
+  (StackCore.Image<'T> -> Image.ImageFacts) when 'T: equality
+
+val imageBytes<'T> : (uint64 -> uint64)
 
 val cast<'S,'T when 'S: equality and 'T: equality> :
   SlimPipeline.Stage<StackCore.Image<'S>,StackCore.Image<'T>>

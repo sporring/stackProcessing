@@ -49,6 +49,29 @@ module InternalHelpers =
       t: itk.simple.PixelIDValueEnum -> acc: obj -> k: obj -> p: obj -> obj
 val getBytesPerComponent: t: System.Type -> uint32
 val getBytesPerSItkComponent: t: itk.simple.PixelIDValueEnum -> uint32
+type ImageFacts =
+    {
+      Backend: string
+      PixelType: string
+      ComponentBytes: uint64
+      ComponentsPerPixel: uint64
+      Size: uint64 list
+      VoxelCount: uint64
+      MemoryBytes: uint64
+    }
+module ImageFacts =
+    val private product: values: uint64 list -> uint64
+    val create:
+      backend: string ->
+        pixelType: string ->
+        componentBytes: uint64 ->
+        componentsPerPixel: uint64 -> size: uint64 list -> ImageFacts
+    val forType<'T> :
+      size: uint list -> componentsPerPixel: uint32 -> ImageFacts
+    val ofSimpleITK: sitk: itk.simple.Image -> ImageFacts
+    val memoryBytesForType<'T> :
+      nVoxels: uint64 -> componentsPerPixel: uint32 -> uint64
+    val sliceBytesForType<'T> : width: uint -> height: uint -> uint64
 val equalOne: v: 'T -> bool
 val private syncRoot: obj
 val mutable private totalImages: int
@@ -171,8 +194,10 @@ type Image<'T when 'T: equality> =
     member Get: coords: uint list -> 'T
     member GetDepth: unit -> uint32
     member GetDimensions: unit -> uint32
+    member GetFacts: unit -> ImageFacts
     override GetHashCode: unit -> int
     member GetHeight: unit -> uint32
+    member GetMemoryBytes: unit -> uint64
     member GetNumberOfComponentsPerPixel: unit -> uint32
     member GetSize: unit -> uint list
     member

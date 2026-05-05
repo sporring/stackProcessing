@@ -12,19 +12,13 @@ let private inputValue input =
     input |> SingleOrPair.sum |> SingleOrPair.fst
 
 let private imageBytes<'T> nPixels =
-    nPixels * (typeof<'T> |> Image.getBytesPerComponent |> uint64)
+    StackProcessingCost.imageBytes<'T> nPixels
 
 let private imageIoCost<'T> kind evaluation calibrationKey bytes ops : StageWorkModel =
-    match kind with
-    | "read" -> StageWorkModel.ioRead evaluation (Some calibrationKey) bytes ops
-    | "write" -> StageWorkModel.ioWrite evaluation (Some calibrationKey) bytes ops
-    | _ -> StageWorkModel.zero evaluation
+    StackProcessingCost.imageIoCost<'T> kind evaluation calibrationKey bytes ops
 
 let private withCostModel costModel stage =
-    { stage with
-        CostModel = costModel
-        MemoryModel = costModel.Memory
-        MemoryNeed = StageCostModel.memoryNeed costModel }
+    StackProcessingCost.withCostModel costModel stage
 
 let getStackDepth (inputDir: string) (suffix: string) : uint =
     let files = Directory.GetFiles(inputDir, "*"+suffix) |> Array.sort

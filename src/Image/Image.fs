@@ -292,6 +292,51 @@ let getBytesPerSItkComponent t =
     elif t = itk.simple.PixelIDValueEnum.sitkLabelUInt32 then 4u
     elif t = itk.simple.PixelIDValueEnum.sitkLabelUInt64 then 8u
     else 8u // guessing here
+
+type ImageFacts =
+    { Backend: string
+      PixelType: string
+      ComponentBytes: uint64
+      ComponentsPerPixel: uint64
+      Size: uint64 list
+      VoxelCount: uint64
+      MemoryBytes: uint64 }
+
+module ImageFacts =
+    let private product values =
+        values |> List.fold (fun acc value -> acc * value) 1UL
+
+    let create backend pixelType componentBytes componentsPerPixel size =
+        let voxelCount = product size
+        { Backend = backend
+          PixelType = pixelType
+          ComponentBytes = componentBytes
+          ComponentsPerPixel = componentsPerPixel
+          Size = size
+          VoxelCount = voxelCount
+          MemoryBytes = voxelCount * componentBytes * componentsPerPixel }
+
+    let forType<'T> size componentsPerPixel =
+        create
+            "generic"
+            typeof<'T>.Name
+            (getBytesPerComponent typeof<'T> |> uint64)
+            (uint64 componentsPerPixel)
+            (size |> List.map uint64)
+
+    let ofSimpleITK (sitk: itk.simple.Image) =
+        create
+            "SimpleITK"
+            (pixelIdToString (sitk.GetPixelID()))
+            (getBytesPerSItkComponent (sitk.GetPixelID()) |> uint64)
+            (uint64 (sitk.GetNumberOfComponentsPerPixel()))
+            (sitk.GetSize() |> fromVectorUInt32 |> List.map uint64)
+
+    let memoryBytesForType<'T> (nVoxels: uint64) componentsPerPixel =
+        (forType<'T> [uint nVoxels] componentsPerPixel).MemoryBytes
+
+    let sliceBytesForType<'T> width height =
+        (forType<'T> [width; height] 1u).MemoryBytes
     
 
 let equalOne (v : 'T) : bool =
@@ -376,8 +421,7 @@ type Image<'T when 'T : equality>(sz: uint list, ?optionalNumberComponents: uint
     let itkId = fromType<'T>
     let isListType = typeof<'T>.IsGenericType && typeof<'T>.GetGenericTypeDefinition() = typedefof<list<_>>
     let mutable img = 
-        if isListType && numberComp < 2u then new itk.simple.Image(sz |> toVectorUInt32, itkId, 2u)
-        elif isListType && numberComp > 1u then  new itk.simple.Image(sz |> toVectorUInt32, itkId)
+        if isListType then new itk.simple.Image(sz |> toVectorUInt32, itkId, max 2u numberComp)
         else new itk.simple.Image(sz |> toVectorUInt32, itkId, numberComp)
     do incMemUsed (Image<_>.memoryEstimateSItk img)
     // count how many references there is to this image.
@@ -425,17 +469,18 @@ type Image<'T when 'T : equality>(sz: uint list, ?optionalNumberComponents: uint
             img <- new itk.simple.Image([0u;0u] |> toVectorUInt32, itkId)
 
     static member memoryEstimateSItk (sitk : itk.simple.Image) = 
-        let noComponent = sitk.GetNumberOfComponentsPerPixel()
-        let bytesPerComponent = getBytesPerSItkComponent (sitk.GetPixelID())
-        let size = sitk.GetSize() |> fromVectorUInt32
-        let res = bytesPerComponent * (size |> List.reduce ( * ));
-        res
+        let facts = ImageFacts.ofSimpleITK sitk
+        if facts.MemoryBytes > uint64 System.UInt32.MaxValue then
+            System.UInt32.MaxValue
+        else
+            uint32 facts.MemoryBytes
 
     static member memoryEstimate (width: uint) (height: uint) =
-        let bytesPerComponent = getBytesPerSItkComponent (fromType<'T>)
-        uint64 (bytesPerComponent * width * height);
+        ImageFacts.sliceBytesForType<'T> width height
 
     member this.GetSize () = img.GetSize() |> fromVectorUInt32
+    member this.GetFacts () = ImageFacts.ofSimpleITK img
+    member this.GetMemoryBytes () = this.GetFacts().MemoryBytes
     member this.GetDepth() = max 1u (img.GetDepth()) // Non-vector images returns 0
     member this.GetDimensions() = img.GetDimension()
     member this.GetHeight() = img.GetHeight()
