@@ -202,6 +202,12 @@ module ResourceOps =
     val retainAndReturn: ops: ResourceOps<'T> -> value: 'T -> 'T
     val release: ops: ResourceOps<'T> -> value: 'T -> unit
     val memoryOf: ops: ResourceOps<'T> -> value: 'T -> uint64 option
+module DebugLevel =
+    val mutable private level: uint32
+    val set: value: uint32 -> unit
+    val current: unit -> uint32
+    val isEnabled: unit -> bool
+    val rssEnabled: unit -> bool
 type PipelineGraphNode =
     {
       Id: int
@@ -399,9 +405,11 @@ type Plan<'S,'T> =
       memAvail: uint64
       memPeak: uint64
       debug: bool
+      debugLevel: uint
     }
 module Plan =
     val private graphOfStage: stage: Stage<'a,'b> option -> PipelineGraph
+    val private levelOf: debug: bool -> uint32
     val create:
       stage: Stage<'S,'T> option ->
         memAvail: uint64 ->
@@ -418,7 +426,7 @@ module Plan =
     val graph: pl: Plan<'S,'T> -> PipelineGraph
     /// Source type operators
     val source: availableMemory: uint64 -> Plan<unit,unit>
-    val debug: availableMemory: uint64 -> Plan<unit,unit>
+    val debug: level: uint -> availableMemory: uint64 -> Plan<unit,unit>
     /// Composition operators
     val composePlan:
       name: string -> pl: Plan<'a,'b> -> stage: Stage<'b,'c> -> Plan<'a,'c>
