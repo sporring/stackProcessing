@@ -1,0 +1,1 @@
+dotnet test StackProcessing.Tests.fsproj --tl:off --logger "console;verbosity=detailed"

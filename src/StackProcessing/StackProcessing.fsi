@@ -104,14 +104,12 @@ val private printVolRssSummary:
 val volFctToLstFctReleaseAfterDebug:
   debug: bool ->
     f: (Image<'S> -> Image<'T>) ->
-    pad: uint ->
-    stride: uint -> images: Image.Image<'S> list -> Image.Image<'T> list
+    pad: uint -> stride: uint -> images: Image<'S> list -> Image<'T> list
     when 'S: equality and 'T: equality
 
 val volFctToLstFctReleaseAfter:
   f: (Image<'S> -> Image<'T>) ->
-    pad: uint ->
-    stride: uint -> images: Image.Image<'S> list -> Image.Image<'T> list
+    pad: uint -> stride: uint -> images: Image<'S> list -> Image<'T> list
     when 'S: equality and 'T: equality
 
 val (>=>) :
@@ -695,7 +693,8 @@ val closing:
 
 /// Full stack operators
 val binaryFillHoles:
-  winSz: uint -> SlimPipeline.Stage<StackCore.Image<uint8>,Image.Image<uint8>>
+  winSz: uint ->
+    SlimPipeline.Stage<StackCore.Image<uint8>,StackCore.Image<uint8>>
 
 val connectedComponents:
   winSz: uint ->
@@ -703,23 +702,24 @@ val connectedComponents:
 
 val relabelComponents:
   a: uint ->
-    winSz: uint -> SlimPipeline.Stage<StackCore.Image<'a>,Image.Image<'a>>
+    winSz: uint -> SlimPipeline.Stage<StackCore.Image<'a>,StackCore.Image<'a>>
     when 'a: equality
 
 val watershed:
   a: float ->
-    winSz: uint -> SlimPipeline.Stage<StackCore.Image<'a>,Image.Image<'a>>
+    winSz: uint -> SlimPipeline.Stage<StackCore.Image<'a>,StackCore.Image<'a>>
     when 'a: equality
 
 val signedDistanceMap:
-  winSz: uint -> SlimPipeline.Stage<StackCore.Image<uint8>,Image.Image<float>>
+  winSz: uint ->
+    SlimPipeline.Stage<StackCore.Image<uint8>,StackCore.Image<float>>
 
 val otsuThreshold:
-  winSz: uint -> SlimPipeline.Stage<StackCore.Image<'a>,Image.Image<uint8>>
+  winSz: uint -> SlimPipeline.Stage<StackCore.Image<'a>,StackCore.Image<uint8>>
     when 'a: equality
 
 val momentsThreshold:
-  winSz: uint -> SlimPipeline.Stage<StackCore.Image<'a>,Image.Image<uint8>>
+  winSz: uint -> SlimPipeline.Stage<StackCore.Image<'a>,StackCore.Image<uint8>>
     when 'a: equality
 
 val threshold:
@@ -946,7 +946,7 @@ val releaseAfter2:
 
 val volFctToLstFctReleaseAfter:
   ((StackCore.Image<'a> -> StackCore.Image<'b>) ->
-     uint -> uint -> Image.Image<'a> list -> Image.Image<'b> list)
+     uint -> uint -> StackCore.Image<'a> list -> StackCore.Image<'b> list)
     when 'a: equality and 'b: equality
 
 val (>=>) :
@@ -1415,7 +1415,7 @@ val closing:
   (uint -> StackCore.Stage<StackCore.Image<uint8>,StackCore.Image<uint8>>)
 
 val binaryFillHoles:
-  (uint -> SlimPipeline.Stage<StackCore.Image<uint8>,Image.Image<uint8>>)
+  (uint -> SlimPipeline.Stage<StackCore.Image<uint8>,StackCore.Image<uint8>>)
 
 val connectedComponents:
   (uint ->
@@ -1423,22 +1423,22 @@ val connectedComponents:
                         (StackCore.Image<uint64> * uint64)>)
 
 val relabelComponents:
-  (uint -> uint -> SlimPipeline.Stage<StackCore.Image<'a>,Image.Image<'a>>)
+  (uint -> uint -> SlimPipeline.Stage<StackCore.Image<'a>,StackCore.Image<'a>>)
     when 'a: equality
 
 val watershed:
-  (float -> uint -> SlimPipeline.Stage<StackCore.Image<'a>,Image.Image<'a>>)
+  (float -> uint -> SlimPipeline.Stage<StackCore.Image<'a>,StackCore.Image<'a>>)
     when 'a: equality
 
 val signedDistanceMap:
-  (uint -> SlimPipeline.Stage<StackCore.Image<uint8>,Image.Image<float>>)
+  (uint -> SlimPipeline.Stage<StackCore.Image<uint8>,StackCore.Image<float>>)
 
 val otsuThreshold:
-  (uint -> SlimPipeline.Stage<StackCore.Image<'a>,Image.Image<uint8>>)
+  (uint -> SlimPipeline.Stage<StackCore.Image<'a>,StackCore.Image<uint8>>)
     when 'a: equality
 
 val momentsThreshold:
-  (uint -> SlimPipeline.Stage<StackCore.Image<'a>,Image.Image<uint8>>)
+  (uint -> SlimPipeline.Stage<StackCore.Image<'a>,StackCore.Image<uint8>>)
     when 'a: equality
 
 val threshold:
