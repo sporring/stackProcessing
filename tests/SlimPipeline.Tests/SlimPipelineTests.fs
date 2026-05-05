@@ -11,6 +11,21 @@ let private initInts name count =
 let private mapInts name f =
     Stage.map<int, int> name (fun _ x -> f x) (fun _ -> 0UL) id
 
+let private costedMap name memoryPeak workUnits calibrationKey =
+    let stage = Stage.map<int, int> name (fun _ x -> x) (fun _ -> memoryPeak) id
+    let memoryModel = StageMemoryModel.fromSinglePeak Map (fun _ -> memoryPeak)
+    let workModel = StageWorkModel.cpu Map calibrationKey (fun _ -> workUnits)
+    let costModel = StageCostModel.create memoryModel workModel
+    { stage with
+        MemoryNeed = StageCostModel.memoryNeed costModel
+        MemoryModel = memoryModel
+        CostModel = costModel }
+
+let private candidate name memoryPeak workUnits =
+    { Name = name
+      Stage = costedMap name memoryPeak workUnits None
+      Explanation = "" }
+
 let private apply stage plan =
     Plan.composePlan ">=>" plan stage
 
@@ -105,4 +120,41 @@ let planSuite =
             let names = graph.Nodes |> List.map _.Name
             Expect.containsAll names ["numbers"; "inc"] "Graph should include composed stage nodes."
             Expect.isGreaterThanOrEqual graph.Edges.Length 1 "Graph should connect composed stage nodes."
+    ]
+
+[<Tests>]
+let optimizerSuite =
+    testList "Optimizer" [
+        testCase "chooses lowest work candidate within memory limit" <| fun _ ->
+            let result =
+                [ candidate "fast-too-large" 200UL 1.0
+                  candidate "balanced" 80UL 2.0
+                  candidate "small-slow" 10UL 10.0 ]
+                |> Optimizer.chooseStage 100UL (Single 1UL)
+
+            Expect.equal (result.Selected |> Option.map _.Name) (Some "balanced") "Optimizer should reject the oversized candidate and choose the lowest-work accepted one."
+            Expect.equal (result.Decisions |> List.filter _.Accepted |> List.map _.CandidateName) ["balanced"; "small-slow"] "Only candidates under the memory ceiling should be accepted."
+
+        testCase "returns no selection when all candidates exceed memory limit" <| fun _ ->
+            let result =
+                [ candidate "large" 200UL 1.0
+                  candidate "larger" 300UL 0.5 ]
+                |> Optimizer.chooseStage 100UL (Single 1UL)
+
+            Expect.isNone result.Selected "No candidate should be selected if none fit the memory ceiling."
+            Expect.isTrue (result.Decisions |> List.forall (fun decision -> not decision.Accepted)) "Every decision should be rejected."
+
+        testCase "uses calibrated milliseconds before raw work score when available" <| fun _ ->
+            StageCostCalibration.clear()
+            StageCostCalibration.register "slow-calibrated" { StageCostCoefficients.zero with CpuMillisecondsPerUnit = 10.0 }
+            StageCostCalibration.register "fast-calibrated" { StageCostCoefficients.zero with CpuMillisecondsPerUnit = 0.1 }
+
+            let candidates =
+                [ { Name = "slow-calibrated"; Stage = costedMap "slow-calibrated" 10UL 1.0 (Some "slow-calibrated"); Explanation = "" }
+                  { Name = "fast-calibrated"; Stage = costedMap "fast-calibrated" 10UL 10.0 (Some "fast-calibrated"); Explanation = "" } ]
+
+            let result = Optimizer.chooseStage 100UL (Single 1UL) candidates
+            StageCostCalibration.clear()
+
+            Expect.equal (result.Selected |> Option.map _.Name) (Some "fast-calibrated") "Calibrated elapsed time should beat raw work units."
     ]

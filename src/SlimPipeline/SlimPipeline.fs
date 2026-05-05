@@ -1170,6 +1170,80 @@ module Stage =
         let transition = ProfileTransition.create Streaming Streaming
         create name build transition memoryNeed id []// Type calculation needs to be updated!!!!
 
+type OptimizationCandidate<'S,'T> =
+    { Name: string
+      Stage: Stage<'S,'T>
+      Explanation: string }
+
+type OptimizationDecision =
+    { CandidateName: string
+      Accepted: bool
+      EstimatedMemoryBytes: uint64
+      EstimatedMilliseconds: float option
+      EstimatedWorkScore: float
+      Reason: string }
+
+type OptimizationResult<'S,'T> =
+    { Selected: OptimizationCandidate<'S,'T> option
+      Decisions: OptimizationDecision list }
+
+module Optimizer =
+    let private workScore pressure =
+        pressure.CpuWorkUnits
+        + pressure.NativeWorkUnits
+        + float pressure.IoReadBytes
+        + float pressure.IoWriteBytes
+        + float pressure.IoReadOps
+        + float pressure.IoWriteOps
+
+    let private compareAccepted (_leftCandidate, leftDecision) (_rightCandidate, rightDecision) =
+        match leftDecision.EstimatedMilliseconds, rightDecision.EstimatedMilliseconds with
+        | Some leftMs, Some rightMs -> compare leftMs rightMs
+        | Some _, None -> -1
+        | None, Some _ -> 1
+        | None, None -> compare leftDecision.EstimatedWorkScore rightDecision.EstimatedWorkScore
+
+    let chooseStage (availableMemory: uint64) (inputShape: SingleOrPair) (candidates: OptimizationCandidate<'S,'T> list) : OptimizationResult<'S,'T> =
+        let evaluated =
+            candidates
+            |> List.map (fun candidate ->
+                let cost = StageCostModel.estimate candidate.Stage.CostModel inputShape
+                let estimatedMemory = cost.Memory.Peak
+                let estimatedMilliseconds = StageCostCalibration.estimateMilliseconds cost.Work
+                let estimatedWorkScore = workScore cost.Work
+                let accepted = estimatedMemory <= availableMemory
+                let reason =
+                    if accepted then
+                        match estimatedMilliseconds with
+                        | Some ms -> $"Accepted: estimated {ms:g} ms within {availableMemory} B."
+                        | None -> $"Accepted: estimated work score {estimatedWorkScore:g} within {availableMemory} B."
+                    else
+                        $"Rejected: estimated memory {estimatedMemory} B exceeds available memory {availableMemory} B."
+
+                candidate,
+                { CandidateName = candidate.Name
+                  Accepted = accepted
+                  EstimatedMemoryBytes = estimatedMemory
+                  EstimatedMilliseconds = estimatedMilliseconds
+                  EstimatedWorkScore = estimatedWorkScore
+                  Reason = reason })
+
+        let selected =
+            evaluated
+            |> List.filter (fun (_, decision) -> decision.Accepted)
+            |> List.sortWith compareAccepted
+            |> List.tryHead
+            |> Option.map fst
+
+        { Selected = selected
+          Decisions = evaluated |> List.map snd }
+
+    let chooseStageOrThrow availableMemory inputShape candidates =
+        let result = chooseStage availableMemory inputShape candidates
+        match result.Selected with
+        | Some candidate -> candidate.Stage, result
+        | None -> failwith $"No optimization candidate fits within {availableMemory} B."
+
 ////////////////////////////////////////////////////////////
 // Plan flow controler
 type Plan<'S,'T> = { 
@@ -1206,6 +1280,41 @@ module Plan =
         | None -> Some candidate
         | Some previous ->
             if candidate.Memory.Peak > previous.Memory.Peak then Some candidate else current
+
+    let private workScore pressure =
+        pressure.CpuWorkUnits
+        + pressure.NativeWorkUnits
+        + float pressure.IoReadBytes
+        + float pressure.IoWriteBytes
+        + float pressure.IoReadOps
+        + float pressure.IoWriteOps
+
+    let private trySumEstimatedMilliseconds (observations: StageCostPressure list) =
+        observations
+        |> List.fold
+            (fun state observation ->
+                match state, StageCostCalibration.estimateMilliseconds observation.Work with
+                | Some total, Some milliseconds -> Some(total + milliseconds)
+                | _ -> None)
+            (Some 0.0)
+
+    let private totalWorkScore (observations: StageCostPressure list) =
+        observations |> List.sumBy (fun observation -> workScore observation.Work)
+
+    let private printOptimizationSummary label (pl: Plan<'S,'T>) =
+        if pl.debug && pl.debugLevel >= 1u then
+            let status =
+                if pl.memPeak <= pl.memAvail then "accepted" else "exceeds memory limit"
+            let timeText =
+                match trySumEstimatedMilliseconds pl.costObservations with
+                | Some milliseconds -> $", estimated time {milliseconds:g} ms"
+                | None -> $", uncalibrated work score {totalWorkScore pl.costObservations:g}"
+            let peakStageText =
+                match pl.costPeak with
+                | Some peak -> $", peak stage {peak.Memory.Peak / 1024UL} KB"
+                | None -> ""
+
+            printfn $"[{label}] Optimization {status}: estimated memory peak {pl.memPeak / 1024UL} / {pl.memAvail / 1024UL} KB{peakStageText}{timeText}; {pl.costObservations.Length} cost observations."
 
     let graph (pl: Plan<'S,'T>) =
         pl.graph
@@ -1344,6 +1453,7 @@ module Plan =
             failwith $"Not enough memory for the plan {pl.memPeak} > {pl.memAvail}"
         if pl.debug then printfn $"[sink] Transform plan graph with {pl.graph.Nodes.Length} nodes / {pl.graph.Edges.Length} edges to pipeline"
         let pipeline = Option.map (fun stage -> Stage.toPipe stage ()) pl.stage
+        printOptimizationSummary "sink" pl
         if pl.debug then printfn $"[sink] Running pipeline with an estimated {pl.memPeak/1024UL} / {pl.memAvail/1024UL} KB of memory use"
         if pl.debug && pl.debugLevel >= 2u then
             let _, snapshot =
@@ -1369,6 +1479,7 @@ module Plan =
                 Some stg -> 
                     if pl.debug then printfn $"[{name}] Transform plan graph with {pl.graph.Nodes.Length} nodes / {pl.graph.Edges.Length} edges to pipeline"
                     let pipeline = stg.Build ()
+                    printOptimizationSummary name pl
                     if pl.debug then printfn $"[{name}] Running pipeline with an estimated {pl.memPeak/1024UL} / {pl.memAvail/1024UL} KB memory use" 
                     if pl.debug && pl.debugLevel >= 2u then
                         let result, snapshot =

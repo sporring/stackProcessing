@@ -512,6 +512,37 @@ module Stage =
     val cast:
       name: string -> f: ('S -> 'T) -> memoryNeed: MemoryNeed -> Stage<'S,'T>
         when 'S: equality and 'T: equality
+type OptimizationCandidate<'S,'T> =
+    {
+      Name: string
+      Stage: Stage<'S,'T>
+      Explanation: string
+    }
+type OptimizationDecision =
+    {
+      CandidateName: string
+      Accepted: bool
+      EstimatedMemoryBytes: uint64
+      EstimatedMilliseconds: float option
+      EstimatedWorkScore: float
+      Reason: string
+    }
+type OptimizationResult<'S,'T> =
+    {
+      Selected: OptimizationCandidate<'S,'T> option
+      Decisions: OptimizationDecision list
+    }
+module Optimizer =
+    val chooseStage:
+      availableMemory: uint64 ->
+        inputShape: SingleOrPair ->
+        candidates: OptimizationCandidate<'S,'T> list ->
+        OptimizationResult<'S,'T>
+    val chooseStageOrThrow:
+      availableMemory: uint64 ->
+        inputShape: SingleOrPair ->
+        candidates: OptimizationCandidate<'a,'b> list ->
+        Stage<'a,'b> * OptimizationResult<'a,'b>
 type Plan<'S,'T> =
     {
       stage: Stage<'S,'T> option
