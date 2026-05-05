@@ -4,7 +4,11 @@ open Expecto
 
 [<Tests>]
 let allTests =
-    testList "All Tests" []
+    testSequenced
+    <| testList "All Tests" [
+        Tests.StackProcessingSupportTests.stackProcessingSupportSuite
+        Tests.StackProcessingCorrectnessTests.stackProcessingCorrectnessSuite
+    ]
 
 [<EntryPoint>]
 let main argv =
