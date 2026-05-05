@@ -234,7 +234,7 @@ let discreteGaussianOp (name: string) (sigma: float) (outputRegionMode: ImageFun
     // windowSize = 1, 6, 15, or 26, pad = 2, length = 22, => n = 21, 10, 1, or 0
     let f debug = 
         if debug then printfn $"discreteGaussianOp: sigma {sigma}, ksz {ksz}, win {win}, stride {stride}, pad {pad}"
-        volFctToLstFctReleaseAfter (ImageFunctions.discreteGaussian 3u sigma (ksz |> Some) outputRegionMode boundaryCondition) pad stride
+        volFctToLstFctReleaseAfterDebug debug (ImageFunctions.discreteGaussian 3u sigma (ksz |> Some) outputRegionMode boundaryCondition) pad stride
     let memoryNeed nPixels = (2UL*nPixels*(uint64 win) + (uint64 ksz))*(typeof<float> |> Image.getBytesPerComponent |> uint64)
     let lengthTransformation nElems = 
         match outputRegionMode with
@@ -288,7 +288,7 @@ let convolveOp (name: string) (kernel: Image<'T>) (outputRegionMode: ImageFuncti
         match outputRegionMode with
             | Some Valid -> 0u
             | _ -> ksz/2u //floor
-    let f debug =  volFctToLstFctReleaseAfter (fun image3D -> ImageFunctions.convolve outputRegionMode bc image3D kernel) pad stride
+    let f debug =  volFctToLstFctReleaseAfterDebug debug (fun image3D -> ImageFunctions.convolve outputRegionMode bc image3D kernel) pad stride
     let memoryNeed nPixels = (2UL*nPixels*(uint64 win) + (uint64 ksz))*(typeof<'T> |> Image.getBytesPerComponent |> uint64)
     let lengthTransformation nElems = nElems - 2UL*(uint64 pad) 
     let stg = Stage.map name f memoryNeed lengthTransformation
@@ -309,7 +309,7 @@ let private makeMorphOp (name: string) (radius: uint) (winSz: uint option) (core
     let win = Option.defaultValue ksz winSz |> min ksz
     let stride = win - ksz + 1u
 
-    let f debug = volFctToLstFctReleaseAfter (core radius) pad stride
+    let f debug = volFctToLstFctReleaseAfterDebug debug (core radius) pad stride
     let stg = Stage.map name f id id
     (window win pad stride) --> stg --> flatten ()
 
@@ -321,7 +321,7 @@ let closing radius = makeMorphOp "binaryErode"  radius None ImageFunctions.binar
 /// Full stack operators
 let binaryFillHoles (winSz: uint)= 
     let pad, stride = 0u, winSz
-    let f debug = volFctToLstFctReleaseAfter (ImageFunctions.binaryFillHoles) pad stride
+    let f debug = volFctToLstFctReleaseAfterDebug debug (ImageFunctions.binaryFillHoles) pad stride
     let stg = Stage.map "fillHoles" f id id
     (window winSz pad stride) --> stg --> flatten ()
 
@@ -356,29 +356,29 @@ let connectedComponents (winSz: uint) =
 
 let relabelComponents a (winSz: uint) = 
     let pad, stride = 0u, winSz
-    let f debug = volFctToLstFctReleaseAfter (ImageFunctions.relabelComponents a) pad stride
+    let f debug = volFctToLstFctReleaseAfterDebug debug (ImageFunctions.relabelComponents a) pad stride
     let stg = Stage.map "relabelComponents" f id id
     (window winSz pad stride) --> stg --> flatten ()
 
 let watershed a (winSz: uint) =
     let pad, stride = 0u, winSz
-    let f debug = volFctToLstFctReleaseAfter (ImageFunctions.watershed a) pad stride
+    let f debug = volFctToLstFctReleaseAfterDebug debug (ImageFunctions.watershed a) pad stride
     let stg = Stage.map "watershed" f id id
     (window winSz pad stride) --> stg --> flatten ()
 let signedDistanceMap (winSz: uint) =
     let pad, stride = 0u, winSz
-    let f debug = volFctToLstFctReleaseAfter (ImageFunctions.signedDistanceMap 0uy 1uy) pad stride
+    let f debug = volFctToLstFctReleaseAfterDebug debug (ImageFunctions.signedDistanceMap 0uy 1uy) pad stride
     let stg = Stage.map "signedDistanceMap" f id id
     (window winSz pad stride) --> stg --> flatten ()
 let otsuThreshold (winSz: uint) =
     let pad, stride = 0u, winSz
-    let f debug = volFctToLstFctReleaseAfter (ImageFunctions.otsuThreshold) pad stride
+    let f debug = volFctToLstFctReleaseAfterDebug debug (ImageFunctions.otsuThreshold) pad stride
     let stg = Stage.map "otsuThreshold" f id id
     (window winSz pad stride) --> stg --> flatten ()
 
 let momentsThreshold (winSz: uint) =
     let pad, stride = 0u, winSz
-    let f debug = volFctToLstFctReleaseAfter (ImageFunctions.momentsThreshold) pad stride
+    let f debug = volFctToLstFctReleaseAfterDebug debug (ImageFunctions.momentsThreshold) pad stride
     let stg = Stage.map "momentsThreshold" f id id
     (window winSz pad stride) --> stg --> flatten ()
 
@@ -424,7 +424,19 @@ let srcStage (name: string) (width: uint) (height: uint) (depth: uint) (mapper: 
 let srcPlan (debug: bool) (memAvail: uint64) (width: uint) (height: uint) (depth: uint) (stage: Stage<unit,Image<'T>> option) =
     let nElems = (uint64 width) * (uint64 height)
     let memPeak = Image<'T>.memoryEstimate width height
+    let sourcePeek =
+        SourcePeek.create
+            "synthetic-image-stack"
+            memPeak
+            (Some (uint64 depth))
+            (Map.ofList
+                [ "kind", "synthetic-image-stack"
+                  "width", string width
+                  "height", string height
+                  "depth", string depth
+                  "pixelType", typeof<'T>.Name ])
     Plan.create stage memAvail memPeak nElems (uint64 depth)  debug
+    |> Plan.withSourcePeek sourcePeek
 
 let zero<'T when 'T: equality> (width: uint) (height: uint) (depth: uint) (pl: Plan<unit, unit>) : Plan<unit, Image<'T>> =
     if pl.debug then printfn $"[zero] {width}x{height}x{depth}"

@@ -58,6 +58,7 @@ let getStackWidth = StackIO.getStackWidth
 let getStackHeight = StackIO.getStackHeight
 let getFilenames = StackIO.getFilenames
 let readFiles<'T when 'T: equality> = StackIO.readFiles<'T>
+let readFilesWithShape<'T when 'T: equality> = StackIO.readFilesWithShape<'T>
 let readFilePairs<'T when 'T: equality> = StackIO.readFilePairs<'T>
 let readFiltered<'T when 'T: equality> = StackIO.readFiltered<'T>
 let read<'T when 'T: equality> = StackIO.read<'T>

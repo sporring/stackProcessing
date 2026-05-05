@@ -15,7 +15,7 @@ let main arg =
     let width, height, depth, output = 
         if arg.Length > 1 then
             let n = (int arg[1]) / 3 |> pown 2 |> uint 
-            n, n, n, $"image{arg[1]}"
+            n, n, n, $"../image{arg[1]}"
         else
             64u, 64u, 64u, "../image18"
 
