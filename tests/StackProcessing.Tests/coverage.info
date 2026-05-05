@@ -133,8 +133,8 @@ FN:163,Image/Image`1<a> ImageFunctions::logImage(Image/Image`1<T>)
 FNDA:27,Image/Image`1<a> ImageFunctions::logImage(Image/Image`1<T>)
 DA:164,27
 FN:164,Image/Image`1<a> ImageFunctions::log10Image(Image/Image`1<T>)
-FNDA:0,Image/Image`1<a> ImageFunctions::log10Image(Image/Image`1<T>)
-DA:165,0
+FNDA:27,Image/Image`1<a> ImageFunctions::log10Image(Image/Image`1<T>)
+DA:165,27
 FN:165,Image/Image`1<a> ImageFunctions::expImage(Image/Image`1<T>)
 FNDA:27,Image/Image`1<a> ImageFunctions::expImage(Image/Image`1<T>)
 DA:166,27
@@ -145,23 +145,23 @@ FN:167,Image/Image`1<a> ImageFunctions::squareImage(Image/Image`1<T>)
 FNDA:27,Image/Image`1<a> ImageFunctions::squareImage(Image/Image`1<T>)
 DA:168,27
 FN:168,Image/Image`1<a> ImageFunctions::sinImage(Image/Image`1<T>)
-FNDA:0,Image/Image`1<a> ImageFunctions::sinImage(Image/Image`1<T>)
-DA:169,0
+FNDA:27,Image/Image`1<a> ImageFunctions::sinImage(Image/Image`1<T>)
+DA:169,27
 FN:169,Image/Image`1<a> ImageFunctions::cosImage(Image/Image`1<T>)
-FNDA:0,Image/Image`1<a> ImageFunctions::cosImage(Image/Image`1<T>)
-DA:170,0
+FNDA:27,Image/Image`1<a> ImageFunctions::cosImage(Image/Image`1<T>)
+DA:170,27
 FN:170,Image/Image`1<a> ImageFunctions::tanImage(Image/Image`1<T>)
-FNDA:0,Image/Image`1<a> ImageFunctions::tanImage(Image/Image`1<T>)
-DA:171,0
+FNDA:27,Image/Image`1<a> ImageFunctions::tanImage(Image/Image`1<T>)
+DA:171,27
 FN:171,Image/Image`1<a> ImageFunctions::asinImage(Image/Image`1<T>)
-FNDA:0,Image/Image`1<a> ImageFunctions::asinImage(Image/Image`1<T>)
-DA:172,0
+FNDA:27,Image/Image`1<a> ImageFunctions::asinImage(Image/Image`1<T>)
+DA:172,27
 FN:172,Image/Image`1<a> ImageFunctions::acosImage(Image/Image`1<T>)
-FNDA:0,Image/Image`1<a> ImageFunctions::acosImage(Image/Image`1<T>)
-DA:173,0
+FNDA:27,Image/Image`1<a> ImageFunctions::acosImage(Image/Image`1<T>)
+DA:173,27
 FN:173,Image/Image`1<a> ImageFunctions::atanImage(Image/Image`1<T>)
-FNDA:0,Image/Image`1<a> ImageFunctions::atanImage(Image/Image`1<T>)
-DA:174,0
+FNDA:27,Image/Image`1<a> ImageFunctions::atanImage(Image/Image`1<T>)
+DA:174,27
 FN:174,Image/Image`1<a> ImageFunctions::roundImage(Image/Image`1<T>)
 FNDA:27,Image/Image`1<a> ImageFunctions::roundImage(Image/Image`1<T>)
 DA:175,27
@@ -410,12 +410,12 @@ DA:374,0
 DA:375,0
 DA:376,0
 FN:380,Microsoft.FSharp.Core.FSharpFunc`2<Image/Image`1<System.Byte>,Image/Image`1<System.Byte>> ImageFunctions::binaryErode(System.UInt32)
-FNDA:0,Microsoft.FSharp.Core.FSharpFunc`2<Image/Image`1<System.Byte>,Image/Image`1<System.Byte>> ImageFunctions::binaryErode(System.UInt32)
-DA:381,0
-DA:382,0
-DA:383,0
-DA:384,0
-DA:385,0
+FNDA:2,Microsoft.FSharp.Core.FSharpFunc`2<Image/Image`1<System.Byte>,Image/Image`1<System.Byte>> ImageFunctions::binaryErode(System.UInt32)
+DA:381,2
+DA:382,2
+DA:383,11
+DA:384,11
+DA:385,13
 FN:388,Microsoft.FSharp.Core.FSharpFunc`2<Image/Image`1<System.Byte>,Image/Image`1<System.Byte>> ImageFunctions::binaryDilate(System.UInt32)
 FNDA:2,Microsoft.FSharp.Core.FSharpFunc`2<Image/Image`1<System.Byte>,Image/Image`1<System.Byte>> ImageFunctions::binaryDilate(System.UInt32)
 DA:389,2
@@ -424,23 +424,23 @@ DA:391,15
 DA:392,15
 DA:393,17
 FN:396,Microsoft.FSharp.Core.FSharpFunc`2<Image/Image`1<System.Byte>,Image/Image`1<System.Byte>> ImageFunctions::binaryOpening(System.UInt32)
-FNDA:0,Microsoft.FSharp.Core.FSharpFunc`2<Image/Image`1<System.Byte>,Image/Image`1<System.Byte>> ImageFunctions::binaryOpening(System.UInt32)
-DA:397,0
-DA:398,0
-DA:399,0
-DA:400,0
-DA:401,0
+FNDA:2,Microsoft.FSharp.Core.FSharpFunc`2<Image/Image`1<System.Byte>,Image/Image`1<System.Byte>> ImageFunctions::binaryOpening(System.UInt32)
+DA:397,2
+DA:398,2
+DA:399,11
+DA:400,11
+DA:401,13
 FN:404,Microsoft.FSharp.Core.FSharpFunc`2<Image/Image`1<System.Byte>,Image/Image`1<System.Byte>> ImageFunctions::binaryClosing(System.UInt32)
-FNDA:0,Microsoft.FSharp.Core.FSharpFunc`2<Image/Image`1<System.Byte>,Image/Image`1<System.Byte>> ImageFunctions::binaryClosing(System.UInt32)
-DA:405,0
-DA:406,0
-DA:407,0
-DA:408,0
-DA:409,0
+FNDA:2,Microsoft.FSharp.Core.FSharpFunc`2<Image/Image`1<System.Byte>,Image/Image`1<System.Byte>> ImageFunctions::binaryClosing(System.UInt32)
+DA:405,2
+DA:406,2
+DA:407,11
+DA:408,11
+DA:409,13
 FN:412,Image/Image`1<System.Byte> ImageFunctions::binaryFillHoles(Image/Image`1<System.Byte>)
-FNDA:0,Image/Image`1<System.Byte> ImageFunctions::binaryFillHoles(Image/Image`1<System.Byte>)
-DA:413,0
-DA:414,0
+FNDA:2,Image/Image`1<System.Byte> ImageFunctions::binaryFillHoles(Image/Image`1<System.Byte>)
+DA:413,2
+DA:414,2
 FN:422,ImageFunctions/ConnectedComponentsResult ImageFunctions::connectedComponents(Image/Image`1<System.Byte>)
 FNDA:2,ImageFunctions/ConnectedComponentsResult ImageFunctions::connectedComponents(Image/Image`1<System.Byte>)
 DA:423,2
@@ -542,22 +542,22 @@ DA:568,0
 DA:569,0
 DA:570,0
 FN:574,Image/Image`1<System.Byte> ImageFunctions::otsuThreshold(Image/Image`1<T>)
-FNDA:0,Image/Image`1<System.Byte> ImageFunctions::otsuThreshold(Image/Image`1<T>)
-DA:575,0
-DA:576,0
-DA:577,0
-DA:578,0
+FNDA:2,Image/Image`1<System.Byte> ImageFunctions::otsuThreshold(Image/Image`1<T>)
+DA:575,2
+DA:576,2
+DA:577,2
+DA:578,2
 FN:581,Image/Image`1<System.Byte> ImageFunctions::otsuMultiThreshold(System.Byte,Image/Image`1<T>)
 FNDA:0,Image/Image`1<System.Byte> ImageFunctions::otsuMultiThreshold(System.Byte,Image/Image`1<T>)
 DA:582,0
 DA:583,0
 DA:584,0
 FN:587,Image/Image`1<System.Byte> ImageFunctions::momentsThreshold(Image/Image`1<T>)
-FNDA:0,Image/Image`1<System.Byte> ImageFunctions::momentsThreshold(Image/Image`1<T>)
-DA:588,0
-DA:589,0
-DA:590,0
-DA:591,0
+FNDA:2,Image/Image`1<System.Byte> ImageFunctions::momentsThreshold(Image/Image`1<T>)
+DA:588,2
+DA:589,2
+DA:590,2
+DA:591,2
 FN:595,Image/Image`1<System.UInt32> ImageFunctions::generateCoordinateAxis(System.Int32,Microsoft.FSharp.Collections.FSharpList`1<System.Int32>)
 FNDA:0,Image/Image`1<System.UInt32> ImageFunctions::generateCoordinateAxis(System.Int32,Microsoft.FSharp.Collections.FSharpList`1<System.Int32>)
 DA:596,0
@@ -604,14 +604,14 @@ FN:652,Microsoft.FSharp.Collections.FSharpList`1<System.Tuple`2<System.Int32,Sys
 FNDA:0,Microsoft.FSharp.Collections.FSharpList`1<System.Tuple`2<System.Int32,System.Int32>> ImageFunctions::pairs2ints(Microsoft.FSharp.Collections.FSharpList`1<System.Tuple`2<T,S>>)
 DA:653,0
 FN:655,Microsoft.FSharp.Core.FSharpFunc`2<Image/Image`1<T>,Image/Image`1<T>> ImageFunctions::addNormalNoise(System.Double,System.Double)
-FNDA:0,Microsoft.FSharp.Core.FSharpFunc`2<Image/Image`1<T>,Image/Image`1<T>> ImageFunctions::addNormalNoise(System.Double,System.Double)
-DA:656,0
-DA:657,0
-DA:658,0
-DA:659,0
-DA:660,0
-DA:661,0
-DA:662,0
+FNDA:2,Microsoft.FSharp.Core.FSharpFunc`2<Image/Image`1<T>,Image/Image`1<T>> ImageFunctions::addNormalNoise(System.Double,System.Double)
+DA:656,2
+DA:657,2
+DA:658,9
+DA:659,2
+DA:660,9
+DA:661,9
+DA:662,11
 FN:664,Image/Image`1<System.Byte> ImageFunctions::threshold(System.Double,System.Double,Image/Image`1<T>)
 FNDA:13,Image/Image`1<System.Byte> ImageFunctions::threshold(System.Double,System.Double,Image/Image`1<T>)
 DA:665,13
@@ -628,37 +628,37 @@ DA:675,0
 BRDA:673,47,1,0
 BRDA:673,47,0,0
 FN:677,Image/Image`1<T> ImageFunctions::stack(Microsoft.FSharp.Collections.FSharpList`1<Image/Image`1<T>>)
-FNDA:35,Image/Image`1<T> ImageFunctions::stack(Microsoft.FSharp.Collections.FSharpList`1<Image/Image`1<T>>)
-DA:678,35
+FNDA:86,Image/Image`1<T> ImageFunctions::stack(Microsoft.FSharp.Collections.FSharpList`1<Image/Image`1<T>>)
+DA:678,86
 DA:679,0
-DA:681,35
-DA:682,313
+DA:681,86
+DA:682,742
 DA:683,0
-DA:684,35
-DA:685,35
-DA:686,35
-DA:687,35
-DA:688,208
-DA:689,35
-DA:690,35
-DA:691,70
-DA:692,70
-DA:693,35
-DA:694,278
-DA:695,140
+DA:684,86
+DA:685,86
+DA:686,86
+DA:687,86
+DA:688,484
+DA:689,86
+DA:690,86
+DA:691,172
+DA:692,172
+DA:693,86
+DA:694,656
+DA:695,344
 DA:697,0
 DA:698,0
 BRDA:678,8,1,0
-BRDA:678,8,0,35
+BRDA:678,8,0,86
 BRDA:682,69,0,0
-BRDA:682,69,1,35
-BRDA:684,91,0,35
-BRDA:689,231,1,208
+BRDA:682,69,1,86
+BRDA:684,91,0,86
+BRDA:689,231,1,484
 BRDA:688,171,0,0
-BRDA:688,171,1,208
-BRDA:689,231,0,35
-BRDA:694,351,1,208
-BRDA:694,351,0,35
+BRDA:688,171,1,484
+BRDA:689,231,0,86
+BRDA:694,351,1,484
+BRDA:694,351,0,86
 BRDA:684,91,1,0
 FN:700,Image/Image`1<T> ImageFunctions::extractSub(Microsoft.FSharp.Collections.FSharpList`1<System.UInt32>,Microsoft.FSharp.Collections.FSharpList`1<System.UInt32>,Image/Image`1<T>)
 FNDA:0,Image/Image`1<T> ImageFunctions::extractSub(Microsoft.FSharp.Collections.FSharpList`1<System.UInt32>,Microsoft.FSharp.Collections.FSharpList`1<System.UInt32>,Image/Image`1<T>)
@@ -681,59 +681,59 @@ BRDA:703,85,1,0
 BRDA:706,133,0,0
 BRDA:706,133,1,0
 FN:715,Image/Image`1<T> ImageFunctions::extractSlice(System.UInt32,System.Int32,Image/Image`1<T>)
-FNDA:206,Image/Image`1<T> ImageFunctions::extractSlice(System.UInt32,System.Int32,Image/Image`1<T>)
-DA:716,206
+FNDA:422,Image/Image`1<T> ImageFunctions::extractSlice(System.UInt32,System.Int32,Image/Image`1<T>)
+DA:716,422
 DA:717,0
-DA:718,206
-DA:719,206
-DA:721,206
-DA:722,206
-DA:723,206
-DA:724,618
-DA:725,618
-DA:726,206
-DA:727,206
-DA:728,206
+DA:718,422
+DA:719,422
+DA:721,422
+DA:722,422
+DA:723,422
+DA:724,1266
+DA:725,1266
+DA:726,422
+DA:727,422
+DA:728,422
 BRDA:716,8,0,0
-BRDA:716,8,1,206
+BRDA:716,8,1,422
 BRDA:721,39,0,0
-BRDA:721,39,1,206
+BRDA:721,39,1,422
 BRDA:722,113,0,0
-BRDA:722,113,1,206
+BRDA:722,113,1,422
 FN:730,Microsoft.FSharp.Collections.FSharpList`1<Image/Image`1<T>> ImageFunctions::unstack(System.UInt32,Image/Image`1<T>)
-FNDA:18,Microsoft.FSharp.Collections.FSharpList`1<Image/Image`1<T>> ImageFunctions::unstack(System.UInt32,Image/Image`1<T>)
-DA:731,18
-DA:732,36
-DA:733,188
-DA:734,18
+FNDA:36,Microsoft.FSharp.Collections.FSharpList`1<Image/Image`1<T>> ImageFunctions::unstack(System.UInt32,Image/Image`1<T>)
+DA:731,36
+DA:732,72
+DA:733,362
+DA:734,36
 FN:736,Microsoft.FSharp.Collections.FSharpList`1<Image/Image`1<T>> ImageFunctions::unstackSkipNTakeM(System.UInt32,System.UInt32,Image/Image`1<T>)
-FNDA:18,Microsoft.FSharp.Collections.FSharpList`1<Image/Image`1<T>> ImageFunctions::unstackSkipNTakeM(System.UInt32,System.UInt32,Image/Image`1<T>)
-DA:737,18
-DA:738,18
+FNDA:51,Microsoft.FSharp.Collections.FSharpList`1<Image/Image`1<T>> ImageFunctions::unstackSkipNTakeM(System.UInt32,System.UInt32,Image/Image`1<T>)
+DA:737,51
+DA:738,51
 DA:739,0
-DA:740,36
-DA:741,18
-DA:742,18
+DA:740,102
+DA:741,51
+DA:742,51
 DA:743,0
-DA:744,50
-DA:745,18
+DA:744,143
+DA:745,51
 BRDA:738,12,0,0
-BRDA:738,12,1,18
+BRDA:738,12,1,51
 BRDA:741,85,0,1
-BRDA:741,85,1,17
+BRDA:741,85,1,50
 BRDA:742,103,0,0
-BRDA:742,103,1,18
+BRDA:742,103,1,51
 FN:748,ImageFunctions/FileInfo ImageFunctions::getFileInfo(System.String)
-FNDA:29,ImageFunctions/FileInfo ImageFunctions::getFileInfo(System.String)
-DA:749,29
-DA:750,29
-DA:751,29
-DA:752,29
-DA:753,29
-DA:754,58
-DA:755,58
-DA:756,29
-DA:757,29
+FNDA:47,ImageFunctions/FileInfo ImageFunctions::getFileInfo(System.String)
+DA:749,47
+DA:750,47
+DA:751,47
+DA:752,47
+DA:753,47
+DA:754,94
+DA:755,94
+DA:756,47
+DA:757,47
 FN:767,System.Collections.Generic.IEnumerable`1<System.Collections.Generic.IEnumerable`1<System.Double>> ImageFunctions::toSeqSeq(Image/Image`1<T>)
 FNDA:0,System.Collections.Generic.IEnumerable`1<System.Collections.Generic.IEnumerable`1<System.Double>> ImageFunctions::toSeqSeq(Image/Image`1<T>)
 DA:768,0
@@ -742,10 +742,10 @@ DA:770,0
 DA:771,0
 DA:772,0
 FN:774,Image/Image`1<S> ImageFunctions::permuteAxes(Microsoft.FSharp.Collections.FSharpList`1<System.UInt32>,Image/Image`1<T>)
-FNDA:0,Image/Image`1<S> ImageFunctions::permuteAxes(Microsoft.FSharp.Collections.FSharpList`1<System.UInt32>,Image/Image`1<T>)
-DA:775,0
-DA:776,0
-DA:777,0
+FNDA:9,Image/Image`1<S> ImageFunctions::permuteAxes(Microsoft.FSharp.Collections.FSharpList`1<System.UInt32>,Image/Image`1<T>)
+DA:775,9
+DA:776,27
+DA:777,9
 FN:780,Image/Image`1<System.Numerics.Complex> ImageFunctions::FFTXY(Image/Image`1<T>)
 FNDA:0,Image/Image`1<System.Numerics.Complex> ImageFunctions::FFTXY(Image/Image`1<T>)
 DA:781,0
@@ -855,26 +855,26 @@ BRDA:807,70,1,0
 BRDA:807,132,1,0
 BRDA:807,132,0,0
 LF:509
-LH:145
+LH:187
 BRF:216
 BRH:32
 FNF:87
-FNH:19
+FNH:34
 end_of_record
 SF:/Users/jrh630/repositories/stackProcessing/src/Image/Image.fs
 FN:243,System.UInt32 Image::getBytesPerComponent(System.Type)
-FNDA:195,System.UInt32 Image::getBytesPerComponent(System.Type)
-DA:244,195
-DA:245,83
-DA:246,83
-DA:247,83
-DA:248,84
-DA:249,82
-DA:250,82
-DA:251,82
-DA:252,82
-DA:253,82
-DA:254,158
+FNDA:307,System.UInt32 Image::getBytesPerComponent(System.Type)
+DA:244,307
+DA:245,151
+DA:246,151
+DA:247,151
+DA:248,152
+DA:249,150
+DA:250,150
+DA:251,150
+DA:252,150
+DA:253,150
+DA:254,294
 DA:255,6
 DA:256,6
 DA:257,6
@@ -886,27 +886,27 @@ DA:262,0
 DA:263,0
 DA:264,0
 DA:265,0
-BRDA:244,17,0,56
-BRDA:244,17,1,83
+BRDA:244,17,0,78
+BRDA:244,17,1,151
 BRDA:245,38,0,0
-BRDA:245,38,1,83
+BRDA:245,38,1,151
 BRDA:246,59,0,0
-BRDA:246,59,1,83
+BRDA:246,59,1,151
 BRDA:247,80,0,0
-BRDA:247,80,1,83
+BRDA:247,80,1,151
 BRDA:248,101,0,1
-BRDA:248,101,1,82
+BRDA:248,101,1,150
 BRDA:249,122,0,0
-BRDA:249,122,1,82
+BRDA:249,122,1,150
 BRDA:250,143,0,0
-BRDA:250,143,1,82
+BRDA:250,143,1,150
 BRDA:251,164,0,0
-BRDA:251,164,1,82
+BRDA:251,164,1,150
 BRDA:252,185,0,0
-BRDA:252,185,1,82
+BRDA:252,185,1,150
 BRDA:253,206,0,0
-BRDA:253,206,1,82
-BRDA:254,227,0,76
+BRDA:253,206,1,150
+BRDA:254,227,0,144
 BRDA:254,227,1,6
 BRDA:255,248,0,0
 BRDA:255,248,1,6
@@ -929,25 +929,25 @@ BRDA:263,416,1,0
 BRDA:264,437,0,0
 BRDA:264,437,1,0
 FN:267,System.UInt32 Image::getBytesPerSItkComponent(itk.simple.PixelIDValueEnum)
-FNDA:2978,System.UInt32 Image::getBytesPerSItkComponent(itk.simple.PixelIDValueEnum)
-DA:268,2978
-DA:269,1796
-DA:270,1796
-DA:271,1796
-DA:272,1796
-DA:273,1796
-DA:274,1796
-DA:275,1796
-DA:276,1796
-DA:277,1796
-DA:278,3472
-DA:279,120
-DA:280,120
-DA:281,120
-DA:282,120
-DA:283,150
-DA:284,90
-DA:285,180
+FNDA:6126,System.UInt32 Image::getBytesPerSItkComponent(itk.simple.PixelIDValueEnum)
+DA:268,6126
+DA:269,3256
+DA:270,3256
+DA:271,3256
+DA:272,3256
+DA:273,3256
+DA:274,3256
+DA:275,3256
+DA:276,3256
+DA:277,3256
+DA:278,6284
+DA:279,228
+DA:280,228
+DA:281,228
+DA:282,228
+DA:283,258
+DA:284,198
+DA:285,396
 DA:286,0
 DA:287,0
 DA:288,0
@@ -957,41 +957,41 @@ DA:291,0
 DA:292,0
 DA:293,0
 DA:294,0
-BRDA:268,12,0,591
-BRDA:268,12,1,1796
+BRDA:268,12,0,1435
+BRDA:268,12,1,3256
 BRDA:269,28,0,0
-BRDA:269,28,1,1796
+BRDA:269,28,1,3256
 BRDA:270,44,0,0
-BRDA:270,44,1,1796
+BRDA:270,44,1,3256
 BRDA:271,60,0,0
-BRDA:271,60,1,1796
+BRDA:271,60,1,3256
 BRDA:272,76,0,0
-BRDA:272,76,1,1796
+BRDA:272,76,1,3256
 BRDA:273,92,0,0
-BRDA:273,92,1,1796
+BRDA:273,92,1,3256
 BRDA:274,108,0,0
-BRDA:274,108,1,1796
+BRDA:274,108,1,3256
 BRDA:275,124,0,0
-BRDA:275,124,1,1796
+BRDA:275,124,1,3256
 BRDA:276,140,0,0
-BRDA:276,140,1,1796
+BRDA:276,140,1,3256
 BRDA:277,156,0,0
-BRDA:277,156,1,1796
-BRDA:278,172,0,1676
-BRDA:278,172,1,120
+BRDA:277,156,1,3256
+BRDA:278,172,0,3028
+BRDA:278,172,1,228
 BRDA:279,188,0,0
-BRDA:279,188,1,120
+BRDA:279,188,1,228
 BRDA:280,204,0,0
-BRDA:280,204,1,120
+BRDA:280,204,1,228
 BRDA:281,220,0,0
-BRDA:281,220,1,120
+BRDA:281,220,1,228
 BRDA:282,236,0,0
-BRDA:282,236,1,120
+BRDA:282,236,1,228
 BRDA:283,252,0,30
-BRDA:283,252,1,90
+BRDA:283,252,1,198
 BRDA:284,268,0,0
-BRDA:284,268,1,90
-BRDA:285,284,0,90
+BRDA:284,268,1,198
+BRDA:285,284,0,198
 BRDA:285,284,1,0
 BRDA:286,300,0,0
 BRDA:286,300,1,0
@@ -1049,23 +1049,23 @@ BRDA:354,384,0,0
 BRDA:354,384,1,0
 BRDA:343,194,1,0
 FN:360,System.Void Image::incTotalImages()
-FNDA:1630,System.Void Image::incTotalImages()
-DA:361,1630
-DA:362,1630
-BRDA:362,75,0,27
-BRDA:362,75,1,788
+FNDA:3180,System.Void Image::incTotalImages()
+DA:361,3180
+DA:362,3180
+BRDA:362,75,0,35
+BRDA:362,75,1,1555
 FN:363,System.Void Image::decTotalImages()
-FNDA:1626,System.Void Image::decTotalImages()
-DA:364,1626
+FNDA:3160,System.Void Image::decTotalImages()
+DA:364,3160
 FN:368,System.Void Image::incMemUsed(System.UInt32)
-FNDA:3148,System.Void Image::incMemUsed(System.UInt32)
-DA:369,3148
-DA:370,3148
-BRDA:370,75,0,59
-BRDA:370,75,1,1515
+FNDA:6222,System.Void Image::incMemUsed(System.UInt32)
+DA:369,6222
+DA:370,6222
+BRDA:370,75,0,60
+BRDA:370,75,1,3051
 FN:371,System.Void Image::decMemUsed(System.UInt32)
-FNDA:1626,System.Void Image::decMemUsed(System.UInt32)
-DA:372,1626
+FNDA:3160,System.Void Image::decMemUsed(System.UInt32)
+DA:372,3160
 FN:374,System.UInt64 Image::currentRssBytes()
 FNDA:0,System.UInt64 Image::currentRssBytes()
 DA:375,0
@@ -1114,17 +1114,17 @@ DA:449,0
 BRDA:449,3,0,0
 BRDA:449,3,1,0
 FN:449,itk.simple.Image Image/Image`1::get_Image()
-FNDA:81813,itk.simple.Image Image/Image`1::get_Image()
-DA:450,81813
+FNDA:117271,itk.simple.Image Image/Image`1::get_Image()
+DA:450,117271
 FN:450,System.String Image/Image`1::get_Name()
 FNDA:0,System.String Image/Image`1::get_Name()
 DA:451,0
 FN:451,System.Int32 Image/Image`1::get_index()
-FNDA:1020,System.Int32 Image/Image`1::get_index()
-DA:452,1020
+FNDA:2029,System.Int32 Image/Image`1::get_index()
+DA:452,2029
 FN:453,System.Void Image/Image`1::SetImg(itk.simple.Image)
-FNDA:759,System.Void Image/Image`1::SetImg(itk.simple.Image)
-DA:454,759
+FNDA:1521,System.Void Image/Image`1::SetImg(itk.simple.Image)
+DA:454,1521
 FN:455,System.Int32 Image/Image`1::getNReferences()
 FNDA:3,System.Int32 Image/Image`1::getNReferences()
 DA:456,3
@@ -1135,35 +1135,35 @@ DA:459,3
 BRDA:458,6,0,0
 BRDA:458,6,1,3
 FN:461,System.Void Image/Image`1::decRefCount()
-FNDA:823,System.Void Image/Image`1::decRefCount()
-DA:462,823
-DA:463,823
-DA:464,823
-DA:465,813
-DA:466,813
-DA:467,813
-DA:468,813
-DA:469,2439
+FNDA:1590,System.Void Image/Image`1::decRefCount()
+DA:462,1590
+DA:463,1590
+DA:464,1590
+DA:465,1580
+DA:466,1580
+DA:467,1580
+DA:468,1580
+DA:469,4740
 BRDA:462,6,0,0
-BRDA:462,6,1,823
-BRDA:464,55,0,813
+BRDA:462,6,1,1590
+BRDA:464,55,0,1580
 BRDA:467,86,0,0
-BRDA:467,86,1,813
+BRDA:467,86,1,1580
 BRDA:464,55,1,10
 FN:471,System.UInt32 Image/Image`1::memoryEstimateSItk(itk.simple.Image)
-FNDA:2387,System.UInt32 Image/Image`1::memoryEstimateSItk(itk.simple.Image)
-DA:472,2387
-DA:473,2387
+FNDA:4691,System.UInt32 Image/Image`1::memoryEstimateSItk(itk.simple.Image)
+DA:472,4691
+DA:473,4691
 DA:474,0
-DA:476,2387
+DA:476,4691
 BRDA:473,16,0,0
-BRDA:473,16,1,2387
+BRDA:473,16,1,4691
 FN:478,System.UInt64 Image/Image`1::memoryEstimate(System.UInt32,System.UInt32)
-FNDA:106,System.UInt64 Image/Image`1::memoryEstimate(System.UInt32,System.UInt32)
-DA:479,106
+FNDA:178,System.UInt64 Image/Image`1::memoryEstimate(System.UInt32,System.UInt32)
+DA:479,178
 FN:480,Microsoft.FSharp.Collections.FSharpList`1<System.UInt32> Image/Image`1::GetSize()
-FNDA:1242,Microsoft.FSharp.Collections.FSharpList`1<System.UInt32> Image/Image`1::GetSize()
-DA:481,1242
+FNDA:2534,Microsoft.FSharp.Collections.FSharpList`1<System.UInt32> Image/Image`1::GetSize()
+DA:481,2534
 FN:481,Image/ImageFacts Image/Image`1::GetFacts()
 FNDA:0,Image/ImageFacts Image/Image`1::GetFacts()
 DA:482,0
@@ -1171,13 +1171,13 @@ FN:482,System.UInt64 Image/Image`1::GetMemoryBytes()
 FNDA:0,System.UInt64 Image/Image`1::GetMemoryBytes()
 DA:483,0
 FN:483,System.UInt32 Image/Image`1::GetDepth()
-FNDA:39,System.UInt32 Image/Image`1::GetDepth()
-DA:484,39
-BRDA:484,16,0,38
+FNDA:72,System.UInt32 Image/Image`1::GetDepth()
+DA:484,72
+BRDA:484,16,0,71
 BRDA:484,16,1,1
 FN:484,System.UInt32 Image/Image`1::GetDimensions()
-FNDA:467,System.UInt32 Image/Image`1::GetDimensions()
-DA:485,467
+FNDA:1043,System.UInt32 Image/Image`1::GetDimensions()
+DA:485,1043
 FN:485,System.UInt32 Image/Image`1::GetHeight()
 FNDA:42,System.UInt32 Image/Image`1::GetHeight()
 DA:486,42
@@ -1200,32 +1200,32 @@ FN:495,System.String Image/Image`1::get_Display()
 FNDA:2,System.String Image/Image`1::get_Display()
 DA:496,2
 FN:507,Image/Image`1<T> Image/Image`1::ofSimpleITK(itk.simple.Image,Microsoft.FSharp.Core.FSharpOption`1<System.String>,Microsoft.FSharp.Core.FSharpOption`1<System.Int32>)
-FNDA:759,Image/Image`1<T> Image/Image`1::ofSimpleITK(itk.simple.Image,Microsoft.FSharp.Core.FSharpOption`1<System.String>,Microsoft.FSharp.Core.FSharpOption`1<System.Int32>)
-DA:508,759
-DA:509,759
-DA:511,759
-DA:512,1518
+FNDA:1521,Image/Image`1<T> Image/Image`1::ofSimpleITK(itk.simple.Image,Microsoft.FSharp.Core.FSharpOption`1<System.String>,Microsoft.FSharp.Core.FSharpOption`1<System.Int32>)
+DA:508,1521
+DA:509,1521
+DA:511,1521
+DA:512,3042
 DA:513,0
-DA:514,759
-DA:516,759
-DA:517,759
-DA:518,759
-DA:519,759
+DA:514,1521
+DA:516,1521
+DA:517,1521
+DA:518,1521
+DA:519,1521
 BRDA:512,53,0,0
-BRDA:512,53,1,759
+BRDA:512,53,1,1521
 BRDA:512,70,0,0
-BRDA:512,70,1,759
+BRDA:512,70,1,1521
 BRDA:518,181,0,0
-BRDA:518,181,1,759
+BRDA:518,181,1,1521
 FN:521,itk.simple.Image Image/Image`1::toSimpleITK()
-FNDA:1276,itk.simple.Image Image/Image`1::toSimpleITK()
-DA:522,1276
+FNDA:2626,itk.simple.Image Image/Image`1::toSimpleITK()
+DA:522,2626
 DA:523,0
-DA:524,638
+DA:524,1313
 BRDA:522,26,0,0
-BRDA:522,26,1,638
+BRDA:522,26,1,1313
 BRDA:522,48,0,0
-BRDA:522,48,1,638
+BRDA:522,48,1,1313
 FN:525,Image/Image`1<S> Image/Image`1::castTo()
 FNDA:13,Image/Image`1<S> Image/Image`1::castTo()
 DA:526,13
@@ -1257,8 +1257,8 @@ FN:534,Image/Image`1<System.Single> Image/Image`1::toFloat32()
 FNDA:0,Image/Image`1<System.Single> Image/Image`1::toFloat32()
 DA:535,0
 FN:535,Image/Image`1<System.Double> Image/Image`1::toFloat()
-FNDA:30,Image/Image`1<System.Double> Image/Image`1::toFloat()
-DA:536,30
+FNDA:66,Image/Image`1<System.Double> Image/Image`1::toFloat()
+DA:536,66
 FN:536,Image/Image`1<System.Numerics.Complex> Image/Image`1::toComplex()
 FNDA:0,Image/Image`1<System.Numerics.Complex> Image/Image`1::toComplex()
 DA:537,0
@@ -1300,12 +1300,12 @@ DA:552,36
 DA:553,587
 DA:554,36
 FN:556,Image/Image`1<T> Image/Image`1::ofArray3D(T[0...,0...,0...],Microsoft.FSharp.Core.FSharpOption`1<System.String>)
-FNDA:9,Image/Image`1<T> Image/Image`1::ofArray3D(T[0...,0...,0...],Microsoft.FSharp.Core.FSharpOption`1<System.String>)
-DA:557,9
-DA:558,18
-DA:559,9
-DA:560,25197
-DA:561,9
+FNDA:16,Image/Image`1<T> Image/Image`1::ofArray3D(T[0...,0...,0...],Microsoft.FSharp.Core.FSharpOption`1<System.String>)
+DA:557,16
+DA:558,32
+DA:559,16
+DA:560,30259
+DA:561,16
 FN:563,Image/Image`1<Microsoft.FSharp.Collections.FSharpList`1<S>> Image/Image`1::ofArray3DVector(S[0...,0...,0...],Microsoft.FSharp.Core.FSharpOption`1<System.String>)
 FNDA:0,Image/Image`1<Microsoft.FSharp.Collections.FSharpList`1<S>> Image/Image`1::ofArray3DVector(S[0...,0...,0...],Microsoft.FSharp.Core.FSharpOption`1<System.String>)
 DA:564,0
@@ -1512,41 +1512,41 @@ DA:694,0
 DA:695,0
 DA:696,0
 FN:698,Image/Image`1<T> Image/Image`1::ofFile(System.String,Microsoft.FSharp.Core.FSharpOption`1<System.String>,Microsoft.FSharp.Core.FSharpOption`1<System.Int32>)
-FNDA:329,Image/Image`1<T> Image/Image`1::ofFile(System.String,Microsoft.FSharp.Core.FSharpOption`1<System.String>,Microsoft.FSharp.Core.FSharpOption`1<System.Int32>)
-DA:699,329
-DA:700,329
-DA:702,329
-DA:703,329
-DA:704,329
-DA:705,329
-DA:706,329
-DA:707,329
-DA:709,329
-DA:710,329
-DA:713,329
+FNDA:641,Image/Image`1<T> Image/Image`1::ofFile(System.String,Microsoft.FSharp.Core.FSharpOption`1<System.String>,Microsoft.FSharp.Core.FSharpOption`1<System.Int32>)
+DA:699,641
+DA:700,641
+DA:702,641
+DA:703,641
+DA:704,641
+DA:705,641
+DA:706,641
+DA:707,641
+DA:709,641
+DA:710,641
+DA:713,641
 DA:714,0
 DA:715,0
 DA:716,0
 DA:717,0
-DA:718,329
+DA:718,641
 DA:719,0
-DA:721,329
+DA:721,641
 BRDA:709,84,0,0
 BRDA:709,112,0,0
 BRDA:709,112,1,0
-BRDA:709,84,1,329
+BRDA:709,84,1,641
 BRDA:709,137,0,0
-BRDA:709,137,1,329
+BRDA:709,137,1,641
 BRDA:713,173,0,0
-BRDA:713,173,1,329
+BRDA:713,173,1,641
 BRDA:714,201,0,0
-BRDA:714,201,1,329
+BRDA:714,201,1,641
 BRDA:714,187,0,0
 BRDA:716,217,0,0
 BRDA:718,238,0,0
-BRDA:714,187,1,329
-BRDA:716,217,1,329
-BRDA:718,238,1,329
+BRDA:714,187,1,641
+BRDA:716,217,1,641
+BRDA:718,238,1,641
 FN:723,Image/Image`1<Microsoft.FSharp.Collections.FSharpList`1<S>> Image/Image`1::ofFileVector(System.String,Microsoft.FSharp.Core.FSharpOption`1<System.String>,Microsoft.FSharp.Core.FSharpOption`1<System.Int32>)
 FNDA:0,Image/Image`1<Microsoft.FSharp.Collections.FSharpList`1<S>> Image/Image`1::ofFileVector(System.String,Microsoft.FSharp.Core.FSharpOption`1<System.String>,Microsoft.FSharp.Core.FSharpOption`1<System.Int32>)
 DA:724,0
@@ -1573,15 +1573,15 @@ DA:744,0
 BRDA:742,49,0,0
 BRDA:742,49,1,0
 FN:746,System.Void Image/Image`1::toFile(System.String,Microsoft.FSharp.Core.FSharpOption`1<System.String>)
-FNDA:338,System.Void Image/Image`1::toFile(System.String,Microsoft.FSharp.Core.FSharpOption`1<System.String>)
-DA:747,338
-DA:748,338
-DA:749,338
+FNDA:650,System.Void Image/Image`1::toFile(System.String,Microsoft.FSharp.Core.FSharpOption`1<System.String>)
+DA:747,650
+DA:748,650
+DA:749,650
 DA:750,0
-DA:751,338
-DA:752,338
+DA:751,650
+DA:752,650
 BRDA:749,16,1,0
-BRDA:749,16,0,338
+BRDA:749,16,0,650
 FN:754,System.Void Image/Image`1::toFileVector(System.String,Microsoft.FSharp.Core.FSharpOption`1<System.String>)
 FNDA:0,System.Void Image/Image`1::toFileVector(System.String,Microsoft.FSharp.Core.FSharpOption`1<System.String>)
 DA:755,0
@@ -1663,11 +1663,11 @@ DA:817,0
 DA:818,0
 DA:819,0
 FN:821,System.Void Image/Image`1::iteri(Microsoft.FSharp.Core.FSharpFunc`2<Microsoft.FSharp.Collections.FSharpList`1<System.UInt32>,Microsoft.FSharp.Core.FSharpFunc`2<T,Microsoft.FSharp.Core.Unit>>,Image/Image`1<T>)
-FNDA:45,System.Void Image/Image`1::iteri(Microsoft.FSharp.Core.FSharpFunc`2<Microsoft.FSharp.Collections.FSharpList`1<System.UInt32>,Microsoft.FSharp.Core.FSharpFunc`2<T,Microsoft.FSharp.Core.Unit>>,Image/Image`1<T>)
-DA:822,45
-DA:823,45
-DA:824,45
-DA:825,51433
+FNDA:52,System.Void Image/Image`1::iteri(Microsoft.FSharp.Core.FSharpFunc`2<Microsoft.FSharp.Collections.FSharpList`1<System.UInt32>,Microsoft.FSharp.Core.FSharpFunc`2<T,Microsoft.FSharp.Core.Unit>>,Image/Image`1<T>)
+DA:822,52
+DA:823,52
+DA:824,52
+DA:825,61536
 FN:827,S Image/Image`1::fold(Microsoft.FSharp.Core.FSharpFunc`2<S,Microsoft.FSharp.Core.FSharpFunc`2<T,S>>,S,Image/Image`1<T>)
 FNDA:0,S Image/Image`1::fold(Microsoft.FSharp.Core.FSharpFunc`2<S,Microsoft.FSharp.Core.FSharpFunc`2<T,S>>,S,Image/Image`1<T>)
 DA:828,0
@@ -1714,9 +1714,9 @@ DA:865,0
 DA:866,0
 DA:867,0
 FN:869,T Image/Image`1::Get(Microsoft.FSharp.Collections.FSharpList`1<System.UInt32>)
-FNDA:110028,T Image/Image`1::Get(Microsoft.FSharp.Collections.FSharpList`1<System.UInt32>)
-DA:870,110028
-DA:871,55014
+FNDA:168700,T Image/Image`1::Get(Microsoft.FSharp.Collections.FSharpList`1<System.UInt32>)
+DA:870,168700
+DA:871,84350
 DA:872,0
 DA:873,0
 DA:874,0
@@ -1726,53 +1726,53 @@ DA:877,0
 DA:878,0
 DA:879,0
 DA:880,0
-DA:881,55014
+DA:881,84350
 DA:882,0
-DA:883,55014
+DA:883,84350
 DA:884,0
-DA:885,55014
+DA:885,84350
 DA:886,0
-DA:887,55014
+DA:887,84350
 DA:888,0
-DA:889,55014
+DA:889,84350
 DA:890,0
-DA:891,55014
+DA:891,84350
 DA:892,0
-DA:893,55014
+DA:893,84350
 DA:894,0
-DA:895,55014
+DA:895,84350
 DA:896,0
-DA:897,55014
+DA:897,84350
 DA:898,0
-DA:899,55014
+DA:899,84350
 DA:900,0
-DA:902,55014
-DA:903,55014
-DA:904,55014
+DA:902,84350
+DA:903,84350
+DA:904,84350
 BRDA:871,35,0,0
 BRDA:873,63,0,0
 BRDA:873,63,1,0
-BRDA:871,35,1,55014
+BRDA:871,35,1,84350
 BRDA:881,266,0,0
-BRDA:881,266,1,55014
+BRDA:881,266,1,84350
 BRDA:883,335,0,0
-BRDA:883,335,1,55014
+BRDA:883,335,1,84350
 BRDA:885,404,0,0
-BRDA:885,404,1,55014
+BRDA:885,404,1,84350
 BRDA:887,473,0,0
-BRDA:887,473,1,55014
+BRDA:887,473,1,84350
 BRDA:889,542,0,0
-BRDA:889,542,1,55014
+BRDA:889,542,1,84350
 BRDA:891,611,0,0
-BRDA:891,611,1,55014
+BRDA:891,611,1,84350
 BRDA:893,680,0,0
-BRDA:893,680,1,55014
+BRDA:893,680,1,84350
 BRDA:895,749,0,0
-BRDA:895,749,1,55014
+BRDA:895,749,1,84350
 BRDA:897,818,0,0
-BRDA:897,818,1,55014
+BRDA:897,818,1,84350
 BRDA:899,887,0,0
-BRDA:899,887,1,55014
+BRDA:899,887,1,84350
 FN:907,Image/Image`1<T> Image/Image`1::GetSlice(Microsoft.FSharp.Core.FSharpOption`1<System.Int32>,Microsoft.FSharp.Core.FSharpOption`1<System.Int32>,Microsoft.FSharp.Core.FSharpOption`1<System.Int32>,Microsoft.FSharp.Core.FSharpOption`1<System.Int32>,Microsoft.FSharp.Core.FSharpOption`1<System.Int32>,Microsoft.FSharp.Core.FSharpOption`1<System.Int32>)
 FNDA:8,Image/Image`1<T> Image/Image`1::GetSlice(Microsoft.FSharp.Core.FSharpOption`1<System.Int32>,Microsoft.FSharp.Core.FSharpOption`1<System.Int32>,Microsoft.FSharp.Core.FSharpOption`1<System.Int32>,Microsoft.FSharp.Core.FSharpOption`1<System.Int32>,Microsoft.FSharp.Core.FSharpOption`1<System.Int32>,Microsoft.FSharp.Core.FSharpOption`1<System.Int32>)
 DA:908,8
@@ -1784,9 +1784,9 @@ DA:913,8
 DA:914,8
 DA:915,8
 FN:917,System.Void Image/Image`1::Set(Microsoft.FSharp.Collections.FSharpList`1<System.UInt32>,T)
-FNDA:25702,System.Void Image/Image`1::Set(Microsoft.FSharp.Collections.FSharpList`1<System.UInt32>,T)
-DA:918,25702
-DA:919,25702
+FNDA:30750,System.Void Image/Image`1::Set(Microsoft.FSharp.Collections.FSharpList`1<System.UInt32>,T)
+DA:918,30750
+DA:919,30750
 DA:920,0
 DA:921,0
 DA:922,0
@@ -1799,12 +1799,12 @@ DA:928,0
 DA:929,0
 DA:930,0
 DA:931,0
-DA:933,25702
-DA:934,25702
+DA:933,30750
+DA:934,30750
 BRDA:919,33,0,0
 BRDA:922,73,0,0
 BRDA:922,73,1,0
-BRDA:919,33,1,25702
+BRDA:919,33,1,30750
 FN:936,System.Void Image/Image`1::SetSlice(Microsoft.FSharp.Core.FSharpOption`1<System.Int32>,Microsoft.FSharp.Core.FSharpOption`1<System.Int32>,Microsoft.FSharp.Core.FSharpOption`1<System.Int32>,Microsoft.FSharp.Core.FSharpOption`1<System.Int32>,Microsoft.FSharp.Core.FSharpOption`1<System.Int32>,Microsoft.FSharp.Core.FSharpOption`1<System.Int32>,Image/Image`1<T>)
 FNDA:0,System.Void Image/Image`1::SetSlice(Microsoft.FSharp.Core.FSharpOption`1<System.Int32>,Microsoft.FSharp.Core.FSharpOption`1<System.Int32>,Microsoft.FSharp.Core.FSharpOption`1<System.Int32>,Microsoft.FSharp.Core.FSharpOption`1<System.Int32>,Microsoft.FSharp.Core.FSharpOption`1<System.Int32>,Microsoft.FSharp.Core.FSharpOption`1<System.Int32>,Image/Image`1<T>)
 DA:937,0
@@ -1821,8 +1821,8 @@ FN:948,System.Void Image/Image`1::set_Item(System.Int32,System.Int32,T)
 FNDA:8,System.Void Image/Image`1::set_Item(System.Int32,System.Int32,T)
 DA:949,8
 FN:951,T Image/Image`1::get_Item(System.Int32,System.Int32,System.Int32)
-FNDA:29169,T Image/Image`1::get_Item(System.Int32,System.Int32,System.Int32)
-DA:952,29169
+FNDA:53457,T Image/Image`1::get_Item(System.Int32,System.Int32,System.Int32)
+DA:952,53457
 FN:953,System.Void Image/Image`1::set_Item(System.Int32,System.Int32,System.Int32,T)
 FNDA:0,System.Void Image/Image`1::set_Item(System.Int32,System.Int32,System.Int32,T)
 DA:954,0
@@ -1953,79 +1953,79 @@ DA:433,8
 DA:434,32
 DA:435,8
 FN:408,System.Void Image/Image`1::.ctor(Microsoft.FSharp.Collections.FSharpList`1<System.UInt32>,Microsoft.FSharp.Core.FSharpOption`1<System.UInt32>,Microsoft.FSharp.Core.FSharpOption`1<System.String>,Microsoft.FSharp.Core.FSharpOption`1<System.Int32>,Microsoft.FSharp.Core.FSharpOption`1<System.Boolean>)
-FNDA:815,System.Void Image/Image`1::.ctor(Microsoft.FSharp.Collections.FSharpList`1<System.UInt32>,Microsoft.FSharp.Core.FSharpOption`1<System.UInt32>,Microsoft.FSharp.Core.FSharpOption`1<System.String>,Microsoft.FSharp.Core.FSharpOption`1<System.Int32>,Microsoft.FSharp.Core.FSharpOption`1<System.Boolean>)
-DA:409,815
-DA:410,815
-DA:411,815
-DA:412,1630
-DA:413,815
-DA:415,815
-DA:416,813
+FNDA:1590,System.Void Image/Image`1::.ctor(Microsoft.FSharp.Collections.FSharpList`1<System.UInt32>,Microsoft.FSharp.Core.FSharpOption`1<System.UInt32>,Microsoft.FSharp.Core.FSharpOption`1<System.String>,Microsoft.FSharp.Core.FSharpOption`1<System.Int32>,Microsoft.FSharp.Core.FSharpOption`1<System.Boolean>)
+DA:409,1590
+DA:410,1590
+DA:411,1590
+DA:412,3180
+DA:413,1590
+DA:415,1590
+DA:416,1588
 DA:417,2
-DA:418,815
-DA:419,815
-DA:421,815
-DA:422,815
-DA:424,815
-DA:425,2445
-DA:426,815
-DA:437,815
-DA:439,815
-DA:440,1630
-DA:441,815
+DA:418,1590
+DA:419,1590
+DA:421,1590
+DA:422,1590
+DA:424,1590
+DA:425,4770
+DA:426,1590
+DA:437,1590
+DA:439,1590
+DA:440,3180
+DA:441,1590
 BRDA:412,46,0,0
-BRDA:412,46,1,815
+BRDA:412,46,1,1590
 BRDA:412,60,0,0
-BRDA:412,60,1,815
-BRDA:415,112,0,813
+BRDA:412,60,1,1590
+BRDA:415,112,0,1588
 BRDA:415,112,1,2
 BRDA:422,198,0,0
 BRDA:422,234,0,0
 BRDA:422,234,1,0
-BRDA:422,198,1,815
+BRDA:422,198,1,1590
 BRDA:424,265,0,0
 BRDA:424,294,0,0
 BRDA:424,294,1,0
-BRDA:424,265,1,815
+BRDA:424,265,1,1590
 BRDA:440,377,0,0
-BRDA:440,377,1,815
+BRDA:440,377,1,1590
 BRDA:440,390,0,0
-BRDA:440,390,1,815
+BRDA:440,390,1,1590
 FN:306,System.UInt64 Image/ImageFactsModule::product(Microsoft.FSharp.Collections.FSharpList`1<System.UInt64>)
-FNDA:10262,System.UInt64 Image/ImageFactsModule::product(Microsoft.FSharp.Collections.FSharpList`1<System.UInt64>)
-DA:307,10262
+FNDA:20110,System.UInt64 Image/ImageFactsModule::product(Microsoft.FSharp.Collections.FSharpList`1<System.UInt64>)
+DA:307,20110
 FN:309,Image/ImageFacts Image/ImageFactsModule::create(System.String,System.String,System.UInt64,System.UInt64,Microsoft.FSharp.Collections.FSharpList`1<System.UInt64>)
-FNDA:2512,Image/ImageFacts Image/ImageFactsModule::create(System.String,System.String,System.UInt64,System.UInt64,Microsoft.FSharp.Collections.FSharpList`1<System.UInt64>)
-DA:310,2512
-DA:311,2512
-DA:312,2512
-DA:313,2512
-DA:314,2512
-DA:315,2512
-DA:316,2512
-DA:317,2512
+FNDA:4906,Image/ImageFacts Image/ImageFactsModule::create(System.String,System.String,System.UInt64,System.UInt64,Microsoft.FSharp.Collections.FSharpList`1<System.UInt64>)
+DA:310,4906
+DA:311,4906
+DA:312,4906
+DA:313,4906
+DA:314,4906
+DA:315,4906
+DA:316,4906
+DA:317,4906
 FN:319,Image/ImageFacts Image/ImageFactsModule::forType(Microsoft.FSharp.Collections.FSharpList`1<System.UInt32>,System.UInt32)
-FNDA:125,Image/ImageFacts Image/ImageFactsModule::forType(Microsoft.FSharp.Collections.FSharpList`1<System.UInt32>,System.UInt32)
-DA:320,125
-DA:321,125
-DA:322,125
-DA:323,250
-DA:324,125
-DA:325,375
+FNDA:215,Image/ImageFacts Image/ImageFactsModule::forType(Microsoft.FSharp.Collections.FSharpList`1<System.UInt32>,System.UInt32)
+DA:320,215
+DA:321,215
+DA:322,215
+DA:323,430
+DA:324,215
+DA:325,645
 FN:327,Image/ImageFacts Image/ImageFactsModule::ofSimpleITK(itk.simple.Image)
-FNDA:2387,Image/ImageFacts Image/ImageFactsModule::ofSimpleITK(itk.simple.Image)
-DA:328,2387
-DA:329,2387
-DA:330,2387
-DA:331,4774
-DA:332,2387
-DA:333,9548
+FNDA:4691,Image/ImageFacts Image/ImageFactsModule::ofSimpleITK(itk.simple.Image)
+DA:328,4691
+DA:329,4691
+DA:330,4691
+DA:331,9382
+DA:332,4691
+DA:333,18764
 FN:335,System.UInt64 Image/ImageFactsModule::memoryBytesForType(System.UInt64,System.UInt32)
-FNDA:18,System.UInt64 Image/ImageFactsModule::memoryBytesForType(System.UInt64,System.UInt32)
-DA:336,18
+FNDA:36,System.UInt64 Image/ImageFactsModule::memoryBytesForType(System.UInt64,System.UInt32)
+DA:336,36
 FN:338,System.UInt64 Image/ImageFactsModule::sliceBytesForType(System.UInt32,System.UInt32)
-FNDA:107,System.UInt64 Image/ImageFactsModule::sliceBytesForType(System.UInt32,System.UInt32)
-DA:339,107
+FNDA:179,System.UInt64 Image/ImageFactsModule::sliceBytesForType(System.UInt32,System.UInt32)
+DA:339,179
 FN:4,itk.simple.VectorUInt8 Image/InternalHelpers::toVectorUInt8(Microsoft.FSharp.Collections.FSharpList`1<System.Byte>)
 FNDA:0,itk.simple.VectorUInt8 Image/InternalHelpers::toVectorUInt8(Microsoft.FSharp.Collections.FSharpList`1<System.Byte>)
 DA:5,0
@@ -2039,11 +2039,11 @@ FN:7,itk.simple.VectorInt16 Image/InternalHelpers::toVectorInt16(Microsoft.FShar
 FNDA:0,itk.simple.VectorInt16 Image/InternalHelpers::toVectorInt16(Microsoft.FSharp.Collections.FSharpList`1<System.Int16>)
 DA:8,0
 FN:8,itk.simple.VectorUInt32 Image/InternalHelpers::toVectorUInt32(Microsoft.FSharp.Collections.FSharpList`1<System.UInt32>)
-FNDA:82550,itk.simple.VectorUInt32 Image/InternalHelpers::toVectorUInt32(Microsoft.FSharp.Collections.FSharpList`1<System.UInt32>)
-DA:9,82550
+FNDA:118701,itk.simple.VectorUInt32 Image/InternalHelpers::toVectorUInt32(Microsoft.FSharp.Collections.FSharpList`1<System.UInt32>)
+DA:9,118701
 FN:9,itk.simple.VectorInt32 Image/InternalHelpers::toVectorInt32(Microsoft.FSharp.Collections.FSharpList`1<System.Int32>)
-FNDA:222,itk.simple.VectorInt32 Image/InternalHelpers::toVectorInt32(Microsoft.FSharp.Collections.FSharpList`1<System.Int32>)
-DA:10,222
+FNDA:438,itk.simple.VectorInt32 Image/InternalHelpers::toVectorInt32(Microsoft.FSharp.Collections.FSharpList`1<System.Int32>)
+DA:10,438
 FN:10,itk.simple.VectorUInt64 Image/InternalHelpers::toVectorUInt64(Microsoft.FSharp.Collections.FSharpList`1<System.UInt64>)
 FNDA:0,itk.simple.VectorUInt64 Image/InternalHelpers::toVectorUInt64(Microsoft.FSharp.Collections.FSharpList`1<System.UInt64>)
 DA:11,0
@@ -2083,8 +2083,8 @@ BRDA:22,25,0,0
 BRDA:22,8,0,0
 BRDA:22,47,1,0
 FN:28,Microsoft.FSharp.Collections.FSharpList`1<b> Image/InternalHelpers::fromItkVector(Microsoft.FSharp.Core.FSharpFunc`2<a,b>,System.Collections.Generic.IEnumerable`1<a>)
-FNDA:9129,Microsoft.FSharp.Collections.FSharpList`1<b> Image/InternalHelpers::fromItkVector(Microsoft.FSharp.Core.FSharpFunc`2<a,b>,System.Collections.Generic.IEnumerable`1<a>)
-DA:29,9129
+FNDA:18033,Microsoft.FSharp.Collections.FSharpList`1<b> Image/InternalHelpers::fromItkVector(Microsoft.FSharp.Core.FSharpFunc`2<a,b>,System.Collections.Generic.IEnumerable`1<a>)
+DA:29,18033
 FN:30,Microsoft.FSharp.Collections.FSharpList`1<System.Byte> Image/InternalHelpers::fromVectorUInt8(itk.simple.VectorUInt8)
 FNDA:0,Microsoft.FSharp.Collections.FSharpList`1<System.Byte> Image/InternalHelpers::fromVectorUInt8(itk.simple.VectorUInt8)
 DA:31,0
@@ -2098,14 +2098,14 @@ FN:33,Microsoft.FSharp.Collections.FSharpList`1<System.Int16> Image/InternalHelp
 FNDA:0,Microsoft.FSharp.Collections.FSharpList`1<System.Int16> Image/InternalHelpers::fromVectorInt16(itk.simple.VectorInt16)
 DA:34,0
 FN:34,Microsoft.FSharp.Collections.FSharpList`1<System.UInt32> Image/InternalHelpers::fromVectorUInt32(itk.simple.VectorUInt32)
-FNDA:3014,Microsoft.FSharp.Collections.FSharpList`1<System.UInt32> Image/InternalHelpers::fromVectorUInt32(itk.simple.VectorUInt32)
-DA:35,3014
+FNDA:5964,Microsoft.FSharp.Collections.FSharpList`1<System.UInt32> Image/InternalHelpers::fromVectorUInt32(itk.simple.VectorUInt32)
+DA:35,5964
 FN:35,Microsoft.FSharp.Collections.FSharpList`1<System.Int32> Image/InternalHelpers::fromVectorInt32(itk.simple.VectorInt32)
 FNDA:0,Microsoft.FSharp.Collections.FSharpList`1<System.Int32> Image/InternalHelpers::fromVectorInt32(itk.simple.VectorInt32)
 DA:36,0
 FN:36,Microsoft.FSharp.Collections.FSharpList`1<System.UInt64> Image/InternalHelpers::fromVectorUInt64(itk.simple.VectorUInt64)
-FNDA:29,Microsoft.FSharp.Collections.FSharpList`1<System.UInt64> Image/InternalHelpers::fromVectorUInt64(itk.simple.VectorUInt64)
-DA:37,29
+FNDA:47,Microsoft.FSharp.Collections.FSharpList`1<System.UInt64> Image/InternalHelpers::fromVectorUInt64(itk.simple.VectorUInt64)
+DA:37,47
 FN:37,Microsoft.FSharp.Collections.FSharpList`1<System.Int64> Image/InternalHelpers::fromVectorInt64(itk.simple.VectorInt64)
 FNDA:0,Microsoft.FSharp.Collections.FSharpList`1<System.Int64> Image/InternalHelpers::fromVectorInt64(itk.simple.VectorInt64)
 DA:38,0
@@ -2116,18 +2116,18 @@ FN:39,Microsoft.FSharp.Collections.FSharpList`1<System.Double> Image/InternalHel
 FNDA:0,Microsoft.FSharp.Collections.FSharpList`1<System.Double> Image/InternalHelpers::fromVectorFloat64(itk.simple.VectorDouble)
 DA:40,0
 FN:41,itk.simple.PixelIDValueEnum Image/InternalHelpers::fromType()
-FNDA:786182,itk.simple.PixelIDValueEnum Image/InternalHelpers::fromType()
-DA:42,786182
-DA:43,873712
-DA:44,772937
-DA:45,698652
-DA:46,624367
-DA:47,550082
-DA:48,475797
-DA:49,401660
-DA:50,326951
-DA:51,298910
-DA:52,116728
+FNDA:1123847,itk.simple.PixelIDValueEnum Image/InternalHelpers::fromType()
+DA:42,1123847
+DA:43,1250321
+DA:44,1102042
+DA:45,997373
+DA:46,892704
+DA:47,788035
+DA:48,683366
+DA:49,578845
+DA:50,473752
+DA:51,422328
+DA:52,214024
 DA:53,0
 DA:54,0
 DA:55,0
@@ -2140,25 +2140,25 @@ DA:61,0
 DA:62,0
 DA:63,0
 DA:64,0
-BRDA:43,28,0,87530
-BRDA:43,28,1,698652
-BRDA:44,53,0,74285
-BRDA:44,53,1,624367
-BRDA:45,78,0,74285
-BRDA:45,78,1,550082
-BRDA:46,103,0,74285
-BRDA:46,103,1,475797
-BRDA:47,128,0,74285
-BRDA:47,128,1,401512
-BRDA:48,153,0,74285
-BRDA:48,153,1,327227
-BRDA:49,178,0,74433
-BRDA:49,178,1,252794
-BRDA:50,203,0,74157
-BRDA:50,203,1,178637
-BRDA:51,228,0,120273
-BRDA:51,228,1,58364
-BRDA:52,253,0,58364
+BRDA:43,28,0,126474
+BRDA:43,28,1,997373
+BRDA:44,53,0,104669
+BRDA:44,53,1,892704
+BRDA:45,78,0,104669
+BRDA:45,78,1,788035
+BRDA:46,103,0,104669
+BRDA:46,103,1,683366
+BRDA:47,128,0,104669
+BRDA:47,128,1,578697
+BRDA:48,153,0,104669
+BRDA:48,153,1,474028
+BRDA:49,178,0,104817
+BRDA:49,178,1,369211
+BRDA:50,203,0,104541
+BRDA:50,203,1,264670
+BRDA:51,228,0,157658
+BRDA:51,228,1,107012
+BRDA:52,253,0,107012
 BRDA:52,253,1,0
 BRDA:53,278,0,0
 BRDA:53,278,1,0
@@ -2192,21 +2192,21 @@ FN:70,System.Boolean Image/InternalHelpers::isComplexCompatibleImage(itk.simple.
 FNDA:0,System.Boolean Image/InternalHelpers::isComplexCompatibleImage(itk.simple.Image)
 DA:71,0
 FN:73,itk.simple.Image Image/InternalHelpers::ofCastItk(itk.simple.Image)
-FNDA:759,itk.simple.Image Image/InternalHelpers::ofCastItk(itk.simple.Image)
-DA:74,759
-DA:75,1518
+FNDA:1521,itk.simple.Image Image/InternalHelpers::ofCastItk(itk.simple.Image)
+DA:74,1521
+DA:75,3042
 DA:76,0
-DA:77,759
-DA:78,714
-DA:80,45
-DA:81,45
-DA:82,45
+DA:77,1521
+DA:78,1440
+DA:80,81
+DA:81,81
+DA:82,81
 BRDA:75,32,0,0
-BRDA:75,32,1,759
+BRDA:75,32,1,1521
 BRDA:75,45,0,0
-BRDA:75,45,1,759
-BRDA:77,62,0,714
-BRDA:77,62,1,45
+BRDA:75,45,1,1521
+BRDA:77,62,0,1440
+BRDA:77,62,1,81
 FN:84,System.Tuple`2<T,U>[0...,0...] Image/InternalHelpers::array2dZip(T[0...,0...],U[0...,0...])
 FNDA:0,System.Tuple`2<T,U>[0...,0...] Image/InternalHelpers::array2dZip(T[0...,0...],U[0...,0...])
 DA:85,0
@@ -2219,20 +2219,20 @@ BRDA:87,74,1,0
 BRDA:87,89,0,0
 BRDA:87,89,1,0
 FN:91,System.String Image/InternalHelpers::pixelIdToString(itk.simple.PixelIDValueEnum)
-FNDA:2416,System.String Image/InternalHelpers::pixelIdToString(itk.simple.PixelIDValueEnum)
-DA:92,2416
+FNDA:4738,System.String Image/InternalHelpers::pixelIdToString(itk.simple.PixelIDValueEnum)
+DA:92,4738
 FN:94,System.Collections.Generic.IEnumerable`1<Microsoft.FSharp.Collections.FSharpList`1<System.UInt32>> Image/InternalHelpers::flatIndices(Microsoft.FSharp.Collections.FSharpList`1<System.UInt32>)
-FNDA:50,System.Collections.Generic.IEnumerable`1<Microsoft.FSharp.Collections.FSharpList`1<System.UInt32>> Image/InternalHelpers::flatIndices(Microsoft.FSharp.Collections.FSharpList`1<System.UInt32>)
-DA:95,50
+FNDA:57,System.Collections.Generic.IEnumerable`1<Microsoft.FSharp.Collections.FSharpList`1<System.UInt32>> Image/InternalHelpers::flatIndices(Microsoft.FSharp.Collections.FSharpList`1<System.UInt32>)
+DA:95,57
 DA:97,41
 DA:98,218
 DA:99,1003
 DA:100,636
-DA:102,9
-DA:103,117
-DA:104,1754
-DA:105,29550
-DA:106,25188
+DA:102,16
+DA:103,193
+DA:104,2496
+DA:105,36266
+DA:106,30243
 DA:108,0
 DA:109,0
 DA:110,0
@@ -2241,12 +2241,12 @@ DA:112,0
 DA:113,0
 DA:114,0
 BRDA:95,9,1,41
-BRDA:95,9,2,9
+BRDA:95,9,2,16
 BRDA:95,9,3,0
 BRDA:95,9,0,0
 FN:116,System.Void Image/InternalHelpers::setBoxedPixel(itk.simple.Image,itk.simple.PixelIDValueEnum,itk.simple.VectorUInt32,System.Object)
-FNDA:25702,System.Void Image/InternalHelpers::setBoxedPixel(itk.simple.Image,itk.simple.PixelIDValueEnum,itk.simple.VectorUInt32,System.Object)
-DA:117,25702
+FNDA:30750,System.Void Image/InternalHelpers::setBoxedPixel(itk.simple.Image,itk.simple.PixelIDValueEnum,itk.simple.VectorUInt32,System.Object)
+DA:117,30750
 DA:118,0
 DA:119,0
 DA:120,0
@@ -2257,26 +2257,26 @@ DA:124,0
 DA:125,0
 DA:126,0
 DA:127,0
-DA:129,28909
-DA:130,22495
-DA:131,22495
-DA:132,22495
-DA:133,22495
-DA:134,22495
-DA:135,22495
-DA:136,22495
-DA:137,44990
+DA:129,35957
+DA:130,25543
+DA:131,25543
+DA:132,25543
+DA:133,25543
+DA:134,25543
+DA:135,25543
+DA:136,25543
+DA:137,51086
 DA:138,0
 DA:139,0
-BRDA:117,13,0,25702
-BRDA:117,29,0,25702
-BRDA:117,45,0,25702
-BRDA:117,63,0,25702
-BRDA:117,81,0,25702
-BRDA:117,99,0,25702
-BRDA:117,117,0,25702
-BRDA:117,135,0,25702
-BRDA:117,153,0,25702
+BRDA:117,13,0,30750
+BRDA:117,29,0,30750
+BRDA:117,45,0,30750
+BRDA:117,63,0,30750
+BRDA:117,81,0,30750
+BRDA:117,99,0,30750
+BRDA:117,117,0,30750
+BRDA:117,135,0,30750
+BRDA:117,153,0,30750
 BRDA:117,13,1,0
 BRDA:117,29,1,0
 BRDA:117,45,1,0
@@ -2287,39 +2287,39 @@ BRDA:117,117,1,0
 BRDA:117,135,1,0
 BRDA:117,153,1,0
 BRDA:117,171,0,0
-BRDA:117,171,1,25702
-BRDA:129,423,0,3207
-BRDA:129,423,1,22495
+BRDA:117,171,1,30750
+BRDA:129,423,0,5207
+BRDA:129,423,1,25543
 BRDA:130,451,0,0
-BRDA:130,451,1,22495
+BRDA:130,451,1,25543
 BRDA:131,479,0,0
-BRDA:131,479,1,22495
+BRDA:131,479,1,25543
 BRDA:132,507,0,0
-BRDA:132,507,1,22495
+BRDA:132,507,1,25543
 BRDA:133,535,0,0
-BRDA:133,535,1,22495
+BRDA:133,535,1,25543
 BRDA:134,563,0,0
-BRDA:134,563,1,22495
+BRDA:134,563,1,25543
 BRDA:135,591,0,0
-BRDA:135,591,1,22495
+BRDA:135,591,1,25543
 BRDA:136,619,0,0
-BRDA:136,619,1,22495
-BRDA:137,647,0,22495
+BRDA:136,619,1,25543
+BRDA:137,647,0,25543
 BRDA:137,647,1,0
 BRDA:138,675,0,0
 BRDA:138,675,1,0
 FN:142,System.Object Image/InternalHelpers::getBoxedPixel(itk.simple.Image,itk.simple.PixelIDValueEnum,itk.simple.VectorUInt32)
-FNDA:58238,System.Object Image/InternalHelpers::getBoxedPixel(itk.simple.Image,itk.simple.PixelIDValueEnum,itk.simple.VectorUInt32)
-DA:143,58238
-DA:144,51790
-DA:145,51790
-DA:146,51790
-DA:147,51790
-DA:148,51790
-DA:149,51918
-DA:150,51662
-DA:151,74172
-DA:152,58304
+FNDA:89574,System.Object Image/InternalHelpers::getBoxedPixel(itk.simple.Image,itk.simple.PixelIDValueEnum,itk.simple.VectorUInt32)
+DA:143,89574
+DA:144,79126
+DA:145,79126
+DA:146,79126
+DA:147,79126
+DA:148,79126
+DA:149,79254
+DA:150,78998
+DA:151,104556
+DA:152,106880
 DA:153,0
 DA:154,0
 DA:155,0
@@ -2340,25 +2340,25 @@ DA:177,0
 DA:178,0
 DA:179,0
 DA:181,0
-BRDA:143,12,0,3224
-BRDA:143,12,1,51790
+BRDA:143,12,0,5224
+BRDA:143,12,1,79126
 BRDA:144,39,0,0
-BRDA:144,39,1,51790
+BRDA:144,39,1,79126
 BRDA:145,66,0,0
-BRDA:145,66,1,51790
+BRDA:145,66,1,79126
 BRDA:146,93,0,0
-BRDA:146,93,1,51790
+BRDA:146,93,1,79126
 BRDA:147,120,0,0
-BRDA:147,120,1,51790
+BRDA:147,120,1,79126
 BRDA:148,147,0,0
-BRDA:148,147,1,51790
+BRDA:148,147,1,79126
 BRDA:149,174,0,128
-BRDA:149,174,1,51662
+BRDA:149,174,1,78998
 BRDA:150,201,0,0
-BRDA:150,201,1,51662
-BRDA:151,228,0,22510
-BRDA:151,228,1,29152
-BRDA:152,255,0,29152
+BRDA:150,201,1,78998
+BRDA:151,228,0,25558
+BRDA:151,228,1,53440
+BRDA:152,255,0,53440
 BRDA:152,255,1,0
 BRDA:153,282,0,0
 BRDA:155,305,0,0
@@ -2527,14 +2527,14 @@ FNH:65
 end_of_record
 SF:/Users/jrh630/repositories/stackProcessing/src/AsyncSeqExtensions/AsyncSeqExtensions.fs
 FN:58,FSharp.Control.IAsyncEnumerable`1<Microsoft.FSharp.Collections.FSharpList`1<T>> AsyncSeqExtensions::windowedWithPad(System.UInt32,System.UInt32,System.UInt32,System.UInt32,Microsoft.FSharp.Core.FSharpFunc`2<System.Int32,Microsoft.FSharp.Core.FSharpFunc`2<T,T>>,FSharp.Control.IAsyncEnumerable`1<T>)
-FNDA:6,FSharp.Control.IAsyncEnumerable`1<Microsoft.FSharp.Collections.FSharpList`1<T>> AsyncSeqExtensions::windowedWithPad(System.UInt32,System.UInt32,System.UInt32,System.UInt32,Microsoft.FSharp.Core.FSharpFunc`2<System.Int32,Microsoft.FSharp.Core.FSharpFunc`2<T,T>>,FSharp.Control.IAsyncEnumerable`1<T>)
-DA:59,6
-DA:60,6
-DA:62,6
+FNDA:12,FSharp.Control.IAsyncEnumerable`1<Microsoft.FSharp.Collections.FSharpList`1<T>> AsyncSeqExtensions::windowedWithPad(System.UInt32,System.UInt32,System.UInt32,System.UInt32,Microsoft.FSharp.Core.FSharpFunc`2<System.Int32,Microsoft.FSharp.Core.FSharpFunc`2<T,T>>,FSharp.Control.IAsyncEnumerable`1<T>)
+DA:59,12
+DA:60,12
+DA:62,12
 BRDA:59,2,0,0
-BRDA:59,2,1,6
+BRDA:59,2,1,12
 BRDA:60,27,0,0
-BRDA:60,27,1,6
+BRDA:60,27,1,12
 FN:136,FSharp.Control.IAsyncEnumerable`1<T> AsyncSeqExtensions::ofAsync(Microsoft.FSharp.Control.FSharpAsync`1<T>)
 FNDA:4,FSharp.Control.IAsyncEnumerable`1<T> AsyncSeqExtensions::ofAsync(Microsoft.FSharp.Control.FSharpAsync`1<T>)
 DA:137,4
@@ -2542,92 +2542,92 @@ FN:142,FSharp.Control.IAsyncEnumerable`1<System.Tuple`2<U,V>> AsyncSeqExtensions
 FNDA:0,FSharp.Control.IAsyncEnumerable`1<System.Tuple`2<U,V>> AsyncSeqExtensions::zipConcurrent(FSharp.Control.IAsyncEnumerable`1<U>,FSharp.Control.IAsyncEnumerable`1<V>)
 DA:143,0
 FN:67,Microsoft.FSharp.Control.FSharpAsync`1<Microsoft.FSharp.Core.FSharpOption`1<T>> AsyncSeqExtensions/tryGetNext@68-2::Invoke(System.Boolean)
-FNDA:98,Microsoft.FSharp.Control.FSharpAsync`1<Microsoft.FSharp.Core.FSharpOption`1<T>> AsyncSeqExtensions/tryGetNext@68-2::Invoke(System.Boolean)
-DA:68,98
-DA:69,49
-BRDA:68,4,0,43
-BRDA:68,4,1,6
+FNDA:230,Microsoft.FSharp.Control.FSharpAsync`1<Microsoft.FSharp.Core.FSharpOption`1<T>> AsyncSeqExtensions/tryGetNext@68-2::Invoke(System.Boolean)
+DA:68,230
+DA:69,115
+BRDA:68,4,0,103
+BRDA:68,4,1,12
 FN:66,Microsoft.FSharp.Control.FSharpAsync`1<Microsoft.FSharp.Core.FSharpOption`1<T>> AsyncSeqExtensions/tryGetNext@68-1::Invoke(Microsoft.FSharp.Core.Unit)
-FNDA:147,Microsoft.FSharp.Control.FSharpAsync`1<Microsoft.FSharp.Core.FSharpOption`1<T>> AsyncSeqExtensions/tryGetNext@68-1::Invoke(Microsoft.FSharp.Core.Unit)
-DA:67,147
+FNDA:345,Microsoft.FSharp.Control.FSharpAsync`1<Microsoft.FSharp.Core.FSharpOption`1<T>> AsyncSeqExtensions/tryGetNext@68-1::Invoke(Microsoft.FSharp.Core.Unit)
+DA:67,345
 FN:65,Microsoft.FSharp.Control.FSharpAsync`1<Microsoft.FSharp.Core.FSharpOption`1<T>> AsyncSeqExtensions/tryGetNext@66::Invoke(Microsoft.FSharp.Core.Unit)
-FNDA:49,Microsoft.FSharp.Control.FSharpAsync`1<Microsoft.FSharp.Core.FSharpOption`1<T>> AsyncSeqExtensions/tryGetNext@66::Invoke(Microsoft.FSharp.Core.Unit)
-DA:66,49
+FNDA:115,Microsoft.FSharp.Control.FSharpAsync`1<Microsoft.FSharp.Core.FSharpOption`1<T>> AsyncSeqExtensions/tryGetNext@66::Invoke(Microsoft.FSharp.Core.Unit)
+DA:66,115
 FN:80,Microsoft.FSharp.Control.FSharpAsync`1<System.Tuple`4<Microsoft.FSharp.Core.FSharpOption`1<T>,System.UInt32,System.UInt32,Microsoft.FSharp.Core.FSharpOption`1<T>>> AsyncSeqExtensions/tryGetCurrent@81-3::Invoke(Microsoft.FSharp.Core.FSharpOption`1<T>)
-FNDA:43,Microsoft.FSharp.Control.FSharpAsync`1<System.Tuple`4<Microsoft.FSharp.Core.FSharpOption`1<T>,System.UInt32,System.UInt32,Microsoft.FSharp.Core.FSharpOption`1<T>>> AsyncSeqExtensions/tryGetCurrent@81-3::Invoke(Microsoft.FSharp.Core.FSharpOption`1<T>)
-DA:81,43
+FNDA:103,Microsoft.FSharp.Control.FSharpAsync`1<System.Tuple`4<Microsoft.FSharp.Core.FSharpOption`1<T>,System.UInt32,System.UInt32,Microsoft.FSharp.Core.FSharpOption`1<T>>> AsyncSeqExtensions/tryGetCurrent@81-3::Invoke(Microsoft.FSharp.Core.FSharpOption`1<T>)
+DA:81,103
 FN:73,Microsoft.FSharp.Control.FSharpAsync`1<System.Tuple`4<Microsoft.FSharp.Core.FSharpOption`1<T>,System.UInt32,System.UInt32,Microsoft.FSharp.Core.FSharpOption`1<T>>> AsyncSeqExtensions/tryGetCurrent@74-1::Invoke(Microsoft.FSharp.Core.Unit)
-FNDA:47,Microsoft.FSharp.Control.FSharpAsync`1<System.Tuple`4<Microsoft.FSharp.Core.FSharpOption`1<T>,System.UInt32,System.UInt32,Microsoft.FSharp.Core.FSharpOption`1<T>>> AsyncSeqExtensions/tryGetCurrent@74-1::Invoke(Microsoft.FSharp.Core.Unit)
-DA:74,47
-DA:76,2
-DA:77,2
-DA:78,45
-DA:80,43
-DA:84,2
-DA:85,2
-BRDA:74,8,0,2
+FNDA:113,Microsoft.FSharp.Control.FSharpAsync`1<System.Tuple`4<Microsoft.FSharp.Core.FSharpOption`1<T>,System.UInt32,System.UInt32,Microsoft.FSharp.Core.FSharpOption`1<T>>> AsyncSeqExtensions/tryGetCurrent@74-1::Invoke(Microsoft.FSharp.Core.Unit)
+DA:74,113
+DA:76,5
+DA:77,5
+DA:78,108
+DA:80,103
+DA:84,5
+DA:85,5
+BRDA:74,8,0,5
 BRDA:76,36,1,0
-BRDA:76,36,0,2
-BRDA:74,8,1,45
-BRDA:78,142,0,43
-BRDA:78,142,1,2
+BRDA:76,36,0,5
+BRDA:74,8,1,108
+BRDA:78,142,0,103
+BRDA:78,142,1,5
 BRDA:84,241,1,0
-BRDA:84,241,0,2
+BRDA:84,241,0,5
 FN:71,Microsoft.FSharp.Control.FSharpAsync`1<System.Tuple`4<Microsoft.FSharp.Core.FSharpOption`1<T>,System.UInt32,System.UInt32,Microsoft.FSharp.Core.FSharpOption`1<T>>> AsyncSeqExtensions/tryGetCurrent@72D::Invoke(Microsoft.FSharp.Core.FSharpOption`1<T>)
-FNDA:47,Microsoft.FSharp.Control.FSharpAsync`1<System.Tuple`4<Microsoft.FSharp.Core.FSharpOption`1<T>,System.UInt32,System.UInt32,Microsoft.FSharp.Core.FSharpOption`1<T>>> AsyncSeqExtensions/tryGetCurrent@72D::Invoke(Microsoft.FSharp.Core.FSharpOption`1<T>)
-DA:72,47
+FNDA:113,Microsoft.FSharp.Control.FSharpAsync`1<System.Tuple`4<Microsoft.FSharp.Core.FSharpOption`1<T>,System.UInt32,System.UInt32,Microsoft.FSharp.Core.FSharpOption`1<T>>> AsyncSeqExtensions/tryGetCurrent@72D::Invoke(Microsoft.FSharp.Core.FSharpOption`1<T>)
+DA:72,113
 FN:108,FSharp.Control.IAsyncEnumerable`1<Microsoft.FSharp.Collections.FSharpList`1<T>> AsyncSeqExtensions/yieldWindows@109-2::Invoke(Microsoft.FSharp.Core.Unit)
-FNDA:3,FSharp.Control.IAsyncEnumerable`1<Microsoft.FSharp.Collections.FSharpList`1<T>> AsyncSeqExtensions/yieldWindows@109-2::Invoke(Microsoft.FSharp.Core.Unit)
-DA:109,3
+FNDA:6,FSharp.Control.IAsyncEnumerable`1<Microsoft.FSharp.Collections.FSharpList`1<T>> AsyncSeqExtensions/yieldWindows@109-2::Invoke(Microsoft.FSharp.Core.Unit)
+DA:109,6
 FN:118,FSharp.Control.IAsyncEnumerable`1<Microsoft.FSharp.Collections.FSharpList`1<T>> AsyncSeqExtensions/yieldWindows@119-6::Invoke(Microsoft.FSharp.Core.Unit)
 FNDA:0,FSharp.Control.IAsyncEnumerable`1<Microsoft.FSharp.Collections.FSharpList`1<T>> AsyncSeqExtensions/yieldWindows@119-6::Invoke(Microsoft.FSharp.Core.Unit)
 DA:119,0
 FN:122,FSharp.Control.IAsyncEnumerable`1<Microsoft.FSharp.Collections.FSharpList`1<T>> AsyncSeqExtensions/yieldWindows@123-7::Invoke(Microsoft.FSharp.Core.Unit)
-FNDA:23,FSharp.Control.IAsyncEnumerable`1<Microsoft.FSharp.Collections.FSharpList`1<T>> AsyncSeqExtensions/yieldWindows@123-7::Invoke(Microsoft.FSharp.Core.Unit)
-DA:123,23
-DA:124,23
-DA:126,23
-BRDA:123,21,0,18
-BRDA:123,21,1,5
+FNDA:56,FSharp.Control.IAsyncEnumerable`1<Microsoft.FSharp.Collections.FSharpList`1<T>> AsyncSeqExtensions/yieldWindows@123-7::Invoke(Microsoft.FSharp.Core.Unit)
+DA:123,56
+DA:124,56
+DA:126,56
+BRDA:123,21,0,48
+BRDA:123,21,1,8
 FN:113,FSharp.Control.IAsyncEnumerable`1<Microsoft.FSharp.Collections.FSharpList`1<T>> AsyncSeqExtensions/yieldWindows@114-4::Invoke(System.Tuple`4<Microsoft.FSharp.Core.FSharpOption`1<T>,System.UInt32,System.UInt32,Microsoft.FSharp.Core.FSharpOption`1<T>>)
-FNDA:47,FSharp.Control.IAsyncEnumerable`1<Microsoft.FSharp.Collections.FSharpList`1<T>> AsyncSeqExtensions/yieldWindows@114-4::Invoke(System.Tuple`4<Microsoft.FSharp.Core.FSharpOption`1<T>,System.UInt32,System.UInt32,Microsoft.FSharp.Core.FSharpOption`1<T>>)
-DA:114,47
-DA:116,47
+FNDA:113,FSharp.Control.IAsyncEnumerable`1<Microsoft.FSharp.Collections.FSharpList`1<T>> AsyncSeqExtensions/yieldWindows@114-4::Invoke(System.Tuple`4<Microsoft.FSharp.Core.FSharpOption`1<T>,System.UInt32,System.UInt32,Microsoft.FSharp.Core.FSharpOption`1<T>>)
+DA:114,113
+DA:116,113
 DA:117,0
-DA:120,47
-DA:122,92
-DA:129,24
+DA:120,113
+DA:122,224
+DA:129,57
 BRDA:114,54,1,0
-BRDA:114,54,0,47
+BRDA:114,54,0,113
 BRDA:116,89,0,0
 BRDA:117,110,0,0
 BRDA:117,110,1,0
-BRDA:116,89,1,47
-BRDA:120,225,0,23
-BRDA:120,225,1,24
+BRDA:116,89,1,113
+BRDA:120,225,0,56
+BRDA:120,225,1,57
 FN:105,FSharp.Control.IAsyncEnumerable`1<Microsoft.FSharp.Collections.FSharpList`1<T>> AsyncSeqExtensions/yieldWindows@106-1::Invoke(Microsoft.FSharp.Core.Unit)
-FNDA:138,FSharp.Control.IAsyncEnumerable`1<Microsoft.FSharp.Collections.FSharpList`1<T>> AsyncSeqExtensions/yieldWindows@106-1::Invoke(Microsoft.FSharp.Core.Unit)
-DA:106,138
-DA:107,9
-DA:108,9
-DA:113,47
-BRDA:106,7,0,32
-BRDA:106,7,1,21
-BRDA:106,26,0,6
-BRDA:107,50,0,3
-BRDA:107,50,1,3
-BRDA:106,26,1,47
+FNDA:318,FSharp.Control.IAsyncEnumerable`1<Microsoft.FSharp.Collections.FSharpList`1<T>> AsyncSeqExtensions/yieldWindows@106-1::Invoke(Microsoft.FSharp.Core.Unit)
+DA:106,318
+DA:107,18
+DA:108,18
+DA:113,113
+BRDA:106,7,0,68
+BRDA:106,7,1,57
+BRDA:106,26,0,12
+BRDA:107,50,0,6
+BRDA:107,50,1,6
+BRDA:106,26,1,113
 FN:103,FSharp.Control.IAsyncEnumerable`1<Microsoft.FSharp.Collections.FSharpList`1<T>> AsyncSeqExtensions/yieldWindows@104D::Invoke(Microsoft.FSharp.Core.FSharpOption`1<T>,Microsoft.FSharp.Core.FSharpOption`1<T>)
-FNDA:53,FSharp.Control.IAsyncEnumerable`1<Microsoft.FSharp.Collections.FSharpList`1<T>> AsyncSeqExtensions/yieldWindows@104D::Invoke(Microsoft.FSharp.Core.FSharpOption`1<T>,Microsoft.FSharp.Core.FSharpOption`1<T>)
-DA:104,53
+FNDA:125,FSharp.Control.IAsyncEnumerable`1<Microsoft.FSharp.Collections.FSharpList`1<T>> AsyncSeqExtensions/yieldWindows@104D::Invoke(Microsoft.FSharp.Core.FSharpOption`1<T>,Microsoft.FSharp.Core.FSharpOption`1<T>)
+DA:104,125
 FN:131,FSharp.Control.IAsyncEnumerable`1<Microsoft.FSharp.Collections.FSharpList`1<T>> AsyncSeqExtensions/windowedWithPad@132-1::Invoke(Microsoft.FSharp.Core.FSharpOption`1<T>)
-FNDA:6,FSharp.Control.IAsyncEnumerable`1<Microsoft.FSharp.Collections.FSharpList`1<T>> AsyncSeqExtensions/windowedWithPad@132-1::Invoke(Microsoft.FSharp.Core.FSharpOption`1<T>)
-DA:132,6
+FNDA:12,FSharp.Control.IAsyncEnumerable`1<Microsoft.FSharp.Collections.FSharpList`1<T>> AsyncSeqExtensions/windowedWithPad@132-1::Invoke(Microsoft.FSharp.Core.FSharpOption`1<T>)
+DA:132,12
 FN:62,FSharp.Control.IAsyncEnumerable`1<Microsoft.FSharp.Collections.FSharpList`1<T>> AsyncSeqExtensions/windowedWithPad@63::Invoke(Microsoft.FSharp.Core.Unit)
-FNDA:6,FSharp.Control.IAsyncEnumerable`1<Microsoft.FSharp.Collections.FSharpList`1<T>> AsyncSeqExtensions/windowedWithPad@63::Invoke(Microsoft.FSharp.Core.Unit)
-DA:63,6
-DA:64,6
-DA:131,6
+FNDA:12,FSharp.Control.IAsyncEnumerable`1<Microsoft.FSharp.Collections.FSharpList`1<T>> AsyncSeqExtensions/windowedWithPad@63::Invoke(Microsoft.FSharp.Core.Unit)
+DA:63,12
+DA:64,12
+DA:131,12
 FN:138,FSharp.Control.IAsyncEnumerable`1<T> AsyncSeqExtensions/ofAsync@139-1::Invoke(T)
 FNDA:4,FSharp.Control.IAsyncEnumerable`1<T> AsyncSeqExtensions/ofAsync@139-1::Invoke(T)
 DA:139,4
@@ -2692,8 +2692,8 @@ FN:71,Microsoft.FSharp.Core.FSharpFunc`2<System.String,Microsoft.FSharp.Core.FSh
 FNDA:0,Microsoft.FSharp.Core.FSharpFunc`2<System.String,Microsoft.FSharp.Core.FSharpFunc`2<System.String,Microsoft.FSharp.Core.FSharpFunc`2<Microsoft.FSharp.Core.FSharpFunc`2<System.String[],System.String[]>,Microsoft.FSharp.Core.FSharpFunc`2<SlimPipeline/Plan`2<Microsoft.FSharp.Core.Unit,Microsoft.FSharp.Core.Unit>,SlimPipeline/Plan`2<Microsoft.FSharp.Core.Unit,Image/Image`1<T>>>>>> StackProcessing::readFiltered()
 DA:72,0
 FN:72,Microsoft.FSharp.Core.FSharpFunc`2<System.String,Microsoft.FSharp.Core.FSharpFunc`2<System.String,Microsoft.FSharp.Core.FSharpFunc`2<SlimPipeline/Plan`2<Microsoft.FSharp.Core.Unit,Microsoft.FSharp.Core.Unit>,SlimPipeline/Plan`2<Microsoft.FSharp.Core.Unit,Image/Image`1<T>>>>> StackProcessing::read()
-FNDA:23,Microsoft.FSharp.Core.FSharpFunc`2<System.String,Microsoft.FSharp.Core.FSharpFunc`2<System.String,Microsoft.FSharp.Core.FSharpFunc`2<SlimPipeline/Plan`2<Microsoft.FSharp.Core.Unit,Microsoft.FSharp.Core.Unit>,SlimPipeline/Plan`2<Microsoft.FSharp.Core.Unit,Image/Image`1<T>>>>> StackProcessing::read()
-DA:73,23
+FNDA:41,Microsoft.FSharp.Core.FSharpFunc`2<System.String,Microsoft.FSharp.Core.FSharpFunc`2<System.String,Microsoft.FSharp.Core.FSharpFunc`2<SlimPipeline/Plan`2<Microsoft.FSharp.Core.Unit,Microsoft.FSharp.Core.Unit>,SlimPipeline/Plan`2<Microsoft.FSharp.Core.Unit,Image/Image`1<T>>>>> StackProcessing::read()
+DA:73,41
 FN:73,Microsoft.FSharp.Core.FSharpFunc`2<System.UInt32,Microsoft.FSharp.Core.FSharpFunc`2<System.String,Microsoft.FSharp.Core.FSharpFunc`2<System.String,Microsoft.FSharp.Core.FSharpFunc`2<SlimPipeline/Plan`2<Microsoft.FSharp.Core.Unit,Microsoft.FSharp.Core.Unit>,SlimPipeline/Plan`2<Microsoft.FSharp.Core.Unit,Image/Image`1<T>>>>>> StackProcessing::readRandom()
 FNDA:1,Microsoft.FSharp.Core.FSharpFunc`2<System.UInt32,Microsoft.FSharp.Core.FSharpFunc`2<System.String,Microsoft.FSharp.Core.FSharpFunc`2<System.String,Microsoft.FSharp.Core.FSharpFunc`2<SlimPipeline/Plan`2<Microsoft.FSharp.Core.Unit,Microsoft.FSharp.Core.Unit>,SlimPipeline/Plan`2<Microsoft.FSharp.Core.Unit,Image/Image`1<T>>>>>> StackProcessing::readRandom()
 DA:74,1
@@ -2749,29 +2749,29 @@ FN:118,SlimPipeline/Stage`2<Image/Image`1<T>,Image/Image`1<T>> StackProcessing::
 FNDA:1,SlimPipeline/Stage`2<Image/Image`1<T>,Image/Image`1<T>> StackProcessing::abs()
 DA:119,1
 FN:119,SlimPipeline/Stage`2<Image/Image`1<T>,Image/Image`1<T>> StackProcessing::acos()
-FNDA:0,SlimPipeline/Stage`2<Image/Image`1<T>,Image/Image`1<T>> StackProcessing::acos()
-DA:120,0
+FNDA:1,SlimPipeline/Stage`2<Image/Image`1<T>,Image/Image`1<T>> StackProcessing::acos()
+DA:120,1
 FN:120,SlimPipeline/Stage`2<Image/Image`1<T>,Image/Image`1<T>> StackProcessing::asin()
-FNDA:0,SlimPipeline/Stage`2<Image/Image`1<T>,Image/Image`1<T>> StackProcessing::asin()
-DA:121,0
+FNDA:1,SlimPipeline/Stage`2<Image/Image`1<T>,Image/Image`1<T>> StackProcessing::asin()
+DA:121,1
 FN:121,SlimPipeline/Stage`2<Image/Image`1<T>,Image/Image`1<T>> StackProcessing::atan()
-FNDA:0,SlimPipeline/Stage`2<Image/Image`1<T>,Image/Image`1<T>> StackProcessing::atan()
-DA:122,0
+FNDA:1,SlimPipeline/Stage`2<Image/Image`1<T>,Image/Image`1<T>> StackProcessing::atan()
+DA:122,1
 FN:122,SlimPipeline/Stage`2<Image/Image`1<T>,Image/Image`1<T>> StackProcessing::cos()
-FNDA:0,SlimPipeline/Stage`2<Image/Image`1<T>,Image/Image`1<T>> StackProcessing::cos()
-DA:123,0
+FNDA:1,SlimPipeline/Stage`2<Image/Image`1<T>,Image/Image`1<T>> StackProcessing::cos()
+DA:123,1
 FN:123,SlimPipeline/Stage`2<Image/Image`1<T>,Image/Image`1<T>> StackProcessing::sin()
-FNDA:0,SlimPipeline/Stage`2<Image/Image`1<T>,Image/Image`1<T>> StackProcessing::sin()
-DA:124,0
+FNDA:1,SlimPipeline/Stage`2<Image/Image`1<T>,Image/Image`1<T>> StackProcessing::sin()
+DA:124,1
 FN:124,SlimPipeline/Stage`2<Image/Image`1<T>,Image/Image`1<T>> StackProcessing::tan()
-FNDA:0,SlimPipeline/Stage`2<Image/Image`1<T>,Image/Image`1<T>> StackProcessing::tan()
-DA:125,0
+FNDA:1,SlimPipeline/Stage`2<Image/Image`1<T>,Image/Image`1<T>> StackProcessing::tan()
+DA:125,1
 FN:125,SlimPipeline/Stage`2<Image/Image`1<T>,Image/Image`1<T>> StackProcessing::exp()
 FNDA:1,SlimPipeline/Stage`2<Image/Image`1<T>,Image/Image`1<T>> StackProcessing::exp()
 DA:126,1
 FN:126,SlimPipeline/Stage`2<Image/Image`1<T>,Image/Image`1<T>> StackProcessing::log10()
-FNDA:0,SlimPipeline/Stage`2<Image/Image`1<T>,Image/Image`1<T>> StackProcessing::log10()
-DA:127,0
+FNDA:1,SlimPipeline/Stage`2<Image/Image`1<T>,Image/Image`1<T>> StackProcessing::log10()
+DA:127,1
 FN:127,SlimPipeline/Stage`2<Image/Image`1<T>,Image/Image`1<T>> StackProcessing::log()
 FNDA:1,SlimPipeline/Stage`2<Image/Image`1<T>,Image/Image`1<T>> StackProcessing::log()
 DA:128,1
@@ -2807,11 +2807,11 @@ FNDA:1,System.Void <StartupCode$StackProcessing>.$StackProcessing::.cctor()
 DA:33,1
 DA:145,1
 LF:45
-LH:12
+LH:19
 BRF:0
 BRH:0
 FNF:44
-FNH:11
+FNH:18
 end_of_record
 SF:/Users/jrh630/repositories/stackProcessing/src/StackProcessing/ChunkedAffineResampler.fs
 FN:9,System.Int32 ChunkedAffineResampler::floorToInt(System.Double)
@@ -3053,8 +3053,8 @@ FN:7,Microsoft.FSharp.Core.FSharpFunc`2<Microsoft.FSharp.Core.FSharpFunc`2<a,b>,
 FNDA:2,Microsoft.FSharp.Core.FSharpFunc`2<Microsoft.FSharp.Core.FSharpFunc`2<a,b>,Microsoft.FSharp.Core.FSharpFunc`2<Microsoft.FSharp.Core.FSharpFunc`2<System.UInt64,System.UInt64>,Microsoft.FSharp.Core.FSharpFunc`2<Microsoft.FSharp.Core.FSharpFunc`2<System.UInt64,System.UInt64>,SlimPipeline/Stage`2<a,b>>>> StackImageFunctions::liftUnary(System.String)
 DA:8,2
 FN:9,SlimPipeline/Stage`2<Image/Image`1<S>,Image/Image`1<T>> StackImageFunctions::liftUnaryReleaseAfter(System.String,Microsoft.FSharp.Core.FSharpFunc`2<Image/Image`1<S>,Image/Image`1<T>>,Microsoft.FSharp.Core.FSharpFunc`2<System.UInt64,System.UInt64>,Microsoft.FSharp.Core.FSharpFunc`2<System.UInt64,System.UInt64>)
-FNDA:12,SlimPipeline/Stage`2<Image/Image`1<S>,Image/Image`1<T>> StackImageFunctions::liftUnaryReleaseAfter(System.String,Microsoft.FSharp.Core.FSharpFunc`2<Image/Image`1<S>,Image/Image`1<T>>,Microsoft.FSharp.Core.FSharpFunc`2<System.UInt64,System.UInt64>,Microsoft.FSharp.Core.FSharpFunc`2<System.UInt64,System.UInt64>)
-DA:10,12
+FNDA:23,SlimPipeline/Stage`2<Image/Image`1<S>,Image/Image`1<T>> StackImageFunctions::liftUnaryReleaseAfter(System.String,Microsoft.FSharp.Core.FSharpFunc`2<Image/Image`1<S>,Image/Image`1<T>>,Microsoft.FSharp.Core.FSharpFunc`2<System.UInt64,System.UInt64>,Microsoft.FSharp.Core.FSharpFunc`2<System.UInt64,System.UInt64>)
+DA:10,23
 FN:11,System.UInt64 StackImageFunctions::getBytesPerComponent()
 FNDA:6,System.UInt64 StackImageFunctions::getBytesPerComponent()
 DA:12,6
@@ -3146,49 +3146,49 @@ FN:112,System.Tuple`2<System.Double,System.Double> StackImageFunctions::getMinMa
 FNDA:1,System.Tuple`2<System.Double,System.Double> StackImageFunctions::getMinMax(Image/Image`1<a>)
 DA:113,1
 FN:115,System.Void StackImageFunctions::failTypeMismatch(System.String,Microsoft.FSharp.Collections.FSharpList`1<System.Type>)
-FNDA:6,System.Void StackImageFunctions::failTypeMismatch(System.String,Microsoft.FSharp.Collections.FSharpList`1<System.Type>)
-DA:116,6
-DA:117,24
+FNDA:13,System.Void StackImageFunctions::failTypeMismatch(System.String,Microsoft.FSharp.Collections.FSharpList`1<System.Type>)
+DA:116,13
+DA:117,52
 DA:118,0
 DA:119,0
 BRDA:117,38,0,0
-BRDA:117,38,1,6
+BRDA:117,38,1,13
 FN:124,SlimPipeline/Stage`2<Image/Image`1<T>,Image/Image`1<T>> StackImageFunctions::abs()
 FNDA:1,SlimPipeline/Stage`2<Image/Image`1<T>,Image/Image`1<T>> StackImageFunctions::abs()
 DA:125,1
 DA:126,1
 FN:127,SlimPipeline/Stage`2<Image/Image`1<T>,Image/Image`1<T>> StackImageFunctions::acos()
-FNDA:0,SlimPipeline/Stage`2<Image/Image`1<T>,Image/Image`1<T>> StackImageFunctions::acos()
-DA:128,0
-DA:129,0
+FNDA:1,SlimPipeline/Stage`2<Image/Image`1<T>,Image/Image`1<T>> StackImageFunctions::acos()
+DA:128,1
+DA:129,1
 FN:130,SlimPipeline/Stage`2<Image/Image`1<T>,Image/Image`1<T>> StackImageFunctions::asin()
-FNDA:0,SlimPipeline/Stage`2<Image/Image`1<T>,Image/Image`1<T>> StackImageFunctions::asin()
-DA:131,0
-DA:132,0
+FNDA:1,SlimPipeline/Stage`2<Image/Image`1<T>,Image/Image`1<T>> StackImageFunctions::asin()
+DA:131,1
+DA:132,1
 FN:133,SlimPipeline/Stage`2<Image/Image`1<T>,Image/Image`1<T>> StackImageFunctions::atan()
-FNDA:0,SlimPipeline/Stage`2<Image/Image`1<T>,Image/Image`1<T>> StackImageFunctions::atan()
-DA:134,0
-DA:135,0
+FNDA:1,SlimPipeline/Stage`2<Image/Image`1<T>,Image/Image`1<T>> StackImageFunctions::atan()
+DA:134,1
+DA:135,1
 FN:136,SlimPipeline/Stage`2<Image/Image`1<T>,Image/Image`1<T>> StackImageFunctions::cos()
-FNDA:0,SlimPipeline/Stage`2<Image/Image`1<T>,Image/Image`1<T>> StackImageFunctions::cos()
-DA:137,0
-DA:138,0
+FNDA:1,SlimPipeline/Stage`2<Image/Image`1<T>,Image/Image`1<T>> StackImageFunctions::cos()
+DA:137,1
+DA:138,1
 FN:139,SlimPipeline/Stage`2<Image/Image`1<T>,Image/Image`1<T>> StackImageFunctions::sin()
-FNDA:0,SlimPipeline/Stage`2<Image/Image`1<T>,Image/Image`1<T>> StackImageFunctions::sin()
-DA:140,0
-DA:141,0
+FNDA:1,SlimPipeline/Stage`2<Image/Image`1<T>,Image/Image`1<T>> StackImageFunctions::sin()
+DA:140,1
+DA:141,1
 FN:142,SlimPipeline/Stage`2<Image/Image`1<T>,Image/Image`1<T>> StackImageFunctions::tan()
-FNDA:0,SlimPipeline/Stage`2<Image/Image`1<T>,Image/Image`1<T>> StackImageFunctions::tan()
-DA:143,0
-DA:144,0
+FNDA:1,SlimPipeline/Stage`2<Image/Image`1<T>,Image/Image`1<T>> StackImageFunctions::tan()
+DA:143,1
+DA:144,1
 FN:145,SlimPipeline/Stage`2<Image/Image`1<T>,Image/Image`1<T>> StackImageFunctions::exp()
 FNDA:1,SlimPipeline/Stage`2<Image/Image`1<T>,Image/Image`1<T>> StackImageFunctions::exp()
 DA:146,1
 DA:147,1
 FN:148,SlimPipeline/Stage`2<Image/Image`1<T>,Image/Image`1<T>> StackImageFunctions::log10()
-FNDA:0,SlimPipeline/Stage`2<Image/Image`1<T>,Image/Image`1<T>> StackImageFunctions::log10()
-DA:149,0
-DA:150,0
+FNDA:1,SlimPipeline/Stage`2<Image/Image`1<T>,Image/Image`1<T>> StackImageFunctions::log10()
+DA:149,1
+DA:150,1
 FN:151,SlimPipeline/Stage`2<Image/Image`1<T>,Image/Image`1<T>> StackImageFunctions::log()
 FNDA:1,SlimPipeline/Stage`2<Image/Image`1<T>,Image/Image`1<T>> StackImageFunctions::log()
 DA:152,1
@@ -3320,34 +3320,34 @@ FNDA:0,SlimPipeline/Stage`2<Image/Image`1<System.Double>,Image/Image`1<System.Do
 DA:326,0
 DA:327,0
 FN:330,SlimPipeline/Stage`2<Image/Image`1<T>,Image/Image`1<T>> StackImageFunctions::makeMorphOp(System.String,System.UInt32,Microsoft.FSharp.Core.FSharpOption`1<System.UInt32>,Microsoft.FSharp.Core.FSharpFunc`2<System.UInt32,Microsoft.FSharp.Core.FSharpFunc`2<Image/Image`1<T>,Image/Image`1<T>>>)
-FNDA:1,SlimPipeline/Stage`2<Image/Image`1<T>,Image/Image`1<T>> StackImageFunctions::makeMorphOp(System.String,System.UInt32,Microsoft.FSharp.Core.FSharpOption`1<System.UInt32>,Microsoft.FSharp.Core.FSharpFunc`2<System.UInt32,Microsoft.FSharp.Core.FSharpFunc`2<Image/Image`1<T>,Image/Image`1<T>>>)
-DA:331,1
-DA:332,1
-DA:333,2
-DA:334,1
-DA:337,1
-DA:338,1
-BRDA:333,18,1,1
+FNDA:4,SlimPipeline/Stage`2<Image/Image`1<T>,Image/Image`1<T>> StackImageFunctions::makeMorphOp(System.String,System.UInt32,Microsoft.FSharp.Core.FSharpOption`1<System.UInt32>,Microsoft.FSharp.Core.FSharpFunc`2<System.UInt32,Microsoft.FSharp.Core.FSharpFunc`2<Image/Image`1<T>,Image/Image`1<T>>>)
+DA:331,4
+DA:332,4
+DA:333,8
+DA:334,4
+DA:337,4
+DA:338,4
+BRDA:333,18,1,4
 BRDA:333,18,0,0
 BRDA:333,46,0,0
-BRDA:333,46,1,1
+BRDA:333,46,1,4
 FN:339,SlimPipeline/Stage`2<Image/Image`1<System.Byte>,Image/Image`1<System.Byte>> StackImageFunctions::erode(System.UInt32)
-FNDA:0,SlimPipeline/Stage`2<Image/Image`1<System.Byte>,Image/Image`1<System.Byte>> StackImageFunctions::erode(System.UInt32)
-DA:340,0
+FNDA:1,SlimPipeline/Stage`2<Image/Image`1<System.Byte>,Image/Image`1<System.Byte>> StackImageFunctions::erode(System.UInt32)
+DA:340,1
 FN:340,SlimPipeline/Stage`2<Image/Image`1<System.Byte>,Image/Image`1<System.Byte>> StackImageFunctions::dilate(System.UInt32)
 FNDA:1,SlimPipeline/Stage`2<Image/Image`1<System.Byte>,Image/Image`1<System.Byte>> StackImageFunctions::dilate(System.UInt32)
 DA:341,1
 FN:341,SlimPipeline/Stage`2<Image/Image`1<System.Byte>,Image/Image`1<System.Byte>> StackImageFunctions::opening(System.UInt32)
-FNDA:0,SlimPipeline/Stage`2<Image/Image`1<System.Byte>,Image/Image`1<System.Byte>> StackImageFunctions::opening(System.UInt32)
-DA:342,0
+FNDA:1,SlimPipeline/Stage`2<Image/Image`1<System.Byte>,Image/Image`1<System.Byte>> StackImageFunctions::opening(System.UInt32)
+DA:342,1
 FN:342,SlimPipeline/Stage`2<Image/Image`1<System.Byte>,Image/Image`1<System.Byte>> StackImageFunctions::closing(System.UInt32)
-FNDA:0,SlimPipeline/Stage`2<Image/Image`1<System.Byte>,Image/Image`1<System.Byte>> StackImageFunctions::closing(System.UInt32)
-DA:343,0
+FNDA:1,SlimPipeline/Stage`2<Image/Image`1<System.Byte>,Image/Image`1<System.Byte>> StackImageFunctions::closing(System.UInt32)
+DA:343,1
 FN:346,SlimPipeline/Stage`2<Image/Image`1<System.Byte>,Image/Image`1<System.Byte>> StackImageFunctions::binaryFillHoles(System.UInt32)
-FNDA:0,SlimPipeline/Stage`2<Image/Image`1<System.Byte>,Image/Image`1<System.Byte>> StackImageFunctions::binaryFillHoles(System.UInt32)
-DA:347,0
-DA:349,0
-DA:350,0
+FNDA:1,SlimPipeline/Stage`2<Image/Image`1<System.Byte>,Image/Image`1<System.Byte>> StackImageFunctions::binaryFillHoles(System.UInt32)
+DA:347,1
+DA:349,1
+DA:350,1
 FN:352,SlimPipeline/Stage`2<Image/Image`1<System.Byte>,System.Tuple`2<Image/Image`1<System.UInt64>,System.UInt64>> StackImageFunctions::connectedComponents(System.UInt32)
 FNDA:1,SlimPipeline/Stage`2<Image/Image`1<System.Byte>,System.Tuple`2<Image/Image`1<System.UInt64>,System.UInt64>> StackImageFunctions::connectedComponents(System.UInt32)
 DA:353,1
@@ -3370,21 +3370,21 @@ DA:393,0
 DA:395,0
 DA:396,0
 FN:397,SlimPipeline/Stage`2<Image/Image`1<a>,Image/Image`1<System.Byte>> StackImageFunctions::otsuThreshold(System.UInt32)
-FNDA:0,SlimPipeline/Stage`2<Image/Image`1<a>,Image/Image`1<System.Byte>> StackImageFunctions::otsuThreshold(System.UInt32)
-DA:398,0
-DA:400,0
-DA:401,0
+FNDA:1,SlimPipeline/Stage`2<Image/Image`1<a>,Image/Image`1<System.Byte>> StackImageFunctions::otsuThreshold(System.UInt32)
+DA:398,1
+DA:400,1
+DA:401,1
 FN:403,SlimPipeline/Stage`2<Image/Image`1<a>,Image/Image`1<System.Byte>> StackImageFunctions::momentsThreshold(System.UInt32)
-FNDA:0,SlimPipeline/Stage`2<Image/Image`1<a>,Image/Image`1<System.Byte>> StackImageFunctions::momentsThreshold(System.UInt32)
-DA:404,0
-DA:406,0
-DA:407,0
+FNDA:1,SlimPipeline/Stage`2<Image/Image`1<a>,Image/Image`1<System.Byte>> StackImageFunctions::momentsThreshold(System.UInt32)
+DA:404,1
+DA:406,1
+DA:407,1
 FN:408,SlimPipeline/Stage`2<Image/Image`1<a>,Image/Image`1<System.Byte>> StackImageFunctions::threshold(System.Double,System.Double)
 FNDA:1,SlimPipeline/Stage`2<Image/Image`1<a>,Image/Image`1<System.Byte>> StackImageFunctions::threshold(System.Double,System.Double)
 DA:409,1
 FN:410,SlimPipeline/Stage`2<Image/Image`1<a>,Image/Image`1<a>> StackImageFunctions::addNormalNoise(System.Double,System.Double)
-FNDA:0,SlimPipeline/Stage`2<Image/Image`1<a>,Image/Image`1<a>> StackImageFunctions::addNormalNoise(System.Double,System.Double)
-DA:411,0
+FNDA:1,SlimPipeline/Stage`2<Image/Image`1<a>,Image/Image`1<a>> StackImageFunctions::addNormalNoise(System.Double,System.Double)
+DA:411,1
 FN:413,SlimPipeline/Stage`2<Image/Image`1<System.Object>,Image/Image`1<System.Object>> StackImageFunctions::ImageConstantPad(Microsoft.FSharp.Collections.FSharpList`1<System.UInt32>,Microsoft.FSharp.Collections.FSharpList`1<System.UInt32>,System.Double)
 FNDA:0,SlimPipeline/Stage`2<Image/Image`1<System.Object>,Image/Image`1<System.Object>> StackImageFunctions::ImageConstantPad(Microsoft.FSharp.Collections.FSharpList`1<System.UInt32>,Microsoft.FSharp.Collections.FSharpList`1<System.UInt32>,System.Double)
 DA:414,0
@@ -3466,14 +3466,14 @@ DA:618,0
 DA:619,0
 DA:632,0
 FN:634,SlimPipeline/Stage`2<Image/Image`1<T>,Image/Image`1<T>> StackImageFunctions::permuteAxes(System.UInt32,System.UInt32,System.UInt32,System.UInt32)
-FNDA:0,SlimPipeline/Stage`2<Image/Image`1<T>,Image/Image`1<T>> StackImageFunctions::permuteAxes(System.UInt32,System.UInt32,System.UInt32,System.UInt32)
-DA:635,0
-DA:637,0
+FNDA:1,SlimPipeline/Stage`2<Image/Image`1<T>,Image/Image`1<T>> StackImageFunctions::permuteAxes(System.UInt32,System.UInt32,System.UInt32,System.UInt32)
+DA:635,1
+DA:637,4
 DA:638,0
-DA:639,0
+DA:639,2
 DA:640,0
-DA:641,0
-DA:645,0
+DA:641,3
+DA:645,2
 DA:648,0
 DA:649,0
 DA:667,0
@@ -3487,18 +3487,18 @@ DA:677,0
 DA:678,0
 DA:679,0
 BRDA:637,9,0,0
-BRDA:637,9,1,0
+BRDA:637,9,1,1
 BRDA:637,20,0,0
-BRDA:637,20,1,0
+BRDA:637,20,1,1
 BRDA:637,31,0,0
-BRDA:637,31,1,0
+BRDA:637,31,1,1
 BRDA:639,48,0,0
-BRDA:639,48,1,0
+BRDA:639,48,1,1
 BRDA:639,59,0,0
-BRDA:639,59,1,0
-BRDA:641,71,0,0
+BRDA:639,59,1,1
+BRDA:641,71,0,1
 BRDA:641,71,1,0
-BRDA:641,82,0,0
+BRDA:641,82,0,1
 BRDA:641,82,1,0
 FN:68,Image/Image`1<T> StackImageFunctions/f@69::Invoke(Image/Image`1<S>)
 FNDA:12,Image/Image`1<T> StackImageFunctions/f@69::Invoke(Image/Image`1<S>)
@@ -3567,11 +3567,11 @@ FNDA:1,System.Double StackImageFunctions/workUnits@315-1::Invoke(SlimPipeline/Si
 DA:315,1
 DA:316,1
 FN:335,Microsoft.FSharp.Core.FSharpFunc`2<Microsoft.FSharp.Collections.FSharpList`1<Image/Image`1<T>>,Microsoft.FSharp.Collections.FSharpList`1<Image/Image`1<T>>> StackImageFunctions/f@336-7::Invoke(System.Boolean)
-FNDA:1,Microsoft.FSharp.Core.FSharpFunc`2<Microsoft.FSharp.Collections.FSharpList`1<Image/Image`1<T>>,Microsoft.FSharp.Collections.FSharpList`1<Image/Image`1<T>>> StackImageFunctions/f@336-7::Invoke(System.Boolean)
-DA:336,1
+FNDA:4,Microsoft.FSharp.Core.FSharpFunc`2<Microsoft.FSharp.Collections.FSharpList`1<Image/Image`1<T>>,Microsoft.FSharp.Collections.FSharpList`1<Image/Image`1<T>>> StackImageFunctions/f@336-7::Invoke(System.Boolean)
+DA:336,4
 FN:347,Microsoft.FSharp.Core.FSharpFunc`2<Microsoft.FSharp.Collections.FSharpList`1<Image/Image`1<System.Byte>>,Microsoft.FSharp.Collections.FSharpList`1<Image/Image`1<System.Byte>>> StackImageFunctions/f@348-9::Invoke(System.Boolean)
-FNDA:0,Microsoft.FSharp.Core.FSharpFunc`2<Microsoft.FSharp.Collections.FSharpList`1<Image/Image`1<System.Byte>>,Microsoft.FSharp.Collections.FSharpList`1<Image/Image`1<System.Byte>>> StackImageFunctions/f@348-9::Invoke(System.Boolean)
-DA:348,0
+FNDA:1,Microsoft.FSharp.Core.FSharpFunc`2<Microsoft.FSharp.Collections.FSharpList`1<Image/Image`1<System.Byte>>,Microsoft.FSharp.Collections.FSharpList`1<Image/Image`1<System.Byte>>> StackImageFunctions/f@348-9::Invoke(System.Boolean)
+DA:348,1
 FN:364,System.UInt64 StackImageFunctions/memoryNeed@365-3::Invoke(System.UInt64)
 FNDA:6,System.UInt64 StackImageFunctions/memoryNeed@365-3::Invoke(System.UInt64)
 DA:365,6
@@ -3603,11 +3603,11 @@ FN:393,Microsoft.FSharp.Core.FSharpFunc`2<Microsoft.FSharp.Collections.FSharpLis
 FNDA:0,Microsoft.FSharp.Core.FSharpFunc`2<Microsoft.FSharp.Collections.FSharpList`1<Image/Image`1<System.Byte>>,Microsoft.FSharp.Collections.FSharpList`1<Image/Image`1<System.Double>>> StackImageFunctions/f@394-16::Invoke(System.Boolean)
 DA:394,0
 FN:398,Microsoft.FSharp.Core.FSharpFunc`2<Microsoft.FSharp.Collections.FSharpList`1<Image/Image`1<b>>,Microsoft.FSharp.Collections.FSharpList`1<Image/Image`1<System.Byte>>> StackImageFunctions/f@399-19T::Invoke(System.Boolean)
-FNDA:0,Microsoft.FSharp.Core.FSharpFunc`2<Microsoft.FSharp.Collections.FSharpList`1<Image/Image`1<b>>,Microsoft.FSharp.Collections.FSharpList`1<Image/Image`1<System.Byte>>> StackImageFunctions/f@399-19T::Invoke(System.Boolean)
-DA:399,0
+FNDA:1,Microsoft.FSharp.Core.FSharpFunc`2<Microsoft.FSharp.Collections.FSharpList`1<Image/Image`1<b>>,Microsoft.FSharp.Collections.FSharpList`1<Image/Image`1<System.Byte>>> StackImageFunctions/f@399-19T::Invoke(System.Boolean)
+DA:399,1
 FN:404,Microsoft.FSharp.Core.FSharpFunc`2<Microsoft.FSharp.Collections.FSharpList`1<Image/Image`1<b>>,Microsoft.FSharp.Collections.FSharpList`1<Image/Image`1<System.Byte>>> StackImageFunctions/f@405-22T::Invoke(System.Boolean)
-FNDA:0,Microsoft.FSharp.Core.FSharpFunc`2<Microsoft.FSharp.Collections.FSharpList`1<Image/Image`1<b>>,Microsoft.FSharp.Collections.FSharpList`1<Image/Image`1<System.Byte>>> StackImageFunctions/f@405-22T::Invoke(System.Boolean)
-DA:405,0
+FNDA:1,Microsoft.FSharp.Core.FSharpFunc`2<Microsoft.FSharp.Collections.FSharpList`1<Image/Image`1<b>>,Microsoft.FSharp.Collections.FSharpList`1<Image/Image`1<System.Byte>>> StackImageFunctions/f@405-22T::Invoke(System.Boolean)
+DA:405,1
 FN:417,Microsoft.FSharp.Core.Unit StackImageFunctions/consumer@418::Invoke(System.Boolean,System.Int32,Image/Image`1<T>)
 FNDA:0,Microsoft.FSharp.Core.Unit StackImageFunctions/consumer@418::Invoke(System.Boolean,System.Int32,Image/Image`1<T>)
 DA:418,0
@@ -3818,8 +3818,8 @@ FN:629,System.UInt64 StackImageFunctions/memoryNeed@630-9T::Invoke(a)
 FNDA:0,System.UInt64 StackImageFunctions/memoryNeed@630-9T::Invoke(a)
 DA:630,0
 FN:642,System.UInt64 StackImageFunctions/memoryNeed@643-10T::Invoke(a)
-FNDA:0,System.UInt64 StackImageFunctions/memoryNeed@643-10T::Invoke(a)
-DA:643,0
+FNDA:4,System.UInt64 StackImageFunctions/memoryNeed@643-10T::Invoke(a)
+DA:643,4
 FN:659,Image/Image`1<T> StackImageFunctions/res@659-1::Invoke(Image/Image`1<T>)
 FNDA:0,Image/Image`1<T> StackImageFunctions/res@659-1::Invoke(Image/Image`1<T>)
 DA:660,0
@@ -3850,39 +3850,39 @@ DA:122,1
 DA:123,1
 DA:265,1
 LF:394
-LH:196
+LH:232
 BRF:102
-BRH:28
+BRH:35
 FNF:154
-FNH:67
+FNH:86
 end_of_record
 SF:/Users/jrh630/repositories/stackProcessing/src/StackProcessing/StackIO.fs
 FN:11,System.UInt64 StackIO::inputValue(SlimPipeline/SingleOrPair)
-FNDA:48,System.UInt64 StackIO::inputValue(SlimPipeline/SingleOrPair)
-DA:12,48
+FNDA:102,System.UInt64 StackIO::inputValue(SlimPipeline/SingleOrPair)
+DA:12,102
 FN:14,System.UInt64 StackIO::imageBytes(System.UInt64)
-FNDA:16,System.UInt64 StackIO::imageBytes(System.UInt64)
-DA:15,16
+FNDA:34,System.UInt64 StackIO::imageBytes(System.UInt64)
+DA:15,34
 FN:17,SlimPipeline/StageWorkModel StackIO::imageIoCost(System.String,SlimPipeline/StageEvaluation,System.String,Microsoft.FSharp.Core.FSharpFunc`2<SlimPipeline/SingleOrPair,System.UInt64>,Microsoft.FSharp.Core.FSharpFunc`2<SlimPipeline/SingleOrPair,System.UInt64>)
-FNDA:40,SlimPipeline/StageWorkModel StackIO::imageIoCost(System.String,SlimPipeline/StageEvaluation,System.String,Microsoft.FSharp.Core.FSharpFunc`2<SlimPipeline/SingleOrPair,System.UInt64>,Microsoft.FSharp.Core.FSharpFunc`2<SlimPipeline/SingleOrPair,System.UInt64>)
-DA:18,40
+FNDA:76,SlimPipeline/StageWorkModel StackIO::imageIoCost(System.String,SlimPipeline/StageEvaluation,System.String,Microsoft.FSharp.Core.FSharpFunc`2<SlimPipeline/SingleOrPair,System.UInt64>,Microsoft.FSharp.Core.FSharpFunc`2<SlimPipeline/SingleOrPair,System.UInt64>)
+DA:18,76
 FN:20,SlimPipeline/Stage`2<a,b> StackIO::withCostModel(SlimPipeline/StageCostModel,SlimPipeline/Stage`2<a,b>)
-FNDA:64,SlimPipeline/Stage`2<a,b> StackIO::withCostModel(SlimPipeline/StageCostModel,SlimPipeline/Stage`2<a,b>)
-DA:21,64
+FNDA:118,SlimPipeline/Stage`2<a,b> StackIO::withCostModel(SlimPipeline/StageCostModel,SlimPipeline/Stage`2<a,b>)
+DA:21,118
 FN:23,System.UInt32 StackIO::getStackDepth(System.String,System.String)
 FNDA:2,System.UInt32 StackIO::getStackDepth(System.String,System.String)
 DA:24,2
 DA:25,2
 FN:27,ImageFunctions/FileInfo StackIO::getStackInfo(System.String,System.String)
-FNDA:54,ImageFunctions/FileInfo StackIO::getStackInfo(System.String,System.String)
-DA:28,54
-DA:29,54
-DA:30,27
+FNDA:90,ImageFunctions/FileInfo StackIO::getStackInfo(System.String,System.String)
+DA:28,90
+DA:29,90
+DA:30,45
 DA:31,0
-DA:32,27
-DA:33,27
+DA:32,45
+DA:33,45
 BRDA:30,38,0,0
-BRDA:30,38,1,27
+BRDA:30,38,1,45
 FN:35,System.Tuple`3<System.UInt32,System.UInt32,System.UInt32> StackIO::getStackSize(System.String,System.String)
 FNDA:1,System.Tuple`3<System.UInt32,System.UInt32,System.UInt32> StackIO::getStackSize(System.String,System.String)
 DA:36,1
@@ -3896,42 +3896,42 @@ FNDA:1,System.UInt64 StackIO::getStackHeight(System.String,System.String)
 DA:44,1
 DA:45,1
 FN:47,System.String[] StackIO::_getFilenames(System.String,System.String,Microsoft.FSharp.Core.FSharpFunc`2<System.String[],System.String[]>)
-FNDA:48,System.String[] StackIO::_getFilenames(System.String,System.String,Microsoft.FSharp.Core.FSharpFunc`2<System.String[],System.String[]>)
-DA:48,48
+FNDA:84,System.String[] StackIO::_getFilenames(System.String,System.String,Microsoft.FSharp.Core.FSharpFunc`2<System.String[],System.String[]>)
+DA:48,84
 FN:50,SlimPipeline/Plan`2<Microsoft.FSharp.Core.Unit,System.String> StackIO::getFilenames(System.String,System.String,Microsoft.FSharp.Core.FSharpFunc`2<System.String[],System.String[]>,SlimPipeline/Plan`2<Microsoft.FSharp.Core.Unit,Microsoft.FSharp.Core.Unit>)
-FNDA:24,SlimPipeline/Plan`2<Microsoft.FSharp.Core.Unit,System.String> StackIO::getFilenames(System.String,System.String,Microsoft.FSharp.Core.FSharpFunc`2<System.String[],System.String[]>,SlimPipeline/Plan`2<Microsoft.FSharp.Core.Unit,Microsoft.FSharp.Core.Unit>)
-DA:51,24
-DA:52,24
-DA:53,24
-DA:59,24
-DA:60,24
-DA:63,24
-DA:64,24
-DA:65,26
-DA:67,24
-DA:68,24
-DA:69,24
-DA:71,24
-DA:72,24
-DA:73,24
+FNDA:42,SlimPipeline/Plan`2<Microsoft.FSharp.Core.Unit,System.String> StackIO::getFilenames(System.String,System.String,Microsoft.FSharp.Core.FSharpFunc`2<System.String[],System.String[]>,SlimPipeline/Plan`2<Microsoft.FSharp.Core.Unit,Microsoft.FSharp.Core.Unit>)
+DA:51,42
+DA:52,42
+DA:53,42
+DA:59,42
+DA:60,42
+DA:63,42
+DA:64,42
+DA:65,44
+DA:67,42
+DA:68,42
+DA:69,42
+DA:71,42
+DA:72,42
+DA:73,42
 FN:75,SlimPipeline/Stage`2<System.String,Image/Image`1<T>> StackIO::readFilesWithShape(System.Boolean,System.UInt32,System.UInt32)
-FNDA:24,SlimPipeline/Stage`2<System.String,Image/Image`1<T>> StackIO::readFilesWithShape(System.Boolean,System.UInt32,System.UInt32)
-DA:76,24
-DA:77,24
-DA:78,24
-DA:79,24
-DA:92,24
-DA:93,24
-DA:94,24
-DA:95,24
-DA:96,24
-DA:97,24
-DA:98,26
-DA:99,50
-DA:100,24
-DA:101,24
+FNDA:42,SlimPipeline/Stage`2<System.String,Image/Image`1<T>> StackIO::readFilesWithShape(System.Boolean,System.UInt32,System.UInt32)
+DA:76,42
+DA:77,42
+DA:78,42
+DA:79,42
+DA:92,42
+DA:93,42
+DA:94,42
+DA:95,42
+DA:96,42
+DA:97,42
+DA:98,44
+DA:99,86
+DA:100,42
+DA:101,42
 BRDA:77,8,0,0
-BRDA:77,8,1,24
+BRDA:77,8,1,42
 FN:103,SlimPipeline/Stage`2<System.String,Image/Image`1<T>> StackIO::readFiles(System.Boolean)
 FNDA:0,SlimPipeline/Stage`2<System.String,Image/Image`1<T>> StackIO::readFiles(System.Boolean)
 DA:104,0
@@ -3954,31 +3954,31 @@ DA:134,0
 BRDA:108,8,0,0
 BRDA:108,8,1,0
 FN:136,SlimPipeline/Plan`2<Microsoft.FSharp.Core.Unit,Image/Image`1<T>> StackIO::readFiltered(System.String,System.String,Microsoft.FSharp.Core.FSharpFunc`2<System.String[],System.String[]>,SlimPipeline/Plan`2<Microsoft.FSharp.Core.Unit,Microsoft.FSharp.Core.Unit>)
-FNDA:24,SlimPipeline/Plan`2<Microsoft.FSharp.Core.Unit,Image/Image`1<T>> StackIO::readFiltered(System.String,System.String,Microsoft.FSharp.Core.FSharpFunc`2<System.String[],System.String[]>,SlimPipeline/Plan`2<Microsoft.FSharp.Core.Unit,Microsoft.FSharp.Core.Unit>)
-DA:137,24
-DA:138,24
-DA:139,24
-DA:140,24
-DA:141,24
-DA:142,24
-DA:143,24
-DA:144,24
-DA:145,24
-DA:146,24
-DA:147,24
-DA:148,24
-DA:149,24
-DA:150,24
-DA:151,24
-DA:152,24
-DA:153,24
-DA:155,48
-DA:156,24
-DA:157,24
-DA:158,24
+FNDA:42,SlimPipeline/Plan`2<Microsoft.FSharp.Core.Unit,Image/Image`1<T>> StackIO::readFiltered(System.String,System.String,Microsoft.FSharp.Core.FSharpFunc`2<System.String[],System.String[]>,SlimPipeline/Plan`2<Microsoft.FSharp.Core.Unit,Microsoft.FSharp.Core.Unit>)
+DA:137,42
+DA:138,42
+DA:139,42
+DA:140,42
+DA:141,42
+DA:142,42
+DA:143,42
+DA:144,42
+DA:145,42
+DA:146,42
+DA:147,42
+DA:148,42
+DA:149,42
+DA:150,42
+DA:151,42
+DA:152,42
+DA:153,42
+DA:155,84
+DA:156,42
+DA:157,42
+DA:158,42
 FN:160,SlimPipeline/Plan`2<Microsoft.FSharp.Core.Unit,Image/Image`1<T>> StackIO::read(System.String,System.String,SlimPipeline/Plan`2<Microsoft.FSharp.Core.Unit,Microsoft.FSharp.Core.Unit>)
-FNDA:23,SlimPipeline/Plan`2<Microsoft.FSharp.Core.Unit,Image/Image`1<T>> StackIO::read(System.String,System.String,SlimPipeline/Plan`2<Microsoft.FSharp.Core.Unit,Microsoft.FSharp.Core.Unit>)
-DA:161,23
+FNDA:41,SlimPipeline/Plan`2<Microsoft.FSharp.Core.Unit,Image/Image`1<T>> StackIO::read(System.String,System.String,SlimPipeline/Plan`2<Microsoft.FSharp.Core.Unit,Microsoft.FSharp.Core.Unit>)
+DA:161,41
 FN:163,SlimPipeline/Plan`2<Microsoft.FSharp.Core.Unit,Image/Image`1<T>> StackIO::readRandom(System.UInt32,System.String,System.String,SlimPipeline/Plan`2<Microsoft.FSharp.Core.Unit,Microsoft.FSharp.Core.Unit>)
 FNDA:1,SlimPipeline/Plan`2<Microsoft.FSharp.Core.Unit,Image/Image`1<T>> StackIO::readRandom(System.UInt32,System.String,System.String,SlimPipeline/Plan`2<Microsoft.FSharp.Core.Unit,Microsoft.FSharp.Core.Unit>)
 DA:164,1
@@ -4108,8 +4108,8 @@ FN:292,SlimPipeline/Plan`2<Microsoft.FSharp.Core.Unit,Image/Image`1<T>> StackIO:
 FNDA:0,SlimPipeline/Plan`2<Microsoft.FSharp.Core.Unit,Image/Image`1<T>> StackIO::readChunks(System.String,System.String,SlimPipeline/Plan`2<Microsoft.FSharp.Core.Unit,Microsoft.FSharp.Core.Unit>)
 DA:293,0
 FN:295,System.Boolean StackIO::icompare(System.String,System.String)
-FNDA:32,System.Boolean StackIO::icompare(System.String,System.String)
-DA:296,32
+FNDA:68,System.Boolean StackIO::icompare(System.String,System.String)
+DA:296,68
 FN:299,System.String StackIO::getUnusedDirectoryName(System.String)
 FNDA:0,System.String StackIO::getUnusedDirectoryName(System.String)
 DA:300,0
@@ -4124,36 +4124,36 @@ DA:307,0
 BRDA:306,7,0,0
 BRDA:306,7,1,0
 FN:309,SlimPipeline/Stage`2<Image/Image`1<T>,Image/Image`1<T>> StackIO::write(System.String,System.String)
-FNDA:15,SlimPipeline/Stage`2<Image/Image`1<T>,Image/Image`1<T>> StackIO::write(System.String,System.String)
-DA:310,15
-DA:311,45
-DA:312,93
+FNDA:33,SlimPipeline/Stage`2<Image/Image`1<T>,Image/Image`1<T>> StackIO::write(System.String,System.String)
+DA:310,33
+DA:311,99
+DA:312,195
 DA:313,0
-DA:314,30
-DA:321,15
-DA:322,15
-DA:323,15
-DA:324,15
-DA:325,15
-DA:326,15
-DA:327,30
-DA:328,30
-DA:329,15
-DA:330,15
+DA:314,66
+DA:321,33
+DA:322,33
+DA:323,33
+DA:324,33
+DA:325,33
+DA:326,33
+DA:327,66
+DA:328,66
+DA:329,33
+DA:330,33
 BRDA:311,23,0,0
-BRDA:311,23,1,15
-BRDA:311,41,0,15
-BRDA:312,63,0,3
-BRDA:312,63,1,12
-BRDA:312,86,0,3
-BRDA:312,86,1,12
-BRDA:312,109,0,3
-BRDA:312,109,1,12
-BRDA:312,132,0,3
-BRDA:312,132,1,12
+BRDA:311,23,1,33
+BRDA:311,41,0,33
+BRDA:312,63,0,9
+BRDA:312,63,1,24
+BRDA:312,86,0,9
+BRDA:312,86,1,24
+BRDA:312,109,0,9
+BRDA:312,109,1,24
+BRDA:312,132,0,9
+BRDA:312,132,1,24
 BRDA:311,41,1,0
 BRDA:312,163,0,0
-BRDA:312,163,1,15
+BRDA:312,163,1,33
 FN:332,System.Void StackIO::_writeChunkSlice(System.Boolean,System.String,System.String,System.UInt32,System.UInt32,System.UInt32,System.Int32,Image/Image`1<T>)
 FNDA:10,System.Void StackIO::_writeChunkSlice(System.Boolean,System.String,System.String,System.UInt32,System.UInt32,System.UInt32,System.Int32,Image/Image`1<T>)
 DA:333,10
@@ -4236,11 +4236,11 @@ BRDA:354,163,1,1
 BRDA:356,201,0,0
 BRDA:356,201,1,1
 FN:55,System.String StackIO/mapper@56::Invoke(System.Int32)
-FNDA:187,System.String StackIO/mapper@56::Invoke(System.Int32)
-DA:56,187
-DA:57,187
+FNDA:343,System.String StackIO/mapper@56::Invoke(System.Int32)
+DA:56,343
+DA:57,343
 BRDA:56,12,0,0
-BRDA:56,12,1,187
+BRDA:56,12,1,343
 FN:60,System.UInt64 StackIO/memoryNeed@61T::Invoke(a)
 FNDA:6,System.UInt64 StackIO/memoryNeed@61T::Invoke(a)
 DA:61,6
@@ -4248,23 +4248,23 @@ FN:61,System.UInt64 StackIO/lengthTransformation@62T::Invoke(a)
 FNDA:0,System.UInt64 StackIO/lengthTransformation@62T::Invoke(a)
 DA:62,0
 FN:81,Image/Image`1<T> StackIO/mapper@82-4::Invoke(System.Boolean,System.String)
-FNDA:187,Image/Image`1<T> StackIO/mapper@82-4::Invoke(System.Boolean,System.String)
-DA:82,187
-DA:83,187
-DA:84,187
+FNDA:343,Image/Image`1<T> StackIO/mapper@82-4::Invoke(System.Boolean,System.String)
+DA:82,343
+DA:83,343
+DA:84,343
 DA:85,0
 DA:86,0
-DA:87,187
+DA:87,343
 BRDA:82,2,0,0
-BRDA:82,2,1,187
+BRDA:82,2,1,343
 BRDA:84,79,0,0
-BRDA:84,79,1,187
+BRDA:84,79,1,343
 FN:88,System.UInt64 StackIO/memoryNeed@89-1T::Invoke(a)
-FNDA:54,System.UInt64 StackIO/memoryNeed@89-1T::Invoke(a)
-DA:89,54
+FNDA:90,System.UInt64 StackIO/memoryNeed@89-1T::Invoke(a)
+DA:89,90
 FN:89,System.UInt64 StackIO/lengthTransformation@90-1T::Invoke(a)
-FNDA:24,System.UInt64 StackIO/lengthTransformation@90-1T::Invoke(a)
-DA:90,24
+FNDA:42,System.UInt64 StackIO/lengthTransformation@90-1T::Invoke(a)
+DA:90,42
 FN:112,System.Tuple`2<Image/Image`1<T>,Image/Image`1<T>> StackIO/mapper@113-8::Invoke(System.Boolean,System.Tuple`2<System.String,System.String>)
 FNDA:0,System.Tuple`2<Image/Image`1<T>,Image/Image`1<T>> StackIO/mapper@113-8::Invoke(System.Boolean,System.Tuple`2<System.String,System.String>)
 DA:113,0
@@ -4312,13 +4312,13 @@ FN:277,System.UInt64 StackIO/lengthTransformation@278-3T::Invoke(a)
 FNDA:0,System.UInt64 StackIO/lengthTransformation@278-3T::Invoke(a)
 DA:278,0
 FN:315,Image/Image`1<T> StackIO/mapper@316-16::Invoke(System.Boolean,System.Int64,Image/Image`1<T>)
-FNDA:140,Image/Image`1<T> StackIO/mapper@316-16::Invoke(System.Boolean,System.Int64,Image/Image`1<T>)
-DA:316,140
-DA:317,140
-DA:318,140
-DA:319,140
+FNDA:296,Image/Image`1<T> StackIO/mapper@316-16::Invoke(System.Boolean,System.Int64,Image/Image`1<T>)
+DA:316,296
+DA:317,296
+DA:318,296
+DA:319,296
 BRDA:317,48,0,0
-BRDA:317,48,1,140
+BRDA:317,48,1,296
 FN:360,Image/Image`1<T> StackIO/f@361::Invoke(System.Boolean,System.Int64,Image/Image`1<T>)
 FNDA:2,Image/Image`1<T> StackIO/f@361::Invoke(System.Boolean,System.Int64,Image/Image`1<T>)
 DA:361,2
@@ -4354,8 +4354,8 @@ FN:34,System.String StackProcessingCost::pixelTypeName()
 FNDA:1,System.String StackProcessingCost::pixelTypeName()
 DA:35,1
 FN:37,System.UInt64 StackProcessingCost::imageBytes(System.UInt64)
-FNDA:18,System.UInt64 StackProcessingCost::imageBytes(System.UInt64)
-DA:38,18
+FNDA:36,System.UInt64 StackProcessingCost::imageBytes(System.UInt64)
+DA:38,36
 FN:40,System.UInt64 StackProcessingCost::sliceBytes(System.UInt32,System.UInt32)
 FNDA:1,System.UInt64 StackProcessingCost::sliceBytes(System.UInt32,System.UInt32)
 DA:41,1
@@ -4376,21 +4376,21 @@ DA:55,0
 DA:56,0
 DA:57,0
 FN:59,SlimPipeline/StageWorkModel StackProcessingCost::imageIoCost(System.String,SlimPipeline/StageEvaluation,System.String,Microsoft.FSharp.Core.FSharpFunc`2<SlimPipeline/SingleOrPair,System.UInt64>,Microsoft.FSharp.Core.FSharpFunc`2<SlimPipeline/SingleOrPair,System.UInt64>)
-FNDA:40,SlimPipeline/StageWorkModel StackProcessingCost::imageIoCost(System.String,SlimPipeline/StageEvaluation,System.String,Microsoft.FSharp.Core.FSharpFunc`2<SlimPipeline/SingleOrPair,System.UInt64>,Microsoft.FSharp.Core.FSharpFunc`2<SlimPipeline/SingleOrPair,System.UInt64>)
-DA:60,40
-DA:61,24
-DA:62,16
+FNDA:76,SlimPipeline/StageWorkModel StackProcessingCost::imageIoCost(System.String,SlimPipeline/StageEvaluation,System.String,Microsoft.FSharp.Core.FSharpFunc`2<SlimPipeline/SingleOrPair,System.UInt64>,Microsoft.FSharp.Core.FSharpFunc`2<SlimPipeline/SingleOrPair,System.UInt64>)
+DA:60,76
+DA:61,42
+DA:62,34
 DA:63,0
-BRDA:60,13,0,16
-BRDA:60,13,1,24
-BRDA:60,26,0,16
+BRDA:60,13,0,34
+BRDA:60,13,1,42
+BRDA:60,26,0,34
 BRDA:60,26,1,0
 FN:65,SlimPipeline/Stage`2<a,b> StackProcessingCost::withCostModel(SlimPipeline/StageCostModel,SlimPipeline/Stage`2<a,b>)
-FNDA:65,SlimPipeline/Stage`2<a,b> StackProcessingCost::withCostModel(SlimPipeline/StageCostModel,SlimPipeline/Stage`2<a,b>)
-DA:66,65
-DA:67,65
-DA:68,65
-DA:69,65
+FNDA:119,SlimPipeline/Stage`2<a,b> StackProcessingCost::withCostModel(SlimPipeline/StageCostModel,SlimPipeline/Stage`2<a,b>)
+DA:66,119
+DA:67,119
+DA:68,119
+DA:69,119
 FN:71,System.Boolean StackProcessingCost::tryLoadCostCalibration(System.String)
 FNDA:3,System.Boolean StackProcessingCost::tryLoadCostCalibration(System.String)
 DA:72,3
@@ -4433,10 +4433,10 @@ DA:13,0
 DA:14,0
 DA:15,0
 FN:17,SlimPipeline/ResourceOps`1<Image/Image`1<S>> StackCore::imageResourceOps()
-FNDA:53,SlimPipeline/ResourceOps`1<Image/Image`1<S>> StackCore::imageResourceOps()
-DA:18,53
-DA:19,141
-DA:20,53
+FNDA:64,SlimPipeline/ResourceOps`1<Image/Image`1<S>> StackCore::imageResourceOps()
+DA:18,64
+DA:19,229
+DA:20,64
 FN:22,T StackCore::releaseAfterWith(SlimPipeline/ResourceOps`1<S>,Microsoft.FSharp.Core.FSharpFunc`2<S,T>,S)
 FNDA:29,T StackCore::releaseAfterWith(SlimPipeline/ResourceOps`1<S>,Microsoft.FSharp.Core.FSharpFunc`2<S,T>,S)
 DA:23,29
@@ -4482,9 +4482,9 @@ FN:42,SlimPipeline/Stage`2<a,a> StackCore::incRef()
 FNDA:0,SlimPipeline/Stage`2<a,a> StackCore::incRef()
 DA:43,0
 FN:44,a StackCore::decIfImage(a)
-FNDA:145,a StackCore::decIfImage(a)
-DA:45,145
-DA:46,43
+FNDA:301,a StackCore::decIfImage(a)
+DA:45,301
+DA:46,103
 DA:47,0
 DA:48,0
 DA:49,0
@@ -4492,20 +4492,20 @@ DA:50,0
 DA:51,0
 DA:52,0
 DA:53,0
-DA:54,102
+DA:54,198
 DA:55,0
 DA:56,0
-DA:57,145
-BRDA:45,18,0,102
-BRDA:45,34,0,102
-BRDA:45,50,0,102
-BRDA:45,68,0,102
-BRDA:45,86,0,102
-BRDA:45,104,0,102
-BRDA:45,122,0,102
-BRDA:45,140,0,102
+DA:57,301
+BRDA:45,18,0,198
+BRDA:45,34,0,198
+BRDA:45,50,0,198
+BRDA:45,68,0,198
+BRDA:45,86,0,198
+BRDA:45,104,0,198
+BRDA:45,122,0,198
+BRDA:45,140,0,198
 BRDA:45,158,0,0
-BRDA:45,18,1,43
+BRDA:45,18,1,103
 BRDA:45,34,1,0
 BRDA:45,50,1,0
 BRDA:45,68,1,0
@@ -4513,7 +4513,7 @@ BRDA:45,86,1,0
 BRDA:45,104,1,0
 BRDA:45,122,1,0
 BRDA:45,140,1,0
-BRDA:45,158,1,102
+BRDA:45,158,1,198
 BRDA:45,176,0,0
 BRDA:45,176,1,0
 FN:58,SlimPipeline/Stage`2<a,a> StackCore::decRef()
@@ -4533,63 +4533,63 @@ FN:75,System.UInt64 StackCore::rssKb()
 FNDA:0,System.UInt64 StackCore::rssKb()
 DA:76,0
 FN:78,System.Tuple`2<System.UInt64,System.Int64> StackCore::sampleVolRssProbe(System.Boolean,a,System.UInt64,System.UInt64)
-FNDA:126,System.Tuple`2<System.UInt64,System.Int64> StackCore::sampleVolRssProbe(System.Boolean,a,System.UInt64,System.UInt64)
-DA:79,126
+FNDA:357,System.Tuple`2<System.UInt64,System.Int64> StackCore::sampleVolRssProbe(System.Boolean,a,System.UInt64,System.UInt64)
+DA:79,357
 DA:80,0
 DA:81,0
 DA:82,0
 DA:83,0
 DA:84,0
-DA:86,126
+DA:86,357
 BRDA:79,2,0,0
-BRDA:79,2,1,126
+BRDA:79,2,1,357
 FN:88,System.Void StackCore::printVolRssSummary(System.Boolean,System.UInt64,System.UInt64,System.Int64,System.Int64,System.Int64,System.Int64,System.Int64,System.Int64)
-FNDA:18,System.Void StackCore::printVolRssSummary(System.Boolean,System.UInt64,System.UInt64,System.Int64,System.Int64,System.Int64,System.Int64,System.Int64,System.Int64)
-DA:89,18
+FNDA:51,System.Void StackCore::printVolRssSummary(System.Boolean,System.UInt64,System.UInt64,System.Int64,System.Int64,System.Int64,System.Int64,System.Int64,System.Int64)
+DA:89,51
 DA:90,0
 DA:91,0
 BRDA:89,2,0,0
-BRDA:89,2,1,18
+BRDA:89,2,1,51
 FN:93,Microsoft.FSharp.Collections.FSharpList`1<Image/Image`1<T>> StackCore::volFctToLstFctReleaseAfterDebug(System.Boolean,Microsoft.FSharp.Core.FSharpFunc`2<Image/Image`1<S>,Image/Image`1<T>>,System.UInt32,System.UInt32,Microsoft.FSharp.Collections.FSharpList`1<Image/Image`1<S>>)
-FNDA:19,Microsoft.FSharp.Collections.FSharpList`1<Image/Image`1<T>> StackCore::volFctToLstFctReleaseAfterDebug(System.Boolean,Microsoft.FSharp.Core.FSharpFunc`2<Image/Image`1<S>,Image/Image`1<T>>,System.UInt32,System.UInt32,Microsoft.FSharp.Collections.FSharpList`1<Image/Image`1<S>>)
-DA:94,19
-DA:95,4
-DA:96,1
-DA:98,18
-DA:99,36
-DA:100,18
-DA:101,18
-DA:102,18
-DA:103,18
-DA:104,88
-DA:105,18
-DA:106,18
-DA:107,18
-DA:108,18
-DA:109,18
-DA:110,18
-DA:111,18
-DA:112,18
-DA:113,18
-DA:114,18
-DA:115,18
-DA:116,18
-DA:117,18
-DA:118,18
-DA:119,18
-DA:120,18
-BRDA:94,11,0,1
-BRDA:95,59,1,2
-BRDA:95,59,0,1
-BRDA:94,11,1,18
+FNDA:55,Microsoft.FSharp.Collections.FSharpList`1<Image/Image`1<T>> StackCore::volFctToLstFctReleaseAfterDebug(System.Boolean,Microsoft.FSharp.Core.FSharpFunc`2<Image/Image`1<S>,Image/Image`1<T>>,System.UInt32,System.UInt32,Microsoft.FSharp.Collections.FSharpList`1<Image/Image`1<S>>)
+DA:94,55
+DA:95,16
+DA:96,4
+DA:98,51
+DA:99,102
+DA:100,51
+DA:101,51
+DA:102,51
+DA:103,51
+DA:104,247
+DA:105,51
+DA:106,51
+DA:107,51
+DA:108,51
+DA:109,51
+DA:110,51
+DA:111,51
+DA:112,51
+DA:113,51
+DA:114,51
+DA:115,51
+DA:116,51
+DA:117,51
+DA:118,51
+DA:119,51
+DA:120,51
+BRDA:94,11,0,4
+BRDA:95,59,1,8
+BRDA:95,59,0,4
+BRDA:94,11,1,51
 BRDA:98,68,0,0
-BRDA:98,68,1,18
+BRDA:98,68,1,51
 BRDA:99,85,0,0
-BRDA:99,85,1,18
-BRDA:104,196,0,15
-BRDA:104,196,1,3
-BRDA:104,274,1,34
-BRDA:104,274,0,18
+BRDA:99,85,1,51
+BRDA:104,196,0,45
+BRDA:104,196,1,6
+BRDA:104,274,1,94
+BRDA:104,274,0,51
 FN:122,Microsoft.FSharp.Collections.FSharpList`1<Image/Image`1<T>> StackCore::volFctToLstFctReleaseAfter(Microsoft.FSharp.Core.FSharpFunc`2<Image/Image`1<S>,Image/Image`1<T>>,System.UInt32,System.UInt32,Microsoft.FSharp.Collections.FSharpList`1<Image/Image`1<S>>)
 FNDA:0,Microsoft.FSharp.Collections.FSharpList`1<Image/Image`1<T>> StackCore::volFctToLstFctReleaseAfter(Microsoft.FSharp.Core.FSharpFunc`2<Image/Image`1<S>,Image/Image`1<T>>,System.UInt32,System.UInt32,Microsoft.FSharp.Collections.FSharpList`1<Image/Image`1<S>>)
 DA:123,0
@@ -4661,20 +4661,20 @@ BRDA:165,149,1,0
 BRDA:165,149,2,0
 BRDA:167,334,1,0
 FN:180,SlimPipeline/Stage`2<a,Microsoft.FSharp.Core.Unit> StackCore::ignoreSingles()
-FNDA:16,SlimPipeline/Stage`2<a,Microsoft.FSharp.Core.Unit> StackCore::ignoreSingles()
-DA:181,16
+FNDA:34,SlimPipeline/Stage`2<a,Microsoft.FSharp.Core.Unit> StackCore::ignoreSingles()
+DA:181,34
 FN:181,SlimPipeline/Stage`2<System.Tuple`2<a,Microsoft.FSharp.Core.Unit>,Microsoft.FSharp.Core.Unit> StackCore::ignorePairs()
 FNDA:0,SlimPipeline/Stage`2<System.Tuple`2<a,Microsoft.FSharp.Core.Unit>,Microsoft.FSharp.Core.Unit> StackCore::ignorePairs()
 DA:182,0
 FN:182,Image/Image`1<S> StackCore::zeroMaker(System.Int32,Image/Image`1<S>)
-FNDA:4,Image/Image`1<S> StackCore::zeroMaker(System.Int32,Image/Image`1<S>)
-DA:183,4
+FNDA:10,Image/Image`1<S> StackCore::zeroMaker(System.Int32,Image/Image`1<S>)
+DA:183,10
 FN:183,SlimPipeline/Stage`2<Image/Image`1<a>,Microsoft.FSharp.Collections.FSharpList`1<Image/Image`1<a>>> StackCore::window(System.UInt32,System.UInt32,System.UInt32)
-FNDA:6,SlimPipeline/Stage`2<Image/Image`1<a>,Microsoft.FSharp.Collections.FSharpList`1<Image/Image`1<a>>> StackCore::window(System.UInt32,System.UInt32,System.UInt32)
-DA:184,6
+FNDA:12,SlimPipeline/Stage`2<Image/Image`1<a>,Microsoft.FSharp.Collections.FSharpList`1<Image/Image`1<a>>> StackCore::window(System.UInt32,System.UInt32,System.UInt32)
+DA:184,12
 FN:184,SlimPipeline/Stage`2<Microsoft.FSharp.Collections.FSharpList`1<a>,a> StackCore::flatten()
-FNDA:4,SlimPipeline/Stage`2<Microsoft.FSharp.Collections.FSharpList`1<a>,a> StackCore::flatten()
-DA:185,4
+FNDA:10,SlimPipeline/Stage`2<Microsoft.FSharp.Collections.FSharpList`1<a>,a> StackCore::flatten()
+DA:185,10
 FN:185,SlimPipeline/Stage`2<a,b> StackCore::map(Microsoft.FSharp.Core.FSharpFunc`2<System.Boolean,Microsoft.FSharp.Core.FSharpFunc`2<a,b>>)
 FNDA:0,SlimPipeline/Stage`2<a,b> StackCore::map(Microsoft.FSharp.Core.FSharpFunc`2<System.Boolean,Microsoft.FSharp.Core.FSharpFunc`2<a,b>>)
 DA:186,0
@@ -4682,8 +4682,8 @@ FN:187,System.Void StackCore::sinkOp(SlimPipeline/Plan`2<Microsoft.FSharp.Core.U
 FNDA:0,System.Void StackCore::sinkOp(SlimPipeline/Plan`2<Microsoft.FSharp.Core.Unit,Microsoft.FSharp.Core.Unit>)
 DA:188,0
 FN:189,System.Void StackCore::sink(SlimPipeline/Plan`2<Microsoft.FSharp.Core.Unit,T>)
-FNDA:32,System.Void StackCore::sink(SlimPipeline/Plan`2<Microsoft.FSharp.Core.Unit,T>)
-DA:190,32
+FNDA:68,System.Void StackCore::sink(SlimPipeline/Plan`2<Microsoft.FSharp.Core.Unit,T>)
+DA:190,68
 FN:190,System.Void StackCore::sinkList(Microsoft.FSharp.Collections.FSharpList`1<SlimPipeline/Plan`2<Microsoft.FSharp.Core.Unit,Microsoft.FSharp.Core.Unit>>)
 FNDA:0,System.Void StackCore::sinkList(Microsoft.FSharp.Collections.FSharpList`1<SlimPipeline/Plan`2<Microsoft.FSharp.Core.Unit,Microsoft.FSharp.Core.Unit>>)
 DA:191,0
@@ -4764,37 +4764,37 @@ FNH:2
 end_of_record
 SF:/Users/jrh630/repositories/stackProcessing/src/SlimPipeline/SlimPipeline.fs
 FN:1263,SlimPipeline/PipelineGraph SlimPipeline/Plan::graphOfStage(Microsoft.FSharp.Core.FSharpOption`1<SlimPipeline/Stage`2<a,b>>)
-FNDA:521,SlimPipeline/PipelineGraph SlimPipeline/Plan::graphOfStage(Microsoft.FSharp.Core.FSharpOption`1<SlimPipeline/Stage`2<a,b>>)
-DA:1264,521
-BRDA:1264,5,1,27
-BRDA:1264,5,0,110
-BRDA:1264,53,1,27
-BRDA:1264,53,0,110
+FNDA:935,SlimPipeline/PipelineGraph SlimPipeline/Plan::graphOfStage(Microsoft.FSharp.Core.FSharpOption`1<SlimPipeline/Stage`2<a,b>>)
+DA:1264,935
+BRDA:1264,5,1,45
+BRDA:1264,5,0,200
+BRDA:1264,53,1,45
+BRDA:1264,53,0,200
 FN:1266,System.UInt32 SlimPipeline/Plan::levelOf(System.Boolean)
-FNDA:274,System.UInt32 SlimPipeline/Plan::levelOf(System.Boolean)
-DA:1267,274
+FNDA:490,System.UInt32 SlimPipeline/Plan::levelOf(System.Boolean)
+DA:1267,490
 BRDA:1267,2,0,0
 BRDA:1267,16,0,0
 BRDA:1267,16,1,0
-BRDA:1267,2,1,137
+BRDA:1267,2,1,245
 FN:1269,SlimPipeline/Plan`2<S,T> SlimPipeline/Plan::create(Microsoft.FSharp.Core.FSharpOption`1<SlimPipeline/Stage`2<S,T>>,System.UInt64,System.UInt64,System.UInt64,System.UInt64,System.Boolean)
-FNDA:53,SlimPipeline/Plan`2<S,T> SlimPipeline/Plan::create(Microsoft.FSharp.Core.FSharpOption`1<SlimPipeline/Stage`2<S,T>>,System.UInt64,System.UInt64,System.UInt64,System.UInt64,System.Boolean)
-DA:1270,53
+FNDA:89,SlimPipeline/Plan`2<S,T> SlimPipeline/Plan::create(Microsoft.FSharp.Core.FSharpOption`1<SlimPipeline/Stage`2<S,T>>,System.UInt64,System.UInt64,System.UInt64,System.UInt64,System.Boolean)
+DA:1270,89
 FN:1272,SlimPipeline/Plan`2<S,T> SlimPipeline/Plan::createWrapped(Microsoft.FSharp.Core.FSharpOption`1<SlimPipeline/Stage`2<S,T>>,System.UInt64,System.UInt64,SlimPipeline/SingleOrPair,System.UInt64,System.Boolean)
-FNDA:84,SlimPipeline/Plan`2<S,T> SlimPipeline/Plan::createWrapped(Microsoft.FSharp.Core.FSharpOption`1<SlimPipeline/Stage`2<S,T>>,System.UInt64,System.UInt64,SlimPipeline/SingleOrPair,System.UInt64,System.Boolean)
-DA:1273,84
+FNDA:156,SlimPipeline/Plan`2<S,T> SlimPipeline/Plan::createWrapped(Microsoft.FSharp.Core.FSharpOption`1<SlimPipeline/Stage`2<S,T>>,System.UInt64,System.UInt64,SlimPipeline/SingleOrPair,System.UInt64,System.Boolean)
+DA:1273,156
 FN:1275,SlimPipeline/Plan`2<S,T> SlimPipeline/Plan::withSourcePeek(SlimPipeline/SourcePeek,SlimPipeline/Plan`2<S,T>)
-FNDA:26,SlimPipeline/Plan`2<S,T> SlimPipeline/Plan::withSourcePeek(SlimPipeline/SourcePeek,SlimPipeline/Plan`2<S,T>)
-DA:1276,26
+FNDA:44,SlimPipeline/Plan`2<S,T> SlimPipeline/Plan::withSourcePeek(SlimPipeline/SourcePeek,SlimPipeline/Plan`2<S,T>)
+DA:1276,44
 FN:1278,Microsoft.FSharp.Core.FSharpOption`1<SlimPipeline/StageCostPressure> SlimPipeline/Plan::mergeCostPeak(Microsoft.FSharp.Core.FSharpOption`1<SlimPipeline/StageCostPressure>,SlimPipeline/StageCostPressure)
-FNDA:85,Microsoft.FSharp.Core.FSharpOption`1<SlimPipeline/StageCostPressure> SlimPipeline/Plan::mergeCostPeak(Microsoft.FSharp.Core.FSharpOption`1<SlimPipeline/StageCostPressure>,SlimPipeline/StageCostPressure)
-DA:1279,85
-DA:1280,26
-DA:1282,118
-BRDA:1279,3,1,26
-BRDA:1279,3,0,59
-BRDA:1282,46,0,7
-BRDA:1282,46,1,52
+FNDA:157,Microsoft.FSharp.Core.FSharpOption`1<SlimPipeline/StageCostPressure> SlimPipeline/Plan::mergeCostPeak(Microsoft.FSharp.Core.FSharpOption`1<SlimPipeline/StageCostPressure>,SlimPipeline/StageCostPressure)
+DA:1279,157
+DA:1280,44
+DA:1282,226
+BRDA:1279,3,1,44
+BRDA:1279,3,0,113
+BRDA:1282,46,0,13
+BRDA:1282,46,1,100
 FN:1284,System.Double SlimPipeline/Plan::workScore(SlimPipeline/StageWorkPressure)
 FNDA:0,System.Double SlimPipeline/Plan::workScore(SlimPipeline/StageWorkPressure)
 DA:1285,0
@@ -4820,8 +4820,8 @@ BRDA:1302,10,1,0
 BRDA:1302,84,1,0
 BRDA:1302,84,0,0
 FN:1304,System.Void SlimPipeline/Plan::printOptimizationSummary(a,SlimPipeline/Plan`2<S,T>)
-FNDA:50,System.Void SlimPipeline/Plan::printOptimizationSummary(a,SlimPipeline/Plan`2<S,T>)
-DA:1305,50
+FNDA:86,System.Void SlimPipeline/Plan::printOptimizationSummary(a,SlimPipeline/Plan`2<S,T>)
+DA:1305,86
 DA:1307,0
 DA:1309,0
 DA:1310,0
@@ -4831,7 +4831,7 @@ DA:1314,0
 DA:1315,0
 DA:1317,0
 BRDA:1305,7,0,0
-BRDA:1305,7,1,25
+BRDA:1305,7,1,43
 BRDA:1305,26,0,0
 BRDA:1307,44,0,0
 BRDA:1307,44,1,0
@@ -4839,14 +4839,14 @@ BRDA:1309,74,1,0
 BRDA:1309,74,0,0
 BRDA:1313,184,1,0
 BRDA:1313,184,0,0
-BRDA:1305,26,1,25
+BRDA:1305,26,1,43
 FN:1319,SlimPipeline/PipelineGraph SlimPipeline/Plan::graph(SlimPipeline/Plan`2<S,T>)
 FNDA:0,SlimPipeline/PipelineGraph SlimPipeline/Plan::graph(SlimPipeline/Plan`2<S,T>)
 DA:1320,0
 FN:1324,SlimPipeline/Plan`2<Microsoft.FSharp.Core.Unit,Microsoft.FSharp.Core.Unit> SlimPipeline/Plan::source(System.UInt64)
-FNDA:27,SlimPipeline/Plan`2<Microsoft.FSharp.Core.Unit,Microsoft.FSharp.Core.Unit> SlimPipeline/Plan::source(System.UInt64)
-DA:1325,27
-DA:1326,27
+FNDA:45,SlimPipeline/Plan`2<Microsoft.FSharp.Core.Unit,Microsoft.FSharp.Core.Unit> SlimPipeline/Plan::source(System.UInt64)
+DA:1325,45
+DA:1326,45
 FN:1328,SlimPipeline/Plan`2<Microsoft.FSharp.Core.Unit,Microsoft.FSharp.Core.Unit> SlimPipeline/Plan::debug(System.UInt32,System.UInt64)
 FNDA:0,SlimPipeline/Plan`2<Microsoft.FSharp.Core.Unit,Microsoft.FSharp.Core.Unit> SlimPipeline/Plan::debug(System.UInt32,System.UInt64)
 DA:1329,0
@@ -4858,31 +4858,31 @@ DA:1334,0
 BRDA:1329,6,0,0
 BRDA:1329,6,1,0
 FN:1338,SlimPipeline/Plan`2<a,c> SlimPipeline/Plan::composePlan(System.String,SlimPipeline/Plan`2<a,b>,SlimPipeline/Stage`2<b,c>)
-FNDA:83,SlimPipeline/Plan`2<a,c> SlimPipeline/Plan::composePlan(System.String,SlimPipeline/Plan`2<a,b>,SlimPipeline/Stage`2<b,c>)
-DA:1339,83
-DA:1341,166
-DA:1342,332
-DA:1343,83
-DA:1344,83
-DA:1345,83
-DA:1346,83
-DA:1347,249
+FNDA:155,SlimPipeline/Plan`2<a,c> SlimPipeline/Plan::composePlan(System.String,SlimPipeline/Plan`2<a,b>,SlimPipeline/Stage`2<b,c>)
+DA:1339,155
+DA:1341,310
+DA:1342,620
+DA:1343,155
+DA:1344,155
+DA:1345,155
+DA:1346,155
+DA:1347,465
 DA:1348,0
-DA:1349,83
-DA:1350,166
+DA:1349,155
+DA:1350,310
 BRDA:1339,7,0,0
-BRDA:1339,7,1,83
+BRDA:1339,7,1,155
 BRDA:1341,75,1,0
-BRDA:1341,75,0,83
-BRDA:1343,167,0,10
-BRDA:1343,167,1,73
-BRDA:1347,240,0,83
+BRDA:1341,75,0,155
+BRDA:1343,167,0,18
+BRDA:1343,167,1,137
+BRDA:1347,240,0,155
 BRDA:1347,240,1,0
 BRDA:1347,257,0,0
-BRDA:1347,257,1,83
+BRDA:1347,257,1,155
 FN:1352,SlimPipeline/Plan`2<a,c> SlimPipeline/Plan::op_GreaterEqualsGreater(SlimPipeline/Plan`2<a,b>,SlimPipeline/Stage`2<b,c>)
-FNDA:83,SlimPipeline/Plan`2<a,c> SlimPipeline/Plan::op_GreaterEqualsGreater(SlimPipeline/Plan`2<a,b>,SlimPipeline/Stage`2<b,c>)
-DA:1353,83
+FNDA:155,SlimPipeline/Plan`2<a,c> SlimPipeline/Plan::op_GreaterEqualsGreater(SlimPipeline/Plan`2<a,b>,SlimPipeline/Stage`2<b,c>)
+DA:1353,155
 FN:1355,SlimPipeline/Plan`2<In,V> SlimPipeline/Plan::map(System.String,Microsoft.FSharp.Core.FSharpFunc`2<U,V>,SlimPipeline/Plan`2<In,U>)
 FNDA:0,SlimPipeline/Plan`2<In,V> SlimPipeline/Plan::map(System.String,Microsoft.FSharp.Core.FSharpFunc`2<U,V>,SlimPipeline/Plan`2<In,U>)
 DA:1356,0
@@ -4986,49 +4986,49 @@ FN:1443,SlimPipeline/Plan`2<In,System.Tuple`2<S,T>> SlimPipeline/Plan::op_Greate
 FNDA:0,SlimPipeline/Plan`2<In,System.Tuple`2<S,T>> SlimPipeline/Plan::op_GreaterGreaterEqualsGreaterGreater(Microsoft.FSharp.Core.FSharpFunc`2<System.Tuple`2<U,V>,System.Tuple`2<S,T>>,SlimPipeline/Plan`2<In,System.Tuple`2<U,V>>,SlimPipeline/Stage`2<System.Tuple`2<U,V>,System.Tuple`2<S,T>>)
 DA:1444,0
 FN:1448,Microsoft.FSharp.Core.FSharpOption`1<Microsoft.FSharp.Core.Unit> SlimPipeline/Plan::doCleaning(SlimPipeline/Plan`2<a,b>)
-FNDA:100,Microsoft.FSharp.Core.FSharpOption`1<Microsoft.FSharp.Core.Unit> SlimPipeline/Plan::doCleaning(SlimPipeline/Plan`2<a,b>)
-DA:1449,100
+FNDA:172,Microsoft.FSharp.Core.FSharpOption`1<Microsoft.FSharp.Core.Unit> SlimPipeline/Plan::doCleaning(SlimPipeline/Plan`2<a,b>)
+DA:1449,172
 BRDA:1449,8,1,0
-BRDA:1449,8,0,25
+BRDA:1449,8,0,43
 BRDA:1449,98,1,0
-BRDA:1449,98,0,25
+BRDA:1449,98,0,43
 FN:1451,System.Void SlimPipeline/Plan::sink(SlimPipeline/Plan`2<Microsoft.FSharp.Core.Unit,Microsoft.FSharp.Core.Unit>)
-FNDA:48,System.Void SlimPipeline/Plan::sink(SlimPipeline/Plan`2<Microsoft.FSharp.Core.Unit,Microsoft.FSharp.Core.Unit>)
-DA:1452,48
+FNDA:102,System.Void SlimPipeline/Plan::sink(SlimPipeline/Plan`2<Microsoft.FSharp.Core.Unit,Microsoft.FSharp.Core.Unit>)
+DA:1452,102
 DA:1453,0
-DA:1454,16
-DA:1455,32
-DA:1456,16
-DA:1457,16
-DA:1458,32
+DA:1454,34
+DA:1455,68
+DA:1456,34
+DA:1457,34
+DA:1458,68
 DA:1459,0
 DA:1460,0
 DA:1461,0
 DA:1462,0
-DA:1464,32
-DA:1465,16
-DA:1466,32
-DA:1467,16
-BRDA:1452,12,0,16
+DA:1464,68
+DA:1465,34
+DA:1466,68
+DA:1467,34
+BRDA:1452,12,0,34
 BRDA:1452,12,1,0
 BRDA:1452,33,0,0
-BRDA:1452,33,1,16
+BRDA:1452,33,1,34
 BRDA:1454,109,0,0
-BRDA:1454,109,1,16
+BRDA:1454,109,1,34
 BRDA:1455,202,1,0
-BRDA:1455,202,0,16
+BRDA:1455,202,0,34
 BRDA:1457,263,0,0
-BRDA:1457,263,1,16
+BRDA:1457,263,1,34
 BRDA:1458,349,0,0
-BRDA:1458,349,1,16
+BRDA:1458,349,1,34
 BRDA:1458,368,0,0
-BRDA:1458,368,1,16
+BRDA:1458,368,1,34
 BRDA:1464,515,1,0
-BRDA:1464,515,0,16
+BRDA:1464,515,0,34
 BRDA:1465,565,0,0
-BRDA:1465,565,1,16
+BRDA:1465,565,1,34
 BRDA:1467,606,0,0
-BRDA:1467,606,1,16
+BRDA:1467,606,1,34
 FN:1469,System.Void SlimPipeline/Plan::sinkList(Microsoft.FSharp.Collections.FSharpList`1<SlimPipeline/Plan`2<Microsoft.FSharp.Core.Unit,Microsoft.FSharp.Core.Unit>>)
 FNDA:0,System.Void SlimPipeline/Plan::sinkList(Microsoft.FSharp.Collections.FSharpList`1<SlimPipeline/Plan`2<Microsoft.FSharp.Core.Unit,Microsoft.FSharp.Core.Unit>>)
 DA:1470,0
@@ -5179,25 +5179,25 @@ DA:1245,0
 BRDA:1243,17,1,0
 BRDA:1243,17,0,0
 FN:892,SlimPipeline/Stage`2<S,T> SlimPipeline/Stage::createWithCostModel(System.String,Microsoft.FSharp.Core.FSharpFunc`2<Microsoft.FSharp.Core.Unit,SlimPipeline/Pipe`2<S,T>>,SlimPipeline/ProfileTransition,SlimPipeline/StageCostModel,Microsoft.FSharp.Core.FSharpFunc`2<System.UInt64,System.UInt64>,Microsoft.FSharp.Collections.FSharpList`1<Microsoft.FSharp.Core.FSharpFunc`2<Microsoft.FSharp.Core.Unit,Microsoft.FSharp.Core.Unit>>)
-FNDA:215,SlimPipeline/Stage`2<S,T> SlimPipeline/Stage::createWithCostModel(System.String,Microsoft.FSharp.Core.FSharpFunc`2<Microsoft.FSharp.Core.Unit,SlimPipeline/Pipe`2<S,T>>,SlimPipeline/ProfileTransition,SlimPipeline/StageCostModel,Microsoft.FSharp.Core.FSharpFunc`2<System.UInt64,System.UInt64>,Microsoft.FSharp.Collections.FSharpList`1<Microsoft.FSharp.Core.FSharpFunc`2<Microsoft.FSharp.Core.Unit,Microsoft.FSharp.Core.Unit>>)
-DA:893,215
-DA:894,215
-DA:895,215
-DA:896,215
-DA:897,215
-DA:898,215
-DA:899,215
-DA:900,215
-DA:901,215
-DA:902,215
+FNDA:401,SlimPipeline/Stage`2<S,T> SlimPipeline/Stage::createWithCostModel(System.String,Microsoft.FSharp.Core.FSharpFunc`2<Microsoft.FSharp.Core.Unit,SlimPipeline/Pipe`2<S,T>>,SlimPipeline/ProfileTransition,SlimPipeline/StageCostModel,Microsoft.FSharp.Core.FSharpFunc`2<System.UInt64,System.UInt64>,Microsoft.FSharp.Collections.FSharpList`1<Microsoft.FSharp.Core.FSharpFunc`2<Microsoft.FSharp.Core.Unit,Microsoft.FSharp.Core.Unit>>)
+DA:893,401
+DA:894,401
+DA:895,401
+DA:896,401
+DA:897,401
+DA:898,401
+DA:899,401
+DA:900,401
+DA:901,401
+DA:902,401
 FN:904,SlimPipeline/Stage`2<S,T> SlimPipeline/Stage::createWithModel(System.String,Microsoft.FSharp.Core.FSharpFunc`2<Microsoft.FSharp.Core.Unit,SlimPipeline/Pipe`2<S,T>>,SlimPipeline/ProfileTransition,SlimPipeline/StageMemoryModel,Microsoft.FSharp.Core.FSharpFunc`2<System.UInt64,System.UInt64>,Microsoft.FSharp.Collections.FSharpList`1<Microsoft.FSharp.Core.FSharpFunc`2<Microsoft.FSharp.Core.Unit,Microsoft.FSharp.Core.Unit>>)
-FNDA:121,SlimPipeline/Stage`2<S,T> SlimPipeline/Stage::createWithModel(System.String,Microsoft.FSharp.Core.FSharpFunc`2<Microsoft.FSharp.Core.Unit,SlimPipeline/Pipe`2<S,T>>,SlimPipeline/ProfileTransition,SlimPipeline/StageMemoryModel,Microsoft.FSharp.Core.FSharpFunc`2<System.UInt64,System.UInt64>,Microsoft.FSharp.Collections.FSharpList`1<Microsoft.FSharp.Core.FSharpFunc`2<Microsoft.FSharp.Core.Unit,Microsoft.FSharp.Core.Unit>>)
-DA:905,121
+FNDA:223,SlimPipeline/Stage`2<S,T> SlimPipeline/Stage::createWithModel(System.String,Microsoft.FSharp.Core.FSharpFunc`2<Microsoft.FSharp.Core.Unit,SlimPipeline/Pipe`2<S,T>>,SlimPipeline/ProfileTransition,SlimPipeline/StageMemoryModel,Microsoft.FSharp.Core.FSharpFunc`2<System.UInt64,System.UInt64>,Microsoft.FSharp.Collections.FSharpList`1<Microsoft.FSharp.Core.FSharpFunc`2<Microsoft.FSharp.Core.Unit,Microsoft.FSharp.Core.Unit>>)
+DA:905,223
 FN:907,SlimPipeline/Stage`2<S,T> SlimPipeline/Stage::create(System.String,Microsoft.FSharp.Core.FSharpFunc`2<Microsoft.FSharp.Core.Unit,SlimPipeline/Pipe`2<S,T>>,SlimPipeline/ProfileTransition,Microsoft.FSharp.Core.FSharpFunc`2<System.UInt64,System.UInt64>,Microsoft.FSharp.Core.FSharpFunc`2<System.UInt64,System.UInt64>,Microsoft.FSharp.Collections.FSharpList`1<Microsoft.FSharp.Core.FSharpFunc`2<Microsoft.FSharp.Core.Unit,Microsoft.FSharp.Core.Unit>>)
-FNDA:62,SlimPipeline/Stage`2<S,T> SlimPipeline/Stage::create(System.String,Microsoft.FSharp.Core.FSharpFunc`2<Microsoft.FSharp.Core.Unit,SlimPipeline/Pipe`2<S,T>>,SlimPipeline/ProfileTransition,Microsoft.FSharp.Core.FSharpFunc`2<System.UInt64,System.UInt64>,Microsoft.FSharp.Core.FSharpFunc`2<System.UInt64,System.UInt64>,Microsoft.FSharp.Collections.FSharpList`1<Microsoft.FSharp.Core.FSharpFunc`2<Microsoft.FSharp.Core.Unit,Microsoft.FSharp.Core.Unit>>)
-DA:908,62
-DA:909,62
-DA:910,62
+FNDA:115,SlimPipeline/Stage`2<S,T> SlimPipeline/Stage::create(System.String,Microsoft.FSharp.Core.FSharpFunc`2<Microsoft.FSharp.Core.Unit,SlimPipeline/Pipe`2<S,T>>,SlimPipeline/ProfileTransition,Microsoft.FSharp.Core.FSharpFunc`2<System.UInt64,System.UInt64>,Microsoft.FSharp.Core.FSharpFunc`2<System.UInt64,System.UInt64>,Microsoft.FSharp.Collections.FSharpList`1<Microsoft.FSharp.Core.FSharpFunc`2<Microsoft.FSharp.Core.Unit,Microsoft.FSharp.Core.Unit>>)
+DA:908,115
+DA:909,115
+DA:910,115
 FN:912,SlimPipeline/Stage`2<S,T> SlimPipeline/Stage::createWrapped(System.String,Microsoft.FSharp.Core.FSharpFunc`2<Microsoft.FSharp.Core.Unit,SlimPipeline/Pipe`2<S,T>>,SlimPipeline/ProfileTransition,Microsoft.FSharp.Core.FSharpFunc`2<SlimPipeline/SingleOrPair,SlimPipeline/SingleOrPair>,Microsoft.FSharp.Core.FSharpFunc`2<System.UInt64,System.UInt64>,Microsoft.FSharp.Collections.FSharpList`1<Microsoft.FSharp.Core.FSharpFunc`2<Microsoft.FSharp.Core.Unit,Microsoft.FSharp.Core.Unit>>)
 FNDA:2,SlimPipeline/Stage`2<S,T> SlimPipeline/Stage::createWrapped(System.String,Microsoft.FSharp.Core.FSharpFunc`2<Microsoft.FSharp.Core.Unit,SlimPipeline/Pipe`2<S,T>>,SlimPipeline/ProfileTransition,Microsoft.FSharp.Core.FSharpFunc`2<SlimPipeline/SingleOrPair,SlimPipeline/SingleOrPair>,Microsoft.FSharp.Core.FSharpFunc`2<System.UInt64,System.UInt64>,Microsoft.FSharp.Collections.FSharpList`1<Microsoft.FSharp.Core.FSharpFunc`2<Microsoft.FSharp.Core.Unit,Microsoft.FSharp.Core.Unit>>)
 DA:913,2
@@ -5206,25 +5206,25 @@ FN:916,SlimPipeline/Stage`2<S,T> SlimPipeline/Stage::createWrappedWithModel(Syst
 FNDA:0,SlimPipeline/Stage`2<S,T> SlimPipeline/Stage::createWrappedWithModel(System.String,Microsoft.FSharp.Core.FSharpFunc`2<Microsoft.FSharp.Core.Unit,SlimPipeline/Pipe`2<S,T>>,SlimPipeline/ProfileTransition,SlimPipeline/StageMemoryModel,Microsoft.FSharp.Core.FSharpFunc`2<System.UInt64,System.UInt64>,Microsoft.FSharp.Collections.FSharpList`1<Microsoft.FSharp.Core.FSharpFunc`2<Microsoft.FSharp.Core.Unit,Microsoft.FSharp.Core.Unit>>)
 DA:917,0
 FN:919,SlimPipeline/Stage`2<S,T> SlimPipeline/Stage::createWrappedWithCostModel(System.String,Microsoft.FSharp.Core.FSharpFunc`2<Microsoft.FSharp.Core.Unit,SlimPipeline/Pipe`2<S,T>>,SlimPipeline/ProfileTransition,SlimPipeline/StageCostModel,Microsoft.FSharp.Core.FSharpFunc`2<System.UInt64,System.UInt64>,Microsoft.FSharp.Collections.FSharpList`1<Microsoft.FSharp.Core.FSharpFunc`2<Microsoft.FSharp.Core.Unit,Microsoft.FSharp.Core.Unit>>)
-FNDA:94,SlimPipeline/Stage`2<S,T> SlimPipeline/Stage::createWrappedWithCostModel(System.String,Microsoft.FSharp.Core.FSharpFunc`2<Microsoft.FSharp.Core.Unit,SlimPipeline/Pipe`2<S,T>>,SlimPipeline/ProfileTransition,SlimPipeline/StageCostModel,Microsoft.FSharp.Core.FSharpFunc`2<System.UInt64,System.UInt64>,Microsoft.FSharp.Collections.FSharpList`1<Microsoft.FSharp.Core.FSharpFunc`2<Microsoft.FSharp.Core.Unit,Microsoft.FSharp.Core.Unit>>)
-DA:920,94
+FNDA:178,SlimPipeline/Stage`2<S,T> SlimPipeline/Stage::createWrappedWithCostModel(System.String,Microsoft.FSharp.Core.FSharpFunc`2<Microsoft.FSharp.Core.Unit,SlimPipeline/Pipe`2<S,T>>,SlimPipeline/ProfileTransition,SlimPipeline/StageCostModel,Microsoft.FSharp.Core.FSharpFunc`2<System.UInt64,System.UInt64>,Microsoft.FSharp.Collections.FSharpList`1<Microsoft.FSharp.Core.FSharpFunc`2<Microsoft.FSharp.Core.Unit,Microsoft.FSharp.Core.Unit>>)
+DA:920,178
 FN:922,SlimPipeline/Stage`2<a,b> SlimPipeline/Stage::withGraph(SlimPipeline/PipelineGraph,SlimPipeline/Stage`2<a,b>)
-FNDA:96,SlimPipeline/Stage`2<a,b> SlimPipeline/Stage::withGraph(SlimPipeline/PipelineGraph,SlimPipeline/Stage`2<a,b>)
-DA:923,96
+FNDA:180,SlimPipeline/Stage`2<a,b> SlimPipeline/Stage::withGraph(SlimPipeline/PipelineGraph,SlimPipeline/Stage`2<a,b>)
+DA:923,180
 FN:926,SlimPipeline/Stage`2<Microsoft.FSharp.Core.Unit,Microsoft.FSharp.Core.Unit> SlimPipeline/Stage::empty(System.String)
 FNDA:0,SlimPipeline/Stage`2<Microsoft.FSharp.Core.Unit,Microsoft.FSharp.Core.Unit> SlimPipeline/Stage::empty(System.String)
 DA:927,0
 DA:930,0
 FN:933,SlimPipeline/Stage`2<Microsoft.FSharp.Core.Unit,T> SlimPipeline/Stage::init(System.String,System.UInt32,Microsoft.FSharp.Core.FSharpFunc`2<System.Int32,T>,SlimPipeline/ProfileTransition,Microsoft.FSharp.Core.FSharpFunc`2<System.UInt64,System.UInt64>,Microsoft.FSharp.Core.FSharpFunc`2<System.UInt64,System.UInt64>)
-FNDA:26,SlimPipeline/Stage`2<Microsoft.FSharp.Core.Unit,T> SlimPipeline/Stage::init(System.String,System.UInt32,Microsoft.FSharp.Core.FSharpFunc`2<System.Int32,T>,SlimPipeline/ProfileTransition,Microsoft.FSharp.Core.FSharpFunc`2<System.UInt64,System.UInt64>,Microsoft.FSharp.Core.FSharpFunc`2<System.UInt64,System.UInt64>)
-DA:934,26
+FNDA:44,SlimPipeline/Stage`2<Microsoft.FSharp.Core.Unit,T> SlimPipeline/Stage::init(System.String,System.UInt32,Microsoft.FSharp.Core.FSharpFunc`2<System.Int32,T>,SlimPipeline/ProfileTransition,Microsoft.FSharp.Core.FSharpFunc`2<System.UInt64,System.UInt64>,Microsoft.FSharp.Core.FSharpFunc`2<System.UInt64,System.UInt64>)
+DA:934,44
 FN:937,SlimPipeline/Stage`2<S,U> SlimPipeline/Stage::compose(SlimPipeline/Stage`2<S,T>,SlimPipeline/Stage`2<T,U>)
-FNDA:93,SlimPipeline/Stage`2<S,U> SlimPipeline/Stage::compose(SlimPipeline/Stage`2<S,T>,SlimPipeline/Stage`2<T,U>)
-DA:938,93
-DA:939,93
-DA:940,93
-DA:941,93
-DA:942,93
+FNDA:177,SlimPipeline/Stage`2<S,U> SlimPipeline/Stage::compose(SlimPipeline/Stage`2<S,T>,SlimPipeline/Stage`2<T,U>)
+DA:938,177
+DA:939,177
+DA:940,177
+DA:941,177
+DA:942,177
 FN:947,SlimPipeline/Stage`2<S,S> SlimPipeline/Stage::prepend(System.String,SlimPipeline/Stage`2<Microsoft.FSharp.Core.Unit,S>)
 FNDA:0,SlimPipeline/Stage`2<S,S> SlimPipeline/Stage::prepend(System.String,SlimPipeline/Stage`2<Microsoft.FSharp.Core.Unit,S>)
 DA:948,0
@@ -5244,11 +5244,11 @@ FNDA:0,SlimPipeline/Stage`2<T,T> SlimPipeline/Stage::clean(System.String,Microso
 DA:965,0
 DA:966,0
 FN:967,Microsoft.FSharp.Core.FSharpFunc`2<Microsoft.FSharp.Core.Unit,SlimPipeline/Pipe`2<a,b>> SlimPipeline/Stage::toPipe(SlimPipeline/Stage`2<a,b>)
-FNDA:16,Microsoft.FSharp.Core.FSharpFunc`2<Microsoft.FSharp.Core.Unit,SlimPipeline/Pipe`2<a,b>> SlimPipeline/Stage::toPipe(SlimPipeline/Stage`2<a,b>)
-DA:968,16
+FNDA:34,Microsoft.FSharp.Core.FSharpFunc`2<Microsoft.FSharp.Core.Unit,SlimPipeline/Pipe`2<a,b>> SlimPipeline/Stage::toPipe(SlimPipeline/Stage`2<a,b>)
+DA:968,34
 FN:970,SlimPipeline/Stage`2<S,T> SlimPipeline/Stage::fromPipe(System.String,SlimPipeline/ProfileTransition,Microsoft.FSharp.Core.FSharpFunc`2<System.UInt64,System.UInt64>,Microsoft.FSharp.Core.FSharpFunc`2<System.UInt64,System.UInt64>,SlimPipeline/Pipe`2<S,T>)
-FNDA:8,SlimPipeline/Stage`2<S,T> SlimPipeline/Stage::fromPipe(System.String,SlimPipeline/ProfileTransition,Microsoft.FSharp.Core.FSharpFunc`2<System.UInt64,System.UInt64>,Microsoft.FSharp.Core.FSharpFunc`2<System.UInt64,System.UInt64>,SlimPipeline/Pipe`2<S,T>)
-DA:971,8
+FNDA:20,SlimPipeline/Stage`2<S,T> SlimPipeline/Stage::fromPipe(System.String,SlimPipeline/ProfileTransition,Microsoft.FSharp.Core.FSharpFunc`2<System.UInt64,System.UInt64>,Microsoft.FSharp.Core.FSharpFunc`2<System.UInt64,System.UInt64>,SlimPipeline/Pipe`2<S,T>)
+DA:971,20
 FN:974,SlimPipeline/Stage`2<S,S> SlimPipeline/Stage::skip(System.String,System.UInt32)
 FNDA:0,SlimPipeline/Stage`2<S,S> SlimPipeline/Stage::skip(System.String,System.UInt32)
 DA:975,0
@@ -5258,13 +5258,13 @@ FNDA:0,SlimPipeline/Stage`2<S,S> SlimPipeline/Stage::take(System.String,System.U
 DA:980,0
 DA:981,0
 FN:985,SlimPipeline/Stage`2<S,T> SlimPipeline/Stage::map(System.String,Microsoft.FSharp.Core.FSharpFunc`2<System.Boolean,Microsoft.FSharp.Core.FSharpFunc`2<S,T>>,Microsoft.FSharp.Core.FSharpFunc`2<System.UInt64,System.UInt64>,Microsoft.FSharp.Core.FSharpFunc`2<System.UInt64,System.UInt64>)
-FNDA:29,SlimPipeline/Stage`2<S,T> SlimPipeline/Stage::map(System.String,Microsoft.FSharp.Core.FSharpFunc`2<System.Boolean,Microsoft.FSharp.Core.FSharpFunc`2<S,T>>,Microsoft.FSharp.Core.FSharpFunc`2<System.UInt64,System.UInt64>,Microsoft.FSharp.Core.FSharpFunc`2<System.UInt64,System.UInt64>)
-DA:986,29
-DA:987,29
+FNDA:54,SlimPipeline/Stage`2<S,T> SlimPipeline/Stage::map(System.String,Microsoft.FSharp.Core.FSharpFunc`2<System.Boolean,Microsoft.FSharp.Core.FSharpFunc`2<S,T>>,Microsoft.FSharp.Core.FSharpFunc`2<System.UInt64,System.UInt64>,Microsoft.FSharp.Core.FSharpFunc`2<System.UInt64,System.UInt64>)
+DA:986,54
+DA:987,54
 FN:991,SlimPipeline/Stage`2<S,T> SlimPipeline/Stage::mapi(System.String,Microsoft.FSharp.Core.FSharpFunc`2<System.Boolean,Microsoft.FSharp.Core.FSharpFunc`2<System.Int64,Microsoft.FSharp.Core.FSharpFunc`2<S,T>>>,Microsoft.FSharp.Core.FSharpFunc`2<System.UInt64,System.UInt64>,Microsoft.FSharp.Core.FSharpFunc`2<System.UInt64,System.UInt64>)
-FNDA:18,SlimPipeline/Stage`2<S,T> SlimPipeline/Stage::mapi(System.String,Microsoft.FSharp.Core.FSharpFunc`2<System.Boolean,Microsoft.FSharp.Core.FSharpFunc`2<System.Int64,Microsoft.FSharp.Core.FSharpFunc`2<S,T>>>,Microsoft.FSharp.Core.FSharpFunc`2<System.UInt64,System.UInt64>,Microsoft.FSharp.Core.FSharpFunc`2<System.UInt64,System.UInt64>)
-DA:992,18
-DA:993,18
+FNDA:36,SlimPipeline/Stage`2<S,T> SlimPipeline/Stage::mapi(System.String,Microsoft.FSharp.Core.FSharpFunc`2<System.Boolean,Microsoft.FSharp.Core.FSharpFunc`2<System.Int64,Microsoft.FSharp.Core.FSharpFunc`2<S,T>>>,Microsoft.FSharp.Core.FSharpFunc`2<System.UInt64,System.UInt64>,Microsoft.FSharp.Core.FSharpFunc`2<System.UInt64,System.UInt64>)
+DA:992,36
+DA:993,36
 FN:996,SlimPipeline/Stage`2<In,V> SlimPipeline/Stage::map1(System.String,Microsoft.FSharp.Core.FSharpFunc`2<U,V>,SlimPipeline/Stage`2<In,U>,Microsoft.FSharp.Core.FSharpFunc`2<System.UInt64,System.UInt64>,Microsoft.FSharp.Core.FSharpFunc`2<System.UInt64,System.UInt64>)
 FNDA:0,SlimPipeline/Stage`2<In,V> SlimPipeline/Stage::map1(System.String,Microsoft.FSharp.Core.FSharpFunc`2<U,V>,SlimPipeline/Stage`2<In,U>,Microsoft.FSharp.Core.FSharpFunc`2<System.UInt64,System.UInt64>,Microsoft.FSharp.Core.FSharpFunc`2<System.UInt64,System.UInt64>)
 DA:997,0
@@ -5323,23 +5323,23 @@ FNDA:3,SlimPipeline/Stage`2<S,T> SlimPipeline/Stage::fold(System.String,Microsof
 DA:1094,3
 DA:1095,3
 FN:1097,SlimPipeline/Stage`2<T,Microsoft.FSharp.Collections.FSharpList`1<T>> SlimPipeline/Stage::window(System.String,System.UInt32,System.UInt32,Microsoft.FSharp.Core.FSharpFunc`2<System.Int32,Microsoft.FSharp.Core.FSharpFunc`2<T,T>>,System.UInt32)
-FNDA:6,SlimPipeline/Stage`2<T,Microsoft.FSharp.Collections.FSharpList`1<T>> SlimPipeline/Stage::window(System.String,System.UInt32,System.UInt32,Microsoft.FSharp.Core.FSharpFunc`2<System.Int32,Microsoft.FSharp.Core.FSharpFunc`2<T,T>>,System.UInt32)
-DA:1098,6
-DA:1099,6
-DA:1100,12
+FNDA:12,SlimPipeline/Stage`2<T,Microsoft.FSharp.Collections.FSharpList`1<T>> SlimPipeline/Stage::window(System.String,System.UInt32,System.UInt32,Microsoft.FSharp.Core.FSharpFunc`2<System.Int32,Microsoft.FSharp.Core.FSharpFunc`2<T,T>>,System.UInt32)
+DA:1098,12
+DA:1099,12
+DA:1100,24
 FN:1102,SlimPipeline/Stage`2<Microsoft.FSharp.Collections.FSharpList`1<T>,T> SlimPipeline/Stage::flatten(System.String)
-FNDA:4,SlimPipeline/Stage`2<Microsoft.FSharp.Collections.FSharpList`1<T>,T> SlimPipeline/Stage::flatten(System.String)
-DA:1103,4
-DA:1104,4
-DA:1105,4
+FNDA:10,SlimPipeline/Stage`2<Microsoft.FSharp.Collections.FSharpList`1<T>,T> SlimPipeline/Stage::flatten(System.String)
+DA:1103,10
+DA:1104,10
+DA:1105,10
 FN:1108,SlimPipeline/Stage`2<S,T> SlimPipeline/Stage::liftUnary(System.String,Microsoft.FSharp.Core.FSharpFunc`2<S,T>,Microsoft.FSharp.Core.FSharpFunc`2<System.UInt64,System.UInt64>,Microsoft.FSharp.Core.FSharpFunc`2<System.UInt64,System.UInt64>)
 FNDA:1,SlimPipeline/Stage`2<S,T> SlimPipeline/Stage::liftUnary(System.String,Microsoft.FSharp.Core.FSharpFunc`2<S,T>,Microsoft.FSharp.Core.FSharpFunc`2<System.UInt64,System.UInt64>,Microsoft.FSharp.Core.FSharpFunc`2<System.UInt64,System.UInt64>)
 DA:1109,1
 DA:1110,1
 FN:1113,SlimPipeline/Stage`2<S,T> SlimPipeline/Stage::liftReleaseUnary(System.String,Microsoft.FSharp.Core.FSharpFunc`2<S,Microsoft.FSharp.Core.Unit>,Microsoft.FSharp.Core.FSharpFunc`2<S,T>,Microsoft.FSharp.Core.FSharpFunc`2<System.UInt64,System.UInt64>,Microsoft.FSharp.Core.FSharpFunc`2<System.UInt64,System.UInt64>)
-FNDA:14,SlimPipeline/Stage`2<S,T> SlimPipeline/Stage::liftReleaseUnary(System.String,Microsoft.FSharp.Core.FSharpFunc`2<S,Microsoft.FSharp.Core.Unit>,Microsoft.FSharp.Core.FSharpFunc`2<S,T>,Microsoft.FSharp.Core.FSharpFunc`2<System.UInt64,System.UInt64>,Microsoft.FSharp.Core.FSharpFunc`2<System.UInt64,System.UInt64>)
-DA:1114,14
-DA:1115,14
+FNDA:25,SlimPipeline/Stage`2<S,T> SlimPipeline/Stage::liftReleaseUnary(System.String,Microsoft.FSharp.Core.FSharpFunc`2<S,Microsoft.FSharp.Core.Unit>,Microsoft.FSharp.Core.FSharpFunc`2<S,T>,Microsoft.FSharp.Core.FSharpFunc`2<System.UInt64,System.UInt64>,Microsoft.FSharp.Core.FSharpFunc`2<System.UInt64,System.UInt64>)
+DA:1114,25
+DA:1115,25
 FN:1117,SlimPipeline/Stage`2<T,T> SlimPipeline/Stage::retainWith(System.String,SlimPipeline/ResourceOps`1<T>)
 FNDA:0,SlimPipeline/Stage`2<T,T> SlimPipeline/Stage::retainWith(System.String,SlimPipeline/ResourceOps`1<T>)
 DA:1118,0
@@ -5348,8 +5348,8 @@ FNDA:0,SlimPipeline/Stage`2<T,Microsoft.FSharp.Core.Unit> SlimPipeline/Stage::re
 DA:1122,0
 DA:1123,0
 FN:1125,SlimPipeline/Stage`2<S,T> SlimPipeline/Stage::liftResourceUnary(System.String,SlimPipeline/ResourceOps`1<S>,Microsoft.FSharp.Core.FSharpFunc`2<S,T>,Microsoft.FSharp.Core.FSharpFunc`2<System.UInt64,System.UInt64>,Microsoft.FSharp.Core.FSharpFunc`2<System.UInt64,System.UInt64>)
-FNDA:12,SlimPipeline/Stage`2<S,T> SlimPipeline/Stage::liftResourceUnary(System.String,SlimPipeline/ResourceOps`1<S>,Microsoft.FSharp.Core.FSharpFunc`2<S,T>,Microsoft.FSharp.Core.FSharpFunc`2<System.UInt64,System.UInt64>,Microsoft.FSharp.Core.FSharpFunc`2<System.UInt64,System.UInt64>)
-DA:1126,12
+FNDA:23,SlimPipeline/Stage`2<S,T> SlimPipeline/Stage::liftResourceUnary(System.String,SlimPipeline/ResourceOps`1<S>,Microsoft.FSharp.Core.FSharpFunc`2<S,T>,Microsoft.FSharp.Core.FSharpFunc`2<System.UInt64,System.UInt64>,Microsoft.FSharp.Core.FSharpFunc`2<System.UInt64,System.UInt64>)
+DA:1126,23
 FN:1135,SlimPipeline/Stage`2<T,T> SlimPipeline/Stage::tapItStage(System.String,Microsoft.FSharp.Core.FSharpFunc`2<T,System.String>)
 FNDA:7,SlimPipeline/Stage`2<T,T> SlimPipeline/Stage::tapItStage(System.String,Microsoft.FSharp.Core.FSharpFunc`2<T,System.String>)
 DA:1136,7
@@ -5360,9 +5360,9 @@ FN:1141,SlimPipeline/Stage`2<T,T> SlimPipeline/Stage::tap(System.String)
 FNDA:3,SlimPipeline/Stage`2<T,T> SlimPipeline/Stage::tap(System.String)
 DA:1142,3
 FN:1153,SlimPipeline/Stage`2<T,Microsoft.FSharp.Core.Unit> SlimPipeline/Stage::ignore(Microsoft.FSharp.Core.FSharpFunc`2<T,Microsoft.FSharp.Core.Unit>)
-FNDA:16,SlimPipeline/Stage`2<T,Microsoft.FSharp.Core.Unit> SlimPipeline/Stage::ignore(Microsoft.FSharp.Core.FSharpFunc`2<T,Microsoft.FSharp.Core.Unit>)
-DA:1154,16
-DA:1155,16
+FNDA:34,SlimPipeline/Stage`2<T,Microsoft.FSharp.Core.Unit> SlimPipeline/Stage::ignore(Microsoft.FSharp.Core.FSharpFunc`2<T,Microsoft.FSharp.Core.Unit>)
+DA:1154,34
+DA:1155,34
 FN:1158,SlimPipeline/Stage`2<System.Tuple`2<S,T>,Microsoft.FSharp.Core.Unit> SlimPipeline/Stage::ignorePairs(Microsoft.FSharp.Core.FSharpFunc`2<S,Microsoft.FSharp.Core.Unit>,Microsoft.FSharp.Core.FSharpFunc`2<T,Microsoft.FSharp.Core.Unit>)
 FNDA:0,SlimPipeline/Stage`2<System.Tuple`2<S,T>,Microsoft.FSharp.Core.Unit> SlimPipeline/Stage::ignorePairs(Microsoft.FSharp.Core.FSharpFunc`2<S,Microsoft.FSharp.Core.Unit>,Microsoft.FSharp.Core.FSharpFunc`2<T,Microsoft.FSharp.Core.Unit>)
 DA:1159,0
@@ -5382,11 +5382,11 @@ FN:927,System.UInt64 SlimPipeline/Stage/memoryNeed@928T::Invoke(a)
 FNDA:0,System.UInt64 SlimPipeline/Stage/memoryNeed@928T::Invoke(a)
 DA:928,0
 FN:932,SlimPipeline/Pipe`2<Microsoft.FSharp.Core.Unit,T> SlimPipeline/Stage/build@933-1::Invoke(Microsoft.FSharp.Core.Unit)
-FNDA:26,SlimPipeline/Pipe`2<Microsoft.FSharp.Core.Unit,T> SlimPipeline/Stage/build@933-1::Invoke(Microsoft.FSharp.Core.Unit)
-DA:933,26
+FNDA:44,SlimPipeline/Pipe`2<Microsoft.FSharp.Core.Unit,T> SlimPipeline/Stage/build@933-1::Invoke(Microsoft.FSharp.Core.Unit)
+DA:933,44
 FN:936,SlimPipeline/Pipe`2<S,U> SlimPipeline/Stage/build@937-2::Invoke(Microsoft.FSharp.Core.Unit)
-FNDA:93,SlimPipeline/Pipe`2<S,U> SlimPipeline/Stage/build@937-2::Invoke(Microsoft.FSharp.Core.Unit)
-DA:937,93
+FNDA:177,SlimPipeline/Pipe`2<S,U> SlimPipeline/Stage/build@937-2::Invoke(Microsoft.FSharp.Core.Unit)
+DA:937,177
 FN:946,SlimPipeline/Pipe`2<S,S> SlimPipeline/Stage/build@947-3::Invoke(Microsoft.FSharp.Core.Unit)
 FNDA:0,SlimPipeline/Pipe`2<S,S> SlimPipeline/Stage/build@947-3::Invoke(Microsoft.FSharp.Core.Unit)
 DA:947,0
@@ -5406,17 +5406,17 @@ FN:978,SlimPipeline/Pipe`2<a,a> SlimPipeline/Stage/build@979-8T::Invoke(Microsof
 FNDA:0,SlimPipeline/Pipe`2<a,a> SlimPipeline/Stage/build@979-8T::Invoke(Microsoft.FSharp.Core.Unit)
 DA:979,0
 FN:983,FSharp.Control.IAsyncEnumerable`1<T> SlimPipeline/Stage/apply@984-37::Invoke(System.Boolean,FSharp.Control.IAsyncEnumerable`1<S>)
-FNDA:58,FSharp.Control.IAsyncEnumerable`1<T> SlimPipeline/Stage/apply@984-37::Invoke(System.Boolean,FSharp.Control.IAsyncEnumerable`1<S>)
-DA:984,58
+FNDA:108,FSharp.Control.IAsyncEnumerable`1<T> SlimPipeline/Stage/apply@984-37::Invoke(System.Boolean,FSharp.Control.IAsyncEnumerable`1<S>)
+DA:984,108
 FN:984,SlimPipeline/Pipe`2<S,T> SlimPipeline/Stage/build@985-9::Invoke(Microsoft.FSharp.Core.Unit)
-FNDA:29,SlimPipeline/Pipe`2<S,T> SlimPipeline/Stage/build@985-9::Invoke(Microsoft.FSharp.Core.Unit)
-DA:985,29
+FNDA:54,SlimPipeline/Pipe`2<S,T> SlimPipeline/Stage/build@985-9::Invoke(Microsoft.FSharp.Core.Unit)
+DA:985,54
 FN:989,FSharp.Control.IAsyncEnumerable`1<T> SlimPipeline/Stage/apply@990-38::Invoke(System.Boolean,FSharp.Control.IAsyncEnumerable`1<S>)
-FNDA:36,FSharp.Control.IAsyncEnumerable`1<T> SlimPipeline/Stage/apply@990-38::Invoke(System.Boolean,FSharp.Control.IAsyncEnumerable`1<S>)
-DA:990,36
+FNDA:72,FSharp.Control.IAsyncEnumerable`1<T> SlimPipeline/Stage/apply@990-38::Invoke(System.Boolean,FSharp.Control.IAsyncEnumerable`1<S>)
+DA:990,72
 FN:990,SlimPipeline/Pipe`2<S,T> SlimPipeline/Stage/build@991-10::Invoke(Microsoft.FSharp.Core.Unit)
-FNDA:18,SlimPipeline/Pipe`2<S,T> SlimPipeline/Stage/build@991-10::Invoke(Microsoft.FSharp.Core.Unit)
-DA:991,18
+FNDA:36,SlimPipeline/Pipe`2<S,T> SlimPipeline/Stage/build@991-10::Invoke(Microsoft.FSharp.Core.Unit)
+DA:991,36
 FN:995,SlimPipeline/Pipe`2<In,V> SlimPipeline/Stage/build@996-11::Invoke(Microsoft.FSharp.Core.Unit)
 FNDA:0,SlimPipeline/Pipe`2<In,V> SlimPipeline/Stage/build@996-11::Invoke(Microsoft.FSharp.Core.Unit)
 DA:996,0
@@ -5474,14 +5474,14 @@ FN:1107,SlimPipeline/Pipe`2<S,T> SlimPipeline/Stage/build@1108-18::Invoke(Micros
 FNDA:1,SlimPipeline/Pipe`2<S,T> SlimPipeline/Stage/build@1108-18::Invoke(Microsoft.FSharp.Core.Unit)
 DA:1108,1
 FN:1112,SlimPipeline/Pipe`2<S,T> SlimPipeline/Stage/build@1113-19::Invoke(Microsoft.FSharp.Core.Unit)
-FNDA:14,SlimPipeline/Pipe`2<S,T> SlimPipeline/Stage/build@1113-19::Invoke(Microsoft.FSharp.Core.Unit)
-DA:1113,14
+FNDA:25,SlimPipeline/Pipe`2<S,T> SlimPipeline/Stage/build@1113-19::Invoke(Microsoft.FSharp.Core.Unit)
+DA:1113,25
 FN:1120,SlimPipeline/Pipe`2<T,Microsoft.FSharp.Core.Unit> SlimPipeline/Stage/build@1121-20::Invoke(Microsoft.FSharp.Core.Unit)
 FNDA:0,SlimPipeline/Pipe`2<T,Microsoft.FSharp.Core.Unit> SlimPipeline/Stage/build@1121-20::Invoke(Microsoft.FSharp.Core.Unit)
 DA:1121,0
 FN:1152,SlimPipeline/Pipe`2<T,Microsoft.FSharp.Core.Unit> SlimPipeline/Stage/build@1153-22::Invoke(Microsoft.FSharp.Core.Unit)
-FNDA:16,SlimPipeline/Pipe`2<T,Microsoft.FSharp.Core.Unit> SlimPipeline/Stage/build@1153-22::Invoke(Microsoft.FSharp.Core.Unit)
-DA:1153,16
+FNDA:34,SlimPipeline/Pipe`2<T,Microsoft.FSharp.Core.Unit> SlimPipeline/Stage/build@1153-22::Invoke(Microsoft.FSharp.Core.Unit)
+DA:1153,34
 FN:1157,SlimPipeline/Pipe`2<System.Tuple`2<S,T>,Microsoft.FSharp.Core.Unit> SlimPipeline/Stage/build@1158-23::Invoke(Microsoft.FSharp.Core.Unit)
 FNDA:0,SlimPipeline/Pipe`2<System.Tuple`2<S,T>,Microsoft.FSharp.Core.Unit> SlimPipeline/Stage/build@1158-23::Invoke(Microsoft.FSharp.Core.Unit)
 DA:1158,0
@@ -5495,15 +5495,15 @@ FN:1168,SlimPipeline/Pipe`2<S,T> SlimPipeline/Stage/build@1169-25::Invoke(Micros
 FNDA:1,SlimPipeline/Pipe`2<S,T> SlimPipeline/Stage/build@1169-25::Invoke(Microsoft.FSharp.Core.Unit)
 DA:1169,1
 FN:821,SlimPipeline/PipelineGraph SlimPipeline/PipelineGraphModule::singleton(System.String,SlimPipeline/ProfileTransition)
-FNDA:218,SlimPipeline/PipelineGraph SlimPipeline/PipelineGraphModule::singleton(System.String,SlimPipeline/ProfileTransition)
-DA:822,218
-DA:823,218
-DA:824,218
-DA:825,218
-DA:826,218
-DA:827,218
-DA:828,218
-DA:829,218
+FNDA:404,SlimPipeline/PipelineGraph SlimPipeline/PipelineGraphModule::singleton(System.String,SlimPipeline/ProfileTransition)
+DA:822,404
+DA:823,404
+DA:824,404
+DA:825,404
+DA:826,404
+DA:827,404
+DA:828,404
+DA:829,404
 FN:831,SlimPipeline/PipelineGraph SlimPipeline/PipelineGraphModule::merge(SlimPipeline/PipelineGraph,SlimPipeline/PipelineGraph)
 FNDA:1,SlimPipeline/PipelineGraph SlimPipeline/PipelineGraphModule::merge(SlimPipeline/PipelineGraph,SlimPipeline/PipelineGraph)
 DA:832,1
@@ -5527,31 +5527,31 @@ BRDA:840,144,0,0
 BRDA:840,160,0,0
 BRDA:840,160,1,1
 FN:845,SlimPipeline/PipelineGraph SlimPipeline/PipelineGraphModule::connect(System.String,SlimPipeline/PipelineGraph,SlimPipeline/PipelineGraph)
-FNDA:95,SlimPipeline/PipelineGraph SlimPipeline/PipelineGraphModule::connect(System.String,SlimPipeline/PipelineGraph,SlimPipeline/PipelineGraph)
-DA:846,95
-DA:847,285
-DA:848,380
-DA:849,190
-DA:851,95
-DA:852,95
-DA:853,95
-DA:854,190
-DA:855,95
-DA:856,285
-BRDA:847,111,1,95
-BRDA:848,73,1,95
-BRDA:848,73,0,95
-BRDA:847,111,0,95
+FNDA:179,SlimPipeline/PipelineGraph SlimPipeline/PipelineGraphModule::connect(System.String,SlimPipeline/PipelineGraph,SlimPipeline/PipelineGraph)
+DA:846,179
+DA:847,537
+DA:848,716
+DA:849,358
+DA:851,179
+DA:852,179
+DA:853,179
+DA:854,358
+DA:855,179
+DA:856,537
+BRDA:847,111,1,179
+BRDA:848,73,1,179
+BRDA:848,73,0,179
+BRDA:847,111,0,179
 BRDA:854,200,0,0
-BRDA:854,200,1,95
+BRDA:854,200,1,179
 BRDA:856,230,0,0
-BRDA:856,230,1,95
+BRDA:856,230,1,179
 FN:858,SlimPipeline/PipelineGraph SlimPipeline/PipelineGraphModule::appendNode(System.String,System.String,SlimPipeline/ProfileTransition,SlimPipeline/PipelineGraph)
 FNDA:2,SlimPipeline/PipelineGraph SlimPipeline/PipelineGraphModule::appendNode(System.String,System.String,SlimPipeline/ProfileTransition,SlimPipeline/PipelineGraph)
 DA:859,2
 FN:861,SlimPipeline/PipelineGraph SlimPipeline/PipelineGraphModule::compose(SlimPipeline/PipelineGraph,SlimPipeline/PipelineGraph)
-FNDA:93,SlimPipeline/PipelineGraph SlimPipeline/PipelineGraphModule::compose(SlimPipeline/PipelineGraph,SlimPipeline/PipelineGraph)
-DA:862,93
+FNDA:177,SlimPipeline/PipelineGraph SlimPipeline/PipelineGraphModule::compose(SlimPipeline/PipelineGraph,SlimPipeline/PipelineGraph)
+DA:862,177
 FN:864,SlimPipeline/PipelineGraph SlimPipeline/PipelineGraphModule::parallelJoin(System.String,SlimPipeline/PipelineGraph,SlimPipeline/PipelineGraph)
 FNDA:1,SlimPipeline/PipelineGraph SlimPipeline/PipelineGraphModule::parallelJoin(System.String,SlimPipeline/PipelineGraph,SlimPipeline/PipelineGraph)
 DA:865,1
@@ -5569,12 +5569,12 @@ BRDA:869,105,1,1
 BRDA:869,105,0,1
 BRDA:868,144,0,1
 FN:811,System.Int32 SlimPipeline/PipelineGraphModule/nextNodeId@811::Invoke(Microsoft.FSharp.Core.Unit)
-FNDA:218,System.Int32 SlimPipeline/PipelineGraphModule/nextNodeId@811::Invoke(Microsoft.FSharp.Core.Unit)
-DA:812,218
-DA:813,218
+FNDA:404,System.Int32 SlimPipeline/PipelineGraphModule/nextNodeId@811::Invoke(Microsoft.FSharp.Core.Unit)
+DA:812,404
+DA:813,404
 FN:783,System.Void SlimPipeline/DebugLevel::set(System.UInt32)
-FNDA:27,System.Void SlimPipeline/DebugLevel::set(System.UInt32)
-DA:784,27
+FNDA:45,System.Void SlimPipeline/DebugLevel::set(System.UInt32)
+DA:784,45
 FN:785,System.UInt32 SlimPipeline/DebugLevel::current()
 FNDA:0,System.UInt32 SlimPipeline/DebugLevel::current()
 DA:786,0
@@ -5594,8 +5594,8 @@ FNDA:0,T SlimPipeline/ResourceOps::retainAndReturn(SlimPipeline/ResourceOps`1<T>
 DA:772,0
 DA:773,0
 FN:775,System.Void SlimPipeline/ResourceOps::release(SlimPipeline/ResourceOps`1<T>,T)
-FNDA:100,System.Void SlimPipeline/ResourceOps::release(SlimPipeline/ResourceOps`1<T>,T)
-DA:776,100
+FNDA:188,System.Void SlimPipeline/ResourceOps::release(SlimPipeline/ResourceOps`1<T>,T)
+DA:776,188
 FN:778,Microsoft.FSharp.Core.FSharpOption`1<System.UInt64> SlimPipeline/ResourceOps::memoryOf(SlimPipeline/ResourceOps`1<T>,T)
 FNDA:0,Microsoft.FSharp.Core.FSharpOption`1<System.UInt64> SlimPipeline/ResourceOps::memoryOf(SlimPipeline/ResourceOps`1<T>,T)
 DA:779,0
@@ -5655,90 +5655,90 @@ FN:728,Microsoft.FSharp.Control.FSharpAsync`1<Microsoft.FSharp.Core.Unit> SlimPi
 FNDA:0,Microsoft.FSharp.Control.FSharpAsync`1<Microsoft.FSharp.Core.Unit> SlimPipeline/MemoryProbe/loop@729-15::Invoke(Microsoft.FSharp.Core.Unit)
 DA:729,0
 FN:693,SlimPipeline/SourcePeek SlimPipeline/SourcePeekModule::create(System.String,System.UInt64,Microsoft.FSharp.Core.FSharpOption`1<System.UInt64>,Microsoft.FSharp.Collections.FSharpMap`2<System.String,System.String>)
-FNDA:26,SlimPipeline/SourcePeek SlimPipeline/SourcePeekModule::create(System.String,System.UInt64,Microsoft.FSharp.Core.FSharpOption`1<System.UInt64>,Microsoft.FSharp.Collections.FSharpMap`2<System.String,System.String>)
-DA:694,26
-DA:695,26
-DA:696,26
-DA:697,26
+FNDA:44,SlimPipeline/SourcePeek SlimPipeline/SourcePeekModule::create(System.String,System.UInt64,Microsoft.FSharp.Core.FSharpOption`1<System.UInt64>,Microsoft.FSharp.Collections.FSharpMap`2<System.String,System.String>)
+DA:694,44
+DA:695,44
+DA:696,44
+DA:697,44
 FN:656,SlimPipeline/StageCostModel SlimPipeline/StageCostModelModule::create(SlimPipeline/StageMemoryModel,SlimPipeline/StageWorkModel)
-FNDA:280,SlimPipeline/StageCostModel SlimPipeline/StageCostModelModule::create(SlimPipeline/StageMemoryModel,SlimPipeline/StageWorkModel)
-DA:657,280
-DA:658,280
+FNDA:520,SlimPipeline/StageCostModel SlimPipeline/StageCostModelModule::create(SlimPipeline/StageMemoryModel,SlimPipeline/StageWorkModel)
+DA:657,520
+DA:658,520
 FN:660,SlimPipeline/StageCostModel SlimPipeline/StageCostModelModule::fromMemory(SlimPipeline/StageMemoryModel)
-FNDA:121,SlimPipeline/StageCostModel SlimPipeline/StageCostModelModule::fromMemory(SlimPipeline/StageMemoryModel)
-DA:661,121
+FNDA:223,SlimPipeline/StageCostModel SlimPipeline/StageCostModelModule::fromMemory(SlimPipeline/StageMemoryModel)
+DA:661,223
 FN:663,SlimPipeline/StageCostPressure SlimPipeline/StageCostModelModule::estimate(SlimPipeline/StageCostModel,SlimPipeline/SingleOrPair)
-FNDA:84,SlimPipeline/StageCostPressure SlimPipeline/StageCostModelModule::estimate(SlimPipeline/StageCostModel,SlimPipeline/SingleOrPair)
-DA:664,84
-DA:665,84
+FNDA:156,SlimPipeline/StageCostPressure SlimPipeline/StageCostModelModule::estimate(SlimPipeline/StageCostModel,SlimPipeline/SingleOrPair)
+DA:664,156
+DA:665,156
 FN:667,SlimPipeline/SingleOrPair SlimPipeline/StageCostModelModule::memoryNeed(SlimPipeline/StageCostModel,SlimPipeline/SingleOrPair)
-FNDA:93,SlimPipeline/SingleOrPair SlimPipeline/StageCostModelModule::memoryNeed(SlimPipeline/StageCostModel,SlimPipeline/SingleOrPair)
-DA:668,93
+FNDA:165,SlimPipeline/SingleOrPair SlimPipeline/StageCostModelModule::memoryNeed(SlimPipeline/StageCostModel,SlimPipeline/SingleOrPair)
+DA:668,165
 FN:670,SlimPipeline/StageCostModel SlimPipeline/StageCostModelModule::combine(SlimPipeline/StageEvaluation,SlimPipeline/StageCostModel,SlimPipeline/StageCostModel)
-FNDA:93,SlimPipeline/StageCostModel SlimPipeline/StageCostModelModule::combine(SlimPipeline/StageEvaluation,SlimPipeline/StageCostModel,SlimPipeline/StageCostModel)
-DA:671,93
-DA:672,93
-DA:673,93
-DA:674,93
-DA:675,26
-DA:676,26
-DA:677,119
-DA:678,93
-DA:679,93
-DA:680,93
-DA:681,93
-DA:682,93
-DA:683,105
-DA:684,93
+FNDA:177,SlimPipeline/StageCostModel SlimPipeline/StageCostModelModule::combine(SlimPipeline/StageEvaluation,SlimPipeline/StageCostModel,SlimPipeline/StageCostModel)
+DA:671,177
+DA:672,177
+DA:673,177
+DA:674,177
+DA:675,50
+DA:676,50
+DA:677,227
+DA:678,177
+DA:679,177
+DA:680,177
+DA:681,177
+DA:682,177
+DA:683,201
+DA:684,177
 FN:647,SlimPipeline/StageCostPressure SlimPipeline/StageCostPressureModule::add(SlimPipeline/StageCostPressure,SlimPipeline/StageCostPressure)
 FNDA:0,SlimPipeline/StageCostPressure SlimPipeline/StageCostPressureModule::add(SlimPipeline/StageCostPressure,SlimPipeline/StageCostPressure)
 DA:648,0
 DA:649,0
 FN:600,System.Double SlimPipeline/StageWorkModelModule::elementCount(SlimPipeline/SingleOrPair)
-FNDA:208,System.Double SlimPipeline/StageWorkModelModule::elementCount(SlimPipeline/SingleOrPair)
-DA:601,208
+FNDA:400,System.Double SlimPipeline/StageWorkModelModule::elementCount(SlimPipeline/SingleOrPair)
+DA:601,400
 FN:603,SlimPipeline/StageWorkModel SlimPipeline/StageWorkModelModule::zero(SlimPipeline/StageEvaluation)
 FNDA:0,SlimPipeline/StageWorkModel SlimPipeline/StageWorkModelModule::zero(SlimPipeline/StageEvaluation)
 DA:604,0
 DA:605,0
 DA:606,0
 FN:608,SlimPipeline/StageWorkModel SlimPipeline/StageWorkModelModule::cpu(SlimPipeline/StageEvaluation,Microsoft.FSharp.Core.FSharpOption`1<System.String>,Microsoft.FSharp.Core.FSharpFunc`2<SlimPipeline/SingleOrPair,System.Double>)
-FNDA:139,SlimPipeline/StageWorkModel SlimPipeline/StageWorkModelModule::cpu(SlimPipeline/StageEvaluation,Microsoft.FSharp.Core.FSharpOption`1<System.String>,Microsoft.FSharp.Core.FSharpFunc`2<SlimPipeline/SingleOrPair,System.Double>)
-DA:609,139
-DA:610,139
-DA:611,187
+FNDA:253,SlimPipeline/StageWorkModel SlimPipeline/StageWorkModelModule::cpu(SlimPipeline/StageEvaluation,Microsoft.FSharp.Core.FSharpOption`1<System.String>,Microsoft.FSharp.Core.FSharpFunc`2<SlimPipeline/SingleOrPair,System.Double>)
+DA:609,253
+DA:610,253
+DA:611,343
 FN:613,SlimPipeline/StageWorkModel SlimPipeline/StageWorkModelModule::native(SlimPipeline/StageEvaluation,Microsoft.FSharp.Core.FSharpOption`1<System.String>,Microsoft.FSharp.Core.FSharpFunc`2<SlimPipeline/SingleOrPair,System.Double>)
-FNDA:7,SlimPipeline/StageWorkModel SlimPipeline/StageWorkModelModule::native(SlimPipeline/StageEvaluation,Microsoft.FSharp.Core.FSharpOption`1<System.String>,Microsoft.FSharp.Core.FSharpFunc`2<SlimPipeline/SingleOrPair,System.Double>)
-DA:614,7
-DA:615,7
-DA:616,14
+FNDA:13,SlimPipeline/StageWorkModel SlimPipeline/StageWorkModelModule::native(SlimPipeline/StageEvaluation,Microsoft.FSharp.Core.FSharpOption`1<System.String>,Microsoft.FSharp.Core.FSharpFunc`2<SlimPipeline/SingleOrPair,System.Double>)
+DA:614,13
+DA:615,13
+DA:616,26
 FN:618,SlimPipeline/StageWorkModel SlimPipeline/StageWorkModelModule::ioRead(SlimPipeline/StageEvaluation,Microsoft.FSharp.Core.FSharpOption`1<System.String>,Microsoft.FSharp.Core.FSharpFunc`2<SlimPipeline/SingleOrPair,System.UInt64>,Microsoft.FSharp.Core.FSharpFunc`2<SlimPipeline/SingleOrPair,System.UInt64>)
-FNDA:24,SlimPipeline/StageWorkModel SlimPipeline/StageWorkModelModule::ioRead(SlimPipeline/StageEvaluation,Microsoft.FSharp.Core.FSharpOption`1<System.String>,Microsoft.FSharp.Core.FSharpFunc`2<SlimPipeline/SingleOrPair,System.UInt64>,Microsoft.FSharp.Core.FSharpFunc`2<SlimPipeline/SingleOrPair,System.UInt64>)
-DA:619,24
-DA:620,24
-DA:621,50
+FNDA:42,SlimPipeline/StageWorkModel SlimPipeline/StageWorkModelModule::ioRead(SlimPipeline/StageEvaluation,Microsoft.FSharp.Core.FSharpOption`1<System.String>,Microsoft.FSharp.Core.FSharpFunc`2<SlimPipeline/SingleOrPair,System.UInt64>,Microsoft.FSharp.Core.FSharpFunc`2<SlimPipeline/SingleOrPair,System.UInt64>)
+DA:619,42
+DA:620,42
+DA:621,86
 FN:623,SlimPipeline/StageWorkModel SlimPipeline/StageWorkModelModule::ioWrite(SlimPipeline/StageEvaluation,Microsoft.FSharp.Core.FSharpOption`1<System.String>,Microsoft.FSharp.Core.FSharpFunc`2<SlimPipeline/SingleOrPair,System.UInt64>,Microsoft.FSharp.Core.FSharpFunc`2<SlimPipeline/SingleOrPair,System.UInt64>)
-FNDA:16,SlimPipeline/StageWorkModel SlimPipeline/StageWorkModelModule::ioWrite(SlimPipeline/StageEvaluation,Microsoft.FSharp.Core.FSharpOption`1<System.String>,Microsoft.FSharp.Core.FSharpFunc`2<SlimPipeline/SingleOrPair,System.UInt64>,Microsoft.FSharp.Core.FSharpFunc`2<SlimPipeline/SingleOrPair,System.UInt64>)
-DA:624,16
-DA:625,16
-DA:626,32
+FNDA:34,SlimPipeline/StageWorkModel SlimPipeline/StageWorkModelModule::ioWrite(SlimPipeline/StageEvaluation,Microsoft.FSharp.Core.FSharpOption`1<System.String>,Microsoft.FSharp.Core.FSharpFunc`2<SlimPipeline/SingleOrPair,System.UInt64>,Microsoft.FSharp.Core.FSharpFunc`2<SlimPipeline/SingleOrPair,System.UInt64>)
+DA:624,34
+DA:625,34
+DA:626,68
 FN:628,SlimPipeline/StageWorkModel SlimPipeline/StageWorkModelModule::fromEvaluation(SlimPipeline/StageEvaluation,Microsoft.FSharp.Core.FSharpOption`1<System.String>)
-FNDA:121,SlimPipeline/StageWorkModel SlimPipeline/StageWorkModelModule::fromEvaluation(SlimPipeline/StageEvaluation,Microsoft.FSharp.Core.FSharpOption`1<System.String>)
-DA:629,121
+FNDA:223,SlimPipeline/StageWorkModel SlimPipeline/StageWorkModelModule::fromEvaluation(SlimPipeline/StageEvaluation,Microsoft.FSharp.Core.FSharpOption`1<System.String>)
+DA:629,223
 DA:632,0
-DA:638,115
-DA:640,12
+DA:638,211
+DA:640,24
 BRDA:629,8,7,0
-BRDA:629,8,10,64
+BRDA:629,8,10,117
 BRDA:629,8,0,0
 BRDA:629,8,1,0
 BRDA:629,8,3,0
 BRDA:629,8,9,0
-BRDA:629,8,2,115
-BRDA:629,8,5,115
-BRDA:629,8,6,115
-BRDA:629,8,8,115
-BRDA:629,8,4,6
+BRDA:629,8,2,211
+BRDA:629,8,5,211
+BRDA:629,8,6,211
+BRDA:629,8,8,211
+BRDA:629,8,4,12
 FN:550,System.Void SlimPipeline/StageCostCalibration::clear()
 FNDA:0,System.Void SlimPipeline/StageCostCalibration::clear()
 DA:551,0
@@ -5815,34 +5815,34 @@ DA:543,0
 DA:544,0
 DA:545,0
 FN:499,SlimPipeline/StageWorkPressure SlimPipeline/StageWorkPressureModule::create(System.Double,System.Double,System.UInt64,System.UInt64,System.UInt64,System.UInt64,Microsoft.FSharp.Core.FSharpOption`1<System.String>)
-FNDA:97,SlimPipeline/StageWorkPressure SlimPipeline/StageWorkPressureModule::create(System.Double,System.Double,System.UInt64,System.UInt64,System.UInt64,System.UInt64,Microsoft.FSharp.Core.FSharpOption`1<System.String>)
-DA:500,97
-DA:501,97
-DA:502,97
-DA:503,97
-DA:504,97
-DA:505,97
-DA:506,97
+FNDA:181,SlimPipeline/StageWorkPressure SlimPipeline/StageWorkPressureModule::create(System.Double,System.Double,System.UInt64,System.UInt64,System.UInt64,System.UInt64,Microsoft.FSharp.Core.FSharpOption`1<System.String>)
+DA:500,181
+DA:501,181
+DA:502,181
+DA:503,181
+DA:504,181
+DA:505,181
+DA:506,181
 FN:508,SlimPipeline/StageWorkPressure SlimPipeline/StageWorkPressureModule::add(SlimPipeline/StageWorkPressure,SlimPipeline/StageWorkPressure)
-FNDA:13,SlimPipeline/StageWorkPressure SlimPipeline/StageWorkPressureModule::add(SlimPipeline/StageWorkPressure,SlimPipeline/StageWorkPressure)
-DA:509,13
-DA:510,13
-DA:511,13
-DA:512,13
-DA:513,13
-DA:514,13
-DA:515,13
+FNDA:25,SlimPipeline/StageWorkPressure SlimPipeline/StageWorkPressureModule::add(SlimPipeline/StageWorkPressure,SlimPipeline/StageWorkPressure)
+DA:509,25
+DA:510,25
+DA:511,25
+DA:512,25
+DA:513,25
+DA:514,25
+DA:515,25
 FN:431,System.UInt64 SlimPipeline/StageMemoryModelModule::bytesOf(SlimPipeline/SingleOrPair)
-FNDA:36,System.UInt64 SlimPipeline/StageMemoryModelModule::bytesOf(SlimPipeline/SingleOrPair)
-DA:432,36
+FNDA:72,System.UInt64 SlimPipeline/StageMemoryModelModule::bytesOf(SlimPipeline/SingleOrPair)
+DA:432,72
 FN:434,SlimPipeline/StageMemoryModel SlimPipeline/StageMemoryModelModule::fromPeak(SlimPipeline/StageEvaluation,Microsoft.FSharp.Core.FSharpFunc`2<SlimPipeline/SingleOrPair,SlimPipeline/SingleOrPair>)
-FNDA:181,SlimPipeline/StageMemoryModel SlimPipeline/StageMemoryModelModule::fromPeak(SlimPipeline/StageEvaluation,Microsoft.FSharp.Core.FSharpFunc`2<SlimPipeline/SingleOrPair,SlimPipeline/SingleOrPair>)
-DA:435,181
-DA:436,181
+FNDA:331,SlimPipeline/StageMemoryModel SlimPipeline/StageMemoryModelModule::fromPeak(SlimPipeline/StageEvaluation,Microsoft.FSharp.Core.FSharpFunc`2<SlimPipeline/SingleOrPair,SlimPipeline/SingleOrPair>)
+DA:435,331
+DA:436,331
 FN:438,SlimPipeline/StageMemoryModel SlimPipeline/StageMemoryModelModule::fromSinglePeak(SlimPipeline/StageEvaluation,Microsoft.FSharp.Core.FSharpFunc`2<System.UInt64,System.UInt64>)
-FNDA:116,SlimPipeline/StageMemoryModel SlimPipeline/StageMemoryModelModule::fromSinglePeak(SlimPipeline/StageEvaluation,Microsoft.FSharp.Core.FSharpFunc`2<System.UInt64,System.UInt64>)
-DA:439,116
-DA:440,116
+FNDA:213,SlimPipeline/StageMemoryModel SlimPipeline/StageMemoryModelModule::fromSinglePeak(SlimPipeline/StageEvaluation,Microsoft.FSharp.Core.FSharpFunc`2<System.UInt64,System.UInt64>)
+DA:439,213
+DA:440,213
 FN:442,SlimPipeline/StageMemoryModel SlimPipeline/StageMemoryModelModule::mapLike(Microsoft.FSharp.Core.FSharpFunc`2<System.UInt64,System.UInt64>,Microsoft.FSharp.Core.FSharpFunc`2<System.UInt64,System.UInt64>)
 FNDA:0,SlimPipeline/StageMemoryModel SlimPipeline/StageMemoryModelModule::mapLike(Microsoft.FSharp.Core.FSharpFunc`2<System.UInt64,System.UInt64>,Microsoft.FSharp.Core.FSharpFunc`2<System.UInt64,System.UInt64>)
 DA:443,0
@@ -5858,13 +5858,13 @@ DA:452,0
 DA:453,0
 DA:454,0
 FN:456,SlimPipeline/StageMemoryModel SlimPipeline/StageMemoryModelModule::windowLike(System.UInt32,System.UInt32,System.UInt32)
-FNDA:6,SlimPipeline/StageMemoryModel SlimPipeline/StageMemoryModelModule::windowLike(System.UInt32,System.UInt32,System.UInt32)
-DA:457,6
-DA:458,6
-DA:459,6
-DA:460,12
-DA:461,12
-DA:462,18
+FNDA:12,SlimPipeline/StageMemoryModel SlimPipeline/StageMemoryModelModule::windowLike(System.UInt32,System.UInt32,System.UInt32)
+DA:457,12
+DA:458,12
+DA:459,12
+DA:460,24
+DA:461,24
+DA:462,36
 FN:464,SlimPipeline/StageMemoryModel SlimPipeline/StageMemoryModelModule::reduceLike(Microsoft.FSharp.Core.FSharpFunc`2<System.UInt64,System.UInt64>,Microsoft.FSharp.Core.FSharpFunc`2<System.UInt64,System.UInt64>)
 FNDA:0,SlimPipeline/StageMemoryModel SlimPipeline/StageMemoryModelModule::reduceLike(Microsoft.FSharp.Core.FSharpFunc`2<System.UInt64,System.UInt64>,Microsoft.FSharp.Core.FSharpFunc`2<System.UInt64,System.UInt64>)
 DA:465,0
@@ -5873,34 +5873,34 @@ DA:467,0
 DA:468,0
 DA:469,0
 FN:471,SlimPipeline/SingleOrPair SlimPipeline/StageMemoryModelModule::memoryNeed(SlimPipeline/StageMemoryModel,SlimPipeline/SingleOrPair)
-FNDA:279,SlimPipeline/SingleOrPair SlimPipeline/StageMemoryModelModule::memoryNeed(SlimPipeline/StageMemoryModel,SlimPipeline/SingleOrPair)
-DA:472,279
+FNDA:495,SlimPipeline/SingleOrPair SlimPipeline/StageMemoryModelModule::memoryNeed(SlimPipeline/StageMemoryModel,SlimPipeline/SingleOrPair)
+DA:472,495
 FN:411,SlimPipeline/StageMemoryPressure SlimPipeline/StageMemoryPressureModule::create(System.UInt64,System.UInt64,System.UInt64,System.UInt64)
-FNDA:13,SlimPipeline/StageMemoryPressure SlimPipeline/StageMemoryPressureModule::create(System.UInt64,System.UInt64,System.UInt64,System.UInt64)
-DA:412,13
-DA:413,13
-DA:414,13
-DA:415,13
-DA:416,13
-DA:417,13
+FNDA:25,SlimPipeline/StageMemoryPressure SlimPipeline/StageMemoryPressureModule::create(System.UInt64,System.UInt64,System.UInt64,System.UInt64)
+DA:412,25
+DA:413,25
+DA:414,25
+DA:415,25
+DA:416,25
+DA:417,25
 FN:419,SlimPipeline/StageMemoryPressure SlimPipeline/StageMemoryPressureModule::fromPeak(System.UInt64)
-FNDA:217,SlimPipeline/StageMemoryPressure SlimPipeline/StageMemoryPressureModule::fromPeak(System.UInt64)
-DA:420,217
-DA:421,217
-DA:422,217
-DA:423,217
-DA:424,217
+FNDA:397,SlimPipeline/StageMemoryPressure SlimPipeline/StageMemoryPressureModule::fromPeak(System.UInt64)
+DA:420,397
+DA:421,397
+DA:422,397
+DA:423,397
+DA:424,397
 FN:115,SlimPipeline/Pipe`2<S,T> SlimPipeline/Pipe::create(System.String,Microsoft.FSharp.Core.FSharpFunc`2<System.Boolean,Microsoft.FSharp.Core.FSharpFunc`2<FSharp.Control.IAsyncEnumerable`1<S>,FSharp.Control.IAsyncEnumerable`1<T>>>,SlimPipeline/Profile)
-FNDA:221,SlimPipeline/Pipe`2<S,T> SlimPipeline/Pipe::create(System.String,Microsoft.FSharp.Core.FSharpFunc`2<System.Boolean,Microsoft.FSharp.Core.FSharpFunc`2<FSharp.Control.IAsyncEnumerable`1<S>,FSharp.Control.IAsyncEnumerable`1<T>>>,SlimPipeline/Profile)
-DA:116,221
+FNDA:407,SlimPipeline/Pipe`2<S,T> SlimPipeline/Pipe::create(System.String,Microsoft.FSharp.Core.FSharpFunc`2<System.Boolean,Microsoft.FSharp.Core.FSharpFunc`2<FSharp.Control.IAsyncEnumerable`1<S>,FSharp.Control.IAsyncEnumerable`1<T>>>,SlimPipeline/Profile)
+DA:116,407
 FN:118,Microsoft.FSharp.Control.FSharpAsync`1<Microsoft.FSharp.Core.Unit> SlimPipeline/Pipe::runWith(System.Boolean,S,SlimPipeline/Pipe`2<S,T>)
-FNDA:16,Microsoft.FSharp.Control.FSharpAsync`1<Microsoft.FSharp.Core.Unit> SlimPipeline/Pipe::runWith(System.Boolean,S,SlimPipeline/Pipe`2<S,T>)
-DA:119,16
-DA:120,16
-DA:121,32
+FNDA:34,Microsoft.FSharp.Control.FSharpAsync`1<Microsoft.FSharp.Core.Unit> SlimPipeline/Pipe::runWith(System.Boolean,S,SlimPipeline/Pipe`2<S,T>)
+DA:119,34
+DA:120,34
+DA:121,68
 FN:123,System.Void SlimPipeline/Pipe::run(System.Boolean,SlimPipeline/Pipe`2<Microsoft.FSharp.Core.Unit,Microsoft.FSharp.Core.Unit>)
-FNDA:32,System.Void SlimPipeline/Pipe::run(System.Boolean,SlimPipeline/Pipe`2<Microsoft.FSharp.Core.Unit,Microsoft.FSharp.Core.Unit>)
-DA:124,32
+FNDA:68,System.Void SlimPipeline/Pipe::run(System.Boolean,SlimPipeline/Pipe`2<Microsoft.FSharp.Core.Unit,Microsoft.FSharp.Core.Unit>)
+DA:124,68
 FN:127,SlimPipeline/Pipe`2<S,T> SlimPipeline/Pipe::lift(System.String,SlimPipeline/Profile,Microsoft.FSharp.Core.FSharpFunc`2<S,T>)
 FNDA:1,SlimPipeline/Pipe`2<S,T> SlimPipeline/Pipe::lift(System.String,SlimPipeline/Profile,Microsoft.FSharp.Core.FSharpFunc`2<S,T>)
 DA:128,1
@@ -5908,15 +5908,15 @@ FN:131,SlimPipeline/Pipe`2<Microsoft.FSharp.Core.Unit,Microsoft.FSharp.Core.Unit
 FNDA:0,SlimPipeline/Pipe`2<Microsoft.FSharp.Core.Unit,Microsoft.FSharp.Core.Unit> SlimPipeline/Pipe::empty(System.String)
 DA:132,0
 FN:135,SlimPipeline/Pipe`2<Microsoft.FSharp.Core.Unit,T> SlimPipeline/Pipe::init(System.String,System.UInt32,Microsoft.FSharp.Core.FSharpFunc`2<System.Int32,T>,SlimPipeline/Profile)
-FNDA:26,SlimPipeline/Pipe`2<Microsoft.FSharp.Core.Unit,T> SlimPipeline/Pipe::init(System.String,System.UInt32,Microsoft.FSharp.Core.FSharpFunc`2<System.Int32,T>,SlimPipeline/Profile)
-DA:136,26
+FNDA:44,SlimPipeline/Pipe`2<Microsoft.FSharp.Core.Unit,T> SlimPipeline/Pipe::init(System.String,System.UInt32,Microsoft.FSharp.Core.FSharpFunc`2<System.Int32,T>,SlimPipeline/Profile)
+DA:136,44
 FN:143,SlimPipeline/Pipe`2<S,T> SlimPipeline/Pipe::liftRelease(System.String,SlimPipeline/Profile,Microsoft.FSharp.Core.FSharpFunc`2<S,Microsoft.FSharp.Core.Unit>,Microsoft.FSharp.Core.FSharpFunc`2<S,T>)
-FNDA:14,SlimPipeline/Pipe`2<S,T> SlimPipeline/Pipe::liftRelease(System.String,SlimPipeline/Profile,Microsoft.FSharp.Core.FSharpFunc`2<S,Microsoft.FSharp.Core.Unit>,Microsoft.FSharp.Core.FSharpFunc`2<S,T>)
-DA:144,14
+FNDA:25,SlimPipeline/Pipe`2<S,T> SlimPipeline/Pipe::liftRelease(System.String,SlimPipeline/Profile,Microsoft.FSharp.Core.FSharpFunc`2<S,Microsoft.FSharp.Core.Unit>,Microsoft.FSharp.Core.FSharpFunc`2<S,T>)
+DA:144,25
 FN:147,SlimPipeline/Pipe`2<S,U> SlimPipeline/Pipe::compose(SlimPipeline/Pipe`2<S,T>,SlimPipeline/Pipe`2<T,U>)
-FNDA:93,SlimPipeline/Pipe`2<S,U> SlimPipeline/Pipe::compose(SlimPipeline/Pipe`2<S,T>,SlimPipeline/Pipe`2<T,U>)
-DA:148,93
-DA:150,93
+FNDA:177,SlimPipeline/Pipe`2<S,U> SlimPipeline/Pipe::compose(SlimPipeline/Pipe`2<S,T>,SlimPipeline/Pipe`2<T,U>)
+DA:148,177
+DA:150,177
 FN:153,SlimPipeline/Pipe`2<a,a> SlimPipeline/Pipe::skip(System.String,System.UInt32)
 FNDA:0,SlimPipeline/Pipe`2<a,a> SlimPipeline/Pipe::skip(System.String,System.UInt32)
 DA:154,0
@@ -5966,19 +5966,19 @@ FN:316,SlimPipeline/Pipe`2<T,Microsoft.FSharp.Core.Unit> SlimPipeline/Pipe::cons
 FNDA:0,SlimPipeline/Pipe`2<T,Microsoft.FSharp.Core.Unit> SlimPipeline/Pipe::consumeWith(System.String,Microsoft.FSharp.Core.FSharpFunc`2<System.Boolean,Microsoft.FSharp.Core.FSharpFunc`2<System.Int32,Microsoft.FSharp.Core.FSharpFunc`2<T,Microsoft.FSharp.Core.Unit>>>,SlimPipeline/Profile)
 DA:317,0
 FN:342,SlimPipeline/Pipe`2<T,Microsoft.FSharp.Collections.FSharpList`1<T>> SlimPipeline/Pipe::window(System.String,System.UInt32,System.UInt32,Microsoft.FSharp.Core.FSharpFunc`2<System.Int32,Microsoft.FSharp.Core.FSharpFunc`2<T,T>>,System.UInt32)
-FNDA:6,SlimPipeline/Pipe`2<T,Microsoft.FSharp.Collections.FSharpList`1<T>> SlimPipeline/Pipe::window(System.String,System.UInt32,System.UInt32,Microsoft.FSharp.Core.FSharpFunc`2<System.Int32,Microsoft.FSharp.Core.FSharpFunc`2<T,T>>,System.UInt32)
-DA:343,6
-DA:344,6
+FNDA:12,SlimPipeline/Pipe`2<T,Microsoft.FSharp.Collections.FSharpList`1<T>> SlimPipeline/Pipe::window(System.String,System.UInt32,System.UInt32,Microsoft.FSharp.Core.FSharpFunc`2<System.Int32,Microsoft.FSharp.Core.FSharpFunc`2<T,T>>,System.UInt32)
+DA:343,12
+DA:344,12
 FN:349,SlimPipeline/Pipe`2<S,T> SlimPipeline/Pipe::collect(System.String,Microsoft.FSharp.Core.FSharpFunc`2<S,Microsoft.FSharp.Collections.FSharpList`1<T>>)
-FNDA:4,SlimPipeline/Pipe`2<S,T> SlimPipeline/Pipe::collect(System.String,Microsoft.FSharp.Core.FSharpFunc`2<S,Microsoft.FSharp.Collections.FSharpList`1<T>>)
-DA:350,4
-DA:351,4
+FNDA:10,SlimPipeline/Pipe`2<S,T> SlimPipeline/Pipe::collect(System.String,Microsoft.FSharp.Core.FSharpFunc`2<S,Microsoft.FSharp.Collections.FSharpList`1<T>>)
+DA:350,10
+DA:351,10
 FN:361,SlimPipeline/Pipe`2<Microsoft.FSharp.Collections.FSharpList`1<T>,T> SlimPipeline/Pipe::flatten(System.String)
-FNDA:24,SlimPipeline/Pipe`2<Microsoft.FSharp.Collections.FSharpList`1<T>,T> SlimPipeline/Pipe::flatten(System.String)
-DA:362,24
+FNDA:66,SlimPipeline/Pipe`2<Microsoft.FSharp.Collections.FSharpList`1<T>,T> SlimPipeline/Pipe::flatten(System.String)
+DA:362,66
 FN:371,SlimPipeline/Pipe`2<T,Microsoft.FSharp.Core.Unit> SlimPipeline/Pipe::ignore(Microsoft.FSharp.Core.FSharpFunc`2<T,Microsoft.FSharp.Core.Unit>)
-FNDA:16,SlimPipeline/Pipe`2<T,Microsoft.FSharp.Core.Unit> SlimPipeline/Pipe::ignore(Microsoft.FSharp.Core.FSharpFunc`2<T,Microsoft.FSharp.Core.Unit>)
-DA:372,16
+FNDA:34,SlimPipeline/Pipe`2<T,Microsoft.FSharp.Core.Unit> SlimPipeline/Pipe::ignore(Microsoft.FSharp.Core.FSharpFunc`2<T,Microsoft.FSharp.Core.Unit>)
+DA:372,34
 FN:381,SlimPipeline/Pipe`2<System.Tuple`2<S,T>,Microsoft.FSharp.Core.Unit> SlimPipeline/Pipe::ignorePairs(Microsoft.FSharp.Core.FSharpFunc`2<S,Microsoft.FSharp.Core.Unit>,Microsoft.FSharp.Core.FSharpFunc`2<T,Microsoft.FSharp.Core.Unit>)
 FNDA:0,SlimPipeline/Pipe`2<System.Tuple`2<S,T>,Microsoft.FSharp.Core.Unit> SlimPipeline/Pipe::ignorePairs(Microsoft.FSharp.Core.FSharpFunc`2<S,Microsoft.FSharp.Core.Unit>,Microsoft.FSharp.Core.FSharpFunc`2<T,Microsoft.FSharp.Core.Unit>)
 DA:382,0
@@ -5989,19 +5989,19 @@ FN:130,FSharp.Control.IAsyncEnumerable`1<c> SlimPipeline/Pipe/apply@131-1TTT::In
 FNDA:0,FSharp.Control.IAsyncEnumerable`1<c> SlimPipeline/Pipe/apply@131-1TTT::Invoke(a,b)
 DA:131,0
 FN:134,T SlimPipeline/Pipe/apply@135-3::Invoke(System.Int64)
-FNDA:218,T SlimPipeline/Pipe/apply@135-3::Invoke(System.Int64)
-DA:135,218
+FNDA:392,T SlimPipeline/Pipe/apply@135-3::Invoke(System.Int64)
+DA:135,392
 FN:139,T SlimPipeline/Pipe/mapper@140::Invoke(S)
-FNDA:102,T SlimPipeline/Pipe/mapper@140::Invoke(S)
-DA:140,102
-DA:141,102
-DA:142,102
+FNDA:190,T SlimPipeline/Pipe/mapper@140::Invoke(S)
+DA:140,190
+DA:141,190
+DA:142,190
 FN:142,FSharp.Control.IAsyncEnumerable`1<T> SlimPipeline/Pipe/apply@143-4T::Invoke(a,FSharp.Control.IAsyncEnumerable`1<S>)
-FNDA:28,FSharp.Control.IAsyncEnumerable`1<T> SlimPipeline/Pipe/apply@143-4T::Invoke(a,FSharp.Control.IAsyncEnumerable`1<S>)
-DA:143,28
+FNDA:50,FSharp.Control.IAsyncEnumerable`1<T> SlimPipeline/Pipe/apply@143-4T::Invoke(a,FSharp.Control.IAsyncEnumerable`1<S>)
+DA:143,50
 FN:148,FSharp.Control.IAsyncEnumerable`1<U> SlimPipeline/Pipe/apply@149-5::Invoke(System.Boolean,FSharp.Control.IAsyncEnumerable`1<S>)
-FNDA:279,FSharp.Control.IAsyncEnumerable`1<U> SlimPipeline/Pipe/apply@149-5::Invoke(System.Boolean,FSharp.Control.IAsyncEnumerable`1<S>)
-DA:149,279
+FNDA:531,FSharp.Control.IAsyncEnumerable`1<U> SlimPipeline/Pipe/apply@149-5::Invoke(System.Boolean,FSharp.Control.IAsyncEnumerable`1<S>)
+DA:149,531
 FN:152,FSharp.Control.IAsyncEnumerable`1<c> SlimPipeline/Pipe/apply@153-6TT::Invoke(b,FSharp.Control.IAsyncEnumerable`1<c>)
 FNDA:0,FSharp.Control.IAsyncEnumerable`1<c> SlimPipeline/Pipe/apply@153-6TT::Invoke(b,FSharp.Control.IAsyncEnumerable`1<c>)
 DA:153,0
@@ -6183,20 +6183,20 @@ FN:312,FSharp.Control.IAsyncEnumerable`1<Microsoft.FSharp.Core.Unit> SlimPipelin
 FNDA:0,FSharp.Control.IAsyncEnumerable`1<Microsoft.FSharp.Core.Unit> SlimPipeline/Pipe/apply@313-18::Invoke(System.Boolean,FSharp.Control.IAsyncEnumerable`1<T>)
 DA:313,0
 FN:341,FSharp.Control.IAsyncEnumerable`1<Microsoft.FSharp.Collections.FSharpList`1<T>> SlimPipeline/Pipe/apply@340-23T::Invoke(a,FSharp.Control.IAsyncEnumerable`1<T>)
-FNDA:6,FSharp.Control.IAsyncEnumerable`1<Microsoft.FSharp.Collections.FSharpList`1<T>> SlimPipeline/Pipe/apply@340-23T::Invoke(a,FSharp.Control.IAsyncEnumerable`1<T>)
-DA:342,6
+FNDA:12,FSharp.Control.IAsyncEnumerable`1<Microsoft.FSharp.Collections.FSharpList`1<T>> SlimPipeline/Pipe/apply@340-23T::Invoke(a,FSharp.Control.IAsyncEnumerable`1<T>)
+DA:342,12
 FN:348,FSharp.Control.IAsyncEnumerable`1<T> SlimPipeline/Pipe/apply@348-24T::Invoke(a,FSharp.Control.IAsyncEnumerable`1<S>)
-FNDA:8,FSharp.Control.IAsyncEnumerable`1<T> SlimPipeline/Pipe/apply@348-24T::Invoke(a,FSharp.Control.IAsyncEnumerable`1<S>)
-DA:349,8
+FNDA:20,FSharp.Control.IAsyncEnumerable`1<T> SlimPipeline/Pipe/apply@348-24T::Invoke(a,FSharp.Control.IAsyncEnumerable`1<S>)
+DA:349,20
 FN:367,Microsoft.FSharp.Control.FSharpAsync`1<Microsoft.FSharp.Core.Unit> SlimPipeline/Pipe/apply@368-29::Invoke(T)
-FNDA:304,Microsoft.FSharp.Control.FSharpAsync`1<Microsoft.FSharp.Core.Unit> SlimPipeline/Pipe/apply@368-29::Invoke(T)
-DA:368,304
+FNDA:634,Microsoft.FSharp.Control.FSharpAsync`1<Microsoft.FSharp.Core.Unit> SlimPipeline/Pipe/apply@368-29::Invoke(T)
+DA:368,634
 FN:369,FSharp.Control.IAsyncEnumerable`1<Microsoft.FSharp.Core.Unit> SlimPipeline/Pipe/apply@370-31::Invoke(Microsoft.FSharp.Core.Unit)
-FNDA:16,FSharp.Control.IAsyncEnumerable`1<Microsoft.FSharp.Core.Unit> SlimPipeline/Pipe/apply@370-31::Invoke(Microsoft.FSharp.Core.Unit)
-DA:370,16
+FNDA:34,FSharp.Control.IAsyncEnumerable`1<Microsoft.FSharp.Core.Unit> SlimPipeline/Pipe/apply@370-31::Invoke(Microsoft.FSharp.Core.Unit)
+DA:370,34
 FN:365,FSharp.Control.IAsyncEnumerable`1<Microsoft.FSharp.Core.Unit> SlimPipeline/Pipe/apply@365-27T::Invoke(a,FSharp.Control.IAsyncEnumerable`1<T>)
-FNDA:16,FSharp.Control.IAsyncEnumerable`1<Microsoft.FSharp.Core.Unit> SlimPipeline/Pipe/apply@365-27T::Invoke(a,FSharp.Control.IAsyncEnumerable`1<T>)
-DA:366,16
+FNDA:34,FSharp.Control.IAsyncEnumerable`1<Microsoft.FSharp.Core.Unit> SlimPipeline/Pipe/apply@365-27T::Invoke(a,FSharp.Control.IAsyncEnumerable`1<T>)
+DA:366,34
 FN:377,Microsoft.FSharp.Control.FSharpAsync`1<Microsoft.FSharp.Core.Unit> SlimPipeline/Pipe/apply@378-34::Invoke(System.Tuple`2<S,T>)
 FNDA:0,Microsoft.FSharp.Control.FSharpAsync`1<Microsoft.FSharp.Core.Unit> SlimPipeline/Pipe/apply@378-34::Invoke(System.Tuple`2<S,T>)
 DA:378,0
@@ -6207,11 +6207,11 @@ FN:375,FSharp.Control.IAsyncEnumerable`1<Microsoft.FSharp.Core.Unit> SlimPipelin
 FNDA:0,FSharp.Control.IAsyncEnumerable`1<Microsoft.FSharp.Core.Unit> SlimPipeline/Pipe/apply@375-32T::Invoke(a,FSharp.Control.IAsyncEnumerable`1<System.Tuple`2<S,T>>)
 DA:376,0
 FN:95,SlimPipeline/ProfileTransition SlimPipeline/ProfileTransitionModule::create(SlimPipeline/Profile,SlimPipeline/Profile)
-FNDA:218,SlimPipeline/ProfileTransition SlimPipeline/ProfileTransitionModule::create(SlimPipeline/Profile,SlimPipeline/Profile)
-DA:96,218
-DA:97,218
-DA:98,218
-DA:99,218
+FNDA:404,SlimPipeline/ProfileTransition SlimPipeline/ProfileTransitionModule::create(SlimPipeline/Profile,SlimPipeline/Profile)
+DA:96,404
+DA:97,404
+DA:98,404
+DA:99,404
 FN:63,System.UInt64 SlimPipeline/ProfileModule::estimateUsage(SlimPipeline/Profile,System.UInt64)
 FNDA:0,System.UInt64 SlimPipeline/ProfileModule::estimateUsage(SlimPipeline/Profile,System.UInt64)
 DA:64,0
@@ -6225,27 +6225,27 @@ BRDA:64,8,2,0
 BRDA:64,8,3,0
 BRDA:64,8,4,0
 FN:71,SlimPipeline/Profile SlimPipeline/ProfileModule::combine(SlimPipeline/Profile,SlimPipeline/Profile)
-FNDA:93,SlimPipeline/Profile SlimPipeline/ProfileModule::combine(SlimPipeline/Profile,SlimPipeline/Profile)
-DA:72,93
+FNDA:177,SlimPipeline/Profile SlimPipeline/ProfileModule::combine(SlimPipeline/Profile,SlimPipeline/Profile)
+DA:72,177
 DA:75,0
-DA:77,21
-DA:79,72
+DA:77,51
+DA:79,126
 DA:81,0
 DA:83,0
-DA:85,93
-BRDA:72,19,0,15
-BRDA:72,19,4,15
+DA:85,177
+BRDA:72,19,0,39
+BRDA:72,19,4,39
 BRDA:72,63,0,0
 BRDA:72,63,4,0
 BRDA:72,63,2,0
-BRDA:72,63,1,3
-BRDA:72,19,3,52
-BRDA:72,202,0,4
-BRDA:72,202,4,4
+BRDA:72,63,1,9
+BRDA:72,19,3,94
+BRDA:72,202,0,10
+BRDA:72,202,4,10
 BRDA:72,19,2,0
 BRDA:72,297,0,0
 BRDA:72,297,4,0
-BRDA:72,19,1,26
+BRDA:72,19,1,44
 BRDA:72,392,0,2
 BRDA:72,392,4,2
 BRDA:75,568,0,0
@@ -6258,12 +6258,12 @@ BRDA:75,634,0,0
 BRDA:75,634,1,0
 BRDA:75,656,0,0
 BRDA:75,656,1,0
-BRDA:72,63,3,12
-BRDA:72,202,1,72
-BRDA:72,202,2,72
-BRDA:72,202,3,72
-BRDA:72,297,3,72
-BRDA:72,392,3,72
+BRDA:72,63,3,30
+BRDA:72,202,1,126
+BRDA:72,202,2,126
+BRDA:72,202,3,126
+BRDA:72,297,3,126
+BRDA:72,392,3,126
 BRDA:72,297,1,0
 BRDA:72,297,2,0
 BRDA:72,392,2,0
@@ -6274,11 +6274,11 @@ DA:10,0
 BRDA:10,8,0,0
 BRDA:10,8,1,0
 FN:12,SlimPipeline/SingleOrPair SlimPipeline/SingleOrPairModule::map(Microsoft.FSharp.Core.FSharpFunc`2<System.UInt64,System.UInt64>,SlimPipeline/SingleOrPair)
-FNDA:83,SlimPipeline/SingleOrPair SlimPipeline/SingleOrPairModule::map(Microsoft.FSharp.Core.FSharpFunc`2<System.UInt64,System.UInt64>,SlimPipeline/SingleOrPair)
-DA:13,83
-DA:14,82
+FNDA:155,SlimPipeline/SingleOrPair SlimPipeline/SingleOrPairModule::map(Microsoft.FSharp.Core.FSharpFunc`2<System.UInt64,System.UInt64>,SlimPipeline/SingleOrPair)
+DA:13,155
+DA:14,154
 DA:15,1
-BRDA:13,8,1,82
+BRDA:13,8,1,154
 BRDA:13,8,0,1
 FN:17,SlimPipeline/SingleOrPair SlimPipeline/SingleOrPairModule::mapPair(Microsoft.FSharp.Core.FSharpFunc`2<System.UInt64,System.UInt64>,Microsoft.FSharp.Core.FSharpFunc`2<System.UInt64,System.UInt64>,SlimPipeline/SingleOrPair)
 FNDA:0,SlimPipeline/SingleOrPair SlimPipeline/SingleOrPairModule::mapPair(Microsoft.FSharp.Core.FSharpFunc`2<System.UInt64,System.UInt64>,Microsoft.FSharp.Core.FSharpFunc`2<System.UInt64,System.UInt64>,SlimPipeline/SingleOrPair)
@@ -6302,11 +6302,11 @@ DA:30,4
 BRDA:28,8,1,0
 BRDA:28,8,0,4
 FN:32,System.UInt64 SlimPipeline/SingleOrPairModule::fst(SlimPipeline/SingleOrPair)
-FNDA:549,System.UInt64 SlimPipeline/SingleOrPairModule::fst(SlimPipeline/SingleOrPair)
-DA:33,549
-DA:34,549
+FNDA:1011,System.UInt64 SlimPipeline/SingleOrPairModule::fst(SlimPipeline/SingleOrPair)
+DA:33,1011
+DA:34,1011
 DA:35,0
-BRDA:33,8,1,549
+BRDA:33,8,1,1011
 BRDA:33,8,0,0
 FN:36,System.UInt64 SlimPipeline/SingleOrPairModule::snd(SlimPipeline/SingleOrPair)
 FNDA:0,System.UInt64 SlimPipeline/SingleOrPairModule::snd(SlimPipeline/SingleOrPair)
@@ -6316,12 +6316,12 @@ DA:39,0
 BRDA:37,8,1,0
 BRDA:37,8,0,0
 FN:41,SlimPipeline/SingleOrPair SlimPipeline/SingleOrPairModule::sum(SlimPipeline/SingleOrPair)
-FNDA:542,SlimPipeline/SingleOrPair SlimPipeline/SingleOrPairModule::sum(SlimPipeline/SingleOrPair)
-DA:42,542
+FNDA:1004,SlimPipeline/SingleOrPair SlimPipeline/SingleOrPairModule::sum(SlimPipeline/SingleOrPair)
+DA:42,1004
 DA:43,18
-DA:44,533
+DA:44,995
 BRDA:42,8,0,9
-BRDA:42,8,1,533
+BRDA:42,8,1,995
 FN:46,SlimPipeline/SingleOrPair SlimPipeline/SingleOrPairModule::add(SlimPipeline/SingleOrPair,SlimPipeline/SingleOrPair)
 FNDA:3,SlimPipeline/SingleOrPair SlimPipeline/SingleOrPairModule::add(SlimPipeline/SingleOrPair,SlimPipeline/SingleOrPair)
 DA:47,3
