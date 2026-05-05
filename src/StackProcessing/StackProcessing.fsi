@@ -85,6 +85,18 @@ val releaseAfter2:
   f: (Image<'S> -> Image<'S> -> 'T) -> I: Image<'S> -> J: Image<'S> -> 'T
     when 'S: equality
 
+val private rssKb: unit -> uint64
+
+val private printVolRssProbe:
+  enabled: bool -> label: 'a -> startKb: uint64 -> previousKb: uint64 -> uint64
+
+val volFctToLstFctReleaseAfterDebug:
+  debug: bool ->
+    f: (Image<'S> -> Image<'T>) ->
+    pad: uint ->
+    stride: uint -> images: Image.Image<'S> list -> Image.Image<'T> list
+    when 'S: equality and 'T: equality
+
 val volFctToLstFctReleaseAfter:
   f: (Image<'S> -> Image<'T>) ->
     pad: uint ->
@@ -202,6 +214,11 @@ val getFilenames:
     suffix: string ->
     filter: (string array -> string array) ->
     pl: SlimPipeline.Plan<unit,unit> -> SlimPipeline.Plan<unit,string>
+
+val readFilesWithShape:
+  debug: bool ->
+    width: uint -> height: uint -> StackCore.Stage<string,StackCore.Image<'T>>
+    when 'T: equality
 
 val readFiles:
   debug: bool -> StackCore.Stage<string,StackCore.Image<'T>> when 'T: equality
@@ -921,6 +938,10 @@ val getFilenames:
 
 val readFiles<'T when 'T: equality> :
   (bool -> StackCore.Stage<string,StackCore.Image<'T>>) when 'T: equality
+
+val readFilesWithShape<'T when 'T: equality> :
+  (bool -> uint -> uint -> StackCore.Stage<string,StackCore.Image<'T>>)
+    when 'T: equality
 
 val readFilePairs<'T when 'T: equality> :
   (bool ->

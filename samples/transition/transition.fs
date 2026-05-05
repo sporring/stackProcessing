@@ -14,7 +14,7 @@ let main arg =
             source availableMemory
     let input,output = 
         if arg.Length > 1 then
-            $"image{arg[1]}", $"result{arg[1]}"
+            $"../image{arg[1]}", $"../result{arg[1]}"
         else
             "../image18", "../result18"
 

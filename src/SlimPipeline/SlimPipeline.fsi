@@ -115,6 +115,82 @@ module private Pipe =
 type MemoryNeed = uint64 -> uint64
 type MemoryNeedWrapped = SingleOrPair -> SingleOrPair
 type LengthTransformation = uint64 -> uint64
+type StageEvaluation =
+    | Source
+    | Map
+    | Iter
+    | Windowed of windowSize: uint * stride: uint * pad: uint
+    | Flatten
+    | Reduce
+    | Fanout of branchCount: int
+    | Join
+    | Sink
+    | Custom of string
+type StageMemoryPressure =
+    {
+      InputLive: uint64
+      OutputLive: uint64
+      WorkLive: uint64
+      RetainedLive: uint64
+      Peak: uint64
+    }
+module StageMemoryPressure =
+    val create:
+      inputLive: uint64 ->
+        outputLive: uint64 ->
+        workLive: uint64 -> retainedLive: uint64 -> StageMemoryPressure
+    val fromPeak: peak: uint64 -> StageMemoryPressure
+type StageMemoryModel =
+    {
+      Evaluation: StageEvaluation
+      Estimate: (SingleOrPair -> StageMemoryPressure)
+    }
+module StageMemoryModel =
+    val private bytesOf: input: SingleOrPair -> uint64
+    val fromPeak:
+      evaluation: StageEvaluation ->
+        memoryNeed: MemoryNeedWrapped -> StageMemoryModel
+    val fromSinglePeak:
+      evaluation: StageEvaluation -> memoryNeed: MemoryNeed -> StageMemoryModel
+    val mapLike:
+      outputBytes: MemoryNeed -> workBytes: MemoryNeed -> StageMemoryModel
+    val iterLike: workBytes: MemoryNeed -> StageMemoryModel
+    val windowLike: winSz: uint -> stride: uint -> pad: uint -> StageMemoryModel
+    val reduceLike:
+      accumulatorBytes: MemoryNeed -> workBytes: MemoryNeed -> StageMemoryModel
+    val memoryNeed:
+      model: StageMemoryModel -> input: SingleOrPair -> SingleOrPair
+type SourcePeek =
+    {
+      Name: string
+      ElementBytes: uint64
+      Length: uint64 option
+      Shape: Map<string,string>
+    }
+module SourcePeek =
+    val create:
+      name: string ->
+        elementBytes: uint64 ->
+        length: uint64 option -> shape: Map<string,string> -> SourcePeek
+module MemoryProbe =
+    type Snapshot =
+        {
+          Baseline: uint64
+          Peak: uint64
+          Delta: uint64
+        }
+    type private Probe =
+        {
+          Baseline: uint64
+          mutable Peak: uint64
+          Cancellation: System.Threading.CancellationTokenSource
+        }
+    val currentRssBytes: unit -> uint64
+    val private sample: probe: Probe -> unit
+    val private start: sampleIntervalMs: int -> Probe
+    val private stop: probe: Probe -> Snapshot
+    val measure: sampleIntervalMs: int -> f: (unit -> 'a) -> 'a * Snapshot
+    val formatBytes: bytes: uint64 -> string
 type ResourceOps<'T> =
     {
       Retain: ('T -> unit)
@@ -169,11 +245,19 @@ type Stage<'S,'T> =
       Build: (unit -> Pipe<'S,'T>)
       Transition: ProfileTransition
       MemoryNeed: MemoryNeedWrapped
+      MemoryModel: StageMemoryModel
       LengthTransformation: LengthTransformation
       Graph: PipelineGraph
       Cleaning: (unit -> unit) list
     }
 module Stage =
+    val createWithModel:
+      name: string ->
+        build: (unit -> Pipe<'S,'T>) ->
+        transition: ProfileTransition ->
+        memoryModel: StageMemoryModel ->
+        lengthTransformation: LengthTransformation ->
+        cleaning: (unit -> unit) list -> Stage<'S,'T>
     val create:
       name: string ->
         build: (unit -> Pipe<'S,'T>) ->
@@ -186,6 +270,13 @@ module Stage =
         build: (unit -> Pipe<'S,'T>) ->
         transition: ProfileTransition ->
         wrapMemoryNeed: MemoryNeedWrapped ->
+        lengthTransformation: LengthTransformation ->
+        cleaning: (unit -> unit) list -> Stage<'S,'T>
+    val createWrappedWithModel:
+      name: string ->
+        build: (unit -> Pipe<'S,'T>) ->
+        transition: ProfileTransition ->
+        memoryModel: StageMemoryModel ->
         lengthTransformation: LengthTransformation ->
         cleaning: (unit -> unit) list -> Stage<'S,'T>
     val private withGraph:
@@ -302,6 +393,7 @@ type Plan<'S,'T> =
     {
       stage: Stage<'S,'T> option
       graph: PipelineGraph
+      sourcePeek: SourcePeek option
       nElemsPerSlice: SingleOrPair
       length: uint64
       memAvail: uint64
@@ -322,6 +414,7 @@ module Plan =
         memPeak: uint64 ->
         nElemsPerSlice: SingleOrPair ->
         length: uint64 -> debug: bool -> Plan<'S,'T> when 'T: equality
+    val withSourcePeek: sourcePeek: SourcePeek -> pl: Plan<'S,'T> -> Plan<'S,'T>
     val graph: pl: Plan<'S,'T> -> PipelineGraph
     /// Source type operators
     val source: availableMemory: uint64 -> Plan<unit,unit>

@@ -388,6 +388,162 @@ type MemoryNeed = uint64->uint64
 type MemoryNeedWrapped = SingleOrPair -> SingleOrPair
 type LengthTransformation = uint64 -> uint64
 
+type StageEvaluation =
+    | Source
+    | Map
+    | Iter
+    | Windowed of windowSize: uint * stride: uint * pad: uint
+    | Flatten
+    | Reduce
+    | Fanout of branchCount: int
+    | Join
+    | Sink
+    | Custom of string
+
+type StageMemoryPressure =
+    { InputLive: uint64
+      OutputLive: uint64
+      WorkLive: uint64
+      RetainedLive: uint64
+      Peak: uint64 }
+
+module StageMemoryPressure =
+    let create inputLive outputLive workLive retainedLive =
+        let peak = inputLive + outputLive + workLive + retainedLive
+        { InputLive = inputLive
+          OutputLive = outputLive
+          WorkLive = workLive
+          RetainedLive = retainedLive
+          Peak = peak }
+
+    let fromPeak peak =
+        { InputLive = 0UL
+          OutputLive = 0UL
+          WorkLive = peak
+          RetainedLive = 0UL
+          Peak = peak }
+
+type StageMemoryModel =
+    { Evaluation: StageEvaluation
+      Estimate: SingleOrPair -> StageMemoryPressure }
+
+module StageMemoryModel =
+    let private bytesOf input =
+        input |> SingleOrPair.sum |> SingleOrPair.fst
+
+    let fromPeak evaluation (memoryNeed: MemoryNeedWrapped) =
+        { Evaluation = evaluation
+          Estimate = memoryNeed >> SingleOrPair.sum >> SingleOrPair.fst >> StageMemoryPressure.fromPeak }
+
+    let fromSinglePeak evaluation (memoryNeed: MemoryNeed) =
+        let wrapped = SingleOrPair.sum >> SingleOrPair.fst >> memoryNeed >> Single
+        fromPeak evaluation wrapped
+
+    let mapLike (outputBytes: MemoryNeed) (workBytes: MemoryNeed) =
+        { Evaluation = Map
+          Estimate =
+            fun input ->
+                let inputBytes = bytesOf input
+                StageMemoryPressure.create inputBytes (outputBytes inputBytes) (workBytes inputBytes) 0UL }
+
+    let iterLike (workBytes: MemoryNeed) =
+        { Evaluation = Iter
+          Estimate =
+            fun input ->
+                let inputBytes = bytesOf input
+                StageMemoryPressure.create inputBytes inputBytes (workBytes inputBytes) 0UL }
+
+    let windowLike winSz stride pad =
+        { Evaluation = Windowed(winSz, stride, pad)
+          Estimate =
+            fun input ->
+                let inputBytes = bytesOf input
+                let windowBytes = inputBytes * uint64 winSz
+                StageMemoryPressure.create windowBytes windowBytes 0UL 0UL }
+
+    let reduceLike (accumulatorBytes: MemoryNeed) (workBytes: MemoryNeed) =
+        { Evaluation = Reduce
+          Estimate =
+            fun input ->
+                let inputBytes = bytesOf input
+                StageMemoryPressure.create inputBytes (accumulatorBytes inputBytes) (workBytes inputBytes) 0UL }
+
+    let memoryNeed model input =
+        model.Estimate input |> fun pressure -> Single pressure.Peak
+
+type SourcePeek =
+    { Name: string
+      ElementBytes: uint64
+      Length: uint64 option
+      Shape: Map<string, string> }
+
+module SourcePeek =
+    let create name elementBytes length shape =
+        { Name = name
+          ElementBytes = elementBytes
+          Length = length
+          Shape = shape }
+
+module MemoryProbe =
+    type Snapshot =
+        { Baseline: uint64
+          Peak: uint64
+          Delta: uint64 }
+
+    type private Probe =
+        { Baseline: uint64
+          mutable Peak: uint64
+          Cancellation: System.Threading.CancellationTokenSource }
+
+    let currentRssBytes () =
+        let p = System.Diagnostics.Process.GetCurrentProcess()
+        p.Refresh()
+        uint64 p.WorkingSet64
+
+    let private sample (probe: Probe) =
+        let current = currentRssBytes()
+        if current > probe.Peak then
+            probe.Peak <- current
+
+    let private start (sampleIntervalMs: int) =
+        let baseline = currentRssBytes()
+        let cancellation = new System.Threading.CancellationTokenSource()
+        let probe =
+            { Baseline = baseline
+              Peak = baseline
+              Cancellation = cancellation }
+
+        let rec loop () =
+            async {
+                if not cancellation.IsCancellationRequested then
+                    sample probe
+                    do! Async.Sleep sampleIntervalMs
+                    return! loop ()
+            }
+
+        Async.Start(loop (), cancellation.Token)
+        probe
+
+    let private stop (probe: Probe) =
+        sample probe
+        probe.Cancellation.Cancel()
+        probe.Cancellation.Dispose()
+        { Baseline = probe.Baseline
+          Peak = probe.Peak
+          Delta = probe.Peak - probe.Baseline }
+
+    let measure sampleIntervalMs f =
+        let probe = start sampleIntervalMs
+        try
+            let result = f ()
+            result, stop probe
+        with ex ->
+            let _ = stop probe
+            reraise ()
+
+    let formatBytes (bytes: uint64) =
+        $"{bytes / 1024UL} KB"
+
 type ResourceOps<'T> =
     { Retain : 'T -> unit
       Release : 'T -> unit
@@ -501,6 +657,7 @@ type Stage<'S,'T> =
       Build      : unit -> Pipe<'S,'T> // the pipe creator function
       Transition : ProfileTransition // The transformation of the transition profile
       MemoryNeed : MemoryNeedWrapped // calculate the memory needed to process a specified number of element
+      MemoryModel : StageMemoryModel
       LengthTransformation : LengthTransformation // the transformation of the length of the sequence of elements
       Graph: PipelineGraph
       Cleaning: (unit->unit) list // Functions to be called at sink/drain/flush
@@ -508,21 +665,46 @@ type Stage<'S,'T> =
 
 module Stage =
 
-    let create<'S,'T> (name: string) (build: unit->Pipe<'S,'T>) (transition: ProfileTransition) (memoryNeed: MemoryNeed) (lengthTransformation: LengthTransformation) (cleaning: (unit->unit) list) =
-        let wrapMemoryNeed = SingleOrPair.sum >> SingleOrPair.fst >> memoryNeed >> Single
+    let createWithModel<'S,'T> (name: string) (build: unit->Pipe<'S,'T>) (transition: ProfileTransition) (memoryModel: StageMemoryModel) (lengthTransformation: LengthTransformation) (cleaning: (unit->unit) list) =
+        let wrapMemoryNeed = StageMemoryModel.memoryNeed memoryModel
         { Name = name
           Build = build
           Transition = transition
           MemoryNeed = wrapMemoryNeed
+          MemoryModel = memoryModel
+          LengthTransformation = lengthTransformation
+          Graph = PipelineGraph.singleton name transition
+          Cleaning = cleaning}
+
+    let create<'S,'T> (name: string) (build: unit->Pipe<'S,'T>) (transition: ProfileTransition) (memoryNeed: MemoryNeed) (lengthTransformation: LengthTransformation) (cleaning: (unit->unit) list) =
+        let wrapMemoryNeed = SingleOrPair.sum >> SingleOrPair.fst >> memoryNeed >> Single
+        let memoryModel = StageMemoryModel.fromPeak (Custom name) wrapMemoryNeed
+        { Name = name
+          Build = build
+          Transition = transition
+          MemoryNeed = wrapMemoryNeed
+          MemoryModel = memoryModel
           LengthTransformation = lengthTransformation
           Graph = PipelineGraph.singleton name transition
           Cleaning = cleaning}
 
     let createWrapped<'S,'T> (name: string) (build: unit->Pipe<'S,'T>) (transition: ProfileTransition) (wrapMemoryNeed: MemoryNeedWrapped) (lengthTransformation: LengthTransformation) (cleaning: (unit->unit) list) =
+        let memoryModel = StageMemoryModel.fromPeak (Custom name) wrapMemoryNeed
         { Name = name
           Build = build
           Transition = transition
           MemoryNeed = wrapMemoryNeed
+          MemoryModel = memoryModel
+          LengthTransformation = lengthTransformation
+          Graph = PipelineGraph.singleton name transition
+          Cleaning = cleaning}
+
+    let createWrappedWithModel<'S,'T> (name: string) (build: unit->Pipe<'S,'T>) (transition: ProfileTransition) (memoryModel: StageMemoryModel) (lengthTransformation: LengthTransformation) (cleaning: (unit->unit) list) =
+        { Name = name
+          Build = build
+          Transition = transition
+          MemoryNeed = StageMemoryModel.memoryNeed memoryModel
+          MemoryModel = memoryModel
           LengthTransformation = lengthTransformation
           Graph = PipelineGraph.singleton name transition
           Cleaning = cleaning}
@@ -592,13 +774,13 @@ module Stage =
         let apply debug input = input |> AsyncSeq.map (f debug)
         let build () : Pipe<'S,'T> = Pipe.create name apply Streaming
         let transition = ProfileTransition.create Streaming Streaming
-        create name build transition memoryNeed lengthTransformation []// Not right!!!
+        createWithModel name build transition (StageMemoryModel.fromSinglePeak Map memoryNeed) lengthTransformation []
 
     let mapi<'S,'T> (name: string) (f: bool -> int64 -> 'S -> 'T) (memoryNeed: MemoryNeed) (lengthTransformation: LengthTransformation) : Stage<'S, 'T> =
         let apply debug input = input |> AsyncSeq.mapi (f debug)
         let build () : Pipe<'S,'T> = Pipe.create name apply Streaming
         let transition = ProfileTransition.create Streaming Streaming
-        create name build transition memoryNeed lengthTransformation []// Not right!!!
+        createWithModel name build transition (StageMemoryModel.fromSinglePeak Map memoryNeed) lengthTransformation []
 
     let map1 (name: string) (f: 'U -> 'V) (stage: Stage<'In, 'U>) (memoryNeed: MemoryNeed) (lengthTransformation: LengthTransformation) : Stage<'In, 'V> =
         let build () = Pipe.map name f (stage.Build())
@@ -681,17 +863,17 @@ module Stage =
     let reduce (name: string) (reducer: bool -> AsyncSeq<'In> -> Async<'Out>) (profile: Profile) (memoryNeed: MemoryNeed) (lengthTransformation: LengthTransformation) : Stage<'In, 'Out> =
         let build () = Pipe.reduce name reducer profile
         let transition = ProfileTransition.create Streaming Constant
-        create name build transition memoryNeed lengthTransformation []// Check !!!
+        createWithModel name build transition (StageMemoryModel.fromSinglePeak Reduce memoryNeed) lengthTransformation []
 
     let fold<'S,'T> (name: string) (folder: 'T -> 'S -> 'T) (initial: 'T) (memoryNeed: MemoryNeed) (lengthTransformation: LengthTransformation) : Stage<'S, 'T> =
         let build () : Pipe<'S,'T> = Pipe.fold name folder initial Streaming
         let transition = ProfileTransition.create Streaming Constant
-        create name build transition memoryNeed lengthTransformation [] // Check !!!
+        createWithModel name build transition (StageMemoryModel.fromSinglePeak Reduce memoryNeed) lengthTransformation []
 
     let window (name: string) (winSz: uint) (pad: uint) (zeroMaker: int -> 'T -> 'T) (stride: uint) : Stage<'T, 'T list> =
         let pipe = Pipe.window name winSz pad zeroMaker stride
         let transition = ProfileTransition.create Streaming Streaming
-        fromPipe name transition id id pipe
+        createWithModel name (fun () -> pipe) transition (StageMemoryModel.windowLike winSz stride pad) id []
 
     let flatten (name: string) : Stage<'T list, 'T> =
         let pipe = Pipe.flatten name 
@@ -756,7 +938,7 @@ module Stage =
     let consumeWith (name: string) (consume: bool -> int -> 'T -> unit) (memoryNeed: MemoryNeed) : Stage<'T, unit> = 
         let build () = Pipe.consumeWith name consume Streaming
         let transition = ProfileTransition.create Streaming Constant
-        create name build transition memoryNeed (fun _ -> 0UL) []// Check !!!!
+        createWithModel name build transition (StageMemoryModel.fromSinglePeak Iter memoryNeed) (fun _ -> 0UL) []
 
     let cast<'S,'T when 'S: equality and 'T: equality> name f (memoryNeed: MemoryNeed) : Stage<'S,'T> = // cast cannot change
         let apply debug input = input |> AsyncSeq.map f 
@@ -769,6 +951,7 @@ module Stage =
 type Plan<'S,'T> = { 
     stage          : Stage<'S,'T> option // the function to be applied, when the plan is run
     graph          : PipelineGraph // the analyzable graph built while the DSL is composed
+    sourcePeek     : SourcePeek option // source metadata available to future optimizers
     nElemsPerSlice : SingleOrPair // number of elments (pixels) before transformation - this could be single or pair
     length         : uint64 // length of the sequence, the plan is applied to
     memAvail       : uint64 // memory available for the plan
@@ -780,10 +963,13 @@ module Plan =
         stage |> Option.map (fun stg -> stg.Graph) |> Option.defaultValue PipelineGraph.empty
 
     let create<'S,'T when 'T: equality> (stage: Stage<'S,'T> option) (memAvail : uint64) (memPeak: uint64) (nElemsPerSlice: uint64) (length: uint64) (debug: bool) : Plan<'S, 'T> =
-        { stage = stage; graph = graphOfStage stage; memAvail = memAvail; memPeak = memPeak; nElemsPerSlice = Single nElemsPerSlice; length = length; debug = debug }
+        { stage = stage; graph = graphOfStage stage; sourcePeek = None; memAvail = memAvail; memPeak = memPeak; nElemsPerSlice = Single nElemsPerSlice; length = length; debug = debug }
 
     let createWrapped<'S,'T when 'T: equality> (stage: Stage<'S,'T> option) (memAvail : uint64) (memPeak: uint64) (nElemsPerSlice: SingleOrPair) (length: uint64) (debug: bool) : Plan<'S, 'T> =
-        { stage = stage; graph = graphOfStage stage; memAvail = memAvail; memPeak = memPeak; nElemsPerSlice = nElemsPerSlice; length = length; debug = debug }
+        { stage = stage; graph = graphOfStage stage; sourcePeek = None; memAvail = memAvail; memPeak = memPeak; nElemsPerSlice = nElemsPerSlice; length = length; debug = debug }
+
+    let withSourcePeek (sourcePeek: SourcePeek) (pl: Plan<'S,'T>) =
+        { pl with sourcePeek = Some sourcePeek }
 
     let graph (pl: Plan<'S,'T>) =
         pl.graph
@@ -810,7 +996,7 @@ module Plan =
         if (not pl.debug) && memPeak > pl.memAvail then
             failwith $"Out of available memory: {stage.Name} requested {memNeeded} B but have only {pl.memAvail} B"
         let nElemsPerSlice' = SingleOrPair.map stage.LengthTransformation pl.nElemsPerSlice // Stage LengthTransformation must be updated as well
-        createWrapped stage' pl.memAvail memPeak nElemsPerSlice' pl.length pl.debug
+        { createWrapped stage' pl.memAvail memPeak nElemsPerSlice' pl.length pl.debug with sourcePeek = pl.sourcePeek }
 
     let (>=>) (pl: Plan<'a, 'b>) (stage: Stage<'b, 'c>) : Plan<'a, 'c> =
         composePlan $">=>" pl stage
@@ -829,7 +1015,7 @@ module Plan =
         let memPeak = max pl.memPeak memNeeded
         if (not pl.debug) && memPeak > pl.memAvail then
             failwith $"Out of available memory: {stage.Name} requested {memoryNeed} B but have only {pl.memAvail} B"
-        createWrapped (Some stage) pl.memAvail memPeak nElemsPerSlice' pl.length pl.debug
+        { createWrapped (Some stage) pl.memAvail memPeak nElemsPerSlice' pl.length pl.debug with sourcePeek = pl.sourcePeek }
         
     /// parallel execution of non-synchronised streams
     let internal zipPlan (name: string) (pl1: Plan<'In, 'U>) (pl2: Plan<'In, 'V>) : Plan<'In, ('U * 'V)> =
@@ -857,7 +1043,7 @@ module Plan =
                 let maxMemAvail = max pl1.memAvail pl2.memAvail // Should we max or sum? What would the most natural usage be for src?
                 if (not debug) && (memPeak > maxMemAvail) then
                     failwith $"Out of available memory: {stage.Name} requested {memNeeded|>SingleOrPair.fst}+{memNeeded|>SingleOrPair.snd}={memPeak} B but have only {maxMemAvail} B"
-                createWrapped (Some stage) maxMemAvail memPeak nElemsPerSlice pl1.length debug
+                { createWrapped (Some stage) maxMemAvail memPeak nElemsPerSlice pl1.length debug with sourcePeek = pl1.sourcePeek }
             | _,_ -> failwith $"[{name}] Cannot zip with an empty plan"
 
     /// parallel execution of non-synchronised streams
@@ -905,7 +1091,13 @@ module Plan =
         if pl.debug then printfn $"[sink] Transform plan graph with {pl.graph.Nodes.Length} nodes / {pl.graph.Edges.Length} edges to pipeline"
         let pipeline = Option.map (fun stage -> Stage.toPipe stage ()) pl.stage
         if pl.debug then printfn $"[sink] Running pipeline with an estimated {pl.memPeak/1024UL} / {pl.memAvail/1024UL} KB of memory use"
-        Option.map (Pipe.run pl.debug) pipeline |> ignore
+        if pl.debug then
+            let _, snapshot =
+                MemoryProbe.measure 10 (fun () ->
+                    Option.map (Pipe.run pl.debug) pipeline |> ignore)
+            printfn $"[sink] Process RSS baseline {MemoryProbe.formatBytes snapshot.Baseline}, peak {MemoryProbe.formatBytes snapshot.Peak}, delta {MemoryProbe.formatBytes snapshot.Delta}"
+        else
+            Option.map (Pipe.run pl.debug) pipeline |> ignore
         if pl.debug then printfn "[sink] Cleaning"
         doCleaning pl |> ignore
         if pl.debug then printfn "[sink] Done"
@@ -924,7 +1116,14 @@ module Plan =
                     if pl.debug then printfn $"[{name}] Transform plan graph with {pl.graph.Nodes.Length} nodes / {pl.graph.Edges.Length} edges to pipeline"
                     let pipeline = stg.Build ()
                     if pl.debug then printfn $"[{name}] Running pipeline with an estimated {pl.memPeak/1024UL} / {pl.memAvail/1024UL} KB memory use" 
-                    AsyncSeq.singleton () |> pipeline.Apply pl.debug |> reducer |> Async.RunSynchronously
+                    if pl.debug then
+                        let result, snapshot =
+                            MemoryProbe.measure 10 (fun () ->
+                                AsyncSeq.singleton () |> pipeline.Apply pl.debug |> reducer |> Async.RunSynchronously)
+                        printfn $"[{name}] Process RSS baseline {MemoryProbe.formatBytes snapshot.Baseline}, peak {MemoryProbe.formatBytes snapshot.Peak}, delta {MemoryProbe.formatBytes snapshot.Delta}"
+                        result
+                    else
+                        AsyncSeq.singleton () |> pipeline.Apply pl.debug |> reducer |> Async.RunSynchronously
                 | _ -> failwith $"[{name}] Plan is empty"
         doCleaning pl |> ignore
         res

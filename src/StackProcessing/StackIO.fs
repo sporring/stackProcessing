@@ -54,11 +54,11 @@ let getFilenames (inputDir: string) (suffix: string) (filter: string[]->string[]
     let length = depth
     Plan.create stage pl.memAvail memPeak memPerElem length pl.debug
 
-let readFiles<'T when 'T: equality> (debug: bool) : Stage<string, Image<'T>> =
+let readFilesWithShape<'T when 'T: equality> (debug: bool) (width: uint) (height: uint) : Stage<string, Image<'T>> =
     let name = "readFiles"
     if debug then printfn $"[{name} cast to {typeof<'T>.Name}]"
-    let mutable width = 0u // We need to read the first image in order to find its size
-    let mutable height = 0u
+    let mutable width = width
+    let mutable height = height
 
     let mapper (debug: bool) (fileName: string) : Image<'T> = 
         if debug then printfn "[%s] Reading image named %s as %s" name fileName (typeof<'T>.Name)
@@ -69,9 +69,12 @@ let readFiles<'T when 'T: equality> (debug: bool) : Stage<string, Image<'T>> =
         image
 
     let memoryNeed = fun _ -> Image<'T>.memoryEstimate width height
-    let lengthTransformation = id
+    let lengthTransformation _ = uint64 width * uint64 height
 
     Stage.map name mapper memoryNeed lengthTransformation
+
+let readFiles<'T when 'T: equality> (debug: bool) : Stage<string, Image<'T>> =
+    readFilesWithShape<'T> debug 0u 0u
 
 let readFilePairs<'T when 'T: equality> (debug: bool) : Stage<string*string, Image<'T>*Image<'T>> =
     let name = "readFilePairs"
@@ -95,7 +98,28 @@ let readFilePairs<'T when 'T: equality> (debug: bool) : Stage<string*string, Ima
     Stage.map name mapper memoryNeed lengthTransformation
 
 let readFiltered<'T when 'T: equality> (inputDir: string) (suffix: string) (filter: string[]->string[]) (pl: Plan<unit, unit>) : Plan<unit, Image<'T>> =
-    pl |> getFilenames inputDir suffix filter >=> readFiles pl.debug
+    let info = getStackInfo inputDir suffix
+    let width = uint info.size[0]
+    let height = uint info.size[1]
+    let elementBytes = Image<'T>.memoryEstimate width height
+    let sourcePeek =
+        SourcePeek.create
+            "read"
+            elementBytes
+            (Some (uint64 info.size[2]))
+            (Map.ofList
+                [ "kind", "image-stack"
+                  "inputDir", inputDir
+                  "suffix", suffix
+                  "width", string width
+                  "height", string height
+                  "depth", string info.size[2]
+                  "pixelType", typeof<'T>.Name ])
+
+    pl
+    |> getFilenames inputDir suffix filter
+    >=> readFilesWithShape<'T> pl.debug width height
+    |> Plan.withSourcePeek sourcePeek
 
 let read<'T when 'T: equality> (inputDir: string) (suffix: string) (pl: Plan<unit, unit>) : Plan<unit, Image<'T>> =
     readFiltered<'T> inputDir suffix Array.sort pl
@@ -187,6 +211,24 @@ let readChunksAsWindows<'T when 'T: equality> (inputDir: string) (suffix: string
     let name = "readChunks"
     let chunkInfo = getChunkInfo inputDir suffix
     let depth = uint64 chunkInfo.chunks[2] // we will read chunks_*_*_i* as windows
+    let elementBytes =
+        chunkInfo.topLeftInfo.size
+        |> List.fold (*) 1UL
+        |> fun voxels -> voxels * (typeof<'T> |> Image.getBytesPerComponent |> uint64)
+    let sourcePeek =
+        SourcePeek.create
+            "readChunks"
+            elementBytes
+            (Some depth)
+            (Map.ofList
+                [ "kind", "image-chunks"
+                  "inputDir", inputDir
+                  "suffix", suffix
+                  "chunkWidth", string chunkInfo.topLeftInfo.size[0]
+                  "chunkHeight", string chunkInfo.topLeftInfo.size[1]
+                  "chunkDepth", string chunkInfo.topLeftInfo.size[2]
+                  "chunks", chunkInfo.chunks |> List.map string |> String.concat "x"
+                  "pixelType", typeof<'T>.Name ])
 
     let mapper (k: int) : Image<'T> list = 
         let chunkSlice = _readChunkSlice<'T> inputDir suffix chunkInfo 2u k
@@ -203,6 +245,7 @@ let readChunksAsWindows<'T when 'T: equality> (inputDir: string) (suffix: string
     let memPerElem = 256UL // surrugate string length
     let length = depth
     Plan.create stage pl.memAvail memPeak memPerElem depth pl.debug
+    |> Plan.withSourcePeek sourcePeek
 
 let readChunks<'T when 'T: equality> (inputDir: string) (suffix: string) (pl: Plan<unit, unit>) : Plan<unit, Image<'T>> =
     pl |> readChunksAsWindows<'T> inputDir suffix >=> flatten ()
@@ -267,7 +310,7 @@ let writeInChunks (outputDir: string) (suffix: string) (width: uint) (height: ui
         _writeChunkSlice debug outputDir suffix width height winSz (int k) stack
         stack.incRefCount() //to make sure volFctToLstFctReleaseAfter doesn't release it.
         stack
-    let mapper (debug: bool) (idx: int64) = volFctToLstFctReleaseAfter (f debug idx) pad stride
+    let mapper (debug: bool) (idx: int64) = volFctToLstFctReleaseAfterDebug debug (f debug idx) pad stride
     //let mapper (debug: bool) (idx: int64) = fun stack -> _writeChunkSlice debug outputDir suffix width height winSz (int idx) stack; stack
     let btUint8 = typeof<uint8>|>Image.getBytesPerComponent |> uint64
     let btUint64 = typeof<uint64> |> Image.getBytesPerComponent |> uint64

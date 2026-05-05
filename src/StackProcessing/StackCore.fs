@@ -72,14 +72,38 @@ let releaseNAfter (n: int) (f: Image<'S> list->'T list) (sLst: Image<'S> list) :
     tLst 
 *)
 
-let volFctToLstFctReleaseAfter (f: Image<'S>->Image<'T>) pad stride images =
+let private rssKb () =
+    MemoryProbe.currentRssBytes() / 1024UL
+
+let private printVolRssProbe enabled label startKb previousKb =
+    if enabled then
+        let currentKb = rssKb()
+        let stepDelta = int64 currentKb - int64 previousKb
+        let totalDelta = int64 currentKb - int64 startKb
+        printfn $"[rss:vol] {label}: RSS {currentKb} KB, step %+d{stepDelta} KB, total %+d{totalDelta} KB"
+        currentKb
+    else
+        previousKb
+
+let volFctToLstFctReleaseAfterDebug debug (f: Image<'S>->Image<'T>) pad stride images =
+    let startKb = if debug then rssKb() else 0UL
+    let mutable previousKb = printVolRssProbe debug "start" startKb startKb
     let stack = ImageFunctions.stack images 
+    previousKb <- printVolRssProbe debug "after stack" startKb previousKb
     images |> List.take (min (int stride) images.Length) |> List.iter (fun I -> I.decRefCount())
+    previousKb <- printVolRssProbe debug "after release input slices" startKb previousKb
     let vol = f stack
+    previousKb <- printVolRssProbe debug "after volume function" startKb previousKb
     stack.decRefCount ()
+    previousKb <- printVolRssProbe debug "after dispose stack" startKb previousKb
     let result = ImageFunctions.unstackSkipNTakeM pad stride vol
+    previousKb <- printVolRssProbe debug "after unstack" startKb previousKb
     vol.decRefCount ()
+    previousKb <- printVolRssProbe debug "after dispose volume" startKb previousKb
     result
+
+let volFctToLstFctReleaseAfter (f: Image<'S>->Image<'T>) pad stride images =
+    volFctToLstFctReleaseAfterDebug false f pad stride images
 
 let (>=>) = Plan.(>=>)
 let (-->) = Stage.(-->)

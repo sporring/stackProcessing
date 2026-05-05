@@ -59,6 +59,12 @@ val mutable private memUsed: uint32
 val mutable private peakMemUsed: uint32
 val private incMemUsed: mem: uint32 -> unit
 val private decMemUsed: mem: uint32 -> unit
+val private currentRssBytes: unit -> uint64
+val mutable private rssBaselineBytes: uint64
+val mutable private peakRssDeltaBytes: uint64
+val private resetRssProbe: unit -> unit
+val private rssDeltaBytes: unit -> uint64
+val private sampleRssDeltaBytes: unit -> uint64 * uint64
 val private printDebugMessage: str: string -> unit
 val mutable private debug: bool
 [<StructuredFormatDisplay ("{Display}")>]
