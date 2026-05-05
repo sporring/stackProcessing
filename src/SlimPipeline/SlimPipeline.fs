@@ -471,6 +471,218 @@ module StageMemoryModel =
     let memoryNeed model input =
         model.Estimate input |> fun pressure -> Single pressure.Peak
 
+type StageCostKind =
+    | Cpu
+    | Native
+    | Io
+    | Mixed
+
+type StageWorkPressure =
+    { CpuWorkUnits: float
+      NativeWorkUnits: float
+      IoReadBytes: uint64
+      IoWriteBytes: uint64
+      IoReadOps: uint64
+      IoWriteOps: uint64
+      CalibrationKey: string option }
+
+module StageWorkPressure =
+    let zero =
+        { CpuWorkUnits = 0.0
+          NativeWorkUnits = 0.0
+          IoReadBytes = 0UL
+          IoWriteBytes = 0UL
+          IoReadOps = 0UL
+          IoWriteOps = 0UL
+          CalibrationKey = None }
+
+    let create cpuWorkUnits nativeWorkUnits ioReadBytes ioWriteBytes ioReadOps ioWriteOps calibrationKey =
+        { CpuWorkUnits = cpuWorkUnits
+          NativeWorkUnits = nativeWorkUnits
+          IoReadBytes = ioReadBytes
+          IoWriteBytes = ioWriteBytes
+          IoReadOps = ioReadOps
+          IoWriteOps = ioWriteOps
+          CalibrationKey = calibrationKey }
+
+    let add left right =
+        { CpuWorkUnits = left.CpuWorkUnits + right.CpuWorkUnits
+          NativeWorkUnits = left.NativeWorkUnits + right.NativeWorkUnits
+          IoReadBytes = left.IoReadBytes + right.IoReadBytes
+          IoWriteBytes = left.IoWriteBytes + right.IoWriteBytes
+          IoReadOps = left.IoReadOps + right.IoReadOps
+          IoWriteOps = left.IoWriteOps + right.IoWriteOps
+          CalibrationKey = None }
+
+type StageWorkModel =
+    { Kind: StageCostKind
+      Evaluation: StageEvaluation
+      Estimate: SingleOrPair -> StageWorkPressure }
+
+type StageCostCoefficients =
+    { CpuMillisecondsPerUnit: float
+      NativeMillisecondsPerUnit: float
+      IoReadMillisecondsPerByte: float
+      IoWriteMillisecondsPerByte: float
+      IoReadMillisecondsPerOp: float
+      IoWriteMillisecondsPerOp: float }
+
+module StageCostCoefficients =
+    let zero =
+        { CpuMillisecondsPerUnit = 0.0
+          NativeMillisecondsPerUnit = 0.0
+          IoReadMillisecondsPerByte = 0.0
+          IoWriteMillisecondsPerByte = 0.0
+          IoReadMillisecondsPerOp = 0.0
+          IoWriteMillisecondsPerOp = 0.0 }
+
+    let estimateMilliseconds coefficients pressure =
+        pressure.CpuWorkUnits * coefficients.CpuMillisecondsPerUnit
+        + pressure.NativeWorkUnits * coefficients.NativeMillisecondsPerUnit
+        + float pressure.IoReadBytes * coefficients.IoReadMillisecondsPerByte
+        + float pressure.IoWriteBytes * coefficients.IoWriteMillisecondsPerByte
+        + float pressure.IoReadOps * coefficients.IoReadMillisecondsPerOp
+        + float pressure.IoWriteOps * coefficients.IoWriteMillisecondsPerOp
+
+module StageCostCalibration =
+    let mutable private coefficientsByKey: Map<string, StageCostCoefficients> = Map.empty
+
+    let clear () =
+        coefficientsByKey <- Map.empty
+
+    let register key coefficients =
+        coefficientsByKey <- coefficientsByKey |> Map.add key coefficients
+
+    let tryFind key =
+        coefficientsByKey |> Map.tryFind key
+
+    let estimateMilliseconds pressure =
+        match pressure.CalibrationKey |> Option.bind tryFind with
+        | Some coefficients -> Some (StageCostCoefficients.estimateMilliseconds coefficients pressure)
+        | None -> None
+
+    let private propertyDouble (name: string) (element: System.Text.Json.JsonElement) =
+        match element.TryGetProperty(name) with
+        | true, property when property.ValueKind = System.Text.Json.JsonValueKind.Number ->
+            property.GetDouble()
+        | _ ->
+            let pascalName =
+                if System.String.IsNullOrEmpty(name) then
+                    name
+                else
+                    name.Substring(0, 1).ToUpperInvariant() + name.Substring(1)
+            match element.TryGetProperty(pascalName) with
+            | true, property when property.ValueKind = System.Text.Json.JsonValueKind.Number ->
+                property.GetDouble()
+            | _ -> 0.0
+
+    let loadJson path =
+        if System.IO.File.Exists(path) then
+            use document = System.Text.Json.JsonDocument.Parse(System.IO.File.ReadAllText(path))
+            match document.RootElement.TryGetProperty("calibrations") with
+            | true, calibrations when calibrations.ValueKind = System.Text.Json.JsonValueKind.Object ->
+                for property in calibrations.EnumerateObject() do
+                    let value = property.Value
+                    register
+                        property.Name
+                        { CpuMillisecondsPerUnit = propertyDouble "cpuMillisecondsPerUnit" value
+                          NativeMillisecondsPerUnit = propertyDouble "nativeMillisecondsPerUnit" value
+                          IoReadMillisecondsPerByte = propertyDouble "ioReadMillisecondsPerByte" value
+                          IoWriteMillisecondsPerByte = propertyDouble "ioWriteMillisecondsPerByte" value
+                          IoReadMillisecondsPerOp = propertyDouble "ioReadMillisecondsPerOp" value
+                          IoWriteMillisecondsPerOp = propertyDouble "ioWriteMillisecondsPerOp" value }
+                true
+            | _ -> false
+        else
+            false
+
+module StageWorkModel =
+    let private elementCount input =
+        input |> SingleOrPair.sum |> SingleOrPair.fst |> float
+
+    let zero evaluation =
+        { Kind = Cpu
+          Evaluation = evaluation
+          Estimate = fun _ -> StageWorkPressure.zero }
+
+    let cpu evaluation calibrationKey workUnits =
+        { Kind = Cpu
+          Evaluation = evaluation
+          Estimate = fun input -> StageWorkPressure.create (workUnits input) 0.0 0UL 0UL 0UL 0UL calibrationKey }
+
+    let native evaluation calibrationKey workUnits =
+        { Kind = Native
+          Evaluation = evaluation
+          Estimate = fun input -> StageWorkPressure.create 0.0 (workUnits input) 0UL 0UL 0UL 0UL calibrationKey }
+
+    let ioRead evaluation calibrationKey bytes ops =
+        { Kind = Io
+          Evaluation = evaluation
+          Estimate = fun input -> StageWorkPressure.create 0.0 0.0 (bytes input) 0UL (ops input) 0UL calibrationKey }
+
+    let ioWrite evaluation calibrationKey bytes ops =
+        { Kind = Io
+          Evaluation = evaluation
+          Estimate = fun input -> StageWorkPressure.create 0.0 0.0 0UL (bytes input) 0UL (ops input) calibrationKey }
+
+    let fromEvaluation evaluation calibrationKey =
+        match evaluation with
+        | Source
+        | Sink
+        | Iter -> zero evaluation
+        | Map
+        | Flatten
+        | Reduce
+        | Fanout _
+        | Join
+        | Custom _ -> cpu evaluation calibrationKey elementCount
+        | Windowed(winSz, _, _) ->
+            native evaluation calibrationKey (fun input -> elementCount input * float winSz)
+
+type StageCostPressure =
+    { Memory: StageMemoryPressure
+      Work: StageWorkPressure }
+
+module StageCostPressure =
+    let add (left: StageCostPressure) (right: StageCostPressure) =
+        { Memory = StageMemoryPressure.fromPeak (left.Memory.Peak + right.Memory.Peak)
+          Work = StageWorkPressure.add left.Work right.Work }
+
+type StageCostModel =
+    { Memory: StageMemoryModel
+      Work: StageWorkModel }
+
+module StageCostModel =
+    let create memory work =
+        { Memory = memory
+          Work = work }
+
+    let fromMemory memory =
+        create memory (StageWorkModel.fromEvaluation memory.Evaluation None)
+
+    let estimate (model: StageCostModel) input : StageCostPressure =
+        { Memory = model.Memory.Estimate input
+          Work = model.Work.Estimate input }
+
+    let memoryNeed model input =
+        StageMemoryModel.memoryNeed model.Memory input
+
+    let combine evaluation left right =
+        let memory =
+            { Evaluation = evaluation
+              Estimate =
+                fun input ->
+                    let leftPressure = left.Memory.Estimate input
+                    let rightPressure = right.Memory.Estimate input
+                    StageMemoryPressure.fromPeak (leftPressure.Peak + rightPressure.Peak) }
+        let work =
+            { Kind = Mixed
+              Evaluation = evaluation
+              Estimate =
+                fun input ->
+                    StageWorkPressure.add (left.Work.Estimate input) (right.Work.Estimate input) }
+        create memory work
+
 type SourcePeek =
     { Name: string
       ElementBytes: uint64
@@ -669,6 +881,7 @@ type Stage<'S,'T> =
       Transition : ProfileTransition // The transformation of the transition profile
       MemoryNeed : MemoryNeedWrapped // calculate the memory needed to process a specified number of element
       MemoryModel : StageMemoryModel
+      CostModel : StageCostModel
       LengthTransformation : LengthTransformation // the transformation of the length of the sequence of elements
       Graph: PipelineGraph
       Cleaning: (unit->unit) list // Functions to be called at sink/drain/flush
@@ -676,49 +889,35 @@ type Stage<'S,'T> =
 
 module Stage =
 
-    let createWithModel<'S,'T> (name: string) (build: unit->Pipe<'S,'T>) (transition: ProfileTransition) (memoryModel: StageMemoryModel) (lengthTransformation: LengthTransformation) (cleaning: (unit->unit) list) =
-        let wrapMemoryNeed = StageMemoryModel.memoryNeed memoryModel
+    let createWithCostModel<'S,'T> (name: string) (build: unit->Pipe<'S,'T>) (transition: ProfileTransition) (costModel: StageCostModel) (lengthTransformation: LengthTransformation) (cleaning: (unit->unit) list) =
+        let wrapMemoryNeed = StageCostModel.memoryNeed costModel
         { Name = name
           Build = build
           Transition = transition
           MemoryNeed = wrapMemoryNeed
-          MemoryModel = memoryModel
+          MemoryModel = costModel.Memory
+          CostModel = costModel
           LengthTransformation = lengthTransformation
           Graph = PipelineGraph.singleton name transition
           Cleaning = cleaning}
+
+    let createWithModel<'S,'T> (name: string) (build: unit->Pipe<'S,'T>) (transition: ProfileTransition) (memoryModel: StageMemoryModel) (lengthTransformation: LengthTransformation) (cleaning: (unit->unit) list) =
+        createWithCostModel name build transition (StageCostModel.fromMemory memoryModel) lengthTransformation cleaning
 
     let create<'S,'T> (name: string) (build: unit->Pipe<'S,'T>) (transition: ProfileTransition) (memoryNeed: MemoryNeed) (lengthTransformation: LengthTransformation) (cleaning: (unit->unit) list) =
         let wrapMemoryNeed = SingleOrPair.sum >> SingleOrPair.fst >> memoryNeed >> Single
         let memoryModel = StageMemoryModel.fromPeak (Custom name) wrapMemoryNeed
-        { Name = name
-          Build = build
-          Transition = transition
-          MemoryNeed = wrapMemoryNeed
-          MemoryModel = memoryModel
-          LengthTransformation = lengthTransformation
-          Graph = PipelineGraph.singleton name transition
-          Cleaning = cleaning}
+        createWithModel name build transition memoryModel lengthTransformation cleaning
 
     let createWrapped<'S,'T> (name: string) (build: unit->Pipe<'S,'T>) (transition: ProfileTransition) (wrapMemoryNeed: MemoryNeedWrapped) (lengthTransformation: LengthTransformation) (cleaning: (unit->unit) list) =
         let memoryModel = StageMemoryModel.fromPeak (Custom name) wrapMemoryNeed
-        { Name = name
-          Build = build
-          Transition = transition
-          MemoryNeed = wrapMemoryNeed
-          MemoryModel = memoryModel
-          LengthTransformation = lengthTransformation
-          Graph = PipelineGraph.singleton name transition
-          Cleaning = cleaning}
+        createWithModel name build transition memoryModel lengthTransformation cleaning
 
     let createWrappedWithModel<'S,'T> (name: string) (build: unit->Pipe<'S,'T>) (transition: ProfileTransition) (memoryModel: StageMemoryModel) (lengthTransformation: LengthTransformation) (cleaning: (unit->unit) list) =
-        { Name = name
-          Build = build
-          Transition = transition
-          MemoryNeed = StageMemoryModel.memoryNeed memoryModel
-          MemoryModel = memoryModel
-          LengthTransformation = lengthTransformation
-          Graph = PipelineGraph.singleton name transition
-          Cleaning = cleaning}
+        createWithModel name build transition memoryModel lengthTransformation cleaning
+
+    let createWrappedWithCostModel<'S,'T> (name: string) (build: unit->Pipe<'S,'T>) (transition: ProfileTransition) (costModel: StageCostModel) (lengthTransformation: LengthTransformation) (cleaning: (unit->unit) list) =
+        createWithCostModel name build transition costModel lengthTransformation cleaning
 
     let private withGraph graph stage =
         { stage with Graph = graph }
@@ -737,9 +936,9 @@ module Stage =
     let compose (stage1 : Stage<'S,'T>) (stage2 : Stage<'T,'U>) : Stage<'S,'U> =
         let build () = Pipe.compose (stage1.Build ()) (stage2.Build ())
         let transition = ProfileTransition.create stage1.Transition.From stage2.Transition.To
-        let memoryNeed nElems = SingleOrPair.add (stage1.MemoryNeed nElems) (stage2.MemoryNeed nElems)
+        let costModel = StageCostModel.combine (Custom $"{stage2.Name} o {stage1.Name}") stage1.CostModel stage2.CostModel
         let lengthTransformation = stage1.LengthTransformation >> stage2.LengthTransformation
-        createWrapped $"{stage2.Name} o {stage1.Name}" build transition memoryNeed lengthTransformation (stage2.Cleaning@stage1.Cleaning)
+        createWrappedWithCostModel $"{stage2.Name} o {stage1.Name}" build transition costModel lengthTransformation (stage2.Cleaning@stage1.Cleaning)
         |> withGraph (PipelineGraph.compose stage1.Graph stage2.Graph)
 
     let (-->) = compose
@@ -802,13 +1001,27 @@ module Stage =
     let map2 (name: string) (debug: bool) (f: 'U -> 'V -> 'W) (stage1: Stage<'In, 'U>) (stage2: Stage<'In, 'V>) (memoryNeed: MemoryNeedWrapped) (lengthTransformation: LengthTransformation) : Stage<'In, 'W> =
         let build () = Pipe.map2 name debug f (stage1.Build ()) (stage2.Build ())
         let transition = ProfileTransition.create Streaming Streaming
-        createWrapped name build transition memoryNeed lengthTransformation (stage1.Cleaning@stage2.Cleaning)
+        let memoryModel = StageMemoryModel.fromPeak Join memoryNeed
+        let workModel =
+            { Kind = Mixed
+              Evaluation = Join
+              Estimate =
+                fun input ->
+                    StageWorkPressure.add (stage1.CostModel.Work.Estimate input) (stage2.CostModel.Work.Estimate input) }
+        createWrappedWithCostModel name build transition (StageCostModel.create memoryModel workModel) lengthTransformation (stage1.Cleaning@stage2.Cleaning)
         |> withGraph (PipelineGraph.parallelJoin name stage1.Graph stage2.Graph)
 
     let map2Sync (name: string) (debug: bool) (f: 'U -> 'V -> 'W) (stage1: Stage<'In, 'U>) (stage2: Stage<'In, 'V>) (memoryNeed: MemoryNeedWrapped) (lengthTransformation: LengthTransformation) : Stage<'In, 'W> =
         let build () = Pipe.map2Sync name debug f (stage1.Build ()) (stage2.Build ())
         let transition = ProfileTransition.create Streaming Streaming
-        createWrapped name build transition memoryNeed lengthTransformation (stage1.Cleaning@stage2.Cleaning)
+        let memoryModel = StageMemoryModel.fromPeak Join memoryNeed
+        let workModel =
+            { Kind = Mixed
+              Evaluation = Join
+              Estimate =
+                fun input ->
+                    StageWorkPressure.add (stage1.CostModel.Work.Estimate input) (stage2.CostModel.Work.Estimate input) }
+        createWrappedWithCostModel name build transition (StageCostModel.create memoryModel workModel) lengthTransformation (stage1.Cleaning@stage2.Cleaning)
         |> withGraph (PipelineGraph.parallelJoin name stage1.Graph stage2.Graph)
 
     let teeFst (stage: Stage<'A, 'A>) : Stage<'A * 'B, 'A * 'B> =
@@ -963,6 +1176,8 @@ type Plan<'S,'T> = {
     stage          : Stage<'S,'T> option // the function to be applied, when the plan is run
     graph          : PipelineGraph // the analyzable graph built while the DSL is composed
     sourcePeek     : SourcePeek option // source metadata available to future optimizers
+    costPeak       : StageCostPressure option // peak stage cost seen while composing the plan
+    costObservations: StageCostPressure list // individual stage costs seen while composing the plan
     nElemsPerSlice : SingleOrPair // number of elments (pixels) before transformation - this could be single or pair
     length         : uint64 // length of the sequence, the plan is applied to
     memAvail       : uint64 // memory available for the plan
@@ -978,13 +1193,19 @@ module Plan =
         if debug then DebugLevel.current() |> max 1u else 0u
 
     let create<'S,'T when 'T: equality> (stage: Stage<'S,'T> option) (memAvail : uint64) (memPeak: uint64) (nElemsPerSlice: uint64) (length: uint64) (debug: bool) : Plan<'S, 'T> =
-        { stage = stage; graph = graphOfStage stage; sourcePeek = None; memAvail = memAvail; memPeak = memPeak; nElemsPerSlice = Single nElemsPerSlice; length = length; debug = debug; debugLevel = levelOf debug }
+        { stage = stage; graph = graphOfStage stage; sourcePeek = None; costPeak = None; costObservations = []; memAvail = memAvail; memPeak = memPeak; nElemsPerSlice = Single nElemsPerSlice; length = length; debug = debug; debugLevel = levelOf debug }
 
     let createWrapped<'S,'T when 'T: equality> (stage: Stage<'S,'T> option) (memAvail : uint64) (memPeak: uint64) (nElemsPerSlice: SingleOrPair) (length: uint64) (debug: bool) : Plan<'S, 'T> =
-        { stage = stage; graph = graphOfStage stage; sourcePeek = None; memAvail = memAvail; memPeak = memPeak; nElemsPerSlice = nElemsPerSlice; length = length; debug = debug; debugLevel = levelOf debug }
+        { stage = stage; graph = graphOfStage stage; sourcePeek = None; costPeak = None; costObservations = []; memAvail = memAvail; memPeak = memPeak; nElemsPerSlice = nElemsPerSlice; length = length; debug = debug; debugLevel = levelOf debug }
 
     let withSourcePeek (sourcePeek: SourcePeek) (pl: Plan<'S,'T>) =
         { pl with sourcePeek = Some sourcePeek }
+
+    let private mergeCostPeak (current: StageCostPressure option) (candidate: StageCostPressure) =
+        match current with
+        | None -> Some candidate
+        | Some previous ->
+            if candidate.Memory.Peak > previous.Memory.Peak then Some candidate else current
 
     let graph (pl: Plan<'S,'T>) =
         pl.graph
@@ -1011,10 +1232,13 @@ module Plan =
         let stage' = Option.map (fun stg -> Stage.compose stg stage) pl.stage
         let memNeeded = pl.nElemsPerSlice |> stage.MemoryNeed  |> SingleOrPair.sum |> SingleOrPair.fst// Stage.MemoryNeed must be updated as well
         let memPeak = max pl.memPeak memNeeded
+        let stageCost = StageCostModel.estimate stage.CostModel pl.nElemsPerSlice
+        let costPeak = mergeCostPeak pl.costPeak stageCost
+        let costObservations = stageCost :: pl.costObservations
         if (not pl.debug) && memPeak > pl.memAvail then
             failwith $"Out of available memory: {stage.Name} requested {memNeeded} B but have only {pl.memAvail} B"
         let nElemsPerSlice' = SingleOrPair.map stage.LengthTransformation pl.nElemsPerSlice // Stage LengthTransformation must be updated as well
-        { createWrapped stage' pl.memAvail memPeak nElemsPerSlice' pl.length pl.debug with sourcePeek = pl.sourcePeek }
+        { createWrapped stage' pl.memAvail memPeak nElemsPerSlice' pl.length pl.debug with sourcePeek = pl.sourcePeek; costPeak = costPeak; costObservations = costObservations }
 
     let (>=>) (pl: Plan<'a, 'b>) (stage: Stage<'b, 'c>) : Plan<'a, 'c> =
         composePlan $">=>" pl stage
@@ -1031,9 +1255,12 @@ module Plan =
         let nElemsPerSlice' = SingleOrPair.map stage.LengthTransformation pl.nElemsPerSlice
         let memNeeded = pl.nElemsPerSlice |> stage.MemoryNeed  |> SingleOrPair.sum |> SingleOrPair.fst
         let memPeak = max pl.memPeak memNeeded
+        let stageCost = StageCostModel.estimate stage.CostModel pl.nElemsPerSlice
+        let costPeak = mergeCostPeak pl.costPeak stageCost
+        let costObservations = stageCost :: pl.costObservations
         if (not pl.debug) && memPeak > pl.memAvail then
             failwith $"Out of available memory: {stage.Name} requested {memoryNeed} B but have only {pl.memAvail} B"
-        { createWrapped (Some stage) pl.memAvail memPeak nElemsPerSlice' pl.length pl.debug with sourcePeek = pl.sourcePeek }
+        { createWrapped (Some stage) pl.memAvail memPeak nElemsPerSlice' pl.length pl.debug with sourcePeek = pl.sourcePeek; costPeak = costPeak; costObservations = costObservations }
         
     /// parallel execution of non-synchronised streams
     let internal zipPlan (name: string) (pl1: Plan<'In, 'U>) (pl2: Plan<'In, 'V>) : Plan<'In, ('U * 'V)> =
@@ -1059,10 +1286,18 @@ module Plan =
                 let memNeeded = SingleOrPair.add (nElemsPerSlice |> stage1.MemoryNeed) (nElemsPerSlice |> stage2.MemoryNeed)
                 let maxMemPeak = max pl1.memPeak pl2.memPeak
                 let memPeak = max maxMemPeak (nElemsPerSlice |> memoryNeed |> SingleOrPair.fst)
+                let stageCost = StageCostModel.estimate stage.CostModel nElemsPerSlice
+                let costPeak =
+                    mergeCostPeak pl1.costPeak stageCost
+                    |> fun peak ->
+                        match pl2.costPeak with
+                        | Some rightPeak -> mergeCostPeak peak rightPeak
+                        | None -> peak
+                let costObservations = stageCost :: (pl1.costObservations @ pl2.costObservations)
                 let maxMemAvail = max pl1.memAvail pl2.memAvail // Should we max or sum? What would the most natural usage be for src?
                 if (not debug) && (memPeak > maxMemAvail) then
                     failwith $"Out of available memory: {stage.Name} requested {memNeeded|>SingleOrPair.fst}+{memNeeded|>SingleOrPair.snd}={memPeak} B but have only {maxMemAvail} B"
-                { createWrapped (Some stage) maxMemAvail memPeak nElemsPerSlice pl1.length debug with sourcePeek = pl1.sourcePeek }
+                { createWrapped (Some stage) maxMemAvail memPeak nElemsPerSlice pl1.length debug with sourcePeek = pl1.sourcePeek; costPeak = costPeak; costObservations = costObservations }
             | _,_ -> failwith $"[{name}] Cannot zip with an empty plan"
 
     /// parallel execution of non-synchronised streams

@@ -8,6 +8,24 @@ open StackCore
 type FileInfo = ImageFunctions.FileInfo
 type ChunkInfo = { chunks: int list; size: uint64 list; topLeftInfo: FileInfo}
 
+let private inputValue input =
+    input |> SingleOrPair.sum |> SingleOrPair.fst
+
+let private imageBytes<'T> nPixels =
+    nPixels * (typeof<'T> |> Image.getBytesPerComponent |> uint64)
+
+let private imageIoCost<'T> kind evaluation calibrationKey bytes ops : StageWorkModel =
+    match kind with
+    | "read" -> StageWorkModel.ioRead evaluation (Some calibrationKey) bytes ops
+    | "write" -> StageWorkModel.ioWrite evaluation (Some calibrationKey) bytes ops
+    | _ -> StageWorkModel.zero evaluation
+
+let private withCostModel costModel stage =
+    { stage with
+        CostModel = costModel
+        MemoryModel = costModel.Memory
+        MemoryNeed = StageCostModel.memoryNeed costModel }
+
 let getStackDepth (inputDir: string) (suffix: string) : uint =
     let files = Directory.GetFiles(inputDir, "*"+suffix) |> Array.sort
     files.Length |> uint
@@ -48,7 +66,13 @@ let getFilenames (inputDir: string) (suffix: string) (filter: string[]->string[]
     let memPeak = 256UL // surrugate string length
     let memoryNeed = fun _ -> memPeak
     let lengthTransformation = fun _ -> depth
-    let stage = Stage.init $"{name}" (uint depth) mapper transition memoryNeed lengthTransformation |> Some
+    let memoryModel = StageMemoryModel.fromSinglePeak Source memoryNeed
+    let workModel =
+        StageWorkModel.cpu Source (Some "getFilenames") (fun _ -> float depth)
+    let stage =
+        Stage.init $"{name}" (uint depth) mapper transition memoryNeed lengthTransformation
+        |> withCostModel (StageCostModel.create memoryModel workModel)
+        |> Some
 
     let memPerElem = 256UL // surrugate string length
     let length = depth
@@ -71,7 +95,16 @@ let readFilesWithShape<'T when 'T: equality> (debug: bool) (width: uint) (height
     let memoryNeed = fun _ -> Image<'T>.memoryEstimate width height
     let lengthTransformation _ = uint64 width * uint64 height
 
+    let memoryModel = StageMemoryModel.fromSinglePeak Map memoryNeed
+    let workModel =
+        imageIoCost<'T>
+            "read"
+            Map
+            $"readFiles.{typeof<'T>.Name}"
+            (fun _ -> Image<'T>.memoryEstimate width height)
+            (fun _ -> 1UL)
     Stage.map name mapper memoryNeed lengthTransformation
+    |> withCostModel (StageCostModel.create memoryModel workModel)
 
 let readFiles<'T when 'T: equality> (debug: bool) : Stage<string, Image<'T>> =
     readFilesWithShape<'T> debug 0u 0u
@@ -95,7 +128,16 @@ let readFilePairs<'T when 'T: equality> (debug: bool) : Stage<string*string, Ima
     let memoryNeed = fun _ -> 2UL*Image<'T>.memoryEstimate width height
     let lengthTransformation = id
 
+    let memoryModel = StageMemoryModel.fromSinglePeak Map memoryNeed
+    let workModel =
+        imageIoCost<'T>
+            "read"
+            Map
+            $"readFilePairs.{typeof<'T>.Name}"
+            (fun _ -> 2UL * Image<'T>.memoryEstimate width height)
+            (fun _ -> 2UL)
     Stage.map name mapper memoryNeed lengthTransformation
+    |> withCostModel (StageCostModel.create memoryModel workModel)
 
 let readFiltered<'T when 'T: equality> (inputDir: string) (suffix: string) (filter: string[]->string[]) (pl: Plan<unit, unit>) : Plan<unit, Image<'T>> =
     let info = getStackInfo inputDir suffix
@@ -240,7 +282,13 @@ let readChunksAsWindows<'T when 'T: equality> (inputDir: string) (suffix: string
     let memPeak = 256UL // surrugate string length
     let memoryNeed = fun _ -> memPeak
     let lengthTransformation = fun _ -> depth
-    let stage = Stage.init $"{name}" (uint depth) mapper transition memoryNeed lengthTransformation |> Some
+    let memoryModel = StageMemoryModel.fromSinglePeak Source memoryNeed
+    let workModel =
+        StageWorkModel.ioRead Source (Some $"readChunks.{typeof<'T>.Name}") (fun _ -> elementBytes) (fun _ -> 1UL)
+    let stage =
+        Stage.init $"{name}" (uint depth) mapper transition memoryNeed lengthTransformation
+        |> withCostModel (StageCostModel.create memoryModel workModel)
+        |> Some
 
     let memPerElem = 256UL // surrugate string length
     let length = depth
@@ -264,7 +312,7 @@ let deleteIfExists dir =
     if System.IO.Directory.Exists(dir) then 
         System.IO.Directory.Delete(dir,true)
 
-let write (outputDir: string) (suffix: string) : Stage<Image<'T>, Image<'T>> =
+let write<'T when 'T: equality> (outputDir: string) (suffix: string) : Stage<Image<'T>, Image<'T>> =
     let t = typeof<'T>
     if (icompare suffix ".tif" || icompare suffix ".tiff") 
         && not (t = typeof<uint8> || t = typeof<int8> || t = typeof<uint16> || t = typeof<int16> || t = typeof<float32>) then
@@ -276,7 +324,16 @@ let write (outputDir: string) (suffix: string) : Stage<Image<'T>, Image<'T>> =
         image.toFile(fileName)
         image
     let memoryNeed = id
+    let memoryModel = StageMemoryModel.fromSinglePeak Iter memoryNeed
+    let workModel =
+        imageIoCost<'T>
+            "write"
+            Iter
+            $"write.{typeof<'T>.Name}"
+            (fun input -> inputValue input |> imageBytes<'T>)
+            (fun _ -> 1UL)
     Stage.mapi $"write \"{outputDir}/*{suffix}\"" mapper memoryNeed id
+    |> withCostModel (StageCostModel.create memoryModel workModel)
 
 let _writeChunkSlice (debug: bool) (outputDir: string) (suffix: string) (width: uint) (height: uint) (winSz: uint) (k: int) (stack: Image<'T>) =
     for i in [0u..stack.GetWidth()/width] do
@@ -297,7 +354,7 @@ let _writeChunkSlice (debug: bool) (outputDir: string) (suffix: string) (width: 
 let _writeChunks (debug: bool) (outputDir: string) (suffix: string) (width: uint) (height: uint) (winSz: uint) (stack: Image<'T>) =
     ()
 
-let writeInChunks (outputDir: string) (suffix: string) (width: uint) (height: uint) (winSz: uint) : Stage<Image<'T>, Image<'T>> =
+let writeInChunks<'T when 'T: equality> (outputDir: string) (suffix: string) (width: uint) (height: uint) (winSz: uint) : Stage<Image<'T>, Image<'T>> =
     let t = typeof<'T>
     if (icompare suffix ".tif" || icompare suffix ".tiff") 
         && not (t = typeof<uint8> || t = typeof<int8> || t = typeof<uint16> || t = typeof<int16> || t = typeof<float32>) then
@@ -321,5 +378,15 @@ let writeInChunks (outputDir: string) (suffix: string) (width: uint) (height: ui
         let str = uint64 stride
         max (nPixels*(wsz*(2UL*bt8+bt64)-str*bt8)) (nPixels*(wsz*(bt8+bt64)+str*(bt64-bt8)))
     let lengthTransformation = id
-    let stg = Stage.mapi "writeInChunks" mapper memoryNeed lengthTransformation
+    let memoryModel = StageMemoryModel.fromSinglePeak Iter memoryNeed
+    let workModel =
+        imageIoCost<'T>
+            "write"
+            Iter
+            $"writeInChunks.{typeof<'T>.Name}"
+            (fun input -> inputValue input |> imageBytes<'T>)
+            (fun _ -> 1UL)
+    let stg =
+        Stage.mapi "writeInChunks" mapper memoryNeed lengthTransformation
+        |> withCostModel (StageCostModel.create memoryModel workModel)
     (window winSz pad stride) --> stg --> flatten ()

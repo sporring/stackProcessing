@@ -11,6 +11,20 @@ let liftUnaryReleaseAfter (name: string) (f: Image<'S> -> Image<'T>) (memoryNeed
 
 let getBytesPerComponent<'T> = (typeof<'T> |> Image.getBytesPerComponent |> uint64)
 
+let private inputValue input =
+    input |> SingleOrPair.sum |> SingleOrPair.fst
+
+let private withCostModel costModel stage =
+    { stage with
+        CostModel = costModel
+        MemoryModel = costModel.Memory
+        MemoryNeed = StageCostModel.memoryNeed costModel }
+
+let private nativeImageStageCost name memoryModel workUnits =
+    StageCostModel.create
+        memoryModel
+        (StageWorkModel.native Map (Some name) workUnits)
+
 type System.String with // From https: //stackoverflow.com/questions/1936767/f-case-insensitive-string-compare
     member s1.icompare(s2: string) =
         System.String.Equals(s1, s2, System.StringComparison.CurrentCultureIgnoreCase)
@@ -240,7 +254,13 @@ let discreteGaussianOp (name: string) (sigma: float) (outputRegionMode: ImageFun
         match outputRegionMode with
             | Some Valid -> nElems - 2UL * uint64 pad
             |_ -> nElems
-    let stg = Stage.map name f memoryNeed lengthTransformation // wrong for Valid, where the sequences becomes shorter
+    let memoryModel = StageMemoryModel.fromSinglePeak Map memoryNeed
+    let workUnits input =
+        let kernelVoxels = uint64 ksz * uint64 ksz * uint64 ksz
+        float (inputValue input * uint64 win * kernelVoxels)
+    let stg =
+        Stage.map name f memoryNeed lengthTransformation // wrong for Valid, where the sequences becomes shorter
+        |> withCostModel (nativeImageStageCost $"discreteGaussian.Float64" memoryModel workUnits)
     (window win pad stride) --> stg --> flatten ()
 
 let discreteGaussian = discreteGaussianOp "discreteGaussian"
@@ -291,7 +311,13 @@ let convolveOp (name: string) (kernel: Image<'T>) (outputRegionMode: ImageFuncti
     let f debug =  volFctToLstFctReleaseAfterDebug debug (fun image3D -> ImageFunctions.convolve outputRegionMode bc image3D kernel) pad stride
     let memoryNeed nPixels = (2UL*nPixels*(uint64 win) + (uint64 ksz))*(typeof<'T> |> Image.getBytesPerComponent |> uint64)
     let lengthTransformation nElems = nElems - 2UL*(uint64 pad) 
-    let stg = Stage.map name f memoryNeed lengthTransformation
+    let memoryModel = StageMemoryModel.fromSinglePeak Map memoryNeed
+    let workUnits input =
+        let kernelVoxels = uint64 (kernel.GetWidth()) * uint64 (kernel.GetHeight()) * uint64 (kernel.GetDepth())
+        float (inputValue input * uint64 win * kernelVoxels)
+    let stg =
+        Stage.map name f memoryNeed lengthTransformation
+        |> withCostModel (nativeImageStageCost $"convolve.{typeof<'T>.Name}" memoryModel workUnits)
     let padding = createPadding "padding" pad 
     (Stage.prepend "prepend" padding) --> (Stage.append "append" padding) --> (window win 0u stride) --> stg --> flatten ()
 
