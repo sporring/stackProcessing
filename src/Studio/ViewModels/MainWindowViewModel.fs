@@ -248,6 +248,17 @@ module private ScalarNode =
         | _, Some value -> value
         | _ -> state.Definition.DisplayName
 
+module private FileDirectoryNode =
+    let kindOptions = [ "File"; "Directory" ]
+
+    let title (state: PipelineNodeState) =
+        state.Parameters
+        |> Seq.tryFind (fun parameter -> parameter.Key = "value")
+        |> Option.map (fun parameter -> parameter.Value.Trim())
+        |> Option.filter (String.IsNullOrWhiteSpace >> not)
+        |> Option.map NodeTitle.quotedString
+        |> Option.defaultValue state.Definition.DisplayName
+
 module private ScalarOpNode =
     let typeOptions =
         [ Numeric UInt8
@@ -685,6 +696,10 @@ type PipelineNodeViewModel(
                     state.Title <- ScalarNode.title state
                     this.Name <- state.Title
                     markGraphDirty()
+                elif state.Definition.Id = "FileDirectory" && parameter.Key = "value" && args.PropertyName = nameof parameter.Value then
+                    state.Title <- FileDirectoryNode.title state
+                    this.Name <- state.Title
+                    markGraphDirty()
                 elif SourceImageNode.hasInputTitle state.Definition.Id && parameter.Key = "input" && args.PropertyName = nameof parameter.Value then
                     state.Title <- SourceImageNode.title state
                     this.Name <- state.Title
@@ -823,6 +838,7 @@ type PipelineNodeViewModel(
         let inputs, outputs =
             match state.Definition.Id with
             | "Scalar" -> state.Definition.Inputs, [ ScalarNode.outputPort state ]
+            | "FileDirectory" -> state.Definition.Inputs, state.Definition.Outputs
             | "ScalarOp" -> state.Definition.Inputs, [ ScalarOpNode.outputPort state ]
             | "Read"
             | "ReadRandom"
@@ -846,6 +862,7 @@ type PipelineNodeViewModel(
             let kind =
                 match state.Definition.Id with
                 | "Scalar"
+                | "FileDirectory"
                 | "ScalarOp" -> ScalarOutput
                 | "ComputeStats"
                 | "ComponentTranslationTable"
@@ -948,10 +965,13 @@ type MainWindowViewModel() as this =
                 Path.GetTempPath()
 
         Path.Combine(tempRoot, "StackProcessingStudioRun", string Environment.ProcessId)
+
     let studioWorkingDirectory = Directory.GetCurrentDirectory()
     let mutable paletteSearch = ""
     let mutable graphDirty = false
     let mutable currentGraphPath: string option = None
+    let mutable resolveFileDirectoryPath: PipelineNodeViewModel -> Async<string option> =
+        fun _ -> async { return None }
 
     let editor =
         let editor = EditorViewModel()
@@ -991,6 +1011,14 @@ type MainWindowViewModel() as this =
                         |> List.map (fun value -> ParameterOptionViewModel(value, value, true))
 
                     PipelineParameterViewModel(parameter.Label, parameter.Key, parameter.DefaultValue, parameter.Type, options, false)
+                | "FileDirectory", "kind" ->
+                    let options =
+                        FileDirectoryNode.kindOptions
+                        |> List.map (fun value -> ParameterOptionViewModel(value, value, true))
+
+                    PipelineParameterViewModel(parameter.Label, parameter.Key, parameter.DefaultValue, parameter.Type, options, false)
+                | "FileDirectory", "value" ->
+                    PipelineParameterViewModel(parameter.Label, parameter.Key, parameter.DefaultValue, parameter.Type, canUseInput = false)
                 | "ScalarOp", "operation" ->
                     let options =
                         ScalarOpNode.operationOptions
@@ -1064,6 +1092,8 @@ type MainWindowViewModel() as this =
 
         if definition.Id = "Scalar" then
             state.Title <- ScalarNode.title state
+        elif definition.Id = "FileDirectory" then
+            state.Title <- FileDirectoryNode.title state
         elif definition.Id = "ScalarOp" then
             state.Title <- ScalarOpNode.title state
         elif SourceImageNode.hasInputTitle definition.Id then
@@ -1093,6 +1123,11 @@ type MainWindowViewModel() as this =
     let pipelineStates () =
         pipelineNodes ()
         |> Seq.map _.State
+
+    let fileDirectoryNodes () =
+        pipelineNodes ()
+        |> Seq.filter (fun node -> node.State.Definition.Id = "FileDirectory")
+        |> Seq.toArray
 
     let clearSelectedNodes () =
         selectedNodes
@@ -1952,6 +1987,59 @@ type MainWindowViewModel() as this =
             this.SetRunInProgress(false)
         }
 
+    member this.ResolveFileDirectoryPath
+        with get () = resolveFileDirectoryPath
+        and set value = resolveFileDirectoryPath <- value
+
+    member private _.SetFileDirectoryPromptHighlight(node: PipelineNodeViewModel, isHighlighted: bool) =
+        let apply () =
+            if isHighlighted then
+                selectOnlyNode node
+
+            node.State.IsProblemHighlighted <- isHighlighted
+
+        if Dispatcher.UIThread.CheckAccess() then
+            apply()
+        else
+            Dispatcher.UIThread.Post(apply)
+
+    member private this.SetFileDirectoryValue(node: PipelineNodeViewModel, path: string) =
+        let apply () =
+            node.State.Parameters
+            |> Seq.tryFind (fun parameter -> parameter.Key = "value")
+            |> Option.iter (fun parameter -> parameter.Value <- path)
+
+            node.State.Title <- FileDirectoryNode.title node.State
+            node.Name <- node.State.Title
+            this.MarkGraphDirty()
+
+        if Dispatcher.UIThread.CheckAccess() then
+            apply()
+        else
+            Dispatcher.UIThread.Post(apply)
+
+    member private this.ResolveFileDirectoryInputs() =
+        async {
+            let mutable shouldContinue = true
+
+            for node in fileDirectoryNodes () do
+                if shouldContinue then
+                    this.SetFileDirectoryPromptHighlight(node, true)
+
+                    let! selectedPath = resolveFileDirectoryPath node
+
+                    this.SetFileDirectoryPromptHighlight(node, false)
+
+                    match selectedPath with
+                    | Some path when not (String.IsNullOrWhiteSpace path) ->
+                        this.SetFileDirectoryValue(node, path)
+                    | _ ->
+                        shouldContinue <- false
+                        this.AppendGraphOutputLineOnUi("Run cancelled: file/directory selection was not completed.")
+
+            return shouldContinue
+        }
+    
     member _.ConnectSeedPipeline() =
         if drawing.Connectors.Count = 0 then
             pipelineNodes ()
@@ -2202,12 +2290,18 @@ type MainWindowViewModel() as this =
             (fun _ ->
                 match this.ValidateGraph() with
                 | Ok () ->
-                    let generatedProgram = PipelineCodeGenerator.generateSavedGraph (this.ExportGraph())
                     this.SetRunInProgress(true)
-                    this.AppendGeneratedProgram(generatedProgram)
-                    generatedProgram
-                    |> this.BuildAndRunGeneratedProgram
-                    |> Async.Start
+                    async {
+                        let! fileDirectoryInputsResolved = this.ResolveFileDirectoryInputs()
+
+                        if fileDirectoryInputsResolved then
+                            let generatedProgram = PipelineCodeGenerator.generateSavedGraph (this.ExportGraph())
+                            this.AppendGeneratedProgram(generatedProgram)
+                            do! this.BuildAndRunGeneratedProgram(generatedProgram)
+                        else
+                            this.SetRunInProgress(false)
+                    }
+                    |> Async.StartImmediate
                 | Error message -> this.AppendGeneratedProgram(message)),
             (fun _ -> true))
         :> ICommand

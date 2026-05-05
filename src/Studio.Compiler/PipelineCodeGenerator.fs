@@ -135,8 +135,16 @@ module PipelineCodeGenerator =
         else
             pixelTypeNameFromSuffix configuredType
 
+    let private uint64Literal (value: string) =
+        let trimmed = value.Trim()
+
+        if trimmed.EndsWith("UL", StringComparison.OrdinalIgnoreCase) then
+            trimmed
+        else
+            $"{trimmed}UL"
+
     let private sourcePrefix availableMemory line =
-        $"source {availableMemory}{Environment.NewLine}{line}"
+        $"source {uint64Literal availableMemory}{Environment.NewLine}{line}"
 
     let private pairFunctionName functionId =
         match functionId with
@@ -189,6 +197,26 @@ module PipelineCodeGenerator =
 
     let private scalarTypeName (node: SavedNode) =
         savedParamValue "type" node
+
+    let private scalarParameter key value =
+        { Key = key
+          Value = value
+          UseInput = false }
+
+    let private replaceFileDirectorySelectors (graph: SavedGraph) =
+        let nodes =
+            graph.Nodes
+            |> Array.map (fun node ->
+                if node.FunctionId = "FileDirectory" then
+                    { node with
+                        FunctionId = "Scalar"
+                        Parameters =
+                            [| scalarParameter "type" "String"
+                               scalarParameter "value" (savedParamValue "value" node) |] }
+                else
+                    node)
+
+        { graph with Nodes = nodes }
 
     let private scalarNames (scalarNodes: SavedNode array) =
         scalarNodes
@@ -355,12 +383,12 @@ module PipelineCodeGenerator =
                     nodesById
                     |> Map.tryFind edge.FromNode
                     |> Option.map (fun sourceNode ->
-                        if sourceNode.FunctionId = "Tap" then
-                            "I"
-                        elif sourceNode.FunctionId = "Scalar" then
-                            savedParamValue "type" sourceNode
-                        else
-                            sourceNode.FunctionId)
+                            if sourceNode.FunctionId = "Tap" then
+                                "I"
+                            elif sourceNode.FunctionId = "Scalar" then
+                                savedParamValue "type" sourceNode
+                            else
+                                sourceNode.FunctionId)
                 | _ ->
                     None)
             |> Option.orElseWith (fun () ->
@@ -467,7 +495,7 @@ module PipelineCodeGenerator =
                   $"    let a = 2.0 * System.Math.PI * float i / float depth"
                   $"    let offset = float boxSize / 2.0 - 0.5"
                   $"    {transformBody}"
-                  $"source {availableMemory}"
+                  $"source {uint64Literal availableMemory}"
                   $"|> createByEuler2DTransform<{pixelType}> {imageName} depth {transformName}" ]
         | "ReadRandom" ->
             let availableMemory = parameterValue "availableMemory"
@@ -662,6 +690,7 @@ module PipelineCodeGenerator =
             $"// Unsupported element: {node.FunctionId}"
 
     let generateSavedGraph (graph: SavedGraph) =
+        let graph = replaceFileDirectorySelectors graph
         let builder = StringBuilder()
         let nodesById = graph.Nodes |> Seq.map (fun node -> node.Id, node) |> Map.ofSeq
         let scalarNodes =

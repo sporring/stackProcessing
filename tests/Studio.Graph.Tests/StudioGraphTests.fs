@@ -58,7 +58,16 @@ let catalogSuite =
     testList "Studio.Graph catalog" [
         testCase "catalog exposes expected generic functions" <| fun _ ->
             let ids = BuiltInCatalog.orderedFunctions |> List.map _.Id
-            Expect.containsAll ids ["Scalar"; "Read"; "Write"; "ImageOpImage"; "ComputeStats"; "Chart"] "Important Studio functions should be in the palette catalog."
+            Expect.containsAll ids ["Scalar"; "FileDirectory"; "Read"; "Write"; "ImageOpImage"; "ComputeStats"; "Chart"] "Important Studio functions should be in the palette catalog."
+
+        testCase "file directory source emits a string scalar" <| fun _ ->
+            let fileDirectory = BuiltInCatalog.find "FileDirectory"
+
+            Expect.equal fileDirectory.DisplayName "file/directory" "File/directory should have a compact palette name."
+            Expect.equal fileDirectory.Inputs [] "File/directory is a source."
+            Expect.equal fileDirectory.Outputs.[0].Type (Scalar BasicType.String) "File/directory should emit a string path."
+            Expect.equal fileDirectory.Parameters.[0].Key "kind" "The picker kind should be the first parameter."
+            Expect.equal fileDirectory.Parameters.[1].Key "value" "The resolved path should be stored in value."
 
         testCase "catalog entries have palette summaries and detailed descriptions can be empty" <| fun _ ->
             let functions = BuiltInCatalog.orderedFunctions

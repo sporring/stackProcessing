@@ -102,6 +102,45 @@ type MainView() as this =
         else
             None
 
+    let folderLocalPath (folder: IStorageFolder) =
+        if folder.Path.IsAbsoluteUri then
+            Some folder.Path.LocalPath
+        else
+            None
+
+    let fileDirectoryKind (node: PipelineNodeViewModel) =
+        node.State.Parameters
+        |> Seq.tryFind (fun parameter -> parameter.Key = "kind")
+        |> Option.map _.Value
+        |> Option.defaultValue "Directory"
+
+    let resolveFileDirectoryPathAsync (node: PipelineNodeViewModel) =
+        async {
+            match TopLevel.GetTopLevel(this) with
+            | null ->
+                return None
+            | topLevel ->
+                let title = $"Select {fileDirectoryKind node} for {node.State.Title}"
+
+                if String.Equals(fileDirectoryKind node, "File", StringComparison.OrdinalIgnoreCase) then
+                    let options =
+                        FilePickerOpenOptions(
+                            Title = title,
+                            AllowMultiple = false,
+                            FileTypeFilter = [ FilePickerFileTypes.All ])
+
+                    let! files = topLevel.StorageProvider.OpenFilePickerAsync(options) |> Async.AwaitTask
+                    return files |> Seq.tryHead |> Option.bind localPath
+                else
+                    let options =
+                        FolderPickerOpenOptions(
+                            Title = title,
+                            AllowMultiple = false)
+
+                    let! folders = topLevel.StorageProvider.OpenFolderPickerAsync(options) |> Async.AwaitTask
+                    return folders |> Seq.tryHead |> Option.bind folderLocalPath
+        }
+
     let parentWindow () =
         match TopLevel.GetTopLevel(this) with
         | :? Window as window -> window
@@ -1551,6 +1590,7 @@ type MainView() as this =
 
                     match this.DataContext with
                     | :? MainWindowViewModel as viewModel ->
+                        viewModel.ResolveFileDirectoryPath <- resolveFileDirectoryPathAsync
                         Dispatcher.UIThread.Post(fun () -> viewModel.ConnectSeedPipeline())
                     | _ -> ()
 
