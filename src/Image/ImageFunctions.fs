@@ -224,8 +224,8 @@ let internal convolve3 (img:itk.simple.Image) (ker:itk.simple.Image) (outputRegi
     let szRes, offset = 
         match outputRegionMode with
         | None | Some Same -> 
-            szImg, 
-            List.map (fun a -> a/2) szKer // floor
+            [ szImg[0]; szImg[1]; szImg[2] - szKer[2] + 1 ],
+            [ szKer[0] / 2; szKer[1] / 2; szKer[2] - 1 ] // x/y same, z valid for stack windows
         | Some Valid ->
             List.map2 (fun a b -> a - b + 1) szImg szKer,
             szKer
@@ -282,8 +282,12 @@ let convolve (outputRegionMode: OutputRegionMode option) (boundaryCondition: Bou
             let szImg = img.GetSize() |> fromVectorUInt32 |> List.map int
             let szKer = ker.GetSize() |> fromVectorUInt32 |> List.map int
             let szZip = List.zip szImg szKer
+            if List.exists (fun (a,b) -> a < b) szZip then
+                failwith "Image must not be smaller than kernel in any dimension"
             let res =
-                if List.forall (fun (a,b) -> a >= b && b > 1) szZip then
+                if dimImg = 3u && outputRegionMode <> Some Valid then
+                    convolve3 img ker outputRegionMode
+                elif List.forall (fun (a,b) -> a >= b && b > 1) szZip then
                     f.Execute(img,ker)
                 elif dimImg = 3u then
                     convolve3 img ker outputRegionMode
@@ -338,13 +342,7 @@ let finiteDiffFilter3D (sigma:float) (direction: uint) (order: uint) : Image<flo
             Array3D.init 1 n 1 (fun _ i _ -> lst[i])
         else 
             Array3D.init 1 1 n (fun _ _ i -> lst[i])
-    let stensil = Image<float>.ofArray3D(arr, "stensil3D") 
-    let sz = defaultGaussWindowSize sigma
-    let gauss = gauss 3u sigma (Some sz)
-    let kernel = convolve None None gauss stensil
-    stensil.decRefCount()
-    gauss.decRefCount()
-    kernel
+    Image<float>.ofArray3D(arr, "stensil3D")
 
 let finiteDiffFilter4D (direction: uint) (order: uint) : Image<float> =
     let lst = stensil order
@@ -677,13 +675,27 @@ let toVectorOfImage images =
     v
 
 let stack (images: Image<'T> list) : Image<'T> =
-    use filter = new itk.simple.JoinSeriesImageFilter ()
-    filter.SetOrigin(0.0) |> ignore
-    filter.SetSpacing(1.0) |> ignore
-    use v = new itk.simple.VectorOfImage()
-    images |> List.iter (fun (I:Image<'T>) -> v.Add (I.toSimpleITK()))
-    let res = v |> filter.Execute |> (fun sitk -> Image<'T>.ofSimpleITK(sitk,"stack",images[0].index) )
-    res
+    match images with
+    | [] -> invalidArg "images" "Cannot stack an empty image list."
+    | first :: _ ->
+        let dim = first.GetDimensions()
+        if images |> List.exists (fun image -> image.GetDimensions() <> dim) then
+            failwith "Images must have the same dimensionality."
+        if dim = 2u then
+            let expectedSize = first.GetSize()
+            images
+            |> List.iter (fun image ->
+                if image.GetSize() <> expectedSize then
+                    failwithf "Image sizes differ: %A vs %A" (image.GetSize()) expectedSize)
+            use filter = new itk.simple.JoinSeriesImageFilter ()
+            filter.SetOrigin(0.0) |> ignore
+            filter.SetSpacing(1.0) |> ignore
+            use v = new itk.simple.VectorOfImage()
+            images |> List.iter (fun (I:Image<'T>) -> v.Add (I.toSimpleITK()))
+            v |> filter.Execute |> (fun sitk -> Image<'T>.ofSimpleITK(sitk,"stack",first.index) )
+        else
+            let stackDim = dim - 1u
+            images |> List.reduce (concatAlong stackDim)
 
 let extractSub (topLeft : uint list) (bottomRight: uint list) (img: Image<'T>) : Image<'T> =
     if topLeft.Length <> bottomRight.Length then
