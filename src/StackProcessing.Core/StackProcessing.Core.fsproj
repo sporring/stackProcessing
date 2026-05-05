@@ -5,21 +5,6 @@
         <GenerateDocumentationFile>true</GenerateDocumentationFile>
     </PropertyGroup>
 
-    <PropertyGroup>
-        <SigFile>$(MSBuildThisFileDirectory)StackProcessing.fsi</SigFile>
-    </PropertyGroup>
- 
-    <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|AnyCPU'">
-        <DefineConstants>TRACE</DefineConstants>
-        <PlatformTarget>AnyCPU</PlatformTarget>
-        <OtherFlags>--sig:"$(SigFile)"</OtherFlags>
-    </PropertyGroup>
-<!--
-    <Target Name="CleanTextFile" AfterTargets="Build">
-        <Exec Command="tmp='$(SigFile).tmp.'$$; grep -v '^[[:space:]]*$' '$(SigFile)' &gt; &quot;$tmp&quot; &amp;&amp; mv &quot;$tmp&quot; '$(SigFile)'"/>
-    </Target>
--->
-
     <!-- We want to copy the Managed library regardless of platform -->
     <ItemGroup>
       <Reference Include="SimpleITKCSharp">
@@ -34,7 +19,7 @@
         <TargetPath>libSimpleITKCSharpNative.dll</TargetPath>
       </None>
     </ItemGroup>
-    
+
     <ItemGroup Condition="$([MSBuild]::IsOSPlatform('Linux'))">
       <None Include="../../lib/libSimpleITKCSharpNative.so"
         CopyToOutputDirectory="PreserveNewest" />
@@ -44,18 +29,20 @@
       <None Include="../../lib/libSimpleITKCSharpNative.dylib"
         CopyToOutputDirectory="PreserveNewest" />
     </ItemGroup>
-    
+
     <ItemGroup>
+        <PackageReference Include="DIKU.Graph" Version="1.0.0" />
         <ProjectReference Include="../Image/Image.fsproj" />
         <ProjectReference Include="../SlimPipeline/SlimPipeline.fsproj" />
-        <ProjectReference Include="../StackProcessing.Core/StackProcessing.Core.fsproj" />
-<!--
-        <ProjectReference Include="../../diku-graph/graph/graph.fsproj" />
--->
     </ItemGroup>
 
     <ItemGroup>
-        <Compile Include="StackProcessing.fs" />
+        <Compile Include="TinyLinAlg.fs" />
+        <Compile Include="StackCore.fs" />
+        <Compile Include="StackProcessingCost.fs" />
+        <Compile Include="StackIO.fs" />
+        <Compile Include="StackImageFunctions.fs" />
+        <Compile Include="ChunkedAffineResampler.fs" />
     </ItemGroup>
 
 </Project>

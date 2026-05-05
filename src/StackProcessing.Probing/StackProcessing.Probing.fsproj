@@ -10,6 +10,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\StackProcessing\StackProcessing.fsproj" />
+    <ProjectReference Include="..\StackProcessing.Core\StackProcessing.Core.fsproj" />
   </ItemGroup>
 
   <ItemGroup>

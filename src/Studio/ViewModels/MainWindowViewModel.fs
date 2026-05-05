@@ -1833,6 +1833,7 @@ type MainWindowViewModel() as this =
 
         let repositoryRoot = this.FindRepositoryRoot()
         let stackProcessingProject = Path.Combine(repositoryRoot, "src", "StackProcessing", "StackProcessing.fsproj")
+        let stackProcessingCoreProject = Path.Combine(repositoryRoot, "src", "StackProcessing.Core", "StackProcessing.Core.fsproj")
         let projectPath = Path.Combine(runProjectDirectory, "StudioRun.fsproj")
 
         let plotlyReference =
@@ -1850,6 +1851,7 @@ type MainWindowViewModel() as this =
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="{stackProcessingProject}" />
+    <ProjectReference Include="{stackProcessingCoreProject}" />
 {plotlyReference}
   </ItemGroup>
   <ItemGroup>
