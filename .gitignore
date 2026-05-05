@@ -38,3 +38,4 @@ samples/transpose/test1.tiff
 !/samples/*/*.json
 /samples/connectedComponents/tmp
 /samples/mask18
+/samples/tmp
