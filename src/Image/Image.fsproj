@@ -21,7 +21,7 @@
     <OtherFlags>--sig:"$(SigFile)"</OtherFlags>
   </PropertyGroup>   
   <Target Name="CleanTextFile" AfterTargets="Build">
-    <Exec Command="grep -v '^[[:space:]]*$' '$(SigFile)' &gt; '$(SigFile).tmp' &amp;&amp; mv '$(SigFile).tmp' '$(SigFile)'" />
+    <Exec Command="tmp='$(SigFile).tmp.'$$; grep -v '^[[:space:]]*$' '$(SigFile)' &gt; &quot;$tmp&quot; &amp;&amp; mv &quot;$tmp&quot; '$(SigFile)'" />
   </Target>
 
   <!-- We want to copy the Managed library regardless of platform -->

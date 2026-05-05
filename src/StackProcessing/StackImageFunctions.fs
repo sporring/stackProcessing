@@ -317,8 +317,7 @@ let convolveOp (name: string) (kernel: Image<'T>) (outputRegionMode: ImageFuncti
     let stg =
         Stage.map name f memoryNeed lengthTransformation
         |> withCostModel (nativeImageStageCost $"convolve.{typeof<'T>.Name}" memoryModel workUnits)
-    let padding = createPadding "padding" pad 
-    (Stage.prepend "prepend" padding) --> (Stage.append "append" padding) --> (window win 0u stride) --> stg --> flatten ()
+    (window win pad stride) --> stg --> flatten ()
 
 let convolve kernel outputRegionMode boundaryCondition winSz = convolveOp "convolve" kernel outputRegionMode boundaryCondition winSz
 let conv kernel = convolveOp "conv" kernel None None None

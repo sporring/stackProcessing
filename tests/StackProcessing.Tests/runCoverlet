@@ -1,0 +1,6 @@
+dotnet test StackProcessing.Tests.fsproj \
+  --tl:off \
+  --no-build \
+  /p:CollectCoverage=true \
+  /p:CoverletOutputFormat=cobertura \
+  /p:CoverletOutput="$(pwd)/coverage/"

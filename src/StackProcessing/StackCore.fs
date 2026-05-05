@@ -90,30 +90,34 @@ let private printVolRssSummary enabled startKb finalKb stackDelta releaseInputsD
         let totalDelta = int64 finalKb - int64 startKb
         printfn $"[rss:vol-summary] stack %+d{stackDelta} KB, releaseInputs %+d{releaseInputsDelta} KB, volumeFunction %+d{volumeFunctionDelta} KB, disposeStack %+d{disposeStackDelta} KB, unstack %+d{unstackDelta} KB, disposeVolume %+d{disposeVolumeDelta} KB, total %+d{totalDelta} KB"
 
-let volFctToLstFctReleaseAfterDebug debug (f: Image<'S>->Image<'T>) pad stride images =
-    let rssDebug = debug && DebugLevel.rssEnabled()
-    let startKb = if rssDebug then rssKb() else 0UL
-    let mutable previousKb, _ = sampleVolRssProbe rssDebug "start" startKb startKb
-    let stack = ImageFunctions.stack images 
-    let currentKb, stackDelta = sampleVolRssProbe rssDebug "after stack" startKb previousKb
-    previousKb <- currentKb
-    images |> List.take (min (int stride) images.Length) |> List.iter (fun I -> I.decRefCount())
-    let currentKb, releaseInputsDelta = sampleVolRssProbe rssDebug "after release input slices" startKb previousKb
-    previousKb <- currentKb
-    let vol = f stack
-    let currentKb, volumeFunctionDelta = sampleVolRssProbe rssDebug "after volume function" startKb previousKb
-    previousKb <- currentKb
-    stack.decRefCount ()
-    let currentKb, disposeStackDelta = sampleVolRssProbe rssDebug "after dispose stack" startKb previousKb
-    previousKb <- currentKb
-    let result = ImageFunctions.unstackSkipNTakeM pad stride vol
-    let currentKb, unstackDelta = sampleVolRssProbe rssDebug "after unstack" startKb previousKb
-    previousKb <- currentKb
-    vol.decRefCount ()
-    let currentKb, disposeVolumeDelta = sampleVolRssProbe rssDebug "after dispose volume" startKb previousKb
-    previousKb <- currentKb
-    printVolRssSummary rssDebug startKb previousKb stackDelta releaseInputsDelta volumeFunctionDelta disposeStackDelta unstackDelta disposeVolumeDelta
-    result
+let volFctToLstFctReleaseAfterDebug (debug: bool) (f: Image<'S> -> Image<'T>) (pad: uint) (stride: uint) (images: Image<'S> list) : Image<'T> list =
+    if images.Length <= int (2u * pad) then
+        images |> List.iter (fun image -> image.decRefCount())
+        []
+    else
+        let rssDebug = debug && DebugLevel.rssEnabled()
+        let startKb = if rssDebug then rssKb() else 0UL
+        let mutable previousKb, _ = sampleVolRssProbe rssDebug "start" startKb startKb
+        let stack = ImageFunctions.stack images 
+        let currentKb, stackDelta = sampleVolRssProbe rssDebug "after stack" startKb previousKb
+        previousKb <- currentKb
+        images |> List.take (min (int stride) images.Length) |> List.iter (fun I -> I.decRefCount())
+        let currentKb, releaseInputsDelta = sampleVolRssProbe rssDebug "after release input slices" startKb previousKb
+        previousKb <- currentKb
+        let vol = f stack
+        let currentKb, volumeFunctionDelta = sampleVolRssProbe rssDebug "after volume function" startKb previousKb
+        previousKb <- currentKb
+        stack.decRefCount ()
+        let currentKb, disposeStackDelta = sampleVolRssProbe rssDebug "after dispose stack" startKb previousKb
+        previousKb <- currentKb
+        let result = ImageFunctions.unstackSkipNTakeM pad stride vol
+        let currentKb, unstackDelta = sampleVolRssProbe rssDebug "after unstack" startKb previousKb
+        previousKb <- currentKb
+        vol.decRefCount ()
+        let currentKb, disposeVolumeDelta = sampleVolRssProbe rssDebug "after dispose volume" startKb previousKb
+        previousKb <- currentKb
+        printVolRssSummary rssDebug startKb previousKb stackDelta releaseInputsDelta volumeFunctionDelta disposeStackDelta unstackDelta disposeVolumeDelta
+        result
 
 let volFctToLstFctReleaseAfter (f: Image<'S>->Image<'T>) pad stride images =
     volFctToLstFctReleaseAfterDebug false f pad stride images
