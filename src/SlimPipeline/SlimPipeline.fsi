@@ -117,7 +117,6 @@ module private Pipe =
         winSz: uint ->
         pad: uint ->
         zeroMaker: (int -> 'T -> 'T) -> stride: uint -> Pipe<'T,Window<'T>>
-        when 'T: equality
     val collect: name: string -> mapper: ('S -> 'T list) -> Pipe<'S,'T>
     val flatten: name: string -> Pipe<'T list,'T>
     val flattenWindow: name: string -> Pipe<Window<'T>,'T>
@@ -573,7 +572,6 @@ module Stage =
         winSz: uint ->
         pad: uint ->
         zeroMaker: (int -> 'T -> 'T) -> stride: uint -> Stage<'T,Window<'T>>
-        when 'T: equality
     val flatten: name: string -> Stage<'T list,'T>
     val flattenWindow: name: string -> Stage<Window<'T>,'T>
     val liftUnary:

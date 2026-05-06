@@ -39,7 +39,6 @@ val promoteStreamingToWindow:
      uint ->
      uint ->
      uint -> uint -> uint -> StackCore.Stage<'a,'b> -> StackCore.Stage<'a,'b>)
-    when 'a: equality
 
 val (>=>) :
   (SlimPipeline.Plan<'a,'b> ->
