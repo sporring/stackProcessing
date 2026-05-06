@@ -107,6 +107,14 @@ let asyncSeqExtensionsSuite =
             finally
                 dispose enum
 
+        testCase "windowedWithPad preserves strided final remainder windows" <| fun _ ->
+            let actual =
+                ofList [1; 2; 3; 4; 5]
+                |> windowedWithPad 3u 2u 0u 0u (fun _ x -> x)
+                |> toList
+
+            Expect.equal actual [[1; 2; 3]; [3; 4; 5]; [5]] "Strided windows should include the final partial tail window."
+
         testCase "windowedWithPad disposes input enumerator when consumer stops early" <| fun _ ->
             let mutable disposed = false
             let source =
