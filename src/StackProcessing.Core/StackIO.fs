@@ -4,7 +4,12 @@ open SlimPipeline // Core processing model
 open System
 open System.IO
 open System.Text.RegularExpressions
+open System.Threading
+open System.Threading.Tasks
 open StackCore
+open ZarrNET.Core
+open ZarrNET.Core.Nodes
+open ZarrNET.Core.OmeZarr.Coordinates
 
 type FileInfo = ImageFunctions.FileInfo
 type ChunkInfo = { chunks: int list; size: uint64 list; topLeftInfo: FileInfo}
@@ -20,6 +25,93 @@ let private imageIoCost<'T> kind evaluation calibrationKey bytes ops : StageWork
 
 let private withCostModel costModel stage =
     StackProcessingCost.withCostModel costModel stage
+
+let private runTask (task: Task<'T>) : 'T =
+    task.GetAwaiter().GetResult()
+
+let private runUnitTask (task: Task) : unit =
+    task.GetAwaiter().GetResult()
+
+let private zarrDataType<'T> () =
+    if typeof<'T> = typeof<uint8> then
+        "uint8"
+    elif typeof<'T> = typeof<uint16> then
+        "uint16"
+    else
+        failwith $"ZarrNET image IO currently supports UInt8 and UInt16 scalar images, but was {typeof<'T>.Name}."
+
+let private nullableParallelChunks maxParallelChunks =
+    if maxParallelChunks > 0 then
+        Nullable<int>(maxParallelChunks)
+    else
+        Nullable<int>()
+
+let private bytesOfArray2D<'T> (arr: 'T[,]) =
+    let width = arr.GetLength(0)
+    let height = arr.GetLength(1)
+
+    if typeof<'T> = typeof<uint8> then
+        let source = unbox<uint8[,]> (box arr)
+        let bytes = Array.zeroCreate<byte> (width * height)
+        let mutable offset = 0
+
+        for y in 0 .. height - 1 do
+            for x in 0 .. width - 1 do
+                bytes[offset] <- source[x, y]
+                offset <- offset + 1
+
+        bytes
+    elif typeof<'T> = typeof<uint16> then
+        let source = unbox<uint16[,]> (box arr)
+        let bytes = Array.zeroCreate<byte> (width * height * 2)
+        let mutable offset = 0
+
+        for y in 0 .. height - 1 do
+            for x in 0 .. width - 1 do
+                let value = source[x, y]
+                bytes[offset] <- byte (value &&& 0x00FFus)
+                bytes[offset + 1] <- byte (value >>> 8)
+                offset <- offset + 2
+
+        bytes
+    else
+        zarrDataType<'T> () |> ignore
+        failwith "unreachable"
+
+let private array3DOfZarrBytes<'T> (width: int) (height: int) (depth: int) (bytes: byte[]) =
+    if typeof<'T> = typeof<uint8> then
+        let arr =
+            Array3D.init width height depth (fun x y z ->
+                bytes[(z * height + y) * width + x] |> box |> unbox<'T>)
+
+        arr
+    elif typeof<'T> = typeof<uint16> then
+        let arr =
+            Array3D.init width height depth (fun x y z ->
+                let offset = ((z * height + y) * width + x) * 2
+                let value = uint16 bytes[offset] ||| (uint16 bytes[offset + 1] <<< 8)
+                value |> box |> unbox<'T>)
+
+        arr
+    else
+        zarrDataType<'T> () |> ignore
+        failwith "unreachable"
+
+let private openZarrResolutionLevel (path: string) multiscaleIndex datasetIndex : ResolutionLevelNode =
+    let reader: OmeZarrReader =
+        OmeZarrReader.OpenAsync(path, ct = CancellationToken.None)
+        |> runTask
+
+    let multiscale = reader.AsMultiscaleImage()
+    multiscale.OpenResolutionLevelAsync(multiscaleIndex, datasetIndex, CancellationToken.None)
+    |> runTask
+
+let private zarrShapeTCZYX (shape: int64[]) =
+    if shape.Length <> 5 then
+        let shapeText = String.Join("x", shape)
+        failwith $"Expected a 5D OME-Zarr array with t,c,z,y,x axes, but shape was {shapeText}."
+
+    int shape[0], int shape[1], int shape[2], int shape[3], int shape[4]
 
 let private normalizeSuffix (suffix: string) =
     let trimmed = suffix.Trim()
@@ -232,6 +324,32 @@ let getChunkInfo (inputDir: string) (suffix: string) : ChunkInfo =
         ]
     { chunks = [maxI+1;maxJ+1;maxK+1]; topLeftInfo = topLeftFi; size = stackSize }
 
+let getZarrInfo (path: string) (multiscaleIndex: int) (datasetIndex: int) : ChunkInfo =
+    let reader: OmeZarrReader =
+        OmeZarrReader.OpenAsync(path, ct = CancellationToken.None)
+        |> runTask
+
+    let level =
+        reader.AsMultiscaleImage().OpenResolutionLevelAsync(multiscaleIndex, datasetIndex, CancellationToken.None)
+        |> runTask
+
+    let _sizeT, _sizeC, sizeZ, sizeY, sizeX = zarrShapeTCZYX level.Shape
+    let chunks =
+        reader.RootGroup.OpenArrayAsync(level.Dataset.Path, CancellationToken.None)
+        |> runTask
+        |> fun zarrArray -> zarrArray.Metadata.ChunkShape
+        |> Array.toList
+
+    let fileInfo: FileInfo =
+        { dimensions = 3u
+          size = [ uint64 sizeX; uint64 sizeY; uint64 sizeZ ]
+          componentType = level.DataType
+          numberOfComponents = 1u }
+
+    { chunks = chunks
+      size = fileInfo.size
+      topLeftInfo = fileInfo }
+
 let getChunkFilename (path: string) (suffix: string) (i: int) (j: int) (k: int) =
     Path.Combine(path, sprintf "chunk%d_%d_%d%s" i j k suffix)
 
@@ -337,6 +455,104 @@ let readSlabAsWindows<'T when 'T: equality> (inputDir: string) (suffix: string) 
 let readSlab<'T when 'T: equality> (inputDir: string) (suffix: string) (pl: Plan<unit, unit>) : Plan<unit, Image<'T>> =
     pl |> readSlabAsWindows<'T> inputDir suffix >=> flattenList ()
 
+let readZarrSlabStacked<'T when 'T: equality>
+    (path: string)
+    (slabDepth: uint)
+    (multiscaleIndex: int)
+    (datasetIndex: int)
+    (timepoint: int)
+    (channel: int)
+    (maxParallelChunks: int)
+    (pl: Plan<unit, unit>)
+    : Plan<unit, Image<'T>> =
+
+    let name = "readZarrSlabStacked"
+    let dataType = zarrDataType<'T> ()
+    let level = openZarrResolutionLevel path multiscaleIndex datasetIndex
+    let sizeT, sizeC, sizeZ, sizeY, sizeX = zarrShapeTCZYX level.Shape
+
+    if timepoint < 0 || timepoint >= sizeT then
+        invalidArg "timepoint" $"Timepoint {timepoint} is outside the Zarr time range 0..{sizeT - 1}."
+    if channel < 0 || channel >= sizeC then
+        invalidArg "channel" $"Channel {channel} is outside the Zarr channel range 0..{sizeC - 1}."
+    if not (String.Equals(level.DataType, dataType, StringComparison.OrdinalIgnoreCase)) then
+        failwith $"Zarr dataset pixel type is {level.DataType}, but readZarrSlabStacked<{typeof<'T>.Name}> expects {dataType}."
+
+    let slabDepth = max 1u slabDepth |> int
+    let depth = (sizeZ + slabDepth - 1) / slabDepth |> uint64
+    let elementBytes =
+        uint64 sizeX * uint64 sizeY * uint64 slabDepth * (typeof<'T> |> Image.getBytesPerComponent |> uint64)
+    let parallelChunks = nullableParallelChunks maxParallelChunks
+    let sourcePeek =
+        SourcePeek.create
+            name
+            elementBytes
+            (Some depth)
+            (Map.ofList
+                [ "kind", "zarr-slabs"
+                  "path", path
+                  "slabDepth", string slabDepth
+                  "width", string sizeX
+                  "height", string sizeY
+                  "depth", string sizeZ
+                  "pixelType", typeof<'T>.Name
+                  "multiscaleIndex", string multiscaleIndex
+                  "datasetIndex", string datasetIndex
+                  "timepoint", string timepoint
+                  "channel", string channel ])
+
+    let mapper (idx: int) : Image<'T> =
+        let zStart = idx * slabDepth
+        let zStop = min sizeZ (zStart + slabDepth)
+        let zCount = zStop - zStart
+        let region =
+            PixelRegion(
+                [| int64 timepoint; int64 channel; int64 zStart; 0L; 0L |],
+                [| int64 (timepoint + 1); int64 (channel + 1); int64 zStop; int64 sizeY; int64 sizeX |])
+        let result =
+            level.ReadPixelRegionAsync(region, parallelChunks, CancellationToken.None)
+            |> runTask
+        let arr = array3DOfZarrBytes<'T> sizeX sizeY zCount result.Data
+        Image<'T>.ofArray3D(arr, $"readZarrSlabStacked.{idx}")
+
+    let transition = ProfileTransition.create Unit Streaming
+    let memPeak = 256UL
+    let memoryNeed = fun _ -> memPeak
+    let elementTransformation = id
+    let memoryModel = StageMemoryModel.fromSinglePeak Source memoryNeed
+    let workModel =
+        StageWorkModel.ioRead Source (Some $"readZarrSlabStacked.{typeof<'T>.Name}") (fun _ -> elementBytes) (fun _ -> 1UL)
+    let stage =
+        Stage.init name (uint depth) mapper transition memoryNeed elementTransformation
+        |> withCostModel (StageCostModel.create memoryModel workModel)
+        |> Some
+
+    Plan.create stage pl.memAvail memPeak memPeak depth pl.debug
+    |> Plan.withSourcePeek sourcePeek
+
+let readZarrSlab<'T when 'T: equality>
+    (path: string)
+    (slabDepth: uint)
+    (multiscaleIndex: int)
+    (datasetIndex: int)
+    (timepoint: int)
+    (channel: int)
+    (maxParallelChunks: int)
+    (pl: Plan<unit, unit>)
+    : Plan<unit, Image<'T>> =
+
+    let memoryNeed = fun _ -> 256UL
+    let elementTransformation = id
+    let unstackSlab (slab: Image<'T>) =
+        let result = ImageFunctions.unstack 2u slab
+        slab.decRefCount()
+        result
+
+    pl
+    |> readZarrSlabStacked<'T> path slabDepth multiscaleIndex datasetIndex timepoint channel maxParallelChunks
+    >=> Stage.map $"readZarrSlab.{typeof<'T>.Name}" (fun _ slab -> unstackSlab slab) memoryNeed elementTransformation
+    >=> flattenList ()
+
 let icompare s1 s2  = 
     System.String.Equals(s1, s2, System.StringComparison.CurrentCultureIgnoreCase)
 
@@ -372,6 +588,93 @@ let write<'T when 'T: equality> (outputDir: string) (suffix: string) : Stage<Ima
             (fun input -> inputValue input |> imageBytes<'T>)
             (fun _ -> 1UL)
     Stage.mapi $"write \"{outputDir}/*{suffix}\"" mapper memoryNeed id
+    |> withCostModel (StageCostModel.create memoryModel workModel)
+
+let writeZarr<'T when 'T: equality>
+    (outputPath: string)
+    (name: string)
+    (depth: uint)
+    (chunkX: uint)
+    (chunkY: uint)
+    (chunkZ: uint)
+    (physicalSizeX: float)
+    (physicalSizeY: float)
+    (physicalSizeZ: float)
+    (maxConcurrentWrites: int)
+    : Stage<Image<'T>, Image<'T>> =
+
+    let dataType = zarrDataType<'T> ()
+    let mutable writer: OmeZarrWriter option = None
+    let depth = int depth
+    let chunkX = max 1u chunkX |> int
+    let chunkY = max 1u chunkY |> int
+    let chunkZ = max 1u chunkZ |> int
+
+    let createWriter (image: Image<'T>) =
+        let descriptor =
+            BioImageDescriptor(
+                int (image.GetWidth()),
+                int (image.GetHeight()),
+                ZCT(depth, 1, 1),
+                Name = name,
+                DataType = dataType,
+                ChunkX = chunkX,
+                ChunkY = chunkY,
+                ChunkZ = chunkZ,
+                ChunkC = 1,
+                ChunkT = 1,
+                PhysicalSizeX = physicalSizeX,
+                PhysicalSizeY = physicalSizeY,
+                PhysicalSizeZ = physicalSizeZ)
+
+        let created =
+            OmeZarrWriter.CreateAsync(outputPath, descriptor, CancellationToken.None)
+            |> runTask
+
+        if maxConcurrentWrites > 0 then
+            OmeZarrWriter.MaxConcurrentWrites <- maxConcurrentWrites
+
+        writer <- Some created
+        created
+
+    let mapper (debug: bool) (idx: int64) (image: Image<'T>) =
+        if depth <= 0 then
+            invalidArg "depth" "writeZarr depth must be positive."
+        if idx >= int64 depth then
+            failwith $"writeZarr received slice {idx}, but the declared depth is {depth}."
+        if image.GetDimensions() <> 2u then
+            failwith $"writeZarr expects a stream of 2D slice images, but got {image.GetDimensions()}D."
+
+        let zarrWriter =
+            match writer with
+            | Some writer -> writer
+            | None -> createWriter image
+
+        let planeBytes = image.toArray2D() |> bytesOfArray2D
+        if debug then
+            printfn "[writeZarr] Saved plane %d to %s as %s" idx outputPath (typeof<'T>.Name)
+
+        zarrWriter.WritePlaneAsync(int idx, planeBytes, CancellationToken.None)
+        |> runUnitTask
+
+        if idx = int64 (depth - 1) then
+            zarrWriter.DisposeAsync().AsTask()
+            |> runUnitTask
+            writer <- None
+
+        image
+
+    let memoryNeed = id
+    let memoryModel = StageMemoryModel.fromSinglePeak Iter memoryNeed
+    let workModel =
+        imageIoCost<'T>
+            "write"
+            Iter
+            $"writeZarr.{typeof<'T>.Name}"
+            (fun input -> inputValue input |> imageBytes<'T>)
+            (fun _ -> 1UL)
+
+    Stage.mapi $"writeZarr \"{outputPath}\"" mapper memoryNeed id
     |> withCostModel (StageCostModel.create memoryModel workModel)
 
 let _writeSlabChunks (debug: bool) (outputDir: string) (suffix: string) (width: uint) (height: uint) (winSz: uint) (k: int) (stack: Image<'T>) =

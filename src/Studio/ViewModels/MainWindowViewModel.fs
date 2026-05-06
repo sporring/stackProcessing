@@ -337,14 +337,14 @@ module private ScalarFunctionNode =
 
 module private SourceImageNode =
     let hasInputTitle functionId =
-        functionId = "Read" || functionId = "ReadRandom" || functionId = "ReadSlab"
+        functionId = "Read" || functionId = "ReadRandom" || functionId = "ReadSlab" || functionId = "ReadZarrSlab"
 
     let hasOutputTitle functionId =
-        functionId = "Write" || functionId = "WriteThrough" || functionId = "WriteInSlabs"
+        functionId = "Write" || functionId = "WriteThrough" || functionId = "WriteInSlabs" || functionId = "WriteZarr"
 
     let hasFormatParameter functionId =
-        hasInputTitle functionId
-        || hasOutputTitle functionId
+        (hasInputTitle functionId && functionId <> "ReadZarrSlab")
+        || (hasOutputTitle functionId && functionId <> "WriteZarr")
         || functionId = "WriteSlabSlices"
         || functionId = "GetStackInfo"
         || functionId = "GetChunkInfo"
@@ -385,8 +385,11 @@ module private SourceImageNode =
         |> Option.defaultValue ".tiff"
 
     let supportedTypes (state: PipelineNodeState) =
-        selectedSuffix state
-        |> ImageFileFormat.supportedTypes
+        match state.Definition.Id with
+        | "ReadZarrSlab" -> [ UInt8; UInt16 ]
+        | _ ->
+            selectedSuffix state
+            |> ImageFileFormat.supportedTypes
 
     let supportedTypeOptions (state: PipelineNodeState) =
         supportedTypes state
@@ -837,7 +840,7 @@ type PipelineNodeViewModel(
                     state.Title <- ScalarImageOperationNode.title state
                     this.Name <- state.Title
                     markGraphDirty()
-                elif (state.Definition.Id = "Scalar" || state.Definition.Id = "ScalarOp" || state.Definition.Id = "Read" || state.Definition.Id = "ReadRandom" || state.Definition.Id = "ReadSlab" || state.Definition.Id = "Zero" || state.Definition.Id = "CreateByEuler2DTransform" || state.Definition.Id = "Threshold" || state.Definition.Id = "ImageOpImage" || state.Definition.Id = "ResampleAffineTrilinearSlices" || ScalarImageOperationNode.isOperation state.Definition.Id) && parameter.Key = "type" && args.PropertyName = nameof parameter.Value then
+                elif (state.Definition.Id = "Scalar" || state.Definition.Id = "ScalarOp" || state.Definition.Id = "Read" || state.Definition.Id = "ReadRandom" || state.Definition.Id = "ReadSlab" || state.Definition.Id = "ReadZarrSlab" || state.Definition.Id = "Zero" || state.Definition.Id = "CreateByEuler2DTransform" || state.Definition.Id = "Threshold" || state.Definition.Id = "ImageOpImage" || state.Definition.Id = "ResampleAffineTrilinearSlices" || ScalarImageOperationNode.isOperation state.Definition.Id) && parameter.Key = "type" && args.PropertyName = nameof parameter.Value then
                     if state.Definition.Id = "Scalar" then
                         ScalarNode.ensureValueMatchesType state
                         state.Title <- ScalarNode.title state
@@ -976,11 +979,13 @@ type PipelineNodeViewModel(
             | "Read"
             | "ReadRandom"
             | "ReadSlab"
+            | "ReadZarrSlab"
             | "Zero"
             | "CreateByEuler2DTransform" -> state.Definition.Inputs, [ SourceImageNode.outputPort state ]
             | "Write"
             | "WriteThrough"
-            | "WriteInSlabs" ->
+            | "WriteInSlabs"
+            | "WriteZarr" ->
                 [ SourceImageNode.writeInputPort state ], state.Definition.Outputs
             | "ImageOpImage" -> PairOperationNode.ports state
             | "Cast" -> CastNode.ports state
@@ -1173,6 +1178,13 @@ type MainWindowViewModel() as this =
                     let options =
                         ScalarFunctionNode.functionOptions
                         |> List.map (fun value -> ParameterOptionViewModel(value, value, true))
+
+                    PipelineParameterViewModel(parameter.Label, parameter.Key, parameter.DefaultValue, parameter.Type, options, false)
+                | "ReadZarrSlab", "type" ->
+                    let supported = [ "UInt8"; "UInt16" ] |> Set.ofList
+                    let options =
+                        SourceImageNode.typeOptions
+                        |> List.map (fun value -> ParameterOptionViewModel(value, value, supported |> Set.contains value))
 
                     PipelineParameterViewModel(parameter.Label, parameter.Key, parameter.DefaultValue, parameter.Type, options, false)
                 | ("Read" | "ReadRandom" | "ReadSlab" | "Zero" | "CreateByEuler2DTransform" | "ResampleAffineTrilinearSlices"), "type" ->
@@ -1484,6 +1496,7 @@ type MainWindowViewModel() as this =
             node.State.Definition.Id = "Read"
             || node.State.Definition.Id = "ReadRandom"
             || node.State.Definition.Id = "ReadSlab"
+            || node.State.Definition.Id = "ReadZarrSlab"
             || node.State.Definition.Id = "Zero"
             || node.State.Definition.Id = "CreateByEuler2DTransform")
         |> Seq.iter (fun node ->
@@ -1782,6 +1795,9 @@ type MainWindowViewModel() as this =
                     | :? PipelineNodeViewModel as inputNode, Image Number
                         when SourceImageNode.hasOutputTitle inputNode.State.Definition.Id ->
                         true
+                    | :? PipelineNodeViewModel as inputNode, Image numericType
+                        when inputNode.State.Definition.Id = "WriteZarr" ->
+                        numericType = UInt8 || numericType = UInt16
                     | :? PipelineNodeViewModel as inputNode, Image numericType
                         when SourceImageNode.hasOutputTitle inputNode.State.Definition.Id ->
                         SourceImageNode.selectedSuffix inputNode.State

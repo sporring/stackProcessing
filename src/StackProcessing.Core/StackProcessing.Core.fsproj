@@ -21,17 +21,16 @@
     </ItemGroup>
 
     <ItemGroup Condition="$([MSBuild]::IsOSPlatform('Linux'))">
-      <None Include="../../lib/libSimpleITKCSharpNative.so"
-        CopyToOutputDirectory="PreserveNewest" />
+      <None Include="../../lib/libSimpleITKCSharpNative.so" CopyToOutputDirectory="PreserveNewest" />
     </ItemGroup>
 
     <ItemGroup Condition="$([MSBuild]::IsOSPlatform('OSX'))">
-      <None Include="../../lib/libSimpleITKCSharpNative.dylib"
-        CopyToOutputDirectory="PreserveNewest" />
+      <None Include="../../lib/libSimpleITKCSharpNative.dylib" CopyToOutputDirectory="PreserveNewest" />
     </ItemGroup>
 
     <ItemGroup>
         <PackageReference Include="DIKU.Graph" Version="1.0.0" />
+        <PackageReference Include="ZarrNET" Version="0.4.0" />
         <ProjectReference Include="../Image/Image.fsproj" />
         <ProjectReference Include="../SlimPipeline/SlimPipeline.fsproj" />
     </ItemGroup>

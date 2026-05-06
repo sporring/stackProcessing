@@ -44,6 +44,9 @@ module BuiltInCatalog =
   let private chunkWriteFormatDescription =
       "Writes stack slabs split into chunk files for later slab reading. The selected format controls which image types can be connected to the input pin, using the same constraints as write. TIFF output uses the exact selected suffix, either .tif or .tiff."
 
+  let private zarrFormatDescription =
+      "Reads or writes an OME-Zarr volume through ZarrNET. The current native .NET implementation is used here for UInt8 and UInt16 scalar images. readZarrSlab serves 2D slices from a selected timepoint/channel/resolution; writeZarr writes a single timepoint/channel volume and exposes chunk sizes and physical voxel spacing so Studio can be used as a stack-to-Zarr converter."
+
   let private numericDefaultValue tp =
       match tp with
       | UInt8
@@ -167,6 +170,26 @@ module BuiltInCatalog =
             makeParameter "input" "Input" "input" BasicType.String
             suffixParameter ".tiff" ] }
 
+  let makeGenericReadZarrSlab () =
+    { Id = "ReadZarrSlab"
+      DisplayName = "readZarrSlab"
+      Category = "Sources / Sinks"
+      Summary = "Read an OME-Zarr dataset as a normal 2D slice stream."
+      Description = zarrFormatDescription
+      Aliases = [ "zarr"; "ome-zarr"; "slab"; "input"; "UInt8"; "UInt16"; "type" ]
+      Inputs = []
+      Outputs = [ makePort "UInt8" imageUInt8 ]
+      Parameters =
+          [ availableMemoryParameter
+            makeParameter "type" "Type" "UInt8" BasicType.String
+            makeParameter "input" "Input" "input.zarr" BasicType.String
+            makeParameter "slabDepth" "Slab depth" "8" (BasicType.Numeric UInt32)
+            makeParameter "multiscaleIndex" "Multiscale index" "0" (BasicType.Numeric Int32)
+            makeParameter "datasetIndex" "Dataset index" "0" (BasicType.Numeric Int32)
+            makeParameter "timepoint" "Timepoint" "0" (BasicType.Numeric Int32)
+            makeParameter "channel" "Channel" "0" (BasicType.Numeric Int32)
+            makeParameter "maxParallelChunks" "Max parallel chunks" "0" (BasicType.Numeric Int32) ] }
+
   let makeGenericCast () =
     { Id = "Cast"
       DisplayName = "cast"
@@ -268,6 +291,8 @@ module BuiltInCatalog =
 
         makeGenericReadSlab()
 
+        makeGenericReadZarrSlab()
+
         makeGenericZero()
 
         makeGenericCreateByEuler2DTransform()
@@ -341,6 +366,26 @@ module BuiltInCatalog =
                 makeParameter "chunkY" "Chunk Y" "13" (BasicType.Numeric UInt32)
                 makeParameter "chunkZ" "Chunk Z" "14" (BasicType.Numeric UInt32) ] }
 
+        { Id = "WriteZarr"
+          DisplayName = "writeZarr"
+          Category = "Sources / Sinks"
+          Summary = "Write a stream of 2D slices as an OME-Zarr volume."
+          Description = zarrFormatDescription
+          Aliases = [ "zarr"; "ome-zarr"; "output"; "save"; "convert"; "UInt8"; "UInt16" ]
+          Inputs = [ makePort "Number" imageAny ]
+          Outputs = []
+          Parameters =
+              [ makeParameter "output" "Output" "output.zarr" BasicType.String
+                makeParameter "name" "Name" "image" BasicType.String
+                makeParameter "depth" "Depth" "1" (BasicType.Numeric UInt32)
+                makeParameter "chunkX" "Chunk X" "64" (BasicType.Numeric UInt32)
+                makeParameter "chunkY" "Chunk Y" "64" (BasicType.Numeric UInt32)
+                makeParameter "chunkZ" "Chunk Z" "8" (BasicType.Numeric UInt32)
+                makeParameter "physicalSizeX" "Physical size X" "1.0" (BasicType.Numeric Float64)
+                makeParameter "physicalSizeY" "Physical size Y" "1.0" (BasicType.Numeric Float64)
+                makeParameter "physicalSizeZ" "Physical size Z" "1.0" (BasicType.Numeric Float64)
+                makeParameter "maxConcurrentWrites" "Max concurrent writes" "0" (BasicType.Numeric Int32) ] }
+
         { Id = "GetStackInfo"
           DisplayName = "getStackInfo"
           Category = "Sources / Sinks"
@@ -381,6 +426,29 @@ module BuiltInCatalog =
           Parameters =
               [ makeParameter "input" "Name" "input" BasicType.String
                 suffixParameter ".tiff" ] }
+
+        { Id = "GetZarrInfo"
+          DisplayName = "getZarrInfo"
+          Category = "Sources / Sinks"
+          Summary = "Inspect an OME-Zarr dataset and expose chunk layout and image dimensions."
+          Description = "Reads metadata from a selected OME-Zarr multiscale dataset. Chunks reports the storage chunk shape, Size is the x/y/z image size, and ComponentType maps to the Zarr dtype used by readZarrSlab/writeZarr."
+          Aliases = [ "info"; "metadata"; "zarr"; "ome-zarr"; "chunk"; "chunks"; "width"; "height"; "depth"; "size"; "component" ]
+          Inputs = []
+          Outputs =
+              [ makePort "Chunks: int list" intList
+                makePort "Size: UInt64 list" uint64List
+                makePort "ComponentType: String" (Scalar BasicType.String)
+                makePort "NumberOfComponents: UInt32" (Scalar(BasicType.Numeric UInt32))
+                makePort "ChunkX: Int32" (Scalar(BasicType.Numeric Int32))
+                makePort "ChunkY: Int32" (Scalar(BasicType.Numeric Int32))
+                makePort "ChunkZ: Int32" (Scalar(BasicType.Numeric Int32))
+                makePort "Width: UInt64" (Scalar(BasicType.Numeric UInt64))
+                makePort "Height: UInt64" (Scalar(BasicType.Numeric UInt64))
+                makePort "Depth: UInt64" (Scalar(BasicType.Numeric UInt64)) ]
+          Parameters =
+              [ makeParameter "input" "Name" "input.zarr" BasicType.String
+                makeParameter "multiscaleIndex" "Multiscale index" "0" (BasicType.Numeric Int32)
+                makeParameter "datasetIndex" "Dataset index" "0" (BasicType.Numeric Int32) ] }
 
         { Id = "Tap"
           DisplayName = "tap"

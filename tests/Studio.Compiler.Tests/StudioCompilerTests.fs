@@ -76,6 +76,50 @@ let generatorSuite =
             Expect.stringContains code "|> readSlab<uint8> \"chunks\" \".mha\"" "ReadSlab should generate the slab reader."
             Expect.stringContains code ">=> writeInSlabs \"chunks-out\" \".mha\" 12u 13u 14u" "WriteInSlabs should generate the slab writer wrapper."
 
+        testCase "zarr boxes lower to zarr DSL functions" <| fun _ ->
+            let info =
+                node "info" "GetZarrInfo"
+                    [ p "input" "input.zarr" false
+                      p "multiscaleIndex" "0" false
+                      p "datasetIndex" "1" false ]
+
+            let read =
+                node "read" "ReadZarrSlab"
+                    [ p "availableMemory" "1073741824" false
+                      p "type" "UInt16" false
+                      p "input" "input.zarr" false
+                      p "slabDepth" "8" false
+                      p "multiscaleIndex" "0" false
+                      p "datasetIndex" "1" false
+                      p "timepoint" "2" false
+                      p "channel" "3" false
+                      p "maxParallelChunks" "4" false ]
+
+            let write =
+                node "write" "WriteZarr"
+                    [ p "output" "output.zarr" false
+                      p "name" "" true
+                      p "depth" "32" false
+                      p "chunkX" "16" false
+                      p "chunkY" "17" false
+                      p "chunkZ" "8" false
+                      p "physicalSizeX" "0.5" false
+                      p "physicalSizeY" "0.5" false
+                      p "physicalSizeZ" "2.0" false
+                      p "maxConcurrentWrites" "2" false ]
+
+            let code =
+                graph
+                    [ info; read; write ]
+                    [ edge "read" "output" 0 "write" "input" 0
+                      edge "info" "reducerOutput" 2 "write" "parameterInput" 1 ]
+                |> PipelineCodeGenerator.generateSavedGraph
+
+            Expect.stringContains code "let ChunkInfo0 = getZarrInfo \"input.zarr\" 0 1" "GetZarrInfo should generate a metadata binding."
+            Expect.stringContains code "|> readZarrSlab<uint16> \"input.zarr\" 8u 0 1 2 3 4" "ReadZarrSlab should generate the Zarr slab reader."
+            Expect.stringContains code ">=> writeZarr \"output.zarr\" ChunkInfo0.topLeftInfo.componentType 32u 16u 17u 8u 0.5 0.5 2.0 2" "WriteZarr should accept linked Zarr metadata."
+            Expect.stringContains code "|> sink" "Terminal WriteZarr should be sunk."
+
         testCase "linked string scalar is emitted before read and used unquoted" <| fun _ ->
             let scalar =
                 node "scalar" "Scalar"

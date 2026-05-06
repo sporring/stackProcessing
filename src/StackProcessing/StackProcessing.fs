@@ -53,13 +53,17 @@ let readFiltered<'T when 'T: equality> = StackIO.readFiltered<'T>
 let read<'T when 'T: equality> = StackIO.read<'T>
 let readRandom<'T when 'T: equality> = StackIO.readRandom<'T>
 let getChunkInfo = StackIO.getChunkInfo
+let getZarrInfo = StackIO.getZarrInfo
 let getChunkFilename = StackIO.getChunkFilename
 let readSlabStacked<'T when 'T: equality> = StackIO.readSlabStacked<'T>
 let readSlabAsWindows<'T when 'T: equality> = StackIO.readSlabAsWindows<'T>
 let readSlab<'T when 'T: equality> = StackIO.readSlab<'T>
+let readZarrSlabStacked<'T when 'T: equality> = StackIO.readZarrSlabStacked<'T>
+let readZarrSlab<'T when 'T: equality> = StackIO.readZarrSlab<'T>
 
 let deleteIfExists = StackIO.deleteIfExists
 let write = StackIO.write
+let writeZarr = StackIO.writeZarr
 let writeInSlabs = StackIO.writeInSlabs
 
 // //////////////////// ChunkedAffineResampler
