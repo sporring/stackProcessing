@@ -67,7 +67,7 @@ let stackProcessingSupportSuite =
                 let windows =
                     source (2UL * 1024UL * 1024UL * 1024UL)
                     |> zero<uint8> 3u 3u 3u
-                    >=> window 3u 1u 1u
+                    >=> StackCore.window 3u 1u 1u
                     |> drainList
 
                 try
@@ -79,8 +79,8 @@ let stackProcessingSupportSuite =
                 let flattened =
                     source (2UL * 1024UL * 1024UL * 1024UL)
                     |> zero<uint8> 3u 3u 2u
-                    >=> window 2u 0u 2u
-                    >=> flatten ()
+                    >=> StackCore.window 2u 0u 2u
+                    >=> StackCore.flatten ()
                     |> drainList
 
                 try

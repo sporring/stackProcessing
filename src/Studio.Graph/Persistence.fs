@@ -23,6 +23,7 @@ module PipelineGraphStorage =
     let writeJsonAsync (stream: Stream) (graph: SavedGraph) =
         task {
             if stream.CanSeek then
+                stream.Position <- 0L
                 stream.SetLength(0L)
 
             use writer = new StreamWriter(stream, Encoding.UTF8, 1024, leaveOpen = true)

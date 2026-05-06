@@ -7,36 +7,27 @@ let main arg =
     let availableMemory = 2UL * 1024UL * 1024UL *1024UL // 2GB for example
 
     let src, arg = commandLineSource availableMemory arg
-    let input = 
+    let input,output = 
         if arg.Length > 0 then
-            $"../image{arg[0]}"
+            $"../image{arg[0]}",$"../output{arg[0]}"
         else
-            "../image18"
+            "../image18","../result18"
 
-    let readMaker =
+    let Float640 = 255.0
+    let ImageStats0 =
         src
-        |> read<float> input ".tiff"
-
-    let stats = 
-        readMaker 
-        >=> StackProcessing.computeStats () // fix the naming conflict!!!
+        |> readRandom<float> 20u input ".tiff"
+        >=> computeStats ()
         |> drain
-    printfn "%A" stats
+    let Float641 = (ImageStats0.Max - ImageStats0.Min)
+    let Float642 = (Float640 / Float641)
 
-    let normalizeWith (stats: ImageStats) (image: Image<float>) =
-        let J = ImageFunctions.imageSubScalar image stats.Mean;
-        let K = ImageFunctions.imageDivScalar J stats.Std
-        J.decRefCount()
-        K
-
-    // normalizeWith can release image and normalizeWithOp use liftUnary. This saves storing 1 image per iteration
-    let normalizeWithOp = liftUnaryReleaseAfter "normalizeWithOp" (normalizeWith stats) id id
-
-    let updatedStats = 
-        readMaker
-        >=> normalizeWithOp
-        >=> StackProcessing.computeStats ()
-        |> drain
-    printfn "%A" updatedStats
+    src
+    |> read<float> input ".tiff"
+    >=> imageSubScalar ImageStats0.Min
+    >=> imageMulScalar Float642
+    >=> cast<float,uint8>
+    >=> write output ".tiff"
+    |> sink
 
     0

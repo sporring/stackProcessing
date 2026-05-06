@@ -55,7 +55,7 @@ module BuiltInCatalog =
 
   let makeGenericScalar () =
     { Id = "Scalar"
-      DisplayName = "scalar"
+      DisplayName = "a"
       Category = "Sources / Sinks"
       Summary = "Bind a scalar value for graph parameters."
       Description = ""
@@ -81,7 +81,7 @@ module BuiltInCatalog =
 
   let makeScalarOp () =
     { Id = "ScalarOp"
-      DisplayName = "scalarOp"
+      DisplayName = "a op b"
       Category = "Arithmetic"
       Summary = "Combine two scalar values with an arithmetic operation."
       Description = ""
@@ -93,6 +93,19 @@ module BuiltInCatalog =
             makeParameter "type" "Type" "Float64" BasicType.String
             makeParameter "a" "A" (numericDefaultValue Float64) (BasicType.Numeric Float64)
             makeParameter "b" "B" (numericDefaultValue Float64) (BasicType.Numeric Float64) ] }
+
+  let makeScalarFunction () =
+    { Id = "ScalarFunction"
+      DisplayName = "f(a)"
+      Category = "Arithmetic"
+      Summary = "Apply a standard F# function to a scalar value."
+      Description = ""
+      Aliases = [ "scalar"; "function"; "unary"; "abs"; "acos"; "asin"; "atan"; "cos"; "sin"; "tan"; "exp"; "log10"; "log"; "round"; "sqrt"; "square"; "arithmetic" ]
+      Inputs = []
+      Outputs = [ makePort "Float64" (Scalar(BasicType.Numeric Float64)) ]
+      Parameters =
+          [ makeParameter "function" "Function" "sqrt" BasicType.String
+            makeParameter "a" "A" (numericDefaultValue Float64) (BasicType.Numeric Float64) ] }
 
   let makeGenericRead () =
     { Id = "Read"
@@ -233,6 +246,8 @@ module BuiltInCatalog =
     
         makeScalarOp()
 
+        makeScalarFunction()
+
         makeGenericRead()
 
         makeGenericReadRandom()
@@ -312,6 +327,25 @@ module BuiltInCatalog =
                 makeParameter "chunkY" "Chunk Y" "13" (BasicType.Numeric UInt32)
                 makeParameter "chunkZ" "Chunk Z" "14" (BasicType.Numeric UInt32) ] }
 
+        { Id = "GetStackInfo"
+          DisplayName = "getStackInfo"
+          Category = "Sources / Sinks"
+          Summary = "Inspect a stack directory and expose file information fields as scalar outputs."
+          Description = ""
+          Aliases = [ "info"; "metadata"; "file"; "stack"; "width"; "height"; "depth"; "size"; "dimensions"; "component" ]
+          Inputs = []
+          Outputs =
+              [ makePort "Dimensions: UInt32" (Scalar(BasicType.Numeric UInt32))
+                makePort "Size: UInt64 list" (Custom "UInt64List")
+                makePort "ComponentType: String" (Scalar BasicType.String)
+                makePort "NumberOfComponents: UInt32" (Scalar(BasicType.Numeric UInt32))
+                makePort "Width: UInt64" (Scalar(BasicType.Numeric UInt64))
+                makePort "Height: UInt64" (Scalar(BasicType.Numeric UInt64))
+                makePort "Depth: UInt64" (Scalar(BasicType.Numeric UInt64)) ]
+          Parameters =
+              [ makeParameter "input" "Name" "input" BasicType.String
+                makeParameter "suffix" "Suffix" ".tiff" BasicType.String ] }
+
         { Id = "Tap"
           DisplayName = "tap"
           Category = "Debug"
@@ -383,25 +417,25 @@ module BuiltInCatalog =
           Outputs = []
           Parameters = [] }
 
-        { Id = "SqrtFloat64"
-          DisplayName = "sqrt"
+        { Id = "UnaryImageFunction"
+          DisplayName = "f(I)"
           Category = "Arithmetic"
-          Summary = "Apply square root to each pixel."
+          Summary = "Apply a standard unary function to each pixel."
           Description = ""
-          Aliases = [ "sqrt"; "square root"; "arithmetic" ]
-          Inputs = [ makePort "IN" imageFloat64 ]
-          Outputs = [ makePort "OUT" imageFloat64 ]
-          Parameters = [] }
+          Aliases = [ "function"; "unary"; "abs"; "acos"; "asin"; "atan"; "cos"; "sin"; "tan"; "exp"; "log10"; "log"; "round"; "sqrt"; "square"; "arithmetic" ]
+          Inputs = [ makePort "Number" imageAny ]
+          Outputs = [ makePort "Number" imageAny ]
+          Parameters = [ makeParameter "function" "Function" "sqrt" BasicType.String ] }
 
         makeScalarImageOperation
             "ImageOpScalar"
-            "imageOpScalar"
+            "I op a"
             "Apply an arithmetic operation with the image on the left and a scalar on the right."
             [ "add"; "subtract"; "multiply"; "divide"; "image"; "value"; "scale"; "+"; "-"; "*"; "/" ]
 
         makeScalarImageOperation
             "ScalarOpImage"
-            "scalarOpImage"
+            "a op I"
             "Apply an arithmetic operation with a scalar on the left and the image on the right."
             [ "add"; "subtract"; "multiply"; "divide"; "inverse"; "value"; "image"; "+"; "-"; "*"; "/" ]
 
@@ -409,25 +443,11 @@ module BuiltInCatalog =
 
         makePairOperation
             "ImageOpImage"
-            "imageOpImage"
-            "Combine two image streams of the same numeric type pairwise with an arithmetic operation. Code generation inserts zip or shared fan-out as needed."
-            [ "add"; "sum"; "subtract"; "multiply"; "mask"; "divide"; "ratio"; "arithmetic"; "+"; "-"; "*"; "/" ]
+            "I op J"
+            "Combine two image streams of the same numeric type pairwise with an arithmetic, max, or min operation. Code generation inserts zip or shared fan-out as needed."
+            [ "add"; "sum"; "subtract"; "multiply"; "mask"; "divide"; "ratio"; "maximum"; "max"; "minimum"; "min"; "arithmetic"; "+"; "-"; "*"; "/" ]
             [ makeParameter "operation" "Operation" "*" BasicType.String
               makeParameter "type" "Type" "Float64" BasicType.String ]
-
-        makePairOperation
-            "MaxOfPair"
-            "maxOfPair"
-            "Take the pixelwise maximum of two image streams of the same numeric type pairwise. Code generation inserts zip or shared fan-out as needed."
-            [ "maximum"; "max"; "pair"; "arithmetic" ]
-            [ makeParameter "type" "Type" "Float64" BasicType.String ]
-
-        makePairOperation
-            "MinOfPair"
-            "minOfPair"
-            "Take the pixelwise minimum of two image streams of the same numeric type pairwise. Code generation inserts zip or shared fan-out as needed."
-            [ "minimum"; "min"; "pair"; "arithmetic" ]
-            [ makeParameter "type" "Type" "Float64" BasicType.String ]
 
         { Id = "DiscreteGaussian"
           DisplayName = "discreteGaussian"
@@ -481,7 +501,7 @@ module BuiltInCatalog =
 
         { Id = "Erode"
           DisplayName = "erode"
-          Category = "Morphology"
+          Category = "Binary Morphology"
           Summary = "Erode a binary UInt8 image."
           Description = ""
           Aliases = [ "morphology"; "binary"; "mask" ]
@@ -491,7 +511,7 @@ module BuiltInCatalog =
 
         { Id = "Dilate"
           DisplayName = "dilate"
-          Category = "Morphology"
+          Category = "Binary Morphology"
           Summary = "Dilate a binary UInt8 image."
           Description = ""
           Aliases = [ "morphology"; "binary"; "mask" ]
@@ -501,7 +521,7 @@ module BuiltInCatalog =
 
         { Id = "Opening"
           DisplayName = "opening"
-          Category = "Morphology"
+          Category = "Binary Morphology"
           Summary = "Apply morphological opening to a binary UInt8 image."
           Description = ""
           Aliases = [ "morphology"; "binary"; "mask" ]
@@ -511,7 +531,7 @@ module BuiltInCatalog =
 
         { Id = "Closing"
           DisplayName = "closing"
-          Category = "Morphology"
+          Category = "Binary Morphology"
           Summary = "Apply morphological closing to a binary UInt8 image."
           Description = ""
           Aliases = [ "morphology"; "binary"; "mask" ]
@@ -521,7 +541,7 @@ module BuiltInCatalog =
 
         { Id = "ConnectedComponents"
           DisplayName = "connectedComponents"
-          Category = "Segmentation"
+          Category = "Binary Morphology"
           Summary = "Label connected binary components."
           Description = ""
           Aliases = [ "components"; "labels"; "segmentation" ]
@@ -531,7 +551,7 @@ module BuiltInCatalog =
 
         { Id = "ComponentTranslationTable"
           DisplayName = "componentTranslationTable"
-          Category = "Segmentation"
+          Category = "Binary Morphology"
           Summary = "Reduce connected-component label chunks plus object counts to a chunk translation table."
           Description = ""
           Aliases = [ "connected"; "components"; "translation"; "table"; "reducer"; "labels" ]
@@ -541,7 +561,7 @@ module BuiltInCatalog =
 
         { Id = "CollapseComponentLabels"
           DisplayName = "collapseComponentLabels"
-          Category = "Segmentation"
+          Category = "Binary Morphology"
           Summary = "Collapse chunk-local component labels using a translation table."
           Description = ""
           Aliases = [ "connected"; "components"; "translation"; "table"; "update"; "labels" ]

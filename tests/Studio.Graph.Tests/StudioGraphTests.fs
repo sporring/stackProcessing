@@ -58,7 +58,9 @@ let catalogSuite =
     testList "Studio.Graph catalog" [
         testCase "catalog exposes expected generic functions" <| fun _ ->
             let ids = BuiltInCatalog.orderedFunctions |> List.map _.Id
-            Expect.containsAll ids ["Scalar"; "FileDirectory"; "Read"; "Write"; "ImageOpImage"; "ComputeStats"; "Chart"] "Important Studio functions should be in the palette catalog."
+            Expect.containsAll ids ["Scalar"; "FileDirectory"; "Read"; "Write"; "GetStackInfo"; "ImageOpImage"; "ComputeStats"; "Chart"] "Important Studio functions should be in the palette catalog."
+            Expect.isFalse (ids |> List.contains "MaxOfPair") "maxOfPair should be available through ImageOpImage, not as a legacy palette box."
+            Expect.isFalse (ids |> List.contains "MinOfPair") "minOfPair should be available through ImageOpImage, not as a legacy palette box."
 
         testCase "file directory source emits a string scalar" <| fun _ ->
             let fileDirectory = BuiltInCatalog.find "FileDirectory"

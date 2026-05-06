@@ -150,16 +150,20 @@ type MainView() as this =
         task {
             let dialog = Window()
             dialog.Title <- "Could not load graph"
-            dialog.Width <- 460.
-            dialog.Height <- 180.
+            dialog.Width <- 640.
+            dialog.Height <- 300.
             dialog.WindowStartupLocation <- WindowStartupLocation.CenterOwner
-            dialog.CanResize <- false
+            dialog.CanResize <- true
 
             let text =
-                TextBlock(
+                TextBox(
                     Text = message,
+                    IsReadOnly = true,
+                    AcceptsReturn = true,
                     TextWrapping = TextWrapping.Wrap,
-                    Margin = Thickness(16.))
+                    Margin = Thickness(16.),
+                    BorderThickness = Thickness(0.),
+                    Background = Brushes.Transparent)
 
             let ok =
                 Button(
@@ -182,6 +186,21 @@ type MainView() as this =
             | owner ->
                 do! dialog.ShowDialog(owner)
         }
+
+    let graphLoadErrorMessage (file: IStorageFile) (ex: exn) =
+        let location =
+            match localPath file with
+            | Some path -> path
+            | None -> file.Name
+
+        let hint =
+            if ex.Message.Contains("invalid start of a value", StringComparison.OrdinalIgnoreCase)
+               && ex.Message.Contains("<", StringComparison.Ordinal) then
+                "\n\nThe selected file appears to start with '<', so Studio received something like HTML or XML rather than graph JSON. Check that this is the .json graph file you meant to load."
+            else
+                ""
+
+        $"File:\n{location}\n\nError:\n{ex.Message}{hint}"
 
     let confirmIfGraphIsNonEmptyAsync (viewModel: MainWindowViewModel) title message =
         task {
@@ -1220,12 +1239,11 @@ type MainView() as this =
             let mapHeight = miniMap.Bounds.Height
 
             if mapWidth > 0. && mapHeight > 0. then
-                let scale = min (mapWidth / drawing.Width) (mapHeight / drawing.Height)
-                let offsetX = (mapWidth - drawing.Width * scale) / 2.
-                let offsetY = (mapHeight - drawing.Height * scale) / 2.
+                let scaleX = mapWidth / drawing.Width
+                let scaleY = mapHeight / drawing.Height
 
                 let mapPoint (point: Point) =
-                    Point(offsetX + point.X * scale, offsetY + point.Y * scale)
+                    Point(point.X * scaleX, point.Y * scaleY)
 
                 drawing.Connectors
                 |> Seq.iter (fun connector ->
@@ -1245,8 +1263,8 @@ type MainView() as this =
                     let point = mapPoint (Point(node.X, node.Y))
                     let rectangle =
                         Rectangle(
-                            Width = max 3. (node.Width * scale),
-                            Height = max 3. (node.Height * scale),
+                            Width = max 3. (node.Width * scaleX),
+                            Height = max 3. (node.Height * scaleY),
                             Fill = SolidColorBrush.Parse("#DCEEFF"),
                             Stroke = SolidColorBrush.Parse("#0B7DE3"),
                             StrokeThickness = 1.)
@@ -1262,8 +1280,8 @@ type MainView() as this =
                         let topLeft = mapPoint (Point(visible.Left, visible.Top))
                         let viewport =
                             Rectangle(
-                                Width = max 4. (visible.Width * scale),
-                                Height = max 4. (visible.Height * scale),
+                                Width = max 4. (visible.Width * scaleX),
+                                Height = max 4. (visible.Height * scaleY),
                                 Fill = SolidColorBrush.Parse("#1A111111"),
                                 Stroke = SolidColorBrush.Parse("#111111"),
                                 StrokeThickness = 1.5)
@@ -1346,7 +1364,20 @@ type MainView() as this =
 
         let eventStartedInGraphHost = eventSourceIsInside graphHost args.Source
 
-        if not (isNull zoomBorder) && eventStartedInGraphHost then
+        let clamp low high value =
+            if high <= low then
+                low
+            else
+                min high (max low value)
+
+        match currentDrawing () with
+        | Some drawing when
+            not (isNull zoomBorder)
+            && not (isNull graphHost)
+            && eventStartedInGraphHost
+            && drawing.Width > 0.
+            && drawing.Height > 0.
+            ->
             let baseStep = 24.
             let step =
                 if args.KeyModifiers.HasFlag KeyModifiers.Shift then
@@ -1354,21 +1385,43 @@ type MainView() as this =
                 else
                     baseStep
 
-            let delta =
+            let direction =
                 match args.Key with
-                | Key.Left -> Some(step, 0.)
-                | Key.Right -> Some(-step, 0.)
-                | Key.Up -> Some(0., step)
-                | Key.Down -> Some(0., -step)
+                | Key.Left -> Some(-1., 0.)
+                | Key.Right -> Some(1., 0.)
+                | Key.Up -> Some(0., -1.)
+                | Key.Down -> Some(0., 1.)
                 | _ -> None
 
-            match delta with
-            | Some(dx, dy) ->
-                zoomBorder.PanDelta(dx, dy, true)
-                updateMiniMap()
-                args.Handled <- true
+            match direction with
+            | Some(directionX, directionY) ->
+                let visible = zoomBorder.GetVisibleContentBounds()
+                let viewportSize = graphHost.Bounds.Size
+
+                if visible.Width > 0.
+                   && visible.Height > 0.
+                   && viewportSize.Width > 0.
+                   && viewportSize.Height > 0. then
+                    let targetWidth = min drawing.Width visible.Width
+                    let targetHeight = min drawing.Height visible.Height
+                    let stepX = step * visible.Width / viewportSize.Width
+                    let stepY = step * visible.Height / viewportSize.Height
+                    let maxLeft = max 0. (drawing.Width - targetWidth)
+                    let maxTop = max 0. (drawing.Height - targetHeight)
+                    let target =
+                        Rect(
+                            clamp 0. maxLeft (visible.Left + directionX * stepX),
+                            clamp 0. maxTop (visible.Top + directionY * stepY),
+                            targetWidth,
+                            targetHeight)
+
+                    zoomBorder.ZoomToRectangle(target, Nullable(Thickness(0.)), false)
+                    updateMiniMap()
+                    args.Handled <- true
             | None ->
                 ()
+        | _ ->
+            ()
 
     do
         this.InitializeComponent()
@@ -1652,10 +1705,17 @@ type MainView() as this =
                 let! file = topLevel.StorageProvider.SaveFilePickerAsync(options)
 
                 if not (isNull file) then
-                    let! stream = file.OpenWriteAsync()
-                    use stream = stream
-                    do! PipelineGraphStorage.writeJsonAsync stream (viewModel.ExportGraph())
-                    file |> localPath |> Option.iter viewModel.SetCurrentGraphPath
+                    let graph = viewModel.ExportGraph()
+
+                    match localPath file with
+                    | Some path ->
+                        PipelineGraphStorage.save path graph
+                        viewModel.SetCurrentGraphPath(path)
+                    | None ->
+                        let! stream = file.OpenWriteAsync()
+                        use stream = stream
+                        do! PipelineGraphStorage.writeJsonAsync stream graph
+
                     viewModel.MarkGraphSaved()
             | _ -> ()
         }
@@ -1703,7 +1763,7 @@ type MainView() as this =
                                 fitGraphToViewport()
                                 updateMiniMap()), DispatcherPriority.Background)
                         with ex ->
-                            do! showLoadErrorAsync ex.Message
+                            do! showLoadErrorAsync (graphLoadErrorMessage file ex)
                     | None -> ()
             | _ -> ()
         }

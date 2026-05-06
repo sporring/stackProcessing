@@ -142,6 +142,120 @@ let generatorSuite =
             Expect.isLessThan (code.IndexOf("let Float640")) (code.IndexOf("let Float641")) "Dependency binding should come first."
             Expect.stringContains code "printfn $\"{Float641}\"" "Print should emit interpolated printfn."
 
+        testCase "scalar function binding lowers selected F# function" <| fun _ ->
+            let scalar =
+                node "scalar" "Scalar"
+                    [ p "type" "Float64" false
+                      p "value" "0" false ]
+
+            let fn =
+                node "fn" "ScalarFunction"
+                    [ p "function" "cos" false
+                      p "a" "" true ]
+
+            let square =
+                node "square" "ScalarFunction"
+                    [ p "function" "square" false
+                      p "a" "" true ]
+
+            let print =
+                node "print" "Print"
+                    [ p "format" "{input1} {input2}" false
+                      p "input1" "" true
+                      p "input2" "" true ]
+
+            let code =
+                graph
+                    [ scalar; fn; square; print ]
+                    [ edge "scalar" "scalarOutput" 0 "fn" "parameterInput" 1
+                      edge "fn" "scalarOutput" 0 "square" "parameterInput" 1
+                      edge "fn" "scalarOutput" 0 "print" "parameterInput" 1
+                      edge "square" "scalarOutput" 0 "print" "parameterInput" 2 ]
+                |> PipelineCodeGenerator.generateSavedGraph
+
+            Expect.stringContains code "let Float641 = (cos Float640)" "ScalarFunction should lower F# function selection."
+            Expect.stringContains code "let Float642 = (Float641 * Float641)" "ScalarFunction should lower square as multiplication."
+            Expect.stringContains code "printfn $\"{Float641} {Float642}\"" "Print should consume scalar function outputs."
+
+        testCase "standard numeric names lower to Math constants but strings stay literal" <| fun _ ->
+            let numeric =
+                node "numeric" "Scalar"
+                    [ p "type" "Float64" false
+                      p "value" "pi" false ]
+
+            let text =
+                node "text" "Scalar"
+                    [ p "type" "String" false
+                      p "value" "e" false ]
+
+            let read =
+                node "read" "Read"
+                    [ p "availableMemory" "1024" false
+                      p "type" "Float64" false
+                      p "input" "input" false
+                      p "suffix" ".tiff" false ]
+
+            let threshold =
+                node "threshold" "Threshold"
+                    [ p "type" "Float64" false
+                      p "lower" "e" false
+                      p "upper" "pi" false ]
+
+            let write =
+                node "write" "Write"
+                    [ p "output" "out" false
+                      p "suffix" ".tiff" false ]
+
+            let print =
+                node "print" "Print"
+                    [ p "format" "{input1} {input2}" false
+                      p "input1" "" true
+                      p "input2" "" true ]
+
+            let code =
+                graph
+                    [ numeric; text; read; threshold; write; print ]
+                    [ edge "numeric" "scalarOutput" 0 "print" "parameterInput" 1
+                      edge "text" "scalarOutput" 0 "print" "parameterInput" 2
+                      edge "read" "output" 0 "threshold" "input" 0
+                      edge "threshold" "output" 0 "write" "input" 0 ]
+                |> PipelineCodeGenerator.generateSavedGraph
+
+            Expect.stringContains code "let Float640 = System.Math.PI" "Numeric scalar pi should lower to Math.PI."
+            Expect.stringContains code "let String0 = \"e\"" "String scalar e should remain a string literal."
+            Expect.stringContains code ">=> threshold System.Math.E System.Math.PI" "Numeric parameters should lower standard names to Math constants."
+
+        testCase "getStackInfo binds file info fields for scalar outputs" <| fun _ ->
+            let path =
+                node "path" "Scalar"
+                    [ p "type" "String" false
+                      p "value" "input" false ]
+
+            let info =
+                node "info" "GetStackInfo"
+                    [ p "input" "" true
+                      p "suffix" ".tiff" false ]
+
+            let print =
+                node "print" "Print"
+                    [ p "format" "{input1} {input2} {input3}" false
+                      p "input1" "" true
+                      p "input2" "" true
+                      p "input3" "" true ]
+
+            let code =
+                graph
+                    [ path; info; print ]
+                    [ edge "path" "scalarOutput" 0 "info" "parameterInput" 0
+                      edge "info" "reducerOutput" 4 "print" "parameterInput" 1
+                      edge "info" "reducerOutput" 2 "print" "parameterInput" 2
+                      edge "info" "reducerOutput" 0 "print" "parameterInput" 3 ]
+                |> PipelineCodeGenerator.generateSavedGraph
+
+            Expect.stringContains code "let String0 = \"input\"" "Linked stack-info input should keep its string binding."
+            Expect.stringContains code "let StackInfo0 = getStackInfo String0 \".tiff\"" "getStackInfo should bind FileInfo once."
+            Expect.stringContains code "printfn $\"{StackInfo0.size[0]} {StackInfo0.componentType} {StackInfo0.dimensions}\"" "FileInfo output pins should map to field expressions."
+
         testCase "print format unescapes newline and maps linked names" <| fun _ ->
             let stats =
                 node "stats" "ComputeStats" []
@@ -165,24 +279,57 @@ let generatorSuite =
             Expect.stringContains code $"Pixels: {{ImageStats0.NumPixels}}{System.Environment.NewLine}Mean: {{ImageStats0.Mean}}" "Generated F# string should contain a literal newline."
 
         testCase "image op image lowers selected operation to pair stage" <| fun _ ->
-            let readA =
-                node "readA" "Read"
+            let assertOperation operation expectedPairFunction =
+                let readA =
+                    node "readA" "Read"
+                        [ p "availableMemory" "1024" false
+                          p "type" "UInt8" false
+                          p "input" "a" false
+                          p "suffix" ".tiff" false ]
+
+                let readB =
+                    node "readB" "Read"
+                        [ p "availableMemory" "1024" false
+                          p "type" "UInt8" false
+                          p "input" "b" false
+                          p "suffix" ".tiff" false ]
+
+                let op =
+                    node "op" "ImageOpImage"
+                        [ p "operation" operation false
+                          p "type" "UInt8" false ]
+
+                let write =
+                    node "write" "Write"
+                        [ p "output" "out" false
+                          p "suffix" ".tiff" false ]
+
+                let code =
+                    graph
+                        [ readA; readB; op; write ]
+                        [ edge "readA" "output" 0 "op" "input" 0
+                          edge "readB" "output" 0 "op" "input" 1
+                          edge "op" "output" 0 "write" "input" 0 ]
+                    |> PipelineCodeGenerator.generateSavedGraph
+
+                Expect.stringContains code "||> zip" "Independent image inputs should be zipped."
+                Expect.stringContains code $">>=> {expectedPairFunction}" $"The selected {operation} operation should lower to {expectedPairFunction}."
+
+            assertOperation "-" "subPair"
+            assertOperation "max" "maxOfPair"
+            assertOperation "min" "minOfPair"
+
+        testCase "unary image function lowers selected function to stage" <| fun _ ->
+            let read =
+                node "read" "Read"
                     [ p "availableMemory" "1024" false
-                      p "type" "UInt8" false
-                      p "input" "a" false
+                      p "type" "Float64" false
+                      p "input" "input" false
                       p "suffix" ".tiff" false ]
 
-            let readB =
-                node "readB" "Read"
-                    [ p "availableMemory" "1024" false
-                      p "type" "UInt8" false
-                      p "input" "b" false
-                      p "suffix" ".tiff" false ]
-
-            let op =
-                node "op" "ImageOpImage"
-                    [ p "operation" "-" false
-                      p "type" "UInt8" false ]
+            let unary =
+                node "unary" "UnaryImageFunction"
+                    [ p "function" "cos" false ]
 
             let write =
                 node "write" "Write"
@@ -191,14 +338,12 @@ let generatorSuite =
 
             let code =
                 graph
-                    [ readA; readB; op; write ]
-                    [ edge "readA" "output" 0 "op" "input" 0
-                      edge "readB" "output" 0 "op" "input" 1
-                      edge "op" "output" 0 "write" "input" 0 ]
+                    [ read; unary; write ]
+                    [ edge "read" "output" 0 "unary" "input" 0
+                      edge "unary" "output" 0 "write" "input" 0 ]
                 |> PipelineCodeGenerator.generateSavedGraph
 
-            Expect.stringContains code "||> zip" "Independent image inputs should be zipped."
-            Expect.stringContains code ">>=> subPair" "The selected subtraction operation should lower to subPair."
+            Expect.stringContains code ">=> cos" "The selected unary image function should lower to the matching StackProcessing stage."
 
         testCase "connected component pair stream writes chunk labels through teeFst before reducing" <| fun _ ->
             let read =
