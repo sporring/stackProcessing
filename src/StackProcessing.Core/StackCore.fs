@@ -112,35 +112,48 @@ let volFctToWindowFctReleaseAfterDebug
         releaseAllImages window.Items
         []
     else
-        let rssDebug = debug && DebugLevel.rssEnabled()
-        let startKb = if rssDebug then rssKb() else 0UL
-        let mutable previousKb, _ = sampleVolRssProbe rssDebug "start" startKb startKb
-        let stack = ImageFunctions.stack window.Items
-        let currentKb, stackDelta = sampleVolRssProbe rssDebug "after stack" startKb previousKb
-        previousKb <- currentKb
-        releaseConsumedImages window
-        let currentKb, releaseInputsDelta = sampleVolRssProbe rssDebug "after release input slices" startKb previousKb
-        previousKb <- currentKb
-        let vol = f stack
-        let currentKb, volumeFunctionDelta = sampleVolRssProbe rssDebug "after volume function" startKb previousKb
-        previousKb <- currentKb
-        stack.decRefCount ()
-        let currentKb, disposeStackDelta = sampleVolRssProbe rssDebug "after dispose stack" startKb previousKb
-        previousKb <- currentKb
-        let depth = vol.GetDepth()
-        let result =
-            if outputStart >= depth || outputCount = 0u then
-                []
+        match window.Items with
+        | [ image ] when requiredInputDepth <= 1u ->
+            if outputStart = 0u && outputCount > 0u then
+                let result =
+                    try
+                        f image
+                    finally
+                        releaseConsumedImages window
+                [ result ]
             else
-                let count = min outputCount (depth - outputStart)
-                ImageFunctions.unstackSkipNTakeM outputStart count vol
-        let currentKb, unstackDelta = sampleVolRssProbe rssDebug "after unstack" startKb previousKb
-        previousKb <- currentKb
-        vol.decRefCount ()
-        let currentKb, disposeVolumeDelta = sampleVolRssProbe rssDebug "after dispose volume" startKb previousKb
-        previousKb <- currentKb
-        printVolRssSummary rssDebug startKb previousKb stackDelta releaseInputsDelta volumeFunctionDelta disposeStackDelta unstackDelta disposeVolumeDelta
-        result
+                releaseConsumedImages window
+                []
+        | _ ->
+            let rssDebug = debug && DebugLevel.rssEnabled()
+            let startKb = if rssDebug then rssKb() else 0UL
+            let mutable previousKb, _ = sampleVolRssProbe rssDebug "start" startKb startKb
+            let stack = ImageFunctions.stack window.Items
+            let currentKb, stackDelta = sampleVolRssProbe rssDebug "after stack" startKb previousKb
+            previousKb <- currentKb
+            releaseConsumedImages window
+            let currentKb, releaseInputsDelta = sampleVolRssProbe rssDebug "after release input slices" startKb previousKb
+            previousKb <- currentKb
+            let vol = f stack
+            let currentKb, volumeFunctionDelta = sampleVolRssProbe rssDebug "after volume function" startKb previousKb
+            previousKb <- currentKb
+            stack.decRefCount ()
+            let currentKb, disposeStackDelta = sampleVolRssProbe rssDebug "after dispose stack" startKb previousKb
+            previousKb <- currentKb
+            let depth = vol.GetDepth()
+            let result =
+                if outputStart >= depth || outputCount = 0u then
+                    []
+                else
+                    let count = min outputCount (depth - outputStart)
+                    ImageFunctions.unstackSkipNTakeM outputStart count vol
+            let currentKb, unstackDelta = sampleVolRssProbe rssDebug "after unstack" startKb previousKb
+            previousKb <- currentKb
+            vol.decRefCount ()
+            let currentKb, disposeVolumeDelta = sampleVolRssProbe rssDebug "after dispose volume" startKb previousKb
+            previousKb <- currentKb
+            printVolRssSummary rssDebug startKb previousKb stackDelta releaseInputsDelta volumeFunctionDelta disposeStackDelta unstackDelta disposeVolumeDelta
+            result
 
 let volFctToWindowFctReleaseAfter (f: Image<'S> -> Image<'T>) requiredInputDepth outputStart outputCount window =
     volFctToWindowFctReleaseAfterDebug false f requiredInputDepth outputStart outputCount window

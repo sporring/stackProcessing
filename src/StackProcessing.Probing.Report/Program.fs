@@ -83,6 +83,31 @@ let private operationName (probe: ProbeResultJson) =
     |> tryGetParameter "operation"
     |> Option.defaultValue probe.name
 
+let private isWritePipelineProbe (probe: ProbeResultJson) =
+    let operation = operationName probe
+    operation.EndsWith("-write", StringComparison.Ordinal)
+
+let private plottedRawProbes (probes: ProbeResultJson array) =
+    probes
+    |> Array.filter (isWritePipelineProbe >> not)
+
+let private copyParameters (parameters: Dictionary<string, string>) =
+    let copy = Dictionary<string, string>()
+
+    if not (isNull parameters) then
+        parameters
+        |> Seq.iter (fun kv -> copy[kv.Key] <- kv.Value)
+
+    copy
+
+let private parameterKey keys (probe: ProbeResultJson) =
+    keys
+    |> List.map (fun key ->
+        probe
+        |> tryGetParameter key
+        |> Option.defaultValue "")
+    |> String.concat "|"
+
 let private label (probe: ProbeResultJson) =
     let parameterText =
         if isNull probe.parameters || probe.parameters.Count = 0 then
@@ -121,6 +146,109 @@ let private medianMiBPerSecond (probe: ProbeResultJson) =
             bytesPerSecondToMiBPerSecond (float bytes / (elapsed / 1000.0))
         else
             0.0
+
+let private estimateWriteCostProbes (probes: ProbeResultJson array) =
+    let keyFields = [ "width"; "height"; "depth"; "pixelType" ]
+
+    let zeroByKey =
+        probes
+        |> Array.filter (fun probe -> operationName probe = "zero")
+        |> Array.map (fun probe -> parameterKey keyFields probe, probe)
+        |> Map.ofArray
+
+    probes
+    |> Array.filter (fun probe -> operationName probe = "zero-write")
+    |> Array.choose (fun writeProbe ->
+        let key = parameterKey keyFields writeProbe
+
+        match zeroByKey |> Map.tryFind key with
+        | None -> None
+        | Some zeroProbe ->
+            let writeElapsed = elapsedMilliseconds writeProbe
+            let zeroElapsed = elapsedMilliseconds zeroProbe
+            let elapsed = max 0.0 (writeElapsed - zeroElapsed)
+            let rssDelta =
+                let delta = int64 writeProbe.rssDeltaMedianBytes - int64 zeroProbe.rssDeltaMedianBytes
+                if delta > 0L then uint64 delta else 0UL
+            let bytes = measuredBytes writeProbe
+            let throughput =
+                if bytes > 0UL && elapsed > 0.0 then
+                    float bytes / (elapsed / 1000.0)
+                else
+                    0.0
+            let p = copyParameters writeProbe.parameters
+            p["operation"] <- "write-estimate"
+            p["derivedFrom"] <- "zero-write - zero"
+            let nameKey = key.Replace("|", "x")
+            Some
+                { name = $"write-estimate-{nameKey}"
+                  description = $"Estimated write cost for {key}, derived from zero-write minus zero."
+                  parameters = p
+                  observedElements = writeProbe.observedElements
+                  observedBytes = bytes
+                  predictedImagePeakBytes = 0UL
+                  rssDeltaMedianBytes = rssDelta
+                  elapsedMilliseconds = elapsed
+                  elapsedMedianMilliseconds = elapsed
+                  throughputMedianElementsPerSecond = 0.0
+                  throughputMedianBytesPerSecond = throughput
+                  source = writeProbe.source })
+
+let private estimateStageCostProbes (probes: ProbeResultJson array) =
+    let keyFields = [ "width"; "height"; "depth"; "pixelType" ]
+
+    let baselineByKey =
+        probes
+        |> Array.map (fun probe -> operationName probe, parameterKey keyFields probe, probe)
+        |> Array.groupBy (fun (operation, key, _) -> operation, key)
+        |> Array.map (fun ((operation, key), matches) ->
+            let _, _, probe = matches |> Array.head
+            (operation, key), probe)
+        |> Map.ofArray
+
+    probes
+    |> Array.choose (fun probe ->
+        match probe |> tryGetParameter "baselineOperation" with
+        | None -> None
+        | Some baselineOperation ->
+            let key = parameterKey keyFields probe
+
+            match baselineByKey |> Map.tryFind (baselineOperation, key) with
+            | None -> None
+            | Some baselineProbe ->
+                let probeElapsed = elapsedMilliseconds probe
+                let baselineElapsed = elapsedMilliseconds baselineProbe
+                let elapsed = max 0.0 (probeElapsed - baselineElapsed)
+                let rssDelta =
+                    let delta = int64 probe.rssDeltaMedianBytes - int64 baselineProbe.rssDeltaMedianBytes
+                    if delta > 0L then uint64 delta else 0UL
+                let bytes = measuredBytes probe
+                let throughput =
+                    if bytes > 0UL && elapsed > 0.0 then
+                        float bytes / (elapsed / 1000.0)
+                    else
+                        0.0
+                let p = copyParameters probe.parameters
+                let stageName =
+                    probe
+                    |> tryGetParameter "stage"
+                    |> Option.defaultValue (operationName probe)
+                p["operation"] <- $"{stageName}-estimate"
+                p["derivedFrom"] <- $"{operationName probe} - {baselineOperation}"
+                let nameKey = key.Replace("|", "x")
+                Some
+                    { name = $"{stageName}-estimate-{nameKey}"
+                      description = $"Estimated stage cost for {stageName} and {key}, derived from {operationName probe} minus {baselineOperation}."
+                      parameters = p
+                      observedElements = probe.observedElements
+                      observedBytes = bytes
+                      predictedImagePeakBytes = 0UL
+                      rssDeltaMedianBytes = rssDelta
+                      elapsedMilliseconds = elapsed
+                      elapsedMedianMilliseconds = elapsed
+                      throughputMedianElementsPerSecond = 0.0
+                      throughputMedianBytesPerSecond = throughput
+                      source = probe.source })
 
 let private makeScatter title xCandidates yTitle ySelector (probes: ProbeResultJson array) =
     let rows =
@@ -174,13 +302,21 @@ let main args =
         if isNull (box report) || isNull report.probes || report.probes.Length = 0 then
             failwith $"No probes found in {inputPath}"
 
+        let writeCostProbes = estimateWriteCostProbes report.probes
+        let stageCostProbes = estimateStageCostProbes report.probes
+
+        if stageCostProbes.Length = 0 then
+            failwith "No stage-estimate probes could be derived. Re-run StackProcessing.Probing so the report includes probes with matching baselineOperation metadata."
+
+        let rawProbes = plottedRawProbes report.probes
+
         let memoryChart =
             makeScatter
                 "StackProcessing memory by window size"
                 [ "windowSize" ]
                 "RSS median delta (MiB)"
                 (fun probe -> bytesToMiB probe.rssDeltaMedianBytes)
-                report.probes
+                rawProbes
 
         let speedChart =
             makeScatter
@@ -188,7 +324,7 @@ let main args =
                 [ "windowSize" ]
                 "Throughput (MiB/s)"
                 medianMiBPerSecond
-                report.probes
+                rawProbes
 
         let memoryByImageChart =
             makeScatter
@@ -196,7 +332,7 @@ let main args =
                 [ "imagePixels"; "imageVoxels"; "width"; "height"; "depth" ]
                 "RSS median delta (MiB)"
                 (fun probe -> bytesToMiB probe.rssDeltaMedianBytes)
-                (nPlus2Probes report.probes)
+                (nPlus2Probes rawProbes)
 
         let speedByImageChart =
             makeScatter
@@ -204,20 +340,90 @@ let main args =
                 [ "imagePixels"; "imageVoxels"; "width"; "height"; "depth" ]
                 "Throughput (MiB/s)"
                 medianMiBPerSecond
-                (nPlus2Probes report.probes)
+                (nPlus2Probes rawProbes)
 
         let memoryPath = Path.Combine(outputDirectory, "stackprocessing-probing-memory-by-window.html")
         let speedPath = Path.Combine(outputDirectory, "stackprocessing-probing-speed-by-window.html")
         let memoryByImagePath = Path.Combine(outputDirectory, "stackprocessing-probing-memory-by-image-size.html")
         let speedByImagePath = Path.Combine(outputDirectory, "stackprocessing-probing-speed-by-image-size.html")
+        let writeTimePath = Path.Combine(outputDirectory, "stackprocessing-probing-write-time-by-image-size.html")
+        let writeThroughputPath = Path.Combine(outputDirectory, "stackprocessing-probing-write-throughput-by-image-size.html")
+        let stageMemoryByWindowPath = Path.Combine(outputDirectory, "stackprocessing-probing-stage-memory-by-window.html")
+        let stageSpeedByWindowPath = Path.Combine(outputDirectory, "stackprocessing-probing-stage-speed-by-window.html")
+        let stageMemoryByImagePath = Path.Combine(outputDirectory, "stackprocessing-probing-stage-memory-by-image-size.html")
+        let stageSpeedByImagePath = Path.Combine(outputDirectory, "stackprocessing-probing-stage-speed-by-image-size.html")
 
         memoryChart |> Chart.saveHtml(memoryPath)
         speedChart |> Chart.saveHtml(speedPath)
         memoryByImageChart |> Chart.saveHtml(memoryByImagePath)
         speedByImageChart |> Chart.saveHtml(speedByImagePath)
 
+        let stageMemoryByWindowChart =
+            makeScatter
+                "StackProcessing estimated stage memory by window size"
+                [ "windowSize" ]
+                "Estimated stage RSS median delta (MiB)"
+                (fun probe -> bytesToMiB probe.rssDeltaMedianBytes)
+                stageCostProbes
+
+        let stageSpeedByWindowChart =
+            makeScatter
+                "StackProcessing estimated stage speed by window size"
+                [ "windowSize" ]
+                "Estimated stage throughput (MiB/s)"
+                medianMiBPerSecond
+                stageCostProbes
+
+        let stageMemoryByImageChart =
+            makeScatter
+                "StackProcessing estimated stage memory by image size (n+2 depth)"
+                [ "imagePixels"; "imageVoxels"; "width"; "height"; "depth" ]
+                "Estimated stage RSS median delta (MiB)"
+                (fun probe -> bytesToMiB probe.rssDeltaMedianBytes)
+                (nPlus2Probes stageCostProbes)
+
+        let stageSpeedByImageChart =
+            makeScatter
+                "StackProcessing estimated stage speed by image size (n+2 depth)"
+                [ "imagePixels"; "imageVoxels"; "width"; "height"; "depth" ]
+                "Estimated stage throughput (MiB/s)"
+                medianMiBPerSecond
+                (nPlus2Probes stageCostProbes)
+
+        stageMemoryByWindowChart |> Chart.saveHtml(stageMemoryByWindowPath)
+        stageSpeedByWindowChart |> Chart.saveHtml(stageSpeedByWindowPath)
+        stageMemoryByImageChart |> Chart.saveHtml(stageMemoryByImagePath)
+        stageSpeedByImageChart |> Chart.saveHtml(stageSpeedByImagePath)
+
+        if writeCostProbes.Length > 0 then
+            let writeTimeChart =
+                makeScatter
+                    "StackProcessing estimated write time by image size"
+                    [ "imagePixels"; "imageVoxels"; "width"; "height"; "depth" ]
+                    "Estimated write elapsed (ms)"
+                    elapsedMilliseconds
+                    (nPlus2Probes writeCostProbes)
+
+            let writeThroughputChart =
+                makeScatter
+                    "StackProcessing estimated write throughput by image size"
+                    [ "imagePixels"; "imageVoxels"; "width"; "height"; "depth" ]
+                    "Estimated write throughput (MiB/s)"
+                    medianMiBPerSecond
+                    (nPlus2Probes writeCostProbes)
+
+            writeTimeChart |> Chart.saveHtml(writeTimePath)
+            writeThroughputChart |> Chart.saveHtml(writeThroughputPath)
+
         printfn "Wrote %s" memoryPath
         printfn "Wrote %s" speedPath
         printfn "Wrote %s" memoryByImagePath
         printfn "Wrote %s" speedByImagePath
+        printfn "Wrote %s" stageMemoryByWindowPath
+        printfn "Wrote %s" stageSpeedByWindowPath
+        printfn "Wrote %s" stageMemoryByImagePath
+        printfn "Wrote %s" stageSpeedByImagePath
+        if writeCostProbes.Length > 0 then
+            printfn "Wrote %s" writeTimePath
+            printfn "Wrote %s" writeThroughputPath
         0

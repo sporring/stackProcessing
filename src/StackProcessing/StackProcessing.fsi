@@ -323,6 +323,10 @@ val round<'T when 'T: equality> :
 val sqrt<'T when 'T: equality> :
   StackCore.Stage<StackCore.Image<'T>,StackCore.Image<'T>> when 'T: equality
 
+val sqrtWindowed<'T when 'T: equality> :
+  (uint -> StackCore.Stage<StackCore.Image<'T>,StackCore.Image<'T>>)
+    when 'T: equality
+
 val square<'T when 'T: equality> :
   StackCore.Stage<StackCore.Image<'T>,StackCore.Image<'T>> when 'T: equality
 
