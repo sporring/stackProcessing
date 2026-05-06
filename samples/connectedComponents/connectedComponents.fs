@@ -23,7 +23,7 @@ let main arg =
         |> read<uint8> input ".tiff"
         >=> threshold 128.0 infinity
         >=> connectedComponents wsz
-        >=> teeFst (writeChunkSlices tmp tmpSuffix wsz)
+        >=> teeFst (writeSlabSlices tmp tmpSuffix wsz)
         >=> makeConnectedComponentTranslationTable wsz
         |> drain
     printfn "Translation Table drain:\n%A" transTbl

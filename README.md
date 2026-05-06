@@ -395,7 +395,7 @@ Typical sources:
 ```fsharp
 read<'T> inputDir suffix
 readRandom<'T> depth inputDir suffix
-readChunks<'T> inputDir suffix
+readSlab<'T> inputDir suffix
 zero<'T> width height depth
 ```
 
@@ -403,7 +403,7 @@ Typical sinks:
 
 ```fsharp
 write outputDir suffix
-writeInChunks outputDir suffix chunkX chunkY chunkZ
+writeInSlabs outputDir suffix chunkX chunkY chunkZ
 sink
 drain
 ```
@@ -439,7 +439,7 @@ let transTbl =
     |> read<uint8> input ".tiff"
     >=> threshold 128.0 infinity
     >=> connectedComponents wsz
-    >=> teeFst (writeChunkSlices tmp ".mha" wsz)
+    >=> teeFst (writeSlabSlices tmp ".mha" wsz)
     >=> makeConnectedComponentTranslationTable wsz
     |> drain
 
@@ -451,7 +451,7 @@ source availableMemory
 |> sink
 ```
 
-`connectedComponents` returns label chunks paired with object counts. The
+`connectedComponents` returns label slabs paired with object counts. The
 translation-table reducer uses chunk counts and boundary comparisons to build a
 total mapping. Temporary labels are stored losslessly, for example as `.mha`,
 before the second pass collapses labels and writes displayable output.

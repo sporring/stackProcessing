@@ -34,6 +34,9 @@ let private suffixAliases (suffix: string) =
     | suffix when String.Equals(suffix, ".tif", StringComparison.OrdinalIgnoreCase)
                || String.Equals(suffix, ".tiff", StringComparison.OrdinalIgnoreCase) ->
         [ ".tif"; ".tiff" ]
+    | suffix when String.Equals(suffix, ".jpg", StringComparison.OrdinalIgnoreCase)
+               || String.Equals(suffix, ".jpeg", StringComparison.OrdinalIgnoreCase) ->
+        [ ".jpg"; ".jpeg" ]
     | suffix ->
         [ suffix ]
 
@@ -237,7 +240,7 @@ let _readChunk<'T when 'T: equality>  (inputDir: string) (suffix: string) i j k 
     let res = Image<'T>.ofFile filename
     res
 
-let _readChunkSlice<'T when 'T: equality>  (inputDir: string) (suffix: string) (chunkInfo: ChunkInfo) (udir: uint) (idx: int) =
+let _readSlabStacked<'T when 'T: equality>  (inputDir: string) (suffix: string) (chunkInfo: ChunkInfo) (udir: uint) (idx: int) =
     let dir = int udir
     let chunkWidth = int chunkInfo.topLeftInfo.size[0]
     let chunkHeight = int chunkInfo.topLeftInfo.size[1]
@@ -256,7 +259,7 @@ let _readChunkSlice<'T when 'T: equality>  (inputDir: string) (suffix: string) (
         else
             [chunkInfo.size[0]; chunkInfo.size[1]; lastSz], [chunkInfo.chunks[0]; chunkInfo.chunks[1]; 1]
 
-    let chunkSlice = Image<'T>(sz |> List.map uint, chunkInfo.topLeftInfo.numberOfComponents)
+    let slab = Image<'T>(sz |> List.map uint, chunkInfo.topLeftInfo.numberOfComponents)
     for i in [0 .. nChunks[0]-1] do
         for j in [0 .. nChunks[1]-1] do
             for k in [0 .. nChunks[2]-1] do
@@ -270,38 +273,37 @@ let _readChunkSlice<'T when 'T: equality>  (inputDir: string) (suffix: string) (
                 let stop1 = j*chunkHeight+(img.GetHeight()|>int)-1|>Some
                 let start2 = k*chunkDepth|>Some
                 let stop2 = k*chunkDepth+(img.GetDepth()|>int)-1|>Some
-                chunkSlice.SetSlice (start0, stop0, start1, stop1, start2, stop2) img |> ignore
+                slab.SetSlice (start0, stop0, start1, stop1, start2, stop2) img |> ignore
                 img.decRefCount()
-    chunkSlice
+    slab
 
-let readChunksAsWindows<'T when 'T: equality> (inputDir: string) (suffix: string) (pl: Plan<unit, unit>) : Plan<unit, Image<'T> list> =
-    let name = "readChunks"
+let readSlabStacked<'T when 'T: equality> (inputDir: string) (suffix: string) (pl: Plan<unit, unit>) : Plan<unit, Image<'T>> =
+    let name = "readSlabStacked"
     let chunkInfo = getChunkInfo inputDir suffix
-    let depth = uint64 chunkInfo.chunks[2] // we will read chunks_*_*_i* as windows
+    let depth = uint64 chunkInfo.chunks[2] // read each chunk_*_*_k layer as one full x-y slab
     let elementBytes =
-        chunkInfo.topLeftInfo.size
+        [ chunkInfo.size[0]; chunkInfo.size[1]; chunkInfo.topLeftInfo.size[2] ]
         |> List.fold (*) 1UL
         |> fun voxels -> voxels * (typeof<'T> |> Image.getBytesPerComponent |> uint64)
     let sourcePeek =
         SourcePeek.create
-            "readChunks"
+            name
             elementBytes
             (Some depth)
             (Map.ofList
-                [ "kind", "image-chunks"
+                [ "kind", "image-slabs"
                   "inputDir", inputDir
                   "suffix", suffix
                   "chunkWidth", string chunkInfo.topLeftInfo.size[0]
                   "chunkHeight", string chunkInfo.topLeftInfo.size[1]
                   "chunkDepth", string chunkInfo.topLeftInfo.size[2]
+                  "slabWidth", string chunkInfo.size[0]
+                  "slabHeight", string chunkInfo.size[1]
                   "chunks", chunkInfo.chunks |> List.map string |> String.concat "x"
                   "pixelType", typeof<'T>.Name ])
 
-    let mapper (k: int) : Image<'T> list = 
-        let chunkSlice = _readChunkSlice<'T> inputDir suffix chunkInfo 2u k
-        let res = chunkSlice |> ImageFunctions.unstack 2u
-        chunkSlice.decRefCount()
-        res
+    let mapper (k: int) : Image<'T> =
+        _readSlabStacked<'T> inputDir suffix chunkInfo 2u k
 
     let transition = ProfileTransition.create Unit Streaming
     let memPeak = 256UL // surrugate string length
@@ -309,7 +311,7 @@ let readChunksAsWindows<'T when 'T: equality> (inputDir: string) (suffix: string
     let elementTransformation = id
     let memoryModel = StageMemoryModel.fromSinglePeak Source memoryNeed
     let workModel =
-        StageWorkModel.ioRead Source (Some $"readChunks.{typeof<'T>.Name}") (fun _ -> elementBytes) (fun _ -> 1UL)
+        StageWorkModel.ioRead Source (Some $"readSlabStacked.{typeof<'T>.Name}") (fun _ -> elementBytes) (fun _ -> 1UL)
     let stage =
         Stage.init $"{name}" (uint depth) mapper transition memoryNeed elementTransformation
         |> withCostModel (StageCostModel.create memoryModel workModel)
@@ -320,8 +322,20 @@ let readChunksAsWindows<'T when 'T: equality> (inputDir: string) (suffix: string
     Plan.create stage pl.memAvail memPeak memPerElem depth pl.debug
     |> Plan.withSourcePeek sourcePeek
 
-let readChunks<'T when 'T: equality> (inputDir: string) (suffix: string) (pl: Plan<unit, unit>) : Plan<unit, Image<'T>> =
-    pl |> readChunksAsWindows<'T> inputDir suffix >=> flattenList ()
+let readSlabAsWindows<'T when 'T: equality> (inputDir: string) (suffix: string) (pl: Plan<unit, unit>) : Plan<unit, Image<'T> list> =
+    let memoryNeed = fun _ -> 256UL
+    let elementTransformation = id
+    let unstackSlab (slab: Image<'T>) =
+        let result = ImageFunctions.unstack 2u slab
+        slab.decRefCount()
+        result
+
+    pl
+    |> readSlabStacked<'T> inputDir suffix
+    >=> Stage.map $"readSlabAsWindows.{typeof<'T>.Name}" (fun _ slab -> unstackSlab slab) memoryNeed elementTransformation
+
+let readSlab<'T when 'T: equality> (inputDir: string) (suffix: string) (pl: Plan<unit, unit>) : Plan<unit, Image<'T>> =
+    pl |> readSlabAsWindows<'T> inputDir suffix >=> flattenList ()
 
 let icompare s1 s2  = 
     System.String.Equals(s1, s2, System.StringComparison.CurrentCultureIgnoreCase)
@@ -360,7 +374,7 @@ let write<'T when 'T: equality> (outputDir: string) (suffix: string) : Stage<Ima
     Stage.mapi $"write \"{outputDir}/*{suffix}\"" mapper memoryNeed id
     |> withCostModel (StageCostModel.create memoryModel workModel)
 
-let _writeChunkSlice (debug: bool) (outputDir: string) (suffix: string) (width: uint) (height: uint) (winSz: uint) (k: int) (stack: Image<'T>) =
+let _writeSlabChunks (debug: bool) (outputDir: string) (suffix: string) (width: uint) (height: uint) (winSz: uint) (k: int) (stack: Image<'T>) =
     for i in [0u..stack.GetWidth()/width] do
         for j in [0u..stack.GetHeight()/height] do
             let fileName = getChunkFilename outputDir suffix (int i) (int j) (int k)
@@ -379,7 +393,7 @@ let _writeChunkSlice (debug: bool) (outputDir: string) (suffix: string) (width: 
 let _writeChunks (debug: bool) (outputDir: string) (suffix: string) (width: uint) (height: uint) (winSz: uint) (stack: Image<'T>) =
     ()
 
-let writeInChunks<'T when 'T: equality> (outputDir: string) (suffix: string) (width: uint) (height: uint) (winSz: uint) : Stage<Image<'T>, Image<'T>> =
+let private writeInSlabsCore<'T when 'T: equality> (outputDir: string) (suffix: string) (width: uint) (height: uint) (winSz: uint) : Stage<Image<'T>, Image<'T>> =
     let t = typeof<'T>
     if (icompare suffix ".tif" || icompare suffix ".tiff") 
         && not (t = typeof<uint8> || t = typeof<int8> || t = typeof<uint16> || t = typeof<int16> || t = typeof<float32>) then
@@ -389,12 +403,12 @@ let writeInChunks<'T when 'T: equality> (outputDir: string) (suffix: string) (wi
 
     let pad, stride = 0u, winSz
     let f (debug: bool) (k: int64) (stack: Image<'T>) = 
-        _writeChunkSlice debug outputDir suffix width height winSz (int k) stack
+        _writeSlabChunks debug outputDir suffix width height winSz (int k) stack
         stack.incRefCount() //to make sure volFctToLstFctReleaseAfter doesn't release it.
         stack
     let mapper (debug: bool) (idx: int64) (window: Window<Image<'T>>) =
         volFctToWindowFctReleaseAfterDebug debug (f debug idx) 1u pad stride window
-    //let mapper (debug: bool) (idx: int64) = fun stack -> _writeChunkSlice debug outputDir suffix width height winSz (int idx) stack; stack
+    //let mapper (debug: bool) (idx: int64) = fun stack -> _writeSlabChunks debug outputDir suffix width height winSz (int idx) stack; stack
     let btUint8 = typeof<uint8>|>Image.getBytesPerComponent |> uint64
     let btUint64 = typeof<uint64> |> Image.getBytesPerComponent |> uint64
     let memoryNeed nPixels = 
@@ -409,10 +423,13 @@ let writeInChunks<'T when 'T: equality> (outputDir: string) (suffix: string) (wi
         imageIoCost<'T>
             "write"
             Iter
-            $"writeInChunks.{typeof<'T>.Name}"
+            $"writeInSlabs.{typeof<'T>.Name}"
             (fun input -> inputValue input |> imageBytes<'T>)
             (fun _ -> 1UL)
     let stg =
-        Stage.mapi "writeInChunks" mapper memoryNeed elementTransformation
+        Stage.mapi "writeInSlabs" mapper memoryNeed elementTransformation
         |> withCostModel (StageCostModel.create memoryModel workModel)
     (window winSz pad stride) --> stg --> flattenList ()
+
+let writeInSlabs<'T when 'T: equality> outputDir suffix width height winSz =
+    writeInSlabsCore<'T> outputDir suffix width height winSz

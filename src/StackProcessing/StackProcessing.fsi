@@ -34,12 +34,6 @@ val zip:
      SlimPipeline.Plan<'a,'c> -> SlimPipeline.Plan<'a,('b * 'c)>)
     when 'b: equality and 'c: equality
 
-val promoteStreamingToWindow:
-  (string ->
-     uint ->
-     uint ->
-     uint -> uint -> uint -> StackCore.Stage<'a,'b> -> StackCore.Stage<'a,'b>)
-
 val (>=>) :
   (SlimPipeline.Plan<'a,'b> ->
      SlimPipeline.Stage<'b,'c> -> SlimPipeline.Plan<'a,'c>) when 'c: equality
@@ -149,13 +143,19 @@ val getChunkInfo: (string -> string -> StackIO.ChunkInfo)
 
 val getChunkFilename: (string -> string -> int -> int -> int -> string)
 
-val readChunksAsWindows<'T when 'T: equality> :
+val readSlabStacked<'T when 'T: equality> :
+  (string ->
+     string ->
+     SlimPipeline.Plan<unit,unit> -> SlimPipeline.Plan<unit,StackCore.Image<'T>>)
+    when 'T: equality
+
+val readSlabAsWindows<'T when 'T: equality> :
   (string ->
      string ->
      SlimPipeline.Plan<unit,unit> ->
      SlimPipeline.Plan<unit,StackCore.Image<'T> list>) when 'T: equality
 
-val readChunks<'T when 'T: equality> :
+val readSlab<'T when 'T: equality> :
   (string ->
      string ->
      SlimPipeline.Plan<unit,unit> -> SlimPipeline.Plan<unit,StackCore.Image<'T>>)
@@ -167,7 +167,7 @@ val write:
   (string -> string -> StackCore.Stage<StackCore.Image<'a>,StackCore.Image<'a>>)
     when 'a: equality
 
-val writeInChunks:
+val writeInSlabs:
   (string ->
      string ->
      uint ->
@@ -487,7 +487,7 @@ val createByEuler2DTransform<'T when 'T: equality> :
 
 val empty: (SlimPipeline.Plan<unit,unit> -> SlimPipeline.Plan<unit,unit>)
 
-val writeChunkSlices:
+val writeSlabSlices:
   (string ->
      string -> uint -> StackCore.Stage<StackCore.Image<'a>,StackCore.Image<'a>>)
     when 'a: equality

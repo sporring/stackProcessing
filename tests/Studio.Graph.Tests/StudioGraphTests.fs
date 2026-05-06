@@ -42,9 +42,12 @@ let domainSuite =
             Expect.isTrue (ImageFileFormat.supports ".tif" Float64) "TIF should be treated like TIFF."
             Expect.isFalse (ImageFileFormat.supports ".tiff" UInt64) "TIFF should not be offered for 64-bit integer stack output."
             Expect.equal ImageFileFormat.readFormats.Head.Label "TIFF (.tif or .tiff)" "Read format choices should present TIFF suffixes as aliases."
+            Expect.isTrue (ImageFileFormat.readFormats |> List.exists (fun format -> format.Label = "JPEG (.jpg or .jpeg)" && format.Suffix = ".jpg")) "Read format choices should present JPEG suffixes as aliases."
+            Expect.isFalse (ImageFileFormat.readFormats |> List.exists (fun format -> format.Suffix = ".jpeg")) "Read format choices should not show a duplicate JPEG entry."
             Expect.isTrue (ImageFileFormat.supports ".png" UInt16) "PNG should support 16-bit unsigned slices."
             Expect.isFalse (ImageFileFormat.supports ".png" Float32) "PNG should not accept floating-point output."
             Expect.isTrue (ImageFileFormat.supports ".jpg" UInt8) "JPEG should accept 8-bit unsigned slices."
+            Expect.isTrue (ImageFileFormat.supports ".jpeg" UInt8) "JPEG alias should accept 8-bit unsigned slices."
             Expect.isFalse (ImageFileFormat.supports ".jpg" UInt16) "JPEG should be kept to 8-bit output."
 
         testCase "FunctionDefinition.matches searches display category summary description and aliases" <| fun _ ->
@@ -68,7 +71,8 @@ let catalogSuite =
     testList "Studio.Graph catalog" [
         testCase "catalog exposes expected generic functions" <| fun _ ->
             let ids = BuiltInCatalog.orderedFunctions |> List.map _.Id
-            Expect.containsAll ids ["Scalar"; "FileDirectory"; "Read"; "Write"; "GetStackInfo"; "ImageOpImage"; "ComputeStats"; "Chart"] "Important Studio functions should be in the palette catalog."
+            Expect.containsAll ids ["Scalar"; "FileDirectory"; "Read"; "ReadSlab"; "Write"; "WriteInSlabs"; "GetStackInfo"; "GetChunkInfo"; "ImageOpImage"; "ComputeStats"; "Chart"] "Important Studio functions should be in the palette catalog."
+            Expect.containsAll ids ["Convolve"; "BinaryFillHoles"; "RelabelComponents"; "Watershed"; "SignedDistanceMap"; "OtsuThreshold"; "MomentsThreshold"; "ResampleAffineTrilinearSlices"] "The StackProcessing DSL algorithms requested for Studio should be in the palette catalog."
             Expect.isFalse (ids |> List.contains "MaxOfPair") "maxOfPair should be available through ImageOpImage, not as a legacy palette box."
             Expect.isFalse (ids |> List.contains "MinOfPair") "minOfPair should be available through ImageOpImage, not as a legacy palette box."
 

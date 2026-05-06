@@ -530,7 +530,7 @@ let empty (pl: Plan<unit, unit>) : Plan<unit, unit> =
     let stage = "empty" |> Stage.empty |> Some
     Plan.create stage pl.memAvail 0UL 0UL 0UL  pl.debug
 
-let writeChunkSlices (outputDir: string) (suffix: string) (winSz: uint) : Stage<Image<'T>, Image<'T>> =
+let writeSlabSlices (outputDir: string) (suffix: string) (winSz: uint) : Stage<Image<'T>, Image<'T>> =
     if (outputDir |> System.IO.Directory.Exists) |> not then
         System.IO.Directory.CreateDirectory(outputDir) |> ignore
 
@@ -540,12 +540,12 @@ let writeChunkSlices (outputDir: string) (suffix: string) (winSz: uint) : Stage<
         |> List.iteri (fun localIndex slice ->
             let globalIndex = labelChunk.index + localIndex
             let fileName = System.IO.Path.Combine(outputDir, sprintf "image_%03d%s" globalIndex suffix)
-            if debug then printfn "[writeChunkSlices] Saved image %d to %s as %s" globalIndex fileName (typeof<'T>.Name)
+            if debug then printfn "[writeSlabSlices] Saved image %d to %s as %s" globalIndex fileName (typeof<'T>.Name)
             slice.toFile(fileName)
             slice.decRefCount())
         labelChunk
 
-    Stage.mapi $"writeChunkSlices \"{outputDir}/*{suffix}\"" mapper id id
+    Stage.mapi $"writeSlabSlices \"{outputDir}/*{suffix}\"" mapper id id
 
 let makeConnectedComponentTranslationTable (winSz: uint) : Stage<Image<uint64> * uint64,(uint*uint64*uint64) list> =
     let name = "makeConnectedComponentTranslationTable"
@@ -690,10 +690,10 @@ let permuteAxes (i: uint, j: uint, k: uint) (winSz: uint): Stage<Image<'T>,Image
         let tmpSuffix = ".tiff"
 
         let mapper (chunkInfo: ChunkInfo) (debug: bool) (idx: int): Image<'T> list = 
-            let chunkSlice = _readChunkSlice<'T> tmpDir tmpSuffix chunkInfo k (int idx)
-            let sz = chunkSlice.GetSize ()
-            let stack =  ImageFunctions.unstack k chunkSlice
-            chunkSlice.decRefCount()
+            let slab = _readSlabStacked<'T> tmpDir tmpSuffix chunkInfo k (int idx)
+            let sz = slab.GetSize ()
+            let stack =  ImageFunctions.unstack k slab
+            slab.decRefCount()
             let res = 
                 if j < i then // since we use unstack, we need to transpose some
                     stack 
@@ -710,7 +710,7 @@ let permuteAxes (i: uint, j: uint, k: uint) (winSz: uint): Stage<Image<'T>,Image
         let memoryNeed = fun _ -> memPeak
         let elementTransformation = fun _ -> chunkInfo.chunks[int k] |> uint64
 
-        (writeInChunks tmpDir tmpSuffix winSz winSz winSz)
+        (writeInSlabs tmpDir tmpSuffix winSz winSz winSz)
         --> Stage.clean name (fun () -> StackIO.deleteIfExists tmpDir) 
         --> StackCore.ignoreSingles () // force calculation of full stream and decrease references
         --> Stage.map name (fun _ _ -> chunkInfo <- getChunkInfo tmpDir tmpSuffix) memoryNeed elementTransformation // insert side-effect

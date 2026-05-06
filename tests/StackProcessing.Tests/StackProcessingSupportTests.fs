@@ -207,6 +207,11 @@ let stackProcessingSupportSuite =
                 Expect.equal (getStackWidth inputDir suffix) 5UL "Stack width should come from slice metadata."
                 Expect.equal (getStackHeight inputDir suffix) 4UL "Stack height should come from slice metadata."
 
+                File.WriteAllBytes(Path.Combine(inputDir, "alias_000.jpg"), [| 0uy |])
+                File.WriteAllBytes(Path.Combine(inputDir, "alias_001.jpeg"), [| 0uy |])
+                Expect.equal (getStackDepth inputDir ".jpg") 2u "JPG stack depth should include .jpg and .jpeg aliases."
+                Expect.equal (getStackDepth inputDir ".jpeg") 2u "JPEG stack depth should include .jpg and .jpeg aliases."
+
                 let allSlices =
                     source (2UL * 1024UL * 1024UL * 1024UL)
                     |> read<uint8> inputDir suffix
@@ -233,26 +238,45 @@ let stackProcessingSupportSuite =
                 disposeImages slices
                 deleteDirectory inputDir
 
-        testCase "writeInChunks creates chunk files and chunk metadata can be read" <| fun _ ->
+        testCase "writeInSlabs creates chunk files and chunk metadata can be read" <| fun _ ->
             let inputDir = tempDirectory "chunks-input"
             let chunkDir = tempDirectory "chunks-output"
             let suffix = ".tiff"
             let chunkSuffix = ".mha"
             let slices = [ for z in 0 .. 3 -> makeSlice 4 4 z ]
+            let mutable slabs: Image<uint8> list = []
+            let mutable rereadSlices: Image<uint8> list = []
 
             try
                 writeSlices inputDir suffix slices
 
                 source (2UL * 1024UL * 1024UL * 1024UL)
                 |> read<uint8> inputDir suffix
-                >=> writeInChunks chunkDir chunkSuffix 2u 2u 2u
+                >=> writeInSlabs chunkDir chunkSuffix 2u 2u 2u
                 |> sink
 
                 let info = getChunkInfo chunkDir chunkSuffix
                 Expect.equal info.chunks [ 2; 2; 2 ] "4x4x4 data written as 2x2x2 chunks should create a 2x2x2 chunk grid."
                 Expect.equal info.size [ 4UL; 4UL; 4UL ] "Chunk metadata should reconstruct full volume size."
                 Expect.isTrue (File.Exists(getChunkFilename chunkDir chunkSuffix 1 1 1)) "The final chunk file should exist."
+
+                slabs <-
+                    source (2UL * 1024UL * 1024UL * 1024UL)
+                    |> readSlabStacked<uint8> chunkDir chunkSuffix
+                    |> drainList
+
+                Expect.equal slabs.Length 2 "readSlabStacked should emit one full x-y slab per z chunk."
+                Expect.equal (slabs[0].GetSize()) [ 4u; 4u; 2u ] "The first stacked slab should span the full x-y extent and the chunk z depth."
+
+                rereadSlices <-
+                    source (2UL * 1024UL * 1024UL * 1024UL)
+                    |> readSlab<uint8> chunkDir chunkSuffix
+                    |> drainList
+
+                Expect.equal rereadSlices.Length 4 "readSlab should unstack slabs into the normal 2D slice stream."
             finally
+                disposeImages slabs
+                disposeImages rereadSlices
                 disposeImages slices
                 deleteDirectory inputDir
                 deleteDirectory chunkDir
@@ -372,12 +396,12 @@ let stackProcessingSupportSuite =
                     source (2UL * 1024UL * 1024UL * 1024UL)
                     |> read<uint8> inputDir suffix
                     >=> connectedComponents 2u
-                    >=> teeFst (writeChunkSlices labelDir labelSuffix 2u)
+                    >=> teeFst (writeSlabSlices labelDir labelSuffix 2u)
                     >=> makeConnectedComponentTranslationTable 2u
                     |> drain
 
                 Expect.isNonEmpty table "Connected component translation table should contain label mappings."
-                Expect.isTrue (File.Exists(Path.Combine(labelDir, "image_000.mha"))) "writeChunkSlices should write label slices from the tuple stream."
+                Expect.isTrue (File.Exists(Path.Combine(labelDir, "image_000.mha"))) "writeSlabSlices should write label slices from the tuple stream."
                 Expect.isTrue (table |> List.exists (fun (_, sourceLabel, targetLabel) -> sourceLabel <> 0UL && targetLabel <> 0UL)) "The table should contain foreground label mappings."
             finally
                 disposeImages slices

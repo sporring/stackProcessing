@@ -53,6 +53,29 @@ let generatorSuite =
             Expect.stringContains code ">=> write \"output\" \".tiff\"" "Write node should generate write stage."
             Expect.stringContains code "|> sink" "Terminal write should be sunk."
 
+        testCase "slab read and write boxes lower to slab DSL functions" <| fun _ ->
+            let read =
+                node "read" "ReadSlab"
+                    [ p "availableMemory" "1073741824" false
+                      p "type" "UInt8" false
+                      p "input" "chunks" false
+                      p "suffix" ".mha" false ]
+
+            let write =
+                node "write" "WriteInSlabs"
+                    [ p "output" "chunks-out" false
+                      p "suffix" ".mha" false
+                      p "chunkX" "12" false
+                      p "chunkY" "13" false
+                      p "chunkZ" "14" false ]
+
+            let code =
+                graph [ read; write ] [ edge "read" "output" 0 "write" "input" 0 ]
+                |> PipelineCodeGenerator.generateSavedGraph
+
+            Expect.stringContains code "|> readSlab<uint8> \"chunks\" \".mha\"" "ReadSlab should generate the slab reader."
+            Expect.stringContains code ">=> writeInSlabs \"chunks-out\" \".mha\" 12u 13u 14u" "WriteInSlabs should generate the slab writer wrapper."
+
         testCase "linked string scalar is emitted before read and used unquoted" <| fun _ ->
             let scalar =
                 node "scalar" "Scalar"
@@ -256,6 +279,107 @@ let generatorSuite =
             Expect.stringContains code "let StackInfo0 = getStackInfo String0 \".tiff\"" "getStackInfo should bind FileInfo once."
             Expect.stringContains code "printfn $\"{StackInfo0.size[0]} {StackInfo0.componentType} {StackInfo0.dimensions}\"" "FileInfo output pins should map to field expressions."
 
+        testCase "getChunkInfo binds chunk layout fields for scalar outputs" <| fun _ ->
+            let info =
+                node "info" "GetChunkInfo"
+                    [ p "input" "chunks" false
+                      p "suffix" ".mha" false ]
+
+            let print =
+                node "print" "Print"
+                    [ p "format" "{input1} {input2} {input3}" false
+                      p "input1" "" true
+                      p "input2" "" true
+                      p "input3" "" true ]
+
+            let code =
+                graph
+                    [ info; print ]
+                    [ edge "info" "reducerOutput" 4 "print" "parameterInput" 1
+                      edge "info" "reducerOutput" 7 "print" "parameterInput" 2
+                      edge "info" "reducerOutput" 2 "print" "parameterInput" 3 ]
+                |> PipelineCodeGenerator.generateSavedGraph
+
+            Expect.stringContains code "let ChunkInfo0 = getChunkInfo \"chunks\" \".mha\"" "getChunkInfo should bind ChunkInfo once."
+            Expect.stringContains code "printfn $\"{ChunkInfo0.chunks[0]} {ChunkInfo0.size[0]} {ChunkInfo0.topLeftInfo.componentType}\"" "ChunkInfo output pins should map to field expressions."
+
+        testCase "new image processing boxes lower to StackProcessing stages" <| fun _ ->
+            let read =
+                node "read" "Read"
+                    [ p "availableMemory" "1024" false
+                      p "type" "UInt8" false
+                      p "input" "input" false
+                      p "suffix" ".tiff" false ]
+
+            let fill =
+                node "fill" "BinaryFillHoles" [ p "windowSize" "5" false ]
+            let relabel =
+                node "relabel" "RelabelComponents"
+                    [ p "minimumObjectSize" "10" false
+                      p "windowSize" "5" false ]
+            let watershed =
+                node "watershed" "Watershed"
+                    [ p "level" "1.25" false
+                      p "windowSize" "7" false ]
+            let signed =
+                node "signed" "SignedDistanceMap" [ p "windowSize" "9" false ]
+            let otsu =
+                node "otsu" "OtsuThreshold" [ p "windowSize" "11" false ]
+            let moments =
+                node "moments" "MomentsThreshold" [ p "windowSize" "13" false ]
+            let write =
+                node "write" "Write"
+                    [ p "output" "out" false
+                      p "suffix" ".tiff" false ]
+
+            let code =
+                graph
+                    [ read; fill; relabel; watershed; signed; otsu; moments; write ]
+                    [ edge "read" "output" 0 "fill" "input" 0
+                      edge "fill" "output" 0 "relabel" "input" 0
+                      edge "relabel" "output" 0 "watershed" "input" 0
+                      edge "watershed" "output" 0 "signed" "input" 0
+                      edge "signed" "output" 0 "otsu" "input" 0
+                      edge "otsu" "output" 0 "moments" "input" 0
+                      edge "moments" "output" 0 "write" "input" 0 ]
+                |> PipelineCodeGenerator.generateSavedGraph
+
+            Expect.stringContains code ">=> binaryFillHoles 5u" "binaryFillHoles should lower with its window size."
+            Expect.stringContains code ">=> relabelComponents 10u 5u" "relabelComponents should lower with size threshold and window size."
+            Expect.stringContains code ">=> watershed 1.25 7u" "watershed should lower with level and window size."
+            Expect.stringContains code ">=> signedDistanceMap 9u" "signedDistanceMap should lower with its window size."
+            Expect.stringContains code ">=> otsuThreshold 11u" "otsuThreshold should lower with its window size."
+            Expect.stringContains code ">=> momentsThreshold 13u" "momentsThreshold should lower with its window size."
+
+        testCase "convolve lowers to StackProcessing stage" <| fun _ ->
+            let readImage =
+                node "image" "Read"
+                    [ p "availableMemory" "1024" false
+                      p "type" "Float64" false
+                      p "input" "image" false
+                      p "suffix" ".tiff" false ]
+
+            let convolve =
+                node "convolve" "Convolve"
+                    [ p "kernel" "kernelImage" false
+                      p "outputRegionMode" "Same" false
+                      p "boundaryCondition" "ZeroFluxNeumannPad" false
+                      p "windowSize" "8" false ]
+
+            let write =
+                node "write" "Write"
+                    [ p "output" "out" false
+                      p "suffix" ".tiff" false ]
+
+            let code =
+                graph
+                    [ readImage; convolve; write ]
+                    [ edge "image" "output" 0 "convolve" "input" 0
+                      edge "convolve" "output" 0 "write" "input" 0 ]
+                |> PipelineCodeGenerator.generateSavedGraph
+
+            Expect.stringContains code ">=> convolve kernelImage (Some ImageFunctions.Same) (Some ImageFunctions.ZeroFluxNeumannPad) (Some 8u)" "Convolve should call the StackProcessing convolve stage."
+
         testCase "print format unescapes newline and maps linked names" <| fun _ ->
             let stats =
                 node "stats" "ComputeStats" []
@@ -356,8 +480,8 @@ let generatorSuite =
             let connected =
                 node "connected" "ConnectedComponents" [ p "windowSize" "15" false ]
 
-            let writeChunks =
-                node "writeChunks" "WriteChunkSlices"
+            let writeSlabSlices =
+                node "writeSlabSlices" "WriteSlabSlices"
                     [ p "output" "tmp" false
                       p "suffix" ".mha" false
                       p "windowSize" "15" false ]
@@ -367,14 +491,14 @@ let generatorSuite =
 
             let code =
                 graph
-                    [ read; connected; writeChunks; table ]
+                    [ read; connected; writeSlabSlices; table ]
                     [ edge "read" "output" 0 "connected" "input" 0
-                      edge "connected" "output" 0 "writeChunks" "input" 0
-                      edge "writeChunks" "output" 0 "table" "input" 0 ]
+                      edge "connected" "output" 0 "writeSlabSlices" "input" 0
+                      edge "writeSlabSlices" "output" 0 "table" "input" 0 ]
                 |> PipelineCodeGenerator.generateSavedGraph
 
             Expect.stringContains code ">=> connectedComponents 15u" "Connected components should produce label/count pairs."
-            Expect.stringContains code ">=> teeFst (writeChunkSlices \"tmp\" \".mha\" 15u)" "Chunk writing should be an explicit tee over the first tuple element."
+            Expect.stringContains code ">=> teeFst (writeSlabSlices \"tmp\" \".mha\" 15u)" "Slab-slice writing should be an explicit tee over the first tuple element."
             Expect.stringContains code ">=> makeConnectedComponentTranslationTable 15u" "Translation table should consume the pair stream."
             Expect.stringContains code "|> drain" "The reducer should be drained."
 

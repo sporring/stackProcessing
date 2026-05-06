@@ -16,6 +16,8 @@ module BuiltInCatalog =
   let imageComplex = PortType.Image NumericType.Complex
   let translationTable = PortType.Custom "TranslationTable"
   let connectedComponentLabels = PortType.Tuple(imageUInt64, PortType.Scalar(BasicType.Numeric UInt64))
+  let intList = PortType.Custom "IntList"
+  let uint64List = PortType.Custom "UInt64List"
 
   let private makePort name portType =
       { Name = name
@@ -34,13 +36,13 @@ module BuiltInCatalog =
       makeParameter "suffix" "Format" defaultValue BasicType.String
 
   let private readFormatDescription =
-      "Reads one image per stack slice from a directory. TIFF input accepts both .tif and .tiff files when TIFF is selected. Format choices restrict the image type menu to combinations expected to work with SimpleITK/ITK: TIFF supports common 8/16/32-bit integer and 32/64-bit floating-point scalar images; PNG supports UInt8 and UInt16; JPEG and BMP support UInt8; MetaImage, NRRD, and NIfTI support the broad scalar numeric set used by Studio."
+      "Reads one image per stack slice from a directory. TIFF input accepts both .tif and .tiff files when TIFF is selected; JPEG input accepts both .jpg and .jpeg files when JPEG is selected. Format choices restrict the image type menu to combinations expected to work with SimpleITK/ITK: TIFF supports common 8/16/32-bit integer and 32/64-bit floating-point scalar images; PNG supports UInt8 and UInt16; JPEG and BMP support UInt8; MetaImage, NRRD, and NIfTI support the broad scalar numeric set used by Studio."
 
   let private writeFormatDescription =
       "Writes one image per stack slice. The selected format controls which image types can be connected to the input pin: TIFF supports common 8/16/32-bit integer and 32/64-bit floating-point scalar images; PNG supports UInt8 and UInt16; JPEG and BMP support UInt8; MetaImage, NRRD, and NIfTI support the broad scalar numeric set used by Studio. Cast before write when a format cannot store the current image type."
 
   let private chunkWriteFormatDescription =
-      "Writes stack chunks as image files for later chunked reading. The selected format controls which image types can be connected to the input pin, using the same constraints as write. TIFF output uses the exact selected suffix, either .tif or .tiff."
+      "Writes stack slabs split into chunk files for later slab reading. The selected format controls which image types can be connected to the input pin, using the same constraints as write. TIFF output uses the exact selected suffix, either .tif or .tiff."
 
   let private numericDefaultValue tp =
       match tp with
@@ -150,13 +152,13 @@ module BuiltInCatalog =
             makeParameter "input" "Input" "input" BasicType.String
             suffixParameter ".tiff" ] }
 
-  let makeGenericReadChunks () =
-    { Id = "ReadChunks"
-      DisplayName = "readChunks"
+  let makeGenericReadSlab () =
+    { Id = "ReadSlab"
+      DisplayName = "readSlab"
       Category = "Sources / Sinks"
-      Summary = "Read stack chunks from image files."
-      Description = "Reads chunk files produced by writeInChunks. Use the same format and suffix that were used when writing the chunks; unlike regular read, chunk filenames encode x/y/z chunk positions."
-      Aliases = [ "chunks"; "input"; "tiff"; "file"; "UInt8"; "Float64"; "type" ]
+      Summary = "Read chunked stack files as a normal 2D slice stream."
+      Description = "Reads slab files assembled from chunks produced by writeInSlabs, then serves their 2D slices to the pipeline. Use the same format and suffix that were used when writing the chunk files; chunk filenames encode x/y/z chunk positions."
+      Aliases = [ "slab"; "chunks"; "input"; "tiff"; "file"; "UInt8"; "Float64"; "type" ]
       Inputs = []
       Outputs = [ makePort "Float64" imageFloat64 ]
       Parameters =
@@ -264,7 +266,7 @@ module BuiltInCatalog =
 
         makeGenericReadRandom()
 
-        makeGenericReadChunks()
+        makeGenericReadSlab()
 
         makeGenericZero()
 
@@ -311,12 +313,12 @@ module BuiltInCatalog =
               [ makeParameter "output" "Output" "output" BasicType.String
                 suffixParameter ".tiff" ] }
 
-        { Id = "WriteChunkSlices"
-          DisplayName = "writeChunkSlices"
+        { Id = "WriteSlabSlices"
+          DisplayName = "writeSlabSlices"
           Category = "Sources / Sinks"
-          Summary = "Write connected-component label chunks slice-by-slice and pass labels plus object counts through unchanged."
-          Description = "Writes connected-component label chunks slice-by-slice and passes the labels plus object counts onward. MetaImage (.mha/.mhd) is the safest default for label data because it supports large integer scalar images."
-          Aliases = [ "output"; "save"; "chunks"; "labels"; "connected"; "components"; "side effect" ]
+          Summary = "Write connected-component label slabs slice-by-slice and pass labels plus object counts through unchanged."
+          Description = "Writes connected-component label slabs slice-by-slice and passes the labels plus object counts onward. MetaImage (.mha/.mhd) is the safest default for label data because it supports large integer scalar images."
+          Aliases = [ "output"; "save"; "slabs"; "labels"; "connected"; "components"; "side effect" ]
           Inputs = [ makePort "Labels + count" connectedComponentLabels ]
           Outputs = [ makePort "Labels + count" connectedComponentLabels ]
           Parameters =
@@ -324,12 +326,12 @@ module BuiltInCatalog =
                 suffixParameter ".mha"
                 makeParameter "windowSize" "Window size" "8" (BasicType.Numeric UInt32) ] }
 
-        { Id = "WriteInChunks"
-          DisplayName = "writeInChunks"
+        { Id = "WriteInSlabs"
+          DisplayName = "writeInSlabs"
           Category = "Sources / Sinks"
-          Summary = "Write a stack to image files split into chunks."
+          Summary = "Write a stack as slabs split into chunk files."
           Description = chunkWriteFormatDescription
-          Aliases = [ "output"; "save"; "chunks"; "tiff"; "file" ]
+          Aliases = [ "output"; "save"; "slabs"; "chunks"; "tiff"; "file" ]
           Inputs = [ makePort "Number" imageAny ]
           Outputs = []
           Parameters =
@@ -343,7 +345,7 @@ module BuiltInCatalog =
           DisplayName = "getStackInfo"
           Category = "Sources / Sinks"
           Summary = "Inspect a stack directory and expose file information fields as scalar outputs."
-          Description = "Reads metadata from the first matching stack slice and combines it with the number of matching files. TIFF input accepts both .tif and .tiff files when TIFF is selected."
+          Description = "Reads metadata from the first matching stack slice and combines it with the number of matching files. TIFF input accepts both .tif and .tiff files when TIFF is selected; JPEG input accepts both .jpg and .jpeg files when JPEG is selected."
           Aliases = [ "info"; "metadata"; "file"; "stack"; "width"; "height"; "depth"; "size"; "dimensions"; "component" ]
           Inputs = []
           Outputs =
@@ -351,6 +353,28 @@ module BuiltInCatalog =
                 makePort "Size: UInt64 list" (Custom "UInt64List")
                 makePort "ComponentType: String" (Scalar BasicType.String)
                 makePort "NumberOfComponents: UInt32" (Scalar(BasicType.Numeric UInt32))
+                makePort "Width: UInt64" (Scalar(BasicType.Numeric UInt64))
+                makePort "Height: UInt64" (Scalar(BasicType.Numeric UInt64))
+                makePort "Depth: UInt64" (Scalar(BasicType.Numeric UInt64)) ]
+          Parameters =
+              [ makeParameter "input" "Name" "input" BasicType.String
+                suffixParameter ".tiff" ] }
+
+        { Id = "GetChunkInfo"
+          DisplayName = "getChunkInfo"
+          Category = "Sources / Sinks"
+          Summary = "Inspect a chunked stack directory and expose chunk layout and top-left file metadata."
+          Description = "Reads metadata for chunk files produced by writeInSlabs. The Chunks output is the chunk-grid dimensions, Size is the full stack size, and the component outputs come from the top-left chunk file. TIFF input accepts both .tif and .tiff files when TIFF is selected; JPEG input accepts both .jpg and .jpeg files when JPEG is selected."
+          Aliases = [ "info"; "metadata"; "file"; "chunk"; "chunks"; "width"; "height"; "depth"; "size"; "component" ]
+          Inputs = []
+          Outputs =
+              [ makePort "Chunks: int list" intList
+                makePort "Size: UInt64 list" uint64List
+                makePort "ComponentType: String" (Scalar BasicType.String)
+                makePort "NumberOfComponents: UInt32" (Scalar(BasicType.Numeric UInt32))
+                makePort "ChunkX: Int32" (Scalar(BasicType.Numeric Int32))
+                makePort "ChunkY: Int32" (Scalar(BasicType.Numeric Int32))
+                makePort "ChunkZ: Int32" (Scalar(BasicType.Numeric Int32))
                 makePort "Width: UInt64" (Scalar(BasicType.Numeric UInt64))
                 makePort "Height: UInt64" (Scalar(BasicType.Numeric UInt64))
                 makePort "Depth: UInt64" (Scalar(BasicType.Numeric UInt64)) ]
@@ -475,6 +499,20 @@ module BuiltInCatalog =
                 makeParameter "boundaryCondition" "Boundary" "None" BasicType.String
                 makeParameter "windowSize" "Window size" "15" (BasicType.Numeric Int32) ] }
 
+        { Id = "Convolve"
+          DisplayName = "convolve"
+          Category = "Filters"
+          Summary = "Convolve an image stream with a kernel image."
+          Description = "Applies the StackProcessing convolve stage. Kernel is a raw F# expression that evaluates to an Image of the same pixel type as the input stream. Output region and Boundary accept the ImageFunctions union case names exposed by the DSL."
+          Aliases = [ "convolution"; "kernel"; "filter"; "same"; "valid"; "boundary" ]
+          Inputs = [ makePort "Image" imageAny ]
+          Outputs = [ makePort "Image" imageAny ]
+          Parameters =
+              [ makeParameter "kernel" "Kernel" "Image<float>([3u; 3u; 3u])" BasicType.String
+                makeParameter "outputRegionMode" "Output region" "None" BasicType.String
+                makeParameter "boundaryCondition" "Boundary" "None" BasicType.String
+                makeParameter "windowSize" "Window size" "None" BasicType.String ] }
+
         { Id = "ConvGauss"
           DisplayName = "convGauss"
           Category = "Filters"
@@ -497,6 +535,16 @@ module BuiltInCatalog =
               [ makeParameter "sigma" "Sigma" "1.0" (BasicType.Numeric Float64)
                 makeParameter "axis1" "Axis 1" "1" (BasicType.Numeric UInt32)
                 makeParameter "axis2" "Axis 2" "2" (BasicType.Numeric UInt32) ] }
+
+        { Id = "BinaryFillHoles"
+          DisplayName = "binaryFillHoles"
+          Category = "Binary Morphology"
+          Summary = "Fill holes in a binary UInt8 stack."
+          Description = ""
+          Aliases = [ "morphology"; "binary"; "holes"; "fill"; "mask" ]
+          Inputs = [ makePort "UInt8" imageUInt8 ]
+          Outputs = [ makePort "UInt8" imageUInt8 ]
+          Parameters = [ makeParameter "windowSize" "Window size" "3" (BasicType.Numeric UInt32) ] }
 
         { Id = "Threshold"
           DisplayName = "threshold"
@@ -561,10 +609,64 @@ module BuiltInCatalog =
           Outputs = [ makePort "Labels + count" connectedComponentLabels ]
           Parameters = [ makeParameter "windowSize" "Window size" "3" (BasicType.Numeric UInt32) ] }
 
+        { Id = "RelabelComponents"
+          DisplayName = "relabelComponents"
+          Category = "Binary Morphology"
+          Summary = "Relabel connected-component labels and remove small components."
+          Description = ""
+          Aliases = [ "components"; "labels"; "relabel"; "size"; "filter" ]
+          Inputs = [ makePort "UInt64" imageUInt64 ]
+          Outputs = [ makePort "UInt64" imageUInt64 ]
+          Parameters =
+              [ makeParameter "minimumObjectSize" "Minimum object size" "1" (BasicType.Numeric UInt32)
+                makeParameter "windowSize" "Window size" "3" (BasicType.Numeric UInt32) ] }
+
+        { Id = "Watershed"
+          DisplayName = "watershed"
+          Category = "Segmentation"
+          Summary = "Apply watershed segmentation."
+          Description = ""
+          Aliases = [ "segmentation"; "watershed"; "labels"; "basins" ]
+          Inputs = [ makePort "Number" imageAny ]
+          Outputs = [ makePort "Number" imageAny ]
+          Parameters =
+              [ makeParameter "level" "Level" "0.0" (BasicType.Numeric Float64)
+                makeParameter "windowSize" "Window size" "3" (BasicType.Numeric UInt32) ] }
+
+        { Id = "SignedDistanceMap"
+          DisplayName = "signedDistanceMap"
+          Category = "Segmentation"
+          Summary = "Compute a signed distance map from a binary UInt8 image."
+          Description = ""
+          Aliases = [ "distance"; "map"; "signed"; "binary"; "mask" ]
+          Inputs = [ makePort "UInt8" imageUInt8 ]
+          Outputs = [ makePort "Float64" imageFloat64 ]
+          Parameters = [ makeParameter "windowSize" "Window size" "3" (BasicType.Numeric UInt32) ] }
+
+        { Id = "OtsuThreshold"
+          DisplayName = "otsuThreshold"
+          Category = "Segmentation"
+          Summary = "Threshold an image stack using Otsu's method."
+          Description = ""
+          Aliases = [ "threshold"; "otsu"; "binary"; "mask"; "segment" ]
+          Inputs = [ makePort "Number" imageAny ]
+          Outputs = [ makePort "UInt8" imageUInt8 ]
+          Parameters = [ makeParameter "windowSize" "Window size" "3" (BasicType.Numeric UInt32) ] }
+
+        { Id = "MomentsThreshold"
+          DisplayName = "momentsThreshold"
+          Category = "Segmentation"
+          Summary = "Threshold an image stack using moment-preserving thresholding."
+          Description = ""
+          Aliases = [ "threshold"; "moments"; "binary"; "mask"; "segment" ]
+          Inputs = [ makePort "Number" imageAny ]
+          Outputs = [ makePort "UInt8" imageUInt8 ]
+          Parameters = [ makeParameter "windowSize" "Window size" "3" (BasicType.Numeric UInt32) ] }
+
         { Id = "ComponentTranslationTable"
           DisplayName = "componentTranslationTable"
           Category = "Binary Morphology"
-          Summary = "Reduce connected-component label chunks plus object counts to a chunk translation table."
+          Summary = "Reduce connected-component label slabs plus object counts to a chunk translation table."
           Description = ""
           Aliases = [ "connected"; "components"; "translation"; "table"; "reducer"; "labels" ]
           Inputs = [ makePort "Labels + count" connectedComponentLabels ]
@@ -594,6 +696,25 @@ module BuiltInCatalog =
           Parameters =
               [ makeParameter "axes" "Axes" "(0,1,2)" BasicType.String
                 makeParameter "tileSize" "Tile size" "64" (BasicType.Numeric UInt32) ] }
+
+        { Id = "ResampleAffineTrilinearSlices"
+          DisplayName = "resampleAffineTrilinearSlices"
+          Category = "Geometry"
+          Summary = "Run the chunked affine trilinear resampler over chunk files."
+          Description = "Advanced chunk utility. This DSL function returns a sequence of output slices rather than a streaming Plan stage, so the Studio box is terminal and exposes the geometry, affine, interpolation, and background arguments as raw F# expressions."
+          Aliases = [ "resample"; "affine"; "trilinear"; "chunks"; "geometry"; "transform" ]
+          Inputs = []
+          Outputs = []
+          Parameters =
+              [ makeParameter "type" "Type" "Float32" BasicType.String
+                makeParameter "input" "Input" "input" BasicType.String
+                suffixParameter ".tiff"
+                makeParameter "lerp" "Lerp" "(fun a b t -> a + (b - a) * t)" BasicType.String
+                makeParameter "windowSize" "Window size" "8" (BasicType.Numeric Int32)
+                makeParameter "inputGeometry" "Input geometry" "{ W = 64; H = 64; D = 64; Origin = TinyLinAlg.v3 0.0 0.0 0.0; Spacing = TinyLinAlg.v3 1.0 1.0 1.0; Direction = { m00 = 1.0; m01 = 0.0; m02 = 0.0; m10 = 0.0; m11 = 1.0; m12 = 0.0; m20 = 0.0; m21 = 0.0; m22 = 1.0 } }" BasicType.String
+                makeParameter "outputGeometry" "Output geometry" "{ W = 64; H = 64; D = 64; Origin = TinyLinAlg.v3 0.0 0.0 0.0; Spacing = TinyLinAlg.v3 1.0 1.0 1.0; Direction = { m00 = 1.0; m01 = 0.0; m02 = 0.0; m10 = 0.0; m11 = 1.0; m12 = 0.0; m20 = 0.0; m21 = 0.0; m22 = 1.0 } }" BasicType.String
+                makeParameter "affine" "Affine" "{ A = { m00 = 1.0; m01 = 0.0; m02 = 0.0; m10 = 0.0; m11 = 1.0; m12 = 0.0; m20 = 0.0; m21 = 0.0; m22 = 1.0 }; T = TinyLinAlg.v3 0.0 0.0 0.0; C = TinyLinAlg.v3 0.0 0.0 0.0 }" BasicType.String
+                makeParameter "background" "Background" "0.0f" (BasicType.Numeric Float32) ] }
 
         makeGenericCast() ]
 

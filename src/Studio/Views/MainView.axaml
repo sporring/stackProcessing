@@ -324,13 +324,19 @@
                     </ItemsControl>
                 </ScrollViewer>
 
-                <TextBlock Grid.Row="3"
-                           Text="{Binding SelectedNode.State.Description}"
-                           IsVisible="{Binding SelectedNode.State.HasDescription}"
-                           Margin="0,12,0,0"
-                           FontSize="12"
-                           Foreground="#52616B"
-                           TextWrapping="Wrap" />
+                <StackPanel Grid.Row="3"
+                            IsVisible="{Binding SelectedNode.State.HasDescription}"
+                            Margin="0,12,0,0">
+                    <TextBlock Text="Description"
+                               FontSize="14"
+                               FontWeight="SemiBold"
+                               Margin="0,0,0,6"
+                               Foreground="#102A43" />
+                    <TextBlock Text="{Binding SelectedNode.State.Description}"
+                               FontSize="12"
+                               Foreground="#52616B"
+                               TextWrapping="Wrap" />
+                </StackPanel>
             </Grid>
         </Border>
 

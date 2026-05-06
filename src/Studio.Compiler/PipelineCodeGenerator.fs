@@ -125,14 +125,24 @@ module PipelineCodeGenerator =
         else
             $"(Some {trimmed.TrimEnd('u', 'U')}u)"
 
-    let private optionRaw (value: string) =
+    let private optionQualified moduleName (value: string) =
         let trimmed = value.Trim()
+
         if System.String.IsNullOrWhiteSpace trimmed || System.String.Equals(trimmed, "None", StringComparison.OrdinalIgnoreCase) then
             "None"
-        elif trimmed.StartsWith("Some", StringComparison.Ordinal) then
-            trimmed
         else
-            $"(Some {trimmed})"
+            let inner =
+                if trimmed.StartsWith("(Some ", StringComparison.Ordinal) && trimmed.EndsWith(")", StringComparison.Ordinal) then
+                    trimmed.Substring(6, trimmed.Length - 7).Trim()
+                elif trimmed.StartsWith("Some ", StringComparison.Ordinal) then
+                    trimmed.Substring(5).Trim()
+                else
+                    trimmed
+
+            let qualified =
+                if inner.Contains(".", StringComparison.Ordinal) then inner else $"{moduleName}.{inner}"
+
+            $"(Some {qualified})"
 
     let private pixelTypeNameFromSuffix suffix =
         match suffix with
@@ -277,6 +287,19 @@ module PipelineCodeGenerator =
            $"{bindingName}.size[2]" |]
         |> Array.tryItem portIndex
 
+    let private chunkInfoFieldExpression bindingName portIndex =
+        [| $"{bindingName}.chunks"
+           $"{bindingName}.size"
+           $"{bindingName}.topLeftInfo.componentType"
+           $"{bindingName}.topLeftInfo.numberOfComponents"
+           $"{bindingName}.chunks[0]"
+           $"{bindingName}.chunks[1]"
+           $"{bindingName}.chunks[2]"
+           $"{bindingName}.size[0]"
+           $"{bindingName}.size[1]"
+           $"{bindingName}.size[2]" |]
+        |> Array.tryItem portIndex
+
     let private isTranslationTableNode (node: SavedNode) =
         node.FunctionId = "ComponentTranslationTable"
 
@@ -286,7 +309,10 @@ module PipelineCodeGenerator =
     let private isStackInfoNode (node: SavedNode) =
         node.FunctionId = "GetStackInfo"
 
-    let private parameterExpression (graph: SavedGraph) (nodesById: Map<string, SavedNode>) (scalarNamesByNodeId: Map<string, string>) (statsNamesByNodeId: Map<string, string>) (translationTableNamesByNodeId: Map<string, string>) (histogramNamesByNodeId: Map<string, string>) (stackInfoNamesByNodeId: Map<string, string>) (node: SavedNode) parameterIndex key =
+    let private isChunkInfoNode (node: SavedNode) =
+        node.FunctionId = "GetChunkInfo"
+
+    let private parameterExpression (graph: SavedGraph) (nodesById: Map<string, SavedNode>) (scalarNamesByNodeId: Map<string, string>) (statsNamesByNodeId: Map<string, string>) (translationTableNamesByNodeId: Map<string, string>) (histogramNamesByNodeId: Map<string, string>) (stackInfoNamesByNodeId: Map<string, string>) (chunkInfoNamesByNodeId: Map<string, string>) (node: SavedNode) parameterIndex key =
         let linkedExpression =
             graph.Edges
             |> Seq.tryFind (fun edge ->
@@ -310,6 +336,10 @@ module PipelineCodeGenerator =
                                 stackInfoNamesByNodeId
                                 |> Map.tryFind edge.FromNode
                                 |> Option.bind (fun name -> stackInfoFieldExpression name edge.FromPort)
+                                |> Option.orElseWith (fun () ->
+                                    chunkInfoNamesByNodeId
+                                    |> Map.tryFind edge.FromNode
+                                    |> Option.bind (fun name -> chunkInfoFieldExpression name edge.FromPort))
                 | _ ->
                     None)
 
@@ -321,7 +351,7 @@ module PipelineCodeGenerator =
             { Value = savedParamValue key node
               IsLinked = false }
 
-    let private scalarBinding (graph: SavedGraph) (nodesById: Map<string, SavedNode>) (scalarNamesByNodeId: Map<string, string>) (statsNamesByNodeId: Map<string, string>) (translationTableNamesByNodeId: Map<string, string>) (histogramNamesByNodeId: Map<string, string>) (stackInfoNamesByNodeId: Map<string, string>) (node: SavedNode) =
+    let private scalarBinding (graph: SavedGraph) (nodesById: Map<string, SavedNode>) (scalarNamesByNodeId: Map<string, string>) (statsNamesByNodeId: Map<string, string>) (translationTableNamesByNodeId: Map<string, string>) (histogramNamesByNodeId: Map<string, string>) (stackInfoNamesByNodeId: Map<string, string>) (chunkInfoNamesByNodeId: Map<string, string>) (node: SavedNode) =
         let name = scalarNamesByNodeId |> Map.find node.Id
 
         let value =
@@ -330,7 +360,7 @@ module PipelineCodeGenerator =
                 let parameterExpression key =
                     node.Parameters
                     |> Seq.tryFindIndex (fun parameter -> parameter.Key = key)
-                    |> Option.map (fun index -> parameterExpression graph nodesById scalarNamesByNodeId statsNamesByNodeId translationTableNamesByNodeId histogramNamesByNodeId stackInfoNamesByNodeId node index key)
+                    |> Option.map (fun index -> parameterExpression graph nodesById scalarNamesByNodeId statsNamesByNodeId translationTableNamesByNodeId histogramNamesByNodeId stackInfoNamesByNodeId chunkInfoNamesByNodeId node index key)
                     |> Option.defaultValue { Value = ""; IsLinked = false }
 
                 let operation =
@@ -357,7 +387,7 @@ module PipelineCodeGenerator =
                 let parameterExpression =
                     node.Parameters
                     |> Seq.tryFindIndex (fun parameter -> parameter.Key = "a")
-                    |> Option.map (fun index -> parameterExpression graph nodesById scalarNamesByNodeId statsNamesByNodeId translationTableNamesByNodeId histogramNamesByNodeId stackInfoNamesByNodeId node index "a")
+                    |> Option.map (fun index -> parameterExpression graph nodesById scalarNamesByNodeId statsNamesByNodeId translationTableNamesByNodeId histogramNamesByNodeId stackInfoNamesByNodeId chunkInfoNamesByNodeId node index "a")
                     |> Option.defaultValue { Value = ""; IsLinked = false }
 
                 let argument =
@@ -374,11 +404,11 @@ module PipelineCodeGenerator =
 
         name, $"let {name} = {value}"
 
-    let private stackInfoBinding (graph: SavedGraph) (nodesById: Map<string, SavedNode>) (scalarNamesByNodeId: Map<string, string>) (statsNamesByNodeId: Map<string, string>) (translationTableNamesByNodeId: Map<string, string>) (histogramNamesByNodeId: Map<string, string>) (stackInfoNamesByNodeId: Map<string, string>) (node: SavedNode) =
+    let private stackInfoBinding (graph: SavedGraph) (nodesById: Map<string, SavedNode>) (scalarNamesByNodeId: Map<string, string>) (statsNamesByNodeId: Map<string, string>) (translationTableNamesByNodeId: Map<string, string>) (histogramNamesByNodeId: Map<string, string>) (stackInfoNamesByNodeId: Map<string, string>) (chunkInfoNamesByNodeId: Map<string, string>) (node: SavedNode) =
         let parameterExpression key =
             node.Parameters
             |> Seq.tryFindIndex (fun parameter -> parameter.Key = key)
-            |> Option.map (fun index -> parameterExpression graph nodesById scalarNamesByNodeId statsNamesByNodeId translationTableNamesByNodeId histogramNamesByNodeId stackInfoNamesByNodeId node index key)
+            |> Option.map (fun index -> parameterExpression graph nodesById scalarNamesByNodeId statsNamesByNodeId translationTableNamesByNodeId histogramNamesByNodeId stackInfoNamesByNodeId chunkInfoNamesByNodeId node index key)
             |> Option.defaultValue { Value = ""; IsLinked = false }
 
         let stringArgument key =
@@ -390,11 +420,27 @@ module PipelineCodeGenerator =
         let suffix = stringArgument "suffix"
         name, $"let {name} = getStackInfo {input} {suffix}"
 
-    let private savedElementLine (graph: SavedGraph) (nodesById: Map<string, SavedNode>) (scalarNamesByNodeId: Map<string, string>) (statsNamesByNodeId: Map<string, string>) (translationTableNamesByNodeId: Map<string, string>) (histogramNamesByNodeId: Map<string, string>) (stackInfoNamesByNodeId: Map<string, string>) (node: SavedNode) =
+    let private chunkInfoBinding (graph: SavedGraph) (nodesById: Map<string, SavedNode>) (scalarNamesByNodeId: Map<string, string>) (statsNamesByNodeId: Map<string, string>) (translationTableNamesByNodeId: Map<string, string>) (histogramNamesByNodeId: Map<string, string>) (stackInfoNamesByNodeId: Map<string, string>) (chunkInfoNamesByNodeId: Map<string, string>) (node: SavedNode) =
+        let parameterExpression key =
+            node.Parameters
+            |> Seq.tryFindIndex (fun parameter -> parameter.Key = key)
+            |> Option.map (fun index -> parameterExpression graph nodesById scalarNamesByNodeId statsNamesByNodeId translationTableNamesByNodeId histogramNamesByNodeId stackInfoNamesByNodeId chunkInfoNamesByNodeId node index key)
+            |> Option.defaultValue { Value = ""; IsLinked = false }
+
+        let stringArgument key =
+            let expression = parameterExpression key
+            if expression.IsLinked then expression.Value else quote expression.Value
+
+        let name = chunkInfoNamesByNodeId |> Map.find node.Id
+        let input = stringArgument "input"
+        let suffix = stringArgument "suffix"
+        name, $"let {name} = getChunkInfo {input} {suffix}"
+
+    let private savedElementLine (graph: SavedGraph) (nodesById: Map<string, SavedNode>) (scalarNamesByNodeId: Map<string, string>) (statsNamesByNodeId: Map<string, string>) (translationTableNamesByNodeId: Map<string, string>) (histogramNamesByNodeId: Map<string, string>) (stackInfoNamesByNodeId: Map<string, string>) (chunkInfoNamesByNodeId: Map<string, string>) (node: SavedNode) =
         let parameterExpressionForNode (targetNode: SavedNode) key =
             targetNode.Parameters
             |> Seq.tryFindIndex (fun parameter -> parameter.Key = key)
-            |> Option.map (fun index -> parameterExpression graph nodesById scalarNamesByNodeId statsNamesByNodeId translationTableNamesByNodeId histogramNamesByNodeId stackInfoNamesByNodeId targetNode index key)
+            |> Option.map (fun index -> parameterExpression graph nodesById scalarNamesByNodeId statsNamesByNodeId translationTableNamesByNodeId histogramNamesByNodeId stackInfoNamesByNodeId chunkInfoNamesByNodeId targetNode index key)
             |> Option.defaultValue { Value = ""; IsLinked = false }
 
         let parameterExpression key =
@@ -594,34 +640,34 @@ module PipelineCodeGenerator =
             let input = quotedParameter "input"
             let suffix = quotedParameter "suffix"
             $"|> readRandom<{pixelType}> {depth} {input} {suffix}" |> sourcePrefix availableMemory
-        | "ReadChunks" ->
+        | "ReadSlab" ->
             let availableMemory = parameterValue "availableMemory"
             let pixelType = pixelTypeNameFromParameter "type" "Float64" node
             let input = quotedParameter "input"
             let suffix = quotedParameter "suffix"
-            $"|> readChunks<{pixelType}> {input} {suffix}" |> sourcePrefix availableMemory
+            $"|> readSlab<{pixelType}> {input} {suffix}" |> sourcePrefix availableMemory
         | "Read" ->
             let availableMemory = parameterValue "availableMemory"
             let pixelType = pixelTypeNameFromParameter "type" "Float64" node
             let input = quotedParameter "input"
             let suffix = quotedParameter "suffix"
             $"|> read<{pixelType}> {input} {suffix}" |> sourcePrefix availableMemory
-        | "WriteInChunks" ->
+        | "WriteInSlabs" ->
             let output = quotedParameter "output"
             let suffix = quotedParameter "suffix"
             let chunkX = parameterValue "chunkX"
             let chunkY = parameterValue "chunkY"
             let chunkZ = parameterValue "chunkZ"
-            $">=> writeInChunks {output} {suffix} {chunkX} {chunkY} {chunkZ}"
+            $">=> writeInSlabs {output} {suffix} {chunkX} {chunkY} {chunkZ}"
         | "WriteThrough" ->
             let output = quotedParameter "output"
             let suffix = quotedParameter "suffix"
             $">=> write {output} {suffix}"
-        | "WriteChunkSlices" ->
+        | "WriteSlabSlices" ->
             let output = quotedParameter "output"
             let suffix = quotedParameter "suffix"
             let windowSize = parameterValue "windowSize"
-            $">=> teeFst (writeChunkSlices {output} {suffix} {windowSize})"
+            $">=> teeFst (writeSlabSlices {output} {suffix} {windowSize})"
         | "Tap" ->
             let tapPrintNode =
                 graph.Edges
@@ -722,10 +768,16 @@ module PipelineCodeGenerator =
             $">>=> {pairStageFunctionName node |> Option.get}"
         | "DiscreteGaussian" ->
             let sigma = parameterValue "sigma"
-            let outputRegionMode = parameterValue "outputRegionMode" |> optionRaw
-            let boundaryCondition = parameterValue "boundaryCondition" |> optionRaw
+            let outputRegionMode = parameterValue "outputRegionMode" |> optionQualified "ImageFunctions"
+            let boundaryCondition = parameterValue "boundaryCondition" |> optionQualified "ImageFunctions"
             let windowSize = parameterValue "windowSize" |> optionUInt
             $">=> discreteGaussian {sigma} {outputRegionMode} {boundaryCondition} {windowSize}"
+        | "Convolve" ->
+            let kernel = parameterValue "kernel"
+            let outputRegionMode = parameterValue "outputRegionMode" |> optionQualified "ImageFunctions"
+            let boundaryCondition = parameterValue "boundaryCondition" |> optionQualified "ImageFunctions"
+            let windowSize = parameterValue "windowSize" |> optionUInt
+            $">=> convolve {kernel} {outputRegionMode} {boundaryCondition} {windowSize}"
         | "ConvGauss" ->
             let sigma = parameterValue "sigma"
             $">=> convGauss {sigma}"
@@ -734,6 +786,9 @@ module PipelineCodeGenerator =
             let axis1 = parameterValue "axis1"
             let axis2 = parameterValue "axis2"
             $">=> finiteDiff {sigma} {axis1} {axis2}"
+        | "BinaryFillHoles" ->
+            let windowSize = parameterValue "windowSize"
+            $">=> binaryFillHoles {windowSize}"
         | "ComputeStats" ->
             ">=> computeStats ()"
         | "AddNormalNoise" ->
@@ -759,6 +814,23 @@ module PipelineCodeGenerator =
         | "ConnectedComponents" ->
             let windowSize = parameterValue "windowSize"
             $">=> connectedComponents {windowSize}"
+        | "RelabelComponents" ->
+            let minimumObjectSize = parameterValue "minimumObjectSize"
+            let windowSize = parameterValue "windowSize"
+            $">=> relabelComponents {minimumObjectSize} {windowSize}"
+        | "Watershed" ->
+            let level = parameterValue "level"
+            let windowSize = parameterValue "windowSize"
+            $">=> watershed {level} {windowSize}"
+        | "SignedDistanceMap" ->
+            let windowSize = parameterValue "windowSize"
+            $">=> signedDistanceMap {windowSize}"
+        | "OtsuThreshold" ->
+            let windowSize = parameterValue "windowSize"
+            $">=> otsuThreshold {windowSize}"
+        | "MomentsThreshold" ->
+            let windowSize = parameterValue "windowSize"
+            $">=> momentsThreshold {windowSize}"
         | "ComponentTranslationTable" ->
             let windowSize = parameterValue "windowSize"
             $">=> makeConnectedComponentTranslationTable {windowSize}"
@@ -770,6 +842,17 @@ module PipelineCodeGenerator =
             let axes = parameterValue "axes"
             let tileSize = parameterValue "tileSize"
             $">=> permuteAxes {axes} {tileSize}"
+        | "ResampleAffineTrilinearSlices" ->
+            let pixelType = pixelTypeNameFromParameter "type" "Float32" node
+            let input = quotedParameter "input"
+            let suffix = quotedParameter "suffix"
+            let lerp = parameterValue "lerp"
+            let windowSize = parameterValue "windowSize"
+            let inputGeometry = parameterValue "inputGeometry"
+            let outputGeometry = parameterValue "outputGeometry"
+            let affine = parameterValue "affine"
+            let background = parameterValue "background"
+            $"resampleAffineTrilinearSlices<{pixelType}> {input} {suffix} {lerp} {windowSize} {inputGeometry} {outputGeometry} {affine} {background} |> Seq.iter ignore"
         | "Cast" ->
             let sourceType = pixelTypeNameFromParameter "sourceType" "Float64" node
             let targetType = pixelTypeNameFromParameter "targetType" "Float64" node
@@ -850,6 +933,21 @@ module PipelineCodeGenerator =
             |> Array.mapi (fun index node -> node.Id, $"StackInfo{index}")
             |> Map.ofArray
 
+        let chunkInfoNodesWithLinkedOutputs =
+            graph.Edges
+            |> Array.choose (fun edge ->
+                if edge.FromKind = "reducerOutput" && edge.ToKind = "parameterInput" then
+                    nodesById |> Map.tryFind edge.FromNode
+                else
+                    None)
+            |> Array.filter isChunkInfoNode
+            |> Array.distinctBy _.Id
+
+        let chunkInfoNamesByNodeId =
+            chunkInfoNodesWithLinkedOutputs
+            |> Array.mapi (fun index node -> node.Id, $"ChunkInfo{index}")
+            |> Map.ofArray
+
         let newLine = Environment.NewLine
 
         let dataEdges =
@@ -882,7 +980,10 @@ module PipelineCodeGenerator =
                     | None ->
                         match histogramNamesByNodeId |> Map.tryFind edge.FromNode with
                         | Some name -> Some name
-                        | None -> stackInfoNamesByNodeId |> Map.tryFind edge.FromNode
+                        | None ->
+                            match stackInfoNamesByNodeId |> Map.tryFind edge.FromNode with
+                            | Some name -> Some name
+                            | None -> chunkInfoNamesByNodeId |> Map.tryFind edge.FromNode
             | _ ->
                 None
 
@@ -931,7 +1032,7 @@ module PipelineCodeGenerator =
             && left.FromKind = right.FromKind
 
         let stageCall (node: SavedNode) =
-            let line = savedElementLine graph nodesById scalarNamesByNodeId statsNamesByNodeId translationTableNamesByNodeId histogramNamesByNodeId stackInfoNamesByNodeId node
+            let line = savedElementLine graph nodesById scalarNamesByNodeId statsNamesByNodeId translationTableNamesByNodeId histogramNamesByNodeId stackInfoNamesByNodeId chunkInfoNamesByNodeId node
 
             if line.StartsWith(">=> ", StringComparison.Ordinal) then
                 Some(line.Substring(4))
@@ -1021,7 +1122,7 @@ module PipelineCodeGenerator =
                         let right = parenthesizeBlock right
                         $"({newLine}{indentBlock 4 left},{newLine}{indentBlock 4 right}{newLine}){newLine}||> zip{newLine}>>=> {pairFunction}"
                 | _ ->
-                    let line = savedElementLine graph nodesById scalarNamesByNodeId statsNamesByNodeId translationTableNamesByNodeId histogramNamesByNodeId stackInfoNamesByNodeId node
+                    let line = savedElementLine graph nodesById scalarNamesByNodeId statsNamesByNodeId translationTableNamesByNodeId histogramNamesByNodeId stackInfoNamesByNodeId chunkInfoNamesByNodeId node
 
                     match incomingDataEdge node.Id 0 with
                     | Some _ ->
@@ -1035,7 +1136,7 @@ module PipelineCodeGenerator =
                 match node.FunctionId with
                 | "Write"
                 | "WriteThrough"
-                | "WriteInChunks"
+                | "WriteInSlabs"
                 | "Histogram"
                 | "ShowImage" ->
                     $"{expression}{newLine}|> sink"
@@ -1055,11 +1156,13 @@ module PipelineCodeGenerator =
                     && node.FunctionId <> "ScalarOp"
                     && node.FunctionId <> "ScalarFunction"
                     && node.FunctionId <> "GetStackInfo"
+                    && node.FunctionId <> "GetChunkInfo"
                     && not (printNodesUsedByTap |> Set.contains node.Id)
                     && not (statsNamesByNodeId |> Map.containsKey node.Id)
                     && not (translationTableNamesByNodeId |> Map.containsKey node.Id)
                     && not (histogramNamesByNodeId |> Map.containsKey node.Id)
                     && not (stackInfoNamesByNodeId |> Map.containsKey node.Id)
+                    && not (chunkInfoNamesByNodeId |> Map.containsKey node.Id)
                     && not (dataEdges |> Array.exists (fun edge -> edge.FromNode = node.Id)))
 
             terminalNodes
@@ -1080,7 +1183,7 @@ module PipelineCodeGenerator =
             let scalarBindings =
                 scalarNodes
                 |> Array.map (fun node ->
-                    let name, text = scalarBinding graph nodesById scalarNamesByNodeId statsNamesByNodeId translationTableNamesByNodeId histogramNamesByNodeId stackInfoNamesByNodeId node
+                    let name, text = scalarBinding graph nodesById scalarNamesByNodeId statsNamesByNodeId translationTableNamesByNodeId histogramNamesByNodeId stackInfoNamesByNodeId chunkInfoNamesByNodeId node
 
                     { Name = name
                       Dependencies = parameterBindingDependencies node |> Set.remove name
@@ -1111,13 +1214,22 @@ module PipelineCodeGenerator =
             let stackInfoBindings =
                 stackInfoNodesWithLinkedOutputs
                 |> Array.map (fun node ->
-                    let name, text = stackInfoBinding graph nodesById scalarNamesByNodeId statsNamesByNodeId translationTableNamesByNodeId histogramNamesByNodeId stackInfoNamesByNodeId node
+                    let name, text = stackInfoBinding graph nodesById scalarNamesByNodeId statsNamesByNodeId translationTableNamesByNodeId histogramNamesByNodeId stackInfoNamesByNodeId chunkInfoNamesByNodeId node
 
                     { Name = name
                       Dependencies = parameterBindingDependencies node |> Set.remove name
                       Text = text })
 
-            let bindings = Array.concat [ scalarBindings; statsBindings; translationTableBindings; histogramBindings; stackInfoBindings ]
+            let chunkInfoBindings =
+                chunkInfoNodesWithLinkedOutputs
+                |> Array.map (fun node ->
+                    let name, text = chunkInfoBinding graph nodesById scalarNamesByNodeId statsNamesByNodeId translationTableNamesByNodeId histogramNamesByNodeId stackInfoNamesByNodeId chunkInfoNamesByNodeId node
+
+                    { Name = name
+                      Dependencies = parameterBindingDependencies node |> Set.remove name
+                      Text = text })
+
+            let bindings = Array.concat [ scalarBindings; statsBindings; translationTableBindings; histogramBindings; stackInfoBindings; chunkInfoBindings ]
             let bindingsByName = bindings |> Array.map (fun binding -> binding.Name, binding) |> Map.ofArray
             let visited = HashSet<string>()
             let ordered = ResizeArray<NamedBinding>()

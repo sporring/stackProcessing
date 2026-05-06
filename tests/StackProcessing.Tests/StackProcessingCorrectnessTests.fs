@@ -32,6 +32,14 @@ let private makeStrictPositiveFloat32Volume side =
         single (1.5 + Math.Sin(xf * 0.05) * 0.2 + Math.Cos(yf * 0.07) * 0.2 + zf * 0.01))
     |> Image<float32>.ofArray3D
 
+let private makeSecondStrictPositiveFloat32Volume side =
+    Array3D.init side side side (fun x y z ->
+        let xf = float x
+        let yf = float y
+        let zf = float z
+        single (2.25 + Math.Cos(xf * 0.09) * 0.15 + Math.Sin(yf * 0.04) * 0.12 + zf * 0.02))
+    |> Image<float32>.ofArray3D
+
 let private makeTrigonometricFloat32Volume side =
     Array3D.init side side side (fun x y z ->
         let xf = float x
@@ -156,6 +164,25 @@ let private runSlicePipeline name suffix (input: Image<'In>) (stage: Stage<Image
     let actual = readVolumeFromSlices<'Out> outputDir suffix
     actual, inputDir, outputDir
 
+let private runPairSlicePipeline name suffix (left: Image<'In>) (right: Image<'In>) (combine: Image<'In> -> Image<'In> -> Image<'Out>) =
+    let leftDir = tempDirectory $"{name}-left-input"
+    let rightDir = tempDirectory $"{name}-right-input"
+    let outputDir = tempDirectory $"{name}-output"
+
+    writeVolumeAsSlices leftDir suffix left
+    writeVolumeAsSlices rightDir suffix right
+
+    let leftPlan = source (2UL * 1024UL * 1024UL * 1024UL) |> read<'In> leftDir suffix
+    let rightPlan = source (2UL * 1024UL * 1024UL * 1024UL) |> read<'In> rightDir suffix
+
+    zip leftPlan rightPlan
+    >>=> combine
+    >=> write outputDir suffix
+    |> sink
+
+    let actual = readVolumeFromSlices<'Out> outputDir suffix
+    actual, leftDir, rightDir, outputDir
+
 let private cleanupResult keepTempDirs inputDir outputDir =
     if keepTempDirs then
         printfn $"[StackProcessing.Tests] keeping temp directories for inspection: {inputDir}; {outputDir}"
@@ -184,6 +211,34 @@ let private assertStreamingMatchesDirect name suffix tolerance (input: Image<'In
         actualOpt |> Option.iter (fun image -> image.decRefCount())
         expectedOpt |> Option.iter (fun image -> image.decRefCount())
         cleanupResult keepTempDirs inputDir outputDir
+
+let private assertPairStreamingMatchesDirect name suffix tolerance (left: Image<'In>) (right: Image<'In>) (combine: Image<'In> -> Image<'In> -> Image<'Out>) (direct: Image<'In> -> Image<'In> -> Image<'Out>) =
+    let mutable leftDir = ""
+    let mutable rightDir = ""
+    let mutable outputDir = ""
+    let mutable keepTempDirs = false
+    let mutable actualOpt : Image<'Out> option = None
+    let mutable expectedOpt : Image<'Out> option = None
+
+    try
+        let expected = direct left right
+        let actual, lDir, rDir, oDir = runPairSlicePipeline name suffix left right combine
+
+        leftDir <- lDir
+        rightDir <- rDir
+        outputDir <- oDir
+        actualOpt <- Some actual
+        expectedOpt <- Some expected
+
+        keepTempDirs <- compareImages name tolerance $"{leftDir}; {rightDir}" outputDir expected actual
+    finally
+        actualOpt |> Option.iter (fun image -> image.decRefCount())
+        expectedOpt |> Option.iter (fun image -> image.decRefCount())
+        cleanupResult keepTempDirs leftDir outputDir
+        if keepTempDirs then
+            if rightDir <> "" then printfn $"[StackProcessing.Tests] keeping temp directory for inspection: {rightDir}"
+        elif Directory.Exists rightDir then
+            Directory.Delete(rightDir, true)
 
 let private compareStats tolerance (expected: ImageStats) (actual: ImageStats) =
     let expectClose label (actual: float) (expected: float) =
@@ -243,26 +298,18 @@ let stackProcessingCorrectnessSuite =
             finally
                 volume.decRefCount()
 
-        ptestCase "streamed gaussian stages match direct 3D SimpleITK gaussian convolution" <| fun _ ->
+        ptestCase "streamed valid discreteGaussian matches direct 3D SimpleITK gaussian convolution" <| fun _ ->
             let suffix = ".mha"
             let volume = makeFloat64Volume 8
 
             try
                 assertStreamingMatchesDirect
-                    "discrete-gaussian"
+                    "discrete-gaussian-valid"
                     suffix
                     1.0e-8
                     volume
-                    (discreteGaussian 0.5 None None (Some 7u))
-                    (ImageFunctions.discreteGaussian 3u 0.5 (Some 3u) None None)
-
-                assertStreamingMatchesDirect
-                    "conv-gauss"
-                    suffix
-                    1.0e-8
-                    volume
-                    (convGauss 0.5)
-                    (ImageFunctions.discreteGaussian 3u 0.5 (Some 3u) None None)
+                    (discreteGaussian 0.5 (Some ImageFunctions.Valid) None (Some 7u))
+                    (ImageFunctions.discreteGaussian 3u 0.5 (Some 3u) (Some ImageFunctions.Valid) None)
             finally
                 volume.decRefCount()
 
@@ -366,7 +413,7 @@ let stackProcessingCorrectnessSuite =
                 binary.decRefCount()
                 scalar.decRefCount()
 
-        ptestCase "streamed watershed matches direct 3D watershed" <| fun _ ->
+        testCase "streamed watershed matches direct 3D watershed" <| fun _ ->
             let suffix = ".mha"
             let grayscale = makePositiveFloat32Volume 8
 
@@ -411,8 +458,36 @@ let stackProcessingCorrectnessSuite =
             try
                 for name, stage, direct in cases do
                     assertStreamingMatchesDirect $"unary-{name}" suffix 1.0e-4 volume stage direct
+
+                assertStreamingMatchesDirect
+                    "unary-sqrt-windowed"
+                    suffix
+                    1.0e-4
+                    volume
+                    (sqrtWindowed<float32> 3u)
+                    ImageFunctions.sqrtImage
             finally
                 volume.decRefCount()
+
+        testCase "streamed pair arithmetic and extrema match direct 3D Image operators" <| fun _ ->
+            let suffix = ".tiff"
+            let left = makeStrictPositiveFloat32Volume 8
+            let right = makeSecondStrictPositiveFloat32Volume 8
+
+            let cases : (string * (Image<float32> -> Image<float32> -> Image<float32>) * (Image<float32> -> Image<float32> -> Image<float32>)) list =
+                [ "add-pair", addPair, fun a b -> a + b
+                  "sub-pair", subPair, fun a b -> a - b
+                  "mul-pair", mulPair, fun a b -> a * b
+                  "div-pair", divPair, fun a b -> a / b
+                  "max-of-pair", maxOfPair, Image.maximumImage
+                  "min-of-pair", minOfPair, Image.minimumImage ]
+
+            try
+                for name, combine, direct in cases do
+                    assertPairStreamingMatchesDirect name suffix 1.0e-4 left right combine direct
+            finally
+                left.decRefCount()
+                right.decRefCount()
 
         testCase "streamed trigonometric inverse functions match direct 3D ImageFunctions" <| fun _ ->
             let suffix = ".tiff"
@@ -529,4 +604,77 @@ let stackProcessingCorrectnessSuite =
             finally
                 volume.decRefCount()
                 if Directory.Exists inputDir then Directory.Delete(inputDir, true)
+
+        testCase "streamed histogram matches direct 3D histogram" <| fun _ ->
+            let inputDir = tempDirectory "histogram-input"
+            let suffix = ".tiff"
+            let volume = makeBinaryVolume 12
+
+            try
+                writeVolumeAsSlices inputDir suffix volume
+
+                let actual =
+                    source (2UL * 1024UL * 1024UL * 1024UL)
+                    |> read<uint8> inputDir suffix
+                    >=> histogram ()
+                    |> drain
+
+                let expected = ImageFunctions.histogram volume
+                Expect.equal actual expected "Streaming histogram should match direct 3D histogram."
+            finally
+                volume.decRefCount()
+                if Directory.Exists inputDir then Directory.Delete(inputDir, true)
+
+        testCase "streamed connectedComponents matches direct 3D connected components for one full window" <| fun _ ->
+            let inputDir = tempDirectory "connected-components-input"
+            let suffix = ".tiff"
+            let volume = makeBinaryVolume 10
+            let mutable labelsOpt : Image<uint64> option = None
+
+            try
+                writeVolumeAsSlices inputDir suffix volume
+
+                let actual =
+                    source (2UL * 1024UL * 1024UL * 1024UL)
+                    |> read<uint8> inputDir suffix
+                    >=> connectedComponents 10u
+                    |> drainList
+
+                let expected = ImageFunctions.connectedComponents volume
+                labelsOpt <- Some expected.Labels
+
+                try
+                    Expect.equal actual.Length 1 "Full-window connectedComponents should emit one label block."
+                    let actualLabels, actualObjectCount = actual.Head
+                    Expect.equal actualObjectCount expected.ObjectCount "Streaming and direct connectedComponents should report the same object count."
+                    let keepTempDirs = compareImages "connected-components-labels" 0.5 inputDir "" expected.Labels actualLabels
+                    if keepTempDirs then
+                        printfn $"[StackProcessing.Tests] keeping temp directory for inspection: {inputDir}"
+                    actualLabels.decRefCount()
+                finally
+                    actual.Tail |> List.iter (fun (image, _) -> image.decRefCount())
+            finally
+                labelsOpt |> Option.iter (fun image -> image.decRefCount())
+                volume.decRefCount()
+                if Directory.Exists inputDir then Directory.Delete(inputDir, true)
+
+        testCase "streamed relabelComponents matches direct 3D relabeling for one full window" <| fun _ ->
+            let suffix = ".mha"
+            let binary = makeBinaryVolume 10
+            let mutable labelsOpt : Image<uint64> option = None
+
+            try
+                let labels = (ImageFunctions.connectedComponents binary).Labels
+                labelsOpt <- Some labels
+
+                assertStreamingMatchesDirect
+                    "relabel-components"
+                    suffix
+                    0.5
+                    labels
+                    (relabelComponents 1u 10u)
+                    (ImageFunctions.relabelComponents 1u)
+            finally
+                labelsOpt |> Option.iter (fun image -> image.decRefCount())
+                binary.decRefCount()
     ]
