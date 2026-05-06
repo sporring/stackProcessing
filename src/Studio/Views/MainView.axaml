@@ -299,8 +299,13 @@
                                              Text="{Binding Value, Mode=TwoWay}"
                                              IsEnabled="{Binding IsValueEnabled}"
                                              IsReadOnly="{Binding IsValueReadOnly}"
-                                             IsVisible="{Binding !HasOptions}"
+                                             IsVisible="{Binding ShowTextEditor}"
                                              MinHeight="30" />
+                                    <CheckBox Grid.Column="2"
+                                              IsChecked="{Binding BooleanValue, Mode=TwoWay}"
+                                              IsEnabled="{Binding IsValueEnabled}"
+                                              IsVisible="{Binding UseBooleanEditor}"
+                                              VerticalAlignment="Center" />
                                     <ComboBox Grid.Column="2"
                                               ItemsSource="{Binding Options}"
                                               SelectedItem="{Binding SelectedOption, Mode=TwoWay}"

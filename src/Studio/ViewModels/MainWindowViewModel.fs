@@ -616,11 +616,8 @@ module private ThresholdNode =
 module private HighValueFilterNode =
     let typedImageFunctionIds =
         [ "Clamp"
-          "RescaleIntensity"
-          "IntensityWindow"
-          "Normalize"
           "ShiftScale"
-          "InvertIntensity"
+          "IntensityStretch"
           "Median"
           "Bilateral"
           "GradientMagnitude"
@@ -636,6 +633,7 @@ module private HighValueFilterNode =
           "BlackTopHat"
           "MorphologicalGradient"
           "OtsuThreshold"
+          "MomentsThreshold"
           "LabelShapeStatistics"
           "LabelOverlapMeasures"
           "LabelContour"
@@ -653,6 +651,24 @@ module private HighValueFilterNode =
         |> Option.map _.Value
         |> Option.filter (String.IsNullOrWhiteSpace >> not)
         |> Option.defaultValue fallback
+
+module private QuantilesNode =
+    let private enabled key (state: PipelineNodeState) =
+        state.Parameters
+        |> Seq.tryFind (fun parameter -> parameter.Key = key)
+        |> Option.map (_.Value >> fun value -> value.Trim().Equals("true", StringComparison.OrdinalIgnoreCase))
+        |> Option.defaultValue false
+
+    let outputPorts (state: PipelineNodeState) =
+        state.Definition.Outputs
+        |> List.indexed
+        |> List.filter (fun (index, _) ->
+            index = 0
+            || (index = 1 && enabled "useQ2" state)
+            || (index = 2 && enabled "useQ3" state)
+            || (index = 3 && enabled "useQ4" state)
+            || (index = 4 && enabled "useQ5" state))
+        |> List.map snd
 
 module private ChartNode =
     let kindOptions =
@@ -808,7 +824,8 @@ type PipelineNodeViewModel(
             match state.Definition.Id with
             | "ComputeStats"
             | "GetStackInfo"
-            | "GetChunkInfo" -> 170.
+            | "GetChunkInfo"
+            | "Quantiles" -> 170.
             | "ComponentTranslationTable"
             | "CollapseComponentLabels" -> 180.
             | "ResampleAffineTrilinearSlices" -> 220.
@@ -883,6 +900,10 @@ type PipelineNodeViewModel(
                 elif state.Definition.Id = "Chart" && parameter.Key = "kind" && args.PropertyName = nameof parameter.Value then
                     state.Title <- ChartNode.title state
                     this.Name <- state.Title
+                    markGraphDirty()
+                elif state.Definition.Id = "Quantiles" && parameter.Key.StartsWith("useQ", StringComparison.Ordinal) && args.PropertyName = nameof parameter.Value then
+                    this.RebuildPins()
+                    refreshNodePins this
                     markGraphDirty()
                 elif ScalarImageOperationNode.isOperation state.Definition.Id && parameter.Key = "operation" && args.PropertyName = nameof parameter.Value then
                     state.Title <- ScalarImageOperationNode.title state
@@ -1045,6 +1066,7 @@ type PipelineNodeViewModel(
             | "Cast" -> CastNode.ports state
             | functionId when ScalarImageOperationNode.isOperation functionId -> ScalarImageOperationNode.ports state
             | "Threshold" -> ThresholdNode.ports state
+            | "Quantiles" -> state.Definition.Inputs, QuantilesNode.outputPorts state
             | _ -> state.Definition.Inputs, state.Definition.Outputs
 
         inputs
@@ -1063,7 +1085,8 @@ type PipelineNodeViewModel(
                 | "GetStackInfo"
                 | "GetChunkInfo"
                 | "ComponentTranslationTable"
-                | "HistogramData" -> ReducerOutput
+                | "HistogramData"
+                | "Quantiles" -> ReducerOutput
                 | _ -> DataOutput
 
             let alignment =
@@ -1335,6 +1358,10 @@ type MainWindowViewModel() as this =
                         |> List.map (fun value -> ParameterOptionViewModel(value, value, true))
 
                     PipelineParameterViewModel(parameter.Label, parameter.Key, parameter.DefaultValue, parameter.Type, options, false)
+                | "Quantiles", key when key.StartsWith("useQ", StringComparison.Ordinal) ->
+                    PipelineParameterViewModel(parameter.Label, parameter.Key, parameter.DefaultValue, parameter.Type, canUseInput = false)
+                | "Quantiles", "histogram" ->
+                    PipelineParameterViewModel(parameter.Label, parameter.Key, parameter.DefaultValue, parameter.Type, forceUseInput = true)
                 | "LabelIntensityStatistics", ("labelType" | "intensityType") ->
                     let options =
                         HighValueFilterNode.typeOptions

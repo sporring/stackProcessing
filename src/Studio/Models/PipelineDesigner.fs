@@ -36,6 +36,8 @@ type PipelineParameterViewModel(label: string, key: string, value: string, param
     member _.ParameterType = parameterType
     member _.Options = options
     member _.HasOptions = options.Count > 0
+    member _.UseBooleanEditor = parameterType = BasicType.Bool && options.Count = 0
+    member this.ShowTextEditor = not this.HasOptions && not this.UseBooleanEditor
     member _.CanUseInput = canUseInput && not forceUseInput
 
     member this.Value
@@ -43,6 +45,13 @@ type PipelineParameterViewModel(label: string, key: string, value: string, param
         and set v =
             if this.SetProperty(&value, v) then
                 this.OnPropertyChanged(nameof this.SelectedOption)
+                this.OnPropertyChanged(nameof this.BooleanValue)
+
+    member this.BooleanValue
+        with get () =
+            value.Trim().Equals("true", System.StringComparison.OrdinalIgnoreCase)
+        and set v =
+            this.Value <- if v then "true" else "false"
 
     member this.UseInput
         with get () = useInput

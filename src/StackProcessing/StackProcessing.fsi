@@ -403,29 +403,16 @@ val clamp<'T when 'T: equality> :
      double -> SlimPipeline.Stage<StackCore.Image<obj>,StackCore.Image<obj>>)
     when 'T: equality
 
-val rescaleIntensity<'T when 'T: equality> :
-  (double ->
-     double -> SlimPipeline.Stage<StackCore.Image<obj>,StackCore.Image<obj>>)
-    when 'T: equality
-
-val intensityWindow<'T when 'T: equality> :
-  (double ->
-     double ->
-     double ->
-     double -> SlimPipeline.Stage<StackCore.Image<obj>,StackCore.Image<obj>>)
-    when 'T: equality
-
-val normalize<'T when 'T: equality> :
-  SlimPipeline.Stage<StackCore.Image<obj>,StackCore.Image<float>>
-    when 'T: equality
-
 val shiftScale<'T when 'T: equality> :
   (double ->
      double -> SlimPipeline.Stage<StackCore.Image<obj>,StackCore.Image<obj>>)
     when 'T: equality
 
-val invertIntensity<'T when 'T: equality> :
-  (double -> SlimPipeline.Stage<StackCore.Image<obj>,StackCore.Image<obj>>)
+val intensityStretch<'T when 'T: equality> :
+  (double ->
+     double ->
+     double ->
+     double -> SlimPipeline.Stage<StackCore.Image<obj>,StackCore.Image<obj>>)
     when 'T: equality
 
 val median<'T when 'T: equality> :
@@ -489,9 +476,6 @@ val morphologicalGradient<'T when 'T: equality> :
 val binaryContour:
   (bool ->
      uint -> SlimPipeline.Stage<StackCore.Image<uint8>,StackCore.Image<uint8>>)
-
-val binaryThinning:
-  (uint -> SlimPipeline.Stage<StackCore.Image<uint8>,StackCore.Image<uint8>>)
 
 val binaryMedian:
   (uint32 ->
@@ -624,6 +608,20 @@ val histogram:
   (unit -> SlimPipeline.Stage<StackCore.Image<'a>,Map<'a,uint64>>)
     when 'a: comparison
 
+val quantiles: (float list -> Map<'a,uint64> -> float list) when 'a: comparison
+
+val otsuThresholdFromHistogram<'T when 'T: equality> :
+  (uint -> StackCore.Image<'T> list -> float) when 'T: equality
+
+val estimateOtsuThreshold<'T when 'T: equality> :
+  (uint -> uint -> string -> string -> uint64 -> float) when 'T: equality
+
+val momentsThresholdFromHistogram<'T when 'T: equality> :
+  (uint -> StackCore.Image<'T> list -> float) when 'T: equality
+
+val estimateMomentsThreshold<'T when 'T: equality> :
+  (uint -> uint -> string -> string -> uint64 -> float) when 'T: equality
+
 val inline map2pairs<^T,^S
                        when ^T: comparison and
                             ^T: (static member op_Explicit: ^T -> float) and
@@ -728,8 +726,10 @@ val otsuThreshold:
      SlimPipeline.Plan<unit,StackCore.Image<uint8>>) when 'a: equality
 
 val momentsThreshold:
-  (uint -> SlimPipeline.Stage<StackCore.Image<'a>,StackCore.Image<uint8>>)
-    when 'a: equality
+  (uint ->
+     uint ->
+     SlimPipeline.Plan<unit,StackCore.Image<'a>> ->
+     SlimPipeline.Plan<unit,StackCore.Image<uint8>>) when 'a: equality
 
 val threshold:
   (float ->

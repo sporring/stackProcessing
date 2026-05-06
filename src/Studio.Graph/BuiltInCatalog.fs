@@ -51,7 +51,16 @@ module BuiltInCatalog =
       "Reads a rank-3 NeXus/HDF5 detector stack through PureHDF using an explicit dataset path and axis mapping. This covers common MAX IV and ESRF detector-stack layouts while keeping streaming slice reads larger-than-memory friendly. Compressed detector files that use external HDF5 filters may require a later native/plugin fallback."
 
   let private intensityDescription =
-      "Intensity filters change the numeric values of each pixel without changing the stack geometry. They are slice-local and therefore fit the streaming model naturally. Clamp limits values to a range. Rescale maps the current min/max to a requested output range. Window maps a selected input interval to an output interval and clips outside it. ShiftScale applies (input + shift) * scale. Invert maps values around a selected maximum. Normalize produces floating-point output with zero mean and unit variance per streamed image."
+      "Intensity filters change the numeric values of each pixel without changing the stack geometry. They are slice-local and therefore fit the streaming model naturally. Clamp limits values to a range. ShiftScale applies (input + shift) * scale. Intensity stretch maps a selected input range linearly to a selected output range."
+
+  let private shiftScaleDescription =
+      "Uses SimpleITK's ShiftScaleImageFilter. Each output pixel is computed as (input + shift) * scale, and the image geometry is unchanged. Use this with computeStats for two-pass stack normalization: first compute mean and standard deviation, then set shift = -mean and scale = 1/std. The operation itself is streaming-friendly because the shift and scale are already known when the image pass starts."
+
+  let private intensityStretchDescription =
+      "Linearly maps an input intensity range to an output intensity range using the same shift/scale semantics as shiftScale. Values are not clipped: pixels outside the input range continue linearly outside the output range. This is useful with computeStats or quantiles when the source min/max or robust quantile limits are estimated in an earlier reducer pass."
+
+  let private quantilesDescription =
+      "Estimates quantile values from a histogram map. q1 is always emitted. q2, q3, q4, and q5 are optional output slots controlled by the corresponding enabled parameters. Each q value must be between 0 and 1. The result is based on the cumulative histogram counts, so accuracy depends on the histogram key resolution."
 
   let private localDenoiseDescription =
       "These denoising filters are local-neighborhood operations rather than global iterative solvers. Median uses a radius in x, y, and z and is streamed through windows large enough to cover the z-neighborhood. Bilateral is edge-preserving and can be slower; use the window size to give the z-neighborhood enough context. No recursive Gaussian, curvature-flow, or anisotropic-diffusion filters are included here because their iteration/global-dependency structure is less friendly to LMIP streaming."
@@ -591,6 +600,31 @@ module BuiltInCatalog =
           Outputs = [ makePort "Map" (Scalar BasicType.Map) ]
           Parameters = [] }
 
+        { Id = "Quantiles"
+          DisplayName = "quantiles"
+          Category = "Statistics"
+          Summary = "Estimate quantiles from a histogram."
+          Description = quantilesDescription
+          Aliases = [ "quantile"; "percentile"; "histogram"; "statistics"; "robust"; "range" ]
+          Inputs = []
+          Outputs =
+              [ makePort "q1: Float64" (Scalar(BasicType.Numeric Float64))
+                makePort "q2: Float64" (Scalar(BasicType.Numeric Float64))
+                makePort "q3: Float64" (Scalar(BasicType.Numeric Float64))
+                makePort "q4: Float64" (Scalar(BasicType.Numeric Float64))
+                makePort "q5: Float64" (Scalar(BasicType.Numeric Float64)) ]
+          Parameters =
+              [ makeParameter "histogram" "Histogram" "" BasicType.Map
+                makeParameter "q1" "q1" "0.5" (BasicType.Numeric Float64)
+                makeParameter "useQ2" "Enable q2" "false" BasicType.Bool
+                makeParameter "q2" "q2" "0.01" (BasicType.Numeric Float64)
+                makeParameter "useQ3" "Enable q3" "false" BasicType.Bool
+                makeParameter "q3" "q3" "0.99" (BasicType.Numeric Float64)
+                makeParameter "useQ4" "Enable q4" "false" BasicType.Bool
+                makeParameter "q4" "q4" "0.25" (BasicType.Numeric Float64)
+                makeParameter "useQ5" "Enable q5" "false" BasicType.Bool
+                makeParameter "q5" "q5" "0.75" (BasicType.Numeric Float64) ] }
+
         { Id = "Chart"
           DisplayName = "chart"
           Category = "Visualization"
@@ -709,49 +743,11 @@ module BuiltInCatalog =
                 makeParameter "lower" "Lower" "0.0" (BasicType.Numeric Float64)
                 makeParameter "upper" "Upper" "1.0" (BasicType.Numeric Float64) ] }
 
-        { Id = "RescaleIntensity"
-          DisplayName = "rescaleIntensity"
-          Category = "Intensity"
-          Summary = "Rescale image intensities to a requested output range."
-          Description = intensityDescription
-          Aliases = [ "intensity"; "contrast"; "normalize"; "range"; "scale" ]
-          Inputs = [ makePort "Number" imageAny ]
-          Outputs = [ makePort "Number" imageAny ]
-          Parameters =
-              [ makeParameter "type" "Type" "Float64" BasicType.String
-                makeParameter "outputMinimum" "Output minimum" "0.0" (BasicType.Numeric Float64)
-                makeParameter "outputMaximum" "Output maximum" "1.0" (BasicType.Numeric Float64) ] }
-
-        { Id = "IntensityWindow"
-          DisplayName = "intensityWindow"
-          Category = "Intensity"
-          Summary = "Map an input intensity window to an output range."
-          Description = intensityDescription
-          Aliases = [ "intensity"; "window"; "contrast"; "clip"; "range" ]
-          Inputs = [ makePort "Number" imageAny ]
-          Outputs = [ makePort "Number" imageAny ]
-          Parameters =
-              [ makeParameter "type" "Type" "Float64" BasicType.String
-                makeParameter "windowMinimum" "Window minimum" "0.0" (BasicType.Numeric Float64)
-                makeParameter "windowMaximum" "Window maximum" "1.0" (BasicType.Numeric Float64)
-                makeParameter "outputMinimum" "Output minimum" "0.0" (BasicType.Numeric Float64)
-                makeParameter "outputMaximum" "Output maximum" "1.0" (BasicType.Numeric Float64) ] }
-
-        { Id = "Normalize"
-          DisplayName = "normalize"
-          Category = "Intensity"
-          Summary = "Normalize intensities to zero mean and unit variance."
-          Description = intensityDescription
-          Aliases = [ "intensity"; "normalize"; "mean"; "variance"; "standardize"; "float" ]
-          Inputs = [ makePort "Number" imageAny ]
-          Outputs = [ makePort "Float64" imageFloat64 ]
-          Parameters = [ makeParameter "type" "Type" "Float64" BasicType.String ] }
-
         { Id = "ShiftScale"
           DisplayName = "shiftScale"
           Category = "Intensity"
           Summary = "Apply (input + shift) * scale to image intensities."
-          Description = intensityDescription
+          Description = shiftScaleDescription
           Aliases = [ "intensity"; "shift"; "scale"; "offset"; "gain" ]
           Inputs = [ makePort "Number" imageAny ]
           Outputs = [ makePort "Number" imageAny ]
@@ -760,17 +756,20 @@ module BuiltInCatalog =
                 makeParameter "shift" "Shift" "0.0" (BasicType.Numeric Float64)
                 makeParameter "scale" "Scale" "1.0" (BasicType.Numeric Float64) ] }
 
-        { Id = "InvertIntensity"
-          DisplayName = "invertIntensity"
+        { Id = "IntensityStretch"
+          DisplayName = "intensityStretch"
           Category = "Intensity"
-          Summary = "Invert intensities around a selected maximum value."
-          Description = intensityDescription
-          Aliases = [ "intensity"; "invert"; "negative"; "contrast" ]
+          Summary = "Linearly map one intensity range to another."
+          Description = intensityStretchDescription
+          Aliases = [ "intensity"; "stretch"; "contrast"; "linear"; "range"; "scale" ]
           Inputs = [ makePort "Number" imageAny ]
           Outputs = [ makePort "Number" imageAny ]
           Parameters =
               [ makeParameter "type" "Type" "Float64" BasicType.String
-                makeParameter "maximum" "Maximum" "1.0" (BasicType.Numeric Float64) ] }
+                makeParameter "inputMinimum" "Input minimum" "0.0" (BasicType.Numeric Float64)
+                makeParameter "inputMaximum" "Input maximum" "1.0" (BasicType.Numeric Float64)
+                makeParameter "outputMinimum" "Output minimum" "0.0" (BasicType.Numeric Float64)
+                makeParameter "outputMaximum" "Output maximum" "1.0" (BasicType.Numeric Float64) ] }
 
         { Id = "Median"
           DisplayName = "median"
@@ -861,7 +860,7 @@ module BuiltInCatalog =
           DisplayName = "notMask"
           Category = "Segmentation"
           Summary = "Invert a UInt8 mask."
-          Description = "Inverts a UInt8 mask stream using SimpleITK's logical Not filter. This is intended for masks, not for intensity inversion of grayscale images. Use invertIntensity for grayscale negatives. The operation is slice-local and fits streaming naturally."
+          Description = "Inverts a UInt8 mask stream using SimpleITK's logical Not filter. This is intended for masks, not for grayscale intensity inversion. For grayscale negatives, estimate the relevant maximum first and use shiftScale. The operation is slice-local and fits streaming naturally."
           Aliases = [ "mask"; "logic"; "not"; "invert"; "binary"; "boolean" ]
           Inputs = [ makePort "UInt8" imageUInt8 ]
           Outputs = [ makePort "UInt8" imageUInt8 ]
@@ -991,16 +990,6 @@ module BuiltInCatalog =
           Parameters =
               [ makeParameter "fullyConnected" "Fully connected" "false" BasicType.Bool
                 makeParameter "windowSize" "Window size" "3" (BasicType.Numeric UInt32) ] }
-
-        { Id = "BinaryThinning"
-          DisplayName = "binaryThinning"
-          Category = "Binary Morphology"
-          Summary = "Thin a binary UInt8 mask."
-          Description = binaryMorphologyDescription
-          Aliases = [ "morphology"; "binary"; "thin"; "skeleton"; "mask" ]
-          Inputs = [ makePort "UInt8" imageUInt8 ]
-          Outputs = [ makePort "UInt8" imageUInt8 ]
-          Parameters = [ makeParameter "windowSize" "Window size" "9" (BasicType.Numeric UInt32) ] }
 
         { Id = "BinaryMedian"
           DisplayName = "binaryMedian"
@@ -1188,11 +1177,15 @@ module BuiltInCatalog =
           DisplayName = "momentsThreshold"
           Category = "Segmentation"
           Summary = "Threshold an image stack using moment-preserving thresholding."
-          Description = ""
+          Description =
+            "Estimates a single moment-preserving threshold from a random sample of input slices before the streaming pass starts.\n\nThe sampled pixel values are binned into the requested number of histogram bins. The threshold is estimated from the first three histogram moments using Tsai's moment-preserving method, then applied to the full stream with the ordinary binary threshold stage.\n\nIncrease the sample count for stacks whose class balance changes strongly along z. Increase the bin count for broad continuous-valued images, but keep it modest enough that the sampled histogram remains stable. Output pixels are UInt8, with values at or above the estimated threshold set to 1 and lower values set to 0."
           Aliases = [ "threshold"; "moments"; "binary"; "mask"; "segment" ]
           Inputs = [ makePort "Number" imageAny ]
           Outputs = [ makePort "UInt8" imageUInt8 ]
-          Parameters = [ makeParameter "windowSize" "Window size" "3" (BasicType.Numeric UInt32) ] }
+          Parameters =
+              [ makeParameter "type" "Type" "Float64" BasicType.String
+                makeParameter "sampleCount" "Sample slices" "16" (BasicType.Numeric UInt32)
+                makeParameter "bins" "Bins" "256" (BasicType.Numeric UInt32) ] }
 
         { Id = "ComponentTranslationTable"
           DisplayName = "componentTranslationTable"

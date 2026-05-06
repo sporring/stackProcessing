@@ -956,10 +956,96 @@ let otsuMultiThreshold (numThresholds: byte) (img: Image<'T>) : Image<uint8> =
     Image<uint8>.ofSimpleITK(filter.Execute(img.toSimpleITK()),"otsuMultiThreshold",img.index)
 
 /// Moments-based threshold
+let momentsThresholdFromHistogram (bins: uint) (images: Image<'T> list) : float =
+    if bins < 2u then
+        invalidArg "bins" "Moments threshold estimation requires at least two bins."
+    if List.isEmpty images then
+        invalidArg "images" "Moments threshold estimation requires at least one image."
+
+    let toFloat value = System.Convert.ToDouble(box value, System.Globalization.CultureInfo.InvariantCulture)
+    let values =
+        images
+        |> List.collect (fun image ->
+            image.GetSize()
+            |> flatIndices
+            |> Seq.map (image.Get >> toFloat)
+            |> Seq.toList)
+
+    match values with
+    | [] -> invalidArg "images" "Moments threshold estimation requires at least one pixel."
+    | _ ->
+        let minValue = values |> List.min
+        let maxValue = values |> List.max
+        if minValue = maxValue then
+            minValue
+        else
+            let binCount = int bins
+            let width = (maxValue - minValue) / float binCount
+            let histogram = Array.zeroCreate<uint64> binCount
+            values
+            |> List.iter (fun value ->
+                let bin =
+                    if value >= maxValue then
+                        binCount - 1
+                    else
+                        int ((value - minValue) / width)
+                        |> max 0
+                        |> min (binCount - 1)
+                histogram[bin] <- histogram[bin] + 1UL)
+
+            let totalCount = histogram |> Array.sumBy float
+            let moment power =
+                histogram
+                |> Array.mapi (fun i count -> (float i ** power) * float count)
+                |> Array.sum
+                |> fun value -> value / totalCount
+
+            let m0 = 1.0
+            let m1 = moment 1.0
+            let m2 = moment 2.0
+            let m3 = moment 3.0
+            let cd = m0 * m2 - m1 * m1
+
+            if abs cd < 1e-12 then
+                minValue + width * (m1 + 0.5)
+            else
+                let c0 = (-m2 * m2 + m1 * m3) / cd
+                let c1 = (-m3 + m2 * m1) / cd
+                let discriminant = c1 * c1 - 4.0 * c0
+
+                if discriminant < 0.0 then
+                    minValue + width * (m1 + 0.5)
+                else
+                    let root = sqrt discriminant
+                    let z0 = 0.5 * (-c1 - root)
+                    let z1 = 0.5 * (-c1 + root)
+                    let denominator = z1 - z0
+
+                    if abs denominator < 1e-12 then
+                        minValue + width * (m1 + 0.5)
+                    else
+                        let p0 = (z1 - m1) / denominator |> max 0.0 |> min 1.0
+                        let target = p0 * totalCount
+                        let mutable cumulative = 0.0
+                        let mutable thresholdBin = binCount - 1
+                        let mutable found = false
+
+                        for i in 0 .. binCount - 1 do
+                            if not found then
+                                cumulative <- cumulative + float histogram[i]
+                                if cumulative >= target then
+                                    thresholdBin <- i
+                                    found <- true
+
+                        minValue + width * (float thresholdBin + 0.5)
+
 let momentsThreshold (img: Image<'T>) : Image<uint8> =
-    use filter = new itk.simple.MomentsThresholdImageFilter()
-    filter.SetInsideValue(0uy)
-    filter.SetOutsideValue(1uy)
+    let thresholdValue = momentsThresholdFromHistogram 256u [ img ]
+    use filter = new itk.simple.BinaryThresholdImageFilter()
+    filter.SetLowerThreshold(thresholdValue)
+    filter.SetUpperThreshold(System.Double.PositiveInfinity)
+    filter.SetInsideValue(1uy)
+    filter.SetOutsideValue(0uy)
     Image<uint8>.ofSimpleITK(filter.Execute(img.toSimpleITK()),"momentsThreshold",img.index)
 
 /// Coordinate fields
@@ -1023,6 +1109,34 @@ let inline pairs2ints<^T, ^S when ^T : (static member op_Explicit : ^T -> int)
                                  (pairs: (^T * ^S) list) : (int * int) list =
     // must be inline for not reducing 'T and 'S to ints
     pairs |> List.map (fun (k, v) -> (int k, int v)) 
+
+let quantilesFromHistogram (quantiles: float list) (histogram: Map<'T, uint64>) : float list =
+    if Map.isEmpty histogram then
+        invalidArg "histogram" "Cannot estimate quantiles from an empty histogram."
+
+    let total = histogram |> Map.fold (fun acc _ count -> acc + count) 0UL
+    if total = 0UL then
+        invalidArg "histogram" "Cannot estimate quantiles from a histogram with zero total count."
+
+    let ordered =
+        histogram
+        |> Map.toList
+        |> List.map (fun (value, count) -> System.Convert.ToDouble(box value, System.Globalization.CultureInfo.InvariantCulture), count)
+        |> List.sortBy fst
+
+    quantiles
+    |> List.map (fun quantile ->
+        if quantile < 0.0 || quantile > 1.0 || System.Double.IsNaN quantile then
+            invalidArg "quantiles" "Quantiles must be finite numbers between 0 and 1."
+
+        let target = uint64 (ceil (quantile * float total))
+        let target = max 1UL target
+        let mutable cumulative = 0UL
+
+        ordered
+        |> List.pick (fun (value, count) ->
+            cumulative <- cumulative + count
+            if cumulative >= target then Some value else None))
 
 let addNormalNoise (mean: float) (stddev: float) : Image<'T> -> Image<'T> =
     makeUnaryImageOperatorWith
