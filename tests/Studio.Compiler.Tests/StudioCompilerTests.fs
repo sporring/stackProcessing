@@ -624,6 +624,120 @@ let generatorSuite =
 
             Expect.stringContains code ">=> cos" "The selected unary image function should lower to the matching StackProcessing stage."
 
+        testCase "high-value SimpleITK filter boxes lower to StackProcessing stages" <| fun _ ->
+            let read =
+                node "read" "Read"
+                    [ p "availableMemory" "1024" false
+                      p "type" "Float64" false
+                      p "input" "input" false
+                      p "suffix" ".tiff" false ]
+
+            let clamp =
+                node "clamp" "Clamp"
+                    [ p "type" "Float64" false
+                      p "lower" "0.0" false
+                      p "upper" "1.0" false ]
+
+            let median =
+                node "median" "Median"
+                    [ p "type" "Float64" false
+                      p "radius" "1" false
+                      p "windowSize" "3" false ]
+
+            let edgeFilter =
+                node "edge" "GradientMagnitude"
+                    [ p "type" "Float64" false
+                      p "windowSize" "5" false ]
+
+            let write =
+                node "write" "Write"
+                    [ p "output" "out" false
+                      p "suffix" ".tiff" false ]
+
+            let code =
+                graph
+                    [ read; clamp; median; edgeFilter; write ]
+                    [ edge "read" "output" 0 "clamp" "input" 0
+                      edge "clamp" "output" 0 "median" "input" 0
+                      edge "median" "output" 0 "edge" "input" 0
+                      edge "edge" "output" 0 "write" "input" 0 ]
+                |> PipelineCodeGenerator.generateSavedGraph
+
+            Expect.stringContains code ">=> clamp<float> 0.0 1.0" "Clamp should lower with type and bounds."
+            Expect.stringContains code ">=> median<float> 1u 3u" "Median should lower with radius and window size."
+            Expect.stringContains code ">=> gradientMagnitude<float> 5u" "Gradient magnitude should lower with its window size."
+
+        testCase "comparison and mask boxes lower to pair stages" <| fun _ ->
+            let left =
+                node "left" "Read"
+                    [ p "availableMemory" "1024" false
+                      p "type" "Float64" false
+                      p "input" "left" false
+                      p "suffix" ".tiff" false ]
+            let right =
+                node "right" "Read"
+                    [ p "availableMemory" "1024" false
+                      p "type" "Float64" false
+                      p "input" "right" false
+                      p "suffix" ".tiff" false ]
+            let comparison =
+                node "cmp" "ImageComparison"
+                    [ p "operation" ">=" false
+                      p "type" "Float64" false ]
+            let mask =
+                node "mask" "Mask"
+                    [ p "type" "Float64" false
+                      p "outsideValue" "0.0" false ]
+            let write =
+                node "write" "Write"
+                    [ p "output" "out" false
+                      p "suffix" ".tiff" false ]
+
+            let code =
+                graph
+                    [ left; right; comparison; mask; write ]
+                    [ edge "left" "output" 0 "cmp" "I" 0
+                      edge "right" "output" 0 "cmp" "J" 0
+                      edge "left" "output" 0 "mask" "Image" 0
+                      edge "cmp" "output" 0 "mask" "UInt8" 1
+                      edge "mask" "output" 0 "write" "input" 0 ]
+                |> PipelineCodeGenerator.generateSavedGraph
+
+            Expect.stringContains code ">>=> greaterEqual<float>" "Image comparison should lower to the selected typed pair stage."
+            Expect.stringContains code ">>=> mask<float> 0.0" "Mask should lower to the typed image-mask pair stage."
+
+        testCase "morphology and label analysis additions lower to StackProcessing stages" <| fun _ ->
+            let read =
+                node "read" "Read"
+                    [ p "availableMemory" "1024" false
+                      p "type" "Float64" false
+                      p "input" "input" false
+                      p "suffix" ".tiff" false ]
+            let gray =
+                node "gray" "GrayscaleErode"
+                    [ p "type" "Float64" false
+                      p "radius" "2" false
+                      p "windowSize" "5" false ]
+            let contour =
+                node "contour" "BinaryContour"
+                    [ p "fullyConnected" "true" false
+                      p "windowSize" "3" false ]
+            let labelStats =
+                node "stats" "LabelShapeStatistics"
+                    [ p "type" "UInt64" false
+                      p "windowSize" "8" false ]
+            let code =
+                graph
+                    [ read; gray; contour; labelStats ]
+                    [ edge "read" "output" 0 "gray" "input" 0
+                      edge "gray" "output" 0 "contour" "input" 0
+                      edge "contour" "output" 0 "stats" "input" 0 ]
+                |> PipelineCodeGenerator.generateSavedGraph
+
+            Expect.stringContains code ">=> grayscaleErode<float> 2u 5u" "Grayscale morphology should lower with type, radius, and window size."
+            Expect.stringContains code ">=> binaryContour true 3u" "Binary contour should lower with connectivity and window size."
+            Expect.stringContains code ">=> labelShapeStatistics<uint64> 8u" "Label shape statistics should lower with type and window size."
+
         testCase "connected component pair stream writes chunk labels through teeFst before reducing" <| fun _ ->
             let read =
                 node "read" "Read"

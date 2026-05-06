@@ -613,6 +613,46 @@ module private ThresholdNode =
         [ { Name = "UInt8"
             Type = PortType.Image UInt8 } ]
 
+module private HighValueFilterNode =
+    let typedImageFunctionIds =
+        [ "Clamp"
+          "RescaleIntensity"
+          "IntensityWindow"
+          "Normalize"
+          "ShiftScale"
+          "InvertIntensity"
+          "Median"
+          "Bilateral"
+          "GradientMagnitude"
+          "SobelEdge"
+          "Laplacian"
+          "ImageComparison"
+          "Mask"
+          "GrayscaleErode"
+          "GrayscaleDilate"
+          "GrayscaleOpening"
+          "GrayscaleClosing"
+          "WhiteTopHat"
+          "BlackTopHat"
+          "MorphologicalGradient"
+          "LabelShapeStatistics"
+          "LabelOverlapMeasures"
+          "LabelContour"
+          "ChangeLabel" ]
+        |> Set.ofList
+
+    let typeOptions = SourceImageNode.typeOptions
+    let comparisonOptions = [ ">"; ">="; "<"; "<="; "="; "<>"; "!=" ]
+    let maskLogicOptions = [ "and"; "or"; "xor" ]
+    let boolOptions = [ "false"; "true" ]
+
+    let titleFrom key fallback (state: PipelineNodeState) =
+        state.Parameters
+        |> Seq.tryFind (fun parameter -> parameter.Key = key)
+        |> Option.map _.Value
+        |> Option.filter (String.IsNullOrWhiteSpace >> not)
+        |> Option.defaultValue fallback
+
 module private ChartNode =
     let kindOptions =
         [ "Scatter"; "Line"; "Bar"; "Column"; "Area"; "Pie"; "Doughnut" ]
@@ -829,6 +869,16 @@ type PipelineNodeViewModel(
                     state.Title <- UnaryImageFunctionNode.title state
                     this.Name <- state.Title
                     markGraphDirty()
+                elif state.Definition.Id = "ImageComparison" && parameter.Key = "operation" && args.PropertyName = nameof parameter.Value then
+                    let operation = HighValueFilterNode.titleFrom "operation" ">" state
+                    state.Title <- $"I {operation} J"
+                    this.Name <- state.Title
+                    markGraphDirty()
+                elif state.Definition.Id = "MaskLogic" && parameter.Key = "operation" && args.PropertyName = nameof parameter.Value then
+                    let operation = HighValueFilterNode.titleFrom "operation" "and" state
+                    state.Title <- $"M {operation} N"
+                    this.Name <- state.Title
+                    markGraphDirty()
                 elif state.Definition.Id = "Chart" && parameter.Key = "kind" && args.PropertyName = nameof parameter.Value then
                     state.Title <- ChartNode.title state
                     this.Name <- state.Title
@@ -841,7 +891,7 @@ type PipelineNodeViewModel(
                     state.Title <- ScalarImageOperationNode.title state
                     this.Name <- state.Title
                     markGraphDirty()
-                elif (state.Definition.Id = "Scalar" || state.Definition.Id = "ScalarOp" || state.Definition.Id = "Read" || state.Definition.Id = "ReadRandom" || state.Definition.Id = "ReadSlab" || state.Definition.Id = "ReadZarrSlab" || state.Definition.Id = "ReadNexusSlab" || state.Definition.Id = "Zero" || state.Definition.Id = "CreateByEuler2DTransform" || state.Definition.Id = "Threshold" || state.Definition.Id = "ImageOpImage" || state.Definition.Id = "Resize" || state.Definition.Id = "Resample" || state.Definition.Id = "ResampleAffineTrilinearSlices" || ScalarImageOperationNode.isOperation state.Definition.Id) && parameter.Key = "type" && args.PropertyName = nameof parameter.Value then
+                elif (state.Definition.Id = "Scalar" || state.Definition.Id = "ScalarOp" || state.Definition.Id = "Read" || state.Definition.Id = "ReadRandom" || state.Definition.Id = "ReadSlab" || state.Definition.Id = "ReadZarrSlab" || state.Definition.Id = "ReadNexusSlab" || state.Definition.Id = "Zero" || state.Definition.Id = "CreateByEuler2DTransform" || state.Definition.Id = "Threshold" || state.Definition.Id = "ImageOpImage" || state.Definition.Id = "Resize" || state.Definition.Id = "Resample" || state.Definition.Id = "ResampleAffineTrilinearSlices" || HighValueFilterNode.typedImageFunctionIds.Contains state.Definition.Id || ScalarImageOperationNode.isOperation state.Definition.Id) && parameter.Key = "type" && args.PropertyName = nameof parameter.Value then
                     if state.Definition.Id = "Scalar" then
                         ScalarNode.ensureValueMatchesType state
                         state.Title <- ScalarNode.title state
@@ -1266,6 +1316,36 @@ type MainWindowViewModel() as this =
                         |> List.map (fun value -> ParameterOptionViewModel(value, value, true))
 
                     PipelineParameterViewModel(parameter.Label, parameter.Key, parameter.DefaultValue, parameter.Type, options, false)
+                | "ImageComparison", "operation" ->
+                    let options =
+                        HighValueFilterNode.comparisonOptions
+                        |> List.map (fun value -> ParameterOptionViewModel(value, value, true))
+
+                    PipelineParameterViewModel(parameter.Label, parameter.Key, parameter.DefaultValue, parameter.Type, options, false)
+                | "MaskLogic", "operation" ->
+                    let options =
+                        HighValueFilterNode.maskLogicOptions
+                        |> List.map (fun value -> ParameterOptionViewModel(value, value, true))
+
+                    PipelineParameterViewModel(parameter.Label, parameter.Key, parameter.DefaultValue, parameter.Type, options, false)
+                | ("BinaryContour" | "BinaryOpeningByReconstruction" | "BinaryClosingByReconstruction" | "BinaryReconstructionByDilation" | "BinaryReconstructionByErosion" | "LabelContour"), "fullyConnected" ->
+                    let options =
+                        HighValueFilterNode.boolOptions
+                        |> List.map (fun value -> ParameterOptionViewModel(value, value, true))
+
+                    PipelineParameterViewModel(parameter.Label, parameter.Key, parameter.DefaultValue, parameter.Type, options, false)
+                | "LabelIntensityStatistics", ("labelType" | "intensityType") ->
+                    let options =
+                        HighValueFilterNode.typeOptions
+                        |> List.map (fun value -> ParameterOptionViewModel(value, value, true))
+
+                    PipelineParameterViewModel(parameter.Label, parameter.Key, parameter.DefaultValue, parameter.Type, options, false)
+                | functionId, "type" when HighValueFilterNode.typedImageFunctionIds.Contains functionId ->
+                    let options =
+                        HighValueFilterNode.typeOptions
+                        |> List.map (fun value -> ParameterOptionViewModel(value, value, true))
+
+                    PipelineParameterViewModel(parameter.Label, parameter.Key, parameter.DefaultValue, parameter.Type, options, false)
                 | functionId, "operation" when ScalarImageOperationNode.isOperation functionId ->
                     let options =
                         ScalarImageOperationNode.operationOptions
@@ -1317,6 +1397,12 @@ type MainWindowViewModel() as this =
             state.Title <- PairOperationNode.title state
         elif definition.Id = "UnaryImageFunction" then
             state.Title <- UnaryImageFunctionNode.title state
+        elif definition.Id = "ImageComparison" then
+            let operation = HighValueFilterNode.titleFrom "operation" ">" state
+            state.Title <- $"I {operation} J"
+        elif definition.Id = "MaskLogic" then
+            let operation = HighValueFilterNode.titleFrom "operation" "and" state
+            state.Title <- $"M {operation} N"
         elif definition.Id = "Chart" then
             state.Title <- ChartNode.title state
         elif definition.Id = "ImageOpScalar" || definition.Id = "ScalarOpImage" then

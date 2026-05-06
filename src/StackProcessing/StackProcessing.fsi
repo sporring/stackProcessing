@@ -398,6 +398,204 @@ val sqrtWindowed<'T when 'T: equality> :
 val square<'T when 'T: equality> :
   StackCore.Stage<StackCore.Image<'T>,StackCore.Image<'T>> when 'T: equality
 
+val clamp<'T when 'T: equality> :
+  (double ->
+     double -> SlimPipeline.Stage<StackCore.Image<obj>,StackCore.Image<obj>>)
+    when 'T: equality
+
+val rescaleIntensity<'T when 'T: equality> :
+  (double ->
+     double -> SlimPipeline.Stage<StackCore.Image<obj>,StackCore.Image<obj>>)
+    when 'T: equality
+
+val intensityWindow<'T when 'T: equality> :
+  (double ->
+     double ->
+     double ->
+     double -> SlimPipeline.Stage<StackCore.Image<obj>,StackCore.Image<obj>>)
+    when 'T: equality
+
+val normalize<'T when 'T: equality> :
+  SlimPipeline.Stage<StackCore.Image<obj>,StackCore.Image<float>>
+    when 'T: equality
+
+val shiftScale<'T when 'T: equality> :
+  (double ->
+     double -> SlimPipeline.Stage<StackCore.Image<obj>,StackCore.Image<obj>>)
+    when 'T: equality
+
+val invertIntensity<'T when 'T: equality> :
+  (double -> SlimPipeline.Stage<StackCore.Image<obj>,StackCore.Image<obj>>)
+    when 'T: equality
+
+val median<'T when 'T: equality> :
+  (uint32 ->
+     uint32 -> SlimPipeline.Stage<StackCore.Image<obj>,StackCore.Image<obj>>)
+    when 'T: equality
+
+val bilateral<'T when 'T: equality> :
+  (double ->
+     double ->
+     uint32 -> SlimPipeline.Stage<StackCore.Image<obj>,StackCore.Image<obj>>)
+    when 'T: equality
+
+val gradientMagnitude<'T when 'T: equality> :
+  (uint32 -> SlimPipeline.Stage<StackCore.Image<obj>,StackCore.Image<obj>>)
+    when 'T: equality
+
+val sobelEdge<'T when 'T: equality> :
+  (uint32 -> SlimPipeline.Stage<StackCore.Image<obj>,StackCore.Image<obj>>)
+    when 'T: equality
+
+val laplacian<'T when 'T: equality> :
+  (uint32 -> SlimPipeline.Stage<StackCore.Image<obj>,StackCore.Image<obj>>)
+    when 'T: equality
+
+val grayscaleErode<'T when 'T: equality> :
+  (uint32 ->
+     uint32 -> SlimPipeline.Stage<StackCore.Image<obj>,StackCore.Image<obj>>)
+    when 'T: equality
+
+val grayscaleDilate<'T when 'T: equality> :
+  (uint32 ->
+     uint32 -> SlimPipeline.Stage<StackCore.Image<obj>,StackCore.Image<obj>>)
+    when 'T: equality
+
+val grayscaleOpening<'T when 'T: equality> :
+  (uint32 ->
+     uint32 -> SlimPipeline.Stage<StackCore.Image<obj>,StackCore.Image<obj>>)
+    when 'T: equality
+
+val grayscaleClosing<'T when 'T: equality> :
+  (uint32 ->
+     uint32 -> SlimPipeline.Stage<StackCore.Image<obj>,StackCore.Image<obj>>)
+    when 'T: equality
+
+val whiteTopHat<'T when 'T: equality> :
+  (uint32 ->
+     uint32 -> SlimPipeline.Stage<StackCore.Image<obj>,StackCore.Image<obj>>)
+    when 'T: equality
+
+val blackTopHat<'T when 'T: equality> :
+  (uint32 ->
+     uint32 -> SlimPipeline.Stage<StackCore.Image<obj>,StackCore.Image<obj>>)
+    when 'T: equality
+
+val morphologicalGradient<'T when 'T: equality> :
+  (uint32 ->
+     uint32 -> SlimPipeline.Stage<StackCore.Image<obj>,StackCore.Image<obj>>)
+    when 'T: equality
+
+val binaryContour:
+  (bool ->
+     uint -> SlimPipeline.Stage<StackCore.Image<uint8>,StackCore.Image<uint8>>)
+
+val binaryThinning:
+  (uint -> SlimPipeline.Stage<StackCore.Image<uint8>,StackCore.Image<uint8>>)
+
+val binaryMedian:
+  (uint32 ->
+     uint32 -> SlimPipeline.Stage<StackCore.Image<uint8>,StackCore.Image<uint8>>)
+
+val binaryOpeningByReconstruction:
+  (uint32 ->
+     bool ->
+     uint32 -> SlimPipeline.Stage<StackCore.Image<uint8>,StackCore.Image<uint8>>)
+
+val binaryClosingByReconstruction:
+  (uint32 ->
+     bool ->
+     uint32 -> SlimPipeline.Stage<StackCore.Image<uint8>,StackCore.Image<uint8>>)
+
+val binaryReconstructionByDilation:
+  (bool ->
+     StackCore.Stage<(StackCore.Image<uint8> * StackCore.Image<uint8>),
+                     StackCore.Image<uint8>>)
+
+val binaryReconstructionByErosion:
+  (bool ->
+     StackCore.Stage<(StackCore.Image<uint8> * StackCore.Image<uint8>),
+                     StackCore.Image<uint8>>)
+
+val votingBinaryHoleFilling:
+  (uint32 ->
+     uint ->
+     uint32 -> SlimPipeline.Stage<StackCore.Image<uint8>,StackCore.Image<uint8>>)
+
+val equal<'T when 'T: equality> :
+  StackCore.Stage<(StackCore.Image<'T> * StackCore.Image<'T>),
+                  StackCore.Image<uint8>> when 'T: equality
+
+val notEqual<'T when 'T: equality> :
+  StackCore.Stage<(StackCore.Image<'T> * StackCore.Image<'T>),
+                  StackCore.Image<uint8>> when 'T: equality
+
+val greater<'T when 'T: equality> :
+  StackCore.Stage<(StackCore.Image<'T> * StackCore.Image<'T>),
+                  StackCore.Image<uint8>> when 'T: equality
+
+val greaterEqual<'T when 'T: equality> :
+  StackCore.Stage<(StackCore.Image<'T> * StackCore.Image<'T>),
+                  StackCore.Image<uint8>> when 'T: equality
+
+val less<'T when 'T: equality> :
+  StackCore.Stage<(StackCore.Image<'T> * StackCore.Image<'T>),
+                  StackCore.Image<uint8>> when 'T: equality
+
+val lessEqual<'T when 'T: equality> :
+  StackCore.Stage<(StackCore.Image<'T> * StackCore.Image<'T>),
+                  StackCore.Image<uint8>> when 'T: equality
+
+val andMask:
+  StackCore.Stage<(StackCore.Image<uint8> * StackCore.Image<uint8>),
+                  StackCore.Image<uint8>>
+
+val orMask:
+  StackCore.Stage<(StackCore.Image<uint8> * StackCore.Image<uint8>),
+                  StackCore.Image<uint8>>
+
+val xorMask:
+  StackCore.Stage<(StackCore.Image<uint8> * StackCore.Image<uint8>),
+                  StackCore.Image<uint8>>
+
+val notMask: StackCore.Stage<StackCore.Image<uint8>,StackCore.Image<uint8>>
+
+val mask<'T when 'T: equality> :
+  (double ->
+     StackCore.Stage<(StackCore.Image<'T> * StackCore.Image<uint8>),
+                     StackCore.Image<'T>>) when 'T: equality
+
+type LabelShapeStatistics = StackImageFunctions.LabelShapeStatistics
+
+type LabelIntensityStatistics = StackImageFunctions.LabelIntensityStatistics
+
+type LabelOverlapMeasures = StackImageFunctions.LabelOverlapMeasures
+
+val labelShapeStatistics<'T when 'T: equality> :
+  (uint ->
+     StackCore.Stage<StackCore.Image<'T>,
+                     Map<int64,StackImageFunctions.LabelShapeStatistics>>)
+    when 'T: equality
+
+val labelIntensityStatistics<'L,'T when 'L: equality and 'T: equality> :
+  StackCore.Stage<(StackCore.Image<'L> * StackCore.Image<'T>),
+                  Map<int64,StackImageFunctions.LabelIntensityStatistics>>
+    when 'L: equality and 'T: equality
+
+val labelOverlapMeasures<'T when 'T: equality> :
+  StackCore.Stage<(StackCore.Image<'T> * StackCore.Image<'T>),
+                  StackImageFunctions.LabelOverlapMeasures> when 'T: equality
+
+val labelContour<'T when 'T: equality> :
+  (bool ->
+     uint32 -> SlimPipeline.Stage<StackCore.Image<obj>,StackCore.Image<obj>>)
+    when 'T: equality
+
+val changeLabel<'T when 'T: equality> :
+  (double ->
+     double -> SlimPipeline.Stage<StackCore.Image<obj>,StackCore.Image<obj>>)
+    when 'T: equality
+
 val resize<'T when 'T: equality> :
   (uint ->
      uint ->

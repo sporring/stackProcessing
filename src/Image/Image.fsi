@@ -357,6 +357,62 @@ val atanImage:
   img: Image.Image<'T> -> Image.Image<'a> when 'T: equality and 'a: equality
 val roundImage:
   img: Image.Image<'T> -> Image.Image<'a> when 'T: equality and 'a: equality
+val clampImage:
+  lower: double -> upper: double -> (Image.Image<'T> -> Image.Image<'T>)
+    when 'T: equality
+val rescaleIntensity:
+  outputMinimum: double ->
+    outputMaximum: double -> (Image.Image<'T> -> Image.Image<'T>)
+    when 'T: equality
+val intensityWindow:
+  windowMinimum: double ->
+    windowMaximum: double ->
+    outputMinimum: double ->
+    outputMaximum: double -> (Image.Image<'T> -> Image.Image<'T>)
+    when 'T: equality
+val normalizeImage: img: Image.Image<'T> -> Image.Image<float> when 'T: equality
+val shiftScale:
+  shift: double -> scale: double -> (Image.Image<'T> -> Image.Image<'T>)
+    when 'T: equality
+val invertIntensity:
+  maximum: double -> (Image.Image<'T> -> Image.Image<'T>) when 'T: equality
+val median:
+  radius: uint -> (Image.Image<'T> -> Image.Image<'T>) when 'T: equality
+val bilateral:
+  domainSigma: double ->
+    rangeSigma: double -> (Image.Image<'T> -> Image.Image<'T>) when 'T: equality
+val gradientMagnitude: img: Image.Image<'T> -> Image.Image<'T> when 'T: equality
+val sobelEdge: img: Image.Image<'T> -> Image.Image<'T> when 'T: equality
+val laplacian: img: Image.Image<'T> -> Image.Image<'T> when 'T: equality
+val equalImage:
+  a: Image.Image<'T> -> b: Image.Image<'T> -> Image.Image<uint8>
+    when 'T: equality
+val notEqualImage:
+  a: Image.Image<'T> -> b: Image.Image<'T> -> Image.Image<uint8>
+    when 'T: equality
+val greaterImage:
+  a: Image.Image<'T> -> b: Image.Image<'T> -> Image.Image<uint8>
+    when 'T: equality
+val greaterEqualImage:
+  a: Image.Image<'T> -> b: Image.Image<'T> -> Image.Image<uint8>
+    when 'T: equality
+val lessImage:
+  a: Image.Image<'T> -> b: Image.Image<'T> -> Image.Image<uint8>
+    when 'T: equality
+val lessEqualImage:
+  a: Image.Image<'T> -> b: Image.Image<'T> -> Image.Image<uint8>
+    when 'T: equality
+val andImage:
+  a: Image.Image<uint8> -> b: Image.Image<uint8> -> Image.Image<uint8>
+val orImage:
+  a: Image.Image<uint8> -> b: Image.Image<uint8> -> Image.Image<uint8>
+val xorImage:
+  a: Image.Image<uint8> -> b: Image.Image<uint8> -> Image.Image<uint8>
+val notImage: img: Image.Image<uint8> -> Image.Image<uint8>
+val mask:
+  outsideValue: double ->
+    img: Image.Image<'T> -> mask: Image.Image<uint8> -> Image.Image<'T>
+    when 'T: equality
 val euler2DTransform:
   img: Image.Image<'T> ->
     cx: float * cy: float * a: float -> dx: float * dy: float -> Image.Image<'T>
@@ -419,8 +475,41 @@ val binaryDilate: radius: uint -> (Image.Image<uint8> -> Image.Image<uint8>)
 val binaryOpening: radius: uint -> (Image.Image<uint8> -> Image.Image<uint8>)
 /// Binary closing (dilate then erode)
 val binaryClosing: radius: uint -> (Image.Image<uint8> -> Image.Image<uint8>)
+val grayscaleErode:
+  radius: uint -> (Image.Image<'T> -> Image.Image<'T>) when 'T: equality
+val grayscaleDilate:
+  radius: uint -> (Image.Image<'T> -> Image.Image<'T>) when 'T: equality
+val grayscaleOpening:
+  radius: uint -> (Image.Image<'T> -> Image.Image<'T>) when 'T: equality
+val grayscaleClosing:
+  radius: uint -> (Image.Image<'T> -> Image.Image<'T>) when 'T: equality
+val whiteTopHat:
+  radius: uint -> (Image.Image<'T> -> Image.Image<'T>) when 'T: equality
+val blackTopHat:
+  radius: uint -> (Image.Image<'T> -> Image.Image<'T>) when 'T: equality
+val morphologicalGradient:
+  radius: uint -> (Image.Image<'T> -> Image.Image<'T>) when 'T: equality
 /// Fill holes in binary regions
 val binaryFillHoles: img: Image.Image<uint8> -> Image.Image<uint8>
+val binaryContour:
+  fullyConnected: bool -> (Image.Image<uint8> -> Image.Image<uint8>)
+val binaryThinning: img: Image.Image<uint8> -> Image.Image<uint8>
+val binaryMedian: radius: uint -> (Image.Image<uint8> -> Image.Image<uint8>)
+val binaryOpeningByReconstruction:
+  radius: uint ->
+    fullyConnected: bool -> (Image.Image<uint8> -> Image.Image<uint8>)
+val binaryClosingByReconstruction:
+  radius: uint ->
+    fullyConnected: bool -> (Image.Image<uint8> -> Image.Image<uint8>)
+val binaryReconstructionByDilation:
+  fullyConnected: bool ->
+    marker: Image.Image<uint8> -> mask: Image.Image<uint8> -> Image.Image<uint8>
+val binaryReconstructionByErosion:
+  fullyConnected: bool ->
+    marker: Image.Image<uint8> -> mask: Image.Image<uint8> -> Image.Image<uint8>
+val votingBinaryHoleFilling:
+  radius: uint ->
+    majorityThreshold: uint -> (Image.Image<uint8> -> Image.Image<uint8>)
 type ConnectedComponentsResult =
     {
       Labels: Image.Image<uint64>
@@ -460,6 +549,47 @@ type LabelShapeStatistics =
 /// Compute label shape statistics and return a dictionary of results
 val labelShapeStatistics:
   img: Image.Image<'T> -> Map<int64,LabelShapeStatistics> when 'T: equality
+type LabelIntensityStatistics =
+    {
+      Label: int64
+      NumberOfPixels: uint64
+      PhysicalSize: float
+      Mean: float
+      Median: float
+      Minimum: float
+      Maximum: float
+      Sum: float
+      StandardDeviation: float
+      Variance: float
+      Skewness: float
+      Kurtosis: float
+      Centroid: float list
+      CenterOfGravity: float list
+      BoundingBox: uint list
+    }
+val labelIntensityStatistics:
+  labelImage: Image.Image<'L> ->
+    intensityImage: Image.Image<'T> -> Map<int64,LabelIntensityStatistics>
+    when 'L: equality and 'T: equality
+type LabelOverlapMeasures =
+    {
+      MeanOverlap: float
+      UnionOverlap: float
+      JaccardCoefficient: float
+      DiceCoefficient: float
+      VolumeSimilarity: float
+      FalseNegativeError: float
+      FalsePositiveError: float
+      FalseDiscoveryRate: float
+    }
+val labelOverlapMeasures:
+  source: Image.Image<'T> -> target: Image.Image<'T> -> LabelOverlapMeasures
+    when 'T: equality
+val labelContour:
+  fullyConnected: bool -> (Image.Image<'T> -> Image.Image<'T>) when 'T: equality
+val changeLabel:
+  fromLabel: double -> toLabel: double -> (Image.Image<'T> -> Image.Image<'T>)
+    when 'T: equality
 /// Compute signed Maurer distance map (positive outside, negative inside)
 val signedDistanceMap:
   inside: uint8 ->

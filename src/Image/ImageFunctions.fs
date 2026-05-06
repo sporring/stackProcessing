@@ -174,6 +174,125 @@ let acosImage (img: Image<'T>)   = makeUnaryImageOperator "acosImage" (fun () ->
 let atanImage (img: Image<'T>)   = makeUnaryImageOperator "atanImage" (fun () -> new itk.simple.AtanImageFilter())   (fun f x -> f.Execute(x)) img
 let roundImage (img: Image<'T>)  = makeUnaryImageOperator "roundImage" (fun () -> new itk.simple.RoundImageFilter())  (fun f x -> f.Execute(x)) img
 
+let clampImage (lower: double) (upper: double) : Image<'T> -> Image<'T> =
+    makeUnaryImageOperatorWith
+        "clampImage"
+        (fun () -> new itk.simple.ClampImageFilter())
+        (fun f ->
+            f.SetLowerBound(lower)
+            f.SetUpperBound(upper))
+        (fun f x -> f.Execute(x))
+
+let rescaleIntensity (outputMinimum: double) (outputMaximum: double) : Image<'T> -> Image<'T> =
+    makeUnaryImageOperatorWith
+        "rescaleIntensity"
+        (fun () -> new itk.simple.RescaleIntensityImageFilter())
+        (fun f ->
+            f.SetOutputMinimum(outputMinimum)
+            f.SetOutputMaximum(outputMaximum))
+        (fun f x -> f.Execute(x))
+
+let intensityWindow (windowMinimum: double) (windowMaximum: double) (outputMinimum: double) (outputMaximum: double) : Image<'T> -> Image<'T> =
+    makeUnaryImageOperatorWith
+        "intensityWindow"
+        (fun () -> new itk.simple.IntensityWindowingImageFilter())
+        (fun f ->
+            f.SetWindowMinimum(windowMinimum)
+            f.SetWindowMaximum(windowMaximum)
+            f.SetOutputMinimum(outputMinimum)
+            f.SetOutputMaximum(outputMaximum))
+        (fun f x -> f.Execute(x))
+
+let normalizeImage (img: Image<'T>) : Image<float> =
+    use filter = new itk.simple.NormalizeImageFilter()
+    Image<float>.ofSimpleITK(filter.Execute(img.toSimpleITK()), "normalizeImage", img.index)
+
+let shiftScale (shift: double) (scale: double) : Image<'T> -> Image<'T> =
+    makeUnaryImageOperatorWith
+        "shiftScale"
+        (fun () -> new itk.simple.ShiftScaleImageFilter())
+        (fun f ->
+            f.SetShift(shift)
+            f.SetScale(scale))
+        (fun f x -> f.Execute(x))
+
+let invertIntensity (maximum: double) : Image<'T> -> Image<'T> =
+    makeUnaryImageOperatorWith
+        "invertIntensity"
+        (fun () -> new itk.simple.InvertIntensityImageFilter())
+        (fun f -> f.SetMaximum(maximum))
+        (fun f x -> f.Execute(x))
+
+let median (radius: uint) : Image<'T> -> Image<'T> =
+    makeUnaryImageOperatorWith
+        "median"
+        (fun () -> new itk.simple.MedianImageFilter())
+        (fun f -> f.SetRadius(radius))
+        (fun f x -> f.Execute(x))
+
+let bilateral (domainSigma: double) (rangeSigma: double) : Image<'T> -> Image<'T> =
+    makeUnaryImageOperatorWith
+        "bilateral"
+        (fun () -> new itk.simple.BilateralImageFilter())
+        (fun f ->
+            f.SetDomainSigma(domainSigma)
+            f.SetRangeSigma(rangeSigma))
+        (fun f x -> f.Execute(x))
+
+let gradientMagnitude (img: Image<'T>) : Image<'T> =
+    makeUnaryImageOperator "gradientMagnitude" (fun () -> new itk.simple.GradientMagnitudeImageFilter()) (fun f x -> f.Execute(x)) img
+
+let sobelEdge (img: Image<'T>) : Image<'T> =
+    makeUnaryImageOperator "sobelEdge" (fun () -> new itk.simple.SobelEdgeDetectionImageFilter()) (fun f x -> f.Execute(x)) img
+
+let laplacian (img: Image<'T>) : Image<'T> =
+    makeUnaryImageOperator "laplacian" (fun () -> new itk.simple.LaplacianImageFilter()) (fun f x -> f.Execute(x)) img
+
+let equalImage (a: Image<'T>) (b: Image<'T>) : Image<uint8> =
+    use filter = new itk.simple.EqualImageFilter()
+    Image<uint8>.ofSimpleITK(filter.Execute(a.toSimpleITK(), b.toSimpleITK()), "equalImage", a.index)
+
+let notEqualImage (a: Image<'T>) (b: Image<'T>) : Image<uint8> =
+    use filter = new itk.simple.NotEqualImageFilter()
+    Image<uint8>.ofSimpleITK(filter.Execute(a.toSimpleITK(), b.toSimpleITK()), "notEqualImage", a.index)
+
+let greaterImage (a: Image<'T>) (b: Image<'T>) : Image<uint8> =
+    use filter = new itk.simple.GreaterImageFilter()
+    Image<uint8>.ofSimpleITK(filter.Execute(a.toSimpleITK(), b.toSimpleITK()), "greaterImage", a.index)
+
+let greaterEqualImage (a: Image<'T>) (b: Image<'T>) : Image<uint8> =
+    use filter = new itk.simple.GreaterEqualImageFilter()
+    Image<uint8>.ofSimpleITK(filter.Execute(a.toSimpleITK(), b.toSimpleITK()), "greaterEqualImage", a.index)
+
+let lessImage (a: Image<'T>) (b: Image<'T>) : Image<uint8> =
+    use filter = new itk.simple.LessImageFilter()
+    Image<uint8>.ofSimpleITK(filter.Execute(a.toSimpleITK(), b.toSimpleITK()), "lessImage", a.index)
+
+let lessEqualImage (a: Image<'T>) (b: Image<'T>) : Image<uint8> =
+    use filter = new itk.simple.LessEqualImageFilter()
+    Image<uint8>.ofSimpleITK(filter.Execute(a.toSimpleITK(), b.toSimpleITK()), "lessEqualImage", a.index)
+
+let andImage (a: Image<uint8>) (b: Image<uint8>) : Image<uint8> =
+    use filter = new itk.simple.AndImageFilter()
+    Image<uint8>.ofSimpleITK(filter.Execute(a.toSimpleITK(), b.toSimpleITK()), "andImage", a.index)
+
+let orImage (a: Image<uint8>) (b: Image<uint8>) : Image<uint8> =
+    use filter = new itk.simple.OrImageFilter()
+    Image<uint8>.ofSimpleITK(filter.Execute(a.toSimpleITK(), b.toSimpleITK()), "orImage", a.index)
+
+let xorImage (a: Image<uint8>) (b: Image<uint8>) : Image<uint8> =
+    use filter = new itk.simple.XorImageFilter()
+    Image<uint8>.ofSimpleITK(filter.Execute(a.toSimpleITK(), b.toSimpleITK()), "xorImage", a.index)
+
+let notImage (img: Image<uint8>) : Image<uint8> =
+    use filter = new itk.simple.NotImageFilter()
+    Image<uint8>.ofSimpleITK(filter.Execute(img.toSimpleITK()), "notImage", img.index)
+
+let mask (outsideValue: double) (img: Image<'T>) (mask: Image<uint8>) : Image<'T> =
+    use filter = new itk.simple.MaskImageFilter()
+    filter.SetOutsideValue(outsideValue)
+    Image<'T>.ofSimpleITK(filter.Execute(img.toSimpleITK(), mask.toSimpleITK()), "mask", img.index)
+
 // ----- basic image analysis functions -----
 (* // I'm waiting with proper support of complex values
 let fft (img: Image<'T>)  = makeUnaryImageOperator (fun () -> new itk.simple.ForwardFFTImageFilter()) (fun f x -> f.Execute(x)) img
@@ -411,10 +530,114 @@ let binaryClosing (radius: uint) : Image<uint8> -> Image<uint8> =
         (fun f -> f.SetKernelRadius(radius))
         (fun f x -> f.Execute(x))
 
+let grayscaleErode (radius: uint) : Image<'T> -> Image<'T> =
+    makeUnaryImageOperatorWith
+        "grayscaleErode"
+        (fun () -> new itk.simple.GrayscaleErodeImageFilter())
+        (fun f -> f.SetKernelRadius(radius))
+        (fun f x -> f.Execute(x))
+
+let grayscaleDilate (radius: uint) : Image<'T> -> Image<'T> =
+    makeUnaryImageOperatorWith
+        "grayscaleDilate"
+        (fun () -> new itk.simple.GrayscaleDilateImageFilter())
+        (fun f -> f.SetKernelRadius(radius))
+        (fun f x -> f.Execute(x))
+
+let grayscaleOpening (radius: uint) : Image<'T> -> Image<'T> =
+    makeUnaryImageOperatorWith
+        "grayscaleOpening"
+        (fun () -> new itk.simple.GrayscaleMorphologicalOpeningImageFilter())
+        (fun f -> f.SetKernelRadius(radius))
+        (fun f x -> f.Execute(x))
+
+let grayscaleClosing (radius: uint) : Image<'T> -> Image<'T> =
+    makeUnaryImageOperatorWith
+        "grayscaleClosing"
+        (fun () -> new itk.simple.GrayscaleMorphologicalClosingImageFilter())
+        (fun f -> f.SetKernelRadius(radius))
+        (fun f x -> f.Execute(x))
+
+let whiteTopHat (radius: uint) : Image<'T> -> Image<'T> =
+    makeUnaryImageOperatorWith
+        "whiteTopHat"
+        (fun () -> new itk.simple.WhiteTopHatImageFilter())
+        (fun f -> f.SetKernelRadius(radius))
+        (fun f x -> f.Execute(x))
+
+let blackTopHat (radius: uint) : Image<'T> -> Image<'T> =
+    makeUnaryImageOperatorWith
+        "blackTopHat"
+        (fun () -> new itk.simple.BlackTopHatImageFilter())
+        (fun f -> f.SetKernelRadius(radius))
+        (fun f x -> f.Execute(x))
+
+let morphologicalGradient (radius: uint) : Image<'T> -> Image<'T> =
+    makeUnaryImageOperatorWith
+        "morphologicalGradient"
+        (fun () -> new itk.simple.MorphologicalGradientImageFilter())
+        (fun f -> f.SetKernelRadius(radius))
+        (fun f x -> f.Execute(x))
+
 /// Fill holes in binary regions
 let binaryFillHoles (img : Image<uint8>) : Image<uint8> =
     use filter = new itk.simple.BinaryFillholeImageFilter()
     Image<uint8>.ofSimpleITK(filter.Execute(img.toSimpleITK()),"binaryFillHoles",img.index)
+
+let binaryContour (fullyConnected: bool) : Image<uint8> -> Image<uint8> =
+    makeUnaryImageOperatorWith
+        "binaryContour"
+        (fun () -> new itk.simple.BinaryContourImageFilter())
+        (fun f -> f.SetFullyConnected(fullyConnected))
+        (fun f x -> f.Execute(x))
+
+let binaryThinning (img: Image<uint8>) : Image<uint8> =
+    use filter = new itk.simple.BinaryThinningImageFilter()
+    Image<uint8>.ofSimpleITK(filter.Execute(img.toSimpleITK()), "binaryThinning", img.index)
+
+let binaryMedian (radius: uint) : Image<uint8> -> Image<uint8> =
+    makeUnaryImageOperatorWith
+        "binaryMedian"
+        (fun () -> new itk.simple.BinaryMedianImageFilter())
+        (fun f -> f.SetRadius(radius))
+        (fun f x -> f.Execute(x))
+
+let binaryOpeningByReconstruction (radius: uint) (fullyConnected: bool) : Image<uint8> -> Image<uint8> =
+    makeUnaryImageOperatorWith
+        "binaryOpeningByReconstruction"
+        (fun () -> new itk.simple.BinaryOpeningByReconstructionImageFilter())
+        (fun f ->
+            f.SetKernelRadius(radius)
+            f.SetFullyConnected(fullyConnected))
+        (fun f x -> f.Execute(x))
+
+let binaryClosingByReconstruction (radius: uint) (fullyConnected: bool) : Image<uint8> -> Image<uint8> =
+    makeUnaryImageOperatorWith
+        "binaryClosingByReconstruction"
+        (fun () -> new itk.simple.BinaryClosingByReconstructionImageFilter())
+        (fun f ->
+            f.SetKernelRadius(radius)
+            f.SetFullyConnected(fullyConnected))
+        (fun f x -> f.Execute(x))
+
+let binaryReconstructionByDilation (fullyConnected: bool) (marker: Image<uint8>) (mask: Image<uint8>) : Image<uint8> =
+    use filter = new itk.simple.BinaryReconstructionByDilationImageFilter()
+    filter.SetFullyConnected(fullyConnected)
+    Image<uint8>.ofSimpleITK(filter.Execute(marker.toSimpleITK(), mask.toSimpleITK()), "binaryReconstructionByDilation", marker.index)
+
+let binaryReconstructionByErosion (fullyConnected: bool) (marker: Image<uint8>) (mask: Image<uint8>) : Image<uint8> =
+    use filter = new itk.simple.BinaryReconstructionByErosionImageFilter()
+    filter.SetFullyConnected(fullyConnected)
+    Image<uint8>.ofSimpleITK(filter.Execute(marker.toSimpleITK(), mask.toSimpleITK()), "binaryReconstructionByErosion", marker.index)
+
+let votingBinaryHoleFilling (radius: uint) (majorityThreshold: uint) : Image<uint8> -> Image<uint8> =
+    makeUnaryImageOperatorWith
+        "votingBinaryHoleFilling"
+        (fun () -> new itk.simple.VotingBinaryHoleFillingImageFilter())
+        (fun f ->
+            f.SetRadius(radius)
+            f.SetMajorityThreshold(majorityThreshold))
+        (fun f x -> f.Execute(x))
 
 type ConnectedComponentsResult =
     { Labels : Image<uint64>
@@ -499,6 +722,87 @@ let labelShapeStatistics (img: Image<'T>) : Map<int64, LabelShapeStatistics> =
         label, stats
     )
     |> Map.ofSeq
+
+type LabelIntensityStatistics = {
+    Label: int64
+    NumberOfPixels: uint64
+    PhysicalSize: float
+    Mean: float
+    Median: float
+    Minimum: float
+    Maximum: float
+    Sum: float
+    StandardDeviation: float
+    Variance: float
+    Skewness: float
+    Kurtosis: float
+    Centroid: float list
+    CenterOfGravity: float list
+    BoundingBox: uint list
+}
+
+let labelIntensityStatistics (labelImage: Image<'L>) (intensityImage: Image<'T>) : Map<int64, LabelIntensityStatistics> =
+    use stats = new itk.simple.LabelIntensityStatisticsImageFilter()
+    stats.Execute(labelImage.toSimpleITK(), intensityImage.toSimpleITK())
+    stats.GetLabels()
+    |> Seq.map (fun label ->
+        label,
+        { Label = label
+          NumberOfPixels = stats.GetNumberOfPixels(label)
+          PhysicalSize = stats.GetPhysicalSize(label)
+          Mean = stats.GetMean(label)
+          Median = stats.GetMedian(label)
+          Minimum = stats.GetMinimum(label)
+          Maximum = stats.GetMaximum(label)
+          Sum = stats.GetSum(label)
+          StandardDeviation = stats.GetStandardDeviation(label)
+          Variance = stats.GetVariance(label)
+          Skewness = stats.GetSkewness(label)
+          Kurtosis = stats.GetKurtosis(label)
+          Centroid = stats.GetCentroid(label) |> fromVectorFloat64
+          CenterOfGravity = stats.GetCenterOfGravity(label) |> fromVectorFloat64
+          BoundingBox = stats.GetBoundingBox(label) |> fromVectorUInt32 })
+    |> Map.ofSeq
+
+type LabelOverlapMeasures = {
+    MeanOverlap: float
+    UnionOverlap: float
+    JaccardCoefficient: float
+    DiceCoefficient: float
+    VolumeSimilarity: float
+    FalseNegativeError: float
+    FalsePositiveError: float
+    FalseDiscoveryRate: float
+}
+
+let labelOverlapMeasures (source: Image<'T>) (target: Image<'T>) : LabelOverlapMeasures =
+    use stats = new itk.simple.LabelOverlapMeasuresImageFilter()
+    stats.Execute(source.toSimpleITK(), target.toSimpleITK())
+    { MeanOverlap = stats.GetMeanOverlap()
+      UnionOverlap = stats.GetUnionOverlap()
+      JaccardCoefficient = stats.GetJaccardCoefficient()
+      DiceCoefficient = stats.GetDiceCoefficient()
+      VolumeSimilarity = stats.GetVolumeSimilarity()
+      FalseNegativeError = stats.GetFalseNegativeError()
+      FalsePositiveError = stats.GetFalsePositiveError()
+      FalseDiscoveryRate = stats.GetFalseDiscoveryRate() }
+
+let labelContour (fullyConnected: bool) : Image<'T> -> Image<'T> =
+    makeUnaryImageOperatorWith
+        "labelContour"
+        (fun () -> new itk.simple.LabelContourImageFilter())
+        (fun f -> f.SetFullyConnected(fullyConnected))
+        (fun f x -> f.Execute(x))
+
+let changeLabel (fromLabel: double) (toLabel: double) : Image<'T> -> Image<'T> =
+    makeUnaryImageOperatorWith
+        "changeLabel"
+        (fun () -> new itk.simple.ChangeLabelImageFilter())
+        (fun f ->
+            let map = new itk.simple.DoubleDoubleMap()
+            map.Add(fromLabel, toLabel)
+            f.SetChangeMap(map))
+        (fun f x -> f.Execute(x))
 
 /// Compute signed Maurer distance map (positive outside, negative inside)
 // ApproximateSignedDistanceMapImageFilter has an error. These cast an exception: 
