@@ -67,6 +67,7 @@ let readNexusSlab<'T when 'T: equality> = StackIO.readNexusSlab<'T>
 let deleteIfExists = StackIO.deleteIfExists
 let write = StackIO.write
 let writeZarr = StackIO.writeZarr
+let writeNexus = StackIO.writeNexus
 let writeInSlabs = StackIO.writeInSlabs
 
 // //////////////////// ChunkedAffineResampler
@@ -110,6 +111,8 @@ let round<'T when 'T: equality>= StackImageFunctions.round<'T>
 let sqrt<'T when 'T: equality>= StackImageFunctions.sqrt<'T>
 let sqrtWindowed<'T when 'T: equality> = StackImageFunctions.sqrtWindowed<'T>
 let square<'T when 'T: equality>= StackImageFunctions.square<'T>
+let resize<'T when 'T: equality> = StackImageFunctions.resize<'T>
+let resample<'T when 'T: equality> = StackImageFunctions.resample<'T>
 let imageHistogram = StackImageFunctions.imageHistogram
 let imageHistogramFold = StackImageFunctions.imageHistogramFold
 let histogram = StackImageFunctions.histogram

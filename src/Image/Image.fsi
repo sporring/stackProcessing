@@ -364,6 +364,13 @@ val euler2DTransform:
 val euler2DRotate:
   img: Image.Image<'T> -> cx: float * cy: float -> a: float -> Image.Image<'T>
     when 'T: equality
+val resample2D:
+  interpolator: itk.simple.InterpolatorEnum ->
+    outputWidth: uint ->
+    outputHeight: uint ->
+    outputSpacingX: float ->
+    outputSpacingY: float -> img: Image.Image<'T> -> Image.Image<'T>
+    when 'T: equality
 type BoundaryCondition =
     | ZeroPad
     | PerodicPad

@@ -225,6 +225,17 @@ val writeZarr:
      float -> int -> StackCore.Stage<StackCore.Image<'a>,StackCore.Image<'a>>)
     when 'a: equality
 
+val writeNexus:
+  (string ->
+     string ->
+     uint ->
+     uint ->
+     uint ->
+     uint ->
+     int ->
+     int -> int -> StackCore.Stage<StackCore.Image<'a>,StackCore.Image<'a>>)
+    when 'a: equality
+
 val writeInSlabs:
   (string ->
      string ->
@@ -386,6 +397,22 @@ val sqrtWindowed<'T when 'T: equality> :
 
 val square<'T when 'T: equality> :
   StackCore.Stage<StackCore.Image<'T>,StackCore.Image<'T>> when 'T: equality
+
+val resize<'T when 'T: equality> :
+  (uint ->
+     uint ->
+     uint ->
+     string ->
+     SlimPipeline.Plan<unit,StackCore.Image<'T>> ->
+     SlimPipeline.Plan<unit,StackCore.Image<'T>>) when 'T: equality
+
+val resample<'T when 'T: equality> :
+  (float ->
+     float ->
+     float ->
+     string ->
+     SlimPipeline.Plan<unit,StackCore.Image<'T>> ->
+     SlimPipeline.Plan<unit,StackCore.Image<'T>>) when 'T: equality
 
 val imageHistogram:
   (unit -> SlimPipeline.Stage<StackCore.Image<'a>,Map<'a,uint64>>)

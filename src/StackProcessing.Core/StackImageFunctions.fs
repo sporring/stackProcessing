@@ -2,6 +2,7 @@ module StackImageFunctions
 
 open FSharp.Control
 open SlimPipeline // Core processing model
+open System
 open StackCore
 open StackIO
 
@@ -42,6 +43,159 @@ let private nativeImageStageCost name memoryModel workUnits =
     StageCostModel.create
         memoryModel
         (StageWorkModel.native Map (Some name) workUnits)
+
+type ResampleInterpolation =
+    | NearestNeighbor
+    | Linear
+
+module ResampleInterpolation =
+    let parse (value: string) =
+        match value.Trim().ToLowerInvariant().Replace("_", "").Replace("-", "").Replace(" ", "") with
+        | "nearest"
+        | "nearestneighbor"
+        | "nn" -> NearestNeighbor
+        | "linear" -> Linear
+        | _ -> failwith $"Unknown resampling interpolation '{value}'. Use NearestNeighbor or Linear."
+
+    let toItk = function
+        | NearestNeighbor -> itk.simple.InterpolatorEnum.sitkNearestNeighbor
+        | Linear -> itk.simple.InterpolatorEnum.sitkLinear
+
+let private roundPositiveToUInt (value: float) =
+    Math.Round(value, MidpointRounding.AwayFromZero)
+    |> max 1.0
+    |> uint
+
+let private outputSpacingForSize inputSize outputSize =
+    if inputSize <= 1u || outputSize <= 1u then
+        1.0
+    else
+        float (inputSize - 1u) / float (outputSize - 1u)
+
+let private convertFromFloat<'T> (value: float) : 'T =
+    let t = typeof<'T>
+    let inline clamp lo hi v = max lo (min hi v)
+
+    if t = typeof<float> then
+        box value :?> 'T
+    elif t = typeof<float32> then
+        box (float32 value) :?> 'T
+    elif t = typeof<uint8> then
+        box (uint8 (clamp 0.0 255.0 (Math.Round(value)))) :?> 'T
+    elif t = typeof<int8> then
+        box (int8 (clamp -128.0 127.0 (Math.Round(value)))) :?> 'T
+    elif t = typeof<uint16> then
+        box (uint16 (clamp 0.0 65535.0 (Math.Round(value)))) :?> 'T
+    elif t = typeof<int16> then
+        box (int16 (clamp -32768.0 32767.0 (Math.Round(value)))) :?> 'T
+    elif t = typeof<uint32> || t = typeof<uint> then
+        box (uint32 (clamp 0.0 (float UInt32.MaxValue) (Math.Round(value)))) :?> 'T
+    elif t = typeof<int32> || t = typeof<int> then
+        box (int32 (clamp (float Int32.MinValue) (float Int32.MaxValue) (Math.Round(value)))) :?> 'T
+    elif t = typeof<uint64> then
+        box (uint64 (clamp 0.0 (float UInt64.MaxValue) (Math.Round(value)))) :?> 'T
+    elif t = typeof<int64> then
+        box (int64 (clamp (float Int64.MinValue) (float Int64.MaxValue) (Math.Round(value)))) :?> 'T
+    else
+        failwith $"Linear z interpolation is not supported for pixel type {t.Name}."
+
+let private pixelToFloat<'T> (value: 'T) =
+    Convert.ToDouble(value)
+
+let private blendImages<'T when 'T: equality> (t: float) (a: Image<'T>) (b: Image<'T>) =
+    let aPixels = a.toArray2D()
+    let bPixels = b.toArray2D()
+    let width = aPixels.GetLength(0)
+    let height = aPixels.GetLength(1)
+    let arr =
+        Array2D.init width height (fun x y ->
+            let av = pixelToFloat aPixels[x, y]
+            let bv = pixelToFloat bPixels[x, y]
+            convertFromFloat<'T> ((1.0 - t) * av + t * bv))
+
+    Image<'T>.ofArray2D(arr, "resampleZLinear")
+
+let private resampleXYStage<'T when 'T: equality> outputWidth outputHeight spacingX spacingY interpolation =
+    let itkInterpolator = ResampleInterpolation.toItk interpolation
+    let mapper (image: Image<'T>) =
+        ImageFunctions.resample2D itkInterpolator outputWidth outputHeight spacingX spacingY image
+
+    let memoryNeed nPixels =
+        3UL * nPixels * getBytesPerComponent<'T>
+
+    liftUnaryReleaseAfter
+        $"resampleXY.{typeof<'T>.Name}"
+        mapper
+        memoryNeed
+        (fun _ -> uint64 outputWidth * uint64 outputHeight)
+
+let private zPositions inputDepth outputDepth factor =
+    [ for outputIndex in 0 .. int outputDepth - 1 ->
+        let source =
+            match factor with
+            | Some scale -> float outputIndex / scale
+            | None ->
+                if outputDepth <= 1u || inputDepth <= 1UL then 0.0
+                else float outputIndex * float (inputDepth - 1UL) / float (outputDepth - 1u)
+        min (float (inputDepth - 1UL)) (max 0.0 source) ]
+
+let private zResampleStage<'T when 'T: equality> inputDepth outputDepth factor interpolation =
+    let positions = zPositions inputDepth outputDepth factor
+    let memoryNeed nPixels = 3UL * nPixels * getBytesPerComponent<'T>
+
+    let releaseWindow (window: Window<Image<'T>>) =
+        let start, count = window.EmitRange
+        window.Items
+        |> List.skip (int start)
+        |> List.take (min (int count) (max 0 (window.Items.Length - int start)))
+        |> List.iter (fun image -> image.decRefCount())
+
+    let outputForWindow (debug: bool) (windowStart: int64) (window: Window<Image<'T>>) =
+        try
+            match window.Items with
+            | [] -> []
+            | [ only ] ->
+                positions
+                |> List.mapi (fun outputIndex sourceZ -> outputIndex, sourceZ)
+                |> List.filter (fun (_, sourceZ) -> int (Math.Floor(sourceZ)) = int windowStart)
+                |> List.map (fun _ ->
+                    only.incRefCount()
+                    only)
+            | first :: second :: _ ->
+                let z0 = int windowStart
+                positions
+                |> List.mapi (fun outputIndex sourceZ -> outputIndex, sourceZ)
+                |> List.filter (fun (_, sourceZ) ->
+                    let low = int (Math.Floor(sourceZ))
+                    low = z0)
+                |> List.map (fun (_, sourceZ) ->
+                    let fraction = sourceZ - float z0
+                    match interpolation with
+                    | NearestNeighbor ->
+                        let chosen = if fraction < 0.5 then first else second
+                        chosen.incRefCount()
+                        chosen
+                    | Linear ->
+                        if fraction = 0.0 then
+                            first.incRefCount()
+                            first
+                        else
+                            blendImages fraction first second)
+        finally
+            releaseWindow window
+
+    let stage =
+        Stage.mapi
+            $"resampleZ.{typeof<'T>.Name}"
+            (fun debug idx window -> outputForWindow debug idx window)
+            memoryNeed
+            id
+        |> Stage.withSliceCardinality (SliceCardinality.reduceTo (uint64 outputDepth))
+
+    let windowSize =
+        if inputDepth <= 1UL then 1u else 2u
+
+    (window windowSize 0u 1u) --> stage --> flattenList ()
 
 let private liftWindowedUnaryReleaseAfter
         (name: string)
@@ -200,6 +354,81 @@ let sqrtWindowed<'T when 'T: equality> (winSz: uint) : Stage<Image<'T>,Image<'T>
 let square<'T when 'T: equality> : Stage<Image<'T>,Image<'T>> =      
     failTypeMismatch<'T> "square" floatNintTypes
     liftUnaryReleaseAfter "square" ImageFunctions.squareImage id id
+
+let resize<'T when 'T: equality>
+    (outputWidth: uint)
+    (outputHeight: uint)
+    (outputDepth: uint)
+    (interpolationName: string)
+    (pl: Plan<unit, Image<'T>>)
+    : Plan<unit, Image<'T>> =
+
+    let outputWidth = max 1u outputWidth
+    let outputHeight = max 1u outputHeight
+    let outputDepth = max 1u outputDepth
+    let interpolation = ResampleInterpolation.parse interpolationName
+
+    let inputWidth =
+        pl.sourcePeek
+        |> Option.bind (fun peek -> peek.Shape |> Map.tryFind "width")
+        |> Option.bind (fun text -> match UInt32.TryParse text with true, value -> Some value | _ -> None)
+    let inputHeight =
+        pl.sourcePeek
+        |> Option.bind (fun peek -> peek.Shape |> Map.tryFind "height")
+        |> Option.bind (fun text -> match UInt32.TryParse text with true, value -> Some value | _ -> None)
+
+    let spacingX =
+        inputWidth
+        |> Option.map (fun width -> outputSpacingForSize width outputWidth)
+        |> Option.defaultValue 1.0
+    let spacingY =
+        inputHeight
+        |> Option.map (fun height -> outputSpacingForSize height outputHeight)
+        |> Option.defaultValue 1.0
+
+    let xy =
+        resampleXYStage<'T> outputWidth outputHeight spacingX spacingY interpolation
+    let z =
+        zResampleStage<'T> pl.length outputDepth None interpolation
+
+    pl >=> (xy --> z)
+
+let resample<'T when 'T: equality>
+    (factorX: float)
+    (factorY: float)
+    (factorZ: float)
+    (interpolationName: string)
+    (pl: Plan<unit, Image<'T>>)
+    : Plan<unit, Image<'T>> =
+
+    if factorX <= 0.0 || factorY <= 0.0 || factorZ <= 0.0 then
+        invalidArg "factor" "resample factors must be positive."
+
+    let interpolation = ResampleInterpolation.parse interpolationName
+    let outputDepth = max 1u (uint (Math.Round(float pl.length * factorZ, MidpointRounding.AwayFromZero)))
+    let inputWidth =
+        pl.sourcePeek
+        |> Option.bind (fun peek -> peek.Shape |> Map.tryFind "width")
+        |> Option.bind (fun text -> match UInt32.TryParse text with true, value -> Some value | _ -> None)
+    let inputHeight =
+        pl.sourcePeek
+        |> Option.bind (fun peek -> peek.Shape |> Map.tryFind "height")
+        |> Option.bind (fun text -> match UInt32.TryParse text with true, value -> Some value | _ -> None)
+    let outputWidth =
+        inputWidth
+        |> Option.map (fun width -> roundPositiveToUInt (float width * factorX))
+        |> Option.defaultValue (roundPositiveToUInt (Math.Sqrt(float (SingleOrPair.fst pl.nElemsPerSlice)) * factorX))
+    let outputHeight =
+        inputHeight
+        |> Option.map (fun height -> roundPositiveToUInt (float height * factorY))
+        |> Option.defaultValue (roundPositiveToUInt (Math.Sqrt(float (SingleOrPair.fst pl.nElemsPerSlice)) * factorY))
+
+    let xy =
+        resampleXYStage<'T> outputWidth outputHeight (1.0 / factorX) (1.0 / factorY) interpolation
+    let z =
+        zResampleStage<'T> pl.length outputDepth (Some factorZ) interpolation
+
+    pl >=> (xy --> z)
 
 //let histogram<'T when 'T: comparison> = histogramOp<'T> "histogram"
 let imageHistogram () =

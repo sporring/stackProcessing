@@ -410,6 +410,25 @@ module BuiltInCatalog =
                 makeParameter "physicalSizeZ" "Physical size Z" "1.0" (BasicType.Numeric Float64)
                 makeParameter "maxConcurrentWrites" "Max concurrent writes" "0" (BasicType.Numeric Int32) ] }
 
+        { Id = "WriteNexus"
+          DisplayName = "writeNexus"
+          Category = "Sources / Sinks"
+          Summary = "Write a stream of 2D slices as a rank-3 NeXus/HDF5 detector dataset."
+          Description = "Writes a rank-3 HDF5 dataset through PureHDF using incremental hyperslab writes. This is intended as a simple stack-to-HDF5/NeXus converter; use dataset path and axis parameters to choose the detector-stack layout."
+          Aliases = [ "nexus"; "hdf5"; "h5"; "output"; "save"; "convert" ]
+          Inputs = [ makePort "Number" imageAny ]
+          Outputs = []
+          Parameters =
+              [ makeParameter "output" "Output" "output.h5" BasicType.String
+                makeParameter "datasetPath" "Dataset path" "/entry/data/data" BasicType.String
+                makeParameter "depth" "Depth" "1" (BasicType.Numeric UInt32)
+                makeParameter "chunkX" "Chunk X" "64" (BasicType.Numeric UInt32)
+                makeParameter "chunkY" "Chunk Y" "64" (BasicType.Numeric UInt32)
+                makeParameter "chunkZ" "Chunk Z" "8" (BasicType.Numeric UInt32)
+                makeParameter "frameAxis" "Frame axis" "0" (BasicType.Numeric Int32)
+                makeParameter "yAxis" "Y axis" "1" (BasicType.Numeric Int32)
+                makeParameter "xAxis" "X axis" "2" (BasicType.Numeric Int32) ] }
+
         { Id = "GetStackInfo"
           DisplayName = "getStackInfo"
           Category = "Sources / Sinks"
@@ -813,6 +832,36 @@ module BuiltInCatalog =
           Parameters =
               [ makeParameter "axes" "Axes" "(0,1,2)" BasicType.String
                 makeParameter "tileSize" "Tile size" "64" (BasicType.Numeric UInt32) ] }
+
+        { Id = "Resize"
+          DisplayName = "resize"
+          Category = "Geometry"
+          Summary = "Axis-aligned streaming resize to an explicit x/y/z size."
+          Description = "Resizes an image stack without rotation. Each x-y slice is resampled independently with SimpleITK using nearest-neighbor or linear interpolation, then z is interpolated from a streaming two-slice window. The first input coordinate (0,0,0) is always included in the output. No pre-filtering is applied, so downsampling can alias; this is intentional for speed and to keep x-y and z behavior comparable."
+          Aliases = [ "resize"; "resample"; "scale"; "axis"; "aligned"; "nearest"; "linear"; "geometry" ]
+          Inputs = [ makePort "Number" imageAny ]
+          Outputs = [ makePort "Number" imageAny ]
+          Parameters =
+              [ makeParameter "type" "Type" "Float32" BasicType.String
+                makeParameter "width" "Width" "64" (BasicType.Numeric UInt32)
+                makeParameter "height" "Height" "64" (BasicType.Numeric UInt32)
+                makeParameter "depth" "Depth" "64" (BasicType.Numeric UInt32)
+                makeParameter "interpolation" "Interpolation" "Linear" BasicType.String ] }
+
+        { Id = "Resample"
+          DisplayName = "resample"
+          Category = "Geometry"
+          Summary = "Axis-aligned streaming resampling by x/y/z scale factors."
+          Description = "Resamples an image stack by positive x/y/z factors. Factors larger than 1 make the stack larger and factors below 1 make it smaller. Each x-y slice is resampled independently with SimpleITK using nearest-neighbor or linear interpolation, then z is interpolated from a streaming two-slice window. The first input coordinate (0,0,0) is always included in the output. No pre-filtering is applied, so downsampling can alias; this is intentional for speed and to keep x-y and z behavior comparable."
+          Aliases = [ "resample"; "resize"; "scale"; "axis"; "aligned"; "nearest"; "linear"; "geometry" ]
+          Inputs = [ makePort "Number" imageAny ]
+          Outputs = [ makePort "Number" imageAny ]
+          Parameters =
+              [ makeParameter "type" "Type" "Float32" BasicType.String
+                makeParameter "factorX" "Factor X" "1.0" (BasicType.Numeric Float64)
+                makeParameter "factorY" "Factor Y" "1.0" (BasicType.Numeric Float64)
+                makeParameter "factorZ" "Factor Z" "1.0" (BasicType.Numeric Float64)
+                makeParameter "interpolation" "Interpolation" "Linear" BasicType.String ] }
 
         { Id = "ResampleAffineTrilinearSlices"
           DisplayName = "resampleAffineTrilinearSlices"

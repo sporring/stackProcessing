@@ -211,6 +211,21 @@ let euler2DRotate (img: Image<'T>) (cx:float,cy:float) (a:float): Image<'T> =
     f.SetTransform(t) 
     Image<'T>.ofSimpleITK(f.Execute (img.toSimpleITK()),"euler2DRotate",img.index)
 
+let resample2D (interpolator: itk.simple.InterpolatorEnum) (outputWidth: uint) (outputHeight: uint) (outputSpacingX: float) (outputSpacingY: float) (img: Image<'T>) : Image<'T> =
+    if img.GetDimensions() <> 2u then
+        failwith $"resample2D expects a 2D image, but got {img.GetDimensions()}D."
+
+    use transform = new itk.simple.Transform(2u, itk.simple.TransformEnum.sitkIdentity)
+    use filter = new itk.simple.ResampleImageFilter()
+    filter.SetSize([ outputWidth; outputHeight ] |> toVectorUInt32)
+    filter.SetOutputOrigin([ 0.0; 0.0 ] |> toVectorFloat64)
+    filter.SetOutputSpacing([ outputSpacingX; outputSpacingY ] |> toVectorFloat64)
+    filter.SetOutputDirection([ 1.0; 0.0; 0.0; 1.0 ] |> toVectorFloat64)
+    filter.SetInterpolator(interpolator)
+    filter.SetDefaultPixelValue(0.0)
+    filter.SetTransform(transform)
+    Image<'T>.ofSimpleITK(filter.Execute(img.toSimpleITK()), "resample2D", img.index)
+
 type BoundaryCondition = ZeroPad | PerodicPad | ZeroFluxNeumannPad
 type OutputRegionMode = Valid | Same
 

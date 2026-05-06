@@ -164,6 +164,73 @@ let generatorSuite =
             Expect.stringContains code "|> readNexusSlab<uint16> \"scan.h5\" \"/entry/data/data\" 8u 0 1 2" "ReadNexusSlab should generate the NeXus slab reader."
             Expect.stringContains code ">=> writeZarr \"output.zarr\" \"converted\" ChunkInfo0.size[2] 16u 17u 8u 1.0 1.0 1.0 0" "WriteZarr should accept linked NeXus metadata."
 
+        testCase "write nexus box lowers to writeNexus" <| fun _ ->
+            let read =
+                node "read" "Read"
+                    [ p "availableMemory" "1073741824" false
+                      p "type" "UInt16" false
+                      p "input" "input" false
+                      p "suffix" ".tiff" false ]
+
+            let write =
+                node "write" "WriteNexus"
+                    [ p "output" "output.h5" false
+                      p "datasetPath" "/entry/data/data" false
+                      p "depth" "32" false
+                      p "chunkX" "16" false
+                      p "chunkY" "17" false
+                      p "chunkZ" "8" false
+                      p "frameAxis" "0" false
+                      p "yAxis" "1" false
+                      p "xAxis" "2" false ]
+
+            let code =
+                graph [ read; write ] [ edge "read" "output" 0 "write" "input" 0 ]
+                |> PipelineCodeGenerator.generateSavedGraph
+
+            Expect.stringContains code ">=> writeNexus \"output.h5\" \"/entry/data/data\" 32u 16u 17u 8u 0 1 2" "WriteNexus should generate the NeXus writer."
+            Expect.stringContains code "|> sink" "Terminal WriteNexus should be sunk."
+
+        testCase "axis-aligned resize and resample boxes lower to plan functions" <| fun _ ->
+            let read =
+                node "read" "Read"
+                    [ p "availableMemory" "1073741824" false
+                      p "type" "Float32" false
+                      p "input" "input" false
+                      p "suffix" ".tiff" false ]
+
+            let resize =
+                node "resize" "Resize"
+                    [ p "type" "Float32" false
+                      p "width" "20" false
+                      p "height" "21" false
+                      p "depth" "22" false
+                      p "interpolation" "NearestNeighbor" false ]
+
+            let resample =
+                node "resample" "Resample"
+                    [ p "type" "Float32" false
+                      p "factorX" "0.5" false
+                      p "factorY" "2.0" false
+                      p "factorZ" "1.5" false
+                      p "interpolation" "Linear" false ]
+
+            let write =
+                node "write" "Write"
+                    [ p "output" "output" false
+                      p "suffix" ".tiff" false ]
+
+            let code =
+                graph
+                    [ read; resize; resample; write ]
+                    [ edge "read" "output" 0 "resize" "input" 0
+                      edge "resize" "output" 0 "resample" "input" 0
+                      edge "resample" "output" 0 "write" "input" 0 ]
+                |> PipelineCodeGenerator.generateSavedGraph
+
+            Expect.stringContains code "|> resize<float32> 20u 21u 22u \"NearestNeighbor\"" "Resize should generate the explicit-size resampler."
+            Expect.stringContains code "|> resample<float32> 0.5 2.0 1.5 \"Linear\"" "Resample should generate the factor resampler."
+
         testCase "linked string scalar is emitted before read and used unquoted" <| fun _ ->
             let scalar =
                 node "scalar" "Scalar"
