@@ -611,7 +611,9 @@ type ImageStats =
 val computeStats: img: Image.Image<'T> -> ImageStats when 'T: equality
 val addComputeStats: s1: ImageStats -> s2: ImageStats -> ImageStats
 val unique: img: Image.Image<'T> -> 'T list when 'T: comparison
-/// Otsu threshold
+val otsuThresholdFromHistogram:
+  bins: uint -> images: Image.Image<'T> list -> float when 'T: equality
+/// Otsu threshold estimated from a binned histogram of the image values.
 val otsuThreshold: img: Image.Image<'T> -> Image.Image<uint8> when 'T: equality
 /// Otsu multiple thresholds (returns a label map)
 val otsuMultiThreshold:

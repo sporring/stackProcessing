@@ -479,7 +479,10 @@ let generatorSuite =
             let signed =
                 node "signed" "SignedDistanceMap" [ p "windowSize" "9" false ]
             let otsu =
-                node "otsu" "OtsuThreshold" [ p "windowSize" "11" false ]
+                node "otsu" "OtsuThreshold"
+                    [ p "type" "Float64" false
+                      p "sampleCount" "11" false
+                      p "bins" "128" false ]
             let moments =
                 node "moments" "MomentsThreshold" [ p "windowSize" "13" false ]
             let write =
@@ -503,7 +506,7 @@ let generatorSuite =
             Expect.stringContains code ">=> relabelComponents 10u 5u" "relabelComponents should lower with size threshold and window size."
             Expect.stringContains code ">=> watershed 1.25 7u" "watershed should lower with level and window size."
             Expect.stringContains code ">=> signedDistanceMap 9u" "signedDistanceMap should lower with its window size."
-            Expect.stringContains code ">=> otsuThreshold 11u" "otsuThreshold should lower with its window size."
+            Expect.stringContains code "|> otsuThreshold<float> 11u 128u" "otsuThreshold should lower with sample count and bin count."
             Expect.stringContains code ">=> momentsThreshold 13u" "momentsThreshold should lower with its window size."
 
         testCase "convolve lowers to StackProcessing stage" <| fun _ ->

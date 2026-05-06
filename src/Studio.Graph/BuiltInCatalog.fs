@@ -1174,11 +1174,15 @@ module BuiltInCatalog =
           DisplayName = "otsuThreshold"
           Category = "Segmentation"
           Summary = "Threshold an image stack using Otsu's method."
-          Description = ""
+          Description =
+            "Estimates a single Otsu threshold from a random sample of input slices before the streaming pass starts.\n\nThe sampled pixel values are binned into the requested number of histogram bins. The threshold is chosen by brute-force maximization of Otsu's between-class variance over those bins, then applied to the full stream with the ordinary binary threshold stage.\n\nIncrease the sample count for stacks whose foreground/background balance changes strongly along z. Increase the bin count for broad continuous-valued images, but keep it modest enough that the sampled histogram remains stable. Output pixels are UInt8, with values at or above the estimated threshold set to 1 and lower values set to 0."
           Aliases = [ "threshold"; "otsu"; "binary"; "mask"; "segment" ]
           Inputs = [ makePort "Number" imageAny ]
           Outputs = [ makePort "UInt8" imageUInt8 ]
-          Parameters = [ makeParameter "windowSize" "Window size" "3" (BasicType.Numeric UInt32) ] }
+          Parameters =
+              [ makeParameter "type" "Type" "Float64" BasicType.String
+                makeParameter "sampleCount" "Sample slices" "16" (BasicType.Numeric UInt32)
+                makeParameter "bins" "Bins" "256" (BasicType.Numeric UInt32) ] }
 
         { Id = "MomentsThreshold"
           DisplayName = "momentsThreshold"

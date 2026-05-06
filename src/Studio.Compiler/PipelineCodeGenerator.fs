@@ -1084,8 +1084,10 @@ module PipelineCodeGenerator =
             let windowSize = parameterValue "windowSize"
             $">=> signedDistanceMap {windowSize}"
         | "OtsuThreshold" ->
-            let windowSize = parameterValue "windowSize"
-            $">=> otsuThreshold {windowSize}"
+            let pixelType = pixelTypeNameFromParameter "type" "Float64" node
+            let sampleCount = parameterValue "sampleCount"
+            let bins = parameterValue "bins"
+            $"|> otsuThreshold<{pixelType}> {sampleCount} {bins}"
         | "MomentsThreshold" ->
             let windowSize = parameterValue "windowSize"
             $">=> momentsThreshold {windowSize}"

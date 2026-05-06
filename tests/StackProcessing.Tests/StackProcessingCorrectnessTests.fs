@@ -24,6 +24,11 @@ let private makePositiveFloat32Volume side =
         single ((x * 3 + y * 5 + z * 7) % 201))
     |> Image<float32>.ofArray3D
 
+let private makeBimodalFloat32Volume side =
+    Array3D.init side side side (fun x _ _ ->
+        if x < side / 2 then 0.0f else 10.0f)
+    |> Image<float32>.ofArray3D
+
 let private makeStrictPositiveFloat32Volume side =
     Array3D.init side side side (fun x y z ->
         let xf = float x
@@ -395,14 +400,6 @@ let stackProcessingCorrectnessSuite =
                     ImageFunctions.binaryFillHoles
 
                 assertStreamingMatchesDirect
-                    "otsu-threshold"
-                    suffix
-                    1.5
-                    scalar
-                    (otsuThreshold 10u)
-                    ImageFunctions.otsuThreshold
-
-                assertStreamingMatchesDirect
                     "moments-threshold"
                     suffix
                     1.5
@@ -412,6 +409,36 @@ let stackProcessingCorrectnessSuite =
             finally
                 binary.decRefCount()
                 scalar.decRefCount()
+
+        testCase "sampled streamed Otsu threshold separates a bimodal stack" <| fun _ ->
+            let suffix = ".tiff"
+            let inputDir = tempDirectory "otsu-threshold-input"
+            let outputDir = tempDirectory "otsu-threshold-output"
+            let volume = makeBimodalFloat32Volume 8
+            let mutable actualOpt : Image<uint8> option = None
+            let mutable expectedOpt : Image<uint8> option = None
+            let mutable keepTempDirs = false
+
+            try
+                writeVolumeAsSlices inputDir suffix volume
+
+                source (2UL * 1024UL * 1024UL * 1024UL)
+                |> read<float32> inputDir suffix
+                |> otsuThreshold 4u 2u
+                >=> write outputDir suffix
+                |> sink
+
+                let actual = readVolumeFromSlices<uint8> outputDir suffix
+                let expected = ImageFunctions.threshold 5.0 infinity volume
+                actualOpt <- Some actual
+                expectedOpt <- Some expected
+
+                keepTempDirs <- compareImages "otsu-threshold" 0.5 inputDir outputDir expected actual
+            finally
+                actualOpt |> Option.iter (fun image -> image.decRefCount())
+                expectedOpt |> Option.iter (fun image -> image.decRefCount())
+                volume.decRefCount()
+                cleanupResult keepTempDirs inputDir outputDir
 
         testCase "streamed watershed matches direct 3D watershed" <| fun _ ->
             let suffix = ".mha"
