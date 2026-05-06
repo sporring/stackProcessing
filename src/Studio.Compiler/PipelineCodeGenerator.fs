@@ -196,6 +196,41 @@ module PipelineCodeGenerator =
     let private pairStageFunctionName (node: SavedNode) =
         match node.FunctionId with
         | "ImageOpImage" -> Some(imageOpImageFunctionName node)
+        | "ImageComparison" ->
+            let pixelType = pixelTypeNameFromParameter "type" "Float64" node
+            let comparison =
+                match savedParamValue "operation" node with
+                | "=" | "==" | "equal" -> "equal"
+                | "<>" | "!=" | "notEqual" -> "notEqual"
+                | ">=" | "greaterEqual" -> "greaterEqual"
+                | "<" | "less" -> "less"
+                | "<=" | "lessEqual" -> "lessEqual"
+                | _ -> "greater"
+            Some $"{comparison}<{pixelType}>"
+        | "MaskLogic" ->
+            let logic =
+                match savedParamValue "operation" node with
+                | "or" | "||" -> "orMask"
+                | "xor" | "^" -> "xorMask"
+                | _ -> "andMask"
+            Some logic
+        | "Mask" ->
+            let pixelType = pixelTypeNameFromParameter "type" "Float64" node
+            let outsideValue = savedParamValue "outsideValue" node |> numericLiteral Float64
+            Some $"mask<{pixelType}> {outsideValue}"
+        | "BinaryReconstructionByDilation" ->
+            let fullyConnected = savedParamValue "fullyConnected" node
+            Some $"binaryReconstructionByDilation {fullyConnected}"
+        | "BinaryReconstructionByErosion" ->
+            let fullyConnected = savedParamValue "fullyConnected" node
+            Some $"binaryReconstructionByErosion {fullyConnected}"
+        | "LabelIntensityStatistics" ->
+            let labelType = pixelTypeNameFromParameter "labelType" "UInt64" node
+            let intensityType = pixelTypeNameFromParameter "intensityType" "Float64" node
+            Some $"labelIntensityStatistics<{labelType},{intensityType}>"
+        | "LabelOverlapMeasures" ->
+            let pixelType = pixelTypeNameFromParameter "type" "UInt64" node
+            Some $"labelOverlapMeasures<{pixelType}>"
         | _ -> pairFunctionName node.FunctionId
 
     let private safeIdentifier (value: string) =
@@ -239,6 +274,21 @@ module PipelineCodeGenerator =
             configuredFunction
         else
             "sqrt"
+
+    let private comparisonStageFunctionName (node: SavedNode) =
+        match savedParamValue "operation" node with
+        | "=" | "==" | "equal" -> "equal"
+        | "<>" | "!=" | "notEqual" -> "notEqual"
+        | ">=" | "greaterEqual" -> "greaterEqual"
+        | "<" | "less" -> "less"
+        | "<=" | "lessEqual" -> "lessEqual"
+        | _ -> "greater"
+
+    let private maskLogicStageFunctionName (node: SavedNode) =
+        match savedParamValue "operation" node with
+        | "or" | "||" -> "orMask"
+        | "xor" | "^" -> "xorMask"
+        | _ -> "andMask"
 
     let private scalarTypeName (node: SavedNode) =
         match node.FunctionId with
@@ -856,9 +906,147 @@ module PipelineCodeGenerator =
             let axis1 = parameterValue "axis1"
             let axis2 = parameterValue "axis2"
             $">=> finiteDiff {sigma} {axis1} {axis2}"
+        | "Clamp" ->
+            let pixelType = pixelTypeNameFromParameter "type" "Float64" node
+            let lower = parameterValue "lower"
+            let upper = parameterValue "upper"
+            $">=> clamp<{pixelType}> {lower} {upper}"
+        | "RescaleIntensity" ->
+            let pixelType = pixelTypeNameFromParameter "type" "Float64" node
+            let outputMinimum = parameterValue "outputMinimum"
+            let outputMaximum = parameterValue "outputMaximum"
+            $">=> rescaleIntensity<{pixelType}> {outputMinimum} {outputMaximum}"
+        | "IntensityWindow" ->
+            let pixelType = pixelTypeNameFromParameter "type" "Float64" node
+            let windowMinimum = parameterValue "windowMinimum"
+            let windowMaximum = parameterValue "windowMaximum"
+            let outputMinimum = parameterValue "outputMinimum"
+            let outputMaximum = parameterValue "outputMaximum"
+            $">=> intensityWindow<{pixelType}> {windowMinimum} {windowMaximum} {outputMinimum} {outputMaximum}"
+        | "Normalize" ->
+            let pixelType = pixelTypeNameFromParameter "type" "Float64" node
+            $">=> normalize<{pixelType}>"
+        | "ShiftScale" ->
+            let pixelType = pixelTypeNameFromParameter "type" "Float64" node
+            let shift = parameterValue "shift"
+            let scale = parameterValue "scale"
+            $">=> shiftScale<{pixelType}> {shift} {scale}"
+        | "InvertIntensity" ->
+            let pixelType = pixelTypeNameFromParameter "type" "Float64" node
+            let maximum = parameterValue "maximum"
+            $">=> invertIntensity<{pixelType}> {maximum}"
+        | "Median" ->
+            let pixelType = pixelTypeNameFromParameter "type" "Float64" node
+            let radius = parameterValue "radius"
+            let windowSize = parameterValue "windowSize"
+            $">=> median<{pixelType}> {radius} {windowSize}"
+        | "Bilateral" ->
+            let pixelType = pixelTypeNameFromParameter "type" "Float64" node
+            let domainSigma = parameterValue "domainSigma"
+            let rangeSigma = parameterValue "rangeSigma"
+            let windowSize = parameterValue "windowSize"
+            $">=> bilateral<{pixelType}> {domainSigma} {rangeSigma} {windowSize}"
+        | "GradientMagnitude" ->
+            let pixelType = pixelTypeNameFromParameter "type" "Float64" node
+            let windowSize = parameterValue "windowSize"
+            $">=> gradientMagnitude<{pixelType}> {windowSize}"
+        | "SobelEdge" ->
+            let pixelType = pixelTypeNameFromParameter "type" "Float64" node
+            let windowSize = parameterValue "windowSize"
+            $">=> sobelEdge<{pixelType}> {windowSize}"
+        | "Laplacian" ->
+            let pixelType = pixelTypeNameFromParameter "type" "Float64" node
+            let windowSize = parameterValue "windowSize"
+            $">=> laplacian<{pixelType}> {windowSize}"
+        | "GrayscaleErode" ->
+            let pixelType = pixelTypeNameFromParameter "type" "Float64" node
+            let radius = parameterValue "radius"
+            let windowSize = parameterValue "windowSize"
+            $">=> grayscaleErode<{pixelType}> {radius} {windowSize}"
+        | "GrayscaleDilate" ->
+            let pixelType = pixelTypeNameFromParameter "type" "Float64" node
+            let radius = parameterValue "radius"
+            let windowSize = parameterValue "windowSize"
+            $">=> grayscaleDilate<{pixelType}> {radius} {windowSize}"
+        | "GrayscaleOpening" ->
+            let pixelType = pixelTypeNameFromParameter "type" "Float64" node
+            let radius = parameterValue "radius"
+            let windowSize = parameterValue "windowSize"
+            $">=> grayscaleOpening<{pixelType}> {radius} {windowSize}"
+        | "GrayscaleClosing" ->
+            let pixelType = pixelTypeNameFromParameter "type" "Float64" node
+            let radius = parameterValue "radius"
+            let windowSize = parameterValue "windowSize"
+            $">=> grayscaleClosing<{pixelType}> {radius} {windowSize}"
+        | "WhiteTopHat" ->
+            let pixelType = pixelTypeNameFromParameter "type" "Float64" node
+            let radius = parameterValue "radius"
+            let windowSize = parameterValue "windowSize"
+            $">=> whiteTopHat<{pixelType}> {radius} {windowSize}"
+        | "BlackTopHat" ->
+            let pixelType = pixelTypeNameFromParameter "type" "Float64" node
+            let radius = parameterValue "radius"
+            let windowSize = parameterValue "windowSize"
+            $">=> blackTopHat<{pixelType}> {radius} {windowSize}"
+        | "MorphologicalGradient" ->
+            let pixelType = pixelTypeNameFromParameter "type" "Float64" node
+            let radius = parameterValue "radius"
+            let windowSize = parameterValue "windowSize"
+            $">=> morphologicalGradient<{pixelType}> {radius} {windowSize}"
+        | "ImageComparison" ->
+            let pixelType = pixelTypeNameFromParameter "type" "Float64" node
+            $">>=> {comparisonStageFunctionName node}<{pixelType}>"
+        | "MaskLogic" ->
+            $">>=> {maskLogicStageFunctionName node}"
+        | "NotMask" ->
+            ">=> notMask"
+        | "Mask" ->
+            let pixelType = pixelTypeNameFromParameter "type" "Float64" node
+            let outsideValue = parameterValue "outsideValue"
+            $">>=> mask<{pixelType}> {outsideValue}"
         | "BinaryFillHoles" ->
             let windowSize = parameterValue "windowSize"
             $">=> binaryFillHoles {windowSize}"
+        | "BinaryContour" ->
+            let fullyConnected = parameterValue "fullyConnected"
+            let windowSize = parameterValue "windowSize"
+            $">=> binaryContour {fullyConnected} {windowSize}"
+        | "BinaryThinning" ->
+            let windowSize = parameterValue "windowSize"
+            $">=> binaryThinning {windowSize}"
+        | "BinaryMedian" ->
+            let radius = parameterValue "radius"
+            let windowSize = parameterValue "windowSize"
+            $">=> binaryMedian {radius} {windowSize}"
+        | "BinaryOpeningByReconstruction" ->
+            let radius = parameterValue "radius"
+            let fullyConnected = parameterValue "fullyConnected"
+            let windowSize = parameterValue "windowSize"
+            $">=> binaryOpeningByReconstruction {radius} {fullyConnected} {windowSize}"
+        | "BinaryClosingByReconstruction" ->
+            let radius = parameterValue "radius"
+            let fullyConnected = parameterValue "fullyConnected"
+            let windowSize = parameterValue "windowSize"
+            $">=> binaryClosingByReconstruction {radius} {fullyConnected} {windowSize}"
+        | "VotingBinaryHoleFilling" ->
+            let radius = parameterValue "radius"
+            let majorityThreshold = parameterValue "majorityThreshold"
+            let windowSize = parameterValue "windowSize"
+            $">=> votingBinaryHoleFilling {radius} {majorityThreshold} {windowSize}"
+        | "LabelShapeStatistics" ->
+            let pixelType = pixelTypeNameFromParameter "type" "UInt64" node
+            let windowSize = parameterValue "windowSize"
+            $">=> labelShapeStatistics<{pixelType}> {windowSize}"
+        | "LabelContour" ->
+            let pixelType = pixelTypeNameFromParameter "type" "UInt64" node
+            let fullyConnected = parameterValue "fullyConnected"
+            let windowSize = parameterValue "windowSize"
+            $">=> labelContour<{pixelType}> {fullyConnected} {windowSize}"
+        | "ChangeLabel" ->
+            let pixelType = pixelTypeNameFromParameter "type" "UInt64" node
+            let fromLabel = parameterValue "fromLabel"
+            let toLabel = parameterValue "toLabel"
+            $">=> changeLabel<{pixelType}> {fromLabel} {toLabel}"
         | "ComputeStats" ->
             ">=> computeStats ()"
         | "AddNormalNoise" ->

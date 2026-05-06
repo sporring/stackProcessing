@@ -50,6 +50,30 @@ module BuiltInCatalog =
   let private nexusFormatDescription =
       "Reads a rank-3 NeXus/HDF5 detector stack through PureHDF using an explicit dataset path and axis mapping. This covers common MAX IV and ESRF detector-stack layouts while keeping streaming slice reads larger-than-memory friendly. Compressed detector files that use external HDF5 filters may require a later native/plugin fallback."
 
+  let private intensityDescription =
+      "Intensity filters change the numeric values of each pixel without changing the stack geometry. They are slice-local and therefore fit the streaming model naturally. Clamp limits values to a range. Rescale maps the current min/max to a requested output range. Window maps a selected input interval to an output interval and clips outside it. ShiftScale applies (input + shift) * scale. Invert maps values around a selected maximum. Normalize produces floating-point output with zero mean and unit variance per streamed image."
+
+  let private localDenoiseDescription =
+      "These denoising filters are local-neighborhood operations rather than global iterative solvers. Median uses a radius in x, y, and z and is streamed through windows large enough to cover the z-neighborhood. Bilateral is edge-preserving and can be slower; use the window size to give the z-neighborhood enough context. No recursive Gaussian, curvature-flow, or anisotropic-diffusion filters are included here because their iteration/global-dependency structure is less friendly to LMIP streaming."
+
+  let private edgeDescription =
+      "These edge and derivative-like filters are local operators that can be evaluated on streaming z-windows. Gradient magnitude estimates local change strength. Sobel emphasizes edges using a small derivative stencil. Laplacian computes a second-derivative response. Recursive Gaussian and Canny variants are intentionally not included in this first pass because they are less obviously aligned with the 3D LMIP streaming model."
+
+  let private comparisonDescription =
+      "Compare two synchronized image streams pixel by pixel and emit a UInt8 mask. Pixels where the comparison is true become non-zero, and false pixels become zero. The two inputs must have the same selected numeric type and compatible geometry. This is the mask-building counterpart to I op J and compiles to the corresponding StackProcessing comparison stage."
+
+  let private maskDescription =
+      "Masking combines an image stream with a UInt8 mask stream. Non-zero mask pixels keep the input image value, and masked-out pixels are replaced by the outside value. This is useful after thresholding, connected-component cleanup, or comparison stages. The image type parameter controls the left input and output type; the right input is always a UInt8 mask."
+
+  let private grayscaleMorphologyDescription =
+      "Grayscale morphology applies min/max-style neighborhood operations to intensity images rather than binary masks. Erode darkens or shrinks bright structures; dilate brightens or expands them. Opening removes small bright structures, closing fills small dark gaps, white top-hat extracts bright details smaller than the structuring element, black top-hat extracts dark details, and morphological gradient emphasizes local contrast boundaries. These are local filters and are streamed through z-windows large enough to cover the selected radius."
+
+  let private binaryMorphologyDescription =
+      "Binary morphology operates on UInt8 masks where non-zero pixels are treated as foreground. The reconstruction variants preserve connected mask structure while removing or filling features selected by a marker or structuring element. Fully connected controls whether diagonal neighbors count as connected. Window size should be at least 2 * radius + 1 for radius-based operations so the z-neighborhood is available while streaming."
+
+  let private labelAnalysisDescription =
+      "Label analysis stages inspect labeled images rather than changing intensities. Label shape statistics measure object geometry, label intensity statistics measure intensity values inside labeled regions, overlap measures compare two label images, label contour extracts object boundaries, and changeLabel remaps one label value to another. Statistics stages emit scalar/map-like data and are usually terminal or diagnostic parts of a graph."
+
   let private numericDefaultValue tp =
       match tp with
       | UInt8
@@ -672,15 +696,382 @@ module BuiltInCatalog =
                 makeParameter "axis1" "Axis 1" "1" (BasicType.Numeric UInt32)
                 makeParameter "axis2" "Axis 2" "2" (BasicType.Numeric UInt32) ] }
 
+        { Id = "Clamp"
+          DisplayName = "clamp"
+          Category = "Intensity"
+          Summary = "Limit image intensities to a lower and upper bound."
+          Description = intensityDescription
+          Aliases = [ "intensity"; "clip"; "limit"; "range"; "minimum"; "maximum" ]
+          Inputs = [ makePort "Number" imageAny ]
+          Outputs = [ makePort "Number" imageAny ]
+          Parameters =
+              [ makeParameter "type" "Type" "Float64" BasicType.String
+                makeParameter "lower" "Lower" "0.0" (BasicType.Numeric Float64)
+                makeParameter "upper" "Upper" "1.0" (BasicType.Numeric Float64) ] }
+
+        { Id = "RescaleIntensity"
+          DisplayName = "rescaleIntensity"
+          Category = "Intensity"
+          Summary = "Rescale image intensities to a requested output range."
+          Description = intensityDescription
+          Aliases = [ "intensity"; "contrast"; "normalize"; "range"; "scale" ]
+          Inputs = [ makePort "Number" imageAny ]
+          Outputs = [ makePort "Number" imageAny ]
+          Parameters =
+              [ makeParameter "type" "Type" "Float64" BasicType.String
+                makeParameter "outputMinimum" "Output minimum" "0.0" (BasicType.Numeric Float64)
+                makeParameter "outputMaximum" "Output maximum" "1.0" (BasicType.Numeric Float64) ] }
+
+        { Id = "IntensityWindow"
+          DisplayName = "intensityWindow"
+          Category = "Intensity"
+          Summary = "Map an input intensity window to an output range."
+          Description = intensityDescription
+          Aliases = [ "intensity"; "window"; "contrast"; "clip"; "range" ]
+          Inputs = [ makePort "Number" imageAny ]
+          Outputs = [ makePort "Number" imageAny ]
+          Parameters =
+              [ makeParameter "type" "Type" "Float64" BasicType.String
+                makeParameter "windowMinimum" "Window minimum" "0.0" (BasicType.Numeric Float64)
+                makeParameter "windowMaximum" "Window maximum" "1.0" (BasicType.Numeric Float64)
+                makeParameter "outputMinimum" "Output minimum" "0.0" (BasicType.Numeric Float64)
+                makeParameter "outputMaximum" "Output maximum" "1.0" (BasicType.Numeric Float64) ] }
+
+        { Id = "Normalize"
+          DisplayName = "normalize"
+          Category = "Intensity"
+          Summary = "Normalize intensities to zero mean and unit variance."
+          Description = intensityDescription
+          Aliases = [ "intensity"; "normalize"; "mean"; "variance"; "standardize"; "float" ]
+          Inputs = [ makePort "Number" imageAny ]
+          Outputs = [ makePort "Float64" imageFloat64 ]
+          Parameters = [ makeParameter "type" "Type" "Float64" BasicType.String ] }
+
+        { Id = "ShiftScale"
+          DisplayName = "shiftScale"
+          Category = "Intensity"
+          Summary = "Apply (input + shift) * scale to image intensities."
+          Description = intensityDescription
+          Aliases = [ "intensity"; "shift"; "scale"; "offset"; "gain" ]
+          Inputs = [ makePort "Number" imageAny ]
+          Outputs = [ makePort "Number" imageAny ]
+          Parameters =
+              [ makeParameter "type" "Type" "Float64" BasicType.String
+                makeParameter "shift" "Shift" "0.0" (BasicType.Numeric Float64)
+                makeParameter "scale" "Scale" "1.0" (BasicType.Numeric Float64) ] }
+
+        { Id = "InvertIntensity"
+          DisplayName = "invertIntensity"
+          Category = "Intensity"
+          Summary = "Invert intensities around a selected maximum value."
+          Description = intensityDescription
+          Aliases = [ "intensity"; "invert"; "negative"; "contrast" ]
+          Inputs = [ makePort "Number" imageAny ]
+          Outputs = [ makePort "Number" imageAny ]
+          Parameters =
+              [ makeParameter "type" "Type" "Float64" BasicType.String
+                makeParameter "maximum" "Maximum" "1.0" (BasicType.Numeric Float64) ] }
+
+        { Id = "Median"
+          DisplayName = "median"
+          Category = "Filters"
+          Summary = "Apply a local median denoising filter."
+          Description = localDenoiseDescription
+          Aliases = [ "denoise"; "median"; "salt"; "pepper"; "filter" ]
+          Inputs = [ makePort "Number" imageAny ]
+          Outputs = [ makePort "Number" imageAny ]
+          Parameters =
+              [ makeParameter "type" "Type" "Float64" BasicType.String
+                makeParameter "radius" "Radius" "1" (BasicType.Numeric UInt32)
+                makeParameter "windowSize" "Window size" "3" (BasicType.Numeric UInt32) ] }
+
+        { Id = "Bilateral"
+          DisplayName = "bilateral"
+          Category = "Filters"
+          Summary = "Apply an edge-preserving bilateral denoising filter."
+          Description = localDenoiseDescription
+          Aliases = [ "denoise"; "bilateral"; "edge"; "preserve"; "filter" ]
+          Inputs = [ makePort "Number" imageAny ]
+          Outputs = [ makePort "Number" imageAny ]
+          Parameters =
+              [ makeParameter "type" "Type" "Float64" BasicType.String
+                makeParameter "domainSigma" "Domain sigma" "2.0" (BasicType.Numeric Float64)
+                makeParameter "rangeSigma" "Range sigma" "50.0" (BasicType.Numeric Float64)
+                makeParameter "windowSize" "Window size" "7" (BasicType.Numeric UInt32) ] }
+
+        { Id = "GradientMagnitude"
+          DisplayName = "gradientMagnitude"
+          Category = "Filters"
+          Summary = "Compute local gradient magnitude."
+          Description = edgeDescription
+          Aliases = [ "edge"; "gradient"; "magnitude"; "derivative"; "filter" ]
+          Inputs = [ makePort "Number" imageAny ]
+          Outputs = [ makePort "Number" imageAny ]
+          Parameters =
+              [ makeParameter "type" "Type" "Float64" BasicType.String
+                makeParameter "windowSize" "Window size" "3" (BasicType.Numeric UInt32) ] }
+
+        { Id = "SobelEdge"
+          DisplayName = "sobelEdge"
+          Category = "Filters"
+          Summary = "Compute a Sobel edge response."
+          Description = edgeDescription
+          Aliases = [ "edge"; "sobel"; "gradient"; "filter" ]
+          Inputs = [ makePort "Number" imageAny ]
+          Outputs = [ makePort "Number" imageAny ]
+          Parameters =
+              [ makeParameter "type" "Type" "Float64" BasicType.String
+                makeParameter "windowSize" "Window size" "3" (BasicType.Numeric UInt32) ] }
+
+        { Id = "Laplacian"
+          DisplayName = "laplacian"
+          Category = "Filters"
+          Summary = "Compute a local Laplacian response."
+          Description = edgeDescription
+          Aliases = [ "edge"; "laplacian"; "second"; "derivative"; "filter" ]
+          Inputs = [ makePort "Number" imageAny ]
+          Outputs = [ makePort "Number" imageAny ]
+          Parameters =
+              [ makeParameter "type" "Type" "Float64" BasicType.String
+                makeParameter "windowSize" "Window size" "3" (BasicType.Numeric UInt32) ] }
+
+        { Id = "ImageComparison"
+          DisplayName = "I cmp J"
+          Category = "Segmentation"
+          Summary = "Compare two image streams pixelwise and emit a UInt8 mask."
+          Description = comparisonDescription
+          Aliases = [ "compare"; "mask"; "greater"; "less"; "equal"; "threshold"; "<"; ">"; "=" ]
+          Inputs = [ makePort "I" imageAny; makePort "J" imageAny ]
+          Outputs = [ makePort "UInt8" imageUInt8 ]
+          Parameters =
+              [ makeParameter "operation" "Operation" ">" BasicType.String
+                makeParameter "type" "Type" "Float64" BasicType.String ] }
+
+        { Id = "MaskLogic"
+          DisplayName = "M op N"
+          Category = "Segmentation"
+          Summary = "Combine two UInt8 masks with logical operations."
+          Description = "Mask logic operates on UInt8 mask streams and emits a UInt8 mask. Use it to combine threshold, comparison, and segmentation results before masking or writing. Non-zero values are treated as true by the underlying SimpleITK logical filters. The operation selector compiles to andMask, orMask, or xorMask. Use notMask when only a single mask should be inverted."
+          Aliases = [ "mask"; "logic"; "and"; "or"; "xor"; "binary"; "boolean" ]
+          Inputs = [ makePort "UInt8" imageUInt8; makePort "UInt8" imageUInt8 ]
+          Outputs = [ makePort "UInt8" imageUInt8 ]
+          Parameters = [ makeParameter "operation" "Operation" "and" BasicType.String ] }
+
+        { Id = "NotMask"
+          DisplayName = "notMask"
+          Category = "Segmentation"
+          Summary = "Invert a UInt8 mask."
+          Description = "Inverts a UInt8 mask stream using SimpleITK's logical Not filter. This is intended for masks, not for intensity inversion of grayscale images. Use invertIntensity for grayscale negatives. The operation is slice-local and fits streaming naturally."
+          Aliases = [ "mask"; "logic"; "not"; "invert"; "binary"; "boolean" ]
+          Inputs = [ makePort "UInt8" imageUInt8 ]
+          Outputs = [ makePort "UInt8" imageUInt8 ]
+          Parameters = [] }
+
+        { Id = "Mask"
+          DisplayName = "mask"
+          Category = "Segmentation"
+          Summary = "Apply a UInt8 mask to an image stream."
+          Description = maskDescription
+          Aliases = [ "mask"; "apply"; "binary"; "select"; "outside"; "segment" ]
+          Inputs = [ makePort "Image" imageAny; makePort "UInt8" imageUInt8 ]
+          Outputs = [ makePort "Image" imageAny ]
+          Parameters =
+              [ makeParameter "type" "Type" "Float64" BasicType.String
+                makeParameter "outsideValue" "Outside value" "0.0" (BasicType.Numeric Float64) ] }
+
+        { Id = "GrayscaleErode"
+          DisplayName = "grayscaleErode"
+          Category = "Grayscale Morphology"
+          Summary = "Erode a grayscale image with a local structuring element."
+          Description = grayscaleMorphologyDescription
+          Aliases = [ "grayscale"; "morphology"; "erode"; "minimum"; "filter" ]
+          Inputs = [ makePort "Number" imageAny ]
+          Outputs = [ makePort "Number" imageAny ]
+          Parameters =
+              [ makeParameter "type" "Type" "Float64" BasicType.String
+                makeParameter "radius" "Radius" "1" (BasicType.Numeric UInt32)
+                makeParameter "windowSize" "Window size" "3" (BasicType.Numeric UInt32) ] }
+
+        { Id = "GrayscaleDilate"
+          DisplayName = "grayscaleDilate"
+          Category = "Grayscale Morphology"
+          Summary = "Dilate a grayscale image with a local structuring element."
+          Description = grayscaleMorphologyDescription
+          Aliases = [ "grayscale"; "morphology"; "dilate"; "maximum"; "filter" ]
+          Inputs = [ makePort "Number" imageAny ]
+          Outputs = [ makePort "Number" imageAny ]
+          Parameters =
+              [ makeParameter "type" "Type" "Float64" BasicType.String
+                makeParameter "radius" "Radius" "1" (BasicType.Numeric UInt32)
+                makeParameter "windowSize" "Window size" "3" (BasicType.Numeric UInt32) ] }
+
+        { Id = "GrayscaleOpening"
+          DisplayName = "grayscaleOpening"
+          Category = "Grayscale Morphology"
+          Summary = "Remove small bright grayscale structures."
+          Description = grayscaleMorphologyDescription
+          Aliases = [ "grayscale"; "morphology"; "opening"; "bright"; "filter" ]
+          Inputs = [ makePort "Number" imageAny ]
+          Outputs = [ makePort "Number" imageAny ]
+          Parameters =
+              [ makeParameter "type" "Type" "Float64" BasicType.String
+                makeParameter "radius" "Radius" "1" (BasicType.Numeric UInt32)
+                makeParameter "windowSize" "Window size" "3" (BasicType.Numeric UInt32) ] }
+
+        { Id = "GrayscaleClosing"
+          DisplayName = "grayscaleClosing"
+          Category = "Grayscale Morphology"
+          Summary = "Fill small dark grayscale gaps."
+          Description = grayscaleMorphologyDescription
+          Aliases = [ "grayscale"; "morphology"; "closing"; "dark"; "filter" ]
+          Inputs = [ makePort "Number" imageAny ]
+          Outputs = [ makePort "Number" imageAny ]
+          Parameters =
+              [ makeParameter "type" "Type" "Float64" BasicType.String
+                makeParameter "radius" "Radius" "1" (BasicType.Numeric UInt32)
+                makeParameter "windowSize" "Window size" "3" (BasicType.Numeric UInt32) ] }
+
+        { Id = "WhiteTopHat"
+          DisplayName = "whiteTopHat"
+          Category = "Grayscale Morphology"
+          Summary = "Extract small bright grayscale details."
+          Description = grayscaleMorphologyDescription
+          Aliases = [ "grayscale"; "morphology"; "white"; "top"; "hat"; "bright"; "filter" ]
+          Inputs = [ makePort "Number" imageAny ]
+          Outputs = [ makePort "Number" imageAny ]
+          Parameters =
+              [ makeParameter "type" "Type" "Float64" BasicType.String
+                makeParameter "radius" "Radius" "1" (BasicType.Numeric UInt32)
+                makeParameter "windowSize" "Window size" "3" (BasicType.Numeric UInt32) ] }
+
+        { Id = "BlackTopHat"
+          DisplayName = "blackTopHat"
+          Category = "Grayscale Morphology"
+          Summary = "Extract small dark grayscale details."
+          Description = grayscaleMorphologyDescription
+          Aliases = [ "grayscale"; "morphology"; "black"; "top"; "hat"; "dark"; "filter" ]
+          Inputs = [ makePort "Number" imageAny ]
+          Outputs = [ makePort "Number" imageAny ]
+          Parameters =
+              [ makeParameter "type" "Type" "Float64" BasicType.String
+                makeParameter "radius" "Radius" "1" (BasicType.Numeric UInt32)
+                makeParameter "windowSize" "Window size" "3" (BasicType.Numeric UInt32) ] }
+
+        { Id = "MorphologicalGradient"
+          DisplayName = "morphologicalGradient"
+          Category = "Grayscale Morphology"
+          Summary = "Compute local grayscale morphological contrast."
+          Description = grayscaleMorphologyDescription
+          Aliases = [ "grayscale"; "morphology"; "gradient"; "edge"; "contrast"; "filter" ]
+          Inputs = [ makePort "Number" imageAny ]
+          Outputs = [ makePort "Number" imageAny ]
+          Parameters =
+              [ makeParameter "type" "Type" "Float64" BasicType.String
+                makeParameter "radius" "Radius" "1" (BasicType.Numeric UInt32)
+                makeParameter "windowSize" "Window size" "3" (BasicType.Numeric UInt32) ] }
+
         { Id = "BinaryFillHoles"
           DisplayName = "binaryFillHoles"
           Category = "Binary Morphology"
           Summary = "Fill holes in a binary UInt8 stack."
-          Description = ""
+          Description = binaryMorphologyDescription
           Aliases = [ "morphology"; "binary"; "holes"; "fill"; "mask" ]
           Inputs = [ makePort "UInt8" imageUInt8 ]
           Outputs = [ makePort "UInt8" imageUInt8 ]
           Parameters = [ makeParameter "windowSize" "Window size" "3" (BasicType.Numeric UInt32) ] }
+
+        { Id = "BinaryContour"
+          DisplayName = "binaryContour"
+          Category = "Binary Morphology"
+          Summary = "Extract the contour of a binary UInt8 mask."
+          Description = binaryMorphologyDescription
+          Aliases = [ "morphology"; "binary"; "contour"; "edge"; "mask" ]
+          Inputs = [ makePort "UInt8" imageUInt8 ]
+          Outputs = [ makePort "UInt8" imageUInt8 ]
+          Parameters =
+              [ makeParameter "fullyConnected" "Fully connected" "false" BasicType.Bool
+                makeParameter "windowSize" "Window size" "3" (BasicType.Numeric UInt32) ] }
+
+        { Id = "BinaryThinning"
+          DisplayName = "binaryThinning"
+          Category = "Binary Morphology"
+          Summary = "Thin a binary UInt8 mask."
+          Description = binaryMorphologyDescription
+          Aliases = [ "morphology"; "binary"; "thin"; "skeleton"; "mask" ]
+          Inputs = [ makePort "UInt8" imageUInt8 ]
+          Outputs = [ makePort "UInt8" imageUInt8 ]
+          Parameters = [ makeParameter "windowSize" "Window size" "9" (BasicType.Numeric UInt32) ] }
+
+        { Id = "BinaryMedian"
+          DisplayName = "binaryMedian"
+          Category = "Binary Morphology"
+          Summary = "Apply a median filter to a binary UInt8 mask."
+          Description = binaryMorphologyDescription
+          Aliases = [ "morphology"; "binary"; "median"; "denoise"; "mask" ]
+          Inputs = [ makePort "UInt8" imageUInt8 ]
+          Outputs = [ makePort "UInt8" imageUInt8 ]
+          Parameters =
+              [ makeParameter "radius" "Radius" "1" (BasicType.Numeric UInt32)
+                makeParameter "windowSize" "Window size" "3" (BasicType.Numeric UInt32) ] }
+
+        { Id = "BinaryOpeningByReconstruction"
+          DisplayName = "binaryOpeningByReconstruction"
+          Category = "Binary Morphology"
+          Summary = "Open a binary mask by reconstruction."
+          Description = binaryMorphologyDescription
+          Aliases = [ "morphology"; "binary"; "opening"; "reconstruction"; "mask" ]
+          Inputs = [ makePort "UInt8" imageUInt8 ]
+          Outputs = [ makePort "UInt8" imageUInt8 ]
+          Parameters =
+              [ makeParameter "radius" "Radius" "1" (BasicType.Numeric UInt32)
+                makeParameter "fullyConnected" "Fully connected" "false" BasicType.Bool
+                makeParameter "windowSize" "Window size" "3" (BasicType.Numeric UInt32) ] }
+
+        { Id = "BinaryClosingByReconstruction"
+          DisplayName = "binaryClosingByReconstruction"
+          Category = "Binary Morphology"
+          Summary = "Close a binary mask by reconstruction."
+          Description = binaryMorphologyDescription
+          Aliases = [ "morphology"; "binary"; "closing"; "reconstruction"; "mask" ]
+          Inputs = [ makePort "UInt8" imageUInt8 ]
+          Outputs = [ makePort "UInt8" imageUInt8 ]
+          Parameters =
+              [ makeParameter "radius" "Radius" "1" (BasicType.Numeric UInt32)
+                makeParameter "fullyConnected" "Fully connected" "false" BasicType.Bool
+                makeParameter "windowSize" "Window size" "3" (BasicType.Numeric UInt32) ] }
+
+        { Id = "BinaryReconstructionByDilation"
+          DisplayName = "binaryReconstructionByDilation"
+          Category = "Binary Morphology"
+          Summary = "Reconstruct a binary marker under a binary mask by dilation."
+          Description = binaryMorphologyDescription
+          Aliases = [ "morphology"; "binary"; "reconstruction"; "dilation"; "marker"; "mask" ]
+          Inputs = [ makePort "Marker" imageUInt8; makePort "Mask" imageUInt8 ]
+          Outputs = [ makePort "UInt8" imageUInt8 ]
+          Parameters = [ makeParameter "fullyConnected" "Fully connected" "false" BasicType.Bool ] }
+
+        { Id = "BinaryReconstructionByErosion"
+          DisplayName = "binaryReconstructionByErosion"
+          Category = "Binary Morphology"
+          Summary = "Reconstruct a binary marker over a binary mask by erosion."
+          Description = binaryMorphologyDescription
+          Aliases = [ "morphology"; "binary"; "reconstruction"; "erosion"; "marker"; "mask" ]
+          Inputs = [ makePort "Marker" imageUInt8; makePort "Mask" imageUInt8 ]
+          Outputs = [ makePort "UInt8" imageUInt8 ]
+          Parameters = [ makeParameter "fullyConnected" "Fully connected" "false" BasicType.Bool ] }
+
+        { Id = "VotingBinaryHoleFilling"
+          DisplayName = "votingBinaryHoleFilling"
+          Category = "Binary Morphology"
+          Summary = "Fill binary holes by neighborhood voting."
+          Description = binaryMorphologyDescription
+          Aliases = [ "morphology"; "binary"; "voting"; "holes"; "fill"; "mask" ]
+          Inputs = [ makePort "UInt8" imageUInt8 ]
+          Outputs = [ makePort "UInt8" imageUInt8 ]
+          Parameters =
+              [ makeParameter "radius" "Radius" "1" (BasicType.Numeric UInt32)
+                makeParameter "majorityThreshold" "Majority threshold" "1" (BasicType.Numeric UInt32)
+                makeParameter "windowSize" "Window size" "3" (BasicType.Numeric UInt32) ] }
 
         { Id = "Threshold"
           DisplayName = "threshold"
@@ -820,6 +1211,66 @@ module BuiltInCatalog =
           Parameters =
               [ makeParameter "windowSize" "Window size" "3" (BasicType.Numeric UInt32)
                 makeParameter "translationTable" "Translation table" "" BasicType.String ] }
+
+        { Id = "LabelShapeStatistics"
+          DisplayName = "labelShapeStatistics"
+          Category = "Segmentation"
+          Summary = "Measure object geometry in a labeled image."
+          Description = labelAnalysisDescription
+          Aliases = [ "label"; "statistics"; "shape"; "objects"; "measure" ]
+          Inputs = [ makePort "Labels" imageAny ]
+          Outputs = [ makePort "Shape statistics" (Custom "LabelShapeStatistics") ]
+          Parameters =
+              [ makeParameter "type" "Type" "UInt64" BasicType.String
+                makeParameter "windowSize" "Window size" "8" (BasicType.Numeric UInt32) ] }
+
+        { Id = "LabelIntensityStatistics"
+          DisplayName = "labelIntensityStatistics"
+          Category = "Segmentation"
+          Summary = "Measure intensities inside labeled regions."
+          Description = labelAnalysisDescription
+          Aliases = [ "label"; "statistics"; "intensity"; "objects"; "measure" ]
+          Inputs = [ makePort "Labels" imageAny; makePort "Intensity" imageAny ]
+          Outputs = [ makePort "Intensity statistics" (Custom "LabelIntensityStatistics") ]
+          Parameters =
+              [ makeParameter "labelType" "Label type" "UInt64" BasicType.String
+                makeParameter "intensityType" "Intensity type" "Float64" BasicType.String ] }
+
+        { Id = "LabelOverlapMeasures"
+          DisplayName = "labelOverlapMeasures"
+          Category = "Segmentation"
+          Summary = "Compare overlap between two labeled images."
+          Description = labelAnalysisDescription
+          Aliases = [ "label"; "statistics"; "overlap"; "dice"; "jaccard"; "measure" ]
+          Inputs = [ makePort "Source" imageAny; makePort "Target" imageAny ]
+          Outputs = [ makePort "Overlap measures" (Custom "LabelOverlapMeasures") ]
+          Parameters = [ makeParameter "type" "Type" "UInt64" BasicType.String ] }
+
+        { Id = "LabelContour"
+          DisplayName = "labelContour"
+          Category = "Segmentation"
+          Summary = "Extract contours from a labeled image."
+          Description = labelAnalysisDescription
+          Aliases = [ "label"; "contour"; "boundary"; "objects"; "edge" ]
+          Inputs = [ makePort "Labels" imageAny ]
+          Outputs = [ makePort "Labels" imageAny ]
+          Parameters =
+              [ makeParameter "type" "Type" "UInt64" BasicType.String
+                makeParameter "fullyConnected" "Fully connected" "false" BasicType.Bool
+                makeParameter "windowSize" "Window size" "3" (BasicType.Numeric UInt32) ] }
+
+        { Id = "ChangeLabel"
+          DisplayName = "changeLabel"
+          Category = "Segmentation"
+          Summary = "Replace one label value with another."
+          Description = labelAnalysisDescription
+          Aliases = [ "label"; "change"; "map"; "replace"; "relabel" ]
+          Inputs = [ makePort "Labels" imageAny ]
+          Outputs = [ makePort "Labels" imageAny ]
+          Parameters =
+              [ makeParameter "type" "Type" "UInt64" BasicType.String
+                makeParameter "fromLabel" "From label" "1.0" (BasicType.Numeric Float64)
+                makeParameter "toLabel" "To label" "0.0" (BasicType.Numeric Float64) ] }
 
         { Id = "PermuteAxes"
           DisplayName = "permuteAxes"

@@ -298,6 +298,16 @@ let maxOfPair I J = liftRelease2 Image.maximumImage I J
 let minOfPair I J = liftRelease2 Image.minimumImage I J
 let getMinMax I = releaseAfter Image.getMinMax I;
 
+let private releaseImagePair (f: Image<'S> -> Image<'T> -> 'U) (a: Image<'S>, b: Image<'T>) =
+    try
+        f a b
+    finally
+        imageResourceOps.Release a
+        imageResourceOps.Release b
+
+let private liftPairReleaseAfter name f : Stage<Image<'S> * Image<'T>, 'U> =
+    Stage.map name (fun _ pair -> releaseImagePair f pair) id id
+
 let failTypeMismatch<'T> name lst =
     let t = typeof<'T>
     if lst |> List.exists ((=) t) |> not then
@@ -354,6 +364,169 @@ let sqrtWindowed<'T when 'T: equality> (winSz: uint) : Stage<Image<'T>,Image<'T>
 let square<'T when 'T: equality> : Stage<Image<'T>,Image<'T>> =      
     failTypeMismatch<'T> "square" floatNintTypes
     liftUnaryReleaseAfter "square" ImageFunctions.squareImage id id
+
+let clamp<'T when 'T: equality> lower upper =
+    liftUnaryReleaseAfter "clamp" (ImageFunctions.clampImage lower upper) id id
+
+let rescaleIntensity<'T when 'T: equality> outputMinimum outputMaximum =
+    liftUnaryReleaseAfter "rescaleIntensity" (ImageFunctions.rescaleIntensity outputMinimum outputMaximum) id id
+
+let intensityWindow<'T when 'T: equality> windowMinimum windowMaximum outputMinimum outputMaximum =
+    liftUnaryReleaseAfter "intensityWindow" (ImageFunctions.intensityWindow windowMinimum windowMaximum outputMinimum outputMaximum) id id
+
+let normalize<'T when 'T: equality> =
+    liftUnaryReleaseAfter "normalize" ImageFunctions.normalizeImage id id
+
+let shiftScale<'T when 'T: equality> shift scale =
+    liftUnaryReleaseAfter "shiftScale" (ImageFunctions.shiftScale shift scale) id id
+
+let invertIntensity<'T when 'T: equality> maximum =
+    liftUnaryReleaseAfter "invertIntensity" (ImageFunctions.invertIntensity maximum) id id
+
+let private makeWindowedLocalOp name ksz winSz core =
+    let pad = ksz / 2u
+    let win = max ksz winSz
+    let stride = win - ksz + 1u
+    let f debug = volFctToWindowFctReleaseAfterDebug debug core ksz pad stride
+    let stg = mapWindow name f id id
+    (window win pad stride) --> stg --> flattenList ()
+    |> Stage.withSliceCardinality (SlimPipeline.Domain(sameSliceDomainForKernelDepth ksz))
+
+let median<'T when 'T: equality> radius winSz =
+    let ksz = 2u * radius + 1u
+    makeWindowedLocalOp "median" ksz winSz (ImageFunctions.median radius)
+
+let bilateral<'T when 'T: equality> domainSigma rangeSigma winSz =
+    makeWindowedLocalOp "bilateral" (max 1u winSz) winSz (ImageFunctions.bilateral domainSigma rangeSigma)
+
+let gradientMagnitude<'T when 'T: equality> winSz =
+    makeWindowedLocalOp "gradientMagnitude" 3u winSz ImageFunctions.gradientMagnitude
+
+let sobelEdge<'T when 'T: equality> winSz =
+    makeWindowedLocalOp "sobelEdge" 3u winSz ImageFunctions.sobelEdge
+
+let laplacian<'T when 'T: equality> winSz =
+    makeWindowedLocalOp "laplacian" 3u winSz ImageFunctions.laplacian
+
+let grayscaleErode<'T when 'T: equality> radius winSz =
+    let ksz = 2u * radius + 1u
+    makeWindowedLocalOp "grayscaleErode" ksz winSz (ImageFunctions.grayscaleErode radius)
+
+let grayscaleDilate<'T when 'T: equality> radius winSz =
+    let ksz = 2u * radius + 1u
+    makeWindowedLocalOp "grayscaleDilate" ksz winSz (ImageFunctions.grayscaleDilate radius)
+
+let grayscaleOpening<'T when 'T: equality> radius winSz =
+    let ksz = 2u * radius + 1u
+    makeWindowedLocalOp "grayscaleOpening" ksz winSz (ImageFunctions.grayscaleOpening radius)
+
+let grayscaleClosing<'T when 'T: equality> radius winSz =
+    let ksz = 2u * radius + 1u
+    makeWindowedLocalOp "grayscaleClosing" ksz winSz (ImageFunctions.grayscaleClosing radius)
+
+let whiteTopHat<'T when 'T: equality> radius winSz =
+    let ksz = 2u * radius + 1u
+    makeWindowedLocalOp "whiteTopHat" ksz winSz (ImageFunctions.whiteTopHat radius)
+
+let blackTopHat<'T when 'T: equality> radius winSz =
+    let ksz = 2u * radius + 1u
+    makeWindowedLocalOp "blackTopHat" ksz winSz (ImageFunctions.blackTopHat radius)
+
+let morphologicalGradient<'T when 'T: equality> radius winSz =
+    let ksz = 2u * radius + 1u
+    makeWindowedLocalOp "morphologicalGradient" ksz winSz (ImageFunctions.morphologicalGradient radius)
+
+let binaryContour (fullyConnected: bool) (winSz: uint) =
+    makeWindowedLocalOp "binaryContour" 3u winSz (ImageFunctions.binaryContour fullyConnected)
+
+let binaryThinning (winSz: uint) =
+    makeWindowedLocalOp "binaryThinning" (max 1u winSz) winSz ImageFunctions.binaryThinning
+
+let binaryMedian radius winSz =
+    let ksz = 2u * radius + 1u
+    makeWindowedLocalOp "binaryMedian" ksz winSz (ImageFunctions.binaryMedian radius)
+
+let binaryOpeningByReconstruction radius fullyConnected winSz =
+    let ksz = 2u * radius + 1u
+    makeWindowedLocalOp "binaryOpeningByReconstruction" ksz winSz (ImageFunctions.binaryOpeningByReconstruction radius fullyConnected)
+
+let binaryClosingByReconstruction radius fullyConnected winSz =
+    let ksz = 2u * radius + 1u
+    makeWindowedLocalOp "binaryClosingByReconstruction" ksz winSz (ImageFunctions.binaryClosingByReconstruction radius fullyConnected)
+
+let binaryReconstructionByDilation fullyConnected : Stage<Image<uint8> * Image<uint8>, Image<uint8>> =
+    liftPairReleaseAfter "binaryReconstructionByDilation" (ImageFunctions.binaryReconstructionByDilation fullyConnected)
+
+let binaryReconstructionByErosion fullyConnected : Stage<Image<uint8> * Image<uint8>, Image<uint8>> =
+    liftPairReleaseAfter "binaryReconstructionByErosion" (ImageFunctions.binaryReconstructionByErosion fullyConnected)
+
+let votingBinaryHoleFilling radius majorityThreshold winSz =
+    let ksz = 2u * radius + 1u
+    makeWindowedLocalOp "votingBinaryHoleFilling" ksz winSz (ImageFunctions.votingBinaryHoleFilling radius majorityThreshold)
+
+let equal<'T when 'T: equality> : Stage<Image<'T> * Image<'T>, Image<uint8>> =
+    liftPairReleaseAfter "equal" ImageFunctions.equalImage
+
+let notEqual<'T when 'T: equality> : Stage<Image<'T> * Image<'T>, Image<uint8>> =
+    liftPairReleaseAfter "notEqual" ImageFunctions.notEqualImage
+
+let greater<'T when 'T: equality> : Stage<Image<'T> * Image<'T>, Image<uint8>> =
+    liftPairReleaseAfter "greater" ImageFunctions.greaterImage
+
+let greaterEqual<'T when 'T: equality> : Stage<Image<'T> * Image<'T>, Image<uint8>> =
+    liftPairReleaseAfter "greaterEqual" ImageFunctions.greaterEqualImage
+
+let less<'T when 'T: equality> : Stage<Image<'T> * Image<'T>, Image<uint8>> =
+    liftPairReleaseAfter "less" ImageFunctions.lessImage
+
+let lessEqual<'T when 'T: equality> : Stage<Image<'T> * Image<'T>, Image<uint8>> =
+    liftPairReleaseAfter "lessEqual" ImageFunctions.lessEqualImage
+
+let andMask : Stage<Image<uint8> * Image<uint8>, Image<uint8>> =
+    liftPairReleaseAfter "andMask" ImageFunctions.andImage
+
+let orMask : Stage<Image<uint8> * Image<uint8>, Image<uint8>> =
+    liftPairReleaseAfter "orMask" ImageFunctions.orImage
+
+let xorMask : Stage<Image<uint8> * Image<uint8>, Image<uint8>> =
+    liftPairReleaseAfter "xorMask" ImageFunctions.xorImage
+
+let notMask : Stage<Image<uint8>, Image<uint8>> =
+    liftUnaryReleaseAfter "notMask" ImageFunctions.notImage id id
+
+let mask<'T when 'T: equality> outsideValue : Stage<Image<'T> * Image<uint8>, Image<'T>> =
+    liftPairReleaseAfter "mask" (ImageFunctions.mask outsideValue)
+
+type LabelShapeStatistics = ImageFunctions.LabelShapeStatistics
+type LabelIntensityStatistics = ImageFunctions.LabelIntensityStatistics
+type LabelOverlapMeasures = ImageFunctions.LabelOverlapMeasures
+
+let private windowedMap name winSz (f: Image<'T> -> 'S) : Stage<Image<'T>, 'S> when 'T: equality =
+    let mapper (_debug: bool) (window: Window<Image<'T>>) =
+        let stack = ImageFunctions.stack window.Items
+        window.Items
+        |> List.take (min (int winSz) window.Items.Length)
+        |> List.iter (fun image -> image.decRefCount())
+        try
+            f stack
+        finally
+            stack.decRefCount()
+    (window winSz 0u winSz) --> mapWindow name mapper id id
+
+let labelShapeStatistics<'T when 'T: equality> winSz : Stage<Image<'T>, Map<int64, LabelShapeStatistics>> =
+    windowedMap "labelShapeStatistics" winSz ImageFunctions.labelShapeStatistics
+
+let labelIntensityStatistics<'L,'T when 'L: equality and 'T: equality> : Stage<Image<'L> * Image<'T>, Map<int64, LabelIntensityStatistics>> =
+    liftPairReleaseAfter "labelIntensityStatistics" ImageFunctions.labelIntensityStatistics
+
+let labelOverlapMeasures<'T when 'T: equality> : Stage<Image<'T> * Image<'T>, LabelOverlapMeasures> =
+    liftPairReleaseAfter "labelOverlapMeasures" ImageFunctions.labelOverlapMeasures
+
+let labelContour<'T when 'T: equality> fullyConnected winSz =
+    makeWindowedLocalOp "labelContour" 3u winSz (ImageFunctions.labelContour fullyConnected)
+
+let changeLabel<'T when 'T: equality> fromLabel toLabel =
+    liftUnaryReleaseAfter "changeLabel" (ImageFunctions.changeLabel fromLabel toLabel) id id
 
 let resize<'T when 'T: equality>
     (outputWidth: uint)
