@@ -1,6 +1,6 @@
 module StackProcessing
 
-open StackCore
+// open StackCore
 
 // //////////////////// StackCore
 type Stage<'S,'T> = SlimPipeline.Stage<'S,'T>
@@ -27,9 +27,6 @@ let teeSnd = StackCore.teeSnd
 let ignoreSingles = StackCore.ignoreSingles
 let ignorePairs = StackCore.ignorePairs
 let zeroMaker = StackCore.zeroMaker
-let window = StackCore.window
-let flatten = StackCore.flatten
-let map = StackCore.map
 let sinkOp = StackCore.sinkOp
 let sink = StackCore.sink
 let sinkList = StackCore.sinkList
@@ -60,7 +57,6 @@ let getChunkInfo = StackIO.getChunkInfo
 let getChunkFilename = StackIO.getChunkFilename
 let readChunksAsWindows<'T when 'T: equality> = StackIO.readChunksAsWindows<'T>
 let readChunks<'T when 'T: equality> = StackIO.readChunks<'T>
-let icompare = StackIO.icompare
 
 let deleteIfExists = StackIO.deleteIfExists
 let write = StackIO.write
@@ -72,14 +68,7 @@ let resampleAffineTrilinearSlices = ChunkedAffineResampler.resampleAffineTriline
 // //////////////////// StackImageFunctions
 type ImageStats = ImageFunctions.ImageStats
 
-let liftUnary = StackImageFunctions.liftUnary
-let liftUnaryReleaseAfter = StackImageFunctions.liftUnaryReleaseAfter
-let getBytesPerComponent<'T> = StackImageFunctions.getBytesPerComponent<'T>
-let getImageFacts<'T when 'T: equality> = StackImageFunctions.getImageFacts<'T>
-let imageBytes<'T> = StackImageFunctions.imageBytes<'T>
 let cast<'S,'T when 'S: equality and 'T: equality> = StackImageFunctions.cast<'S,'T>
-let liftRelease2 = StackImageFunctions.liftRelease2
-let memNeeded<'T> = StackImageFunctions.memNeeded<'T>
 let add = StackImageFunctions.add
 let addPair = StackImageFunctions.addPair
 let inline scalarAddImage<^T when ^T: equality and ^T: (static member op_Explicit: ^T -> float)> = StackImageFunctions.scalarAddImage<^T>
@@ -122,9 +111,6 @@ let inline pairs2ints< ^T, ^S when ^T: (static member op_Explicit: ^T -> int) an
 let imageComputeStats = StackImageFunctions.imageComputeStats
 let imageComputeStatsFold = StackImageFunctions.imageComputeStatsFold
 let computeStats = StackImageFunctions.computeStats
-let stackFUnstack = StackImageFunctions.stackFUnstack
-let skipNTakeM = StackImageFunctions.skipNTakeM
-let stackFUnstackTrim = StackImageFunctions.stackFUnstackTrim
 let discreteGaussianOp = StackImageFunctions.discreteGaussianOp
 let discreteGaussian = StackImageFunctions.discreteGaussian
 let convGauss = StackImageFunctions.convGauss
@@ -150,13 +136,10 @@ let ImageConstantPad<'T when 'T: equality>= StackImageFunctions.ImageConstantPad
 let show = StackImageFunctions.show
 let plot = StackImageFunctions.plot
 let print = StackImageFunctions.print
-let srcStage = StackImageFunctions.srcStage
-let srcPlan = StackImageFunctions.srcPlan
 let zero<'T when 'T: equality>= StackImageFunctions.zero<'T>
 let createByEuler2DTransform<'T when 'T: equality>= StackImageFunctions.createByEuler2DTransform<'T>
 let empty = StackImageFunctions.empty
 let writeChunkSlices = StackImageFunctions.writeChunkSlices
 let makeConnectedComponentTranslationTable = StackImageFunctions.makeConnectedComponentTranslationTable
-let trd = StackImageFunctions.trd
 let updateConnectedComponents = StackImageFunctions.updateConnectedComponents
 let permuteAxes = StackImageFunctions.permuteAxes

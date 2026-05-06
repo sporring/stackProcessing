@@ -1,15 +1,15 @@
-﻿{
+{
   "version": 1,
   "nodes": [
     {
       "id": "node-1",
       "functionId": "Write",
       "x": 490,
-      "y": 252.60546875,
+      "y": 252.20703125,
       "parameters": [
         {
           "key": "output",
-          "value": "output",
+          "value": "../result18",
           "useInput": false
         },
         {
@@ -90,8 +90,8 @@
     {
       "id": "node-5",
       "functionId": "Scalar",
-      "x": 25.38671875,
-      "y": 30,
+      "x": 0,
+      "y": 66,
       "parameters": [
         {
           "key": "type",
@@ -100,7 +100,7 @@
         },
         {
           "key": "value",
-          "value": "test",
+          "value": "../image18",
           "useInput": false
         }
       ]

@@ -76,16 +76,6 @@ val ignorePairs: (unit -> StackCore.Stage<('a * unit),unit>)
 val zeroMaker:
   (int -> StackCore.Image<'a> -> StackCore.Image<'a>) when 'a: equality
 
-val window:
-  (uint ->
-     uint ->
-     uint -> SlimPipeline.Stage<StackCore.Image<'a>,StackCore.Image<'a> list>)
-    when 'a: equality
-
-val flatten: (unit -> SlimPipeline.Stage<'a list,'a>)
-
-val map: ((bool -> 'a -> 'b) -> SlimPipeline.Stage<'a,'b>)
-
 val sinkOp: (SlimPipeline.Plan<unit,unit> -> unit)
 
 val sink: (SlimPipeline.Plan<unit,'a> -> unit)
@@ -173,8 +163,6 @@ val readChunks<'T when 'T: equality> :
      SlimPipeline.Plan<unit,unit> -> SlimPipeline.Plan<unit,StackCore.Image<'T>>)
     when 'T: equality
 
-val icompare: (string -> string -> bool)
-
 val deleteIfExists: (string -> unit)
 
 val write:
@@ -200,36 +188,9 @@ val resampleAffineTrilinearSlices:
 
 type ImageStats = ImageFunctions.ImageStats
 
-val liftUnary:
-  (string ->
-     ('a -> 'b) ->
-     SlimPipeline.MemoryNeed ->
-     SlimPipeline.LengthTransformation -> SlimPipeline.Stage<'a,'b>)
-
-val liftUnaryReleaseAfter:
-  (string ->
-     (StackCore.Image<'a> -> StackCore.Image<'b>) ->
-     SlimPipeline.MemoryNeed ->
-     SlimPipeline.LengthTransformation ->
-     SlimPipeline.Stage<StackCore.Image<'a>,StackCore.Image<'b>>)
-    when 'a: equality and 'b: equality
-
-val getBytesPerComponent<'T> : uint64
-
-val getImageFacts<'T when 'T: equality> :
-  (StackCore.Image<'T> -> Image.ImageFacts) when 'T: equality
-
-val imageBytes<'T> : (uint64 -> uint64)
-
 val cast<'S,'T when 'S: equality and 'T: equality> :
   SlimPipeline.Stage<StackCore.Image<'S>,StackCore.Image<'T>>
     when 'S: equality and 'T: equality
-
-val liftRelease2:
-  ((StackCore.Image<'a> -> StackCore.Image<'a> -> 'b) ->
-     StackCore.Image<'a> -> StackCore.Image<'a> -> 'b) when 'a: equality
-
-val memNeeded<'T> : (uint64 -> uint64 -> uint64)
 
 val add:
   (StackCore.Image<'a> ->
@@ -415,19 +376,6 @@ val computeStats:
      SlimPipeline.Stage<StackCore.Image<'a>,StackImageFunctions.ImageStats>)
     when 'a: equality
 
-val stackFUnstack:
-  ((StackCore.Image<'a> -> uint) ->
-     StackCore.Image<'a> list -> Image.Image<'b> -> Image.Image<'b> list)
-    when 'a: equality and 'b: equality
-
-val skipNTakeM: (uint -> uint -> 'a list -> 'a list)
-
-val stackFUnstackTrim:
-  (uint32 ->
-     (StackCore.Image<'a> -> StackCore.Image<'b>) ->
-     StackCore.Image<'a> list -> Image.Image<'b> list)
-    when 'a: equality and 'b: equality
-
 val discreteGaussianOp:
   (string ->
      float ->
@@ -537,23 +485,6 @@ val plot:
 
 val print: (unit -> StackCore.Stage<'a,unit>)
 
-val srcStage:
-  (string ->
-     uint ->
-     uint ->
-     uint ->
-     (int -> StackCore.Image<'a>) ->
-     SlimPipeline.Stage<unit,StackCore.Image<'a>>) when 'a: equality
-
-val srcPlan:
-  (bool ->
-     uint64 ->
-     uint ->
-     uint ->
-     uint ->
-     StackCore.Stage<unit,StackCore.Image<'a>> option ->
-     SlimPipeline.Plan<unit,StackCore.Image<'a>>) when 'a: equality
-
 val zero<'T when 'T: equality> :
   (uint ->
      uint ->
@@ -579,8 +510,6 @@ val makeConnectedComponentTranslationTable:
   (uint ->
      StackCore.Stage<(StackCore.Image<uint64> * uint64),
                      (uint * uint64 * uint64) list>)
-
-val trd: ('a * 'b * 'c -> 'c)
 
 val updateConnectedComponents:
   (uint ->

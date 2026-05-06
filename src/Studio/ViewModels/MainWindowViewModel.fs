@@ -9,6 +9,7 @@ open System.Diagnostics
 open System.Globalization
 open System.IO
 open System.Runtime.CompilerServices
+open System.Security
 open System.Text
 open System.Text.RegularExpressions
 open System.Windows.Input
@@ -199,6 +200,10 @@ module private ScalarNode =
         let mutable parsed = 0.0
         Double.TryParse(value, NumberStyles.Float, CultureInfo.InvariantCulture, &parsed)
 
+    let private isStandardNumericName (value: string) =
+        String.Equals(value, "e", StringComparison.OrdinalIgnoreCase)
+        || String.Equals(value, "pi", StringComparison.OrdinalIgnoreCase)
+
     let isValidValue scalarType (value: string) =
         let trimmed = value.Trim()
 
@@ -217,15 +222,15 @@ module private ScalarNode =
             | UInt8
             | UInt16
             | UInt32
-            | UInt64 -> isUnsignedInteger trimmed
+            | UInt64 -> isUnsignedInteger trimmed || isStandardNumericName trimmed
             | Int8
             | Int16
             | Int32
-            | Int64 -> isInteger trimmed
+            | Int64 -> isInteger trimmed || isStandardNumericName trimmed
             | Float32
             | Float64
             | Number
-            | Complex -> isFloat trimmed
+            | Complex -> isFloat trimmed || isStandardNumericName trimmed
 
     let ensureValueMatchesType (state: PipelineNodeState) =
         let selectedType = selectedType state
@@ -258,6 +263,10 @@ module private FileDirectoryNode =
         |> Option.filter (String.IsNullOrWhiteSpace >> not)
         |> Option.map NodeTitle.quotedString
         |> Option.defaultValue state.Definition.DisplayName
+
+module private StandardFunctionOptions =
+    let values =
+        [ "abs"; "acos"; "asin"; "atan"; "cos"; "sin"; "tan"; "exp"; "log10"; "log"; "round"; "sqrt"; "square" ]
 
 module private ScalarOpNode =
     let typeOptions =
@@ -304,6 +313,27 @@ module private ScalarOpNode =
             |> Option.defaultValue "*"
 
         $"a {operation} b"
+
+module private ScalarFunctionNode =
+    let functionOptions = StandardFunctionOptions.values
+
+    let scalarPort =
+        { Name = "a: Float64"
+          Type = Scalar(BasicType.Numeric Float64) }
+
+    let outputPort =
+        { Name = "Float64"
+          Type = Scalar(BasicType.Numeric Float64) }
+
+    let title (state: PipelineNodeState) =
+        let functionName =
+            state.Parameters
+            |> Seq.tryFind (fun parameter -> parameter.Key = "function")
+            |> Option.map _.Value
+            |> Option.filter (fun value -> functionOptions |> List.contains value)
+            |> Option.defaultValue "sqrt"
+
+        $"{functionName}(a)"
 
 module private SourceImageNode =
     let hasInputTitle functionId =
@@ -384,7 +414,7 @@ module private PairOperationNode =
           Complex ]
         |> List.map NumericType.toString
 
-    let operationOptions = [ "+"; "-"; "*"; "/" ]
+    let operationOptions = [ "+"; "-"; "*"; "/"; "max"; "min" ]
 
     let selectedType (state: PipelineNodeState) =
         state.Parameters
@@ -400,8 +430,10 @@ module private PairOperationNode =
             |> Option.filter (fun value -> operationOptions |> List.contains value)
             |> Option.defaultValue "*"
 
-        match state.Definition.Id with
-        | "ImageOpImage" -> $"I .{operation} J"
+        match state.Definition.Id, operation with
+        | "ImageOpImage", "max" -> "max(I, J)"
+        | "ImageOpImage", "min" -> "min(I, J)"
+        | "ImageOpImage", _ -> $"I .{operation} J"
         | _ -> state.Definition.DisplayName
 
     let ports (state: PipelineNodeState) =
@@ -435,6 +467,19 @@ module private CastNode =
             Type = PortType.numericToImage sourceType } ],
         [ { Name = targetTypeName
             Type = PortType.numericToImage targetType } ]
+
+module private UnaryImageFunctionNode =
+    let functionOptions = StandardFunctionOptions.values
+
+    let title (state: PipelineNodeState) =
+        let functionName =
+            state.Parameters
+            |> Seq.tryFind (fun parameter -> parameter.Key = "function")
+            |> Option.map _.Value
+            |> Option.filter (fun value -> functionOptions |> List.contains value)
+            |> Option.defaultValue "sqrt"
+
+        $"{functionName}(I)"
 
 module private ScalarImageOperationNode =
     let typeOptions = SourceImageNode.typeOptions
@@ -663,7 +708,8 @@ type PipelineNodeViewModel(
         this.Name <- state.Title
         this.Width <-
             match state.Definition.Id with
-            | "ComputeStats" -> 170.
+            | "ComputeStats"
+            | "GetStackInfo" -> 170.
             | "ComponentTranslationTable"
             | "CollapseComponentLabels" -> 180.
             | _ -> 110.
@@ -712,8 +758,16 @@ type PipelineNodeViewModel(
                     state.Title <- ScalarOpNode.title state
                     this.Name <- state.Title
                     markGraphDirty()
+                elif state.Definition.Id = "ScalarFunction" && parameter.Key = "function" && args.PropertyName = nameof parameter.Value then
+                    state.Title <- ScalarFunctionNode.title state
+                    this.Name <- state.Title
+                    markGraphDirty()
                 elif state.Definition.Id = "ImageOpImage" && parameter.Key = "operation" && args.PropertyName = nameof parameter.Value then
                     state.Title <- PairOperationNode.title state
+                    this.Name <- state.Title
+                    markGraphDirty()
+                elif state.Definition.Id = "UnaryImageFunction" && parameter.Key = "function" && args.PropertyName = nameof parameter.Value then
+                    state.Title <- UnaryImageFunctionNode.title state
                     this.Name <- state.Title
                     markGraphDirty()
                 elif state.Definition.Id = "Chart" && parameter.Key = "kind" && args.PropertyName = nameof parameter.Value then
@@ -728,7 +782,7 @@ type PipelineNodeViewModel(
                     state.Title <- ScalarImageOperationNode.title state
                     this.Name <- state.Title
                     markGraphDirty()
-                elif (state.Definition.Id = "Scalar" || state.Definition.Id = "ScalarOp" || state.Definition.Id = "Read" || state.Definition.Id = "ReadRandom" || state.Definition.Id = "ReadChunks" || state.Definition.Id = "Zero" || state.Definition.Id = "CreateByEuler2DTransform" || state.Definition.Id = "Threshold" || state.Definition.Id = "ImageOpImage" || state.Definition.Id = "MaxOfPair" || state.Definition.Id = "MinOfPair" || ScalarImageOperationNode.isOperation state.Definition.Id) && parameter.Key = "type" && args.PropertyName = nameof parameter.Value then
+                elif (state.Definition.Id = "Scalar" || state.Definition.Id = "ScalarOp" || state.Definition.Id = "Read" || state.Definition.Id = "ReadRandom" || state.Definition.Id = "ReadChunks" || state.Definition.Id = "Zero" || state.Definition.Id = "CreateByEuler2DTransform" || state.Definition.Id = "Threshold" || state.Definition.Id = "ImageOpImage" || ScalarImageOperationNode.isOperation state.Definition.Id) && parameter.Key = "type" && args.PropertyName = nameof parameter.Value then
                     if state.Definition.Id = "Scalar" then
                         ScalarNode.ensureValueMatchesType state
                         state.Title <- ScalarNode.title state
@@ -791,6 +845,8 @@ type PipelineNodeViewModel(
         let port =
             if state.Definition.Id = "ScalarOp" && (parameter.Key = "a" || parameter.Key = "b") then
                 ScalarOpNode.scalarPort parameter.Key state
+            elif state.Definition.Id = "ScalarFunction" && parameter.Key = "a" then
+                ScalarFunctionNode.scalarPort
             elif ScalarImageOperationNode.isOperation state.Definition.Id && parameter.Key = "value" then
                 ScalarImageOperationNode.valuePort state
             elif state.Definition.Id = "CollapseComponentLabels" && parameter.Key = "translationTable" then
@@ -840,14 +896,13 @@ type PipelineNodeViewModel(
             | "Scalar" -> state.Definition.Inputs, [ ScalarNode.outputPort state ]
             | "FileDirectory" -> state.Definition.Inputs, state.Definition.Outputs
             | "ScalarOp" -> state.Definition.Inputs, [ ScalarOpNode.outputPort state ]
+            | "ScalarFunction" -> state.Definition.Inputs, [ ScalarFunctionNode.outputPort ]
             | "Read"
             | "ReadRandom"
             | "ReadChunks"
             | "Zero"
             | "CreateByEuler2DTransform" -> state.Definition.Inputs, [ SourceImageNode.outputPort state ]
-            | "ImageOpImage"
-            | "MaxOfPair"
-            | "MinOfPair" -> PairOperationNode.ports state
+            | "ImageOpImage" -> PairOperationNode.ports state
             | "Cast" -> CastNode.ports state
             | functionId when ScalarImageOperationNode.isOperation functionId -> ScalarImageOperationNode.ports state
             | "Threshold" -> ThresholdNode.ports state
@@ -863,8 +918,10 @@ type PipelineNodeViewModel(
                 match state.Definition.Id with
                 | "Scalar"
                 | "FileDirectory"
-                | "ScalarOp" -> ScalarOutput
+                | "ScalarOp"
+                | "ScalarFunction" -> ScalarOutput
                 | "ComputeStats"
+                | "GetStackInfo"
                 | "ComponentTranslationTable"
                 | "HistogramData" -> ReducerOutput
                 | _ -> DataOutput
@@ -1031,6 +1088,12 @@ type MainWindowViewModel() as this =
                         |> List.map (fun value -> ParameterOptionViewModel(value, value, true))
 
                     PipelineParameterViewModel(parameter.Label, parameter.Key, parameter.DefaultValue, parameter.Type, options, false)
+                | "ScalarFunction", "function" ->
+                    let options =
+                        ScalarFunctionNode.functionOptions
+                        |> List.map (fun value -> ParameterOptionViewModel(value, value, true))
+
+                    PipelineParameterViewModel(parameter.Label, parameter.Key, parameter.DefaultValue, parameter.Type, options, false)
                 | ("Read" | "ReadRandom" | "ReadChunks" | "Zero" | "CreateByEuler2DTransform"), "type" ->
                     let options =
                         SourceImageNode.typeOptions
@@ -1043,7 +1106,7 @@ type MainWindowViewModel() as this =
                         |> List.map (fun value -> ParameterOptionViewModel(value, value, true))
 
                     PipelineParameterViewModel(parameter.Label, parameter.Key, parameter.DefaultValue, parameter.Type, options, false)
-                | ("ImageOpImage" | "MaxOfPair" | "MinOfPair"), "type" ->
+                | "ImageOpImage", "type" ->
                     let options =
                         PairOperationNode.typeOptions
                         |> List.map (fun value -> ParameterOptionViewModel(value, value, true))
@@ -1052,6 +1115,12 @@ type MainWindowViewModel() as this =
                 | "ImageOpImage", "operation" ->
                     let options =
                         PairOperationNode.operationOptions
+                        |> List.map (fun value -> ParameterOptionViewModel(value, value, true))
+
+                    PipelineParameterViewModel(parameter.Label, parameter.Key, parameter.DefaultValue, parameter.Type, options, false)
+                | "UnaryImageFunction", "function" ->
+                    let options =
+                        UnaryImageFunctionNode.functionOptions
                         |> List.map (fun value -> ParameterOptionViewModel(value, value, true))
 
                     PipelineParameterViewModel(parameter.Label, parameter.Key, parameter.DefaultValue, parameter.Type, options, false)
@@ -1096,12 +1165,16 @@ type MainWindowViewModel() as this =
             state.Title <- FileDirectoryNode.title state
         elif definition.Id = "ScalarOp" then
             state.Title <- ScalarOpNode.title state
+        elif definition.Id = "ScalarFunction" then
+            state.Title <- ScalarFunctionNode.title state
         elif SourceImageNode.hasInputTitle definition.Id then
             state.Title <- SourceImageNode.title state
         elif SourceImageNode.hasOutputTitle definition.Id then
             state.Title <- SourceImageNode.title state
         elif definition.Id = "ImageOpImage" then
             state.Title <- PairOperationNode.title state
+        elif definition.Id = "UnaryImageFunction" then
+            state.Title <- UnaryImageFunctionNode.title state
         elif definition.Id = "Chart" then
             state.Title <- ChartNode.title state
         elif definition.Id = "ImageOpScalar" || definition.Id = "ScalarOpImage" then
@@ -1353,10 +1426,7 @@ type MainWindowViewModel() as this =
                 | _ -> false)
 
         pipelineNodes ()
-        |> Seq.filter (fun node ->
-            node.State.Definition.Id = "ImageOpImage"
-            || node.State.Definition.Id = "MaxOfPair"
-            || node.State.Definition.Id = "MinOfPair")
+        |> Seq.filter (fun node -> node.State.Definition.Id = "ImageOpImage")
         |> Seq.iter (fun node ->
             let isConnected = hasConnection node || hasConnectionRequiringFixedDataOutput node
 
@@ -1431,6 +1501,10 @@ type MainWindowViewModel() as this =
         |> Option.defaultValue (
             if String.Equals(trimmed, "System.Numerics.Complex.One", StringComparison.Ordinal) then
                 "1.0"
+            elif String.Equals(trimmed, "System.Math.E", StringComparison.Ordinal) then
+                "e"
+            elif String.Equals(trimmed, "System.Math.PI", StringComparison.Ordinal) then
+                "pi"
             else
                 value)
 
@@ -1863,13 +1937,38 @@ type MainWindowViewModel() as this =
         else
             "dotnet"
 
+    member private _.GraphRunWorkingDirectory() =
+        currentGraphPath
+        |> Option.bind (fun path ->
+            let fullPath = Path.GetFullPath(path)
+            let directory = Path.GetDirectoryName(fullPath)
+
+            if String.IsNullOrWhiteSpace directory then
+                None
+            else
+                Some directory)
+        |> Option.defaultWith (fun () ->
+            let home = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile)
+
+            if String.IsNullOrWhiteSpace home then
+                studioWorkingDirectory
+            else
+                home)
+
     member private this.EnsureRunProject(includePlotly: bool) =
         Directory.CreateDirectory(runProjectDirectory) |> ignore
 
         let repositoryRoot = this.FindRepositoryRoot()
         let stackProcessingProject = Path.Combine(repositoryRoot, "src", "StackProcessing", "StackProcessing.fsproj")
         let stackProcessingCoreProject = Path.Combine(repositoryRoot, "src", "StackProcessing.Core", "StackProcessing.Core.fsproj")
+        let simpleItkManaged = Path.Combine(repositoryRoot, "lib", "SimpleITKCSharpManaged.dll")
+        let simpleItkWindowsNative = Path.Combine(repositoryRoot, "lib", "SimpleITKCSharpNative.dll")
+        let simpleItkLinuxNative = Path.Combine(repositoryRoot, "lib", "libSimpleITKCSharpNative.so")
+        let simpleItkMacNative = Path.Combine(repositoryRoot, "lib", "libSimpleITKCSharpNative.dylib")
         let projectPath = Path.Combine(runProjectDirectory, "StudioRun.fsproj")
+
+        let xml value =
+            SecurityElement.Escape(value)
 
         let plotlyReference =
             if includePlotly then
@@ -1885,9 +1984,25 @@ type MainWindowViewModel() as this =
     <TargetFramework>net10.0</TargetFramework>
   </PropertyGroup>
   <ItemGroup>
-    <ProjectReference Include="{stackProcessingProject}" />
-    <ProjectReference Include="{stackProcessingCoreProject}" />
+    <Reference Include="SimpleITKCSharp">
+      <HintPath>{xml simpleItkManaged}</HintPath>
+      <Private>true</Private>
+    </Reference>
+    <ProjectReference Include="{xml stackProcessingProject}" />
+    <ProjectReference Include="{xml stackProcessingCoreProject}" />
 {plotlyReference}
+  </ItemGroup>
+  <ItemGroup Condition="$([MSBuild]::IsOSPlatform('Windows'))">
+    <None Include="{xml simpleItkWindowsNative}">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <TargetPath>libSimpleITKCSharpNative.dll</TargetPath>
+    </None>
+  </ItemGroup>
+  <ItemGroup Condition="$([MSBuild]::IsOSPlatform('Linux'))">
+    <None Include="{xml simpleItkLinuxNative}" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+  <ItemGroup Condition="$([MSBuild]::IsOSPlatform('OSX'))">
+    <None Include="{xml simpleItkMacNative}" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
   <ItemGroup>
     <Compile Include="Program.fs" />
@@ -1968,12 +2083,15 @@ type MainWindowViewModel() as this =
                         runProjectDirectory
 
                 if buildExitCode = 0 then
+                    let runWorkingDirectory = this.GraphRunWorkingDirectory()
+                    this.AppendGraphOutputLineOnUi($"Working directory: {runWorkingDirectory}")
+
                     let! runExitCode =
                         this.RunProcess
                             "Run"
                             dotnet
                             [ "run"; "--configuration"; "Release"; "--no-build"; "--project"; projectPath ]
-                            studioWorkingDirectory
+                            runWorkingDirectory
 
                     if runExitCode = 0 then
                         this.AppendGraphOutputLineOnUi("Completed")
@@ -2371,12 +2489,36 @@ type MainWindowViewModel() as this =
         let canonicalFunctionId functionId =
             match functionId with
             | "Plot" -> "Chart"
+            | "SqrtFloat64" -> "UnaryImageFunction"
+            | "MaxOfPair"
+            | "MinOfPair" -> "ImageOpImage"
             | _ -> functionId
+
+        let canonicalSavedNode (savedNode: SavedNode) =
+            let pairOperation =
+                match savedNode.FunctionId with
+                | "MaxOfPair" -> Some "max"
+                | "MinOfPair" -> Some "min"
+                | _ -> None
+
+            match pairOperation with
+            | Some operation ->
+                let operationParameter =
+                    { Key = "operation"
+                      Value = operation
+                      UseInput = false }
+
+                { savedNode with
+                    FunctionId = "ImageOpImage"
+                    Parameters = Array.append [| operationParameter |] savedNode.Parameters }
+            | None ->
+                { savedNode with FunctionId = canonicalFunctionId savedNode.FunctionId }
 
         let loadedNodes =
             savedGraph.Nodes
             |> Array.map (fun savedNode ->
-                let functionId = canonicalFunctionId savedNode.FunctionId
+                let savedNode = canonicalSavedNode savedNode
+                let functionId = savedNode.FunctionId
 
                 match BuiltInCatalog.tryFind functionId with
                 | None -> invalidOp $"Unknown function id in saved graph: {savedNode.FunctionId}"
