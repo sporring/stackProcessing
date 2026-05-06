@@ -54,12 +54,15 @@ let read<'T when 'T: equality> = StackIO.read<'T>
 let readRandom<'T when 'T: equality> = StackIO.readRandom<'T>
 let getChunkInfo = StackIO.getChunkInfo
 let getZarrInfo = StackIO.getZarrInfo
+let getNexusInfo = StackIO.getNexusInfo
 let getChunkFilename = StackIO.getChunkFilename
 let readSlabStacked<'T when 'T: equality> = StackIO.readSlabStacked<'T>
 let readSlabAsWindows<'T when 'T: equality> = StackIO.readSlabAsWindows<'T>
 let readSlab<'T when 'T: equality> = StackIO.readSlab<'T>
 let readZarrSlabStacked<'T when 'T: equality> = StackIO.readZarrSlabStacked<'T>
 let readZarrSlab<'T when 'T: equality> = StackIO.readZarrSlab<'T>
+let readNexusSlabStacked<'T when 'T: equality> = StackIO.readNexusSlabStacked<'T>
+let readNexusSlab<'T when 'T: equality> = StackIO.readNexusSlab<'T>
 
 let deleteIfExists = StackIO.deleteIfExists
 let write = StackIO.write

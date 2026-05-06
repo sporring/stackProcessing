@@ -47,6 +47,9 @@ module BuiltInCatalog =
   let private zarrFormatDescription =
       "Reads or writes an OME-Zarr volume through ZarrNET. The current native .NET implementation is used here for UInt8 and UInt16 scalar images. readZarrSlab serves 2D slices from a selected timepoint/channel/resolution; writeZarr writes a single timepoint/channel volume and exposes chunk sizes and physical voxel spacing so Studio can be used as a stack-to-Zarr converter."
 
+  let private nexusFormatDescription =
+      "Reads a rank-3 NeXus/HDF5 detector stack through PureHDF using an explicit dataset path and axis mapping. This covers common MAX IV and ESRF detector-stack layouts while keeping streaming slice reads larger-than-memory friendly. Compressed detector files that use external HDF5 filters may require a later native/plugin fallback."
+
   let private numericDefaultValue tp =
       match tp with
       | UInt8
@@ -190,6 +193,25 @@ module BuiltInCatalog =
             makeParameter "channel" "Channel" "0" (BasicType.Numeric Int32)
             makeParameter "maxParallelChunks" "Max parallel chunks" "0" (BasicType.Numeric Int32) ] }
 
+  let makeGenericReadNexusSlab () =
+    { Id = "ReadNexusSlab"
+      DisplayName = "readNexusSlab"
+      Category = "Sources / Sinks"
+      Summary = "Read a NeXus/HDF5 detector stack as a normal 2D slice stream."
+      Description = nexusFormatDescription
+      Aliases = [ "nexus"; "hdf5"; "h5"; "slab"; "input"; "MAX IV"; "ESRF"; "DanMAX"; "ForMAX"; "HOAHub"; "type" ]
+      Inputs = []
+      Outputs = [ makePort "UInt16" imageUInt16 ]
+      Parameters =
+          [ availableMemoryParameter
+            makeParameter "type" "Type" "UInt16" BasicType.String
+            makeParameter "input" "Input" "scan.h5" BasicType.String
+            makeParameter "datasetPath" "Dataset path" "/entry/data/data" BasicType.String
+            makeParameter "slabDepth" "Slab depth" "8" (BasicType.Numeric UInt32)
+            makeParameter "frameAxis" "Frame axis" "0" (BasicType.Numeric Int32)
+            makeParameter "yAxis" "Y axis" "1" (BasicType.Numeric Int32)
+            makeParameter "xAxis" "X axis" "2" (BasicType.Numeric Int32) ] }
+
   let makeGenericCast () =
     { Id = "Cast"
       DisplayName = "cast"
@@ -292,6 +314,8 @@ module BuiltInCatalog =
         makeGenericReadSlab()
 
         makeGenericReadZarrSlab()
+
+        makeGenericReadNexusSlab()
 
         makeGenericZero()
 
@@ -449,6 +473,31 @@ module BuiltInCatalog =
               [ makeParameter "input" "Name" "input.zarr" BasicType.String
                 makeParameter "multiscaleIndex" "Multiscale index" "0" (BasicType.Numeric Int32)
                 makeParameter "datasetIndex" "Dataset index" "0" (BasicType.Numeric Int32) ] }
+
+        { Id = "GetNexusInfo"
+          DisplayName = "getNexusInfo"
+          Category = "Sources / Sinks"
+          Summary = "Inspect a NeXus/HDF5 detector stack and expose chunk layout and image dimensions."
+          Description = nexusFormatDescription
+          Aliases = [ "info"; "metadata"; "nexus"; "hdf5"; "h5"; "chunk"; "chunks"; "width"; "height"; "depth"; "size"; "component" ]
+          Inputs = []
+          Outputs =
+              [ makePort "Chunks: int list" intList
+                makePort "Size: UInt64 list" uint64List
+                makePort "ComponentType: String" (Scalar BasicType.String)
+                makePort "NumberOfComponents: UInt32" (Scalar(BasicType.Numeric UInt32))
+                makePort "ChunkX: Int32" (Scalar(BasicType.Numeric Int32))
+                makePort "ChunkY: Int32" (Scalar(BasicType.Numeric Int32))
+                makePort "ChunkZ: Int32" (Scalar(BasicType.Numeric Int32))
+                makePort "Width: UInt64" (Scalar(BasicType.Numeric UInt64))
+                makePort "Height: UInt64" (Scalar(BasicType.Numeric UInt64))
+                makePort "Depth: UInt64" (Scalar(BasicType.Numeric UInt64)) ]
+          Parameters =
+              [ makeParameter "input" "Name" "scan.h5" BasicType.String
+                makeParameter "datasetPath" "Dataset path" "/entry/data/data" BasicType.String
+                makeParameter "frameAxis" "Frame axis" "0" (BasicType.Numeric Int32)
+                makeParameter "yAxis" "Y axis" "1" (BasicType.Numeric Int32)
+                makeParameter "xAxis" "X axis" "2" (BasicType.Numeric Int32) ] }
 
         { Id = "Tap"
           DisplayName = "tap"

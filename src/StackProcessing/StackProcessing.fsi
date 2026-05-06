@@ -143,6 +143,8 @@ val getChunkInfo: (string -> string -> StackIO.ChunkInfo)
 
 val getZarrInfo: (string -> int -> int -> StackIO.ChunkInfo)
 
+val getNexusInfo: (string -> string -> int -> int -> int -> StackIO.ChunkInfo)
+
 val getChunkFilename: (string -> string -> int -> int -> int -> string)
 
 val readSlabStacked<'T when 'T: equality> :
@@ -179,6 +181,26 @@ val readZarrSlab<'T when 'T: equality> :
      uint ->
      int ->
      int ->
+     int ->
+     int ->
+     int ->
+     SlimPipeline.Plan<unit,unit> -> SlimPipeline.Plan<unit,StackCore.Image<'T>>)
+    when 'T: equality
+
+val readNexusSlabStacked<'T when 'T: equality> :
+  (string ->
+     string ->
+     uint ->
+     int ->
+     int ->
+     int ->
+     SlimPipeline.Plan<unit,unit> -> SlimPipeline.Plan<unit,StackCore.Image<'T>>)
+    when 'T: equality
+
+val readNexusSlab<'T when 'T: equality> :
+  (string ->
+     string ->
+     uint ->
      int ->
      int ->
      int ->

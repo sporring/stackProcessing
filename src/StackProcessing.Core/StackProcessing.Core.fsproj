@@ -30,6 +30,7 @@
 
     <ItemGroup>
         <PackageReference Include="DIKU.Graph" Version="1.0.0" />
+        <PackageReference Include="PureHDF" Version="2.1.1" />
         <PackageReference Include="ZarrNET" Version="0.4.0" />
         <ProjectReference Include="../Image/Image.fsproj" />
         <ProjectReference Include="../SlimPipeline/SlimPipeline.fsproj" />

@@ -120,6 +120,50 @@ let generatorSuite =
             Expect.stringContains code ">=> writeZarr \"output.zarr\" ChunkInfo0.topLeftInfo.componentType 32u 16u 17u 8u 0.5 0.5 2.0 2" "WriteZarr should accept linked Zarr metadata."
             Expect.stringContains code "|> sink" "Terminal WriteZarr should be sunk."
 
+        testCase "nexus boxes lower to nexus DSL functions" <| fun _ ->
+            let info =
+                node "info" "GetNexusInfo"
+                    [ p "input" "scan.h5" false
+                      p "datasetPath" "/entry/data/data" false
+                      p "frameAxis" "0" false
+                      p "yAxis" "1" false
+                      p "xAxis" "2" false ]
+
+            let read =
+                node "read" "ReadNexusSlab"
+                    [ p "availableMemory" "1073741824" false
+                      p "type" "UInt16" false
+                      p "input" "scan.h5" false
+                      p "datasetPath" "/entry/data/data" false
+                      p "slabDepth" "8" false
+                      p "frameAxis" "0" false
+                      p "yAxis" "1" false
+                      p "xAxis" "2" false ]
+
+            let write =
+                node "write" "WriteZarr"
+                    [ p "output" "output.zarr" false
+                      p "name" "converted" false
+                      p "depth" "" true
+                      p "chunkX" "16" false
+                      p "chunkY" "17" false
+                      p "chunkZ" "8" false
+                      p "physicalSizeX" "1.0" false
+                      p "physicalSizeY" "1.0" false
+                      p "physicalSizeZ" "1.0" false
+                      p "maxConcurrentWrites" "0" false ]
+
+            let code =
+                graph
+                    [ info; read; write ]
+                    [ edge "read" "output" 0 "write" "input" 0
+                      edge "info" "reducerOutput" 9 "write" "parameterInput" 2 ]
+                |> PipelineCodeGenerator.generateSavedGraph
+
+            Expect.stringContains code "let ChunkInfo0 = getNexusInfo \"scan.h5\" \"/entry/data/data\" 0 1 2" "GetNexusInfo should generate a metadata binding."
+            Expect.stringContains code "|> readNexusSlab<uint16> \"scan.h5\" \"/entry/data/data\" 8u 0 1 2" "ReadNexusSlab should generate the NeXus slab reader."
+            Expect.stringContains code ">=> writeZarr \"output.zarr\" \"converted\" ChunkInfo0.size[2] 16u 17u 8u 1.0 1.0 1.0 0" "WriteZarr should accept linked NeXus metadata."
+
         testCase "linked string scalar is emitted before read and used unquoted" <| fun _ ->
             let scalar =
                 node "scalar" "Scalar"
