@@ -141,6 +141,8 @@ val readRandom<'T when 'T: equality> :
 
 val getChunkInfo: (string -> string -> StackIO.ChunkInfo)
 
+val getZarrInfo: (string -> int -> int -> StackIO.ChunkInfo)
+
 val getChunkFilename: (string -> string -> int -> int -> int -> string)
 
 val readSlabStacked<'T when 'T: equality> :
@@ -161,10 +163,44 @@ val readSlab<'T when 'T: equality> :
      SlimPipeline.Plan<unit,unit> -> SlimPipeline.Plan<unit,StackCore.Image<'T>>)
     when 'T: equality
 
+val readZarrSlabStacked<'T when 'T: equality> :
+  (string ->
+     uint ->
+     int ->
+     int ->
+     int ->
+     int ->
+     int ->
+     SlimPipeline.Plan<unit,unit> -> SlimPipeline.Plan<unit,StackCore.Image<'T>>)
+    when 'T: equality
+
+val readZarrSlab<'T when 'T: equality> :
+  (string ->
+     uint ->
+     int ->
+     int ->
+     int ->
+     int ->
+     int ->
+     SlimPipeline.Plan<unit,unit> -> SlimPipeline.Plan<unit,StackCore.Image<'T>>)
+    when 'T: equality
+
 val deleteIfExists: (string -> unit)
 
 val write:
   (string -> string -> StackCore.Stage<StackCore.Image<'a>,StackCore.Image<'a>>)
+    when 'a: equality
+
+val writeZarr:
+  (string ->
+     string ->
+     uint ->
+     uint ->
+     uint ->
+     uint ->
+     float ->
+     float ->
+     float -> int -> StackCore.Stage<StackCore.Image<'a>,StackCore.Image<'a>>)
     when 'a: equality
 
 val writeInSlabs:

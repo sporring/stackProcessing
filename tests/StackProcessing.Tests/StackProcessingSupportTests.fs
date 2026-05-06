@@ -281,6 +281,50 @@ let stackProcessingSupportSuite =
                 deleteDirectory inputDir
                 deleteDirectory chunkDir
 
+        testCase "writeZarr writes OME-Zarr and readZarrSlab reads it back as slices and slabs" <| fun _ ->
+            let inputDir = tempDirectory "zarr-input"
+            let rootDir = tempDirectory "zarr-output"
+            let suffix = ".tiff"
+            let zarrPath = Path.Combine(rootDir, "roundtrip.zarr")
+            let slices = [ for z in 0 .. 3 -> makeSlice 5 4 z ]
+            let mutable rereadSlices: Image<uint8> list = []
+            let mutable rereadSlabs: Image<uint8> list = []
+
+            try
+                writeSlices inputDir suffix slices
+
+                source (2UL * 1024UL * 1024UL * 1024UL)
+                |> read<uint8> inputDir suffix
+                >=> writeZarr zarrPath "roundtrip" 4u 3u 2u 2u 1.0 1.0 2.0 0
+                |> sink
+
+                let info = getZarrInfo zarrPath 0 0
+                Expect.equal info.size [ 5UL; 4UL; 4UL ] "Zarr metadata should expose x/y/z image size."
+                Expect.equal info.topLeftInfo.componentType "uint8" "Zarr metadata should expose the dataset dtype."
+
+                rereadSlabs <-
+                    source (2UL * 1024UL * 1024UL * 1024UL)
+                    |> readZarrSlabStacked<uint8> zarrPath 2u 0 0 0 0 0
+                    |> drainList
+
+                Expect.equal rereadSlabs.Length 2 "readZarrSlabStacked should emit one stacked slab per requested z block."
+                Expect.equal (rereadSlabs[0].GetSize()) [ 5u; 4u; 2u ] "The first Zarr slab should retain x/y and requested z depth."
+
+                rereadSlices <-
+                    source (2UL * 1024UL * 1024UL * 1024UL)
+                    |> readZarrSlab<uint8> zarrPath 2u 0 0 0 0 0
+                    |> drainList
+
+                Expect.equal rereadSlices.Length 4 "readZarrSlab should unstack slabs into a normal slice stream."
+                let pixels = rereadSlices[3].toArray2D()
+                Expect.equal pixels[4, 3] (uint8 ((4 + 2 * 3 + 3 * 3) % 251)) "Round-tripped Zarr pixel values should match the source stack."
+            finally
+                disposeImages rereadSlices
+                disposeImages rereadSlabs
+                disposeImages slices
+                deleteDirectory inputDir
+                deleteDirectory rootDir
+
         testCase "image pair helpers perform arithmetic and extrema" <| fun _ ->
             let runPair f =
                 let a = image2D (fun x y -> float32 (1 + x + 2 * y))

@@ -310,7 +310,7 @@ module PipelineCodeGenerator =
         node.FunctionId = "GetStackInfo"
 
     let private isChunkInfoNode (node: SavedNode) =
-        node.FunctionId = "GetChunkInfo"
+        node.FunctionId = "GetChunkInfo" || node.FunctionId = "GetZarrInfo"
 
     let private parameterExpression (graph: SavedGraph) (nodesById: Map<string, SavedNode>) (scalarNamesByNodeId: Map<string, string>) (statsNamesByNodeId: Map<string, string>) (translationTableNamesByNodeId: Map<string, string>) (histogramNamesByNodeId: Map<string, string>) (stackInfoNamesByNodeId: Map<string, string>) (chunkInfoNamesByNodeId: Map<string, string>) (node: SavedNode) parameterIndex key =
         let linkedExpression =
@@ -433,8 +433,14 @@ module PipelineCodeGenerator =
 
         let name = chunkInfoNamesByNodeId |> Map.find node.Id
         let input = stringArgument "input"
-        let suffix = stringArgument "suffix"
-        name, $"let {name} = getChunkInfo {input} {suffix}"
+
+        if node.FunctionId = "GetZarrInfo" then
+            let multiscaleIndex = parameterExpression "multiscaleIndex"
+            let datasetIndex = parameterExpression "datasetIndex"
+            name, $"let {name} = getZarrInfo {input} {multiscaleIndex.Value} {datasetIndex.Value}"
+        else
+            let suffix = stringArgument "suffix"
+            name, $"let {name} = getChunkInfo {input} {suffix}"
 
     let private savedElementLine (graph: SavedGraph) (nodesById: Map<string, SavedNode>) (scalarNamesByNodeId: Map<string, string>) (statsNamesByNodeId: Map<string, string>) (translationTableNamesByNodeId: Map<string, string>) (histogramNamesByNodeId: Map<string, string>) (stackInfoNamesByNodeId: Map<string, string>) (chunkInfoNamesByNodeId: Map<string, string>) (node: SavedNode) =
         let parameterExpressionForNode (targetNode: SavedNode) key =
@@ -646,6 +652,17 @@ module PipelineCodeGenerator =
             let input = quotedParameter "input"
             let suffix = quotedParameter "suffix"
             $"|> readSlab<{pixelType}> {input} {suffix}" |> sourcePrefix availableMemory
+        | "ReadZarrSlab" ->
+            let availableMemory = parameterValue "availableMemory"
+            let pixelType = pixelTypeNameFromParameter "type" "UInt8" node
+            let input = quotedParameter "input"
+            let slabDepth = parameterValue "slabDepth"
+            let multiscaleIndex = parameterValue "multiscaleIndex"
+            let datasetIndex = parameterValue "datasetIndex"
+            let timepoint = parameterValue "timepoint"
+            let channel = parameterValue "channel"
+            let maxParallelChunks = parameterValue "maxParallelChunks"
+            $"|> readZarrSlab<{pixelType}> {input} {slabDepth} {multiscaleIndex} {datasetIndex} {timepoint} {channel} {maxParallelChunks}" |> sourcePrefix availableMemory
         | "Read" ->
             let availableMemory = parameterValue "availableMemory"
             let pixelType = pixelTypeNameFromParameter "type" "Float64" node
@@ -659,6 +676,18 @@ module PipelineCodeGenerator =
             let chunkY = parameterValue "chunkY"
             let chunkZ = parameterValue "chunkZ"
             $">=> writeInSlabs {output} {suffix} {chunkX} {chunkY} {chunkZ}"
+        | "WriteZarr" ->
+            let output = quotedParameter "output"
+            let name = quotedParameter "name"
+            let depth = parameterValue "depth"
+            let chunkX = parameterValue "chunkX"
+            let chunkY = parameterValue "chunkY"
+            let chunkZ = parameterValue "chunkZ"
+            let physicalSizeX = parameterValue "physicalSizeX"
+            let physicalSizeY = parameterValue "physicalSizeY"
+            let physicalSizeZ = parameterValue "physicalSizeZ"
+            let maxConcurrentWrites = parameterValue "maxConcurrentWrites"
+            $">=> writeZarr {output} {name} {depth} {chunkX} {chunkY} {chunkZ} {physicalSizeX} {physicalSizeY} {physicalSizeZ} {maxConcurrentWrites}"
         | "WriteThrough" ->
             let output = quotedParameter "output"
             let suffix = quotedParameter "suffix"
@@ -1137,6 +1166,7 @@ module PipelineCodeGenerator =
                 | "Write"
                 | "WriteThrough"
                 | "WriteInSlabs"
+                | "WriteZarr"
                 | "Histogram"
                 | "ShowImage" ->
                     $"{expression}{newLine}|> sink"
@@ -1157,6 +1187,7 @@ module PipelineCodeGenerator =
                     && node.FunctionId <> "ScalarFunction"
                     && node.FunctionId <> "GetStackInfo"
                     && node.FunctionId <> "GetChunkInfo"
+                    && node.FunctionId <> "GetZarrInfo"
                     && not (printNodesUsedByTap |> Set.contains node.Id)
                     && not (statsNamesByNodeId |> Map.containsKey node.Id)
                     && not (translationTableNamesByNodeId |> Map.containsKey node.Id)

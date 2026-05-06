@@ -1,0 +1,26 @@
+[LocalFileSystemStore.WriteAsync] key=zarr.json path=/private/tmp/zarrnet-probe.zarr/zarr.json len=1427 sample=123,10,32,32,34,122,97,114,114,95,102,111,114,109,97,116
+[LocalFileSystemStore.WriteAsync] key=0/zarr.json path=/private/tmp/zarrnet-probe.zarr/0/zarr.json len=691 sample=123,10,32,32,34,122,97,114,114,95,102,111,114,109,97,116
+[LocalFileSystemStore.ReadAsync] key=zarr.json path=/private/tmp/zarrnet-probe.zarr/zarr.json len=1427 sample=123,10,32,32,34,122,97,114,114,95,102,111,114,109,97,116
+[LocalFileSystemStore.ReadAsync] key=0/zarr.json path=/private/tmp/zarrnet-probe.zarr/0/zarr.json len=691 sample=123,10,32,32,34,122,97,114,114,95,102,111,114,109,97,116
+[LocalFileSystemStore.WriteAsync] key=0/c/0/0/0/0/0 path=/private/tmp/zarrnet-probe.zarr/0/c/0/0/0/0/0 len=36 sample=1,1,33,1,12,0,0,0,12,0,0,0,36,0,0,0
+[LocalFileSystemStore.WriteAsync] disk key=0/c/0/0/0/0/0 path=/private/tmp/zarrnet-probe.zarr/0/c/0/0/0/0/0 len=36 sample=1,1,33,1,12,0,0,0,12,0,0,0,36,0,0,0
+[LocalFileSystemStore.WriteAsync] key=0/c/0/0/0/0/1 path=/private/tmp/zarrnet-probe.zarr/0/c/0/0/0/0/1 len=36 sample=1,1,33,1,12,0,0,0,12,0,0,0,36,0,0,0
+[LocalFileSystemStore.WriteAsync] disk key=0/c/0/0/0/0/1 path=/private/tmp/zarrnet-probe.zarr/0/c/0/0/0/0/1 len=36 sample=1,1,33,1,12,0,0,0,12,0,0,0,36,0,0,0
+[LocalFileSystemStore.WriteAsync] key=0/c/0/0/0/1/0 path=/private/tmp/zarrnet-probe.zarr/0/c/0/0/0/1/0 len=36 sample=1,1,33,1,12,0,0,0,12,0,0,0,36,0,0,0
+[LocalFileSystemStore.WriteAsync] disk key=0/c/0/0/0/1/0 path=/private/tmp/zarrnet-probe.zarr/0/c/0/0/0/1/0 len=36 sample=1,1,33,1,12,0,0,0,12,0,0,0,36,0,0,0
+[LocalFileSystemStore.WriteAsync] key=0/c/0/0/0/1/1 path=/private/tmp/zarrnet-probe.zarr/0/c/0/0/0/1/1 len=36 sample=1,1,33,1,12,0,0,0,12,0,0,0,36,0,0,0
+[LocalFileSystemStore.WriteAsync] disk key=0/c/0/0/0/1/1 path=/private/tmp/zarrnet-probe.zarr/0/c/0/0/0/1/1 len=36 sample=1,1,33,1,12,0,0,0,12,0,0,0,36,0,0,0
+[LocalFileSystemStore.ReadAsync] key=0/c/0/0/0/0/0 path=/private/tmp/zarrnet-probe.zarr/0/c/0/0/0/0/0 len=36 sample=1,1,33,1,12,0,0,0,12,0,0,0,36,0,0,0
+[LocalFileSystemStore.WriteAsync] key=0/c/0/0/0/0/0 path=/private/tmp/zarrnet-probe.zarr/0/c/0/0/0/0/0 len=36 sample=1,1,33,1,12,0,0,0,12,0,0,0,36,0,0,0
+[LocalFileSystemStore.WriteAsync] disk key=0/c/0/0/0/0/0 path=/private/tmp/zarrnet-probe.zarr/0/c/0/0/0/0/0 len=36 sample=1,1,33,1,12,0,0,0,12,0,0,0,36,0,0,0
+[LocalFileSystemStore.ReadAsync] key=0/c/0/0/0/0/1 path=/private/tmp/zarrnet-probe.zarr/0/c/0/0/0/0/1 len=36 sample=1,1,33,1,12,0,0,0,12,0,0,0,36,0,0,0
+[LocalFileSystemStore.WriteAsync] key=0/c/0/0/0/0/1 path=/private/tmp/zarrnet-probe.zarr/0/c/0/0/0/0/1 len=36 sample=1,1,33,1,12,0,0,0,12,0,0,0,36,0,0,0
+[LocalFileSystemStore.WriteAsync] disk key=0/c/0/0/0/0/1 path=/private/tmp/zarrnet-probe.zarr/0/c/0/0/0/0/1 len=36 sample=1,1,33,1,12,0,0,0,12,0,0,0,36,0,0,0
+[LocalFileSystemStore.ReadAsync] key=0/c/0/0/0/1/0 path=/private/tmp/zarrnet-probe.zarr/0/c/0/0/0/1/0 len=36 sample=1,1,33,1,12,0,0,0,12,0,0,0,36,0,0,0
+[LocalFileSystemStore.WriteAsync] key=0/c/0/0/0/1/0 path=/private/tmp/zarrnet-probe.zarr/0/c/0/0/0/1/0 len=36 sample=1,1,33,1,12,0,0,0,12,0,0,0,36,0,0,0
+[LocalFileSystemStore.WriteAsync] disk key=0/c/0/0/0/1/0 path=/private/tmp/zarrnet-probe.zarr/0/c/0/0/0/1/0 len=36 sample=1,1,33,1,12,0,0,0,12,0,0,0,36,0,0,0
+[LocalFileSystemStore.ReadAsync] key=0/c/0/0/0/1/1 path=/private/tmp/zarrnet-probe.zarr/0/c/0/0/0/1/1 len=36 sample=1,1,33,1,12,0,0,0,12,0,0,0,36,0,0,0
+[LocalFileSystemStore.WriteAsync] key=0/c/0/0/0/1/1 path=/private/tmp/zarrnet-probe.zarr/0/c/0/0/0/1/1 len=36 sample=1,1,33,1,12,0,0,0,12,0,0,0,36,0,0,0
+[LocalFileSystemStore.WriteAsync] disk key=0/c/0/0/0/1/1 path=/private/tmp/zarrnet-probe.zarr/0/c/0/0/0/1/1 len=36 sample=1,1,33,1,12,0,0,0,12,0,0,0,36,0,0,0
+[LocalFileSystemStore.ReadAsync] key=zarr.json path=/private/tmp/zarrnet-probe.zarr/zarr.json len=1427 sample=123,10,32,32,34,122,97,114,114,95,102,111,114,109,97,116
+[LocalFileSystemStore.ReadAsync] key=0/zarr.json path=/private/tmp/zarrnet-probe.zarr/0/zarr.json len=691 sample=123,10,32,32,34,122,97,114,114,95,102,111,114,109,97,116
