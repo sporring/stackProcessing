@@ -126,7 +126,39 @@ module private Pipe =
       cleanFst: ('S -> unit) * cleanSnd: ('T -> unit) -> Pipe<('S * 'T),unit>
 type MemoryNeed = uint64 -> uint64
 type MemoryNeedWrapped = SingleOrPair -> SingleOrPair
-type LengthTransformation = uint64 -> uint64
+type ElementTransformation = uint64 -> uint64
+type SliceEnd =
+    | RelativeToInputEnd of int64
+    | CountFromStart of uint64
+    | UnknownEnd
+type SliceDomain =
+    {
+      StartOffset: int64
+      End: SliceEnd
+    }
+type SliceCardinality =
+    | Domain of SliceDomain
+    | ReduceTo of uint64
+    | UnknownCardinality
+module SliceDomain =
+    val preserve: SliceDomain
+    val trim: before: uint -> after: uint -> SliceDomain
+    val expand: before: uint -> after: uint -> SliceDomain
+    val skip: count: uint -> SliceDomain
+    val take: count: uint64 -> SliceDomain
+    val private tryUint64: value: int64 -> uint64 option
+    val private composeEnd: left: SliceDomain -> right: SliceDomain -> SliceEnd
+    val compose: left: SliceDomain -> right: SliceDomain -> SliceDomain
+    val private stop: inputLength: uint64 -> domain: SliceDomain -> int64 option
+    val length: inputLength: uint64 -> domain: SliceDomain -> uint64 option
+module SliceCardinality =
+    val preserve: SliceCardinality
+    val reduceTo: count: uint64 -> SliceCardinality
+    val unknown: SliceCardinality
+    val compose:
+      left: SliceCardinality -> right: SliceCardinality -> SliceCardinality
+    val length:
+      inputLength: uint64 -> cardinality: SliceCardinality -> uint64 option
 type StageEvaluation =
     | Source
     | Map
@@ -367,55 +399,98 @@ type Stage<'S,'T> =
       MemoryNeed: MemoryNeedWrapped
       MemoryModel: StageMemoryModel
       CostModel: StageCostModel
-      LengthTransformation: LengthTransformation
+      ElementTransformation: ElementTransformation
+      SliceCardinality: SliceCardinality
       Graph: PipelineGraph
       Cleaning: (unit -> unit) list
     }
 module Stage =
+    val createWithCostModelAndSlice:
+      name: string ->
+        build: (unit -> Pipe<'S,'T>) ->
+        transition: ProfileTransition ->
+        costModel: StageCostModel ->
+        elementTransformation: ElementTransformation ->
+        sliceCardinality: SliceCardinality ->
+        cleaning: (unit -> unit) list -> Stage<'S,'T>
     val createWithCostModel:
       name: string ->
         build: (unit -> Pipe<'S,'T>) ->
         transition: ProfileTransition ->
         costModel: StageCostModel ->
-        lengthTransformation: LengthTransformation ->
+        elementTransformation: ElementTransformation ->
         cleaning: (unit -> unit) list -> Stage<'S,'T>
     val createWithModel:
       name: string ->
         build: (unit -> Pipe<'S,'T>) ->
         transition: ProfileTransition ->
         memoryModel: StageMemoryModel ->
-        lengthTransformation: LengthTransformation ->
+        elementTransformation: ElementTransformation ->
+        cleaning: (unit -> unit) list -> Stage<'S,'T>
+    val createWithModelAndSlice:
+      name: string ->
+        build: (unit -> Pipe<'S,'T>) ->
+        transition: ProfileTransition ->
+        memoryModel: StageMemoryModel ->
+        elementTransformation: ElementTransformation ->
+        sliceCardinality: SliceCardinality ->
         cleaning: (unit -> unit) list -> Stage<'S,'T>
     val create:
       name: string ->
         build: (unit -> Pipe<'S,'T>) ->
         transition: ProfileTransition ->
         memoryNeed: MemoryNeed ->
-        lengthTransformation: LengthTransformation ->
+        elementTransformation: ElementTransformation ->
+        cleaning: (unit -> unit) list -> Stage<'S,'T>
+    val createWithSlice:
+      name: string ->
+        build: (unit -> Pipe<'S,'T>) ->
+        transition: ProfileTransition ->
+        memoryNeed: MemoryNeed ->
+        elementTransformation: ElementTransformation ->
+        sliceCardinality: SliceCardinality ->
         cleaning: (unit -> unit) list -> Stage<'S,'T>
     val createWrapped:
       name: string ->
         build: (unit -> Pipe<'S,'T>) ->
         transition: ProfileTransition ->
         wrapMemoryNeed: MemoryNeedWrapped ->
-        lengthTransformation: LengthTransformation ->
+        elementTransformation: ElementTransformation ->
+        cleaning: (unit -> unit) list -> Stage<'S,'T>
+    val createWrappedWithSlice:
+      name: string ->
+        build: (unit -> Pipe<'S,'T>) ->
+        transition: ProfileTransition ->
+        wrapMemoryNeed: MemoryNeedWrapped ->
+        elementTransformation: ElementTransformation ->
+        sliceCardinality: SliceCardinality ->
         cleaning: (unit -> unit) list -> Stage<'S,'T>
     val createWrappedWithModel:
       name: string ->
         build: (unit -> Pipe<'S,'T>) ->
         transition: ProfileTransition ->
         memoryModel: StageMemoryModel ->
-        lengthTransformation: LengthTransformation ->
+        elementTransformation: ElementTransformation ->
         cleaning: (unit -> unit) list -> Stage<'S,'T>
     val createWrappedWithCostModel:
       name: string ->
         build: (unit -> Pipe<'S,'T>) ->
         transition: ProfileTransition ->
         costModel: StageCostModel ->
-        lengthTransformation: LengthTransformation ->
+        elementTransformation: ElementTransformation ->
+        cleaning: (unit -> unit) list -> Stage<'S,'T>
+    val createWrappedWithCostModelAndSlice:
+      name: string ->
+        build: (unit -> Pipe<'S,'T>) ->
+        transition: ProfileTransition ->
+        costModel: StageCostModel ->
+        elementTransformation: ElementTransformation ->
+        sliceCardinality: SliceCardinality ->
         cleaning: (unit -> unit) list -> Stage<'S,'T>
     val private withGraph:
       graph: PipelineGraph -> stage: Stage<'a,'b> -> Stage<'a,'b>
+    val withSliceCardinality:
+      sliceCardinality: SliceCardinality -> stage: Stage<'a,'b> -> Stage<'a,'b>
     val empty: name: string -> Stage<unit,unit>
     val init<'S,'T> :
       name: string ->
@@ -423,7 +498,7 @@ module Stage =
         mapper: (int -> 'T) ->
         transition: ProfileTransition ->
         memoryNeed: MemoryNeed ->
-        lengthTransformation: LengthTransformation -> Stage<unit,'T>
+        elementTransformation: ElementTransformation -> Stage<unit,'T>
     val compose: stage1: Stage<'S,'T> -> stage2: Stage<'T,'U> -> Stage<'S,'U>
     val (-->) : (Stage<'a,'b> -> Stage<'b,'c> -> Stage<'a,'c>)
     val prepend: name: string -> pre: Stage<unit,'S> -> Stage<'S,'S>
@@ -435,7 +510,7 @@ module Stage =
       name: string ->
         transition: ProfileTransition ->
         memoryNeed: MemoryNeed ->
-        lengthTransformation: LengthTransformation ->
+        elementTransformation: ElementTransformation ->
         pipe: Pipe<'S,'T> -> Stage<'S,'T>
     val skip: name: string -> n: uint -> Stage<'S,'S>
     val take: name: string -> n: uint -> Stage<'S,'S>
@@ -443,18 +518,18 @@ module Stage =
       name: string ->
         f: (bool -> 'S -> 'T) ->
         memoryNeed: MemoryNeed ->
-        lengthTransformation: LengthTransformation -> Stage<'S,'T>
+        elementTransformation: ElementTransformation -> Stage<'S,'T>
     val mapi:
       name: string ->
         f: (bool -> int64 -> 'S -> 'T) ->
         memoryNeed: MemoryNeed ->
-        lengthTransformation: LengthTransformation -> Stage<'S,'T>
+        elementTransformation: ElementTransformation -> Stage<'S,'T>
     val map1:
       name: string ->
         f: ('U -> 'V) ->
         stage: Stage<'In,'U> ->
         memoryNeed: MemoryNeed ->
-        lengthTransformation: LengthTransformation -> Stage<'In,'V>
+        elementTransformation: ElementTransformation -> Stage<'In,'V>
     val map2:
       name: string ->
         debug: bool ->
@@ -462,7 +537,7 @@ module Stage =
         stage1: Stage<'In,'U> ->
         stage2: Stage<'In,'V> ->
         memoryNeed: MemoryNeedWrapped ->
-        lengthTransformation: LengthTransformation -> Stage<'In,'W>
+        elementTransformation: ElementTransformation -> Stage<'In,'W>
     val map2Sync:
       name: string ->
         debug: bool ->
@@ -470,14 +545,15 @@ module Stage =
         stage1: Stage<'In,'U> ->
         stage2: Stage<'In,'V> ->
         memoryNeed: MemoryNeedWrapped ->
-        lengthTransformation: LengthTransformation -> Stage<'In,'W>
+        elementTransformation: ElementTransformation -> Stage<'In,'W>
     val mapPairSync:
       name: string ->
         debug: bool ->
         stage1: Stage<'U,'S> ->
         stage2: Stage<'V,'T> ->
         memoryNeed: MemoryNeedWrapped ->
-        lengthTransformation: LengthTransformation -> Stage<('U * 'V),('S * 'T)>
+        elementTransformation: ElementTransformation ->
+        Stage<('U * 'V),('S * 'T)>
     val teeFst: stage: Stage<'A,'A> -> Stage<('A * 'B),('A * 'B)>
     val teeSnd: stage: Stage<'B,'B> -> Stage<('A * 'B),('A * 'B)>
     val reduce:
@@ -485,13 +561,13 @@ module Stage =
         reducer: (bool -> FSharp.Control.AsyncSeq<'In> -> Async<'Out>) ->
         profile: Profile ->
         memoryNeed: MemoryNeed ->
-        lengthTransformation: LengthTransformation -> Stage<'In,'Out>
+        elementTransformation: ElementTransformation -> Stage<'In,'Out>
     val fold<'S,'T> :
       name: string ->
         folder: ('T -> 'S -> 'T) ->
         initial: 'T ->
         memoryNeed: MemoryNeed ->
-        lengthTransformation: LengthTransformation -> Stage<'S,'T>
+        elementTransformation: ElementTransformation -> Stage<'S,'T>
     val window:
       name: string ->
         winSz: uint ->
@@ -504,13 +580,13 @@ module Stage =
       name: string ->
         f: ('S -> 'T) ->
         memoryNeed: MemoryNeed ->
-        lengthTransformation: LengthTransformation -> Stage<'S,'T>
+        elementTransformation: ElementTransformation -> Stage<'S,'T>
     val liftReleaseUnary:
       name: string ->
         release: ('S -> unit) ->
         f: ('S -> 'T) ->
         memoryNeed: MemoryNeed ->
-        lengthTransformation: LengthTransformation -> Stage<'S,'T>
+        elementTransformation: ElementTransformation -> Stage<'S,'T>
     val retainWith: name: string -> ops: ResourceOps<'T> -> Stage<'T,'T>
     val releaseWith: name: string -> ops: ResourceOps<'T> -> Stage<'T,unit>
     val liftResourceUnary:
@@ -518,7 +594,7 @@ module Stage =
         ops: ResourceOps<'S> ->
         f: ('S -> 'T) ->
         memoryNeed: MemoryNeed ->
-        lengthTransformation: LengthTransformation -> Stage<'S,'T>
+        elementTransformation: ElementTransformation -> Stage<'S,'T>
     val tapItStage: name: string -> toString: ('T -> string) -> Stage<'T,'T>
     val tapIt: toString: ('T -> string) -> Stage<'T,'T>
     val tap: name: string -> Stage<'T,'T>

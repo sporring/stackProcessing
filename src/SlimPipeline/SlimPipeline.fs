@@ -427,7 +427,92 @@ module private Pipe =
 
 type MemoryNeed = uint64->uint64
 type MemoryNeedWrapped = SingleOrPair -> SingleOrPair
-type LengthTransformation = uint64 -> uint64
+type ElementTransformation = uint64 -> uint64
+
+type SliceEnd =
+    | RelativeToInputEnd of int64
+    | CountFromStart of uint64
+    | UnknownEnd
+
+type SliceDomain =
+    { StartOffset: int64
+      End: SliceEnd }
+
+type SliceCardinality =
+    | Domain of SliceDomain
+    | ReduceTo of uint64
+    | UnknownCardinality
+
+module SliceDomain =
+    let preserve =
+        { StartOffset = 0L
+          End = RelativeToInputEnd 0L }
+
+    let trim (before: uint) (after: uint) =
+        { StartOffset = int64 before
+          End = RelativeToInputEnd -(int64 after) }
+
+    let expand (before: uint) (after: uint) =
+        { StartOffset = -(int64 before)
+          End = RelativeToInputEnd (int64 after) }
+
+    let skip (count: uint) =
+        { StartOffset = int64 count
+          End = RelativeToInputEnd 0L }
+
+    let take (count: uint64) =
+        { StartOffset = 0L
+          End = CountFromStart count }
+
+    let private tryUint64 value =
+        if value < 0L then None else Some(uint64 value)
+
+    let private composeEnd left right =
+        match right.End with
+        | UnknownEnd -> UnknownEnd
+        | CountFromStart count -> CountFromStart count
+        | RelativeToInputEnd rightOffset ->
+            match left.End with
+            | RelativeToInputEnd leftOffset -> RelativeToInputEnd(leftOffset + rightOffset)
+            | CountFromStart leftCount ->
+                let composedCount = int64 leftCount + rightOffset - right.StartOffset
+                match tryUint64 composedCount with
+                | Some count -> CountFromStart count
+                | None -> CountFromStart 0UL
+            | UnknownEnd -> UnknownEnd
+
+    let compose left right =
+        { StartOffset = left.StartOffset + right.StartOffset
+          End = composeEnd left right }
+
+    let private stop inputLength domain =
+        match domain.End with
+        | RelativeToInputEnd offset -> Some(int64 inputLength + offset)
+        | CountFromStart count -> Some(domain.StartOffset + int64 count)
+        | UnknownEnd -> None
+
+    let length inputLength domain =
+        stop inputLength domain
+        |> Option.map (fun stop -> max 0L (stop - domain.StartOffset) |> uint64)
+
+module SliceCardinality =
+    let preserve = Domain SliceDomain.preserve
+    let reduceTo count = ReduceTo count
+    let unknown = UnknownCardinality
+
+    let compose left right =
+        match left, right with
+        | UnknownCardinality, _
+        | _, UnknownCardinality -> UnknownCardinality
+        | _, ReduceTo count -> ReduceTo count
+        | ReduceTo _, Domain domain -> Domain domain
+        | Domain leftDomain, Domain rightDomain -> Domain(SliceDomain.compose leftDomain rightDomain)
+
+    let length inputLength cardinality =
+        match cardinality with
+        | Domain domain -> SliceDomain.length inputLength domain
+        | ReduceTo count -> Some count
+        | UnknownCardinality -> None
 
 type StageEvaluation =
     | Source
@@ -923,14 +1008,15 @@ type Stage<'S,'T> =
       MemoryNeed : MemoryNeedWrapped // calculate the memory needed to process a specified number of element
       MemoryModel : StageMemoryModel
       CostModel : StageCostModel
-      LengthTransformation : LengthTransformation // the transformation of the length of the sequence of elements
+      ElementTransformation : ElementTransformation // the transformation of the memory/cost shape of each stream element
+      SliceCardinality : SliceCardinality // the logical z-domain transformation of the stream
       Graph: PipelineGraph
       Cleaning: (unit->unit) list // Functions to be called at sink/drain/flush
       } 
 
 module Stage =
 
-    let createWithCostModel<'S,'T> (name: string) (build: unit->Pipe<'S,'T>) (transition: ProfileTransition) (costModel: StageCostModel) (lengthTransformation: LengthTransformation) (cleaning: (unit->unit) list) =
+    let createWithCostModelAndSlice<'S,'T> (name: string) (build: unit->Pipe<'S,'T>) (transition: ProfileTransition) (costModel: StageCostModel) (elementTransformation: ElementTransformation) (sliceCardinality: SliceCardinality) (cleaning: (unit->unit) list) =
         let wrapMemoryNeed = StageCostModel.memoryNeed costModel
         { Name = name
           Build = build
@@ -938,48 +1024,71 @@ module Stage =
           MemoryNeed = wrapMemoryNeed
           MemoryModel = costModel.Memory
           CostModel = costModel
-          LengthTransformation = lengthTransformation
+          ElementTransformation = elementTransformation
+          SliceCardinality = sliceCardinality
           Graph = PipelineGraph.singleton name transition
           Cleaning = cleaning}
 
-    let createWithModel<'S,'T> (name: string) (build: unit->Pipe<'S,'T>) (transition: ProfileTransition) (memoryModel: StageMemoryModel) (lengthTransformation: LengthTransformation) (cleaning: (unit->unit) list) =
-        createWithCostModel name build transition (StageCostModel.fromMemory memoryModel) lengthTransformation cleaning
+    let createWithCostModel<'S,'T> (name: string) (build: unit->Pipe<'S,'T>) (transition: ProfileTransition) (costModel: StageCostModel) (elementTransformation: ElementTransformation) (cleaning: (unit->unit) list) =
+        createWithCostModelAndSlice name build transition costModel elementTransformation SliceCardinality.preserve cleaning
 
-    let create<'S,'T> (name: string) (build: unit->Pipe<'S,'T>) (transition: ProfileTransition) (memoryNeed: MemoryNeed) (lengthTransformation: LengthTransformation) (cleaning: (unit->unit) list) =
+    let createWithModel<'S,'T> (name: string) (build: unit->Pipe<'S,'T>) (transition: ProfileTransition) (memoryModel: StageMemoryModel) (elementTransformation: ElementTransformation) (cleaning: (unit->unit) list) =
+        createWithCostModel name build transition (StageCostModel.fromMemory memoryModel) elementTransformation cleaning
+
+    let createWithModelAndSlice<'S,'T> (name: string) (build: unit->Pipe<'S,'T>) (transition: ProfileTransition) (memoryModel: StageMemoryModel) (elementTransformation: ElementTransformation) (sliceCardinality: SliceCardinality) (cleaning: (unit->unit) list) =
+        createWithCostModelAndSlice name build transition (StageCostModel.fromMemory memoryModel) elementTransformation sliceCardinality cleaning
+
+    let create<'S,'T> (name: string) (build: unit->Pipe<'S,'T>) (transition: ProfileTransition) (memoryNeed: MemoryNeed) (elementTransformation: ElementTransformation) (cleaning: (unit->unit) list) =
         let wrapMemoryNeed = SingleOrPair.sum >> SingleOrPair.fst >> memoryNeed >> Single
         let memoryModel = StageMemoryModel.fromPeak (Custom name) wrapMemoryNeed
-        createWithModel name build transition memoryModel lengthTransformation cleaning
+        createWithModel name build transition memoryModel elementTransformation cleaning
 
-    let createWrapped<'S,'T> (name: string) (build: unit->Pipe<'S,'T>) (transition: ProfileTransition) (wrapMemoryNeed: MemoryNeedWrapped) (lengthTransformation: LengthTransformation) (cleaning: (unit->unit) list) =
+    let createWithSlice<'S,'T> (name: string) (build: unit->Pipe<'S,'T>) (transition: ProfileTransition) (memoryNeed: MemoryNeed) (elementTransformation: ElementTransformation) (sliceCardinality: SliceCardinality) (cleaning: (unit->unit) list) =
+        let wrapMemoryNeed = SingleOrPair.sum >> SingleOrPair.fst >> memoryNeed >> Single
         let memoryModel = StageMemoryModel.fromPeak (Custom name) wrapMemoryNeed
-        createWithModel name build transition memoryModel lengthTransformation cleaning
+        createWithModelAndSlice name build transition memoryModel elementTransformation sliceCardinality cleaning
 
-    let createWrappedWithModel<'S,'T> (name: string) (build: unit->Pipe<'S,'T>) (transition: ProfileTransition) (memoryModel: StageMemoryModel) (lengthTransformation: LengthTransformation) (cleaning: (unit->unit) list) =
-        createWithModel name build transition memoryModel lengthTransformation cleaning
+    let createWrapped<'S,'T> (name: string) (build: unit->Pipe<'S,'T>) (transition: ProfileTransition) (wrapMemoryNeed: MemoryNeedWrapped) (elementTransformation: ElementTransformation) (cleaning: (unit->unit) list) =
+        let memoryModel = StageMemoryModel.fromPeak (Custom name) wrapMemoryNeed
+        createWithModel name build transition memoryModel elementTransformation cleaning
 
-    let createWrappedWithCostModel<'S,'T> (name: string) (build: unit->Pipe<'S,'T>) (transition: ProfileTransition) (costModel: StageCostModel) (lengthTransformation: LengthTransformation) (cleaning: (unit->unit) list) =
-        createWithCostModel name build transition costModel lengthTransformation cleaning
+    let createWrappedWithSlice<'S,'T> (name: string) (build: unit->Pipe<'S,'T>) (transition: ProfileTransition) (wrapMemoryNeed: MemoryNeedWrapped) (elementTransformation: ElementTransformation) (sliceCardinality: SliceCardinality) (cleaning: (unit->unit) list) =
+        let memoryModel = StageMemoryModel.fromPeak (Custom name) wrapMemoryNeed
+        createWithModelAndSlice name build transition memoryModel elementTransformation sliceCardinality cleaning
+
+    let createWrappedWithModel<'S,'T> (name: string) (build: unit->Pipe<'S,'T>) (transition: ProfileTransition) (memoryModel: StageMemoryModel) (elementTransformation: ElementTransformation) (cleaning: (unit->unit) list) =
+        createWithModel name build transition memoryModel elementTransformation cleaning
+
+    let createWrappedWithCostModel<'S,'T> (name: string) (build: unit->Pipe<'S,'T>) (transition: ProfileTransition) (costModel: StageCostModel) (elementTransformation: ElementTransformation) (cleaning: (unit->unit) list) =
+        createWithCostModel name build transition costModel elementTransformation cleaning
+
+    let createWrappedWithCostModelAndSlice<'S,'T> (name: string) (build: unit->Pipe<'S,'T>) (transition: ProfileTransition) (costModel: StageCostModel) (elementTransformation: ElementTransformation) (sliceCardinality: SliceCardinality) (cleaning: (unit->unit) list) =
+        createWithCostModelAndSlice name build transition costModel elementTransformation sliceCardinality cleaning
 
     let private withGraph graph stage =
         { stage with Graph = graph }
+
+    let withSliceCardinality sliceCardinality stage =
+        { stage with SliceCardinality = sliceCardinality }
 
     let empty (name: string) =
         let build () = Pipe.empty name
         let transition = ProfileTransition.create Streaming Streaming
         let memoryNeed _ = 0UL
-        let lengthTransformation = id
-        create name build transition memoryNeed  lengthTransformation []
+        let elementTransformation = id
+        create name build transition memoryNeed  elementTransformation []
 
-    let init<'S,'T> (name: string) (depth: uint) (mapper: int -> 'T) (transition: ProfileTransition) (memoryNeed: MemoryNeed) (lengthTransformation: LengthTransformation) =
+    let init<'S,'T> (name: string) (depth: uint) (mapper: int -> 'T) (transition: ProfileTransition) (memoryNeed: MemoryNeed) (elementTransformation: ElementTransformation) =
         let build () = Pipe.init name depth mapper transition.From
-        create name build transition memoryNeed lengthTransformation []
+        create name build transition memoryNeed elementTransformation []
 
     let compose (stage1 : Stage<'S,'T>) (stage2 : Stage<'T,'U>) : Stage<'S,'U> =
         let build () = Pipe.compose (stage1.Build ()) (stage2.Build ())
         let transition = ProfileTransition.create stage1.Transition.From stage2.Transition.To
         let costModel = StageCostModel.combine (Custom $"{stage2.Name} o {stage1.Name}") stage1.CostModel stage2.CostModel
-        let lengthTransformation = stage1.LengthTransformation >> stage2.LengthTransformation
-        createWrappedWithCostModel $"{stage2.Name} o {stage1.Name}" build transition costModel lengthTransformation (stage2.Cleaning@stage1.Cleaning)
+        let elementTransformation = stage1.ElementTransformation >> stage2.ElementTransformation
+        let sliceCardinality = SliceCardinality.compose stage1.SliceCardinality stage2.SliceCardinality
+        createWrappedWithCostModelAndSlice $"{stage2.Name} o {stage1.Name}" build transition costModel elementTransformation sliceCardinality (stage2.Cleaning@stage1.Cleaning)
         |> withGraph (PipelineGraph.compose stage1.Graph stage2.Graph)
 
     let (-->) = compose
@@ -987,13 +1096,13 @@ module Stage =
     let prepend (name: string) (pre: Stage<unit,'S>) : Stage<'S,'S> =
         let build () = Pipe.prepend name (pre.Build ())
         let transition = ProfileTransition.create Streaming Streaming
-        createWrapped name build transition pre.MemoryNeed pre.LengthTransformation pre.Cleaning
+        createWrappedWithSlice name build transition pre.MemoryNeed pre.ElementTransformation pre.SliceCardinality pre.Cleaning
         |> withGraph (PipelineGraph.appendNode "prepend" name transition pre.Graph)
 
     let append (name: string) (app: Stage<unit,'S>) : Stage<'S,'S> =
         let build () = Pipe.append name (app.Build ())
         let transition = ProfileTransition.create Streaming Streaming
-        createWrapped name build transition app.MemoryNeed app.LengthTransformation app.Cleaning
+        createWrappedWithSlice name build transition app.MemoryNeed app.ElementTransformation app.SliceCardinality app.Cleaning
         |> withGraph (PipelineGraph.appendNode "append" name transition app.Graph)
 
     let idStage<'T> (name: string) : Stage<'T, 'T> = // I don't think this is used
@@ -1008,38 +1117,38 @@ module Stage =
 
     let toPipe (stage : Stage<_,_>) = stage.Build
 
-    let fromPipe (name: string) (transition: ProfileTransition) (memoryNeed: MemoryNeed) (lengthTransformation: LengthTransformation) (pipe: Pipe<'S, 'T>) : Stage<'S, 'T> =
-        create name (fun () -> pipe) transition memoryNeed lengthTransformation []
+    let fromPipe (name: string) (transition: ProfileTransition) (memoryNeed: MemoryNeed) (elementTransformation: ElementTransformation) (pipe: Pipe<'S, 'T>) : Stage<'S, 'T> =
+        create name (fun () -> pipe) transition memoryNeed elementTransformation []
 
     let skip (name: string) (n: uint) : Stage<'S, 'S> =
         let build () = Pipe.skip name n 
         let transition = ProfileTransition.create Streaming Streaming
-        create name build transition id id []
+        createWithSlice name build transition id id (Domain(SliceDomain.skip n)) []
 
     let take (name: string) (n: uint) : Stage<'S, 'S> =
         let build () = Pipe.take name n 
         let transition = ProfileTransition.create Streaming Streaming
-        create name build transition id id []
+        createWithSlice name build transition id id (Domain(SliceDomain.take (uint64 n))) []
 
-    let map<'S,'T> (name: string) (f: bool -> 'S -> 'T) (memoryNeed: MemoryNeed) (lengthTransformation: LengthTransformation) : Stage<'S, 'T> =
+    let map<'S,'T> (name: string) (f: bool -> 'S -> 'T) (memoryNeed: MemoryNeed) (elementTransformation: ElementTransformation) : Stage<'S, 'T> =
         let apply debug input = input |> AsyncSeq.map (f debug)
         let build () : Pipe<'S,'T> = Pipe.create name apply Streaming
         let transition = ProfileTransition.create Streaming Streaming
-        createWithModel name build transition (StageMemoryModel.fromSinglePeak Map memoryNeed) lengthTransformation []
+        createWithModel name build transition (StageMemoryModel.fromSinglePeak Map memoryNeed) elementTransformation []
 
-    let mapi<'S,'T> (name: string) (f: bool -> int64 -> 'S -> 'T) (memoryNeed: MemoryNeed) (lengthTransformation: LengthTransformation) : Stage<'S, 'T> =
+    let mapi<'S,'T> (name: string) (f: bool -> int64 -> 'S -> 'T) (memoryNeed: MemoryNeed) (elementTransformation: ElementTransformation) : Stage<'S, 'T> =
         let apply debug input = input |> AsyncSeq.mapi (f debug)
         let build () : Pipe<'S,'T> = Pipe.create name apply Streaming
         let transition = ProfileTransition.create Streaming Streaming
-        createWithModel name build transition (StageMemoryModel.fromSinglePeak Map memoryNeed) lengthTransformation []
+        createWithModel name build transition (StageMemoryModel.fromSinglePeak Map memoryNeed) elementTransformation []
 
-    let map1 (name: string) (f: 'U -> 'V) (stage: Stage<'In, 'U>) (memoryNeed: MemoryNeed) (lengthTransformation: LengthTransformation) : Stage<'In, 'V> =
+    let map1 (name: string) (f: 'U -> 'V) (stage: Stage<'In, 'U>) (memoryNeed: MemoryNeed) (elementTransformation: ElementTransformation) : Stage<'In, 'V> =
         let build () = Pipe.map name f (stage.Build())
         let transition = ProfileTransition.create Streaming Streaming
-        create name build transition memoryNeed lengthTransformation []
+        create name build transition memoryNeed elementTransformation []
         |> withGraph (PipelineGraph.appendNode "map" name transition stage.Graph)
 
-    let map2 (name: string) (debug: bool) (f: 'U -> 'V -> 'W) (stage1: Stage<'In, 'U>) (stage2: Stage<'In, 'V>) (memoryNeed: MemoryNeedWrapped) (lengthTransformation: LengthTransformation) : Stage<'In, 'W> =
+    let map2 (name: string) (debug: bool) (f: 'U -> 'V -> 'W) (stage1: Stage<'In, 'U>) (stage2: Stage<'In, 'V>) (memoryNeed: MemoryNeedWrapped) (elementTransformation: ElementTransformation) : Stage<'In, 'W> =
         let build () = Pipe.map2 name debug f (stage1.Build ()) (stage2.Build ())
         let transition = ProfileTransition.create Streaming Streaming
         let memoryModel = StageMemoryModel.fromPeak Join memoryNeed
@@ -1049,10 +1158,12 @@ module Stage =
               Estimate =
                 fun input ->
                     StageWorkPressure.add (stage1.CostModel.Work.Estimate input) (stage2.CostModel.Work.Estimate input) }
-        createWrappedWithCostModel name build transition (StageCostModel.create memoryModel workModel) lengthTransformation (stage1.Cleaning@stage2.Cleaning)
+        let sliceCardinality =
+            if stage1.SliceCardinality = stage2.SliceCardinality then stage1.SliceCardinality else UnknownCardinality
+        createWrappedWithCostModelAndSlice name build transition (StageCostModel.create memoryModel workModel) elementTransformation sliceCardinality (stage1.Cleaning@stage2.Cleaning)
         |> withGraph (PipelineGraph.parallelJoin name stage1.Graph stage2.Graph)
 
-    let map2Sync (name: string) (debug: bool) (f: 'U -> 'V -> 'W) (stage1: Stage<'In, 'U>) (stage2: Stage<'In, 'V>) (memoryNeed: MemoryNeedWrapped) (lengthTransformation: LengthTransformation) : Stage<'In, 'W> =
+    let map2Sync (name: string) (debug: bool) (f: 'U -> 'V -> 'W) (stage1: Stage<'In, 'U>) (stage2: Stage<'In, 'V>) (memoryNeed: MemoryNeedWrapped) (elementTransformation: ElementTransformation) : Stage<'In, 'W> =
         let build () = Pipe.map2Sync name debug f (stage1.Build ()) (stage2.Build ())
         let transition = ProfileTransition.create Streaming Streaming
         let memoryModel = StageMemoryModel.fromPeak Join memoryNeed
@@ -1062,10 +1173,12 @@ module Stage =
               Estimate =
                 fun input ->
                     StageWorkPressure.add (stage1.CostModel.Work.Estimate input) (stage2.CostModel.Work.Estimate input) }
-        createWrappedWithCostModel name build transition (StageCostModel.create memoryModel workModel) lengthTransformation (stage1.Cleaning@stage2.Cleaning)
+        let sliceCardinality =
+            if stage1.SliceCardinality = stage2.SliceCardinality then stage1.SliceCardinality else UnknownCardinality
+        createWrappedWithCostModelAndSlice name build transition (StageCostModel.create memoryModel workModel) elementTransformation sliceCardinality (stage1.Cleaning@stage2.Cleaning)
         |> withGraph (PipelineGraph.parallelJoin name stage1.Graph stage2.Graph)
 
-    let mapPairSync (name: string) (debug: bool) (stage1: Stage<'U, 'S>) (stage2: Stage<'V, 'T>) (memoryNeed: MemoryNeedWrapped) (lengthTransformation: LengthTransformation) : Stage<'U * 'V, 'S * 'T> =
+    let mapPairSync (name: string) (debug: bool) (stage1: Stage<'U, 'S>) (stage2: Stage<'V, 'T>) (memoryNeed: MemoryNeedWrapped) (elementTransformation: ElementTransformation) : Stage<'U * 'V, 'S * 'T> =
         let build () =
             let stage1Pipe = stage1.Build ()
             let stage2Pipe = stage2.Build ()
@@ -1098,7 +1211,9 @@ module Stage =
                     let rightInput = SingleOrPair.index2 input
                     StageWorkPressure.add (stage1.CostModel.Work.Estimate leftInput) (stage2.CostModel.Work.Estimate rightInput) }
 
-        createWrappedWithCostModel name build transition (StageCostModel.create memoryModel workModel) lengthTransformation (stage1.Cleaning@stage2.Cleaning)
+        let sliceCardinality =
+            if stage1.SliceCardinality = stage2.SliceCardinality then stage1.SliceCardinality else UnknownCardinality
+        createWrappedWithCostModelAndSlice name build transition (StageCostModel.create memoryModel workModel) elementTransformation sliceCardinality (stage1.Cleaning@stage2.Cleaning)
         |> withGraph (PipelineGraph.parallelJoin name stage1.Graph stage2.Graph)
 
     let teeFst (stage: Stage<'A, 'A>) : Stage<'A * 'B, 'A * 'B> =
@@ -1161,15 +1276,15 @@ module Stage =
         createWrapped $"teeSnd ({stage.Name})" build (ProfileTransition.create Streaming Streaming) memoryNeed id stage.Cleaning
         |> withGraph (PipelineGraph.appendNode "teeSnd" $"teeSnd ({stage.Name})" (ProfileTransition.create Streaming Streaming) stage.Graph)
 
-    let reduce (name: string) (reducer: bool -> AsyncSeq<'In> -> Async<'Out>) (profile: Profile) (memoryNeed: MemoryNeed) (lengthTransformation: LengthTransformation) : Stage<'In, 'Out> =
+    let reduce (name: string) (reducer: bool -> AsyncSeq<'In> -> Async<'Out>) (profile: Profile) (memoryNeed: MemoryNeed) (elementTransformation: ElementTransformation) : Stage<'In, 'Out> =
         let build () = Pipe.reduce name reducer profile
         let transition = ProfileTransition.create Streaming Constant
-        createWithModel name build transition (StageMemoryModel.fromSinglePeak Reduce memoryNeed) lengthTransformation []
+        createWithModelAndSlice name build transition (StageMemoryModel.fromSinglePeak Reduce memoryNeed) elementTransformation (ReduceTo 1UL) []
 
-    let fold<'S,'T> (name: string) (folder: 'T -> 'S -> 'T) (initial: 'T) (memoryNeed: MemoryNeed) (lengthTransformation: LengthTransformation) : Stage<'S, 'T> =
+    let fold<'S,'T> (name: string) (folder: 'T -> 'S -> 'T) (initial: 'T) (memoryNeed: MemoryNeed) (elementTransformation: ElementTransformation) : Stage<'S, 'T> =
         let build () : Pipe<'S,'T> = Pipe.fold name folder initial Streaming
         let transition = ProfileTransition.create Streaming Constant
-        createWithModel name build transition (StageMemoryModel.fromSinglePeak Reduce memoryNeed) lengthTransformation []
+        createWithModelAndSlice name build transition (StageMemoryModel.fromSinglePeak Reduce memoryNeed) elementTransformation (ReduceTo 1UL) []
 
     let window (name: string) (winSz: uint) (pad: uint) (zeroMaker: int -> 'T -> 'T) (stride: uint) : Stage<'T, Window<'T>> =
         let pipe = Pipe.window name winSz pad zeroMaker stride
@@ -1186,15 +1301,15 @@ module Stage =
         let transition = ProfileTransition.create Streaming Streaming
         fromPipe name transition id id pipe
 
-    let liftUnary<'S,'T> (name: string) (f: 'S -> 'T) (memoryNeed: MemoryNeed) (lengthTransformation: LengthTransformation) : Stage<'S, 'T> =
+    let liftUnary<'S,'T> (name: string) (f: 'S -> 'T) (memoryNeed: MemoryNeed) (elementTransformation: ElementTransformation) : Stage<'S, 'T> =
         let build () = Pipe.lift name Streaming f
         let transition = ProfileTransition.create Streaming Streaming
-        create name build transition memoryNeed lengthTransformation []
+        create name build transition memoryNeed elementTransformation []
 
-    let liftReleaseUnary<'S,'T> (name: string) (release: 'S->unit) (f: 'S -> 'T) (memoryNeed: MemoryNeed) (lengthTransformation: LengthTransformation) : Stage<'S, 'T> =
+    let liftReleaseUnary<'S,'T> (name: string) (release: 'S->unit) (f: 'S -> 'T) (memoryNeed: MemoryNeed) (elementTransformation: ElementTransformation) : Stage<'S, 'T> =
         let build ()= Pipe.liftRelease name Streaming release f
         let transition = ProfileTransition.create Streaming Streaming
-        create name build transition memoryNeed lengthTransformation []
+        create name build transition memoryNeed elementTransformation []
 
     let retainWith<'T> (name: string) (ops: ResourceOps<'T>) : Stage<'T, 'T> =
         liftUnary name (ResourceOps.retainAndReturn ops) (fun _ -> 0UL) id
@@ -1204,14 +1319,14 @@ module Stage =
         let transition = ProfileTransition.create Streaming Unit
         create name build transition id id []
 
-    let liftResourceUnary<'S,'T> (name: string) (ops: ResourceOps<'S>) (f: 'S -> 'T) (memoryNeed: MemoryNeed) (lengthTransformation: LengthTransformation) : Stage<'S, 'T> =
-        liftReleaseUnary name (ResourceOps.release ops) f memoryNeed lengthTransformation
+    let liftResourceUnary<'S,'T> (name: string) (ops: ResourceOps<'S>) (f: 'S -> 'T) (memoryNeed: MemoryNeed) (elementTransformation: ElementTransformation) : Stage<'S, 'T> =
+        liftReleaseUnary name (ResourceOps.release ops) f memoryNeed elementTransformation
 
 (*
-    let liftWindowed<'S,'T when 'S: equality and 'T: equality> (name: string) (window: uint) (pad: uint) (zeroMaker: int->'S->'S) (stride: uint) (emitStart: uint) (emitCount: uint) (f: 'S list -> 'T list) (memoryNeed: MemoryNeed) (lengthTransformation: LengthTransformation) : Stage<'S, 'T> =
+    let liftWindowed<'S,'T when 'S: equality and 'T: equality> (name: string) (window: uint) (pad: uint) (zeroMaker: int->'S->'S) (stride: uint) (emitStart: uint) (emitCount: uint) (f: 'S list -> 'T list) (memoryNeed: MemoryNeed) (elementTransformation: ElementTransformation) : Stage<'S, 'T> =
         let transition = ProfileTransition.create (Window (window,stride,pad,emitStart,emitCount)) Streaming
         let build = Pipe.mapWindowed name window pad zeroMaker stride emitStart emitCount f
-        create name build transition memoryNeed lengthTransformation
+        create name build transition memoryNeed elementTransformation
 *)
 
     let tapItStage (name: string) (toString: 'T -> string) : Stage<'T, 'T> =
@@ -1244,7 +1359,7 @@ module Stage =
     let consumeWith (name: string) (consume: bool -> int -> 'T -> unit) (memoryNeed: MemoryNeed) : Stage<'T, unit> = 
         let build () = Pipe.consumeWith name consume Streaming
         let transition = ProfileTransition.create Streaming Constant
-        createWithModel name build transition (StageMemoryModel.fromSinglePeak Iter memoryNeed) (fun _ -> 0UL) []
+        createWithModelAndSlice name build transition (StageMemoryModel.fromSinglePeak Iter memoryNeed) id (ReduceTo 0UL) []
 
     let cast<'S,'T when 'S: equality and 'T: equality> name f (memoryNeed: MemoryNeed) : Stage<'S,'T> = // cast cannot change
         let apply debug input = input |> AsyncSeq.map f 
@@ -1428,8 +1543,11 @@ module Plan =
         let costObservations = stageCost :: pl.costObservations
         if (not pl.debug) && memPeak > pl.memAvail then
             failwith $"Out of available memory: {stage.Name} requested {memNeeded} B but have only {pl.memAvail} B"
-        let nElemsPerSlice' = SingleOrPair.map stage.LengthTransformation pl.nElemsPerSlice // Stage LengthTransformation must be updated as well
-        { createWrapped stage' pl.memAvail memPeak nElemsPerSlice' pl.length pl.debug with sourcePeek = pl.sourcePeek; costPeak = costPeak; costObservations = costObservations }
+        let nElemsPerSlice' = SingleOrPair.map stage.ElementTransformation pl.nElemsPerSlice
+        let length' =
+            SliceCardinality.length pl.length stage.SliceCardinality
+            |> Option.defaultValue pl.length
+        { createWrapped stage' pl.memAvail memPeak nElemsPerSlice' length' pl.debug with sourcePeek = pl.sourcePeek; costPeak = costPeak; costObservations = costObservations }
 
     let (>=>) (pl: Plan<'a, 'b>) (stage: Stage<'b, 'c>) : Plan<'a, 'c> =
         composePlan $">=>" pl stage
@@ -1437,13 +1555,16 @@ module Plan =
     let map (name: string) (f: 'U->'V) (pl: Plan<'In,'U>) : Plan<'In,'V> =
         if pl.debug then printfn $"[{name}]"
         let memoryNeed m = 2UL*m // assuming simple transformation
-        let lengthTransformation = id
+        let elementTransformation = id
         let stage =
             match pl.stage with
             | Some stg -> 
-                Stage.map1 name f stg memoryNeed lengthTransformation // lengthTransformation is unchanged by map per definition 
+                Stage.map1 name f stg memoryNeed elementTransformation // elementTransformation is unchanged by map per definition 
             | None -> failwith "Plan.map cannot map to empty stage"
-        let nElemsPerSlice' = SingleOrPair.map stage.LengthTransformation pl.nElemsPerSlice
+        let nElemsPerSlice' = SingleOrPair.map stage.ElementTransformation pl.nElemsPerSlice
+        let length' =
+            SliceCardinality.length pl.length stage.SliceCardinality
+            |> Option.defaultValue pl.length
         let memNeeded = pl.nElemsPerSlice |> stage.MemoryNeed  |> SingleOrPair.sum |> SingleOrPair.fst
         let memPeak = max pl.memPeak memNeeded
         let stageCost = StageCostModel.estimate stage.CostModel pl.nElemsPerSlice
@@ -1451,7 +1572,7 @@ module Plan =
         let costObservations = stageCost :: pl.costObservations
         if (not pl.debug) && memPeak > pl.memAvail then
             failwith $"Out of available memory: {stage.Name} requested {memoryNeed} B but have only {pl.memAvail} B"
-        { createWrapped (Some stage) pl.memAvail memPeak nElemsPerSlice' pl.length pl.debug with sourcePeek = pl.sourcePeek; costPeak = costPeak; costObservations = costObservations }
+        { createWrapped (Some stage) pl.memAvail memPeak nElemsPerSlice' length' pl.debug with sourcePeek = pl.sourcePeek; costPeak = costPeak; costObservations = costObservations }
         
     /// parallel execution of non-synchronised streams
     let internal zipPlan (name: string) (pl1: Plan<'In, 'U>) (pl2: Plan<'In, 'V>) : Plan<'In, ('U * 'V)> =
@@ -1469,9 +1590,9 @@ module Plan =
                     let nElemsPerSlice1 = SingleOrPair.index1 nElemsPerSlice
                     let nElemsPerSlice2 = SingleOrPair.index2 nElemsPerSlice
                     SingleOrPair.add (nElemsPerSlice1 |> stage1.MemoryNeed) (nElemsPerSlice2 |> stage2.MemoryNeed) // SingleOrPair.add (nElemsPerSlice |> SingleOrPair.index1 |> stage1.MemoryNeed) (nElemsPerSlice |> SingleOrPair.index2 |> stage2.MemoryNeed)
-                let lengthTransformation = id // Transformation of result equal to any of the input
+                let elementTransformation = id // Transformation of result equal to any of the input
                 let stage =
-                    Stage.map2 $"({stage1.Name},{stage2.Name})" debug (fun U V -> (U,V)) stage1 stage2 memoryNeed lengthTransformation
+                    Stage.map2 $"({stage1.Name},{stage2.Name})" debug (fun U V -> (U,V)) stage1 stage2 memoryNeed elementTransformation
 
                 // Check memory constraints for the zipped stream
                 let memNeeded = SingleOrPair.add (nElemsPerSlice |> stage1.MemoryNeed) (nElemsPerSlice |> stage2.MemoryNeed)
@@ -1503,15 +1624,19 @@ module Plan =
             // nElemsPerSlice is always Singel
             SingleOrPair.add (nElemsPerSlice |> stage1.MemoryNeed) (nElemsPerSlice |> stage2.MemoryNeed)
 
-        let lengthTransformation = stage1.LengthTransformation 
-        let lengthTransformation2 = stage2.LengthTransformation 
-        let nElems = SingleOrPair.map lengthTransformation pl.nElemsPerSlice
-        let nElems2 = SingleOrPair.map lengthTransformation2 pl.nElemsPerSlice
+        let elementTransformation = stage1.ElementTransformation 
+        let elementTransformation2 = stage2.ElementTransformation 
+        let nElems = SingleOrPair.map elementTransformation pl.nElemsPerSlice
+        let nElems2 = SingleOrPair.map elementTransformation2 pl.nElemsPerSlice
         if nElems <> nElems2 then
             failwith $"[>=>>] Cannot zip plans with different number of elements {nElems} vs {nElems2}"
+        let length = SliceCardinality.length pl.length stage1.SliceCardinality
+        let length2 = SliceCardinality.length pl.length stage2.SliceCardinality
+        if length <> length2 || stage1.SliceCardinality <> stage2.SliceCardinality then
+            failwith $"[>=>>] Cannot synchronize branches with different slice domains {stage1.SliceCardinality} vs {stage2.SliceCardinality}"
 
         // Combine both stages in a zip-like stage
-        let stage = Stage.map2Sync $"({stage1.Name},{stage2.Name})" pl.debug (fun u v -> (u, v)) stage1 stage2 memoryNeed lengthTransformation
+        let stage = Stage.map2Sync $"({stage1.Name},{stage2.Name})" pl.debug (fun u v -> (u, v)) stage1 stage2 memoryNeed elementTransformation
 
         composePlan ">=>>" pl stage
 
@@ -1526,14 +1651,17 @@ module Plan =
         let memoryNeed nElemsPerSlice =
             SingleOrPair.add (nElemsPerSlice |> SingleOrPair.index1 |> stage1.MemoryNeed) (nElemsPerSlice |> SingleOrPair.index2 |> stage2.MemoryNeed)
 
-        let lengthTransformation nElems =
-            let left = stage1.LengthTransformation nElems
-            let right = stage2.LengthTransformation nElems
+        let elementTransformation nElems =
+            let left = stage1.ElementTransformation nElems
+            let right = stage2.ElementTransformation nElems
             if left <> right then
-                failwith $"[>>=>>] Cannot zip branch outputs with different lengths {left} vs {right}"
+                failwith $"[>>=>>] Cannot zip branch outputs with different element shapes {left} vs {right}"
             left
 
-        let stage = Stage.mapPairSync $"({stage1.Name},{stage2.Name})" pl.debug stage1 stage2 memoryNeed lengthTransformation
+        if stage1.SliceCardinality <> stage2.SliceCardinality then
+            failwith $"[>>=>>] Cannot synchronize branches with different slice domains {stage1.SliceCardinality} vs {stage2.SliceCardinality}"
+
+        let stage = Stage.mapPairSync $"({stage1.Name},{stage2.Name})" pl.debug stage1 stage2 memoryNeed elementTransformation
         composePlan ">>=>>" pl stage
 
     ///////////////////////////////////////////
