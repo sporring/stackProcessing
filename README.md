@@ -32,6 +32,8 @@ Nothing runs while the pipeline is being built. Execution starts only when
 | `AsyncSeqExtensions` | Streaming helpers used by the pipeline engine. |
 | `SlimPipeline` | Element-agnostic streaming pipeline model, graph metadata, memory estimates, and execution. |
 | `StackProcessing` | Image-stack implementation of `SlimPipeline`: read, write, filters, reducers, visualization helpers. |
+| `StackProcessing.Probing` | Runs calibration-style pipelines and writes JSON with memory and timing observations for cost-model learning. |
+| `StackProcessing.Probing.Report` | Reads probing JSON and writes Plotly.NET scatter plots for memory and speed versus window size or other parameters. |
 | `Studio.Graph` | Pure graph domain model, built-in function catalog, and JSON persistence for Studio. |
 | `Studio.Compiler` | Compiler from Studio graph JSON to executable StackProcessing F# DSL code. |
 | `Studio` | Avalonia visual editor for building, saving, arranging, compiling, and running processing graphs. |
