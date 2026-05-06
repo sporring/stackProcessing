@@ -18,13 +18,13 @@ let main arg =
     |> read<uint8> input ".tiff"
     //|> getFilenames (input) ".tiff" Array.sort
     //>=> readFiles<uint8>
-    >=> writeInChunks output ".tiff" 12u 13u 14u
+    >=> writeInSlabs output ".tiff" 12u 13u 14u
     >=> ignoreSingles ()
     |> sink
 
     let output2 = input+"b"
     deleteIfExists output2
-    src |> readChunks<uint8> output ".tiff"
+    src |> readSlab<uint8> output ".tiff"
     >=> write output2 ".tiff"
     |> sink
 

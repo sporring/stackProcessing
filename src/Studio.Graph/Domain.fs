@@ -88,8 +88,14 @@ module ImageFileFormat =
           { Label = "BMP (.bmp)"; Suffix = ".bmp"; SupportedTypes = [ UInt8 ] } ]
 
     let readFormats =
-        { Label = "TIFF (.tif or .tiff)"; Suffix = ".tiff"; SupportedTypes = tiffScalarTypes }
-        :: (formats |> List.filter (fun format -> format.Suffix <> ".tiff" && format.Suffix <> ".tif"))
+        [ { Label = "TIFF (.tif or .tiff)"; Suffix = ".tiff"; SupportedTypes = tiffScalarTypes }
+          { Label = "JPEG (.jpg or .jpeg)"; Suffix = ".jpg"; SupportedTypes = [ UInt8 ] } ]
+        @ (formats
+           |> List.filter (fun format ->
+               format.Suffix <> ".tiff"
+               && format.Suffix <> ".tif"
+               && format.Suffix <> ".jpg"
+               && format.Suffix <> ".jpeg"))
 
     let suffixes =
         formats |> List.map _.Suffix

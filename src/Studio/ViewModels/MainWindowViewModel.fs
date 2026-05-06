@@ -337,16 +337,18 @@ module private ScalarFunctionNode =
 
 module private SourceImageNode =
     let hasInputTitle functionId =
-        functionId = "Read" || functionId = "ReadRandom" || functionId = "ReadChunks"
+        functionId = "Read" || functionId = "ReadRandom" || functionId = "ReadSlab"
 
     let hasOutputTitle functionId =
-        functionId = "Write" || functionId = "WriteThrough" || functionId = "WriteInChunks"
+        functionId = "Write" || functionId = "WriteThrough" || functionId = "WriteInSlabs"
 
     let hasFormatParameter functionId =
         hasInputTitle functionId
         || hasOutputTitle functionId
-        || functionId = "WriteChunkSlices"
+        || functionId = "WriteSlabSlices"
         || functionId = "GetStackInfo"
+        || functionId = "GetChunkInfo"
+        || functionId = "ResampleAffineTrilinearSlices"
 
     let typeOptions =
         [ UInt8
@@ -371,7 +373,7 @@ module private SourceImageNode =
         |> List.map (fun format -> format.Label, format.Suffix)
 
     let suffixOptionsFor functionId =
-        if hasInputTitle functionId || functionId = "GetStackInfo" then
+        if hasInputTitle functionId || functionId = "GetStackInfo" || functionId = "GetChunkInfo" || functionId = "ResampleAffineTrilinearSlices" then
             readSuffixOptions
         else
             suffixOptions
@@ -760,9 +762,11 @@ type PipelineNodeViewModel(
         this.Width <-
             match state.Definition.Id with
             | "ComputeStats"
-            | "GetStackInfo" -> 170.
+            | "GetStackInfo"
+            | "GetChunkInfo" -> 170.
             | "ComponentTranslationTable"
             | "CollapseComponentLabels" -> 180.
+            | "ResampleAffineTrilinearSlices" -> 220.
             | _ -> 110.
         this.Height <- nodeHeight
         this.Content <- PipelineNodeContent(state.Title, state, this.Width, this.Height, fun () -> selectNode this)
@@ -833,7 +837,7 @@ type PipelineNodeViewModel(
                     state.Title <- ScalarImageOperationNode.title state
                     this.Name <- state.Title
                     markGraphDirty()
-                elif (state.Definition.Id = "Scalar" || state.Definition.Id = "ScalarOp" || state.Definition.Id = "Read" || state.Definition.Id = "ReadRandom" || state.Definition.Id = "ReadChunks" || state.Definition.Id = "Zero" || state.Definition.Id = "CreateByEuler2DTransform" || state.Definition.Id = "Threshold" || state.Definition.Id = "ImageOpImage" || ScalarImageOperationNode.isOperation state.Definition.Id) && parameter.Key = "type" && args.PropertyName = nameof parameter.Value then
+                elif (state.Definition.Id = "Scalar" || state.Definition.Id = "ScalarOp" || state.Definition.Id = "Read" || state.Definition.Id = "ReadRandom" || state.Definition.Id = "ReadSlab" || state.Definition.Id = "Zero" || state.Definition.Id = "CreateByEuler2DTransform" || state.Definition.Id = "Threshold" || state.Definition.Id = "ImageOpImage" || state.Definition.Id = "ResampleAffineTrilinearSlices" || ScalarImageOperationNode.isOperation state.Definition.Id) && parameter.Key = "type" && args.PropertyName = nameof parameter.Value then
                     if state.Definition.Id = "Scalar" then
                         ScalarNode.ensureValueMatchesType state
                         state.Title <- ScalarNode.title state
@@ -971,12 +975,12 @@ type PipelineNodeViewModel(
             | "ScalarFunction" -> state.Definition.Inputs, [ ScalarFunctionNode.outputPort ]
             | "Read"
             | "ReadRandom"
-            | "ReadChunks"
+            | "ReadSlab"
             | "Zero"
             | "CreateByEuler2DTransform" -> state.Definition.Inputs, [ SourceImageNode.outputPort state ]
             | "Write"
             | "WriteThrough"
-            | "WriteInChunks" ->
+            | "WriteInSlabs" ->
                 [ SourceImageNode.writeInputPort state ], state.Definition.Outputs
             | "ImageOpImage" -> PairOperationNode.ports state
             | "Cast" -> CastNode.ports state
@@ -998,6 +1002,7 @@ type PipelineNodeViewModel(
                 | "ScalarFunction" -> ScalarOutput
                 | "ComputeStats"
                 | "GetStackInfo"
+                | "GetChunkInfo"
                 | "ComponentTranslationTable"
                 | "HistogramData" -> ReducerOutput
                 | _ -> DataOutput
@@ -1170,7 +1175,7 @@ type MainWindowViewModel() as this =
                         |> List.map (fun value -> ParameterOptionViewModel(value, value, true))
 
                     PipelineParameterViewModel(parameter.Label, parameter.Key, parameter.DefaultValue, parameter.Type, options, false)
-                | ("Read" | "ReadRandom" | "ReadChunks" | "Zero" | "CreateByEuler2DTransform"), "type" ->
+                | ("Read" | "ReadRandom" | "ReadSlab" | "Zero" | "CreateByEuler2DTransform" | "ResampleAffineTrilinearSlices"), "type" ->
                     let defaultSuffix =
                         definition.Parameters
                         |> List.tryFind (fun parameter -> parameter.Key = "suffix")
@@ -1183,6 +1188,18 @@ type MainWindowViewModel() as this =
                     let options =
                         SourceImageNode.typeOptions
                         |> List.map (fun value -> ParameterOptionViewModel(value, value, supported |> Set.contains value))
+
+                    PipelineParameterViewModel(parameter.Label, parameter.Key, parameter.DefaultValue, parameter.Type, options, false)
+                | ("DiscreteGaussian" | "Convolve"), "outputRegionMode" ->
+                    let options =
+                        [ "None"; "Valid"; "Same" ]
+                        |> List.map (fun value -> ParameterOptionViewModel(value, value, true))
+
+                    PipelineParameterViewModel(parameter.Label, parameter.Key, parameter.DefaultValue, parameter.Type, options, false)
+                | ("DiscreteGaussian" | "Convolve"), "boundaryCondition" ->
+                    let options =
+                        [ "None"; "ZeroPad"; "PerodicPad"; "ZeroFluxNeumannPad" ]
+                        |> List.map (fun value -> ParameterOptionViewModel(value, value, true))
 
                     PipelineParameterViewModel(parameter.Label, parameter.Key, parameter.DefaultValue, parameter.Type, options, false)
                 | functionId, "suffix" when SourceImageNode.hasFormatParameter functionId ->
@@ -1466,7 +1483,7 @@ type MainWindowViewModel() as this =
         |> Seq.filter (fun node ->
             node.State.Definition.Id = "Read"
             || node.State.Definition.Id = "ReadRandom"
-            || node.State.Definition.Id = "ReadChunks"
+            || node.State.Definition.Id = "ReadSlab"
             || node.State.Definition.Id = "Zero"
             || node.State.Definition.Id = "CreateByEuler2DTransform")
         |> Seq.iter (fun node ->

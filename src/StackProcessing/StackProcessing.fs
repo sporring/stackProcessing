@@ -17,7 +17,6 @@ let source = StackCore.source
 let debug = StackCore.debug
 let commandLineSource = StackCore.commandLineSource
 let zip = StackCore.zip
-let promoteStreamingToWindow = StackCore.promoteStreamingToWindow
 let (>=>) = StackCore.(>=>)
 let (-->) = StackCore.(-->)
 let (>=>>) = StackCore.(>=>>)
@@ -55,12 +54,13 @@ let read<'T when 'T: equality> = StackIO.read<'T>
 let readRandom<'T when 'T: equality> = StackIO.readRandom<'T>
 let getChunkInfo = StackIO.getChunkInfo
 let getChunkFilename = StackIO.getChunkFilename
-let readChunksAsWindows<'T when 'T: equality> = StackIO.readChunksAsWindows<'T>
-let readChunks<'T when 'T: equality> = StackIO.readChunks<'T>
+let readSlabStacked<'T when 'T: equality> = StackIO.readSlabStacked<'T>
+let readSlabAsWindows<'T when 'T: equality> = StackIO.readSlabAsWindows<'T>
+let readSlab<'T when 'T: equality> = StackIO.readSlab<'T>
 
 let deleteIfExists = StackIO.deleteIfExists
 let write = StackIO.write
-let writeInChunks = StackIO.writeInChunks
+let writeInSlabs = StackIO.writeInSlabs
 
 // //////////////////// ChunkedAffineResampler
 let resampleAffineTrilinearSlices = ChunkedAffineResampler.resampleAffineTrilinearSlices
@@ -138,7 +138,7 @@ let print = StackImageFunctions.print
 let zero<'T when 'T: equality>= StackImageFunctions.zero<'T>
 let createByEuler2DTransform<'T when 'T: equality>= StackImageFunctions.createByEuler2DTransform<'T>
 let empty = StackImageFunctions.empty
-let writeChunkSlices = StackImageFunctions.writeChunkSlices
+let writeSlabSlices = StackImageFunctions.writeSlabSlices
 let makeConnectedComponentTranslationTable = StackImageFunctions.makeConnectedComponentTranslationTable
 let updateConnectedComponents = StackImageFunctions.updateConnectedComponents
 let permuteAxes = StackImageFunctions.permuteAxes

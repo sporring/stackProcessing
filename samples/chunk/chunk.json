@@ -31,7 +31,7 @@
     },
     {
       "id": "n2",
-      "functionId": "WriteInChunks",
+      "functionId": "WriteInSlabs",
       "x": 260.0,
       "y": 100.0,
       "parameters": [
@@ -64,7 +64,7 @@
     },
     {
       "id": "n3",
-      "functionId": "ReadChunks",
+      "functionId": "ReadSlab",
       "x": 40.0,
       "y": 260.0,
       "parameters": [

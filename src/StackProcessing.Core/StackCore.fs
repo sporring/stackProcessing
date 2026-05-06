@@ -191,25 +191,24 @@ let inline isExactlyImage<'T> () =
     let t = typeof<'T>
     t.IsGenericType && t.GetGenericTypeDefinition() = typedefof<Image<_>>
 *)
-let promoteStreamingToWindow (name: string) (winSz: uint) (pad: uint) (stride: uint) (emitStart: uint) (emitCount: uint) (stage: Stage<'T,'S>) : Stage<'T, 'S> = // Does not change shape
-        let zeroMaker i = id
-        (Stage.window $"{name}: window" winSz pad zeroMaker stride) 
-        --> (Stage.map $"{name}: select delayed emit range" (fun _ window ->
-                let start = int emitStart
-                let count = int emitCount
-                let result =
-                    window.Items
-                    |> List.skip start
-                    |> List.take (min count (max 0 (window.Items.Length - start)))
-                window.Items |> List.take (min (int stride) window.Items.Length) |> List.map decIfImage |> ignore
-                result
-            ) id id )
-        --> Stage.flatten $"{name}: flatten"
-        --> stage
-
 let (>=>>) (pl: Plan<'In, 'S>) (stage1: Stage<'S, 'U>, stage2: Stage<'S, 'V>) : Plan<'In, 'U * 'V> = 
-    let stream2Window winSz pad stride stg = 
-        stg |> promoteStreamingToWindow "makeWindow" winSz pad stride 0u 1u
+    let stream2Window winSz pad stride (stg: Stage<'T,'Out>) : Stage<'T,'Out> =
+        let zeroMaker _ = id
+        Stage.window "makeWindow: window" winSz pad zeroMaker stride
+        --> Stage.map "makeWindow: select delayed emit range"
+                (fun _ window ->
+                    let start = 0
+                    let count = 1
+                    let result =
+                        window.Items
+                        |> List.skip start
+                        |> List.take (min count (max 0 (window.Items.Length - start)))
+                    window.Items |> List.take (min (int stride) window.Items.Length) |> List.iter (decIfImage >> ignore)
+                    result)
+                id
+                id
+        --> Stage.flatten "makeWindow: flatten"
+        --> stg
 
     let stg1,stg2 =
         match stage1.Transition.From, stage2.Transition.From with
