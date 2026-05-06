@@ -290,7 +290,7 @@ let readChunksAsWindows<'T when 'T: equality> (inputDir: string) (suffix: string
     |> Plan.withSourcePeek sourcePeek
 
 let readChunks<'T when 'T: equality> (inputDir: string) (suffix: string) (pl: Plan<unit, unit>) : Plan<unit, Image<'T>> =
-    pl |> readChunksAsWindows<'T> inputDir suffix >=> flatten ()
+    pl |> readChunksAsWindows<'T> inputDir suffix >=> flattenList ()
 
 let icompare s1 s2  = 
     System.String.Equals(s1, s2, System.StringComparison.CurrentCultureIgnoreCase)
@@ -361,7 +361,8 @@ let writeInChunks<'T when 'T: equality> (outputDir: string) (suffix: string) (wi
         _writeChunkSlice debug outputDir suffix width height winSz (int k) stack
         stack.incRefCount() //to make sure volFctToLstFctReleaseAfter doesn't release it.
         stack
-    let mapper (debug: bool) (idx: int64) = volFctToLstFctReleaseAfterDebug debug (f debug idx) pad stride
+    let mapper (debug: bool) (idx: int64) (window: Window<Image<'T>>) =
+        volFctToLstFctReleaseAfterDebug debug (f debug idx) pad stride window.Items
     //let mapper (debug: bool) (idx: int64) = fun stack -> _writeChunkSlice debug outputDir suffix width height winSz (int idx) stack; stack
     let btUint8 = typeof<uint8>|>Image.getBytesPerComponent |> uint64
     let btUint64 = typeof<uint64> |> Image.getBytesPerComponent |> uint64
@@ -383,4 +384,4 @@ let writeInChunks<'T when 'T: equality> (outputDir: string) (suffix: string) (wi
     let stg =
         Stage.mapi "writeInChunks" mapper memoryNeed lengthTransformation
         |> withCostModel (StageCostModel.create memoryModel workModel)
-    (window winSz pad stride) --> stg --> flatten ()
+    (window winSz pad stride) --> stg --> flattenList ()

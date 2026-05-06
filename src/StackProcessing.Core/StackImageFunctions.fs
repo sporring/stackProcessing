@@ -258,9 +258,9 @@ let discreteGaussianOp (name: string) (sigma: float) (outputRegionMode: ImageFun
         let kernelVoxels = uint64 ksz * uint64 ksz * uint64 ksz
         float (inputValue input * uint64 win * kernelVoxels)
     let stg =
-        Stage.map name f memoryNeed lengthTransformation // wrong for Valid, where the sequences becomes shorter
+        mapWindowItems name f memoryNeed lengthTransformation // wrong for Valid, where the sequences becomes shorter
         |> withCostModel (nativeImageStageCost $"discreteGaussian.Float64" memoryModel workUnits)
-    (window win pad stride) --> stg --> flatten ()
+    (window win pad stride) --> stg --> flattenList ()
 
 let discreteGaussian = discreteGaussianOp "discreteGaussian"
 let convGauss sigma = discreteGaussianOp "convGauss" sigma None None None
@@ -315,9 +315,9 @@ let convolveOp (name: string) (kernel: Image<'T>) (outputRegionMode: ImageFuncti
         let kernelVoxels = uint64 (kernel.GetWidth()) * uint64 (kernel.GetHeight()) * uint64 (kernel.GetDepth())
         float (inputValue input * uint64 win * kernelVoxels)
     let stg =
-        Stage.map name f memoryNeed lengthTransformation
+        mapWindowItems name f memoryNeed lengthTransformation
         |> withCostModel (nativeImageStageCost $"convolve.{typeof<'T>.Name}" memoryModel workUnits)
-    (window win pad stride) --> stg --> flatten ()
+    (window win pad stride) --> stg --> flattenList ()
 
 let convolve kernel outputRegionMode boundaryCondition winSz = convolveOp "convolve" kernel outputRegionMode boundaryCondition winSz
 let conv kernel = convolveOp "conv" kernel None None None
@@ -334,8 +334,8 @@ let private makeMorphOp (name: string) (radius: uint) (winSz: uint option) (core
     let stride = win - ksz + 1u
 
     let f debug = volFctToLstFctReleaseAfterDebug debug (core radius) pad stride
-    let stg = Stage.map name f id id
-    (window win pad stride) --> stg --> flatten ()
+    let stg = mapWindowItems name f id id
+    (window win pad stride) --> stg --> flattenList ()
 
 let erode radius = makeMorphOp "binaryErode"  radius None ImageFunctions.binaryErode
 let dilate radius = makeMorphOp "binaryErode"  radius None ImageFunctions.binaryDilate
@@ -346,8 +346,8 @@ let closing radius = makeMorphOp "binaryErode"  radius None ImageFunctions.binar
 let binaryFillHoles (winSz: uint)= 
     let pad, stride = 0u, winSz
     let f debug = volFctToLstFctReleaseAfterDebug debug (ImageFunctions.binaryFillHoles) pad stride
-    let stg = Stage.map "fillHoles" f id id
-    (window winSz pad stride) --> stg --> flatten ()
+    let stg = mapWindowItems "fillHoles" f id id
+    (window winSz pad stride) --> stg --> flattenList ()
 
 let connectedComponents (winSz: uint) =
     let pad, stride = 0u, winSz
@@ -368,7 +368,8 @@ let connectedComponents (winSz: uint) =
         let str = uint64 stride
         max (nPixels*(wsz*(2UL*bt8+bt64)-str*bt8)) (nPixels*(wsz*(bt8+bt64)+str*(bt64-bt8)))
 
-    let mapper (_debug: bool) (chunkIndex: int64) (images: Image<uint8> list) : Image<uint64> * uint64 =
+    let mapper (_debug: bool) (chunkIndex: int64) (window: Window<Image<uint8>>) : Image<uint64> * uint64 =
+        let images = window.Items
         let stack = ImageFunctions.stack images
         images |> List.take (min (int stride) images.Length) |> List.iter (fun image -> image.decRefCount())
         let result = ImageFunctions.connectedComponents stack
@@ -381,30 +382,30 @@ let connectedComponents (winSz: uint) =
 let relabelComponents a (winSz: uint) = 
     let pad, stride = 0u, winSz
     let f debug = volFctToLstFctReleaseAfterDebug debug (ImageFunctions.relabelComponents a) pad stride
-    let stg = Stage.map "relabelComponents" f id id
-    (window winSz pad stride) --> stg --> flatten ()
+    let stg = mapWindowItems "relabelComponents" f id id
+    (window winSz pad stride) --> stg --> flattenList ()
 
 let watershed a (winSz: uint) =
     let pad, stride = 0u, winSz
     let f debug = volFctToLstFctReleaseAfterDebug debug (ImageFunctions.watershed a) pad stride
-    let stg = Stage.map "watershed" f id id
-    (window winSz pad stride) --> stg --> flatten ()
+    let stg = mapWindowItems "watershed" f id id
+    (window winSz pad stride) --> stg --> flattenList ()
 let signedDistanceMap (winSz: uint) =
     let pad, stride = 0u, winSz
     let f debug = volFctToLstFctReleaseAfterDebug debug (ImageFunctions.signedDistanceMap 0uy 1uy) pad stride
-    let stg = Stage.map "signedDistanceMap" f id id
-    (window winSz pad stride) --> stg --> flatten ()
+    let stg = mapWindowItems "signedDistanceMap" f id id
+    (window winSz pad stride) --> stg --> flattenList ()
 let otsuThreshold (winSz: uint) =
     let pad, stride = 0u, winSz
     let f debug = volFctToLstFctReleaseAfterDebug debug (ImageFunctions.otsuThreshold) pad stride
-    let stg = Stage.map "otsuThreshold" f id id
-    (window winSz pad stride) --> stg --> flatten ()
+    let stg = mapWindowItems "otsuThreshold" f id id
+    (window winSz pad stride) --> stg --> flattenList ()
 
 let momentsThreshold (winSz: uint) =
     let pad, stride = 0u, winSz
     let f debug = volFctToLstFctReleaseAfterDebug debug (ImageFunctions.momentsThreshold) pad stride
-    let stg = Stage.map "momentsThreshold" f id id
-    (window winSz pad stride) --> stg --> flatten ()
+    let stg = mapWindowItems "momentsThreshold" f id id
+    (window winSz pad stride) --> stg --> flattenList ()
 
 let threshold a b = liftUnaryReleaseAfter "threshold" (ImageFunctions.threshold a b) id id
 
@@ -674,6 +675,6 @@ let permuteAxes (i: uint, j: uint, k: uint) (winSz: uint): Stage<Image<'T>,Image
         --> StackCore.ignoreSingles () // force calculation of full stream and decrease references
         --> Stage.map name (fun _ _ -> chunkInfo <- getChunkInfo tmpDir tmpSuffix) memoryNeed lengthTransformation // insert side-effect
         --> Stage.map name (fun _ _ -> [0..(chunkInfo.chunks[int k]-1)]) memoryNeed lengthTransformation
-        --> flatten () // expand to a new, non-empty stream
+        --> flattenList () // expand to a new, non-empty stream
         --> Stage.map name (fun debug idx -> mapper chunkInfo debug idx) memoryNeed lengthTransformation // mapper chunkInfo does not work, since argument is copied at compile time
-        --> flatten ()
+        --> flattenList ()

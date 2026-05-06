@@ -6,6 +6,7 @@ type Stage<'S,'T> = SlimPipeline.Stage<'S,'T>
 type Profile = SlimPipeline.Profile
 type ProfileTransition = SlimPipeline.ProfileTransition
 type ResourceOps<'T> = SlimPipeline.ResourceOps<'T>
+type Window<'T> = SlimPipeline.Window<'T>
 //type Slice<'S when 'S: equality> = Slice.Slice<'S>
 type Image<'S when 'S: equality> = Image.Image<'S>
 
@@ -149,9 +150,14 @@ let inline isExactlyImage<'T> () =
 let promoteStreamingToWindow (name: string) (winSz: uint) (pad: uint) (stride: uint) (emitStart: uint) (emitCount: uint) (stage: Stage<'T,'S>) : Stage<'T, 'S> = // Does not change shape
         let zeroMaker i = id
         (Stage.window $"{name}: window" winSz pad zeroMaker stride) 
-        --> (Stage.map $"{name}: skip and take" (fun _ lst ->
-                let result = lst |> List.skip (int stride) |> List.take 1
-                lst |> List.take (int stride) |> List.map decIfImage |> ignore
+        --> (Stage.map $"{name}: select delayed emit range" (fun _ window ->
+                let start = int emitStart
+                let count = int emitCount
+                let result =
+                    window.Items
+                    |> List.skip start
+                    |> List.take (min count (max 0 (window.Items.Length - start)))
+                window.Items |> List.take (min (int stride) window.Items.Length) |> List.map decIfImage |> ignore
                 result
             ) id id )
         --> Stage.flatten $"{name}: flatten"
@@ -182,7 +188,10 @@ let ignoreSingles () : Stage<_,unit> = Stage.ignore (decIfImage>>ignore)
 let ignorePairs () : Stage<_,unit> = Stage.ignorePairs<_,unit> ((decIfImage>>ignore),(decIfImage>>ignore))
 let zeroMaker (index: int) (ex: Image<'S>) : Image<'S> = new Image<'S>(ex.GetSize(), 1u, "padding", index)
 let window windowSize pad stride = Stage.window "window" windowSize pad zeroMaker stride
-let flatten () = Stage.flatten "flatten"
+let flatten () = Stage.flattenWindow "flatten"
+let flattenList () = Stage.flatten "flatten"
+let mapWindowItems (name: string) (f: bool -> 'T list -> 'S) memoryNeed lengthTransformation =
+    Stage.map name (fun debug (window: Window<'T>) -> f debug window.Items) memoryNeed lengthTransformation
 let map f = Stage.map "map" f id id
 let sinkOp (pl: Plan<unit,unit>) : unit = 
     Plan.sink pl

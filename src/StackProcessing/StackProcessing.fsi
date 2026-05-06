@@ -16,6 +16,8 @@ type ResourceOps<'T> = SlimPipeline.ResourceOps<'T>
 
 type StageCostCoefficients = SlimPipeline.StageCostCoefficients
 
+type Window<'T> = SlimPipeline.Window<'T>
+
 type Image<'S when 'S: equality> = Image.Image<'S>
 
 type ImageFacts = Image.ImageFacts
@@ -58,10 +60,9 @@ val (>>=>) :
      ('b -> 'c -> 'd) -> SlimPipeline.Plan<'a,'d>) when 'd: equality
 
 val (>>=>>) :
-  (('a * 'b -> 'c * 'd) ->
-     SlimPipeline.Plan<'e,('a * 'b)> ->
-     SlimPipeline.Stage<('a * 'b),('c * 'd)> -> SlimPipeline.Plan<'e,('c * 'd)>)
-    when 'c: equality and 'd: equality
+  (SlimPipeline.Plan<'a,('b * 'c)> ->
+     SlimPipeline.Stage<'b,'d> * SlimPipeline.Stage<'c,'e> ->
+       SlimPipeline.Plan<'a,('d * 'e)>) when 'd: equality and 'e: equality
 
 val teeFst:
   (SlimPipeline.Stage<'a,'a> -> SlimPipeline.Stage<('a * 'b),('a * 'b)>)

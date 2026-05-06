@@ -5,6 +5,24 @@ open AsyncSeqExtensions
 
 type SingleOrPair = Single of uint64 | Pair of uint64*uint64
 
+type Window<'T> =
+    { Items: 'T list
+      EmitRange: uint * uint }
+
+module Window =
+    let create emitStart emitCount items =
+        { Items = items
+          EmitRange = emitStart, emitCount }
+
+    let singleton item =
+        create 0u 1u [ item ]
+
+    let emitItems window =
+        let start, count = window.EmitRange
+        window.Items
+        |> List.skip (int start)
+        |> List.take (min (int count) (max 0 (window.Items.Length - int start)))
+
 module SingleOrPair =
     let isSingle v = 
         match v with Single _ -> true | _ -> false
@@ -335,11 +353,12 @@ module private Pipe =
 *)
 
     // window : wraps AsyncSeqExtensions.windowedWithPad
-    let window (name: string) (winSz: uint) (pad: uint) (zeroMaker: int -> 'T -> 'T) (stride: uint) : Pipe<'T, 'T list> =
+    let window (name: string) (winSz: uint) (pad: uint) (zeroMaker: int -> 'T -> 'T) (stride: uint) : Pipe<'T, Window<'T>> =
 
-        let apply _debug (input: AsyncSeq<'T>) : AsyncSeq<'T list> =
-            // Produces an AsyncSeq of windows (each window is a 'T list)
+        let apply _debug (input: AsyncSeq<'T>) : AsyncSeq<Window<'T>> =
+            // Produces an AsyncSeq of windows with the default emitted range.
             AsyncSeqExtensions.windowedWithPad winSz stride pad pad zeroMaker input
+            |> AsyncSeq.map (Window.create pad stride)
         let profile = Window (winSz, stride, pad, 0u, winSz)
         create name apply profile
 
@@ -360,6 +379,9 @@ module private Pipe =
 
     let flatten (name: string) : Pipe<'T list, 'T> =
         collect name (fun (lst: 'T list)-> lst)
+
+    let flattenWindow (name: string) : Pipe<Window<'T>, 'T> =
+        collect name Window.emitItems
 
     let ignore clean : Pipe<'T, unit> =
         let apply debug input =
@@ -1024,6 +1046,42 @@ module Stage =
         createWrappedWithCostModel name build transition (StageCostModel.create memoryModel workModel) lengthTransformation (stage1.Cleaning@stage2.Cleaning)
         |> withGraph (PipelineGraph.parallelJoin name stage1.Graph stage2.Graph)
 
+    let mapPairSync (name: string) (debug: bool) (stage1: Stage<'U, 'S>) (stage2: Stage<'V, 'T>) (memoryNeed: MemoryNeedWrapped) (lengthTransformation: LengthTransformation) : Stage<'U * 'V, 'S * 'T> =
+        let build () =
+            let stage1Pipe = stage1.Build ()
+            let stage2Pipe = stage2.Build ()
+
+            let apply debug input =
+                let leftPipe, rightPipe = Pipe.tee debug (Pipe.id "pair-input")
+                let left =
+                    input
+                    |> leftPipe.Apply debug
+                    |> AsyncSeq.map fst
+                    |> stage1Pipe.Apply debug
+                let right =
+                    input
+                    |> rightPipe.Apply debug
+                    |> AsyncSeq.map snd
+                    |> stage2Pipe.Apply debug
+
+                AsyncSeqExtensions.zipConcurrent left right
+
+            Pipe.create name apply Streaming
+
+        let transition = ProfileTransition.create Streaming Streaming
+        let memoryModel = StageMemoryModel.fromPeak Join memoryNeed
+        let workModel =
+            { Kind = Mixed
+              Evaluation = Join
+              Estimate =
+                fun input ->
+                    let leftInput = SingleOrPair.index1 input
+                    let rightInput = SingleOrPair.index2 input
+                    StageWorkPressure.add (stage1.CostModel.Work.Estimate leftInput) (stage2.CostModel.Work.Estimate rightInput) }
+
+        createWrappedWithCostModel name build transition (StageCostModel.create memoryModel workModel) lengthTransformation (stage1.Cleaning@stage2.Cleaning)
+        |> withGraph (PipelineGraph.parallelJoin name stage1.Graph stage2.Graph)
+
     let teeFst (stage: Stage<'A, 'A>) : Stage<'A * 'B, 'A * 'B> =
         if stage.Transition.From <> Streaming || stage.Transition.To <> Streaming then
             invalidArg (nameof stage) $"teeFst expects a streaming identity stage, got {stage.Transition.From} -> {stage.Transition.To}"
@@ -1094,13 +1152,18 @@ module Stage =
         let transition = ProfileTransition.create Streaming Constant
         createWithModel name build transition (StageMemoryModel.fromSinglePeak Reduce memoryNeed) lengthTransformation []
 
-    let window (name: string) (winSz: uint) (pad: uint) (zeroMaker: int -> 'T -> 'T) (stride: uint) : Stage<'T, 'T list> =
+    let window (name: string) (winSz: uint) (pad: uint) (zeroMaker: int -> 'T -> 'T) (stride: uint) : Stage<'T, Window<'T>> =
         let pipe = Pipe.window name winSz pad zeroMaker stride
         let transition = ProfileTransition.create Streaming Streaming
         createWithModel name (fun () -> pipe) transition (StageMemoryModel.windowLike winSz stride pad) id []
 
     let flatten (name: string) : Stage<'T list, 'T> =
         let pipe = Pipe.flatten name 
+        let transition = ProfileTransition.create Streaming Streaming
+        fromPipe name transition id id pipe
+
+    let flattenWindow (name: string) : Stage<Window<'T>, 'T> =
+        let pipe = Pipe.flattenWindow name
         let transition = ProfileTransition.create Streaming Streaming
         fromPipe name transition id id pipe
 
@@ -1440,8 +1503,19 @@ module Plan =
         composePlan ">>=>" pl stage
 *)
 
-    let (>>=>>) (f: ('U*'V) -> ('S*'T)) (pl: Plan<'In,'U*'V>) (stage: Stage<'U*'V,'S*'T>) : Plan<'In,'S*'T>  = 
-        map ">>=>>" f pl 
+    let (>>=>>) (pl: Plan<'In,'U*'V>) (stage1: Stage<'U,'S>, stage2: Stage<'V,'T>) : Plan<'In,'S*'T> =
+        let memoryNeed nElemsPerSlice =
+            SingleOrPair.add (nElemsPerSlice |> SingleOrPair.index1 |> stage1.MemoryNeed) (nElemsPerSlice |> SingleOrPair.index2 |> stage2.MemoryNeed)
+
+        let lengthTransformation nElems =
+            let left = stage1.LengthTransformation nElems
+            let right = stage2.LengthTransformation nElems
+            if left <> right then
+                failwith $"[>>=>>] Cannot zip branch outputs with different lengths {left} vs {right}"
+            left
+
+        let stage = Stage.mapPairSync $"({stage1.Name},{stage2.Name})" pl.debug stage1 stage2 memoryNeed lengthTransformation
+        composePlan ">>=>>" pl stage
 
     ///////////////////////////////////////////
     /// sink type operators

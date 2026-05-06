@@ -8,6 +8,7 @@ type Profile = SlimPipeline.Profile
 type ProfileTransition = SlimPipeline.ProfileTransition
 type ResourceOps<'T> = SlimPipeline.ResourceOps<'T>
 type StageCostCoefficients = SlimPipeline.StageCostCoefficients
+type Window<'T> = SlimPipeline.Window<'T>
 //type Slice<'S when 'S: equality> = Slice.Slice<'S>
 type Image<'S when 'S: equality> = Image.Image<'S>
 type ImageFacts = Image.ImageFacts
