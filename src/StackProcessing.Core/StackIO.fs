@@ -1,6 +1,7 @@
 module StackIO
 
 open SlimPipeline // Core processing model
+open System
 open System.IO
 open System.Text.RegularExpressions
 open StackCore
@@ -20,15 +21,45 @@ let private imageIoCost<'T> kind evaluation calibrationKey bytes ops : StageWork
 let private withCostModel costModel stage =
     StackProcessingCost.withCostModel costModel stage
 
+let private normalizeSuffix (suffix: string) =
+    let trimmed = suffix.Trim()
+
+    if trimmed.StartsWith(".", StringComparison.Ordinal) then
+        trimmed
+    else
+        "." + trimmed
+
+let private suffixAliases (suffix: string) =
+    match normalizeSuffix suffix with
+    | suffix when String.Equals(suffix, ".tif", StringComparison.OrdinalIgnoreCase)
+               || String.Equals(suffix, ".tiff", StringComparison.OrdinalIgnoreCase) ->
+        [ ".tif"; ".tiff" ]
+    | suffix ->
+        [ suffix ]
+
+let private suffixDescription suffix =
+    suffixAliases suffix |> String.concat " or "
+
+let private getStackFiles inputDir suffix =
+    let aliases = suffixAliases suffix
+
+    Directory.EnumerateFiles(inputDir)
+    |> Seq.filter (fun file ->
+        aliases
+        |> List.exists (fun alias -> file.EndsWith(alias, StringComparison.OrdinalIgnoreCase)))
+    |> Seq.distinct
+    |> Seq.sort
+    |> Seq.toArray
+
 let getStackDepth (inputDir: string) (suffix: string) : uint =
-    let files = Directory.GetFiles(inputDir, "*"+suffix) |> Array.sort
+    let files = getStackFiles inputDir suffix
     files.Length |> uint
 
 let getStackInfo (inputDir: string) (suffix: string) : FileInfo =
-    let files = Directory.GetFiles(inputDir, "*"+suffix) |> Array.sort
+    let files = getStackFiles inputDir suffix
     let depth = files.Length |> uint64
     if depth = 0uL then
-        failwith $"No {suffix} files found in directory: {inputDir}"
+        failwith $"No {suffixDescription suffix} files found in directory: {inputDir}"
     let fi = ImageFunctions.getFileInfo(files[0])
     {fi with dimensions = fi.dimensions+1u; size = fi.size @ [depth]}
 
@@ -45,11 +76,11 @@ let getStackHeight (inputDir: string) (suffix: string) : uint64 =
     fi.size[1]
 
 let _getFilenames (inputDir: string) (suffix: string) (filter: string[]->string[]) =
-    System.IO.Directory.GetFiles(inputDir, "*"+suffix) |> filter
+    getStackFiles inputDir suffix |> filter
 
 let getFilenames (inputDir: string) (suffix: string) (filter: string[]->string[]) (pl: Plan<unit, unit>) : Plan<unit, string> =
     let name = "getFilenames"
-    let filenames = _getFilenames inputDir ("*"+suffix) filter
+    let filenames = _getFilenames inputDir suffix filter
     let depth = uint64 filenames.Length
 
     let mapper (i: int) : string = 
