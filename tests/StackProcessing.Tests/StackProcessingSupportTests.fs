@@ -4,6 +4,7 @@ open System
 open System.IO
 open Expecto
 open Image
+open PureHDF
 open SlimPipeline
 open StackProcessing
 
@@ -32,6 +33,19 @@ let private writeSlices directory suffix (slices: Image<'T> list) =
     |> List.iteri (fun index image ->
         let fileName = Path.Combine(directory, sprintf "image_%03d%s" index suffix)
         image.toFile(fileName))
+
+let private writeNexusStack (path: string) (datasetPath: string) (data: uint16[,,]) =
+    let parts: string[] = datasetPath.Trim('/').Split('/', StringSplitOptions.RemoveEmptyEntries)
+    let file = H5File()
+    let mutable group = file :> H5Group
+
+    for part in parts[0 .. parts.Length - 2] do
+        let next = H5Group()
+        group.Add(part, next)
+        group <- next
+
+    group.Add(parts[parts.Length - 1], data)
+    file.Write(filePath = path)
 
 let private disposeImages images =
     images |> List.iter (fun (image: Image<'T>) -> image.decRefCount())
@@ -323,6 +337,42 @@ let stackProcessingSupportSuite =
                 disposeImages rereadSlabs
                 disposeImages slices
                 deleteDirectory inputDir
+                deleteDirectory rootDir
+
+        testCase "readNexusSlab reads a rank-3 HDF5 detector dataset as slices and slabs" <| fun _ ->
+            let rootDir = tempDirectory "nexus-input"
+            let nexusPath = Path.Combine(rootDir, "scan.h5")
+            let datasetPath = "/entry/data/data"
+            let data =
+                Array3D.init 4 3 5 (fun z y x -> uint16 (x + 10 * y + 100 * z))
+            let mutable rereadSlices: Image<uint16> list = []
+            let mutable rereadSlabs: Image<uint16> list = []
+
+            try
+                writeNexusStack nexusPath datasetPath data
+
+                let info = getNexusInfo nexusPath datasetPath 0 1 2
+                Expect.equal info.size [ 5UL; 3UL; 4UL ] "NeXus metadata should expose x/y/z image size according to the axis mapping."
+
+                rereadSlabs <-
+                    source (2UL * 1024UL * 1024UL * 1024UL)
+                    |> readNexusSlabStacked<uint16> nexusPath datasetPath 2u 0 1 2
+                    |> drainList
+
+                Expect.equal rereadSlabs.Length 2 "readNexusSlabStacked should emit one stacked slab per requested frame block."
+                Expect.equal (rereadSlabs[0].GetSize()) [ 5u; 3u; 2u ] "The first NeXus slab should retain x/y and requested z depth."
+
+                rereadSlices <-
+                    source (2UL * 1024UL * 1024UL * 1024UL)
+                    |> readNexusSlab<uint16> nexusPath datasetPath 2u 0 1 2
+                    |> drainList
+
+                Expect.equal rereadSlices.Length 4 "readNexusSlab should unstack slabs into a normal slice stream."
+                let pixels = rereadSlices[3].toArray2D()
+                Expect.equal pixels[4, 2] (uint16 (4 + 10 * 2 + 100 * 3)) "NeXus pixel values should match the source HDF5 dataset."
+            finally
+                disposeImages rereadSlices
+                disposeImages rereadSlabs
                 deleteDirectory rootDir
 
         testCase "image pair helpers perform arithmetic and extrema" <| fun _ ->

@@ -7,6 +7,8 @@ open System.Text.RegularExpressions
 open System.Threading
 open System.Threading.Tasks
 open StackCore
+open PureHDF
+open PureHDF.Selections
 open ZarrNET.Core
 open ZarrNET.Core.Nodes
 open ZarrNET.Core.OmeZarr.Coordinates
@@ -112,6 +114,44 @@ let private zarrShapeTCZYX (shape: int64[]) =
         failwith $"Expected a 5D OME-Zarr array with t,c,z,y,x axes, but shape was {shapeText}."
 
     int shape[0], int shape[1], int shape[2], int shape[3], int shape[4]
+
+let private hdfDataType<'T> () =
+    let t = typeof<'T>
+
+    if t = typeof<uint8>
+       || t = typeof<int8>
+       || t = typeof<uint16>
+       || t = typeof<int16>
+       || t = typeof<uint32>
+       || t = typeof<int32>
+       || t = typeof<float32>
+       || t = typeof<float> then
+        t.Name
+    else
+        failwith $"HDF5/NeXus image IO supports scalar numeric images, but was {t.Name}."
+
+let private hdfDataset (path: string) (datasetPath: string) =
+    let file = H5File.OpenRead(path)
+    file, file.Dataset(datasetPath)
+
+let private hdfDatasetChunks (dataset: IH5Dataset) =
+    try
+        dataset.Layout.Chunks
+        |> Array.map int
+        |> Array.toList
+    with _ ->
+        dataset.Space.Dimensions
+        |> Array.map int
+        |> Array.toList
+
+let private validateHdfAxes rank frameAxis yAxis xAxis =
+    let axes = [ frameAxis; yAxis; xAxis ]
+
+    if axes |> List.exists (fun axis -> axis < 0 || axis >= rank) then
+        invalidArg "axis" $"HDF5/NeXus axes must be in 0..{rank - 1}."
+
+    if (axes |> Set.ofList).Count <> 3 then
+        invalidArg "axis" "HDF5/NeXus frame, y, and x axes must be distinct."
 
 let private normalizeSuffix (suffix: string) =
     let trimmed = suffix.Trim()
@@ -350,6 +390,27 @@ let getZarrInfo (path: string) (multiscaleIndex: int) (datasetIndex: int) : Chun
       size = fileInfo.size
       topLeftInfo = fileInfo }
 
+let getNexusInfo (path: string) (datasetPath: string) (frameAxis: int) (yAxis: int) (xAxis: int) : ChunkInfo =
+    use file = H5File.OpenRead(path)
+    let dataset = file.Dataset(datasetPath)
+    let rank = int dataset.Space.Rank
+    validateHdfAxes rank frameAxis yAxis xAxis
+
+    if rank <> 3 then
+        failwith $"getNexusInfo currently expects a rank-3 detector stack dataset, but {datasetPath} has rank {rank}."
+
+    let dimensions = dataset.Space.Dimensions
+    let chunks = hdfDatasetChunks dataset
+    let fileInfo: FileInfo =
+        { dimensions = 3u
+          size = [ uint64 dimensions[xAxis]; uint64 dimensions[yAxis]; uint64 dimensions[frameAxis] ]
+          componentType = dataset.Type.ToString()
+          numberOfComponents = 1u }
+
+    { chunks = chunks
+      size = fileInfo.size
+      topLeftInfo = fileInfo }
+
 let getChunkFilename (path: string) (suffix: string) (i: int) (j: int) (k: int) =
     Path.Combine(path, sprintf "chunk%d_%d_%d%s" i j k suffix)
 
@@ -551,6 +612,111 @@ let readZarrSlab<'T when 'T: equality>
     pl
     |> readZarrSlabStacked<'T> path slabDepth multiscaleIndex datasetIndex timepoint channel maxParallelChunks
     >=> Stage.map $"readZarrSlab.{typeof<'T>.Name}" (fun _ slab -> unstackSlab slab) memoryNeed elementTransformation
+    >=> flattenList ()
+
+let readNexusSlabStacked<'T when 'T: equality>
+    (path: string)
+    (datasetPath: string)
+    (slabDepth: uint)
+    (frameAxis: int)
+    (yAxis: int)
+    (xAxis: int)
+    (pl: Plan<unit, unit>)
+    : Plan<unit, Image<'T>> =
+
+    let name = "readNexusSlabStacked"
+    hdfDataType<'T> () |> ignore
+    let file, dataset = hdfDataset path datasetPath
+    let rank = int dataset.Space.Rank
+    validateHdfAxes rank frameAxis yAxis xAxis
+
+    if rank <> 3 then
+        failwith $"readNexusSlabStacked currently expects a rank-3 detector stack dataset, but {datasetPath} has rank {rank}."
+
+    let dimensions = dataset.Space.Dimensions
+    let sizeZ = int dimensions[frameAxis]
+    let sizeY = int dimensions[yAxis]
+    let sizeX = int dimensions[xAxis]
+    let slabDepth = max 1u slabDepth |> int
+    let depth = (sizeZ + slabDepth - 1) / slabDepth |> uint64
+    let elementBytes =
+        uint64 sizeX * uint64 sizeY * uint64 slabDepth * (typeof<'T> |> Image.getBytesPerComponent |> uint64)
+    let sourcePeek =
+        SourcePeek.create
+            name
+            elementBytes
+            (Some depth)
+            (Map.ofList
+                [ "kind", "nexus-slabs"
+                  "path", path
+                  "datasetPath", datasetPath
+                  "slabDepth", string slabDepth
+                  "width", string sizeX
+                  "height", string sizeY
+                  "depth", string sizeZ
+                  "pixelType", typeof<'T>.Name
+                  "frameAxis", string frameAxis
+                  "yAxis", string yAxis
+                  "xAxis", string xAxis ])
+
+    let mapper (idx: int) : Image<'T> =
+        let zStart = idx * slabDepth
+        let zStop = min sizeZ (zStart + slabDepth)
+        let zCount = zStop - zStart
+        let starts = Array.zeroCreate<uint64> rank
+        let blocks = Array.create rank 1UL
+        starts[frameAxis] <- uint64 zStart
+        blocks[frameAxis] <- uint64 zCount
+        blocks[yAxis] <- uint64 sizeY
+        blocks[xAxis] <- uint64 sizeX
+
+        let selection = HyperslabSelection(rank, starts, blocks)
+        let source = dataset.Read<'T[,,]>(selection, AllSelection(), blocks) :> Array
+        let arr =
+            Array3D.init sizeX sizeY zCount (fun x y z ->
+                let indices = Array.zeroCreate<int> rank
+                indices[frameAxis] <- z
+                indices[yAxis] <- y
+                indices[xAxis] <- x
+                source.GetValue(indices) |> unbox<'T>)
+
+        Image<'T>.ofArray3D(arr, $"readNexusSlabStacked.{idx}")
+
+    let transition = ProfileTransition.create Unit Streaming
+    let memPeak = 256UL
+    let memoryNeed = fun _ -> memPeak
+    let elementTransformation = id
+    let memoryModel = StageMemoryModel.fromSinglePeak Source memoryNeed
+    let workModel =
+        StageWorkModel.ioRead Source (Some $"readNexusSlabStacked.{typeof<'T>.Name}") (fun _ -> elementBytes) (fun _ -> 1UL)
+    let stage =
+        Stage.init name (uint depth) mapper transition memoryNeed elementTransformation
+        |> withCostModel (StageCostModel.create memoryModel workModel)
+        |> Some
+
+    Plan.create stage pl.memAvail memPeak memPeak depth pl.debug
+    |> Plan.withSourcePeek sourcePeek
+
+let readNexusSlab<'T when 'T: equality>
+    (path: string)
+    (datasetPath: string)
+    (slabDepth: uint)
+    (frameAxis: int)
+    (yAxis: int)
+    (xAxis: int)
+    (pl: Plan<unit, unit>)
+    : Plan<unit, Image<'T>> =
+
+    let memoryNeed = fun _ -> 256UL
+    let elementTransformation = id
+    let unstackSlab (slab: Image<'T>) =
+        let result = ImageFunctions.unstack 2u slab
+        slab.decRefCount()
+        result
+
+    pl
+    |> readNexusSlabStacked<'T> path datasetPath slabDepth frameAxis yAxis xAxis
+    >=> Stage.map $"readNexusSlab.{typeof<'T>.Name}" (fun _ slab -> unstackSlab slab) memoryNeed elementTransformation
     >=> flattenList ()
 
 let icompare s1 s2  = 

@@ -310,7 +310,7 @@ module PipelineCodeGenerator =
         node.FunctionId = "GetStackInfo"
 
     let private isChunkInfoNode (node: SavedNode) =
-        node.FunctionId = "GetChunkInfo" || node.FunctionId = "GetZarrInfo"
+        node.FunctionId = "GetChunkInfo" || node.FunctionId = "GetZarrInfo" || node.FunctionId = "GetNexusInfo"
 
     let private parameterExpression (graph: SavedGraph) (nodesById: Map<string, SavedNode>) (scalarNamesByNodeId: Map<string, string>) (statsNamesByNodeId: Map<string, string>) (translationTableNamesByNodeId: Map<string, string>) (histogramNamesByNodeId: Map<string, string>) (stackInfoNamesByNodeId: Map<string, string>) (chunkInfoNamesByNodeId: Map<string, string>) (node: SavedNode) parameterIndex key =
         let linkedExpression =
@@ -438,6 +438,12 @@ module PipelineCodeGenerator =
             let multiscaleIndex = parameterExpression "multiscaleIndex"
             let datasetIndex = parameterExpression "datasetIndex"
             name, $"let {name} = getZarrInfo {input} {multiscaleIndex.Value} {datasetIndex.Value}"
+        elif node.FunctionId = "GetNexusInfo" then
+            let datasetPath = stringArgument "datasetPath"
+            let frameAxis = parameterExpression "frameAxis"
+            let yAxis = parameterExpression "yAxis"
+            let xAxis = parameterExpression "xAxis"
+            name, $"let {name} = getNexusInfo {input} {datasetPath} {frameAxis.Value} {yAxis.Value} {xAxis.Value}"
         else
             let suffix = stringArgument "suffix"
             name, $"let {name} = getChunkInfo {input} {suffix}"
@@ -663,6 +669,16 @@ module PipelineCodeGenerator =
             let channel = parameterValue "channel"
             let maxParallelChunks = parameterValue "maxParallelChunks"
             $"|> readZarrSlab<{pixelType}> {input} {slabDepth} {multiscaleIndex} {datasetIndex} {timepoint} {channel} {maxParallelChunks}" |> sourcePrefix availableMemory
+        | "ReadNexusSlab" ->
+            let availableMemory = parameterValue "availableMemory"
+            let pixelType = pixelTypeNameFromParameter "type" "UInt16" node
+            let input = quotedParameter "input"
+            let datasetPath = quotedParameter "datasetPath"
+            let slabDepth = parameterValue "slabDepth"
+            let frameAxis = parameterValue "frameAxis"
+            let yAxis = parameterValue "yAxis"
+            let xAxis = parameterValue "xAxis"
+            $"|> readNexusSlab<{pixelType}> {input} {datasetPath} {slabDepth} {frameAxis} {yAxis} {xAxis}" |> sourcePrefix availableMemory
         | "Read" ->
             let availableMemory = parameterValue "availableMemory"
             let pixelType = pixelTypeNameFromParameter "type" "Float64" node
@@ -1188,6 +1204,7 @@ module PipelineCodeGenerator =
                     && node.FunctionId <> "GetStackInfo"
                     && node.FunctionId <> "GetChunkInfo"
                     && node.FunctionId <> "GetZarrInfo"
+                    && node.FunctionId <> "GetNexusInfo"
                     && not (printNodesUsedByTap |> Set.contains node.Id)
                     && not (statsNamesByNodeId |> Map.containsKey node.Id)
                     && not (translationTableNamesByNodeId |> Map.containsKey node.Id)
