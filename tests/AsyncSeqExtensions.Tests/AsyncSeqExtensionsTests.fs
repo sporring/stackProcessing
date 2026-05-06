@@ -45,7 +45,7 @@ let asyncSeqExtensionsSuite =
 
             let left = counted leftPulls [1; 2; 3]
             let right = counted rightPulls ["a"; "b"; "c"]
-            let enum = (zipConcurrent left right |> AsyncSeq.toAsyncEnum).GetAsyncEnumerator()
+            let enum = (zipConcurrent left right).GetAsyncEnumerator()
 
             try
                 Expect.isTrue (moveNext enum) "The first pair should be available."
@@ -68,8 +68,7 @@ let asyncSeqExtensionsSuite =
                 }
 
             let enum =
-                (zipConcurrent (source (fun () -> leftDisposed <- true)) (source (fun () -> rightDisposed <- true))
-                 |> AsyncSeq.toAsyncEnum)
+                (zipConcurrent (source (fun () -> leftDisposed <- true)) (source (fun () -> rightDisposed <- true)))
                     .GetAsyncEnumerator()
 
             Expect.isTrue (moveNext enum) "The first pair should be available."
@@ -98,8 +97,7 @@ let asyncSeqExtensionsSuite =
 
             let enum =
                 (source
-                 |> windowedWithPad 3u 1u 0u 0u (fun _ x -> x)
-                 |> AsyncSeq.toAsyncEnum)
+                 |> windowedWithPad 3u 1u 0u 0u (fun _ x -> x))
                     .GetAsyncEnumerator()
 
             try
@@ -123,8 +121,7 @@ let asyncSeqExtensionsSuite =
 
             let enum =
                 (source
-                 |> windowedWithPad 2u 1u 0u 0u (fun _ x -> x)
-                 |> AsyncSeq.toAsyncEnum)
+                 |> windowedWithPad 2u 1u 0u 0u (fun _ x -> x))
                     .GetAsyncEnumerator()
 
             Expect.isTrue (moveNext enum) "The first window should be available."

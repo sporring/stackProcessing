@@ -221,7 +221,7 @@ module private Pipe =
 
             let agent = MailboxProcessor.Start(fun inbox ->
                 async {
-                    let enum = (AsyncSeq.toAsyncEnum src).GetAsyncEnumerator()
+                    let enum = src.GetAsyncEnumerator()
                     let buffer = ResizeArray<'T>()
                     let mutable bufferStart = 0L
                     let mutable leftIndex = 0L

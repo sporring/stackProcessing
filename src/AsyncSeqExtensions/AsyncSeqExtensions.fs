@@ -13,7 +13,7 @@ let windowed
     if stride = 0u then invalidArg "stride" "Must be > 0"
 
     asyncSeq {
-        let enum = (AsyncSeq.toAsyncEnum source).GetAsyncEnumerator()
+        let enum = source.GetAsyncEnumerator()
         let buffer = ResizeArray<'T>()
         let mutable finished = false
         let mutable last: 'T option = None
@@ -60,7 +60,7 @@ let windowedWithPad
     if stride = 0u then invalidArg "stride" "Must be > 0"
 
     asyncSeq {
-        let enum = (AsyncSeq.toAsyncEnum source).GetAsyncEnumerator()
+        let enum = source.GetAsyncEnumerator()
         let buffer: ResizeArray<'T> = ResizeArray<'T>()
 
         try
@@ -144,8 +144,8 @@ let ofAsync (computation: Async<'T>) : AsyncSeq<'T> =
 
 let zipConcurrent (s1: AsyncSeq<'U>) (s2: AsyncSeq<'V>) : AsyncSeq<'U * 'V> =
     asyncSeq {
-        let e1 = (AsyncSeq.toAsyncEnum s1).GetAsyncEnumerator()
-        let e2 = (AsyncSeq.toAsyncEnum s2).GetAsyncEnumerator()
+        let e1 = s1.GetAsyncEnumerator()
+        let e2 = s2.GetAsyncEnumerator()
 
         try
             let rec loop () = asyncSeq {
