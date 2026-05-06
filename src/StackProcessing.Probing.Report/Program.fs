@@ -83,13 +83,19 @@ let private operationName (probe: ProbeResultJson) =
     |> tryGetParameter "operation"
     |> Option.defaultValue probe.name
 
-let private isWritePipelineProbe (probe: ProbeResultJson) =
-    let operation = operationName probe
+let private isWritePipelineOperation (operation: string) =
     operation.EndsWith("-write", StringComparison.Ordinal)
+
+let private displayOperationName (probe: ProbeResultJson) =
+    let operation = operationName probe
+    if isWritePipelineOperation operation then
+        let trimmed = operation.Substring(0, operation.Length - "-write".Length)
+        $"{trimmed} pipeline"
+    else
+        operation
 
 let private plottedRawProbes (probes: ProbeResultJson array) =
     probes
-    |> Array.filter (isWritePipelineProbe >> not)
 
 let private copyParameters (parameters: Dictionary<string, string>) =
     let copy = Dictionary<string, string>()
@@ -114,13 +120,14 @@ let private label (probe: ProbeResultJson) =
             ""
         else
             probe.parameters
+            |> Seq.filter (fun kv -> kv.Key <> "operation")
             |> Seq.map (fun kv -> $"{kv.Key}={kv.Value}")
             |> String.concat ", "
 
     if String.IsNullOrWhiteSpace parameterText then
-        probe.name
+        displayOperationName probe
     else
-        $"{probe.name}<br>{parameterText}"
+        $"{displayOperationName probe}<br>{parameterText}"
 
 let private measuredBytes (probe: ProbeResultJson) =
     if probe.observedBytes > 0UL then
@@ -255,7 +262,7 @@ let private makeScatter title xCandidates yTitle ySelector (probes: ProbeResultJ
         probes
         |> Array.mapi (fun index probe ->
             let parameterName, x = relevantParameter xCandidates index probe
-            parameterName, operationName probe, x, ySelector probe, label probe)
+            parameterName, displayOperationName probe, x, ySelector probe, label probe)
 
     let xTitle =
         rows
