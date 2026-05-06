@@ -46,6 +46,76 @@ module NumericType =
       | "Complex" -> Some Complex
       | _ -> None
 
+module ImageFileFormat =
+    type Format =
+        { Label: string
+          Suffix: string
+          SupportedTypes: NumericType list }
+
+    let private commonScalarTypes =
+        [ UInt8
+          Int8
+          UInt16
+          Int16
+          UInt32
+          Int32
+          UInt64
+          Int64
+          Float32
+          Float64 ]
+
+    let private tiffScalarTypes =
+        [ UInt8
+          Int8
+          UInt16
+          Int16
+          UInt32
+          Int32
+          Float32
+          Float64 ]
+
+    let formats =
+        [ { Label = "TIFF (.tiff)"; Suffix = ".tiff"; SupportedTypes = tiffScalarTypes }
+          { Label = "TIFF (.tif)"; Suffix = ".tif"; SupportedTypes = tiffScalarTypes }
+          { Label = "MetaImage (.mha)"; Suffix = ".mha"; SupportedTypes = commonScalarTypes }
+          { Label = "MetaImage header (.mhd)"; Suffix = ".mhd"; SupportedTypes = commonScalarTypes }
+          { Label = "NRRD (.nrrd)"; Suffix = ".nrrd"; SupportedTypes = commonScalarTypes }
+          { Label = "NIfTI (.nii)"; Suffix = ".nii"; SupportedTypes = commonScalarTypes }
+          { Label = "NIfTI compressed (.nii.gz)"; Suffix = ".nii.gz"; SupportedTypes = commonScalarTypes }
+          { Label = "PNG (.png)"; Suffix = ".png"; SupportedTypes = [ UInt8; UInt16 ] }
+          { Label = "JPEG (.jpg)"; Suffix = ".jpg"; SupportedTypes = [ UInt8 ] }
+          { Label = "JPEG (.jpeg)"; Suffix = ".jpeg"; SupportedTypes = [ UInt8 ] }
+          { Label = "BMP (.bmp)"; Suffix = ".bmp"; SupportedTypes = [ UInt8 ] } ]
+
+    let readFormats =
+        { Label = "TIFF (.tif or .tiff)"; Suffix = ".tiff"; SupportedTypes = tiffScalarTypes }
+        :: (formats |> List.filter (fun format -> format.Suffix <> ".tiff" && format.Suffix <> ".tif"))
+
+    let suffixes =
+        formats |> List.map _.Suffix
+
+    let private normalizeSuffix (suffix: string) =
+        let trimmed = suffix.Trim()
+
+        if trimmed.StartsWith(".", System.StringComparison.Ordinal) then
+            trimmed.ToLowerInvariant()
+        else
+            "." + trimmed.ToLowerInvariant()
+
+    let tryFind suffix =
+        let suffix = normalizeSuffix suffix
+
+        formats
+        |> List.tryFind (fun format -> format.Suffix = suffix)
+
+    let supportedTypes suffix =
+        tryFind suffix
+        |> Option.map _.SupportedTypes
+        |> Option.defaultValue commonScalarTypes
+
+    let supports suffix numericType =
+        supportedTypes suffix
+        |> List.contains numericType
 
 type BasicType = 
     | Numeric of NumericType

@@ -30,6 +30,18 @@ module BuiltInCatalog =
   let private availableMemoryParameter =
       makeParameter "availableMemory" "Available memory" (string (pown 2 30)) BasicType.String
 
+  let private suffixParameter defaultValue =
+      makeParameter "suffix" "Format" defaultValue BasicType.String
+
+  let private readFormatDescription =
+      "Reads one image per stack slice from a directory. TIFF input accepts both .tif and .tiff files when TIFF is selected. Format choices restrict the image type menu to combinations expected to work with SimpleITK/ITK: TIFF supports common 8/16/32-bit integer and 32/64-bit floating-point scalar images; PNG supports UInt8 and UInt16; JPEG and BMP support UInt8; MetaImage, NRRD, and NIfTI support the broad scalar numeric set used by Studio."
+
+  let private writeFormatDescription =
+      "Writes one image per stack slice. The selected format controls which image types can be connected to the input pin: TIFF supports common 8/16/32-bit integer and 32/64-bit floating-point scalar images; PNG supports UInt8 and UInt16; JPEG and BMP support UInt8; MetaImage, NRRD, and NIfTI support the broad scalar numeric set used by Studio. Cast before write when a format cannot store the current image type."
+
+  let private chunkWriteFormatDescription =
+      "Writes stack chunks as image files for later chunked reading. The selected format controls which image types can be connected to the input pin, using the same constraints as write. TIFF output uses the exact selected suffix, either .tif or .tiff."
+
   let private numericDefaultValue tp =
       match tp with
       | UInt8
@@ -112,7 +124,7 @@ module BuiltInCatalog =
       DisplayName = "read"
       Category = "Sources / Sinks"
       Summary = "Read a stack from chunked image files."
-      Description = ""
+      Description = readFormatDescription
       Aliases = [ "input"; "load"; "tiff"; "file"; "UInt8"; "Float64"; "type" ]
       Inputs = []
       Outputs = [ makePort "Float64" imageFloat64 ]
@@ -120,14 +132,14 @@ module BuiltInCatalog =
           [ availableMemoryParameter
             makeParameter "type" "Type" "Float64" BasicType.String
             makeParameter "input" "Input" "input" BasicType.String
-            makeParameter "suffix" "Suffix" ".tiff" BasicType.String ] }
+            suffixParameter ".tiff" ] }
 
   let makeGenericReadRandom () =
     { Id = "ReadRandom"
       DisplayName = "readRandom"
       Category = "Sources / Sinks"
       Summary = "Read a randomized subset of stack files."
-      Description = ""
+      Description = readFormatDescription
       Aliases = [ "random"; "input"; "tiff"; "file"; "UInt8"; "Float64"; "type" ]
       Inputs = []
       Outputs = [ makePort "Float64" imageFloat64 ]
@@ -136,14 +148,14 @@ module BuiltInCatalog =
             makeParameter "type" "Type" "Float64" BasicType.String
             makeParameter "depth" "Depth" "1" (BasicType.Numeric UInt32)
             makeParameter "input" "Input" "input" BasicType.String
-            makeParameter "suffix" "Suffix" ".tiff" BasicType.String ] }
+            suffixParameter ".tiff" ] }
 
   let makeGenericReadChunks () =
     { Id = "ReadChunks"
       DisplayName = "readChunks"
       Category = "Sources / Sinks"
       Summary = "Read stack chunks from image files."
-      Description = ""
+      Description = "Reads chunk files produced by writeInChunks. Use the same format and suffix that were used when writing the chunks; unlike regular read, chunk filenames encode x/y/z chunk positions."
       Aliases = [ "chunks"; "input"; "tiff"; "file"; "UInt8"; "Float64"; "type" ]
       Inputs = []
       Outputs = [ makePort "Float64" imageFloat64 ]
@@ -151,7 +163,7 @@ module BuiltInCatalog =
           [ availableMemoryParameter
             makeParameter "type" "Type" "Float64" BasicType.String
             makeParameter "input" "Input" "input" BasicType.String
-            makeParameter "suffix" "Suffix" ".tiff" BasicType.String ] }
+            suffixParameter ".tiff" ] }
 
   let makeGenericCast () =
     { Id = "Cast"
@@ -279,50 +291,50 @@ module BuiltInCatalog =
           DisplayName = "write"
           Category = "Sources / Sinks"
           Summary = "Write a processed stack to image files."
-          Description = ""
+          Description = writeFormatDescription
           Aliases = [ "output"; "save"; "tiff"; "file" ]
           Inputs = [ makePort "Number" imageAny ]
           Outputs = []
           Parameters =
               [ makeParameter "output" "Output" "output" BasicType.String
-                makeParameter "suffix" "Suffix" ".tiff" BasicType.String ] }
+                suffixParameter ".tiff" ] }
 
         { Id = "WriteThrough"
           DisplayName = "writeThrough"
           Category = "Sources / Sinks"
           Summary = "Write a processed stack to image files and pass it through unchanged."
-          Description = ""
+          Description = writeFormatDescription
           Aliases = [ "output"; "save"; "tiff"; "file"; "through"; "side effect" ]
           Inputs = [ makePort "Number" imageAny ]
           Outputs = [ makePort "Number" imageAny ]
           Parameters =
               [ makeParameter "output" "Output" "output" BasicType.String
-                makeParameter "suffix" "Suffix" ".tiff" BasicType.String ] }
+                suffixParameter ".tiff" ] }
 
         { Id = "WriteChunkSlices"
           DisplayName = "writeChunkSlices"
           Category = "Sources / Sinks"
           Summary = "Write connected-component label chunks slice-by-slice and pass labels plus object counts through unchanged."
-          Description = ""
+          Description = "Writes connected-component label chunks slice-by-slice and passes the labels plus object counts onward. MetaImage (.mha/.mhd) is the safest default for label data because it supports large integer scalar images."
           Aliases = [ "output"; "save"; "chunks"; "labels"; "connected"; "components"; "side effect" ]
           Inputs = [ makePort "Labels + count" connectedComponentLabels ]
           Outputs = [ makePort "Labels + count" connectedComponentLabels ]
           Parameters =
               [ makeParameter "output" "Output" "tmp" BasicType.String
-                makeParameter "suffix" "Suffix" ".mha" BasicType.String
+                suffixParameter ".mha"
                 makeParameter "windowSize" "Window size" "8" (BasicType.Numeric UInt32) ] }
 
         { Id = "WriteInChunks"
           DisplayName = "writeInChunks"
           Category = "Sources / Sinks"
           Summary = "Write a stack to image files split into chunks."
-          Description = ""
+          Description = chunkWriteFormatDescription
           Aliases = [ "output"; "save"; "chunks"; "tiff"; "file" ]
           Inputs = [ makePort "Number" imageAny ]
           Outputs = []
           Parameters =
               [ makeParameter "output" "Output" "output" BasicType.String
-                makeParameter "suffix" "Suffix" ".tiff" BasicType.String
+                suffixParameter ".tiff"
                 makeParameter "chunkX" "Chunk X" "12" (BasicType.Numeric UInt32)
                 makeParameter "chunkY" "Chunk Y" "13" (BasicType.Numeric UInt32)
                 makeParameter "chunkZ" "Chunk Z" "14" (BasicType.Numeric UInt32) ] }
@@ -331,7 +343,7 @@ module BuiltInCatalog =
           DisplayName = "getStackInfo"
           Category = "Sources / Sinks"
           Summary = "Inspect a stack directory and expose file information fields as scalar outputs."
-          Description = ""
+          Description = "Reads metadata from the first matching stack slice and combines it with the number of matching files. TIFF input accepts both .tif and .tiff files when TIFF is selected."
           Aliases = [ "info"; "metadata"; "file"; "stack"; "width"; "height"; "depth"; "size"; "dimensions"; "component" ]
           Inputs = []
           Outputs =
@@ -344,7 +356,7 @@ module BuiltInCatalog =
                 makePort "Depth: UInt64" (Scalar(BasicType.Numeric UInt64)) ]
           Parameters =
               [ makeParameter "input" "Name" "input" BasicType.String
-                makeParameter "suffix" "Suffix" ".tiff" BasicType.String ] }
+                suffixParameter ".tiff" ] }
 
         { Id = "Tap"
           DisplayName = "tap"
