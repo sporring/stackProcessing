@@ -37,6 +37,16 @@ let domainSuite =
             Expect.isTrue (PortType.canConnect (Image Number) (Image Float64)) "Number image should connect to concrete image input."
             Expect.isFalse (PortType.canConnect (Scalar String) (Scalar(BasicType.Numeric Float64))) "Different concrete scalar types should not connect."
 
+        testCase "image file format table captures important pixel type restrictions" <| fun _ ->
+            Expect.isTrue (ImageFileFormat.supports ".tiff" Float64) "TIFF should support floating-point image stacks."
+            Expect.isTrue (ImageFileFormat.supports ".tif" Float64) "TIF should be treated like TIFF."
+            Expect.isFalse (ImageFileFormat.supports ".tiff" UInt64) "TIFF should not be offered for 64-bit integer stack output."
+            Expect.equal ImageFileFormat.readFormats.Head.Label "TIFF (.tif or .tiff)" "Read format choices should present TIFF suffixes as aliases."
+            Expect.isTrue (ImageFileFormat.supports ".png" UInt16) "PNG should support 16-bit unsigned slices."
+            Expect.isFalse (ImageFileFormat.supports ".png" Float32) "PNG should not accept floating-point output."
+            Expect.isTrue (ImageFileFormat.supports ".jpg" UInt8) "JPEG should accept 8-bit unsigned slices."
+            Expect.isFalse (ImageFileFormat.supports ".jpg" UInt16) "JPEG should be kept to 8-bit output."
+
         testCase "FunctionDefinition.matches searches display category summary description and aliases" <| fun _ ->
             let read = BuiltInCatalog.find "Read"
             Expect.isTrue (FunctionDefinition.matches "read" read) "Display name should match."
