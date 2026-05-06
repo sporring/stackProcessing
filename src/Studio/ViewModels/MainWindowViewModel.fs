@@ -635,6 +635,7 @@ module private HighValueFilterNode =
           "WhiteTopHat"
           "BlackTopHat"
           "MorphologicalGradient"
+          "OtsuThreshold"
           "LabelShapeStatistics"
           "LabelOverlapMeasures"
           "LabelContour"

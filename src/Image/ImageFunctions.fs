@@ -876,12 +876,77 @@ let unique (img: Image<'T>) : 'T list when 'T : comparison =
     |> Set.ofSeq               // remove duplicates
     |> Set.toList              // back to an ordered list
     
-/// Otsu threshold
-// Currying and generic arguments causes value restriction error
+let otsuThresholdFromHistogram (bins: uint) (images: Image<'T> list) : float =
+    if bins < 2u then
+        invalidArg "bins" "Otsu threshold estimation requires at least two bins."
+    if List.isEmpty images then
+        invalidArg "images" "Otsu threshold estimation requires at least one image."
+
+    let toFloat value = System.Convert.ToDouble(box value, System.Globalization.CultureInfo.InvariantCulture)
+    let values =
+        images
+        |> List.collect (fun image ->
+            image.GetSize()
+            |> flatIndices
+            |> Seq.map (image.Get >> toFloat)
+            |> Seq.toList)
+
+    match values with
+    | [] -> invalidArg "images" "Otsu threshold estimation requires at least one pixel."
+    | _ ->
+        let minValue = values |> List.min
+        let maxValue = values |> List.max
+        if minValue = maxValue then
+            minValue
+        else
+            let binCount = int bins
+            let width = (maxValue - minValue) / float binCount
+            let histogram = Array.zeroCreate<uint64> binCount
+            values
+            |> List.iter (fun value ->
+                let bin =
+                    if value >= maxValue then
+                        binCount - 1
+                    else
+                        int ((value - minValue) / width)
+                        |> max 0
+                        |> min (binCount - 1)
+                histogram[bin] <- histogram[bin] + 1UL)
+
+            let totalCount = histogram |> Array.sumBy float
+            let totalMean =
+                histogram
+                |> Array.mapi (fun i count -> float i * float count)
+                |> Array.sum
+
+            let mutable bestThresholdBin = 1
+            let mutable bestVariance = System.Double.NegativeInfinity
+            let mutable backgroundWeight = 0.0
+            let mutable backgroundSum = 0.0
+
+            for thresholdBin in 1 .. binCount - 1 do
+                let previousBin = thresholdBin - 1
+                backgroundWeight <- backgroundWeight + float histogram[previousBin]
+                backgroundSum <- backgroundSum + float previousBin * float histogram[previousBin]
+                let foregroundWeight = totalCount - backgroundWeight
+                if backgroundWeight > 0.0 && foregroundWeight > 0.0 then
+                    let backgroundMean = backgroundSum / backgroundWeight
+                    let foregroundMean = (totalMean - backgroundSum) / foregroundWeight
+                    let variance = backgroundWeight * foregroundWeight * pown (backgroundMean - foregroundMean) 2
+                    if variance > bestVariance then
+                        bestVariance <- variance
+                        bestThresholdBin <- thresholdBin
+
+            minValue + width * (float bestThresholdBin + 0.5)
+
+/// Otsu threshold estimated from a binned histogram of the image values.
 let otsuThreshold (img: Image<'T>) : Image<uint8> =
-    use filter = new itk.simple.OtsuThresholdImageFilter()
-    filter.SetInsideValue(0uy)
-    filter.SetOutsideValue(1uy)
+    let thresholdValue = otsuThresholdFromHistogram 256u [ img ]
+    use filter = new itk.simple.BinaryThresholdImageFilter()
+    filter.SetLowerThreshold(thresholdValue)
+    filter.SetUpperThreshold(System.Double.PositiveInfinity)
+    filter.SetInsideValue(1uy)
+    filter.SetOutsideValue(0uy)
     Image<uint8>.ofSimpleITK(filter.Execute(img.toSimpleITK()),"otsuThreshold",img.index)
 
 /// Otsu multiple thresholds (returns a label map)

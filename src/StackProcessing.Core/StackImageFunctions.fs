@@ -837,11 +837,32 @@ let signedDistanceMap (winSz: uint) =
     let f debug = volFctToWindowFctReleaseAfterDebug debug (ImageFunctions.signedDistanceMap 0uy 1uy) 1u pad stride
     let stg = mapWindow "signedDistanceMap" f id id
     (window winSz pad stride) --> stg --> flattenList ()
-let otsuThreshold (winSz: uint) =
-    let pad, stride = 0u, winSz
-    let f debug = volFctToWindowFctReleaseAfterDebug debug (ImageFunctions.otsuThreshold) 1u pad stride
-    let stg = mapWindow "otsuThreshold" f id id
-    (window winSz pad stride) --> stg --> flattenList ()
+let private sourceShapeValue key (pl: Plan<unit, Image<'T>>) =
+    pl.sourcePeek
+    |> Option.bind (fun peek -> peek.Shape |> Map.tryFind key)
+
+let private requiredSourceShapeValue key (pl: Plan<unit, Image<'T>>) =
+    match sourceShapeValue key pl with
+    | Some value when not (String.IsNullOrWhiteSpace value) -> value
+    | _ -> failwith $"otsuThreshold requires a pipeline source created by read/readRandom/readSlab with source metadata; missing '{key}'."
+
+let estimateOtsuThreshold<'T when 'T: equality> sampleCount bins (inputDir: string) suffix memAvail =
+    let samples =
+        source memAvail
+        |> readRandom<'T> (max 1u sampleCount) inputDir suffix
+        |> drainList
+    try
+        ImageFunctions.otsuThresholdFromHistogram (max 2u bins) samples
+    finally
+        samples |> List.iter (fun image -> image.decRefCount())
+
+let otsuThreshold<'T when 'T: equality> sampleCount bins (pl: Plan<unit, Image<'T>>) : Plan<unit, Image<uint8>> =
+    let inputDir = requiredSourceShapeValue "inputDir" pl
+    let suffix = requiredSourceShapeValue "suffix" pl
+    let thresholdValue = estimateOtsuThreshold<'T> sampleCount bins inputDir suffix pl.memAvail
+    if pl.debug then
+        printfn $"[otsuThreshold] estimated threshold {thresholdValue} from {max 1u sampleCount} random slices and {max 2u bins} bins"
+    pl >=> liftUnaryReleaseAfter "threshold" (ImageFunctions.threshold thresholdValue infinity) id id
 
 let momentsThreshold (winSz: uint) =
     let pad, stride = 0u, winSz

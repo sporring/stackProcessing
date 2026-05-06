@@ -722,8 +722,10 @@ val signedDistanceMap:
   (uint -> SlimPipeline.Stage<StackCore.Image<uint8>,StackCore.Image<float>>)
 
 val otsuThreshold:
-  (uint -> SlimPipeline.Stage<StackCore.Image<'a>,StackCore.Image<uint8>>)
-    when 'a: equality
+  (uint ->
+     uint ->
+     SlimPipeline.Plan<unit,StackCore.Image<'a>> ->
+     SlimPipeline.Plan<unit,StackCore.Image<uint8>>) when 'a: equality
 
 val momentsThreshold:
   (uint -> SlimPipeline.Stage<StackCore.Image<'a>,StackCore.Image<uint8>>)
