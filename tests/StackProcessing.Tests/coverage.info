@@ -2475,142 +2475,157 @@ BRDA:59,2,0,0
 BRDA:59,2,1,14
 BRDA:60,27,0,0
 BRDA:60,27,1,14
-FN:136,FSharp.Control.IAsyncEnumerable`1<T> AsyncSeqExtensions::ofAsync(Microsoft.FSharp.Control.FSharpAsync`1<T>)
+FN:139,FSharp.Control.IAsyncEnumerable`1<T> AsyncSeqExtensions::ofAsync(Microsoft.FSharp.Control.FSharpAsync`1<T>)
 FNDA:4,FSharp.Control.IAsyncEnumerable`1<T> AsyncSeqExtensions::ofAsync(Microsoft.FSharp.Control.FSharpAsync`1<T>)
-DA:137,4
-FN:142,FSharp.Control.IAsyncEnumerable`1<System.Tuple`2<U,V>> AsyncSeqExtensions::zipConcurrent(FSharp.Control.IAsyncEnumerable`1<U>,FSharp.Control.IAsyncEnumerable`1<V>)
+DA:140,4
+FN:145,FSharp.Control.IAsyncEnumerable`1<System.Tuple`2<U,V>> AsyncSeqExtensions::zipConcurrent(FSharp.Control.IAsyncEnumerable`1<U>,FSharp.Control.IAsyncEnumerable`1<V>)
 FNDA:7,FSharp.Control.IAsyncEnumerable`1<System.Tuple`2<U,V>> AsyncSeqExtensions::zipConcurrent(FSharp.Control.IAsyncEnumerable`1<U>,FSharp.Control.IAsyncEnumerable`1<V>)
-DA:143,7
-FN:67,Microsoft.FSharp.Control.FSharpAsync`1<Microsoft.FSharp.Core.FSharpOption`1<T>> AsyncSeqExtensions/tryGetNext@68-2::Invoke(System.Boolean)
-FNDA:246,Microsoft.FSharp.Control.FSharpAsync`1<Microsoft.FSharp.Core.FSharpOption`1<T>> AsyncSeqExtensions/tryGetNext@68-2::Invoke(System.Boolean)
-DA:68,246
-DA:69,123
-BRDA:68,4,0,109
-BRDA:68,4,1,14
-FN:66,Microsoft.FSharp.Control.FSharpAsync`1<Microsoft.FSharp.Core.FSharpOption`1<T>> AsyncSeqExtensions/tryGetNext@68-1::Invoke(Microsoft.FSharp.Core.Unit)
-FNDA:369,Microsoft.FSharp.Control.FSharpAsync`1<Microsoft.FSharp.Core.FSharpOption`1<T>> AsyncSeqExtensions/tryGetNext@68-1::Invoke(Microsoft.FSharp.Core.Unit)
-DA:67,369
-FN:65,Microsoft.FSharp.Control.FSharpAsync`1<Microsoft.FSharp.Core.FSharpOption`1<T>> AsyncSeqExtensions/tryGetNext@66::Invoke(Microsoft.FSharp.Core.Unit)
-FNDA:123,Microsoft.FSharp.Control.FSharpAsync`1<Microsoft.FSharp.Core.FSharpOption`1<T>> AsyncSeqExtensions/tryGetNext@66::Invoke(Microsoft.FSharp.Core.Unit)
-DA:66,123
-FN:80,Microsoft.FSharp.Control.FSharpAsync`1<System.Tuple`4<Microsoft.FSharp.Core.FSharpOption`1<T>,System.UInt32,System.UInt32,Microsoft.FSharp.Core.FSharpOption`1<T>>> AsyncSeqExtensions/tryGetCurrent@81-3::Invoke(Microsoft.FSharp.Core.FSharpOption`1<T>)
-FNDA:109,Microsoft.FSharp.Control.FSharpAsync`1<System.Tuple`4<Microsoft.FSharp.Core.FSharpOption`1<T>,System.UInt32,System.UInt32,Microsoft.FSharp.Core.FSharpOption`1<T>>> AsyncSeqExtensions/tryGetCurrent@81-3::Invoke(Microsoft.FSharp.Core.FSharpOption`1<T>)
-DA:81,109
-FN:73,Microsoft.FSharp.Control.FSharpAsync`1<System.Tuple`4<Microsoft.FSharp.Core.FSharpOption`1<T>,System.UInt32,System.UInt32,Microsoft.FSharp.Core.FSharpOption`1<T>>> AsyncSeqExtensions/tryGetCurrent@74-1::Invoke(Microsoft.FSharp.Core.Unit)
-FNDA:123,Microsoft.FSharp.Control.FSharpAsync`1<System.Tuple`4<Microsoft.FSharp.Core.FSharpOption`1<T>,System.UInt32,System.UInt32,Microsoft.FSharp.Core.FSharpOption`1<T>>> AsyncSeqExtensions/tryGetCurrent@74-1::Invoke(Microsoft.FSharp.Core.Unit)
-DA:74,123
-DA:76,7
+DA:146,7
+FN:68,Microsoft.FSharp.Control.FSharpAsync`1<Microsoft.FSharp.Core.FSharpOption`1<T>> AsyncSeqExtensions/tryGetNext@69-2::Invoke(System.Boolean)
+FNDA:246,Microsoft.FSharp.Control.FSharpAsync`1<Microsoft.FSharp.Core.FSharpOption`1<T>> AsyncSeqExtensions/tryGetNext@69-2::Invoke(System.Boolean)
+DA:69,246
+DA:70,123
+BRDA:69,4,0,109
+BRDA:69,4,1,14
+FN:67,Microsoft.FSharp.Control.FSharpAsync`1<Microsoft.FSharp.Core.FSharpOption`1<T>> AsyncSeqExtensions/tryGetNext@69-1::Invoke(Microsoft.FSharp.Core.Unit)
+FNDA:369,Microsoft.FSharp.Control.FSharpAsync`1<Microsoft.FSharp.Core.FSharpOption`1<T>> AsyncSeqExtensions/tryGetNext@69-1::Invoke(Microsoft.FSharp.Core.Unit)
+DA:68,369
+FN:66,Microsoft.FSharp.Control.FSharpAsync`1<Microsoft.FSharp.Core.FSharpOption`1<T>> AsyncSeqExtensions/tryGetNext@67::Invoke(Microsoft.FSharp.Core.Unit)
+FNDA:123,Microsoft.FSharp.Control.FSharpAsync`1<Microsoft.FSharp.Core.FSharpOption`1<T>> AsyncSeqExtensions/tryGetNext@67::Invoke(Microsoft.FSharp.Core.Unit)
+DA:67,123
+FN:81,Microsoft.FSharp.Control.FSharpAsync`1<System.Tuple`4<Microsoft.FSharp.Core.FSharpOption`1<T>,System.UInt32,System.UInt32,Microsoft.FSharp.Core.FSharpOption`1<T>>> AsyncSeqExtensions/tryGetCurrent@82-3::Invoke(Microsoft.FSharp.Core.FSharpOption`1<T>)
+FNDA:109,Microsoft.FSharp.Control.FSharpAsync`1<System.Tuple`4<Microsoft.FSharp.Core.FSharpOption`1<T>,System.UInt32,System.UInt32,Microsoft.FSharp.Core.FSharpOption`1<T>>> AsyncSeqExtensions/tryGetCurrent@82-3::Invoke(Microsoft.FSharp.Core.FSharpOption`1<T>)
+DA:82,109
+FN:74,Microsoft.FSharp.Control.FSharpAsync`1<System.Tuple`4<Microsoft.FSharp.Core.FSharpOption`1<T>,System.UInt32,System.UInt32,Microsoft.FSharp.Core.FSharpOption`1<T>>> AsyncSeqExtensions/tryGetCurrent@75-1::Invoke(Microsoft.FSharp.Core.Unit)
+FNDA:123,Microsoft.FSharp.Control.FSharpAsync`1<System.Tuple`4<Microsoft.FSharp.Core.FSharpOption`1<T>,System.UInt32,System.UInt32,Microsoft.FSharp.Core.FSharpOption`1<T>>> AsyncSeqExtensions/tryGetCurrent@75-1::Invoke(Microsoft.FSharp.Core.Unit)
+DA:75,123
 DA:77,7
-DA:78,116
-DA:80,109
-DA:84,7
+DA:78,7
+DA:79,116
+DA:81,109
 DA:85,7
-BRDA:74,8,0,7
-BRDA:76,36,1,0
-BRDA:76,36,0,7
-BRDA:74,8,1,116
-BRDA:78,142,0,109
-BRDA:78,142,1,7
-BRDA:84,241,1,0
-BRDA:84,241,0,7
-FN:71,Microsoft.FSharp.Control.FSharpAsync`1<System.Tuple`4<Microsoft.FSharp.Core.FSharpOption`1<T>,System.UInt32,System.UInt32,Microsoft.FSharp.Core.FSharpOption`1<T>>> AsyncSeqExtensions/tryGetCurrent@72D::Invoke(Microsoft.FSharp.Core.FSharpOption`1<T>)
-FNDA:123,Microsoft.FSharp.Control.FSharpAsync`1<System.Tuple`4<Microsoft.FSharp.Core.FSharpOption`1<T>,System.UInt32,System.UInt32,Microsoft.FSharp.Core.FSharpOption`1<T>>> AsyncSeqExtensions/tryGetCurrent@72D::Invoke(Microsoft.FSharp.Core.FSharpOption`1<T>)
-DA:72,123
-FN:108,FSharp.Control.IAsyncEnumerable`1<Microsoft.FSharp.Collections.FSharpList`1<T>> AsyncSeqExtensions/yieldWindows@109-2::Invoke(Microsoft.FSharp.Core.Unit)
-FNDA:6,FSharp.Control.IAsyncEnumerable`1<Microsoft.FSharp.Collections.FSharpList`1<T>> AsyncSeqExtensions/yieldWindows@109-2::Invoke(Microsoft.FSharp.Core.Unit)
-DA:109,6
-FN:118,FSharp.Control.IAsyncEnumerable`1<Microsoft.FSharp.Collections.FSharpList`1<T>> AsyncSeqExtensions/yieldWindows@119-6::Invoke(Microsoft.FSharp.Core.Unit)
-FNDA:0,FSharp.Control.IAsyncEnumerable`1<Microsoft.FSharp.Collections.FSharpList`1<T>> AsyncSeqExtensions/yieldWindows@119-6::Invoke(Microsoft.FSharp.Core.Unit)
-DA:119,0
-FN:122,FSharp.Control.IAsyncEnumerable`1<Microsoft.FSharp.Collections.FSharpList`1<T>> AsyncSeqExtensions/yieldWindows@123-7::Invoke(Microsoft.FSharp.Core.Unit)
-FNDA:62,FSharp.Control.IAsyncEnumerable`1<Microsoft.FSharp.Collections.FSharpList`1<T>> AsyncSeqExtensions/yieldWindows@123-7::Invoke(Microsoft.FSharp.Core.Unit)
-DA:123,62
+DA:86,7
+BRDA:75,8,0,7
+BRDA:77,36,1,0
+BRDA:77,36,0,7
+BRDA:75,8,1,116
+BRDA:79,142,0,109
+BRDA:79,142,1,7
+BRDA:85,241,1,0
+BRDA:85,241,0,7
+FN:72,Microsoft.FSharp.Control.FSharpAsync`1<System.Tuple`4<Microsoft.FSharp.Core.FSharpOption`1<T>,System.UInt32,System.UInt32,Microsoft.FSharp.Core.FSharpOption`1<T>>> AsyncSeqExtensions/tryGetCurrent@73D::Invoke(Microsoft.FSharp.Core.FSharpOption`1<T>)
+FNDA:123,Microsoft.FSharp.Control.FSharpAsync`1<System.Tuple`4<Microsoft.FSharp.Core.FSharpOption`1<T>,System.UInt32,System.UInt32,Microsoft.FSharp.Core.FSharpOption`1<T>>> AsyncSeqExtensions/tryGetCurrent@73D::Invoke(Microsoft.FSharp.Core.FSharpOption`1<T>)
+DA:73,123
+FN:109,FSharp.Control.IAsyncEnumerable`1<Microsoft.FSharp.Collections.FSharpList`1<T>> AsyncSeqExtensions/yieldWindows@110-2::Invoke(Microsoft.FSharp.Core.Unit)
+FNDA:6,FSharp.Control.IAsyncEnumerable`1<Microsoft.FSharp.Collections.FSharpList`1<T>> AsyncSeqExtensions/yieldWindows@110-2::Invoke(Microsoft.FSharp.Core.Unit)
+DA:110,6
+FN:119,FSharp.Control.IAsyncEnumerable`1<Microsoft.FSharp.Collections.FSharpList`1<T>> AsyncSeqExtensions/yieldWindows@120-6::Invoke(Microsoft.FSharp.Core.Unit)
+FNDA:0,FSharp.Control.IAsyncEnumerable`1<Microsoft.FSharp.Collections.FSharpList`1<T>> AsyncSeqExtensions/yieldWindows@120-6::Invoke(Microsoft.FSharp.Core.Unit)
+DA:120,0
+FN:123,FSharp.Control.IAsyncEnumerable`1<Microsoft.FSharp.Collections.FSharpList`1<T>> AsyncSeqExtensions/yieldWindows@124-7::Invoke(Microsoft.FSharp.Core.Unit)
+FNDA:62,FSharp.Control.IAsyncEnumerable`1<Microsoft.FSharp.Collections.FSharpList`1<T>> AsyncSeqExtensions/yieldWindows@124-7::Invoke(Microsoft.FSharp.Core.Unit)
 DA:124,62
-DA:126,62
-BRDA:123,21,0,54
-BRDA:123,21,1,8
-FN:113,FSharp.Control.IAsyncEnumerable`1<Microsoft.FSharp.Collections.FSharpList`1<T>> AsyncSeqExtensions/yieldWindows@114-4::Invoke(System.Tuple`4<Microsoft.FSharp.Core.FSharpOption`1<T>,System.UInt32,System.UInt32,Microsoft.FSharp.Core.FSharpOption`1<T>>)
-FNDA:123,FSharp.Control.IAsyncEnumerable`1<Microsoft.FSharp.Collections.FSharpList`1<T>> AsyncSeqExtensions/yieldWindows@114-4::Invoke(System.Tuple`4<Microsoft.FSharp.Core.FSharpOption`1<T>,System.UInt32,System.UInt32,Microsoft.FSharp.Core.FSharpOption`1<T>>)
+DA:125,62
+DA:127,62
+BRDA:124,21,0,54
+BRDA:124,21,1,8
+FN:114,FSharp.Control.IAsyncEnumerable`1<Microsoft.FSharp.Collections.FSharpList`1<T>> AsyncSeqExtensions/yieldWindows@115-4::Invoke(System.Tuple`4<Microsoft.FSharp.Core.FSharpOption`1<T>,System.UInt32,System.UInt32,Microsoft.FSharp.Core.FSharpOption`1<T>>)
+FNDA:123,FSharp.Control.IAsyncEnumerable`1<Microsoft.FSharp.Collections.FSharpList`1<T>> AsyncSeqExtensions/yieldWindows@115-4::Invoke(System.Tuple`4<Microsoft.FSharp.Core.FSharpOption`1<T>,System.UInt32,System.UInt32,Microsoft.FSharp.Core.FSharpOption`1<T>>)
+DA:115,123
+DA:117,123
+DA:118,0
+DA:121,123
+DA:123,248
+DA:130,61
+BRDA:115,54,1,0
+BRDA:115,54,0,123
+BRDA:117,89,0,0
+BRDA:118,110,0,0
+BRDA:118,110,1,0
+BRDA:117,89,1,123
+BRDA:121,225,0,62
+BRDA:121,225,1,61
+FN:106,FSharp.Control.IAsyncEnumerable`1<Microsoft.FSharp.Collections.FSharpList`1<T>> AsyncSeqExtensions/yieldWindows@107-1::Invoke(Microsoft.FSharp.Core.Unit)
+FNDA:344,FSharp.Control.IAsyncEnumerable`1<Microsoft.FSharp.Collections.FSharpList`1<T>> AsyncSeqExtensions/yieldWindows@107-1::Invoke(Microsoft.FSharp.Core.Unit)
+DA:107,344
+DA:108,20
+DA:109,24
 DA:114,123
-DA:116,123
-DA:117,0
-DA:120,123
-DA:122,248
-DA:129,61
-BRDA:114,54,1,0
-BRDA:114,54,0,123
-BRDA:116,89,0,0
-BRDA:117,110,0,0
-BRDA:117,110,1,0
-BRDA:116,89,1,123
-BRDA:120,225,0,62
-BRDA:120,225,1,61
-FN:105,FSharp.Control.IAsyncEnumerable`1<Microsoft.FSharp.Collections.FSharpList`1<T>> AsyncSeqExtensions/yieldWindows@106-1::Invoke(Microsoft.FSharp.Core.Unit)
-FNDA:344,FSharp.Control.IAsyncEnumerable`1<Microsoft.FSharp.Collections.FSharpList`1<T>> AsyncSeqExtensions/yieldWindows@106-1::Invoke(Microsoft.FSharp.Core.Unit)
-DA:106,344
-DA:107,20
-DA:108,24
-DA:113,123
-BRDA:106,7,0,70
-BRDA:106,7,1,67
-BRDA:106,26,0,14
-BRDA:107,50,0,8
-BRDA:107,50,1,6
-BRDA:106,26,1,123
-FN:103,FSharp.Control.IAsyncEnumerable`1<Microsoft.FSharp.Collections.FSharpList`1<T>> AsyncSeqExtensions/yieldWindows@104D::Invoke(Microsoft.FSharp.Core.FSharpOption`1<T>,Microsoft.FSharp.Core.FSharpOption`1<T>)
-FNDA:137,FSharp.Control.IAsyncEnumerable`1<Microsoft.FSharp.Collections.FSharpList`1<T>> AsyncSeqExtensions/yieldWindows@104D::Invoke(Microsoft.FSharp.Core.FSharpOption`1<T>,Microsoft.FSharp.Core.FSharpOption`1<T>)
-DA:104,137
-FN:131,FSharp.Control.IAsyncEnumerable`1<Microsoft.FSharp.Collections.FSharpList`1<T>> AsyncSeqExtensions/windowedWithPad@132-1::Invoke(Microsoft.FSharp.Core.FSharpOption`1<T>)
-FNDA:14,FSharp.Control.IAsyncEnumerable`1<Microsoft.FSharp.Collections.FSharpList`1<T>> AsyncSeqExtensions/windowedWithPad@132-1::Invoke(Microsoft.FSharp.Core.FSharpOption`1<T>)
+BRDA:107,7,0,70
+BRDA:107,7,1,67
+BRDA:107,26,0,14
+BRDA:108,50,0,8
+BRDA:108,50,1,6
+BRDA:107,26,1,123
+FN:104,FSharp.Control.IAsyncEnumerable`1<Microsoft.FSharp.Collections.FSharpList`1<T>> AsyncSeqExtensions/yieldWindows@105D::Invoke(Microsoft.FSharp.Core.FSharpOption`1<T>,Microsoft.FSharp.Core.FSharpOption`1<T>)
+FNDA:137,FSharp.Control.IAsyncEnumerable`1<Microsoft.FSharp.Collections.FSharpList`1<T>> AsyncSeqExtensions/yieldWindows@105D::Invoke(Microsoft.FSharp.Core.FSharpOption`1<T>,Microsoft.FSharp.Core.FSharpOption`1<T>)
+DA:105,137
+FN:132,FSharp.Control.IAsyncEnumerable`1<Microsoft.FSharp.Collections.FSharpList`1<T>> AsyncSeqExtensions/windowedWithPad@133-2::Invoke(Microsoft.FSharp.Core.FSharpOption`1<T>)
+FNDA:14,FSharp.Control.IAsyncEnumerable`1<Microsoft.FSharp.Collections.FSharpList`1<T>> AsyncSeqExtensions/windowedWithPad@133-2::Invoke(Microsoft.FSharp.Core.FSharpOption`1<T>)
+DA:133,14
+FN:65,FSharp.Control.IAsyncEnumerable`1<Microsoft.FSharp.Collections.FSharpList`1<T>> AsyncSeqExtensions/windowedWithPad@67-1::Invoke(Microsoft.FSharp.Core.Unit)
+FNDA:14,FSharp.Control.IAsyncEnumerable`1<Microsoft.FSharp.Collections.FSharpList`1<T>> AsyncSeqExtensions/windowedWithPad@67-1::Invoke(Microsoft.FSharp.Core.Unit)
+DA:66,14
 DA:132,14
+FN:133,Microsoft.FSharp.Core.Unit AsyncSeqExtensions/windowedWithPad@135-3::Invoke(Microsoft.FSharp.Core.Unit)
+FNDA:14,Microsoft.FSharp.Core.Unit AsyncSeqExtensions/windowedWithPad@135-3::Invoke(Microsoft.FSharp.Core.Unit)
+DA:134,14
+DA:135,14
 FN:62,FSharp.Control.IAsyncEnumerable`1<Microsoft.FSharp.Collections.FSharpList`1<T>> AsyncSeqExtensions/windowedWithPad@63::Invoke(Microsoft.FSharp.Core.Unit)
 FNDA:14,FSharp.Control.IAsyncEnumerable`1<Microsoft.FSharp.Collections.FSharpList`1<T>> AsyncSeqExtensions/windowedWithPad@63::Invoke(Microsoft.FSharp.Core.Unit)
 DA:63,14
 DA:64,14
-DA:131,14
-FN:138,FSharp.Control.IAsyncEnumerable`1<T> AsyncSeqExtensions/ofAsync@139-1::Invoke(T)
-FNDA:4,FSharp.Control.IAsyncEnumerable`1<T> AsyncSeqExtensions/ofAsync@139-1::Invoke(T)
-DA:139,4
-FN:137,FSharp.Control.IAsyncEnumerable`1<T> AsyncSeqExtensions/ofAsync@139::Invoke(Microsoft.FSharp.Core.Unit)
-FNDA:4,FSharp.Control.IAsyncEnumerable`1<T> AsyncSeqExtensions/ofAsync@139::Invoke(Microsoft.FSharp.Core.Unit)
-DA:138,4
-FN:154,FSharp.Control.IAsyncEnumerable`1<System.Tuple`2<U,V>> AsyncSeqExtensions/loop@155-6::Invoke(Microsoft.FSharp.Core.Unit)
-FNDA:21,FSharp.Control.IAsyncEnumerable`1<System.Tuple`2<U,V>> AsyncSeqExtensions/loop@155-6::Invoke(Microsoft.FSharp.Core.Unit)
-DA:155,21
-FN:152,FSharp.Control.IAsyncEnumerable`1<System.Tuple`2<U,V>> AsyncSeqExtensions/loop@153-5::Invoke(System.Boolean)
-FNDA:77,FSharp.Control.IAsyncEnumerable`1<System.Tuple`2<U,V>> AsyncSeqExtensions/loop@153-5::Invoke(System.Boolean)
-DA:153,77
-DA:154,21
-BRDA:153,9,0,21
-BRDA:153,9,1,7
-BRDA:153,17,0,21
-BRDA:153,17,1,7
-FN:151,FSharp.Control.IAsyncEnumerable`1<System.Tuple`2<U,V>> AsyncSeqExtensions/loop@152-4::Invoke(System.Boolean)
-FNDA:28,FSharp.Control.IAsyncEnumerable`1<System.Tuple`2<U,V>> AsyncSeqExtensions/loop@152-4::Invoke(System.Boolean)
-DA:152,28
-FN:150,FSharp.Control.IAsyncEnumerable`1<System.Tuple`2<U,V>> AsyncSeqExtensions/loop@151-3::Invoke(Microsoft.FSharp.Control.FSharpAsync`1<System.Boolean>)
-FNDA:28,FSharp.Control.IAsyncEnumerable`1<System.Tuple`2<U,V>> AsyncSeqExtensions/loop@151-3::Invoke(Microsoft.FSharp.Control.FSharpAsync`1<System.Boolean>)
+FN:141,FSharp.Control.IAsyncEnumerable`1<T> AsyncSeqExtensions/ofAsync@142-1::Invoke(T)
+FNDA:4,FSharp.Control.IAsyncEnumerable`1<T> AsyncSeqExtensions/ofAsync@142-1::Invoke(T)
+DA:142,4
+FN:140,FSharp.Control.IAsyncEnumerable`1<T> AsyncSeqExtensions/ofAsync@142::Invoke(Microsoft.FSharp.Core.Unit)
+FNDA:4,FSharp.Control.IAsyncEnumerable`1<T> AsyncSeqExtensions/ofAsync@142::Invoke(Microsoft.FSharp.Core.Unit)
+DA:141,4
+FN:158,FSharp.Control.IAsyncEnumerable`1<System.Tuple`2<U,V>> AsyncSeqExtensions/loop@159-6::Invoke(Microsoft.FSharp.Core.Unit)
+FNDA:21,FSharp.Control.IAsyncEnumerable`1<System.Tuple`2<U,V>> AsyncSeqExtensions/loop@159-6::Invoke(Microsoft.FSharp.Core.Unit)
+DA:159,21
+FN:156,FSharp.Control.IAsyncEnumerable`1<System.Tuple`2<U,V>> AsyncSeqExtensions/loop@157-5::Invoke(System.Boolean)
+FNDA:77,FSharp.Control.IAsyncEnumerable`1<System.Tuple`2<U,V>> AsyncSeqExtensions/loop@157-5::Invoke(System.Boolean)
+DA:157,77
+DA:158,21
+BRDA:157,9,0,21
+BRDA:157,9,1,7
+BRDA:157,17,0,21
+BRDA:157,17,1,7
+FN:155,FSharp.Control.IAsyncEnumerable`1<System.Tuple`2<U,V>> AsyncSeqExtensions/loop@156-4::Invoke(System.Boolean)
+FNDA:28,FSharp.Control.IAsyncEnumerable`1<System.Tuple`2<U,V>> AsyncSeqExtensions/loop@156-4::Invoke(System.Boolean)
+DA:156,28
+FN:154,FSharp.Control.IAsyncEnumerable`1<System.Tuple`2<U,V>> AsyncSeqExtensions/loop@155-3::Invoke(Microsoft.FSharp.Control.FSharpAsync`1<System.Boolean>)
+FNDA:28,FSharp.Control.IAsyncEnumerable`1<System.Tuple`2<U,V>> AsyncSeqExtensions/loop@155-3::Invoke(Microsoft.FSharp.Control.FSharpAsync`1<System.Boolean>)
+DA:155,28
+FN:153,FSharp.Control.IAsyncEnumerable`1<System.Tuple`2<U,V>> AsyncSeqExtensions/loop@154-2::Invoke(Microsoft.FSharp.Control.FSharpAsync`1<System.Boolean>)
+FNDA:112,FSharp.Control.IAsyncEnumerable`1<System.Tuple`2<U,V>> AsyncSeqExtensions/loop@154-2::Invoke(Microsoft.FSharp.Control.FSharpAsync`1<System.Boolean>)
+DA:154,112
+FN:152,FSharp.Control.IAsyncEnumerable`1<System.Tuple`2<U,V>> AsyncSeqExtensions/loop@157-1::Invoke(Microsoft.FSharp.Core.Unit)
+FNDA:112,FSharp.Control.IAsyncEnumerable`1<System.Tuple`2<U,V>> AsyncSeqExtensions/loop@157-1::Invoke(Microsoft.FSharp.Core.Unit)
+DA:153,112
+FN:150,FSharp.Control.IAsyncEnumerable`1<System.Tuple`2<U,V>> AsyncSeqExtensions/loop@151::Invoke(Microsoft.FSharp.Core.Unit)
+FNDA:28,FSharp.Control.IAsyncEnumerable`1<System.Tuple`2<U,V>> AsyncSeqExtensions/loop@151::Invoke(Microsoft.FSharp.Core.Unit)
 DA:151,28
-FN:149,FSharp.Control.IAsyncEnumerable`1<System.Tuple`2<U,V>> AsyncSeqExtensions/loop@150-2::Invoke(Microsoft.FSharp.Control.FSharpAsync`1<System.Boolean>)
-FNDA:112,FSharp.Control.IAsyncEnumerable`1<System.Tuple`2<U,V>> AsyncSeqExtensions/loop@150-2::Invoke(Microsoft.FSharp.Control.FSharpAsync`1<System.Boolean>)
-DA:150,112
-FN:148,FSharp.Control.IAsyncEnumerable`1<System.Tuple`2<U,V>> AsyncSeqExtensions/loop@153-1::Invoke(Microsoft.FSharp.Core.Unit)
-FNDA:112,FSharp.Control.IAsyncEnumerable`1<System.Tuple`2<U,V>> AsyncSeqExtensions/loop@153-1::Invoke(Microsoft.FSharp.Core.Unit)
-DA:149,112
-FN:146,FSharp.Control.IAsyncEnumerable`1<System.Tuple`2<U,V>> AsyncSeqExtensions/loop@147::Invoke(Microsoft.FSharp.Core.Unit)
-FNDA:28,FSharp.Control.IAsyncEnumerable`1<System.Tuple`2<U,V>> AsyncSeqExtensions/loop@147::Invoke(Microsoft.FSharp.Core.Unit)
-DA:147,28
-FN:143,FSharp.Control.IAsyncEnumerable`1<System.Tuple`2<U,V>> AsyncSeqExtensions/zipConcurrent@144::Invoke(Microsoft.FSharp.Core.Unit)
-FNDA:7,FSharp.Control.IAsyncEnumerable`1<System.Tuple`2<U,V>> AsyncSeqExtensions/zipConcurrent@144::Invoke(Microsoft.FSharp.Core.Unit)
-DA:144,7
-DA:145,7
-DA:160,7
-LF:51
-LH:49
+FN:149,FSharp.Control.IAsyncEnumerable`1<System.Tuple`2<U,V>> AsyncSeqExtensions/zipConcurrent@151-1::Invoke(Microsoft.FSharp.Core.Unit)
+FNDA:7,FSharp.Control.IAsyncEnumerable`1<System.Tuple`2<U,V>> AsyncSeqExtensions/zipConcurrent@151-1::Invoke(Microsoft.FSharp.Core.Unit)
+DA:150,7
+DA:164,7
+FN:164,Microsoft.FSharp.Core.Unit AsyncSeqExtensions/zipConcurrent@166-2::Invoke(Microsoft.FSharp.Core.Unit)
+FNDA:7,Microsoft.FSharp.Core.Unit AsyncSeqExtensions/zipConcurrent@166-2::Invoke(Microsoft.FSharp.Core.Unit)
+DA:165,7
+DA:166,7
+DA:167,7
+FN:146,FSharp.Control.IAsyncEnumerable`1<System.Tuple`2<U,V>> AsyncSeqExtensions/zipConcurrent@147::Invoke(Microsoft.FSharp.Core.Unit)
+FNDA:7,FSharp.Control.IAsyncEnumerable`1<System.Tuple`2<U,V>> AsyncSeqExtensions/zipConcurrent@147::Invoke(Microsoft.FSharp.Core.Unit)
+DA:147,7
+DA:148,7
+LF:58
+LH:56
 BRF:34
 BRH:26
-FNF:27
-FNH:26
+FNF:31
+FNH:30
 end_of_record
 SF:/Users/jrh630/repositories/stackProcessing/src/StackProcessing.Core/ChunkedAffineResampler.fs
 FN:9,System.Int32 ChunkedAffineResampler::floorToInt(System.Double)
@@ -3687,488 +3702,520 @@ FNF:158
 FNH:88
 end_of_record
 SF:/Users/jrh630/repositories/stackProcessing/src/StackProcessing.Core/StackIO.fs
-FN:11,System.UInt64 StackIO::inputValue(SlimPipeline/SingleOrPair)
+FN:12,System.UInt64 StackIO::inputValue(SlimPipeline/SingleOrPair)
 FNDA:102,System.UInt64 StackIO::inputValue(SlimPipeline/SingleOrPair)
-DA:12,102
-FN:14,System.UInt64 StackIO::imageBytes(System.UInt64)
+DA:13,102
+FN:15,System.UInt64 StackIO::imageBytes(System.UInt64)
 FNDA:34,System.UInt64 StackIO::imageBytes(System.UInt64)
-DA:15,34
-FN:17,SlimPipeline/StageWorkModel StackIO::imageIoCost(System.String,SlimPipeline/StageEvaluation,System.String,Microsoft.FSharp.Core.FSharpFunc`2<SlimPipeline/SingleOrPair,System.UInt64>,Microsoft.FSharp.Core.FSharpFunc`2<SlimPipeline/SingleOrPair,System.UInt64>)
+DA:16,34
+FN:18,SlimPipeline/StageWorkModel StackIO::imageIoCost(System.String,SlimPipeline/StageEvaluation,System.String,Microsoft.FSharp.Core.FSharpFunc`2<SlimPipeline/SingleOrPair,System.UInt64>,Microsoft.FSharp.Core.FSharpFunc`2<SlimPipeline/SingleOrPair,System.UInt64>)
 FNDA:76,SlimPipeline/StageWorkModel StackIO::imageIoCost(System.String,SlimPipeline/StageEvaluation,System.String,Microsoft.FSharp.Core.FSharpFunc`2<SlimPipeline/SingleOrPair,System.UInt64>,Microsoft.FSharp.Core.FSharpFunc`2<SlimPipeline/SingleOrPair,System.UInt64>)
-DA:18,76
-FN:20,SlimPipeline/Stage`2<a,b> StackIO::withCostModel(SlimPipeline/StageCostModel,SlimPipeline/Stage`2<a,b>)
+DA:19,76
+FN:21,SlimPipeline/Stage`2<a,b> StackIO::withCostModel(SlimPipeline/StageCostModel,SlimPipeline/Stage`2<a,b>)
 FNDA:118,SlimPipeline/Stage`2<a,b> StackIO::withCostModel(SlimPipeline/StageCostModel,SlimPipeline/Stage`2<a,b>)
-DA:21,118
-FN:23,System.UInt32 StackIO::getStackDepth(System.String,System.String)
-FNDA:2,System.UInt32 StackIO::getStackDepth(System.String,System.String)
-DA:24,2
-DA:25,2
-FN:27,ImageFunctions/FileInfo StackIO::getStackInfo(System.String,System.String)
-FNDA:90,ImageFunctions/FileInfo StackIO::getStackInfo(System.String,System.String)
-DA:28,90
-DA:29,90
-DA:30,45
-DA:31,0
-DA:32,45
-DA:33,45
-BRDA:30,38,0,0
-BRDA:30,38,1,45
-FN:35,System.Tuple`3<System.UInt32,System.UInt32,System.UInt32> StackIO::getStackSize(System.String,System.String)
+DA:22,118
+FN:24,System.String StackIO::normalizeSuffix(System.String)
+FNDA:88,System.String StackIO::normalizeSuffix(System.String)
+DA:25,88
+DA:27,88
+DA:28,88
+DA:30,0
+BRDA:27,20,0,88
+BRDA:27,20,1,0
+FN:32,Microsoft.FSharp.Collections.FSharpList`1<System.String> StackIO::suffixAliases(System.String)
+FNDA:88,Microsoft.FSharp.Collections.FSharpList`1<System.String> StackIO::suffixAliases(System.String)
+DA:33,88
+DA:34,88
+DA:35,88
+DA:36,88
+DA:38,0
+BRDA:34,21,0,0
+BRDA:34,21,1,88
+BRDA:35,40,0,88
+BRDA:35,40,1,0
+FN:40,System.String StackIO::suffixDescription(System.String)
+FNDA:0,System.String StackIO::suffixDescription(System.String)
+DA:41,0
+FN:43,System.String[] StackIO::getStackFiles(System.String,System.String)
+FNDA:88,System.String[] StackIO::getStackFiles(System.String,System.String)
+DA:44,88
+DA:46,88
+DA:47,88
+DA:48,700
+DA:49,2188
+DA:50,88
+DA:51,88
+DA:52,88
+FN:54,System.UInt32 StackIO::getStackDepth(System.String,System.String)
+FNDA:1,System.UInt32 StackIO::getStackDepth(System.String,System.String)
+DA:55,1
+DA:56,2
+FN:58,ImageFunctions/FileInfo StackIO::getStackInfo(System.String,System.String)
+FNDA:45,ImageFunctions/FileInfo StackIO::getStackInfo(System.String,System.String)
+DA:59,45
+DA:60,90
+DA:61,45
+DA:62,0
+DA:63,45
+DA:64,45
+BRDA:61,19,0,0
+BRDA:61,19,1,45
+FN:66,System.Tuple`3<System.UInt32,System.UInt32,System.UInt32> StackIO::getStackSize(System.String,System.String)
 FNDA:1,System.Tuple`3<System.UInt32,System.UInt32,System.UInt32> StackIO::getStackSize(System.String,System.String)
-DA:36,1
-DA:37,1
-FN:39,System.UInt64 StackIO::getStackWidth(System.String,System.String)
+DA:67,1
+DA:68,1
+FN:70,System.UInt64 StackIO::getStackWidth(System.String,System.String)
 FNDA:1,System.UInt64 StackIO::getStackWidth(System.String,System.String)
-DA:40,1
-DA:41,1
-FN:43,System.UInt64 StackIO::getStackHeight(System.String,System.String)
+DA:71,1
+DA:72,1
+FN:74,System.UInt64 StackIO::getStackHeight(System.String,System.String)
 FNDA:1,System.UInt64 StackIO::getStackHeight(System.String,System.String)
-DA:44,1
-DA:45,1
-FN:47,System.String[] StackIO::_getFilenames(System.String,System.String,Microsoft.FSharp.Core.FSharpFunc`2<System.String[],System.String[]>)
+DA:75,1
+DA:76,1
+FN:78,System.String[] StackIO::_getFilenames(System.String,System.String,Microsoft.FSharp.Core.FSharpFunc`2<System.String[],System.String[]>)
 FNDA:84,System.String[] StackIO::_getFilenames(System.String,System.String,Microsoft.FSharp.Core.FSharpFunc`2<System.String[],System.String[]>)
-DA:48,84
-FN:50,SlimPipeline/Plan`2<Microsoft.FSharp.Core.Unit,System.String> StackIO::getFilenames(System.String,System.String,Microsoft.FSharp.Core.FSharpFunc`2<System.String[],System.String[]>,SlimPipeline/Plan`2<Microsoft.FSharp.Core.Unit,Microsoft.FSharp.Core.Unit>)
+DA:79,84
+FN:81,SlimPipeline/Plan`2<Microsoft.FSharp.Core.Unit,System.String> StackIO::getFilenames(System.String,System.String,Microsoft.FSharp.Core.FSharpFunc`2<System.String[],System.String[]>,SlimPipeline/Plan`2<Microsoft.FSharp.Core.Unit,Microsoft.FSharp.Core.Unit>)
 FNDA:42,SlimPipeline/Plan`2<Microsoft.FSharp.Core.Unit,System.String> StackIO::getFilenames(System.String,System.String,Microsoft.FSharp.Core.FSharpFunc`2<System.String[],System.String[]>,SlimPipeline/Plan`2<Microsoft.FSharp.Core.Unit,Microsoft.FSharp.Core.Unit>)
-DA:51,42
-DA:52,42
-DA:53,42
-DA:59,42
-DA:60,42
-DA:63,42
-DA:64,42
-DA:65,44
-DA:67,42
-DA:68,42
-DA:69,42
-DA:71,42
-DA:72,42
-DA:73,42
-FN:75,SlimPipeline/Stage`2<System.String,Image/Image`1<T>> StackIO::readFilesWithShape(System.Boolean,System.UInt32,System.UInt32)
-FNDA:42,SlimPipeline/Stage`2<System.String,Image/Image`1<T>> StackIO::readFilesWithShape(System.Boolean,System.UInt32,System.UInt32)
-DA:76,42
-DA:77,42
-DA:78,42
-DA:79,42
-DA:92,42
-DA:93,42
+DA:82,42
+DA:83,42
+DA:84,42
+DA:90,42
+DA:91,42
 DA:94,42
 DA:95,42
-DA:96,42
-DA:97,42
-DA:98,44
-DA:99,86
+DA:96,44
+DA:98,42
+DA:99,42
 DA:100,42
-DA:101,42
-BRDA:77,8,0,0
-BRDA:77,8,1,42
-FN:103,SlimPipeline/Stage`2<System.String,Image/Image`1<T>> StackIO::readFiles(System.Boolean)
-FNDA:0,SlimPipeline/Stage`2<System.String,Image/Image`1<T>> StackIO::readFiles(System.Boolean)
-DA:104,0
-FN:106,SlimPipeline/Stage`2<System.Tuple`2<System.String,System.String>,System.Tuple`2<Image/Image`1<T>,Image/Image`1<T>>> StackIO::readFilePairs(System.Boolean)
-FNDA:0,SlimPipeline/Stage`2<System.Tuple`2<System.String,System.String>,System.Tuple`2<Image/Image`1<T>,Image/Image`1<T>>> StackIO::readFilePairs(System.Boolean)
-DA:107,0
-DA:108,0
-DA:109,0
-DA:110,0
-DA:125,0
-DA:126,0
-DA:127,0
-DA:128,0
-DA:129,0
-DA:130,0
-DA:131,0
-DA:132,0
-DA:133,0
-DA:134,0
+DA:102,42
+DA:103,42
+DA:104,42
+FN:106,SlimPipeline/Stage`2<System.String,Image/Image`1<T>> StackIO::readFilesWithShape(System.Boolean,System.UInt32,System.UInt32)
+FNDA:42,SlimPipeline/Stage`2<System.String,Image/Image`1<T>> StackIO::readFilesWithShape(System.Boolean,System.UInt32,System.UInt32)
+DA:107,42
+DA:108,42
+DA:109,42
+DA:110,42
+DA:123,42
+DA:124,42
+DA:125,42
+DA:126,42
+DA:127,42
+DA:128,42
+DA:129,44
+DA:130,86
+DA:131,42
+DA:132,42
 BRDA:108,8,0,0
-BRDA:108,8,1,0
-FN:136,SlimPipeline/Plan`2<Microsoft.FSharp.Core.Unit,Image/Image`1<T>> StackIO::readFiltered(System.String,System.String,Microsoft.FSharp.Core.FSharpFunc`2<System.String[],System.String[]>,SlimPipeline/Plan`2<Microsoft.FSharp.Core.Unit,Microsoft.FSharp.Core.Unit>)
+BRDA:108,8,1,42
+FN:134,SlimPipeline/Stage`2<System.String,Image/Image`1<T>> StackIO::readFiles(System.Boolean)
+FNDA:0,SlimPipeline/Stage`2<System.String,Image/Image`1<T>> StackIO::readFiles(System.Boolean)
+DA:135,0
+FN:137,SlimPipeline/Stage`2<System.Tuple`2<System.String,System.String>,System.Tuple`2<Image/Image`1<T>,Image/Image`1<T>>> StackIO::readFilePairs(System.Boolean)
+FNDA:0,SlimPipeline/Stage`2<System.Tuple`2<System.String,System.String>,System.Tuple`2<Image/Image`1<T>,Image/Image`1<T>>> StackIO::readFilePairs(System.Boolean)
+DA:138,0
+DA:139,0
+DA:140,0
+DA:141,0
+DA:156,0
+DA:157,0
+DA:158,0
+DA:159,0
+DA:160,0
+DA:161,0
+DA:162,0
+DA:163,0
+DA:164,0
+DA:165,0
+BRDA:139,8,0,0
+BRDA:139,8,1,0
+FN:167,SlimPipeline/Plan`2<Microsoft.FSharp.Core.Unit,Image/Image`1<T>> StackIO::readFiltered(System.String,System.String,Microsoft.FSharp.Core.FSharpFunc`2<System.String[],System.String[]>,SlimPipeline/Plan`2<Microsoft.FSharp.Core.Unit,Microsoft.FSharp.Core.Unit>)
 FNDA:42,SlimPipeline/Plan`2<Microsoft.FSharp.Core.Unit,Image/Image`1<T>> StackIO::readFiltered(System.String,System.String,Microsoft.FSharp.Core.FSharpFunc`2<System.String[],System.String[]>,SlimPipeline/Plan`2<Microsoft.FSharp.Core.Unit,Microsoft.FSharp.Core.Unit>)
-DA:137,42
-DA:138,42
-DA:139,42
-DA:140,42
-DA:141,42
-DA:142,42
-DA:143,42
-DA:144,42
-DA:145,42
-DA:146,42
-DA:147,42
-DA:148,42
-DA:149,42
-DA:150,42
-DA:151,42
-DA:152,42
-DA:153,42
-DA:155,84
-DA:156,42
-DA:157,42
-DA:158,42
-FN:160,SlimPipeline/Plan`2<Microsoft.FSharp.Core.Unit,Image/Image`1<T>> StackIO::read(System.String,System.String,SlimPipeline/Plan`2<Microsoft.FSharp.Core.Unit,Microsoft.FSharp.Core.Unit>)
+DA:168,42
+DA:169,42
+DA:170,42
+DA:171,42
+DA:172,42
+DA:173,42
+DA:174,42
+DA:175,42
+DA:176,42
+DA:177,42
+DA:178,42
+DA:179,42
+DA:180,42
+DA:181,42
+DA:182,42
+DA:183,42
+DA:184,42
+DA:186,84
+DA:187,42
+DA:188,42
+DA:189,42
+FN:191,SlimPipeline/Plan`2<Microsoft.FSharp.Core.Unit,Image/Image`1<T>> StackIO::read(System.String,System.String,SlimPipeline/Plan`2<Microsoft.FSharp.Core.Unit,Microsoft.FSharp.Core.Unit>)
 FNDA:41,SlimPipeline/Plan`2<Microsoft.FSharp.Core.Unit,Image/Image`1<T>> StackIO::read(System.String,System.String,SlimPipeline/Plan`2<Microsoft.FSharp.Core.Unit,Microsoft.FSharp.Core.Unit>)
-DA:161,41
-FN:163,SlimPipeline/Plan`2<Microsoft.FSharp.Core.Unit,Image/Image`1<T>> StackIO::readRandom(System.UInt32,System.String,System.String,SlimPipeline/Plan`2<Microsoft.FSharp.Core.Unit,Microsoft.FSharp.Core.Unit>)
+DA:192,41
+FN:194,SlimPipeline/Plan`2<Microsoft.FSharp.Core.Unit,Image/Image`1<T>> StackIO::readRandom(System.UInt32,System.String,System.String,SlimPipeline/Plan`2<Microsoft.FSharp.Core.Unit,Microsoft.FSharp.Core.Unit>)
 FNDA:1,SlimPipeline/Plan`2<Microsoft.FSharp.Core.Unit,Image/Image`1<T>> StackIO::readRandom(System.UInt32,System.String,System.String,SlimPipeline/Plan`2<Microsoft.FSharp.Core.Unit,Microsoft.FSharp.Core.Unit>)
-DA:164,1
-FN:178,StackIO/ChunkInfo StackIO::getChunkInfo(System.String,System.String)
-FNDA:1,StackIO/ChunkInfo StackIO::getChunkInfo(System.String,System.String)
-DA:179,1
-DA:180,1
-DA:181,1
-DA:182,1
-DA:183,1
-DA:184,8
-DA:185,19
-DA:186,12
-DA:187,4
-DA:188,8
-DA:189,1
-DA:190,1
-DA:191,1
-DA:193,1
-DA:194,1
 DA:195,1
-DA:196,1
-DA:197,1
-DA:198,1
-DA:199,1
-FN:201,System.String StackIO::getChunkFilename(System.String,System.String,System.Int32,System.Int32,System.Int32)
+FN:209,StackIO/ChunkInfo StackIO::getChunkInfo(System.String,System.String)
+FNDA:1,StackIO/ChunkInfo StackIO::getChunkInfo(System.String,System.String)
+DA:210,1
+DA:211,1
+DA:212,1
+DA:213,1
+DA:214,1
+DA:215,8
+DA:216,19
+DA:217,12
+DA:218,4
+DA:219,8
+DA:220,1
+DA:221,1
+DA:222,1
+DA:224,1
+DA:225,1
+DA:226,1
+DA:227,1
+DA:228,1
+DA:229,1
+DA:230,1
+FN:232,System.String StackIO::getChunkFilename(System.String,System.String,System.Int32,System.Int32,System.Int32)
 FNDA:19,System.String StackIO::getChunkFilename(System.String,System.String,System.Int32,System.Int32,System.Int32)
-DA:202,19
-FN:204,Image/Image`1<T> StackIO::_readChunk(System.String,System.String,System.Int32,System.Int32,System.Int32)
+DA:233,19
+FN:235,Image/Image`1<T> StackIO::_readChunk(System.String,System.String,System.Int32,System.Int32,System.Int32)
 FNDA:0,Image/Image`1<T> StackIO::_readChunk(System.String,System.String,System.Int32,System.Int32,System.Int32)
-DA:205,0
-DA:206,0
-DA:207,0
-FN:209,Image/Image`1<T> StackIO::_readChunkSlice(System.String,System.String,StackIO/ChunkInfo,System.UInt32,System.Int32)
-FNDA:0,Image/Image`1<T> StackIO::_readChunkSlice(System.String,System.String,StackIO/ChunkInfo,System.UInt32,System.Int32)
-DA:210,0
-DA:211,0
-DA:212,0
-DA:213,0
-DA:216,0
-DA:217,0
-DA:218,0
-DA:221,0
-DA:222,0
-DA:223,0
-DA:224,0
-DA:226,0
-DA:228,0
-DA:229,0
-DA:230,0
-DA:231,0
-DA:233,0
-DA:234,0
-DA:235,0
 DA:236,0
 DA:237,0
 DA:238,0
-DA:239,0
-DA:240,0
+FN:240,Image/Image`1<T> StackIO::_readChunkSlice(System.String,System.String,StackIO/ChunkInfo,System.UInt32,System.Int32)
+FNDA:0,Image/Image`1<T> StackIO::_readChunkSlice(System.String,System.String,StackIO/ChunkInfo,System.UInt32,System.Int32)
 DA:241,0
 DA:242,0
 DA:243,0
 DA:244,0
-BRDA:218,137,0,0
-BRDA:218,137,1,0
-BRDA:221,166,0,0
-BRDA:221,166,1,0
-BRDA:223,273,0,0
-BRDA:223,273,1,0
-BRDA:229,549,0,0
-BRDA:229,549,1,0
-BRDA:229,603,1,0
-BRDA:229,603,0,0
-BRDA:229,1195,1,0
-BRDA:230,652,0,0
-BRDA:230,652,1,0
-BRDA:230,718,1,0
-BRDA:230,718,0,0
-BRDA:230,1175,1,0
-BRDA:231,767,0,0
-BRDA:231,767,1,0
-BRDA:231,833,1,0
-BRDA:231,833,0,0
-BRDA:231,1155,1,0
-BRDA:233,869,0,0
-BRDA:233,869,1,0
-BRDA:234,890,0,0
-BRDA:234,890,1,0
-BRDA:231,1155,0,0
-BRDA:230,1175,0,0
-BRDA:229,1195,0,0
-FN:246,SlimPipeline/Plan`2<Microsoft.FSharp.Core.Unit,Microsoft.FSharp.Collections.FSharpList`1<Image/Image`1<T>>> StackIO::readChunksAsWindows(System.String,System.String,SlimPipeline/Plan`2<Microsoft.FSharp.Core.Unit,Microsoft.FSharp.Core.Unit>)
-FNDA:0,SlimPipeline/Plan`2<Microsoft.FSharp.Core.Unit,Microsoft.FSharp.Collections.FSharpList`1<Image/Image`1<T>>> StackIO::readChunksAsWindows(System.String,System.String,SlimPipeline/Plan`2<Microsoft.FSharp.Core.Unit,Microsoft.FSharp.Core.Unit>)
 DA:247,0
 DA:248,0
 DA:249,0
-DA:251,0
 DA:252,0
 DA:253,0
 DA:254,0
 DA:255,0
-DA:256,0
 DA:257,0
-DA:258,0
 DA:259,0
 DA:260,0
 DA:261,0
 DA:262,0
-DA:263,0
 DA:264,0
 DA:265,0
 DA:266,0
 DA:267,0
-DA:275,0
-DA:276,0
-DA:279,0
-DA:280,0
-DA:281,0
-DA:283,0
-DA:284,0
-DA:285,0
-DA:287,0
-DA:288,0
-DA:289,0
-DA:290,0
-FN:292,SlimPipeline/Plan`2<Microsoft.FSharp.Core.Unit,Image/Image`1<T>> StackIO::readChunks(System.String,System.String,SlimPipeline/Plan`2<Microsoft.FSharp.Core.Unit,Microsoft.FSharp.Core.Unit>)
-FNDA:0,SlimPipeline/Plan`2<Microsoft.FSharp.Core.Unit,Image/Image`1<T>> StackIO::readChunks(System.String,System.String,SlimPipeline/Plan`2<Microsoft.FSharp.Core.Unit,Microsoft.FSharp.Core.Unit>)
-DA:293,0
-FN:295,System.Boolean StackIO::icompare(System.String,System.String)
-FNDA:68,System.Boolean StackIO::icompare(System.String,System.String)
-DA:296,68
-FN:299,System.String StackIO::getUnusedDirectoryName(System.String)
-FNDA:0,System.String StackIO::getUnusedDirectoryName(System.String)
-DA:300,0
-DA:301,0
-DA:303,0
-BRDA:300,11,0,0
-BRDA:300,11,1,0
-FN:305,System.Void StackIO::deleteIfExists(System.String)
-FNDA:0,System.Void StackIO::deleteIfExists(System.String)
-DA:306,0
-DA:307,0
-BRDA:306,7,0,0
-BRDA:306,7,1,0
-FN:309,SlimPipeline/Stage`2<Image/Image`1<T>,Image/Image`1<T>> StackIO::write(System.String,System.String)
-FNDA:33,SlimPipeline/Stage`2<Image/Image`1<T>,Image/Image`1<T>> StackIO::write(System.String,System.String)
-DA:310,33
-DA:311,99
-DA:312,195
-DA:313,0
-DA:314,66
-DA:321,33
-DA:322,33
-DA:323,33
-DA:324,33
-DA:325,33
-DA:326,33
-DA:327,66
-DA:328,66
-DA:329,33
-DA:330,33
-BRDA:311,23,0,0
-BRDA:311,23,1,33
-BRDA:311,41,0,33
-BRDA:312,63,0,9
-BRDA:312,63,1,24
-BRDA:312,86,0,9
-BRDA:312,86,1,24
-BRDA:312,109,0,9
-BRDA:312,109,1,24
-BRDA:312,132,0,9
-BRDA:312,132,1,24
-BRDA:311,41,1,0
-BRDA:312,163,0,0
-BRDA:312,163,1,33
-FN:332,System.Void StackIO::_writeChunkSlice(System.Boolean,System.String,System.String,System.UInt32,System.UInt32,System.UInt32,System.Int32,Image/Image`1<T>)
-FNDA:10,System.Void StackIO::_writeChunkSlice(System.Boolean,System.String,System.String,System.UInt32,System.UInt32,System.UInt32,System.Int32,Image/Image`1<T>)
-DA:333,10
-DA:334,30
-DA:335,18
-DA:336,36
-DA:337,126
-DA:338,36
-DA:339,126
-DA:340,18
-DA:341,36
-DA:342,56
-DA:343,8
-DA:344,8
-DA:345,8
-DA:346,8
-BRDA:333,12,0,0
-BRDA:333,12,1,2
-BRDA:333,63,1,6
-BRDA:333,63,0,2
-BRDA:333,607,1,6
-BRDA:334,109,0,0
-BRDA:334,109,1,6
-BRDA:334,175,1,18
-BRDA:334,175,0,6
-BRDA:334,589,1,18
-BRDA:337,289,0,6
-BRDA:337,289,1,12
-BRDA:339,368,0,6
-BRDA:339,368,1,12
-BRDA:342,402,0,12
-BRDA:342,402,1,6
-BRDA:342,418,0,8
-BRDA:342,418,1,10
-BRDA:342,434,0,8
-BRDA:343,441,0,0
-BRDA:343,441,1,8
-BRDA:342,434,1,10
-BRDA:334,589,0,6
-BRDA:333,607,0,2
-FN:348,System.Void StackIO::_writeChunks(System.Boolean,System.String,System.String,System.UInt32,System.UInt32,System.UInt32,Image/Image`1<T>)
-FNDA:0,System.Void StackIO::_writeChunks(System.Boolean,System.String,System.String,System.UInt32,System.UInt32,System.UInt32,Image/Image`1<T>)
-DA:349,0
-FN:351,SlimPipeline/Stage`2<Image/Image`1<T>,Image/Image`1<T>> StackIO::writeInChunks(System.String,System.String,System.UInt32,System.UInt32,System.UInt32)
-FNDA:1,SlimPipeline/Stage`2<Image/Image`1<T>,Image/Image`1<T>> StackIO::writeInChunks(System.String,System.String,System.UInt32,System.UInt32,System.UInt32)
-DA:352,1
-DA:353,3
-DA:354,1
-DA:355,0
-DA:356,1
-DA:357,0
-DA:359,1
-DA:367,3
-DA:368,3
-DA:376,1
-DA:377,1
-DA:378,1
-DA:379,1
-DA:380,1
-DA:381,1
-DA:382,2
-DA:383,2
-DA:385,1
-DA:386,1
-DA:387,1
-BRDA:353,23,0,0
-BRDA:353,23,1,1
-BRDA:353,41,0,0
-BRDA:354,63,0,0
-BRDA:354,63,1,0
-BRDA:354,86,0,0
-BRDA:354,86,1,0
-BRDA:354,109,0,0
-BRDA:354,109,1,0
-BRDA:354,132,0,0
-BRDA:354,132,1,0
-BRDA:353,41,1,1
-BRDA:354,163,0,0
-BRDA:354,163,1,1
-BRDA:356,201,0,0
-BRDA:356,201,1,1
-FN:55,System.String StackIO/mapper@56::Invoke(System.Int32)
-FNDA:343,System.String StackIO/mapper@56::Invoke(System.Int32)
-DA:56,343
-DA:57,343
-BRDA:56,12,0,0
-BRDA:56,12,1,343
-FN:60,System.UInt64 StackIO/memoryNeed@61T::Invoke(a)
-FNDA:6,System.UInt64 StackIO/memoryNeed@61T::Invoke(a)
-DA:61,6
-FN:81,Image/Image`1<T> StackIO/mapper@82-4::Invoke(System.Boolean,System.String)
-FNDA:343,Image/Image`1<T> StackIO/mapper@82-4::Invoke(System.Boolean,System.String)
-DA:82,343
-DA:83,343
-DA:84,343
-DA:85,0
-DA:86,0
-DA:87,343
-BRDA:82,2,0,0
-BRDA:82,2,1,343
-BRDA:84,79,0,0
-BRDA:84,79,1,343
-FN:88,System.UInt64 StackIO/memoryNeed@89-1T::Invoke(a)
-FNDA:90,System.UInt64 StackIO/memoryNeed@89-1T::Invoke(a)
-DA:89,90
-FN:89,System.UInt64 StackIO/elementTransformation@90-1T::Invoke(a)
-FNDA:42,System.UInt64 StackIO/elementTransformation@90-1T::Invoke(a)
-DA:90,42
-FN:112,System.Tuple`2<Image/Image`1<T>,Image/Image`1<T>> StackIO/mapper@113-8::Invoke(System.Boolean,System.Tuple`2<System.String,System.String>)
-FNDA:0,System.Tuple`2<Image/Image`1<T>,Image/Image`1<T>> StackIO/mapper@113-8::Invoke(System.Boolean,System.Tuple`2<System.String,System.String>)
-DA:113,0
-DA:114,0
-DA:115,0
-DA:116,0
-DA:117,0
-DA:118,0
-DA:119,0
-DA:120,0
-BRDA:113,16,0,0
-BRDA:113,16,1,0
-BRDA:115,83,0,0
-BRDA:115,83,1,0
-BRDA:117,163,0,0
-BRDA:117,163,1,0
-FN:121,System.UInt64 StackIO/memoryNeed@122-2T::Invoke(a)
-FNDA:0,System.UInt64 StackIO/memoryNeed@122-2T::Invoke(a)
-DA:122,0
-FN:167,Microsoft.FSharp.Core.FSharpOption`1<System.Tuple`3<System.Int32,System.Int32,System.Int32>> StackIO/|IJK|_|@168::Invoke(System.String)
-FNDA:13,Microsoft.FSharp.Core.FSharpOption`1<System.Tuple`3<System.Int32,System.Int32,System.Int32>> StackIO/|IJK|_|@168::Invoke(System.String)
-DA:168,13
-DA:169,13
-DA:170,13
-DA:171,13
-DA:172,13
-DA:173,13
-DA:174,13
-DA:175,13
-DA:176,13
-DA:177,13
-DA:178,0
-BRDA:170,27,0,13
-BRDA:170,27,1,0
-FN:269,Microsoft.FSharp.Collections.FSharpList`1<Image/Image`1<T>> StackIO/mapper@270-15::Invoke(System.Int32)
-FNDA:0,Microsoft.FSharp.Collections.FSharpList`1<Image/Image`1<T>> StackIO/mapper@270-15::Invoke(System.Int32)
+DA:268,0
+DA:269,0
 DA:270,0
 DA:271,0
 DA:272,0
 DA:273,0
-FN:276,System.UInt64 StackIO/memoryNeed@277-3T::Invoke(a)
-FNDA:0,System.UInt64 StackIO/memoryNeed@277-3T::Invoke(a)
-DA:277,0
-FN:315,Image/Image`1<T> StackIO/mapper@316-16::Invoke(System.Boolean,System.Int64,Image/Image`1<T>)
-FNDA:296,Image/Image`1<T> StackIO/mapper@316-16::Invoke(System.Boolean,System.Int64,Image/Image`1<T>)
-DA:316,296
-DA:317,296
-DA:318,296
-DA:319,296
-BRDA:317,48,0,0
-BRDA:317,48,1,296
-FN:360,Image/Image`1<T> StackIO/f@361::Invoke(System.Boolean,System.Int64,Image/Image`1<T>)
-FNDA:2,Image/Image`1<T> StackIO/f@361::Invoke(System.Boolean,System.Int64,Image/Image`1<T>)
-DA:361,2
-DA:362,2
-DA:363,2
-FN:364,Microsoft.FSharp.Collections.FSharpList`1<Image/Image`1<T>> StackIO/mapper@365-20::Invoke(System.Boolean,System.Int64,SlimPipeline/Window`1<Image/Image`1<T>>)
-FNDA:2,Microsoft.FSharp.Collections.FSharpList`1<Image/Image`1<T>> StackIO/mapper@365-20::Invoke(System.Boolean,System.Int64,SlimPipeline/Window`1<Image/Image`1<T>>)
-DA:365,2
-FN:369,System.UInt64 StackIO/memoryNeed@370-5::Invoke(System.UInt64)
-FNDA:6,System.UInt64 StackIO/memoryNeed@370-5::Invoke(System.UInt64)
-DA:370,6
-DA:371,6
-DA:372,2
-DA:373,2
-DA:374,2
-BRDA:374,113,0,2
-BRDA:374,113,1,0
-FN:297,System.Void <StartupCode$StackProcessing-Core>.$StackIO::.cctor()
-FNDA:0,System.Void <StartupCode$StackProcessing-Core>.$StackIO::.cctor()
+DA:274,0
+DA:275,0
+BRDA:249,137,0,0
+BRDA:249,137,1,0
+BRDA:252,166,0,0
+BRDA:252,166,1,0
+BRDA:254,273,0,0
+BRDA:254,273,1,0
+BRDA:260,549,0,0
+BRDA:260,549,1,0
+BRDA:260,603,1,0
+BRDA:260,603,0,0
+BRDA:260,1195,1,0
+BRDA:261,652,0,0
+BRDA:261,652,1,0
+BRDA:261,718,1,0
+BRDA:261,718,0,0
+BRDA:261,1175,1,0
+BRDA:262,767,0,0
+BRDA:262,767,1,0
+BRDA:262,833,1,0
+BRDA:262,833,0,0
+BRDA:262,1155,1,0
+BRDA:264,869,0,0
+BRDA:264,869,1,0
+BRDA:265,890,0,0
+BRDA:265,890,1,0
+BRDA:262,1155,0,0
+BRDA:261,1175,0,0
+BRDA:260,1195,0,0
+FN:277,SlimPipeline/Plan`2<Microsoft.FSharp.Core.Unit,Microsoft.FSharp.Collections.FSharpList`1<Image/Image`1<T>>> StackIO::readChunksAsWindows(System.String,System.String,SlimPipeline/Plan`2<Microsoft.FSharp.Core.Unit,Microsoft.FSharp.Core.Unit>)
+FNDA:0,SlimPipeline/Plan`2<Microsoft.FSharp.Core.Unit,Microsoft.FSharp.Collections.FSharpList`1<Image/Image`1<T>>> StackIO::readChunksAsWindows(System.String,System.String,SlimPipeline/Plan`2<Microsoft.FSharp.Core.Unit,Microsoft.FSharp.Core.Unit>)
+DA:278,0
+DA:279,0
+DA:280,0
+DA:282,0
+DA:283,0
+DA:284,0
+DA:285,0
+DA:286,0
+DA:287,0
+DA:288,0
+DA:289,0
+DA:290,0
+DA:291,0
+DA:292,0
+DA:293,0
+DA:294,0
+DA:295,0
+DA:296,0
+DA:297,0
 DA:298,0
-LF:276
-LH:169
-BRF:126
-BRH:60
-FNF:45
-FNH:31
+DA:306,0
+DA:307,0
+DA:310,0
+DA:311,0
+DA:312,0
+DA:314,0
+DA:315,0
+DA:316,0
+DA:318,0
+DA:319,0
+DA:320,0
+DA:321,0
+FN:323,SlimPipeline/Plan`2<Microsoft.FSharp.Core.Unit,Image/Image`1<T>> StackIO::readChunks(System.String,System.String,SlimPipeline/Plan`2<Microsoft.FSharp.Core.Unit,Microsoft.FSharp.Core.Unit>)
+FNDA:0,SlimPipeline/Plan`2<Microsoft.FSharp.Core.Unit,Image/Image`1<T>> StackIO::readChunks(System.String,System.String,SlimPipeline/Plan`2<Microsoft.FSharp.Core.Unit,Microsoft.FSharp.Core.Unit>)
+DA:324,0
+FN:326,System.Boolean StackIO::icompare(System.String,System.String)
+FNDA:68,System.Boolean StackIO::icompare(System.String,System.String)
+DA:327,68
+FN:330,System.String StackIO::getUnusedDirectoryName(System.String)
+FNDA:0,System.String StackIO::getUnusedDirectoryName(System.String)
+DA:331,0
+DA:332,0
+DA:334,0
+BRDA:331,11,0,0
+BRDA:331,11,1,0
+FN:336,System.Void StackIO::deleteIfExists(System.String)
+FNDA:0,System.Void StackIO::deleteIfExists(System.String)
+DA:337,0
+DA:338,0
+BRDA:337,7,0,0
+BRDA:337,7,1,0
+FN:340,SlimPipeline/Stage`2<Image/Image`1<T>,Image/Image`1<T>> StackIO::write(System.String,System.String)
+FNDA:33,SlimPipeline/Stage`2<Image/Image`1<T>,Image/Image`1<T>> StackIO::write(System.String,System.String)
+DA:341,33
+DA:342,99
+DA:343,195
+DA:344,0
+DA:345,66
+DA:352,33
+DA:353,33
+DA:354,33
+DA:355,33
+DA:356,33
+DA:357,33
+DA:358,66
+DA:359,66
+DA:360,33
+DA:361,33
+BRDA:342,23,0,0
+BRDA:342,23,1,33
+BRDA:342,41,0,33
+BRDA:343,63,0,9
+BRDA:343,63,1,24
+BRDA:343,86,0,9
+BRDA:343,86,1,24
+BRDA:343,109,0,9
+BRDA:343,109,1,24
+BRDA:343,132,0,9
+BRDA:343,132,1,24
+BRDA:342,41,1,0
+BRDA:343,163,0,0
+BRDA:343,163,1,33
+FN:363,System.Void StackIO::_writeChunkSlice(System.Boolean,System.String,System.String,System.UInt32,System.UInt32,System.UInt32,System.Int32,Image/Image`1<T>)
+FNDA:10,System.Void StackIO::_writeChunkSlice(System.Boolean,System.String,System.String,System.UInt32,System.UInt32,System.UInt32,System.Int32,Image/Image`1<T>)
+DA:364,10
+DA:365,30
+DA:366,18
+DA:367,36
+DA:368,126
+DA:369,36
+DA:370,126
+DA:371,18
+DA:372,36
+DA:373,56
+DA:374,8
+DA:375,8
+DA:376,8
+DA:377,8
+BRDA:364,12,0,0
+BRDA:364,12,1,2
+BRDA:364,63,1,6
+BRDA:364,63,0,2
+BRDA:364,607,1,6
+BRDA:365,109,0,0
+BRDA:365,109,1,6
+BRDA:365,175,1,18
+BRDA:365,175,0,6
+BRDA:365,589,1,18
+BRDA:368,289,0,6
+BRDA:368,289,1,12
+BRDA:370,368,0,6
+BRDA:370,368,1,12
+BRDA:373,402,0,12
+BRDA:373,402,1,6
+BRDA:373,418,0,8
+BRDA:373,418,1,10
+BRDA:373,434,0,8
+BRDA:374,441,0,0
+BRDA:374,441,1,8
+BRDA:373,434,1,10
+BRDA:365,589,0,6
+BRDA:364,607,0,2
+FN:379,System.Void StackIO::_writeChunks(System.Boolean,System.String,System.String,System.UInt32,System.UInt32,System.UInt32,Image/Image`1<T>)
+FNDA:0,System.Void StackIO::_writeChunks(System.Boolean,System.String,System.String,System.UInt32,System.UInt32,System.UInt32,Image/Image`1<T>)
+DA:380,0
+FN:382,SlimPipeline/Stage`2<Image/Image`1<T>,Image/Image`1<T>> StackIO::writeInChunks(System.String,System.String,System.UInt32,System.UInt32,System.UInt32)
+FNDA:1,SlimPipeline/Stage`2<Image/Image`1<T>,Image/Image`1<T>> StackIO::writeInChunks(System.String,System.String,System.UInt32,System.UInt32,System.UInt32)
+DA:383,1
+DA:384,3
+DA:385,1
+DA:386,0
+DA:387,1
+DA:388,0
+DA:390,1
+DA:398,3
+DA:399,3
+DA:407,1
+DA:408,1
+DA:409,1
+DA:410,1
+DA:411,1
+DA:412,1
+DA:413,2
+DA:414,2
+DA:416,1
+DA:417,1
+DA:418,1
+BRDA:384,23,0,0
+BRDA:384,23,1,1
+BRDA:384,41,0,0
+BRDA:385,63,0,0
+BRDA:385,63,1,0
+BRDA:385,86,0,0
+BRDA:385,86,1,0
+BRDA:385,109,0,0
+BRDA:385,109,1,0
+BRDA:385,132,0,0
+BRDA:385,132,1,0
+BRDA:384,41,1,1
+BRDA:385,163,0,0
+BRDA:385,163,1,1
+BRDA:387,201,0,0
+BRDA:387,201,1,1
+FN:86,System.String StackIO/mapper@87::Invoke(System.Int32)
+FNDA:343,System.String StackIO/mapper@87::Invoke(System.Int32)
+DA:87,343
+DA:88,343
+BRDA:87,12,0,0
+BRDA:87,12,1,343
+FN:91,System.UInt64 StackIO/memoryNeed@92T::Invoke(a)
+FNDA:6,System.UInt64 StackIO/memoryNeed@92T::Invoke(a)
+DA:92,6
+FN:112,Image/Image`1<T> StackIO/mapper@113-4::Invoke(System.Boolean,System.String)
+FNDA:343,Image/Image`1<T> StackIO/mapper@113-4::Invoke(System.Boolean,System.String)
+DA:113,343
+DA:114,343
+DA:115,343
+DA:116,0
+DA:117,0
+DA:118,343
+BRDA:113,2,0,0
+BRDA:113,2,1,343
+BRDA:115,79,0,0
+BRDA:115,79,1,343
+FN:119,System.UInt64 StackIO/memoryNeed@120-1T::Invoke(a)
+FNDA:90,System.UInt64 StackIO/memoryNeed@120-1T::Invoke(a)
+DA:120,90
+FN:120,System.UInt64 StackIO/elementTransformation@121-1T::Invoke(a)
+FNDA:42,System.UInt64 StackIO/elementTransformation@121-1T::Invoke(a)
+DA:121,42
+FN:143,System.Tuple`2<Image/Image`1<T>,Image/Image`1<T>> StackIO/mapper@144-8::Invoke(System.Boolean,System.Tuple`2<System.String,System.String>)
+FNDA:0,System.Tuple`2<Image/Image`1<T>,Image/Image`1<T>> StackIO/mapper@144-8::Invoke(System.Boolean,System.Tuple`2<System.String,System.String>)
+DA:144,0
+DA:145,0
+DA:146,0
+DA:147,0
+DA:148,0
+DA:149,0
+DA:150,0
+DA:151,0
+BRDA:144,16,0,0
+BRDA:144,16,1,0
+BRDA:146,83,0,0
+BRDA:146,83,1,0
+BRDA:148,163,0,0
+BRDA:148,163,1,0
+FN:152,System.UInt64 StackIO/memoryNeed@153-2T::Invoke(a)
+FNDA:0,System.UInt64 StackIO/memoryNeed@153-2T::Invoke(a)
+DA:153,0
+FN:198,Microsoft.FSharp.Core.FSharpOption`1<System.Tuple`3<System.Int32,System.Int32,System.Int32>> StackIO/|IJK|_|@199::Invoke(System.String)
+FNDA:13,Microsoft.FSharp.Core.FSharpOption`1<System.Tuple`3<System.Int32,System.Int32,System.Int32>> StackIO/|IJK|_|@199::Invoke(System.String)
+DA:199,13
+DA:200,13
+DA:201,13
+DA:202,13
+DA:203,13
+DA:204,13
+DA:205,13
+DA:206,13
+DA:207,13
+DA:208,13
+DA:209,0
+BRDA:201,27,0,13
+BRDA:201,27,1,0
+FN:300,Microsoft.FSharp.Collections.FSharpList`1<Image/Image`1<T>> StackIO/mapper@301-15::Invoke(System.Int32)
+FNDA:0,Microsoft.FSharp.Collections.FSharpList`1<Image/Image`1<T>> StackIO/mapper@301-15::Invoke(System.Int32)
+DA:301,0
+DA:302,0
+DA:303,0
+DA:304,0
+FN:307,System.UInt64 StackIO/memoryNeed@308-3T::Invoke(a)
+FNDA:0,System.UInt64 StackIO/memoryNeed@308-3T::Invoke(a)
+DA:308,0
+FN:346,Image/Image`1<T> StackIO/mapper@347-16::Invoke(System.Boolean,System.Int64,Image/Image`1<T>)
+FNDA:296,Image/Image`1<T> StackIO/mapper@347-16::Invoke(System.Boolean,System.Int64,Image/Image`1<T>)
+DA:347,296
+DA:348,296
+DA:349,296
+DA:350,296
+BRDA:348,48,0,0
+BRDA:348,48,1,296
+FN:391,Image/Image`1<T> StackIO/f@392::Invoke(System.Boolean,System.Int64,Image/Image`1<T>)
+FNDA:2,Image/Image`1<T> StackIO/f@392::Invoke(System.Boolean,System.Int64,Image/Image`1<T>)
+DA:392,2
+DA:393,2
+DA:394,2
+FN:395,Microsoft.FSharp.Collections.FSharpList`1<Image/Image`1<T>> StackIO/mapper@396-20::Invoke(System.Boolean,System.Int64,SlimPipeline/Window`1<Image/Image`1<T>>)
+FNDA:2,Microsoft.FSharp.Collections.FSharpList`1<Image/Image`1<T>> StackIO/mapper@396-20::Invoke(System.Boolean,System.Int64,SlimPipeline/Window`1<Image/Image`1<T>>)
+DA:396,2
+FN:400,System.UInt64 StackIO/memoryNeed@401-5::Invoke(System.UInt64)
+FNDA:6,System.UInt64 StackIO/memoryNeed@401-5::Invoke(System.UInt64)
+DA:401,6
+DA:402,6
+DA:403,2
+DA:404,2
+DA:405,2
+BRDA:405,113,0,2
+BRDA:405,113,1,0
+FN:328,System.Void <StartupCode$StackProcessing-Core>.$StackIO::.cctor()
+FNDA:0,System.Void <StartupCode$StackProcessing-Core>.$StackIO::.cctor()
+DA:329,0
+LF:294
+LH:184
+BRF:132
+BRH:63
+FNF:49
+FNH:34
 end_of_record
 SF:/Users/jrh630/repositories/stackProcessing/src/StackProcessing.Core/StackProcessingCost.fs
 FN:31,System.UInt64 StackProcessingCost::inputVoxels(SlimPipeline/SingleOrPair)
@@ -6261,8 +6308,8 @@ DA:243,50
 DA:244,50
 DA:245,25
 DA:246,25
-BRDA:242,26,0,7
-BRDA:242,26,1,43
+BRDA:242,26,0,8
+BRDA:242,26,1,42
 BRDA:244,53,0,25
 BRDA:244,53,1,25
 FN:264,Microsoft.FSharp.Control.FSharpAsync`1<Microsoft.FSharp.Core.Unit> SlimPipeline/Pipe/loop@265-4::Invoke(Microsoft.FSharp.Core.Unit)
