@@ -91,18 +91,34 @@ let private printVolRssSummary enabled startKb finalKb stackDelta releaseInputsD
         let totalDelta = int64 finalKb - int64 startKb
         printfn $"[rss:vol-summary] stack %+d{stackDelta} KB, releaseInputs %+d{releaseInputsDelta} KB, volumeFunction %+d{volumeFunctionDelta} KB, disposeStack %+d{disposeStackDelta} KB, unstack %+d{unstackDelta} KB, disposeVolume %+d{disposeVolumeDelta} KB, total %+d{totalDelta} KB"
 
-let volFctToLstFctReleaseAfterDebug (debug: bool) (f: Image<'S> -> Image<'T>) (pad: uint) (stride: uint) (images: Image<'S> list) : Image<'T> list =
-    if images.Length <= int (2u * pad) then
-        images |> List.iter (fun image -> image.decRefCount())
+let private releaseAllImages (images: Image<'S> list) =
+    images |> List.iter (fun image -> image.decRefCount())
+
+let private releaseConsumedImages (window: Window<Image<'S>>) =
+    let _, emitCount = window.EmitRange
+    window.Items
+    |> List.take (min (int emitCount) window.Items.Length)
+    |> List.iter (fun image -> image.decRefCount())
+
+let volFctToWindowFctReleaseAfterDebug
+        (debug: bool)
+        (f: Image<'S> -> Image<'T>)
+        (requiredInputDepth: uint)
+        (outputStart: uint)
+        (outputCount: uint)
+        (window: Window<Image<'S>>)
+        : Image<'T> list =
+    if uint window.Items.Length < requiredInputDepth then
+        releaseAllImages window.Items
         []
     else
         let rssDebug = debug && DebugLevel.rssEnabled()
         let startKb = if rssDebug then rssKb() else 0UL
         let mutable previousKb, _ = sampleVolRssProbe rssDebug "start" startKb startKb
-        let stack = ImageFunctions.stack images 
+        let stack = ImageFunctions.stack window.Items
         let currentKb, stackDelta = sampleVolRssProbe rssDebug "after stack" startKb previousKb
         previousKb <- currentKb
-        images |> List.take (min (int stride) images.Length) |> List.iter (fun I -> I.decRefCount())
+        releaseConsumedImages window
         let currentKb, releaseInputsDelta = sampleVolRssProbe rssDebug "after release input slices" startKb previousKb
         previousKb <- currentKb
         let vol = f stack
@@ -111,7 +127,13 @@ let volFctToLstFctReleaseAfterDebug (debug: bool) (f: Image<'S> -> Image<'T>) (p
         stack.decRefCount ()
         let currentKb, disposeStackDelta = sampleVolRssProbe rssDebug "after dispose stack" startKb previousKb
         previousKb <- currentKb
-        let result = ImageFunctions.unstackSkipNTakeM pad stride vol
+        let depth = vol.GetDepth()
+        let result =
+            if outputStart >= depth || outputCount = 0u then
+                []
+            else
+                let count = min outputCount (depth - outputStart)
+                ImageFunctions.unstackSkipNTakeM outputStart count vol
         let currentKb, unstackDelta = sampleVolRssProbe rssDebug "after unstack" startKb previousKb
         previousKb <- currentKb
         vol.decRefCount ()
@@ -119,6 +141,15 @@ let volFctToLstFctReleaseAfterDebug (debug: bool) (f: Image<'S> -> Image<'T>) (p
         previousKb <- currentKb
         printVolRssSummary rssDebug startKb previousKb stackDelta releaseInputsDelta volumeFunctionDelta disposeStackDelta unstackDelta disposeVolumeDelta
         result
+
+let volFctToWindowFctReleaseAfter (f: Image<'S> -> Image<'T>) requiredInputDepth outputStart outputCount window =
+    volFctToWindowFctReleaseAfterDebug false f requiredInputDepth outputStart outputCount window
+
+let volFctToLstFctReleaseAfterDebug (debug: bool) (f: Image<'S> -> Image<'T>) (pad: uint) (stride: uint) (images: Image<'S> list) : Image<'T> list =
+    let requiredInputDepth =
+        if pad = 0u then 1u else 2u * pad + 1u
+    let window = Window.create pad stride images
+    volFctToWindowFctReleaseAfterDebug debug f requiredInputDepth pad stride window
 
 let volFctToLstFctReleaseAfter (f: Image<'S>->Image<'T>) pad stride images =
     volFctToLstFctReleaseAfterDebug false f pad stride images
@@ -190,6 +221,8 @@ let zeroMaker (index: int) (ex: Image<'S>) : Image<'S> = new Image<'S>(ex.GetSiz
 let window windowSize pad stride = Stage.window "window" windowSize pad zeroMaker stride
 let flatten () = Stage.flattenWindow "flatten"
 let flattenList () = Stage.flatten "flatten"
+let mapWindow (name: string) (f: bool -> Window<'T> -> 'S) memoryNeed lengthTransformation =
+    Stage.map name (fun debug (window: Window<'T>) -> f debug window) memoryNeed lengthTransformation
 let mapWindowItems (name: string) (f: bool -> 'T list -> 'S) memoryNeed lengthTransformation =
     Stage.map name (fun debug (window: Window<'T>) -> f debug window.Items) memoryNeed lengthTransformation
 let map f = Stage.map "map" f id id

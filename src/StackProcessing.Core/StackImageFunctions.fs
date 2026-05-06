@@ -247,7 +247,7 @@ let discreteGaussianOp (name: string) (sigma: float) (outputRegionMode: ImageFun
     // windowSize = 1, 6, 15, or 26, pad = 2, length = 22, => n = 21, 10, 1, or 0
     let f debug = 
         if debug then printfn $"discreteGaussianOp: sigma {sigma}, ksz {ksz}, win {win}, stride {stride}, pad {pad}"
-        volFctToLstFctReleaseAfterDebug debug (ImageFunctions.discreteGaussian 3u sigma (ksz |> Some) outputRegionMode boundaryCondition) pad stride
+        volFctToWindowFctReleaseAfterDebug debug (ImageFunctions.discreteGaussian 3u sigma (ksz |> Some) outputRegionMode boundaryCondition) ksz 0u stride
     let memoryNeed nPixels = (2UL*nPixels*(uint64 win) + (uint64 ksz))*getBytesPerComponent<float>
     let lengthTransformation nElems = 
         match outputRegionMode with
@@ -258,7 +258,7 @@ let discreteGaussianOp (name: string) (sigma: float) (outputRegionMode: ImageFun
         let kernelVoxels = uint64 ksz * uint64 ksz * uint64 ksz
         float (inputValue input * uint64 win * kernelVoxels)
     let stg =
-        mapWindowItems name f memoryNeed lengthTransformation // wrong for Valid, where the sequences becomes shorter
+        mapWindow name f memoryNeed lengthTransformation // wrong for Valid, where the sequences becomes shorter
         |> withCostModel (nativeImageStageCost $"discreteGaussian.Float64" memoryModel workUnits)
     (window win pad stride) --> stg --> flattenList ()
 
@@ -307,7 +307,7 @@ let convolveOp (name: string) (kernel: Image<'T>) (outputRegionMode: ImageFuncti
         match outputRegionMode with
             | Some Valid -> 0u
             | _ -> ksz/2u //floor
-    let f debug =  volFctToLstFctReleaseAfterDebug debug (fun image3D -> ImageFunctions.convolve outputRegionMode bc image3D kernel) pad stride
+    let f debug =  volFctToWindowFctReleaseAfterDebug debug (fun image3D -> ImageFunctions.convolve outputRegionMode bc image3D kernel) ksz 0u stride
     let memoryNeed nPixels = (2UL*nPixels*(uint64 win) + (uint64 ksz))*getBytesPerComponent<'T>
     let lengthTransformation nElems = nElems - 2UL*(uint64 pad) 
     let memoryModel = StageMemoryModel.fromSinglePeak Map memoryNeed
@@ -315,7 +315,7 @@ let convolveOp (name: string) (kernel: Image<'T>) (outputRegionMode: ImageFuncti
         let kernelVoxels = uint64 (kernel.GetWidth()) * uint64 (kernel.GetHeight()) * uint64 (kernel.GetDepth())
         float (inputValue input * uint64 win * kernelVoxels)
     let stg =
-        mapWindowItems name f memoryNeed lengthTransformation
+        mapWindow name f memoryNeed lengthTransformation
         |> withCostModel (nativeImageStageCost $"convolve.{typeof<'T>.Name}" memoryModel workUnits)
     (window win pad stride) --> stg --> flattenList ()
 
@@ -333,8 +333,8 @@ let private makeMorphOp (name: string) (radius: uint) (winSz: uint option) (core
     let win = Option.defaultValue ksz winSz |> min ksz
     let stride = win - ksz + 1u
 
-    let f debug = volFctToLstFctReleaseAfterDebug debug (core radius) pad stride
-    let stg = mapWindowItems name f id id
+    let f debug = volFctToWindowFctReleaseAfterDebug debug (core radius) ksz pad stride
+    let stg = mapWindow name f id id
     (window win pad stride) --> stg --> flattenList ()
 
 let erode radius = makeMorphOp "binaryErode"  radius None ImageFunctions.binaryErode
@@ -345,8 +345,8 @@ let closing radius = makeMorphOp "binaryErode"  radius None ImageFunctions.binar
 /// Full stack operators
 let binaryFillHoles (winSz: uint)= 
     let pad, stride = 0u, winSz
-    let f debug = volFctToLstFctReleaseAfterDebug debug (ImageFunctions.binaryFillHoles) pad stride
-    let stg = mapWindowItems "fillHoles" f id id
+    let f debug = volFctToWindowFctReleaseAfterDebug debug (ImageFunctions.binaryFillHoles) 1u pad stride
+    let stg = mapWindow "fillHoles" f id id
     (window winSz pad stride) --> stg --> flattenList ()
 
 let connectedComponents (winSz: uint) =
@@ -381,30 +381,30 @@ let connectedComponents (winSz: uint) =
 
 let relabelComponents a (winSz: uint) = 
     let pad, stride = 0u, winSz
-    let f debug = volFctToLstFctReleaseAfterDebug debug (ImageFunctions.relabelComponents a) pad stride
-    let stg = mapWindowItems "relabelComponents" f id id
+    let f debug = volFctToWindowFctReleaseAfterDebug debug (ImageFunctions.relabelComponents a) 1u pad stride
+    let stg = mapWindow "relabelComponents" f id id
     (window winSz pad stride) --> stg --> flattenList ()
 
 let watershed a (winSz: uint) =
     let pad, stride = 0u, winSz
-    let f debug = volFctToLstFctReleaseAfterDebug debug (ImageFunctions.watershed a) pad stride
-    let stg = mapWindowItems "watershed" f id id
+    let f debug = volFctToWindowFctReleaseAfterDebug debug (ImageFunctions.watershed a) 1u pad stride
+    let stg = mapWindow "watershed" f id id
     (window winSz pad stride) --> stg --> flattenList ()
 let signedDistanceMap (winSz: uint) =
     let pad, stride = 0u, winSz
-    let f debug = volFctToLstFctReleaseAfterDebug debug (ImageFunctions.signedDistanceMap 0uy 1uy) pad stride
-    let stg = mapWindowItems "signedDistanceMap" f id id
+    let f debug = volFctToWindowFctReleaseAfterDebug debug (ImageFunctions.signedDistanceMap 0uy 1uy) 1u pad stride
+    let stg = mapWindow "signedDistanceMap" f id id
     (window winSz pad stride) --> stg --> flattenList ()
 let otsuThreshold (winSz: uint) =
     let pad, stride = 0u, winSz
-    let f debug = volFctToLstFctReleaseAfterDebug debug (ImageFunctions.otsuThreshold) pad stride
-    let stg = mapWindowItems "otsuThreshold" f id id
+    let f debug = volFctToWindowFctReleaseAfterDebug debug (ImageFunctions.otsuThreshold) 1u pad stride
+    let stg = mapWindow "otsuThreshold" f id id
     (window winSz pad stride) --> stg --> flattenList ()
 
 let momentsThreshold (winSz: uint) =
     let pad, stride = 0u, winSz
-    let f debug = volFctToLstFctReleaseAfterDebug debug (ImageFunctions.momentsThreshold) pad stride
-    let stg = mapWindowItems "momentsThreshold" f id id
+    let f debug = volFctToWindowFctReleaseAfterDebug debug (ImageFunctions.momentsThreshold) 1u pad stride
+    let stg = mapWindow "momentsThreshold" f id id
     (window winSz pad stride) --> stg --> flattenList ()
 
 let threshold a b = liftUnaryReleaseAfter "threshold" (ImageFunctions.threshold a b) id id

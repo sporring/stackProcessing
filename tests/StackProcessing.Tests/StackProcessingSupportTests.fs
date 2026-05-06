@@ -99,6 +99,18 @@ let stackProcessingSupportSuite =
 
             Expect.equal actual [ 2, 2; 3, 4; 4, 6 ] ">=>> should produce paired branch outputs."
 
+        testCase ">=>> does not deadlock when one branch waits for a window" <| fun _ ->
+            let delayed =
+                Stage.window "delayed window" 3u 1u (fun _ _ -> 0) 1u
+                --> Stage.flattenWindow "delayed flatten"
+
+            let actual =
+                scalarPlan [ 1; 2; 3 ]
+                >=>> (scalarStage "fast" ((+) 10), delayed)
+                |> drainList
+
+            Expect.equal actual [ 11, 1; 12, 2; 13, 3 ] ">=>> should queue early requests from the fast branch."
+
         testCase ">>=> maps synchronized pairs to a single stream" <| fun _ ->
             let actual =
                 scalarPlan [ 1; 2; 3 ]
@@ -116,6 +128,19 @@ let stackProcessingSupportSuite =
                 |> drainList
 
             Expect.equal actual [ 2, 15; 3, 25; 4, 35 ] ">>=>> should run both tuple branches and zip their outputs."
+
+        testCase ">>=>> does not deadlock when one tuple branch waits for a window" <| fun _ ->
+            let delayed =
+                Stage.window "delayed pair window" 3u 1u (fun _ _ -> 0) 1u
+                --> Stage.flattenWindow "delayed pair flatten"
+
+            let actual =
+                scalarPlan [ 1; 2; 3 ]
+                >=>> (scalarStage "left" id, scalarStage "right" ((*) 10))
+                >>=>> (scalarStage "fast pair branch" ((+) 100), delayed)
+                |> drainList
+
+            Expect.equal actual [ 101, 10; 102, 20; 103, 30 ] ">>=>> should queue early requests from either tuple branch."
 
         testCase "command line source parses non-debug arguments" <| fun _ ->
             let plan, rest = commandLineSource 1024UL [| "alpha"; "beta" |]

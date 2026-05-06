@@ -77,8 +77,6 @@ val ignorePairs: (unit -> StackCore.Stage<('a * unit),unit>)
 val zeroMaker:
   (int -> StackCore.Image<'a> -> StackCore.Image<'a>) when 'a: equality
 
-val sinkOp: (SlimPipeline.Plan<unit,unit> -> unit)
-
 val sink: (SlimPipeline.Plan<unit,'a> -> unit)
 
 val sinkList: (SlimPipeline.Plan<unit,unit> list -> unit)
@@ -377,14 +375,6 @@ val computeStats:
      SlimPipeline.Stage<StackCore.Image<'a>,StackImageFunctions.ImageStats>)
     when 'a: equality
 
-val discreteGaussianOp:
-  (string ->
-     float ->
-     ImageFunctions.OutputRegionMode option ->
-     ImageFunctions.BoundaryCondition option ->
-     uint option ->
-     StackCore.Stage<StackCore.Image<float>,StackCore.Image<float>>)
-
 val discreteGaussian:
   (float ->
      ImageFunctions.OutputRegionMode option ->
@@ -397,14 +387,6 @@ val convGauss:
 
 val createPadding:
   ('a -> uint -> StackCore.Stage<unit,StackCore.Image<'b>>) when 'b: equality
-
-val convolveOp:
-  (string ->
-     StackCore.Image<'a> ->
-     ImageFunctions.OutputRegionMode option ->
-     ImageFunctions.BoundaryCondition option ->
-     uint option -> StackCore.Stage<StackCore.Image<'a>,StackCore.Image<'a>>)
-    when 'a: equality
 
 val convolve:
   (StackCore.Image<'a> ->

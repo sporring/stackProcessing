@@ -58,6 +58,10 @@ type Pipe<'S,'T> =
       Profile: Profile
     }
 module private Pipe =
+    type TeeSide =
+        | Left
+        | Right
+    type TeeMsg<'T> = | Next of TeeSide * AsyncReplyChannel<'T option>
     val create:
       name: string ->
         apply: (bool ->
@@ -84,9 +88,6 @@ module private Pipe =
     val prepend: name: string -> pre: Pipe<unit,'S> -> Pipe<'S,'S>
     /// Append a sequence produced by a Pipe<unit,'S> to the input stream.
     val append: name: string -> post: Pipe<unit,'S> -> Pipe<'S,'S>
-    type TeeMsg<'T> =
-        | Left of AsyncReplyChannel<'T option>
-        | Right of AsyncReplyChannel<'T option>
     val tee: debug: bool -> p: Pipe<'In,'T> -> Pipe<'In,'T> * Pipe<'In,'T>
     val id: name: string -> Pipe<'T,'T>
     val map2Sync:
