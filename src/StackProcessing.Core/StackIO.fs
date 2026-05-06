@@ -59,12 +59,12 @@ let getFilenames (inputDir: string) (suffix: string) (filter: string[]->string[]
     let transition = ProfileTransition.create Unit Streaming
     let memPeak = 256UL // surrugate string length
     let memoryNeed = fun _ -> memPeak
-    let lengthTransformation = fun _ -> depth
+    let elementTransformation = id
     let memoryModel = StageMemoryModel.fromSinglePeak Source memoryNeed
     let workModel =
         StageWorkModel.cpu Source (Some "getFilenames") (fun _ -> float depth)
     let stage =
-        Stage.init $"{name}" (uint depth) mapper transition memoryNeed lengthTransformation
+        Stage.init $"{name}" (uint depth) mapper transition memoryNeed elementTransformation
         |> withCostModel (StageCostModel.create memoryModel workModel)
         |> Some
 
@@ -87,7 +87,7 @@ let readFilesWithShape<'T when 'T: equality> (debug: bool) (width: uint) (height
         image
 
     let memoryNeed = fun _ -> Image<'T>.memoryEstimate width height
-    let lengthTransformation _ = uint64 width * uint64 height
+    let elementTransformation _ = uint64 width * uint64 height
 
     let memoryModel = StageMemoryModel.fromSinglePeak Map memoryNeed
     let workModel =
@@ -97,7 +97,7 @@ let readFilesWithShape<'T when 'T: equality> (debug: bool) (width: uint) (height
             $"readFiles.{typeof<'T>.Name}"
             (fun _ -> Image<'T>.memoryEstimate width height)
             (fun _ -> 1UL)
-    Stage.map name mapper memoryNeed lengthTransformation
+    Stage.map name mapper memoryNeed elementTransformation
     |> withCostModel (StageCostModel.create memoryModel workModel)
 
 let readFiles<'T when 'T: equality> (debug: bool) : Stage<string, Image<'T>> =
@@ -120,7 +120,7 @@ let readFilePairs<'T when 'T: equality> (debug: bool) : Stage<string*string, Ima
         image1, image2
 
     let memoryNeed = fun _ -> 2UL*Image<'T>.memoryEstimate width height
-    let lengthTransformation = id
+    let elementTransformation = id
 
     let memoryModel = StageMemoryModel.fromSinglePeak Map memoryNeed
     let workModel =
@@ -130,7 +130,7 @@ let readFilePairs<'T when 'T: equality> (debug: bool) : Stage<string*string, Ima
             $"readFilePairs.{typeof<'T>.Name}"
             (fun _ -> 2UL * Image<'T>.memoryEstimate width height)
             (fun _ -> 2UL)
-    Stage.map name mapper memoryNeed lengthTransformation
+    Stage.map name mapper memoryNeed elementTransformation
     |> withCostModel (StageCostModel.create memoryModel workModel)
 
 let readFiltered<'T when 'T: equality> (inputDir: string) (suffix: string) (filter: string[]->string[]) (pl: Plan<unit, unit>) : Plan<unit, Image<'T>> =
@@ -275,12 +275,12 @@ let readChunksAsWindows<'T when 'T: equality> (inputDir: string) (suffix: string
     let transition = ProfileTransition.create Unit Streaming
     let memPeak = 256UL // surrugate string length
     let memoryNeed = fun _ -> memPeak
-    let lengthTransformation = fun _ -> depth
+    let elementTransformation = id
     let memoryModel = StageMemoryModel.fromSinglePeak Source memoryNeed
     let workModel =
         StageWorkModel.ioRead Source (Some $"readChunks.{typeof<'T>.Name}") (fun _ -> elementBytes) (fun _ -> 1UL)
     let stage =
-        Stage.init $"{name}" (uint depth) mapper transition memoryNeed lengthTransformation
+        Stage.init $"{name}" (uint depth) mapper transition memoryNeed elementTransformation
         |> withCostModel (StageCostModel.create memoryModel workModel)
         |> Some
 
@@ -372,7 +372,7 @@ let writeInChunks<'T when 'T: equality> (outputDir: string) (suffix: string) (wi
         let wsz = uint64 winSz
         let str = uint64 stride
         max (nPixels*(wsz*(2UL*bt8+bt64)-str*bt8)) (nPixels*(wsz*(bt8+bt64)+str*(bt64-bt8)))
-    let lengthTransformation = id
+    let elementTransformation = id
     let memoryModel = StageMemoryModel.fromSinglePeak Iter memoryNeed
     let workModel =
         imageIoCost<'T>
@@ -382,6 +382,6 @@ let writeInChunks<'T when 'T: equality> (outputDir: string) (suffix: string) (wi
             (fun input -> inputValue input |> imageBytes<'T>)
             (fun _ -> 1UL)
     let stg =
-        Stage.mapi "writeInChunks" mapper memoryNeed lengthTransformation
+        Stage.mapi "writeInChunks" mapper memoryNeed elementTransformation
         |> withCostModel (StageCostModel.create memoryModel workModel)
     (window winSz pad stride) --> stg --> flattenList ()

@@ -111,6 +111,14 @@ let stackProcessingSupportSuite =
 
             Expect.equal actual [ 11, 1; 12, 2; 13, 3 ] ">=>> should queue early requests from the fast branch."
 
+        testCase ">=>> rejects branches with different slice domains" <| fun _ ->
+            Expect.throws
+                (fun () ->
+                    scalarPlan [ 1; 2; 3 ]
+                    >=>> (scalarStage "preserve" id, Stage.skip "skip first" 1u)
+                    |> ignore)
+                ">=>> should reject synchronization when one branch skips slices."
+
         testCase ">>=> maps synchronized pairs to a single stream" <| fun _ ->
             let actual =
                 scalarPlan [ 1; 2; 3 ]
@@ -141,6 +149,15 @@ let stackProcessingSupportSuite =
                 |> drainList
 
             Expect.equal actual [ 101, 10; 102, 20; 103, 30 ] ">>=>> should queue early requests from either tuple branch."
+
+        testCase ">>=>> rejects tuple branches with different slice domains" <| fun _ ->
+            Expect.throws
+                (fun () ->
+                    scalarPlan [ 1; 2; 3 ]
+                    >=>> (scalarStage "left" id, scalarStage "right" ((*) 10))
+                    >>=>> (Stage.skip "skip left" 1u, scalarStage "right preserve" id)
+                    |> ignore)
+                ">>=>> should reject synchronization when one tuple branch skips slices."
 
         testCase "command line source parses non-debug arguments" <| fun _ ->
             let plan, rest = commandLineSource 1024UL [| "alpha"; "beta" |]

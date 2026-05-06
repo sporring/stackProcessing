@@ -234,10 +234,10 @@ let zeroMaker (index: int) (ex: Image<'S>) : Image<'S> = new Image<'S>(ex.GetSiz
 let window windowSize pad stride = Stage.window "window" windowSize pad zeroMaker stride
 let flatten () = Stage.flattenWindow "flatten"
 let flattenList () = Stage.flatten "flatten"
-let mapWindow (name: string) (f: bool -> Window<'T> -> 'S) memoryNeed lengthTransformation =
-    Stage.map name (fun debug (window: Window<'T>) -> f debug window) memoryNeed lengthTransformation
-let mapWindowItems (name: string) (f: bool -> 'T list -> 'S) memoryNeed lengthTransformation =
-    Stage.map name (fun debug (window: Window<'T>) -> f debug window.Items) memoryNeed lengthTransformation
+let mapWindow (name: string) (f: bool -> Window<'T> -> 'S) memoryNeed elementTransformation =
+    Stage.map name (fun debug (window: Window<'T>) -> f debug window) memoryNeed elementTransformation
+let mapWindowItems (name: string) (f: bool -> 'T list -> 'S) memoryNeed elementTransformation =
+    Stage.map name (fun debug (window: Window<'T>) -> f debug window.Items) memoryNeed elementTransformation
 let map f = Stage.map "map" f id id
 let sinkOp (pl: Plan<unit,unit>) : unit = 
     Plan.sink pl

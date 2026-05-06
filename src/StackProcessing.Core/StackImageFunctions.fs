@@ -6,8 +6,8 @@ open StackCore
 open StackIO
 
 let liftUnary name  = Stage.liftReleaseUnary name ignore
-let liftUnaryReleaseAfter (name: string) (f: Image<'S> -> Image<'T>) (memoryNeed: MemoryNeed) (lengthTransformation: LengthTransformation) = 
-    Stage.liftResourceUnary name imageResourceOps f memoryNeed lengthTransformation
+let liftUnaryReleaseAfter (name: string) (f: Image<'S> -> Image<'T>) (memoryNeed: MemoryNeed) (elementTransformation: ElementTransformation) = 
+    Stage.liftResourceUnary name imageResourceOps f memoryNeed elementTransformation
 
 let getBytesPerComponent<'T> = (typeof<'T> |> Image.getBytesPerComponent |> uint64)
 let getImageFacts<'T when 'T: equality> (image: Image<'T>) = image.GetFacts()
@@ -19,6 +19,25 @@ let private inputValue input =
 let private withCostModel costModel stage =
     StackProcessingCost.withCostModel costModel stage
 
+let private validSliceDomainForKernelDepth ksz =
+    let before = ksz / 2u
+    let after = (ksz - 1u) - before
+    SlimPipeline.SliceDomain.trim before after
+
+let private sameSliceDomainForKernelDepth ksz =
+    let pad = ksz / 2u
+    SlimPipeline.SliceDomain.compose
+        (SlimPipeline.SliceDomain.expand pad pad)
+        (validSliceDomainForKernelDepth ksz)
+
+let private sliceCardinalityForConvolution ksz outputRegionMode =
+    match outputRegionMode with
+    | Some ImageFunctions.Valid ->
+        SlimPipeline.Domain(validSliceDomainForKernelDepth ksz)
+    | None
+    | Some ImageFunctions.Same ->
+        SlimPipeline.Domain(sameSliceDomainForKernelDepth ksz)
+
 let private nativeImageStageCost name memoryModel workUnits =
     StageCostModel.create
         memoryModel
@@ -29,12 +48,12 @@ let private liftWindowedUnaryReleaseAfter
         (winSz: uint)
         (f: Image<'S> -> Image<'T>)
         (memoryNeed: MemoryNeed)
-        (lengthTransformation: LengthTransformation)
+        (elementTransformation: ElementTransformation)
         : Stage<Image<'S>, Image<'T>> =
     let win = max 1u winSz
     let mapper debug =
         volFctToWindowFctReleaseAfterDebug debug f 1u 0u win
-    let stg = mapWindow name mapper memoryNeed lengthTransformation
+    let stg = mapWindow name mapper memoryNeed elementTransformation
     (window win 0u win) --> stg --> flattenList ()
 
 type System.String with // From https: //stackoverflow.com/questions/1936767/f-case-insensitive-string-compare
@@ -270,18 +289,16 @@ let discreteGaussianOp (name: string) (sigma: float) (outputRegionMode: ImageFun
         if debug then printfn $"discreteGaussianOp: sigma {sigma}, ksz {ksz}, win {win}, stride {stride}, pad {pad}"
         volFctToWindowFctReleaseAfterDebug debug (ImageFunctions.discreteGaussian 3u sigma (ksz |> Some) outputRegionMode boundaryCondition) ksz 0u stride
     let memoryNeed nPixels = (2UL*nPixels*(uint64 win) + (uint64 ksz))*getBytesPerComponent<float>
-    let lengthTransformation nElems = 
-        match outputRegionMode with
-            | Some Valid -> nElems - 2UL * uint64 pad
-            |_ -> nElems
+    let elementTransformation = id
     let memoryModel = StageMemoryModel.fromSinglePeak Map memoryNeed
     let workUnits input =
         let kernelVoxels = uint64 ksz * uint64 ksz * uint64 ksz
         float (inputValue input * uint64 win * kernelVoxels)
     let stg =
-        mapWindow name f memoryNeed lengthTransformation // wrong for Valid, where the sequences becomes shorter
+        mapWindow name f memoryNeed elementTransformation
         |> withCostModel (nativeImageStageCost $"discreteGaussian.Float64" memoryModel workUnits)
     (window win pad stride) --> stg --> flattenList ()
+    |> Stage.withSliceCardinality (sliceCardinalityForConvolution ksz outputRegionMode)
 
 let discreteGaussian = discreteGaussianOp "discreteGaussian"
 let convGauss sigma = discreteGaussianOp "convGauss" sigma None None None
@@ -314,9 +331,9 @@ let convGauss sigma = discreteGaussianOp "convGauss" sigma None None None
 let createPadding name pad: Stage<unit,Image<'S>>=
     let transition = ProfileTransition.create Streaming Streaming
     let memoryNeed nPixels = nPixels*getBytesPerComponent<'S>
-    let lengthTransformation nElems = nElems + (uint64 pad)
+    let elementTransformation = id
     let zeroMaker i = Image<'S>([0u;0u],1u,"Padding",i)
-    Stage.init "padding" pad zeroMaker transition memoryNeed lengthTransformation
+    Stage.init "padding" pad zeroMaker transition memoryNeed elementTransformation
 
 let convolveOp (name: string) (kernel: Image<'T>) (outputRegionMode: ImageFunctions.OutputRegionMode option) (bc: ImageFunctions.BoundaryCondition option) (winSz: uint option) : Stage<Image<'T>, Image<'T>> =
     let windowFromKernel (k: Image<'T>) : uint =
@@ -330,15 +347,16 @@ let convolveOp (name: string) (kernel: Image<'T>) (outputRegionMode: ImageFuncti
             | _ -> ksz/2u //floor
     let f debug =  volFctToWindowFctReleaseAfterDebug debug (fun image3D -> ImageFunctions.convolve outputRegionMode bc image3D kernel) ksz 0u stride
     let memoryNeed nPixels = (2UL*nPixels*(uint64 win) + (uint64 ksz))*getBytesPerComponent<'T>
-    let lengthTransformation nElems = nElems - 2UL*(uint64 pad) 
+    let elementTransformation = id
     let memoryModel = StageMemoryModel.fromSinglePeak Map memoryNeed
     let workUnits input =
         let kernelVoxels = uint64 (kernel.GetWidth()) * uint64 (kernel.GetHeight()) * uint64 (kernel.GetDepth())
         float (inputValue input * uint64 win * kernelVoxels)
     let stg =
-        mapWindow name f memoryNeed lengthTransformation
+        mapWindow name f memoryNeed elementTransformation
         |> withCostModel (nativeImageStageCost $"convolve.{typeof<'T>.Name}" memoryModel workUnits)
     (window win pad stride) --> stg --> flattenList ()
+    |> Stage.withSliceCardinality (sliceCardinalityForConvolution ksz outputRegionMode)
 
 let convolve kernel outputRegionMode boundaryCondition winSz = convolveOp "convolve" kernel outputRegionMode boundaryCondition winSz
 let conv kernel = convolveOp "conv" kernel None None None
@@ -357,6 +375,7 @@ let private makeMorphOp (name: string) (radius: uint) (winSz: uint option) (core
     let f debug = volFctToWindowFctReleaseAfterDebug debug (core radius) ksz pad stride
     let stg = mapWindow name f id id
     (window win pad stride) --> stg --> flattenList ()
+    |> Stage.withSliceCardinality (SlimPipeline.Domain(sameSliceDomainForKernelDepth ksz))
 
 let erode radius = makeMorphOp "binaryErode"  radius None ImageFunctions.binaryErode
 let dilate radius = makeMorphOp "binaryErode"  radius None ImageFunctions.binaryDilate
@@ -464,8 +483,8 @@ let print () : Stage<'T, unit> =
 let srcStage (name: string) (width: uint) (height: uint) (depth: uint) (mapper: int->Image<'T>) =
     let transition = ProfileTransition.create Unit Streaming
     let memoryNeed = fun _ -> Image<'T>.memoryEstimate width height
-    let lengthTransformation = fun _ -> uint64 depth
-    Stage.init name depth mapper transition memoryNeed lengthTransformation
+    let elementTransformation = id
+    Stage.init name depth mapper transition memoryNeed elementTransformation
 
 let srcPlan (debug: bool) (memAvail: uint64) (width: uint) (height: uint) (depth: uint) (stage: Stage<unit,Image<'T>> option) =
     let nElems = (uint64 width) * (uint64 height)
@@ -622,8 +641,8 @@ let makeConnectedComponentTranslationTable (winSz: uint) : Stage<Image<uint64> *
         }
 
     let memoryNeed nPixels = 2UL * nPixels * uint64 sizeof<uint64>
-    let lengthTransformation = fun _ -> 1UL
-    Stage.reduce name reducer Streaming memoryNeed lengthTransformation
+    let elementTransformation = fun _ -> 1UL
+    Stage.reduce name reducer Streaming memoryNeed elementTransformation
 
 let trd (_,_,c) = c
 
@@ -650,8 +669,8 @@ let updateConnectedComponents (winSz: uint) (translationTable: (uint*uint64*uint
         res
 
     let memoryNeed = fun _ -> 2*sizeof<uint> |> uint64
-    let lengthTransformation = id
-    Stage.mapi "updateConnectedComponents" mapper memoryNeed lengthTransformation
+    let elementTransformation = id
+    Stage.mapi "updateConnectedComponents" mapper memoryNeed elementTransformation
 
 let permuteAxes (i: uint, j: uint, k: uint) (winSz: uint): Stage<Image<'T>,Image<'T>> =
     let name = "permuteAxes"
@@ -663,8 +682,8 @@ let permuteAxes (i: uint, j: uint, k: uint) (winSz: uint): Stage<Image<'T>,Image
     elif i = 1u && j = 0u then // k = 2u
         // permute 0 1 does not require chunking
         let memoryNeed = fun _ -> 2*sizeof<uint> |> uint64
-        let lengthTransformation = id
-        Stage.map name (fun _ -> ImageFunctions.permuteAxes [i;j;k]) memoryNeed lengthTransformation
+        let elementTransformation = id
+        Stage.map name (fun _ -> ImageFunctions.permuteAxes [i;j;k]) memoryNeed elementTransformation
     else // k neq 2u
         // writechunks and reread in permuted order
         let tmpDir = getUnusedDirectoryName "tmp"
@@ -689,13 +708,13 @@ let permuteAxes (i: uint, j: uint, k: uint) (winSz: uint): Stage<Image<'T>,Image
         let mutable chunkInfo : ChunkInfo = {chunks = [0;0;0] ; size = [0UL;0UL;0UL]; topLeftInfo = {dimensions = 0u; size = [0UL;0UL;0UL]; componentType = ""; numberOfComponents = 0u}}
         let memPeak = 256UL // surrugate string length
         let memoryNeed = fun _ -> memPeak
-        let lengthTransformation = fun _ -> chunkInfo.chunks[int k] |> uint64
+        let elementTransformation = fun _ -> chunkInfo.chunks[int k] |> uint64
 
         (writeInChunks tmpDir tmpSuffix winSz winSz winSz)
         --> Stage.clean name (fun () -> StackIO.deleteIfExists tmpDir) 
         --> StackCore.ignoreSingles () // force calculation of full stream and decrease references
-        --> Stage.map name (fun _ _ -> chunkInfo <- getChunkInfo tmpDir tmpSuffix) memoryNeed lengthTransformation // insert side-effect
-        --> Stage.map name (fun _ _ -> [0..(chunkInfo.chunks[int k]-1)]) memoryNeed lengthTransformation
+        --> Stage.map name (fun _ _ -> chunkInfo <- getChunkInfo tmpDir tmpSuffix) memoryNeed elementTransformation // insert side-effect
+        --> Stage.map name (fun _ _ -> [0..(chunkInfo.chunks[int k]-1)]) memoryNeed elementTransformation
         --> flattenList () // expand to a new, non-empty stream
-        --> Stage.map name (fun debug idx -> mapper chunkInfo debug idx) memoryNeed lengthTransformation // mapper chunkInfo does not work, since argument is copied at compile time
+        --> Stage.map name (fun debug idx -> mapper chunkInfo debug idx) memoryNeed elementTransformation // mapper chunkInfo does not work, since argument is copied at compile time
         --> flattenList ()

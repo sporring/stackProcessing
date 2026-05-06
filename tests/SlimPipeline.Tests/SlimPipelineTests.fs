@@ -7,7 +7,7 @@ open SlimPipeline
 let private source availableMemory = Plan.source availableMemory
 
 let private initInts name count =
-    Stage.init name count id (ProfileTransition.create Unit Streaming) (fun _ -> 0UL) (fun _ -> uint64 count)
+    Stage.init name count id (ProfileTransition.create Unit Streaming) (fun _ -> 0UL) id
 
 let private mapInts name f =
     Stage.map<int, int> name (fun _ x -> f x) (fun _ -> 0UL) id
@@ -59,6 +59,41 @@ let profileSuite =
             Expect.equal (Profile.combine Unit Streaming) Streaming "Streaming should dominate Unit."
             Expect.equal (Profile.combine Constant Streaming) Streaming "Streaming should dominate Constant."
             Expect.equal (Profile.combine (Window(3u, 2u, 1u, 0u, 1u)) Streaming) (Window(3u, 2u, 1u, 0u, 1u)) "Window should dominate Streaming."
+    ]
+
+[<Tests>]
+let sliceDomainSuite =
+    testList "SliceDomain" [
+        testCase "preserve keeps stream length" <| fun _ ->
+            Expect.equal (SliceCardinality.length 10UL SliceCardinality.preserve) (Some 10UL) "Preserve should keep the input length."
+
+        testCase "trim shortens both ends" <| fun _ ->
+            let cardinality = Domain(SliceDomain.trim 2u 3u)
+            Expect.equal (SliceCardinality.length 10UL cardinality) (Some 5UL) "Trim should subtract before and after from the stream length."
+
+        testCase "expand grows both ends" <| fun _ ->
+            let cardinality = Domain(SliceDomain.expand 2u 3u)
+            Expect.equal (SliceCardinality.length 10UL cardinality) (Some 15UL) "Expand should add before and after to the stream length."
+
+        testCase "skip then take composes as a bounded domain" <| fun _ ->
+            let composed = SliceDomain.compose (SliceDomain.skip 2u) (SliceDomain.take 4UL)
+            Expect.equal composed { StartOffset = 2L; End = CountFromStart 4UL } "Skip followed by take should remember the shifted start and fixed count."
+            Expect.equal (SliceDomain.length 10UL composed) (Some 4UL) "Composed skip/take should expose the taken count."
+
+        testCase "trim then skip preserves logical coordinate offset" <| fun _ ->
+            let trim = SliceDomain.trim 2u 2u
+            let composed = SliceDomain.compose trim (SliceDomain.skip 1u)
+            Expect.equal composed { StartOffset = 3L; End = RelativeToInputEnd -2L } "Trim then skip should advance the start without moving the end."
+            Expect.equal (SliceDomain.length 10UL composed) (Some 5UL) "Composed trim/skip should calculate length from the logical domain."
+
+        testCase "expand then trim captures same-style even kernel convention" <| fun _ ->
+            let sameEven =
+                SliceDomain.compose
+                    (SliceDomain.expand 4u 4u)
+                    (SliceDomain.trim 4u 3u)
+
+            Expect.equal sameEven { StartOffset = 0L; End = RelativeToInputEnd 1L } "Even-kernel Same with symmetric padding should expose the current +1 end convention."
+            Expect.equal (SliceDomain.length 10UL sameEven) (Some 11UL) "Even-kernel Same should grow by one under the current padding convention."
     ]
 
 [<Tests>]
