@@ -1,67 +1,58 @@
 SF:/Users/jrh630/repositories/stackProcessing/src/Studio.Graph/BuiltInCatalog.fs
 FN:22,Studio.Graph.Port Studio.Graph.BuiltInCatalog::makePort(System.String,Studio.Graph.PortType)
-FNDA:202,Studio.Graph.Port Studio.Graph.BuiltInCatalog::makePort(System.String,Studio.Graph.PortType)
-DA:23,202
-DA:24,202
+FNDA:199,Studio.Graph.Port Studio.Graph.BuiltInCatalog::makePort(System.String,Studio.Graph.PortType)
+DA:23,199
+DA:24,199
 FN:26,Studio.Graph.Parameter Studio.Graph.BuiltInCatalog::makeParameter(System.String,System.String,System.String,Studio.Graph.BasicType)
-FNDA:252,Studio.Graph.Parameter Studio.Graph.BuiltInCatalog::makeParameter(System.String,System.String,System.String,Studio.Graph.BasicType)
-DA:27,252
-DA:28,252
-DA:29,252
-DA:30,252
+FNDA:257,Studio.Graph.Parameter Studio.Graph.BuiltInCatalog::makeParameter(System.String,System.String,System.String,Studio.Graph.BasicType)
+DA:27,257
+DA:28,257
+DA:29,257
+DA:30,257
 FN:35,Studio.Graph.Parameter Studio.Graph.BuiltInCatalog::suffixParameter(System.String)
 FNDA:10,Studio.Graph.Parameter Studio.Graph.BuiltInCatalog::suffixParameter(System.String)
 DA:36,10
-FN:77,System.String Studio.Graph.BuiltInCatalog::numericDefaultValue(Studio.Graph.NumericType)
+FN:86,System.String Studio.Graph.BuiltInCatalog::numericDefaultValue(Studio.Graph.NumericType)
 FNDA:6,System.String Studio.Graph.BuiltInCatalog::numericDefaultValue(Studio.Graph.NumericType)
-DA:78,6
-DA:84,0
-DA:86,0
-DA:87,0
-DA:89,6
-DA:90,0
-BRDA:78,7,0,0
-BRDA:78,7,2,0
-BRDA:78,7,3,0
-BRDA:78,7,4,0
-BRDA:78,7,5,0
-BRDA:78,7,6,0
-BRDA:78,7,7,0
-BRDA:78,7,8,0
-BRDA:78,7,9,0
-BRDA:78,7,10,0
-BRDA:78,7,1,6
-BRDA:78,7,11,6
-BRDA:78,7,12,0
-FN:92,System.String Studio.Graph.BuiltInCatalog::scalarDefaultValue(Studio.Graph.BasicType)
-FNDA:1,System.String Studio.Graph.BuiltInCatalog::scalarDefaultValue(Studio.Graph.BasicType)
-DA:93,1
-DA:94,0
+DA:87,6
+DA:93,0
 DA:95,0
 DA:96,0
-DA:97,0
-DA:98,1
-BRDA:93,8,0,0
-BRDA:93,8,2,0
-BRDA:93,8,3,0
-BRDA:93,8,4,0
-BRDA:93,8,5,0
-BRDA:93,8,1,1
-FN:100,Studio.Graph.Function Studio.Graph.BuiltInCatalog::makeGenericScalar()
-FNDA:1,Studio.Graph.Function Studio.Graph.BuiltInCatalog::makeGenericScalar()
-DA:101,1
+DA:98,6
+DA:99,0
+BRDA:87,7,0,0
+BRDA:87,7,2,0
+BRDA:87,7,3,0
+BRDA:87,7,4,0
+BRDA:87,7,5,0
+BRDA:87,7,6,0
+BRDA:87,7,7,0
+BRDA:87,7,8,0
+BRDA:87,7,9,0
+BRDA:87,7,10,0
+BRDA:87,7,1,6
+BRDA:87,7,11,6
+BRDA:87,7,12,0
+FN:101,System.String Studio.Graph.BuiltInCatalog::scalarDefaultValue(Studio.Graph.BasicType)
+FNDA:1,System.String Studio.Graph.BuiltInCatalog::scalarDefaultValue(Studio.Graph.BasicType)
 DA:102,1
-DA:103,1
-DA:104,1
-DA:105,1
-DA:106,1
+DA:103,0
+DA:104,0
+DA:105,0
+DA:106,0
 DA:107,1
-DA:108,1
-DA:109,1
+BRDA:102,8,0,0
+BRDA:102,8,2,0
+BRDA:102,8,3,0
+BRDA:102,8,4,0
+BRDA:102,8,5,0
+BRDA:102,8,1,1
+FN:109,Studio.Graph.Function Studio.Graph.BuiltInCatalog::makeGenericScalar()
+FNDA:1,Studio.Graph.Function Studio.Graph.BuiltInCatalog::makeGenericScalar()
 DA:110,1
 DA:111,1
-FN:113,Studio.Graph.Function Studio.Graph.BuiltInCatalog::makeFileDirectory()
-FNDA:1,Studio.Graph.Function Studio.Graph.BuiltInCatalog::makeFileDirectory()
+DA:112,1
+DA:113,1
 DA:114,1
 DA:115,1
 DA:116,1
@@ -69,12 +60,12 @@ DA:117,1
 DA:118,1
 DA:119,1
 DA:120,1
-DA:121,1
-DA:122,1
+FN:122,Studio.Graph.Function Studio.Graph.BuiltInCatalog::makeFileDirectory()
+FNDA:1,Studio.Graph.Function Studio.Graph.BuiltInCatalog::makeFileDirectory()
 DA:123,1
 DA:124,1
-FN:126,Studio.Graph.Function Studio.Graph.BuiltInCatalog::makeScalarOp()
-FNDA:1,Studio.Graph.Function Studio.Graph.BuiltInCatalog::makeScalarOp()
+DA:125,1
+DA:126,1
 DA:127,1
 DA:128,1
 DA:129,1
@@ -82,14 +73,14 @@ DA:130,1
 DA:131,1
 DA:132,1
 DA:133,1
-DA:134,1
-DA:135,1
+FN:135,Studio.Graph.Function Studio.Graph.BuiltInCatalog::makeScalarOp()
+FNDA:1,Studio.Graph.Function Studio.Graph.BuiltInCatalog::makeScalarOp()
 DA:136,1
 DA:137,1
 DA:138,1
 DA:139,1
-FN:141,Studio.Graph.Function Studio.Graph.BuiltInCatalog::makeScalarFunction()
-FNDA:1,Studio.Graph.Function Studio.Graph.BuiltInCatalog::makeScalarFunction()
+DA:140,1
+DA:141,1
 DA:142,1
 DA:143,1
 DA:144,1
@@ -97,12 +88,12 @@ DA:145,1
 DA:146,1
 DA:147,1
 DA:148,1
-DA:149,1
-DA:150,1
+FN:150,Studio.Graph.Function Studio.Graph.BuiltInCatalog::makeScalarFunction()
+FNDA:1,Studio.Graph.Function Studio.Graph.BuiltInCatalog::makeScalarFunction()
 DA:151,1
 DA:152,1
-FN:154,Studio.Graph.Function Studio.Graph.BuiltInCatalog::makeGenericRead()
-FNDA:1,Studio.Graph.Function Studio.Graph.BuiltInCatalog::makeGenericRead()
+DA:153,1
+DA:154,1
 DA:155,1
 DA:156,1
 DA:157,1
@@ -110,14 +101,14 @@ DA:158,1
 DA:159,1
 DA:160,1
 DA:161,1
-DA:162,1
-DA:163,1
+FN:163,Studio.Graph.Function Studio.Graph.BuiltInCatalog::makeGenericRead()
+FNDA:1,Studio.Graph.Function Studio.Graph.BuiltInCatalog::makeGenericRead()
 DA:164,1
 DA:165,1
 DA:166,1
 DA:167,1
-FN:169,Studio.Graph.Function Studio.Graph.BuiltInCatalog::makeGenericReadRandom()
-FNDA:1,Studio.Graph.Function Studio.Graph.BuiltInCatalog::makeGenericReadRandom()
+DA:168,1
+DA:169,1
 DA:170,1
 DA:171,1
 DA:172,1
@@ -125,15 +116,15 @@ DA:173,1
 DA:174,1
 DA:175,1
 DA:176,1
-DA:177,1
-DA:178,1
+FN:178,Studio.Graph.Function Studio.Graph.BuiltInCatalog::makeGenericReadRandom()
+FNDA:1,Studio.Graph.Function Studio.Graph.BuiltInCatalog::makeGenericReadRandom()
 DA:179,1
 DA:180,1
 DA:181,1
 DA:182,1
 DA:183,1
-FN:185,Studio.Graph.Function Studio.Graph.BuiltInCatalog::makeGenericReadSlab()
-FNDA:1,Studio.Graph.Function Studio.Graph.BuiltInCatalog::makeGenericReadSlab()
+DA:184,1
+DA:185,1
 DA:186,1
 DA:187,1
 DA:188,1
@@ -141,14 +132,14 @@ DA:189,1
 DA:190,1
 DA:191,1
 DA:192,1
-DA:193,1
-DA:194,1
+FN:194,Studio.Graph.Function Studio.Graph.BuiltInCatalog::makeGenericReadSlab()
+FNDA:1,Studio.Graph.Function Studio.Graph.BuiltInCatalog::makeGenericReadSlab()
 DA:195,1
 DA:196,1
 DA:197,1
 DA:198,1
-FN:200,Studio.Graph.Function Studio.Graph.BuiltInCatalog::makeGenericReadZarrSlab()
-FNDA:1,Studio.Graph.Function Studio.Graph.BuiltInCatalog::makeGenericReadZarrSlab()
+DA:199,1
+DA:200,1
 DA:201,1
 DA:202,1
 DA:203,1
@@ -156,8 +147,8 @@ DA:204,1
 DA:205,1
 DA:206,1
 DA:207,1
-DA:208,1
-DA:209,1
+FN:209,Studio.Graph.Function Studio.Graph.BuiltInCatalog::makeGenericReadZarrSlab()
+FNDA:1,Studio.Graph.Function Studio.Graph.BuiltInCatalog::makeGenericReadZarrSlab()
 DA:210,1
 DA:211,1
 DA:212,1
@@ -167,8 +158,8 @@ DA:215,1
 DA:216,1
 DA:217,1
 DA:218,1
-FN:220,Studio.Graph.Function Studio.Graph.BuiltInCatalog::makeGenericReadNexusSlab()
-FNDA:1,Studio.Graph.Function Studio.Graph.BuiltInCatalog::makeGenericReadNexusSlab()
+DA:219,1
+DA:220,1
 DA:221,1
 DA:222,1
 DA:223,1
@@ -176,8 +167,8 @@ DA:224,1
 DA:225,1
 DA:226,1
 DA:227,1
-DA:228,1
-DA:229,1
+FN:229,Studio.Graph.Function Studio.Graph.BuiltInCatalog::makeGenericReadNexusSlab()
+FNDA:1,Studio.Graph.Function Studio.Graph.BuiltInCatalog::makeGenericReadNexusSlab()
 DA:230,1
 DA:231,1
 DA:232,1
@@ -186,8 +177,8 @@ DA:234,1
 DA:235,1
 DA:236,1
 DA:237,1
-FN:239,Studio.Graph.Function Studio.Graph.BuiltInCatalog::makeGenericCast()
-FNDA:1,Studio.Graph.Function Studio.Graph.BuiltInCatalog::makeGenericCast()
+DA:238,1
+DA:239,1
 DA:240,1
 DA:241,1
 DA:242,1
@@ -195,12 +186,12 @@ DA:243,1
 DA:244,1
 DA:245,1
 DA:246,1
-DA:247,1
-DA:248,1
+FN:248,Studio.Graph.Function Studio.Graph.BuiltInCatalog::makeGenericCast()
+FNDA:1,Studio.Graph.Function Studio.Graph.BuiltInCatalog::makeGenericCast()
 DA:249,1
 DA:250,1
-FN:252,Studio.Graph.Function Studio.Graph.BuiltInCatalog::makeGenericZero()
-FNDA:1,Studio.Graph.Function Studio.Graph.BuiltInCatalog::makeGenericZero()
+DA:251,1
+DA:252,1
 DA:253,1
 DA:254,1
 DA:255,1
@@ -208,15 +199,15 @@ DA:256,1
 DA:257,1
 DA:258,1
 DA:259,1
-DA:260,1
-DA:261,1
+FN:261,Studio.Graph.Function Studio.Graph.BuiltInCatalog::makeGenericZero()
+FNDA:1,Studio.Graph.Function Studio.Graph.BuiltInCatalog::makeGenericZero()
 DA:262,1
 DA:263,1
 DA:264,1
 DA:265,1
 DA:266,1
-FN:268,Studio.Graph.Function Studio.Graph.BuiltInCatalog::makeGenericCreateByEuler2DTransform()
-FNDA:1,Studio.Graph.Function Studio.Graph.BuiltInCatalog::makeGenericCreateByEuler2DTransform()
+DA:267,1
+DA:268,1
 DA:269,1
 DA:270,1
 DA:271,1
@@ -224,8 +215,8 @@ DA:272,1
 DA:273,1
 DA:274,1
 DA:275,1
-DA:276,1
-DA:277,1
+FN:277,Studio.Graph.Function Studio.Graph.BuiltInCatalog::makeGenericCreateByEuler2DTransform()
+FNDA:1,Studio.Graph.Function Studio.Graph.BuiltInCatalog::makeGenericCreateByEuler2DTransform()
 DA:278,1
 DA:279,1
 DA:280,1
@@ -233,36 +224,36 @@ DA:281,1
 DA:282,1
 DA:283,1
 DA:284,1
-FN:286,Studio.Graph.Function Studio.Graph.BuiltInCatalog::makeScalarImageOperation(System.String,System.String,System.String,Microsoft.FSharp.Collections.FSharpList`1<System.String>)
+DA:285,1
+DA:286,1
+DA:287,1
+DA:288,1
+DA:289,1
+DA:290,1
+DA:291,1
+DA:292,1
+DA:293,1
+FN:295,Studio.Graph.Function Studio.Graph.BuiltInCatalog::makeScalarImageOperation(System.String,System.String,System.String,Microsoft.FSharp.Collections.FSharpList`1<System.String>)
 FNDA:2,Studio.Graph.Function Studio.Graph.BuiltInCatalog::makeScalarImageOperation(System.String,System.String,System.String,Microsoft.FSharp.Collections.FSharpList`1<System.String>)
-DA:287,2
-DA:288,2
-DA:289,2
-DA:290,2
-DA:291,2
-DA:292,2
-DA:293,2
-DA:294,2
-DA:295,2
 DA:296,2
 DA:297,2
 DA:298,2
-FN:300,Studio.Graph.Function Studio.Graph.BuiltInCatalog::makeGenericAddNormalNoise()
+DA:299,2
+DA:300,2
+DA:301,2
+DA:302,2
+DA:303,2
+DA:304,2
+DA:305,2
+DA:306,2
+DA:307,2
+FN:309,Studio.Graph.Function Studio.Graph.BuiltInCatalog::makeGenericAddNormalNoise()
 FNDA:1,Studio.Graph.Function Studio.Graph.BuiltInCatalog::makeGenericAddNormalNoise()
-DA:301,1
-DA:302,1
-DA:303,1
-DA:304,1
-DA:305,1
-DA:306,1
-DA:307,1
-DA:308,1
-DA:309,1
 DA:310,1
 DA:311,1
 DA:312,1
-FN:314,Studio.Graph.Function Studio.Graph.BuiltInCatalog::makePairOperation(System.String,System.String,System.String,Microsoft.FSharp.Collections.FSharpList`1<System.String>,Microsoft.FSharp.Collections.FSharpList`1<Studio.Graph.Parameter>)
-FNDA:1,Studio.Graph.Function Studio.Graph.BuiltInCatalog::makePairOperation(System.String,System.String,System.String,Microsoft.FSharp.Collections.FSharpList`1<System.String>,Microsoft.FSharp.Collections.FSharpList`1<Studio.Graph.Parameter>)
+DA:313,1
+DA:314,1
 DA:315,1
 DA:316,1
 DA:317,1
@@ -270,22 +261,31 @@ DA:318,1
 DA:319,1
 DA:320,1
 DA:321,1
-DA:322,1
-DA:323,1
-FN:1347,Microsoft.FSharp.Core.FSharpOption`1<Studio.Graph.Function> Studio.Graph.BuiltInCatalog::tryFind(System.String)
-FNDA:95,Microsoft.FSharp.Core.FSharpOption`1<Studio.Graph.Function> Studio.Graph.BuiltInCatalog::tryFind(System.String)
-DA:1348,95
-DA:1349,95
-FN:1351,Studio.Graph.Function Studio.Graph.BuiltInCatalog::find(System.String)
+FN:323,Studio.Graph.Function Studio.Graph.BuiltInCatalog::makePairOperation(System.String,System.String,System.String,Microsoft.FSharp.Collections.FSharpList`1<System.String>,Microsoft.FSharp.Collections.FSharpList`1<Studio.Graph.Parameter>)
+FNDA:1,Studio.Graph.Function Studio.Graph.BuiltInCatalog::makePairOperation(System.String,System.String,System.String,Microsoft.FSharp.Collections.FSharpList`1<System.String>,Microsoft.FSharp.Collections.FSharpList`1<Studio.Graph.Parameter>)
+DA:324,1
+DA:325,1
+DA:326,1
+DA:327,1
+DA:328,1
+DA:329,1
+DA:330,1
+DA:331,1
+DA:332,1
+FN:1340,Microsoft.FSharp.Core.FSharpOption`1<Studio.Graph.Function> Studio.Graph.BuiltInCatalog::tryFind(System.String)
+FNDA:104,Microsoft.FSharp.Core.FSharpOption`1<Studio.Graph.Function> Studio.Graph.BuiltInCatalog::tryFind(System.String)
+DA:1341,104
+DA:1342,104
+FN:1344,Studio.Graph.Function Studio.Graph.BuiltInCatalog::find(System.String)
 FNDA:0,Studio.Graph.Function Studio.Graph.BuiltInCatalog::find(System.String)
-DA:1352,0
-DA:1353,0
-DA:1354,0
-BRDA:1352,8,1,0
-BRDA:1352,8,0,0
-FN:1343,System.Tuple`2<System.String,Studio.Graph.Function> Studio.Graph.BuiltInCatalog/Pipe #3 stage #1 at line 1344@1344::Invoke(Studio.Graph.Function)
-FNDA:92,System.Tuple`2<System.String,Studio.Graph.Function> Studio.Graph.BuiltInCatalog/Pipe #3 stage #1 at line 1344@1344::Invoke(Studio.Graph.Function)
-DA:1344,92
+DA:1345,0
+DA:1346,0
+DA:1347,0
+BRDA:1345,8,1,0
+BRDA:1345,8,0,0
+FN:1336,System.Tuple`2<System.String,Studio.Graph.Function> Studio.Graph.BuiltInCatalog/Pipe #3 stage #1 at line 1337@1337::Invoke(Studio.Graph.Function)
+FNDA:89,System.Tuple`2<System.String,Studio.Graph.Function> Studio.Graph.BuiltInCatalog/Pipe #3 stage #1 at line 1337@1337::Invoke(Studio.Graph.Function)
+DA:1337,89
 FN:3,System.Void <StartupCode$Studio-Graph>.$BuiltInCatalog::.cctor()
 FNDA:1,System.Void <StartupCode$Studio-Graph>.$BuiltInCatalog::.cctor()
 DA:4,1
@@ -333,15 +333,12 @@ DA:71,1
 DA:72,1
 DA:74,1
 DA:75,1
-DA:325,1
-DA:326,1
-DA:327,1
-DA:328,1
-DA:329,1
-DA:330,1
-DA:331,1
-DA:332,1
-DA:333,1
+DA:77,1
+DA:78,1
+DA:80,1
+DA:81,1
+DA:83,1
+DA:84,1
 DA:334,1
 DA:335,1
 DA:336,1
@@ -1342,15 +1339,8 @@ DA:1330,1
 DA:1331,1
 DA:1332,1
 DA:1333,1
-DA:1334,1
-DA:1335,1
 DA:1336,1
-DA:1337,1
 DA:1338,1
-DA:1339,1
-DA:1340,1
-DA:1343,1
-DA:1345,1
 BRDA:32,330,0,1
 BRDA:32,335,0,1
 BRDA:32,341,0,1
@@ -1359,8 +1349,8 @@ BRDA:32,335,1,0
 BRDA:32,341,1,0
 BRDA:32,356,0,0
 BRDA:32,356,1,0
-LF:1283
-LH:1272
+LF:1273
+LH:1262
 BRF:29
 BRH:6
 FNF:24
@@ -1773,60 +1763,60 @@ FNH:1
 end_of_record
 SF:/Users/jrh630/repositories/stackProcessing/src/Studio.Compiler/PipelineCodeGenerator.fs
 FN:19,System.String Studio.Compiler.PipelineCodeGenerator::savedParamValue(System.String,Studio.Graph.SavedNode)
-FNDA:274,System.String Studio.Compiler.PipelineCodeGenerator::savedParamValue(System.String,Studio.Graph.SavedNode)
-DA:20,274
-DA:21,969
-DA:22,548
-DA:23,274
+FNDA:304,System.String Studio.Compiler.PipelineCodeGenerator::savedParamValue(System.String,Studio.Graph.SavedNode)
+DA:20,304
+DA:21,1090
+DA:22,608
+DA:23,304
 BRDA:22,29,1,0
-BRDA:22,29,0,274
+BRDA:22,29,0,304
 BRDA:23,78,1,0
-BRDA:23,78,0,274
+BRDA:23,78,0,304
 FN:25,System.String Studio.Compiler.PipelineCodeGenerator::quote(System.String)
-FNDA:94,System.String Studio.Compiler.PipelineCodeGenerator::quote(System.String)
-DA:26,94
+FNDA:100,System.String Studio.Compiler.PipelineCodeGenerator::quote(System.String)
+DA:26,100
 FN:28,System.Boolean Studio.Compiler.PipelineCodeGenerator::hasSuffix(Microsoft.FSharp.Collections.FSharpList`1<System.String>,System.String)
-FNDA:37,System.Boolean Studio.Compiler.PipelineCodeGenerator::hasSuffix(Microsoft.FSharp.Collections.FSharpList`1<System.String>,System.String)
-DA:29,37
-DA:30,74
+FNDA:38,System.Boolean Studio.Compiler.PipelineCodeGenerator::hasSuffix(Microsoft.FSharp.Collections.FSharpList`1<System.String>,System.String)
+DA:29,38
+DA:30,76
 FN:32,System.String Studio.Compiler.PipelineCodeGenerator::float64Literal(System.String)
-FNDA:17,System.String Studio.Compiler.PipelineCodeGenerator::float64Literal(System.String)
-DA:33,17
-DA:34,17
-DA:36,34
-DA:37,17
-DA:38,3
-DA:39,3
-DA:40,3
-DA:41,20
-DA:42,14
-DA:44,3
+FNDA:24,System.String Studio.Compiler.PipelineCodeGenerator::float64Literal(System.String)
+DA:33,24
+DA:34,24
+DA:36,48
+DA:37,24
+DA:38,7
+DA:39,7
+DA:40,7
+DA:41,31
+DA:42,17
+DA:44,7
 BRDA:36,21,0,0
-BRDA:36,21,1,17
-BRDA:37,40,0,14
-BRDA:37,40,1,3
-BRDA:38,59,0,14
-BRDA:38,59,1,3
-BRDA:39,77,0,14
-BRDA:39,77,1,3
-BRDA:40,95,0,14
-BRDA:40,95,1,3
-BRDA:41,113,0,14
-BRDA:41,113,1,3
+BRDA:36,21,1,24
+BRDA:37,40,0,17
+BRDA:37,40,1,7
+BRDA:38,59,0,17
+BRDA:38,59,1,7
+BRDA:39,77,0,17
+BRDA:39,77,1,7
+BRDA:40,95,0,17
+BRDA:40,95,1,7
+BRDA:41,113,0,17
+BRDA:41,113,1,7
 FN:46,Microsoft.FSharp.Core.FSharpOption`1<System.String> Studio.Compiler.PipelineCodeGenerator::standardNumericConstant(System.String)
-FNDA:70,Microsoft.FSharp.Core.FSharpOption`1<System.String> Studio.Compiler.PipelineCodeGenerator::standardNumericConstant(System.String)
-DA:47,70
+FNDA:78,Microsoft.FSharp.Core.FSharpOption`1<System.String> Studio.Compiler.PipelineCodeGenerator::standardNumericConstant(System.String)
+DA:47,78
 DA:48,1
 DA:49,2
-DA:50,67
-BRDA:47,23,0,69
+DA:50,75
+BRDA:47,23,0,77
 BRDA:47,23,1,1
 BRDA:47,36,0,2
-BRDA:47,36,1,67
+BRDA:47,36,1,75
 FN:52,System.String Studio.Compiler.PipelineCodeGenerator::numericLiteral(Studio.Graph.NumericType,System.String)
-FNDA:70,System.String Studio.Compiler.PipelineCodeGenerator::numericLiteral(Studio.Graph.NumericType,System.String)
-DA:53,70
-DA:55,70
+FNDA:78,System.String Studio.Compiler.PipelineCodeGenerator::numericLiteral(Studio.Graph.NumericType,System.String)
+DA:53,78
+DA:55,78
 DA:57,3
 DA:58,0
 DA:59,0
@@ -1839,17 +1829,17 @@ DA:65,0
 DA:66,0
 DA:68,3
 DA:69,0
-DA:71,67
+DA:71,75
 DA:73,0
 DA:75,0
 DA:77,0
 DA:79,0
-DA:81,74
+DA:81,76
 DA:83,13
 DA:85,0
 DA:87,0
 DA:89,0
-DA:92,17
+DA:92,24
 DA:94,0
 DA:95,0
 DA:96,0
@@ -1868,7 +1858,7 @@ BRDA:57,38,10,0
 BRDA:57,38,1,3
 BRDA:57,38,11,3
 BRDA:57,38,12,0
-BRDA:55,15,0,67
+BRDA:55,15,0,75
 BRDA:71,225,0,0
 BRDA:71,225,2,0
 BRDA:73,300,0,0
@@ -1882,9 +1872,9 @@ BRDA:77,376,1,0
 BRDA:71,225,5,0
 BRDA:79,414,0,0
 BRDA:79,414,1,0
-BRDA:71,225,6,37
+BRDA:71,225,6,38
 BRDA:81,452,0,0
-BRDA:81,452,1,37
+BRDA:81,452,1,38
 BRDA:71,225,7,13
 BRDA:71,225,8,0
 BRDA:85,492,0,0
@@ -1895,8 +1885,8 @@ BRDA:87,530,1,0
 BRDA:71,225,10,0
 BRDA:89,568,0,0
 BRDA:89,568,1,0
-BRDA:71,225,1,17
-BRDA:71,225,11,17
+BRDA:71,225,1,24
+BRDA:71,225,11,24
 BRDA:71,225,12,0
 BRDA:94,609,0,0
 BRDA:94,609,1,0
@@ -1965,9 +1955,9 @@ BRDA:137,111,1,2
 BRDA:143,144,0,0
 BRDA:143,144,1,2
 FN:147,System.String Studio.Compiler.PipelineCodeGenerator::pixelTypeNameFromSuffix(System.String)
-FNDA:36,System.String Studio.Compiler.PipelineCodeGenerator::pixelTypeNameFromSuffix(System.String)
-DA:148,36
-DA:149,13
+FNDA:42,System.String Studio.Compiler.PipelineCodeGenerator::pixelTypeNameFromSuffix(System.String)
+DA:148,42
+DA:149,14
 DA:150,0
 DA:151,3
 DA:152,0
@@ -1976,20 +1966,20 @@ DA:154,0
 DA:155,1
 DA:156,0
 DA:157,3
-DA:158,16
+DA:158,21
 DA:159,0
 DA:160,0
-BRDA:148,13,0,23
-BRDA:148,29,0,23
-BRDA:148,45,0,20
-BRDA:148,61,0,20
-BRDA:148,77,0,20
-BRDA:148,90,0,20
-BRDA:148,103,0,19
-BRDA:148,116,0,19
-BRDA:148,129,0,16
+BRDA:148,13,0,28
+BRDA:148,29,0,28
+BRDA:148,45,0,25
+BRDA:148,61,0,25
+BRDA:148,77,0,25
+BRDA:148,90,0,25
+BRDA:148,103,0,24
+BRDA:148,116,0,24
+BRDA:148,129,0,21
 BRDA:148,142,0,0
-BRDA:148,13,1,13
+BRDA:148,13,1,14
 BRDA:148,29,1,0
 BRDA:148,45,1,3
 BRDA:148,61,1,0
@@ -1998,38 +1988,38 @@ BRDA:148,90,1,0
 BRDA:148,103,1,1
 BRDA:148,116,1,0
 BRDA:148,129,1,3
-BRDA:148,142,1,16
+BRDA:148,142,1,21
 BRDA:148,155,0,0
 BRDA:148,155,1,0
 FN:162,System.String Studio.Compiler.PipelineCodeGenerator::pixelTypeNameFromParameter(System.String,System.String,Studio.Graph.SavedNode)
-FNDA:36,System.String Studio.Compiler.PipelineCodeGenerator::pixelTypeNameFromParameter(System.String,System.String,Studio.Graph.SavedNode)
-DA:163,36
-DA:165,36
+FNDA:42,System.String Studio.Compiler.PipelineCodeGenerator::pixelTypeNameFromParameter(System.String,System.String,Studio.Graph.SavedNode)
+DA:163,42
+DA:165,42
 DA:166,0
-DA:168,36
+DA:168,42
 BRDA:165,15,0,0
-BRDA:165,15,1,36
+BRDA:165,15,1,42
 FN:170,System.String Studio.Compiler.PipelineCodeGenerator::uint64Literal(System.String)
-FNDA:24,System.String Studio.Compiler.PipelineCodeGenerator::uint64Literal(System.String)
-DA:171,24
-DA:173,24
+FNDA:27,System.String Studio.Compiler.PipelineCodeGenerator::uint64Literal(System.String)
+DA:171,27
+DA:173,27
 DA:174,0
-DA:176,24
+DA:176,27
 BRDA:173,20,0,0
-BRDA:173,20,1,24
+BRDA:173,20,1,27
 FN:178,System.String Studio.Compiler.PipelineCodeGenerator::sourcePrefix(System.String,a)
-FNDA:24,System.String Studio.Compiler.PipelineCodeGenerator::sourcePrefix(System.String,a)
-DA:179,24
+FNDA:27,System.String Studio.Compiler.PipelineCodeGenerator::sourcePrefix(System.String,a)
+DA:179,27
 FN:181,Microsoft.FSharp.Core.FSharpOption`1<System.String> Studio.Compiler.PipelineCodeGenerator::pairFunctionName(System.String)
-FNDA:103,Microsoft.FSharp.Core.FSharpOption`1<System.String> Studio.Compiler.PipelineCodeGenerator::pairFunctionName(System.String)
-DA:182,103
+FNDA:111,Microsoft.FSharp.Core.FSharpOption`1<System.String> Studio.Compiler.PipelineCodeGenerator::pairFunctionName(System.String)
+DA:182,111
 DA:183,0
 DA:184,0
-DA:185,103
-BRDA:182,13,0,103
+DA:185,111
+BRDA:182,13,0,111
 BRDA:182,13,1,0
 BRDA:182,26,0,0
-BRDA:182,26,1,103
+BRDA:182,26,1,111
 FN:187,System.String Studio.Compiler.PipelineCodeGenerator::imageOpImageFunctionName(Studio.Graph.SavedNode)
 FNDA:6,System.String Studio.Compiler.PipelineCodeGenerator::imageOpImageFunctionName(Studio.Graph.SavedNode)
 DA:188,6
@@ -2050,8 +2040,8 @@ BRDA:188,62,1,2
 BRDA:188,75,0,2
 BRDA:188,75,1,0
 FN:196,Microsoft.FSharp.Core.FSharpOption`1<System.String> Studio.Compiler.PipelineCodeGenerator::pairStageFunctionName(Studio.Graph.SavedNode)
-FNDA:113,Microsoft.FSharp.Core.FSharpOption`1<System.String> Studio.Compiler.PipelineCodeGenerator::pairStageFunctionName(Studio.Graph.SavedNode)
-DA:197,113
+FNDA:121,Microsoft.FSharp.Core.FSharpOption`1<System.String> Studio.Compiler.PipelineCodeGenerator::pairStageFunctionName(Studio.Graph.SavedNode)
+DA:197,121
 DA:198,6
 DA:200,2
 DA:202,2
@@ -2079,14 +2069,14 @@ DA:229,0
 DA:230,0
 DA:232,0
 DA:233,0
-DA:234,103
-BRDA:197,18,0,107
-BRDA:197,31,0,105
-BRDA:197,44,0,105
-BRDA:197,60,0,103
-BRDA:197,76,0,103
-BRDA:197,92,0,103
-BRDA:197,108,0,103
+DA:234,111
+BRDA:197,18,0,115
+BRDA:197,31,0,113
+BRDA:197,44,0,113
+BRDA:197,60,0,111
+BRDA:197,76,0,111
+BRDA:197,92,0,111
+BRDA:197,108,0,111
 BRDA:197,18,1,6
 BRDA:197,31,1,2
 BRDA:202,186,0,2
@@ -2127,7 +2117,7 @@ BRDA:197,76,1,0
 BRDA:197,92,1,0
 BRDA:197,108,1,0
 BRDA:197,124,0,0
-BRDA:197,124,1,103
+BRDA:197,124,1,111
 FN:237,System.String Studio.Compiler.PipelineCodeGenerator::safeIdentifier(System.String)
 FNDA:1,System.String Studio.Compiler.PipelineCodeGenerator::safeIdentifier(System.String)
 DA:238,1
@@ -2178,10 +2168,10 @@ BRDA:253,201,1,0
 BRDA:253,227,1,0
 BRDA:253,302,1,0
 FN:264,System.Boolean Studio.Compiler.PipelineCodeGenerator::isScalarImageFunction(System.String)
-FNDA:62,System.Boolean Studio.Compiler.PipelineCodeGenerator::isScalarImageFunction(System.String)
-DA:265,62
+FNDA:66,System.Boolean Studio.Compiler.PipelineCodeGenerator::isScalarImageFunction(System.String)
+DA:265,66
 BRDA:265,11,0,0
-BRDA:265,11,1,31
+BRDA:265,11,1,33
 FN:270,System.String Studio.Compiler.PipelineCodeGenerator::unaryImageFunctionName(Studio.Graph.SavedNode)
 FNDA:3,System.String Studio.Compiler.PipelineCodeGenerator::unaryImageFunctionName(Studio.Graph.SavedNode)
 DA:271,3
@@ -2250,36 +2240,36 @@ DA:299,2
 DA:300,2
 DA:301,2
 FN:304,Studio.Graph.SavedGraph Studio.Compiler.PipelineCodeGenerator::replaceFileDirectorySelectors(Studio.Graph.SavedGraph)
-FNDA:26,Studio.Graph.SavedGraph Studio.Compiler.PipelineCodeGenerator::replaceFileDirectorySelectors(Studio.Graph.SavedGraph)
-DA:305,26
-DA:306,26
-DA:307,92
+FNDA:28,Studio.Graph.SavedGraph Studio.Compiler.PipelineCodeGenerator::replaceFileDirectorySelectors(Studio.Graph.SavedGraph)
+DA:305,28
+DA:306,28
+DA:307,98
 DA:308,1
 DA:309,1
 DA:310,1
 DA:311,1
 DA:312,1
-DA:313,26
-DA:314,117
-DA:316,26
+DA:313,28
+DA:314,125
+DA:316,28
 BRDA:306,15,0,0
-BRDA:306,15,1,26
-BRDA:314,193,1,92
+BRDA:306,15,1,28
+BRDA:314,193,1,98
 BRDA:307,77,0,1
-BRDA:307,77,1,91
-BRDA:314,193,0,26
+BRDA:307,77,1,97
+BRDA:314,193,0,28
 FN:318,Microsoft.FSharp.Collections.FSharpMap`2<System.String,System.String> Studio.Compiler.PipelineCodeGenerator::scalarNames(Studio.Graph.SavedNode[])
-FNDA:26,Microsoft.FSharp.Collections.FSharpMap`2<System.String,System.String> Studio.Compiler.PipelineCodeGenerator::scalarNames(Studio.Graph.SavedNode[])
-DA:319,26
-DA:320,26
-DA:321,26
+FNDA:28,Microsoft.FSharp.Collections.FSharpMap`2<System.String,System.String> Studio.Compiler.PipelineCodeGenerator::scalarNames(Studio.Graph.SavedNode[])
+DA:319,28
+DA:320,28
+DA:321,28
 DA:322,7
-DA:323,43
-DA:324,26
+DA:323,45
+DA:324,28
 FN:326,Microsoft.FSharp.Core.FSharpOption`1<System.String> Studio.Compiler.PipelineCodeGenerator::computeStatsFieldName(System.Int32)
-FNDA:19,Microsoft.FSharp.Core.FSharpOption`1<System.String> Studio.Compiler.PipelineCodeGenerator::computeStatsFieldName(System.Int32)
-DA:327,19
-DA:328,19
+FNDA:21,Microsoft.FSharp.Core.FSharpOption`1<System.String> Studio.Compiler.PipelineCodeGenerator::computeStatsFieldName(System.Int32)
+DA:327,21
+DA:328,21
 FN:330,Microsoft.FSharp.Core.FSharpOption`1<System.String> Studio.Compiler.PipelineCodeGenerator::stackInfoFieldExpression(a,System.Int32)
 FNDA:3,Microsoft.FSharp.Core.FSharpOption`1<System.String> Studio.Compiler.PipelineCodeGenerator::stackInfoFieldExpression(a,System.Int32)
 DA:331,3
@@ -2304,183 +2294,189 @@ DA:349,5
 DA:350,5
 DA:351,5
 FN:353,System.Boolean Studio.Compiler.PipelineCodeGenerator::isTranslationTableNode(Studio.Graph.SavedNode)
-FNDA:11,System.Boolean Studio.Compiler.PipelineCodeGenerator::isTranslationTableNode(Studio.Graph.SavedNode)
-DA:354,11
+FNDA:13,System.Boolean Studio.Compiler.PipelineCodeGenerator::isTranslationTableNode(Studio.Graph.SavedNode)
+DA:354,13
 FN:356,System.Boolean Studio.Compiler.PipelineCodeGenerator::isHistogramDataNode(Studio.Graph.SavedNode)
-FNDA:11,System.Boolean Studio.Compiler.PipelineCodeGenerator::isHistogramDataNode(Studio.Graph.SavedNode)
-DA:357,11
-FN:359,System.Boolean Studio.Compiler.PipelineCodeGenerator::isStackInfoNode(Studio.Graph.SavedNode)
-FNDA:11,System.Boolean Studio.Compiler.PipelineCodeGenerator::isStackInfoNode(Studio.Graph.SavedNode)
-DA:360,11
-FN:362,System.Boolean Studio.Compiler.PipelineCodeGenerator::isChunkInfoNode(Studio.Graph.SavedNode)
-FNDA:26,System.Boolean Studio.Compiler.PipelineCodeGenerator::isChunkInfoNode(Studio.Graph.SavedNode)
-DA:363,26
-BRDA:363,16,0,3
-BRDA:363,16,1,8
-BRDA:363,39,0,4
-BRDA:363,39,1,7
-FN:366,Studio.Compiler.PipelineCodeGenerator/ParameterExpression Studio.Compiler.PipelineCodeGenerator::parameterExpression(Studio.Graph.SavedGraph,Microsoft.FSharp.Collections.FSharpMap`2<System.String,Studio.Graph.SavedNode>,Microsoft.FSharp.Collections.FSharpMap`2<System.String,System.String>,Microsoft.FSharp.Collections.FSharpMap`2<System.String,System.String>,Microsoft.FSharp.Collections.FSharpMap`2<System.String,System.String>,Microsoft.FSharp.Collections.FSharpMap`2<System.String,System.String>,Microsoft.FSharp.Collections.FSharpMap`2<System.String,System.String>,Microsoft.FSharp.Collections.FSharpMap`2<System.String,System.String>,Studio.Graph.SavedNode,System.Int32,System.String)
-FNDA:212,Studio.Compiler.PipelineCodeGenerator/ParameterExpression Studio.Compiler.PipelineCodeGenerator::parameterExpression(Studio.Graph.SavedGraph,Microsoft.FSharp.Collections.FSharpMap`2<System.String,Studio.Graph.SavedNode>,Microsoft.FSharp.Collections.FSharpMap`2<System.String,System.String>,Microsoft.FSharp.Collections.FSharpMap`2<System.String,System.String>,Microsoft.FSharp.Collections.FSharpMap`2<System.String,System.String>,Microsoft.FSharp.Collections.FSharpMap`2<System.String,System.String>,Microsoft.FSharp.Collections.FSharpMap`2<System.String,System.String>,Microsoft.FSharp.Collections.FSharpMap`2<System.String,System.String>,Studio.Graph.SavedNode,System.Int32,System.String)
-DA:367,212
-DA:368,212
-DA:369,587
-DA:370,156
-DA:371,268
-DA:372,212
-DA:373,23
-DA:374,212
-DA:375,24
-DA:376,212
-DA:377,33
-DA:378,2
-DA:379,212
-DA:380,27
-DA:381,0
-DA:382,212
-DA:383,27
-DA:384,1
-DA:385,212
-DA:386,8
-DA:387,8
-DA:388,11
-DA:389,8
-DA:390,5
-DA:391,5
-DA:392,18
-DA:393,212
-DA:394,212
-DA:396,212
-DA:398,22
-DA:399,22
-DA:401,190
-DA:402,190
-BRDA:372,34,1,189
-BRDA:372,34,0,23
-BRDA:373,83,0,11
-BRDA:373,83,1,12
-BRDA:373,97,0,11
-BRDA:377,171,0,2
-BRDA:377,189,0,2
-BRDA:377,171,1,9
-BRDA:377,189,1,9
-BRDA:380,266,1,0
-BRDA:380,266,0,9
-BRDA:383,319,1,1
-BRDA:383,319,0,8
-BRDA:388,375,1,5
-BRDA:388,375,0,3
-BRDA:389,423,1,5
-BRDA:392,453,1,0
-BRDA:392,453,0,5
-BRDA:389,423,0,3
-BRDA:373,97,1,0
-BRDA:396,508,1,22
-BRDA:396,508,0,190
-FN:404,System.Tuple`2<System.String,System.String> Studio.Compiler.PipelineCodeGenerator::scalarBinding(Studio.Graph.SavedGraph,Microsoft.FSharp.Collections.FSharpMap`2<System.String,Studio.Graph.SavedNode>,Microsoft.FSharp.Collections.FSharpMap`2<System.String,System.String>,Microsoft.FSharp.Collections.FSharpMap`2<System.String,System.String>,Microsoft.FSharp.Collections.FSharpMap`2<System.String,System.String>,Microsoft.FSharp.Collections.FSharpMap`2<System.String,System.String>,Microsoft.FSharp.Collections.FSharpMap`2<System.String,System.String>,Microsoft.FSharp.Collections.FSharpMap`2<System.String,System.String>,Studio.Graph.SavedNode)
-FNDA:20,System.Tuple`2<System.String,System.String> Studio.Compiler.PipelineCodeGenerator::scalarBinding(Studio.Graph.SavedGraph,Microsoft.FSharp.Collections.FSharpMap`2<System.String,Studio.Graph.SavedNode>,Microsoft.FSharp.Collections.FSharpMap`2<System.String,System.String>,Microsoft.FSharp.Collections.FSharpMap`2<System.String,System.String>,Microsoft.FSharp.Collections.FSharpMap`2<System.String,System.String>,Microsoft.FSharp.Collections.FSharpMap`2<System.String,System.String>,Microsoft.FSharp.Collections.FSharpMap`2<System.String,System.String>,Microsoft.FSharp.Collections.FSharpMap`2<System.String,System.String>,Studio.Graph.SavedNode)
-DA:405,20
-DA:408,10
-DA:417,1
-DA:421,1
-DA:422,0
-DA:425,1
+FNDA:13,System.Boolean Studio.Compiler.PipelineCodeGenerator::isHistogramDataNode(Studio.Graph.SavedNode)
+DA:357,13
+FN:359,System.Boolean Studio.Compiler.PipelineCodeGenerator::isQuantilesNode(Studio.Graph.SavedNode)
+FNDA:13,System.Boolean Studio.Compiler.PipelineCodeGenerator::isQuantilesNode(Studio.Graph.SavedNode)
+DA:360,13
+FN:362,System.Boolean Studio.Compiler.PipelineCodeGenerator::isStackInfoNode(Studio.Graph.SavedNode)
+FNDA:13,System.Boolean Studio.Compiler.PipelineCodeGenerator::isStackInfoNode(Studio.Graph.SavedNode)
+DA:363,13
+FN:365,System.Boolean Studio.Compiler.PipelineCodeGenerator::isChunkInfoNode(Studio.Graph.SavedNode)
+FNDA:32,System.Boolean Studio.Compiler.PipelineCodeGenerator::isChunkInfoNode(Studio.Graph.SavedNode)
+DA:366,32
+BRDA:366,16,0,3
+BRDA:366,16,1,10
+BRDA:366,39,0,4
+BRDA:366,39,1,9
+FN:368,Microsoft.FSharp.Core.FSharpOption`1<System.String> Studio.Compiler.PipelineCodeGenerator::quantileFieldExpression(a,System.Int32)
+FNDA:4,Microsoft.FSharp.Core.FSharpOption`1<System.String> Studio.Compiler.PipelineCodeGenerator::quantileFieldExpression(a,System.Int32)
+DA:369,4
+BRDA:369,3,0,1
+BRDA:369,3,1,0
+BRDA:369,14,0,1
+BRDA:369,14,1,0
+FN:372,Studio.Compiler.PipelineCodeGenerator/ParameterExpression Studio.Compiler.PipelineCodeGenerator::parameterExpression(Studio.Graph.SavedGraph,Microsoft.FSharp.Collections.FSharpMap`2<System.String,Studio.Graph.SavedNode>,Microsoft.FSharp.Collections.FSharpMap`2<System.String,System.String>,Microsoft.FSharp.Collections.FSharpMap`2<System.String,System.String>,Microsoft.FSharp.Collections.FSharpMap`2<System.String,System.String>,Microsoft.FSharp.Collections.FSharpMap`2<System.String,System.String>,Microsoft.FSharp.Collections.FSharpMap`2<System.String,System.String>,Microsoft.FSharp.Collections.FSharpMap`2<System.String,System.String>,Microsoft.FSharp.Collections.FSharpMap`2<System.String,System.String>,Studio.Graph.SavedNode,System.Int32,System.String)
+FNDA:231,Studio.Compiler.PipelineCodeGenerator/ParameterExpression Studio.Compiler.PipelineCodeGenerator::parameterExpression(Studio.Graph.SavedGraph,Microsoft.FSharp.Collections.FSharpMap`2<System.String,Studio.Graph.SavedNode>,Microsoft.FSharp.Collections.FSharpMap`2<System.String,System.String>,Microsoft.FSharp.Collections.FSharpMap`2<System.String,System.String>,Microsoft.FSharp.Collections.FSharpMap`2<System.String,System.String>,Microsoft.FSharp.Collections.FSharpMap`2<System.String,System.String>,Microsoft.FSharp.Collections.FSharpMap`2<System.String,System.String>,Microsoft.FSharp.Collections.FSharpMap`2<System.String,System.String>,Microsoft.FSharp.Collections.FSharpMap`2<System.String,System.String>,Studio.Graph.SavedNode,System.Int32,System.String)
+DA:373,231
+DA:374,231
+DA:375,642
+DA:376,167
+DA:377,292
+DA:378,231
+DA:379,25
+DA:380,231
+DA:381,24
+DA:382,231
+DA:383,39
+DA:384,2
+DA:385,231
+DA:386,33
+DA:387,0
+DA:388,231
+DA:389,33
+DA:390,2
+DA:391,231
+DA:392,27
+DA:393,1
+DA:394,231
+DA:395,8
+DA:396,8
+DA:397,11
+DA:398,8
+DA:399,5
+DA:400,5
+DA:401,18
+DA:402,231
+DA:403,231
+DA:405,231
+DA:407,24
+DA:408,24
+DA:410,207
+DA:411,207
+BRDA:378,34,1,206
+BRDA:378,34,0,25
+BRDA:379,83,0,13
+BRDA:379,83,1,12
+BRDA:379,97,0,13
+BRDA:383,171,0,2
+BRDA:383,189,0,2
+BRDA:383,171,1,11
+BRDA:383,189,1,11
+BRDA:386,266,1,0
+BRDA:386,266,0,11
+BRDA:389,319,1,2
+BRDA:389,319,0,9
+BRDA:392,372,1,1
+BRDA:392,372,0,8
+BRDA:397,435,1,5
+BRDA:397,435,0,3
+BRDA:398,483,1,5
+BRDA:401,513,1,0
+BRDA:401,513,0,5
+BRDA:398,483,0,3
+BRDA:379,97,1,0
+BRDA:405,568,1,24
+BRDA:405,568,0,207
+FN:413,System.Tuple`2<System.String,System.String> Studio.Compiler.PipelineCodeGenerator::scalarBinding(Studio.Graph.SavedGraph,Microsoft.FSharp.Collections.FSharpMap`2<System.String,Studio.Graph.SavedNode>,Microsoft.FSharp.Collections.FSharpMap`2<System.String,System.String>,Microsoft.FSharp.Collections.FSharpMap`2<System.String,System.String>,Microsoft.FSharp.Collections.FSharpMap`2<System.String,System.String>,Microsoft.FSharp.Collections.FSharpMap`2<System.String,System.String>,Microsoft.FSharp.Collections.FSharpMap`2<System.String,System.String>,Microsoft.FSharp.Collections.FSharpMap`2<System.String,System.String>,Microsoft.FSharp.Collections.FSharpMap`2<System.String,System.String>,Studio.Graph.SavedNode)
+FNDA:20,System.Tuple`2<System.String,System.String> Studio.Compiler.PipelineCodeGenerator::scalarBinding(Studio.Graph.SavedGraph,Microsoft.FSharp.Collections.FSharpMap`2<System.String,Studio.Graph.SavedNode>,Microsoft.FSharp.Collections.FSharpMap`2<System.String,System.String>,Microsoft.FSharp.Collections.FSharpMap`2<System.String,System.String>,Microsoft.FSharp.Collections.FSharpMap`2<System.String,System.String>,Microsoft.FSharp.Collections.FSharpMap`2<System.String,System.String>,Microsoft.FSharp.Collections.FSharpMap`2<System.String,System.String>,Microsoft.FSharp.Collections.FSharpMap`2<System.String,System.String>,Microsoft.FSharp.Collections.FSharpMap`2<System.String,System.String>,Studio.Graph.SavedNode)
+DA:414,20
+DA:417,10
 DA:426,1
-DA:427,1
-DA:433,1
+DA:430,1
+DA:431,0
 DA:434,1
 DA:435,1
-DA:438,2
-DA:439,6
-DA:440,4
-DA:441,2
-DA:444,2
-DA:445,2
-DA:447,0
-DA:449,2
-DA:450,1
-DA:451,1
-DA:453,7
-DA:455,10
-BRDA:408,35,0,9
-BRDA:408,35,1,1
-BRDA:417,105,0,1
-BRDA:417,119,0,1
-BRDA:417,133,0,1
-BRDA:417,133,1,0
-BRDA:417,119,1,0
-BRDA:417,105,1,0
-BRDA:417,147,0,1
-BRDA:417,147,1,0
-BRDA:427,227,1,0
-BRDA:427,227,0,1
-BRDA:408,48,0,2
-BRDA:440,392,1,0
-BRDA:440,392,0,2
-BRDA:441,470,1,0
-BRDA:441,470,0,2
-BRDA:444,497,0,2
-BRDA:444,497,1,0
-BRDA:449,555,0,1
-BRDA:449,555,1,1
-BRDA:408,48,1,7
-FN:467,System.Tuple`2<System.String,System.String> Studio.Compiler.PipelineCodeGenerator::stackInfoBinding(Studio.Graph.SavedGraph,Microsoft.FSharp.Collections.FSharpMap`2<System.String,Studio.Graph.SavedNode>,Microsoft.FSharp.Collections.FSharpMap`2<System.String,System.String>,Microsoft.FSharp.Collections.FSharpMap`2<System.String,System.String>,Microsoft.FSharp.Collections.FSharpMap`2<System.String,System.String>,Microsoft.FSharp.Collections.FSharpMap`2<System.String,System.String>,Microsoft.FSharp.Collections.FSharpMap`2<System.String,System.String>,Microsoft.FSharp.Collections.FSharpMap`2<System.String,System.String>,Studio.Graph.SavedNode)
-FNDA:2,System.Tuple`2<System.String,System.String> Studio.Compiler.PipelineCodeGenerator::stackInfoBinding(Studio.Graph.SavedGraph,Microsoft.FSharp.Collections.FSharpMap`2<System.String,Studio.Graph.SavedNode>,Microsoft.FSharp.Collections.FSharpMap`2<System.String,System.String>,Microsoft.FSharp.Collections.FSharpMap`2<System.String,System.String>,Microsoft.FSharp.Collections.FSharpMap`2<System.String,System.String>,Microsoft.FSharp.Collections.FSharpMap`2<System.String,System.String>,Microsoft.FSharp.Collections.FSharpMap`2<System.String,System.String>,Microsoft.FSharp.Collections.FSharpMap`2<System.String,System.String>,Studio.Graph.SavedNode)
-DA:468,2
-DA:469,1
-DA:470,1
-DA:471,1
-FN:483,System.Tuple`2<System.String,System.String> Studio.Compiler.PipelineCodeGenerator::chunkInfoBinding(Studio.Graph.SavedGraph,Microsoft.FSharp.Collections.FSharpMap`2<System.String,Studio.Graph.SavedNode>,Microsoft.FSharp.Collections.FSharpMap`2<System.String,System.String>,Microsoft.FSharp.Collections.FSharpMap`2<System.String,System.String>,Microsoft.FSharp.Collections.FSharpMap`2<System.String,System.String>,Microsoft.FSharp.Collections.FSharpMap`2<System.String,System.String>,Microsoft.FSharp.Collections.FSharpMap`2<System.String,System.String>,Microsoft.FSharp.Collections.FSharpMap`2<System.String,System.String>,Studio.Graph.SavedNode)
-FNDA:6,System.Tuple`2<System.String,System.String> Studio.Compiler.PipelineCodeGenerator::chunkInfoBinding(Studio.Graph.SavedGraph,Microsoft.FSharp.Collections.FSharpMap`2<System.String,Studio.Graph.SavedNode>,Microsoft.FSharp.Collections.FSharpMap`2<System.String,System.String>,Microsoft.FSharp.Collections.FSharpMap`2<System.String,System.String>,Microsoft.FSharp.Collections.FSharpMap`2<System.String,System.String>,Microsoft.FSharp.Collections.FSharpMap`2<System.String,System.String>,Microsoft.FSharp.Collections.FSharpMap`2<System.String,System.String>,Microsoft.FSharp.Collections.FSharpMap`2<System.String,System.String>,Studio.Graph.SavedNode)
-DA:484,6
-DA:485,3
-DA:487,3
-DA:488,1
-DA:489,1
-DA:490,1
-DA:491,2
-DA:492,1
-DA:493,1
-DA:494,1
-DA:495,1
-DA:496,1
+DA:436,1
+DA:442,1
+DA:443,1
+DA:444,1
+DA:447,2
+DA:448,6
+DA:449,4
+DA:450,2
+DA:453,2
+DA:454,2
+DA:456,0
+DA:458,2
+DA:459,1
+DA:460,1
+DA:462,7
+DA:464,10
+BRDA:417,35,0,9
+BRDA:417,35,1,1
+BRDA:426,107,0,1
+BRDA:426,121,0,1
+BRDA:426,135,0,1
+BRDA:426,135,1,0
+BRDA:426,121,1,0
+BRDA:426,107,1,0
+BRDA:426,149,0,1
+BRDA:426,149,1,0
+BRDA:436,229,1,0
+BRDA:436,229,0,1
+BRDA:417,48,0,2
+BRDA:449,394,1,0
+BRDA:449,394,0,2
+BRDA:450,474,1,0
+BRDA:450,474,0,2
+BRDA:453,501,0,2
+BRDA:453,501,1,0
+BRDA:458,559,0,1
+BRDA:458,559,1,1
+BRDA:417,48,1,7
+FN:476,System.Tuple`2<System.String,System.String> Studio.Compiler.PipelineCodeGenerator::stackInfoBinding(Studio.Graph.SavedGraph,Microsoft.FSharp.Collections.FSharpMap`2<System.String,Studio.Graph.SavedNode>,Microsoft.FSharp.Collections.FSharpMap`2<System.String,System.String>,Microsoft.FSharp.Collections.FSharpMap`2<System.String,System.String>,Microsoft.FSharp.Collections.FSharpMap`2<System.String,System.String>,Microsoft.FSharp.Collections.FSharpMap`2<System.String,System.String>,Microsoft.FSharp.Collections.FSharpMap`2<System.String,System.String>,Microsoft.FSharp.Collections.FSharpMap`2<System.String,System.String>,Microsoft.FSharp.Collections.FSharpMap`2<System.String,System.String>,Studio.Graph.SavedNode)
+FNDA:2,System.Tuple`2<System.String,System.String> Studio.Compiler.PipelineCodeGenerator::stackInfoBinding(Studio.Graph.SavedGraph,Microsoft.FSharp.Collections.FSharpMap`2<System.String,Studio.Graph.SavedNode>,Microsoft.FSharp.Collections.FSharpMap`2<System.String,System.String>,Microsoft.FSharp.Collections.FSharpMap`2<System.String,System.String>,Microsoft.FSharp.Collections.FSharpMap`2<System.String,System.String>,Microsoft.FSharp.Collections.FSharpMap`2<System.String,System.String>,Microsoft.FSharp.Collections.FSharpMap`2<System.String,System.String>,Microsoft.FSharp.Collections.FSharpMap`2<System.String,System.String>,Microsoft.FSharp.Collections.FSharpMap`2<System.String,System.String>,Studio.Graph.SavedNode)
+DA:477,2
+DA:478,1
+DA:479,1
+DA:480,1
+FN:492,System.Tuple`2<System.String,System.String> Studio.Compiler.PipelineCodeGenerator::chunkInfoBinding(Studio.Graph.SavedGraph,Microsoft.FSharp.Collections.FSharpMap`2<System.String,Studio.Graph.SavedNode>,Microsoft.FSharp.Collections.FSharpMap`2<System.String,System.String>,Microsoft.FSharp.Collections.FSharpMap`2<System.String,System.String>,Microsoft.FSharp.Collections.FSharpMap`2<System.String,System.String>,Microsoft.FSharp.Collections.FSharpMap`2<System.String,System.String>,Microsoft.FSharp.Collections.FSharpMap`2<System.String,System.String>,Microsoft.FSharp.Collections.FSharpMap`2<System.String,System.String>,Microsoft.FSharp.Collections.FSharpMap`2<System.String,System.String>,Studio.Graph.SavedNode)
+FNDA:6,System.Tuple`2<System.String,System.String> Studio.Compiler.PipelineCodeGenerator::chunkInfoBinding(Studio.Graph.SavedGraph,Microsoft.FSharp.Collections.FSharpMap`2<System.String,Studio.Graph.SavedNode>,Microsoft.FSharp.Collections.FSharpMap`2<System.String,System.String>,Microsoft.FSharp.Collections.FSharpMap`2<System.String,System.String>,Microsoft.FSharp.Collections.FSharpMap`2<System.String,System.String>,Microsoft.FSharp.Collections.FSharpMap`2<System.String,System.String>,Microsoft.FSharp.Collections.FSharpMap`2<System.String,System.String>,Microsoft.FSharp.Collections.FSharpMap`2<System.String,System.String>,Microsoft.FSharp.Collections.FSharpMap`2<System.String,System.String>,Studio.Graph.SavedNode)
+DA:493,6
+DA:494,3
+DA:496,3
+DA:497,1
 DA:498,1
 DA:499,1
-BRDA:487,75,0,1
-BRDA:487,75,1,2
-BRDA:491,215,0,1
-BRDA:491,215,1,1
-FN:649,System.String Studio.Compiler.PipelineCodeGenerator::savedElementLine(Studio.Graph.SavedGraph,Microsoft.FSharp.Collections.FSharpMap`2<System.String,Studio.Graph.SavedNode>,Microsoft.FSharp.Collections.FSharpMap`2<System.String,System.String>,Microsoft.FSharp.Collections.FSharpMap`2<System.String,System.String>,Microsoft.FSharp.Collections.FSharpMap`2<System.String,System.String>,Microsoft.FSharp.Collections.FSharpMap`2<System.String,System.String>,Microsoft.FSharp.Collections.FSharpMap`2<System.String,System.String>,Microsoft.FSharp.Collections.FSharpMap`2<System.String,System.String>,Studio.Graph.SavedNode)
-FNDA:72,System.String Studio.Compiler.PipelineCodeGenerator::savedElementLine(Studio.Graph.SavedGraph,Microsoft.FSharp.Collections.FSharpMap`2<System.String,Studio.Graph.SavedNode>,Microsoft.FSharp.Collections.FSharpMap`2<System.String,System.String>,Microsoft.FSharp.Collections.FSharpMap`2<System.String,System.String>,Microsoft.FSharp.Collections.FSharpMap`2<System.String,System.String>,Microsoft.FSharp.Collections.FSharpMap`2<System.String,System.String>,Microsoft.FSharp.Collections.FSharpMap`2<System.String,System.String>,Microsoft.FSharp.Collections.FSharpMap`2<System.String,System.String>,Studio.Graph.SavedNode)
-DA:650,72
-DA:652,0
-DA:653,0
-DA:654,0
-DA:655,0
-DA:656,0
-DA:657,0
-DA:659,0
-DA:660,0
+DA:500,2
+DA:501,1
+DA:502,1
+DA:503,1
+DA:504,1
+DA:505,1
+DA:507,1
+DA:508,1
+BRDA:496,77,0,1
+BRDA:496,77,1,2
+BRDA:500,217,0,1
+BRDA:500,217,1,1
+FN:658,System.String Studio.Compiler.PipelineCodeGenerator::savedElementLine(Studio.Graph.SavedGraph,Microsoft.FSharp.Collections.FSharpMap`2<System.String,Studio.Graph.SavedNode>,Microsoft.FSharp.Collections.FSharpMap`2<System.String,System.String>,Microsoft.FSharp.Collections.FSharpMap`2<System.String,System.String>,Microsoft.FSharp.Collections.FSharpMap`2<System.String,System.String>,Microsoft.FSharp.Collections.FSharpMap`2<System.String,System.String>,Microsoft.FSharp.Collections.FSharpMap`2<System.String,System.String>,Microsoft.FSharp.Collections.FSharpMap`2<System.String,System.String>,Microsoft.FSharp.Collections.FSharpMap`2<System.String,System.String>,Studio.Graph.SavedNode)
+FNDA:78,System.String Studio.Compiler.PipelineCodeGenerator::savedElementLine(Studio.Graph.SavedGraph,Microsoft.FSharp.Collections.FSharpMap`2<System.String,Studio.Graph.SavedNode>,Microsoft.FSharp.Collections.FSharpMap`2<System.String,System.String>,Microsoft.FSharp.Collections.FSharpMap`2<System.String,System.String>,Microsoft.FSharp.Collections.FSharpMap`2<System.String,System.String>,Microsoft.FSharp.Collections.FSharpMap`2<System.String,System.String>,Microsoft.FSharp.Collections.FSharpMap`2<System.String,System.String>,Microsoft.FSharp.Collections.FSharpMap`2<System.String,System.String>,Microsoft.FSharp.Collections.FSharpMap`2<System.String,System.String>,Studio.Graph.SavedNode)
+DA:659,78
 DA:661,0
 DA:662,0
 DA:663,0
 DA:664,0
 DA:665,0
 DA:666,0
-DA:667,0
 DA:668,0
+DA:669,0
 DA:670,0
+DA:671,0
+DA:672,0
+DA:673,0
 DA:674,0
-DA:678,0
-DA:680,0
-DA:682,0
+DA:675,0
+DA:676,0
+DA:677,0
+DA:679,0
 DA:683,0
-DA:684,0
-DA:685,0
-DA:686,0
 DA:687,0
-DA:688,0
 DA:689,0
-DA:690,0
 DA:691,0
 DA:692,0
 DA:693,0
@@ -2488,27 +2484,28 @@ DA:694,0
 DA:695,0
 DA:696,0
 DA:697,0
+DA:698,0
 DA:699,0
 DA:700,0
 DA:701,0
 DA:702,0
 DA:703,0
 DA:704,0
-DA:706,1
-DA:707,1
-DA:708,1
-DA:709,1
-DA:710,2
-DA:712,1
-DA:713,1
-DA:714,1
+DA:705,0
+DA:706,0
+DA:708,0
+DA:709,0
+DA:710,0
+DA:711,0
+DA:712,0
+DA:713,0
 DA:715,1
 DA:716,1
 DA:717,1
 DA:718,1
-DA:719,1
-DA:720,1
-DA:721,2
+DA:719,2
+DA:721,1
+DA:722,1
 DA:723,1
 DA:724,1
 DA:725,1
@@ -2516,1529 +2513,1574 @@ DA:726,1
 DA:727,1
 DA:728,1
 DA:729,1
-DA:730,1
-DA:731,2
-DA:733,21
-DA:734,21
-DA:735,21
-DA:736,21
-DA:737,42
+DA:730,2
+DA:732,1
+DA:733,1
+DA:734,1
+DA:735,1
+DA:736,1
+DA:737,1
+DA:738,1
 DA:739,1
-DA:740,1
-DA:741,1
-DA:742,1
-DA:743,1
-DA:744,1
-DA:746,1
-DA:747,1
+DA:740,2
+DA:742,24
+DA:743,24
+DA:744,24
+DA:745,24
+DA:746,48
 DA:748,1
 DA:749,1
 DA:750,1
 DA:751,1
+DA:752,1
 DA:753,1
-DA:754,1
 DA:755,1
 DA:756,1
 DA:757,1
 DA:758,1
-DA:760,2
-DA:761,2
-DA:762,2
-DA:763,2
-DA:764,2
-DA:765,2
-DA:766,2
-DA:767,2
-DA:768,2
+DA:759,1
+DA:760,1
+DA:762,1
+DA:763,1
+DA:764,1
+DA:765,1
+DA:766,1
+DA:767,1
 DA:769,2
 DA:770,2
-DA:772,1
-DA:773,1
-DA:774,1
-DA:775,1
-DA:776,1
-DA:777,1
-DA:778,1
-DA:779,1
-DA:780,1
+DA:771,2
+DA:772,2
+DA:773,2
+DA:774,2
+DA:775,2
+DA:776,2
+DA:777,2
+DA:778,2
+DA:779,2
 DA:781,1
-DA:783,0
-DA:784,0
-DA:785,0
+DA:782,1
+DA:783,1
+DA:784,1
+DA:785,1
+DA:786,1
 DA:787,1
 DA:788,1
 DA:789,1
 DA:790,1
-DA:793,1
-DA:794,1
-DA:795,6
-DA:796,2
-DA:797,4
-DA:798,2
+DA:792,0
+DA:793,0
+DA:794,0
+DA:796,1
+DA:797,1
+DA:798,1
 DA:799,1
-DA:800,3
-DA:801,2
-DA:802,2
+DA:802,1
 DA:803,1
-DA:805,1
+DA:804,6
+DA:805,2
+DA:806,4
+DA:807,2
 DA:808,1
 DA:809,3
-DA:810,1
-DA:811,4
+DA:810,2
+DA:811,2
 DA:812,1
-DA:813,1
-DA:814,3
-DA:815,2
-DA:816,1
+DA:814,1
 DA:817,1
-DA:818,1
-DA:819,4
-DA:820,1
+DA:818,3
+DA:819,1
+DA:820,4
 DA:821,1
-DA:822,2
-DA:823,1
+DA:822,1
+DA:823,3
+DA:824,2
 DA:825,1
-DA:828,1
-DA:829,3
+DA:826,1
+DA:827,1
+DA:828,4
+DA:829,1
 DA:830,1
-DA:831,5
+DA:831,2
 DA:832,1
-DA:833,1
 DA:834,1
-DA:835,2
-DA:836,1
-DA:837,2
-DA:838,1
-DA:839,3
-DA:840,1
+DA:837,1
+DA:838,3
+DA:839,1
+DA:840,5
 DA:841,1
 DA:842,1
 DA:843,1
-DA:844,1
+DA:844,2
 DA:845,1
-DA:846,1
-DA:847,2
-DA:848,1
+DA:846,2
+DA:847,1
+DA:848,3
+DA:849,1
 DA:850,1
 DA:851,1
-DA:853,0
-DA:854,0
-DA:857,6
-DA:858,26
-DA:859,6
-DA:860,54
-DA:861,13
-DA:862,6
-DA:863,13
-DA:864,6
-DA:867,6
-DA:869,6
-DA:871,0
-DA:873,1
-DA:875,1
-DA:876,1
-DA:877,1
-DA:879,0
-DA:881,1
-DA:883,0
-DA:884,31
-DA:885,0
-DA:886,0
-DA:887,62
+DA:852,1
+DA:853,1
+DA:854,1
+DA:855,1
+DA:856,2
+DA:857,1
+DA:859,1
+DA:860,1
+DA:862,0
+DA:863,0
+DA:866,6
+DA:867,26
+DA:868,6
+DA:869,54
+DA:870,13
+DA:871,6
+DA:872,13
+DA:873,6
+DA:876,6
+DA:878,6
+DA:880,0
+DA:882,2
+DA:884,1
+DA:885,1
+DA:886,1
 DA:888,0
-DA:890,0
-DA:891,0
+DA:890,1
 DA:892,0
-DA:893,0
+DA:893,33
 DA:894,0
-DA:896,1
-DA:897,2
-DA:898,2
-DA:899,2
-DA:900,1
+DA:895,0
+DA:896,66
+DA:897,0
+DA:899,0
+DA:900,0
+DA:901,0
 DA:902,0
 DA:903,0
-DA:905,0
-DA:906,0
-DA:907,0
-DA:908,0
-DA:910,1
-DA:911,1
-DA:912,1
-DA:913,1
+DA:905,1
+DA:906,2
+DA:907,2
+DA:908,2
+DA:909,1
+DA:911,0
+DA:912,0
+DA:914,0
 DA:915,0
 DA:916,0
 DA:917,0
-DA:918,0
-DA:920,0
-DA:921,0
-DA:922,0
-DA:923,0
-DA:924,0
-DA:925,0
-DA:927,0
-DA:928,0
-DA:930,0
-DA:931,0
-DA:932,0
-DA:933,0
-DA:935,0
-DA:936,0
-DA:937,0
+DA:919,1
+DA:920,1
+DA:921,1
+DA:922,1
+DA:924,1
+DA:925,1
+DA:926,1
+DA:927,1
+DA:929,1
+DA:930,1
+DA:931,1
+DA:932,1
+DA:933,1
+DA:934,1
+DA:936,1
+DA:937,1
+DA:938,1
 DA:939,1
-DA:940,1
-DA:941,1
-DA:942,1
+DA:941,0
+DA:942,0
+DA:943,0
 DA:944,0
 DA:945,0
-DA:946,0
-DA:947,0
-DA:948,0
-DA:950,1
-DA:951,1
-DA:952,1
-DA:954,0
+DA:947,1
+DA:948,1
+DA:949,1
+DA:951,0
+DA:952,0
+DA:953,0
 DA:955,0
 DA:956,0
-DA:958,0
-DA:959,0
-DA:960,0
+DA:957,0
+DA:959,1
+DA:960,1
+DA:961,1
 DA:962,1
-DA:963,1
-DA:964,1
-DA:965,1
+DA:964,0
+DA:965,0
+DA:966,0
 DA:967,0
-DA:968,0
 DA:969,0
 DA:970,0
+DA:971,0
 DA:972,0
-DA:973,0
 DA:974,0
 DA:975,0
+DA:976,0
 DA:977,0
-DA:978,0
 DA:979,0
 DA:980,0
+DA:981,0
 DA:982,0
-DA:983,0
 DA:984,0
 DA:985,0
+DA:986,0
 DA:987,0
-DA:988,0
 DA:989,0
 DA:990,0
+DA:991,0
 DA:992,0
-DA:993,0
 DA:994,0
 DA:995,0
 DA:997,0
-DA:998,0
-DA:1000,0
+DA:999,0
+DA:1001,0
 DA:1002,0
-DA:1004,0
-DA:1005,0
-DA:1006,0
+DA:1003,0
+DA:1005,1
+DA:1006,1
 DA:1008,1
 DA:1009,1
-DA:1011,1
-DA:1012,1
-DA:1013,1
-DA:1015,0
+DA:1010,1
+DA:1012,0
+DA:1013,0
+DA:1014,0
 DA:1016,0
+DA:1017,0
 DA:1018,0
 DA:1019,0
-DA:1020,0
+DA:1021,0
 DA:1022,0
 DA:1023,0
 DA:1024,0
-DA:1025,0
+DA:1026,0
 DA:1027,0
 DA:1028,0
 DA:1029,0
-DA:1030,0
-DA:1032,0
-DA:1033,0
-DA:1034,0
+DA:1031,1
+DA:1032,1
+DA:1033,1
 DA:1035,0
-DA:1037,1
-DA:1038,1
-DA:1039,1
+DA:1036,0
+DA:1037,0
+DA:1038,0
+DA:1040,0
 DA:1041,0
 DA:1042,0
 DA:1043,0
-DA:1044,0
-DA:1046,0
+DA:1045,1
 DA:1047,0
 DA:1048,0
 DA:1049,0
 DA:1051,1
-DA:1053,0
-DA:1054,0
+DA:1052,1
+DA:1053,1
 DA:1055,0
-DA:1057,1
-DA:1058,1
-DA:1059,1
+DA:1056,0
+DA:1058,0
+DA:1059,0
 DA:1061,0
 DA:1062,0
 DA:1064,0
 DA:1065,0
-DA:1067,0
-DA:1068,0
-DA:1070,0
-DA:1071,0
-DA:1073,1
+DA:1067,1
+DA:1068,1
+DA:1070,1
+DA:1071,1
+DA:1072,1
 DA:1074,1
+DA:1075,1
 DA:1076,1
-DA:1077,1
 DA:1078,1
-DA:1080,1
+DA:1079,1
 DA:1081,1
 DA:1082,1
+DA:1083,1
 DA:1084,1
-DA:1085,1
+DA:1086,1
 DA:1087,1
 DA:1088,1
 DA:1089,1
-DA:1090,1
+DA:1091,1
 DA:1092,1
-DA:1093,1
-DA:1095,1
-DA:1096,1
+DA:1094,0
+DA:1095,0
+DA:1096,0
 DA:1098,0
 DA:1099,0
 DA:1100,0
 DA:1102,0
 DA:1103,0
 DA:1104,0
+DA:1105,0
 DA:1106,0
 DA:1107,0
 DA:1108,0
 DA:1109,0
 DA:1110,0
 DA:1111,0
-DA:1112,0
 DA:1113,0
 DA:1114,0
 DA:1115,0
-DA:1117,0
-DA:1118,0
-DA:1119,0
-DA:1121,14
-DA:1122,14
-DA:1123,14
-DA:1125,0
-BRDA:650,115,0,72
-BRDA:650,132,0,72
-BRDA:650,149,0,72
-BRDA:650,166,0,71
-BRDA:650,183,0,70
-BRDA:650,200,0,69
-BRDA:650,217,0,48
-BRDA:650,234,0,47
-BRDA:650,251,0,46
-BRDA:650,268,0,45
-BRDA:650,285,0,43
-BRDA:650,302,0,42
-BRDA:650,319,0,42
-BRDA:650,336,0,41
-BRDA:650,353,0,40
-BRDA:650,370,0,34
-BRDA:650,387,0,34
-BRDA:650,404,0,33
-BRDA:650,421,0,32
-BRDA:650,438,0,32
-BRDA:650,455,0,31
-BRDA:650,472,0,31
-BRDA:650,489,0,0
-BRDA:884,502,0,0
-BRDA:650,489,1,31
-BRDA:887,552,0,1
-BRDA:884,565,0,1
-BRDA:887,590,0,0
-BRDA:884,565,1,0
-BRDA:887,552,1,30
-BRDA:887,625,0,0
-BRDA:884,638,0,0
-BRDA:887,663,0,0
-BRDA:884,638,1,0
-BRDA:887,625,1,30
-BRDA:887,698,0,0
-BRDA:884,711,0,0
-BRDA:887,736,0,0
-BRDA:884,711,1,0
-BRDA:887,698,1,30
-BRDA:887,771,0,1
-BRDA:884,784,0,1
-BRDA:887,809,0,0
-BRDA:884,784,1,0
-BRDA:887,771,1,29
-BRDA:887,844,0,0
-BRDA:884,857,0,0
-BRDA:887,882,0,0
-BRDA:884,857,1,0
-BRDA:887,844,1,29
-BRDA:887,917,0,0
-BRDA:884,930,0,0
-BRDA:887,955,0,0
-BRDA:884,930,1,0
-BRDA:887,917,1,29
-BRDA:887,990,0,0
-BRDA:884,1003,0,0
-BRDA:887,1028,0,0
-BRDA:884,1003,1,0
-BRDA:887,990,1,29
-BRDA:887,1063,0,0
-BRDA:884,1076,0,0
-BRDA:887,1101,0,0
-BRDA:884,1076,1,0
-BRDA:887,1063,1,29
-BRDA:887,1136,0,0
-BRDA:884,1149,0,0
-BRDA:887,1174,0,0
-BRDA:884,1149,1,0
-BRDA:887,1136,1,29
-BRDA:887,1209,0,1
-BRDA:884,1222,0,1
-BRDA:887,1247,0,0
-BRDA:884,1222,1,0
-BRDA:887,1209,1,28
-BRDA:887,1282,0,0
-BRDA:884,1295,0,0
-BRDA:887,1320,0,0
-BRDA:884,1295,1,0
-BRDA:887,1282,1,28
-BRDA:887,1355,0,1
-BRDA:884,1368,0,1
-BRDA:887,1393,0,0
-BRDA:884,1368,1,0
-BRDA:887,1355,1,27
-BRDA:887,1428,0,0
-BRDA:884,1441,0,0
-BRDA:887,1466,0,0
-BRDA:884,1441,1,0
-BRDA:887,1428,1,27
-BRDA:887,1501,0,0
-BRDA:884,1514,0,0
-BRDA:887,1539,0,0
-BRDA:884,1514,1,0
-BRDA:887,1501,1,27
-BRDA:887,1574,0,1
-BRDA:884,1587,0,1
-BRDA:887,1612,0,0
-BRDA:884,1587,1,0
-BRDA:887,1574,1,26
-BRDA:887,1647,0,0
-BRDA:884,1660,0,0
-BRDA:887,1685,0,0
-BRDA:884,1660,1,0
-BRDA:887,1647,1,26
-BRDA:887,1720,0,0
-BRDA:884,1733,0,0
-BRDA:887,1758,0,0
-BRDA:884,1733,1,0
-BRDA:887,1720,1,26
-BRDA:887,1793,0,0
-BRDA:884,1806,0,0
-BRDA:887,1831,0,0
-BRDA:884,1806,1,0
-BRDA:887,1793,1,26
-BRDA:887,1866,0,0
-BRDA:884,1879,0,0
-BRDA:887,1904,0,0
-BRDA:884,1879,1,0
-BRDA:887,1866,1,26
-BRDA:887,1939,0,0
-BRDA:884,1952,0,0
-BRDA:887,1977,0,0
-BRDA:884,1952,1,0
-BRDA:887,1939,1,26
-BRDA:887,2012,0,0
-BRDA:884,2025,0,0
-BRDA:887,2050,0,0
-BRDA:884,2025,1,0
-BRDA:887,2012,1,26
-BRDA:887,2085,0,0
-BRDA:884,2098,0,0
-BRDA:887,2123,0,0
-BRDA:884,2098,1,0
-BRDA:887,2085,1,26
-BRDA:887,2158,0,0
-BRDA:884,2171,0,0
-BRDA:887,2196,0,0
-BRDA:884,2171,1,0
-BRDA:887,2158,1,26
-BRDA:887,2231,0,0
-BRDA:884,2244,0,0
-BRDA:887,2269,0,0
-BRDA:884,2244,1,0
-BRDA:887,2231,1,26
-BRDA:887,2304,0,0
-BRDA:884,2317,0,0
-BRDA:887,2342,0,0
-BRDA:884,2317,1,0
-BRDA:887,2304,1,26
-BRDA:887,2377,0,1
-BRDA:884,2390,0,1
-BRDA:887,2415,0,0
-BRDA:884,2390,1,0
-BRDA:887,2377,1,25
-BRDA:887,2450,0,1
-BRDA:884,2463,0,1
-BRDA:887,2488,0,0
-BRDA:884,2463,1,0
-BRDA:887,2450,1,24
-BRDA:887,2523,0,0
-BRDA:884,2536,0,0
-BRDA:887,2561,0,0
-BRDA:884,2536,1,0
-BRDA:887,2523,1,24
-BRDA:887,2596,0,0
-BRDA:884,2609,0,0
-BRDA:887,2634,0,0
-BRDA:884,2609,1,0
-BRDA:887,2596,1,24
-BRDA:887,2669,0,0
-BRDA:884,2682,0,0
-BRDA:887,2707,0,0
-BRDA:884,2682,1,0
-BRDA:887,2669,1,24
-BRDA:887,2742,0,0
-BRDA:884,2755,0,0
-BRDA:887,2780,0,0
-BRDA:884,2755,1,0
-BRDA:887,2742,1,24
-BRDA:887,2815,0,0
-BRDA:884,2828,0,0
-BRDA:887,2853,0,0
-BRDA:884,2828,1,0
-BRDA:887,2815,1,24
-BRDA:887,2888,0,1
-BRDA:884,2901,0,1
-BRDA:887,2926,0,0
-BRDA:884,2901,1,0
-BRDA:887,2888,1,23
-BRDA:887,2961,0,0
-BRDA:884,2974,0,0
-BRDA:887,2999,0,0
-BRDA:884,2974,1,0
-BRDA:887,2961,1,23
-BRDA:887,3034,0,0
-BRDA:884,3047,0,0
-BRDA:887,3072,0,0
-BRDA:884,3047,1,0
-BRDA:887,3034,1,23
-BRDA:887,3107,0,1
-BRDA:884,3120,0,1
-BRDA:887,3145,0,0
-BRDA:884,3120,1,0
-BRDA:887,3107,1,22
-BRDA:887,3180,0,0
-BRDA:884,3193,0,0
-BRDA:887,3218,0,0
-BRDA:884,3193,1,0
-BRDA:887,3180,1,22
-BRDA:887,3253,0,1
-BRDA:884,3266,0,1
-BRDA:887,3291,0,0
-BRDA:884,3266,1,0
-BRDA:887,3253,1,21
-BRDA:887,3326,0,0
-BRDA:884,3339,0,0
-BRDA:887,3364,0,0
-BRDA:884,3339,1,0
-BRDA:887,3326,1,21
-BRDA:887,3399,0,0
-BRDA:884,3412,0,0
-BRDA:887,3437,0,0
-BRDA:884,3412,1,0
-BRDA:887,3399,1,21
-BRDA:887,3472,0,0
-BRDA:884,3485,0,0
-BRDA:887,3510,0,0
-BRDA:884,3485,1,0
-BRDA:887,3472,1,21
-BRDA:887,3545,0,0
-BRDA:884,3558,0,0
-BRDA:887,3583,0,0
-BRDA:884,3558,1,0
-BRDA:887,3545,1,21
-BRDA:887,3618,0,1
-BRDA:884,3631,0,1
-BRDA:887,3656,0,0
-BRDA:884,3631,1,0
-BRDA:887,3618,1,20
-BRDA:887,3691,0,1
-BRDA:884,3704,0,1
-BRDA:887,3729,0,0
-BRDA:884,3704,1,0
-BRDA:887,3691,1,19
-BRDA:887,3764,0,1
-BRDA:884,3777,0,1
-BRDA:887,3802,0,0
-BRDA:884,3777,1,0
-BRDA:887,3764,1,18
-BRDA:887,3837,0,1
-BRDA:884,3850,0,1
-BRDA:887,3875,0,0
-BRDA:884,3850,1,0
-BRDA:887,3837,1,17
-BRDA:887,3910,0,1
-BRDA:884,3923,0,1
-BRDA:887,3948,0,0
-BRDA:884,3923,1,0
-BRDA:887,3910,1,16
-BRDA:887,3983,0,1
-BRDA:884,3996,0,1
-BRDA:887,4021,0,0
-BRDA:884,3996,1,0
-BRDA:887,3983,1,15
-BRDA:887,4056,0,1
-BRDA:884,4069,0,1
-BRDA:887,4094,0,0
-BRDA:884,4069,1,0
-BRDA:887,4056,1,14
-BRDA:887,4129,0,0
-BRDA:884,4142,0,0
-BRDA:887,4167,0,0
-BRDA:884,4142,1,0
-BRDA:887,4129,1,14
-BRDA:887,4202,0,0
-BRDA:884,4215,0,0
-BRDA:887,4240,0,0
-BRDA:884,4215,1,0
-BRDA:887,4202,1,14
-BRDA:887,4275,0,0
-BRDA:884,4288,0,0
-BRDA:887,4313,0,0
-BRDA:884,4288,1,0
-BRDA:887,4275,1,14
-BRDA:887,4348,0,0
-BRDA:884,4361,0,0
-BRDA:887,4386,0,0
-BRDA:884,4361,1,0
-BRDA:887,4348,1,14
-BRDA:887,4421,0,14
-BRDA:884,4434,0,14
-BRDA:887,4459,0,0
-BRDA:884,4434,1,0
-BRDA:887,4421,1,0
-BRDA:884,4493,0,0
-BRDA:887,4518,0,0
-BRDA:884,4493,1,0
-BRDA:650,115,1,0
-BRDA:650,132,1,0
-BRDA:670,4877,0,0
-BRDA:670,4891,0,0
-BRDA:670,4905,0,0
-BRDA:670,4919,0,0
-BRDA:670,4933,0,0
-BRDA:670,4877,1,0
-BRDA:670,4891,1,0
-BRDA:670,4905,1,0
-BRDA:670,4919,1,0
-BRDA:670,4933,1,0
-BRDA:670,4947,0,0
-BRDA:670,4947,1,0
-BRDA:650,149,1,0
-BRDA:650,166,1,1
-BRDA:650,183,1,1
-BRDA:650,200,1,1
-BRDA:650,217,1,21
-BRDA:650,234,1,1
-BRDA:650,251,1,1
-BRDA:650,268,1,1
-BRDA:650,285,1,2
-BRDA:650,302,1,1
-BRDA:650,319,1,0
-BRDA:650,336,1,1
-BRDA:650,353,1,1
-BRDA:805,7900,1,1
-BRDA:823,8023,1,0
-BRDA:823,8023,0,1
-BRDA:805,7900,0,0
-BRDA:650,370,1,6
-BRDA:650,387,1,0
-BRDA:650,404,1,1
-BRDA:650,421,1,1
-BRDA:650,438,1,0
-BRDA:650,455,1,1
-BRDA:650,472,1,0
-BRDA:884,502,1,0
-BRDA:887,530,0,0
-BRDA:887,530,1,0
-BRDA:887,590,1,1
-BRDA:887,663,1,0
-BRDA:887,736,1,0
-BRDA:887,809,1,1
-BRDA:887,882,1,0
-BRDA:887,955,1,0
-BRDA:887,1028,1,0
-BRDA:887,1101,1,0
-BRDA:887,1174,1,0
-BRDA:887,1247,1,1
-BRDA:887,1320,1,0
-BRDA:887,1393,1,1
-BRDA:887,1466,1,0
-BRDA:887,1539,1,0
-BRDA:887,1612,1,1
-BRDA:887,1685,1,0
-BRDA:887,1758,1,0
-BRDA:887,1831,1,0
-BRDA:887,1904,1,0
-BRDA:887,1977,1,0
-BRDA:887,2050,1,0
-BRDA:887,2123,1,0
-BRDA:887,2196,1,0
-BRDA:887,2269,1,0
-BRDA:887,2342,1,0
-BRDA:887,2415,1,1
-BRDA:887,2488,1,1
-BRDA:887,2561,1,0
-BRDA:887,2634,1,0
-BRDA:887,2707,1,0
-BRDA:887,2780,1,0
-BRDA:887,2853,1,0
-BRDA:887,2926,1,1
-BRDA:887,2999,1,0
-BRDA:887,3072,1,0
-BRDA:887,3145,1,1
-BRDA:887,3218,1,0
-BRDA:887,3291,1,1
-BRDA:887,3364,1,0
-BRDA:887,3437,1,0
-BRDA:887,3510,1,0
-BRDA:887,3583,1,0
-BRDA:887,3656,1,1
-BRDA:887,3729,1,1
-BRDA:887,3802,1,1
-BRDA:887,3875,1,1
-BRDA:887,3948,1,1
-BRDA:887,4021,1,1
-BRDA:887,4094,1,1
-BRDA:887,4167,1,0
-BRDA:887,4240,1,0
-BRDA:887,4313,1,0
-BRDA:887,4386,1,0
-BRDA:887,4459,1,14
-BRDA:887,4518,1,0
-FN:1127,System.String Studio.Compiler.PipelineCodeGenerator::generateSavedGraph(Studio.Graph.SavedGraph)
-FNDA:26,System.String Studio.Compiler.PipelineCodeGenerator::generateSavedGraph(Studio.Graph.SavedGraph)
-DA:1128,26
-DA:1129,26
-DA:1130,170
-DA:1132,26
-DA:1133,287
-DA:1135,26
-DA:1137,26
-DA:1138,26
-DA:1139,155
-DA:1140,22
-DA:1141,26
-DA:1142,87
-DA:1143,37
-DA:1144,28
-DA:1147,26
-DA:1148,27
-DA:1149,26
-DA:1152,26
-DA:1153,26
-DA:1154,155
-DA:1155,22
-DA:1156,26
-DA:1157,87
-DA:1158,26
-DA:1159,26
-DA:1162,26
-DA:1163,26
-DA:1164,26
-DA:1167,26
-DA:1168,26
-DA:1169,155
-DA:1170,22
-DA:1171,26
-DA:1172,87
-DA:1173,26
-DA:1174,27
-DA:1177,26
-DA:1178,27
-DA:1179,26
-DA:1182,26
-DA:1183,26
-DA:1184,155
-DA:1185,22
-DA:1186,26
-DA:1187,87
-DA:1188,26
+DA:1117,14
+DA:1118,14
+DA:1119,14
+DA:1121,0
+BRDA:659,117,0,78
+BRDA:659,134,0,78
+BRDA:659,151,0,78
+BRDA:659,168,0,77
+BRDA:659,185,0,76
+BRDA:659,202,0,75
+BRDA:659,219,0,51
+BRDA:659,236,0,50
+BRDA:659,253,0,49
+BRDA:659,270,0,48
+BRDA:659,287,0,46
+BRDA:659,304,0,45
+BRDA:659,321,0,45
+BRDA:659,338,0,44
+BRDA:659,355,0,43
+BRDA:659,372,0,37
+BRDA:659,389,0,37
+BRDA:659,406,0,35
+BRDA:659,423,0,34
+BRDA:659,440,0,34
+BRDA:659,457,0,33
+BRDA:659,474,0,33
+BRDA:659,491,0,0
+BRDA:893,504,0,0
+BRDA:659,491,1,33
+BRDA:896,554,0,1
+BRDA:893,567,0,1
+BRDA:896,592,0,0
+BRDA:893,567,1,0
+BRDA:896,554,1,32
+BRDA:896,627,0,0
+BRDA:893,640,0,0
+BRDA:896,665,0,0
+BRDA:893,640,1,0
+BRDA:896,627,1,32
+BRDA:896,700,0,0
+BRDA:893,713,0,0
+BRDA:896,738,0,0
+BRDA:893,713,1,0
+BRDA:896,700,1,32
+BRDA:896,773,0,1
+BRDA:893,786,0,1
+BRDA:896,811,0,0
+BRDA:893,786,1,0
+BRDA:896,773,1,31
+BRDA:896,846,0,1
+BRDA:893,859,0,1
+BRDA:896,884,0,0
+BRDA:893,859,1,0
+BRDA:896,846,1,30
+BRDA:896,919,0,1
+BRDA:893,932,0,1
+BRDA:896,957,0,0
+BRDA:893,932,1,0
+BRDA:896,919,1,29
+BRDA:896,992,0,1
+BRDA:893,1005,0,1
+BRDA:896,1030,0,0
+BRDA:893,1005,1,0
+BRDA:896,992,1,28
+BRDA:896,1065,0,0
+BRDA:893,1078,0,0
+BRDA:896,1103,0,0
+BRDA:893,1078,1,0
+BRDA:896,1065,1,28
+BRDA:896,1138,0,1
+BRDA:893,1151,0,1
+BRDA:896,1176,0,0
+BRDA:893,1151,1,0
+BRDA:896,1138,1,27
+BRDA:896,1211,0,0
+BRDA:893,1224,0,0
+BRDA:896,1249,0,0
+BRDA:893,1224,1,0
+BRDA:896,1211,1,27
+BRDA:896,1284,0,0
+BRDA:893,1297,0,0
+BRDA:896,1322,0,0
+BRDA:893,1297,1,0
+BRDA:896,1284,1,27
+BRDA:896,1357,0,1
+BRDA:893,1370,0,1
+BRDA:896,1395,0,0
+BRDA:893,1370,1,0
+BRDA:896,1357,1,26
+BRDA:896,1430,0,0
+BRDA:893,1443,0,0
+BRDA:896,1468,0,0
+BRDA:893,1443,1,0
+BRDA:896,1430,1,26
+BRDA:896,1503,0,0
+BRDA:893,1516,0,0
+BRDA:896,1541,0,0
+BRDA:893,1516,1,0
+BRDA:896,1503,1,26
+BRDA:896,1576,0,0
+BRDA:893,1589,0,0
+BRDA:896,1614,0,0
+BRDA:893,1589,1,0
+BRDA:896,1576,1,26
+BRDA:896,1649,0,0
+BRDA:893,1662,0,0
+BRDA:896,1687,0,0
+BRDA:893,1662,1,0
+BRDA:896,1649,1,26
+BRDA:896,1722,0,0
+BRDA:893,1735,0,0
+BRDA:896,1760,0,0
+BRDA:893,1735,1,0
+BRDA:896,1722,1,26
+BRDA:896,1795,0,0
+BRDA:893,1808,0,0
+BRDA:896,1833,0,0
+BRDA:893,1808,1,0
+BRDA:896,1795,1,26
+BRDA:896,1868,0,0
+BRDA:893,1881,0,0
+BRDA:896,1906,0,0
+BRDA:893,1881,1,0
+BRDA:896,1868,1,26
+BRDA:896,1941,0,0
+BRDA:893,1954,0,0
+BRDA:896,1979,0,0
+BRDA:893,1954,1,0
+BRDA:896,1941,1,26
+BRDA:896,2014,0,0
+BRDA:893,2027,0,0
+BRDA:896,2052,0,0
+BRDA:893,2027,1,0
+BRDA:896,2014,1,26
+BRDA:896,2087,0,0
+BRDA:893,2100,0,0
+BRDA:896,2125,0,0
+BRDA:893,2100,1,0
+BRDA:896,2087,1,26
+BRDA:896,2160,0,1
+BRDA:893,2173,0,1
+BRDA:896,2198,0,0
+BRDA:893,2173,1,0
+BRDA:896,2160,1,25
+BRDA:896,2233,0,1
+BRDA:893,2246,0,1
+BRDA:896,2271,0,0
+BRDA:893,2246,1,0
+BRDA:896,2233,1,24
+BRDA:896,2306,0,0
+BRDA:893,2319,0,0
+BRDA:896,2344,0,0
+BRDA:893,2319,1,0
+BRDA:896,2306,1,24
+BRDA:896,2379,0,0
+BRDA:893,2392,0,0
+BRDA:896,2417,0,0
+BRDA:893,2392,1,0
+BRDA:896,2379,1,24
+BRDA:896,2452,0,0
+BRDA:893,2465,0,0
+BRDA:896,2490,0,0
+BRDA:893,2465,1,0
+BRDA:896,2452,1,24
+BRDA:896,2525,0,0
+BRDA:893,2538,0,0
+BRDA:896,2563,0,0
+BRDA:893,2538,1,0
+BRDA:896,2525,1,24
+BRDA:896,2598,0,1
+BRDA:893,2611,0,1
+BRDA:896,2636,0,0
+BRDA:893,2611,1,0
+BRDA:896,2598,1,23
+BRDA:896,2671,0,0
+BRDA:893,2684,0,0
+BRDA:896,2709,0,0
+BRDA:893,2684,1,0
+BRDA:896,2671,1,23
+BRDA:896,2744,0,0
+BRDA:893,2757,0,0
+BRDA:896,2782,0,0
+BRDA:893,2757,1,0
+BRDA:896,2744,1,23
+BRDA:896,2817,0,1
+BRDA:893,2830,0,1
+BRDA:896,2855,0,0
+BRDA:893,2830,1,0
+BRDA:896,2817,1,22
+BRDA:896,2890,0,0
+BRDA:893,2903,0,0
+BRDA:896,2928,0,0
+BRDA:893,2903,1,0
+BRDA:896,2890,1,22
+BRDA:896,2963,0,1
+BRDA:893,2976,0,1
+BRDA:896,3001,0,0
+BRDA:893,2976,1,0
+BRDA:896,2963,1,21
+BRDA:896,3036,0,0
+BRDA:893,3049,0,0
+BRDA:896,3074,0,0
+BRDA:893,3049,1,0
+BRDA:896,3036,1,21
+BRDA:896,3109,0,0
+BRDA:893,3122,0,0
+BRDA:896,3147,0,0
+BRDA:893,3122,1,0
+BRDA:896,3109,1,21
+BRDA:896,3182,0,0
+BRDA:893,3195,0,0
+BRDA:896,3220,0,0
+BRDA:893,3195,1,0
+BRDA:896,3182,1,21
+BRDA:896,3255,0,0
+BRDA:893,3268,0,0
+BRDA:896,3293,0,0
+BRDA:893,3268,1,0
+BRDA:896,3255,1,21
+BRDA:896,3328,0,1
+BRDA:893,3341,0,1
+BRDA:896,3366,0,0
+BRDA:893,3341,1,0
+BRDA:896,3328,1,20
+BRDA:896,3401,0,1
+BRDA:893,3414,0,1
+BRDA:896,3439,0,0
+BRDA:893,3414,1,0
+BRDA:896,3401,1,19
+BRDA:896,3474,0,1
+BRDA:893,3487,0,1
+BRDA:896,3512,0,0
+BRDA:893,3487,1,0
+BRDA:896,3474,1,18
+BRDA:896,3547,0,1
+BRDA:893,3560,0,1
+BRDA:896,3585,0,0
+BRDA:893,3560,1,0
+BRDA:896,3547,1,17
+BRDA:896,3620,0,1
+BRDA:893,3633,0,1
+BRDA:896,3658,0,0
+BRDA:893,3633,1,0
+BRDA:896,3620,1,16
+BRDA:896,3693,0,1
+BRDA:893,3706,0,1
+BRDA:896,3731,0,0
+BRDA:893,3706,1,0
+BRDA:896,3693,1,15
+BRDA:896,3766,0,1
+BRDA:893,3779,0,1
+BRDA:896,3804,0,0
+BRDA:893,3779,1,0
+BRDA:896,3766,1,14
+BRDA:896,3839,0,0
+BRDA:893,3852,0,0
+BRDA:896,3877,0,0
+BRDA:893,3852,1,0
+BRDA:896,3839,1,14
+BRDA:896,3912,0,0
+BRDA:893,3925,0,0
+BRDA:896,3950,0,0
+BRDA:893,3925,1,0
+BRDA:896,3912,1,14
+BRDA:896,3985,0,0
+BRDA:893,3998,0,0
+BRDA:896,4023,0,0
+BRDA:893,3998,1,0
+BRDA:896,3985,1,14
+BRDA:896,4058,0,0
+BRDA:893,4071,0,0
+BRDA:896,4096,0,0
+BRDA:893,4071,1,0
+BRDA:896,4058,1,14
+BRDA:896,4131,0,14
+BRDA:893,4144,0,14
+BRDA:896,4169,0,0
+BRDA:893,4144,1,0
+BRDA:896,4131,1,0
+BRDA:893,4203,0,0
+BRDA:896,4228,0,0
+BRDA:893,4203,1,0
+BRDA:659,117,1,0
+BRDA:659,134,1,0
+BRDA:679,4587,0,0
+BRDA:679,4601,0,0
+BRDA:679,4615,0,0
+BRDA:679,4629,0,0
+BRDA:679,4643,0,0
+BRDA:679,4587,1,0
+BRDA:679,4601,1,0
+BRDA:679,4615,1,0
+BRDA:679,4629,1,0
+BRDA:679,4643,1,0
+BRDA:679,4657,0,0
+BRDA:679,4657,1,0
+BRDA:659,151,1,0
+BRDA:659,168,1,1
+BRDA:659,185,1,1
+BRDA:659,202,1,1
+BRDA:659,219,1,24
+BRDA:659,236,1,1
+BRDA:659,253,1,1
+BRDA:659,270,1,1
+BRDA:659,287,1,2
+BRDA:659,304,1,1
+BRDA:659,321,1,0
+BRDA:659,338,1,1
+BRDA:659,355,1,1
+BRDA:814,7546,1,1
+BRDA:832,7669,1,0
+BRDA:832,7669,0,1
+BRDA:814,7546,0,0
+BRDA:659,372,1,6
+BRDA:659,389,1,0
+BRDA:659,406,1,2
+BRDA:659,423,1,1
+BRDA:659,440,1,0
+BRDA:659,457,1,1
+BRDA:659,474,1,0
+BRDA:893,504,1,0
+BRDA:896,532,0,0
+BRDA:896,532,1,0
+BRDA:896,592,1,1
+BRDA:896,665,1,0
+BRDA:896,738,1,0
+BRDA:896,811,1,1
+BRDA:896,884,1,1
+BRDA:896,957,1,1
+BRDA:896,1030,1,1
+BRDA:896,1103,1,0
+BRDA:896,1176,1,1
+BRDA:896,1249,1,0
+BRDA:896,1322,1,0
+BRDA:896,1395,1,1
+BRDA:896,1468,1,0
+BRDA:896,1541,1,0
+BRDA:896,1614,1,0
+BRDA:896,1687,1,0
+BRDA:896,1760,1,0
+BRDA:896,1833,1,0
+BRDA:896,1906,1,0
+BRDA:896,1979,1,0
+BRDA:896,2052,1,0
+BRDA:896,2125,1,0
+BRDA:896,2198,1,1
+BRDA:896,2271,1,1
+BRDA:896,2344,1,0
+BRDA:896,2417,1,0
+BRDA:896,2490,1,0
+BRDA:896,2563,1,0
+BRDA:896,2636,1,1
+BRDA:896,2709,1,0
+BRDA:896,2782,1,0
+BRDA:896,2855,1,1
+BRDA:896,2928,1,0
+BRDA:896,3001,1,1
+BRDA:896,3074,1,0
+BRDA:896,3147,1,0
+BRDA:896,3220,1,0
+BRDA:896,3293,1,0
+BRDA:896,3366,1,1
+BRDA:896,3439,1,1
+BRDA:896,3512,1,1
+BRDA:896,3585,1,1
+BRDA:896,3658,1,1
+BRDA:896,3731,1,1
+BRDA:896,3804,1,1
+BRDA:896,3877,1,0
+BRDA:896,3950,1,0
+BRDA:896,4023,1,0
+BRDA:896,4096,1,0
+BRDA:896,4169,1,14
+BRDA:896,4228,1,0
+FN:1123,System.String Studio.Compiler.PipelineCodeGenerator::generateSavedGraph(Studio.Graph.SavedGraph)
+FNDA:28,System.String Studio.Compiler.PipelineCodeGenerator::generateSavedGraph(Studio.Graph.SavedGraph)
+DA:1124,28
+DA:1125,28
+DA:1126,182
+DA:1128,28
+DA:1129,307
+DA:1131,28
+DA:1133,28
+DA:1134,28
+DA:1135,167
+DA:1136,26
+DA:1137,28
+DA:1138,92
+DA:1139,41
+DA:1140,30
+DA:1143,28
+DA:1144,29
+DA:1145,28
+DA:1148,28
+DA:1149,28
+DA:1150,167
+DA:1151,26
+DA:1152,28
+DA:1153,92
+DA:1154,28
+DA:1155,28
+DA:1158,28
+DA:1159,28
+DA:1160,28
+DA:1163,28
+DA:1164,28
+DA:1165,167
+DA:1166,26
+DA:1167,28
+DA:1168,92
+DA:1169,28
+DA:1170,30
+DA:1173,28
+DA:1174,30
+DA:1175,28
+DA:1178,28
+DA:1179,28
+DA:1180,167
+DA:1181,26
+DA:1182,28
+DA:1183,92
+DA:1184,28
+DA:1185,29
+DA:1188,28
 DA:1189,29
-DA:1192,26
-DA:1193,27
-DA:1194,26
-DA:1197,26
-DA:1198,26
-DA:1199,155
-DA:1200,22
-DA:1201,26
-DA:1202,87
-DA:1203,26
-DA:1204,31
-DA:1207,26
-DA:1208,29
-DA:1209,26
+DA:1190,28
+DA:1193,28
+DA:1194,28
+DA:1195,167
+DA:1196,26
+DA:1197,28
+DA:1198,92
+DA:1199,28
+DA:1200,31
+DA:1203,28
+DA:1204,29
+DA:1205,28
+DA:1208,28
+DA:1209,28
+DA:1210,167
 DA:1211,26
-DA:1214,26
-DA:1215,158
-DA:1218,26
-DA:1219,26
-DA:1220,156
-DA:1221,60
-DA:1222,13
-DA:1223,1
-DA:1224,26
-DA:1225,11
-DA:1226,26
-DA:1227,86
-DA:1228,26
-DA:1415,26
-DA:1416,26
-DA:1417,92
-DA:1418,85
-DA:1419,84
-DA:1420,82
-DA:1421,81
-DA:1422,80
-DA:1423,79
-DA:1424,234
-DA:1425,231
-DA:1426,228
-DA:1427,228
-DA:1428,225
-DA:1429,225
-DA:1430,407
-DA:1432,26
-DA:1433,80
-DA:1513,236
-DA:1516,144
-DA:1518,51
-DA:1520,52
-DA:1522,26
-DA:1523,2
-DA:1525,52
-DA:1527,26
-DA:1528,2
-DA:1529,2
-DA:1530,2
-DA:1531,2
-DA:1532,2
-DA:1533,2
-DA:1534,2
-DA:1535,2
-DA:1536,2
-DA:1537,2
-DA:1538,2
-DA:1539,2
-DA:1541,26
-DA:1542,0
-DA:1543,0
-DA:1544,0
-DA:1545,0
-DA:1546,0
-DA:1548,26
-DA:1550,26
-DA:1551,11
-DA:1552,43
-DA:1553,22
-DA:1555,26
-DA:1556,26
-DA:1557,27
-DA:1558,2
-DA:1559,26
-DA:1560,80
-DA:1562,26
-BRDA:1433,746,0,0
-BRDA:1433,746,1,26
-BRDA:1433,840,1,27
-BRDA:1433,840,0,26
-BRDA:1513,908,0,0
-BRDA:1513,908,1,26
-BRDA:1513,1009,1,92
-BRDA:1513,958,0,0
-BRDA:1513,958,1,92
-BRDA:1513,992,1,117
-BRDA:1513,992,0,1
-BRDA:1513,1009,0,26
-BRDA:1516,1034,0,0
-BRDA:1516,1034,1,26
-BRDA:1516,1111,1,92
-BRDA:1516,1094,1,118
-BRDA:1516,1094,0,0
-BRDA:1516,1111,0,26
-BRDA:1518,1119,0,1
-BRDA:1518,1119,1,25
-BRDA:1522,1150,0,1
-BRDA:1522,1150,1,25
-BRDA:1527,1188,0,1
-BRDA:1527,1188,1,25
-BRDA:1541,1399,0,0
-BRDA:1541,1399,1,26
-BRDA:1550,1501,0,11
-BRDA:1552,1518,0,0
-BRDA:1552,1518,1,11
-BRDA:1552,1579,1,16
-BRDA:1552,1579,0,11
-BRDA:1550,1501,1,15
-FN:411,System.Boolean Studio.Compiler.PipelineCodeGenerator/Pipe #1 stage #1 at line 412@412::Invoke(Studio.Graph.SavedParameter)
-FNDA:9,System.Boolean Studio.Compiler.PipelineCodeGenerator/Pipe #1 stage #1 at line 412@412::Invoke(Studio.Graph.SavedParameter)
-DA:412,9
-FN:410,Studio.Compiler.PipelineCodeGenerator/ParameterExpression Studio.Compiler.PipelineCodeGenerator/parameterExpression@411::Invoke(System.String)
-FNDA:2,Studio.Compiler.PipelineCodeGenerator/ParameterExpression Studio.Compiler.PipelineCodeGenerator/parameterExpression@411::Invoke(System.String)
-DA:411,2
-DA:413,4
-DA:414,2
-BRDA:413,34,1,0
-BRDA:413,34,0,2
-BRDA:414,148,1,0
-BRDA:414,148,0,2
-FN:429,System.String Studio.Compiler.PipelineCodeGenerator/typedParameter@430::Invoke(System.String)
-FNDA:2,System.String Studio.Compiler.PipelineCodeGenerator/typedParameter@430::Invoke(System.String)
-DA:430,2
-DA:431,4
-BRDA:431,20,0,1
-BRDA:431,20,1,1
-FN:459,System.Boolean Studio.Compiler.PipelineCodeGenerator/Pipe #1 stage #1 at line 460@460::Invoke(Studio.Graph.SavedParameter)
-FNDA:5,System.Boolean Studio.Compiler.PipelineCodeGenerator/Pipe #1 stage #1 at line 460@460::Invoke(Studio.Graph.SavedParameter)
-DA:460,5
-FN:458,Studio.Compiler.PipelineCodeGenerator/ParameterExpression Studio.Compiler.PipelineCodeGenerator/parameterExpression@459-1::Invoke(System.String)
-FNDA:2,Studio.Compiler.PipelineCodeGenerator/ParameterExpression Studio.Compiler.PipelineCodeGenerator/parameterExpression@459-1::Invoke(System.String)
-DA:459,2
-DA:461,4
-DA:462,2
-BRDA:461,34,1,0
-BRDA:461,34,0,2
-BRDA:462,148,1,0
-BRDA:462,148,0,2
-FN:464,System.String Studio.Compiler.PipelineCodeGenerator/stringArgument@465::Invoke(System.String)
-FNDA:2,System.String Studio.Compiler.PipelineCodeGenerator/stringArgument@465::Invoke(System.String)
-DA:465,2
-DA:466,4
-BRDA:466,20,0,1
-BRDA:466,20,1,1
-FN:475,System.Boolean Studio.Compiler.PipelineCodeGenerator/Pipe #1 stage #1 at line 476@476::Invoke(Studio.Graph.SavedParameter)
-FNDA:34,System.Boolean Studio.Compiler.PipelineCodeGenerator/Pipe #1 stage #1 at line 476@476::Invoke(Studio.Graph.SavedParameter)
-DA:476,34
-FN:474,Studio.Compiler.PipelineCodeGenerator/ParameterExpression Studio.Compiler.PipelineCodeGenerator/parameterExpression@475-2::Invoke(System.String)
-FNDA:10,Studio.Compiler.PipelineCodeGenerator/ParameterExpression Studio.Compiler.PipelineCodeGenerator/parameterExpression@475-2::Invoke(System.String)
-DA:475,10
-DA:477,20
-DA:478,10
-BRDA:477,34,1,0
-BRDA:477,34,0,10
-BRDA:478,148,1,0
-BRDA:478,148,0,10
-FN:480,System.String Studio.Compiler.PipelineCodeGenerator/stringArgument@481-1::Invoke(System.String)
-FNDA:5,System.String Studio.Compiler.PipelineCodeGenerator/stringArgument@481-1::Invoke(System.String)
-DA:481,5
-DA:482,10
-BRDA:482,20,0,0
-BRDA:482,20,1,5
-FN:503,System.Boolean Studio.Compiler.PipelineCodeGenerator/Pipe #1 stage #1 at line 504@504::Invoke(Studio.Graph.SavedParameter)
-FNDA:787,System.Boolean Studio.Compiler.PipelineCodeGenerator/Pipe #1 stage #1 at line 504@504::Invoke(Studio.Graph.SavedParameter)
-DA:504,787
-FN:502,Studio.Compiler.PipelineCodeGenerator/ParameterExpression Studio.Compiler.PipelineCodeGenerator/parameterExpressionForNode@503::Invoke(Studio.Graph.SavedNode,System.String)
-FNDA:196,Studio.Compiler.PipelineCodeGenerator/ParameterExpression Studio.Compiler.PipelineCodeGenerator/parameterExpressionForNode@503::Invoke(Studio.Graph.SavedNode,System.String)
-DA:503,196
-DA:505,392
-DA:506,196
-BRDA:505,29,1,0
-BRDA:505,29,0,196
-BRDA:506,138,1,0
-BRDA:506,138,0,196
-FN:508,Studio.Compiler.PipelineCodeGenerator/ParameterExpression Studio.Compiler.PipelineCodeGenerator/parameterExpression@509-3::Invoke(System.String)
-FNDA:87,Studio.Compiler.PipelineCodeGenerator/ParameterExpression Studio.Compiler.PipelineCodeGenerator/parameterExpression@509-3::Invoke(System.String)
-DA:509,87
-FN:512,Microsoft.FSharp.Core.FSharpOption`1<Studio.Graph.BasicType> Studio.Compiler.PipelineCodeGenerator/configuredNumericType@513::Invoke(Microsoft.FSharp.Core.Unit)
-FNDA:0,Microsoft.FSharp.Core.FSharpOption`1<Studio.Graph.BasicType> Studio.Compiler.PipelineCodeGenerator/configuredNumericType@513::Invoke(Microsoft.FSharp.Core.Unit)
-DA:513,0
-DA:514,0
-DA:515,0
-BRDA:515,27,1,0
-BRDA:515,27,0,0
-FN:527,System.Boolean Studio.Compiler.PipelineCodeGenerator/Pipe #1 stage #1 at line 528@528::Invoke(Studio.Graph.Parameter)
-FNDA:414,System.Boolean Studio.Compiler.PipelineCodeGenerator/Pipe #1 stage #1 at line 528@528::Invoke(Studio.Graph.Parameter)
-DA:528,414
-FN:516,Microsoft.FSharp.Core.FSharpOption`1<Studio.Graph.BasicType> Studio.Compiler.PipelineCodeGenerator/dynamicParameterTypeForNode@512::Invoke(Studio.Graph.SavedNode,System.String)
-FNDA:94,Microsoft.FSharp.Core.FSharpOption`1<Studio.Graph.BasicType> Studio.Compiler.PipelineCodeGenerator/dynamicParameterTypeForNode@512::Invoke(Studio.Graph.SavedNode,System.String)
-DA:517,94
-DA:519,0
-DA:521,0
+DA:1212,28
+DA:1213,92
+DA:1214,28
+DA:1215,33
+DA:1218,28
+DA:1219,31
+DA:1220,28
+DA:1222,28
+DA:1225,28
+DA:1226,170
+DA:1229,28
+DA:1230,28
+DA:1231,166
+DA:1232,60
+DA:1233,13
+DA:1234,1
+DA:1235,28
+DA:1236,11
+DA:1237,28
+DA:1238,93
+DA:1239,28
+DA:1429,28
+DA:1430,28
+DA:1431,98
+DA:1432,91
+DA:1433,90
+DA:1434,88
+DA:1435,87
+DA:1436,86
+DA:1437,85
+DA:1438,252
+DA:1439,249
+DA:1440,246
+DA:1441,246
+DA:1442,240
+DA:1443,237
+DA:1444,237
+DA:1445,426
+DA:1447,28
+DA:1448,86
+DA:1562,252
+DA:1565,154
+DA:1567,55
+DA:1569,56
+DA:1571,28
+DA:1572,2
+DA:1574,56
+DA:1576,28
+DA:1577,2
+DA:1578,2
+DA:1579,2
+DA:1580,2
+DA:1581,2
+DA:1582,2
+DA:1583,2
+DA:1584,2
+DA:1585,2
+DA:1586,2
+DA:1587,2
+DA:1588,2
+DA:1590,28
+DA:1591,0
+DA:1592,0
+DA:1593,0
+DA:1594,0
+DA:1595,0
+DA:1597,28
+DA:1599,28
+DA:1600,12
+DA:1601,48
+DA:1602,24
+DA:1604,28
+DA:1605,28
+DA:1606,29
+DA:1607,2
+DA:1608,28
+DA:1609,86
+DA:1611,28
+BRDA:1448,832,0,0
+BRDA:1448,832,1,28
+BRDA:1448,926,1,29
+BRDA:1448,926,0,28
+BRDA:1562,998,0,0
+BRDA:1562,998,1,28
+BRDA:1562,1099,1,98
+BRDA:1562,1048,0,0
+BRDA:1562,1048,1,98
+BRDA:1562,1082,1,125
+BRDA:1562,1082,0,1
+BRDA:1562,1099,0,28
+BRDA:1565,1124,0,0
+BRDA:1565,1124,1,28
+BRDA:1565,1201,1,98
+BRDA:1565,1184,1,126
+BRDA:1565,1184,0,0
+BRDA:1565,1201,0,28
+BRDA:1567,1209,0,1
+BRDA:1567,1209,1,27
+BRDA:1571,1240,0,1
+BRDA:1571,1240,1,27
+BRDA:1576,1278,0,1
+BRDA:1576,1278,1,27
+BRDA:1590,1489,0,0
+BRDA:1590,1489,1,28
+BRDA:1599,1591,0,12
+BRDA:1601,1608,0,0
+BRDA:1601,1608,1,12
+BRDA:1601,1669,1,18
+BRDA:1601,1669,0,12
+BRDA:1599,1591,1,16
+FN:420,System.Boolean Studio.Compiler.PipelineCodeGenerator/Pipe #1 stage #1 at line 421@421::Invoke(Studio.Graph.SavedParameter)
+FNDA:9,System.Boolean Studio.Compiler.PipelineCodeGenerator/Pipe #1 stage #1 at line 421@421::Invoke(Studio.Graph.SavedParameter)
+DA:421,9
+FN:419,Studio.Compiler.PipelineCodeGenerator/ParameterExpression Studio.Compiler.PipelineCodeGenerator/parameterExpression@420::Invoke(System.String)
+FNDA:2,Studio.Compiler.PipelineCodeGenerator/ParameterExpression Studio.Compiler.PipelineCodeGenerator/parameterExpression@420::Invoke(System.String)
+DA:420,2
+DA:422,4
+DA:423,2
+BRDA:422,34,1,0
+BRDA:422,34,0,2
+BRDA:423,154,1,0
+BRDA:423,154,0,2
+FN:438,System.String Studio.Compiler.PipelineCodeGenerator/typedParameter@439::Invoke(System.String)
+FNDA:2,System.String Studio.Compiler.PipelineCodeGenerator/typedParameter@439::Invoke(System.String)
+DA:439,2
+DA:440,4
+BRDA:440,20,0,1
+BRDA:440,20,1,1
+FN:468,System.Boolean Studio.Compiler.PipelineCodeGenerator/Pipe #1 stage #1 at line 469@469::Invoke(Studio.Graph.SavedParameter)
+FNDA:5,System.Boolean Studio.Compiler.PipelineCodeGenerator/Pipe #1 stage #1 at line 469@469::Invoke(Studio.Graph.SavedParameter)
+DA:469,5
+FN:467,Studio.Compiler.PipelineCodeGenerator/ParameterExpression Studio.Compiler.PipelineCodeGenerator/parameterExpression@468-1::Invoke(System.String)
+FNDA:2,Studio.Compiler.PipelineCodeGenerator/ParameterExpression Studio.Compiler.PipelineCodeGenerator/parameterExpression@468-1::Invoke(System.String)
+DA:468,2
+DA:470,4
+DA:471,2
+BRDA:470,34,1,0
+BRDA:470,34,0,2
+BRDA:471,154,1,0
+BRDA:471,154,0,2
+FN:473,System.String Studio.Compiler.PipelineCodeGenerator/stringArgument@474::Invoke(System.String)
+FNDA:2,System.String Studio.Compiler.PipelineCodeGenerator/stringArgument@474::Invoke(System.String)
+DA:474,2
+DA:475,4
+BRDA:475,20,0,1
+BRDA:475,20,1,1
+FN:484,System.Boolean Studio.Compiler.PipelineCodeGenerator/Pipe #1 stage #1 at line 485@485::Invoke(Studio.Graph.SavedParameter)
+FNDA:34,System.Boolean Studio.Compiler.PipelineCodeGenerator/Pipe #1 stage #1 at line 485@485::Invoke(Studio.Graph.SavedParameter)
+DA:485,34
+FN:483,Studio.Compiler.PipelineCodeGenerator/ParameterExpression Studio.Compiler.PipelineCodeGenerator/parameterExpression@484-2::Invoke(System.String)
+FNDA:10,Studio.Compiler.PipelineCodeGenerator/ParameterExpression Studio.Compiler.PipelineCodeGenerator/parameterExpression@484-2::Invoke(System.String)
+DA:484,10
+DA:486,20
+DA:487,10
+BRDA:486,34,1,0
+BRDA:486,34,0,10
+BRDA:487,154,1,0
+BRDA:487,154,0,10
+FN:489,System.String Studio.Compiler.PipelineCodeGenerator/stringArgument@490-1::Invoke(System.String)
+FNDA:5,System.String Studio.Compiler.PipelineCodeGenerator/stringArgument@490-1::Invoke(System.String)
+DA:490,5
+DA:491,10
+BRDA:491,20,0,0
+BRDA:491,20,1,5
+FN:512,System.Boolean Studio.Compiler.PipelineCodeGenerator/Pipe #1 stage #1 at line 513@513::Invoke(Studio.Graph.SavedParameter)
+FNDA:850,System.Boolean Studio.Compiler.PipelineCodeGenerator/Pipe #1 stage #1 at line 513@513::Invoke(Studio.Graph.SavedParameter)
+DA:513,850
+FN:511,Studio.Compiler.PipelineCodeGenerator/ParameterExpression Studio.Compiler.PipelineCodeGenerator/parameterExpressionForNode@512::Invoke(Studio.Graph.SavedNode,System.String)
+FNDA:212,Studio.Compiler.PipelineCodeGenerator/ParameterExpression Studio.Compiler.PipelineCodeGenerator/parameterExpressionForNode@512::Invoke(Studio.Graph.SavedNode,System.String)
+DA:512,212
+DA:514,424
+DA:515,212
+BRDA:514,29,1,0
+BRDA:514,29,0,212
+BRDA:515,144,1,0
+BRDA:515,144,0,212
+FN:517,Studio.Compiler.PipelineCodeGenerator/ParameterExpression Studio.Compiler.PipelineCodeGenerator/parameterExpression@518-3::Invoke(System.String)
+FNDA:93,Studio.Compiler.PipelineCodeGenerator/ParameterExpression Studio.Compiler.PipelineCodeGenerator/parameterExpression@518-3::Invoke(System.String)
+DA:518,93
+FN:521,Microsoft.FSharp.Core.FSharpOption`1<Studio.Graph.BasicType> Studio.Compiler.PipelineCodeGenerator/configuredNumericType@522::Invoke(Microsoft.FSharp.Core.Unit)
+FNDA:0,Microsoft.FSharp.Core.FSharpOption`1<Studio.Graph.BasicType> Studio.Compiler.PipelineCodeGenerator/configuredNumericType@522::Invoke(Microsoft.FSharp.Core.Unit)
 DA:522,0
 DA:523,0
-DA:525,94
-DA:526,94
-DA:527,94
-DA:529,282
-BRDA:517,36,0,0
-BRDA:517,54,0,0
-BRDA:517,75,0,0
-BRDA:517,96,0,0
-BRDA:517,36,1,94
-BRDA:522,140,0,0
-BRDA:522,158,0,0
-BRDA:522,176,0,0
-BRDA:522,193,0,0
-BRDA:522,140,1,94
-BRDA:522,220,0,0
-BRDA:522,237,0,0
-BRDA:517,54,1,0
-BRDA:517,75,1,0
-BRDA:522,158,1,0
-BRDA:522,114,0,0
-BRDA:517,96,1,94
-BRDA:522,114,1,94
-BRDA:522,176,1,94
-BRDA:522,193,1,94
-BRDA:522,220,1,94
-BRDA:522,237,1,94
-BRDA:526,306,1,0
-BRDA:526,306,0,94
-BRDA:529,367,1,0
-BRDA:529,367,0,94
-FN:531,System.String Studio.Compiler.PipelineCodeGenerator/parameterValueForNode@532::Invoke(Studio.Graph.SavedNode,System.String)
-FNDA:109,System.String Studio.Compiler.PipelineCodeGenerator/parameterValueForNode@532::Invoke(Studio.Graph.SavedNode,System.String)
-DA:532,109
-DA:534,109
-DA:535,15
-DA:537,94
-DA:539,64
-DA:541,1
-DA:543,0
-DA:545,0
-DA:548,29
-BRDA:534,21,0,15
-BRDA:534,21,1,94
-BRDA:537,45,1,94
-BRDA:537,62,0,64
-BRDA:537,62,1,64
-BRDA:537,62,2,1
-BRDA:537,62,5,0
-BRDA:537,62,4,0
-BRDA:537,45,0,29
-BRDA:537,62,3,29
-FN:550,System.String Studio.Compiler.PipelineCodeGenerator/parameterValue@551::Invoke(System.String)
-FNDA:108,System.String Studio.Compiler.PipelineCodeGenerator/parameterValue@551::Invoke(System.String)
-DA:551,108
-FN:553,System.String Studio.Compiler.PipelineCodeGenerator/quotedParameter@554::Invoke(System.String)
-FNDA:87,System.String Studio.Compiler.PipelineCodeGenerator/quotedParameter@554::Invoke(System.String)
-DA:554,87
-DA:555,174
-BRDA:555,20,0,3
-BRDA:555,20,1,84
-FN:557,System.String Studio.Compiler.PipelineCodeGenerator/stringParameter@558::Invoke(System.String)
-FNDA:0,System.String Studio.Compiler.PipelineCodeGenerator/stringParameter@558::Invoke(System.String)
-DA:558,0
-DA:559,0
-BRDA:559,20,0,0
-BRDA:559,20,1,0
-FN:563,System.Boolean Studio.Compiler.PipelineCodeGenerator/Pipe #1 stage #1 at line 563@563::Invoke(Studio.Graph.SavedEdge)
-FNDA:34,System.Boolean Studio.Compiler.PipelineCodeGenerator/Pipe #1 stage #1 at line 563@563::Invoke(Studio.Graph.SavedEdge)
-DA:564,34
-DA:565,24
-DA:566,39
-BRDA:564,22,0,24
-BRDA:564,22,1,10
-BRDA:565,45,0,24
-BRDA:565,45,1,10
-FN:593,System.Boolean Studio.Compiler.PipelineCodeGenerator/Pipe #1 stage #1 at line 594@594::Invoke(Studio.Graph.SavedParameter)
-FNDA:0,System.Boolean Studio.Compiler.PipelineCodeGenerator/Pipe #1 stage #1 at line 594@594::Invoke(Studio.Graph.SavedParameter)
-DA:594,0
-FN:561,System.String Studio.Compiler.PipelineCodeGenerator/printInputNameForNode@562::Invoke(Studio.Graph.SavedNode,System.String,System.Int32)
-FNDA:15,System.String Studio.Compiler.PipelineCodeGenerator/printInputNameForNode@562::Invoke(Studio.Graph.SavedNode,System.String,System.Int32)
-DA:562,15
-DA:563,15
-DA:567,15
-DA:568,15
-DA:569,15
-DA:570,8
-DA:571,8
-DA:572,1
-DA:573,1
-DA:574,9
-DA:575,1
-DA:576,10
-DA:577,1
-DA:578,1
-DA:579,12
-DA:580,15
-DA:581,7
-DA:582,7
-DA:583,7
-DA:584,7
-DA:585,2
-DA:586,5
-DA:587,2
-DA:588,7
-DA:589,10
-DA:590,15
-DA:591,15
-DA:592,15
-DA:593,0
-DA:595,15
-DA:596,15
-DA:597,15
-DA:598,15
+DA:524,0
+BRDA:524,27,1,0
+BRDA:524,27,0,0
+FN:536,System.Boolean Studio.Compiler.PipelineCodeGenerator/Pipe #1 stage #1 at line 537@537::Invoke(Studio.Graph.Parameter)
+FNDA:447,System.Boolean Studio.Compiler.PipelineCodeGenerator/Pipe #1 stage #1 at line 537@537::Invoke(Studio.Graph.Parameter)
+DA:537,447
+FN:525,Microsoft.FSharp.Core.FSharpOption`1<Studio.Graph.BasicType> Studio.Compiler.PipelineCodeGenerator/dynamicParameterTypeForNode@521::Invoke(Studio.Graph.SavedNode,System.String)
+FNDA:103,Microsoft.FSharp.Core.FSharpOption`1<Studio.Graph.BasicType> Studio.Compiler.PipelineCodeGenerator/dynamicParameterTypeForNode@521::Invoke(Studio.Graph.SavedNode,System.String)
+DA:526,103
+DA:528,0
+DA:530,0
+DA:531,0
+DA:532,0
+DA:534,103
+DA:535,103
+DA:536,103
+DA:538,309
+BRDA:526,36,0,0
+BRDA:526,54,0,0
+BRDA:526,75,0,0
+BRDA:526,96,0,0
+BRDA:526,36,1,103
+BRDA:531,140,0,0
+BRDA:531,158,0,0
+BRDA:531,176,0,0
+BRDA:531,193,0,0
+BRDA:531,140,1,103
+BRDA:531,220,0,0
+BRDA:531,237,0,0
+BRDA:526,54,1,0
+BRDA:526,75,1,0
+BRDA:531,158,1,0
+BRDA:531,114,0,0
+BRDA:526,96,1,103
+BRDA:531,114,1,103
+BRDA:531,176,1,103
+BRDA:531,193,1,103
+BRDA:531,220,1,103
+BRDA:531,237,1,103
+BRDA:535,306,1,0
+BRDA:535,306,0,103
+BRDA:538,367,1,0
+BRDA:538,367,0,103
+FN:540,System.String Studio.Compiler.PipelineCodeGenerator/parameterValueForNode@541::Invoke(Studio.Graph.SavedNode,System.String)
+FNDA:119,System.String Studio.Compiler.PipelineCodeGenerator/parameterValueForNode@541::Invoke(Studio.Graph.SavedNode,System.String)
+DA:541,119
+DA:543,119
+DA:544,16
+DA:546,103
+DA:548,70
+DA:550,1
+DA:552,0
+DA:554,0
+DA:557,32
+BRDA:543,21,0,16
+BRDA:543,21,1,103
+BRDA:546,45,1,103
+BRDA:546,62,0,70
+BRDA:546,62,1,70
+BRDA:546,62,2,1
+BRDA:546,62,5,0
+BRDA:546,62,4,0
+BRDA:546,45,0,32
+BRDA:546,62,3,32
+FN:559,System.String Studio.Compiler.PipelineCodeGenerator/parameterValue@560::Invoke(System.String)
+FNDA:118,System.String Studio.Compiler.PipelineCodeGenerator/parameterValue@560::Invoke(System.String)
+DA:560,118
+FN:562,System.String Studio.Compiler.PipelineCodeGenerator/quotedParameter@563::Invoke(System.String)
+FNDA:93,System.String Studio.Compiler.PipelineCodeGenerator/quotedParameter@563::Invoke(System.String)
+DA:563,93
+DA:564,186
+BRDA:564,20,0,3
+BRDA:564,20,1,90
+FN:566,System.String Studio.Compiler.PipelineCodeGenerator/stringParameter@567::Invoke(System.String)
+FNDA:0,System.String Studio.Compiler.PipelineCodeGenerator/stringParameter@567::Invoke(System.String)
+DA:567,0
+DA:568,0
+BRDA:568,20,0,0
+BRDA:568,20,1,0
+FN:572,System.Boolean Studio.Compiler.PipelineCodeGenerator/Pipe #1 stage #1 at line 572@572::Invoke(Studio.Graph.SavedEdge)
+FNDA:34,System.Boolean Studio.Compiler.PipelineCodeGenerator/Pipe #1 stage #1 at line 572@572::Invoke(Studio.Graph.SavedEdge)
+DA:573,34
+DA:574,24
+DA:575,39
+BRDA:573,22,0,24
+BRDA:573,22,1,10
+BRDA:574,45,0,24
+BRDA:574,45,1,10
+FN:602,System.Boolean Studio.Compiler.PipelineCodeGenerator/Pipe #1 stage #1 at line 603@603::Invoke(Studio.Graph.SavedParameter)
+FNDA:0,System.Boolean Studio.Compiler.PipelineCodeGenerator/Pipe #1 stage #1 at line 603@603::Invoke(Studio.Graph.SavedParameter)
+DA:603,0
+FN:570,System.String Studio.Compiler.PipelineCodeGenerator/printInputNameForNode@571::Invoke(Studio.Graph.SavedNode,System.String,System.Int32)
+FNDA:15,System.String Studio.Compiler.PipelineCodeGenerator/printInputNameForNode@571::Invoke(Studio.Graph.SavedNode,System.String,System.Int32)
+DA:571,15
+DA:572,15
+DA:576,15
+DA:577,15
+DA:578,15
+DA:579,8
+DA:580,8
+DA:581,1
+DA:582,1
+DA:583,9
+DA:584,1
+DA:585,10
+DA:586,1
+DA:587,1
+DA:588,12
+DA:589,15
+DA:590,7
+DA:591,7
+DA:592,7
+DA:593,7
+DA:594,2
+DA:595,5
+DA:596,2
+DA:597,7
+DA:598,10
 DA:599,15
-DA:600,1
+DA:600,15
 DA:601,15
-DA:602,29
-DA:603,15
+DA:602,0
 DA:604,15
-BRDA:567,35,1,0
-BRDA:567,35,0,15
-BRDA:568,84,0,7
-BRDA:568,84,1,8
-BRDA:571,128,1,1
-BRDA:574,165,1,0
-BRDA:574,165,0,1
-BRDA:576,213,1,0
-BRDA:576,213,0,1
-BRDA:579,272,1,0
-BRDA:579,272,0,1
-BRDA:571,128,0,7
-BRDA:568,98,0,7
-BRDA:583,352,1,0
-BRDA:583,352,0,7
-BRDA:584,395,0,2
-BRDA:584,395,1,5
-BRDA:586,423,0,2
-BRDA:586,423,1,3
-BRDA:568,98,1,0
-BRDA:592,466,1,0
-BRDA:595,507,1,0
-BRDA:595,507,0,0
-BRDA:592,466,0,15
-BRDA:596,554,1,0
-BRDA:596,554,0,15
-BRDA:599,594,0,1
-BRDA:599,594,1,14
-BRDA:603,661,1,0
-BRDA:603,661,0,15
-BRDA:603,691,0,15
-BRDA:603,691,1,0
-BRDA:604,716,1,0
-BRDA:604,716,0,15
-FN:606,System.String Studio.Compiler.PipelineCodeGenerator/printInputName@607::Invoke(System.String,System.Int32)
-FNDA:13,System.String Studio.Compiler.PipelineCodeGenerator/printInputName@607::Invoke(System.String,System.Int32)
-DA:607,13
-FN:611,Microsoft.FSharp.Collections.FSharpList`1<System.Tuple`2<System.String,System.String>> Studio.Compiler.PipelineCodeGenerator/Pipe #1 stage #1 at line 612@612::Invoke(System.Tuple`3<System.String,System.String,System.String>)
-FNDA:21,Microsoft.FSharp.Collections.FSharpList`1<System.Tuple`2<System.String,System.String>> Studio.Compiler.PipelineCodeGenerator/Pipe #1 stage #1 at line 612@612::Invoke(System.Tuple`3<System.String,System.String,System.String>)
-DA:612,21
-FN:615,System.String Studio.Compiler.PipelineCodeGenerator/escapeText@616::Invoke(System.String)
-FNDA:9,System.String Studio.Compiler.PipelineCodeGenerator/escapeText@616::Invoke(System.String)
-DA:616,9
-DA:617,9
-DA:618,9
-DA:619,9
-DA:620,9
-DA:621,9
-DA:622,9
-DA:623,9
-DA:624,9
+DA:605,15
+DA:606,15
+DA:607,15
+DA:608,15
+DA:609,1
+DA:610,15
+DA:611,29
+DA:612,15
+DA:613,15
+BRDA:576,35,1,0
+BRDA:576,35,0,15
+BRDA:577,84,0,7
+BRDA:577,84,1,8
+BRDA:580,128,1,1
+BRDA:583,165,1,0
+BRDA:583,165,0,1
+BRDA:585,213,1,0
+BRDA:585,213,0,1
+BRDA:588,272,1,0
+BRDA:588,272,0,1
+BRDA:580,128,0,7
+BRDA:577,98,0,7
+BRDA:592,352,1,0
+BRDA:592,352,0,7
+BRDA:593,395,0,2
+BRDA:593,395,1,5
+BRDA:595,423,0,2
+BRDA:595,423,1,3
+BRDA:577,98,1,0
+BRDA:601,466,1,0
+BRDA:604,507,1,0
+BRDA:604,507,0,0
+BRDA:601,466,0,15
+BRDA:605,554,1,0
+BRDA:605,554,0,15
+BRDA:608,594,0,1
+BRDA:608,594,1,14
+BRDA:612,661,1,0
+BRDA:612,661,0,15
+BRDA:612,691,0,15
+BRDA:612,691,1,0
+BRDA:613,716,1,0
+BRDA:613,716,0,15
+FN:615,System.String Studio.Compiler.PipelineCodeGenerator/printInputName@616::Invoke(System.String,System.Int32)
+FNDA:13,System.String Studio.Compiler.PipelineCodeGenerator/printInputName@616::Invoke(System.String,System.Int32)
+DA:616,13
+FN:620,Microsoft.FSharp.Collections.FSharpList`1<System.Tuple`2<System.String,System.String>> Studio.Compiler.PipelineCodeGenerator/Pipe #1 stage #1 at line 621@621::Invoke(System.Tuple`3<System.String,System.String,System.String>)
+FNDA:21,Microsoft.FSharp.Collections.FSharpList`1<System.Tuple`2<System.String,System.String>> Studio.Compiler.PipelineCodeGenerator/Pipe #1 stage #1 at line 621@621::Invoke(System.Tuple`3<System.String,System.String,System.String>)
+DA:621,21
+FN:624,System.String Studio.Compiler.PipelineCodeGenerator/escapeText@625::Invoke(System.String)
+FNDA:9,System.String Studio.Compiler.PipelineCodeGenerator/escapeText@625::Invoke(System.String)
 DA:625,9
 DA:626,9
-FN:610,System.String Studio.Compiler.PipelineCodeGenerator/interpolatedStringExpression@610::Invoke(System.String,Microsoft.FSharp.Collections.FSharpList`1<System.Tuple`3<System.String,System.String,System.String>>)
-FNDA:7,System.String Studio.Compiler.PipelineCodeGenerator/interpolatedStringExpression@610::Invoke(System.String,Microsoft.FSharp.Collections.FSharpList`1<System.Tuple`3<System.String,System.String,System.String>>)
-DA:611,7
-DA:613,7
-DA:628,7
-DA:629,7
-DA:631,35
-DA:632,14
-DA:633,18
-DA:635,14
-DA:637,42
-DA:639,28
-DA:641,0
-DA:643,14
-DA:645,7
-DA:646,0
-DA:648,7
-BRDA:631,279,1,14
-BRDA:632,88,0,9
-BRDA:632,88,1,5
-BRDA:637,173,1,14
-BRDA:637,173,0,0
-BRDA:631,279,0,7
-BRDA:645,317,0,0
-BRDA:645,317,1,7
-FN:1230,Microsoft.FSharp.Core.FSharpOption`1<System.String> Studio.Compiler.PipelineCodeGenerator/bindingNameForOutput@1231::Invoke(Studio.Graph.SavedEdge)
-FNDA:4,Microsoft.FSharp.Core.FSharpOption`1<System.String> Studio.Compiler.PipelineCodeGenerator/bindingNameForOutput@1231::Invoke(Studio.Graph.SavedEdge)
-DA:1231,4
-DA:1233,8
-DA:1235,0
-DA:1236,0
-DA:1238,0
-DA:1239,0
-DA:1241,0
-DA:1242,0
-DA:1244,0
-DA:1245,0
-DA:1246,0
-DA:1248,0
-BRDA:1231,18,0,0
-BRDA:1231,18,1,4
-BRDA:1231,31,0,0
-BRDA:1235,80,1,0
-BRDA:1235,80,0,0
-BRDA:1238,130,1,0
-BRDA:1238,130,0,0
-BRDA:1241,181,1,0
-BRDA:1241,181,0,0
-BRDA:1244,232,1,0
-BRDA:1244,232,0,0
-BRDA:1231,31,1,0
-FN:1252,Microsoft.FSharp.Core.FSharpOption`1<System.String> Studio.Compiler.PipelineCodeGenerator/Pipe #1 stage #1 at line 1252@1252::Invoke(Studio.Graph.SavedEdge)
-FNDA:96,Microsoft.FSharp.Core.FSharpOption`1<System.String> Studio.Compiler.PipelineCodeGenerator/Pipe #1 stage #1 at line 1252@1252::Invoke(Studio.Graph.SavedEdge)
-DA:1253,96
-DA:1254,4
-DA:1256,58
-BRDA:1253,23,0,4
-BRDA:1253,23,1,42
-BRDA:1253,46,0,4
-BRDA:1253,46,1,42
-FN:1250,Microsoft.FSharp.Collections.FSharpSet`1<System.String> Studio.Compiler.PipelineCodeGenerator/parameterBindingDependencies@1251::Invoke(Studio.Graph.SavedNode)
-FNDA:16,Microsoft.FSharp.Collections.FSharpSet`1<System.String> Studio.Compiler.PipelineCodeGenerator/parameterBindingDependencies@1251::Invoke(Studio.Graph.SavedNode)
-DA:1251,16
-DA:1252,16
-DA:1255,16
-DA:1257,16
-FN:1267,System.Boolean Studio.Compiler.PipelineCodeGenerator/Pipe #3 stage #1 at line 1268@1268::Invoke(Studio.Graph.SavedEdge)
-FNDA:2,System.Boolean Studio.Compiler.PipelineCodeGenerator/Pipe #3 stage #1 at line 1268@1268::Invoke(Studio.Graph.SavedEdge)
-DA:1268,2
-FN:1268,Microsoft.FSharp.Core.FSharpOption`1<Studio.Graph.SavedNode> Studio.Compiler.PipelineCodeGenerator/Pipe #3 stage #2 at line 1269@1269::Invoke(Studio.Graph.SavedEdge)
-FNDA:2,Microsoft.FSharp.Core.FSharpOption`1<Studio.Graph.SavedNode> Studio.Compiler.PipelineCodeGenerator/Pipe #3 stage #2 at line 1269@1269::Invoke(Studio.Graph.SavedEdge)
-DA:1269,2
-FN:1259,Microsoft.FSharp.Collections.FSharpSet`1<System.String> Studio.Compiler.PipelineCodeGenerator/pipelineBindingDependencies@1260::Invoke(Microsoft.FSharp.Collections.FSharpSet`1<System.String>,Studio.Graph.SavedNode)
-FNDA:6,Microsoft.FSharp.Collections.FSharpSet`1<System.String> Studio.Compiler.PipelineCodeGenerator/pipelineBindingDependencies@1260::Invoke(Microsoft.FSharp.Collections.FSharpSet`1<System.String>,Studio.Graph.SavedNode)
-DA:1260,6
-DA:1261,0
-DA:1263,4
-DA:1264,2
-DA:1267,2
-DA:1270,2
-DA:1271,2
-DA:1273,2
-BRDA:1260,15,0,0
-BRDA:1260,15,1,2
-BRDA:1270,114,0,0
-BRDA:1270,114,1,2
-BRDA:1270,181,1,0
-BRDA:1270,181,0,2
-FN:1275,System.String Studio.Compiler.PipelineCodeGenerator/indentBlock@1276::Invoke(System.Int32,System.String)
-FNDA:22,System.String Studio.Compiler.PipelineCodeGenerator/indentBlock@1276::Invoke(System.Int32,System.String)
-DA:1276,22
-DA:1278,22
-DA:1279,182
-DA:1280,22
-BRDA:1279,47,0,0
-BRDA:1279,47,1,22
-BRDA:1279,131,1,80
-BRDA:1279,98,0,0
-BRDA:1279,98,1,80
-BRDA:1279,131,0,22
-FN:1282,System.String Studio.Compiler.PipelineCodeGenerator/parenthesizeBlock@1283::Invoke(System.String)
-FNDA:10,System.String Studio.Compiler.PipelineCodeGenerator/parenthesizeBlock@1283::Invoke(System.String)
-DA:1283,10
-FN:1286,System.Boolean Studio.Compiler.PipelineCodeGenerator/incomingDataEdge@1287-1::Invoke(Studio.Graph.SavedEdge)
-FNDA:559,System.Boolean Studio.Compiler.PipelineCodeGenerator/incomingDataEdge@1287-1::Invoke(Studio.Graph.SavedEdge)
-DA:1287,559
-BRDA:1287,17,0,109
-BRDA:1287,17,1,202
-FN:1285,Microsoft.FSharp.Core.FSharpOption`1<Studio.Graph.SavedEdge> Studio.Compiler.PipelineCodeGenerator/incomingDataEdge@1286::Invoke(System.String,System.Int32)
-FNDA:139,Microsoft.FSharp.Core.FSharpOption`1<Studio.Graph.SavedEdge> Studio.Compiler.PipelineCodeGenerator/incomingDataEdge@1286::Invoke(System.String,System.Int32)
-DA:1286,139
-FN:1289,System.Boolean Studio.Compiler.PipelineCodeGenerator/sameOutputEdge@1290::Invoke(Studio.Graph.SavedEdge,Studio.Graph.SavedEdge)
-FNDA:4,System.Boolean Studio.Compiler.PipelineCodeGenerator/sameOutputEdge@1290::Invoke(Studio.Graph.SavedEdge,Studio.Graph.SavedEdge)
-DA:1290,4
-DA:1291,0
-DA:1292,0
-BRDA:1290,17,0,0
-BRDA:1290,17,1,4
-BRDA:1291,38,0,0
-BRDA:1291,38,1,4
-FN:1294,Microsoft.FSharp.Core.FSharpOption`1<System.String> Studio.Compiler.PipelineCodeGenerator/stageCall@1295::Invoke(Studio.Graph.SavedNode)
-FNDA:0,Microsoft.FSharp.Core.FSharpOption`1<System.String> Studio.Compiler.PipelineCodeGenerator/stageCall@1295::Invoke(Studio.Graph.SavedNode)
-DA:1295,0
-DA:1297,0
-DA:1298,0
-DA:1299,0
-DA:1300,0
-DA:1302,0
-BRDA:1297,68,0,0
-BRDA:1297,68,1,0
-BRDA:1299,96,0,0
-BRDA:1299,96,1,0
-FN:1304,System.String Studio.Compiler.PipelineCodeGenerator/composeStages@1305::Invoke(System.String,System.String)
-FNDA:0,System.String Studio.Compiler.PipelineCodeGenerator/composeStages@1305::Invoke(System.String,System.String)
+DA:627,9
+DA:628,9
+DA:629,9
+DA:630,9
+DA:631,9
+DA:632,9
+DA:633,9
+DA:634,9
+DA:635,9
+FN:619,System.String Studio.Compiler.PipelineCodeGenerator/interpolatedStringExpression@619::Invoke(System.String,Microsoft.FSharp.Collections.FSharpList`1<System.Tuple`3<System.String,System.String,System.String>>)
+FNDA:7,System.String Studio.Compiler.PipelineCodeGenerator/interpolatedStringExpression@619::Invoke(System.String,Microsoft.FSharp.Collections.FSharpList`1<System.Tuple`3<System.String,System.String,System.String>>)
+DA:620,7
+DA:622,7
+DA:637,7
+DA:638,7
+DA:640,35
+DA:641,14
+DA:642,18
+DA:644,14
+DA:646,42
+DA:648,28
+DA:650,0
+DA:652,14
+DA:654,7
+DA:655,0
+DA:657,7
+BRDA:640,279,1,14
+BRDA:641,88,0,9
+BRDA:641,88,1,5
+BRDA:646,173,1,14
+BRDA:646,173,0,0
+BRDA:640,279,0,7
+BRDA:654,317,0,0
+BRDA:654,317,1,7
+FN:1241,Microsoft.FSharp.Core.FSharpOption`1<System.String> Studio.Compiler.PipelineCodeGenerator/bindingNameForOutput@1242::Invoke(Studio.Graph.SavedEdge)
+FNDA:5,Microsoft.FSharp.Core.FSharpOption`1<System.String> Studio.Compiler.PipelineCodeGenerator/bindingNameForOutput@1242::Invoke(Studio.Graph.SavedEdge)
+DA:1242,5
+DA:1244,8
+DA:1246,3
+DA:1247,0
+DA:1249,3
+DA:1250,0
+DA:1252,3
+DA:1253,1
+DA:1255,0
+DA:1256,0
+DA:1258,0
+DA:1259,0
+DA:1260,0
+DA:1262,0
+BRDA:1242,18,0,1
+BRDA:1242,18,1,4
+BRDA:1242,31,0,1
+BRDA:1246,80,1,0
+BRDA:1246,80,0,1
+BRDA:1249,130,1,0
+BRDA:1249,130,0,1
+BRDA:1252,181,1,1
+BRDA:1252,181,0,0
+BRDA:1255,232,1,0
+BRDA:1255,232,0,0
+BRDA:1258,283,1,0
+BRDA:1258,283,0,0
+BRDA:1242,31,1,0
+FN:1266,Microsoft.FSharp.Core.FSharpOption`1<System.String> Studio.Compiler.PipelineCodeGenerator/Pipe #1 stage #1 at line 1266@1266::Invoke(Studio.Graph.SavedEdge)
+FNDA:122,Microsoft.FSharp.Core.FSharpOption`1<System.String> Studio.Compiler.PipelineCodeGenerator/Pipe #1 stage #1 at line 1266@1266::Invoke(Studio.Graph.SavedEdge)
+DA:1267,122
+DA:1268,5
+DA:1270,72
+BRDA:1267,23,0,6
+BRDA:1267,23,1,52
+BRDA:1267,46,0,5
+BRDA:1267,46,1,53
+FN:1264,Microsoft.FSharp.Collections.FSharpSet`1<System.String> Studio.Compiler.PipelineCodeGenerator/parameterBindingDependencies@1265::Invoke(Studio.Graph.SavedNode)
+FNDA:19,Microsoft.FSharp.Collections.FSharpSet`1<System.String> Studio.Compiler.PipelineCodeGenerator/parameterBindingDependencies@1265::Invoke(Studio.Graph.SavedNode)
+DA:1265,19
+DA:1266,19
+DA:1269,19
+DA:1271,19
+FN:1281,System.Boolean Studio.Compiler.PipelineCodeGenerator/Pipe #3 stage #1 at line 1282@1282::Invoke(Studio.Graph.SavedEdge)
+FNDA:8,System.Boolean Studio.Compiler.PipelineCodeGenerator/Pipe #3 stage #1 at line 1282@1282::Invoke(Studio.Graph.SavedEdge)
+DA:1282,8
+FN:1282,Microsoft.FSharp.Core.FSharpOption`1<Studio.Graph.SavedNode> Studio.Compiler.PipelineCodeGenerator/Pipe #3 stage #2 at line 1283@1283::Invoke(Studio.Graph.SavedEdge)
+FNDA:6,Microsoft.FSharp.Core.FSharpOption`1<Studio.Graph.SavedNode> Studio.Compiler.PipelineCodeGenerator/Pipe #3 stage #2 at line 1283@1283::Invoke(Studio.Graph.SavedEdge)
+DA:1283,6
+FN:1273,Microsoft.FSharp.Collections.FSharpSet`1<System.String> Studio.Compiler.PipelineCodeGenerator/pipelineBindingDependencies@1274::Invoke(Microsoft.FSharp.Collections.FSharpSet`1<System.String>,Studio.Graph.SavedNode)
+FNDA:12,Microsoft.FSharp.Collections.FSharpSet`1<System.String> Studio.Compiler.PipelineCodeGenerator/pipelineBindingDependencies@1274::Invoke(Microsoft.FSharp.Collections.FSharpSet`1<System.String>,Studio.Graph.SavedNode)
+DA:1274,12
+DA:1275,0
+DA:1277,8
+DA:1278,4
+DA:1281,4
+DA:1284,4
+DA:1285,4
+DA:1287,4
+BRDA:1274,15,0,0
+BRDA:1274,15,1,4
+BRDA:1284,114,0,0
+BRDA:1284,114,1,4
+BRDA:1284,181,1,1
+BRDA:1284,181,0,4
+FN:1289,System.String Studio.Compiler.PipelineCodeGenerator/indentBlock@1290::Invoke(System.Int32,System.String)
+FNDA:23,System.String Studio.Compiler.PipelineCodeGenerator/indentBlock@1290::Invoke(System.Int32,System.String)
+DA:1290,23
+DA:1292,23
+DA:1293,191
+DA:1294,23
+BRDA:1293,47,0,0
+BRDA:1293,47,1,23
+BRDA:1293,131,1,84
+BRDA:1293,98,0,0
+BRDA:1293,98,1,84
+BRDA:1293,131,0,23
+FN:1296,System.String Studio.Compiler.PipelineCodeGenerator/parenthesizeBlock@1297::Invoke(System.String)
+FNDA:10,System.String Studio.Compiler.PipelineCodeGenerator/parenthesizeBlock@1297::Invoke(System.String)
+DA:1297,10
+FN:1300,System.Boolean Studio.Compiler.PipelineCodeGenerator/incomingDataEdge@1301-1::Invoke(Studio.Graph.SavedEdge)
+FNDA:587,System.Boolean Studio.Compiler.PipelineCodeGenerator/incomingDataEdge@1301-1::Invoke(Studio.Graph.SavedEdge)
+DA:1301,587
+BRDA:1301,17,0,115
+BRDA:1301,17,1,209
+FN:1299,Microsoft.FSharp.Core.FSharpOption`1<Studio.Graph.SavedEdge> Studio.Compiler.PipelineCodeGenerator/incomingDataEdge@1300::Invoke(System.String,System.Int32)
+FNDA:148,Microsoft.FSharp.Core.FSharpOption`1<Studio.Graph.SavedEdge> Studio.Compiler.PipelineCodeGenerator/incomingDataEdge@1300::Invoke(System.String,System.Int32)
+DA:1300,148
+FN:1303,System.Boolean Studio.Compiler.PipelineCodeGenerator/sameOutputEdge@1304::Invoke(Studio.Graph.SavedEdge,Studio.Graph.SavedEdge)
+FNDA:4,System.Boolean Studio.Compiler.PipelineCodeGenerator/sameOutputEdge@1304::Invoke(Studio.Graph.SavedEdge,Studio.Graph.SavedEdge)
+DA:1304,4
 DA:1305,0
-FN:1307,System.String Studio.Compiler.PipelineCodeGenerator/formatStageTuple@1308::Invoke(System.String,System.String)
-FNDA:0,System.String Studio.Compiler.PipelineCodeGenerator/formatStageTuple@1308::Invoke(System.String,System.String)
-DA:1308,0
+DA:1306,0
+BRDA:1304,17,0,0
+BRDA:1304,17,1,4
+BRDA:1305,38,0,0
+BRDA:1305,38,1,4
+FN:1308,Microsoft.FSharp.Core.FSharpOption`1<System.String> Studio.Compiler.PipelineCodeGenerator/stageCall@1309::Invoke(Studio.Graph.SavedNode)
+FNDA:0,Microsoft.FSharp.Core.FSharpOption`1<System.String> Studio.Compiler.PipelineCodeGenerator/stageCall@1309::Invoke(Studio.Graph.SavedNode)
 DA:1309,0
 DA:1311,0
-BRDA:1308,14,0,0
-BRDA:1308,14,1,0
-BRDA:1308,34,0,0
-BRDA:1308,34,1,0
-FN:1319,System.String Studio.Compiler.PipelineCodeGenerator/inputExpression@1320::Invoke(System.Int32)
-FNDA:49,System.String Studio.Compiler.PipelineCodeGenerator/inputExpression@1320::Invoke(System.Int32)
-DA:1320,49
-DA:1322,144
-DA:1323,48
-DA:1324,0
-DA:1325,1
-BRDA:1320,25,1,48
-BRDA:1322,62,1,48
-BRDA:1322,62,0,0
-BRDA:1320,25,0,1
-FN:1327,Microsoft.FSharp.Core.FSharpOption`1<System.String> Studio.Compiler.PipelineCodeGenerator/branchStageExpression@1328::Invoke(Studio.Graph.SavedEdge,Microsoft.FSharp.Collections.FSharpSet`1<System.String>,Studio.Graph.SavedNode)
-FNDA:0,Microsoft.FSharp.Core.FSharpOption`1<System.String> Studio.Compiler.PipelineCodeGenerator/branchStageExpression@1328::Invoke(Studio.Graph.SavedEdge,Microsoft.FSharp.Collections.FSharpSet`1<System.String>,Studio.Graph.SavedNode)
-DA:1328,0
-DA:1329,0
-DA:1331,0
-DA:1333,0
-DA:1334,0
-DA:1335,0
-DA:1337,0
+DA:1312,0
+DA:1313,0
+DA:1314,0
+DA:1316,0
+BRDA:1311,74,0,0
+BRDA:1311,74,1,0
+BRDA:1313,102,0,0
+BRDA:1313,102,1,0
+FN:1318,System.String Studio.Compiler.PipelineCodeGenerator/composeStages@1319::Invoke(System.String,System.String)
+FNDA:0,System.String Studio.Compiler.PipelineCodeGenerator/composeStages@1319::Invoke(System.String,System.String)
+DA:1319,0
+FN:1321,System.String Studio.Compiler.PipelineCodeGenerator/formatStageTuple@1322::Invoke(System.String,System.String)
+FNDA:0,System.String Studio.Compiler.PipelineCodeGenerator/formatStageTuple@1322::Invoke(System.String,System.String)
+DA:1322,0
+DA:1323,0
+DA:1325,0
+BRDA:1322,14,0,0
+BRDA:1322,14,1,0
+BRDA:1322,34,0,0
+BRDA:1322,34,1,0
+FN:1333,System.String Studio.Compiler.PipelineCodeGenerator/inputExpression@1334::Invoke(System.Int32)
+FNDA:52,System.String Studio.Compiler.PipelineCodeGenerator/inputExpression@1334::Invoke(System.Int32)
+DA:1334,52
+DA:1336,153
+DA:1337,51
 DA:1338,0
-DA:1339,0
-DA:1340,0
+DA:1339,1
+BRDA:1334,25,1,51
+BRDA:1336,62,1,51
+BRDA:1336,62,0,0
+BRDA:1334,25,0,1
+FN:1341,Microsoft.FSharp.Core.FSharpOption`1<System.String> Studio.Compiler.PipelineCodeGenerator/branchStageExpression@1342::Invoke(Studio.Graph.SavedEdge,Microsoft.FSharp.Collections.FSharpSet`1<System.String>,Studio.Graph.SavedNode)
+FNDA:0,Microsoft.FSharp.Core.FSharpOption`1<System.String> Studio.Compiler.PipelineCodeGenerator/branchStageExpression@1342::Invoke(Studio.Graph.SavedEdge,Microsoft.FSharp.Collections.FSharpSet`1<System.String>,Studio.Graph.SavedNode)
 DA:1342,0
-BRDA:1328,15,0,0
-BRDA:1328,15,1,0
-BRDA:1333,76,0,0
-BRDA:1333,95,0,0
-BRDA:1334,140,0,0
-BRDA:1334,140,1,0
-BRDA:1339,226,1,0
-BRDA:1339,226,0,0
-BRDA:1340,261,1,0
-BRDA:1340,261,0,0
-BRDA:1333,76,1,0
-BRDA:1333,95,1,0
-FN:1344,Microsoft.FSharp.Core.FSharpOption`1<System.String> Studio.Compiler.PipelineCodeGenerator/sharedFanOutExpression@1345::Invoke(Microsoft.FSharp.Core.Unit)
-FNDA:5,Microsoft.FSharp.Core.FSharpOption`1<System.String> Studio.Compiler.PipelineCodeGenerator/sharedFanOutExpression@1345::Invoke(Microsoft.FSharp.Core.Unit)
-DA:1345,5
-DA:1346,4
+DA:1343,0
+DA:1345,0
 DA:1347,0
 DA:1348,0
 DA:1349,0
-DA:1350,0
 DA:1351,0
 DA:1352,0
 DA:1353,0
-DA:1355,20
-DA:1357,4
-DA:1358,0
-DA:1359,0
+DA:1354,0
+DA:1356,0
+BRDA:1342,15,0,0
+BRDA:1342,15,1,0
+BRDA:1347,76,0,0
+BRDA:1347,95,0,0
+BRDA:1348,140,0,0
+BRDA:1348,140,1,0
+BRDA:1353,226,1,0
+BRDA:1353,226,0,0
+BRDA:1354,261,1,0
+BRDA:1354,261,0,0
+BRDA:1347,76,1,0
+BRDA:1347,95,1,0
+FN:1358,Microsoft.FSharp.Core.FSharpOption`1<System.String> Studio.Compiler.PipelineCodeGenerator/sharedFanOutExpression@1359::Invoke(Microsoft.FSharp.Core.Unit)
+FNDA:5,Microsoft.FSharp.Core.FSharpOption`1<System.String> Studio.Compiler.PipelineCodeGenerator/sharedFanOutExpression@1359::Invoke(Microsoft.FSharp.Core.Unit)
+DA:1359,5
+DA:1360,4
 DA:1361,0
+DA:1362,0
 DA:1363,0
 DA:1364,0
 DA:1365,0
 DA:1366,0
 DA:1367,0
-DA:1368,4
-DA:1369,0
-DA:1370,1
-BRDA:1345,58,0,5
-BRDA:1345,76,0,4
-BRDA:1346,117,0,0
-BRDA:1349,168,1,0
-BRDA:1349,168,0,0
-BRDA:1353,254,1,0
-BRDA:1353,254,0,0
-BRDA:1346,117,1,4
-BRDA:1355,458,0,4
-BRDA:1355,479,0,4
-BRDA:1357,563,0,0
-BRDA:1357,584,0,0
-BRDA:1358,631,0,0
-BRDA:1359,681,1,0
-BRDA:1361,755,0,0
-BRDA:1361,776,0,0
-BRDA:1365,848,1,0
-BRDA:1365,848,0,0
-BRDA:1361,755,1,0
-BRDA:1361,776,1,0
-BRDA:1359,681,0,0
-BRDA:1357,563,1,4
-BRDA:1357,584,1,4
-BRDA:1358,631,1,4
-BRDA:1355,458,1,0
-BRDA:1355,479,1,0
-BRDA:1345,58,1,1
-BRDA:1345,76,1,1
-FN:1313,System.String Studio.Compiler.PipelineCodeGenerator/pipelineExpression@1314::Invoke(Microsoft.FSharp.Collections.FSharpSet`1<System.String>,Studio.Graph.SavedNode)
-FNDA:231,System.String Studio.Compiler.PipelineCodeGenerator/pipelineExpression@1314::Invoke(Microsoft.FSharp.Collections.FSharpSet`1<System.String>,Studio.Graph.SavedNode)
-DA:1314,231
-DA:1315,0
-DA:1317,154
-DA:1372,77
-DA:1373,154
-DA:1374,5
-DA:1376,0
-DA:1378,10
-DA:1379,5
-DA:1380,5
-DA:1381,5
-DA:1382,5
-DA:1383,5
-DA:1385,72
-DA:1387,72
-DA:1389,39
-DA:1390,39
-DA:1392,33
-BRDA:1314,15,0,0
-BRDA:1314,15,1,77
-BRDA:1373,179,0,5
-BRDA:1374,200,1,0
-BRDA:1374,200,0,5
-BRDA:1373,179,1,72
-BRDA:1387,542,1,39
-BRDA:1387,542,0,33
-FN:1395,System.String Studio.Compiler.PipelineCodeGenerator/appendSinkIfTerminalWrite@1396::Invoke(Studio.Graph.SavedNode,System.String)
-FNDA:27,System.String Studio.Compiler.PipelineCodeGenerator/appendSinkIfTerminalWrite@1396::Invoke(Studio.Graph.SavedNode,System.String)
-DA:1396,27
-DA:1404,18
-DA:1406,0
-DA:1408,1
-DA:1410,0
-DA:1412,8
-BRDA:1396,18,0,13
-BRDA:1396,34,0,13
-BRDA:1396,50,0,12
-BRDA:1396,63,0,10
-BRDA:1396,76,0,9
-BRDA:1396,89,0,9
-BRDA:1396,102,0,9
-BRDA:1396,115,0,9
-BRDA:1396,128,0,8
-BRDA:1396,18,1,18
-BRDA:1396,34,1,18
-BRDA:1396,50,1,18
-BRDA:1396,63,1,18
-BRDA:1396,76,1,18
-BRDA:1396,89,1,18
-BRDA:1396,102,1,18
-BRDA:1396,115,1,0
-BRDA:1396,128,1,1
-BRDA:1396,144,0,0
-BRDA:1396,144,1,8
-FN:1503,Microsoft.FSharp.Core.FSharpOption`1<Studio.Compiler.PipelineCodeGenerator/NamedBinding> Studio.Compiler.PipelineCodeGenerator/Pipe #1 stage #1 at line 1504@1504::Invoke(System.String)
-FNDA:24,Microsoft.FSharp.Core.FSharpOption`1<Studio.Compiler.PipelineCodeGenerator/NamedBinding> Studio.Compiler.PipelineCodeGenerator/Pipe #1 stage #1 at line 1504@1504::Invoke(System.String)
-DA:1504,24
-FN:1501,Microsoft.FSharp.Core.Unit Studio.Compiler.PipelineCodeGenerator/visit@1502::Invoke(Studio.Compiler.PipelineCodeGenerator/NamedBinding)
-FNDA:20,Microsoft.FSharp.Core.Unit Studio.Compiler.PipelineCodeGenerator/visit@1502::Invoke(Studio.Compiler.PipelineCodeGenerator/NamedBinding)
-DA:1502,20
-DA:1503,16
-DA:1505,16
-DA:1507,16
-BRDA:1502,18,0,16
-BRDA:1502,18,1,4
-FN:1436,Studio.Compiler.PipelineCodeGenerator/NamedBinding[] Studio.Compiler.PipelineCodeGenerator/orderedBindings@1436::Invoke(Microsoft.FSharp.Core.Unit)
-FNDA:26,Studio.Compiler.PipelineCodeGenerator/NamedBinding[] Studio.Compiler.PipelineCodeGenerator/orderedBindings@1436::Invoke(Microsoft.FSharp.Core.Unit)
-DA:1437,26
-DA:1438,26
-DA:1439,2
-DA:1440,1
-DA:1441,1
-DA:1442,26
-DA:1443,27
-DA:1444,2
-DA:1445,27
-DA:1448,26
-DA:1449,26
-DA:1450,10
-DA:1451,26
-DA:1452,36
-DA:1453,20
-DA:1454,36
-DA:1457,26
-DA:1458,26
-DA:1459,0
-DA:1460,0
-DA:1461,0
-DA:1462,26
-DA:1463,26
-DA:1464,0
-DA:1465,26
-DA:1468,26
-DA:1469,26
-DA:1470,2
-DA:1471,1
-DA:1472,1
-DA:1473,26
-DA:1474,27
-DA:1475,2
-DA:1476,27
-DA:1479,26
-DA:1480,26
-DA:1481,1
-DA:1482,26
-DA:1483,27
-DA:1484,2
-DA:1485,27
-DA:1488,26
-DA:1489,26
-DA:1490,3
-DA:1491,26
-DA:1492,29
-DA:1493,6
-DA:1494,29
-DA:1496,26
-DA:1497,94
-DA:1498,26
-DA:1499,26
-DA:1509,52
-DA:1510,52
-BRDA:1438,15,0,0
-BRDA:1438,15,1,26
-BRDA:1444,255,1,1
-BRDA:1444,255,0,26
-BRDA:1449,281,0,0
-BRDA:1449,281,1,26
-BRDA:1453,454,1,10
-BRDA:1453,454,0,26
-BRDA:1458,482,0,0
-BRDA:1458,482,1,26
-BRDA:1464,727,1,0
-BRDA:1464,727,0,26
-BRDA:1469,755,0,0
-BRDA:1469,755,1,26
-BRDA:1475,1000,1,1
-BRDA:1475,1000,0,26
-BRDA:1480,1028,0,0
-BRDA:1480,1028,1,26
-BRDA:1484,1201,1,1
-BRDA:1484,1201,0,26
-BRDA:1489,1229,0,0
-BRDA:1489,1229,1,26
-BRDA:1493,1402,1,3
-BRDA:1493,1402,0,26
-BRDA:1497,1479,0,0
-BRDA:1497,1479,1,26
-BRDA:1497,1555,1,16
-BRDA:1497,1555,0,26
-BRDA:1509,1612,0,0
-BRDA:1509,1612,1,26
-BRDA:1509,1660,1,16
-BRDA:1509,1660,0,26
+DA:1369,20
+DA:1371,4
+DA:1372,0
+DA:1373,0
+DA:1375,0
+DA:1377,0
+DA:1378,0
+DA:1379,0
+DA:1380,0
+DA:1381,0
+DA:1382,4
+DA:1383,0
+DA:1384,1
+BRDA:1359,58,0,5
+BRDA:1359,76,0,4
+BRDA:1360,117,0,0
+BRDA:1363,168,1,0
+BRDA:1363,168,0,0
+BRDA:1367,254,1,0
+BRDA:1367,254,0,0
+BRDA:1360,117,1,4
+BRDA:1369,458,0,4
+BRDA:1369,479,0,4
+BRDA:1371,563,0,0
+BRDA:1371,584,0,0
+BRDA:1372,631,0,0
+BRDA:1373,681,1,0
+BRDA:1375,755,0,0
+BRDA:1375,776,0,0
+BRDA:1379,848,1,0
+BRDA:1379,848,0,0
+BRDA:1375,755,1,0
+BRDA:1375,776,1,0
+BRDA:1373,681,0,0
+BRDA:1371,563,1,4
+BRDA:1371,584,1,4
+BRDA:1372,631,1,4
+BRDA:1369,458,1,0
+BRDA:1369,479,1,0
+BRDA:1359,58,1,1
+BRDA:1359,76,1,1
+FN:1327,System.String Studio.Compiler.PipelineCodeGenerator/pipelineExpression@1328::Invoke(Microsoft.FSharp.Collections.FSharpSet`1<System.String>,Studio.Graph.SavedNode)
+FNDA:249,System.String Studio.Compiler.PipelineCodeGenerator/pipelineExpression@1328::Invoke(Microsoft.FSharp.Collections.FSharpSet`1<System.String>,Studio.Graph.SavedNode)
+DA:1328,249
+DA:1329,0
+DA:1331,166
+DA:1386,83
+DA:1387,166
+DA:1388,5
+DA:1390,0
+DA:1392,10
+DA:1393,5
+DA:1394,5
+DA:1395,5
+DA:1396,5
+DA:1397,5
+DA:1399,78
+DA:1401,78
+DA:1403,42
+DA:1404,42
+DA:1406,36
+BRDA:1328,15,0,0
+BRDA:1328,15,1,83
+BRDA:1387,179,0,5
+BRDA:1388,200,1,0
+BRDA:1388,200,0,5
+BRDA:1387,179,1,78
+BRDA:1401,548,1,42
+BRDA:1401,548,0,36
+FN:1409,System.String Studio.Compiler.PipelineCodeGenerator/appendSinkIfTerminalWrite@1410::Invoke(Studio.Graph.SavedNode,System.String)
+FNDA:29,System.String Studio.Compiler.PipelineCodeGenerator/appendSinkIfTerminalWrite@1410::Invoke(Studio.Graph.SavedNode,System.String)
+DA:1410,29
+DA:1418,18
+DA:1420,0
+DA:1422,1
+DA:1424,0
+DA:1426,10
+BRDA:1410,18,0,15
+BRDA:1410,34,0,15
+BRDA:1410,50,0,14
+BRDA:1410,63,0,12
+BRDA:1410,76,0,11
+BRDA:1410,89,0,11
+BRDA:1410,102,0,11
+BRDA:1410,115,0,11
+BRDA:1410,128,0,10
+BRDA:1410,18,1,18
+BRDA:1410,34,1,18
+BRDA:1410,50,1,18
+BRDA:1410,63,1,18
+BRDA:1410,76,1,18
+BRDA:1410,89,1,18
+BRDA:1410,102,1,18
+BRDA:1410,115,1,0
+BRDA:1410,128,1,1
+BRDA:1410,144,0,0
+BRDA:1410,144,1,10
+FN:1499,System.Boolean Studio.Compiler.PipelineCodeGenerator/Pipe #1 stage #1 at line 1500@1500::Invoke(Studio.Graph.SavedParameter)
+FNDA:10,System.Boolean Studio.Compiler.PipelineCodeGenerator/Pipe #1 stage #1 at line 1500@1500::Invoke(Studio.Graph.SavedParameter)
+DA:1500,10
+FN:1498,Studio.Compiler.PipelineCodeGenerator/ParameterExpression Studio.Compiler.PipelineCodeGenerator/parameter@1499::Invoke(System.String)
+FNDA:3,Studio.Compiler.PipelineCodeGenerator/ParameterExpression Studio.Compiler.PipelineCodeGenerator/parameter@1499::Invoke(System.String)
+DA:1499,3
+DA:1501,6
+DA:1502,3
+BRDA:1501,34,1,0
+BRDA:1501,34,0,3
+BRDA:1502,161,1,0
+BRDA:1502,161,0,3
+FN:1504,System.String Studio.Compiler.PipelineCodeGenerator/numericParameter@1505::Invoke(System.String)
+FNDA:2,System.String Studio.Compiler.PipelineCodeGenerator/numericParameter@1505::Invoke(System.String)
+DA:1505,2
+DA:1506,4
+BRDA:1506,20,0,0
+BRDA:1506,20,1,2
+FN:1508,System.Boolean Studio.Compiler.PipelineCodeGenerator/boolParameter@1509::Invoke(System.String)
+FNDA:4,System.Boolean Studio.Compiler.PipelineCodeGenerator/boolParameter@1509::Invoke(System.String)
+DA:1509,4
+DA:1510,8
+FN:1517,Microsoft.FSharp.Core.FSharpOption`1<System.String> Studio.Compiler.PipelineCodeGenerator/Pipe #2 stage #1 at line 1518@1518::Invoke(System.Tuple`2<System.String,System.Boolean>)
+FNDA:11,Microsoft.FSharp.Core.FSharpOption`1<System.String> Studio.Compiler.PipelineCodeGenerator/Pipe #2 stage #1 at line 1518@1518::Invoke(System.Tuple`2<System.String,System.Boolean>)
+DA:1518,11
+BRDA:1518,16,0,2
+BRDA:1518,16,1,3
+FN:1552,Microsoft.FSharp.Core.FSharpOption`1<Studio.Compiler.PipelineCodeGenerator/NamedBinding> Studio.Compiler.PipelineCodeGenerator/Pipe #1 stage #1 at line 1553@1553::Invoke(System.String)
+FNDA:28,Microsoft.FSharp.Core.FSharpOption`1<Studio.Compiler.PipelineCodeGenerator/NamedBinding> Studio.Compiler.PipelineCodeGenerator/Pipe #1 stage #1 at line 1553@1553::Invoke(System.String)
+DA:1553,28
+FN:1550,Microsoft.FSharp.Core.Unit Studio.Compiler.PipelineCodeGenerator/visit@1551::Invoke(Studio.Compiler.PipelineCodeGenerator/NamedBinding)
+FNDA:23,Microsoft.FSharp.Core.Unit Studio.Compiler.PipelineCodeGenerator/visit@1551::Invoke(Studio.Compiler.PipelineCodeGenerator/NamedBinding)
+DA:1551,23
+DA:1552,18
+DA:1554,18
+DA:1556,18
+BRDA:1551,18,0,18
+BRDA:1551,18,1,5
+FN:1451,Studio.Compiler.PipelineCodeGenerator/NamedBinding[] Studio.Compiler.PipelineCodeGenerator/orderedBindings@1451::Invoke(Microsoft.FSharp.Core.Unit)
+FNDA:28,Studio.Compiler.PipelineCodeGenerator/NamedBinding[] Studio.Compiler.PipelineCodeGenerator/orderedBindings@1451::Invoke(Microsoft.FSharp.Core.Unit)
+DA:1452,28
+DA:1453,28
+DA:1454,2
+DA:1455,1
+DA:1456,1
+DA:1457,28
+DA:1458,29
+DA:1459,2
+DA:1460,29
+DA:1463,28
+DA:1464,28
+DA:1465,10
+DA:1466,28
+DA:1467,38
+DA:1468,20
+DA:1469,38
+DA:1472,28
+DA:1473,28
+DA:1474,0
+DA:1475,0
+DA:1476,0
+DA:1477,28
+DA:1478,28
+DA:1479,0
+DA:1480,28
+DA:1483,28
+DA:1484,28
+DA:1485,4
+DA:1486,2
+DA:1487,2
+DA:1488,28
+DA:1489,30
+DA:1490,4
+DA:1491,30
+DA:1494,28
+DA:1495,28
+DA:1496,2
+DA:1497,28
+DA:1498,28
+DA:1503,28
+DA:1504,28
+DA:1507,28
+DA:1508,28
+DA:1511,28
+DA:1512,28
+DA:1513,1
+DA:1514,1
+DA:1515,1
+DA:1516,1
+DA:1517,1
+DA:1519,1
+DA:1520,28
+DA:1521,1
+DA:1522,28
+DA:1523,29
+DA:1524,2
+DA:1525,29
+DA:1528,28
+DA:1529,28
+DA:1530,1
+DA:1531,28
+DA:1532,29
+DA:1533,2
+DA:1534,29
+DA:1537,28
+DA:1538,28
+DA:1539,3
+DA:1540,28
+DA:1541,31
+DA:1542,6
+DA:1543,31
+DA:1545,28
+DA:1546,102
+DA:1547,28
+DA:1548,28
+DA:1558,56
+DA:1559,56
+BRDA:1453,15,0,0
+BRDA:1453,15,1,28
+BRDA:1459,255,1,1
+BRDA:1459,255,0,28
+BRDA:1464,281,0,0
+BRDA:1464,281,1,28
+BRDA:1468,460,1,10
+BRDA:1468,460,0,28
+BRDA:1473,488,0,0
+BRDA:1473,488,1,28
+BRDA:1479,733,1,0
+BRDA:1479,733,0,28
+BRDA:1484,761,0,0
+BRDA:1484,761,1,28
+BRDA:1490,1006,1,2
+BRDA:1490,1006,0,28
+BRDA:1495,1034,0,0
+BRDA:1495,1034,1,28
+BRDA:1524,1487,1,1
+BRDA:1524,1487,0,28
+BRDA:1529,1515,0,0
+BRDA:1529,1515,1,28
+BRDA:1533,1694,1,1
+BRDA:1533,1694,0,28
+BRDA:1538,1722,0,0
+BRDA:1538,1722,1,28
+BRDA:1542,1901,1,3
+BRDA:1542,1901,0,28
+BRDA:1546,1985,0,0
+BRDA:1546,1985,1,28
+BRDA:1546,2061,1,18
+BRDA:1546,2061,0,28
+BRDA:1558,2118,0,0
+BRDA:1558,2118,1,28
+BRDA:1558,2166,1,18
+BRDA:1558,2166,0,28
 FN:266,System.Void <StartupCode$Studio-Compiler>.$PipelineCodeGenerator::.cctor()
 FNDA:1,System.Void <StartupCode$Studio-Compiler>.$PipelineCodeGenerator::.cctor()
 DA:267,1
 DA:268,1
-LF:1095
-LH:744
-BRF:1114
-BRH:564
-FNF:89
-FNH:79
+LF:1137
+LH:809
+BRF:1116
+BRH:590
+FNF:96
+FNH:86
 end_of_record

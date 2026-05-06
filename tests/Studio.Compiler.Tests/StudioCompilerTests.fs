@@ -484,7 +484,10 @@ let generatorSuite =
                       p "sampleCount" "11" false
                       p "bins" "128" false ]
             let moments =
-                node "moments" "MomentsThreshold" [ p "windowSize" "13" false ]
+                node "moments" "MomentsThreshold"
+                    [ p "type" "UInt8" false
+                      p "sampleCount" "13" false
+                      p "bins" "64" false ]
             let write =
                 node "write" "Write"
                     [ p "output" "out" false
@@ -507,7 +510,7 @@ let generatorSuite =
             Expect.stringContains code ">=> watershed 1.25 7u" "watershed should lower with level and window size."
             Expect.stringContains code ">=> signedDistanceMap 9u" "signedDistanceMap should lower with its window size."
             Expect.stringContains code "|> otsuThreshold<float> 11u 128u" "otsuThreshold should lower with sample count and bin count."
-            Expect.stringContains code ">=> momentsThreshold 13u" "momentsThreshold should lower with its window size."
+            Expect.stringContains code "|> momentsThreshold<uint8> 13u 64u" "momentsThreshold should lower with sample count and bin count."
 
         testCase "convolve lowers to StackProcessing stage" <| fun _ ->
             let readImage =
@@ -825,4 +828,71 @@ let generatorSuite =
             Expect.stringContains code "let showChart kind points =" "Chart helper should be emitted once."
             Expect.stringContains code "let Histogram0 =" "Linked histogram data should be bound before use."
             Expect.stringContains code "showChart \"Line\" Histogram0" "Chart should use the selected chart kind and linked histogram value."
+
+        testCase "quantiles over histogram data can feed image parameters" <| fun _ ->
+            let read =
+                node "read" "Read"
+                    [ p "availableMemory" "1024" false
+                      p "type" "Float64" false
+                      p "input" "input" false
+                      p "suffix" ".tiff" false ]
+
+            let histogram =
+                node "histogram" "HistogramData" []
+
+            let quantiles =
+                node "quantiles" "Quantiles"
+                    [ p "histogram" "" true
+                      p "q1" "0.5" false
+                      p "useQ2" "true" false
+                      p "q2" "0.01" false
+                      p "useQ3" "false" false
+                      p "q3" "0.99" false
+                      p "useQ4" "false" false
+                      p "q4" "0.25" false
+                      p "useQ5" "false" false
+                      p "q5" "0.75" false ]
+
+            let shift =
+                node "shift" "ShiftScale"
+                    [ p "type" "Float64" false
+                      p "shift" "0.0" true
+                      p "scale" "1.0" false ]
+
+            let code =
+                graph
+                    [ read; histogram; quantiles; shift ]
+                    [ edge "read" "output" 0 "histogram" "input" 0
+                      edge "histogram" "reducerOutput" 0 "quantiles" "parameterInput" 0
+                      edge "quantiles" "reducerOutput" 1 "shift" "parameterInput" 1
+                      edge "read" "output" 0 "shift" "input" 0 ]
+                |> PipelineCodeGenerator.generateSavedGraph
+
+            Expect.stringContains code "let Histogram0 =" "Linked histogram data should be bound before quantiles."
+            Expect.stringContains code "let Quantiles0 = quantiles [0.5; 0.01] Histogram0" "Quantile binding should include q1 and enabled extra slots."
+            Expect.stringContains code ">=> shiftScale<float> Quantiles0[1] 1.0" "Quantile output should be usable as a linked scalar parameter."
+
+        testCase "intensity stretch lowers to StackProcessing stage" <| fun _ ->
+            let read =
+                node "read" "Read"
+                    [ p "availableMemory" "1024" false
+                      p "type" "Float64" false
+                      p "input" "input" false
+                      p "suffix" ".tiff" false ]
+
+            let stretch =
+                node "stretch" "IntensityStretch"
+                    [ p "type" "Float64" false
+                      p "inputMinimum" "10" false
+                      p "inputMaximum" "20" false
+                      p "outputMinimum" "0" false
+                      p "outputMaximum" "1" false ]
+
+            let code =
+                graph
+                    [ read; stretch ]
+                    [ edge "read" "output" 0 "stretch" "input" 0 ]
+                |> PipelineCodeGenerator.generateSavedGraph
+
+            Expect.stringContains code ">=> intensityStretch<float> 10.0 20.0 0.0 1.0" "Intensity stretch should lower with typed linear range parameters."
     ]

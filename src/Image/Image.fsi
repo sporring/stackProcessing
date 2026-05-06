@@ -620,6 +620,8 @@ val otsuMultiThreshold:
   numThresholds: byte -> img: Image.Image<'T> -> Image.Image<uint8>
     when 'T: equality
 /// Moments-based threshold
+val momentsThresholdFromHistogram:
+  bins: uint -> images: Image.Image<'T> list -> float when 'T: equality
 val momentsThreshold:
   img: Image.Image<'T> -> Image.Image<uint8> when 'T: equality
 /// Coordinate fields
@@ -636,6 +638,9 @@ val inline pairs2ints:
   pairs: (^T * ^S) list -> (int * int) list
     when ^T: (static member op_Explicit: ^T -> int) and
          ^S: (static member op_Explicit: ^S -> int)
+val quantilesFromHistogram:
+  quantiles: float list -> histogram: Map<'T,uint64> -> float list
+    when 'T: comparison
 val addNormalNoise:
   mean: float -> stddev: float -> (Image.Image<'T> -> Image.Image<'T>)
     when 'T: equality

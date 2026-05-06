@@ -399,13 +399,6 @@ let stackProcessingCorrectnessSuite =
                     (binaryFillHoles 10u)
                     ImageFunctions.binaryFillHoles
 
-                assertStreamingMatchesDirect
-                    "moments-threshold"
-                    suffix
-                    1.5
-                    scalar
-                    (momentsThreshold 10u)
-                    ImageFunctions.momentsThreshold
             finally
                 binary.decRefCount()
                 scalar.decRefCount()
@@ -434,6 +427,36 @@ let stackProcessingCorrectnessSuite =
                 expectedOpt <- Some expected
 
                 keepTempDirs <- compareImages "otsu-threshold" 0.5 inputDir outputDir expected actual
+            finally
+                actualOpt |> Option.iter (fun image -> image.decRefCount())
+                expectedOpt |> Option.iter (fun image -> image.decRefCount())
+                volume.decRefCount()
+                cleanupResult keepTempDirs inputDir outputDir
+
+        testCase "sampled streamed moments threshold separates a bimodal stack" <| fun _ ->
+            let suffix = ".tiff"
+            let inputDir = tempDirectory "moments-threshold-input"
+            let outputDir = tempDirectory "moments-threshold-output"
+            let volume = makeBimodalFloat32Volume 8
+            let mutable actualOpt : Image<uint8> option = None
+            let mutable expectedOpt : Image<uint8> option = None
+            let mutable keepTempDirs = false
+
+            try
+                writeVolumeAsSlices inputDir suffix volume
+
+                source (2UL * 1024UL * 1024UL * 1024UL)
+                |> read<float32> inputDir suffix
+                |> momentsThreshold 4u 2u
+                >=> write outputDir suffix
+                |> sink
+
+                let actual = readVolumeFromSlices<uint8> outputDir suffix
+                let expected = ImageFunctions.threshold 2.5 infinity volume
+                actualOpt <- Some actual
+                expectedOpt <- Some expected
+
+                keepTempDirs <- compareImages "moments-threshold" 0.5 inputDir outputDir expected actual
             finally
                 actualOpt |> Option.iter (fun image -> image.decRefCount())
                 expectedOpt |> Option.iter (fun image -> image.decRefCount())

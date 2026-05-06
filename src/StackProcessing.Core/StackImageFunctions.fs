@@ -368,20 +368,18 @@ let square<'T when 'T: equality> : Stage<Image<'T>,Image<'T>> =
 let clamp<'T when 'T: equality> lower upper =
     liftUnaryReleaseAfter "clamp" (ImageFunctions.clampImage lower upper) id id
 
-let rescaleIntensity<'T when 'T: equality> outputMinimum outputMaximum =
-    liftUnaryReleaseAfter "rescaleIntensity" (ImageFunctions.rescaleIntensity outputMinimum outputMaximum) id id
-
-let intensityWindow<'T when 'T: equality> windowMinimum windowMaximum outputMinimum outputMaximum =
-    liftUnaryReleaseAfter "intensityWindow" (ImageFunctions.intensityWindow windowMinimum windowMaximum outputMinimum outputMaximum) id id
-
-let normalize<'T when 'T: equality> =
-    liftUnaryReleaseAfter "normalize" ImageFunctions.normalizeImage id id
-
 let shiftScale<'T when 'T: equality> shift scale =
     liftUnaryReleaseAfter "shiftScale" (ImageFunctions.shiftScale shift scale) id id
 
-let invertIntensity<'T when 'T: equality> maximum =
-    liftUnaryReleaseAfter "invertIntensity" (ImageFunctions.invertIntensity maximum) id id
+let intensityStretch<'T when 'T: equality> inputMinimum inputMaximum outputMinimum outputMaximum =
+    if inputMinimum = inputMaximum then
+        invalidArg "inputMaximum" "Cannot stretch intensities from an input range with zero width."
+    if outputMinimum = outputMaximum then
+        invalidArg "outputMaximum" "Cannot stretch intensities to an output range with zero width using shiftScale."
+
+    let scale = (outputMaximum - outputMinimum) / (inputMaximum - inputMinimum)
+    let shift = outputMinimum / scale - inputMinimum
+    shiftScale<'T> shift scale
 
 let private makeWindowedLocalOp name ksz winSz core =
     let pad = ksz / 2u
@@ -438,9 +436,6 @@ let morphologicalGradient<'T when 'T: equality> radius winSz =
 
 let binaryContour (fullyConnected: bool) (winSz: uint) =
     makeWindowedLocalOp "binaryContour" 3u winSz (ImageFunctions.binaryContour fullyConnected)
-
-let binaryThinning (winSz: uint) =
-    makeWindowedLocalOp "binaryThinning" (max 1u winSz) winSz ImageFunctions.binaryThinning
 
 let binaryMedian radius winSz =
     let ksz = 2u * radius + 1u
@@ -612,6 +607,15 @@ let imageHistogramFold () =
 
 let histogram () =
     imageHistogram () --> imageHistogramFold ()
+
+let quantiles (quantileValues: float list) (histogram: Map<'T,uint64>) =
+    ImageFunctions.quantilesFromHistogram quantileValues histogram
+
+let otsuThresholdFromHistogram<'T when 'T: equality> bins (images: Image<'T> list) =
+    ImageFunctions.otsuThresholdFromHistogram bins images
+
+let momentsThresholdFromHistogram<'T when 'T: equality> bins (images: Image<'T> list) =
+    ImageFunctions.momentsThresholdFromHistogram bins images
 
 let inline map2pairs< ^T, ^S when ^T: comparison and ^T: (static member op_Explicit: ^T -> float) and  ^S: (static member op_Explicit: ^S -> float) > = 
     let map2pairs (map: Map<'T, 'S>) : ('T * 'S) list =
@@ -841,10 +845,10 @@ let private sourceShapeValue key (pl: Plan<unit, Image<'T>>) =
     pl.sourcePeek
     |> Option.bind (fun peek -> peek.Shape |> Map.tryFind key)
 
-let private requiredSourceShapeValue key (pl: Plan<unit, Image<'T>>) =
+let private requiredThresholdSourceShapeValue operation key (pl: Plan<unit, Image<'T>>) =
     match sourceShapeValue key pl with
     | Some value when not (String.IsNullOrWhiteSpace value) -> value
-    | _ -> failwith $"otsuThreshold requires a pipeline source created by read/readRandom/readSlab with source metadata; missing '{key}'."
+    | _ -> failwith $"{operation} requires a pipeline source created by read/readRandom/readSlab with source metadata; missing '{key}'."
 
 let estimateOtsuThreshold<'T when 'T: equality> sampleCount bins (inputDir: string) suffix memAvail =
     let samples =
@@ -857,18 +861,30 @@ let estimateOtsuThreshold<'T when 'T: equality> sampleCount bins (inputDir: stri
         samples |> List.iter (fun image -> image.decRefCount())
 
 let otsuThreshold<'T when 'T: equality> sampleCount bins (pl: Plan<unit, Image<'T>>) : Plan<unit, Image<uint8>> =
-    let inputDir = requiredSourceShapeValue "inputDir" pl
-    let suffix = requiredSourceShapeValue "suffix" pl
+    let inputDir = requiredThresholdSourceShapeValue "otsuThreshold" "inputDir" pl
+    let suffix = requiredThresholdSourceShapeValue "otsuThreshold" "suffix" pl
     let thresholdValue = estimateOtsuThreshold<'T> sampleCount bins inputDir suffix pl.memAvail
     if pl.debug then
         printfn $"[otsuThreshold] estimated threshold {thresholdValue} from {max 1u sampleCount} random slices and {max 2u bins} bins"
     pl >=> liftUnaryReleaseAfter "threshold" (ImageFunctions.threshold thresholdValue infinity) id id
 
-let momentsThreshold (winSz: uint) =
-    let pad, stride = 0u, winSz
-    let f debug = volFctToWindowFctReleaseAfterDebug debug (ImageFunctions.momentsThreshold) 1u pad stride
-    let stg = mapWindow "momentsThreshold" f id id
-    (window winSz pad stride) --> stg --> flattenList ()
+let estimateMomentsThreshold<'T when 'T: equality> sampleCount bins (inputDir: string) suffix memAvail =
+    let samples =
+        source memAvail
+        |> readRandom<'T> (max 1u sampleCount) inputDir suffix
+        |> drainList
+    try
+        ImageFunctions.momentsThresholdFromHistogram (max 2u bins) samples
+    finally
+        samples |> List.iter (fun image -> image.decRefCount())
+
+let momentsThreshold<'T when 'T: equality> sampleCount bins (pl: Plan<unit, Image<'T>>) : Plan<unit, Image<uint8>> =
+    let inputDir = requiredThresholdSourceShapeValue "momentsThreshold" "inputDir" pl
+    let suffix = requiredThresholdSourceShapeValue "momentsThreshold" "suffix" pl
+    let thresholdValue = estimateMomentsThreshold<'T> sampleCount bins inputDir suffix pl.memAvail
+    if pl.debug then
+        printfn $"[momentsThreshold] estimated threshold {thresholdValue} from {max 1u sampleCount} random slices and {max 2u bins} bins"
+    pl >=> liftUnaryReleaseAfter "threshold" (ImageFunctions.threshold thresholdValue infinity) id id
 
 let threshold a b = liftUnaryReleaseAfter "threshold" (ImageFunctions.threshold a b) id id
 
