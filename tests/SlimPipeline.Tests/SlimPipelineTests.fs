@@ -2,6 +2,7 @@ module Tests.SlimPipelineTests
 
 open System.IO
 open Expecto
+open FSharp.Control
 open SlimPipeline
 
 let private source availableMemory = Plan.source availableMemory
@@ -32,6 +33,9 @@ let private apply stage plan =
 
 let private planFrom stage length =
     Plan.create (Some stage) 1024UL 0UL 0UL length false
+
+let private asyncSeqToList seq =
+    seq |> AsyncSeq.toListAsync |> Async.RunSynchronously
 
 [<Tests>]
 let singleOrPairSuite =
@@ -164,6 +168,49 @@ let resourceOpsSuite =
             Expect.equal retained 1 "Retain should be called once."
             Expect.equal released 1 "Release should be called once."
             Expect.equal (ResourceOps.memoryOf ops value) (Some 7UL) "Memory callback should be forwarded."
+    ]
+
+[<Tests>]
+let asyncStreamSemanticsSuite =
+    testList "Async stream semantics" [
+        testCase "map2Sync shares upstream stream without duplicating pulls" <| fun _ ->
+            let pulls = ref 0
+            let source =
+                asyncSeq {
+                    for value in [1; 2; 3] do
+                        pulls := !pulls + 1
+                        yield value
+                }
+
+            let left = Stage.map<int, int> "left" (fun _ x -> x + 10) (fun _ -> 0UL) id
+            let right = Stage.map<int, int> "right" (fun _ x -> x * 2) (fun _ -> 0UL) id
+            let combined = Stage.map2Sync "combine" false (fun a b -> a, b) left right (fun _ -> Single 0UL) id
+
+            let actual = (combined.Build()).Apply false source |> asyncSeqToList
+
+            Expect.equal actual [(11, 2); (12, 4); (13, 6)] "map2Sync should combine corresponding branch results."
+            Expect.equal !pulls 3 "The shared upstream should be pulled once per input element, not once per branch."
+
+        testCase "window then flatten preserves singleton-window stream order" <| fun _ ->
+            let source = [1; 2; 3; 4] |> AsyncSeq.ofSeq
+            let window = Stage.window "window" 1u 0u (fun _ x -> x) 1u
+            let flatten = Stage.flattenWindow "flatten"
+            let stage = Stage.compose window flatten
+
+            let actual = (stage.Build()).Apply false source |> asyncSeqToList
+
+            Expect.equal actual [1; 2; 3; 4] "Singleton windows should flatten back to the original stream."
+
+        testCase "windowed stage with padding exposes expected padded windows" <| fun _ ->
+            let source = [10; 20; 30] |> AsyncSeq.ofSeq
+            let window = Stage.window "window" 3u 1u (fun i _ -> i) 1u
+
+            let actual =
+                (window.Build()).Apply false source
+                |> AsyncSeq.map _.Items
+                |> asyncSeqToList
+
+            Expect.equal actual [[-1; 10; 20]; [10; 20; 30]; [20; 30; 3]; [30; 3]] "Pipe.window should preserve AsyncSeqExtensions padding semantics."
     ]
 
 [<Tests>]
