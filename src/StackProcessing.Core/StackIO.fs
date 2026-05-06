@@ -134,6 +134,21 @@ let private hdfDataset (path: string) (datasetPath: string) =
     let file = H5File.OpenRead(path)
     file, file.Dataset(datasetPath)
 
+let private addHdfDatasetPath (file: H5File) (datasetPath: string) (dataset: obj) =
+    let parts = datasetPath.Trim('/').Split('/', StringSplitOptions.RemoveEmptyEntries)
+
+    if parts.Length = 0 then
+        invalidArg "datasetPath" "HDF5 dataset path must name a dataset."
+
+    let mutable group = file :> H5Group
+
+    for part in parts[0 .. parts.Length - 2] do
+        let next = H5Group()
+        group.Add(part, next)
+        group <- next
+
+    group.Add(parts[parts.Length - 1], dataset)
+
 let private hdfDatasetChunks (dataset: IH5Dataset) =
     try
         dataset.Layout.Chunks
@@ -841,6 +856,106 @@ let writeZarr<'T when 'T: equality>
             (fun _ -> 1UL)
 
     Stage.mapi $"writeZarr \"{outputPath}\"" mapper memoryNeed id
+    |> withCostModel (StageCostModel.create memoryModel workModel)
+
+let writeNexus<'T when 'T: equality>
+    (outputPath: string)
+    (datasetPath: string)
+    (depth: uint)
+    (chunkX: uint)
+    (chunkY: uint)
+    (chunkZ: uint)
+    (frameAxis: int)
+    (yAxis: int)
+    (xAxis: int)
+    : Stage<Image<'T>, Image<'T>> =
+
+    hdfDataType<'T> () |> ignore
+    validateHdfAxes 3 frameAxis yAxis xAxis
+
+    let depth = int depth
+    let chunkX = max 1u chunkX |> uint32
+    let chunkY = max 1u chunkY |> uint32
+    let chunkZ = max 1u chunkZ |> uint32
+    let mutable writer: H5NativeWriter option = None
+    let mutable dataset: H5Dataset<'T[,,]> option = None
+
+    let createWriter (image: Image<'T>) =
+        if depth <= 0 then
+            invalidArg "depth" "writeNexus depth must be positive."
+
+        let fileDims = Array.zeroCreate<uint64> 3
+        let chunks = Array.zeroCreate<uint32> 3
+        fileDims[frameAxis] <- uint64 depth
+        fileDims[yAxis] <- uint64 (image.GetHeight())
+        fileDims[xAxis] <- uint64 (image.GetWidth())
+        chunks[frameAxis] <- min chunkZ (uint32 depth)
+        chunks[yAxis] <- min chunkY (uint32 (image.GetHeight()))
+        chunks[xAxis] <- min chunkX (uint32 (image.GetWidth()))
+
+        let file = H5File()
+        let createdDataset = H5Dataset<'T[,,]>(fileDims, chunks = chunks)
+        addHdfDatasetPath file datasetPath createdDataset
+        let createdWriter = file.BeginWrite(filePath = outputPath)
+        writer <- Some createdWriter
+        dataset <- Some createdDataset
+        createdWriter, createdDataset
+
+    let mapper (debug: bool) (idx: int64) (image: Image<'T>) =
+        if idx >= int64 depth then
+            failwith $"writeNexus received slice {idx}, but the declared depth is {depth}."
+        if image.GetDimensions() <> 2u then
+            failwith $"writeNexus expects a stream of 2D slice images, but got {image.GetDimensions()}D."
+
+        let hdfWriter, hdfDataset =
+            match writer, dataset with
+            | Some hdfWriter, Some hdfDataset -> hdfWriter, hdfDataset
+            | _ -> createWriter image
+
+        let width = int (image.GetWidth())
+        let height = int (image.GetHeight())
+        let plane = image.toArray2D()
+        let memDims = Array.zeroCreate<int> 3
+        memDims[frameAxis] <- 1
+        memDims[yAxis] <- height
+        memDims[xAxis] <- width
+
+        let data =
+            Array3D.init memDims[0] memDims[1] memDims[2] (fun a b c ->
+                let indices = [| a; b; c |]
+                plane[indices[xAxis], indices[yAxis]])
+
+        let fileStarts = Array.zeroCreate<uint64> 3
+        let blocks = Array.zeroCreate<uint64> 3
+        fileStarts[frameAxis] <- uint64 idx
+        blocks[frameAxis] <- 1UL
+        blocks[yAxis] <- uint64 height
+        blocks[xAxis] <- uint64 width
+        let fileSelection = HyperslabSelection(3, fileStarts, blocks)
+
+        if debug then
+            printfn "[writeNexus] Saved frame %d to %s:%s as %s" idx outputPath datasetPath (typeof<'T>.Name)
+
+        hdfWriter.Write(hdfDataset, data, AllSelection(), fileSelection)
+
+        if idx = int64 (depth - 1) then
+            hdfWriter.Dispose()
+            writer <- None
+            dataset <- None
+
+        image
+
+    let memoryNeed = id
+    let memoryModel = StageMemoryModel.fromSinglePeak Iter memoryNeed
+    let workModel =
+        imageIoCost<'T>
+            "write"
+            Iter
+            $"writeNexus.{typeof<'T>.Name}"
+            (fun input -> inputValue input |> imageBytes<'T>)
+            (fun _ -> 1UL)
+
+    Stage.mapi $"writeNexus \"{outputPath}:{datasetPath}\"" mapper memoryNeed id
     |> withCostModel (StageCostModel.create memoryModel workModel)
 
 let _writeSlabChunks (debug: bool) (outputDir: string) (suffix: string) (width: uint) (height: uint) (winSz: uint) (k: int) (stack: Image<'T>) =

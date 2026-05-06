@@ -340,11 +340,11 @@ module private SourceImageNode =
         functionId = "Read" || functionId = "ReadRandom" || functionId = "ReadSlab" || functionId = "ReadZarrSlab" || functionId = "ReadNexusSlab"
 
     let hasOutputTitle functionId =
-        functionId = "Write" || functionId = "WriteThrough" || functionId = "WriteInSlabs" || functionId = "WriteZarr"
+        functionId = "Write" || functionId = "WriteThrough" || functionId = "WriteInSlabs" || functionId = "WriteZarr" || functionId = "WriteNexus"
 
     let hasFormatParameter functionId =
         (hasInputTitle functionId && functionId <> "ReadZarrSlab" && functionId <> "ReadNexusSlab")
-        || (hasOutputTitle functionId && functionId <> "WriteZarr")
+        || (hasOutputTitle functionId && functionId <> "WriteZarr" && functionId <> "WriteNexus")
         || functionId = "WriteSlabSlices"
         || functionId = "GetStackInfo"
         || functionId = "GetChunkInfo"
@@ -841,7 +841,7 @@ type PipelineNodeViewModel(
                     state.Title <- ScalarImageOperationNode.title state
                     this.Name <- state.Title
                     markGraphDirty()
-                elif (state.Definition.Id = "Scalar" || state.Definition.Id = "ScalarOp" || state.Definition.Id = "Read" || state.Definition.Id = "ReadRandom" || state.Definition.Id = "ReadSlab" || state.Definition.Id = "ReadZarrSlab" || state.Definition.Id = "ReadNexusSlab" || state.Definition.Id = "Zero" || state.Definition.Id = "CreateByEuler2DTransform" || state.Definition.Id = "Threshold" || state.Definition.Id = "ImageOpImage" || state.Definition.Id = "ResampleAffineTrilinearSlices" || ScalarImageOperationNode.isOperation state.Definition.Id) && parameter.Key = "type" && args.PropertyName = nameof parameter.Value then
+                elif (state.Definition.Id = "Scalar" || state.Definition.Id = "ScalarOp" || state.Definition.Id = "Read" || state.Definition.Id = "ReadRandom" || state.Definition.Id = "ReadSlab" || state.Definition.Id = "ReadZarrSlab" || state.Definition.Id = "ReadNexusSlab" || state.Definition.Id = "Zero" || state.Definition.Id = "CreateByEuler2DTransform" || state.Definition.Id = "Threshold" || state.Definition.Id = "ImageOpImage" || state.Definition.Id = "Resize" || state.Definition.Id = "Resample" || state.Definition.Id = "ResampleAffineTrilinearSlices" || ScalarImageOperationNode.isOperation state.Definition.Id) && parameter.Key = "type" && args.PropertyName = nameof parameter.Value then
                     if state.Definition.Id = "Scalar" then
                         ScalarNode.ensureValueMatchesType state
                         state.Title <- ScalarNode.title state
@@ -987,7 +987,8 @@ type PipelineNodeViewModel(
             | "Write"
             | "WriteThrough"
             | "WriteInSlabs"
-            | "WriteZarr" ->
+            | "WriteZarr"
+            | "WriteNexus" ->
                 [ SourceImageNode.writeInputPort state ], state.Definition.Outputs
             | "ImageOpImage" -> PairOperationNode.ports state
             | "Cast" -> CastNode.ports state
@@ -1220,6 +1221,18 @@ type MainWindowViewModel() as this =
                 | ("DiscreteGaussian" | "Convolve"), "boundaryCondition" ->
                     let options =
                         [ "None"; "ZeroPad"; "PerodicPad"; "ZeroFluxNeumannPad" ]
+                        |> List.map (fun value -> ParameterOptionViewModel(value, value, true))
+
+                    PipelineParameterViewModel(parameter.Label, parameter.Key, parameter.DefaultValue, parameter.Type, options, false)
+                | ("Resize" | "Resample"), "interpolation" ->
+                    let options =
+                        [ "Linear"; "NearestNeighbor" ]
+                        |> List.map (fun value -> ParameterOptionViewModel(value, value, true))
+
+                    PipelineParameterViewModel(parameter.Label, parameter.Key, parameter.DefaultValue, parameter.Type, options, false)
+                | ("Resize" | "Resample"), "type" ->
+                    let options =
+                        SourceImageNode.typeOptions
                         |> List.map (fun value -> ParameterOptionViewModel(value, value, true))
 
                     PipelineParameterViewModel(parameter.Label, parameter.Key, parameter.DefaultValue, parameter.Type, options, false)

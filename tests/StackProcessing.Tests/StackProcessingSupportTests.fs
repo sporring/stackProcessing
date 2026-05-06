@@ -375,6 +375,97 @@ let stackProcessingSupportSuite =
                 disposeImages rereadSlabs
                 deleteDirectory rootDir
 
+        testCase "writeNexus writes a rank-3 HDF5 detector dataset incrementally" <| fun _ ->
+            let inputDir = tempDirectory "nexus-write-input"
+            let rootDir = tempDirectory "nexus-write-output"
+            let suffix = ".tiff"
+            let nexusPath = Path.Combine(rootDir, "written.h5")
+            let datasetPath = "/entry/data/data"
+            let slices =
+                [ for z in 0 .. 3 ->
+                    Array2D.init 5 3 (fun x y -> uint16 (x + 10 * y + 100 * z))
+                    |> Image<uint16>.ofArray2D ]
+            let mutable rereadSlices: Image<uint16> list = []
+
+            try
+                writeSlices inputDir suffix slices
+
+                source (2UL * 1024UL * 1024UL * 1024UL)
+                |> read<uint16> inputDir suffix
+                >=> writeNexus nexusPath datasetPath 4u 5u 3u 2u 0 1 2
+                |> sink
+
+                let info = getNexusInfo nexusPath datasetPath 0 1 2
+                Expect.equal info.size [ 5UL; 3UL; 4UL ] "writeNexus metadata should expose x/y/z image size."
+
+                rereadSlices <-
+                    source (2UL * 1024UL * 1024UL * 1024UL)
+                    |> readNexusSlab<uint16> nexusPath datasetPath 2u 0 1 2
+                    |> drainList
+
+                Expect.equal rereadSlices.Length 4 "writeNexus output should be readable by readNexusSlab."
+                let pixels = rereadSlices[2].toArray2D()
+                Expect.equal pixels[4, 2] (uint16 (4 + 10 * 2 + 100 * 2)) "writeNexus should preserve pixel values."
+            finally
+                disposeImages rereadSlices
+                disposeImages slices
+                deleteDirectory inputDir
+                deleteDirectory rootDir
+
+        testCase "resize changes x y z size while preserving first coordinate" <| fun _ ->
+            let inputDir = tempDirectory "resize-input"
+            let suffix = ".tiff"
+            let slices =
+                [ for z in 0 .. 2 ->
+                    Array2D.init 3 3 (fun x y -> uint16 (x + 10 * y + 100 * z))
+                    |> Image<uint16>.ofArray2D ]
+            let mutable resized: Image<uint16> list = []
+
+            try
+                writeSlices inputDir suffix slices
+
+                resized <-
+                    source (2UL * 1024UL * 1024UL * 1024UL)
+                    |> read<uint16> inputDir suffix
+                    |> resize<uint16> 5u 4u 5u "NearestNeighbor"
+                    |> drainList
+
+                Expect.equal resized.Length 5 "resize should emit the requested z size."
+                Expect.equal (resized[0].GetSize()) [ 5u; 4u ] "resize should emit the requested x-y slice size."
+                let first = resized[0].toArray2D()
+                Expect.equal first[0, 0] 0us "resize should keep the first input coordinate anchored at output 0,0,0."
+            finally
+                disposeImages resized
+                disposeImages slices
+                deleteDirectory inputDir
+
+        testCase "resample factors change x y z size while preserving first coordinate" <| fun _ ->
+            let inputDir = tempDirectory "resample-input"
+            let suffix = ".tiff"
+            let slices =
+                [ for z in 0 .. 2 ->
+                    Array2D.init 4 2 (fun x y -> float32 (x + 10 * y + 100 * z))
+                    |> Image<float32>.ofArray2D ]
+            let mutable resampled: Image<float32> list = []
+
+            try
+                writeSlices inputDir suffix slices
+
+                resampled <-
+                    source (2UL * 1024UL * 1024UL * 1024UL)
+                    |> read<float32> inputDir suffix
+                    |> resample<float32> 0.5 2.0 2.0 "Linear"
+                    |> drainList
+
+                Expect.equal resampled.Length 6 "resample should scale the z size by the z factor."
+                Expect.equal (resampled[0].GetSize()) [ 2u; 4u ] "resample should scale the x-y slice size by the x/y factors."
+                let first = resampled[0].toArray2D()
+                expectFloat32Close first[0, 0] 0.0f "resample should keep the first input coordinate anchored at output 0,0,0."
+            finally
+                disposeImages resampled
+                disposeImages slices
+                deleteDirectory inputDir
+
         testCase "image pair helpers perform arithmetic and extrema" <| fun _ ->
             let runPair f =
                 let a = image2D (fun x y -> float32 (1 + x + 2 * y))

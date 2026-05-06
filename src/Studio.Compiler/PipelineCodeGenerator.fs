@@ -685,6 +685,20 @@ module PipelineCodeGenerator =
             let input = quotedParameter "input"
             let suffix = quotedParameter "suffix"
             $"|> read<{pixelType}> {input} {suffix}" |> sourcePrefix availableMemory
+        | "Resize" ->
+            let pixelType = pixelTypeNameFromParameter "type" "Float32" node
+            let width = parameterValue "width"
+            let height = parameterValue "height"
+            let depth = parameterValue "depth"
+            let interpolation = quotedParameter "interpolation"
+            $"|> resize<{pixelType}> {width} {height} {depth} {interpolation}"
+        | "Resample" ->
+            let pixelType = pixelTypeNameFromParameter "type" "Float32" node
+            let factorX = parameterValue "factorX"
+            let factorY = parameterValue "factorY"
+            let factorZ = parameterValue "factorZ"
+            let interpolation = quotedParameter "interpolation"
+            $"|> resample<{pixelType}> {factorX} {factorY} {factorZ} {interpolation}"
         | "WriteInSlabs" ->
             let output = quotedParameter "output"
             let suffix = quotedParameter "suffix"
@@ -704,6 +718,17 @@ module PipelineCodeGenerator =
             let physicalSizeZ = parameterValue "physicalSizeZ"
             let maxConcurrentWrites = parameterValue "maxConcurrentWrites"
             $">=> writeZarr {output} {name} {depth} {chunkX} {chunkY} {chunkZ} {physicalSizeX} {physicalSizeY} {physicalSizeZ} {maxConcurrentWrites}"
+        | "WriteNexus" ->
+            let output = quotedParameter "output"
+            let datasetPath = quotedParameter "datasetPath"
+            let depth = parameterValue "depth"
+            let chunkX = parameterValue "chunkX"
+            let chunkY = parameterValue "chunkY"
+            let chunkZ = parameterValue "chunkZ"
+            let frameAxis = parameterValue "frameAxis"
+            let yAxis = parameterValue "yAxis"
+            let xAxis = parameterValue "xAxis"
+            $">=> writeNexus {output} {datasetPath} {depth} {chunkX} {chunkY} {chunkZ} {frameAxis} {yAxis} {xAxis}"
         | "WriteThrough" ->
             let output = quotedParameter "output"
             let suffix = quotedParameter "suffix"
@@ -1183,6 +1208,7 @@ module PipelineCodeGenerator =
                 | "WriteThrough"
                 | "WriteInSlabs"
                 | "WriteZarr"
+                | "WriteNexus"
                 | "Histogram"
                 | "ShowImage" ->
                     $"{expression}{newLine}|> sink"
