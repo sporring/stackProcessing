@@ -1,5 +1,6 @@
 module SlimPipeline
 
+open System.Collections.Generic
 open FSharp.Control
 open AsyncSeqExtensions
 
@@ -130,6 +131,13 @@ type Pipe<'S,'T> = {
 }
 
 module private Pipe =
+    type TeeSide =
+        | Left
+        | Right
+
+    type TeeMsg<'T> =
+        | Next of TeeSide * AsyncReplyChannel<'T option>
+
     let create (name: string) (apply: bool -> AsyncSeq<'S> -> AsyncSeq<'T>) (profile: Profile) : Pipe<'S,'T> =
         { Name = name; Apply = apply; Profile = profile }
 
@@ -203,10 +211,6 @@ module private Pipe =
         create name apply pipe.Profile
 *)
 
-    type TeeMsg<'T> =
-        | Left of AsyncReplyChannel<'T option>
-        | Right of AsyncReplyChannel<'T option>
-
     let tee (debug: bool) (p: Pipe<'In, 'T>) : Pipe<'In, 'T> * Pipe<'In, 'T> =
         // Shared lazy value to ensure Apply is only triggered once
         let mutable shared: Lazy<AsyncSeq<'T> * AsyncSeq<'T>> option = None
@@ -218,35 +222,50 @@ module private Pipe =
             let agent = MailboxProcessor.Start(fun inbox ->
                 async {
                     let enum = (AsyncSeq.toAsyncEnum src).GetAsyncEnumerator()
-                    let mutable current: 'T option = None
-                    let mutable consumed = (true, true)
+                    let buffer = ResizeArray<'T>()
+                    let mutable bufferStart = 0L
+                    let mutable leftIndex = 0L
+                    let mutable rightIndex = 0L
                     let mutable finished = false
 
+                    let rec ensureAvailable index =
+                        async {
+                            while not finished && bufferStart + int64 buffer.Count <= index do
+                                let! hasNext = enum.MoveNextAsync().AsTask() |> Async.AwaitTask
+                                if hasNext then
+                                    buffer.Add(enum.Current)
+                                else
+                                    finished <- true
+                        }
+
+                    let trimConsumedPrefix () =
+                        let minIndex = min leftIndex rightIndex
+                        let removable = minIndex - bufferStart
+                        if removable > 0L then
+                            buffer.RemoveRange(0, int removable)
+                            bufferStart <- minIndex
+
                     let rec loop () = async {
-                        if current.IsNone && not finished then
-                            let! hasNext = enum.MoveNextAsync().AsTask() |> Async.AwaitTask
-                            if hasNext then
-                                current <- Some enum.Current
-                                consumed <- (false, false)
-                            else
-                                finished <- true
-
                         let! msg = inbox.Receive()
-                        match msg, current with
-                        | Left reply, Some v when not (fst consumed) ->
-                            reply.Reply(Some v)
-                            consumed <- (true, snd consumed)
-                        | Right reply, Some v when not (snd consumed) ->
-                            reply.Reply(Some v)
-                            consumed <- (fst consumed, true)
-                        | Left reply, None when finished ->
-                            reply.Reply(None)
-                        | Right reply, None when finished ->
-                            reply.Reply(None)
-                        | _ -> ()  // Ignore duplicate requests
 
-                        if consumed = (true, true) then
-                            current <- None
+                        match msg with
+                        | Next(side, reply) ->
+                            let index =
+                                match side with
+                                | Left -> leftIndex
+                                | Right -> rightIndex
+
+                            do! ensureAvailable index
+
+                            if index < bufferStart + int64 buffer.Count then
+                                let value = buffer[int (index - bufferStart)]
+                                match side with
+                                | Left -> leftIndex <- leftIndex + 1L
+                                | Right -> rightIndex <- rightIndex + 1L
+                                trimConsumedPrefix ()
+                                reply.Reply(Some value)
+                            else
+                                reply.Reply(None)
 
                         return! loop ()
                     }
@@ -258,7 +277,7 @@ module private Pipe =
                 asyncSeq {
                     let mutable done_ = false
                     while not done_ do
-                        let! vOpt = agent.PostAndAsyncReply(tag)
+                        let! vOpt = agent.PostAndAsyncReply(fun reply -> Next(tag, reply))
                         match vOpt with
                         | Some v -> yield v
                         | None -> done_ <- true

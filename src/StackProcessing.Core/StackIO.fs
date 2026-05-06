@@ -362,7 +362,7 @@ let writeInChunks<'T when 'T: equality> (outputDir: string) (suffix: string) (wi
         stack.incRefCount() //to make sure volFctToLstFctReleaseAfter doesn't release it.
         stack
     let mapper (debug: bool) (idx: int64) (window: Window<Image<'T>>) =
-        volFctToLstFctReleaseAfterDebug debug (f debug idx) pad stride window.Items
+        volFctToWindowFctReleaseAfterDebug debug (f debug idx) 1u pad stride window
     //let mapper (debug: bool) (idx: int64) = fun stack -> _writeChunkSlice debug outputDir suffix width height winSz (int idx) stack; stack
     let btUint8 = typeof<uint8>|>Image.getBytesPerComponent |> uint64
     let btUint64 = typeof<uint64> |> Image.getBytesPerComponent |> uint64
