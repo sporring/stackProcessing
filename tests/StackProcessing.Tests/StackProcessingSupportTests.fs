@@ -53,8 +53,70 @@ let private testCase name body =
             GC.WaitForPendingFinalizers()
             GC.Collect())
 
+let private scalarPlan values =
+    let items = values |> List.toArray
+    let stage =
+        Stage.init
+            "scalar source"
+            (uint items.Length)
+            (fun index -> items[index])
+            (ProfileTransition.create Unit Streaming)
+            (fun _ -> 0UL)
+            id
+
+    Plan.create (Some stage) 1024UL 0UL 1UL (uint64 items.Length) false
+
+let private scalarStage name f =
+    Stage.map name (fun _ value -> f value) (fun _ -> 0UL) id
+
 let stackProcessingSupportSuite =
     testSequenced <| testList "StackProcessing support coverage" [
+        testCase ">=> composes a plan with a stage" <| fun _ ->
+            let actual =
+                scalarPlan [ 1; 2; 3 ]
+                >=> scalarStage "increment" ((+) 1)
+                |> drainList
+
+            Expect.equal actual [ 2; 3; 4 ] ">=> should apply the stage to every stream element."
+
+        testCase "--> composes stages before plan execution" <| fun _ ->
+            let stage =
+                scalarStage "increment" ((+) 1)
+                --> scalarStage "double" ((*) 2)
+
+            let actual =
+                scalarPlan [ 1; 2; 3 ]
+                >=> stage
+                |> drainList
+
+            Expect.equal actual [ 4; 6; 8 ] "--> should compose stages left-to-right."
+
+        testCase ">=>> forks a synchronized stream into two stages" <| fun _ ->
+            let actual =
+                scalarPlan [ 1; 2; 3 ]
+                >=>> (scalarStage "increment" ((+) 1), scalarStage "double" ((*) 2))
+                |> drainList
+
+            Expect.equal actual [ 2, 2; 3, 4; 4, 6 ] ">=>> should produce paired branch outputs."
+
+        testCase ">>=> maps synchronized pairs to a single stream" <| fun _ ->
+            let actual =
+                scalarPlan [ 1; 2; 3 ]
+                >=>> (scalarStage "increment" ((+) 1), scalarStage "double" ((*) 2))
+                >>=> (+)
+                |> drainList
+
+            Expect.equal actual [ 4; 7; 10 ] ">>=> should combine paired values."
+
+        testCase ">>=>> applies synchronized stages to paired streams" <| fun _ ->
+            let actual =
+                scalarPlan [ 1; 2; 3 ]
+                >=>> (scalarStage "left" id, scalarStage "right" ((*) 10))
+                >>=>> (scalarStage "left plus one" ((+) 1), scalarStage "right plus five" ((+) 5))
+                |> drainList
+
+            Expect.equal actual [ 2, 15; 3, 25; 4, 35 ] ">>=>> should run both tuple branches and zip their outputs."
+
         testCase "command line source parses non-debug arguments" <| fun _ ->
             let plan, rest = commandLineSource 1024UL [| "alpha"; "beta" |]
             Expect.isFalse plan.debug "commandLineSource should leave debug off without -d."
@@ -72,9 +134,9 @@ let stackProcessingSupportSuite =
 
                 try
                     Expect.isGreaterThanOrEqual windows.Length 3 "window should produce padded windows."
-                    Expect.equal windows[0].Length 3 "Each window should contain the requested number of images."
+                    Expect.equal windows[0].Items.Length 3 "Each window should contain the requested number of images."
                 finally
-                    windows |> List.concat |> disposeImages
+                    windows |> List.collect _.Items |> disposeImages
 
                 let flattened =
                     source (2UL * 1024UL * 1024UL * 1024UL)

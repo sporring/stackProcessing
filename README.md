@@ -86,8 +86,8 @@ generated code uses the connected value.
 
 | Category | Examples |
 | -------- | -------- |
-| Sources / Sinks | `read`, `readRandom`, `zero`, `write`, `writeThrough`, `scalar` |
-| Arithmetic | `scalarOp`, `imageOpScalar`, `scalarOpImage`, `imageOpImage`, `maxOfPair`, `minOfPair` |
+| Sources / Sinks | `read`, `readRandom`, `zero`, `write`, `writeThrough`, `scalar`, `getStackInfo` |
+| Arithmetic | `scalarOp`, `imageOpScalar`, `scalarOpImage`, `imageOpImage`, `f(I)`, `f(a)` |
 | Filters | `discreteGaussian`, `convGauss`, `finiteDiff` |
 | Segmentation | `threshold`, morphology, connected-component stages |
 | Statistics | `computeStats`, `addNormalNoise` |
@@ -95,8 +95,20 @@ generated code uses the connected value.
 | Debug | `tap`, `print` |
 
 Many boxes are generic: for example `read` has a type dropdown instead of one
-separate box per pixel type. When a box is connected, Studio restricts type
-choices to values compatible with the existing connection.
+separate box per pixel type, `imageOpImage` has an operator dropdown including
+`+`, `-`, `*`, `/`, `max`, and `min`, and `f(I)` / `f(a)` expose standard
+function dropdowns. When a box is connected, Studio restricts type choices to
+values compatible with the existing connection.
+
+Scalar parameter fields accept ordinary typed literals. Numeric scalar fields
+also accept `e` and `pi`, which compile to `System.Math.E` and
+`System.Math.PI`; string fields keep those inputs as the literal strings `"e"`
+and `"pi"`.
+
+When a graph is run from Studio, relative file and directory names are resolved
+relative to the graph's last `Load`, `Save`, or `Save As` location. If the graph
+has never had a file location, Studio falls back to the user's home/root
+directory.
 
 Studio also tries to catch structural mistakes while the graph is being built.
 It rejects incompatible pin types, cycles, and reducer/streaming combinations
@@ -195,9 +207,10 @@ respected. For example, if a string scalar is used by both `read` and
 `readRandom`, its binding is emitted before either dependent pipeline.
 
 The compiler is also where compact visual boxes are expanded back to the lower
-level DSL. For example, an `imageOpImage` box with operator `*` becomes the
-corresponding pair operation in generated F#, and a chart box expands to the
-Plotly.NET helper code needed for the selected chart kind.
+level DSL. For example, an `imageOpImage` box with operator `*`, `max`, or `min`
+becomes the corresponding pair operation (`mulPair`, `maxOfPair`, or
+`minOfPair`) in generated F#, and a chart box expands to the Plotly.NET helper
+code needed for the selected chart kind.
 
 ### `Studio`
 
@@ -303,6 +316,19 @@ type Profile =
 neighbouring elements must be held together. Reducers move from streaming input
 to constant output.
 
+Windowed stages use a first-class low-level representation:
+
+```fsharp
+type Window<'T> =
+    { Items: 'T list
+      EmitRange: uint * uint }
+```
+
+`Items` is the retained context for the current window. `EmitRange` identifies
+the subrange that should be released when the window is flattened back into the
+ordinary element stream. Singleton streaming can be treated as a one-item
+window when stages need synchronized window semantics.
+
 Each stage also has:
 
 * `MemoryNeed`: estimate of required memory for a slice or pair of slices.
@@ -352,10 +378,8 @@ operators build and execute the final pipe.
 | `>=>>` | Split one stream into two synchronized branches. |
 | `zip` | Combine two compatible plans elementwise. |
 | `>>=>` | Combine paired results with a function. |
+| `>>=>>` | Apply synchronized stages to the two sides of an existing paired stream. |
 | `teeFst` / `teeSnd` | Apply a side-effecting identity stage to one side of a pair. |
-
-`>>=>>` exists as an older synchronization idea, but current connected-component
-work prefers explicit tuple streams with `teeFst` and `teeSnd`.
 
 ## StackProcessing Design
 

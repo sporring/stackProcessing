@@ -59,7 +59,7 @@ A complete dataflow, created from a source and extended via the composition oper
 | `-->`    | Compose two plans directly. (`Plan<'a,'b> -> Plan<'b,'c> -> Plan<'a,'c>`)                                                            |
 | `>=>>`   | Parallelize two branches from the same pipeline source. (`Pipeline<'In,'S> -> (Plan<'S,'U> * Plan<'S,'V>) -> Pipeline<'In,('U * 'V)>`) |
 | `>>=>`   | Combine paired results using a binary function. (`Pipeline<'a,('b * 'c)> -> ('b -> 'c -> 'd) -> Pipeline<'a,'d>`)                        |
-| `>>=>>`  | Combine a function producing pairs with another plan transforming pairs.                                                                |
+| `>>=>>`  | Apply synchronized stages to both sides of an existing paired stream.                                                                  |
 
 These operators let users declaratively build complex, memory-aware workflows.
 
@@ -124,10 +124,11 @@ val window :
     windowSize:uint ->
     pad:uint ->
     stride:uint ->
-    Plan<Image<'a>, Image<'a> list>
+    Plan<Image<'a>, Window<Image<'a>>>
 ```
 
-Converts a stream of 2D image slices into a **sliding window** of 3D image chunks.
+Converts a stream of 2D image slices into a **sliding window** value. The window
+contains the retained slice list plus an emit range used by `flatten`.
 Useful for localized processing (e.g., convolution or denoising across slices).
 
 Example:
@@ -141,10 +142,11 @@ Example:
 ### `flatten`
 
 ```fsharp
-val flatten : unit -> Plan<'a list,'a>
+val flatten : unit -> Plan<Window<'a>,'a>
 ```
 
-Reverses `window` - flattens a list of items back into a single stream.
+Reverses `window` by emitting the window's selected range back into a single
+stream.
 
  
 
@@ -172,18 +174,19 @@ Combines two pipelines elementwise, yielding paired outputs - analogous to `Seq.
 
  
 
-### `promoteStreamingToSliding`
+### `promoteStreamingToWindow`
 
 ```fsharp
-val promoteStreamingToSliding :
+val promoteStreamingToWindow :
   name:string ->
   winSz:uint -> pad:uint -> stride:uint ->
   emitStart:uint -> emitCount:uint ->
   plan:Plan<'T,'S> -> Plan<'T,'S>
 ```
 
-Transforms a **streaming** plan into a **sliding-window** plan,
-enabling localized operations over streaming image stacks.
+Delays a **streaming** stage so it follows the cadence of a matching windowed
+stage. This is used when synchronized branch operators must keep paired outputs
+aligned even if one branch has to collect a window before emitting.
 
  
 

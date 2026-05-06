@@ -3,6 +3,16 @@ module SlimPipeline
 type SingleOrPair =
     | Single of uint64
     | Pair of uint64 * uint64
+type Window<'T> =
+    {
+      Items: 'T list
+      EmitRange: uint * uint
+    }
+module Window =
+    val create:
+      emitStart: uint -> emitCount: uint -> items: 'a list -> Window<'a>
+    val singleton: item: 'a -> Window<'a>
+    val emitItems: window: Window<'a> -> 'a list
 module SingleOrPair =
     val isSingle: v: SingleOrPair -> bool
     val map: f: (uint64 -> uint64) -> v: SingleOrPair -> SingleOrPair
@@ -105,10 +115,11 @@ module private Pipe =
       name: string ->
         winSz: uint ->
         pad: uint ->
-        zeroMaker: (int -> 'T -> 'T) -> stride: uint -> Pipe<'T,'T list>
+        zeroMaker: (int -> 'T -> 'T) -> stride: uint -> Pipe<'T,Window<'T>>
         when 'T: equality
     val collect: name: string -> mapper: ('S -> 'T list) -> Pipe<'S,'T>
     val flatten: name: string -> Pipe<'T list,'T>
+    val flattenWindow: name: string -> Pipe<Window<'T>,'T>
     val ignore: clean: ('T -> unit) -> Pipe<'T,unit>
     val ignorePairs:
       cleanFst: ('S -> unit) * cleanSnd: ('T -> unit) -> Pipe<('S * 'T),unit>
@@ -459,6 +470,13 @@ module Stage =
         stage2: Stage<'In,'V> ->
         memoryNeed: MemoryNeedWrapped ->
         lengthTransformation: LengthTransformation -> Stage<'In,'W>
+    val mapPairSync:
+      name: string ->
+        debug: bool ->
+        stage1: Stage<'U,'S> ->
+        stage2: Stage<'V,'T> ->
+        memoryNeed: MemoryNeedWrapped ->
+        lengthTransformation: LengthTransformation -> Stage<('U * 'V),('S * 'T)>
     val teeFst: stage: Stage<'A,'A> -> Stage<('A * 'B),('A * 'B)>
     val teeSnd: stage: Stage<'B,'B> -> Stage<('A * 'B),('A * 'B)>
     val reduce:
@@ -477,9 +495,10 @@ module Stage =
       name: string ->
         winSz: uint ->
         pad: uint ->
-        zeroMaker: (int -> 'T -> 'T) -> stride: uint -> Stage<'T,'T list>
+        zeroMaker: (int -> 'T -> 'T) -> stride: uint -> Stage<'T,Window<'T>>
         when 'T: equality
     val flatten: name: string -> Stage<'T list,'T>
+    val flattenWindow: name: string -> Stage<Window<'T>,'T>
     val liftUnary:
       name: string ->
         f: ('S -> 'T) ->
@@ -616,9 +635,8 @@ module Plan =
       pl: Plan<'In,('U * 'V)> -> f: ('U -> 'V -> 'W) -> Plan<'In,'W>
         when 'W: equality
     val (>>=>>) :
-      f: ('U * 'V -> 'S * 'T) ->
-        pl: Plan<'In,('U * 'V)> ->
-        stage: Stage<('U * 'V),('S * 'T)> -> Plan<'In,('S * 'T)>
+      pl: Plan<'In,('U * 'V)> ->
+        stage1: Stage<'U,'S> * stage2: Stage<'V,'T> -> Plan<'In,('S * 'T)>
         when 'S: equality and 'T: equality
     /// sink type operators
     val doCleaning: pl: Plan<'a,'b> -> unit option
