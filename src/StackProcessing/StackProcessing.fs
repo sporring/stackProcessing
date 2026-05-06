@@ -101,6 +101,7 @@ let log10<'T when 'T: equality>= StackImageFunctions.log10<'T>
 let log<'T when 'T: equality>= StackImageFunctions.log<'T>
 let round<'T when 'T: equality>= StackImageFunctions.round<'T>
 let sqrt<'T when 'T: equality>= StackImageFunctions.sqrt<'T>
+let sqrtWindowed<'T when 'T: equality> = StackImageFunctions.sqrtWindowed<'T>
 let square<'T when 'T: equality>= StackImageFunctions.square<'T>
 let imageHistogram = StackImageFunctions.imageHistogram
 let imageHistogramFold = StackImageFunctions.imageHistogramFold

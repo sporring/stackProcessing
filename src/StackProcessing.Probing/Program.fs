@@ -130,8 +130,18 @@ let private inputSizes =
           for depth in inputDepths do
               imageSize xy depth ]
 
+let private convolutionBreakdownSizes =
+    [ 16u; 32u; 64u ]
+    |> List.map (fun side -> imageSize side side)
+
 let private gaussianWindowSizes =
     [ 5u; 9u; 15u ]
+
+let private unaryWindowSizes =
+    [ 1u; 5u; 9u; 15u ]
+
+let private stackUnstackWindowSizes =
+    gaussianWindowSizes
 
 let private forceFullGc () =
     GC.Collect()
@@ -353,6 +363,121 @@ let private runDrainProbe name description probeParameters (planFactory: unit ->
     let execute plan = drain plan |> ignore
     runProbe name description probeParameters execute planFactory
 
+let private releaseImages (images: Image<float> list) =
+    images |> List.iter (fun image -> image.decRefCount())
+
+let private releaseConsumedImages (window: Window<Image<float>>) =
+    let _, emitCount = window.EmitRange
+    window.Items
+    |> List.take (min (int emitCount) window.Items.Length)
+    |> List.iter (fun image -> image.decRefCount())
+
+let private stackUnstackWindow (window: Window<Image<float>>) =
+    match window.Items with
+    | [] -> []
+    | items ->
+        let stack = ImageFunctions.stack items
+        releaseConsumedImages window
+        let outputCount = min (snd window.EmitRange) (stack.GetDepth())
+        let result =
+            if outputCount = 0u then
+                []
+            else
+                ImageFunctions.unstackSkipNTakeM 0u outputCount stack
+        stack.decRefCount()
+        result
+
+let private stackUnstackInputStage (windowSize: uint) : Stage<Image<float>, Image<float>> =
+    StackCore.window windowSize 0u windowSize
+    --> StackCore.flatten ()
+
+let private stackUnstackStage (windowSize: uint) : Stage<Image<float>, Image<float>> =
+    StackCore.window windowSize 0u windowSize
+    --> StackCore.mapWindow "stack-unstack" (fun _ window -> stackUnstackWindow window) id id
+    --> StackCore.flattenList ()
+
+let private stackOnlyWindow (window: Window<Image<float>>) =
+    match window.Items with
+    | [] -> []
+    | items ->
+        let stack = ImageFunctions.stack items
+        releaseConsumedImages window
+        [ stack ]
+
+let private stackConvolveWindow (kernel: Image<float>) (window: Window<Image<float>>) =
+    match window.Items with
+    | [] -> []
+    | items ->
+        let stack = ImageFunctions.stack items
+        releaseConsumedImages window
+        let convolved = ImageFunctions.convolve (Some ImageFunctions.Valid) None stack kernel
+        stack.decRefCount()
+        [ convolved ]
+
+let private stackConvolveUnstackWindow (kernel: Image<float>) (window: Window<Image<float>>) =
+    match stackConvolveWindow kernel window with
+    | [] -> []
+    | [ convolved ] ->
+        let result = ImageFunctions.unstackSkipNTakeM 0u (convolved.GetDepth()) convolved
+        convolved.decRefCount()
+        result
+    | images ->
+        releaseImages images
+        failwith "stackConvolveWindow returned more than one volume."
+
+let private stackDiscreteGaussianWindow (kernelSize: uint) (window: Window<Image<float>>) =
+    match window.Items with
+    | [] -> []
+    | items ->
+        let stack = ImageFunctions.stack items
+        releaseConsumedImages window
+        let filtered = ImageFunctions.discreteGaussian 3u 1.0 (Some kernelSize) None None stack
+        stack.decRefCount()
+        [ filtered ]
+
+let private stackDiscreteGaussianUnstackWindow (kernelSize: uint) (window: Window<Image<float>>) =
+    match stackDiscreteGaussianWindow kernelSize window with
+    | [] -> []
+    | [ filtered ] ->
+        let result = ImageFunctions.unstackSkipNTakeM 0u (filtered.GetDepth()) filtered
+        filtered.decRefCount()
+        result
+    | images ->
+        releaseImages images
+        failwith "stackDiscreteGaussianWindow returned more than one volume."
+
+let private convolutionBreakdownInputStage (windowSize: uint) : Stage<Image<float>, Image<float>> =
+    StackCore.window windowSize 0u windowSize
+    --> StackCore.flatten ()
+
+let private convolutionBreakdownStackStage (windowSize: uint) : Stage<Image<float>, Image<float>> =
+    StackCore.window windowSize 0u windowSize
+    --> StackCore.mapWindow "convolution-breakdown-stack" (fun _ window -> stackOnlyWindow window) id id
+    --> StackCore.flattenList ()
+
+let private convolutionBreakdownStackConvolveStage (windowSize: uint) (kernel: Image<float>) : Stage<Image<float>, Image<float>> =
+    StackCore.window windowSize 0u windowSize
+    --> StackCore.mapWindow "convolution-breakdown-stack-convolve" (fun _ window -> stackConvolveWindow kernel window) id id
+    --> StackCore.flattenList ()
+
+let private convolutionBreakdownStackConvolveUnstackStage (windowSize: uint) (kernel: Image<float>) : Stage<Image<float>, Image<float>> =
+    StackCore.window windowSize 0u windowSize
+    --> StackCore.mapWindow "convolution-breakdown-stack-convolve-unstack" (fun _ window -> stackConvolveUnstackWindow kernel window) id id
+    --> StackCore.flattenList ()
+
+let private discreteGaussianBreakdownStackStage (windowSize: uint) =
+    convolutionBreakdownStackStage windowSize
+
+let private discreteGaussianBreakdownStackFilterStage (windowSize: uint) (kernelSize: uint) : Stage<Image<float>, Image<float>> =
+    StackCore.window windowSize 0u windowSize
+    --> StackCore.mapWindow "discrete-gaussian-breakdown-stack-filter" (fun _ window -> stackDiscreteGaussianWindow kernelSize window) id id
+    --> StackCore.flattenList ()
+
+let private discreteGaussianBreakdownStackFilterUnstackStage (windowSize: uint) (kernelSize: uint) : Stage<Image<float>, Image<float>> =
+    StackCore.window windowSize 0u windowSize
+    --> StackCore.mapWindow "discrete-gaussian-breakdown-stack-filter-unstack" (fun _ window -> stackDiscreteGaussianUnstackWindow kernelSize window) id id
+    --> StackCore.flattenList ()
+
 let private sizeName size =
     $"{size.Width}x{size.Height}x{size.Depth}"
 
@@ -369,15 +494,91 @@ let private cleanDirectory path =
         Directory.Delete(path, true)
     Directory.CreateDirectory(path) |> ignore
 
-let private reportPathFromArgs (args: string array) =
-    if args.Length > 0 then
-        Path.GetFullPath(args[0])
-    else
-        Path.GetFullPath("stackprocessing-probing.json")
+type ProbeOptions =
+    { ReportPath: string
+      SqrtOnly: bool
+      StackUnstackOnly: bool
+      ConvolutionBreakdownOnly: bool
+      DiscreteGaussianBreakdownOnly: bool }
+
+let private parseArgs (args: string array) =
+    let mutable reportPath = None
+    let mutable sqrtOnly = false
+    let mutable stackUnstackOnly = false
+    let mutable convolutionBreakdownOnly = false
+    let mutable discreteGaussianBreakdownOnly = false
+    let mutable i = 0
+
+    while i < args.Length do
+        match args[i] with
+        | "--sqrt-only"
+        | "--only-sqrt" ->
+            sqrtOnly <- true
+            i <- i + 1
+        | "--stack-unstack-only"
+        | "--only-stack-unstack" ->
+            stackUnstackOnly <- true
+            i <- i + 1
+        | "--convolution-breakdown-only"
+        | "--only-convolution-breakdown" ->
+            convolutionBreakdownOnly <- true
+            i <- i + 1
+        | "--discrete-gaussian-breakdown-only"
+        | "--only-discrete-gaussian-breakdown" ->
+            discreteGaussianBreakdownOnly <- true
+            i <- i + 1
+        | "--operation" ->
+            if i + 1 >= args.Length then
+                failwith "Expected an operation name after --operation."
+            match args[i + 1].ToLowerInvariant() with
+            | "sqrt" ->
+                sqrtOnly <- true
+                i <- i + 2
+            | "stack-unstack"
+            | "stackunstack" ->
+                stackUnstackOnly <- true
+                i <- i + 2
+            | "convolution-breakdown"
+            | "convolutionbreakdown" ->
+                convolutionBreakdownOnly <- true
+                i <- i + 2
+            | "discrete-gaussian-breakdown"
+            | "discretegaussianbreakdown" ->
+                discreteGaussianBreakdownOnly <- true
+                i <- i + 2
+            | operation ->
+                failwith $"Unsupported probing operation '{operation}'. Currently supported: sqrt, stack-unstack, convolution-breakdown, discrete-gaussian-breakdown."
+        | arg when arg.StartsWith("-") ->
+            failwith $"Unknown probing argument '{arg}'."
+        | path ->
+            match reportPath with
+            | Some existing ->
+                failwith $"Expected only one report path, got '{existing}' and '{path}'."
+            | None ->
+                reportPath <- Some path
+                i <- i + 1
+
+    let selectedModeCount =
+        [ sqrtOnly; stackUnstackOnly; convolutionBreakdownOnly; discreteGaussianBreakdownOnly ]
+        |> List.filter id
+        |> List.length
+
+    if selectedModeCount > 1 then
+        failwith "Choose only one single-operation probe mode."
+
+    { ReportPath =
+        reportPath
+        |> Option.defaultValue "stackprocessing-probing.json"
+        |> Path.GetFullPath
+      SqrtOnly = sqrtOnly
+      StackUnstackOnly = stackUnstackOnly
+      ConvolutionBreakdownOnly = convolutionBreakdownOnly
+      DiscreteGaussianBreakdownOnly = discreteGaussianBreakdownOnly }
 
 [<EntryPoint>]
 let main args =
-    let reportPath = reportPathFromArgs args
+    let options = parseArgs args
+    let reportPath = options.ReportPath
     let tempRoot =
         Path.Combine(
             Path.GetTempPath(),
@@ -386,133 +587,410 @@ let main args =
 
     cleanDirectory tempRoot
 
-    let inputDirs =
-        inputSizes
-        |> List.map (fun size ->
-            let path = Path.Combine(tempRoot, $"input-{sizeName size}")
-            createInputStack size path
-            size, path)
-        |> Map.ofList
+    let inputDirs : Map<ImageSize, string> =
+        if options.SqrtOnly || options.StackUnstackOnly || options.ConvolutionBreakdownOnly || options.DiscreteGaussianBreakdownOnly then
+            Map.empty
+        else
+            inputSizes
+            |> List.map (fun size ->
+                let path = Path.Combine(tempRoot, $"input-{sizeName size}")
+                createInputStack size path
+                size, path)
+            |> Map.ofList
 
     let outputDir size name =
         let path = Path.Combine(tempRoot, $"output-{sizeName size}", name)
         Directory.CreateDirectory(path) |> ignore
         path
 
+    let convolutionBreakdownKernel =
+        if options.ConvolutionBreakdownOnly then
+            let kernel: Image<float> = ImageFunctions.gauss 3u 1.0 (Some 8u)
+            Some kernel
+        else
+            None
+
     let probes =
         [| for xy in xySizes do
-               for depth in defaultDepths do
-                   let size = imageSize xy depth
-                   let inputDir = inputDirs[size]
-                   let suffix = sizeName size
+               if not options.SqrtOnly && not options.StackUnstackOnly && not options.ConvolutionBreakdownOnly && not options.DiscreteGaussianBreakdownOnly then
+                   for depth in defaultDepths do
+                       let size = imageSize xy depth
+                       let inputDir = inputDirs[size]
+                       let suffix = sizeName size
 
-                   yield runSinkProbe
-                             $"zero-uint8-write-{suffix}"
-                             $"Synthetic UInt8 {suffix} source written to TIFF."
-                             (let p = defaultImageParameters size "uint8" 1u
-                              p["operation"] <- "zero-write"
-                              p)
-                             (fun () ->
-                                 source availableMemory
-                                 |> zero<uint8> size.Width size.Height size.Depth
-                                 >=> write (outputDir size "zero-uint8-write") ".tiff")
-
-                   yield runSinkProbe
-                             $"add-normal-noise-uint8-write-{suffix}"
-                             $"Synthetic UInt8 {suffix} source, additive Gaussian noise, write."
-                             (let p = defaultImageParameters size "uint8" 1u
-                              p["operation"] <- "noise-write"
-                              p["mean"] <- "128"
-                              p["sigma"] <- "50"
-                              p)
-                             (fun () ->
-                                 source availableMemory
-                                 |> zero<uint8> size.Width size.Height size.Depth
-                                 >=> addNormalNoise 128.0 50.0
-                                 >=> write (outputDir size "add-normal-noise-uint8-write") ".tiff")
-
-                   yield runSinkProbe
-                             $"read-uint8-ignore-{suffix}"
-                             $"Read UInt8 {suffix} TIFF stack and consume it without writing."
-                             (let p = defaultImageParameters size "uint8" 1u
-                              p["operation"] <- "read-ignore"
-                              p)
-                             (fun () ->
-                                 source availableMemory
-                                 |> read<uint8> inputDir ".tiff"
-                                 >=> ignoreSingles ())
-
-                   yield runSinkProbe
-                             $"read-uint8-write-{suffix}"
-                             $"Copy-style UInt8 {suffix} read and write pipeline."
-                             (let p = defaultImageParameters size "uint8" 1u
-                              p["operation"] <- "read-write"
-                              p)
-                             (fun () ->
-                                 source availableMemory
-                                 |> read<uint8> inputDir ".tiff"
-                                 >=> write (outputDir size "read-uint8-write") ".tiff")
-
-                   yield runSinkProbe
-                             $"threshold-float-write-{suffix}"
-                             $"Synthetic Float64 {suffix} source, threshold to UInt8, write."
-                             (let p = defaultImageParameters size "float" 1u
-                              p["operation"] <- "threshold-write"
-                              p["threshold"] <- "128"
-                              p)
-                             (fun () ->
-                                 source availableMemory
-                                 |> zero<float> size.Width size.Height size.Depth
-                                 >=> addNormalNoise 128.0 50.0
-                                 >=> threshold 128.0 infinity
-                                 >=> imageMulScalar 255uy
-                                 >=> write (outputDir size "threshold-float-write") ".tiff")
-
-                   yield runDrainProbe
-                             $"compute-stats-read-float-{suffix}"
-                             $"Read {suffix} stack as Float64 and drain computeStats reducer."
-                             (let p = defaultImageParameters size "float" 1u
-                              p["operation"] <- "compute-stats"
-                              p)
-                             (fun () ->
-                                 source availableMemory
-                                 |> read<float> inputDir ".tiff"
-                                 >=> computeStats ())
-
-               for depth in singletonDepths do
-                   let size = imageSize xy depth
-                   let inputDir = inputDirs[size]
-                   let suffix = sizeName size
-
-                   yield runSinkProbe
-                             $"sqrt-float-write-{suffix}"
-                             $"Synthetic Float64 {suffix} source, sqrt, cast to UInt8, write."
-                             (let p = singletonImageParameters size "float" 1u
-                              p["operation"] <- "sqrt-write"
-                              p)
-                             (fun () ->
-                                 source availableMemory
-                                 |> zero<float> size.Width size.Height size.Depth
-                                 >=> imageAddScalar 4.0
-                                 >=> sqrt<float>
-                                 >=> cast<float, uint8>
-                                 >=> write (outputDir size "sqrt-float-write") ".tiff")
-
-                   for windowSize in gaussianWindowSizes do
                        yield runSinkProbe
-                                 $"convolve3d-read-float-cast-write-{suffix}-win-{windowSize}"
-                                 $"Read {suffix} stack as Float64, discreteGaussian windowed convolution with window size {windowSize}, cast to UInt8, write."
-                                 (let p = singletonImageParameters size "float" windowSize
-                                  p["operation"] <- "discreteGaussian-write"
-                                  p["sigma"] <- "1"
-                                  p["kernelSize"] <- "5"
+                                 $"zero-uint8-{suffix}"
+                                 $"Synthetic UInt8 {suffix} source consumed without writing."
+                                 (let p = defaultImageParameters size "uint8" 1u
+                                  p["operation"] <- "zero"
+                                  p)
+                                 (fun () ->
+                                     source availableMemory
+                                     |> zero<uint8> size.Width size.Height size.Depth
+                                     >=> ignoreSingles ())
+
+                       yield runSinkProbe
+                                 $"zero-uint8-write-{suffix}"
+                                 $"Synthetic UInt8 {suffix} source written to TIFF."
+                                 (let p = defaultImageParameters size "uint8" 1u
+                                  p["operation"] <- "zero-write"
+                                  p)
+                                 (fun () ->
+                                     source availableMemory
+                                     |> zero<uint8> size.Width size.Height size.Depth
+                                     >=> write (outputDir size "zero-uint8-write") ".tiff")
+
+                       yield runSinkProbe
+                                 $"add-normal-noise-uint8-write-{suffix}"
+                                 $"Synthetic UInt8 {suffix} source, additive Gaussian noise, write."
+                                 (let p = defaultImageParameters size "uint8" 1u
+                                  p["operation"] <- "noise-write"
+                                  p["mean"] <- "128"
+                                  p["sigma"] <- "50"
+                                  p)
+                                 (fun () ->
+                                     source availableMemory
+                                     |> zero<uint8> size.Width size.Height size.Depth
+                                     >=> addNormalNoise 128.0 50.0
+                                     >=> write (outputDir size "add-normal-noise-uint8-write") ".tiff")
+
+                       yield runSinkProbe
+                                 $"read-uint8-ignore-{suffix}"
+                                 $"Read UInt8 {suffix} TIFF stack and consume it without writing."
+                                 (let p = defaultImageParameters size "uint8" 1u
+                                  p["operation"] <- "read-ignore"
+                                  p)
+                                 (fun () ->
+                                     source availableMemory
+                                     |> read<uint8> inputDir ".tiff"
+                                     >=> ignoreSingles ())
+
+                       yield runSinkProbe
+                                 $"read-uint8-write-{suffix}"
+                                 $"Copy-style UInt8 {suffix} read and write pipeline."
+                                 (let p = defaultImageParameters size "uint8" 1u
+                                  p["operation"] <- "read-write"
+                                  p)
+                                 (fun () ->
+                                     source availableMemory
+                                     |> read<uint8> inputDir ".tiff"
+                                     >=> write (outputDir size "read-uint8-write") ".tiff")
+
+                       yield runSinkProbe
+                                 $"threshold-float-write-{suffix}"
+                                 $"Synthetic Float64 {suffix} source, threshold to UInt8, write."
+                                 (let p = defaultImageParameters size "float" 1u
+                                  p["operation"] <- "threshold-write"
+                                  p["threshold"] <- "128"
+                                  p)
+                                 (fun () ->
+                                     source availableMemory
+                                     |> zero<float> size.Width size.Height size.Depth
+                                     >=> addNormalNoise 128.0 50.0
+                                     >=> threshold 128.0 infinity
+                                     >=> imageMulScalar 255uy
+                                     >=> write (outputDir size "threshold-float-write") ".tiff")
+
+                       yield runDrainProbe
+                                 $"compute-stats-read-float-{suffix}"
+                                 $"Read {suffix} stack as Float64 and drain computeStats reducer."
+                                 (let p = defaultImageParameters size "float" 1u
+                                  p["operation"] <- "compute-stats"
                                   p)
                                  (fun () ->
                                      source availableMemory
                                      |> read<float> inputDir ".tiff"
-                                     >=> discreteGaussian 1.0 None None (Some windowSize)
+                                     >=> computeStats ())
+
+               if not options.StackUnstackOnly && not options.ConvolutionBreakdownOnly && not options.DiscreteGaussianBreakdownOnly then
+                   for depth in singletonDepths do
+                       let size = imageSize xy depth
+                       let suffix = sizeName size
+
+                       if options.SqrtOnly then
+                           yield runSinkProbe
+                                     $"zero-uint8-{suffix}"
+                                     $"Synthetic UInt8 {suffix} source consumed without writing."
+                                     (let p = singletonImageParameters size "uint8" 1u
+                                      p["operation"] <- "zero"
+                                      p)
+                                     (fun () ->
+                                         source availableMemory
+                                         |> zero<uint8> size.Width size.Height size.Depth
+                                         >=> ignoreSingles ())
+
+                           yield runSinkProbe
+                                     $"zero-uint8-write-{suffix}"
+                                     $"Synthetic UInt8 {suffix} source written to TIFF."
+                                     (let p = singletonImageParameters size "uint8" 1u
+                                      p["operation"] <- "zero-write"
+                                      p)
+                                     (fun () ->
+                                         source availableMemory
+                                         |> zero<uint8> size.Width size.Height size.Depth
+                                         >=> write (outputDir size "zero-uint8-write") ".tiff")
+
+                       yield runSinkProbe
+                                 $"sqrt-input-float-{suffix}"
+                                 $"Synthetic Float64 {suffix} source prepared for sqrt and consumed without applying sqrt."
+                                 (let p = singletonImageParameters size "float" 1u
+                                  p["operation"] <- "sqrt-input"
+                                  p)
+                                 (fun () ->
+                                     source availableMemory
+                                     |> zero<float> size.Width size.Height size.Depth
+                                     >=> imageAddScalar 4.0
+                                     >=> ignoreSingles ())
+
+                       yield runSinkProbe
+                                 $"sqrt-float-{suffix}"
+                                 $"Synthetic Float64 {suffix} source, sqrt, consumed without writing."
+                                 (let p = singletonImageParameters size "float" 1u
+                                  p["operation"] <- "sqrt"
+                                  p["baselineOperation"] <- "sqrt-input"
+                                  p["stage"] <- "sqrt"
+                                  p)
+                                 (fun () ->
+                                     source availableMemory
+                                     |> zero<float> size.Width size.Height size.Depth
+                                     >=> imageAddScalar 4.0
+                                     >=> sqrt<float>
+                                     >=> ignoreSingles ())
+
+                       yield runSinkProbe
+                                 $"sqrt-float-write-{suffix}"
+                                 $"Synthetic Float64 {suffix} source, sqrt, cast to UInt8, write."
+                                 (let p = singletonImageParameters size "float" 1u
+                                  p["operation"] <- "sqrt-write"
+                                  p)
+                                 (fun () ->
+                                     source availableMemory
+                                     |> zero<float> size.Width size.Height size.Depth
+                                     >=> imageAddScalar 4.0
+                                     >=> sqrt<float>
                                      >=> cast<float, uint8>
-                                     >=> write (outputDir size $"convolve3d-read-float-cast-write-win-{windowSize}") ".tiff") |]
+                                     >=> write (outputDir size "sqrt-float-write") ".tiff")
+
+                       for windowSize in unaryWindowSizes do
+                           yield runSinkProbe
+                                     $"sqrt-windowed-float-{suffix}-win-{windowSize}"
+                                     $"Synthetic Float64 {suffix} source, windowed sqrt with window size {windowSize}, consumed without writing."
+                                     (let p = singletonImageParameters size "float" windowSize
+                                      p["operation"] <- "sqrt-windowed"
+                                      p["baselineOperation"] <- "sqrt-input"
+                                      p["stage"] <- "sqrt-windowed"
+                                      p)
+                                     (fun () ->
+                                         source availableMemory
+                                         |> zero<float> size.Width size.Height size.Depth
+                                         >=> imageAddScalar 4.0
+                                         >=> sqrtWindowed<float> windowSize
+                                         >=> ignoreSingles ())
+
+                           yield runSinkProbe
+                                     $"sqrt-windowed-float-write-{suffix}-win-{windowSize}"
+                                     $"Synthetic Float64 {suffix} source, windowed sqrt with window size {windowSize}, cast to UInt8, write."
+                                     (let p = singletonImageParameters size "float" windowSize
+                                      p["operation"] <- "sqrt-windowed-write"
+                                      p)
+                                     (fun () ->
+                                         source availableMemory
+                                         |> zero<float> size.Width size.Height size.Depth
+                                         >=> imageAddScalar 4.0
+                                         >=> sqrtWindowed<float> windowSize
+                                         >=> cast<float, uint8>
+                                         >=> write (outputDir size $"sqrt-windowed-float-write-win-{windowSize}") ".tiff")
+
+                       if not options.SqrtOnly then
+                           for windowSize in gaussianWindowSizes do
+                               let inputDir = inputDirs[size]
+                               yield runSinkProbe
+                                         $"convolve3d-read-float-cast-write-{suffix}-win-{windowSize}"
+                                         $"Read {suffix} stack as Float64, discreteGaussian windowed convolution with window size {windowSize}, cast to UInt8, write."
+                                         (let p = singletonImageParameters size "float" windowSize
+                                          p["operation"] <- "discreteGaussian-write"
+                                          p["sigma"] <- "1"
+                                          p["kernelSize"] <- "5"
+                                          p)
+                                         (fun () ->
+                                             source availableMemory
+                                             |> read<float> inputDir ".tiff"
+                                             >=> discreteGaussian 1.0 None None (Some windowSize)
+                                             >=> cast<float, uint8>
+                                             >=> write (outputDir size $"convolve3d-read-float-cast-write-win-{windowSize}") ".tiff")
+
+               if options.StackUnstackOnly then
+                   for depth in inputDepths do
+                       let size = imageSize xy depth
+                       let suffix = sizeName size
+
+                       for windowSize in stackUnstackWindowSizes do
+                           yield runSinkProbe
+                                     $"stack-unstack-input-float-{suffix}-win-{windowSize}"
+                                     $"Synthetic Float64 {suffix} source, windowed and flattened with window size {windowSize} without stacking."
+                                     (let p = imageParameters size "float" windowSize 1u
+                                      p["operation"] <- "stack-unstack-input"
+                                      p)
+                                     (fun () ->
+                                         source availableMemory
+                                         |> zero<float> size.Width size.Height size.Depth
+                                         >=> stackUnstackInputStage windowSize
+                                         >=> ignoreSingles ())
+
+                           yield runSinkProbe
+                                     $"stack-unstack-float-{suffix}-win-{windowSize}"
+                                     $"Synthetic Float64 {suffix} source, stack then unstack with window size {windowSize}."
+                                     (let p = imageParameters size "float" windowSize 1u
+                                      p["operation"] <- "stack-unstack"
+                                      p["baselineOperation"] <- "stack-unstack-input"
+                                      p["stage"] <- "stack-unstack"
+                                      p)
+                                     (fun () ->
+                                         source availableMemory
+                                         |> zero<float> size.Width size.Height size.Depth
+                                         >=> stackUnstackStage windowSize
+                                         >=> ignoreSingles ())
+
+               if options.ConvolutionBreakdownOnly && xy = List.head xySizes then
+                   let kernel = convolutionBreakdownKernel |> Option.get
+                   let kernelSize = 8u
+
+                   for size in convolutionBreakdownSizes do
+                       let suffix = sizeName size
+                       let windowSize = size.Depth
+
+                       yield runSinkProbe
+                                 $"convolution-breakdown-input-float-{suffix}"
+                                 $"Synthetic Float64 {suffix} source, windowed and flattened without stack or convolution."
+                                 (let p = imageParameters size "float" windowSize 1u
+                                  p["operation"] <- "convolution-breakdown-input"
+                                  p["kernelSize"] <- string kernelSize
+                                  p)
+                                 (fun () ->
+                                     source availableMemory
+                                     |> zero<float> size.Width size.Height size.Depth
+                                     >=> convolutionBreakdownInputStage windowSize
+                                     >=> ignoreSingles ())
+
+                       yield runSinkProbe
+                                 $"convolution-breakdown-stack-float-{suffix}"
+                                 $"Synthetic Float64 {suffix} source, stack only."
+                                 (let p = imageParameters size "float" windowSize 1u
+                                  p["operation"] <- "convolution-breakdown-stack"
+                                  p["baselineOperation"] <- "convolution-breakdown-input"
+                                  p["stage"] <- "stack"
+                                  p["kernelSize"] <- string kernelSize
+                                  p)
+                                 (fun () ->
+                                     source availableMemory
+                                     |> zero<float> size.Width size.Height size.Depth
+                                     >=> convolutionBreakdownStackStage windowSize
+                                     >=> ignoreSingles ())
+
+                       yield runSinkProbe
+                                 $"convolution-breakdown-stack-convolve-float-{suffix}"
+                                 $"Synthetic Float64 {suffix} source, stack and SimpleITK Valid convolution with an 8^3 Gaussian kernel."
+                                 (let p = imageParameters size "float" windowSize 1u
+                                  p["operation"] <- "convolution-breakdown-stack-convolve"
+                                  p["baselineOperation"] <- "convolution-breakdown-stack"
+                                  p["stage"] <- "convolve"
+                                  p["kernelSize"] <- string kernelSize
+                                  p["outputRegionMode"] <- "Valid"
+                                  p)
+                                 (fun () ->
+                                     source availableMemory
+                                     |> zero<float> size.Width size.Height size.Depth
+                                     >=> convolutionBreakdownStackConvolveStage windowSize kernel
+                                     >=> ignoreSingles ())
+
+                       yield runSinkProbe
+                                 $"convolution-breakdown-stack-convolve-unstack-float-{suffix}"
+                                 $"Synthetic Float64 {suffix} source, stack, SimpleITK Valid convolution with an 8^3 Gaussian kernel, then unstack."
+                                 (let p = imageParameters size "float" windowSize 1u
+                                  p["operation"] <- "convolution-breakdown-stack-convolve-unstack"
+                                  p["baselineOperation"] <- "convolution-breakdown-stack-convolve"
+                                  p["stage"] <- "unstack"
+                                  p["kernelSize"] <- string kernelSize
+                                  p["outputRegionMode"] <- "Valid"
+                                  p)
+                                 (fun () ->
+                                     source availableMemory
+                                     |> zero<float> size.Width size.Height size.Depth
+                                     >=> convolutionBreakdownStackConvolveUnstackStage windowSize kernel
+                                     >=> ignoreSingles ())
+
+               if options.DiscreteGaussianBreakdownOnly && xy = List.head xySizes then
+                   let kernelSize = 8u
+
+                   for size in convolutionBreakdownSizes do
+                       let suffix = sizeName size
+                       let windowSize = size.Depth
+
+                       yield runSinkProbe
+                                 $"discrete-gaussian-breakdown-input-float-{suffix}"
+                                 $"Synthetic Float64 {suffix} source, windowed and flattened without stack or discreteGaussian."
+                                 (let p = imageParameters size "float" windowSize 1u
+                                  p["operation"] <- "discrete-gaussian-breakdown-input"
+                                  p["kernelSize"] <- string kernelSize
+                                  p["sigma"] <- "1"
+                                  p)
+                                 (fun () ->
+                                     source availableMemory
+                                     |> zero<float> size.Width size.Height size.Depth
+                                     >=> convolutionBreakdownInputStage windowSize
+                                     >=> ignoreSingles ())
+
+                       yield runSinkProbe
+                                 $"discrete-gaussian-breakdown-stack-float-{suffix}"
+                                 $"Synthetic Float64 {suffix} source, stack only."
+                                 (let p = imageParameters size "float" windowSize 1u
+                                  p["operation"] <- "discrete-gaussian-breakdown-stack"
+                                  p["baselineOperation"] <- "discrete-gaussian-breakdown-input"
+                                  p["stage"] <- "stack"
+                                  p["kernelSize"] <- string kernelSize
+                                  p["sigma"] <- "1"
+                                  p)
+                                 (fun () ->
+                                     source availableMemory
+                                     |> zero<float> size.Width size.Height size.Depth
+                                     >=> discreteGaussianBreakdownStackStage windowSize
+                                     >=> ignoreSingles ())
+
+                       yield runSinkProbe
+                                 $"discrete-gaussian-breakdown-stack-filter-float-{suffix}"
+                                 $"Synthetic Float64 {suffix} source, stack and discreteGaussian with an 8^3 Gaussian kernel."
+                                 (let p = imageParameters size "float" windowSize 1u
+                                  p["operation"] <- "discrete-gaussian-breakdown-stack-filter"
+                                  p["baselineOperation"] <- "discrete-gaussian-breakdown-stack"
+                                  p["stage"] <- "discreteGaussian"
+                                  p["kernelSize"] <- string kernelSize
+                                  p["sigma"] <- "1"
+                                  p["outputRegionMode"] <- "Default"
+                                  p)
+                                 (fun () ->
+                                     source availableMemory
+                                     |> zero<float> size.Width size.Height size.Depth
+                                     >=> discreteGaussianBreakdownStackFilterStage windowSize kernelSize
+                                     >=> ignoreSingles ())
+
+                       yield runSinkProbe
+                                 $"discrete-gaussian-breakdown-stack-filter-unstack-float-{suffix}"
+                                 $"Synthetic Float64 {suffix} source, stack, discreteGaussian with an 8^3 Gaussian kernel, then unstack."
+                                 (let p = imageParameters size "float" windowSize 1u
+                                  p["operation"] <- "discrete-gaussian-breakdown-stack-filter-unstack"
+                                  p["baselineOperation"] <- "discrete-gaussian-breakdown-stack-filter"
+                                  p["stage"] <- "unstack"
+                                  p["kernelSize"] <- string kernelSize
+                                  p["sigma"] <- "1"
+                                  p["outputRegionMode"] <- "Default"
+                                  p)
+                                 (fun () ->
+                                     source availableMemory
+                                     |> zero<float> size.Width size.Height size.Depth
+                                     >=> discreteGaussianBreakdownStackFilterUnstackStage windowSize kernelSize
+                                     >=> ignoreSingles ()) |]
+
+    convolutionBreakdownKernel |> Option.iter (fun kernel -> kernel.decRefCount())
     let calibrations = Dictionary<string, StageCostCoefficients>()
     for probe in probes do
         match probe.costWorks with

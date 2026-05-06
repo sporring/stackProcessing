@@ -24,6 +24,19 @@ let private nativeImageStageCost name memoryModel workUnits =
         memoryModel
         (StageWorkModel.native Map (Some name) workUnits)
 
+let private liftWindowedUnaryReleaseAfter
+        (name: string)
+        (winSz: uint)
+        (f: Image<'S> -> Image<'T>)
+        (memoryNeed: MemoryNeed)
+        (lengthTransformation: LengthTransformation)
+        : Stage<Image<'S>, Image<'T>> =
+    let win = max 1u winSz
+    let mapper debug =
+        volFctToWindowFctReleaseAfterDebug debug f 1u 0u win
+    let stg = mapWindow name mapper memoryNeed lengthTransformation
+    (window win 0u win) --> stg --> flattenList ()
+
 type System.String with // From https: //stackoverflow.com/questions/1936767/f-case-insensitive-string-compare
     member s1.icompare(s2: string) =
         System.String.Equals(s1, s2, System.StringComparison.CurrentCultureIgnoreCase)
@@ -157,6 +170,14 @@ let round<'T when 'T: equality>  : Stage<Image<'T>,Image<'T>> =
 let sqrt<'T when 'T: equality>   : Stage<Image<'T>,Image<'T>> =      
     failTypeMismatch<'T> "sqrt" floatNintTypes
     liftUnaryReleaseAfter "sqrt"   ImageFunctions.sqrtImage id id
+let sqrtWindowed<'T when 'T: equality> (winSz: uint) : Stage<Image<'T>,Image<'T>> =
+    failTypeMismatch<'T> "sqrtWindowed" floatNintTypes
+    let win = max 1u winSz
+    let memoryNeed nPixels = 2UL * nPixels * uint64 win * getBytesPerComponent<'T>
+    let memoryModel = StageMemoryModel.fromSinglePeak Map memoryNeed
+    let workUnits input = float (inputValue input * uint64 win)
+    liftWindowedUnaryReleaseAfter "sqrtWindowed" win ImageFunctions.sqrtImage memoryNeed id
+    |> withCostModel (nativeImageStageCost $"sqrtWindowed.{typeof<'T>.Name}" memoryModel workUnits)
 let square<'T when 'T: equality> : Stage<Image<'T>,Image<'T>> =      
     failTypeMismatch<'T> "square" floatNintTypes
     liftUnaryReleaseAfter "square" ImageFunctions.squareImage id id
