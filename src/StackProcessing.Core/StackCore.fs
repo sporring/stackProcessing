@@ -252,4 +252,3 @@ let drainLast pl = Plan.drainLast "drainLast" pl
 let tap = Stage.tap
 //let tap str = Stage.tap str --> incRef()// tap and tapIt neither realeases after nor increases number of references
 let tapIt = Stage.tapIt
-let idStage<'T> = Stage.idStage<'T>

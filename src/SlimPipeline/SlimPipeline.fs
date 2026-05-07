@@ -1107,16 +1107,6 @@ module Stage =
         createWrappedWithSlice name build transition app.MemoryNeed app.ElementTransformation app.SliceCardinality app.Cleaning
         |> withGraph (PipelineGraph.appendNode "append" name transition app.Graph)
 
-    let idStage<'T> (name: string) : Stage<'T, 'T> = // I don't think this is used
-        let build () = Pipe.id name
-        let transition = ProfileTransition.create Streaming Streaming
-        create "id" build transition id id []
-
-    let clean<'T> (name: string) fct : Stage<'T, 'T> = // I don't think this is used
-        let build () = Pipe.id name
-        let transition = ProfileTransition.create Streaming Streaming
-        create "id" build transition id id [fct]
-
     let toPipe (stage : Stage<_,_>) = stage.Build
 
     let fromPipe (name: string) (transition: ProfileTransition) (memoryNeed: MemoryNeed) (elementTransformation: ElementTransformation) (pipe: Pipe<'S, 'T>) : Stage<'S, 'T> =
@@ -1578,7 +1568,7 @@ module Plan =
         let length' =
             SliceCardinality.length pl.length stage.SliceCardinality
             |> Option.defaultValue pl.length
-        { createWrapped stage' pl.memAvail memPeak nElemsPerSlice' length' pl.debug with sourcePeek = pl.sourcePeek; costPeak = costPeak; costObservations = costObservations }
+        { createWrapped stage' pl.memAvail memPeak nElemsPerSlice' length' pl.debug with sourcePeek = pl.sourcePeek; costPeak = costPeak; costObservations = costObservations; debugLevel = pl.debugLevel }
 
     let (>=>) (pl: Plan<'a, 'b>) (stage: Stage<'b, 'c>) : Plan<'a, 'c> =
         composePlan $">=>" pl stage
@@ -1603,7 +1593,7 @@ module Plan =
         let costObservations = stageCost :: pl.costObservations
         if (not pl.debug) && memPeak > pl.memAvail then
             failwith $"Out of available memory: {stage.Name} requested {memoryNeed} B but have only {pl.memAvail} B"
-        { createWrapped (Some stage) pl.memAvail memPeak nElemsPerSlice' length' pl.debug with sourcePeek = pl.sourcePeek; costPeak = costPeak; costObservations = costObservations }
+        { createWrapped (Some stage) pl.memAvail memPeak nElemsPerSlice' length' pl.debug with sourcePeek = pl.sourcePeek; costPeak = costPeak; costObservations = costObservations; debugLevel = pl.debugLevel }
         
     /// parallel execution of non-synchronised streams
     let internal zipPlan (name: string) (pl1: Plan<'In, 'U>) (pl2: Plan<'In, 'V>) : Plan<'In, ('U * 'V)> =
@@ -1640,7 +1630,7 @@ module Plan =
                 let maxMemAvail = max pl1.memAvail pl2.memAvail // Should we max or sum? What would the most natural usage be for src?
                 if (not debug) && (memPeak > maxMemAvail) then
                     failwith $"Out of available memory: {stage.Name} requested {memNeeded|>SingleOrPair.fst}+{memNeeded|>SingleOrPair.snd}={memPeak} B but have only {maxMemAvail} B"
-                { createWrapped (Some stage) maxMemAvail memPeak nElemsPerSlice pl1.length debug with sourcePeek = pl1.sourcePeek; costPeak = costPeak; costObservations = costObservations }
+                { createWrapped (Some stage) maxMemAvail memPeak nElemsPerSlice pl1.length debug with sourcePeek = pl1.sourcePeek; costPeak = costPeak; costObservations = costObservations; debugLevel = max pl1.debugLevel pl2.debugLevel }
             | _,_ -> failwith $"[{name}] Cannot zip with an empty plan"
 
     /// parallel execution of non-synchronised streams

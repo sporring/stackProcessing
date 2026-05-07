@@ -503,8 +503,6 @@ module Stage =
     val (-->) : (Stage<'a,'b> -> Stage<'b,'c> -> Stage<'a,'c>)
     val prepend: name: string -> pre: Stage<unit,'S> -> Stage<'S,'S>
     val append: name: string -> app: Stage<unit,'S> -> Stage<'S,'S>
-    val idStage: name: string -> Stage<'T,'T>
-    val clean: name: string -> fct: (unit -> unit) -> Stage<'T,'T>
     val toPipe: stage: Stage<'a,'b> -> (unit -> Pipe<'a,'b>)
     val fromPipe:
       name: string ->

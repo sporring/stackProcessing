@@ -200,24 +200,15 @@ let resourceOpsSuite =
 let debugLevelSuite =
     testList "DebugLevel" [
         testCase "level 3 includes level 1 and 2 behaviour and disables sink optimization analysis" <| fun _ ->
-            let previous = DebugLevel.current()
-            try
-                DebugLevel.set 3u
+            let plan =
+                captureStdout (fun () ->
+                    Plan.debug 3u 1024UL
+                    |> Plan.sink)
 
-                Expect.isTrue (DebugLevel.isEnabled()) "Level 3 should include ordinary debug output."
-                Expect.isTrue (DebugLevel.rssEnabled()) "Level 3 should include RSS probing."
-                Expect.isTrue (DebugLevel.optimizationDisabled()) "Level 3 should disable sink optimization analysis."
-
-                let plan =
-                    captureStdout (fun () ->
-                        Plan.debug 3u 1024UL
-                        |> Plan.sink)
-
-                Expect.isFalse (plan.Contains "Optimization accepted") "Debug level 3 should not print an accepted sink optimization summary."
-                Expect.isFalse (plan.Contains "Optimization exceeds memory limit") "Debug level 3 should not print a rejected sink optimization summary."
-                Expect.stringContains plan "Process RSS baseline" "Debug level 3 should still include level 2 RSS output."
-            finally
-                DebugLevel.set previous
+            Expect.stringContains plan "[debug] Preparing plan" "Level 3 should include ordinary debug output."
+            Expect.isFalse (plan.Contains "Optimization accepted") "Debug level 3 should not print an accepted sink optimization summary."
+            Expect.isFalse (plan.Contains "Optimization exceeds memory limit") "Debug level 3 should not print a rejected sink optimization summary."
+            Expect.stringContains plan "Process RSS baseline" "Debug level 3 should still include level 2 RSS output."
     ]
 
 [<Tests>]
