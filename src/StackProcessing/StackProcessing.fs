@@ -39,11 +39,15 @@ let idStage<'T> = StackCore.idStage<'T>
 // //////////////////// StackIO
 type FileInfo = ImageFunctions.FileInfo
 type ChunkInfo = StackIO.ChunkInfo
+type Position3D<'T> = StackPoints.Position3D<'T>
 type CoordinatePoint = StackPoints.CoordinatePoint
 type PointSetChunk = StackPoints.PointSetChunk
 type Affine = TinyLinAlg.Affine
 type AffineRegistrationOptions = StackRegistration.AffineRegistrationOptions
 type AffineRegistrationResult = StackRegistration.AffineRegistrationResult
+type ObjectConnectivity = StackObjects.ObjectConnectivity
+type ObjectBounds = StackObjects.ObjectBounds
+type StreamedObject = StackObjects.StreamedObject
 type Point3D = StackMesh.Point3D
 type Triangle = StackMesh.Triangle
 type MeshChunk = StackMesh.MeshChunk
@@ -88,6 +92,11 @@ let earthMoversDistance = StackRegistration.earthMoversDistance
 let transformPointSet = StackRegistration.transformPointSet
 let inverseAffine = StackRegistration.inverseAffine
 let affineRegistration = StackRegistration.affineRegistration
+
+// //////////////////// StackObjects
+let streamConnectedObjects<'T when 'T: equality> = StackObjects.streamConnectedObjects<'T>
+let paintObjects = StackObjects.paintObjects
+let paintObjectsCropped = StackObjects.paintObjectsCropped
 
 // //////////////////// StackAffineResampler
 let resampleAffineTrilinearSlices = StackAffineResampler.resampleAffineTrilinearSlices

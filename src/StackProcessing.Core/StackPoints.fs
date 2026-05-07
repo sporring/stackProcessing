@@ -7,6 +7,11 @@ open FSharp.Control
 open SlimPipeline
 open StackCore
 
+type Position3D<'T> =
+    { X: 'T
+      Y: 'T
+      Z: 'T }
+
 type CoordinatePoint =
     { X: float
       Y: float

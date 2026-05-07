@@ -18,6 +18,7 @@ module BuiltInCatalog =
   let connectedComponentLabels = PortType.Tuple(imageUInt64, PortType.Scalar(BasicType.Numeric UInt64))
   let mesh = PortType.Custom "Mesh"
   let pointSet = PortType.Custom "PointSet"
+  let streamedObjects = PortType.Custom "StreamedObjects"
   let intList = PortType.Custom "IntList"
   let uint64List = PortType.Custom "UInt64List"
 
@@ -57,6 +58,9 @@ module BuiltInCatalog =
 
   let private dogKeypointsDescription =
       "Detects local Difference-of-Gaussian extrema in streaming z-windows. Each window builds a small 3D Gaussian scale space, subtracts adjacent scales, and emits points that are strict local maxima or minima in x, y, z, and scale. Only the center stride slices of each window are emitted, while the z padding covers the largest Gaussian support and the one-slice extrema neighborhood.\n\nThis is a detector only, not a complete SIFT descriptor implementation. Coordinates are reported in pixel units and z uses the source slice index. Increase scale levels or sigma for larger features; increase contrast threshold to suppress weak/noisy extrema."
+
+  let private streamedObjectsDescription =
+      "Streams completed connected objects from a binary mask. Each input slice is inspected for non-zero foreground pixels, object fronts touching the advancing z-boundary are carried forward, and objects are emitted once the next slice proves they cannot continue. Six-connectivity uses face contacts only; TwentySix-connectivity also allows diagonal contacts. paintObjects converts the emitted integer positions back into UInt8 mask slices with value 1 at object pixels and 0 elsewhere."
 
   let private intensityDescription =
       "Intensity filters change the numeric values of each pixel without changing the stack geometry. They are slice-local and therefore fit the streaming model naturally. Clamp limits values to a range. ShiftScale applies (input + shift) * scale. Intensity stretch maps a selected input range linearly to a selected output range."
@@ -1221,6 +1225,39 @@ module BuiltInCatalog =
           Inputs = [ makePort "UInt8" imageUInt8 ]
           Outputs = [ makePort "Labels + count" connectedComponentLabels ]
           Parameters = [ makeParameter "windowSize" "Window size" "3" (BasicType.Numeric UInt32) ] }
+
+        { Id = "StreamConnectedObjects"
+          DisplayName = "streamConnectedObjects"
+          Category = "Segmentation"
+          Summary = "Emit completed connected objects from a binary mask stream."
+          Description = streamedObjectsDescription
+          Aliases = [ "objects"; "components"; "connected"; "stream"; "coordinates"; "mask" ]
+          Inputs = [ makePort "UInt8" imageUInt8 ]
+          Outputs = [ makePort "Objects" streamedObjects ]
+          Parameters =
+              [ makeParameter "connectivity" "Connectivity" "Six" BasicType.String ] }
+
+        { Id = "PaintObjects"
+          DisplayName = "paintObjects"
+          Category = "Segmentation"
+          Summary = "Paint streamed object coordinates into UInt8 mask slices."
+          Description = streamedObjectsDescription
+          Aliases = [ "paint"; "objects"; "coordinates"; "mask"; "UInt8" ]
+          Inputs = [ makePort "Objects" streamedObjects ]
+          Outputs = [ makePort "UInt8" imageUInt8 ]
+          Parameters =
+              [ makeParameter "width" "Width" "64" (BasicType.Numeric UInt32)
+                makeParameter "height" "Height" "64" (BasicType.Numeric UInt32) ] }
+
+        { Id = "PaintObjectsCropped"
+          DisplayName = "paintObjectsCropped"
+          Category = "Segmentation"
+          Summary = "Paint each streamed object into its minimal UInt8 mask slices."
+          Description = streamedObjectsDescription
+          Aliases = [ "paint"; "objects"; "coordinates"; "mask"; "cropped"; "minimal"; "bounding"; "box" ]
+          Inputs = [ makePort "Objects" streamedObjects ]
+          Outputs = [ makePort "UInt8" imageUInt8 ]
+          Parameters = [] }
 
         { Id = "RelabelComponents"
           DisplayName = "relabelComponents"

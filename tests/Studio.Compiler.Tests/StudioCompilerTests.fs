@@ -368,6 +368,50 @@ let generatorSuite =
             Expect.stringContains readPointCode "source 1024UL" "ReadPointSet should include a source."
             Expect.stringContains readPointCode "|> readPointSet \"points.csv\"" "ReadPointSet should generate the CSV point reader."
 
+        testCase "streamed object and painter boxes lower to object-mask DSL stages" <| fun _ ->
+            let read =
+                node "read" "Read"
+                    [ p "availableMemory" "1073741824" false
+                      p "type" "UInt8" false
+                      p "input" "input" false
+                      p "suffix" ".tiff" false ]
+
+            let objects =
+                node "objects" "StreamConnectedObjects"
+                    [ p "connectivity" "TwentySix" false ]
+
+            let paint =
+                node "paint" "PaintObjects"
+                    [ p "width" "64" false
+                      p "height" "48" false ]
+
+            let write =
+                node "write" "Write"
+                    [ p "output" "mask" false
+                      p "suffix" ".tiff" false ]
+
+            let code =
+                graph [ read; objects; paint; write ]
+                    [ edge "read" "output" 0 "objects" "input" 0
+                      edge "objects" "output" 0 "paint" "input" 0
+                      edge "paint" "output" 0 "write" "input" 0 ]
+                |> PipelineCodeGenerator.generateSavedGraph
+
+            Expect.stringContains code ">=> streamConnectedObjects<uint8> ObjectConnectivity.TwentySix" "StreamConnectedObjects should generate the connectivity-aware object streamer."
+            Expect.stringContains code ">=> paintObjects 64u 48u" "PaintObjects should generate the UInt8 mask painter."
+            Expect.stringContains code ">=> write \"mask\" \".tiff\"" "Painted masks should connect to normal image writing."
+
+            let croppedPaint =
+                node "croppedPaint" "PaintObjectsCropped" []
+
+            let croppedCode =
+                graph [ read; objects; croppedPaint ]
+                    [ edge "read" "output" 0 "objects" "input" 0
+                      edge "objects" "output" 0 "croppedPaint" "input" 0 ]
+                |> PipelineCodeGenerator.generateSavedGraph
+
+            Expect.stringContains croppedCode ">=> paintObjectsCropped" "PaintObjectsCropped should generate the minimal-mask painter."
+
         testCase "linked string scalar is emitted before read and used unquoted" <| fun _ ->
             let scalar =
                 node "scalar" "Scalar"
