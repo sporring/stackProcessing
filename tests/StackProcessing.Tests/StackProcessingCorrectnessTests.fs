@@ -464,9 +464,16 @@ let stackProcessingCorrectnessSuite =
             try
                 writeVolumeAsSlices inputDir suffix volume
 
+                let thresholdValue =
+                    source (2UL * 1024UL * 1024UL * 1024UL)
+                    |> readRandom<float32> 4u inputDir suffix
+                    >=> histogram ()
+                    |> drain
+                    |> otsuThresholdFromHistogram
+
                 source (2UL * 1024UL * 1024UL * 1024UL)
                 |> read<float32> inputDir suffix
-                |> otsuThreshold 4u 2u
+                >=> threshold thresholdValue infinity
                 >=> write outputDir suffix
                 |> sink
 
@@ -494,9 +501,16 @@ let stackProcessingCorrectnessSuite =
             try
                 writeVolumeAsSlices inputDir suffix volume
 
+                let thresholdValue =
+                    source (2UL * 1024UL * 1024UL * 1024UL)
+                    |> readRandom<float32> 4u inputDir suffix
+                    >=> histogram ()
+                    |> drain
+                    |> momentsThresholdFromHistogram
+
                 source (2UL * 1024UL * 1024UL * 1024UL)
                 |> read<float32> inputDir suffix
-                |> momentsThreshold 4u 2u
+                >=> threshold thresholdValue infinity
                 >=> write outputDir suffix
                 |> sink
 
@@ -512,32 +526,17 @@ let stackProcessingCorrectnessSuite =
                 volume.decRefCount()
                 cleanupResult keepTempDirs inputDir outputDir
 
-        testCase "streamed watershed matches direct 3D watershed" <| fun _ ->
-            let suffix = ".mha"
-            let grayscale = makePositiveFloat32Volume 8
-
-            try
-                assertStreamingMatchesDirect
-                    "watershed"
-                    suffix
-                    0.5
-                    grayscale
-                    (watershed 0.0 8u)
-                    (ImageFunctions.watershed 0.0)
-            finally
-                grayscale.decRefCount()
-
-        ptestCase "streamed signedDistanceMap matches direct 3D distance map" <| fun _ ->
+        ptestCase "streamed signedDistanceBand matches direct 3D distance map inside the finite band" <| fun _ ->
             let suffix = ".mha"
             let binary = makeBinaryVolume 8
 
             try
                 assertStreamingMatchesDirect
-                    "signed-distance-map"
+                    "signed-distance-band"
                     suffix
                     1.0e-8
                     binary
-                    (signedDistanceMap 8u 8u)
+                    (signedDistanceBand 8u 8u)
                     (ImageFunctions.signedDistanceMap 0uy 1uy)
             finally
                 binary.decRefCount()

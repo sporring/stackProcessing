@@ -626,7 +626,6 @@ module private HighValueFilterNode =
           "SobelEdge"
           "Laplacian"
           "ImageComparison"
-          "Mask"
           "GrayscaleErode"
           "GrayscaleDilate"
           "GrayscaleOpening"
@@ -634,8 +633,8 @@ module private HighValueFilterNode =
           "WhiteTopHat"
           "BlackTopHat"
           "MorphologicalGradient"
-          "OtsuThreshold"
-          "MomentsThreshold"
+          "OtsuThresholdFromHistogram"
+          "MomentsThresholdFromHistogram"
           "MarchingCubes"
           "DogKeypoints"
           "LabelContour"
@@ -1355,9 +1354,15 @@ type MainWindowViewModel() as this =
                         |> List.map (fun value -> ParameterOptionViewModel(value, value, true))
 
                     PipelineParameterViewModel(parameter.Label, parameter.Key, parameter.DefaultValue, parameter.Type, options, false)
-                | ("BinaryContour" | "BinaryOpeningByReconstruction" | "BinaryClosingByReconstruction" | "BinaryReconstructionByDilation" | "BinaryReconstructionByErosion" | "LabelContour"), "fullyConnected" ->
+                | ("BinaryContour" | "LabelContour"), "fullyConnected" ->
                     let options =
                         HighValueFilterNode.boolOptions
+                        |> List.map (fun value -> ParameterOptionViewModel(value, value, true))
+
+                    PipelineParameterViewModel(parameter.Label, parameter.Key, parameter.DefaultValue, parameter.Type, options, false)
+                | ("StreamConnectedObjects" | "RemoveSmallObjects" | "FillSmallHoles"), "connectivity" ->
+                    let options =
+                        [ "Six"; "TwentySix" ]
                         |> List.map (fun value -> ParameterOptionViewModel(value, value, true))
 
                     PipelineParameterViewModel(parameter.Label, parameter.Key, parameter.DefaultValue, parameter.Type, options, false)

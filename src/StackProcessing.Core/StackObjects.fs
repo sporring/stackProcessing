@@ -330,6 +330,166 @@ let streamConnectedObjects<'T when 'T: equality> connectivity : Stage<Image<'T>,
 
     Stage.fromPipe name (ProfileTransition.create Streaming Streaming) id id pipe
 
+let private copyBinaryImage (image: Image<uint8>) =
+    let copy = image.toArray2D() |> Image<uint8>.ofArray2D
+    copy.index <- image.index
+    copy
+
+let private invertedBinaryImage (image: Image<uint8>) =
+    let width = int (image.GetWidth())
+    let height = int (image.GetHeight())
+    let inverted =
+        Array2D.init width height (fun x y -> if image[x, y] = 0uy then 1uy else 0uy)
+        |> Image<uint8>.ofArray2D
+    inverted.index <- image.index
+    inverted
+
+let private paintObjectValue value (buffer: SortedDictionary<int, Image<uint8>>) (object: StreamedObject) =
+    for position in object.Positions do
+        match buffer.TryGetValue position.Z with
+        | true, image ->
+            image[position.X, position.Y] <- value
+        | false, _ ->
+            invalidOp $"Cannot edit completed object label {object.Label}; buffered slice {position.Z} has already been emitted."
+
+let private touchesXYBoundary width height (object: StreamedObject) =
+    object.Bounds.MinX <= 0
+    || object.Bounds.MinY <= 0
+    || object.Bounds.MaxX >= width - 1
+    || object.Bounds.MaxY >= height - 1
+
+let private emitBufferedThrough cutoff (buffer: SortedDictionary<int, Image<uint8>>) =
+    seq {
+        let mutable emitting = true
+
+        while emitting && buffer.Count > 0 do
+            let z = buffer.Keys |> Seq.head
+
+            if z <= cutoff then
+                let image = buffer[z]
+                buffer.Remove z |> ignore
+                yield image
+            else
+                emitting <- false
+    }
+
+let private bufferedBinaryComponentEdit
+    name
+    (maximumVolume: uint64)
+    connectivity
+    targetValue
+    componentImage
+    isProtectedComponent
+    : Stage<Image<uint8>, Image<uint8>> =
+
+    let apply _debug (input: AsyncSeq<Image<uint8>>) =
+        asyncSeq {
+            let buffer = SortedDictionary<int, Image<uint8>>()
+            let mutable state = 1UL, Map.empty<uint64, ActiveObject>
+            let mutable width = None
+            let mutable height = None
+            let mutable firstZ = None
+            let enumerator = input.GetAsyncEnumerator()
+            let mutable more = true
+
+            while more do
+                let! hasNext = enumerator.MoveNextAsync().AsTask() |> Async.AwaitTask
+
+                if hasNext then
+                    let image = enumerator.Current
+                    let currentWidth = int (image.GetWidth())
+                    let currentHeight = int (image.GetHeight())
+
+                    match width, height with
+                    | None, None ->
+                        width <- Some currentWidth
+                        height <- Some currentHeight
+                        firstZ <- Some image.index
+                    | Some expectedWidth, Some expectedHeight when expectedWidth = currentWidth && expectedHeight = currentHeight -> ()
+                    | _ ->
+                        invalidOp $"{name} requires a stream with constant x-y slice size."
+
+                    let buffered = copyBinaryImage image
+                    buffer.Add(buffered.index, buffered)
+
+                    let componentInput = componentImage image
+                    let nextState, completed =
+                        try
+                            processSlice connectivity state componentInput
+                        finally
+                            componentInput.decRefCount()
+                            image.decRefCount()
+
+                    state <- nextState
+
+                    for object in completed do
+                        if object.Size <= maximumVolume && not (isProtectedComponent currentWidth currentHeight firstZ None object) then
+                            paintObjectValue targetValue buffer object
+
+                    let _, active = state
+                    let cutoff =
+                        if active.IsEmpty then
+                            buffered.index
+                        else
+                            active
+                            |> Map.toSeq
+                            |> Seq.map (fun (_, object) -> object.Bounds.MinZ)
+                            |> Seq.min
+                            |> fun minActiveZ -> minActiveZ - 1
+
+                    for image in emitBufferedThrough cutoff buffer do
+                        yield image
+                else
+                    more <- false
+
+            let _, active = state
+            let lastZ =
+                if buffer.Count = 0 then
+                    None
+                else
+                    Some (buffer.Keys |> Seq.max)
+
+            for object in active |> Map.toList |> List.map (snd >> toStreamedObject) do
+                let currentWidth = width |> Option.defaultValue 0
+                let currentHeight = height |> Option.defaultValue 0
+
+                if object.Size <= maximumVolume && not (isProtectedComponent currentWidth currentHeight firstZ lastZ object) then
+                    paintObjectValue targetValue buffer object
+
+            for image in emitBufferedThrough Int32.MaxValue buffer do
+                yield image
+        }
+
+    let pipe =
+        { Name = name
+          Apply = apply
+          Profile = Streaming }
+
+    Stage.fromPipe name (ProfileTransition.create Streaming Streaming) id id pipe
+
+let removeSmallObjects maximumVolume connectivity : Stage<Image<uint8>, Image<uint8>> =
+    bufferedBinaryComponentEdit
+        "removeSmallObjects"
+        maximumVolume
+        connectivity
+        0uy
+        copyBinaryImage
+        (fun _ _ _ _ _ -> false)
+
+let fillSmallHoles maximumVolume connectivity : Stage<Image<uint8>, Image<uint8>> =
+    let protectExterior width height firstZ lastZ object =
+        touchesXYBoundary width height object
+        || (firstZ |> Option.exists (fun z -> object.Bounds.MinZ = z))
+        || (lastZ |> Option.exists (fun z -> object.Bounds.MaxZ = z))
+
+    bufferedBinaryComponentEdit
+        "fillSmallHoles"
+        maximumVolume
+        connectivity
+        1uy
+        invertedBinaryImage
+        protectExterior
+
 let private paintObjectBatch width height (objects: StreamedObject list) =
     if width = 0u then invalidArg (nameof width) "paintObjects width must be positive."
     if height = 0u then invalidArg (nameof height) "paintObjects height must be positive."

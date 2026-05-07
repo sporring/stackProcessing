@@ -442,24 +442,6 @@ let binaryMedian radius winSz =
     let ksz = 2u * radius + 1u
     makeWindowedLocalOp "binaryMedian" ksz winSz (ImageFunctions.binaryMedian radius)
 
-let binaryOpeningByReconstruction radius fullyConnected winSz =
-    let ksz = 2u * radius + 1u
-    makeWindowedLocalOp "binaryOpeningByReconstruction" ksz winSz (ImageFunctions.binaryOpeningByReconstruction radius fullyConnected)
-
-let binaryClosingByReconstruction radius fullyConnected winSz =
-    let ksz = 2u * radius + 1u
-    makeWindowedLocalOp "binaryClosingByReconstruction" ksz winSz (ImageFunctions.binaryClosingByReconstruction radius fullyConnected)
-
-let binaryReconstructionByDilation fullyConnected : Stage<Image<uint8> * Image<uint8>, Image<uint8>> =
-    liftPairReleaseAfter "binaryReconstructionByDilation" (ImageFunctions.binaryReconstructionByDilation fullyConnected)
-
-let binaryReconstructionByErosion fullyConnected : Stage<Image<uint8> * Image<uint8>, Image<uint8>> =
-    liftPairReleaseAfter "binaryReconstructionByErosion" (ImageFunctions.binaryReconstructionByErosion fullyConnected)
-
-let votingBinaryHoleFilling radius majorityThreshold winSz =
-    let ksz = 2u * radius + 1u
-    makeWindowedLocalOp "votingBinaryHoleFilling" ksz winSz (ImageFunctions.votingBinaryHoleFilling radius majorityThreshold)
-
 let equal<'T when 'T: equality> : Stage<Image<'T> * Image<'T>, Image<uint8>> =
     liftPairReleaseAfter "equal" ImageFunctions.equalImage
 
@@ -587,11 +569,11 @@ let histogram () =
 let quantiles (quantileValues: float list) (histogram: Map<'T,uint64>) =
     ImageFunctions.quantilesFromHistogram quantileValues histogram
 
-let otsuThresholdFromHistogram<'T when 'T: equality> bins (images: Image<'T> list) =
-    ImageFunctions.otsuThresholdFromHistogram bins images
+let otsuThresholdFromHistogram histogram =
+    ImageFunctions.otsuThresholdFromHistogram histogram
 
-let momentsThresholdFromHistogram<'T when 'T: equality> bins (images: Image<'T> list) =
-    ImageFunctions.momentsThresholdFromHistogram bins images
+let momentsThresholdFromHistogram histogram =
+    ImageFunctions.momentsThresholdFromHistogram histogram
 
 let inline map2pairs< ^T, ^S when ^T: comparison and ^T: (static member op_Explicit: ^T -> float) and  ^S: (static member op_Explicit: ^S -> float) > = 
     let map2pairs (map: Map<'T, 'S>) : ('T * 'S) list =
@@ -901,7 +883,7 @@ let watershed a (winSz: uint) =
     let f debug = volFctToWindowFctReleaseAfterDebug debug (ImageFunctions.watershed a) 1u pad stride
     let stg = mapWindow "watershed" f id id
     (window winSz pad stride) --> stg --> flattenList ()
-let signedDistanceMap (bandRadius: uint) (stride: uint) =
+let signedDistanceBand (bandRadius: uint) (stride: uint) =
     if bandRadius = 0u then
         invalidArg "bandRadius" "Band signed distance requires a positive band radius."
     if stride = 0u then
@@ -910,53 +892,8 @@ let signedDistanceMap (bandRadius: uint) (stride: uint) =
     let pad = bandRadius
     let winSz = stride + 2u * bandRadius
     let f debug = volFctToWindowFctReleaseAfterDebug debug (ImageFunctions.bandSignedDistanceMap bandRadius) 1u pad stride
-    let stg = mapWindow "signedDistanceMap" f id id
+    let stg = mapWindow "signedDistanceBand" f id id
     (window winSz pad stride) --> stg --> flattenList ()
-let private sourceShapeValue key (pl: Plan<unit, Image<'T>>) =
-    pl.sourcePeek
-    |> Option.bind (fun peek -> peek.Shape |> Map.tryFind key)
-
-let private requiredThresholdSourceShapeValue operation key (pl: Plan<unit, Image<'T>>) =
-    match sourceShapeValue key pl with
-    | Some value when not (String.IsNullOrWhiteSpace value) -> value
-    | _ -> failwith $"{operation} requires a pipeline source created by read/readRandom/readSlab with source metadata; missing '{key}'."
-
-let estimateOtsuThreshold<'T when 'T: equality> sampleCount bins (inputDir: string) suffix memAvail =
-    let samples =
-        source memAvail
-        |> readRandom<'T> (max 1u sampleCount) inputDir suffix
-        |> drainList
-    try
-        ImageFunctions.otsuThresholdFromHistogram (max 2u bins) samples
-    finally
-        samples |> List.iter (fun image -> image.decRefCount())
-
-let otsuThreshold<'T when 'T: equality> sampleCount bins (pl: Plan<unit, Image<'T>>) : Plan<unit, Image<uint8>> =
-    let inputDir = requiredThresholdSourceShapeValue "otsuThreshold" "inputDir" pl
-    let suffix = requiredThresholdSourceShapeValue "otsuThreshold" "suffix" pl
-    let thresholdValue = estimateOtsuThreshold<'T> sampleCount bins inputDir suffix pl.memAvail
-    if pl.debug then
-        printfn $"[otsuThreshold] estimated threshold {thresholdValue} from {max 1u sampleCount} random slices and {max 2u bins} bins"
-    pl >=> liftUnaryReleaseAfter "threshold" (ImageFunctions.threshold thresholdValue infinity) id id
-
-let estimateMomentsThreshold<'T when 'T: equality> sampleCount bins (inputDir: string) suffix memAvail =
-    let samples =
-        source memAvail
-        |> readRandom<'T> (max 1u sampleCount) inputDir suffix
-        |> drainList
-    try
-        ImageFunctions.momentsThresholdFromHistogram (max 2u bins) samples
-    finally
-        samples |> List.iter (fun image -> image.decRefCount())
-
-let momentsThreshold<'T when 'T: equality> sampleCount bins (pl: Plan<unit, Image<'T>>) : Plan<unit, Image<uint8>> =
-    let inputDir = requiredThresholdSourceShapeValue "momentsThreshold" "inputDir" pl
-    let suffix = requiredThresholdSourceShapeValue "momentsThreshold" "suffix" pl
-    let thresholdValue = estimateMomentsThreshold<'T> sampleCount bins inputDir suffix pl.memAvail
-    if pl.debug then
-        printfn $"[momentsThreshold] estimated threshold {thresholdValue} from {max 1u sampleCount} random slices and {max 2u bins} bins"
-    pl >=> liftUnaryReleaseAfter "threshold" (ImageFunctions.threshold thresholdValue infinity) id id
-
 let threshold a b = liftUnaryReleaseAfter "threshold" (ImageFunctions.threshold a b) id id
 
 let addNormalNoise a b = liftUnaryReleaseAfter "addNormalNoise" (ImageFunctions.addNormalNoise a b) id id

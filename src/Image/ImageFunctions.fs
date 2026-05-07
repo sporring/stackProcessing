@@ -904,11 +904,11 @@ let unique (img: Image<'T>) : 'T list when 'T : comparison =
     |> Set.ofSeq               // remove duplicates
     |> Set.toList              // back to an ordered list
     
-let otsuThresholdFromHistogram (bins: uint) (images: Image<'T> list) : float =
+let private valuesFromImages bins (images: Image<'T> list) operation =
     if bins < 2u then
-        invalidArg "bins" "Otsu threshold estimation requires at least two bins."
+        invalidArg "bins" $"{operation} threshold estimation requires at least two bins."
     if List.isEmpty images then
-        invalidArg "images" "Otsu threshold estimation requires at least one image."
+        invalidArg "images" $"{operation} threshold estimation requires at least one image."
 
     let toFloat value = System.Convert.ToDouble(box value, System.Globalization.CultureInfo.InvariantCulture)
     let values =
@@ -920,27 +920,84 @@ let otsuThresholdFromHistogram (bins: uint) (images: Image<'T> list) : float =
             |> Seq.toList)
 
     match values with
-    | [] -> invalidArg "images" "Otsu threshold estimation requires at least one pixel."
-    | _ ->
-        let minValue = values |> List.min
-        let maxValue = values |> List.max
-        if minValue = maxValue then
-            minValue
-        else
-            let binCount = int bins
-            let width = (maxValue - minValue) / float binCount
-            let histogram = Array.zeroCreate<uint64> binCount
-            values
-            |> List.iter (fun value ->
-                let bin =
-                    if value >= maxValue then
-                        binCount - 1
-                    else
-                        int ((value - minValue) / width)
-                        |> max 0
-                        |> min (binCount - 1)
-                histogram[bin] <- histogram[bin] + 1UL)
+    | [] -> invalidArg "images" $"{operation} threshold estimation requires at least one pixel."
+    | _ -> values
 
+let private binnedHistogram bins values =
+    let minValue = values |> List.min
+    let maxValue = values |> List.max
+    if minValue = maxValue then
+        minValue, maxValue, 1.0, [| uint64 values.Length |]
+    else
+        let binCount = int bins
+        let width = (maxValue - minValue) / float binCount
+        let histogram = Array.zeroCreate<uint64> binCount
+        values
+        |> List.iter (fun value ->
+            let bin =
+                if value >= maxValue then
+                    binCount - 1
+                else
+                    int ((value - minValue) / width)
+                    |> max 0
+                    |> min (binCount - 1)
+            histogram[bin] <- histogram[bin] + 1UL)
+        minValue, maxValue, width, histogram
+
+let private orderedHistogramValues (histogram: Map<'T, uint64>) operation =
+    if Map.isEmpty histogram then
+        invalidArg "histogram" $"{operation} threshold estimation requires a non-empty histogram."
+
+    let ordered =
+        histogram
+        |> Map.toList
+        |> List.choose (fun (value, count) ->
+            if count = 0UL then
+                None
+            else
+                Some(System.Convert.ToDouble(box value, System.Globalization.CultureInfo.InvariantCulture), count))
+        |> List.sortBy fst
+
+    if List.isEmpty ordered then
+        invalidArg "histogram" $"{operation} threshold estimation requires a histogram with non-zero counts."
+
+    ordered
+
+let otsuThresholdFromHistogram (histogram: Map<'T, uint64>) : float =
+    let ordered = orderedHistogramValues histogram "Otsu"
+    match ordered with
+    | [ value, _ ] -> value
+    | _ ->
+        let totalCount = ordered |> List.sumBy (snd >> float)
+        let totalMean = ordered |> List.sumBy (fun (value, count) -> value * float count)
+        let mutable bestThreshold = fst ordered[0]
+        let mutable bestVariance = System.Double.NegativeInfinity
+        let mutable backgroundWeight = 0.0
+        let mutable backgroundSum = 0.0
+
+        for index in 0 .. ordered.Length - 2 do
+            let value, count = ordered[index]
+            backgroundWeight <- backgroundWeight + float count
+            backgroundSum <- backgroundSum + value * float count
+            let foregroundWeight = totalCount - backgroundWeight
+            if backgroundWeight > 0.0 && foregroundWeight > 0.0 then
+                let backgroundMean = backgroundSum / backgroundWeight
+                let foregroundMean = (totalMean - backgroundSum) / foregroundWeight
+                let variance = backgroundWeight * foregroundWeight * pown (backgroundMean - foregroundMean) 2
+                if variance > bestVariance then
+                    bestVariance <- variance
+                    let nextValue = fst ordered[index + 1]
+                    bestThreshold <- 0.5 * (value + nextValue)
+
+        bestThreshold
+
+let private otsuThresholdFromImages bins images =
+    let values = valuesFromImages bins images "Otsu"
+    let minValue, maxValue, width, histogram = binnedHistogram bins values
+    if minValue = maxValue then
+        minValue
+    else
+            let binCount = histogram.Length
             let totalCount = histogram |> Array.sumBy float
             let totalMean =
                 histogram
@@ -969,7 +1026,7 @@ let otsuThresholdFromHistogram (bins: uint) (images: Image<'T> list) : float =
 
 /// Otsu threshold estimated from a binned histogram of the image values.
 let otsuThreshold (img: Image<'T>) : Image<uint8> =
-    let thresholdValue = otsuThresholdFromHistogram 256u [ img ]
+    let thresholdValue = otsuThresholdFromImages 256u [ img ]
     use filter = new itk.simple.BinaryThresholdImageFilter()
     filter.SetLowerThreshold(thresholdValue)
     filter.SetUpperThreshold(System.Double.PositiveInfinity)
@@ -984,43 +1041,68 @@ let otsuMultiThreshold (numThresholds: byte) (img: Image<'T>) : Image<uint8> =
     Image<uint8>.ofSimpleITK(filter.Execute(img.toSimpleITK()),"otsuMultiThreshold",img.index)
 
 /// Moments-based threshold
-let momentsThresholdFromHistogram (bins: uint) (images: Image<'T> list) : float =
-    if bins < 2u then
-        invalidArg "bins" "Moments threshold estimation requires at least two bins."
-    if List.isEmpty images then
-        invalidArg "images" "Moments threshold estimation requires at least one image."
-
-    let toFloat value = System.Convert.ToDouble(box value, System.Globalization.CultureInfo.InvariantCulture)
-    let values =
-        images
-        |> List.collect (fun image ->
-            image.GetSize()
-            |> flatIndices
-            |> Seq.map (image.Get >> toFloat)
-            |> Seq.toList)
-
-    match values with
-    | [] -> invalidArg "images" "Moments threshold estimation requires at least one pixel."
+let momentsThresholdFromHistogram (histogram: Map<'T, uint64>) : float =
+    let ordered = orderedHistogramValues histogram "Moments"
+    match ordered with
+    | [ value, _ ] -> value
     | _ ->
-        let minValue = values |> List.min
-        let maxValue = values |> List.max
-        if minValue = maxValue then
-            minValue
-        else
-            let binCount = int bins
-            let width = (maxValue - minValue) / float binCount
-            let histogram = Array.zeroCreate<uint64> binCount
-            values
-            |> List.iter (fun value ->
-                let bin =
-                    if value >= maxValue then
-                        binCount - 1
-                    else
-                        int ((value - minValue) / width)
-                        |> max 0
-                        |> min (binCount - 1)
-                histogram[bin] <- histogram[bin] + 1UL)
+        let totalCount = ordered |> List.sumBy (snd >> float)
+        let moment power =
+            ordered
+            |> List.sumBy (fun (value, count) -> (value ** power) * float count)
+            |> fun value -> value / totalCount
 
+        let m0 = 1.0
+        let m1 = moment 1.0
+        let m2 = moment 2.0
+        let m3 = moment 3.0
+        let cd = m0 * m2 - m1 * m1
+
+        if abs cd < 1e-12 then
+            m1
+        else
+            let c0 = (-m2 * m2 + m1 * m3) / cd
+            let c1 = (-m3 + m2 * m1) / cd
+            let discriminant = c1 * c1 - 4.0 * c0
+
+            if discriminant < 0.0 then
+                m1
+            else
+                let root = sqrt discriminant
+                let z0 = 0.5 * (-c1 - root)
+                let z1 = 0.5 * (-c1 + root)
+                let denominator = z1 - z0
+
+                if abs denominator < 1e-12 then
+                    m1
+                else
+                    let p0 = (z1 - m1) / denominator |> max 0.0 |> min 1.0
+                    let target = p0 * totalCount
+                    let mutable cumulative = 0.0
+                    let mutable threshold = fst (List.last ordered)
+                    let mutable found = false
+
+                    for index in 0 .. ordered.Length - 1 do
+                        let value, count = ordered[index]
+                        if not found then
+                            cumulative <- cumulative + float count
+                            if cumulative >= target then
+                                threshold <-
+                                    if index < ordered.Length - 1 then
+                                        0.5 * (value + fst ordered[index + 1])
+                                    else
+                                        value
+                                found <- true
+
+                    threshold
+
+let private momentsThresholdFromImages bins images =
+    let values = valuesFromImages bins images "Moments"
+    let minValue, maxValue, width, histogram = binnedHistogram bins values
+    if minValue = maxValue then
+        minValue
+    else
+            let binCount = histogram.Length
             let totalCount = histogram |> Array.sumBy float
             let moment power =
                 histogram
@@ -1068,7 +1150,7 @@ let momentsThresholdFromHistogram (bins: uint) (images: Image<'T> list) : float 
                         minValue + width * (float thresholdBin + 0.5)
 
 let momentsThreshold (img: Image<'T>) : Image<uint8> =
-    let thresholdValue = momentsThresholdFromHistogram 256u [ img ]
+    let thresholdValue = momentsThresholdFromImages 256u [ img ]
     use filter = new itk.simple.BinaryThresholdImageFilter()
     filter.SetLowerThreshold(thresholdValue)
     filter.SetUpperThreshold(System.Double.PositiveInfinity)
