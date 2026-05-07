@@ -45,6 +45,12 @@ let private nativeImageStageCost name memoryModel workUnits =
         memoryModel
         (StageWorkModel.native Map (Some name) workUnits)
 
+let private identityStage name =
+    Stage.map name (fun _ value -> value) id id
+
+let private cleanStage name cleanup =
+    { identityStage name with Cleaning = [ cleanup ] }
+
 type ResampleInterpolation =
     | NearestNeighbor
     | Linear
@@ -471,9 +477,6 @@ let xorMask : Stage<Image<uint8> * Image<uint8>, Image<uint8>> =
 
 let notMask : Stage<Image<uint8>, Image<uint8>> =
     liftUnaryReleaseAfter "notMask" ImageFunctions.notImage id id
-
-let mask<'T when 'T: equality> outsideValue : Stage<Image<'T> * Image<uint8>, Image<'T>> =
-    liftPairReleaseAfter "mask" (ImageFunctions.mask outsideValue)
 
 let labelContour<'T when 'T: equality> fullyConnected winSz =
     makeWindowedLocalOp "labelContour" 3u winSz (ImageFunctions.labelContour fullyConnected)
@@ -946,11 +949,6 @@ let relabelComponents a (winSz: uint) =
     let stg = mapWindow "relabelComponents" f id id
     (window winSz pad stride) --> stg --> flattenList ()
 
-let watershed a (winSz: uint) =
-    let pad, stride = 0u, winSz
-    let f debug = volFctToWindowFctReleaseAfterDebug debug (ImageFunctions.watershed a) 1u pad stride
-    let stg = mapWindow "watershed" f id id
-    (window winSz pad stride) --> stg --> flattenList ()
 let signedDistanceBand (bandRadius: uint) (stride: uint) =
     if bandRadius = 0u then
         invalidArg "bandRadius" "Band signed distance requires a positive band radius."
@@ -965,9 +963,6 @@ let signedDistanceBand (bandRadius: uint) (stride: uint) =
 let threshold a b = liftUnaryReleaseAfter "threshold" (ImageFunctions.threshold a b) id id
 
 let addNormalNoise a b = liftUnaryReleaseAfter "addNormalNoise" (ImageFunctions.addNormalNoise a b) id id
-
-let ImageConstantPad<'T when 'T: equality> (padLower: uint list) (padUpper: uint list) (c: double) =
-    liftUnaryReleaseAfter "constantPad2D" (ImageFunctions.constantPad2D padLower padUpper c) id id // Check that constantPad2D makes a new image!!!
 
 let show (plt: Image<'T> -> unit) : Stage<Image<'T>, unit> =
     let consumer (debug: bool) (idx: int) (image: Image<'T>) =
@@ -1293,7 +1288,7 @@ let permuteAxes (i: uint, j: uint, k: uint) (winSz: uint): Stage<Image<'T>,Image
     if i = j || i = k || j = k then
         failwith "Order must be a permuation of [0u;1u;2u]"
     elif i = 0u && j = 1u then // k = 2u
-        Stage.idStage<Image<'T>> name
+        identityStage name
     elif i = 1u && j = 0u then // k = 2u
         // permute 0 1 does not require chunking
         let memoryNeed = fun _ -> 2*sizeof<uint> |> uint64
@@ -1326,7 +1321,7 @@ let permuteAxes (i: uint, j: uint, k: uint) (winSz: uint): Stage<Image<'T>,Image
         let elementTransformation = fun _ -> chunkInfo.chunks[int k] |> uint64
 
         (writeInSlabs tmpDir tmpSuffix winSz winSz winSz)
-        --> Stage.clean name (fun () -> StackIO.deleteIfExists tmpDir) 
+        --> cleanStage name (fun () -> StackIO.deleteIfExists tmpDir) 
         --> StackCore.ignoreSingles () // force calculation of full stream and decrease references
         --> Stage.map name (fun _ _ -> chunkInfo <- getChunkInfo tmpDir tmpSuffix) memoryNeed elementTransformation // insert side-effect
         --> Stage.map name (fun _ _ -> [0..(chunkInfo.chunks[int k]-1)]) memoryNeed elementTransformation

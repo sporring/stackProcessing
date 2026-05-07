@@ -1400,7 +1400,10 @@ module PipelineCodeGenerator =
                         |> Map.tryFind leftEdge.FromNode
                         |> Option.bind (fun sharedNode ->
                             let shared = pipelineExpression visited sharedNode
-                            let fanOut = formatStageTuple "idStage \"left\"" "idStage \"right\""
+                            let fanOut =
+                                formatStageTuple
+                                    "SlimPipeline.Stage.map \"left\" (fun _ value -> value) id id"
+                                    "SlimPipeline.Stage.map \"right\" (fun _ value -> value) id id"
                             pairStageFunctionName node
                             |> Option.map (fun pairFunction -> $"{shared}{newLine}{fanOut}{newLine}>>=> {pairFunction}"))
                     | Some leftEdge, Some rightEdge ->

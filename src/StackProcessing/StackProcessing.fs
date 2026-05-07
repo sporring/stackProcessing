@@ -34,7 +34,6 @@ let drainList = StackCore.drainList
 let drainLast = StackCore.drainLast
 let tap = StackCore.tap
 let tapIt = StackCore.tapIt
-let idStage<'T> = StackCore.idStage<'T>
 
 // //////////////////// StackIO
 type FileInfo = ImageFunctions.FileInfo
@@ -187,8 +186,6 @@ let momentsThresholdFromHistogram = StackImageFunctions.momentsThresholdFromHist
 let inline map2pairs< ^T, ^S when ^T: comparison and ^T: (static member op_Explicit: ^T -> float) and  ^S: (static member op_Explicit: ^S -> float) > = StackImageFunctions.map2pairs<'T,'S>
 let inline pairs2floats< ^T, ^S when ^T: (static member op_Explicit: ^T -> float) and  ^S: (static member op_Explicit: ^S -> float) > = StackImageFunctions.pairs2floats<'T,'S>
 let inline pairs2ints< ^T, ^S when ^T: (static member op_Explicit: ^T -> int) and  ^S: (static member op_Explicit: ^S -> int) > = StackImageFunctions.pairs2ints<'T,'S>
-let imageComputeStats = StackImageFunctions.imageComputeStats
-let imageComputeStatsFold = StackImageFunctions.imageComputeStatsFold
 let computeStats = StackImageFunctions.computeStats
 let discreteGaussian = StackImageFunctions.discreteGaussian
 let convGauss = StackImageFunctions.convGauss
@@ -206,7 +203,6 @@ let relabelComponents = StackImageFunctions.relabelComponents
 let signedDistanceBand = StackImageFunctions.signedDistanceBand
 let threshold = StackImageFunctions.threshold
 let addNormalNoise = StackImageFunctions.addNormalNoise
-let ImageConstantPad<'T when 'T: equality>= StackImageFunctions.ImageConstantPad<'T>
 let show = StackImageFunctions.show
 let plot = StackImageFunctions.plot
 let print = StackImageFunctions.print

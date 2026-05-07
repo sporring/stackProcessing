@@ -84,8 +84,6 @@ val tap: (string -> SlimPipeline.Stage<'a,'a>)
 
 val tapIt: (('a -> string) -> SlimPipeline.Stage<'a,'a>)
 
-val idStage<'T> : (string -> SlimPipeline.Stage<'T,'T>)
-
 type FileInfo = ImageFunctions.FileInfo
 
 type ChunkInfo = StackIO.ChunkInfo
@@ -691,16 +689,6 @@ val inline pairs2ints<^T,^S
     when ^T: (static member op_Explicit: ^T -> int) and
          ^S: (static member op_Explicit: ^S -> int)
 
-val imageComputeStats:
-  (unit ->
-     SlimPipeline.Stage<StackCore.Image<'a>,StackImageFunctions.ImageStats>)
-    when 'a: equality
-
-val imageComputeStatsFold:
-  (unit ->
-     SlimPipeline.Stage<StackImageFunctions.ImageStats,
-                        StackImageFunctions.ImageStats>)
-
 val computeStats:
   (unit ->
      SlimPipeline.Stage<StackCore.Image<'a>,StackImageFunctions.ImageStats>)
@@ -782,12 +770,6 @@ val threshold:
 val addNormalNoise:
   (float -> float -> SlimPipeline.Stage<StackCore.Image<'a>,StackCore.Image<'a>>)
     when 'a: equality
-
-val ImageConstantPad<'T when 'T: equality> :
-  (uint list ->
-     uint list ->
-     double -> SlimPipeline.Stage<StackCore.Image<obj>,StackCore.Image<obj>>)
-    when 'T: equality
 
 val show:
   ((StackCore.Image<'a> -> unit) -> StackCore.Stage<StackCore.Image<'a>,unit>)
