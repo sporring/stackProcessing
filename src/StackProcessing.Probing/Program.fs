@@ -35,10 +35,10 @@ type ProbeIterationJson =
       throughputBytesPerSecond: float }
 
 [<CLIMutable>]
-type ProbeWorkJson =
+type ProbeTimeCostJson =
     { calibrationKey: string
-      cpuWorkUnits: float
-      nativeWorkUnits: float
+      cpuCostUnits: float
+      nativeCostUnits: float
       ioReadBytes: uint64
       ioWriteBytes: uint64
       ioReadOps: uint64
@@ -81,8 +81,8 @@ type ProbeResultJson =
       warmupCount: int
       repetitionCount: int
       source: ProbeSourceJson
-      costPeakWork: ProbeWorkJson option
-      costWorks: ProbeWorkJson array
+      costPeakTime: ProbeTimeCostJson option
+      costTimes: ProbeTimeCostJson array
       iterations: ProbeIterationJson array }
 
 [<CLIMutable>]
@@ -97,7 +97,7 @@ type ProbeReportJson =
       repetitionCount: int
       workingDirectory: string
       tempDirectory: string
-      calibrations: Dictionary<string, StageCostCoefficients>
+      calibrations: Dictionary<string, StageTimeCoefficients>
       probes: ProbeResultJson array }
 
 let private availableMemory = 2UL * 1024UL * 1024UL * 1024UL
@@ -254,40 +254,40 @@ let private defaultImageParameters size pixelType windowSize =
 let private singletonImageParameters size pixelType windowSize =
     imageParameters size pixelType windowSize 1u
 
-let private workToJson (work: StageWorkPressure) =
-    work.CalibrationKey
+let private timeCostToJson (timeCost: StageTimeCostEstimate) =
+    timeCost.CalibrationKey
     |> Option.map (fun key ->
         { calibrationKey = key
-          cpuWorkUnits = work.CpuWorkUnits
-          nativeWorkUnits = work.NativeWorkUnits
-          ioReadBytes = work.IoReadBytes
-          ioWriteBytes = work.IoWriteBytes
-          ioReadOps = work.IoReadOps
-          ioWriteOps = work.IoWriteOps })
+          cpuCostUnits = timeCost.CpuCostUnits
+          nativeCostUnits = timeCost.NativeCostUnits
+          ioReadBytes = timeCost.IoReadBytes
+          ioWriteBytes = timeCost.IoWriteBytes
+          ioReadOps = timeCost.IoReadOps
+          ioWriteOps = timeCost.IoWriteOps })
 
-let private workFromJson (work: ProbeWorkJson) =
-    { CpuWorkUnits = work.cpuWorkUnits
-      NativeWorkUnits = work.nativeWorkUnits
-      IoReadBytes = work.ioReadBytes
-      IoWriteBytes = work.ioWriteBytes
-      IoReadOps = work.ioReadOps
-      IoWriteOps = work.ioWriteOps
-      CalibrationKey = Some work.calibrationKey }
+let private timeCostFromJson (timeCost: ProbeTimeCostJson) =
+    { CpuCostUnits = timeCost.cpuCostUnits
+      NativeCostUnits = timeCost.nativeCostUnits
+      IoReadBytes = timeCost.ioReadBytes
+      IoWriteBytes = timeCost.ioWriteBytes
+      IoReadOps = timeCost.ioReadOps
+      IoWriteOps = timeCost.ioWriteOps
+      CalibrationKey = Some timeCost.calibrationKey }
 
-let private coefficientsFromWork elapsedMilliseconds (work: StageWorkPressure) =
+let private coefficientsFromTimeCost elapsedMilliseconds (timeCost: StageTimeCostEstimate) =
     let elapsed = elapsedMilliseconds
     { CpuMillisecondsPerUnit =
-        if work.CpuWorkUnits > 0.0 then elapsed / work.CpuWorkUnits else 0.0
+        if timeCost.CpuCostUnits > 0.0 then elapsed / timeCost.CpuCostUnits else 0.0
       NativeMillisecondsPerUnit =
-        if work.NativeWorkUnits > 0.0 then elapsed / work.NativeWorkUnits else 0.0
+        if timeCost.NativeCostUnits > 0.0 then elapsed / timeCost.NativeCostUnits else 0.0
       IoReadMillisecondsPerByte =
-        if work.IoReadBytes > 0UL then elapsed / float work.IoReadBytes else 0.0
+        if timeCost.IoReadBytes > 0UL then elapsed / float timeCost.IoReadBytes else 0.0
       IoWriteMillisecondsPerByte =
-        if work.IoWriteBytes > 0UL then elapsed / float work.IoWriteBytes else 0.0
+        if timeCost.IoWriteBytes > 0UL then elapsed / float timeCost.IoWriteBytes else 0.0
       IoReadMillisecondsPerOp =
-        if work.IoReadBytes = 0UL && work.IoReadOps > 0UL then elapsed / float work.IoReadOps else 0.0
+        if timeCost.IoReadBytes = 0UL && timeCost.IoReadOps > 0UL then elapsed / float timeCost.IoReadOps else 0.0
       IoWriteMillisecondsPerOp =
-        if work.IoWriteBytes = 0UL && work.IoWriteOps > 0UL then elapsed / float work.IoWriteOps else 0.0 }
+        if timeCost.IoWriteBytes = 0UL && timeCost.IoWriteOps > 0UL then elapsed / float timeCost.IoWriteOps else 0.0 }
 
 let private runProbe name description probeParameters execute (planFactory: unit -> Plan<unit, _>) =
     printfn "Probing %s" name
@@ -364,11 +364,11 @@ let private runProbe name description probeParameters execute (planFactory: unit
             let elapsedDistance = Math.Abs(iteration.elapsedTotalMilliseconds - medianElapsed)
             float (deltaDistance + retainedDistance) + elapsedDistance)
         |> Array.head
-    let costPeakWork = metadataPlan.costPeak |> Option.bind (fun cost -> workToJson cost.Work)
-    let costWorks =
+    let costPeakTime = metadataPlan.costPeak |> Option.bind (fun cost -> timeCostToJson cost.Time)
+    let costTimes =
         metadataPlan.costObservations
         |> List.rev
-        |> List.choose (fun cost -> workToJson cost.Work)
+        |> List.choose (fun cost -> timeCostToJson cost.Time)
         |> List.toArray
 
     { name = name
@@ -406,8 +406,8 @@ let private runProbe name description probeParameters execute (planFactory: unit
       warmupCount = warmupCount
       repetitionCount = repetitionCount
       source = source
-      costPeakWork = costPeakWork
-      costWorks = costWorks
+      costPeakTime = costPeakTime
+      costTimes = costTimes
       iterations = iterations }
 
 let private runSinkProbe name description probeParameters (planFactory: unit -> Plan<unit, _>) =
@@ -418,16 +418,16 @@ let private runDrainProbe name description probeParameters (planFactory: unit ->
     let execute plan = drain plan |> ignore
     runProbe name description probeParameters execute planFactory
 
-let private tryStageWork (probe: ProbeResultJson) =
+let private tryStageTimeCost (probe: ProbeResultJson) =
     match tryParameter "stage" probe with
     | Some stage ->
         let normalizedStage = normalizedIdentifier stage
-        probe.costWorks
-        |> Array.tryFind (fun work ->
-            (normalizedIdentifier work.calibrationKey).Contains(normalizedStage))
+        probe.costTimes
+        |> Array.tryFind (fun timeCost ->
+            (normalizedIdentifier timeCost.calibrationKey).Contains(normalizedStage))
     | None ->
-        match probe.costWorks with
-        | [| work |] -> Some work
+        match probe.costTimes with
+        | [| timeCost |] -> Some timeCost
         | _ -> None
 
 let private coefficientObservations (probes: ProbeResultJson array) =
@@ -439,8 +439,8 @@ let private coefficientObservations (probes: ProbeResultJson array) =
 
     seq {
         for probe in probes do
-            match tryParameter "baselineOperation" probe, tryStageWork probe with
-            | Some baselineOperation, Some work ->
+            match tryParameter "baselineOperation" probe, tryStageTimeCost probe with
+            | Some baselineOperation, Some timeCost ->
                 let baselineKey = baselineOperation, calibrationParameterKey probe
 
                 match probesByOperationAndShape |> Map.tryFind baselineKey with
@@ -449,16 +449,16 @@ let private coefficientObservations (probes: ProbeResultJson array) =
                         max 0.0 (probe.elapsedMedianMilliseconds - baseline.elapsedMedianMilliseconds)
 
                     if elapsed > 0.0 then
-                        yield work.calibrationKey, coefficientsFromWork elapsed (workFromJson work)
+                        yield timeCost.calibrationKey, coefficientsFromTimeCost elapsed (timeCostFromJson timeCost)
                 | None -> ()
-            | None, Some work when probe.costWorks.Length = 1 ->
+            | None, Some timeCost when probe.costTimes.Length = 1 ->
                 if probe.elapsedMedianMilliseconds > 0.0 then
-                    yield work.calibrationKey, coefficientsFromWork probe.elapsedMedianMilliseconds (workFromJson work)
+                    yield timeCost.calibrationKey, coefficientsFromTimeCost probe.elapsedMedianMilliseconds (timeCostFromJson timeCost)
             | _ -> ()
     }
     |> Seq.toList
 
-let private averageCoefficients (items: StageCostCoefficients list) =
+let private averageCoefficients (items: StageTimeCoefficients list) =
     let count = float items.Length
     let average selector =
         items |> List.sumBy selector |> fun total -> total / count
@@ -471,7 +471,7 @@ let private averageCoefficients (items: StageCostCoefficients list) =
       IoWriteMillisecondsPerOp = average _.IoWriteMillisecondsPerOp }
 
 let private buildCalibrations probes =
-    let calibrations = Dictionary<string, StageCostCoefficients>()
+    let calibrations = Dictionary<string, StageTimeCoefficients>()
 
     probes
     |> coefficientObservations
@@ -484,15 +484,15 @@ let private buildCalibrations probes =
 
     calibrations
 
-let private tryPredictElapsedMilliseconds (calibrations: Dictionary<string, StageCostCoefficients>) (probe: ProbeResultJson) =
+let private tryPredictElapsedMilliseconds (calibrations: Dictionary<string, StageTimeCoefficients>) (probe: ProbeResultJson) =
     let mutable any = false
     let mutable total = 0.0
 
-    for work in probe.costWorks do
-        match calibrations.TryGetValue work.calibrationKey with
+    for timeCost in probe.costTimes do
+        match calibrations.TryGetValue timeCost.calibrationKey with
         | true, coefficients ->
             any <- true
-            total <- total + StageCostCoefficients.estimateMilliseconds coefficients (workFromJson work)
+            total <- total + StageTimeCoefficients.estimateMilliseconds coefficients (timeCostFromJson timeCost)
         | _ -> ()
 
     if any then Some total else None
@@ -510,9 +510,8 @@ let private releaseImages (images: Image<float> list) =
     images |> List.iter (fun image -> image.decRefCount())
 
 let private releaseConsumedImages (window: Window<Image<float>>) =
-    let _, emitCount = window.EmitRange
     window.Items
-    |> List.take (min (int emitCount) window.Items.Length)
+    |> List.take (min (int window.ReleaseCount) window.Items.Length)
     |> List.iter (fun image -> image.decRefCount())
 
 let private stackUnstackWindow (window: Window<Image<float>>) =

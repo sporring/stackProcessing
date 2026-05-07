@@ -75,6 +75,36 @@ let simpleFunctionTests =
 
     Expect.throws (fun () -> ImageFunctions.convolve (Some ImageFunctions.Valid) None img kernel |> ignore) "Kernels larger than the image should be rejected before calling SimpleITK."
 
+  testCase "convolve Same preserves 3D image size in every dimension" <| fun _ ->
+    let img = Image<float>.ofArray3D (Array3D.init 5 6 7 (fun x y z -> float (x + y + z)))
+    let kernel = Image<float>.ofArray3D (Array3D.create 3 3 3 (1.0 / 27.0))
+
+    let defaultSame = ImageFunctions.convolve None None img kernel
+    let explicitSame = ImageFunctions.convolve (Some ImageFunctions.Same) None img kernel
+    let convDefault = ImageFunctions.conv img kernel
+
+    Expect.equal (defaultSame.GetSize()) [5u; 6u; 7u] "Default convolve should preserve x, y, and z."
+    Expect.equal (explicitSame.GetSize()) [5u; 6u; 7u] "Explicit Same convolve should preserve x, y, and z."
+    Expect.equal (convDefault.GetSize()) [5u; 6u; 7u] "conv should use Same-sized output."
+
+    defaultSame.decRefCount()
+    explicitSame.decRefCount()
+    convDefault.decRefCount()
+    kernel.decRefCount()
+    img.decRefCount()
+
+  testCase "convolve Valid trims 3D image size by kernel size minus one" <| fun _ ->
+    let img = Image<float>.ofArray3D (Array3D.init 5 6 7 (fun x y z -> float (x + y + z)))
+    let kernel = Image<float>.ofArray3D (Array3D.create 3 4 5 (1.0 / 60.0))
+
+    let valid = ImageFunctions.convolve (Some ImageFunctions.Valid) None img kernel
+
+    Expect.equal (valid.GetSize()) [3u; 3u; 3u] "Valid convolve should reduce each dimension by kernelSize - 1."
+
+    valid.decRefCount()
+    kernel.decRefCount()
+    img.decRefCount()
+
   testCase "finiteDiffFilter3D creates directional stencil kernels" <| fun _ ->
     let x = ImageFunctions.finiteDiffFilter3D 0.0 0u 1u
     let z = ImageFunctions.finiteDiffFilter3D 0.0 2u 2u

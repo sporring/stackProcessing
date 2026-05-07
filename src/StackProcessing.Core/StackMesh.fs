@@ -139,9 +139,8 @@ let private meshBetweenSlices<'T when 'T: equality> surfaceValue (lower: Image<'
 
 let marchingCubes<'T when 'T: equality> surfaceValue : Stage<Image<'T>, MeshChunk> =
     let releaseConsumed (window: Window<Image<'T>>) =
-        let _, emitCount = window.EmitRange
         window.Items
-        |> List.take (min (int emitCount) window.Items.Length)
+        |> List.take (min (int window.ReleaseCount) window.Items.Length)
         |> List.iter (fun image -> image.decRefCount())
 
     let mapper (_debug: bool) (window: Window<Image<'T>>) =

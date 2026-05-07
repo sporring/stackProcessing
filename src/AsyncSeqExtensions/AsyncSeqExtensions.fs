@@ -2,14 +2,18 @@ module AsyncSeqExtensions
 
 open FSharp.Control
 
-let windowedWithPad
+type WindowItem<'T> =
+    { Value: 'T
+      IsReal: bool }
+
+let windowedWithPadClassified
     (windowSize: uint)
     (stride: uint)
     (prePad: uint)
     (postPad: uint)
     (zeroMaker: int -> 'T -> 'T)
     (source: AsyncSeq<'T>)
-    : AsyncSeq<'T list> =
+    : AsyncSeq<WindowItem<'T> list> =
 
     if windowSize = 0u then invalidArg "windowSize" "Must be > 0"
     if stride = 0u then invalidArg "stride" "Must be > 0"
@@ -29,20 +33,19 @@ let windowedWithPad
                 |> AsyncSeq.prependSeq firstItems
                 |> AsyncSeq.map (fun item ->
                     last <- item
-                    let id = nextId
                     nextId <- nextId + 1
-                    item)
+                    { Value = item; IsReal = true })
 
             let prePadding =
                 seq {
                     for i in 0 .. int prePad - 1 do
-                        yield zeroMaker (i - int prePad) first
+                        yield { Value = zeroMaker (i - int prePad) first; IsReal = false }
                 }
 
             let postPadding =
                 seq {
                     for i in 0 .. int postPad - 1 do
-                        yield zeroMaker (nextId + i) last
+                        yield { Value = zeroMaker (nextId + i) last; IsReal = false }
                 }
 
             let trailingEmptySlots =
@@ -83,6 +86,17 @@ let windowedWithPad
 
             yield! windows
     }
+
+let windowedWithPad
+    (windowSize: uint)
+    (stride: uint)
+    (prePad: uint)
+    (postPad: uint)
+    (zeroMaker: int -> 'T -> 'T)
+    (source: AsyncSeq<'T>)
+    : AsyncSeq<'T list> =
+    windowedWithPadClassified windowSize stride prePad postPad zeroMaker source
+    |> AsyncSeq.map (List.map _.Value)
 
 /// Converts an asynchronous computation of a single value into an asynchronous sequence containing one item.
 let ofAsync (computation: Async<'T>) : AsyncSeq<'T> =

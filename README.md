@@ -436,8 +436,8 @@ type Plan<'S,'T> =
     { stage: Stage<'S,'T> option
       graph: PipelineGraph
       sourcePeek: SourcePeek option
-      costPeak: StageCostPressure option
-      costObservations: StageCostPressure list
+      costPeak: StageCostEstimate option
+      costObservations: StageCostEstimate list
       nElemsPerSlice: SingleOrPair
       length: uint64
       memAvail: uint64

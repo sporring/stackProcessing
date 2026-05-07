@@ -8,12 +8,19 @@ type SingleOrPair = Single of uint64 | Pair of uint64*uint64
 
 type Window<'T> =
     { Items: 'T list
-      EmitRange: uint * uint }
+      EmitRange: uint * uint
+      ReleaseCount: uint }
 
 module Window =
     let create emitStart emitCount items =
         { Items = items
-          EmitRange = emitStart, emitCount }
+          EmitRange = emitStart, emitCount
+          ReleaseCount = emitCount }
+
+    let createWithRelease emitStart emitCount releaseCount items =
+        { Items = items
+          EmitRange = emitStart, emitCount
+          ReleaseCount = releaseCount }
 
     let singleton item =
         create 0u 1u [ item ]
@@ -376,8 +383,18 @@ module private Pipe =
 
         let apply _debug (input: AsyncSeq<'T>) : AsyncSeq<Window<'T>> =
             // Produces an AsyncSeq of windows with the default emitted range.
-            AsyncSeqExtensions.windowedWithPad winSz stride pad pad zeroMaker input
-            |> AsyncSeq.map (Window.create pad stride)
+            AsyncSeqExtensions.windowedWithPadClassified winSz stride pad pad zeroMaker input
+            |> AsyncSeq.map (fun classified ->
+                let emitCount =
+                    classified
+                    |> List.skip (min (int pad) classified.Length)
+                    |> List.take (min (int stride) (max 0 (classified.Length - int pad)))
+                    |> List.filter _.IsReal
+                    |> List.length
+                    |> uint
+
+                let items = classified |> List.map _.Value
+                Window.createWithRelease pad emitCount stride items)
         let profile = Window (winSz, stride, pad, 0u, winSz)
         create name apply profile
 
@@ -526,14 +543,14 @@ type StageEvaluation =
     | Sink
     | Custom of string
 
-type StageMemoryPressure =
+type StageMemoryEstimate =
     { InputLive: uint64
       OutputLive: uint64
       WorkLive: uint64
       RetainedLive: uint64
       Peak: uint64 }
 
-module StageMemoryPressure =
+module StageMemoryEstimate =
     let create inputLive outputLive workLive retainedLive =
         let peak = inputLive + outputLive + workLive + retainedLive
         { InputLive = inputLive
@@ -551,7 +568,7 @@ module StageMemoryPressure =
 
 type StageMemoryModel =
     { Evaluation: StageEvaluation
-      Estimate: SingleOrPair -> StageMemoryPressure }
+      Estimate: SingleOrPair -> StageMemoryEstimate }
 
 module StageMemoryModel =
     let private bytesOf input =
@@ -559,7 +576,7 @@ module StageMemoryModel =
 
     let fromPeak evaluation (memoryNeed: MemoryNeedWrapped) =
         { Evaluation = evaluation
-          Estimate = memoryNeed >> SingleOrPair.sum >> SingleOrPair.fst >> StageMemoryPressure.fromPeak }
+          Estimate = memoryNeed >> SingleOrPair.sum >> SingleOrPair.fst >> StageMemoryEstimate.fromPeak }
 
     let fromSinglePeak evaluation (memoryNeed: MemoryNeed) =
         let wrapped = SingleOrPair.sum >> SingleOrPair.fst >> memoryNeed >> Single
@@ -570,14 +587,14 @@ module StageMemoryModel =
           Estimate =
             fun input ->
                 let inputBytes = bytesOf input
-                StageMemoryPressure.create inputBytes (outputBytes inputBytes) (workBytes inputBytes) 0UL }
+                StageMemoryEstimate.create inputBytes (outputBytes inputBytes) (workBytes inputBytes) 0UL }
 
     let iterLike (workBytes: MemoryNeed) =
         { Evaluation = Iter
           Estimate =
             fun input ->
                 let inputBytes = bytesOf input
-                StageMemoryPressure.create inputBytes inputBytes (workBytes inputBytes) 0UL }
+                StageMemoryEstimate.create inputBytes inputBytes (workBytes inputBytes) 0UL }
 
     let windowLike winSz stride pad =
         { Evaluation = Windowed(winSz, stride, pad)
@@ -585,46 +602,46 @@ module StageMemoryModel =
             fun input ->
                 let inputBytes = bytesOf input
                 let windowBytes = inputBytes * uint64 winSz
-                StageMemoryPressure.create windowBytes windowBytes 0UL 0UL }
+                StageMemoryEstimate.create windowBytes windowBytes 0UL 0UL }
 
     let reduceLike (accumulatorBytes: MemoryNeed) (workBytes: MemoryNeed) =
         { Evaluation = Reduce
           Estimate =
             fun input ->
                 let inputBytes = bytesOf input
-                StageMemoryPressure.create inputBytes (accumulatorBytes inputBytes) (workBytes inputBytes) 0UL }
+                StageMemoryEstimate.create inputBytes (accumulatorBytes inputBytes) (workBytes inputBytes) 0UL }
 
     let memoryNeed model input =
-        model.Estimate input |> fun pressure -> Single pressure.Peak
+        model.Estimate input |> fun estimate -> Single estimate.Peak
 
-type StageCostKind =
+type StageTimeCostKind =
     | Cpu
     | Native
     | Io
     | Mixed
 
-type StageWorkPressure =
-    { CpuWorkUnits: float
-      NativeWorkUnits: float
+type StageTimeCostEstimate =
+    { CpuCostUnits: float
+      NativeCostUnits: float
       IoReadBytes: uint64
       IoWriteBytes: uint64
       IoReadOps: uint64
       IoWriteOps: uint64
       CalibrationKey: string option }
 
-module StageWorkPressure =
+module StageTimeCostEstimate =
     let zero =
-        { CpuWorkUnits = 0.0
-          NativeWorkUnits = 0.0
+        { CpuCostUnits = 0.0
+          NativeCostUnits = 0.0
           IoReadBytes = 0UL
           IoWriteBytes = 0UL
           IoReadOps = 0UL
           IoWriteOps = 0UL
           CalibrationKey = None }
 
-    let create cpuWorkUnits nativeWorkUnits ioReadBytes ioWriteBytes ioReadOps ioWriteOps calibrationKey =
-        { CpuWorkUnits = cpuWorkUnits
-          NativeWorkUnits = nativeWorkUnits
+    let create cpuCostUnits nativeCostUnits ioReadBytes ioWriteBytes ioReadOps ioWriteOps calibrationKey =
+        { CpuCostUnits = cpuCostUnits
+          NativeCostUnits = nativeCostUnits
           IoReadBytes = ioReadBytes
           IoWriteBytes = ioWriteBytes
           IoReadOps = ioReadOps
@@ -632,20 +649,20 @@ module StageWorkPressure =
           CalibrationKey = calibrationKey }
 
     let add left right =
-        { CpuWorkUnits = left.CpuWorkUnits + right.CpuWorkUnits
-          NativeWorkUnits = left.NativeWorkUnits + right.NativeWorkUnits
+        { CpuCostUnits = left.CpuCostUnits + right.CpuCostUnits
+          NativeCostUnits = left.NativeCostUnits + right.NativeCostUnits
           IoReadBytes = left.IoReadBytes + right.IoReadBytes
           IoWriteBytes = left.IoWriteBytes + right.IoWriteBytes
           IoReadOps = left.IoReadOps + right.IoReadOps
           IoWriteOps = left.IoWriteOps + right.IoWriteOps
           CalibrationKey = None }
 
-type StageWorkModel =
-    { Kind: StageCostKind
+type StageTimeCostModel =
+    { Kind: StageTimeCostKind
       Evaluation: StageEvaluation
-      Estimate: SingleOrPair -> StageWorkPressure }
+      Estimate: SingleOrPair -> StageTimeCostEstimate }
 
-type StageCostCoefficients =
+type StageTimeCoefficients =
     { CpuMillisecondsPerUnit: float
       NativeMillisecondsPerUnit: float
       IoReadMillisecondsPerByte: float
@@ -653,7 +670,7 @@ type StageCostCoefficients =
       IoReadMillisecondsPerOp: float
       IoWriteMillisecondsPerOp: float }
 
-module StageCostCoefficients =
+module StageTimeCoefficients =
     let zero =
         { CpuMillisecondsPerUnit = 0.0
           NativeMillisecondsPerUnit = 0.0
@@ -662,16 +679,16 @@ module StageCostCoefficients =
           IoReadMillisecondsPerOp = 0.0
           IoWriteMillisecondsPerOp = 0.0 }
 
-    let estimateMilliseconds coefficients pressure =
-        pressure.CpuWorkUnits * coefficients.CpuMillisecondsPerUnit
-        + pressure.NativeWorkUnits * coefficients.NativeMillisecondsPerUnit
-        + float pressure.IoReadBytes * coefficients.IoReadMillisecondsPerByte
-        + float pressure.IoWriteBytes * coefficients.IoWriteMillisecondsPerByte
-        + float pressure.IoReadOps * coefficients.IoReadMillisecondsPerOp
-        + float pressure.IoWriteOps * coefficients.IoWriteMillisecondsPerOp
+    let estimateMilliseconds coefficients estimate =
+        estimate.CpuCostUnits * coefficients.CpuMillisecondsPerUnit
+        + estimate.NativeCostUnits * coefficients.NativeMillisecondsPerUnit
+        + float estimate.IoReadBytes * coefficients.IoReadMillisecondsPerByte
+        + float estimate.IoWriteBytes * coefficients.IoWriteMillisecondsPerByte
+        + float estimate.IoReadOps * coefficients.IoReadMillisecondsPerOp
+        + float estimate.IoWriteOps * coefficients.IoWriteMillisecondsPerOp
 
-module StageCostCalibration =
-    let mutable private coefficientsByKey: Map<string, StageCostCoefficients> = Map.empty
+module StageTimeCalibration =
+    let mutable private coefficientsByKey: Map<string, StageTimeCoefficients> = Map.empty
 
     let clear () =
         coefficientsByKey <- Map.empty
@@ -682,9 +699,9 @@ module StageCostCalibration =
     let tryFind key =
         coefficientsByKey |> Map.tryFind key
 
-    let estimateMilliseconds pressure =
-        match pressure.CalibrationKey |> Option.bind tryFind with
-        | Some coefficients -> Some (StageCostCoefficients.estimateMilliseconds coefficients pressure)
+    let estimateMilliseconds estimate =
+        match estimate.CalibrationKey |> Option.bind tryFind with
+        | Some coefficients -> Some (StageTimeCoefficients.estimateMilliseconds coefficients estimate)
         | None -> None
 
     let private propertyDouble (name: string) (element: System.Text.Json.JsonElement) =
@@ -722,34 +739,34 @@ module StageCostCalibration =
         else
             false
 
-module StageWorkModel =
+module StageTimeCostModel =
     let private elementCount input =
         input |> SingleOrPair.sum |> SingleOrPair.fst |> float
 
     let zero evaluation =
         { Kind = Cpu
           Evaluation = evaluation
-          Estimate = fun _ -> StageWorkPressure.zero }
+          Estimate = fun _ -> StageTimeCostEstimate.zero }
 
-    let cpu evaluation calibrationKey workUnits =
+    let cpu evaluation calibrationKey costUnits =
         { Kind = Cpu
           Evaluation = evaluation
-          Estimate = fun input -> StageWorkPressure.create (workUnits input) 0.0 0UL 0UL 0UL 0UL calibrationKey }
+          Estimate = fun input -> StageTimeCostEstimate.create (costUnits input) 0.0 0UL 0UL 0UL 0UL calibrationKey }
 
-    let native evaluation calibrationKey workUnits =
+    let native evaluation calibrationKey costUnits =
         { Kind = Native
           Evaluation = evaluation
-          Estimate = fun input -> StageWorkPressure.create 0.0 (workUnits input) 0UL 0UL 0UL 0UL calibrationKey }
+          Estimate = fun input -> StageTimeCostEstimate.create 0.0 (costUnits input) 0UL 0UL 0UL 0UL calibrationKey }
 
     let ioRead evaluation calibrationKey bytes ops =
         { Kind = Io
           Evaluation = evaluation
-          Estimate = fun input -> StageWorkPressure.create 0.0 0.0 (bytes input) 0UL (ops input) 0UL calibrationKey }
+          Estimate = fun input -> StageTimeCostEstimate.create 0.0 0.0 (bytes input) 0UL (ops input) 0UL calibrationKey }
 
     let ioWrite evaluation calibrationKey bytes ops =
         { Kind = Io
           Evaluation = evaluation
-          Estimate = fun input -> StageWorkPressure.create 0.0 0.0 0UL (bytes input) 0UL (ops input) calibrationKey }
+          Estimate = fun input -> StageTimeCostEstimate.create 0.0 0.0 0UL (bytes input) 0UL (ops input) calibrationKey }
 
     let fromEvaluation evaluation calibrationKey =
         match evaluation with
@@ -765,30 +782,30 @@ module StageWorkModel =
         | Windowed(winSz, _, _) ->
             native evaluation calibrationKey (fun input -> elementCount input * float winSz)
 
-type StageCostPressure =
-    { Memory: StageMemoryPressure
-      Work: StageWorkPressure }
+type StageCostEstimate =
+    { Memory: StageMemoryEstimate
+      Time: StageTimeCostEstimate }
 
-module StageCostPressure =
-    let add (left: StageCostPressure) (right: StageCostPressure) =
-        { Memory = StageMemoryPressure.fromPeak (left.Memory.Peak + right.Memory.Peak)
-          Work = StageWorkPressure.add left.Work right.Work }
+module StageCostEstimate =
+    let add (left: StageCostEstimate) (right: StageCostEstimate) =
+        { Memory = StageMemoryEstimate.fromPeak (left.Memory.Peak + right.Memory.Peak)
+          Time = StageTimeCostEstimate.add left.Time right.Time }
 
 type StageCostModel =
     { Memory: StageMemoryModel
-      Work: StageWorkModel }
+      Time: StageTimeCostModel }
 
 module StageCostModel =
-    let create memory work =
+    let create memory time =
         { Memory = memory
-          Work = work }
+          Time = time }
 
     let fromMemory memory =
-        create memory (StageWorkModel.fromEvaluation memory.Evaluation None)
+        create memory (StageTimeCostModel.fromEvaluation memory.Evaluation None)
 
-    let estimate (model: StageCostModel) input : StageCostPressure =
+    let estimate (model: StageCostModel) input : StageCostEstimate =
         { Memory = model.Memory.Estimate input
-          Work = model.Work.Estimate input }
+          Time = model.Time.Estimate input }
 
     let memoryNeed model input =
         StageMemoryModel.memoryNeed model.Memory input
@@ -798,16 +815,16 @@ module StageCostModel =
             { Evaluation = evaluation
               Estimate =
                 fun input ->
-                    let leftPressure = left.Memory.Estimate input
-                    let rightPressure = right.Memory.Estimate input
-                    StageMemoryPressure.fromPeak (leftPressure.Peak + rightPressure.Peak) }
-        let work =
+                    let leftEstimate = left.Memory.Estimate input
+                    let rightEstimate = right.Memory.Estimate input
+                    StageMemoryEstimate.fromPeak (leftEstimate.Peak + rightEstimate.Peak) }
+        let timeCost =
             { Kind = Mixed
               Evaluation = evaluation
               Estimate =
                 fun input ->
-                    StageWorkPressure.add (left.Work.Estimate input) (right.Work.Estimate input) }
-        create memory work
+                    StageTimeCostEstimate.add (left.Time.Estimate input) (right.Time.Estimate input) }
+        create memory timeCost
 
 type SourcePeek =
     { Name: string
@@ -1144,30 +1161,30 @@ module Stage =
         let build () = Pipe.map2 name debug f (stage1.Build ()) (stage2.Build ())
         let transition = ProfileTransition.create Streaming Streaming
         let memoryModel = StageMemoryModel.fromPeak Join memoryNeed
-        let workModel =
+        let timeCostModel =
             { Kind = Mixed
               Evaluation = Join
               Estimate =
                 fun input ->
-                    StageWorkPressure.add (stage1.CostModel.Work.Estimate input) (stage2.CostModel.Work.Estimate input) }
+                    StageTimeCostEstimate.add (stage1.CostModel.Time.Estimate input) (stage2.CostModel.Time.Estimate input) }
         let sliceCardinality =
             if stage1.SliceCardinality = stage2.SliceCardinality then stage1.SliceCardinality else UnknownCardinality
-        createWrappedWithCostModelAndSlice name build transition (StageCostModel.create memoryModel workModel) elementTransformation sliceCardinality (stage1.Cleaning@stage2.Cleaning)
+        createWrappedWithCostModelAndSlice name build transition (StageCostModel.create memoryModel timeCostModel) elementTransformation sliceCardinality (stage1.Cleaning@stage2.Cleaning)
         |> withGraph (PipelineGraph.parallelJoin name stage1.Graph stage2.Graph)
 
     let map2Sync (name: string) (debug: bool) (f: 'U -> 'V -> 'W) (stage1: Stage<'In, 'U>) (stage2: Stage<'In, 'V>) (memoryNeed: MemoryNeedWrapped) (elementTransformation: ElementTransformation) : Stage<'In, 'W> =
         let build () = Pipe.map2Sync name debug f (stage1.Build ()) (stage2.Build ())
         let transition = ProfileTransition.create Streaming Streaming
         let memoryModel = StageMemoryModel.fromPeak Join memoryNeed
-        let workModel =
+        let timeCostModel =
             { Kind = Mixed
               Evaluation = Join
               Estimate =
                 fun input ->
-                    StageWorkPressure.add (stage1.CostModel.Work.Estimate input) (stage2.CostModel.Work.Estimate input) }
+                    StageTimeCostEstimate.add (stage1.CostModel.Time.Estimate input) (stage2.CostModel.Time.Estimate input) }
         let sliceCardinality =
             if stage1.SliceCardinality = stage2.SliceCardinality then stage1.SliceCardinality else UnknownCardinality
-        createWrappedWithCostModelAndSlice name build transition (StageCostModel.create memoryModel workModel) elementTransformation sliceCardinality (stage1.Cleaning@stage2.Cleaning)
+        createWrappedWithCostModelAndSlice name build transition (StageCostModel.create memoryModel timeCostModel) elementTransformation sliceCardinality (stage1.Cleaning@stage2.Cleaning)
         |> withGraph (PipelineGraph.parallelJoin name stage1.Graph stage2.Graph)
 
     let mapPairSync (name: string) (debug: bool) (stage1: Stage<'U, 'S>) (stage2: Stage<'V, 'T>) (memoryNeed: MemoryNeedWrapped) (elementTransformation: ElementTransformation) : Stage<'U * 'V, 'S * 'T> =
@@ -1194,18 +1211,18 @@ module Stage =
 
         let transition = ProfileTransition.create Streaming Streaming
         let memoryModel = StageMemoryModel.fromPeak Join memoryNeed
-        let workModel =
+        let timeCostModel =
             { Kind = Mixed
               Evaluation = Join
               Estimate =
                 fun input ->
                     let leftInput = SingleOrPair.index1 input
                     let rightInput = SingleOrPair.index2 input
-                    StageWorkPressure.add (stage1.CostModel.Work.Estimate leftInput) (stage2.CostModel.Work.Estimate rightInput) }
+                    StageTimeCostEstimate.add (stage1.CostModel.Time.Estimate leftInput) (stage2.CostModel.Time.Estimate rightInput) }
 
         let sliceCardinality =
             if stage1.SliceCardinality = stage2.SliceCardinality then stage1.SliceCardinality else UnknownCardinality
-        createWrappedWithCostModelAndSlice name build transition (StageCostModel.create memoryModel workModel) elementTransformation sliceCardinality (stage1.Cleaning@stage2.Cleaning)
+        createWrappedWithCostModelAndSlice name build transition (StageCostModel.create memoryModel timeCostModel) elementTransformation sliceCardinality (stage1.Cleaning@stage2.Cleaning)
         |> withGraph (PipelineGraph.parallelJoin name stage1.Graph stage2.Graph)
 
     let teeFst (stage: Stage<'A, 'A>) : Stage<'A * 'B, 'A * 'B> =
@@ -1368,8 +1385,8 @@ type OptimizationDecision =
     { CandidateName: string
       Accepted: bool
       EstimatedMemoryBytes: uint64
-      EstimatedMilliseconds: float option
-      EstimatedWorkScore: float
+      EstimatedTimeMilliseconds: float option
+      EstimatedCostScore: float
       Reason: string }
 
 type OptimizationResult<'S,'T> =
@@ -1379,13 +1396,13 @@ type OptimizationResult<'S,'T> =
 module Optimizer =
     let private relativeTolerance = 0.05
 
-    let private workScore pressure =
-        pressure.CpuWorkUnits
-        + pressure.NativeWorkUnits
-        + float pressure.IoReadBytes
-        + float pressure.IoWriteBytes
-        + float pressure.IoReadOps
-        + float pressure.IoWriteOps
+    let private costScore estimate =
+        estimate.CpuCostUnits
+        + estimate.NativeCostUnits
+        + float estimate.IoReadBytes
+        + float estimate.IoWriteBytes
+        + float estimate.IoReadOps
+        + float estimate.IoWriteOps
 
     let private nearlyEqual left right =
         let scale = max 1.0 (max (abs left) (abs right))
@@ -1400,14 +1417,14 @@ module Optimizer =
         compare (windowPreference rightCandidate) (windowPreference leftCandidate)
 
     let private compareAccepted (_leftCandidate, leftDecision) (_rightCandidate, rightDecision) =
-        match leftDecision.EstimatedMilliseconds, rightDecision.EstimatedMilliseconds with
+        match leftDecision.EstimatedTimeMilliseconds, rightDecision.EstimatedTimeMilliseconds with
         | Some leftMs, Some rightMs -> compare leftMs rightMs
         | Some _, None -> -1
         | None, Some _ -> 1
-        | None, None -> compare leftDecision.EstimatedWorkScore rightDecision.EstimatedWorkScore
+        | None, None -> compare leftDecision.EstimatedCostScore rightDecision.EstimatedCostScore
 
     let private compareAcceptedWithWindowPreference (leftCandidate, leftDecision) (rightCandidate, rightDecision) =
-        match leftDecision.EstimatedMilliseconds, rightDecision.EstimatedMilliseconds with
+        match leftDecision.EstimatedTimeMilliseconds, rightDecision.EstimatedTimeMilliseconds with
         | Some leftMs, Some rightMs when nearlyEqual leftMs rightMs ->
             let preference = compareWindowPreference leftCandidate rightCandidate
             if preference <> 0 then preference else compare leftMs rightMs
@@ -1415,11 +1432,11 @@ module Optimizer =
             compareAccepted (leftCandidate, leftDecision) (rightCandidate, rightDecision)
         | Some _, None -> -1
         | None, Some _ -> 1
-        | None, None when nearlyEqual leftDecision.EstimatedWorkScore rightDecision.EstimatedWorkScore ->
+        | None, None when nearlyEqual leftDecision.EstimatedCostScore rightDecision.EstimatedCostScore ->
             let preference = compareWindowPreference leftCandidate rightCandidate
-            if preference <> 0 then preference else compare leftDecision.EstimatedWorkScore rightDecision.EstimatedWorkScore
+            if preference <> 0 then preference else compare leftDecision.EstimatedCostScore rightDecision.EstimatedCostScore
         | None, None ->
-            compare leftDecision.EstimatedWorkScore rightDecision.EstimatedWorkScore
+            compare leftDecision.EstimatedCostScore rightDecision.EstimatedCostScore
 
     let chooseStage (availableMemory: uint64) (inputShape: SingleOrPair) (candidates: OptimizationCandidate<'S,'T> list) : OptimizationResult<'S,'T> =
         let evaluated =
@@ -1427,14 +1444,14 @@ module Optimizer =
             |> List.map (fun candidate ->
                 let cost = StageCostModel.estimate candidate.Stage.CostModel inputShape
                 let estimatedMemory = cost.Memory.Peak
-                let estimatedMilliseconds = StageCostCalibration.estimateMilliseconds cost.Work
-                let estimatedWorkScore = workScore cost.Work
+                let estimatedTimeMilliseconds = StageTimeCalibration.estimateMilliseconds cost.Time
+                let estimatedCostScore = costScore cost.Time
                 let accepted = estimatedMemory <= availableMemory
                 let reason =
                     if accepted then
-                        match estimatedMilliseconds with
+                        match estimatedTimeMilliseconds with
                         | Some ms -> $"Accepted: estimated {ms:g} ms within {availableMemory} B."
-                        | None -> $"Accepted: estimated work score {estimatedWorkScore:g} within {availableMemory} B."
+                        | None -> $"Accepted: estimated cost score {estimatedCostScore:g} within {availableMemory} B."
                     else
                         $"Rejected: estimated memory {estimatedMemory} B exceeds available memory {availableMemory} B."
 
@@ -1442,8 +1459,8 @@ module Optimizer =
                 { CandidateName = candidate.Name
                   Accepted = accepted
                   EstimatedMemoryBytes = estimatedMemory
-                  EstimatedMilliseconds = estimatedMilliseconds
-                  EstimatedWorkScore = estimatedWorkScore
+                  EstimatedTimeMilliseconds = estimatedTimeMilliseconds
+                  EstimatedCostScore = estimatedCostScore
                   Reason = reason })
 
         let selected =
@@ -1468,8 +1485,8 @@ type Plan<'S,'T> = {
     stage          : Stage<'S,'T> option // the function to be applied, when the plan is run
     graph          : PipelineGraph // the analyzable graph built while the DSL is composed
     sourcePeek     : SourcePeek option // source metadata available to future optimizers
-    costPeak       : StageCostPressure option // peak stage cost seen while composing the plan
-    costObservations: StageCostPressure list // individual stage costs seen while composing the plan
+    costPeak       : StageCostEstimate option // peak stage cost seen while composing the plan
+    costObservations: StageCostEstimate list // individual stage costs seen while composing the plan
     nElemsPerSlice : SingleOrPair // number of elments (pixels) before transformation - this could be single or pair
     length         : uint64 // length of the sequence, the plan is applied to
     memAvail       : uint64 // memory available for the plan
@@ -1493,40 +1510,40 @@ module Plan =
     let withSourcePeek (sourcePeek: SourcePeek) (pl: Plan<'S,'T>) =
         { pl with sourcePeek = Some sourcePeek }
 
-    let private mergeCostPeak (current: StageCostPressure option) (candidate: StageCostPressure) =
+    let private mergeCostPeak (current: StageCostEstimate option) (candidate: StageCostEstimate) =
         match current with
         | None -> Some candidate
         | Some previous ->
             if candidate.Memory.Peak > previous.Memory.Peak then Some candidate else current
 
-    let private workScore pressure =
-        pressure.CpuWorkUnits
-        + pressure.NativeWorkUnits
-        + float pressure.IoReadBytes
-        + float pressure.IoWriteBytes
-        + float pressure.IoReadOps
-        + float pressure.IoWriteOps
+    let private costScore estimate =
+        estimate.CpuCostUnits
+        + estimate.NativeCostUnits
+        + float estimate.IoReadBytes
+        + float estimate.IoWriteBytes
+        + float estimate.IoReadOps
+        + float estimate.IoWriteOps
 
-    let private trySumEstimatedMilliseconds (observations: StageCostPressure list) =
+    let private trySumEstimatedTimeMilliseconds (observations: StageCostEstimate list) =
         observations
         |> List.fold
             (fun state observation ->
-                match state, StageCostCalibration.estimateMilliseconds observation.Work with
+                match state, StageTimeCalibration.estimateMilliseconds observation.Time with
                 | Some total, Some milliseconds -> Some(total + milliseconds)
                 | _ -> None)
             (Some 0.0)
 
-    let private totalWorkScore (observations: StageCostPressure list) =
-        observations |> List.sumBy (fun observation -> workScore observation.Work)
+    let private totalCostScore (observations: StageCostEstimate list) =
+        observations |> List.sumBy (fun observation -> costScore observation.Time)
 
     let private printOptimizationSummary label (pl: Plan<'S,'T>) =
         if pl.debug && pl.debugLevel >= 1u && pl.debugLevel < 3u then
             let status =
                 if pl.memPeak <= pl.memAvail then "accepted" else "exceeds memory limit"
             let timeText =
-                match trySumEstimatedMilliseconds pl.costObservations with
+                match trySumEstimatedTimeMilliseconds pl.costObservations with
                 | Some milliseconds -> $", estimated time {milliseconds:g} ms"
-                | None -> $", uncalibrated work score {totalWorkScore pl.costObservations:g}"
+                | None -> $", uncalibrated cost score {totalCostScore pl.costObservations:g}"
             let peakStageText =
                 match pl.costPeak with
                 | Some peak -> $", peak stage {peak.Memory.Peak / 1024UL} KB"

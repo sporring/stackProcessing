@@ -14,34 +14,34 @@ let private initInts name count =
 let private mapInts name f =
     Stage.map<int, int> name (fun _ x -> f x) (fun _ -> 0UL) id
 
-let private costedMap name memoryPeak workUnits calibrationKey =
+let private costedMap name memoryPeak costUnits calibrationKey =
     let stage = Stage.map<int, int> name (fun _ x -> x) (fun _ -> memoryPeak) id
     let memoryModel = StageMemoryModel.fromSinglePeak Map (fun _ -> memoryPeak)
-    let workModel = StageWorkModel.cpu Map calibrationKey (fun _ -> workUnits)
-    let costModel = StageCostModel.create memoryModel workModel
+    let timeCostModel = StageTimeCostModel.cpu Map calibrationKey (fun _ -> costUnits)
+    let costModel = StageCostModel.create memoryModel timeCostModel
     { stage with
         MemoryNeed = StageCostModel.memoryNeed costModel
         MemoryModel = memoryModel
         CostModel = costModel }
 
-let private costedWindowLikeMap name windowSize memoryPeak workUnits calibrationKey =
+let private costedWindowLikeMap name windowSize memoryPeak costUnits calibrationKey =
     let stage = Stage.map<int, int> name (fun _ x -> x) (fun _ -> memoryPeak) id
     let memoryModel = StageMemoryModel.windowLike windowSize windowSize 0u
-    let workModel = StageWorkModel.cpu (Windowed(windowSize, windowSize, 0u)) calibrationKey (fun _ -> workUnits)
-    let costModel = StageCostModel.create memoryModel workModel
+    let timeCostModel = StageTimeCostModel.cpu (Windowed(windowSize, windowSize, 0u)) calibrationKey (fun _ -> costUnits)
+    let costModel = StageCostModel.create memoryModel timeCostModel
     { stage with
         MemoryNeed = StageCostModel.memoryNeed costModel
         MemoryModel = memoryModel
         CostModel = costModel }
 
-let private candidate name memoryPeak workUnits =
+let private candidate name memoryPeak costUnits =
     { Name = name
-      Stage = costedMap name memoryPeak workUnits None
+      Stage = costedMap name memoryPeak costUnits None
       Explanation = "" }
 
-let private windowCandidate name windowSize memoryPeak workUnits =
+let private windowCandidate name windowSize memoryPeak costUnits =
     { Name = name
-      Stage = costedWindowLikeMap name windowSize memoryPeak workUnits None
+      Stage = costedWindowLikeMap name windowSize memoryPeak costUnits None
       Explanation = "" }
 
 let private apply stage plan =
@@ -131,39 +131,39 @@ let costModelSuite =
     testList "Stage cost model" [
         testCase "memory model mapLike accounts for input output and work buffers" <| fun _ ->
             let model = StageMemoryModel.mapLike ((*) 2UL) ((*) 3UL)
-            let pressure = model.Estimate (Single 10UL)
+            let estimate = model.Estimate (Single 10UL)
 
-            Expect.equal pressure.InputLive 10UL "Map stages keep the input live while computing."
-            Expect.equal pressure.OutputLive 20UL "Output bytes should be estimated from the supplied function."
-            Expect.equal pressure.WorkLive 30UL "Temporary work bytes should be estimated from the supplied function."
-            Expect.equal pressure.Peak 60UL "Peak should include input, output, work, and retained bytes."
+            Expect.equal estimate.InputLive 10UL "Map stages keep the input live while computing."
+            Expect.equal estimate.OutputLive 20UL "Output bytes should be estimated from the supplied function."
+            Expect.equal estimate.WorkLive 30UL "Temporary work bytes should be estimated from the supplied function."
+            Expect.equal estimate.Peak 60UL "Peak should include input, output, work, and retained bytes."
             Expect.equal (StageMemoryModel.memoryNeed model (Single 10UL)) (Single 60UL) "Legacy memory need should be derived from the peak."
 
-        testCase "work pressures add cpu native and io components" <| fun _ ->
-            let left = StageWorkPressure.create 1.0 2.0 3UL 4UL 5UL 6UL (Some "left")
-            let right = StageWorkPressure.create 10.0 20.0 30UL 40UL 50UL 60UL None
-            let combined = StageWorkPressure.add left right
+        testCase "time cost estimates add cpu native and io components" <| fun _ ->
+            let left = StageTimeCostEstimate.create 1.0 2.0 3UL 4UL 5UL 6UL (Some "left")
+            let right = StageTimeCostEstimate.create 10.0 20.0 30UL 40UL 50UL 60UL None
+            let combined = StageTimeCostEstimate.add left right
 
-            Expect.equal combined.CpuWorkUnits 11.0 "CPU units should add."
-            Expect.equal combined.NativeWorkUnits 22.0 "Native units should add."
+            Expect.equal combined.CpuCostUnits 11.0 "CPU units should add."
+            Expect.equal combined.NativeCostUnits 22.0 "Native units should add."
             Expect.equal combined.IoReadBytes 33UL "Read bytes should add."
             Expect.equal combined.IoWriteBytes 44UL "Write bytes should add."
             Expect.equal combined.IoReadOps 55UL "Read ops should add."
             Expect.equal combined.IoWriteOps 66UL "Write ops should add."
-            Expect.equal combined.CalibrationKey None "Combined work from multiple stages should not pretend to have a single calibration key."
+            Expect.equal combined.CalibrationKey None "Combined time costs from multiple stages should not pretend to have a single calibration key."
 
         testCase "calibration json is optional and supports camelCase coefficients" <| fun _ ->
-            StageCostCalibration.clear()
+            StageTimeCalibration.clear()
             let path = Path.Combine(Path.GetTempPath(), $"slimpipeline-cost-{System.Guid.NewGuid():N}.json")
             File.WriteAllText(path, """{"calibrations":{"stage":{"cpuMillisecondsPerUnit":2.0,"ioReadMillisecondsPerByte":0.5,"ioWriteMillisecondsPerOp":3.0}}}""")
 
             try
-                Expect.isTrue (StageCostCalibration.loadJson path) "Calibration JSON should load when the file exists and has a calibrations object."
-                let pressure = StageWorkPressure.create 4.0 0.0 10UL 0UL 0UL 2UL (Some "stage")
-                Expect.equal (StageCostCalibration.estimateMilliseconds pressure) (Some 19.0) "Registered coefficients should estimate elapsed milliseconds."
-                Expect.isFalse (StageCostCalibration.loadJson (path + ".missing")) "Missing calibration files should be ignored cleanly."
+                Expect.isTrue (StageTimeCalibration.loadJson path) "Calibration JSON should load when the file exists and has a calibrations object."
+                let estimate = StageTimeCostEstimate.create 4.0 0.0 10UL 0UL 0UL 2UL (Some "stage")
+                Expect.equal (StageTimeCalibration.estimateMilliseconds estimate) (Some 19.0) "Registered coefficients should estimate elapsed milliseconds."
+                Expect.isFalse (StageTimeCalibration.loadJson (path + ".missing")) "Missing calibration files should be ignored cleanly."
             finally
-                StageCostCalibration.clear()
+                StageTimeCalibration.clear()
                 if File.Exists path then File.Delete path
 
         testCase "source peek stores source metadata for optimizers" <| fun _ ->
@@ -296,14 +296,14 @@ let planSuite =
 [<Tests>]
 let optimizerSuite =
     testList "Optimizer" [
-        testCase "chooses lowest work candidate within memory limit" <| fun _ ->
+        testCase "chooses lowest cost candidate within memory limit" <| fun _ ->
             let result =
                 [ candidate "fast-too-large" 200UL 1.0
                   candidate "balanced" 80UL 2.0
                   candidate "small-slow" 10UL 10.0 ]
                 |> Optimizer.chooseStage 100UL (Single 1UL)
 
-            Expect.equal (result.Selected |> Option.map _.Name) (Some "balanced") "Optimizer should reject the oversized candidate and choose the lowest-work accepted one."
+            Expect.equal (result.Selected |> Option.map _.Name) (Some "balanced") "Optimizer should reject the oversized candidate and choose the lowest-cost accepted one."
             Expect.equal (result.Decisions |> List.filter _.Accepted |> List.map _.CandidateName) ["balanced"; "small-slow"] "Only candidates under the memory ceiling should be accepted."
 
         testCase "returns no selection when all candidates exceed memory limit" <| fun _ ->
@@ -315,19 +315,19 @@ let optimizerSuite =
             Expect.isNone result.Selected "No candidate should be selected if none fit the memory ceiling."
             Expect.isTrue (result.Decisions |> List.forall (fun decision -> not decision.Accepted)) "Every decision should be rejected."
 
-        testCase "uses calibrated milliseconds before raw work score when available" <| fun _ ->
-            StageCostCalibration.clear()
-            StageCostCalibration.register "slow-calibrated" { StageCostCoefficients.zero with CpuMillisecondsPerUnit = 10.0 }
-            StageCostCalibration.register "fast-calibrated" { StageCostCoefficients.zero with CpuMillisecondsPerUnit = 0.1 }
+        testCase "uses calibrated milliseconds before raw cost score when available" <| fun _ ->
+            StageTimeCalibration.clear()
+            StageTimeCalibration.register "slow-calibrated" { StageTimeCoefficients.zero with CpuMillisecondsPerUnit = 10.0 }
+            StageTimeCalibration.register "fast-calibrated" { StageTimeCoefficients.zero with CpuMillisecondsPerUnit = 0.1 }
 
             let candidates =
                 [ { Name = "slow-calibrated"; Stage = costedMap "slow-calibrated" 10UL 1.0 (Some "slow-calibrated"); Explanation = "" }
                   { Name = "fast-calibrated"; Stage = costedMap "fast-calibrated" 10UL 10.0 (Some "fast-calibrated"); Explanation = "" } ]
 
             let result = Optimizer.chooseStage 100UL (Single 1UL) candidates
-            StageCostCalibration.clear()
+            StageTimeCalibration.clear()
 
-            Expect.equal (result.Selected |> Option.map _.Name) (Some "fast-calibrated") "Calibrated elapsed time should beat raw work units."
+            Expect.equal (result.Selected |> Option.map _.Name) (Some "fast-calibrated") "Calibrated elapsed time should beat raw cost units."
 
         testCase "prefers larger accepted window when costs are nearly tied" <| fun _ ->
             let result =
@@ -335,7 +335,7 @@ let optimizerSuite =
                   windowCandidate "large-window" 9u 10UL 102.0 ]
                 |> Optimizer.chooseStage 100UL (Single 1UL)
 
-            Expect.equal (result.Selected |> Option.map _.Name) (Some "large-window") "The optimizer should prefer larger windows when the estimated work is within the tie tolerance."
+            Expect.equal (result.Selected |> Option.map _.Name) (Some "large-window") "The optimizer should prefer larger windows when the estimated cost is within the tie tolerance."
 
         testCase "keeps clearly cheaper smaller window when larger window is much more expensive" <| fun _ ->
             let result =

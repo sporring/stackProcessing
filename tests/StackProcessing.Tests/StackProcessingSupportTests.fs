@@ -7,6 +7,7 @@ open Image
 open PureHDF
 open SlimPipeline
 open StackProcessing
+open StackProcessingCost
 open TinyLinAlg
 
 let private tempDirectory name =
@@ -240,6 +241,113 @@ let stackProcessingSupportSuite =
             let plan, rest = commandLineSource 1024UL [| "alpha"; "beta" |]
             Expect.isFalse plan.debug "commandLineSource should leave debug off without -d."
             Expect.equal (rest |> Array.toList) [ "alpha"; "beta" ] "commandLineSource should return non-debug arguments."
+
+        testCase "command line source parses debug level and remaining arguments" <| fun _ ->
+            try
+                let plan, rest = commandLineSource 1024UL [| "-d"; "2"; "alpha" |]
+
+                Expect.isTrue plan.debug "commandLineSource should enable debug when -d is present."
+                Expect.equal plan.debugLevel 2u "commandLineSource should store the requested debug level."
+                Expect.equal (rest |> Array.toList) [ "alpha" ] "commandLineSource should remove the debug arguments."
+            finally
+                DebugLevel.set 0u
+                Image<uint8>.setDebugLevel 0u
+
+        testCase "command line source rejects non-numeric debug level" <| fun _ ->
+            Expect.throws
+                (fun () ->
+                    commandLineSource 1024UL [| "-d"; "verbose" |]
+                    |> ignore)
+                "commandLineSource should validate the debug level after -d."
+
+        testCase "releaseAfterWith releases resources after success and failure" <| fun _ ->
+            let mutable releases = 0
+            let ops =
+                { Retain = fun _ -> ()
+                  Release = fun _ -> releases <- releases + 1
+                  MemoryOf = fun value -> Some(uint64 value) }
+
+            let actual = StackCore.releaseAfterWith ops ((+) 1) 41
+            Expect.equal actual 42 "releaseAfterWith should return the wrapped result."
+            Expect.equal releases 1 "releaseAfterWith should release after a successful call."
+
+            Expect.throws
+                (fun () ->
+                    StackCore.releaseAfterWith ops (fun _ -> failwith "boom") 7
+                    |> ignore)
+                "releaseAfterWith should rethrow the wrapped exception."
+            Expect.equal releases 2 "releaseAfterWith should also release when the wrapped function fails."
+
+        testCase "StackProcessingCost estimates memory and time cost components" <| fun _ ->
+            let input = Pair(5UL, 7UL)
+            Expect.equal (inputVoxels input) 12UL "inputVoxels should sum paired stream element sizes."
+            Expect.equal (pixelTypeName<uint16>) "UInt16" "pixelTypeName should use the CLR pixel type name."
+
+            let bytes = imageBytes<uint16> 12UL
+            Expect.equal bytes 24UL "imageBytes should estimate bytes for the supplied pixel type."
+            Expect.equal (sliceBytes<uint16> 3u 4u) bytes "sliceBytes should multiply x/y dimensions before estimating bytes."
+
+            let shape =
+                { InputImages = 1UL
+                  OutputImages = 2UL
+                  WorkImages = 3UL
+                  RetainedImages = 4UL }
+            let memory = imageStageMemory<uint16> Map shape
+            let memoryEstimate = memory.Estimate input
+
+            Expect.equal memoryEstimate.InputLive bytes "Input live bytes should scale by the input image count."
+            Expect.equal memoryEstimate.OutputLive (bytes * 2UL) "Output live bytes should scale by the output image count."
+            Expect.equal memoryEstimate.WorkLive (bytes * 3UL) "Work live bytes should scale by the work image count."
+            Expect.equal memoryEstimate.RetainedLive (bytes * 4UL) "Retained live bytes should scale by the retained image count."
+            Expect.equal memoryEstimate.Peak (bytes * 10UL) "Peak should include every image category."
+
+            let costModel = imageMapCost<uint16> "map.u16" (fun actualInput -> float (inputVoxels actualInput) * 2.0)
+            let costEstimate = StageCostModel.estimate costModel input
+            Expect.equal costEstimate.Memory.Peak (bytes * 2UL) "imageMapCost should account for one input and one output image."
+            Expect.equal costEstimate.Time.NativeCostUnits 24.0 "imageMapCost should use the supplied native cost estimator."
+            Expect.equal costEstimate.Time.CalibrationKey (Some "map.u16") "imageMapCost should retain the calibration key."
+
+        testCase "StackProcessingCost builds IO models and installs cost models on stages" <| fun _ ->
+            let readModel = imageIoCost<uint8> "read" Source "read.key" (fun _ -> 128UL) (fun _ -> 2UL)
+            let readEstimate = readModel.Estimate (Single 1UL)
+            Expect.equal readEstimate.IoReadBytes 128UL "Read IO cost should estimate read bytes."
+            Expect.equal readEstimate.IoReadOps 2UL "Read IO cost should estimate read ops."
+            Expect.equal readEstimate.CalibrationKey (Some "read.key") "Read IO cost should retain the calibration key."
+
+            let writeModel = imageIoCost<uint8> "write" Sink "write.key" (fun _ -> 256UL) (fun _ -> 3UL)
+            let writeEstimate = writeModel.Estimate (Single 1UL)
+            Expect.equal writeEstimate.IoWriteBytes 256UL "Write IO cost should estimate write bytes."
+            Expect.equal writeEstimate.IoWriteOps 3UL "Write IO cost should estimate write ops."
+
+            let unknownModel = imageIoCost<uint8> "metadata" (Custom "metadata") "metadata" (fun _ -> 512UL) (fun _ -> 4UL)
+            Expect.equal (unknownModel.Estimate (Single 1UL)) StageTimeCostEstimate.zero "Unknown IO cost kinds should be zero-cost."
+
+            let stage = scalarStage "identity" id
+            let memoryModel = StageMemoryModel.fromSinglePeak Map (fun _ -> 99UL)
+            let timeModel = StageTimeCostModel.cpu Map (Some "cpu.key") (fun _ -> 7.0)
+            let costModel = StageCostModel.create memoryModel timeModel
+            let updated = withCostModel costModel stage
+
+            Expect.equal (updated.MemoryNeed (Single 1UL)) (Single 99UL) "withCostModel should update the legacy memory need."
+            Expect.equal (updated.CostModel.Time.Estimate (Single 1UL)).CpuCostUnits 7.0 "withCostModel should install the supplied time cost model."
+
+        testCase "StackProcessingCost loads the first available time calibration file" <| fun _ ->
+            let tempDir = tempDirectory "time-calibration"
+            let missing = Path.Combine(tempDir, "missing.json")
+            let calibrationPath = Path.Combine(tempDir, "calibration.json")
+
+            try
+                StageTimeCalibration.clear()
+                File.WriteAllText(calibrationPath, """{"calibrations":{"stage":{"cpuMillisecondsPerUnit":2.5}}}""")
+
+                Expect.isFalse (tryLoadTimeCalibration missing) "Missing calibration files should not load."
+                Expect.isTrue (tryLoadFirstTimeCalibration [ missing; calibrationPath ]) "The first existing calibration file should load."
+
+                let estimate = StageTimeCostEstimate.create 4.0 0.0 0UL 0UL 0UL 0UL (Some "stage")
+                Expect.equal (StageTimeCalibration.estimateMilliseconds estimate) (Some 10.0) "Loaded coefficients should estimate milliseconds."
+            finally
+                StageTimeCalibration.clear()
+                deleteDirectory tempDir
 
         testCase "window and flatten expose padded windows for stack slices" <| fun _ ->
             let images = [ for z in 0 .. 2 -> makeSlice 3 3 z ]

@@ -1055,8 +1055,8 @@ let ImageProcessingTests =
         let ker = Image<float>.ofArray3D (Array3D.create 2 2 2 2.0)
         let result = ImageFunctions.convolve (Some ImageFunctions.Same) None img ker
         let sz = result.GetSize()
-        let expected = [3u; 3u; 2u]
-        Expect.equal sz expected $"Expected a result with equal size in x and y and smaller in z\nimg={ImageFunctions.dump(img)}\nker={ImageFunctions.dump(ker)}\nresult={ImageFunctions.dump(result)}\n"
+        let expected = [3u; 3u; 3u]
+        Expect.equal sz expected $"Expected Same output to preserve x, y, and z size\nimg={ImageFunctions.dump(img)}\nker={ImageFunctions.dump(ker)}\nresult={ImageFunctions.dump(result)}\n"
 
     testCase "convolve 3D Odd size" <| fun _ ->
         let img = Image<float>.ofArray3D (Array3D.create 3 3 3 1.0)

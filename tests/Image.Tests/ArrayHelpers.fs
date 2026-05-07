@@ -24,6 +24,15 @@ let arrayAndTypeTests =
       let casted = ofCastItk<float32> (img.toSimpleITK())
       Expect.equal (casted.GetPixelID()) PixelIDValueEnum.sitkFloat32 "Pixel ID changed to float32"
 
+    testCase "same-type cast keeps independent native image ownership" <| fun _ ->
+      let img = Image<float>.ofArray2D (Array2D.init 3 3 (fun x y -> float (x + y)))
+      let casted = img.toFloat()
+
+      casted.decRefCount()
+
+      Expect.equal img.[1, 2] 3.0 "Disposing a same-type cast should not dispose the source image."
+      img.decRefCount()
+
     // array2dZip
     testCase "array2dZip elementwise" <| fun _ ->
       let a = array2D [ [1; 2]; [3; 4] ]

@@ -14,7 +14,7 @@ type ProfileTransition = SlimPipeline.ProfileTransition
 
 type ResourceOps<'T> = SlimPipeline.ResourceOps<'T>
 
-type StageCostCoefficients = SlimPipeline.StageCostCoefficients
+type StageTimeCoefficients = SlimPipeline.StageTimeCoefficients
 
 type Window<'T> = SlimPipeline.Window<'T>
 

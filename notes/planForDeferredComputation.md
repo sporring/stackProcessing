@@ -21,9 +21,9 @@ type PlanParams =
 type ResourceModel =
   { // Functions must be PURE and monotone if possible
     MinStackIn     : int                      // minimal #input slices needed at once
-    MemoryPressure : int list -> uint64       // est. peak bytes for a candidate slice batch
-    CpuCost        : int list -> float        // est. time (ms) for that batch (rough)
-    IoCost         : int list -> float        // est. IO time (ms) for that batch
+    MemoryEstimate : int list -> uint64       // est. peak bytes for a candidate slice batch
+    CpuTime        : int list -> float        // est. time (ms) for that batch (rough)
+    IoTime         : int list -> float        // est. IO time (ms) for that batch
   }
 
 type PlanSpec<'S,'T> =
@@ -112,7 +112,7 @@ val evaluate : Plan<'S,'T> * PlanParams list -> EvalPoint
 `evaluate` walks the plan:
 
 * For each Plan, build `Resource(params)` and estimate memory for “coexisting” slices (respect upstream/downstream buffering; for first pass assume a bounded queue size like 2–3).
-* Peak = max over accumulated “in-flight” footprint plus Plan’s `MemoryPressure`.
+* Peak = max over accumulated “in-flight” footprint plus Plan’s `MemoryEstimate`.
 * TotalCost = Σ max(CPU, IO) (or a queuing model later).
 
 ## 5) Provide **parameter search** (heuristic + monotone assumptions)
@@ -228,9 +228,9 @@ let convGaussSpec (sigmaCandidates:int list) : PlanSpec<float[], float[]> =
   let resource = function
     | Windowed p ->
         { MinStackIn     = p.Window
-          MemoryPressure = Resource.windowed elemBytes p.Window
-          CpuCost        = Resource.cpuLinear k b
-          IoCost         = fun _ -> 0.0 }
+          MemoryEstimate = Resource.windowed elemBytes p.Window
+          CpuTime        = Resource.cpuLinear k b
+          IoTime         = fun _ -> 0.0 }
     | _ -> failwith "bad params"
   { Name = "convGauss"; Kind = Transform; ParamSpace = paramSpace; ArityMap = arity; Resource = resource; Build = build }
 ```

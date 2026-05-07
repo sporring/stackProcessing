@@ -45,22 +45,22 @@ let imageStageMemory<'T> evaluation shape =
       Estimate =
         fun input ->
             let bytes = inputVoxels input |> imageBytes<'T>
-            StageMemoryPressure.create
+            StageMemoryEstimate.create
                 (bytes * shape.InputImages)
                 (bytes * shape.OutputImages)
                 (bytes * shape.WorkImages)
                 (bytes * shape.RetainedImages) }
 
-let imageMapCost<'T> calibrationKey workUnits =
+let imageMapCost<'T> calibrationKey costUnits =
     StageCostModel.create
         (imageStageMemory<'T> Map ImageStageShape.mapLike)
-        (StageWorkModel.native Map (Some calibrationKey) workUnits)
+        (StageTimeCostModel.native Map (Some calibrationKey) costUnits)
 
-let imageIoCost<'T> kind evaluation calibrationKey bytes ops : StageWorkModel =
+let imageIoCost<'T> kind evaluation calibrationKey bytes ops : StageTimeCostModel =
     match kind with
-    | "read" -> StageWorkModel.ioRead evaluation (Some calibrationKey) bytes ops
-    | "write" -> StageWorkModel.ioWrite evaluation (Some calibrationKey) bytes ops
-    | _ -> StageWorkModel.zero evaluation
+    | "read" -> StageTimeCostModel.ioRead evaluation (Some calibrationKey) bytes ops
+    | "write" -> StageTimeCostModel.ioWrite evaluation (Some calibrationKey) bytes ops
+    | _ -> StageTimeCostModel.zero evaluation
 
 let withCostModel costModel stage =
     { stage with
@@ -68,11 +68,11 @@ let withCostModel costModel stage =
         MemoryModel = costModel.Memory
         MemoryNeed = StageCostModel.memoryNeed costModel }
 
-let tryLoadCostCalibration path =
+let tryLoadTimeCalibration path =
     if File.Exists path then
-        StageCostCalibration.loadJson path
+        StageTimeCalibration.loadJson path
     else
         false
 
-let tryLoadFirstCostCalibration paths =
-    paths |> List.tryFind tryLoadCostCalibration |> Option.isSome
+let tryLoadFirstTimeCalibration paths =
+    paths |> List.tryFind tryLoadTimeCalibration |> Option.isSome

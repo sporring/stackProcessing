@@ -40,10 +40,10 @@ let private sliceCardinalityForConvolution ksz outputRegionMode =
     | Some ImageFunctions.Same ->
         SlimPipeline.Domain(sameSliceDomainForKernelDepth ksz)
 
-let private nativeImageStageCost name memoryModel workUnits =
+let private nativeImageStageCost name memoryModel costUnits =
     StageCostModel.create
         memoryModel
-        (StageWorkModel.native Map (Some name) workUnits)
+        (StageTimeCostModel.native Map (Some name) costUnits)
 
 let private identityStage name =
     Stage.map name (fun _ value -> value) id id
@@ -365,9 +365,9 @@ let sqrtWindowed<'T when 'T: equality> (winSz: uint) : Stage<Image<'T>,Image<'T>
     let win = max 1u winSz
     let memoryNeed nPixels = 2UL * nPixels * uint64 win * getBytesPerComponent<'T>
     let memoryModel = StageMemoryModel.fromSinglePeak Map memoryNeed
-    let workUnits input = float (inputValue input * uint64 win)
+    let costUnits input = float (inputValue input * uint64 win)
     liftWindowedUnaryReleaseAfter "sqrtWindowed" win ImageFunctions.sqrtImage memoryNeed id
-    |> withCostModel (nativeImageStageCost $"sqrtWindowed.{typeof<'T>.Name}" memoryModel workUnits)
+    |> withCostModel (nativeImageStageCost $"sqrtWindowed.{typeof<'T>.Name}" memoryModel costUnits)
 let square<'T when 'T: equality> : Stage<Image<'T>,Image<'T>> =      
     failTypeMismatch<'T> "square" floatNintTypes
     liftUnaryReleaseAfter "square" ImageFunctions.squareImage id id
@@ -722,6 +722,10 @@ let discreteGaussianOp (name: string) (sigma: float) (outputRegionMode: ImageFun
         match outputRegionMode with
             | Some Valid -> 0u
             | _ -> ksz/2u //floor
+    let outputStart =
+        match outputRegionMode with
+            | Some Valid -> 0u
+            | _ -> pad
     // length-2*pad = n*stride+windowSize
     // stride = windowSize-2*pad
     // => n = (windowSize-length-2*pad)/(2*pad-windowSize)
@@ -729,16 +733,16 @@ let discreteGaussianOp (name: string) (sigma: float) (outputRegionMode: ImageFun
     // windowSize = 1, 6, 15, or 26, pad = 2, length = 22, => n = 21, 10, 1, or 0
     let f debug = 
         if debug then printfn $"discreteGaussianOp: sigma {sigma}, ksz {ksz}, win {win}, stride {stride}, pad {pad}"
-        volFctToWindowFctReleaseAfterDebug debug (ImageFunctions.discreteGaussian 3u sigma (ksz |> Some) outputRegionMode boundaryCondition) ksz 0u stride
+        volFctToWindowFctReleaseAfterDebug debug (ImageFunctions.discreteGaussian 3u sigma (ksz |> Some) outputRegionMode boundaryCondition) ksz outputStart stride
     let memoryNeed nPixels = (2UL*nPixels*(uint64 win) + (uint64 ksz))*getBytesPerComponent<float>
     let elementTransformation = id
     let memoryModel = StageMemoryModel.fromSinglePeak Map memoryNeed
-    let workUnits input =
+    let costUnits input =
         let kernelVoxels = uint64 ksz * uint64 ksz * uint64 ksz
         float (inputValue input * uint64 win * kernelVoxels)
     let stg =
         mapWindow name f memoryNeed elementTransformation
-        |> withCostModel (nativeImageStageCost $"discreteGaussian.Float64" memoryModel workUnits)
+        |> withCostModel (nativeImageStageCost $"discreteGaussian.Float64" memoryModel costUnits)
     (window win pad stride) --> stg --> flattenList ()
     |> Stage.withSliceCardinality (sliceCardinalityForConvolution ksz outputRegionMode)
 
@@ -876,16 +880,20 @@ let convolveOp (name: string) (kernel: Image<'T>) (outputRegionMode: ImageFuncti
         match outputRegionMode with
             | Some Valid -> 0u
             | _ -> ksz/2u //floor
-    let f debug =  volFctToWindowFctReleaseAfterDebug debug (fun image3D -> ImageFunctions.convolve outputRegionMode bc image3D kernel) ksz 0u stride
+    let outputStart =
+        match outputRegionMode with
+            | Some Valid -> 0u
+            | _ -> pad
+    let f debug =  volFctToWindowFctReleaseAfterDebug debug (fun image3D -> ImageFunctions.convolve outputRegionMode bc image3D kernel) ksz outputStart stride
     let memoryNeed nPixels = (2UL*nPixels*(uint64 win) + (uint64 ksz))*getBytesPerComponent<'T>
     let elementTransformation = id
     let memoryModel = StageMemoryModel.fromSinglePeak Map memoryNeed
-    let workUnits input =
+    let costUnits input =
         let kernelVoxels = uint64 (kernel.GetWidth()) * uint64 (kernel.GetHeight()) * uint64 (kernel.GetDepth())
         float (inputValue input * uint64 win * kernelVoxels)
     let stg =
         mapWindow name f memoryNeed elementTransformation
-        |> withCostModel (nativeImageStageCost $"convolve.{typeof<'T>.Name}" memoryModel workUnits)
+        |> withCostModel (nativeImageStageCost $"convolve.{typeof<'T>.Name}" memoryModel costUnits)
     (window win pad stride) --> stg --> flattenList ()
     |> Stage.withSliceCardinality (sliceCardinalityForConvolution ksz outputRegionMode)
 

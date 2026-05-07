@@ -358,8 +358,7 @@ type BoundaryCondition = ZeroPad | PerodicPad | ZeroFluxNeumannPad
 type OutputRegionMode = Valid | Same
 
 let internal convolve3 (img:itk.simple.Image) (ker:itk.simple.Image) (outputRegionMode: OutputRegionMode option) =
-    // Tailored for sliding-window stacks: default/Same means x/y Same and z Valid.
-    // Let SimpleITK do the heavy SAME convolution, then discard the unusable halo.
+    // Let SimpleITK do the heavy SAME convolution, then discard halos only for Valid output.
     let szImg = img.GetSize() |> fromVectorUInt32 |> List.map int
     let szKer = ker.GetSize() |> fromVectorUInt32 |> List.map int
 
@@ -371,8 +370,8 @@ let internal convolve3 (img:itk.simple.Image) (ker:itk.simple.Image) (outputRegi
     let start, size =
         match outputRegionMode with
         | None | Some Same ->
-            [ 0; 0; szKer[2] / 2 ],
-            [ szImg[0]; szImg[1]; szImg[2] - szKer[2] + 1 ]
+            [ 0; 0; 0 ],
+            szImg
         | Some Valid ->
             szKer |> List.map (fun n -> n / 2),
             List.map2 (fun a b -> a - b + 1) szImg szKer

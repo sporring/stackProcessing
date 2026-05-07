@@ -23,7 +23,7 @@ let private inputValue input =
 let private imageBytes<'T> nPixels =
     StackProcessingCost.imageBytes<'T> nPixels
 
-let private imageIoCost<'T> kind evaluation calibrationKey bytes ops : StageWorkModel =
+let private imageIoCost<'T> kind evaluation calibrationKey bytes ops : StageTimeCostModel =
     StackProcessingCost.imageIoCost<'T> kind evaluation calibrationKey bytes ops
 
 let private withCostModel costModel stage =
@@ -283,11 +283,11 @@ let getFilenames (inputDir: string) (suffix: string) (filter: string[]->string[]
     let memoryNeed = fun _ -> memPeak
     let elementTransformation = id
     let memoryModel = StageMemoryModel.fromSinglePeak Source memoryNeed
-    let workModel =
-        StageWorkModel.cpu Source (Some "getFilenames") (fun _ -> float depth)
+    let timeCostModel =
+        StageTimeCostModel.cpu Source (Some "getFilenames") (fun _ -> float depth)
     let stage =
         Stage.init $"{name}" (uint depth) mapper transition memoryNeed elementTransformation
-        |> withCostModel (StageCostModel.create memoryModel workModel)
+        |> withCostModel (StageCostModel.create memoryModel timeCostModel)
         |> Some
 
     let memPerElem = 256UL // surrugate string length
@@ -312,7 +312,7 @@ let readFilesWithShape<'T when 'T: equality> (debug: bool) (width: uint) (height
     let elementTransformation _ = uint64 width * uint64 height
 
     let memoryModel = StageMemoryModel.fromSinglePeak Map memoryNeed
-    let workModel =
+    let timeCostModel =
         imageIoCost<'T>
             "read"
             Map
@@ -320,7 +320,7 @@ let readFilesWithShape<'T when 'T: equality> (debug: bool) (width: uint) (height
             (fun _ -> Image<'T>.memoryEstimate width height)
             (fun _ -> 1UL)
     Stage.map name mapper memoryNeed elementTransformation
-    |> withCostModel (StageCostModel.create memoryModel workModel)
+    |> withCostModel (StageCostModel.create memoryModel timeCostModel)
 
 let readFiles<'T when 'T: equality> (debug: bool) : Stage<string, Image<'T>> =
     readFilesWithShape<'T> debug 0u 0u
@@ -345,7 +345,7 @@ let readFilePairs<'T when 'T: equality> (debug: bool) : Stage<string*string, Ima
     let elementTransformation = id
 
     let memoryModel = StageMemoryModel.fromSinglePeak Map memoryNeed
-    let workModel =
+    let timeCostModel =
         imageIoCost<'T>
             "read"
             Map
@@ -353,7 +353,7 @@ let readFilePairs<'T when 'T: equality> (debug: bool) : Stage<string*string, Ima
             (fun _ -> 2UL * Image<'T>.memoryEstimate width height)
             (fun _ -> 2UL)
     Stage.map name mapper memoryNeed elementTransformation
-    |> withCostModel (StageCostModel.create memoryModel workModel)
+    |> withCostModel (StageCostModel.create memoryModel timeCostModel)
 
 let readFiltered<'T when 'T: equality> (inputDir: string) (suffix: string) (filter: string[]->string[]) (pl: Plan<unit, unit>) : Plan<unit, Image<'T>> =
     let info = getStackInfo inputDir suffix
@@ -622,11 +622,11 @@ let readSlabStacked<'T when 'T: equality> (inputDir: string) (suffix: string) (p
     let memoryNeed = fun _ -> memPeak
     let elementTransformation = id
     let memoryModel = StageMemoryModel.fromSinglePeak Source memoryNeed
-    let workModel =
-        StageWorkModel.ioRead Source (Some $"readSlabStacked.{typeof<'T>.Name}") (fun _ -> elementBytes) (fun _ -> 1UL)
+    let timeCostModel =
+        StageTimeCostModel.ioRead Source (Some $"readSlabStacked.{typeof<'T>.Name}") (fun _ -> elementBytes) (fun _ -> 1UL)
     let stage =
         Stage.init $"{name}" (uint depth) mapper transition memoryNeed elementTransformation
-        |> withCostModel (StageCostModel.create memoryModel workModel)
+        |> withCostModel (StageCostModel.create memoryModel timeCostModel)
         |> Some
 
     let memPerElem = 256UL // surrugate string length
@@ -717,11 +717,11 @@ let readZarrSlabStacked<'T when 'T: equality>
     let memoryNeed = fun _ -> memPeak
     let elementTransformation = id
     let memoryModel = StageMemoryModel.fromSinglePeak Source memoryNeed
-    let workModel =
-        StageWorkModel.ioRead Source (Some $"readZarrSlabStacked.{typeof<'T>.Name}") (fun _ -> elementBytes) (fun _ -> 1UL)
+    let timeCostModel =
+        StageTimeCostModel.ioRead Source (Some $"readZarrSlabStacked.{typeof<'T>.Name}") (fun _ -> elementBytes) (fun _ -> 1UL)
     let stage =
         Stage.init name (uint depth) mapper transition memoryNeed elementTransformation
-        |> withCostModel (StageCostModel.create memoryModel workModel)
+        |> withCostModel (StageCostModel.create memoryModel timeCostModel)
         |> Some
 
     Plan.create stage pl.memAvail memPeak memPeak depth pl.debug
@@ -823,11 +823,11 @@ let readNexusSlabStacked<'T when 'T: equality>
     let memoryNeed = fun _ -> memPeak
     let elementTransformation = id
     let memoryModel = StageMemoryModel.fromSinglePeak Source memoryNeed
-    let workModel =
-        StageWorkModel.ioRead Source (Some $"readNexusSlabStacked.{typeof<'T>.Name}") (fun _ -> elementBytes) (fun _ -> 1UL)
+    let timeCostModel =
+        StageTimeCostModel.ioRead Source (Some $"readNexusSlabStacked.{typeof<'T>.Name}") (fun _ -> elementBytes) (fun _ -> 1UL)
     let stage =
         Stage.init name (uint depth) mapper transition memoryNeed elementTransformation
-        |> withCostModel (StageCostModel.create memoryModel workModel)
+        |> withCostModel (StageCostModel.create memoryModel timeCostModel)
         |> Some
 
     Plan.create stage pl.memAvail memPeak memPeak depth pl.debug
@@ -882,7 +882,7 @@ let write<'T when 'T: equality> (outputDir: string) (suffix: string) : Stage<Ima
         image
     let memoryNeed = id
     let memoryModel = StageMemoryModel.fromSinglePeak Iter memoryNeed
-    let workModel =
+    let timeCostModel =
         imageIoCost<'T>
             "write"
             Iter
@@ -890,7 +890,7 @@ let write<'T when 'T: equality> (outputDir: string) (suffix: string) : Stage<Ima
             (fun input -> inputValue input |> imageBytes<'T>)
             (fun _ -> 1UL)
     Stage.mapi $"write \"{outputDir}/*{suffix}\"" mapper memoryNeed id
-    |> withCostModel (StageCostModel.create memoryModel workModel)
+    |> withCostModel (StageCostModel.create memoryModel timeCostModel)
 
 let writeZarr<'T when 'T: equality>
     (outputPath: string)
@@ -973,7 +973,7 @@ let writeZarr<'T when 'T: equality>
 
     let memoryNeed = id
     let memoryModel = StageMemoryModel.fromSinglePeak Iter memoryNeed
-    let workModel =
+    let timeCostModel =
         imageIoCost<'T>
             "write"
             Iter
@@ -982,7 +982,7 @@ let writeZarr<'T when 'T: equality>
             (fun _ -> 1UL)
 
     Stage.mapi $"writeZarr \"{outputPath}\"" mapper memoryNeed id
-    |> withCostModel (StageCostModel.create memoryModel workModel)
+    |> withCostModel (StageCostModel.create memoryModel timeCostModel)
 
 let writeNexus<'T when 'T: equality>
     (outputPath: string)
@@ -1073,7 +1073,7 @@ let writeNexus<'T when 'T: equality>
 
     let memoryNeed = id
     let memoryModel = StageMemoryModel.fromSinglePeak Iter memoryNeed
-    let workModel =
+    let timeCostModel =
         imageIoCost<'T>
             "write"
             Iter
@@ -1082,7 +1082,7 @@ let writeNexus<'T when 'T: equality>
             (fun _ -> 1UL)
 
     Stage.mapi $"writeNexus \"{outputPath}:{datasetPath}\"" mapper memoryNeed id
-    |> withCostModel (StageCostModel.create memoryModel workModel)
+    |> withCostModel (StageCostModel.create memoryModel timeCostModel)
 
 let _writeSlabChunks (debug: bool) (outputDir: string) (suffix: string) (width: uint) (height: uint) (winSz: uint) (k: int) (stack: Image<'T>) =
     for i in [0u..stack.GetWidth()/width] do
@@ -1129,7 +1129,7 @@ let private writeInSlabsCore<'T when 'T: equality> (outputDir: string) (suffix: 
         max (nPixels*(wsz*(2UL*bt8+bt64)-str*bt8)) (nPixels*(wsz*(bt8+bt64)+str*(bt64-bt8)))
     let elementTransformation = id
     let memoryModel = StageMemoryModel.fromSinglePeak Iter memoryNeed
-    let workModel =
+    let timeCostModel =
         imageIoCost<'T>
             "write"
             Iter
@@ -1138,7 +1138,7 @@ let private writeInSlabsCore<'T when 'T: equality> (outputDir: string) (suffix: 
             (fun _ -> 1UL)
     let stg =
         Stage.mapi "writeInSlabs" mapper memoryNeed elementTransformation
-        |> withCostModel (StageCostModel.create memoryModel workModel)
+        |> withCostModel (StageCostModel.create memoryModel timeCostModel)
     (window winSz pad stride) --> stg --> flattenList ()
 
 let writeInSlabs<'T when 'T: equality> outputDir suffix width height winSz =

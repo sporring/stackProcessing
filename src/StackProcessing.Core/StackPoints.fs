@@ -249,9 +249,8 @@ let dogKeypoints<'T when 'T: equality>
     let windowSize = stride + 2u * pad
 
     let releaseConsumed (window: Window<Image<'T>>) =
-        let _, emitCount = window.EmitRange
         window.Items
-        |> List.take (min (int emitCount) window.Items.Length)
+        |> List.take (min (int window.ReleaseCount) window.Items.Length)
         |> List.iter (fun image -> image.decRefCount())
 
     let mapper (_debug: bool) (window: Window<Image<'T>>) =

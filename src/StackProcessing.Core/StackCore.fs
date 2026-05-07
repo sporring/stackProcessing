@@ -95,9 +95,8 @@ let private releaseAllImages (images: Image<'S> list) =
     images |> List.iter (fun image -> image.decRefCount())
 
 let private releaseConsumedImages (window: Window<Image<'S>>) =
-    let _, emitCount = window.EmitRange
     window.Items
-    |> List.take (min (int emitCount) window.Items.Length)
+    |> List.take (min (int window.ReleaseCount) window.Items.Length)
     |> List.iter (fun image -> image.decRefCount())
 
 let volFctToWindowFctReleaseAfterDebug
@@ -108,13 +107,20 @@ let volFctToWindowFctReleaseAfterDebug
         (outputCount: uint)
         (window: Window<Image<'S>>)
         : Image<'T> list =
+    let _, windowEmitCount = window.EmitRange
+    let effectiveOutputCount = min outputCount windowEmitCount
+
     if uint window.Items.Length < requiredInputDepth then
         releaseAllImages window.Items
         []
     else
+        if effectiveOutputCount = 0u then
+            releaseAllImages window.Items
+            []
+        else
         match window.Items with
         | [ image ] when requiredInputDepth <= 1u ->
-            if outputStart = 0u && outputCount > 0u then
+            if outputStart = 0u then
                 let result =
                     try
                         f image
@@ -142,10 +148,10 @@ let volFctToWindowFctReleaseAfterDebug
             previousKb <- currentKb
             let depth = vol.GetDepth()
             let result =
-                if outputStart >= depth || outputCount = 0u then
+                if outputStart >= depth then
                     []
                 else
-                    let count = min outputCount (depth - outputStart)
+                    let count = min effectiveOutputCount (depth - outputStart)
                     ImageFunctions.unstackSkipNTakeM outputStart count vol
             let currentKb, unstackDelta = sampleVolRssProbe rssDebug "after unstack" startKb previousKb
             previousKb <- currentKb

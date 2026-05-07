@@ -73,9 +73,9 @@ module InternalHelpers = // internal
     let ofCastItk<'T> (itkImg: itk.simple.Image) : itk.simple.Image =
         let expectedId = fromType<'T>
         if typeof<'T> = typeof<System.Numerics.Complex> && isComplexCompatibleImage itkImg then
-            itkImg
+            new itk.simple.Image(itkImg)
         elif itkImg.GetPixelID() = expectedId then
-            itkImg // No casting needed
+            new itk.simple.Image(itkImg) // Preserve independent wrapper ownership when no cast is needed.
         else
             use cast = new itk.simple.CastImageFilter()
             cast.SetOutputPixelType(expectedId)

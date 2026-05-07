@@ -1769,7 +1769,7 @@ type MainView() as this =
                         FilePickerOpenOptions(
                             Title = "Load pipeline graph",
                             AllowMultiple = false,
-                            FileTypeFilter = [ FilePickerFileTypes.All ])
+                            FileTypeFilter = [ FilePickerFileTypes.Json ])
 
                     let! files = topLevel.StorageProvider.OpenFilePickerAsync(options)
 

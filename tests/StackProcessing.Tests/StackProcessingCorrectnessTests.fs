@@ -352,7 +352,7 @@ let stackProcessingCorrectnessSuite =
             finally
                 volume.decRefCount()
 
-        ptestCase "streamed valid discreteGaussian matches direct 3D SimpleITK gaussian convolution" <| fun _ ->
+        testCase "streamed valid discreteGaussian matches direct 3D SimpleITK gaussian convolution" <| fun _ ->
             let suffix = ".mha"
             let volume = makeFloat64Volume 8
 
@@ -367,7 +367,7 @@ let stackProcessingCorrectnessSuite =
             finally
                 volume.decRefCount()
 
-        ptestCase "streamed conv matches direct 3D convolution" <| fun _ ->
+        testCase "streamed conv matches direct 3D convolution" <| fun _ ->
             let suffix = ".tiff"
             let volume = makeFloat32Volume 16
             let kernel = makeAveragingKernel ()
@@ -384,7 +384,7 @@ let stackProcessingCorrectnessSuite =
                 kernel.decRefCount()
                 volume.decRefCount()
 
-        ptestCase "streamed finiteDiff matches direct 3D finite difference convolution" <| fun _ ->
+        testCase "streamed finiteDiff matches direct 3D finite difference convolution" <| fun _ ->
             let suffix = ".mha"
             let volume = makeFloat64Volume 8
 
@@ -508,20 +508,46 @@ let stackProcessingCorrectnessSuite =
                 volume.decRefCount()
                 cleanupResult keepTempDirs inputDir outputDir
 
-        ptestCase "streamed signedDistanceBand matches direct 3D distance map inside the finite band" <| fun _ ->
+        testCase "streamed signedDistanceBand matches sampled direct 3D distance map values inside the finite band" <| fun _ ->
             let suffix = ".mha"
             let binary = makeBinaryVolume 8
+            let mutable inputDir = ""
+            let mutable outputDir = ""
+            let mutable actualOpt : Image<float> option = None
+            let mutable expectedOpt : Image<float> option = None
 
             try
-                assertStreamingMatchesDirect
-                    "signed-distance-band"
-                    suffix
-                    1.0e-8
-                    binary
-                    (signedDistanceBand 8u 8u)
-                    (ImageFunctions.signedDistanceMap 0uy 1uy)
+                let actual, iDir, oDir = runSlicePipeline "signed-distance-band" suffix binary (signedDistanceBand 8u 8u)
+                let expected = ImageFunctions.bandSignedDistanceMap 8u binary
+                inputDir <- iDir
+                outputDir <- oDir
+                actualOpt <- Some actual
+                expectedOpt <- Some expected
+
+                Expect.equal (actual.GetSize()) (binary.GetSize()) $"signedDistanceBand should preserve the input stack shape. Input slices: {inputDir}; output slices: {outputDir}."
+
+                let sampledPoints =
+                    [ 4, 4, 4
+                      5, 4, 4
+                      6, 4, 4
+                      4, 6, 4
+                      4, 4, 6
+                      3, 4, 4
+                      4, 3, 4
+                      4, 4, 3 ]
+
+                for x, y, z in sampledPoints do
+                    let actualValue = actual.[x, y, z]
+                    let expectedValue = expected.[x, y, z]
+                    Expect.isFalse (Double.IsNaN actualValue) $"Sampled streamed distance at ({x},{y},{z}) should be inside the finite band."
+                    Expect.isFalse (Double.IsNaN expectedValue) $"Sampled direct distance at ({x},{y},{z}) should be inside the finite band."
+                    let diff = Math.Abs(actualValue - expectedValue)
+                    Expect.isLessThan diff 1.0e-8 $"Sampled signed distance at ({x},{y},{z}) should match direct band distance. Actual: {actualValue}; expected: {expectedValue}."
             finally
+                actualOpt |> Option.iter (fun image -> image.decRefCount())
+                expectedOpt |> Option.iter (fun image -> image.decRefCount())
                 binary.decRefCount()
+                cleanupResult false inputDir outputDir
 
         testCase "streamed unary math functions match direct 3D ImageFunctions" <| fun _ ->
             let suffix = ".tiff"

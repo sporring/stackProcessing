@@ -1,5 +1,18 @@
 namespace FSharp
 module AsyncSeqExtensions
+type WindowItem<'T> =
+    {
+      Value: 'T
+      IsReal: bool
+    }
+val windowedWithPadClassified:
+  windowSize: uint ->
+    stride: uint ->
+    prePad: uint ->
+    postPad: uint ->
+    zeroMaker: (int -> 'T -> 'T) ->
+    source: FSharp.Control.AsyncSeq<'T> ->
+    FSharp.Control.AsyncSeq<WindowItem<'T> list>
 val windowedWithPad:
   windowSize: uint ->
     stride: uint ->

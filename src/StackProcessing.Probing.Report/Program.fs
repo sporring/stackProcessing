@@ -154,7 +154,7 @@ let private medianMiBPerSecond (probe: ProbeResultJson) =
         else
             0.0
 
-let private estimateWriteCostProbes (probes: ProbeResultJson array) =
+let private estimateWriteTimeProbes (probes: ProbeResultJson array) =
     let keyFields = [ "width"; "height"; "depth"; "pixelType" ]
 
     let zeroByKey =
@@ -189,7 +189,7 @@ let private estimateWriteCostProbes (probes: ProbeResultJson array) =
             let nameKey = key.Replace("|", "x")
             Some
                 { name = $"write-estimate-{nameKey}"
-                  description = $"Estimated write cost for {key}, derived from zero-write minus zero."
+                  description = $"Estimated write time for {key}, derived from zero-write minus zero."
                   parameters = p
                   observedElements = writeProbe.observedElements
                   observedBytes = bytes
@@ -201,7 +201,7 @@ let private estimateWriteCostProbes (probes: ProbeResultJson array) =
                   throughputMedianBytesPerSecond = throughput
                   source = writeProbe.source })
 
-let private estimateStageCostProbes (probes: ProbeResultJson array) =
+let private estimateStageTimeProbes (probes: ProbeResultJson array) =
     let keyFields = [ "width"; "height"; "depth"; "pixelType" ]
 
     let baselineByKey =
@@ -245,7 +245,7 @@ let private estimateStageCostProbes (probes: ProbeResultJson array) =
                 let nameKey = key.Replace("|", "x")
                 Some
                     { name = $"{stageName}-estimate-{nameKey}"
-                      description = $"Estimated stage cost for {stageName} and {key}, derived from {operationName probe} minus {baselineOperation}."
+                      description = $"Estimated stage time for {stageName} and {key}, derived from {operationName probe} minus {baselineOperation}."
                       parameters = p
                       observedElements = probe.observedElements
                       observedBytes = bytes
@@ -309,10 +309,10 @@ let main args =
         if isNull (box report) || isNull report.probes || report.probes.Length = 0 then
             failwith $"No probes found in {inputPath}"
 
-        let writeCostProbes = estimateWriteCostProbes report.probes
-        let stageCostProbes = estimateStageCostProbes report.probes
+        let writeTimeProbes = estimateWriteTimeProbes report.probes
+        let stageTimeProbes = estimateStageTimeProbes report.probes
 
-        if stageCostProbes.Length = 0 then
+        if stageTimeProbes.Length = 0 then
             failwith "No stage-estimate probes could be derived. Re-run StackProcessing.Probing so the report includes probes with matching baselineOperation metadata."
 
         let rawProbes = plottedRawProbes report.probes
@@ -371,7 +371,7 @@ let main args =
                 [ "windowSize" ]
                 "Estimated stage RSS median delta (MiB)"
                 (fun probe -> bytesToMiB probe.rssDeltaMedianBytes)
-                stageCostProbes
+                stageTimeProbes
 
         let stageSpeedByWindowChart =
             makeScatter
@@ -379,7 +379,7 @@ let main args =
                 [ "windowSize" ]
                 "Estimated stage throughput (MiB/s)"
                 medianMiBPerSecond
-                stageCostProbes
+                stageTimeProbes
 
         let stageMemoryByImageChart =
             makeScatter
@@ -387,7 +387,7 @@ let main args =
                 [ "imagePixels"; "imageVoxels"; "width"; "height"; "depth" ]
                 "Estimated stage RSS median delta (MiB)"
                 (fun probe -> bytesToMiB probe.rssDeltaMedianBytes)
-                (nPlus2Probes stageCostProbes)
+                (nPlus2Probes stageTimeProbes)
 
         let stageSpeedByImageChart =
             makeScatter
@@ -395,21 +395,21 @@ let main args =
                 [ "imagePixels"; "imageVoxels"; "width"; "height"; "depth" ]
                 "Estimated stage throughput (MiB/s)"
                 medianMiBPerSecond
-                (nPlus2Probes stageCostProbes)
+                (nPlus2Probes stageTimeProbes)
 
         stageMemoryByWindowChart |> Chart.saveHtml(stageMemoryByWindowPath)
         stageSpeedByWindowChart |> Chart.saveHtml(stageSpeedByWindowPath)
         stageMemoryByImageChart |> Chart.saveHtml(stageMemoryByImagePath)
         stageSpeedByImageChart |> Chart.saveHtml(stageSpeedByImagePath)
 
-        if writeCostProbes.Length > 0 then
+        if writeTimeProbes.Length > 0 then
             let writeTimeChart =
                 makeScatter
                     "StackProcessing estimated write time by image size"
                     [ "imagePixels"; "imageVoxels"; "width"; "height"; "depth" ]
                     "Estimated write elapsed (ms)"
                     elapsedMilliseconds
-                    (nPlus2Probes writeCostProbes)
+                    (nPlus2Probes writeTimeProbes)
 
             let writeThroughputChart =
                 makeScatter
@@ -417,7 +417,7 @@ let main args =
                     [ "imagePixels"; "imageVoxels"; "width"; "height"; "depth" ]
                     "Estimated write throughput (MiB/s)"
                     medianMiBPerSecond
-                    (nPlus2Probes writeCostProbes)
+                    (nPlus2Probes writeTimeProbes)
 
             writeTimeChart |> Chart.saveHtml(writeTimePath)
             writeThroughputChart |> Chart.saveHtml(writeThroughputPath)
@@ -430,7 +430,7 @@ let main args =
         printfn "Wrote %s" stageSpeedByWindowPath
         printfn "Wrote %s" stageMemoryByImagePath
         printfn "Wrote %s" stageSpeedByImagePath
-        if writeCostProbes.Length > 0 then
+        if writeTimeProbes.Length > 0 then
             printfn "Wrote %s" writeTimePath
             printfn "Wrote %s" writeThroughputPath
         0
