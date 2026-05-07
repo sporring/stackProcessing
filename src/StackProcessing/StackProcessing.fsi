@@ -94,6 +94,12 @@ type CoordinatePoint = StackPoints.CoordinatePoint
 
 type PointSetChunk = StackPoints.PointSetChunk
 
+type Affine = TinyLinAlg.Affine
+
+type AffineRegistrationOptions = StackRegistration.AffineRegistrationOptions
+
+type AffineRegistrationResult = StackRegistration.AffineRegistrationResult
+
 type Point3D = StackMesh.Point3D
 
 type Triangle = StackMesh.Triangle
@@ -270,6 +276,23 @@ val writeInSlabs:
 val writePointSet: (string -> StackCore.Stage<StackPoints.PointSetChunk,unit>)
 
 val writeMesh: (string -> string -> StackCore.Stage<StackMesh.MeshChunk,unit>)
+
+val defaultAffineRegistrationOptions:
+  StackRegistration.AffineRegistrationOptions
+
+val earthMoversDistance:
+  (StackPoints.CoordinatePoint seq -> StackPoints.CoordinatePoint seq -> float)
+
+val transformPointSet:
+  (TinyLinAlg.Affine -> StackPoints.PointSetChunk -> StackPoints.PointSetChunk)
+
+val inverseAffine: (TinyLinAlg.Affine -> TinyLinAlg.Affine)
+
+val affineRegistration:
+  (StackRegistration.AffineRegistrationOptions ->
+     StackPoints.CoordinatePoint seq ->
+     StackPoints.CoordinatePoint seq ->
+     StackRegistration.AffineRegistrationResult)
 
 val resampleAffineTrilinearSlices:
   (string ->

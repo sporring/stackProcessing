@@ -42,6 +42,7 @@
         <Compile Include="StackProcessingCost.fs" />
         <Compile Include="StackIO.fs" />
         <Compile Include="StackPoints.fs" />
+        <Compile Include="StackRegistration.fs" />
         <Compile Include="StackMesh.fs" />
         <Compile Include="StackImageFunctions.fs" />
         <Compile Include="StackAffineResampler.fs" />
