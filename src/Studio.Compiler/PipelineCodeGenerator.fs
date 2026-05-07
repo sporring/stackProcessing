@@ -1110,6 +1110,15 @@ module PipelineCodeGenerator =
             let contrastThreshold = parameterValue "contrastThreshold"
             let stride = parameterValue "stride"
             $">=> dogKeypoints<{pixelType}> {sigma0} {scaleFactor} {scaleLevels} {contrastThreshold} {stride}"
+        | "StreamConnectedObjects" ->
+            let connectivity = parameterValue "connectivity"
+            $">=> streamConnectedObjects<uint8> ObjectConnectivity.{connectivity}"
+        | "PaintObjects" ->
+            let width = parameterValue "width"
+            let height = parameterValue "height"
+            $">=> paintObjects {width} {height}"
+        | "PaintObjectsCropped" ->
+            $">=> paintObjectsCropped"
         | "Watershed" ->
             let level = parameterValue "level"
             let windowSize = parameterValue "windowSize"

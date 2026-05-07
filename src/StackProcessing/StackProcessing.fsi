@@ -90,6 +90,8 @@ type FileInfo = ImageFunctions.FileInfo
 
 type ChunkInfo = StackIO.ChunkInfo
 
+type Position3D<'T> = StackPoints.Position3D<'T>
+
 type CoordinatePoint = StackPoints.CoordinatePoint
 
 type PointSetChunk = StackPoints.PointSetChunk
@@ -99,6 +101,12 @@ type Affine = TinyLinAlg.Affine
 type AffineRegistrationOptions = StackRegistration.AffineRegistrationOptions
 
 type AffineRegistrationResult = StackRegistration.AffineRegistrationResult
+
+type ObjectConnectivity = StackObjects.ObjectConnectivity
+
+type ObjectBounds = StackObjects.ObjectBounds
+
+type StreamedObject = StackObjects.StreamedObject
 
 type Point3D = StackMesh.Point3D
 
@@ -293,6 +301,19 @@ val affineRegistration:
      StackPoints.CoordinatePoint seq ->
      StackPoints.CoordinatePoint seq ->
      StackRegistration.AffineRegistrationResult)
+
+val streamConnectedObjects<'T when 'T: equality> :
+  (StackObjects.ObjectConnectivity ->
+     StackCore.Stage<StackCore.Image<'T>,StackObjects.StreamedObject list>)
+    when 'T: equality
+
+val paintObjects:
+  (uint32 ->
+     uint32 ->
+     StackCore.Stage<StackObjects.StreamedObject list,StackCore.Image<uint8>>)
+
+val paintObjectsCropped:
+  StackCore.Stage<StackObjects.StreamedObject list,StackCore.Image<uint8>>
 
 val resampleAffineTrilinearSlices:
   (string ->

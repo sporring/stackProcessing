@@ -518,6 +518,111 @@ let stackProcessingSupportSuite =
 
             Expect.isLessThan (earthMoversDistance moving fixedAsMovingCoordinates) 1.0e-8 "The inverse transform should map fixed-grid coordinates back to moving coordinates for StackAffineResampler."
 
+        testCase "streamConnectedObjects emits completed objects without waiting for the full stack" <| fun _ ->
+            let slices =
+                [ for z in 0 .. 3 ->
+                    let image =
+                        Array2D.init 5 5 (fun x y ->
+                            let objectCompletedAfterNextSlice = z = 0 && x = 1 && y = 1
+                            let objectSpanningTwoSlices = (z = 1 || z = 2) && x = 3 && y = 3
+                            if objectCompletedAfterNextSlice || objectSpanningTwoSlices then 255uy else 0uy)
+                        |> Image<uint8>.ofArray2D
+                    image.index <- z
+                    image ]
+
+            try
+                let batches =
+                    imagePlan slices
+                    >=> streamConnectedObjects<uint8> ObjectConnectivity.Six
+                    |> drainList
+
+                Expect.equal (batches |> List.map List.length) [ 0; 1; 0; 1 ] "Objects should be emitted when the next slice proves they no longer continue."
+
+                let objects = batches |> List.collect id
+                Expect.equal objects.Length 2 "Both completed objects should be emitted."
+                Expect.equal objects[0].Size 1UL "The one-slice object should contain one pixel."
+                Expect.equal objects[0].Bounds.MinZ 0 "The first object should come from z=0."
+                Expect.equal objects[0].Bounds.MaxZ 0 "The first object should be complete at z=0."
+                Expect.equal objects[1].Size 2UL "The second object should span two slices."
+                Expect.equal objects[1].Bounds.MinZ 1 "The spanning object should start at z=1."
+                Expect.equal objects[1].Bounds.MaxZ 2 "The spanning object should end at z=2."
+                Expect.equal objects[1].Positions [ { X = 3; Y = 3; Z = 1 }; { X = 3; Y = 3; Z = 2 } ] "Object pixels should use exact integer positions."
+            finally
+                disposeImages slices
+
+        testCase "streamConnectedObjects honors 26-connectivity across diagonal slice contacts" <| fun _ ->
+            let slices =
+                [ for z in 0 .. 1 ->
+                    let image =
+                        Array2D.init 4 4 (fun x y ->
+                            if (z = 0 && x = 1 && y = 1) || (z = 1 && x = 2 && y = 2) then 255uy else 0uy)
+                        |> Image<uint8>.ofArray2D
+                    image.index <- z
+                    image ]
+
+            try
+                let sixObjects =
+                    imagePlan slices
+                    >=> streamConnectedObjects<uint8> ObjectConnectivity.Six
+                    |> drainList
+                    |> List.collect id
+
+                let twentySixObjects =
+                    imagePlan slices
+                    >=> streamConnectedObjects<uint8> ObjectConnectivity.TwentySix
+                    |> drainList
+                    |> List.collect id
+
+                Expect.equal sixObjects.Length 2 "Face connectivity should keep diagonal z-neighbors separate."
+                Expect.equal twentySixObjects.Length 1 "26-connectivity should merge diagonal z-neighbors."
+                Expect.equal twentySixObjects[0].Size 2UL "The merged object should contain both pixels."
+            finally
+                disposeImages slices
+
+        testCase "paintObjects turns streamed object positions into UInt8 mask slices" <| fun _ ->
+            let objects: StreamedObject list =
+                [ { Label = 1UL
+                    Positions = [ { X = 1; Y = 2; Z = 0 }; { X = 3; Y = 1; Z = 0 }; { X = 2; Y = 2; Z = 2 } ]
+                    Bounds = { MinX = 1; MaxX = 3; MinY = 1; MaxY = 2; MinZ = 0; MaxZ = 2 }
+                    Size = 3UL } ]
+
+            let painted =
+                scalarPlan [ objects ]
+                >=> paintObjects 5u 4u
+                |> drainList
+
+            try
+                Expect.equal (painted |> List.map _.index) [ 0; 2 ] "Painting should emit only z slices that contain object positions."
+                Expect.equal (painted[0][1, 2]) 1uy "First painted position should be one."
+                Expect.equal (painted[0][3, 1]) 1uy "Second painted position should be one."
+                Expect.equal (painted[0][0, 0]) 0uy "Background should be zero."
+                Expect.equal (painted[1][2, 2]) 1uy "The z=2 position should be painted in the second emitted image."
+            finally
+                disposeImages painted
+
+        testCase "paintObjectsCropped turns streamed objects into minimal local UInt8 masks" <| fun _ ->
+            let objects: StreamedObject list =
+                [ { Label = 7UL
+                    Positions = [ { X = 4; Y = 5; Z = 10 }; { X = 6; Y = 5; Z = 10 }; { X = 5; Y = 6; Z = 11 } ]
+                    Bounds = { MinX = 4; MaxX = 6; MinY = 5; MaxY = 6; MinZ = 10; MaxZ = 11 }
+                    Size = 3UL } ]
+
+            let painted =
+                scalarPlan [ objects ]
+                >=> paintObjectsCropped
+                |> drainList
+
+            try
+                Expect.equal painted.Length 2 "A two-z object should emit two local slices."
+                Expect.equal (painted |> List.map _.index) [ 0; 1 ] "Cropped masks should use local z indices."
+                Expect.equal (painted[0].GetWidth()) 3u "The local mask width should match the object x bounds."
+                Expect.equal (painted[0].GetHeight()) 2u "The local mask height should match the object y bounds."
+                Expect.equal (painted[0][0, 0]) 1uy "The first point should be translated to the local origin."
+                Expect.equal (painted[0][2, 0]) 1uy "The second point should be translated by MinX/MinY."
+                Expect.equal (painted[1][1, 1]) 1uy "The z=11 point should appear in local z=1."
+            finally
+                disposeImages painted
+
         testCase "writeInSlabs creates chunk files and chunk metadata can be read" <| fun _ ->
             let inputDir = tempDirectory "chunks-input"
             let chunkDir = tempDirectory "chunks-output"
