@@ -1248,9 +1248,9 @@ module BuiltInCatalog =
         { Id = "ComponentTranslationTable"
           DisplayName = "componentTranslationTable"
           Category = "Binary Morphology"
-          Summary = "Reduce connected-component label slabs plus object counts to a chunk translation table."
-          Description = ""
-          Aliases = [ "connected"; "components"; "translation"; "table"; "reducer"; "labels" ]
+          Summary = "Reduce connected-component label slabs to a translation table with streaming component statistics."
+          Description = "Consumes connected-component label slabs and their local object counts. It records label equivalences across slab boundaries, accumulates per-slab voxel counts and bounding boxes on the fly, then reduces both the label mapping and statistics to the final whole-stack component labels. The resulting table can be used by collapseComponentLabels and also contains global component statistics."
+          Aliases = [ "connected"; "components"; "translation"; "table"; "statistics"; "stats"; "reducer"; "labels" ]
           Inputs = [ makePort "Labels + count" connectedComponentLabels ]
           Outputs = [ makePort "TranslationTable" translationTable ]
           Parameters = [ makeParameter "windowSize" "Window size" "3" (BasicType.Numeric UInt32) ] }
@@ -1266,40 +1266,6 @@ module BuiltInCatalog =
           Parameters =
               [ makeParameter "windowSize" "Window size" "3" (BasicType.Numeric UInt32)
                 makeParameter "translationTable" "Translation table" "" BasicType.String ] }
-
-        { Id = "LabelShapeStatistics"
-          DisplayName = "labelShapeStatistics"
-          Category = "Segmentation"
-          Summary = "Measure object geometry in a labeled image."
-          Description = labelAnalysisDescription
-          Aliases = [ "label"; "statistics"; "shape"; "objects"; "measure" ]
-          Inputs = [ makePort "Labels" imageAny ]
-          Outputs = [ makePort "Shape statistics" (Custom "LabelShapeStatistics") ]
-          Parameters =
-              [ makeParameter "type" "Type" "UInt64" BasicType.String
-                makeParameter "windowSize" "Window size" "8" (BasicType.Numeric UInt32) ] }
-
-        { Id = "LabelIntensityStatistics"
-          DisplayName = "labelIntensityStatistics"
-          Category = "Segmentation"
-          Summary = "Measure intensities inside labeled regions."
-          Description = labelAnalysisDescription
-          Aliases = [ "label"; "statistics"; "intensity"; "objects"; "measure" ]
-          Inputs = [ makePort "Labels" imageAny; makePort "Intensity" imageAny ]
-          Outputs = [ makePort "Intensity statistics" (Custom "LabelIntensityStatistics") ]
-          Parameters =
-              [ makeParameter "labelType" "Label type" "UInt64" BasicType.String
-                makeParameter "intensityType" "Intensity type" "Float64" BasicType.String ] }
-
-        { Id = "LabelOverlapMeasures"
-          DisplayName = "labelOverlapMeasures"
-          Category = "Segmentation"
-          Summary = "Compare overlap between two labeled images."
-          Description = labelAnalysisDescription
-          Aliases = [ "label"; "statistics"; "overlap"; "dice"; "jaccard"; "measure" ]
-          Inputs = [ makePort "Source" imageAny; makePort "Target" imageAny ]
-          Outputs = [ makePort "Overlap measures" (Custom "LabelOverlapMeasures") ]
-          Parameters = [ makeParameter "type" "Type" "UInt64" BasicType.String ] }
 
         { Id = "LabelContour"
           DisplayName = "labelContour"

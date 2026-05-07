@@ -780,7 +780,7 @@ let generatorSuite =
             Expect.stringContains code ">>=> greaterEqual<float>" "Image comparison should lower to the selected typed pair stage."
             Expect.stringContains code ">>=> mask<float> 0.0" "Mask should lower to the typed image-mask pair stage."
 
-        testCase "morphology and label analysis additions lower to StackProcessing stages" <| fun _ ->
+        testCase "morphology and streaming label additions lower to StackProcessing stages" <| fun _ ->
             let read =
                 node "read" "Read"
                     [ p "availableMemory" "1024" false
@@ -796,21 +796,15 @@ let generatorSuite =
                 node "contour" "BinaryContour"
                     [ p "fullyConnected" "true" false
                       p "windowSize" "3" false ]
-            let labelStats =
-                node "stats" "LabelShapeStatistics"
-                    [ p "type" "UInt64" false
-                      p "windowSize" "8" false ]
             let code =
                 graph
-                    [ read; gray; contour; labelStats ]
+                    [ read; gray; contour ]
                     [ edge "read" "output" 0 "gray" "input" 0
-                      edge "gray" "output" 0 "contour" "input" 0
-                      edge "contour" "output" 0 "stats" "input" 0 ]
+                      edge "gray" "output" 0 "contour" "input" 0 ]
                 |> PipelineCodeGenerator.generateSavedGraph
 
             Expect.stringContains code ">=> grayscaleErode<float> 2u 5u" "Grayscale morphology should lower with type, radius, and window size."
             Expect.stringContains code ">=> binaryContour true 3u" "Binary contour should lower with connectivity and window size."
-            Expect.stringContains code ">=> labelShapeStatistics<uint64> 8u" "Label shape statistics should lower with type and window size."
 
         testCase "connected component pair stream writes chunk labels through teeFst before reducing" <| fun _ ->
             let read =

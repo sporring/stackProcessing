@@ -664,9 +664,16 @@ let stackProcessingSupportSuite =
                     >=> makeConnectedComponentTranslationTable 2u
                     |> drain
 
-                Expect.isNonEmpty table "Connected component translation table should contain label mappings."
+                Expect.isNonEmpty table.Labels "Connected component translation table should contain label mappings."
+                Expect.isNonEmpty table.Statistics "Connected component translation table should include streaming component statistics."
                 Expect.isTrue (File.Exists(Path.Combine(labelDir, "image_000.mha"))) "writeSlabSlices should write label slices from the tuple stream."
-                Expect.isTrue (table |> List.exists (fun (_, sourceLabel, targetLabel) -> sourceLabel <> 0UL && targetLabel <> 0UL)) "The table should contain foreground label mappings."
+                Expect.isTrue (table.Labels |> List.exists (fun (_, sourceLabel, targetLabel) -> sourceLabel <> 0UL && targetLabel <> 0UL)) "The table should contain foreground label mappings."
+                Expect.isTrue (table.Statistics |> List.forall (fun stats -> stats.Label <> 0UL && stats.NumberOfPixels > 0UL)) "Statistics should be reduced to non-background global labels."
+                let expectedForeground =
+                    slices
+                    |> List.sumBy (Image.fold (fun count value -> if value = 0uy then count else count + 1UL) 0UL)
+                let actualForeground = table.Statistics |> List.sumBy _.NumberOfPixels
+                Expect.equal actualForeground expectedForeground "Streaming component statistics should account for every foreground voxel exactly once."
             finally
                 disposeImages slices
                 deleteDirectory inputDir

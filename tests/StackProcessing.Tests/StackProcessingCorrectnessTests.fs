@@ -69,6 +69,19 @@ let private makeBinaryVolume side =
         if dx * dx + dy * dy + dz * dz < (side / 4) * (side / 4) then 255uy else 0uy)
     |> Image<uint8>.ofArray3D
 
+let private makeSeparatedBinaryComponentsVolume () =
+    Array3D.init 8 8 8 (fun x y z ->
+        let crossingSlabComponent =
+            x >= 1 && x <= 2 &&
+            y >= 1 && y <= 2 &&
+            z >= 1 && z <= 4
+        let laterComponent =
+            x >= 5 && x <= 6 &&
+            y >= 5 && y <= 6 &&
+            z >= 6 && z <= 7
+        if crossingSlabComponent || laterComponent then 255uy else 0uy)
+    |> Image<uint8>.ofArray3D
+
 let private makeAveragingKernel () =
     Array3D.create 3 3 3 (single (1.0 / 27.0))
     |> Image<float32>.ofArray3D
@@ -257,6 +270,42 @@ let private compareStats tolerance (expected: ImageStats) (actual: ImageStats) =
     expectClose "maximum" actual.Max expected.Max
     expectClose "sum" actual.Sum expected.Sum
     expectClose "variance" actual.Var expected.Var
+
+let private compareComponentStatistics tolerance (expected: ImageFunctions.LabelShapeStatistics list) (actual: ComponentStatistics list) =
+    let expected =
+        expected
+        |> List.map (fun stats ->
+            let boundingBox = stats.BoundingBox
+            let minX = boundingBox[0]
+            let minY = boundingBox[1]
+            let minZ = boundingBox[2]
+            let maxX = minX + boundingBox[3] - 1u
+            let maxY = minY + boundingBox[4] - 1u
+            let maxZ = minZ + boundingBox[5] - 1u
+            stats.NumberOfPixels, stats.Centroid, (minX, maxX, minY, maxY, minZ, maxZ))
+        |> List.sortBy (fun (_, centroid, _) -> centroid)
+
+    let actual =
+        actual
+        |> List.map (fun stats ->
+            let centroid =
+                let n = float stats.NumberOfPixels
+                [ float stats.SumX / n
+                  float stats.SumY / n
+                  float stats.SumZ / n ]
+            stats.NumberOfPixels, centroid, (stats.MinX, stats.MaxX, stats.MinY, stats.MaxY, stats.MinZ, stats.MaxZ))
+        |> List.sortBy (fun (_, centroid, _) -> centroid)
+
+    Expect.equal actual.Length expected.Length "Streaming and direct connected-component statistics should find the same number of components."
+
+    List.zip expected actual
+    |> List.iteri (fun index ((expectedPixels, expectedCentroid, expectedBounds), (actualPixels, actualCentroid, actualBounds)) ->
+        Expect.equal actualPixels expectedPixels $"Component {index} should have the same voxel count."
+        Expect.equal actualBounds expectedBounds $"Component {index} should have the same bounding box."
+        List.zip expectedCentroid actualCentroid
+        |> List.iteri (fun axis (expectedValue, actualValue) ->
+            let diff = Math.Abs(expectedValue - actualValue)
+            Expect.isLessThan diff tolerance $"Component {index} centroid axis {axis} should match direct 3D SimpleITK statistics. Actual: {actualValue}; expected: {expectedValue}; difference: {diff}; tolerance: {tolerance}."))
 
 let private expectoTestCase = testCase
 
@@ -705,6 +754,35 @@ let stackProcessingCorrectnessSuite =
                     actual.Tail |> List.iter (fun (image, _) -> image.decRefCount())
             finally
                 labelsOpt |> Option.iter (fun image -> image.decRefCount())
+                volume.decRefCount()
+                if Directory.Exists inputDir then Directory.Delete(inputDir, true)
+
+        testCase "streamed connected component statistics match direct 3D SimpleITK label shape statistics" <| fun _ ->
+            let inputDir = tempDirectory "connected-component-stats-input"
+            let suffix = ".tiff"
+            let volume = makeSeparatedBinaryComponentsVolume ()
+            let mutable expectedLabelsOpt : Image<uint64> option = None
+
+            try
+                writeVolumeAsSlices inputDir suffix volume
+
+                let actual =
+                    source (2UL * 1024UL * 1024UL * 1024UL)
+                    |> read<uint8> inputDir suffix
+                    >=> connectedComponents 3u
+                    >=> makeConnectedComponentTranslationTable 3u
+                    |> drain
+
+                let expectedLabels = (ImageFunctions.connectedComponents volume).Labels
+                expectedLabelsOpt <- Some expectedLabels
+                let expected =
+                    ImageFunctions.labelShapeStatistics expectedLabels
+                    |> Map.toList
+                    |> List.map snd
+
+                compareComponentStatistics 1.0e-6 expected actual.Statistics
+            finally
+                expectedLabelsOpt |> Option.iter (fun image -> image.decRefCount())
                 volume.decRefCount()
                 if Directory.Exists inputDir then Directory.Delete(inputDir, true)
 
