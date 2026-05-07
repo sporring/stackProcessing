@@ -56,11 +56,92 @@ module BuiltInCatalog =
   let private pointSetDescription =
       "Reads and writes coordinate point sets as clean CSV. The header is x,y,z,scale,response. x, y, and z are image coordinates; scale and response are optional when reading and are written as floating-point values. This format is intentionally simple so point detections can be exchanged with Python, R, spreadsheets, and visualization tools without custom parsers."
 
+  let private scalarDescription =
+      "Creates a named scalar value that can be connected to parameter inputs on other boxes.\n\nUse it for thresholds, scale factors, file names, booleans, or other values that should be visible in the graph instead of typed directly into a parameter field.\n\nFor numeric types, the names pi and e are accepted and compile to the standard mathematical constants. For strings, pi and e remain ordinary text."
+
+  let private fileDirectoryDescription =
+      "Prompts for a file or directory when the graph is run.\n\nUse this when the path should be chosen interactively instead of saved as fixed text in the graph. The selected path is emitted as a string and can be linked to read, write, or metadata boxes.\n\nIf the picker is cancelled, the run is stopped before processing starts."
+
+  let private scalarArithmeticDescription =
+      "Combines two scalar values with a simple arithmetic operation.\n\nThe result is another scalar that can be used as a parameter elsewhere in the graph. This is useful for derived constants, such as converting a measured range into a scale factor or combining quantile outputs.\n\nBoth inputs are ordinary parameters unless linked from another scalar-producing box."
+
+  let private scalarFunctionDescription =
+      "Applies one standard mathematical function to a scalar value.\n\nExamples include sqrt, abs, log, exp, sin, cos, and square. Use this when a parameter should be derived from another scalar rather than typed by hand.\n\nThe output is a Float64 scalar and can be linked to numeric parameter fields."
+
+  let private castDescription =
+      "Converts every image slice from one numeric pixel type to another.\n\nUse cast before writing to formats that only support certain pixel types, or before filters that expect a particular type. Values are converted using the normal SimpleITK cast behavior, so converting from floating point to integer can round or truncate and may lose precision.\n\nThe image size and slice order are unchanged."
+
+  let private zeroDescription =
+      "Creates a synthetic stack filled with zero-valued pixels.\n\nThis is useful for testing, for generating blank masks, or for building small example graphs without reading files. Width and height define each 2D slice, and depth defines the number of slices in the stack.\n\nChoose the output type to match the filters or writer that follow."
+
+  let private euler2DDescription =
+      "Creates a synthetic stack by transforming a simple seed image through a sequence of 2D Euler transforms.\n\nIt is mainly a demonstration and testing source for registration, resampling, and motion-like examples. The generated stack contains a box-like object whose position changes according to the selected transform pattern.\n\nUse read boxes for real experimental data."
+
+  let private scalarImageOperationDescription =
+      "Applies an arithmetic operation between every image pixel and one scalar value.\n\nI op a means the image value is on the left, for example I - a or I / a. a op I means the scalar is on the left, for example a - I or a / I.\n\nUse these boxes for offsets, gains, ratios, and simple intensity formulas where the same scalar is applied to the whole stack."
+
+  let private pairImageOperationDescription =
+      "Combines two synchronized image streams pixel by pixel.\n\nBoth inputs should have the same selected numeric type and compatible image geometry. The operation can add, subtract, multiply, divide, take a pixelwise maximum, or take a pixelwise minimum.\n\nUse this for image arithmetic such as ratios, differences, masks represented as 0/1 images, or combining two processed versions of the same stack."
+
+  let private normalNoiseDescription =
+      "Adds normally distributed random noise to each image slice.\n\nThe mean parameter controls the average added value, and std controls the noise spread. This is mainly useful for simulations, robustness tests, and example graphs.\n\nFor integer images, remember that the result is converted back to the selected pixel type, so values may be clipped or rounded by the image representation."
+
+  let private tapDescription =
+      "Prints each value that passes through the box and then forwards it unchanged.\n\nUse tap while debugging a graph to check that a branch is producing values at the expected point. The label parameter is printed together with the value, which makes several taps easier to tell apart.\n\nFor large image streams, prefer using tap sparingly because printing every element can slow a run."
+
+  let private printDescription =
+      "Prints scalar values from the generated program.\n\nUse the format text to decide how the values appear; placeholders such as {input1} are replaced by linked inputs. This is useful for reporting computed statistics, thresholds, quantiles, or file information at the end of a run.\n\nIt is intended for scalar summaries, not for printing image pixels."
+
+  let private histogramDescription =
+      "Computes an intensity histogram from the image stream and immediately shows it as a chart.\n\nThe x-axis is the pixel value or histogram bin key, and the y-axis is the number of pixels observed. Use this to inspect intensity distributions before choosing thresholds, stretches, or quantiles.\n\nFor very large or continuous-valued images, consider sampling first so the chart stays readable."
+
+  let private histogramDataDescription =
+      "Computes an intensity histogram and emits it as data instead of displaying it directly.\n\nThis is the preferred input to quantiles, otsuThresholdFromHistogram, and momentsThresholdFromHistogram. The histogram is reduced over the whole connected stream, so the output is available after the histogram branch has been drained.\n\nUse readRandom or readRange upstream when an estimated histogram is enough."
+
+  let private chartDescription =
+      "Displays map-like data as a Plotly chart.\n\nUse it with histogramData, object-size histograms, or other key/value summaries. The kind parameter selects the visual style, such as column, scatter, line, area, pie, or doughnut.\n\nChart is a visualization sink: it helps inspect results and does not produce image data for later boxes."
+
+  let private showImageDescription =
+      "Shows each incoming image slice as a heatmap.\n\nThis is useful for quick visual inspection of small or sampled stacks. For large stacks, display can be slower than the processing itself, so use it on short ranges or diagnostic branches.\n\nFor final output, use write instead."
+
+  let private unaryImageFunctionDescription =
+      "Applies one standard mathematical function independently to every pixel.\n\nExamples include sqrt, abs, log, exp, sin, cos, and square. The image geometry and slice order are unchanged, only the pixel values are transformed.\n\nUse this for simple intensity formulas that do not depend on neighboring pixels."
+
+  let private gaussianDescription =
+      "Smooths an image with a Gaussian-shaped neighborhood.\n\nSigma controls the blur width: larger sigma removes larger-scale noise and softens edges more strongly. Boundary and output-region settings control how pixels near the edge of the available volume are treated.\n\nUse Gaussian smoothing before derivatives, feature detection, or thresholding when small noise should be suppressed."
+
+  let private convolveDescription =
+      "Applies a user-specified convolution kernel to the image stack.\n\nThe kernel defines how neighboring pixels are weighted and summed, so this box can implement smoothing, sharpening, derivatives, or custom local filters. Output region controls whether edge pixels are preserved or trimmed, and boundary controls how missing neighborhood values are handled.\n\nFor most users, discreteGaussian or finiteDiff are easier starting points."
+
+  let private convGaussDescription =
+      "Applies Gaussian convolution with a compact convenience interface.\n\nSigma controls how far the smoothing reaches. This is useful for denoising before thresholding, derivatives, keypoint detection, or other measurements that should be less sensitive to pixel noise.\n\nIf edge behavior or output size matters, use the more explicit discreteGaussian or convolve boxes."
+
+  let private finiteDiffDescription =
+      "Computes finite-difference derivative-like responses.\n\nUse it to emphasize changes along selected axes, such as edges, ridges, or directional gradients. Sigma controls smoothing before the derivative, while axis1 and axis2 select the derivative directions.\n\nThe result is an intensity image that often needs scaling, thresholding, or visualization before interpretation."
+
   let private dogKeypointsDescription =
       "Detects local Difference-of-Gaussian extrema in streaming z-windows. Each window builds a small 3D Gaussian scale space, subtracts adjacent scales, and emits points that are strict local maxima or minima in x, y, z, and scale. Only the center stride slices of each window are emitted, while the z padding covers the largest Gaussian support and the one-slice extrema neighborhood.\n\nThis is a detector only, not a complete SIFT descriptor implementation. Coordinates are reported in pixel units and z uses the source slice index. Increase scale levels or sigma for larger features; increase contrast threshold to suppress weak/noisy extrema."
 
   let private streamedObjectsDescription =
       "Streams completed connected objects from a binary mask. Each input slice is inspected for non-zero foreground pixels, object fronts touching the advancing z-boundary are carried forward, and objects are emitted once the next slice proves they cannot continue. Six-connectivity uses face contacts only; TwentySix-connectivity also allows diagonal contacts. paintObjects converts the emitted integer positions back into UInt8 mask slices with value 1 at object pixels and 0 elsewhere."
+
+  let private thresholdDescription =
+      "Turns a numeric image into a UInt8 binary mask.\n\nPixels between lower and upper, including the limits, become foreground; pixels outside the range become background. Use infinity as the upper limit when you want a simple lower-threshold operation.\n\nThresholds can be typed directly or linked from computeStats, quantiles, otsuThresholdFromHistogram, or momentsThresholdFromHistogram."
+
+  let private binaryShapeDescription =
+      "Changes the shape of a UInt8 binary mask using a local neighborhood.\n\nErode removes foreground pixels near object boundaries and can break thin connections. Dilate expands foreground regions and can close small gaps. Opening is erosion followed by dilation and tends to remove small bright objects. Closing is dilation followed by erosion and tends to fill small dark gaps.\n\nThe radius controls the neighborhood size."
+
+  let private connectedComponentsDescription =
+      "Labels connected foreground regions in a binary mask.\n\nThe output image stores an integer label for each component, with background left as zero. The count output reports how many local components were found before any later global relabeling.\n\nUse componentTranslationTable and collapseComponentLabels when labels need to be made consistent across streamed slabs."
+
+  let private relabelComponentsDescription =
+      "Renumbers connected-component labels and removes components below a chosen size.\n\nThis is used after connectedComponents when small labeled objects should be discarded and the remaining labels should be compacted. The minimum object size is measured in voxels.\n\nFor direct cleanup of binary masks, removeSmallObjects is usually the simpler box."
+
+  let private collapseLabelsDescription =
+      "Applies a connected-component translation table to a labeled image stream.\n\nUse it after componentTranslationTable to turn slab-local labels into consistent whole-stack labels. Background remains zero, while labels that belong to the same physical object are mapped to the same final value.\n\nThis is part of the connected-component workflow for larger-than-memory stacks."
+
+  let private permuteAxesDescription =
+      "Reorders the x, y, and z axes of a stack.\n\nUse this when detector data or intermediate results need a different orientation, for example turning z into x or swapping x and y. Axis permutation can require chunked access because changing the z-axis changes which pixels belong to each output slice.\n\nTile size controls the working block size used during the transpose."
 
   let private intensityDescription =
       "Intensity filters change the numeric values of each pixel without changing the stack geometry. They are slice-local and therefore fit the streaming model naturally. Clamp limits values to a range. ShiftScale applies (input + shift) * scale. Intensity stretch maps a selected input range linearly to a selected output range."
@@ -73,6 +154,9 @@ module BuiltInCatalog =
 
   let private quantilesDescription =
       "Estimates quantile values from a histogram map. q1 is always emitted. q2, q3, q4, and q5 are optional output slots controlled by the corresponding enabled parameters. Each q value must be between 0 and 1. The result is based on the cumulative histogram counts, so accuracy depends on the histogram key resolution."
+
+  let private computeStatsDescription =
+      "Computes whole-stream summary statistics for an image stack.\n\nThe outputs include pixel count, mean, standard deviation, minimum, maximum, sum, and sum of squares. Use these values to choose thresholds, normalize intensities, or report basic measurements.\n\nBecause the result summarizes the input stream, it is usually used on a separate branch before a second processing pass that applies the chosen parameters."
 
   let private localDenoiseDescription =
       "These denoising filters are local-neighborhood operations rather than global iterative solvers. Median uses a radius in x, y, and z and is streamed through windows large enough to cover the z-neighborhood. Bilateral is edge-preserving and can be slower; use the window size to give the z-neighborhood enough context. No recursive Gaussian, curvature-flow, or anisotropic-diffusion filters are included here because their iteration/global-dependency structure is less friendly to LMIP streaming."
@@ -87,7 +171,7 @@ module BuiltInCatalog =
       "Grayscale morphology applies min/max-style neighborhood operations to intensity images rather than binary masks. Erode darkens or shrinks bright structures; dilate brightens or expands them. Opening removes small bright structures, closing fills small dark gaps, white top-hat extracts bright details smaller than the structuring element, black top-hat extracts dark details, and morphological gradient emphasizes local contrast boundaries. These are local filters and are streamed through z-windows large enough to cover the selected radius."
 
   let private binaryMorphologyDescription =
-      "Binary morphology operates on UInt8 masks where non-zero pixels are treated as foreground. The reconstruction variants preserve connected mask structure while removing or filling features selected by a marker or structuring element. Fully connected controls whether diagonal neighbors count as connected. Window size should be at least 2 * radius + 1 for radius-based operations so the z-neighborhood is available while streaming."
+      "Binary morphology operates on UInt8 masks where non-zero pixels are treated as foreground.\n\nUse these boxes to clean masks, adjust object boundaries, extract contours, and remove or fill small connected regions. Radius-based operations use a local neighborhood, while removeSmallObjects and fillSmallHoles make decisions from connected component size.\n\nChoose connectivity carefully: Six uses face contact, while TwentySix also treats diagonal contact as connected."
 
   let private labelAnalysisDescription =
       "Label analysis stages inspect labeled images rather than changing intensities. Label shape statistics measure object geometry, label intensity statistics measure intensity values inside labeled regions, overlap measures compare two label images, label contour extracts object boundaries, and changeLabel remaps one label value to another. Statistics stages emit scalar/map-like data and are usually terminal or diagnostic parts of a graph."
@@ -120,7 +204,7 @@ module BuiltInCatalog =
       DisplayName = "a"
       Category = "Sources / Sinks"
       Summary = "Bind a scalar value for graph parameters."
-      Description = ""
+      Description = scalarDescription
       Aliases = [ "value"; "parameter"; "constant"; "let"; "UInt8"; "Float64"; "String"; "Bool" ]
       Inputs = []
       Outputs = [ makePort "Value" (Scalar(Numeric Float64)) ]
@@ -133,7 +217,7 @@ module BuiltInCatalog =
       DisplayName = "file/directory"
       Category = "Sources / Sinks"
       Summary = "Ask for a file or directory when the graph is run and emit its path as a string."
-      Description = "When Run is pressed, Studio highlights each File/Directory box and opens the corresponding picker. Run stops if the user cancels one of the prompts."
+      Description = fileDirectoryDescription
       Aliases = [ "file"; "directory"; "folder"; "path"; "input"; "output"; "String" ]
       Inputs = []
       Outputs = [ makePort "Value" (Scalar BasicType.String) ]
@@ -146,7 +230,7 @@ module BuiltInCatalog =
       DisplayName = "a op b"
       Category = "Arithmetic"
       Summary = "Combine two scalar values with an arithmetic operation."
-      Description = ""
+      Description = scalarArithmeticDescription
       Aliases = [ "scalar"; "arithmetic"; "add"; "subtract"; "multiply"; "divide"; "+"; "-"; "*"; "/" ]
       Inputs = []
       Outputs = [ makePort "Float64" (Scalar(BasicType.Numeric Float64)) ]
@@ -161,7 +245,7 @@ module BuiltInCatalog =
       DisplayName = "f(a)"
       Category = "Arithmetic"
       Summary = "Apply a standard F# function to a scalar value."
-      Description = ""
+      Description = scalarFunctionDescription
       Aliases = [ "scalar"; "function"; "unary"; "abs"; "acos"; "asin"; "atan"; "cos"; "sin"; "tan"; "exp"; "log10"; "log"; "round"; "sqrt"; "square"; "arithmetic" ]
       Inputs = []
       Outputs = [ makePort "Float64" (Scalar(BasicType.Numeric Float64)) ]
@@ -277,7 +361,7 @@ module BuiltInCatalog =
       DisplayName = "cast"
       Category = "Type conversions"
       Summary = "Convert stream element type."
-      Description = ""
+      Description = castDescription
       Aliases = [ "convert"; "uint8"; "float"; "type"; "UInt8"; "Float64" ]
       Inputs = [ makePort "Float64" imageFloat64 ]
       Outputs = [ makePort "Float64" imageFloat64 ]
@@ -290,7 +374,7 @@ module BuiltInCatalog =
       DisplayName = "zero"
       Category = "Sources / Sinks"
       Summary = "Create a zero-valued synthetic stack."
-      Description = ""
+      Description = zeroDescription
       Aliases = [ "empty"; "synthetic"; "source"; "UInt8"; "Float64"; "type" ]
       Inputs = []
       Outputs = [ makePort "Float64" imageFloat64 ]
@@ -306,7 +390,7 @@ module BuiltInCatalog =
       DisplayName = "createByEuler2DTransform"
       Category = "Sources / Sinks"
       Summary = "Create a synthetic stack by applying an Euler 2D transform to a seed image."
-      Description = ""
+      Description = euler2DDescription
       Aliases = [ "synthetic"; "source"; "euler"; "transform"; "rotation"; "UInt8"; "Float64"; "type" ]
       Inputs = []
       Outputs = [ makePort "Float64" imageFloat64 ]
@@ -324,7 +408,7 @@ module BuiltInCatalog =
       DisplayName = displayName
       Category = "Arithmetic"
       Summary = description
-      Description = ""
+      Description = scalarImageOperationDescription
       Aliases = aliases @ [ "scalar"; "arithmetic"; "UInt8"; "Float64"; "type" ]
       Inputs = [ makePort "Float64" imageFloat64 ]
       Outputs = [ makePort "Float64" imageFloat64 ]
@@ -338,7 +422,7 @@ module BuiltInCatalog =
       DisplayName = "addNormalNoise"
       Category = "Statistics"
       Summary = "Add normally distributed noise to each image."
-      Description = ""
+      Description = normalNoiseDescription
       Aliases = [ "noise"; "random"; "normal"; "statistics"; "UInt8"; "Float64"; "type" ]
       Inputs = [ makePort "Float64" imageFloat64 ]
       Outputs = [ makePort "Float64" imageFloat64 ]
@@ -352,7 +436,7 @@ module BuiltInCatalog =
       DisplayName = displayName
       Category = "Arithmetic"
       Summary = description
-      Description = ""
+      Description = pairImageOperationDescription
       Aliases = aliases @ [ "pair"; "zip"; "UInt8"; "Float64"; "type" ]
       Inputs = [ makePort "I: Float64" imageFloat64; makePort "J: Float64" imageFloat64 ]
       Outputs = [ makePort "Float64" imageFloat64 ]
@@ -399,7 +483,7 @@ module BuiltInCatalog =
           DisplayName = "computeStats"
           Category = "Statistics"
           Summary = "Reduce an image stream to aggregate image statistics."
-          Description = ""
+          Description = computeStatsDescription
           Aliases = [ "statistics"; "stats"; "mean"; "std"; "min"; "max"; "reducer" ]
           Inputs = [ makePort "Number" imageAny ]
           Outputs =
@@ -618,7 +702,7 @@ module BuiltInCatalog =
           DisplayName = "tap"
           Category = "Debug"
           Summary = "Print each streamed value and pass it through unchanged."
-          Description = ""
+          Description = tapDescription
           Aliases = [ "debug"; "trace"; "log"; "inspect" ]
           Inputs = [ makePort "Any" any ]
           Outputs = [ makePort "Any" any ]
@@ -628,7 +712,7 @@ module BuiltInCatalog =
           DisplayName = "print"
           Category = "Visualization"
           Summary = "Print one or more scalar values in the generated program."
-          Description = ""
+          Description = printDescription
           Aliases = [ "debug"; "trace"; "log"; "sink"; "inspect"; "printfn" ]
           Inputs = []
           Outputs = []
@@ -647,7 +731,7 @@ module BuiltInCatalog =
           DisplayName = "histogram"
           Category = "Visualization"
           Summary = "Compute and show an image histogram."
-          Description = ""
+          Description = histogramDescription
           Aliases = [ "plot"; "chart"; "histogram"; "visualize"; "show" ]
           Inputs = [ makePort "Number" imageAny ]
           Outputs = []
@@ -657,7 +741,7 @@ module BuiltInCatalog =
           DisplayName = "histogramData"
           Category = "Visualization"
           Summary = "Reduce an image stream to histogram points that can be printed or plotted."
-          Description = ""
+          Description = histogramDataDescription
           Aliases = [ "plot"; "chart"; "histogram"; "points"; "reducer" ]
           Inputs = [ makePort "Number" imageAny ]
           Outputs = [ makePort "Map" (Scalar BasicType.Map) ]
@@ -692,7 +776,7 @@ module BuiltInCatalog =
           DisplayName = "chart"
           Category = "Visualization"
           Summary = "Render map-like x/y or key/value data as a Plotly.NET chart."
-          Description = ""
+          Description = chartDescription
           Aliases = [ "plot"; "chart"; "histogram"; "visualize"; "show"; "scatter"; "line"; "bar"; "column"; "area"; "pie"; "doughnut" ]
           Inputs = []
           Outputs = []
@@ -704,7 +788,7 @@ module BuiltInCatalog =
           DisplayName = "showImage"
           Category = "Visualization"
           Summary = "Show each image as a heatmap."
-          Description = ""
+          Description = showImageDescription
           Aliases = [ "plot"; "image"; "heatmap"; "visualize"; "show" ]
           Inputs = [ makePort "Number" imageAny ]
           Outputs = []
@@ -714,7 +798,7 @@ module BuiltInCatalog =
           DisplayName = "f(I)"
           Category = "Arithmetic"
           Summary = "Apply a standard unary function to each pixel."
-          Description = ""
+          Description = unaryImageFunctionDescription
           Aliases = [ "function"; "unary"; "abs"; "acos"; "asin"; "atan"; "cos"; "sin"; "tan"; "exp"; "log10"; "log"; "round"; "sqrt"; "square"; "arithmetic" ]
           Inputs = [ makePort "Number" imageAny ]
           Outputs = [ makePort "Number" imageAny ]
@@ -746,7 +830,7 @@ module BuiltInCatalog =
           DisplayName = "discreteGaussian"
           Category = "Filters"
           Summary = "Apply a Gaussian smoothing filter."
-          Description = ""
+          Description = gaussianDescription
           Aliases = [ "gaussian"; "smooth"; "blur"; "filter" ]
           Inputs = [ makePort "Float64" imageFloat64 ]
           Outputs = [ makePort "Float64" imageFloat64 ]
@@ -760,7 +844,7 @@ module BuiltInCatalog =
           DisplayName = "convolve"
           Category = "Filters"
           Summary = "Convolve an image stream with a kernel image."
-          Description = "Applies the StackProcessing convolve stage. Kernel is a raw F# expression that evaluates to an Image of the same pixel type as the input stream. Output region and Boundary accept the ImageFunctions union case names exposed by the DSL."
+          Description = convolveDescription
           Aliases = [ "convolution"; "kernel"; "filter"; "same"; "valid"; "boundary" ]
           Inputs = [ makePort "Image" imageAny ]
           Outputs = [ makePort "Image" imageAny ]
@@ -774,7 +858,7 @@ module BuiltInCatalog =
           DisplayName = "convGauss"
           Category = "Filters"
           Summary = "Apply Gaussian convolution."
-          Description = ""
+          Description = convGaussDescription
           Aliases = [ "gaussian"; "smooth"; "blur"; "filter" ]
           Inputs = [ makePort "Float64" imageFloat64 ]
           Outputs = [ makePort "Float64" imageFloat64 ]
@@ -784,7 +868,7 @@ module BuiltInCatalog =
           DisplayName = "finiteDiff"
           Category = "Filters"
           Summary = "Apply finite difference derivative filters."
-          Description = ""
+          Description = finiteDiffDescription
           Aliases = [ "derivative"; "difference"; "filter" ]
           Inputs = [ makePort "Float64" imageFloat64 ]
           Outputs = [ makePort "Float64" imageFloat64 ]
@@ -1119,7 +1203,7 @@ module BuiltInCatalog =
           DisplayName = "threshold"
           Category = "Segmentation"
           Summary = "Threshold an image into a binary UInt8 image."
-          Description = ""
+          Description = thresholdDescription
           Aliases = [ "binary"; "mask"; "segment"; "UInt8"; "Float64"; "type" ]
           Inputs = [ makePort "Float64" imageFloat64 ]
           Outputs = [ makePort "UInt8" imageUInt8 ]
@@ -1132,7 +1216,7 @@ module BuiltInCatalog =
           DisplayName = "erode"
           Category = "Binary Morphology"
           Summary = "Erode a binary UInt8 image."
-          Description = ""
+          Description = binaryShapeDescription
           Aliases = [ "morphology"; "binary"; "mask" ]
           Inputs = [ makePort "UInt8" imageUInt8 ]
           Outputs = [ makePort "UInt8" imageUInt8 ]
@@ -1142,7 +1226,7 @@ module BuiltInCatalog =
           DisplayName = "dilate"
           Category = "Binary Morphology"
           Summary = "Dilate a binary UInt8 image."
-          Description = ""
+          Description = binaryShapeDescription
           Aliases = [ "morphology"; "binary"; "mask" ]
           Inputs = [ makePort "UInt8" imageUInt8 ]
           Outputs = [ makePort "UInt8" imageUInt8 ]
@@ -1152,7 +1236,7 @@ module BuiltInCatalog =
           DisplayName = "opening"
           Category = "Binary Morphology"
           Summary = "Apply morphological opening to a binary UInt8 image."
-          Description = ""
+          Description = binaryShapeDescription
           Aliases = [ "morphology"; "binary"; "mask" ]
           Inputs = [ makePort "UInt8" imageUInt8 ]
           Outputs = [ makePort "UInt8" imageUInt8 ]
@@ -1162,7 +1246,7 @@ module BuiltInCatalog =
           DisplayName = "closing"
           Category = "Binary Morphology"
           Summary = "Apply morphological closing to a binary UInt8 image."
-          Description = ""
+          Description = binaryShapeDescription
           Aliases = [ "morphology"; "binary"; "mask" ]
           Inputs = [ makePort "UInt8" imageUInt8 ]
           Outputs = [ makePort "UInt8" imageUInt8 ]
@@ -1172,7 +1256,7 @@ module BuiltInCatalog =
           DisplayName = "connectedComponents"
           Category = "Binary Morphology"
           Summary = "Label connected binary components."
-          Description = ""
+          Description = connectedComponentsDescription
           Aliases = [ "components"; "labels"; "segmentation" ]
           Inputs = [ makePort "UInt8" imageUInt8 ]
           Outputs = [ makePort "Labels + count" connectedComponentLabels ]
@@ -1215,7 +1299,7 @@ module BuiltInCatalog =
           DisplayName = "relabelComponents"
           Category = "Binary Morphology"
           Summary = "Relabel connected-component labels and remove small components."
-          Description = ""
+          Description = relabelComponentsDescription
           Aliases = [ "components"; "labels"; "relabel"; "size"; "filter" ]
           Inputs = [ makePort "UInt64" imageUInt64 ]
           Outputs = [ makePort "UInt64" imageUInt64 ]
@@ -1302,7 +1386,7 @@ module BuiltInCatalog =
           DisplayName = "collapseComponentLabels"
           Category = "Binary Morphology"
           Summary = "Collapse chunk-local component labels using a translation table."
-          Description = ""
+          Description = collapseLabelsDescription
           Aliases = [ "connected"; "components"; "translation"; "table"; "update"; "labels" ]
           Inputs = [ makePort "UInt64" imageUInt64 ]
           Outputs = [ makePort "UInt64" imageUInt64 ]
@@ -1340,7 +1424,7 @@ module BuiltInCatalog =
           DisplayName = "permuteAxes"
           Category = "Geometry"
           Summary = "Transpose stack axes."
-          Description = ""
+          Description = permuteAxesDescription
           Aliases = [ "transpose"; "axes"; "permute" ]
           Inputs = [ makePort "Number" imageAny ]
           Outputs = [ makePort "Number" imageAny ]
