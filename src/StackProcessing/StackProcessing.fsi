@@ -139,6 +139,15 @@ val readRandom<'T when 'T: equality> :
      SlimPipeline.Plan<unit,unit> -> SlimPipeline.Plan<unit,StackCore.Image<'T>>)
     when 'T: equality
 
+val readRange<'T when 'T: equality> :
+  (string ->
+     int ->
+     string ->
+     string ->
+     string ->
+     SlimPipeline.Plan<unit,unit> -> SlimPipeline.Plan<unit,StackCore.Image<'T>>)
+    when 'T: equality
+
 val getChunkInfo: (string -> string -> StackIO.ChunkInfo)
 
 val getZarrInfo: (string -> int -> int -> StackIO.ChunkInfo)
@@ -669,8 +678,22 @@ val discreteGaussian:
 val convGauss:
   (float -> StackCore.Stage<StackCore.Image<float>,StackCore.Image<float>>)
 
-val createPadding:
-  ('a -> uint -> StackCore.Stage<unit,StackCore.Image<'b>>) when 'b: equality
+val createPadding<'T when 'T: equality> :
+  (uint ->
+     uint ->
+     uint ->
+     uint ->
+     uint ->
+     uint -> double -> StackCore.Stage<StackCore.Image<'T>,StackCore.Image<'T>>)
+    when 'T: equality
+
+val crop<'T when 'T: equality> :
+  (uint ->
+     uint ->
+     uint ->
+     uint ->
+     uint32 -> uint -> StackCore.Stage<StackCore.Image<'T>,StackCore.Image<'T>>)
+    when 'T: equality
 
 val convolve:
   (StackCore.Image<'a> ->

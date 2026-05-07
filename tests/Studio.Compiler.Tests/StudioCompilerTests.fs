@@ -76,6 +76,28 @@ let generatorSuite =
             Expect.stringContains code "|> readSlab<uint8> \"chunks\" \".mha\"" "ReadSlab should generate the slab reader."
             Expect.stringContains code ">=> writeInSlabs \"chunks-out\" \".mha\" 12u 13u 14u" "WriteInSlabs should generate the slab writer wrapper."
 
+        testCase "readRange box lowers to ranged DSL source" <| fun _ ->
+            let read =
+                node "read" "ReadRange"
+                    [ p "availableMemory" "1073741824" false
+                      p "type" "UInt16" false
+                      p "first" "1" false
+                      p "step" "2" false
+                      p "last" "end-1" false
+                      p "input" "input" false
+                      p "suffix" ".tif" false ]
+
+            let write =
+                node "write" "Write"
+                    [ p "output" "output" false
+                      p "suffix" ".tiff" false ]
+
+            let code =
+                graph [ read; write ] [ edge "read" "output" 0 "write" "input" 0 ]
+                |> PipelineCodeGenerator.generateSavedGraph
+
+            Expect.stringContains code "|> readRange<uint16> \"1\" 2 \"end-1\" \"input\" \".tif\"" "ReadRange should generate a typed clamped range reader."
+
         testCase "zarr boxes lower to zarr DSL functions" <| fun _ ->
             let info =
                 node "info" "GetZarrInfo"
@@ -230,6 +252,50 @@ let generatorSuite =
 
             Expect.stringContains code "|> resize<float32> 20u 21u 22u \"NearestNeighbor\"" "Resize should generate the explicit-size resampler."
             Expect.stringContains code "|> resample<float32> 0.5 2.0 1.5 \"Linear\"" "Resample should generate the factor resampler."
+
+        testCase "padding and crop boxes lower to streaming geometry DSL functions" <| fun _ ->
+            let read =
+                node "read" "Read"
+                    [ p "availableMemory" "1073741824" false
+                      p "type" "UInt8" false
+                      p "input" "input" false
+                      p "suffix" ".tiff" false ]
+
+            let padding =
+                node "pad" "CreatePadding"
+                    [ p "type" "UInt8" false
+                      p "beforeX" "1" false
+                      p "afterX" "2" false
+                      p "beforeY" "3" false
+                      p "afterY" "4" false
+                      p "beforeZ" "5" false
+                      p "afterZ" "6" false
+                      p "value" "7.0" false ]
+
+            let crop =
+                node "crop" "Crop"
+                    [ p "type" "UInt8" false
+                      p "beforeX" "1" false
+                      p "afterX" "1" false
+                      p "beforeY" "2" false
+                      p "afterY" "2" false
+                      p "beforeZ" "3" false
+                      p "afterZ" "3" false ]
+
+            let write =
+                node "write" "Write"
+                    [ p "output" "output" false
+                      p "suffix" ".tiff" false ]
+
+            let code =
+                graph [ read; padding; crop; write ]
+                    [ edge "read" "output" 0 "pad" "input" 0
+                      edge "pad" "output" 0 "crop" "input" 0
+                      edge "crop" "output" 0 "write" "input" 0 ]
+                |> PipelineCodeGenerator.generateSavedGraph
+
+            Expect.stringContains code ">=> createPadding<uint8> 1u 2u 3u 4u 5u 6u 7.0" "CreatePadding should generate a typed six-side padding stage."
+            Expect.stringContains code ">=> crop<uint8> 1u 1u 2u 2u 3u 3u" "Crop should generate a typed six-side crop stage."
 
         testCase "linked string scalar is emitted before read and used unquoted" <| fun _ ->
             let scalar =

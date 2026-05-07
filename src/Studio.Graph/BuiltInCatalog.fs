@@ -191,6 +191,24 @@ module BuiltInCatalog =
             makeParameter "input" "Input" "input" BasicType.String
             suffixParameter ".tiff" ] }
 
+  let makeGenericReadRange () =
+    { Id = "ReadRange"
+      DisplayName = "readRange"
+      Category = "Sources / Sinks"
+      Summary = "Read a clamped range of stack files."
+      Description = "Reads a regular subset of a stack as first, first+step, first+2*step and so on, stopping at or before last. Indices are zero-based. First and last are clamped to the available stack range, and last accepts Matlab-like notation: end is the final image, end-1 is the second-to-last image, and so on. Step must be non-zero; use a negative step to read backwards."
+      Aliases = [ "range"; "subset"; "input"; "end"; "matlab"; "tiff"; "file"; "UInt8"; "Float64"; "type" ]
+      Inputs = []
+      Outputs = [ makePort "Float64" imageFloat64 ]
+      Parameters =
+          [ availableMemoryParameter
+            makeParameter "type" "Type" "Float64" BasicType.String
+            makeParameter "first" "First" "0" BasicType.String
+            makeParameter "step" "Step" "1" (BasicType.Numeric Int32)
+            makeParameter "last" "Last" "end" BasicType.String
+            makeParameter "input" "Input" "input" BasicType.String
+            suffixParameter ".tiff" ] }
+
   let makeGenericReadSlab () =
     { Id = "ReadSlab"
       DisplayName = "readSlab"
@@ -343,6 +361,8 @@ module BuiltInCatalog =
         makeGenericRead()
 
         makeGenericReadRandom()
+
+        makeGenericReadRange()
 
         makeGenericReadSlab()
 
@@ -770,6 +790,41 @@ module BuiltInCatalog =
                 makeParameter "inputMaximum" "Input maximum" "1.0" (BasicType.Numeric Float64)
                 makeParameter "outputMinimum" "Output minimum" "0.0" (BasicType.Numeric Float64)
                 makeParameter "outputMaximum" "Output maximum" "1.0" (BasicType.Numeric Float64) ] }
+
+        { Id = "CreatePadding"
+          DisplayName = "createPadding"
+          Category = "Geometry"
+          Summary = "Pad an image volume on all six sides."
+          Description = "Pads the x and y sides of each 2D slice with SimpleITK's constant padding filter, and pads the z direction by streaming generated constant slices before and after the input stream. The six side parameters are before/after x, before/after y, and before/after z. Padding in z increases the stream length, while x/y padding increases each slice size. The padding value is converted to the selected image type."
+          Aliases = [ "padding"; "pad"; "constant"; "border"; "geometry"; "x"; "y"; "z" ]
+          Inputs = [ makePort "Number" imageAny ]
+          Outputs = [ makePort "Number" imageAny ]
+          Parameters =
+              [ makeParameter "type" "Type" "Float64" BasicType.String
+                makeParameter "beforeX" "Before X" "0" (BasicType.Numeric UInt32)
+                makeParameter "afterX" "After X" "0" (BasicType.Numeric UInt32)
+                makeParameter "beforeY" "Before Y" "0" (BasicType.Numeric UInt32)
+                makeParameter "afterY" "After Y" "0" (BasicType.Numeric UInt32)
+                makeParameter "beforeZ" "Before Z" "0" (BasicType.Numeric UInt32)
+                makeParameter "afterZ" "After Z" "0" (BasicType.Numeric UInt32)
+                makeParameter "value" "Value" "0.0" (BasicType.Numeric Float64) ] }
+
+        { Id = "Crop"
+          DisplayName = "crop"
+          Category = "Geometry"
+          Summary = "Crop an image volume on all six sides."
+          Description = "Removes pixels from the x and y sides of every slice with SimpleITK's crop filter, and removes slices from the beginning and end of the z stream. Cropping before z skips and releases those incoming slices immediately. Cropping after z buffers only the requested trailing count, so the pipeline can truncate once the last needed streaming element has passed."
+          Aliases = [ "crop"; "trim"; "remove"; "border"; "geometry"; "x"; "y"; "z" ]
+          Inputs = [ makePort "Number" imageAny ]
+          Outputs = [ makePort "Number" imageAny ]
+          Parameters =
+              [ makeParameter "type" "Type" "Float64" BasicType.String
+                makeParameter "beforeX" "Before X" "0" (BasicType.Numeric UInt32)
+                makeParameter "afterX" "After X" "0" (BasicType.Numeric UInt32)
+                makeParameter "beforeY" "Before Y" "0" (BasicType.Numeric UInt32)
+                makeParameter "afterY" "After Y" "0" (BasicType.Numeric UInt32)
+                makeParameter "beforeZ" "Before Z" "0" (BasicType.Numeric UInt32)
+                makeParameter "afterZ" "After Z" "0" (BasicType.Numeric UInt32) ] }
 
         { Id = "Median"
           DisplayName = "median"

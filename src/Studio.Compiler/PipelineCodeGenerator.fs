@@ -711,6 +711,15 @@ module PipelineCodeGenerator =
             let input = quotedParameter "input"
             let suffix = quotedParameter "suffix"
             $"|> readRandom<{pixelType}> {depth} {input} {suffix}" |> sourcePrefix availableMemory
+        | "ReadRange" ->
+            let availableMemory = parameterValue "availableMemory"
+            let pixelType = pixelTypeNameFromParameter "type" "Float64" node
+            let first = quotedParameter "first"
+            let step = parameterValue "step"
+            let last = quotedParameter "last"
+            let input = quotedParameter "input"
+            let suffix = quotedParameter "suffix"
+            $"|> readRange<{pixelType}> {first} {step} {last} {input} {suffix}" |> sourcePrefix availableMemory
         | "ReadSlab" ->
             let availableMemory = parameterValue "availableMemory"
             let pixelType = pixelTypeNameFromParameter "type" "Float64" node
@@ -932,6 +941,25 @@ module PipelineCodeGenerator =
             let outputMinimum = parameterValue "outputMinimum"
             let outputMaximum = parameterValue "outputMaximum"
             $">=> intensityStretch<{pixelType}> {inputMinimum} {inputMaximum} {outputMinimum} {outputMaximum}"
+        | "CreatePadding" ->
+            let pixelType = pixelTypeNameFromParameter "type" "Float64" node
+            let beforeX = parameterValue "beforeX"
+            let afterX = parameterValue "afterX"
+            let beforeY = parameterValue "beforeY"
+            let afterY = parameterValue "afterY"
+            let beforeZ = parameterValue "beforeZ"
+            let afterZ = parameterValue "afterZ"
+            let value = parameterValue "value"
+            $">=> createPadding<{pixelType}> {beforeX} {afterX} {beforeY} {afterY} {beforeZ} {afterZ} {value}"
+        | "Crop" ->
+            let pixelType = pixelTypeNameFromParameter "type" "Float64" node
+            let beforeX = parameterValue "beforeX"
+            let afterX = parameterValue "afterX"
+            let beforeY = parameterValue "beforeY"
+            let afterY = parameterValue "afterY"
+            let beforeZ = parameterValue "beforeZ"
+            let afterZ = parameterValue "afterZ"
+            $">=> crop<{pixelType}> {beforeX} {afterX} {beforeY} {afterY} {beforeZ} {afterZ}"
         | "Median" ->
             let pixelType = pixelTypeNameFromParameter "type" "Float64" node
             let radius = parameterValue "radius"

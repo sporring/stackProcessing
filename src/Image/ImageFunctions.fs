@@ -130,6 +130,15 @@ let constantPad2D<'T when 'T : equality> (padLower : uint list) (padUpper : uint
     let padded = filter.Execute(img.toSimpleITK())
     Image<'T>.ofSimpleITK(padded,"constantPad2D",img.index)
 
+let crop2D<'T when 'T : equality> (cropLower : uint list) (cropUpper : uint list) (img : Image<'T>) : Image<'T> =
+    if cropLower.Length <> 2 || cropUpper.Length <> 2 then
+        invalidArg "cropLower/cropUpper" "Both bounds must have length 2 for a 2-D image."
+    use filter = new itk.simple.CropImageFilter()
+    filter.SetLowerBoundaryCropSize(cropLower |> toVectorUInt32)
+    filter.SetUpperBoundaryCropSize(cropUpper |> toVectorUInt32)
+    let cropped = filter.Execute(img.toSimpleITK())
+    Image<'T>.ofSimpleITK(cropped,"crop2D",img.index)
+
 
 // ----- basic mathematical helper functions -----
 let inline makeUnaryImageOperatorWith

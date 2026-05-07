@@ -344,6 +344,79 @@ let read<'T when 'T: equality> (inputDir: string) (suffix: string) (pl: Plan<uni
 let readRandom<'T when 'T: equality> (count: uint) (inputDir: string) (suffix: string) (pl: Plan<unit, unit>) : Plan<unit, Image<'T>> =
     readFiltered<'T> inputDir suffix (Array.randomChoices (int count)) pl
 
+let private parseRangeEndpoint (depth: int) (name: string) (value: string) =
+    if depth <= 0 then
+        0
+    else
+        let trimmed = value.Trim().ToLowerInvariant().Replace(" ", "")
+        let lastIndex = depth - 1
+        let parsed =
+            if trimmed = "end" then
+                lastIndex
+            elif trimmed.StartsWith("end-") then
+                match Int32.TryParse(trimmed.Substring(4)) with
+                | true, offset -> lastIndex - offset
+                | false, _ -> invalidArg name $"Could not parse range endpoint '{value}'. Use an integer, end, or end-n."
+            elif trimmed.StartsWith("end+") then
+                match Int32.TryParse(trimmed.Substring(4)) with
+                | true, offset -> lastIndex + offset
+                | false, _ -> invalidArg name $"Could not parse range endpoint '{value}'. Use an integer, end, or end-n."
+            else
+                match Int32.TryParse(trimmed) with
+                | true, index -> index
+                | false, _ -> invalidArg name $"Could not parse range endpoint '{value}'. Use an integer, end, or end-n."
+        min lastIndex (max 0 parsed)
+
+let private rangeFilter first step last files =
+    if step = 0 then
+        invalidArg "step" "readRange step must be non-zero."
+    let sorted = Array.sort files
+    let depth = sorted.Length
+    if depth = 0 then
+        [||]
+    else
+        let startIndex = parseRangeEndpoint depth "first" first
+        let lastIndex = parseRangeEndpoint depth "last" last
+        if step > 0 && startIndex > lastIndex then
+            [||]
+        elif step < 0 && startIndex < lastIndex then
+            [||]
+        else
+            [| for index in startIndex .. step .. lastIndex -> sorted[index] |]
+
+let readRange<'T when 'T: equality> (first: string) (step: int) (last: string) (inputDir: string) (suffix: string) (pl: Plan<unit, unit>) : Plan<unit, Image<'T>> =
+    let info = getStackInfo inputDir suffix
+    let width = uint info.size[0]
+    let height = uint info.size[1]
+    let selectedDepth =
+        getStackFiles inputDir suffix
+        |> rangeFilter first step last
+        |> Array.length
+        |> uint64
+    let elementBytes = Image<'T>.memoryEstimate width height
+    let sourcePeek =
+        SourcePeek.create
+            "readRange"
+            elementBytes
+            (Some selectedDepth)
+            (Map.ofList
+                [ "kind", "image-stack"
+                  "inputDir", inputDir
+                  "suffix", suffix
+                  "width", string width
+                  "height", string height
+                  "depth", string selectedDepth
+                  "sourceDepth", string info.size[2]
+                  "pixelType", typeof<'T>.Name
+                  "first", first
+                  "step", string step
+                  "last", last ])
+
+    pl
+    |> getFilenames inputDir suffix (rangeFilter first step last)
+    >=> readFilesWithShape<'T> pl.debug width height
+    |> Plan.withSourcePeek sourcePeek
+
 let getChunkInfo (inputDir: string) (suffix: string) : ChunkInfo =
     let (|IJK|_|) (s: string) =
         let rx = Regex(@"chunk(\d+)_(\d+)_(\d+)(.*)$", RegexOptions.Compiled)

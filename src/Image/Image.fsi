@@ -305,6 +305,10 @@ val constantPad2D:
   padLower: uint list ->
     padUpper: uint list -> c: double -> img: Image.Image<'T> -> Image.Image<'T>
     when 'T: equality
+val crop2D:
+  cropLower: uint list ->
+    cropUpper: uint list -> img: Image.Image<'T> -> Image.Image<'T>
+    when 'T: equality
 val inline makeUnaryImageOperatorWith:
   name: string ->
     createFilter: (unit -> 'Filter) ->

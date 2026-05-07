@@ -3,6 +3,7 @@ module StackImageFunctions
 open FSharp.Control
 open SlimPipeline // Core processing model
 open System
+open System.Collections.Generic
 open StackCore
 open StackIO
 
@@ -734,12 +735,101 @@ let convGauss sigma = discreteGaussianOp "convGauss" sigma None None None
 //                                          * * *
 //                                            * * *
 
-let createPadding name pad: Stage<unit,Image<'S>>=
+let private constantImageLike<'T when 'T: equality> name index (size: uint list) components value =
+    let image = Image<'T>(size, components, name, index)
+    let filled = Image.map (fun _ -> value) image
+    filled.index <- index
+    image.decRefCount()
+    filled
+
+let private convertPaddingValue<'T> (value: double) : 'T =
+    let t = typeof<'T>
+    if t = typeof<float> then box value :?> 'T
+    elif t = typeof<float32> then box (float32 value) :?> 'T
+    elif t = typeof<uint8> then box (uint8 (max 0.0 (min 255.0 (Math.Round value)))) :?> 'T
+    elif t = typeof<int8> then box (int8 (max -128.0 (min 127.0 (Math.Round value)))) :?> 'T
+    elif t = typeof<uint16> then box (uint16 (max 0.0 (min 65535.0 (Math.Round value)))) :?> 'T
+    elif t = typeof<int16> then box (int16 (max -32768.0 (min 32767.0 (Math.Round value)))) :?> 'T
+    elif t = typeof<uint32> || t = typeof<uint> then box (uint32 (max 0.0 (min (float UInt32.MaxValue) (Math.Round value)))) :?> 'T
+    elif t = typeof<int32> || t = typeof<int> then box (int32 (max (float Int32.MinValue) (min (float Int32.MaxValue) (Math.Round value)))) :?> 'T
+    elif t = typeof<uint64> then box (uint64 (max 0.0 (min (float UInt64.MaxValue) (Math.Round value)))) :?> 'T
+    elif t = typeof<int64> then box (int64 (max (float Int64.MinValue) (min (float Int64.MaxValue) (Math.Round value)))) :?> 'T
+    else failwith $"Padding value conversion is not supported for pixel type {t.Name}."
+
+let createPadding<'T when 'T: equality> beforeX afterX beforeY afterY beforeZ afterZ paddingValue : Stage<Image<'T>, Image<'T>> =
+    let name = "createPadding"
+    let padXY (image: Image<'T>) =
+        try
+            ImageFunctions.constantPad2D [ beforeX; beforeY ] [ afterX; afterY ] paddingValue image
+        finally
+            image.decRefCount()
+
+    let apply (_debug: bool) (input: AsyncSeq<Image<'T>>) =
+        asyncSeq {
+            let! prefixAndRest = input |> AsyncSeq.splitAt 1
+            let firstItems, rest = prefixAndRest
+            match firstItems |> Array.tryHead with
+            | None -> ()
+            | Some first ->
+                let paddingPixel = convertPaddingValue<'T> paddingValue
+                let firstPadded = padXY first
+                let mutable lastSize = firstPadded.GetSize()
+                let mutable lastComponents = firstPadded.GetNumberOfComponentsPerPixel()
+                let mutable nextIndex = firstPadded.index + 1
+
+                for index in 0 .. int beforeZ - 1 do
+                    yield constantImageLike<'T> "padding" (firstPadded.index - int beforeZ + index) lastSize lastComponents paddingPixel
+
+                yield firstPadded
+
+                for image in rest do
+                    let padded = padXY image
+                    lastSize <- padded.GetSize()
+                    lastComponents <- padded.GetNumberOfComponentsPerPixel()
+                    nextIndex <- padded.index + 1
+                    yield padded
+
+                for index in 0 .. int afterZ - 1 do
+                    yield constantImageLike<'T> "padding" (nextIndex + index) lastSize lastComponents paddingPixel
+        }
+
     let transition = ProfileTransition.create Streaming Streaming
-    let memoryNeed nPixels = nPixels*getBytesPerComponent<'S>
-    let elementTransformation = id
-    let zeroMaker i = Image<'S>([0u;0u],1u,"Padding",i)
-    Stage.init "padding" pad zeroMaker transition memoryNeed elementTransformation
+    let memoryNeed nPixels = 2UL * nPixels * getBytesPerComponent<'T>
+    let pipe = { Name = name; Apply = apply; Profile = Streaming }
+    Stage.fromPipe name transition memoryNeed id pipe
+    |> Stage.withSliceCardinality (SlimPipeline.Domain(SlimPipeline.SliceDomain.expand beforeZ afterZ))
+
+let crop<'T when 'T: equality> beforeX afterX beforeY afterY beforeZ afterZ : Stage<Image<'T>, Image<'T>> =
+    let name = "crop"
+    let cropXY (image: Image<'T>) =
+        try
+            ImageFunctions.crop2D [ beforeX; beforeY ] [ afterX; afterY ] image
+        finally
+            image.decRefCount()
+
+    let apply (_debug: bool) (input: AsyncSeq<Image<'T>>) =
+        asyncSeq {
+            let pending = Queue<Image<'T>>()
+            let mutable skipped = 0u
+
+            for image in input do
+                if skipped < beforeZ then
+                    skipped <- skipped + 1u
+                    image.decRefCount()
+                else
+                    pending.Enqueue(cropXY image)
+                    if pending.Count > int afterZ then
+                        yield pending.Dequeue()
+
+            while pending.Count > 0 do
+                pending.Dequeue().decRefCount()
+        }
+
+    let transition = ProfileTransition.create Streaming Streaming
+    let memoryNeed nPixels = nPixels * getBytesPerComponent<'T>
+    let pipe = { Name = name; Apply = apply; Profile = Streaming }
+    Stage.fromPipe name transition memoryNeed id pipe
+    |> Stage.withSliceCardinality (SlimPipeline.Domain(SlimPipeline.SliceDomain.trim beforeZ afterZ))
 
 let convolveOp (name: string) (kernel: Image<'T>) (outputRegionMode: ImageFunctions.OutputRegionMode option) (bc: ImageFunctions.BoundaryCondition option) (winSz: uint option) : Stage<Image<'T>, Image<'T>> =
     let windowFromKernel (k: Image<'T>) : uint =
