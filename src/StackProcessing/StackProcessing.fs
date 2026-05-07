@@ -41,6 +41,9 @@ type FileInfo = ImageFunctions.FileInfo
 type ChunkInfo = StackIO.ChunkInfo
 type CoordinatePoint = StackPoints.CoordinatePoint
 type PointSetChunk = StackPoints.PointSetChunk
+type Affine = TinyLinAlg.Affine
+type AffineRegistrationOptions = StackRegistration.AffineRegistrationOptions
+type AffineRegistrationResult = StackRegistration.AffineRegistrationResult
 type Point3D = StackMesh.Point3D
 type Triangle = StackMesh.Triangle
 type MeshChunk = StackMesh.MeshChunk
@@ -78,6 +81,13 @@ let writeNexus = StackIO.writeNexus
 let writeInSlabs = StackIO.writeInSlabs
 let writePointSet = StackPoints.writePointSet
 let writeMesh = StackMesh.writeMesh
+
+// //////////////////// StackRegistration
+let defaultAffineRegistrationOptions = StackRegistration.defaultAffineRegistrationOptions
+let earthMoversDistance = StackRegistration.earthMoversDistance
+let transformPointSet = StackRegistration.transformPointSet
+let inverseAffine = StackRegistration.inverseAffine
+let affineRegistration = StackRegistration.affineRegistration
 
 // //////////////////// StackAffineResampler
 let resampleAffineTrilinearSlices = StackAffineResampler.resampleAffineTrilinearSlices

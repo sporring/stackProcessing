@@ -56,6 +56,37 @@ let private image2D f =
 let private expectFloat32Close actual expected message =
     Expect.isLessThan (Math.Abs(float actual - float expected)) 1.0e-5 message
 
+let private point x y z : CoordinatePoint =
+    { X = x; Y = y; Z = z; Scale = Double.NaN; Response = Double.NaN }
+
+let private pointDistance (a: CoordinatePoint) (b: CoordinatePoint) =
+    let dx = a.X - b.X
+    let dy = a.Y - b.Y
+    let dz = a.Z - b.Z
+    Math.Sqrt(dx * dx + dy * dy + dz * dz)
+
+let private permutations values =
+    let rec loop prefix remaining =
+        seq {
+            match remaining with
+            | [] -> yield List.rev prefix
+            | _ ->
+                for index in 0 .. List.length remaining - 1 do
+                    let value = remaining[index]
+                    let rest = remaining |> List.removeAt index
+                    yield! loop (value :: prefix) rest
+        }
+
+    loop [] values
+
+let private bruteForceMatchingDistance fixedPoints movingPoints =
+    permutations movingPoints
+    |> Seq.map (fun candidate ->
+        (fixedPoints, candidate)
+        ||> List.map2 pointDistance
+        |> List.average)
+    |> Seq.min
+
 let private expectoTestCase = testCase
 
 let private testCase name body =
@@ -407,6 +438,85 @@ let stackProcessingSupportSuite =
                 Expect.isTrue (points |> List.exists (fun p -> p.X = 4.0 && p.Y = 4.0 && p.Z = 4.0)) "A centered impulse should produce a keypoint near the impulse coordinate."
             finally
                 disposeImages slices
+
+        testCase "earthMoversDistance agrees with brute-force matching for equal-sized point sets" <| fun _ ->
+            let fixedPoints =
+                [ point 0.0 0.0 0.0
+                  point 0.0 3.0 0.0
+                  point 4.0 0.0 1.0
+                  point 2.0 2.0 2.0 ]
+
+            let movingPoints =
+                [ point 4.2 0.1 1.2
+                  point -0.1 3.3 -0.2
+                  point 2.5 2.1 2.4
+                  point 0.3 -0.2 0.1 ]
+
+            let expected = bruteForceMatchingDistance fixedPoints movingPoints
+            let actual = earthMoversDistance fixedPoints movingPoints
+
+            Expect.floatClose Accuracy.high actual expected "Equal-cardinality EMD should use the optimal point matching."
+
+        testCase "earthMoversDistance transports equal mass when point set sizes differ" <| fun _ ->
+            let fixedPoints = [ point 0.0 0.0 0.0 ]
+            let movingPoints = [ point 0.0 0.0 0.0; point 10.0 0.0 0.0 ]
+
+            Expect.floatClose Accuracy.high (earthMoversDistance fixedPoints movingPoints) 5.0 "One fixed point should receive half the moving mass from each moving point."
+
+        testCase "inverseAffine round-trips nontrivial affine points" <| fun _ ->
+            let affine: Affine =
+                { A =
+                    { m00 = 1.2; m01 = 0.1; m02 = -0.05
+                      m10 = -0.2; m11 = 0.9; m12 = 0.15
+                      m20 = 0.05; m21 = -0.1; m22 = 1.1 }
+                  T = TinyLinAlg.v3 2.0 -3.0 0.5
+                  C = TinyLinAlg.v3 1.0 2.0 -1.0 }
+
+            let original: PointSetChunk =
+                { Points = [ point 4.0 -2.0 3.0; point -1.0 5.0 2.5 ] }
+            let roundTripped =
+                original
+                |> transformPointSet affine
+                |> transformPointSet (inverseAffine affine)
+
+            Expect.isLessThan (earthMoversDistance original.Points roundTripped.Points) 1.0e-10 "inverseAffine should invert affinePoint for resampler-style backward transforms."
+
+        testCase "affine registration aligns translated point sets and exposes resampler-compatible inverse" <| fun _ ->
+            let moving =
+                [ point 0.0 0.0 0.0
+                  point 1.0 0.0 0.0
+                  point 0.0 1.0 0.0
+                  point 0.0 0.0 1.0 ]
+
+            let fixedPoints =
+                moving
+                |> List.map (fun p -> point (p.X + 2.0) (p.Y - 1.0) (p.Z + 0.5))
+
+            let shuffledFixed =
+                [ fixedPoints[2]; fixedPoints[0]; fixedPoints[3]; fixedPoints[1] ]
+
+            let emd = earthMoversDistance fixedPoints shuffledFixed
+            Expect.floatClose Accuracy.high emd 0.0 "EMD should match equal point sets independent of order."
+
+            let result =
+                affineRegistration
+                    { defaultAffineRegistrationOptions with MaxIterations = 5 }
+                    fixedPoints
+                    moving
+
+            Expect.isLessThan result.Distance 1.0e-8 "The optimizer should find the centroid translation immediately for a pure translation."
+
+            let transformedMoving =
+                transformPointSet result.Transform { Points = moving }
+                |> _.Points
+
+            Expect.isLessThan (earthMoversDistance fixedPoints transformedMoving) 1.0e-8 "The forward registration transform should map moving points to fixed points."
+
+            let fixedAsMovingCoordinates =
+                transformPointSet result.InverseTransform { Points = fixedPoints }
+                |> _.Points
+
+            Expect.isLessThan (earthMoversDistance moving fixedAsMovingCoordinates) 1.0e-8 "The inverse transform should map fixed-grid coordinates back to moving coordinates for StackAffineResampler."
 
         testCase "writeInSlabs creates chunk files and chunk metadata can be read" <| fun _ ->
             let inputDir = tempDirectory "chunks-input"
