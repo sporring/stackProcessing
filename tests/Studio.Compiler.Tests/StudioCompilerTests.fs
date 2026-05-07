@@ -325,6 +325,49 @@ let generatorSuite =
             Expect.stringContains code ">=> writeMesh \"surface.obj\" \"auto\"" "WriteMesh should generate the mesh writer."
             Expect.stringContains code "|> sink" "Terminal WriteMesh should run the mesh writer."
 
+        testCase "dogKeypoints and point-set IO boxes lower to CSV point-set DSL functions" <| fun _ ->
+            let read =
+                node "read" "Read"
+                    [ p "availableMemory" "1073741824" false
+                      p "type" "Float64" false
+                      p "input" "input" false
+                      p "suffix" ".tiff" false ]
+
+            let dog =
+                node "dog" "DogKeypoints"
+                    [ p "type" "Float64" false
+                      p "sigma0" "0.5" false
+                      p "scaleFactor" "1.2" false
+                      p "scaleLevels" "4" false
+                      p "contrastThreshold" "0.001" false
+                      p "stride" "3" false ]
+
+            let write =
+                node "writePoints" "WritePointSet"
+                    [ p "output" "points.csv" false ]
+
+            let code =
+                graph [ read; dog; write ]
+                    [ edge "read" "output" 0 "dog" "input" 0
+                      edge "dog" "output" 0 "writePoints" "input" 0 ]
+                |> PipelineCodeGenerator.generateSavedGraph
+
+            Expect.stringContains code ">=> dogKeypoints<float> 0.5 1.2 4u 0.001 3u" "DogKeypoints should generate a typed point detector."
+            Expect.stringContains code ">=> writePointSet \"points.csv\"" "WritePointSet should generate the CSV point writer."
+            Expect.stringContains code "|> sink" "Terminal WritePointSet should run the point writer."
+
+            let readPoints =
+                node "readPoints" "ReadPointSet"
+                    [ p "availableMemory" "1024" false
+                      p "input" "points.csv" false ]
+
+            let readPointCode =
+                graph [ readPoints ] []
+                |> PipelineCodeGenerator.generateSavedGraph
+
+            Expect.stringContains readPointCode "source 1024UL" "ReadPointSet should include a source."
+            Expect.stringContains readPointCode "|> readPointSet \"points.csv\"" "ReadPointSet should generate the CSV point reader."
+
         testCase "linked string scalar is emitted before read and used unquoted" <| fun _ ->
             let scalar =
                 node "scalar" "Scalar"

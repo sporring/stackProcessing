@@ -637,6 +637,7 @@ module private HighValueFilterNode =
           "OtsuThreshold"
           "MomentsThreshold"
           "MarchingCubes"
+          "DogKeypoints"
           "LabelContour"
           "ChangeLabel" ]
         |> Set.ofList

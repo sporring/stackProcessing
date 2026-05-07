@@ -740,6 +740,10 @@ module PipelineCodeGenerator =
             let yAxis = parameterValue "yAxis"
             let xAxis = parameterValue "xAxis"
             $"|> readNexusSlab<{pixelType}> {input} {datasetPath} {slabDepth} {frameAxis} {yAxis} {xAxis}" |> sourcePrefix availableMemory
+        | "ReadPointSet" ->
+            let availableMemory = parameterValue "availableMemory"
+            let input = quotedParameter "input"
+            $"|> readPointSet {input}" |> sourcePrefix availableMemory
         | "Read" ->
             let availableMemory = parameterValue "availableMemory"
             let pixelType = pixelTypeNameFromParameter "type" "Float64" node
@@ -783,6 +787,9 @@ module PipelineCodeGenerator =
             let output = quotedParameter "output"
             let format = quotedParameter "format"
             $">=> writeMesh {output} {format}"
+        | "WritePointSet" ->
+            let output = quotedParameter "output"
+            $">=> writePointSet {output}"
         | "WriteNexus" ->
             let output = quotedParameter "output"
             let datasetPath = quotedParameter "datasetPath"
@@ -1095,6 +1102,14 @@ module PipelineCodeGenerator =
             let pixelType = pixelTypeNameFromParameter "type" "Float64" node
             let surfaceValue = parameterValue "surfaceValue"
             $">=> marchingCubes<{pixelType}> {surfaceValue}"
+        | "DogKeypoints" ->
+            let pixelType = pixelTypeNameFromParameter "type" "Float64" node
+            let sigma0 = parameterValue "sigma0"
+            let scaleFactor = parameterValue "scaleFactor"
+            let scaleLevels = parameterValue "scaleLevels"
+            let contrastThreshold = parameterValue "contrastThreshold"
+            let stride = parameterValue "stride"
+            $">=> dogKeypoints<{pixelType}> {sigma0} {scaleFactor} {scaleLevels} {contrastThreshold} {stride}"
         | "Watershed" ->
             let level = parameterValue "level"
             let windowSize = parameterValue "windowSize"
@@ -1439,6 +1454,7 @@ module PipelineCodeGenerator =
                 | "WriteInSlabs"
                 | "WriteZarr"
                 | "WriteMesh"
+                | "WritePointSet"
                 | "WriteNexus"
                 | "Histogram"
                 | "ShowImage" ->

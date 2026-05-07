@@ -39,6 +39,8 @@ let idStage<'T> = StackCore.idStage<'T>
 // //////////////////// StackIO
 type FileInfo = ImageFunctions.FileInfo
 type ChunkInfo = StackIO.ChunkInfo
+type CoordinatePoint = StackPoints.CoordinatePoint
+type PointSetChunk = StackPoints.PointSetChunk
 type Point3D = StackMesh.Point3D
 type Triangle = StackMesh.Triangle
 type MeshChunk = StackMesh.MeshChunk
@@ -67,12 +69,14 @@ let readZarrSlabStacked<'T when 'T: equality> = StackIO.readZarrSlabStacked<'T>
 let readZarrSlab<'T when 'T: equality> = StackIO.readZarrSlab<'T>
 let readNexusSlabStacked<'T when 'T: equality> = StackIO.readNexusSlabStacked<'T>
 let readNexusSlab<'T when 'T: equality> = StackIO.readNexusSlab<'T>
+let readPointSet = StackPoints.readPointSet
 
 let deleteIfExists = StackIO.deleteIfExists
 let write = StackIO.write
 let writeZarr = StackIO.writeZarr
 let writeNexus = StackIO.writeNexus
 let writeInSlabs = StackIO.writeInSlabs
+let writePointSet = StackPoints.writePointSet
 let writeMesh = StackMesh.writeMesh
 
 // //////////////////// StackAffineResampler
@@ -152,6 +156,7 @@ let mask<'T when 'T: equality> = StackImageFunctions.mask<'T>
 let labelContour<'T when 'T: equality> = StackImageFunctions.labelContour<'T>
 let changeLabel<'T when 'T: equality> = StackImageFunctions.changeLabel<'T>
 let marchingCubes<'T when 'T: equality> = StackMesh.marchingCubes<'T>
+let dogKeypoints<'T when 'T: equality> = StackPoints.dogKeypoints<'T>
 let resize<'T when 'T: equality> = StackImageFunctions.resize<'T>
 let resample<'T when 'T: equality> = StackImageFunctions.resample<'T>
 let imageHistogram = StackImageFunctions.imageHistogram
