@@ -24,6 +24,29 @@ source availableMemory
 Nothing runs while the pipeline is being built. Execution starts only when
 `sink`, `drain`, or another terminal operation is called.
 
+## Installation
+
+StackProcessing is a .NET 10 F# solution. Install the .NET 10 SDK, clone the
+repository, and run Studio from the `src/Studio` project:
+
+```bash
+git clone https://github.com/sporring/stackProcessing.git
+cd stackProcessing
+dotnet build StackProcessing.sln
+dotnet run --project src/Studio/Studio.fsproj
+```
+
+The samples are ordinary F# console projects. For example:
+
+```bash
+cd samples/copy
+dotnet run -- 18
+dotnet run -- -d 1 18
+```
+
+The optional `-d` flag enables debug output. Levels `1`, `2`, and `3` add
+increasingly detailed execution information.
+
 ## Projects
 
 | Project | Role |
