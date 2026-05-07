@@ -648,6 +648,64 @@ let stackProcessingSupportSuite =
             finally
                 disposeImages slices
 
+        testCase "removeSmallObjects removes completed small foreground components" <| fun _ ->
+            let slices =
+                [ for z in 0 .. 4 ->
+                    let image =
+                        Array2D.init 7 7 (fun x y ->
+                            let smallObject = x = 1 && y = 1 && (z = 1 || z = 2)
+                            let largeObject = x = 4 && y = 4 && z >= 1 && z <= 3
+                            if smallObject || largeObject then 1uy else 0uy)
+                        |> Image<uint8>.ofArray2D
+                    image.index <- z
+                    image ]
+            let mutable cleaned: Image<uint8> list = []
+
+            try
+                cleaned <-
+                    imagePlan slices
+                    >=> removeSmallObjects 2UL ObjectConnectivity.Six
+                    |> drainList
+
+                let z1 = cleaned |> List.find (fun image -> image.index = 1)
+                let z2 = cleaned |> List.find (fun image -> image.index = 2)
+                let z3 = cleaned |> List.find (fun image -> image.index = 3)
+
+                Expect.equal z1[1, 1] 0uy "The two-voxel object should be removed from its first slice."
+                Expect.equal z2[1, 1] 0uy "The two-voxel object should be removed from its second slice."
+                Expect.equal z1[4, 4] 1uy "The larger object should be preserved."
+                Expect.equal z2[4, 4] 1uy "The larger object should be preserved through the middle slice."
+                Expect.equal z3[4, 4] 1uy "The larger object should be preserved at completion."
+            finally
+                disposeImages cleaned
+                disposeImages slices
+
+        testCase "fillSmallHoles fills enclosed small background components and preserves exterior background" <| fun _ ->
+            let slices =
+                [ for z in 0 .. 4 ->
+                    let image =
+                        Array2D.init 7 7 (fun x y ->
+                            let exteriorBackground = x = 0
+                            let enclosedHole = x = 3 && y = 3 && z = 2
+                            if exteriorBackground || enclosedHole then 0uy else 1uy)
+                        |> Image<uint8>.ofArray2D
+                    image.index <- z
+                    image ]
+            let mutable filled: Image<uint8> list = []
+
+            try
+                filled <-
+                    imagePlan slices
+                    >=> fillSmallHoles 1UL ObjectConnectivity.Six
+                    |> drainList
+
+                let z2 = filled |> List.find (fun image -> image.index = 2)
+                Expect.equal z2[3, 3] 1uy "The one-voxel enclosed hole should be filled."
+                Expect.equal z2[0, 3] 0uy "Background touching the x-y image border is exterior and should be preserved."
+            finally
+                disposeImages filled
+                disposeImages slices
+
         testCase "paintObjects turns streamed object positions into UInt8 mask slices" <| fun _ ->
             let objects: StreamedObject list =
                 [ { Label = 1UL
@@ -691,6 +749,38 @@ let stackProcessingSupportSuite =
                 Expect.equal (painted[1][1, 1]) 1uy "The z=11 point should appear in local z=1."
             finally
                 disposeImages painted
+
+        testCase "signedDistanceBand emits finite values near boundaries and NaN outside the band" <| fun _ ->
+            let slices =
+                [ for z in 0 .. 4 ->
+                    let image =
+                        Array2D.init 9 9 (fun x y ->
+                            if x >= 3 && x <= 5 && y >= 3 && y <= 5 && z >= 1 && z <= 3 then 1uy else 0uy)
+                        |> Image<uint8>.ofArray2D
+                    image.index <- z
+                    image ]
+            let mutable distances: Image<float> list = []
+
+            try
+                distances <-
+                    imagePlan slices
+                    >=> signedDistanceBand 2u 1u
+                    |> drainList
+
+                let middle = distances |> List.find (fun image -> image.index = 2)
+                Expect.isTrue (Double.IsNaN middle[0, 0]) "Pixels outside the requested band should be NaN."
+                Expect.isFalse (Double.IsNaN middle[3, 3]) "Object boundary pixels should be finite."
+                let finiteValues =
+                    middle.toArray2D()
+                    |> Seq.cast<float>
+                    |> Seq.filter (Double.IsNaN >> not)
+                    |> Seq.toList
+
+                Expect.isNonEmpty finiteValues "The finite band should contain measurable distances."
+                Expect.isTrue (finiteValues |> List.exists (fun value -> Math.Abs value > 0.0)) "The finite band should include non-zero distances away from the boundary."
+            finally
+                disposeImages distances
+                disposeImages slices
 
         testCase "measureObjects derives per-object measurements and reducers summarize sizes" <| fun _ ->
             let firstBatch: StreamedObject list =
@@ -952,6 +1042,8 @@ let stackProcessingSupportSuite =
                 Expect.equal (resampled[0].GetSize()) [ 2u; 4u ] "resample should scale the x-y slice size by the x/y factors."
                 let first = resampled[0].toArray2D()
                 expectFloat32Close first[0, 0] 0.0f "resample should keep the first input coordinate anchored at output 0,0,0."
+                let halfwayZ = resampled[1].toArray2D()
+                expectFloat32Close halfwayZ[0, 0] 50.0f "Linear z resampling should interpolate midway between the first two input slices."
             finally
                 disposeImages resampled
                 disposeImages slices
@@ -1006,6 +1098,17 @@ let stackProcessingSupportSuite =
             finally
                 disposeImages slices
                 deleteDirectory inputDir
+
+        testCase "histogram threshold estimators return scalar thresholds for the standard threshold stage" <| fun _ ->
+            let histogram = Map.ofList [ 0.0f, 4UL; 10.0f, 4UL ]
+
+            let otsu = otsuThresholdFromHistogram histogram
+            let moments = momentsThresholdFromHistogram histogram
+
+            Expect.isGreaterThan otsu 0.0 "Otsu threshold should lie between the two modes."
+            Expect.isLessThan otsu 10.0 "Otsu threshold should lie between the two modes."
+            Expect.isGreaterThan moments 0.0 "Moments threshold should lie between the two modes."
+            Expect.isLessThan moments 10.0 "Moments threshold should lie between the two modes."
 
         testCase "map2pairs and pair conversions transform histogram data" <| fun _ ->
             let inputDir = tempDirectory "histogram-pairs-input"

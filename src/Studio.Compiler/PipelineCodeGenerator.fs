@@ -214,16 +214,6 @@ module PipelineCodeGenerator =
                 | "xor" | "^" -> "xorMask"
                 | _ -> "andMask"
             Some logic
-        | "Mask" ->
-            let pixelType = pixelTypeNameFromParameter "type" "Float64" node
-            let outsideValue = savedParamValue "outsideValue" node |> numericLiteral Float64
-            Some $"mask<{pixelType}> {outsideValue}"
-        | "BinaryReconstructionByDilation" ->
-            let fullyConnected = savedParamValue "fullyConnected" node
-            Some $"binaryReconstructionByDilation {fullyConnected}"
-        | "BinaryReconstructionByErosion" ->
-            let fullyConnected = savedParamValue "fullyConnected" node
-            Some $"binaryReconstructionByErosion {fullyConnected}"
         | _ -> pairFunctionName node.FunctionId
 
     let private safeIdentifier (value: string) =
@@ -286,6 +276,8 @@ module PipelineCodeGenerator =
     let private scalarTypeName (node: SavedNode) =
         match node.FunctionId with
         | "ScalarFunction" -> "Float64"
+        | "OtsuThresholdFromHistogram"
+        | "MomentsThresholdFromHistogram" -> "Float64"
         | _ -> savedParamValue "type" node
 
     let private scalarParameter key value =
@@ -451,6 +443,21 @@ module PipelineCodeGenerator =
                 match unaryImageFunctionName node with
                 | "square" -> $"({argument} * {argument})"
                 | functionName -> $"({functionName} {argument})"
+            | "OtsuThresholdFromHistogram"
+            | "MomentsThresholdFromHistogram" ->
+                let functionName =
+                    if node.FunctionId = "OtsuThresholdFromHistogram" then
+                        "otsuThresholdFromHistogram"
+                    else
+                        "momentsThresholdFromHistogram"
+
+                let histogram =
+                    node.Parameters
+                    |> Seq.tryFindIndex (fun parameter -> parameter.Key = "histogram")
+                    |> Option.map (fun index -> parameterExpression graph nodesById scalarNamesByNodeId statsNamesByNodeId translationTableNamesByNodeId histogramNamesByNodeId quantileNamesByNodeId stackInfoNamesByNodeId chunkInfoNamesByNodeId node index "histogram")
+                    |> Option.defaultValue { Value = savedParamValue "histogram" node; IsLinked = false }
+
+                $"{functionName} {histogram.Value}"
             | _ ->
                 scalarValueLiteral node
 
@@ -892,7 +899,7 @@ module PipelineCodeGenerator =
         | "Histogram" ->
             ">=> histogram () >=> map2pairs --> pairs2floats --> plot (showChart \"Column\")"
         | "HistogramData" ->
-            ">=> histogram () >=> map2pairs --> pairs2floats"
+            ">=> histogram ()"
         | "Chart" ->
             let values = parameterValue "input"
             let kind = savedParamValue "kind" node
@@ -1029,10 +1036,6 @@ module PipelineCodeGenerator =
             $">>=> {maskLogicStageFunctionName node}"
         | "NotMask" ->
             ">=> notMask"
-        | "Mask" ->
-            let pixelType = pixelTypeNameFromParameter "type" "Float64" node
-            let outsideValue = parameterValue "outsideValue"
-            $">>=> mask<{pixelType}> {outsideValue}"
         | "BinaryFillHoles" ->
             let windowSize = parameterValue "windowSize"
             $">=> binaryFillHoles {windowSize}"
@@ -1044,21 +1047,14 @@ module PipelineCodeGenerator =
             let radius = parameterValue "radius"
             let windowSize = parameterValue "windowSize"
             $">=> binaryMedian {radius} {windowSize}"
-        | "BinaryOpeningByReconstruction" ->
-            let radius = parameterValue "radius"
-            let fullyConnected = parameterValue "fullyConnected"
-            let windowSize = parameterValue "windowSize"
-            $">=> binaryOpeningByReconstruction {radius} {fullyConnected} {windowSize}"
-        | "BinaryClosingByReconstruction" ->
-            let radius = parameterValue "radius"
-            let fullyConnected = parameterValue "fullyConnected"
-            let windowSize = parameterValue "windowSize"
-            $">=> binaryClosingByReconstruction {radius} {fullyConnected} {windowSize}"
-        | "VotingBinaryHoleFilling" ->
-            let radius = parameterValue "radius"
-            let majorityThreshold = parameterValue "majorityThreshold"
-            let windowSize = parameterValue "windowSize"
-            $">=> votingBinaryHoleFilling {radius} {majorityThreshold} {windowSize}"
+        | "RemoveSmallObjects" ->
+            let maximumVolume = parameterValue "maximumVolume"
+            let connectivity = parameterValue "connectivity"
+            $">=> removeSmallObjects {maximumVolume} ObjectConnectivity.{connectivity}"
+        | "FillSmallHoles" ->
+            let maximumVolume = parameterValue "maximumVolume"
+            let connectivity = parameterValue "connectivity"
+            $">=> fillSmallHoles {maximumVolume} ObjectConnectivity.{connectivity}"
         | "LabelContour" ->
             let pixelType = pixelTypeNameFromParameter "type" "UInt64" node
             let fullyConnected = parameterValue "fullyConnected"
@@ -1119,24 +1115,10 @@ module PipelineCodeGenerator =
             $">=> paintObjects {width} {height}"
         | "PaintObjectsCropped" ->
             $">=> paintObjectsCropped"
-        | "Watershed" ->
-            let level = parameterValue "level"
-            let windowSize = parameterValue "windowSize"
-            $">=> watershed {level} {windowSize}"
-        | "SignedDistanceMap" ->
+        | "SignedDistanceBand" ->
             let bandRadius = parameterValue "bandRadius"
             let stride = parameterValue "stride"
-            $">=> signedDistanceMap {bandRadius} {stride}"
-        | "OtsuThreshold" ->
-            let pixelType = pixelTypeNameFromParameter "type" "Float64" node
-            let sampleCount = parameterValue "sampleCount"
-            let bins = parameterValue "bins"
-            $"|> otsuThreshold<{pixelType}> {sampleCount} {bins}"
-        | "MomentsThreshold" ->
-            let pixelType = pixelTypeNameFromParameter "type" "Float64" node
-            let sampleCount = parameterValue "sampleCount"
-            let bins = parameterValue "bins"
-            $"|> momentsThreshold<{pixelType}> {sampleCount} {bins}"
+            $">=> signedDistanceBand {bandRadius} {stride}"
         | "ComponentTranslationTable" ->
             let windowSize = parameterValue "windowSize"
             $">=> makeConnectedComponentTranslationTable {windowSize}"
@@ -1176,7 +1158,12 @@ module PipelineCodeGenerator =
         let nodesById = graph.Nodes |> Seq.map (fun node -> node.Id, node) |> Map.ofSeq
         let scalarNodes =
             graph.Nodes
-            |> Array.filter (fun node -> node.FunctionId = "Scalar" || node.FunctionId = "ScalarOp" || node.FunctionId = "ScalarFunction")
+            |> Array.filter (fun node ->
+                node.FunctionId = "Scalar"
+                || node.FunctionId = "ScalarOp"
+                || node.FunctionId = "ScalarFunction"
+                || node.FunctionId = "OtsuThresholdFromHistogram"
+                || node.FunctionId = "MomentsThresholdFromHistogram")
 
         let scalarNamesByNodeId = scalarNames scalarNodes
         let statsNodesWithLinkedFields =
@@ -1483,6 +1470,8 @@ module PipelineCodeGenerator =
                     node.FunctionId <> "Scalar"
                     && node.FunctionId <> "ScalarOp"
                     && node.FunctionId <> "ScalarFunction"
+                    && node.FunctionId <> "OtsuThresholdFromHistogram"
+                    && node.FunctionId <> "MomentsThresholdFromHistogram"
                     && node.FunctionId <> "GetStackInfo"
                     && node.FunctionId <> "GetChunkInfo"
                     && node.FunctionId <> "GetZarrInfo"
@@ -1627,7 +1616,7 @@ module PipelineCodeGenerator =
 
         if hasChart then
             builder.AppendLine("let showChart kind points =") |> ignore
-            builder.AppendLine("    let x, y = points |> List.unzip") |> ignore
+            builder.AppendLine("    let x, y = points |> Seq.toList |> List.unzip") |> ignore
             builder.AppendLine("    match kind with") |> ignore
             builder.AppendLine("    | \"Scatter\" -> Chart.Scatter(x = x, y = y, mode = StyleParam.Mode.Markers)") |> ignore
             builder.AppendLine("    | \"Line\" -> Chart.Line(x = x, y = y)") |> ignore

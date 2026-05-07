@@ -653,24 +653,10 @@ let generatorSuite =
                 node "relabel" "RelabelComponents"
                     [ p "minimumObjectSize" "10" false
                       p "windowSize" "5" false ]
-            let watershed =
-                node "watershed" "Watershed"
-                    [ p "level" "1.25" false
-                      p "windowSize" "7" false ]
             let signed =
-                node "signed" "SignedDistanceMap"
+                node "signed" "SignedDistanceBand"
                     [ p "bandRadius" "9" false
                       p "stride" "5" false ]
-            let otsu =
-                node "otsu" "OtsuThreshold"
-                    [ p "type" "Float64" false
-                      p "sampleCount" "11" false
-                      p "bins" "128" false ]
-            let moments =
-                node "moments" "MomentsThreshold"
-                    [ p "type" "UInt8" false
-                      p "sampleCount" "13" false
-                      p "bins" "64" false ]
             let write =
                 node "write" "Write"
                     [ p "output" "out" false
@@ -678,22 +664,16 @@ let generatorSuite =
 
             let code =
                 graph
-                    [ read; fill; relabel; watershed; signed; otsu; moments; write ]
+                    [ read; fill; relabel; signed; write ]
                     [ edge "read" "output" 0 "fill" "input" 0
                       edge "fill" "output" 0 "relabel" "input" 0
-                      edge "relabel" "output" 0 "watershed" "input" 0
-                      edge "watershed" "output" 0 "signed" "input" 0
-                      edge "signed" "output" 0 "otsu" "input" 0
-                      edge "otsu" "output" 0 "moments" "input" 0
-                      edge "moments" "output" 0 "write" "input" 0 ]
+                      edge "relabel" "output" 0 "signed" "input" 0
+                      edge "signed" "output" 0 "write" "input" 0 ]
                 |> PipelineCodeGenerator.generateSavedGraph
 
             Expect.stringContains code ">=> binaryFillHoles 5u" "binaryFillHoles should lower with its window size."
             Expect.stringContains code ">=> relabelComponents 10u 5u" "relabelComponents should lower with size threshold and window size."
-            Expect.stringContains code ">=> watershed 1.25 7u" "watershed should lower with level and window size."
-            Expect.stringContains code ">=> signedDistanceMap 9u 5u" "signedDistanceMap should lower with band radius and stride."
-            Expect.stringContains code "|> otsuThreshold<float> 11u 128u" "otsuThreshold should lower with sample count and bin count."
-            Expect.stringContains code "|> momentsThreshold<uint8> 13u 64u" "momentsThreshold should lower with sample count and bin count."
+            Expect.stringContains code ">=> signedDistanceBand 9u 5u" "signedDistanceBand should lower with band radius and stride."
 
         testCase "convolve lowers to StackProcessing stage" <| fun _ ->
             let readImage =
@@ -856,7 +836,7 @@ let generatorSuite =
             Expect.stringContains code ">=> median<float> 1u 3u" "Median should lower with radius and window size."
             Expect.stringContains code ">=> gradientMagnitude<float> 5u" "Gradient magnitude should lower with its window size."
 
-        testCase "comparison and mask boxes lower to pair stages" <| fun _ ->
+        testCase "comparison boxes lower to pair stages" <| fun _ ->
             let left =
                 node "left" "Read"
                     [ p "availableMemory" "1024" false
@@ -873,10 +853,6 @@ let generatorSuite =
                 node "cmp" "ImageComparison"
                     [ p "operation" ">=" false
                       p "type" "Float64" false ]
-            let mask =
-                node "mask" "Mask"
-                    [ p "type" "Float64" false
-                      p "outsideValue" "0.0" false ]
             let write =
                 node "write" "Write"
                     [ p "output" "out" false
@@ -884,16 +860,13 @@ let generatorSuite =
 
             let code =
                 graph
-                    [ left; right; comparison; mask; write ]
+                    [ left; right; comparison; write ]
                     [ edge "left" "output" 0 "cmp" "I" 0
                       edge "right" "output" 0 "cmp" "J" 0
-                      edge "left" "output" 0 "mask" "Image" 0
-                      edge "cmp" "output" 0 "mask" "UInt8" 1
-                      edge "mask" "output" 0 "write" "input" 0 ]
+                      edge "cmp" "output" 0 "write" "input" 0 ]
                 |> PipelineCodeGenerator.generateSavedGraph
 
             Expect.stringContains code ">>=> greaterEqual<float>" "Image comparison should lower to the selected typed pair stage."
-            Expect.stringContains code ">>=> mask<float> 0.0" "Mask should lower to the typed image-mask pair stage."
 
         testCase "morphology and streaming label additions lower to StackProcessing stages" <| fun _ ->
             let read =
@@ -911,15 +884,25 @@ let generatorSuite =
                 node "contour" "BinaryContour"
                     [ p "fullyConnected" "true" false
                       p "windowSize" "3" false ]
+            let removeSmall =
+                node "removeSmall" "RemoveSmallObjects"
+                    [ p "maximumVolume" "11" false
+                      p "connectivity" "TwentySix" false ]
+            let fillSmall =
+                node "fillSmall" "FillSmallHoles"
+                    [ p "maximumVolume" "13" false
+                      p "connectivity" "Six" false ]
             let code =
                 graph
-                    [ read; gray; contour ]
+                    [ read; gray; contour; removeSmall; fillSmall ]
                     [ edge "read" "output" 0 "gray" "input" 0
                       edge "gray" "output" 0 "contour" "input" 0 ]
                 |> PipelineCodeGenerator.generateSavedGraph
 
             Expect.stringContains code ">=> grayscaleErode<float> 2u 5u" "Grayscale morphology should lower with type, radius, and window size."
             Expect.stringContains code ">=> binaryContour true 3u" "Binary contour should lower with connectivity and window size."
+            Expect.stringContains code ">=> removeSmallObjects 11UL ObjectConnectivity.TwentySix" "removeSmallObjects should lower with maximum volume and connectivity."
+            Expect.stringContains code ">=> fillSmallHoles 13UL ObjectConnectivity.Six" "fillSmallHoles should lower with maximum volume and connectivity."
 
         testCase "connected component pair stream writes chunk labels through teeFst before reducing" <| fun _ ->
             let read =
@@ -1048,6 +1031,46 @@ let generatorSuite =
             Expect.stringContains code "let Histogram0 =" "Linked histogram data should be bound before quantiles."
             Expect.stringContains code "let Quantiles0 = quantiles [0.5; 0.01] Histogram0" "Quantile binding should include q1 and enabled extra slots."
             Expect.stringContains code ">=> shiftScale<float> Quantiles0[1] 1.0" "Quantile output should be usable as a linked scalar parameter."
+
+        testCase "histogram threshold estimators can feed standard threshold" <| fun _ ->
+            let read =
+                node "read" "Read"
+                    [ p "availableMemory" "1024" false
+                      p "type" "Float64" false
+                      p "input" "input" false
+                      p "suffix" ".tiff" false ]
+
+            let histogram =
+                node "histogram" "HistogramData" []
+
+            let otsu =
+                node "otsu" "OtsuThresholdFromHistogram"
+                    [ p "histogram" "" true ]
+
+            let threshold =
+                node "threshold" "Threshold"
+                    [ p "type" "Float64" false
+                      p "lower" "0.0" true
+                      p "upper" "infinity" false ]
+
+            let write =
+                node "write" "Write"
+                    [ p "output" "out" false
+                      p "suffix" ".tiff" false ]
+
+            let code =
+                graph
+                    [ read; histogram; otsu; threshold; write ]
+                    [ edge "read" "output" 0 "histogram" "input" 0
+                      edge "histogram" "reducerOutput" 0 "otsu" "parameterInput" 0
+                      edge "otsu" "scalarOutput" 0 "threshold" "parameterInput" 1
+                      edge "read" "output" 0 "threshold" "input" 0
+                      edge "threshold" "output" 0 "write" "input" 0 ]
+                |> PipelineCodeGenerator.generateSavedGraph
+
+            Expect.stringContains code "let Histogram0 =" "Linked histogram data should be bound before threshold estimation."
+            Expect.stringContains code "let Float640 = otsuThresholdFromHistogram Histogram0" "Otsu threshold estimation should be a scalar binding."
+            Expect.stringContains code ">=> threshold Float640 infinity" "The scalar threshold should feed the standard threshold stage."
 
         testCase "intensity stretch lowers to StackProcessing stage" <| fun _ ->
             let read =

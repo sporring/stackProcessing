@@ -311,6 +311,16 @@ val streamConnectedObjects<'T when 'T: equality> :
      StackCore.Stage<StackCore.Image<'T>,StackObjects.StreamedObject list>)
     when 'T: equality
 
+val removeSmallObjects:
+  (uint64 ->
+     StackObjects.ObjectConnectivity ->
+     StackCore.Stage<StackCore.Image<uint8>,StackCore.Image<uint8>>)
+
+val fillSmallHoles:
+  (uint64 ->
+     StackObjects.ObjectConnectivity ->
+     StackCore.Stage<StackCore.Image<uint8>,StackCore.Image<uint8>>)
+
 val paintObjects:
   (uint32 ->
      uint32 ->
@@ -569,31 +579,6 @@ val binaryMedian:
   (uint32 ->
      uint32 -> SlimPipeline.Stage<StackCore.Image<uint8>,StackCore.Image<uint8>>)
 
-val binaryOpeningByReconstruction:
-  (uint32 ->
-     bool ->
-     uint32 -> SlimPipeline.Stage<StackCore.Image<uint8>,StackCore.Image<uint8>>)
-
-val binaryClosingByReconstruction:
-  (uint32 ->
-     bool ->
-     uint32 -> SlimPipeline.Stage<StackCore.Image<uint8>,StackCore.Image<uint8>>)
-
-val binaryReconstructionByDilation:
-  (bool ->
-     StackCore.Stage<(StackCore.Image<uint8> * StackCore.Image<uint8>),
-                     StackCore.Image<uint8>>)
-
-val binaryReconstructionByErosion:
-  (bool ->
-     StackCore.Stage<(StackCore.Image<uint8> * StackCore.Image<uint8>),
-                     StackCore.Image<uint8>>)
-
-val votingBinaryHoleFilling:
-  (uint32 ->
-     uint ->
-     uint32 -> SlimPipeline.Stage<StackCore.Image<uint8>,StackCore.Image<uint8>>)
-
 val equal<'T when 'T: equality> :
   StackCore.Stage<(StackCore.Image<'T> * StackCore.Image<'T>),
                   StackCore.Image<uint8>> when 'T: equality
@@ -631,11 +616,6 @@ val xorMask:
                   StackCore.Image<uint8>>
 
 val notMask: StackCore.Stage<StackCore.Image<uint8>,StackCore.Image<uint8>>
-
-val mask<'T when 'T: equality> :
-  (double ->
-     StackCore.Stage<(StackCore.Image<'T> * StackCore.Image<uint8>),
-                     StackCore.Image<'T>>) when 'T: equality
 
 val labelContour<'T when 'T: equality> :
   (bool ->
@@ -675,31 +655,15 @@ val resample<'T when 'T: equality> :
      SlimPipeline.Plan<unit,StackCore.Image<'T>> ->
      SlimPipeline.Plan<unit,StackCore.Image<'T>>) when 'T: equality
 
-val imageHistogram:
-  (unit -> SlimPipeline.Stage<StackCore.Image<'a>,Map<'a,uint64>>)
-    when 'a: comparison
-
-val imageHistogramFold:
-  (unit -> SlimPipeline.Stage<Map<'a,uint64>,Map<'a,uint64>>)
-    when 'a: comparison
-
 val histogram:
   (unit -> SlimPipeline.Stage<StackCore.Image<'a>,Map<'a,uint64>>)
     when 'a: comparison
 
 val quantiles: (float list -> Map<'a,uint64> -> float list) when 'a: comparison
 
-val otsuThresholdFromHistogram<'T when 'T: equality> :
-  (uint -> StackCore.Image<'T> list -> float) when 'T: equality
+val otsuThresholdFromHistogram: (Map<'a,uint64> -> float) when 'a: comparison
 
-val estimateOtsuThreshold<'T when 'T: equality> :
-  (uint -> uint -> string -> string -> uint64 -> float) when 'T: equality
-
-val momentsThresholdFromHistogram<'T when 'T: equality> :
-  (uint -> StackCore.Image<'T> list -> float) when 'T: equality
-
-val estimateMomentsThreshold<'T when 'T: equality> :
-  (uint -> uint -> string -> string -> uint64 -> float) when 'T: equality
+val momentsThresholdFromHistogram: (Map<'a,uint64> -> float) when 'a: comparison
 
 val inline map2pairs<^T,^S
                        when ^T: comparison and
@@ -805,25 +769,9 @@ val relabelComponents:
   (uint -> uint -> SlimPipeline.Stage<StackCore.Image<'a>,StackCore.Image<'a>>)
     when 'a: equality
 
-val watershed:
-  (float -> uint -> SlimPipeline.Stage<StackCore.Image<'a>,StackCore.Image<'a>>)
-    when 'a: equality
-
-val signedDistanceMap:
+val signedDistanceBand:
   (uint ->
      uint -> SlimPipeline.Stage<StackCore.Image<uint8>,StackCore.Image<float>>)
-
-val otsuThreshold:
-  (uint ->
-     uint ->
-     SlimPipeline.Plan<unit,StackCore.Image<'a>> ->
-     SlimPipeline.Plan<unit,StackCore.Image<uint8>>) when 'a: equality
-
-val momentsThreshold:
-  (uint ->
-     uint ->
-     SlimPipeline.Plan<unit,StackCore.Image<'a>> ->
-     SlimPipeline.Plan<unit,StackCore.Image<uint8>>) when 'a: equality
 
 val threshold:
   (float ->

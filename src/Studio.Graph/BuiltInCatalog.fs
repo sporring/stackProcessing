@@ -83,9 +83,6 @@ module BuiltInCatalog =
   let private comparisonDescription =
       "Compare two synchronized image streams pixel by pixel and emit a UInt8 mask. Pixels where the comparison is true become non-zero, and false pixels become zero. The two inputs must have the same selected numeric type and compatible geometry. This is the mask-building counterpart to I op J and compiles to the corresponding StackProcessing comparison stage."
 
-  let private maskDescription =
-      "Masking combines an image stream with a UInt8 mask stream. Non-zero mask pixels keep the input image value, and masked-out pixels are replaced by the outside value. This is useful after thresholding, connected-component cleanup, or comparison stages. The image type parameter controls the left input and output type; the right input is always a UInt8 mask."
-
   let private grayscaleMorphologyDescription =
       "Grayscale morphology applies min/max-style neighborhood operations to intensity images rather than binary masks. Erode darkens or shrinks bright structures; dilate brightens or expands them. Opening removes small bright structures, closing fills small dark gaps, white top-hat extracts bright details smaller than the structuring element, black top-hat extracts dark details, and morphological gradient emphasizes local contrast boundaries. These are local filters and are streamed through z-windows large enough to cover the selected radius."
 
@@ -967,18 +964,6 @@ module BuiltInCatalog =
           Outputs = [ makePort "UInt8" imageUInt8 ]
           Parameters = [] }
 
-        { Id = "Mask"
-          DisplayName = "mask"
-          Category = "Segmentation"
-          Summary = "Apply a UInt8 mask to an image stream."
-          Description = maskDescription
-          Aliases = [ "mask"; "apply"; "binary"; "select"; "outside"; "segment" ]
-          Inputs = [ makePort "Image" imageAny; makePort "UInt8" imageUInt8 ]
-          Outputs = [ makePort "Image" imageAny ]
-          Parameters =
-              [ makeParameter "type" "Type" "Float64" BasicType.String
-                makeParameter "outsideValue" "Outside value" "0.0" (BasicType.Numeric Float64) ] }
-
         { Id = "GrayscaleErode"
           DisplayName = "grayscaleErode"
           Category = "Grayscale Morphology"
@@ -1104,64 +1089,31 @@ module BuiltInCatalog =
               [ makeParameter "radius" "Radius" "1" (BasicType.Numeric UInt32)
                 makeParameter "windowSize" "Window size" "3" (BasicType.Numeric UInt32) ] }
 
-        { Id = "BinaryOpeningByReconstruction"
-          DisplayName = "binaryOpeningByReconstruction"
+        { Id = "RemoveSmallObjects"
+          DisplayName = "removeSmallObjects"
           Category = "Binary Morphology"
-          Summary = "Open a binary mask by reconstruction."
-          Description = binaryMorphologyDescription
-          Aliases = [ "morphology"; "binary"; "opening"; "reconstruction"; "mask" ]
+          Summary = "Remove connected foreground objects up to a maximum voxel count."
+          Description =
+            "Streams a binary mask and removes completed foreground components whose voxel count is less than or equal to the requested maximum volume.\n\nThe stage carries only components that still touch the advancing z-frontier. Once an object cannot continue into the next slice, it is either painted to zero or left unchanged. Six-connectivity uses face contacts only; TwentySix-connectivity also allows diagonal contacts across and within slices.\n\nThis replaces reconstruction-style object cleanup in the LMIP DSL because its decision rule is finite, explicit, and local to completed connected components."
+          Aliases = [ "morphology"; "binary"; "objects"; "remove"; "small"; "cleanup"; "mask" ]
           Inputs = [ makePort "UInt8" imageUInt8 ]
           Outputs = [ makePort "UInt8" imageUInt8 ]
           Parameters =
-              [ makeParameter "radius" "Radius" "1" (BasicType.Numeric UInt32)
-                makeParameter "fullyConnected" "Fully connected" "false" BasicType.Bool
-                makeParameter "windowSize" "Window size" "3" (BasicType.Numeric UInt32) ] }
+              [ makeParameter "maximumVolume" "Maximum volume" "64" (BasicType.Numeric UInt64)
+                makeParameter "connectivity" "Connectivity" "Six" BasicType.String ] }
 
-        { Id = "BinaryClosingByReconstruction"
-          DisplayName = "binaryClosingByReconstruction"
+        { Id = "FillSmallHoles"
+          DisplayName = "fillSmallHoles"
           Category = "Binary Morphology"
-          Summary = "Close a binary mask by reconstruction."
-          Description = binaryMorphologyDescription
-          Aliases = [ "morphology"; "binary"; "closing"; "reconstruction"; "mask" ]
+          Summary = "Fill enclosed background holes up to a maximum voxel count."
+          Description =
+            "Streams a binary mask and fills completed background components whose voxel count is less than or equal to the requested maximum volume.\n\nBackground components touching the x-y border, the first z-slice, or the final z-slice are treated as exterior and are preserved. Other completed background components are holes and are painted to one when small enough. Six-connectivity uses face contacts only; TwentySix-connectivity also allows diagonal contacts.\n\nThis is the LMIP-oriented replacement for neighborhood voting hole filling when the desired operation is connected-hole cleanup by size."
+          Aliases = [ "morphology"; "binary"; "holes"; "fill"; "small"; "cleanup"; "mask" ]
           Inputs = [ makePort "UInt8" imageUInt8 ]
           Outputs = [ makePort "UInt8" imageUInt8 ]
           Parameters =
-              [ makeParameter "radius" "Radius" "1" (BasicType.Numeric UInt32)
-                makeParameter "fullyConnected" "Fully connected" "false" BasicType.Bool
-                makeParameter "windowSize" "Window size" "3" (BasicType.Numeric UInt32) ] }
-
-        { Id = "BinaryReconstructionByDilation"
-          DisplayName = "binaryReconstructionByDilation"
-          Category = "Binary Morphology"
-          Summary = "Reconstruct a binary marker under a binary mask by dilation."
-          Description = binaryMorphologyDescription
-          Aliases = [ "morphology"; "binary"; "reconstruction"; "dilation"; "marker"; "mask" ]
-          Inputs = [ makePort "Marker" imageUInt8; makePort "Mask" imageUInt8 ]
-          Outputs = [ makePort "UInt8" imageUInt8 ]
-          Parameters = [ makeParameter "fullyConnected" "Fully connected" "false" BasicType.Bool ] }
-
-        { Id = "BinaryReconstructionByErosion"
-          DisplayName = "binaryReconstructionByErosion"
-          Category = "Binary Morphology"
-          Summary = "Reconstruct a binary marker over a binary mask by erosion."
-          Description = binaryMorphologyDescription
-          Aliases = [ "morphology"; "binary"; "reconstruction"; "erosion"; "marker"; "mask" ]
-          Inputs = [ makePort "Marker" imageUInt8; makePort "Mask" imageUInt8 ]
-          Outputs = [ makePort "UInt8" imageUInt8 ]
-          Parameters = [ makeParameter "fullyConnected" "Fully connected" "false" BasicType.Bool ] }
-
-        { Id = "VotingBinaryHoleFilling"
-          DisplayName = "votingBinaryHoleFilling"
-          Category = "Binary Morphology"
-          Summary = "Fill binary holes by neighborhood voting."
-          Description = binaryMorphologyDescription
-          Aliases = [ "morphology"; "binary"; "voting"; "holes"; "fill"; "mask" ]
-          Inputs = [ makePort "UInt8" imageUInt8 ]
-          Outputs = [ makePort "UInt8" imageUInt8 ]
-          Parameters =
-              [ makeParameter "radius" "Radius" "1" (BasicType.Numeric UInt32)
-                makeParameter "majorityThreshold" "Majority threshold" "1" (BasicType.Numeric UInt32)
-                makeParameter "windowSize" "Window size" "3" (BasicType.Numeric UInt32) ] }
+              [ makeParameter "maximumVolume" "Maximum volume" "64" (BasicType.Numeric UInt64)
+                makeParameter "connectivity" "Connectivity" "Six" BasicType.String ] }
 
         { Id = "Threshold"
           DisplayName = "threshold"
@@ -1299,20 +1251,8 @@ module BuiltInCatalog =
                 makeParameter "contrastThreshold" "Contrast threshold" "0.03" (BasicType.Numeric Float64)
                 makeParameter "stride" "Stride" "8" (BasicType.Numeric UInt32) ] }
 
-        { Id = "Watershed"
-          DisplayName = "watershed"
-          Category = "Segmentation"
-          Summary = "Apply watershed segmentation."
-          Description = ""
-          Aliases = [ "segmentation"; "watershed"; "labels"; "basins" ]
-          Inputs = [ makePort "Number" imageAny ]
-          Outputs = [ makePort "Number" imageAny ]
-          Parameters =
-              [ makeParameter "level" "Level" "0.0" (BasicType.Numeric Float64)
-                makeParameter "windowSize" "Window size" "3" (BasicType.Numeric UInt32) ] }
-
-        { Id = "SignedDistanceMap"
-          DisplayName = "signedDistanceMap"
+        { Id = "SignedDistanceBand"
+          DisplayName = "signedDistanceBand"
           Category = "Segmentation"
           Summary = "Compute a band-limited signed distance map from a binary UInt8 image."
           Description =
@@ -1324,33 +1264,29 @@ module BuiltInCatalog =
               [ makeParameter "bandRadius" "Band radius" "8" (BasicType.Numeric UInt32)
                 makeParameter "stride" "Stride" "8" (BasicType.Numeric UInt32) ] }
 
-        { Id = "OtsuThreshold"
-          DisplayName = "otsuThreshold"
-          Category = "Segmentation"
-          Summary = "Threshold an image stack using Otsu's method."
+        { Id = "OtsuThresholdFromHistogram"
+          DisplayName = "otsuThresholdFromHistogram"
+          Category = "Statistics"
+          Summary = "Estimate an Otsu threshold from a histogram."
           Description =
-            "Estimates a single Otsu threshold from a random sample of input slices before the streaming pass starts.\n\nThe sampled pixel values are binned into the requested number of histogram bins. The threshold is chosen by brute-force maximization of Otsu's between-class variance over those bins, then applied to the full stream with the ordinary binary threshold stage.\n\nIncrease the sample count for stacks whose foreground/background balance changes strongly along z. Increase the bin count for broad continuous-valued images, but keep it modest enough that the sampled histogram remains stable. Output pixels are UInt8, with values at or above the estimated threshold set to 1 and lower values set to 0."
-          Aliases = [ "threshold"; "otsu"; "binary"; "mask"; "segment" ]
-          Inputs = [ makePort "Number" imageAny ]
-          Outputs = [ makePort "UInt8" imageUInt8 ]
+            "Takes a histogram, usually from histogramData on a sampled or random-read branch, and returns a scalar threshold by maximizing Otsu's between-class variance.\n\nThis box does not threshold images itself. Link its scalar output to the lower bound of the standard threshold box, and use infinity or another upper bound there. Keeping threshold estimation separate from threshold application makes the two-pass LMIP structure explicit."
+          Aliases = [ "threshold"; "otsu"; "histogram"; "statistics"; "scalar"; "segment" ]
+          Inputs = []
+          Outputs = [ makePort "Threshold: Float64" (Scalar(BasicType.Numeric Float64)) ]
           Parameters =
-              [ makeParameter "type" "Type" "Float64" BasicType.String
-                makeParameter "sampleCount" "Sample slices" "16" (BasicType.Numeric UInt32)
-                makeParameter "bins" "Bins" "256" (BasicType.Numeric UInt32) ] }
+              [ makeParameter "histogram" "Histogram" "" BasicType.Map ] }
 
-        { Id = "MomentsThreshold"
-          DisplayName = "momentsThreshold"
-          Category = "Segmentation"
-          Summary = "Threshold an image stack using moment-preserving thresholding."
+        { Id = "MomentsThresholdFromHistogram"
+          DisplayName = "momentsThresholdFromHistogram"
+          Category = "Statistics"
+          Summary = "Estimate a moment-preserving threshold from a histogram."
           Description =
-            "Estimates a single moment-preserving threshold from a random sample of input slices before the streaming pass starts.\n\nThe sampled pixel values are binned into the requested number of histogram bins. The threshold is estimated from the first three histogram moments using Tsai's moment-preserving method, then applied to the full stream with the ordinary binary threshold stage.\n\nIncrease the sample count for stacks whose class balance changes strongly along z. Increase the bin count for broad continuous-valued images, but keep it modest enough that the sampled histogram remains stable. Output pixels are UInt8, with values at or above the estimated threshold set to 1 and lower values set to 0."
-          Aliases = [ "threshold"; "moments"; "binary"; "mask"; "segment" ]
-          Inputs = [ makePort "Number" imageAny ]
-          Outputs = [ makePort "UInt8" imageUInt8 ]
+            "Takes a histogram, usually from histogramData on a sampled or random-read branch, and returns a scalar threshold from the first three histogram moments using Tsai's moment-preserving method.\n\nThis box does not threshold images itself. Link its scalar output to the lower bound of the standard threshold box, and use infinity or another upper bound there. Keeping threshold estimation separate from threshold application makes the two-pass LMIP structure explicit."
+          Aliases = [ "threshold"; "moments"; "histogram"; "statistics"; "scalar"; "segment" ]
+          Inputs = []
+          Outputs = [ makePort "Threshold: Float64" (Scalar(BasicType.Numeric Float64)) ]
           Parameters =
-              [ makeParameter "type" "Type" "Float64" BasicType.String
-                makeParameter "sampleCount" "Sample slices" "16" (BasicType.Numeric UInt32)
-                makeParameter "bins" "Bins" "256" (BasicType.Numeric UInt32) ] }
+              [ makeParameter "histogram" "Histogram" "" BasicType.Map ] }
 
         { Id = "ComponentTranslationTable"
           DisplayName = "componentTranslationTable"

@@ -617,8 +617,18 @@ type ImageStats =
 val computeStats: img: Image.Image<'T> -> ImageStats when 'T: equality
 val addComputeStats: s1: ImageStats -> s2: ImageStats -> ImageStats
 val unique: img: Image.Image<'T> -> 'T list when 'T: comparison
+val private valuesFromImages:
+  bins: uint32 -> images: Image.Image<'T> list -> operation: 'a -> float list
+    when 'T: equality
+val private binnedHistogram:
+  bins: uint32 -> values: float list -> float * float * float * uint64 array
+val private orderedHistogramValues:
+  histogram: Map<'T,uint64> -> operation: 'a -> (float * uint64) list
+    when 'T: comparison
 val otsuThresholdFromHistogram:
-  bins: uint -> images: Image.Image<'T> list -> float when 'T: equality
+  histogram: Map<'T,uint64> -> float when 'T: comparison
+val private otsuThresholdFromImages:
+  bins: uint32 -> images: Image.Image<'a> list -> float when 'a: equality
 /// Otsu threshold estimated from a binned histogram of the image values.
 val otsuThreshold: img: Image.Image<'T> -> Image.Image<uint8> when 'T: equality
 /// Otsu multiple thresholds (returns a label map)
@@ -627,7 +637,9 @@ val otsuMultiThreshold:
     when 'T: equality
 /// Moments-based threshold
 val momentsThresholdFromHistogram:
-  bins: uint -> images: Image.Image<'T> list -> float when 'T: equality
+  histogram: Map<'T,uint64> -> float when 'T: comparison
+val private momentsThresholdFromImages:
+  bins: uint32 -> images: Image.Image<'a> list -> float when 'a: equality
 val momentsThreshold:
   img: Image.Image<'T> -> Image.Image<uint8> when 'T: equality
 /// Coordinate fields
