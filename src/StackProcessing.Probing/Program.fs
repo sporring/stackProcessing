@@ -52,6 +52,10 @@ type ProbeResultJson =
       observedElements: uint64
       observedBytes: uint64
       predictedImagePeakBytes: uint64
+      predictedMemoryPeakBytes: uint64
+      actualMemoryDeltaBytes: uint64
+      predictedElapsedMilliseconds: float option
+      actualElapsedMedianMilliseconds: float
       rssBaselineBytes: uint64
       rssPeakBytes: uint64
       rssDeltaBytes: uint64
@@ -191,6 +195,44 @@ let private parameters pairs =
     pairs |> List.iter (fun (key, value) -> dict[key] <- value)
     dict
 
+let private tryParameter key (probe: ProbeResultJson) =
+    if isNull probe.parameters then
+        None
+    else
+        match probe.parameters.TryGetValue key with
+        | true, value -> Some value
+        | _ -> None
+
+let private operationName probe =
+    probe
+    |> tryParameter "operation"
+    |> Option.defaultValue probe.name
+
+let private normalizedIdentifier (value: string) =
+    value.Trim().ToLowerInvariant().Replace("-", "").Replace("_", "").Replace(".", "")
+
+let private calibrationParameterKey (probe: ProbeResultJson) =
+    let excluded =
+        set [ "operation"
+              "baselineOperation"
+              "stage"
+              "derivedFrom"
+              "isNPlus2"
+              "depthOffset" ]
+
+    if isNull probe.parameters then
+        ""
+    else
+        probe.parameters
+        |> Seq.cast<KeyValuePair<string, string>>
+        |> Seq.choose (fun kvp ->
+            if excluded.Contains kvp.Key then
+                None
+            else
+                Some $"{kvp.Key}={kvp.Value}")
+        |> Seq.sort
+        |> String.concat "|"
+
 let private imageParameters size pixelType windowSize baseDepth =
     let p =
         parameters
@@ -222,6 +264,15 @@ let private workToJson (work: StageWorkPressure) =
           ioWriteBytes = work.IoWriteBytes
           ioReadOps = work.IoReadOps
           ioWriteOps = work.IoWriteOps })
+
+let private workFromJson (work: ProbeWorkJson) =
+    { CpuWorkUnits = work.cpuWorkUnits
+      NativeWorkUnits = work.nativeWorkUnits
+      IoReadBytes = work.ioReadBytes
+      IoWriteBytes = work.ioWriteBytes
+      IoReadOps = work.ioReadOps
+      IoWriteOps = work.ioWriteOps
+      CalibrationKey = Some work.calibrationKey }
 
 let private coefficientsFromWork elapsedMilliseconds (work: StageWorkPressure) =
     let elapsed = elapsedMilliseconds
@@ -326,6 +377,10 @@ let private runProbe name description probeParameters execute (planFactory: unit
       observedElements = observedElements
       observedBytes = observedBytes
       predictedImagePeakBytes = metadataPlan.memPeak
+      predictedMemoryPeakBytes = metadataPlan.memPeak
+      actualMemoryDeltaBytes = medianDelta
+      predictedElapsedMilliseconds = None
+      actualElapsedMedianMilliseconds = medianElapsed
       rssBaselineBytes = medianIteration.rssBaselineBytes
       rssPeakBytes = medianIteration.rssPeakBytes
       rssDeltaBytes = medianIteration.rssDeltaBytes
@@ -362,6 +417,94 @@ let private runSinkProbe name description probeParameters (planFactory: unit -> 
 let private runDrainProbe name description probeParameters (planFactory: unit -> Plan<unit, _>) =
     let execute plan = drain plan |> ignore
     runProbe name description probeParameters execute planFactory
+
+let private tryStageWork (probe: ProbeResultJson) =
+    match tryParameter "stage" probe with
+    | Some stage ->
+        let normalizedStage = normalizedIdentifier stage
+        probe.costWorks
+        |> Array.tryFind (fun work ->
+            (normalizedIdentifier work.calibrationKey).Contains(normalizedStage))
+    | None ->
+        match probe.costWorks with
+        | [| work |] -> Some work
+        | _ -> None
+
+let private coefficientObservations (probes: ProbeResultJson array) =
+    let probesByOperationAndShape =
+        probes
+        |> Array.groupBy (fun probe -> operationName probe, calibrationParameterKey probe)
+        |> Array.map (fun (key, matches) -> key, matches[0])
+        |> Map.ofArray
+
+    seq {
+        for probe in probes do
+            match tryParameter "baselineOperation" probe, tryStageWork probe with
+            | Some baselineOperation, Some work ->
+                let baselineKey = baselineOperation, calibrationParameterKey probe
+
+                match probesByOperationAndShape |> Map.tryFind baselineKey with
+                | Some baseline ->
+                    let elapsed =
+                        max 0.0 (probe.elapsedMedianMilliseconds - baseline.elapsedMedianMilliseconds)
+
+                    if elapsed > 0.0 then
+                        yield work.calibrationKey, coefficientsFromWork elapsed (workFromJson work)
+                | None -> ()
+            | None, Some work when probe.costWorks.Length = 1 ->
+                if probe.elapsedMedianMilliseconds > 0.0 then
+                    yield work.calibrationKey, coefficientsFromWork probe.elapsedMedianMilliseconds (workFromJson work)
+            | _ -> ()
+    }
+    |> Seq.toList
+
+let private averageCoefficients (items: StageCostCoefficients list) =
+    let count = float items.Length
+    let average selector =
+        items |> List.sumBy selector |> fun total -> total / count
+
+    { CpuMillisecondsPerUnit = average _.CpuMillisecondsPerUnit
+      NativeMillisecondsPerUnit = average _.NativeMillisecondsPerUnit
+      IoReadMillisecondsPerByte = average _.IoReadMillisecondsPerByte
+      IoWriteMillisecondsPerByte = average _.IoWriteMillisecondsPerByte
+      IoReadMillisecondsPerOp = average _.IoReadMillisecondsPerOp
+      IoWriteMillisecondsPerOp = average _.IoWriteMillisecondsPerOp }
+
+let private buildCalibrations probes =
+    let calibrations = Dictionary<string, StageCostCoefficients>()
+
+    probes
+    |> coefficientObservations
+    |> List.groupBy fst
+    |> List.iter (fun (key, observations) ->
+        calibrations[key] <-
+            observations
+            |> List.map snd
+            |> averageCoefficients)
+
+    calibrations
+
+let private tryPredictElapsedMilliseconds (calibrations: Dictionary<string, StageCostCoefficients>) (probe: ProbeResultJson) =
+    let mutable any = false
+    let mutable total = 0.0
+
+    for work in probe.costWorks do
+        match calibrations.TryGetValue work.calibrationKey with
+        | true, coefficients ->
+            any <- true
+            total <- total + StageCostCoefficients.estimateMilliseconds coefficients (workFromJson work)
+        | _ -> ()
+
+    if any then Some total else None
+
+let private attachPredictions calibrations probes =
+    probes
+    |> Array.map (fun probe ->
+        { probe with
+            predictedElapsedMilliseconds = tryPredictElapsedMilliseconds calibrations probe
+            predictedMemoryPeakBytes = probe.predictedImagePeakBytes
+            actualMemoryDeltaBytes = probe.rssDeltaMedianBytes
+            actualElapsedMedianMilliseconds = probe.elapsedMedianMilliseconds })
 
 let private releaseImages (images: Image<float> list) =
     images |> List.iter (fun image -> image.decRefCount())
@@ -991,20 +1134,8 @@ let main args =
                                      >=> ignoreSingles ()) |]
 
     convolutionBreakdownKernel |> Option.iter (fun kernel -> kernel.decRefCount())
-    let calibrations = Dictionary<string, StageCostCoefficients>()
-    for probe in probes do
-        match probe.costWorks with
-        | [| work |] ->
-            let pressure =
-                { CpuWorkUnits = work.cpuWorkUnits
-                  NativeWorkUnits = work.nativeWorkUnits
-                  IoReadBytes = work.ioReadBytes
-                  IoWriteBytes = work.ioWriteBytes
-                  IoReadOps = work.ioReadOps
-                  IoWriteOps = work.ioWriteOps
-                  CalibrationKey = Some work.calibrationKey }
-            calibrations[work.calibrationKey] <- coefficientsFromWork probe.elapsedMedianMilliseconds pressure
-        | _ -> ()
+    let calibrations = buildCalibrations probes
+    let probes = attachPredictions calibrations probes
 
     let report =
         { generatedUtc = DateTimeOffset.UtcNow.ToString("O")

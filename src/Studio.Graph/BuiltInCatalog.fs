@@ -104,6 +104,9 @@ module BuiltInCatalog =
   let private showImageDescription =
       "Shows each incoming image slice as a heatmap.\n\nThis is useful for quick visual inspection of small or sampled stacks. For large stacks, display can be slower than the processing itself, so use it on short ranges or diagnostic branches.\n\nFor final output, use write instead."
 
+  let private sumProjectionDescription =
+      "Builds one 2D projection image by summing intensities through the stack direction.\n\nUse it as a quick volume visualizer before showImage or write. The function selector transforms each pixel before it is added: Identity sums raw intensity, Abs sums magnitude, Square emphasizes strong signals, SqrtAbs compresses bright values, and Log1pAbs gives a logarithmic-looking projection without failing on negative values.\n\nThe output is Float64 and contains one image slice."
+
   let private unaryImageFunctionDescription =
       "Applies one standard mathematical function independently to every pixel.\n\nExamples include sqrt, abs, log, exp, sin, cos, and square. The image geometry and slice order are unchanged, only the pixel values are transformed.\n\nUse this for simple intensity formulas that do not depend on neighboring pixels."
 
@@ -794,6 +797,18 @@ module BuiltInCatalog =
           Outputs = []
           Parameters = [] }
 
+        { Id = "SumProjection"
+          DisplayName = "sumProjection"
+          Category = "Visualization"
+          Summary = "Reduce a stack to one summed projection image."
+          Description = sumProjectionDescription
+          Aliases = [ "projection"; "sum"; "volume"; "visualize"; "mip"; "z"; "intensity"; "show"; "write" ]
+          Inputs = [ makePort "Number" imageAny ]
+          Outputs = [ makePort "Float64" imageFloat64 ]
+          Parameters =
+              [ makeParameter "type" "Type" "Float64" BasicType.String
+                makeParameter "function" "Function" "Identity" BasicType.String ] }
+
         { Id = "UnaryImageFunction"
           DisplayName = "f(I)"
           Category = "Arithmetic"
@@ -1138,16 +1153,6 @@ module BuiltInCatalog =
               [ makeParameter "type" "Type" "Float64" BasicType.String
                 makeParameter "radius" "Radius" "1" (BasicType.Numeric UInt32)
                 makeParameter "windowSize" "Window size" "3" (BasicType.Numeric UInt32) ] }
-
-        { Id = "BinaryFillHoles"
-          DisplayName = "binaryFillHoles"
-          Category = "Binary Morphology"
-          Summary = "Fill holes in a binary UInt8 stack."
-          Description = binaryMorphologyDescription
-          Aliases = [ "morphology"; "binary"; "holes"; "fill"; "mask" ]
-          Inputs = [ makePort "UInt8" imageUInt8 ]
-          Outputs = [ makePort "UInt8" imageUInt8 ]
-          Parameters = [ makeParameter "windowSize" "Window size" "3" (BasicType.Numeric UInt32) ] }
 
         { Id = "BinaryContour"
           DisplayName = "binaryContour"

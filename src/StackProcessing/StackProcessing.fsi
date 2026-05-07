@@ -659,6 +659,10 @@ val histogram:
   (unit -> SlimPipeline.Stage<StackCore.Image<'a>,Map<'a,uint64>>)
     when 'a: comparison
 
+val sumProjection<'T when 'T: equality> :
+  (string -> StackCore.Stage<StackCore.Image<'T>,StackCore.Image<float>>)
+    when 'T: equality
+
 val quantiles: (float list -> Map<'a,uint64> -> float list) when 'a: comparison
 
 val otsuThresholdFromHistogram: (Map<'a,uint64> -> float) when 'a: comparison
@@ -756,9 +760,6 @@ val opening:
 
 val closing:
   (uint -> StackCore.Stage<StackCore.Image<uint8>,StackCore.Image<uint8>>)
-
-val binaryFillHoles:
-  (uint -> SlimPipeline.Stage<StackCore.Image<uint8>,StackCore.Image<uint8>>)
 
 val connectedComponents:
   (uint ->

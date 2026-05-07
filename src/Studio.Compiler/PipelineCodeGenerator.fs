@@ -906,6 +906,10 @@ module PipelineCodeGenerator =
             $"showChart \"{kind}\" {values}"
         | "ShowImage" ->
             ">=> show showImagePlot"
+        | "SumProjection" ->
+            let pixelType = pixelTypeNameFromParameter "type" "Float64" node
+            let functionName = savedParamValue "function" node
+            $">=> sumProjection<{pixelType}> {quote functionName}"
         | "UnaryImageFunction" ->
             $">=> {unaryImageFunctionName node}"
         | "SqrtFloat64" ->
@@ -1036,9 +1040,6 @@ module PipelineCodeGenerator =
             $">>=> {maskLogicStageFunctionName node}"
         | "NotMask" ->
             ">=> notMask"
-        | "BinaryFillHoles" ->
-            let windowSize = parameterValue "windowSize"
-            $">=> binaryFillHoles {windowSize}"
         | "BinaryContour" ->
             let fullyConnected = parameterValue "fullyConnected"
             let windowSize = parameterValue "windowSize"

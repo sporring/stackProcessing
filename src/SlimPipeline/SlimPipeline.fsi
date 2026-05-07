@@ -353,6 +353,7 @@ module DebugLevel =
     val current: unit -> uint32
     val isEnabled: unit -> bool
     val rssEnabled: unit -> bool
+    val optimizationDisabled: unit -> bool
 type PipelineGraphNode =
     {
       Id: int
@@ -627,10 +628,22 @@ type OptimizationResult<'S,'T> =
       Decisions: OptimizationDecision list
     }
 module Optimizer =
+    val private relativeTolerance: float
     val private workScore: pressure: StageWorkPressure -> float
+    val private nearlyEqual: left: float -> right: float -> bool
+    val private windowPreference:
+      candidate: OptimizationCandidate<'S,'T> -> uint
+    val private compareWindowPreference:
+      leftCandidate: OptimizationCandidate<'a,'b> ->
+        rightCandidate: OptimizationCandidate<'c,'d> -> int
     val private compareAccepted:
       _leftCandidate: 'a * leftDecision: OptimizationDecision ->
         _rightCandidate: 'b * rightDecision: OptimizationDecision -> int
+    val private compareAcceptedWithWindowPreference:
+      leftCandidate: OptimizationCandidate<'a,'b> *
+      leftDecision: OptimizationDecision ->
+        rightCandidate: OptimizationCandidate<'c,'d> *
+        rightDecision: OptimizationDecision -> int
     val chooseStage:
       availableMemory: uint64 ->
         inputShape: SingleOrPair ->

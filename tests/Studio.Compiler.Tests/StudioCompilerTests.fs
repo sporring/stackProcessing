@@ -647,8 +647,6 @@ let generatorSuite =
                       p "input" "input" false
                       p "suffix" ".tiff" false ]
 
-            let fill =
-                node "fill" "BinaryFillHoles" [ p "windowSize" "5" false ]
             let relabel =
                 node "relabel" "RelabelComponents"
                     [ p "minimumObjectSize" "10" false
@@ -664,14 +662,12 @@ let generatorSuite =
 
             let code =
                 graph
-                    [ read; fill; relabel; signed; write ]
-                    [ edge "read" "output" 0 "fill" "input" 0
-                      edge "fill" "output" 0 "relabel" "input" 0
+                    [ read; relabel; signed; write ]
+                    [ edge "read" "output" 0 "relabel" "input" 0
                       edge "relabel" "output" 0 "signed" "input" 0
                       edge "signed" "output" 0 "write" "input" 0 ]
                 |> PipelineCodeGenerator.generateSavedGraph
 
-            Expect.stringContains code ">=> binaryFillHoles 5u" "binaryFillHoles should lower with its window size."
             Expect.stringContains code ">=> relabelComponents 10u 5u" "relabelComponents should lower with size threshold and window size."
             Expect.stringContains code ">=> signedDistanceBand 9u 5u" "signedDistanceBand should lower with band radius and stride."
 
@@ -835,6 +831,32 @@ let generatorSuite =
             Expect.stringContains code ">=> clamp<float> 0.0 1.0" "Clamp should lower with type and bounds."
             Expect.stringContains code ">=> median<float> 1u 3u" "Median should lower with radius and window size."
             Expect.stringContains code ">=> gradientMagnitude<float> 5u" "Gradient magnitude should lower with its window size."
+
+        testCase "sum projection lowers to a Float64 image reducer" <| fun _ ->
+            let read =
+                node "read" "Read"
+                    [ p "availableMemory" "1024" false
+                      p "type" "UInt16" false
+                      p "input" "input" false
+                      p "suffix" ".tiff" false ]
+
+            let projection =
+                node "projection" "SumProjection"
+                    [ p "type" "UInt16" false
+                      p "function" "Log1pAbs" false ]
+
+            let show =
+                node "show" "ShowImage" []
+
+            let code =
+                graph
+                    [ read; projection; show ]
+                    [ edge "read" "output" 0 "projection" "input" 0
+                      edge "projection" "output" 0 "show" "input" 0 ]
+                |> PipelineCodeGenerator.generateSavedGraph
+
+            Expect.stringContains code ">=> sumProjection<uint16> \"Log1pAbs\"" "SumProjection should lower with input pixel type and pre-sum transform."
+            Expect.stringContains code ">=> show showImagePlot" "The projection output should be connectable to showImage."
 
         testCase "comparison boxes lower to pair stages" <| fun _ ->
             let left =
