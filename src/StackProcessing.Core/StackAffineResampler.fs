@@ -1,4 +1,4 @@
-module ChunkedAffineResampler
+module StackAffineResampler
 
 open System
 open System.Collections.Generic

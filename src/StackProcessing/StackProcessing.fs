@@ -39,6 +39,9 @@ let idStage<'T> = StackCore.idStage<'T>
 // //////////////////// StackIO
 type FileInfo = ImageFunctions.FileInfo
 type ChunkInfo = StackIO.ChunkInfo
+type Point3D = StackMesh.Point3D
+type Triangle = StackMesh.Triangle
+type MeshChunk = StackMesh.MeshChunk
 
 let getStackDepth = StackIO.getStackDepth
 let getStackInfo = StackIO.getStackInfo
@@ -70,9 +73,10 @@ let write = StackIO.write
 let writeZarr = StackIO.writeZarr
 let writeNexus = StackIO.writeNexus
 let writeInSlabs = StackIO.writeInSlabs
+let writeMesh = StackMesh.writeMesh
 
-// //////////////////// ChunkedAffineResampler
-let resampleAffineTrilinearSlices = ChunkedAffineResampler.resampleAffineTrilinearSlices
+// //////////////////// StackAffineResampler
+let resampleAffineTrilinearSlices = StackAffineResampler.resampleAffineTrilinearSlices
 
 // //////////////////// StackImageFunctions
 type ImageStats = ImageFunctions.ImageStats
@@ -147,6 +151,7 @@ let notMask = StackImageFunctions.notMask
 let mask<'T when 'T: equality> = StackImageFunctions.mask<'T>
 let labelContour<'T when 'T: equality> = StackImageFunctions.labelContour<'T>
 let changeLabel<'T when 'T: equality> = StackImageFunctions.changeLabel<'T>
+let marchingCubes<'T when 'T: equality> = StackMesh.marchingCubes<'T>
 let resize<'T when 'T: equality> = StackImageFunctions.resize<'T>
 let resample<'T when 'T: equality> = StackImageFunctions.resample<'T>
 let imageHistogram = StackImageFunctions.imageHistogram

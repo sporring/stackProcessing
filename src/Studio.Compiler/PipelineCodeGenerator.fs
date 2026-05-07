@@ -779,6 +779,10 @@ module PipelineCodeGenerator =
             let physicalSizeZ = parameterValue "physicalSizeZ"
             let maxConcurrentWrites = parameterValue "maxConcurrentWrites"
             $">=> writeZarr {output} {name} {depth} {chunkX} {chunkY} {chunkZ} {physicalSizeX} {physicalSizeY} {physicalSizeZ} {maxConcurrentWrites}"
+        | "WriteMesh" ->
+            let output = quotedParameter "output"
+            let format = quotedParameter "format"
+            $">=> writeMesh {output} {format}"
         | "WriteNexus" ->
             let output = quotedParameter "output"
             let datasetPath = quotedParameter "datasetPath"
@@ -1087,6 +1091,10 @@ module PipelineCodeGenerator =
             let minimumObjectSize = parameterValue "minimumObjectSize"
             let windowSize = parameterValue "windowSize"
             $">=> relabelComponents {minimumObjectSize} {windowSize}"
+        | "MarchingCubes" ->
+            let pixelType = pixelTypeNameFromParameter "type" "Float64" node
+            let surfaceValue = parameterValue "surfaceValue"
+            $">=> marchingCubes<{pixelType}> {surfaceValue}"
         | "Watershed" ->
             let level = parameterValue "level"
             let windowSize = parameterValue "windowSize"
@@ -1430,6 +1438,7 @@ module PipelineCodeGenerator =
                 | "WriteThrough"
                 | "WriteInSlabs"
                 | "WriteZarr"
+                | "WriteMesh"
                 | "WriteNexus"
                 | "Histogram"
                 | "ShowImage" ->

@@ -1,0 +1,50 @@
+SF:/Users/jrh630/repositories/stackProcessing/src/TinyLinAlg/TinyLinAlg.fs
+FN:13,TinyLinAlg/V3 TinyLinAlg::v3(System.Double,System.Double,System.Double)
+FNDA:0,TinyLinAlg/V3 TinyLinAlg::v3(System.Double,System.Double,System.Double)
+DA:14,0
+FN:15,TinyLinAlg/V3 TinyLinAlg::add(TinyLinAlg/V3,TinyLinAlg/V3)
+FNDA:0,TinyLinAlg/V3 TinyLinAlg::add(TinyLinAlg/V3,TinyLinAlg/V3)
+DA:16,0
+FN:16,TinyLinAlg/V3 TinyLinAlg::sub(TinyLinAlg/V3,TinyLinAlg/V3)
+FNDA:0,TinyLinAlg/V3 TinyLinAlg::sub(TinyLinAlg/V3,TinyLinAlg/V3)
+DA:17,0
+FN:17,TinyLinAlg/V3 TinyLinAlg::scale(System.Double,TinyLinAlg/V3)
+FNDA:0,TinyLinAlg/V3 TinyLinAlg::scale(System.Double,TinyLinAlg/V3)
+DA:18,0
+FN:20,TinyLinAlg/V3 TinyLinAlg::mulMV(TinyLinAlg/M3,TinyLinAlg/V3)
+FNDA:0,TinyLinAlg/V3 TinyLinAlg::mulMV(TinyLinAlg/M3,TinyLinAlg/V3)
+DA:21,0
+DA:22,0
+DA:23,0
+DA:24,0
+FN:26,System.Double TinyLinAlg::det3(TinyLinAlg/M3)
+FNDA:0,System.Double TinyLinAlg::det3(TinyLinAlg/M3)
+DA:27,0
+DA:28,0
+DA:29,0
+FN:31,TinyLinAlg/M3 TinyLinAlg::inv3(TinyLinAlg/M3)
+FNDA:3,TinyLinAlg/M3 TinyLinAlg::inv3(TinyLinAlg/M3)
+DA:32,3
+DA:33,4
+DA:34,2
+DA:35,2
+DA:36,2
+DA:37,2
+DA:38,2
+DA:39,2
+DA:40,2
+DA:41,2
+DA:42,2
+DA:43,2
+BRDA:33,140,0,1
+BRDA:33,140,1,2
+FN:54,TinyLinAlg/V3 TinyLinAlg::affinePoint(TinyLinAlg/Affine,TinyLinAlg/V3)
+FNDA:1,TinyLinAlg/V3 TinyLinAlg::affinePoint(TinyLinAlg/Affine,TinyLinAlg/V3)
+DA:55,1
+LF:24
+LH:13
+BRF:2
+BRH:2
+FNF:8
+FNH:2
+end_of_record
