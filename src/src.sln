@@ -1,0 +1,36 @@
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio Version 17
+VisualStudioVersion = 17.5.2.0
+MinimumVisualStudioVersion = 10.0.40219.1
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Avalonia.Xaml.Interactions.DragAndDrop.Compat", "Avalonia.Xaml.Interactions.DragAndDrop.Compat\Avalonia.Xaml.Interactions.DragAndDrop.Compat.csproj", "{E985DC22-AA3D-F14A-DBD1-E8EF930A6191}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Avalonia.Xaml.Interactivity.Compat", "Avalonia.Xaml.Interactivity.Compat\Avalonia.Xaml.Interactivity.Compat.csproj", "{29DFF33F-4771-4944-08BD-CDA942FE5328}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Avalonia.Controls.PanAndZoom.Compat", "Avalonia.Controls.PanAndZoom.Compat\Avalonia.Controls.PanAndZoom.Compat.csproj", "{43ABC5B7-4418-1E4F-4FCF-62537F396402}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Any CPU = Debug|Any CPU
+		Release|Any CPU = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{E985DC22-AA3D-F14A-DBD1-E8EF930A6191}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{E985DC22-AA3D-F14A-DBD1-E8EF930A6191}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{E985DC22-AA3D-F14A-DBD1-E8EF930A6191}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{E985DC22-AA3D-F14A-DBD1-E8EF930A6191}.Release|Any CPU.Build.0 = Release|Any CPU
+		{29DFF33F-4771-4944-08BD-CDA942FE5328}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{29DFF33F-4771-4944-08BD-CDA942FE5328}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{29DFF33F-4771-4944-08BD-CDA942FE5328}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{29DFF33F-4771-4944-08BD-CDA942FE5328}.Release|Any CPU.Build.0 = Release|Any CPU
+		{43ABC5B7-4418-1E4F-4FCF-62537F396402}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{43ABC5B7-4418-1E4F-4FCF-62537F396402}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{43ABC5B7-4418-1E4F-4FCF-62537F396402}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{43ABC5B7-4418-1E4F-4FCF-62537F396402}.Release|Any CPU.Build.0 = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+	GlobalSection(ExtensibilityGlobals) = postSolution
+		SolutionGuid = {F933CE8B-6881-4C7F-B763-40B748C76A4D}
+	EndGlobalSection
+EndGlobal

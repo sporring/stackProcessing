@@ -1,7 +1,7 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
     <OutputType>WinExe</OutputType>
-    <TargetFramework>net9.0</TargetFramework>
+    <TargetFramework>net10.0</TargetFramework>
     <ApplicationManifest>app.manifest</ApplicationManifest>
     <AvaloniaUseCompiledBindingsByDefault>true</AvaloniaUseCompiledBindingsByDefault>
   </PropertyGroup>
@@ -12,25 +12,32 @@
   </ItemGroup>
 
   <ItemGroup>
-    <PackageReference Include="Avalonia" Version="11.3.9" />
-    <PackageReference Include="Avalonia.Desktop" Version="11.3.9" />
-    <PackageReference Include="Avalonia.Themes.Fluent" Version="11.3.9" />
-    <PackageReference Include="Avalonia.Fonts.Inter" Version="11.3.9" />
-    <!--Condition below is needed to remove Avalonia.Diagnostics package from build output in Release configuration.-->
-    <PackageReference Include="Avalonia.Diagnostics" Version="11.3.9">
-      <IncludeAssets Condition="'$(Configuration)' != 'Debug'">None</IncludeAssets>
-      <PrivateAssets Condition="'$(Configuration)' != 'Debug'">All</PrivateAssets>
-    </PackageReference>
-    <PackageReference Include="CommunityToolkit.Mvvm" Version="8.2.1" />
-    <PackageReference Include="NodeEditorAvalonia" Version="11.2.0" />
-    <PackageReference Include="NodeEditorAvalonia.Mvvm" Version="11.2.0" />
+    <PackageReference Include="Avalonia" Version="12.0.1" />
+    <PackageReference Include="Avalonia.Desktop" Version="12.0.1" />
+    <PackageReference Include="Avalonia.Themes.Fluent" Version="12.0.1" />
+    <PackageReference Include="Avalonia.Fonts.Inter" Version="12.0.1" />
+    <PackageReference Include="CommunityToolkit.Mvvm" Version="8.4.0" />
+    <PackageReference Include="NodeEditorAvalonia" Version="12.0.0" />
+    <PackageReference Include="NodeEditorAvalonia.Mvvm" Version="12.0.0" />
+    <PackageReference Include="PanAndZoom" Version="12.0.0.1" />
+    <PackageReference Include="Xaml.Behaviors.Avalonia" Version="12.0.0" />
   </ItemGroup>
 
   <ItemGroup>
+    <ProjectReference Include="../Studio.Graph/Studio.Graph.fsproj" />
+    <ProjectReference Include="../Studio.Compiler/Studio.Compiler.fsproj" />
+    <ProjectReference Include="../Avalonia.Controls.PanAndZoom.Compat/Avalonia.Controls.PanAndZoom.Compat.csproj" />
+    <ProjectReference Include="../Avalonia.Xaml.Interactivity.Compat/Avalonia.Xaml.Interactivity.Compat.csproj" />
+    <ProjectReference Include="../Avalonia.Xaml.Interactions.DragAndDrop.Compat/Avalonia.Xaml.Interactions.DragAndDrop.Compat.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Compile Include="Models/PipelineDesigner.fs" />
     <Compile Include="Services/MyNodeFactory.fs" />
-    <Compile Include="Views/MainView.axaml.fs" />
     <Compile Include="ViewModels/ViewModelBase.fs" />
     <Compile Include="ViewModels/MainWindowViewModel.fs" />
+    <Compile Include="Views/ConfirmationDialogs.fs" />
+    <Compile Include="Views/MainView.axaml.fs" />
     <Compile Include="Views/MainWindow.axaml.fs" />
     <Compile Include="ViewLocator.fs" />
     <Compile Include="App.axaml.fs" />

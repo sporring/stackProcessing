@@ -1,0 +1,129 @@
+SF:/Users/jrh630/repositories/stackProcessing/src/AsyncSeqExtensions/AsyncSeqExtensions.fs
+FN:13,System.Collections.Generic.IAsyncEnumerable`1<Microsoft.FSharp.Collections.FSharpList`1<T>> AsyncSeqExtensions::windowedWithPad(System.UInt32,System.UInt32,System.UInt32,System.UInt32,Microsoft.FSharp.Core.FSharpFunc`2<System.Int32,Microsoft.FSharp.Core.FSharpFunc`2<T,T>>,System.Collections.Generic.IAsyncEnumerable`1<T>)
+FNDA:7,System.Collections.Generic.IAsyncEnumerable`1<Microsoft.FSharp.Collections.FSharpList`1<T>> AsyncSeqExtensions::windowedWithPad(System.UInt32,System.UInt32,System.UInt32,System.UInt32,Microsoft.FSharp.Core.FSharpFunc`2<System.Int32,Microsoft.FSharp.Core.FSharpFunc`2<T,T>>,System.Collections.Generic.IAsyncEnumerable`1<T>)
+DA:14,7
+DA:15,6
+DA:17,4
+BRDA:14,2,0,1
+BRDA:14,2,1,5
+BRDA:15,27,0,1
+BRDA:15,27,1,4
+FN:88,System.Collections.Generic.IAsyncEnumerable`1<T> AsyncSeqExtensions::ofAsync(Microsoft.FSharp.Control.FSharpAsync`1<T>)
+FNDA:1,System.Collections.Generic.IAsyncEnumerable`1<T> AsyncSeqExtensions::ofAsync(Microsoft.FSharp.Control.FSharpAsync`1<T>)
+DA:89,1
+FN:94,System.Collections.Generic.IAsyncEnumerable`1<System.Tuple`2<U,V>> AsyncSeqExtensions::zipConcurrent(System.Collections.Generic.IAsyncEnumerable`1<U>,System.Collections.Generic.IAsyncEnumerable`1<V>)
+FNDA:7,System.Collections.Generic.IAsyncEnumerable`1<System.Tuple`2<U,V>> AsyncSeqExtensions::zipConcurrent(System.Collections.Generic.IAsyncEnumerable`1<U>,System.Collections.Generic.IAsyncEnumerable`1<V>)
+DA:95,7
+FN:30,T AsyncSeqExtensions/body@30::Invoke(T)
+FNDA:13,T AsyncSeqExtensions/body@30::Invoke(T)
+DA:31,13
+DA:32,13
+DA:33,13
+DA:34,17
+FN:37,System.Int32 AsyncSeqExtensions/prePadding@38::GenerateNext(System.Collections.Generic.IEnumerable`1<T>&)
+FNDA:9,System.Int32 AsyncSeqExtensions/prePadding@38::GenerateNext(System.Collections.Generic.IEnumerable`1<T>&)
+DA:38,9
+DA:39,1
+BRDA:38,8,1,0
+BRDA:38,8,2,1
+BRDA:38,8,3,0
+BRDA:38,8,0,4
+BRDA:38,138,1,1
+BRDA:38,138,0,4
+FN:43,System.Int32 AsyncSeqExtensions/postPadding@44::GenerateNext(System.Collections.Generic.IEnumerable`1<T>&)
+FNDA:5,System.Int32 AsyncSeqExtensions/postPadding@44::GenerateNext(System.Collections.Generic.IEnumerable`1<T>&)
+DA:44,5
+DA:45,1
+BRDA:44,8,1,0
+BRDA:44,8,2,1
+BRDA:44,8,3,0
+BRDA:44,8,0,2
+BRDA:44,151,1,1
+BRDA:44,151,0,2
+FN:49,System.Int32 AsyncSeqExtensions/trailingEmptySlots@50::GenerateNext(System.Collections.Generic.IEnumerable`1<Microsoft.FSharp.Core.FSharpOption`1<T>>&)
+FNDA:8,System.Int32 AsyncSeqExtensions/trailingEmptySlots@50::GenerateNext(System.Collections.Generic.IEnumerable`1<Microsoft.FSharp.Core.FSharpOption`1<T>>&)
+DA:50,8
+DA:51,4
+BRDA:50,8,1,0
+BRDA:50,8,2,4
+BRDA:50,8,3,0
+BRDA:50,8,0,2
+BRDA:50,111,1,4
+BRDA:50,111,0,2
+FN:59,System.Int32 AsyncSeqExtensions/padded@60::GenerateNext(System.Collections.Generic.IEnumerable`1<Microsoft.FSharp.Core.FSharpOption`1<T>>&)
+FNDA:6,System.Int32 AsyncSeqExtensions/padded@60::GenerateNext(System.Collections.Generic.IEnumerable`1<Microsoft.FSharp.Core.FSharpOption`1<T>>&)
+DA:60,6
+DA:61,2
+BRDA:60,8,1,0
+BRDA:60,8,2,1
+BRDA:60,8,3,0
+BRDA:60,8,4,0
+BRDA:60,8,0,2
+BRDA:60,123,1,1
+BRDA:60,123,0,2
+FN:70,Microsoft.FSharp.Core.FSharpOption`1<Microsoft.FSharp.Collections.FSharpList`1<T>> AsyncSeqExtensions/windows@70::Invoke(System.Tuple`2<System.Int64,Microsoft.FSharp.Core.FSharpOption`1<T>[]>)
+FNDA:35,Microsoft.FSharp.Core.FSharpOption`1<Microsoft.FSharp.Collections.FSharpList`1<T>> AsyncSeqExtensions/windows@70::Invoke(System.Tuple`2<System.Int64,Microsoft.FSharp.Core.FSharpOption`1<T>[]>)
+DA:71,35
+DA:72,3
+DA:74,27
+DA:76,9
+DA:77,7
+DA:78,2
+DA:79,2
+DA:80,2
+DA:82,4
+BRDA:71,26,0,1
+BRDA:71,26,1,11
+BRDA:71,49,0,3
+BRDA:71,49,1,9
+BRDA:76,89,0,7
+BRDA:76,89,1,2
+BRDA:78,106,0,2
+BRDA:78,106,1,0
+FN:19,System.Collections.Generic.IAsyncEnumerable`1<Microsoft.FSharp.Collections.FSharpList`1<T>> AsyncSeqExtensions/windowedWithPad@20-1::Invoke(System.Tuple`2<T[],System.Collections.Generic.IAsyncEnumerable`1<T>>)
+FNDA:12,System.Collections.Generic.IAsyncEnumerable`1<Microsoft.FSharp.Collections.FSharpList`1<T>> AsyncSeqExtensions/windowedWithPad@20-1::Invoke(System.Tuple`2<T[],System.Collections.Generic.IAsyncEnumerable`1<T>>)
+DA:20,12
+DA:24,4
+DA:25,4
+DA:28,4
+DA:29,4
+DA:30,4
+DA:37,4
+DA:40,4
+DA:43,4
+DA:46,4
+DA:49,4
+DA:52,4
+DA:55,4
+DA:56,4
+DA:57,12
+DA:58,4
+DA:59,4
+DA:62,4
+DA:64,4
+DA:67,4
+DA:68,4
+DA:69,4
+DA:70,4
+DA:73,4
+DA:75,4
+DA:81,4
+DA:84,4
+BRDA:20,29,1,0
+BRDA:20,29,0,4
+FN:17,System.Collections.Generic.IAsyncEnumerable`1<Microsoft.FSharp.Collections.FSharpList`1<T>> AsyncSeqExtensions/windowedWithPad@20::Invoke(Microsoft.FSharp.Core.Unit)
+FNDA:4,System.Collections.Generic.IAsyncEnumerable`1<Microsoft.FSharp.Collections.FSharpList`1<T>> AsyncSeqExtensions/windowedWithPad@20::Invoke(Microsoft.FSharp.Core.Unit)
+DA:18,4
+FN:90,System.Collections.Generic.IAsyncEnumerable`1<T> AsyncSeqExtensions/ofAsync@91-1::Invoke(T)
+FNDA:1,System.Collections.Generic.IAsyncEnumerable`1<T> AsyncSeqExtensions/ofAsync@91-1::Invoke(T)
+DA:91,1
+FN:89,System.Collections.Generic.IAsyncEnumerable`1<T> AsyncSeqExtensions/ofAsync@91::Invoke(Microsoft.FSharp.Core.Unit)
+FNDA:1,System.Collections.Generic.IAsyncEnumerable`1<T> AsyncSeqExtensions/ofAsync@91::Invoke(Microsoft.FSharp.Core.Unit)
+DA:90,1
+LF:56
+LH:56
+BRF:39
+BRH:28
+FNF:13
+FNH:13
+end_of_record

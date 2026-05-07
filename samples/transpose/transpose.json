@@ -1,0 +1,167 @@
+{
+  "version": 1,
+  "nodes": [
+    {
+      "id": "n1",
+      "functionId": "Read",
+      "x": 40.0,
+      "y": 100.0,
+      "parameters": [
+        {
+          "key": "availableMemory",
+          "value": "2147483648UL",
+          "useInput": false
+        },
+        {
+          "key": "type",
+          "value": "UInt8",
+          "useInput": false
+        },
+        {
+          "key": "input",
+          "value": "../image18",
+          "useInput": false
+        },
+        {
+          "key": "suffix",
+          "value": ".tiff",
+          "useInput": false
+        }
+      ]
+    },
+    {
+      "id": "n2",
+      "functionId": "PermuteAxes",
+      "x": 260.0,
+      "y": 100.0,
+      "parameters": [
+        {
+          "key": "axes",
+          "value": "(0,2,1)",
+          "useInput": false
+        },
+        {
+          "key": "tileSize",
+          "value": "32",
+          "useInput": false
+        }
+      ]
+    },
+    {
+      "id": "n3",
+      "functionId": "Write",
+      "x": 480.0,
+      "y": 100.0,
+      "parameters": [
+        {
+          "key": "output",
+          "value": "../result18021",
+          "useInput": false
+        },
+        {
+          "key": "suffix",
+          "value": ".tiff",
+          "useInput": false
+        }
+      ]
+    },
+    {
+      "id": "n4",
+      "functionId": "Read",
+      "x": 40.0,
+      "y": 260.0,
+      "parameters": [
+        {
+          "key": "availableMemory",
+          "value": "2147483648UL",
+          "useInput": false
+        },
+        {
+          "key": "type",
+          "value": "UInt8",
+          "useInput": false
+        },
+        {
+          "key": "input",
+          "value": "../result18021",
+          "useInput": false
+        },
+        {
+          "key": "suffix",
+          "value": ".tiff",
+          "useInput": false
+        }
+      ]
+    },
+    {
+      "id": "n5",
+      "functionId": "PermuteAxes",
+      "x": 260.0,
+      "y": 260.0,
+      "parameters": [
+        {
+          "key": "axes",
+          "value": "(0,2,1)",
+          "useInput": false
+        },
+        {
+          "key": "tileSize",
+          "value": "64",
+          "useInput": false
+        }
+      ]
+    },
+    {
+      "id": "n6",
+      "functionId": "Write",
+      "x": 480.0,
+      "y": 260.0,
+      "parameters": [
+        {
+          "key": "output",
+          "value": "../image18b",
+          "useInput": false
+        },
+        {
+          "key": "suffix",
+          "value": ".tiff",
+          "useInput": false
+        }
+      ]
+    }
+  ],
+  "edges": [
+    {
+      "fromNode": "n1",
+      "fromKind": "dataOutput",
+      "fromPort": 0,
+      "toNode": "n2",
+      "toKind": "dataInput",
+      "toPort": 0
+    },
+    {
+      "fromNode": "n2",
+      "fromKind": "dataOutput",
+      "fromPort": 0,
+      "toNode": "n3",
+      "toKind": "dataInput",
+      "toPort": 0
+    },
+    {
+      "fromNode": "n4",
+      "fromKind": "dataOutput",
+      "fromPort": 0,
+      "toNode": "n5",
+      "toKind": "dataInput",
+      "toPort": 0
+    },
+    {
+      "fromNode": "n5",
+      "fromKind": "dataOutput",
+      "fromPort": 0,
+      "toNode": "n6",
+      "toKind": "dataInput",
+      "toPort": 0
+    }
+  ]
+}

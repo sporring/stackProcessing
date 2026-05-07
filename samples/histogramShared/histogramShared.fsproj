@@ -2,9 +2,9 @@
 
   <PropertyGroup>
     <OutputType>Exe</OutputType>
-    <TargetFramework>net9.0</TargetFramework>
+    <TargetFramework>net10.0</TargetFramework>
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
-    <DocumentationFile>bin\Debug\net8.0\memoryAwarePipeline.xml</DocumentationFile>
+    <DocumentationFile>bin\Debug\net10.0\memoryAwarePipeline.xml</DocumentationFile>
   </PropertyGroup>
 
   <!-- We want to copy the Managed library regardless of platform -->
@@ -23,18 +23,17 @@
   </ItemGroup>
   
   <ItemGroup Condition="$([MSBuild]::IsOSPlatform('Linux'))">
-    <None Include="../../lib/libSimpleITKCSharpNative.so"
-      CopyToOutputDirectory="PreserveNewest" />
+    <None Include="../../lib/libSimpleITKCSharpNative.so" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 
   <ItemGroup Condition="$([MSBuild]::IsOSPlatform('OSX'))">
-    <None Include="../../lib/libSimpleITKCSharpNative.dylib"
-      CopyToOutputDirectory="PreserveNewest" />
+    <None Include="../../lib/libSimpleITKCSharpNative.dylib" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
  
   <ItemGroup>
-    <PackageReference Include="Plotly.NET" Version="5.0.0" />
+    <PackageReference Include="Plotly.NET" Version="5.1.0" />
     <ProjectReference Include="../../src/StackProcessing/StackProcessing.fsproj" />
+    <ProjectReference Include="../../src/StackProcessing.Core/StackProcessing.Core.fsproj" />
   </ItemGroup>
 
   <ItemGroup>

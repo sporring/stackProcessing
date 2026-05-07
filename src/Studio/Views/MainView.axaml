@@ -1,37 +1,424 @@
 <UserControl xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:ne="clr-namespace:NodeEditor.Controls;assembly=NodeEditorAvalonia"
+             xmlns:paz="using:Avalonia.Controls.PanAndZoom"
              xmlns:vm="using:Studio.ViewModels"
+             xmlns:models="using:Studio.Models"
+             xmlns:graph="using:Studio.Graph"
              x:Class="Studio.Views.MainView"
+             x:Name="Root"
              x:DataType="vm:MainWindowViewModel">
 
-    <ScrollViewer Grid.Column="0">
-    <ItemsControl ItemsSource="{Binding Editor.Templates}">
-        <ItemsControl.ItemsPanel>
-        <ItemsPanelTemplate>
-            <WrapPanel />
-        </ItemsPanelTemplate>
-        </ItemsControl.ItemsPanel>
+    <UserControl.Styles>
+        <Style Selector="ne|Connector">
+            <Setter Property="Stroke" Value="#D32F2F" />
+            <Setter Property="StrokeThickness" Value="3" />
+            <Setter Property="Fill" Value="Transparent" />
+            <Setter Property="IsHitTestVisible" Value="False" />
+        </Style>
 
-        <ItemsControl.ItemTemplate>
-        <DataTemplate>
-            <Border Width="72" Height="72"
-                    Margin="6"
-                    CornerRadius="8"
-                    Background="#060606ff"
-                    BorderBrush="#b73333ff"
-                    BorderThickness="1">
-            <Grid>
-                <!-- You can show an icon, or a simplified preview -->
-                <TextBlock Text="{Binding Title}"
-                        TextWrapping="Wrap"
-                        FontSize="10"
-                        HorizontalAlignment="Center"
-                        VerticalAlignment="Center"/>
-            </Grid>
+        <Style Selector="ne|Pin">
+            <Setter Property="Template">
+                <ControlTemplate TargetType="ne:Pin">
+                    <Polygon Width="{TemplateBinding Width}"
+                             Height="{TemplateBinding Height}"
+                             Points="0,0 14,7 0,14"
+                             Fill="#FFFFFF"
+                             Stroke="#111111"
+                             StrokeThickness="2" />
+                </ControlTemplate>
+            </Setter>
+        </Style>
+
+        <Style Selector="ne|Pin[Alignment=Top], ne|Pin[Alignment=Bottom]">
+            <Setter Property="Template">
+                <ControlTemplate TargetType="ne:Pin">
+                    <Polygon Width="{TemplateBinding Width}"
+                             Height="{TemplateBinding Height}"
+                             Points="0,0 14,0 7,14"
+                             Fill="#8A5A22"
+                             Stroke="#111111"
+                             StrokeThickness="2" />
+                </ControlTemplate>
+            </Setter>
+        </Style>
+
+        <Style Selector="Expander.paletteCategory">
+            <Setter Property="FontSize" Value="12" />
+            <Setter Property="Padding" Value="0" />
+        </Style>
+
+        <Style Selector="Expander.paletteCategory /template/ ToggleButton">
+            <Setter Property="MinHeight" Value="22" />
+            <Setter Property="Padding" Value="6,1" />
+        </Style>
+
+        <Style Selector="Expander.paletteCategory /template/ ContentPresenter">
+            <Setter Property="Margin" Value="0" />
+        </Style>
+
+        <Style Selector="Border.paletteFunction">
+            <Setter Property="Background" Value="#FFFFFF" />
+            <Setter Property="BorderBrush" Value="#D7DDE5" />
+        </Style>
+
+        <Style Selector="Border.paletteFunction:pointerover">
+            <Setter Property="Background" Value="#EAF3FF" />
+            <Setter Property="BorderBrush" Value="#2F80ED" />
+        </Style>
+    </UserControl.Styles>
+
+    <UserControl.DataTemplates>
+        <DataTemplate x:DataType="graph:Function">
+            <Border Margin="0,0,0,2"
+                    Padding="8,2"
+                    Classes="paletteFunction"
+                    HorizontalAlignment="Stretch"
+                    BorderThickness="1"
+                    CornerRadius="4"
+                    ToolTip.Tip="{Binding Summary}"
+                    Tag="{Binding Id}"
+                    PointerPressed="PaletteElementPointerPressed">
+                <TextBlock Text="{Binding DisplayName}"
+                           FontSize="12"
+                           FontWeight="SemiBold"
+                           Foreground="#102A43"
+                           TextTrimming="CharacterEllipsis" />
             </Border>
         </DataTemplate>
-        </ItemsControl.ItemTemplate>
-    </ItemsControl>
-    </ScrollViewer>
 
+        <DataTemplate x:DataType="models:PaletteGroupViewModel">
+            <Expander Header="{Binding Title}"
+                      Classes="paletteCategory"
+                      IsExpanded="{Binding IsExpanded, Mode=OneWay}"
+                      HorizontalAlignment="Stretch"
+                      Margin="0,0,0,1"
+                      Padding="0">
+                <ItemsControl ItemsSource="{Binding Functions}"
+                              HorizontalAlignment="Stretch"
+                              Margin="0" />
+            </Expander>
+        </DataTemplate>
+
+        <DataTemplate DataType="models:PipelineNodeContent">
+            <Border Width="{Binding Width}"
+                    Height="{Binding Height}"
+                    Background="{Binding State.NodeBackground}"
+                    BorderBrush="{Binding State.NodeBorderBrush}"
+                    BorderThickness="2"
+                    Opacity="{Binding State.NodeOpacity}"
+                    CornerRadius="6">
+                <TextBlock Text="{Binding State.Title}"
+                           HorizontalAlignment="Center"
+                           VerticalAlignment="Center"
+                           FontSize="11"
+                           FontWeight="SemiBold"
+                           TextTrimming="CharacterEllipsis"
+                           Foreground="#102A43" />
+            </Border>
+        </DataTemplate>
+    </UserControl.DataTemplates>
+
+    <Grid RowDefinitions="Auto,*,220"
+          ColumnDefinitions="260,*,340"
+          Background="#FFFFFF">
+
+        <Border Grid.Row="0"
+                Grid.ColumnSpan="3"
+                Background="#F4F6F8"
+                BorderBrush="#D7DDE5"
+                BorderThickness="0,0,0,1"
+                Padding="10">
+            <DockPanel LastChildFill="True">
+                <StackPanel DockPanel.Dock="Right"
+                            Orientation="Horizontal"
+                            Spacing="8">
+                    <Button Width="76"
+                            Click="SaveGraphClicked"
+                            IsEnabled="{Binding CanSaveGraph}"
+                            Content="Save" />
+                    <Button Width="76"
+                            Click="SaveGraphAsClicked"
+                            IsEnabled="{Binding CanSaveGraphAs}"
+                            Content="Save As" />
+                    <Button Width="76"
+                            Click="LoadGraphClicked"
+                            Content="Load" />
+                    <Button Width="76"
+                            Click="ClearGraphClicked"
+                            IsEnabled="{Binding CanClearGraph}"
+                            Content="Clear" />
+                    <Button Width="76"
+                            Click="ArrangeGraphClicked"
+                            IsEnabled="{Binding HasGraph}"
+                            Content="Arrange" />
+                    <Button Width="76"
+                            Click="FitGraphClicked"
+                            IsEnabled="{Binding HasGraph}"
+                            Content="Fit" />
+                    <Button Width="76"
+                            Command="{Binding RunCommand}"
+                            IsEnabled="{Binding CanRunGraph}"
+                            Content="Run" />
+                </StackPanel>
+
+                <TextBlock Text="StackProcessing Studio"
+                           VerticalAlignment="Center"
+                           FontSize="14"
+                           FontWeight="SemiBold"
+                           Foreground="#102A43" />
+            </DockPanel>
+        </Border>
+
+        <Border Grid.Row="1"
+                Grid.Column="0"
+                Background="#FAFBFC"
+                BorderBrush="#D7DDE5"
+                BorderThickness="0,0,1,0"
+                Padding="10">
+            <Grid RowDefinitions="Auto,Auto,*">
+                <TextBlock Text="Functions"
+                           FontSize="14"
+                           FontWeight="SemiBold"
+                           Margin="0,0,0,8" />
+
+                <TextBox Grid.Row="1"
+                         PlaceholderText="Search functions"
+                         Text="{Binding PaletteSearch, Mode=TwoWay}"
+                         Margin="0,0,0,10"
+                         MinHeight="30" />
+
+                <ScrollViewer Grid.Row="2">
+                    <ItemsControl ItemsSource="{Binding PaletteGroups}"
+                                  HorizontalAlignment="Stretch" />
+                </ScrollViewer>
+            </Grid>
+        </Border>
+
+        <Grid x:Name="GraphHost"
+              Grid.Row="1"
+              Grid.Column="1"
+              ClipToBounds="True"
+              Background="#FFFFFF"
+              DragDrop.AllowDrop="True"
+              DragDrop.DragOver="PipelineEditorDragOver"
+              DragDrop.Drop="PipelineEditorDrop">
+            <paz:ZoomBorder x:Name="GraphZoomBorder"
+                             ClipToBounds="True"
+                             Background="#FFFFFF"
+                             EnablePan="True"
+                             EnableZoom="False"
+                             PanButton="Middle"
+                             Stretch="None"
+                             HorizontalAlignment="Stretch"
+                             VerticalAlignment="Stretch">
+                <ne:Editor x:Name="PipelineEditor"
+                           Width="{Binding Editor.Drawing.Width}"
+                           Height="{Binding Editor.Drawing.Height}"
+                           DrawingSource="{Binding Editor.Drawing}"
+                           DragDrop.AllowDrop="True"
+                           DragDrop.DragOver="PipelineEditorDragOver"
+                           DragDrop.Drop="PipelineEditorDrop"
+                           Background="#FFFFFF" />
+            </paz:ZoomBorder>
+
+            <Canvas IsHitTestVisible="False">
+                <Line x:Name="ConnectionPreview"
+                      IsVisible="False"
+                      Stroke="#D32F2F"
+                      StrokeThickness="3"
+                      StartPoint="0,0"
+                      EndPoint="0,0" />
+            </Canvas>
+
+            <Border x:Name="GraphTrash"
+                    Width="44"
+                    Height="44"
+                    HorizontalAlignment="Right"
+                    VerticalAlignment="Bottom"
+                    Margin="0,0,12,12"
+                    Background="#FFF1F0"
+                    BorderBrush="#C62828"
+                    BorderThickness="2"
+                    CornerRadius="4"
+                    DragDrop.AllowDrop="True"
+                    DragDrop.DragOver="TrashDragOver"
+                    DragDrop.Drop="TrashDrop">
+                <TextBlock Text="×"
+                           HorizontalAlignment="Center"
+                           VerticalAlignment="Center"
+                           FontSize="24"
+                           FontWeight="SemiBold"
+                           Foreground="#8E1B1B" />
+            </Border>
+        </Grid>
+
+        <Border Grid.Row="1"
+                Grid.Column="2"
+                Background="#FAFBFC"
+                BorderBrush="#D7DDE5"
+                BorderThickness="1,0,0,0"
+                Padding="10">
+            <Grid RowDefinitions="Auto,Auto,*,Auto">
+                <StackPanel IsVisible="{Binding HasSelectedElement}"
+                            Margin="0,0,0,12">
+                    <TextBlock Text="{Binding SelectedNode.State.Definition.DisplayName}"
+                               FontSize="14"
+                               FontWeight="SemiBold"
+                               Foreground="#102A43"
+                               TextWrapping="Wrap" />
+                    <TextBlock Text="{Binding SelectedNode.State.Summary}"
+                               Margin="0,4,0,0"
+                               FontSize="12"
+                               Foreground="#52616B"
+                               TextWrapping="Wrap" />
+                </StackPanel>
+
+                <TextBlock Grid.Row="1"
+                           Text="Parameters"
+                           FontSize="14"
+                           FontWeight="SemiBold"
+                           Margin="0,0,0,8" />
+
+                <ScrollViewer Grid.Row="2">
+                    <ItemsControl ItemsSource="{Binding SelectedNode.State.Parameters}">
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate x:DataType="models:PipelineParameterViewModel">
+                                <Grid ColumnDefinitions="92,72,*"
+                                      Margin="0,0,0,10">
+                                    <TextBlock Text="{Binding Label}"
+                                               VerticalAlignment="Center"
+                                               FontSize="12" />
+                                    <CheckBox Grid.Column="1"
+                                              Content="Graph"
+                                              IsChecked="{Binding UseInput, Mode=TwoWay}"
+                                              IsEnabled="{Binding CanUseInput}"
+                                              VerticalAlignment="Center"
+                                              FontSize="11" />
+                                    <TextBox Grid.Column="2"
+                                             Text="{Binding Value, Mode=TwoWay}"
+                                             IsEnabled="{Binding IsValueEnabled}"
+                                             IsReadOnly="{Binding IsValueReadOnly}"
+                                             IsVisible="{Binding ShowTextEditor}"
+                                             MinHeight="30" />
+                                    <CheckBox Grid.Column="2"
+                                              IsChecked="{Binding BooleanValue, Mode=TwoWay}"
+                                              IsEnabled="{Binding IsValueEnabled}"
+                                              IsVisible="{Binding UseBooleanEditor}"
+                                              VerticalAlignment="Center" />
+                                    <ComboBox Grid.Column="2"
+                                              ItemsSource="{Binding Options}"
+                                              SelectedItem="{Binding SelectedOption, Mode=TwoWay}"
+                                              IsVisible="{Binding HasOptions}"
+                                              MinHeight="30">
+                                        <ComboBox.Styles>
+                                            <Style Selector="ComboBoxItem"
+                                                   x:DataType="models:ParameterOptionViewModel">
+                                                <Setter Property="IsEnabled" Value="{Binding IsEnabled}" />
+                                            </Style>
+                                        </ComboBox.Styles>
+                                        <ComboBox.ItemTemplate>
+                                            <DataTemplate x:DataType="models:ParameterOptionViewModel">
+                                                <TextBlock Text="{Binding Label}" />
+                                            </DataTemplate>
+                                        </ComboBox.ItemTemplate>
+                                    </ComboBox>
+                                </Grid>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                </ScrollViewer>
+
+                <StackPanel Grid.Row="3"
+                            IsVisible="{Binding SelectedNode.State.HasDescription}"
+                            Margin="0,12,0,0">
+                    <TextBlock Text="Description"
+                               FontSize="14"
+                               FontWeight="SemiBold"
+                               Margin="0,0,0,6"
+                               Foreground="#102A43" />
+                    <TextBlock Text="{Binding SelectedNode.State.Description}"
+                               FontSize="12"
+                               Foreground="#52616B"
+                               TextWrapping="Wrap" />
+                </StackPanel>
+            </Grid>
+        </Border>
+
+        <Border Grid.Row="2"
+                Grid.Column="0"
+                Background="#FAFBFC"
+                BorderBrush="#D7DDE5"
+                BorderThickness="0,1,1,0"
+                Padding="10">
+            <Grid RowDefinitions="Auto,*">
+                <TextBlock Text="Canvas"
+                           FontSize="14"
+                           FontWeight="SemiBold"
+                           Margin="0,0,0,8" />
+
+                <Border Grid.Row="1"
+                        Background="#FFFFFF"
+                        BorderBrush="#D7DDE5"
+                        BorderThickness="1"
+                        ClipToBounds="True">
+                    <Canvas x:Name="MiniMapCanvas"
+                            Background="#FFFFFF"
+                            SizeChanged="MiniMapSizeChanged" />
+                </Border>
+            </Grid>
+        </Border>
+
+        <Border Grid.Row="2"
+                Grid.Column="1"
+                Grid.ColumnSpan="2"
+                Background="#FFFFFF"
+                BorderBrush="#D7DDE5"
+                BorderThickness="0,1,0,0"
+                Padding="10">
+            <Grid RowDefinitions="Auto,*">
+                <TextBlock Text="Output"
+                           FontSize="14"
+                           FontWeight="SemiBold"
+                           Margin="0,0,0,8" />
+
+                <TextBox x:Name="GraphOutputTextBox"
+                         Grid.Row="1"
+                         Text="{Binding GraphOutput}"
+                         FontFamily="Consolas, Menlo, monospace"
+                         FontSize="13"
+                         IsReadOnly="True"
+                         AcceptsReturn="True"
+                         TextWrapping="NoWrap"
+                         ScrollViewer.HorizontalScrollBarVisibility="Auto"
+                         ScrollViewer.VerticalScrollBarVisibility="Auto"
+                         Background="#FFFFFF"
+                         BorderBrush="#D7DDE5" />
+            </Grid>
+        </Border>
+
+        <Canvas x:Name="PaletteDragOverlay"
+                Grid.RowSpan="3"
+                Grid.ColumnSpan="3"
+                Panel.ZIndex="1000"
+                IsHitTestVisible="False">
+            <Border x:Name="PaletteDragPreview"
+                    Width="110"
+                    Height="48"
+                    IsVisible="False"
+                    Background="#FFF8E1"
+                    BorderBrush="#F2A900"
+                    BorderThickness="2"
+                    Opacity="0.86"
+                    CornerRadius="6">
+                <TextBlock x:Name="PaletteDragPreviewLabel"
+                           HorizontalAlignment="Center"
+                           VerticalAlignment="Center"
+                           FontSize="11"
+                           FontWeight="SemiBold"
+                           TextTrimming="CharacterEllipsis"
+                           Foreground="#102A43" />
+            </Border>
+        </Canvas>
+    </Grid>
 </UserControl>

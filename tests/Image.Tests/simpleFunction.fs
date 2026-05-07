@@ -49,4 +49,40 @@ let simpleFunctionTests =
     let img = Image<float>.ofArray2D arr
     Expect.floatClose Accuracy.veryHigh (img |> ImageFunctions.sum|>float) 10.0 "Sum of floats"
 
+  testCase "stack joins matching 2D slices into a 3D volume" <| fun _ ->
+    let first = Image<uint8>.ofArray2D (array2D [ [1uy; 2uy]; [3uy; 4uy] ])
+    let second = Image<uint8>.ofArray2D (array2D [ [5uy; 6uy]; [7uy; 8uy] ])
+    let stacked = ImageFunctions.stack [first; second]
+    Expect.equal (stacked.GetSize()) [2u; 2u; 2u] "Two 2D slices should become one 3D volume."
+    Expect.equal stacked.[0,0,0] 1uy "First slice should be at z=0."
+    Expect.equal stacked.[1,1,1] 8uy "Second slice should be at z=1."
+
+  testCase "stack rejects empty and mismatched image lists" <| fun _ ->
+    let twoByTwo = Image<uint8>.ofArray2D (array2D [ [1uy; 2uy]; [3uy; 4uy] ])
+    let twoByThree = Image<uint8>.ofArray2D (array2D [ [1uy; 2uy; 3uy]; [4uy; 5uy; 6uy] ])
+
+    Expect.throws (fun () -> ImageFunctions.stack ([]: Image<uint8> list) |> ignore) "Empty stacks should fail clearly."
+    Expect.throws (fun () -> ImageFunctions.stack [twoByTwo; twoByThree] |> ignore) "2D slices must have identical sizes."
+
+  testCase "convolve rejects kernels larger than the image" <| fun _ ->
+    let img = Image<float>.ofArray2D (array2D [ [1.0; 2.0]; [3.0; 4.0] ])
+    let kernel =
+      Image<float>.ofArray2D (
+        array2D [
+          [1.0; 1.0; 1.0]
+          [1.0; 1.0; 1.0]
+          [1.0; 1.0; 1.0] ])
+
+    Expect.throws (fun () -> ImageFunctions.convolve (Some ImageFunctions.Valid) None img kernel |> ignore) "Kernels larger than the image should be rejected before calling SimpleITK."
+
+  testCase "finiteDiffFilter3D creates directional stencil kernels" <| fun _ ->
+    let x = ImageFunctions.finiteDiffFilter3D 0.0 0u 1u
+    let z = ImageFunctions.finiteDiffFilter3D 0.0 2u 2u
+
+    Expect.equal (x.GetSize()) [3u; 1u; 1u] "X first derivative should be a 3x1x1 stencil."
+    Expect.equal (z.GetSize()) [1u; 1u; 3u] "Z second derivative should be a 1x1x3 stencil."
+    Expect.floatClose Accuracy.high x.[0,0,0] 0.5 "First derivative stencil should follow the existing positive-to-negative convention."
+    Expect.floatClose Accuracy.high x.[2,0,0] -0.5 "First derivative stencil should end negative."
+    Expect.floatClose Accuracy.high z.[0,0,1] -2.0 "Second derivative center should be -2."
+
   ]

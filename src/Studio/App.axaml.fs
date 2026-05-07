@@ -2,8 +2,6 @@ namespace Studio
 
 open Avalonia
 open Avalonia.Controls.ApplicationLifetimes
-open Avalonia.Data.Core
-open Avalonia.Data.Core.Plugins
 open Avalonia.Markup.Xaml
 open Studio.ViewModels
 open Studio.Views
@@ -15,10 +13,6 @@ type App() =
             AvaloniaXamlLoader.Load(this)
 
     override this.OnFrameworkInitializationCompleted() =
-
-        // Line below is needed to remove Avalonia data validation.
-        // Without this line you will get duplicate validations from both Avalonia and CT
-        BindingPlugins.DataValidators.RemoveAt(0)
 
         match this.ApplicationLifetime with
         | :? IClassicDesktopStyleApplicationLifetime as desktop ->

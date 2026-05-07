@@ -1,0 +1,52 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+    <PropertyGroup>
+        <TargetFramework>net10.0</TargetFramework>
+        <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    </PropertyGroup>
+
+    <!-- We want to copy the Managed library regardless of platform -->
+    <ItemGroup>
+      <Reference Include="SimpleITKCSharp">
+      <HintPath>../../lib/SimpleITKCSharpManaged.dll</HintPath>
+      <Private>true</Private>
+      </Reference>
+    </ItemGroup>
+
+    <ItemGroup Condition="$([MSBuild]::IsOSPlatform('Windows'))">
+      <None Include="../../lib/SimpleITKCSharpNative.dll">
+        <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+        <TargetPath>libSimpleITKCSharpNative.dll</TargetPath>
+      </None>
+    </ItemGroup>
+
+    <ItemGroup Condition="$([MSBuild]::IsOSPlatform('Linux'))">
+      <None Include="../../lib/libSimpleITKCSharpNative.so" CopyToOutputDirectory="PreserveNewest" />
+    </ItemGroup>
+
+    <ItemGroup Condition="$([MSBuild]::IsOSPlatform('OSX'))">
+      <None Include="../../lib/libSimpleITKCSharpNative.dylib" CopyToOutputDirectory="PreserveNewest" />
+    </ItemGroup>
+
+    <ItemGroup>
+        <PackageReference Include="DIKU.Graph" Version="1.0.0" />
+        <PackageReference Include="PureHDF" Version="2.1.1" />
+        <PackageReference Include="ZarrNET" Version="0.4.0" />
+        <ProjectReference Include="../TinyLinAlg/TinyLinAlg.fsproj" />
+        <ProjectReference Include="../Image/Image.fsproj" />
+        <ProjectReference Include="../SlimPipeline/SlimPipeline.fsproj" />
+    </ItemGroup>
+
+    <ItemGroup>
+        <Compile Include="StackCore.fs" />
+        <Compile Include="StackProcessingCost.fs" />
+        <Compile Include="StackIO.fs" />
+        <Compile Include="StackPoints.fs" />
+        <Compile Include="StackRegistration.fs" />
+        <Compile Include="StackObjects.fs" />
+        <Compile Include="StackMesh.fs" />
+        <Compile Include="StackImageFunctions.fs" />
+        <Compile Include="StackAffineResampler.fs" />
+    </ItemGroup>
+
+</Project>

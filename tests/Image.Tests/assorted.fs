@@ -1240,12 +1240,12 @@ let MorphologyTests =
 
     testCase "connectedComponents labels two blobs" <| fun _ ->
       let img = Image<uint8>.ofArray2D (array2D [[0uy;1uy;1uy;0uy;1uy]])
-      let cc = ImageFunctions.connectedComponents img
+      let cc = (ImageFunctions.connectedComponents img).Labels
       Expect.isTrue(cc[0,0] <> cc[0,2] && cc[0,3] = 0uL) "Should label blobs separately"
 
     testCase "relabelComponents removes small component" <| fun _ ->
       let img = Image<uint8>.ofArray2D (array2D [[1uy;0uy;1uy]])
-      let cc = ImageFunctions.connectedComponents img
+      let cc = (ImageFunctions.connectedComponents img).Labels
       let relabeled = ImageFunctions.relabelComponents 2u cc
       Expect.isTrue(relabeled[0,0] = 0uL || relabeled[0,2] = 0uL) "Small blobs should be removed"
 
@@ -1253,6 +1253,12 @@ let MorphologyTests =
       let img = Image<uint8>.ofArray2D (array2D [[0uy;0uy;1uy;1uy; 1uy;0uy;0uy]])
       let dmap = ImageFunctions.signedDistanceMap 1uy 0uy img
       Expect.isTrue(dmap[0,0] > 0 && dmap[0,3] < 0) "Foreground should be negative"
+
+    testCase "bandSignedDistanceMap keeps only finite values inside the requested band" <| fun _ ->
+      let img = Image<uint8>.ofArray2D (array2D [[0uy;0uy;0uy;1uy;1uy;1uy;0uy;0uy;0uy]])
+      let dmap = ImageFunctions.bandSignedDistanceMap 2u img
+      Expect.isTrue(System.Double.IsNaN dmap[0,0]) "Distances outside the band should be NaN"
+      Expect.isTrue(dmap[0,3] < 0.0 && not (System.Double.IsNaN dmap[0,3])) "Object boundary distances inside the band should be finite and negative"
 
     testCase "watershed separates peaks" <| fun _ ->
       let img = Image<int>.ofArray2D (array2D [[0;1;0;1;0]])
@@ -1560,4 +1566,3 @@ let someImageFunctionTests =
       let arr = (slice |> ImageFunctions.squeeze).toArray2D()
       Expect.equal arr.[0,0] 1 "Value from second slice"
   ]
-

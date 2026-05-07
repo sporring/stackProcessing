@@ -135,7 +135,7 @@ AsyncSeq<'S> -> AsyncSeq<'T>
 So it's **not just a function** - it's a *composable building block* that also carries:
 
 * A **name** (for debugging / tracing),
-* A **memory profile** (Streaming, Sliding, Buffered, Constant),
+* A **memory profile** (Streaming, Window, Buffered, Constant),
 * An **execution model** via the `Apply` field.
 
  
@@ -224,7 +224,7 @@ type Plan<'S,'T> =
 Use it when:
 
 * You need to compose pipelines with **explicit control** over memory usage.
-* You want to check **transition compatibility** between plans (e.g. Sliding -> Streaming).
+* You want to check **transition compatibility** between plans (e.g. Window -> Streaming).
 * You're planning for **3D windowed operations** or full-buffer transforms.
 
 It preserves the `Pipe` interface, but enables smart graph validation.
@@ -779,4 +779,3 @@ Use
 | Scalar Injector    | `Pipe<'In, 'A> -> Pipe<'In, 'B> -> Pipe<'In, 'C>` | Merges scalar and stream (e.g. via `zipWith`)        |
 
  
-

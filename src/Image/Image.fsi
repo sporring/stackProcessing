@@ -11,6 +11,8 @@ module InternalHelpers =
     val toVectorInt64: lst: int64 list -> itk.simple.VectorInt64
     val toVectorFloat32: lst: float32 list -> itk.simple.VectorFloat
     val toVectorFloat64: lst: float list -> itk.simple.VectorDouble
+    val toComplexFloat32: lst: float32 list -> System.Numerics.Complex
+    val toComplexFloat64: lst: float list -> System.Numerics.Complex
     val fromItkVector: f: ('a -> 'b) -> v: 'a seq -> 'b list
     val fromVectorUInt8: v: itk.simple.VectorUInt8 -> uint8 list
     val fromVectorInt8: v: itk.simple.VectorInt8 -> int8 list
@@ -23,6 +25,8 @@ module InternalHelpers =
     val fromVectorFloat32: v: itk.simple.VectorFloat -> float32 list
     val fromVectorFloat64: v: itk.simple.VectorDouble -> float list
     val fromType<'T> : itk.simple.PixelIDValueEnum
+    val isComplexPixelId: pid: itk.simple.PixelIDValueEnum -> bool
+    val isComplexCompatibleImage: itkImg: itk.simple.Image -> bool
     val ofCastItk<'T> : itkImg: itk.simple.Image -> itk.simple.Image
     val array2dZip: a: 'T array2d -> b: 'U array2d -> ('T * 'U) array2d
     val pixelIdToString: id: itk.simple.PixelIDValueEnum -> string
@@ -36,10 +40,38 @@ module InternalHelpers =
         t: itk.simple.PixelIDValueEnum -> u: itk.simple.VectorUInt32 -> obj
     val getBoxedZero:
       t: itk.simple.PixelIDValueEnum -> vSize: uint option -> obj
+    val getFloatPixel:
+      img: itk.simple.Image -> u: itk.simple.VectorUInt32 -> float
+    val setFloatPixel:
+      img: itk.simple.Image ->
+        u: itk.simple.VectorUInt32 -> value: float -> unit
     val inline mulAdd:
       t: itk.simple.PixelIDValueEnum -> acc: obj -> k: obj -> p: obj -> obj
 val getBytesPerComponent: t: System.Type -> uint32
 val getBytesPerSItkComponent: t: itk.simple.PixelIDValueEnum -> uint32
+type ImageFacts =
+    {
+      Backend: string
+      PixelType: string
+      ComponentBytes: uint64
+      ComponentsPerPixel: uint64
+      Size: uint64 list
+      VoxelCount: uint64
+      MemoryBytes: uint64
+    }
+module ImageFacts =
+    val private product: values: uint64 list -> uint64
+    val create:
+      backend: string ->
+        pixelType: string ->
+        componentBytes: uint64 ->
+        componentsPerPixel: uint64 -> size: uint64 list -> ImageFacts
+    val forType<'T> :
+      size: uint list -> componentsPerPixel: uint32 -> ImageFacts
+    val ofSimpleITK: sitk: itk.simple.Image -> ImageFacts
+    val memoryBytesForType<'T> :
+      nVoxels: uint64 -> componentsPerPixel: uint32 -> uint64
+    val sliceBytesForType<'T> : width: uint -> height: uint -> uint64
 val equalOne: v: 'T -> bool
 val private syncRoot: obj
 val mutable private totalImages: int
@@ -50,6 +82,13 @@ val mutable private memUsed: uint32
 val mutable private peakMemUsed: uint32
 val private incMemUsed: mem: uint32 -> unit
 val private decMemUsed: mem: uint32 -> unit
+val private currentRssBytes: unit -> uint64
+val mutable private rssBaselineBytes: uint64
+val mutable private peakRssDeltaBytes: uint64
+val mutable private debugLevel: uint32
+val private resetRssProbe: unit -> unit
+val private rssDeltaBytes: unit -> uint64
+val private sampleRssDeltaBytes: unit -> uint64 * uint64
 val private printDebugMessage: str: string -> unit
 val mutable private debug: bool
 [<StructuredFormatDisplay ("{Display}")>]
@@ -111,16 +150,43 @@ type Image<'T when 'T: equality> =
     static member neq: f1: Image<'S> * f2: Image<'S> -> bool when 'S: equality
     static member ofArray2D: arr: 'T array2d * ?name: string -> Image<'T>
     static member ofArray3D: arr: 'T array3d * ?name: string -> Image<'T>
+    static member
+      ofArray3DComplex: arr: float array3d * ?name: string ->
+                          Image<System.Numerics.Complex>
+    static member
+      ofArray3DVector: arr: 'S array3d * ?name: string -> Image<'S list>
+                         when 'S: equality
     static member ofArray4D: arr: 'T array4d * ?name: string -> Image<'T>
+    static member
+      ofArray4DComplex: arr: float array4d * ?name: string ->
+                          Image<System.Numerics.Complex>
+    static member
+      ofArray4DVector: arr: 'S array4d * ?name: string -> Image<'S list>
+                         when 'S: equality
     static member
       ofFile: filename: string * ?optionalName: string * ?optionalIndex: int ->
                 Image<'T>
     static member
+      ofFileComplex: filename: string * ?optionalName: string *
+                     ?optionalIndex: int -> Image<System.Numerics.Complex>
+    static member
+      ofFileVector: filename: string * ?optionalName: string *
+                    ?optionalIndex: int -> Image<'S list> when 'S: equality
+    static member
       ofImageList: images: Image<'S> list -> Image<'S list> when 'S: equality
+    static member
+      ofImagePairToComplex: realImg: Image<float> ->
+                              imagImg: Image<float> ->
+                              Image<System.Numerics.Complex>
     static member
       ofSimpleITK: itkImg: itk.simple.Image * ?optionalName: string *
                    ?optionalIndex: int -> Image<'T>
     static member setDebug: d: bool -> unit
+    static member setDebugLevel: level: uint32 -> unit
+    static member
+      toArray3DVector: img: Image<'S list> -> 'S array3d when 'S: equality
+    static member
+      toArray4DVector: img: Image<'S list> -> 'S array4d when 'S: equality
     static member unzip: im: Image<'T list> -> Image<'T> list
     static member zip: imLst: Image<'T> list -> Image<'T list>
     member CompareTo: other: Image<'T> -> int
@@ -128,8 +194,10 @@ type Image<'T when 'T: equality> =
     member Get: coords: uint list -> 'T
     member GetDepth: unit -> uint32
     member GetDimensions: unit -> uint32
+    member GetFacts: unit -> ImageFacts
     override GetHashCode: unit -> int
     member GetHeight: unit -> uint32
+    member GetMemoryBytes: unit -> uint64
     member GetNumberOfComponentsPerPixel: unit -> uint32
     member GetSize: unit -> uint list
     member
@@ -152,7 +220,10 @@ type Image<'T when 'T: equality> =
     member toArray2D: unit -> 'T array2d
     member toArray3D: unit -> 'T array3d
     member toArray4D: unit -> 'T array4d
+    member toComplex: unit -> Image<System.Numerics.Complex>
     member toFile: filename: string * ?optionalFormat: string -> unit
+    member toFileComplex: filename: string * ?optionalFormat: string -> unit
+    member toFileVector: filename: string * ?optionalFormat: string -> unit
     member toFloat: unit -> Image<float>
     member toFloat32: unit -> Image<float32>
     member toImageList: unit -> Image<'S> list when 'S: equality
@@ -165,6 +236,16 @@ type Image<'T when 'T: equality> =
     member toUInt16: unit -> Image<uint16>
     member toUInt64: unit -> Image<uint64>
     member toUInt8: unit -> Image<uint8>
+    member toVectorFloat32: unit -> Image<float32 list>
+    member toVectorFloat64: unit -> Image<float list>
+    member toVectorInt16: unit -> Image<int16 list>
+    member toVectorInt32: unit -> Image<int32 list>
+    member toVectorInt64: unit -> Image<int64 list>
+    member toVectorInt8: unit -> Image<int8 list>
+    member toVectorUInt16: unit -> Image<uint16 list>
+    member toVectorUInt32: unit -> Image<uint32 list>
+    member toVectorUInt64: unit -> Image<uint64 list>
+    member toVectorUInt8: unit -> Image<uint8 list>
     member Display: string
     member Image: itk.simple.Image
     member Item: i0: int * i1: int -> 'T with get
@@ -224,6 +305,10 @@ val constantPad2D:
   padLower: uint list ->
     padUpper: uint list -> c: double -> img: Image.Image<'T> -> Image.Image<'T>
     when 'T: equality
+val crop2D:
+  cropLower: uint list ->
+    cropUpper: uint list -> img: Image.Image<'T> -> Image.Image<'T>
+    when 'T: equality
 val inline makeUnaryImageOperatorWith:
   name: string ->
     createFilter: (unit -> 'Filter) ->
@@ -276,12 +361,75 @@ val atanImage:
   img: Image.Image<'T> -> Image.Image<'a> when 'T: equality and 'a: equality
 val roundImage:
   img: Image.Image<'T> -> Image.Image<'a> when 'T: equality and 'a: equality
+val clampImage:
+  lower: double -> upper: double -> (Image.Image<'T> -> Image.Image<'T>)
+    when 'T: equality
+val rescaleIntensity:
+  outputMinimum: double ->
+    outputMaximum: double -> (Image.Image<'T> -> Image.Image<'T>)
+    when 'T: equality
+val intensityWindow:
+  windowMinimum: double ->
+    windowMaximum: double ->
+    outputMinimum: double ->
+    outputMaximum: double -> (Image.Image<'T> -> Image.Image<'T>)
+    when 'T: equality
+val normalizeImage: img: Image.Image<'T> -> Image.Image<float> when 'T: equality
+val shiftScale:
+  shift: double -> scale: double -> (Image.Image<'T> -> Image.Image<'T>)
+    when 'T: equality
+val invertIntensity:
+  maximum: double -> (Image.Image<'T> -> Image.Image<'T>) when 'T: equality
+val median:
+  radius: uint -> (Image.Image<'T> -> Image.Image<'T>) when 'T: equality
+val bilateral:
+  domainSigma: double ->
+    rangeSigma: double -> (Image.Image<'T> -> Image.Image<'T>) when 'T: equality
+val gradientMagnitude: img: Image.Image<'T> -> Image.Image<'T> when 'T: equality
+val sobelEdge: img: Image.Image<'T> -> Image.Image<'T> when 'T: equality
+val laplacian: img: Image.Image<'T> -> Image.Image<'T> when 'T: equality
+val equalImage:
+  a: Image.Image<'T> -> b: Image.Image<'T> -> Image.Image<uint8>
+    when 'T: equality
+val notEqualImage:
+  a: Image.Image<'T> -> b: Image.Image<'T> -> Image.Image<uint8>
+    when 'T: equality
+val greaterImage:
+  a: Image.Image<'T> -> b: Image.Image<'T> -> Image.Image<uint8>
+    when 'T: equality
+val greaterEqualImage:
+  a: Image.Image<'T> -> b: Image.Image<'T> -> Image.Image<uint8>
+    when 'T: equality
+val lessImage:
+  a: Image.Image<'T> -> b: Image.Image<'T> -> Image.Image<uint8>
+    when 'T: equality
+val lessEqualImage:
+  a: Image.Image<'T> -> b: Image.Image<'T> -> Image.Image<uint8>
+    when 'T: equality
+val andImage:
+  a: Image.Image<uint8> -> b: Image.Image<uint8> -> Image.Image<uint8>
+val orImage:
+  a: Image.Image<uint8> -> b: Image.Image<uint8> -> Image.Image<uint8>
+val xorImage:
+  a: Image.Image<uint8> -> b: Image.Image<uint8> -> Image.Image<uint8>
+val notImage: img: Image.Image<uint8> -> Image.Image<uint8>
+val mask:
+  outsideValue: double ->
+    img: Image.Image<'T> -> mask: Image.Image<uint8> -> Image.Image<'T>
+    when 'T: equality
 val euler2DTransform:
   img: Image.Image<'T> ->
     cx: float * cy: float * a: float -> dx: float * dy: float -> Image.Image<'T>
     when 'T: equality
 val euler2DRotate:
   img: Image.Image<'T> -> cx: float * cy: float -> a: float -> Image.Image<'T>
+    when 'T: equality
+val resample2D:
+  interpolator: itk.simple.InterpolatorEnum ->
+    outputWidth: uint ->
+    outputHeight: uint ->
+    outputSpacingX: float ->
+    outputSpacingY: float -> img: Image.Image<'T> -> Image.Image<'T>
     when 'T: equality
 type BoundaryCondition =
     | ZeroPad
@@ -331,10 +479,48 @@ val binaryDilate: radius: uint -> (Image.Image<uint8> -> Image.Image<uint8>)
 val binaryOpening: radius: uint -> (Image.Image<uint8> -> Image.Image<uint8>)
 /// Binary closing (dilate then erode)
 val binaryClosing: radius: uint -> (Image.Image<uint8> -> Image.Image<uint8>)
+val grayscaleErode:
+  radius: uint -> (Image.Image<'T> -> Image.Image<'T>) when 'T: equality
+val grayscaleDilate:
+  radius: uint -> (Image.Image<'T> -> Image.Image<'T>) when 'T: equality
+val grayscaleOpening:
+  radius: uint -> (Image.Image<'T> -> Image.Image<'T>) when 'T: equality
+val grayscaleClosing:
+  radius: uint -> (Image.Image<'T> -> Image.Image<'T>) when 'T: equality
+val whiteTopHat:
+  radius: uint -> (Image.Image<'T> -> Image.Image<'T>) when 'T: equality
+val blackTopHat:
+  radius: uint -> (Image.Image<'T> -> Image.Image<'T>) when 'T: equality
+val morphologicalGradient:
+  radius: uint -> (Image.Image<'T> -> Image.Image<'T>) when 'T: equality
 /// Fill holes in binary regions
 val binaryFillHoles: img: Image.Image<uint8> -> Image.Image<uint8>
+val binaryContour:
+  fullyConnected: bool -> (Image.Image<uint8> -> Image.Image<uint8>)
+val binaryThinning: img: Image.Image<uint8> -> Image.Image<uint8>
+val binaryMedian: radius: uint -> (Image.Image<uint8> -> Image.Image<uint8>)
+val binaryOpeningByReconstruction:
+  radius: uint ->
+    fullyConnected: bool -> (Image.Image<uint8> -> Image.Image<uint8>)
+val binaryClosingByReconstruction:
+  radius: uint ->
+    fullyConnected: bool -> (Image.Image<uint8> -> Image.Image<uint8>)
+val binaryReconstructionByDilation:
+  fullyConnected: bool ->
+    marker: Image.Image<uint8> -> mask: Image.Image<uint8> -> Image.Image<uint8>
+val binaryReconstructionByErosion:
+  fullyConnected: bool ->
+    marker: Image.Image<uint8> -> mask: Image.Image<uint8> -> Image.Image<uint8>
+val votingBinaryHoleFilling:
+  radius: uint ->
+    majorityThreshold: uint -> (Image.Image<uint8> -> Image.Image<uint8>)
+type ConnectedComponentsResult =
+    {
+      Labels: Image.Image<uint64>
+      ObjectCount: uint64
+    }
 /// Connected components labeling
-val connectedComponents: img: Image.Image<uint8> -> Image.Image<uint64>
+val connectedComponents: img: Image.Image<uint8> -> ConnectedComponentsResult
 /// Relabel components by size, optionally remove small objects
 val relabelComponents:
   minObjectSize: uint -> (Image.Image<'T> -> Image.Image<'T>) when 'T: equality
@@ -367,10 +553,53 @@ type LabelShapeStatistics =
 /// Compute label shape statistics and return a dictionary of results
 val labelShapeStatistics:
   img: Image.Image<'T> -> Map<int64,LabelShapeStatistics> when 'T: equality
+type LabelIntensityStatistics =
+    {
+      Label: int64
+      NumberOfPixels: uint64
+      PhysicalSize: float
+      Mean: float
+      Median: float
+      Minimum: float
+      Maximum: float
+      Sum: float
+      StandardDeviation: float
+      Variance: float
+      Skewness: float
+      Kurtosis: float
+      Centroid: float list
+      CenterOfGravity: float list
+      BoundingBox: uint list
+    }
+val labelIntensityStatistics:
+  labelImage: Image.Image<'L> ->
+    intensityImage: Image.Image<'T> -> Map<int64,LabelIntensityStatistics>
+    when 'L: equality and 'T: equality
+type LabelOverlapMeasures =
+    {
+      MeanOverlap: float
+      UnionOverlap: float
+      JaccardCoefficient: float
+      DiceCoefficient: float
+      VolumeSimilarity: float
+      FalseNegativeError: float
+      FalsePositiveError: float
+      FalseDiscoveryRate: float
+    }
+val labelOverlapMeasures:
+  source: Image.Image<'T> -> target: Image.Image<'T> -> LabelOverlapMeasures
+    when 'T: equality
+val labelContour:
+  fullyConnected: bool -> (Image.Image<'T> -> Image.Image<'T>) when 'T: equality
+val changeLabel:
+  fromLabel: double -> toLabel: double -> (Image.Image<'T> -> Image.Image<'T>)
+    when 'T: equality
 /// Compute signed Maurer distance map (positive outside, negative inside)
 val signedDistanceMap:
   inside: uint8 ->
     outside: uint8 -> img: Image.Image<uint8> -> Image.Image<float>
+val bandSignedDistanceMap:
+  bandRadius: uint -> img: Image.Image<uint8> -> Image.Image<float>
 /// Morphological watershed (binary or grayscale)
 val watershed:
   level: float -> (Image.Image<'T> -> Image.Image<'T>) when 'T: equality
@@ -388,13 +617,29 @@ type ImageStats =
 val computeStats: img: Image.Image<'T> -> ImageStats when 'T: equality
 val addComputeStats: s1: ImageStats -> s2: ImageStats -> ImageStats
 val unique: img: Image.Image<'T> -> 'T list when 'T: comparison
-/// Otsu threshold
+val private valuesFromImages:
+  bins: uint32 -> images: Image.Image<'T> list -> operation: 'a -> float list
+    when 'T: equality
+val private binnedHistogram:
+  bins: uint32 -> values: float list -> float * float * float * uint64 array
+val private orderedHistogramValues:
+  histogram: Map<'T,uint64> -> operation: 'a -> (float * uint64) list
+    when 'T: comparison
+val otsuThresholdFromHistogram:
+  histogram: Map<'T,uint64> -> float when 'T: comparison
+val private otsuThresholdFromImages:
+  bins: uint32 -> images: Image.Image<'a> list -> float when 'a: equality
+/// Otsu threshold estimated from a binned histogram of the image values.
 val otsuThreshold: img: Image.Image<'T> -> Image.Image<uint8> when 'T: equality
 /// Otsu multiple thresholds (returns a label map)
 val otsuMultiThreshold:
   numThresholds: byte -> img: Image.Image<'T> -> Image.Image<uint8>
     when 'T: equality
 /// Moments-based threshold
+val momentsThresholdFromHistogram:
+  histogram: Map<'T,uint64> -> float when 'T: comparison
+val private momentsThresholdFromImages:
+  bins: uint32 -> images: Image.Image<'a> list -> float when 'a: equality
 val momentsThreshold:
   img: Image.Image<'T> -> Image.Image<uint8> when 'T: equality
 /// Coordinate fields
@@ -411,6 +656,9 @@ val inline pairs2ints:
   pairs: (^T * ^S) list -> (int * int) list
     when ^T: (static member op_Explicit: ^T -> int) and
          ^S: (static member op_Explicit: ^S -> int)
+val quantilesFromHistogram:
+  quantiles: float list -> histogram: Map<'T,uint64> -> float list
+    when 'T: comparison
 val addNormalNoise:
   mean: float -> stddev: float -> (Image.Image<'T> -> Image.Image<'T>)
     when 'T: equality
@@ -443,3 +691,9 @@ val toSeqSeq: I: Image.Image<'T> -> float seq seq when 'T: equality
 val permuteAxes:
   order: uint list -> img: Image.Image<'T> -> Image.Image<'S>
     when 'T: equality and 'S: equality
+val FFTXY:
+  image: Image.Image<'T> -> Image.Image<System.Numerics.Complex>
+    when 'T: equality
+val directionalFFT:
+  dir: uint -> image: Image.Image<'T> -> Image.Image<System.Numerics.Complex>
+    when 'T: equality

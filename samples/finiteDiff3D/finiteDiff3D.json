@@ -1,0 +1,163 @@
+{
+  "version": 1,
+  "nodes": [
+    {
+      "id": "n1",
+      "functionId": "Read",
+      "x": 40.0,
+      "y": 120.0,
+      "parameters": [
+        {
+          "key": "availableMemory",
+          "value": "2147483648UL",
+          "useInput": false
+        },
+        {
+          "key": "type",
+          "value": "Float64",
+          "useInput": false
+        },
+        {
+          "key": "input",
+          "value": "../image18",
+          "useInput": false
+        },
+        {
+          "key": "suffix",
+          "value": ".tiff",
+          "useInput": false
+        }
+      ]
+    },
+    {
+      "id": "n2",
+      "functionId": "Tap",
+      "x": 240.0,
+      "y": 120.0,
+      "parameters": []
+    },
+    {
+      "id": "n3",
+      "functionId": "FiniteDiff",
+      "x": 440.0,
+      "y": 120.0,
+      "parameters": [
+        {
+          "key": "sigma",
+          "value": "1.0",
+          "useInput": false
+        },
+        {
+          "key": "axis1",
+          "value": "1",
+          "useInput": false
+        },
+        {
+          "key": "axis2",
+          "value": "2",
+          "useInput": false
+        }
+      ]
+    },
+    {
+      "id": "n4",
+      "functionId": "Tap",
+      "x": 640.0,
+      "y": 120.0,
+      "parameters": []
+    },
+    {
+      "id": "n5",
+      "functionId": "Cast",
+      "x": 840.0,
+      "y": 120.0,
+      "parameters": [
+        {
+          "key": "sourceType",
+          "value": "Float64",
+          "useInput": false
+        },
+        {
+          "key": "targetType",
+          "value": "UInt8",
+          "useInput": false
+        }
+      ]
+    },
+    {
+      "id": "n6",
+      "functionId": "Tap",
+      "x": 1040.0,
+      "y": 120.0,
+      "parameters": []
+    },
+    {
+      "id": "n7",
+      "functionId": "Write",
+      "x": 1240.0,
+      "y": 120.0,
+      "parameters": [
+        {
+          "key": "output",
+          "value": "../result18",
+          "useInput": false
+        },
+        {
+          "key": "suffix",
+          "value": ".tiff",
+          "useInput": false
+        }
+      ]
+    }
+  ],
+  "edges": [
+    {
+      "fromNode": "n1",
+      "fromKind": "dataOutput",
+      "fromPort": 0,
+      "toNode": "n2",
+      "toKind": "dataInput",
+      "toPort": 0
+    },
+    {
+      "fromNode": "n2",
+      "fromKind": "dataOutput",
+      "fromPort": 0,
+      "toNode": "n3",
+      "toKind": "dataInput",
+      "toPort": 0
+    },
+    {
+      "fromNode": "n3",
+      "fromKind": "dataOutput",
+      "fromPort": 0,
+      "toNode": "n4",
+      "toKind": "dataInput",
+      "toPort": 0
+    },
+    {
+      "fromNode": "n4",
+      "fromKind": "dataOutput",
+      "fromPort": 0,
+      "toNode": "n5",
+      "toKind": "dataInput",
+      "toPort": 0
+    },
+    {
+      "fromNode": "n5",
+      "fromKind": "dataOutput",
+      "fromPort": 0,
+      "toNode": "n6",
+      "toKind": "dataInput",
+      "toPort": 0
+    },
+    {
+      "fromNode": "n6",
+      "fromKind": "dataOutput",
+      "fromPort": 0,
+      "toNode": "n7",
+      "toKind": "dataInput",
+      "toPort": 0
+    }
+  ]
+}

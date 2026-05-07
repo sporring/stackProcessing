@@ -1,0 +1,250 @@
+{
+  "version": 1,
+  "nodes": [
+    {
+      "id": "n1",
+      "functionId": "CreateByEuler2DTransform",
+      "x": 40.0,
+      "y": 80.0,
+      "parameters": [
+        {
+          "key": "availableMemory",
+          "value": "2147483648UL",
+          "useInput": false
+        },
+        {
+          "key": "type",
+          "value": "UInt8",
+          "useInput": false
+        },
+        {
+          "key": "width",
+          "value": "64",
+          "useInput": false
+        },
+        {
+          "key": "height",
+          "value": "64",
+          "useInput": false
+        },
+        {
+          "key": "depth",
+          "value": "64",
+          "useInput": false
+        },
+        {
+          "key": "boxSize",
+          "value": "16",
+          "useInput": false
+        },
+        {
+          "key": "transform",
+          "value": "Diagonal",
+          "useInput": false
+        }
+      ]
+    },
+    {
+      "id": "n2",
+      "functionId": "CreateByEuler2DTransform",
+      "x": 40.0,
+      "y": 220.0,
+      "parameters": [
+        {
+          "key": "availableMemory",
+          "value": "2147483648UL",
+          "useInput": false
+        },
+        {
+          "key": "type",
+          "value": "UInt8",
+          "useInput": false
+        },
+        {
+          "key": "width",
+          "value": "64",
+          "useInput": false
+        },
+        {
+          "key": "height",
+          "value": "64",
+          "useInput": false
+        },
+        {
+          "key": "depth",
+          "value": "64",
+          "useInput": false
+        },
+        {
+          "key": "boxSize",
+          "value": "16",
+          "useInput": false
+        },
+        {
+          "key": "transform",
+          "value": "TopDown",
+          "useInput": false
+        }
+      ]
+    },
+    {
+      "id": "n3",
+      "functionId": "CreateByEuler2DTransform",
+      "x": 40.0,
+      "y": 360.0,
+      "parameters": [
+        {
+          "key": "availableMemory",
+          "value": "2147483648UL",
+          "useInput": false
+        },
+        {
+          "key": "type",
+          "value": "UInt8",
+          "useInput": false
+        },
+        {
+          "key": "width",
+          "value": "64",
+          "useInput": false
+        },
+        {
+          "key": "height",
+          "value": "64",
+          "useInput": false
+        },
+        {
+          "key": "depth",
+          "value": "64",
+          "useInput": false
+        },
+        {
+          "key": "boxSize",
+          "value": "16",
+          "useInput": false
+        },
+        {
+          "key": "transform",
+          "value": "AntiDiagonal",
+          "useInput": false
+        }
+      ]
+    },
+    {
+      "id": "n4",
+      "functionId": "MaxOfPair",
+      "x": 320.0,
+      "y": 150.0,
+      "parameters": [
+        {
+          "key": "type",
+          "value": "UInt8",
+          "useInput": false
+        }
+      ]
+    },
+    {
+      "id": "n5",
+      "functionId": "Tap",
+      "x": 540.0,
+      "y": 150.0,
+      "parameters": []
+    },
+    {
+      "id": "n6",
+      "functionId": "Tap",
+      "x": 320.0,
+      "y": 360.0,
+      "parameters": []
+    },
+    {
+      "id": "n7",
+      "functionId": "MaxOfPair",
+      "x": 760.0,
+      "y": 230.0,
+      "parameters": [
+        {
+          "key": "type",
+          "value": "UInt8",
+          "useInput": false
+        }
+      ]
+    },
+    {
+      "id": "n8",
+      "functionId": "Write",
+      "x": 980.0,
+      "y": 230.0,
+      "parameters": [
+        {
+          "key": "output",
+          "value": "../image18",
+          "useInput": false
+        },
+        {
+          "key": "suffix",
+          "value": ".tiff",
+          "useInput": false
+        }
+      ]
+    }
+  ],
+  "edges": [
+    {
+      "fromNode": "n1",
+      "fromKind": "dataOutput",
+      "fromPort": 0,
+      "toNode": "n4",
+      "toKind": "dataInput",
+      "toPort": 0
+    },
+    {
+      "fromNode": "n2",
+      "fromKind": "dataOutput",
+      "fromPort": 0,
+      "toNode": "n4",
+      "toKind": "dataInput",
+      "toPort": 1
+    },
+    {
+      "fromNode": "n4",
+      "fromKind": "dataOutput",
+      "fromPort": 0,
+      "toNode": "n5",
+      "toKind": "dataInput",
+      "toPort": 0
+    },
+    {
+      "fromNode": "n3",
+      "fromKind": "dataOutput",
+      "fromPort": 0,
+      "toNode": "n6",
+      "toKind": "dataInput",
+      "toPort": 0
+    },
+    {
+      "fromNode": "n5",
+      "fromKind": "dataOutput",
+      "fromPort": 0,
+      "toNode": "n7",
+      "toKind": "dataInput",
+      "toPort": 0
+    },
+    {
+      "fromNode": "n6",
+      "fromKind": "dataOutput",
+      "fromPort": 0,
+      "toNode": "n7",
+      "toKind": "dataInput",
+      "toPort": 1
+    },
+    {
+      "fromNode": "n7",
+      "fromKind": "dataOutput",
+      "fromPort": 0,
+      "toNode": "n8",
+      "toKind": "dataInput",
+      "toPort": 0
+    }
+  ]
+}

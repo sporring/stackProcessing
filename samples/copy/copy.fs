@@ -1,19 +1,15 @@
 ﻿// To run, remember to:
-// export DYLD_LIBRARY_PATH=./StackPipeline/lib:$(pwd)/bin/Debug/net8.0
+// export DYLD_LIBRARY_PATH=./StackPipeline/lib:$(pwd)/bin/Debug/net10.0
 open StackProcessing
 
 [<EntryPoint>]
 let main arg =
     let availableMemory = 2UL * 1024UL * 1024UL *1024UL // 2GB for example
 
-    let src = 
-        if arg.Length > 0 && arg[0] = "debug" then
-            debug availableMemory
-        else
-            source availableMemory
+    let src, arg = commandLineSource availableMemory arg
     let input,output = 
-        if arg.Length > 1 then
-            $"image{arg[1]}", $"mask{arg[1]}"
+        if arg.Length > 0 then
+            $"../image{arg[0]}", $"../mask{arg[0]}"
         else
             "../image18", "../mask18"
 

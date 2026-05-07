@@ -37,7 +37,7 @@ type Profile =
     | Unit
     | Constant
     | Streaming
-    | Sliding of uint * uint * uint * uint * uint
+    | Window of uint * uint * uint * uint * uint
 ```
 
 which has the following meaning:
@@ -47,7 +47,18 @@ which has the following meaning:
 | `Unit`      | Stateless, no retained elements. |
 | `Constant`  | End result terminating the stream. |
 | `Streaming` | Streaming single elements. |
-| `Sliding`   | Streaming list of elements with parametrized list size, stride, and initial and ending padding: `window`, `stride`, `pad`, `emitStart`, `emitCount`. |
+| `Window`    | Streaming windows with parametrized window size, stride, pad, emit start, and emit count. |
+
+Windowed stages carry their retained context explicitly:
+
+```fsharp
+type Window<'T> =
+  { Items: 'T list
+    EmitRange: uint * uint }
+```
+
+`Items` holds the current window contents. `EmitRange` describes which part of
+that window is emitted when it is flattened back to the ordinary stream.
 
 ### `Pipe<'S,'T>`
 
@@ -78,7 +89,7 @@ Each `Pipe` is a composable unit. They can be chained into full pipelines using 
 | `Pipe.liftRelease` | Lifts a mapping function to a pipe and releases the input after its application via the callback function given. |
 | `Pipe.compose`     | Composes two pipes into a new pipe. |
 | `Pipe.map2Sync`    | Synchronously maps a pure function `U -> 'V -> 'W` and fans out the result to two synchronized streams. |
-| `Pipe.window`      | Create a sliding window of elements from a stream of given size, padding, and stride. |
+| `Pipe.window`      | Create a stream of `Window<'T>` values from a stream of elements. |
 | `Pipe.init`        | Initializes a new stream from a generator (`int -> 'T`).  |
 | `Pipe.skip`        | Skips the first n elements in the sequence. |
 | `Pipe.take`        | Takes the first n elements in the sequence. |
@@ -170,4 +181,4 @@ Each `Pipeline` is a composable unit. They can be chained into full pipelines us
 | `>=>`    | Functionally compose a pipeline and a plan returning a Pipeline. |
 | `>=>>`   | Fan out a stream into a stream pair with Pipe.map2Sync synchronization. |
 | `>>=>`   | Fan in a stream of pairs into a stream of singles. |
-| `>>=>>`  | Functionally compose a Pipeline of pairs with a Plan for pairs. |
+| `>>=>>`  | Apply synchronized stages to both sides of an existing paired stream. |

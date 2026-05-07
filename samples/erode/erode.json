@@ -1,0 +1,149 @@
+{
+  "version": 1,
+  "nodes": [
+    {
+      "id": "n1",
+      "functionId": "Zero",
+      "x": 40.0,
+      "y": 120.0,
+      "parameters": [
+        {
+          "key": "availableMemory",
+          "value": "2147483648UL",
+          "useInput": false
+        },
+        {
+          "key": "type",
+          "value": "UInt8",
+          "useInput": false
+        },
+        {
+          "key": "width",
+          "value": "64",
+          "useInput": false
+        },
+        {
+          "key": "height",
+          "value": "64",
+          "useInput": false
+        },
+        {
+          "key": "depth",
+          "value": "64",
+          "useInput": false
+        }
+      ]
+    },
+    {
+      "id": "n2",
+      "functionId": "AddNormalNoise",
+      "x": 260.0,
+      "y": 120.0,
+      "parameters": [
+        {
+          "key": "type",
+          "value": "UInt8",
+          "useInput": false
+        },
+        {
+          "key": "mean",
+          "value": "128.0",
+          "useInput": false
+        },
+        {
+          "key": "std",
+          "value": "50.0",
+          "useInput": false
+        }
+      ]
+    },
+    {
+      "id": "n3",
+      "functionId": "Threshold",
+      "x": 480.0,
+      "y": 120.0,
+      "parameters": [
+        {
+          "key": "type",
+          "value": "UInt8",
+          "useInput": false
+        },
+        {
+          "key": "lower",
+          "value": "128.0",
+          "useInput": false
+        },
+        {
+          "key": "upper",
+          "value": "infinity",
+          "useInput": false
+        }
+      ]
+    },
+    {
+      "id": "n4",
+      "functionId": "Erode",
+      "x": 700.0,
+      "y": 120.0,
+      "parameters": [
+        {
+          "key": "radius",
+          "value": "1",
+          "useInput": false
+        }
+      ]
+    },
+    {
+      "id": "n5",
+      "functionId": "Write",
+      "x": 920.0,
+      "y": 120.0,
+      "parameters": [
+        {
+          "key": "output",
+          "value": "../result18",
+          "useInput": false
+        },
+        {
+          "key": "suffix",
+          "value": ".tiff",
+          "useInput": false
+        }
+      ]
+    }
+  ],
+  "edges": [
+    {
+      "fromNode": "n1",
+      "fromKind": "dataOutput",
+      "fromPort": 0,
+      "toNode": "n2",
+      "toKind": "dataInput",
+      "toPort": 0
+    },
+    {
+      "fromNode": "n2",
+      "fromKind": "dataOutput",
+      "fromPort": 0,
+      "toNode": "n3",
+      "toKind": "dataInput",
+      "toPort": 0
+    },
+    {
+      "fromNode": "n3",
+      "fromKind": "dataOutput",
+      "fromPort": 0,
+      "toNode": "n4",
+      "toKind": "dataInput",
+      "toPort": 0
+    },
+    {
+      "fromNode": "n4",
+      "fromKind": "dataOutput",
+      "fromPort": 0,
+      "toNode": "n5",
+      "toKind": "dataInput",
+      "toPort": 0
+    }
+  ]
+}

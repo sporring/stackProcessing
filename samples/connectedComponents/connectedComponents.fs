@@ -1,51 +1,39 @@
 ﻿// To run, remember to:
-// export DYLD_LIBRARY_PATH=./StackPipeline/lib:$(pwd)/bin/Debug/net8.0
+// export DYLD_LIBRARY_PATH=./StackPipeline/lib:$(pwd)/bin/Debug/net10.0
 open StackProcessing
 
 [<EntryPoint>]
 let main arg =
     let availableMemory = 2UL * 1024UL * 1024UL *1024UL // 1MB for example
 
-    let src = 
-        if arg.Length > 0 && arg[0] = "debug" then
-            debug availableMemory
-        else
-            source availableMemory
+    let src, arg = commandLineSource availableMemory arg
     let width, height, depth, input, output = 
-        if arg.Length > 1 then
-            let n = (int arg[1]) / 3 |> pown 2 |> uint 
-            n, n, n, $"image{arg[1]}", $"result{arg[1]}"
+        if arg.Length > 0 then
+            let n = (int arg[0]) / 3 |> pown 2 |> uint 
+            n, n, n, $"../image{arg[0]}", $"../result{arg[0]}"
         else
             64u, 64u, 64u, "../image18", "../result18"
     let tmp = "tmp"
+    let suffix = ".tiff"
+    let tmpSuffix = ".mha"
 
     let wsz = (depth/8u)
 
-    src
-    |> read<uint8> input ".tiff"
-    >=> imageDivScalar 255uy
-    >=> connectedComponents wsz
-    >=> cast<uint64,uint8>
-    >=> scalarMulImage (255uy/3uy)
-    // Tiff supports uint8, int8, uint16, int16, and float32
-    >=> write (tmp) ".tiff"
-    |> sink
-
     let transTbl =
         src
-        |> getConnectedChunkNeighbours (tmp) ".tiff" wsz
-        >=> makeAdjacencyGraph ()
-        //>=> tapIt (fun (i,g) -> sprintf "Vertices\n%A\nEdges\n%A\n" (g|>simpleGraph.vertices|>Set.toList|>List.sort) (g|>simpleGraph.edges|>Set.toList|>List.sort))
-        >=> makeTranslationTable ()
+        |> read<uint8> input suffix
+        >=> threshold 128.0 infinity
+        >=> connectedComponents wsz
+        >=> teeFst (writeSlabSlices tmp tmpSuffix wsz)
+        >=> makeConnectedComponentTranslationTable wsz
         |> drain
     printfn "Translation Table drain:\n%A" transTbl
 
     src
-    |> read<uint64> (tmp) ".tiff"
+    |> read<uint64> tmp tmpSuffix
     >=> updateConnectedComponents wsz transTbl
     >=> cast<uint64,uint8>
-    >=> scalarMulImage (255uy/3uy)
-    >=> write output ".tiff"
+    >=> write output suffix
     |> sink
 
     0
