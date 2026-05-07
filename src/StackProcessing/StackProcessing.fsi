@@ -108,6 +108,10 @@ type ObjectBounds = StackObjects.ObjectBounds
 
 type StreamedObject = StackObjects.StreamedObject
 
+type ObjectMeasurements = StackObjects.ObjectMeasurements
+
+type ObjectSizeStats = StackObjects.ObjectSizeStats
+
 type Point3D = StackMesh.Point3D
 
 type Triangle = StackMesh.Triangle
@@ -314,6 +318,18 @@ val paintObjects:
 
 val paintObjectsCropped:
   StackCore.Stage<StackObjects.StreamedObject list,StackCore.Image<uint8>>
+
+val measureObjects:
+  StackCore.Stage<StackObjects.StreamedObject list,
+                  StackObjects.ObjectMeasurements list>
+
+val objectSizeStats:
+  StackCore.Stage<StackObjects.ObjectMeasurements list,
+                  StackObjects.ObjectSizeStats>
+
+val objectSizeHistogram:
+  (uint64 ->
+     StackCore.Stage<StackObjects.ObjectMeasurements list,Map<uint64,uint64>>)
 
 val resampleAffineTrilinearSlices:
   (string ->

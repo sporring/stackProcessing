@@ -25,6 +25,26 @@ type StreamedObject =
       Bounds: ObjectBounds
       Size: uint64 }
 
+type ObjectMeasurements =
+    { Label: uint64
+      Size: uint64
+      MinX: int
+      MaxX: int
+      MinY: int
+      MaxY: int
+      MinZ: int
+      MaxZ: int
+      Width: uint64
+      Height: uint64
+      Depth: uint64 }
+
+type ObjectSizeStats =
+    { Count: uint64
+      Mean: float
+      Variance: float
+      Minimum: uint64
+      Maximum: uint64 }
+
 type private SliceComponent =
     { Id: int
       Positions: Position3D<int> list
@@ -48,7 +68,7 @@ let private objectPoint x y z =
       Y = y
       Z = z }
 
-let private pointBounds x y z =
+let private pointBounds x y z : ObjectBounds =
     { MinX = x
       MaxX = x
       MinY = y
@@ -56,7 +76,7 @@ let private pointBounds x y z =
       MinZ = z
       MaxZ = z }
 
-let private addPointToBounds bounds x y z =
+let private addPointToBounds (bounds: ObjectBounds) x y z : ObjectBounds =
     { MinX = min bounds.MinX x
       MaxX = max bounds.MaxX x
       MinY = min bounds.MinY y
@@ -64,7 +84,7 @@ let private addPointToBounds bounds x y z =
       MinZ = min bounds.MinZ z
       MaxZ = max bounds.MaxZ z }
 
-let private mergeBounds left right =
+let private mergeBounds (left: ObjectBounds) (right: ObjectBounds) : ObjectBounds =
     { MinX = min left.MinX right.MinX
       MaxX = max left.MaxX right.MaxX
       MinY = min left.MinY right.MinY
@@ -371,3 +391,71 @@ let private paintCroppedObjectBatch (objects: StreamedObject list) =
 let paintObjectsCropped : Stage<StreamedObject list, Image<uint8>> =
     Stage.map "paintObjectsCropped" (fun _ -> paintCroppedObjectBatch) id id
     --> Stage.flatten "paintObjectsCropped: flatten"
+
+let private measurementsOfObject (object: StreamedObject) =
+    { Label = object.Label
+      Size = object.Size
+      MinX = object.Bounds.MinX
+      MaxX = object.Bounds.MaxX
+      MinY = object.Bounds.MinY
+      MaxY = object.Bounds.MaxY
+      MinZ = object.Bounds.MinZ
+      MaxZ = object.Bounds.MaxZ
+      Width = uint64 (object.Bounds.MaxX - object.Bounds.MinX + 1)
+      Height = uint64 (object.Bounds.MaxY - object.Bounds.MinY + 1)
+      Depth = uint64 (object.Bounds.MaxZ - object.Bounds.MinZ + 1) }
+
+let measureObjects : Stage<StreamedObject list, ObjectMeasurements list> =
+    Stage.map "measureObjects" (fun _ objects -> objects |> List.map measurementsOfObject) id id
+
+let private zeroSizeStats =
+    { Count = 0UL
+      Mean = 0.0
+      Variance = 0.0
+      Minimum = UInt64.MaxValue
+      Maximum = 0UL }
+
+let private addSizeToStats (count, mean, m2, minimum, maximum) (size: uint64) =
+    let count' = count + 1UL
+    let x = float size
+    let delta = x - mean
+    let mean' = mean + delta / float count'
+    let delta2 = x - mean'
+    count', mean', m2 + delta * delta2, min minimum size, max maximum size
+
+let objectSizeStats : Stage<ObjectMeasurements list, ObjectSizeStats> =
+    let reducer (_debug: bool) (input: AsyncSeq<ObjectMeasurements list>) =
+        async {
+            let! count, mean, m2, minimum, maximum =
+                input
+                |> AsyncSeq.fold
+                    (fun state measurements ->
+                        measurements
+                        |> List.fold (fun state measurement -> addSizeToStats state measurement.Size) state)
+                    (0UL, 0.0, 0.0, UInt64.MaxValue, 0UL)
+
+            if count = 0UL then
+                return zeroSizeStats
+            else
+                return
+                    { Count = count
+                      Mean = mean
+                      Variance = if count > 1UL then m2 / float (count - 1UL) else 0.0
+                      Minimum = minimum
+                      Maximum = maximum }
+        }
+
+    Stage.reduce "objectSizeStats" reducer Streaming (fun _ -> 0UL) (fun _ -> 1UL)
+
+let objectSizeHistogram binWidth : Stage<ObjectMeasurements list, Map<uint64, uint64>> =
+    if binWidth = 0UL then invalidArg (nameof binWidth) "objectSizeHistogram binWidth must be positive."
+
+    let addToHistogram histogram (measurement: ObjectMeasurements) =
+        let bin = measurement.Size / binWidth
+        let current = histogram |> Map.tryFind bin |> Option.defaultValue 0UL
+        histogram |> Map.add bin (current + 1UL)
+
+    let folder histogram measurements =
+        measurements |> List.fold addToHistogram histogram
+
+    Stage.fold "objectSizeHistogram" folder Map.empty<uint64, uint64> (fun _ -> 0UL) (fun _ -> 1UL)

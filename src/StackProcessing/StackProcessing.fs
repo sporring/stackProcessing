@@ -48,6 +48,8 @@ type AffineRegistrationResult = StackRegistration.AffineRegistrationResult
 type ObjectConnectivity = StackObjects.ObjectConnectivity
 type ObjectBounds = StackObjects.ObjectBounds
 type StreamedObject = StackObjects.StreamedObject
+type ObjectMeasurements = StackObjects.ObjectMeasurements
+type ObjectSizeStats = StackObjects.ObjectSizeStats
 type Point3D = StackMesh.Point3D
 type Triangle = StackMesh.Triangle
 type MeshChunk = StackMesh.MeshChunk
@@ -97,6 +99,9 @@ let affineRegistration = StackRegistration.affineRegistration
 let streamConnectedObjects<'T when 'T: equality> = StackObjects.streamConnectedObjects<'T>
 let paintObjects = StackObjects.paintObjects
 let paintObjectsCropped = StackObjects.paintObjectsCropped
+let measureObjects = StackObjects.measureObjects
+let objectSizeStats = StackObjects.objectSizeStats
+let objectSizeHistogram = StackObjects.objectSizeHistogram
 
 // //////////////////// StackAffineResampler
 let resampleAffineTrilinearSlices = StackAffineResampler.resampleAffineTrilinearSlices

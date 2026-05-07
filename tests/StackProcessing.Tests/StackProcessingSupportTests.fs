@@ -623,6 +623,52 @@ let stackProcessingSupportSuite =
             finally
                 disposeImages painted
 
+        testCase "measureObjects derives per-object measurements and reducers summarize sizes" <| fun _ ->
+            let firstBatch: StreamedObject list =
+                [ { Label = 1UL
+                    Positions = [ { X = 1; Y = 1; Z = 0 }; { X = 2; Y = 1; Z = 0 } ]
+                    Bounds = { MinX = 1; MaxX = 2; MinY = 1; MaxY = 1; MinZ = 0; MaxZ = 0 }
+                    Size = 2UL }
+                  { Label = 2UL
+                    Positions = [ { X = 4; Y = 4; Z = 0 }; { X = 4; Y = 5; Z = 0 }; { X = 4; Y = 6; Z = 0 } ]
+                    Bounds = { MinX = 4; MaxX = 4; MinY = 4; MaxY = 6; MinZ = 0; MaxZ = 0 }
+                    Size = 3UL } ]
+
+            let secondBatch: StreamedObject list =
+                [ { Label = 3UL
+                    Positions = [ { X = 0; Y = 0; Z = 2 }; { X = 1; Y = 0; Z = 2 }; { X = 0; Y = 1; Z = 2 }; { X = 1; Y = 1; Z = 2 } ]
+                    Bounds = { MinX = 0; MaxX = 1; MinY = 0; MaxY = 1; MinZ = 2; MaxZ = 2 }
+                    Size = 4UL } ]
+
+            let measurements =
+                scalarPlan [ firstBatch; secondBatch ]
+                >=> measureObjects
+                |> drainList
+
+            Expect.equal (measurements.[0].[0].Width) 2UL "Width should be derived from x bounds."
+            Expect.equal (measurements.[0].[1].Height) 3UL "Height should be derived from y bounds."
+            Expect.equal (measurements.[1].[0].Depth) 1UL "Depth should be derived from z bounds."
+
+            let stats =
+                scalarPlan [ firstBatch; secondBatch ]
+                >=> measureObjects
+                >=> objectSizeStats
+                |> drain
+
+            Expect.equal stats.Count 3UL "Three objects should be summarized."
+            Expect.floatClose Accuracy.high stats.Mean 3.0 "Mean size should be calculated online."
+            Expect.floatClose Accuracy.high stats.Variance 1.0 "Sample variance of sizes 2,3,4 should be one."
+            Expect.equal stats.Minimum 2UL "Minimum size should be tracked."
+            Expect.equal stats.Maximum 4UL "Maximum size should be tracked."
+
+            let histogram =
+                scalarPlan [ firstBatch; secondBatch ]
+                >=> measureObjects
+                >=> objectSizeHistogram 2UL
+                |> drain
+
+            Expect.equal histogram (Map.ofList [ 1UL, 2UL; 2UL, 1UL ]) "Size histogram should count bin index size/binWidth."
+
         testCase "writeInSlabs creates chunk files and chunk metadata can be read" <| fun _ ->
             let inputDir = tempDirectory "chunks-input"
             let chunkDir = tempDirectory "chunks-output"
