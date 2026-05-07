@@ -59,3 +59,9 @@ samples/transpose/test1.tiff
 /samples/signedDistanceBand/-d
 /samples/sumProjection/-d
 /samples/momentsThreshold18
+/samples/otsuThreshold18
+/samples/removeSmallObjects18
+/samples/resample18
+/samples/resize18
+/samples/signedDistanceBand18
+/samples/sumProjection18
