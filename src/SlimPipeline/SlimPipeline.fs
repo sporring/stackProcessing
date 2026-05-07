@@ -914,6 +914,8 @@ module DebugLevel =
         level > 0u
     let rssEnabled () =
         level >= 2u
+    let optimizationDisabled () =
+        level >= 3u
 
 type PipelineGraphNode =
     { Id: int
@@ -1385,6 +1387,8 @@ type OptimizationResult<'S,'T> =
       Decisions: OptimizationDecision list }
 
 module Optimizer =
+    let private relativeTolerance = 0.05
+
     let private workScore pressure =
         pressure.CpuWorkUnits
         + pressure.NativeWorkUnits
@@ -1393,12 +1397,39 @@ module Optimizer =
         + float pressure.IoReadOps
         + float pressure.IoWriteOps
 
+    let private nearlyEqual left right =
+        let scale = max 1.0 (max (abs left) (abs right))
+        abs (left - right) <= scale * relativeTolerance
+
+    let private windowPreference (candidate: OptimizationCandidate<'S,'T>) =
+        match candidate.Stage.CostModel.Memory.Evaluation with
+        | Windowed(windowSize, _, _) -> windowSize
+        | _ -> 0u
+
+    let private compareWindowPreference leftCandidate rightCandidate =
+        compare (windowPreference rightCandidate) (windowPreference leftCandidate)
+
     let private compareAccepted (_leftCandidate, leftDecision) (_rightCandidate, rightDecision) =
         match leftDecision.EstimatedMilliseconds, rightDecision.EstimatedMilliseconds with
         | Some leftMs, Some rightMs -> compare leftMs rightMs
         | Some _, None -> -1
         | None, Some _ -> 1
         | None, None -> compare leftDecision.EstimatedWorkScore rightDecision.EstimatedWorkScore
+
+    let private compareAcceptedWithWindowPreference (leftCandidate, leftDecision) (rightCandidate, rightDecision) =
+        match leftDecision.EstimatedMilliseconds, rightDecision.EstimatedMilliseconds with
+        | Some leftMs, Some rightMs when nearlyEqual leftMs rightMs ->
+            let preference = compareWindowPreference leftCandidate rightCandidate
+            if preference <> 0 then preference else compare leftMs rightMs
+        | Some _, Some _ ->
+            compareAccepted (leftCandidate, leftDecision) (rightCandidate, rightDecision)
+        | Some _, None -> -1
+        | None, Some _ -> 1
+        | None, None when nearlyEqual leftDecision.EstimatedWorkScore rightDecision.EstimatedWorkScore ->
+            let preference = compareWindowPreference leftCandidate rightCandidate
+            if preference <> 0 then preference else compare leftDecision.EstimatedWorkScore rightDecision.EstimatedWorkScore
+        | None, None ->
+            compare leftDecision.EstimatedWorkScore rightDecision.EstimatedWorkScore
 
     let chooseStage (availableMemory: uint64) (inputShape: SingleOrPair) (candidates: OptimizationCandidate<'S,'T> list) : OptimizationResult<'S,'T> =
         let evaluated =
@@ -1428,7 +1459,7 @@ module Optimizer =
         let selected =
             evaluated
             |> List.filter (fun (_, decision) -> decision.Accepted)
-            |> List.sortWith compareAccepted
+            |> List.sortWith compareAcceptedWithWindowPreference
             |> List.tryHead
             |> Option.map fst
 
@@ -1499,7 +1530,7 @@ module Plan =
         observations |> List.sumBy (fun observation -> workScore observation.Work)
 
     let private printOptimizationSummary label (pl: Plan<'S,'T>) =
-        if pl.debug && pl.debugLevel >= 1u then
+        if pl.debug && pl.debugLevel >= 1u && pl.debugLevel < 3u then
             let status =
                 if pl.memPeak <= pl.memAvail then "accepted" else "exceeds memory limit"
             let timeText =

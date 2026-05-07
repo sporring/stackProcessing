@@ -566,6 +566,81 @@ let imageHistogramFold () =
 let histogram () =
     imageHistogram () --> imageHistogramFold ()
 
+module ProjectionTransform =
+    let values =
+        [ "Identity"
+          "Abs"
+          "Square"
+          "SqrtAbs"
+          "Log1pAbs" ]
+
+    let apply (name: string) : float -> float =
+        match name.Trim().ToLowerInvariant().Replace("-", "").Replace("_", "").Replace(" ", "") with
+        | ""
+        | "identity"
+        | "none" -> id
+        | "abs"
+        | "absolute" -> fun value -> Math.Abs value
+        | "square"
+        | "squared" -> fun value -> value * value
+        | "sqrtabs"
+        | "sqrt"
+        | "squareroot" -> fun value -> Math.Sqrt(Math.Abs value)
+        | "log1pabs"
+        | "log"
+        | "logabs" -> fun value -> Math.Log(1.0 + Math.Abs value)
+        | _ ->
+            let options = String.Join(", ", values)
+            failwith $"Unknown projection transform '{name}'. Use one of: {options}."
+
+let sumProjection<'T when 'T: equality> transformName : Stage<Image<'T>, Image<float>> =
+    let transform = ProjectionTransform.apply transformName
+
+    let reducer (_debug: bool) (input: AsyncSeq<Image<'T>>) =
+        async {
+            let! state =
+                input
+                |> AsyncSeq.foldAsync
+                    (fun state image ->
+                        async {
+                            try
+                                let width = int (image.GetWidth())
+                                let height = int (image.GetHeight())
+                                let accumulator =
+                                    match state with
+                                    | None ->
+                                        Some(width, height, Array2D.zeroCreate<float> width height)
+                                    | Some(expectedWidth, expectedHeight, values) ->
+                                        if expectedWidth <> width || expectedHeight <> height then
+                                            invalidOp $"sumProjection requires constant x-y slice size; got {width}x{height}, expected {expectedWidth}x{expectedHeight}."
+                                        Some(expectedWidth, expectedHeight, values)
+
+                                match accumulator with
+                                | None -> return None
+                                | Some(_, _, values) ->
+                                    for y in 0 .. height - 1 do
+                                        for x in 0 .. width - 1 do
+                                            values[x, y] <- values[x, y] + transform (Convert.ToDouble image[x, y])
+                                    return accumulator
+                            finally
+                                image.decRefCount()
+                        })
+                    None
+
+            match state with
+            | None ->
+                return raise (InvalidOperationException "sumProjection cannot reduce an empty image stream.")
+            | Some(_, _, values) ->
+                let image = Image<float>.ofArray2D(values, "sumProjection")
+                image.index <- 0
+                return image
+        }
+
+    let memoryNeed nElems =
+        imageBytes<float> nElems
+
+    Stage.reduce $"sumProjection {transformName}" reducer Streaming memoryNeed id
+
 let quantiles (quantileValues: float list) (histogram: Map<'T,uint64>) =
     ImageFunctions.quantilesFromHistogram quantileValues histogram
 
@@ -834,13 +909,6 @@ let erode radius = makeMorphOp "binaryErode"  radius None ImageFunctions.binaryE
 let dilate radius = makeMorphOp "binaryErode"  radius None ImageFunctions.binaryDilate
 let opening radius = makeMorphOp "binaryErode"  radius None ImageFunctions.binaryOpening
 let closing radius = makeMorphOp "binaryErode"  radius None ImageFunctions.binaryClosing
-
-/// Full stack operators
-let binaryFillHoles (winSz: uint)= 
-    let pad, stride = 0u, winSz
-    let f debug = volFctToWindowFctReleaseAfterDebug debug (ImageFunctions.binaryFillHoles) 1u pad stride
-    let stg = mapWindow "fillHoles" f id id
-    (window winSz pad stride) --> stg --> flattenList ()
 
 let connectedComponents (winSz: uint) =
     let pad, stride = 0u, winSz

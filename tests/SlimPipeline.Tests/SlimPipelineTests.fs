@@ -1,5 +1,6 @@
 module Tests.SlimPipelineTests
 
+open System
 open System.IO
 open Expecto
 open FSharp.Control
@@ -23,9 +24,24 @@ let private costedMap name memoryPeak workUnits calibrationKey =
         MemoryModel = memoryModel
         CostModel = costModel }
 
+let private costedWindowLikeMap name windowSize memoryPeak workUnits calibrationKey =
+    let stage = Stage.map<int, int> name (fun _ x -> x) (fun _ -> memoryPeak) id
+    let memoryModel = StageMemoryModel.windowLike windowSize windowSize 0u
+    let workModel = StageWorkModel.cpu (Windowed(windowSize, windowSize, 0u)) calibrationKey (fun _ -> workUnits)
+    let costModel = StageCostModel.create memoryModel workModel
+    { stage with
+        MemoryNeed = StageCostModel.memoryNeed costModel
+        MemoryModel = memoryModel
+        CostModel = costModel }
+
 let private candidate name memoryPeak workUnits =
     { Name = name
       Stage = costedMap name memoryPeak workUnits None
+      Explanation = "" }
+
+let private windowCandidate name windowSize memoryPeak workUnits =
+    { Name = name
+      Stage = costedWindowLikeMap name windowSize memoryPeak workUnits None
       Explanation = "" }
 
 let private apply stage plan =
@@ -36,6 +52,16 @@ let private planFrom stage length =
 
 let private asyncSeqToList seq =
     seq |> AsyncSeq.toListAsync |> Async.RunSynchronously
+
+let private captureStdout f =
+    let original = Console.Out
+    use writer = new StringWriter()
+    Console.SetOut writer
+    try
+        f ()
+        writer.ToString()
+    finally
+        Console.SetOut original
 
 [<Tests>]
 let singleOrPairSuite =
@@ -171,6 +197,30 @@ let resourceOpsSuite =
     ]
 
 [<Tests>]
+let debugLevelSuite =
+    testList "DebugLevel" [
+        testCase "level 3 includes level 1 and 2 behaviour and disables sink optimization analysis" <| fun _ ->
+            let previous = DebugLevel.current()
+            try
+                DebugLevel.set 3u
+
+                Expect.isTrue (DebugLevel.isEnabled()) "Level 3 should include ordinary debug output."
+                Expect.isTrue (DebugLevel.rssEnabled()) "Level 3 should include RSS probing."
+                Expect.isTrue (DebugLevel.optimizationDisabled()) "Level 3 should disable sink optimization analysis."
+
+                let plan =
+                    captureStdout (fun () ->
+                        Plan.debug 3u 1024UL
+                        |> Plan.sink)
+
+                Expect.isFalse (plan.Contains "Optimization accepted") "Debug level 3 should not print an accepted sink optimization summary."
+                Expect.isFalse (plan.Contains "Optimization exceeds memory limit") "Debug level 3 should not print a rejected sink optimization summary."
+                Expect.stringContains plan "Process RSS baseline" "Debug level 3 should still include level 2 RSS output."
+            finally
+                DebugLevel.set previous
+    ]
+
+[<Tests>]
 let asyncStreamSemanticsSuite =
     testList "Async stream semantics" [
         testCase "map2Sync shares upstream stream without duplicating pulls" <| fun _ ->
@@ -287,4 +337,20 @@ let optimizerSuite =
             StageCostCalibration.clear()
 
             Expect.equal (result.Selected |> Option.map _.Name) (Some "fast-calibrated") "Calibrated elapsed time should beat raw work units."
+
+        testCase "prefers larger accepted window when costs are nearly tied" <| fun _ ->
+            let result =
+                [ windowCandidate "small-window" 3u 10UL 100.0
+                  windowCandidate "large-window" 9u 10UL 102.0 ]
+                |> Optimizer.chooseStage 100UL (Single 1UL)
+
+            Expect.equal (result.Selected |> Option.map _.Name) (Some "large-window") "The optimizer should prefer larger windows when the estimated work is within the tie tolerance."
+
+        testCase "keeps clearly cheaper smaller window when larger window is much more expensive" <| fun _ ->
+            let result =
+                [ windowCandidate "small-window" 3u 10UL 100.0
+                  windowCandidate "large-window" 9u 10UL 130.0 ]
+                |> Optimizer.chooseStage 100UL (Single 1UL)
+
+            Expect.equal (result.Selected |> Option.map _.Name) (Some "small-window") "Window preference should not override a clearly cheaper candidate."
     ]

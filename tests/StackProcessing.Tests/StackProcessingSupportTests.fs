@@ -1110,6 +1110,29 @@ let stackProcessingSupportSuite =
             Expect.isGreaterThan moments 0.0 "Moments threshold should lie between the two modes."
             Expect.isLessThan moments 10.0 "Moments threshold should lie between the two modes."
 
+        testCase "sumProjection reduces a stack to one transformed Float64 image" <| fun _ ->
+            let slices =
+                [ array2D [ [ 1s; -2s ]; [ 3s; -4s ] ] |> Image<int16>.ofArray2D
+                  array2D [ [ 2s; -3s ]; [ 4s; -5s ] ] |> Image<int16>.ofArray2D ]
+            let mutable projections: Image<float> list = []
+
+            try
+                projections <-
+                    imagePlan slices
+                    >=> sumProjection<int16> "Abs"
+                    |> drainList
+
+                Expect.equal projections.Length 1 "sumProjection should emit one projection image."
+                let projection = projections[0]
+                Expect.equal projection.index 0 "The projection image should use index zero."
+                expectFloat32Close (float32 projection[0, 0]) 3.0f "Projection should sum transformed values at x=0,y=0."
+                expectFloat32Close (float32 projection[0, 1]) 5.0f "Projection should sum absolute values at x=0,y=1."
+                expectFloat32Close (float32 projection[1, 0]) 7.0f "Projection should sum absolute values at x=1,y=0."
+                expectFloat32Close (float32 projection[1, 1]) 9.0f "Projection should sum absolute values at x=1,y=1."
+            finally
+                disposeImages projections
+                disposeImages slices
+
         testCase "map2pairs and pair conversions transform histogram data" <| fun _ ->
             let inputDir = tempDirectory "histogram-pairs-input"
             let suffix = ".tiff"

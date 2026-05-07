@@ -538,6 +538,14 @@ module private UnaryImageFunctionNode =
 
         $"{functionName}(I)"
 
+module private SumProjectionNode =
+    let functionOptions =
+        [ "Identity"
+          "Abs"
+          "Square"
+          "SqrtAbs"
+          "Log1pAbs" ]
+
 module private ScalarImageOperationNode =
     let typeOptions = SourceImageNode.typeOptions
 
@@ -1339,6 +1347,12 @@ type MainWindowViewModel() as this =
                 | "UnaryImageFunction", "function" ->
                     let options =
                         UnaryImageFunctionNode.functionOptions
+                        |> List.map (fun value -> ParameterOptionViewModel(value, value, true))
+
+                    PipelineParameterViewModel(parameter.Label, parameter.Key, parameter.DefaultValue, parameter.Type, options, false)
+                | "SumProjection", "function" ->
+                    let options =
+                        SumProjectionNode.functionOptions
                         |> List.map (fun value -> ParameterOptionViewModel(value, value, true))
 
                     PipelineParameterViewModel(parameter.Label, parameter.Key, parameter.DefaultValue, parameter.Type, options, false)

@@ -115,6 +115,8 @@ Project("{F2A71F9B-5D33-465A-A702-920D77279786}") = "signedDistanceBand", "sampl
 EndProject
 Project("{F2A71F9B-5D33-465A-A702-920D77279786}") = "removeSmallObjects", "samples\removeSmallObjects\removeSmallObjects.fsproj", "{0F95CE3D-05D7-4FFF-9BDF-45AC824B3898}"
 EndProject
+Project("{F2A71F9B-5D33-465A-A702-920D77279786}") = "sumProjection", "samples\sumProjection\sumProjection.fsproj", "{96016E3A-5D84-43D3-8DE3-B0793E0009F8}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -749,6 +751,18 @@ Global
 		{0F95CE3D-05D7-4FFF-9BDF-45AC824B3898}.Release|x64.Build.0 = Release|Any CPU
 		{0F95CE3D-05D7-4FFF-9BDF-45AC824B3898}.Release|x86.ActiveCfg = Release|Any CPU
 		{0F95CE3D-05D7-4FFF-9BDF-45AC824B3898}.Release|x86.Build.0 = Release|Any CPU
+		{96016E3A-5D84-43D3-8DE3-B0793E0009F8}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{96016E3A-5D84-43D3-8DE3-B0793E0009F8}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{96016E3A-5D84-43D3-8DE3-B0793E0009F8}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{96016E3A-5D84-43D3-8DE3-B0793E0009F8}.Debug|x64.Build.0 = Debug|Any CPU
+		{96016E3A-5D84-43D3-8DE3-B0793E0009F8}.Debug|x86.ActiveCfg = Debug|Any CPU
+		{96016E3A-5D84-43D3-8DE3-B0793E0009F8}.Debug|x86.Build.0 = Debug|Any CPU
+		{96016E3A-5D84-43D3-8DE3-B0793E0009F8}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{96016E3A-5D84-43D3-8DE3-B0793E0009F8}.Release|Any CPU.Build.0 = Release|Any CPU
+		{96016E3A-5D84-43D3-8DE3-B0793E0009F8}.Release|x64.ActiveCfg = Release|Any CPU
+		{96016E3A-5D84-43D3-8DE3-B0793E0009F8}.Release|x64.Build.0 = Release|Any CPU
+		{96016E3A-5D84-43D3-8DE3-B0793E0009F8}.Release|x86.ActiveCfg = Release|Any CPU
+		{96016E3A-5D84-43D3-8DE3-B0793E0009F8}.Release|x86.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
@@ -807,5 +821,6 @@ Global
 		{C148385E-4060-487D-9A71-48B4523AB1EA} = {5D20AA90-6969-D8BD-9DCD-8634F4692FDA}
 		{37302462-3E77-422F-9901-2531EF715354} = {5D20AA90-6969-D8BD-9DCD-8634F4692FDA}
 		{0F95CE3D-05D7-4FFF-9BDF-45AC824B3898} = {5D20AA90-6969-D8BD-9DCD-8634F4692FDA}
+		{96016E3A-5D84-43D3-8DE3-B0793E0009F8} = {5D20AA90-6969-D8BD-9DCD-8634F4692FDA}
 	EndGlobalSection
 EndGlobal

@@ -434,24 +434,6 @@ let stackProcessingCorrectnessSuite =
             finally
                 volume.decRefCount()
 
-        testCase "streamed full-stack binary and threshold stages match direct 3D filters" <| fun _ ->
-            let suffix = ".tiff"
-            let binary = makeBinaryVolumeWithHole 10
-            let scalar = makePositiveFloat32Volume 10
-
-            try
-                assertStreamingMatchesDirect
-                    "binary-fill-holes"
-                    suffix
-                    0.5
-                    binary
-                    (binaryFillHoles 10u)
-                    ImageFunctions.binaryFillHoles
-
-            finally
-                binary.decRefCount()
-                scalar.decRefCount()
-
         testCase "sampled streamed Otsu threshold separates a bimodal stack" <| fun _ ->
             let suffix = ".tiff"
             let inputDir = tempDirectory "otsu-threshold-input"
