@@ -594,6 +594,8 @@ val changeLabel:
 val signedDistanceMap:
   inside: uint8 ->
     outside: uint8 -> img: Image.Image<uint8> -> Image.Image<float>
+val bandSignedDistanceMap:
+  bandRadius: uint -> img: Image.Image<uint8> -> Image.Image<float>
 /// Morphological watershed (binary or grayscale)
 val watershed:
   level: float -> (Image.Image<'T> -> Image.Image<'T>) when 'T: equality

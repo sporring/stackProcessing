@@ -717,7 +717,8 @@ val watershed:
     when 'a: equality
 
 val signedDistanceMap:
-  (uint -> SlimPipeline.Stage<StackCore.Image<uint8>,StackCore.Image<float>>)
+  (uint ->
+     uint -> SlimPipeline.Stage<StackCore.Image<uint8>,StackCore.Image<float>>)
 
 val otsuThreshold:
   (uint ->

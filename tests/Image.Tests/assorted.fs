@@ -1254,6 +1254,12 @@ let MorphologyTests =
       let dmap = ImageFunctions.signedDistanceMap 1uy 0uy img
       Expect.isTrue(dmap[0,0] > 0 && dmap[0,3] < 0) "Foreground should be negative"
 
+    testCase "bandSignedDistanceMap keeps only finite values inside the requested band" <| fun _ ->
+      let img = Image<uint8>.ofArray2D (array2D [[0uy;0uy;0uy;1uy;1uy;1uy;0uy;0uy;0uy]])
+      let dmap = ImageFunctions.bandSignedDistanceMap 2u img
+      Expect.isTrue(System.Double.IsNaN dmap[0,0]) "Distances outside the band should be NaN"
+      Expect.isTrue(dmap[0,3] < 0.0 && not (System.Double.IsNaN dmap[0,3])) "Object boundary distances inside the band should be finite and negative"
+
     testCase "watershed separates peaks" <| fun _ ->
       let img = Image<int>.ofArray2D (array2D [[0;1;0;1;0]])
       let ws = ImageFunctions.watershed 0.0 img
