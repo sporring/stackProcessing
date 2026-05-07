@@ -636,6 +636,7 @@ module private HighValueFilterNode =
           "MorphologicalGradient"
           "OtsuThreshold"
           "MomentsThreshold"
+          "MarchingCubes"
           "LabelContour"
           "ChangeLabel" ]
         |> Set.ofList

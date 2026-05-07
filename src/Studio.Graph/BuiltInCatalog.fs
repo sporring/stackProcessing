@@ -16,6 +16,7 @@ module BuiltInCatalog =
   let imageComplex = PortType.Image NumericType.Complex
   let translationTable = PortType.Custom "TranslationTable"
   let connectedComponentLabels = PortType.Tuple(imageUInt64, PortType.Scalar(BasicType.Numeric UInt64))
+  let mesh = PortType.Custom "Mesh"
   let intList = PortType.Custom "IntList"
   let uint64List = PortType.Custom "UInt64List"
 
@@ -462,6 +463,18 @@ module BuiltInCatalog =
                 makeParameter "physicalSizeY" "Physical size Y" "1.0" (BasicType.Numeric Float64)
                 makeParameter "physicalSizeZ" "Physical size Z" "1.0" (BasicType.Numeric Float64)
                 makeParameter "maxConcurrentWrites" "Max concurrent writes" "0" (BasicType.Numeric Int32) ] }
+
+        { Id = "WriteMesh"
+          DisplayName = "writeMesh"
+          Category = "Sources / Sinks"
+          Summary = "Write a streamed triangle mesh to OBJ, STL, or PLY."
+          Description = "Writes mesh chunks produced by marchingCubes. OBJ and ASCII STL are written in a streaming-friendly pass. ASCII PLY is also supported, but its header needs vertex and face counts, so chunks are counted before the file is finalized. Use OBJ for the broadest compatibility during exploratory streaming workflows."
+          Aliases = [ "mesh"; "surface"; "triangles"; "obj"; "stl"; "ply"; "write"; "save" ]
+          Inputs = [ makePort "Mesh" mesh ]
+          Outputs = []
+          Parameters =
+              [ makeParameter "output" "Output" "surface.obj" BasicType.String
+                makeParameter "format" "Format" "auto" BasicType.String ] }
 
         { Id = "WriteNexus"
           DisplayName = "writeNexus"
@@ -1191,6 +1204,18 @@ module BuiltInCatalog =
           Parameters =
               [ makeParameter "minimumObjectSize" "Minimum object size" "1" (BasicType.Numeric UInt32)
                 makeParameter "windowSize" "Window size" "3" (BasicType.Numeric UInt32) ] }
+
+        { Id = "MarchingCubes"
+          DisplayName = "marchingCubes"
+          Category = "Geometry"
+          Summary = "Extract a streamed triangle surface from consecutive image slices."
+          Description = "Builds a triangle mesh from a rolling two-slice window. Each pair of consecutive slices forms the cubes needed for a local isosurface, so the operation is larger-than-memory friendly in z. The surface value is compared directly to the selected image type values; using the desired label or threshold value avoids an extra subtraction or recentering stage. The implementation triangulates each cube locally and emits mesh chunks for writeMesh."
+          Aliases = [ "marching"; "cubes"; "mesh"; "surface"; "isosurface"; "triangles"; "geometry" ]
+          Inputs = [ makePort "Number" imageAny ]
+          Outputs = [ makePort "Mesh" mesh ]
+          Parameters =
+              [ makeParameter "type" "Type" "Float64" BasicType.String
+                makeParameter "surfaceValue" "Surface value" "0.5" (BasicType.Numeric Float64) ] }
 
         { Id = "Watershed"
           DisplayName = "watershed"

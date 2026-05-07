@@ -3,6 +3,7 @@ module StackIO
 open SlimPipeline // Core processing model
 open System
 open System.IO
+open System.Reflection
 open System.Text.RegularExpressions
 open System.Threading
 open System.Threading.Tasks
@@ -33,6 +34,40 @@ let private runTask (task: Task<'T>) : 'T =
 
 let private runUnitTask (task: Task) : unit =
     task.GetAwaiter().GetResult()
+
+let private deleteZarrNetDebugLogs () =
+    let candidates =
+        [ Path.Combine(Directory.GetCurrentDirectory(), @"C:\Users\Public\biolog.txt")
+          Path.Combine(AppContext.BaseDirectory, @"C:\Users\Public\biolog.txt")
+          Path.Combine(Directory.GetCurrentDirectory(), "log.txt")
+          Path.Combine(AppContext.BaseDirectory, "log.txt") ]
+        |> List.distinct
+
+    for path in candidates do
+        try
+            if File.Exists path then
+                File.Delete path
+        with _ ->
+            ()
+
+let private suppressZarrNetDebugLogging () =
+    let flags = BindingFlags.Static ||| BindingFlags.NonPublic
+
+    let setField (typeName: string) (fieldName: string) (value: obj) =
+        try
+            match Type.GetType(typeName, throwOnError = false) with
+            | null -> ()
+            | typ ->
+                match typ.GetField(fieldName, flags) with
+                | null -> ()
+                | field -> field.SetValue(null, value)
+        with _ ->
+            ()
+
+    deleteZarrNetDebugLogs ()
+    setField "ZarrNET.Core.Zarr.ZarrArray, ZarrNET" "s_writeDebugCount" (box Int32.MaxValue)
+    setField "ZarrNET.Core.Zarr.ZarrArray, ZarrNET" "s_readDebugCount" (box Int32.MaxValue)
+    setField "ZarrNET.Core.Zarr.Store.LocalFileSystemStore, ZarrNET" "s_debugCount" (box Int32.MaxValue)
 
 let private zarrDataType<'T> () =
     if typeof<'T> = typeof<uint8> then
@@ -100,13 +135,19 @@ let private array3DOfZarrBytes<'T> (width: int) (height: int) (depth: int) (byte
         failwith "unreachable"
 
 let private openZarrResolutionLevel (path: string) multiscaleIndex datasetIndex : ResolutionLevelNode =
+    suppressZarrNetDebugLogging ()
+
     let reader: OmeZarrReader =
         OmeZarrReader.OpenAsync(path, ct = CancellationToken.None)
         |> runTask
 
     let multiscale = reader.AsMultiscaleImage()
-    multiscale.OpenResolutionLevelAsync(multiscaleIndex, datasetIndex, CancellationToken.None)
-    |> runTask
+    let level =
+        multiscale.OpenResolutionLevelAsync(multiscaleIndex, datasetIndex, CancellationToken.None)
+        |> runTask
+
+    deleteZarrNetDebugLogs ()
+    level
 
 let private zarrShapeTCZYX (shape: int64[]) =
     if shape.Length <> 5 then
@@ -453,6 +494,8 @@ let getChunkInfo (inputDir: string) (suffix: string) : ChunkInfo =
     { chunks = [maxI+1;maxJ+1;maxK+1]; topLeftInfo = topLeftFi; size = stackSize }
 
 let getZarrInfo (path: string) (multiscaleIndex: int) (datasetIndex: int) : ChunkInfo =
+    suppressZarrNetDebugLogging ()
+
     let reader: OmeZarrReader =
         OmeZarrReader.OpenAsync(path, ct = CancellationToken.None)
         |> runTask
@@ -467,6 +510,8 @@ let getZarrInfo (path: string) (multiscaleIndex: int) (datasetIndex: int) : Chun
         |> runTask
         |> fun zarrArray -> zarrArray.Metadata.ChunkShape
         |> Array.toList
+
+    deleteZarrNetDebugLogs ()
 
     let fileInfo: FileInfo =
         { dimensions = 3u
@@ -615,6 +660,8 @@ let readZarrSlabStacked<'T when 'T: equality>
     (pl: Plan<unit, unit>)
     : Plan<unit, Image<'T>> =
 
+    suppressZarrNetDebugLogging ()
+
     let name = "readZarrSlabStacked"
     let dataType = zarrDataType<'T> ()
     let level = openZarrResolutionLevel path multiscaleIndex datasetIndex
@@ -661,6 +708,7 @@ let readZarrSlabStacked<'T when 'T: equality>
         let result =
             level.ReadPixelRegionAsync(region, parallelChunks, CancellationToken.None)
             |> runTask
+        deleteZarrNetDebugLogs ()
         let arr = array3DOfZarrBytes<'T> sizeX sizeY zCount result.Data
         Image<'T>.ofArray3D(arr, $"readZarrSlabStacked.{idx}")
 
@@ -857,6 +905,8 @@ let writeZarr<'T when 'T: equality>
     (maxConcurrentWrites: int)
     : Stage<Image<'T>, Image<'T>> =
 
+    suppressZarrNetDebugLogging ()
+
     let dataType = zarrDataType<'T> ()
     let mutable writer: OmeZarrWriter option = None
     let depth = int depth
@@ -884,6 +934,7 @@ let writeZarr<'T when 'T: equality>
         let created =
             OmeZarrWriter.CreateAsync(outputPath, descriptor, CancellationToken.None)
             |> runTask
+        deleteZarrNetDebugLogs ()
 
         if maxConcurrentWrites > 0 then
             OmeZarrWriter.MaxConcurrentWrites <- maxConcurrentWrites
@@ -910,11 +961,13 @@ let writeZarr<'T when 'T: equality>
 
         zarrWriter.WritePlaneAsync(int idx, planeBytes, CancellationToken.None)
         |> runUnitTask
+        deleteZarrNetDebugLogs ()
 
         if idx = int64 (depth - 1) then
             zarrWriter.DisposeAsync().AsTask()
             |> runUnitTask
             writer <- None
+            deleteZarrNetDebugLogs ()
 
         image
 

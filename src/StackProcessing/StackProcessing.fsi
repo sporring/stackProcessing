@@ -90,6 +90,12 @@ type FileInfo = ImageFunctions.FileInfo
 
 type ChunkInfo = StackIO.ChunkInfo
 
+type Point3D = StackMesh.Point3D
+
+type Triangle = StackMesh.Triangle
+
+type MeshChunk = StackMesh.MeshChunk
+
 val getStackDepth: (string -> string -> uint)
 
 val getStackInfo: (string -> string -> StackIO.FileInfo)
@@ -252,14 +258,16 @@ val writeInSlabs:
      uint -> uint -> StackCore.Stage<StackCore.Image<'a>,StackCore.Image<'a>>)
     when 'a: equality
 
+val writeMesh: (string -> string -> StackCore.Stage<StackMesh.MeshChunk,unit>)
+
 val resampleAffineTrilinearSlices:
   (string ->
      string ->
      ('a -> 'a -> float32 -> 'a) ->
      int ->
-     ChunkedAffineResampler.ImageGeom ->
-     ChunkedAffineResampler.ImageGeom ->
-     TinyLinAlg.Affine -> 'a -> (int * ChunkedAffineResampler.Image<'a>) seq)
+     StackAffineResampler.ImageGeom ->
+     StackAffineResampler.ImageGeom ->
+     TinyLinAlg.Affine -> 'a -> (int * StackAffineResampler.Image<'a>) seq)
     when 'a: equality
 
 type ImageStats = ImageFunctions.ImageStats
@@ -566,6 +574,10 @@ val labelContour<'T when 'T: equality> :
 val changeLabel<'T when 'T: equality> :
   (double ->
      double -> SlimPipeline.Stage<StackCore.Image<obj>,StackCore.Image<obj>>)
+    when 'T: equality
+
+val marchingCubes<'T when 'T: equality> :
+  (float -> StackCore.Stage<StackCore.Image<'T>,StackMesh.MeshChunk>)
     when 'T: equality
 
 val resize<'T when 'T: equality> :

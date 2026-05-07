@@ -331,6 +331,41 @@ let stackProcessingSupportSuite =
                 disposeImages cropped
                 disposeImages slices
 
+        testCase "marchingCubes streams mesh chunks and writeMesh writes OBJ" <| fun _ ->
+            let inputDir = tempDirectory "mesh-input"
+            let outputDir = tempDirectory "mesh-output"
+            let suffix = ".tiff"
+            let outputPath = Path.Combine(outputDir, "surface.obj")
+            let slices =
+                [ Image<uint8>.ofArray2D(Array2D.create 3 3 0uy)
+                  Image<uint8>.ofArray2D(Array2D.init 3 3 (fun x y -> if x >= 1 && y >= 1 then 1uy else 0uy))
+                  Image<uint8>.ofArray2D(Array2D.create 3 3 0uy) ]
+
+            try
+                writeSlices inputDir suffix slices
+
+                let chunks =
+                    source (2UL * 1024UL * 1024UL * 1024UL)
+                    |> read<uint8> inputDir suffix
+                    >=> marchingCubes<uint8> 0.5
+                    |> drainList
+
+                Expect.isTrue (chunks |> List.exists (fun chunk -> not chunk.Triangles.IsEmpty)) "marchingCubes should emit at least one triangle chunk for a crossing surface."
+
+                source (2UL * 1024UL * 1024UL * 1024UL)
+                |> read<uint8> inputDir suffix
+                >=> marchingCubes<uint8> 0.5
+                >=> writeMesh outputPath "auto"
+                |> drain
+
+                let meshText = File.ReadAllText(outputPath)
+                Expect.stringContains meshText "v " "OBJ mesh should contain vertices."
+                Expect.stringContains meshText "f " "OBJ mesh should contain faces."
+            finally
+                disposeImages slices
+                deleteDirectory inputDir
+                deleteDirectory outputDir
+
         testCase "writeInSlabs creates chunk files and chunk metadata can be read" <| fun _ ->
             let inputDir = tempDirectory "chunks-input"
             let chunkDir = tempDirectory "chunks-output"
@@ -379,11 +414,15 @@ let stackProcessingSupportSuite =
             let rootDir = tempDirectory "zarr-output"
             let suffix = ".tiff"
             let zarrPath = Path.Combine(rootDir, "roundtrip.zarr")
+            let zarrDebugPath = Path.Combine(Directory.GetCurrentDirectory(), @"C:\Users\Public\biolog.txt")
             let slices = [ for z in 0 .. 3 -> makeSlice 5 4 z ]
             let mutable rereadSlices: Image<uint8> list = []
             let mutable rereadSlabs: Image<uint8> list = []
 
             try
+                if File.Exists zarrDebugPath then
+                    File.Delete zarrDebugPath
+
                 writeSlices inputDir suffix slices
 
                 source (2UL * 1024UL * 1024UL * 1024UL)
@@ -411,6 +450,7 @@ let stackProcessingSupportSuite =
                 Expect.equal rereadSlices.Length 4 "readZarrSlab should unstack slabs into a normal slice stream."
                 let pixels = rereadSlices[3].toArray2D()
                 Expect.equal pixels[4, 3] (uint8 ((4 + 2 * 3 + 3 * 3) % 251)) "Round-tripped Zarr pixel values should match the source stack."
+                Expect.isFalse (File.Exists zarrDebugPath) "ZarrNET debug logging should not create a Windows-style biolog.txt side-effect."
             finally
                 disposeImages rereadSlices
                 disposeImages rereadSlabs

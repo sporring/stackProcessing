@@ -297,6 +297,34 @@ let generatorSuite =
             Expect.stringContains code ">=> createPadding<uint8> 1u 2u 3u 4u 5u 6u 7.0" "CreatePadding should generate a typed six-side padding stage."
             Expect.stringContains code ">=> crop<uint8> 1u 1u 2u 2u 3u 3u" "Crop should generate a typed six-side crop stage."
 
+        testCase "marchingCubes and writeMesh boxes lower to streaming mesh DSL functions" <| fun _ ->
+            let read =
+                node "read" "Read"
+                    [ p "availableMemory" "1073741824" false
+                      p "type" "UInt8" false
+                      p "input" "input" false
+                      p "suffix" ".tiff" false ]
+
+            let marching =
+                node "mesh" "MarchingCubes"
+                    [ p "type" "UInt8" false
+                      p "surfaceValue" "1.0" false ]
+
+            let write =
+                node "writeMesh" "WriteMesh"
+                    [ p "output" "surface.obj" false
+                      p "format" "auto" false ]
+
+            let code =
+                graph [ read; marching; write ]
+                    [ edge "read" "output" 0 "mesh" "input" 0
+                      edge "mesh" "output" 0 "writeMesh" "input" 0 ]
+                |> PipelineCodeGenerator.generateSavedGraph
+
+            Expect.stringContains code ">=> marchingCubes<uint8> 1.0" "MarchingCubes should generate a typed streaming mesh stage."
+            Expect.stringContains code ">=> writeMesh \"surface.obj\" \"auto\"" "WriteMesh should generate the mesh writer."
+            Expect.stringContains code "|> sink" "Terminal WriteMesh should run the mesh writer."
+
         testCase "linked string scalar is emitted before read and used unquoted" <| fun _ ->
             let scalar =
                 node "scalar" "Scalar"
