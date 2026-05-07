@@ -7,6 +7,7 @@ open Image
 open PureHDF
 open SlimPipeline
 open StackProcessing
+open TinyLinAlg
 
 let private tempDirectory name =
     let path = Path.Combine(Path.GetTempPath(), $"stackprocessing-{name}-{Guid.NewGuid():N}")
@@ -27,6 +28,23 @@ let private makeBinarySlice width height z =
         let inSecond = x >= 4 && x <= 5 && y >= 4 && y <= 5 && z >= 2
         if inFirst || inSecond then 255uy else 0uy)
     |> Image<uint8>.ofArray2D
+
+let private makeFloatSlice width height z =
+    Array2D.init width height (fun x y -> float32 x + 10.0f * float32 y + 100.0f * float32 z)
+    |> Image<float32>.ofArray2D
+
+let private identity3 =
+    { m00 = 1.0; m01 = 0.0; m02 = 0.0
+      m10 = 0.0; m11 = 1.0; m12 = 0.0
+      m20 = 0.0; m21 = 0.0; m22 = 1.0 }
+
+let private imageGeom width height depth : StackAffineResampler.ImageGeom =
+    { W = width
+      H = height
+      D = depth
+      Origin = v3 0.0 0.0 0.0
+      Spacing = v3 1.0 1.0 1.0
+      Direction = identity3 }
 
 let private writeSlices directory suffix (slices: Image<'T> list) =
     slices
@@ -517,6 +535,57 @@ let stackProcessingSupportSuite =
                 |> _.Points
 
             Expect.isLessThan (earthMoversDistance moving fixedAsMovingCoordinates) 1.0e-8 "The inverse transform should map fixed-grid coordinates back to moving coordinates for StackAffineResampler."
+
+        testCase "resampleAffineTrilinearSlices samples chunked slabs with the supplied output-to-input affine" <| fun _ ->
+            let chunkDirectory = tempDirectory "affine-resampler-chunks"
+            let slices =
+                [ for z in 0 .. 3 ->
+                    let image = makeFloatSlice 5 4 z
+                    image.index <- z
+                    image ]
+
+            try
+                imagePlan slices
+                >=> writeInSlabs chunkDirectory ".tiff" 2u 2u 2u
+                >=> ignoreSingles ()
+                |> sink
+
+                let lerp (a: float32) (b: float32) (t: float32) =
+                    a + (b - a) * t
+
+                let transform: Affine =
+                    { A = identity3
+                      T = v3 0.5 1.0 0.0
+                      C = v3 0.0 0.0 0.0 }
+
+                let output =
+                    resampleAffineTrilinearSlices
+                        chunkDirectory
+                        ".tiff"
+                        lerp
+                        2
+                        (imageGeom 5 4 4)
+                        (imageGeom 3 2 3)
+                        transform
+                        -1.0f
+                    |> Seq.toList
+
+                Expect.equal (output |> List.map fst) [ 0; 1; 2 ] "The resampler should emit the requested output slices in z order."
+
+                for k, image in output do
+                    for y in 0 .. int (image.GetHeight()) - 1 do
+                        for x in 0 .. int (image.GetWidth()) - 1 do
+                            let expected =
+                                (float32 x + 0.5f)
+                                + 10.0f * (float32 y + 1.0f)
+                                + 100.0f * float32 k
+
+                            expectFloat32Close image[x, y] expected $"Trilinear sampling should match the known linear volume at ({x},{y},{k})."
+
+                output |> List.map snd |> disposeImages
+            finally
+                disposeImages slices
+                deleteDirectory chunkDirectory
 
         testCase "streamConnectedObjects emits completed objects without waiting for the full stack" <| fun _ ->
             let slices =
