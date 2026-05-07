@@ -801,6 +801,21 @@ type MainView() as this =
                 |> Seq.tryHead
         | _ -> None
 
+    let tryFindPipelineNodeAtPoint (point: Point) =
+        currentDrawing ()
+        |> Option.bind (fun drawing ->
+            drawing.Nodes
+            |> Seq.choose (function
+                | :? PipelineNodeViewModel as node -> Some node
+                | _ -> None)
+            |> Seq.toArray
+            |> Array.rev
+            |> Array.tryFind (fun node ->
+                point.X >= node.X
+                && point.X <= node.X + node.Width
+                && point.Y >= node.Y
+                && point.Y <= node.Y + node.Height))
+
     let deleteConnector (connector: IConnector) =
         let editor = this.FindControl<Editor>("PipelineEditor")
 
@@ -1531,8 +1546,16 @@ type MainView() as this =
                         match this.DataContext with
                         | :? MainWindowViewModel as viewModel ->
                             let isCtrlPressed = args.KeyModifiers.HasFlag KeyModifiers.Control
+                            let node =
+                                match tryFindPipelineNodeFromSource args.Source with
+                                | Some node -> Some node
+                                | None when not (isNull graphHost) ->
+                                    args.GetPosition(graphHost)
+                                    |> viewportToGraphContent
+                                    |> tryFindPipelineNodeAtPoint
+                                | None -> None
 
-                            match tryFindPipelineNodeFromSource args.Source with
+                            match node with
                             | Some node when isCtrlPressed ->
                                 let wasSelected = node.State.IsSelected
                                 viewModel.ToggleNodeSelection node
@@ -1546,8 +1569,7 @@ type MainView() as this =
                                     args.PreventGestureRecognition()
                                     args.Handled <- true
                             | Some node ->
-                                if not node.State.IsSelected then
-                                    viewModel.SelectSingleNode node
+                                viewModel.SelectNodeFromEditor node
                             | None ->
                                 viewModel.ClearSelection()
                         | _ -> ()
