@@ -2,6 +2,16 @@
 open StackProcessing
 open Plotly.NET
 
+let private samplePath prefix fallback (args: string[]) =
+    if args.Length > 0 then
+        let token = args[0]
+        if token |> Seq.forall System.Char.IsDigit then
+            $"../{prefix}{token}"
+        else
+            token
+    else
+        fallback
+
 let private plotHistogram (histogram: Map<uint64, uint64>) =
     let bins =
         histogram
@@ -19,14 +29,14 @@ let private plotHistogram (histogram: Map<uint64, uint64>) =
 
 [<EntryPoint>]
 let main args =
-    let availableMemory = 2UL * 1024UL * 1024UL * 1024UL
+    let availableMemory = 2UL * 1024UL * 1024UL * 1024UL // 2GB for example
 
     let src, args = commandLineSource availableMemory args
 
     let input, binWidth =
         match args with
-        | [| input; binWidth |] -> input, uint64 binWidth
-        | [| input |] -> input, 100UL
+        | [| input; binWidth |] -> samplePath "objectsImage" "../objectsImage" [| input |], uint64 binWidth
+        | [| _ |] -> samplePath "objectsImage" "../objectsImage" args, 100UL
         | _ -> "../objectsImage", 100UL
 
     let measured =

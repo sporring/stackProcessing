@@ -25,7 +25,17 @@ let private syntheticSlice width height depth index =
 
     image
 
-let private syntheticSource availableMemory width height depth =
+let private sampleRoot sampleName (args: string[]) =
+    if args.Length > 0 then
+        let token = args[0]
+        if token |> Seq.forall Char.IsDigit then
+            $"../{sampleName}{token}"
+        else
+            token
+    else
+        $"../{sampleName}"
+
+let private syntheticSource src width height depth =
     let stage =
         Stage.init
             "signed distance synthetic source"
@@ -35,12 +45,14 @@ let private syntheticSource availableMemory width height depth =
             (fun _ -> 0UL)
             id
 
-    Plan.create (Some stage) availableMemory 0UL (uint64 width * uint64 height) (uint64 depth) false
+    Plan.create (Some stage) src.memAvail 0UL (uint64 width * uint64 height) (uint64 depth) src.debug
 
 [<EntryPoint>]
 let main args =
-    let availableMemory = 2UL * 1024UL * 1024UL * 1024UL
-    let root = if args.Length > 0 then args[0] else "../signedDistanceBand"
+    let availableMemory = 2UL * 1024UL * 1024UL * 1024UL // 2GB for example
+
+    let src, args = commandLineSource availableMemory args
+    let root = sampleRoot "signedDistanceBand" args
     let mask = Path.Combine(root, "mask")
     let distance = Path.Combine(root, "distance-band")
 
@@ -51,11 +63,11 @@ let main args =
     let bandRadius = 6u
     let stride = 4u
 
-    syntheticSource availableMemory width height depth
+    syntheticSource src width height depth
     >=> write mask ".tiff"
     |> sink
 
-    syntheticSource availableMemory width height depth
+    syntheticSource src width height depth
     >=> signedDistanceBand bandRadius stride
     >=> write distance ".mha"
     |> sink

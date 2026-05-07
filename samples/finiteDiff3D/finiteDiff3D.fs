@@ -18,7 +18,7 @@ let main arg =
     src
     |> read<float> input ".tiff"
     >=> tap "tap: For finiteDiff"
-    >=> finiteDiff sigma 1u 2u
+    >=> finiteDiff sigma 2u 1u
     >=> tap "tap: For cast"
     >=> cast<float,uint8>
     >=> tap "tap: For write"

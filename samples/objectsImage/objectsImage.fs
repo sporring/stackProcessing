@@ -47,7 +47,17 @@ let private streamedObject width height depth label object : StreamedObject =
       Bounds = boundsOf positions
       Size = uint64 positions.Length }
 
-let private objectSource availableMemory (objects: StreamedObject list) : SlimPipeline.Plan<unit, StreamedObject list> =
+let private sampleRoot sampleName (args: string[]) =
+    if args.Length > 0 then
+        let token = args[0]
+        if token |> Seq.forall Char.IsDigit then
+            $"../{sampleName}{token}"
+        else
+            token
+    else
+        $"../{sampleName}"
+
+let private objectSource src (objects: StreamedObject list) : SlimPipeline.Plan<unit, StreamedObject list> =
     let stage =
         Stage.init
             "synthetic streamed objects"
@@ -57,17 +67,15 @@ let private objectSource availableMemory (objects: StreamedObject list) : SlimPi
             (fun _ -> 0UL)
             id
 
-    Plan.create (Some stage) availableMemory 0UL 1UL 1UL false
+    Plan.create (Some stage) src.memAvail 0UL 1UL 1UL src.debug
 
 [<EntryPoint>]
 let main args =
-    let availableMemory = 2UL * 1024UL * 1024UL * 1024UL
+    let availableMemory = 2UL * 1024UL * 1024UL * 1024UL // 2GB for example
 
+    let src, args = commandLineSource availableMemory args
     let width, height, depth, output =
-        if args.Length > 0 then
-            64u, 64u, 48u, args[0]
-        else
-            64u, 64u, 48u, "../objectsImage"
+        64u, 64u, 48u, sampleRoot "objectsImage" args
 
     let widthI, heightI, depthI = int width, int height, int depth
 
@@ -88,7 +96,7 @@ let main args =
     for file in Directory.EnumerateFiles(output, "*.tiff") do
         File.Delete(file)
 
-    objectSource availableMemory objects
+    objectSource src objects
     >=> paintObjects width height
     >=> write output ".tiff"
     |> sink
