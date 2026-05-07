@@ -31,6 +31,7 @@ Nothing runs while the pipeline is being built. Execution starts only when
 | `Image` | Thin F# image abstraction over SimpleITK, including typed pixel access and image functions. |
 | `AsyncSeqExtensions` | Streaming helpers used by the pipeline engine. |
 | `SlimPipeline` | Element-agnostic streaming pipeline model, graph metadata, memory estimates, and execution. |
+| `TinyLinAlg` | Small affine/vector/matrix helper library used by registration and resampling code. |
 | `StackProcessing` | Image-stack implementation of `SlimPipeline`: read, write, filters, reducers, visualization helpers. |
 | `StackProcessing.Probing` | Runs calibration-style pipelines and writes JSON with memory and timing observations for cost-model learning. |
 | `StackProcessing.Probing.Report` | Reads probing JSON and writes Plotly.NET scatter plots for memory and speed versus window size or other parameters. |
@@ -38,11 +39,55 @@ Nothing runs while the pipeline is being built. Execution starts only when
 | `Studio.Compiler` | Compiler from Studio graph JSON to executable StackProcessing F# DSL code. |
 | `Studio` | Avalonia visual editor for building, saving, arranging, compiling, and running processing graphs. |
 
+## Component Overview
+
+```mermaid
+flowchart TD
+    UserFSharp["F# user code / samples"]
+    Studio["Studio\nAvalonia graph editor"]
+    StudioGraph["Studio.Graph\ncatalog + saved graph JSON"]
+    StudioCompiler["Studio.Compiler\ngraph -> F# DSL"]
+    StackProcessing["StackProcessing\npublic DSL"]
+    Core["StackProcessing.Core\nLMIP image-stack algorithms"]
+    Slim["SlimPipeline\nstreaming plans, stages, windows, cost metadata"]
+    AsyncSeq["FSharp.Control.AsyncSeq\nasync stream substrate"]
+    Image["Image\nF# wrapper over SimpleITK"]
+    SimpleITK["SimpleITK\nnative image IO + filters"]
+    TinyLinAlg["TinyLinAlg\naffine/vector helpers"]
+    ZarrNexus["ZarrNET + PureHDF\nZarr / HDF5-NeXus IO"]
+    Probing["StackProcessing.Probing\nruntime measurements"]
+    Report["StackProcessing.Probing.Report\nPlotly.NET reports"]
+
+    UserFSharp --> StackProcessing
+    Studio --> StudioGraph
+    StudioGraph --> StudioCompiler
+    StudioCompiler --> StackProcessing
+
+    StackProcessing --> Core
+    StackProcessing --> Slim
+    Core --> Slim
+    Slim --> AsyncSeq
+    Core --> Image
+    Image --> SimpleITK
+    Core --> TinyLinAlg
+    Core --> ZarrNexus
+
+    StackProcessing --> Probing
+    Probing --> Report
+```
+
+There are two user-facing entry points. Programmers can write the
+`StackProcessing` DSL directly; non-programmers can build the same DSL through
+Studio graphs. Both routes end in `SlimPipeline` plans and stages. The image
+work is implemented in `StackProcessing.Core` and `Image`, while file formats,
+registration helpers, probing, and reports sit beside that core path.
+
 ## Studio For Users
 
-Studio is the visual way to build StackProcessing programs. It is intended to
-let a user compose useful larger-than-memory image workflows without writing F#
-by hand.
+![Studio graph editor showing a StackProcessing workflow](images/StudioExample.png)
+
+Studio is the visual way to build StackProcessing programs. It lets a user
+compose useful larger-than-memory image workflows without writing F# by hand.
 
 From the user's point of view, a Studio graph is a recipe: boxes describe where
 data comes from, what processing should happen, what scalar values or statistics
@@ -92,7 +137,7 @@ generated code uses the connected value.
 | Arithmetic | `scalarOp`, `imageOpScalar`, `scalarOpImage`, `imageOpImage`, `f(I)`, `f(a)` |
 | Filters | `discreteGaussian`, `convGauss`, `finiteDiff` |
 | Segmentation | `threshold`, morphology, connected-component stages |
-| Statistics | `computeStats`, `addNormalNoise` |
+| Statistics | `computeStats`, `histogram`, `quantiles`, object-size statistics |
 | Visualization | `histogram`, `chart`, `showImage` |
 | Debug | `tap`, `print` |
 
@@ -119,7 +164,7 @@ streaming path can continue.
 
 ### Run Output
 
-Pressing `Run` currently:
+Pressing `Run`:
 
 1. Shows `Compiling` while the graph is translated to F# DSL text.
 2. Creates or reuses a temporary build directory.
@@ -228,9 +273,8 @@ The Avalonia project is responsible for interaction:
 * Pan, zoom, minimap, and Output panel behavior.
 * Running the compiler and external `dotnet` build/run process.
 
-Studio's UI code should stay a shell around `Studio.Graph` and
-`Studio.Compiler`; graph semantics and code generation should not live in
-Avalonia view code.
+Studio's UI code is a shell around `Studio.Graph` and `Studio.Compiler`; graph
+semantics and code generation live outside Avalonia view code.
 
 ## SlimPipeline Design
 
@@ -262,7 +306,10 @@ type Stage<'S,'T> =
       Build: unit -> Pipe<'S,'T>
       Transition: ProfileTransition
       MemoryNeed: MemoryNeedWrapped
-      LengthTransformation: uint64 -> uint64
+      MemoryModel: StageMemoryModel
+      CostModel: StageCostModel
+      ElementTransformation: ElementTransformation
+      SliceCardinality: SliceCardinality
       Graph: PipelineGraph
       Cleaning: (unit -> unit) list }
 ```
@@ -273,12 +320,11 @@ The distinction matters:
 * `Pipe` is executable.
 * `sink` and `drain` transform a `Stage` into a `Pipe` and run it.
 
-This separation prepares the codebase for future optimization passes over the
-abstract graph before execution.
+This separation lets the system analyze the abstract graph before execution.
 
 ### Pipeline Graph Metadata
 
-As the DSL is composed, SlimPipeline now builds a graph:
+As the DSL is composed, SlimPipeline builds a graph:
 
 ```fsharp
 type PipelineGraphNode =
@@ -298,9 +344,8 @@ type PipelineGraph =
       Exits: int list }
 ```
 
-This graph is not yet the final optimizer, but it is the foundation for one.
-It records composition, branching, joining, and stage boundaries while keeping
-the runtime `Pipe` path intact.
+This graph records composition, branching, joining, and stage boundaries while
+keeping the runtime `Pipe` path intact.
 
 ### Profiles And Memory
 
@@ -334,8 +379,14 @@ window when stages need synchronized window semantics.
 Each stage also has:
 
 * `MemoryNeed`: estimate of required memory for a slice or pair of slices.
-* `LengthTransformation`: estimate of stream length after the stage.
+* `MemoryModel` and `CostModel`: structured estimates used by probing and optimization.
+* `ElementTransformation`: estimate of the x-y element shape after the stage.
+* `SliceCardinality`: logical z-domain change after the stage.
 * `Cleaning`: delayed cleanup actions run after terminal operations.
+
+`SliceCardinality` uses small composable slice domains such as preserve, trim,
+expand, skip, and take. Branch synchronization uses these domains to reject
+incompatible stream lengths before a deadlock-prone pipeline is run.
 
 ### `ResourceOps<'T>`
 
@@ -361,11 +412,15 @@ A `Plan` is the user's partially built pipeline:
 type Plan<'S,'T> =
     { stage: Stage<'S,'T> option
       graph: PipelineGraph
+      sourcePeek: SourcePeek option
+      costPeak: StageCostPressure option
+      costObservations: StageCostPressure list
       nElemsPerSlice: SingleOrPair
       length: uint64
       memAvail: uint64
       memPeak: uint64
-      debug: bool }
+      debug: bool
+      debugLevel: uint }
 ```
 
 The source creates an empty plan. Composition operators add stages. Terminal
@@ -395,7 +450,11 @@ Typical sources:
 ```fsharp
 read<'T> inputDir suffix
 readRandom<'T> depth inputDir suffix
+readRange<'T> first step last inputDir suffix
 readSlab<'T> inputDir suffix
+readZarrSlab<'T> inputDir arrayPath
+readNexusSlab<'T> inputFile datasetPath
+readPointSet inputCsv
 zero<'T> width height depth
 ```
 
@@ -404,6 +463,10 @@ Typical sinks:
 ```fsharp
 write outputDir suffix
 writeInSlabs outputDir suffix chunkX chunkY chunkZ
+writeZarr outputDir arrayPath chunkX chunkY chunkZ
+writeNexus outputFile datasetPath chunkX chunkY chunkZ
+writePointSet outputCsv
+writeMesh outputPath format
 sink
 drain
 ```
@@ -416,22 +479,52 @@ downstream.
 
 StackProcessing wraps image functions as `Stage`s:
 
-* image-image arithmetic: `addPair`, `subPair`, `mulPair`, `divPair`,
-* scalar-image operations: `imageAddScalar`, `imageMulScalar`,
-  `scalarDivImage`, etc.,
-* filters: `discreteGaussian`, `convGauss`, `finiteDiff`,
-* segmentation: `threshold`, morphology, connected components,
-* reducers: `computeStats`, histograms, connected-component translation tables,
-* debug and visualization: `tap`, `tapIt`, `print`, `show`, chart helpers.
+* image-image arithmetic and comparison,
+* scalar-image operations,
+* local filters, morphology, resampling, and convolution,
+* streaming-friendly segmentation and connected-object processing,
+* reducers for statistics, histograms, quantiles, objects, and label tables,
+* point sets, meshes, registration, debug, and visualization helpers.
 
 Studio may present several of these concrete functions as one generic box with
 an operator or type dropdown. The generated code still targets the concrete
 StackProcessing DSL functions.
 
+### Image Processing Algorithm Inventory
+
+The public `StackProcessing` DSL exposes algorithms that fit the
+larger-than-memory model. Operations that need whole-volume iterative access,
+such as full-image watershed, thinning, full signed distance maps, or
+whole-stack normalization, are not part of the streaming DSL surface.
+
+| Area | DSL functions |
+| ---- | ------------- |
+| Type conversion and creation | `cast`, `zero`, `empty`, `createByEuler2DTransform` |
+| Arithmetic | `add`, `sub`, `mul`, `div`, `addPair`, `subPair`, `mulPair`, `divPair`, `maxOfPair`, `minOfPair` |
+| Scalar-image arithmetic | `scalarAddImage`, `imageAddScalar`, `scalarSubImage`, `imageSubScalar`, `scalarMulImage`, `imageMulScalar`, `scalarDivImage`, `imageDivScalar` |
+| Pointwise math | `abs`, `acos`, `asin`, `atan`, `cos`, `sin`, `tan`, `exp`, `log10`, `log`, `round`, `sqrt`, `sqrtWindowed`, `square`, `clamp` |
+| Intensity mapping | `shiftScale`, `intensityStretch`, `threshold`, `addNormalNoise` |
+| Comparisons and masks | `equal`, `notEqual`, `greater`, `greaterEqual`, `less`, `lessEqual`, `andMask`, `orMask`, `xorMask`, `notMask` |
+| Local filtering | `median`, `bilateral`, `gradientMagnitude`, `sobelEdge`, `laplacian`, `discreteGaussian`, `convGauss`, `convolve`, `conv`, `finiteDiff` |
+| Binary morphology | `erode`, `dilate`, `opening`, `closing`, `binaryContour`, `binaryMedian` |
+| Grayscale morphology | `grayscaleErode`, `grayscaleDilate`, `grayscaleOpening`, `grayscaleClosing`, `whiteTopHat`, `blackTopHat`, `morphologicalGradient` |
+| Padding, cropping, axes, and geometry | `createPadding`, `crop`, `resize`, `resample`, `resampleAffineTrilinearSlices`, `permuteAxes` |
+| Connected components and labels | `connectedComponents`, `relabelComponents`, `makeConnectedComponentTranslationTable`, `updateConnectedComponents`, `labelContour`, `changeLabel` |
+| Streaming object processing | `streamConnectedObjects`, `removeSmallObjects`, `fillSmallHoles`, `paintObjects`, `paintObjectsCropped`, `measureObjects`, `objectSizeStats`, `objectSizeHistogram` |
+| Distance, surfaces, and features | `signedDistanceBand`, `marchingCubes`, `dogKeypoints` |
+| Point sets and registration | `readPointSet`, `writePointSet`, `earthMoversDistance`, `transformPointSet`, `inverseAffine`, `affineRegistration` |
+| Reducers and summaries | `computeStats`, `histogram`, `quantiles`, `otsuThresholdFromHistogram`, `momentsThresholdFromHistogram`, `sumProjection` |
+| Visualization and diagnostics | `show`, `plot`, `print`, `tap`, `tapIt` |
+
+Threshold estimation uses the pattern
+`histogram -> otsuThresholdFromHistogram` or
+`histogram -> momentsThresholdFromHistogram`, followed by the ordinary streaming
+`threshold` stage. This makes the sampling and two-pass nature explicit.
+
 ### Larger-Than-Memory Connected Components
 
-Connected components require two passes for large stacks. The current design is
-a linear tuple stream:
+Connected components use two passes for large stacks. The DSL expresses this
+as a linear tuple stream:
 
 ```fsharp
 let transTbl =
@@ -468,6 +561,8 @@ Test projects are split by layer:
 | `AsyncSeqExtensions.Tests` | Async sequence helpers. |
 | `SlimPipeline.Tests` | Profiles, resource ops, graph metadata, and basic execution. |
 | `Image.Tests` | Image abstraction and image functions. |
+| `TinyLinAlg.Tests` | Small vector/matrix/affine helpers. |
+| `StackProcessing.Tests` | Streaming image correctness against direct 3D image operations where practical. |
 | `Studio.Graph.Tests` | Graph domain, catalog, and persistence. |
 | `Studio.Compiler.Tests` | Graph-to-F# code generation. |
 
@@ -477,6 +572,8 @@ Useful commands:
 dotnet build StackProcessing.sln
 dotnet test tests/AsyncSeqExtensions.Tests/AsyncSeqExtensions.Tests.fsproj
 dotnet test tests/SlimPipeline.Tests/SlimPipeline.Tests.fsproj
+dotnet test tests/StackProcessing.Tests/StackProcessing.Tests.fsproj
+dotnet test tests/TinyLinAlg.Tests/TinyLinAlg.Tests.fsproj
 dotnet test tests/Studio.Graph.Tests/Studio.Graph.Tests.fsproj
 dotnet test tests/Studio.Compiler.Tests/Studio.Compiler.Tests.fsproj
 dotnet test tests/Image.Tests/Image.Tests.fsproj
@@ -490,6 +587,23 @@ dotnet test tests/Image.Tests/Image.Tests.fsproj
 * Make memory ownership explicit for large native resources.
 * Prefer streaming and chunked algorithms over full-volume materialization.
 * Let users choose between visual programming in Studio and direct F# DSL code.
+
+## Acknowledgements
+
+StackProcessing builds on a lot of excellent open-source work. In particular:
+
+* The SimpleITK and ITK teams provide the image IO, typed image representation,
+  and many of the native image filters wrapped by the `Image` project.
+* The FSharp.Control.AsyncSeq team provides the asynchronous sequence substrate
+  used by `SlimPipeline` to express streaming execution.
+* The Avalonia, NodeEditorAvalonia, PanAndZoom, and CommunityToolkit.Mvvm
+  projects make the cross-platform Studio UI possible.
+* Plotly.NET is used for probing reports, histograms, and visual summaries.
+* PureHDF and ZarrNET provide native .NET access to HDF5/NeXus and Zarr-style
+  array storage.
+* Expecto, YoloDev.Expecto.TestSdk, Microsoft.NET.Test.Sdk, and coverlet support
+  the test and coverage setup.
+* DIKU.Graph supports graph algorithms used inside the stack-processing core.
 
 ## How To Cite
 

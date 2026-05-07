@@ -4,8 +4,8 @@
     {
       "id": "node-1",
       "functionId": "Write",
-      "x": 490,
-      "y": 252.20703125,
+      "x": 635.1171875,
+      "y": 424.7060546875,
       "parameters": [
         {
           "key": "output",
@@ -22,8 +22,8 @@
     {
       "id": "node-2",
       "functionId": "Read",
-      "x": 8.09375,
-      "y": 213.98046875,
+      "x": 44.67578125,
+      "y": 205.0498046875,
       "parameters": [
         {
           "key": "availableMemory",
@@ -50,15 +50,15 @@
     {
       "id": "node-3",
       "functionId": "ComputeStats",
-      "x": 398.53515625,
-      "y": 75,
+      "x": 316.87109375,
+      "y": 129.0693359375,
       "parameters": []
     },
     {
       "id": "node-4",
       "functionId": "ReadRandom",
-      "x": 189.53515625,
-      "y": 73.94140625,
+      "x": 154.67578125,
+      "y": 129.0693359375,
       "parameters": [
         {
           "key": "availableMemory",
@@ -90,8 +90,8 @@
     {
       "id": "node-5",
       "functionId": "Scalar",
-      "x": 0,
-      "y": 66,
+      "x": 36.58203125,
+      "y": 57.0693359375,
       "parameters": [
         {
           "key": "type",
@@ -108,8 +108,8 @@
     {
       "id": "node-6",
       "functionId": "Scalar",
-      "x": 243.4921875,
-      "y": 252.20703125,
+      "x": 280.07421875,
+      "y": 259.7724609375,
       "parameters": [
         {
           "key": "type",
@@ -126,8 +126,8 @@
     {
       "id": "node-7",
       "functionId": "Cast",
-      "x": 450.2890625,
-      "y": 373.703125,
+      "x": 445.07421875,
+      "y": 424.7060546875,
       "parameters": [
         {
           "key": "sourceType",
@@ -144,8 +144,8 @@
     {
       "id": "node-8",
       "functionId": "ScalarOp",
-      "x": 360.53125,
-      "y": 260.35546875,
+      "x": 401.87109375,
+      "y": 259.7724609375,
       "parameters": [
         {
           "key": "operation",
@@ -172,8 +172,8 @@
     {
       "id": "node-9",
       "functionId": "ImageOpScalar",
-      "x": 106.51953125,
-      "y": 307.703125,
+      "x": 143.1015625,
+      "y": 298.7724609375,
       "parameters": [
         {
           "key": "operation",
@@ -195,8 +195,8 @@
     {
       "id": "node-10",
       "functionId": "ImageOpScalar",
-      "x": 217.44921875,
-      "y": 433.63671875,
+      "x": 254.03125,
+      "y": 424.7060546875,
       "parameters": [
         {
           "key": "operation",
@@ -218,8 +218,8 @@
     {
       "id": "node-11",
       "functionId": "ScalarOp",
-      "x": 275.01171875,
-      "y": 348.484375,
+      "x": 335.07421875,
+      "y": 340.7724609375,
       "parameters": [
         {
           "key": "operation",
