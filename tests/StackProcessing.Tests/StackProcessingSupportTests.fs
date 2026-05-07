@@ -366,6 +366,48 @@ let stackProcessingSupportSuite =
                 deleteDirectory inputDir
                 deleteDirectory outputDir
 
+        testCase "point-set CSV read and write round-trip coordinate chunks" <| fun _ ->
+            let outputDir = tempDirectory "point-set"
+            let path = Path.Combine(outputDir, "points.csv")
+            let points: PointSetChunk =
+                { Points =
+                    [ { X = 1.0; Y = 2.0; Z = 3.0; Scale = 1.6; Response = 0.25 }
+                      { X = 4.5; Y = 5.5; Z = 6.5; Scale = 2.0; Response = -0.125 } ] }
+
+            try
+                scalarPlan [ points ]
+                >=> writePointSet path
+                |> sink
+
+                let reread =
+                    source 1024UL
+                    |> readPointSet path
+                    |> drain
+
+                Expect.equal reread points "Point-set CSV should preserve x,y,z,scale,response values."
+            finally
+                deleteDirectory outputDir
+
+        testCase "dogKeypoints detects streamed Difference-of-Gaussian point candidates" <| fun _ ->
+            let slices =
+                [ for z in 0 .. 8 ->
+                    let image =
+                        Array2D.init 9 9 (fun x y -> if x = 4 && y = 4 && z = 4 then 255uy else 0uy)
+                        |> Image<uint8>.ofArray2D
+                    image.index <- z
+                    image ]
+
+            try
+                let chunks =
+                    imagePlan slices
+                    >=> dogKeypoints<uint8> 0.5 1.2 4u 0.0001 1u
+                    |> drainList
+
+                let points = chunks |> List.collect _.Points
+                Expect.isTrue (points |> List.exists (fun p -> p.X = 4.0 && p.Y = 4.0 && p.Z = 4.0)) "A centered impulse should produce a keypoint near the impulse coordinate."
+            finally
+                disposeImages slices
+
         testCase "writeInSlabs creates chunk files and chunk metadata can be read" <| fun _ ->
             let inputDir = tempDirectory "chunks-input"
             let chunkDir = tempDirectory "chunks-output"

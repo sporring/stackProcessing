@@ -90,6 +90,10 @@ type FileInfo = ImageFunctions.FileInfo
 
 type ChunkInfo = StackIO.ChunkInfo
 
+type CoordinatePoint = StackPoints.CoordinatePoint
+
+type PointSetChunk = StackPoints.PointSetChunk
+
 type Point3D = StackMesh.Point3D
 
 type Triangle = StackMesh.Triangle
@@ -222,6 +226,11 @@ val readNexusSlab<'T when 'T: equality> :
      SlimPipeline.Plan<unit,unit> -> SlimPipeline.Plan<unit,StackCore.Image<'T>>)
     when 'T: equality
 
+val readPointSet:
+  (string ->
+     SlimPipeline.Plan<unit,unit> ->
+     SlimPipeline.Plan<unit,StackPoints.PointSetChunk>)
+
 val deleteIfExists: (string -> unit)
 
 val write:
@@ -257,6 +266,8 @@ val writeInSlabs:
      uint ->
      uint -> uint -> StackCore.Stage<StackCore.Image<'a>,StackCore.Image<'a>>)
     when 'a: equality
+
+val writePointSet: (string -> StackCore.Stage<StackPoints.PointSetChunk,unit>)
 
 val writeMesh: (string -> string -> StackCore.Stage<StackMesh.MeshChunk,unit>)
 
@@ -578,6 +589,14 @@ val changeLabel<'T when 'T: equality> :
 
 val marchingCubes<'T when 'T: equality> :
   (float -> StackCore.Stage<StackCore.Image<'T>,StackMesh.MeshChunk>)
+    when 'T: equality
+
+val dogKeypoints<'T when 'T: equality> :
+  (float ->
+     float ->
+     uint ->
+     float ->
+     uint -> StackCore.Stage<StackCore.Image<'T>,StackPoints.PointSetChunk>)
     when 'T: equality
 
 val resize<'T when 'T: equality> :

@@ -17,6 +17,7 @@ module BuiltInCatalog =
   let translationTable = PortType.Custom "TranslationTable"
   let connectedComponentLabels = PortType.Tuple(imageUInt64, PortType.Scalar(BasicType.Numeric UInt64))
   let mesh = PortType.Custom "Mesh"
+  let pointSet = PortType.Custom "PointSet"
   let intList = PortType.Custom "IntList"
   let uint64List = PortType.Custom "UInt64List"
 
@@ -50,6 +51,12 @@ module BuiltInCatalog =
 
   let private nexusFormatDescription =
       "Reads a rank-3 NeXus/HDF5 detector stack through PureHDF using an explicit dataset path and axis mapping. This covers common MAX IV and ESRF detector-stack layouts while keeping streaming slice reads larger-than-memory friendly. Compressed detector files that use external HDF5 filters may require a later native/plugin fallback."
+
+  let private pointSetDescription =
+      "Reads and writes coordinate point sets as clean CSV. The header is x,y,z,scale,response. x, y, and z are image coordinates; scale and response are optional when reading and are written as floating-point values. This format is intentionally simple so point detections can be exchanged with Python, R, spreadsheets, and visualization tools without custom parsers."
+
+  let private dogKeypointsDescription =
+      "Detects local Difference-of-Gaussian extrema in streaming z-windows. Each window builds a small 3D Gaussian scale space, subtracts adjacent scales, and emits points that are strict local maxima or minima in x, y, z, and scale. Only the center stride slices of each window are emitted, while the z padding covers the largest Gaussian support and the one-slice extrema neighborhood.\n\nThis is a detector only, not a complete SIFT descriptor implementation. Coordinates are reported in pixel units and z uses the source slice index. Increase scale levels or sigma for larger features; increase contrast threshold to suppress weak/noisy extrema."
 
   let private intensityDescription =
       "Intensity filters change the numeric values of each pixel without changing the stack geometry. They are slice-local and therefore fit the streaming model naturally. Clamp limits values to a range. ShiftScale applies (input + shift) * scale. Intensity stretch maps a selected input range linearly to a selected output range."
@@ -371,6 +378,18 @@ module BuiltInCatalog =
 
         makeGenericReadNexusSlab()
 
+        { Id = "ReadPointSet"
+          DisplayName = "readPointSet"
+          Category = "Sources / Sinks"
+          Summary = "Read coordinate points from a CSV point-set file."
+          Description = pointSetDescription
+          Aliases = [ "points"; "csv"; "keypoints"; "coordinates"; "features"; "read"; "source" ]
+          Inputs = []
+          Outputs = [ makePort "PointSet" pointSet ]
+          Parameters =
+              [ availableMemoryParameter
+                makeParameter "input" "Input" "points.csv" BasicType.String ] }
+
         makeGenericZero()
 
         makeGenericCreateByEuler2DTransform()
@@ -475,6 +494,16 @@ module BuiltInCatalog =
           Parameters =
               [ makeParameter "output" "Output" "surface.obj" BasicType.String
                 makeParameter "format" "Format" "auto" BasicType.String ] }
+
+        { Id = "WritePointSet"
+          DisplayName = "writePointSet"
+          Category = "Sources / Sinks"
+          Summary = "Write coordinate point chunks to a CSV file."
+          Description = pointSetDescription
+          Aliases = [ "points"; "csv"; "keypoints"; "coordinates"; "features"; "write"; "save" ]
+          Inputs = [ makePort "PointSet" pointSet ]
+          Outputs = []
+          Parameters = [ makeParameter "output" "Output" "points.csv" BasicType.String ] }
 
         { Id = "WriteNexus"
           DisplayName = "writeNexus"
@@ -1216,6 +1245,22 @@ module BuiltInCatalog =
           Parameters =
               [ makeParameter "type" "Type" "Float64" BasicType.String
                 makeParameter "surfaceValue" "Surface value" "0.5" (BasicType.Numeric Float64) ] }
+
+        { Id = "DogKeypoints"
+          DisplayName = "dogKeypoints"
+          Category = "Geometry"
+          Summary = "Detect streamed Difference-of-Gaussian keypoints."
+          Description = dogKeypointsDescription
+          Aliases = [ "dog"; "sift"; "keypoints"; "features"; "points"; "scale"; "gaussian" ]
+          Inputs = [ makePort "Number" imageAny ]
+          Outputs = [ makePort "PointSet" pointSet ]
+          Parameters =
+              [ makeParameter "type" "Type" "Float64" BasicType.String
+                makeParameter "sigma0" "Sigma 0" "1.0" (BasicType.Numeric Float64)
+                makeParameter "scaleFactor" "Scale factor" "1.6" (BasicType.Numeric Float64)
+                makeParameter "scaleLevels" "Scale levels" "4" (BasicType.Numeric UInt32)
+                makeParameter "contrastThreshold" "Contrast threshold" "0.03" (BasicType.Numeric Float64)
+                makeParameter "stride" "Stride" "8" (BasicType.Numeric UInt32) ] }
 
         { Id = "Watershed"
           DisplayName = "watershed"
