@@ -558,27 +558,6 @@ val mask<'T when 'T: equality> :
      StackCore.Stage<(StackCore.Image<'T> * StackCore.Image<uint8>),
                      StackCore.Image<'T>>) when 'T: equality
 
-type LabelShapeStatistics = StackImageFunctions.LabelShapeStatistics
-
-type LabelIntensityStatistics = StackImageFunctions.LabelIntensityStatistics
-
-type LabelOverlapMeasures = StackImageFunctions.LabelOverlapMeasures
-
-val labelShapeStatistics<'T when 'T: equality> :
-  (uint ->
-     StackCore.Stage<StackCore.Image<'T>,
-                     Map<int64,StackImageFunctions.LabelShapeStatistics>>)
-    when 'T: equality
-
-val labelIntensityStatistics<'L,'T when 'L: equality and 'T: equality> :
-  StackCore.Stage<(StackCore.Image<'L> * StackCore.Image<'T>),
-                  Map<int64,StackImageFunctions.LabelIntensityStatistics>>
-    when 'L: equality and 'T: equality
-
-val labelOverlapMeasures<'T when 'T: equality> :
-  StackCore.Stage<(StackCore.Image<'T> * StackCore.Image<'T>),
-                  StackImageFunctions.LabelOverlapMeasures> when 'T: equality
-
 val labelContour<'T when 'T: equality> :
   (bool ->
      uint32 -> SlimPipeline.Stage<StackCore.Image<obj>,StackCore.Image<obj>>)
@@ -801,14 +780,19 @@ val writeSlabSlices:
      string -> uint -> StackCore.Stage<StackCore.Image<'a>,StackCore.Image<'a>>)
     when 'a: equality
 
+type ComponentStatistics = StackImageFunctions.ComponentStatistics
+
+type ConnectedComponentTranslationTable =
+    StackImageFunctions.ConnectedComponentTranslationTable
+
 val makeConnectedComponentTranslationTable:
   (uint ->
      StackCore.Stage<(StackCore.Image<uint64> * uint64),
-                     (uint * uint64 * uint64) list>)
+                     StackImageFunctions.ConnectedComponentTranslationTable>)
 
 val updateConnectedComponents:
   (uint ->
-     (uint * uint64 * uint64) list ->
+     StackImageFunctions.ConnectedComponentTranslationTable ->
      StackCore.Stage<StackCore.Image<uint64>,StackCore.Image<uint64>>)
 
 val permuteAxes:

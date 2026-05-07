@@ -443,6 +443,9 @@ let transTbl =
     >=> makeConnectedComponentTranslationTable wsz
     |> drain
 
+// transTbl.Labels contains the per-slab to global-label mapping.
+// transTbl.Statistics contains streaming component counts, bounds, and centroids.
+
 source availableMemory
 |> read<uint64> tmp ".mha"
 >=> updateConnectedComponents wsz transTbl

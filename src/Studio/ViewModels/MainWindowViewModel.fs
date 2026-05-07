@@ -636,8 +636,6 @@ module private HighValueFilterNode =
           "MorphologicalGradient"
           "OtsuThreshold"
           "MomentsThreshold"
-          "LabelShapeStatistics"
-          "LabelOverlapMeasures"
           "LabelContour"
           "ChangeLabel" ]
         |> Set.ofList
@@ -1365,12 +1363,6 @@ type MainWindowViewModel() as this =
                     PipelineParameterViewModel(parameter.Label, parameter.Key, parameter.DefaultValue, parameter.Type, canUseInput = false)
                 | "Quantiles", "histogram" ->
                     PipelineParameterViewModel(parameter.Label, parameter.Key, parameter.DefaultValue, parameter.Type, forceUseInput = true)
-                | "LabelIntensityStatistics", ("labelType" | "intensityType") ->
-                    let options =
-                        HighValueFilterNode.typeOptions
-                        |> List.map (fun value -> ParameterOptionViewModel(value, value, true))
-
-                    PipelineParameterViewModel(parameter.Label, parameter.Key, parameter.DefaultValue, parameter.Type, options, false)
                 | functionId, "type" when HighValueFilterNode.typedImageFunctionIds.Contains functionId ->
                     let options =
                         HighValueFilterNode.typeOptions

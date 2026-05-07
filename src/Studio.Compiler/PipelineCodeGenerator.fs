@@ -224,13 +224,6 @@ module PipelineCodeGenerator =
         | "BinaryReconstructionByErosion" ->
             let fullyConnected = savedParamValue "fullyConnected" node
             Some $"binaryReconstructionByErosion {fullyConnected}"
-        | "LabelIntensityStatistics" ->
-            let labelType = pixelTypeNameFromParameter "labelType" "UInt64" node
-            let intensityType = pixelTypeNameFromParameter "intensityType" "Float64" node
-            Some $"labelIntensityStatistics<{labelType},{intensityType}>"
-        | "LabelOverlapMeasures" ->
-            let pixelType = pixelTypeNameFromParameter "type" "UInt64" node
-            Some $"labelOverlapMeasures<{pixelType}>"
         | _ -> pairFunctionName node.FunctionId
 
     let private safeIdentifier (value: string) =
@@ -1055,10 +1048,6 @@ module PipelineCodeGenerator =
             let majorityThreshold = parameterValue "majorityThreshold"
             let windowSize = parameterValue "windowSize"
             $">=> votingBinaryHoleFilling {radius} {majorityThreshold} {windowSize}"
-        | "LabelShapeStatistics" ->
-            let pixelType = pixelTypeNameFromParameter "type" "UInt64" node
-            let windowSize = parameterValue "windowSize"
-            $">=> labelShapeStatistics<{pixelType}> {windowSize}"
         | "LabelContour" ->
             let pixelType = pixelTypeNameFromParameter "type" "UInt64" node
             let fullyConnected = parameterValue "fullyConnected"

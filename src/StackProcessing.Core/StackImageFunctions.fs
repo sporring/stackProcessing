@@ -493,31 +493,6 @@ let notMask : Stage<Image<uint8>, Image<uint8>> =
 let mask<'T when 'T: equality> outsideValue : Stage<Image<'T> * Image<uint8>, Image<'T>> =
     liftPairReleaseAfter "mask" (ImageFunctions.mask outsideValue)
 
-type LabelShapeStatistics = ImageFunctions.LabelShapeStatistics
-type LabelIntensityStatistics = ImageFunctions.LabelIntensityStatistics
-type LabelOverlapMeasures = ImageFunctions.LabelOverlapMeasures
-
-let private windowedMap name winSz (f: Image<'T> -> 'S) : Stage<Image<'T>, 'S> when 'T: equality =
-    let mapper (_debug: bool) (window: Window<Image<'T>>) =
-        let stack = ImageFunctions.stack window.Items
-        window.Items
-        |> List.take (min (int winSz) window.Items.Length)
-        |> List.iter (fun image -> image.decRefCount())
-        try
-            f stack
-        finally
-            stack.decRefCount()
-    (window winSz 0u winSz) --> mapWindow name mapper id id
-
-let labelShapeStatistics<'T when 'T: equality> winSz : Stage<Image<'T>, Map<int64, LabelShapeStatistics>> =
-    windowedMap "labelShapeStatistics" winSz ImageFunctions.labelShapeStatistics
-
-let labelIntensityStatistics<'L,'T when 'L: equality and 'T: equality> : Stage<Image<'L> * Image<'T>, Map<int64, LabelIntensityStatistics>> =
-    liftPairReleaseAfter "labelIntensityStatistics" ImageFunctions.labelIntensityStatistics
-
-let labelOverlapMeasures<'T when 'T: equality> : Stage<Image<'T> * Image<'T>, LabelOverlapMeasures> =
-    liftPairReleaseAfter "labelOverlapMeasures" ImageFunctions.labelOverlapMeasures
-
 let labelContour<'T when 'T: equality> fullyConnected winSz =
     makeWindowedLocalOp "labelContour" 3u winSz (ImageFunctions.labelContour fullyConnected)
 
@@ -1082,7 +1057,84 @@ let writeSlabSlices (outputDir: string) (suffix: string) (winSz: uint) : Stage<I
 
     Stage.mapi $"writeSlabSlices \"{outputDir}/*{suffix}\"" mapper id id
 
-let makeConnectedComponentTranslationTable (winSz: uint) : Stage<Image<uint64> * uint64,(uint*uint64*uint64) list> =
+type ComponentStatistics =
+    { Label: uint64
+      NumberOfPixels: uint64
+      SumX: uint64
+      SumY: uint64
+      SumZ: uint64
+      MinX: uint
+      MaxX: uint
+      MinY: uint
+      MaxY: uint
+      MinZ: uint
+      MaxZ: uint }
+
+type ConnectedComponentTranslationTable =
+    { Labels: (uint * uint64 * uint64) list
+      Statistics: ComponentStatistics list }
+
+module ComponentStatistics =
+    let create label x y z : ComponentStatistics =
+        { Label = label
+          NumberOfPixels = 1UL
+          SumX = uint64 x
+          SumY = uint64 y
+          SumZ = uint64 z
+          MinX = x
+          MaxX = x
+          MinY = y
+          MaxY = y
+          MinZ = z
+          MaxZ = z }
+
+    let add left right =
+        if left.Label <> right.Label then
+            invalidArg "right" "Component statistics can only be added for the same label."
+        { Label = left.Label
+          NumberOfPixels = left.NumberOfPixels + right.NumberOfPixels
+          SumX = left.SumX + right.SumX
+          SumY = left.SumY + right.SumY
+          SumZ = left.SumZ + right.SumZ
+          MinX = min left.MinX right.MinX
+          MaxX = max left.MaxX right.MaxX
+          MinY = min left.MinY right.MinY
+          MaxY = max left.MaxY right.MaxY
+          MinZ = min left.MinZ right.MinZ
+          MaxZ = max left.MaxZ right.MaxZ }
+
+    let addToMap key stats map =
+        map
+        |> Map.change key (function
+            | Some existing -> Some(add existing stats)
+            | None -> Some stats)
+
+    let relabel newLabel (stats: ComponentStatistics) =
+        { stats with Label = newLabel }
+
+    let centroid stats =
+        if stats.NumberOfPixels = 0UL then
+            0.0, 0.0, 0.0
+        else
+            let n = float stats.NumberOfPixels
+            float stats.SumX / n, float stats.SumY / n, float stats.SumZ / n
+
+let private labelChunkStatistics chunk (labelChunk: Image<uint64>) =
+    Image.foldi
+        (fun index acc label ->
+            if label = 0UL then
+                acc
+            else
+                let x = index |> List.tryItem 0 |> Option.defaultValue 0u
+                let y = index |> List.tryItem 1 |> Option.defaultValue 0u
+                let localZ = index |> List.tryItem 2 |> Option.defaultValue 0u
+                let z = uint (labelChunk.index + int localZ)
+                let stats = ComponentStatistics.create label x y z
+                acc |> ComponentStatistics.addToMap (chunk, label) stats)
+        Map.empty
+        labelChunk
+
+let makeConnectedComponentTranslationTable (winSz: uint) : Stage<Image<uint64> * uint64, ConnectedComponentTranslationTable> =
     let name = "makeConnectedComponentTranslationTable"
 
     let addBoundaryEdges graph previousChunk (previous: Image<uint64>) (current: Image<uint64>) =
@@ -1135,11 +1187,27 @@ let makeConnectedComponentTranslationTable (winSz: uint) : Stage<Image<uint64> *
         |> List.map (fun ((chunk, oldLabel), newLabel) -> chunk, oldLabel, newLabel)
         |> List.sort
 
+    let mergeTranslatedStats translation localStatistics =
+        localStatistics
+        |> Map.toSeq
+        |> Seq.fold
+            (fun acc (key, stats) ->
+                match translation |> Map.tryFind key with
+                | Some newLabel when newLabel <> 0UL ->
+                    acc
+                    |> ComponentStatistics.addToMap newLabel (stats |> ComponentStatistics.relabel newLabel)
+                | _ -> acc)
+            Map.empty<uint64, ComponentStatistics>
+        |> Map.toList
+        |> List.map snd
+        |> List.sortBy _.Label
+
     let reducer (debug: bool) (input: AsyncSeq<Image<uint64> * uint64>) =
         async {
             let mutable previousBoundary : (uint * Image<uint64>) option = None
             let mutable graph = simpleGraph.empty
             let mutable chunkCounts = Map.empty<uint,uint64>
+            let mutable localStatistics = Map.empty<uint * uint64, ComponentStatistics>
 
             do!
                 input
@@ -1147,6 +1215,10 @@ let makeConnectedComponentTranslationTable (winSz: uint) : Stage<Image<uint64> *
                     async {
                         let chunk = uint (labelChunk.index / int winSz)
                         chunkCounts <- chunkCounts |> Map.add chunk objectCount
+                        localStatistics <-
+                            labelChunk
+                            |> labelChunkStatistics chunk
+                            |> Map.fold (fun acc key stats -> acc |> ComponentStatistics.addToMap key stats) localStatistics
 
                         let firstSlice = ImageFunctions.extractSlice 2u 0 labelChunk
 
@@ -1168,11 +1240,14 @@ let makeConnectedComponentTranslationTable (winSz: uint) : Stage<Image<uint64> *
 
             previousBoundary |> Option.iter (fun (_, image) -> image.decRefCount())
 
-            return
+            let translation =
                 chunkCounts
                 |> makeBaseMap
                 |> collapseTouchingComponents graph
-                |> toTranslationList
+
+            return
+                { Labels = translation |> toTranslationList
+                  Statistics = localStatistics |> mergeTranslatedStats translation }
         }
 
     let memoryNeed nPixels = 2UL * nPixels * uint64 sizeof<uint64>
@@ -1181,9 +1256,9 @@ let makeConnectedComponentTranslationTable (winSz: uint) : Stage<Image<uint64> *
 
 let trd (_,_,c) = c
 
-let updateConnectedComponents (winSz: uint) (translationTable: (uint*uint64*uint64) list) : Stage<Image<uint64>,Image<uint64>> =
+let updateConnectedComponents (winSz: uint) (translationTable: ConnectedComponentTranslationTable) : Stage<Image<uint64>,Image<uint64>> =
     let name = "updateConnectedComponents"
-    let translationTableChunked = List.groupBy (fun (c,_,_) -> c) translationTable
+    let translationTableChunked = List.groupBy (fun (c,_,_) -> c) translationTable.Labels
     let translationMap =
         translationTableChunked
         |> List.map (fun (chunk,lst) ->
