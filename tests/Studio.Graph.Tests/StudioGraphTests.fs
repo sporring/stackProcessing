@@ -108,11 +108,11 @@ let catalogSuite =
             Expect.equal fileDirectory.Parameters.[0].Key "kind" "The picker kind should be the first parameter."
             Expect.equal fileDirectory.Parameters.[1].Key "value" "The resolved path should be stored in value."
 
-        testCase "catalog entries have palette summaries and detailed descriptions can be empty" <| fun _ ->
+        testCase "catalog entries have palette summaries and detailed descriptions" <| fun _ ->
             let functions = BuiltInCatalog.orderedFunctions
             Expect.isNonEmpty functions "The built-in catalog should not be empty."
             Expect.isTrue (functions |> List.forall (fun f -> not (System.String.IsNullOrWhiteSpace f.Summary))) "Every palette entry should have hover summary text."
-            Expect.isTrue (functions |> List.exists (fun f -> f.Description = "")) "Detailed descriptions are optional while the field is rolled out."
+            Expect.isTrue (functions |> List.forall (fun f -> not (System.String.IsNullOrWhiteSpace f.Description))) "Every palette entry should have non-programmer-oriented description text."
 
         testCase "debug and visualization functions expose parameter input ports" <| fun _ ->
             let print = BuiltInCatalog.find "Print"
