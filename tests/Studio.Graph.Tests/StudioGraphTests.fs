@@ -71,7 +71,7 @@ let catalogSuite =
     testList "Studio.Graph catalog" [
         testCase "catalog exposes expected generic functions" <| fun _ ->
             let ids = BuiltInCatalog.orderedFunctions |> List.map _.Id
-            Expect.containsAll ids ["Scalar"; "FileDirectory"; "Read"; "ReadSlab"; "ReadZarrSlab"; "ReadNexusSlab"; "Write"; "WriteInSlabs"; "WriteZarr"; "WriteNexus"; "GetStackInfo"; "GetChunkInfo"; "GetZarrInfo"; "GetNexusInfo"; "Resize"; "Resample"; "ImageOpImage"; "ComputeStats"; "Quantiles"; "Chart"] "Important Studio functions should be in the palette catalog."
+            Expect.containsAll ids ["Scalar"; "FileDirectory"; "Read"; "ReadRandom"; "ReadRange"; "ReadSlab"; "ReadZarrSlab"; "ReadNexusSlab"; "Write"; "WriteInSlabs"; "WriteZarr"; "WriteNexus"; "GetStackInfo"; "GetChunkInfo"; "GetZarrInfo"; "GetNexusInfo"; "Resize"; "Resample"; "CreatePadding"; "Crop"; "ImageOpImage"; "ComputeStats"; "Quantiles"; "Chart"] "Important Studio functions should be in the palette catalog."
             Expect.containsAll ids ["Convolve"; "BinaryFillHoles"; "RelabelComponents"; "Watershed"; "SignedDistanceMap"; "OtsuThreshold"; "MomentsThreshold"; "ResampleAffineTrilinearSlices"] "The StackProcessing DSL algorithms requested for Studio should be in the palette catalog."
             Expect.containsAll ids ["Clamp"; "ShiftScale"; "IntensityStretch"; "Median"; "Bilateral"; "GradientMagnitude"; "SobelEdge"; "Laplacian"; "ImageComparison"; "MaskLogic"; "NotMask"; "Mask"] "The high-value SimpleITK filter families should be available in Studio."
             Expect.isFalse (ids |> List.contains "Normalize") "normalize is intentionally not exposed as a streaming Studio box; use computeStats plus shiftScale."

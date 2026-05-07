@@ -80,6 +80,20 @@ let private scalarPlan values =
 
     Plan.create (Some stage) 1024UL 0UL 1UL (uint64 items.Length) false
 
+let private imagePlan (images: Image<'T> list) =
+    images |> List.iter (fun image -> image.incRefCount())
+    let items = images |> List.toArray
+    let stage =
+        Stage.init
+            "image source"
+            (uint items.Length)
+            (fun index -> items[index])
+            (ProfileTransition.create Unit Streaming)
+            (fun _ -> 0UL)
+            id
+
+    Plan.create (Some stage) (2UL * 1024UL * 1024UL * 1024UL) 0UL 1UL (uint64 items.Length) false
+
 let private scalarStage name f =
     Stage.map name (fun _ value -> f value) (fun _ -> 0UL) id
 
@@ -248,9 +262,74 @@ let stackProcessingSupportSuite =
                     randomSlices |> List.iter (fun image -> Expect.equal (image.GetSize()) [ 5u; 4u ] "readRandom slices should preserve shape.")
                 finally
                     disposeImages randomSlices
+
+                let rangeSlices =
+                    source (2UL * 1024UL * 1024UL * 1024UL)
+                    |> readRange<uint8> "1" 2 "end" inputDir suffix
+                    |> drainList
+
+                try
+                    Expect.equal rangeSlices.Length 1 "readRange should read first, first+step, ... up to last."
+                    Expect.equal (rangeSlices[0].[0, 0]) 3uy "readRange should preserve the requested sorted slice order."
+                finally
+                    disposeImages rangeSlices
+
+                let clampedRangeSlices =
+                    source (2UL * 1024UL * 1024UL * 1024UL)
+                    |> readRange<uint8> "-10" 2 "end+10" inputDir suffix
+                    |> drainList
+
+                try
+                    Expect.equal clampedRangeSlices.Length 2 "readRange should clamp endpoints outside the stack."
+                    Expect.equal (clampedRangeSlices[0].[0, 0]) 0uy "A clamped first endpoint should begin at slice zero."
+                    Expect.equal (clampedRangeSlices[1].[0, 0]) 6uy "A clamped last endpoint should allow the final stepped slice."
+                finally
+                    disposeImages clampedRangeSlices
+
+                let reverseRangeSlices =
+                    source (2UL * 1024UL * 1024UL * 1024UL)
+                    |> readRange<uint8> "end" -1 "0" inputDir suffix
+                    |> drainList
+
+                try
+                    Expect.equal reverseRangeSlices.Length 3 "readRange should support negative steps."
+                    Expect.equal (reverseRangeSlices[0].[0, 0]) 6uy "A reverse range should start at the clamped first endpoint."
+                    Expect.equal (reverseRangeSlices[2].[0, 0]) 0uy "A reverse range should stop at the requested lower endpoint."
+                finally
+                    disposeImages reverseRangeSlices
             finally
                 disposeImages slices
                 deleteDirectory inputDir
+
+        testCase "createPadding and crop update x/y/z volume geometry in streaming order" <| fun _ ->
+            let slices = [ for z in 0 .. 2 -> makeSlice 3 3 z ]
+
+            let padded =
+                imagePlan slices
+                >=> createPadding<uint8> 1u 2u 1u 0u 1u 1u 7.0
+                |> drainList
+
+            try
+                Expect.equal padded.Length 5 "createPadding should add before/after z slices."
+                padded |> List.iter (fun image -> Expect.equal (image.GetSize()) [ 6u; 4u ] "createPadding should pad x/y slice dimensions.")
+                Expect.equal padded[0].[0, 0] 7uy "The prepended z padding slice should contain the padding value."
+                Expect.equal padded[1].[1, 1] slices[0].[0, 0] "The original first pixel should be offset by x/y padding."
+                Expect.equal padded[4].[5, 3] 7uy "The appended z padding slice should contain the padding value."
+            finally
+                disposeImages padded
+
+            let cropped =
+                imagePlan slices
+                >=> crop<uint8> 1u 1u 1u 0u 1u 1u
+                |> drainList
+
+            try
+                Expect.equal cropped.Length 1 "crop should trim the requested z prefix and suffix."
+                Expect.equal (cropped[0].GetSize()) [ 1u; 2u ] "crop should remove x/y borders from every retained slice."
+                Expect.equal cropped[0].[0, 0] slices[1].[1, 1] "crop should preserve the correct interior pixels."
+            finally
+                disposeImages cropped
+                disposeImages slices
 
         testCase "writeInSlabs creates chunk files and chunk metadata can be read" <| fun _ ->
             let inputDir = tempDirectory "chunks-input"
