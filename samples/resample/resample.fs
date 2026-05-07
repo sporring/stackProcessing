@@ -26,7 +26,17 @@ let private syntheticSlice width height index =
 
     image
 
-let private syntheticSource availableMemory width height depth =
+let private sampleRoot sampleName (args: string[]) =
+    if args.Length > 0 then
+        let token = args[0]
+        if token |> Seq.forall Char.IsDigit then
+            $"../{sampleName}{token}"
+        else
+            token
+    else
+        $"../{sampleName}"
+
+let private syntheticSource src width height depth =
     let stage =
         Stage.init
             "resample synthetic source"
@@ -36,12 +46,14 @@ let private syntheticSource availableMemory width height depth =
             (fun _ -> 0UL)
             id
 
-    Plan.create (Some stage) availableMemory 0UL (uint64 width * uint64 height) (uint64 depth) false
+    Plan.create (Some stage) src.memAvail 0UL (uint64 width * uint64 height) (uint64 depth) src.debug
 
 [<EntryPoint>]
 let main args =
-    let availableMemory = 2UL * 1024UL * 1024UL * 1024UL
-    let root = if args.Length > 0 then args[0] else "../resample"
+    let availableMemory = 2UL * 1024UL * 1024UL * 1024UL // 2GB for example
+
+    let src, args = commandLineSource availableMemory args
+    let root = sampleRoot "resample" args
     let original = Path.Combine(root, "original")
     let upsampled = Path.Combine(root, "resampled-up-linear")
     let anisotropic = Path.Combine(root, "resampled-anisotropic-nearest")
@@ -49,16 +61,16 @@ let main args =
     for path in [ original; upsampled; anisotropic ] do
         clearDirectory path
 
-    syntheticSource availableMemory 32u 32u 12u
+    syntheticSource src 32u 32u 12u
     >=> write original ".tiff"
     |> sink
 
-    syntheticSource availableMemory 32u 32u 12u
+    syntheticSource src 32u 32u 12u
     |> resample<float32> 1.5 1.5 2.0 "Linear"
     >=> write upsampled ".tiff"
     |> sink
 
-    syntheticSource availableMemory 32u 32u 12u
+    syntheticSource src 32u 32u 12u
     |> resample<float32> 0.75 1.25 0.5 "NearestNeighbor"
     >=> write anisotropic ".tiff"
     |> sink

@@ -49,7 +49,17 @@ let private streamedObject width height depth label object : StreamedObject =
       Bounds = boundsOf positions
       Size = uint64 positions.Length }
 
-let private objectSource availableMemory (objects: StreamedObject list) : Plan<unit, StreamedObject list> =
+let private sampleRoot sampleName (args: string[]) =
+    if args.Length > 0 then
+        let token = args[0]
+        if token |> Seq.forall Char.IsDigit then
+            $"../{sampleName}{token}"
+        else
+            token
+    else
+        $"../{sampleName}"
+
+let private objectSource src (objects: StreamedObject list) : Plan<unit, StreamedObject list> =
     let stage =
         Stage.init
             "synthetic registration objects"
@@ -59,9 +69,9 @@ let private objectSource availableMemory (objects: StreamedObject list) : Plan<u
             (fun _ -> 0UL)
             id
 
-    Plan.create (Some stage) availableMemory 0UL 1UL 1UL false
+    Plan.create (Some stage) src.memAvail 0UL 1UL 1UL src.debug
 
-let private imageSource availableMemory (images: Image<float32> list) : Plan<unit, Image<float32>> =
+let private imageSource src (images: Image<float32> list) : Plan<unit, Image<float32>> =
     images |> List.iter _.incRefCount()
     let items = images |> List.toArray
     let stage =
@@ -73,7 +83,7 @@ let private imageSource availableMemory (images: Image<float32> list) : Plan<uni
             (fun _ -> 0UL)
             id
 
-    Plan.create (Some stage) availableMemory 0UL 1UL (uint64 items.Length) false
+    Plan.create (Some stage) src.memAvail 0UL 1UL (uint64 items.Length) src.debug
 
 let private clearDirectory path =
     if Directory.Exists path then
@@ -125,8 +135,8 @@ let private strongestKeypoints maxCount (points: CoordinatePoint list) =
     |> List.sortByDescending (fun point -> Math.Abs point.Response)
     |> List.truncate maxCount
 
-let private detectKeypoints availableMemory input =
-    source availableMemory
+let private detectKeypoints src input =
+    src
     |> read<float32> input ".tiff"
     >=> dogKeypoints<float32> 0.8 1.25 4u 0.0005 4u
     |> drainList
@@ -179,8 +189,10 @@ let private printAffine name (affine: Affine) =
 
 [<EntryPoint>]
 let main args =
-    let availableMemory = 2UL * 1024UL * 1024UL * 1024UL
-    let root = if args.Length > 0 then args[0] else "../affineKeypointRegistration"
+    let availableMemory = 2UL * 1024UL * 1024UL * 1024UL // 2GB for example
+
+    let src, args = commandLineSource availableMemory args
+    let root = sampleRoot "affineKeypointRegistration" args
     let width, height, depth = 64u, 64u, 48u
 
     let originalStack = Path.Combine(root, "original")
@@ -205,7 +217,7 @@ let main args =
         shapes
         |> List.mapi (fun index shape -> streamedObject widthI heightI depthI (uint64 (index + 1)) shape)
 
-    objectSource availableMemory objects
+    objectSource src objects
     >=> paintObjects width height
     >=> cast<uint8, float32>
     >=> write originalStack ".tiff"
@@ -220,14 +232,14 @@ let main args =
 
     let movingImages = resampleToImages originalChunks width height depth (inverseAffine knownForward)
 
-    imageSource availableMemory movingImages
+    imageSource src movingImages
     >=> write movingStack ".tiff"
     >=> writeInSlabs movingChunks ".tiff" 12u 12u 12u
     >=> ignoreSingles ()
     |> sink
 
-    let fixedKeypoints = detectKeypoints availableMemory originalStack
-    let movingKeypoints = detectKeypoints availableMemory movingStack
+    let fixedKeypoints = detectKeypoints src originalStack
+    let movingKeypoints = detectKeypoints src movingStack
 
     printfn "Detected %d original keypoints and %d transformed keypoints." fixedKeypoints.Length movingKeypoints.Length
 
@@ -251,7 +263,7 @@ let main args =
 
     let restoredImages = resampleToImages movingChunks width height depth registration.InverseTransform
 
-    imageSource availableMemory restoredImages
+    imageSource src restoredImages
     >=> write restoredStack ".tiff"
     >=> ignoreSingles ()
     |> sink

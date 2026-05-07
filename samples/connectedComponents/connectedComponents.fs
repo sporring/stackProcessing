@@ -14,13 +14,14 @@ let main arg =
         else
             64u, 64u, 64u, "../image18", "../result18"
     let tmp = "tmp"
+    let suffix = ".tiff"
     let tmpSuffix = ".mha"
 
     let wsz = (depth/8u)
 
     let transTbl =
         src
-        |> read<uint8> input ".tiff"
+        |> read<uint8> input suffix
         >=> threshold 128.0 infinity
         >=> connectedComponents wsz
         >=> teeFst (writeSlabSlices tmp tmpSuffix wsz)
@@ -32,7 +33,7 @@ let main arg =
     |> read<uint64> tmp tmpSuffix
     >=> updateConnectedComponents wsz transTbl
     >=> cast<uint64,uint8>
-    >=> write output ".tiff"
+    >=> write output suffix
     |> sink
 
     0

@@ -23,7 +23,17 @@ let private syntheticSlice width height index =
 
     image
 
-let private syntheticSource availableMemory width height depth =
+let private sampleRoot sampleName (args: string[]) =
+    if args.Length > 0 then
+        let token = args[0]
+        if token |> Seq.forall Char.IsDigit then
+            $"../{sampleName}{token}"
+        else
+            token
+    else
+        $"../{sampleName}"
+
+let private syntheticSource src width height depth =
     let stage =
         Stage.init
             "resize synthetic source"
@@ -33,12 +43,14 @@ let private syntheticSource availableMemory width height depth =
             (fun _ -> 0UL)
             id
 
-    Plan.create (Some stage) availableMemory 0UL (uint64 width * uint64 height) (uint64 depth) false
+    Plan.create (Some stage) src.memAvail 0UL (uint64 width * uint64 height) (uint64 depth) src.debug
 
 [<EntryPoint>]
 let main args =
-    let availableMemory = 2UL * 1024UL * 1024UL * 1024UL
-    let root = if args.Length > 0 then args[0] else "../resize"
+    let availableMemory = 2UL * 1024UL * 1024UL * 1024UL // 2GB for example
+
+    let src, args = commandLineSource availableMemory args
+    let root = sampleRoot "resize" args
     let original = Path.Combine(root, "original")
     let resizedLinear = Path.Combine(root, "resized-linear")
     let resizedNearest = Path.Combine(root, "resized-nearest")
@@ -46,16 +58,16 @@ let main args =
     for path in [ original; resizedLinear; resizedNearest ] do
         clearDirectory path
 
-    syntheticSource availableMemory 32u 32u 12u
+    syntheticSource src 32u 32u 12u
     >=> write original ".tiff"
     |> sink
 
-    syntheticSource availableMemory 32u 32u 12u
+    syntheticSource src 32u 32u 12u
     |> resize<float32> 64u 48u 20u "Linear"
     >=> write resizedLinear ".tiff"
     |> sink
 
-    syntheticSource availableMemory 32u 32u 12u
+    syntheticSource src 32u 32u 12u
     |> resize<float32> 20u 20u 8u "NearestNeighbor"
     >=> write resizedNearest ".tiff"
     |> sink
