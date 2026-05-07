@@ -477,7 +477,9 @@ let generatorSuite =
                     [ p "level" "1.25" false
                       p "windowSize" "7" false ]
             let signed =
-                node "signed" "SignedDistanceMap" [ p "windowSize" "9" false ]
+                node "signed" "SignedDistanceMap"
+                    [ p "bandRadius" "9" false
+                      p "stride" "5" false ]
             let otsu =
                 node "otsu" "OtsuThreshold"
                     [ p "type" "Float64" false
@@ -508,7 +510,7 @@ let generatorSuite =
             Expect.stringContains code ">=> binaryFillHoles 5u" "binaryFillHoles should lower with its window size."
             Expect.stringContains code ">=> relabelComponents 10u 5u" "relabelComponents should lower with size threshold and window size."
             Expect.stringContains code ">=> watershed 1.25 7u" "watershed should lower with level and window size."
-            Expect.stringContains code ">=> signedDistanceMap 9u" "signedDistanceMap should lower with its window size."
+            Expect.stringContains code ">=> signedDistanceMap 9u 5u" "signedDistanceMap should lower with band radius and stride."
             Expect.stringContains code "|> otsuThreshold<float> 11u 128u" "otsuThreshold should lower with sample count and bin count."
             Expect.stringContains code "|> momentsThreshold<uint8> 13u 64u" "momentsThreshold should lower with sample count and bin count."
 

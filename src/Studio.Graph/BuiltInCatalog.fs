@@ -1152,12 +1152,15 @@ module BuiltInCatalog =
         { Id = "SignedDistanceMap"
           DisplayName = "signedDistanceMap"
           Category = "Segmentation"
-          Summary = "Compute a signed distance map from a binary UInt8 image."
-          Description = ""
+          Summary = "Compute a band-limited signed distance map from a binary UInt8 image."
+          Description =
+            "Computes signed distances in streaming z-windows. Each window has depth stride + 2 * bandRadius, and only the center stride slices are emitted. Input mask values different from 0 are treated as object pixels. Distances inside the object are negative and distances outside are positive. Values whose absolute distance is not less than bandRadius are set to NaN because they may depend on object boundaries outside the current window."
           Aliases = [ "distance"; "map"; "signed"; "binary"; "mask" ]
           Inputs = [ makePort "UInt8" imageUInt8 ]
           Outputs = [ makePort "Float64" imageFloat64 ]
-          Parameters = [ makeParameter "windowSize" "Window size" "3" (BasicType.Numeric UInt32) ] }
+          Parameters =
+              [ makeParameter "bandRadius" "Band radius" "8" (BasicType.Numeric UInt32)
+                makeParameter "stride" "Stride" "8" (BasicType.Numeric UInt32) ] }
 
         { Id = "OtsuThreshold"
           DisplayName = "otsuThreshold"

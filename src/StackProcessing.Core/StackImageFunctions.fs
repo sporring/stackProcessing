@@ -836,9 +836,15 @@ let watershed a (winSz: uint) =
     let f debug = volFctToWindowFctReleaseAfterDebug debug (ImageFunctions.watershed a) 1u pad stride
     let stg = mapWindow "watershed" f id id
     (window winSz pad stride) --> stg --> flattenList ()
-let signedDistanceMap (winSz: uint) =
-    let pad, stride = 0u, winSz
-    let f debug = volFctToWindowFctReleaseAfterDebug debug (ImageFunctions.signedDistanceMap 0uy 1uy) 1u pad stride
+let signedDistanceMap (bandRadius: uint) (stride: uint) =
+    if bandRadius = 0u then
+        invalidArg "bandRadius" "Band signed distance requires a positive band radius."
+    if stride = 0u then
+        invalidArg "stride" "Band signed distance requires a positive stride."
+
+    let pad = bandRadius
+    let winSz = stride + 2u * bandRadius
+    let f debug = volFctToWindowFctReleaseAfterDebug debug (ImageFunctions.bandSignedDistanceMap bandRadius) 1u pad stride
     let stg = mapWindow "signedDistanceMap" f id id
     (window winSz pad stride) --> stg --> flattenList ()
 let private sourceShapeValue key (pl: Plan<unit, Image<'T>>) =

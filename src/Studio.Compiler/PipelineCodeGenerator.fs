@@ -1075,8 +1075,9 @@ module PipelineCodeGenerator =
             let windowSize = parameterValue "windowSize"
             $">=> watershed {level} {windowSize}"
         | "SignedDistanceMap" ->
-            let windowSize = parameterValue "windowSize"
-            $">=> signedDistanceMap {windowSize}"
+            let bandRadius = parameterValue "bandRadius"
+            let stride = parameterValue "stride"
+            $">=> signedDistanceMap {bandRadius} {stride}"
         | "OtsuThreshold" ->
             let pixelType = pixelTypeNameFromParameter "type" "Float64" node
             let sampleCount = parameterValue "sampleCount"

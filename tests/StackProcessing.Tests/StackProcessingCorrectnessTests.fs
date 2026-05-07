@@ -488,7 +488,7 @@ let stackProcessingCorrectnessSuite =
                     suffix
                     1.0e-8
                     binary
-                    (signedDistanceMap 8u)
+                    (signedDistanceMap 8u 8u)
                     (ImageFunctions.signedDistanceMap 0uy 1uy)
             finally
                 binary.decRefCount()

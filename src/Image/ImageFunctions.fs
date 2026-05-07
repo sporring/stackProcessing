@@ -815,6 +815,25 @@ let signedDistanceMap (inside: uint8) (outside: uint8) (img: Image<uint8>) : Ima
     f.SetOutsideValue(float outside)
     Image<float>.ofSimpleITK(f.Execute(img.toSimpleITK()),"signedDistanceMap",img.index)
 
+let bandSignedDistanceMap (bandRadius: uint) (img: Image<uint8>) : Image<float> =
+    if bandRadius = 0u then
+        invalidArg "bandRadius" "Band signed distance requires a positive band radius."
+
+    let binary =
+        Image.map (fun value -> if value = 0uy then 0uy else 1uy) img
+
+    let distance =
+        try
+            signedDistanceMap 1uy 0uy binary
+        finally
+            binary.decRefCount()
+
+    try
+        let limit = float bandRadius
+        Image.map (fun value -> if abs value < limit then value else System.Double.NaN) distance
+    finally
+        distance.decRefCount()
+
 /// Morphological watershed (binary or grayscale)
 let watershed (level: float) : Image<'T> -> Image<'T> =
     makeUnaryImageOperatorWith
