@@ -849,15 +849,10 @@ type PipelineNodeViewModel(
     let mutable lastY = 0.
     let mutable suppressGroupMove = false
     let pinSize = PipelinePinGeometry.size
-    let pinHalfSize = PipelinePinGeometry.halfSize
 
     let setPinCenter x y (pin: IPin) =
         pin.X <- x
         pin.Y <- y
-
-    let setTopBottomPinCenter x y (pin: IPin) =
-        pin.X <- x - pinHalfSize
-        pin.Y <- y - pinHalfSize
 
     let addPipelinePin x y alignment kind parameterKey (port: Port) =
         let pin = PipelinePinViewModel(alignment, port, kind, ?parameterKey = parameterKey)
@@ -877,10 +872,7 @@ type PipelineNodeViewModel(
         pin.Parent <- this
         pin.Width <- pinSize
         pin.Height <- pinSize
-        match alignment with
-        | PinAlignment.Top
-        | PinAlignment.Bottom -> setTopBottomPinCenter x y pin
-        | _ -> setPinCenter x y pin
+        setPinCenter x y pin
         pin.Alignment <- alignment
         this.Pins.Add(pin :> IPin)
         pin :> IPin
@@ -1142,8 +1134,9 @@ type PipelineNodeViewModel(
             this.RemoveConnectionsForPin(pin)
             pin.X <- -10000.
             pin.Y <- -10000.
-            pin.Width <- 0.
-            pin.Height <- 0.
+            // Keep hidden pins at full size; NodeEditor's centering margin can become stale after a 0x0 pin is reactivated.
+            pin.Width <- pinSize
+            pin.Height <- pinSize
 
             match pin with
             | :? PipelinePinViewModel as parameterPin -> parameterPin.SetActive(false)
@@ -1186,13 +1179,13 @@ type PipelineNodeViewModel(
         |> List.iteri (fun index parameter ->
             match this.TryFindParameterPin(parameter.Key) with
             | Some pin ->
+                this.SetParameterPinVisibility(parameter, pin)
+
                 match visibleParameterIndexes |> Set.toList |> List.tryFindIndex ((=) index) with
                 | Some visibleIndex ->
-                    setTopBottomPinCenter (pinPosition (nodeWidth ()) visibleIndex visibleParameterIndexes.Count) 0. pin
+                    setPinCenter (pinPosition (nodeWidth ()) visibleIndex visibleParameterIndexes.Count) 0. pin
                 | None ->
                     ()
-
-                this.SetParameterPinVisibility(parameter, pin)
             | None ->
                 this.AddParameterPin(0, 1, parameter))
 
@@ -3301,6 +3294,7 @@ type MainWindowViewModel() as this =
         node.SyncMoveOrigin()
 
         drawing.Nodes.Add(node :> INode)
+        node.RebuildPins()
         this.SelectedNode <- node
         this.MarkGraphDirty()
 
@@ -3312,6 +3306,7 @@ type MainWindowViewModel() as this =
         node.SyncMoveOrigin()
 
         drawing.Nodes.Add(node :> INode)
+        node.RebuildPins()
         this.SelectedNode <- node
         this.MarkGraphDirty()
 
@@ -3323,6 +3318,7 @@ type MainWindowViewModel() as this =
         node.SyncMoveOrigin()
 
         drawing.Nodes.Add(node :> INode)
+        node.RebuildPins()
         this.SelectedNode <- node
         this.MarkGraphDirty()
 
