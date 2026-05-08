@@ -1248,6 +1248,40 @@ module PipelineCodeGenerator =
             let contrastThreshold = parameterValue "contrastThreshold"
             let stride = parameterValue "stride"
             $">=> siftKeypoints<{pixelType}> {sigma0} {scaleFactor} {scaleLevels} {contrastThreshold} {stride}"
+        | "LogBlobKeypoints" ->
+            let pixelType = pixelTypeNameFromParameter "type" "Float64" node
+            let sigma = parameterValue "sigma"
+            let threshold = parameterValue "threshold"
+            let stride = parameterValue "stride"
+            $">=> logBlobKeypoints<{pixelType}> {sigma} {threshold} {stride}"
+        | "HessianKeypoints" ->
+            let pixelType = pixelTypeNameFromParameter "type" "Float64" node
+            let sigma = parameterValue "sigma"
+            let responseKind = quotedParameter "responseKind"
+            let threshold = parameterValue "threshold"
+            let stride = parameterValue "stride"
+            $">=> hessianKeypoints<{pixelType}> {sigma} {responseKind} {threshold} {stride}"
+        | "Harris3DKeypoints" ->
+            let pixelType = pixelTypeNameFromParameter "type" "Float64" node
+            let sigma = parameterValue "sigma"
+            let rho = parameterValue "rho"
+            let k = parameterValue "k"
+            let threshold = parameterValue "threshold"
+            let stride = parameterValue "stride"
+            $">=> harris3DKeypoints<{pixelType}> {sigma} {rho} {k} {threshold} {stride}"
+        | "Forstner3DKeypoints" ->
+            let pixelType = pixelTypeNameFromParameter "type" "Float64" node
+            let sigma = parameterValue "sigma"
+            let rho = parameterValue "rho"
+            let threshold = parameterValue "threshold"
+            let stride = parameterValue "stride"
+            $">=> forstner3DKeypoints<{pixelType}> {sigma} {rho} {threshold} {stride}"
+        | "PhaseCongruencyKeypoints" ->
+            let pixelType = pixelTypeNameFromParameter "type" "Float64" node
+            let sigma = parameterValue "sigma"
+            let threshold = parameterValue "threshold"
+            let stride = parameterValue "stride"
+            $">=> phaseCongruencyKeypoints<{pixelType}> {sigma} {threshold} {stride}"
         | "StreamConnectedObjects" ->
             let connectivity = parameterValue "connectivity"
             $">=> streamConnectedObjects<uint8> ObjectConnectivity.{connectivity}"

@@ -671,6 +671,12 @@ module private HighValueFilterNode =
           "MomentsThresholdFromHistogram"
           "MarchingCubes"
           "DogKeypoints"
+          "SiftKeypoints"
+          "LogBlobKeypoints"
+          "HessianKeypoints"
+          "Harris3DKeypoints"
+          "Forstner3DKeypoints"
+          "PhaseCongruencyKeypoints"
           "LabelContour"
           "ChangeLabel" ]
         |> Set.ofList
@@ -1458,6 +1464,12 @@ type MainWindowViewModel() as this =
                 | ("StreamConnectedObjects" | "RemoveSmallObjects" | "FillSmallHoles"), "connectivity" ->
                     let options =
                         [ "Six"; "TwentySix" ]
+                        |> List.map (fun value -> ParameterOptionViewModel(value, value, true))
+
+                    PipelineParameterViewModel(parameter.Label, parameter.Key, parameter.DefaultValue, parameter.Type, options, false)
+                | "HessianKeypoints", "responseKind" ->
+                    let options =
+                        [ "Blob"; "Tube"; "Sheet" ]
                         |> List.map (fun value -> ParameterOptionViewModel(value, value, true))
 
                     PipelineParameterViewModel(parameter.Label, parameter.Key, parameter.DefaultValue, parameter.Type, options, false)

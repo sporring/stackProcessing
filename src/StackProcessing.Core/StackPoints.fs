@@ -7,6 +7,7 @@ open System.Text
 open FSharp.Control
 open SlimPipeline
 open StackCore
+open TinyLinAlg
 
 type Position3D<'T> =
     { X: 'T
@@ -322,6 +323,99 @@ let private gaussianBlur3D sigma source =
     |> blur1D 1 kernel radius
     |> blur1D 2 kernel radius
 
+let private central (source: double[,,]) x y z axis =
+    let width = source.GetLength(0)
+    let height = source.GetLength(1)
+    let depth = source.GetLength(2)
+
+    match axis with
+    | 0 -> (source[clamp 0 (width - 1) (x + 1), y, z] - source[clamp 0 (width - 1) (x - 1), y, z]) / 2.0
+    | 1 -> (source[x, clamp 0 (height - 1) (y + 1), z] - source[x, clamp 0 (height - 1) (y - 1), z]) / 2.0
+    | _ -> (source[x, y, clamp 0 (depth - 1) (z + 1)] - source[x, y, clamp 0 (depth - 1) (z - 1)]) / 2.0
+
+let private second (source: double[,,]) x y z axis =
+    let width = source.GetLength(0)
+    let height = source.GetLength(1)
+    let depth = source.GetLength(2)
+
+    match axis with
+    | 0 -> source[clamp 0 (width - 1) (x + 1), y, z] - 2.0 * source[x, y, z] + source[clamp 0 (width - 1) (x - 1), y, z]
+    | 1 -> source[x, clamp 0 (height - 1) (y + 1), z] - 2.0 * source[x, y, z] + source[x, clamp 0 (height - 1) (y - 1), z]
+    | _ -> source[x, y, clamp 0 (depth - 1) (z + 1)] - 2.0 * source[x, y, z] + source[x, y, clamp 0 (depth - 1) (z - 1)]
+
+let private mixed (source: double[,,]) x y z axisA axisB =
+    let shifted da db =
+        let sx = if axisA = 0 then x + da elif axisB = 0 then x + db else x
+        let sy = if axisA = 1 then y + da elif axisB = 1 then y + db else y
+        let sz = if axisA = 2 then z + da elif axisB = 2 then z + db else z
+        source[clamp 0 (source.GetLength(0) - 1) sx, clamp 0 (source.GetLength(1) - 1) sy, clamp 0 (source.GetLength(2) - 1) sz]
+
+    (shifted 1 1 - shifted 1 -1 - shifted -1 1 + shifted -1 -1) / 4.0
+
+let private isStrictLocalMaximum (response: double[,,]) x y z =
+    let value = response[x, y, z]
+    let mutable isMaximum = true
+
+    for dz in -1 .. 1 do
+        for dy in -1 .. 1 do
+            for dx in -1 .. 1 do
+                if dx <> 0 || dy <> 0 || dz <> 0 then
+                    if value <= response[x + dx, y + dy, z + dz] then
+                        isMaximum <- false
+
+    isMaximum
+
+let private keypointsFromResponse threshold scale (images: Image<'T> list) (window: Window<Image<'T>>) (response: double[,,]) =
+    let width = response.GetLength(0)
+    let height = response.GetLength(1)
+    let depth = response.GetLength(2)
+    let targetZ =
+        Window.emitItems window
+        |> List.map _.index
+        |> Set.ofList
+
+    let points = ResizeArray<CoordinatePoint>()
+
+    if width >= 3 && height >= 3 && depth >= 3 then
+        for z in 1 .. depth - 2 do
+            let sourceZ = images[z].index
+            if targetZ.Contains sourceZ then
+                for y in 1 .. height - 2 do
+                    for x in 1 .. width - 2 do
+                        let value = response[x, y, z]
+                        if value >= threshold && isStrictLocalMaximum response x y z then
+                            points.Add
+                                { X = float x
+                                  Y = float y
+                                  Z = float sourceZ
+                                  Scale = scale
+                                  Response = value }
+
+    { Points = points |> Seq.toList }
+
+let private releaseConsumed (window: Window<Image<'T>>) =
+    window.Items
+    |> List.take (min (int window.ReleaseCount) window.Items.Length)
+    |> List.iter (fun image -> image.decRefCount())
+
+let private localKeypointStage<'T when 'T: equality> name sigma stride response : Stage<Image<'T>, PointSet> =
+    if sigma <= 0.0 then invalidArg "sigma" $"{name} sigma must be positive."
+    if stride = 0u then invalidArg "stride" $"{name} stride must be positive."
+
+    let pad = uint (ceil (3.0 * sigma)) + 2u
+    let windowSize = stride + 2u * pad
+
+    let mapper (_debug: bool) (window: Window<Image<'T>>) =
+        try
+            let images = window.Items
+            let volume = imageToVolume images
+            response images window volume
+        finally
+            releaseConsumed window
+
+    (StackCore.window windowSize pad stride)
+    --> StackCore.mapWindow name mapper id id
+
 let private dogKeypointsInWindow<'T when 'T: equality>
     sigma0
     scaleFactor
@@ -433,6 +527,226 @@ let dogKeypoints<'T when 'T: equality>
 
     (StackCore.window windowSize pad stride)
     --> StackCore.mapWindow "dogKeypoints" mapper id id
+
+let logBlobKeypoints<'T when 'T: equality>
+    (sigma: float)
+    (threshold: float)
+    (stride: uint)
+    : Stage<Image<'T>, PointSet> =
+
+    localKeypointStage<'T> "logBlobKeypoints" sigma stride (fun images window volume ->
+        let smoothed = gaussianBlur3D sigma volume
+        let width = smoothed.GetLength(0)
+        let height = smoothed.GetLength(1)
+        let depth = smoothed.GetLength(2)
+        let response = Array3D.zeroCreate<double> width height depth
+
+        for z in 0 .. depth - 1 do
+            for y in 0 .. height - 1 do
+                for x in 0 .. width - 1 do
+                    let laplacian =
+                        second smoothed x y z 0
+                        + second smoothed x y z 1
+                        + second smoothed x y z 2
+                    response[x, y, z] <- sigma * sigma * abs laplacian
+
+        keypointsFromResponse threshold sigma images window response)
+
+let private hessianResponse (responseKind: string) sigma (smoothed: double[,,]) =
+    let width = smoothed.GetLength(0)
+    let height = smoothed.GetLength(1)
+    let depth = smoothed.GetLength(2)
+    let response = Array3D.zeroCreate<double> width height depth
+    let kind = responseKind.Trim().ToLowerInvariant()
+
+    for z in 0 .. depth - 1 do
+        for y in 0 .. height - 1 do
+            for x in 0 .. width - 1 do
+                let hxx = second smoothed x y z 0
+                let hyy = second smoothed x y z 1
+                let hzz = second smoothed x y z 2
+                let hxy = mixed smoothed x y z 0 1
+                let hxz = mixed smoothed x y z 0 2
+                let hyz = mixed smoothed x y z 1 2
+                let eig =
+                    symmetricEigen
+                        { m00 = hxx; m01 = hxy; m02 = hxz
+                          m10 = hxy; m11 = hyy; m12 = hyz
+                          m20 = hxz; m21 = hyz; m22 = hzz }
+                    |> List.map (fst >> abs)
+                    |> List.sortDescending
+
+                let l1 = eig[0]
+                let l2 = eig[1]
+                let l3 = eig[2]
+                let epsilon = 1.0e-12
+                let value =
+                    match kind with
+                    | "tube"
+                    | "tubeness"
+                    | "vessel"
+                    | "vesselness" ->
+                        l2 * l3 / (l1 + epsilon)
+                    | "sheet"
+                    | "sheetness" ->
+                        l1 * l3 / (l2 + epsilon)
+                    | _ ->
+                        l1 * l2 * l3
+
+                response[x, y, z] <- (sigma ** 6.0) * value
+
+    response
+
+let hessianKeypoints<'T when 'T: equality>
+    (sigma: float)
+    (responseKind: string)
+    (threshold: float)
+    (stride: uint)
+    : Stage<Image<'T>, PointSet> =
+
+    localKeypointStage<'T> "hessianKeypoints" sigma stride (fun images window volume ->
+        let smoothed = gaussianBlur3D sigma volume
+        let response = hessianResponse responseKind sigma smoothed
+        keypointsFromResponse threshold sigma images window response)
+
+let harris3DKeypoints<'T when 'T: equality>
+    (sigma: float)
+    (rho: float)
+    (k: float)
+    (threshold: float)
+    (stride: uint)
+    : Stage<Image<'T>, PointSet> =
+
+    if sigma <= 0.0 then invalidArg "sigma" "harris3DKeypoints sigma must be positive."
+    if rho <= 0.0 then invalidArg "rho" "harris3DKeypoints rho must be positive."
+
+    localKeypointStage<'T> "harris3DKeypoints" (max sigma rho) stride (fun images window volume ->
+        let smoothed = gaussianBlur3D sigma volume
+        let width = smoothed.GetLength(0)
+        let height = smoothed.GetLength(1)
+        let depth = smoothed.GetLength(2)
+        let ixx = Array3D.zeroCreate<double> width height depth
+        let iyy = Array3D.zeroCreate<double> width height depth
+        let izz = Array3D.zeroCreate<double> width height depth
+        let ixy = Array3D.zeroCreate<double> width height depth
+        let ixz = Array3D.zeroCreate<double> width height depth
+        let iyz = Array3D.zeroCreate<double> width height depth
+
+        for z in 0 .. depth - 1 do
+            for y in 0 .. height - 1 do
+                for x in 0 .. width - 1 do
+                    let gx = central smoothed x y z 0
+                    let gy = central smoothed x y z 1
+                    let gz = central smoothed x y z 2
+                    ixx[x, y, z] <- gx * gx
+                    iyy[x, y, z] <- gy * gy
+                    izz[x, y, z] <- gz * gz
+                    ixy[x, y, z] <- gx * gy
+                    ixz[x, y, z] <- gx * gz
+                    iyz[x, y, z] <- gy * gz
+
+        let ixx = gaussianBlur3D rho ixx
+        let iyy = gaussianBlur3D rho iyy
+        let izz = gaussianBlur3D rho izz
+        let ixy = gaussianBlur3D rho ixy
+        let ixz = gaussianBlur3D rho ixz
+        let iyz = gaussianBlur3D rho iyz
+        let response = Array3D.zeroCreate<double> width height depth
+
+        for z in 0 .. depth - 1 do
+            for y in 0 .. height - 1 do
+                for x in 0 .. width - 1 do
+                    let m =
+                        { m00 = ixx[x, y, z]; m01 = ixy[x, y, z]; m02 = ixz[x, y, z]
+                          m10 = ixy[x, y, z]; m11 = iyy[x, y, z]; m12 = iyz[x, y, z]
+                          m20 = ixz[x, y, z]; m21 = iyz[x, y, z]; m22 = izz[x, y, z] }
+                    let trace = m.m00 + m.m11 + m.m22
+                    response[x, y, z] <- det3 m - k * trace * trace * trace
+
+        keypointsFromResponse threshold (max sigma rho) images window response)
+
+let forstner3DKeypoints<'T when 'T: equality>
+    (sigma: float)
+    (rho: float)
+    (threshold: float)
+    (stride: uint)
+    : Stage<Image<'T>, PointSet> =
+
+    if sigma <= 0.0 then invalidArg "sigma" "forstner3DKeypoints sigma must be positive."
+    if rho <= 0.0 then invalidArg "rho" "forstner3DKeypoints rho must be positive."
+
+    localKeypointStage<'T> "forstner3DKeypoints" (max sigma rho) stride (fun images window volume ->
+        let smoothed = gaussianBlur3D sigma volume
+        let width = smoothed.GetLength(0)
+        let height = smoothed.GetLength(1)
+        let depth = smoothed.GetLength(2)
+        let ixx = Array3D.zeroCreate<double> width height depth
+        let iyy = Array3D.zeroCreate<double> width height depth
+        let izz = Array3D.zeroCreate<double> width height depth
+        let ixy = Array3D.zeroCreate<double> width height depth
+        let ixz = Array3D.zeroCreate<double> width height depth
+        let iyz = Array3D.zeroCreate<double> width height depth
+
+        for z in 0 .. depth - 1 do
+            for y in 0 .. height - 1 do
+                for x in 0 .. width - 1 do
+                    let gx = central smoothed x y z 0
+                    let gy = central smoothed x y z 1
+                    let gz = central smoothed x y z 2
+                    ixx[x, y, z] <- gx * gx
+                    iyy[x, y, z] <- gy * gy
+                    izz[x, y, z] <- gz * gz
+                    ixy[x, y, z] <- gx * gy
+                    ixz[x, y, z] <- gx * gz
+                    iyz[x, y, z] <- gy * gz
+
+        let ixx = gaussianBlur3D rho ixx
+        let iyy = gaussianBlur3D rho iyy
+        let izz = gaussianBlur3D rho izz
+        let ixy = gaussianBlur3D rho ixy
+        let ixz = gaussianBlur3D rho ixz
+        let iyz = gaussianBlur3D rho iyz
+        let response = Array3D.zeroCreate<double> width height depth
+
+        for z in 0 .. depth - 1 do
+            for y in 0 .. height - 1 do
+                for x in 0 .. width - 1 do
+                    let m =
+                        { m00 = ixx[x, y, z]; m01 = ixy[x, y, z]; m02 = ixz[x, y, z]
+                          m10 = ixy[x, y, z]; m11 = iyy[x, y, z]; m12 = iyz[x, y, z]
+                          m20 = ixz[x, y, z]; m21 = iyz[x, y, z]; m22 = izz[x, y, z] }
+                    let trace = m.m00 + m.m11 + m.m22
+                    response[x, y, z] <- if trace <= 1.0e-12 then 0.0 else det3 m / trace
+
+        keypointsFromResponse threshold (max sigma rho) images window response)
+
+let phaseCongruencyKeypoints<'T when 'T: equality>
+    (sigma: float)
+    (threshold: float)
+    (stride: uint)
+    : Stage<Image<'T>, PointSet> =
+
+    localKeypointStage<'T> "phaseCongruencyKeypoints" sigma stride (fun images window volume ->
+        let smoothed = gaussianBlur3D sigma volume
+        let width = smoothed.GetLength(0)
+        let height = smoothed.GetLength(1)
+        let depth = smoothed.GetLength(2)
+        let response = Array3D.zeroCreate<double> width height depth
+
+        for z in 0 .. depth - 1 do
+            for y in 0 .. height - 1 do
+                for x in 0 .. width - 1 do
+                    let gx = central smoothed x y z 0
+                    let gy = central smoothed x y z 1
+                    let gz = central smoothed x y z 2
+                    let gradient = sqrt (gx * gx + gy * gy + gz * gz)
+                    let laplacian =
+                        second smoothed x y z 0
+                        + second smoothed x y z 1
+                        + second smoothed x y z 2
+                    response[x, y, z] <- abs laplacian / (gradient + 1.0e-6)
+
+        keypointsFromResponse threshold sigma images window response)
 
 let siftKeypoints<'T when 'T: equality>
     (sigma0: float)

@@ -484,6 +484,58 @@ let generatorSuite =
 
             Expect.stringContains siftCode ">=> siftKeypoints<float> 0.5 1.2 4u 0.001 3u" "SiftKeypoints should generate a typed point detector."
 
+            let logBlob =
+                node "log" "LogBlobKeypoints"
+                    [ p "type" "Float64" false
+                      p "sigma" "1.5" false
+                      p "threshold" "0.02" false
+                      p "stride" "2" false ]
+
+            let hessian =
+                node "hessian" "HessianKeypoints"
+                    [ p "type" "Float64" false
+                      p "sigma" "1.5" false
+                      p "responseKind" "Tube" false
+                      p "threshold" "0.02" false
+                      p "stride" "2" false ]
+
+            let harris =
+                node "harris" "Harris3DKeypoints"
+                    [ p "type" "Float64" false
+                      p "sigma" "1.0" false
+                      p "rho" "1.5" false
+                      p "k" "0.04" false
+                      p "threshold" "0.02" false
+                      p "stride" "2" false ]
+
+            let forstner =
+                node "forstner" "Forstner3DKeypoints"
+                    [ p "type" "Float64" false
+                      p "sigma" "1.0" false
+                      p "rho" "1.5" false
+                      p "threshold" "0.02" false
+                      p "stride" "2" false ]
+
+            let phase =
+                node "phase" "PhaseCongruencyKeypoints"
+                    [ p "type" "Float64" false
+                      p "sigma" "1.5" false
+                      p "threshold" "0.02" false
+                      p "stride" "2" false ]
+
+            let generated detector expected message =
+                graph [ read; detector; write ]
+                    [ edge "read" "output" 0 detector.Id "input" 0
+                      edge detector.Id "output" 0 "writePoints" "input" 0 ]
+                |> PipelineCodeGenerator.generateSavedGraph
+                |> fun code -> Expect.stringContains code expected message
+
+            generated logBlob ">=> logBlobKeypoints<float> 1.5 0.02 2u" "LogBlobKeypoints should generate a typed local blob detector."
+            generated hessian ">=> hessianKeypoints<float> 1.5 \"Tube\" 0.02 2u" "HessianKeypoints should generate a typed local Hessian detector."
+            generated harris ">=> harris3DKeypoints<float> 1.0 1.5 0.04 0.02 2u" "Harris3DKeypoints should generate a typed local Harris detector."
+            generated forstner ">=> forstner3DKeypoints<float> 1.0 1.5 0.02 2u" "Forstner3DKeypoints should generate a typed local Förstner detector."
+            generated phase ">=> phaseCongruencyKeypoints<float> 1.5 0.02 2u" "PhaseCongruencyKeypoints should generate a typed local phase detector."
+
             let readPoints =
                 node "readPoints" "ReadPointSet"
                     [ p "availableMemory" "1024" false

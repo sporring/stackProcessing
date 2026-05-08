@@ -47,9 +47,12 @@ type AffineRegistrationOptions = StackRegistration.AffineRegistrationOptions
 type AffineRegistrationResult = StackRegistration.AffineRegistrationResult
 type ImageSetCoordinateSystem = StackManifest.ImageSetCoordinateSystem
 type ImageSetTransform = StackManifest.ImageSetTransform
+type ImageSetGrid = StackManifest.ImageSetGrid
 type ImageSetItem = StackManifest.ImageSetItem
 type ImageSetMember = StackManifest.ImageSetItem
 type ImageSetManifest = StackManifest.ImageSetManifest
+type StitchPlanItem = StackStitching.StitchPlanItem
+type StitchPlan = StackStitching.StitchPlan
 type ObjectConnectivity = StackObjects.ObjectConnectivity
 type ObjectBounds = StackObjects.ObjectBounds
 type StreamedObject = StackObjects.StreamedObject
@@ -118,8 +121,15 @@ let imageSetTransformToMatrix = StackManifest.transformToMatrix
 let imageSetTransformFromAffine = StackManifest.transformFromAffine
 let imageSetTransformToAffine = StackManifest.transformToAffine
 let createImageSetManifest = StackManifest.createManifest
+let identityImageSetManifest = StackManifest.identityManifest
+let imageSetGrid = StackManifest.imageSetGrid
+let withImageSetGrid = StackManifest.withGrid
+let imageSetGridIndexTransform = StackManifest.gridIndexTransform
+let composeImageSetTransforms = StackManifest.composeTransforms
+let updateMovingImageSetItemTransformFromRegistration = StackManifest.updateMovingItemTransformFromRegistration
 let imageSetItem = StackManifest.spatialDataItem
 let scalarImageSetItem = StackManifest.scalarImageItem
+let gridImageSetItem = StackManifest.gridImageItem
 let vectorImageSetItem = StackManifest.vectorImageItem
 let pointSetManifestItem = StackManifest.pointSetItem
 let triangleMeshManifestItem = StackManifest.triangleMeshItem
@@ -131,6 +141,10 @@ let replaceImageSetItemTransform = StackManifest.replaceItemTransform
 let replaceImageSetMemberTransform = StackManifest.replaceImageTransform
 let writeImageSetManifest = StackManifest.writeManifest
 let readImageSetManifest = StackManifest.readManifest
+
+// //////////////////// StackStitching
+let createStitchPlan = StackStitching.createStitchPlan
+let stitchManifestImages<'T when 'T: equality> = StackStitching.stitchManifestImages<'T>
 
 // //////////////////// StackObjects
 let streamConnectedObjects<'T when 'T: equality> = StackObjects.streamConnectedObjects<'T>
@@ -233,6 +247,11 @@ let changeLabel<'T when 'T: equality> fromLabel toLabel : Stage<Image<'T>, Image
 let marchingCubes<'T when 'T: equality> = StackMesh.marchingCubes<'T>
 let surfaceArea = StackMesh.surfaceArea
 let dogKeypoints<'T when 'T: equality> = StackPoints.dogKeypoints<'T>
+let logBlobKeypoints<'T when 'T: equality> = StackPoints.logBlobKeypoints<'T>
+let hessianKeypoints<'T when 'T: equality> = StackPoints.hessianKeypoints<'T>
+let harris3DKeypoints<'T when 'T: equality> = StackPoints.harris3DKeypoints<'T>
+let forstner3DKeypoints<'T when 'T: equality> = StackPoints.forstner3DKeypoints<'T>
+let phaseCongruencyKeypoints<'T when 'T: equality> = StackPoints.phaseCongruencyKeypoints<'T>
 let siftKeypoints<'T when 'T: equality> = StackPoints.siftKeypoints<'T>
 let resize<'T when 'T: equality> = StackImageFunctions.resize<'T>
 let resample<'T when 'T: equality> = StackImageFunctions.resample<'T>

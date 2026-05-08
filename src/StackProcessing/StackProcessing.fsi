@@ -106,11 +106,17 @@ type ImageSetCoordinateSystem = StackManifest.ImageSetCoordinateSystem
 
 type ImageSetTransform = StackManifest.ImageSetTransform
 
+type ImageSetGrid = StackManifest.ImageSetGrid
+
 type ImageSetItem = StackManifest.ImageSetItem
 
 type ImageSetMember = StackManifest.ImageSetItem
 
 type ImageSetManifest = StackManifest.ImageSetManifest
+
+type StitchPlanItem = StackStitching.StitchPlanItem
+
+type StitchPlan = StackStitching.StitchPlan
 
 type ObjectConnectivity = StackObjects.ObjectConnectivity
 
@@ -364,6 +370,28 @@ val imageSetTransformToAffine:
 
 val createImageSetManifest: (string -> string -> StackManifest.ImageSetManifest)
 
+val identityImageSetManifest:
+  (string -> string -> StackManifest.ImageSetManifest)
+
+val imageSetGrid: (uint64 list -> StackManifest.ImageSetGrid)
+
+val withImageSetGrid:
+  (StackManifest.ImageSetGrid ->
+     StackManifest.ImageSetManifest -> StackManifest.ImageSetManifest)
+
+val imageSetGridIndexTransform:
+  (StackManifest.ImageSetGrid -> int list -> StackManifest.ImageSetTransform)
+
+val composeImageSetTransforms:
+  (StackManifest.ImageSetTransform ->
+     StackManifest.ImageSetTransform -> StackManifest.ImageSetTransform)
+
+val updateMovingImageSetItemTransformFromRegistration:
+  (string ->
+     string ->
+     StackManifest.ImageSetTransform ->
+     StackManifest.ImageSetManifest -> StackManifest.ImageSetManifest)
+
 val imageSetItem:
   (string ->
      string ->
@@ -380,6 +408,16 @@ val scalarImageSetItem:
      string ->
      uint64 list ->
      float list ->
+     StackManifest.ImageSetTransform ->
+     string list -> StackManifest.ImageSetItem)
+
+val gridImageSetItem:
+  (string ->
+     string ->
+     string ->
+     uint64 list ->
+     float list ->
+     int list ->
      StackManifest.ImageSetTransform ->
      string list -> StackManifest.ImageSetItem)
 
@@ -445,6 +483,16 @@ val replaceImageSetMemberTransform:
 val writeImageSetManifest: (string -> 'a -> unit)
 
 val readImageSetManifest: (string -> StackManifest.ImageSetManifest)
+
+val createStitchPlan:
+  (StackManifest.ImageSetManifest -> string list -> StackStitching.StitchPlan)
+
+val stitchManifestImages<'T when 'T: equality> :
+  (string ->
+     string list ->
+     float ->
+     SlimPipeline.Plan<unit,unit> -> SlimPipeline.Plan<unit,Image.Image<'T>>)
+    when 'T: equality
 
 val streamConnectedObjects<'T when 'T: equality> :
   (StackObjects.ObjectConnectivity ->
@@ -814,6 +862,35 @@ val dogKeypoints<'T when 'T: equality> :
   (float ->
      float ->
      uint ->
+     float -> uint -> StackCore.Stage<StackCore.Image<'T>,StackPoints.PointSet>)
+    when 'T: equality
+
+val logBlobKeypoints<'T when 'T: equality> :
+  (float ->
+     float -> uint -> StackCore.Stage<StackCore.Image<'T>,StackPoints.PointSet>)
+    when 'T: equality
+
+val hessianKeypoints<'T when 'T: equality> :
+  (float ->
+     string ->
+     float -> uint -> StackCore.Stage<StackCore.Image<'T>,StackPoints.PointSet>)
+    when 'T: equality
+
+val harris3DKeypoints<'T when 'T: equality> :
+  (float ->
+     float ->
+     float ->
+     float -> uint -> StackCore.Stage<StackCore.Image<'T>,StackPoints.PointSet>)
+    when 'T: equality
+
+val forstner3DKeypoints<'T when 'T: equality> :
+  (float ->
+     float ->
+     float -> uint -> StackCore.Stage<StackCore.Image<'T>,StackPoints.PointSet>)
+    when 'T: equality
+
+val phaseCongruencyKeypoints<'T when 'T: equality> :
+  (float ->
      float -> uint -> StackCore.Stage<StackCore.Image<'T>,StackPoints.PointSet>)
     when 'T: equality
 

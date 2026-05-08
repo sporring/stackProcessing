@@ -709,6 +709,41 @@ let stackProcessingSupportSuite =
             finally
                 disposeImages slices
 
+        testCase "streaming-friendly 3D keypoint detectors emit local point candidates" <| fun _ ->
+            let makeImpulseSlices () =
+                [ for z in 0 .. 10 ->
+                    let image =
+                        Array2D.init 11 11 (fun x y ->
+                            let centeredImpulse = x = 5 && y = 5 && z = 5
+                            let diagonalCorner = x >= 5 && y >= 5 && z >= 5
+                            if centeredImpulse || diagonalCorner then 255uy else 0uy)
+                        |> Image<uint8>.ofArray2D
+                    image.index <- z
+                    image ]
+
+            let detectorCases =
+                [ "logBlobKeypoints", logBlobKeypoints<uint8> 0.5 0.0 1u, true
+                  "hessianKeypoints", hessianKeypoints<uint8> 0.5 "Blob" 0.0 1u, true
+                  "harris3DKeypoints", harris3DKeypoints<uint8> 0.5 0.75 0.04 -1.0e9 1u, false
+                  "forstner3DKeypoints", forstner3DKeypoints<uint8> 0.5 0.75 0.0 1u, true
+                  "phaseCongruencyKeypoints", phaseCongruencyKeypoints<uint8> 0.5 0.0 1u, true ]
+
+            for name, detector, shouldEmit in detectorCases do
+                let slices = makeImpulseSlices ()
+
+                try
+                    let pointSets =
+                        imagePlan slices
+                        >=> detector
+                        |> drainList
+
+                    let points = pointSets |> List.collect _.Points
+                    if shouldEmit then
+                        Expect.isNonEmpty points $"{name} should emit at least one bounded-window keypoint."
+                    Expect.isTrue (points |> List.forall (fun p -> p.Z >= 0.0 && p.Z <= 10.0)) $"{name} should preserve stack z coordinates."
+                finally
+                    disposeImages slices
+
         testCase "earthMoversDistance agrees with brute-force matching for equal-sized point sets" <| fun _ ->
             let fixedPoints =
                 [ point 0.0 0.0 0.0
@@ -909,6 +944,150 @@ let stackProcessingSupportSuite =
                 Expect.equal updated.Items[0].TransformToWorld.Matrix identityImageSetTransform.Matrix "Manifest item transforms should be replaceable without touching data files."
             finally
                 deleteDirectory outputDir
+
+        testCase "identity manifest and registration composition update moving item transforms" <| fun _ ->
+            let fixedToWorld =
+                { A = identity3
+                  T = v3 10.0 0.0 0.0
+                  C = v3 0.0 0.0 0.0 }
+                |> imageSetTransformFromAffine
+
+            let fixedFromMoving =
+                { A = identity3
+                  T = v3 3.0 0.0 0.0
+                  C = v3 0.0 0.0 0.0 }
+                |> imageSetTransformFromAffine
+
+            let fixedItem =
+                scalarImageSetItem "fixed" "fixed" ".tiff" [ 2UL; 2UL; 1UL ] [ 1.0; 1.0; 1.0 ] fixedToWorld []
+
+            let movingItem =
+                scalarImageSetItem "moving" "moving" ".tiff" [ 2UL; 2UL; 1UL ] [ 1.0; 1.0; 1.0 ] identityImageSetTransform []
+
+            let manifest =
+                identityImageSetManifest "joint" "voxel"
+                |> addImageSetItem fixedItem
+                |> addImageSetItem movingItem
+                |> updateMovingImageSetItemTransformFromRegistration "fixed" "moving" fixedFromMoving
+
+            let movingToWorld =
+                manifest.Items
+                |> List.find (fun item -> item.Id = "moving")
+                |> _.TransformToWorld
+
+            Expect.floatClose Accuracy.high movingToWorld.Matrix.[0].[3] 13.0 "Moving item should compose as fixedToWorld * fixedFromMoving."
+            Expect.floatClose Accuracy.high movingToWorld.Matrix.[1].[3] 0.0 "Composition should preserve unrelated translation components."
+
+        testCase "image-set grid uses unit-spaced index tile coordinates" <| fun _ ->
+            let grid = imageSetGrid [ 2UL; 3UL; 4UL ]
+            let transform = imageSetGridIndexTransform grid [ 1; 2; 3 ]
+
+            Expect.floatClose Accuracy.high transform.Matrix.[0].[3] 2.0 "Grid X offset should be index * tile width in voxel units."
+            Expect.floatClose Accuracy.high transform.Matrix.[1].[3] 6.0 "Grid Y offset should be index * tile height in voxel units."
+            Expect.floatClose Accuracy.high transform.Matrix.[2].[3] 12.0 "Grid Z offset should be index * tile depth in voxel units."
+
+            let item =
+                gridImageSetItem
+                    "tile_100"
+                    "tile_100"
+                    ".tiff"
+                    [ 2UL; 3UL; 4UL ]
+                    [ 1.0; 1.0; 1.0 ]
+                    [ 1; 0; 0 ]
+                    identityImageSetTransform
+                    []
+
+            let manifest =
+                identityImageSetManifest "grid" "voxel"
+                |> withImageSetGrid grid
+                |> addImageSetItem item
+
+            Expect.equal manifest.Grid.Value.TileSize [ 2UL; 3UL; 4UL ] "Grid tile size should live on the manifest."
+            Expect.equal manifest.Items[0].GridIndex (Some [ 1; 0; 0 ]) "Image items should carry their integer grid index."
+
+        testCase "manifest item construction rejects non-affine homogeneous transforms" <| fun _ ->
+            let invalidTransform =
+                { identityImageSetTransform with
+                    Matrix =
+                        [ [ 1.0; 0.0; 0.0; 0.0 ]
+                          [ 0.0; 1.0; 0.0; 0.0 ]
+                          [ 0.0; 0.0; 1.0; 0.0 ]
+                          [ 0.0; 0.0; 0.0; 2.0 ] ] }
+
+            Expect.throws
+                (fun () ->
+                    scalarImageSetItem "bad" "bad" ".tiff" [ 1UL; 1UL; 1UL ] [ 1.0; 1.0; 1.0 ] invalidTransform []
+                    |> ignore)
+                "Manifest image items should reject transforms whose last row is not affine homogeneous form."
+
+        testCase "stitch planning enforces equal grid image size" <| fun _ ->
+            let grid = imageSetGrid [ 2UL; 2UL; 1UL ]
+
+            let tile0 =
+                gridImageSetItem "tile0" "tile0" ".tiff" [ 2UL; 2UL; 1UL ] [ 1.0; 1.0; 1.0 ] [ 0; 0; 0 ] identityImageSetTransform []
+
+            let tile1 =
+                gridImageSetItem "tile1" "tile1" ".tiff" [ 2UL; 2UL; 1UL ] [ 1.0; 1.0; 1.0 ] [ 1; 0; 0 ] identityImageSetTransform []
+
+            let manifest =
+                identityImageSetManifest "grid" "voxel"
+                |> withImageSetGrid grid
+                |> addImageSetItem tile0
+                |> addImageSetItem tile1
+
+            let plan = createStitchPlan manifest [ "tile0"; "tile1" ]
+            Expect.equal plan.Size [ 4UL; 2UL; 1UL ] "Two touching grid tiles should produce a bounding box in voxel units."
+
+            let mismatched =
+                manifest
+                |> addImageSetItem (gridImageSetItem "bad" "bad" ".tiff" [ 3UL; 2UL; 1UL ] [ 1.0; 1.0; 1.0 ] [ 2; 0; 0 ] identityImageSetTransform [])
+
+            Expect.throws
+                (fun () -> createStitchPlan mismatched [ "tile0"; "bad" ] |> ignore)
+                "Stitch planning should reject image sets where selected image sizes differ."
+
+        testCase "stitchManifestImages streams an identity manifest image stack" <| fun _ ->
+            let rootDir = tempDirectory "manifest-stitch"
+            let inputDir = Path.Combine(rootDir, "tile")
+            let manifestPath = Path.Combine(rootDir, "imageset.json")
+            Directory.CreateDirectory(inputDir) |> ignore
+
+            let slices =
+                [ array2D [ [ 1.0f; 2.0f ]; [ 3.0f; 4.0f ] ] |> Image<float32>.ofArray2D
+                  array2D [ [ 5.0f; 6.0f ]; [ 7.0f; 8.0f ] ] |> Image<float32>.ofArray2D ]
+
+            try
+                writeSlices inputDir ".tiff" slices
+
+                let item =
+                    scalarImageSetItem
+                        "tile"
+                        inputDir
+                        ".tiff"
+                        [ 2UL; 2UL; 2UL ]
+                        [ 1.0; 1.0; 1.0 ]
+                        identityImageSetTransform
+                        []
+
+                let manifest =
+                    identityImageSetManifest "joint" "voxel"
+                    |> addImageSetItem item
+
+                writeImageSetManifest manifestPath manifest
+
+                let stitched =
+                    source 1024UL
+                    |> stitchManifestImages<float32> manifestPath [ "tile" ] 1.0
+                    |> drainList
+
+                Expect.equal stitched.Length 2 "Identity stitching should emit one slice per source slice."
+                Expect.equal (stitched[0].toArray2D()) (slices[0].toArray2D()) "Identity stitching should preserve the first slice."
+                Expect.equal (stitched[1].toArray2D()) (slices[1].toArray2D()) "Identity stitching should preserve the second slice."
+
+                stitched |> List.iter (fun image -> image.decRefCount())
+            finally
+                disposeImages slices
+                deleteDirectory rootDir
 
         testCase "resampleAffineTrilinearSlices samples chunked slabs with the supplied output-to-input affine" <| fun _ ->
             let chunkDirectory = tempDirectory "affine-resampler-chunks"

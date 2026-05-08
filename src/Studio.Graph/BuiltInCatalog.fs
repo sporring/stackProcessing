@@ -130,6 +130,9 @@ module BuiltInCatalog =
   let private siftKeypointsDescription =
       "Detects SIFT-style keypoint locations as local Difference-of-Gaussian extrema in streaming z-windows. The output is a point set containing x, y, z, scale, and response. Descriptor vectors and canonical orientations are not emitted by the current point-set representation."
 
+  let private streamingKeypointDescription =
+      "Detects 3D keypoints with a bounded z-window local operator and emits x, y, z, scale, and response as a PointSet. These detectors are streaming-friendly: they never need the full stack in memory, but the selected scale controls the window padding."
+
   let private streamedObjectsDescription =
       "Streams completed connected objects from a binary mask. Each input slice is inspected for non-zero foreground pixels, object fronts touching the advancing z-boundary are carried forward, and objects are emitted once the next slice proves they cannot continue. Six-connectivity uses face contacts only; TwentySix-connectivity also allows diagonal contacts. paintObjects converts the emitted integer positions back into UInt8 mask slices with value 1 at object pixels and 0 elsewhere."
 
@@ -1784,6 +1787,80 @@ module BuiltInCatalog =
                 makeParameter "scaleFactor" "Scale factor" "1.6" (BasicType.Numeric Float64)
                 makeParameter "scaleLevels" "Scale levels" "4" (BasicType.Numeric UInt32)
                 makeParameter "contrastThreshold" "Contrast threshold" "0.03" (BasicType.Numeric Float64)
+                makeParameter "stride" "Stride" "8" (BasicType.Numeric UInt32) ] }
+
+        { Id = "LogBlobKeypoints"
+          DisplayName = "logBlobKeypoints"
+          Category = "Geometry"
+          Summary = "Detect 3D Laplacian-of-Gaussian blob keypoints."
+          Description = streamingKeypointDescription
+          Aliases = [ "log"; "blob"; "keypoints"; "features"; "points"; "gaussian" ]
+          Inputs = [ makePort "Number" imageAny ]
+          Outputs = [ makePort "PointSet" pointSet ]
+          Parameters =
+              [ makeParameter "type" "Type" "Float64" BasicType.String
+                makeParameter "sigma" "Sigma" "1.0" (BasicType.Numeric Float64)
+                makeParameter "threshold" "Threshold" "0.03" (BasicType.Numeric Float64)
+                makeParameter "stride" "Stride" "8" (BasicType.Numeric UInt32) ] }
+
+        { Id = "HessianKeypoints"
+          DisplayName = "hessianKeypoints"
+          Category = "Geometry"
+          Summary = "Detect 3D blob, tube, or sheet keypoints from Hessian eigenvalues."
+          Description = streamingKeypointDescription
+          Aliases = [ "hessian"; "blob"; "tube"; "sheet"; "vessel"; "keypoints"; "features"; "points" ]
+          Inputs = [ makePort "Number" imageAny ]
+          Outputs = [ makePort "PointSet" pointSet ]
+          Parameters =
+              [ makeParameter "type" "Type" "Float64" BasicType.String
+                makeParameter "sigma" "Sigma" "1.0" (BasicType.Numeric Float64)
+                makeParameter "responseKind" "Response" "Blob" BasicType.String
+                makeParameter "threshold" "Threshold" "0.03" (BasicType.Numeric Float64)
+                makeParameter "stride" "Stride" "8" (BasicType.Numeric UInt32) ] }
+
+        { Id = "Harris3DKeypoints"
+          DisplayName = "harris3DKeypoints"
+          Category = "Geometry"
+          Summary = "Detect 3D corner or junction keypoints from the structure tensor."
+          Description = streamingKeypointDescription
+          Aliases = [ "harris"; "corner"; "junction"; "structure"; "tensor"; "keypoints"; "features"; "points" ]
+          Inputs = [ makePort "Number" imageAny ]
+          Outputs = [ makePort "PointSet" pointSet ]
+          Parameters =
+              [ makeParameter "type" "Type" "Float64" BasicType.String
+                makeParameter "sigma" "Sigma" "1.0" (BasicType.Numeric Float64)
+                makeParameter "rho" "Rho" "1.5" (BasicType.Numeric Float64)
+                makeParameter "k" "K" "0.04" (BasicType.Numeric Float64)
+                makeParameter "threshold" "Threshold" "0.03" (BasicType.Numeric Float64)
+                makeParameter "stride" "Stride" "8" (BasicType.Numeric UInt32) ] }
+
+        { Id = "Forstner3DKeypoints"
+          DisplayName = "forstner3DKeypoints"
+          Category = "Geometry"
+          Summary = "Detect 3D Förstner-style junction keypoints from the structure tensor."
+          Description = streamingKeypointDescription
+          Aliases = [ "forstner"; "foerstner"; "corner"; "junction"; "structure"; "tensor"; "keypoints"; "features"; "points" ]
+          Inputs = [ makePort "Number" imageAny ]
+          Outputs = [ makePort "PointSet" pointSet ]
+          Parameters =
+              [ makeParameter "type" "Type" "Float64" BasicType.String
+                makeParameter "sigma" "Sigma" "1.0" (BasicType.Numeric Float64)
+                makeParameter "rho" "Rho" "1.5" (BasicType.Numeric Float64)
+                makeParameter "threshold" "Threshold" "0.03" (BasicType.Numeric Float64)
+                makeParameter "stride" "Stride" "8" (BasicType.Numeric UInt32) ] }
+
+        { Id = "PhaseCongruencyKeypoints"
+          DisplayName = "phaseCongruencyKeypoints"
+          Category = "Geometry"
+          Summary = "Detect contrast-normalized local phase keypoints with a bounded window."
+          Description = streamingKeypointDescription
+          Aliases = [ "phase"; "congruency"; "local"; "contrast"; "keypoints"; "features"; "points" ]
+          Inputs = [ makePort "Number" imageAny ]
+          Outputs = [ makePort "PointSet" pointSet ]
+          Parameters =
+              [ makeParameter "type" "Type" "Float64" BasicType.String
+                makeParameter "sigma" "Sigma" "1.0" (BasicType.Numeric Float64)
+                makeParameter "threshold" "Threshold" "0.03" (BasicType.Numeric Float64)
                 makeParameter "stride" "Stride" "8" (BasicType.Numeric UInt32) ] }
 
         { Id = "SignedDistanceBand"
