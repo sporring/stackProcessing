@@ -372,13 +372,13 @@ let square<'T when 'T: equality> : Stage<Image<'T>,Image<'T>> =
     failTypeMismatch<'T> "square" floatNintTypes
     liftUnaryReleaseAfter "square" ImageFunctions.squareImage id id
 
-let clamp<'T when 'T: equality> lower upper =
+let clamp<'T when 'T: equality> lower upper : Stage<Image<'T>, Image<'T>> =
     liftUnaryReleaseAfter "clamp" (ImageFunctions.clampImage lower upper) id id
 
-let shiftScale<'T when 'T: equality> shift scale =
+let shiftScale<'T when 'T: equality> shift scale : Stage<Image<'T>, Image<'T>> =
     liftUnaryReleaseAfter "shiftScale" (ImageFunctions.shiftScale shift scale) id id
 
-let intensityStretch<'T when 'T: equality> inputMinimum inputMaximum outputMinimum outputMaximum =
+let intensityStretch<'T when 'T: equality> inputMinimum inputMaximum outputMinimum outputMaximum : Stage<Image<'T>, Image<'T>> =
     if inputMinimum = inputMaximum then
         invalidArg "inputMaximum" "Cannot stretch intensities from an input range with zero width."
     if outputMinimum = outputMaximum then
@@ -397,47 +397,47 @@ let private makeWindowedLocalOp name ksz winSz core =
     (window win pad stride) --> stg --> flattenList ()
     |> Stage.withSliceCardinality (SlimPipeline.Domain(sameSliceDomainForKernelDepth ksz))
 
-let median<'T when 'T: equality> radius winSz =
+let median<'T when 'T: equality> radius winSz : Stage<Image<'T>, Image<'T>> =
     let ksz = 2u * radius + 1u
     makeWindowedLocalOp "median" ksz winSz (ImageFunctions.median radius)
 
-let bilateral<'T when 'T: equality> domainSigma rangeSigma winSz =
+let bilateral<'T when 'T: equality> domainSigma rangeSigma winSz : Stage<Image<'T>, Image<'T>> =
     makeWindowedLocalOp "bilateral" (max 1u winSz) winSz (ImageFunctions.bilateral domainSigma rangeSigma)
 
-let gradientMagnitude<'T when 'T: equality> winSz =
+let gradientMagnitude<'T when 'T: equality> winSz : Stage<Image<'T>, Image<'T>> =
     makeWindowedLocalOp "gradientMagnitude" 3u winSz ImageFunctions.gradientMagnitude
 
-let sobelEdge<'T when 'T: equality> winSz =
+let sobelEdge<'T when 'T: equality> winSz : Stage<Image<'T>, Image<'T>> =
     makeWindowedLocalOp "sobelEdge" 3u winSz ImageFunctions.sobelEdge
 
-let laplacian<'T when 'T: equality> winSz =
+let laplacian<'T when 'T: equality> winSz : Stage<Image<'T>, Image<'T>> =
     makeWindowedLocalOp "laplacian" 3u winSz ImageFunctions.laplacian
 
-let grayscaleErode<'T when 'T: equality> radius winSz =
+let grayscaleErode<'T when 'T: equality> radius winSz : Stage<Image<'T>, Image<'T>> =
     let ksz = 2u * radius + 1u
     makeWindowedLocalOp "grayscaleErode" ksz winSz (ImageFunctions.grayscaleErode radius)
 
-let grayscaleDilate<'T when 'T: equality> radius winSz =
+let grayscaleDilate<'T when 'T: equality> radius winSz : Stage<Image<'T>, Image<'T>> =
     let ksz = 2u * radius + 1u
     makeWindowedLocalOp "grayscaleDilate" ksz winSz (ImageFunctions.grayscaleDilate radius)
 
-let grayscaleOpening<'T when 'T: equality> radius winSz =
+let grayscaleOpening<'T when 'T: equality> radius winSz : Stage<Image<'T>, Image<'T>> =
     let ksz = 2u * radius + 1u
     makeWindowedLocalOp "grayscaleOpening" ksz winSz (ImageFunctions.grayscaleOpening radius)
 
-let grayscaleClosing<'T when 'T: equality> radius winSz =
+let grayscaleClosing<'T when 'T: equality> radius winSz : Stage<Image<'T>, Image<'T>> =
     let ksz = 2u * radius + 1u
     makeWindowedLocalOp "grayscaleClosing" ksz winSz (ImageFunctions.grayscaleClosing radius)
 
-let whiteTopHat<'T when 'T: equality> radius winSz =
+let whiteTopHat<'T when 'T: equality> radius winSz : Stage<Image<'T>, Image<'T>> =
     let ksz = 2u * radius + 1u
     makeWindowedLocalOp "whiteTopHat" ksz winSz (ImageFunctions.whiteTopHat radius)
 
-let blackTopHat<'T when 'T: equality> radius winSz =
+let blackTopHat<'T when 'T: equality> radius winSz : Stage<Image<'T>, Image<'T>> =
     let ksz = 2u * radius + 1u
     makeWindowedLocalOp "blackTopHat" ksz winSz (ImageFunctions.blackTopHat radius)
 
-let morphologicalGradient<'T when 'T: equality> radius winSz =
+let morphologicalGradient<'T when 'T: equality> radius winSz : Stage<Image<'T>, Image<'T>> =
     let ksz = 2u * radius + 1u
     makeWindowedLocalOp "morphologicalGradient" ksz winSz (ImageFunctions.morphologicalGradient radius)
 
@@ -478,10 +478,10 @@ let xorMask : Stage<Image<uint8> * Image<uint8>, Image<uint8>> =
 let notMask : Stage<Image<uint8>, Image<uint8>> =
     liftUnaryReleaseAfter "notMask" ImageFunctions.notImage id id
 
-let labelContour<'T when 'T: equality> fullyConnected winSz =
+let labelContour<'T when 'T: equality> fullyConnected winSz : Stage<Image<'T>, Image<'T>> =
     makeWindowedLocalOp "labelContour" 3u winSz (ImageFunctions.labelContour fullyConnected)
 
-let changeLabel<'T when 'T: equality> fromLabel toLabel =
+let changeLabel<'T when 'T: equality> fromLabel toLabel : Stage<Image<'T>, Image<'T>> =
     liftUnaryReleaseAfter "changeLabel" (ImageFunctions.changeLabel fromLabel toLabel) id id
 
 let resize<'T when 'T: equality>

@@ -494,79 +494,60 @@ val sqrtWindowed<'T when 'T: equality> :
 val square<'T when 'T: equality> :
   StackCore.Stage<StackCore.Image<'T>,StackCore.Image<'T>> when 'T: equality
 
-val clamp<'T when 'T: equality> :
-  (double ->
-     double -> SlimPipeline.Stage<StackCore.Image<obj>,StackCore.Image<obj>>)
+val clamp:
+  lower: double -> upper: double -> Stage<Image<'T>,Image<'T>> when 'T: equality
+
+val shiftScale:
+  shift: double -> scale: double -> Stage<Image<'T>,Image<'T>> when 'T: equality
+
+val intensityStretch:
+  inputMinimum: double ->
+    inputMaximum: double ->
+    outputMinimum: double -> outputMaximum: double -> Stage<Image<'T>,Image<'T>>
     when 'T: equality
 
-val shiftScale<'T when 'T: equality> :
-  (double ->
-     double -> SlimPipeline.Stage<StackCore.Image<obj>,StackCore.Image<obj>>)
+val median:
+  radius: uint32 -> winSz: uint32 -> Stage<Image<'T>,Image<'T>>
     when 'T: equality
 
-val intensityStretch<'T when 'T: equality> :
-  (double ->
-     double ->
-     double ->
-     double -> SlimPipeline.Stage<StackCore.Image<obj>,StackCore.Image<obj>>)
+val bilateral:
+  domainSigma: double ->
+    rangeSigma: double -> winSz: uint32 -> Stage<Image<'T>,Image<'T>>
     when 'T: equality
 
-val median<'T when 'T: equality> :
-  (uint32 ->
-     uint32 -> SlimPipeline.Stage<StackCore.Image<obj>,StackCore.Image<obj>>)
+val gradientMagnitude:
+  winSz: uint32 -> Stage<Image<'T>,Image<'T>> when 'T: equality
+
+val sobelEdge: winSz: uint32 -> Stage<Image<'T>,Image<'T>> when 'T: equality
+
+val laplacian: winSz: uint32 -> Stage<Image<'T>,Image<'T>> when 'T: equality
+
+val grayscaleErode:
+  radius: uint32 -> winSz: uint32 -> Stage<Image<'T>,Image<'T>>
     when 'T: equality
 
-val bilateral<'T when 'T: equality> :
-  (double ->
-     double ->
-     uint32 -> SlimPipeline.Stage<StackCore.Image<obj>,StackCore.Image<obj>>)
+val grayscaleDilate:
+  radius: uint32 -> winSz: uint32 -> Stage<Image<'T>,Image<'T>>
     when 'T: equality
 
-val gradientMagnitude<'T when 'T: equality> :
-  (uint32 -> SlimPipeline.Stage<StackCore.Image<obj>,StackCore.Image<obj>>)
+val grayscaleOpening:
+  radius: uint32 -> winSz: uint32 -> Stage<Image<'T>,Image<'T>>
     when 'T: equality
 
-val sobelEdge<'T when 'T: equality> :
-  (uint32 -> SlimPipeline.Stage<StackCore.Image<obj>,StackCore.Image<obj>>)
+val grayscaleClosing:
+  radius: uint32 -> winSz: uint32 -> Stage<Image<'T>,Image<'T>>
     when 'T: equality
 
-val laplacian<'T when 'T: equality> :
-  (uint32 -> SlimPipeline.Stage<StackCore.Image<obj>,StackCore.Image<obj>>)
+val whiteTopHat:
+  radius: uint32 -> winSz: uint32 -> Stage<Image<'T>,Image<'T>>
     when 'T: equality
 
-val grayscaleErode<'T when 'T: equality> :
-  (uint32 ->
-     uint32 -> SlimPipeline.Stage<StackCore.Image<obj>,StackCore.Image<obj>>)
+val blackTopHat:
+  radius: uint32 -> winSz: uint32 -> Stage<Image<'T>,Image<'T>>
     when 'T: equality
 
-val grayscaleDilate<'T when 'T: equality> :
-  (uint32 ->
-     uint32 -> SlimPipeline.Stage<StackCore.Image<obj>,StackCore.Image<obj>>)
-    when 'T: equality
-
-val grayscaleOpening<'T when 'T: equality> :
-  (uint32 ->
-     uint32 -> SlimPipeline.Stage<StackCore.Image<obj>,StackCore.Image<obj>>)
-    when 'T: equality
-
-val grayscaleClosing<'T when 'T: equality> :
-  (uint32 ->
-     uint32 -> SlimPipeline.Stage<StackCore.Image<obj>,StackCore.Image<obj>>)
-    when 'T: equality
-
-val whiteTopHat<'T when 'T: equality> :
-  (uint32 ->
-     uint32 -> SlimPipeline.Stage<StackCore.Image<obj>,StackCore.Image<obj>>)
-    when 'T: equality
-
-val blackTopHat<'T when 'T: equality> :
-  (uint32 ->
-     uint32 -> SlimPipeline.Stage<StackCore.Image<obj>,StackCore.Image<obj>>)
-    when 'T: equality
-
-val morphologicalGradient<'T when 'T: equality> :
-  (uint32 ->
-     uint32 -> SlimPipeline.Stage<StackCore.Image<obj>,StackCore.Image<obj>>)
+val morphologicalGradient:
+  radius: uint32 -> winSz: uint32 -> Stage<Image<'T>,Image<'T>>
     when 'T: equality
 
 val binaryContour:
@@ -615,14 +596,12 @@ val xorMask:
 
 val notMask: StackCore.Stage<StackCore.Image<uint8>,StackCore.Image<uint8>>
 
-val labelContour<'T when 'T: equality> :
-  (bool ->
-     uint32 -> SlimPipeline.Stage<StackCore.Image<obj>,StackCore.Image<obj>>)
+val labelContour:
+  fullyConnected: bool -> winSz: uint32 -> Stage<Image<'T>,Image<'T>>
     when 'T: equality
 
-val changeLabel<'T when 'T: equality> :
-  (double ->
-     double -> SlimPipeline.Stage<StackCore.Image<obj>,StackCore.Image<obj>>)
+val changeLabel:
+  fromLabel: double -> toLabel: double -> Stage<Image<'T>,Image<'T>>
     when 'T: equality
 
 val marchingCubes<'T when 'T: equality> :

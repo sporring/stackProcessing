@@ -1325,4 +1325,220 @@ let stackProcessingSupportSuite =
                 deleteDirectory inputDir
                 deleteDirectory labelDir
 
+        testCase "StackProcessing facade reads files through direct reader stages" <| fun _ ->
+            let inputDir = tempDirectory "facade-readers"
+            let suffix = ".tiff"
+            let slices = [ for z in 0 .. 1 -> makeSlice 4 3 z ]
+
+            try
+                writeSlices inputDir suffix slices
+                let files = Directory.GetFiles(inputDir, "*" + suffix) |> Array.sort
+
+                let single =
+                    scalarPlan [ files[0] ]
+                    >=> StackProcessing.readFiles<uint8> false
+                    |> drain
+
+                try
+                    Expect.equal (single.GetSize()) [ 4u; 3u ] "readFiles should read a single public filename stream element."
+                finally
+                    single.decRefCount()
+
+                let shaped =
+                    scalarPlan [ files[1] ]
+                    >=> StackProcessing.readFilesWithShape<uint8> false 4u 3u
+                    |> drain
+
+                try
+                    Expect.equal shaped.[0, 0] 3uy "readFilesWithShape should read with the supplied shape estimate."
+                finally
+                    shaped.decRefCount()
+
+                let left, right =
+                    scalarPlan [ files[0], files[1] ]
+                    >=> StackProcessing.readFilePairs<uint8> false
+                    |> drain
+
+                try
+                    Expect.equal left.[0, 0] 0uy "readFilePairs should read the first file."
+                    Expect.equal right.[0, 0] 3uy "readFilePairs should read the second file."
+                finally
+                    left.decRefCount()
+                    right.decRefCount()
+
+                let filtered =
+                    StackProcessing.source (2UL * 1024UL * 1024UL * 1024UL)
+                    |> StackProcessing.readFiltered<uint8> inputDir suffix (fun names -> names |> Array.take 1)
+                    |> StackProcessing.drainList
+
+                try
+                    Expect.equal filtered.Length 1 "readFiltered should expose the public filtered stack reader."
+                    Expect.equal filtered[0].[0, 0] 0uy "readFiltered should preserve sorted filtered order."
+                finally
+                    disposeImages filtered
+            finally
+                disposeImages slices
+                deleteDirectory inputDir
+
+        testCase "StackProcessing facade exposes scalar image arithmetic wrappers" <| fun _ ->
+            let image = image2D (fun x y -> float32 (x + y + 2))
+
+            let run (stage: Stage<Image<float32>, Image<float32>>) =
+                let result =
+                    imagePlan [ image ]
+                    >=> stage
+                    |> drain
+                let value = result.[0, 0]
+                result.decRefCount()
+                value
+
+            try
+                expectFloat32Close (run (StackProcessing.scalarAddImage<float32> 3.0f)) 5.0f "scalarAddImage should add scalar on the left."
+                expectFloat32Close (run (StackProcessing.imageAddScalar<float32> 3.0f)) 5.0f "imageAddScalar should add scalar on the right."
+                expectFloat32Close (run (StackProcessing.scalarSubImage<float32> 10.0f)) 8.0f "scalarSubImage should subtract the image from the scalar."
+                expectFloat32Close (run (StackProcessing.imageSubScalar<float32> 1.0f)) 1.0f "imageSubScalar should subtract the scalar from the image."
+                expectFloat32Close (run (StackProcessing.scalarMulImage<float32> 4.0f)) 8.0f "scalarMulImage should multiply."
+                expectFloat32Close (run (StackProcessing.imageMulScalar<float32> 4.0f)) 8.0f "imageMulScalar should multiply."
+                expectFloat32Close (run (StackProcessing.scalarDivImage<float32> 8.0f)) 4.0f "scalarDivImage should divide scalar by image."
+                expectFloat32Close (run (StackProcessing.imageDivScalar<float32> 2.0f)) 1.0f "imageDivScalar should divide image by scalar."
+            finally
+                image.decRefCount()
+
+        testCase "StackProcessing facade exposes pair comparisons and mask wrappers" <| fun _ ->
+            let runPairStage (stage: Stage<Image<uint8> * Image<uint8>, Image<uint8>>) (leftValue: uint8) (rightValue: uint8) =
+                let left = Image<uint8>.ofArray2D (Array2D.create 2 2 leftValue)
+                let right = Image<uint8>.ofArray2D (Array2D.create 2 2 rightValue)
+                let result =
+                    scalarPlan [ left, right ]
+                    >=> stage
+                    |> drain
+                let value = result.[0, 0]
+                result.decRefCount()
+                value
+
+            Expect.equal (runPairStage StackProcessing.equal<uint8> 7uy 7uy) 1uy "equal should flag equal pixels."
+            Expect.equal (runPairStage StackProcessing.notEqual<uint8> 7uy 8uy) 1uy "notEqual should flag differing pixels."
+            Expect.equal (runPairStage StackProcessing.greater<uint8> 9uy 8uy) 1uy "greater should flag greater pixels."
+            Expect.equal (runPairStage StackProcessing.greaterEqual<uint8> 8uy 8uy) 1uy "greaterEqual should include equality."
+            Expect.equal (runPairStage StackProcessing.less<uint8> 7uy 8uy) 1uy "less should flag lesser pixels."
+            Expect.equal (runPairStage StackProcessing.lessEqual<uint8> 8uy 8uy) 1uy "lessEqual should include equality."
+            Expect.equal (runPairStage StackProcessing.andMask 255uy 0uy) 0uy "andMask should combine binary masks."
+            Expect.equal (runPairStage StackProcessing.orMask 255uy 0uy) 255uy "orMask should combine binary masks."
+            Expect.equal (runPairStage StackProcessing.xorMask 255uy 0uy) 255uy "xorMask should combine binary masks."
+
+            let mask = Image<uint8>.ofArray2D (Array2D.create 2 2 0uy)
+            let inverted =
+                imagePlan [ mask ]
+                >=> StackProcessing.notMask
+                |> drain
+            try
+                Expect.equal inverted.[0, 0] 1uy "notMask should invert binary masks."
+            finally
+                inverted.decRefCount()
+                mask.decRefCount()
+
+        testCase "StackProcessing facade exposes local image filter wrappers" <| fun _ ->
+            let floatSlices = [ for z in 0 .. 2 -> makeFloatSlice 5 5 z ]
+            let uintSlices = [ for z in 0 .. 2 -> makeSlice 5 5 z ]
+            let binarySlices = [ for z in 0 .. 2 -> makeBinarySlice 6 6 z ]
+
+            let expectSameShapeFloat32 label (input: Image<float32> list) (stage: Stage<Image<float32>, Image<float32>>) =
+                let actual =
+                    imagePlan input
+                    >=> stage
+                    |> drainList
+
+                try
+                    Expect.equal actual.Length input.Length $"{label} should preserve slice count."
+                    actual |> List.iter (fun image -> Expect.equal (image.GetSize()) (input.Head.GetSize()) $"{label} should preserve x/y shape.")
+                finally
+                    disposeImages actual
+
+            let expectSameShapeUint8 label (input: Image<uint8> list) (stage: Stage<Image<uint8>, Image<uint8>>) =
+                let actual =
+                    imagePlan input
+                    >=> stage
+                    |> drainList
+
+                try
+                    Expect.equal actual.Length input.Length $"{label} should preserve slice count."
+                    actual |> List.iter (fun image -> Expect.equal (image.GetSize()) (input.Head.GetSize()) $"{label} should preserve x/y shape.")
+                finally
+                    disposeImages actual
+
+            try
+                let clampStage : Stage<Image<float32>, Image<float32>> = StackProcessing.clamp<float32> 0.0 120.0
+                let shiftScaleStage : Stage<Image<float32>, Image<float32>> = StackProcessing.shiftScale<float32> 1.0 2.0
+                let stretchStage : Stage<Image<float32>, Image<float32>> = StackProcessing.intensityStretch<float32> 0.0 200.0 0.0 1.0
+                let medianStage : Stage<Image<uint8>, Image<uint8>> = StackProcessing.median<uint8> 1u 3u
+                let gradientStage : Stage<Image<float32>, Image<float32>> = StackProcessing.gradientMagnitude<float32> 3u
+                let sobelStage : Stage<Image<float32>, Image<float32>> = StackProcessing.sobelEdge<float32> 3u
+                let laplacianStage : Stage<Image<float32>, Image<float32>> = StackProcessing.laplacian<float32> 3u
+                let erodeStage : Stage<Image<uint8>, Image<uint8>> = StackProcessing.grayscaleErode<uint8> 1u 3u
+                let dilateStage : Stage<Image<uint8>, Image<uint8>> = StackProcessing.grayscaleDilate<uint8> 1u 3u
+                let openingStage : Stage<Image<uint8>, Image<uint8>> = StackProcessing.grayscaleOpening<uint8> 1u 3u
+                let closingStage : Stage<Image<uint8>, Image<uint8>> = StackProcessing.grayscaleClosing<uint8> 1u 3u
+                let whiteTopHatStage : Stage<Image<uint8>, Image<uint8>> = StackProcessing.whiteTopHat<uint8> 1u 3u
+                let blackTopHatStage : Stage<Image<uint8>, Image<uint8>> = StackProcessing.blackTopHat<uint8> 1u 3u
+                let morphGradientStage : Stage<Image<uint8>, Image<uint8>> = StackProcessing.morphologicalGradient<uint8> 1u 3u
+                let binaryContourStage : Stage<Image<uint8>, Image<uint8>> = StackProcessing.binaryContour false 3u
+                let binaryMedianStage : Stage<Image<uint8>, Image<uint8>> = StackProcessing.binaryMedian 1u 3u
+                let labelContourStage : Stage<Image<uint8>, Image<uint8>> = StackProcessing.labelContour<uint8> false 3u
+                let changeLabelStage : Stage<Image<uint8>, Image<uint8>> = StackProcessing.changeLabel<uint8> 255.0 128.0
+
+                expectSameShapeFloat32 "clamp" floatSlices clampStage
+                expectSameShapeFloat32 "shiftScale" floatSlices shiftScaleStage
+                expectSameShapeFloat32 "intensityStretch" floatSlices stretchStage
+                expectSameShapeUint8 "median" uintSlices medianStage
+                expectSameShapeFloat32 "gradientMagnitude" floatSlices gradientStage
+                expectSameShapeFloat32 "sobelEdge" floatSlices sobelStage
+                expectSameShapeFloat32 "laplacian" floatSlices laplacianStage
+                expectSameShapeUint8 "grayscaleErode" uintSlices erodeStage
+                expectSameShapeUint8 "grayscaleDilate" uintSlices dilateStage
+                expectSameShapeUint8 "grayscaleOpening" uintSlices openingStage
+                expectSameShapeUint8 "grayscaleClosing" uintSlices closingStage
+                expectSameShapeUint8 "whiteTopHat" uintSlices whiteTopHatStage
+                expectSameShapeUint8 "blackTopHat" uintSlices blackTopHatStage
+                expectSameShapeUint8 "morphologicalGradient" uintSlices morphGradientStage
+                expectSameShapeUint8 "binaryContour" binarySlices binaryContourStage
+                expectSameShapeUint8 "binaryMedian" binarySlices binaryMedianStage
+                expectSameShapeUint8 "labelContour" binarySlices labelContourStage
+                expectSameShapeUint8 "changeLabel" binarySlices changeLabelStage
+            finally
+                disposeImages floatSlices
+                disposeImages uintSlices
+                disposeImages binarySlices
+
+        testCase "StackProcessing facade exposes histogram and pair conversion helpers" <| fun _ ->
+            let histogramMap = Map.ofList [ 1, 2UL; 3, 4UL ]
+            let pairs =
+                scalarPlan [ histogramMap ]
+                >=> StackProcessing.map2pairs<int, uint64>
+                |> drain
+
+            Expect.equal pairs [ 1, 2UL; 3, 4UL ] "map2pairs should expose map entries through the facade."
+
+            let floatPairs =
+                scalarPlan [ pairs ]
+                >=> StackProcessing.pairs2floats<int, uint64>
+                |> drain
+
+            Expect.equal floatPairs [ 1.0, 2.0; 3.0, 4.0 ] "pairs2floats should convert numeric pairs through the facade."
+
+            let intPairs =
+                scalarPlan [ pairs ]
+                >=> StackProcessing.pairs2ints<int, uint64>
+                |> drain
+
+            Expect.equal intPairs [ 1, 2; 3, 4 ] "pairs2ints should convert numeric pairs through the facade."
+
+            let image = Image<float32>.ofArray2D (array2D [ [ 1.0f; 2.0f ]; [ 3.0f; 4.0f ] ])
+            let minValue, maxValue = StackProcessing.getMinMax image
+            Expect.equal minValue 1.0 "getMinMax should be exposed through the facade."
+            Expect.equal maxValue 4.0 "getMinMax should be exposed through the facade."
+
+            Expect.throws
+                (fun () -> StackProcessing.failTypeMismatch<uint8> "facade" [ typeof<float32> ])
+                "failTypeMismatch should be exposed through the facade."
+
     ]
