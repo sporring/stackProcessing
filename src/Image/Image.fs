@@ -1,5 +1,7 @@
 module Image
 open FSharp.Collections
+open System
+open System.Runtime.InteropServices
 
 module InternalHelpers = // internal
     let toVectorUInt8 (lst: uint8 list)     = new itk.simple.VectorUInt8(lst)
@@ -70,6 +72,82 @@ module InternalHelpers = // internal
     let isComplexCompatibleImage (itkImg: itk.simple.Image) =
         isComplexPixelId (itkImg.GetPixelID())
 
+    let isScalarImportSupported<'T> =
+        let t = typeof<'T>
+        t = typeof<uint8>
+        || t = typeof<int8>
+        || t = typeof<uint16>
+        || t = typeof<int16>
+        || t = typeof<uint32>
+        || t = typeof<int32>
+        || t = typeof<uint64>
+        || t = typeof<int64>
+        || t = typeof<float32>
+        || t = typeof<float>
+
+    let setImportBuffer<'T> (importer: itk.simple.ImportImageFilter) (buffer: nativeint) =
+        let t = typeof<'T>
+        if t = typeof<uint8> then importer.SetBufferAsUInt8(buffer)
+        elif t = typeof<int8> then importer.SetBufferAsInt8(buffer)
+        elif t = typeof<uint16> then importer.SetBufferAsUInt16(buffer)
+        elif t = typeof<int16> then importer.SetBufferAsInt16(buffer)
+        elif t = typeof<uint32> then importer.SetBufferAsUInt32(buffer)
+        elif t = typeof<int32> then importer.SetBufferAsInt32(buffer)
+        elif t = typeof<uint64> then importer.SetBufferAsUInt64(buffer)
+        elif t = typeof<int64> then importer.SetBufferAsInt64(buffer)
+        elif t = typeof<float32> then importer.SetBufferAsFloat(buffer)
+        elif t = typeof<float> then importer.SetBufferAsDouble(buffer)
+        else invalidArg "T" $"Unsupported scalar import pixel type: {t.Name}"
+
+    let scalarComponentByteSize<'T> =
+        let t = typeof<'T>
+        if t = typeof<uint8> || t = typeof<int8> then 1
+        elif t = typeof<uint16> || t = typeof<int16> then 2
+        elif t = typeof<uint32> || t = typeof<int32> || t = typeof<float32> then 4
+        elif t = typeof<uint64> || t = typeof<int64> || t = typeof<float> then 8
+        else invalidArg "T" $"Unsupported scalar buffer pixel type: {t.Name}"
+
+    let getConstBuffer<'T> (image: itk.simple.Image) =
+        let t = typeof<'T>
+        if t = typeof<uint8> then image.GetConstBufferAsUInt8()
+        elif t = typeof<int8> then image.GetConstBufferAsInt8()
+        elif t = typeof<uint16> then image.GetConstBufferAsUInt16()
+        elif t = typeof<int16> then image.GetConstBufferAsInt16()
+        elif t = typeof<uint32> then image.GetConstBufferAsUInt32()
+        elif t = typeof<int32> then image.GetConstBufferAsInt32()
+        elif t = typeof<uint64> then image.GetConstBufferAsUInt64()
+        elif t = typeof<int64> then image.GetConstBufferAsInt64()
+        elif t = typeof<float32> then image.GetConstBufferAsFloat()
+        elif t = typeof<float> then image.GetConstBufferAsDouble()
+        else invalidArg "T" $"Unsupported scalar buffer pixel type: {t.Name}"
+
+    let copyScalarPixels<'T> (image: itk.simple.Image) pixelCount =
+        if image.GetPixelID() <> fromType<'T> then
+            invalidArg "image" $"Expected {fromType<'T>} image buffer, got {image.GetPixelID()}."
+        if image.GetNumberOfComponentsPerPixel() <> 1u then
+            invalidArg "image" $"Expected a scalar image buffer, got {image.GetNumberOfComponentsPerPixel()} components per pixel."
+
+        let byteCount = pixelCount * scalarComponentByteSize<'T>
+        let bytes = Array.zeroCreate<byte> byteCount
+        Marshal.Copy(getConstBuffer<'T> image, bytes, 0, byteCount)
+        let pixels = Array.zeroCreate<'T> pixelCount
+        Buffer.BlockCopy(bytes, 0, pixels, 0, byteCount)
+        pixels
+
+    let importScalarImage<'T> (size: uint list) (pixels: 'T[]) =
+        use importer = new itk.simple.ImportImageFilter()
+        importer.SetSize(size |> toVectorUInt32)
+
+        let handle = GCHandle.Alloc(pixels, GCHandleType.Pinned)
+        try
+            setImportBuffer<'T> importer (handle.AddrOfPinnedObject())
+            use imported = importer.Execute()
+            use cast = new itk.simple.CastImageFilter()
+            cast.SetOutputPixelType(fromType<'T>)
+            cast.Execute(imported)
+        finally
+            handle.Free()
+
     let ofCastItk<'T> (itkImg: itk.simple.Image) : itk.simple.Image =
         let expectedId = fromType<'T>
         if typeof<'T> = typeof<System.Numerics.Complex> && isComplexCompatibleImage itkImg then
@@ -104,13 +182,6 @@ module InternalHelpers = // internal
                         for i1 in [0..(int size[1] - 1)] do 
                             for i2 in [0..(int size[2] - 1)] do 
                                yield [uint i0; uint i1; uint i2] }
-            | 4 ->
-                seq { 
-                    for i0 in [0..(int size[0] - 1)] do 
-                        for i1 in [0..(int size[1] - 1)] do 
-                            for i2 in [0..(int size[2] - 1)] do 
-                                for i3 in [0..(int size[3] - 1)] do 
-                                    yield [uint i0; uint i1; uint i2; uint i3] }
             | _ -> failwith $"Unsupported dimensionality {size.Length}"
 
     let setBoxedPixel (sitkImg: itk.simple.Image) (t: itk.simple.PixelIDValueEnum) (u: itk.simple.VectorUInt32) (value: obj) : unit =
@@ -420,6 +491,7 @@ let mutable private debug = false
 
 [<StructuredFormatDisplay("{Display}")>] // Prevent fsi printing information about its members such as img
 type Image<'T when 'T : equality>(sz: uint list, ?optionalNumberComponents: uint, ?optionalName: string, ?optionalIndex: int, ?optionalQuiet: bool) =
+    do if sz.Length > 3 then invalidArg "sz" $"Image supports at most 3 dimensions; got {sz.Length}."
     let isComplexType = typeof<'T> = typeof<System.Numerics.Complex>
     let numberCompDefault = 1u
     let numberComp = defaultArg optionalNumberComponents numberCompDefault
@@ -560,19 +632,47 @@ type Image<'T when 'T : equality>(sz: uint list, ?optionalNumberComponents: uint
     member this.toVectorFloat32 () : Image<float32 list> = Image<float32 list>.ofSimpleITK(this.toSimpleITK(),"toVectorFloat32",this.index)
     member this.toVectorFloat64 () : Image<float list>   = Image<float list>.ofSimpleITK(this.toSimpleITK(),"toVectorFloat64",this.index)
 
-    static member ofArray2D (arr: 'T[,], ?name:string) : Image<'T> =
+    static member ofArray2D (arr: 'T[,], ?name:string, ?index:int) : Image<'T> =
         let _name = defaultArg name ""
+        let _index = defaultArg index 0
         let sz = [arr.GetLength(0); arr.GetLength(1)] |> List.map uint
-        let img = new Image<'T>(sz,1u,_name)
-        img |> Image.iteri (fun idxLst _ -> img.Set idxLst arr[int idxLst[0],int idxLst[1]])
-        img
+        if isScalarImportSupported<'T> then
+            let width = arr.GetLength(0)
+            let height = arr.GetLength(1)
+            let pixels = Array.zeroCreate<'T> (width * height)
+            let mutable offset = 0
+            for y in 0 .. height - 1 do
+                for x in 0 .. width - 1 do
+                    pixels[offset] <- arr[x, y]
+                    offset <- offset + 1
 
-    static member ofArray3D (arr: 'T[,,], ?name:string) : Image<'T> =
+            Image<'T>.ofSimpleITK(importScalarImage sz pixels, _name, _index)
+        else
+            let img = new Image<'T>(sz,1u,_name,_index)
+            img |> Image.iteri (fun idxLst _ -> img.Set idxLst arr[int idxLst[0],int idxLst[1]])
+            img
+
+    static member ofArray3D (arr: 'T[,,], ?name:string, ?index:int) : Image<'T> =
         let _name = defaultArg name ""
+        let _index = defaultArg index 0
         let sz = [arr.GetLength(0); arr.GetLength(1); arr.GetLength(2)] |> List.map uint
-        let img = new Image<'T>(sz,1u,_name)
-        img |> Image.iteri (fun idxLst _ -> img.Set idxLst arr[int idxLst[0],int idxLst[1],int idxLst[2]])
-        img
+        if isScalarImportSupported<'T> then
+            let width = arr.GetLength(0)
+            let height = arr.GetLength(1)
+            let depth = arr.GetLength(2)
+            let pixels = Array.zeroCreate<'T> (width * height * depth)
+            let mutable offset = 0
+            for z in 0 .. depth - 1 do
+                for y in 0 .. height - 1 do
+                    for x in 0 .. width - 1 do
+                        pixels[offset] <- arr[x, y, z]
+                        offset <- offset + 1
+
+            Image<'T>.ofSimpleITK(importScalarImage sz pixels, _name, _index)
+        else
+            let img = new Image<'T>(sz,1u,_name,_index)
+            img |> Image.iteri (fun idxLst _ -> img.Set idxLst arr[int idxLst[0],int idxLst[1],int idxLst[2]])
+            img
 
     static member ofArray3DVector (arr: 'S[,,], ?name:string) : Image<'S list> =
         let _name = defaultArg name ""
@@ -613,45 +713,6 @@ type Image<'T when 'T : equality>(sz: uint list, ?optionalNumberComponents: uint
         imagImg.decRefCount()
         result
 
-    static member ofArray4D (arr: 'T[,,,], ?name:string) : Image<'T> =
-        let _name = defaultArg name ""
-        let sz = [arr.GetLength(0); arr.GetLength(1); arr.GetLength(2); arr.GetLength(3)] |> List.map uint
-        let img = new Image<'T>(sz,1u,_name)
-        img |> Image.iteri (fun idxLst _ -> img.Set idxLst arr[int idxLst[0],int idxLst[1],int idxLst[2],int idxLst[3]])
-        img
-
-    static member ofArray4DVector (arr: 'S[,,,], ?name:string) : Image<'S list> =
-        let _name = defaultArg name ""
-        let w = arr.GetLength(0)
-        let h = arr.GetLength(1)
-        let d = arr.GetLength(2)
-        let c = arr.GetLength(3)
-        let componentCount = max 2 c
-        let img = new Image<'S list>([uint w; uint h; uint d], uint componentCount, _name)
-        for i0 in 0 .. w - 1 do
-            for i1 in 0 .. h - 1 do
-                for i2 in 0 .. d - 1 do
-                    let comps =
-                        [ for k in 0 .. componentCount - 1 ->
-                              if k < c then arr[i0, i1, i2, k] else Unchecked.defaultof<'S> ]
-                    img.Set [uint i0; uint i1; uint i2] comps
-        img
-
-    static member ofArray4DComplex (arr: float[,,,], ?name:string) : Image<System.Numerics.Complex> =
-        let _name = defaultArg name ""
-        let w = arr.GetLength(0)
-        let h = arr.GetLength(1)
-        let d = arr.GetLength(2)
-        let c = arr.GetLength(3)
-        if c <> 2 then invalidArg "arr" "ofArray4DComplex expects last dimension size 2 (real, imag)."
-        let img = new Image<System.Numerics.Complex>([uint w; uint h; uint d], 1u, _name)
-        for i0 in 0 .. w - 1 do
-            for i1 in 0 .. h - 1 do
-                for i2 in 0 .. d - 1 do
-                    let cplx = System.Numerics.Complex(arr[i0, i1, i2, 0], arr[i0, i1, i2, 1])
-                    img.Set [uint i0; uint i1; uint i2] cplx
-        img
-
     static member ofComplexArray3D (arr: System.Numerics.Complex[,,], ?name:string) : Image<System.Numerics.Complex> =
         let _name = defaultArg name "ofComplexArray3D"
         let real = Array3D.init (arr.GetLength 0) (arr.GetLength 1) (arr.GetLength 2) (fun x y z -> arr[x, y, z].Real)
@@ -665,7 +726,13 @@ type Image<'T when 'T : equality>(sz: uint list, ?optionalNumberComponents: uint
 
     member this.toArray2D (): 'T[,] =
         let sz = this.GetSize() |> List.map int
-        Array2D.init sz[0] sz[1] (fun i0 i1 -> this.Get([uint i0; uint i1]))
+        if this.GetDimensions() = 2u && isScalarImportSupported<'T> && this.Image.GetPixelID() = fromType<'T> then
+            let width = sz[0]
+            let height = sz[1]
+            let pixels = copyScalarPixels<'T> this.Image (width * height)
+            Array2D.init width height (fun x y -> pixels[y * width + x])
+        else
+            Array2D.init sz[0] sz[1] (fun i0 i1 -> this.Get([uint i0; uint i1]))
 
     member this.toComplexArray2D () : System.Numerics.Complex[,] =
         if typeof<'T> <> typeof<System.Numerics.Complex> then
@@ -694,7 +761,14 @@ type Image<'T when 'T : equality>(sz: uint list, ?optionalNumberComponents: uint
 
     member this.toArray3D (): 'T[,,] =
         let sz = this.GetSize() |> List.map int
-        Array3D.init sz[0] sz[1] sz[2] (fun i0 i1 i2 -> this.Get([uint i0; uint i1; uint i2]))
+        if this.GetDimensions() = 3u && isScalarImportSupported<'T> && this.Image.GetPixelID() = fromType<'T> then
+            let width = sz[0]
+            let height = sz[1]
+            let depth = sz[2]
+            let pixels = copyScalarPixels<'T> this.Image (width * height * depth)
+            Array3D.init width height depth (fun x y z -> pixels[(z * height + y) * width + x])
+        else
+            Array3D.init sz[0] sz[1] sz[2] (fun i0 i1 i2 -> this.Get([uint i0; uint i1; uint i2]))
 
     member this.toComplexArray3D () : System.Numerics.Complex[,,] =
         if typeof<'T> <> typeof<System.Numerics.Complex> then
@@ -711,19 +785,6 @@ type Image<'T when 'T : equality>(sz: uint list, ?optionalNumberComponents: uint
         realImg.decRefCount()
         imagImg.decRefCount()
         Array3D.init (real.GetLength 0) (real.GetLength 1) (real.GetLength 2) (fun x y z -> System.Numerics.Complex(real[x, y, z], imag[x, y, z]))
-
-    member this.toArray4D (): 'T[,,,] =
-        let sz = this.GetSize() |> List.map int
-        Array4D.init sz[0] sz[1] sz[2] sz[3] (fun i0 i1 i2 i3 -> this.Get([uint i0; uint i1; uint i2; uint i3]))
-
-    static member toArray4DVector<'S when 'S: equality> (img: Image<'S list>) : 'S[,,,] =
-        if img.GetDimensions() <> 3u then
-            failwith $"toArray4DVector: image must be 3D, got {img.GetDimensions()}D"
-        let sz = img.GetSize() |> List.map int
-        let comps = img.GetNumberOfComponentsPerPixel() |> int
-        Array4D.init sz[0] sz[1] sz[2] comps (fun i0 i1 i2 k ->
-            let lst = img.Get([uint i0; uint i1; uint i2])
-            lst[k])
 
     // Make a multicomponent image of a list
     static member ofImageList (images: Image<'S> list) : Image<'S list> =
@@ -1020,12 +1081,6 @@ type Image<'T when 'T : equality>(sz: uint list, ?optionalNumberComponents: uint
             this.Get([ uint i0; uint i1; uint i2 ])
         and set(i0: int, i1: int, i2: int) (value: 'T) : unit =
             this.Set [ uint i0; uint i1; uint i2 ] value
-    member this.Item
-        with get(i0: int, i1: int, i2: int, i3: int) : 'T =
-            this.Get([ uint i0; uint i1; uint i2; uint i3 ])
-        and set(i0: int, i1: int, i2: int, i3: int) (value: 'T) : unit =
-            this.Set [ uint i0; uint i1; uint i2; uint i3 ] value
-
     member this.forAll (p: 'T -> bool) : bool =
         this |> Image.fold (fun acc elm -> acc && p elm) true
 
@@ -1040,10 +1095,8 @@ type Image<'T when 'T : equality>(sz: uint list, ?optionalNumberComponents: uint
             hash (this.toArray2D())
         elif dim = 3u then
             hash (this.toArray3D())
-        elif dim = 4u then
-            hash (this.toArray4D())
         else
-            failwith "No hashcode defined for images with dimensions less than 2 or greater than 4"
+            failwith "No hashcode defined for images with dimensions less than 2 or greater than 3"
 
     member this.CompareTo(other: Image<'T>) =
         let diff : Image<'T> = this - other

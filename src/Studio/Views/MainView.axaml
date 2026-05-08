@@ -160,6 +160,10 @@
                             Command="{Binding RunCommand}"
                             IsEnabled="{Binding CanRunGraph}"
                             Content="Run" />
+                    <Button Width="76"
+                            Command="{Binding StopRunCommand}"
+                            IsEnabled="{Binding CanStopRun}"
+                            Content="Stop" />
                 </StackPanel>
 
                 <TextBlock Text="StackProcessing Studio"

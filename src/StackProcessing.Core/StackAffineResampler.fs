@@ -224,16 +224,15 @@ let resampleAffineTrilinearSlices (inputDir: string) (suffix: string) (lerp: 'T-
             let pIn00k  = affinePoint affOutToIn pOut00k
             let c00k    = physicalToContIndex inG invInDir pIn00k
 
-            let slice = Image<'T> ([outG.W; outG.H]|>List.map uint)
+            let slice = Array2D.zeroCreate<'T> outG.W outG.H
 
             let mutable rowStart = c00k
             for j in 0 .. outG.H - 1 do
                 let mutable c = rowStart
-                let baseIdx = j * outG.W
                 for i in 0 .. outG.W - 1 do
                     slice[i,j] <- trilinearSample inputDir suffix winsz inG.W inG.H inG.D background lerp c cache
                     c <- add c stepI_in_cont
                 rowStart <- add rowStart stepJ_in_cont
 
-            yield (k, slice)
+            yield (k, Image<'T>.ofArray2D(slice, $"resampleAffine[{k}]", k))
     }

@@ -18,13 +18,6 @@ let getHashCodeTests =
       let b = Image<uint8>.ofArray3D (Array3D.init 2 2 1 (fun x y z -> byte (x + y + z)))
       Expect.equal (a.GetHashCode()) (b.GetHashCode()) "3D image hash codes should match"
 
-    testCase "Hash codes differ for different 4D images" <| fun _ ->
-      let arr1 = Array4D.init 1 1 1 2 (fun _ _ _ i -> byte (i + 1))
-      let arr2 = Array4D.init 1 1 1 2 (fun _ _ _ i -> byte (i + 1))
-      let a = Image<uint8>.ofArray4D arr1
-      let b = Image<uint8>.ofArray4D arr2
-      Expect.equal (a.GetHashCode()) (b.GetHashCode()) "4D image hash codes should differ"
-
     testCase "IComparable compares identical images as equal" <| fun _ ->
       let a = Image<int8>.ofArray2D (array2D [ [1y; 2y] ])
       let b = Image<int8>.ofArray2D (array2D [ [1y; 2y] ])

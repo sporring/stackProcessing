@@ -21,7 +21,7 @@ let inline private fromUint8< ^T when ^T : equality> (v : uint8) : ^T =
     else failwithf "Unsupported conversion from uint8 to %A" t
 
 // ──────────────────────────────────────────────────────────────────────
-//  Tiny test images (2‑D / 3‑D / 4‑D)
+//  Tiny test images (2-D / 3-D)
 // ──────────────────────────────────────────────────────────────────────
 let inline make2D< ^T when ^T : equality> () : Image< ^T > =
     let raw  = array2D [ [ 1uy; 2uy ]
@@ -34,12 +34,6 @@ let inline make3D< ^T when ^T : equality> () : Image< ^T > =
         let v = 1 + x + 2*y + 4*z      // 1 … 8
         fromUint8< ^T > (uint8 v) )
     Image< ^T >.ofArray3D arr
-
-let inline make4D< ^T when ^T : equality> () : Image< ^T > =
-    let arr = Array4D.init 2 2 1 2 (fun x y _ t ->
-        let v = 1 + x + 2*y + 4*t
-        fromUint8< ^T > (uint8 v) )
-    Image< ^T >.ofArray4D arr          // simpleITK 4‑D support is limited
 
 // ──────────────────────────────────────────────────────────────────────
 //  Generic helpers
@@ -112,15 +106,6 @@ let inline arithmeticTests< ^T
       let res = ImageFunctions.imageAddScalar img s
       Expect.equal res.[1,1,1] (img.[1,1,1] + s)          "3‑D add pixel"
 
-    // ── 4‑D (optional) ────────────────────────────────────────────────
-(* simpleITK 4‑D support is limited; enable if available
-
-    testCase "4‑D arithmetic (spot‑check)" <| fun _ ->
-      let img = make4D< ^T >()
-      let s   = u 2uy
-      let res = imageMulScalar img s
-      Expect.equal res.[1,1,0,1] (img.[1,1,0,1] * s)      "4‑D mul pixel"
-*)
   ]
 
 // ──────────────────────────────────────────────────────────────────────

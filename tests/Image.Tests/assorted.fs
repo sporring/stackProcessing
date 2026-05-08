@@ -1171,42 +1171,6 @@ let ImageProcessingTests =
         Expect.isTrue (sz[0]=1u && sz[1]=1u && sz[2]>1u) "shape should be nx1"
         Expect.floatClose Accuracy.high diff 0.0 "All finite diff filters should sum to 0.0"
 
-    testCase "finiteDiff 4D axis 0" <| fun _ ->
-        let imgLst = List.map (ImageFunctions.finiteDiffFilter4D 0u) [1u;2u;3u;4u;5u]
-        let sumLst = List.map ImageFunctions.sum imgLst
-        let expected = 0.0
-        let diff = List.fold (fun acc elm -> abs(elm-expected)) 0.0 sumLst
-        let sz = imgLst[0].GetSize()
-        Expect.isTrue (sz[0]>1u && sz[1]=1u && sz[2]=1u && sz[3]=1u) "shape should be nx1"
-        Expect.floatClose Accuracy.high diff 0.0 "All finite diff filters should sum to 0.0"
-
-    testCase "finiteDiff 4D axis 1" <| fun _ ->
-        let imgLst = List.map (ImageFunctions.finiteDiffFilter4D 1u) [1u;2u;3u;4u;5u]
-        let sumLst = List.map ImageFunctions.sum imgLst
-        let expected = 0.0
-        let diff = List.fold (fun acc elm -> abs(elm-expected)) 0.0 sumLst
-        let sz = imgLst[0].GetSize()
-        Expect.isTrue (sz[0]=1u && sz[1]>1u && sz[2]=1u && sz[3]=1u) "shape should be nx1"
-        Expect.floatClose Accuracy.high diff 0.0 "All finite diff filters should sum to 0.0"
-
-    testCase "finiteDiff 4D axis 2" <| fun _ ->
-        let imgLst = List.map (ImageFunctions.finiteDiffFilter4D 2u) [1u;2u;3u;4u;5u]
-        let sumLst = List.map ImageFunctions.sum imgLst
-        let expected = 0.0
-        let diff = List.fold (fun acc elm -> abs(elm-expected)) 0.0 sumLst
-        let sz = imgLst[0].GetSize()
-        Expect.isTrue (sz[0]=1u && sz[1]=1u && sz[2]>1u && sz[3]=1u) "shape should be nx1"
-        Expect.floatClose Accuracy.high diff 0.0 "All finite diff filters should sum to 0.0"
-
-    testCase "finiteDiff 4D axis 3" <| fun _ ->
-        let imgLst = List.map (ImageFunctions.finiteDiffFilter4D 3u) [1u;2u;3u;4u;5u]
-        let sumLst = List.map ImageFunctions.sum imgLst
-        let expected = 0.0
-        let diff = List.fold (fun acc elm -> abs(elm-expected)) 0.0 sumLst
-        let sz = imgLst[0].GetSize()
-        Expect.isTrue (sz[0]=1u && sz[1]=1u && sz[2]=1u && sz[3]>1u) "shape should be nx1"
-        Expect.floatClose Accuracy.high diff 0.0 "All finite diff filters should sum to 0.0"
-
   ]
 
 [<Tests>]

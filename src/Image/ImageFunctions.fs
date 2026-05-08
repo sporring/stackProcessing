@@ -492,20 +492,6 @@ let gradientVector3D (order: uint) (img: Image<float>) : Image<float list> =
     finally
         derivatives |> List.iter (fun derivativeImage -> derivativeImage.decRefCount())
 
-let finiteDiffFilter4D (direction: uint) (order: uint) : Image<float> =
-    let lst = stensil order
-    let n = lst.Length
-    let arr = 
-        if direction = 0u then
-            Array4D.init n 1 1 1 (fun i _ _ _ -> lst[i])
-        elif direction = 1u then
-            Array4D.init 1 n 1 1 (fun _ i _ _ -> lst[i])
-        elif direction = 2u then
-            Array4D.init 1 1 n 1 (fun _ _ i _ -> lst[i])
-        else 
-            Array4D.init 1 1 1 n (fun _ _ _ i -> lst[i])
-    Image<float>.ofArray4D(arr, "stensil4D")
-
 let discreteGaussian (dim: uint) (sigma: float) (kernelSize: uint option) (outputRegionMode: OutputRegionMode option) (boundaryCondition: BoundaryCondition option) : Image<'T> -> Image<'T> =
     fun (input: Image<'T>) -> 
         let kern = gauss dim sigma kernelSize
@@ -1178,24 +1164,22 @@ let momentsThreshold (img: Image<'T>) : Image<uint8> =
 /// Coordinate fields
 // Cannot get TransformToDisplacementFieldFilter to work, so making it by hand.
 let generateCoordinateAxis (axis: int) (size: int list) : Image<uint32> =
-    let img = new itk.simple.Image(toVectorUInt32 (size |> List.map uint), itk.simple.PixelIDValueEnum.sitkUInt32)
-
-    // Recursive generator for all N-dimensional indices
-    let rec generateIndices dims =
-        match dims with
-        | [] -> [ [] ]
-        | d :: ds ->
-            List.allPairs [0 .. d - 1] (generateIndices ds)
-            |> List.map (fun (i, rest) -> i :: rest)
-
-    // Write coordinate values along the selected axis
-    generateIndices size
-    |> List.iter (fun index ->
-        let coord = uint32 index[axis]
-        let idxVec = toVectorUInt32 (index |> List.map uint)
-        img.SetPixelAsUInt32(idxVec, coord))
-
-    Image<uint32>.ofSimpleITK(img,"generateCoordinateAxis")
+    match size with
+    | [ width; height ] ->
+        Array2D.init width height (fun x y ->
+            if axis = 0 then uint32 x
+            elif axis = 1 then uint32 y
+            else invalidArg "axis" $"Axis {axis} is outside a 2D image.")
+        |> fun values -> Image<uint32>.ofArray2D(values, "generateCoordinateAxis")
+    | [ width; height; depth ] ->
+        Array3D.init width height depth (fun x y z ->
+            if axis = 0 then uint32 x
+            elif axis = 1 then uint32 y
+            elif axis = 2 then uint32 z
+            else invalidArg "axis" $"Axis {axis} is outside a 3D image.")
+        |> fun values -> Image<uint32>.ofArray3D(values, "generateCoordinateAxis")
+    | _ ->
+        failwith $"Unsupported dimensionality {size.Length}"
 
 let histogram (img: Image<'T>) : Map<'T, uint64> =
     img.GetSize()

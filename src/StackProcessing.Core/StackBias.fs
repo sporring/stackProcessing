@@ -217,7 +217,7 @@ let private correctedImage (model: BiasPolynomialModel) (image: Image<'T>) mask 
         if z >= model.Depth then
             invalidOp $"Bias correction got slice index {image.index}, outside model depth {model.Depth}."
 
-        let output = new Image<float>([ width; height ], 1u, "correctBias", image.index)
+        let output = Array2D.zeroCreate<float> (int width) (int height)
 
         for y in 0u .. height - 1u do
             for x in 0u .. width - 1u do
@@ -229,9 +229,9 @@ let private correctedImage (model: BiasPolynomialModel) (image: Image<'T>) mask 
                 let value =
                     if includePixel then input - evaluate model x y z
                     else input
-                output.Set [ x; y ] value
+                output[int x, int y] <- value
 
-        output
+        Image<float>.ofArray2D(output, "correctBias", image.index)
     finally
         image.decRefCount()
         mask |> Option.iter (fun (maskImage: Image<uint8>) -> maskImage.decRefCount())
@@ -248,11 +248,11 @@ let private coordinateSource name width height depth mapper (pl: Plan<unit, unit
     if depth = 0u then invalidArg "depth" $"{name} depth must be positive."
 
     let makeSlice (z: int) =
-        let image = new Image<float>([ width; height ], 1u, $"{name}[{z}]", z)
+        let values = Array2D.zeroCreate<float> (int width) (int height)
         for y in 0u .. height - 1u do
             for x in 0u .. width - 1u do
-                image.Set [ x; y ] (mapper x y (uint z))
-        image
+                values[int x, int y] <- mapper x y (uint z)
+        Image<float>.ofArray2D(values, $"{name}[{z}]", z)
 
     let stage = StackImageFunctions.srcStage name width height depth makeSlice |> Some
     StackImageFunctions.srcPlan pl.debug pl.memAvail width height depth stage

@@ -188,7 +188,7 @@ let stitchManifestImages<'T when 'T: equality>
             item, stackFiles path item.Suffix)
 
     let mapper (outputZ: int) =
-        let image = new Image<'T>([ width; height ], 1u, $"stitch[{outputZ}]", outputZ)
+        let values = Array2D.zeroCreate<'T> (int width) (int height)
         let sliceCache = Collections.Generic.Dictionary<string * int, Image<'T>>()
 
         let getSlice (itemId: string) (files: string[]) (z: int) : Image<'T> option =
@@ -234,9 +234,9 @@ let stitchManifestImages<'T when 'T: equality>
                             | None -> ()
 
                     if weightSum > 0.0 then
-                        image[x, y] <- convertFromDouble<'T> (valueSum / weightSum)
+                        values[x, y] <- convertFromDouble<'T> (valueSum / weightSum)
 
-            image
+            Image<'T>.ofArray2D(values, $"stitch[{outputZ}]", outputZ)
         finally
             for slice in sliceCache.Values do
                 slice.decRefCount()

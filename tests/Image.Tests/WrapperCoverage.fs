@@ -130,19 +130,12 @@ let wrapperCoverage =
       Expect.equal (getBytesPerSItkComponent PixelIDValueEnum.sitkLabelUInt64) 8u "LabelUInt64 components should be eight bytes."
       Expect.equal (ImageFacts.memoryBytesForType<Complex> 6UL 1u) 96UL "Complex memory estimates should use sixteen bytes per pixel."
 
-    testCase "higher-dimensional scalar vector and complex array conversions" <| fun _ ->
-      let scalar4D = Array4D.init 2 2 2 2 (fun x y z t -> x + 10 * y + 100 * z + 1000 * t)
-      let scalarImg = Image<int>.ofArray4D scalar4D
+    testCase "complex array conversions" <| fun _ ->
       let complex2D = Array3D.init 2 2 2 (fun x y c -> if c = 0 then float (x + 10 * y) else float (100 + x + 10 * y))
-      let complex3D = Array4D.init 2 2 2 2 (fun x y z c -> if c = 0 then float (x + 10 * y + 100 * z) else float (1000 + x + 10 * y + 100 * z))
       let complex2DImg = Image<Complex>.ofArray3DComplex complex2D
-      let complex3DImg = Image<Complex>.ofArray4DComplex complex3D
 
-      Expect.equal (scalarImg.toArray4D()) scalar4D "ofArray4D and toArray4D should round-trip scalar data."
       Expect.equal complex2DImg.[1,1] (Complex(11.0, 111.0)) "ofArray3DComplex should map the final array axis to real/imaginary parts."
-      Expect.equal complex3DImg.[1,1,1] (Complex(111.0, 1111.0)) "ofArray4DComplex should map the final array axis to real/imaginary parts."
       Expect.throws (fun () -> Image<Complex>.ofArray3DComplex (Array3D.zeroCreate 2 2 3) |> ignore) "ofArray3DComplex should require a real/imaginary component axis."
-      Expect.throws (fun () -> Image<Complex>.ofArray4DComplex (Array4D.zeroCreate 2 2 2 3) |> ignore) "ofArray4DComplex should require a real/imaginary component axis."
 
     testCase "complex helpers and Fourier wrappers cover native complex paths" <| fun _ ->
       let src = Image<float>.ofArray2D (array2D [ [ 1.0; 0.0 ]; [ 0.0; 0.0 ] ])

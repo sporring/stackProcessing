@@ -21,7 +21,7 @@ let inline private fromUint8< ^T when ^T : equality> (v : uint8) : ^T =
     else failwithf "Unsupported conversion from uint8 to %A" t
 
 // ──────────────────────────────────────────────────────────────────────
-//  Tiny test images (2‑D / 3‑D / 4‑D)
+//  Tiny test images (2-D / 3-D)
 // ──────────────────────────────────────────────────────────────────────
 let inline make2D< ^T when ^T : equality> () : Image< ^T > =
     let raw  = array2D [ [ 1uy; 2uy ]
@@ -34,13 +34,6 @@ let inline make3D< ^T when ^T : equality> () : Image< ^T > =
         let v = 1 + x + 2*y + 4*z      // 1 … 8
         fromUint8< ^T > (uint8 v) )
     Image< ^T >.ofArray3D arr
-
-let inline make4D< ^T when ^T : equality> () : Image< ^T > =
-    let arr = Array4D.init 2 2 1 2 (fun x y _ t ->
-        let v = 1 + x + 2*y + 4*t
-        fromUint8< ^T > (uint8 v) )
-    Image< ^T >.ofArray4D arr          // simpleITK 4‑D support is limited
-
 
 let inline u< ^T when ^T : equality> (n : uint8) : ^T =
     fromUint8< ^T > n                  // handy literal converter
@@ -65,11 +58,6 @@ let inline indexerTests<^T when ^T : (static member op_Explicit : uint8 -> ^T)
       img.[1,1,0] <- u 8uy
       Expect.equal img.[1,1,0] (u 8uy) "Set 3D index"
 
-    testCase "4D get/set" <| fun _ ->
-      let img = make4D<^T>()
-      Expect.equal img.[1,1,0,1] (u 8uy) "Get 4D index"
-      img.[1,1,0,1] <- u 12uy
-      Expect.equal img.[1,1,0,1] (u 12uy) "Set 4D index"
   ]
 
 [<Tests>]

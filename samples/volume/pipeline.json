@@ -5,7 +5,7 @@
       "id": "node-1",
       "functionId": "ReadVolume",
       "x": 1295.69921875,
-      "y": 931.3671875,
+      "y": 933.265625,
       "parameters": [
         {
           "key": "availableMemory",
@@ -14,7 +14,7 @@
         },
         {
           "key": "type",
-          "value": "Float64",
+          "value": "UInt8",
           "useInput": false
         },
         {

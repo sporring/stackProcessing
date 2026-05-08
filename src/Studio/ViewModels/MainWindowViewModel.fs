@@ -12,6 +12,7 @@ open System.Runtime.CompilerServices
 open System.Security
 open System.Text
 open System.Text.RegularExpressions
+open System.Threading
 open System.Windows.Input
 open Avalonia.Threading
 open Studio.Compiler
@@ -1255,6 +1256,9 @@ type MainWindowViewModel() as this =
     let selectedNodes = HashSet<PipelineNodeViewModel>(HashIdentity.Reference)
     let mutable graphOutput = ""
     let mutable isRunInProgress = false
+    let mutable runCancellation: CancellationTokenSource option = None
+    let mutable activeRunProcess: Process option = None
+    let activeRunProcessLock = obj()
     let runProjectDirectory =
         let tempRoot =
             if Directory.Exists("/private/tmp") then
@@ -2377,8 +2381,23 @@ type MainWindowViewModel() as this =
             if isRunInProgress <> value then
                 isRunInProgress <- value
                 this.OnPropertyChanged(PropertyChangedEventArgs(nameof this.CanRunGraph))
+                this.OnPropertyChanged(PropertyChangedEventArgs(nameof this.CanStopRun))
         else
             Dispatcher.UIThread.Post(fun () -> this.SetRunInProgress(value))
+
+    member private _.SetActiveRunProcess(procOpt: Process option) =
+        lock activeRunProcessLock (fun () -> activeRunProcess <- procOpt)
+
+    member private _.KillActiveRunProcess() =
+        lock activeRunProcessLock (fun () ->
+            match activeRunProcess with
+            | Some proc ->
+                try
+                    if not proc.HasExited then
+                        proc.Kill(true)
+                with _ ->
+                    ()
+            | None -> ())
 
     member private _.FindRepositoryRoot() =
         let rec search (directory: DirectoryInfo) =
@@ -2488,7 +2507,7 @@ type MainWindowViewModel() as this =
         let programPath = Path.Combine(runProjectDirectory, "Program.fs")
         File.WriteAllText(programPath, generatedProgram, Encoding.UTF8)
 
-    member private this.RunProcess(phase: string option) (echoOutput: bool) (echoOnlyOnFailure: bool) (fileName: string) (arguments: string list) (workingDirectory: string) =
+    member private this.RunProcess(phase: string option) (echoOutput: bool) (echoOnlyOnFailure: bool) (fileName: string) (arguments: string list) (workingDirectory: string) (cancellationToken: CancellationToken) =
         async {
             phase |> Option.iter this.AppendGraphOutputLineOnUi
 
@@ -2528,21 +2547,40 @@ type MainWindowViewModel() as this =
             if not (proc.Start()) then
                 return -1
             else
-                let! output = readLines proc.StandardOutput |> Async.StartChild
-                let! error = readLines proc.StandardError |> Async.StartChild
+                this.SetActiveRunProcess(Some proc)
+                use _registration =
+                    cancellationToken.Register(fun () ->
+                        try
+                            if not proc.HasExited then
+                                proc.Kill(true)
+                        with _ ->
+                            ())
 
-                do! proc.WaitForExitAsync() |> Async.AwaitTask
-                let! outputLines = output
-                let! errorLines = error
+                try
+                    let! output = readLines proc.StandardOutput |> Async.StartChild
+                    let! error = readLines proc.StandardError |> Async.StartChild
 
-                if echoOutput && echoOnlyOnFailure && proc.ExitCode <> 0 then
-                    (outputLines @ errorLines)
-                    |> List.iter this.AppendGraphOutputLineOnUi
+                    try
+                        do! proc.WaitForExitAsync(cancellationToken) |> Async.AwaitTask
+                    with
+                    | :? OperationCanceledException ->
+                        if not proc.HasExited then
+                            try proc.Kill(true) with _ -> ()
+                        do! proc.WaitForExitAsync() |> Async.AwaitTask
 
-                return proc.ExitCode
+                    let! outputLines = output
+                    let! errorLines = error
+
+                    if echoOutput && echoOnlyOnFailure && proc.ExitCode <> 0 && not cancellationToken.IsCancellationRequested then
+                        (outputLines @ errorLines)
+                        |> List.iter this.AppendGraphOutputLineOnUi
+
+                    return proc.ExitCode
+                finally
+                    this.SetActiveRunProcess(None)
         }
 
-    member private this.BuildAndRunGeneratedProgram(generatedProgram: string) =
+    member private this.BuildAndRunGeneratedProgram(generatedProgram: string) (cancellationToken: CancellationToken) =
         async {
             try
                 this.SetRunInProgress(true)
@@ -2561,23 +2599,32 @@ type MainWindowViewModel() as this =
                         dotnet
                         [ "build"; projectPath; "--configuration"; "Release"; "--nologo"; "--verbosity"; "quiet"; "--consoleLoggerParameters:ErrorsOnly" ]
                         runProjectDirectory
+                        cancellationToken
 
-                if buildExitCode = 0 then
+                if cancellationToken.IsCancellationRequested then
+                    this.AppendGraphOutputLineOnUi("Run stopped")
+                elif buildExitCode = 0 then
                     let runWorkingDirectory = this.GraphRunWorkingDirectory()
+                    let runStarted = DateTimeOffset.Now
 
                     let! runExitCode =
                         this.RunProcess
-                            None
+                            (Some "Running")
                             true
                             false
                             dotnet
                             [ "run"; "--configuration"; "Release"; "--no-build"; "--project"; projectPath ]
                             runWorkingDirectory
+                            cancellationToken
 
-                    if runExitCode = 0 then
-                        ()
+                    let elapsed = DateTimeOffset.Now - runStarted
+
+                    if cancellationToken.IsCancellationRequested then
+                        this.AppendGraphOutputLineOnUi($"Run stopped after {elapsed:g}")
+                    elif runExitCode = 0 then
+                        this.AppendGraphOutputLineOnUi($"Run completed in {elapsed:g}")
                     else
-                        this.AppendGraphOutputLineOnUi($"Run failed with exit code {runExitCode}")
+                        this.AppendGraphOutputLineOnUi($"Run failed with exit code {runExitCode} after {elapsed:g}")
                 else
                     this.AppendGraphOutputLineOnUi($"Build failed with exit code {buildExitCode}")
             with ex ->
@@ -2890,19 +2937,40 @@ type MainWindowViewModel() as this =
                 match this.ValidateGraph() with
                 | Ok () ->
                     this.SetRunInProgress(true)
+                    let cancellation = new CancellationTokenSource()
+                    runCancellation <- Some cancellation
                     async {
-                        let! fileDirectoryInputsResolved = this.ResolveFileDirectoryInputs()
+                        try
+                            let! fileDirectoryInputsResolved = this.ResolveFileDirectoryInputs()
 
-                        if fileDirectoryInputsResolved then
-                            let generatedProgram = PipelineCodeGenerator.generateSavedGraph (this.ExportGraph())
-                            this.AppendGeneratedProgram(generatedProgram)
-                            do! this.BuildAndRunGeneratedProgram(generatedProgram)
-                        else
+                            if cancellation.IsCancellationRequested then
+                                this.AppendGraphOutputLine("Run stopped")
+                            elif fileDirectoryInputsResolved then
+                                let generatedProgram = PipelineCodeGenerator.generateSavedGraph (this.ExportGraph())
+                                this.AppendGeneratedProgram(generatedProgram)
+                                do! this.BuildAndRunGeneratedProgram(generatedProgram) cancellation.Token
+                            else
+                                this.SetRunInProgress(false)
+                        finally
+                            runCancellation <- None
                             this.SetRunInProgress(false)
+                            cancellation.Dispose()
                     }
                     |> Async.StartImmediate
                 | Error message -> this.AppendGeneratedProgram(message)),
-            (fun _ -> true))
+            (fun _ -> this.CanRunGraph))
+        :> ICommand
+
+    member this.StopRunCommand =
+        SimpleCommand(
+            (fun _ ->
+                match runCancellation with
+                | Some cancellation when not cancellation.IsCancellationRequested ->
+                    this.AppendGraphOutputLine("Stopping")
+                    cancellation.Cancel()
+                    this.KillActiveRunProcess()
+                | _ -> ()),
+            (fun _ -> isRunInProgress))
         :> ICommand
 
     member _.ExportGraph() =
@@ -3076,6 +3144,8 @@ type MainWindowViewModel() as this =
     member this.CanClearGraph = this.HasGraph
 
     member this.CanRunGraph = this.HasGraph && not isRunInProgress
+
+    member _.CanStopRun = isRunInProgress
 
     member _.SuggestedGraphFileName =
         currentGraphPath

@@ -178,16 +178,16 @@ let serialPolynomialBiasCorrect<'T when 'T: equality> order : Stage<Image<'T>, I
                 let width = image.GetWidth()
                 let height = image.GetHeight()
                 let terms, coefficients = fitPolynomial2D order image
-                let output = new Image<float>([ width; height ], 1u, "serialPolynomialBiasCorrect", image.index)
+                let output = Array2D.zeroCreate<float> (int width) (int height)
 
                 for y in 0u .. height - 1u do
                     for x in 0u .. width - 1u do
                         let corrected =
                             (image.Get [ x; y ] |> toDouble)
                             - evalPolynomial2D terms coefficients width height x y
-                        output.Set [ x; y ] corrected
+                        output[int x, int y] <- corrected
 
-                output
+                Image<float>.ofArray2D(output, "serialPolynomialBiasCorrect", image.index)
             finally
                 image.decRefCount())
         id
@@ -457,16 +457,16 @@ let private applyManifestSlice manifest expand background (image: Image<'T>) =
 
         let matrix = transformForSlice manifest image.index
         let inverse = invertMatrix matrix
-        let output = new Image<float>([ outputWidth; outputHeight ], 1u, "serialApplyManifest", image.index)
+        let output = Array2D.zeroCreate<float> (int outputWidth) (int outputHeight)
 
         for y in 0u .. outputHeight - 1u do
             for x in 0u .. outputWidth - 1u do
                 let referenceX = float x + minX
                 let referenceY = float y + minY
                 let inputX, inputY = transformPoint inverse referenceX referenceY
-                output.Set [ x; y ] (sampleBilinear background image inputX inputY)
+                output[int x, int y] <- sampleBilinear background image inputX inputY
 
-        output
+        Image<float>.ofArray2D(output, "serialApplyManifest", image.index)
     finally
         image.decRefCount()
 

@@ -27,6 +27,14 @@ module InternalHelpers =
     val fromType<'T> : itk.simple.PixelIDValueEnum
     val isComplexPixelId: pid: itk.simple.PixelIDValueEnum -> bool
     val isComplexCompatibleImage: itkImg: itk.simple.Image -> bool
+    val isScalarImportSupported<'T> : bool
+    val setImportBuffer<'T> :
+      importer: itk.simple.ImportImageFilter -> buffer: nativeint -> unit
+    val scalarComponentByteSize<'T> : int
+    val getConstBuffer<'T> : image: itk.simple.Image -> nativeint
+    val copyScalarPixels: image: itk.simple.Image -> pixelCount: int -> 'T array
+    val importScalarImage:
+      size: uint list -> pixels: 'T array -> itk.simple.Image
     val ofCastItk<'T> : itkImg: itk.simple.Image -> itk.simple.Image
     val array2dZip: a: 'T array2d -> b: 'U array2d -> ('T * 'U) array2d
     val pixelIdToString: id: itk.simple.PixelIDValueEnum -> string
@@ -152,20 +160,15 @@ type Image<'T when 'T: equality> =
     static member memoryEstimateSItk: sitk: itk.simple.Image -> uint32
     static member minimumImage: f1: Image<'T> -> f2: Image<'T> -> Image<'T>
     static member neq: f1: Image<'S> * f2: Image<'S> -> bool when 'S: equality
-    static member ofArray2D: arr: 'T array2d * ?name: string -> Image<'T>
-    static member ofArray3D: arr: 'T array3d * ?name: string -> Image<'T>
+    static member
+      ofArray2D: arr: 'T array2d * ?name: string * ?index: int -> Image<'T>
+    static member
+      ofArray3D: arr: 'T array3d * ?name: string * ?index: int -> Image<'T>
     static member
       ofArray3DComplex: arr: float array3d * ?name: string ->
                           Image<System.Numerics.Complex>
     static member
       ofArray3DVector: arr: 'S array3d * ?name: string -> Image<'S list>
-                         when 'S: equality
-    static member ofArray4D: arr: 'T array4d * ?name: string -> Image<'T>
-    static member
-      ofArray4DComplex: arr: float array4d * ?name: string ->
-                          Image<System.Numerics.Complex>
-    static member
-      ofArray4DVector: arr: 'S array4d * ?name: string -> Image<'S list>
                          when 'S: equality
     static member
       ofComplexArray2D: arr: System.Numerics.Complex array2d * ?name: string ->
@@ -195,8 +198,6 @@ type Image<'T when 'T: equality> =
     static member setDebugLevel: level: uint32 -> unit
     static member
       toArray3DVector: img: Image<'S list> -> 'S array3d when 'S: equality
-    static member
-      toArray4DVector: img: Image<'S list> -> 'S array4d when 'S: equality
     static member unzip: im: Image<'T list> -> Image<'T> list
     static member zip: imLst: Image<'T> list -> Image<'T list>
     member CompareTo: other: Image<'T> -> int
@@ -229,7 +230,6 @@ type Image<'T when 'T: equality> =
     member incRefCount: unit -> unit
     member toArray2D: unit -> 'T array2d
     member toArray3D: unit -> 'T array3d
-    member toArray4D: unit -> 'T array4d
     member toComplex: unit -> Image<System.Numerics.Complex>
     member toComplexArray2D: unit -> System.Numerics.Complex array2d
     member toComplexArray3D: unit -> System.Numerics.Complex array3d
@@ -264,8 +264,6 @@ type Image<'T when 'T: equality> =
     member Item: i0: int * i1: int -> 'T with set
     member Item: i0: int * i1: int * i2: int -> 'T with get
     member Item: i0: int * i1: int * i2: int -> 'T with set
-    member Item: i0: int * i1: int * i2: int * i3: int -> 'T with get
-    member Item: i0: int * i1: int * i2: int * i3: int -> 'T with set
     member Name: string
     member index: int with get, set
 val Re: img: Image<System.Numerics.Complex> -> Image<float>
@@ -483,7 +481,6 @@ val finiteDiffFilter2D: direction: uint -> order: uint -> Image.Image<float>
 val finiteDiffFilter3D: direction: uint -> order: uint -> Image.Image<float>
 val gradientVector3D:
   order: uint -> img: Image.Image<float> -> Image.Image<float list>
-val finiteDiffFilter4D: direction: uint -> order: uint -> Image.Image<float>
 val discreteGaussian:
   dim: uint ->
     sigma: float ->
