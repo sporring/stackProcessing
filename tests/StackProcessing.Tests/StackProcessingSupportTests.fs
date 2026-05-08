@@ -538,7 +538,7 @@ let stackProcessingSupportSuite =
                 disposeImages cropped
                 disposeImages slices
 
-        testCase "marchingCubes streams mesh chunks and writeMesh writes OBJ" <| fun _ ->
+        testCase "marchingCubes streams triangle sets and writeMesh writes OBJ" <| fun _ ->
             let inputDir = tempDirectory "mesh-input"
             let outputDir = tempDirectory "mesh-output"
             let suffix = ".tiff"
@@ -551,13 +551,13 @@ let stackProcessingSupportSuite =
             try
                 writeSlices inputDir suffix slices
 
-                let chunks =
+                let triangleSets =
                     source (2UL * 1024UL * 1024UL * 1024UL)
                     |> read<uint8> inputDir suffix
                     >=> marchingCubes<uint8> 0.5
                     |> drainList
 
-                Expect.isTrue (chunks |> List.exists (fun chunk -> not chunk.Triangles.IsEmpty)) "marchingCubes should emit at least one triangle chunk for a crossing surface."
+                Expect.isTrue (triangleSets |> List.exists (fun triangleSet -> not triangleSet.Triangles.IsEmpty)) "marchingCubes should emit at least one triangle set for a crossing surface."
 
                 source (2UL * 1024UL * 1024UL * 1024UL)
                 |> read<uint8> inputDir suffix
@@ -573,17 +573,49 @@ let stackProcessingSupportSuite =
                 deleteDirectory inputDir
                 deleteDirectory outputDir
 
-        testCase "point-set CSV read and write round-trip coordinate chunks" <| fun _ ->
+        testCase "surfaceArea scales triangle coordinates before summing areas" <| fun _ ->
+            let triangleSet: TriangleSet =
+                { Triangles =
+                    [ { A = { X = 0.0; Y = 0.0; Z = 0.0 }
+                        B = { X = 1.0; Y = 0.0; Z = 0.0 }
+                        C = { X = 0.0; Y = 1.0; Z = 0.0 } }
+                      { A = { X = 0.0; Y = 0.0; Z = 0.0 }
+                        B = { X = 0.0; Y = 1.0; Z = 0.0 }
+                        C = { X = 0.0; Y = 0.0; Z = 1.0 } } ] }
+
+            let actual =
+                scalarPlan [ triangleSet ]
+                >=> surfaceArea 2.0 3.0 5.0
+                |> drain
+
+            Expect.floatClose Accuracy.high actual 10.5 "surfaceArea should sum areas after anisotropic x/y/z scaling."
+
+        testCase "volume reduces UInt8 0-1 mask slices to physical volume" <| fun _ ->
+            let slices =
+                [ Image<uint8>.ofArray2D(array2D [ [ 1uy; 0uy ]; [ 1uy; 1uy ] ])
+                  Image<uint8>.ofArray2D(array2D [ [ 0uy; 1uy ]; [ 0uy; 0uy ] ]) ]
+
+            try
+                let actual =
+                    imagePlan slices
+                    >=> volume 2.0 3.0 4.0
+                    |> drain
+
+                Expect.floatClose Accuracy.high actual 96.0 "volume should multiply foreground voxel count by physical voxel volume."
+            finally
+                disposeImages slices
+
+        testCase "point-set CSV read and write round-trip point sets" <| fun _ ->
             let outputDir = tempDirectory "point-set"
             let path = Path.Combine(outputDir, "points.csv")
-            let points: PointSetChunk =
+            let points: PointSet =
                 { Points =
                     [ { X = 1.0; Y = 2.0; Z = 3.0; Scale = 1.6; Response = 0.25 }
                       { X = 4.5; Y = 5.5; Z = 6.5; Scale = 2.0; Response = -0.125 } ] }
 
             try
                 scalarPlan [ points ]
-                >=> writePointSet path
+                >=> writePointSet path ".csv"
                 |> sink
 
                 let reread =
@@ -592,6 +624,41 @@ let stackProcessingSupportSuite =
                     |> drain
 
                 Expect.equal reread points "Point-set CSV should preserve x,y,z,scale,response values."
+            finally
+                deleteDirectory outputDir
+
+        testCase "pointPairDistances returns a vectorized physical distance matrix" <| fun _ ->
+            let outputDir = tempDirectory "distance-matrix"
+            let outputPath = Path.Combine(outputDir, "distances.csv")
+            let points: PointSet =
+                { Points =
+                    [ point 0.0 0.0 0.0
+                      point 1.0 0.0 0.0
+                      point 1.0 2.0 2.0 ] }
+
+            try
+                let distances =
+                    scalarPlan [ points ]
+                    >=> pointPairDistances 2.0 3.0 4.0
+                    |> drain
+
+                let matrix = unvectorizeMatrix distances
+                Expect.equal distances.Rows 3u "pointPairDistances should preserve the row count."
+                Expect.equal distances.Columns 3u "pointPairDistances should preserve the column count."
+                Expect.floatClose Accuracy.high matrix[0, 1] 2.0 "x distance should use xUnit."
+                Expect.floatClose Accuracy.high matrix[1, 2] 10.0 "y/z distance should use yUnit and zUnit."
+                Expect.floatClose Accuracy.high matrix[2, 1] 10.0 "distance matrix should be symmetric."
+
+                let vectorizedAgain = vectorizeMatrix matrix
+                Expect.equal vectorizedAgain distances "matrix vectorization should round-trip through unvectorizeMatrix."
+
+                scalarPlan [ distances ]
+                >=> writeMatrix outputPath ".csv"
+                |> sink
+
+                let csv = File.ReadAllLines(outputPath)
+                Expect.equal csv.Length 3 "writeMatrix should write one row per matrix row."
+                Expect.stringContains csv[0] "2" "writeMatrix should include matrix values."
             finally
                 deleteDirectory outputDir
 
@@ -605,12 +672,12 @@ let stackProcessingSupportSuite =
                     image ]
 
             try
-                let chunks =
+                let pointSets =
                     imagePlan slices
                     >=> dogKeypoints<uint8> 0.5 1.2 4u 0.0001 1u
                     |> drainList
 
-                let points = chunks |> List.collect _.Points
+                let points = pointSets |> List.collect _.Points
                 Expect.isTrue (points |> List.exists (fun p -> p.X = 4.0 && p.Y = 4.0 && p.Z = 4.0)) "A centered impulse should produce a keypoint near the impulse coordinate."
             finally
                 disposeImages slices
@@ -625,12 +692,12 @@ let stackProcessingSupportSuite =
                     image ]
 
             try
-                let chunks =
+                let pointSets =
                     imagePlan slices
                     >=> siftKeypoints<uint8> 0.5 1.2 4u 0.0001 1u
                     |> drainList
 
-                let points = chunks |> List.collect _.Points
+                let points = pointSets |> List.collect _.Points
                 Expect.isTrue (points |> List.exists (fun p -> p.X = 4.0 && p.Y = 4.0 && p.Z = 4.0)) "A centered impulse should produce a SIFT-style keypoint near the impulse coordinate."
             finally
                 disposeImages slices
@@ -668,7 +735,7 @@ let stackProcessingSupportSuite =
                   T = TinyLinAlg.v3 2.0 -3.0 0.5
                   C = TinyLinAlg.v3 1.0 2.0 -1.0 }
 
-            let original: PointSetChunk =
+            let original: PointSet =
                 { Points = [ point 4.0 -2.0 3.0; point -1.0 5.0 2.5 ] }
             let roundTripped =
                 original
@@ -1656,6 +1723,42 @@ let stackProcessingSupportSuite =
                 Expect.equal eigenvalues[2].[2, 2] [ 1.0; 0.0; 0.0 ] "selectGroupedOutput 4 0 should select eigenvalues."
             finally
                 disposeImages eigenvalues
+
+        testCase "StackProcessing PCA reduces 3-vector images to eigensystem streams" <| fun _ ->
+            let vectors = new Image<float list>([ 2u; 1u ], 3u, "pca-input", 0)
+            vectors.[0, 0] <- [ 1.0; 0.0; 0.0 ]
+            vectors.[1, 0] <- [ -1.0; 0.0; 0.0 ]
+
+            let actual =
+                imagePlan [ vectors ]
+                >=> StackProcessing.PCA 3u
+                |> drainList
+
+            try
+                Expect.equal actual.Length 4 "PCA should emit eigenvalues plus three eigenvector images."
+                actual |> List.iter (fun image ->
+                    Expect.equal (image.GetSize()) [ 1u; 1u ] "PCA outputs should be singleton images."
+                    Expect.equal (image.GetNumberOfComponentsPerPixel()) 3u "PCA outputs should be 3-vector images.")
+                Expect.equal actual[0].[0, 0] [ 1.0; 0.0; 0.0 ] "PCA eigenvalues should capture variance along x."
+                Expect.floatClose Accuracy.high (System.Math.Abs(actual[1].[0, 0].[0])) 1.0 "The first PCA eigenvector should point along x, up to sign."
+            finally
+                disposeImages actual
+
+            let vectors2D = new Image<float list>([ 2u; 1u ], 2u, "pca-input-2d", 0)
+            vectors2D.[0, 0] <- [ 2.0; 0.0 ]
+            vectors2D.[1, 0] <- [ -2.0; 0.0 ]
+
+            let actual2D =
+                imagePlan [ vectors2D ]
+                >=> StackProcessing.PCA 2u
+                |> drainList
+
+            try
+                Expect.equal actual2D.Length 3 "2-component PCA should emit eigenvalues plus two eigenvector images."
+                actual2D |> List.iter (fun image -> Expect.equal (image.GetNumberOfComponentsPerPixel()) 2u "2-component PCA outputs should be 2-vector images.")
+                Expect.equal actual2D[0].[0, 0] [ 4.0; 0.0 ] "2-component PCA eigenvalues should capture variance along x."
+            finally
+                disposeImages actual2D
 
         testCase "StackProcessing facade exposes complex image wrappers" <| fun _ ->
             let makeReal () = Image<float>.ofArray2D (array2D [ [ 3.0; 1.0 ]; [ -2.0; 0.0 ] ])

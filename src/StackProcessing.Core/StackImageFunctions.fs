@@ -636,6 +636,159 @@ let private splitEigenImages : Stage<Image<float list>, Image<float list>> =
         (fun slices -> slices * 4UL)
     --> flattenList ()
 
+type private PcaAccumulator =
+    { Count: uint64
+      Components: int
+      Sums: float[]
+      Products: float[,] }
+
+let private zeroPcaAccumulator (components: int) : PcaAccumulator =
+    { Count = 0UL
+      Components = components
+      Sums = Array.zeroCreate components
+      Products = Array2D.zeroCreate components components }
+
+let private addPcaVector (state: PcaAccumulator) (values: float list) : PcaAccumulator =
+    let values = values |> List.toArray
+    if values.Length <> state.Components then
+        failwith $"PCA: expected {state.Components}-component vectors, got {values.Length}."
+
+    let sums = Array.copy state.Sums
+    let products = Array2D.copy state.Products
+    values |> Array.iteri (fun i value -> sums[i] <- sums[i] + value)
+    for i in 0 .. state.Components - 1 do
+        for j in i .. state.Components - 1 do
+            let product = values[i] * values[j]
+            products[i, j] <- products[i, j] + product
+            if i <> j then products[j, i] <- products[j, i] + product
+
+    { state with
+        Count = state.Count + 1UL
+        Sums = sums
+        Products = products }
+
+let private vectorImageIndices (image: Image<float list>) =
+    match image.GetSize() with
+    | [ width; height ] ->
+        seq {
+            for y in 0u .. height - 1u do
+                for x in 0u .. width - 1u do
+                    yield [ x; y ]
+        }
+    | [ width; height; depth ] ->
+        seq {
+            for z in 0u .. depth - 1u do
+                for y in 0u .. height - 1u do
+                    for x in 0u .. width - 1u do
+                        yield [ x; y; z ]
+        }
+    | size ->
+        invalidArg "image" $"PCA: expected 2D or 3D vector images, got size {size}."
+
+let private pcaOutputImage name components values =
+    let image = new Image<float list>([ 1u; 1u ], uint components, name, 0)
+    image.Set [ 0u; 0u ] values
+    image
+
+let private symmetricEigenN (matrix: float[,]) : (float * float list) list =
+    let n = matrix.GetLength(0)
+    if n <> matrix.GetLength(1) then invalidArg "matrix" "PCA eigen decomposition expects a square matrix."
+    if n < 2 then invalidArg "matrix" "PCA eigen decomposition expects at least two components."
+
+    let a = Array2D.copy matrix
+    let v = Array2D.zeroCreate<float> n n
+    for i in 0 .. n - 1 do
+        v[i, i] <- 1.0
+
+    let rotate p q =
+        if System.Math.Abs a[p, q] > 1e-14 then
+            let tau = (a[q, q] - a[p, p]) / (2.0 * a[p, q])
+            let sign = if tau >= 0.0 then 1.0 else -1.0
+            let t = sign / (System.Math.Abs tau + System.Math.Sqrt (1.0 + tau * tau))
+            let c = 1.0 / System.Math.Sqrt (1.0 + t * t)
+            let s = t * c
+            let app = a[p, p]
+            let aqq = a[q, q]
+            let apq = a[p, q]
+
+            a[p, p] <- app - t * apq
+            a[q, q] <- aqq + t * apq
+            a[p, q] <- 0.0
+            a[q, p] <- 0.0
+
+            for r in 0 .. n - 1 do
+                if r <> p && r <> q then
+                    let arp = a[r, p]
+                    let arq = a[r, q]
+                    a[r, p] <- c * arp - s * arq
+                    a[p, r] <- a[r, p]
+                    a[r, q] <- s * arp + c * arq
+                    a[q, r] <- a[r, q]
+
+            for r in 0 .. n - 1 do
+                let vrp = v[r, p]
+                let vrq = v[r, q]
+                v[r, p] <- c * vrp - s * vrq
+                v[r, q] <- s * vrp + c * vrq
+
+    for _ in 1 .. System.Math.Max(32, 8 * n * n) do
+        for p in 0 .. n - 2 do
+            for q in p + 1 .. n - 1 do
+                rotate p q
+
+    [ for i in 0 .. n - 1 ->
+        let vector = [ for r in 0 .. n - 1 -> v[r, i] ]
+        let norm = vector |> List.sumBy (fun value -> value * value) |> System.Math.Sqrt
+        let vector = if norm < 1e-18 then vector else vector |> List.map (fun value -> value / norm)
+        a[i, i], vector ]
+    |> List.sortByDescending fst
+
+let private pcaImages (state: PcaAccumulator) : Image<float list> list =
+    if state.Count = 0UL then
+        invalidOp "PCA cannot reduce an empty vector image stream."
+
+    let n = float state.Count
+    let means = state.Sums |> Array.map (fun sum -> sum / n)
+    let covariance = Array2D.zeroCreate<float> state.Components state.Components
+    for i in 0 .. state.Components - 1 do
+        for j in 0 .. state.Components - 1 do
+            covariance[i, j] <- state.Products[i, j] / n - means[i] * means[j]
+
+    let eigen = symmetricEigenN covariance
+    let eigenvalues = eigen |> List.map fst
+    [ yield pcaOutputImage "PCAEigenvalues" state.Components eigenvalues
+      for index, (_, vector) in eigen |> List.indexed do
+          yield pcaOutputImage $"PCAEigenvector{index}" state.Components vector ]
+
+let PCA components : Stage<Image<float list>, Image<float list>> =
+    if components < 2u then invalidArg "components" "PCA needs at least two vector components."
+    let components = int components
+    let reducer (_debug: bool) (input: AsyncSeq<Image<float list>>) =
+        async {
+            let! state =
+                input
+                |> AsyncSeq.foldAsync
+                    (fun state image ->
+                        async {
+                            try
+                                if image.GetNumberOfComponentsPerPixel() <> uint components then
+                                    invalidArg "image" $"PCA: expected {components}-component vector images, got {image.GetNumberOfComponentsPerPixel()} components."
+
+                                let state' =
+                                    vectorImageIndices image
+                                    |> Seq.fold (fun acc idx -> addPcaVector acc (image.Get idx)) state
+                                return state'
+                            finally
+                                image.decRefCount()
+                        })
+                    (zeroPcaAccumulator components)
+
+            return pcaImages state
+        }
+
+    Stage.reduce "PCA" reducer Streaming (fun _ -> uint64 ((components + 1) * components * sizeof<float>)) (fun _ -> uint64 (components + 1))
+    --> flattenList ()
+
 let selectGroupedOutput (groupSize: uint) (part: uint) : Stage<Image<'T>, Image<'T>> =
     if groupSize = 0u then
         invalidArg "groupSize" "selectGroupedOutput: groupSize must be positive."
@@ -890,6 +1043,32 @@ let sumProjection<'T when 'T: equality> transformName : Stage<Image<'T>, Image<f
         imageBytes<float> nElems
 
     Stage.reduce $"sumProjection {transformName}" reducer Streaming memoryNeed id
+
+let volume xUnit yUnit zUnit : Stage<Image<uint8>, float> =
+    if xUnit <= 0.0 then invalidArg (nameof xUnit) "xUnit must be positive."
+    if yUnit <= 0.0 then invalidArg (nameof yUnit) "yUnit must be positive."
+    if zUnit <= 0.0 then invalidArg (nameof zUnit) "zUnit must be positive."
+
+    let voxelVolume = xUnit * yUnit * zUnit
+
+    let folder volume (image: Image<uint8>) =
+        try
+            let width = int (image.GetWidth())
+            let height = int (image.GetHeight())
+            let mutable foreground = 0UL
+            for y in 0 .. height - 1 do
+                for x in 0 .. width - 1 do
+                    match image[x, y] with
+                    | 0uy -> ()
+                    | 1uy -> foreground <- foreground + 1UL
+                    | value ->
+                        invalidOp $"volume expects a UInt8 0-1 mask stream; got pixel value {value} at ({x}, {y}) in slice {image.index}."
+
+            volume + float foreground * voxelVolume
+        finally
+            image.decRefCount()
+
+    Stage.fold "volume" folder 0.0 id (fun _ -> 1UL)
 
 let quantiles (quantileValues: float list) (histogram: Map<'T,uint64>) =
     ImageFunctions.quantilesFromHistogram quantileValues histogram

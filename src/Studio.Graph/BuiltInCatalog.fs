@@ -19,6 +19,7 @@ module BuiltInCatalog =
   let connectedComponentLabels = PortType.Tuple(imageUInt64, PortType.Scalar(BasicType.Numeric UInt64))
   let mesh = PortType.Custom "Mesh"
   let pointSet = PortType.Custom "PointSet"
+  let float64Matrix = PortType.Custom "Float64Matrix"
   let streamedObjects = PortType.Custom "StreamedObjects"
   let intList = PortType.Custom "IntList"
   let uint64List = PortType.Custom "UInt64List"
@@ -616,6 +617,19 @@ module BuiltInCatalog =
                 makePort "Var: Float64" (Scalar(BasicType.Numeric Float64)) ]
           Parameters = [] }
 
+        { Id = "Volume"
+          DisplayName = "volume"
+          Category = "Statistics"
+          Summary = "Reduce a UInt8 0-1 mask stream to real-world object volume."
+          Description = "Counts foreground voxels in a UInt8 mask stream where pixels must be 0 or 1, then multiplies by xUnit * yUnit * zUnit. Use the unit parameters to convert voxel counts into physical volume units."
+          Aliases = [ "volume"; "mask"; "voxel"; "object"; "measure"; "reducer" ]
+          Inputs = [ makePort "UInt8 mask" imageUInt8 ]
+          Outputs = [ makePort "Volume: Float64" (Scalar(BasicType.Numeric Float64)) ]
+          Parameters =
+              [ makeParameter "xUnit" "X unit" "1.0" (BasicType.Numeric Float64)
+                makeParameter "yUnit" "Y unit" "1.0" (BasicType.Numeric Float64)
+                makeParameter "zUnit" "Z unit" "1.0" (BasicType.Numeric Float64) ] }
+
         { Id = "Write"
           DisplayName = "write"
           Category = "Sources / Sinks"
@@ -692,7 +706,7 @@ module BuiltInCatalog =
           DisplayName = "writeMesh"
           Category = "Sources / Sinks"
           Summary = "Write a streamed triangle mesh to OBJ, STL, or PLY."
-          Description = "Writes mesh chunks produced by marchingCubes. OBJ and ASCII STL are written in a streaming-friendly pass. ASCII PLY is also supported, but its header needs vertex and face counts, so chunks are counted before the file is finalized. Use OBJ for the broadest compatibility during exploratory streaming workflows."
+          Description = "Writes triangle sets produced by marchingCubes. OBJ and ASCII STL are written in a streaming-friendly pass. ASCII PLY is also supported, but its header needs vertex and face counts, so triangle sets are counted before the file is finalized. Use OBJ for the broadest compatibility during exploratory streaming workflows."
           Aliases = [ "mesh"; "surface"; "triangles"; "obj"; "stl"; "ply"; "write"; "save" ]
           Inputs = [ makePort "Mesh" mesh ]
           Outputs = []
@@ -700,15 +714,55 @@ module BuiltInCatalog =
               [ makeParameter "output" "Output" "surface.obj" BasicType.String
                 makeParameter "format" "Format" "auto" BasicType.String ] }
 
+        { Id = "SurfaceArea"
+          DisplayName = "surfaceArea"
+          Category = "Geometry"
+          Summary = "Reduce a triangle mesh stream to real-world surface area."
+          Description = "Sums triangle areas from streamed triangle sets, scaling x, y, and z coordinates by the supplied unit sizes before area is computed. This lets marching-cubes surfaces be measured in physical units when voxel spacing is anisotropic."
+          Aliases = [ "area"; "surface"; "mesh"; "triangles"; "measure"; "reducer" ]
+          Inputs = [ makePort "Mesh" mesh ]
+          Outputs = [ makePort "Area: Float64" (Scalar(BasicType.Numeric Float64)) ]
+          Parameters =
+              [ makeParameter "xUnit" "X unit" "1.0" (BasicType.Numeric Float64)
+                makeParameter "yUnit" "Y unit" "1.0" (BasicType.Numeric Float64)
+                makeParameter "zUnit" "Z unit" "1.0" (BasicType.Numeric Float64) ] }
+
         { Id = "WritePointSet"
           DisplayName = "writePointSet"
           Category = "Sources / Sinks"
-          Summary = "Write coordinate point chunks to a CSV file."
+          Summary = "Write coordinate point sets to a CSV file."
           Description = pointSetDescription
           Aliases = [ "points"; "csv"; "keypoints"; "coordinates"; "features"; "write"; "save" ]
           Inputs = [ makePort "PointSet" pointSet ]
           Outputs = []
-          Parameters = [ makeParameter "output" "Output" "points.csv" BasicType.String ] }
+          Parameters =
+              [ makeParameter "output" "Output" "points" BasicType.String
+                suffixParameter ".csv" ] }
+
+        { Id = "PointPairDistances"
+          DisplayName = "pointPairDistances"
+          Category = "Geometry"
+          Summary = "Reduce point sets to a vectorized Euclidean distance matrix."
+          Description = "Collects streamed point sets, scales x, y, and z coordinates by the supplied unit sizes, and computes the Euclidean distance between every pair. The result is a row-major vectorized Float64 distance matrix that can be converted back to a matrix with unvectorizeMatrix."
+          Aliases = [ "points"; "distance"; "matrix"; "pairwise"; "euclidean"; "dog"; "keypoints"; "reducer" ]
+          Inputs = [ makePort "PointSet" pointSet ]
+          Outputs = [ makePort "Distance matrix" float64Matrix ]
+          Parameters =
+              [ makeParameter "xUnit" "X unit" "1.0" (BasicType.Numeric Float64)
+                makeParameter "yUnit" "Y unit" "1.0" (BasicType.Numeric Float64)
+                makeParameter "zUnit" "Z unit" "1.0" (BasicType.Numeric Float64) ] }
+
+        { Id = "WriteMatrix"
+          DisplayName = "writeMatrix"
+          Category = "Sources / Sinks"
+          Summary = "Write a vectorized Float64 matrix to a file."
+          Description = "Writes a row-major vectorized Float64 matrix, such as the output of pointPairDistances. The current supported format is CSV, with one row per matrix row; the suffix parameter leaves the surface open for additional formats later."
+          Aliases = [ "matrix"; "csv"; "write"; "save"; "distance" ]
+          Inputs = [ makePort "Float64 matrix" float64Matrix ]
+          Outputs = []
+          Parameters =
+              [ makeParameter "output" "Output" "matrix" BasicType.String
+                suffixParameter ".csv" ] }
 
         { Id = "WriteNexus"
           DisplayName = "writeNexus"
@@ -1175,6 +1229,25 @@ module BuiltInCatalog =
             [ makeParameter "sigma" "Sigma" "1.0" (BasicType.Numeric Float64)
               makeParameter "rho" "Rho" "2.0" (BasicType.Numeric Float64) ] }
 
+        { Id = "PCA"
+          DisplayName = "PCA"
+          Category = "Vector Images"
+          Summary = "Reduce vector images to a principal-component eigensystem."
+          Description = "Computes principal component analysis over all vector pixels in the input stream. Components selects the vector dimensionality, from 2 to 8 in Studio. The reducer emits singleton vector streams: eigenvalues followed by one eigenvector stream per component, sorted by descending eigenvalue."
+          Aliases = [ "pca"; "principal"; "component"; "covariance"; "eigen"; "vector"; "reducer" ]
+          Inputs = [ makePort "Vector Float64" vectorImageFloat64 ]
+          Outputs =
+            [ makePort "Eigenvalues" vectorImageFloat64
+              makePort "Eigenvector 0" vectorImageFloat64
+              makePort "Eigenvector 1" vectorImageFloat64
+              makePort "Eigenvector 2" vectorImageFloat64
+              makePort "Eigenvector 3" vectorImageFloat64
+              makePort "Eigenvector 4" vectorImageFloat64
+              makePort "Eigenvector 5" vectorImageFloat64
+              makePort "Eigenvector 6" vectorImageFloat64
+              makePort "Eigenvector 7" vectorImageFloat64 ]
+          Parameters = [ makeParameter "components" "Components" "3" (BasicType.Numeric UInt32) ] }
+
         { Id = "SmoothWGauss"
           DisplayName = "smoothWGauss"
           Category = "Filters"
@@ -1639,7 +1712,7 @@ module BuiltInCatalog =
           DisplayName = "marchingCubes"
           Category = "Geometry"
           Summary = "Extract a streamed triangle surface from consecutive image slices."
-          Description = "Builds a triangle mesh from a rolling two-slice window. Each pair of consecutive slices forms the cubes needed for a local isosurface, so the operation is larger-than-memory friendly in z. The surface value is compared directly to the selected image type values; using the desired label or threshold value avoids an extra subtraction or recentering stage. The implementation triangulates each cube locally and emits mesh chunks for writeMesh."
+          Description = "Builds a triangle mesh from a rolling two-slice window. Each pair of consecutive slices forms the cubes needed for a local isosurface, so the operation is larger-than-memory friendly in z. The surface value is compared directly to the selected image type values; using the desired label or threshold value avoids an extra subtraction or recentering stage. The implementation triangulates each cube locally and emits triangle sets for writeMesh."
           Aliases = [ "marching"; "cubes"; "mesh"; "surface"; "isosurface"; "triangles"; "geometry" ]
           Inputs = [ makePort "Number" imageAny ]
           Outputs = [ makePort "Mesh" mesh ]

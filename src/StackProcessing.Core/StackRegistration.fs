@@ -151,7 +151,7 @@ let earthMoversDistance (fixedPoints: CoordinatePoint seq) (movingPoints: Coordi
     else
         greedyTransportDistance fixedPoints movingPoints
 
-let transformPointSet (transform: Affine) (points: PointSetChunk) =
+let transformPointSet (transform: Affine) (points: PointSet) =
     { Points =
         points.Points
         |> List.map (fun point ->

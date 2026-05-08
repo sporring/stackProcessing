@@ -270,7 +270,7 @@ type MainView() as this =
         | _ -> false
 
     let candidateIsDataConnector (outputPin: PipelinePinViewModel) (inputPin: PipelinePinViewModel) =
-        outputPin.Kind = DataOutput && inputPin.Kind = DataInput
+        (outputPin.Kind = DataOutput || outputPin.Kind = ReducerOutput) && inputPin.Kind = DataInput
 
     let candidateIsParameterConnector (outputPin: PipelinePinViewModel) (inputPin: PipelinePinViewModel) =
         (outputPin.Kind = ScalarOutput || outputPin.Kind = ReducerOutput) && inputPin.Kind = ParameterInput

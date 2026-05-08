@@ -71,7 +71,7 @@ let catalogSuite =
     testList "Studio.Graph catalog" [
         testCase "catalog exposes expected generic functions" <| fun _ ->
             let ids = BuiltInCatalog.orderedFunctions |> List.map _.Id
-            Expect.containsAll ids ["Scalar"; "FileDirectory"; "Read"; "ReadRandom"; "ReadRange"; "ReadSlab"; "ReadZarrSlab"; "ReadNexusSlab"; "ReadPointSet"; "Zero"; "NormalNoise"; "SaltAndPepperNoise"; "ShotNoise"; "SpeckleNoise"; "Write"; "WriteInSlabs"; "WriteZarr"; "WriteNexus"; "WriteMesh"; "WritePointSet"; "GetStackInfo"; "GetChunkInfo"; "GetZarrInfo"; "GetNexusInfo"; "Resize"; "Resample"; "CreatePadding"; "Crop"; "MarchingCubes"; "DogKeypoints"; "SiftKeypoints"; "StreamConnectedObjects"; "PaintObjects"; "PaintObjectsCropped"; "ImageOpImage"; "ComputeStats"; "Quantiles"; "Chart"; "SumProjection"] "Important Studio functions should be in the palette catalog."
+            Expect.containsAll ids ["Scalar"; "FileDirectory"; "Read"; "ReadRandom"; "ReadRange"; "ReadSlab"; "ReadZarrSlab"; "ReadNexusSlab"; "ReadPointSet"; "Zero"; "NormalNoise"; "SaltAndPepperNoise"; "ShotNoise"; "SpeckleNoise"; "Write"; "WriteInSlabs"; "WriteZarr"; "WriteNexus"; "WriteMesh"; "WritePointSet"; "WriteMatrix"; "GetStackInfo"; "GetChunkInfo"; "GetZarrInfo"; "GetNexusInfo"; "Resize"; "Resample"; "CreatePadding"; "Crop"; "MarchingCubes"; "SurfaceArea"; "DogKeypoints"; "SiftKeypoints"; "PointPairDistances"; "StreamConnectedObjects"; "PaintObjects"; "PaintObjectsCropped"; "ImageOpImage"; "ComputeStats"; "Volume"; "Quantiles"; "Chart"; "SumProjection"] "Important Studio functions should be in the palette catalog."
             Expect.containsAll ids ["AddNormalNoise"; "AddSaltAndPepperNoise"; "AddShotNoise"; "AddSpeckleNoise"] "Noise add-stage boxes should be available in Studio."
             Expect.containsAll ids ["Convolve"; "RelabelComponents"; "SignedDistanceBand"; "OtsuThresholdFromHistogram"; "MomentsThresholdFromHistogram"; "ResampleAffineTrilinearSlices"] "The StackProcessing DSL algorithms requested for Studio should be in the palette catalog."
             Expect.isFalse (ids |> List.contains "BinaryFillHoles") "binaryFillHoles is a whole-stack SimpleITK operation and should not be exposed as an LMIP Studio box."
@@ -83,6 +83,23 @@ let catalogSuite =
             Expect.isFalse (ids |> List.contains "SampledMomentsThreshold") "sampledMomentsThreshold hides the histogram-to-threshold step and should not be exposed."
             Expect.containsAll ids ["Clamp"; "ShiftScale"; "IntensityStretch"; "SmoothWMedian"; "SmoothWBilateral"; "GradientMagnitude"; "SobelEdge"; "Laplacian"; "ImageComparison"; "MaskLogic"; "MaskNot"] "The high-value SimpleITK filter families should be available in Studio."
             Expect.isFalse (ids |> List.contains "Mask") "mask is intentionally not exposed; use binary arithmetic/logical stages directly."
+
+        testCase "geometry measurement catalog uses mesh and scalar reducer ports" <| fun _ ->
+            let ids = BuiltInCatalog.orderedFunctions |> List.map _.Id
+            let surfaceArea = BuiltInCatalog.find "SurfaceArea"
+            let volume = BuiltInCatalog.find "Volume"
+            let pointPairDistances = BuiltInCatalog.find "PointPairDistances"
+            let writeMatrix = BuiltInCatalog.find "WriteMatrix"
+
+            Expect.equal surfaceArea.Inputs.[0].Type (PortType.Custom "Mesh") "surfaceArea should consume streamed triangle sets."
+            Expect.equal surfaceArea.Outputs.[0].Type (PortType.Scalar(BasicType.Numeric Float64)) "surfaceArea should emit a scalar Float64 reducer output."
+            Expect.equal surfaceArea.Parameters.Length 3 "surfaceArea should expose x/y/z unit parameters."
+            Expect.equal volume.Inputs.[0].Type (PortType.Image UInt8) "volume should consume UInt8 0-1 mask slices."
+            Expect.equal volume.Outputs.[0].Type (PortType.Scalar(BasicType.Numeric Float64)) "volume should emit a scalar Float64 reducer output."
+            Expect.equal volume.Parameters.Length 3 "volume should expose x/y/z unit parameters."
+            Expect.equal pointPairDistances.Inputs.[0].Type (PortType.Custom "PointSet") "pointPairDistances should consume point sets."
+            Expect.equal pointPairDistances.Outputs.[0].Type (PortType.Custom "Float64Matrix") "pointPairDistances should emit a vectorized Float64 matrix."
+            Expect.equal writeMatrix.Inputs.[0].Type (PortType.Custom "Float64Matrix") "writeMatrix should consume vectorized Float64 matrices."
             Expect.isFalse (ids |> List.contains "Normalize") "normalize is intentionally not exposed as a streaming Studio box; use computeStats plus shiftScale."
             Expect.isFalse (ids |> List.contains "RescaleIntensity") "rescaleIntensity is intentionally not exposed as a streaming Studio box; use sampled statistics or quantiles plus intensityStretch."
             Expect.isFalse (ids |> List.contains "IntensityWindow") "intensityWindow overlaps with intensityStretch and should not be exposed as a separate Studio box."
@@ -117,6 +134,7 @@ let catalogSuite =
             let vectorAngleTo = BuiltInCatalog.find "VectorAngleTo"
             let gradient = BuiltInCatalog.find "Gradient"
             let structureTensor = BuiltInCatalog.find "StructureTensor"
+            let pca = BuiltInCatalog.find "PCA"
 
             Expect.equal toVectorImage.Outputs.[0].Type vectorType "toVectorImage should emit a vector-valued image stream."
             Expect.equal appendVectorElement.Inputs.[0].Type vectorType "appendVectorElement should consume an existing vector image."
@@ -130,6 +148,9 @@ let catalogSuite =
             Expect.equal gradient.Outputs.[0].Type vectorType "gradient should emit vector-valued pixels."
             Expect.equal structureTensor.Inputs.[0].Type (PortType.Image Float64) "structureTensor should consume scalar Float64 slices."
             Expect.equal (structureTensor.Outputs |> List.map _.Type) [ vectorType; vectorType; vectorType; vectorType ] "structureTensor should expose four vector-valued outputs."
+            Expect.equal pca.Inputs.[0].Type vectorType "PCA should consume vector-valued images."
+            Expect.equal pca.Outputs.Length 9 "PCA should expose eigenvalues plus up to eight eigenvector outputs."
+            Expect.equal (pca.Outputs |> List.map _.Type) (List.replicate 9 vectorType) "PCA outputs should be vector-valued."
 
         testCase "complex image catalog uses complex and Float64 ports" <| fun _ ->
             let fromReIm = BuiltInCatalog.find "ComplexFromReIm"

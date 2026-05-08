@@ -1,55 +1,54 @@
 SF:/Users/jrh630/repositories/stackProcessing/src/Studio.Graph/BuiltInCatalog.fs
-FN:26,Studio.Graph.Port Studio.Graph.BuiltInCatalog::makePort(System.String,Studio.Graph.PortType)
-FNDA:251,Studio.Graph.Port Studio.Graph.BuiltInCatalog::makePort(System.String,Studio.Graph.PortType)
-DA:27,251
-DA:28,251
-FN:30,Studio.Graph.Parameter Studio.Graph.BuiltInCatalog::makeParameter(System.String,System.String,System.String,Studio.Graph.BasicType)
-FNDA:325,Studio.Graph.Parameter Studio.Graph.BuiltInCatalog::makeParameter(System.String,System.String,System.String,Studio.Graph.BasicType)
-DA:31,325
-DA:32,325
-DA:33,325
-DA:34,325
-FN:39,Studio.Graph.Parameter Studio.Graph.BuiltInCatalog::suffixParameter(System.String)
-FNDA:11,Studio.Graph.Parameter Studio.Graph.BuiltInCatalog::suffixParameter(System.String)
-DA:40,11
-FN:183,System.String Studio.Graph.BuiltInCatalog::numericDefaultValue(Studio.Graph.NumericType)
+FN:27,Studio.Graph.Port Studio.Graph.BuiltInCatalog::makePort(System.String,Studio.Graph.PortType)
+FNDA:268,Studio.Graph.Port Studio.Graph.BuiltInCatalog::makePort(System.String,Studio.Graph.PortType)
+DA:28,268
+DA:29,268
+FN:31,Studio.Graph.Parameter Studio.Graph.BuiltInCatalog::makeParameter(System.String,System.String,System.String,Studio.Graph.BasicType)
+FNDA:338,Studio.Graph.Parameter Studio.Graph.BuiltInCatalog::makeParameter(System.String,System.String,System.String,Studio.Graph.BasicType)
+DA:32,338
+DA:33,338
+DA:34,338
+DA:35,338
+FN:40,Studio.Graph.Parameter Studio.Graph.BuiltInCatalog::suffixParameter(System.String)
+FNDA:13,Studio.Graph.Parameter Studio.Graph.BuiltInCatalog::suffixParameter(System.String)
+DA:41,13
+FN:184,System.String Studio.Graph.BuiltInCatalog::numericDefaultValue(Studio.Graph.NumericType)
 FNDA:6,System.String Studio.Graph.BuiltInCatalog::numericDefaultValue(Studio.Graph.NumericType)
-DA:184,6
-DA:190,0
-DA:192,0
+DA:185,6
+DA:191,0
 DA:193,0
-DA:195,6
-DA:196,0
-BRDA:184,7,0,0
-BRDA:184,7,2,0
-BRDA:184,7,3,0
-BRDA:184,7,4,0
-BRDA:184,7,5,0
-BRDA:184,7,6,0
-BRDA:184,7,7,0
-BRDA:184,7,8,0
-BRDA:184,7,9,0
-BRDA:184,7,10,0
-BRDA:184,7,1,6
-BRDA:184,7,11,6
-BRDA:184,7,12,0
-FN:198,System.String Studio.Graph.BuiltInCatalog::scalarDefaultValue(Studio.Graph.BasicType)
+DA:194,0
+DA:196,6
+DA:197,0
+BRDA:185,7,0,0
+BRDA:185,7,2,0
+BRDA:185,7,3,0
+BRDA:185,7,4,0
+BRDA:185,7,5,0
+BRDA:185,7,6,0
+BRDA:185,7,7,0
+BRDA:185,7,8,0
+BRDA:185,7,9,0
+BRDA:185,7,10,0
+BRDA:185,7,1,6
+BRDA:185,7,11,6
+BRDA:185,7,12,0
+FN:199,System.String Studio.Graph.BuiltInCatalog::scalarDefaultValue(Studio.Graph.BasicType)
 FNDA:1,System.String Studio.Graph.BuiltInCatalog::scalarDefaultValue(Studio.Graph.BasicType)
-DA:199,1
-DA:200,0
+DA:200,1
 DA:201,0
 DA:202,0
 DA:203,0
-DA:204,1
-BRDA:199,8,0,0
-BRDA:199,8,2,0
-BRDA:199,8,3,0
-BRDA:199,8,4,0
-BRDA:199,8,5,0
-BRDA:199,8,1,1
-FN:206,Studio.Graph.Function Studio.Graph.BuiltInCatalog::makeGenericScalar()
+DA:204,0
+DA:205,1
+BRDA:200,8,0,0
+BRDA:200,8,2,0
+BRDA:200,8,3,0
+BRDA:200,8,4,0
+BRDA:200,8,5,0
+BRDA:200,8,1,1
+FN:207,Studio.Graph.Function Studio.Graph.BuiltInCatalog::makeGenericScalar()
 FNDA:1,Studio.Graph.Function Studio.Graph.BuiltInCatalog::makeGenericScalar()
-DA:207,1
 DA:208,1
 DA:209,1
 DA:210,1
@@ -60,9 +59,9 @@ DA:214,1
 DA:215,1
 DA:216,1
 DA:217,1
-FN:219,Studio.Graph.Function Studio.Graph.BuiltInCatalog::makeFileDirectory()
+DA:218,1
+FN:220,Studio.Graph.Function Studio.Graph.BuiltInCatalog::makeFileDirectory()
 FNDA:1,Studio.Graph.Function Studio.Graph.BuiltInCatalog::makeFileDirectory()
-DA:220,1
 DA:221,1
 DA:222,1
 DA:223,1
@@ -73,9 +72,9 @@ DA:227,1
 DA:228,1
 DA:229,1
 DA:230,1
-FN:232,Studio.Graph.Function Studio.Graph.BuiltInCatalog::makeScalarOp()
+DA:231,1
+FN:233,Studio.Graph.Function Studio.Graph.BuiltInCatalog::makeScalarOp()
 FNDA:1,Studio.Graph.Function Studio.Graph.BuiltInCatalog::makeScalarOp()
-DA:233,1
 DA:234,1
 DA:235,1
 DA:236,1
@@ -88,9 +87,9 @@ DA:242,1
 DA:243,1
 DA:244,1
 DA:245,1
-FN:247,Studio.Graph.Function Studio.Graph.BuiltInCatalog::makeScalarFunction()
+DA:246,1
+FN:248,Studio.Graph.Function Studio.Graph.BuiltInCatalog::makeScalarFunction()
 FNDA:1,Studio.Graph.Function Studio.Graph.BuiltInCatalog::makeScalarFunction()
-DA:248,1
 DA:249,1
 DA:250,1
 DA:251,1
@@ -101,9 +100,9 @@ DA:255,1
 DA:256,1
 DA:257,1
 DA:258,1
-FN:260,Studio.Graph.Function Studio.Graph.BuiltInCatalog::makeGenericRead()
+DA:259,1
+FN:261,Studio.Graph.Function Studio.Graph.BuiltInCatalog::makeGenericRead()
 FNDA:1,Studio.Graph.Function Studio.Graph.BuiltInCatalog::makeGenericRead()
-DA:261,1
 DA:262,1
 DA:263,1
 DA:264,1
@@ -116,9 +115,9 @@ DA:270,1
 DA:271,1
 DA:272,1
 DA:273,1
-FN:275,Studio.Graph.Function Studio.Graph.BuiltInCatalog::makeGenericReadRandom()
+DA:274,1
+FN:276,Studio.Graph.Function Studio.Graph.BuiltInCatalog::makeGenericReadRandom()
 FNDA:1,Studio.Graph.Function Studio.Graph.BuiltInCatalog::makeGenericReadRandom()
-DA:276,1
 DA:277,1
 DA:278,1
 DA:279,1
@@ -132,9 +131,9 @@ DA:286,1
 DA:287,1
 DA:288,1
 DA:289,1
-FN:291,Studio.Graph.Function Studio.Graph.BuiltInCatalog::makeGenericReadRange()
+DA:290,1
+FN:292,Studio.Graph.Function Studio.Graph.BuiltInCatalog::makeGenericReadRange()
 FNDA:1,Studio.Graph.Function Studio.Graph.BuiltInCatalog::makeGenericReadRange()
-DA:292,1
 DA:293,1
 DA:294,1
 DA:295,1
@@ -150,9 +149,9 @@ DA:304,1
 DA:305,1
 DA:306,1
 DA:307,1
-FN:309,Studio.Graph.Function Studio.Graph.BuiltInCatalog::makeGenericReadSlab()
+DA:308,1
+FN:310,Studio.Graph.Function Studio.Graph.BuiltInCatalog::makeGenericReadSlab()
 FNDA:1,Studio.Graph.Function Studio.Graph.BuiltInCatalog::makeGenericReadSlab()
-DA:310,1
 DA:311,1
 DA:312,1
 DA:313,1
@@ -165,9 +164,9 @@ DA:319,1
 DA:320,1
 DA:321,1
 DA:322,1
-FN:324,Studio.Graph.Function Studio.Graph.BuiltInCatalog::makeGenericReadZarrSlab()
+DA:323,1
+FN:325,Studio.Graph.Function Studio.Graph.BuiltInCatalog::makeGenericReadZarrSlab()
 FNDA:1,Studio.Graph.Function Studio.Graph.BuiltInCatalog::makeGenericReadZarrSlab()
-DA:325,1
 DA:326,1
 DA:327,1
 DA:328,1
@@ -185,9 +184,9 @@ DA:339,1
 DA:340,1
 DA:341,1
 DA:342,1
-FN:344,Studio.Graph.Function Studio.Graph.BuiltInCatalog::makeGenericReadNexusSlab()
+DA:343,1
+FN:345,Studio.Graph.Function Studio.Graph.BuiltInCatalog::makeGenericReadNexusSlab()
 FNDA:1,Studio.Graph.Function Studio.Graph.BuiltInCatalog::makeGenericReadNexusSlab()
-DA:345,1
 DA:346,1
 DA:347,1
 DA:348,1
@@ -204,9 +203,9 @@ DA:358,1
 DA:359,1
 DA:360,1
 DA:361,1
-FN:363,Studio.Graph.Function Studio.Graph.BuiltInCatalog::makeGenericCast()
+DA:362,1
+FN:364,Studio.Graph.Function Studio.Graph.BuiltInCatalog::makeGenericCast()
 FNDA:1,Studio.Graph.Function Studio.Graph.BuiltInCatalog::makeGenericCast()
-DA:364,1
 DA:365,1
 DA:366,1
 DA:367,1
@@ -217,9 +216,9 @@ DA:371,1
 DA:372,1
 DA:373,1
 DA:374,1
-FN:376,Studio.Graph.Function Studio.Graph.BuiltInCatalog::makeGenericZero()
+DA:375,1
+FN:377,Studio.Graph.Function Studio.Graph.BuiltInCatalog::makeGenericZero()
 FNDA:1,Studio.Graph.Function Studio.Graph.BuiltInCatalog::makeGenericZero()
-DA:377,1
 DA:378,1
 DA:379,1
 DA:380,1
@@ -233,9 +232,9 @@ DA:387,1
 DA:388,1
 DA:389,1
 DA:390,1
-FN:392,Studio.Graph.Function Studio.Graph.BuiltInCatalog::makeGenericNormalNoise()
+DA:391,1
+FN:393,Studio.Graph.Function Studio.Graph.BuiltInCatalog::makeGenericNormalNoise()
 FNDA:1,Studio.Graph.Function Studio.Graph.BuiltInCatalog::makeGenericNormalNoise()
-DA:393,1
 DA:394,1
 DA:395,1
 DA:396,1
@@ -251,9 +250,9 @@ DA:405,1
 DA:406,1
 DA:407,1
 DA:408,1
-FN:410,Studio.Graph.Function Studio.Graph.BuiltInCatalog::makeGenericSaltAndPepperNoise()
+DA:409,1
+FN:411,Studio.Graph.Function Studio.Graph.BuiltInCatalog::makeGenericSaltAndPepperNoise()
 FNDA:1,Studio.Graph.Function Studio.Graph.BuiltInCatalog::makeGenericSaltAndPepperNoise()
-DA:411,1
 DA:412,1
 DA:413,1
 DA:414,1
@@ -268,9 +267,9 @@ DA:422,1
 DA:423,1
 DA:424,1
 DA:425,1
-FN:427,Studio.Graph.Function Studio.Graph.BuiltInCatalog::makeGenericShotNoise()
+DA:426,1
+FN:428,Studio.Graph.Function Studio.Graph.BuiltInCatalog::makeGenericShotNoise()
 FNDA:1,Studio.Graph.Function Studio.Graph.BuiltInCatalog::makeGenericShotNoise()
-DA:428,1
 DA:429,1
 DA:430,1
 DA:431,1
@@ -285,9 +284,9 @@ DA:439,1
 DA:440,1
 DA:441,1
 DA:442,1
-FN:444,Studio.Graph.Function Studio.Graph.BuiltInCatalog::makeGenericSpeckleNoise()
+DA:443,1
+FN:445,Studio.Graph.Function Studio.Graph.BuiltInCatalog::makeGenericSpeckleNoise()
 FNDA:1,Studio.Graph.Function Studio.Graph.BuiltInCatalog::makeGenericSpeckleNoise()
-DA:445,1
 DA:446,1
 DA:447,1
 DA:448,1
@@ -302,9 +301,9 @@ DA:456,1
 DA:457,1
 DA:458,1
 DA:459,1
-FN:461,Studio.Graph.Function Studio.Graph.BuiltInCatalog::makeGenericCreateByEuler2DTransform()
+DA:460,1
+FN:462,Studio.Graph.Function Studio.Graph.BuiltInCatalog::makeGenericCreateByEuler2DTransform()
 FNDA:1,Studio.Graph.Function Studio.Graph.BuiltInCatalog::makeGenericCreateByEuler2DTransform()
-DA:462,1
 DA:463,1
 DA:464,1
 DA:465,1
@@ -320,9 +319,9 @@ DA:474,1
 DA:475,1
 DA:476,1
 DA:477,1
-FN:479,Studio.Graph.Function Studio.Graph.BuiltInCatalog::makeScalarImageOperation(System.String,System.String,System.String,Microsoft.FSharp.Collections.FSharpList`1<System.String>)
+DA:478,1
+FN:480,Studio.Graph.Function Studio.Graph.BuiltInCatalog::makeScalarImageOperation(System.String,System.String,System.String,Microsoft.FSharp.Collections.FSharpList`1<System.String>)
 FNDA:2,Studio.Graph.Function Studio.Graph.BuiltInCatalog::makeScalarImageOperation(System.String,System.String,System.String,Microsoft.FSharp.Collections.FSharpList`1<System.String>)
-DA:480,2
 DA:481,2
 DA:482,2
 DA:483,2
@@ -334,9 +333,9 @@ DA:488,2
 DA:489,2
 DA:490,2
 DA:491,2
-FN:493,Studio.Graph.Function Studio.Graph.BuiltInCatalog::makeGenericAddNormalNoise()
+DA:492,2
+FN:494,Studio.Graph.Function Studio.Graph.BuiltInCatalog::makeGenericAddNormalNoise()
 FNDA:1,Studio.Graph.Function Studio.Graph.BuiltInCatalog::makeGenericAddNormalNoise()
-DA:494,1
 DA:495,1
 DA:496,1
 DA:497,1
@@ -348,9 +347,9 @@ DA:502,1
 DA:503,1
 DA:504,1
 DA:505,1
-FN:507,Studio.Graph.Function Studio.Graph.BuiltInCatalog::makeGenericAddSaltAndPepperNoise()
+DA:506,1
+FN:508,Studio.Graph.Function Studio.Graph.BuiltInCatalog::makeGenericAddSaltAndPepperNoise()
 FNDA:1,Studio.Graph.Function Studio.Graph.BuiltInCatalog::makeGenericAddSaltAndPepperNoise()
-DA:508,1
 DA:509,1
 DA:510,1
 DA:511,1
@@ -361,9 +360,9 @@ DA:515,1
 DA:516,1
 DA:517,1
 DA:518,1
-FN:520,Studio.Graph.Function Studio.Graph.BuiltInCatalog::makeGenericAddShotNoise()
+DA:519,1
+FN:521,Studio.Graph.Function Studio.Graph.BuiltInCatalog::makeGenericAddShotNoise()
 FNDA:1,Studio.Graph.Function Studio.Graph.BuiltInCatalog::makeGenericAddShotNoise()
-DA:521,1
 DA:522,1
 DA:523,1
 DA:524,1
@@ -374,9 +373,9 @@ DA:528,1
 DA:529,1
 DA:530,1
 DA:531,1
-FN:533,Studio.Graph.Function Studio.Graph.BuiltInCatalog::makeGenericAddSpeckleNoise()
+DA:532,1
+FN:534,Studio.Graph.Function Studio.Graph.BuiltInCatalog::makeGenericAddSpeckleNoise()
 FNDA:1,Studio.Graph.Function Studio.Graph.BuiltInCatalog::makeGenericAddSpeckleNoise()
-DA:534,1
 DA:535,1
 DA:536,1
 DA:537,1
@@ -387,9 +386,9 @@ DA:541,1
 DA:542,1
 DA:543,1
 DA:544,1
-FN:546,Studio.Graph.Function Studio.Graph.BuiltInCatalog::makePairOperation(System.String,System.String,System.String,Microsoft.FSharp.Collections.FSharpList`1<System.String>,Microsoft.FSharp.Collections.FSharpList`1<Studio.Graph.Parameter>)
+DA:545,1
+FN:547,Studio.Graph.Function Studio.Graph.BuiltInCatalog::makePairOperation(System.String,System.String,System.String,Microsoft.FSharp.Collections.FSharpList`1<System.String>,Microsoft.FSharp.Collections.FSharpList`1<Studio.Graph.Parameter>)
 FNDA:1,Studio.Graph.Function Studio.Graph.BuiltInCatalog::makePairOperation(System.String,System.String,System.String,Microsoft.FSharp.Collections.FSharpList`1<System.String>,Microsoft.FSharp.Collections.FSharpList`1<Studio.Graph.Parameter>)
-DA:547,1
 DA:548,1
 DA:549,1
 DA:550,1
@@ -398,20 +397,21 @@ DA:552,1
 DA:553,1
 DA:554,1
 DA:555,1
-FN:1835,Microsoft.FSharp.Core.FSharpOption`1<Studio.Graph.Function> Studio.Graph.BuiltInCatalog::tryFind(System.String)
-FNDA:25,Microsoft.FSharp.Core.FSharpOption`1<Studio.Graph.Function> Studio.Graph.BuiltInCatalog::tryFind(System.String)
-DA:1836,25
-DA:1837,25
-FN:1839,Studio.Graph.Function Studio.Graph.BuiltInCatalog::find(System.String)
-FNDA:25,Studio.Graph.Function Studio.Graph.BuiltInCatalog::find(System.String)
-DA:1840,25
-DA:1841,24
-DA:1842,1
-BRDA:1840,8,1,24
-BRDA:1840,8,0,1
-FN:1831,System.Tuple`2<System.String,Studio.Graph.Function> Studio.Graph.BuiltInCatalog/Pipe #3 stage #1 at line 1832@1832::Invoke(Studio.Graph.Function)
-FNDA:118,System.Tuple`2<System.String,Studio.Graph.Function> Studio.Graph.BuiltInCatalog/Pipe #3 stage #1 at line 1832@1832::Invoke(Studio.Graph.Function)
-DA:1832,118
+DA:556,1
+FN:1908,Microsoft.FSharp.Core.FSharpOption`1<Studio.Graph.Function> Studio.Graph.BuiltInCatalog::tryFind(System.String)
+FNDA:30,Microsoft.FSharp.Core.FSharpOption`1<Studio.Graph.Function> Studio.Graph.BuiltInCatalog::tryFind(System.String)
+DA:1909,30
+DA:1910,30
+FN:1912,Studio.Graph.Function Studio.Graph.BuiltInCatalog::find(System.String)
+FNDA:30,Studio.Graph.Function Studio.Graph.BuiltInCatalog::find(System.String)
+DA:1913,30
+DA:1914,29
+DA:1915,1
+BRDA:1913,8,1,29
+BRDA:1913,8,0,1
+FN:1904,System.Tuple`2<System.String,Studio.Graph.Function> Studio.Graph.BuiltInCatalog/Pipe #3 stage #1 at line 1905@1905::Invoke(Studio.Graph.Function)
+FNDA:123,System.Tuple`2<System.String,Studio.Graph.Function> Studio.Graph.BuiltInCatalog/Pipe #3 stage #1 at line 1905@1905::Invoke(Studio.Graph.Function)
+DA:1905,123
 FN:3,System.Void <StartupCode$Studio-Graph>.$BuiltInCatalog::.cctor()
 FNDA:1,System.Void <StartupCode$Studio-Graph>.$BuiltInCatalog::.cctor()
 DA:4,1
@@ -435,103 +435,103 @@ DA:21,1
 DA:22,1
 DA:23,1
 DA:24,1
-DA:36,1
+DA:25,1
 DA:37,1
-DA:42,1
+DA:38,1
 DA:43,1
-DA:45,1
+DA:44,1
 DA:46,1
-DA:48,1
+DA:47,1
 DA:49,1
-DA:51,1
+DA:50,1
 DA:52,1
-DA:54,1
+DA:53,1
 DA:55,1
-DA:57,1
+DA:56,1
 DA:58,1
-DA:60,1
+DA:59,1
 DA:61,1
-DA:63,1
+DA:62,1
 DA:64,1
-DA:66,1
+DA:65,1
 DA:67,1
-DA:69,1
+DA:68,1
 DA:70,1
-DA:72,1
+DA:71,1
 DA:73,1
-DA:75,1
+DA:74,1
 DA:76,1
-DA:78,1
+DA:77,1
 DA:79,1
-DA:81,1
+DA:80,1
 DA:82,1
-DA:84,1
+DA:83,1
 DA:85,1
-DA:87,1
+DA:86,1
 DA:88,1
-DA:90,1
+DA:89,1
 DA:91,1
-DA:93,1
+DA:92,1
 DA:94,1
-DA:96,1
+DA:95,1
 DA:97,1
-DA:99,1
+DA:98,1
 DA:100,1
-DA:102,1
+DA:101,1
 DA:103,1
-DA:105,1
+DA:104,1
 DA:106,1
-DA:108,1
+DA:107,1
 DA:109,1
-DA:111,1
+DA:110,1
 DA:112,1
-DA:114,1
+DA:113,1
 DA:115,1
-DA:117,1
+DA:116,1
 DA:118,1
-DA:120,1
+DA:119,1
 DA:121,1
-DA:123,1
+DA:122,1
 DA:124,1
-DA:126,1
+DA:125,1
 DA:127,1
-DA:129,1
+DA:128,1
 DA:130,1
-DA:132,1
+DA:131,1
 DA:133,1
-DA:135,1
+DA:134,1
 DA:136,1
-DA:138,1
+DA:137,1
 DA:139,1
-DA:141,1
+DA:140,1
 DA:142,1
-DA:144,1
+DA:143,1
 DA:145,1
-DA:147,1
+DA:146,1
 DA:148,1
-DA:150,1
+DA:149,1
 DA:151,1
-DA:153,1
+DA:152,1
 DA:154,1
-DA:156,1
+DA:155,1
 DA:157,1
-DA:159,1
+DA:158,1
 DA:160,1
-DA:162,1
+DA:161,1
 DA:163,1
-DA:165,1
+DA:164,1
 DA:166,1
-DA:168,1
+DA:167,1
 DA:169,1
-DA:171,1
+DA:170,1
 DA:172,1
-DA:174,1
+DA:173,1
 DA:175,1
-DA:177,1
+DA:176,1
 DA:178,1
-DA:180,1
+DA:179,1
 DA:181,1
-DA:557,1
+DA:182,1
 DA:558,1
 DA:559,1
 DA:560,1
@@ -1803,18 +1803,91 @@ DA:1825,1
 DA:1826,1
 DA:1827,1
 DA:1828,1
+DA:1829,1
+DA:1830,1
 DA:1831,1
+DA:1832,1
 DA:1833,1
-BRDA:36,402,0,1
-BRDA:36,407,0,1
-BRDA:36,413,0,1
-BRDA:36,402,1,0
-BRDA:36,407,1,0
-BRDA:36,413,1,0
-BRDA:36,428,0,0
-BRDA:36,428,1,0
-LF:1721
-LH:1713
+DA:1834,1
+DA:1835,1
+DA:1836,1
+DA:1837,1
+DA:1838,1
+DA:1839,1
+DA:1840,1
+DA:1841,1
+DA:1842,1
+DA:1843,1
+DA:1844,1
+DA:1845,1
+DA:1846,1
+DA:1847,1
+DA:1848,1
+DA:1849,1
+DA:1850,1
+DA:1851,1
+DA:1852,1
+DA:1853,1
+DA:1854,1
+DA:1855,1
+DA:1856,1
+DA:1857,1
+DA:1858,1
+DA:1859,1
+DA:1860,1
+DA:1861,1
+DA:1862,1
+DA:1863,1
+DA:1864,1
+DA:1865,1
+DA:1866,1
+DA:1867,1
+DA:1868,1
+DA:1869,1
+DA:1870,1
+DA:1871,1
+DA:1872,1
+DA:1873,1
+DA:1874,1
+DA:1875,1
+DA:1876,1
+DA:1877,1
+DA:1878,1
+DA:1879,1
+DA:1880,1
+DA:1881,1
+DA:1882,1
+DA:1883,1
+DA:1884,1
+DA:1885,1
+DA:1886,1
+DA:1887,1
+DA:1888,1
+DA:1889,1
+DA:1890,1
+DA:1891,1
+DA:1892,1
+DA:1893,1
+DA:1894,1
+DA:1895,1
+DA:1896,1
+DA:1897,1
+DA:1898,1
+DA:1899,1
+DA:1900,1
+DA:1901,1
+DA:1904,1
+DA:1906,1
+BRDA:37,420,0,1
+BRDA:37,425,0,1
+BRDA:37,431,0,1
+BRDA:37,420,1,0
+BRDA:37,425,1,0
+BRDA:37,431,1,0
+BRDA:37,446,0,0
+BRDA:37,446,1,0
+LF:1794
+LH:1786
 BRF:29
 BRH:8
 FNF:32

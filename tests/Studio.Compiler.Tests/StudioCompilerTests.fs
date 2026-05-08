@@ -420,6 +420,21 @@ let generatorSuite =
             Expect.stringContains code ">=> writeMesh \"surface.obj\" \"auto\"" "WriteMesh should generate the mesh writer."
             Expect.stringContains code "|> sink" "Terminal WriteMesh should run the mesh writer."
 
+            let surfaceArea =
+                node "area" "SurfaceArea"
+                    [ p "xUnit" "2.0" false
+                      p "yUnit" "3.0" false
+                      p "zUnit" "4.0" false ]
+
+            let areaCode =
+                graph [ read; marching; surfaceArea ]
+                    [ edge "read" "output" 0 "mesh" "input" 0
+                      edge "mesh" "output" 0 "area" "input" 0 ]
+                |> PipelineCodeGenerator.generateSavedGraph
+
+            Expect.stringContains areaCode ">=> surfaceArea 2.0 3.0 4.0" "SurfaceArea should generate the physical area reducer."
+            Expect.stringContains areaCode "|> drain" "Terminal SurfaceArea should be drained."
+
         testCase "dogKeypoints and point-set IO boxes lower to CSV point-set DSL functions" <| fun _ ->
             let read =
                 node "read" "Read"
@@ -439,7 +454,8 @@ let generatorSuite =
 
             let write =
                 node "writePoints" "WritePointSet"
-                    [ p "output" "points.csv" false ]
+                    [ p "output" "points" false
+                      p "suffix" ".csv" false ]
 
             let code =
                 graph [ read; dog; write ]
@@ -448,7 +464,7 @@ let generatorSuite =
                 |> PipelineCodeGenerator.generateSavedGraph
 
             Expect.stringContains code ">=> dogKeypoints<float> 0.5 1.2 4u 0.001 3u" "DogKeypoints should generate a typed point detector."
-            Expect.stringContains code ">=> writePointSet \"points.csv\"" "WritePointSet should generate the CSV point writer."
+            Expect.stringContains code ">=> writePointSet \"points\" \".csv\"" "WritePointSet should generate the point writer with suffix."
             Expect.stringContains code "|> sink" "Terminal WritePointSet should run the point writer."
 
             let sift =
@@ -479,6 +495,37 @@ let generatorSuite =
 
             Expect.stringContains readPointCode "source 1024UL" "ReadPointSet should include a source."
             Expect.stringContains readPointCode "|> readPointSet \"points.csv\"" "ReadPointSet should generate the CSV point reader."
+
+            let distances =
+                node "distances" "PointPairDistances"
+                    [ p "xUnit" "2.0" false
+                      p "yUnit" "3.0" false
+                      p "zUnit" "4.0" false ]
+
+            let distanceCode =
+                graph [ read; dog; distances ]
+                    [ edge "read" "output" 0 "dog" "input" 0
+                      edge "dog" "output" 0 "distances" "input" 0 ]
+                |> PipelineCodeGenerator.generateSavedGraph
+
+            Expect.stringContains distanceCode ">=> pointPairDistances 2.0 3.0 4.0" "PointPairDistances should generate the physical distance matrix reducer."
+            Expect.stringContains distanceCode "|> drain" "Terminal PointPairDistances should be drained."
+
+            let writeMatrix =
+                node "writeMatrix" "WriteMatrix"
+                    [ p "output" "distances" false
+                      p "suffix" ".csv" false ]
+
+            let distanceWriteCode =
+                graph [ read; dog; distances; writeMatrix ]
+                    [ edge "read" "output" 0 "dog" "input" 0
+                      edge "dog" "output" 0 "distances" "input" 0
+                      edge "distances" "reducerOutput" 0 "writeMatrix" "input" 0 ]
+                |> PipelineCodeGenerator.generateSavedGraph
+
+            Expect.stringContains distanceWriteCode ">=> pointPairDistances 2.0 3.0 4.0" "PointPairDistances should feed matrix CSV writing."
+            Expect.stringContains distanceWriteCode ">=> writeMatrix \"distances\" \".csv\"" "WriteMatrix should generate the suffix-controlled matrix writer."
+            Expect.stringContains distanceWriteCode "|> sink" "Terminal WriteMatrix should run the matrix writer."
 
         testCase "streamed object and painter boxes lower to object-mask DSL stages" <| fun _ ->
             let read =
@@ -1090,6 +1137,21 @@ let generatorSuite =
 
             Expect.stringContains structureTensorCode ">=> structureTensor 1.0 2.0" "StructureTensor should lower with sigma and rho."
             Expect.stringContains structureTensorCode ">=> selectGroupedOutput 4u 2u" "Connecting a StructureTensor output port should select the corresponding 3-vector stream."
+
+            let pcaCode =
+                graph
+                    [ read "x" "x"; read "y" "y"
+                      node "toVector" "ToVectorImage" []
+                      node "pca" "PCA" [ p "components" "3" false ]
+                      write ]
+                    [ edge "x" "output" 0 "toVector" "I" 0
+                      edge "y" "output" 0 "toVector" "J" 0
+                      edge "toVector" "output" 0 "pca" "input" 0
+                      edge "pca" "output" 1 "write" "input" 0 ]
+                |> PipelineCodeGenerator.generateSavedGraph
+
+            Expect.stringContains pcaCode ">=> PCA 3u" "PCA should lower as a reducer stage with component count."
+            Expect.stringContains pcaCode ">=> selectGroupedOutput (3u + 1u) 1u" "Connecting a PCA output port should select the corresponding eigensystem stream."
 
             let dotCode =
                 graph

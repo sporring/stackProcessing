@@ -17,10 +17,10 @@ type Triangle =
       B: Point3D
       C: Point3D }
 
-type MeshChunk =
+type TriangleSet =
     { Triangles: Triangle list }
 
-module MeshChunk =
+module TriangleSet =
     let empty = { Triangles = [] }
 
 let private point x y z =
@@ -137,7 +137,7 @@ let private meshBetweenSlices<'T when 'T: equality> surfaceValue (lower: Image<'
 
     { Triangles = triangles |> Seq.toList }
 
-let marchingCubes<'T when 'T: equality> surfaceValue : Stage<Image<'T>, MeshChunk> =
+let marchingCubes<'T when 'T: equality> surfaceValue : Stage<Image<'T>, TriangleSet> =
     let releaseConsumed (window: Window<Image<'T>>) =
         window.Items
         |> List.take (min (int window.ReleaseCount) window.Items.Length)
@@ -147,12 +147,48 @@ let marchingCubes<'T when 'T: equality> surfaceValue : Stage<Image<'T>, MeshChun
         try
             match window.Items with
             | lower :: upper :: _ -> meshBetweenSlices surfaceValue lower upper
-            | _ -> MeshChunk.empty
+            | _ -> TriangleSet.empty
         finally
             releaseConsumed window
 
     (StackCore.window 2u 0u 1u)
     --> StackCore.mapWindow "marchingCubes" mapper id id
+
+let private validateUnit name value =
+    if value <= 0.0 then
+        invalidArg name $"{name} must be positive."
+
+let private scalePoint xUnit yUnit zUnit (point: Point3D) =
+    { X = point.X * xUnit
+      Y = point.Y * yUnit
+      Z = point.Z * zUnit }
+
+let private triangleArea xUnit yUnit zUnit (triangle: Triangle) =
+    let a = scalePoint xUnit yUnit zUnit triangle.A
+    let b = scalePoint xUnit yUnit zUnit triangle.B
+    let c = scalePoint xUnit yUnit zUnit triangle.C
+    let ux = b.X - a.X
+    let uy = b.Y - a.Y
+    let uz = b.Z - a.Z
+    let vx = c.X - a.X
+    let vy = c.Y - a.Y
+    let vz = c.Z - a.Z
+    let cx = uy * vz - uz * vy
+    let cy = uz * vx - ux * vz
+    let cz = ux * vy - uy * vx
+    0.5 * Math.Sqrt(cx * cx + cy * cy + cz * cz)
+
+let surfaceArea xUnit yUnit zUnit : Stage<TriangleSet, float> =
+    validateUnit (nameof xUnit) xUnit
+    validateUnit (nameof yUnit) yUnit
+    validateUnit (nameof zUnit) zUnit
+
+    let folder area chunk =
+        chunk.Triangles
+        |> List.sumBy (triangleArea xUnit yUnit zUnit)
+        |> (+) area
+
+    Stage.fold "surfaceArea" folder 0.0 id (fun _ -> 1UL)
 
 type MeshFormat =
     | Obj
@@ -172,24 +208,24 @@ let private inferFormat (outputPath: string) (format: string) =
 let private f (value: float) =
     value.ToString("R", CultureInfo.InvariantCulture)
 
-let private writeObj outputPath (chunks: MeshChunk seq) =
+let private writeObj outputPath (triangleSets: TriangleSet seq) =
     use writer = new StreamWriter(outputPath, false)
     let mutable nextVertex = 1
-    chunks
-    |> Seq.iter (fun chunk ->
-        chunk.Triangles
+    triangleSets
+    |> Seq.iter (fun triangleSet ->
+        triangleSet.Triangles
         |> List.iter (fun triangle ->
             [ triangle.A; triangle.B; triangle.C ]
             |> List.iter (fun p -> writer.WriteLine($"v {f p.X} {f p.Y} {f p.Z}"))
             writer.WriteLine($"f {nextVertex} {nextVertex + 1} {nextVertex + 2}")
             nextVertex <- nextVertex + 3))
 
-let private writeStl outputPath (chunks: MeshChunk seq) =
+let private writeStl outputPath (triangleSets: TriangleSet seq) =
     use writer = new StreamWriter(outputPath, false)
     writer.WriteLine("solid stackProcessing")
-    chunks
-    |> Seq.iter (fun chunk ->
-        chunk.Triangles
+    triangleSets
+    |> Seq.iter (fun triangleSet ->
+        triangleSet.Triangles
         |> List.iter (fun triangle ->
             writer.WriteLine("  facet normal 0 0 0")
             writer.WriteLine("    outer loop")
@@ -199,9 +235,9 @@ let private writeStl outputPath (chunks: MeshChunk seq) =
             writer.WriteLine("  endfacet")))
     writer.WriteLine("endsolid stackProcessing")
 
-let private writePly outputPath (chunks: MeshChunk seq) =
+let private writePly outputPath (triangleSets: TriangleSet seq) =
     let triangles =
-        chunks
+        triangleSets
         |> Seq.collect _.Triangles
         |> Seq.toArray
 
@@ -226,16 +262,16 @@ let private writePly outputPath (chunks: MeshChunk seq) =
         let start = index * 3
         writer.WriteLine($"3 {start} {start + 1} {start + 2}"))
 
-let writeMesh (outputPath: string) (format: string) : Stage<MeshChunk, unit> =
-    let reducer (_debug: bool) (input: AsyncSeq<MeshChunk>) =
+let writeMesh (outputPath: string) (format: string) : Stage<TriangleSet, unit> =
+    let reducer (_debug: bool) (input: AsyncSeq<TriangleSet>) =
         async {
-            let chunks = ResizeArray<MeshChunk>()
+            let triangleSets = ResizeArray<TriangleSet>()
             do!
                 input
-                |> AsyncSeq.iterAsync (fun chunk ->
+                |> AsyncSeq.iterAsync (fun triangleSet ->
                     async {
-                        if chunk.Triangles.Length > 0 then
-                            chunks.Add(chunk)
+                        if triangleSet.Triangles.Length > 0 then
+                            triangleSets.Add(triangleSet)
                     })
 
             let directory = Path.GetDirectoryName(outputPath)
@@ -243,9 +279,9 @@ let writeMesh (outputPath: string) (format: string) : Stage<MeshChunk, unit> =
                 Directory.CreateDirectory(directory) |> ignore
 
             match inferFormat outputPath format with
-            | Obj -> writeObj outputPath chunks
-            | Stl -> writeStl outputPath chunks
-            | Ply -> writePly outputPath chunks
+            | Obj -> writeObj outputPath triangleSets
+            | Stl -> writeStl outputPath triangleSets
+            | Ply -> writePly outputPath triangleSets
         }
 
     Stage.reduce $"writeMesh \"{outputPath}\"" reducer Streaming (fun _ -> 0UL) (fun _ -> 1UL)

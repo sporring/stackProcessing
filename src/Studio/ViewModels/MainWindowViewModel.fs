@@ -858,6 +858,9 @@ type PipelineNodeViewModel(
         this.Width <-
             match state.Definition.Id with
             | "ComputeStats"
+            | "SurfaceArea"
+            | "Volume"
+            | "PointPairDistances"
             | "GetStackInfo"
             | "GetChunkInfo"
             | "Quantiles" -> 170.
@@ -1132,6 +1135,9 @@ type PipelineNodeViewModel(
                 | "ScalarOp"
                 | "ScalarFunction" -> ScalarOutput
                 | "ComputeStats"
+                | "SurfaceArea"
+                | "Volume"
+                | "PointPairDistances"
                 | "GetStackInfo"
                 | "GetChunkInfo"
                 | "ComponentTranslationTable"
@@ -1366,6 +1372,12 @@ type MainWindowViewModel() as this =
                         |> List.map (fun (label, value) -> ParameterOptionViewModel(label, value, true))
 
                     PipelineParameterViewModel(parameter.Label, parameter.Key, parameter.DefaultValue, parameter.Type, options, false)
+                | ("WritePointSet" | "WriteMatrix"), "suffix" ->
+                    let options =
+                        [ "CSV", ".csv" ]
+                        |> List.map (fun (label, value) -> ParameterOptionViewModel(label, value, true))
+
+                    PipelineParameterViewModel(parameter.Label, parameter.Key, parameter.DefaultValue, parameter.Type, options, false)
                 | "Cast", ("sourceType" | "targetType") ->
                     let options =
                         CastNode.typeOptions
@@ -1401,6 +1413,14 @@ type MainWindowViewModel() as this =
                     let options =
                         VectorImageNode.functionOptions
                         |> List.map (fun value -> ParameterOptionViewModel(value, value, true))
+
+                    PipelineParameterViewModel(parameter.Label, parameter.Key, parameter.DefaultValue, parameter.Type, options, false)
+                | "PCA", "components" ->
+                    let options =
+                        [ 2 .. 8 ]
+                        |> List.map (fun value ->
+                            let value = string value
+                            ParameterOptionViewModel(value, value, true))
 
                     PipelineParameterViewModel(parameter.Label, parameter.Key, parameter.DefaultValue, parameter.Type, options, false)
                 | "SumProjection", "function" ->
@@ -2001,7 +2021,7 @@ type MainWindowViewModel() as this =
             if isPrintParameter && (outputPin.Kind = ScalarOutput || outputPin.Kind = ReducerOutput) then
                 assignedParameterInputType inputPin
                 |> Option.forall (PortType.canConnect outputPin.Port.Type)
-            elif outputPin.Kind = DataOutput && inputPin.Kind = DataInput then
+            elif (outputPin.Kind = DataOutput || outputPin.Kind = ReducerOutput) && inputPin.Kind = DataInput then
                 let baseCompatible = PortType.canConnect outputPin.Port.Type inputPin.Port.Type
                 let formatCompatible =
                     match inputPin.Parent, outputPin.Port.Type with

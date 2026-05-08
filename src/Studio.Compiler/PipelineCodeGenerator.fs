@@ -318,6 +318,9 @@ module PipelineCodeGenerator =
         [| "NumPixels"; "Mean"; "Std"; "Min"; "Max"; "Sum"; "Var" |]
         |> Array.tryItem portIndex
 
+    let private isSingleValueReducerNode (node: SavedNode) =
+        node.FunctionId = "SurfaceArea" || node.FunctionId = "Volume" || node.FunctionId = "PointPairDistances"
+
     let private stackInfoFieldExpression bindingName portIndex =
         [| $"{bindingName}.dimensions"
            $"{bindingName}.size"
@@ -371,8 +374,13 @@ module PipelineCodeGenerator =
                 | "scalarOutput" ->
                     scalarNamesByNodeId |> Map.tryFind edge.FromNode
                 | "reducerOutput" ->
-                    match statsNamesByNodeId |> Map.tryFind edge.FromNode, computeStatsFieldName edge.FromPort with
-                    | Some statsName, Some fieldName -> Some $"{statsName}.{fieldName}"
+                    match statsNamesByNodeId |> Map.tryFind edge.FromNode with
+                    | Some statsName ->
+                        match nodesById |> Map.tryFind edge.FromNode with
+                        | Some reducerNode when isSingleValueReducerNode reducerNode && edge.FromPort = 0 -> Some statsName
+                        | Some reducerNode when reducerNode.FunctionId = "ComputeStats" ->
+                            computeStatsFieldName edge.FromPort |> Option.map (fun fieldName -> $"{statsName}.{fieldName}")
+                        | _ -> None
                     | _ ->
                         match translationTableNamesByNodeId |> Map.tryFind edge.FromNode with
                         | Some name -> Some name
@@ -835,7 +843,12 @@ module PipelineCodeGenerator =
             $">=> writeMesh {output} {format}"
         | "WritePointSet" ->
             let output = quotedParameter "output"
-            $">=> writePointSet {output}"
+            let suffix = quotedParameter "suffix"
+            $">=> writePointSet {output} {suffix}"
+        | "WriteMatrix" ->
+            let output = quotedParameter "output"
+            let suffix = quotedParameter "suffix"
+            $">=> writeMatrix {output} {suffix}"
         | "WriteNexus" ->
             let output = quotedParameter "output"
             let datasetPath = quotedParameter "datasetPath"
@@ -996,6 +1009,9 @@ module PipelineCodeGenerator =
             let sigma = parameterValue "sigma"
             let rho = parameterValue "rho"
             $">=> structureTensor {sigma} {rho}"
+        | "PCA" ->
+            let components = parameterValue "components"
+            $">=> PCA {components}"
         | "SqrtFloat64" ->
             ">=> sqrt"
         | id when isScalarImageFunction id ->
@@ -1148,6 +1164,21 @@ module PipelineCodeGenerator =
             $">=> changeLabel<{pixelType}> {fromLabel} {toLabel}"
         | "ComputeStats" ->
             ">=> computeStats ()"
+        | "SurfaceArea" ->
+            let xUnit = parameterValue "xUnit"
+            let yUnit = parameterValue "yUnit"
+            let zUnit = parameterValue "zUnit"
+            $">=> surfaceArea {xUnit} {yUnit} {zUnit}"
+        | "Volume" ->
+            let xUnit = parameterValue "xUnit"
+            let yUnit = parameterValue "yUnit"
+            let zUnit = parameterValue "zUnit"
+            $">=> volume {xUnit} {yUnit} {zUnit}"
+        | "PointPairDistances" ->
+            let xUnit = parameterValue "xUnit"
+            let yUnit = parameterValue "yUnit"
+            let zUnit = parameterValue "zUnit"
+            $">=> pointPairDistances {xUnit} {yUnit} {zUnit}"
         | "AddNormalNoise" ->
             let mean = parameterValue "mean"
             let std = parameterValue "std"
@@ -1271,12 +1302,16 @@ module PipelineCodeGenerator =
                     nodesById |> Map.tryFind edge.FromNode
                 else
                     None)
-            |> Array.filter (fun node -> node.FunctionId = "ComputeStats")
+            |> Array.filter (fun node -> node.FunctionId = "ComputeStats" || isSingleValueReducerNode node)
             |> Array.distinctBy _.Id
 
         let statsNamesByNodeId =
             statsNodesWithLinkedFields
-            |> Array.mapi (fun index node -> node.Id, $"ImageStats{index}")
+            |> Array.mapi (fun index node ->
+                let name =
+                    if node.FunctionId = "ComputeStats" then $"ImageStats{index}"
+                    else $"{node.FunctionId}{index}"
+                node.Id, name)
             |> Map.ofArray
 
         let translationTableNodesWithLinkedOutputs =
@@ -1473,6 +1508,12 @@ module PipelineCodeGenerator =
                             let upstreamExpression = pipelineExpression visited upstream
                             if upstream.FunctionId = "StructureTensor" && edge.FromPort >= 0 && edge.FromPort <= 3 then
                                 $"{upstreamExpression}{newLine}>=> selectGroupedOutput 4u {edge.FromPort}u"
+                            elif upstream.FunctionId = "PCA" && edge.FromPort >= 0 && edge.FromPort <= 8 then
+                                let rawComponents = savedParamValue "components" upstream
+                                let components =
+                                    if String.IsNullOrWhiteSpace rawComponents then "3u"
+                                    else numericLiteral UInt32 rawComponents
+                                $"{upstreamExpression}{newLine}>=> selectGroupedOutput ({components} + 1u) {edge.FromPort}u"
                             else
                                 upstreamExpression
                         | None -> $"// Cannot generate F#: missing upstream node {edge.FromNode}"
@@ -1557,11 +1598,16 @@ module PipelineCodeGenerator =
                 | "WriteZarr"
                 | "WriteMesh"
                 | "WritePointSet"
+                | "WriteMatrix"
                 | "WriteNexus"
                 | "Histogram"
                 | "ShowImage" ->
                     $"{expression}{newLine}|> sink"
                 | "ComputeStats" ->
+                    $"{expression}{newLine}|> drain"
+                | "SurfaceArea"
+                | "Volume"
+                | "PointPairDistances" ->
                     $"{expression}{newLine}|> drain"
                 | "ComponentTranslationTable" ->
                     $"{expression}{newLine}|> drain"

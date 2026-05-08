@@ -3,6 +3,7 @@ module StackPoints
 open System
 open System.Globalization
 open System.IO
+open System.Text
 open FSharp.Control
 open SlimPipeline
 open StackCore
@@ -19,11 +20,16 @@ type CoordinatePoint =
       Scale: float
       Response: float }
 
-type PointSetChunk =
+type PointSet =
     { Points: CoordinatePoint list }
 
-module PointSetChunk =
+module PointSet =
     let empty = { Points = [] }
+
+type VectorizedMatrix =
+    { Rows: uint
+      Columns: uint
+      Values: float list }
 
 let private invariant = CultureInfo.InvariantCulture
 
@@ -33,11 +39,21 @@ let private f (value: float) =
 let private parseFloat (text: string) =
     Double.Parse(text.Trim(), NumberStyles.Float ||| NumberStyles.AllowThousands, invariant)
 
+let private outputPathWithSuffix (output: string) (suffix: string) =
+    let suffix = if String.IsNullOrWhiteSpace suffix then ".csv" else suffix
+    if not (suffix.Equals(".csv", StringComparison.OrdinalIgnoreCase)) then
+        failwith $"Unsupported point/matrix output format '{suffix}'. Currently supported: .csv."
+
+    if output.EndsWith(suffix, StringComparison.OrdinalIgnoreCase) then
+        output
+    else
+        output + suffix
+
 let private splitCsvLine (line: string) =
     line.Split(',')
     |> Array.map _.Trim()
 
-let readPointSet (path: string) (pl: Plan<unit, unit>) : Plan<unit, PointSetChunk> =
+let readPointSet (path: string) (pl: Plan<unit, unit>) : Plan<unit, PointSet> =
     let mapper (_idx: int) =
         let lines =
             File.ReadLines(path)
@@ -70,9 +86,10 @@ let readPointSet (path: string) (pl: Plan<unit, unit>) : Plan<unit, PointSetChun
 
     Plan.create stage pl.memAvail 0UL 0UL 1UL pl.debug
 
-let writePointSet (outputPath: string) : Stage<PointSetChunk, unit> =
-    let reducer (_debug: bool) (input: AsyncSeq<PointSetChunk>) =
+let writePointSet (output: string) (suffix: string) : Stage<PointSet, unit> =
+    let reducer (_debug: bool) (input: AsyncSeq<PointSet>) =
         async {
+            let outputPath = outputPathWithSuffix output suffix
             let directory = Path.GetDirectoryName(outputPath)
             if not (String.IsNullOrWhiteSpace directory) then
                 Directory.CreateDirectory(directory) |> ignore
@@ -89,7 +106,95 @@ let writePointSet (outputPath: string) : Stage<PointSetChunk, unit> =
                     })
         }
 
-    Stage.reduce $"writePointSet \"{outputPath}\"" reducer Streaming (fun _ -> 0UL) (fun _ -> 1UL)
+    Stage.reduce $"writePointSet \"{output}\" \"{suffix}\"" reducer Streaming (fun _ -> 0UL) (fun _ -> 1UL)
+
+let vectorizeMatrix (matrix: float[,]) =
+    let rows = matrix.GetLength(0)
+    let columns = matrix.GetLength(1)
+    { Rows = uint rows
+      Columns = uint columns
+      Values =
+          [ for row in 0 .. rows - 1 do
+                for column in 0 .. columns - 1 do
+                    matrix[row, column] ] }
+
+let unvectorizeMatrix (matrix: VectorizedMatrix) =
+    let rows = int matrix.Rows
+    let columns = int matrix.Columns
+    if matrix.Values.Length <> rows * columns then
+        invalidArg "matrix" $"Vectorized matrix has {matrix.Values.Length} values, but {rows}x{columns} requires {rows * columns}."
+
+    let result = Array2D.zeroCreate<float> rows columns
+    matrix.Values
+    |> List.iteri (fun index value ->
+        let row = index / columns
+        let column = index % columns
+        result[row, column] <- value)
+    result
+
+let writeMatrix (output: string) (suffix: string) : Stage<VectorizedMatrix, unit> =
+    let reducer (_debug: bool) (input: AsyncSeq<VectorizedMatrix>) =
+        async {
+            let! matrices = input |> AsyncSeq.toListAsync
+
+            match matrices with
+            | [] -> invalidOp "writeMatrix expected one vectorized matrix, but the stream was empty."
+            | [ matrix ] ->
+                let outputPath = outputPathWithSuffix output suffix
+                let directory = Path.GetDirectoryName(outputPath)
+                if not (String.IsNullOrWhiteSpace directory) then
+                    Directory.CreateDirectory(directory) |> ignore
+
+                let values = unvectorizeMatrix matrix
+                use writer = new StreamWriter(outputPath, false, Encoding.UTF8)
+                for row in 0 .. values.GetLength(0) - 1 do
+                    let line =
+                        [ for column in 0 .. values.GetLength(1) - 1 ->
+                            f values[row, column] ]
+                        |> String.concat ","
+                    writer.WriteLine(line)
+            | _ ->
+                invalidOp $"writeMatrix expected one vectorized matrix, but got {matrices.Length}."
+        }
+
+    Stage.reduce $"writeMatrix \"{output}\" \"{suffix}\"" reducer Streaming (fun _ -> 0UL) (fun _ -> 1UL)
+
+let private validateUnit name value =
+    if value <= 0.0 then
+        invalidArg name $"{name} must be positive."
+
+let private scaledDistance xUnit yUnit zUnit (a: CoordinatePoint) (b: CoordinatePoint) =
+    let dx = (a.X - b.X) * xUnit
+    let dy = (a.Y - b.Y) * yUnit
+    let dz = (a.Z - b.Z) * zUnit
+    Math.Sqrt(dx * dx + dy * dy + dz * dz)
+
+let pointPairDistances xUnit yUnit zUnit : Stage<PointSet, VectorizedMatrix> =
+    validateUnit (nameof xUnit) xUnit
+    validateUnit (nameof yUnit) yUnit
+    validateUnit (nameof zUnit) zUnit
+
+    let reducer (_debug: bool) (input: AsyncSeq<PointSet>) =
+        async {
+            let! points =
+                input
+                |> AsyncSeq.foldAsync
+                    (fun points pointSet -> async { return (List.rev pointSet.Points) @ points })
+                    []
+
+            let points = points |> List.rev |> List.toArray
+            let count = points.Length
+            let distances = Array2D.zeroCreate<float> count count
+            for row in 0 .. count - 1 do
+                for column in row + 1 .. count - 1 do
+                    let distance = scaledDistance xUnit yUnit zUnit points[row] points[column]
+                    distances[row, column] <- distance
+                    distances[column, row] <- distance
+
+            return vectorizeMatrix distances
+        }
+
+    Stage.reduce "pointPairDistances" reducer Streaming (fun _ -> 0UL) (fun _ -> 1UL)
 
 let private imageToVolume (images: Image<'T> list) =
     match images with
@@ -174,7 +279,7 @@ let private dogKeypointsInWindow<'T when 'T: equality>
     let depth = volume.GetLength(2)
 
     if width < 3 || height < 3 || depth < 3 then
-        PointSetChunk.empty
+        PointSet.empty
     else
         let sigmas =
             [| for level in 0 .. scaleLevels - 1 -> sigma0 * Math.Pow(scaleFactor, float level) |]
@@ -237,7 +342,7 @@ let dogKeypoints<'T when 'T: equality>
     (scaleLevels: uint)
     (contrastThreshold: float)
     (stride: uint)
-    : Stage<Image<'T>, PointSetChunk> =
+    : Stage<Image<'T>, PointSet> =
 
     if sigma0 <= 0.0 then invalidArg "sigma0" "dogKeypoints sigma0 must be positive."
     if scaleFactor <= 1.0 then invalidArg "scaleFactor" "dogKeypoints scaleFactor must be greater than 1."
@@ -268,6 +373,6 @@ let siftKeypoints<'T when 'T: equality>
     (scaleLevels: uint)
     (contrastThreshold: float)
     (stride: uint)
-    : Stage<Image<'T>, PointSetChunk> =
+    : Stage<Image<'T>, PointSet> =
 
     dogKeypoints<'T> sigma0 scaleFactor scaleLevels contrastThreshold stride

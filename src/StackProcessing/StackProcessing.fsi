@@ -92,7 +92,9 @@ type Position3D<'T> = StackPoints.Position3D<'T>
 
 type CoordinatePoint = StackPoints.CoordinatePoint
 
-type PointSetChunk = StackPoints.PointSetChunk
+type PointSet = StackPoints.PointSet
+
+type VectorizedMatrix = StackPoints.VectorizedMatrix
 
 type Affine = TinyLinAlg.Affine
 
@@ -114,7 +116,7 @@ type Point3D = StackMesh.Point3D
 
 type Triangle = StackMesh.Triangle
 
-type MeshChunk = StackMesh.MeshChunk
+type TriangleSet = StackMesh.TriangleSet
 
 val getStackDepth: (string -> string -> uint)
 
@@ -245,7 +247,7 @@ val readNexusSlab<'T when 'T: equality> :
 val readPointSet:
   (string ->
      SlimPipeline.Plan<unit,unit> ->
-     SlimPipeline.Plan<unit,StackPoints.PointSetChunk>)
+     SlimPipeline.Plan<unit,StackPoints.PointSet>)
 
 val deleteIfExists: (string -> unit)
 
@@ -283,9 +285,22 @@ val writeInSlabs:
      uint -> uint -> StackCore.Stage<StackCore.Image<'a>,StackCore.Image<'a>>)
     when 'a: equality
 
-val writePointSet: (string -> StackCore.Stage<StackPoints.PointSetChunk,unit>)
+val writePointSet:
+  (string -> string -> StackCore.Stage<StackPoints.PointSet,unit>)
 
-val writeMesh: (string -> string -> StackCore.Stage<StackMesh.MeshChunk,unit>)
+val vectorizeMatrix: (float array2d -> StackPoints.VectorizedMatrix)
+
+val unvectorizeMatrix: (StackPoints.VectorizedMatrix -> float array2d)
+
+val pointPairDistances:
+  (float ->
+     float ->
+     float -> StackCore.Stage<StackPoints.PointSet,StackPoints.VectorizedMatrix>)
+
+val writeMatrix:
+  (string -> string -> StackCore.Stage<StackPoints.VectorizedMatrix,unit>)
+
+val writeMesh: (string -> string -> StackCore.Stage<StackMesh.TriangleSet,unit>)
 
 val defaultAffineRegistrationOptions:
   StackRegistration.AffineRegistrationOptions
@@ -294,7 +309,7 @@ val earthMoversDistance:
   (StackPoints.CoordinatePoint seq -> StackPoints.CoordinatePoint seq -> float)
 
 val transformPointSet:
-  (TinyLinAlg.Affine -> StackPoints.PointSetChunk -> StackPoints.PointSetChunk)
+  (TinyLinAlg.Affine -> StackPoints.PointSet -> StackPoints.PointSet)
 
 val inverseAffine: (TinyLinAlg.Affine -> TinyLinAlg.Affine)
 
@@ -662,23 +677,24 @@ val changeLabel:
     when 'T: equality
 
 val marchingCubes<'T when 'T: equality> :
-  (float -> StackCore.Stage<StackCore.Image<'T>,StackMesh.MeshChunk>)
+  (float -> StackCore.Stage<StackCore.Image<'T>,StackMesh.TriangleSet>)
     when 'T: equality
+
+val surfaceArea:
+  (float -> float -> float -> StackCore.Stage<StackMesh.TriangleSet,float>)
 
 val dogKeypoints<'T when 'T: equality> :
   (float ->
      float ->
      uint ->
-     float ->
-     uint -> StackCore.Stage<StackCore.Image<'T>,StackPoints.PointSetChunk>)
+     float -> uint -> StackCore.Stage<StackCore.Image<'T>,StackPoints.PointSet>)
     when 'T: equality
 
 val siftKeypoints<'T when 'T: equality> :
   (float ->
      float ->
      uint ->
-     float ->
-     uint -> StackCore.Stage<StackCore.Image<'T>,StackPoints.PointSetChunk>)
+     float -> uint -> StackCore.Stage<StackCore.Image<'T>,StackPoints.PointSet>)
     when 'T: equality
 
 val resize<'T when 'T: equality> :
@@ -704,6 +720,9 @@ val histogram:
 val sumProjection<'T when 'T: equality> :
   (string -> StackCore.Stage<StackCore.Image<'T>,StackCore.Image<float>>)
     when 'T: equality
+
+val volume:
+  (float -> float -> float -> StackCore.Stage<StackCore.Image<uint8>,float>)
 
 val quantiles: (float list -> Map<'a,uint64> -> float list) when 'a: comparison
 
@@ -779,6 +798,8 @@ val finiteDiff:
 
 val structureTensor:
   sigma: float -> rho: float -> Stage<Image<float>,Image<float list>>
+
+val PCA: components: uint32 -> Stage<Image<float list>,Image<float list>>
 
 val selectGroupedOutput:
   groupSize: uint -> part: uint -> Stage<Image<'T>,Image<'T>> when 'T: equality
