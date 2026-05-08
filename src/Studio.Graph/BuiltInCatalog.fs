@@ -21,6 +21,7 @@ module BuiltInCatalog =
   let pointSet = PortType.Custom "PointSet"
   let float64Matrix = PortType.Custom "Float64Matrix"
   let biasModel = PortType.Custom "BiasModel"
+  let serialSliceManifest = PortType.Custom "SerialSliceManifest"
   let streamedObjects = PortType.Custom "StreamedObjects"
   let intList = PortType.Custom "IntList"
   let uint64List = PortType.Custom "UInt64List"
@@ -88,6 +89,9 @@ module BuiltInCatalog =
 
   let private correctBiasDescription =
       "Subtracts a fitted polynomial BiasModel from each streamed slice and emits Float64 corrected images. The masked variant only subtracts inside non-zero mask pixels and leaves pixels outside the mask unchanged."
+
+  let private serialSectionsDescription =
+      "Serial-section tools operate slice-wise for stacks acquired by physical sectioning, shaving, cutting, or other per-slice interactions with the material. They keep z as an ordered section index and use serial* names to distinguish acquisition correction from ordinary 3D image filtering."
 
   let private euler2DDescription =
       "Creates a synthetic stack by transforming a simple seed image through a sequence of 2D Euler transforms.\n\nIt is mainly a demonstration and testing source for registration, resampling, and motion-like examples. The generated stack contains a box-like object whose position changes according to the selected transform pattern.\n\nUse read boxes for real experimental data."
@@ -737,6 +741,81 @@ module BuiltInCatalog =
           Parameters =
               [ makeParameter "type" "Type" "Float64" BasicType.String
                 makeParameter "model" "Model" "biasModel" BasicType.String ] }
+
+        { Id = "SerialPolynomialBiasCorrect"
+          DisplayName = "serialPolynomialBiasCorrect"
+          Category = "Serial Sections"
+          Summary = "Fit and subtract a 2D polynomial bias field independently per slice."
+          Description = serialSectionsDescription
+          Aliases = [ "serial"; "slice"; "slicewise"; "bias"; "polynomial"; "section"; "illumination" ]
+          Inputs = [ makePort "Number" imageAny ]
+          Outputs = [ makePort "Float64" imageFloat64 ]
+          Parameters =
+              [ makeParameter "type" "Type" "Float64" BasicType.String
+                makeParameter "order" "Order" "2" (BasicType.Numeric Int32) ] }
+
+        { Id = "SerialKeypoints2D"
+          DisplayName = "serialKeypoints2D"
+          Category = "Serial Sections"
+          Summary = "Detect 2D keypoints independently in each serial section."
+          Description = serialSectionsDescription
+          Aliases = [ "serial"; "slice"; "slicewise"; "keypoints"; "features"; "registration"; "section" ]
+          Inputs = [ makePort "Number" imageAny ]
+          Outputs = [ makePort "PointSet" pointSet ]
+          Parameters =
+              [ makeParameter "type" "Type" "Float64" BasicType.String
+                makeParameter "sigma" "Sigma" "1.0" (BasicType.Numeric Float64)
+                makeParameter "threshold" "Threshold" "0.03" (BasicType.Numeric Float64) ] }
+
+        { Id = "SerialKeypointTranslationManifest"
+          DisplayName = "serialKeypointTranslationManifest"
+          Category = "Serial Sections"
+          Summary = "Reduce slicewise keypoints to a cumulative translation manifest."
+          Description = serialSectionsDescription
+          Aliases = [ "serial"; "slice"; "slicewise"; "manifest"; "keypoints"; "registration"; "translation" ]
+          Inputs = [ makePort "PointSet" pointSet ]
+          Outputs = [ makePort "SerialSliceManifest" serialSliceManifest ]
+          Parameters =
+              [ makeParameter "width" "Width" "64" (BasicType.Numeric UInt32)
+                makeParameter "height" "Height" "64" (BasicType.Numeric UInt32) ] }
+
+        { Id = "SerialImageTranslationManifest"
+          DisplayName = "serialImageTranslationManifest"
+          Category = "Serial Sections"
+          Summary = "Estimate pairwise slicewise translations and accumulate them from the first slice."
+          Description = serialSectionsDescription
+          Aliases = [ "serial"; "slice"; "slicewise"; "manifest"; "registration"; "translation"; "alignment" ]
+          Inputs = [ makePort "Number" imageAny ]
+          Outputs = [ makePort "SerialSliceManifest" serialSliceManifest ]
+          Parameters =
+              [ makeParameter "type" "Type" "Float64" BasicType.String
+                makeParameter "maxShift" "Max shift" "8" (BasicType.Numeric Int32) ] }
+
+        { Id = "SerialApplyManifest"
+          DisplayName = "serialApplyManifest"
+          Category = "Serial Sections"
+          Summary = "Apply slicewise serial-section transforms on the original slice canvas."
+          Description = serialSectionsDescription
+          Aliases = [ "serial"; "slice"; "slicewise"; "manifest"; "transform"; "registration"; "apply" ]
+          Inputs = [ makePort "Number" imageAny ]
+          Outputs = [ makePort "Float64" imageFloat64 ]
+          Parameters =
+              [ makeParameter "type" "Type" "Float64" BasicType.String
+                makeParameter "manifest" "Manifest" "serialManifest" BasicType.String
+                makeParameter "background" "Background" "0.0" (BasicType.Numeric Float64) ] }
+
+        { Id = "SerialApplyManifestInBoundingBox"
+          DisplayName = "serialApplyManifestInBoundingBox"
+          Category = "Serial Sections"
+          Summary = "Apply slicewise transforms on an expanded canvas covering all transformed slices."
+          Description = serialSectionsDescription
+          Aliases = [ "serial"; "slice"; "slicewise"; "manifest"; "transform"; "registration"; "bounding"; "box" ]
+          Inputs = [ makePort "Number" imageAny ]
+          Outputs = [ makePort "Float64" imageFloat64 ]
+          Parameters =
+              [ makeParameter "type" "Type" "Float64" BasicType.String
+                makeParameter "manifest" "Manifest" "serialManifest" BasicType.String
+                makeParameter "background" "Background" "0.0" (BasicType.Numeric Float64) ] }
 
         { Id = "Write"
           DisplayName = "write"

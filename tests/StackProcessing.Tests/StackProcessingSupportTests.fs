@@ -806,6 +806,87 @@ let stackProcessingSupportSuite =
             finally
                 disposeImages corrected
 
+        testCase "serial section polynomial correction works slice-wise" <| fun _ ->
+            let slices =
+                [ for z in 0 .. 2 ->
+                    let image =
+                        Array2D.init 4 3 (fun x y -> 3.0 + float z + 2.0 * float x - float y)
+                        |> Image<float>.ofArray2D
+                    image.index <- z
+                    image ]
+
+            let corrected =
+                try
+                    imagePlan slices
+                    >=> serialPolynomialBiasCorrect<float> 1
+                    |> drainList
+                finally
+                    disposeImages slices
+
+            try
+                for image in corrected do
+                    let arr = image.toArray2D()
+                    for y in 0 .. arr.GetLength(1) - 1 do
+                        for x in 0 .. arr.GetLength(0) - 1 do
+                            Expect.floatClose Accuracy.medium arr[x, y] 0.0 "Slicewise linear polynomial bias should subtract to numerical zero."
+            finally
+                disposeImages corrected
+
+        testCase "serial section manifests accumulate pairwise translations and can expand canvas" <| fun _ ->
+            let makeSlice z impulseX =
+                let image =
+                    Array2D.init 5 5 (fun x y -> if x = impulseX && y = 2 then 10.0 else 0.0)
+                    |> Image<float>.ofArray2D
+                image.index <- z
+                image
+
+            let sampled = [ makeSlice 0 2; makeSlice 1 3 ]
+            let manifest =
+                try
+                    imagePlan sampled
+                    >=> serialImageTranslationManifest<float> 2
+                    |> drain
+                finally
+                    disposeImages sampled
+
+            Expect.equal manifest.Transforms.Length 2 "The serial manifest should contain one transform per slice."
+            Expect.floatClose Accuracy.high manifest.Transforms.[1].Matrix.[0].[2] -1.0 "The second slice should be translated back toward the first slice."
+
+            let input = [ makeSlice 0 2; makeSlice 1 3 ]
+            let transformed =
+                try
+                    imagePlan input
+                    >=> serialApplyManifestInBoundingBox<float> manifest 0.0
+                    |> drainList
+                finally
+                    disposeImages input
+
+            try
+                Expect.equal (transformed[0].GetWidth()) 6u "Bounding-box application should expand the x canvas enough for shifted slices."
+                Expect.floatClose Accuracy.medium (transformed[1].Get [ 3u; 2u ]) 10.0 "The shifted impulse should align with the first slice in the expanded canvas."
+            finally
+                disposeImages transformed
+
+        testCase "serial 2D keypoints emit per-slice point sets" <| fun _ ->
+            let slices =
+                [ for z in 0 .. 1 ->
+                    let image =
+                        Array2D.init 7 7 (fun x y -> if x = 3 && y = 3 then 255uy else 0uy)
+                        |> Image<uint8>.ofArray2D
+                    image.index <- z
+                    image ]
+
+            try
+                let pointSets =
+                    imagePlan slices
+                    >=> serialKeypoints2D<uint8> 0.5 0.0
+                    |> drainList
+
+                let points = pointSets |> List.collect _.Points
+                Expect.isTrue (points |> List.exists (fun p -> p.X = 3.0 && p.Y = 3.0 && p.Z = 0.0)) "Slicewise 2D keypoints should preserve slice z."
+            finally
+                disposeImages slices
+
         testCase "earthMoversDistance agrees with brute-force matching for equal-sized point sets" <| fun _ ->
             let fixedPoints =
                 [ point 0.0 0.0 0.0

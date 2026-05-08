@@ -186,6 +186,42 @@ let generatorSuite =
             Expect.stringContains code "|> drain" "Linked bias model reducer should be drained into a binding."
             Expect.stringContains code ">=> correctBias<float> FitBiasModel0" "CorrectBias should receive the linked bias model binding."
 
+        testCase "serial section manifest reducer can feed slicewise transform application" <| fun _ ->
+            let read =
+                node "read" "Read"
+                    [ p "availableMemory" "4096" false
+                      p "type" "Float64" false
+                      p "input" "sections" false
+                      p "suffix" ".tiff" false ]
+
+            let manifest =
+                node "manifest" "SerialImageTranslationManifest"
+                    [ p "type" "Float64" false
+                      p "maxShift" "4" false ]
+
+            let apply =
+                node "apply" "SerialApplyManifestInBoundingBox"
+                    [ p "type" "Float64" false
+                      p "manifest" "serialManifest" true
+                      p "background" "0.0" false ]
+
+            let write =
+                node "write" "Write"
+                    [ p "output" "aligned" false
+                      p "suffix" ".tiff" false ]
+
+            let code =
+                graph
+                    [ read; manifest; apply; write ]
+                    [ edge "read" "output" 0 "manifest" "input" 0
+                      edge "manifest" "reducerOutput" 0 "apply" "parameterInput" 1
+                      edge "read" "output" 0 "apply" "input" 0
+                      edge "apply" "output" 0 "write" "input" 0 ]
+                |> PipelineCodeGenerator.generateSavedGraph
+
+            Expect.stringContains code ">=> serialImageTranslationManifest<float> 4" "SerialImageTranslationManifest should lower to the serial reducer."
+            Expect.stringContains code ">=> serialApplyManifestInBoundingBox<float> SerialImageTranslationManifest0 0.0" "Serial apply should receive the linked manifest binding."
+
         testCase "noise add-stage boxes lower to streaming filters" <| fun _ ->
             let read =
                 node "read" "Read"

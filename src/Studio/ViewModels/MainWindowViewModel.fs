@@ -681,6 +681,11 @@ module private HighValueFilterNode =
           "FitBiasModelMasked"
           "CorrectBias"
           "CorrectBiasMasked"
+          "SerialPolynomialBiasCorrect"
+          "SerialKeypoints2D"
+          "SerialImageTranslationManifest"
+          "SerialApplyManifest"
+          "SerialApplyManifestInBoundingBox"
           "LabelContour"
           "ChangeLabel" ]
         |> Set.ofList
@@ -1480,6 +1485,8 @@ type MainWindowViewModel() as this =
                 | "Quantiles", key when key.StartsWith("useQ", StringComparison.Ordinal) ->
                     PipelineParameterViewModel(parameter.Label, parameter.Key, parameter.DefaultValue, parameter.Type, canUseInput = false)
                 | ("CorrectBias" | "CorrectBiasMasked"), "model" ->
+                    PipelineParameterViewModel(parameter.Label, parameter.Key, parameter.DefaultValue, parameter.Type, forceUseInput = true)
+                | ("SerialApplyManifest" | "SerialApplyManifestInBoundingBox"), "manifest" ->
                     PipelineParameterViewModel(parameter.Label, parameter.Key, parameter.DefaultValue, parameter.Type, forceUseInput = true)
                 | "Quantiles", "histogram" ->
                     PipelineParameterViewModel(parameter.Label, parameter.Key, parameter.DefaultValue, parameter.Type, forceUseInput = true)

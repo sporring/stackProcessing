@@ -132,6 +132,10 @@ type BiasPolynomialTerm = StackBias.BiasPolynomialTerm
 
 type BiasPolynomialModel = StackBias.BiasPolynomialModel
 
+type SerialSliceTransform = StackSerialSections.SerialSliceTransform
+
+type SerialSliceManifest = StackSerialSections.SerialSliceManifest
+
 type Point3D = StackMesh.Point3D
 
 type Triangle = StackMesh.Triangle
@@ -974,6 +978,38 @@ val correctBiasMasked<'T when 'T: equality> :
   (StackBias.BiasPolynomialModel ->
      StackCore.Stage<(StackCore.Image<'T> * StackCore.Image<uint8>),
                      StackCore.Image<float>>) when 'T: equality
+
+val serialIdentityManifest:
+  (uint32 -> uint32 -> uint32 -> StackSerialSections.SerialSliceManifest)
+
+val serialPolynomialBiasCorrect<'T when 'T: equality> :
+  (int -> StackCore.Stage<StackCore.Image<'T>,StackCore.Image<float>>)
+    when 'T: equality
+
+val serialKeypoints2D<'T when 'T: equality> :
+  (float -> float -> StackCore.Stage<StackCore.Image<'T>,StackPoints.PointSet>)
+    when 'T: equality
+
+val serialKeypointTranslationManifest:
+  (uint ->
+     uint ->
+     StackCore.Stage<StackPoints.PointSet,
+                     StackSerialSections.SerialSliceManifest>)
+
+val serialImageTranslationManifest<'T when 'T: equality> :
+  (int ->
+     StackCore.Stage<StackCore.Image<'T>,StackSerialSections.SerialSliceManifest>)
+    when 'T: equality
+
+val serialApplyManifest<'T when 'T: equality> :
+  (StackSerialSections.SerialSliceManifest ->
+     float -> StackCore.Stage<StackCore.Image<'T>,StackCore.Image<float>>)
+    when 'T: equality
+
+val serialApplyManifestInBoundingBox<'T when 'T: equality> :
+  (StackSerialSections.SerialSliceManifest ->
+     float -> StackCore.Stage<StackCore.Image<'T>,StackCore.Image<float>>)
+    when 'T: equality
 
 val quantiles: (float list -> Map<'a,uint64> -> float list) when 'a: comparison
 

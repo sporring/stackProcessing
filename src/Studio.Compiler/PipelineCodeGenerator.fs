@@ -331,6 +331,8 @@ module PipelineCodeGenerator =
         || node.FunctionId = "PointPairDistances"
         || node.FunctionId = "FitBiasModel"
         || node.FunctionId = "FitBiasModelMasked"
+        || node.FunctionId = "SerialKeypointTranslationManifest"
+        || node.FunctionId = "SerialImageTranslationManifest"
 
     let private stackInfoFieldExpression bindingName portIndex =
         [| $"{bindingName}.dimensions"
@@ -1227,6 +1229,33 @@ module PipelineCodeGenerator =
             let pixelType = pixelTypeNameFromParameter "type" "Float64" node
             let model = parameterValue "model"
             $">=> correctBiasMasked<{pixelType}> {model}"
+        | "SerialPolynomialBiasCorrect" ->
+            let pixelType = pixelTypeNameFromParameter "type" "Float64" node
+            let order = parameterValue "order"
+            $">=> serialPolynomialBiasCorrect<{pixelType}> {order}"
+        | "SerialKeypoints2D" ->
+            let pixelType = pixelTypeNameFromParameter "type" "Float64" node
+            let sigma = parameterValue "sigma"
+            let threshold = parameterValue "threshold"
+            $">=> serialKeypoints2D<{pixelType}> {sigma} {threshold}"
+        | "SerialKeypointTranslationManifest" ->
+            let width = parameterValue "width"
+            let height = parameterValue "height"
+            $">=> serialKeypointTranslationManifest {width} {height}"
+        | "SerialImageTranslationManifest" ->
+            let pixelType = pixelTypeNameFromParameter "type" "Float64" node
+            let maxShift = parameterValue "maxShift"
+            $">=> serialImageTranslationManifest<{pixelType}> {maxShift}"
+        | "SerialApplyManifest" ->
+            let pixelType = pixelTypeNameFromParameter "type" "Float64" node
+            let manifest = parameterValue "manifest"
+            let background = parameterValue "background"
+            $">=> serialApplyManifest<{pixelType}> {manifest} {background}"
+        | "SerialApplyManifestInBoundingBox" ->
+            let pixelType = pixelTypeNameFromParameter "type" "Float64" node
+            let manifest = parameterValue "manifest"
+            let background = parameterValue "background"
+            $">=> serialApplyManifestInBoundingBox<{pixelType}> {manifest} {background}"
         | "PointPairDistances" ->
             let xUnit = parameterValue "xUnit"
             let yUnit = parameterValue "yUnit"
@@ -1700,6 +1729,8 @@ module PipelineCodeGenerator =
                 | "PointPairDistances"
                 | "FitBiasModel"
                 | "FitBiasModelMasked"
+                | "SerialKeypointTranslationManifest"
+                | "SerialImageTranslationManifest"
                 | "AffineRegistration" ->
                     $"{expression}{newLine}|> drain"
                 | "ComponentTranslationTable" ->

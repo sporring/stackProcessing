@@ -49,6 +49,7 @@
         <Compile Include="StackMesh.fs" />
         <Compile Include="StackImageFunctions.fs" />
         <Compile Include="StackBias.fs" />
+        <Compile Include="StackSerialSections.fs" />
         <Compile Include="StackAffineResampler.fs" />
     </ItemGroup>
 
