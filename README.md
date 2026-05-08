@@ -44,8 +44,10 @@ dotnet run -- 18
 dotnet run -- -d 1 18
 ```
 
-The optional `-d` flag enables debug output. Levels `1`, `2`, and `3` add
-increasingly detailed execution information.
+The optional `-d` flag enables debug output. Level `1` reports read and write
+progress only. Level `2` adds plan, stage, and optimization summaries. Level
+`3` adds process RSS measurements. Level `4` is the most intrusive diagnostic
+level and disables optimization choices that would hide internal structure.
 
 ## Projects
 

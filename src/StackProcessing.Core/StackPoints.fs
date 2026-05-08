@@ -71,6 +71,9 @@ let private splitCsvLine (line: string) =
 
 let readPointSet (path: string) (pl: Plan<unit, unit>) : Plan<unit, PointSet> =
     let mapper (_idx: int) =
+        if pl.debug then
+            printfn $"[readPointSet] Reading {path}"
+
         let lines =
             File.ReadLines(path)
             |> Seq.filter (fun line -> not (String.IsNullOrWhiteSpace line))
@@ -103,9 +106,12 @@ let readPointSet (path: string) (pl: Plan<unit, unit>) : Plan<unit, PointSet> =
     Plan.create stage pl.memAvail 0UL 0UL 1UL pl.debug
 
 let writePointSet (output: string) (suffix: string) : Stage<PointSet, unit> =
-    let reducer (_debug: bool) (input: AsyncSeq<PointSet>) =
+    let reducer (debug: bool) (input: AsyncSeq<PointSet>) =
         async {
             let outputPath = outputPathWithSuffix output suffix
+            if debug then
+                printfn $"[writePointSet] Writing {outputPath}"
+
             let directory = Path.GetDirectoryName(outputPath)
             if not (String.IsNullOrWhiteSpace directory) then
                 Directory.CreateDirectory(directory) |> ignore
@@ -152,7 +158,7 @@ let unvectorizeMatrix (matrix: VectorizedMatrix) =
     result
 
 let writeMatrix (output: string) (suffix: string) : Stage<VectorizedMatrix, unit> =
-    let reducer (_debug: bool) (input: AsyncSeq<VectorizedMatrix>) =
+    let reducer (debug: bool) (input: AsyncSeq<VectorizedMatrix>) =
         async {
             let! matrices = input |> AsyncSeq.toListAsync
 
@@ -160,6 +166,9 @@ let writeMatrix (output: string) (suffix: string) : Stage<VectorizedMatrix, unit
             | [] -> invalidOp "writeMatrix expected one vectorized matrix, but the stream was empty."
             | [ matrix ] ->
                 let outputPath = outputPathWithSuffix output suffix
+                if debug then
+                    printfn $"[writeMatrix] Writing {outputPath}"
+
                 let directory = Path.GetDirectoryName(outputPath)
                 if not (String.IsNullOrWhiteSpace directory) then
                     Directory.CreateDirectory(directory) |> ignore
@@ -182,7 +191,7 @@ let writeCSVMatrix (output: string) : Stage<VectorizedMatrix, unit> =
     writeMatrix output ".csv"
 
 let writeCSVHistogram<'T when 'T: comparison> (output: string) : Stage<Map<'T, uint64>, unit> =
-    let reducer (_debug: bool) (input: AsyncSeq<Map<'T, uint64>>) =
+    let reducer (debug: bool) (input: AsyncSeq<Map<'T, uint64>>) =
         async {
             let! histogram =
                 input
@@ -200,6 +209,9 @@ let writeCSVHistogram<'T when 'T: comparison> (output: string) : Stage<Map<'T, u
                     Map.empty
 
             let outputPath = outputPathWithSuffix output ".csv"
+            if debug then
+                printfn $"[writeHistogram] Writing {outputPath}"
+
             let directory = Path.GetDirectoryName(outputPath)
             if not (String.IsNullOrWhiteSpace directory) then
                 Directory.CreateDirectory(directory) |> ignore

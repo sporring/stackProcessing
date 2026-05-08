@@ -184,7 +184,7 @@ let (-->) = Stage.(-->)
 let source = Plan.source 
 let debug level availableMemory = 
     let level = max 1u level
-    Image.Image<_>.setDebugLevel level
+    Image.Image<_>.setDebugLevel (if level > 1u then level - 1u else 0u)
     Plan.debug level availableMemory
 let commandLineSource availableMemory (args: string array) =
     if args.Length >= 2 && args[0] = "-d" then
@@ -227,10 +227,10 @@ let (>=>>) (pl: Plan<'In, 'S>) (stage1: Stage<'S, 'U>, stage2: Stage<'S, 'V>) : 
         | Streaming, Streaming -> stage1, stage2
         | Window (a1,b1,c1,d1,e1), Window (a2,b2,c2,d2,e2) when a1=a2 && b1=b2 && c1=c2 && d1=d2 && e1=e2 -> stage1, stage2
         | Streaming, Window (winSz, stride, pad, emitStart, emitCount) -> 
-            printfn "left is promoted"
+            if pl.debug && DebugLevel.current() >= 2u then printfn "left is promoted"
             stream2Window winSz pad stride stage1, stage2 
         | Window (winSz, stride, pad, emitStart, emitCount), Streaming -> 
-            printfn "right is promoted"
+            if pl.debug && DebugLevel.current() >= 2u then printfn "right is promoted"
             stage1, stream2Window winSz pad stride stage2
         | _,_ -> failwith $"[>=>>] does not know how to combine the stage-profiles: {stage1.Transition.From} vs {stage2.Transition.From}"
 

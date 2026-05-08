@@ -353,7 +353,7 @@ let getFilenames (inputDir: string) (suffix: string) (filter: string[]->string[]
     let depth = uint64 filenames.Length
 
     let mapper (i: int) : string = 
-        if pl.debug then printfn "[%s] Supplying filename %i: %s" name i filenames[i]
+        if pl.debug && DebugLevel.current() >= 2u then printfn "[%s] Supplying filename %i: %s" name i filenames[i]
         filenames[i]
 
     let transition = ProfileTransition.create Unit Streaming
@@ -374,7 +374,7 @@ let getFilenames (inputDir: string) (suffix: string) (filter: string[]->string[]
 
 let readFilesWithShape<'T when 'T: equality> (debug: bool) (width: uint) (height: uint) : Stage<string, Image<'T>> =
     let name = "readFiles"
-    if debug then printfn $"[{name} cast to {typeof<'T>.Name}]"
+    if debug && DebugLevel.current() >= 2u then printfn $"[{name} cast to {typeof<'T>.Name}]"
     let mutable width = width
     let mutable height = height
 
@@ -565,6 +565,9 @@ let private readTiffVolume<'T when 'T: equality> (filename: string) (pl: Plan<un
                     invalidOp $"Could not open '{filename}' for TIFF volume reading."
 
                 for index in 0 .. int depth - 1 do
+                    if _debug then
+                        printfn $"[readVolume] Reading TIFF page {index} from {filename} as {typeof<'T>.Name}"
+
                     let pageWidth = uint (tiffFieldInt reader TiffTag.IMAGEWIDTH 0)
                     let pageHeight = uint (tiffFieldInt reader TiffTag.IMAGELENGTH 0)
                     if pageWidth <> width || pageHeight <> height then
@@ -614,6 +617,9 @@ let private readSimpleItkVolume<'T when 'T: equality> (filename: string) (pl: Pl
                   "pixelType", typeof<'T>.Name ])
 
     let mapper (index: int) =
+        if pl.debug then
+            printfn $"[readVolume] Reading slice {index} from {filename} as {typeof<'T>.Name}"
+
         use reader = new itk.simple.ImageFileReader()
         reader.SetFileName(filename)
         if dimension = 3 then
@@ -651,7 +657,7 @@ let readVolume<'T when 'T: equality> (filename: string) (pl: Plan<unit, unit>) :
 
 let readFilePairs<'T when 'T: equality> (debug: bool) : Stage<string*string, Image<'T>*Image<'T>> =
     let name = "readFilePairs"
-    if debug then printfn $"[{name} cast to {typeof<'T>.Name}]"
+    if debug && DebugLevel.current() >= 2u then printfn $"[{name} cast to {typeof<'T>.Name}]"
     let mutable width = 0u // We need to read the first image in order to find its size
     let mutable height = 0u
 
@@ -954,6 +960,9 @@ let readSlabStacked<'T when 'T: equality> (inputDir: string) (suffix: string) (p
                   "pixelType", typeof<'T>.Name ])
 
     let mapper (k: int) : Image<'T> =
+        if pl.debug then
+            printfn $"[readSlabStacked] Reading slab {k} from {inputDir}/*{suffix} as {typeof<'T>.Name}"
+
         _readSlabStacked<'T> inputDir suffix chunkInfo 2u k
 
     let transition = ProfileTransition.create Unit Streaming
@@ -1041,6 +1050,9 @@ let readZarrSlabStacked<'T when 'T: equality>
         let zStart = idx * slabDepth
         let zStop = min sizeZ (zStart + slabDepth)
         let zCount = zStop - zStart
+        if pl.debug then
+            printfn $"[readZarrSlabStacked] Reading z {zStart}..{zStop - 1} from {path} as {typeof<'T>.Name}"
+
         let region =
             PixelRegion(
                 [| int64 timepoint; int64 channel; int64 zStart; 0L; 0L |],
@@ -1138,6 +1150,9 @@ let readNexusSlabStacked<'T when 'T: equality>
         let zStart = idx * slabDepth
         let zStop = min sizeZ (zStart + slabDepth)
         let zCount = zStop - zStart
+        if pl.debug then
+            printfn $"[readNexusSlabStacked] Reading z {zStart}..{zStop - 1} from {path}:{datasetPath} as {typeof<'T>.Name}"
+
         let starts = Array.zeroCreate<uint64> rank
         let blocks = Array.create rank 1UL
         starts[frameAxis] <- uint64 zStart

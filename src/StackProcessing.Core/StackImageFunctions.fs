@@ -1386,7 +1386,7 @@ let smoothWGauss (sigma: float) (outputRegionMode: ImageFunctions.OutputRegionMo
     // e.g., integer solutions for 
     // windowSize = 1, 6, 15, or 26, pad = 2, length = 22, => n = 21, 10, 1, or 0
     let f debug = 
-        if debug then printfn $"smoothWGauss: sigma {sigma}, ksz {ksz}, win {win}, stride {stride}, pad {pad}"
+        if debug && DebugLevel.current() >= 2u then printfn $"smoothWGauss: sigma {sigma}, ksz {ksz}, win {win}, stride {stride}, pad {pad}"
         volFctToWindowFctReleaseAfterDebug debug (ImageFunctions.discreteGaussian 3u sigma (ksz |> Some) outputRegionMode boundaryCondition) ksz outputStart stride
     let memoryNeed nPixels = (2UL*nPixels*(uint64 win) + (uint64 ksz))*getBytesPerComponent<float>
     let elementTransformation = id
@@ -1639,7 +1639,7 @@ let addSpeckleNoise stddev = liftUnaryReleaseAfter "addSpeckleNoise" (ImageFunct
 
 let show (plt: Image<'T> -> unit) : Stage<Image<'T>, unit> =
     let consumer (debug: bool) (idx: int) (image: Image<'T>) =
-        if debug then printfn "[show] Showing image %d" idx
+        if debug && DebugLevel.current() >= 2u then printfn "[show] Showing image %d" idx
         let width = image.GetWidth() |> int
         let height = image.GetHeight() |> int
         plt image
@@ -1649,7 +1649,7 @@ let show (plt: Image<'T> -> unit) : Stage<Image<'T>, unit> =
 
 let plot (plt: (float list)->(float list)->unit) : Stage<(float * float) list, unit> = // better be (float*float) list
     let consumer (debug: bool) (idx: int) (points: (float*float) list) =
-        if debug then printfn $"[plot] Plotting {points.Length} 2D points"
+        if debug && DebugLevel.current() >= 2u then printfn $"[plot] Plotting {points.Length} 2D points"
         let x,y = points |> List.unzip
         plt x y
     let memoryNeed = id
@@ -1657,7 +1657,7 @@ let plot (plt: (float list)->(float list)->unit) : Stage<(float * float) list, u
 
 let print () : Stage<'T, unit> =
     let consumer (debug: bool) (idx: int) (elm: 'T) =
-        if debug then printfn "[print]"
+        if debug && DebugLevel.current() >= 2u then printfn "[print]"
         printfn "%d -> %A" idx elm
     let memoryNeed = id
     Stage.consumeWith "print" consumer memoryNeed
@@ -1687,32 +1687,32 @@ let srcPlan (debug: bool) (memAvail: uint64) (width: uint) (height: uint) (depth
     |> Plan.withSourcePeek sourcePeek
 
 let zero<'T when 'T: equality> (width: uint) (height: uint) (depth: uint) (pl: Plan<unit, unit>) : Plan<unit, Image<'T>> =
-    if pl.debug then printfn $"[zero] {width}x{height}x{depth}"
+    if pl.debug && DebugLevel.current() >= 2u then printfn $"[zero] {width}x{height}x{depth}"
     let mapper (i: int) : Image<'T> = 
         let image = new Image<'T>([width; height], 1u,$"zero[{i}]", i)
-        if pl.debug then printfn "[zero] Created image %A" i
+        if pl.debug && DebugLevel.current() >= 2u then printfn "[zero] Created image %A" i
         image
     let stage = srcStage "zero" width height depth mapper |> Some
     srcPlan pl.debug pl.memAvail width height depth stage
 
 let normalNoise<'T when 'T: equality> (width: uint) (height: uint) (depth: uint) (mean: float) (stddev: float) (pl: Plan<unit, unit>) : Plan<unit, Image<'T>> =
-    if pl.debug then printfn $"[normalNoise] {width}x{height}x{depth}, mean {mean}, std {stddev}"
+    if pl.debug && DebugLevel.current() >= 2u then printfn $"[normalNoise] {width}x{height}x{depth}, mean {mean}, std {stddev}"
     let mapper (i: int) : Image<'T> =
         let zero = new Image<'T>([width; height], 1u, $"normalNoise.zero[{i}]", i)
         let image = ImageFunctions.addNormalNoise mean stddev zero
         zero.decRefCount()
-        if pl.debug then printfn "[normalNoise] Created image %A" i
+        if pl.debug && DebugLevel.current() >= 2u then printfn "[normalNoise] Created image %A" i
         image
     let stage = srcStage "normalNoise" width height depth mapper |> Some
     srcPlan pl.debug pl.memAvail width height depth stage
 
 let private noiseSource<'T when 'T: equality> name width height depth addNoise (pl: Plan<unit, unit>) : Plan<unit, Image<'T>> =
-    if pl.debug then printfn $"[{name}] {width}x{height}x{depth}"
+    if pl.debug && DebugLevel.current() >= 2u then printfn $"[{name}] {width}x{height}x{depth}"
     let mapper (i: int) : Image<'T> =
         let zero = new Image<'T>([width; height], 1u, $"{name}.zero[{i}]", i)
         let image = addNoise zero
         zero.decRefCount()
-        if pl.debug then printfn "[%s] Created image %A" name i
+        if pl.debug && DebugLevel.current() >= 2u then printfn "[%s] Created image %A" name i
         image
     let stage = srcStage name width height depth mapper |> Some
     srcPlan pl.debug pl.memAvail width height depth stage
@@ -1730,11 +1730,11 @@ let createByEuler2DTransform<'T when 'T: equality> (img: Image<'T>) (depth: uint
     // width, heigth, depth should be replaced with shape and shapeUpdate, and mapper should be deferred to outside Core!!!
     let width= img.GetWidth()
     let height = img.GetHeight()
-    if pl.debug then printfn $"[createByTranslation] {width}x{height}x{depth}"
+    if pl.debug && DebugLevel.current() >= 2u then printfn $"[createByTranslation] {width}x{height}x{depth}"
     let mapper (i: int) : Image<'T> =
         let rot, trans = transform (uint i)
         let image = ImageFunctions.euler2DTransform img rot trans
-        if pl.debug then printfn "[createByTranslation] Created image %A" i
+        if pl.debug && DebugLevel.current() >= 2u then printfn "[createByTranslation] Created image %A" i
         image
     let stage = srcStage "createByEuler2DTransform" width height depth mapper |> Some
     srcPlan pl.debug pl.memAvail width height depth stage

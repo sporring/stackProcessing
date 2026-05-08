@@ -265,7 +265,7 @@ let private writePly outputPath (triangleSets: TriangleSet seq) =
         writer.WriteLine($"3 {start} {start + 1} {start + 2}"))
 
 let writeMesh (outputPath: string) (format: string) : Stage<TriangleSet, unit> =
-    let reducer (_debug: bool) (input: AsyncSeq<TriangleSet>) =
+    let reducer (debug: bool) (input: AsyncSeq<TriangleSet>) =
         async {
             let triangleSets = ResizeArray<TriangleSet>()
             do!
@@ -279,6 +279,9 @@ let writeMesh (outputPath: string) (format: string) : Stage<TriangleSet, unit> =
             let directory = Path.GetDirectoryName(outputPath)
             if not (String.IsNullOrWhiteSpace directory) then
                 Directory.CreateDirectory(directory) |> ignore
+
+            if debug then
+                printfn $"[writeMesh] Writing {outputPath}"
 
             match inferFormat outputPath format with
             | Obj -> writeObj outputPath triangleSets

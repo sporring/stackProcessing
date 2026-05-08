@@ -930,9 +930,9 @@ module DebugLevel =
     let isEnabled () =
         level > 0u
     let rssEnabled () =
-        level >= 2u
-    let optimizationDisabled () =
         level >= 3u
+    let optimizationDisabled () =
+        level >= 4u
 
 type PipelineGraphNode =
     { Id: int
@@ -1537,7 +1537,7 @@ module Plan =
         observations |> List.sumBy (fun observation -> costScore observation.Time)
 
     let private printOptimizationSummary label (pl: Plan<'S,'T>) =
-        if pl.debug && pl.debugLevel >= 1u && pl.debugLevel < 3u then
+        if pl.debug && pl.debugLevel >= 2u && pl.debugLevel < 4u then
             let status =
                 if pl.memPeak <= pl.memAvail then "accepted" else "exceeds memory limit"
             let timeText =
@@ -1563,15 +1563,17 @@ module Plan =
     let debug (level: uint) (availableMemory: uint64) : Plan<unit, unit> =
         let level = max 1u level
         DebugLevel.set level
-        printfn $"[debug] Preparing plan - {availableMemory} B available, level {level}"
+        if level >= 2u then
+            printfn $"[debug] Preparing plan - {availableMemory} B available, level {level}"
         let result = create None availableMemory 0UL 0UL 0UL true
-        printfn $"[debug] Done"
+        if level >= 2u then
+            printfn $"[debug] Done"
         result
 
     //////////////////////////////////////////////////////////////
     /// Composition operators
     let composePlan (name: string) (pl: Plan<'a, 'b>) (stage: Stage<'b, 'c>) : Plan<'a, 'c> =
-        if pl.debug then printfn $"[{name}] {stage.Name}"
+        if pl.debug && pl.debugLevel >= 2u then printfn $"[{name}] {stage.Name}"
 
         let stage' = Option.map (fun stg -> Stage.compose stg stage) pl.stage
         let memNeeded = pl.nElemsPerSlice |> stage.MemoryNeed  |> SingleOrPair.sum |> SingleOrPair.fst// Stage.MemoryNeed must be updated as well
@@ -1591,7 +1593,7 @@ module Plan =
         composePlan $">=>" pl stage
 
     let map (name: string) (f: 'U->'V) (pl: Plan<'In,'U>) : Plan<'In,'V> =
-        if pl.debug then printfn $"[{name}]"
+        if pl.debug && pl.debugLevel >= 2u then printfn $"[{name}]"
         let memoryNeed m = 2UL*m // assuming simple transformation
         let elementTransformation = id
         let stage =
@@ -1618,7 +1620,7 @@ module Plan =
             Some stage1, Some stage2 ->
                 let debug = (pl1.debug || pl2.debug)
                 if debug then DebugLevel.set (max pl1.debugLevel pl2.debugLevel)
-                if debug then printfn $"[{name}] ({stage1.Name}, {stage2.Name})"
+                if debug && max pl1.debugLevel pl2.debugLevel >= 2u then printfn $"[{name}] ({stage1.Name}, {stage2.Name})"
 
                 if pl1.length <> pl2.length then
                     failwith $"[{name}] plans to be ziped must be over sequences of equal lengths {pl1.length} <> {pl2.length}"
@@ -1710,20 +1712,20 @@ module Plan =
     let sink (pl: Plan<unit, unit>) : unit =
         if not pl.debug && (pl.memPeak > pl.memAvail) then
             failwith $"Not enough memory for the plan {pl.memPeak} > {pl.memAvail}"
-        if pl.debug then printfn $"[sink] Transform plan graph with {pl.graph.Nodes.Length} nodes / {pl.graph.Edges.Length} edges to pipeline"
+        if pl.debug && pl.debugLevel >= 2u then printfn $"[sink] Transform plan graph with {pl.graph.Nodes.Length} nodes / {pl.graph.Edges.Length} edges to pipeline"
         let pipeline = Option.map (fun stage -> Stage.toPipe stage ()) pl.stage
         printOptimizationSummary "sink" pl
-        if pl.debug then printfn $"[sink] Running pipeline with an estimated {pl.memPeak/1024UL} / {pl.memAvail/1024UL} KB of memory use"
-        if pl.debug && pl.debugLevel >= 2u then
+        if pl.debug && pl.debugLevel >= 2u then printfn $"[sink] Running pipeline with an estimated {pl.memPeak/1024UL} / {pl.memAvail/1024UL} KB of memory use"
+        if pl.debug && pl.debugLevel >= 3u then
             let _, snapshot =
                 MemoryProbe.measure 10 (fun () ->
                     Option.map (Pipe.run pl.debug) pipeline |> ignore)
             printfn $"[sink] Process RSS baseline {MemoryProbe.formatBytes snapshot.Baseline}, peak {MemoryProbe.formatBytes snapshot.Peak}, delta {MemoryProbe.formatBytes snapshot.Delta}"
         else
             Option.map (Pipe.run pl.debug) pipeline |> ignore
-        if pl.debug then printfn "[sink] Cleaning"
+        if pl.debug && pl.debugLevel >= 2u then printfn "[sink] Cleaning"
         doCleaning pl |> ignore
-        if pl.debug then printfn "[sink] Done"
+        if pl.debug && pl.debugLevel >= 2u then printfn "[sink] Done"
 
     let sinkList (plans: Plan<unit, unit> list) : unit = // shape of unit?
         plans |> List.iter sink
@@ -1736,11 +1738,11 @@ module Plan =
         let res = 
             match stage with
                 Some stg -> 
-                    if pl.debug then printfn $"[{name}] Transform plan graph with {pl.graph.Nodes.Length} nodes / {pl.graph.Edges.Length} edges to pipeline"
+                    if pl.debug && pl.debugLevel >= 2u then printfn $"[{name}] Transform plan graph with {pl.graph.Nodes.Length} nodes / {pl.graph.Edges.Length} edges to pipeline"
                     let pipeline = stg.Build ()
                     printOptimizationSummary name pl
-                    if pl.debug then printfn $"[{name}] Running pipeline with an estimated {pl.memPeak/1024UL} / {pl.memAvail/1024UL} KB memory use" 
-                    if pl.debug && pl.debugLevel >= 2u then
+                    if pl.debug && pl.debugLevel >= 2u then printfn $"[{name}] Running pipeline with an estimated {pl.memPeak/1024UL} / {pl.memAvail/1024UL} KB memory use" 
+                    if pl.debug && pl.debugLevel >= 3u then
                         let result, snapshot =
                             MemoryProbe.measure 10 (fun () ->
                                 AsyncSeq.singleton () |> pipeline.Apply pl.debug |> reducer |> Async.RunSynchronously)
