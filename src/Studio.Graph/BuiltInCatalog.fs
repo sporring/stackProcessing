@@ -752,6 +752,25 @@ module BuiltInCatalog =
                 makeParameter "yUnit" "Y unit" "1.0" (BasicType.Numeric Float64)
                 makeParameter "zUnit" "Z unit" "1.0" (BasicType.Numeric Float64) ] }
 
+        { Id = "AffineRegistration"
+          DisplayName = "affineRegistration"
+          Category = "Geometry"
+          Summary = "Register two point sets and emit affine transform matrices."
+          Description = "Registers moving points to fixed points using the point-set affine optimizer. The outputs are 4x4 homogeneous Float64 matrices: Transform maps moving coordinates to fixed coordinates, and Inverse transform maps fixed coordinates back to moving coordinates. The matrices can be written with writeMatrix."
+          Aliases = [ "registration"; "affine"; "points"; "transform"; "matrix"; "alignment"; "reducer" ]
+          Inputs =
+              [ makePort "Fixed PointSet" pointSet
+                makePort "Moving PointSet" pointSet ]
+          Outputs =
+              [ makePort "Transform" float64Matrix
+                makePort "Inverse transform" float64Matrix ]
+          Parameters =
+              [ makeParameter "maxIterations" "Max iterations" "200" (BasicType.Numeric Int32)
+                makeParameter "initialLinearStep" "Linear step" "0.05" (BasicType.Numeric Float64)
+                makeParameter "initialTranslationStep" "Translation step" "1.0" (BasicType.Numeric Float64)
+                makeParameter "minStep" "Min step" "0.0001" (BasicType.Numeric Float64)
+                makeParameter "stepShrink" "Step shrink" "0.5" (BasicType.Numeric Float64) ] }
+
         { Id = "WriteMatrix"
           DisplayName = "writeMatrix"
           Category = "Sources / Sinks"

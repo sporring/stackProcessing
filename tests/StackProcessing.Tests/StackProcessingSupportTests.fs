@@ -781,6 +781,117 @@ let stackProcessingSupportSuite =
 
             Expect.isLessThan (earthMoversDistance moving fixedAsMovingCoordinates) 1.0e-8 "The inverse transform should map fixed-grid coordinates back to moving coordinates for StackAffineResampler."
 
+            let transformMatrix = affineToMatrix result.Transform
+            let matrixAffine = matrixToAffine transformMatrix
+            let matrixTransformedMoving =
+                transformPointSet matrixAffine { Points = moving }
+                |> _.Points
+
+            Expect.equal transformMatrix.Rows 4u "affineToMatrix should produce a 4x4 homogeneous matrix."
+            Expect.equal transformMatrix.Columns 4u "affineToMatrix should produce a 4x4 homogeneous matrix."
+            Expect.isLessThan (earthMoversDistance fixedPoints matrixTransformedMoving) 1.0e-8 "matrixToAffine should preserve the transform represented by affineToMatrix."
+
+            let matrices =
+                scalarPlan [ ({ Points = fixedPoints } : PointSet) ]
+                >=>> (
+                    Stage.map "fixed" (fun _ points -> points) id id,
+                    Stage.map "moving" (fun _ _ -> ({ Points = moving } : PointSet)) id id)
+                >=> affineRegistrationMatrices { defaultAffineRegistrationOptions with MaxIterations = 5 }
+                |> drainList
+
+            Expect.equal matrices.Length 2 "affineRegistrationMatrices should emit transform and inverse transform matrices."
+            Expect.equal matrices[0].Rows 4u "The forward transform matrix should be 4x4."
+            Expect.equal matrices[1].Rows 4u "The inverse transform matrix should be 4x4."
+
+        testCase "image-set manifest round-trips spatial data items as independent JSON sidecar" <| fun _ ->
+            let outputDir = tempDirectory "image-set-manifest"
+            let manifestPath = Path.Combine(outputDir, "imageset.json")
+            let affine: Affine =
+                { A =
+                    { m00 = 1.0; m01 = 0.0; m02 = 0.0
+                      m10 = 0.0; m11 = 1.0; m12 = 0.0
+                      m20 = 0.0; m21 = 0.0; m22 = 1.0 }
+                  T = v3 2.0 -1.0 0.5
+                  C = v3 4.0 5.0 6.0 }
+
+            try
+                let scalarItem =
+                    scalarImageSetItem
+                        "tile_001"
+                        "tile_001.tiff"
+                        ".tiff"
+                        [ 128UL; 64UL; 32UL ]
+                        [ 0.2; 0.2; 0.5 ]
+                        (imageSetTransformFromAffine affine)
+                        []
+
+                let vectorItem =
+                    vectorImageSetItem
+                        "gradient_001"
+                        "gradient_001.mha"
+                        ".mha"
+                        [ 128UL; 64UL; 32UL ]
+                        [ 0.2; 0.2; 0.5 ]
+                        (imageSetTransformFromAffine affine)
+                        [ "tile_001" ]
+
+                let pointItem =
+                    pointSetManifestItem
+                        "dog_001"
+                        "dog_001.csv"
+                        ".csv"
+                        [ 128UL; 64UL; 32UL ]
+                        [ 0.2; 0.2; 0.5 ]
+                        (imageSetTransformFromAffine affine)
+                        [ "tile_001" ]
+
+                let meshItem =
+                    triangleMeshManifestItem
+                        "surface_001"
+                        "surface_001.obj"
+                        ".obj"
+                        [ 128UL; 64UL; 32UL ]
+                        [ 0.2; 0.2; 0.5 ]
+                        (imageSetTransformFromAffine affine)
+                        [ "tile_001" ]
+
+                let manifest =
+                    createImageSetManifest "sample-registered" "micrometer"
+                    |> addImageSetItem scalarItem
+                    |> addImageSetItem vectorItem
+                    |> addImageSetItem pointItem
+                    |> addImageSetItem meshItem
+
+                writeImageSetManifest manifestPath manifest
+                let reread = readImageSetManifest manifestPath
+
+                Expect.equal reread.Version 1 "Image-set manifests should carry a version."
+                Expect.equal reread.CoordinateSystem.Name "sample-registered" "Coordinate-system metadata should round-trip."
+                Expect.equal reread.Items.Length 4 "Manifest items should round-trip."
+                Expect.equal reread.Items[0].Id "tile_001" "Item ids should round-trip."
+                Expect.equal reread.Items[0].Kind "ScalarImage" "Scalar images should keep their manifest kind."
+                Expect.equal reread.Items[1].Kind "VectorImage" "Vector images should keep their manifest kind."
+                Expect.equal reread.Items[2].Kind "PointSet" "Point sets should keep their manifest kind."
+                Expect.equal reread.Items[3].Kind "TriangleMesh" "Triangle meshes should keep their manifest kind."
+                Expect.equal reread.Items[1].Sources [ "tile_001" ] "Derived vector images should record their source item."
+                Expect.equal reread.Items[2].Sources [ "tile_001" ] "Derived point sets should record their source item."
+                Expect.equal reread.Items[3].Sources [ "tile_001" ] "Derived triangle meshes should record their source item."
+
+                let transform = imageSetTransformToAffine reread.Items[0].TransformToWorld
+                let transformed =
+                    transformPointSet transform { Points = [ point 0.0 0.0 0.0 ] }
+                    |> _.Points
+
+                Expect.isLessThan (earthMoversDistance [ point 2.0 -1.0 0.5 ] transformed) 1.0e-10 "Manifest transforms should convert back to an affine."
+
+                let updated =
+                    reread
+                    |> replaceImageSetItemTransform "tile_001" identityImageSetTransform
+
+                Expect.equal updated.Items[0].TransformToWorld.Matrix identityImageSetTransform.Matrix "Manifest item transforms should be replaceable without touching data files."
+            finally
+                deleteDirectory outputDir
+
         testCase "resampleAffineTrilinearSlices samples chunked slabs with the supplied output-to-input affine" <| fun _ ->
             let chunkDirectory = tempDirectory "affine-resampler-chunks"
             let slices =

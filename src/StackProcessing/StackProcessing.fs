@@ -45,6 +45,11 @@ type VectorizedMatrix = StackPoints.VectorizedMatrix
 type Affine = TinyLinAlg.Affine
 type AffineRegistrationOptions = StackRegistration.AffineRegistrationOptions
 type AffineRegistrationResult = StackRegistration.AffineRegistrationResult
+type ImageSetCoordinateSystem = StackManifest.ImageSetCoordinateSystem
+type ImageSetTransform = StackManifest.ImageSetTransform
+type ImageSetItem = StackManifest.ImageSetItem
+type ImageSetMember = StackManifest.ImageSetItem
+type ImageSetManifest = StackManifest.ImageSetManifest
 type ObjectConnectivity = StackObjects.ObjectConnectivity
 type ObjectBounds = StackObjects.ObjectBounds
 type StreamedObject = StackObjects.StreamedObject
@@ -90,6 +95,7 @@ let vectorizeMatrix = StackPoints.vectorizeMatrix
 let unvectorizeMatrix = StackPoints.unvectorizeMatrix
 let pointPairDistances = StackPoints.pointPairDistances
 let writeMatrix = StackPoints.writeMatrix
+let selectGroupedValueOutput = StackPoints.selectGroupedValueOutput
 let writeMesh = StackMesh.writeMesh
 
 // //////////////////// StackRegistration
@@ -97,7 +103,31 @@ let defaultAffineRegistrationOptions = StackRegistration.defaultAffineRegistrati
 let earthMoversDistance = StackRegistration.earthMoversDistance
 let transformPointSet = StackRegistration.transformPointSet
 let inverseAffine = StackRegistration.inverseAffine
+let affineToMatrix = StackRegistration.affineToMatrix
+let matrixToAffine = StackRegistration.matrixToAffine
 let affineRegistration = StackRegistration.affineRegistration
+let affineRegistrationMatrices = StackRegistration.affineRegistrationMatrices
+
+// //////////////////// StackManifest
+let identityImageSetTransform = StackManifest.identityTransform
+let imageSetTransformFromMatrix = StackManifest.transformFromMatrix
+let imageSetTransformToMatrix = StackManifest.transformToMatrix
+let imageSetTransformFromAffine = StackManifest.transformFromAffine
+let imageSetTransformToAffine = StackManifest.transformToAffine
+let createImageSetManifest = StackManifest.createManifest
+let imageSetItem = StackManifest.spatialDataItem
+let scalarImageSetItem = StackManifest.scalarImageItem
+let vectorImageSetItem = StackManifest.vectorImageItem
+let pointSetManifestItem = StackManifest.pointSetItem
+let triangleMeshManifestItem = StackManifest.triangleMeshItem
+let matrixManifestItem = StackManifest.matrixItem
+let imageSetMember = StackManifest.imageMember
+let addImageSetItem = StackManifest.addItem
+let addImageSetMember = StackManifest.addImage
+let replaceImageSetItemTransform = StackManifest.replaceItemTransform
+let replaceImageSetMemberTransform = StackManifest.replaceImageTransform
+let writeImageSetManifest = StackManifest.writeManifest
+let readImageSetManifest = StackManifest.readManifest
 
 // //////////////////// StackObjects
 let streamConnectedObjects<'T when 'T: equality> = StackObjects.streamConnectedObjects<'T>

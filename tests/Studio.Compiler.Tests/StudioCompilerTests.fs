@@ -527,6 +527,40 @@ let generatorSuite =
             Expect.stringContains distanceWriteCode ">=> writeMatrix \"distances\" \".csv\"" "WriteMatrix should generate the suffix-controlled matrix writer."
             Expect.stringContains distanceWriteCode "|> sink" "Terminal WriteMatrix should run the matrix writer."
 
+            let fixedPoints =
+                node "fixedPoints" "ReadPointSet"
+                    [ p "availableMemory" "1024" false
+                      p "input" "fixed.csv" false ]
+
+            let movingPoints =
+                node "movingPoints" "ReadPointSet"
+                    [ p "availableMemory" "1024" false
+                      p "input" "moving.csv" false ]
+
+            let registration =
+                node "registration" "AffineRegistration"
+                    [ p "maxIterations" "5" false
+                      p "initialLinearStep" "0.05" false
+                      p "initialTranslationStep" "1.0" false
+                      p "minStep" "0.0001" false
+                      p "stepShrink" "0.5" false ]
+
+            let writeTransform =
+                node "writeTransform" "WriteMatrix"
+                    [ p "output" "transform" false
+                      p "suffix" ".csv" false ]
+
+            let registrationCode =
+                graph [ fixedPoints; movingPoints; registration; writeTransform ]
+                    [ edge "fixedPoints" "output" 0 "registration" "input" 0
+                      edge "movingPoints" "output" 0 "registration" "input" 1
+                      edge "registration" "reducerOutput" 1 "writeTransform" "input" 0 ]
+                |> PipelineCodeGenerator.generateSavedGraph
+
+            Expect.stringContains registrationCode ">>=> affineRegistrationMatrices" "AffineRegistration should lower to the point-set registration matrix stage."
+            Expect.stringContains registrationCode ">=> selectGroupedValueOutput 2u 1u" "Connecting the inverse transform output should select the second matrix."
+            Expect.stringContains registrationCode ">=> writeMatrix \"transform\" \".csv\"" "AffineRegistration matrices should be writable with writeMatrix."
+
         testCase "streamed object and painter boxes lower to object-mask DSL stages" <| fun _ ->
             let read =
                 node "read" "Read"

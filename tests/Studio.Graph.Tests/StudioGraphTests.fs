@@ -71,7 +71,7 @@ let catalogSuite =
     testList "Studio.Graph catalog" [
         testCase "catalog exposes expected generic functions" <| fun _ ->
             let ids = BuiltInCatalog.orderedFunctions |> List.map _.Id
-            Expect.containsAll ids ["Scalar"; "FileDirectory"; "Read"; "ReadRandom"; "ReadRange"; "ReadSlab"; "ReadZarrSlab"; "ReadNexusSlab"; "ReadPointSet"; "Zero"; "NormalNoise"; "SaltAndPepperNoise"; "ShotNoise"; "SpeckleNoise"; "Write"; "WriteInSlabs"; "WriteZarr"; "WriteNexus"; "WriteMesh"; "WritePointSet"; "WriteMatrix"; "GetStackInfo"; "GetChunkInfo"; "GetZarrInfo"; "GetNexusInfo"; "Resize"; "Resample"; "CreatePadding"; "Crop"; "MarchingCubes"; "SurfaceArea"; "DogKeypoints"; "SiftKeypoints"; "PointPairDistances"; "StreamConnectedObjects"; "PaintObjects"; "PaintObjectsCropped"; "ImageOpImage"; "ComputeStats"; "Volume"; "Quantiles"; "Chart"; "SumProjection"] "Important Studio functions should be in the palette catalog."
+            Expect.containsAll ids ["Scalar"; "FileDirectory"; "Read"; "ReadRandom"; "ReadRange"; "ReadSlab"; "ReadZarrSlab"; "ReadNexusSlab"; "ReadPointSet"; "Zero"; "NormalNoise"; "SaltAndPepperNoise"; "ShotNoise"; "SpeckleNoise"; "Write"; "WriteInSlabs"; "WriteZarr"; "WriteNexus"; "WriteMesh"; "WritePointSet"; "WriteMatrix"; "GetStackInfo"; "GetChunkInfo"; "GetZarrInfo"; "GetNexusInfo"; "Resize"; "Resample"; "CreatePadding"; "Crop"; "MarchingCubes"; "SurfaceArea"; "DogKeypoints"; "SiftKeypoints"; "PointPairDistances"; "AffineRegistration"; "StreamConnectedObjects"; "PaintObjects"; "PaintObjectsCropped"; "ImageOpImage"; "ComputeStats"; "Volume"; "Quantiles"; "Chart"; "SumProjection"] "Important Studio functions should be in the palette catalog."
             Expect.containsAll ids ["AddNormalNoise"; "AddSaltAndPepperNoise"; "AddShotNoise"; "AddSpeckleNoise"] "Noise add-stage boxes should be available in Studio."
             Expect.containsAll ids ["Convolve"; "RelabelComponents"; "SignedDistanceBand"; "OtsuThresholdFromHistogram"; "MomentsThresholdFromHistogram"; "ResampleAffineTrilinearSlices"] "The StackProcessing DSL algorithms requested for Studio should be in the palette catalog."
             Expect.isFalse (ids |> List.contains "BinaryFillHoles") "binaryFillHoles is a whole-stack SimpleITK operation and should not be exposed as an LMIP Studio box."
@@ -89,6 +89,7 @@ let catalogSuite =
             let surfaceArea = BuiltInCatalog.find "SurfaceArea"
             let volume = BuiltInCatalog.find "Volume"
             let pointPairDistances = BuiltInCatalog.find "PointPairDistances"
+            let affineRegistration = BuiltInCatalog.find "AffineRegistration"
             let writeMatrix = BuiltInCatalog.find "WriteMatrix"
 
             Expect.equal surfaceArea.Inputs.[0].Type (PortType.Custom "Mesh") "surfaceArea should consume streamed triangle sets."
@@ -99,6 +100,8 @@ let catalogSuite =
             Expect.equal volume.Parameters.Length 3 "volume should expose x/y/z unit parameters."
             Expect.equal pointPairDistances.Inputs.[0].Type (PortType.Custom "PointSet") "pointPairDistances should consume point sets."
             Expect.equal pointPairDistances.Outputs.[0].Type (PortType.Custom "Float64Matrix") "pointPairDistances should emit a vectorized Float64 matrix."
+            Expect.equal (affineRegistration.Inputs |> List.map _.Type) [ PortType.Custom "PointSet"; PortType.Custom "PointSet" ] "affineRegistration should consume fixed and moving point sets."
+            Expect.equal (affineRegistration.Outputs |> List.map _.Type) [ PortType.Custom "Float64Matrix"; PortType.Custom "Float64Matrix" ] "affineRegistration should emit transform and inverse matrices."
             Expect.equal writeMatrix.Inputs.[0].Type (PortType.Custom "Float64Matrix") "writeMatrix should consume vectorized Float64 matrices."
             Expect.isFalse (ids |> List.contains "Normalize") "normalize is intentionally not exposed as a streaming Studio box; use computeStats plus shiftScale."
             Expect.isFalse (ids |> List.contains "RescaleIntensity") "rescaleIntensity is intentionally not exposed as a streaming Studio box; use sampled statistics or quantiles plus intensityStretch."

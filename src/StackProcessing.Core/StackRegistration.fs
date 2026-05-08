@@ -1,6 +1,8 @@
 module StackRegistration
 
 open System
+open SlimPipeline
+open StackCore
 open StackPoints
 open TinyLinAlg
 
@@ -174,6 +176,40 @@ let private affineFromParameters (center: V3) (parameters: float[]) =
       T = v3 parameters[9] parameters[10] parameters[11]
       C = center }
 
+let affineToMatrix (transform: Affine) =
+    let c = transform.C
+    let ac = mulMV transform.A c
+    let offset = add transform.T (sub c ac)
+    let matrix = Array2D.zeroCreate<float> 4 4
+    matrix[0, 0] <- transform.A.m00
+    matrix[0, 1] <- transform.A.m01
+    matrix[0, 2] <- transform.A.m02
+    matrix[0, 3] <- offset.x
+    matrix[1, 0] <- transform.A.m10
+    matrix[1, 1] <- transform.A.m11
+    matrix[1, 2] <- transform.A.m12
+    matrix[1, 3] <- offset.y
+    matrix[2, 0] <- transform.A.m20
+    matrix[2, 1] <- transform.A.m21
+    matrix[2, 2] <- transform.A.m22
+    matrix[2, 3] <- offset.z
+    matrix[3, 3] <- 1.0
+    vectorizeMatrix matrix
+
+let matrixToAffine (matrix: VectorizedMatrix) =
+    let matrix = unvectorizeMatrix matrix
+    if matrix.GetLength(0) <> 4 || matrix.GetLength(1) <> 4 then
+        invalidArg "matrix" "matrixToAffine expects a 4x4 homogeneous affine matrix."
+    if abs (matrix[3, 0]) > 1.0e-12 || abs (matrix[3, 1]) > 1.0e-12 || abs (matrix[3, 2]) > 1.0e-12 || abs (matrix[3, 3] - 1.0) > 1.0e-12 then
+        invalidArg "matrix" "matrixToAffine expects the last row to be [0, 0, 0, 1]."
+
+    { A =
+        { m00 = matrix[0, 0]; m01 = matrix[0, 1]; m02 = matrix[0, 2]
+          m10 = matrix[1, 0]; m11 = matrix[1, 1]; m12 = matrix[1, 2]
+          m20 = matrix[2, 0]; m21 = matrix[2, 1]; m22 = matrix[2, 2] }
+      T = v3 matrix[0, 3] matrix[1, 3] matrix[2, 3]
+      C = v3 0.0 0.0 0.0 }
+
 let private transformPoints transform (points: CoordinatePoint[]) =
     points
     |> Array.map (fun point ->
@@ -248,3 +284,14 @@ let affineRegistration
       Distance = bestDistance
       Iterations = iteration
       Converged = (steps |> Array.max) <= options.MinStep }
+
+let affineRegistrationMatrices options : Stage<PointSet * PointSet, VectorizedMatrix> =
+    Stage.map
+        "affineRegistration"
+        (fun _ (fixedPoints, movingPoints) ->
+            let result = affineRegistration options fixedPoints.Points movingPoints.Points
+            [ affineToMatrix result.Transform
+              affineToMatrix result.InverseTransform ])
+        (fun _ -> 0UL)
+        (fun pointSets -> pointSets * 2UL)
+    --> StackCore.flattenList ()

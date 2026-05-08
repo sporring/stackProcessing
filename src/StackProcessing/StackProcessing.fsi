@@ -102,6 +102,16 @@ type AffineRegistrationOptions = StackRegistration.AffineRegistrationOptions
 
 type AffineRegistrationResult = StackRegistration.AffineRegistrationResult
 
+type ImageSetCoordinateSystem = StackManifest.ImageSetCoordinateSystem
+
+type ImageSetTransform = StackManifest.ImageSetTransform
+
+type ImageSetItem = StackManifest.ImageSetItem
+
+type ImageSetMember = StackManifest.ImageSetItem
+
+type ImageSetManifest = StackManifest.ImageSetManifest
+
 type ObjectConnectivity = StackObjects.ObjectConnectivity
 
 type ObjectBounds = StackObjects.ObjectBounds
@@ -300,6 +310,8 @@ val pointPairDistances:
 val writeMatrix:
   (string -> string -> StackCore.Stage<StackPoints.VectorizedMatrix,unit>)
 
+val selectGroupedValueOutput: (uint -> uint -> StackCore.Stage<'a,'a>)
+
 val writeMesh: (string -> string -> StackCore.Stage<StackMesh.TriangleSet,unit>)
 
 val defaultAffineRegistrationOptions:
@@ -313,11 +325,118 @@ val transformPointSet:
 
 val inverseAffine: (TinyLinAlg.Affine -> TinyLinAlg.Affine)
 
+val affineToMatrix: (TinyLinAlg.Affine -> StackPoints.VectorizedMatrix)
+
+val matrixToAffine: (StackPoints.VectorizedMatrix -> TinyLinAlg.Affine)
+
 val affineRegistration:
   (StackRegistration.AffineRegistrationOptions ->
      StackPoints.CoordinatePoint seq ->
      StackPoints.CoordinatePoint seq ->
      StackRegistration.AffineRegistrationResult)
+
+val affineRegistrationMatrices:
+  (StackRegistration.AffineRegistrationOptions ->
+     StackCore.Stage<(StackPoints.PointSet * StackPoints.PointSet),
+                     StackPoints.VectorizedMatrix>)
+
+val identityImageSetTransform: StackManifest.ImageSetTransform
+
+val imageSetTransformFromMatrix:
+  (StackPoints.VectorizedMatrix -> StackManifest.ImageSetTransform)
+
+val imageSetTransformToMatrix:
+  (StackManifest.ImageSetTransform -> StackPoints.VectorizedMatrix)
+
+val imageSetTransformFromAffine:
+  (TinyLinAlg.Affine -> StackManifest.ImageSetTransform)
+
+val imageSetTransformToAffine:
+  (StackManifest.ImageSetTransform -> TinyLinAlg.Affine)
+
+val createImageSetManifest: (string -> string -> StackManifest.ImageSetManifest)
+
+val imageSetItem:
+  (string ->
+     string ->
+     string ->
+     string ->
+     uint64 list ->
+     float list ->
+     StackManifest.ImageSetTransform ->
+     string list -> StackManifest.ImageSetItem)
+
+val scalarImageSetItem:
+  (string ->
+     string ->
+     string ->
+     uint64 list ->
+     float list ->
+     StackManifest.ImageSetTransform ->
+     string list -> StackManifest.ImageSetItem)
+
+val vectorImageSetItem:
+  (string ->
+     string ->
+     string ->
+     uint64 list ->
+     float list ->
+     StackManifest.ImageSetTransform ->
+     string list -> StackManifest.ImageSetItem)
+
+val pointSetManifestItem:
+  (string ->
+     string ->
+     string ->
+     uint64 list ->
+     float list ->
+     StackManifest.ImageSetTransform ->
+     string list -> StackManifest.ImageSetItem)
+
+val triangleMeshManifestItem:
+  (string ->
+     string ->
+     string ->
+     uint64 list ->
+     float list ->
+     StackManifest.ImageSetTransform ->
+     string list -> StackManifest.ImageSetItem)
+
+val matrixManifestItem:
+  (string ->
+     string ->
+     string ->
+     StackManifest.ImageSetTransform ->
+     string list -> StackManifest.ImageSetItem)
+
+val imageSetMember:
+  (string ->
+     string ->
+     string ->
+     uint64 list ->
+     float list -> StackManifest.ImageSetTransform -> StackManifest.ImageSetItem)
+
+val addImageSetItem:
+  (StackManifest.ImageSetItem ->
+     StackManifest.ImageSetManifest -> StackManifest.ImageSetManifest)
+
+val addImageSetMember:
+  (StackManifest.ImageSetItem ->
+     StackManifest.ImageSetManifest -> StackManifest.ImageSetManifest)
+
+val replaceImageSetItemTransform:
+  (string ->
+     StackManifest.ImageSetTransform ->
+     StackManifest.ImageSetManifest -> StackManifest.ImageSetManifest)
+
+val replaceImageSetMemberTransform:
+  (string ->
+     StackManifest.ImageSetTransform ->
+     StackManifest.ImageSetManifest -> StackManifest.ImageSetManifest)
+
+val writeImageSetManifest: (string -> 'a -> unit)
+
+val readImageSetManifest: (string -> StackManifest.ImageSetManifest)
 
 val streamConnectedObjects<'T when 'T: equality> :
   (StackObjects.ObjectConnectivity ->

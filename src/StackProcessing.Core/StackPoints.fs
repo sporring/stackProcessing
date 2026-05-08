@@ -196,6 +196,20 @@ let pointPairDistances xUnit yUnit zUnit : Stage<PointSet, VectorizedMatrix> =
 
     Stage.reduce "pointPairDistances" reducer Streaming (fun _ -> 0UL) (fun _ -> 1UL)
 
+let selectGroupedValueOutput (groupSize: uint) (part: uint) : Stage<'T, 'T> =
+    if groupSize = 0u then
+        invalidArg "groupSize" "selectGroupedValueOutput: groupSize must be positive."
+    if part >= groupSize then
+        invalidArg "part" $"selectGroupedValueOutput: part must be smaller than groupSize ({groupSize})."
+
+    Stage.mapi
+        "selectGroupedValueOutput"
+        (fun _ index value ->
+            if uint (index % int64 groupSize) = part then [ value ] else [])
+        id
+        (fun values -> (values + uint64 groupSize - 1UL) / uint64 groupSize)
+    --> StackCore.flattenList ()
+
 let private imageToVolume (images: Image<'T> list) =
     match images with
     | [] -> Array3D.zeroCreate<double> 0 0 0

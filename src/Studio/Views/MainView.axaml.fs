@@ -252,7 +252,7 @@ type MainView() as this =
     let isDataConnector (connector: IConnector) =
         match connector.Start, connector.End with
         | (:? PipelinePinViewModel as startPin), (:? PipelinePinViewModel as endPin) ->
-            startPin.Kind = DataOutput && endPin.Kind = DataInput
+            (startPin.Kind = DataOutput || startPin.Kind = ReducerOutput) && endPin.Kind = DataInput
         | _ ->
             false
 
@@ -262,6 +262,10 @@ type MainView() as this =
             pipelineNode.State.Definition.Id = "ComputeStats"
             || pipelineNode.State.Definition.Id = "ComponentTranslationTable"
             || pipelineNode.State.Definition.Id = "HistogramData"
+            || pipelineNode.State.Definition.Id = "SurfaceArea"
+            || pipelineNode.State.Definition.Id = "Volume"
+            || pipelineNode.State.Definition.Id = "PointPairDistances"
+            || pipelineNode.State.Definition.Id = "AffineRegistration"
         | _ -> false
 
     let isDataNode (node: INode) =

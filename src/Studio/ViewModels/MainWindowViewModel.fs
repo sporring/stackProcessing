@@ -861,6 +861,7 @@ type PipelineNodeViewModel(
             | "SurfaceArea"
             | "Volume"
             | "PointPairDistances"
+            | "AffineRegistration"
             | "GetStackInfo"
             | "GetChunkInfo"
             | "Quantiles" -> 170.
@@ -1138,6 +1139,7 @@ type PipelineNodeViewModel(
                 | "SurfaceArea"
                 | "Volume"
                 | "PointPairDistances"
+                | "AffineRegistration"
                 | "GetStackInfo"
                 | "GetChunkInfo"
                 | "ComponentTranslationTable"

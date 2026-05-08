@@ -202,6 +202,13 @@ module PipelineCodeGenerator =
         | "AppendVectorElement" -> Some "appendVectorElement"
         | "VectorDot" -> Some "vectorDot"
         | "VectorCross3D" -> Some "vectorCross3D"
+        | "AffineRegistration" ->
+            let maxIterations = savedParamValue "maxIterations" node |> numericLiteral Int32
+            let initialLinearStep = savedParamValue "initialLinearStep" node |> numericLiteral Float64
+            let initialTranslationStep = savedParamValue "initialTranslationStep" node |> numericLiteral Float64
+            let minStep = savedParamValue "minStep" node |> numericLiteral Float64
+            let stepShrink = savedParamValue "stepShrink" node |> numericLiteral Float64
+            Some $"affineRegistrationMatrices {{ defaultAffineRegistrationOptions with MaxIterations = {maxIterations}; InitialLinearStep = {initialLinearStep}; InitialTranslationStep = {initialTranslationStep}; MinStep = {minStep}; StepShrink = {stepShrink} }}"
         | "ImageComparison" ->
             let pixelType = pixelTypeNameFromParameter "type" "Float64" node
             let comparison =
@@ -1514,6 +1521,8 @@ module PipelineCodeGenerator =
                                     if String.IsNullOrWhiteSpace rawComponents then "3u"
                                     else numericLiteral UInt32 rawComponents
                                 $"{upstreamExpression}{newLine}>=> selectGroupedOutput ({components} + 1u) {edge.FromPort}u"
+                            elif upstream.FunctionId = "AffineRegistration" && edge.FromPort >= 0 && edge.FromPort <= 1 then
+                                $"{upstreamExpression}{newLine}>=> selectGroupedValueOutput 2u {edge.FromPort}u"
                             else
                                 upstreamExpression
                         | None -> $"// Cannot generate F#: missing upstream node {edge.FromNode}"
@@ -1607,7 +1616,8 @@ module PipelineCodeGenerator =
                     $"{expression}{newLine}|> drain"
                 | "SurfaceArea"
                 | "Volume"
-                | "PointPairDistances" ->
+                | "PointPairDistances"
+                | "AffineRegistration" ->
                     $"{expression}{newLine}|> drain"
                 | "ComponentTranslationTable" ->
                     $"{expression}{newLine}|> drain"
