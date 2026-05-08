@@ -1657,6 +1657,50 @@ let generatorSuite =
             Expect.stringContains code "let Histogram0 =" "Linked histogram data should be bound before use."
             Expect.stringContains code "showChart \"Line\" Histogram0" "Chart should use the selected chart kind and linked histogram value."
 
+        testCase "estimateHistogram source exposes histogram map and diagnostics" <| fun _ ->
+            let read =
+                node "read" "Read"
+                    [ p "availableMemory" "1024" false
+                      p "type" "UInt8" false
+                      p "input" "input" false
+                      p "suffix" ".tiff" false ]
+
+            let estimate =
+                node "estimate" "EstimateHistogram"
+                    [ p "availableMemory" "1024" false
+                      p "type" "UInt8" false
+                      p "slices" "12" false
+                      p "input" "input" false
+                      p "suffix" ".tiff" false
+                      p "down" "4" false
+                      p "estimator" "DKWAndHoldout" false
+                      p "confidence" "0.95" false ]
+
+            let equalize =
+                node "equalize" "HistogramEqualization"
+                    [ p "type" "UInt8" false
+                      p "histogram" "" true ]
+
+            let print =
+                node "print" "Print"
+                    [ p "format" "n={input1}, eps={input2}" false
+                      p "input1" "" true
+                      p "input2" "" true ]
+
+            let code =
+                graph
+                    [ read; estimate; equalize; print ]
+                    [ edge "estimate" "reducerOutput" 0 "equalize" "parameterInput" 1
+                      edge "estimate" "reducerOutput" 1 "print" "parameterInput" 1
+                      edge "estimate" "reducerOutput" 2 "print" "parameterInput" 2
+                      edge "read" "output" 0 "equalize" "input" 0 ]
+                |> PipelineCodeGenerator.generateSavedGraph
+
+            Expect.stringContains code "|> estimateHistogram<uint8> 12u \"input\" \".tiff\" 4u \"DKWAndHoldout\" 0.95" "EstimateHistogram should lower to the typed random-sampling source."
+            Expect.stringContains code "let Histogram0 =" "Linked estimate outputs should be bound once."
+            Expect.stringContains code ">=> histogramEqualization<uint8> Histogram0.Histogram" "The map output should feed histogram-based image stages."
+            Expect.stringContains code "n={Histogram0.Samples}, eps={Histogram0.CdfHalfWidth}" "Diagnostics should be addressable as scalar-like outputs."
+
         testCase "writeCSV can write histogram data" <| fun _ ->
             let read =
                 node "read" "Read"

@@ -361,7 +361,7 @@ module PipelineCodeGenerator =
         node.FunctionId = "ComponentTranslationTable"
 
     let private isHistogramDataNode (node: SavedNode) =
-        node.FunctionId = "HistogramData"
+        node.FunctionId = "HistogramData" || node.FunctionId = "EstimateHistogram"
 
     let private isQuantilesNode (node: SavedNode) =
         node.FunctionId = "Quantiles"
@@ -374,6 +374,18 @@ module PipelineCodeGenerator =
 
     let private quantileFieldExpression bindingName portIndex =
         if portIndex >= 0 && portIndex < 5 then Some $"{bindingName}[{portIndex}]" else None
+
+    let private histogramFieldExpression (nodesById: Map<string, SavedNode>) nodeId bindingName portIndex =
+        match nodesById |> Map.tryFind nodeId with
+        | Some node when node.FunctionId = "EstimateHistogram" ->
+            match portIndex with
+            | 0 -> Some $"{bindingName}.Histogram"
+            | 1 -> Some $"{bindingName}.Samples"
+            | 2 -> Some $"{bindingName}.CdfHalfWidth"
+            | 3 -> Some $"{bindingName}.HoldoutMaxCdfDelta"
+            | _ -> None
+        | _ ->
+            if portIndex = 0 then Some bindingName else None
 
     let private parameterExpression (graph: SavedGraph) (nodesById: Map<string, SavedNode>) (scalarNamesByNodeId: Map<string, string>) (statsNamesByNodeId: Map<string, string>) (translationTableNamesByNodeId: Map<string, string>) (histogramNamesByNodeId: Map<string, string>) (quantileNamesByNodeId: Map<string, string>) (stackInfoNamesByNodeId: Map<string, string>) (chunkInfoNamesByNodeId: Map<string, string>) (node: SavedNode) parameterIndex key =
         let linkedExpression =
@@ -399,7 +411,7 @@ module PipelineCodeGenerator =
                         | Some name -> Some name
                         | None ->
                             match histogramNamesByNodeId |> Map.tryFind edge.FromNode with
-                            | Some name -> Some name
+                            | Some name -> histogramFieldExpression nodesById edge.FromNode name edge.FromPort
                             | None ->
                                 match quantileNamesByNodeId |> Map.tryFind edge.FromNode with
                                 | Some name -> quantileFieldExpression name edge.FromPort
@@ -789,6 +801,16 @@ module PipelineCodeGenerator =
             let input = quotedParameter "input"
             let suffix = quotedParameter "suffix"
             $"|> readRandom<{pixelType}> {depth} {input} {suffix}" |> sourcePrefix availableMemory
+        | "EstimateHistogram" ->
+            let availableMemory = parameterValue "availableMemory"
+            let pixelType = pixelTypeNameFromParameter "type" "Float64" node
+            let slices = parameterValue "slices"
+            let input = quotedParameter "input"
+            let suffix = quotedParameter "suffix"
+            let down = parameterValue "down"
+            let estimator = quotedParameter "estimator"
+            let confidence = parameterValue "confidence"
+            $"|> estimateHistogram<{pixelType}> {slices} {input} {suffix} {down} {estimator} {confidence}" |> sourcePrefix availableMemory
         | "ReadRange" ->
             let availableMemory = parameterValue "availableMemory"
             let pixelType = pixelTypeNameFromParameter "type" "Float64" node
@@ -1644,6 +1666,8 @@ module PipelineCodeGenerator =
                                 $"{upstreamExpression}{newLine}>=> selectGroupedOutput ({components} + 1u) {edge.FromPort}u"
                             elif upstream.FunctionId = "AffineRegistration" && edge.FromPort >= 0 && edge.FromPort <= 1 then
                                 $"{upstreamExpression}{newLine}>=> selectGroupedValueOutput 2u {edge.FromPort}u"
+                            elif upstream.FunctionId = "EstimateHistogram" && edge.FromPort = 0 then
+                                $"{upstreamExpression}{newLine}>=> histogramEstimateMap"
                             else
                                 upstreamExpression
                         | None -> $"// Cannot generate F#: missing upstream node {edge.FromNode}"
@@ -1749,6 +1773,8 @@ module PipelineCodeGenerator =
                 | "ComponentTranslationTable" ->
                     $"{expression}{newLine}|> drain"
                 | "HistogramData" ->
+                    $"{expression}{newLine}|> drain"
+                | "EstimateHistogram" ->
                     $"{expression}{newLine}|> drain"
                 | _ ->
                     expression

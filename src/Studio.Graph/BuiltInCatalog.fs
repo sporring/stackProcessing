@@ -123,6 +123,9 @@ module BuiltInCatalog =
   let private histogramDataDescription =
       "Computes an intensity histogram and emits it as data instead of displaying it directly.\n\nThis is the preferred input to quantiles, otsuThresholdFromHistogram, and momentsThresholdFromHistogram. The histogram is reduced over the whole connected stream, so the output is available after the histogram branch has been drained.\n\nUse readRandom or readRange upstream when an estimated histogram is enough."
 
+  let private estimateHistogramDescription =
+      "Randomly samples whole slices from an image stack, downsamples pixels within those slices, and emits an estimated histogram plus diagnostics. DKW reports a distribution-free half-width for the empirical CDF at the selected confidence. Holdout splits sampled pixels into two halves and reports the maximum CDF difference between them. Use the histogram output exactly like histogramData when feeding quantiles, threshold estimators, or histogramEqualization."
+
   let private chartDescription =
       "Displays map-like data as a Plotly chart.\n\nUse it with histogramData, object-size histograms, or other key/value summaries. The kind parameter selects the visual style, such as column, scatter, line, area, pie, or doughnut.\n\nChart is a visualization sink: it helps inspect results and does not produce image data for later boxes."
 
@@ -331,6 +334,29 @@ module BuiltInCatalog =
             makeParameter "depth" "Depth" "1" (BasicType.Numeric UInt32)
             makeParameter "input" "Input" "input" BasicType.String
             suffixParameter ".tiff" ] }
+
+  let makeGenericEstimateHistogram () =
+    { Id = "EstimateHistogram"
+      DisplayName = "estimateHistogram"
+      Category = "Statistics"
+      Summary = "Randomly sample slices and estimate a histogram with diagnostics."
+      Description = estimateHistogramDescription
+      Aliases = [ "histogram"; "estimate"; "random"; "confidence"; "dkw"; "holdout"; "sample"; "cdf"; "type" ]
+      Inputs = []
+      Outputs =
+          [ makePort "Map" (Scalar BasicType.Map)
+            makePort "Samples: UInt64" (Scalar(BasicType.Numeric UInt64))
+            makePort "CDF half-width: Float64" (Scalar(BasicType.Numeric Float64))
+            makePort "Holdout max CDF delta: Float64" (Scalar(BasicType.Numeric Float64)) ]
+      Parameters =
+          [ availableMemoryParameter
+            makeParameter "type" "Type" "Float64" BasicType.String
+            makeParameter "slices" "Slices" "16" (BasicType.Numeric UInt32)
+            makeParameter "input" "Input" "input" BasicType.String
+            suffixParameter ".tiff"
+            makeParameter "down" "Down" "4" (BasicType.Numeric UInt32)
+            makeParameter "estimator" "Estimator" "DKWAndHoldout" BasicType.String
+            makeParameter "confidence" "Confidence" "0.95" (BasicType.Numeric Float64) ] }
 
   let makeGenericReadRange () =
     { Id = "ReadRange"
@@ -612,6 +638,8 @@ module BuiltInCatalog =
         makeGenericReadVolume()
 
         makeGenericReadRandom()
+
+        makeGenericEstimateHistogram()
 
         makeGenericReadRange()
 

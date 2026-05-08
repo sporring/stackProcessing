@@ -958,8 +958,31 @@ val histogram:
   (unit -> SlimPipeline.Stage<StackCore.Image<'a>,Map<'a,uint64>>)
     when 'a: comparison
 
+val histogramEstimate<'T when 'T: comparison> :
+  (uint32 ->
+     string ->
+     float ->
+     SlimPipeline.Stage<StackCore.Image<'T>,
+                        StackImageFunctions.HistogramEstimate<'T>>)
+    when 'T: comparison
+
+val estimateHistogram<'T when 'T: comparison> :
+  (uint32 ->
+     string ->
+     string ->
+     uint32 ->
+     string ->
+     float ->
+     SlimPipeline.Plan<unit,unit> ->
+     SlimPipeline.Plan<unit,StackImageFunctions.HistogramEstimate<'T>>)
+    when 'T: comparison
+
+val histogramEstimateMap<'T when 'T: comparison> :
+  SlimPipeline.Stage<StackImageFunctions.HistogramEstimate<'T>,Map<'T,uint64>>
+    when 'T: comparison
+
 val histogramEqualization<'T when 'T: comparison> :
-  (Map<'T,uint64> -> SlimPipeline.Stage<StackCore.Image<'T>,StackCore.Image<float>>)
+  (Map<'T,uint64> -> SlimPipeline.Stage<StackCore.Image<'T>,Image.Image<float>>)
     when 'T: comparison
 
 val sumProjection<'T when 'T: equality> :
@@ -1232,3 +1255,4 @@ val permuteAxes:
   (uint * uint * uint ->
      uint -> StackCore.Stage<StackCore.Image<'a>,StackCore.Image<'a>>)
     when 'a: equality
+

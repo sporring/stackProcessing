@@ -1849,6 +1849,25 @@ let stackProcessingSupportSuite =
                 input.decRefCount()
                 disposeImages equalized
 
+        testCase "histogramEstimate downsamples pixels and reports CDF diagnostics" <| fun _ ->
+            let slices =
+                [ array2D [ [ 0uy; 9uy; 1uy; 9uy ]; [ 9uy; 9uy; 9uy; 9uy ]; [ 1uy; 9uy; 1uy; 9uy ]; [ 9uy; 9uy; 9uy; 9uy ] ] |> Image<uint8>.ofArray2D
+                  array2D [ [ 1uy; 9uy; 0uy; 9uy ]; [ 9uy; 9uy; 9uy; 9uy ]; [ 0uy; 9uy; 0uy; 9uy ]; [ 9uy; 9uy; 9uy; 9uy ] ] |> Image<uint8>.ofArray2D ]
+
+            try
+                let estimate =
+                    imagePlan slices
+                    >=> histogramEstimate<uint8> 2u "DKWAndHoldout" 0.95
+                    |> drain
+
+                Expect.equal estimate.Samples 8UL "Downsampling by two should sample four pixels from each 4x4 slice."
+                Expect.equal estimate.Histogram (Map.ofList [ 0uy, 4UL; 1uy, 4UL ]) "Histogram estimate should count only sampled pixels."
+                Expect.isGreaterThan estimate.CdfHalfWidth 0.0 "DKW diagnostics should report a positive CDF half-width."
+                Expect.isLessThan estimate.CdfHalfWidth 1.0 "DKW diagnostics should stay bounded for this sample count."
+                Expect.isGreaterThanOrEqual estimate.HoldoutMaxCdfDelta 0.0 "Holdout diagnostics should report a valid max CDF delta."
+            finally
+                disposeImages slices
+
         testCase "writeCSVHistogram writes sorted key-count rows" <| fun _ ->
             let outputDir = tempDirectory "histogram-csv"
             let outputPath = Path.Combine(outputDir, "histogram")

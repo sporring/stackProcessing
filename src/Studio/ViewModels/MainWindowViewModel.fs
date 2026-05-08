@@ -337,7 +337,7 @@ module private ScalarFunctionNode =
 
 module private SourceImageNode =
     let hasInputTitle functionId =
-        functionId = "Read" || functionId = "ReadVolume" || functionId = "ReadRandom" || functionId = "ReadRange" || functionId = "ReadSlab" || functionId = "ReadZarrSlab" || functionId = "ReadNexusSlab"
+        functionId = "Read" || functionId = "ReadVolume" || functionId = "ReadRandom" || functionId = "EstimateHistogram" || functionId = "ReadRange" || functionId = "ReadSlab" || functionId = "ReadZarrSlab" || functionId = "ReadNexusSlab"
 
     let hasOutputTitle functionId =
         functionId = "Write" || functionId = "WriteThrough" || functionId = "WriteVolume" || functionId = "WriteInSlabs" || functionId = "WriteZarr" || functionId = "WriteNexus"
@@ -694,6 +694,7 @@ module private HighValueFilterNode =
     let typeOptions = SourceImageNode.typeOptions
     let comparisonOptions = [ ">"; ">="; "<"; "<="; "="; "<>"; "!=" ]
     let maskLogicOptions = [ "and"; "or"; "xor" ]
+    let histogramEstimatorOptions = [ "DKWAndHoldout"; "DKW"; "Holdout" ]
     let boolOptions = [ "false"; "true" ]
 
     let titleFrom key fallback (state: PipelineNodeState) =
@@ -974,7 +975,7 @@ type PipelineNodeViewModel(
                     state.Title <- ScalarImageOperationNode.title state
                     this.Name <- state.Title
                     markGraphDirty()
-                elif (state.Definition.Id = "Scalar" || state.Definition.Id = "ScalarOp" || state.Definition.Id = "Read" || state.Definition.Id = "ReadVolume" || state.Definition.Id = "ReadRandom" || state.Definition.Id = "ReadRange" || state.Definition.Id = "ReadSlab" || state.Definition.Id = "ReadZarrSlab" || state.Definition.Id = "ReadNexusSlab" || state.Definition.Id = "Zero" || state.Definition.Id = "NormalNoise" || state.Definition.Id = "SaltAndPepperNoise" || state.Definition.Id = "ShotNoise" || state.Definition.Id = "SpeckleNoise" || state.Definition.Id = "CreateByEuler2DTransform" || state.Definition.Id = "Threshold" || state.Definition.Id = "ImageOpImage" || state.Definition.Id = "Resize" || state.Definition.Id = "Resample" || state.Definition.Id = "ResampleAffineTrilinearSlices" || HighValueFilterNode.typedImageFunctionIds.Contains state.Definition.Id || ScalarImageOperationNode.isOperation state.Definition.Id) && parameter.Key = "type" && args.PropertyName = nameof parameter.Value then
+                elif (state.Definition.Id = "Scalar" || state.Definition.Id = "ScalarOp" || state.Definition.Id = "Read" || state.Definition.Id = "ReadVolume" || state.Definition.Id = "ReadRandom" || state.Definition.Id = "EstimateHistogram" || state.Definition.Id = "ReadRange" || state.Definition.Id = "ReadSlab" || state.Definition.Id = "ReadZarrSlab" || state.Definition.Id = "ReadNexusSlab" || state.Definition.Id = "Zero" || state.Definition.Id = "NormalNoise" || state.Definition.Id = "SaltAndPepperNoise" || state.Definition.Id = "ShotNoise" || state.Definition.Id = "SpeckleNoise" || state.Definition.Id = "CreateByEuler2DTransform" || state.Definition.Id = "Threshold" || state.Definition.Id = "ImageOpImage" || state.Definition.Id = "Resize" || state.Definition.Id = "Resample" || state.Definition.Id = "ResampleAffineTrilinearSlices" || HighValueFilterNode.typedImageFunctionIds.Contains state.Definition.Id || ScalarImageOperationNode.isOperation state.Definition.Id) && parameter.Key = "type" && args.PropertyName = nameof parameter.Value then
                     if state.Definition.Id = "Scalar" then
                         ScalarNode.ensureValueMatchesType state
                         state.Title <- ScalarNode.title state
@@ -1117,6 +1118,7 @@ type PipelineNodeViewModel(
             | "Read"
             | "ReadVolume"
             | "ReadRandom"
+            | "EstimateHistogram"
             | "ReadRange"
             | "ReadSlab"
             | "ReadZarrSlab"
@@ -1346,7 +1348,7 @@ type MainWindowViewModel() as this =
                         |> List.map (fun value -> ParameterOptionViewModel(value, value, supported |> Set.contains value))
 
                     PipelineParameterViewModel(parameter.Label, parameter.Key, parameter.DefaultValue, parameter.Type, options, false)
-                | ("Read" | "ReadVolume" | "ReadRandom" | "ReadRange" | "ReadSlab" | "Zero" | "NormalNoise" | "SaltAndPepperNoise" | "ShotNoise" | "SpeckleNoise" | "CreateByEuler2DTransform" | "ResampleAffineTrilinearSlices"), "type" ->
+                | ("Read" | "ReadVolume" | "ReadRandom" | "EstimateHistogram" | "ReadRange" | "ReadSlab" | "Zero" | "NormalNoise" | "SaltAndPepperNoise" | "ShotNoise" | "SpeckleNoise" | "CreateByEuler2DTransform" | "ResampleAffineTrilinearSlices"), "type" ->
                     let defaultSuffix =
                         definition.Parameters
                         |> List.tryFind (fun parameter -> parameter.Key = "suffix")
@@ -1463,6 +1465,12 @@ type MainWindowViewModel() as this =
                 | "MaskLogic", "operation" ->
                     let options =
                         HighValueFilterNode.maskLogicOptions
+                        |> List.map (fun value -> ParameterOptionViewModel(value, value, true))
+
+                    PipelineParameterViewModel(parameter.Label, parameter.Key, parameter.DefaultValue, parameter.Type, options, false)
+                | "EstimateHistogram", "estimator" ->
+                    let options =
+                        HighValueFilterNode.histogramEstimatorOptions
                         |> List.map (fun value -> ParameterOptionViewModel(value, value, true))
 
                     PipelineParameterViewModel(parameter.Label, parameter.Key, parameter.DefaultValue, parameter.Type, options, false)

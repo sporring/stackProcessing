@@ -969,6 +969,159 @@ let imageHistogramFold () =
 let histogram () =
     imageHistogram () --> imageHistogramFold ()
 
+type HistogramEstimator =
+    | DKW
+    | Holdout
+    | DKWAndHoldout
+
+module HistogramEstimator =
+    let parse (value: string) =
+        match value.Trim().ToLowerInvariant().Replace("-", "").Replace("_", "").Replace(" ", "") with
+        | "dkw" -> DKW
+        | "holdout"
+        | "halftest"
+        | "halftesting" -> Holdout
+        | ""
+        | "both"
+        | "dkwandholdout"
+        | "holdoutanddkw" -> DKWAndHoldout
+        | _ -> invalidArg "estimator" $"Unknown histogram estimator '{value}'. Use DKW, Holdout, or DKWAndHoldout."
+
+type HistogramEstimate<'T when 'T: comparison> =
+    { Histogram: Map<'T,uint64>
+      Samples: uint64
+      Confidence: float
+      CdfHalfWidth: float
+      HoldoutMaxCdfDelta: float }
+
+let histogramEstimateMap<'T when 'T: comparison> =
+    Stage.map<HistogramEstimate<'T>, Map<'T,uint64>> "histogramEstimateMap" (fun _ estimate -> estimate.Histogram) id id
+
+let private addHistogramValue value histogram =
+    histogram
+    |> Map.change value (function
+        | Some count -> Some(count + 1UL)
+        | None -> Some 1UL)
+
+let private histogramCdfValues<'T when 'T: comparison> (histogram: Map<'T,uint64>) =
+    histogram
+    |> Map.toArray
+    |> Array.map (fun (key, count) -> Convert.ToDouble(key), count)
+    |> Array.sortBy fst
+
+let private histogramCdfAt (bins: (float * uint64) array) total value =
+    if total = 0UL || bins.Length = 0 then
+        0.0
+    else
+        let mutable cumulative = 0UL
+        let mutable index = 0
+        while index < bins.Length && fst bins[index] <= value do
+            cumulative <- cumulative + snd bins[index]
+            index <- index + 1
+        float cumulative / float total
+
+let private holdoutMaxCdfDelta<'T when 'T: comparison> (left: Map<'T,uint64>) (right: Map<'T,uint64>) =
+    if Map.isEmpty left || Map.isEmpty right then
+        nan
+    else
+        let leftBins = histogramCdfValues left
+        let rightBins = histogramCdfValues right
+        let leftTotal = leftBins |> Array.sumBy snd
+        let rightTotal = rightBins |> Array.sumBy snd
+
+        Array.concat [ leftBins |> Array.map fst; rightBins |> Array.map fst ]
+        |> Array.distinct
+        |> Array.sort
+        |> Array.fold
+            (fun maxDelta key ->
+                let delta = Math.Abs(histogramCdfAt leftBins leftTotal key - histogramCdfAt rightBins rightTotal key)
+                max maxDelta delta)
+            0.0
+
+let private dkwHalfWidth samples confidence =
+    if samples = 0UL then
+        nan
+    else
+        let confidence = min 0.999999999999 (max 0.0 confidence)
+        let alpha = max 1e-12 (1.0 - confidence)
+        Math.Sqrt(Math.Log(2.0 / alpha) / (2.0 * float samples))
+
+let histogramEstimate<'T when 'T: equality and 'T: comparison> down estimatorName confidence =
+    if down = 0u then
+        invalidArg (nameof down) "histogramEstimate down must be positive."
+
+    let estimator = HistogramEstimator.parse estimatorName
+    let step = int down
+
+    let reducer (_debug: bool) (input: AsyncSeq<Image<'T>>) =
+        async {
+            let mutable histogram = Map.empty<'T,uint64>
+            let mutable holdoutLeft = Map.empty<'T,uint64>
+            let mutable holdoutRight = Map.empty<'T,uint64>
+            let mutable samples = 0UL
+
+            do!
+                input
+                |> AsyncSeq.iterAsync (fun image ->
+                    async {
+                        try
+                            let width = int (image.GetWidth())
+                            let height = int (image.GetHeight())
+
+                            for y in 0 .. step .. height - 1 do
+                                for x in 0 .. step .. width - 1 do
+                                    let value = image[x, y]
+                                    histogram <- histogram |> addHistogramValue value
+
+                                    if samples % 2UL = 0UL then
+                                        holdoutLeft <- holdoutLeft |> addHistogramValue value
+                                    else
+                                        holdoutRight <- holdoutRight |> addHistogramValue value
+
+                                    samples <- samples + 1UL
+                        finally
+                            image.decRefCount()
+                    })
+
+            let cdfHalfWidth =
+                match estimator with
+                | DKW
+                | DKWAndHoldout -> dkwHalfWidth samples confidence
+                | Holdout -> nan
+
+            let holdoutDelta =
+                match estimator with
+                | Holdout
+                | DKWAndHoldout -> holdoutMaxCdfDelta holdoutLeft holdoutRight
+                | DKW -> nan
+
+            return
+                { Histogram = histogram
+                  Samples = samples
+                  Confidence = confidence
+                  CdfHalfWidth = cdfHalfWidth
+                  HoldoutMaxCdfDelta = holdoutDelta }
+        }
+
+    Stage.reduce $"histogramEstimate.{typeof<'T>.Name}" reducer Streaming id id
+
+let estimateHistogram<'T when 'T: equality and 'T: comparison>
+    slices
+    inputDir
+    suffix
+    down
+    estimator
+    confidence
+    (pl: Plan<unit, unit>)
+    : Plan<unit, HistogramEstimate<'T>> =
+
+    if slices = 0u then
+        invalidArg (nameof slices) "estimateHistogram slices must be positive."
+
+    pl
+    |> StackIO.readRandom<'T> slices inputDir suffix
+    >=> histogramEstimate<'T> down estimator confidence
+
 let private histogramKeyToFloat<'T> (value: 'T) =
     Convert.ToDouble(value)
 
