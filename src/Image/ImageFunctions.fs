@@ -1263,11 +1263,87 @@ let threshold (lower: float) (upper: float) (img: Image<'T>) : Image<uint8> =
     let res = filter.Execute(img.toSimpleITK()); 
     Image<uint8>.ofSimpleITK(res,"threshold",0)
 
-let toVectorOfImage images =
-    let v = new itk.simple.VectorOfImage()
-    for img in images do
-        v.Add(img)
-    v
+let toVectorImage (images: Image<'T> list) : Image<'T list> =
+    Image<'T>.ofImageList images
+
+let vectorElement<'T when 'T : equality> (componentId: uint) (img: Image<'T list>) : Image<'T> =
+    let componentIndex = int componentId
+    let componentCount = int (img.GetNumberOfComponentsPerPixel())
+    if componentIndex < 0 || componentIndex >= componentCount then
+        invalidArg "componentId" $"vectorElement: component {componentId} is outside the available component range 0..{componentCount - 1}."
+
+    let output = new Image<'T>(img.GetSize(), 1u, "vectorElement", img.index)
+    img.GetSize()
+    |> flatIndices
+    |> Seq.iter (fun idx ->
+        let values = img.Get idx
+        output.Set idx values[componentIndex])
+    output
+
+let appendVectorElement (vector: Image<float list>) (element: Image<float>) : Image<float list> =
+    if vector.GetSize() <> element.GetSize() then
+        invalidArg "element" $"appendVectorElement: image sizes differ: {vector.GetSize()} vs {element.GetSize()}."
+
+    let output =
+        new Image<float list>(
+            vector.GetSize(),
+            vector.GetNumberOfComponentsPerPixel() + 1u,
+            "appendVectorElement",
+            vector.index)
+
+    vector.GetSize()
+    |> flatIndices
+    |> Seq.iter (fun idx ->
+        vector.Get idx @ [ element.Get idx ]
+        |> output.Set idx)
+    output
+
+let mapVectorElements (f: float -> float) (img: Image<float list>) : Image<float list> =
+    let output = new Image<float list>(img.GetSize(), img.GetNumberOfComponentsPerPixel(), "mapVectorElements", img.index)
+    img.GetSize()
+    |> flatIndices
+    |> Seq.iter (fun idx ->
+        img.Get idx
+        |> List.map f
+        |> output.Set idx)
+    output
+
+let private ensureMatchingVectorImages name (a: Image<float list>) (b: Image<float list>) =
+    if a.GetSize() <> b.GetSize() then
+        invalidArg "b" $"{name}: image sizes differ: {a.GetSize()} vs {b.GetSize()}."
+    if a.GetNumberOfComponentsPerPixel() <> b.GetNumberOfComponentsPerPixel() then
+        invalidArg "b" $"{name}: component counts differ: {a.GetNumberOfComponentsPerPixel()} vs {b.GetNumberOfComponentsPerPixel()}."
+
+let vectorDot (a: Image<float list>) (b: Image<float list>) : Image<float> =
+    ensureMatchingVectorImages "vectorDot" a b
+    let output = new Image<float>(a.GetSize(), 1u, "vectorDot", a.index)
+    a.GetSize()
+    |> flatIndices
+    |> Seq.iter (fun idx ->
+        let av = a.Get idx
+        let bv = b.Get idx
+        let value = List.map2 (*) av bv |> List.sum
+        output.Set idx value)
+    output
+
+let vectorCross3D (a: Image<float list>) (b: Image<float list>) : Image<float list> =
+    ensureMatchingVectorImages "vectorCross3D" a b
+    if a.GetNumberOfComponentsPerPixel() <> 3u then
+        invalidArg "a" $"vectorCross3D: expected 3-component vector images, got {a.GetNumberOfComponentsPerPixel()} components."
+
+    let output = new Image<float list>(a.GetSize(), 3u, "vectorCross3D", a.index)
+    a.GetSize()
+    |> flatIndices
+    |> Seq.iter (fun idx ->
+        match a.Get idx, b.Get idx with
+        | [ ax; ay; az ], [ bx; by; bz ] ->
+            [ ay * bz - az * by
+              az * bx - ax * bz
+              ax * by - ay * bx ]
+            |> output.Set idx
+        | av, bv ->
+            failwith $"vectorCross3D: expected 3-component vectors, got {av.Length} and {bv.Length}.")
+    output
 
 let stack (images: Image<'T> list) : Image<'T> =
     match images with

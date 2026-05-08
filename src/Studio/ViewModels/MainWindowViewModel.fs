@@ -538,6 +538,29 @@ module private UnaryImageFunctionNode =
 
         $"{functionName}(I)"
 
+module private VectorImageNode =
+    let functionOptions = "identity" :: StandardFunctionOptions.values
+
+    let title (state: PipelineNodeState) =
+        match state.Definition.Id with
+        | "VectorElement" ->
+            let componentText =
+                state.Parameters
+                |> Seq.tryFind (fun parameter -> parameter.Key = "component")
+                |> Option.map _.Value
+                |> Option.filter (String.IsNullOrWhiteSpace >> not)
+                |> Option.defaultValue "0"
+            $"V[{componentText}]"
+        | "VectorMapElements" ->
+            let functionName =
+                state.Parameters
+                |> Seq.tryFind (fun parameter -> parameter.Key = "function")
+                |> Option.map _.Value
+                |> Option.filter (fun value -> functionOptions |> List.contains value)
+                |> Option.defaultValue "sqrt"
+            $"{functionName}(V)"
+        | _ -> state.Definition.DisplayName
+
 module private SumProjectionNode =
     let functionOptions =
         [ "Identity"
@@ -894,6 +917,12 @@ type PipelineNodeViewModel(
                     markGraphDirty()
                 elif state.Definition.Id = "UnaryImageFunction" && parameter.Key = "function" && args.PropertyName = nameof parameter.Value then
                     state.Title <- UnaryImageFunctionNode.title state
+                    this.Name <- state.Title
+                    markGraphDirty()
+                elif (state.Definition.Id = "VectorElement" && parameter.Key = "component"
+                      || state.Definition.Id = "VectorMapElements" && parameter.Key = "function")
+                     && args.PropertyName = nameof parameter.Value then
+                    state.Title <- VectorImageNode.title state
                     this.Name <- state.Title
                     markGraphDirty()
                 elif state.Definition.Id = "ImageComparison" && parameter.Key = "operation" && args.PropertyName = nameof parameter.Value then
@@ -1350,6 +1379,12 @@ type MainWindowViewModel() as this =
                         |> List.map (fun value -> ParameterOptionViewModel(value, value, true))
 
                     PipelineParameterViewModel(parameter.Label, parameter.Key, parameter.DefaultValue, parameter.Type, options, false)
+                | "VectorMapElements", "function" ->
+                    let options =
+                        VectorImageNode.functionOptions
+                        |> List.map (fun value -> ParameterOptionViewModel(value, value, true))
+
+                    PipelineParameterViewModel(parameter.Label, parameter.Key, parameter.DefaultValue, parameter.Type, options, false)
                 | "SumProjection", "function" ->
                     let options =
                         SumProjectionNode.functionOptions
@@ -1441,6 +1476,8 @@ type MainWindowViewModel() as this =
             state.Title <- PairOperationNode.title state
         elif definition.Id = "UnaryImageFunction" then
             state.Title <- UnaryImageFunctionNode.title state
+        elif definition.Id = "VectorElement" || definition.Id = "VectorMapElements" then
+            state.Title <- VectorImageNode.title state
         elif definition.Id = "ImageComparison" then
             let operation = HighValueFilterNode.titleFrom "operation" ">" state
             state.Title <- $"I {operation} J"

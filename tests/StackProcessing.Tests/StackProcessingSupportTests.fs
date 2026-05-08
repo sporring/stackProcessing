@@ -1437,6 +1437,178 @@ let stackProcessingSupportSuite =
                 inverted.decRefCount()
                 mask.decRefCount()
 
+        testCase "StackProcessing facade exposes vector image wrappers" <| fun _ ->
+            let makeX () = Image<float>.ofArray2D (array2D [ [ 1.0; 2.0 ]; [ 3.0; 4.0 ] ])
+            let makeY () = Image<float>.ofArray2D (array2D [ [ 10.0; 20.0 ]; [ 30.0; 40.0 ] ])
+            let makeZ () = Image<float>.ofArray2D (array2D [ [ 100.0; 200.0 ]; [ 300.0; 400.0 ] ])
+            let makeZero () = Image<float>.ofArray2D (array2D [ [ 0.0; 0.0 ]; [ 0.0; 0.0 ] ])
+            let makeOne () = Image<float>.ofArray2D (array2D [ [ 1.0; 1.0 ]; [ 1.0; 1.0 ] ])
+            let makeVector3ViaStage zImage =
+                let x, y = makeX (), makeY ()
+                let vector2 = ImageFunctions.toVectorImage [ x; y ]
+                x.decRefCount()
+                y.decRefCount()
+
+                scalarPlan [ vector2, zImage ]
+                >=> StackProcessing.appendVectorElement
+                |> drain
+
+            let vector2 =
+                scalarPlan [ makeX (), makeY () ]
+                >=> StackProcessing.toVectorImage<float>
+                |> drain
+
+            try
+                Expect.equal vector2.[1, 1] [ 4.0; 40.0 ] "toVectorImage should combine synchronized scalar images into vector pixels."
+
+                let second =
+                    imagePlan [ vector2 ]
+                    >=> StackProcessing.vectorElement<float> 1u
+                    |> drain
+
+                try
+                    Expect.equal second.[1, 1] 40.0 "vectorElement should extract a scalar component stream."
+                finally
+                    second.decRefCount()
+
+                let mapped =
+                    imagePlan [ vector2 ]
+                    >=> StackProcessing.vectorMapElements "square"
+                    |> drain
+
+                try
+                    Expect.equal mapped.[1, 1] [ 16.0; 1600.0 ] "vectorMapElements should map scalar functions over every component."
+                finally
+                    mapped.decRefCount()
+            finally
+                vector2.decRefCount()
+
+            let vector3a = makeVector3ViaStage (makeZ ())
+
+            let unitY =
+                let zero, one = makeZero (), makeOne ()
+                let vector2 = ImageFunctions.toVectorImage [ zero; one ]
+                zero.decRefCount()
+                one.decRefCount()
+                scalarPlan [ vector2, makeZero () ]
+                >=> StackProcessing.appendVectorElement
+                |> drain
+
+            let cross =
+                scalarPlan [ vector3a, unitY ]
+                >=> StackProcessing.vectorCross3D
+                |> drain
+
+            try
+                Expect.equal cross.[1, 1] [ -400.0; 0.0; 4.0 ] "vectorCross3D should compute a cross product per pixel."
+            finally
+                cross.decRefCount()
+
+            let vector3b = makeVector3ViaStage (makeZ ())
+
+            let unitY2 =
+                let zero, one = makeZero (), makeOne ()
+                let vector2 = ImageFunctions.toVectorImage [ zero; one ]
+                zero.decRefCount()
+                one.decRefCount()
+                scalarPlan [ vector2, makeZero () ]
+                >=> StackProcessing.appendVectorElement
+                |> drain
+
+            let dot =
+                scalarPlan [ vector3b, unitY2 ]
+                >=> StackProcessing.vectorDot
+                |> drain
+
+            try
+                Expect.equal dot.[1, 1] 40.0 "vectorDot should compute a dot product per pixel."
+            finally
+                dot.decRefCount()
+
+        testCase "StackProcessing facade exposes complex image wrappers" <| fun _ ->
+            let makeReal () = Image<float>.ofArray2D (array2D [ [ 3.0; 1.0 ]; [ -2.0; 0.0 ] ])
+            let makeImag () = Image<float>.ofArray2D (array2D [ [ 4.0; -1.0 ]; [ 2.0; -5.0 ] ])
+            let makeComplex () =
+                let real, imag = makeReal (), makeImag ()
+                let complexImage = Image.toComplex real imag
+                real.decRefCount()
+                imag.decRefCount()
+                complexImage
+
+            let complexImage =
+                scalarPlan [ makeReal (), makeImag () ]
+                >=> StackProcessing.toComplex
+                |> drain
+
+            try
+                Expect.equal complexImage.[0, 0] (System.Numerics.Complex(3.0, 4.0)) "toComplex should compose real and imaginary streams."
+            finally
+                complexImage.decRefCount()
+
+            let realPart =
+                scalarPlan [ makeComplex () ]
+                >=> StackProcessing.Re
+                |> drain
+
+            try
+                Expect.floatClose Accuracy.high realPart.[0, 0] 3.0 "Re should extract the real stream."
+            finally
+                realPart.decRefCount()
+
+            let imagPart =
+                scalarPlan [ makeComplex () ]
+                >=> StackProcessing.Im
+                |> drain
+
+            try
+                Expect.floatClose Accuracy.high imagPart.[0, 0] 4.0 "Im should extract the imaginary stream."
+            finally
+                imagPart.decRefCount()
+
+            let magnitude =
+                scalarPlan [ makeComplex () ]
+                >=> StackProcessing.modulus
+                |> drain
+
+            try
+                Expect.floatClose Accuracy.high magnitude.[0, 0] 5.0 "modulus should compute complex magnitude."
+            finally
+                magnitude.decRefCount()
+
+            let phase =
+                scalarPlan [ makeComplex () ]
+                >=> StackProcessing.arg
+                |> drain
+
+            try
+                Expect.floatClose Accuracy.high phase.[0, 0] (Math.Atan2(4.0, 3.0)) "arg should compute complex phase."
+            finally
+                phase.decRefCount()
+
+            let conjugated =
+                scalarPlan [ makeComplex () ]
+                >=> StackProcessing.conjugate
+                |> drain
+
+            try
+                Expect.equal conjugated.[0, 0] (System.Numerics.Complex(3.0, -4.0)) "conjugate should negate the imaginary stream."
+            finally
+                conjugated.decRefCount()
+
+            let fromPolar =
+                scalarPlan [
+                    Image<float>.ofArray2D (array2D [ [ 5.0 ] ]),
+                    Image<float>.ofArray2D (array2D [ [ Math.Atan2(4.0, 3.0) ] ])
+                ]
+                >=> StackProcessing.polarToComplex
+                |> drain
+
+            try
+                Expect.floatClose Accuracy.high fromPolar.[0, 0].Real 3.0 "polarToComplex should recover the real component."
+                Expect.floatClose Accuracy.high fromPolar.[0, 0].Imaginary 4.0 "polarToComplex should recover the imaginary component."
+            finally
+                fromPolar.decRefCount()
+
         testCase "StackProcessing facade exposes local image filter wrappers" <| fun _ ->
             let floatSlices = [ for z in 0 .. 2 -> makeFloatSlice 5 5 z ]
             let uintSlices = [ for z in 0 .. 2 -> makeSlice 5 5 z ]

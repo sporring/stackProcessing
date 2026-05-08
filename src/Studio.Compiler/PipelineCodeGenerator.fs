@@ -196,6 +196,12 @@ module PipelineCodeGenerator =
     let private pairStageFunctionName (node: SavedNode) =
         match node.FunctionId with
         | "ImageOpImage" -> Some(imageOpImageFunctionName node)
+        | "ComplexFromReIm" -> Some "toComplex"
+        | "ComplexPolar" -> Some "polarToComplex"
+        | "ToVectorImage" -> Some "toVectorImage<float>"
+        | "AppendVectorElement" -> Some "appendVectorElement"
+        | "VectorDot" -> Some "vectorDot"
+        | "VectorCross3D" -> Some "vectorCross3D"
         | "ImageComparison" ->
             let pixelType = pixelTypeNameFromParameter "type" "Float64" node
             let comparison =
@@ -912,6 +918,22 @@ module PipelineCodeGenerator =
             $">=> sumProjection<{pixelType}> {quote functionName}"
         | "UnaryImageFunction" ->
             $">=> {unaryImageFunctionName node}"
+        | "ComplexRe" ->
+            ">=> Re"
+        | "ComplexIm" ->
+            ">=> Im"
+        | "ComplexModulus" ->
+            ">=> modulus"
+        | "ComplexArg" ->
+            ">=> arg"
+        | "ComplexConjugate" ->
+            ">=> conjugate"
+        | "VectorElement" ->
+            let componentId = parameterValue "component"
+            $">=> vectorElement<float> {componentId}"
+        | "VectorMapElements" ->
+            let functionName = quotedParameter "function"
+            $">=> vectorMapElements {functionName}"
         | "SqrtFloat64" ->
             ">=> sqrt"
         | id when isScalarImageFunction id ->

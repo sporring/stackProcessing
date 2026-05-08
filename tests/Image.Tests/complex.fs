@@ -17,6 +17,34 @@ let private makeComplexArray2D () =
 let complexSuite =
   testList "Complex image support" [
 
+    testCase "Re Im toComplex and bulk 2D complex array accessors" <| fun _ ->
+      let arr =
+        array2D [
+          [ c 1.0 -1.0; c 2.0 -2.0 ]
+          [ c 3.0 -3.0; c 4.0 -4.0 ] ]
+
+      let img = Image<Complex>.ofComplexArray2D arr
+      let re = Re img
+      let im = Im img
+      let rebuilt = toComplex re im
+
+      Expect.equal (re.GetSize()) [2u; 2u] "Re should preserve image size."
+      Expect.equal (im.GetSize()) [2u; 2u] "Im should preserve image size."
+      Expect.floatClose Accuracy.high re.[1,0] 3.0 "Re should expose real values."
+      Expect.floatClose Accuracy.high im.[1,0] -3.0 "Im should expose imaginary values."
+      Expect.equal (rebuilt.toSimpleITK().GetPixelID()) PixelIDValueEnum.sitkComplexFloat64 "toComplex should return a native complex image."
+      Expect.equal (rebuilt.toComplexArray2D()) arr "toComplexArray2D should bulk round-trip complex values."
+      Expect.throws (fun () -> img.toComplexArray3D() |> ignore) "toComplexArray3D should reject 2D images."
+
+    testCase "bulk 3D complex array accessors" <| fun _ ->
+      let arr = Array3D.init 2 2 2 (fun x y z -> c (float (x + 10*y + 100*z)) (-float (x + 10*y + 100*z)))
+      let img = Image<Complex>.ofComplexArray3D arr
+      let back = img.toComplexArray3D()
+
+      Expect.equal (img.GetSize()) [2u; 2u; 2u] "ofComplexArray3D should preserve the three spatial dimensions."
+      Expect.equal back arr "toComplexArray3D should bulk round-trip complex volumes."
+      Expect.throws (fun () -> img.toComplexArray2D() |> ignore) "toComplexArray2D should reject 3D images."
+
 (*    testCase "ofArray3DComplex roundtrip" <| fun _ ->
       let arr = makeComplexArray2D ()
       let img = Image<Complex>.ofArray3DComplex arr
@@ -32,6 +60,33 @@ let complexSuite =
       let img = Image<float>.ofImagePairToComplex real imag
       Expect.equal img.[0,1] (c 2.0 1.5) "Complex value at (0,1) mismatch"
       Expect.equal img.[1,0] (c 3.0 2.5) "Complex value at (1,0) mismatch"
+
+    testCase "complex arithmetic modulus arg conjugate and polar conversion" <| fun _ ->
+      let real = Image<float>.ofArray2D (array2D [ [ 3.0; 1.0 ]; [ -2.0; 0.0 ] ])
+      let imag = Image<float>.ofArray2D (array2D [ [ 4.0; -1.0 ]; [ 2.0; -5.0 ] ])
+      let otherReal = Image<float>.ofArray2D (array2D [ [ 1.0; 2.0 ]; [ 0.5; -3.0 ] ])
+      let otherImag = Image<float>.ofArray2D (array2D [ [ -2.0; 0.5 ]; [ 1.0; 2.0 ] ])
+      let z = toComplex real imag
+      let w = toComplex otherReal otherImag
+      let sum = z + w
+      let difference = z - w
+      let product = z * w
+      let quotient = z / w
+      let zModulus = modulus z
+      let zArg = arg z
+      let zConjugate = conjugate z
+      let fromPolar = polarToComplex zModulus zArg
+
+      Expect.equal sum.[0,0] (c 4.0 2.0) "Complex addition should preserve native complex arithmetic."
+      Expect.equal difference.[0,0] (c 2.0 6.0) "Complex subtraction should preserve native complex arithmetic."
+      Expect.equal product.[0,0] (c 11.0 -2.0) "Complex multiplication should preserve native complex arithmetic."
+      Expect.floatClose Accuracy.high quotient.[0,0].Real -1.0 "Complex division real part should match."
+      Expect.floatClose Accuracy.high quotient.[0,0].Imaginary 2.0 "Complex division imaginary part should match."
+      Expect.floatClose Accuracy.high zModulus.[0,0] 5.0 "modulus should compute sqrt(re^2 + im^2)."
+      Expect.floatClose Accuracy.high zArg.[0,0] (System.Math.Atan2(4.0, 3.0)) "arg should compute the complex phase angle."
+      Expect.equal zConjugate.[0,0] (c 3.0 -4.0) "conjugate should keep Re and negate Im."
+      Expect.floatClose Accuracy.high fromPolar.[0,0].Real 3.0 "polarToComplex should recover the real component."
+      Expect.floatClose Accuracy.high fromPolar.[0,0].Imaginary 4.0 "polarToComplex should recover the imaginary component."
 
     testCase "toComplex from vector image is not supported" <| fun _ ->
       let arr = Array3D.init 2 2 2 (

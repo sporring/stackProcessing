@@ -890,6 +890,147 @@ let generatorSuite =
 
             Expect.stringContains code ">>=> greaterEqual<float>" "Image comparison should lower to the selected typed pair stage."
 
+        testCase "vector image boxes lower to StackProcessing vector stages" <| fun _ ->
+            let read id input =
+                node id "Read"
+                    [ p "availableMemory" "1024" false
+                      p "type" "Float64" false
+                      p "input" input false
+                      p "suffix" ".tiff" false ]
+
+            let write = node "write" "Write" [ p "output" "out" false; p "suffix" ".tiff" false ]
+
+            let vectorCode =
+                graph
+                    [ read "x" "x"; read "y" "y"; read "z" "z"
+                      node "toVector" "ToVectorImage" []
+                      node "append" "AppendVectorElement" []
+                      node "map" "VectorMapElements" [ p "function" "sqrt" false ]
+                      node "element" "VectorElement" [ p "component" "2" false ]
+                      write ]
+                    [ edge "x" "output" 0 "toVector" "I" 0
+                      edge "y" "output" 0 "toVector" "J" 0
+                      edge "toVector" "output" 0 "append" "Vector" 0
+                      edge "z" "output" 0 "append" "Float64" 1
+                      edge "append" "output" 0 "map" "input" 0
+                      edge "map" "output" 0 "element" "input" 0
+                      edge "element" "output" 0 "write" "input" 0 ]
+                |> PipelineCodeGenerator.generateSavedGraph
+
+            Expect.stringContains vectorCode ">>=> toVectorImage<float>" "toVectorImage should lower to the vector composition pair stage."
+            Expect.stringContains vectorCode ">>=> appendVectorElement" "appendVectorElement should lower as a mixed vector/scalar pair stage."
+            Expect.stringContains vectorCode ">=> vectorMapElements \"sqrt\"" "VectorMapElements should lower with the selected function."
+            Expect.stringContains vectorCode ">=> vectorElement<float> 2" "VectorElement should lower with the selected component."
+
+            let dotCode =
+                graph
+                    [ read "x" "x"; read "y" "y"; read "u" "u"; read "v" "v"
+                      node "leftVector" "ToVectorImage" []
+                      node "rightVector" "ToVectorImage" []
+                      node "dot" "VectorDot" []
+                      write ]
+                    [ edge "x" "output" 0 "leftVector" "I" 0
+                      edge "y" "output" 0 "leftVector" "J" 0
+                      edge "u" "output" 0 "rightVector" "I" 0
+                      edge "v" "output" 0 "rightVector" "J" 0
+                      edge "leftVector" "output" 0 "dot" "U" 0
+                      edge "rightVector" "output" 0 "dot" "V" 1
+                      edge "dot" "output" 0 "write" "input" 0 ]
+                |> PipelineCodeGenerator.generateSavedGraph
+
+            Expect.stringContains dotCode ">>=> vectorDot" "VectorDot should lower to the pixelwise dot-product stage."
+
+            let crossCode =
+                graph
+                    [ read "x" "x"; read "y" "y"; read "u" "u"; read "v" "v"
+                      node "leftVector" "ToVectorImage" []
+                      node "rightVector" "ToVectorImage" []
+                      node "cross" "VectorCross3D" []
+                      node "element" "VectorElement" [ p "component" "0" false ]
+                      write ]
+                    [ edge "x" "output" 0 "leftVector" "I" 0
+                      edge "y" "output" 0 "leftVector" "J" 0
+                      edge "u" "output" 0 "rightVector" "I" 0
+                      edge "v" "output" 0 "rightVector" "J" 0
+                      edge "leftVector" "output" 0 "cross" "U" 0
+                      edge "rightVector" "output" 0 "cross" "V" 1
+                      edge "cross" "output" 0 "element" "input" 0
+                      edge "element" "output" 0 "write" "input" 0 ]
+                |> PipelineCodeGenerator.generateSavedGraph
+
+            Expect.stringContains crossCode ">>=> vectorCross3D" "VectorCross3D should lower to the pixelwise 3D cross-product stage."
+
+        testCase "complex image boxes lower to StackProcessing complex stages" <| fun _ ->
+            let read id input =
+                node id "Read"
+                    [ p "availableMemory" "1024" false
+                      p "type" "Float64" false
+                      p "input" input false
+                      p "suffix" ".tiff" false ]
+
+            let write = node "write" "Write" [ p "output" "out" false; p "suffix" ".tiff" false ]
+
+            let complexCode =
+                graph
+                    [ read "real" "real"; read "imag" "imag"
+                      node "complex" "ComplexFromReIm" []
+                      node "conjugate" "ComplexConjugate" []
+                      node "modulus" "ComplexModulus" []
+                      write ]
+                    [ edge "real" "output" 0 "complex" "Re" 0
+                      edge "imag" "output" 0 "complex" "Im" 1
+                      edge "complex" "output" 0 "conjugate" "input" 0
+                      edge "conjugate" "output" 0 "modulus" "input" 0
+                      edge "modulus" "output" 0 "write" "input" 0 ]
+                |> PipelineCodeGenerator.generateSavedGraph
+
+            Expect.stringContains complexCode ">>=> toComplex" "ComplexFromReIm should lower to the real/imag composition stage."
+            Expect.stringContains complexCode ">=> conjugate" "ComplexConjugate should lower to conjugate."
+            Expect.stringContains complexCode ">=> modulus" "ComplexModulus should lower to modulus."
+
+            let polarCode =
+                graph
+                    [ read "magnitude" "magnitude"; read "phase" "phase"
+                      node "complex" "ComplexPolar" []
+                      node "re" "ComplexRe" []
+                      write ]
+                    [ edge "magnitude" "output" 0 "complex" "Modulus" 0
+                      edge "phase" "output" 0 "complex" "Arg" 1
+                      edge "complex" "output" 0 "re" "input" 0
+                      edge "re" "output" 0 "write" "input" 0 ]
+                |> PipelineCodeGenerator.generateSavedGraph
+
+            Expect.stringContains polarCode ">>=> polarToComplex" "ComplexPolar should lower to polarToComplex."
+            Expect.stringContains polarCode ">=> Re" "ComplexRe should lower to Re."
+
+            let imCode =
+                graph
+                    [ read "real" "real"; read "imag" "imag"
+                      node "complex" "ComplexFromReIm" []
+                      node "im" "ComplexIm" []
+                      write ]
+                    [ edge "real" "output" 0 "complex" "Re" 0
+                      edge "imag" "output" 0 "complex" "Im" 1
+                      edge "complex" "output" 0 "im" "input" 0
+                      edge "im" "output" 0 "write" "input" 0 ]
+                |> PipelineCodeGenerator.generateSavedGraph
+
+            Expect.stringContains imCode ">=> Im" "ComplexIm should lower to Im."
+
+            let argCode =
+                graph
+                    [ read "real" "real"; read "imag" "imag"
+                      node "complex" "ComplexFromReIm" []
+                      node "arg" "ComplexArg" []
+                      write ]
+                    [ edge "real" "output" 0 "complex" "Re" 0
+                      edge "imag" "output" 0 "complex" "Im" 1
+                      edge "complex" "output" 0 "arg" "input" 0
+                      edge "arg" "output" 0 "write" "input" 0 ]
+                |> PipelineCodeGenerator.generateSavedGraph
+
+            Expect.stringContains argCode ">=> arg" "ComplexArg should lower to arg."
+
         testCase "morphology and streaming label additions lower to StackProcessing stages" <| fun _ ->
             let read =
                 node "read" "Read"

@@ -324,6 +324,63 @@ let failTypeMismatch<'T> name lst =
 /// Simple functions
 let private floatNintTypes = [typeof<float>;typeof<float32>;typeof<int>]
 let private floatTypes = [typeof<float>;typeof<float32>]
+let private vectorElementFunction (name: string) =
+    match name.Trim().ToLowerInvariant() with
+    | "abs" -> abs
+    | "acos" -> acos
+    | "asin" -> asin
+    | "atan" -> atan
+    | "cos" -> cos
+    | "sin" -> sin
+    | "tan" -> tan
+    | "exp" -> exp
+    | "log10" -> log10
+    | "log" -> log
+    | "round" -> round
+    | "sqrt" -> sqrt
+    | "square" -> fun x -> x * x
+    | "identity" -> id
+    | other -> invalidArg "name" $"Unknown vector element function '{other}'."
+
+let toVectorImage<'T when 'T: equality> : Stage<Image<'T> * Image<'T>, Image<'T list>> =
+    liftPairReleaseAfter "toVectorImage" (fun a b -> ImageFunctions.toVectorImage [ a; b ])
+
+let vectorElement<'T when 'T: equality> componentId : Stage<Image<'T list>, Image<'T>> =
+    liftUnaryReleaseAfter "vectorElement" (ImageFunctions.vectorElement componentId) id id
+
+let appendVectorElement : Stage<Image<float list> * Image<float>, Image<float list>> =
+    liftPairReleaseAfter "appendVectorElement" ImageFunctions.appendVectorElement
+
+let vectorMapElements functionName : Stage<Image<float list>, Image<float list>> =
+    liftUnaryReleaseAfter "vectorMapElements" (ImageFunctions.mapVectorElements (vectorElementFunction functionName)) id id
+
+let vectorDot : Stage<Image<float list> * Image<float list>, Image<float>> =
+    liftPairReleaseAfter "vectorDot" ImageFunctions.vectorDot
+
+let vectorCross3D : Stage<Image<float list> * Image<float list>, Image<float list>> =
+    liftPairReleaseAfter "vectorCross3D" ImageFunctions.vectorCross3D
+
+let Re : Stage<Image<System.Numerics.Complex>, Image<float>> =
+    liftUnaryReleaseAfter "Re" Image.Re id id
+
+let Im : Stage<Image<System.Numerics.Complex>, Image<float>> =
+    liftUnaryReleaseAfter "Im" Image.Im id id
+
+let modulus : Stage<Image<System.Numerics.Complex>, Image<float>> =
+    liftUnaryReleaseAfter "modulus" Image.modulus id id
+
+let arg : Stage<Image<System.Numerics.Complex>, Image<float>> =
+    liftUnaryReleaseAfter "arg" Image.arg id id
+
+let conjugate : Stage<Image<System.Numerics.Complex>, Image<System.Numerics.Complex>> =
+    liftUnaryReleaseAfter "conjugate" Image.conjugate id id
+
+let toComplex : Stage<Image<float> * Image<float>, Image<System.Numerics.Complex>> =
+    liftPairReleaseAfter "toComplex" Image.toComplex
+
+let polarToComplex : Stage<Image<float> * Image<float>, Image<System.Numerics.Complex>> =
+    liftPairReleaseAfter "polarToComplex" Image.polarToComplex
+
 let abs<'T when 'T: equality>    : Stage<Image<'T>,Image<'T>> = 
     failTypeMismatch<'T> "abs" floatNintTypes
     liftUnaryReleaseAfter "abs"    ImageFunctions.absImage id id

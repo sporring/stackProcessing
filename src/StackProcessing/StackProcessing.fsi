@@ -451,6 +451,40 @@ val getMinMax: (StackCore.Image<'a> -> float * float) when 'a: equality
 
 val failTypeMismatch<'T> : (string -> System.Type list -> unit)
 
+val toVectorImage<'T when 'T: equality> :
+  Stage<(Image<'T> * Image<'T>),Image<'T list>> when 'T: equality
+
+val vectorElement:
+  componentId: uint -> Stage<Image<'T list>,Image<'T>> when 'T: equality
+
+val appendVectorElement:
+  Stage<(Image<float list> * Image<float>),Image<float list>>
+
+val vectorMapElements:
+  functionName: string -> Stage<Image<float list>,Image<float list>>
+
+val vectorDot: Stage<(Image<float list> * Image<float list>),Image<float>>
+
+val vectorCross3D:
+  Stage<(Image<float list> * Image<float list>),Image<float list>>
+
+val Re: Stage<Image<System.Numerics.Complex>,Image<float>>
+
+val Im: Stage<Image<System.Numerics.Complex>,Image<float>>
+
+val modulus: Stage<Image<System.Numerics.Complex>,Image<float>>
+
+val arg: Stage<Image<System.Numerics.Complex>,Image<float>>
+
+val conjugate:
+  Stage<Image<System.Numerics.Complex>,Image<System.Numerics.Complex>>
+
+val toComplex:
+  Stage<(Image<float> * Image<float>),Image<System.Numerics.Complex>>
+
+val polarToComplex:
+  Stage<(Image<float> * Image<float>),Image<System.Numerics.Complex>>
+
 val abs<'T when 'T: equality> :
   StackCore.Stage<StackCore.Image<'T>,StackCore.Image<'T>> when 'T: equality
 

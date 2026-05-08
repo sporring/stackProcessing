@@ -14,6 +14,7 @@ module BuiltInCatalog =
   let imageFloat32 = PortType.Image NumericType.Float32
   let imageFloat64 = PortType.Image NumericType.Float64
   let imageComplex = PortType.Image NumericType.Complex
+  let vectorImageFloat64 = PortType.Custom "VectorImageFloat64"
   let translationTable = PortType.Custom "TranslationTable"
   let connectedComponentLabels = PortType.Tuple(imageUInt64, PortType.Scalar(BasicType.Numeric UInt64))
   let mesh = PortType.Custom "Mesh"
@@ -840,6 +841,136 @@ module BuiltInCatalog =
             [ "add"; "sum"; "subtract"; "multiply"; "mask"; "divide"; "ratio"; "maximum"; "max"; "minimum"; "min"; "arithmetic"; "+"; "-"; "*"; "/" ]
             [ makeParameter "operation" "Operation" "*" BasicType.String
               makeParameter "type" "Type" "Float64" BasicType.String ]
+
+        { Id = "ComplexFromReIm"
+          DisplayName = "toComplex"
+          Category = "Complex Images"
+          Summary = "Compose real and imaginary Float64 image streams into a native complex image stream."
+          Description = "Combines synchronized Float64 real and imaginary images into one native ComplexFloat64 image stream."
+          Aliases = [ "complex"; "real"; "imaginary"; "compose"; "toComplex"; "fourier" ]
+          Inputs = [ makePort "Re: Float64" imageFloat64; makePort "Im: Float64" imageFloat64 ]
+          Outputs = [ makePort "Complex" imageComplex ]
+          Parameters = [] }
+
+        { Id = "ComplexPolar"
+          DisplayName = "polarToComplex"
+          Category = "Complex Images"
+          Summary = "Compose modulus and argument Float64 image streams into a native complex image stream."
+          Description = "Combines synchronized modulus and angle images into one native ComplexFloat64 image stream using polar coordinates."
+          Aliases = [ "complex"; "polar"; "modulus"; "argument"; "phase"; "angle"; "fourier" ]
+          Inputs = [ makePort "Modulus: Float64" imageFloat64; makePort "Arg: Float64" imageFloat64 ]
+          Outputs = [ makePort "Complex" imageComplex ]
+          Parameters = [] }
+
+        { Id = "ComplexRe"
+          DisplayName = "Re"
+          Category = "Complex Images"
+          Summary = "Extract the real part of a complex image stream."
+          Description = "Extracts the real component from each native complex pixel and emits a Float64 image stream."
+          Aliases = [ "complex"; "real"; "re"; "fourier" ]
+          Inputs = [ makePort "Complex" imageComplex ]
+          Outputs = [ makePort "Float64" imageFloat64 ]
+          Parameters = [] }
+
+        { Id = "ComplexIm"
+          DisplayName = "Im"
+          Category = "Complex Images"
+          Summary = "Extract the imaginary part of a complex image stream."
+          Description = "Extracts the imaginary component from each native complex pixel and emits a Float64 image stream."
+          Aliases = [ "complex"; "imaginary"; "im"; "fourier" ]
+          Inputs = [ makePort "Complex" imageComplex ]
+          Outputs = [ makePort "Float64" imageFloat64 ]
+          Parameters = [] }
+
+        { Id = "ComplexModulus"
+          DisplayName = "modulus"
+          Category = "Complex Images"
+          Summary = "Compute the modulus of a complex image stream."
+          Description = "Computes the complex modulus at each pixel and emits a Float64 image stream."
+          Aliases = [ "complex"; "abs"; "absolute"; "magnitude"; "modulus"; "fourier" ]
+          Inputs = [ makePort "Complex" imageComplex ]
+          Outputs = [ makePort "Float64" imageFloat64 ]
+          Parameters = [] }
+
+        { Id = "ComplexArg"
+          DisplayName = "arg"
+          Category = "Complex Images"
+          Summary = "Compute the argument angle of a complex image stream."
+          Description = "Computes the complex phase angle at each pixel and emits a Float64 image stream."
+          Aliases = [ "complex"; "arg"; "argument"; "phase"; "angle"; "fourier" ]
+          Inputs = [ makePort "Complex" imageComplex ]
+          Outputs = [ makePort "Float64" imageFloat64 ]
+          Parameters = [] }
+
+        { Id = "ComplexConjugate"
+          DisplayName = "conjugate"
+          Category = "Complex Images"
+          Summary = "Compute the complex conjugate of a complex image stream."
+          Description = "Keeps the real part and negates the imaginary part of each native complex pixel."
+          Aliases = [ "complex"; "conjugate"; "fourier" ]
+          Inputs = [ makePort "Complex" imageComplex ]
+          Outputs = [ makePort "Complex" imageComplex ]
+          Parameters = [] }
+
+        { Id = "ToVectorImage"
+          DisplayName = "toVectorImage"
+          Category = "Vector Images"
+          Summary = "Combine two Float64 image streams into one two-component vector-valued image stream."
+          Description = "Combines synchronized scalar image streams into vector-valued pixels while preserving the image domain. This is the vector-valued counterpart to stack: stack adds a spatial axis, while toVectorImage adds pixel components."
+          Aliases = [ "vector"; "components"; "compose"; "toVectorImage"; "field" ]
+          Inputs = [ makePort "I: Float64" imageFloat64; makePort "J: Float64" imageFloat64 ]
+          Outputs = [ makePort "Vector Float64" vectorImageFloat64 ]
+          Parameters = [] }
+
+        { Id = "VectorElement"
+          DisplayName = "vectorElement"
+          Category = "Vector Images"
+          Summary = "Extract one scalar component from a vector-valued image stream."
+          Description = "Extracts a component from each vector-valued pixel and emits an ordinary Float64 image stream. Component indices are zero-based."
+          Aliases = [ "vector"; "component"; "extract"; "element"; "channel" ]
+          Inputs = [ makePort "Vector Float64" vectorImageFloat64 ]
+          Outputs = [ makePort "Float64" imageFloat64 ]
+          Parameters = [ makeParameter "component" "Component" "0" (BasicType.Numeric UInt32) ] }
+
+        { Id = "AppendVectorElement"
+          DisplayName = "appendVectorElement"
+          Category = "Vector Images"
+          Summary = "Append a scalar image stream as a new vector component."
+          Description = "Combines a vector-valued image stream and a synchronized scalar image stream by appending the scalar pixel as the last vector component. Use it with toVectorImage to build three-component vector images for vectorCross3D."
+          Aliases = [ "vector"; "append"; "component"; "compose"; "field" ]
+          Inputs = [ makePort "Vector Float64" vectorImageFloat64; makePort "Float64" imageFloat64 ]
+          Outputs = [ makePort "Vector Float64" vectorImageFloat64 ]
+          Parameters = [] }
+
+        { Id = "VectorMapElements"
+          DisplayName = "mapVectorElements"
+          Category = "Vector Images"
+          Summary = "Apply a scalar function independently to every vector component."
+          Description = "Maps a simple Float64 function over every component of every vector-valued pixel while preserving the image domain and component count."
+          Aliases = [ "vector"; "map"; "component"; "abs"; "sqrt"; "function" ]
+          Inputs = [ makePort "Vector Float64" vectorImageFloat64 ]
+          Outputs = [ makePort "Vector Float64" vectorImageFloat64 ]
+          Parameters = [ makeParameter "function" "Function" "sqrt" BasicType.String ] }
+
+        { Id = "VectorDot"
+          DisplayName = "vectorDot"
+          Category = "Vector Images"
+          Summary = "Compute the pixelwise dot product of two vector-valued image streams."
+          Description = "Combines synchronized vector-valued image streams by taking the dot product at each pixel, producing an ordinary Float64 image stream."
+          Aliases = [ "vector"; "dot"; "inner"; "product" ]
+          Inputs = [ makePort "U: Vector Float64" vectorImageFloat64; makePort "V: Vector Float64" vectorImageFloat64 ]
+          Outputs = [ makePort "Float64" imageFloat64 ]
+          Parameters = [] }
+
+        { Id = "VectorCross3D"
+          DisplayName = "vectorCross3D"
+          Category = "Vector Images"
+          Summary = "Compute the pixelwise 3D cross product of two vector-valued image streams."
+          Description = "Combines synchronized three-component vector-valued image streams by taking the 3D cross product at each pixel, producing another vector-valued image stream."
+          Aliases = [ "vector"; "cross"; "3d"; "product" ]
+          Inputs = [ makePort "U: Vector Float64" vectorImageFloat64; makePort "V: Vector Float64" vectorImageFloat64 ]
+          Outputs = [ makePort "Vector Float64" vectorImageFloat64 ]
+          Parameters = [] }
 
         { Id = "DiscreteGaussian"
           DisplayName = "discreteGaussian"

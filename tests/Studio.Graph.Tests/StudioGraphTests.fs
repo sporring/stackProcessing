@@ -99,6 +99,44 @@ let catalogSuite =
             Expect.isFalse (ids |> List.contains "BinaryThinning") "binaryThinning requires iterative skeletonization and is out of scope for LMIP streaming."
             Expect.isFalse (ids |> List.contains "MaxOfPair") "maxOfPair should be available through ImageOpImage, not as a legacy palette box."
             Expect.isFalse (ids |> List.contains "MinOfPair") "minOfPair should be available through ImageOpImage, not as a legacy palette box."
+            Expect.containsAll ids ["ToVectorImage"; "AppendVectorElement"; "VectorElement"; "VectorMapElements"; "VectorDot"; "VectorCross3D"] "Vector-valued image composition and pixelwise vector operations should be available in Studio."
+            Expect.containsAll ids ["ComplexFromReIm"; "ComplexPolar"; "ComplexRe"; "ComplexIm"; "ComplexModulus"; "ComplexArg"; "ComplexConjugate"] "Complex-valued image composition and unary operations should be available in Studio."
+
+        testCase "vector image catalog uses vector-valued ports" <| fun _ ->
+            let vectorType = PortType.Custom "VectorImageFloat64"
+            let toVectorImage = BuiltInCatalog.find "ToVectorImage"
+            let appendVectorElement = BuiltInCatalog.find "AppendVectorElement"
+            let vectorElement = BuiltInCatalog.find "VectorElement"
+            let vectorDot = BuiltInCatalog.find "VectorDot"
+            let vectorCross3D = BuiltInCatalog.find "VectorCross3D"
+
+            Expect.equal toVectorImage.Outputs.[0].Type vectorType "toVectorImage should emit a vector-valued image stream."
+            Expect.equal appendVectorElement.Inputs.[0].Type vectorType "appendVectorElement should consume an existing vector image."
+            Expect.equal appendVectorElement.Inputs.[1].Type (PortType.Image Float64) "appendVectorElement should append a scalar Float64 image."
+            Expect.equal appendVectorElement.Outputs.[0].Type vectorType "appendVectorElement should keep the stream vector-valued."
+            Expect.equal vectorElement.Outputs.[0].Type (PortType.Image Float64) "vectorElement should extract a scalar image."
+            Expect.equal vectorDot.Outputs.[0].Type (PortType.Image Float64) "vectorDot should reduce vectors to scalar pixels."
+            Expect.equal vectorCross3D.Outputs.[0].Type vectorType "vectorCross3D should preserve vector-valued pixels."
+
+        testCase "complex image catalog uses complex and Float64 ports" <| fun _ ->
+            let fromReIm = BuiltInCatalog.find "ComplexFromReIm"
+            let polar = BuiltInCatalog.find "ComplexPolar"
+            let re = BuiltInCatalog.find "ComplexRe"
+            let im = BuiltInCatalog.find "ComplexIm"
+            let modulus = BuiltInCatalog.find "ComplexModulus"
+            let arg = BuiltInCatalog.find "ComplexArg"
+            let conjugate = BuiltInCatalog.find "ComplexConjugate"
+
+            Expect.equal fromReIm.Inputs.[0].Type (PortType.Image Float64) "toComplex should consume a Float64 real image."
+            Expect.equal fromReIm.Inputs.[1].Type (PortType.Image Float64) "toComplex should consume a Float64 imaginary image."
+            Expect.equal fromReIm.Outputs.[0].Type (PortType.Image Complex) "toComplex should emit a native complex image."
+            Expect.equal polar.Outputs.[0].Type (PortType.Image Complex) "polarToComplex should emit a native complex image."
+            Expect.equal re.Outputs.[0].Type (PortType.Image Float64) "Re should emit Float64."
+            Expect.equal im.Outputs.[0].Type (PortType.Image Float64) "Im should emit Float64."
+            Expect.equal modulus.Outputs.[0].Type (PortType.Image Float64) "modulus should emit Float64."
+            Expect.equal arg.Outputs.[0].Type (PortType.Image Float64) "arg should emit Float64."
+            Expect.equal conjugate.Inputs.[0].Type (PortType.Image Complex) "conjugate should consume Complex."
+            Expect.equal conjugate.Outputs.[0].Type (PortType.Image Complex) "conjugate should emit Complex."
 
         testCase "file directory source emits a string scalar" <| fun _ ->
             let fileDirectory = BuiltInCatalog.find "FileDirectory"

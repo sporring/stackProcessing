@@ -45,6 +45,10 @@ module InternalHelpers =
     val setFloatPixel:
       img: itk.simple.Image ->
         u: itk.simple.VectorUInt32 -> value: float -> unit
+    val private ensureNativeComplex:
+      name: string -> img: itk.simple.Image -> unit
+    val extractComplexRealImage: img: itk.simple.Image -> itk.simple.Image
+    val extractComplexImagImage: img: itk.simple.Image -> itk.simple.Image
     val inline mulAdd:
       t: itk.simple.PixelIDValueEnum -> acc: obj -> k: obj -> p: obj -> obj
 val getBytesPerComponent: t: System.Type -> uint32
@@ -164,6 +168,12 @@ type Image<'T when 'T: equality> =
       ofArray4DVector: arr: 'S array4d * ?name: string -> Image<'S list>
                          when 'S: equality
     static member
+      ofComplexArray2D: arr: System.Numerics.Complex array2d * ?name: string ->
+                          Image<System.Numerics.Complex>
+    static member
+      ofComplexArray3D: arr: System.Numerics.Complex array3d * ?name: string ->
+                          Image<System.Numerics.Complex>
+    static member
       ofFile: filename: string * ?optionalName: string * ?optionalIndex: int ->
                 Image<'T>
     static member
@@ -221,6 +231,8 @@ type Image<'T when 'T: equality> =
     member toArray3D: unit -> 'T array3d
     member toArray4D: unit -> 'T array4d
     member toComplex: unit -> Image<System.Numerics.Complex>
+    member toComplexArray2D: unit -> System.Numerics.Complex array2d
+    member toComplexArray3D: unit -> System.Numerics.Complex array3d
     member toFile: filename: string * ?optionalFormat: string -> unit
     member toFileComplex: filename: string * ?optionalFormat: string -> unit
     member toFileVector: filename: string * ?optionalFormat: string -> unit
@@ -256,6 +268,18 @@ type Image<'T when 'T: equality> =
     member Item: i0: int * i1: int * i2: int * i3: int -> 'T with set
     member Name: string
     member index: int with get, set
+val Re: img: Image<System.Numerics.Complex> -> Image<float>
+val Im: img: Image<System.Numerics.Complex> -> Image<float>
+val modulus: img: Image<System.Numerics.Complex> -> Image<float>
+val arg: img: Image<System.Numerics.Complex> -> Image<float>
+val toComplex:
+  realImg: Image<float> ->
+    imagImg: Image<float> -> Image<System.Numerics.Complex>
+val polarToComplex:
+  modulusImg: Image<float> ->
+    argImg: Image<float> -> Image<System.Numerics.Complex>
+val conjugate:
+  img: Image<System.Numerics.Complex> -> Image<System.Numerics.Complex>
 module ImageFunctions
 val inline imageAddScalar:
   img: Image.Image<^S> -> i: ^S -> Image.Image<^S>
@@ -665,7 +689,23 @@ val addNormalNoise:
 val threshold:
   lower: float -> upper: float -> img: Image.Image<'T> -> Image.Image<uint8>
     when 'T: equality
-val toVectorOfImage: images: #itk.simple.Image seq -> itk.simple.VectorOfImage
+val toVectorImage:
+  images: Image.Image<'T> list -> Image.Image<'T list> when 'T: equality
+val vectorElement:
+  componentId: uint -> img: Image.Image<'T list> -> Image.Image<'T>
+    when 'T: equality
+val appendVectorElement:
+  vector: Image.Image<float list> ->
+    element: Image.Image<float> -> Image.Image<float list>
+val mapVectorElements:
+  f: (float -> float) -> img: Image.Image<float list> -> Image.Image<float list>
+val private ensureMatchingVectorImages:
+  name: 'a -> a: Image.Image<float list> -> b: Image.Image<float list> -> unit
+val vectorDot:
+  a: Image.Image<float list> -> b: Image.Image<float list> -> Image.Image<float>
+val vectorCross3D:
+  a: Image.Image<float list> ->
+    b: Image.Image<float list> -> Image.Image<float list>
 val stack: images: Image.Image<'T> list -> Image.Image<'T> when 'T: equality
 val extractSub:
   topLeft: uint list ->

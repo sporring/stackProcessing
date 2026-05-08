@@ -225,6 +225,20 @@ module InternalHelpers = // internal
         else
             failwithf "Unsupported real/imaginary complex component type: %O" pid
 
+    let private ensureNativeComplex (name: string) (img: itk.simple.Image) =
+        if not (isComplexPixelId (img.GetPixelID())) then
+            invalidArg "img" $"%s{name}: expected a native complex image, got %O{img.GetPixelID()}."
+
+    let extractComplexRealImage img =
+        ensureNativeComplex "Re" img
+        use filter = new itk.simple.ComplexToRealImageFilter()
+        filter.Execute(img)
+
+    let extractComplexImagImage img =
+        ensureNativeComplex "Im" img
+        use filter = new itk.simple.ComplexToImaginaryImageFilter()
+        filter.Execute(img)
+
     let inline mulAdd (t : itk.simple.PixelIDValueEnum) (acc : obj) (k : obj) (p : obj) : obj =
           //if      t = fromType<uint8>                   then box 0uy
         //elif    t = fromType<int8>                    then box 0y
@@ -588,6 +602,17 @@ type Image<'T when 'T : equality>(sz: uint list, ?optionalNumberComponents: uint
                 img.Set [uint i0; uint i1] cplx
         img
 
+    static member ofComplexArray2D (arr: System.Numerics.Complex[,], ?name:string) : Image<System.Numerics.Complex> =
+        let _name = defaultArg name "ofComplexArray2D"
+        let real = Array2D.init (arr.GetLength 0) (arr.GetLength 1) (fun x y -> arr[x, y].Real)
+        let imag = Array2D.init (arr.GetLength 0) (arr.GetLength 1) (fun x y -> arr[x, y].Imaginary)
+        let realImg = Image<float>.ofArray2D(real, $"{_name}.Re")
+        let imagImg = Image<float>.ofArray2D(imag, $"{_name}.Im")
+        let result = Image<float>.ofImagePairToComplex realImg imagImg
+        realImg.decRefCount()
+        imagImg.decRefCount()
+        result
+
     static member ofArray4D (arr: 'T[,,,], ?name:string) : Image<'T> =
         let _name = defaultArg name ""
         let sz = [arr.GetLength(0); arr.GetLength(1); arr.GetLength(2); arr.GetLength(3)] |> List.map uint
@@ -627,9 +652,36 @@ type Image<'T when 'T : equality>(sz: uint list, ?optionalNumberComponents: uint
                     img.Set [uint i0; uint i1; uint i2] cplx
         img
 
+    static member ofComplexArray3D (arr: System.Numerics.Complex[,,], ?name:string) : Image<System.Numerics.Complex> =
+        let _name = defaultArg name "ofComplexArray3D"
+        let real = Array3D.init (arr.GetLength 0) (arr.GetLength 1) (arr.GetLength 2) (fun x y z -> arr[x, y, z].Real)
+        let imag = Array3D.init (arr.GetLength 0) (arr.GetLength 1) (arr.GetLength 2) (fun x y z -> arr[x, y, z].Imaginary)
+        let realImg = Image<float>.ofArray3D(real, $"{_name}.Re")
+        let imagImg = Image<float>.ofArray3D(imag, $"{_name}.Im")
+        let result = Image<float>.ofImagePairToComplex realImg imagImg
+        realImg.decRefCount()
+        imagImg.decRefCount()
+        result
+
     member this.toArray2D (): 'T[,] =
         let sz = this.GetSize() |> List.map int
         Array2D.init sz[0] sz[1] (fun i0 i1 -> this.Get([uint i0; uint i1]))
+
+    member this.toComplexArray2D () : System.Numerics.Complex[,] =
+        if typeof<'T> <> typeof<System.Numerics.Complex> then
+            invalidOp "toComplexArray2D: image pixel type must be System.Numerics.Complex."
+        if this.GetDimensions() <> 2u then
+            invalidOp $"toComplexArray2D: image must be 2D, got {this.GetDimensions()}D."
+
+        use realItk = extractComplexRealImage this.Image
+        use imagItk = extractComplexImagImage this.Image
+        let realImg = Image<float>.ofSimpleITK(realItk, "toComplexArray2D.Re", this.index)
+        let imagImg = Image<float>.ofSimpleITK(imagItk, "toComplexArray2D.Im", this.index)
+        let real = realImg.toArray2D()
+        let imag = imagImg.toArray2D()
+        realImg.decRefCount()
+        imagImg.decRefCount()
+        Array2D.init (real.GetLength 0) (real.GetLength 1) (fun x y -> System.Numerics.Complex(real[x, y], imag[x, y]))
 
     static member toArray3DVector<'S when 'S: equality> (img: Image<'S list>) : 'S[,,] =
         if img.GetDimensions() <> 2u then
@@ -643,6 +695,22 @@ type Image<'T when 'T : equality>(sz: uint list, ?optionalNumberComponents: uint
     member this.toArray3D (): 'T[,,] =
         let sz = this.GetSize() |> List.map int
         Array3D.init sz[0] sz[1] sz[2] (fun i0 i1 i2 -> this.Get([uint i0; uint i1; uint i2]))
+
+    member this.toComplexArray3D () : System.Numerics.Complex[,,] =
+        if typeof<'T> <> typeof<System.Numerics.Complex> then
+            invalidOp "toComplexArray3D: image pixel type must be System.Numerics.Complex."
+        if this.GetDimensions() <> 3u then
+            invalidOp $"toComplexArray3D: image must be 3D, got {this.GetDimensions()}D."
+
+        use realItk = extractComplexRealImage this.Image
+        use imagItk = extractComplexImagImage this.Image
+        let realImg = Image<float>.ofSimpleITK(realItk, "toComplexArray3D.Re", this.index)
+        let imagImg = Image<float>.ofSimpleITK(imagItk, "toComplexArray3D.Im", this.index)
+        let real = realImg.toArray3D()
+        let imag = imagImg.toArray3D()
+        realImg.decRefCount()
+        imagImg.decRefCount()
+        Array3D.init (real.GetLength 0) (real.GetLength 1) (real.GetLength 2) (fun x y z -> System.Numerics.Complex(real[x, y, z], imag[x, y, z]))
 
     member this.toArray4D (): 'T[,,,] =
         let sz = this.GetSize() |> List.map int
@@ -1051,3 +1119,42 @@ type Image<'T when 'T : equality>(sz: uint list, ?optionalNumberComponents: uint
     static member op_LogicalNot (f: Image<'S>) =
         use filter = new itk.simple.InvertIntensityImageFilter()
         Image<'S>.ofSimpleITK(filter.Execute(f.toSimpleITK()),"op_LogicalNot")
+
+let Re (img: Image<System.Numerics.Complex>) : Image<float> =
+    use realItk = extractComplexRealImage (img.toSimpleITK())
+    Image<float>.ofSimpleITK(realItk, "Re", img.index)
+
+let Im (img: Image<System.Numerics.Complex>) : Image<float> =
+    use imagItk = extractComplexImagImage (img.toSimpleITK())
+    Image<float>.ofSimpleITK(imagItk, "Im", img.index)
+
+let modulus (img: Image<System.Numerics.Complex>) : Image<float> =
+    use filter = new itk.simple.ComplexToModulusImageFilter()
+    let modulusItk = filter.Execute(img.toSimpleITK())
+    Image<float>.ofSimpleITK(modulusItk, "modulus", img.index)
+
+let arg (img: Image<System.Numerics.Complex>) : Image<float> =
+    use filter = new itk.simple.ComplexToPhaseImageFilter()
+    let phaseItk = filter.Execute(img.toSimpleITK())
+    Image<float>.ofSimpleITK(phaseItk, "arg", img.index)
+
+let toComplex (realImg: Image<float>) (imagImg: Image<float>) : Image<System.Numerics.Complex> =
+    Image<float>.ofImagePairToComplex realImg imagImg
+
+let polarToComplex (modulusImg: Image<float>) (argImg: Image<float>) : Image<System.Numerics.Complex> =
+    use filter = new itk.simple.MagnitudeAndPhaseToComplexImageFilter()
+    let complexItk = filter.Execute(modulusImg.toSimpleITK(), argImg.toSimpleITK())
+    Image<System.Numerics.Complex>.ofSimpleITK(complexItk, "polarToComplex", modulusImg.index)
+
+let conjugate (img: Image<System.Numerics.Complex>) : Image<System.Numerics.Complex> =
+    let realImg = Re img
+    let imagImg = Im img
+    use negate = new itk.simple.MultiplyImageFilter()
+    let negImagItk = negate.Execute(imagImg.toSimpleITK(), -1.0)
+    let negImagImg = Image<float>.ofSimpleITK(negImagItk, "conjugate.Im", img.index)
+    try
+        toComplex realImg negImagImg
+    finally
+        realImg.decRefCount()
+        imagImg.decRefCount()
+        negImagImg.decRefCount()
