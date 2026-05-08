@@ -66,6 +66,11 @@ module PipelinePinKind =
 
     let isOutput kind = not (isInput kind)
 
+module private PipelinePinGeometry =
+    let size = 14.
+    let halfSize = size / 2.
+    let triangleOffset = 0.
+
 type PipelinePinViewModel(alignment: PinAlignment, port: Port, kind: PipelinePinKind, ?parameterKey: string) =
     inherit PinViewModel()
 
@@ -99,14 +104,6 @@ type PipelinePinViewModel(alignment: PinAlignment, port: Port, kind: PipelinePin
         | ReducerOutput -> "#8A5A22"
         | DataInput
         | DataOutput -> "#FFFFFF"
-
-    member _.TrianglePoints =
-        match kind with
-        | ParameterInput
-        | ScalarOutput
-        | ReducerOutput -> "0,0 14,0 7,14"
-        | DataInput -> "14,0 0,7 14,14"
-        | DataOutput -> "0,0 14,7 0,14"
 
     member _.IsInput = PipelinePinKind.isInput kind
     member _.IsOutput = PipelinePinKind.isOutput kind
@@ -851,8 +848,16 @@ type PipelineNodeViewModel(
     let mutable lastX = 0.
     let mutable lastY = 0.
     let mutable suppressGroupMove = false
-    let pinSize = 14.
-    let pinHalfSize = pinSize / 2.
+    let pinSize = PipelinePinGeometry.size
+    let pinHalfSize = PipelinePinGeometry.halfSize
+
+    let setPinCenter x y (pin: IPin) =
+        pin.X <- x
+        pin.Y <- y
+
+    let setTopBottomPinCenter x y (pin: IPin) =
+        pin.X <- x - pinHalfSize
+        pin.Y <- y - pinHalfSize
 
     let addPipelinePin x y alignment kind parameterKey (port: Port) =
         let pin = PipelinePinViewModel(alignment, port, kind, ?parameterKey = parameterKey)
@@ -870,13 +875,95 @@ type PipelineNodeViewModel(
         pin.Name <- pinName
 
         pin.Parent <- this
-        pin.X <- x
-        pin.Y <- y
         pin.Width <- pinSize
         pin.Height <- pinSize
+        match alignment with
+        | PinAlignment.Top
+        | PinAlignment.Bottom -> setTopBottomPinCenter x y pin
+        | _ -> setPinCenter x y pin
         pin.Alignment <- alignment
         this.Pins.Add(pin :> IPin)
         pin :> IPin
+
+    let outputKindFor functionId =
+        match functionId with
+        | "Scalar"
+        | "FileDirectory"
+        | "ScalarOp"
+        | "ScalarFunction"
+        | "OtsuThresholdFromHistogram"
+        | "MomentsThresholdFromHistogram" -> ScalarOutput
+        | "ComputeStats"
+        | "SurfaceArea"
+        | "Volume"
+        | "PointPairDistances"
+        | "AffineRegistration"
+        | "FitBiasModel"
+        | "FitBiasModelMasked"
+        | "SerialKeypointTranslationManifest"
+        | "SerialImageTranslationManifest"
+        | "GetStackInfo"
+        | "GetChunkInfo"
+        | "ComponentTranslationTable"
+        | "HistogramData"
+        | "EstimateHistogram"
+        | "Quantiles" -> ReducerOutput
+        | _ -> DataOutput
+
+    let effectivePorts () =
+        match state.Definition.Id with
+        | "Scalar" -> state.Definition.Inputs, [ ScalarNode.outputPort state ]
+        | "FileDirectory" -> state.Definition.Inputs, state.Definition.Outputs
+        | "ScalarOp" -> state.Definition.Inputs, [ ScalarOpNode.outputPort state ]
+        | "ScalarFunction" -> state.Definition.Inputs, [ ScalarFunctionNode.outputPort ]
+        | "Read"
+        | "ReadVolume"
+        | "ReadRandom"
+        | "ReadRange"
+        | "ReadSlab"
+        | "ReadZarrSlab"
+        | "ReadNexusSlab"
+        | "Zero"
+        | "NormalNoise"
+        | "SaltAndPepperNoise"
+        | "ShotNoise"
+        | "SpeckleNoise"
+        | "CreateByEuler2DTransform" -> state.Definition.Inputs, [ SourceImageNode.outputPort state ]
+        | "Write"
+        | "WriteThrough"
+        | "WriteInSlabs"
+        | "WriteZarr"
+        | "WriteNexus" ->
+            [ SourceImageNode.writeInputPort state ], state.Definition.Outputs
+        | "ImageOpImage" -> PairOperationNode.ports state
+        | "Cast" -> CastNode.ports state
+        | functionId when ScalarImageOperationNode.isOperation functionId -> ScalarImageOperationNode.ports state
+        | "Threshold" -> ThresholdNode.ports state
+        | "SerialPolynomialBiasCorrect" -> HighValueFilterNode.typedImagePorts state
+        | "Quantiles" -> state.Definition.Inputs, QuantilesNode.outputPorts state
+        | _ -> state.Definition.Inputs, state.Definition.Outputs
+
+    let computeNodeWidth () =
+        let minimumWidth = 110.
+
+        let parameterPinCount = state.Parameters.Count
+
+        let _, outputs = effectivePorts ()
+        let outputKind = outputKindFor state.Definition.Id
+
+        let bottomOutputCount =
+            if outputKind = ScalarOutput || outputKind = ReducerOutput then
+                outputs.Length
+            elif state.Definition.Id = "Tap" then
+                1
+            else
+                0
+
+        let horizontalPinCount = max parameterPinCount bottomOutputCount
+        let pinWidth = 20. + 22. * float (max 1 horizontalPinCount)
+        max minimumWidth pinWidth
+
+    let nodeWidth () = this.Width
 
     let nodeHeight =
         let portCount =
@@ -887,31 +974,13 @@ type PipelineNodeViewModel(
 
         max 48. (20. + 22. * float (max 1 portCount))
 
-    let verticalPinPosition index count =
-        if count <= 1 then
-            nodeHeight / 2.
-        else
-            let spacing = 22.
-            let totalHeight = spacing * float (count - 1)
-            (nodeHeight - totalHeight) / 2. + spacing * float index
+    let pinPosition length index count =
+        let n = float (index + 1)
+        n * length / float (count + 1)
 
     do
         this.Name <- state.Title
-        this.Width <-
-            match state.Definition.Id with
-            | "ComputeStats"
-            | "SurfaceArea"
-            | "Volume"
-            | "PointPairDistances"
-            | "AffineRegistration"
-            | "GetStackInfo"
-            | "GetChunkInfo"
-            | "Quantiles"
-            | "EstimateHistogram" -> 170.
-            | "ComponentTranslationTable"
-            | "CollapseComponentLabels" -> 180.
-            | "ResampleAffineTrilinearSlices" -> 220.
-            | _ -> 110.
+        this.Width <- computeNodeWidth ()
         this.Height <- nodeHeight
         this.Content <- PipelineNodeContent(state.Title, state, this.Width, this.Height, fun () -> selectNode this)
         this.Pins <- ObservableCollection<IPin>()
@@ -1080,12 +1149,8 @@ type PipelineNodeViewModel(
             | :? PipelinePinViewModel as parameterPin -> parameterPin.SetActive(false)
             | _ -> ()
 
-    member private this.ParameterPinX(index: int, count: int) =
-        let n = float (index + 1)
-        n * this.Width / float (count + 1)
-
     member private this.AddParameterPin(index: int, count: int, parameter: PipelineParameterViewModel) =
-        let x = this.ParameterPinX(index, count)
+        let x = pinPosition (nodeWidth ()) index count
         let port =
             if state.Definition.Id = "ScalarOp" && (parameter.Key = "a" || parameter.Key = "b") then
                 ScalarOpNode.scalarPort parameter.Key state
@@ -1123,8 +1188,7 @@ type PipelineNodeViewModel(
             | Some pin ->
                 match visibleParameterIndexes |> Set.toList |> List.tryFindIndex ((=) index) with
                 | Some visibleIndex ->
-                    pin.X <- this.ParameterPinX(visibleIndex, visibleParameterIndexes.Count)
-                    pin.Y <- 0.
+                    setTopBottomPinCenter (pinPosition (nodeWidth ()) visibleIndex visibleParameterIndexes.Count) 0. pin
                 | None ->
                     ()
 
@@ -1135,87 +1199,38 @@ type PipelineNodeViewModel(
     member private this.InitializePins() =
         this.Pins.Clear()
 
-        let inputs, outputs =
-            match state.Definition.Id with
-            | "Scalar" -> state.Definition.Inputs, [ ScalarNode.outputPort state ]
-            | "FileDirectory" -> state.Definition.Inputs, state.Definition.Outputs
-            | "ScalarOp" -> state.Definition.Inputs, [ ScalarOpNode.outputPort state ]
-            | "ScalarFunction" -> state.Definition.Inputs, [ ScalarFunctionNode.outputPort ]
-            | "Read"
-            | "ReadVolume"
-            | "ReadRandom"
-            | "ReadRange"
-            | "ReadSlab"
-            | "ReadZarrSlab"
-            | "ReadNexusSlab"
-            | "Zero"
-            | "NormalNoise"
-            | "SaltAndPepperNoise"
-            | "ShotNoise"
-            | "SpeckleNoise"
-            | "CreateByEuler2DTransform" -> state.Definition.Inputs, [ SourceImageNode.outputPort state ]
-            | "Write"
-            | "WriteThrough"
-            | "WriteInSlabs"
-            | "WriteZarr"
-            | "WriteNexus" ->
-                [ SourceImageNode.writeInputPort state ], state.Definition.Outputs
-            | "ImageOpImage" -> PairOperationNode.ports state
-            | "Cast" -> CastNode.ports state
-            | functionId when ScalarImageOperationNode.isOperation functionId -> ScalarImageOperationNode.ports state
-            | "Threshold" -> ThresholdNode.ports state
-            | "SerialPolynomialBiasCorrect" -> HighValueFilterNode.typedImagePorts state
-            | "Quantiles" -> state.Definition.Inputs, QuantilesNode.outputPorts state
-            | _ -> state.Definition.Inputs, state.Definition.Outputs
+        let inputs, outputs = effectivePorts ()
 
         inputs
         |> List.iteri (fun portIndex port ->
-            addPipelinePin 0. (verticalPinPosition portIndex inputs.Length) PinAlignment.Left DataInput None port |> ignore)
+            addPipelinePin 0. (pinPosition nodeHeight portIndex inputs.Length) PinAlignment.Left DataInput None port |> ignore)
 
         outputs
         |> List.iteri (fun portIndex port ->
-            let kind =
-                match state.Definition.Id with
-                | "Scalar"
-                | "FileDirectory"
-                | "ScalarOp"
-                | "ScalarFunction" -> ScalarOutput
-                | "ComputeStats"
-                | "SurfaceArea"
-                | "Volume"
-                | "PointPairDistances"
-                | "AffineRegistration"
-                | "GetStackInfo"
-                | "GetChunkInfo"
-                | "ComponentTranslationTable"
-                | "HistogramData"
-                | "EstimateHistogram"
-                | "Quantiles" -> ReducerOutput
-                | _ -> DataOutput
+            let kind = outputKindFor state.Definition.Id
 
             let alignment =
                 if kind = ScalarOutput || kind = ReducerOutput then PinAlignment.Bottom else PinAlignment.Right
 
             let x =
                 if kind = ReducerOutput then
-                    let spacing = this.Width / float (outputs.Length + 1)
-                    spacing * float (portIndex + 1)
+                    pinPosition (nodeWidth ()) portIndex outputs.Length
                 elif kind = ScalarOutput then
-                    this.Width / 2.
+                    nodeWidth () / 2.
                 else
-                    this.Width
+                    nodeWidth ()
 
             let y =
                 if kind = ScalarOutput || kind = ReducerOutput then
                     nodeHeight
                 else
-                    verticalPinPosition portIndex outputs.Length
+                    pinPosition nodeHeight portIndex outputs.Length
 
             addPipelinePin x y alignment kind None port |> ignore)
 
         if state.Definition.Id = "Tap" then
             addPipelinePin
-                (this.Width / 2.)
+                (nodeWidth () / 2.)
                 nodeHeight
                 PinAlignment.Bottom
                 ScalarOutput
@@ -1232,6 +1247,12 @@ type PipelineNodeViewModel(
         this.SyncParameterPinVisibility()
 
     member this.RebuildPins() =
+        let updatedWidth = computeNodeWidth ()
+
+        if this.Width <> updatedWidth then
+            this.Width <- updatedWidth
+            this.Content <- PipelineNodeContent(state.Title, state, this.Width, this.Height, fun () -> selectNode this)
+
         this.InitializePins()
 
     member _.State = state

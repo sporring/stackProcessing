@@ -229,6 +229,13 @@ module PipelineCodeGenerator =
             Some logic
         | _ -> pairFunctionName node.FunctionId
 
+    let private pairCompositionOperator (node: SavedNode) =
+        match node.FunctionId with
+        | "ImageOpImage"
+        | "MaxOfPair"
+        | "MinOfPair" -> ">>=>"
+        | _ -> ">=>"
+
     let private safeIdentifier (value: string) =
         let chars =
             value
@@ -270,6 +277,22 @@ module PipelineCodeGenerator =
             configuredFunction
         else
             "sqrt"
+
+    let private scalarFunctionExpression functionName argument =
+        match functionName with
+        | "abs" -> $"(System.Math.Abs {argument})"
+        | "acos" -> $"(System.Math.Acos {argument})"
+        | "asin" -> $"(System.Math.Asin {argument})"
+        | "atan" -> $"(System.Math.Atan {argument})"
+        | "cos" -> $"(System.Math.Cos {argument})"
+        | "sin" -> $"(System.Math.Sin {argument})"
+        | "tan" -> $"(System.Math.Tan {argument})"
+        | "exp" -> $"(System.Math.Exp {argument})"
+        | "log10" -> $"(System.Math.Log10 {argument})"
+        | "log" -> $"(System.Math.Log {argument})"
+        | "round" -> $"(System.Math.Round {argument})"
+        | "square" -> $"({argument} * {argument})"
+        | _ -> $"(System.Math.Sqrt {argument})"
 
     let private comparisonStageFunctionName (node: SavedNode) =
         match savedParamValue "operation" node with
@@ -479,9 +502,7 @@ module PipelineCodeGenerator =
                     else
                         literalValue (BasicType.Numeric Float64) parameterExpression.Value
 
-                match unaryImageFunctionName node with
-                | "square" -> $"({argument} * {argument})"
-                | functionName -> $"({functionName} {argument})"
+                scalarFunctionExpression (unaryImageFunctionName node) argument
             | "OtsuThresholdFromHistogram"
             | "MomentsThresholdFromHistogram" ->
                 let functionName =
@@ -1016,7 +1037,7 @@ module PipelineCodeGenerator =
 
             $"printfn {format}"
         | "Histogram" ->
-            ">=> histogram () >=> map2pairs --> pairs2floats --> plot (showChart \"Column\")"
+            ">=> histogram () >=> map2pairs --> pairs2floats --> plot (showChartXY \"Column\")"
         | "HistogramData" ->
             ">=> histogram ()"
         | "Chart" ->
@@ -1085,7 +1106,7 @@ module PipelineCodeGenerator =
             let value = parameterValue "value"
             $">=> {scalarImageFunctionName node |> Option.get} {value}"
         | id when pairStageFunctionName node |> Option.isSome ->
-            $">>=> {pairStageFunctionName node |> Option.get}"
+            $"{pairCompositionOperator node} {pairStageFunctionName node |> Option.get}"
         | "SmoothWGauss" ->
             let sigma = parameterValue "sigma"
             let outputRegionMode = parameterValue "outputRegionMode" |> optionQualified "ImageFunctions"
@@ -1202,9 +1223,9 @@ module PipelineCodeGenerator =
             $">=> morphologicalGradient<{pixelType}> {radius} {windowSize}"
         | "ImageComparison" ->
             let pixelType = pixelTypeNameFromParameter "type" "Float64" node
-            $">>=> {comparisonStageFunctionName node}<{pixelType}>"
+            $">=> {comparisonStageFunctionName node}<{pixelType}>"
         | "MaskLogic" ->
-            $">>=> {maskLogicStageFunctionName node}"
+            $">=> {maskLogicStageFunctionName node}"
         | "MaskNot" ->
             ">=> maskNot"
         | "BinaryContour" ->
@@ -1716,7 +1737,7 @@ module PipelineCodeGenerator =
                                     "identity"
                                     "identity"
                             pairStageFunctionName node
-                            |> Option.map (fun pairFunction -> $"{shared}{newLine}{fanOut}{newLine}>>=> {pairFunction}"))
+                            |> Option.map (fun pairFunction -> $"{shared}{newLine}{fanOut}{newLine}{pairCompositionOperator node} {pairFunction}"))
                     | Some leftEdge, Some rightEdge ->
                         match nodesById |> Map.tryFind leftEdge.FromNode, nodesById |> Map.tryFind rightEdge.FromNode with
                         | Some leftNode, Some rightNode ->
@@ -1728,7 +1749,7 @@ module PipelineCodeGenerator =
                                     | Some leftStage, Some rightStage ->
                                         let shared = pipelineExpression visited sharedNode
                                         pairStageFunctionName node
-                                        |> Option.map (fun pairFunction -> $"{shared}{newLine}{formatStageTuple leftStage rightStage}{newLine}>>=> {pairFunction}")
+                                        |> Option.map (fun pairFunction -> $"{shared}{newLine}{formatStageTuple leftStage rightStage}{newLine}{pairCompositionOperator node} {pairFunction}")
                                     | _ -> None
                                 | None -> None
                             | _ -> None
@@ -1746,7 +1767,12 @@ module PipelineCodeGenerator =
                         let right = inputExpression 1
                         let left = parenthesizeBlock left
                         let right = parenthesizeBlock right
-                        $"({newLine}{indentBlock 4 left},{newLine}{indentBlock 4 right}{newLine}){newLine}||> zip{newLine}>>=> {pairFunction}"
+                        $"({newLine}{indentBlock 4 left},{newLine}{indentBlock 4 right}{newLine}){newLine}||> zip{newLine}{pairCompositionOperator node} {pairFunction}"
+                | _ when (incomingDataEdge node.Id 1 |> Option.isSome) && (stageCall node |> Option.isSome) ->
+                    let stage = stageCall node |> Option.get
+                    let left = inputExpression 0 |> parenthesizeBlock
+                    let right = inputExpression 1 |> parenthesizeBlock
+                    $"({newLine}{indentBlock 4 left},{newLine}{indentBlock 4 right}{newLine}){newLine}||> zip{newLine}>=> {stage}"
                 | _ ->
                     let line = savedElementLine graph nodesById scalarNamesByNodeId statsNamesByNodeId translationTableNamesByNodeId histogramNamesByNodeId quantileNamesByNodeId stackInfoNamesByNodeId chunkInfoNamesByNodeId node
 
@@ -1944,8 +1970,7 @@ module PipelineCodeGenerator =
         builder.AppendLine() |> ignore
 
         if hasChart then
-            builder.AppendLine("let showChart kind points =") |> ignore
-            builder.AppendLine("    let x, y = points |> Seq.toList |> List.unzip") |> ignore
+            builder.AppendLine("let showChartData kind x y =") |> ignore
             builder.AppendLine("    match kind with") |> ignore
             builder.AppendLine("    | \"Scatter\" -> Chart.Scatter(x = x, y = y, mode = StyleParam.Mode.Markers)") |> ignore
             builder.AppendLine("    | \"Line\" -> Chart.Line(x = x, y = y)") |> ignore
@@ -1955,6 +1980,13 @@ module PipelineCodeGenerator =
             builder.AppendLine("    | \"Doughnut\" -> Chart.Doughnut(values = y, Labels = x)") |> ignore
             builder.AppendLine("    | _ -> Chart.Column(values = y, Keys = x)") |> ignore
             builder.AppendLine("    |> Chart.show") |> ignore
+            builder.AppendLine() |> ignore
+            builder.AppendLine("let showChart kind points =") |> ignore
+            builder.AppendLine("    let x, y = points |> Map.toList |> List.unzip") |> ignore
+            builder.AppendLine("    showChartData kind x y") |> ignore
+            builder.AppendLine() |> ignore
+            builder.AppendLine("let showChartXY kind x y =") |> ignore
+            builder.AppendLine("    showChartData kind x y") |> ignore
             builder.AppendLine() |> ignore
 
         if hasShowImage then

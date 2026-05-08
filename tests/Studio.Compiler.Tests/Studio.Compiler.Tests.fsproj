@@ -23,6 +23,7 @@
   </ItemGroup>
 
   <ItemGroup>
+    <Compile Include="StudioCompilerSmokeTests.fs" />
     <Compile Include="StudioCompilerTests.fs" />
     <Compile Include="Tests.fs" />
   </ItemGroup>
