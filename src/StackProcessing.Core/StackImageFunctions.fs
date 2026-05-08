@@ -3,6 +3,7 @@ module StackImageFunctions
 open FSharp.Control
 open SlimPipeline // Core processing model
 open System
+open System.IO
 open System.Collections.Generic
 open StackCore
 open StackIO
@@ -360,6 +361,9 @@ let vectorDot : Stage<Image<float list> * Image<float list>, Image<float>> =
 let vectorCross3D : Stage<Image<float list> * Image<float list>, Image<float list>> =
     liftPairReleaseAfter "vectorCross3D" ImageFunctions.vectorCross3D
 
+let vectorAngleTo (reference: float list) : Stage<Image<float list>, Image<float>> =
+    liftUnaryReleaseAfter "vectorAngleTo" (ImageFunctions.vectorAngleTo reference) id id
+
 let Re : Stage<Image<System.Numerics.Complex>, Image<float>> =
     liftUnaryReleaseAfter "Re" Image.Re id id
 
@@ -380,6 +384,129 @@ let toComplex : Stage<Image<float> * Image<float>, Image<System.Numerics.Complex
 
 let polarToComplex : Stage<Image<float> * Image<float>, Image<System.Numerics.Complex>> =
     liftPairReleaseAfter "polarToComplex" Image.polarToComplex
+
+let private writeVolumeAsChunks debug outputDir suffix chunkX chunkY chunkZ (volume: Image<'T>) =
+    let depth = volume.GetDepth()
+    let mutable k = 0u
+    while k < depth do
+        let last = min (depth - 1u) (k + chunkZ - 1u)
+        let slab = ImageFunctions.extractSub [ 0u; 0u; k ] [ volume.GetWidth() - 1u; volume.GetHeight() - 1u; last ] volume
+        _writeSlabChunks debug outputDir suffix chunkX chunkY (last - k + 1u) (int (k / chunkZ)) slab
+        slab.decRefCount()
+        k <- k + chunkZ
+
+let private readChunkVolume<'T when 'T: equality> inputDir suffix =
+    let chunkInfo = getChunkInfo inputDir suffix
+    let slabs =
+        [ for k in 0 .. chunkInfo.chunks[2] - 1 ->
+            _readSlabStacked<'T> inputDir suffix chunkInfo 2u k ]
+    let volume = ImageFunctions.stack slabs
+    slabs |> List.iter (fun slab -> slab.decRefCount())
+    volume, chunkInfo
+
+let private chunkedFFT3D debug inputDir outputDir suffix chunkX chunkY chunkZ =
+    if Directory.Exists(outputDir) then Directory.Delete(outputDir, true)
+    Directory.CreateDirectory(outputDir) |> ignore
+    let volume, _ = readChunkVolume<System.Numerics.Complex> inputDir suffix
+    let zTransformed = ImageFunctions.directionalFFTComplex 2u false volume
+    volume.decRefCount()
+    writeVolumeAsChunks debug outputDir suffix chunkX chunkY chunkZ zTransformed
+    zTransformed.decRefCount()
+
+let private chunkedInvFFT3D debug inputDir outputDir suffix chunkX chunkY chunkZ =
+    if Directory.Exists(outputDir) then Directory.Delete(outputDir, true)
+    Directory.CreateDirectory(outputDir) |> ignore
+    let volume, _ = readChunkVolume<System.Numerics.Complex> inputDir suffix
+    let zInverse = ImageFunctions.directionalFFTComplex 2u true volume
+    volume.decRefCount()
+    let slices = ImageFunctions.unstack 2u zInverse
+    zInverse.decRefCount()
+    let realSlices =
+        slices
+        |> List.map (fun slice ->
+            let real = ImageFunctions.inverseFFTXY slice
+            slice.decRefCount()
+            real)
+    let realVolume = ImageFunctions.stack realSlices
+    realSlices |> List.iter (fun slice -> slice.decRefCount())
+    writeVolumeAsChunks debug outputDir suffix chunkX chunkY chunkZ realVolume
+    realVolume.decRefCount()
+
+let private chunkedShiftFFT debug inputDir outputDir suffix chunkX chunkY chunkZ =
+    if Directory.Exists(outputDir) then Directory.Delete(outputDir, true)
+    Directory.CreateDirectory(outputDir) |> ignore
+    let volume, _ = readChunkVolume<System.Numerics.Complex> inputDir suffix
+    let shifted = ImageFunctions.shiftFFT volume
+    volume.decRefCount()
+    writeVolumeAsChunks debug outputDir suffix chunkX chunkY chunkZ shifted
+    shifted.decRefCount()
+
+let private readChunksAsSlices<'T when 'T: equality> name outputDir suffix =
+    let mutable chunkInfo : ChunkInfo = { chunks = [0;0;0]; size = [0UL;0UL;0UL]; topLeftInfo = { dimensions = 0u; size = [0UL;0UL;0UL]; componentType = ""; numberOfComponents = 0u } }
+    let memoryNeed = fun _ -> 256UL
+    let elementTransformation = fun _ -> chunkInfo.chunks[2] |> uint64
+    Stage.map name (fun _ _ -> chunkInfo <- getChunkInfo outputDir suffix) memoryNeed elementTransformation
+    --> Stage.map name (fun _ _ -> [ 0 .. chunkInfo.chunks[2] - 1 ]) memoryNeed elementTransformation
+    --> flattenList ()
+    --> Stage.map name (fun _ idx ->
+        let slab = _readSlabStacked<'T> outputDir suffix chunkInfo 2u idx
+        let slices = ImageFunctions.unstack 2u slab
+        slab.decRefCount()
+        slices) memoryNeed elementTransformation
+    --> flattenList ()
+
+let private chunkedVolumeOperation
+    name
+    (prepareInput: Stage<Image<'S>, Image<'I>>)
+    (operation: bool -> string -> string -> string -> uint -> uint -> uint -> unit)
+    (chunkX: uint)
+    (chunkY: uint)
+    (chunkZ: uint)
+    : Stage<Image<'S>, Image<'T>> =
+    let workspaceRoot =
+        Path.Combine(Path.GetTempPath(), $"stackprocessing-{name}-{Guid.NewGuid():N}")
+    let inputDir = Path.Combine(workspaceRoot, "input")
+    let outputDir = Path.Combine(workspaceRoot, "output")
+    let suffix = ".mha"
+    let chunkX = max 1u chunkX
+    let chunkY = max 1u chunkY
+    let chunkZ = max 1u chunkZ
+    let memoryNeed = fun _ -> 256UL
+    let elementTransformation = fun _ -> 1UL
+
+    prepareInput
+    --> writeInSlabs inputDir suffix chunkX chunkY chunkZ
+    --> cleanStage name (fun () -> StackIO.deleteIfExists workspaceRoot)
+    --> StackCore.ignoreSingles ()
+    --> Stage.map name (fun debug _ -> operation debug inputDir outputDir suffix chunkX chunkY chunkZ) memoryNeed elementTransformation
+    --> readChunksAsSlices<'T> name outputDir suffix
+
+let FFT<'T when 'T: equality> chunkX chunkY chunkZ : Stage<Image<'T>, Image<System.Numerics.Complex>> =
+    chunkedVolumeOperation
+        "FFT"
+        (liftUnaryReleaseAfter "FFTXY" ImageFunctions.FFTXY id id)
+        chunkedFFT3D
+        chunkX
+        chunkY
+        chunkZ
+
+let invFFT chunkX chunkY chunkZ : Stage<Image<System.Numerics.Complex>, Image<float>> =
+    chunkedVolumeOperation
+        "invFFT"
+        (identityStage "invFFT.input")
+        chunkedInvFFT3D
+        chunkX
+        chunkY
+        chunkZ
+
+let shiftFFT chunkX chunkY chunkZ : Stage<Image<System.Numerics.Complex>, Image<System.Numerics.Complex>> =
+    chunkedVolumeOperation
+        "shiftFFT"
+        (identityStage "shiftFFT.input")
+        chunkedShiftFFT
+        chunkX
+        chunkY
+        chunkZ
 
 let abs<'T when 'T: equality>    : Stage<Image<'T>,Image<'T>> = 
     failTypeMismatch<'T> "abs" floatNintTypes
@@ -454,15 +581,78 @@ let private makeWindowedLocalOp name ksz winSz core =
     (window win pad stride) --> stg --> flattenList ()
     |> Stage.withSliceCardinality (SlimPipeline.Domain(sameSliceDomainForKernelDepth ksz))
 
-let median<'T when 'T: equality> radius winSz : Stage<Image<'T>, Image<'T>> =
+let smoothWMedian<'T when 'T: equality> radius winSz : Stage<Image<'T>, Image<'T>> =
     let ksz = 2u * radius + 1u
-    makeWindowedLocalOp "median" ksz winSz (ImageFunctions.median radius)
+    makeWindowedLocalOp "smoothWMedian" ksz winSz (ImageFunctions.median radius)
 
-let bilateral<'T when 'T: equality> domainSigma rangeSigma winSz : Stage<Image<'T>, Image<'T>> =
-    makeWindowedLocalOp "bilateral" (max 1u winSz) winSz (ImageFunctions.bilateral domainSigma rangeSigma)
+let smoothWBilateral<'T when 'T: equality> domainSigma rangeSigma winSz : Stage<Image<'T>, Image<'T>> =
+    makeWindowedLocalOp "smoothWBilateral" (max 1u winSz) winSz (ImageFunctions.bilateral domainSigma rangeSigma)
 
 let gradientMagnitude<'T when 'T: equality> winSz : Stage<Image<'T>, Image<'T>> =
     makeWindowedLocalOp "gradientMagnitude" 3u winSz ImageFunctions.gradientMagnitude
+
+let private finiteDiffKernelDepth order =
+    let kernel = ImageFunctions.finiteDiffFilter3D 2u order
+    try
+        max 1u (kernel.GetDepth())
+    finally
+        kernel.decRefCount()
+
+let gradient (order: uint) (winSz: uint option) : Stage<Image<float>, Image<float list>> =
+    let ksz = finiteDiffKernelDepth order
+    let pad = ksz / 2u
+    let win = Option.defaultValue ksz winSz |> max ksz
+    let stride = win - ksz + 1u
+    let f debug = volFctToWindowFctReleaseAfterDebug debug (ImageFunctions.gradientVector3D order) ksz pad stride
+    let memoryNeed nPixels = (4UL * nPixels * uint64 win) * getBytesPerComponent<float>
+    let stg = mapWindow "gradient" f memoryNeed id
+    (window win pad stride) --> stg --> flattenList ()
+    |> Stage.withSliceCardinality (SlimPipeline.Domain(sameSliceDomainForKernelDepth ksz))
+
+let private gaussianVectorElements (sigma: float) : Stage<Image<float list>, Image<float list>> =
+    if sigma <= 0.0 then
+        identityStage "gaussianVectorElements.identity"
+    else
+        let roundFloatToUint v = uint (v + 0.5)
+        let ksz = max 1u (4.0 * sigma + 1.0 |> roundFloatToUint)
+        let pad = ksz / 2u
+        let win = ksz
+        let stride = win - ksz + 1u
+        let f debug =
+            volFctToWindowFctReleaseAfterDebug debug (ImageFunctions.smoothVectorElements3D sigma) ksz pad stride
+        let memoryNeed nPixels = (8UL * nPixels * uint64 win) * getBytesPerComponent<float>
+        let stg = mapWindow "gaussianVectorElements" f memoryNeed id
+        (window win pad stride) --> stg --> flattenList ()
+        |> Stage.withSliceCardinality (SlimPipeline.Domain(sameSliceDomainForKernelDepth ksz))
+
+let private splitEigenImages : Stage<Image<float list>, Image<float list>> =
+    Stage.map
+        "structureTensorEigenImages"
+        (fun _ tensor ->
+            let result = ImageFunctions.structureTensorEigenImages tensor
+            tensor.decRefCount()
+            result)
+        id
+        (fun slices -> slices * 4UL)
+    --> flattenList ()
+
+let selectGroupedOutput (groupSize: uint) (part: uint) : Stage<Image<'T>, Image<'T>> =
+    if groupSize = 0u then
+        invalidArg "groupSize" "selectGroupedOutput: groupSize must be positive."
+    if part >= groupSize then
+        invalidArg "part" $"selectGroupedOutput: part must be smaller than groupSize ({groupSize})."
+
+    Stage.mapi
+        "selectGroupedOutput"
+        (fun _ index image ->
+            if uint (index % int64 groupSize) = part then
+                [ image ]
+            else
+                image.decRefCount()
+                [])
+        id
+        (fun slices -> (slices + uint64 groupSize - 1UL) / uint64 groupSize)
+    --> flattenList ()
 
 let sobelEdge<'T when 'T: equality> winSz : Stage<Image<'T>, Image<'T>> =
     makeWindowedLocalOp "sobelEdge" 3u winSz ImageFunctions.sobelEdge
@@ -523,17 +713,17 @@ let less<'T when 'T: equality> : Stage<Image<'T> * Image<'T>, Image<uint8>> =
 let lessEqual<'T when 'T: equality> : Stage<Image<'T> * Image<'T>, Image<uint8>> =
     liftPairReleaseAfter "lessEqual" ImageFunctions.lessEqualImage
 
-let andMask : Stage<Image<uint8> * Image<uint8>, Image<uint8>> =
-    liftPairReleaseAfter "andMask" ImageFunctions.andImage
+let maskAnd : Stage<Image<uint8> * Image<uint8>, Image<uint8>> =
+    liftPairReleaseAfter "maskAnd" ImageFunctions.andImage
 
-let orMask : Stage<Image<uint8> * Image<uint8>, Image<uint8>> =
-    liftPairReleaseAfter "orMask" ImageFunctions.orImage
+let maskOr : Stage<Image<uint8> * Image<uint8>, Image<uint8>> =
+    liftPairReleaseAfter "maskOr" ImageFunctions.orImage
 
-let xorMask : Stage<Image<uint8> * Image<uint8>, Image<uint8>> =
-    liftPairReleaseAfter "xorMask" ImageFunctions.xorImage
+let maskXor : Stage<Image<uint8> * Image<uint8>, Image<uint8>> =
+    liftPairReleaseAfter "maskXor" ImageFunctions.xorImage
 
-let notMask : Stage<Image<uint8>, Image<uint8>> =
-    liftUnaryReleaseAfter "notMask" ImageFunctions.notImage id id
+let maskNot : Stage<Image<uint8>, Image<uint8>> =
+    liftUnaryReleaseAfter "maskNot" ImageFunctions.notImage id id
 
 let labelContour<'T when 'T: equality> fullyConnected winSz : Stage<Image<'T>, Image<'T>> =
     makeWindowedLocalOp "labelContour" 3u winSz (ImageFunctions.labelContour fullyConnected)
@@ -769,7 +959,7 @@ let stackFUnstackTrim trim (f: Image<'T>->Image<'S>) (images: Image<'T> list) =
         imageLst
     result
 
-let discreteGaussianOp (name: string) (sigma: float) (outputRegionMode: ImageFunctions.OutputRegionMode option) (boundaryCondition: ImageFunctions.BoundaryCondition option) (winSz: uint option) : Stage<Image<float>, Image<float>> =
+let smoothWGauss (sigma: float) (outputRegionMode: ImageFunctions.OutputRegionMode option) (boundaryCondition: ImageFunctions.BoundaryCondition option) (winSz: uint option) : Stage<Image<float>, Image<float>> =
     let roundFloatToUint v = uint (v+0.5)
 
     let ksz = 4.0 * sigma + 1.0 |> roundFloatToUint
@@ -789,7 +979,7 @@ let discreteGaussianOp (name: string) (sigma: float) (outputRegionMode: ImageFun
     // e.g., integer solutions for 
     // windowSize = 1, 6, 15, or 26, pad = 2, length = 22, => n = 21, 10, 1, or 0
     let f debug = 
-        if debug then printfn $"discreteGaussianOp: sigma {sigma}, ksz {ksz}, win {win}, stride {stride}, pad {pad}"
+        if debug then printfn $"smoothWGauss: sigma {sigma}, ksz {ksz}, win {win}, stride {stride}, pad {pad}"
         volFctToWindowFctReleaseAfterDebug debug (ImageFunctions.discreteGaussian 3u sigma (ksz |> Some) outputRegionMode boundaryCondition) ksz outputStart stride
     let memoryNeed nPixels = (2UL*nPixels*(uint64 win) + (uint64 ksz))*getBytesPerComponent<float>
     let elementTransformation = id
@@ -798,13 +988,21 @@ let discreteGaussianOp (name: string) (sigma: float) (outputRegionMode: ImageFun
         let kernelVoxels = uint64 ksz * uint64 ksz * uint64 ksz
         float (inputValue input * uint64 win * kernelVoxels)
     let stg =
-        mapWindow name f memoryNeed elementTransformation
-        |> withCostModel (nativeImageStageCost $"discreteGaussian.Float64" memoryModel costUnits)
+        mapWindow "smoothWGauss" f memoryNeed elementTransformation
+        |> withCostModel (nativeImageStageCost $"smoothWGauss.Float64" memoryModel costUnits)
     (window win pad stride) --> stg --> flattenList ()
     |> Stage.withSliceCardinality (sliceCardinalityForConvolution ksz outputRegionMode)
 
-let discreteGaussian = discreteGaussianOp "discreteGaussian"
-let convGauss sigma = discreteGaussianOp "convGauss" sigma None None None
+let structureTensor (sigma: float) (rho: float) : Stage<Image<float>, Image<float list>> =
+    let preSmooth =
+        if sigma <= 0.0 then identityStage "structureTensor.preSmooth.identity"
+        else smoothWGauss sigma None None None
+
+    preSmooth
+    --> gradient 1u None
+    --> liftUnaryReleaseAfter "structureTensorOuterProduct" ImageFunctions.structureTensorOuterProduct id id
+    --> gaussianVectorElements rho
+    --> splitEigenImages
 
 // stride calculation example
 // ker = 3, win = 7
@@ -957,8 +1155,8 @@ let convolveOp (name: string) (kernel: Image<'T>) (outputRegionMode: ImageFuncti
 let convolve kernel outputRegionMode boundaryCondition winSz = convolveOp "convolve" kernel outputRegionMode boundaryCondition winSz
 let conv kernel = convolveOp "conv" kernel None None None
 
-let finiteDiff (sigma: float) (direction: uint) (order: uint) =
-    let kernel = ImageFunctions.finiteDiffFilter3D sigma direction order
+let finiteDiff (direction: uint) (order: uint) =
+    let kernel = ImageFunctions.finiteDiffFilter3D direction order
     convolveOp "finiteDiff" kernel None None None
 
 // these only works on uint8
@@ -1028,6 +1226,9 @@ let signedDistanceBand (bandRadius: uint) (stride: uint) =
 let threshold a b = liftUnaryReleaseAfter "threshold" (ImageFunctions.threshold a b) id id
 
 let addNormalNoise a b = liftUnaryReleaseAfter "addNormalNoise" (ImageFunctions.addNormalNoise a b) id id
+let addSaltAndPepperNoise probability = liftUnaryReleaseAfter "addSaltAndPepperNoise" (ImageFunctions.addSaltAndPepperNoise probability) id id
+let addShotNoise scale = liftUnaryReleaseAfter "addShotNoise" (ImageFunctions.addShotNoise scale) id id
+let addSpeckleNoise stddev = liftUnaryReleaseAfter "addSpeckleNoise" (ImageFunctions.addSpeckleNoise stddev) id id
 
 let show (plt: Image<'T> -> unit) : Stage<Image<'T>, unit> =
     let consumer (debug: bool) (idx: int) (image: Image<'T>) =
@@ -1086,6 +1287,37 @@ let zero<'T when 'T: equality> (width: uint) (height: uint) (depth: uint) (pl: P
         image
     let stage = srcStage "zero" width height depth mapper |> Some
     srcPlan pl.debug pl.memAvail width height depth stage
+
+let normalNoise<'T when 'T: equality> (width: uint) (height: uint) (depth: uint) (mean: float) (stddev: float) (pl: Plan<unit, unit>) : Plan<unit, Image<'T>> =
+    if pl.debug then printfn $"[normalNoise] {width}x{height}x{depth}, mean {mean}, std {stddev}"
+    let mapper (i: int) : Image<'T> =
+        let zero = new Image<'T>([width; height], 1u, $"normalNoise.zero[{i}]", i)
+        let image = ImageFunctions.addNormalNoise mean stddev zero
+        zero.decRefCount()
+        if pl.debug then printfn "[normalNoise] Created image %A" i
+        image
+    let stage = srcStage "normalNoise" width height depth mapper |> Some
+    srcPlan pl.debug pl.memAvail width height depth stage
+
+let private noiseSource<'T when 'T: equality> name width height depth addNoise (pl: Plan<unit, unit>) : Plan<unit, Image<'T>> =
+    if pl.debug then printfn $"[{name}] {width}x{height}x{depth}"
+    let mapper (i: int) : Image<'T> =
+        let zero = new Image<'T>([width; height], 1u, $"{name}.zero[{i}]", i)
+        let image = addNoise zero
+        zero.decRefCount()
+        if pl.debug then printfn "[%s] Created image %A" name i
+        image
+    let stage = srcStage name width height depth mapper |> Some
+    srcPlan pl.debug pl.memAvail width height depth stage
+
+let saltAndPepperNoise<'T when 'T: equality> (width: uint) (height: uint) (depth: uint) (probability: float) (pl: Plan<unit, unit>) : Plan<unit, Image<'T>> =
+    noiseSource "saltAndPepperNoise" width height depth (ImageFunctions.addSaltAndPepperNoise probability) pl
+
+let shotNoise<'T when 'T: equality> (width: uint) (height: uint) (depth: uint) (scale: float) (pl: Plan<unit, unit>) : Plan<unit, Image<'T>> =
+    noiseSource "shotNoise" width height depth (ImageFunctions.addShotNoise scale) pl
+
+let speckleNoise<'T when 'T: equality> (width: uint) (height: uint) (depth: uint) (stddev: float) (pl: Plan<unit, unit>) : Plan<unit, Image<'T>> =
+    noiseSource "speckleNoise" width height depth (ImageFunctions.addSpeckleNoise stddev) pl
 
 let createByEuler2DTransform<'T when 'T: equality> (img: Image<'T>) (depth: uint) (transform: uint -> (float*float*float) * (float*float)) (pl: Plan<unit, unit>) : Plan<unit, Image<'T>> =
     // width, heigth, depth should be replaced with shape and shapeUpdate, and mapper should be deferred to outside Core!!!

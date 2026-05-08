@@ -261,3 +261,13 @@ let dogKeypoints<'T when 'T: equality>
 
     (StackCore.window windowSize pad stride)
     --> StackCore.mapWindow "dogKeypoints" mapper id id
+
+let siftKeypoints<'T when 'T: equality>
+    (sigma0: float)
+    (scaleFactor: float)
+    (scaleLevels: uint)
+    (contrastThreshold: float)
+    (stride: uint)
+    : Stage<Image<'T>, PointSetChunk> =
+
+    dogKeypoints<'T> sigma0 scaleFactor scaleLevels contrastThreshold stride

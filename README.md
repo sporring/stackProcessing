@@ -15,7 +15,7 @@ let availableMemory = 2UL * 1024UL * 1024UL * 1024UL
 
 source availableMemory
 |> read<float> "image18" ".tiff"
->=> discreteGaussian 1.0 None None (Some 15u)
+>=> smoothWGauss 1.0 None None (Some 15u)
 >=> cast<float,uint8>
 >=> write "result18" ".tiff"
 |> sink
@@ -156,9 +156,9 @@ generated code uses the connected value.
 
 | Category | Examples |
 | -------- | -------- |
-| Sources / Sinks | `read`, `readRandom`, `zero`, `write`, `writeThrough`, `scalar`, `getStackInfo` |
+| Sources / Sinks | `read`, `readRandom`, `zero`, `normalNoise`, `saltAndPepperNoise`, `shotNoise`, `speckleNoise`, `write`, `writeThrough`, `scalar`, `getStackInfo` |
 | Arithmetic | `scalarOp`, `imageOpScalar`, `scalarOpImage`, `imageOpImage`, `f(I)`, `f(a)` |
-| Filters | `discreteGaussian`, `convGauss`, `finiteDiff` |
+| Filters | `smoothWGauss`, `finiteDiff` |
 | Segmentation | `threshold`, morphology, connected-component stages |
 | Statistics | `computeStats`, `histogram`, `quantiles`, object-size statistics |
 | Visualization | `histogram`, `chart`, `showImage` |
@@ -526,15 +526,15 @@ whole-stack normalization, are not part of the streaming DSL surface.
 | Arithmetic | `add`, `sub`, `mul`, `div`, `addPair`, `subPair`, `mulPair`, `divPair`, `maxOfPair`, `minOfPair` |
 | Scalar-image arithmetic | `scalarAddImage`, `imageAddScalar`, `scalarSubImage`, `imageSubScalar`, `scalarMulImage`, `imageMulScalar`, `scalarDivImage`, `imageDivScalar` |
 | Pointwise math | `abs`, `acos`, `asin`, `atan`, `cos`, `sin`, `tan`, `exp`, `log10`, `log`, `round`, `sqrt`, `sqrtWindowed`, `square`, `clamp` |
-| Intensity mapping | `shiftScale`, `intensityStretch`, `threshold`, `addNormalNoise` |
-| Comparisons and masks | `equal`, `notEqual`, `greater`, `greaterEqual`, `less`, `lessEqual`, `andMask`, `orMask`, `xorMask`, `notMask` |
-| Local filtering | `median`, `bilateral`, `gradientMagnitude`, `sobelEdge`, `laplacian`, `discreteGaussian`, `convGauss`, `convolve`, `conv`, `finiteDiff` |
+| Intensity mapping and noise | `shiftScale`, `intensityStretch`, `threshold`, `addNormalNoise`, `addSaltAndPepperNoise`, `addShotNoise`, `addSpeckleNoise`, `normalNoise`, `saltAndPepperNoise`, `shotNoise`, `speckleNoise` |
+| Comparisons and masks | `equal`, `notEqual`, `greater`, `greaterEqual`, `less`, `lessEqual`, `maskAnd`, `maskOr`, `maskXor`, `maskNot` |
+| Local filtering | `smoothWMedian`, `smoothWBilateral`, `gradientMagnitude`, `sobelEdge`, `laplacian`, `smoothWGauss`, `convolve`, `conv`, `finiteDiff` |
 | Binary morphology | `erode`, `dilate`, `opening`, `closing`, `binaryContour`, `binaryMedian` |
 | Grayscale morphology | `grayscaleErode`, `grayscaleDilate`, `grayscaleOpening`, `grayscaleClosing`, `whiteTopHat`, `blackTopHat`, `morphologicalGradient` |
 | Padding, cropping, axes, and geometry | `createPadding`, `crop`, `resize`, `resample`, `resampleAffineTrilinearSlices`, `permuteAxes` |
 | Connected components and labels | `connectedComponents`, `relabelComponents`, `makeConnectedComponentTranslationTable`, `updateConnectedComponents`, `labelContour`, `changeLabel` |
 | Streaming object processing | `streamConnectedObjects`, `removeSmallObjects`, `fillSmallHoles`, `paintObjects`, `paintObjectsCropped`, `measureObjects`, `objectSizeStats`, `objectSizeHistogram` |
-| Distance, surfaces, and features | `signedDistanceBand`, `marchingCubes`, `dogKeypoints` |
+| Distance, surfaces, and features | `signedDistanceBand`, `marchingCubes`, `dogKeypoints`, `siftKeypoints` |
 | Point sets and registration | `readPointSet`, `writePointSet`, `earthMoversDistance`, `transformPointSet`, `inverseAffine`, `affineRegistration` |
 | Reducers and summaries | `computeStats`, `histogram`, `quantiles`, `otsuThresholdFromHistogram`, `momentsThresholdFromHistogram`, `sumProjection` |
 | Visualization and diagnostics | `show`, `plot`, `print`, `tap`, `tapIt` |

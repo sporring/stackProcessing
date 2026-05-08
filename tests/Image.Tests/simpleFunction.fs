@@ -106,8 +106,8 @@ let simpleFunctionTests =
     img.decRefCount()
 
   testCase "finiteDiffFilter3D creates directional stencil kernels" <| fun _ ->
-    let x = ImageFunctions.finiteDiffFilter3D 0.0 0u 1u
-    let z = ImageFunctions.finiteDiffFilter3D 0.0 2u 2u
+    let x = ImageFunctions.finiteDiffFilter3D 0u 1u
+    let z = ImageFunctions.finiteDiffFilter3D 2u 2u
 
     Expect.equal (x.GetSize()) [3u; 1u; 1u] "X first derivative should be a 3x1x1 stencil."
     Expect.equal (z.GetSize()) [1u; 1u; 3u] "Z second derivative should be a 1x1x3 stencil."

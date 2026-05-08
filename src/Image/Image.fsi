@@ -480,8 +480,9 @@ val gauss:
     when 'T: equality
 val private stensil: order: uint32 -> float list
 val finiteDiffFilter2D: direction: uint -> order: uint -> Image.Image<float>
-val finiteDiffFilter3D:
-  sigma: float -> direction: uint -> order: uint -> Image.Image<float>
+val finiteDiffFilter3D: direction: uint -> order: uint -> Image.Image<float>
+val gradientVector3D:
+  order: uint -> img: Image.Image<float> -> Image.Image<float list>
 val finiteDiffFilter4D: direction: uint -> order: uint -> Image.Image<float>
 val discreteGaussian:
   dim: uint ->
@@ -683,9 +684,17 @@ val inline pairs2ints:
 val quantilesFromHistogram:
   quantiles: float list -> histogram: Map<'T,uint64> -> float list
     when 'T: comparison
+val private retainNoNoise:
+  img: Image.Image<'T> -> Image.Image<'T> when 'T: equality
 val addNormalNoise:
   mean: float -> stddev: float -> (Image.Image<'T> -> Image.Image<'T>)
     when 'T: equality
+val addSaltAndPepperNoise:
+  probability: float -> (Image.Image<'T> -> Image.Image<'T>) when 'T: equality
+val addShotNoise:
+  scale: float -> (Image.Image<'T> -> Image.Image<'T>) when 'T: equality
+val addSpeckleNoise:
+  stddev: float -> (Image.Image<'T> -> Image.Image<'T>) when 'T: equality
 val threshold:
   lower: float -> upper: float -> img: Image.Image<'T> -> Image.Image<uint8>
     when 'T: equality
@@ -706,6 +715,14 @@ val vectorDot:
 val vectorCross3D:
   a: Image.Image<float list> ->
     b: Image.Image<float list> -> Image.Image<float list>
+val vectorAngleTo:
+  reference: float list -> img: Image.Image<float list> -> Image.Image<float>
+val structureTensorOuterProduct:
+  gradient: Image.Image<float list> -> Image.Image<float list>
+val smoothVectorElements3D:
+  sigma: float -> img: Image.Image<float list> -> Image.Image<float list>
+val structureTensorEigenImages:
+  tensor: Image.Image<float list> -> Image.Image<float list> list
 val stack: images: Image.Image<'T> list -> Image.Image<'T> when 'T: equality
 val extractSub:
   topLeft: uint list ->
@@ -737,3 +754,13 @@ val FFTXY:
 val directionalFFT:
   dir: uint -> image: Image.Image<'T> -> Image.Image<System.Numerics.Complex>
     when 'T: equality
+val directionalFFTComplex:
+  dir: uint ->
+    inverse: bool ->
+    image: Image.Image<System.Numerics.Complex> ->
+    Image.Image<System.Numerics.Complex>
+val inverseFFTXY:
+  image: Image.Image<System.Numerics.Complex> -> Image.Image<float>
+val shiftFFT:
+  image: Image.Image<System.Numerics.Complex> ->
+    Image.Image<System.Numerics.Complex>

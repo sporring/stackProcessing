@@ -6,8 +6,6 @@ open StackProcessing
 let main arg =
     printfn "Setting up finite difference filter"
     let availableMemory = 2UL * 1024UL * 1024UL *1024UL // 1MB for example
-    let sigma = 1.0
-
     let src, arg = commandLineSource availableMemory arg
     let input, output = 
         if arg.Length > 0 then
@@ -18,7 +16,7 @@ let main arg =
     src
     |> read<float> input ".tiff"
     >=> tap "tap: For finiteDiff"
-    >=> finiteDiff sigma 2u 1u
+    >=> finiteDiff 2u 1u
     >=> tap "tap: For cast"
     >=> cast<float,uint8>
     >=> tap "tap: For write"

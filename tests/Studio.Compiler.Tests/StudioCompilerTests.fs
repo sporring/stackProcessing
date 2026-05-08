@@ -53,6 +53,101 @@ let generatorSuite =
             Expect.stringContains code ">=> write \"output\" \".tiff\"" "Write node should generate write stage."
             Expect.stringContains code "|> sink" "Terminal write should be sunk."
 
+        testCase "normalNoise source lowers to synthetic noise source" <| fun _ ->
+            let noise =
+                node "noise" "NormalNoise"
+                    [ p "availableMemory" "2048" false
+                      p "type" "Float32" false
+                      p "width" "12" false
+                      p "height" "13" false
+                      p "depth" "4" false
+                      p "mean" "5.0" false
+                      p "std" "0.25" false ]
+
+            let write =
+                node "write" "Write"
+                    [ p "output" "noise" false
+                      p "suffix" ".tiff" false ]
+
+            let code =
+                graph [ noise; write ] [ edge "noise" "output" 0 "write" "input" 0 ]
+                |> PipelineCodeGenerator.generateSavedGraph
+
+            Expect.stringContains code "source 2048UL" "NormalNoise should generate a source with available memory."
+            Expect.stringContains code "|> normalNoise<float32> 12u 13u 4u 5.0 0.25" "NormalNoise should generate typed dimensions and distribution parameters."
+
+            let saltCode =
+                graph
+                    [ node "salt" "SaltAndPepperNoise"
+                        [ p "availableMemory" "2048" false
+                          p "type" "Float32" false
+                          p "width" "12" false
+                          p "height" "13" false
+                          p "depth" "4" false
+                          p "probability" "0.01" false ]
+                      write ]
+                    [ edge "salt" "output" 0 "write" "input" 0 ]
+                |> PipelineCodeGenerator.generateSavedGraph
+
+            let shotCode =
+                graph
+                    [ node "shot" "ShotNoise"
+                        [ p "availableMemory" "2048" false
+                          p "type" "Float32" false
+                          p "width" "12" false
+                          p "height" "13" false
+                          p "depth" "4" false
+                          p "scale" "2.0" false ]
+                      write ]
+                    [ edge "shot" "output" 0 "write" "input" 0 ]
+                |> PipelineCodeGenerator.generateSavedGraph
+
+            let speckleCode =
+                graph
+                    [ node "speckle" "SpeckleNoise"
+                        [ p "availableMemory" "2048" false
+                          p "type" "Float32" false
+                          p "width" "12" false
+                          p "height" "13" false
+                          p "depth" "4" false
+                          p "std" "0.5" false ]
+                      write ]
+                    [ edge "speckle" "output" 0 "write" "input" 0 ]
+                |> PipelineCodeGenerator.generateSavedGraph
+
+            Expect.stringContains saltCode "|> saltAndPepperNoise<float32> 12u 13u 4u 0.01" "SaltAndPepperNoise should lower with probability."
+            Expect.stringContains shotCode "|> shotNoise<float32> 12u 13u 4u 2.0" "ShotNoise should lower with scale."
+            Expect.stringContains speckleCode "|> speckleNoise<float32> 12u 13u 4u 0.5" "SpeckleNoise should lower with std."
+
+        testCase "noise add-stage boxes lower to streaming filters" <| fun _ ->
+            let read =
+                node "read" "Read"
+                    [ p "availableMemory" "2048" false
+                      p "type" "Float32" false
+                      p "input" "input" false
+                      p "suffix" ".tiff" false ]
+
+            let normal = node "normal" "AddNormalNoise" [ p "type" "Float32" false; p "mean" "1.0" false; p "std" "0.25" false ]
+            let salt = node "salt" "AddSaltAndPepperNoise" [ p "type" "Float32" false; p "probability" "0.01" false ]
+            let shot = node "shot" "AddShotNoise" [ p "type" "Float32" false; p "scale" "2.0" false ]
+            let speckle = node "speckle" "AddSpeckleNoise" [ p "type" "Float32" false; p "std" "0.5" false ]
+            let write = node "write" "Write" [ p "output" "noise" false; p "suffix" ".tiff" false ]
+
+            let code =
+                graph
+                    [ read; normal; salt; shot; speckle; write ]
+                    [ edge "read" "output" 0 "normal" "input" 0
+                      edge "normal" "output" 0 "salt" "input" 0
+                      edge "salt" "output" 0 "shot" "input" 0
+                      edge "shot" "output" 0 "speckle" "input" 0
+                      edge "speckle" "output" 0 "write" "input" 0 ]
+                |> PipelineCodeGenerator.generateSavedGraph
+
+            Expect.stringContains code ">=> addNormalNoise 1.0 0.25" "AddNormalNoise should lower with mean and std."
+            Expect.stringContains code ">=> addSaltAndPepperNoise 0.01" "AddSaltAndPepperNoise should lower with probability."
+            Expect.stringContains code ">=> addShotNoise 2.0" "AddShotNoise should lower with scale."
+            Expect.stringContains code ">=> addSpeckleNoise 0.5" "AddSpeckleNoise should lower with std."
+
         testCase "slab read and write boxes lower to slab DSL functions" <| fun _ ->
             let read =
                 node "read" "ReadSlab"
@@ -355,6 +450,23 @@ let generatorSuite =
             Expect.stringContains code ">=> dogKeypoints<float> 0.5 1.2 4u 0.001 3u" "DogKeypoints should generate a typed point detector."
             Expect.stringContains code ">=> writePointSet \"points.csv\"" "WritePointSet should generate the CSV point writer."
             Expect.stringContains code "|> sink" "Terminal WritePointSet should run the point writer."
+
+            let sift =
+                node "sift" "SiftKeypoints"
+                    [ p "type" "Float64" false
+                      p "sigma0" "0.5" false
+                      p "scaleFactor" "1.2" false
+                      p "scaleLevels" "4" false
+                      p "contrastThreshold" "0.001" false
+                      p "stride" "3" false ]
+
+            let siftCode =
+                graph [ read; sift; write ]
+                    [ edge "read" "output" 0 "sift" "input" 0
+                      edge "sift" "output" 0 "writePoints" "input" 0 ]
+                |> PipelineCodeGenerator.generateSavedGraph
+
+            Expect.stringContains siftCode ">=> siftKeypoints<float> 0.5 1.2 4u 0.001 3u" "SiftKeypoints should generate a typed point detector."
 
             let readPoints =
                 node "readPoints" "ReadPointSet"
@@ -804,10 +916,24 @@ let generatorSuite =
                       p "upper" "1.0" false ]
 
             let median =
-                node "median" "Median"
+                node "median" "SmoothWMedian"
                     [ p "type" "Float64" false
                       p "radius" "1" false
                       p "windowSize" "3" false ]
+
+            let bilateral =
+                node "bilateral" "SmoothWBilateral"
+                    [ p "type" "Float64" false
+                      p "domainSigma" "2.0" false
+                      p "rangeSigma" "10.0" false
+                      p "windowSize" "5" false ]
+
+            let smooth =
+                node "smooth" "SmoothWGauss"
+                    [ p "sigma" "1.0" false
+                      p "outputRegionMode" "None" false
+                      p "boundaryCondition" "None" false
+                      p "windowSize" "None" false ]
 
             let edgeFilter =
                 node "edge" "GradientMagnitude"
@@ -821,15 +947,19 @@ let generatorSuite =
 
             let code =
                 graph
-                    [ read; clamp; median; edgeFilter; write ]
+                    [ read; clamp; median; bilateral; smooth; edgeFilter; write ]
                     [ edge "read" "output" 0 "clamp" "input" 0
                       edge "clamp" "output" 0 "median" "input" 0
-                      edge "median" "output" 0 "edge" "input" 0
+                      edge "median" "output" 0 "bilateral" "input" 0
+                      edge "bilateral" "output" 0 "smooth" "input" 0
+                      edge "smooth" "output" 0 "edge" "input" 0
                       edge "edge" "output" 0 "write" "input" 0 ]
                 |> PipelineCodeGenerator.generateSavedGraph
 
             Expect.stringContains code ">=> clamp<float> 0.0 1.0" "Clamp should lower with type and bounds."
-            Expect.stringContains code ">=> median<float> 1u 3u" "Median should lower with radius and window size."
+            Expect.stringContains code ">=> smoothWMedian<float> 1u 3u" "smoothWMedian should lower with radius and window size."
+            Expect.stringContains code ">=> smoothWBilateral<float> 2.0 10.0 5u" "smoothWBilateral should lower with sigmas and window size."
+            Expect.stringContains code ">=> smoothWGauss 1.0 None None None" "smoothWGauss should lower with explicit options."
             Expect.stringContains code ">=> gradientMagnitude<float> 5u" "Gradient magnitude should lower with its window size."
 
         testCase "sum projection lowers to a Float64 image reducer" <| fun _ ->
@@ -921,6 +1051,45 @@ let generatorSuite =
             Expect.stringContains vectorCode ">>=> appendVectorElement" "appendVectorElement should lower as a mixed vector/scalar pair stage."
             Expect.stringContains vectorCode ">=> vectorMapElements \"sqrt\"" "VectorMapElements should lower with the selected function."
             Expect.stringContains vectorCode ">=> vectorElement<float> 2" "VectorElement should lower with the selected component."
+
+            let gradientCode =
+                graph
+                    [ read "source" "source"
+                      node "gradient" "Gradient" [ p "order" "1" false; p "windowSize" "5" false ]
+                      node "element" "VectorElement" [ p "component" "0" false ]
+                      write ]
+                    [ edge "source" "output" 0 "gradient" "input" 0
+                      edge "gradient" "output" 0 "element" "input" 0
+                      edge "element" "output" 0 "write" "input" 0 ]
+                |> PipelineCodeGenerator.generateSavedGraph
+
+            Expect.stringContains gradientCode ">=> gradient 1u (Some 5u)" "Gradient should lower with order and window size."
+
+            let angleCode =
+                graph
+                    [ read "x" "x"; read "y" "y"
+                      node "toVector" "ToVectorImage" []
+                      node "angle" "VectorAngleTo" [ p "x" "0.0" false; p "y" "1.0" false; p "z" "0.0" false ]
+                      write ]
+                    [ edge "x" "output" 0 "toVector" "I" 0
+                      edge "y" "output" 0 "toVector" "J" 0
+                      edge "toVector" "output" 0 "angle" "input" 0
+                      edge "angle" "output" 0 "write" "input" 0 ]
+                |> PipelineCodeGenerator.generateSavedGraph
+
+            Expect.stringContains angleCode ">=> vectorAngleTo [ 0.0; 1.0; 0.0 ]" "VectorAngleTo should lower with the reference vector."
+
+            let structureTensorCode =
+                graph
+                    [ read "source" "source"
+                      node "tensor" "StructureTensor" [ p "sigma" "1.0" false; p "rho" "2.0" false ]
+                      write ]
+                    [ edge "source" "output" 0 "tensor" "input" 0
+                      edge "tensor" "output" 2 "write" "input" 0 ]
+                |> PipelineCodeGenerator.generateSavedGraph
+
+            Expect.stringContains structureTensorCode ">=> structureTensor 1.0 2.0" "StructureTensor should lower with sigma and rho."
+            Expect.stringContains structureTensorCode ">=> selectGroupedOutput 4u 2u" "Connecting a StructureTensor output port should select the corresponding 3-vector stream."
 
             let dotCode =
                 graph
@@ -1030,6 +1199,44 @@ let generatorSuite =
                 |> PipelineCodeGenerator.generateSavedGraph
 
             Expect.stringContains argCode ">=> arg" "ComplexArg should lower to arg."
+
+        testCase "fourier boxes lower to chunk-backed StackProcessing stages" <| fun _ ->
+            let read =
+                node "read" "Read"
+                    [ p "availableMemory" "1024" false
+                      p "type" "Float64" false
+                      p "input" "input" false
+                      p "suffix" ".tiff" false ]
+            let fft =
+                node "fft" "FFT"
+                    [ p "type" "Float64" false
+                      p "chunkX" "8" false
+                      p "chunkY" "9" false
+                      p "chunkZ" "2" false ]
+            let shift =
+                node "shift" "ShiftFFT"
+                    [ p "chunkX" "8" false
+                      p "chunkY" "9" false
+                      p "chunkZ" "2" false ]
+            let inv =
+                node "inv" "InvFFT"
+                    [ p "chunkX" "8" false
+                      p "chunkY" "9" false
+                      p "chunkZ" "2" false ]
+            let write = node "write" "Write" [ p "output" "out" false; p "suffix" ".tiff" false ]
+
+            let code =
+                graph
+                    [ read; fft; shift; inv; write ]
+                    [ edge "read" "output" 0 "fft" "input" 0
+                      edge "fft" "output" 0 "shift" "input" 0
+                      edge "shift" "output" 0 "inv" "input" 0
+                      edge "inv" "output" 0 "write" "input" 0 ]
+                |> PipelineCodeGenerator.generateSavedGraph
+
+            Expect.stringContains code ">=> FFT<float> 8u 9u 2u" "FFT should lower with pixel type and chunk shape."
+            Expect.stringContains code ">=> shiftFFT 8u 9u 2u" "ShiftFFT should lower with chunk shape."
+            Expect.stringContains code ">=> invFFT 8u 9u 2u" "InvFFT should lower with chunk shape."
 
         testCase "morphology and streaming label additions lower to StackProcessing stages" <| fun _ ->
             let read =

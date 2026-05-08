@@ -468,6 +468,9 @@ val vectorDot: Stage<(Image<float list> * Image<float list>),Image<float>>
 val vectorCross3D:
   Stage<(Image<float list> * Image<float list>),Image<float list>>
 
+val vectorAngleTo:
+  reference: float list -> Stage<Image<float list>,Image<float>>
+
 val Re: Stage<Image<System.Numerics.Complex>,Image<float>>
 
 val Im: Stage<Image<System.Numerics.Complex>,Image<float>>
@@ -484,6 +487,23 @@ val toComplex:
 
 val polarToComplex:
   Stage<(Image<float> * Image<float>),Image<System.Numerics.Complex>>
+
+val FFT:
+  chunkX: uint ->
+    chunkY: uint ->
+    chunkZ: uint -> Stage<Image<'T>,Image<System.Numerics.Complex>>
+    when 'T: equality
+
+val invFFT:
+  chunkX: uint ->
+    chunkY: uint ->
+    chunkZ: uint -> Stage<Image<System.Numerics.Complex>,Image<float>>
+
+val shiftFFT:
+  chunkX: uint ->
+    chunkY: uint ->
+    chunkZ: uint ->
+    Stage<Image<System.Numerics.Complex>,Image<System.Numerics.Complex>>
 
 val abs<'T when 'T: equality> :
   StackCore.Stage<StackCore.Image<'T>,StackCore.Image<'T>> when 'T: equality
@@ -540,17 +560,20 @@ val intensityStretch:
     outputMinimum: double -> outputMaximum: double -> Stage<Image<'T>,Image<'T>>
     when 'T: equality
 
-val median:
+val smoothWMedian:
   radius: uint32 -> winSz: uint32 -> Stage<Image<'T>,Image<'T>>
     when 'T: equality
 
-val bilateral:
+val smoothWBilateral:
   domainSigma: double ->
     rangeSigma: double -> winSz: uint32 -> Stage<Image<'T>,Image<'T>>
     when 'T: equality
 
 val gradientMagnitude:
   winSz: uint32 -> Stage<Image<'T>,Image<'T>> when 'T: equality
+
+val gradient:
+  order: uint -> winSz: uint option -> Stage<Image<float>,Image<float list>>
 
 val sobelEdge: winSz: uint32 -> Stage<Image<'T>,Image<'T>> when 'T: equality
 
@@ -616,19 +639,19 @@ val lessEqual<'T when 'T: equality> :
   StackCore.Stage<(StackCore.Image<'T> * StackCore.Image<'T>),
                   StackCore.Image<uint8>> when 'T: equality
 
-val andMask:
+val maskAnd:
   StackCore.Stage<(StackCore.Image<uint8> * StackCore.Image<uint8>),
                   StackCore.Image<uint8>>
 
-val orMask:
+val maskOr:
   StackCore.Stage<(StackCore.Image<uint8> * StackCore.Image<uint8>),
                   StackCore.Image<uint8>>
 
-val xorMask:
+val maskXor:
   StackCore.Stage<(StackCore.Image<uint8> * StackCore.Image<uint8>),
                   StackCore.Image<uint8>>
 
-val notMask: StackCore.Stage<StackCore.Image<uint8>,StackCore.Image<uint8>>
+val maskNot: StackCore.Stage<StackCore.Image<uint8>,StackCore.Image<uint8>>
 
 val labelContour:
   fullyConnected: bool -> winSz: uint32 -> Stage<Image<'T>,Image<'T>>
@@ -643,6 +666,14 @@ val marchingCubes<'T when 'T: equality> :
     when 'T: equality
 
 val dogKeypoints<'T when 'T: equality> :
+  (float ->
+     float ->
+     uint ->
+     float ->
+     uint -> StackCore.Stage<StackCore.Image<'T>,StackPoints.PointSetChunk>)
+    when 'T: equality
+
+val siftKeypoints<'T when 'T: equality> :
   (float ->
      float ->
      uint ->
@@ -707,15 +738,12 @@ val computeStats:
      SlimPipeline.Stage<StackCore.Image<'a>,StackImageFunctions.ImageStats>)
     when 'a: equality
 
-val discreteGaussian:
+val smoothWGauss:
   (float ->
      ImageFunctions.OutputRegionMode option ->
      ImageFunctions.BoundaryCondition option ->
      uint option ->
      StackCore.Stage<StackCore.Image<float>,StackCore.Image<float>>)
-
-val convGauss:
-  (float -> StackCore.Stage<StackCore.Image<float>,StackCore.Image<float>>)
 
 val createPadding<'T when 'T: equality> :
   (uint ->
@@ -746,9 +774,14 @@ val conv:
      StackCore.Stage<StackCore.Image<'a>,StackCore.Image<'a>>) when 'a: equality
 
 val finiteDiff:
-  (float ->
-     uint ->
+  (uint ->
      uint -> StackCore.Stage<StackCore.Image<float>,StackCore.Image<float>>)
+
+val structureTensor:
+  sigma: float -> rho: float -> Stage<Image<float>,Image<float list>>
+
+val selectGroupedOutput:
+  groupSize: uint -> part: uint -> Stage<Image<'T>,Image<'T>> when 'T: equality
 
 val erode:
   (uint -> StackCore.Stage<StackCore.Image<uint8>,StackCore.Image<uint8>>)
@@ -784,6 +817,18 @@ val addNormalNoise:
   (float -> float -> SlimPipeline.Stage<StackCore.Image<'a>,StackCore.Image<'a>>)
     when 'a: equality
 
+val addSaltAndPepperNoise:
+  (float -> SlimPipeline.Stage<StackCore.Image<'a>,StackCore.Image<'a>>)
+    when 'a: equality
+
+val addShotNoise:
+  (float -> SlimPipeline.Stage<StackCore.Image<'a>,StackCore.Image<'a>>)
+    when 'a: equality
+
+val addSpeckleNoise:
+  (float -> SlimPipeline.Stage<StackCore.Image<'a>,StackCore.Image<'a>>)
+    when 'a: equality
+
 val show:
   ((StackCore.Image<'a> -> unit) -> StackCore.Stage<StackCore.Image<'a>,unit>)
     when 'a: equality
@@ -798,6 +843,39 @@ val zero<'T when 'T: equality> :
   (uint ->
      uint ->
      uint ->
+     SlimPipeline.Plan<unit,unit> -> SlimPipeline.Plan<unit,StackCore.Image<'T>>)
+    when 'T: equality
+
+val normalNoise<'T when 'T: equality> :
+  (uint ->
+     uint ->
+     uint ->
+     float ->
+     float ->
+     SlimPipeline.Plan<unit,unit> -> SlimPipeline.Plan<unit,StackCore.Image<'T>>)
+    when 'T: equality
+
+val saltAndPepperNoise<'T when 'T: equality> :
+  (uint ->
+     uint ->
+     uint ->
+     float ->
+     SlimPipeline.Plan<unit,unit> -> SlimPipeline.Plan<unit,StackCore.Image<'T>>)
+    when 'T: equality
+
+val shotNoise<'T when 'T: equality> :
+  (uint ->
+     uint ->
+     uint ->
+     float ->
+     SlimPipeline.Plan<unit,unit> -> SlimPipeline.Plan<unit,StackCore.Image<'T>>)
+    when 'T: equality
+
+val speckleNoise<'T when 'T: equality> :
+  (uint ->
+     uint ->
+     uint ->
+     float ->
      SlimPipeline.Plan<unit,unit> -> SlimPipeline.Plan<unit,StackCore.Image<'T>>)
     when 'T: equality
 

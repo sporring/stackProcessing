@@ -52,7 +52,7 @@ type MyNodeFactory() =
             ObservableCollection<INodeTemplate>(
                 [ template "source"
                   template "read"
-                  template "discreteGaussian"
+                  template "smoothWGauss"
                   template "cast"
                   template "write"
                   template "sink" ])

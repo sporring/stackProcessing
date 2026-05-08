@@ -1145,7 +1145,7 @@ let ImageProcessingTests =
         Expect.floatClose Accuracy.high diff 0.0 "All finite diff filters should sum to 0.0"
 
     testCase "finiteDiff 3D axis 0" <| fun _ ->
-        let imgLst = List.map (ImageFunctions.finiteDiffFilter3D 0.0 0u) [1u;2u;3u;4u;5u]
+        let imgLst = List.map (ImageFunctions.finiteDiffFilter3D 0u) [1u;2u;3u;4u;5u]
         let sumLst = List.map ImageFunctions.sum imgLst
         let expected = 0.0
         let diff = List.fold (fun acc elm -> abs(elm-expected)) 0.0 sumLst
@@ -1154,7 +1154,7 @@ let ImageProcessingTests =
         Expect.floatClose Accuracy.high diff 0.0 "All finite diff filters should sum to 0.0"
 
     testCase "finiteDiff 3D axis 1" <| fun _ ->
-        let imgLst = List.map (ImageFunctions.finiteDiffFilter3D 1.0 1u) [1u;2u;3u;4u;5u]
+        let imgLst = List.map (ImageFunctions.finiteDiffFilter3D 1u) [1u;2u;3u;4u;5u]
         let sumLst = List.map ImageFunctions.sum imgLst
         let expected = 0.0
         let diff = List.fold (fun acc elm -> abs(elm-expected)) 0.0 sumLst
@@ -1163,7 +1163,7 @@ let ImageProcessingTests =
         Expect.floatClose Accuracy.high diff 0.0 "All finite diff filters should sum to 0.0"
 
     testCase "finiteDiff 3D axis 2" <| fun _ ->
-        let imgLst = List.map (ImageFunctions.finiteDiffFilter3D 2.0 2u) [1u;2u;3u;4u;5u]
+        let imgLst = List.map (ImageFunctions.finiteDiffFilter3D 2u) [1u;2u;3u;4u;5u]
         let sumLst = List.map ImageFunctions.sum imgLst
         let expected = 0.0
         let diff = List.fold (fun acc elm -> abs(elm-expected)) 0.0 sumLst

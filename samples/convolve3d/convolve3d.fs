@@ -18,8 +18,7 @@ let main arg =
     |> read<float> input ".tiff"
     // sigma = 1 => pad=2, depth = 22 => integer solution for number of strides when:
     // windowSize = 1, 6, 15, or 26, => n = 21, 10, 1, or 0
-    >=> discreteGaussian sigma None None (Some 15u) 
-    //>=> convGauss sigma
+    >=> smoothWGauss sigma None None (Some 15u) 
     >=> cast<float,uint8>
     >=> write output ".tiff"
     //>=> ignoreImages ()

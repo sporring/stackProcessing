@@ -48,6 +48,10 @@ let wrapperCoverage =
       let gradient = ImageFunctions.gradientMagnitude img
       let sobel = ImageFunctions.sobelEdge img
       let laplacian = ImageFunctions.laplacian img
+      let normal = ImageFunctions.addNormalNoise 10.0 0.0 img
+      let saltAndPepper = ImageFunctions.addSaltAndPepperNoise 0.0 img
+      let shot = ImageFunctions.addShotNoise 0.0 img
+      let speckle = ImageFunctions.addSpeckleNoise 0.0 img
 
       Expect.equal (clamped.GetSize()) [ 2u; 2u ] "clampImage should preserve shape."
       expectClose clamped.[0,0] 1.5 "clampImage should apply the lower bound."
@@ -64,6 +68,16 @@ let wrapperCoverage =
       Expect.equal (gradient.GetSize()) [ 2u; 2u ] "gradientMagnitude should preserve shape."
       Expect.equal (sobel.GetSize()) [ 2u; 2u ] "sobelEdge should preserve shape."
       Expect.equal (laplacian.GetSize()) [ 2u; 2u ] "laplacian should preserve shape."
+      Expect.equal (normal.GetSize()) [ 2u; 2u ] "addNormalNoise should preserve shape."
+      Expect.equal (saltAndPepper.GetSize()) [ 2u; 2u ] "addSaltAndPepperNoise should preserve shape."
+      Expect.equal (shot.GetSize()) [ 2u; 2u ] "addShotNoise should preserve shape."
+      Expect.equal (speckle.GetSize()) [ 2u; 2u ] "addSpeckleNoise should preserve shape."
+      expectClose normal.[0,0] img.[0,0] "Zero-std normal noise should bypass SimpleITK and preserve pixels."
+      expectClose saltAndPepper.[0,1] img.[0,1] "Zero-probability salt-and-pepper noise should preserve pixels."
+      expectClose shot.[1,0] img.[1,0] "Zero-scale shot noise should preserve pixels."
+      expectClose speckle.[1,1] img.[1,1] "Zero-std speckle noise should preserve pixels."
+      Expect.isTrue (Object.ReferenceEquals(img, normal)) "Zero-std normal noise should retain and return the input image."
+      Expect.isGreaterThanOrEqual (img.getNReferences()) 2 "Zero-noise bypass should increment the image reference count."
 
     testCase "comparison logical mask and transform wrappers" <| fun _ ->
       let a = Image<uint8>.ofArray2D (array2D [ [ 0uy; 1uy ]; [ 2uy; 3uy ] ])
@@ -235,5 +249,58 @@ let wrapperCoverage =
       Expect.equal second.[1,1] 40.0 "vectorElement should extract the requested component."
       Expect.equal dot.[1,1] 40.0 "vectorDot should compute a per-pixel dot product."
       Expect.equal cross.[1,1] [ -400.0; 0.0; 4.0 ] "vectorCross3D should compute a per-pixel 3D cross product."
+      Expect.floatClose Accuracy.high (ImageFunctions.vectorAngleTo [ 0.0; 1.0 ] v2).[1,1] (atan (0.1)) "vectorAngleTo should compute the angle to the reference vector."
       Expect.throws (fun () -> ImageFunctions.vectorElement 2u v2 |> ignore) "vectorElement should reject missing components."
+
+    testCase "structure tensor helpers keep compact tensors and split eigensystem images" <| fun _ ->
+      let gradient =
+        Image<float list>.ofArray3DVector (
+          Array3D.init 2 2 3 (fun _ _ elementIndex ->
+            if elementIndex = 0 then 2.0 elif elementIndex = 1 then 0.0 else 0.0))
+      let tensor = ImageFunctions.structureTensorOuterProduct gradient
+      let eigenImages = ImageFunctions.structureTensorEigenImages tensor
+
+      try
+        Expect.equal (tensor.GetNumberOfComponentsPerPixel()) 6u "The compact symmetric tensor should store six components."
+        Expect.equal tensor.[1,1] [ 4.0; 0.0; 0.0; 0.0; 0.0; 0.0 ] "Outer products should use [xx xy xz yy yz zz] order."
+        Expect.equal eigenImages.Length 4 "The eigensystem should split into eigenvalues plus three eigenvector images."
+        eigenImages |> List.iter (fun image -> Expect.equal (image.GetNumberOfComponentsPerPixel()) 3u "Every eigensystem output image should be a 3-vector.")
+        Expect.equal eigenImages[0].[1,1] [ 4.0; 0.0; 0.0 ] "Eigenvalues should be stored in the first 3-vector image."
+        Expect.equal eigenImages[1].[1,1] [ 1.0; 0.0; 0.0 ] "The first eigenvector should follow the x direction for a pure x-gradient."
+      finally
+        eigenImages |> List.iter (fun image -> image.decRefCount())
+        tensor.decRefCount()
+        gradient.decRefCount()
+
+    testCase "gradientVector3D bundles finite differences into a 3-vector image" <| fun _ ->
+      let volume =
+        Array3D.init 5 5 5 (fun x y z -> float x + 10.0 * float y + 100.0 * float z)
+        |> Image<float>.ofArray3D
+
+      let gradient = ImageFunctions.gradientVector3D 1u volume
+      let split = gradient.toImageList()
+      let direct =
+        [ 0u; 1u; 2u ]
+        |> List.map (fun direction ->
+          let kernel = ImageFunctions.finiteDiffFilter3D direction 1u
+          try
+            ImageFunctions.convolve None None volume kernel
+          finally
+            kernel.decRefCount())
+
+      try
+        Expect.equal (gradient.GetSize()) (volume.GetSize()) "gradientVector3D should preserve the 3D image domain."
+        Expect.equal (gradient.GetNumberOfComponentsPerPixel()) 3u "gradientVector3D should emit dx dy dz components."
+
+        List.zip3 split direct [ "dx"; "dy"; "dz" ]
+        |> List.iter (fun (actualComponent, expected, label) ->
+          expectClose actualComponent.[2,2,2] expected.[2,2,2] $"{label} should match the corresponding finite-difference convolution.")
+
+        Expect.equal gradient.[2,2,2] [ split[0].[2,2,2]; split[1].[2,2,2]; split[2].[2,2,2] ] "The vector pixel should preserve component order."
+        Expect.throws (fun () -> ImageFunctions.gradientVector3D 1u (tinyFloatImage ()) |> ignore) "gradientVector3D should reject non-3D images."
+      finally
+        gradient.decRefCount()
+        split |> List.iter (fun image -> image.decRefCount())
+        direct |> List.iter (fun image -> image.decRefCount())
+        volume.decRefCount()
   ]

@@ -75,6 +75,10 @@ let private image2D f =
 let private expectFloat32Close actual expected message =
     Expect.isLessThan (Math.Abs(float actual - float expected)) 1.0e-5 message
 
+let private expectComplexClose (actual: System.Numerics.Complex) (expected: System.Numerics.Complex) message =
+    Expect.floatClose Accuracy.high actual.Real expected.Real $"{message} real"
+    Expect.floatClose Accuracy.high actual.Imaginary expected.Imaginary $"{message} imaginary"
+
 let private point x y z : CoordinatePoint =
     { X = x; Y = y; Z = z; Scale = Double.NaN; Response = Double.NaN }
 
@@ -379,6 +383,52 @@ let stackProcessingSupportSuite =
             finally
                 disposeImages images
 
+        testCase "normalNoise source emits requested shape and zero-variance value" <| fun _ ->
+            let slices =
+                source (2UL * 1024UL * 1024UL * 1024UL)
+                |> StackProcessing.normalNoise<float> 4u 3u 2u 5.0 0.0
+                |> drainList
+
+            try
+                Expect.equal slices.Length 2 "normalNoise should emit the requested depth."
+                slices
+                |> List.iter (fun image ->
+                    Expect.equal (image.GetSize()) [ 4u; 3u ] "normalNoise should emit the requested x/y size."
+                    for x in 0 .. 3 do
+                        for y in 0 .. 2 do
+                            Expect.floatClose Accuracy.high image[x, y] 0.0 "Zero-variance normalNoise should bypass SimpleITK and preserve the zero source.")
+            finally
+                disposeImages slices
+
+        testCase "additional noise sources emit requested shape" <| fun _ ->
+            let expectNoiseSource label (makePlan: unit -> Plan<unit, Image<float>>) =
+                let slices = makePlan () |> drainList
+                try
+                    Expect.equal slices.Length 2 $"{label} should emit the requested depth."
+                    slices
+                    |> List.iter (fun image ->
+                        Expect.equal (image.GetSize()) [ 4u; 3u ] $"{label} should emit the requested x/y size.")
+                finally
+                    disposeImages slices
+
+            expectNoiseSource
+                "saltAndPepperNoise"
+                (fun () ->
+                    source (2UL * 1024UL * 1024UL * 1024UL)
+                    |> StackProcessing.saltAndPepperNoise<float> 4u 3u 2u 0.0)
+
+            expectNoiseSource
+                "shotNoise"
+                (fun () ->
+                    source (2UL * 1024UL * 1024UL * 1024UL)
+                    |> StackProcessing.shotNoise<float> 4u 3u 2u 0.0)
+
+            expectNoiseSource
+                "speckleNoise"
+                (fun () ->
+                    source (2UL * 1024UL * 1024UL * 1024UL)
+                    |> StackProcessing.speckleNoise<float> 4u 3u 2u 0.0)
+
         testCase "StackIO reports stack metadata and read/readRandom return slices" <| fun _ ->
             let inputDir = tempDirectory "io-read"
             let suffix = ".tiff"
@@ -562,6 +612,26 @@ let stackProcessingSupportSuite =
 
                 let points = chunks |> List.collect _.Points
                 Expect.isTrue (points |> List.exists (fun p -> p.X = 4.0 && p.Y = 4.0 && p.Z = 4.0)) "A centered impulse should produce a keypoint near the impulse coordinate."
+            finally
+                disposeImages slices
+
+        testCase "siftKeypoints exposes SIFT-style streamed point detection" <| fun _ ->
+            let slices =
+                [ for z in 0 .. 8 ->
+                    let image =
+                        Array2D.init 9 9 (fun x y -> if x = 4 && y = 4 && z = 4 then 255uy else 0uy)
+                        |> Image<uint8>.ofArray2D
+                    image.index <- z
+                    image ]
+
+            try
+                let chunks =
+                    imagePlan slices
+                    >=> siftKeypoints<uint8> 0.5 1.2 4u 0.0001 1u
+                    |> drainList
+
+                let points = chunks |> List.collect _.Points
+                Expect.isTrue (points |> List.exists (fun p -> p.X = 4.0 && p.Y = 4.0 && p.Z = 4.0)) "A centered impulse should produce a SIFT-style keypoint near the impulse coordinate."
             finally
                 disposeImages slices
 
@@ -1422,17 +1492,17 @@ let stackProcessingSupportSuite =
             Expect.equal (runPairStage StackProcessing.greaterEqual<uint8> 8uy 8uy) 1uy "greaterEqual should include equality."
             Expect.equal (runPairStage StackProcessing.less<uint8> 7uy 8uy) 1uy "less should flag lesser pixels."
             Expect.equal (runPairStage StackProcessing.lessEqual<uint8> 8uy 8uy) 1uy "lessEqual should include equality."
-            Expect.equal (runPairStage StackProcessing.andMask 255uy 0uy) 0uy "andMask should combine binary masks."
-            Expect.equal (runPairStage StackProcessing.orMask 255uy 0uy) 255uy "orMask should combine binary masks."
-            Expect.equal (runPairStage StackProcessing.xorMask 255uy 0uy) 255uy "xorMask should combine binary masks."
+            Expect.equal (runPairStage StackProcessing.maskAnd 255uy 0uy) 0uy "maskAnd should combine binary masks."
+            Expect.equal (runPairStage StackProcessing.maskOr 255uy 0uy) 255uy "maskOr should combine binary masks."
+            Expect.equal (runPairStage StackProcessing.maskXor 255uy 0uy) 255uy "maskXor should combine binary masks."
 
             let mask = Image<uint8>.ofArray2D (Array2D.create 2 2 0uy)
             let inverted =
                 imagePlan [ mask ]
-                >=> StackProcessing.notMask
+                >=> StackProcessing.maskNot
                 |> drain
             try
-                Expect.equal inverted.[0, 0] 1uy "notMask should invert binary masks."
+                Expect.equal inverted.[0, 0] 1uy "maskNot should invert binary masks."
             finally
                 inverted.decRefCount()
                 mask.decRefCount()
@@ -1525,6 +1595,68 @@ let stackProcessingSupportSuite =
             finally
                 dot.decRefCount()
 
+        testCase "StackProcessing gradient emits streamed 3-vector finite differences" <| fun _ ->
+            let makeDoubleSlice z =
+                Array2D.init 5 5 (fun x y -> float x + 10.0 * float y + 100.0 * float z)
+                |> Image<float>.ofArray2D
+
+            let inputSlices = [ 0 .. 4 ] |> List.map makeDoubleSlice
+            let directSlices = [ 0 .. 4 ] |> List.map makeDoubleSlice
+
+            let actual =
+                imagePlan inputSlices
+                >=> StackProcessing.gradient 1u (Some 3u)
+                |> drainList
+
+            let volume = ImageFunctions.stack directSlices
+            let expectedVolume = ImageFunctions.gradientVector3D 1u volume
+            let expected = ImageFunctions.unstack 2u expectedVolume
+
+            try
+                Expect.equal actual.Length inputSlices.Length "gradient should preserve slice count."
+                Expect.equal (actual.Head.GetNumberOfComponentsPerPixel()) 3u "gradient should emit 3-component vector pixels."
+                List.zip actual expected
+                |> List.iteri (fun z (streamed, direct) ->
+                    Expect.equal (streamed.GetSize()) (direct.GetSize()) $"gradient slice {z} should preserve x/y shape."
+                    Expect.equal streamed.[2, 2] direct.[2, 2] $"gradient slice {z} should match direct 3D finite differences at an interior pixel.")
+            finally
+                disposeImages actual
+                disposeImages expected
+                expectedVolume.decRefCount()
+                volume.decRefCount()
+                disposeImages directSlices
+
+        testCase "StackProcessing structureTensor emits four 3-vector images per input slice" <| fun _ ->
+            let makeDoubleSlice z =
+                Array2D.init 5 5 (fun x _ -> float x + 0.0 * float z)
+                |> Image<float>.ofArray2D
+
+            let inputSlices = [ 0 .. 4 ] |> List.map makeDoubleSlice
+            let actual =
+                imagePlan inputSlices
+                >=> StackProcessing.structureTensor 0.0 0.0
+                |> drainList
+
+            try
+                Expect.equal actual.Length (4 * inputSlices.Length) "structureTensor should emit eigenvalues plus three eigenvector images for each input slice."
+                actual |> List.iter (fun image -> Expect.equal (image.GetNumberOfComponentsPerPixel()) 3u "structureTensor outputs should be 3-vector images.")
+                Expect.equal actual[8].[2, 2] [ 1.0; 0.0; 0.0 ] "The middle eigenvalue image should detect a pure x-gradient."
+                Expect.equal actual[9].[2, 2] [ 1.0; 0.0; 0.0 ] "The first eigenvector image should point along x for a pure x-gradient."
+            finally
+                disposeImages actual
+
+            let eigenvalues =
+                imagePlan ([ 0 .. 4 ] |> List.map makeDoubleSlice)
+                >=> StackProcessing.structureTensor 0.0 0.0
+                >=> StackProcessing.selectGroupedOutput 4u 0u
+                |> drainList
+
+            try
+                Expect.equal eigenvalues.Length inputSlices.Length "selectGroupedOutput should select one of the four output streams."
+                Expect.equal eigenvalues[2].[2, 2] [ 1.0; 0.0; 0.0 ] "selectGroupedOutput 4 0 should select eigenvalues."
+            finally
+                disposeImages eigenvalues
+
         testCase "StackProcessing facade exposes complex image wrappers" <| fun _ ->
             let makeReal () = Image<float>.ofArray2D (array2D [ [ 3.0; 1.0 ]; [ -2.0; 0.0 ] ])
             let makeImag () = Image<float>.ofArray2D (array2D [ [ 4.0; -1.0 ]; [ 2.0; -5.0 ] ])
@@ -1609,6 +1741,55 @@ let stackProcessingSupportSuite =
             finally
                 fromPolar.decRefCount()
 
+        testCase "StackProcessing FFT invFFT and shiftFFT stream through chunk workspace" <| fun _ ->
+            let makeSlice z =
+                Image<float>.ofArray2D (
+                    Array2D.init 2 2 (fun x y ->
+                        if x = 0 && y = 0 && z = 0 then 1.0 else 0.0))
+
+            let inputSlices = [ makeSlice 0; makeSlice 1 ]
+            let fftSlices =
+                imagePlan inputSlices
+                >=> StackProcessing.FFT<float> 1u 1u 1u
+                |> drainList
+
+            try
+                Expect.equal fftSlices.Length 2 "FFT should emit one complex slice per input slice."
+                for slice in fftSlices do
+                    for x in 0 .. 1 do
+                        for y in 0 .. 1 do
+                            expectComplexClose slice.[x, y] System.Numerics.Complex.One "3D FFT of an impulse should be one everywhere."
+
+                let recovered =
+                    imagePlan fftSlices
+                    >=> StackProcessing.invFFT 1u 1u 1u
+                    |> drainList
+
+                try
+                    Expect.equal recovered.Length 2 "invFFT should emit one real slice per frequency slice."
+                    Expect.floatClose Accuracy.high recovered[0].[0, 0] 1.0 "invFFT should recover the impulse."
+                    Expect.floatClose Accuracy.high recovered[0].[1, 0] 0.0 "invFFT should recover zero pixels."
+                    Expect.floatClose Accuracy.high recovered[1].[0, 0] 0.0 "invFFT should recover zero z-slices."
+                finally
+                    disposeImages recovered
+
+                let shifted =
+                    imagePlan fftSlices
+                    >=> StackProcessing.shiftFFT 1u 1u 1u
+                    |> drainList
+
+                try
+                    Expect.equal shifted.Length 2 "shiftFFT should preserve output slice count."
+                    for slice in shifted do
+                        for x in 0 .. 1 do
+                            for y in 0 .. 1 do
+                                expectComplexClose slice.[x, y] System.Numerics.Complex.One "Shifting a constant spectrum should remain constant."
+                finally
+                    disposeImages shifted
+            finally
+                disposeImages fftSlices
+                disposeImages inputSlices
+
         testCase "StackProcessing facade exposes local image filter wrappers" <| fun _ ->
             let floatSlices = [ for z in 0 .. 2 -> makeFloatSlice 5 5 z ]
             let uintSlices = [ for z in 0 .. 2 -> makeSlice 5 5 z ]
@@ -1642,7 +1823,7 @@ let stackProcessingSupportSuite =
                 let clampStage : Stage<Image<float32>, Image<float32>> = StackProcessing.clamp<float32> 0.0 120.0
                 let shiftScaleStage : Stage<Image<float32>, Image<float32>> = StackProcessing.shiftScale<float32> 1.0 2.0
                 let stretchStage : Stage<Image<float32>, Image<float32>> = StackProcessing.intensityStretch<float32> 0.0 200.0 0.0 1.0
-                let medianStage : Stage<Image<uint8>, Image<uint8>> = StackProcessing.median<uint8> 1u 3u
+                let medianStage : Stage<Image<uint8>, Image<uint8>> = StackProcessing.smoothWMedian<uint8> 1u 3u
                 let gradientStage : Stage<Image<float32>, Image<float32>> = StackProcessing.gradientMagnitude<float32> 3u
                 let sobelStage : Stage<Image<float32>, Image<float32>> = StackProcessing.sobelEdge<float32> 3u
                 let laplacianStage : Stage<Image<float32>, Image<float32>> = StackProcessing.laplacian<float32> 3u
@@ -1657,11 +1838,14 @@ let stackProcessingSupportSuite =
                 let binaryMedianStage : Stage<Image<uint8>, Image<uint8>> = StackProcessing.binaryMedian 1u 3u
                 let labelContourStage : Stage<Image<uint8>, Image<uint8>> = StackProcessing.labelContour<uint8> false 3u
                 let changeLabelStage : Stage<Image<uint8>, Image<uint8>> = StackProcessing.changeLabel<uint8> 255.0 128.0
+                let saltAndPepperStage : Stage<Image<float32>, Image<float32>> = StackProcessing.addSaltAndPepperNoise 0.0
+                let shotStage : Stage<Image<float32>, Image<float32>> = StackProcessing.addShotNoise 0.0
+                let speckleStage : Stage<Image<float32>, Image<float32>> = StackProcessing.addSpeckleNoise 0.0
 
                 expectSameShapeFloat32 "clamp" floatSlices clampStage
                 expectSameShapeFloat32 "shiftScale" floatSlices shiftScaleStage
                 expectSameShapeFloat32 "intensityStretch" floatSlices stretchStage
-                expectSameShapeUint8 "median" uintSlices medianStage
+                expectSameShapeUint8 "smoothWMedian" uintSlices medianStage
                 expectSameShapeFloat32 "gradientMagnitude" floatSlices gradientStage
                 expectSameShapeFloat32 "sobelEdge" floatSlices sobelStage
                 expectSameShapeFloat32 "laplacian" floatSlices laplacianStage
@@ -1676,6 +1860,9 @@ let stackProcessingSupportSuite =
                 expectSameShapeUint8 "binaryMedian" binarySlices binaryMedianStage
                 expectSameShapeUint8 "labelContour" binarySlices labelContourStage
                 expectSameShapeUint8 "changeLabel" binarySlices changeLabelStage
+                expectSameShapeFloat32 "addSaltAndPepperNoise" floatSlices saltAndPepperStage
+                expectSameShapeFloat32 "addShotNoise" floatSlices shotStage
+                expectSameShapeFloat32 "addSpeckleNoise" floatSlices speckleStage
             finally
                 disposeImages floatSlices
                 disposeImages uintSlices

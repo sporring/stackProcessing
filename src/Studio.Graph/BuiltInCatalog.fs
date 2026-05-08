@@ -115,16 +115,16 @@ module BuiltInCatalog =
       "Smooths an image with a Gaussian-shaped neighborhood.\n\nSigma controls the blur width: larger sigma removes larger-scale noise and softens edges more strongly. Boundary and output-region settings control how pixels near the edge of the available volume are treated.\n\nUse Gaussian smoothing before derivatives, feature detection, or thresholding when small noise should be suppressed."
 
   let private convolveDescription =
-      "Applies a user-specified convolution kernel to the image stack.\n\nThe kernel defines how neighboring pixels are weighted and summed, so this box can implement smoothing, sharpening, derivatives, or custom local filters. Output region controls whether edge pixels are preserved or trimmed, and boundary controls how missing neighborhood values are handled.\n\nFor most users, discreteGaussian or finiteDiff are easier starting points."
-
-  let private convGaussDescription =
-      "Applies Gaussian convolution with a compact convenience interface.\n\nSigma controls how far the smoothing reaches. This is useful for denoising before thresholding, derivatives, keypoint detection, or other measurements that should be less sensitive to pixel noise.\n\nIf edge behavior or output size matters, use the more explicit discreteGaussian or convolve boxes."
+      "Applies a user-specified convolution kernel to the image stack.\n\nThe kernel defines how neighboring pixels are weighted and summed, so this box can implement smoothing, sharpening, derivatives, or custom local filters. Output region controls whether edge pixels are preserved or trimmed, and boundary controls how missing neighborhood values are handled.\n\nFor most users, smoothWGauss or finiteDiff are easier starting points."
 
   let private finiteDiffDescription =
-      "Computes finite-difference derivative-like responses.\n\nUse it to emphasize changes along selected axes, such as edges, ridges, or directional gradients. Sigma controls smoothing before the derivative, while axis1 and axis2 select the derivative directions.\n\nThe result is an intensity image that often needs scaling, thresholding, or visualization before interpretation."
+      "Computes the smallest centered finite-difference derivative estimator.\n\nUse it to emphasize changes along selected axes, such as edges, ridges, or directional gradients. Smooth the image explicitly before this box when derivative noise should be suppressed.\n\nThe result is an intensity image that often needs scaling, thresholding, or visualization before interpretation."
 
   let private dogKeypointsDescription =
       "Detects local Difference-of-Gaussian extrema in streaming z-windows. Each window builds a small 3D Gaussian scale space, subtracts adjacent scales, and emits points that are strict local maxima or minima in x, y, z, and scale. Only the center stride slices of each window are emitted, while the z padding covers the largest Gaussian support and the one-slice extrema neighborhood.\n\nThis is a detector only, not a complete SIFT descriptor implementation. Coordinates are reported in pixel units and z uses the source slice index. Increase scale levels or sigma for larger features; increase contrast threshold to suppress weak/noisy extrema."
+
+  let private siftKeypointsDescription =
+      "Detects SIFT-style keypoint locations as local Difference-of-Gaussian extrema in streaming z-windows. The output is a point set containing x, y, z, scale, and response. Descriptor vectors and canonical orientations are not emitted by the current point-set representation."
 
   let private streamedObjectsDescription =
       "Streams completed connected objects from a binary mask. Each input slice is inspected for non-zero foreground pixels, object fronts touching the advancing z-boundary are carried forward, and objects are emitted once the next slice proves they cannot continue. Six-connectivity uses face contacts only; TwentySix-connectivity also allows diagonal contacts. paintObjects converts the emitted integer positions back into UInt8 mask slices with value 1 at object pixels and 0 elsewhere."
@@ -163,7 +163,7 @@ module BuiltInCatalog =
       "Computes whole-stream summary statistics for an image stack.\n\nThe outputs include pixel count, mean, standard deviation, minimum, maximum, sum, and sum of squares. Use these values to choose thresholds, normalize intensities, or report basic measurements.\n\nBecause the result summarizes the input stream, it is usually used on a separate branch before a second processing pass that applies the chosen parameters."
 
   let private localDenoiseDescription =
-      "These denoising filters are local-neighborhood operations rather than global iterative solvers. Median uses a radius in x, y, and z and is streamed through windows large enough to cover the z-neighborhood. Bilateral is edge-preserving and can be slower; use the window size to give the z-neighborhood enough context. No recursive Gaussian, curvature-flow, or anisotropic-diffusion filters are included here because their iteration/global-dependency structure is less friendly to LMIP streaming."
+      "These denoising filters are local-neighborhood smoothing operations rather than global iterative solvers. smoothWMedian uses a radius in x, y, and z and is streamed through windows large enough to cover the z-neighborhood. smoothWBilateral is edge-preserving and can be slower; use the window size to give the z-neighborhood enough context. No recursive Gaussian, curvature-flow, or anisotropic-diffusion filters are included here because their iteration/global-dependency structure is less friendly to LMIP streaming."
 
   let private edgeDescription =
       "These edge and derivative-like filters are local operators that can be evaluated on streaming z-windows. Gradient magnitude estimates local change strength. Sobel emphasizes edges using a small derivative stencil. Laplacian computes a second-derivative response. Recursive Gaussian and Canny variants are intentionally not included in this first pass because they are less obviously aligned with the 3D LMIP streaming model."
@@ -389,6 +389,75 @@ module BuiltInCatalog =
             makeParameter "height" "Height" "64" (BasicType.Numeric UInt32)
             makeParameter "depth" "Depth" "1" (BasicType.Numeric UInt32) ] }
 
+  let makeGenericNormalNoise () =
+    { Id = "NormalNoise"
+      DisplayName = "normalNoise"
+      Category = "Sources / Sinks"
+      Summary = "Create a synthetic stack of normally distributed noise."
+      Description = "Creates a synthetic image stack with normally distributed pixel values. This is the source-form sibling of addNormalNoise: it behaves like zero followed by addNormalNoise, using the requested width, height, depth, mean, and standard deviation."
+      Aliases = [ "noise"; "random"; "normal"; "synthetic"; "source"; "UInt8"; "Float64"; "type" ]
+      Inputs = []
+      Outputs = [ makePort "Float64" imageFloat64 ]
+      Parameters =
+          [ availableMemoryParameter
+            makeParameter "type" "Type" "Float64" BasicType.String
+            makeParameter "width" "Width" "64" (BasicType.Numeric UInt32)
+            makeParameter "height" "Height" "64" (BasicType.Numeric UInt32)
+            makeParameter "depth" "Depth" "1" (BasicType.Numeric UInt32)
+            makeParameter "mean" "Mean" "0.0" (BasicType.Numeric Float64)
+            makeParameter "std" "Std" "1.0" (BasicType.Numeric Float64) ] }
+
+  let makeGenericSaltAndPepperNoise () =
+    { Id = "SaltAndPepperNoise"
+      DisplayName = "saltAndPepperNoise"
+      Category = "Sources / Sinks"
+      Summary = "Create a synthetic salt-and-pepper noise stack."
+      Description = "Creates a synthetic image stack by applying SimpleITK's salt-and-pepper noise filter to zero-valued slices. Probability controls how often pixels are replaced by salt or pepper values."
+      Aliases = [ "noise"; "random"; "salt"; "pepper"; "impulse"; "synthetic"; "source"; "UInt8"; "Float64"; "type" ]
+      Inputs = []
+      Outputs = [ makePort "Float64" imageFloat64 ]
+      Parameters =
+          [ availableMemoryParameter
+            makeParameter "type" "Type" "Float64" BasicType.String
+            makeParameter "width" "Width" "64" (BasicType.Numeric UInt32)
+            makeParameter "height" "Height" "64" (BasicType.Numeric UInt32)
+            makeParameter "depth" "Depth" "1" (BasicType.Numeric UInt32)
+            makeParameter "probability" "Probability" "0.01" (BasicType.Numeric Float64) ] }
+
+  let makeGenericShotNoise () =
+    { Id = "ShotNoise"
+      DisplayName = "shotNoise"
+      Category = "Sources / Sinks"
+      Summary = "Create a synthetic shot-noise stack."
+      Description = "Creates a synthetic image stack by applying SimpleITK's shot-noise filter to zero-valued slices. Scale controls the shot-noise scale used by the native filter."
+      Aliases = [ "noise"; "random"; "shot"; "poisson"; "synthetic"; "source"; "UInt8"; "Float64"; "type" ]
+      Inputs = []
+      Outputs = [ makePort "Float64" imageFloat64 ]
+      Parameters =
+          [ availableMemoryParameter
+            makeParameter "type" "Type" "Float64" BasicType.String
+            makeParameter "width" "Width" "64" (BasicType.Numeric UInt32)
+            makeParameter "height" "Height" "64" (BasicType.Numeric UInt32)
+            makeParameter "depth" "Depth" "1" (BasicType.Numeric UInt32)
+            makeParameter "scale" "Scale" "1.0" (BasicType.Numeric Float64) ] }
+
+  let makeGenericSpeckleNoise () =
+    { Id = "SpeckleNoise"
+      DisplayName = "speckleNoise"
+      Category = "Sources / Sinks"
+      Summary = "Create a synthetic speckle-noise stack."
+      Description = "Creates a synthetic image stack by applying SimpleITK's speckle-noise filter to zero-valued slices. Std controls the standard deviation used by the native filter."
+      Aliases = [ "noise"; "random"; "speckle"; "multiplicative"; "synthetic"; "source"; "UInt8"; "Float64"; "type" ]
+      Inputs = []
+      Outputs = [ makePort "Float64" imageFloat64 ]
+      Parameters =
+          [ availableMemoryParameter
+            makeParameter "type" "Type" "Float64" BasicType.String
+            makeParameter "width" "Width" "64" (BasicType.Numeric UInt32)
+            makeParameter "height" "Height" "64" (BasicType.Numeric UInt32)
+            makeParameter "depth" "Depth" "1" (BasicType.Numeric UInt32)
+            makeParameter "std" "Std" "1.0" (BasicType.Numeric Float64) ] }
+
   let makeGenericCreateByEuler2DTransform () =
     { Id = "CreateByEuler2DTransform"
       DisplayName = "createByEuler2DTransform"
@@ -435,6 +504,45 @@ module BuiltInCatalog =
             makeParameter "mean" "Mean" "128.0" (BasicType.Numeric Float64)
             makeParameter "std" "Std" "50.0" (BasicType.Numeric Float64) ] }
 
+  let makeGenericAddSaltAndPepperNoise () =
+    { Id = "AddSaltAndPepperNoise"
+      DisplayName = "addSaltAndPepperNoise"
+      Category = "Statistics"
+      Summary = "Add salt-and-pepper noise to each image."
+      Description = "Applies SimpleITK's salt-and-pepper noise filter to each image slice. Probability controls how often pixels are replaced by salt or pepper values."
+      Aliases = [ "noise"; "random"; "salt"; "pepper"; "impulse"; "statistics"; "UInt8"; "Float64"; "type" ]
+      Inputs = [ makePort "Float64" imageFloat64 ]
+      Outputs = [ makePort "Float64" imageFloat64 ]
+      Parameters =
+          [ makeParameter "type" "Type" "Float64" BasicType.String
+            makeParameter "probability" "Probability" "0.01" (BasicType.Numeric Float64) ] }
+
+  let makeGenericAddShotNoise () =
+    { Id = "AddShotNoise"
+      DisplayName = "addShotNoise"
+      Category = "Statistics"
+      Summary = "Add shot noise to each image."
+      Description = "Applies SimpleITK's shot-noise filter to each image slice. Scale controls the shot-noise scale used by the native filter."
+      Aliases = [ "noise"; "random"; "shot"; "poisson"; "statistics"; "UInt8"; "Float64"; "type" ]
+      Inputs = [ makePort "Float64" imageFloat64 ]
+      Outputs = [ makePort "Float64" imageFloat64 ]
+      Parameters =
+          [ makeParameter "type" "Type" "Float64" BasicType.String
+            makeParameter "scale" "Scale" "1.0" (BasicType.Numeric Float64) ] }
+
+  let makeGenericAddSpeckleNoise () =
+    { Id = "AddSpeckleNoise"
+      DisplayName = "addSpeckleNoise"
+      Category = "Statistics"
+      Summary = "Add speckle noise to each image."
+      Description = "Applies SimpleITK's speckle-noise filter to each image slice. Std controls the standard deviation used by the native filter."
+      Aliases = [ "noise"; "random"; "speckle"; "multiplicative"; "statistics"; "UInt8"; "Float64"; "type" ]
+      Inputs = [ makePort "Float64" imageFloat64 ]
+      Outputs = [ makePort "Float64" imageFloat64 ]
+      Parameters =
+          [ makeParameter "type" "Type" "Float64" BasicType.String
+            makeParameter "std" "Std" "1.0" (BasicType.Numeric Float64) ] }
+
   let makePairOperation id displayName description aliases parameters =
     { Id = id
       DisplayName = displayName
@@ -480,6 +588,14 @@ module BuiltInCatalog =
                 makeParameter "input" "Input" "points.csv" BasicType.String ] }
 
         makeGenericZero()
+
+        makeGenericNormalNoise()
+
+        makeGenericSaltAndPepperNoise()
+
+        makeGenericShotNoise()
+
+        makeGenericSpeckleNoise()
 
         makeGenericCreateByEuler2DTransform()
 
@@ -834,6 +950,12 @@ module BuiltInCatalog =
 
         makeGenericAddNormalNoise()
 
+        makeGenericAddSaltAndPepperNoise()
+
+        makeGenericAddShotNoise()
+
+        makeGenericAddSpeckleNoise()
+
         makePairOperation
             "ImageOpImage"
             "I op J"
@@ -912,6 +1034,46 @@ module BuiltInCatalog =
           Outputs = [ makePort "Complex" imageComplex ]
           Parameters = [] }
 
+        { Id = "FFT"
+          DisplayName = "FFT"
+          Category = "Fourier"
+          Summary = "Compute a chunk-backed 3D FFT from a scalar image stack."
+          Description = "Streams scalar slices into a temporary chunk workspace, computes slice-wise XY FFT followed by a z-direction FFT, and emits native complex frequency-domain slices."
+          Aliases = [ "fft"; "fourier"; "frequency"; "3d"; "chunk"; "spectrum" ]
+          Inputs = [ makePort "Number" imageAny ]
+          Outputs = [ makePort "Complex" imageComplex ]
+          Parameters =
+            [ makeParameter "type" "Type" "Float64" BasicType.String
+              makeParameter "chunkX" "Chunk X" "64" (BasicType.Numeric UInt32)
+              makeParameter "chunkY" "Chunk Y" "64" (BasicType.Numeric UInt32)
+              makeParameter "chunkZ" "Chunk Z" "16" (BasicType.Numeric UInt32) ] }
+
+        { Id = "InvFFT"
+          DisplayName = "invFFT"
+          Category = "Fourier"
+          Summary = "Compute the inverse chunk-backed 3D FFT."
+          Description = "Streams complex frequency-domain slices through a temporary chunk workspace, applies the inverse z transform and inverse XY transforms, and emits real Float64 slices."
+          Aliases = [ "ifft"; "inverse"; "fourier"; "frequency"; "3d"; "chunk" ]
+          Inputs = [ makePort "Complex" imageComplex ]
+          Outputs = [ makePort "Float64" imageFloat64 ]
+          Parameters =
+            [ makeParameter "chunkX" "Chunk X" "64" (BasicType.Numeric UInt32)
+              makeParameter "chunkY" "Chunk Y" "64" (BasicType.Numeric UInt32)
+              makeParameter "chunkZ" "Chunk Z" "16" (BasicType.Numeric UInt32) ] }
+
+        { Id = "ShiftFFT"
+          DisplayName = "shiftFFT"
+          Category = "Fourier"
+          Summary = "Shift the zero-frequency component to the center of a complex spectrum."
+          Description = "Streams complex frequency-domain slices through a temporary chunk workspace and circularly shifts each axis by half its size."
+          Aliases = [ "fftshift"; "shift"; "fourier"; "frequency"; "center"; "spectrum" ]
+          Inputs = [ makePort "Complex" imageComplex ]
+          Outputs = [ makePort "Complex" imageComplex ]
+          Parameters =
+            [ makeParameter "chunkX" "Chunk X" "64" (BasicType.Numeric UInt32)
+              makeParameter "chunkY" "Chunk Y" "64" (BasicType.Numeric UInt32)
+              makeParameter "chunkZ" "Chunk Z" "16" (BasicType.Numeric UInt32) ] }
+
         { Id = "ToVectorImage"
           DisplayName = "toVectorImage"
           Category = "Vector Images"
@@ -972,8 +1134,49 @@ module BuiltInCatalog =
           Outputs = [ makePort "Vector Float64" vectorImageFloat64 ]
           Parameters = [] }
 
-        { Id = "DiscreteGaussian"
-          DisplayName = "discreteGaussian"
+        { Id = "VectorAngleTo"
+          DisplayName = "vectorAngleTo"
+          Category = "Vector Images"
+          Summary = "Compute the per-pixel angle to a fixed vector."
+          Description = "Computes the angle in radians between each vector-valued pixel and a fixed reference vector."
+          Aliases = [ "vector"; "angle"; "orientation"; "direction" ]
+          Inputs = [ makePort "Vector Float64" vectorImageFloat64 ]
+          Outputs = [ makePort "Float64" imageFloat64 ]
+          Parameters =
+            [ makeParameter "x" "X" "1.0" (BasicType.Numeric Float64)
+              makeParameter "y" "Y" "0.0" (BasicType.Numeric Float64)
+              makeParameter "z" "Z" "0.0" (BasicType.Numeric Float64) ] }
+
+        { Id = "Gradient"
+          DisplayName = "gradient"
+          Category = "Vector Images"
+          Summary = "Compute a 3-component finite-difference gradient field."
+          Description = "Computes finite-difference derivatives along x, y, and z and emits them as three-component vector-valued pixels ordered as dx, dy, dz."
+          Aliases = [ "gradient"; "derivative"; "finite"; "difference"; "vector"; "field" ]
+          Inputs = [ makePort "Float64" imageFloat64 ]
+          Outputs = [ makePort "Vector Float64" vectorImageFloat64 ]
+          Parameters =
+            [ makeParameter "order" "Order" "1" (BasicType.Numeric UInt32)
+              makeParameter "windowSize" "Window size" "3" (BasicType.Numeric UInt32) ] }
+
+        { Id = "StructureTensor"
+          DisplayName = "structureTensor"
+          Category = "Vector Images"
+          Summary = "Compute structure-tensor eigensystem fields."
+          Description = "Pre-smooths the scalar image with sigma, computes the finite-difference gradient, forms the six unique components of the symmetric exterior product, smooths those tensor components with rho, and emits four 3-vector streams: eigenvalues followed by the three eigenvector fields."
+          Aliases = [ "structure"; "tensor"; "eigen"; "orientation"; "gradient"; "matrix" ]
+          Inputs = [ makePort "Float64" imageFloat64 ]
+          Outputs =
+            [ makePort "Eigenvalues" vectorImageFloat64
+              makePort "Eigenvector 0" vectorImageFloat64
+              makePort "Eigenvector 1" vectorImageFloat64
+              makePort "Eigenvector 2" vectorImageFloat64 ]
+          Parameters =
+            [ makeParameter "sigma" "Sigma" "1.0" (BasicType.Numeric Float64)
+              makeParameter "rho" "Rho" "2.0" (BasicType.Numeric Float64) ] }
+
+        { Id = "SmoothWGauss"
+          DisplayName = "smoothWGauss"
           Category = "Filters"
           Summary = "Apply a Gaussian smoothing filter."
           Description = gaussianDescription
@@ -984,7 +1187,7 @@ module BuiltInCatalog =
               [ makeParameter "sigma" "Sigma" "1.0" (BasicType.Numeric Float64)
                 makeParameter "outputRegionMode" "Output region" "None" BasicType.String
                 makeParameter "boundaryCondition" "Boundary" "None" BasicType.String
-                makeParameter "windowSize" "Window size" "15" (BasicType.Numeric Int32) ] }
+                makeParameter "windowSize" "Window size" "None" BasicType.String ] }
 
         { Id = "Convolve"
           DisplayName = "convolve"
@@ -1000,16 +1203,6 @@ module BuiltInCatalog =
                 makeParameter "boundaryCondition" "Boundary" "None" BasicType.String
                 makeParameter "windowSize" "Window size" "None" BasicType.String ] }
 
-        { Id = "ConvGauss"
-          DisplayName = "convGauss"
-          Category = "Filters"
-          Summary = "Apply Gaussian convolution."
-          Description = convGaussDescription
-          Aliases = [ "gaussian"; "smooth"; "blur"; "filter" ]
-          Inputs = [ makePort "Float64" imageFloat64 ]
-          Outputs = [ makePort "Float64" imageFloat64 ]
-          Parameters = [ makeParameter "sigma" "Sigma" "1.0" (BasicType.Numeric Float64) ] }
-
         { Id = "FiniteDiff"
           DisplayName = "finiteDiff"
           Category = "Filters"
@@ -1019,8 +1212,7 @@ module BuiltInCatalog =
           Inputs = [ makePort "Float64" imageFloat64 ]
           Outputs = [ makePort "Float64" imageFloat64 ]
           Parameters =
-              [ makeParameter "sigma" "Sigma" "1.0" (BasicType.Numeric Float64)
-                makeParameter "axis1" "Axis 1" "1" (BasicType.Numeric UInt32)
+              [ makeParameter "axis1" "Axis 1" "1" (BasicType.Numeric UInt32)
                 makeParameter "axis2" "Axis 2" "2" (BasicType.Numeric UInt32) ] }
 
         { Id = "Clamp"
@@ -1099,8 +1291,8 @@ module BuiltInCatalog =
                 makeParameter "beforeZ" "Before Z" "0" (BasicType.Numeric UInt32)
                 makeParameter "afterZ" "After Z" "0" (BasicType.Numeric UInt32) ] }
 
-        { Id = "Median"
-          DisplayName = "median"
+        { Id = "SmoothWMedian"
+          DisplayName = "smoothWMedian"
           Category = "Filters"
           Summary = "Apply a local median denoising filter."
           Description = localDenoiseDescription
@@ -1112,8 +1304,8 @@ module BuiltInCatalog =
                 makeParameter "radius" "Radius" "1" (BasicType.Numeric UInt32)
                 makeParameter "windowSize" "Window size" "3" (BasicType.Numeric UInt32) ] }
 
-        { Id = "Bilateral"
-          DisplayName = "bilateral"
+        { Id = "SmoothWBilateral"
+          DisplayName = "smoothWBilateral"
           Category = "Filters"
           Summary = "Apply an edge-preserving bilateral denoising filter."
           Description = localDenoiseDescription
@@ -1178,14 +1370,14 @@ module BuiltInCatalog =
           DisplayName = "M op N"
           Category = "Segmentation"
           Summary = "Combine two UInt8 masks with logical operations."
-          Description = "Mask logic operates on UInt8 mask streams and emits a UInt8 mask. Use it to combine threshold, comparison, and segmentation results before masking or writing. Non-zero values are treated as true by the underlying SimpleITK logical filters. The operation selector compiles to andMask, orMask, or xorMask. Use notMask when only a single mask should be inverted."
+          Description = "Mask logic operates on UInt8 mask streams and emits a UInt8 mask. Use it to combine threshold, comparison, and segmentation results before masking or writing. Non-zero values are treated as true by the underlying SimpleITK logical filters. The operation selector compiles to maskAnd, maskOr, or maskXor. Use maskNot when only a single mask should be inverted."
           Aliases = [ "mask"; "logic"; "and"; "or"; "xor"; "binary"; "boolean" ]
           Inputs = [ makePort "UInt8" imageUInt8; makePort "UInt8" imageUInt8 ]
           Outputs = [ makePort "UInt8" imageUInt8 ]
           Parameters = [ makeParameter "operation" "Operation" "and" BasicType.String ] }
 
-        { Id = "NotMask"
-          DisplayName = "notMask"
+        { Id = "MaskNot"
+          DisplayName = "maskNot"
           Category = "Segmentation"
           Summary = "Invert a UInt8 mask."
           Description = "Inverts a UInt8 mask stream using SimpleITK's logical Not filter. This is intended for masks, not for grayscale intensity inversion. For grayscale negatives, estimate the relevant maximum first and use shiftScale. The operation is slice-local and fits streaming naturally."
@@ -1461,6 +1653,22 @@ module BuiltInCatalog =
           Summary = "Detect streamed Difference-of-Gaussian keypoints."
           Description = dogKeypointsDescription
           Aliases = [ "dog"; "sift"; "keypoints"; "features"; "points"; "scale"; "gaussian" ]
+          Inputs = [ makePort "Number" imageAny ]
+          Outputs = [ makePort "PointSet" pointSet ]
+          Parameters =
+              [ makeParameter "type" "Type" "Float64" BasicType.String
+                makeParameter "sigma0" "Sigma 0" "1.0" (BasicType.Numeric Float64)
+                makeParameter "scaleFactor" "Scale factor" "1.6" (BasicType.Numeric Float64)
+                makeParameter "scaleLevels" "Scale levels" "4" (BasicType.Numeric UInt32)
+                makeParameter "contrastThreshold" "Contrast threshold" "0.03" (BasicType.Numeric Float64)
+                makeParameter "stride" "Stride" "8" (BasicType.Numeric UInt32) ] }
+
+        { Id = "SiftKeypoints"
+          DisplayName = "siftKeypoints"
+          Category = "Geometry"
+          Summary = "Detect streamed SIFT-style keypoints."
+          Description = siftKeypointsDescription
+          Aliases = [ "sift"; "dog"; "keypoints"; "features"; "points"; "scale"; "gaussian" ]
           Inputs = [ makePort "Number" imageAny ]
           Outputs = [ makePort "PointSet" pointSet ]
           Parameters =

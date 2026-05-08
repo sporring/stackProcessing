@@ -21,7 +21,7 @@ let main arg =
 
     readMaker 
     >=> tap "For >=>>"
-    >=>> (imageAddScalar 1.0, convGauss 1.0)
+    >=>> (imageAddScalar 1.0, smoothWGauss 1.0 None None None)
     >=> tap "For >>=>"
     >>=> mulPair
     >=> tap "For cast"

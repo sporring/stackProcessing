@@ -578,6 +578,9 @@ module private ScalarImageOperationNode =
         functionId = "ImageOpScalar"
         || functionId = "ScalarOpImage"
         || functionId = "AddNormalNoise"
+        || functionId = "AddSaltAndPepperNoise"
+        || functionId = "AddShotNoise"
+        || functionId = "AddSpeckleNoise"
 
     let selectedType (state: PipelineNodeState) =
         state.Parameters
@@ -951,7 +954,7 @@ type PipelineNodeViewModel(
                     state.Title <- ScalarImageOperationNode.title state
                     this.Name <- state.Title
                     markGraphDirty()
-                elif (state.Definition.Id = "Scalar" || state.Definition.Id = "ScalarOp" || state.Definition.Id = "Read" || state.Definition.Id = "ReadRandom" || state.Definition.Id = "ReadRange" || state.Definition.Id = "ReadSlab" || state.Definition.Id = "ReadZarrSlab" || state.Definition.Id = "ReadNexusSlab" || state.Definition.Id = "Zero" || state.Definition.Id = "CreateByEuler2DTransform" || state.Definition.Id = "Threshold" || state.Definition.Id = "ImageOpImage" || state.Definition.Id = "Resize" || state.Definition.Id = "Resample" || state.Definition.Id = "ResampleAffineTrilinearSlices" || HighValueFilterNode.typedImageFunctionIds.Contains state.Definition.Id || ScalarImageOperationNode.isOperation state.Definition.Id) && parameter.Key = "type" && args.PropertyName = nameof parameter.Value then
+                elif (state.Definition.Id = "Scalar" || state.Definition.Id = "ScalarOp" || state.Definition.Id = "Read" || state.Definition.Id = "ReadRandom" || state.Definition.Id = "ReadRange" || state.Definition.Id = "ReadSlab" || state.Definition.Id = "ReadZarrSlab" || state.Definition.Id = "ReadNexusSlab" || state.Definition.Id = "Zero" || state.Definition.Id = "NormalNoise" || state.Definition.Id = "SaltAndPepperNoise" || state.Definition.Id = "ShotNoise" || state.Definition.Id = "SpeckleNoise" || state.Definition.Id = "CreateByEuler2DTransform" || state.Definition.Id = "Threshold" || state.Definition.Id = "ImageOpImage" || state.Definition.Id = "Resize" || state.Definition.Id = "Resample" || state.Definition.Id = "ResampleAffineTrilinearSlices" || HighValueFilterNode.typedImageFunctionIds.Contains state.Definition.Id || ScalarImageOperationNode.isOperation state.Definition.Id) && parameter.Key = "type" && args.PropertyName = nameof parameter.Value then
                     if state.Definition.Id = "Scalar" then
                         ScalarNode.ensureValueMatchesType state
                         state.Title <- ScalarNode.title state
@@ -963,6 +966,10 @@ type PipelineNodeViewModel(
                 elif SourceImageNode.hasFormatParameter state.Definition.Id && parameter.Key = "suffix" && args.PropertyName = nameof parameter.Value then
                     if SourceImageNode.hasInputTitle state.Definition.Id
                        || state.Definition.Id = "Zero"
+                       || state.Definition.Id = "NormalNoise"
+                       || state.Definition.Id = "SaltAndPepperNoise"
+                       || state.Definition.Id = "ShotNoise"
+                       || state.Definition.Id = "SpeckleNoise"
                        || state.Definition.Id = "CreateByEuler2DTransform" then
                         state.Parameters
                         |> Seq.tryFind (fun parameter -> parameter.Key = "type")
@@ -1094,6 +1101,10 @@ type PipelineNodeViewModel(
             | "ReadZarrSlab"
             | "ReadNexusSlab"
             | "Zero"
+            | "NormalNoise"
+            | "SaltAndPepperNoise"
+            | "ShotNoise"
+            | "SpeckleNoise"
             | "CreateByEuler2DTransform" -> state.Definition.Inputs, [ SourceImageNode.outputPort state ]
             | "Write"
             | "WriteThrough"
@@ -1310,7 +1321,7 @@ type MainWindowViewModel() as this =
                         |> List.map (fun value -> ParameterOptionViewModel(value, value, supported |> Set.contains value))
 
                     PipelineParameterViewModel(parameter.Label, parameter.Key, parameter.DefaultValue, parameter.Type, options, false)
-                | ("Read" | "ReadRandom" | "ReadRange" | "ReadSlab" | "Zero" | "CreateByEuler2DTransform" | "ResampleAffineTrilinearSlices"), "type" ->
+                | ("Read" | "ReadRandom" | "ReadRange" | "ReadSlab" | "Zero" | "NormalNoise" | "SaltAndPepperNoise" | "ShotNoise" | "SpeckleNoise" | "CreateByEuler2DTransform" | "ResampleAffineTrilinearSlices"), "type" ->
                     let defaultSuffix =
                         definition.Parameters
                         |> List.tryFind (fun parameter -> parameter.Key = "suffix")
@@ -1325,13 +1336,13 @@ type MainWindowViewModel() as this =
                         |> List.map (fun value -> ParameterOptionViewModel(value, value, supported |> Set.contains value))
 
                     PipelineParameterViewModel(parameter.Label, parameter.Key, parameter.DefaultValue, parameter.Type, options, false)
-                | ("DiscreteGaussian" | "Convolve"), "outputRegionMode" ->
+                | ("SmoothWGauss" | "Convolve"), "outputRegionMode" ->
                     let options =
                         [ "None"; "Valid"; "Same" ]
                         |> List.map (fun value -> ParameterOptionViewModel(value, value, true))
 
                     PipelineParameterViewModel(parameter.Label, parameter.Key, parameter.DefaultValue, parameter.Type, options, false)
-                | ("DiscreteGaussian" | "Convolve"), "boundaryCondition" ->
+                | ("SmoothWGauss" | "Convolve"), "boundaryCondition" ->
                     let options =
                         [ "None"; "ZeroPad"; "PerodicPad"; "ZeroFluxNeumannPad" ]
                         |> List.map (fun value -> ParameterOptionViewModel(value, value, true))
@@ -1364,6 +1375,13 @@ type MainWindowViewModel() as this =
                 | "ImageOpImage", "type" ->
                     let options =
                         PairOperationNode.typeOptions
+                        |> List.map (fun value -> ParameterOptionViewModel(value, value, true))
+
+                    PipelineParameterViewModel(parameter.Label, parameter.Key, parameter.DefaultValue, parameter.Type, options, false)
+                | "FFT", "type" ->
+                    let options =
+                        PairOperationNode.typeOptions
+                        |> List.filter ((<>) (NumericType.toString Complex))
                         |> List.map (fun value -> ParameterOptionViewModel(value, value, true))
 
                     PipelineParameterViewModel(parameter.Label, parameter.Key, parameter.DefaultValue, parameter.Type, options, false)
@@ -1689,6 +1707,10 @@ type MainWindowViewModel() as this =
             || node.State.Definition.Id = "ReadZarrSlab"
             || node.State.Definition.Id = "ReadNexusSlab"
             || node.State.Definition.Id = "Zero"
+            || node.State.Definition.Id = "NormalNoise"
+            || node.State.Definition.Id = "SaltAndPepperNoise"
+            || node.State.Definition.Id = "ShotNoise"
+            || node.State.Definition.Id = "SpeckleNoise"
             || node.State.Definition.Id = "CreateByEuler2DTransform")
         |> Seq.iter (fun node ->
             let isConnected = hasConnectionRequiringFixedDataOutput node
@@ -2555,7 +2577,7 @@ type MainWindowViewModel() as this =
         SimpleCommand((fun _ -> this.AddElement("Read")), (fun _ -> true)) :> ICommand
 
     member this.AddGaussianCommand =
-        SimpleCommand((fun _ -> this.AddElement("DiscreteGaussian")), (fun _ -> true)) :> ICommand
+        SimpleCommand((fun _ -> this.AddElement("SmoothWGauss")), (fun _ -> true)) :> ICommand
 
     member this.AddCastCommand =
         SimpleCommand((fun _ -> this.AddElement("Cast")), (fun _ -> true)) :> ICommand

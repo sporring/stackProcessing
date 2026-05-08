@@ -122,6 +122,30 @@ let tinyLinAlgSuite =
             Expect.throws (fun () -> inv3 singular |> ignore) "Singular matrices should not be inverted."
             Expect.throws (fun () -> inv3 { identity with m22 = 1e-20 } |> ignore) "Nearly singular matrices should respect the singularity threshold."
 
+        testCase "symmetricEigen sorts eigenpairs for symmetric matrices" <| fun _ ->
+            let diagonal =
+                { m00 = 9.0; m01 = 0.0; m02 = 0.0
+                  m10 = 0.0; m11 = 4.0; m12 = 0.0
+                  m20 = 0.0; m21 = 0.0; m22 = 1.0 }
+
+            let eigen = symmetricEigen diagonal
+
+            Expect.equal (eigen |> List.map fst) [ 9.0; 4.0; 1.0 ] "Eigenvalues should be sorted descending."
+            expectV3 (eigen[0] |> snd) (v3 1.0 0.0 0.0) "largest eigenvector"
+            expectV3 (eigen[1] |> snd) (v3 0.0 1.0 0.0) "middle eigenvector"
+            expectV3 (eigen[2] |> snd) (v3 0.0 0.0 1.0) "smallest eigenvector"
+
+            let rotated =
+                { m00 = 5.0; m01 = 2.0; m02 = 0.0
+                  m10 = 2.0; m11 = 5.0; m12 = 0.0
+                  m20 = 0.0; m21 = 0.0; m22 = 1.0 }
+
+            let rotatedEigen = symmetricEigen rotated
+            Expect.floatClose Accuracy.high (rotatedEigen[0] |> fst) 7.0 "rotated largest eigenvalue"
+            Expect.floatClose Accuracy.high (rotatedEigen[1] |> fst) 3.0 "rotated middle eigenvalue"
+            Expect.floatClose Accuracy.high (abs ((rotatedEigen[0] |> snd).x)) (1.0 / sqrt 2.0) "rotated eigenvector x magnitude"
+            Expect.floatClose Accuracy.high (abs ((rotatedEigen[0] |> snd).y)) (1.0 / sqrt 2.0) "rotated eigenvector y magnitude"
+
         testCase "affinePoint follows SimpleITK center convention" <| fun _ ->
             let rotateZ90 =
                 { m00 = 0.0; m01 = -1.0; m02 = 0.0

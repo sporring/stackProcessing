@@ -1,6 +1,7 @@
 module ImageFunctions
 open Image
 open Image.InternalHelpers
+open TinyLinAlg
 
 // Image constant arithmetic operations
 let inline imageAddScalar<'S when ^S : equality
@@ -462,7 +463,7 @@ let finiteDiffFilter2D (direction: uint) (order: uint) : Image<float> =
             Array2D.init 1 n (fun _ i -> lst[i])
     Image<float>.ofArray2D(arr, "stensil2D") 
 
-let finiteDiffFilter3D (sigma:float) (direction: uint) (order: uint) : Image<float> =
+let finiteDiffFilter3D (direction: uint) (order: uint) : Image<float> =
     let lst = stensil order
     let n = lst.Length
     let arr = 
@@ -473,6 +474,23 @@ let finiteDiffFilter3D (sigma:float) (direction: uint) (order: uint) : Image<flo
         else 
             Array3D.init 1 1 n (fun _ _ i -> lst[i])
     Image<float>.ofArray3D(arr, "stensil3D")
+
+let gradientVector3D (order: uint) (img: Image<float>) : Image<float list> =
+    if img.GetDimensions() <> 3u then
+        invalidArg "img" $"gradientVector3D: expected a 3D image, got {img.GetDimensions()}D."
+
+    let derivative direction =
+        let kernel = finiteDiffFilter3D direction order
+        try
+            convolve None None img kernel
+        finally
+            kernel.decRefCount()
+
+    let derivatives = [ 0u; 1u; 2u ] |> List.map derivative
+    try
+        Image<float>.ofImageList derivatives
+    finally
+        derivatives |> List.iter (fun derivativeImage -> derivativeImage.decRefCount())
 
 let finiteDiffFilter4D (direction: uint) (order: uint) : Image<float> =
     let lst = stensil order
@@ -1247,14 +1265,51 @@ let quantilesFromHistogram (quantiles: float list) (histogram: Map<'T, uint64>) 
             cumulative <- cumulative + count
             if cumulative >= target then Some value else None))
 
+let private retainNoNoise (img: Image<'T>) =
+    img.incRefCount()
+    img
+
 let addNormalNoise (mean: float) (stddev: float) : Image<'T> -> Image<'T> =
-    makeUnaryImageOperatorWith
-        "addNormalNoise"
-        (fun () -> new itk.simple.AdditiveGaussianNoiseImageFilter())
-        (fun f -> 
-            f.SetMean(mean)
-            f.SetStandardDeviation(stddev))
-        (fun f x -> f.Execute(x))
+    if stddev <= 0.0 then
+        retainNoNoise
+    else
+        makeUnaryImageOperatorWith
+            "addNormalNoise"
+            (fun () -> new itk.simple.AdditiveGaussianNoiseImageFilter())
+            (fun f -> 
+                f.SetMean(mean)
+                f.SetStandardDeviation(stddev))
+            (fun f x -> f.Execute(x))
+
+let addSaltAndPepperNoise (probability: float) : Image<'T> -> Image<'T> =
+    if probability <= 0.0 then
+        retainNoNoise
+    else
+        makeUnaryImageOperatorWith
+            "addSaltAndPepperNoise"
+            (fun () -> new itk.simple.SaltAndPepperNoiseImageFilter())
+            (fun f -> f.SetProbability(probability))
+            (fun f x -> f.Execute(x))
+
+let addShotNoise (scale: float) : Image<'T> -> Image<'T> =
+    if scale <= 0.0 then
+        retainNoNoise
+    else
+        makeUnaryImageOperatorWith
+            "addShotNoise"
+            (fun () -> new itk.simple.ShotNoiseImageFilter())
+            (fun f -> f.SetScale(scale))
+            (fun f x -> f.Execute(x))
+
+let addSpeckleNoise (stddev: float) : Image<'T> -> Image<'T> =
+    if stddev <= 0.0 then
+        retainNoNoise
+    else
+        makeUnaryImageOperatorWith
+            "addSpeckleNoise"
+            (fun () -> new itk.simple.SpeckleNoiseImageFilter())
+            (fun f -> f.SetStandardDeviation(stddev))
+            (fun f x -> f.Execute(x))
 
 let threshold (lower: float) (upper: float) (img: Image<'T>) : Image<uint8> =
     use filter = new itk.simple.BinaryThresholdImageFilter()
@@ -1344,6 +1399,106 @@ let vectorCross3D (a: Image<float list>) (b: Image<float list>) : Image<float li
         | av, bv ->
             failwith $"vectorCross3D: expected 3-component vectors, got {av.Length} and {bv.Length}.")
     output
+
+let vectorAngleTo (reference: float list) (img: Image<float list>) : Image<float> =
+    if reference.Length <> int (img.GetNumberOfComponentsPerPixel()) then
+        invalidArg "reference" $"vectorAngleTo: reference vector has {reference.Length} components, image has {img.GetNumberOfComponentsPerPixel()}."
+
+    let referenceNorm = reference |> List.sumBy (fun value -> value * value) |> sqrt
+    if referenceNorm < 1e-18 then
+        invalidArg "reference" "vectorAngleTo: reference vector must be non-zero."
+
+    let output = new Image<float>(img.GetSize(), 1u, "vectorAngleTo", img.index)
+    img.GetSize()
+    |> flatIndices
+    |> Seq.iter (fun idx ->
+        let values = img.Get idx
+        let valueNorm = values |> List.sumBy (fun value -> value * value) |> sqrt
+        let angle =
+            if valueNorm < 1e-18 then
+                System.Double.NaN
+            else
+                let cosTheta =
+                    List.map2 (*) values reference
+                    |> List.sum
+                    |> fun dot -> dot / (valueNorm * referenceNorm)
+                    |> max -1.0
+                    |> min 1.0
+                acos cosTheta
+        output.Set idx angle)
+    output
+
+let structureTensorOuterProduct (gradient: Image<float list>) : Image<float list> =
+    if gradient.GetNumberOfComponentsPerPixel() <> 3u then
+        invalidArg "gradient" $"structureTensorOuterProduct: expected a 3-component gradient image, got {gradient.GetNumberOfComponentsPerPixel()} components."
+
+    let output = new Image<float list>(gradient.GetSize(), 6u, "structureTensorOuterProduct", gradient.index)
+    gradient.GetSize()
+    |> flatIndices
+    |> Seq.iter (fun idx ->
+        match gradient.Get idx with
+        | [ gx; gy; gz ] ->
+            [ gx * gx
+              gx * gy
+              gx * gz
+              gy * gy
+              gy * gz
+              gz * gz ]
+            |> output.Set idx
+        | values ->
+            failwith $"structureTensorOuterProduct: expected 3 components, got {values.Length}.")
+    output
+
+let smoothVectorElements3D (sigma: float) (img: Image<float list>) : Image<float list> =
+    if img.GetDimensions() <> 3u then
+        invalidArg "img" $"smoothVectorElements3D: expected a 3D vector image, got {img.GetDimensions()}D."
+    if sigma <= 0.0 then
+        mapVectorElements id img
+    else
+        let roundFloatToUint v = uint (v + 0.5)
+        let kernelSize = max 1u (4.0 * sigma + 1.0 |> roundFloatToUint)
+        let components = img.toImageList()
+        let smoothed =
+            components
+            |> List.map (fun elementImage ->
+                discreteGaussian 3u sigma (Some kernelSize) None None elementImage)
+        try
+            Image<float>.ofImageList smoothed
+        finally
+            components |> List.iter (fun elementImage -> elementImage.decRefCount())
+            smoothed |> List.iter (fun elementImage -> elementImage.decRefCount())
+
+let structureTensorEigenImages (tensor: Image<float list>) : Image<float list> list =
+    if tensor.GetNumberOfComponentsPerPixel() <> 6u then
+        invalidArg "tensor" $"structureTensorEigenImages: expected a 6-component symmetric tensor image, got {tensor.GetNumberOfComponentsPerPixel()} components."
+
+    let eigenvalues = new Image<float list>(tensor.GetSize(), 3u, "structureTensorEigenValues", tensor.index)
+    let eigenvector0 = new Image<float list>(tensor.GetSize(), 3u, "structureTensorEigenvector0", tensor.index)
+    let eigenvector1 = new Image<float list>(tensor.GetSize(), 3u, "structureTensorEigenvector1", tensor.index)
+    let eigenvector2 = new Image<float list>(tensor.GetSize(), 3u, "structureTensorEigenvector2", tensor.index)
+    tensor.GetSize()
+    |> flatIndices
+    |> Seq.iter (fun idx ->
+        match tensor.Get idx with
+        | [ xx; xy; xz; yy; yz; zz ] ->
+            let matrix =
+                { m00 = xx; m01 = xy; m02 = xz
+                  m10 = xy; m11 = yy; m12 = yz
+                  m20 = xz; m21 = yz; m22 = zz }
+            let eigen = symmetricEigen matrix
+            let values = eigen |> List.map fst
+            eigenvalues.Set idx values
+            eigen
+            |> List.map snd
+            |> function
+                | [ v0; v1; v2 ] ->
+                    eigenvector0.Set idx [ v0.x; v0.y; v0.z ]
+                    eigenvector1.Set idx [ v1.x; v1.y; v1.z ]
+                    eigenvector2.Set idx [ v2.x; v2.y; v2.z ]
+                | _ -> failwith "structureTensorEigenImages: expected three eigenvectors."
+        | values ->
+            failwith $"structureTensorEigenImages: expected 6 components, got {values.Length}.")
+    [ eigenvalues; eigenvector0; eigenvector1; eigenvector2 ]
 
 let stack (images: Image<'T> list) : Image<'T> =
     match images with
@@ -1498,3 +1653,65 @@ let directionalFFT (dir: uint) (image: Image<'T>) : Image<System.Numerics.Comple
             outputImag.Set coord im
 
     Image<float>.ofImagePairToComplex outputReal outputImag
+
+let directionalFFTComplex (dir: uint) (inverse: bool) (image: Image<System.Numerics.Complex>) : Image<System.Numerics.Complex> =
+    let dims = image.GetDimensions()
+    if dir >= dims then
+        failwith $"directionalFFTComplex: dir={dir} is out of range for {dims}D image"
+
+    let size = image.GetSize()
+    let output = new Image<System.Numerics.Complex>(size, 1u, "directionalFFTComplex", image.index, true)
+    let dimInt = int dims
+
+    let rec baseCoords i acc =
+        if i = dimInt then
+            [List.rev acc]
+        else
+            if uint i = dir then
+                baseCoords (i + 1) (0u :: acc)
+            else
+                [0u .. size[i] - 1u]
+                |> List.collect (fun v -> baseCoords (i + 1) (v :: acc))
+
+    let lineLength = size[int dir] |> int
+    let lineLengthFloat = float lineLength
+    let sign = if inverse then 1.0 else -1.0
+    let scale = if inverse then 1.0 / lineLengthFloat else 1.0
+
+    for baseCoord in baseCoords 0 [] do
+        let line =
+            [| for n in 0 .. lineLength - 1 ->
+                let coord = baseCoord |> List.mapi (fun i v -> if uint i = dir then uint n else v)
+                image.Get coord |]
+
+        for k in 0 .. lineLength - 1 do
+            let mutable value = System.Numerics.Complex.Zero
+            for n in 0 .. lineLength - 1 do
+                let theta = sign * 2.0 * System.Math.PI * float (k * n) / lineLengthFloat
+                value <- value + line[n] * System.Numerics.Complex(System.Math.Cos theta, System.Math.Sin theta)
+
+            let coord = baseCoord |> List.mapi (fun i v -> if uint i = dir then uint k else v)
+            output.Set coord (value * scale)
+
+    output
+
+let inverseFFTXY (image: Image<System.Numerics.Complex>) : Image<float> =
+    if image.GetDimensions() <> 2u then
+        failwith $"inverseFFTXY: image must be 2D, got {image.GetDimensions()}D"
+
+    let xInv = directionalFFTComplex 0u true image
+    let xyInv = directionalFFTComplex 1u true xInv
+    let real = Image.Re xyInv
+    xInv.decRefCount()
+    xyInv.decRefCount()
+    real
+
+let shiftFFT (image: Image<System.Numerics.Complex>) : Image<System.Numerics.Complex> =
+    let size = image.GetSize()
+    let output = new Image<System.Numerics.Complex>(size, 1u, "shiftFFT", image.index, true)
+    for src in flatIndices size do
+        let dst =
+            src
+            |> List.mapi (fun axis value -> (value + size[axis] / 2u) % size[axis])
+        output.Set dst (image.Get src)
+    output

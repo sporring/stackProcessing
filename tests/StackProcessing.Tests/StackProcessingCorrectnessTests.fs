@@ -352,17 +352,17 @@ let stackProcessingCorrectnessSuite =
             finally
                 volume.decRefCount()
 
-        testCase "streamed valid discreteGaussian matches direct 3D SimpleITK gaussian convolution" <| fun _ ->
+        testCase "streamed valid smoothWGauss matches direct 3D Gaussian smoothing" <| fun _ ->
             let suffix = ".mha"
             let volume = makeFloat64Volume 8
 
             try
                 assertStreamingMatchesDirect
-                    "discrete-gaussian-valid"
+                    "smooth-gauss-valid"
                     suffix
                     1.0e-8
                     volume
-                    (discreteGaussian 0.5 (Some ImageFunctions.Valid) None (Some 7u))
+                    (smoothWGauss 0.5 (Some ImageFunctions.Valid) None (Some 7u))
                     (ImageFunctions.discreteGaussian 3u 0.5 (Some 3u) (Some ImageFunctions.Valid) None)
             finally
                 volume.decRefCount()
@@ -394,9 +394,9 @@ let stackProcessingCorrectnessSuite =
                     suffix
                     1.0e-8
                     volume
-                    (finiteDiff 0.0 2u 1u)
+                    (finiteDiff 2u 1u)
                     (fun input ->
-                        let finiteKernel = ImageFunctions.finiteDiffFilter3D 0.0 2u 1u
+                        let finiteKernel = ImageFunctions.finiteDiffFilter3D 2u 1u
                         try
                             ImageFunctions.conv input finiteKernel
                         finally

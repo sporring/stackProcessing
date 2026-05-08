@@ -17,9 +17,9 @@ let main arg =
     src
     |> read<float> input ".tiff"
     >=> sqrt
-    >=> convGauss sigma 
+    >=> smoothWGauss sigma None None None 
     >=> sqrt
-    >=> convGauss sigma 
+    >=> smoothWGauss sigma None None None 
     >=> cast<float,uint8>
     >=> write output ".tiff"
     |> sink

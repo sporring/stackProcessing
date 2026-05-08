@@ -38,13 +38,28 @@
     },
     {
       "id": "n3",
-      "functionId": "ConvGauss",
+      "functionId": "SmoothWGauss",
       "x": 440.0,
       "y": 120.0,
       "parameters": [
         {
           "key": "sigma",
           "value": "1.0",
+          "useInput": false
+        },
+        {
+          "key": "outputRegionMode",
+          "value": "None",
+          "useInput": false
+        },
+        {
+          "key": "boundaryCondition",
+          "value": "None",
+          "useInput": false
+        },
+        {
+          "key": "windowSize",
+          "value": "None",
           "useInput": false
         }
       ]
@@ -58,13 +73,28 @@
     },
     {
       "id": "n5",
-      "functionId": "ConvGauss",
+      "functionId": "SmoothWGauss",
       "x": 840.0,
       "y": 120.0,
       "parameters": [
         {
           "key": "sigma",
           "value": "1.0",
+          "useInput": false
+        },
+        {
+          "key": "outputRegionMode",
+          "value": "None",
+          "useInput": false
+        },
+        {
+          "key": "boundaryCondition",
+          "value": "None",
+          "useInput": false
+        },
+        {
+          "key": "windowSize",
+          "value": "None",
           "useInput": false
         }
       ]

@@ -549,8 +549,19 @@ let getChunkFilename (path: string) (suffix: string) (i: int) (j: int) (k: int) 
 
 let _readChunk<'T when 'T: equality>  (inputDir: string) (suffix: string) i j k = 
     let filename = getChunkFilename inputDir suffix i j k
-    let res = Image<'T>.ofFile filename
-    res
+    if typeof<'T> = typeof<System.Numerics.Complex> then
+        let vector: Image<float list> = Image<float>.ofFileVector filename
+        let parts = vector.toImageList()
+        if parts.Length < 2 then
+            vector.decRefCount()
+            parts |> List.iter (fun part -> part.decRefCount())
+            failwith $"Complex chunk {filename} must contain real and imaginary vector components."
+        let complex = Image.toComplex parts[0] parts[1]
+        vector.decRefCount()
+        parts |> List.iter (fun part -> part.decRefCount())
+        unbox<Image<'T>> (box complex)
+    else
+        Image<'T>.ofFile filename
 
 let _readSlabStacked<'T when 'T: equality>  (inputDir: string) (suffix: string) (chunkInfo: ChunkInfo) (udir: uint) (idx: int) =
     let dir = int udir
@@ -571,7 +582,11 @@ let _readSlabStacked<'T when 'T: equality>  (inputDir: string) (suffix: string) 
         else
             [chunkInfo.size[0]; chunkInfo.size[1]; lastSz], [chunkInfo.chunks[0]; chunkInfo.chunks[1]; 1]
 
-    let slab = Image<'T>(sz |> List.map uint, chunkInfo.topLeftInfo.numberOfComponents)
+    let numberOfComponents =
+        if typeof<'T> = typeof<System.Numerics.Complex> then 1u
+        else chunkInfo.topLeftInfo.numberOfComponents
+
+    let slab = Image<'T>(sz |> List.map uint, numberOfComponents)
     for i in [0 .. nChunks[0]-1] do
         for j in [0 .. nChunks[1]-1] do
             for k in [0 .. nChunks[2]-1] do
@@ -1113,7 +1128,12 @@ let private writeInSlabsCore<'T when 'T: equality> (outputDir: string) (suffix: 
 
     let pad, stride = 0u, winSz
     let f (debug: bool) (k: int64) (stack: Image<'T>) = 
-        _writeSlabChunks debug outputDir suffix width height winSz (int k) stack
+        if stack.GetDimensions() = 2u then
+            let slab = ImageFunctions.stack [ stack ]
+            _writeSlabChunks debug outputDir suffix width height 1u (int k) slab
+            slab.decRefCount()
+        else
+            _writeSlabChunks debug outputDir suffix width height winSz (int k) stack
         stack.incRefCount() //to make sure volFctToLstFctReleaseAfter doesn't release it.
         stack
     let mapper (debug: bool) (idx: int64) (window: Window<Image<'T>>) =

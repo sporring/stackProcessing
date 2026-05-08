@@ -43,11 +43,6 @@
       "y": 120.0,
       "parameters": [
         {
-          "key": "sigma",
-          "value": "1.0",
-          "useInput": false
-        },
-        {
           "key": "axis1",
           "value": "1",
           "useInput": false

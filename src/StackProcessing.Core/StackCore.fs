@@ -38,6 +38,7 @@ let incIfImage x =
     | :? Image<int64> as im -> im.incRefCount()   // or img.incNRefCount(1) if it takes an int
     | :? Image<float32> as im -> im.incRefCount()   // or img.incNRefCount(1) if it takes an int
     | :? Image<float> as im -> im.incRefCount()   // or img.incNRefCount(1) if it takes an int
+    | :? Image<System.Numerics.Complex> as im -> im.incRefCount()
     | _ -> ()
     x
 let incRef () =
@@ -54,6 +55,7 @@ let decIfImage x =
     | :? Image<int64> as im -> im.decRefCount()   // or img.incNRefCount(1) if it takes an int
     | :? Image<float32> as im -> im.decRefCount()   // or img.incNRefCount(1) if it takes an int
     | :? Image<float> as im -> im.decRefCount()   // or img.incNRefCount(1) if it takes an int
+    | :? Image<System.Numerics.Complex> as im -> im.decRefCount()
     | _ -> ()
     x
 let decRef () =

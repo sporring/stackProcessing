@@ -8,6 +8,10 @@ open itk.simple
 
 let private c (re: float) (im: float) = Complex(re, im)
 
+let private expectComplexClose (actual: Complex) (expected: Complex) message =
+    Expect.floatClose Accuracy.high actual.Real expected.Real $"{message} real"
+    Expect.floatClose Accuracy.high actual.Imaginary expected.Imaginary $"{message} imaginary"
+
 let private makeComplexArray2D () =
     Array3D.init 2 2 2 (fun x y k ->
         let baseVal = float (1 + x + 2*y)
@@ -127,4 +131,30 @@ let complexSuite =
       Expect.floatClose Accuracy.high out.[1,0].Imaginary 0.0 "dirFFT imag at (1,0)"
       Expect.floatClose Accuracy.high out.[0,1].Imaginary 0.0 "dirFFT imag at (0,1)"
       Expect.floatClose Accuracy.high out.[1,1].Imaginary 0.0 "dirFFT imag at (1,1)"
+
+    testCase "complex directional FFT inverse XY FFT and shift helpers" <| fun _ ->
+      let src = Image<float>.ofArray2D (array2D [ [ 1.0; 0.0 ]; [ 0.0; 0.0 ] ])
+      let spectrum = FFTXY src
+      let zVolume = ImageFunctions.stack [ spectrum; spectrum ]
+      let zTransformed = directionalFFTComplex 2u false zVolume
+      let zRecovered = directionalFFTComplex 2u true zTransformed
+      let xyRecovered = inverseFFTXY spectrum
+      let shifted = shiftFFT zTransformed
+
+      try
+        Expect.equal (zTransformed.GetSize()) [ 2u; 2u; 2u ] "directionalFFTComplex should preserve volume shape."
+        Expect.equal zTransformed.[0,0,0] (c 2.0 0.0) "z FFT should add equal z samples at zero frequency."
+        expectComplexClose zTransformed.[0,0,1] Complex.Zero "z FFT should cancel equal z samples at Nyquist frequency."
+        Expect.floatClose Accuracy.high zRecovered.[1,1,0].Real spectrum.[1,1].Real "inverse directionalFFTComplex should recover real values."
+        Expect.floatClose Accuracy.high zRecovered.[1,1,0].Imaginary spectrum.[1,1].Imaginary "inverse directionalFFTComplex should recover imaginary values."
+        Expect.floatClose Accuracy.high xyRecovered.[0,0] 1.0 "inverseFFTXY should recover the original impulse."
+        Expect.floatClose Accuracy.high xyRecovered.[1,0] 0.0 "inverseFFTXY should recover zero pixels."
+        Expect.equal shifted.[1,1,1] zTransformed.[0,0,0] "shiftFFT should move zero frequency to the center for even-sized volumes."
+      finally
+        spectrum.decRefCount()
+        zVolume.decRefCount()
+        zTransformed.decRefCount()
+        zRecovered.decRefCount()
+        xyRecovered.decRefCount()
+        shifted.decRefCount()
   ]
