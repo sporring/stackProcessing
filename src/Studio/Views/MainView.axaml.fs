@@ -1557,19 +1557,16 @@ type MainView() as this =
 
                             match node with
                             | Some node when isCtrlPressed ->
-                                let wasSelected = node.State.IsSelected
-                                viewModel.ToggleNodeSelection node
+                                if not node.State.IsSelected then
+                                    viewModel.ToggleNodeSelection node
 
-                                if wasSelected then
-                                    args.PreventGestureRecognition()
-                                    args.Handled <- true
-                                elif not (isNull graphHost) then
+                                if not (isNull graphHost) then
                                     groupDragLastPoint <- Some(viewportToGraphContent (args.GetPosition(graphHost)))
                                     args.Pointer.Capture(this) |> ignore
                                     args.PreventGestureRecognition()
                                     args.Handled <- true
                             | Some node ->
-                                viewModel.SelectNodeFromEditor node
+                                viewModel.SelectSingleNode node
                             | None ->
                                 viewModel.ClearSelection()
                         | _ -> ()
