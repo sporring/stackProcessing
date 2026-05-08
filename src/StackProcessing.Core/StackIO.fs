@@ -135,6 +135,23 @@ let private array3DOfZarrBytes<'T> (width: int) (height: int) (depth: int) (byte
         zarrDataType<'T> () |> ignore
         failwith "unreachable"
 
+let private zarrSlabImageAs<'T when 'T: equality> (dataType: string) width height depth (bytes: byte[]) name =
+    let castNative (nativeImage: Image<'Native>) =
+        let cast = nativeImage.castTo<'T>()
+        nativeImage.decRefCount()
+        cast
+
+    if String.Equals(dataType, "uint8", StringComparison.OrdinalIgnoreCase) then
+        array3DOfZarrBytes<uint8> width height depth bytes
+        |> fun arr -> Image<uint8>.ofArray3D(arr, name)
+        |> castNative
+    elif String.Equals(dataType, "uint16", StringComparison.OrdinalIgnoreCase) then
+        array3DOfZarrBytes<uint16> width height depth bytes
+        |> fun arr -> Image<uint16>.ofArray3D(arr, name)
+        |> castNative
+    else
+        failwith $"ZarrNET image IO currently supports UInt8 and UInt16 scalar datasets, but dataset type was {dataType}."
+
 let private openZarrResolutionLevel (path: string) multiscaleIndex datasetIndex : ResolutionLevelNode =
     suppressZarrNetDebugLogging ()
 
@@ -200,6 +217,66 @@ let private hdfDatasetChunks (dataset: IH5Dataset) =
         dataset.Space.Dimensions
         |> Array.map int
         |> Array.toList
+
+let private readHdfSlabNative<'Native, 'T when 'Native: equality and 'T: equality>
+    (dataset: IH5Dataset)
+    rank
+    starts
+    blocks
+    sizeX
+    sizeY
+    zCount
+    frameAxis
+    yAxis
+    xAxis
+    name =
+
+    let selection = HyperslabSelection(rank, starts, blocks)
+    let source = dataset.Read<'Native[,,]>(selection, AllSelection(), blocks) :> Array
+    let arr =
+        Array3D.init sizeX sizeY zCount (fun x y z ->
+            let indices = Array.zeroCreate<int> rank
+            indices[frameAxis] <- z
+            indices[yAxis] <- y
+            indices[xAxis] <- x
+            source.GetValue(indices) |> unbox<'Native>)
+    let nativeImage = Image<'Native>.ofArray3D(arr, name)
+    let cast = nativeImage.castTo<'T>()
+    nativeImage.decRefCount()
+    cast
+
+let private hdfSlabImageAs<'T when 'T: equality>
+    (dataset: IH5Dataset)
+    rank
+    starts
+    blocks
+    sizeX
+    sizeY
+    zCount
+    frameAxis
+    yAxis
+    xAxis
+    name =
+
+    match dataset.Type.Class, dataset.Type.Size with
+    | H5DataTypeClass.FixedPoint, 1 when dataset.Type.FixedPoint.IsSigned ->
+        readHdfSlabNative<int8, 'T> dataset rank starts blocks sizeX sizeY zCount frameAxis yAxis xAxis name
+    | H5DataTypeClass.FixedPoint, 1 ->
+        readHdfSlabNative<uint8, 'T> dataset rank starts blocks sizeX sizeY zCount frameAxis yAxis xAxis name
+    | H5DataTypeClass.FixedPoint, 2 when dataset.Type.FixedPoint.IsSigned ->
+        readHdfSlabNative<int16, 'T> dataset rank starts blocks sizeX sizeY zCount frameAxis yAxis xAxis name
+    | H5DataTypeClass.FixedPoint, 2 ->
+        readHdfSlabNative<uint16, 'T> dataset rank starts blocks sizeX sizeY zCount frameAxis yAxis xAxis name
+    | H5DataTypeClass.FixedPoint, 4 when dataset.Type.FixedPoint.IsSigned ->
+        readHdfSlabNative<int32, 'T> dataset rank starts blocks sizeX sizeY zCount frameAxis yAxis xAxis name
+    | H5DataTypeClass.FixedPoint, 4 ->
+        readHdfSlabNative<uint32, 'T> dataset rank starts blocks sizeX sizeY zCount frameAxis yAxis xAxis name
+    | H5DataTypeClass.FloatingPoint, 4 ->
+        readHdfSlabNative<float32, 'T> dataset rank starts blocks sizeX sizeY zCount frameAxis yAxis xAxis name
+    | H5DataTypeClass.FloatingPoint, 8 ->
+        readHdfSlabNative<float, 'T> dataset rank starts blocks sizeX sizeY zCount frameAxis yAxis xAxis name
+    | dataClass, size ->
+        failwith $"HDF5/NeXus image IO supports scalar numeric datasets UInt8, Int8, UInt16, Int16, UInt32, Int32, Float32, and Float64; dataset class was {dataClass} with size {size} bytes."
 
 let private validateHdfAxes rank frameAxis yAxis xAxis =
     let axes = [ frameAxis; yAxis; xAxis ]
@@ -381,18 +458,33 @@ let private setImportImageBuffer<'T> (importer: itk.simple.ImportImageFilter) (b
     else
         invalidArg "T" $"readVolume TIFF streaming currently supports UInt8, Int8, UInt16, Int16, Float32, and Float64 images; got {t.Name}."
 
-let private validateTiffPixelLayout<'T> bitsPerSample sampleFormat samplesPerPixel =
+let private setImportImageBufferFromTiffLayout (importer: itk.simple.ImportImageFilter) bitsPerSample sampleFormat (buffer: IntPtr) =
+    match sampleFormat, bitsPerSample with
+    | SampleFormat.UINT, 8 -> importer.SetBufferAsUInt8(buffer)
+    | SampleFormat.INT, 8 -> importer.SetBufferAsInt8(buffer)
+    | SampleFormat.UINT, 16 -> importer.SetBufferAsUInt16(buffer)
+    | SampleFormat.INT, 16 -> importer.SetBufferAsInt16(buffer)
+    | SampleFormat.IEEEFP, 32 -> importer.SetBufferAsFloat(buffer)
+    | SampleFormat.IEEEFP, 64 -> importer.SetBufferAsDouble(buffer)
+    | _ ->
+        invalidOp $"readVolume TIFF streaming currently supports UInt8, Int8, UInt16, Int16, Float32, and Float64 scalar pages; got {bitsPerSample}-bit {sampleFormat}."
+
+let private tiffBytesPerSample bitsPerSample sampleFormat =
+    match sampleFormat, bitsPerSample with
+    | SampleFormat.UINT, 8
+    | SampleFormat.INT, 8 -> 1
+    | SampleFormat.UINT, 16
+    | SampleFormat.INT, 16 -> 2
+    | SampleFormat.IEEEFP, 32 -> 4
+    | SampleFormat.IEEEFP, 64 -> 8
+    | _ ->
+        invalidOp $"readVolume TIFF streaming currently supports UInt8, Int8, UInt16, Int16, Float32, and Float64 scalar pages; got {bitsPerSample}-bit {sampleFormat}."
+
+let private validateTiffSamples samplesPerPixel =
     if samplesPerPixel <> 1 then
         invalidOp $"readVolume TIFF streaming expects scalar pages with one sample per pixel; got {samplesPerPixel} samples per pixel."
 
-    let expectedBits, expectedSampleFormat, _ = tiffPixelLayout<'T> ()
-    if bitsPerSample <> expectedBits then
-        invalidOp $"readVolume<{typeof<'T>.Name}> expected {expectedBits} bits per sample, but TIFF has {bitsPerSample}."
-
-    if sampleFormat <> expectedSampleFormat then
-        invalidOp $"readVolume<{typeof<'T>.Name}> expected TIFF sample format {expectedSampleFormat}, but TIFF has {sampleFormat}."
-
-let private readTiffPage<'T when 'T: equality> (tiff: Tiff) width height bytesPerSample index =
+let private readTiffPage<'T when 'T: equality> (tiff: Tiff) width height bitsPerSample sampleFormat bytesPerSample index =
     let rowBytes = int width * bytesPerSample
     let scanlineSize = max rowBytes (tiff.ScanlineSize())
     let buffer = Array.zeroCreate<byte> scanlineSize
@@ -409,7 +501,7 @@ let private readTiffPage<'T when 'T: equality> (tiff: Tiff) width height bytesPe
 
     let handle = GCHandle.Alloc(pageBuffer, GCHandleType.Pinned)
     try
-        setImportImageBuffer<'T> importer (handle.AddrOfPinnedObject())
+        setImportImageBufferFromTiffLayout importer bitsPerSample sampleFormat (handle.AddrOfPinnedObject())
         use imported = importer.Execute()
         use cast = new itk.simple.CastImageFilter()
         cast.SetOutputPixelType(fromType<'T>)
@@ -434,8 +526,9 @@ let private readTiffVolume<'T when 'T: equality> (filename: string) (pl: Plan<un
         let raw = tiffFieldIntDefaulted header TiffTag.SAMPLEFORMAT (int SampleFormat.UINT)
         enum<SampleFormat> raw
 
-    let _, _, bytesPerSample = tiffPixelLayout<'T> ()
-    validateTiffPixelLayout<'T> bitsPerSample sampleFormat samplesPerPixel
+    validateTiffSamples samplesPerPixel
+    tiffPixelLayout<'T> () |> ignore
+    let bytesPerSample = tiffBytesPerSample bitsPerSample sampleFormat
 
     let depth = tiffDirectoryCount filename
     let pixelBytes = Image<'T>.memoryEstimate width height
@@ -452,43 +545,6 @@ let private readTiffVolume<'T when 'T: equality> (filename: string) (pl: Plan<un
                   "depth", string depth
                   "pixelType", typeof<'T>.Name ])
 
-    let mutable tiff: Tiff option = None
-    let mutable nextPage = 0
-
-    let mapper (index: int) =
-        if index = 0 && tiff.IsNone then
-            nextPage <- 0
-
-        if index <> nextPage then
-            invalidOp $"readVolume TIFF streaming is forward-only; requested page {index}, expected {nextPage}."
-
-        let reader =
-            match tiff with
-            | Some reader -> reader
-            | None ->
-                let opened = Tiff.Open(filename, "r")
-                if isNull opened then
-                    invalidOp $"Could not open '{filename}' for TIFF volume reading."
-                tiff <- Some opened
-                opened
-
-        let pageWidth = uint (tiffFieldInt reader TiffTag.IMAGEWIDTH 0)
-        let pageHeight = uint (tiffFieldInt reader TiffTag.IMAGELENGTH 0)
-        if pageWidth <> width || pageHeight <> height then
-            invalidOp $"readVolume expected all TIFF pages to be {width}x{height}; page {index} is {pageWidth}x{pageHeight}."
-
-        let image = readTiffPage<'T> reader width height bytesPerSample index
-        nextPage <- nextPage + 1
-
-        if nextPage < int depth then
-            if not (reader.ReadDirectory()) then
-                invalidOp $"TIFF volume '{filename}' ended after page {index}, but expected {depth} pages."
-        else
-            reader.Dispose()
-            tiff <- None
-
-        image
-
     let transition = ProfileTransition.create Unit Streaming
     let memoryNeed _ = pixelBytes
     let elementTransformation _ = uint64 width * uint64 height
@@ -501,19 +557,33 @@ let private readTiffVolume<'T when 'T: equality> (filename: string) (pl: Plan<un
             (fun _ -> pixelBytes)
             (fun _ -> 1UL)
 
-    let cleanup () =
-        match tiff with
-        | Some reader ->
-            reader.Dispose()
-            tiff <- None
-        | None -> ()
-
     let stage =
-        let created =
-            Stage.init "readVolume.tiff" depth mapper transition memoryNeed elementTransformation
-            |> withCostModel (StageCostModel.create memoryModel timeCostModel)
+        let apply (_debug: bool) (_input: AsyncSeq<unit>) =
+            asyncSeq {
+                use reader = Tiff.Open(filename, "r")
+                if isNull reader then
+                    invalidOp $"Could not open '{filename}' for TIFF volume reading."
 
-        { created with Cleaning = cleanup :: created.Cleaning }
+                for index in 0 .. int depth - 1 do
+                    let pageWidth = uint (tiffFieldInt reader TiffTag.IMAGEWIDTH 0)
+                    let pageHeight = uint (tiffFieldInt reader TiffTag.IMAGELENGTH 0)
+                    if pageWidth <> width || pageHeight <> height then
+                        invalidOp $"readVolume expected all TIFF pages to be {width}x{height}; page {index} is {pageWidth}x{pageHeight}."
+
+                    yield readTiffPage<'T> reader width height bitsPerSample sampleFormat bytesPerSample index
+
+                    if index < int depth - 1 then
+                        if not (reader.ReadDirectory()) then
+                            invalidOp $"TIFF volume '{filename}' ended after page {index}, but expected {depth} pages."
+            }
+
+        let pipe =
+            { Name = "readVolume.tiff"
+              Apply = apply
+              Profile = transition.From }
+
+        Stage.fromPipe "readVolume.tiff" transition memoryNeed elementTransformation pipe
+        |> withCostModel (StageCostModel.create memoryModel timeCostModel)
         |> Some
 
     Plan.create stage pl.memAvail pixelBytes (uint64 width * uint64 height) (uint64 depth) pl.debug
@@ -932,7 +1002,7 @@ let readZarrSlabStacked<'T when 'T: equality>
     suppressZarrNetDebugLogging ()
 
     let name = "readZarrSlabStacked"
-    let dataType = zarrDataType<'T> ()
+    Image.InternalHelpers.fromType<'T> |> ignore
     let level = openZarrResolutionLevel path multiscaleIndex datasetIndex
     let sizeT, sizeC, sizeZ, sizeY, sizeX = zarrShapeTCZYX level.Shape
 
@@ -940,8 +1010,9 @@ let readZarrSlabStacked<'T when 'T: equality>
         invalidArg "timepoint" $"Timepoint {timepoint} is outside the Zarr time range 0..{sizeT - 1}."
     if channel < 0 || channel >= sizeC then
         invalidArg "channel" $"Channel {channel} is outside the Zarr channel range 0..{sizeC - 1}."
-    if not (String.Equals(level.DataType, dataType, StringComparison.OrdinalIgnoreCase)) then
-        failwith $"Zarr dataset pixel type is {level.DataType}, but readZarrSlabStacked<{typeof<'T>.Name}> expects {dataType}."
+    if not (String.Equals(level.DataType, "uint8", StringComparison.OrdinalIgnoreCase)
+            || String.Equals(level.DataType, "uint16", StringComparison.OrdinalIgnoreCase)) then
+        failwith $"ZarrNET image IO currently supports UInt8 and UInt16 scalar datasets, but dataset type was {level.DataType}."
 
     let slabDepth = max 1u slabDepth |> int
     let depth = (sizeZ + slabDepth - 1) / slabDepth |> uint64
@@ -978,8 +1049,7 @@ let readZarrSlabStacked<'T when 'T: equality>
             level.ReadPixelRegionAsync(region, parallelChunks, CancellationToken.None)
             |> runTask
         deleteZarrNetDebugLogs ()
-        let arr = array3DOfZarrBytes<'T> sizeX sizeY zCount result.Data
-        Image<'T>.ofArray3D(arr, $"readZarrSlabStacked.{idx}")
+        zarrSlabImageAs<'T> level.DataType sizeX sizeY zCount result.Data $"readZarrSlabStacked.{idx}"
 
     let transition = ProfileTransition.create Unit Streaming
     let memPeak = 256UL
@@ -1075,17 +1145,18 @@ let readNexusSlabStacked<'T when 'T: equality>
         blocks[yAxis] <- uint64 sizeY
         blocks[xAxis] <- uint64 sizeX
 
-        let selection = HyperslabSelection(rank, starts, blocks)
-        let source = dataset.Read<'T[,,]>(selection, AllSelection(), blocks) :> Array
-        let arr =
-            Array3D.init sizeX sizeY zCount (fun x y z ->
-                let indices = Array.zeroCreate<int> rank
-                indices[frameAxis] <- z
-                indices[yAxis] <- y
-                indices[xAxis] <- x
-                source.GetValue(indices) |> unbox<'T>)
-
-        Image<'T>.ofArray3D(arr, $"readNexusSlabStacked.{idx}")
+        hdfSlabImageAs<'T>
+            dataset
+            rank
+            starts
+            blocks
+            sizeX
+            sizeY
+            zCount
+            frameAxis
+            yAxis
+            xAxis
+            $"readNexusSlabStacked.{idx}"
 
     let transition = ProfileTransition.create Unit Streaming
     let memPeak = 256UL

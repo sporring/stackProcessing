@@ -23,6 +23,15 @@ type SerialSliceManifest =
 let private toDouble value =
     Convert.ToDouble(box value, CultureInfo.InvariantCulture)
 
+let private fromDouble<'T> value =
+    let t = typeof<'T>
+    if t = typeof<float32> then
+        box (float32 value) :?> 'T
+    elif t = typeof<float> then
+        box value :?> 'T
+    else
+        invalidArg "T" $"serialPolynomialBiasCorrect supports Float32 and Float64 images, got {t.Name}."
+
 let private validateMatrix matrix =
     if List.length matrix <> 3 || matrix |> List.exists (fun row -> List.length row <> 3) then
         invalidArg "matrix" "Serial slice transforms must be 3x3 homogeneous matrices."
@@ -103,6 +112,27 @@ let private basis2D terms width height x y =
     terms
     |> List.map (fun (xp, yp) -> (xn ** float xp) * (yn ** float yp))
 
+let private coordinatePowers size order =
+    Array.init (int size) (fun i ->
+        let value = norm size (uint i)
+        let powers = Array.zeroCreate<float> (order + 1)
+        powers[0] <- 1.0
+        for p in 1 .. order do
+            powers[p] <- powers[p - 1] * value
+        powers)
+
+let private basis2DValues (terms: (int * int)[]) (xPowers: float[][]) (yPowers: float[][]) x y =
+    Array.init terms.Length (fun i ->
+        let xp, yp = terms[i]
+        xPowers[x][xp] * yPowers[y][yp])
+
+let private evalPolynomial2DValues (terms: (int * int)[]) (coefficients: float[]) (xPowers: float[][]) (yPowers: float[][]) x y =
+    let mutable sum = 0.0
+    for i in 0 .. terms.Length - 1 do
+        let xp, yp = terms[i]
+        sum <- sum + coefficients[i] * xPowers[x][xp] * yPowers[y][yp]
+    sum
+
 let private solveLinearSystem (a: float[,]) (b: float[]) =
     let n = b.Length
     let m = Array2D.copy a
@@ -149,45 +179,50 @@ let private solveLinearSystem (a: float[,]) (b: float[]) =
 let private fitPolynomial2D order (image: Image<'T>) =
     let width = image.GetWidth()
     let height = image.GetHeight()
-    let terms = terms2D order
+    let terms = terms2D order |> List.toArray
     let n = terms.Length
     let normal = Array2D.zeroCreate<float> n n
     let right = Array.zeroCreate<float> n
+    let pixels = image.toArray2D()
+    let xPowers = coordinatePowers width order
+    let yPowers = coordinatePowers height order
 
-    for y in 0u .. height - 1u do
-        for x in 0u .. width - 1u do
-            let values = basis2D terms width height x y |> List.toArray
-            let intensity = image.Get [ x; y ] |> toDouble
+    for y in 0 .. int height - 1 do
+        for x in 0 .. int width - 1 do
+            let values = basis2DValues terms xPowers yPowers x y
+            let intensity = pixels[x, y] |> toDouble
             for row in 0 .. n - 1 do
                 right[row] <- right[row] + values[row] * intensity
                 for col in 0 .. n - 1 do
                     normal[row, col] <- normal[row, col] + values[row] * values[col]
 
-    terms, solveLinearSystem normal right
+    terms, xPowers, yPowers, pixels, solveLinearSystem normal right
 
 let private evalPolynomial2D terms coefficients width height x y =
     basis2D terms width height x y
     |> List.zip (Array.toList coefficients)
     |> List.sumBy (fun (c, b) -> c * b)
 
-let serialPolynomialBiasCorrect<'T when 'T: equality> order : Stage<Image<'T>, Image<float>> =
+let serialPolynomialBiasCorrect<'T when 'T: equality> order : Stage<Image<'T>, Image<'T>> =
+    fromDouble<'T> 0.0 |> ignore
+
     Stage.map
         "serialPolynomialBiasCorrect"
         (fun _ image ->
             try
                 let width = image.GetWidth()
                 let height = image.GetHeight()
-                let terms, coefficients = fitPolynomial2D order image
-                let output = Array2D.zeroCreate<float> (int width) (int height)
+                let terms, xPowers, yPowers, pixels, coefficients = fitPolynomial2D order image
+                let output = Array2D.zeroCreate<'T> (int width) (int height)
 
-                for y in 0u .. height - 1u do
-                    for x in 0u .. width - 1u do
+                for y in 0 .. int height - 1 do
+                    for x in 0 .. int width - 1 do
                         let corrected =
-                            (image.Get [ x; y ] |> toDouble)
-                            - evalPolynomial2D terms coefficients width height x y
-                        output[int x, int y] <- corrected
+                            (pixels[x, y] |> toDouble)
+                            - evalPolynomial2DValues terms coefficients xPowers yPowers x y
+                        output[x, y] <- fromDouble<'T> corrected
 
-                Image<float>.ofArray2D(output, "serialPolynomialBiasCorrect", image.index)
+                Image<'T>.ofArray2D(output, "serialPolynomialBiasCorrect", image.index)
             finally
                 image.decRefCount())
         id
@@ -201,9 +236,8 @@ let private gaussianKernel sigma =
     radius, weights |> Array.map (fun value -> value / sum)
 
 let private imageToArray (image: Image<'T>) =
-    let width = int (image.GetWidth())
-    let height = int (image.GetHeight())
-    Array2D.init width height (fun x y -> image.Get [ uint x; uint y ] |> toDouble)
+    image.toArray2D()
+    |> Array2D.map toDouble
 
 let private blur2D sigma (source: double[,]) =
     let radius, kernel = gaussianKernel sigma
@@ -411,9 +445,9 @@ let private transformForSlice manifest slice =
     |> Option.map _.Matrix
     |> Option.defaultValue identityMatrix
 
-let private sampleBilinear background (image: Image<'T>) x y =
-    let width = int (image.GetWidth())
-    let height = int (image.GetHeight())
+let private sampleBilinear background (pixels: 'T[,]) x y =
+    let width = Array2D.length1 pixels
+    let height = Array2D.length2 pixels
     if x < 0.0 || y < 0.0 || x > float (width - 1) || y > float (height - 1) then
         background
     else
@@ -423,10 +457,10 @@ let private sampleBilinear background (image: Image<'T>) x y =
         let y1 = min (height - 1) (y0 + 1)
         let tx = x - float x0
         let ty = y - float y0
-        let v00 = image.Get [ uint x0; uint y0 ] |> toDouble
-        let v10 = image.Get [ uint x1; uint y0 ] |> toDouble
-        let v01 = image.Get [ uint x0; uint y1 ] |> toDouble
-        let v11 = image.Get [ uint x1; uint y1 ] |> toDouble
+        let v00 = pixels[x0, y0] |> toDouble
+        let v10 = pixels[x1, y0] |> toDouble
+        let v01 = pixels[x0, y1] |> toDouble
+        let v11 = pixels[x1, y1] |> toDouble
         (1.0 - tx) * (1.0 - ty) * v00
         + tx * (1.0 - ty) * v10
         + (1.0 - tx) * ty * v01
@@ -458,13 +492,14 @@ let private applyManifestSlice manifest expand background (image: Image<'T>) =
         let matrix = transformForSlice manifest image.index
         let inverse = invertMatrix matrix
         let output = Array2D.zeroCreate<float> (int outputWidth) (int outputHeight)
+        let pixels = image.toArray2D()
 
         for y in 0u .. outputHeight - 1u do
             for x in 0u .. outputWidth - 1u do
                 let referenceX = float x + minX
                 let referenceY = float y + minY
                 let inputX, inputY = transformPoint inverse referenceX referenceY
-                output[int x, int y] <- sampleBilinear background image inputX inputY
+                output[int x, int y] <- sampleBilinear background pixels inputX inputY
 
         Image<float>.ofArray2D(output, "serialApplyManifest", image.index)
     finally

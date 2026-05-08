@@ -298,6 +298,7 @@ let finiteDiff = StackImageFunctions.finiteDiff
 let structureTensor sigma rho : Stage<Image<float>, Image<float list>> = StackImageFunctions.structureTensor sigma rho
 let PCA components : Stage<Image<float list>, Image<float list>> = StackImageFunctions.PCA components
 let selectGroupedOutput groupSize part : Stage<Image<'T>, Image<'T>> = StackImageFunctions.selectGroupedOutput groupSize part
+let identity<'T> : Stage<'T, 'T> = StackImageFunctions.identityStage "identity"
 let erode = StackImageFunctions.erode
 let dilate = StackImageFunctions.dilate
 let opening = StackImageFunctions.opening

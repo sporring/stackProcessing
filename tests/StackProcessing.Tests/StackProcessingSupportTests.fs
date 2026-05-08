@@ -181,6 +181,14 @@ let stackProcessingSupportSuite =
 
             Expect.equal actual [ 2, 2; 3, 4; 4, 6 ] ">=>> should produce paired branch outputs."
 
+        testCase "identity passes stream elements through unchanged" <| fun _ ->
+            let actual =
+                scalarPlan [ 1; 2; 3 ]
+                >=> identity<int>
+                |> drainList
+
+            Expect.equal actual [ 1; 2; 3 ] "identity should be available from StackProcessing and preserve values."
+
         testCase ">=>> does not deadlock when one branch waits for a window" <| fun _ ->
             let delayed =
                 Stage.window "delayed window" 3u 1u (fun _ _ -> 0) 1u
@@ -832,6 +840,32 @@ let stackProcessingSupportSuite =
             finally
                 disposeImages corrected
 
+        testCase "serial section polynomial correction supports Float32" <| fun _ ->
+            let slices =
+                [ for z in 0 .. 1 ->
+                    let image =
+                        Array2D.init 4 3 (fun x y -> float32 (3.0 + float z + 2.0 * float x - float y))
+                        |> Image<float32>.ofArray2D
+                    image.index <- z
+                    image ]
+
+            let corrected =
+                try
+                    imagePlan slices
+                    >=> serialPolynomialBiasCorrect<float32> 1
+                    |> drainList
+                finally
+                    disposeImages slices
+
+            try
+                for image in corrected do
+                    let arr = image.toArray2D()
+                    for y in 0 .. arr.GetLength(1) - 1 do
+                        for x in 0 .. arr.GetLength(0) - 1 do
+                            Expect.floatClose Accuracy.medium (float arr[x, y]) 0.0 "Slicewise Float32 polynomial bias should subtract to numerical zero."
+            finally
+                disposeImages corrected
+
         testCase "serial section manifests accumulate pairwise translations and can expand canvas" <| fun _ ->
             let makeSlice z impulseX =
                 let image =
@@ -914,6 +948,36 @@ let stackProcessingSupportSuite =
                     Expect.equal roundTripped[2].index 2 "readVolume should assign slice indices from page order."
                 finally
                     disposeImages roundTripped
+            finally
+                disposeImages slices
+                deleteDirectory outputDir
+
+        testCase "readVolume casts TIFF pages to the requested output type" <| fun _ ->
+            let outputDir = tempDirectory "volume-tiff-cast"
+            let volumePath = Path.Combine(outputDir, "volume.tiff")
+            let slices =
+                [ for z in 0 .. 1 ->
+                    let image =
+                        Array2D.init 3 2 (fun x y -> uint8 (x + 10 * y + 100 * z))
+                        |> Image<uint8>.ofArray2D
+                    image.index <- z
+                    image ]
+
+            try
+                imagePlan slices
+                >=> writeVolume<uint8> volumePath
+                |> drain
+
+                let asFloat32 =
+                    source 1024UL
+                    |> readVolume<float32> volumePath
+                    |> drainList
+
+                try
+                    Expect.equal asFloat32.Length 2 "readVolume should preserve the TIFF page count while casting."
+                    Expect.floatClose Accuracy.high (float asFloat32[1].[2, 1]) 112.0 "readVolume should cast UInt8 TIFF pixels to Float32 output."
+                finally
+                    disposeImages asFloat32
             finally
                 disposeImages slices
                 deleteDirectory outputDir
@@ -1639,6 +1703,18 @@ let stackProcessingSupportSuite =
                 Expect.equal rereadSlices.Length 4 "readZarrSlab should unstack slabs into a normal slice stream."
                 let pixels = rereadSlices[3].toArray2D()
                 Expect.equal pixels[4, 3] (uint8 ((4 + 2 * 3 + 3 * 3) % 251)) "Round-tripped Zarr pixel values should match the source stack."
+
+                let castSlices =
+                    source (2UL * 1024UL * 1024UL * 1024UL)
+                    |> readZarrSlab<float32> zarrPath 2u 0 0 0 0 0
+                    |> drainList
+
+                try
+                    Expect.equal castSlices.Length 4 "readZarrSlab should preserve slice count while casting."
+                    Expect.floatClose Accuracy.high (float castSlices[3].[4, 3]) (float ((4 + 2 * 3 + 3 * 3) % 251)) "readZarrSlab should cast native UInt8 pixels to Float32 output."
+                finally
+                    disposeImages castSlices
+
                 Expect.isFalse (File.Exists zarrDebugPath) "ZarrNET debug logging should not create a Windows-style biolog.txt side-effect."
             finally
                 disposeImages rereadSlices
@@ -1678,6 +1754,17 @@ let stackProcessingSupportSuite =
                 Expect.equal rereadSlices.Length 4 "readNexusSlab should unstack slabs into a normal slice stream."
                 let pixels = rereadSlices[3].toArray2D()
                 Expect.equal pixels[4, 2] (uint16 (4 + 10 * 2 + 100 * 3)) "NeXus pixel values should match the source HDF5 dataset."
+
+                let castSlices =
+                    source (2UL * 1024UL * 1024UL * 1024UL)
+                    |> readNexusSlab<float32> nexusPath datasetPath 2u 0 1 2
+                    |> drainList
+
+                try
+                    Expect.equal castSlices.Length 4 "readNexusSlab should preserve slice count while casting."
+                    Expect.floatClose Accuracy.high (float castSlices[3].[4, 2]) (float (4 + 10 * 2 + 100 * 3)) "readNexusSlab should cast native UInt16 pixels to Float32 output."
+                finally
+                    disposeImages castSlices
             finally
                 disposeImages rereadSlices
                 disposeImages rereadSlabs

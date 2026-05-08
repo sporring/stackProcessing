@@ -1018,7 +1018,7 @@ val serialIdentityManifest:
   (uint32 -> uint32 -> uint32 -> StackSerialSections.SerialSliceManifest)
 
 val serialPolynomialBiasCorrect<'T when 'T: equality> :
-  (int -> StackCore.Stage<StackCore.Image<'T>,StackCore.Image<float>>)
+  (int -> StackCore.Stage<StackCore.Image<'T>,StackCore.Image<'T>>)
     when 'T: equality
 
 val serialKeypoints2D<'T when 'T: equality> :
@@ -1125,6 +1125,8 @@ val PCA: components: uint32 -> Stage<Image<float list>,Image<float list>>
 
 val selectGroupedOutput:
   groupSize: uint -> part: uint -> Stage<Image<'T>,Image<'T>> when 'T: equality
+
+val identity<'T> : Stage<'T,'T>
 
 val erode:
   (uint -> StackCore.Stage<StackCore.Image<uint8>,StackCore.Image<uint8>>)

@@ -2,6 +2,10 @@ module StackCore
 
 open SlimPipeline // Core processing model
 
+// Whole-slice stages should do their pixel work in managed arrays and cross
+// the ITK boundary once per slice. Per-pixel Image.Get/setter calls are kept
+// for sparse/random access paths where bulk transport would be the wrong cost.
+
 type Stage<'S,'T> = SlimPipeline.Stage<'S,'T>
 type Profile = SlimPipeline.Profile
 type ProfileTransition = SlimPipeline.ProfileTransition

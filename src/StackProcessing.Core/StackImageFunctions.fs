@@ -46,7 +46,7 @@ let private nativeImageStageCost name memoryModel costUnits =
         memoryModel
         (StageTimeCostModel.native Map (Some name) costUnits)
 
-let private identityStage name =
+let identityStage name =
     Stage.map name (fun _ value -> value) id id
 
 let private cleanStage name cleanup =
@@ -1067,10 +1067,11 @@ let histogramEstimate<'T when 'T: equality and 'T: comparison> down estimatorNam
                         try
                             let width = int (image.GetWidth())
                             let height = int (image.GetHeight())
+                            let pixels = image.toArray2D()
 
                             for y in 0 .. step .. height - 1 do
                                 for x in 0 .. step .. width - 1 do
-                                    let value = image[x, y]
+                                    let value = pixels[x, y]
                                     histogram <- histogram |> addHistogramValue value
 
                                     if samples % 2UL = 0UL then
@@ -1179,9 +1180,10 @@ let histogramEqualization<'T when 'T: equality and 'T: comparison> (histogram: M
         try
             let width = int (image.GetWidth())
             let height = int (image.GetHeight())
+            let pixels = image.toArray2D()
             let output =
                 Array2D.init width height (fun x y ->
-                    image[x, y]
+                    pixels[x, y]
                     |> histogramKeyToFloat
                     |> lookup)
                 |> Image<float>.ofArray2D
@@ -1233,6 +1235,7 @@ let sumProjection<'T when 'T: equality> transformName : Stage<Image<'T>, Image<f
                             try
                                 let width = int (image.GetWidth())
                                 let height = int (image.GetHeight())
+                                let pixels = image.toArray2D()
                                 let accumulator =
                                     match state with
                                     | None ->
@@ -1247,7 +1250,7 @@ let sumProjection<'T when 'T: equality> transformName : Stage<Image<'T>, Image<f
                                 | Some(_, _, values) ->
                                     for y in 0 .. height - 1 do
                                         for x in 0 .. width - 1 do
-                                            values[x, y] <- values[x, y] + transform (Convert.ToDouble image[x, y])
+                                            values[x, y] <- values[x, y] + transform (Convert.ToDouble pixels[x, y])
                                     return accumulator
                             finally
                                 image.decRefCount()
@@ -1279,10 +1282,11 @@ let volume xUnit yUnit zUnit : Stage<Image<uint8>, float> =
         try
             let width = int (image.GetWidth())
             let height = int (image.GetHeight())
+            let pixels = image.toArray2D()
             let mutable foreground = 0UL
             for y in 0 .. height - 1 do
                 for x in 0 .. width - 1 do
-                    match image[x, y] with
+                    match pixels[x, y] with
                     | 0uy -> ()
                     | 1uy -> foreground <- foreground + 1UL
                     | value ->

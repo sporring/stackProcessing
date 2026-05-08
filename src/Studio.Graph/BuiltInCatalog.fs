@@ -46,7 +46,7 @@ module BuiltInCatalog =
       "Reads one image per stack slice from a directory. TIFF input accepts both .tif and .tiff files when TIFF is selected; JPEG input accepts both .jpg and .jpeg files when JPEG is selected. Format choices restrict the image type menu to combinations expected to work with SimpleITK/ITK: TIFF supports common 8/16/32-bit integer and 32/64-bit floating-point scalar images; PNG supports UInt8 and UInt16; JPEG and BMP support UInt8; MetaImage, NRRD, and NIfTI support the broad scalar numeric set used by Studio."
 
   let private readVolumeDescription =
-      "Reads a single 2D or 3D volume file as a normal slice stream. SimpleITK's extract-region reader is used so each z-slice is requested independently rather than loading the full volume first. Multipage TIFF/BigTIFF/OME-TIFF, NRRD, NIfTI, and MetaImage support depends on the local SimpleITK IO backends."
+      "Reads a single 2D or 3D volume file as a normal slice stream. Multipage TIFF/BigTIFF pages are read forward-only through the streaming TIFF reader; other volume formats use SimpleITK's extract-region reader so each z-slice is requested independently rather than loading the full volume first. The Type selector is the emitted stream type, so readable TIFF pixel types are cast to that type after page import."
 
   let private writeFormatDescription =
       "Writes one image per stack slice. The selected format controls which image types can be connected to the input pin: TIFF supports common 8/16/32-bit integer and 32/64-bit floating-point scalar images; PNG supports UInt8 and UInt16; JPEG and BMP support UInt8; MetaImage, NRRD, and NIfTI support the broad scalar numeric set used by Studio. Cast before write when a format cannot store the current image type."

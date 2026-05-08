@@ -4,8 +4,8 @@
     {
       "id": "node-1",
       "functionId": "ReadVolume",
-      "x": 1295.69921875,
-      "y": 933.265625,
+      "x": 1265.69921875,
+      "y": 948.9993286132812,
       "parameters": [
         {
           "key": "availableMemory",
@@ -14,7 +14,7 @@
         },
         {
           "key": "type",
-          "value": "UInt8",
+          "value": "Float64",
           "useInput": false
         },
         {
@@ -27,8 +27,8 @@
     {
       "id": "node-2",
       "functionId": "Write",
-      "x": 1538.26953125,
-      "y": 933.265625,
+      "x": 1525.69921875,
+      "y": 1099.54931640625,
       "parameters": [
         {
           "key": "output",
@@ -41,11 +41,104 @@
           "useInput": false
         }
       ]
+    },
+    {
+      "id": "node-3",
+      "functionId": "SerialPolynomialBiasCorrect",
+      "x": 1335.69921875,
+      "y": 1066.54931640625,
+      "parameters": [
+        {
+          "key": "type",
+          "value": "Float64",
+          "useInput": false
+        },
+        {
+          "key": "order",
+          "value": "2",
+          "useInput": false
+        }
+      ]
+    },
+    {
+      "id": "node-4",
+      "functionId": "ImageOpImage",
+      "x": 1445.69921875,
+      "y": 916.9993286132812,
+      "parameters": [
+        {
+          "key": "operation",
+          "value": "-",
+          "useInput": false
+        },
+        {
+          "key": "type",
+          "value": "Float64",
+          "useInput": false
+        }
+      ]
+    },
+    {
+      "id": "node-5",
+      "functionId": "IntensityStretch",
+      "x": 1565.971923828125,
+      "y": 1027.54931640625,
+      "parameters": [
+        {
+          "key": "type",
+          "value": "Float64",
+          "useInput": false
+        },
+        {
+          "key": "inputMinimum",
+          "value": "0.0",
+          "useInput": true
+        },
+        {
+          "key": "inputMaximum",
+          "value": "1.0",
+          "useInput": true
+        },
+        {
+          "key": "outputMinimum",
+          "value": "0.0",
+          "useInput": false
+        },
+        {
+          "key": "outputMaximum",
+          "value": "1.0",
+          "useInput": false
+        }
+      ]
     }
   ],
   "edges": [
     {
       "fromNode": "node-1",
+      "fromKind": "dataOutput",
+      "fromPort": 0,
+      "toNode": "node-3",
+      "toKind": "dataInput",
+      "toPort": 0
+    },
+    {
+      "fromNode": "node-1",
+      "fromKind": "dataOutput",
+      "fromPort": 0,
+      "toNode": "node-4",
+      "toKind": "dataInput",
+      "toPort": 0
+    },
+    {
+      "fromNode": "node-3",
+      "fromKind": "dataOutput",
+      "fromPort": 0,
+      "toNode": "node-4",
+      "toKind": "dataInput",
+      "toPort": 1
+    },
+    {
+      "fromNode": "node-4",
       "fromKind": "dataOutput",
       "fromPort": 0,
       "toNode": "node-2",

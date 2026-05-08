@@ -55,7 +55,8 @@ increasingly detailed execution information.
 | `AsyncSeqExtensions` | Streaming helpers used by the pipeline engine. |
 | `SlimPipeline` | Element-agnostic streaming pipeline model, graph metadata, memory estimates, and execution. |
 | `TinyLinAlg` | Small affine/vector/matrix helper library used by registration and resampling code. |
-| `StackProcessing` | Image-stack implementation of `SlimPipeline`: read, write, filters, reducers, visualization helpers. |
+| `StackProcessing.Core` | Streaming image-stack algorithms, IO, manifests, stitching, points, meshes, bias correction, and serial-section tools. |
+| `StackProcessing` | Public F# DSL over `StackProcessing.Core` and `SlimPipeline`. |
 | `StackProcessing.Probing` | Runs calibration-style pipelines and writes JSON with memory and timing observations for cost-model learning. |
 | `StackProcessing.Probing.Report` | Reads probing JSON and writes Plotly.NET scatter plots for memory and speed versus window size or other parameters. |
 | `Studio.Graph` | Pure graph domain model, built-in function catalog, and JSON persistence for Studio. |
@@ -102,8 +103,9 @@ flowchart TD
 There are two user-facing entry points. Programmers can write the
 `StackProcessing` DSL directly; non-programmers can build the same DSL through
 Studio graphs. Both routes end in `SlimPipeline` plans and stages. The image
-work is implemented in `StackProcessing.Core` and `Image`, while file formats,
-registration helpers, probing, and reports sit beside that core path.
+work is implemented in `StackProcessing.Core` and `Image`. File formats,
+registration helpers, manifests, stitching, serial-section tools, probing, and
+reports sit beside that core path.
 
 ## Studio For Users
 
@@ -156,12 +158,14 @@ generated code uses the connected value.
 
 | Category | Examples |
 | -------- | -------- |
-| Sources / Sinks | `read`, `readRandom`, `zero`, `normalNoise`, `saltAndPepperNoise`, `shotNoise`, `speckleNoise`, `write`, `writeThrough`, `scalar`, `getStackInfo` |
+| Sources / Sinks | `read`, `readVolume`, `readRandom`, `readPointSet`, `zero`, coordinate images, noise sources, `write`, `writeVolume`, `writeZarr`, `writeCSV`, `writeMesh`, `scalar`, `getStackInfo` |
 | Arithmetic | `scalarOp`, `imageOpScalar`, `scalarOpImage`, `imageOpImage`, `f(I)`, `f(a)` |
-| Filters | `smoothWGauss`, `finiteDiff` |
-| Segmentation | `threshold`, morphology, connected-component stages |
-| Statistics | `computeStats`, `histogram`, `quantiles`, object-size statistics |
-| Visualization | `histogram`, `chart`, `showImage` |
+| Filters | `smoothWGauss`, `smoothWMedian`, `smoothWBilateral`, `finiteDiff`, `gradient`, `structureTensor`, `FFT`, `invFFT`, `shiftFFT` |
+| Segmentation | `threshold`, morphology, connected-component stages, streaming objects |
+| Statistics | `computeStats`, `estimateHistogram`, `histogramEqualization`, `quantiles`, object-size statistics, `volume`, `surfaceArea`, PCA |
+| Points / Meshes / Registration | 3D keypoints, point-set registration, point-pair distances, marching cubes, manifest items |
+| Serial Sections | slice-wise bias correction, 2D keypoints, slice translation manifests, manifest application |
+| Visualization | `histogram`, `chart`, `showImage`, `print`, `tap` |
 | Debug | `tap`, `print` |
 
 Many boxes are generic: for example `read` has a type dropdown instead of one
@@ -192,9 +196,9 @@ Pressing `Run`:
 1. Shows `Compiling` while the graph is translated to F# DSL text.
 2. Creates or reuses a temporary build directory.
 3. Shows `Building` while a small runner project is built.
-4. Shows `Run` while the generated program executes.
-5. Shows `Completed` when execution exits successfully.
-6. Appends generated code, build logs, and program output to the Output panel.
+4. Shows `Running` while the generated program executes.
+5. Shows `Completed` and the runtime when execution exits successfully.
+6. Appends generated code, build logs, debug output, and program output to the Output panel.
 
 This keeps the generated program visible for debugging while making Studio a
 one-button path from graph to execution.
@@ -472,23 +476,36 @@ Typical sources:
 
 ```fsharp
 read<'T> inputDir suffix
+readVolume<'T> inputFile
 readRandom<'T> depth inputDir suffix
 readRange<'T> first step last inputDir suffix
 readSlab<'T> inputDir suffix
 readZarrSlab<'T> inputDir arrayPath
 readNexusSlab<'T> inputFile datasetPath
 readPointSet inputCsv
+coordinateX width height depth
+coordinateY width height depth
+coordinateZ width height depth
 zero<'T> width height depth
+normalNoise<'T> width height depth mean stddev
+saltAndPepperNoise<'T> width height depth probability
+shotNoise<'T> width height depth scale
+speckleNoise<'T> width height depth stddev
 ```
 
 Typical sinks:
 
 ```fsharp
 write outputDir suffix
+writeVolume outputFile
 writeInSlabs outputDir suffix chunkX chunkY chunkZ
 writeZarr outputDir arrayPath chunkX chunkY chunkZ
 writeNexus outputFile datasetPath chunkX chunkY chunkZ
 writePointSet outputCsv
+writeMatrix output suffix
+writeCSVPointSet output
+writeCSVMatrix output
+writeCSVHistogram output
 writeMesh outputPath format
 sink
 drain
@@ -498,16 +515,27 @@ drain
 such as write-through processing, where a value is written and still passed
 downstream.
 
+`readVolume` and `writeVolume` are streaming volume-file operations. The TIFF
+path reads and writes multipage TIFFs page by page, so converting a volume file
+to ordinary slice files does not require materializing the full volume first.
+Zarr and NeXus/HDF5 accessors expose chunk/slab-oriented paths for native array
+stores.
+
 ### Image Stages
 
 StackProcessing wraps image functions as `Stage`s:
 
 * image-image arithmetic and comparison,
 * scalar-image operations,
-* local filters, morphology, resampling, and convolution,
+* scalar, vector-valued, and complex-valued image operations,
+* local filters, morphology, resampling, convolution, and FFT helpers,
 * streaming-friendly segmentation and connected-object processing,
-* reducers for statistics, histograms, quantiles, objects, and label tables,
-* point sets, meshes, registration, debug, and visualization helpers.
+* reducers for statistics, histograms, quantiles, objects, volumes, surfaces,
+  point distances, PCA, and label tables,
+* point sets, meshes, registration, manifests, stitching, debug, and
+  visualization helpers,
+* serial-section operations for slice-wise correction, registration, and
+  resampling.
 
 Studio may present several of these concrete functions as one generic box with
 an operator or type dropdown. The generated code still targets the concrete
@@ -522,27 +550,64 @@ whole-stack normalization, are not part of the streaming DSL surface.
 
 | Area | DSL functions |
 | ---- | ------------- |
-| Type conversion and creation | `cast`, `zero`, `empty`, `createByEuler2DTransform` |
+| IO, creation, and coordinates | `read`, `readVolume`, `readRandom`, `readRange`, `readSlab`, `readZarrSlab`, `readNexusSlab`, `readPointSet`, `write`, `writeVolume`, `writeZarr`, `writeNexus`, `writePointSet`, `writeMatrix`, `writeCSVHistogram`, `writeMesh`, `zero`, `empty`, `coordinateX`, `coordinateY`, `coordinateZ`, `createByEuler2DTransform` |
+| Type conversion and identity | `cast`, `identity`, `selectGroupedOutput`, `selectGroupedValueOutput` |
 | Arithmetic | `add`, `sub`, `mul`, `div`, `addPair`, `subPair`, `mulPair`, `divPair`, `maxOfPair`, `minOfPair` |
 | Scalar-image arithmetic | `scalarAddImage`, `imageAddScalar`, `scalarSubImage`, `imageSubScalar`, `scalarMulImage`, `imageMulScalar`, `scalarDivImage`, `imageDivScalar` |
 | Pointwise math | `abs`, `acos`, `asin`, `atan`, `cos`, `sin`, `tan`, `exp`, `log10`, `log`, `round`, `sqrt`, `sqrtWindowed`, `square`, `clamp` |
 | Intensity mapping and noise | `shiftScale`, `intensityStretch`, `threshold`, `addNormalNoise`, `addSaltAndPepperNoise`, `addShotNoise`, `addSpeckleNoise`, `normalNoise`, `saltAndPepperNoise`, `shotNoise`, `speckleNoise` |
 | Comparisons and masks | `equal`, `notEqual`, `greater`, `greaterEqual`, `less`, `lessEqual`, `maskAnd`, `maskOr`, `maskXor`, `maskNot` |
-| Local filtering | `smoothWMedian`, `smoothWBilateral`, `gradientMagnitude`, `sobelEdge`, `laplacian`, `smoothWGauss`, `convolve`, `conv`, `finiteDiff` |
+| Vector images | `toVectorImage`, `vectorElement`, `appendVectorElement`, `vectorMapElements`, `vectorDot`, `vectorCross3D`, `vectorAngleTo`, `PCA` |
+| Complex images and FFT | `Re`, `Im`, `modulus`, `arg`, `conjugate`, `toComplex`, `polarToComplex`, `FFT`, `invFFT`, `shiftFFT` |
+| Local filtering | `smoothWMedian`, `smoothWBilateral`, `gradientMagnitude`, `gradient`, `sobelEdge`, `laplacian`, `smoothWGauss`, `convolve`, `conv`, `finiteDiff`, `structureTensor` |
 | Binary morphology | `erode`, `dilate`, `opening`, `closing`, `binaryContour`, `binaryMedian` |
 | Grayscale morphology | `grayscaleErode`, `grayscaleDilate`, `grayscaleOpening`, `grayscaleClosing`, `whiteTopHat`, `blackTopHat`, `morphologicalGradient` |
 | Padding, cropping, axes, and geometry | `createPadding`, `crop`, `resize`, `resample`, `resampleAffineTrilinearSlices`, `permuteAxes` |
 | Connected components and labels | `connectedComponents`, `relabelComponents`, `makeConnectedComponentTranslationTable`, `updateConnectedComponents`, `labelContour`, `changeLabel` |
 | Streaming object processing | `streamConnectedObjects`, `removeSmallObjects`, `fillSmallHoles`, `paintObjects`, `paintObjectsCropped`, `measureObjects`, `objectSizeStats`, `objectSizeHistogram` |
-| Distance, surfaces, and features | `signedDistanceBand`, `marchingCubes`, `dogKeypoints`, `siftKeypoints` |
-| Point sets and registration | `readPointSet`, `writePointSet`, `earthMoversDistance`, `transformPointSet`, `inverseAffine`, `affineRegistration` |
-| Reducers and summaries | `computeStats`, `histogram`, `quantiles`, `otsuThresholdFromHistogram`, `momentsThresholdFromHistogram`, `sumProjection` |
+| Distance, surfaces, and features | `signedDistanceBand`, `marchingCubes`, `surfaceArea`, `dogKeypoints`, `logBlobKeypoints`, `hessianKeypoints`, `harris3DKeypoints`, `forstner3DKeypoints`, `phaseCongruencyKeypoints`, `siftKeypoints` |
+| Point sets, matrices, and registration | `readPointSet`, `writePointSet`, `vectorizeMatrix`, `unvectorizeMatrix`, `pointPairDistances`, `earthMoversDistance`, `transformPointSet`, `inverseAffine`, `affineToMatrix`, `matrixToAffine`, `affineRegistration`, `affineRegistrationMatrices` |
+| Manifests and stitching | `identityImageSetManifest`, `createImageSetManifest`, `imageSetGrid`, `imageSetGridIndexTransform`, `composeImageSetTransforms`, `updateMovingImageSetItemTransformFromRegistration`, manifest item constructors, `readImageSetManifest`, `writeImageSetManifest`, `createStitchPlan`, `stitchManifestImages` |
+| Bias and serial sections | `fitBiasModel`, `fitBiasModelMasked`, `correctBias`, `correctBiasMasked`, `serialIdentityManifest`, `serialPolynomialBiasCorrect`, `serialKeypoints2D`, `serialKeypointTranslationManifest`, `serialImageTranslationManifest`, `serialApplyManifest`, `serialApplyManifestInBoundingBox` |
+| Reducers and summaries | `computeStats`, `histogram`, `histogramEstimate`, `estimateHistogram`, `histogramEstimateMap`, `histogramEqualization`, `quantiles`, `otsuThresholdFromHistogram`, `momentsThresholdFromHistogram`, `sumProjection`, `volume` |
 | Visualization and diagnostics | `show`, `plot`, `print`, `tap`, `tapIt` |
 
-Threshold estimation uses the pattern
-`histogram -> otsuThresholdFromHistogram` or
-`histogram -> momentsThresholdFromHistogram`, followed by the ordinary streaming
-`threshold` stage. This makes the sampling and two-pass nature explicit.
+Threshold estimation uses the pattern `histogram -> otsuThresholdFromHistogram`
+or `histogram -> momentsThresholdFromHistogram`, followed by the ordinary
+streaming `threshold` stage. Histogram estimation can also be expressed as
+`estimateHistogram`, which combines random slice reads with an estimator,
+confidence diagnostics, and a histogram map suitable for thresholding or
+equalization.
+
+### Performance Rule For Slice Stages
+
+Whole-slice stages do their pixel work in managed arrays and cross the ITK
+boundary once per slice. `Image.Get` and per-pixel setters are reserved for
+sparse or genuinely random access. This keeps ordinary streaming stages fast
+while still allowing targeted access when the algorithm needs it.
+
+### Manifests, Registration, And Stitching
+
+`ImageSetManifest` records spatial data items and their homogeneous transforms
+independently from the image stream. Manifests are optional: ordinary
+non-manifest pipelines remain plain image streams, while registration,
+point-set outputs, vector images, meshes, and derived matrices can be associated
+with manifest items when spatial provenance matters.
+
+Image-set stitching uses manifests to build a stitch plan, checks transform
+validity, assumes unit spacing for image coordinates, and streams transformed
+images into the bounding box of the participating stacks. Overlap blending is
+linear from the image borders, and `0` is the background convention for masks
+and labels.
+
+### Serial Section Tools
+
+Serial-section operations are a separate family for slice-wise acquisition
+workflows such as volume electron microscopy. They fit the same streaming model
+as ordinary image stages but use 2D slice operations: polynomial bias
+correction, local 2D keypoints, pairwise slice translation manifests, and
+affine manifest application either in-place or in a bounding box large enough
+for transformed slices.
 
 ### Larger-Than-Memory Connected Components
 
@@ -609,6 +674,8 @@ dotnet test tests/Image.Tests/Image.Tests.fsproj
 * Keep Studio's graph model and compiler independent of Avalonia.
 * Make memory ownership explicit for large native resources.
 * Prefer streaming and chunked algorithms over full-volume materialization.
+* Keep whole-slice pixel work in arrays and cross native image boundaries once
+  per slice.
 * Let users choose between visual programming in Studio and direct F# DSL code.
 
 ## Acknowledgements

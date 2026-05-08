@@ -70,8 +70,15 @@ type PipelinePinViewModel(alignment: PinAlignment, port: Port, kind: PipelinePin
     inherit PinViewModel()
 
     let mutable isActive = kind <> ParameterInput
+    let mutable portValue = port
 
-    member _.Port = port
+    member this.Port
+        with get () = portValue
+        and set value =
+            if portValue <> value then
+                portValue <- value
+                this.OnPropertyChanged(nameof this.Port)
+
     member _.Kind = kind
     member _.ParameterKey = defaultArg parameterKey ""
     member _.IsActive = isActive
@@ -697,6 +704,23 @@ module private HighValueFilterNode =
     let maskLogicOptions = [ "and"; "or"; "xor" ]
     let histogramEstimatorOptions = [ "DKWAndHoldout"; "DKW"; "Holdout" ]
     let boolOptions = [ "false"; "true" ]
+    let floatingImageTypeOptions = [ "Float32"; "Float64" ]
+
+    let selectedType (state: PipelineNodeState) =
+        state.Parameters
+        |> Seq.tryFind (fun parameter -> parameter.Key = "type")
+        |> Option.bind (fun parameter -> NumericType.tryParse parameter.Value)
+        |> Option.defaultValue Float64
+
+    let typedImagePorts (state: PipelineNodeState) =
+        let selectedType = selectedType state
+        let typeName = NumericType.toString selectedType
+        let portType = PortType.numericToImage selectedType
+
+        [ { Name = typeName
+            Type = portType } ],
+        [ { Name = typeName
+            Type = portType } ]
 
     let titleFrom key fallback (state: PipelineNodeState) =
         state.Parameters
@@ -1140,6 +1164,7 @@ type PipelineNodeViewModel(
             | "Cast" -> CastNode.ports state
             | functionId when ScalarImageOperationNode.isOperation functionId -> ScalarImageOperationNode.ports state
             | "Threshold" -> ThresholdNode.ports state
+            | "SerialPolynomialBiasCorrect" -> HighValueFilterNode.typedImagePorts state
             | "Quantiles" -> state.Definition.Inputs, QuantilesNode.outputPorts state
             | _ -> state.Definition.Inputs, state.Definition.Outputs
 
@@ -1255,6 +1280,9 @@ type MainWindowViewModel() as this =
     let mutable selectedNode: PipelineNodeViewModel = null
     let selectedNodes = HashSet<PipelineNodeViewModel>(HashIdentity.Reference)
     let mutable graphOutput = ""
+    let pendingGraphOutput = StringBuilder()
+    let pendingGraphOutputLock = obj()
+    let mutable graphOutputFlushScheduled = false
     let mutable isRunInProgress = false
     let mutable runCancellation: CancellationTokenSource option = None
     let mutable activeRunProcess: Process option = None
@@ -1505,6 +1533,12 @@ type MainWindowViewModel() as this =
                     PipelineParameterViewModel(parameter.Label, parameter.Key, parameter.DefaultValue, parameter.Type, forceUseInput = true)
                 | ("Quantiles" | "HistogramEqualization"), "histogram" ->
                     PipelineParameterViewModel(parameter.Label, parameter.Key, parameter.DefaultValue, parameter.Type, forceUseInput = true)
+                | "SerialPolynomialBiasCorrect", "type" ->
+                    let options =
+                        HighValueFilterNode.floatingImageTypeOptions
+                        |> List.map (fun value -> ParameterOptionViewModel(value, value, true))
+
+                    PipelineParameterViewModel(parameter.Label, parameter.Key, parameter.DefaultValue, parameter.Type, options, false)
                 | functionId, "type" when HighValueFilterNode.typedImageFunctionIds.Contains functionId ->
                     let options =
                         HighValueFilterNode.typeOptions
@@ -1819,10 +1853,33 @@ type MainWindowViewModel() as this =
             | _ ->
                 None)
 
+    let refreshWriteInputPin (node: PipelineNodeViewModel) =
+        if SourceImageNode.hasOutputTitle node.State.Definition.Id then
+            let staticPort = SourceImageNode.writeInputPort node.State
+            let port =
+                if staticPort.Type <> Image Number then
+                    staticPort
+                else
+                    connectedWriteInputType node
+                    |> Option.map (fun numericType ->
+                        { Name = NumericType.toString numericType
+                          Type = PortType.numericToImage numericType })
+                    |> Option.defaultValue staticPort
+
+            node.Pins
+            |> Seq.tryPick (function
+                | :? PipelinePinViewModel as pin when pin.Kind = DataInput -> Some pin
+                | _ -> None)
+            |> Option.iter (fun pin ->
+                pin.Port <- port
+                pin.Name <- port.Name)
+
     let refreshImageFormatOptions () =
         pipelineNodes ()
-        |> Seq.filter (fun node -> SourceImageNode.hasFormatParameter node.State.Definition.Id)
+        |> Seq.filter (fun node -> SourceImageNode.hasFormatParameter node.State.Definition.Id || SourceImageNode.hasOutputTitle node.State.Definition.Id)
         |> Seq.iter (fun node ->
+            refreshWriteInputPin node
+
             let requiredType =
                 if SourceImageNode.hasOutputTitle node.State.Definition.Id then
                     connectedWriteInputType node
@@ -2183,14 +2240,6 @@ type MainWindowViewModel() as this =
             for connector in connectors do
                 drawing.Connectors.Remove(connector) |> ignore
 
-            let index =
-                drawing.Nodes
-                |> Seq.tryFindIndex (fun candidate -> Object.ReferenceEquals(candidate, node))
-                |> Option.defaultValue (drawing.Nodes.Count - 1)
-
-            drawing.Nodes.Remove(node :> INode) |> ignore
-            drawing.Nodes.Insert(index, node :> INode)
-
             Dispatcher.UIThread.Post(
                 (fun () ->
                     for connector, startEndpoint, endEndpoint in connectorSnapshots do
@@ -2357,7 +2406,9 @@ type MainWindowViewModel() as this =
 
     member this.AppendGraphOutput(text: string) =
         let separator =
-            if String.IsNullOrEmpty graphOutput || text.StartsWith(Environment.NewLine, StringComparison.Ordinal) then
+            if String.IsNullOrEmpty graphOutput
+               || graphOutput.EndsWith(Environment.NewLine, StringComparison.Ordinal)
+               || text.StartsWith(Environment.NewLine, StringComparison.Ordinal) then
                 ""
             else
                 Environment.NewLine
@@ -2373,8 +2424,33 @@ type MainWindowViewModel() as this =
         let block = $"Program generated {timestamp}{Environment.NewLine}{text}"
         this.AppendGraphOutput(block)
 
+    member private this.FlushPendingGraphOutput() =
+        let text =
+            lock pendingGraphOutputLock (fun () ->
+                let text = pendingGraphOutput.ToString()
+                pendingGraphOutput.Clear() |> ignore
+                graphOutputFlushScheduled <- false
+                text)
+
+        if not (String.IsNullOrEmpty text) then
+            this.AppendGraphOutput(text)
+
+    member private this.AppendGraphOutputOnUi(text: string) =
+        let scheduleFlush =
+            lock pendingGraphOutputLock (fun () ->
+                pendingGraphOutput.Append(text) |> ignore
+
+                if graphOutputFlushScheduled then
+                    false
+                else
+                    graphOutputFlushScheduled <- true
+                    true)
+
+        if scheduleFlush then
+            Dispatcher.UIThread.Post((fun () -> this.FlushPendingGraphOutput()), DispatcherPriority.Background)
+
     member private this.AppendGraphOutputLineOnUi(text: string) =
-        Dispatcher.UIThread.Post(fun () -> this.AppendGraphOutputLine(text))
+        this.AppendGraphOutputOnUi(text + Environment.NewLine)
 
     member private this.SetRunInProgress(value: bool) =
         if Dispatcher.UIThread.CheckAccess() then
@@ -2537,7 +2613,9 @@ type MainWindowViewModel() as this =
                         if isNull line then
                             keepReading <- false
                         else
-                            lines.Add line
+                            if echoOutput && echoOnlyOnFailure then
+                                lines.Add line
+
                             if echoOutput && not echoOnlyOnFailure then
                                 this.AppendGraphOutputLineOnUi(line)
 
@@ -2958,7 +3036,7 @@ type MainWindowViewModel() as this =
                     }
                     |> Async.StartImmediate
                 | Error message -> this.AppendGeneratedProgram(message)),
-            (fun _ -> this.CanRunGraph))
+            (fun _ -> true))
         :> ICommand
 
     member this.StopRunCommand =
@@ -2970,7 +3048,7 @@ type MainWindowViewModel() as this =
                     cancellation.Cancel()
                     this.KillActiveRunProcess()
                 | _ -> ()),
-            (fun _ -> isRunInProgress))
+            (fun _ -> true))
         :> ICommand
 
     member _.ExportGraph() =

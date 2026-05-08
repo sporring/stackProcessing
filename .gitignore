@@ -69,3 +69,5 @@ samples/volume/volumedata.tif
 /samples/volume/volumedata
 samples/data/volumedata.tif
 samples/serial/volumedata.tif
+/samples/serialBiasCorrect/volumedata
+samples/serialBiasCorrect/volumedata.tif

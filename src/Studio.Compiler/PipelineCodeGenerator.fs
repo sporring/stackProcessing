@@ -176,7 +176,7 @@ module PipelineCodeGenerator =
             $"{trimmed}UL"
 
     let private sourcePrefix availableMemory line =
-        $"source {uint64Literal availableMemory}{Environment.NewLine}{line}"
+        $"debug 1u {uint64Literal availableMemory}{Environment.NewLine}{line}"
 
     let private pairFunctionName functionId =
         match functionId with
@@ -792,7 +792,7 @@ module PipelineCodeGenerator =
                   $"    let a = 2.0 * System.Math.PI * float i / float depth"
                   $"    let offset = float boxSize / 2.0 - 0.5"
                   $"    {transformBody}"
-                  $"source {uint64Literal availableMemory}"
+                  $"debug 1u {uint64Literal availableMemory}"
                   $"|> createByEuler2DTransform<{pixelType}> {imageName} depth {transformName}" ]
         | "ReadRandom" ->
             let availableMemory = parameterValue "availableMemory"
@@ -1625,6 +1625,18 @@ module PipelineCodeGenerator =
             && left.FromPort = right.FromPort
             && left.FromKind = right.FromKind
 
+        let commonUpstreamInputEdge (node: SavedNode) =
+            match incomingDataEdge node.Id 0 with
+            | Some edge -> Some edge
+            | None ->
+                Some
+                    { FromNode = node.Id
+                      FromKind = "dataOutput"
+                      FromPort = 0
+                      ToNode = node.Id
+                      ToKind = "dataInput"
+                      ToPort = 0 }
+
         let stageCall (node: SavedNode) =
             let line = savedElementLine graph nodesById scalarNamesByNodeId statsNamesByNodeId translationTableNamesByNodeId histogramNamesByNodeId quantileNamesByNodeId stackInfoNamesByNodeId chunkInfoNamesByNodeId node
 
@@ -1676,6 +1688,8 @@ module PipelineCodeGenerator =
                 let rec branchStageExpression commonInputEdge visited (node: SavedNode) =
                     if visited |> Set.contains node.Id then
                         None
+                    elif node.Id = commonInputEdge.FromNode then
+                        Some "identity"
                     else
                         let visited = visited |> Set.add node.Id
 
@@ -1699,14 +1713,14 @@ module PipelineCodeGenerator =
                             let shared = pipelineExpression visited sharedNode
                             let fanOut =
                                 formatStageTuple
-                                    "SlimPipeline.Stage.map \"left\" (fun _ value -> value) id id"
-                                    "SlimPipeline.Stage.map \"right\" (fun _ value -> value) id id"
+                                    "identity"
+                                    "identity"
                             pairStageFunctionName node
                             |> Option.map (fun pairFunction -> $"{shared}{newLine}{fanOut}{newLine}>>=> {pairFunction}"))
                     | Some leftEdge, Some rightEdge ->
                         match nodesById |> Map.tryFind leftEdge.FromNode, nodesById |> Map.tryFind rightEdge.FromNode with
                         | Some leftNode, Some rightNode ->
-                            match incomingDataEdge leftNode.Id 0, incomingDataEdge rightNode.Id 0 with
+                            match commonUpstreamInputEdge leftNode, commonUpstreamInputEdge rightNode with
                             | Some leftInput, Some rightInput when sameOutputEdge leftInput rightInput ->
                                 match nodesById |> Map.tryFind leftInput.FromNode with
                                 | Some sharedNode ->

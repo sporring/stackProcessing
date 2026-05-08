@@ -1677,7 +1677,13 @@ type MainView() as this =
                         Dispatcher.UIThread.Post(
                             (fun () ->
                                 let text = graphOutputTextBox.Text
-                                graphOutputTextBox.CaretIndex <- if isNull text then 0 else text.Length),
+                                graphOutputTextBox.CaretIndex <- if isNull text then 0 else text.Length
+                                let lineCount =
+                                    if String.IsNullOrEmpty text then
+                                        0
+                                    else
+                                        text.Split([| '\n' |]).Length - 1
+                                graphOutputTextBox.ScrollToLine(lineCount)),
                             DispatcherPriority.Background))))
 
     member private this.InitializeComponent() =

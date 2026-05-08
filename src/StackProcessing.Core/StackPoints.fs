@@ -275,9 +275,10 @@ let private imageToVolume (images: Image<'T> list) =
 
         images
         |> List.iteri (fun z image ->
+            let pixels = image.toArray2D()
             for y in 0 .. height - 1 do
                 for x in 0 .. width - 1 do
-                    volume[x, y, z] <- Convert.ToDouble(image[x, y], invariant))
+                    volume[x, y, z] <- Convert.ToDouble(pixels[x, y], invariant))
 
         volume
 

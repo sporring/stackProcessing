@@ -37,6 +37,17 @@ let private normalizeCoordinate size value =
     if size <= 1u then 0.0
     else 2.0 * float value / float (size - 1u) - 1.0
 
+let private coordinatePowers size order =
+    Array.init (int size) (fun i ->
+        let value = normalizeCoordinate size (uint i)
+        let powers = Array.zeroCreate<float> (order + 1)
+        powers[0] <- 1.0
+
+        for p in 1 .. order do
+            powers[p] <- powers[p - 1] * value
+
+        powers)
+
 let private basis terms width height depth x y z =
     let xn = normalizeCoordinate width x
     let yn = normalizeCoordinate height y
@@ -48,10 +59,41 @@ let private basis terms width height depth x y z =
         * (yn ** float term.YPower)
         * (zn ** float term.ZPower))
 
+let private basisValues
+    (terms: BiasPolynomialTerm[])
+    (xPowers: float[][])
+    (yPowers: float[][])
+    (zPowers: float[][])
+    x
+    y
+    z =
+
+    Array.init terms.Length (fun i ->
+        let term = terms[i]
+        xPowers[x][term.XPower] * yPowers[y][term.YPower] * zPowers[z][term.ZPower])
+
 let private evaluate model x y z =
     basis model.Terms model.Width model.Height model.Depth x y z
     |> List.zip model.Coefficients
     |> List.sumBy (fun (coefficient, value) -> coefficient * value)
+
+let private evaluateValues
+    (terms: BiasPolynomialTerm[])
+    (coefficients: float[])
+    (xPowers: float[][])
+    (yPowers: float[][])
+    (zPowers: float[][])
+    x
+    y
+    z =
+
+    let mutable sum = 0.0
+
+    for i in 0 .. terms.Length - 1 do
+        let term = terms[i]
+        sum <- sum + coefficients[i] * xPowers[x][term.XPower] * yPowers[y][term.YPower] * zPowers[z][term.ZPower]
+
+    sum
 
 let private solveLinearSystem (a: float[,]) (b: float[]) =
     let n = b.Length
@@ -124,9 +166,7 @@ let private emptyFitState order depth =
       Height = None
       Count = 0UL }
 
-let private observePixel state width height x y z value =
-    let values = basis state.Terms width height state.Depth x y z |> List.toArray
-
+let private observePixelValues state (values: float[]) value =
     for row in 0 .. values.Length - 1 do
         state.Right[row] <- state.Right[row] + values[row] * value
         for col in 0 .. values.Length - 1 do
@@ -158,15 +198,24 @@ let private addImageObservations state (image: Image<'T>) mask =
         if z >= state.Depth then
             invalidOp $"Bias model fit got slice index {image.index}, outside declared depth {state.Depth}."
 
-        for y in 0u .. height - 1u do
-            for x in 0u .. width - 1u do
+        let pixels = image.toArray2D()
+        let maskPixels = mask |> Option.map (fun (maskImage: Image<uint8>) -> maskImage.toArray2D())
+        let terms = state.Terms |> List.toArray
+        let xPowers = coordinatePowers width state.Order
+        let yPowers = coordinatePowers height state.Order
+        let zPowers = coordinatePowers state.Depth state.Order
+        let zIndex = int z
+
+        for y in 0 .. int height - 1 do
+            for x in 0 .. int width - 1 do
                 let includePixel =
-                    match mask with
+                    match maskPixels with
                     | None -> true
-                    | Some (maskImage: Image<uint8>) -> maskImage.Get [ x; y ] <> 0uy
+                    | Some maskValues -> maskValues[x, y] <> 0uy
 
                 if includePixel then
-                    observePixel state width height x y z (image.Get [ x; y ] |> toDouble)
+                    let values = basisValues terms xPowers yPowers zPowers x y zIndex
+                    observePixelValues state values (pixels[x, y] |> toDouble)
     finally
         image.decRefCount()
         mask |> Option.iter (fun (maskImage: Image<uint8>) -> maskImage.decRefCount())
@@ -218,16 +267,24 @@ let private correctedImage (model: BiasPolynomialModel) (image: Image<'T>) mask 
             invalidOp $"Bias correction got slice index {image.index}, outside model depth {model.Depth}."
 
         let output = Array2D.zeroCreate<float> (int width) (int height)
+        let pixels = image.toArray2D()
+        let maskPixels = mask |> Option.map (fun (maskImage: Image<uint8>) -> maskImage.toArray2D())
+        let terms = model.Terms |> List.toArray
+        let coefficients = model.Coefficients |> List.toArray
+        let xPowers = coordinatePowers width model.Order
+        let yPowers = coordinatePowers height model.Order
+        let zPowers = coordinatePowers model.Depth model.Order
+        let zIndex = int z
 
-        for y in 0u .. height - 1u do
-            for x in 0u .. width - 1u do
-                let input = image.Get [ x; y ] |> toDouble
+        for y in 0 .. int height - 1 do
+            for x in 0 .. int width - 1 do
+                let input = pixels[x, y] |> toDouble
                 let includePixel =
-                    match mask with
+                    match maskPixels with
                     | None -> true
-                    | Some (maskImage: Image<uint8>) -> maskImage.Get [ x; y ] <> 0uy
+                    | Some maskValues -> maskValues[x, y] <> 0uy
                 let value =
-                    if includePixel then input - evaluate model x y z
+                    if includePixel then input - evaluateValues terms coefficients xPowers yPowers zPowers x y zIndex
                     else input
                 output[int x, int y] <- value
 

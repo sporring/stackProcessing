@@ -93,13 +93,15 @@ let private cubeTetrahedra =
        [| 0; 7; 4; 6 |]
        [| 0; 4; 5; 6 |] |]
 
-let private voxelValue<'T when 'T: equality> (image: Image<'T>) x y =
-    image[x, y] |> Convert.ToDouble
+let private voxelValue (pixels: 'T[,]) x y =
+    pixels[x, y] |> Convert.ToDouble
 
 let private meshBetweenSlices<'T when 'T: equality> surfaceValue (lower: Image<'T>) (upper: Image<'T>) =
     let width = min (int (lower.GetWidth())) (int (upper.GetWidth()))
     let height = min (int (lower.GetHeight())) (int (upper.GetHeight()))
     let z = float lower.index
+    let lowerPixels = lower.toArray2D()
+    let upperPixels = upper.toArray2D()
 
     let triangles = ResizeArray<Triangle>()
 
@@ -117,14 +119,14 @@ let private meshBetweenSlices<'T when 'T: equality> surfaceValue (lower: Image<'
                        point (float x) (float (y + 1)) (z + 1.0) |]
 
                 let values =
-                    [| voxelValue lower x y
-                       voxelValue lower (x + 1) y
-                       voxelValue lower (x + 1) (y + 1)
-                       voxelValue lower x (y + 1)
-                       voxelValue upper x y
-                       voxelValue upper (x + 1) y
-                       voxelValue upper (x + 1) (y + 1)
-                       voxelValue upper x (y + 1) |]
+                    [| voxelValue lowerPixels x y
+                       voxelValue lowerPixels (x + 1) y
+                       voxelValue lowerPixels (x + 1) (y + 1)
+                       voxelValue lowerPixels x (y + 1)
+                       voxelValue upperPixels x y
+                       voxelValue upperPixels (x + 1) y
+                       voxelValue upperPixels (x + 1) (y + 1)
+                       voxelValue upperPixels x (y + 1) |]
 
                 let cube = Array.init 8 (fun index -> positions[index], values[index])
 

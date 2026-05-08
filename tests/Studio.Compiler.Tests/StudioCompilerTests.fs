@@ -48,7 +48,7 @@ let generatorSuite =
                 |> PipelineCodeGenerator.generateSavedGraph
 
             Expect.stringContains code "open StackProcessing" "Generated code should open StackProcessing."
-            Expect.stringContains code "source 1073741824UL" "Read node should generate source with uint64 available memory."
+            Expect.stringContains code "debug 1u 1073741824UL" "Read node should generate a debug source with uint64 available memory."
             Expect.stringContains code "|> read<uint8> \"input\" \".tiff\"" "Read node should generate typed read."
             Expect.stringContains code ">=> write \"output\" \".tiff\"" "Write node should generate write stage."
             Expect.stringContains code "|> sink" "Terminal write should be sunk."
@@ -92,7 +92,7 @@ let generatorSuite =
                 graph [ noise; write ] [ edge "noise" "output" 0 "write" "input" 0 ]
                 |> PipelineCodeGenerator.generateSavedGraph
 
-            Expect.stringContains code "source 2048UL" "NormalNoise should generate a source with available memory."
+            Expect.stringContains code "debug 1u 2048UL" "NormalNoise should generate a debug source with available memory."
             Expect.stringContains code "|> normalNoise<float32> 12u 13u 4u 5.0 0.25" "NormalNoise should generate typed dimensions and distribution parameters."
 
             let saltCode =
@@ -667,7 +667,7 @@ let generatorSuite =
                 graph [ readPoints ] []
                 |> PipelineCodeGenerator.generateSavedGraph
 
-            Expect.stringContains readPointCode "source 1024UL" "ReadPointSet should include a source."
+            Expect.stringContains readPointCode "debug 1u 1024UL" "ReadPointSet should include a debug source."
             Expect.stringContains readPointCode "|> readPointSet \"points.csv\"" "ReadPointSet should generate the CSV point reader."
 
             let distances =
@@ -1157,6 +1157,42 @@ let generatorSuite =
             assertOperation "-" "subPair"
             assertOperation "max" "maxOfPair"
             assertOperation "min" "minOfPair"
+
+        testCase "image op image shares a common source used directly and through a branch" <| fun _ ->
+            let read =
+                node "read" "ReadVolume"
+                    [ p "availableMemory" "1073741824" false
+                      p "type" "Float32" false
+                      p "input" "volumedata.tif" false ]
+
+            let correct =
+                node "correct" "SerialPolynomialBiasCorrect"
+                    [ p "type" "Float32" false
+                      p "order" "2" false ]
+
+            let op =
+                node "op" "ImageOpImage"
+                    [ p "operation" "-" false
+                      p "type" "Float32" false ]
+
+            let write =
+                node "write" "Write"
+                    [ p "output" "volumedata" false
+                      p "suffix" ".tiff" false ]
+
+            let code =
+                graph
+                    [ read; correct; op; write ]
+                    [ edge "read" "dataOutput" 0 "correct" "dataInput" 0
+                      edge "read" "dataOutput" 0 "op" "dataInput" 0
+                      edge "correct" "dataOutput" 0 "op" "dataInput" 1
+                      edge "op" "dataOutput" 0 "write" "dataInput" 0 ]
+                |> PipelineCodeGenerator.generateSavedGraph
+
+            Expect.equal (code.Split("|> readVolume<float32>").Length - 1) 1 "The shared readVolume source should be generated once."
+            Expect.stringContains code ">=>> (identity" "The direct branch should use the public identity stage in shared fan-out."
+            Expect.stringContains code "serialPolynomialBiasCorrect<float32> 2" "The corrected branch should still include the bias correction stage."
+            Expect.stringContains code ">>=> subPair" "The two branches should be combined by the pair operation."
 
         testCase "unary image function lowers selected function to stage" <| fun _ ->
             let read =

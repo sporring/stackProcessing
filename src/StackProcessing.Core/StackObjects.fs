@@ -230,11 +230,12 @@ let private processSlice connectivity ((stateNextLabel, active): uint64 * Map<ui
     let height = int (image.GetHeight())
     let z = image.index
     let zOffsets = zNeighborOffsets connectivity
+    let pixels = image.toArray2D()
     // This deliberately uses a small streaming F# flood-fill. If object streaming becomes a bottleneck,
     // compare it with a slab-local implementation that delegates labeling to SimpleITK and keeps this
     // frontier-carry/early-emit logic around the slab labels.
     let components =
-        connectedComponents2D connectivity z width height (fun x y -> foreground image[x, y])
+        connectedComponents2D connectivity z width height (fun x y -> foreground pixels[x, y])
 
     let activeNodes = active |> Map.toList |> List.map (fst >> Active)
     let localNodes = components |> List.map (fun objectComponent -> Local objectComponent.Id)
@@ -336,19 +337,20 @@ let private copyBinaryImage (image: Image<uint8>) =
     copy
 
 let private invertedBinaryImage (image: Image<uint8>) =
-    let width = int (image.GetWidth())
-    let height = int (image.GetHeight())
+    let pixels = image.toArray2D()
+    let width = Array2D.length1 pixels
+    let height = Array2D.length2 pixels
     let inverted =
-        Array2D.init width height (fun x y -> if image[x, y] = 0uy then 1uy else 0uy)
+        Array2D.init width height (fun x y -> if pixels[x, y] = 0uy then 1uy else 0uy)
         |> Image<uint8>.ofArray2D
     inverted.index <- image.index
     inverted
 
-let private paintObjectValue value (buffer: SortedDictionary<int, Image<uint8>>) (object: StreamedObject) =
+let private paintObjectValue value (buffer: SortedDictionary<int, uint8[,]>) (object: StreamedObject) =
     for position in object.Positions do
         match buffer.TryGetValue position.Z with
-        | true, image ->
-            image[position.X, position.Y] <- value
+        | true, pixels ->
+            pixels[position.X, position.Y] <- value
         | false, _ ->
             invalidOp $"Cannot edit completed object label {object.Label}; buffered slice {position.Z} has already been emitted."
 
@@ -358,7 +360,7 @@ let private touchesXYBoundary width height (object: StreamedObject) =
     || object.Bounds.MaxX >= width - 1
     || object.Bounds.MaxY >= height - 1
 
-let private emitBufferedThrough cutoff (buffer: SortedDictionary<int, Image<uint8>>) =
+let private emitBufferedThrough cutoff (buffer: SortedDictionary<int, uint8[,]>) =
     seq {
         let mutable emitting = true
 
@@ -366,7 +368,8 @@ let private emitBufferedThrough cutoff (buffer: SortedDictionary<int, Image<uint
             let z = buffer.Keys |> Seq.head
 
             if z <= cutoff then
-                let image = buffer[z]
+                let image = Image<uint8>.ofArray2D(buffer[z])
+                image.index <- z
                 buffer.Remove z |> ignore
                 yield image
             else
@@ -384,7 +387,7 @@ let private bufferedBinaryComponentEdit
 
     let apply _debug (input: AsyncSeq<Image<uint8>>) =
         asyncSeq {
-            let buffer = SortedDictionary<int, Image<uint8>>()
+            let buffer = SortedDictionary<int, uint8[,]>()
             let mutable state = 1UL, Map.empty<uint64, ActiveObject>
             let mutable width = None
             let mutable height = None
@@ -409,8 +412,8 @@ let private bufferedBinaryComponentEdit
                     | _ ->
                         invalidOp $"{name} requires a stream with constant x-y slice size."
 
-                    let buffered = copyBinaryImage image
-                    buffer.Add(buffered.index, buffered)
+                    let bufferedIndex = image.index
+                    buffer.Add(bufferedIndex, image.toArray2D())
 
                     let componentInput = componentImage image
                     let nextState, completed =
@@ -429,7 +432,7 @@ let private bufferedBinaryComponentEdit
                     let _, active = state
                     let cutoff =
                         if active.IsEmpty then
-                            buffered.index
+                            bufferedIndex
                         else
                             active
                             |> Map.toSeq
