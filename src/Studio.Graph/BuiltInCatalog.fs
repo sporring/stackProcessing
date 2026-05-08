@@ -45,8 +45,14 @@ module BuiltInCatalog =
   let private readFormatDescription =
       "Reads one image per stack slice from a directory. TIFF input accepts both .tif and .tiff files when TIFF is selected; JPEG input accepts both .jpg and .jpeg files when JPEG is selected. Format choices restrict the image type menu to combinations expected to work with SimpleITK/ITK: TIFF supports common 8/16/32-bit integer and 32/64-bit floating-point scalar images; PNG supports UInt8 and UInt16; JPEG and BMP support UInt8; MetaImage, NRRD, and NIfTI support the broad scalar numeric set used by Studio."
 
+  let private readVolumeDescription =
+      "Reads a single 2D or 3D volume file as a normal slice stream. SimpleITK's extract-region reader is used so each z-slice is requested independently rather than loading the full volume first. Multipage TIFF/BigTIFF/OME-TIFF, NRRD, NIfTI, and MetaImage support depends on the local SimpleITK IO backends."
+
   let private writeFormatDescription =
       "Writes one image per stack slice. The selected format controls which image types can be connected to the input pin: TIFF supports common 8/16/32-bit integer and 32/64-bit floating-point scalar images; PNG supports UInt8 and UInt16; JPEG and BMP support UInt8; MetaImage, NRRD, and NIfTI support the broad scalar numeric set used by Studio. Cast before write when a format cannot store the current image type."
+
+  let private writeVolumeDescription =
+      "Writes a slice stream as one volume file. The current streaming implementation writes multipage TIFF or BigTIFF pages incrementally, without materializing the full stack in memory. Use .btf or .bigtiff for BigTIFF output."
 
   let private chunkWriteFormatDescription =
       "Writes stack slabs split into chunk files for later slab reading. The selected format controls which image types can be connected to the input pin, using the same constraints as write. TIFF output uses the exact selected suffix, either .tif or .tiff."
@@ -177,6 +183,9 @@ module BuiltInCatalog =
   let private intensityStretchDescription =
       "Linearly maps an input intensity range to an output intensity range using the same shift/scale semantics as shiftScale. Values are not clipped: pixels outside the input range continue linearly outside the output range. This is useful with computeStats or quantiles when the source min/max or robust quantile limits are estimated in an earlier reducer pass."
 
+  let private histogramEqualizationDescription =
+      "Applies 3D histogram equalization from a histogram map estimated over the connected stack or a representative sample. The stage streams slices and emits Float64 values in the range 0..1. Histogram bins are treated as an empirical cumulative distribution, with interpolation between sampled bin keys so readRandom estimates can still be used on continuous-valued images."
+
   let private quantilesDescription =
       "Estimates quantile values from a histogram map. q1 is always emitted. q2, q3, q4, and q5 are optional output slots controlled by the corresponding enabled parameters. Each q value must be between 0 and 1. The result is based on the cumulative histogram counts, so accuracy depends on the histogram key resolution."
 
@@ -292,6 +301,20 @@ module BuiltInCatalog =
             makeParameter "type" "Type" "Float64" BasicType.String
             makeParameter "input" "Input" "input" BasicType.String
             suffixParameter ".tiff" ] }
+
+  let makeGenericReadVolume () =
+    { Id = "ReadVolume"
+      DisplayName = "readVolume"
+      Category = "Sources / Sinks"
+      Summary = "Read one volume file as a slice stream."
+      Description = readVolumeDescription
+      Aliases = [ "volume"; "multipage"; "tiff"; "bigtiff"; "ome"; "nrrd"; "nifti"; "mha"; "source"; "type" ]
+      Inputs = []
+      Outputs = [ makePort "Float64" imageFloat64 ]
+      Parameters =
+          [ availableMemoryParameter
+            makeParameter "type" "Type" "Float64" BasicType.String
+            makeParameter "input" "Input" "volume.tiff" BasicType.String ] }
 
   let makeGenericReadRandom () =
     { Id = "ReadRandom"
@@ -586,6 +609,8 @@ module BuiltInCatalog =
 
         makeGenericRead()
 
+        makeGenericReadVolume()
+
         makeGenericReadRandom()
 
         makeGenericReadRange()
@@ -840,6 +865,17 @@ module BuiltInCatalog =
           Parameters =
               [ makeParameter "output" "Output" "output" BasicType.String
                 suffixParameter ".tiff" ] }
+
+        { Id = "WriteVolume"
+          DisplayName = "writeVolume"
+          Category = "Sources / Sinks"
+          Summary = "Write a stream as one multipage TIFF/BigTIFF volume."
+          Description = writeVolumeDescription
+          Aliases = [ "volume"; "multipage"; "tiff"; "bigtiff"; "ome"; "write"; "save" ]
+          Inputs = [ makePort "Number" imageAny ]
+          Outputs = []
+          Parameters =
+              [ makeParameter "output" "Output" "volume.tiff" BasicType.String ] }
 
         { Id = "WriteSlabSlices"
           DisplayName = "writeSlabSlices"
@@ -1546,6 +1582,18 @@ module BuiltInCatalog =
                 makeParameter "inputMaximum" "Input maximum" "1.0" (BasicType.Numeric Float64)
                 makeParameter "outputMinimum" "Output minimum" "0.0" (BasicType.Numeric Float64)
                 makeParameter "outputMaximum" "Output maximum" "1.0" (BasicType.Numeric Float64) ] }
+
+        { Id = "HistogramEqualization"
+          DisplayName = "histogramEqualization"
+          Category = "Intensity"
+          Summary = "Equalize intensities from a 3D histogram estimate."
+          Description = histogramEqualizationDescription
+          Aliases = [ "intensity"; "histogram"; "equalize"; "equalization"; "contrast"; "cdf"; "3d" ]
+          Inputs = [ makePort "Number" imageAny ]
+          Outputs = [ makePort "Float64" imageFloat64 ]
+          Parameters =
+              [ makeParameter "type" "Type" "Float64" BasicType.String
+                makeParameter "histogram" "Histogram" "" BasicType.Map ] }
 
         { Id = "CreatePadding"
           DisplayName = "createPadding"

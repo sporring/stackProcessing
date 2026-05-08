@@ -969,6 +969,77 @@ let imageHistogramFold () =
 let histogram () =
     imageHistogram () --> imageHistogramFold ()
 
+let private histogramKeyToFloat<'T> (value: 'T) =
+    Convert.ToDouble(value)
+
+let private histogramEqualizationLookup<'T when 'T: comparison> (histogram: Map<'T,uint64>) =
+    if Map.isEmpty histogram then
+        invalidArg (nameof histogram) "Cannot equalize from an empty histogram."
+
+    let bins =
+        histogram
+        |> Map.toArray
+        |> Array.map (fun (key, count) -> histogramKeyToFloat key, count)
+        |> Array.sortBy fst
+
+    let total = bins |> Array.sumBy snd
+    if total = 0UL then
+        invalidArg (nameof histogram) "Cannot equalize from a histogram whose total count is zero."
+
+    let firstCount = snd bins[0]
+    let denominator = float (total - firstCount)
+    let keys = bins |> Array.map fst
+    let equalized = Array.zeroCreate<float> bins.Length
+    let mutable cumulative = 0UL
+
+    for i in 0 .. bins.Length - 1 do
+        cumulative <- cumulative + snd bins[i]
+        equalized[i] <-
+            if denominator <= 0.0 then
+                0.0
+            else
+                (float (cumulative - firstCount)) / denominator
+
+    fun value ->
+        if value <= keys[0] then
+            equalized[0]
+        elif value >= keys[keys.Length - 1] then
+            equalized[equalized.Length - 1]
+        else
+            let search = Array.BinarySearch(keys, value)
+            if search >= 0 then
+                equalized[search]
+            else
+                let upper = ~~~search
+                let lower = upper - 1
+                let span = keys[upper] - keys[lower]
+                if span <= 0.0 then
+                    equalized[lower]
+                else
+                    let t = (value - keys[lower]) / span
+                    equalized[lower] + t * (equalized[upper] - equalized[lower])
+
+let histogramEqualization<'T when 'T: equality and 'T: comparison> (histogram: Map<'T,uint64>) =
+    let lookup = histogramEqualizationLookup histogram
+
+    let equalize (_debug: bool) (image: Image<'T>) =
+        try
+            let width = int (image.GetWidth())
+            let height = int (image.GetHeight())
+            let output =
+                Array2D.init width height (fun x y ->
+                    image[x, y]
+                    |> histogramKeyToFloat
+                    |> lookup)
+                |> Image<float>.ofArray2D
+
+            output.index <- image.index
+            output
+        finally
+            image.decRefCount()
+
+    Stage.map "histogramEqualization" equalize imageBytes<float> id
+
 module ProjectionTransform =
     let values =
         [ "Identity"

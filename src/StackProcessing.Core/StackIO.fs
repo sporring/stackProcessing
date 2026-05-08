@@ -7,7 +7,10 @@ open System.Reflection
 open System.Text.RegularExpressions
 open System.Threading
 open System.Threading.Tasks
+open BitMiracle.LibTiff.Classic
+open FSharp.Control
 open StackCore
+open Image.InternalHelpers
 open PureHDF
 open PureHDF.Selections
 open ZarrNET.Core
@@ -324,6 +327,66 @@ let readFilesWithShape<'T when 'T: equality> (debug: bool) (width: uint) (height
 
 let readFiles<'T when 'T: equality> (debug: bool) : Stage<string, Image<'T>> =
     readFilesWithShape<'T> debug 0u 0u
+
+let private imageFileReaderInfo filename =
+    let reader = new itk.simple.ImageFileReader()
+    reader.SetFileName(filename)
+    reader.ReadImageInformation()
+    reader
+
+let readVolume<'T when 'T: equality> (filename: string) (pl: Plan<unit, unit>) : Plan<unit, Image<'T>> =
+    use infoReader = imageFileReaderInfo filename
+    let dimension = int (infoReader.GetDimension())
+    if dimension < 2 || dimension > 3 then
+        invalidArg "filename" $"readVolume expects a 2D or 3D image volume, got {dimension} dimensions in '{filename}'."
+
+    let size = infoReader.GetSize() |> fromVectorUInt64 |> List.map uint
+    let width = size[0]
+    let height = size[1]
+    let depth = if dimension = 3 then size[2] else 1u
+    let pixelBytes = Image<'T>.memoryEstimate width height
+    let sourcePeek =
+        SourcePeek.create
+            "readVolume"
+            pixelBytes
+            (Some (uint64 depth))
+            (Map.ofList
+                [ "kind", "volume-file"
+                  "filename", filename
+                  "width", string width
+                  "height", string height
+                  "depth", string depth
+                  "pixelType", typeof<'T>.Name ])
+
+    let mapper (index: int) =
+        use reader = new itk.simple.ImageFileReader()
+        reader.SetFileName(filename)
+        if dimension = 3 then
+            reader.SetExtractIndex([ 0; 0; index ] |> toVectorInt32)
+            reader.SetExtractSize([ width; height; 0u ] |> toVectorUInt32)
+
+        let itkImage = reader.Execute()
+        Image<'T>.ofSimpleITK(itkImage, $"readVolume[{index}]", index)
+
+    let transition = ProfileTransition.create Unit Streaming
+    let memoryNeed _ = pixelBytes
+    let elementTransformation _ = uint64 width * uint64 height
+    let memoryModel = StageMemoryModel.fromSinglePeak Source memoryNeed
+    let timeCostModel =
+        imageIoCost<'T>
+            "readVolume"
+            Source
+            $"readVolume.{typeof<'T>.Name}"
+            (fun _ -> pixelBytes)
+            (fun _ -> 1UL)
+
+    let stage =
+        Stage.init "readVolume" depth mapper transition memoryNeed elementTransformation
+        |> withCostModel (StageCostModel.create memoryModel timeCostModel)
+        |> Some
+
+    Plan.create stage pl.memAvail pixelBytes (uint64 width * uint64 height) (uint64 depth) pl.debug
+    |> Plan.withSourcePeek sourcePeek
 
 let readFilePairs<'T when 'T: equality> (debug: bool) : Stage<string*string, Image<'T>*Image<'T>> =
     let name = "readFilePairs"
@@ -906,6 +969,119 @@ let write<'T when 'T: equality> (outputDir: string) (suffix: string) : Stage<Ima
             (fun _ -> 1UL)
     Stage.mapi $"write \"{outputDir}/*{suffix}\"" mapper memoryNeed id
     |> withCostModel (StageCostModel.create memoryModel timeCostModel)
+
+let private tiffPixelLayout<'T> () =
+    let t = typeof<'T>
+    if t = typeof<uint8> then 8, SampleFormat.UINT, 1
+    elif t = typeof<int8> then 8, SampleFormat.INT, 1
+    elif t = typeof<uint16> then 16, SampleFormat.UINT, 2
+    elif t = typeof<int16> then 16, SampleFormat.INT, 2
+    elif t = typeof<float32> then 32, SampleFormat.IEEEFP, 4
+    elif t = typeof<float> then 64, SampleFormat.IEEEFP, 8
+    else
+        invalidArg "T" $"writeVolume currently supports streaming TIFF output for UInt8, Int8, UInt16, Int16, Float32, and Float64 images; got {t.Name}."
+
+let private tiffMode (filename: string) =
+    let ext = Path.GetExtension(filename).ToLowerInvariant()
+    if ext = ".btf" || ext = ".bigtiff" then "w8" else "w"
+
+let private writeTiffRow<'T when 'T: equality> bytesPerSample (image: Image<'T>) (row: uint) =
+    let width = int (image.GetWidth())
+    let buffer = Array.zeroCreate<byte> (width * bytesPerSample)
+    let t = typeof<'T>
+
+    if t = typeof<uint8> then
+        for x in 0 .. width - 1 do
+            buffer[x] <- image.Get [ uint x; row ] |> box :?> byte
+    elif t = typeof<int8> then
+        for x in 0 .. width - 1 do
+            buffer[x] <- byte (image.Get [ uint x; row ] |> box :?> int8)
+    elif t = typeof<uint16> then
+        for x in 0 .. width - 1 do
+            let bytes = BitConverter.GetBytes(image.Get [ uint x; row ] |> box :?> uint16)
+            Buffer.BlockCopy(bytes, 0, buffer, x * 2, 2)
+    elif t = typeof<int16> then
+        for x in 0 .. width - 1 do
+            let bytes = BitConverter.GetBytes(image.Get [ uint x; row ] |> box :?> int16)
+            Buffer.BlockCopy(bytes, 0, buffer, x * 2, 2)
+    elif t = typeof<float32> then
+        for x in 0 .. width - 1 do
+            let bytes = BitConverter.GetBytes(image.Get [ uint x; row ] |> box :?> float32)
+            Buffer.BlockCopy(bytes, 0, buffer, x * 4, 4)
+    elif t = typeof<float> then
+        for x in 0 .. width - 1 do
+            let bytes = BitConverter.GetBytes(image.Get [ uint x; row ] |> box :?> float)
+            Buffer.BlockCopy(bytes, 0, buffer, x * 8, 8)
+    else
+        invalidArg "T" $"Unsupported TIFF pixel type {t.Name}."
+
+    buffer
+
+let writeVolume<'T when 'T: equality> (filename: string) : Stage<Image<'T>, unit> =
+    let extension = Path.GetExtension(filename).ToLowerInvariant()
+    if extension <> ".tif" && extension <> ".tiff" && extension <> ".btf" && extension <> ".bigtiff" then
+        invalidArg "filename" "writeVolume currently supports streaming multipage TIFF/BigTIFF output only."
+
+    let bitsPerSample, sampleFormat, bytesPerSample = tiffPixelLayout<'T> ()
+
+    let reducer (debug: bool) (input: AsyncSeq<Image<'T>>) =
+        async {
+            let directory = Path.GetDirectoryName(Path.GetFullPath(filename))
+            if not (String.IsNullOrWhiteSpace directory) then
+                Directory.CreateDirectory(directory) |> ignore
+
+            use tiff = Tiff.Open(filename, tiffMode filename)
+            if isNull tiff then
+                invalidOp $"Could not open '{filename}' for TIFF volume writing."
+
+            let mutable width = 0u
+            let mutable height = 0u
+            let mutable page = 0
+
+            do!
+                input
+                |> AsyncSeq.iterAsync (fun image ->
+                    async {
+                        try
+                            if image.GetDimensions() <> 2u then
+                                invalidOp $"writeVolume expects 2D slices, got {image.GetDimensions()}D at slice {image.index}."
+
+                            if page = 0 then
+                                width <- image.GetWidth()
+                                height <- image.GetHeight()
+                            elif image.GetWidth() <> width || image.GetHeight() <> height then
+                                invalidOp $"writeVolume expected all slices to be {width}x{height}; got {image.GetWidth()}x{image.GetHeight()} at slice {image.index}."
+
+                            if debug then
+                                printfn $"[writeVolume] Writing TIFF page {page} from slice {image.index} to {filename}"
+
+                            tiff.SetField(TiffTag.IMAGEWIDTH, int width) |> ignore
+                            tiff.SetField(TiffTag.IMAGELENGTH, int height) |> ignore
+                            tiff.SetField(TiffTag.SAMPLESPERPIXEL, 1) |> ignore
+                            tiff.SetField(TiffTag.BITSPERSAMPLE, bitsPerSample) |> ignore
+                            tiff.SetField(TiffTag.SAMPLEFORMAT, sampleFormat) |> ignore
+                            tiff.SetField(TiffTag.PHOTOMETRIC, Photometric.MINISBLACK) |> ignore
+                            tiff.SetField(TiffTag.PLANARCONFIG, PlanarConfig.CONTIG) |> ignore
+                            tiff.SetField(TiffTag.ROWSPERSTRIP, int height) |> ignore
+                            tiff.SetField(TiffTag.COMPRESSION, Compression.NONE) |> ignore
+                            tiff.SetField(TiffTag.SUBFILETYPE, FileType.PAGE) |> ignore
+                            tiff.SetField(TiffTag.PAGENUMBER, page, 0) |> ignore
+
+                            for row in 0u .. height - 1u do
+                                let buffer = writeTiffRow bytesPerSample image row
+                                if not (tiff.WriteScanline(buffer, int row)) then
+                                    invalidOp $"Failed to write TIFF scanline {row} for page {page}."
+
+                            if not (tiff.WriteDirectory()) then
+                                invalidOp $"Failed to write TIFF directory for page {page}."
+
+                            page <- page + 1
+                        finally
+                            image.decRefCount()
+                    })
+        }
+
+    Stage.reduce "writeVolume" reducer Streaming id (fun _ -> 1UL)
 
 let writeZarr<'T when 'T: equality>
     (outputPath: string)

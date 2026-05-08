@@ -887,6 +887,37 @@ let stackProcessingSupportSuite =
             finally
                 disposeImages slices
 
+        testCase "writeVolume and readVolume stream multipage TIFF slices" <| fun _ ->
+            let outputDir = tempDirectory "volume-tiff"
+            let volumePath = Path.Combine(outputDir, "volume.tiff")
+            let slices =
+                [ for z in 0 .. 2 ->
+                    let image =
+                        Array2D.init 4 3 (fun x y -> uint16 (x + 10 * y + 100 * z))
+                        |> Image<uint16>.ofArray2D
+                    image.index <- z
+                    image ]
+
+            try
+                imagePlan slices
+                >=> writeVolume<uint16> volumePath
+                |> drain
+
+                let roundTripped =
+                    source 1024UL
+                    |> readVolume<uint16> volumePath
+                    |> drainList
+
+                try
+                    Expect.equal roundTripped.Length 3 "readVolume should emit one slice per TIFF page."
+                    Expect.equal (roundTripped[2].Get [ 3u; 2u ]) 223us "readVolume should preserve page pixel values."
+                    Expect.equal roundTripped[2].index 2 "readVolume should assign slice indices from page order."
+                finally
+                    disposeImages roundTripped
+            finally
+                disposeImages slices
+                deleteDirectory outputDir
+
         testCase "earthMoversDistance agrees with brute-force matching for equal-sized point sets" <| fun _ ->
             let fixedPoints =
                 [ point 0.0 0.0 0.0
@@ -1794,6 +1825,29 @@ let stackProcessingSupportSuite =
             finally
                 disposeImages slices
                 deleteDirectory inputDir
+
+        testCase "histogramEqualization streams Float64 CDF values from an estimated 3D histogram" <| fun _ ->
+            let input =
+                array2D [ [ 0uy; 10uy ]; [ 15uy; 20uy ] ]
+                |> Image<uint8>.ofArray2D
+
+            let histogram = Map.ofList [ 0uy, 1UL; 10uy, 1UL; 20uy, 2UL ]
+            let mutable equalized: Image<float> list = []
+
+            try
+                equalized <-
+                    imagePlan [ input ]
+                    >=> histogramEqualization<uint8> histogram
+                    |> drainList
+
+                Expect.hasLength equalized 1 "Equalization should preserve slice cardinality."
+                Expect.floatClose Accuracy.high equalized[0].[0, 0] 0.0 "The lowest occupied histogram bin should map to zero."
+                Expect.floatClose Accuracy.high equalized[0].[0, 1] (1.0 / 3.0) "Exact sampled keys should map through the histogram CDF."
+                Expect.floatClose Accuracy.medium equalized[0].[1, 0] (2.0 / 3.0) "Unsampled input values should interpolate between histogram keys."
+                Expect.floatClose Accuracy.high equalized[0].[1, 1] 1.0 "The highest occupied histogram bin should map to one."
+            finally
+                input.decRefCount()
+                disposeImages equalized
 
         testCase "writeCSVHistogram writes sorted key-count rows" <| fun _ ->
             let outputDir = tempDirectory "histogram-csv"

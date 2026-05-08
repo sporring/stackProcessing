@@ -53,6 +53,25 @@ let generatorSuite =
             Expect.stringContains code ">=> write \"output\" \".tiff\"" "Write node should generate write stage."
             Expect.stringContains code "|> sink" "Terminal write should be sunk."
 
+        testCase "readVolume writeVolume pipeline generates streaming volume conversion" <| fun _ ->
+            let read =
+                node "readVolume" "ReadVolume"
+                    [ p "availableMemory" "1073741824" false
+                      p "type" "UInt16" false
+                      p "input" "input.tiff" false ]
+
+            let write =
+                node "writeVolume" "WriteVolume"
+                    [ p "output" "output.tiff" false ]
+
+            let code =
+                graph [ read; write ] [ edge "readVolume" "output" 0 "writeVolume" "input" 0 ]
+                |> PipelineCodeGenerator.generateSavedGraph
+
+            Expect.stringContains code "|> readVolume<uint16> \"input.tiff\"" "ReadVolume should generate a typed volume source."
+            Expect.stringContains code ">=> writeVolume \"output.tiff\"" "WriteVolume should generate a streaming volume writer."
+            Expect.stringContains code "|> sink" "Terminal WriteVolume should be sunk."
+
         testCase "normalNoise source lowers to synthetic noise source" <| fun _ ->
             let noise =
                 node "noise" "NormalNoise"
@@ -1747,6 +1766,39 @@ let generatorSuite =
             Expect.stringContains code "let Histogram0 =" "Linked histogram data should be bound before threshold estimation."
             Expect.stringContains code "let Float640 = otsuThresholdFromHistogram Histogram0" "Otsu threshold estimation should be a scalar binding."
             Expect.stringContains code ">=> threshold Float640 infinity" "The scalar threshold should feed the standard threshold stage."
+
+        testCase "histogram equalization consumes linked histogram data" <| fun _ ->
+            let read =
+                node "read" "Read"
+                    [ p "availableMemory" "1024" false
+                      p "type" "UInt16" false
+                      p "input" "input" false
+                      p "suffix" ".tiff" false ]
+
+            let histogram =
+                node "histogram" "HistogramData" []
+
+            let equalize =
+                node "equalize" "HistogramEqualization"
+                    [ p "type" "UInt16" false
+                      p "histogram" "" true ]
+
+            let write =
+                node "write" "Write"
+                    [ p "output" "out" false
+                      p "suffix" ".tiff" false ]
+
+            let code =
+                graph
+                    [ read; histogram; equalize; write ]
+                    [ edge "read" "output" 0 "histogram" "input" 0
+                      edge "histogram" "reducerOutput" 0 "equalize" "parameterInput" 1
+                      edge "read" "output" 0 "equalize" "input" 0
+                      edge "equalize" "output" 0 "write" "input" 0 ]
+                |> PipelineCodeGenerator.generateSavedGraph
+
+            Expect.stringContains code "let Histogram0 =" "Linked histogram data should be bound before image equalization."
+            Expect.stringContains code ">=> histogramEqualization<uint16> Histogram0" "Histogram equalization should consume the linked histogram map."
 
         testCase "intensity stretch lowers to StackProcessing stage" <| fun _ ->
             let read =

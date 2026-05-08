@@ -835,6 +835,11 @@ module PipelineCodeGenerator =
             let input = quotedParameter "input"
             let suffix = quotedParameter "suffix"
             $"|> read<{pixelType}> {input} {suffix}" |> sourcePrefix availableMemory
+        | "ReadVolume" ->
+            let availableMemory = parameterValue "availableMemory"
+            let pixelType = pixelTypeNameFromParameter "type" "Float64" node
+            let input = quotedParameter "input"
+            $"|> readVolume<{pixelType}> {input}" |> sourcePrefix availableMemory
         | "Resize" ->
             let pixelType = pixelTypeNameFromParameter "type" "Float32" node
             let width = parameterValue "width"
@@ -868,6 +873,9 @@ module PipelineCodeGenerator =
             let physicalSizeZ = parameterValue "physicalSizeZ"
             let maxConcurrentWrites = parameterValue "maxConcurrentWrites"
             $">=> writeZarr {output} {name} {depth} {chunkX} {chunkY} {chunkZ} {physicalSizeX} {physicalSizeY} {physicalSizeZ} {maxConcurrentWrites}"
+        | "WriteVolume" ->
+            let output = quotedParameter "output"
+            $">=> writeVolume {output}"
         | "WriteMesh" ->
             let output = quotedParameter "output"
             let format = quotedParameter "format"
@@ -1089,6 +1097,10 @@ module PipelineCodeGenerator =
             let outputMinimum = parameterValue "outputMinimum"
             let outputMaximum = parameterValue "outputMaximum"
             $">=> intensityStretch<{pixelType}> {inputMinimum} {inputMaximum} {outputMinimum} {outputMaximum}"
+        | "HistogramEqualization" ->
+            let pixelType = pixelTypeNameFromParameter "type" "Float64" node
+            let histogram = parameterValue "histogram"
+            $">=> histogramEqualization<{pixelType}> {histogram}"
         | "CreatePadding" ->
             let pixelType = pixelTypeNameFromParameter "type" "Float64" node
             let beforeX = parameterValue "beforeX"
@@ -1712,6 +1724,7 @@ module PipelineCodeGenerator =
                 match node.FunctionId with
                 | "Write"
                 | "WriteThrough"
+                | "WriteVolume"
                 | "WriteInSlabs"
                 | "WriteZarr"
                 | "WriteMesh"

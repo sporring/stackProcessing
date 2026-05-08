@@ -184,6 +184,11 @@ val read<'T when 'T: equality> :
      SlimPipeline.Plan<unit,unit> -> SlimPipeline.Plan<unit,StackCore.Image<'T>>)
     when 'T: equality
 
+val readVolume<'T when 'T: equality> :
+  (string ->
+     SlimPipeline.Plan<unit,unit> -> SlimPipeline.Plan<unit,StackCore.Image<'T>>)
+    when 'T: equality
+
 val readRandom<'T when 'T: equality> :
   (uint ->
      string ->
@@ -299,6 +304,9 @@ val deleteIfExists: (string -> unit)
 val write:
   (string -> string -> StackCore.Stage<StackCore.Image<'a>,StackCore.Image<'a>>)
     when 'a: equality
+
+val writeVolume<'T when 'T: equality> :
+  (string -> StackCore.Stage<StackCore.Image<'T>,unit>) when 'T: equality
 
 val writeZarr:
   (string ->
@@ -950,6 +958,10 @@ val histogram:
   (unit -> SlimPipeline.Stage<StackCore.Image<'a>,Map<'a,uint64>>)
     when 'a: comparison
 
+val histogramEqualization<'T when 'T: comparison> :
+  (Map<'T,uint64> -> SlimPipeline.Stage<StackCore.Image<'T>,StackCore.Image<float>>)
+    when 'T: comparison
+
 val sumProjection<'T when 'T: equality> :
   (string -> StackCore.Stage<StackCore.Image<'T>,StackCore.Image<float>>)
     when 'T: equality
@@ -1220,4 +1232,3 @@ val permuteAxes:
   (uint * uint * uint ->
      uint -> StackCore.Stage<StackCore.Image<'a>,StackCore.Image<'a>>)
     when 'a: equality
-
