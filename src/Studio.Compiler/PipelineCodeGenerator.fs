@@ -326,7 +326,11 @@ module PipelineCodeGenerator =
         |> Array.tryItem portIndex
 
     let private isSingleValueReducerNode (node: SavedNode) =
-        node.FunctionId = "SurfaceArea" || node.FunctionId = "Volume" || node.FunctionId = "PointPairDistances"
+        node.FunctionId = "SurfaceArea"
+        || node.FunctionId = "Volume"
+        || node.FunctionId = "PointPairDistances"
+        || node.FunctionId = "FitBiasModel"
+        || node.FunctionId = "FitBiasModelMasked"
 
     let private stackInfoFieldExpression bindingName portIndex =
         [| $"{bindingName}.dimensions"
@@ -685,6 +689,24 @@ module PipelineCodeGenerator =
             let height = parameterValue "height"
             let depth = parameterValue "depth"
             $"|> zero<{pixelType}> {width} {height} {depth}" |> sourcePrefix availableMemory
+        | "CoordinateX" ->
+            let availableMemory = parameterValue "availableMemory"
+            let width = parameterValue "width"
+            let height = parameterValue "height"
+            let depth = parameterValue "depth"
+            $"|> coordinateX {width} {height} {depth}" |> sourcePrefix availableMemory
+        | "CoordinateY" ->
+            let availableMemory = parameterValue "availableMemory"
+            let width = parameterValue "width"
+            let height = parameterValue "height"
+            let depth = parameterValue "depth"
+            $"|> coordinateY {width} {height} {depth}" |> sourcePrefix availableMemory
+        | "CoordinateZ" ->
+            let availableMemory = parameterValue "availableMemory"
+            let width = parameterValue "width"
+            let height = parameterValue "height"
+            let depth = parameterValue "depth"
+            $"|> coordinateZ {width} {height} {depth}" |> sourcePrefix availableMemory
         | "NormalNoise" ->
             let availableMemory = parameterValue "availableMemory"
             let pixelType = pixelTypeNameFromParameter "type" "Float64" node
@@ -1187,6 +1209,24 @@ module PipelineCodeGenerator =
             let yUnit = parameterValue "yUnit"
             let zUnit = parameterValue "zUnit"
             $">=> volume {xUnit} {yUnit} {zUnit}"
+        | "FitBiasModel" ->
+            let pixelType = pixelTypeNameFromParameter "type" "Float64" node
+            let order = parameterValue "order"
+            let depth = parameterValue "depth"
+            $">=> fitBiasModel<{pixelType}> {order} {depth}"
+        | "FitBiasModelMasked" ->
+            let pixelType = pixelTypeNameFromParameter "type" "Float64" node
+            let order = parameterValue "order"
+            let depth = parameterValue "depth"
+            $">=> fitBiasModelMasked<{pixelType}> {order} {depth}"
+        | "CorrectBias" ->
+            let pixelType = pixelTypeNameFromParameter "type" "Float64" node
+            let model = parameterValue "model"
+            $">=> correctBias<{pixelType}> {model}"
+        | "CorrectBiasMasked" ->
+            let pixelType = pixelTypeNameFromParameter "type" "Float64" node
+            let model = parameterValue "model"
+            $">=> correctBiasMasked<{pixelType}> {model}"
         | "PointPairDistances" ->
             let xUnit = parameterValue "xUnit"
             let yUnit = parameterValue "yUnit"
@@ -1658,6 +1698,8 @@ module PipelineCodeGenerator =
                 | "SurfaceArea"
                 | "Volume"
                 | "PointPairDistances"
+                | "FitBiasModel"
+                | "FitBiasModelMasked"
                 | "AffineRegistration" ->
                     $"{expression}{newLine}|> drain"
                 | "ComponentTranslationTable" ->

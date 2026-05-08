@@ -677,6 +677,10 @@ module private HighValueFilterNode =
           "Harris3DKeypoints"
           "Forstner3DKeypoints"
           "PhaseCongruencyKeypoints"
+          "FitBiasModel"
+          "FitBiasModelMasked"
+          "CorrectBias"
+          "CorrectBiasMasked"
           "LabelContour"
           "ChangeLabel" ]
         |> Set.ofList
@@ -1475,6 +1479,8 @@ type MainWindowViewModel() as this =
                     PipelineParameterViewModel(parameter.Label, parameter.Key, parameter.DefaultValue, parameter.Type, options, false)
                 | "Quantiles", key when key.StartsWith("useQ", StringComparison.Ordinal) ->
                     PipelineParameterViewModel(parameter.Label, parameter.Key, parameter.DefaultValue, parameter.Type, canUseInput = false)
+                | ("CorrectBias" | "CorrectBiasMasked"), "model" ->
+                    PipelineParameterViewModel(parameter.Label, parameter.Key, parameter.DefaultValue, parameter.Type, forceUseInput = true)
                 | "Quantiles", "histogram" ->
                     PipelineParameterViewModel(parameter.Label, parameter.Key, parameter.DefaultValue, parameter.Type, forceUseInput = true)
                 | functionId, "type" when HighValueFilterNode.typedImageFunctionIds.Contains functionId ->

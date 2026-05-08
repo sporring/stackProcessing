@@ -744,6 +744,68 @@ let stackProcessingSupportSuite =
                 finally
                     disposeImages slices
 
+        testCase "coordinate sources emit x y and z slice coordinates" <| fun _ ->
+            let xs =
+                source 1024UL
+                |> coordinateX 3u 2u 2u
+                |> drainList
+
+            let ys =
+                source 1024UL
+                |> coordinateY 3u 2u 2u
+                |> drainList
+
+            let zs =
+                source 1024UL
+                |> coordinateZ 3u 2u 2u
+                |> drainList
+
+            try
+                Expect.equal xs.Length 2 "coordinateX should emit one image per z slice."
+                Expect.floatClose Accuracy.high (xs[0].Get [ 2u; 1u ]) 2.0 "coordinateX should store x positions."
+                Expect.floatClose Accuracy.high (ys[0].Get [ 2u; 1u ]) 1.0 "coordinateY should store y positions."
+                Expect.floatClose Accuracy.high (zs[1].Get [ 2u; 1u ]) 1.0 "coordinateZ should store slice indices."
+            finally
+                disposeImages xs
+                disposeImages ys
+                disposeImages zs
+
+        testCase "polynomial bias model fits sampled coordinates and corrects the full stream" <| fun _ ->
+            let makeSlices () =
+                [ for z in 0 .. 3 ->
+                    let image =
+                        Array2D.init 4 3 (fun x y -> 10.0 + 2.0 * float x - 3.0 * float y + 5.0 * float z)
+                        |> Image<float>.ofArray2D
+                    image.index <- z
+                    image ]
+
+            let sampled = makeSlices ()
+            let model =
+                try
+                    imagePlan sampled
+                    >=> fitBiasModel<float> 1 4u
+                    |> drain
+                finally
+                    disposeImages sampled
+
+            let full = makeSlices ()
+            let corrected =
+                try
+                    imagePlan full
+                    >=> correctBias<float> model
+                    |> drainList
+                finally
+                    disposeImages full
+
+            try
+                for image in corrected do
+                    let arr = image.toArray2D()
+                    for y in 0 .. arr.GetLength(1) - 1 do
+                        for x in 0 .. arr.GetLength(0) - 1 do
+                            Expect.floatClose Accuracy.medium arr[x, y] 0.0 "Linear polynomial bias should subtract to numerical zero."
+            finally
+                disposeImages corrected
+
         testCase "earthMoversDistance agrees with brute-force matching for equal-sized point sets" <| fun _ ->
             let fixedPoints =
                 [ point 0.0 0.0 0.0

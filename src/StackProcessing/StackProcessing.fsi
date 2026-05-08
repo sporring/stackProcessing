@@ -128,6 +128,10 @@ type ObjectMeasurements = StackObjects.ObjectMeasurements
 
 type ObjectSizeStats = StackObjects.ObjectSizeStats
 
+type BiasPolynomialTerm = StackBias.BiasPolynomialTerm
+
+type BiasPolynomialModel = StackBias.BiasPolynomialModel
+
 type Point3D = StackMesh.Point3D
 
 type Triangle = StackMesh.Triangle
@@ -264,6 +268,27 @@ val readPointSet:
   (string ->
      SlimPipeline.Plan<unit,unit> ->
      SlimPipeline.Plan<unit,StackPoints.PointSet>)
+
+val coordinateX:
+  (uint32 ->
+     uint32 ->
+     uint32 ->
+     SlimPipeline.Plan<unit,unit> ->
+     SlimPipeline.Plan<unit,StackCore.Image<float>>)
+
+val coordinateY:
+  (uint32 ->
+     uint32 ->
+     uint32 ->
+     SlimPipeline.Plan<unit,unit> ->
+     SlimPipeline.Plan<unit,StackCore.Image<float>>)
+
+val coordinateZ:
+  (uint32 ->
+     uint32 ->
+     uint32 ->
+     SlimPipeline.Plan<unit,unit> ->
+     SlimPipeline.Plan<unit,StackCore.Image<float>>)
 
 val deleteIfExists: (string -> unit)
 
@@ -927,6 +952,28 @@ val sumProjection<'T when 'T: equality> :
 
 val volume:
   (float -> float -> float -> StackCore.Stage<StackCore.Image<uint8>,float>)
+
+val fitBiasModel<'T when 'T: equality> :
+  (int ->
+     uint32 ->
+     StackCore.Stage<StackCore.Image<'T>,StackBias.BiasPolynomialModel>)
+    when 'T: equality
+
+val fitBiasModelMasked<'T when 'T: equality> :
+  (int ->
+     uint32 ->
+     StackCore.Stage<(StackCore.Image<'T> * StackCore.Image<uint8>),
+                     StackBias.BiasPolynomialModel>) when 'T: equality
+
+val correctBias<'T when 'T: equality> :
+  (StackBias.BiasPolynomialModel ->
+     StackCore.Stage<StackCore.Image<'T>,StackCore.Image<float>>)
+    when 'T: equality
+
+val correctBiasMasked<'T when 'T: equality> :
+  (StackBias.BiasPolynomialModel ->
+     StackCore.Stage<(StackCore.Image<'T> * StackCore.Image<uint8>),
+                     StackCore.Image<float>>) when 'T: equality
 
 val quantiles: (float list -> Map<'a,uint64> -> float list) when 'a: comparison
 

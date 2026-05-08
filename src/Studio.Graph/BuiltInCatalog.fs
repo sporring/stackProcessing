@@ -20,6 +20,7 @@ module BuiltInCatalog =
   let mesh = PortType.Custom "Mesh"
   let pointSet = PortType.Custom "PointSet"
   let float64Matrix = PortType.Custom "Float64Matrix"
+  let biasModel = PortType.Custom "BiasModel"
   let streamedObjects = PortType.Custom "StreamedObjects"
   let intList = PortType.Custom "IntList"
   let uint64List = PortType.Custom "UInt64List"
@@ -78,6 +79,15 @@ module BuiltInCatalog =
 
   let private zeroDescription =
       "Creates a synthetic stack filled with zero-valued pixels.\n\nThis is useful for testing, for generating blank masks, or for building small example graphs without reading files. Width and height define each 2D slice, and depth defines the number of slices in the stack.\n\nChoose the output type to match the filters or writer that follow."
+
+  let private coordinateDescription axis =
+      $"Creates a synthetic Float64 image stack where every pixel stores its {axis}-coordinate. Width and height define the slice shape, depth defines the number of emitted slices, and z is taken from the slice index. These sources are useful when building coordinate-aware models and diagnostics."
+
+  let private biasModelDescription =
+      "Fits a low-order 3D polynomial bias field to streamed image slices. The z-coordinate is the slice index, so this works naturally with readRandom: sample slices to estimate the model, then connect the resulting BiasModel to correctBias on the full stream. The masked variant only uses non-zero mask pixels for fitting."
+
+  let private correctBiasDescription =
+      "Subtracts a fitted polynomial BiasModel from each streamed slice and emits Float64 corrected images. The masked variant only subtracts inside non-zero mask pixels and leaves pixels outside the mask unchanged."
 
   let private euler2DDescription =
       "Creates a synthetic stack by transforming a simple seed image through a sequence of 2D Euler transforms.\n\nIt is mainly a demonstration and testing source for registration, resampling, and motion-like examples. The generated stack contains a box-like object whose position changes according to the selected transform pattern.\n\nUse read boxes for real experimental data."
@@ -596,6 +606,48 @@ module BuiltInCatalog =
 
         makeGenericZero()
 
+        { Id = "CoordinateX"
+          DisplayName = "coordinateX"
+          Category = "Sources / Sinks"
+          Summary = "Create a Float64 stack of x-coordinate values."
+          Description = coordinateDescription "x"
+          Aliases = [ "coordinate"; "x"; "source"; "synthetic"; "position" ]
+          Inputs = []
+          Outputs = [ makePort "Float64" imageFloat64 ]
+          Parameters =
+              [ availableMemoryParameter
+                makeParameter "width" "Width" "64" (BasicType.Numeric UInt32)
+                makeParameter "height" "Height" "64" (BasicType.Numeric UInt32)
+                makeParameter "depth" "Depth" "1" (BasicType.Numeric UInt32) ] }
+
+        { Id = "CoordinateY"
+          DisplayName = "coordinateY"
+          Category = "Sources / Sinks"
+          Summary = "Create a Float64 stack of y-coordinate values."
+          Description = coordinateDescription "y"
+          Aliases = [ "coordinate"; "y"; "source"; "synthetic"; "position" ]
+          Inputs = []
+          Outputs = [ makePort "Float64" imageFloat64 ]
+          Parameters =
+              [ availableMemoryParameter
+                makeParameter "width" "Width" "64" (BasicType.Numeric UInt32)
+                makeParameter "height" "Height" "64" (BasicType.Numeric UInt32)
+                makeParameter "depth" "Depth" "1" (BasicType.Numeric UInt32) ] }
+
+        { Id = "CoordinateZ"
+          DisplayName = "coordinateZ"
+          Category = "Sources / Sinks"
+          Summary = "Create a Float64 stack of z-coordinate values."
+          Description = coordinateDescription "z"
+          Aliases = [ "coordinate"; "z"; "source"; "synthetic"; "position"; "slice" ]
+          Inputs = []
+          Outputs = [ makePort "Float64" imageFloat64 ]
+          Parameters =
+              [ availableMemoryParameter
+                makeParameter "width" "Width" "64" (BasicType.Numeric UInt32)
+                makeParameter "height" "Height" "64" (BasicType.Numeric UInt32)
+                makeParameter "depth" "Depth" "1" (BasicType.Numeric UInt32) ] }
+
         makeGenericNormalNoise()
 
         makeGenericSaltAndPepperNoise()
@@ -623,6 +675,32 @@ module BuiltInCatalog =
                 makePort "Var: Float64" (Scalar(BasicType.Numeric Float64)) ]
           Parameters = [] }
 
+        { Id = "FitBiasModel"
+          DisplayName = "fitBiasModel"
+          Category = "Statistics"
+          Summary = "Fit a 3D polynomial bias model from streamed image slices."
+          Description = biasModelDescription
+          Aliases = [ "bias"; "background"; "polynomial"; "flatfield"; "illumination"; "reducer"; "random" ]
+          Inputs = [ makePort "Number" imageAny ]
+          Outputs = [ makePort "BiasModel" biasModel ]
+          Parameters =
+              [ makeParameter "type" "Type" "Float64" BasicType.String
+                makeParameter "order" "Order" "2" (BasicType.Numeric Int32)
+                makeParameter "depth" "Depth" "1" (BasicType.Numeric UInt32) ] }
+
+        { Id = "FitBiasModelMasked"
+          DisplayName = "fitBiasModelMasked"
+          Category = "Statistics"
+          Summary = "Fit a 3D polynomial bias model inside a mask."
+          Description = biasModelDescription
+          Aliases = [ "bias"; "background"; "polynomial"; "flatfield"; "illumination"; "mask"; "reducer"; "random" ]
+          Inputs = [ makePort "Number" imageAny; makePort "Mask" imageUInt8 ]
+          Outputs = [ makePort "BiasModel" biasModel ]
+          Parameters =
+              [ makeParameter "type" "Type" "Float64" BasicType.String
+                makeParameter "order" "Order" "2" (BasicType.Numeric Int32)
+                makeParameter "depth" "Depth" "1" (BasicType.Numeric UInt32) ] }
+
         { Id = "Volume"
           DisplayName = "volume"
           Category = "Statistics"
@@ -635,6 +713,30 @@ module BuiltInCatalog =
               [ makeParameter "xUnit" "X unit" "1.0" (BasicType.Numeric Float64)
                 makeParameter "yUnit" "Y unit" "1.0" (BasicType.Numeric Float64)
                 makeParameter "zUnit" "Z unit" "1.0" (BasicType.Numeric Float64) ] }
+
+        { Id = "CorrectBias"
+          DisplayName = "correctBias"
+          Category = "Intensity"
+          Summary = "Subtract a fitted polynomial bias model."
+          Description = correctBiasDescription
+          Aliases = [ "bias"; "background"; "polynomial"; "flatfield"; "illumination"; "subtract"; "correct" ]
+          Inputs = [ makePort "Number" imageAny ]
+          Outputs = [ makePort "Float64" imageFloat64 ]
+          Parameters =
+              [ makeParameter "type" "Type" "Float64" BasicType.String
+                makeParameter "model" "Model" "biasModel" BasicType.String ] }
+
+        { Id = "CorrectBiasMasked"
+          DisplayName = "correctBiasMasked"
+          Category = "Intensity"
+          Summary = "Subtract a fitted polynomial bias model inside a mask."
+          Description = correctBiasDescription
+          Aliases = [ "bias"; "background"; "polynomial"; "flatfield"; "illumination"; "mask"; "subtract"; "correct" ]
+          Inputs = [ makePort "Number" imageAny; makePort "Mask" imageUInt8 ]
+          Outputs = [ makePort "Float64" imageFloat64 ]
+          Parameters =
+              [ makeParameter "type" "Type" "Float64" BasicType.String
+                makeParameter "model" "Model" "biasModel" BasicType.String ] }
 
         { Id = "Write"
           DisplayName = "write"

@@ -119,6 +119,73 @@ let generatorSuite =
             Expect.stringContains shotCode "|> shotNoise<float32> 12u 13u 4u 2.0" "ShotNoise should lower with scale."
             Expect.stringContains speckleCode "|> speckleNoise<float32> 12u 13u 4u 0.5" "SpeckleNoise should lower with std."
 
+        testCase "coordinate sources lower to Float64 coordinate image streams" <| fun _ ->
+            let write =
+                node "write" "Write"
+                    [ p "output" "coords" false
+                      p "suffix" ".tiff" false ]
+
+            let codeFor id functionId =
+                let coord =
+                    node id functionId
+                        [ p "availableMemory" "2048" false
+                          p "width" "12" false
+                          p "height" "13" false
+                          p "depth" "4" false ]
+
+                graph [ coord; write ] [ edge id "output" 0 "write" "input" 0 ]
+                |> PipelineCodeGenerator.generateSavedGraph
+
+            Expect.stringContains (codeFor "x" "CoordinateX") "|> coordinateX 12u 13u 4u" "CoordinateX should generate a coordinate source."
+            Expect.stringContains (codeFor "y" "CoordinateY") "|> coordinateY 12u 13u 4u" "CoordinateY should generate a coordinate source."
+            Expect.stringContains (codeFor "z" "CoordinateZ") "|> coordinateZ 12u 13u 4u" "CoordinateZ should generate a coordinate source."
+
+        testCase "bias model reducer can feed correction stage" <| fun _ ->
+            let sample =
+                node "sample" "ReadRandom"
+                    [ p "availableMemory" "4096" false
+                      p "type" "Float64" false
+                      p "depth" "8" false
+                      p "input" "input" false
+                      p "suffix" ".tiff" false ]
+
+            let fit =
+                node "fit" "FitBiasModel"
+                    [ p "type" "Float64" false
+                      p "order" "2" false
+                      p "depth" "32" false ]
+
+            let read =
+                node "read" "Read"
+                    [ p "availableMemory" "4096" false
+                      p "type" "Float64" false
+                      p "input" "input" false
+                      p "suffix" ".tiff" false ]
+
+            let correct =
+                node "correct" "CorrectBias"
+                    [ p "type" "Float64" false
+                      p "model" "biasModel" true ]
+
+            let write =
+                node "write" "Write"
+                    [ p "output" "corrected" false
+                      p "suffix" ".tiff" false ]
+
+            let code =
+                graph
+                    [ sample; fit; read; correct; write ]
+                    [ edge "sample" "output" 0 "fit" "input" 0
+                      edge "fit" "reducerOutput" 0 "correct" "parameterInput" 1
+                      edge "read" "output" 0 "correct" "input" 0
+                      edge "correct" "output" 0 "write" "input" 0 ]
+                |> PipelineCodeGenerator.generateSavedGraph
+
+            Expect.stringContains code "|> readRandom<float> 8u \"input\" \".tiff\"" "Bias fit should be able to use readRandom."
+            Expect.stringContains code ">=> fitBiasModel<float> 2 32u" "FitBiasModel should lower to the polynomial reducer."
+            Expect.stringContains code "|> drain" "Linked bias model reducer should be drained into a binding."
+            Expect.stringContains code ">=> correctBias<float> FitBiasModel0" "CorrectBias should receive the linked bias model binding."
+
         testCase "noise add-stage boxes lower to streaming filters" <| fun _ ->
             let read =
                 node "read" "Read"
