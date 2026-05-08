@@ -1,0 +1,56 @@
+{
+  "version": 1,
+  "nodes": [
+    {
+      "id": "node-1",
+      "functionId": "ReadVolume",
+      "x": 1295.69921875,
+      "y": 931.3671875,
+      "parameters": [
+        {
+          "key": "availableMemory",
+          "value": "1073741824",
+          "useInput": false
+        },
+        {
+          "key": "type",
+          "value": "Float64",
+          "useInput": false
+        },
+        {
+          "key": "input",
+          "value": "volumedata.tif",
+          "useInput": false
+        }
+      ]
+    },
+    {
+      "id": "node-2",
+      "functionId": "Write",
+      "x": 1538.26953125,
+      "y": 933.265625,
+      "parameters": [
+        {
+          "key": "output",
+          "value": "volumedata",
+          "useInput": false
+        },
+        {
+          "key": "suffix",
+          "value": ".tiff",
+          "useInput": false
+        }
+      ]
+    }
+  ],
+  "edges": [
+    {
+      "fromNode": "node-1",
+      "fromKind": "dataOutput",
+      "fromPort": 0,
+      "toNode": "node-2",
+      "toKind": "dataInput",
+      "toPort": 0
+    }
+  ]
+}

@@ -259,7 +259,7 @@
                 BorderBrush="#D7DDE5"
                 BorderThickness="1,0,0,0"
                 Padding="10">
-            <Grid RowDefinitions="Auto,Auto,*,Auto">
+            <Grid RowDefinitions="Auto,*">
                 <StackPanel IsVisible="{Binding HasSelectedElement}"
                             Margin="0,0,0,12">
                     <TextBlock Text="{Binding SelectedNode.State.Definition.DisplayName}"
@@ -274,74 +274,74 @@
                                TextWrapping="Wrap" />
                 </StackPanel>
 
-                <TextBlock Grid.Row="1"
-                           Text="Parameters"
-                           FontSize="14"
-                           FontWeight="SemiBold"
-                           Margin="0,0,0,8" />
+                <ScrollViewer Grid.Row="1">
+                    <StackPanel>
+                        <TextBlock Text="Parameters"
+                                   FontSize="14"
+                                   FontWeight="SemiBold"
+                                   Margin="0,0,0,8" />
 
-                <ScrollViewer Grid.Row="2">
-                    <ItemsControl ItemsSource="{Binding SelectedNode.State.Parameters}">
-                        <ItemsControl.ItemTemplate>
-                            <DataTemplate x:DataType="models:PipelineParameterViewModel">
-                                <Grid ColumnDefinitions="92,72,*"
-                                      Margin="0,0,0,10">
-                                    <TextBlock Text="{Binding Label}"
-                                               VerticalAlignment="Center"
-                                               FontSize="12" />
-                                    <CheckBox Grid.Column="1"
-                                              Content="Graph"
-                                              IsChecked="{Binding UseInput, Mode=TwoWay}"
-                                              IsEnabled="{Binding CanUseInput}"
-                                              VerticalAlignment="Center"
-                                              FontSize="11" />
-                                    <TextBox Grid.Column="2"
-                                             Text="{Binding Value, Mode=TwoWay}"
-                                             IsEnabled="{Binding IsValueEnabled}"
-                                             IsReadOnly="{Binding IsValueReadOnly}"
-                                             IsVisible="{Binding ShowTextEditor}"
-                                             MinHeight="30" />
-                                    <CheckBox Grid.Column="2"
-                                              IsChecked="{Binding BooleanValue, Mode=TwoWay}"
-                                              IsEnabled="{Binding IsValueEnabled}"
-                                              IsVisible="{Binding UseBooleanEditor}"
-                                              VerticalAlignment="Center" />
-                                    <ComboBox Grid.Column="2"
-                                              ItemsSource="{Binding Options}"
-                                              SelectedItem="{Binding SelectedOption, Mode=TwoWay}"
-                                              IsVisible="{Binding HasOptions}"
-                                              MinHeight="30">
-                                        <ComboBox.Styles>
-                                            <Style Selector="ComboBoxItem"
-                                                   x:DataType="models:ParameterOptionViewModel">
-                                                <Setter Property="IsEnabled" Value="{Binding IsEnabled}" />
-                                            </Style>
-                                        </ComboBox.Styles>
-                                        <ComboBox.ItemTemplate>
-                                            <DataTemplate x:DataType="models:ParameterOptionViewModel">
-                                                <TextBlock Text="{Binding Label}" />
-                                            </DataTemplate>
-                                        </ComboBox.ItemTemplate>
-                                    </ComboBox>
-                                </Grid>
-                            </DataTemplate>
-                        </ItemsControl.ItemTemplate>
-                    </ItemsControl>
+                        <ItemsControl ItemsSource="{Binding SelectedNode.State.Parameters}">
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate x:DataType="models:PipelineParameterViewModel">
+                                    <Grid ColumnDefinitions="92,72,*"
+                                          Margin="0,0,0,10">
+                                        <TextBlock Text="{Binding Label}"
+                                                   VerticalAlignment="Center"
+                                                   FontSize="12" />
+                                        <CheckBox Grid.Column="1"
+                                                  Content="Graph"
+                                                  IsChecked="{Binding UseInput, Mode=TwoWay}"
+                                                  IsEnabled="{Binding CanUseInput}"
+                                                  VerticalAlignment="Center"
+                                                  FontSize="11" />
+                                        <TextBox Grid.Column="2"
+                                                 Text="{Binding Value, Mode=TwoWay}"
+                                                 IsEnabled="{Binding IsValueEnabled}"
+                                                 IsReadOnly="{Binding IsValueReadOnly}"
+                                                 IsVisible="{Binding ShowTextEditor}"
+                                                 MinHeight="30" />
+                                        <CheckBox Grid.Column="2"
+                                                  IsChecked="{Binding BooleanValue, Mode=TwoWay}"
+                                                  IsEnabled="{Binding IsValueEnabled}"
+                                                  IsVisible="{Binding UseBooleanEditor}"
+                                                  VerticalAlignment="Center" />
+                                        <ComboBox Grid.Column="2"
+                                                  ItemsSource="{Binding Options}"
+                                                  SelectedItem="{Binding SelectedOption, Mode=TwoWay}"
+                                                  IsVisible="{Binding HasOptions}"
+                                                  MinHeight="30">
+                                            <ComboBox.Styles>
+                                                <Style Selector="ComboBoxItem"
+                                                       x:DataType="models:ParameterOptionViewModel">
+                                                    <Setter Property="IsEnabled" Value="{Binding IsEnabled}" />
+                                                </Style>
+                                            </ComboBox.Styles>
+                                            <ComboBox.ItemTemplate>
+                                                <DataTemplate x:DataType="models:ParameterOptionViewModel">
+                                                    <TextBlock Text="{Binding Label}" />
+                                                </DataTemplate>
+                                            </ComboBox.ItemTemplate>
+                                        </ComboBox>
+                                    </Grid>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+
+                        <StackPanel IsVisible="{Binding SelectedNode.State.HasDescription}"
+                                    Margin="0,12,0,0">
+                            <TextBlock Text="Description"
+                                       FontSize="14"
+                                       FontWeight="SemiBold"
+                                       Margin="0,0,0,6"
+                                       Foreground="#102A43" />
+                            <TextBlock Text="{Binding SelectedNode.State.Description}"
+                                       FontSize="12"
+                                       Foreground="#52616B"
+                                       TextWrapping="Wrap" />
+                        </StackPanel>
+                    </StackPanel>
                 </ScrollViewer>
-
-                <StackPanel Grid.Row="3"
-                            IsVisible="{Binding SelectedNode.State.HasDescription}"
-                            Margin="0,12,0,0">
-                    <TextBlock Text="Description"
-                               FontSize="14"
-                               FontWeight="SemiBold"
-                               Margin="0,0,0,6"
-                               Foreground="#102A43" />
-                    <TextBlock Text="{Binding SelectedNode.State.Description}"
-                               FontSize="12"
-                               Foreground="#52616B"
-                               TextWrapping="Wrap" />
-                </StackPanel>
             </Grid>
         </Border>
 

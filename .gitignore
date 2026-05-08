@@ -65,3 +65,7 @@ samples/transpose/test1.tiff
 /samples/resize18
 /samples/signedDistanceBand18
 /samples/sumProjection18
+samples/volume/volumedata.tif
+/samples/volume/volumedata
+samples/data/volumedata.tif
+samples/serial/volumedata.tif

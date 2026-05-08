@@ -881,7 +881,8 @@ type PipelineNodeViewModel(
             | "AffineRegistration"
             | "GetStackInfo"
             | "GetChunkInfo"
-            | "Quantiles" -> 170.
+            | "Quantiles"
+            | "EstimateHistogram" -> 170.
             | "ComponentTranslationTable"
             | "CollapseComponentLabels" -> 180.
             | "ResampleAffineTrilinearSlices" -> 220.
@@ -1118,7 +1119,6 @@ type PipelineNodeViewModel(
             | "Read"
             | "ReadVolume"
             | "ReadRandom"
-            | "EstimateHistogram"
             | "ReadRange"
             | "ReadSlab"
             | "ReadZarrSlab"
@@ -1163,6 +1163,7 @@ type PipelineNodeViewModel(
                 | "GetChunkInfo"
                 | "ComponentTranslationTable"
                 | "HistogramData"
+                | "EstimateHistogram"
                 | "Quantiles" -> ReducerOutput
                 | _ -> DataOutput
 
@@ -2487,9 +2488,9 @@ type MainWindowViewModel() as this =
         let programPath = Path.Combine(runProjectDirectory, "Program.fs")
         File.WriteAllText(programPath, generatedProgram, Encoding.UTF8)
 
-    member private this.RunProcess(phase: string) (fileName: string) (arguments: string list) (workingDirectory: string) =
+    member private this.RunProcess(phase: string option) (echoOutput: bool) (echoOnlyOnFailure: bool) (fileName: string) (arguments: string list) (workingDirectory: string) =
         async {
-            this.AppendGraphOutputLineOnUi(phase)
+            phase |> Option.iter this.AppendGraphOutputLineOnUi
 
             let startInfo = ProcessStartInfo()
             startInfo.FileName <- fileName
@@ -2508,6 +2509,7 @@ type MainWindowViewModel() as this =
 
             let readLines (reader: StreamReader) =
                 async {
+                    let lines = ResizeArray<string>()
                     let mutable keepReading = true
 
                     while keepReading do
@@ -2516,7 +2518,11 @@ type MainWindowViewModel() as this =
                         if isNull line then
                             keepReading <- false
                         else
-                            this.AppendGraphOutputLineOnUi(line)
+                            lines.Add line
+                            if echoOutput && not echoOnlyOnFailure then
+                                this.AppendGraphOutputLineOnUi(line)
+
+                    return lines |> Seq.toList
                 }
 
             if not (proc.Start()) then
@@ -2526,8 +2532,12 @@ type MainWindowViewModel() as this =
                 let! error = readLines proc.StandardError |> Async.StartChild
 
                 do! proc.WaitForExitAsync() |> Async.AwaitTask
-                do! output
-                do! error
+                let! outputLines = output
+                let! errorLines = error
+
+                if echoOutput && echoOnlyOnFailure && proc.ExitCode <> 0 then
+                    (outputLines @ errorLines)
+                    |> List.iter this.AppendGraphOutputLineOnUi
 
                 return proc.ExitCode
         }
@@ -2545,24 +2555,27 @@ type MainWindowViewModel() as this =
 
                 let! buildExitCode =
                     this.RunProcess
-                        "Building"
+                        None
+                        true
+                        true
                         dotnet
-                        [ "build"; projectPath; "--configuration"; "Release"; "--nologo"; "--verbosity"; "minimal" ]
+                        [ "build"; projectPath; "--configuration"; "Release"; "--nologo"; "--verbosity"; "quiet"; "--consoleLoggerParameters:ErrorsOnly" ]
                         runProjectDirectory
 
                 if buildExitCode = 0 then
                     let runWorkingDirectory = this.GraphRunWorkingDirectory()
-                    this.AppendGraphOutputLineOnUi($"Working directory: {runWorkingDirectory}")
 
                     let! runExitCode =
                         this.RunProcess
-                            "Run"
+                            None
+                            true
+                            false
                             dotnet
                             [ "run"; "--configuration"; "Release"; "--no-build"; "--project"; projectPath ]
                             runWorkingDirectory
 
                     if runExitCode = 0 then
-                        this.AppendGraphOutputLineOnUi("Completed")
+                        ()
                     else
                         this.AppendGraphOutputLineOnUi($"Run failed with exit code {runExitCode}")
                 else

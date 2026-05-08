@@ -1,0 +1,81 @@
+{
+  "version": 1,
+  "nodes": [
+    {
+      "id": "node-1",
+      "functionId": "EstimateHistogram",
+      "x": 1335.828125,
+      "y": 986.07421875,
+      "parameters": [
+        {
+          "key": "availableMemory",
+          "value": "1073741824",
+          "useInput": false
+        },
+        {
+          "key": "type",
+          "value": "Float64",
+          "useInput": false
+        },
+        {
+          "key": "slices",
+          "value": "16",
+          "useInput": false
+        },
+        {
+          "key": "input",
+          "value": "input",
+          "useInput": true
+        },
+        {
+          "key": "suffix",
+          "value": ".tiff",
+          "useInput": false
+        },
+        {
+          "key": "down",
+          "value": "4",
+          "useInput": false
+        },
+        {
+          "key": "estimator",
+          "value": "DKWAndHoldout",
+          "useInput": false
+        },
+        {
+          "key": "confidence",
+          "value": "0.95",
+          "useInput": false
+        }
+      ]
+    },
+    {
+      "id": "node-2",
+      "functionId": "FileDirectory",
+      "x": 1335.828125,
+      "y": 802.50390625,
+      "parameters": [
+        {
+          "key": "kind",
+          "value": "Directory",
+          "useInput": false
+        },
+        {
+          "key": "value",
+          "value": "",
+          "useInput": false
+        }
+      ]
+    }
+  ],
+  "edges": [
+    {
+      "fromNode": "node-2",
+      "fromKind": "scalarOutput",
+      "fromPort": 0,
+      "toNode": "node-1",
+      "toKind": "parameterInput",
+      "toPort": 3
+    }
+  ]
+}
