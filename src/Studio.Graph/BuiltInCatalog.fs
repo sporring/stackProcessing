@@ -58,6 +58,9 @@ module BuiltInCatalog =
   let private pointSetDescription =
       "Reads and writes coordinate point sets as clean CSV. The header is x,y,z,scale,response. x, y, and z are image coordinates; scale and response are optional when reading and are written as floating-point values. This format is intentionally simple so point detections can be exchanged with Python, R, spreadsheets, and visualization tools without custom parsers."
 
+  let private csvWriteDescription =
+      "Writes a non-image data stream to CSV. Use the data kind selector to choose whether the input is a PointSet, a Float64 matrix, or a histogram map. Histogram rows are written as key,count and are sorted by key."
+
   let private scalarDescription =
       "Creates a named scalar value that can be connected to parameter inputs on other boxes.\n\nUse it for thresholds, scale factors, file names, booleans, or other values that should be visible in the graph instead of typed directly into a parameter field.\n\nFor numeric types, the names pi and e are accepted and compile to the standard mathematical constants. For strings, pi and e remain ordinary text."
 
@@ -782,6 +785,18 @@ module BuiltInCatalog =
           Parameters =
               [ makeParameter "output" "Output" "matrix" BasicType.String
                 suffixParameter ".csv" ] }
+
+        { Id = "WriteCSV"
+          DisplayName = "writeCSV"
+          Category = "Sources / Sinks"
+          Summary = "Write point sets, matrices, or histograms to CSV."
+          Description = csvWriteDescription
+          Aliases = [ "csv"; "write"; "save"; "points"; "matrix"; "histogram"; "keypoints"; "distance" ]
+          Inputs = [ makePort "Data" any ]
+          Outputs = []
+          Parameters =
+              [ makeParameter "output" "Output" "data" BasicType.String
+                makeParameter "dataKind" "Data" "PointSet" BasicType.String ] }
 
         { Id = "WriteNexus"
           DisplayName = "writeNexus"

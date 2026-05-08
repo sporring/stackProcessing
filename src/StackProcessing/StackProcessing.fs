@@ -91,10 +91,13 @@ let writeZarr = StackIO.writeZarr
 let writeNexus = StackIO.writeNexus
 let writeInSlabs = StackIO.writeInSlabs
 let writePointSet = StackPoints.writePointSet
+let writeCSVPointSet = StackPoints.writeCSVPointSet
 let vectorizeMatrix = StackPoints.vectorizeMatrix
 let unvectorizeMatrix = StackPoints.unvectorizeMatrix
 let pointPairDistances = StackPoints.pointPairDistances
 let writeMatrix = StackPoints.writeMatrix
+let writeCSVMatrix = StackPoints.writeCSVMatrix
+let writeCSVHistogram<'T when 'T: comparison> = StackPoints.writeCSVHistogram<'T>
 let selectGroupedValueOutput = StackPoints.selectGroupedValueOutput
 let writeMesh = StackMesh.writeMesh
 

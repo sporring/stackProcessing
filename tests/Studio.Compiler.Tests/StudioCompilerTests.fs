@@ -527,6 +527,34 @@ let generatorSuite =
             Expect.stringContains distanceWriteCode ">=> writeMatrix \"distances\" \".csv\"" "WriteMatrix should generate the suffix-controlled matrix writer."
             Expect.stringContains distanceWriteCode "|> sink" "Terminal WriteMatrix should run the matrix writer."
 
+            let writeCSVMatrix =
+                node "writeCSVMatrix" "WriteCSV"
+                    [ p "output" "distances" false
+                      p "dataKind" "Matrix" false ]
+
+            let csvMatrixCode =
+                graph [ read; dog; distances; writeCSVMatrix ]
+                    [ edge "read" "output" 0 "dog" "input" 0
+                      edge "dog" "output" 0 "distances" "input" 0
+                      edge "distances" "reducerOutput" 0 "writeCSVMatrix" "input" 0 ]
+                |> PipelineCodeGenerator.generateSavedGraph
+
+            Expect.stringContains csvMatrixCode ">=> writeCSVMatrix \"distances\"" "WriteCSV should lower matrix input to the matrix CSV writer."
+            Expect.stringContains csvMatrixCode "|> sink" "Terminal WriteCSV should run the selected CSV writer."
+
+            let writeCSVPoints =
+                node "writeCSVPoints" "WriteCSV"
+                    [ p "output" "points" false
+                      p "dataKind" "PointSet" false ]
+
+            let csvPointCode =
+                graph [ read; dog; writeCSVPoints ]
+                    [ edge "read" "output" 0 "dog" "input" 0
+                      edge "dog" "output" 0 "writeCSVPoints" "input" 0 ]
+                |> PipelineCodeGenerator.generateSavedGraph
+
+            Expect.stringContains csvPointCode ">=> writeCSVPointSet \"points\"" "WriteCSV should lower point-set input to the point-set CSV writer."
+
             let fixedPoints =
                 node "fixedPoints" "ReadPointSet"
                     [ p "availableMemory" "1024" false
@@ -1454,6 +1482,33 @@ let generatorSuite =
             Expect.stringContains code "let showChart kind points =" "Chart helper should be emitted once."
             Expect.stringContains code "let Histogram0 =" "Linked histogram data should be bound before use."
             Expect.stringContains code "showChart \"Line\" Histogram0" "Chart should use the selected chart kind and linked histogram value."
+
+        testCase "writeCSV can write histogram data" <| fun _ ->
+            let read =
+                node "read" "Read"
+                    [ p "availableMemory" "1024" false
+                      p "type" "UInt8" false
+                      p "input" "input" false
+                      p "suffix" ".tiff" false ]
+
+            let histogram =
+                node "histogram" "HistogramData" []
+
+            let write =
+                node "writeHistogram" "WriteCSV"
+                    [ p "output" "histogram" false
+                      p "dataKind" "Histogram" false ]
+
+            let code =
+                graph
+                    [ read; histogram; write ]
+                    [ edge "read" "output" 0 "histogram" "input" 0
+                      edge "histogram" "reducerOutput" 0 "writeHistogram" "input" 0 ]
+                |> PipelineCodeGenerator.generateSavedGraph
+
+            Expect.stringContains code ">=> histogram ()" "HistogramData should still generate the histogram reducer."
+            Expect.stringContains code ">=> writeCSVHistogram \"histogram\"" "WriteCSV should lower histogram input to the histogram CSV writer."
+            Expect.stringContains code "|> sink" "Terminal histogram WriteCSV should be a sink."
 
         testCase "quantiles over histogram data can feed image parameters" <| fun _ ->
             let read =

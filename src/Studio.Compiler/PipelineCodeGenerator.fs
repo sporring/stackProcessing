@@ -856,6 +856,12 @@ module PipelineCodeGenerator =
             let output = quotedParameter "output"
             let suffix = quotedParameter "suffix"
             $">=> writeMatrix {output} {suffix}"
+        | "WriteCSV" ->
+            let output = quotedParameter "output"
+            match savedParamValue "dataKind" node with
+            | "Matrix" -> $">=> writeCSVMatrix {output}"
+            | "Histogram" -> $">=> writeCSVHistogram {output}"
+            | _ -> $">=> writeCSVPointSet {output}"
         | "WriteNexus" ->
             let output = quotedParameter "output"
             let datasetPath = quotedParameter "datasetPath"
@@ -1608,6 +1614,7 @@ module PipelineCodeGenerator =
                 | "WriteMesh"
                 | "WritePointSet"
                 | "WriteMatrix"
+                | "WriteCSV"
                 | "WriteNexus"
                 | "Histogram"
                 | "ShowImage" ->

@@ -36,6 +36,21 @@ let private invariant = CultureInfo.InvariantCulture
 let private f (value: float) =
     value.ToString("R", invariant)
 
+let private invariantText (value: 'T) =
+    match box value with
+    | null -> ""
+    | :? IFormattable as formattable -> formattable.ToString(null, invariant)
+    | value -> value.ToString()
+
+let private escapeCsv (text: string) =
+    if text.Contains(",", StringComparison.Ordinal)
+       || text.Contains("\"", StringComparison.Ordinal)
+       || text.Contains("\n", StringComparison.Ordinal)
+       || text.Contains("\r", StringComparison.Ordinal) then
+        "\"" + text.Replace("\"", "\"\"") + "\""
+    else
+        text
+
 let private parseFloat (text: string) =
     Double.Parse(text.Trim(), NumberStyles.Float ||| NumberStyles.AllowThousands, invariant)
 
@@ -108,6 +123,9 @@ let writePointSet (output: string) (suffix: string) : Stage<PointSet, unit> =
 
     Stage.reduce $"writePointSet \"{output}\" \"{suffix}\"" reducer Streaming (fun _ -> 0UL) (fun _ -> 1UL)
 
+let writeCSVPointSet (output: string) : Stage<PointSet, unit> =
+    writePointSet output ".csv"
+
 let vectorizeMatrix (matrix: float[,]) =
     let rows = matrix.GetLength(0)
     let columns = matrix.GetLength(1)
@@ -158,6 +176,41 @@ let writeMatrix (output: string) (suffix: string) : Stage<VectorizedMatrix, unit
         }
 
     Stage.reduce $"writeMatrix \"{output}\" \"{suffix}\"" reducer Streaming (fun _ -> 0UL) (fun _ -> 1UL)
+
+let writeCSVMatrix (output: string) : Stage<VectorizedMatrix, unit> =
+    writeMatrix output ".csv"
+
+let writeCSVHistogram<'T when 'T: comparison> (output: string) : Stage<Map<'T, uint64>, unit> =
+    let reducer (_debug: bool) (input: AsyncSeq<Map<'T, uint64>>) =
+        async {
+            let! histogram =
+                input
+                |> AsyncSeq.foldAsync
+                    (fun state partial ->
+                        async {
+                            return
+                                partial
+                                |> Map.fold
+                                    (fun histogram key count ->
+                                        let current = histogram |> Map.tryFind key |> Option.defaultValue 0UL
+                                        histogram |> Map.add key (current + count))
+                                    state
+                        })
+                    Map.empty
+
+            let outputPath = outputPathWithSuffix output ".csv"
+            let directory = Path.GetDirectoryName(outputPath)
+            if not (String.IsNullOrWhiteSpace directory) then
+                Directory.CreateDirectory(directory) |> ignore
+
+            use writer = new StreamWriter(outputPath, false, Encoding.UTF8)
+            writer.WriteLine("key,count")
+
+            for KeyValue(key, count) in histogram do
+                writer.WriteLine($"{escapeCsv (invariantText key)},{count.ToString(invariant)}")
+        }
+
+    Stage.reduce $"writeCSVHistogram \"{output}\"" reducer Streaming (fun _ -> 0UL) (fun _ -> 1UL)
 
 let private validateUnit name value =
     if value <= 0.0 then

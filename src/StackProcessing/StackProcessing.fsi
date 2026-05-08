@@ -298,6 +298,8 @@ val writeInSlabs:
 val writePointSet:
   (string -> string -> StackCore.Stage<StackPoints.PointSet,unit>)
 
+val writeCSVPointSet: (string -> StackCore.Stage<StackPoints.PointSet,unit>)
+
 val vectorizeMatrix: (float array2d -> StackPoints.VectorizedMatrix)
 
 val unvectorizeMatrix: (StackPoints.VectorizedMatrix -> float array2d)
@@ -309,6 +311,12 @@ val pointPairDistances:
 
 val writeMatrix:
   (string -> string -> StackCore.Stage<StackPoints.VectorizedMatrix,unit>)
+
+val writeCSVMatrix:
+  (string -> StackCore.Stage<StackPoints.VectorizedMatrix,unit>)
+
+val writeCSVHistogram<'T when 'T: comparison> :
+  (string -> StackCore.Stage<Map<'T,uint64>,unit>) when 'T: comparison
 
 val selectGroupedValueOutput: (uint -> uint -> StackCore.Stage<'a,'a>)
 

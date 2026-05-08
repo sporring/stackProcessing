@@ -659,6 +659,13 @@ let stackProcessingSupportSuite =
                 let csv = File.ReadAllLines(outputPath)
                 Expect.equal csv.Length 3 "writeMatrix should write one row per matrix row."
                 Expect.stringContains csv[0] "2" "writeMatrix should include matrix values."
+
+                let wrapperPath = Path.Combine(outputDir, "distances-wrapper")
+                scalarPlan [ distances ]
+                >=> writeCSVMatrix wrapperPath
+                |> sink
+
+                Expect.isTrue (File.Exists(wrapperPath + ".csv")) "writeCSVMatrix should append the CSV suffix."
             finally
                 deleteDirectory outputDir
 
@@ -743,6 +750,17 @@ let stackProcessingSupportSuite =
                 |> transformPointSet (inverseAffine affine)
 
             Expect.isLessThan (earthMoversDistance original.Points roundTripped.Points) 1.0e-10 "inverseAffine should invert affinePoint for resampler-style backward transforms."
+
+            let homogeneous = affineToMatrix affine |> unvectorizeMatrix
+            let expectedOffset = add affine.T (sub affine.C (mulMV affine.A affine.C))
+
+            Expect.floatClose Accuracy.high homogeneous[0, 3] expectedOffset.x "The homogeneous matrix fourth column should hold the X addition term."
+            Expect.floatClose Accuracy.high homogeneous[1, 3] expectedOffset.y "The homogeneous matrix fourth column should hold the Y addition term."
+            Expect.floatClose Accuracy.high homogeneous[2, 3] expectedOffset.z "The homogeneous matrix fourth column should hold the Z addition term."
+            Expect.floatClose Accuracy.high homogeneous[3, 0] 0.0 "The homogeneous matrix last row should keep affine point weight unchanged."
+            Expect.floatClose Accuracy.high homogeneous[3, 1] 0.0 "The homogeneous matrix last row should keep affine point weight unchanged."
+            Expect.floatClose Accuracy.high homogeneous[3, 2] 0.0 "The homogeneous matrix last row should keep affine point weight unchanged."
+            Expect.floatClose Accuracy.high homogeneous[3, 3] 1.0 "The homogeneous matrix last row should keep affine point weight unchanged."
 
         testCase "affine registration aligns translated point sets and exposes resampler-compatible inverse" <| fun _ ->
             let moving =
@@ -1454,6 +1472,20 @@ let stackProcessingSupportSuite =
             finally
                 disposeImages slices
                 deleteDirectory inputDir
+
+        testCase "writeCSVHistogram writes sorted key-count rows" <| fun _ ->
+            let outputDir = tempDirectory "histogram-csv"
+            let outputPath = Path.Combine(outputDir, "histogram")
+
+            try
+                scalarPlan [ Map.ofList [ 3uy, 2UL; 1uy, 4UL ]; Map.ofList [ 2uy, 5UL; 1uy, 1UL ] ]
+                >=> writeCSVHistogram<uint8> outputPath
+                |> sink
+
+                let rows = File.ReadAllLines(outputPath + ".csv")
+                Expect.equal rows [| "key,count"; "1,5"; "2,5"; "3,2" |] "Histogram CSV output should combine maps and keep keys sorted."
+            finally
+                deleteDirectory outputDir
 
         testCase "histogram threshold estimators return scalar thresholds for the standard threshold stage" <| fun _ ->
             let histogram = Map.ofList [ 0.0f, 4UL; 10.0f, 4UL ]

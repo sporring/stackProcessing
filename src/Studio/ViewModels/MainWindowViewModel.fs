@@ -1380,6 +1380,12 @@ type MainWindowViewModel() as this =
                         |> List.map (fun (label, value) -> ParameterOptionViewModel(label, value, true))
 
                     PipelineParameterViewModel(parameter.Label, parameter.Key, parameter.DefaultValue, parameter.Type, options, false)
+                | "WriteCSV", "dataKind" ->
+                    let options =
+                        [ "PointSet"; "Matrix"; "Histogram" ]
+                        |> List.map (fun value -> ParameterOptionViewModel(value, value, true))
+
+                    PipelineParameterViewModel(parameter.Label, parameter.Key, parameter.DefaultValue, parameter.Type, options, false)
                 | "Cast", ("sourceType" | "targetType") ->
                     let options =
                         CastNode.typeOptions
