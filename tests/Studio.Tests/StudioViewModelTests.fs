@@ -43,6 +43,10 @@ let private typeParameter (node: PipelineNodeViewModel) =
     node.State.Parameters
     |> Seq.find (fun parameter -> parameter.Key = "type")
 
+let private parameter key (node: PipelineNodeViewModel) =
+    node.State.Parameters
+    |> Seq.find (fun parameter -> parameter.Key = key)
+
 let private optionStates (parameter: PipelineParameterViewModel) =
     parameter.Options
     |> Seq.map (fun option -> option.Value, option.IsEnabled)
@@ -64,7 +68,7 @@ let viewModelSuite =
             let estimator =
                 node "estimator" "SerialEstTrans"
                     [ p "type" "Float32" false
-                      p "maxShift" "8" false ]
+                      p "searchRadius" "8" false ]
 
             let apply =
                 node "apply" "SerialApplyTrans"
@@ -90,4 +94,43 @@ let viewModelSuite =
             Expect.isFalse estimatorOptions["Float64"] "The connected estimator should gray out Float64."
             Expect.isTrue applyOptions["Float32"] "The connected Float32 apply type should remain selectable."
             Expect.isFalse applyOptions["Float64"] "The connected apply box should gray out Float64."
+
+        testCase "serial estimator method is a dropdown" <| fun _ ->
+            let vm = MainWindowViewModel()
+            vm.SetDrawingSize(1200.0, 800.0)
+            vm.AddElement("SerialEstTrans")
+
+            let estimator =
+                pipelineNodes vm
+                |> Seq.find (fun node -> node.State.Definition.Id = "SerialEstTrans")
+
+            let methodParameter = estimator |> parameter "method"
+            let options =
+                methodParameter.Options
+                |> Seq.map _.Value
+                |> Seq.toList
+
+            Expect.sequenceEqual options [ "dogAffine"; "siftAffine"; "SSDAffine" ] "The serial estimator method should use fixed dropdown options."
+            Expect.equal methodParameter.Value "dogAffine" "The catalog default should remain selected unless changed."
+
+        testCase "serial estimator parameters are enabled by selected method" <| fun _ ->
+            let vm = MainWindowViewModel()
+            vm.SetDrawingSize(1200.0, 800.0)
+            vm.AddElement("SerialEstTrans")
+
+            let estimator =
+                pipelineNodes vm
+                |> Seq.find (fun node -> node.State.Definition.Id = "SerialEstTrans")
+
+            let methodParameter = estimator |> parameter "method"
+            let scaleParameter = estimator |> parameter "scale"
+            let pixelFractionParameter = estimator |> parameter "pixelFraction"
+
+            Expect.isTrue scaleParameter.IsValueEnabled "Scale should be active for dog/sift keypoint methods."
+            Expect.isFalse pixelFractionParameter.IsValueEnabled "Pixel fraction should be inactive for dog/sift keypoint methods."
+
+            methodParameter.Value <- "SSDAffine"
+
+            Expect.isFalse scaleParameter.IsValueEnabled "Scale should be inactive for SSD affine."
+            Expect.isTrue pixelFractionParameter.IsValueEnabled "Pixel fraction should be active for SSD affine."
     ]

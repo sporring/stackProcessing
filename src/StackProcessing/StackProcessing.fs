@@ -45,6 +45,8 @@ type VectorizedMatrix = StackPoints.VectorizedMatrix
 type Affine = TinyLinAlg.Affine
 type AffineRegistrationOptions = StackRegistration.AffineRegistrationOptions
 type AffineRegistrationResult = StackRegistration.AffineRegistrationResult
+type RansacResult<'Model, 'Item> = StackRansac.RansacResult<'Model, 'Item>
+type PointMatch2D = StackRansac.PointMatch2D
 type ImageSetCoordinateSystem = StackManifest.ImageSetCoordinateSystem
 type ImageSetTransform = StackManifest.ImageSetTransform
 type ImageSetGrid = StackManifest.ImageSetGrid
@@ -122,6 +124,9 @@ let affineToMatrix = StackRegistration.affineToMatrix
 let matrixToAffine = StackRegistration.matrixToAffine
 let affineRegistration = StackRegistration.affineRegistration
 let affineRegistrationMatrices = StackRegistration.affineRegistrationMatrices
+let ransacFit = StackRansac.fit
+let affine2DFromMatches = StackRansac.affine2DFromMatches
+let affine2DRansac = StackRansac.affine2DRansac
 
 // //////////////////// StackManifest
 let identityImageSetTransform = StackManifest.identityTransform

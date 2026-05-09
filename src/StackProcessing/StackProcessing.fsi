@@ -102,6 +102,10 @@ type AffineRegistrationOptions = StackRegistration.AffineRegistrationOptions
 
 type AffineRegistrationResult = StackRegistration.AffineRegistrationResult
 
+type RansacResult<'Model,'Item> = StackRansac.RansacResult<'Model,'Item>
+
+type PointMatch2D = StackRansac.PointMatch2D
+
 type ImageSetCoordinateSystem = StackManifest.ImageSetCoordinateSystem
 
 type ImageSetTransform = StackManifest.ImageSetTransform
@@ -390,6 +394,23 @@ val affineRegistrationMatrices:
   (StackRegistration.AffineRegistrationOptions ->
      StackCore.Stage<(StackPoints.PointSet * StackPoints.PointSet),
                      StackPoints.VectorizedMatrix>)
+
+val ransacFit:
+  (int ->
+     int ->
+     float ->
+     int ->
+     ('a list -> 'b option) ->
+     ('b -> 'a -> float option) ->
+     'a seq -> StackRansac.RansacResult<'b,'a> option)
+
+val affine2DFromMatches:
+  (StackRansac.PointMatch2D list -> float list list option)
+
+val affine2DRansac:
+  (int ->
+     float ->
+     float -> int -> StackRansac.PointMatch2D seq -> float list list option)
 
 val identityImageSetTransform: StackManifest.ImageSetTransform
 
@@ -1024,15 +1045,6 @@ val serialPolynomialBiasCorrect<'T when 'T: equality> :
 val serialEstTrans<'T when 'T: equality> :
   (int ->
      string ->
-     float ->
-     float ->
-     uint32 ->
-     double ->
-     uint32 ->
-     float ->
-     int ->
-     float ->
-     float ->
      float ->
      float ->
      StackCore.Stage<StackCore.Image<'T>,

@@ -878,7 +878,7 @@ let stackProcessingSupportSuite =
             let estimated =
                 try
                     imagePlan sampled
-                    >=> serialEstTrans<float> 2 "SiftAffine" 0.5 1.2 4u 0.0001 20u 1.5 5 0.05 1.0 0.0001 0.5
+                    >=> serialEstTrans<float> 2 "SSDAffine" 0.5 0.1
                     |> drainList
                 finally
                     disposeImages sampled
@@ -894,7 +894,7 @@ let stackProcessingSupportSuite =
             let transformed =
                 try
                     imagePlan input
-                    >=> serialEstTrans<float> 2 "SiftAffine" 0.5 1.2 4u 0.0001 20u 1.5 5 0.05 1.0 0.0001 0.5
+                    >=> serialEstTrans<float> 2 "SSDAffine" 0.5 0.1
                     >=> serialApplyTrans<float> 0.0
                     |> drainList
                 finally
@@ -906,7 +906,7 @@ let stackProcessingSupportSuite =
             finally
                 disposeImages transformed
 
-        testCase "serial section SSD translation mode is available as an intensity-based option" <| fun _ ->
+        testCase "serial section SSD affine mode is available as an intensity-based option" <| fun _ ->
             let makeSlice z impulseX =
                 let image =
                     Array2D.init 5 5 (fun x y -> if x = impulseX && y = 2 then 10.0 else 0.0)
@@ -918,7 +918,7 @@ let stackProcessingSupportSuite =
             let estimated =
                 try
                     imagePlan sampled
-                    >=> serialEstTrans<float> 2 "SSDTranslation" 0.5 1.2 4u 0.0001 20u 1.5 5 0.05 1.0 0.0001 0.5
+                    >=> serialEstTrans<float> 2 "SSDAffine" 0.5 0.1
                     |> drainList
                 finally
                     disposeImages sampled
@@ -926,7 +926,34 @@ let stackProcessingSupportSuite =
             try
                 let manifests = estimated |> List.map snd
                 Expect.floatClose Accuracy.high manifests.[1].Transforms.[0].Matrix.[0].[2] -1.0 "SSD mode should recover the same pure translation."
-                Expect.floatClose Accuracy.high manifests.[1].Transforms.[0].Matrix.[0].[0] 1.0 "SSD mode should emit translation-only affine matrices."
+                Expect.floatClose Accuracy.high manifests.[1].Transforms.[0].Matrix.[0].[0] 1.0 "SSD mode should emit affine matrices."
+            finally
+                estimated |> List.map fst |> disposeImages
+
+        testCase "serial section SSD affine reuses coarse scale for downsampled estimation" <| fun _ ->
+            let makeSlice z offsetX =
+                let image =
+                    Array2D.init 16 16 (fun x y ->
+                        if x >= 5 + offsetX && x <= 8 + offsetX && y >= 6 && y <= 9 then
+                            float (10 + x + 2 * y)
+                        else
+                            0.0)
+                    |> Image<float>.ofArray2D
+                image.index <- z
+                image
+
+            let sampled = [ makeSlice 0 0; makeSlice 1 4 ]
+            let estimated =
+                try
+                    imagePlan sampled
+                    >=> serialEstTrans<float> 6 "SSDAffine" 2.0 0.25
+                    |> drainList
+                finally
+                    disposeImages sampled
+
+            try
+                let manifests = estimated |> List.map snd
+                Expect.floatClose Accuracy.medium manifests.[1].Transforms.[0].Matrix.[0].[2] -4.0 "SSD scale should support coarse downsampled estimation and lift translation back to full resolution."
             finally
                 estimated |> List.map fst |> disposeImages
 
@@ -1122,6 +1149,23 @@ let stackProcessingSupportSuite =
             Expect.equal matrices.Length 2 "affineRegistrationMatrices should emit transform and inverse transform matrices."
             Expect.equal matrices[0].Rows 4u "The forward transform matrix should be 4x4."
             Expect.equal matrices[1].Rows 4u "The inverse transform matrix should be 4x4."
+
+        testCase "2D affine RANSAC ignores outlier point matches" <| fun _ ->
+            let matches: PointMatch2D list =
+                [ { FixedX = 2.0; FixedY = -1.0; MovingX = 0.0; MovingY = 0.0 }
+                  { FixedX = 3.0; FixedY = -1.0; MovingX = 1.0; MovingY = 0.0 }
+                  { FixedX = 2.0; FixedY = 0.0; MovingX = 0.0; MovingY = 1.0 }
+                  { FixedX = 3.0; FixedY = 0.0; MovingX = 1.0; MovingY = 1.0 }
+                  { FixedX = 40.0; FixedY = -30.0; MovingX = 2.0; MovingY = 2.0 } ]
+
+            let matrix =
+                affine2DRansac 80 0.25 0.5 123 matches
+                |> Option.defaultWith (fun () -> failwith "RANSAC should find the dominant affine match set.")
+
+            Expect.floatClose Accuracy.high matrix.[0].[0] 1.0 "The fitted affine should preserve x scale."
+            Expect.floatClose Accuracy.high matrix.[1].[1] 1.0 "The fitted affine should preserve y scale."
+            Expect.floatClose Accuracy.medium matrix.[0].[2] 2.0 "The fitted affine should recover x translation despite an outlier."
+            Expect.floatClose Accuracy.medium matrix.[1].[2] -1.0 "The fitted affine should recover y translation despite an outlier."
 
         testCase "image-set manifest round-trips spatial data items as independent JSON sidecar" <| fun _ ->
             let outputDir = tempDirectory "image-set-manifest"

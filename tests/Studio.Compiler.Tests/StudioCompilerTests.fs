@@ -29,19 +29,10 @@ let private graph nodes edges =
 
 let private serialEstTransParameters pixelType =
     [ p "type" pixelType false
-      p "maxShift" "4" false
-      p "method" "SiftAffine" false
-      p "sigma0" "1.6" false
-      p "scaleFactor" "1.41421356237" false
-      p "scaleLevels" "4" false
-      p "contrastThreshold" "0.03" false
-      p "maxKeypoints" "50" false
-      p "matchTolerance" "1.5" false
-      p "maxIterations" "60" false
-      p "initialLinearStep" "0.05" false
-      p "initialTranslationStep" "1.0" false
-      p "minStep" "0.0001" false
-      p "stepShrink" "0.5" false ]
+      p "searchRadius" "4" false
+      p "method" "dogAffine" false
+      p "scale" "1.6" false
+      p "pixelFraction" "0.1" false ]
 
 [<Tests>]
 let generatorSuite =
@@ -251,7 +242,7 @@ let generatorSuite =
                       edge "apply" "output" 0 "write" "input" 0 ]
                 |> PipelineCodeGenerator.generateSavedGraph
 
-            Expect.stringContains code ">=> serialEstTrans<float> 4 \"SiftAffine\" 1.6 1.41421356237 4u 0.03 50u 1.5 60 0.05 1.0 0.0001 0.5" "SerialEstTrans should lower to the streamed image/manifest estimator."
+            Expect.stringContains code ">=> serialEstTrans<float> 4 \"dogAffine\" 1.6 0.1" "SerialEstTrans should lower to the streamed image/manifest estimator."
             Expect.stringContains code ">=> serialApplyTrans<float> 0.0" "Serial apply should consume the streamed image/manifest pairs."
             Expect.isFalse (code.Contains("serialTransImage")) "Direct estimator-to-apply wiring should keep the pair stream intact."
 
@@ -285,7 +276,7 @@ let generatorSuite =
                 |> PipelineCodeGenerator.generateSavedGraph
 
             Expect.stringContains code "|> readVolume<float32> \"sections.tif\"" "The source should be Float32."
-            Expect.stringContains code ">=> serialEstTrans<float32> 4 \"SiftAffine\" 1.6 1.41421356237 4u 0.03 50u 1.5 60 0.05 1.0 0.0001 0.5" "SerialEstTrans should use the connected image type."
+            Expect.stringContains code ">=> serialEstTrans<float32> 4 \"dogAffine\" 1.6 0.1" "SerialEstTrans should use the connected image type."
             Expect.stringContains code ">=> serialApplyTrans<float32> 0.0" "SerialApplyTrans should use the connected image type."
             Expect.isFalse (code.Contains("serialEstTrans<float>")) "Stale Float64 serial parameters must not leak into generated code."
 

@@ -4,8 +4,8 @@
     {
       "id": "node-1",
       "functionId": "ReadVolume",
-      "x": 1203.6897581137634,
-      "y": 936.4934320102844,
+      "x": 1224.4493041200917,
+      "y": 932.8451419822637,
       "parameters": [
         {
           "key": "availableMemory",
@@ -27,8 +27,8 @@
     {
       "id": "node-2",
       "functionId": "Write",
-      "x": 1883.094807836518,
-      "y": 936.3485749293549,
+      "x": 1923.2902616936815,
+      "y": 935.7848383066076,
       "parameters": [
         {
           "key": "output",
@@ -45,8 +45,8 @@
     {
       "id": "node-3",
       "functionId": "SerialEstTrans",
-      "x": 1378.0032260125813,
-      "y": 935.2867319792412,
+      "x": 1398.258741380916,
+      "y": 926.0227006049821,
       "parameters": [
         {
           "key": "type",
@@ -54,68 +54,23 @@
           "useInput": false
         },
         {
-          "key": "maxShift",
+          "key": "method",
+          "value": "dogAffine",
+          "useInput": false
+        },
+        {
+          "key": "searchRadius",
           "value": "8",
           "useInput": false
         },
         {
-          "key": "method",
-          "value": "SiftAffine",
-          "useInput": false
-        },
-        {
-          "key": "sigma0",
+          "key": "scale",
           "value": "1.6",
           "useInput": false
         },
         {
-          "key": "scaleFactor",
-          "value": "1.41421356237",
-          "useInput": false
-        },
-        {
-          "key": "scaleLevels",
-          "value": "4",
-          "useInput": false
-        },
-        {
-          "key": "contrastThreshold",
-          "value": "0.03",
-          "useInput": false
-        },
-        {
-          "key": "maxKeypoints",
-          "value": "50",
-          "useInput": false
-        },
-        {
-          "key": "matchTolerance",
-          "value": "1.5",
-          "useInput": false
-        },
-        {
-          "key": "maxIterations",
-          "value": "60",
-          "useInput": false
-        },
-        {
-          "key": "initialLinearStep",
-          "value": "0.05",
-          "useInput": false
-        },
-        {
-          "key": "initialTranslationStep",
-          "value": "1.0",
-          "useInput": false
-        },
-        {
-          "key": "minStep",
-          "value": "0.0001",
-          "useInput": false
-        },
-        {
-          "key": "stepShrink",
-          "value": "0.5",
+          "key": "pixelFraction",
+          "value": "0.1",
           "useInput": false
         }
       ]
@@ -123,8 +78,8 @@
     {
       "id": "node-4",
       "functionId": "SerialApplyTrans",
-      "x": 1550.9221553446353,
-      "y": 935.3024850199031,
+      "x": 1591.5117450134298,
+      "y": 925.5262427472588,
       "parameters": [
         {
           "key": "type",
@@ -141,8 +96,8 @@
     {
       "id": "node-5",
       "functionId": "Cast",
-      "x": 1725.260471010184,
-      "y": 950.5635357706782,
+      "x": 1765.4214972743882,
+      "y": 935.4525627267544,
       "parameters": [
         {
           "key": "sourceType",

@@ -96,6 +96,14 @@ let private transformPoint matrix x y =
     matrix[0][0] * x + matrix[0][1] * y + matrix[0][2],
     matrix[1][0] * x + matrix[1][1] * y + matrix[1][2]
 
+let private scaleCoordinateMatrix factor =
+    [ [ factor; 0.0; 0.0 ]
+      [ 0.0; factor; 0.0 ]
+      [ 0.0; 0.0; 1.0 ] ]
+
+let private liftMatrixFromDownsampledCoordinates factor matrix =
+    multiplyMatrix (scaleCoordinateMatrix factor) (multiplyMatrix matrix (scaleCoordinateMatrix (1.0 / factor)))
+
 let private terms2D order =
     if order < 0 then invalidArg "order" "Polynomial order must be non-negative."
     [ for total in 0 .. order do
@@ -416,14 +424,147 @@ let private siftKeypoints2D sigma0 scaleFactor scaleLevels contrastThreshold max
         |> Seq.truncate maxKeypoints
         |> Seq.toList
 
-let private estimateSsdTranslation maxShift (fixedImage: Image<'T>) (movingImage: Image<'T>) =
-    let width = int (fixedImage.GetWidth())
-    let height = int (fixedImage.GetHeight())
-    if movingImage.GetWidth() <> uint width || movingImage.GetHeight() <> uint height then
+type private SiftFeature =
+    { Point: CoordinatePoint
+      Descriptor: float[] }
+
+type private FeatureMatch =
+    { Fixed: CoordinatePoint
+      Moving: CoordinatePoint }
+
+let private gradientAt (pixels: double[,]) x y =
+    let width = pixels.GetLength(0)
+    let height = pixels.GetLength(1)
+    let clamp lo hi value = min hi (max lo value)
+    let gx = pixels[clamp 0 (width - 1) (x + 1), y] - pixels[clamp 0 (width - 1) (x - 1), y]
+    let gy = pixels[x, clamp 0 (height - 1) (y + 1)] - pixels[x, clamp 0 (height - 1) (y - 1)]
+    gx, gy
+
+let private wrapAngle angle =
+    let twoPi = 2.0 * Math.PI
+    let mutable wrapped = angle % twoPi
+    if wrapped < 0.0 then wrapped <- wrapped + twoPi
+    wrapped
+
+let private dominantOrientation orientationBins (pixels: double[,]) (point: CoordinatePoint) =
+    let width = pixels.GetLength(0)
+    let height = pixels.GetLength(1)
+    let bins = Array.zeroCreate<float> orientationBins
+    let radius = max 1 (int (round (3.0 * point.Scale)))
+    let sigma = max 1.0 (1.5 * point.Scale)
+    let cx = int (round point.X)
+    let cy = int (round point.Y)
+
+    for y in max 1 (cy - radius) .. min (height - 2) (cy + radius) do
+        for x in max 1 (cx - radius) .. min (width - 2) (cx + radius) do
+            let gx, gy = gradientAt pixels x y
+            let magnitude = sqrt (gx * gx + gy * gy)
+            if magnitude > 0.0 then
+                let dx = float x - point.X
+                let dy = float y - point.Y
+                let weight = exp (-(dx * dx + dy * dy) / (2.0 * sigma * sigma))
+                let bin = int (floor (wrapAngle (atan2 gy gx) / (2.0 * Math.PI) * float orientationBins)) % orientationBins
+                bins[bin] <- bins[bin] + weight * magnitude
+
+    let best =
+        bins
+        |> Array.mapi (fun i value -> i, value)
+        |> Array.maxBy snd
+        |> fst
+
+    (float best + 0.5) * 2.0 * Math.PI / float orientationBins
+
+let private normalizeDescriptor (descriptor: float[]) =
+    let normalize values =
+        let norm = sqrt (values |> Array.sumBy (fun value -> value * value))
+        if norm <= 1.0e-12 then values else values |> Array.map (fun value -> value / norm)
+
+    let normalized = normalize descriptor
+    let clipped = normalized |> Array.map (min 0.2)
+    normalize clipped
+
+let private siftDescriptor descriptorSize orientationBins (pixels: double[,]) (point: CoordinatePoint) =
+    let width = pixels.GetLength(0)
+    let height = pixels.GetLength(1)
+    let cellSize = 4.0
+    let grid = descriptorSize
+    let half = 0.5 * cellSize * float grid
+    let orientation = dominantOrientation orientationBins pixels point
+    let cosA = cos orientation
+    let sinA = sin orientation
+    let descriptor = Array.zeroCreate<float> (grid * grid * orientationBins)
+    let radius = int (ceil half)
+    let cx = int (round point.X)
+    let cy = int (round point.Y)
+    let sigma = 0.5 * float grid * cellSize
+
+    for y in max 1 (cy - radius) .. min (height - 2) (cy + radius) do
+        for x in max 1 (cx - radius) .. min (width - 2) (cx + radius) do
+            let rx = float x - point.X
+            let ry = float y - point.Y
+            let localX = cosA * rx + sinA * ry
+            let localY = -sinA * rx + cosA * ry
+            if abs localX < half && abs localY < half then
+                let cellX = int (floor ((localX + half) / cellSize))
+                let cellY = int (floor ((localY + half) / cellSize))
+                if cellX >= 0 && cellX < grid && cellY >= 0 && cellY < grid then
+                    let gx, gy = gradientAt pixels x y
+                    let magnitude = sqrt (gx * gx + gy * gy)
+                    if magnitude > 0.0 then
+                        let dx = float x - point.X
+                        let dy = float y - point.Y
+                        let weight = exp (-(dx * dx + dy * dy) / (2.0 * sigma * sigma))
+                        let angle = wrapAngle ((atan2 gy gx) - orientation)
+                        let bin = int (floor (angle / (2.0 * Math.PI) * float orientationBins)) % orientationBins
+                        let index = (cellY * grid + cellX) * orientationBins + bin
+                        descriptor[index] <- descriptor[index] + weight * magnitude
+
+    normalizeDescriptor descriptor
+
+let private siftFeaturesFromPoints descriptorSize orientationBins pixels points =
+    points
+    |> List.choose (fun point ->
+        let descriptor = siftDescriptor descriptorSize orientationBins pixels point
+        if descriptor |> Array.exists (fun value -> value > 0.0) then
+            Some { Point = point; Descriptor = descriptor }
+        else
+            None)
+
+let private descriptorDistanceSquared (a: float[]) (b: float[]) =
+    let mutable sum = 0.0
+    for i in 0 .. a.Length - 1 do
+        let diff = a[i] - b[i]
+        sum <- sum + diff * diff
+    sum
+
+let private matchSiftFeatures nearestNeighborRatio (fixedFeatures: SiftFeature list) (movingFeatures: SiftFeature list) =
+    if fixedFeatures.Length < 2 then
+        []
+    else
+        [ for moving in movingFeatures do
+            let distances =
+                fixedFeatures
+                |> List.map (fun fixedFeature -> descriptorDistanceSquared moving.Descriptor fixedFeature.Descriptor, fixedFeature)
+                |> List.sortBy fst
+
+            match distances with
+            | (bestDistance, best) :: (nextDistance, _) :: _ when bestDistance <= nearestNeighborRatio * nearestNeighborRatio * nextDistance ->
+                { Fixed = best.Point; Moving = moving.Point }
+            | _ -> () ]
+
+type private PreparedSerialImage<'T when 'T: equality> =
+    { Image: Image<'T>
+      Pixels: Lazy<double[,]>
+      SsdPixels: Lazy<double[,]>
+      DogPoints: Lazy<CoordinatePoint list>
+      SiftFeatures: Lazy<SiftFeature list> }
+
+let private estimateSsdTranslationPixels maxShift (fixedPixels: double[,]) (moving: double[,]) =
+    let width = fixedPixels.GetLength(0)
+    let height = fixedPixels.GetLength(1)
+    if moving.GetLength(0) <> width || moving.GetLength(1) <> height then
         invalidOp "serialEstTrans expects all slices to have the same shape."
 
-    let fixedPixels = imageToArray fixedImage
-    let moving = imageToArray movingImage
     let mutable bestDx = 0
     let mutable bestDy = 0
     let mutable bestScore = Double.PositiveInfinity
@@ -451,15 +592,146 @@ let private estimateSsdTranslation maxShift (fixedImage: Image<'T>) (movingImage
 
     float bestDx, float bestDy
 
-let private estimateKeypointTranslation maxShift sigma0 scaleFactor scaleLevels contrastThreshold maxKeypoints matchTolerance (fixedImage: Image<'T>) (movingImage: Image<'T>) =
-    let width = int (fixedImage.GetWidth())
-    let height = int (fixedImage.GetHeight())
-    if movingImage.GetWidth() <> uint width || movingImage.GetHeight() <> uint height then
+let private sampleDoubleBilinear background (pixels: double[,]) x y =
+    let width = Array2D.length1 pixels
+    let height = Array2D.length2 pixels
+    if x < 0.0 || y < 0.0 || x > float (width - 1) || y > float (height - 1) then
+        background
+    else
+        let x0 = int (floor x)
+        let y0 = int (floor y)
+        let x1 = min (width - 1) (x0 + 1)
+        let y1 = min (height - 1) (y0 + 1)
+        let tx = x - float x0
+        let ty = y - float y0
+        (1.0 - tx) * (1.0 - ty) * pixels[x0, y0]
+        + tx * (1.0 - ty) * pixels[x1, y0]
+        + (1.0 - tx) * ty * pixels[x0, y1]
+        + tx * ty * pixels[x1, y1]
+
+let private matrixFromAffineParameters (parameters: float[]) =
+    [ [ parameters[0]; parameters[1]; parameters[2] ]
+      [ parameters[3]; parameters[4]; parameters[5] ]
+      [ 0.0; 0.0; 1.0 ] ]
+
+let private affineParametersFromMatrix matrix =
+    validateMatrix matrix
+    [| matrix[0][0]; matrix[0][1]; matrix[0][2]; matrix[1][0]; matrix[1][1]; matrix[1][2] |]
+
+let private downsampleSmoothed factor (pixels: double[,]) =
+    let width = pixels.GetLength(0)
+    let height = pixels.GetLength(1)
+    let outputWidth = max 3 (int (ceil (float width / factor)))
+    let outputHeight = max 3 (int (ceil (float height / factor)))
+    let smoothed = blur2D (max 0.5 (0.5 * factor)) pixels
+    let output = Array2D.zeroCreate<float> outputWidth outputHeight
+
+    for y in 0 .. outputHeight - 1 do
+        for x in 0 .. outputWidth - 1 do
+            output[x, y] <- sampleDoubleBilinear 0.0 smoothed (float x * factor) (float y * factor)
+
+    output
+
+let private estimateSsdAffineMatrixAtResolution maxShift maxIterations initialLinearStep initialTranslationStep minStep stepShrink pixelFraction initialMatrix (fixedPixels: double[,]) (movingPixels: double[,]) =
+    let width = fixedPixels.GetLength(0)
+    let height = fixedPixels.GetLength(1)
+    if movingPixels.GetLength(0) <> width || movingPixels.GetLength(1) <> height then
         invalidOp "serialEstTrans expects all slices to have the same shape."
 
-    let fixedPoints = siftKeypoints2D sigma0 scaleFactor scaleLevels contrastThreshold maxKeypoints fixedImage
-    let movingPoints = siftKeypoints2D sigma0 scaleFactor scaleLevels contrastThreshold maxKeypoints movingImage
+    let mutable bestParameters =
+        match initialMatrix with
+        | Some matrix -> affineParametersFromMatrix matrix
+        | None ->
+            let initialDx, initialDy = estimateSsdTranslationPixels maxShift fixedPixels movingPixels
+            [| 1.0; 0.0; initialDx; 0.0; 1.0; initialDy |]
 
+    let steps = [| initialLinearStep; initialLinearStep; initialTranslationStep; initialLinearStep; initialLinearStep; initialTranslationStep |]
+    let sampleStride = max 1 (int (round (sqrt (1.0 / pixelFraction))))
+
+    let objective parameters =
+        let matrix = matrixFromAffineParameters parameters
+        try
+            let inverse = invertMatrix matrix
+            let mutable score = 0.0
+            let mutable count = 0
+
+            for y in 0 .. sampleStride .. height - 1 do
+                for x in 0 .. sampleStride .. width - 1 do
+                    let movingX, movingY = transformPoint inverse (float x) (float y)
+                    if movingX >= 0.0 && movingY >= 0.0 && movingX <= float (width - 1) && movingY <= float (height - 1) then
+                        let diff = fixedPixels[x, y] - sampleDoubleBilinear 0.0 movingPixels movingX movingY
+                        score <- score + diff * diff
+                        count <- count + 1
+
+            if count = 0 then Double.PositiveInfinity else score / float count
+        with _ ->
+            Double.PositiveInfinity
+
+    let mutable bestScore = objective bestParameters
+    let mutable iteration = 0
+
+    while iteration < maxIterations && (steps |> Array.max) > minStep do
+        let mutable improved = false
+
+        for parameterIndex in 0 .. bestParameters.Length - 1 do
+            for direction in [ 1.0; -1.0 ] do
+                let candidate = Array.copy bestParameters
+                candidate[parameterIndex] <- candidate[parameterIndex] + direction * steps[parameterIndex]
+
+                if abs candidate[2] <= float maxShift && abs candidate[5] <= float maxShift then
+                    let score = objective candidate
+                    if score < bestScore then
+                        bestParameters <- candidate
+                        bestScore <- score
+                        improved <- true
+
+        if not improved then
+            for index in 0 .. steps.Length - 1 do
+                steps[index] <- steps[index] * stepShrink
+
+        iteration <- iteration + 1
+
+    matrixFromAffineParameters bestParameters
+
+let private estimateSsdAffineMatrixFromPrepared maxShift maxIterations initialLinearStep initialTranslationStep minStep stepShrink pixelFraction factor (fixedImage: PreparedSerialImage<'T>) (movingImage: PreparedSerialImage<'T>) =
+    let fixedPixels = fixedImage.Pixels.Value
+    let movingPixels = movingImage.Pixels.Value
+    let width = fixedPixels.GetLength(0)
+    let height = fixedPixels.GetLength(1)
+    if movingPixels.GetLength(0) <> width || movingPixels.GetLength(1) <> height then
+        invalidOp "serialEstTrans expects all slices to have the same shape."
+
+    if factor <= 1.0 || width < int (3.0 * factor) || height < int (3.0 * factor) then
+        estimateSsdAffineMatrixAtResolution maxShift maxIterations initialLinearStep initialTranslationStep minStep stepShrink pixelFraction None fixedPixels movingPixels
+    else
+        let lowMaxShift = max 1 (int (ceil (float maxShift / factor)))
+        let lowMatrix =
+            estimateSsdAffineMatrixAtResolution
+                lowMaxShift
+                maxIterations
+                initialLinearStep
+                (max 1.0 (initialTranslationStep / factor))
+                minStep
+                stepShrink
+                pixelFraction
+                None
+                fixedImage.SsdPixels.Value
+                movingImage.SsdPixels.Value
+        let fullInitial = liftMatrixFromDownsampledCoordinates factor lowMatrix
+
+        estimateSsdAffineMatrixAtResolution
+            maxShift
+            (max 8 (maxIterations / 4))
+            initialLinearStep
+            initialTranslationStep
+            minStep
+            stepShrink
+            pixelFraction
+            (Some fullInitial)
+            fixedPixels
+            movingPixels
+
+let private estimateKeypointTranslation maxShift matchTolerance fixedPoints movingPoints =
     if List.isEmpty fixedPoints || List.isEmpty movingPoints then
         0.0, 0.0
     else
@@ -506,69 +778,45 @@ let private estimateKeypointTranslation maxShift sigma0 scaleFactor scaleLevels 
 
             dx, dy
 
-let private toRegistrationPoint (point: CoordinatePoint) =
-    { point with Z = 0.0 }
+let private dogMatchesNearTranslation matchTolerance dx dy fixedPoints movingPoints : StackRansac.PointMatch2D list =
+    movingPoints
+    |> List.choose (fun moving ->
+        fixedPoints
+        |> List.map (fun fixedPoint ->
+            let predictedX = moving.X + dx
+            let predictedY = moving.Y + dy
+            let error = sqrt ((fixedPoint.X - predictedX) ** 2.0 + (fixedPoint.Y - predictedY) ** 2.0)
+            fixedPoint, error)
+        |> List.sortBy snd
+        |> function
+            | (fixedPoint, error) :: _ when error <= matchTolerance ->
+                Some
+                    { StackRansac.FixedX = fixedPoint.X
+                      FixedY = fixedPoint.Y
+                      MovingX = moving.X
+                      MovingY = moving.Y }
+            | _ -> None)
 
-let private affineToSerialMatrix transform =
-    let matrix = StackRegistration.affineToMatrix transform |> unvectorizeMatrix
+let private estimateSiftAffineMatrixFromPrepared maxShift nearestNeighborRatio ransacIterations ransacMaxError ransacMinInlierRatio fixedImage movingImage =
+    let matches =
+        matchSiftFeatures nearestNeighborRatio fixedImage.SiftFeatures.Value movingImage.SiftFeatures.Value
+        |> List.filter (fun matchItem ->
+            abs (matchItem.Fixed.X - matchItem.Moving.X) <= float maxShift
+            && abs (matchItem.Fixed.Y - matchItem.Moving.Y) <= float maxShift)
 
-    [ [ matrix[0, 0]; matrix[0, 1]; matrix[0, 3] ]
-      [ matrix[1, 0]; matrix[1, 1]; matrix[1, 3] ]
-      [ 0.0; 0.0; 1.0 ] ]
+    let pointMatches: StackRansac.PointMatch2D list =
+        matches
+        |> List.map (fun matchItem ->
+            { FixedX = matchItem.Fixed.X
+              FixedY = matchItem.Fixed.Y
+              MovingX = matchItem.Moving.X
+              MovingY = matchItem.Moving.Y })
 
-let private estimateAffineMatrix maxShift sigma0 scaleFactor scaleLevels contrastThreshold maxKeypoints matchTolerance registrationOptions fixedImage movingImage =
-    let dx, dy =
-        estimateKeypointTranslation
-            maxShift
-            sigma0
-            scaleFactor
-            scaleLevels
-            contrastThreshold
-            maxKeypoints
-            matchTolerance
-            fixedImage
-            movingImage
-
-    let fixedPoints = siftKeypoints2D sigma0 scaleFactor scaleLevels contrastThreshold maxKeypoints fixedImage
-    let movingPoints = siftKeypoints2D sigma0 scaleFactor scaleLevels contrastThreshold maxKeypoints movingImage
-
-    if fixedPoints.Length < 3 || movingPoints.Length < 3 then
+    match StackRansac.affine2DRansac ransacIterations ransacMaxError ransacMinInlierRatio 12345 pointMatches with
+    | Some matrix -> matrix
+    | None ->
+        let dx, dy = estimateSsdTranslationPixels maxShift fixedImage.Pixels.Value movingImage.Pixels.Value
         translationMatrix dx dy
-    else
-        let nearTranslation point =
-            movingPoints
-            |> List.exists (fun moving ->
-                abs ((point.X - moving.X) - dx) <= matchTolerance
-                && abs ((point.Y - moving.Y) - dy) <= matchTolerance)
-
-        let fixedCandidates =
-            fixedPoints
-            |> List.filter nearTranslation
-            |> function
-                | [] -> fixedPoints
-                | points -> points
-
-        let movingCandidates =
-            movingPoints
-            |> List.filter (fun moving ->
-                fixedPoints
-                |> List.exists (fun fixedPoint ->
-                    abs ((fixedPoint.X - moving.X) - dx) <= matchTolerance
-                    && abs ((fixedPoint.Y - moving.Y) - dy) <= matchTolerance))
-            |> function
-                | [] -> movingPoints
-                | points -> points
-
-        try
-            let result =
-                StackRegistration.affineRegistration
-                    registrationOptions
-                    (fixedCandidates |> List.map toRegistrationPoint)
-                    (movingCandidates |> List.map toRegistrationPoint)
-
-            affineToSerialMatrix result.Transform
-        with _ ->
-            translationMatrix dx dy
 
 let private singleSliceManifest width height transform =
     { Version = 1
@@ -576,28 +824,49 @@ let private singleSliceManifest width height transform =
       Height = height
       Transforms = [ transform ] }
 
-let serialEstTrans<'T when 'T: equality> maxShift (method: string) sigma0 scaleFactor scaleLevels contrastThreshold maxKeypoints matchTolerance maxIterations initialLinearStep initialTranslationStep minStep stepShrink : Stage<Image<'T>, Image<'T> * SerialSliceManifest> =
-    if maxShift < 0 then invalidArg "maxShift" "maxShift must be non-negative."
+let serialEstTrans<'T when 'T: equality> searchRadius (method: string) scale pixelFraction : Stage<Image<'T>, Image<'T> * SerialSliceManifest> =
+    if searchRadius < 0 then invalidArg "searchRadius" "searchRadius must be non-negative."
     let methodName = method.Trim().ToLowerInvariant()
-    if methodName <> "siftaffine" && methodName <> "sift" && methodName <> "ssdtranslation" && methodName <> "ssd" then
-        invalidArg "method" "serialEstTrans method must be SiftAffine or SSDTranslation."
-    if sigma0 <= 0.0 then invalidArg "sigma0" "serialEstTrans sigma0 must be positive."
-    if scaleFactor <= 1.0 then invalidArg "scaleFactor" "serialEstTrans scaleFactor must be greater than 1."
-    if scaleLevels < 4u then invalidArg "scaleLevels" "serialEstTrans needs at least 4 Gaussian scale levels."
-    if maxKeypoints = 0u then invalidArg "maxKeypoints" "serialEstTrans maxKeypoints must be positive."
-    if matchTolerance <= 0.0 then invalidArg "matchTolerance" "serialEstTrans matchTolerance must be positive."
-    if maxIterations <= 0 then invalidArg "maxIterations" "serialEstTrans maxIterations must be positive."
-    if initialLinearStep <= 0.0 then invalidArg "initialLinearStep" "serialEstTrans initialLinearStep must be positive."
-    if initialTranslationStep <= 0.0 then invalidArg "initialTranslationStep" "serialEstTrans initialTranslationStep must be positive."
-    if minStep <= 0.0 then invalidArg "minStep" "serialEstTrans minStep must be positive."
-    if stepShrink <= 0.0 || stepShrink >= 1.0 then invalidArg "stepShrink" "serialEstTrans stepShrink must be between 0 and 1."
-    let registrationOptions =
-        { StackRegistration.defaultAffineRegistrationOptions with
-            MaxIterations = maxIterations
-            InitialLinearStep = initialLinearStep
-            InitialTranslationStep = initialTranslationStep
-            MinStep = minStep
-            StepShrink = stepShrink }
+    if methodName <> "dogaffine" && methodName <> "ssdaffine" && methodName <> "siftaffine" then
+        invalidArg "method" "serialEstTrans method must be dogAffine, siftAffine, or SSDAffine."
+    if scale <= 0.0 then invalidArg "scale" "serialEstTrans scale must be positive."
+    if pixelFraction <= 0.0 || pixelFraction > 1.0 then invalidArg "pixelFraction" "serialEstTrans pixelFraction must be in (0, 1]."
+
+    let sigma0 = scale
+    let scaleFactor = sqrt 2.0
+    let scaleLevels = 4u
+    let contrastThreshold = 0.03
+    let maxKeypoints = 50u
+    let matchTolerance = max 1.5 (2.0 * scale)
+    let maxIterations = 60
+    let initialLinearStep = 0.05
+    let initialTranslationStep = max 1.0 scale
+    let minStep = 0.0001
+    let stepShrink = 0.5
+    let descriptorSize = 4u
+    let orientationBins = 8u
+    let nearestNeighborRatio = 0.8
+    let ransacIterations = 200
+    let ransacMaxError = max 2.0 (2.0 * scale)
+    let ransacMinInlierRatio = 0.05
+    let ssdResolutionScale = max 1.0 (round scale)
+
+    let prepareImage image =
+        let pixels = lazy (imageToArray image)
+        let dogPoints =
+            lazy (siftKeypoints2D sigma0 scaleFactor scaleLevels contrastThreshold (int maxKeypoints) image)
+
+        { Image = image
+          Pixels = pixels
+          SsdPixels =
+              lazy
+                  (if ssdResolutionScale <= 1.0 then
+                       pixels.Value
+                   else
+                       downsampleSmoothed ssdResolutionScale pixels.Value)
+          DogPoints = dogPoints
+          SiftFeatures =
+              lazy (siftFeaturesFromPoints (int descriptorSize) (int orientationBins) pixels.Value dogPoints.Value) }
 
     let apply (_debug: bool) (input: AsyncSeq<Image<'T>>) =
         asyncSeq {
@@ -618,32 +887,61 @@ let serialEstTrans<'T when 'T: equality> maxShift (method: string) sigma0 scaleF
                     | _ ->
                         invalidOp "serialEstTrans has inconsistent cached image dimensions."
 
+                    let currentPrepared = prepareImage image
+
                     match previous with
                     | None -> ()
                     | Some previousImage ->
                         let pairwiseTransform =
                             match methodName with
-                            | "ssd"
-                            | "ssdtranslation" ->
-                                let dx, dy = estimateSsdTranslation maxShift previousImage image
-                                translationMatrix dx dy
-                            | _ ->
-                                estimateAffineMatrix
-                                    maxShift
-                                    sigma0
-                                    scaleFactor
-                                    scaleLevels
-                                    contrastThreshold
-                                    (int maxKeypoints)
-                                    matchTolerance
-                                    registrationOptions
+                            | "ssdaffine" ->
+                                estimateSsdAffineMatrixFromPrepared
+                                    searchRadius
+                                    maxIterations
+                                    initialLinearStep
+                                    initialTranslationStep
+                                    minStep
+                                    stepShrink
+                                    pixelFraction
+                                    ssdResolutionScale
                                     previousImage
-                                    image
+                                    currentPrepared
+                            | "siftaffine" ->
+                                estimateSiftAffineMatrixFromPrepared
+                                    searchRadius
+                                    nearestNeighborRatio
+                                    ransacIterations
+                                    ransacMaxError
+                                    ransacMinInlierRatio
+                                    previousImage
+                                    currentPrepared
+                            | _ ->
+                                let dx, dy =
+                                    estimateKeypointTranslation
+                                        searchRadius
+                                        matchTolerance
+                                        previousImage.DogPoints.Value
+                                        currentPrepared.DogPoints.Value
+
+                                if previousImage.DogPoints.Value.Length < 3 || currentPrepared.DogPoints.Value.Length < 3 then
+                                    translationMatrix dx dy
+                                else
+                                    let matches =
+                                        dogMatchesNearTranslation
+                                            matchTolerance
+                                            dx
+                                            dy
+                                            previousImage.DogPoints.Value
+                                            currentPrepared.DogPoints.Value
+
+                                    match StackRansac.affine2DRansac ransacIterations ransacMaxError ransacMinInlierRatio 12345 matches with
+                                    | Some matrix -> matrix
+                                    | None -> translationMatrix dx dy
                         cumulative <- multiplyMatrix cumulative pairwiseTransform
-                        previousImage.decRefCount()
+                        previousImage.Image.decRefCount()
 
                     image.incRefCount()
-                    previous <- Some image
+                    previous <- Some currentPrepared
 
                     let transform =
                         { Slice = image.index
@@ -651,7 +949,7 @@ let serialEstTrans<'T when 'T: equality> maxShift (method: string) sigma0 scaleF
 
                     yield image, singleSliceManifest (Option.get width) (Option.get height) transform
             finally
-                previous |> Option.iter (fun image -> image.decRefCount())
+                previous |> Option.iter (fun prepared -> prepared.Image.decRefCount())
         }
 
     let transition = ProfileTransition.create Streaming Streaming

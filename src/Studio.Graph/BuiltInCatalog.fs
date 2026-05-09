@@ -811,8 +811,8 @@ module BuiltInCatalog =
         { Id = "SerialEstTrans"
           DisplayName = "serialEstTrans"
           Category = "Serial Sections"
-          Summary = "Estimate pairwise slicewise affine transforms from 2D SIFT-style keypoints."
-          Description = serialSectionsDescription + "\n\nserialEstTrans supports two methods. SiftAffine detects 2D Difference-of-Gaussian/SIFT-style keypoint locations in neighboring slices, uses displacement voting for a robust initial pairing region, then registers the keypoint sets with the affine point-set optimizer and accumulates the pairwise affine transforms from the first slice. SSDTranslation uses direct sum-of-squared-differences image matching and emits translation-only affine matrices. The current point representation uses keypoint positions, scale, and response; descriptor vectors and canonical orientations are not part of the Studio box yet."
+          Summary = "Estimate pairwise slicewise affine transforms."
+          Description = serialSectionsDescription + "\n\nserialEstTrans supports three methods. siftAffine detects 2D Difference-of-Gaussian/SIFT-style keypoints, builds orientation-histogram descriptors, matches descriptors with the closest/next-closest ratio test, filters matches with RANSAC, and accumulates affine transforms from the first slice. dogAffine uses Difference-of-Gaussian keypoint locations without descriptors, displacement voting, and RANSAC affine consensus. SSDAffine uses sampled sum-of-squared-differences image matching to estimate affine transforms from a fraction of the pixels. Scale is interpreted as feature scale for dogAffine and siftAffine; for SSDAffine it is a coarse resolution factor used for a faster smoothed/downsampled estimate before full-resolution refinement. Search radius is the maximum expected point displacement in pixels; it limits matching and SSD initialization, not the full affine scale/shear/rotation."
           Aliases = [ "serial"; "slice"; "slicewise"; "manifest"; "registration"; "translation"; "alignment"; "sift"; "keypoint"; "DoG" ]
           Inputs = [ makePort "Number" imageAny ]
           Outputs =
@@ -820,19 +820,10 @@ module BuiltInCatalog =
                 makePort "SerialSliceManifest" serialSliceManifest ]
           Parameters =
               [ makeParameter "type" "Type" "Float64" BasicType.String
-                makeParameter "maxShift" "Max shift" "8" (BasicType.Numeric Int32)
-                makeParameter "method" "Method" "SiftAffine" BasicType.String
-                makeParameter "sigma0" "Sigma 0" "1.6" (BasicType.Numeric Float64)
-                makeParameter "scaleFactor" "Scale factor" "1.41421356237" (BasicType.Numeric Float64)
-                makeParameter "scaleLevels" "Scale levels" "4" (BasicType.Numeric UInt32)
-                makeParameter "contrastThreshold" "Contrast threshold" "0.03" (BasicType.Numeric Float64)
-                makeParameter "maxKeypoints" "Max keypoints" "50" (BasicType.Numeric UInt32)
-                makeParameter "matchTolerance" "Match tolerance" "1.5" (BasicType.Numeric Float64)
-                makeParameter "maxIterations" "Max iterations" "60" (BasicType.Numeric Int32)
-                makeParameter "initialLinearStep" "Linear step" "0.05" (BasicType.Numeric Float64)
-                makeParameter "initialTranslationStep" "Translation step" "1.0" (BasicType.Numeric Float64)
-                makeParameter "minStep" "Min step" "0.0001" (BasicType.Numeric Float64)
-                makeParameter "stepShrink" "Step shrink" "0.5" (BasicType.Numeric Float64) ] }
+                makeParameter "method" "Method" "dogAffine" BasicType.String
+                makeParameter "searchRadius" "Search radius" "8" (BasicType.Numeric Int32)
+                makeParameter "scale" "Scale" "1.6" (BasicType.Numeric Float64)
+                makeParameter "pixelFraction" "Pixel fraction" "0.1" (BasicType.Numeric Float64) ] }
 
         { Id = "SerialApplyTrans"
           DisplayName = "serialApplyTrans"

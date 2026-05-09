@@ -185,19 +185,10 @@ let rec private sourceFor caseId portType =
         let manifest =
             node $"source_{caseId}_manifest" "SerialEstTrans"
                 [ p "type" "Float64" false
-                  p "maxShift" "4" false
-                  p "method" "SiftAffine" false
-                  p "sigma0" "1.6" false
-                  p "scaleFactor" "1.41421356237" false
-                  p "scaleLevels" "4" false
-                  p "contrastThreshold" "0.03" false
-                  p "maxKeypoints" "50" false
-                  p "matchTolerance" "1.5" false
-                  p "maxIterations" "60" false
-                  p "initialLinearStep" "0.05" false
-                  p "initialTranslationStep" "1.0" false
-                  p "minStep" "0.0001" false
-                  p "stepShrink" "0.5" false ]
+                  p "searchRadius" "4" false
+                  p "method" "dogAffine" false
+                  p "scale" "1.6" false
+                  p "pixelFraction" "0.1" false ]
 
         { Nodes = image.Nodes @ [ manifest ]
           Edges = image.Edges @ [ edge image.NodeId image.Kind image.Port manifest.Id "input" 0 ]

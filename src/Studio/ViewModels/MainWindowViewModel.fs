@@ -823,6 +823,13 @@ module private QuantilesNode =
 module private SerialTransformNode =
     let selectedType = HighValueFilterNode.selectedType
     let typeOptions = HighValueFilterNode.floatingImageTypeOptions
+    let methodOptions = [ "dogAffine"; "siftAffine"; "SSDAffine" ]
+
+    let method (state: PipelineNodeState) =
+        state.Parameters
+        |> Seq.tryFind (fun parameter -> parameter.Key = "method")
+        |> Option.map _.Value
+        |> Option.defaultValue "dogAffine"
 
     let estimatorPorts (state: PipelineNodeState) =
         let selectedType = selectedType state
@@ -846,6 +853,17 @@ module private SerialTransformNode =
             Type = PortType.Custom "SerialSliceManifest" } ],
         [ { Name = typeName
             Type = PortType.numericToImage selectedType } ]
+
+    let updateMethodParameterStates (state: PipelineNodeState) =
+        if state.Definition.Id = "SerialEstTrans" then
+            let isSsd = (method state).Trim().Equals("SSDAffine", StringComparison.OrdinalIgnoreCase)
+
+            state.Parameters
+            |> Seq.iter (fun parameter ->
+                match parameter.Key with
+                | "scale" -> parameter.IsValueEnabled <- not isSsd
+                | "pixelFraction" -> parameter.IsValueEnabled <- isSsd
+                | _ -> ())
 
 module private ChartNode =
     let kindOptions =
@@ -1157,6 +1175,9 @@ type PipelineNodeViewModel(
                     this.RebuildPins()
                     refreshNodePins this
                     markGraphDirty()
+                elif state.Definition.Id = "SerialEstTrans" && parameter.Key = "method" && args.PropertyName = nameof parameter.Value then
+                    SerialTransformNode.updateMethodParameterStates state
+                    markGraphDirty()
                 elif ScalarImageOperationNode.isOperation state.Definition.Id && parameter.Key = "operation" && args.PropertyName = nameof parameter.Value then
                     state.Title <- ScalarImageOperationNode.title state
                     this.Name <- state.Title
@@ -1205,6 +1226,7 @@ type PipelineNodeViewModel(
                     markGraphDirty()))
 
         this.InitializePins()
+        SerialTransformNode.updateMethodParameterStates state
 
     member private this.RemoveConnectionsForPin(pin: IPin) =
         removePinConnections [ pin ]
@@ -1350,6 +1372,7 @@ type PipelineNodeViewModel(
             this.Content <- PipelineNodeContent(state.Title, state, this.Width, this.Height, fun () -> selectNode this)
 
         this.InitializePins()
+        SerialTransformNode.updateMethodParameterStates state
 
     member _.State = state
 
@@ -1670,6 +1693,12 @@ type MainWindowViewModel() as this =
                         |> List.map (fun value -> ParameterOptionViewModel(value, value, true))
 
                     PipelineParameterViewModel(parameter.Label, parameter.Key, parameter.DefaultValue, parameter.Type, options, false)
+                | "SerialEstTrans", "method" ->
+                    let options =
+                        SerialTransformNode.methodOptions
+                        |> List.map (fun value -> ParameterOptionViewModel(value, value, true))
+
+                    PipelineParameterViewModel(parameter.Label, parameter.Key, parameter.DefaultValue, parameter.Type, options, false)
                 | functionId, "type" when HighValueFilterNode.typedImageFunctionIds.Contains functionId ->
                     let options =
                         HighValueFilterNode.typeOptions
@@ -1740,6 +1769,7 @@ type MainWindowViewModel() as this =
         elif definition.Id = "ImageOpScalar" || definition.Id = "ScalarOpImage" then
             state.Title <- ScalarImageOperationNode.title state
 
+        SerialTransformNode.updateMethodParameterStates state
         state
 
     let watchState (state: PipelineNodeState) =
@@ -3403,6 +3433,7 @@ type MainWindowViewModel() as this =
                     node.ClampToDrawing()
                     node.SyncMoveOrigin()
                     setParameterValues node.State savedNode.Parameters
+                    SerialTransformNode.updateMethodParameterStates node.State
                     drawing.Nodes.Add(node :> INode)
                     savedNode.Id, node)
             |> Map.ofArray
