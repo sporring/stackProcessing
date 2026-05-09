@@ -16,6 +16,10 @@ module PipelineCodeGenerator =
           Dependencies: Set<string>
           Text: string }
 
+    type private TerminalExpression =
+        { Dependencies: Set<string>
+          Text: string }
+
     let private savedParamValue key (node: SavedNode) =
         node.Parameters
         |> Seq.tryFind (fun p -> p.Key = key)
@@ -1935,7 +1939,7 @@ module PipelineCodeGenerator =
                     | None ->
                         line
 
-        let generatedPipelines =
+        let generatedPipelines () =
             let appendSinkIfTerminalWrite (node: SavedNode) expression =
                 match node.FunctionId with
                 | "Write"
@@ -1994,7 +1998,9 @@ module PipelineCodeGenerator =
                     && not (dataEdges |> Array.exists (fun edge -> edge.FromNode = node.Id)))
 
             terminalNodes
-            |> Array.map (fun node -> pipelineExpression Set.empty node |> appendSinkIfTerminalWrite node)
+            |> Array.map (fun node ->
+                { Dependencies = pipelineBindingDependencies Set.empty node
+                  Text = pipelineExpression Set.empty node |> appendSinkIfTerminalWrite node })
 
         let orderedBindings () =
             let statsBindings =
@@ -2292,17 +2298,61 @@ module PipelineCodeGenerator =
             builder.AppendLine() |> ignore
 
         let bindings = orderedBindings ()
+        let bindingsByName = bindings |> Array.map (fun binding -> binding.Name, binding) |> Map.ofArray
 
-        if bindings.Length > 0 then
-            bindings
-            |> Array.iter (fun binding -> builder.AppendLine(binding.Text) |> ignore)
-            builder.AppendLine() |> ignore
+        let postRootNames =
+            stackInfoProducerNodesWithLinkedOutputs
+            |> Array.choose (fun node ->
+                if node.FunctionId = "Write" then
+                    stackInfoNamesByNodeId |> Map.tryFind node.Id
+                else
+                    None)
+            |> Set.ofArray
 
-        generatedPipelines
-        |> Seq.iteri (fun index expression ->
-            if index > 0 then
+        let rec bindingIsPost visited name =
+            if postRootNames |> Set.contains name then
+                true
+            elif visited |> Set.contains name then
+                false
+            else
+                match bindingsByName |> Map.tryFind name with
+                | Some binding ->
+                    binding.Dependencies
+                    |> Seq.exists (bindingIsPost (visited |> Set.add name))
+                | None ->
+                    false
+
+        let terminalExpressions = generatedPipelines ()
+
+        let terminalIsPost (terminal: TerminalExpression) =
+            terminal.Dependencies |> Seq.exists (bindingIsPost Set.empty)
+
+        let preBindings =
+            bindings |> Array.filter (fun binding -> not (bindingIsPost Set.empty binding.Name))
+
+        let postBindings =
+            bindings |> Array.filter (fun binding -> bindingIsPost Set.empty binding.Name)
+
+        let preTerminals =
+            terminalExpressions |> Array.filter (terminalIsPost >> not)
+
+        let postTerminals =
+            terminalExpressions |> Array.filter terminalIsPost
+
+        let appendBlock (lines: string array) =
+            if lines.Length > 0 then
+                lines
+                |> Array.iteri (fun index text ->
+                    if index > 0 then
+                        builder.AppendLine() |> ignore
+
+                    builder.AppendLine(text) |> ignore)
+
                 builder.AppendLine() |> ignore
 
-            builder.AppendLine(expression) |> ignore)
+        appendBlock (preBindings |> Array.map _.Text)
+        appendBlock (preTerminals |> Array.map _.Text)
+        appendBlock (postBindings |> Array.map _.Text)
+        appendBlock (postTerminals |> Array.map _.Text)
 
         builder.ToString().TrimEnd()

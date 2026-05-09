@@ -1083,15 +1083,16 @@ type PipelineNodeViewModel(
         let parameterPinCount = state.Parameters.Count
 
         let _, outputs = effectivePorts ()
-        let outputKind = outputKindFor state.Definition.Id
 
         let bottomOutputCount =
-            if outputKind = ScalarOutput || outputKind = ReducerOutput then
-                outputs.Length
-            elif state.Definition.Id = "Tap" then
-                1
-            else
-                0
+            outputs
+            |> List.indexed
+            |> List.sumBy (fun (index, output) ->
+                match outputKindForPort state.Definition.Id index output with
+                | ScalarOutput
+                | ReducerOutput -> 1
+                | _ -> 0)
+            |> fun count -> if state.Definition.Id = "Tap" then max count 1 else count
 
         let horizontalPinCount = max parameterPinCount bottomOutputCount
         let pinWidth = 20. + 22. * float (max 1 horizontalPinCount)
@@ -1100,11 +1101,23 @@ type PipelineNodeViewModel(
     let nodeWidth () = this.Width
 
     let nodeHeight =
-        let portCount =
-            if state.Definition.Id = "ComputeStats" || state.Definition.Id = "ComponentTranslationTable" || state.Definition.Id = "StackInfoExpand" || state.Definition.Id = "ChunkInfoExpand" then
-                state.Definition.Inputs.Length
+        let inputs, outputs = effectivePorts ()
+
+        let sideInputCount =
+            if state.Definition.Id = "StackInfoExpand" || state.Definition.Id = "ChunkInfoExpand" then
+                0
             else
-                max state.Definition.Inputs.Length state.Definition.Outputs.Length
+                inputs.Length
+
+        let sideOutputCount =
+            outputs
+            |> List.indexed
+            |> List.sumBy (fun (index, output) ->
+                match outputKindForPort state.Definition.Id index output with
+                | DataOutput -> 1
+                | _ -> 0)
+
+        let portCount = max sideInputCount sideOutputCount
 
         max 48. (20. + 22. * float (max 1 portCount))
 
@@ -1352,13 +1365,31 @@ type PipelineNodeViewModel(
         outputs
         |> List.iteri (fun portIndex port ->
             let kind = outputKindForPort state.Definition.Id portIndex port
+            let bottomOutputIndex =
+                outputs
+                |> List.take portIndex
+                |> List.indexed
+                |> List.sumBy (fun (previousIndex, output) ->
+                    match outputKindForPort state.Definition.Id previousIndex output with
+                    | ScalarOutput
+                    | ReducerOutput -> 1
+                    | _ -> 0)
+
+            let bottomOutputCount =
+                outputs
+                |> List.indexed
+                |> List.sumBy (fun (index, output) ->
+                    match outputKindForPort state.Definition.Id index output with
+                    | ScalarOutput
+                    | ReducerOutput -> 1
+                    | _ -> 0)
 
             let alignment =
                 if kind = ScalarOutput || kind = ReducerOutput then PinAlignment.Bottom else PinAlignment.Right
 
             let x =
                 if kind = ReducerOutput then
-                    pinPosition (nodeWidth ()) portIndex outputs.Length
+                    pinPosition (nodeWidth ()) bottomOutputIndex bottomOutputCount
                 elif kind = ScalarOutput then
                     nodeWidth () / 2.
                 else
@@ -3065,7 +3096,15 @@ type MainWindowViewModel() as this =
                     (startPin.Kind = ScalarOutput || startPin.Kind = ReducerOutput) && endPin.Kind = ParameterInput
 
                 let isDataEdge (startPin: PipelinePinViewModel) (endPin: PipelinePinViewModel) =
-                    (startPin.Kind = DataOutput || startPin.Kind = ReducerOutput) && endPin.Kind = DataInput
+                    startPin.Kind = DataOutput && endPin.Kind = DataInput
+
+                let isInfoExpandEdge (startPin: PipelinePinViewModel) (endPin: PipelinePinViewModel) =
+                    startPin.Kind = ReducerOutput
+                    && endPin.Kind = DataInput
+                    && (match endPin.Parent with
+                        | :? PipelineNodeViewModel as node ->
+                            node.State.Definition.Id = "StackInfoExpand" || node.State.Definition.Id = "ChunkInfoExpand"
+                        | _ -> false)
 
                 let nodeIndexes = Dictionary<PipelineNodeViewModel, int>(HashIdentity.Reference)
                 nodes |> Array.iteri (fun index node -> nodeIndexes[node] <- index)
@@ -3236,6 +3275,13 @@ type MainWindowViewModel() as this =
                                 if shortfall > 0. then
                                     addPairForce startIndex endIndex 0. 1. (arrangeWeights.ConnectorDirection * shortfall)
 
+                            if isInfoExpandEdge startPin endPin then
+                                let preferredBelow = (nodes[startIndex].Height + nodes[endIndex].Height) / 2. + preferredGap
+                                let verticalError = preferredBelow - dy
+
+                                addPairForce startIndex endIndex 0. 1. (arrangeWeights.ConnectorDirection * verticalError)
+                                addPairForce startIndex endIndex -1. 0. (arrangeWeights.ConnectorDirection * dx)
+
                             let length = sqrt (square dx + square dy)
                             let preferredLength = max nodes[startIndex].Height nodes[endIndex].Height
                             let excess = length - preferredLength
@@ -3282,6 +3328,15 @@ type MainWindowViewModel() as this =
                                 addForce aEnd (anx / alen) (any / alen) arrangeWeights.ConnectorCrossings
                                 addForce bStart -(bnx / blen) -(bny / blen) arrangeWeights.ConnectorCrossings
                                 addForce bEnd -(bnx / blen) -(bny / blen) arrangeWeights.ConnectorCrossings
+
+                    // Most arrange terms are translation-invariant. Remove their shared drift so the
+                    // graph settles in place instead of slowly flowing when boundary-node counts differ.
+                    let meanForceX = fx |> Array.average
+                    let meanForceY = fy |> Array.average
+
+                    for i in 0 .. nodes.Length - 1 do
+                        fx[i] <- fx[i] - meanForceX
+                        fy[i] <- fy[i] - meanForceY
 
                     let progress = 1. - float iteration / float arrangeTiming.Iterations
                     let step = 0.75 * progress + 0.08
