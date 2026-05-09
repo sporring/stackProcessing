@@ -25,7 +25,7 @@
         {
           "key": "suffix",
           "value": ".tiff",
-          "useInput": true
+          "useInput": false
         }
       ]
     },
@@ -202,7 +202,7 @@
         {
           "key": "suffix",
           "value": ".tiff",
-          "useInput": true
+          "useInput": false
         }
       ]
     },
@@ -238,24 +238,6 @@
         {
           "key": "value",
           "value": "../result18",
-          "useInput": false
-        }
-      ]
-    },
-    {
-      "id": "node-13",
-      "functionId": "Scalar",
-      "x": 646.3936925754655,
-      "y": 28.465186023531885,
-      "parameters": [
-        {
-          "key": "type",
-          "value": "String",
-          "useInput": false
-        },
-        {
-          "key": "value",
-          "value": ".tiff",
           "useInput": false
         }
       ]
@@ -349,22 +331,6 @@
       "toNode": "node-5",
       "toKind": "dataInput",
       "toPort": 0
-    },
-    {
-      "fromNode": "node-13",
-      "fromKind": "scalarOutput",
-      "fromPort": 0,
-      "toNode": "node-1",
-      "toKind": "parameterInput",
-      "toPort": 3
-    },
-    {
-      "fromNode": "node-13",
-      "fromKind": "scalarOutput",
-      "fromPort": 0,
-      "toNode": "node-10",
-      "toKind": "parameterInput",
-      "toPort": 1
     }
   ]
 }

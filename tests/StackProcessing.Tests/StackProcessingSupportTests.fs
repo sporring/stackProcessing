@@ -878,7 +878,7 @@ let stackProcessingSupportSuite =
             let manifest =
                 try
                     imagePlan sampled
-                    >=> serialImageTranslationManifest<float> 2
+                    >=> serialEstTrans<float> 2
                     |> drain
                 finally
                     disposeImages sampled
@@ -913,7 +913,7 @@ let stackProcessingSupportSuite =
             try
                 let pointSets =
                     imagePlan slices
-                    >=> serialKeypoints2D<uint8> 0.5 0.0
+                    >=> StackSerialSections.serialKeypoints2D<uint8> 0.5 0.0
                     |> drainList
 
                 let points = pointSets |> List.collect _.Points

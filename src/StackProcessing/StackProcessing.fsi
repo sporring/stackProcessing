@@ -1021,22 +1021,12 @@ val serialPolynomialBiasCorrect<'T when 'T: equality> :
   (int -> StackCore.Stage<StackCore.Image<'T>,StackCore.Image<'T>>)
     when 'T: equality
 
-val serialKeypoints2D<'T when 'T: equality> :
-  (float -> float -> StackCore.Stage<StackCore.Image<'T>,StackPoints.PointSet>)
-    when 'T: equality
-
-val serialKeypointTranslationManifest:
-  (uint ->
-     uint ->
-     StackCore.Stage<StackPoints.PointSet,
-                     StackSerialSections.SerialSliceManifest>)
-
-val serialImageTranslationManifest<'T when 'T: equality> :
+val serialEstTrans<'T when 'T: equality> :
   (int ->
      StackCore.Stage<StackCore.Image<'T>,StackSerialSections.SerialSliceManifest>)
     when 'T: equality
 
-val serialApplyManifest<'T when 'T: equality> :
+val serialApplyTrans<'T when 'T: equality> :
   (StackSerialSections.SerialSliceManifest ->
      float -> StackCore.Stage<StackCore.Image<'T>,StackCore.Image<float>>)
     when 'T: equality

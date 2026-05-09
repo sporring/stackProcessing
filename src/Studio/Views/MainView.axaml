@@ -266,33 +266,33 @@
             <Grid RowDefinitions="Auto,*">
                 <StackPanel IsVisible="{Binding HasSelectedElement}"
                             Margin="0,0,0,12">
-                    <TextBlock Text="{Binding SelectedNode.State.Definition.DisplayName}"
-                               FontSize="14"
-                               FontWeight="SemiBold"
-                               Foreground="#102A43"
-                               TextWrapping="Wrap" />
-                    <TextBlock Text="{Binding SelectedNode.State.Summary}"
-                               Margin="0,4,0,0"
-                               FontSize="12"
-                               Foreground="#52616B"
-                               TextWrapping="Wrap" />
+                    <SelectableTextBlock Text="{Binding SelectedNode.State.Definition.DisplayName}"
+                                         FontSize="14"
+                                         FontWeight="SemiBold"
+                                         Foreground="#102A43"
+                                         TextWrapping="Wrap" />
+                    <SelectableTextBlock Text="{Binding SelectedNode.State.Summary}"
+                                         Margin="0,4,0,0"
+                                         FontSize="12"
+                                         Foreground="#52616B"
+                                         TextWrapping="Wrap" />
                 </StackPanel>
 
                 <ScrollViewer Grid.Row="1">
                     <StackPanel>
-                        <TextBlock Text="Parameters"
-                                   FontSize="14"
-                                   FontWeight="SemiBold"
-                                   Margin="0,0,0,8" />
+                        <SelectableTextBlock Text="Parameters"
+                                             FontSize="14"
+                                             FontWeight="SemiBold"
+                                             Margin="0,0,0,8" />
 
                         <ItemsControl ItemsSource="{Binding SelectedNode.State.Parameters}">
                             <ItemsControl.ItemTemplate>
                                 <DataTemplate x:DataType="models:PipelineParameterViewModel">
                                     <Grid ColumnDefinitions="92,72,*"
                                           Margin="0,0,0,10">
-                                        <TextBlock Text="{Binding Label}"
-                                                   VerticalAlignment="Center"
-                                                   FontSize="12" />
+                                        <SelectableTextBlock Text="{Binding Label}"
+                                                             VerticalAlignment="Center"
+                                                             FontSize="12" />
                                         <CheckBox Grid.Column="1"
                                                   Content="Graph"
                                                   IsChecked="{Binding UseInput, Mode=TwoWay}"
@@ -323,7 +323,7 @@
                                             </ComboBox.Styles>
                                             <ComboBox.ItemTemplate>
                                                 <DataTemplate x:DataType="models:ParameterOptionViewModel">
-                                                    <TextBlock Text="{Binding Label}" />
+                                                    <SelectableTextBlock Text="{Binding Label}" />
                                                 </DataTemplate>
                                             </ComboBox.ItemTemplate>
                                         </ComboBox>
@@ -334,15 +334,15 @@
 
                         <StackPanel IsVisible="{Binding SelectedNode.State.HasDescription}"
                                     Margin="0,12,0,0">
-                            <TextBlock Text="Description"
-                                       FontSize="14"
-                                       FontWeight="SemiBold"
-                                       Margin="0,0,0,6"
-                                       Foreground="#102A43" />
-                            <TextBlock Text="{Binding SelectedNode.State.Description}"
-                                       FontSize="12"
-                                       Foreground="#52616B"
-                                       TextWrapping="Wrap" />
+                            <SelectableTextBlock Text="Description"
+                                                 FontSize="14"
+                                                 FontWeight="SemiBold"
+                                                 Margin="0,0,0,6"
+                                                 Foreground="#102A43" />
+                            <SelectableTextBlock Text="{Binding SelectedNode.State.Description}"
+                                                 FontSize="12"
+                                                 Foreground="#52616B"
+                                                 TextWrapping="Wrap" />
                         </StackPanel>
                     </StackPanel>
                 </ScrollViewer>
@@ -380,7 +380,8 @@
                 BorderBrush="#D7DDE5"
                 BorderThickness="0,1,0,0"
                 Padding="10">
-            <Grid RowDefinitions="Auto,*">
+            <Grid ColumnDefinitions="*,Auto"
+                  RowDefinitions="Auto,*">
                 <TextBlock Text="Output"
                            FontSize="14"
                            FontWeight="SemiBold"
@@ -388,6 +389,7 @@
 
                 <TextBox x:Name="GraphOutputTextBox"
                          Grid.Row="1"
+                         Grid.Column="0"
                          Text="{Binding GraphOutput}"
                          FontFamily="Consolas, Menlo, monospace"
                          FontSize="13"
@@ -398,6 +400,83 @@
                          ScrollViewer.VerticalScrollBarVisibility="Auto"
                          Background="#FFFFFF"
                          BorderBrush="#D7DDE5" />
+
+                <Border IsVisible="False"
+                        Grid.Row="0"
+                        Grid.RowSpan="2"
+                        Grid.Column="1"
+                        Width="320"
+                        Margin="10,0,0,0"
+                        Padding="10"
+                        Background="#FAFBFC"
+                        BorderBrush="#D7DDE5"
+                        BorderThickness="1"
+                        DataContext="{Binding ArrangeSettings}">
+                    <Grid RowDefinitions="Auto,*,Auto">
+                        <TextBlock Text="Arrange Parameters"
+                                   FontSize="14"
+                                   FontWeight="SemiBold"
+                                   Margin="0,0,0,8" />
+
+                        <ScrollViewer Grid.Row="1"
+                                      VerticalScrollBarVisibility="Auto">
+                            <StackPanel Spacing="5">
+                                <Grid ColumnDefinitions="116,*,58">
+                                    <TextBlock Text="Compact" VerticalAlignment="Center" FontSize="11" />
+                                    <TextBox Grid.Column="1" Text="{Binding BoundingBoxCompact, Mode=TwoWay}" FontSize="11" MinHeight="24" />
+                                </Grid>
+                                <Grid ColumnDefinitions="116,*,58">
+                                    <TextBlock Text="Square" VerticalAlignment="Center" FontSize="11" />
+                                    <TextBox Grid.Column="1" Text="{Binding BoundingBoxSquare, Mode=TwoWay}" FontSize="11" MinHeight="24" />
+                                </Grid>
+                                <Grid ColumnDefinitions="116,*,58">
+                                    <TextBlock Text="Spacing" VerticalAlignment="Center" FontSize="11" />
+                                    <TextBox Grid.Column="1" Text="{Binding BoxSpacing, Mode=TwoWay}" FontSize="11" MinHeight="24" />
+                                </Grid>
+                                <Grid ColumnDefinitions="116,*,58">
+                                    <TextBlock Text="Sharpness" VerticalAlignment="Center" FontSize="11" />
+                                    <TextBox Grid.Column="1" Text="{Binding BoxSpacingSharpness, Mode=TwoWay}" FontSize="11" MinHeight="24" />
+                                </Grid>
+                                <Grid ColumnDefinitions="116,*,58">
+                                    <TextBlock Text="Direction" VerticalAlignment="Center" FontSize="11" />
+                                    <TextBox Grid.Column="1" Text="{Binding ConnectorDirection, Mode=TwoWay}" FontSize="11" MinHeight="24" />
+                                </Grid>
+                                <Grid ColumnDefinitions="116,*,58">
+                                    <TextBlock Text="Length" VerticalAlignment="Center" FontSize="11" />
+                                    <TextBox Grid.Column="1" Text="{Binding ConnectorLength, Mode=TwoWay}" FontSize="11" MinHeight="24" />
+                                </Grid>
+                                <Grid ColumnDefinitions="116,*,58">
+                                    <TextBlock Text="Avoid boxes" VerticalAlignment="Center" FontSize="11" />
+                                    <TextBox Grid.Column="1" Text="{Binding ConnectorAvoidsBoxes, Mode=TwoWay}" FontSize="11" MinHeight="24" />
+                                </Grid>
+                                <Grid ColumnDefinitions="116,*,58">
+                                    <TextBlock Text="Crossings" VerticalAlignment="Center" FontSize="11" />
+                                    <TextBox Grid.Column="1" Text="{Binding ConnectorCrossings, Mode=TwoWay}" FontSize="11" MinHeight="24" />
+                                </Grid>
+                                <Grid ColumnDefinitions="116,*,58">
+                                    <TextBlock Text="Stay near" VerticalAlignment="Center" FontSize="11" />
+                                    <TextBox Grid.Column="1" Text="{Binding StayNearUserLayout, Mode=TwoWay}" FontSize="11" MinHeight="24" />
+                                </Grid>
+                                <Grid ColumnDefinitions="116,*,58">
+                                    <TextBlock Text="Delay ms" VerticalAlignment="Center" FontSize="11" />
+                                    <TextBox Grid.Column="1" Text="{Binding VisualizationDelayMs, Mode=TwoWay}" FontSize="11" MinHeight="24" />
+                                </Grid>
+                            </StackPanel>
+                        </ScrollViewer>
+
+                        <StackPanel Grid.Row="2"
+                                    Orientation="Horizontal"
+                                    HorizontalAlignment="Right"
+                                    Spacing="8"
+                                    Margin="0,8,0,0"
+                                    DataContext="{Binding #Root.DataContext}">
+                            <Button Content="Reset"
+                                    Command="{Binding ResetArrangeSettingsCommand}" />
+                            <Button Content="Arrange"
+                                    Command="{Binding ArrangeGraphCommand}" />
+                        </StackPanel>
+                    </Grid>
+                </Border>
             </Grid>
         </Border>
 

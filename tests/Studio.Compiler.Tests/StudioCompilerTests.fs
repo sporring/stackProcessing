@@ -214,7 +214,7 @@ let generatorSuite =
                       p "suffix" ".tiff" false ]
 
             let manifest =
-                node "manifest" "SerialImageTranslationManifest"
+                node "manifest" "SerialEstTrans"
                     [ p "type" "Float64" false
                       p "maxShift" "4" false ]
 
@@ -238,8 +238,8 @@ let generatorSuite =
                       edge "apply" "output" 0 "write" "input" 0 ]
                 |> PipelineCodeGenerator.generateSavedGraph
 
-            Expect.stringContains code ">=> serialImageTranslationManifest<float> 4" "SerialImageTranslationManifest should lower to the serial reducer."
-            Expect.stringContains code ">=> serialApplyManifestInBoundingBox<float> SerialImageTranslationManifest0 0.0" "Serial apply should receive the linked manifest binding."
+            Expect.stringContains code ">=> serialEstTrans<float> 4" "SerialEstTrans should lower to the serial reducer."
+            Expect.stringContains code ">=> serialApplyManifestInBoundingBox<float> SerialEstTrans0 0.0" "Serial apply should receive the linked manifest binding."
 
         testCase "noise add-stage boxes lower to streaming filters" <| fun _ ->
             let read =

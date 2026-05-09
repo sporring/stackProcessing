@@ -183,7 +183,7 @@ let rec private sourceFor caseId portType =
     | PortType.Custom "SerialSliceManifest" ->
         let image = imageSource $"{caseId}_manifest_image" NumericType.Float64
         let manifest =
-            node $"source_{caseId}_manifest" "SerialImageTranslationManifest"
+            node $"source_{caseId}_manifest" "SerialEstTrans"
                 [ p "type" "Float64" false
                   p "maxShift" "4" false ]
 
@@ -239,8 +239,7 @@ let private outputKindFor functionId portType =
     | "AffineRegistration"
     | "FitBiasModel"
     | "FitBiasModelMasked"
-    | "SerialKeypointTranslationManifest"
-    | "SerialImageTranslationManifest"
+    | "SerialEstTrans"
     | "GetStackInfo"
     | "GetChunkInfo"
     | "GetZarrInfo"
@@ -336,7 +335,7 @@ let private graphForDefinition caseIndex (definition: Function) =
         match definition.Id with
         | "CorrectBias"
         | "CorrectBiasMasked" -> [ "model" ]
-        | "SerialApplyManifest"
+        | "SerialApplyTrans"
         | "SerialApplyManifestInBoundingBox" -> [ "manifest" ]
         | "CollapseComponentLabels" -> [ "translationTable" ]
         | "HistogramEqualization"

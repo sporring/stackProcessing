@@ -321,7 +321,7 @@ let private centroid points =
             (points |> List.sumBy (fun point -> point.X)) / n,
             (points |> List.sumBy (fun point -> point.Y)) / n)
 
-let serialKeypointTranslationManifest width height : Stage<PointSet, SerialSliceManifest> =
+let serialKeypointsApplyTrans width height : Stage<PointSet, SerialSliceManifest> =
     let reducer (_debug: bool) (input: AsyncSeq<PointSet>) =
         async {
             let! pointSets = input |> AsyncSeq.toListAsync
@@ -355,13 +355,13 @@ let serialKeypointTranslationManifest width height : Stage<PointSet, SerialSlice
                   Transforms = transforms }
         }
 
-    Stage.reduce "serialKeypointTranslationManifest" reducer Streaming id (fun _ -> 1UL)
+    Stage.reduce "serialKeypointsApplyTrans" reducer Streaming id (fun _ -> 1UL)
 
 let private estimateTranslation maxShift (fixedImage: Image<'T>) (movingImage: Image<'T>) =
     let width = int (fixedImage.GetWidth())
     let height = int (fixedImage.GetHeight())
     if movingImage.GetWidth() <> uint width || movingImage.GetHeight() <> uint height then
-        invalidOp "serialImageTranslationManifest expects all slices to have the same shape."
+        invalidOp "serialEstTrans expects all slices to have the same shape."
 
     let fixedPixels = imageToArray fixedImage
     let moving = imageToArray movingImage
@@ -392,7 +392,7 @@ let private estimateTranslation maxShift (fixedImage: Image<'T>) (movingImage: I
 
     float bestDx, float bestDy
 
-let serialImageTranslationManifest<'T when 'T: equality> maxShift : Stage<Image<'T>, SerialSliceManifest> =
+let serialEstTrans<'T when 'T: equality> maxShift : Stage<Image<'T>, SerialSliceManifest> =
     if maxShift < 0 then invalidArg "maxShift" "maxShift must be non-negative."
 
     let reducer (_debug: bool) (input: AsyncSeq<Image<'T>>) =
@@ -436,7 +436,7 @@ let serialImageTranslationManifest<'T when 'T: equality> maxShift : Stage<Image<
                       Transforms = transforms }
         }
 
-    Stage.reduce "serialImageTranslationManifest" reducer Streaming id (fun _ -> 1UL)
+    Stage.reduce "serialEstTrans" reducer Streaming id (fun _ -> 1UL)
 
 let private transformForSlice manifest slice =
     manifest.Transforms
@@ -501,12 +501,12 @@ let private applyManifestSlice manifest expand background (image: Image<'T>) =
                 let inputX, inputY = transformPoint inverse referenceX referenceY
                 output[int x, int y] <- sampleBilinear background pixels inputX inputY
 
-        Image<float>.ofArray2D(output, "serialApplyManifest", image.index)
+        Image<float>.ofArray2D(output, "serialApplyTrans", image.index)
     finally
         image.decRefCount()
 
-let serialApplyManifest<'T when 'T: equality> manifest background : Stage<Image<'T>, Image<float>> =
-    Stage.map "serialApplyManifest" (fun _ image -> applyManifestSlice manifest false background image) id id
+let serialApplyTrans<'T when 'T: equality> manifest background : Stage<Image<'T>, Image<float>> =
+    Stage.map "serialApplyTrans" (fun _ image -> applyManifestSlice manifest false background image) id id
 
 let serialApplyManifestInBoundingBox<'T when 'T: equality> manifest background : Stage<Image<'T>, Image<float>> =
     Stage.map "serialApplyManifestInBoundingBox" (fun _ image -> applyManifestSlice manifest true background image) id id

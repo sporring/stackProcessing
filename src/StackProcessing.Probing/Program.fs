@@ -948,16 +948,16 @@ let main args =
                                let inputDir = inputDirs[size]
                                yield runSinkProbe
                                          $"convolve3d-read-float-cast-write-{suffix}-win-{windowSize}"
-                                         $"Read {suffix} stack as Float64, discreteGaussian windowed convolution with window size {windowSize}, cast to UInt8, write."
+                                         $"Read {suffix} stack as Float64, smoothWGauss windowed convolution with window size {windowSize}, cast to UInt8, write."
                                          (let p = singletonImageParameters size "float" windowSize
-                                          p["operation"] <- "discreteGaussian-write"
+                                          p["operation"] <- "smoothWGauss-write"
                                           p["sigma"] <- "1"
                                           p["kernelSize"] <- "5"
                                           p)
                                          (fun () ->
                                              source availableMemory
                                              |> read<float> inputDir ".tiff"
-                                             >=> discreteGaussian 1.0 None None (Some windowSize)
+                                             >=> smoothWGauss 1.0 None None (Some windowSize)
                                              >=> cast<float, uint8>
                                              >=> write (outputDir size $"convolve3d-read-float-cast-write-win-{windowSize}") ".tiff")
 

@@ -108,6 +108,83 @@ type PipelinePinViewModel(alignment: PinAlignment, port: Port, kind: PipelinePin
     member _.IsInput = PipelinePinKind.isInput kind
     member _.IsOutput = PipelinePinKind.isOutput kind
 
+type ArrangeSettingsViewModel() =
+    inherit ViewModelBase()
+
+    let defaultBoundingBoxCompact = 0.002
+    let defaultBoundingBoxSquare = 0.
+    let defaultBoxSpacing = 3.
+    let defaultBoxSpacingSharpness = 1.
+    let defaultConnectorDirection = 1.
+    let defaultConnectorLength = 0.01
+    let defaultConnectorAvoidsBoxes = 1.
+    let defaultConnectorCrossings = 0.
+    let defaultStayNearUserLayout = 0.
+    let defaultVisualizationDelayMs = 28.0
+
+    let mutable boundingBoxCompact = defaultBoundingBoxCompact
+    let mutable boundingBoxSquare = defaultBoundingBoxSquare
+    let mutable boxSpacing = defaultBoxSpacing
+    let mutable boxSpacingSharpness = defaultBoxSpacingSharpness
+    let mutable connectorDirection = defaultConnectorDirection
+    let mutable connectorLength = defaultConnectorLength
+    let mutable connectorAvoidsBoxes = defaultConnectorAvoidsBoxes
+    let mutable connectorCrossings = defaultConnectorCrossings
+    let mutable stayNearUserLayout = defaultStayNearUserLayout
+    let mutable visualizationDelayMs = defaultVisualizationDelayMs
+
+    member this.BoundingBoxCompact
+        with get () = boundingBoxCompact
+        and set value = this.SetProperty(&boundingBoxCompact, value) |> ignore
+
+    member this.BoundingBoxSquare
+        with get () = boundingBoxSquare
+        and set value = this.SetProperty(&boundingBoxSquare, value) |> ignore
+
+    member this.BoxSpacing
+        with get () = boxSpacing
+        and set value = this.SetProperty(&boxSpacing, value) |> ignore
+
+    member this.BoxSpacingSharpness
+        with get () = boxSpacingSharpness
+        and set value = this.SetProperty(&boxSpacingSharpness, value) |> ignore
+
+    member this.ConnectorDirection
+        with get () = connectorDirection
+        and set value = this.SetProperty(&connectorDirection, value) |> ignore
+
+    member this.ConnectorLength
+        with get () = connectorLength
+        and set value = this.SetProperty(&connectorLength, value) |> ignore
+
+    member this.ConnectorAvoidsBoxes
+        with get () = connectorAvoidsBoxes
+        and set value = this.SetProperty(&connectorAvoidsBoxes, value) |> ignore
+
+    member this.ConnectorCrossings
+        with get () = connectorCrossings
+        and set value = this.SetProperty(&connectorCrossings, value) |> ignore
+
+    member this.StayNearUserLayout
+        with get () = stayNearUserLayout
+        and set value = this.SetProperty(&stayNearUserLayout, value) |> ignore
+
+    member this.VisualizationDelayMs
+        with get () = visualizationDelayMs
+        and set value = this.SetProperty(&visualizationDelayMs, value) |> ignore
+
+    member this.ResetDefaults() =
+        this.BoundingBoxCompact <- defaultBoundingBoxCompact
+        this.BoundingBoxSquare <- defaultBoundingBoxSquare
+        this.BoxSpacing <- defaultBoxSpacing
+        this.BoxSpacingSharpness <- defaultBoxSpacingSharpness
+        this.ConnectorDirection <- defaultConnectorDirection
+        this.ConnectorLength <- defaultConnectorLength
+        this.ConnectorAvoidsBoxes <- defaultConnectorAvoidsBoxes
+        this.ConnectorCrossings <- defaultConnectorCrossings
+        this.StayNearUserLayout <- defaultStayNearUserLayout
+        this.VisualizationDelayMs <- defaultVisualizationDelayMs
+
 module private PortMapping =
     let private basicTypeLabel basicType =
         match basicType with
@@ -688,9 +765,8 @@ module private HighValueFilterNode =
           "CorrectBias"
           "CorrectBiasMasked"
           "SerialPolynomialBiasCorrect"
-          "SerialKeypoints2D"
-          "SerialImageTranslationManifest"
-          "SerialApplyManifest"
+          "SerialEstTrans"
+          "SerialApplyTrans"
           "SerialApplyManifestInBoundingBox"
           "LabelContour"
           "ChangeLabel" ]
@@ -892,8 +968,7 @@ type PipelineNodeViewModel(
         | "AffineRegistration"
         | "FitBiasModel"
         | "FitBiasModelMasked"
-        | "SerialKeypointTranslationManifest"
-        | "SerialImageTranslationManifest"
+        | "SerialEstTrans"
         | "GetStackInfo"
         | "GetChunkInfo"
         | "ComponentTranslationTable"
@@ -1291,6 +1366,9 @@ type MainWindowViewModel() as this =
     inherit ViewModelBase()
 
     let paletteGroups = ObservableCollection<PaletteGroupViewModel>()
+    let arrangeSettings = ArrangeSettingsViewModel()
+    let mutable arrangeSettingsRevision = 0
+    let mutable arrangeRunSerial = 0
     let mutable selectedNode: PipelineNodeViewModel = null
     let selectedNodes = HashSet<PipelineNodeViewModel>(HashIdentity.Reference)
     let mutable graphOutput = ""
@@ -1326,6 +1404,19 @@ type MainWindowViewModel() as this =
 
     let drawing =
         editor.Drawing :?> DrawingNodeViewModel
+
+    do
+        arrangeSettings.PropertyChanged.Add(fun _ ->
+            arrangeSettingsRevision <- arrangeSettingsRevision + 1
+            let revision = arrangeSettingsRevision
+
+            async {
+                do! Async.Sleep 150
+
+                if revision = arrangeSettingsRevision then
+                    this.ArrangeGraph()
+            }
+            |> Async.StartImmediate)
 
     let updatePaletteGroups () =
         paletteGroups.Clear()
@@ -1543,7 +1634,7 @@ type MainWindowViewModel() as this =
                     PipelineParameterViewModel(parameter.Label, parameter.Key, parameter.DefaultValue, parameter.Type, canUseInput = false)
                 | ("CorrectBias" | "CorrectBiasMasked"), "model" ->
                     PipelineParameterViewModel(parameter.Label, parameter.Key, parameter.DefaultValue, parameter.Type, forceUseInput = true)
-                | ("SerialApplyManifest" | "SerialApplyManifestInBoundingBox"), "manifest" ->
+                | ("SerialApplyTrans" | "SerialApplyManifestInBoundingBox"), "manifest" ->
                     PipelineParameterViewModel(parameter.Label, parameter.Key, parameter.DefaultValue, parameter.Type, forceUseInput = true)
                 | ("Quantiles" | "HistogramEqualization"), "histogram" ->
                     PipelineParameterViewModel(parameter.Label, parameter.Key, parameter.DefaultValue, parameter.Type, forceUseInput = true)
@@ -2325,6 +2416,7 @@ type MainWindowViewModel() as this =
 
     member _.Editor = editor
     member _.PaletteGroups = paletteGroups
+    member _.ArrangeSettings = arrangeSettings
 
     member this.PaletteSearch
         with get () = paletteSearch
@@ -2811,209 +2903,315 @@ type MainWindowViewModel() as this =
         :> ICommand
 
     member this.ArrangeGraph() =
-        let nodes = pipelineNodes () |> Seq.toArray
+        arrangeRunSerial <- arrangeRunSerial + 1
+        let runSerial = arrangeRunSerial
 
-        if nodes.Length > 0 then
-            let connectorEdges =
-                drawing.Connectors
-                |> Seq.choose (fun connector ->
-                    match connector.Start, connector.End with
-                    | (:? PipelinePinViewModel as startPin), (:? PipelinePinViewModel as endPin) ->
-                        match startPin.Parent, endPin.Parent with
-                        | (:? PipelineNodeViewModel as startNode), (:? PipelineNodeViewModel as endNode)
-                            when not (Object.ReferenceEquals(startNode, endNode)) ->
-                            Some(startPin, endPin, startNode, endNode)
-                        | _ -> None
-                    | _ -> None)
-                |> Seq.toArray
+        async {
+            let nodes = pipelineNodes () |> Seq.toArray
 
-            let hasDataPin (node: PipelineNodeViewModel) =
-                node.Pins
-                |> Seq.exists (function
-                    | :? PipelinePinViewModel as pin -> pin.Kind = DataInput || pin.Kind = DataOutput
-                    | _ -> false)
+            if nodes.Length > 0 then
+                let connectorEdges =
+                    drawing.Connectors
+                    |> Seq.choose (fun connector ->
+                        match connector.Start, connector.End with
+                        | (:? PipelinePinViewModel as startPin), (:? PipelinePinViewModel as endPin) ->
+                            match startPin.Parent, endPin.Parent with
+                            | (:? PipelineNodeViewModel as startNode), (:? PipelineNodeViewModel as endNode)
+                                when not (Object.ReferenceEquals(startNode, endNode)) ->
+                                Some(startPin, endPin, startNode, endNode)
+                            | _ -> None
+                        | _ -> None)
+                    |> Seq.toArray
 
-            let columnSpacing = 190.
-            let rowSpacing = 108.
-            let leftMargin = 32.
-            let topMargin = 32.
+                let arrangeWeights =
+                    {| BoundingBoxCompact = arrangeSettings.BoundingBoxCompact
+                       BoundingBoxSquare = arrangeSettings.BoundingBoxSquare
+                       BoxSpacing = arrangeSettings.BoxSpacing
+                       BoxSpacingSharpness = arrangeSettings.BoxSpacingSharpness
+                       ConnectorDirection = arrangeSettings.ConnectorDirection
+                       ConnectorLength = arrangeSettings.ConnectorLength
+                       ConnectorAvoidsBoxes = arrangeSettings.ConnectorAvoidsBoxes
+                       ConnectorCrossings = arrangeSettings.ConnectorCrossings
+                       StayNearUserLayout = arrangeSettings.StayNearUserLayout
+                       VisualizationDelayMs = int arrangeSettings.VisualizationDelayMs |}
 
-            let isParameterEdge (startPin: PipelinePinViewModel) (endPin: PipelinePinViewModel) =
-                (startPin.Kind = ScalarOutput || startPin.Kind = ReducerOutput) && endPin.Kind = ParameterInput
+                let arrangeTiming =
+                    {| Iterations = 1000
+                       VisualizeEvery = 3
+                       StopWhenMaxMoveBelow = 0.5
+                       InitialMaxMove = 8.0
+                       FinalMaxMove = 1.0 |}
 
-            let isDataEdge (startPin: PipelinePinViewModel) (endPin: PipelinePinViewModel) =
-                startPin.Kind = DataOutput && endPin.Kind = DataInput
+                let leftMargin = 32.
+                let topMargin = 32.
 
-            let xRanks = Dictionary<PipelineNodeViewModel, int>()
-            let yRanks = Dictionary<PipelineNodeViewModel, int>()
+                let isParameterEdge (startPin: PipelinePinViewModel) (endPin: PipelinePinViewModel) =
+                    (startPin.Kind = ScalarOutput || startPin.Kind = ReducerOutput) && endPin.Kind = ParameterInput
 
-            nodes
-            |> Array.iter (fun node ->
-                xRanks[node] <- 0
-                yRanks[node] <- 0)
+                let isDataEdge (startPin: PipelinePinViewModel) (endPin: PipelinePinViewModel) =
+                    startPin.Kind = DataOutput && endPin.Kind = DataInput
 
-            let updateRank (ranks: Dictionary<PipelineNodeViewModel, int>) startNode endNode delta =
-                let candidate = ranks[startNode] + delta
+                let nodeIndexes = Dictionary<PipelineNodeViewModel, int>(HashIdentity.Reference)
+                nodes |> Array.iteri (fun index node -> nodeIndexes[node] <- index)
 
-                if candidate > ranks[endNode] then
-                    ranks[endNode] <- candidate
+                let startX = nodes |> Array.map _.X
+                let startY = nodes |> Array.map _.Y
+                let x = Array.copy startX
+                let y = Array.copy startY
+                let fx = Array.zeroCreate<float> nodes.Length
+                let fy = Array.zeroCreate<float> nodes.Length
 
-            for _ in 1 .. nodes.Length do
-                for startPin, endPin, startNode, endNode in connectorEdges do
-                    if isDataEdge startPin endPin || isParameterEdge startPin endPin then
-                        updateRank xRanks startNode endNode 1
-                    if isParameterEdge startPin endPin then
-                        updateRank yRanks startNode endNode 1
+                let inline clamp lo hi value = min hi (max lo value)
+                let inline signOrOne value = if value < 0. then -1. else 1.
+                let inline square value = value * value
 
-            let incomingCount node =
-                connectorEdges
-                |> Array.sumBy (fun (_, _, _, endNode) ->
-                    if Object.ReferenceEquals(endNode, node) then 1 else 0)
+                let inline nodeCenterX i = x[i] + nodes[i].Width / 2.
+                let inline nodeCenterY i = y[i] + nodes[i].Height / 2.
+                let inline rectLeft i = x[i]
+                let inline rectTop i = y[i]
+                let inline rectRight i = x[i] + nodes[i].Width
+                let inline rectBottom i = y[i] + nodes[i].Height
 
-            let outgoingCount node =
-                connectorEdges
-                |> Array.sumBy (fun (_, _, startNode, _) ->
-                    if Object.ReferenceEquals(startNode, node) then 1 else 0)
+                let addForce index dx dy scale =
+                    fx[index] <- fx[index] + dx * scale
+                    fy[index] <- fy[index] + dy * scale
 
-            let predecessors node =
-                connectorEdges
-                |> Array.choose (fun (startPin, endPin, startNode, endNode) ->
-                    if (isDataEdge startPin endPin || isParameterEdge startPin endPin)
-                       && Object.ReferenceEquals(endNode, node) then
-                        Some startNode
-                    else
-                        None)
+                let addPairForce first second dx dy scale =
+                    addForce first -dx -dy scale
+                    addForce second dx dy scale
 
-            let incomingEdges node =
-                connectorEdges
-                |> Array.filter (fun (_, _, _, endNode) -> Object.ReferenceEquals(endNode, node))
+                let applyPositions () =
+                    for i in 0 .. nodes.Length - 1 do
+                        nodes[i].X <- x[i]
+                        nodes[i].Y <- y[i]
 
-            let columns =
-                nodes
-                |> Array.groupBy (fun node -> xRanks[node])
-                |> Array.sortBy fst
+                let pinPoint (positionsX: float array) (positionsY: float array) index (pin: PipelinePinViewModel) =
+                    positionsX[index] + pin.X, positionsY[index] + pin.Y
 
-            let rowHints = Dictionary<PipelineNodeViewModel, float>()
+                let connectorSegments () =
+                    connectorEdges
+                    |> Array.choose (fun (startPin, endPin, startNode, endNode) ->
+                        match nodeIndexes.TryGetValue startNode, nodeIndexes.TryGetValue endNode with
+                        | (true, startIndex), (true, endIndex) ->
+                            let sx, sy = pinPoint x y startIndex startPin
+                            let ex, ey = pinPoint x y endIndex endPin
+                            Some(startIndex, endIndex, sx, sy, ex, ey)
+                        | _ -> None)
 
-            for depth, columnNodes in columns do
-                let ordered =
-                    columnNodes
-                    |> Array.sortBy (fun node ->
-                        let predecessorRows =
-                            predecessors node
-                            |> Array.choose (fun predecessor ->
-                                match rowHints.TryGetValue predecessor with
-                                | true, row -> Some row
-                                | _ -> None)
+                let distanceFromPointToSegment px py ax ay bx by =
+                    let vx = bx - ax
+                    let vy = by - ay
+                    let lengthSquared = vx * vx + vy * vy
 
-                        let predecessorRow =
-                            if predecessorRows.Length = 0 then
-                                node.Y / rowSpacing
-                            else
-                                predecessorRows |> Array.average
+                    let t =
+                        if lengthSquared <= 0.000001 then
+                            0.
+                        else
+                            ((px - ax) * vx + (py - ay) * vy) / lengthSquared
+                            |> clamp 0. 1.
 
-                        predecessorRow,
-                        yRanks[node],
-                        incomingEdges node |> Array.exists (fun (startPin, endPin, _, _) -> isParameterEdge startPin endPin),
-                        incomingCount node,
-                        -outgoingCount node,
-                        node.Y,
-                        node.X,
-                        node.State.Title)
+                    let cx = ax + t * vx
+                    let cy = ay + t * vy
+                    let dx = px - cx
+                    let dy = py - cy
+                    sqrt (dx * dx + dy * dy), dx, dy
 
-                ordered
-                |> Array.iteri (fun index node ->
-                    node.X <- leftMargin + float depth * columnSpacing
-                    node.Y <- topMargin + float index * rowSpacing
-                    rowHints[node] <- float index)
+                let ccw ax ay bx by cx cy =
+                    (cy - ay) * (bx - ax) > (by - ay) * (cx - ax)
 
-            let settleColumnCollisions () =
-                columns
-                |> Array.iter (fun (_, columnNodes) ->
-                    let mutable previousBottom = Double.NegativeInfinity
+                let segmentsCross ax ay bx by cx cy dx dy =
+                    ccw ax ay cx cy dx dy <> ccw bx by cx cy dx dy
+                    && ccw ax ay bx by cx cy <> ccw ax ay bx by dx dy
 
-                    columnNodes
-                    |> Array.sortBy (fun node -> node.Y, node.X, node.State.Title)
-                    |> Array.iter (fun node ->
-                        let minimumY = previousBottom + 32.
+                let mutable iteration = 0
+                let mutable isConverged = false
 
-                        if node.Y < minimumY then
-                            node.Y <- minimumY
+                while iteration < arrangeTiming.Iterations && not isConverged do
+                    Array.Clear(fx, 0, fx.Length)
+                    Array.Clear(fy, 0, fy.Length)
 
-                        previousBottom <- node.Y + node.Height))
+                    let minX = nodes |> Array.mapi (fun i _ -> rectLeft i) |> Array.min
+                    let minY = nodes |> Array.mapi (fun i _ -> rectTop i) |> Array.min
+                    let maxX = nodes |> Array.mapi (fun i _ -> rectRight i) |> Array.max
+                    let maxY = nodes |> Array.mapi (fun i _ -> rectBottom i) |> Array.max
+                    let width = max 1. (maxX - minX)
+                    let height = max 1. (maxY - minY)
+                    let centerX = minX + width / 2.
+                    let centerY = minY + height / 2.
+                    let squareBias = width - height
+                    let boundaryTolerance = 0.5
 
-            for _ in 1 .. max 1 nodes.Length do
-                for startPin, endPin, startNode, endNode in connectorEdges do
-                    if isParameterEdge startPin endPin then
-                        let minimumY = startNode.Y + startNode.Height + 48.
+                    for i in 0 .. nodes.Length - 1 do
+                        let cx = nodeCenterX i
+                        let cy = nodeCenterY i
 
-                        if endNode.Y < minimumY then
-                            endNode.Y <- minimumY
+                        if abs (rectLeft i - minX) <= boundaryTolerance then
+                            addForce i 1. 0. (arrangeWeights.BoundingBoxCompact * height)
 
-                settleColumnCollisions()
+                        if abs (rectRight i - maxX) <= boundaryTolerance then
+                            addForce i -1. 0. (arrangeWeights.BoundingBoxCompact * height)
 
-            let minX = nodes |> Array.map _.X |> Array.min
-            let minY = nodes |> Array.map _.Y |> Array.min
+                        if abs (rectTop i - minY) <= boundaryTolerance then
+                            addForce i 0. 1. (arrangeWeights.BoundingBoxCompact * width)
 
-            if minX < leftMargin then
-                let shift = leftMargin - minX
-                nodes |> Array.iter (fun node -> node.X <- node.X + shift)
+                        if abs (rectBottom i - maxY) <= boundaryTolerance then
+                            addForce i 0. -1. (arrangeWeights.BoundingBoxCompact * width)
 
-            if minY < topMargin then
-                let shift = topMargin - minY
-                nodes |> Array.iter (fun node -> node.Y <- node.Y + shift)
+                        addForce i (startX[i] - x[i]) (startY[i] - y[i]) arrangeWeights.StayNearUserLayout
+                        addForce i (centerX - cx) 0. (arrangeWeights.BoundingBoxSquare * squareBias / width)
+                        addForce i 0. (centerY - cy) (arrangeWeights.BoundingBoxSquare * -squareBias / height)
 
-            let right =
-                nodes
-                |> Array.map (fun node -> node.X + node.Width)
-                |> Array.max
+                    for i in 0 .. nodes.Length - 2 do
+                        for j in i + 1 .. nodes.Length - 1 do
+                            let dx = nodeCenterX j - nodeCenterX i
+                            let dy = nodeCenterY j - nodeCenterY i
+                            let horizontalLimit = (nodes[i].Width + nodes[j].Width) / 2.
+                            let verticalLimit = (nodes[i].Height + nodes[j].Height) / 2.
+                            let standardGap = max nodes[i].Height nodes[j].Height
+                            let overlapX = horizontalLimit - abs dx
+                            let overlapY = verticalLimit - abs dy
 
-            let bottom =
-                nodes
-                |> Array.map (fun node -> node.Y + node.Height)
-                |> Array.max
+                            let clearance =
+                                if overlapX > 0. && overlapY > 0. then
+                                    -min overlapX overlapY
+                                else
+                                    let gapX = max 0. -overlapX
+                                    let gapY = max 0. -overlapY
+                                    sqrt (square gapX + square gapY)
 
-            let requiredWidth = right + leftMargin
-            let requiredHeight = bottom + topMargin
+                            let directionX, directionY =
+                                if overlapX > 0. && overlapY > 0. then
+                                    if overlapX < overlapY then
+                                        signOrOne dx, 0.
+                                    else
+                                        0., signOrOne dy
+                                else
+                                    let length = max 0.0001 (sqrt (square dx + square dy))
+                                    dx / length, dy / length
 
-            drawing.Width <- max drawing.Width requiredWidth
-            drawing.Height <- max drawing.Height requiredHeight
+                            let normalizedClearance = clearance / max 1. standardGap
+                            let spacingForce =
+                                arrangeWeights.BoxSpacing
+                                * exp (-arrangeWeights.BoxSpacingSharpness * normalizedClearance)
 
-            let shiftInsideCanvas () =
-                let minX = nodes |> Array.map _.X |> Array.min
-                let minY = nodes |> Array.map _.Y |> Array.min
+                            if overlapX > 0. && overlapY > 0. then
+                                addPairForce i j directionX directionY (spacingForce * (1. + min overlapX overlapY))
+                            elif clearance < 3.0 * standardGap then
+                                addPairForce i j directionX directionY spacingForce
 
-                if minX < leftMargin then
-                    let shift = leftMargin - minX
-                    nodes |> Array.iter (fun node -> node.X <- node.X + shift)
+                    for startPin, endPin, startNode, endNode in connectorEdges do
+                        match nodeIndexes.TryGetValue startNode, nodeIndexes.TryGetValue endNode with
+                        | (true, startIndex), (true, endIndex) ->
+                            let dx = nodeCenterX endIndex - nodeCenterX startIndex
+                            let dy = nodeCenterY endIndex - nodeCenterY startIndex
+                            let preferredGap = max nodes[startIndex].Height nodes[endIndex].Height
 
-                if minY < topMargin then
-                    let shift = topMargin - minY
-                    nodes |> Array.iter (fun node -> node.Y <- node.Y + shift)
+                            if isDataEdge startPin endPin then
+                                let preferredRight = (nodes[startIndex].Width + nodes[endIndex].Width) / 2. + preferredGap
+                                let shortfall = preferredRight - dx
 
-                let overflowX =
-                    nodes
-                    |> Array.map (fun node -> node.X + node.Width)
-                    |> Array.max
-                    |> fun right -> right + leftMargin - drawing.Width
+                                if shortfall > 0. then
+                                    addPairForce startIndex endIndex 1. 0. (arrangeWeights.ConnectorDirection * shortfall)
 
-                let overflowY =
-                    nodes
-                    |> Array.map (fun node -> node.Y + node.Height)
-                    |> Array.max
-                    |> fun bottom -> bottom + topMargin - drawing.Height
+                            if isParameterEdge startPin endPin then
+                                let preferredBelow = (nodes[startIndex].Height + nodes[endIndex].Height) / 2. + preferredGap
+                                let shortfall = preferredBelow - dy
 
-                if overflowX > 0. then
-                    drawing.Width <- drawing.Width + overflowX
+                                if shortfall > 0. then
+                                    addPairForce startIndex endIndex 0. 1. (arrangeWeights.ConnectorDirection * shortfall)
 
-                if overflowY > 0. then
-                    drawing.Height <- drawing.Height + overflowY
+                            let length = sqrt (square dx + square dy)
+                            let preferredLength = max nodes[startIndex].Height nodes[endIndex].Height
+                            let excess = length - preferredLength
 
-            shiftInsideCanvas()
+                            if excess > 0. && length > 0.0001 then
+                                addPairForce startIndex endIndex -(dx / length) -(dy / length) (arrangeWeights.ConnectorLength * excess)
+                            | _ -> ()
 
-            nodes |> Array.iter _.ClampToDrawing()
-            shiftInsideCanvas()
-            this.MarkGraphDirty()
+                    let segments = connectorSegments()
+
+                    for startIndex, endIndex, sx, sy, ex, ey in segments do
+                        for i in 0 .. nodes.Length - 1 do
+                            if i <> startIndex && i <> endIndex then
+                                let cx = nodeCenterX i
+                                let cy = nodeCenterY i
+                                let radius = 0.5 * sqrt (square nodes[i].Width + square nodes[i].Height) + 18.
+                                let distance, dx, dy = distanceFromPointToSegment cx cy sx sy ex ey
+
+                                if distance < radius then
+                                    let nx, ny =
+                                        if distance <= 0.0001 then
+                                            0., 1.
+                                        else
+                                            dx / distance, dy / distance
+
+                                    addForce i nx ny (arrangeWeights.ConnectorAvoidsBoxes * (radius - distance))
+
+                    for a in 0 .. segments.Length - 2 do
+                        let aStart, aEnd, ax, ay, bx, by = segments[a]
+
+                        for b in a + 1 .. segments.Length - 1 do
+                            let bStart, bEnd, cx, cy, dx, dy = segments[b]
+                            let sharesNode = aStart = bStart || aStart = bEnd || aEnd = bStart || aEnd = bEnd
+
+                            if not sharesNode && segmentsCross ax ay bx by cx cy dx dy then
+                                let anx = -(by - ay)
+                                let any = bx - ax
+                                let bnx = -(dy - cy)
+                                let bny = dx - cx
+                                let alen = max 1. (sqrt (square anx + square any))
+                                let blen = max 1. (sqrt (square bnx + square bny))
+
+                                addForce aStart (anx / alen) (any / alen) arrangeWeights.ConnectorCrossings
+                                addForce aEnd (anx / alen) (any / alen) arrangeWeights.ConnectorCrossings
+                                addForce bStart -(bnx / blen) -(bny / blen) arrangeWeights.ConnectorCrossings
+                                addForce bEnd -(bnx / blen) -(bny / blen) arrangeWeights.ConnectorCrossings
+
+                    let progress = 1. - float iteration / float arrangeTiming.Iterations
+                    let step = 0.75 * progress + 0.08
+                    let maxMove = arrangeTiming.InitialMaxMove * progress + arrangeTiming.FinalMaxMove * (1. - progress)
+                    let mutable maxStepMove = 0.
+
+                    for i in 0 .. nodes.Length - 1 do
+                        let dx = clamp -maxMove maxMove (fx[i] * step)
+                        let dy = clamp -maxMove maxMove (fy[i] * step)
+                        maxStepMove <- max maxStepMove (sqrt (square dx + square dy))
+                        x[i] <- max leftMargin (x[i] + dx)
+                        y[i] <- max topMargin (y[i] + dy)
+
+                    if iteration % arrangeTiming.VisualizeEvery = 0 || iteration = arrangeTiming.Iterations - 1 then
+                        if runSerial = arrangeRunSerial then
+                            applyPositions()
+
+                        do! Async.Sleep arrangeWeights.VisualizationDelayMs
+
+                    if iteration > 3 && maxStepMove < arrangeTiming.StopWhenMaxMoveBelow then
+                        isConverged <- true
+
+                    iteration <- iteration + 1
+
+                if runSerial = arrangeRunSerial then
+                    applyPositions()
+
+                    let requiredWidth =
+                        nodes
+                        |> Array.map (fun node -> node.X + node.Width)
+                        |> Array.max
+                        |> fun right -> right + leftMargin
+
+                    let requiredHeight =
+                        nodes
+                        |> Array.map (fun node -> node.Y + node.Height)
+                        |> Array.max
+                        |> fun bottom -> bottom + topMargin
+
+                    drawing.Width <- max drawing.Width requiredWidth
+                    drawing.Height <- max drawing.Height requiredHeight
+
+                    nodes |> Array.iter _.ClampToDrawing()
+                    this.MarkGraphDirty()
+        }
+        |> Async.StartImmediate
 
     member this.DeleteSelectedCommand =
         SimpleCommand((fun _ -> this.DeleteSelectedElement()), (fun _ -> not (isNull selectedNode)))
@@ -3021,6 +3219,10 @@ type MainWindowViewModel() as this =
 
     member this.ArrangeGraphCommand =
         SimpleCommand((fun _ -> this.ArrangeGraph()), (fun _ -> true))
+        :> ICommand
+
+    member _.ResetArrangeSettingsCommand =
+        SimpleCommand((fun _ -> arrangeSettings.ResetDefaults()), (fun _ -> true))
         :> ICommand
 
     member this.RunCommand =

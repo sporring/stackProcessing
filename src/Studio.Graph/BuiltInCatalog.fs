@@ -807,33 +807,8 @@ module BuiltInCatalog =
               [ makeParameter "type" "Type" "Float64" BasicType.String
                 makeParameter "order" "Order" "2" (BasicType.Numeric Int32) ] }
 
-        { Id = "SerialKeypoints2D"
-          DisplayName = "serialKeypoints2D"
-          Category = "Serial Sections"
-          Summary = "Detect 2D keypoints independently in each serial section."
-          Description = serialSectionsDescription
-          Aliases = [ "serial"; "slice"; "slicewise"; "keypoints"; "features"; "registration"; "section" ]
-          Inputs = [ makePort "Number" imageAny ]
-          Outputs = [ makePort "PointSet" pointSet ]
-          Parameters =
-              [ makeParameter "type" "Type" "Float64" BasicType.String
-                makeParameter "sigma" "Sigma" "1.0" (BasicType.Numeric Float64)
-                makeParameter "threshold" "Threshold" "0.03" (BasicType.Numeric Float64) ] }
-
-        { Id = "SerialKeypointTranslationManifest"
-          DisplayName = "serialKeypointTranslationManifest"
-          Category = "Serial Sections"
-          Summary = "Reduce slicewise keypoints to a cumulative translation manifest."
-          Description = serialSectionsDescription
-          Aliases = [ "serial"; "slice"; "slicewise"; "manifest"; "keypoints"; "registration"; "translation" ]
-          Inputs = [ makePort "PointSet" pointSet ]
-          Outputs = [ makePort "SerialSliceManifest" serialSliceManifest ]
-          Parameters =
-              [ makeParameter "width" "Width" "64" (BasicType.Numeric UInt32)
-                makeParameter "height" "Height" "64" (BasicType.Numeric UInt32) ] }
-
-        { Id = "SerialImageTranslationManifest"
-          DisplayName = "serialImageTranslationManifest"
+        { Id = "SerialEstTrans"
+          DisplayName = "serialEstTrans"
           Category = "Serial Sections"
           Summary = "Estimate pairwise slicewise translations and accumulate them from the first slice."
           Description = serialSectionsDescription
@@ -844,8 +819,8 @@ module BuiltInCatalog =
               [ makeParameter "type" "Type" "Float64" BasicType.String
                 makeParameter "maxShift" "Max shift" "8" (BasicType.Numeric Int32) ] }
 
-        { Id = "SerialApplyManifest"
-          DisplayName = "serialApplyManifest"
+        { Id = "SerialApplyTrans"
+          DisplayName = "serialApplyTrans"
           Category = "Serial Sections"
           Summary = "Apply slicewise serial-section transforms on the original slice canvas."
           Description = serialSectionsDescription
