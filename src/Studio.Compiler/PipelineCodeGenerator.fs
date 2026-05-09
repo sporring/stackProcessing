@@ -178,12 +178,6 @@ module PipelineCodeGenerator =
     let private sourcePrefix availableMemory line =
         $"debug 1u {uint64Literal availableMemory}{Environment.NewLine}{line}"
 
-    let private pairFunctionName functionId =
-        match functionId with
-        | "MaxOfPair" -> Some "maxOfPair"
-        | "MinOfPair" -> Some "minOfPair"
-        | _ -> None
-
     let private imageOpImageFunctionName (node: SavedNode) =
         match savedParamValue "operation" node with
         | "+" -> "addPair"
@@ -227,13 +221,11 @@ module PipelineCodeGenerator =
                 | "xor" | "^" -> "maskXor"
                 | _ -> "maskAnd"
             Some logic
-        | _ -> pairFunctionName node.FunctionId
+        | _ -> None
 
     let private pairCompositionOperator (node: SavedNode) =
         match node.FunctionId with
-        | "ImageOpImage"
-        | "MaxOfPair"
-        | "MinOfPair" -> ">>=>"
+        | "ImageOpImage" -> ">>=>"
         | _ -> ">=>"
 
     let private safeIdentifier (value: string) =
@@ -1099,8 +1091,6 @@ module PipelineCodeGenerator =
         | "PCA" ->
             let components = parameterValue "components"
             $">=> PCA {components}"
-        | "SqrtFloat64" ->
-            ">=> sqrt"
         | id when isScalarImageFunction id ->
             let value = parameterValue "value"
             $">=> {scalarImageFunctionName node |> Option.get} {value}"

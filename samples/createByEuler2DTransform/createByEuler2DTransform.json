@@ -132,10 +132,15 @@
     },
     {
       "id": "n4",
-      "functionId": "MaxOfPair",
+      "functionId": "ImageOpImage",
       "x": 320.0,
       "y": 150.0,
       "parameters": [
+        {
+          "key": "operation",
+          "value": "max",
+          "useInput": false
+        },
         {
           "key": "type",
           "value": "UInt8",
@@ -159,10 +164,15 @@
     },
     {
       "id": "n7",
-      "functionId": "MaxOfPair",
+      "functionId": "ImageOpImage",
       "x": 760.0,
       "y": 230.0,
       "parameters": [
+        {
+          "key": "operation",
+          "value": "max",
+          "useInput": false
+        },
         {
           "key": "type",
           "value": "UInt8",

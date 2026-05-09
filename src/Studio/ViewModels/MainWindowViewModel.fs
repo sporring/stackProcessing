@@ -50,11 +50,12 @@ module PipelinePinKind =
 
     let ofString value =
         match value with
+        | "dataInput" -> DataInput
         | "parameterInput" -> ParameterInput
         | "scalarOutput" -> ScalarOutput
         | "reducerOutput" -> ReducerOutput
         | "dataOutput" -> DataOutput
-        | _ -> DataInput
+        | _ -> invalidOp $"Unknown pipeline pin kind: {value}"
 
     let isInput kind =
         match kind with
@@ -3329,38 +3330,9 @@ type MainWindowViewModel() as this =
         drawing.Nodes.Clear()
         this.SelectedNode <- null
 
-        let canonicalFunctionId functionId =
-            match functionId with
-            | "Plot" -> "Chart"
-            | "SqrtFloat64" -> "UnaryImageFunction"
-            | "MaxOfPair"
-            | "MinOfPair" -> "ImageOpImage"
-            | _ -> functionId
-
-        let canonicalSavedNode (savedNode: SavedNode) =
-            let pairOperation =
-                match savedNode.FunctionId with
-                | "MaxOfPair" -> Some "max"
-                | "MinOfPair" -> Some "min"
-                | _ -> None
-
-            match pairOperation with
-            | Some operation ->
-                let operationParameter =
-                    { Key = "operation"
-                      Value = operation
-                      UseInput = false }
-
-                { savedNode with
-                    FunctionId = "ImageOpImage"
-                    Parameters = Array.append [| operationParameter |] savedNode.Parameters }
-            | None ->
-                { savedNode with FunctionId = canonicalFunctionId savedNode.FunctionId }
-
         let loadedNodes =
             savedGraph.Nodes
             |> Array.map (fun savedNode ->
-                let savedNode = canonicalSavedNode savedNode
                 let functionId = savedNode.FunctionId
 
                 match BuiltInCatalog.tryFind functionId with
@@ -3389,25 +3361,16 @@ type MainWindowViewModel() as this =
         for edge in savedGraph.Edges do
             match loadedNodes |> Map.tryFind edge.FromNode, loadedNodes |> Map.tryFind edge.ToNode with
             | Some fromNode, Some toNode ->
-                let fromKind =
-                    if String.IsNullOrWhiteSpace edge.FromKind then DataOutput else PipelinePinKind.ofString edge.FromKind
+                let fromKind = PipelinePinKind.ofString edge.FromKind
+                let toKind = PipelinePinKind.ofString edge.ToKind
 
-                let toKind =
-                    if String.IsNullOrWhiteSpace edge.ToKind then DataInput else PipelinePinKind.ofString edge.ToKind
-
-                let toPort =
-                    if toKind = ParameterInput && toNode.State.Definition.Id = "Chart" && edge.ToPort = 0 then
-                        1
-                    else
-                        edge.ToPort
-
-                match pinByKindIndex fromKind edge.FromPort fromNode, pinByKindIndex toKind toPort toNode with
+                match pinByKindIndex fromKind edge.FromPort fromNode, pinByKindIndex toKind edge.ToPort toNode with
                 | Some startPin, Some endPin when canConnectPins startPin endPin ->
                     addConnector startPin endPin
                 | Some _, Some _ ->
-                    invalidOp $"Saved edge has incompatible port types: {edge.FromNode}[{edge.FromPort}] -> {edge.ToNode}[{toPort}]"
+                    invalidOp $"Saved edge has incompatible port types: {edge.FromNode}[{edge.FromPort}] -> {edge.ToNode}[{edge.ToPort}]"
                 | _ ->
-                    invalidOp $"Saved edge refers to a missing port: {edge.FromNode}[{edge.FromPort}] -> {edge.ToNode}[{toPort}]"
+                    invalidOp $"Saved edge refers to a missing port: {edge.FromNode}[{edge.FromPort}] -> {edge.ToNode}[{edge.ToPort}]"
             | _ ->
                 invalidOp $"Saved edge refers to a missing node: {edge.FromNode} -> {edge.ToNode}"
 

@@ -166,8 +166,7 @@ module BasicType =
       | "Complex" -> Some(Numeric Complex)
       | "Bool" -> Some Bool
       | "String" -> Some String
-      | "Map"
-      | "Histogram" -> Some Map
+      | "Map" -> Some Map
       | "Unit" -> Some Unit
       | _ -> None
 

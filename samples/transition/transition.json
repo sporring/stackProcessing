@@ -31,10 +31,16 @@
     },
     {
       "id": "n2",
-      "functionId": "SqrtFloat64",
+      "functionId": "UnaryImageFunction",
       "x": 240.0,
       "y": 120.0,
-      "parameters": []
+      "parameters": [
+        {
+          "key": "function",
+          "value": "sqrt",
+          "useInput": false
+        }
+      ]
     },
     {
       "id": "n3",
@@ -66,10 +72,16 @@
     },
     {
       "id": "n4",
-      "functionId": "SqrtFloat64",
+      "functionId": "UnaryImageFunction",
       "x": 640.0,
       "y": 120.0,
-      "parameters": []
+      "parameters": [
+        {
+          "key": "function",
+          "value": "sqrt",
+          "useInput": false
+        }
+      ]
     },
     {
       "id": "n5",
