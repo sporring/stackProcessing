@@ -1015,7 +1015,7 @@ val correctBiasMasked<'T when 'T: equality> :
                      StackCore.Image<float>>) when 'T: equality
 
 val serialIdentityManifest:
-  (uint32 -> uint32 -> uint32 -> StackSerialSections.SerialSliceManifest)
+  (uint32 -> uint32 -> int -> StackSerialSections.SerialSliceManifest)
 
 val serialPolynomialBiasCorrect<'T when 'T: equality> :
   (int -> StackCore.Stage<StackCore.Image<'T>,StackCore.Image<'T>>)
@@ -1023,17 +1023,40 @@ val serialPolynomialBiasCorrect<'T when 'T: equality> :
 
 val serialEstTrans<'T when 'T: equality> :
   (int ->
-     StackCore.Stage<StackCore.Image<'T>,StackSerialSections.SerialSliceManifest>)
+     string ->
+     float ->
+     float ->
+     uint32 ->
+     double ->
+     uint32 ->
+     float ->
+     int ->
+     float ->
+     float ->
+     float ->
+     float ->
+     StackCore.Stage<StackCore.Image<'T>,
+                     (StackCore.Image<'T> *
+                      StackSerialSections.SerialSliceManifest)>)
     when 'T: equality
 
 val serialApplyTrans<'T when 'T: equality> :
-  (StackSerialSections.SerialSliceManifest ->
-     float -> StackCore.Stage<StackCore.Image<'T>,StackCore.Image<float>>)
-    when 'T: equality
+  (float ->
+     StackCore.Stage<(StackCore.Image<'T> *
+                      StackSerialSections.SerialSliceManifest),
+                     StackCore.Image<'T>>) when 'T: equality
+
+val serialTransImage<'T when 'T: equality> :
+  StackCore.Stage<(StackCore.Image<'T> * StackSerialSections.SerialSliceManifest),
+                  StackCore.Image<'T>> when 'T: equality
+
+val serialTransManifest<'T when 'T: equality> :
+  StackCore.Stage<(StackCore.Image<'T> * StackSerialSections.SerialSliceManifest),
+                  StackSerialSections.SerialSliceManifest> when 'T: equality
 
 val serialApplyManifestInBoundingBox<'T when 'T: equality> :
   (StackSerialSections.SerialSliceManifest ->
-     float -> StackCore.Stage<StackCore.Image<'T>,StackCore.Image<float>>)
+     float -> StackCore.Stage<StackCore.Image<'T>,StackCore.Image<'T>>)
     when 'T: equality
 
 val quantiles: (float list -> Map<'a,uint64> -> float list) when 'a: comparison

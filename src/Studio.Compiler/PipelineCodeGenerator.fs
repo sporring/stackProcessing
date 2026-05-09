@@ -346,7 +346,6 @@ module PipelineCodeGenerator =
         || node.FunctionId = "PointPairDistances"
         || node.FunctionId = "FitBiasModel"
         || node.FunctionId = "FitBiasModelMasked"
-        || node.FunctionId = "SerialEstTrans"
 
     let private stackInfoFieldExpression bindingName portIndex =
         [| $"{bindingName}.dimensions"
@@ -609,6 +608,34 @@ module PipelineCodeGenerator =
 
         let parameterValue key =
             parameterValueForNode node key
+
+        let rec inferredImagePixelType visited (targetNode: SavedNode) inputPort =
+            if visited |> Set.contains targetNode.Id then
+                None
+            else
+                let visited = visited |> Set.add targetNode.Id
+
+                graph.Edges
+                |> Array.tryFind (fun edge ->
+                    edge.ToNode = targetNode.Id
+                    && edge.ToKind <> "parameterInput"
+                    && edge.ToPort = inputPort)
+                |> Option.bind (fun edge ->
+                    nodesById
+                    |> Map.tryFind edge.FromNode
+                    |> Option.bind (fun sourceNode ->
+                        match sourceNode.FunctionId, edge.FromPort with
+                        | "SerialEstTrans", (0 | 1) ->
+                            inferredImagePixelType visited sourceNode 0
+                        | "Cast", 0 ->
+                            Some(pixelTypeNameFromParameter "targetType" "Float64" sourceNode)
+                        | _ ->
+                            let configured = savedParamValue "type" sourceNode
+                            if String.IsNullOrWhiteSpace configured then None else Some(pixelTypeNameFromSuffix configured)))
+
+        let pipelinePixelType defaultType =
+            inferredImagePixelType Set.empty node 0
+            |> Option.defaultValue (pixelTypeNameFromParameter "type" defaultType node)
 
         let quotedParameter key =
             let expression = parameterExpression key
@@ -1278,14 +1305,25 @@ module PipelineCodeGenerator =
             let order = parameterValue "order"
             $">=> serialPolynomialBiasCorrect<{pixelType}> {order}"
         | "SerialEstTrans" ->
-            let pixelType = pixelTypeNameFromParameter "type" "Float64" node
+            let pixelType = pipelinePixelType "Float64"
             let maxShift = parameterValue "maxShift"
-            $">=> serialEstTrans<{pixelType}> {maxShift}"
+            let method = quotedParameter "method"
+            let sigma0 = parameterValue "sigma0"
+            let scaleFactor = parameterValue "scaleFactor"
+            let scaleLevels = parameterValue "scaleLevels"
+            let contrastThreshold = parameterValue "contrastThreshold"
+            let maxKeypoints = parameterValue "maxKeypoints"
+            let matchTolerance = parameterValue "matchTolerance"
+            let maxIterations = parameterValue "maxIterations"
+            let initialLinearStep = parameterValue "initialLinearStep"
+            let initialTranslationStep = parameterValue "initialTranslationStep"
+            let minStep = parameterValue "minStep"
+            let stepShrink = parameterValue "stepShrink"
+            $">=> serialEstTrans<{pixelType}> {maxShift} {method} {sigma0} {scaleFactor} {scaleLevels} {contrastThreshold} {maxKeypoints} {matchTolerance} {maxIterations} {initialLinearStep} {initialTranslationStep} {minStep} {stepShrink}"
         | "SerialApplyTrans" ->
-            let pixelType = pixelTypeNameFromParameter "type" "Float64" node
-            let manifest = parameterValue "manifest"
+            let pixelType = pipelinePixelType "Float64"
             let background = parameterValue "background"
-            $">=> serialApplyTrans<{pixelType}> {manifest} {background}"
+            $">=> serialApplyTrans<{pixelType}> {background}"
         | "SerialApplyManifestInBoundingBox" ->
             let pixelType = pixelTypeNameFromParameter "type" "Float64" node
             let manifest = parameterValue "manifest"
@@ -1648,6 +1686,26 @@ module PipelineCodeGenerator =
             else
                 None
 
+        let rec inferredImagePixelType visited (targetNode: SavedNode) inputPort =
+            if visited |> Set.contains targetNode.Id then
+                None
+            else
+                let visited = visited |> Set.add targetNode.Id
+
+                incomingDataEdge targetNode.Id inputPort
+                |> Option.bind (fun edge ->
+                    nodesById
+                    |> Map.tryFind edge.FromNode
+                    |> Option.bind (fun sourceNode ->
+                        match sourceNode.FunctionId, edge.FromPort with
+                        | "SerialEstTrans", (0 | 1) ->
+                            inferredImagePixelType visited sourceNode 0
+                        | "Cast", 0 ->
+                            Some(pixelTypeNameFromParameter "targetType" "Float64" sourceNode)
+                        | _ ->
+                            let configured = savedParamValue "type" sourceNode
+                            if String.IsNullOrWhiteSpace configured then None else Some(pixelTypeNameFromSuffix configured)))
+
         let composeStages (left: string) (right: string) =
             $"{left}{newLine}>=> {right}"
 
@@ -1679,6 +1737,16 @@ module PipelineCodeGenerator =
                                 $"{upstreamExpression}{newLine}>=> selectGroupedOutput ({components} + 1u) {edge.FromPort}u"
                             elif upstream.FunctionId = "AffineRegistration" && edge.FromPort >= 0 && edge.FromPort <= 1 then
                                 $"{upstreamExpression}{newLine}>=> selectGroupedValueOutput 2u {edge.FromPort}u"
+                            elif upstream.FunctionId = "SerialEstTrans" && edge.FromPort = 0 then
+                                let pixelType =
+                                    inferredImagePixelType Set.empty upstream 0
+                                    |> Option.defaultValue (pixelTypeNameFromParameter "type" "Float64" upstream)
+                                $"{upstreamExpression}{newLine}>=> serialTransImage<{pixelType}>"
+                            elif upstream.FunctionId = "SerialEstTrans" && edge.FromPort = 1 then
+                                let pixelType =
+                                    inferredImagePixelType Set.empty upstream 0
+                                    |> Option.defaultValue (pixelTypeNameFromParameter "type" "Float64" upstream)
+                                $"{upstreamExpression}{newLine}>=> serialTransManifest<{pixelType}>"
                             elif upstream.FunctionId = "EstimateHistogram" && edge.FromPort = 0 then
                                 $"{upstreamExpression}{newLine}>=> histogramEstimateMap"
                             else
@@ -1737,6 +1805,26 @@ module PipelineCodeGenerator =
                     | _ -> None
 
                 match node.FunctionId with
+                | "SerialApplyTrans" ->
+                    match incomingDataEdge node.Id 0, incomingDataEdge node.Id 1, stageCall node with
+                    | Some imageEdge, Some manifestEdge, Some stage
+                        when imageEdge.FromNode = manifestEdge.FromNode
+                             && imageEdge.FromKind = manifestEdge.FromKind
+                             && imageEdge.FromPort = 0
+                             && manifestEdge.FromPort = 1 ->
+                        match nodesById |> Map.tryFind imageEdge.FromNode with
+                        | Some upstream when upstream.FunctionId = "SerialEstTrans" ->
+                            let input = pipelineExpression visited upstream
+                            $"{input}{newLine}>=> {stage}"
+                        | _ ->
+                            let left = inputExpression 0 |> parenthesizeBlock
+                            let right = inputExpression 1 |> parenthesizeBlock
+                            $"({newLine}{indentBlock 4 left},{newLine}{indentBlock 4 right}{newLine}){newLine}||> zip{newLine}>=> {stage}"
+                    | _ ->
+                        let stage = stageCall node |> Option.get
+                        let left = inputExpression 0 |> parenthesizeBlock
+                        let right = inputExpression 1 |> parenthesizeBlock
+                        $"({newLine}{indentBlock 4 left},{newLine}{indentBlock 4 right}{newLine}){newLine}||> zip{newLine}>=> {stage}"
                 | id when pairStageFunctionName node |> Option.isSome ->
                     match sharedFanOutExpression () with
                     | Some expression ->
@@ -1786,7 +1874,6 @@ module PipelineCodeGenerator =
                 | "PointPairDistances"
                 | "FitBiasModel"
                 | "FitBiasModelMasked"
-                | "SerialEstTrans"
                 | "AffineRegistration" ->
                     $"{expression}{newLine}|> drain"
                 | "ComponentTranslationTable" ->

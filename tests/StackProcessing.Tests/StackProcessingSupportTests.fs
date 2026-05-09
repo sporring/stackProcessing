@@ -866,7 +866,7 @@ let stackProcessingSupportSuite =
             finally
                 disposeImages corrected
 
-        testCase "serial section manifests accumulate pairwise translations and can expand canvas" <| fun _ ->
+        testCase "serial section transform stream accumulates pairwise translations and applies on original canvas" <| fun _ ->
             let makeSlice z impulseX =
                 let image =
                     Array2D.init 5 5 (fun x y -> if x = impulseX && y = 2 then 10.0 else 0.0)
@@ -875,31 +875,60 @@ let stackProcessingSupportSuite =
                 image
 
             let sampled = [ makeSlice 0 2; makeSlice 1 3 ]
-            let manifest =
+            let estimated =
                 try
                     imagePlan sampled
-                    >=> serialEstTrans<float> 2
-                    |> drain
+                    >=> serialEstTrans<float> 2 "SiftAffine" 0.5 1.2 4u 0.0001 20u 1.5 5 0.05 1.0 0.0001 0.5
+                    |> drainList
                 finally
                     disposeImages sampled
 
-            Expect.equal manifest.Transforms.Length 2 "The serial manifest should contain one transform per slice."
-            Expect.floatClose Accuracy.high manifest.Transforms.[1].Matrix.[0].[2] -1.0 "The second slice should be translated back toward the first slice."
+            try
+                let manifests = estimated |> List.map snd
+                Expect.equal manifests.Length 2 "The serial estimator should emit one manifest per slice."
+                Expect.floatClose Accuracy.high manifests.[1].Transforms.[0].Matrix.[0].[2] -1.0 "The second slice should be translated back toward the first slice."
+            finally
+                estimated |> List.map fst |> disposeImages
 
             let input = [ makeSlice 0 2; makeSlice 1 3 ]
             let transformed =
                 try
                     imagePlan input
-                    >=> serialApplyManifestInBoundingBox<float> manifest 0.0
+                    >=> serialEstTrans<float> 2 "SiftAffine" 0.5 1.2 4u 0.0001 20u 1.5 5 0.05 1.0 0.0001 0.5
+                    >=> serialApplyTrans<float> 0.0
                     |> drainList
                 finally
                     disposeImages input
 
             try
-                Expect.equal (transformed[0].GetWidth()) 6u "Bounding-box application should expand the x canvas enough for shifted slices."
-                Expect.floatClose Accuracy.medium (transformed[1].Get [ 3u; 2u ]) 10.0 "The shifted impulse should align with the first slice in the expanded canvas."
+                Expect.equal (transformed[0].GetWidth()) 5u "Serial application should keep the original canvas width."
+                Expect.floatClose Accuracy.medium (transformed[1].Get [ 2u; 2u ]) 10.0 "The shifted impulse should align with the first slice on the original canvas."
             finally
                 disposeImages transformed
+
+        testCase "serial section SSD translation mode is available as an intensity-based option" <| fun _ ->
+            let makeSlice z impulseX =
+                let image =
+                    Array2D.init 5 5 (fun x y -> if x = impulseX && y = 2 then 10.0 else 0.0)
+                    |> Image<float>.ofArray2D
+                image.index <- z
+                image
+
+            let sampled = [ makeSlice 0 2; makeSlice 1 3 ]
+            let estimated =
+                try
+                    imagePlan sampled
+                    >=> serialEstTrans<float> 2 "SSDTranslation" 0.5 1.2 4u 0.0001 20u 1.5 5 0.05 1.0 0.0001 0.5
+                    |> drainList
+                finally
+                    disposeImages sampled
+
+            try
+                let manifests = estimated |> List.map snd
+                Expect.floatClose Accuracy.high manifests.[1].Transforms.[0].Matrix.[0].[2] -1.0 "SSD mode should recover the same pure translation."
+                Expect.floatClose Accuracy.high manifests.[1].Transforms.[0].Matrix.[0].[0] 1.0 "SSD mode should emit translation-only affine matrices."
+            finally
+                estimated |> List.map fst |> disposeImages
 
         testCase "serial 2D keypoints emit per-slice point sets" <| fun _ ->
             let slices =

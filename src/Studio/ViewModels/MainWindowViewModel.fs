@@ -768,7 +768,6 @@ module private HighValueFilterNode =
           "SerialPolynomialBiasCorrect"
           "SerialEstTrans"
           "SerialApplyTrans"
-          "SerialApplyManifestInBoundingBox"
           "LabelContour"
           "ChangeLabel" ]
         |> Set.ofList
@@ -820,6 +819,33 @@ module private QuantilesNode =
             || (index = 3 && enabled "useQ4" state)
             || (index = 4 && enabled "useQ5" state))
         |> List.map snd
+
+module private SerialTransformNode =
+    let selectedType = HighValueFilterNode.selectedType
+    let typeOptions = HighValueFilterNode.floatingImageTypeOptions
+
+    let estimatorPorts (state: PipelineNodeState) =
+        let selectedType = selectedType state
+        let typeName = NumericType.toString selectedType
+        let imagePort =
+            { Name = typeName
+              Type = PortType.numericToImage selectedType }
+
+        [ imagePort ],
+        [ imagePort
+          { Name = "SerialSliceManifest"
+            Type = PortType.Custom "SerialSliceManifest" } ]
+
+    let applyPorts (state: PipelineNodeState) =
+        let selectedType = selectedType state
+        let typeName = NumericType.toString selectedType
+
+        [ { Name = typeName
+            Type = PortType.numericToImage selectedType }
+          { Name = "SerialSliceManifest"
+            Type = PortType.Custom "SerialSliceManifest" } ],
+        [ { Name = typeName
+            Type = PortType.numericToImage selectedType } ]
 
 module private ChartNode =
     let kindOptions =
@@ -969,7 +995,6 @@ type PipelineNodeViewModel(
         | "AffineRegistration"
         | "FitBiasModel"
         | "FitBiasModelMasked"
-        | "SerialEstTrans"
         | "GetStackInfo"
         | "GetChunkInfo"
         | "ComponentTranslationTable"
@@ -1007,6 +1032,8 @@ type PipelineNodeViewModel(
         | "Cast" -> CastNode.ports state
         | functionId when ScalarImageOperationNode.isOperation functionId -> ScalarImageOperationNode.ports state
         | "Threshold" -> ThresholdNode.ports state
+        | "SerialEstTrans" -> SerialTransformNode.estimatorPorts state
+        | "SerialApplyTrans" -> SerialTransformNode.applyPorts state
         | "SerialPolynomialBiasCorrect" -> HighValueFilterNode.typedImagePorts state
         | "Quantiles" -> state.Definition.Inputs, QuantilesNode.outputPorts state
         | _ -> state.Definition.Inputs, state.Definition.Outputs
@@ -1635,13 +1662,11 @@ type MainWindowViewModel() as this =
                     PipelineParameterViewModel(parameter.Label, parameter.Key, parameter.DefaultValue, parameter.Type, canUseInput = false)
                 | ("CorrectBias" | "CorrectBiasMasked"), "model" ->
                     PipelineParameterViewModel(parameter.Label, parameter.Key, parameter.DefaultValue, parameter.Type, forceUseInput = true)
-                | ("SerialApplyTrans" | "SerialApplyManifestInBoundingBox"), "manifest" ->
-                    PipelineParameterViewModel(parameter.Label, parameter.Key, parameter.DefaultValue, parameter.Type, forceUseInput = true)
                 | ("Quantiles" | "HistogramEqualization"), "histogram" ->
                     PipelineParameterViewModel(parameter.Label, parameter.Key, parameter.DefaultValue, parameter.Type, forceUseInput = true)
-                | "SerialPolynomialBiasCorrect", "type" ->
+                | ("SerialPolynomialBiasCorrect" | "SerialEstTrans" | "SerialApplyTrans"), "type" ->
                     let options =
-                        HighValueFilterNode.floatingImageTypeOptions
+                        SerialTransformNode.typeOptions
                         |> List.map (fun value -> ParameterOptionViewModel(value, value, true))
 
                     PipelineParameterViewModel(parameter.Label, parameter.Key, parameter.DefaultValue, parameter.Type, options, false)
@@ -2096,6 +2121,29 @@ type MainWindowViewModel() as this =
                 for option in parameter.Options do
                     option.IsEnabled <- not isConnected || option.Value = parameter.Value))
 
+    let refreshSerialTransformTypeOptions () =
+        let hasConstrainedConnection (node: PipelineNodeViewModel) =
+            node.Pins
+            |> Seq.exists (function
+                | :? PipelinePinViewModel as pin when pin.Kind = DataInput && pin.Port.Type <> PortType.Custom "SerialSliceManifest" ->
+                    drawing.Connectors
+                    |> Seq.exists (fun connector -> Object.ReferenceEquals(connector.End, pin))
+                | :? PipelinePinViewModel as pin when pin.Kind = DataOutput ->
+                    drawing.Connectors
+                    |> Seq.exists (fun connector -> Object.ReferenceEquals(connector.Start, pin))
+                | _ -> false)
+
+        pipelineNodes ()
+        |> Seq.filter (fun node -> node.State.Definition.Id = "SerialEstTrans" || node.State.Definition.Id = "SerialApplyTrans")
+        |> Seq.iter (fun node ->
+            let isConnected = hasConstrainedConnection node
+
+            node.State.Parameters
+            |> Seq.tryFind (fun parameter -> parameter.Key = "type")
+            |> Option.iter (fun parameter ->
+                for option in parameter.Options do
+                    option.IsEnabled <- not isConnected || option.Value = parameter.Value))
+
     let parameterValues (state: PipelineNodeState) =
         state.Parameters
         |> Seq.map (fun parameter ->
@@ -2409,6 +2457,7 @@ type MainWindowViewModel() as this =
                 refreshPairOperationTypeOptions()
                 refreshScalarImageOperationTypeOptions()
                 refreshThresholdTypeOptions()
+                refreshSerialTransformTypeOptions()
                 this.RaiseGraphStateChanged()
                 this.MarkGraphDirty())
         | _ -> ()

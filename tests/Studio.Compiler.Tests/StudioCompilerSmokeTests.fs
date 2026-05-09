@@ -185,13 +185,25 @@ let rec private sourceFor caseId portType =
         let manifest =
             node $"source_{caseId}_manifest" "SerialEstTrans"
                 [ p "type" "Float64" false
-                  p "maxShift" "4" false ]
+                  p "maxShift" "4" false
+                  p "method" "SiftAffine" false
+                  p "sigma0" "1.6" false
+                  p "scaleFactor" "1.41421356237" false
+                  p "scaleLevels" "4" false
+                  p "contrastThreshold" "0.03" false
+                  p "maxKeypoints" "50" false
+                  p "matchTolerance" "1.5" false
+                  p "maxIterations" "60" false
+                  p "initialLinearStep" "0.05" false
+                  p "initialTranslationStep" "1.0" false
+                  p "minStep" "0.0001" false
+                  p "stepShrink" "0.5" false ]
 
         { Nodes = image.Nodes @ [ manifest ]
           Edges = image.Edges @ [ edge image.NodeId image.Kind image.Port manifest.Id "input" 0 ]
           NodeId = manifest.Id
-          Kind = "reducerOutput"
-          Port = 0 }
+          Kind = "output"
+          Port = 1 }
     | PortType.Scalar BasicType.Map ->
         let image = imageSource $"{caseId}_histogram_image" NumericType.Float64
         let histogram = node $"source_{caseId}_histogram" "HistogramData" []
@@ -239,7 +251,6 @@ let private outputKindFor functionId portType =
     | "AffineRegistration"
     | "FitBiasModel"
     | "FitBiasModelMasked"
-    | "SerialEstTrans"
     | "GetStackInfo"
     | "GetChunkInfo"
     | "GetZarrInfo"
@@ -335,8 +346,6 @@ let private graphForDefinition caseIndex (definition: Function) =
         match definition.Id with
         | "CorrectBias"
         | "CorrectBiasMasked" -> [ "model" ]
-        | "SerialApplyTrans"
-        | "SerialApplyManifestInBoundingBox" -> [ "manifest" ]
         | "CollapseComponentLabels" -> [ "translationTable" ]
         | "HistogramEqualization"
         | "Quantiles"

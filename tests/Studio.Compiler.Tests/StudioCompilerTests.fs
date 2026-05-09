@@ -27,6 +27,22 @@ let private graph nodes edges =
       Nodes = nodes |> List.toArray
       Edges = edges |> List.toArray }
 
+let private serialEstTransParameters pixelType =
+    [ p "type" pixelType false
+      p "maxShift" "4" false
+      p "method" "SiftAffine" false
+      p "sigma0" "1.6" false
+      p "scaleFactor" "1.41421356237" false
+      p "scaleLevels" "4" false
+      p "contrastThreshold" "0.03" false
+      p "maxKeypoints" "50" false
+      p "matchTolerance" "1.5" false
+      p "maxIterations" "60" false
+      p "initialLinearStep" "0.05" false
+      p "initialTranslationStep" "1.0" false
+      p "minStep" "0.0001" false
+      p "stepShrink" "0.5" false ]
+
 [<Tests>]
 let generatorSuite =
     testList "Studio.Compiler PipelineCodeGenerator" [
@@ -205,7 +221,7 @@ let generatorSuite =
             Expect.stringContains code "|> drain" "Linked bias model reducer should be drained into a binding."
             Expect.stringContains code ">=> correctBias<float> FitBiasModel0" "CorrectBias should receive the linked bias model binding."
 
-        testCase "serial section manifest reducer can feed slicewise transform application" <| fun _ ->
+        testCase "serial section transform stream can feed slicewise transform application" <| fun _ ->
             let read =
                 node "read" "Read"
                     [ p "availableMemory" "4096" false
@@ -214,14 +230,11 @@ let generatorSuite =
                       p "suffix" ".tiff" false ]
 
             let manifest =
-                node "manifest" "SerialEstTrans"
-                    [ p "type" "Float64" false
-                      p "maxShift" "4" false ]
+                node "manifest" "SerialEstTrans" (serialEstTransParameters "Float64")
 
             let apply =
-                node "apply" "SerialApplyManifestInBoundingBox"
+                node "apply" "SerialApplyTrans"
                     [ p "type" "Float64" false
-                      p "manifest" "serialManifest" true
                       p "background" "0.0" false ]
 
             let write =
@@ -233,13 +246,48 @@ let generatorSuite =
                 graph
                     [ read; manifest; apply; write ]
                     [ edge "read" "output" 0 "manifest" "input" 0
-                      edge "manifest" "reducerOutput" 0 "apply" "parameterInput" 1
-                      edge "read" "output" 0 "apply" "input" 0
+                      edge "manifest" "output" 0 "apply" "input" 0
+                      edge "manifest" "output" 1 "apply" "input" 1
                       edge "apply" "output" 0 "write" "input" 0 ]
                 |> PipelineCodeGenerator.generateSavedGraph
 
-            Expect.stringContains code ">=> serialEstTrans<float> 4" "SerialEstTrans should lower to the serial reducer."
-            Expect.stringContains code ">=> serialApplyManifestInBoundingBox<float> SerialEstTrans0 0.0" "Serial apply should receive the linked manifest binding."
+            Expect.stringContains code ">=> serialEstTrans<float> 4 \"SiftAffine\" 1.6 1.41421356237 4u 0.03 50u 1.5 60 0.05 1.0 0.0001 0.5" "SerialEstTrans should lower to the streamed image/manifest estimator."
+            Expect.stringContains code ">=> serialApplyTrans<float> 0.0" "Serial apply should consume the streamed image/manifest pairs."
+            Expect.isFalse (code.Contains("serialTransImage")) "Direct estimator-to-apply wiring should keep the pair stream intact."
+
+        testCase "serial transform compiler infers image type from connected stream when saved box type is stale" <| fun _ ->
+            let read =
+                node "read" "ReadVolume"
+                    [ p "availableMemory" "4096" false
+                      p "type" "Float32" false
+                      p "input" "sections.tif" false ]
+
+            let manifest =
+                node "manifest" "SerialEstTrans" (serialEstTransParameters "Float64")
+
+            let apply =
+                node "apply" "SerialApplyTrans"
+                    [ p "type" "Float64" false
+                      p "background" "0.0" false ]
+
+            let write =
+                node "write" "Write"
+                    [ p "output" "aligned" false
+                      p "suffix" ".tiff" false ]
+
+            let code =
+                graph
+                    [ read; manifest; apply; write ]
+                    [ edge "read" "output" 0 "manifest" "input" 0
+                      edge "manifest" "output" 0 "apply" "input" 0
+                      edge "manifest" "output" 1 "apply" "input" 1
+                      edge "apply" "output" 0 "write" "input" 0 ]
+                |> PipelineCodeGenerator.generateSavedGraph
+
+            Expect.stringContains code "|> readVolume<float32> \"sections.tif\"" "The source should be Float32."
+            Expect.stringContains code ">=> serialEstTrans<float32> 4 \"SiftAffine\" 1.6 1.41421356237 4u 0.03 50u 1.5 60 0.05 1.0 0.0001 0.5" "SerialEstTrans should use the connected image type."
+            Expect.stringContains code ">=> serialApplyTrans<float32> 0.0" "SerialApplyTrans should use the connected image type."
+            Expect.isFalse (code.Contains("serialEstTrans<float>")) "Stale Float64 serial parameters must not leak into generated code."
 
         testCase "noise add-stage boxes lower to streaming filters" <| fun _ ->
             let read =

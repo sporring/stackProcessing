@@ -22,6 +22,7 @@ module BuiltInCatalog =
   let float64Matrix = PortType.Custom "Float64Matrix"
   let biasModel = PortType.Custom "BiasModel"
   let serialSliceManifest = PortType.Custom "SerialSliceManifest"
+  let serialTransPair = PortType.Tuple(imageAny, serialSliceManifest)
   let streamedObjects = PortType.Custom "StreamedObjects"
   let intList = PortType.Custom "IntList"
   let uint64List = PortType.Custom "UInt64List"
@@ -670,7 +671,7 @@ module BuiltInCatalog =
           Description = coordinateDescription "x"
           Aliases = [ "coordinate"; "x"; "source"; "synthetic"; "position" ]
           Inputs = []
-          Outputs = [ makePort "Float64" imageFloat64 ]
+          Outputs = [ makePort "Number" imageAny ]
           Parameters =
               [ availableMemoryParameter
                 makeParameter "width" "Width" "64" (BasicType.Numeric UInt32)
@@ -810,14 +811,28 @@ module BuiltInCatalog =
         { Id = "SerialEstTrans"
           DisplayName = "serialEstTrans"
           Category = "Serial Sections"
-          Summary = "Estimate pairwise slicewise translations and accumulate them from the first slice."
-          Description = serialSectionsDescription
-          Aliases = [ "serial"; "slice"; "slicewise"; "manifest"; "registration"; "translation"; "alignment" ]
+          Summary = "Estimate pairwise slicewise affine transforms from 2D SIFT-style keypoints."
+          Description = serialSectionsDescription + "\n\nserialEstTrans supports two methods. SiftAffine detects 2D Difference-of-Gaussian/SIFT-style keypoint locations in neighboring slices, uses displacement voting for a robust initial pairing region, then registers the keypoint sets with the affine point-set optimizer and accumulates the pairwise affine transforms from the first slice. SSDTranslation uses direct sum-of-squared-differences image matching and emits translation-only affine matrices. The current point representation uses keypoint positions, scale, and response; descriptor vectors and canonical orientations are not part of the Studio box yet."
+          Aliases = [ "serial"; "slice"; "slicewise"; "manifest"; "registration"; "translation"; "alignment"; "sift"; "keypoint"; "DoG" ]
           Inputs = [ makePort "Number" imageAny ]
-          Outputs = [ makePort "SerialSliceManifest" serialSliceManifest ]
+          Outputs =
+              [ makePort "Number" imageAny
+                makePort "SerialSliceManifest" serialSliceManifest ]
           Parameters =
               [ makeParameter "type" "Type" "Float64" BasicType.String
-                makeParameter "maxShift" "Max shift" "8" (BasicType.Numeric Int32) ] }
+                makeParameter "maxShift" "Max shift" "8" (BasicType.Numeric Int32)
+                makeParameter "method" "Method" "SiftAffine" BasicType.String
+                makeParameter "sigma0" "Sigma 0" "1.6" (BasicType.Numeric Float64)
+                makeParameter "scaleFactor" "Scale factor" "1.41421356237" (BasicType.Numeric Float64)
+                makeParameter "scaleLevels" "Scale levels" "4" (BasicType.Numeric UInt32)
+                makeParameter "contrastThreshold" "Contrast threshold" "0.03" (BasicType.Numeric Float64)
+                makeParameter "maxKeypoints" "Max keypoints" "50" (BasicType.Numeric UInt32)
+                makeParameter "matchTolerance" "Match tolerance" "1.5" (BasicType.Numeric Float64)
+                makeParameter "maxIterations" "Max iterations" "60" (BasicType.Numeric Int32)
+                makeParameter "initialLinearStep" "Linear step" "0.05" (BasicType.Numeric Float64)
+                makeParameter "initialTranslationStep" "Translation step" "1.0" (BasicType.Numeric Float64)
+                makeParameter "minStep" "Min step" "0.0001" (BasicType.Numeric Float64)
+                makeParameter "stepShrink" "Step shrink" "0.5" (BasicType.Numeric Float64) ] }
 
         { Id = "SerialApplyTrans"
           DisplayName = "serialApplyTrans"
@@ -825,24 +840,12 @@ module BuiltInCatalog =
           Summary = "Apply slicewise serial-section transforms on the original slice canvas."
           Description = serialSectionsDescription
           Aliases = [ "serial"; "slice"; "slicewise"; "manifest"; "transform"; "registration"; "apply" ]
-          Inputs = [ makePort "Number" imageAny ]
+          Inputs =
+              [ makePort "Number" imageAny
+                makePort "SerialSliceManifest" serialSliceManifest ]
           Outputs = [ makePort "Float64" imageFloat64 ]
           Parameters =
               [ makeParameter "type" "Type" "Float64" BasicType.String
-                makeParameter "manifest" "Manifest" "serialManifest" BasicType.String
-                makeParameter "background" "Background" "0.0" (BasicType.Numeric Float64) ] }
-
-        { Id = "SerialApplyManifestInBoundingBox"
-          DisplayName = "serialApplyManifestInBoundingBox"
-          Category = "Serial Sections"
-          Summary = "Apply slicewise transforms on an expanded canvas covering all transformed slices."
-          Description = serialSectionsDescription
-          Aliases = [ "serial"; "slice"; "slicewise"; "manifest"; "transform"; "registration"; "bounding"; "box" ]
-          Inputs = [ makePort "Number" imageAny ]
-          Outputs = [ makePort "Float64" imageFloat64 ]
-          Parameters =
-              [ makeParameter "type" "Type" "Float64" BasicType.String
-                makeParameter "manifest" "Manifest" "serialManifest" BasicType.String
                 makeParameter "background" "Background" "0.0" (BasicType.Numeric Float64) ] }
 
         { Id = "Write"

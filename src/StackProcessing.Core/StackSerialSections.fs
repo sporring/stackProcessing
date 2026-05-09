@@ -1,6 +1,7 @@
 module StackSerialSections
 
 open System
+open System.Collections.Generic
 open System.Globalization
 open FSharp.Control
 open Image
@@ -30,7 +31,7 @@ let private fromDouble<'T> value =
     elif t = typeof<float> then
         box value :?> 'T
     else
-        invalidArg "T" $"serialPolynomialBiasCorrect supports Float32 and Float64 images, got {t.Name}."
+        invalidArg "T" $"Serial floating-point transforms support Float32 and Float64 images, got {t.Name}."
 
 let private validateMatrix matrix =
     if List.length matrix <> 3 || matrix |> List.exists (fun row -> List.length row <> 3) then
@@ -357,7 +358,65 @@ let serialKeypointsApplyTrans width height : Stage<PointSet, SerialSliceManifest
 
     Stage.reduce "serialKeypointsApplyTrans" reducer Streaming id (fun _ -> 1UL)
 
-let private estimateTranslation maxShift (fixedImage: Image<'T>) (movingImage: Image<'T>) =
+let private siftKeypoints2D sigma0 scaleFactor scaleLevels contrastThreshold maxKeypoints (image: Image<'T>) =
+    let width = int (image.GetWidth())
+    let height = int (image.GetHeight())
+    let scaleLevels = int scaleLevels
+
+    if width < 3 || height < 3 || scaleLevels < 4 || maxKeypoints <= 0 then
+        []
+    else
+        let pixels = imageToArray image
+        let sigmas =
+            [| for level in 0 .. scaleLevels - 1 -> sigma0 * Math.Pow(scaleFactor, float level) |]
+
+        let blurred = sigmas |> Array.map (fun sigma -> blur2D sigma pixels)
+        let dogs =
+            [| for level in 0 .. scaleLevels - 2 ->
+                let lower = blurred[level]
+                let upper = blurred[level + 1]
+                let dog = Array2D.zeroCreate<double> width height
+                for y in 0 .. height - 1 do
+                    for x in 0 .. width - 1 do
+                        dog[x, y] <- upper[x, y] - lower[x, y]
+                dog |]
+
+        let points = ResizeArray<CoordinatePoint>()
+
+        for scaleIndex in 0 .. dogs.Length - 1 do
+            let dog = dogs[scaleIndex]
+            for y in 1 .. height - 2 do
+                for x in 1 .. width - 2 do
+                    let value = dog[x, y]
+                    if abs value >= contrastThreshold then
+                        let mutable greater = true
+                        let mutable less = true
+                        let scaleNeighborStart = max 0 (scaleIndex - 1)
+                        let scaleNeighborStop = min (dogs.Length - 1) (scaleIndex + 1)
+
+                        for neighborScaleIndex in scaleNeighborStart .. scaleNeighborStop do
+                            let neighborDog = dogs[neighborScaleIndex]
+                            for dy in -1 .. 1 do
+                                for dx in -1 .. 1 do
+                                    if neighborScaleIndex <> scaleIndex || dy <> 0 || dx <> 0 then
+                                        let neighbor = neighborDog[x + dx, y + dy]
+                                        if value <= neighbor then greater <- false
+                                        if value >= neighbor then less <- false
+
+                        if greater || less then
+                            points.Add
+                                { X = float x
+                                  Y = float y
+                                  Z = float image.index
+                                  Scale = sigmas[scaleIndex]
+                                  Response = value }
+
+        points
+        |> Seq.sortByDescending (fun point -> abs point.Response)
+        |> Seq.truncate maxKeypoints
+        |> Seq.toList
+
+let private estimateSsdTranslation maxShift (fixedImage: Image<'T>) (movingImage: Image<'T>) =
     let width = int (fixedImage.GetWidth())
     let height = int (fixedImage.GetHeight())
     if movingImage.GetWidth() <> uint width || movingImage.GetHeight() <> uint height then
@@ -392,51 +451,212 @@ let private estimateTranslation maxShift (fixedImage: Image<'T>) (movingImage: I
 
     float bestDx, float bestDy
 
-let serialEstTrans<'T when 'T: equality> maxShift : Stage<Image<'T>, SerialSliceManifest> =
+let private estimateKeypointTranslation maxShift sigma0 scaleFactor scaleLevels contrastThreshold maxKeypoints matchTolerance (fixedImage: Image<'T>) (movingImage: Image<'T>) =
+    let width = int (fixedImage.GetWidth())
+    let height = int (fixedImage.GetHeight())
+    if movingImage.GetWidth() <> uint width || movingImage.GetHeight() <> uint height then
+        invalidOp "serialEstTrans expects all slices to have the same shape."
+
+    let fixedPoints = siftKeypoints2D sigma0 scaleFactor scaleLevels contrastThreshold maxKeypoints fixedImage
+    let movingPoints = siftKeypoints2D sigma0 scaleFactor scaleLevels contrastThreshold maxKeypoints movingImage
+
+    if List.isEmpty fixedPoints || List.isEmpty movingPoints then
+        0.0, 0.0
+    else
+        let votes = Dictionary<int * int, ResizeArray<float * float>>()
+
+        for fixedPoint in fixedPoints do
+            for movingPoint in movingPoints do
+                let dx = fixedPoint.X - movingPoint.X
+                let dy = fixedPoint.Y - movingPoint.Y
+                if abs dx <= float maxShift && abs dy <= float maxShift then
+                    let key = int (round dx), int (round dy)
+                    let mutable bucket = Unchecked.defaultof<ResizeArray<float * float>>
+                    if not (votes.TryGetValue(key, &bucket)) then
+                        bucket <- ResizeArray<float * float>()
+                        votes[key] <- bucket
+                    bucket.Add(dx, dy)
+
+        if votes.Count = 0 then
+            0.0, 0.0
+        else
+            let scoreBucket (KeyValue((binDx, binDy), candidates)) =
+                let close =
+                    candidates
+                    |> Seq.filter (fun (dx, dy) ->
+                        let distance = sqrt ((dx - float binDx) ** 2.0 + (dy - float binDy) ** 2.0)
+                        distance <= matchTolerance)
+                    |> Seq.toArray
+
+                if close.Length = 0 then
+                    0, Double.PositiveInfinity, float binDx, float binDy
+                else
+                    let meanDx = close |> Array.averageBy fst
+                    let meanDy = close |> Array.averageBy snd
+                    let residual =
+                        close
+                        |> Array.averageBy (fun (dx, dy) -> (dx - meanDx) ** 2.0 + (dy - meanDy) ** 2.0)
+                    close.Length, residual, meanDx, meanDy
+
+            let _, _, dx, dy =
+                votes
+                |> Seq.map scoreBucket
+                |> Seq.sortBy (fun (count, residual, _, _) -> -count, residual)
+                |> Seq.head
+
+            dx, dy
+
+let private toRegistrationPoint (point: CoordinatePoint) =
+    { point with Z = 0.0 }
+
+let private affineToSerialMatrix transform =
+    let matrix = StackRegistration.affineToMatrix transform |> unvectorizeMatrix
+
+    [ [ matrix[0, 0]; matrix[0, 1]; matrix[0, 3] ]
+      [ matrix[1, 0]; matrix[1, 1]; matrix[1, 3] ]
+      [ 0.0; 0.0; 1.0 ] ]
+
+let private estimateAffineMatrix maxShift sigma0 scaleFactor scaleLevels contrastThreshold maxKeypoints matchTolerance registrationOptions fixedImage movingImage =
+    let dx, dy =
+        estimateKeypointTranslation
+            maxShift
+            sigma0
+            scaleFactor
+            scaleLevels
+            contrastThreshold
+            maxKeypoints
+            matchTolerance
+            fixedImage
+            movingImage
+
+    let fixedPoints = siftKeypoints2D sigma0 scaleFactor scaleLevels contrastThreshold maxKeypoints fixedImage
+    let movingPoints = siftKeypoints2D sigma0 scaleFactor scaleLevels contrastThreshold maxKeypoints movingImage
+
+    if fixedPoints.Length < 3 || movingPoints.Length < 3 then
+        translationMatrix dx dy
+    else
+        let nearTranslation point =
+            movingPoints
+            |> List.exists (fun moving ->
+                abs ((point.X - moving.X) - dx) <= matchTolerance
+                && abs ((point.Y - moving.Y) - dy) <= matchTolerance)
+
+        let fixedCandidates =
+            fixedPoints
+            |> List.filter nearTranslation
+            |> function
+                | [] -> fixedPoints
+                | points -> points
+
+        let movingCandidates =
+            movingPoints
+            |> List.filter (fun moving ->
+                fixedPoints
+                |> List.exists (fun fixedPoint ->
+                    abs ((fixedPoint.X - moving.X) - dx) <= matchTolerance
+                    && abs ((fixedPoint.Y - moving.Y) - dy) <= matchTolerance))
+            |> function
+                | [] -> movingPoints
+                | points -> points
+
+        try
+            let result =
+                StackRegistration.affineRegistration
+                    registrationOptions
+                    (fixedCandidates |> List.map toRegistrationPoint)
+                    (movingCandidates |> List.map toRegistrationPoint)
+
+            affineToSerialMatrix result.Transform
+        with _ ->
+            translationMatrix dx dy
+
+let private singleSliceManifest width height transform =
+    { Version = 1
+      Width = width
+      Height = height
+      Transforms = [ transform ] }
+
+let serialEstTrans<'T when 'T: equality> maxShift (method: string) sigma0 scaleFactor scaleLevels contrastThreshold maxKeypoints matchTolerance maxIterations initialLinearStep initialTranslationStep minStep stepShrink : Stage<Image<'T>, Image<'T> * SerialSliceManifest> =
     if maxShift < 0 then invalidArg "maxShift" "maxShift must be non-negative."
+    let methodName = method.Trim().ToLowerInvariant()
+    if methodName <> "siftaffine" && methodName <> "sift" && methodName <> "ssdtranslation" && methodName <> "ssd" then
+        invalidArg "method" "serialEstTrans method must be SiftAffine or SSDTranslation."
+    if sigma0 <= 0.0 then invalidArg "sigma0" "serialEstTrans sigma0 must be positive."
+    if scaleFactor <= 1.0 then invalidArg "scaleFactor" "serialEstTrans scaleFactor must be greater than 1."
+    if scaleLevels < 4u then invalidArg "scaleLevels" "serialEstTrans needs at least 4 Gaussian scale levels."
+    if maxKeypoints = 0u then invalidArg "maxKeypoints" "serialEstTrans maxKeypoints must be positive."
+    if matchTolerance <= 0.0 then invalidArg "matchTolerance" "serialEstTrans matchTolerance must be positive."
+    if maxIterations <= 0 then invalidArg "maxIterations" "serialEstTrans maxIterations must be positive."
+    if initialLinearStep <= 0.0 then invalidArg "initialLinearStep" "serialEstTrans initialLinearStep must be positive."
+    if initialTranslationStep <= 0.0 then invalidArg "initialTranslationStep" "serialEstTrans initialTranslationStep must be positive."
+    if minStep <= 0.0 then invalidArg "minStep" "serialEstTrans minStep must be positive."
+    if stepShrink <= 0.0 || stepShrink >= 1.0 then invalidArg "stepShrink" "serialEstTrans stepShrink must be between 0 and 1."
+    let registrationOptions =
+        { StackRegistration.defaultAffineRegistrationOptions with
+            MaxIterations = maxIterations
+            InitialLinearStep = initialLinearStep
+            InitialTranslationStep = initialTranslationStep
+            MinStep = minStep
+            StepShrink = stepShrink }
 
-    let reducer (_debug: bool) (input: AsyncSeq<Image<'T>>) =
-        async {
-            let! images = input |> AsyncSeq.toListAsync
-            match images with
-            | [] -> return serialIdentityManifest 1u 1u 0u
-            | first :: _ ->
-                let width = first.GetWidth()
-                let height = first.GetHeight()
-                let mutable cumulative = identityMatrix
-                let mutable previous = None
+    let apply (_debug: bool) (input: AsyncSeq<Image<'T>>) =
+        asyncSeq {
+            let mutable width = None
+            let mutable height = None
+            let mutable cumulative = identityMatrix
+            let mutable previous = None
 
-                let transforms =
-                    images
-                    |> List.map (fun image ->
-                        try
-                            match previous with
-                            | None -> ()
-                            | Some previousImage ->
-                                let dx, dy = estimateTranslation maxShift previousImage image
-                                cumulative <- multiplyMatrix cumulative (translationMatrix dx dy)
+            try
+                for image in input do
+                    match width, height with
+                    | None, None ->
+                        width <- Some(image.GetWidth())
+                        height <- Some(image.GetHeight())
+                    | Some expectedWidth, Some expectedHeight ->
+                        if image.GetWidth() <> expectedWidth || image.GetHeight() <> expectedHeight then
+                            invalidOp "serialEstTrans expects all slices to have the same shape."
+                    | _ ->
+                        invalidOp "serialEstTrans has inconsistent cached image dimensions."
 
-                            previous |> Option.iter (fun old -> old.decRefCount())
-                            image.incRefCount()
-                            previous <- Some image
-                            { Slice = image.index
-                              Matrix = cumulative }
-                        with
-                        | ex ->
-                            previous |> Option.iter (fun old -> old.decRefCount())
-                            images |> List.iter (fun img -> img.decRefCount())
-                            raise ex)
+                    match previous with
+                    | None -> ()
+                    | Some previousImage ->
+                        let pairwiseTransform =
+                            match methodName with
+                            | "ssd"
+                            | "ssdtranslation" ->
+                                let dx, dy = estimateSsdTranslation maxShift previousImage image
+                                translationMatrix dx dy
+                            | _ ->
+                                estimateAffineMatrix
+                                    maxShift
+                                    sigma0
+                                    scaleFactor
+                                    scaleLevels
+                                    contrastThreshold
+                                    (int maxKeypoints)
+                                    matchTolerance
+                                    registrationOptions
+                                    previousImage
+                                    image
+                        cumulative <- multiplyMatrix cumulative pairwiseTransform
+                        previousImage.decRefCount()
 
-                previous |> Option.iter (fun old -> old.decRefCount())
-                images |> List.iter (fun image -> image.decRefCount())
-                return
-                    { Version = 1
-                      Width = width
-                      Height = height
-                      Transforms = transforms }
+                    image.incRefCount()
+                    previous <- Some image
+
+                    let transform =
+                        { Slice = image.index
+                          Matrix = cumulative }
+
+                    yield image, singleSliceManifest (Option.get width) (Option.get height) transform
+            finally
+                previous |> Option.iter (fun image -> image.decRefCount())
         }
 
-    Stage.reduce "serialEstTrans" reducer Streaming id (fun _ -> 1UL)
+    let transition = ProfileTransition.create Streaming Streaming
+    let pipe = { Name = "serialEstTrans"; Apply = apply; Profile = Streaming }
+    Stage.fromPipe "serialEstTrans" transition id id pipe
 
 let private transformForSlice manifest slice =
     manifest.Transforms
@@ -491,7 +711,7 @@ let private applyManifestSlice manifest expand background (image: Image<'T>) =
 
         let matrix = transformForSlice manifest image.index
         let inverse = invertMatrix matrix
-        let output = Array2D.zeroCreate<float> (int outputWidth) (int outputHeight)
+        let output = Array2D.zeroCreate<'T> (int outputWidth) (int outputHeight)
         let pixels = image.toArray2D()
 
         for y in 0u .. outputHeight - 1u do
@@ -499,14 +719,26 @@ let private applyManifestSlice manifest expand background (image: Image<'T>) =
                 let referenceX = float x + minX
                 let referenceY = float y + minY
                 let inputX, inputY = transformPoint inverse referenceX referenceY
-                output[int x, int y] <- sampleBilinear background pixels inputX inputY
+                output[int x, int y] <- sampleBilinear background pixels inputX inputY |> fromDouble<'T>
 
-        Image<float>.ofArray2D(output, "serialApplyTrans", image.index)
+        Image<'T>.ofArray2D(output, "serialApplyTrans", image.index)
     finally
         image.decRefCount()
 
-let serialApplyTrans<'T when 'T: equality> manifest background : Stage<Image<'T>, Image<float>> =
-    Stage.map "serialApplyTrans" (fun _ image -> applyManifestSlice manifest false background image) id id
+let serialApplyTrans<'T when 'T: equality> background : Stage<Image<'T> * SerialSliceManifest, Image<'T>> =
+    Stage.map "serialApplyTrans" (fun _ (image, manifest) -> applyManifestSlice manifest false background image) id id
 
-let serialApplyManifestInBoundingBox<'T when 'T: equality> manifest background : Stage<Image<'T>, Image<float>> =
+let serialTransImage<'T when 'T: equality> : Stage<Image<'T> * SerialSliceManifest, Image<'T>> =
+    Stage.map "serialTransImage" (fun _ (image, _manifest) -> image) id id
+
+let serialTransManifest<'T when 'T: equality> : Stage<Image<'T> * SerialSliceManifest, SerialSliceManifest> =
+    Stage.map
+        "serialTransManifest"
+        (fun _ (image, manifest) ->
+            image.decRefCount()
+            manifest)
+        id
+        id
+
+let serialApplyManifestInBoundingBox<'T when 'T: equality> manifest background : Stage<Image<'T>, Image<'T>> =
     Stage.map "serialApplyManifestInBoundingBox" (fun _ image -> applyManifestSlice manifest true background image) id id
