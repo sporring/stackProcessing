@@ -22,6 +22,9 @@ module BuiltInCatalog =
   let float64Matrix = PortType.Custom "Float64Matrix"
   let biasModel = PortType.Custom "BiasModel"
   let serialSliceManifest = PortType.Custom "SerialSliceManifest"
+  let serialVolumeGeometry = PortType.Custom "SerialVolumeGeometry"
+  let stackInfo = PortType.Custom "StackInfo"
+  let chunkInfo = PortType.Custom "ChunkInfo"
   let serialTransPair = PortType.Tuple(imageAny, serialSliceManifest)
   let streamedObjects = PortType.Custom "StreamedObjects"
   let intList = PortType.Custom "IntList"
@@ -36,6 +39,27 @@ module BuiltInCatalog =
         Label = label
         DefaultValue = defaultValue
         Type = parameterType }
+
+  let private stackInfoOutputs =
+      [ makePort "Dimensions: UInt32" (Scalar(BasicType.Numeric UInt32))
+        makePort "Size: UInt64 list" (Custom "UInt64List")
+        makePort "ComponentType: String" (Scalar BasicType.String)
+        makePort "NumberOfComponents: UInt32" (Scalar(BasicType.Numeric UInt32))
+        makePort "Width: UInt64" (Scalar(BasicType.Numeric UInt64))
+        makePort "Height: UInt64" (Scalar(BasicType.Numeric UInt64))
+        makePort "Depth: UInt64" (Scalar(BasicType.Numeric UInt64)) ]
+
+  let private chunkInfoOutputs =
+      [ makePort "Chunks: int list" intList
+        makePort "Size: UInt64 list" uint64List
+        makePort "ComponentType: String" (Scalar BasicType.String)
+        makePort "NumberOfComponents: UInt32" (Scalar(BasicType.Numeric UInt32))
+        makePort "ChunkX: Int32" (Scalar(BasicType.Numeric Int32))
+        makePort "ChunkY: Int32" (Scalar(BasicType.Numeric Int32))
+        makePort "ChunkZ: Int32" (Scalar(BasicType.Numeric Int32))
+        makePort "Width: UInt64" (Scalar(BasicType.Numeric UInt64))
+        makePort "Height: UInt64" (Scalar(BasicType.Numeric UInt64))
+        makePort "Depth: UInt64" (Scalar(BasicType.Numeric UInt64)) ]
 
   let private availableMemoryParameter =
       makeParameter "availableMemory" "Available memory" (string (pown 2 30)) BasicType.String
@@ -299,7 +323,9 @@ module BuiltInCatalog =
       Description = readFormatDescription
       Aliases = [ "input"; "load"; "tiff"; "file"; "UInt8"; "Float64"; "type" ]
       Inputs = []
-      Outputs = [ makePort "Float64" imageFloat64 ]
+      Outputs =
+          [ makePort "Float64" imageFloat64
+            makePort "StackInfo" stackInfo ]
       Parameters =
           [ availableMemoryParameter
             makeParameter "type" "Type" "Float64" BasicType.String
@@ -314,7 +340,9 @@ module BuiltInCatalog =
       Description = readVolumeDescription
       Aliases = [ "volume"; "multipage"; "tiff"; "bigtiff"; "ome"; "nrrd"; "nifti"; "mha"; "source"; "type" ]
       Inputs = []
-      Outputs = [ makePort "Float64" imageFloat64 ]
+      Outputs =
+          [ makePort "Float64" imageFloat64
+            makePort "StackInfo" stackInfo ]
       Parameters =
           [ availableMemoryParameter
             makeParameter "type" "Type" "Float64" BasicType.String
@@ -328,7 +356,9 @@ module BuiltInCatalog =
       Description = readFormatDescription
       Aliases = [ "random"; "input"; "tiff"; "file"; "UInt8"; "Float64"; "type" ]
       Inputs = []
-      Outputs = [ makePort "Float64" imageFloat64 ]
+      Outputs =
+          [ makePort "Float64" imageFloat64
+            makePort "ChunkInfo" chunkInfo ]
       Parameters =
           [ availableMemoryParameter
             makeParameter "type" "Type" "Float64" BasicType.String
@@ -400,7 +430,9 @@ module BuiltInCatalog =
       Description = zarrFormatDescription
       Aliases = [ "zarr"; "ome-zarr"; "slab"; "input"; "UInt8"; "UInt16"; "type" ]
       Inputs = []
-      Outputs = [ makePort "UInt8" imageUInt8 ]
+      Outputs =
+          [ makePort "UInt8" imageUInt8
+            makePort "ChunkInfo" chunkInfo ]
       Parameters =
           [ availableMemoryParameter
             makeParameter "type" "Type" "UInt8" BasicType.String
@@ -420,7 +452,9 @@ module BuiltInCatalog =
       Description = nexusFormatDescription
       Aliases = [ "nexus"; "hdf5"; "h5"; "slab"; "input"; "MAX IV"; "ESRF"; "DanMAX"; "ForMAX"; "HOAHub"; "type" ]
       Inputs = []
-      Outputs = [ makePort "UInt16" imageUInt16 ]
+      Outputs =
+          [ makePort "UInt16" imageUInt16
+            makePort "ChunkInfo" chunkInfo ]
       Parameters =
           [ availableMemoryParameter
             makeParameter "type" "Type" "UInt16" BasicType.String
@@ -828,8 +862,8 @@ module BuiltInCatalog =
         { Id = "SerialApplyTrans"
           DisplayName = "serialApplyTrans"
           Category = "Serial Sections"
-          Summary = "Apply slicewise serial-section transforms on the original slice canvas."
-          Description = serialSectionsDescription
+          Summary = "Apply slicewise serial-section transforms."
+          Description = serialSectionsDescription + "\n\nBy default serialApplyTrans samples each transformed slice on the original slice canvas. Connect serialEstBoundingBox to the Geometry parameter to sample on an expanded canvas that contains all deformed slice boundaries."
           Aliases = [ "serial"; "slice"; "slicewise"; "manifest"; "transform"; "registration"; "apply" ]
           Inputs =
               [ makePort "Number" imageAny
@@ -837,7 +871,21 @@ module BuiltInCatalog =
           Outputs = [ makePort "Float64" imageFloat64 ]
           Parameters =
               [ makeParameter "type" "Type" "Float64" BasicType.String
-                makeParameter "background" "Background" "0.0" (BasicType.Numeric Float64) ] }
+                makeParameter "background" "Background" "0.0" (BasicType.Numeric Float64)
+                makeParameter "geometry" "Geometry" "None" BasicType.String ] }
+
+        { Id = "SerialEstBoundingBox"
+          DisplayName = "serialEstBoundingBox"
+          Category = "Serial Sections"
+          Summary = "Estimate an output canvas containing transformed serial-section slices."
+          Description = serialSectionsDescription + "\n\nConsumes the streamed image/manifest pairs from serialEstTrans, follows the transformed slice corners, and reduces them to a SerialVolumeGeometry value. Connect this value to serialApplyTrans's Geometry parameter to sample transformed slices on a canvas where all deformed boundaries stay inside."
+          Aliases = [ "serial"; "slice"; "slicewise"; "manifest"; "registration"; "bounding"; "box"; "geometry"; "canvas" ]
+          Inputs =
+              [ makePort "Number" imageAny
+                makePort "SerialSliceManifest" serialSliceManifest ]
+          Outputs = [ makePort "SerialVolumeGeometry" serialVolumeGeometry ]
+          Parameters =
+              [ makeParameter "type" "Type" "Float64" BasicType.String ] }
 
         { Id = "Write"
           DisplayName = "write"
@@ -846,19 +894,7 @@ module BuiltInCatalog =
           Description = writeFormatDescription
           Aliases = [ "output"; "save"; "tiff"; "file" ]
           Inputs = [ makePort "Number" imageAny ]
-          Outputs = []
-          Parameters =
-              [ makeParameter "output" "Output" "output" BasicType.String
-                suffixParameter ".tiff" ] }
-
-        { Id = "WriteThrough"
-          DisplayName = "writeThrough"
-          Category = "Sources / Sinks"
-          Summary = "Write a processed stack to image files and pass it through unchanged."
-          Description = writeFormatDescription
-          Aliases = [ "output"; "save"; "tiff"; "file"; "through"; "side effect" ]
-          Inputs = [ makePort "Number" imageAny ]
-          Outputs = [ makePort "Number" imageAny ]
+          Outputs = [ makePort "StackInfo" stackInfo ]
           Parameters =
               [ makeParameter "output" "Output" "output" BasicType.String
                 suffixParameter ".tiff" ] }
@@ -1034,24 +1070,25 @@ module BuiltInCatalog =
                 makeParameter "yAxis" "Y axis" "1" (BasicType.Numeric Int32)
                 makeParameter "xAxis" "X axis" "2" (BasicType.Numeric Int32) ] }
 
-        { Id = "GetStackInfo"
-          DisplayName = "getStackInfo"
+        { Id = "StackInfoExpand"
+          DisplayName = "stackInfoExpand"
           Category = "Sources / Sinks"
-          Summary = "Inspect a stack directory and expose file information fields as scalar outputs."
-          Description = "Reads metadata from the first matching stack slice and combines it with the number of matching files. TIFF input accepts both .tif and .tiff files when TIFF is selected; JPEG input accepts both .jpg and .jpeg files when JPEG is selected."
-          Aliases = [ "info"; "metadata"; "file"; "stack"; "width"; "height"; "depth"; "size"; "dimensions"; "component" ]
-          Inputs = []
-          Outputs =
-              [ makePort "Dimensions: UInt32" (Scalar(BasicType.Numeric UInt32))
-                makePort "Size: UInt64 list" (Custom "UInt64List")
-                makePort "ComponentType: String" (Scalar BasicType.String)
-                makePort "NumberOfComponents: UInt32" (Scalar(BasicType.Numeric UInt32))
-                makePort "Width: UInt64" (Scalar(BasicType.Numeric UInt64))
-                makePort "Height: UInt64" (Scalar(BasicType.Numeric UInt64))
-                makePort "Depth: UInt64" (Scalar(BasicType.Numeric UInt64)) ]
-          Parameters =
-              [ makeParameter "input" "Name" "input" BasicType.String
-                suffixParameter ".tiff" ] }
+          Summary = "Expose StackInfo fields as scalar outputs."
+          Description = "Expands a StackInfo value, for example from write after the stack has been written, into scalar fields that can be connected to print or other parameter inputs."
+          Aliases = [ "info"; "metadata"; "stack"; "expand"; "width"; "height"; "depth"; "size"; "dimensions"; "component" ]
+          Inputs = [ makePort "StackInfo" stackInfo ]
+          Outputs = stackInfoOutputs
+          Parameters = [] }
+
+        { Id = "ChunkInfoExpand"
+          DisplayName = "chunkInfoExpand"
+          Category = "Sources / Sinks"
+          Summary = "Expose ChunkInfo fields as scalar outputs."
+          Description = "Expands metadata from chunked stack, OME-Zarr, or NeXus/HDF5 readers into scalar fields that can be connected to print or writer parameters."
+          Aliases = [ "info"; "metadata"; "chunk"; "chunks"; "expand"; "width"; "height"; "depth"; "size"; "component" ]
+          Inputs = [ makePort "ChunkInfo" chunkInfo ]
+          Outputs = chunkInfoOutputs
+          Parameters = [] }
 
         { Id = "GetChunkInfo"
           DisplayName = "getChunkInfo"
@@ -1060,17 +1097,7 @@ module BuiltInCatalog =
           Description = "Reads metadata for chunk files produced by writeInSlabs. The Chunks output is the chunk-grid dimensions, Size is the full stack size, and the component outputs come from the top-left chunk file. TIFF input accepts both .tif and .tiff files when TIFF is selected; JPEG input accepts both .jpg and .jpeg files when JPEG is selected."
           Aliases = [ "info"; "metadata"; "file"; "chunk"; "chunks"; "width"; "height"; "depth"; "size"; "component" ]
           Inputs = []
-          Outputs =
-              [ makePort "Chunks: int list" intList
-                makePort "Size: UInt64 list" uint64List
-                makePort "ComponentType: String" (Scalar BasicType.String)
-                makePort "NumberOfComponents: UInt32" (Scalar(BasicType.Numeric UInt32))
-                makePort "ChunkX: Int32" (Scalar(BasicType.Numeric Int32))
-                makePort "ChunkY: Int32" (Scalar(BasicType.Numeric Int32))
-                makePort "ChunkZ: Int32" (Scalar(BasicType.Numeric Int32))
-                makePort "Width: UInt64" (Scalar(BasicType.Numeric UInt64))
-                makePort "Height: UInt64" (Scalar(BasicType.Numeric UInt64))
-                makePort "Depth: UInt64" (Scalar(BasicType.Numeric UInt64)) ]
+          Outputs = chunkInfoOutputs
           Parameters =
               [ makeParameter "input" "Name" "input" BasicType.String
                 suffixParameter ".tiff" ] }
@@ -1082,17 +1109,7 @@ module BuiltInCatalog =
           Description = "Reads metadata from a selected OME-Zarr multiscale dataset. Chunks reports the storage chunk shape, Size is the x/y/z image size, and ComponentType maps to the Zarr dtype used by readZarrSlab/writeZarr."
           Aliases = [ "info"; "metadata"; "zarr"; "ome-zarr"; "chunk"; "chunks"; "width"; "height"; "depth"; "size"; "component" ]
           Inputs = []
-          Outputs =
-              [ makePort "Chunks: int list" intList
-                makePort "Size: UInt64 list" uint64List
-                makePort "ComponentType: String" (Scalar BasicType.String)
-                makePort "NumberOfComponents: UInt32" (Scalar(BasicType.Numeric UInt32))
-                makePort "ChunkX: Int32" (Scalar(BasicType.Numeric Int32))
-                makePort "ChunkY: Int32" (Scalar(BasicType.Numeric Int32))
-                makePort "ChunkZ: Int32" (Scalar(BasicType.Numeric Int32))
-                makePort "Width: UInt64" (Scalar(BasicType.Numeric UInt64))
-                makePort "Height: UInt64" (Scalar(BasicType.Numeric UInt64))
-                makePort "Depth: UInt64" (Scalar(BasicType.Numeric UInt64)) ]
+          Outputs = chunkInfoOutputs
           Parameters =
               [ makeParameter "input" "Name" "input.zarr" BasicType.String
                 makeParameter "multiscaleIndex" "Multiscale index" "0" (BasicType.Numeric Int32)
@@ -1105,17 +1122,7 @@ module BuiltInCatalog =
           Description = nexusFormatDescription
           Aliases = [ "info"; "metadata"; "nexus"; "hdf5"; "h5"; "chunk"; "chunks"; "width"; "height"; "depth"; "size"; "component" ]
           Inputs = []
-          Outputs =
-              [ makePort "Chunks: int list" intList
-                makePort "Size: UInt64 list" uint64List
-                makePort "ComponentType: String" (Scalar BasicType.String)
-                makePort "NumberOfComponents: UInt32" (Scalar(BasicType.Numeric UInt32))
-                makePort "ChunkX: Int32" (Scalar(BasicType.Numeric Int32))
-                makePort "ChunkY: Int32" (Scalar(BasicType.Numeric Int32))
-                makePort "ChunkZ: Int32" (Scalar(BasicType.Numeric Int32))
-                makePort "Width: UInt64" (Scalar(BasicType.Numeric UInt64))
-                makePort "Height: UInt64" (Scalar(BasicType.Numeric UInt64))
-                makePort "Depth: UInt64" (Scalar(BasicType.Numeric UInt64)) ]
+          Outputs = chunkInfoOutputs
           Parameters =
               [ makeParameter "input" "Name" "scan.h5" BasicType.String
                 makeParameter "datasetPath" "Dataset path" "/entry/data/data" BasicType.String

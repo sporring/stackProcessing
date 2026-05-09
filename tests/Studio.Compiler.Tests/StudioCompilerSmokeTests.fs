@@ -195,6 +195,53 @@ let rec private sourceFor caseId portType =
           NodeId = manifest.Id
           Kind = "output"
           Port = 1 }
+    | PortType.Custom "SerialVolumeGeometry" ->
+        let image = imageSource $"{caseId}_geometry_image" NumericType.Float64
+        let manifest =
+            node $"source_{caseId}_geometry_manifest" "SerialEstTrans"
+                [ p "type" "Float64" false
+                  p "searchRadius" "4" false
+                  p "method" "dogAffine" false
+                  p "scale" "1.6" false
+                  p "pixelFraction" "0.1" false ]
+        let bounds =
+            node $"source_{caseId}_geometry" "SerialEstBoundingBox"
+                [ p "type" "Float64" false ]
+
+        { Nodes = image.Nodes @ [ manifest; bounds ]
+          Edges =
+            image.Edges
+            @ [ edge image.NodeId image.Kind image.Port manifest.Id "input" 0
+                edge manifest.Id "output" 0 bounds.Id "input" 0
+                edge manifest.Id "output" 1 bounds.Id "input" 1 ]
+          NodeId = bounds.Id
+          Kind = "reducerOutput"
+          Port = 0 }
+    | PortType.Custom "StackInfo" ->
+        let image = imageSource $"{caseId}_stack_info_image" NumericType.UInt8
+        let write =
+            node $"source_{caseId}_stack_info_write" "Write"
+                [ p "output" "out" false
+                  p "suffix" ".tiff" false ]
+
+        { Nodes = image.Nodes @ [ write ]
+          Edges = image.Edges @ [ edge image.NodeId image.Kind image.Port write.Id "input" 0 ]
+          NodeId = write.Id
+          Kind = "reducerOutput"
+          Port = 0 }
+    | PortType.Custom "ChunkInfo" ->
+        let read =
+            node $"source_{caseId}_chunk_info_read" "ReadSlab"
+                [ p "availableMemory" "1073741824" false
+                  p "type" "UInt8" false
+                  p "input" "chunks" false
+                  p "suffix" ".tiff" false ]
+
+        { Nodes = [ read ]
+          Edges = []
+          NodeId = read.Id
+          Kind = "reducerOutput"
+          Port = 1 }
     | PortType.Scalar BasicType.Map ->
         let image = imageSource $"{caseId}_histogram_image" NumericType.Float64
         let histogram = node $"source_{caseId}_histogram" "HistogramData" []
@@ -242,18 +289,22 @@ let private outputKindFor functionId portType =
     | "AffineRegistration"
     | "FitBiasModel"
     | "FitBiasModelMasked"
-    | "GetStackInfo"
+    | "StackInfoExpand"
+    | "ChunkInfoExpand"
     | "GetChunkInfo"
     | "GetZarrInfo"
     | "GetNexusInfo"
     | "ComponentTranslationTable"
+    | "SerialEstBoundingBox"
     | "HistogramData"
     | "EstimateHistogram"
     | "Quantiles" -> "reducerOutput"
     | _ ->
         match portType with
         | PortType.Scalar _
-        | PortType.Custom "TranslationTable" -> "reducerOutput"
+        | PortType.Custom "TranslationTable"
+        | PortType.Custom "StackInfo"
+        | PortType.Custom "SerialVolumeGeometry" -> "reducerOutput"
         | _ -> "output"
 
 let private sinkFor caseId functionId portType =
@@ -287,6 +338,16 @@ let private sinkFor caseId functionId portType =
           node $"sink_{caseId}_write" "Write" [ p "output" "objects" false; p "suffix" ".tiff" false ] ],
         [ edge $"target_{caseId}" targetKind 0 $"sink_{caseId}_paint" "input" 0
           edge $"sink_{caseId}_paint" "output" 0 $"sink_{caseId}_write" "input" 0 ]
+    | PortType.Custom "StackInfo" ->
+        [ node $"sink_{caseId}_expand" "StackInfoExpand" []
+          node $"sink_{caseId}_print" "Print" [ p "format" "{input1}" false; p "input1" "" true ] ],
+        [ edge $"target_{caseId}" targetKind 0 $"sink_{caseId}_expand" "input" 0
+          edge $"sink_{caseId}_expand" "reducerOutput" 4 $"sink_{caseId}_print" "parameterInput" 1 ]
+    | PortType.Custom "ChunkInfo" ->
+        [ node $"sink_{caseId}_expand" "ChunkInfoExpand" []
+          node $"sink_{caseId}_print" "Print" [ p "format" "{input1}" false; p "input1" "" true ] ],
+        [ edge $"target_{caseId}" targetKind 0 $"sink_{caseId}_expand" "input" 0
+          edge $"sink_{caseId}_expand" "reducerOutput" 4 $"sink_{caseId}_print" "parameterInput" 1 ]
     | PortType.Tuple _ ->
         [ node $"sink_{caseId}_table" "ComponentTranslationTable" [ p "windowSize" "3" false ] ],
         [ edge $"target_{caseId}" targetKind 0 $"sink_{caseId}_table" "input" 0 ]
@@ -304,6 +365,7 @@ let private parameterSourceFor caseId parameterKey =
     match parameterKey with
     | "model" -> sourceFor $"{caseId}_param_model" (PortType.Custom "BiasModel")
     | "manifest" -> sourceFor $"{caseId}_param_manifest" (PortType.Custom "SerialSliceManifest")
+    | "geometry" -> sourceFor $"{caseId}_param_geometry" (PortType.Custom "SerialVolumeGeometry")
     | "translationTable" -> sourceFor $"{caseId}_param_table" (PortType.Custom "TranslationTable")
     | "histogram" -> sourceFor $"{caseId}_param_histogram" (PortType.Scalar BasicType.Map)
     | "input" -> sourceFor $"{caseId}_param_input" (PortType.Scalar BasicType.Map)
@@ -343,6 +405,7 @@ let private graphForDefinition caseIndex (definition: Function) =
         | "OtsuThresholdFromHistogram"
         | "MomentsThresholdFromHistogram" -> [ "histogram" ]
         | "Chart" -> [ "input" ]
+        | "SerialApplyTrans" -> [ "geometry" ]
         | _ -> []
 
     let parameterOutlets =

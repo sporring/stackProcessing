@@ -1,6 +1,7 @@
 module Tests.StudioViewModelTests
 
 open Expecto
+open NodeEditor.Model
 open NodeEditor.Mvvm
 open Studio.Graph
 open Studio.Models
@@ -133,4 +134,44 @@ let viewModelSuite =
 
             Expect.isFalse scaleParameter.IsValueEnabled "Scale should be inactive for SSD affine."
             Expect.isTrue pixelFractionParameter.IsValueEnabled "Pixel fraction should be active for SSD affine."
+
+        testCase "stack info expand accepts stack info on top edge" <| fun _ ->
+            let vm = MainWindowViewModel()
+            vm.SetDrawingSize(1200.0, 800.0)
+            vm.AddElement("StackInfoExpand")
+
+            let info =
+                pipelineNodes vm
+                |> Seq.find (fun node -> node.State.Definition.Id = "StackInfoExpand")
+
+            let inputPin =
+                info.Pins
+                |> Seq.choose (function
+                    | :? PipelinePinViewModel as pin when pin.Kind = DataInput -> Some pin
+                    | _ -> None)
+                |> Seq.exactlyOne
+
+            Expect.equal inputPin.Alignment PinAlignment.Top "StackInfoExpand should place the StackInfo input on the top edge."
+            Expect.floatClose Accuracy.high inputPin.X (info.Width / 2.0) "The top input should be horizontally centered."
+            Expect.floatClose Accuracy.high inputPin.Y 0.0 "The top input should sit on the top edge."
+
+        testCase "chunk info expand accepts chunk info on top edge" <| fun _ ->
+            let vm = MainWindowViewModel()
+            vm.SetDrawingSize(1200.0, 800.0)
+            vm.AddElement("ChunkInfoExpand")
+
+            let info =
+                pipelineNodes vm
+                |> Seq.find (fun node -> node.State.Definition.Id = "ChunkInfoExpand")
+
+            let inputPin =
+                info.Pins
+                |> Seq.choose (function
+                    | :? PipelinePinViewModel as pin when pin.Kind = DataInput -> Some pin
+                    | _ -> None)
+                |> Seq.exactlyOne
+
+            Expect.equal inputPin.Alignment PinAlignment.Top "ChunkInfoExpand should place the ChunkInfo input on the top edge."
+            Expect.floatClose Accuracy.high inputPin.X (info.Width / 2.0) "The top input should be horizontally centered."
+            Expect.floatClose Accuracy.high inputPin.Y 0.0 "The top input should sit on the top edge."
     ]

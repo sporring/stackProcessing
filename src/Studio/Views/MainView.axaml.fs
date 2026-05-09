@@ -426,7 +426,7 @@ type MainView() as this =
                 |> Option.forall (PortType.canConnect outputPin.Port.Type)
             | None ->
                 true
-        elif outputPin.Kind = DataOutput && inputPin.Kind = DataInput then
+        elif (outputPin.Kind = DataOutput || outputPin.Kind = ReducerOutput) && inputPin.Kind = DataInput then
             let baseCompatible = PortType.canConnect outputPin.Port.Type inputPin.Port.Type
 
             let isTapNode (node: INode) =
@@ -642,6 +642,13 @@ type MainView() as this =
         match startPin, endPin with
         | (:? PipelinePinViewModel as outputPin), (:? PipelinePinViewModel as inputPin)
             when outputPin.Kind = ScalarOutput || inputPin.Kind = ParameterInput ->
+            ConnectorOrientation.Vertical
+        | (:? PipelinePinViewModel as outputPin), (:? PipelinePinViewModel as inputPin)
+            when outputPin.Kind = ReducerOutput
+                 && inputPin.Kind = DataInput
+                 && (match inputPin.Parent with
+                     | :? PipelineNodeViewModel as node -> node.State.Definition.Id = "StackInfoExpand" || node.State.Definition.Id = "ChunkInfoExpand"
+                     | _ -> false) ->
             ConnectorOrientation.Vertical
         | _ ->
             ConnectorOrientation.Horizontal

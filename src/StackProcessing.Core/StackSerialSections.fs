@@ -21,6 +21,15 @@ type SerialSliceManifest =
       Height: uint
       Transforms: SerialSliceTransform list }
 
+[<CLIMutable>]
+type SerialVolumeGeometry =
+    { Version: int
+      MinX: float
+      MinY: float
+      Width: uint
+      Height: uint
+      Depth: uint }
+
 let private toDouble value =
     Convert.ToDouble(box value, CultureInfo.InvariantCulture)
 
@@ -984,7 +993,7 @@ let private sampleBilinear background (pixels: 'T[,]) x y =
         + (1.0 - tx) * ty * v01
         + tx * ty * v11
 
-let private manifestBounds manifest =
+let private manifestBounds (manifest: SerialSliceManifest) =
     let width = float manifest.Width
     let height = float manifest.Height
     let corners = [ 0.0, 0.0; width - 1.0, 0.0; 0.0, height - 1.0; width - 1.0, height - 1.0 ]
@@ -1001,21 +1010,93 @@ let private manifestBounds manifest =
     let maxY = ceil (List.max ys)
     minX, minY, uint (maxX - minX + 1.0), uint (maxY - minY + 1.0)
 
-let private applyManifestSlice manifest expand background (image: Image<'T>) =
+let private manifestGeometry (manifest: SerialSliceManifest) =
+    let minX, minY, width, height = manifestBounds manifest
+    { Version = 1
+      MinX = minX
+      MinY = minY
+      Width = width
+      Height = height
+      Depth = uint manifest.Transforms.Length }
+
+let private geometryFromManifestSlice (manifest: SerialSliceManifest) =
+    { Version = 1
+      MinX = 0.0
+      MinY = 0.0
+      Width = manifest.Width
+      Height = manifest.Height
+      Depth = 1u }
+
+let serialEstBoundingBox<'T when 'T: equality> : Stage<Image<'T> * SerialSliceManifest, SerialVolumeGeometry> =
+    let reducer (_debug: bool) (input: AsyncSeq<Image<'T> * SerialSliceManifest>) =
+        async {
+            let mutable minX = Double.PositiveInfinity
+            let mutable minY = Double.PositiveInfinity
+            let mutable maxX = Double.NegativeInfinity
+            let mutable maxY = Double.NegativeInfinity
+            let mutable depth = 0u
+
+            let includePoint x y =
+                minX <- min minX x
+                minY <- min minY y
+                maxX <- max maxX x
+                maxY <- max maxY y
+
+            for image, manifest in input do
+                try
+                    let matrix = transformForSlice manifest image.index
+                    let width = float manifest.Width
+                    let height = float manifest.Height
+                    let corners = [ 0.0, 0.0; width - 1.0, 0.0; 0.0, height - 1.0; width - 1.0, height - 1.0 ]
+
+                    for x, y in corners do
+                        let tx, ty = transformPoint matrix x y
+                        includePoint tx ty
+
+                    depth <- depth + 1u
+                finally
+                    image.decRefCount()
+
+            if depth = 0u then
+                return
+                    { Version = 1
+                      MinX = 0.0
+                      MinY = 0.0
+                      Width = 0u
+                      Height = 0u
+                      Depth = 0u }
+            else
+                let minX = floor minX
+                let minY = floor minY
+                let maxX = ceil maxX
+                let maxY = ceil maxY
+
+                return
+                    { Version = 1
+                      MinX = minX
+                      MinY = minY
+                      Width = uint (maxX - minX + 1.0)
+                      Height = uint (maxY - minY + 1.0)
+                      Depth = depth }
+        }
+
+    Stage.reduce "serialEstBoundingBox" reducer Streaming id (fun _ -> 1UL)
+
+let private applyManifestSlice (manifest: SerialSliceManifest) (geometry: SerialVolumeGeometry option) background (image: Image<'T>) =
     try
-        let minX, minY, outputWidth, outputHeight =
-            if expand then manifestBounds manifest
-            else 0.0, 0.0, manifest.Width, manifest.Height
+        let geometry =
+            geometry
+            |> Option.defaultValue (geometryFromManifestSlice manifest)
 
         let matrix = transformForSlice manifest image.index
         let inverse = invertMatrix matrix
-        let output = Array2D.zeroCreate<'T> (int outputWidth) (int outputHeight)
+        let output = Array2D.zeroCreate<'T> (int geometry.Width) (int geometry.Height)
         let pixels = image.toArray2D()
 
-        for y in 0u .. outputHeight - 1u do
-            for x in 0u .. outputWidth - 1u do
-                let referenceX = float x + minX
-                let referenceY = float y + minY
+        for y in 0u .. geometry.Height - 1u do
+            for x in 0u .. geometry.Width - 1u do
+                let referenceX = float x + geometry.MinX
+                let referenceY = float y + geometry.MinY
                 let inputX, inputY = transformPoint inverse referenceX referenceY
                 output[int x, int y] <- sampleBilinear background pixels inputX inputY |> fromDouble<'T>
 
@@ -1023,8 +1104,8 @@ let private applyManifestSlice manifest expand background (image: Image<'T>) =
     finally
         image.decRefCount()
 
-let serialApplyTrans<'T when 'T: equality> background : Stage<Image<'T> * SerialSliceManifest, Image<'T>> =
-    Stage.map "serialApplyTrans" (fun _ (image, manifest) -> applyManifestSlice manifest false background image) id id
+let serialApplyTrans<'T when 'T: equality> background geometry : Stage<Image<'T> * SerialSliceManifest, Image<'T>> =
+    Stage.map "serialApplyTrans" (fun _ (image, manifest) -> applyManifestSlice manifest geometry background image) id id
 
 let serialTransImage<'T when 'T: equality> : Stage<Image<'T> * SerialSliceManifest, Image<'T>> =
     Stage.map "serialTransImage" (fun _ (image, _manifest) -> image) id id
@@ -1039,4 +1120,4 @@ let serialTransManifest<'T when 'T: equality> : Stage<Image<'T> * SerialSliceMan
         id
 
 let serialApplyManifestInBoundingBox<'T when 'T: equality> manifest background : Stage<Image<'T>, Image<'T>> =
-    Stage.map "serialApplyManifestInBoundingBox" (fun _ image -> applyManifestSlice manifest true background image) id id
+    Stage.map "serialApplyManifestInBoundingBox" (fun _ image -> applyManifestSlice manifest (Some(manifestGeometry manifest)) background image) id id

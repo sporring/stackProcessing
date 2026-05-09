@@ -73,3 +73,4 @@ samples/serial/volumedata.tif
 samples/serialBiasCorrect/volumedata.tif
 samples/serialTransform/volumedata.tif
 /samples/serialTransform/volumedata
+*.tif

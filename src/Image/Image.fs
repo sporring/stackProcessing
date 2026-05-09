@@ -529,7 +529,6 @@ type Image<'T when 'T : equality>(sz: uint list, ?optionalNumberComponents: uint
     static member setDebugLevel level =
         debugLevel <- level
         if level >= 2u then resetRssProbe()
-        printfn $"Added debugging of Image class"
         debug <- level > 0u
     static member setDebug d =
         Image<'T>.setDebugLevel(if d then 1u else 0u)

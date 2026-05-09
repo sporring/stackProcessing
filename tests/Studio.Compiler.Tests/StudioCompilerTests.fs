@@ -243,8 +243,50 @@ let generatorSuite =
                 |> PipelineCodeGenerator.generateSavedGraph
 
             Expect.stringContains code ">=> serialEstTrans<float> 4 \"dogAffine\" 1.6 0.1" "SerialEstTrans should lower to the streamed image/manifest estimator."
-            Expect.stringContains code ">=> serialApplyTrans<float> 0.0" "Serial apply should consume the streamed image/manifest pairs."
+            Expect.stringContains code ">=> serialApplyTrans<float> 0.0 None" "Serial apply should consume the streamed image/manifest pairs."
             Expect.isFalse (code.Contains("serialTransImage")) "Direct estimator-to-apply wiring should keep the pair stream intact."
+
+        testCase "serial bounding box can feed serial apply geometry parameter" <| fun _ ->
+            let read =
+                node "read" "Read"
+                    [ p "availableMemory" "4096" false
+                      p "type" "Float64" false
+                      p "input" "sections" false
+                      p "suffix" ".tiff" false ]
+
+            let manifest =
+                node "manifest" "SerialEstTrans" (serialEstTransParameters "Float64")
+
+            let bounds =
+                node "bounds" "SerialEstBoundingBox"
+                    [ p "type" "Float64" false ]
+
+            let apply =
+                node "apply" "SerialApplyTrans"
+                    [ p "type" "Float64" false
+                      p "background" "0.0" false
+                      p "geometry" "None" true ]
+
+            let write =
+                node "write" "Write"
+                    [ p "output" "aligned" false
+                      p "suffix" ".tiff" false ]
+
+            let code =
+                graph
+                    [ read; manifest; bounds; apply; write ]
+                    [ edge "read" "output" 0 "manifest" "input" 0
+                      edge "manifest" "output" 0 "bounds" "input" 0
+                      edge "manifest" "output" 1 "bounds" "input" 1
+                      edge "manifest" "output" 0 "apply" "input" 0
+                      edge "manifest" "output" 1 "apply" "input" 1
+                      edge "bounds" "reducerOutput" 0 "apply" "parameterInput" 2
+                      edge "apply" "output" 0 "write" "input" 0 ]
+                |> PipelineCodeGenerator.generateSavedGraph
+
+            Expect.stringContains code "let SerialVolumeGeometry0 =" "Linked serial bounding box should be drained into a geometry binding."
+            Expect.stringContains code ">=> serialEstBoundingBox<float>" "SerialEstBoundingBox should lower to the Core reducer."
+            Expect.stringContains code ">=> serialApplyTrans<float> 0.0 (Some SerialVolumeGeometry0)" "SerialApplyTrans should receive the linked geometry binding."
 
         testCase "serial transform compiler infers image type from connected stream when saved box type is stale" <| fun _ ->
             let read =
@@ -277,7 +319,7 @@ let generatorSuite =
 
             Expect.stringContains code "|> readVolume<float32> \"sections.tif\"" "The source should be Float32."
             Expect.stringContains code ">=> serialEstTrans<float32> 4 \"dogAffine\" 1.6 0.1" "SerialEstTrans should use the connected image type."
-            Expect.stringContains code ">=> serialApplyTrans<float32> 0.0" "SerialApplyTrans should use the connected image type."
+            Expect.stringContains code ">=> serialApplyTrans<float32> 0.0 None" "SerialApplyTrans should use the connected image type."
             Expect.isFalse (code.Contains("serialEstTrans<float>")) "Stale Float64 serial parameters must not leak into generated code."
 
         testCase "noise add-stage boxes lower to streaming filters" <| fun _ ->
@@ -953,7 +995,7 @@ let generatorSuite =
 
             let print =
                 node "print" "Print"
-                    [ p "format" "{input1} {input2}" false
+                    [ p "format" "{Width} {Depth}" false
                       p "input1" "" true
                       p "input2" "" true ]
 
@@ -1001,7 +1043,7 @@ let generatorSuite =
 
             let print =
                 node "print" "Print"
-                    [ p "format" "{input1} {input2}" false
+                    [ p "format" "{Width} {Depth}" false
                       p "input1" "" true
                       p "input2" "" true ]
 
@@ -1018,36 +1060,76 @@ let generatorSuite =
             Expect.stringContains code "let String0 = \"e\"" "String scalar e should remain a string literal."
             Expect.stringContains code ">=> threshold System.Math.E System.Math.PI" "Numeric parameters should lower standard names to Math constants."
 
-        testCase "getStackInfo binds file info fields for scalar outputs" <| fun _ ->
+        testCase "read stack info output binds file info fields for scalar outputs" <| fun _ ->
             let path =
                 node "path" "Scalar"
                     [ p "type" "String" false
                       p "value" "input" false ]
 
-            let info =
-                node "info" "GetStackInfo"
-                    [ p "input" "" true
+            let read =
+                node "read" "Read"
+                    [ p "availableMemory" "1073741824" false
+                      p "type" "UInt8" false
+                      p "input" "" true
                       p "suffix" ".tiff" false ]
+
+            let expand = node "expand" "StackInfoExpand" []
 
             let print =
                 node "print" "Print"
-                    [ p "format" "{input1} {input2} {input3}" false
+                    [ p "format" "{input1} {input2}" false
                       p "input1" "" true
-                      p "input2" "" true
-                      p "input3" "" true ]
+                      p "input2" "" true ]
 
             let code =
                 graph
-                    [ path; info; print ]
-                    [ edge "path" "scalarOutput" 0 "info" "parameterInput" 0
-                      edge "info" "reducerOutput" 4 "print" "parameterInput" 1
-                      edge "info" "reducerOutput" 2 "print" "parameterInput" 2
-                      edge "info" "reducerOutput" 0 "print" "parameterInput" 3 ]
+                    [ path; read; expand; print ]
+                    [ edge "path" "scalarOutput" 0 "read" "parameterInput" 2
+                      edge "read" "reducerOutput" 1 "expand" "dataInput" 0
+                      edge "expand" "reducerOutput" 4 "print" "parameterInput" 1
+                      edge "expand" "reducerOutput" 6 "print" "parameterInput" 2 ]
                 |> PipelineCodeGenerator.generateSavedGraph
 
-            Expect.stringContains code "let String0 = \"input\"" "Linked stack-info input should keep its string binding."
-            Expect.stringContains code "let StackInfo0 = getStackInfo String0 \".tiff\"" "getStackInfo should bind FileInfo once."
-            Expect.stringContains code "printfn $\"{StackInfo0.size[0]} {StackInfo0.componentType} {StackInfo0.dimensions}\"" "FileInfo output pins should map to field expressions."
+            Expect.stringContains code "let StackInfo0 = getStackInfo String0 \".tiff\"" "Read metadata should wrap getStackInfo."
+            Expect.stringContains code "let StackInfoExpand0 = StackInfo0" "StackInfoExpand should alias the read StackInfo value."
+            Expect.stringContains code "printfn $\"{StackInfoExpand0.size[0]} {StackInfoExpand0.size[2]}\"" "Expanded fields should connect naturally to print."
+
+        testCase "write stack info output runs getStackInfo after draining write" <| fun _ ->
+            let read =
+                node "read" "Read"
+                    [ p "availableMemory" "1073741824" false
+                      p "type" "UInt8" false
+                      p "input" "input" false
+                      p "suffix" ".tiff" false ]
+
+            let write =
+                node "write" "Write"
+                    [ p "output" "output" false
+                      p "suffix" ".tiff" false ]
+
+            let expand = node "expand" "StackInfoExpand" []
+
+            let print =
+                node "print" "Print"
+                    [ p "format" "{input1} {input2}" false
+                      p "input1" "" true
+                      p "input2" "" true ]
+
+            let code =
+                graph
+                    [ read; write; expand; print ]
+                    [ edge "read" "output" 0 "write" "input" 0
+                      edge "write" "reducerOutput" 0 "expand" "dataInput" 0
+                      edge "expand" "reducerOutput" 4 "print" "parameterInput" 1
+                      edge "expand" "reducerOutput" 6 "print" "parameterInput" 2 ]
+                |> PipelineCodeGenerator.generateSavedGraph
+
+            Expect.stringContains code "let StackInfo0 =" "The write output should bind a post-write StackInfo value."
+            Expect.stringContains code ">=> write \"output\" \".tiff\"" "The write stage should still write the stream."
+            Expect.stringContains code "|> sink" "The write stream should be consumed before StackInfo is read."
+            Expect.stringContains code "getStackInfo \"output\" \".tiff\"" "The output stack info should be inspected after writing."
+            Expect.stringContains code "let StackInfoExpand0 = StackInfo0" "StackInfoExpand should alias the upstream StackInfo value."
+            Expect.stringContains code "printfn $\"{StackInfoExpand0.size[0]} {StackInfoExpand0.size[2]}\"" "Expanded fields should connect naturally to print."
 
         testCase "getChunkInfo binds chunk layout fields for scalar outputs" <| fun _ ->
             let info =

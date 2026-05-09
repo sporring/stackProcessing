@@ -140,6 +140,8 @@ type SerialSliceTransform = StackSerialSections.SerialSliceTransform
 
 type SerialSliceManifest = StackSerialSections.SerialSliceManifest
 
+type SerialVolumeGeometry = StackSerialSections.SerialVolumeGeometry
+
 type Point3D = StackMesh.Point3D
 
 type Triangle = StackMesh.Triangle
@@ -147,6 +149,8 @@ type Triangle = StackMesh.Triangle
 type TriangleSet = StackMesh.TriangleSet
 
 val getStackDepth: (string -> string -> uint)
+
+val getFileInfo: (string -> ImageFunctions.FileInfo)
 
 val getStackInfo: (string -> string -> StackIO.FileInfo)
 
@@ -306,6 +310,10 @@ val coordinateZ:
 val deleteIfExists: (string -> unit)
 
 val write:
+  (string -> string -> StackCore.Stage<StackCore.Image<'a>,StackCore.Image<'a>>)
+    when 'a: equality
+
+val writeThrough:
   (string -> string -> StackCore.Stage<StackCore.Image<'a>,StackCore.Image<'a>>)
     when 'a: equality
 
@@ -1052,8 +1060,13 @@ val serialEstTrans<'T when 'T: equality> :
                       StackSerialSections.SerialSliceManifest)>)
     when 'T: equality
 
+val serialEstBoundingBox<'T when 'T: equality> :
+  StackCore.Stage<(StackCore.Image<'T> * StackSerialSections.SerialSliceManifest),
+                  StackSerialSections.SerialVolumeGeometry> when 'T: equality
+
 val serialApplyTrans<'T when 'T: equality> :
   (float ->
+     StackSerialSections.SerialVolumeGeometry option ->
      StackCore.Stage<(StackCore.Image<'T> *
                       StackSerialSections.SerialSliceManifest),
                      StackCore.Image<'T>>) when 'T: equality

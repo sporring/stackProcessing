@@ -429,7 +429,6 @@ module private SourceImageNode =
         (hasInputTitle functionId && functionId <> "ReadZarrSlab" && functionId <> "ReadNexusSlab")
         || (hasOutputTitle functionId && functionId <> "WriteZarr" && functionId <> "WriteNexus")
         || functionId = "WriteSlabSlices"
-        || functionId = "GetStackInfo"
         || functionId = "GetChunkInfo"
         || functionId = "ResampleAffineTrilinearSlices"
 
@@ -456,7 +455,7 @@ module private SourceImageNode =
         |> List.map (fun format -> format.Label, format.Suffix)
 
     let suffixOptionsFor functionId =
-        if hasInputTitle functionId || functionId = "GetStackInfo" || functionId = "GetChunkInfo" || functionId = "ResampleAffineTrilinearSlices" then
+        if hasInputTitle functionId || functionId = "GetChunkInfo" || functionId = "ResampleAffineTrilinearSlices" then
             readSuffixOptions
         else
             suffixOptions
@@ -768,6 +767,7 @@ module private HighValueFilterNode =
           "SerialPolynomialBiasCorrect"
           "SerialEstTrans"
           "SerialApplyTrans"
+          "SerialEstBoundingBox"
           "LabelContour"
           "ChangeLabel" ]
         |> Set.ofList
@@ -853,6 +853,17 @@ module private SerialTransformNode =
             Type = PortType.Custom "SerialSliceManifest" } ],
         [ { Name = typeName
             Type = PortType.numericToImage selectedType } ]
+
+    let boundingBoxPorts (state: PipelineNodeState) =
+        let selectedType = selectedType state
+        let typeName = NumericType.toString selectedType
+
+        [ { Name = typeName
+            Type = PortType.numericToImage selectedType }
+          { Name = "SerialSliceManifest"
+            Type = PortType.Custom "SerialSliceManifest" } ],
+        [ { Name = "SerialVolumeGeometry"
+            Type = PortType.Custom "SerialVolumeGeometry" } ]
 
     let updateMethodParameterStates (state: PipelineNodeState) =
         if state.Definition.Id = "SerialEstTrans" then
@@ -1013,13 +1024,22 @@ type PipelineNodeViewModel(
         | "AffineRegistration"
         | "FitBiasModel"
         | "FitBiasModelMasked"
-        | "GetStackInfo"
+        | "StackInfoExpand"
+        | "ChunkInfoExpand"
+        | "Write"
         | "GetChunkInfo"
         | "ComponentTranslationTable"
+        | "SerialEstBoundingBox"
         | "HistogramData"
         | "EstimateHistogram"
         | "Quantiles" -> ReducerOutput
         | _ -> DataOutput
+
+    let outputKindForPort functionId portIndex (port: Port) =
+        match functionId, portIndex, port.Type with
+        | ("Read" | "ReadVolume" | "ReadSlab" | "ReadZarrSlab" | "ReadNexusSlab"), _, Custom _
+        | "Write", _, Custom "StackInfo" -> ReducerOutput
+        | _ -> outputKindFor functionId
 
     let effectivePorts () =
         match state.Definition.Id with
@@ -1029,11 +1049,12 @@ type PipelineNodeViewModel(
         | "ScalarFunction" -> state.Definition.Inputs, [ ScalarFunctionNode.outputPort ]
         | "Read"
         | "ReadVolume"
-        | "ReadRandom"
-        | "ReadRange"
         | "ReadSlab"
         | "ReadZarrSlab"
-        | "ReadNexusSlab"
+        | "ReadNexusSlab" ->
+            state.Definition.Inputs, SourceImageNode.outputPort state :: (state.Definition.Outputs |> List.skip 1)
+        | "ReadRandom"
+        | "ReadRange"
         | "Zero"
         | "NormalNoise"
         | "SaltAndPepperNoise"
@@ -1041,7 +1062,6 @@ type PipelineNodeViewModel(
         | "SpeckleNoise"
         | "CreateByEuler2DTransform" -> state.Definition.Inputs, [ SourceImageNode.outputPort state ]
         | "Write"
-        | "WriteThrough"
         | "WriteInSlabs"
         | "WriteZarr"
         | "WriteNexus" ->
@@ -1052,6 +1072,7 @@ type PipelineNodeViewModel(
         | "Threshold" -> ThresholdNode.ports state
         | "SerialEstTrans" -> SerialTransformNode.estimatorPorts state
         | "SerialApplyTrans" -> SerialTransformNode.applyPorts state
+        | "SerialEstBoundingBox" -> SerialTransformNode.boundingBoxPorts state
         | "SerialPolynomialBiasCorrect" -> HighValueFilterNode.typedImagePorts state
         | "Quantiles" -> state.Definition.Inputs, QuantilesNode.outputPorts state
         | _ -> state.Definition.Inputs, state.Definition.Outputs
@@ -1080,7 +1101,7 @@ type PipelineNodeViewModel(
 
     let nodeHeight =
         let portCount =
-            if state.Definition.Id = "ComputeStats" || state.Definition.Id = "ComponentTranslationTable" then
+            if state.Definition.Id = "ComputeStats" || state.Definition.Id = "ComponentTranslationTable" || state.Definition.Id = "StackInfoExpand" || state.Definition.Id = "ChunkInfoExpand" then
                 state.Definition.Inputs.Length
             else
                 max state.Definition.Inputs.Length state.Definition.Outputs.Length
@@ -1278,6 +1299,8 @@ type PipelineNodeViewModel(
                 ScalarImageOperationNode.valuePort state
             elif state.Definition.Id = "CollapseComponentLabels" && parameter.Key = "translationTable" then
                 PortMapping.customParameterPort parameter.Key "TranslationTable"
+            elif state.Definition.Id = "SerialApplyTrans" && parameter.Key = "geometry" then
+                PortMapping.customParameterPort parameter.Key "SerialVolumeGeometry"
             elif state.Definition.Id = "Print" && PrintNode.isInputKey parameter.Key then
                 PortMapping.anyParameterPort parameter.Key
             elif state.Definition.Id = "Tap" && parameter.Key = "label" then
@@ -1321,11 +1344,14 @@ type PipelineNodeViewModel(
 
         inputs
         |> List.iteri (fun portIndex port ->
-            addPipelinePin 0. (pinPosition nodeHeight portIndex inputs.Length) PinAlignment.Left DataInput None port |> ignore)
+            if state.Definition.Id = "StackInfoExpand" || state.Definition.Id = "ChunkInfoExpand" then
+                addPipelinePin (pinPosition (nodeWidth ()) portIndex inputs.Length) 0. PinAlignment.Top DataInput None port |> ignore
+            else
+                addPipelinePin 0. (pinPosition nodeHeight portIndex inputs.Length) PinAlignment.Left DataInput None port |> ignore)
 
         outputs
         |> List.iteri (fun portIndex port ->
-            let kind = outputKindFor state.Definition.Id
+            let kind = outputKindForPort state.Definition.Id portIndex port
 
             let alignment =
                 if kind = ScalarOutput || kind = ReducerOutput then PinAlignment.Bottom else PinAlignment.Right
@@ -1687,7 +1713,7 @@ type MainWindowViewModel() as this =
                     PipelineParameterViewModel(parameter.Label, parameter.Key, parameter.DefaultValue, parameter.Type, forceUseInput = true)
                 | ("Quantiles" | "HistogramEqualization"), "histogram" ->
                     PipelineParameterViewModel(parameter.Label, parameter.Key, parameter.DefaultValue, parameter.Type, forceUseInput = true)
-                | ("SerialPolynomialBiasCorrect" | "SerialEstTrans" | "SerialApplyTrans"), "type" ->
+                | ("SerialPolynomialBiasCorrect" | "SerialEstTrans" | "SerialApplyTrans" | "SerialEstBoundingBox"), "type" ->
                     let options =
                         SerialTransformNode.typeOptions
                         |> List.map (fun value -> ParameterOptionViewModel(value, value, true))
@@ -2164,7 +2190,10 @@ type MainWindowViewModel() as this =
                 | _ -> false)
 
         pipelineNodes ()
-        |> Seq.filter (fun node -> node.State.Definition.Id = "SerialEstTrans" || node.State.Definition.Id = "SerialApplyTrans")
+        |> Seq.filter (fun node ->
+            node.State.Definition.Id = "SerialEstTrans"
+            || node.State.Definition.Id = "SerialApplyTrans"
+            || node.State.Definition.Id = "SerialEstBoundingBox")
         |> Seq.iter (fun node ->
             let isConnected = hasConstrainedConnection node
 
@@ -2369,6 +2398,13 @@ type MainWindowViewModel() as this =
         match startPin, endPin with
         | (:? PipelinePinViewModel as outputPin), (:? PipelinePinViewModel as inputPin)
             when outputPin.Kind = ScalarOutput || inputPin.Kind = ParameterInput ->
+            ConnectorOrientation.Vertical
+        | (:? PipelinePinViewModel as outputPin), (:? PipelinePinViewModel as inputPin)
+            when outputPin.Kind = ReducerOutput
+                 && inputPin.Kind = DataInput
+                 && (match inputPin.Parent with
+                     | :? PipelineNodeViewModel as node -> node.State.Definition.Id = "StackInfoExpand" || node.State.Definition.Id = "ChunkInfoExpand"
+                     | _ -> false) ->
             ConnectorOrientation.Vertical
         | _ ->
             ConnectorOrientation.Horizontal
@@ -3029,7 +3065,7 @@ type MainWindowViewModel() as this =
                     (startPin.Kind = ScalarOutput || startPin.Kind = ReducerOutput) && endPin.Kind = ParameterInput
 
                 let isDataEdge (startPin: PipelinePinViewModel) (endPin: PipelinePinViewModel) =
-                    startPin.Kind = DataOutput && endPin.Kind = DataInput
+                    (startPin.Kind = DataOutput || startPin.Kind = ReducerOutput) && endPin.Kind = DataInput
 
                 let nodeIndexes = Dictionary<PipelineNodeViewModel, int>(HashIdentity.Reference)
                 nodes |> Array.iteri (fun index node -> nodeIndexes[node] <- index)

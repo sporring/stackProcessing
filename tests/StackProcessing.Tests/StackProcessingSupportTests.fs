@@ -895,7 +895,7 @@ let stackProcessingSupportSuite =
                 try
                     imagePlan input
                     >=> serialEstTrans<float> 2 "SSDAffine" 0.5 0.1
-                    >=> serialApplyTrans<float> 0.0
+                    >=> serialApplyTrans<float> 0.0 None
                     |> drainList
                 finally
                     disposeImages input
@@ -956,6 +956,44 @@ let stackProcessingSupportSuite =
                 Expect.floatClose Accuracy.medium manifests.[1].Transforms.[0].Matrix.[0].[2] -4.0 "SSD scale should support coarse downsampled estimation and lift translation back to full resolution."
             finally
                 estimated |> List.map fst |> disposeImages
+
+        testCase "serial bounding box geometry expands serial apply canvas" <| fun _ ->
+            let makeSlice z impulseX =
+                let image =
+                    Array2D.init 5 5 (fun x y -> if x = impulseX && y = 2 then 10.0 else 0.0)
+                    |> Image<float>.ofArray2D
+                image.index <- z
+                image
+
+            let geometryInput = [ makeSlice 0 2; makeSlice 1 3 ]
+            let geometry =
+                try
+                    imagePlan geometryInput
+                    >=> serialEstTrans<float> 2 "SSDAffine" 0.5 0.1
+                    >=> serialEstBoundingBox<float>
+                    |> drain
+                finally
+                    disposeImages geometryInput
+
+            Expect.equal geometry.MinX -1.0 "The transformed stack geometry should include the shifted slice boundary."
+            Expect.equal geometry.Width 6u "The transformed stack geometry should widen enough for all slice boundaries."
+            Expect.equal geometry.Depth 2u "The transformed stack geometry should count streamed slices."
+
+            let input = [ makeSlice 0 2; makeSlice 1 3 ]
+            let transformed =
+                try
+                    imagePlan input
+                    >=> serialEstTrans<float> 2 "SSDAffine" 0.5 0.1
+                    >=> serialApplyTrans<float> 0.0 (Some geometry)
+                    |> drainList
+                finally
+                    disposeImages input
+
+            try
+                Expect.equal (transformed[0].GetWidth()) 6u "Serial application should use the estimated geometry width."
+                Expect.floatClose Accuracy.medium (transformed[1].Get [ 3u; 2u ]) 10.0 "The shifted impulse should align on the expanded canvas."
+            finally
+                disposeImages transformed
 
         testCase "serial 2D keypoints emit per-slice point sets" <| fun _ ->
             let slices =
