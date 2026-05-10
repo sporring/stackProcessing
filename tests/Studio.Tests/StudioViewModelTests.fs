@@ -540,6 +540,23 @@ let viewModelSuite =
                 (exported.Edges |> Array.exists (fun edge -> edge.FromNode = "node-4" && edge.ToNode = "node-5"))
                 "The imported Expand-to-Print field edges should survive."
 
+        testCase "normalize sample imports with current read random parameter ports" <| fun _ ->
+            let vm = MainWindowViewModel()
+            vm.SetDrawingSize(2000.0, 1400.0)
+
+            let samplePath = findRepoFile (Path.Combine("samples", "normalize", "normalize.json"))
+            let graph = PipelineGraphStorage.load samplePath
+
+            Expect.isTrue (File.Exists samplePath) "The normalize sample should exist."
+            try
+                vm.ImportGraph graph
+            with ex ->
+                failtestf "Importing normalize/normalize.json should not throw, but got: %s" ex.Message
+
+            let exported = vm.ExportGraph()
+
+            Expect.equal exported.Edges.Length graph.Edges.Length "Importing normalize should preserve every saved edge."
+
         testCase "changing read type adapts downstream image boxes and keeps metadata links" <| fun _ ->
             let vm = MainWindowViewModel()
             vm.SetDrawingSize(2000.0, 1400.0)

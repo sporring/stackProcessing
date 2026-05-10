@@ -100,11 +100,11 @@ module BuiltInCatalog =
   let private readSlabFormatParameter =
       makeParameter "format" "Source" "Chunked stack" BasicType.String
 
-  let private writeFormatDescription =
-      "Writes one image per stack slice. The selected format controls which image types can be connected to the input pin: TIFF output supports 8/16-bit integer and Float32 scalar images; PNG supports UInt8 and UInt16; JPEG and BMP support UInt8; MetaImage, NRRD, and NIfTI support the broad scalar numeric set used by Studio. Cast before write when a format cannot store the current image type."
+  let private writeFormatParameter =
+      makeParameter "format" "Target" "Image stack" BasicType.String
 
-  let private writeVolumeDescription =
-      "Writes a slice stream as one volume file. The current streaming implementation writes multipage TIFF or BigTIFF pages incrementally, without materializing the full stack in memory. Use .btf or .bigtiff for BigTIFF output."
+  let private writeFormatDescription =
+      "Writes image data from a slice stream. Target selects whether output is an image stack directory, one volume file, an OME-Zarr store, or a NeXus/HDF5 detector dataset. File type selects the on-disk image format where that applies. The selected target controls which image types can be connected: TIFF stack/volume output supports 8/16-bit integer and Float32 scalar images; PNG supports UInt8 and UInt16; JPEG and BMP support UInt8; OME-Zarr currently supports UInt8 and UInt16; NeXus/HDF5 supports the scalar numeric set used by Studio. Cast before write when a target cannot store the current image type."
 
   let private chunkWriteFormatDescription =
       "Writes stack slabs split into chunk files for later slab reading. The selected format controls which image types can be connected to the input pin, using the same constraints as write. TIFF output uses the exact selected suffix, either .tif or .tiff."
@@ -170,7 +170,7 @@ module BuiltInCatalog =
       "Prints scalar values from the generated program.\n\nUse the format text to decide how the values appear; placeholders such as {input1} are replaced by linked inputs. This is useful for reporting computed statistics, thresholds, quantiles, or file information at the end of a run.\n\nIt is intended for scalar summaries, not for printing image pixels."
 
   let private histogramDescription =
-      "Computes an intensity histogram from the image stream and immediately shows it as a chart.\n\nThe x-axis is the pixel value or histogram bin key, and the y-axis is the number of pixels observed. Use this to inspect intensity distributions before choosing thresholds, stretches, or quantiles.\n\nFor very large or continuous-valued images, consider sampling first so the chart stays readable."
+      "Computes an intensity histogram from the image stream and immediately shows it as a chart.\n\nThe x-axis is the pixel value or histogram bin key, and the y-axis is the number of pixels observed. Title, horizontal axis label, and vertical axis label are shown on the chart when filled in. Use this to inspect intensity distributions before choosing thresholds, stretches, or quantiles.\n\nFor very large or continuous-valued images, consider sampling first so the chart stays readable."
 
   let private histogramDataDescription =
       "Computes an intensity histogram and emits it as data instead of displaying it directly.\n\nThis is the preferred input to quantiles, otsuThresholdFromHistogram, and momentsThresholdFromHistogram. The histogram is reduced over the whole connected stream, so the output is available after the histogram branch has been drained.\n\nUse readRandom or readRange upstream when an estimated histogram is enough."
@@ -182,7 +182,7 @@ module BuiltInCatalog =
       "Displays map-like data as a Plotly chart.\n\nUse it with histogramData, object-size histograms, or other key/value summaries. The kind parameter selects the visual style, such as column, scatter, line, area, pie, or doughnut.\n\nChart is a visualization sink: it helps inspect results and does not produce image data for later boxes."
 
   let private showImageDescription =
-      "Shows each incoming image slice as a heatmap.\n\nThis is useful for quick visual inspection of small or sampled stacks. For large stacks, display can be slower than the processing itself, so use it on short ranges or diagnostic branches.\n\nFor final output, use write instead."
+      "Shows each incoming image slice as a heatmap.\n\nThis is useful for quick visual inspection of small or sampled stacks. Title, horizontal axis label, vertical axis label, and colormap are passed to the displayed Plotly chart. For large stacks, display can be slower than the processing itself, so use it on short ranges or diagnostic branches.\n\nFor final output, use write instead."
 
   let private sumProjectionDescription =
       "Builds one 2D projection image by summing intensities through the stack direction.\n\nUse it as a quick volume visualizer before showImage or write. The function selector transforms each pixel before it is added: Identity sums raw intensity, Abs sums magnitude, Square emphasizes strong signals, SqrtAbs compresses bright values, and Log1pAbs gives a logarithmic-looking projection without failing on negative values.\n\nThe output is Float64 and contains one image slice."
@@ -197,7 +197,7 @@ module BuiltInCatalog =
       "Applies a user-specified convolution kernel to the image stack.\n\nThe kernel defines how neighboring pixels are weighted and summed, so this box can implement smoothing, sharpening, derivatives, or custom local filters. Output region controls whether edge pixels are preserved or trimmed, boundary controls how missing neighborhood values are handled, and window size controls how many z-slices are processed per streamed chunk. Leaving window size as None picks a window larger than the kernel for better throughput.\n\nFor most users, smoothWGauss or finiteDiff are easier starting points."
 
   let private finiteDiffDescription =
-      "Computes the smallest centered finite-difference derivative estimator.\n\nUse it to emphasize changes along selected axes, such as edges, ridges, or directional gradients. Smooth the image explicitly before this box when derivative noise should be suppressed.\n\nThe result is an intensity image that often needs scaling, thresholding, or visualization before interpretation."
+      "Computes a centered finite-difference derivative estimator.\n\nDirection selects the spatial axis: x is the 0th image dimension, y is the 1st image dimension, and z is the stack direction. Order selects the derivative order from 1 to 6. Smooth the image explicitly before this box when derivative noise should be suppressed.\n\nThe result is an intensity image that often needs scaling, thresholding, or visualization before interpretation."
 
   let private dogKeypointsDescription =
       "Detects local Difference-of-Gaussian extrema in streaming z-windows. Each window builds a small 3D Gaussian scale space, subtracts adjacent scales, and emits points that are strict local maxima or minima in x, y, z, and scale. Only the center stride slices of each window are emitted, while the z padding covers the largest Gaussian support and the one-slice extrema neighborhood.\n\nThis is a detector only, not a complete SIFT descriptor implementation. Coordinates are reported in pixel units and z uses the source slice index. Increase scale levels or sigma for larger features; increase contrast threshold to suppress weak/noisy extrema."
@@ -374,9 +374,9 @@ module BuiltInCatalog =
     { Id = "ReadRandom"
       DisplayName = "readRandom"
       Category = "Sources / Sinks"
-      Summary = "Read a randomized subset of stack files."
-      Description = readFormatDescription
-      Aliases = [ "random"; "input"; "tiff"; "file"; "UInt8"; "Float64"; "type" ]
+      Summary = "Read a randomized subset of image slices."
+      Description = "Reads a randomized subset of slices from image stacks, single volume files, OME-Zarr datasets, or NeXus/HDF5 detector stacks. The Format selector controls which core reader is used and which metadata record is exposed on the lower output."
+      Aliases = [ "random"; "input"; "tiff"; "png"; "zarr"; "nexus"; "hdf5"; "volume"; "file"; "UInt8"; "Float64"; "type" ]
       Inputs = []
       Outputs =
           [ makePort "Float64" imageFloat64
@@ -384,9 +384,19 @@ module BuiltInCatalog =
       Parameters =
           [ availableMemoryParameter
             makeParameter "type" "Type" "Float64" BasicType.String
+            readFormatParameter
             makeParameter "depth" "Depth" "1" (BasicType.Numeric UInt32)
             makeParameter "input" "Input" "input" BasicType.String
-            suffixParameter ".tiff" ] }
+            readSuffixParameter ".tiff"
+            makeParameter "multiscaleIndex" "Multiscale index" "0" (BasicType.Numeric Int32)
+            makeParameter "datasetIndex" "Dataset index" "0" (BasicType.Numeric Int32)
+            makeParameter "timepoint" "Timepoint" "0" (BasicType.Numeric Int32)
+            makeParameter "channel" "Channel" "0" (BasicType.Numeric Int32)
+            makeParameter "maxParallelChunks" "Max parallel chunks" "0" (BasicType.Numeric Int32)
+            makeParameter "datasetPath" "Dataset path" "/entry/data/data" BasicType.String
+            makeParameter "frameAxis" "Frame axis" "0" (BasicType.Numeric Int32)
+            makeParameter "yAxis" "Y axis" "1" (BasicType.Numeric Int32)
+            makeParameter "xAxis" "X axis" "2" (BasicType.Numeric Int32) ] }
 
   let makeGenericEstimateHistogram () =
     { Id = "EstimateHistogram"
@@ -871,25 +881,28 @@ module BuiltInCatalog =
         { Id = "Write"
           DisplayName = "write"
           Category = "Sources / Sinks"
-          Summary = "Write a processed stack to image files."
+          Summary = "Write a processed stack to files or chunked containers."
           Description = writeFormatDescription
-          Aliases = [ "output"; "save"; "tiff"; "file" ]
+          Aliases = [ "output"; "save"; "tiff"; "file"; "volume"; "zarr"; "nexus"; "hdf5" ]
           Inputs = [ makePort "Number" imageAny ]
           Outputs = [ makePort "StackInfo" stackInfo ]
           Parameters =
-              [ makeParameter "output" "Output" "output" BasicType.String
-                suffixParameter ".tiff" ] }
-
-        { Id = "WriteVolume"
-          DisplayName = "writeVolume"
-          Category = "Sources / Sinks"
-          Summary = "Write a stream as one multipage TIFF/BigTIFF volume."
-          Description = writeVolumeDescription
-          Aliases = [ "volume"; "multipage"; "tiff"; "bigtiff"; "ome"; "write"; "save" ]
-          Inputs = [ makePort "Number" imageAny ]
-          Outputs = []
-          Parameters =
-              [ makeParameter "output" "Output" "volume.tiff" BasicType.String ] }
+              [ writeFormatParameter
+                makeParameter "output" "Output" "output" BasicType.String
+                suffixParameter ".tiff"
+                makeParameter "name" "Name" "image" BasicType.String
+                makeParameter "depth" "Depth" "1" (BasicType.Numeric UInt32)
+                makeParameter "chunkX" "Chunk X" "64" (BasicType.Numeric UInt32)
+                makeParameter "chunkY" "Chunk Y" "64" (BasicType.Numeric UInt32)
+                makeParameter "chunkZ" "Chunk Z" "8" (BasicType.Numeric UInt32)
+                makeParameter "physicalSizeX" "Physical size X" "1.0" (BasicType.Numeric Float64)
+                makeParameter "physicalSizeY" "Physical size Y" "1.0" (BasicType.Numeric Float64)
+                makeParameter "physicalSizeZ" "Physical size Z" "1.0" (BasicType.Numeric Float64)
+                makeParameter "maxConcurrentWrites" "Max concurrent writes" "0" (BasicType.Numeric Int32)
+                makeParameter "datasetPath" "Dataset path" "/entry/data/data" BasicType.String
+                makeParameter "frameAxis" "Frame axis" "0" (BasicType.Numeric Int32)
+                makeParameter "yAxis" "Y axis" "1" (BasicType.Numeric Int32)
+                makeParameter "xAxis" "X axis" "2" (BasicType.Numeric Int32) ] }
 
         { Id = "WriteSlabSlices"
           DisplayName = "writeSlabSlices"
@@ -918,26 +931,6 @@ module BuiltInCatalog =
                 makeParameter "chunkX" "Chunk X" "12" (BasicType.Numeric UInt32)
                 makeParameter "chunkY" "Chunk Y" "13" (BasicType.Numeric UInt32)
                 makeParameter "chunkZ" "Chunk Z" "14" (BasicType.Numeric UInt32) ] }
-
-        { Id = "WriteZarr"
-          DisplayName = "writeZarr"
-          Category = "Sources / Sinks"
-          Summary = "Write a stream of 2D slices as an OME-Zarr volume."
-          Description = zarrFormatDescription
-          Aliases = [ "zarr"; "ome-zarr"; "output"; "save"; "convert"; "UInt8"; "UInt16" ]
-          Inputs = [ makePort "Number" imageAny ]
-          Outputs = []
-          Parameters =
-              [ makeParameter "output" "Output" "output.zarr" BasicType.String
-                makeParameter "name" "Name" "image" BasicType.String
-                makeParameter "depth" "Depth" "1" (BasicType.Numeric UInt32)
-                makeParameter "chunkX" "Chunk X" "64" (BasicType.Numeric UInt32)
-                makeParameter "chunkY" "Chunk Y" "64" (BasicType.Numeric UInt32)
-                makeParameter "chunkZ" "Chunk Z" "8" (BasicType.Numeric UInt32)
-                makeParameter "physicalSizeX" "Physical size X" "1.0" (BasicType.Numeric Float64)
-                makeParameter "physicalSizeY" "Physical size Y" "1.0" (BasicType.Numeric Float64)
-                makeParameter "physicalSizeZ" "Physical size Z" "1.0" (BasicType.Numeric Float64)
-                makeParameter "maxConcurrentWrites" "Max concurrent writes" "0" (BasicType.Numeric Int32) ] }
 
         { Id = "WriteMesh"
           DisplayName = "writeMesh"
@@ -1032,25 +1025,6 @@ module BuiltInCatalog =
               [ makeParameter "output" "Output" "data" BasicType.String
                 makeParameter "dataKind" "Data" "PointSet" BasicType.String ] }
 
-        { Id = "WriteNexus"
-          DisplayName = "writeNexus"
-          Category = "Sources / Sinks"
-          Summary = "Write a stream of 2D slices as a rank-3 NeXus/HDF5 detector dataset."
-          Description = "Writes a rank-3 HDF5 dataset through PureHDF using incremental hyperslab writes. This is intended as a simple stack-to-HDF5/NeXus converter; use dataset path and axis parameters to choose the detector-stack layout."
-          Aliases = [ "nexus"; "hdf5"; "h5"; "output"; "save"; "convert" ]
-          Inputs = [ makePort "Number" imageAny ]
-          Outputs = []
-          Parameters =
-              [ makeParameter "output" "Output" "output.h5" BasicType.String
-                makeParameter "datasetPath" "Dataset path" "/entry/data/data" BasicType.String
-                makeParameter "depth" "Depth" "1" (BasicType.Numeric UInt32)
-                makeParameter "chunkX" "Chunk X" "64" (BasicType.Numeric UInt32)
-                makeParameter "chunkY" "Chunk Y" "64" (BasicType.Numeric UInt32)
-                makeParameter "chunkZ" "Chunk Z" "8" (BasicType.Numeric UInt32)
-                makeParameter "frameAxis" "Frame axis" "0" (BasicType.Numeric Int32)
-                makeParameter "yAxis" "Y axis" "1" (BasicType.Numeric Int32)
-                makeParameter "xAxis" "X axis" "2" (BasicType.Numeric Int32) ] }
-
         { Id = "Expand"
           DisplayName = "expand"
           Category = "Sources / Sinks"
@@ -1143,8 +1117,8 @@ module BuiltInCatalog =
                 makeParameter "lastLeftEdge" "Last left edge" "255.0" (BasicType.Numeric Float64)
                 makeParameter "bins" "Bins" "256" (BasicType.Numeric UInt32)
                 makeParameter "title" "Title" "" BasicType.String
-                makeParameter "xAxis" "Horizontal axis" "" BasicType.String
-                makeParameter "yAxis" "Vertical axis" "" BasicType.String ] }
+                makeParameter "xAxis" "Horizontal axis label" "" BasicType.String
+                makeParameter "yAxis" "Vertical axis label" "" BasicType.String ] }
 
         { Id = "HistogramData"
           DisplayName = "histogramData"
@@ -1207,7 +1181,11 @@ module BuiltInCatalog =
           Aliases = [ "plot"; "image"; "heatmap"; "visualize"; "show" ]
           Inputs = [ makePort "Number" imageAny ]
           Outputs = []
-          Parameters = [] }
+          Parameters =
+              [ makeParameter "colorMap" "Colormap" "Viridis" BasicType.String
+                makeParameter "title" "Title" "" BasicType.String
+                makeParameter "xAxis" "Horizontal axis label" "" BasicType.String
+                makeParameter "yAxis" "Vertical axis label" "" BasicType.String ] }
 
         { Id = "SumProjection"
           DisplayName = "sumProjection"
@@ -1526,8 +1504,8 @@ module BuiltInCatalog =
           Inputs = [ makePort "Float64" imageFloat64 ]
           Outputs = [ makePort "Float64" imageFloat64 ]
           Parameters =
-              [ makeParameter "axis1" "Axis 1" "1" (BasicType.Numeric UInt32)
-                makeParameter "axis2" "Axis 2" "2" (BasicType.Numeric UInt32) ] }
+              [ makeParameter "direction" "Direction" "0" (BasicType.Numeric UInt32)
+                makeParameter "order" "Order" "1" (BasicType.Numeric UInt32) ] }
 
         { Id = "Clamp"
           DisplayName = "clamp"

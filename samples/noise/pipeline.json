@@ -49,7 +49,38 @@
       "functionId": "Histogram",
       "x": 880.4343804535167,
       "y": 331.6010935441589,
-      "parameters": []
+      "parameters": [
+        {
+          "key": "firstLeftEdge",
+          "value": "0.0",
+          "useInput": false
+        },
+        {
+          "key": "lastLeftEdge",
+          "value": "255.0",
+          "useInput": false
+        },
+        {
+          "key": "bins",
+          "value": "256",
+          "useInput": false
+        },
+        {
+          "key": "title",
+          "value": "Noise histogram",
+          "useInput": false
+        },
+        {
+          "key": "xAxis",
+          "value": "Intensity",
+          "useInput": false
+        },
+        {
+          "key": "yAxis",
+          "value": "Pixel count",
+          "useInput": false
+        }
+      ]
     },
     {
       "id": "node-3",

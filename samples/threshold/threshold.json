@@ -2,10 +2,10 @@
   "version": 1,
   "nodes": [
     {
-      "id": "n1",
+      "id": "node-1",
       "functionId": "Zero",
-      "x": 40.0,
-      "y": 120.0,
+      "x": 178.42867815760286,
+      "y": 120,
       "parameters": [
         {
           "key": "availableMemory",
@@ -35,10 +35,10 @@
       ]
     },
     {
-      "id": "n2",
+      "id": "node-2",
       "functionId": "AddNormalNoise",
-      "x": 260.0,
-      "y": 120.0,
+      "x": 330.4645804965382,
+      "y": 120,
       "parameters": [
         {
           "key": "type",
@@ -58,10 +58,10 @@
       ]
     },
     {
-      "id": "n3",
+      "id": "node-3",
       "functionId": "Threshold",
-      "x": 480.0,
-      "y": 120.0,
+      "x": 479.99999999999994,
+      "y": 120,
       "parameters": [
         {
           "key": "type",
@@ -81,10 +81,10 @@
       ]
     },
     {
-      "id": "n4",
+      "id": "node-4",
       "functionId": "ImageOpScalar",
-      "x": 700.0,
-      "y": 120.0,
+      "x": 629.5354195034618,
+      "y": 120,
       "parameters": [
         {
           "key": "operation",
@@ -104,19 +104,89 @@
       ]
     },
     {
-      "id": "n5",
+      "id": "node-5",
       "functionId": "Write",
-      "x": 920.0,
-      "y": 120.0,
+      "x": 781.5713218423971,
+      "y": 120,
       "parameters": [
         {
+          "key": "format",
+          "value": "Image stack",
+          "useInput": false
+        },
+        {
           "key": "output",
-          "value": "../image18",
+          "value": "../data/result",
           "useInput": false
         },
         {
           "key": "suffix",
           "value": ".tiff",
+          "useInput": false
+        },
+        {
+          "key": "name",
+          "value": "image",
+          "useInput": false
+        },
+        {
+          "key": "depth",
+          "value": "1",
+          "useInput": false
+        },
+        {
+          "key": "chunkX",
+          "value": "64",
+          "useInput": false
+        },
+        {
+          "key": "chunkY",
+          "value": "64",
+          "useInput": false
+        },
+        {
+          "key": "chunkZ",
+          "value": "8",
+          "useInput": false
+        },
+        {
+          "key": "physicalSizeX",
+          "value": "1.0",
+          "useInput": false
+        },
+        {
+          "key": "physicalSizeY",
+          "value": "1.0",
+          "useInput": false
+        },
+        {
+          "key": "physicalSizeZ",
+          "value": "1.0",
+          "useInput": false
+        },
+        {
+          "key": "maxConcurrentWrites",
+          "value": "0",
+          "useInput": false
+        },
+        {
+          "key": "datasetPath",
+          "value": "/entry/data/data",
+          "useInput": false
+        },
+        {
+          "key": "frameAxis",
+          "value": "0",
+          "useInput": false
+        },
+        {
+          "key": "yAxis",
+          "value": "1",
+          "useInput": false
+        },
+        {
+          "key": "xAxis",
+          "value": "2",
           "useInput": false
         }
       ]
@@ -124,34 +194,34 @@
   ],
   "edges": [
     {
-      "fromNode": "n1",
+      "fromNode": "node-1",
       "fromKind": "dataOutput",
       "fromPort": 0,
-      "toNode": "n2",
+      "toNode": "node-2",
       "toKind": "dataInput",
       "toPort": 0
     },
     {
-      "fromNode": "n2",
+      "fromNode": "node-2",
       "fromKind": "dataOutput",
       "fromPort": 0,
-      "toNode": "n3",
+      "toNode": "node-3",
       "toKind": "dataInput",
       "toPort": 0
     },
     {
-      "fromNode": "n3",
+      "fromNode": "node-3",
       "fromKind": "dataOutput",
       "fromPort": 0,
-      "toNode": "n4",
+      "toNode": "node-4",
       "toKind": "dataInput",
       "toPort": 0
     },
     {
-      "fromNode": "n4",
+      "fromNode": "node-4",
       "fromKind": "dataOutput",
       "fromPort": 0,
-      "toNode": "n5",
+      "toNode": "node-5",
       "toKind": "dataInput",
       "toPort": 0
     }

@@ -2,10 +2,10 @@
   "version": 1,
   "nodes": [
     {
-      "id": "n1",
+      "id": "node-1",
       "functionId": "Zero",
-      "x": 40.0,
-      "y": 80.0,
+      "x": 382.56913209342724,
+      "y": 111.50242711340844,
       "parameters": [
         {
           "key": "availableMemory",
@@ -35,10 +35,10 @@
       ]
     },
     {
-      "id": "n2",
+      "id": "node-2",
       "functionId": "Zero",
-      "x": 40.0,
-      "y": 230.0,
+      "x": 75.8403123659218,
+      "y": 206.18657156233564,
       "parameters": [
         {
           "key": "availableMemory",
@@ -68,10 +68,10 @@
       ]
     },
     {
-      "id": "n3",
+      "id": "node-3",
       "functionId": "ImageOpScalar",
-      "x": 260.0,
-      "y": 230.0,
+      "x": 230.050937162741,
+      "y": 206.0469403022201,
       "parameters": [
         {
           "key": "operation",
@@ -91,10 +91,10 @@
       ]
     },
     {
-      "id": "n4",
+      "id": "node-4",
       "functionId": "ImageOpScalar",
-      "x": 480.0,
-      "y": 230.0,
+      "x": 384.59561681953517,
+      "y": 206.92049744967514,
       "parameters": [
         {
           "key": "operation",
@@ -114,10 +114,10 @@
       ]
     },
     {
-      "id": "n5",
+      "id": "node-5",
       "functionId": "ImageOpImage",
-      "x": 700.0,
-      "y": 150.0,
+      "x": 555.7000796441029,
+      "y": 151.71733766505227,
       "parameters": [
         {
           "key": "operation",
@@ -132,19 +132,89 @@
       ]
     },
     {
-      "id": "n6",
+      "id": "node-6",
       "functionId": "Write",
-      "x": 920.0,
-      "y": 150.0,
+      "x": 726.6809003318273,
+      "y": 160.08697182544995,
       "parameters": [
         {
+          "key": "format",
+          "value": "Image stack",
+          "useInput": false
+        },
+        {
           "key": "output",
-          "value": "../result18",
+          "value": "../data/result",
           "useInput": false
         },
         {
           "key": "suffix",
           "value": ".tiff",
+          "useInput": false
+        },
+        {
+          "key": "name",
+          "value": "image",
+          "useInput": false
+        },
+        {
+          "key": "depth",
+          "value": "1",
+          "useInput": false
+        },
+        {
+          "key": "chunkX",
+          "value": "64",
+          "useInput": false
+        },
+        {
+          "key": "chunkY",
+          "value": "64",
+          "useInput": false
+        },
+        {
+          "key": "chunkZ",
+          "value": "8",
+          "useInput": false
+        },
+        {
+          "key": "physicalSizeX",
+          "value": "1.0",
+          "useInput": false
+        },
+        {
+          "key": "physicalSizeY",
+          "value": "1.0",
+          "useInput": false
+        },
+        {
+          "key": "physicalSizeZ",
+          "value": "1.0",
+          "useInput": false
+        },
+        {
+          "key": "maxConcurrentWrites",
+          "value": "0",
+          "useInput": false
+        },
+        {
+          "key": "datasetPath",
+          "value": "/entry/data/data",
+          "useInput": false
+        },
+        {
+          "key": "frameAxis",
+          "value": "0",
+          "useInput": false
+        },
+        {
+          "key": "yAxis",
+          "value": "1",
+          "useInput": false
+        },
+        {
+          "key": "xAxis",
+          "value": "2",
           "useInput": false
         }
       ]
@@ -152,42 +222,42 @@
   ],
   "edges": [
     {
-      "fromNode": "n1",
+      "fromNode": "node-1",
       "fromKind": "dataOutput",
       "fromPort": 0,
-      "toNode": "n5",
+      "toNode": "node-5",
       "toKind": "dataInput",
       "toPort": 0
     },
     {
-      "fromNode": "n2",
+      "fromNode": "node-2",
       "fromKind": "dataOutput",
       "fromPort": 0,
-      "toNode": "n3",
+      "toNode": "node-3",
       "toKind": "dataInput",
       "toPort": 0
     },
     {
-      "fromNode": "n3",
+      "fromNode": "node-3",
       "fromKind": "dataOutput",
       "fromPort": 0,
-      "toNode": "n4",
+      "toNode": "node-4",
       "toKind": "dataInput",
       "toPort": 0
     },
     {
-      "fromNode": "n4",
+      "fromNode": "node-4",
       "fromKind": "dataOutput",
       "fromPort": 0,
-      "toNode": "n5",
+      "toNode": "node-5",
       "toKind": "dataInput",
       "toPort": 1
     },
     {
-      "fromNode": "n5",
+      "fromNode": "node-5",
       "fromKind": "dataOutput",
       "fromPort": 0,
-      "toNode": "n6",
+      "toNode": "node-6",
       "toKind": "dataInput",
       "toPort": 0
     }

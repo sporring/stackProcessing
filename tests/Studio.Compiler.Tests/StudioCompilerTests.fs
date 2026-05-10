@@ -69,8 +69,10 @@ let generatorSuite =
                       p "input" "input.tiff" false ]
 
             let write =
-                node "writeVolume" "WriteVolume"
-                    [ p "output" "output.tiff" false ]
+                node "writeVolume" "Write"
+                    [ p "format" "Volume file" false
+                      p "output" "output.tiff" false
+                      p "suffix" ".tiff" false ]
 
             let code =
                 graph [ read; write ] [ edge "readVolume" "output" 0 "writeVolume" "input" 0 ]
@@ -78,8 +80,8 @@ let generatorSuite =
 
             Expect.stringContains code "|> readVolume<uint16> (volumeFilePath \"input.tiff\" \".tiff\")" "Read with Volume file format should generate a typed volume source."
             Expect.isFalse (code.Contains("let volumeFilePath")) "volumeFilePath should live in StackIO/StackProcessing, not in generated code."
-            Expect.stringContains code ">=> writeVolume \"output.tiff\"" "WriteVolume should generate a streaming volume writer."
-            Expect.stringContains code "|> sink" "Terminal WriteVolume should be sunk."
+            Expect.stringContains code ">=> writeVolume (volumeFilePath \"output.tiff\" \".tiff\")" "Write with Volume file target should generate a streaming volume writer."
+            Expect.stringContains code "|> sink" "Terminal volume Write should be sunk."
 
         testCase "normalNoise source lowers to synthetic noise source" <| fun _ ->
             let noise =
@@ -213,6 +215,49 @@ let generatorSuite =
             Expect.stringContains code ">=> fitBiasModel<float> 2 32u" "FitBiasModel should lower to the polynomial reducer."
             Expect.stringContains code "|> drain" "Linked bias model reducer should be drained into a binding."
             Expect.stringContains code ">=> correctBias<float> FitBiasModel0" "CorrectBias should receive the linked bias model binding."
+
+        testCase "readRandom supports volume, zarr, and nexus formats" <| fun _ ->
+            let volume =
+                node "volume" "ReadRandom"
+                    [ p "availableMemory" "4096" false
+                      p "type" "Float32" false
+                      p "format" "Volume file" false
+                      p "depth" "5" false
+                      p "input" "sections.tif" false
+                      p "suffix" ".tiff" false ]
+
+            let zarr =
+                node "zarr" "ReadRandom"
+                    [ p "availableMemory" "4096" false
+                      p "type" "UInt16" false
+                      p "format" "OME-Zarr" false
+                      p "depth" "6" false
+                      p "input" "input.zarr" false
+                      p "multiscaleIndex" "0" false
+                      p "datasetIndex" "1" false
+                      p "timepoint" "2" false
+                      p "channel" "3" false
+                      p "maxParallelChunks" "4" false ]
+
+            let nexus =
+                node "nexus" "ReadRandom"
+                    [ p "availableMemory" "4096" false
+                      p "type" "UInt16" false
+                      p "format" "NeXus/HDF5" false
+                      p "depth" "7" false
+                      p "input" "scan.h5" false
+                      p "datasetPath" "/entry/data/data" false
+                      p "frameAxis" "0" false
+                      p "yAxis" "1" false
+                      p "xAxis" "2" false ]
+
+            let codeFor node =
+                graph [ node ] []
+                |> PipelineCodeGenerator.generateSavedGraph
+
+            Expect.stringContains (codeFor volume) "|> readVolumeRandom<float32> 5u (volumeFilePath \"sections.tif\" \".tiff\")" "ReadRandom with Volume file format should generate the random volume reader."
+            Expect.stringContains (codeFor zarr) "|> readZarrRandom<uint16> 6u \"input.zarr\" 0 1 2 3 4" "ReadRandom with OME-Zarr format should generate the random Zarr reader."
+            Expect.stringContains (codeFor nexus) "|> readNexusRandom<uint16> 7u \"scan.h5\" \"/entry/data/data\" 0 1 2" "ReadRandom with NeXus/HDF5 format should generate the random NeXus reader."
 
         testCase "serial section transform stream can feed slicewise transform application" <| fun _ ->
             let read =
@@ -420,8 +465,10 @@ let generatorSuite =
                       p "maxParallelChunks" "4" false ]
 
             let write =
-                node "write" "WriteZarr"
-                    [ p "output" "output.zarr" false
+                node "write" "Write"
+                    [ p "format" "OME-Zarr" false
+                      p "output" "output.zarr" false
+                      p "suffix" ".tiff" false
                       p "name" "" true
                       p "depth" "32" false
                       p "chunkX" "16" false
@@ -436,13 +483,13 @@ let generatorSuite =
                 graph
                     [ info; read; write ]
                     [ edge "read" "output" 0 "write" "input" 0
-                      edge "info" "reducerOutput" 2 "write" "parameterInput" 1 ]
+                      edge "info" "reducerOutput" 2 "write" "parameterInput" 3 ]
                 |> PipelineCodeGenerator.generateSavedGraph
 
             Expect.stringContains code "let ChunkInfo0 = getZarrInfo \"input.zarr\" 0 1" "GetZarrInfo should generate a metadata binding."
             Expect.stringContains code "|> readZarrSlab<uint16> \"input.zarr\" 8u 0 1 2 3 4" "Read with OME-Zarr format should generate the Zarr slab reader."
-            Expect.stringContains code ">=> writeZarr \"output.zarr\" ChunkInfo0.topLeftInfo.componentType 32u 16u 17u 8u 0.5 0.5 2.0 2" "WriteZarr should accept linked Zarr metadata."
-            Expect.stringContains code "|> sink" "Terminal WriteZarr should be sunk."
+            Expect.stringContains code ">=> writeZarr \"output.zarr\" ChunkInfo0.topLeftInfo.componentType 32u 16u 17u 8u 0.5 0.5 2.0 2" "Write with OME-Zarr target should accept linked Zarr metadata."
+            Expect.stringContains code "|> sink" "Terminal Zarr Write should be sunk."
 
         testCase "nexus boxes lower to nexus DSL functions" <| fun _ ->
             let info =
@@ -466,8 +513,10 @@ let generatorSuite =
                       p "xAxis" "2" false ]
 
             let write =
-                node "write" "WriteZarr"
-                    [ p "output" "output.zarr" false
+                node "write" "Write"
+                    [ p "format" "OME-Zarr" false
+                      p "output" "output.zarr" false
+                      p "suffix" ".tiff" false
                       p "name" "converted" false
                       p "depth" "" true
                       p "chunkX" "16" false
@@ -482,14 +531,14 @@ let generatorSuite =
                 graph
                     [ info; read; write ]
                     [ edge "read" "output" 0 "write" "input" 0
-                      edge "info" "reducerOutput" 9 "write" "parameterInput" 2 ]
+                      edge "info" "reducerOutput" 9 "write" "parameterInput" 4 ]
                 |> PipelineCodeGenerator.generateSavedGraph
 
             Expect.stringContains code "let ChunkInfo0 = getNexusInfo \"scan.h5\" \"/entry/data/data\" 0 1 2" "GetNexusInfo should generate a metadata binding."
             Expect.stringContains code "|> readNexusSlab<uint16> \"scan.h5\" \"/entry/data/data\" 8u 0 1 2" "Read with NeXus/HDF5 format should generate the NeXus slab reader."
-            Expect.stringContains code ">=> writeZarr \"output.zarr\" \"converted\" ChunkInfo0.size[2] 16u 17u 8u 1.0 1.0 1.0 0" "WriteZarr should accept linked NeXus metadata."
+            Expect.stringContains code ">=> writeZarr \"output.zarr\" \"converted\" ChunkInfo0.size[2] 16u 17u 8u 1.0 1.0 1.0 0" "Write with OME-Zarr target should accept linked NeXus metadata."
 
-        testCase "write nexus box lowers to writeNexus" <| fun _ ->
+        testCase "write nexus target lowers to writeNexus" <| fun _ ->
             let read =
                 node "read" "Read"
                     [ p "availableMemory" "1073741824" false
@@ -498,8 +547,10 @@ let generatorSuite =
                       p "suffix" ".tiff" false ]
 
             let write =
-                node "write" "WriteNexus"
-                    [ p "output" "output.h5" false
+                node "write" "Write"
+                    [ p "format" "NeXus/HDF5" false
+                      p "output" "output.h5" false
+                      p "suffix" ".tiff" false
                       p "datasetPath" "/entry/data/data" false
                       p "depth" "32" false
                       p "chunkX" "16" false
@@ -513,8 +564,8 @@ let generatorSuite =
                 graph [ read; write ] [ edge "read" "output" 0 "write" "input" 0 ]
                 |> PipelineCodeGenerator.generateSavedGraph
 
-            Expect.stringContains code ">=> writeNexus \"output.h5\" \"/entry/data/data\" 32u 16u 17u 8u 0 1 2" "WriteNexus should generate the NeXus writer."
-            Expect.stringContains code "|> sink" "Terminal WriteNexus should be sunk."
+            Expect.stringContains code ">=> writeNexus \"output.h5\" \"/entry/data/data\" 32u 16u 17u 8u 0 1 2" "Write with NeXus/HDF5 target should generate the NeXus writer."
+            Expect.stringContains code "|> sink" "Terminal NeXus Write should be sunk."
 
         testCase "axis-aligned resize and resample boxes lower to plan functions" <| fun _ ->
             let read =
@@ -1494,7 +1545,11 @@ let generatorSuite =
                       p "function" "Log1pAbs" false ]
 
             let show =
-                node "show" "ShowImage" []
+                node "show" "ShowImage"
+                    [ p "colorMap" "Greys" false
+                      p "title" "Projection" false
+                      p "xAxis" "x" false
+                      p "yAxis" "y" false ]
 
             let code =
                 graph
@@ -1504,7 +1559,7 @@ let generatorSuite =
                 |> PipelineCodeGenerator.generateSavedGraph
 
             Expect.stringContains code ">=> sumProjection<uint16> \"Log1pAbs\"" "SumProjection should lower with input pixel type and pre-sum transform."
-            Expect.stringContains code ">=> show showImagePlot" "The projection output should be connectable to showImage."
+            Expect.stringContains code ">=> show (showImageWithLabels \"Greys\" \"Projection\" \"x\" \"y\")" "The projection output should be connectable to showImage with chart options."
 
         testCase "comparison boxes lower to pair stages" <| fun _ ->
             let left =
@@ -1895,7 +1950,7 @@ let generatorSuite =
         testCase "histogram boxes can use fixed bins and chart labels" <| fun _ ->
             let histogram =
                 node "histogram" "Histogram"
-                    [ p "firstLeftEdge" "0.0" true
+                    [ p "firstLeftEdge" "0.0" false
                       p "lastLeftEdge" "255.0" false
                       p "bins" "256" false
                       p "title" "Intensity histogram" false
@@ -1906,7 +1961,7 @@ let generatorSuite =
                 graph [ histogram ] []
                 |> PipelineCodeGenerator.generateSavedGraph
 
-            Expect.stringContains code ">=> histogramFixedBins 0.0 255.0 256u" "Activating fixed-bin controls should lower to the fixed-bin reducer."
+            Expect.stringContains code ">=> histogramFixedBins 0.0 255.0 256u" "Configured fixed-bin controls should lower to the fixed-bin reducer."
             Expect.stringContains code "showChartXYWithLabels \"Column\" \"Intensity histogram\" \"Intensity\" \"Pixels\"" "Histogram should pass title and axis labels to the shared chart helper."
 
         testCase "estimateHistogram source exposes histogram map and diagnostics" <| fun _ ->
@@ -2151,4 +2206,25 @@ let generatorSuite =
 
             Expect.stringContains code ">=> intensityStretch<uint8> 0.0 255.0 0.0 1.0" "Float parameters should never emit trailing-dot literals."
             Expect.stringContains code ">=> scalarSubImage 1uy" "Integer typed scalar parameters should accept decimal-looking whole numbers."
+
+        testCase "finiteDiff lowers direction and derivative order parameters" <| fun _ ->
+            let read =
+                node "read" "Read"
+                    [ p "availableMemory" "1024" false
+                      p "type" "Float64" false
+                      p "input" "input" false
+                      p "suffix" ".tiff" false ]
+
+            let finiteDiff =
+                node "finiteDiff" "FiniteDiff"
+                    [ p "direction" "2" false
+                      p "order" "1" false ]
+
+            let code =
+                graph
+                    [ read; finiteDiff ]
+                    [ edge "read" "output" 0 "finiteDiff" "input" 0 ]
+                |> PipelineCodeGenerator.generateSavedGraph
+
+            Expect.stringContains code ">=> finiteDiff 2u 1u" "finiteDiff should pass direction first and derivative order second."
     ]

@@ -2,10 +2,10 @@
   "version": 1,
   "nodes": [
     {
-      "id": "n1",
+      "id": "node-1",
       "functionId": "Read",
-      "x": 40.0,
-      "y": 120.0,
+      "x": 402.2548916741343,
+      "y": 120,
       "parameters": [
         {
           "key": "availableMemory",
@@ -18,54 +18,95 @@
           "useInput": false
         },
         {
+          "key": "format",
+          "value": "Image stack",
+          "useInput": false
+        },
+        {
           "key": "input",
-          "value": "../image18",
+          "value": "../data/rotatingBoxes",
           "useInput": false
         },
         {
           "key": "suffix",
           "value": ".tiff",
           "useInput": false
-        }
-      ]
-    },
-    {
-      "id": "n2",
-      "functionId": "Tap",
-      "x": 240.0,
-      "y": 120.0,
-      "parameters": []
-    },
-    {
-      "id": "n3",
-      "functionId": "FiniteDiff",
-      "x": 440.0,
-      "y": 120.0,
-      "parameters": [
+        },
         {
-          "key": "axis1",
+          "key": "slabDepth",
+          "value": "8",
+          "useInput": false
+        },
+        {
+          "key": "multiscaleIndex",
+          "value": "0",
+          "useInput": false
+        },
+        {
+          "key": "datasetIndex",
+          "value": "0",
+          "useInput": false
+        },
+        {
+          "key": "timepoint",
+          "value": "0",
+          "useInput": false
+        },
+        {
+          "key": "channel",
+          "value": "0",
+          "useInput": false
+        },
+        {
+          "key": "maxParallelChunks",
+          "value": "0",
+          "useInput": false
+        },
+        {
+          "key": "datasetPath",
+          "value": "/entry/data/data",
+          "useInput": false
+        },
+        {
+          "key": "frameAxis",
+          "value": "0",
+          "useInput": false
+        },
+        {
+          "key": "yAxis",
           "value": "1",
           "useInput": false
         },
         {
-          "key": "axis2",
+          "key": "xAxis",
           "value": "2",
           "useInput": false
         }
       ]
     },
     {
-      "id": "n4",
-      "functionId": "Tap",
-      "x": 640.0,
-      "y": 120.0,
-      "parameters": []
+      "id": "node-2",
+      "functionId": "FiniteDiff",
+      "x": 560.5750084918808,
+      "y": 120,
+      "parameters": [
+        {
+          "key": "direction",
+          "value": "0",
+          "useInput": false
+        },
+        {
+          "key": "order",
+          "value": "1",
+          "useInput": false
+        }
+      ]
     },
     {
-      "id": "n5",
+      "id": "node-3",
       "functionId": "Cast",
-      "x": 840.0,
-      "y": 120.0,
+      "x": 719.4249915081193,
+      "y": 120,
       "parameters": [
         {
           "key": "sourceType",
@@ -80,26 +121,89 @@
       ]
     },
     {
-      "id": "n6",
-      "functionId": "Tap",
-      "x": 1040.0,
-      "y": 120.0,
-      "parameters": []
-    },
-    {
-      "id": "n7",
+      "id": "node-4",
       "functionId": "Write",
-      "x": 1240.0,
-      "y": 120.0,
+      "x": 877.7451083258659,
+      "y": 120,
       "parameters": [
         {
+          "key": "format",
+          "value": "Image stack",
+          "useInput": false
+        },
+        {
           "key": "output",
-          "value": "../result18",
+          "value": "../result",
           "useInput": false
         },
         {
           "key": "suffix",
           "value": ".tiff",
+          "useInput": false
+        },
+        {
+          "key": "name",
+          "value": "image",
+          "useInput": false
+        },
+        {
+          "key": "depth",
+          "value": "1",
+          "useInput": false
+        },
+        {
+          "key": "chunkX",
+          "value": "64",
+          "useInput": false
+        },
+        {
+          "key": "chunkY",
+          "value": "64",
+          "useInput": false
+        },
+        {
+          "key": "chunkZ",
+          "value": "8",
+          "useInput": false
+        },
+        {
+          "key": "physicalSizeX",
+          "value": "1.0",
+          "useInput": false
+        },
+        {
+          "key": "physicalSizeY",
+          "value": "1.0",
+          "useInput": false
+        },
+        {
+          "key": "physicalSizeZ",
+          "value": "1.0",
+          "useInput": false
+        },
+        {
+          "key": "maxConcurrentWrites",
+          "value": "0",
+          "useInput": false
+        },
+        {
+          "key": "datasetPath",
+          "value": "/entry/data/data",
+          "useInput": false
+        },
+        {
+          "key": "frameAxis",
+          "value": "0",
+          "useInput": false
+        },
+        {
+          "key": "yAxis",
+          "value": "1",
+          "useInput": false
+        },
+        {
+          "key": "xAxis",
+          "value": "2",
           "useInput": false
         }
       ]
@@ -107,50 +211,26 @@
   ],
   "edges": [
     {
-      "fromNode": "n1",
+      "fromNode": "node-1",
       "fromKind": "dataOutput",
       "fromPort": 0,
-      "toNode": "n2",
+      "toNode": "node-2",
       "toKind": "dataInput",
       "toPort": 0
     },
     {
-      "fromNode": "n2",
+      "fromNode": "node-2",
       "fromKind": "dataOutput",
       "fromPort": 0,
-      "toNode": "n3",
+      "toNode": "node-3",
       "toKind": "dataInput",
       "toPort": 0
     },
     {
-      "fromNode": "n3",
+      "fromNode": "node-3",
       "fromKind": "dataOutput",
       "fromPort": 0,
-      "toNode": "n4",
-      "toKind": "dataInput",
-      "toPort": 0
-    },
-    {
-      "fromNode": "n4",
-      "fromKind": "dataOutput",
-      "fromPort": 0,
-      "toNode": "n5",
-      "toKind": "dataInput",
-      "toPort": 0
-    },
-    {
-      "fromNode": "n5",
-      "fromKind": "dataOutput",
-      "fromPort": 0,
-      "toNode": "n6",
-      "toKind": "dataInput",
-      "toPort": 0
-    },
-    {
-      "fromNode": "n6",
-      "fromKind": "dataOutput",
-      "fromPort": 0,
-      "toNode": "n7",
+      "toNode": "node-4",
       "toKind": "dataInput",
       "toPort": 0
     }

@@ -4,27 +4,27 @@
     {
       "id": "node-1",
       "functionId": "Read",
-      "x": 1236.9593940794468,
-      "y": 906.9993286132812,
+      "x": 67.63233284655495,
+      "y": 100,
       "parameters": [
         {
           "key": "availableMemory",
-          "value": "1073741824",
+          "value": "2147483648UL",
           "useInput": false
         },
         {
           "key": "type",
-          "value": "Float32",
+          "value": "UInt8",
           "useInput": false
         },
         {
           "key": "format",
-          "value": "Volume file",
+          "value": "Image stack",
           "useInput": false
         },
         {
           "key": "input",
-          "value": "volumedata",
+          "value": "../data/volume",
           "useInput": false
         },
         {
@@ -86,18 +86,13 @@
     },
     {
       "id": "node-2",
-      "functionId": "Write",
-      "x": 1645.69921875,
-      "y": 939.9993286132812,
+      "functionId": "WriteInSlabs",
+      "x": 232.36766715344504,
+      "y": 100,
       "parameters": [
         {
-          "key": "format",
-          "value": "Image stack",
-          "useInput": false
-        },
-        {
           "key": "output",
-          "value": "volumedata",
+          "value": "../data/chunk",
           "useInput": false
         },
         {
@@ -106,86 +101,18 @@
           "useInput": false
         },
         {
-          "key": "name",
-          "value": "image",
-          "useInput": false
-        },
-        {
-          "key": "depth",
-          "value": "1",
-          "useInput": false
-        },
-        {
           "key": "chunkX",
-          "value": "64",
+          "value": "12",
           "useInput": false
         },
         {
           "key": "chunkY",
-          "value": "64",
+          "value": "13",
           "useInput": false
         },
         {
           "key": "chunkZ",
-          "value": "8",
-          "useInput": false
-        },
-        {
-          "key": "physicalSizeX",
-          "value": "1.0",
-          "useInput": false
-        },
-        {
-          "key": "physicalSizeY",
-          "value": "1.0",
-          "useInput": false
-        },
-        {
-          "key": "physicalSizeZ",
-          "value": "1.0",
-          "useInput": false
-        },
-        {
-          "key": "maxConcurrentWrites",
-          "value": "0",
-          "useInput": false
-        },
-        {
-          "key": "datasetPath",
-          "value": "/entry/data/data",
-          "useInput": false
-        },
-        {
-          "key": "frameAxis",
-          "value": "0",
-          "useInput": false
-        },
-        {
-          "key": "yAxis",
-          "value": "1",
-          "useInput": false
-        },
-        {
-          "key": "xAxis",
-          "value": "2",
-          "useInput": false
-        }
-      ]
-    },
-    {
-      "id": "node-3",
-      "functionId": "SerialPolynomialBiasCorrect",
-      "x": 1436.9593940794468,
-      "y": 915.9993286132812,
-      "parameters": [
-        {
-          "key": "type",
-          "value": "Float32",
-          "useInput": false
-        },
-        {
-          "key": "order",
-          "value": "2",
+          "value": "14",
           "useInput": false
         }
       ]
@@ -194,14 +121,6 @@
   "edges": [
     {
       "fromNode": "node-1",
-      "fromKind": "dataOutput",
-      "fromPort": 0,
-      "toNode": "node-3",
-      "toKind": "dataInput",
-      "toPort": 0
-    },
-    {
-      "fromNode": "node-3",
       "fromKind": "dataOutput",
       "fromPort": 0,
       "toNode": "node-2",

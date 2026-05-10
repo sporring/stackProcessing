@@ -551,11 +551,20 @@ type MainView() as this =
             |> Option.map _.Value
             |> Option.defaultValue ".tiff"
 
+        let selectedFormat (node: PipelineNodeViewModel) =
+            node.State.Parameters
+            |> Seq.tryFind (fun parameter -> parameter.Key = "format")
+            |> Option.map _.Value
+            |> Option.defaultValue "Image stack"
+
         let supportedWriterTypes (node: PipelineNodeViewModel) =
             match node.State.Definition.Id with
-            | "WriteVolume" -> ImageFileFormat.readSupportedTypes ".tiff"
-            | "WriteZarr" -> [ UInt8; UInt16 ]
-            | "WriteNexus" -> [ UInt8; Int8; UInt16; Int16; UInt32; Int32; Float32; Float64 ]
+            | "Write" ->
+                match selectedFormat node with
+                | "Volume file" -> ImageFileFormat.readSupportedTypes ".tiff"
+                | "OME-Zarr" -> [ UInt8; UInt16 ]
+                | "NeXus/HDF5" -> [ UInt8; Int8; UInt16; Int16; UInt32; Int32; Float32; Float64 ]
+                | _ -> ImageFileFormat.supportedTypes (selectedSuffix node)
             | _ -> ImageFileFormat.supportedTypes (selectedSuffix node)
 
         let writerAcceptsOutputType numericType =
@@ -563,10 +572,7 @@ type MainView() as this =
             | :? PipelineNodeViewModel as node
                 when node.State.Definition.Id = "Write"
                      || node.State.Definition.Id = "WriteThrough"
-                     || node.State.Definition.Id = "WriteVolume"
-                     || node.State.Definition.Id = "WriteInSlabs"
-                     || node.State.Definition.Id = "WriteZarr"
-                     || node.State.Definition.Id = "WriteNexus" ->
+                     || node.State.Definition.Id = "WriteInSlabs" ->
                 supportedWriterTypes node
                 |> List.contains numericType
             | _ ->

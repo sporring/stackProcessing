@@ -1541,31 +1541,49 @@ let crop<'T when 'T: equality> beforeX afterX beforeY afterY beforeZ afterZ : St
     |> Stage.withSliceCardinality (SlimPipeline.Domain(SlimPipeline.SliceDomain.trim beforeZ afterZ))
 
 let convolveOp (name: string) (kernel: Image<'T>) (outputRegionMode: ImageFunctions.OutputRegionMode option) (bc: ImageFunctions.BoundaryCondition option) (winSz: uint option) : Stage<Image<'T>, Image<'T>> =
-    let windowFromKernel (k: Image<'T>) : uint =
-        max 1u (k.GetDepth())
-    let ksz = windowFromKernel kernel
-    let win = Option.defaultValue (defaultConvolutionWindowSize ksz) winSz |> max ksz
-    let stride = win-ksz+1u
-    let pad = 
-        match outputRegionMode with
-            | Some Valid -> 0u
-            | _ -> ksz/2u //floor
-    let outputStart =
-        match outputRegionMode with
-            | Some Valid -> 0u
-            | _ -> pad
-    let f debug =  volFctToWindowFctReleaseAfterDebug debug (fun image3D -> ImageFunctions.convolve outputRegionMode bc image3D kernel) ksz outputStart stride
-    let memoryNeed nPixels = (2UL*nPixels*(uint64 win) + (uint64 ksz))*getBytesPerComponent<'T>
-    let elementTransformation = id
-    let memoryModel = StageMemoryModel.fromSinglePeak Map memoryNeed
-    let costUnits input =
-        let kernelVoxels = uint64 (kernel.GetWidth()) * uint64 (kernel.GetHeight()) * uint64 (kernel.GetDepth())
-        float (inputValue input * uint64 win * kernelVoxels)
-    let stg =
-        mapWindow name f memoryNeed elementTransformation
+    let kernel =
+        if kernel.GetDimensions() = 3u && kernel.GetDepth() = 1u then
+            ImageFunctions.extractSlice 2u 0 kernel
+        else
+            kernel
+
+    if kernel.GetDimensions() < 3u then
+        let memoryNeed nPixels =
+            2UL * nPixels * getBytesPerComponent<'T>
+
+        let memoryModel = StageMemoryModel.fromSinglePeak Map memoryNeed
+        let costUnits input =
+            let kernelVoxels = uint64 (kernel.GetWidth()) * uint64 (kernel.GetHeight())
+            float (inputValue input * kernelVoxels)
+
+        liftUnaryReleaseAfter name (fun image -> ImageFunctions.convolve outputRegionMode bc image kernel) memoryNeed id
         |> withCostModel (nativeImageStageCost $"convolve.{typeof<'T>.Name}" memoryModel costUnits)
-    (window win pad stride) --> stg --> flattenList ()
-    |> Stage.withSliceCardinality (sliceCardinalityForConvolution ksz outputRegionMode)
+    else
+        let windowFromKernel (k: Image<'T>) : uint =
+            max 1u (k.GetDepth())
+        let ksz = windowFromKernel kernel
+        let win = Option.defaultValue (defaultConvolutionWindowSize ksz) winSz |> max ksz
+        let stride = win-ksz+1u
+        let pad =
+            match outputRegionMode with
+                | Some Valid -> 0u
+                | _ -> ksz/2u //floor
+        let outputStart =
+            match outputRegionMode with
+                | Some Valid -> 0u
+                | _ -> pad
+        let f debug =  volFctToWindowFctReleaseAfterDebug debug (fun image3D -> ImageFunctions.convolve outputRegionMode bc image3D kernel) ksz outputStart stride
+        let memoryNeed nPixels = (2UL*nPixels*(uint64 win) + (uint64 ksz))*getBytesPerComponent<'T>
+        let elementTransformation = id
+        let memoryModel = StageMemoryModel.fromSinglePeak Map memoryNeed
+        let costUnits input =
+            let kernelVoxels = uint64 (kernel.GetWidth()) * uint64 (kernel.GetHeight()) * uint64 (kernel.GetDepth())
+            float (inputValue input * uint64 win * kernelVoxels)
+        let stg =
+            mapWindow name f memoryNeed elementTransformation
+            |> withCostModel (nativeImageStageCost $"convolve.{typeof<'T>.Name}" memoryModel costUnits)
+        (window win pad stride) --> stg --> flattenList ()
+        |> Stage.withSliceCardinality (sliceCardinalityForConvolution ksz outputRegionMode)
 
 let convolve kernel outputRegionMode boundaryCondition winSz = convolveOp "convolve" kernel outputRegionMode boundaryCondition winSz
 let conv kernel = convolveOp "conv" kernel None None None

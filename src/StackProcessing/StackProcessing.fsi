@@ -110,6 +110,12 @@ val showChartXYWithLabels:
      string ->
      string -> #System.IConvertible seq -> #System.IConvertible seq -> unit)
 
+val showImage: (Image.Image<'a> -> unit) when 'a: equality
+
+val showImageWithLabels:
+  (string -> string -> string -> string -> Image.Image<'a> -> unit)
+    when 'a: equality
+
 type FileInfo = ImageFunctions.FileInfo
 
 type ChunkInfo = StackIO.ChunkInfo
@@ -225,6 +231,12 @@ val readVolume<'T when 'T: equality> :
      SlimPipeline.Plan<unit,unit> -> SlimPipeline.Plan<unit,StackCore.Image<'T>>)
     when 'T: equality
 
+val readVolumeRandom<'T when 'T: equality> :
+  (uint ->
+     string ->
+     SlimPipeline.Plan<unit,unit> -> SlimPipeline.Plan<unit,StackCore.Image<'T>>)
+    when 'T: equality
+
 val readRandom<'T when 'T: equality> :
   (uint ->
      string ->
@@ -289,6 +301,17 @@ val readZarrSlab<'T when 'T: equality> :
      SlimPipeline.Plan<unit,unit> -> SlimPipeline.Plan<unit,StackCore.Image<'T>>)
     when 'T: equality
 
+val readZarrRandom<'T when 'T: equality> :
+  (uint ->
+     string ->
+     int ->
+     int ->
+     int ->
+     int ->
+     int ->
+     SlimPipeline.Plan<unit,unit> -> SlimPipeline.Plan<unit,StackCore.Image<'T>>)
+    when 'T: equality
+
 val readNexusSlabStacked<'T when 'T: equality> :
   (string ->
      string ->
@@ -303,6 +326,16 @@ val readNexusSlab<'T when 'T: equality> :
   (string ->
      string ->
      uint ->
+     int ->
+     int ->
+     int ->
+     SlimPipeline.Plan<unit,unit> -> SlimPipeline.Plan<unit,StackCore.Image<'T>>)
+    when 'T: equality
+
+val readNexusRandom<'T when 'T: equality> :
+  (uint ->
+     string ->
+     string ->
      int ->
      int ->
      int ->

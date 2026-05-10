@@ -14,6 +14,25 @@ let private applyChartLabels title xAxis yAxis chart =
     if System.String.IsNullOrWhiteSpace yAxis then withXAxis
     else withXAxis |> Chart.withYAxisStyle yAxis
 
+let private colorScale name =
+    match name with
+    | "Blackbody" -> StyleParam.Colorscale.Blackbody
+    | "Bluered" -> StyleParam.Colorscale.Bluered
+    | "Cividis" -> StyleParam.Colorscale.Cividis
+    | "Earth" -> StyleParam.Colorscale.Earth
+    | "Electric" -> StyleParam.Colorscale.Electric
+    | "Greens" -> StyleParam.Colorscale.Greens
+    | "Greys" -> StyleParam.Colorscale.Greys
+    | "Hot" -> StyleParam.Colorscale.Hot
+    | "Jet" -> StyleParam.Colorscale.Jet
+    | "Picnic" -> StyleParam.Colorscale.Picnic
+    | "Portland" -> StyleParam.Colorscale.Portland
+    | "Rainbow" -> StyleParam.Colorscale.Rainbow
+    | "RdBu" -> StyleParam.Colorscale.RdBu
+    | "YlGnBu" -> StyleParam.Colorscale.YIGnBu
+    | "YlOrRd" -> StyleParam.Colorscale.YIOrRd
+    | _ -> StyleParam.Colorscale.Viridis
+
 let chartData kind x y =
     match kind with
     | "Scatter" -> Chart.Scatter(x = x, y = y, mode = StyleParam.Mode.Markers)
@@ -44,3 +63,11 @@ let showChartXYWithLabels kind title xAxis yAxis x y =
 
 let showChartXY kind x y =
     showChartXYWithLabels kind "" "" "" x y
+
+let showImageWithLabels colorMap title xAxis yAxis image =
+    Chart.Heatmap(ImageFunctions.toSeqSeq image, ColorScale = colorScale colorMap)
+    |> applyChartLabels title xAxis yAxis
+    |> Chart.show
+
+let showImage image =
+    showImageWithLabels "Viridis" "" "" "" image

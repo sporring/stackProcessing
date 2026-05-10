@@ -2,14 +2,52 @@
   "version": 1,
   "nodes": [
     {
-      "id": "n1",
-      "functionId": "Read",
-      "x": 40.0,
-      "y": 120.0,
+      "id": "node-1",
+      "functionId": "Histogram",
+      "x": 234.8058413346943,
+      "y": 121.71208427696577,
+      "parameters": [
+        {
+          "key": "firstLeftEdge",
+          "value": "50.0",
+          "useInput": false
+        },
+        {
+          "key": "lastLeftEdge",
+          "value": "255.0",
+          "useInput": false
+        },
+        {
+          "key": "bins",
+          "value": "64",
+          "useInput": false
+        },
+        {
+          "key": "title",
+          "value": "Intensity histogram",
+          "useInput": false
+        },
+        {
+          "key": "xAxis",
+          "value": "Intensity",
+          "useInput": false
+        },
+        {
+          "key": "yAxis",
+          "value": "Pixel count",
+          "useInput": false
+        }
+      ]
+    },
+    {
+      "id": "node-2",
+      "functionId": "ReadRandom",
+      "x": 77.64972507155571,
+      "y": 121.77107001990923,
       "parameters": [
         {
           "key": "availableMemory",
-          "value": "2147483648UL",
+          "value": "1073741824",
           "useInput": false
         },
         {
@@ -18,31 +56,84 @@
           "useInput": false
         },
         {
+          "key": "format",
+          "value": "Image stack",
+          "useInput": false
+        },
+        {
+          "key": "depth",
+          "value": "10",
+          "useInput": false
+        },
+        {
           "key": "input",
-          "value": "../image18",
+          "value": "../data/volume",
           "useInput": false
         },
         {
           "key": "suffix",
           "value": ".tiff",
           "useInput": false
+        },
+        {
+          "key": "slabDepth",
+          "value": "1",
+          "useInput": false
+        },
+        {
+          "key": "multiscaleIndex",
+          "value": "0",
+          "useInput": false
+        },
+        {
+          "key": "datasetIndex",
+          "value": "0",
+          "useInput": false
+        },
+        {
+          "key": "timepoint",
+          "value": "0",
+          "useInput": false
+        },
+        {
+          "key": "channel",
+          "value": "0",
+          "useInput": false
+        },
+        {
+          "key": "maxParallelChunks",
+          "value": "0",
+          "useInput": false
+        },
+        {
+          "key": "datasetPath",
+          "value": "/entry/data/data",
+          "useInput": false
+        },
+        {
+          "key": "frameAxis",
+          "value": "0",
+          "useInput": false
+        },
+        {
+          "key": "yAxis",
+          "value": "1",
+          "useInput": false
+        },
+        {
+          "key": "xAxis",
+          "value": "2",
+          "useInput": false
         }
       ]
-    },
-    {
-      "id": "n2",
-      "functionId": "Histogram",
-      "x": 260.0,
-      "y": 120.0,
-      "parameters": []
     }
   ],
   "edges": [
     {
-      "fromNode": "n1",
+      "fromNode": "node-2",
       "fromKind": "dataOutput",
       "fromPort": 0,
-      "toNode": "n2",
+      "toNode": "node-1",
       "toKind": "dataInput",
       "toPort": 0
     }

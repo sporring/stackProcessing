@@ -40,6 +40,8 @@ let showChart = StackCharts.showChart
 let showChartWithLabels = StackCharts.showChartWithLabels
 let showChartXY = StackCharts.showChartXY
 let showChartXYWithLabels = StackCharts.showChartXYWithLabels
+let showImage = StackCharts.showImage
+let showImageWithLabels = StackCharts.showImageWithLabels
 
 // //////////////////// StackIO
 type FileInfo = ImageFunctions.FileInfo
@@ -89,6 +91,7 @@ let readFilePairs<'T when 'T: equality> = StackIO.readFilePairs<'T>
 let readFiltered<'T when 'T: equality> = StackIO.readFiltered<'T>
 let read<'T when 'T: equality> = StackIO.read<'T>
 let readVolume<'T when 'T: equality> = StackIO.readVolume<'T>
+let readVolumeRandom<'T when 'T: equality> = StackIO.readVolumeRandom<'T>
 let readRandom<'T when 'T: equality> = StackIO.readRandom<'T>
 let readRange<'T when 'T: equality> = StackIO.readRange<'T>
 let getChunkInfo = StackIO.getChunkInfo
@@ -100,8 +103,10 @@ let readSlabAsWindows<'T when 'T: equality> = StackIO.readSlabAsWindows<'T>
 let readSlab<'T when 'T: equality> = StackIO.readSlab<'T>
 let readZarrSlabStacked<'T when 'T: equality> = StackIO.readZarrSlabStacked<'T>
 let readZarrSlab<'T when 'T: equality> = StackIO.readZarrSlab<'T>
+let readZarrRandom<'T when 'T: equality> = StackIO.readZarrRandom<'T>
 let readNexusSlabStacked<'T when 'T: equality> = StackIO.readNexusSlabStacked<'T>
 let readNexusSlab<'T when 'T: equality> = StackIO.readNexusSlab<'T>
+let readNexusRandom<'T when 'T: equality> = StackIO.readNexusRandom<'T>
 let readPointSet = StackPoints.readPointSet
 let coordinateX = StackBias.coordinateX
 let coordinateY = StackBias.coordinateY

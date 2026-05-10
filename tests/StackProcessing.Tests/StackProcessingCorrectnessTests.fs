@@ -404,6 +404,26 @@ let stackProcessingCorrectnessSuite =
             finally
                 volume.decRefCount()
 
+        testCase "streamed finiteDiff with xy direction keeps singleton-z kernels slice-local" <| fun _ ->
+            let suffix = ".mha"
+            let volume = makeFloat64Volume 8
+
+            try
+                assertStreamingMatchesDirect
+                    "finite-diff-x"
+                    suffix
+                    1.0e-8
+                    volume
+                    (finiteDiff 0u 2u)
+                    (fun input ->
+                        let finiteKernel = ImageFunctions.finiteDiffFilter3D 0u 2u
+                        try
+                            ImageFunctions.conv input finiteKernel
+                        finally
+                            finiteKernel.decRefCount())
+            finally
+                volume.decRefCount()
+
         testCase "streamed binary dilation matches direct 3D binary dilation" <| fun _ ->
             let suffix = ".tiff"
             let volume = makeBinaryVolume 14

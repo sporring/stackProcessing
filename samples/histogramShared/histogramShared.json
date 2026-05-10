@@ -3,62 +3,85 @@
   "nodes": [
     {
       "id": "node-1",
-      "functionId": "Read",
-      "x": 40.0,
-      "y": 160.0,
+      "functionId": "HistogramData",
+      "x": 342.40953544028304,
+      "y": 124.4240384327974,
       "parameters": [
         {
-          "key": "availableMemory",
-          "value": "2147483648UL",
+          "key": "firstLeftEdge",
+          "value": "0.0",
           "useInput": false
         },
         {
-          "key": "type",
-          "value": "UInt8",
+          "key": "lastLeftEdge",
+          "value": "255.0",
           "useInput": false
         },
         {
-          "key": "input",
-          "value": "../image18",
-          "useInput": false
-        },
-        {
-          "key": "suffix",
-          "value": ".tiff",
+          "key": "bins",
+          "value": "256",
           "useInput": false
         }
       ]
     },
     {
       "id": "node-2",
-      "functionId": "HistogramData",
-      "x": 280.0,
-      "y": 160.0,
-      "parameters": []
-    },
-    {
-      "id": "node-3",
       "functionId": "Print",
-      "x": 540.0,
-      "y": 80.0,
+      "x": 421.4094768157926,
+      "y": 220.14359107814133,
       "parameters": [
         {
           "key": "format",
-          "value": "{input1}",
+          "value": "{Map}",
           "useInput": false
         },
         {
           "key": "input1",
-          "value": "input1",
+          "value": "Map",
           "useInput": true
+        },
+        {
+          "key": "input2",
+          "value": "input2",
+          "useInput": false
+        },
+        {
+          "key": "input3",
+          "value": "input3",
+          "useInput": false
+        },
+        {
+          "key": "input4",
+          "value": "input4",
+          "useInput": false
+        },
+        {
+          "key": "input5",
+          "value": "input5",
+          "useInput": false
+        },
+        {
+          "key": "input6",
+          "value": "input6",
+          "useInput": false
+        },
+        {
+          "key": "input7",
+          "value": "input7",
+          "useInput": false
+        },
+        {
+          "key": "input8",
+          "value": "input8",
+          "useInput": false
         }
       ]
     },
     {
-      "id": "node-4",
+      "id": "node-3",
       "functionId": "Chart",
-      "x": 540.0,
-      "y": 240.0,
+      "x": 262.5451125216716,
+      "y": 220.13174325141975,
       "parameters": [
         {
           "key": "kind",
@@ -68,6 +91,109 @@
         {
           "key": "input",
           "value": "map",
+          "useInput": true
+        },
+        {
+          "key": "title",
+          "value": "",
+          "useInput": false
+        },
+        {
+          "key": "xAxis",
+          "value": "",
+          "useInput": false
+        },
+        {
+          "key": "yAxis",
+          "value": "",
+          "useInput": false
+        }
+      ]
+    },
+    {
+      "id": "node-4",
+      "functionId": "ReadRandom",
+      "x": 185.22364250047056,
+      "y": 123.89450985692761,
+      "parameters": [
+        {
+          "key": "availableMemory",
+          "value": "1073741824",
+          "useInput": false
+        },
+        {
+          "key": "type",
+          "value": "UInt8",
+          "useInput": false
+        },
+        {
+          "key": "format",
+          "value": "Image stack",
+          "useInput": false
+        },
+        {
+          "key": "depth",
+          "value": "10",
+          "useInput": false
+        },
+        {
+          "key": "input",
+          "value": "../data/volume",
+          "useInput": false
+        },
+        {
+          "key": "suffix",
+          "value": ".tiff",
+          "useInput": false
+        },
+        {
+          "key": "slabDepth",
+          "value": "1",
+          "useInput": false
+        },
+        {
+          "key": "multiscaleIndex",
+          "value": "0",
+          "useInput": false
+        },
+        {
+          "key": "datasetIndex",
+          "value": "0",
+          "useInput": false
+        },
+        {
+          "key": "timepoint",
+          "value": "0",
+          "useInput": false
+        },
+        {
+          "key": "channel",
+          "value": "0",
+          "useInput": false
+        },
+        {
+          "key": "maxParallelChunks",
+          "value": "0",
+          "useInput": false
+        },
+        {
+          "key": "datasetPath",
+          "value": "/entry/data/data",
+          "useInput": false
+        },
+        {
+          "key": "frameAxis",
+          "value": "0",
+          "useInput": false
+        },
+        {
+          "key": "yAxis",
+          "value": "1",
+          "useInput": false
+        },
+        {
+          "key": "xAxis",
+          "value": "2",
           "useInput": false
         }
       ]
@@ -76,14 +202,14 @@
   "edges": [
     {
       "fromNode": "node-1",
-      "fromKind": "dataOutput",
+      "fromKind": "reducerOutput",
       "fromPort": 0,
       "toNode": "node-2",
-      "toKind": "dataInput",
-      "toPort": 0
+      "toKind": "parameterInput",
+      "toPort": 1
     },
     {
-      "fromNode": "node-2",
+      "fromNode": "node-1",
       "fromKind": "reducerOutput",
       "fromPort": 0,
       "toNode": "node-3",
@@ -91,12 +217,12 @@
       "toPort": 1
     },
     {
-      "fromNode": "node-2",
-      "fromKind": "reducerOutput",
+      "fromNode": "node-4",
+      "fromKind": "dataOutput",
       "fromPort": 0,
-      "toNode": "node-4",
-      "toKind": "parameterInput",
-      "toPort": 1
+      "toNode": "node-1",
+      "toKind": "dataInput",
+      "toPort": 0
     }
   ]
 }

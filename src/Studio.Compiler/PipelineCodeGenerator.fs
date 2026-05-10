@@ -420,14 +420,20 @@ module PipelineCodeGenerator =
 
     let private isWriteStackInfoNode (node: SavedNode) =
         node.FunctionId = "Write"
+        && savedParamValue "format" node <> "OME-Zarr"
+        && savedParamValue "format" node <> "NeXus/HDF5"
+
+    let private isWriteChunkInfoNode (node: SavedNode) =
+        node.FunctionId = "Write"
+        && (savedParamValue "format" node = "OME-Zarr" || savedParamValue "format" node = "NeXus/HDF5")
 
     let private readFormat (node: SavedNode) =
         savedParamValue "format" node
 
     let private isReadStackInfoNode (node: SavedNode) =
         match node.FunctionId with
-        | "Read" -> readFormat node <> "OME-Zarr" && readFormat node <> "NeXus/HDF5"
-        | "ReadRandom"
+        | "Read"
+        | "ReadRandom" -> readFormat node <> "OME-Zarr" && readFormat node <> "NeXus/HDF5"
         | "ReadRange" -> true
         | _ -> false
 
@@ -436,7 +442,8 @@ module PipelineCodeGenerator =
 
     let private isReadChunkInfoNode (node: SavedNode) =
         match node.FunctionId with
-        | "Read" -> readFormat node = "OME-Zarr" || readFormat node = "NeXus/HDF5"
+        | "Read"
+        | "ReadRandom" -> readFormat node = "OME-Zarr" || readFormat node = "NeXus/HDF5"
         | "ReadSlab" -> true
         | _ -> false
 
@@ -871,11 +878,11 @@ module PipelineCodeGenerator =
             "$\"" + builder.ToString() + "\""
 
         let histogramStageExpression () =
-            let hasGraphInput key =
+            let hasParameter key =
                 node.Parameters
-                |> Seq.exists (fun parameter -> parameter.Key = key && parameter.UseInput)
+                |> Seq.exists (fun parameter -> parameter.Key = key)
 
-            if [ "firstLeftEdge"; "lastLeftEdge"; "bins" ] |> List.exists hasGraphInput then
+            if [ "firstLeftEdge"; "lastLeftEdge"; "bins" ] |> List.forall hasParameter then
                 let firstLeftEdge = parameterValue "firstLeftEdge"
                 let lastLeftEdge = parameterValue "lastLeftEdge"
                 let bins = parameterValue "bins"
@@ -985,10 +992,29 @@ module PipelineCodeGenerator =
         | "ReadRandom" ->
             let availableMemory = parameterValue "availableMemory"
             let pixelType = pixelTypeNameFromParameter "type" "Float64" node
+            let format = savedParamValue "format" node
             let depth = parameterValue "depth"
             let input = quotedParameter "input"
-            let suffix = quotedParameter "suffix"
-            $"|> readRandom<{pixelType}> {depth} {input} {suffix}" |> sourcePrefix availableMemory
+            let suffix = quotedParameterOrDefault "suffix" ".tiff"
+            match format with
+            | "Volume file" ->
+                let volumeInput = $"(volumeFilePath {input} {suffix})"
+                $"|> readVolumeRandom<{pixelType}> {depth} {volumeInput}" |> sourcePrefix availableMemory
+            | "OME-Zarr" ->
+                let multiscaleIndex = parameterValue "multiscaleIndex"
+                let datasetIndex = parameterValue "datasetIndex"
+                let timepoint = parameterValue "timepoint"
+                let channel = parameterValue "channel"
+                let maxParallelChunks = parameterValue "maxParallelChunks"
+                $"|> readZarrRandom<{pixelType}> {depth} {input} {multiscaleIndex} {datasetIndex} {timepoint} {channel} {maxParallelChunks}" |> sourcePrefix availableMemory
+            | "NeXus/HDF5" ->
+                let datasetPath = quotedParameter "datasetPath"
+                let frameAxis = parameterValue "frameAxis"
+                let yAxis = parameterValue "yAxis"
+                let xAxis = parameterValue "xAxis"
+                $"|> readNexusRandom<{pixelType}> {depth} {input} {datasetPath} {frameAxis} {yAxis} {xAxis}" |> sourcePrefix availableMemory
+            | _ ->
+                $"|> readRandom<{pixelType}> {depth} {input} {suffix}" |> sourcePrefix availableMemory
         | "EstimateHistogram" ->
             let availableMemory = parameterValue "availableMemory"
             let pixelType = pixelTypeNameFromParameter "type" "Float64" node
@@ -1082,21 +1108,36 @@ module PipelineCodeGenerator =
             let chunkY = parameterValue "chunkY"
             let chunkZ = parameterValue "chunkZ"
             $">=> writeInSlabs {output} {suffix} {chunkX} {chunkY} {chunkZ}"
-        | "WriteZarr" ->
+        | "Write" ->
+            let format = savedParamValue "format" node
             let output = quotedParameter "output"
-            let name = quotedParameter "name"
-            let depth = parameterValue "depth"
-            let chunkX = parameterValue "chunkX"
-            let chunkY = parameterValue "chunkY"
-            let chunkZ = parameterValue "chunkZ"
-            let physicalSizeX = parameterValue "physicalSizeX"
-            let physicalSizeY = parameterValue "physicalSizeY"
-            let physicalSizeZ = parameterValue "physicalSizeZ"
-            let maxConcurrentWrites = parameterValue "maxConcurrentWrites"
-            $">=> writeZarr {output} {name} {depth} {chunkX} {chunkY} {chunkZ} {physicalSizeX} {physicalSizeY} {physicalSizeZ} {maxConcurrentWrites}"
-        | "WriteVolume" ->
-            let output = quotedParameter "output"
-            $">=> writeVolume {output}"
+            let suffix = quotedParameterOrDefault "suffix" ".tiff"
+            match format with
+            | "Volume file" ->
+                $">=> writeVolume (volumeFilePath {output} {suffix})"
+            | "OME-Zarr" ->
+                let name = quotedParameter "name"
+                let depth = parameterValue "depth"
+                let chunkX = parameterValue "chunkX"
+                let chunkY = parameterValue "chunkY"
+                let chunkZ = parameterValue "chunkZ"
+                let physicalSizeX = parameterValue "physicalSizeX"
+                let physicalSizeY = parameterValue "physicalSizeY"
+                let physicalSizeZ = parameterValue "physicalSizeZ"
+                let maxConcurrentWrites = parameterValue "maxConcurrentWrites"
+                $">=> writeZarr {output} {name} {depth} {chunkX} {chunkY} {chunkZ} {physicalSizeX} {physicalSizeY} {physicalSizeZ} {maxConcurrentWrites}"
+            | "NeXus/HDF5" ->
+                let datasetPath = quotedParameter "datasetPath"
+                let depth = parameterValue "depth"
+                let chunkX = parameterValue "chunkX"
+                let chunkY = parameterValue "chunkY"
+                let chunkZ = parameterValue "chunkZ"
+                let frameAxis = parameterValue "frameAxis"
+                let yAxis = parameterValue "yAxis"
+                let xAxis = parameterValue "xAxis"
+                $">=> writeNexus {output} {datasetPath} {depth} {chunkX} {chunkY} {chunkZ} {frameAxis} {yAxis} {xAxis}"
+            | _ ->
+                $">=> write {output} {suffix}"
         | "WriteMesh" ->
             let output = quotedParameter "output"
             let format = quotedParameter "format"
@@ -1115,17 +1156,6 @@ module PipelineCodeGenerator =
             | "Matrix" -> $">=> writeCSVMatrix {output}"
             | "Histogram" -> $">=> writeCSVHistogram {output}"
             | _ -> $">=> writeCSVPointSet {output}"
-        | "WriteNexus" ->
-            let output = quotedParameter "output"
-            let datasetPath = quotedParameter "datasetPath"
-            let depth = parameterValue "depth"
-            let chunkX = parameterValue "chunkX"
-            let chunkY = parameterValue "chunkY"
-            let chunkZ = parameterValue "chunkZ"
-            let frameAxis = parameterValue "frameAxis"
-            let yAxis = parameterValue "yAxis"
-            let xAxis = parameterValue "xAxis"
-            $">=> writeNexus {output} {datasetPath} {depth} {chunkX} {chunkY} {chunkZ} {frameAxis} {yAxis} {xAxis}"
         | "WriteThrough" ->
             let output = quotedParameter "output"
             let suffix = quotedParameter "suffix"
@@ -1230,7 +1260,11 @@ module PipelineCodeGenerator =
             let yAxis = quotedParameter "yAxis"
             $"showChartWithLabels {quote kind} {title} {xAxis} {yAxis} {values}"
         | "ShowImage" ->
-            ">=> show showImagePlot"
+            let colorMap = quotedParameter "colorMap"
+            let title = quotedParameter "title"
+            let xAxis = quotedParameter "xAxis"
+            let yAxis = quotedParameter "yAxis"
+            $">=> show (showImageWithLabels {colorMap} {title} {xAxis} {yAxis})"
         | "SumProjection" ->
             let pixelType = pixelTypeNameFromParameter "type" "Float64" node
             let functionName = savedParamValue "function" node
@@ -1303,9 +1337,9 @@ module PipelineCodeGenerator =
             let windowSize = parameterValue "windowSize" |> optionUInt
             $">=> convolve {kernel} {outputRegionMode} {boundaryCondition} {windowSize}"
         | "FiniteDiff" ->
-            let axis1 = parameterValue "axis1"
-            let axis2 = parameterValue "axis2"
-            $">=> finiteDiff {axis1} {axis2}"
+            let direction = parameterValue "direction"
+            let order = parameterValue "order"
+            $">=> finiteDiff {direction} {order}"
         | "Clamp" ->
             let pixelType = pixelTypeNameFromParameter "type" "Float64" node
             let lower = parameterValue "lower"
@@ -1632,10 +1666,6 @@ module PipelineCodeGenerator =
             let sourceType = pixelTypeNameFromParameter "sourceType" "Float64" node
             let targetType = pixelTypeNameFromParameter "targetType" "Float64" node
             $">=> cast<{sourceType},{targetType}>"
-        | "Write" ->
-            let output = quotedParameter "output"
-            let suffix = quotedParameter "suffix"
-            $">=> write {output} {suffix}"
         | _ ->
             $"// Unsupported element: {node.FunctionId}"
 
@@ -1802,7 +1832,7 @@ module PipelineCodeGenerator =
             |> Array.distinctBy _.Id
 
         let chunkInfoExpandNodesWithLinkedOutputs =
-            expandNodesFor (fun node -> isChunkInfoNode node || isReadChunkInfoNode node)
+            expandNodesFor (fun node -> isChunkInfoNode node || isReadChunkInfoNode node || isWriteChunkInfoNode node)
 
         let chunkInfoProducerNodesForExpand =
             chunkInfoExpandNodesWithLinkedOutputs
@@ -1816,7 +1846,7 @@ module PipelineCodeGenerator =
                     nodesById |> Map.tryFind edge.FromNode
                 else
                     None)
-            |> Array.filter (fun node -> isChunkInfoNode node || isReadChunkInfoNode node)
+            |> Array.filter (fun node -> isChunkInfoNode node || isReadChunkInfoNode node || isWriteChunkInfoNode node)
             |> Array.distinctBy _.Id
 
         let chunkInfoProducerNodesWithLinkedOutputs =
@@ -2132,14 +2162,11 @@ module PipelineCodeGenerator =
                 match node.FunctionId with
                 | "Write"
                 | "WriteThrough"
-                | "WriteVolume"
                 | "WriteInSlabs"
-                | "WriteZarr"
                 | "WriteMesh"
                 | "WritePointSet"
                 | "WriteMatrix"
                 | "WriteCSV"
-                | "WriteNexus"
                 | "Histogram"
                 | "ShowImage" ->
                     $"{expression}{newLine}|> sink"
@@ -2335,7 +2362,33 @@ module PipelineCodeGenerator =
                             { Name = name
                               Dependencies = parameterBindingDependencies node |> Set.remove name
                               Text = text }
-                        | "ReadRandom"
+                        | "ReadRandom" ->
+                            let name = stackInfoNamesByNodeId |> Map.find node.Id
+                            let parameter key =
+                                node.Parameters
+                                |> Seq.tryFindIndex (fun parameter -> parameter.Key = key)
+                                |> Option.map (fun index -> parameterExpression graph nodesById scalarNamesByNodeId statsNamesByNodeId translationTableNamesByNodeId histogramNamesByNodeId quantileNamesByNodeId stackInfoNamesByNodeId chunkInfoNamesByNodeId serialGeometryNamesByNodeId node index key)
+                                |> Option.defaultValue { Value = savedParamValue key node; IsLinked = false }
+                            let stringArgument key =
+                                let expression = parameter key
+                                if expression.IsLinked then expression.Value else quote expression.Value
+                            let stringArgumentOrDefault key fallback =
+                                let expression = parameter key
+                                if expression.IsLinked then expression.Value
+                                elif String.IsNullOrWhiteSpace expression.Value then quote fallback
+                                else quote expression.Value
+                            let input = stringArgument "input"
+                            let suffix = stringArgumentOrDefault "suffix" ".tiff"
+                            let text =
+                                match savedParamValue "format" node with
+                                | "Volume file" ->
+                                    let volumeInput = $"(volumeFilePath {input} {suffix})"
+                                    $"let {name} = getFileInfo {volumeInput}"
+                                | _ ->
+                                    $"let {name} = getStackInfo {input} {suffix}"
+                            { Name = name
+                              Dependencies = parameterBindingDependencies node |> Set.remove name
+                              Text = text }
                         | "ReadRange" ->
                             let name = stackInfoNamesByNodeId |> Map.find node.Id
                             let parameter key =
@@ -2366,7 +2419,11 @@ module PipelineCodeGenerator =
                             let expression = pipelineExpression Set.empty node
                             let output = stringArgument "output"
                             let suffix = stringArgument "suffix"
-                            let body = indentBlock 4 $"{expression}{newLine}|> sink{newLine}getStackInfo {output} {suffix}"
+                            let infoExpression =
+                                match savedParamValue "format" node with
+                                | "Volume file" -> $"getFileInfo (volumeFilePath {output} {suffix})"
+                                | _ -> $"getStackInfo {output} {suffix}"
+                            let body = indentBlock 4 $"{expression}{newLine}|> sink{newLine}{infoExpression}"
 
                             { Name = name
                               Dependencies =
@@ -2422,6 +2479,7 @@ module PipelineCodeGenerator =
                               Dependencies = parameterBindingDependencies node |> Set.remove name
                               Text = text }
                         | "Read"
+                        | "ReadRandom"
                         | "ReadSlab" ->
                             let name = chunkInfoNamesByNodeId |> Map.find node.Id
                             let input = stringArgument "input"
@@ -2440,6 +2498,30 @@ module PipelineCodeGenerator =
                             { Name = name
                               Dependencies = parameterBindingDependencies node |> Set.remove name
                               Text = text }
+                        | "Write" ->
+                            let name = chunkInfoNamesByNodeId |> Map.find node.Id
+                            let expression = pipelineExpression Set.empty node
+                            let output = stringArgument "output"
+                            let multiscaleIndex = "0"
+                            let datasetIndex = "0"
+                            let datasetPath = stringArgument "datasetPath"
+                            let frameAxis = (parameter "frameAxis").Value
+                            let yAxis = (parameter "yAxis").Value
+                            let xAxis = (parameter "xAxis").Value
+                            let format = savedParamValue "format" node
+                            let infoExpression =
+                                match format with
+                                | "OME-Zarr" -> $"getZarrInfo {output} {multiscaleIndex} {datasetIndex}"
+                                | "NeXus/HDF5" -> $"getNexusInfo {output} {datasetPath} {frameAxis} {yAxis} {xAxis}"
+                                | _ -> failwith $"Write node '{node.Id}' does not produce ChunkInfo for format '{format}'."
+                            let body = indentBlock 4 $"{expression}{newLine}|> sink{newLine}{infoExpression}"
+                            { Name = name
+                              Dependencies =
+                                  Set.union
+                                      (pipelineBindingDependencies Set.empty node)
+                                      (parameterBindingDependencies node)
+                                  |> Set.remove name
+                              Text = $"let {name} ={newLine}{body}" }
                         | _ ->
                             failwith $"Unsupported ChunkInfo producer: {node.FunctionId}")
 
@@ -2489,36 +2571,27 @@ module PipelineCodeGenerator =
             bindings |> Array.iter visit
             ordered |> Seq.toArray
 
-        let hasChart =
-            graph.Nodes |> Array.exists (fun node -> node.FunctionId = "Histogram" || node.FunctionId = "Chart")
-
-        let hasShowImage =
-            graph.Nodes |> Array.exists (fun node -> node.FunctionId = "ShowImage")
-
         builder.AppendLine("open StackProcessing") |> ignore
 
-        if hasShowImage then
-            builder.AppendLine("open Plotly.NET") |> ignore
-
         builder.AppendLine() |> ignore
-
-        if hasShowImage then
-            builder.AppendLine("let showImagePlot image =") |> ignore
-            builder.AppendLine("    ImageFunctions.toSeqSeq image") |> ignore
-            builder.AppendLine("    |> Chart.Heatmap") |> ignore
-            builder.AppendLine("    |> Chart.show") |> ignore
-            builder.AppendLine() |> ignore
 
         let bindings = orderedBindings ()
         let bindingsByName = bindings |> Array.map (fun binding -> binding.Name, binding) |> Map.ofArray
 
         let postRootNames =
-            stackInfoProducerNodesWithLinkedOutputs
-            |> Array.choose (fun node ->
-                if node.FunctionId = "Write" then
-                    stackInfoNamesByNodeId |> Map.tryFind node.Id
-                else
-                    None)
+            Array.append
+                (stackInfoProducerNodesWithLinkedOutputs
+                 |> Array.choose (fun node ->
+                     if node.FunctionId = "Write" then
+                         stackInfoNamesByNodeId |> Map.tryFind node.Id
+                     else
+                         None))
+                (chunkInfoProducerNodesWithLinkedOutputs
+                 |> Array.choose (fun node ->
+                     if node.FunctionId = "Write" then
+                         chunkInfoNamesByNodeId |> Map.tryFind node.Id
+                     else
+                         None))
             |> Set.ofArray
 
         let rec bindingIsPost visited name =
