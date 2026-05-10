@@ -1073,7 +1073,7 @@ let generatorSuite =
                       p "input" "" true
                       p "suffix" ".tiff" false ]
 
-            let expand = node "expand" "StackInfoExpand" []
+            let expand = node "expand" "Expand" []
 
             let print =
                 node "print" "Print"
@@ -1085,14 +1085,14 @@ let generatorSuite =
                 graph
                     [ path; read; expand; print ]
                     [ edge "path" "scalarOutput" 0 "read" "parameterInput" 2
-                      edge "read" "reducerOutput" 1 "expand" "dataInput" 0
+                      edge "read" "reducerOutput" 0 "expand" "dataInput" 0
                       edge "expand" "reducerOutput" 4 "print" "parameterInput" 1
                       edge "expand" "reducerOutput" 6 "print" "parameterInput" 2 ]
                 |> PipelineCodeGenerator.generateSavedGraph
 
             Expect.stringContains code "let StackInfo0 = getStackInfo String0 \".tiff\"" "Read metadata should wrap getStackInfo."
-            Expect.stringContains code "let StackInfoExpand0 = StackInfo0" "StackInfoExpand should alias the read StackInfo value."
-            Expect.stringContains code "printfn $\"{StackInfoExpand0.size[0]} {StackInfoExpand0.size[2]}\"" "Expanded fields should connect naturally to print."
+            Expect.stringContains code "let Expand0 = StackInfo0" "Expand should alias the read StackInfo value."
+            Expect.stringContains code "printfn $\"{Expand0.size[0]} {Expand0.size[2]}\"" "Expanded fields should connect naturally to print."
 
         testCase "write stack info output runs getStackInfo after draining write" <| fun _ ->
             let read =
@@ -1107,7 +1107,7 @@ let generatorSuite =
                     [ p "output" "output" false
                       p "suffix" ".tiff" false ]
 
-            let expand = node "expand" "StackInfoExpand" []
+            let expand = node "expand" "Expand" []
 
             let print =
                 node "print" "Print"
@@ -1128,8 +1128,8 @@ let generatorSuite =
             Expect.stringContains code ">=> write \"output\" \".tiff\"" "The write stage should still write the stream."
             Expect.stringContains code "|> sink" "The write stream should be consumed before StackInfo is read."
             Expect.stringContains code "getStackInfo \"output\" \".tiff\"" "The output stack info should be inspected after writing."
-            Expect.stringContains code "let StackInfoExpand0 = StackInfo0" "StackInfoExpand should alias the upstream StackInfo value."
-            Expect.stringContains code "printfn $\"{StackInfoExpand0.size[0]} {StackInfoExpand0.size[2]}\"" "Expanded fields should connect naturally to print."
+            Expect.stringContains code "let Expand0 = StackInfo0" "Expand should alias the upstream StackInfo value."
+            Expect.stringContains code "printfn $\"{Expand0.size[0]} {Expand0.size[2]}\"" "Expanded fields should connect naturally to print."
 
         testCase "getChunkInfo binds chunk layout fields for scalar outputs" <| fun _ ->
             let info =
@@ -1220,6 +1220,9 @@ let generatorSuite =
             let stats =
                 node "stats" "ComputeStats" []
 
+            let expand =
+                node "expand" "Expand" []
+
             let print =
                 node "print" "Print"
                     [ p "format" "Pixels: {NumPixels}\\nMean: {Mean}" false
@@ -1228,15 +1231,17 @@ let generatorSuite =
 
             let code =
                 graph
-                    [ stats; print ]
-                    [ edge "stats" "reducerOutput" 0 "print" "parameterInput" 1
-                      edge "stats" "reducerOutput" 1 "print" "parameterInput" 2 ]
+                    [ stats; expand; print ]
+                    [ edge "stats" "reducerOutput" 0 "expand" "dataInput" 0
+                      edge "expand" "reducerOutput" 0 "print" "parameterInput" 1
+                      edge "expand" "reducerOutput" 1 "print" "parameterInput" 2 ]
                 |> PipelineCodeGenerator.generateSavedGraph
 
             Expect.stringContains code "let ImageStats0 =" "Linked reducer output should create a stats binding."
-            Expect.stringContains code "{ImageStats0.NumPixels}" "Format placeholder should map to NumPixels expression."
-            Expect.stringContains code "{ImageStats0.Mean}" "Format placeholder should map to Mean expression."
-            Expect.stringContains code $"Pixels: {{ImageStats0.NumPixels}}{System.Environment.NewLine}Mean: {{ImageStats0.Mean}}" "Generated F# string should contain a literal newline."
+            Expect.stringContains code "let Expand0 = ImageStats0" "Expand should alias the ImageStats record."
+            Expect.stringContains code "{Expand0.NumPixels}" "Format placeholder should map to NumPixels expression."
+            Expect.stringContains code "{Expand0.Mean}" "Format placeholder should map to Mean expression."
+            Expect.stringContains code $"Pixels: {{Expand0.NumPixels}}{System.Environment.NewLine}Mean: {{Expand0.Mean}}" "Generated F# string should contain a literal newline."
 
         testCase "image op image lowers selected operation to pair stage" <| fun _ ->
             let assertOperation operation expectedPairFunction =

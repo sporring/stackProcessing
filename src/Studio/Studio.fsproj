@@ -26,6 +26,8 @@
   <ItemGroup>
     <ProjectReference Include="../Studio.Graph/Studio.Graph.fsproj" />
     <ProjectReference Include="../Studio.Compiler/Studio.Compiler.fsproj" />
+    <ProjectReference Include="../Image/Image.fsproj" />
+    <ProjectReference Include="../StackProcessing.Core/StackProcessing.Core.fsproj" />
     <ProjectReference Include="../Avalonia.Controls.PanAndZoom.Compat/Avalonia.Controls.PanAndZoom.Compat.csproj" />
     <ProjectReference Include="../Avalonia.Xaml.Interactivity.Compat/Avalonia.Xaml.Interactivity.Compat.csproj" />
     <ProjectReference Include="../Avalonia.Xaml.Interactions.DragAndDrop.Compat/Avalonia.Xaml.Interactions.DragAndDrop.Compat.csproj" />

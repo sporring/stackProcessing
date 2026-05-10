@@ -183,6 +183,14 @@ type Port =
       Type: PortType }
 
 module PortType =
+    let isRecordType portType =
+        match portType with
+        | Custom "Record"
+        | Custom "ImageStats"
+        | Custom "StackInfo"
+        | Custom "ChunkInfo" -> true
+        | _ -> false
+
     let numericToImage (tp:NumericType) : PortType = 
         match tp with
         | Number -> PortType.Image(NumericType.Float64)
@@ -202,6 +210,7 @@ module PortType =
         match outputType, inputType with
         | Any, _
         | _, Any -> true
+        | outputType, Custom "Record" when isRecordType outputType -> true
         | Image _, Image Number -> true
         | Image Number, Image _ -> true
         | _ -> outputType = inputType

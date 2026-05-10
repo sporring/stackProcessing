@@ -180,6 +180,15 @@ let rec private sourceFor caseId portType =
           NodeId = model.Id
           Kind = "reducerOutput"
           Port = 0 }
+    | PortType.Custom "ImageStats" ->
+        let image = imageSource $"{caseId}_stats_image" NumericType.Float64
+        let stats = node $"source_{caseId}_stats" "ComputeStats" []
+
+        { Nodes = image.Nodes @ [ stats ]
+          Edges = image.Edges @ [ edge image.NodeId image.Kind image.Port stats.Id "input" 0 ]
+          NodeId = stats.Id
+          Kind = "reducerOutput"
+          Port = 0 }
     | PortType.Custom "SerialSliceManifest" ->
         let image = imageSource $"{caseId}_manifest_image" NumericType.Float64
         let manifest =
@@ -231,17 +240,22 @@ let rec private sourceFor caseId portType =
           Port = 0 }
     | PortType.Custom "ChunkInfo" ->
         let read =
-            node $"source_{caseId}_chunk_info_read" "ReadSlab"
+            node $"source_{caseId}_chunk_info_read" "ReadZarrSlab"
                 [ p "availableMemory" "1073741824" false
                   p "type" "UInt8" false
-                  p "input" "chunks" false
-                  p "suffix" ".tiff" false ]
+                  p "input" "input.zarr" false
+                  p "slabDepth" "8" false
+                  p "multiscaleIndex" "0" false
+                  p "datasetIndex" "0" false
+                  p "timepoint" "0" false
+                  p "channel" "0" false
+                  p "maxParallelChunks" "0" false ]
 
         { Nodes = [ read ]
           Edges = []
           NodeId = read.Id
           Kind = "reducerOutput"
-          Port = 1 }
+          Port = 0 }
     | PortType.Scalar BasicType.Map ->
         let image = imageSource $"{caseId}_histogram_image" NumericType.Float64
         let histogram = node $"source_{caseId}_histogram" "HistogramData" []
@@ -289,8 +303,7 @@ let private outputKindFor functionId portType =
     | "AffineRegistration"
     | "FitBiasModel"
     | "FitBiasModelMasked"
-    | "StackInfoExpand"
-    | "ChunkInfoExpand"
+    | "Expand"
     | "GetChunkInfo"
     | "GetZarrInfo"
     | "GetNexusInfo"
@@ -302,6 +315,7 @@ let private outputKindFor functionId portType =
     | _ ->
         match portType with
         | PortType.Scalar _
+        | PortType.Custom "ImageStats"
         | PortType.Custom "TranslationTable"
         | PortType.Custom "StackInfo"
         | PortType.Custom "SerialVolumeGeometry" -> "reducerOutput"
@@ -339,15 +353,20 @@ let private sinkFor caseId functionId portType =
         [ edge $"target_{caseId}" targetKind 0 $"sink_{caseId}_paint" "input" 0
           edge $"sink_{caseId}_paint" "output" 0 $"sink_{caseId}_write" "input" 0 ]
     | PortType.Custom "StackInfo" ->
-        [ node $"sink_{caseId}_expand" "StackInfoExpand" []
+        [ node $"sink_{caseId}_expand" "Expand" []
           node $"sink_{caseId}_print" "Print" [ p "format" "{input1}" false; p "input1" "" true ] ],
         [ edge $"target_{caseId}" targetKind 0 $"sink_{caseId}_expand" "input" 0
           edge $"sink_{caseId}_expand" "reducerOutput" 4 $"sink_{caseId}_print" "parameterInput" 1 ]
     | PortType.Custom "ChunkInfo" ->
-        [ node $"sink_{caseId}_expand" "ChunkInfoExpand" []
+        [ node $"sink_{caseId}_expand" "Expand" []
           node $"sink_{caseId}_print" "Print" [ p "format" "{input1}" false; p "input1" "" true ] ],
         [ edge $"target_{caseId}" targetKind 0 $"sink_{caseId}_expand" "input" 0
           edge $"sink_{caseId}_expand" "reducerOutput" 4 $"sink_{caseId}_print" "parameterInput" 1 ]
+    | PortType.Custom "ImageStats" ->
+        [ node $"sink_{caseId}_expand" "Expand" []
+          node $"sink_{caseId}_print" "Print" [ p "format" "{input1}" false; p "input1" "" true ] ],
+        [ edge $"target_{caseId}" targetKind 0 $"sink_{caseId}_expand" "input" 0
+          edge $"sink_{caseId}_expand" "reducerOutput" 1 $"sink_{caseId}_print" "parameterInput" 1 ]
     | PortType.Tuple _ ->
         [ node $"sink_{caseId}_table" "ComponentTranslationTable" [ p "windowSize" "3" false ] ],
         [ edge $"target_{caseId}" targetKind 0 $"sink_{caseId}_table" "input" 0 ]
@@ -572,6 +591,7 @@ let smokeSuite =
         testCase "catalog box graphs compile as F#" <| fun _ ->
             let cases =
                 BuiltInCatalog.orderedFunctions
+                |> List.filter (fun definition -> definition.Id <> "Expand")
                 |> List.mapi (fun index definition ->
                     let name =
                         definition.Id

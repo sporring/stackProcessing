@@ -135,14 +135,14 @@ let viewModelSuite =
             Expect.isFalse scaleParameter.IsValueEnabled "Scale should be inactive for SSD affine."
             Expect.isTrue pixelFractionParameter.IsValueEnabled "Pixel fraction should be active for SSD affine."
 
-        testCase "stack info expand accepts stack info on top edge" <| fun _ ->
+        testCase "expand accepts records on top edge" <| fun _ ->
             let vm = MainWindowViewModel()
             vm.SetDrawingSize(1200.0, 800.0)
-            vm.AddElement("StackInfoExpand")
+            vm.AddElement("Expand")
 
             let info =
                 pipelineNodes vm
-                |> Seq.find (fun node -> node.State.Definition.Id = "StackInfoExpand")
+                |> Seq.find (fun node -> node.State.Definition.Id = "Expand")
 
             let inputPin =
                 info.Pins
@@ -151,27 +151,44 @@ let viewModelSuite =
                     | _ -> None)
                 |> Seq.exactlyOne
 
-            Expect.equal inputPin.Alignment PinAlignment.Top "StackInfoExpand should place the StackInfo input on the top edge."
+            Expect.equal inputPin.Alignment PinAlignment.Top "Expand should place the record input on the top edge."
             Expect.floatClose Accuracy.high inputPin.X (info.Width / 2.0) "The top input should be horizontally centered."
             Expect.floatClose Accuracy.high inputPin.Y 0.0 "The top input should sit on the top edge."
 
-        testCase "chunk info expand accepts chunk info on top edge" <| fun _ ->
+        testCase "imported expand adapts output ports from connected record type" <| fun _ ->
             let vm = MainWindowViewModel()
             vm.SetDrawingSize(1200.0, 800.0)
-            vm.AddElement("ChunkInfoExpand")
 
-            let info =
+            let read =
+                node "read" "Read"
+                    [ p "availableMemory" "1073741824" false
+                      p "type" "UInt8" false
+                      p "input" "input" false
+                      p "suffix" ".tiff" false ]
+
+            let expand =
+                node "expand" "Expand" []
+
+            vm.ImportGraph(
+                graph
+                    [ read; expand ]
+                    [ edge "read" "reducerOutput" 0 "expand" "dataInput" 0 ])
+
+            let expandNode =
                 pipelineNodes vm
-                |> Seq.find (fun node -> node.State.Definition.Id = "ChunkInfoExpand")
+                |> Seq.find (fun node -> node.State.Definition.Id = "Expand")
 
-            let inputPin =
-                info.Pins
+            let outputPins =
+                expandNode.Pins
                 |> Seq.choose (function
-                    | :? PipelinePinViewModel as pin when pin.Kind = DataInput -> Some pin
+                    | :? PipelinePinViewModel as pin when pin.Kind = ReducerOutput -> Some pin
                     | _ -> None)
-                |> Seq.exactlyOne
+                |> Seq.toList
 
-            Expect.equal inputPin.Alignment PinAlignment.Top "ChunkInfoExpand should place the ChunkInfo input on the top edge."
-            Expect.floatClose Accuracy.high inputPin.X (info.Width / 2.0) "The top input should be horizontally centered."
-            Expect.floatClose Accuracy.high inputPin.Y 0.0 "The top input should sit on the top edge."
+            Expect.equal expandNode.State.RecordType (Some (PortType.Custom "StackInfo")) "Expand should remember the connected record type."
+            Expect.equal outputPins.Length 7 "Expand should expose the StackInfo fields once it is connected to StackInfo."
+            Expect.sequenceEqual
+                (outputPins |> List.map _.Port.Name)
+                [ "Dimensions: UInt32"; "Size: UInt64 list"; "ComponentType: String"; "NumberOfComponents: UInt32"; "Width: UInt64"; "Height: UInt64"; "Depth: UInt64" ]
+                "StackInfo fields should appear as reducer outputs."
     ]

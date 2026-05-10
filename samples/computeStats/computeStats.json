@@ -154,6 +154,13 @@
           "useInput": false
         }
       ]
+    },
+    {
+      "id": "node-6",
+      "functionId": "Expand",
+      "x": 350,
+      "y": 267,
+      "parameters": []
     }
   ],
   "edges": [
@@ -161,12 +168,20 @@
       "fromNode": "node-2",
       "fromKind": "reducerOutput",
       "fromPort": 0,
+      "toNode": "node-6",
+      "toKind": "dataInput",
+      "toPort": 0
+    },
+    {
+      "fromNode": "node-6",
+      "fromKind": "reducerOutput",
+      "fromPort": 0,
       "toNode": "node-3",
       "toKind": "parameterInput",
       "toPort": 1
     },
     {
-      "fromNode": "node-2",
+      "fromNode": "node-6",
       "fromKind": "reducerOutput",
       "fromPort": 1,
       "toNode": "node-3",
@@ -174,7 +189,7 @@
       "toPort": 2
     },
     {
-      "fromNode": "node-2",
+      "fromNode": "node-6",
       "fromKind": "reducerOutput",
       "fromPort": 2,
       "toNode": "node-3",
@@ -182,7 +197,7 @@
       "toPort": 3
     },
     {
-      "fromNode": "node-2",
+      "fromNode": "node-6",
       "fromKind": "reducerOutput",
       "fromPort": 3,
       "toNode": "node-3",
@@ -190,7 +205,7 @@
       "toPort": 4
     },
     {
-      "fromNode": "node-2",
+      "fromNode": "node-6",
       "fromKind": "reducerOutput",
       "fromPort": 4,
       "toNode": "node-3",
@@ -198,7 +213,7 @@
       "toPort": 5
     },
     {
-      "fromNode": "node-2",
+      "fromNode": "node-6",
       "fromKind": "reducerOutput",
       "fromPort": 5,
       "toNode": "node-3",
@@ -206,7 +221,7 @@
       "toPort": 6
     },
     {
-      "fromNode": "node-2",
+      "fromNode": "node-6",
       "fromKind": "reducerOutput",
       "fromPort": 6,
       "toNode": "node-3",

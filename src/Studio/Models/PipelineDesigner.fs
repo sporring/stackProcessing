@@ -82,6 +82,7 @@ type PipelineNodeState(definition: Function, parameters: PipelineParameterViewMo
     inherit ObservableObject()
 
     let mutable title = definition.DisplayName
+    let mutable recordType: PortType option = None
     let mutable isPaletteDragOutside = false
     let mutable isProblemHighlighted = false
     let mutable isSelected = false
@@ -91,6 +92,10 @@ type PipelineNodeState(definition: Function, parameters: PipelineParameterViewMo
     member _.Summary = definition.Summary
     member _.Description = definition.Description
     member _.HasDescription = not (System.String.IsNullOrWhiteSpace definition.Description)
+
+    member this.RecordType
+        with get () = recordType
+        and set v = this.SetProperty(&recordType, v) |> ignore
 
     member this.Title
         with get () = title

@@ -242,6 +242,13 @@
           "useInput": true
         }
       ]
+    },
+    {
+      "id": "node-12",
+      "functionId": "Expand",
+      "x": 316.87109375,
+      "y": 205.0693359375,
+      "parameters": []
     }
   ],
   "edges": [
@@ -280,13 +287,21 @@
     {
       "fromNode": "node-3",
       "fromKind": "reducerOutput",
+      "fromPort": 0,
+      "toNode": "node-12",
+      "toKind": "dataInput",
+      "toPort": 0
+    },
+    {
+      "fromNode": "node-12",
+      "fromKind": "reducerOutput",
       "fromPort": 3,
       "toNode": "node-8",
       "toKind": "parameterInput",
       "toPort": 3
     },
     {
-      "fromNode": "node-3",
+      "fromNode": "node-12",
       "fromKind": "reducerOutput",
       "fromPort": 4,
       "toNode": "node-8",
@@ -302,7 +317,7 @@
       "toPort": 0
     },
     {
-      "fromNode": "node-3",
+      "fromNode": "node-12",
       "fromKind": "reducerOutput",
       "fromPort": 3,
       "toNode": "node-9",

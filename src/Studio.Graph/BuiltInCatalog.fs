@@ -23,6 +23,8 @@ module BuiltInCatalog =
   let biasModel = PortType.Custom "BiasModel"
   let serialSliceManifest = PortType.Custom "SerialSliceManifest"
   let serialVolumeGeometry = PortType.Custom "SerialVolumeGeometry"
+  let record = PortType.Custom "Record"
+  let imageStats = PortType.Custom "ImageStats"
   let stackInfo = PortType.Custom "StackInfo"
   let chunkInfo = PortType.Custom "ChunkInfo"
   let serialTransPair = PortType.Tuple(imageAny, serialSliceManifest)
@@ -60,6 +62,22 @@ module BuiltInCatalog =
         makePort "Width: UInt64" (Scalar(BasicType.Numeric UInt64))
         makePort "Height: UInt64" (Scalar(BasicType.Numeric UInt64))
         makePort "Depth: UInt64" (Scalar(BasicType.Numeric UInt64)) ]
+
+  let private imageStatsOutputs =
+      [ makePort "NumPixels: UInt32" (Scalar(BasicType.Numeric UInt32))
+        makePort "Mean: Float64" (Scalar(BasicType.Numeric Float64))
+        makePort "Std: Float64" (Scalar(BasicType.Numeric Float64))
+        makePort "Min: Float64" (Scalar(BasicType.Numeric Float64))
+        makePort "Max: Float64" (Scalar(BasicType.Numeric Float64))
+        makePort "Sum: Float64" (Scalar(BasicType.Numeric Float64))
+        makePort "Var: Float64" (Scalar(BasicType.Numeric Float64)) ]
+
+  let expandOutputsFor portType =
+      match portType with
+      | Custom "ImageStats" -> imageStatsOutputs
+      | Custom "StackInfo" -> stackInfoOutputs
+      | Custom "ChunkInfo" -> chunkInfoOutputs
+      | _ -> []
 
   let private availableMemoryParameter =
       makeParameter "availableMemory" "Available memory" (string (pown 2 30)) BasicType.String
@@ -757,14 +775,7 @@ module BuiltInCatalog =
           Description = computeStatsDescription
           Aliases = [ "statistics"; "stats"; "mean"; "std"; "min"; "max"; "reducer" ]
           Inputs = [ makePort "Number" imageAny ]
-          Outputs =
-              [ makePort "NumPixels: UInt32" (Scalar(BasicType.Numeric UInt32))
-                makePort "Mean: Float64" (Scalar(BasicType.Numeric Float64))
-                makePort "Std: Float64" (Scalar(BasicType.Numeric Float64))
-                makePort "Min: Float64" (Scalar(BasicType.Numeric Float64))
-                makePort "Max: Float64" (Scalar(BasicType.Numeric Float64))
-                makePort "Sum: Float64" (Scalar(BasicType.Numeric Float64))
-                makePort "Var: Float64" (Scalar(BasicType.Numeric Float64)) ]
+          Outputs = [ makePort "ImageStats" imageStats ]
           Parameters = [] }
 
         { Id = "FitBiasModel"
@@ -1070,24 +1081,14 @@ module BuiltInCatalog =
                 makeParameter "yAxis" "Y axis" "1" (BasicType.Numeric Int32)
                 makeParameter "xAxis" "X axis" "2" (BasicType.Numeric Int32) ] }
 
-        { Id = "StackInfoExpand"
-          DisplayName = "stackInfoExpand"
+        { Id = "Expand"
+          DisplayName = "expand"
           Category = "Sources / Sinks"
-          Summary = "Expose StackInfo fields as scalar outputs."
-          Description = "Expands a StackInfo value, for example from write after the stack has been written, into scalar fields that can be connected to print or other parameter inputs."
-          Aliases = [ "info"; "metadata"; "stack"; "expand"; "width"; "height"; "depth"; "size"; "dimensions"; "component" ]
-          Inputs = [ makePort "StackInfo" stackInfo ]
-          Outputs = stackInfoOutputs
-          Parameters = [] }
-
-        { Id = "ChunkInfoExpand"
-          DisplayName = "chunkInfoExpand"
-          Category = "Sources / Sinks"
-          Summary = "Expose ChunkInfo fields as scalar outputs."
-          Description = "Expands metadata from chunked stack, OME-Zarr, or NeXus/HDF5 readers into scalar fields that can be connected to print or writer parameters."
-          Aliases = [ "info"; "metadata"; "chunk"; "chunks"; "expand"; "width"; "height"; "depth"; "size"; "component" ]
-          Inputs = [ makePort "ChunkInfo" chunkInfo ]
-          Outputs = chunkInfoOutputs
+          Summary = "Expose record fields as scalar outputs."
+          Description = "Expands record-like values, such as ImageStats, StackInfo, or ChunkInfo, into scalar fields that can be connected to print or other parameter inputs. The output ports adapt to the connected record type."
+          Aliases = [ "info"; "metadata"; "record"; "expand"; "stats"; "mean"; "width"; "height"; "depth"; "size"; "component" ]
+          Inputs = [ makePort "Record" record ]
+          Outputs = []
           Parameters = [] }
 
         { Id = "GetChunkInfo"

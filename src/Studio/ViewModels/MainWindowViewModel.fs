@@ -1024,8 +1024,7 @@ type PipelineNodeViewModel(
         | "AffineRegistration"
         | "FitBiasModel"
         | "FitBiasModelMasked"
-        | "StackInfoExpand"
-        | "ChunkInfoExpand"
+        | "Expand"
         | "Write"
         | "GetChunkInfo"
         | "ComponentTranslationTable"
@@ -1075,6 +1074,11 @@ type PipelineNodeViewModel(
         | "SerialEstBoundingBox" -> SerialTransformNode.boundingBoxPorts state
         | "SerialPolynomialBiasCorrect" -> HighValueFilterNode.typedImagePorts state
         | "Quantiles" -> state.Definition.Inputs, QuantilesNode.outputPorts state
+        | "Expand" ->
+            state.Definition.Inputs,
+            state.RecordType
+            |> Option.map BuiltInCatalog.expandOutputsFor
+            |> Option.defaultValue []
         | _ -> state.Definition.Inputs, state.Definition.Outputs
 
     let computeNodeWidth () =
@@ -1104,7 +1108,7 @@ type PipelineNodeViewModel(
         let inputs, outputs = effectivePorts ()
 
         let sideInputCount =
-            if state.Definition.Id = "StackInfoExpand" || state.Definition.Id = "ChunkInfoExpand" then
+            if state.Definition.Id = "Expand" then
                 0
             else
                 inputs.Length
@@ -1357,7 +1361,7 @@ type PipelineNodeViewModel(
 
         inputs
         |> List.iteri (fun portIndex port ->
-            if state.Definition.Id = "StackInfoExpand" || state.Definition.Id = "ChunkInfoExpand" then
+            if state.Definition.Id = "Expand" then
                 addPipelinePin (pinPosition (nodeWidth ()) portIndex inputs.Length) 0. PinAlignment.Top DataInput None port |> ignore
             else
                 addPipelinePin 0. (pinPosition nodeHeight portIndex inputs.Length) PinAlignment.Left DataInput None port |> ignore)
@@ -1477,6 +1481,7 @@ type MainWindowViewModel() as this =
     let arrangeSettings = ArrangeSettingsViewModel()
     let mutable arrangeSettingsRevision = 0
     let mutable arrangeRunSerial = 0
+    let mutable suppressExpandRefresh = false
     let mutable selectedNode: PipelineNodeViewModel = null
     let selectedNodes = HashSet<PipelineNodeViewModel>(HashIdentity.Reference)
     let mutable graphOutput = ""
@@ -2434,7 +2439,7 @@ type MainWindowViewModel() as this =
             when outputPin.Kind = ReducerOutput
                  && inputPin.Kind = DataInput
                  && (match inputPin.Parent with
-                     | :? PipelineNodeViewModel as node -> node.State.Definition.Id = "StackInfoExpand" || node.State.Definition.Id = "ChunkInfoExpand"
+                     | :? PipelineNodeViewModel as node -> node.State.Definition.Id = "Expand"
                      | _ -> false) ->
             ConnectorOrientation.Vertical
         | _ ->
@@ -2470,7 +2475,11 @@ type MainWindowViewModel() as this =
                 | ScalarOutput ->
                     Some 0
                 | ReducerOutput ->
-                    Some 0
+                    node.Pins
+                    |> Seq.choose (function
+                        | :? PipelinePinViewModel as outputPin when outputPin.Kind = ReducerOutput -> Some outputPin
+                        | _ -> None)
+                    |> Seq.tryFindIndex (fun outputPin -> Object.ReferenceEquals(outputPin, pin))
 
             let nodeEndpoint (pin: IPin) =
                 match pin with
@@ -2525,13 +2534,54 @@ type MainWindowViewModel() as this =
         node.SyncMoveOrigin()
         node
 
-    let addConnector startPin endPin =
+    let addConnector (startPin: IPin) (endPin: IPin) =
         let connector = ConnectorViewModel()
         connector.Start <- startPin
         connector.End <- endPin
         connector.Orientation <- connectorOrientation startPin endPin
         drawing.Connectors.Add(connector :> IConnector)
+
+        match endPin with
+        | :? PipelinePinViewModel as inputPin ->
+            match inputPin.Parent with
+            | :? PipelineNodeViewModel as node when node.State.Definition.Id = "Expand" ->
+                match startPin with
+                | :? PipelinePinViewModel as outputPin ->
+                    node.State.RecordType <- Some outputPin.Port.Type
+                    node.RebuildPins()
+                    refreshNodePins node
+                | _ -> ()
+            | _ -> ()
+        | _ -> ()
+
         this.MarkGraphDirty()
+
+    let refreshExpandNodeRecordTypes () =
+        if not suppressExpandRefresh then
+            suppressExpandRefresh <- true
+
+            try
+                drawing.Nodes
+                |> Seq.choose (function
+                    | :? PipelineNodeViewModel as node when node.State.Definition.Id = "Expand" -> Some node
+                    | _ -> None)
+                |> Seq.iter (fun node ->
+                    let recordType =
+                        drawing.Connectors
+                        |> Seq.tryPick (fun connector ->
+                            match connector.Start, connector.End with
+                            | (:? PipelinePinViewModel as startPin), (:? PipelinePinViewModel as endPin)
+                                when Object.ReferenceEquals(endPin.Parent, node)
+                                     && endPin.Kind = DataInput ->
+                                Some startPin.Port.Type
+                            | _ -> None)
+
+                    if node.State.RecordType <> recordType then
+                        node.State.RecordType <- recordType
+                        node.RebuildPins()
+                        refreshNodePins node)
+            finally
+                suppressExpandRefresh <- false
 
     do
         updatePaletteGroups()
@@ -2546,6 +2596,7 @@ type MainWindowViewModel() as this =
         match drawing.Connectors with
         | :? INotifyCollectionChanged as connectors ->
             connectors.CollectionChanged.Add(fun _ ->
+                refreshExpandNodeRecordTypes()
                 refreshScalarTypeOptions()
                 refreshScalarOpTypeOptions()
                 refreshImageFormatOptions()
@@ -2577,6 +2628,7 @@ type MainWindowViewModel() as this =
             if this.SetProperty(&selectedNode, value) then
                 selectOnlyNode value
                 this.OnPropertyChanged(PropertyChangedEventArgs(nameof this.HasSelectedElement))
+                this.OnPropertyChanged(PropertyChangedEventArgs(nameof this.HasSelectedNodes))
 
     member this.SelectedElement
         with get () = selectedNode
@@ -2591,6 +2643,7 @@ type MainWindowViewModel() as this =
             this.OnPropertyChanged(PropertyChangedEventArgs(nameof this.SelectedNode))
             this.OnPropertyChanged(PropertyChangedEventArgs(nameof this.SelectedElement))
             this.OnPropertyChanged(PropertyChangedEventArgs(nameof this.HasSelectedElement))
+            this.OnPropertyChanged(PropertyChangedEventArgs(nameof this.HasSelectedNodes))
 
     member this.SelectSingleNode(node: PipelineNodeViewModel) =
         this.SelectedNode <- node
@@ -2601,6 +2654,7 @@ type MainWindowViewModel() as this =
             this.OnPropertyChanged(PropertyChangedEventArgs(nameof this.SelectedNode))
             this.OnPropertyChanged(PropertyChangedEventArgs(nameof this.SelectedElement))
             this.OnPropertyChanged(PropertyChangedEventArgs(nameof this.HasSelectedElement))
+            this.OnPropertyChanged(PropertyChangedEventArgs(nameof this.HasSelectedNodes))
         else
             this.SelectedNode <- node
 
@@ -2619,12 +2673,14 @@ type MainWindowViewModel() as this =
                     this.OnPropertyChanged(PropertyChangedEventArgs(nameof this.SelectedNode))
                     this.OnPropertyChanged(PropertyChangedEventArgs(nameof this.SelectedElement))
                     this.OnPropertyChanged(PropertyChangedEventArgs(nameof this.HasSelectedElement))
+                    this.OnPropertyChanged(PropertyChangedEventArgs(nameof this.HasSelectedNodes))
             else
                 addSelectedNode node
                 selectedNode <- node
                 this.OnPropertyChanged(PropertyChangedEventArgs(nameof this.SelectedNode))
                 this.OnPropertyChanged(PropertyChangedEventArgs(nameof this.SelectedElement))
                 this.OnPropertyChanged(PropertyChangedEventArgs(nameof this.HasSelectedElement))
+                this.OnPropertyChanged(PropertyChangedEventArgs(nameof this.HasSelectedNodes))
 
     member this.SelectNodes(nodes: PipelineNodeViewModel seq) =
         clearSelectedNodes()
@@ -2641,6 +2697,7 @@ type MainWindowViewModel() as this =
         this.OnPropertyChanged(PropertyChangedEventArgs(nameof this.SelectedNode))
         this.OnPropertyChanged(PropertyChangedEventArgs(nameof this.SelectedElement))
         this.OnPropertyChanged(PropertyChangedEventArgs(nameof this.HasSelectedElement))
+        this.OnPropertyChanged(PropertyChangedEventArgs(nameof this.HasSelectedNodes))
 
     member this.MoveSelectionBy(dx: float, dy: float) =
         let selected = selectedNodes |> Seq.toArray
@@ -2648,6 +2705,8 @@ type MainWindowViewModel() as this =
         if selected.Length > 0 && (dx <> 0. || dy <> 0.) then
             let clampedDx, clampedDy = clampSelectionDelta selected dx dy
             applySelectionDelta selected clampedDx clampedDy
+
+    member _.HasSelectedNodes = selectedNodes.Count > 0 || not (isNull selectedNode)
 
     member _.GraphOutput = graphOutput
 
@@ -3103,7 +3162,7 @@ type MainWindowViewModel() as this =
                     && endPin.Kind = DataInput
                     && (match endPin.Parent with
                         | :? PipelineNodeViewModel as node ->
-                            node.State.Definition.Id = "StackInfoExpand" || node.State.Definition.Id = "ChunkInfoExpand"
+                            node.State.Definition.Id = "Expand"
                         | _ -> false)
 
                 let nodeIndexes = Dictionary<PipelineNodeViewModel, int>(HashIdentity.Reference)
@@ -3385,7 +3444,7 @@ type MainWindowViewModel() as this =
         |> Async.StartImmediate
 
     member this.DeleteSelectedCommand =
-        SimpleCommand((fun _ -> this.DeleteSelectedElement()), (fun _ -> not (isNull selectedNode)))
+        SimpleCommand((fun _ -> this.DeleteSelectedElement()), (fun _ -> this.HasSelectedNodes))
         :> ICommand
 
     member this.ArrangeGraphCommand =
@@ -3531,6 +3590,20 @@ type MainWindowViewModel() as this =
 
         for edge in savedGraph.Edges do
             match loadedNodes |> Map.tryFind edge.FromNode, loadedNodes |> Map.tryFind edge.ToNode with
+            | Some fromNode, Some toNode
+                when toNode.State.Definition.Id = "Expand"
+                     && edge.ToKind <> "parameterInput"
+                     && edge.ToPort = 0 ->
+                let fromKind = PipelinePinKind.ofString edge.FromKind
+
+                pinByKindIndex fromKind edge.FromPort fromNode
+                |> Option.iter (fun outputPin ->
+                    toNode.State.RecordType <- Some outputPin.Port.Type
+                    toNode.RebuildPins())
+            | _ -> ()
+
+        for edge in savedGraph.Edges do
+            match loadedNodes |> Map.tryFind edge.FromNode, loadedNodes |> Map.tryFind edge.ToNode with
             | Some fromNode, Some toNode ->
                 let fromKind = PipelinePinKind.ofString edge.FromKind
                 let toKind = PipelinePinKind.ofString edge.ToKind
@@ -3538,6 +3611,10 @@ type MainWindowViewModel() as this =
                 match pinByKindIndex fromKind edge.FromPort fromNode, pinByKindIndex toKind edge.ToPort toNode with
                 | Some startPin, Some endPin when canConnectPins startPin endPin ->
                     addConnector startPin endPin
+                    if toNode.State.Definition.Id = "Expand" && edge.ToKind <> "parameterInput" && edge.ToPort = 0 then
+                        toNode.State.RecordType <- Some startPin.Port.Type
+                        toNode.RebuildPins()
+                        refreshNodePins toNode
                 | Some _, Some _ ->
                     invalidOp $"Saved edge has incompatible port types: {edge.FromNode}[{edge.FromPort}] -> {edge.ToNode}[{edge.ToPort}]"
                 | _ ->
@@ -3667,18 +3744,89 @@ type MainWindowViewModel() as this =
             if shouldClamp then
                 selectedNode.ClampToDrawing()
 
-            selectedNode.SyncMoveOrigin()
+        selectedNode.SyncMoveOrigin()
+        this.MarkGraphDirty()
+
+    member this.DuplicateSelectedElements() =
+        let selected =
+            if selectedNodes.Count > 0 then
+                selectedNodes |> Seq.toArray
+            elif not (isNull selectedNode) then
+                [| selectedNode |]
+            else
+                Array.empty
+
+        if selected.Length > 0 then
+            let offset = 32.
+            let clones = Dictionary<PipelineNodeViewModel, PipelineNodeViewModel>(HashIdentity.Reference)
+
+            for original in selected do
+                let clone = createNode drawing.Nodes.Count original.State.Definition.Id
+                clone.X <- original.X + offset
+                clone.Y <- original.Y + offset
+                clone.State.RecordType <- original.State.RecordType
+                setParameterValues clone.State (parameterValues original.State)
+                SerialTransformNode.updateMethodParameterStates clone.State
+                clone.ClampToDrawing()
+                clone.SyncMoveOrigin()
+                drawing.Nodes.Add(clone :> INode)
+                clone.RebuildPins()
+                clones.Add(original, clone)
+
+            let selectedSet = HashSet<PipelineNodeViewModel>(selected, HashIdentity.Reference)
+
+            let internalConnectors =
+                drawing.Connectors
+                |> Seq.choose (fun connector ->
+                    match connector.Start, connector.End with
+                    | (:? PipelinePinViewModel as startPin), (:? PipelinePinViewModel as endPin) ->
+                        match startPin.Parent, endPin.Parent with
+                        | (:? PipelineNodeViewModel as startNode), (:? PipelineNodeViewModel as endNode)
+                            when selectedSet.Contains startNode && selectedSet.Contains endNode ->
+                            match pinIndexByKind startPin.Kind startPin startNode, pinIndexByKind endPin.Kind endPin endNode with
+                            | Some fromPort, Some toPort ->
+                                Some(startNode, startPin.Kind, fromPort, endNode, endPin.Kind, toPort)
+                            | _ ->
+                                None
+                        | _ ->
+                            None
+                    | _ ->
+                        None)
+                |> Seq.toArray
+
+            for startNode, startKind, fromPort, endNode, endKind, toPort in internalConnectors do
+                match clones.TryGetValue startNode, clones.TryGetValue endNode with
+                | (true, clonedStartNode), (true, clonedEndNode) ->
+                    match pinByKindIndex startKind fromPort clonedStartNode, pinByKindIndex endKind toPort clonedEndNode with
+                    | Some startPin, Some endPin when canConnectPins startPin endPin ->
+                        addConnector startPin endPin
+                    | _ ->
+                        ()
+                | _ ->
+                    ()
+
+            this.SelectNodes(clones.Values)
             this.MarkGraphDirty()
 
     member this.DeleteSelectedElement() =
-        if not (isNull selectedNode) then
+        let selected =
+            if selectedNodes.Count > 0 then
+                selectedNodes |> Seq.toArray
+            elif not (isNull selectedNode) then
+                [| selectedNode |]
+            else
+                Array.empty
+
+        if selected.Length > 0 then
             let nodes = pipelineNodes () |> Seq.toArray
             let currentIndex =
                 nodes
-                |> Array.tryFindIndex (fun node -> Object.ReferenceEquals(node, selectedNode))
+                |> Array.tryFindIndex (fun node -> selected |> Array.exists (fun selectedNode -> Object.ReferenceEquals(node, selectedNode)))
                 |> Option.defaultValue 0
 
-            let pinsToRemove = selectedNode.Pins |> Seq.toArray
+            let pinsToRemove =
+                selected
+                |> Array.collect (fun node -> node.Pins |> Seq.toArray)
 
             let connectorsToRemove =
                 drawing.Connectors
@@ -3690,7 +3838,8 @@ type MainWindowViewModel() as this =
             for connector in connectorsToRemove do
                 drawing.Connectors.Remove(connector) |> ignore
 
-            drawing.Nodes.Remove(selectedNode) |> ignore
+            for node in selected do
+                drawing.Nodes.Remove(node) |> ignore
 
             let remaining = pipelineNodes () |> Seq.toArray
             if remaining.Length > 0 then

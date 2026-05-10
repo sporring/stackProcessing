@@ -145,6 +145,9 @@
                             Click="LoadGraphClicked"
                             Content="Load" />
                     <Button Width="76"
+                            Click="InspectImageClicked"
+                            Content="Inspect" />
+                    <Button Width="76"
                             Click="ClearGraphClicked"
                             IsEnabled="{Binding CanClearGraph}"
                             Content="Clear" />

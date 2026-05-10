@@ -2,7 +2,10 @@ namespace Studio.Views
 
 open System
 open System.Collections.Generic
+open System.IO
 open System.Runtime.CompilerServices
+open System.Text
+open System.Text.RegularExpressions
 open System.Threading.Tasks
 open Avalonia
 open Avalonia.Controls
@@ -108,6 +111,143 @@ type MainView() as this =
         else
             None
 
+    let parentWindow () =
+        match TopLevel.GetTopLevel(this) with
+        | :? Window as window -> window
+        | _ -> null
+
+    let imageSuffixes =
+        [ ".tiff"; ".tif"; ".png"; ".jpg"; ".jpeg"; ".bmp"; ".mha"; ".mhd"; ".nrrd"; ".nii"; ".nii.gz" ]
+
+    let extensionOf (path: string) =
+        if path.EndsWith(".nii.gz", StringComparison.OrdinalIgnoreCase) then
+            ".nii.gz"
+        else
+            Path.GetExtension(path)
+
+    let formatList values =
+        values |> Seq.map string |> String.concat " x "
+
+    let appendFileInfo (builder: StringBuilder) (info: ImageFunctions.FileInfo) =
+        builder.AppendLine($"Dimensions: {info.dimensions}") |> ignore
+        builder.AppendLine($"Size: {formatList info.size}") |> ignore
+        builder.AppendLine($"Component type: {info.componentType}") |> ignore
+        builder.AppendLine($"Components per pixel: {info.numberOfComponents}") |> ignore
+
+    let appendChunkInfo (builder: StringBuilder) (info: StackIO.ChunkInfo) =
+        builder.AppendLine($"Chunks: {formatList info.chunks}") |> ignore
+        builder.AppendLine($"Full size: {formatList info.size}") |> ignore
+        builder.AppendLine($"Component type: {info.topLeftInfo.componentType}") |> ignore
+        builder.AppendLine($"Components per pixel: {info.topLeftInfo.numberOfComponents}") |> ignore
+        builder.AppendLine($"Top-left chunk size: {formatList info.topLeftInfo.size}") |> ignore
+
+    let inferStackSuffix (directory: string) =
+        if Directory.Exists directory then
+            let files = Directory.EnumerateFiles(directory) |> Seq.toArray
+
+            imageSuffixes
+            |> List.tryPick (fun suffix ->
+                let count =
+                    files
+                    |> Array.filter (fun file ->
+                        if suffix = ".tiff" || suffix = ".tif" then
+                            file.EndsWith(".tiff", StringComparison.OrdinalIgnoreCase)
+                            || file.EndsWith(".tif", StringComparison.OrdinalIgnoreCase)
+                        elif suffix = ".jpg" || suffix = ".jpeg" then
+                            file.EndsWith(".jpg", StringComparison.OrdinalIgnoreCase)
+                            || file.EndsWith(".jpeg", StringComparison.OrdinalIgnoreCase)
+                        else
+                            file.EndsWith(suffix, StringComparison.OrdinalIgnoreCase))
+                    |> Array.length
+
+                if count > 0 then Some(suffix, count) else None)
+        else
+            None
+
+    let directoryLooksLikeZarr (directory: string) =
+        directory.EndsWith(".zarr", StringComparison.OrdinalIgnoreCase)
+        || File.Exists(Path.Combine(directory, ".zattrs"))
+        || File.Exists(Path.Combine(directory, ".zgroup"))
+        || File.Exists(Path.Combine(directory, "zarr.json"))
+
+    let directoryLooksLikeChunks (directory: string) =
+        Directory.Exists directory
+        && Directory.EnumerateFiles(directory)
+           |> Seq.exists (fun file -> Regex.IsMatch(Path.GetFileName(file), @"^chunk\d+_\d+_\d+", RegexOptions.IgnoreCase))
+
+    let inspectPath (path: string) =
+        let builder = StringBuilder()
+
+        let appendHeader kind source =
+            builder.AppendLine($"Path: {path}") |> ignore
+            builder.AppendLine($"Image kind: {kind}") |> ignore
+            builder.AppendLine($"Info source: {source}") |> ignore
+            builder.AppendLine() |> ignore
+
+        if Directory.Exists path then
+            if directoryLooksLikeZarr path then
+                let info = StackIO.getZarrInfo path 0 0
+                appendHeader "OME-Zarr directory" "getZarrInfo path 0 0"
+                appendChunkInfo builder info
+                builder.AppendLine("Multiscale index: 0") |> ignore
+                builder.AppendLine("Dataset index: 0") |> ignore
+            elif directoryLooksLikeChunks path then
+                match inferStackSuffix path with
+                | Some(suffix, fileCount) ->
+                    let info = StackIO.getChunkInfo path suffix
+                    appendHeader "chunked slab stack directory" $"getChunkInfo path {suffix}"
+                    appendChunkInfo builder info
+                    builder.AppendLine($"Matching files: {fileCount}") |> ignore
+                    builder.AppendLine($"Suffix: {suffix}") |> ignore
+                | None ->
+                    appendHeader "chunked slab stack directory" "directory scan"
+                    builder.AppendLine("No supported image suffix was found for chunk files.") |> ignore
+            else
+                match inferStackSuffix path with
+                | Some(suffix, fileCount) ->
+                    let info = StackIO.getStackInfo path suffix
+                    appendHeader $"stack of {suffix} files" $"getStackInfo path {suffix}"
+                    appendFileInfo builder info
+                    builder.AppendLine($"Matching files: {fileCount}") |> ignore
+                    builder.AppendLine($"Suffix: {suffix}") |> ignore
+                | None ->
+                    appendHeader "directory" "directory scan"
+                    builder.AppendLine("No supported stack image files were found.") |> ignore
+        elif File.Exists path then
+            let ext = extensionOf path
+
+            if [ ".h5"; ".hdf5"; ".nxs"; ".nx" ] |> List.exists (fun suffix -> ext.Equals(suffix, StringComparison.OrdinalIgnoreCase)) then
+                try
+                    let datasetPath = "/entry/data/data"
+                    let info = StackIO.getNexusInfo path datasetPath 0 1 2
+                    appendHeader "NeXus/HDF5 detector stack file" $"getNexusInfo path {datasetPath} 0 1 2"
+                    appendChunkInfo builder info
+                    builder.AppendLine($"Dataset path: {datasetPath}") |> ignore
+                    builder.AppendLine("Axes: frame=0, y=1, x=2") |> ignore
+                with ex ->
+                    appendHeader "HDF5/NeXus-like file" "getNexusInfo path /entry/data/data 0 1 2"
+                    builder.AppendLine($"Could not inspect the default NeXus dataset: {ex.Message}") |> ignore
+            else
+                let info = ImageFunctions.getFileInfo path
+
+                let kind =
+                    if ext.Equals(".tif", StringComparison.OrdinalIgnoreCase)
+                       || ext.Equals(".tiff", StringComparison.OrdinalIgnoreCase) then
+                        if info.dimensions >= 3u then "volume TIFF file" else "TIFF image file"
+                    elif info.dimensions >= 3u then
+                        "volume image file"
+                    else
+                        $"{ext.TrimStart('.').ToUpperInvariant()} image file"
+
+                appendHeader kind "getFileInfo"
+                appendFileInfo builder info
+                builder.AppendLine($"Extension: {ext}") |> ignore
+        else
+            appendHeader "missing path" "filesystem"
+            builder.AppendLine("The selected path does not exist.") |> ignore
+
+        builder.ToString().TrimEnd()
+
     let fileDirectoryKind (node: PipelineNodeViewModel) =
         node.State.Parameters
         |> Seq.tryFind (fun parameter -> parameter.Key = "kind")
@@ -140,11 +280,6 @@ type MainView() as this =
                     let! folders = topLevel.StorageProvider.OpenFolderPickerAsync(options) |> Async.AwaitTask
                     return folders |> Seq.tryHead |> Option.bind folderLocalPath
         }
-
-    let parentWindow () =
-        match TopLevel.GetTopLevel(this) with
-        | :? Window as window -> window
-        | _ -> null
 
     let showLoadErrorAsync (message: string) =
         task {
@@ -647,7 +782,7 @@ type MainView() as this =
             when outputPin.Kind = ReducerOutput
                  && inputPin.Kind = DataInput
                  && (match inputPin.Parent with
-                     | :? PipelineNodeViewModel as node -> node.State.Definition.Id = "StackInfoExpand" || node.State.Definition.Id = "ChunkInfoExpand"
+                     | :? PipelineNodeViewModel as node -> node.State.Definition.Id = "Expand"
                      | _ -> false) ->
             ConnectorOrientation.Vertical
         | _ ->
@@ -1100,6 +1235,20 @@ type MainView() as this =
         | _ ->
             false
 
+    let eventSourceIsTextControl (source: obj) =
+        match source with
+        | :? Control as control ->
+            seq {
+                yield control :> Visual
+                yield! control.GetVisualAncestors()
+            }
+            |> Seq.exists (function
+                | :? TextBox -> true
+                | :? SelectableTextBlock -> true
+                | _ -> false)
+        | _ ->
+            false
+
     let noteWheelSource (args: PointerWheelEventArgs) =
         let graphHost = this.FindControl<Grid>("GraphHost")
 
@@ -1319,6 +1468,28 @@ type MainView() as this =
             if not (isNull miniMap) then
                 miniMap.Children.Clear()
 
+    let handleGraphKeyboardCommand (args: KeyEventArgs) =
+        let graphHost = this.FindControl<Grid>("GraphHost")
+        let startedInGraph = eventSourceIsInside graphHost args.Source
+        let isCtrl = args.KeyModifiers.HasFlag KeyModifiers.Control
+
+        if startedInGraph && not (eventSourceIsTextControl args.Source) then
+            match this.DataContext with
+            | :? MainWindowViewModel as viewModel when args.Key = Key.Delete ->
+                viewModel.DeleteSelectedElement()
+                updateMiniMap()
+                args.Handled <- true
+                true
+            | :? MainWindowViewModel as viewModel when isCtrl && args.Key = Key.C ->
+                viewModel.DuplicateSelectedElements()
+                updateMiniMap()
+                args.Handled <- true
+                true
+            | _ ->
+                false
+        else
+            false
+
     let zoomGraphWithWheel (args: PointerWheelEventArgs) =
         let zoomBorder = graphZoomBorder ()
         let graphHost = this.FindControl<Grid>("GraphHost")
@@ -1453,7 +1624,9 @@ type MainView() as this =
         this.InitializeComponent()
         this.AddHandler(
             InputElement.KeyDownEvent,
-            EventHandler<KeyEventArgs>(fun _ args -> panGraphWithArrowKey args),
+            EventHandler<KeyEventArgs>(fun _ args ->
+                if not (handleGraphKeyboardCommand args) then
+                    panGraphWithArrowKey args),
             RoutingStrategies.Tunnel,
             true)
 
@@ -1802,6 +1975,121 @@ type MainView() as this =
                             do! showLoadErrorAsync (graphLoadErrorMessage file ex)
                     | None -> ()
             | _ -> ()
+        }
+        |> ignore
+
+    member this.InspectImagePathAsync(path: string) =
+        task {
+            let appendToOutput (text: string) =
+                Dispatcher.UIThread.Post(fun () ->
+                    match this.DataContext with
+                    | :? MainWindowViewModel as viewModel -> viewModel.AppendGraphOutput(text)
+                    | _ -> ())
+
+            try
+                let! report = Task.Run(fun () -> inspectPath path)
+                appendToOutput $"Inspection: {path}{Environment.NewLine}{report}{Environment.NewLine}"
+            with ex ->
+                appendToOutput $"Inspection failed: {path}{Environment.NewLine}{ex.Message}{Environment.NewLine}"
+        }
+
+    member this.InspectImageClicked(_sender: obj, args: RoutedEventArgs) =
+        task {
+            args.Handled <- true
+
+            match TopLevel.GetTopLevel(this) with
+            | null -> ()
+            | topLevel ->
+                let chooser = Window()
+                chooser.Title <- "Inspect Image"
+                chooser.Width <- 360.
+                chooser.Height <- 170.
+                chooser.WindowStartupLocation <- WindowStartupLocation.CenterOwner
+                chooser.CanResize <- false
+
+                let text =
+                    TextBlock(
+                        Text = "Choose an image file or a directory-backed image.",
+                        TextWrapping = TextWrapping.Wrap,
+                        Margin = Thickness(16., 16., 16., 8.))
+
+                let fileButton =
+                    Button(
+                        Content = "File...",
+                        Width = 110.,
+                        HorizontalAlignment = HorizontalAlignment.Center)
+
+                let folderButton =
+                    Button(
+                        Content = "Directory...",
+                        Width = 110.,
+                        HorizontalAlignment = HorizontalAlignment.Center)
+
+                let cancelButton =
+                    Button(
+                        Content = "Cancel",
+                        Width = 110.,
+                        HorizontalAlignment = HorizontalAlignment.Center)
+
+                let buttons =
+                    StackPanel(
+                        Orientation = Orientation.Horizontal,
+                        HorizontalAlignment = HorizontalAlignment.Center,
+                        Spacing = 10.,
+                        Margin = Thickness(16.))
+
+                buttons.Children.Add(fileButton)
+                buttons.Children.Add(folderButton)
+                buttons.Children.Add(cancelButton)
+
+                let panel = DockPanel(LastChildFill = true)
+                DockPanel.SetDock(buttons, Dock.Bottom)
+                panel.Children.Add(buttons)
+                panel.Children.Add(text)
+                chooser.Content <- panel
+
+                fileButton.Click.Add(fun _ ->
+                    task {
+                        chooser.Close()
+
+                        let options =
+                            FilePickerOpenOptions(
+                                Title = "Inspect image file",
+                                AllowMultiple = false,
+                                FileTypeFilter = [ FilePickerFileTypes.All ])
+
+                        let! files = topLevel.StorageProvider.OpenFilePickerAsync(options)
+
+                        files
+                        |> Seq.tryHead
+                        |> Option.bind localPath
+                        |> Option.iter (fun path -> this.InspectImagePathAsync(path) |> ignore)
+                    }
+                    |> ignore)
+
+                folderButton.Click.Add(fun _ ->
+                    task {
+                        chooser.Close()
+
+                        let options =
+                            FolderPickerOpenOptions(
+                                Title = "Inspect image directory",
+                                AllowMultiple = false)
+
+                        let! folders = topLevel.StorageProvider.OpenFolderPickerAsync(options)
+
+                        folders
+                        |> Seq.tryHead
+                        |> Option.bind folderLocalPath
+                        |> Option.iter (fun path -> this.InspectImagePathAsync(path) |> ignore)
+                    }
+                    |> ignore)
+
+                cancelButton.Click.Add(fun _ -> chooser.Close())
+
+                match parentWindow () with
+                | null -> chooser.Show()
+                | owner -> chooser.Show(owner)
         }
         |> ignore
 

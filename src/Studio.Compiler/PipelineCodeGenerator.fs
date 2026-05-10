@@ -386,8 +386,8 @@ module PipelineCodeGenerator =
     let private isSerialVolumeGeometryNode (node: SavedNode) =
         node.FunctionId = "SerialEstBoundingBox"
 
-    let private isStackInfoExpandNode (node: SavedNode) =
-        node.FunctionId = "StackInfoExpand"
+    let private isExpandNode (node: SavedNode) =
+        node.FunctionId = "Expand"
 
     let private isWriteStackInfoNode (node: SavedNode) =
         node.FunctionId = "Write"
@@ -397,9 +397,6 @@ module PipelineCodeGenerator =
 
     let private isChunkInfoNode (node: SavedNode) =
         node.FunctionId = "GetChunkInfo" || node.FunctionId = "GetZarrInfo" || node.FunctionId = "GetNexusInfo"
-
-    let private isChunkInfoExpandNode (node: SavedNode) =
-        node.FunctionId = "ChunkInfoExpand"
 
     let private isReadChunkInfoNode (node: SavedNode) =
         node.FunctionId = "ReadSlab" || node.FunctionId = "ReadZarrSlab" || node.FunctionId = "ReadNexusSlab"
@@ -435,7 +432,7 @@ module PipelineCodeGenerator =
                     | Some statsName ->
                         match nodesById |> Map.tryFind edge.FromNode with
                         | Some reducerNode when isSingleValueReducerNode reducerNode && edge.FromPort = 0 -> Some statsName
-                        | Some reducerNode when reducerNode.FunctionId = "ComputeStats" ->
+                        | Some reducerNode when reducerNode.FunctionId = "Expand" ->
                             computeStatsFieldName edge.FromPort |> Option.map (fun fieldName -> $"{statsName}.{fieldName}")
                         | _ -> None
                     | _ ->
@@ -661,8 +658,26 @@ module PipelineCodeGenerator =
                     nodesById
                     |> Map.tryFind edge.FromNode
                     |> Option.bind (fun sourceNode ->
-                        if sourceNode.FunctionId = "ComputeStats" then
-                            computeStatsFieldName edge.FromPort
+                        if sourceNode.FunctionId = "Expand" then
+                            graph.Edges
+                            |> Array.tryFind (fun inputEdge ->
+                                inputEdge.ToNode = sourceNode.Id
+                                && inputEdge.ToKind <> "parameterInput"
+                                && inputEdge.ToPort = 0)
+                            |> Option.bind (fun inputEdge -> nodesById |> Map.tryFind inputEdge.FromNode)
+                            |> Option.map (fun recordSource ->
+                                if recordSource.FunctionId = "ComputeStats" then
+                                    PortType.Custom "ImageStats"
+                                elif isWriteStackInfoNode recordSource || isReadStackInfoNode recordSource then
+                                    PortType.Custom "StackInfo"
+                                elif isChunkInfoNode recordSource || isReadChunkInfoNode recordSource then
+                                    PortType.Custom "ChunkInfo"
+                                else
+                                    PortType.Custom "Record")
+                            |> Option.bind (fun recordType ->
+                                BuiltInCatalog.expandOutputsFor recordType
+                                |> List.tryItem edge.FromPort
+                                |> Option.map _.Name)
                         else
                             BuiltInCatalog.tryFind sourceNode.FunctionId
                             |> Option.bind (fun definition ->
@@ -1497,6 +1512,39 @@ module PipelineCodeGenerator =
                 || node.FunctionId = "MomentsThresholdFromHistogram")
 
         let scalarNamesByNodeId = scalarNames scalarNodes
+        let expandNodesWithLinkedOutputs =
+            graph.Edges
+            |> Array.choose (fun edge ->
+                if edge.FromKind = "reducerOutput" && edge.ToKind = "parameterInput" then
+                    nodesById |> Map.tryFind edge.FromNode
+                else
+                    None)
+            |> Array.filter isExpandNode
+            |> Array.distinctBy _.Id
+
+        let expandSourceNode (expandNode: SavedNode) =
+            graph.Edges
+            |> Array.tryFind (fun edge ->
+                edge.ToNode = expandNode.Id
+                && edge.ToKind <> "parameterInput"
+                && edge.ToPort = 0)
+            |> Option.bind (fun edge -> nodesById |> Map.tryFind edge.FromNode)
+
+        let expandNodesFor predicate =
+            expandNodesWithLinkedOutputs
+            |> Array.filter (fun expandNode ->
+                expandSourceNode expandNode
+                |> Option.exists predicate)
+            |> Array.distinctBy _.Id
+
+        let statsExpandNodesWithLinkedOutputs =
+            expandNodesFor (fun node -> node.FunctionId = "ComputeStats")
+
+        let statsProducerNodesForExpand =
+            statsExpandNodesWithLinkedOutputs
+            |> Array.choose expandSourceNode
+            |> Array.distinctBy _.Id
+
         let statsNodesWithLinkedFields =
             graph.Edges
             |> Array.choose (fun edge ->
@@ -1504,16 +1552,23 @@ module PipelineCodeGenerator =
                     nodesById |> Map.tryFind edge.FromNode
                 else
                     None)
-            |> Array.filter (fun node -> node.FunctionId = "ComputeStats" || isSingleValueReducerNode node)
+            |> Array.filter isSingleValueReducerNode
             |> Array.distinctBy _.Id
 
         let statsNamesByNodeId =
-            statsNodesWithLinkedFields
-            |> Array.mapi (fun index node ->
-                let name =
-                    if node.FunctionId = "ComputeStats" then $"ImageStats{index}"
-                    else $"{node.FunctionId}{index}"
-                node.Id, name)
+            let producerNames =
+                statsProducerNodesForExpand
+                |> Array.mapi (fun index node -> node.Id, $"ImageStats{index}")
+
+            let singleValueNames =
+                statsNodesWithLinkedFields
+                |> Array.mapi (fun index node -> node.Id, $"{node.FunctionId}{index}")
+
+            let expandNames =
+                statsExpandNodesWithLinkedOutputs
+                |> Array.mapi (fun index node -> node.Id, $"Expand{index}")
+
+            Array.concat [ producerNames; singleValueNames; expandNames ]
             |> Map.ofArray
 
         let translationTableNodesWithLinkedOutputs =
@@ -1562,25 +1617,11 @@ module PipelineCodeGenerator =
             |> Map.ofArray
 
         let stackInfoExpandNodesWithLinkedOutputs =
-            graph.Edges
-            |> Array.choose (fun edge ->
-                if edge.FromKind = "reducerOutput" && edge.ToKind = "parameterInput" then
-                    nodesById |> Map.tryFind edge.FromNode
-                else
-                    None)
-            |> Array.filter isStackInfoExpandNode
-            |> Array.distinctBy _.Id
+            expandNodesFor (fun node -> isWriteStackInfoNode node || isReadStackInfoNode node)
 
         let stackInfoProducerNodesForExpand =
             stackInfoExpandNodesWithLinkedOutputs
-            |> Array.choose (fun expandNode ->
-                graph.Edges
-                |> Array.tryFind (fun edge ->
-                    edge.ToNode = expandNode.Id
-                    && edge.ToKind <> "parameterInput"
-                    && edge.ToPort = 0)
-                |> Option.bind (fun edge -> nodesById |> Map.tryFind edge.FromNode))
-            |> Array.filter (fun node -> isWriteStackInfoNode node || isReadStackInfoNode node)
+            |> Array.choose expandSourceNode
             |> Array.distinctBy _.Id
 
         let stackInfoProducerNodesWithLinkedOutputs =
@@ -1594,7 +1635,7 @@ module PipelineCodeGenerator =
 
             let expandNames =
                 stackInfoExpandNodesWithLinkedOutputs
-                |> Array.mapi (fun index node -> node.Id, $"StackInfoExpand{index}")
+                |> Array.mapi (fun index node -> node.Id, $"Expand{index + statsExpandNodesWithLinkedOutputs.Length}")
 
             Array.concat [ producerNames; expandNames ]
             |> Map.ofArray
@@ -1610,25 +1651,11 @@ module PipelineCodeGenerator =
             |> Array.distinctBy _.Id
 
         let chunkInfoExpandNodesWithLinkedOutputs =
-            graph.Edges
-            |> Array.choose (fun edge ->
-                if edge.FromKind = "reducerOutput" && edge.ToKind = "parameterInput" then
-                    nodesById |> Map.tryFind edge.FromNode
-                else
-                    None)
-            |> Array.filter isChunkInfoExpandNode
-            |> Array.distinctBy _.Id
+            expandNodesFor (fun node -> isChunkInfoNode node || isReadChunkInfoNode node)
 
         let chunkInfoProducerNodesForExpand =
             chunkInfoExpandNodesWithLinkedOutputs
-            |> Array.choose (fun expandNode ->
-                graph.Edges
-                |> Array.tryFind (fun edge ->
-                    edge.ToNode = expandNode.Id
-                    && edge.ToKind <> "parameterInput"
-                    && edge.ToPort = 0)
-                |> Option.bind (fun edge -> nodesById |> Map.tryFind edge.FromNode))
-            |> Array.filter (fun node -> isChunkInfoNode node || isReadChunkInfoNode node)
+            |> Array.choose expandSourceNode
             |> Array.distinctBy _.Id
 
         let chunkInfoProducerNodesWithLinkedOutputs =
@@ -1642,7 +1669,7 @@ module PipelineCodeGenerator =
 
             let expandNames =
                 chunkInfoExpandNodesWithLinkedOutputs
-                |> Array.mapi (fun index node -> node.Id, $"ChunkInfoExpand{index}")
+                |> Array.mapi (fun index node -> node.Id, $"Expand{index + statsExpandNodesWithLinkedOutputs.Length + stackInfoExpandNodesWithLinkedOutputs.Length}")
 
             Array.concat [ producerNames; expandNames ]
             |> Map.ofArray
@@ -1985,8 +2012,7 @@ module PipelineCodeGenerator =
                     && node.FunctionId <> "GetChunkInfo"
                     && node.FunctionId <> "GetZarrInfo"
                     && node.FunctionId <> "GetNexusInfo"
-                    && node.FunctionId <> "StackInfoExpand"
-                    && node.FunctionId <> "ChunkInfoExpand"
+                    && node.FunctionId <> "Expand"
                     && not (printNodesUsedByTap |> Set.contains node.Id)
                     && not (statsNamesByNodeId |> Map.containsKey node.Id)
                     && not (translationTableNamesByNodeId |> Map.containsKey node.Id)
@@ -2004,15 +2030,47 @@ module PipelineCodeGenerator =
 
         let orderedBindings () =
             let statsBindings =
-                statsNodesWithLinkedFields
-                |> Array.map (fun node ->
-                    let name = statsNamesByNodeId |> Map.find node.Id
-                    let expression = pipelineExpression Set.empty node
-                    let body = indentBlock 4 $"{expression}{newLine}|> drain"
+                let producerBindings =
+                    statsProducerNodesForExpand
+                    |> Array.map (fun node ->
+                        let name = statsNamesByNodeId |> Map.find node.Id
+                        let expression = pipelineExpression Set.empty node
+                        let body = indentBlock 4 $"{expression}{newLine}|> drain"
 
-                    { Name = name
-                      Dependencies = pipelineBindingDependencies Set.empty node |> Set.remove name
-                      Text = $"let {name} ={newLine}{body}" })
+                        { Name = name
+                          Dependencies = pipelineBindingDependencies Set.empty node |> Set.remove name
+                          Text = $"let {name} ={newLine}{body}" })
+
+                let singleValueBindings =
+                    statsNodesWithLinkedFields
+                    |> Array.map (fun node ->
+                        let name = statsNamesByNodeId |> Map.find node.Id
+                        let expression = pipelineExpression Set.empty node
+                        let body = indentBlock 4 $"{expression}{newLine}|> drain"
+
+                        { Name = name
+                          Dependencies = pipelineBindingDependencies Set.empty node |> Set.remove name
+                          Text = $"let {name} ={newLine}{body}" })
+
+                let expandBindings =
+                    statsExpandNodesWithLinkedOutputs
+                    |> Array.map (fun node ->
+                        let name = statsNamesByNodeId |> Map.find node.Id
+
+                        let sourceName =
+                            graph.Edges
+                            |> Array.tryFind (fun edge ->
+                                edge.ToNode = node.Id
+                                && edge.ToKind <> "parameterInput"
+                                && edge.ToPort = 0)
+                            |> Option.bind bindingNameForOutput
+                            |> Option.defaultWith (fun () -> failwith $"Expand node '{node.Id}' is missing a record input.")
+
+                        { Name = name
+                          Dependencies = Set.singleton sourceName
+                          Text = $"let {name} = {sourceName}" })
+
+                Array.concat [ producerBindings; singleValueBindings; expandBindings ]
 
             let scalarBindings =
                 scalarNodes
@@ -2150,7 +2208,7 @@ module PipelineCodeGenerator =
                                 && edge.ToKind <> "parameterInput"
                                 && edge.ToPort = 0)
                             |> Option.bind bindingNameForOutput
-                            |> Option.defaultWith (fun () -> failwith $"StackInfoExpand node '{node.Id}' is missing a StackInfo input.")
+                            |> Option.defaultWith (fun () -> failwith $"Expand node '{node.Id}' is missing a StackInfo input.")
 
                         { Name = name
                           Dependencies = Set.singleton sourceName
@@ -2220,7 +2278,7 @@ module PipelineCodeGenerator =
                                 && edge.ToKind <> "parameterInput"
                                 && edge.ToPort = 0)
                             |> Option.bind bindingNameForOutput
-                            |> Option.defaultWith (fun () -> failwith $"ChunkInfoExpand node '{node.Id}' is missing a ChunkInfo input.")
+                            |> Option.defaultWith (fun () -> failwith $"Expand node '{node.Id}' is missing a ChunkInfo input.")
 
                         { Name = name
                           Dependencies = Set.singleton sourceName
