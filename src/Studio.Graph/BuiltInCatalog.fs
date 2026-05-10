@@ -91,6 +91,12 @@ module BuiltInCatalog =
   let private readVolumeDescription =
       "Reads a single 2D or 3D volume file as a normal slice stream. Multipage TIFF/BigTIFF pages are read forward-only through the streaming TIFF reader; other volume formats use SimpleITK's extract-region reader so each z-slice is requested independently rather than loading the full volume first. The Type selector is the emitted stream type, so readable TIFF pixel types are cast to that type after page import."
 
+  let private readFormatParameter =
+      makeParameter "format" "Format" "Image stack" BasicType.String
+
+  let private readSlabFormatParameter =
+      makeParameter "format" "Format" "Chunked stack" BasicType.String
+
   let private writeFormatDescription =
       "Writes one image per stack slice. The selected format controls which image types can be connected to the input pin: TIFF supports common 8/16/32-bit integer and 32/64-bit floating-point scalar images; PNG supports UInt8 and UInt16; JPEG and BMP support UInt8; MetaImage, NRRD, and NIfTI support the broad scalar numeric set used by Studio. Cast before write when a format cannot store the current image type."
 
@@ -337,9 +343,9 @@ module BuiltInCatalog =
     { Id = "Read"
       DisplayName = "read"
       Category = "Sources / Sinks"
-      Summary = "Read a stack from chunked image files."
-      Description = readFormatDescription
-      Aliases = [ "input"; "load"; "tiff"; "file"; "UInt8"; "Float64"; "type" ]
+      Summary = "Read image data as a slice stream."
+      Description = "Reads image stacks, single volume files, OME-Zarr datasets, or NeXus/HDF5 detector stacks as a normal stream of 2D slices. The Format selector controls which core reader is used and which metadata record is exposed on the lower output."
+      Aliases = [ "input"; "load"; "tiff"; "png"; "zarr"; "nexus"; "hdf5"; "volume"; "file"; "UInt8"; "Float64"; "type" ]
       Inputs = []
       Outputs =
           [ makePort "Float64" imageFloat64
@@ -347,24 +353,19 @@ module BuiltInCatalog =
       Parameters =
           [ availableMemoryParameter
             makeParameter "type" "Type" "Float64" BasicType.String
+            readFormatParameter
             makeParameter "input" "Input" "input" BasicType.String
-            suffixParameter ".tiff" ] }
-
-  let makeGenericReadVolume () =
-    { Id = "ReadVolume"
-      DisplayName = "readVolume"
-      Category = "Sources / Sinks"
-      Summary = "Read one volume file as a slice stream."
-      Description = readVolumeDescription
-      Aliases = [ "volume"; "multipage"; "tiff"; "bigtiff"; "ome"; "nrrd"; "nifti"; "mha"; "source"; "type" ]
-      Inputs = []
-      Outputs =
-          [ makePort "Float64" imageFloat64
-            makePort "StackInfo" stackInfo ]
-      Parameters =
-          [ availableMemoryParameter
-            makeParameter "type" "Type" "Float64" BasicType.String
-            makeParameter "input" "Input" "volume.tiff" BasicType.String ] }
+            suffixParameter ".tiff"
+            makeParameter "slabDepth" "Slab depth" "8" (BasicType.Numeric UInt32)
+            makeParameter "multiscaleIndex" "Multiscale index" "0" (BasicType.Numeric Int32)
+            makeParameter "datasetIndex" "Dataset index" "0" (BasicType.Numeric Int32)
+            makeParameter "timepoint" "Timepoint" "0" (BasicType.Numeric Int32)
+            makeParameter "channel" "Channel" "0" (BasicType.Numeric Int32)
+            makeParameter "maxParallelChunks" "Max parallel chunks" "0" (BasicType.Numeric Int32)
+            makeParameter "datasetPath" "Dataset path" "/entry/data/data" BasicType.String
+            makeParameter "frameAxis" "Frame axis" "0" (BasicType.Numeric Int32)
+            makeParameter "yAxis" "Y axis" "1" (BasicType.Numeric Int32)
+            makeParameter "xAxis" "X axis" "2" (BasicType.Numeric Int32) ] }
 
   let makeGenericReadRandom () =
     { Id = "ReadRandom"
@@ -376,7 +377,7 @@ module BuiltInCatalog =
       Inputs = []
       Outputs =
           [ makePort "Float64" imageFloat64
-            makePort "ChunkInfo" chunkInfo ]
+            makePort "StackInfo" stackInfo ]
       Parameters =
           [ availableMemoryParameter
             makeParameter "type" "Type" "Float64" BasicType.String
@@ -415,7 +416,9 @@ module BuiltInCatalog =
       Description = "Reads a regular subset of a stack as first, first+step, first+2*step and so on, stopping at or before last. Indices are zero-based. First and last are clamped to the available stack range, and last accepts Matlab-like notation: end is the final image, end-1 is the second-to-last image, and so on. Step must be non-zero; use a negative step to read backwards."
       Aliases = [ "range"; "subset"; "input"; "end"; "matlab"; "tiff"; "file"; "UInt8"; "Float64"; "type" ]
       Inputs = []
-      Outputs = [ makePort "Float64" imageFloat64 ]
+      Outputs =
+          [ makePort "Float64" imageFloat64
+            makePort "StackInfo" stackInfo ]
       Parameters =
           [ availableMemoryParameter
             makeParameter "type" "Type" "Float64" BasicType.String
@@ -433,52 +436,22 @@ module BuiltInCatalog =
       Description = "Reads slab files assembled from chunks produced by writeInSlabs, then serves their 2D slices to the pipeline. Use the same format and suffix that were used when writing the chunk files; chunk filenames encode x/y/z chunk positions."
       Aliases = [ "slab"; "chunks"; "input"; "tiff"; "file"; "UInt8"; "Float64"; "type" ]
       Inputs = []
-      Outputs = [ makePort "Float64" imageFloat64 ]
-      Parameters =
-          [ availableMemoryParameter
-            makeParameter "type" "Type" "Float64" BasicType.String
-            makeParameter "input" "Input" "input" BasicType.String
-            suffixParameter ".tiff" ] }
-
-  let makeGenericReadZarrSlab () =
-    { Id = "ReadZarrSlab"
-      DisplayName = "readZarrSlab"
-      Category = "Sources / Sinks"
-      Summary = "Read an OME-Zarr dataset as a normal 2D slice stream."
-      Description = zarrFormatDescription
-      Aliases = [ "zarr"; "ome-zarr"; "slab"; "input"; "UInt8"; "UInt16"; "type" ]
-      Inputs = []
       Outputs =
-          [ makePort "UInt8" imageUInt8
+          [ makePort "Float64" imageFloat64
             makePort "ChunkInfo" chunkInfo ]
       Parameters =
           [ availableMemoryParameter
-            makeParameter "type" "Type" "UInt8" BasicType.String
-            makeParameter "input" "Input" "input.zarr" BasicType.String
+            makeParameter "type" "Type" "Float64" BasicType.String
+            readSlabFormatParameter
+            makeParameter "input" "Input" "input" BasicType.String
+            suffixParameter ".tiff"
             makeParameter "slabDepth" "Slab depth" "8" (BasicType.Numeric UInt32)
             makeParameter "multiscaleIndex" "Multiscale index" "0" (BasicType.Numeric Int32)
             makeParameter "datasetIndex" "Dataset index" "0" (BasicType.Numeric Int32)
             makeParameter "timepoint" "Timepoint" "0" (BasicType.Numeric Int32)
             makeParameter "channel" "Channel" "0" (BasicType.Numeric Int32)
-            makeParameter "maxParallelChunks" "Max parallel chunks" "0" (BasicType.Numeric Int32) ] }
-
-  let makeGenericReadNexusSlab () =
-    { Id = "ReadNexusSlab"
-      DisplayName = "readNexusSlab"
-      Category = "Sources / Sinks"
-      Summary = "Read a NeXus/HDF5 detector stack as a normal 2D slice stream."
-      Description = nexusFormatDescription
-      Aliases = [ "nexus"; "hdf5"; "h5"; "slab"; "input"; "MAX IV"; "ESRF"; "DanMAX"; "ForMAX"; "HOAHub"; "type" ]
-      Inputs = []
-      Outputs =
-          [ makePort "UInt16" imageUInt16
-            makePort "ChunkInfo" chunkInfo ]
-      Parameters =
-          [ availableMemoryParameter
-            makeParameter "type" "Type" "UInt16" BasicType.String
-            makeParameter "input" "Input" "scan.h5" BasicType.String
+            makeParameter "maxParallelChunks" "Max parallel chunks" "0" (BasicType.Numeric Int32)
             makeParameter "datasetPath" "Dataset path" "/entry/data/data" BasicType.String
-            makeParameter "slabDepth" "Slab depth" "8" (BasicType.Numeric UInt32)
             makeParameter "frameAxis" "Frame axis" "0" (BasicType.Numeric Int32)
             makeParameter "yAxis" "Y axis" "1" (BasicType.Numeric Int32)
             makeParameter "xAxis" "X axis" "2" (BasicType.Numeric Int32) ] }
@@ -688,8 +661,6 @@ module BuiltInCatalog =
 
         makeGenericRead()
 
-        makeGenericReadVolume()
-
         makeGenericReadRandom()
 
         makeGenericEstimateHistogram()
@@ -697,10 +668,6 @@ module BuiltInCatalog =
         makeGenericReadRange()
 
         makeGenericReadSlab()
-
-        makeGenericReadZarrSlab()
-
-        makeGenericReadNexusSlab()
 
         { Id = "ReadPointSet"
           DisplayName = "readPointSet"

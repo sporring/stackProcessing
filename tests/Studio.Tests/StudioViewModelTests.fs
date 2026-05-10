@@ -1,5 +1,7 @@
 module Tests.StudioViewModelTests
 
+open System
+open System.IO
 open Expecto
 open NodeEditor.Model
 open NodeEditor.Mvvm
@@ -53,6 +55,19 @@ let private optionStates (parameter: PipelineParameterViewModel) =
     |> Seq.map (fun option -> option.Value, option.IsEnabled)
     |> Map.ofSeq
 
+let private findRepoFile relativePath =
+    let rec search (directory: DirectoryInfo) =
+        let candidate = Path.Combine(directory.FullName, relativePath)
+
+        if File.Exists candidate then
+            candidate
+        elif isNull directory.Parent then
+            failtestf "Could not find %s from %s" relativePath AppContext.BaseDirectory
+        else
+            search directory.Parent
+
+    search (DirectoryInfo(AppContext.BaseDirectory))
+
 [<Tests>]
 let viewModelSuite =
     testList "Studio ViewModels" [
@@ -61,9 +76,10 @@ let viewModelSuite =
             vm.SetDrawingSize(2000.0, 2000.0)
 
             let read =
-                node "read" "ReadVolume"
+                node "read" "Read"
                     [ p "availableMemory" "1024" false
                       p "type" "Float32" false
+                      p "format" "Volume file" false
                       p "input" "volumedata.tif" false ]
 
             let estimator =
@@ -155,6 +171,36 @@ let viewModelSuite =
             Expect.floatClose Accuracy.high inputPin.X (info.Width / 2.0) "The top input should be horizontally centered."
             Expect.floatClose Accuracy.high inputPin.Y 0.0 "The top input should sit on the top edge."
 
+        testCase "read stream output is centered despite metadata output" <| fun _ ->
+            let vm = MainWindowViewModel()
+            vm.SetDrawingSize(1200.0, 800.0)
+            vm.AddElement("Read")
+
+            let readNode =
+                pipelineNodes vm
+                |> Seq.find (fun node -> node.State.Definition.Id = "Read")
+
+            let streamPin =
+                readNode.Pins
+                |> Seq.choose (function
+                    | :? PipelinePinViewModel as pin when pin.Kind = DataOutput -> Some pin
+                    | _ -> None)
+                |> Seq.exactlyOne
+
+            let infoPin =
+                readNode.Pins
+                |> Seq.choose (function
+                    | :? PipelinePinViewModel as pin when pin.Kind = ReducerOutput -> Some pin
+                    | _ -> None)
+                |> Seq.exactlyOne
+
+            Expect.equal streamPin.Alignment PinAlignment.Right "The image stream should leave on the right edge."
+            Expect.floatClose Accuracy.high streamPin.X readNode.Width "The stream output should sit on the right edge."
+            Expect.floatClose Accuracy.high streamPin.Y (readNode.Height / 2.0) "The stream output should ignore bottom metadata pins when placed vertically."
+            Expect.equal infoPin.Alignment PinAlignment.Bottom "The metadata record should leave on the bottom edge."
+            Expect.floatClose Accuracy.high infoPin.X (readNode.Width / 2.0) "The single metadata output should be horizontally centered."
+            Expect.floatClose Accuracy.high infoPin.Y readNode.Height "The metadata output should sit on the bottom edge."
+
         testCase "imported expand adapts output ports from connected record type" <| fun _ ->
             let vm = MainWindowViewModel()
             vm.SetDrawingSize(1200.0, 800.0)
@@ -191,4 +237,83 @@ let viewModelSuite =
                 (outputPins |> List.map _.Port.Name)
                 [ "Dimensions: UInt32"; "Size: UInt64 list"; "ComponentType: String"; "NumberOfComponents: UInt32"; "Width: UInt64"; "Height: UInt64"; "Depth: UInt64" ]
                 "StackInfo fields should appear as reducer outputs."
+
+        testCase "resample sample imports without changing connectors during collection notification" <| fun _ ->
+            let vm = MainWindowViewModel()
+            vm.SetDrawingSize(2000.0, 1400.0)
+
+            let samplePath = findRepoFile (Path.Combine("samples", "resample", "pipeline.json"))
+            let graph = PipelineGraphStorage.load samplePath
+
+            Expect.isTrue (File.Exists samplePath) "The resample sample should exist."
+            try
+                vm.ImportGraph graph
+            with ex ->
+                failtestf "Importing resample/pipeline.json should not throw, but got: %s" ex.Message
+
+            let exported = vm.ExportGraph()
+
+            Expect.equal exported.Edges.Length graph.Edges.Length "Importing resample should preserve every saved edge."
+            Expect.isTrue
+                (exported.Edges |> Array.exists (fun edge -> edge.FromNode = "node-4" && edge.ToNode = "node-5"))
+                "The imported Expand-to-Print field edges should survive."
+
+        testCase "changing read type adapts downstream image boxes and keeps metadata links" <| fun _ ->
+            let vm = MainWindowViewModel()
+            vm.SetDrawingSize(2000.0, 1400.0)
+
+            let samplePath = findRepoFile (Path.Combine("samples", "resample", "pipeline.json"))
+            vm.ImportGraph(PipelineGraphStorage.load samplePath)
+
+            let nodes =
+                pipelineNodes vm
+                |> Seq.toArray
+
+            let readNode = nodes |> Array.find (fun node -> node.State.Definition.Id = "Read")
+            let resampleNode = nodes |> Array.find (fun node -> node.State.Definition.Id = "Resample")
+            let expandNodes = nodes |> Array.filter (fun node -> node.State.Definition.Id = "Expand")
+            let drawing = vm.Editor.Drawing :?> DrawingNodeViewModel
+
+            let streamConnectorCountBefore =
+                drawing.Connectors
+                |> Seq.filter (fun connector ->
+                    match connector.Start, connector.End with
+                    | (:? PipelinePinViewModel as startPin), (:? PipelinePinViewModel as endPin) ->
+                        Object.ReferenceEquals(startPin.Parent, readNode)
+                        && startPin.Kind = DataOutput
+                        && Object.ReferenceEquals(endPin.Parent, resampleNode)
+                        && endPin.Kind = DataInput
+                    | _ ->
+                        false)
+                |> Seq.length
+
+            Expect.equal streamConnectorCountBefore 1 "Read should be connected to Resample before the type change."
+
+            (readNode |> parameter "type").Value <- "Float32"
+
+            Expect.equal (readNode |> parameter "type").Value "Float32" "The read type parameter should change."
+            Expect.equal (resampleNode |> parameter "type").Value "Float32" "Resample should adapt to the changed source image type."
+
+            let resampleInput =
+                resampleNode.Pins
+                |> Seq.choose (function
+                    | :? PipelinePinViewModel as pin when pin.Kind = DataInput -> Some pin
+                    | _ -> None)
+                |> Seq.exactlyOne
+
+            Expect.equal resampleInput.Port.Name "Float32" "Resample's image input hover text should show the concrete type."
+
+            let readMetadataStillConnected =
+                drawing.Connectors
+                |> Seq.exists (fun connector ->
+                    match connector.Start, connector.End with
+                    | (:? PipelinePinViewModel as startPin), (:? PipelinePinViewModel as endPin) ->
+                        Object.ReferenceEquals(startPin.Parent, readNode)
+                        && startPin.Kind = ReducerOutput
+                        && expandNodes |> Array.exists (fun expandNode -> Object.ReferenceEquals(endPin.Parent, expandNode))
+                        && endPin.Kind = DataInput
+                    | _ ->
+                        false)
+
+            Expect.isTrue readMetadataStillConnected "Changing the stream type should not remove the unchanged StackInfo connection."
     ]

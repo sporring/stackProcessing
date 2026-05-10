@@ -112,7 +112,7 @@ type PipelinePinViewModel(alignment: PinAlignment, port: Port, kind: PipelinePin
 type ArrangeSettingsViewModel() =
     inherit ViewModelBase()
 
-    let defaultBoundingBoxCompact = 0.002
+    let defaultBoundingBoxCompact = 0.005
     let defaultBoundingBoxSquare = 0.
     let defaultBoxSpacing = 3.
     let defaultBoxSpacingSharpness = 1.
@@ -121,6 +121,7 @@ type ArrangeSettingsViewModel() =
     let defaultConnectorAvoidsBoxes = 1.
     let defaultConnectorCrossings = 0.
     let defaultStayNearUserLayout = 0.
+    let defaultDamping = 0.75
     let defaultVisualizationDelayMs = 28.0
 
     let mutable boundingBoxCompact = defaultBoundingBoxCompact
@@ -132,6 +133,7 @@ type ArrangeSettingsViewModel() =
     let mutable connectorAvoidsBoxes = defaultConnectorAvoidsBoxes
     let mutable connectorCrossings = defaultConnectorCrossings
     let mutable stayNearUserLayout = defaultStayNearUserLayout
+    let mutable damping = defaultDamping
     let mutable visualizationDelayMs = defaultVisualizationDelayMs
 
     member this.BoundingBoxCompact
@@ -170,6 +172,10 @@ type ArrangeSettingsViewModel() =
         with get () = stayNearUserLayout
         and set value = this.SetProperty(&stayNearUserLayout, value) |> ignore
 
+    member this.Damping
+        with get () = damping
+        and set value = this.SetProperty(&damping, value) |> ignore
+
     member this.VisualizationDelayMs
         with get () = visualizationDelayMs
         and set value = this.SetProperty(&visualizationDelayMs, value) |> ignore
@@ -184,6 +190,7 @@ type ArrangeSettingsViewModel() =
         this.ConnectorAvoidsBoxes <- defaultConnectorAvoidsBoxes
         this.ConnectorCrossings <- defaultConnectorCrossings
         this.StayNearUserLayout <- defaultStayNearUserLayout
+        this.Damping <- defaultDamping
         this.VisualizationDelayMs <- defaultVisualizationDelayMs
 
 module private PortMapping =
@@ -420,13 +427,13 @@ module private ScalarFunctionNode =
 
 module private SourceImageNode =
     let hasInputTitle functionId =
-        functionId = "Read" || functionId = "ReadVolume" || functionId = "ReadRandom" || functionId = "EstimateHistogram" || functionId = "ReadRange" || functionId = "ReadSlab" || functionId = "ReadZarrSlab" || functionId = "ReadNexusSlab"
+        functionId = "Read" || functionId = "ReadRandom" || functionId = "EstimateHistogram" || functionId = "ReadRange" || functionId = "ReadSlab"
 
     let hasOutputTitle functionId =
         functionId = "Write" || functionId = "WriteThrough" || functionId = "WriteVolume" || functionId = "WriteInSlabs" || functionId = "WriteZarr" || functionId = "WriteNexus"
 
     let hasFormatParameter functionId =
-        (hasInputTitle functionId && functionId <> "ReadZarrSlab" && functionId <> "ReadNexusSlab")
+        (hasInputTitle functionId && functionId <> "Read")
         || (hasOutputTitle functionId && functionId <> "WriteZarr" && functionId <> "WriteNexus")
         || functionId = "WriteSlabSlices"
         || functionId = "GetChunkInfo"
@@ -454,6 +461,17 @@ module private SourceImageNode =
         ImageFileFormat.readFormats
         |> List.map (fun format -> format.Label, format.Suffix)
 
+    let readFormatOptions =
+        [ "Image stack"
+          "Volume file"
+          "OME-Zarr"
+          "NeXus/HDF5" ]
+
+    let readSlabFormatOptions =
+        [ "Chunked stack"
+          "OME-Zarr"
+          "NeXus/HDF5" ]
+
     let suffixOptionsFor functionId =
         if hasInputTitle functionId || functionId = "GetChunkInfo" || functionId = "ResampleAffineTrilinearSlices" then
             readSuffixOptions
@@ -466,10 +484,18 @@ module private SourceImageNode =
         |> Option.map _.Value
         |> Option.defaultValue ".tiff"
 
+    let selectedFormat (state: PipelineNodeState) =
+        state.Parameters
+        |> Seq.tryFind (fun parameter -> parameter.Key = "format")
+        |> Option.map _.Value
+        |> Option.defaultValue "Image stack"
+
     let supportedTypes (state: PipelineNodeState) =
         match state.Definition.Id with
-        | "ReadZarrSlab" -> [ UInt8; UInt16 ]
-        | "ReadNexusSlab" -> [ UInt8; Int8; UInt16; Int16; UInt32; Int32; Float32; Float64 ]
+        | "Read" when selectedFormat state = "OME-Zarr" -> [ UInt8; UInt16 ]
+        | "Read" when selectedFormat state = "NeXus/HDF5" -> [ UInt8; Int8; UInt16; Int16; UInt32; Int32; Float32; Float64 ]
+        | "ReadSlab" when selectedFormat state = "OME-Zarr" -> [ UInt8; UInt16 ]
+        | "ReadSlab" when selectedFormat state = "NeXus/HDF5" -> [ UInt8; Int8; UInt16; Int16; UInt32; Int32; Float32; Float64 ]
         | _ ->
             selectedSuffix state
             |> ImageFileFormat.supportedTypes
@@ -974,7 +1000,8 @@ type PipelineNodeViewModel(
     getDrawingSize: unit -> float * float,
     markGraphDirty: unit -> unit,
     removePinConnections: IPin seq -> unit,
-    refreshNodePins: PipelineNodeViewModel -> unit) as this =
+    refreshNodePins: PipelineNodeViewModel -> unit,
+    handleTypeChange: PipelineNodeViewModel -> string -> bool) as this =
     inherit NodeViewModel()
 
     let mutable lastX = 0.
@@ -1036,7 +1063,7 @@ type PipelineNodeViewModel(
 
     let outputKindForPort functionId portIndex (port: Port) =
         match functionId, portIndex, port.Type with
-        | ("Read" | "ReadVolume" | "ReadSlab" | "ReadZarrSlab" | "ReadNexusSlab"), _, Custom _
+        | ("Read" | "ReadRandom" | "ReadRange" | "ReadSlab"), _, Custom _
         | "Write", _, Custom "StackInfo" -> ReducerOutput
         | _ -> outputKindFor functionId
 
@@ -1046,14 +1073,20 @@ type PipelineNodeViewModel(
         | "FileDirectory" -> state.Definition.Inputs, state.Definition.Outputs
         | "ScalarOp" -> state.Definition.Inputs, [ ScalarOpNode.outputPort state ]
         | "ScalarFunction" -> state.Definition.Inputs, [ ScalarFunctionNode.outputPort ]
-        | "Read"
-        | "ReadVolume"
-        | "ReadSlab"
-        | "ReadZarrSlab"
-        | "ReadNexusSlab" ->
+        | "Read" ->
+            let infoType =
+                match SourceImageNode.selectedFormat state with
+                | "OME-Zarr"
+                | "NeXus/HDF5" -> BuiltInCatalog.chunkInfo
+                | _ -> BuiltInCatalog.stackInfo
+            let infoName = if infoType = BuiltInCatalog.chunkInfo then "ChunkInfo" else "StackInfo"
+
+            state.Definition.Inputs, SourceImageNode.outputPort state :: [ { Name = infoName; Type = infoType } ]
+        | "ReadSlab" ->
             state.Definition.Inputs, SourceImageNode.outputPort state :: (state.Definition.Outputs |> List.skip 1)
         | "ReadRandom"
-        | "ReadRange"
+        | "ReadRange" ->
+            state.Definition.Inputs, SourceImageNode.outputPort state :: (state.Definition.Outputs |> List.skip 1)
         | "Zero"
         | "NormalNoise"
         | "SaltAndPepperNoise"
@@ -1067,6 +1100,8 @@ type PipelineNodeViewModel(
             [ SourceImageNode.writeInputPort state ], state.Definition.Outputs
         | "ImageOpImage" -> PairOperationNode.ports state
         | "Cast" -> CastNode.ports state
+        | "Resize"
+        | "Resample" -> HighValueFilterNode.typedImagePorts state
         | functionId when ScalarImageOperationNode.isOperation functionId -> ScalarImageOperationNode.ports state
         | "Threshold" -> ThresholdNode.ports state
         | "SerialEstTrans" -> SerialTransformNode.estimatorPorts state
@@ -1081,12 +1116,26 @@ type PipelineNodeViewModel(
             |> Option.defaultValue []
         | _ -> state.Definition.Inputs, state.Definition.Outputs
 
+    let parameterPinIsVisible (parameter: PipelineParameterViewModel) =
+        parameter.UseInput
+        && (state.Definition.Id <> "Print" || PrintNode.inputIsVisible state parameter.Key)
+        || (state.Definition.Id = "CollapseComponentLabels" && parameter.Key = "translationTable")
+
     let computeNodeWidth () =
         let minimumWidth = 110.
 
-        let parameterPinCount = state.Parameters.Count
+        let parameterPinCount =
+            state.Parameters
+            |> Seq.filter parameterPinIsVisible
+            |> Seq.length
 
-        let _, outputs = effectivePorts ()
+        let inputs, outputs = effectivePorts ()
+
+        let topInputCount =
+            if state.Definition.Id = "Expand" then
+                inputs.Length
+            else
+                0
 
         let bottomOutputCount =
             outputs
@@ -1098,7 +1147,7 @@ type PipelineNodeViewModel(
                 | _ -> 0)
             |> fun count -> if state.Definition.Id = "Tap" then max count 1 else count
 
-        let horizontalPinCount = max parameterPinCount bottomOutputCount
+        let horizontalPinCount = max topInputCount (max parameterPinCount bottomOutputCount)
         let pinWidth = 20. + 22. * float (max 1 horizontalPinCount)
         max minimumWidth pinWidth
 
@@ -1141,6 +1190,7 @@ type PipelineNodeViewModel(
             parameter.PropertyChanged.Add(fun args ->
                 if args.PropertyName = nameof parameter.UseInput then
                     this.SyncParameterPinVisibility()
+                    this.RebuildPins()
                     if state.Definition.Id = "Print" && PrintNode.isInputKey parameter.Key then
                         state.Parameters
                         |> Seq.tryFind (fun parameter -> parameter.Key = "format")
@@ -1224,14 +1274,16 @@ type PipelineNodeViewModel(
                     state.Title <- ScalarImageOperationNode.title state
                     this.Name <- state.Title
                     markGraphDirty()
-                elif (state.Definition.Id = "Scalar" || state.Definition.Id = "ScalarOp" || state.Definition.Id = "Read" || state.Definition.Id = "ReadVolume" || state.Definition.Id = "ReadRandom" || state.Definition.Id = "EstimateHistogram" || state.Definition.Id = "ReadRange" || state.Definition.Id = "ReadSlab" || state.Definition.Id = "ReadZarrSlab" || state.Definition.Id = "ReadNexusSlab" || state.Definition.Id = "Zero" || state.Definition.Id = "NormalNoise" || state.Definition.Id = "SaltAndPepperNoise" || state.Definition.Id = "ShotNoise" || state.Definition.Id = "SpeckleNoise" || state.Definition.Id = "CreateByEuler2DTransform" || state.Definition.Id = "Threshold" || state.Definition.Id = "ImageOpImage" || state.Definition.Id = "Resize" || state.Definition.Id = "Resample" || state.Definition.Id = "ResampleAffineTrilinearSlices" || HighValueFilterNode.typedImageFunctionIds.Contains state.Definition.Id || ScalarImageOperationNode.isOperation state.Definition.Id) && parameter.Key = "type" && args.PropertyName = nameof parameter.Value then
+                elif (state.Definition.Id = "Scalar" || state.Definition.Id = "ScalarOp" || state.Definition.Id = "Read" || state.Definition.Id = "ReadRandom" || state.Definition.Id = "EstimateHistogram" || state.Definition.Id = "ReadRange" || state.Definition.Id = "ReadSlab" || state.Definition.Id = "Zero" || state.Definition.Id = "NormalNoise" || state.Definition.Id = "SaltAndPepperNoise" || state.Definition.Id = "ShotNoise" || state.Definition.Id = "SpeckleNoise" || state.Definition.Id = "CreateByEuler2DTransform" || state.Definition.Id = "Threshold" || state.Definition.Id = "ImageOpImage" || state.Definition.Id = "Resize" || state.Definition.Id = "Resample" || state.Definition.Id = "ResampleAffineTrilinearSlices" || HighValueFilterNode.typedImageFunctionIds.Contains state.Definition.Id || ScalarImageOperationNode.isOperation state.Definition.Id) && parameter.Key = "type" && args.PropertyName = nameof parameter.Value then
                     if state.Definition.Id = "Scalar" then
                         ScalarNode.ensureValueMatchesType state
                         state.Title <- ScalarNode.title state
                         this.Name <- state.Title
 
-                    this.RebuildPins()
-                    refreshNodePins this
+                    if not (handleTypeChange this parameter.Value) then
+                        this.RebuildPins()
+                        refreshNodePins this
+
                     markGraphDirty()
                 elif SourceImageNode.hasFormatParameter state.Definition.Id && parameter.Key = "suffix" && args.PropertyName = nameof parameter.Value then
                     if SourceImageNode.hasInputTitle state.Definition.Id
@@ -1258,6 +1310,24 @@ type PipelineNodeViewModel(
                     this.RebuildPins()
                     refreshNodePins this
                     markGraphDirty()
+                elif (state.Definition.Id = "Read" || state.Definition.Id = "ReadSlab") && parameter.Key = "format" && args.PropertyName = nameof parameter.Value then
+                    let supportedOptions = SourceImageNode.supportedTypeOptions state
+                    let supported = supportedOptions |> Set.ofList
+
+                    state.Parameters
+                    |> Seq.tryFind (fun parameter -> parameter.Key = "type")
+                    |> Option.iter (fun typeParameter ->
+                        for option in typeParameter.Options do
+                            option.IsEnabled <- supported |> Set.contains option.Value
+
+                        if not (supported |> Set.contains typeParameter.Value) then
+                            supportedOptions
+                            |> List.tryHead
+                            |> Option.iter (fun value -> typeParameter.Value <- value))
+
+                    this.RebuildPins()
+                    refreshNodePins this
+                    markGraphDirty()
                 elif state.Definition.Id = "Cast" && (parameter.Key = "sourceType" || parameter.Key = "targetType") && args.PropertyName = nameof parameter.Value then
                     this.RebuildPins()
                     refreshNodePins this
@@ -1277,9 +1347,7 @@ type PipelineNodeViewModel(
             | _ -> None)
 
     member private _.ParameterPinIsVisible(parameter: PipelineParameterViewModel) =
-        parameter.UseInput
-        && (state.Definition.Id <> "Print" || PrintNode.inputIsVisible state parameter.Key)
-        || (state.Definition.Id = "CollapseComponentLabels" && parameter.Key = "translationTable")
+        parameterPinIsVisible parameter
 
     member private this.SetParameterPinVisibility(parameter: PipelineParameterViewModel, pin: IPin) =
         let isVisible = this.ParameterPinIsVisible parameter
@@ -1388,6 +1456,23 @@ type PipelineNodeViewModel(
                     | ReducerOutput -> 1
                     | _ -> 0)
 
+            let sideOutputIndex =
+                outputs
+                |> List.take portIndex
+                |> List.indexed
+                |> List.sumBy (fun (previousIndex, output) ->
+                    match outputKindForPort state.Definition.Id previousIndex output with
+                    | DataOutput -> 1
+                    | _ -> 0)
+
+            let sideOutputCount =
+                outputs
+                |> List.indexed
+                |> List.sumBy (fun (index, output) ->
+                    match outputKindForPort state.Definition.Id index output with
+                    | DataOutput -> 1
+                    | _ -> 0)
+
             let alignment =
                 if kind = ScalarOutput || kind = ReducerOutput then PinAlignment.Bottom else PinAlignment.Right
 
@@ -1403,7 +1488,7 @@ type PipelineNodeViewModel(
                 if kind = ScalarOutput || kind = ReducerOutput then
                     nodeHeight
                 else
-                    pinPosition nodeHeight portIndex outputs.Length
+                    pinPosition nodeHeight sideOutputIndex sideOutputCount
 
             addPipelinePin x y alignment kind None port |> ignore)
 
@@ -1482,6 +1567,8 @@ type MainWindowViewModel() as this =
     let mutable arrangeSettingsRevision = 0
     let mutable arrangeRunSerial = 0
     let mutable suppressExpandRefresh = false
+    let mutable expandRefreshScheduled = false
+    let mutable suppressTypePropagation = false
     let mutable selectedNode: PipelineNodeViewModel = null
     let selectedNodes = HashSet<PipelineNodeViewModel>(HashIdentity.Reference)
     let mutable graphOutput = ""
@@ -1585,21 +1672,23 @@ type MainWindowViewModel() as this =
                         |> List.map (fun value -> ParameterOptionViewModel(value, value, true))
 
                     PipelineParameterViewModel(parameter.Label, parameter.Key, parameter.DefaultValue, parameter.Type, options, false)
-                | "ReadZarrSlab", "type" ->
-                    let supported = [ "UInt8"; "UInt16" ] |> Set.ofList
+                | ("Read" | "ReadSlab"), "format" ->
+                    let options =
+                        (if functionId = "Read" then SourceImageNode.readFormatOptions else SourceImageNode.readSlabFormatOptions)
+                        |> List.map (fun value -> ParameterOptionViewModel(value, value, true))
+
+                    PipelineParameterViewModel(parameter.Label, parameter.Key, parameter.DefaultValue, parameter.Type, options, false)
+                | ("Read" | "ReadSlab"), "type" ->
+                    let supported =
+                        ImageFileFormat.supportedTypes ".tiff"
+                        |> List.map NumericType.toString
+                        |> Set.ofList
                     let options =
                         SourceImageNode.typeOptions
                         |> List.map (fun value -> ParameterOptionViewModel(value, value, supported |> Set.contains value))
 
                     PipelineParameterViewModel(parameter.Label, parameter.Key, parameter.DefaultValue, parameter.Type, options, false)
-                | "ReadNexusSlab", "type" ->
-                    let supported = [ "UInt8"; "Int8"; "UInt16"; "Int16"; "UInt32"; "Int32"; "Float32"; "Float64" ] |> Set.ofList
-                    let options =
-                        SourceImageNode.typeOptions
-                        |> List.map (fun value -> ParameterOptionViewModel(value, value, supported |> Set.contains value))
-
-                    PipelineParameterViewModel(parameter.Label, parameter.Key, parameter.DefaultValue, parameter.Type, options, false)
-                | ("Read" | "ReadVolume" | "ReadRandom" | "EstimateHistogram" | "ReadRange" | "ReadSlab" | "Zero" | "NormalNoise" | "SaltAndPepperNoise" | "ShotNoise" | "SpeckleNoise" | "CreateByEuler2DTransform" | "ResampleAffineTrilinearSlices"), "type" ->
+                | ("ReadRandom" | "EstimateHistogram" | "ReadRange" | "Zero" | "NormalNoise" | "SaltAndPepperNoise" | "ShotNoise" | "SpeckleNoise" | "CreateByEuler2DTransform" | "ResampleAffineTrilinearSlices"), "type" ->
                     let defaultSuffix =
                         definition.Parameters
                         |> List.tryFind (fun parameter -> parameter.Key = "suffix")
@@ -1932,6 +2021,18 @@ type MainWindowViewModel() as this =
             | _ -> false
         | _ -> false
 
+    let isAdaptableImageInputPin (pin: IPin) =
+        match pin with
+        | :? PipelinePinViewModel as pipelinePin when pipelinePin.Kind = DataInput ->
+            match pipelinePin.Parent, pipelinePin.Port.Type with
+            | :? PipelineNodeViewModel as node, Image _ ->
+                node.State.Definition.Id = "Cast"
+                || (node.State.Parameters |> Seq.exists (fun parameter -> parameter.Key = "type"))
+            | _ ->
+                false
+        | _ ->
+            false
+
     let hasConnectionRequiringFixedDataOutput (node: PipelineNodeViewModel) =
         node.Pins
         |> Seq.exists (function
@@ -1939,7 +2040,8 @@ type MainWindowViewModel() as this =
                 drawing.Connectors
                 |> Seq.exists (fun connector ->
                     Object.ReferenceEquals(connector.Start, pin)
-                    && not (isNumberImagePin connector.End))
+                    && not (isNumberImagePin connector.End)
+                    && not (isAdaptableImageInputPin connector.End))
             | _ -> false)
 
     let refreshScalarTypeOptions () =
@@ -2029,8 +2131,6 @@ type MainWindowViewModel() as this =
             || node.State.Definition.Id = "ReadRandom"
             || node.State.Definition.Id = "ReadRange"
             || node.State.Definition.Id = "ReadSlab"
-            || node.State.Definition.Id = "ReadZarrSlab"
-            || node.State.Definition.Id = "ReadNexusSlab"
             || node.State.Definition.Id = "Zero"
             || node.State.Definition.Id = "NormalNoise"
             || node.State.Definition.Id = "SaltAndPepperNoise"
@@ -2375,6 +2475,12 @@ type MainWindowViewModel() as this =
             if isPrintParameter && (outputPin.Kind = ScalarOutput || outputPin.Kind = ReducerOutput) then
                 assignedParameterInputType inputPin
                 |> Option.forall (PortType.canConnect outputPin.Port.Type)
+            elif outputPin.Kind = ReducerOutput
+                 && inputPin.Kind = DataInput
+                 && (match inputPin.Parent with
+                     | :? PipelineNodeViewModel as node -> node.State.Definition.Id = "Expand"
+                     | _ -> false) then
+                PortType.canConnect outputPin.Port.Type inputPin.Port.Type
             elif (outputPin.Kind = DataOutput || outputPin.Kind = ReducerOutput) && inputPin.Kind = DataInput then
                 let baseCompatible = PortType.canConnect outputPin.Port.Type inputPin.Port.Type
                 let formatCompatible =
@@ -2479,14 +2585,13 @@ type MainWindowViewModel() as this =
                     |> Seq.choose (function
                         | :? PipelinePinViewModel as outputPin when outputPin.Kind = ReducerOutput -> Some outputPin
                         | _ -> None)
-                    |> Seq.tryFindIndex (fun outputPin -> Object.ReferenceEquals(outputPin, pin))
+                    |> Seq.tryFindIndex (fun outputPin -> outputPin.Port.Name = pin.Port.Name)
 
             let nodeEndpoint (pin: IPin) =
                 match pin with
                 | :? PipelinePinViewModel as pipelinePin when Object.ReferenceEquals(pipelinePin.Parent, node) ->
-                    dynamicPinIndex pipelinePin
-                    |> Option.map (fun index -> pipelinePin.Kind, index)
-                | _ -> None
+                    true, dynamicPinIndex pipelinePin |> Option.map (fun index -> pipelinePin.Kind, index)
+                | _ -> false, None
 
             let connectors =
                 drawing.Connectors
@@ -2495,25 +2600,196 @@ type MainWindowViewModel() as this =
 
             let connectorSnapshots =
                 connectors
-                |> Array.map (fun connector -> connector, nodeEndpoint connector.Start, nodeEndpoint connector.End)
+                |> Array.map (fun connector ->
+                    let startBelongsToNode, startEndpoint = nodeEndpoint connector.Start
+                    let endBelongsToNode, endEndpoint = nodeEndpoint connector.End
+                    connector, startBelongsToNode, startEndpoint, endBelongsToNode, endEndpoint)
 
             for connector in connectors do
                 drawing.Connectors.Remove(connector) |> ignore
 
-            Dispatcher.UIThread.Post(
-                (fun () ->
-                    for connector, startEndpoint, endEndpoint in connectorSnapshots do
-                        startEndpoint
-                        |> Option.bind (fun (kind, index) -> pinByKindIndex kind index node)
+            for connector, startBelongsToNode, startEndpoint, endBelongsToNode, endEndpoint in connectorSnapshots do
+                let startReplacement =
+                    startEndpoint
+                    |> Option.bind (fun (kind, index) -> pinByKindIndex kind index node)
+
+                let endReplacement =
+                    endEndpoint
+                    |> Option.bind (fun (kind, index) -> pinByKindIndex kind index node)
+
+                let startStillExists =
+                    if startBelongsToNode then
+                        startReplacement.IsSome
+                    else
+                        true
+
+                let endStillExists =
+                    if endBelongsToNode then
+                        endReplacement.IsSome
+                    else
+                        true
+
+                startReplacement
+                |> Option.iter (fun pin -> connector.Start <- pin)
+
+                endReplacement
+                |> Option.iter (fun pin -> connector.End <- pin)
+
+                if startStillExists && endStillExists && canConnectPins connector.Start connector.End then
+                    drawing.Connectors.Add(connector) |> ignore
+
+    let handleTypeChange (sourceNode: PipelineNodeViewModel) (typeValue: string) =
+        if suppressTypePropagation then
+            true
+        else
+            suppressTypePropagation <- true
+
+            try
+                let parameterCanUseValue (parameter: PipelineParameterViewModel) =
+                    parameter.Options.Count = 0
+                    || (parameter.Options |> Seq.exists (fun option -> option.Value = typeValue))
+
+                let trySetParameter key (node: PipelineNodeViewModel) =
+                    node.State.Parameters
+                    |> Seq.tryFind (fun parameter -> parameter.Key = key)
+                    |> Option.filter parameterCanUseValue
+                    |> Option.map (fun parameter ->
+                        let changed = parameter.Value <> typeValue
+                        if changed then
+                            parameter.Value <- typeValue
+
+                        changed)
+                    |> Option.defaultValue false
+
+                let changedNodes = ResizeArray<PipelineNodeViewModel>()
+                let queue = Queue<PipelineNodeViewModel>()
+                let visited = HashSet<PipelineNodeViewModel>(HashIdentity.Reference)
+
+                let remember node =
+                    if changedNodes |> Seq.exists (fun candidate -> Object.ReferenceEquals(candidate, node)) |> not then
+                        changedNodes.Add node
+
+                remember sourceNode
+                queue.Enqueue sourceNode
+
+                while queue.Count > 0 do
+                    let node = queue.Dequeue()
+
+                    if visited.Add node then
+                        let downstreamInputs =
+                            drawing.Connectors
+                            |> Seq.choose (fun connector ->
+                                match connector.Start, connector.End with
+                                | (:? PipelinePinViewModel as startPin), (:? PipelinePinViewModel as endPin)
+                                    when Object.ReferenceEquals(startPin.Parent, node)
+                                         && startPin.Kind = DataOutput
+                                         && endPin.Kind = DataInput ->
+                                    Some endPin
+                                | _ ->
+                                    None)
+                            |> Seq.toArray
+
+                        for endPin in downstreamInputs do
+                            match endPin.Parent with
+                            | :? PipelineNodeViewModel as targetNode when targetNode.State.Definition.Id = "Cast" ->
+                                if trySetParameter "sourceType" targetNode then
+                                    remember targetNode
+                            | :? PipelineNodeViewModel as targetNode ->
+                                if trySetParameter "type" targetNode then
+                                    remember targetNode
+                                    queue.Enqueue targetNode
+                            | _ ->
+                                ()
+
+                let refreshChangedNodePinsTogether (nodes: PipelineNodeViewModel seq) =
+                    let nodes = nodes |> Seq.toArray
+                    let nodeSet = HashSet<PipelineNodeViewModel>(nodes, HashIdentity.Reference)
+
+                    let dynamicPinIndexFor (node: PipelineNodeViewModel) (pin: PipelinePinViewModel) =
+                        match pin.Kind with
+                        | ParameterInput ->
+                            node.State.Parameters
+                            |> Seq.tryFindIndex (fun parameter -> parameter.Key = pin.ParameterKey)
+                        | DataInput
+                        | DataOutput ->
+                            match pin.Kind, pin.Port.Name with
+                            | DataInput, name when name.StartsWith("J:", StringComparison.Ordinal) -> Some 1
+                            | DataInput, name when name.StartsWith("K:", StringComparison.Ordinal) -> Some 2
+                            | DataInput, name when name.StartsWith("L:", StringComparison.Ordinal) -> Some 3
+                            | _ -> Some 0
+                        | ScalarOutput ->
+                            Some 0
+                        | ReducerOutput ->
+                            node.Pins
+                            |> Seq.choose (function
+                                | :? PipelinePinViewModel as outputPin when outputPin.Kind = ReducerOutput -> Some outputPin
+                                | _ -> None)
+                            |> Seq.tryFindIndex (fun outputPin -> outputPin.Port.Name = pin.Port.Name)
+
+                    let nodeEndpoint (pin: IPin) =
+                        match pin with
+                        | :? PipelinePinViewModel as pipelinePin ->
+                            match pipelinePin.Parent with
+                            | :? PipelineNodeViewModel as node when nodeSet.Contains node ->
+                                true, Some node, dynamicPinIndexFor node pipelinePin |> Option.map (fun index -> pipelinePin.Kind, index)
+                            | _ ->
+                                false, None, None
+                        | _ ->
+                            false, None, None
+
+                    let connectors =
+                        drawing.Connectors
+                        |> Seq.filter (fun connector ->
+                            match connector.Start.Parent, connector.End.Parent with
+                            | (:? PipelineNodeViewModel as startNode), _ when nodeSet.Contains startNode -> true
+                            | _, (:? PipelineNodeViewModel as endNode) when nodeSet.Contains endNode -> true
+                            | _ -> false)
+                        |> Seq.toArray
+
+                    let connectorSnapshots =
+                        connectors
+                        |> Array.map (fun connector ->
+                            let startBelongsToNode, startNode, startEndpoint = nodeEndpoint connector.Start
+                            let endBelongsToNode, endNode, endEndpoint = nodeEndpoint connector.End
+                            connector, startBelongsToNode, startNode, startEndpoint, endBelongsToNode, endNode, endEndpoint)
+
+                    for connector in connectors do
+                        drawing.Connectors.Remove(connector) |> ignore
+
+                    for connector, startBelongsToNode, startNode, startEndpoint, endBelongsToNode, endNode, endEndpoint in connectorSnapshots do
+                        let startReplacement =
+                            match startNode, startEndpoint with
+                            | Some node, Some(kind, index) -> pinByKindIndex kind index node
+                            | _ -> None
+
+                        let endReplacement =
+                            match endNode, endEndpoint with
+                            | Some node, Some(kind, index) -> pinByKindIndex kind index node
+                            | _ -> None
+
+                        let startStillExists =
+                            if startBelongsToNode then startReplacement.IsSome else true
+
+                        let endStillExists =
+                            if endBelongsToNode then endReplacement.IsSome else true
+
+                        startReplacement
                         |> Option.iter (fun pin -> connector.Start <- pin)
 
-                        endEndpoint
-                        |> Option.bind (fun (kind, index) -> pinByKindIndex kind index node)
+                        endReplacement
                         |> Option.iter (fun pin -> connector.End <- pin)
 
-                        if canConnectPins connector.Start connector.End then
-                            drawing.Connectors.Add(connector) |> ignore),
-                DispatcherPriority.Background)
+                        if startStillExists && endStillExists && canConnectPins connector.Start connector.End then
+                            drawing.Connectors.Add(connector) |> ignore
+
+                for node in changedNodes do
+                    node.RebuildPins()
+
+                refreshChangedNodePinsTogether changedNodes
+
+                true
+            finally
+                suppressTypePropagation <- false
 
     let createNode index functionId =
         let node =
@@ -2524,7 +2800,8 @@ type MainWindowViewModel() as this =
                 (fun () -> drawing.Width, drawing.Height),
                 (fun () -> this.MarkGraphDirty()),
                 removePinConnections,
-                refreshNodePins)
+                refreshNodePins,
+                handleTypeChange)
 
         watchState node.State
 
@@ -2561,27 +2838,75 @@ type MainWindowViewModel() as this =
             suppressExpandRefresh <- true
 
             try
-                drawing.Nodes
-                |> Seq.choose (function
-                    | :? PipelineNodeViewModel as node when node.State.Definition.Id = "Expand" -> Some node
-                    | _ -> None)
-                |> Seq.iter (fun node ->
-                    let recordType =
-                        drawing.Connectors
-                        |> Seq.tryPick (fun connector ->
-                            match connector.Start, connector.End with
-                            | (:? PipelinePinViewModel as startPin), (:? PipelinePinViewModel as endPin)
-                                when Object.ReferenceEquals(endPin.Parent, node)
-                                     && endPin.Kind = DataInput ->
-                                Some startPin.Port.Type
-                            | _ -> None)
+                let pinIsStillOnNode (pin: IPin) =
+                    match pin with
+                    | :? PipelinePinViewModel as pipelinePin ->
+                        match pipelinePin.Parent with
+                        | :? PipelineNodeViewModel as node ->
+                            node.Pins
+                            |> Seq.exists (fun currentPin -> Object.ReferenceEquals(currentPin, pin))
+                        | _ -> true
+                    | _ -> true
 
-                    if node.State.RecordType <> recordType then
-                        node.State.RecordType <- recordType
-                        node.RebuildPins()
-                        refreshNodePins node)
+                let pruneInvalidConnectors () =
+                    let invalidConnectors =
+                        drawing.Connectors
+                        |> Seq.filter (fun connector ->
+                            not (pinIsStillOnNode connector.Start)
+                            || not (pinIsStillOnNode connector.End)
+                            || not (canConnectPins connector.Start connector.End))
+                        |> Seq.toArray
+
+                    for connector in invalidConnectors do
+                        drawing.Connectors.Remove(connector) |> ignore
+
+                    invalidConnectors.Length > 0
+
+                let refreshExpandNodes () =
+                    let mutable changed = false
+
+                    drawing.Nodes
+                    |> Seq.choose (function
+                        | :? PipelineNodeViewModel as node when node.State.Definition.Id = "Expand" -> Some node
+                        | _ -> None)
+                    |> Seq.iter (fun node ->
+                        let recordType =
+                            drawing.Connectors
+                            |> Seq.tryPick (fun connector ->
+                                match connector.Start, connector.End with
+                                | (:? PipelinePinViewModel as startPin), (:? PipelinePinViewModel as endPin)
+                                    when Object.ReferenceEquals(endPin.Parent, node)
+                                         && endPin.Kind = DataInput ->
+                                    Some startPin.Port.Type
+                                | _ -> None)
+
+                        if node.State.RecordType <> recordType then
+                            node.State.RecordType <- recordType
+                            node.RebuildPins()
+                            refreshNodePins node
+                            changed <- true)
+
+                    changed
+
+                let mutable changed = true
+                let mutable passes = 0
+
+                while changed && passes < 32 do
+                    passes <- passes + 1
+                    // Walk the graph forward: prune invalid outgoing links first, then let
+                    // dynamic downstream nodes adapt and possibly invalidate their outputs.
+                    changed <- pruneInvalidConnectors() || refreshExpandNodes()
             finally
                 suppressExpandRefresh <- false
+
+    let scheduleExpandNodeRecordTypeRefresh () =
+        if not suppressExpandRefresh && not expandRefreshScheduled then
+            expandRefreshScheduled <- true
+            Dispatcher.UIThread.Post(
+                (fun () ->
+                    expandRefreshScheduled <- false
+                    refreshExpandNodeRecordTypes()),
+                DispatcherPriority.Background)
 
     do
         updatePaletteGroups()
@@ -2596,7 +2921,7 @@ type MainWindowViewModel() as this =
         match drawing.Connectors with
         | :? INotifyCollectionChanged as connectors ->
             connectors.CollectionChanged.Add(fun _ ->
-                refreshExpandNodeRecordTypes()
+                scheduleExpandNodeRecordTypeRefresh()
                 refreshScalarTypeOptions()
                 refreshScalarOpTypeOptions()
                 refreshImageFormatOptions()
@@ -2707,6 +3032,14 @@ type MainWindowViewModel() as this =
             applySelectionDelta selected clampedDx clampedDy
 
     member _.HasSelectedNodes = selectedNodes.Count > 0 || not (isNull selectedNode)
+
+    member _.SelectedNodes =
+        if selectedNodes.Count > 0 then
+            selectedNodes |> Seq.toArray
+        elif not (isNull selectedNode) then
+            [| selectedNode |]
+        else
+            Array.empty
 
     member _.GraphOutput = graphOutput
 
@@ -3139,6 +3472,7 @@ type MainWindowViewModel() as this =
                        ConnectorAvoidsBoxes = arrangeSettings.ConnectorAvoidsBoxes
                        ConnectorCrossings = arrangeSettings.ConnectorCrossings
                        StayNearUserLayout = arrangeSettings.StayNearUserLayout
+                       Damping = arrangeSettings.Damping
                        VisualizationDelayMs = int arrangeSettings.VisualizationDelayMs |}
 
                 let arrangeTiming =
@@ -3174,6 +3508,8 @@ type MainWindowViewModel() as this =
                 let y = Array.copy startY
                 let fx = Array.zeroCreate<float> nodes.Length
                 let fy = Array.zeroCreate<float> nodes.Length
+                let vx = Array.zeroCreate<float> nodes.Length
+                let vy = Array.zeroCreate<float> nodes.Length
 
                 let inline clamp lo hi value = min hi (max lo value)
                 let inline signOrOne value = if value < 0. then -1. else 1.
@@ -3271,6 +3607,11 @@ type MainWindowViewModel() as this =
                         if abs (rectBottom i - maxY) <= boundaryTolerance then
                             addForce i 0. -1. (arrangeWeights.BoundingBoxCompact * width)
 
+                        // The exact bounding-box area gradient only touches nodes on the current
+                        // min/max borders. This soft companion keeps interior nodes from drifting
+                        // far apart when another node temporarily owns the graph boundary.
+                        addForce i (centerX - cx) 0. (arrangeWeights.BoundingBoxCompact * height / width)
+                        addForce i 0. (centerY - cy) (arrangeWeights.BoundingBoxCompact * width / height)
                         addForce i (startX[i] - x[i]) (startY[i] - y[i]) arrangeWeights.StayNearUserLayout
                         addForce i (centerX - cx) 0. (arrangeWeights.BoundingBoxSquare * squareBias / width)
                         addForce i 0. (centerY - cy) (arrangeWeights.BoundingBoxSquare * -squareBias / height)
@@ -3316,37 +3657,36 @@ type MainWindowViewModel() as this =
                     for startPin, endPin, startNode, endNode in connectorEdges do
                         match nodeIndexes.TryGetValue startNode, nodeIndexes.TryGetValue endNode with
                         | (true, startIndex), (true, endIndex) ->
-                            let dx = nodeCenterX endIndex - nodeCenterX startIndex
-                            let dy = nodeCenterY endIndex - nodeCenterY startIndex
                             let preferredGap = max nodes[startIndex].Height nodes[endIndex].Height
+                            let sx, sy = pinPoint x y startIndex startPin
+                            let ex, ey = pinPoint x y endIndex endPin
+                            let pinDx = ex - sx
+                            let pinDy = ey - sy
 
                             if isDataEdge startPin endPin then
-                                let preferredRight = (nodes[startIndex].Width + nodes[endIndex].Width) / 2. + preferredGap
-                                let shortfall = preferredRight - dx
+                                let horizontalError = preferredGap - pinDx
 
-                                if shortfall > 0. then
-                                    addPairForce startIndex endIndex 1. 0. (arrangeWeights.ConnectorDirection * shortfall)
+                                addPairForce startIndex endIndex 1. 0. (arrangeWeights.ConnectorDirection * horizontalError)
+                                addPairForce startIndex endIndex 0. 1. (arrangeWeights.ConnectorDirection * -pinDy)
 
                             if isParameterEdge startPin endPin then
-                                let preferredBelow = (nodes[startIndex].Height + nodes[endIndex].Height) / 2. + preferredGap
-                                let shortfall = preferredBelow - dy
-
-                                if shortfall > 0. then
-                                    addPairForce startIndex endIndex 0. 1. (arrangeWeights.ConnectorDirection * shortfall)
-
-                            if isInfoExpandEdge startPin endPin then
-                                let preferredBelow = (nodes[startIndex].Height + nodes[endIndex].Height) / 2. + preferredGap
-                                let verticalError = preferredBelow - dy
+                                let verticalError = preferredGap - pinDy
 
                                 addPairForce startIndex endIndex 0. 1. (arrangeWeights.ConnectorDirection * verticalError)
-                                addPairForce startIndex endIndex -1. 0. (arrangeWeights.ConnectorDirection * dx)
+                                addPairForce startIndex endIndex 1. 0. (arrangeWeights.ConnectorDirection * -pinDx)
 
-                            let length = sqrt (square dx + square dy)
+                            if isInfoExpandEdge startPin endPin then
+                                let verticalError = preferredGap - pinDy
+
+                                addPairForce startIndex endIndex 0. 1. (arrangeWeights.ConnectorDirection * verticalError)
+                                addPairForce startIndex endIndex 1. 0. (arrangeWeights.ConnectorDirection * -pinDx)
+
+                            let length = sqrt (square pinDx + square pinDy)
                             let preferredLength = max nodes[startIndex].Height nodes[endIndex].Height
                             let excess = length - preferredLength
 
                             if excess > 0. && length > 0.0001 then
-                                addPairForce startIndex endIndex -(dx / length) -(dy / length) (arrangeWeights.ConnectorLength * excess)
+                                addPairForce startIndex endIndex -(pinDx / length) -(pinDy / length) (arrangeWeights.ConnectorLength * excess)
                             | _ -> ()
 
                     let segments = connectorSegments()
@@ -3400,11 +3740,17 @@ type MainWindowViewModel() as this =
                     let progress = 1. - float iteration / float arrangeTiming.Iterations
                     let step = 0.75 * progress + 0.08
                     let maxMove = arrangeTiming.InitialMaxMove * progress + arrangeTiming.FinalMaxMove * (1. - progress)
+                    let damping = clamp 0. 0.98 arrangeWeights.Damping
                     let mutable maxStepMove = 0.
 
                     for i in 0 .. nodes.Length - 1 do
-                        let dx = clamp -maxMove maxMove (fx[i] * step)
-                        let dy = clamp -maxMove maxMove (fy[i] * step)
+                        vx[i] <- damping * vx[i] + (1. - damping) * fx[i] * step
+                        vy[i] <- damping * vy[i] + (1. - damping) * fy[i] * step
+
+                        let dx = clamp -maxMove maxMove vx[i]
+                        let dy = clamp -maxMove maxMove vy[i]
+                        vx[i] <- dx
+                        vy[i] <- dy
                         maxStepMove <- max maxStepMove (sqrt (square dx + square dy))
                         x[i] <- max leftMargin (x[i] + dx)
                         y[i] <- max topMargin (y[i] + dy)
@@ -3575,7 +3921,8 @@ type MainWindowViewModel() as this =
                             (fun () -> drawing.Width, drawing.Height),
                             (fun () -> this.MarkGraphDirty()),
                             removePinConnections,
-                            refreshNodePins)
+                            refreshNodePins,
+                            handleTypeChange)
 
                     watchState node.State
                     node.X <- savedNode.X
@@ -3888,11 +4235,23 @@ type MainWindowViewModel() as this =
             |> Seq.iter _.ClampToDrawing()
 
     member this.DeleteSelectedElementIfInTrashZone(trashWidth: float, trashHeight: float, margin: float) =
-        if not (isNull selectedNode) then
+        let selected = this.SelectedNodes
+
+        if selected.Length > 0 then
             let trashLeft = max 0. (drawing.Width - trashWidth - margin)
             let trashTop = max 0. (drawing.Height - trashHeight - margin)
 
-            if selectedNode.X + selectedNode.Width >= trashLeft && selectedNode.Y + selectedNode.Height >= trashTop then
+            let selectionRight =
+                selected
+                |> Array.map (fun node -> node.X + node.Width)
+                |> Array.max
+
+            let selectionBottom =
+                selected
+                |> Array.map (fun node -> node.Y + node.Height)
+                |> Array.max
+
+            if selectionRight >= trashLeft && selectionBottom >= trashTop then
                 this.DeleteSelectedElement()
 
     interface IGraphWindowController with

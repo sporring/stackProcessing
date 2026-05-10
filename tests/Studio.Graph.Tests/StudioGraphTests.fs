@@ -54,7 +54,7 @@ let domainSuite =
             let read = BuiltInCatalog.find "Read"
             Expect.isTrue (FunctionDefinition.matches "read" read) "Display name should match."
             Expect.isTrue (FunctionDefinition.matches "Sources" read) "Category should match."
-            Expect.isTrue (FunctionDefinition.matches "chunked" read) "Summary should match."
+            Expect.isTrue (FunctionDefinition.matches "slice" read) "Summary should match."
 
             let withDescription =
                 { read with
@@ -71,7 +71,7 @@ let catalogSuite =
     testList "Studio.Graph catalog" [
         testCase "catalog exposes expected generic functions" <| fun _ ->
             let ids = BuiltInCatalog.orderedFunctions |> List.map _.Id
-            Expect.containsAll ids ["Scalar"; "FileDirectory"; "Read"; "ReadVolume"; "ReadRandom"; "EstimateHistogram"; "ReadRange"; "ReadSlab"; "ReadZarrSlab"; "ReadNexusSlab"; "ReadPointSet"; "Zero"; "CoordinateX"; "CoordinateY"; "CoordinateZ"; "NormalNoise"; "SaltAndPepperNoise"; "ShotNoise"; "Write"; "WriteVolume"; "WriteInSlabs"; "WriteZarr"; "WriteNexus"; "WriteMesh"; "WritePointSet"; "WriteMatrix"; "Expand"; "GetChunkInfo"; "GetZarrInfo"; "GetNexusInfo"; "Resize"; "Resample"; "CreatePadding"; "Crop"; "MarchingCubes"; "SurfaceArea"; "DogKeypoints"; "SiftKeypoints"; "LogBlobKeypoints"; "HessianKeypoints"; "Harris3DKeypoints"; "Forstner3DKeypoints"; "PhaseCongruencyKeypoints"; "PointPairDistances"; "AffineRegistration"; "StreamConnectedObjects"; "PaintObjects"; "PaintObjectsCropped"; "ImageOpImage"; "ComputeStats"; "FitBiasModel"; "FitBiasModelMasked"; "CorrectBias"; "CorrectBiasMasked"; "SerialPolynomialBiasCorrect"; "SerialEstTrans"; "SerialApplyTrans"; "SerialEstBoundingBox"; "Volume"; "Quantiles"; "Chart"; "SumProjection"] "Important Studio functions should be in the palette catalog."
+            Expect.containsAll ids ["Scalar"; "FileDirectory"; "Read"; "ReadRandom"; "EstimateHistogram"; "ReadRange"; "ReadSlab"; "ReadPointSet"; "Zero"; "CoordinateX"; "CoordinateY"; "CoordinateZ"; "NormalNoise"; "SaltAndPepperNoise"; "ShotNoise"; "Write"; "WriteVolume"; "WriteInSlabs"; "WriteZarr"; "WriteNexus"; "WriteMesh"; "WritePointSet"; "WriteMatrix"; "Expand"; "GetChunkInfo"; "GetZarrInfo"; "GetNexusInfo"; "Resize"; "Resample"; "CreatePadding"; "Crop"; "MarchingCubes"; "SurfaceArea"; "DogKeypoints"; "SiftKeypoints"; "LogBlobKeypoints"; "HessianKeypoints"; "Harris3DKeypoints"; "Forstner3DKeypoints"; "PhaseCongruencyKeypoints"; "PointPairDistances"; "AffineRegistration"; "StreamConnectedObjects"; "PaintObjects"; "PaintObjectsCropped"; "ImageOpImage"; "ComputeStats"; "FitBiasModel"; "FitBiasModelMasked"; "CorrectBias"; "CorrectBiasMasked"; "SerialPolynomialBiasCorrect"; "SerialEstTrans"; "SerialApplyTrans"; "SerialEstBoundingBox"; "Volume"; "Quantiles"; "Chart"; "SumProjection"] "Important Studio functions should be in the palette catalog."
             Expect.isFalse (ids |> List.contains "GetStackInfo") "Stack info should come from read/write boxes in Studio."
             Expect.isFalse (ids |> List.contains "WriteThrough") "writeThrough is a DSL/internal primitive and should stay hidden from Studio."
             Expect.containsAll ids ["AddNormalNoise"; "AddSaltAndPepperNoise"; "AddShotNoise"; "AddSpeckleNoise"] "Noise add-stage boxes should be available in Studio."

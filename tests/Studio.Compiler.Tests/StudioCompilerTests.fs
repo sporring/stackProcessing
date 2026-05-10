@@ -60,11 +60,12 @@ let generatorSuite =
             Expect.stringContains code ">=> write \"output\" \".tiff\"" "Write node should generate write stage."
             Expect.stringContains code "|> sink" "Terminal write should be sunk."
 
-        testCase "readVolume writeVolume pipeline generates streaming volume conversion" <| fun _ ->
+        testCase "read volume format writes streaming volume conversion" <| fun _ ->
             let read =
-                node "readVolume" "ReadVolume"
+                node "readVolume" "Read"
                     [ p "availableMemory" "1073741824" false
                       p "type" "UInt16" false
+                      p "format" "Volume file" false
                       p "input" "input.tiff" false ]
 
             let write =
@@ -75,7 +76,7 @@ let generatorSuite =
                 graph [ read; write ] [ edge "readVolume" "output" 0 "writeVolume" "input" 0 ]
                 |> PipelineCodeGenerator.generateSavedGraph
 
-            Expect.stringContains code "|> readVolume<uint16> \"input.tiff\"" "ReadVolume should generate a typed volume source."
+            Expect.stringContains code "|> readVolume<uint16> \"input.tiff\"" "Read with Volume file format should generate a typed volume source."
             Expect.stringContains code ">=> writeVolume \"output.tiff\"" "WriteVolume should generate a streaming volume writer."
             Expect.stringContains code "|> sink" "Terminal WriteVolume should be sunk."
 
@@ -290,9 +291,10 @@ let generatorSuite =
 
         testCase "serial transform compiler infers image type from connected stream when saved box type is stale" <| fun _ ->
             let read =
-                node "read" "ReadVolume"
+                node "read" "Read"
                     [ p "availableMemory" "4096" false
                       p "type" "Float32" false
+                      p "format" "Volume file" false
                       p "input" "sections.tif" false ]
 
             let manifest =
@@ -404,9 +406,10 @@ let generatorSuite =
                       p "datasetIndex" "1" false ]
 
             let read =
-                node "read" "ReadZarrSlab"
+                node "read" "Read"
                     [ p "availableMemory" "1073741824" false
                       p "type" "UInt16" false
+                      p "format" "OME-Zarr" false
                       p "input" "input.zarr" false
                       p "slabDepth" "8" false
                       p "multiscaleIndex" "0" false
@@ -436,7 +439,7 @@ let generatorSuite =
                 |> PipelineCodeGenerator.generateSavedGraph
 
             Expect.stringContains code "let ChunkInfo0 = getZarrInfo \"input.zarr\" 0 1" "GetZarrInfo should generate a metadata binding."
-            Expect.stringContains code "|> readZarrSlab<uint16> \"input.zarr\" 8u 0 1 2 3 4" "ReadZarrSlab should generate the Zarr slab reader."
+            Expect.stringContains code "|> readZarrSlab<uint16> \"input.zarr\" 8u 0 1 2 3 4" "Read with OME-Zarr format should generate the Zarr slab reader."
             Expect.stringContains code ">=> writeZarr \"output.zarr\" ChunkInfo0.topLeftInfo.componentType 32u 16u 17u 8u 0.5 0.5 2.0 2" "WriteZarr should accept linked Zarr metadata."
             Expect.stringContains code "|> sink" "Terminal WriteZarr should be sunk."
 
@@ -450,9 +453,10 @@ let generatorSuite =
                       p "xAxis" "2" false ]
 
             let read =
-                node "read" "ReadNexusSlab"
+                node "read" "Read"
                     [ p "availableMemory" "1073741824" false
                       p "type" "UInt16" false
+                      p "format" "NeXus/HDF5" false
                       p "input" "scan.h5" false
                       p "datasetPath" "/entry/data/data" false
                       p "slabDepth" "8" false
@@ -481,7 +485,7 @@ let generatorSuite =
                 |> PipelineCodeGenerator.generateSavedGraph
 
             Expect.stringContains code "let ChunkInfo0 = getNexusInfo \"scan.h5\" \"/entry/data/data\" 0 1 2" "GetNexusInfo should generate a metadata binding."
-            Expect.stringContains code "|> readNexusSlab<uint16> \"scan.h5\" \"/entry/data/data\" 8u 0 1 2" "ReadNexusSlab should generate the NeXus slab reader."
+            Expect.stringContains code "|> readNexusSlab<uint16> \"scan.h5\" \"/entry/data/data\" 8u 0 1 2" "Read with NeXus/HDF5 format should generate the NeXus slab reader."
             Expect.stringContains code ">=> writeZarr \"output.zarr\" \"converted\" ChunkInfo0.size[2] 16u 17u 8u 1.0 1.0 1.0 0" "WriteZarr should accept linked NeXus metadata."
 
         testCase "write nexus box lowers to writeNexus" <| fun _ ->
@@ -1131,6 +1135,45 @@ let generatorSuite =
             Expect.stringContains code "let Expand0 = StackInfo0" "Expand should alias the upstream StackInfo value."
             Expect.stringContains code "printfn $\"{Expand0.size[0]} {Expand0.size[2]}\"" "Expanded fields should connect naturally to print."
 
+        testCase "direct write stack info output prints the concrete record binding" <| fun _ ->
+            let read =
+                node "read" "Read"
+                    [ p "availableMemory" "1073741824" false
+                      p "type" "UInt8" false
+                      p "format" "Volume file" false
+                      p "input" "volumedata.tif" false
+                      p "suffix" ".tiff" false ]
+
+            let resample =
+                node "resample" "Resample"
+                    [ p "type" "UInt8" false
+                      p "factorX" "0.25" false
+                      p "factorY" "0.25" false
+                      p "factorZ" "0.25" false
+                      p "interpolation" "Linear" false ]
+
+            let write =
+                node "write" "Write"
+                    [ p "output" "volume" false
+                      p "suffix" ".tiff" false ]
+
+            let print =
+                node "print" "Print"
+                    [ p "format" "After: {StackInfo}" false
+                      p "input1" "StackInfo" true ]
+
+            let code =
+                graph
+                    [ read; resample; write; print ]
+                    [ edge "read" "dataOutput" 0 "resample" "dataInput" 0
+                      edge "resample" "dataOutput" 0 "write" "dataInput" 0
+                      edge "write" "reducerOutput" 0 "print" "parameterInput" 1 ]
+                |> PipelineCodeGenerator.generateSavedGraph
+
+            Expect.stringContains code "let StackInfo0 =" "The direct write metadata output should receive a StackInfo binding."
+            Expect.stringContains code "printfn $\"After: {StackInfo0}\"" "The print placeholder should map to the concrete StackInfo binding."
+            Expect.isFalse (code.Contains("After: {StackInfo}\"")) "The old literal placeholder should not leak into generated F#."
+
         testCase "getChunkInfo binds chunk layout fields for scalar outputs" <| fun _ ->
             let info =
                 node "info" "GetChunkInfo"
@@ -1286,9 +1329,10 @@ let generatorSuite =
 
         testCase "image op image shares a common source used directly and through a branch" <| fun _ ->
             let read =
-                node "read" "ReadVolume"
+                node "read" "Read"
                     [ p "availableMemory" "1073741824" false
                       p "type" "Float32" false
+                      p "format" "Volume file" false
                       p "input" "volumedata.tif" false ]
 
             let correct =

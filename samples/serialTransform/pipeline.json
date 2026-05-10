@@ -3,7 +3,7 @@
   "nodes": [
     {
       "id": "node-1",
-      "functionId": "ReadVolume",
+      "functionId": "Read",
       "x": 1224.4493041200917,
       "y": 932.8451419822637,
       "parameters": [
@@ -15,6 +15,11 @@
         {
           "key": "type",
           "value": "Float32",
+          "useInput": false
+        },
+        {
+          "key": "format",
+          "value": "Volume file",
           "useInput": false
         },
         {

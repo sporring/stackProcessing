@@ -240,9 +240,10 @@ let rec private sourceFor caseId portType =
           Port = 0 }
     | PortType.Custom "ChunkInfo" ->
         let read =
-            node $"source_{caseId}_chunk_info_read" "ReadZarrSlab"
+            node $"source_{caseId}_chunk_info_read" "ReadSlab"
                 [ p "availableMemory" "1073741824" false
                   p "type" "UInt8" false
+                  p "format" "OME-Zarr" false
                   p "input" "input.zarr" false
                   p "slabDepth" "8" false
                   p "multiscaleIndex" "0" false

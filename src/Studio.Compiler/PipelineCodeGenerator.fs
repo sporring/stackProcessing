@@ -392,14 +392,24 @@ module PipelineCodeGenerator =
     let private isWriteStackInfoNode (node: SavedNode) =
         node.FunctionId = "Write"
 
+    let private readFormat (node: SavedNode) =
+        savedParamValue "format" node
+
     let private isReadStackInfoNode (node: SavedNode) =
-        node.FunctionId = "Read" || node.FunctionId = "ReadVolume"
+        match node.FunctionId with
+        | "Read" -> readFormat node <> "OME-Zarr" && readFormat node <> "NeXus/HDF5"
+        | "ReadRandom"
+        | "ReadRange" -> true
+        | _ -> false
 
     let private isChunkInfoNode (node: SavedNode) =
         node.FunctionId = "GetChunkInfo" || node.FunctionId = "GetZarrInfo" || node.FunctionId = "GetNexusInfo"
 
     let private isReadChunkInfoNode (node: SavedNode) =
-        node.FunctionId = "ReadSlab" || node.FunctionId = "ReadZarrSlab" || node.FunctionId = "ReadNexusSlab"
+        match node.FunctionId with
+        | "Read" -> readFormat node = "OME-Zarr" || readFormat node = "NeXus/HDF5"
+        | "ReadSlab" -> true
+        | _ -> false
 
     let private quantileFieldExpression bindingName portIndex =
         if portIndex >= 0 && portIndex < 5 then Some $"{bindingName}[{portIndex}]" else None
@@ -447,11 +457,27 @@ module PipelineCodeGenerator =
                                 | None ->
                                     stackInfoNamesByNodeId
                                     |> Map.tryFind edge.FromNode
-                                    |> Option.bind (fun name -> stackInfoFieldExpression name edge.FromPort)
+                                    |> Option.bind (fun name ->
+                                        match nodesById |> Map.tryFind edge.FromNode with
+                                        | Some sourceNode when sourceNode.FunctionId = "Expand" ->
+                                            stackInfoFieldExpression name edge.FromPort
+                                        | Some _ when edge.FromPort = 0 ->
+                                            Some name
+                                        | _ ->
+                                            None)
                                     |> Option.orElseWith (fun () ->
                                         chunkInfoNamesByNodeId
                                         |> Map.tryFind edge.FromNode
-                                        |> Option.bind (fun name -> chunkInfoFieldExpression name edge.FromPort))
+                                        |> Option.bind (fun name ->
+                                        match nodesById |> Map.tryFind edge.FromNode with
+                                        | Some sourceNode when sourceNode.FunctionId = "Expand" ->
+                                            chunkInfoFieldExpression name edge.FromPort
+                                        | Some sourceNode when isChunkInfoNode sourceNode ->
+                                            chunkInfoFieldExpression name edge.FromPort
+                                        | Some _ when edge.FromPort = 0 ->
+                                            Some name
+                                        | _ ->
+                                            None))
                                     |> Option.orElseWith (fun () -> serialGeometryNamesByNodeId |> Map.tryFind edge.FromNode)
                 | _ ->
                     None)
@@ -888,30 +914,26 @@ module PipelineCodeGenerator =
         | "ReadSlab" ->
             let availableMemory = parameterValue "availableMemory"
             let pixelType = pixelTypeNameFromParameter "type" "Float64" node
+            let format = savedParamValue "format" node
             let input = quotedParameter "input"
             let suffix = quotedParameter "suffix"
-            $"|> readSlab<{pixelType}> {input} {suffix}" |> sourcePrefix availableMemory
-        | "ReadZarrSlab" ->
-            let availableMemory = parameterValue "availableMemory"
-            let pixelType = pixelTypeNameFromParameter "type" "UInt8" node
-            let input = quotedParameter "input"
             let slabDepth = parameterValue "slabDepth"
             let multiscaleIndex = parameterValue "multiscaleIndex"
             let datasetIndex = parameterValue "datasetIndex"
             let timepoint = parameterValue "timepoint"
             let channel = parameterValue "channel"
             let maxParallelChunks = parameterValue "maxParallelChunks"
-            $"|> readZarrSlab<{pixelType}> {input} {slabDepth} {multiscaleIndex} {datasetIndex} {timepoint} {channel} {maxParallelChunks}" |> sourcePrefix availableMemory
-        | "ReadNexusSlab" ->
-            let availableMemory = parameterValue "availableMemory"
-            let pixelType = pixelTypeNameFromParameter "type" "UInt16" node
-            let input = quotedParameter "input"
             let datasetPath = quotedParameter "datasetPath"
-            let slabDepth = parameterValue "slabDepth"
             let frameAxis = parameterValue "frameAxis"
             let yAxis = parameterValue "yAxis"
             let xAxis = parameterValue "xAxis"
-            $"|> readNexusSlab<{pixelType}> {input} {datasetPath} {slabDepth} {frameAxis} {yAxis} {xAxis}" |> sourcePrefix availableMemory
+            match format with
+            | "OME-Zarr" ->
+                $"|> readZarrSlab<{pixelType}> {input} {slabDepth} {multiscaleIndex} {datasetIndex} {timepoint} {channel} {maxParallelChunks}" |> sourcePrefix availableMemory
+            | "NeXus/HDF5" ->
+                $"|> readNexusSlab<{pixelType}> {input} {datasetPath} {slabDepth} {frameAxis} {yAxis} {xAxis}" |> sourcePrefix availableMemory
+            | _ ->
+                $"|> readSlab<{pixelType}> {input} {suffix}" |> sourcePrefix availableMemory
         | "ReadPointSet" ->
             let availableMemory = parameterValue "availableMemory"
             let input = quotedParameter "input"
@@ -919,14 +941,28 @@ module PipelineCodeGenerator =
         | "Read" ->
             let availableMemory = parameterValue "availableMemory"
             let pixelType = pixelTypeNameFromParameter "type" "Float64" node
+            let format = savedParamValue "format" node
             let input = quotedParameter "input"
             let suffix = quotedParameter "suffix"
-            $"|> read<{pixelType}> {input} {suffix}" |> sourcePrefix availableMemory
-        | "ReadVolume" ->
-            let availableMemory = parameterValue "availableMemory"
-            let pixelType = pixelTypeNameFromParameter "type" "Float64" node
-            let input = quotedParameter "input"
-            $"|> readVolume<{pixelType}> {input}" |> sourcePrefix availableMemory
+            let slabDepth = parameterValue "slabDepth"
+            let multiscaleIndex = parameterValue "multiscaleIndex"
+            let datasetIndex = parameterValue "datasetIndex"
+            let timepoint = parameterValue "timepoint"
+            let channel = parameterValue "channel"
+            let maxParallelChunks = parameterValue "maxParallelChunks"
+            let datasetPath = quotedParameter "datasetPath"
+            let frameAxis = parameterValue "frameAxis"
+            let yAxis = parameterValue "yAxis"
+            let xAxis = parameterValue "xAxis"
+            match format with
+            | "Volume file" ->
+                $"|> readVolume<{pixelType}> {input}" |> sourcePrefix availableMemory
+            | "OME-Zarr" ->
+                $"|> readZarrSlab<{pixelType}> {input} {slabDepth} {multiscaleIndex} {datasetIndex} {timepoint} {channel} {maxParallelChunks}" |> sourcePrefix availableMemory
+            | "NeXus/HDF5" ->
+                $"|> readNexusSlab<{pixelType}> {input} {datasetPath} {slabDepth} {frameAxis} {yAxis} {xAxis}" |> sourcePrefix availableMemory
+            | _ ->
+                $"|> read<{pixelType}> {input} {suffix}" |> sourcePrefix availableMemory
         | "Resize" ->
             let pixelType = pixelTypeNameFromParameter "type" "Float32" node
             let width = parameterValue "width"
@@ -1624,8 +1660,18 @@ module PipelineCodeGenerator =
             |> Array.choose expandSourceNode
             |> Array.distinctBy _.Id
 
+        let stackInfoProducerNodesWithDirectLinkedOutputs =
+            graph.Edges
+            |> Array.choose (fun edge ->
+                if edge.FromKind = "reducerOutput" && edge.ToKind = "parameterInput" then
+                    nodesById |> Map.tryFind edge.FromNode
+                else
+                    None)
+            |> Array.filter (fun node -> isWriteStackInfoNode node || isReadStackInfoNode node)
+            |> Array.distinctBy _.Id
+
         let stackInfoProducerNodesWithLinkedOutputs =
-            stackInfoProducerNodesForExpand
+            Array.concat [ stackInfoProducerNodesForExpand; stackInfoProducerNodesWithDirectLinkedOutputs ]
             |> Array.distinctBy _.Id
 
         let stackInfoNamesByNodeId =
@@ -1658,8 +1704,18 @@ module PipelineCodeGenerator =
             |> Array.choose expandSourceNode
             |> Array.distinctBy _.Id
 
+        let chunkInfoProducerNodesWithDirectLinkedOutputs =
+            graph.Edges
+            |> Array.choose (fun edge ->
+                if edge.FromKind = "reducerOutput" && edge.ToKind = "parameterInput" then
+                    nodesById |> Map.tryFind edge.FromNode
+                else
+                    None)
+            |> Array.filter (fun node -> isChunkInfoNode node || isReadChunkInfoNode node)
+            |> Array.distinctBy _.Id
+
         let chunkInfoProducerNodesWithLinkedOutputs =
-            Array.concat [ chunkInfoNodesWithLinkedOutputs; chunkInfoProducerNodesForExpand ]
+            Array.concat [ chunkInfoNodesWithLinkedOutputs; chunkInfoProducerNodesForExpand; chunkInfoProducerNodesWithDirectLinkedOutputs ]
             |> Array.distinctBy _.Id
 
         let chunkInfoNamesByNodeId =
@@ -2154,21 +2210,31 @@ module PipelineCodeGenerator =
                                 if expression.IsLinked then expression.Value else quote expression.Value
                             let input = stringArgument "input"
                             let suffix = stringArgument "suffix"
+                            let format = savedParamValue "format" node
+                            let text =
+                                if format = "Volume file" then
+                                    $"let {name} = getFileInfo {input}"
+                                else
+                                    $"let {name} = getStackInfo {input} {suffix}"
                             { Name = name
                               Dependencies = parameterBindingDependencies node |> Set.remove name
-                              Text = $"let {name} = getStackInfo {input} {suffix}" }
-                        | "ReadVolume" ->
+                              Text = text }
+                        | "ReadRandom"
+                        | "ReadRange" ->
                             let name = stackInfoNamesByNodeId |> Map.find node.Id
                             let parameter key =
                                 node.Parameters
                                 |> Seq.tryFindIndex (fun parameter -> parameter.Key = key)
                                 |> Option.map (fun index -> parameterExpression graph nodesById scalarNamesByNodeId statsNamesByNodeId translationTableNamesByNodeId histogramNamesByNodeId quantileNamesByNodeId stackInfoNamesByNodeId chunkInfoNamesByNodeId serialGeometryNamesByNodeId node index key)
                                 |> Option.defaultValue { Value = savedParamValue key node; IsLinked = false }
-                            let inputExpression = parameter "input"
-                            let input = if inputExpression.IsLinked then inputExpression.Value else quote inputExpression.Value
+                            let stringArgument key =
+                                let expression = parameter key
+                                if expression.IsLinked then expression.Value else quote expression.Value
+                            let input = stringArgument "input"
+                            let suffix = stringArgument "suffix"
                             { Name = name
                               Dependencies = parameterBindingDependencies node |> Set.remove name
-                              Text = $"let {name} = getFileInfo {input}" }
+                              Text = $"let {name} = getStackInfo {input} {suffix}" }
                         | "Write" ->
                             let parameter key =
                                 node.Parameters
@@ -2239,31 +2305,25 @@ module PipelineCodeGenerator =
                             { Name = name
                               Dependencies = parameterBindingDependencies node |> Set.remove name
                               Text = text }
+                        | "Read"
                         | "ReadSlab" ->
                             let name = chunkInfoNamesByNodeId |> Map.find node.Id
                             let input = stringArgument "input"
                             let suffix = stringArgument "suffix"
-                            { Name = name
-                              Dependencies = parameterBindingDependencies node |> Set.remove name
-                              Text = $"let {name} = getChunkInfo {input} {suffix}" }
-                        | "ReadZarrSlab" ->
-                            let name = chunkInfoNamesByNodeId |> Map.find node.Id
-                            let input = stringArgument "input"
                             let multiscaleIndex = (parameter "multiscaleIndex").Value
                             let datasetIndex = (parameter "datasetIndex").Value
-                            { Name = name
-                              Dependencies = parameterBindingDependencies node |> Set.remove name
-                              Text = $"let {name} = getZarrInfo {input} {multiscaleIndex} {datasetIndex}" }
-                        | "ReadNexusSlab" ->
-                            let name = chunkInfoNamesByNodeId |> Map.find node.Id
-                            let input = stringArgument "input"
                             let datasetPath = stringArgument "datasetPath"
                             let frameAxis = (parameter "frameAxis").Value
                             let yAxis = (parameter "yAxis").Value
                             let xAxis = (parameter "xAxis").Value
+                            let text =
+                                match savedParamValue "format" node with
+                                | "OME-Zarr" -> $"let {name} = getZarrInfo {input} {multiscaleIndex} {datasetIndex}"
+                                | "NeXus/HDF5" -> $"let {name} = getNexusInfo {input} {datasetPath} {frameAxis} {yAxis} {xAxis}"
+                                | _ -> $"let {name} = getChunkInfo {input} {suffix}"
                             { Name = name
                               Dependencies = parameterBindingDependencies node |> Set.remove name
-                              Text = $"let {name} = getNexusInfo {input} {datasetPath} {frameAxis} {yAxis} {xAxis}" }
+                              Text = text }
                         | _ ->
                             failwith $"Unsupported ChunkInfo producer: {node.FunctionId}")
 

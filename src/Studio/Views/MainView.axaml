@@ -461,6 +461,10 @@
                                     <TextBox Grid.Column="1" Text="{Binding StayNearUserLayout, Mode=TwoWay}" FontSize="11" MinHeight="24" />
                                 </Grid>
                                 <Grid ColumnDefinitions="116,*,58">
+                                    <TextBlock Text="Damping" VerticalAlignment="Center" FontSize="11" />
+                                    <TextBox Grid.Column="1" Text="{Binding Damping, Mode=TwoWay}" FontSize="11" MinHeight="24" />
+                                </Grid>
+                                <Grid ColumnDefinitions="116,*,58">
                                     <TextBlock Text="Delay ms" VerticalAlignment="Center" FontSize="11" />
                                     <TextBox Grid.Column="1" Text="{Binding VisualizationDelayMs, Mode=TwoWay}" FontSize="11" MinHeight="24" />
                                 </Grid>

@@ -1170,23 +1170,25 @@ type MainView() as this =
         let trash = this.FindControl<Border>("GraphTrash")
 
         match this.DataContext with
-        | :? MainWindowViewModel as viewModel when not (isNull graphHost) && not (isNull trash) && not (isNull viewModel.SelectedNode) ->
-            let node = viewModel.SelectedNode
-            let nodeTopLeft = Point(node.X, node.Y) |> graphContentToViewport
-            let nodeBottomRight = Point(node.X + node.Width, node.Y + node.Height) |> graphContentToViewport
-            let nodeBounds =
-                Rect(
-                    min nodeTopLeft.X nodeBottomRight.X,
-                    min nodeTopLeft.Y nodeBottomRight.Y,
-                    abs (nodeBottomRight.X - nodeTopLeft.X),
-                    abs (nodeBottomRight.Y - nodeTopLeft.Y))
+        | :? MainWindowViewModel as viewModel when not (isNull graphHost) && not (isNull trash) && viewModel.SelectedNodes.Length > 0 ->
+            let selectedBounds =
+                viewModel.SelectedNodes
+                |> Array.map (fun node ->
+                    let nodeTopLeft = Point(node.X, node.Y) |> graphContentToViewport
+                    let nodeBottomRight = Point(node.X + node.Width, node.Y + node.Height) |> graphContentToViewport
+                    Rect(
+                        min nodeTopLeft.X nodeBottomRight.X,
+                        min nodeTopLeft.Y nodeBottomRight.Y,
+                        abs (nodeBottomRight.X - nodeTopLeft.X),
+                        abs (nodeBottomRight.Y - nodeTopLeft.Y)))
+                |> Array.reduce (fun bounds nodeBounds -> bounds.Union nodeBounds)
 
             let trashTopLeft = trash.TranslatePoint(Point(0., 0.), graphHost)
 
             if trashTopLeft.HasValue then
                 let trashBounds = Rect(trashTopLeft.Value, trash.Bounds.Size)
 
-                if nodeBounds.Intersects trashBounds then
+                if selectedBounds.Intersects trashBounds then
                     viewModel.DeleteSelectedElement()
         | _ -> ()
 
@@ -1472,15 +1474,17 @@ type MainView() as this =
         let graphHost = this.FindControl<Grid>("GraphHost")
         let startedInGraph = eventSourceIsInside graphHost args.Source
         let isCtrl = args.KeyModifiers.HasFlag KeyModifiers.Control
+        let isCharacterLeftDeleteKey = args.Key = Key.Back
+        let isForwardDeleteKey = args.Key = Key.Delete
 
-        if startedInGraph && not (eventSourceIsTextControl args.Source) then
+        if not (eventSourceIsTextControl args.Source) then
             match this.DataContext with
-            | :? MainWindowViewModel as viewModel when args.Key = Key.Delete ->
+            | :? MainWindowViewModel as viewModel when (isCharacterLeftDeleteKey || isForwardDeleteKey) && viewModel.HasSelectedNodes ->
                 viewModel.DeleteSelectedElement()
                 updateMiniMap()
                 args.Handled <- true
                 true
-            | :? MainWindowViewModel as viewModel when isCtrl && args.Key = Key.C ->
+            | :? MainWindowViewModel as viewModel when startedInGraph && isCtrl && args.Key = Key.C ->
                 viewModel.DuplicateSelectedElements()
                 updateMiniMap()
                 args.Handled <- true
