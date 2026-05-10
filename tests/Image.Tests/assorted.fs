@@ -570,6 +570,21 @@ let imageCoreTests =
       let roundtrip = Image<float32>.ofSimpleITK(orig.toSimpleITK())
       Expect.equal (roundtrip.toArray2D()) arr "Expected roundtrip to preserve array"
 
+    testCase "ofSimpleITK strips physical metadata" <| fun _ ->
+      let arr = array2D [| [| 5.0f; 6.0f |]; [| 7.0f; 8.0f |] |]
+      let source = Image<float32>.ofArray2D arr
+      let sitk = new itk.simple.Image(source.toSimpleITK())
+      sitk.SetSpacing([ 4.0; 5.0 ] |> toVectorFloat64)
+      sitk.SetOrigin([ 10.0; 11.0 ] |> toVectorFloat64)
+      sitk.SetMetaData("origin", "external")
+
+      let imported = Image<float32>.ofSimpleITK(sitk)
+      let normalized = imported.toSimpleITK()
+
+      Expect.equal (normalized.GetSpacing() |> fromVectorFloat64) [ 1.0; 1.0 ] "Spacing should be canonical."
+      Expect.equal (normalized.GetOrigin() |> fromVectorFloat64) [ 0.0; 0.0 ] "Origin should be canonical."
+      Expect.isFalse (normalized.HasMetaDataKey("origin")) "Arbitrary metadata keys should not be carried into Image."
+
     testCase "ofFile / toFile roundtrip" <| fun _ ->
       let arr = array2D [| [| 1.0f; 2.0f |]; [| 3.0f; 4.0f |] |]
       let img = Image<float32>.ofArray2D arr
@@ -1437,6 +1452,21 @@ let stackTests =
       let result = stacked.toArray3D()
       Expect.equal [result[1,0,0];result[0,0,1]] [3;5] "Stacked size should be 2x2x2"
 
+    testCase "stack ignores mismatched 2D physical spacing metadata" <| fun _ ->
+      let source1 = Image.ofArray2D (array2D [[1;2];[3;4]])
+      let source2 = Image.ofArray2D (array2D [[5;6];[7;8]])
+      let itk1 = new itk.simple.Image(source1.toSimpleITK())
+      let itk2 = new itk.simple.Image(source2.toSimpleITK())
+      itk1.SetSpacing([ 1.0; 1.0 ] |> toVectorFloat64)
+      itk2.SetSpacing([ 4.0; 4.0 ] |> toVectorFloat64)
+      let img1 = Image<int>.ofSimpleITK(itk1, "spacing1")
+      let img2 = Image<int>.ofSimpleITK(itk2, "spacing4")
+
+      let stacked = ImageFunctions.stack [ img1; img2 ]
+
+      Expect.equal (stacked.GetSize()) [2u; 2u; 2u] "Spacing metadata should not prevent temporary 2D slices from becoming a 3D stack."
+      Expect.equal stacked.[0,0,1] 5 "The second slice pixels should still be present."
+
     testCase "Stacking 2D images results in 3D image along 3rd axis" <| fun _ ->
       let img1 = Image.ofArray2D (array2D [[1; 2]; [3; 4]])
       let img2 = Image.ofArray2D (array2D [[5; 6]; [7; 8]])
@@ -1482,6 +1512,15 @@ let someImageFunctionTests =
       Expect.equal hist.[1] 1UL "One 1"
       Expect.equal hist.[2] 2UL "Two 2s"
       Expect.equal hist.[3] 3UL "Three 3s"
+
+    testCase "histogramFixedBins counts values into configured left-edge bins" <| fun _ ->
+      let img = Image.ofArray2D (array2D [[0.0; 0.2; 1.1]; [2.0; 255.0; 256.0]])
+      let hist = ImageFunctions.histogramFixedBins 0.0 255.0 256u img
+      Expect.equal hist.[0.0] 2UL "Values in [0,1) should be counted in the 0 bin"
+      Expect.equal hist.[1.0] 1UL "Values in [1,2) should be counted in the 1 bin"
+      Expect.equal hist.[2.0] 1UL "The exact left edge should count in its own bin"
+      Expect.equal hist.[255.0] 1UL "The last configured left edge should be included"
+      Expect.isFalse (hist.ContainsKey 256.0) "Bins should be exactly the configured left edges"
 
     test "Adding histograms correctly" {
         let im1 = Image<int>.ofArray2D (Array2D.init 2 2 (fun i j -> i ))

@@ -95,8 +95,6 @@ type MainView() as this =
     let jsonFileType () =
         let fileType = FilePickerFileType("Pipeline JSON")
         fileType.Patterns <- [ "*.json"; "*.JSON" ]
-        fileType.MimeTypes <- [ "application/json"; "text/json"; "text/plain" ]
-        fileType.AppleUniformTypeIdentifiers <- [ "public.json"; "public.text" ]
         fileType
 
     let localPath (file: IStorageFile) =
@@ -1527,6 +1525,17 @@ type MainView() as this =
                 updateMiniMap()
                 args.Handled <- true
                 true
+            | :? MainWindowViewModel as viewModel when isCtrl && args.Key = Key.S && viewModel.HasGraph ->
+                task {
+                    match viewModel.CurrentGraphPath with
+                    | Some path ->
+                        viewModel.SaveGraph(path)
+                    | None ->
+                        do! this.SaveGraphAsAsync()
+                }
+                |> ignore
+                args.Handled <- true
+                true
             | _ ->
                 false
         else
@@ -1998,7 +2007,7 @@ type MainView() as this =
                         FilePickerOpenOptions(
                             Title = "Load pipeline graph",
                             AllowMultiple = false,
-                            FileTypeFilter = [ FilePickerFileTypes.Json ])
+                            FileTypeFilter = [ jsonFileType(); FilePickerFileTypes.All ])
 
                     let! files = topLevel.StorageProvider.OpenFilePickerAsync(options)
 
@@ -2035,7 +2044,7 @@ type MainView() as this =
                 appendToOutput $"Inspection failed: {path}{Environment.NewLine}{ex.Message}{Environment.NewLine}"
         }
 
-    member this.InspectFileClicked(_sender: obj, args: RoutedEventArgs) =
+    member private this.InspectFileAsync(title: string, fileTypes: FilePickerFileType list, args: RoutedEventArgs) =
         task {
             args.Handled <- true
 
@@ -2050,9 +2059,9 @@ type MainView() as this =
                 | topLevel ->
                     let options =
                         FilePickerOpenOptions(
-                            Title = "Inspect image file",
+                            Title = title,
                             AllowMultiple = false,
-                            FileTypeFilter = [ FilePickerFileTypes.All ])
+                            FileTypeFilter = FilePickerFileTypes.All :: fileTypes)
 
                     let! files = topLevel.StorageProvider.OpenFilePickerAsync(options)
 
@@ -2063,9 +2072,8 @@ type MainView() as this =
             with ex ->
                 appendToOutput $"Inspection picker failed:{Environment.NewLine}{ex.Message}{Environment.NewLine}"
         }
-        |> ignore
 
-    member this.InspectDirectoryClicked(_sender: obj, args: RoutedEventArgs) =
+    member private this.InspectDirectoryAsync(title: string, args: RoutedEventArgs) =
         task {
             args.Handled <- true
 
@@ -2080,7 +2088,7 @@ type MainView() as this =
                 | topLevel ->
                     let options =
                         FolderPickerOpenOptions(
-                            Title = "Inspect image directory",
+                            Title = title,
                             AllowMultiple = false)
 
                     let! folders = topLevel.StorageProvider.OpenFolderPickerAsync(options)
@@ -2092,7 +2100,28 @@ type MainView() as this =
             with ex ->
                 appendToOutput $"Inspection picker failed:{Environment.NewLine}{ex.Message}{Environment.NewLine}"
         }
-        |> ignore
+
+    member this.InspectStackClicked(_sender: obj, args: RoutedEventArgs) =
+        this.InspectDirectoryAsync("Inspect image stack directory", args) |> ignore
+
+    member this.InspectVolumeClicked(_sender: obj, args: RoutedEventArgs) =
+        let volumeTypes =
+            let fileType = FilePickerFileType("Volume image")
+            fileType.Patterns <- [ "*.tif"; "*.tiff"; "*.mha"; "*.mhd"; "*.nrrd"; "*.nii"; "*.nii.gz" ]
+            fileType
+
+        this.InspectFileAsync("Inspect volume image file", [ volumeTypes ], args) |> ignore
+
+    member this.InspectZarrClicked(_sender: obj, args: RoutedEventArgs) =
+        this.InspectDirectoryAsync("Inspect OME-Zarr directory", args) |> ignore
+
+    member this.InspectNexusClicked(_sender: obj, args: RoutedEventArgs) =
+        let nexusTypes =
+            let fileType = FilePickerFileType("NeXus/HDF5")
+            fileType.Patterns <- [ "*.nxs"; "*.nx"; "*.h5"; "*.hdf5" ]
+            fileType
+
+        this.InspectFileAsync("Inspect NeXus/HDF5 file", [ nexusTypes ], args) |> ignore
 
     member _.ClearGraphClicked(_sender: obj, args: RoutedEventArgs) =
         task {

@@ -478,6 +478,12 @@ module private SourceImageNode =
     let isReadSource functionId =
         readSourceFunctionIds |> Set.contains functionId
 
+    let private syntheticSourceFunctionIds =
+        Set.ofList [ "Zero"; "NormalNoise"; "SaltAndPepperNoise"; "ShotNoise"; "SpeckleNoise"; "CreateByEuler2DTransform" ]
+
+    let isSyntheticSource functionId =
+        syntheticSourceFunctionIds |> Set.contains functionId
+
     let selectedFormat (state: PipelineNodeState) =
         state.Parameters
         |> Seq.tryFind (fun parameter -> parameter.Key = "format")
@@ -568,6 +574,9 @@ module private SourceImageNode =
 
     let supportedTypes (state: PipelineNodeState) =
         match state.Definition.Id with
+        | functionId when isSyntheticSource functionId ->
+            typeOptions
+            |> List.choose NumericType.tryParse
         | functionId when isReadSource functionId ->
             typeOptions
             |> List.choose NumericType.tryParse
@@ -854,6 +863,48 @@ module private ThresholdNode =
             Type = PortType.Image UInt8 } ]
 
 module private HighValueFilterNode =
+    let typedImageSameTypeFunctionIds =
+        [ "Clamp"
+          "ShiftScale"
+          "IntensityStretch"
+          "CreatePadding"
+          "Crop"
+          "SmoothWMedian"
+          "SmoothWBilateral"
+          "GradientMagnitude"
+          "SobelEdge"
+          "Laplacian"
+          "GrayscaleErode"
+          "GrayscaleDilate"
+          "GrayscaleOpening"
+          "GrayscaleClosing"
+          "WhiteTopHat"
+          "BlackTopHat"
+          "MorphologicalGradient"
+          "LabelContour"
+          "ChangeLabel"
+          "SerialPolynomialBiasCorrect" ]
+        |> Set.ofList
+
+    let typedImageInputFunctionIds =
+        [ "HistogramEqualization"
+          "ImageComparison"
+          "FitBiasModel"
+          "FitBiasModelMasked"
+          "CorrectBias"
+          "CorrectBiasMasked"
+          "MarchingCubes"
+          "DogKeypoints"
+          "SiftKeypoints"
+          "LogBlobKeypoints"
+          "HessianKeypoints"
+          "Harris3DKeypoints"
+          "Forstner3DKeypoints"
+          "PhaseCongruencyKeypoints"
+          "SumProjection"
+          "FFT" ]
+        |> Set.ofList
+
     let typedImageFunctionIds =
         [ "Clamp"
           "ShiftScale"
@@ -861,8 +912,8 @@ module private HighValueFilterNode =
           "HistogramEqualization"
           "CreatePadding"
           "Crop"
-          "Median"
-          "Bilateral"
+          "SmoothWMedian"
+          "SmoothWBilateral"
           "GradientMagnitude"
           "SobelEdge"
           "Laplacian"
@@ -888,6 +939,8 @@ module private HighValueFilterNode =
           "FitBiasModelMasked"
           "CorrectBias"
           "CorrectBiasMasked"
+          "SumProjection"
+          "FFT"
           "SerialPolynomialBiasCorrect"
           "SerialEstTrans"
           "SerialApplyTrans"
@@ -918,6 +971,31 @@ module private HighValueFilterNode =
             Type = portType } ],
         [ { Name = typeName
             Type = portType } ]
+
+    let typedImageInputsWithCatalogOutputs (state: PipelineNodeState) =
+        let selectedType = selectedType state
+        let typeName = NumericType.toString selectedType
+        let typedInput =
+            { Name = typeName
+              Type = PortType.numericToImage selectedType }
+
+        let inputs =
+            state.Definition.Inputs
+            |> List.mapi (fun index port ->
+                match index, port.Type with
+                | 0, PortType.Image Number -> typedInput
+                | _ -> port)
+
+        inputs, state.Definition.Outputs
+
+    let typedImageComparisonPorts (state: PipelineNodeState) =
+        let selectedType = selectedType state
+        let typeName = NumericType.toString selectedType
+        let typedInput =
+            { Name = typeName
+              Type = PortType.numericToImage selectedType }
+
+        [ typedInput; typedInput ], state.Definition.Outputs
 
     let titleFrom key fallback (state: PipelineNodeState) =
         state.Parameters
@@ -1200,12 +1278,14 @@ type PipelineNodeViewModel(
         | "Cast" -> CastNode.ports state
         | "Resize"
         | "Resample" -> HighValueFilterNode.typedImagePorts state
+        | functionId when HighValueFilterNode.typedImageSameTypeFunctionIds.Contains functionId -> HighValueFilterNode.typedImagePorts state
+        | "ImageComparison" -> HighValueFilterNode.typedImageComparisonPorts state
+        | functionId when HighValueFilterNode.typedImageInputFunctionIds.Contains functionId -> HighValueFilterNode.typedImageInputsWithCatalogOutputs state
         | functionId when ScalarImageOperationNode.isOperation functionId -> ScalarImageOperationNode.ports state
         | "Threshold" -> ThresholdNode.ports state
         | "SerialEstTrans" -> SerialTransformNode.estimatorPorts state
         | "SerialApplyTrans" -> SerialTransformNode.applyPorts state
         | "SerialEstBoundingBox" -> SerialTransformNode.boundingBoxPorts state
-        | "SerialPolynomialBiasCorrect" -> HighValueFilterNode.typedImagePorts state
         | "Quantiles" -> state.Definition.Inputs, QuantilesNode.outputPorts state
         | "Expand" ->
             state.Definition.Inputs,
@@ -1779,7 +1859,13 @@ type MainWindowViewModel() as this =
                         |> List.map (fun value -> ParameterOptionViewModel(value, value, true))
 
                     PipelineParameterViewModel(parameter.Label, parameter.Key, parameter.DefaultValue, parameter.Type, options, false)
-                | ("Zero" | "NormalNoise" | "SaltAndPepperNoise" | "ShotNoise" | "SpeckleNoise" | "CreateByEuler2DTransform" | "ResampleAffineTrilinearSlices"), "type" ->
+                | functionId, "type" when SourceImageNode.isSyntheticSource functionId ->
+                    let options =
+                        SourceImageNode.typeOptions
+                        |> List.map (fun value -> ParameterOptionViewModel(value, value, true))
+
+                    PipelineParameterViewModel(parameter.Label, parameter.Key, parameter.DefaultValue, parameter.Type, options, false)
+                | "ResampleAffineTrilinearSlices", "type" ->
                     let defaultSuffix =
                         definition.Parameters
                         |> List.tryFind (fun parameter -> parameter.Key = "suffix")
@@ -2242,13 +2328,13 @@ type MainWindowViewModel() as this =
                 for option in parameter.Options do
                     let supported = supportedTypes |> Set.contains option.Value
                     option.IsEnabled <-
-                        if SourceImageNode.isReadSource node.State.Definition.Id then
+                        if SourceImageNode.isReadSource node.State.Definition.Id || SourceImageNode.isSyntheticSource node.State.Definition.Id then
                             supported
                         else
                             supported && (not isConnected || option.Value = parameter.Value)
 
                 if not (supportedTypes |> Set.contains parameter.Value)
-                   && (not isConnected || SourceImageNode.isReadSource node.State.Definition.Id) then
+                   && (not isConnected || SourceImageNode.isReadSource node.State.Definition.Id || SourceImageNode.isSyntheticSource node.State.Definition.Id) then
                     SourceImageNode.supportedTypeOptions node.State
                     |> List.tryHead
                     |> Option.iter (fun value -> parameter.Value <- value)))
@@ -3772,28 +3858,36 @@ type MainWindowViewModel() as this =
                     let centerY = minY + height / 2.
                     let squareBias = width - height
                     let boundaryTolerance = 0.5
+                    let compactPerimeterScale =
+                        arrangeWeights.BoundingBoxCompact * 0.5 * (width + height)
+                    let compactCenterScale =
+                        compactPerimeterScale / max width height
 
                     for i in 0 .. nodes.Length - 1 do
                         let cx = nodeCenterX i
                         let cy = nodeCenterY i
 
                         if abs (rectLeft i - minX) <= boundaryTolerance then
-                            addForce i 1. 0. (arrangeWeights.BoundingBoxCompact * height)
+                            addForce i 1. 0. compactPerimeterScale
 
                         if abs (rectRight i - maxX) <= boundaryTolerance then
-                            addForce i -1. 0. (arrangeWeights.BoundingBoxCompact * height)
+                            addForce i -1. 0. compactPerimeterScale
 
                         if abs (rectTop i - minY) <= boundaryTolerance then
-                            addForce i 0. 1. (arrangeWeights.BoundingBoxCompact * width)
+                            addForce i 0. 1. compactPerimeterScale
 
                         if abs (rectBottom i - maxY) <= boundaryTolerance then
-                            addForce i 0. -1. (arrangeWeights.BoundingBoxCompact * width)
+                            addForce i 0. -1. compactPerimeterScale
 
-                        // The exact bounding-box area gradient only touches nodes on the current
+                        // Bounding-box compactness uses perimeter, not area. Area rewards collapsing
+                        // one dimension when the graph is already elongated; perimeter keeps the
+                        // inward pressure symmetric in x and y.
+                        //
+                        // The exact bounding-box gradient only touches nodes on the current
                         // min/max borders. This soft companion keeps interior nodes from drifting
                         // far apart when another node temporarily owns the graph boundary.
-                        addForce i (centerX - cx) 0. (arrangeWeights.BoundingBoxCompact * height / width)
-                        addForce i 0. (centerY - cy) (arrangeWeights.BoundingBoxCompact * width / height)
+                        addForce i (centerX - cx) 0. compactCenterScale
+                        addForce i 0. (centerY - cy) compactCenterScale
                         addForce i (startX[i] - x[i]) (startY[i] - y[i]) arrangeWeights.StayNearUserLayout
                         addForce i (centerX - cx) 0. (arrangeWeights.BoundingBoxSquare * squareBias / width)
                         addForce i 0. (centerY - cy) (arrangeWeights.BoundingBoxSquare * -squareBias / height)
@@ -4188,6 +4282,11 @@ type MainWindowViewModel() as this =
         |> Option.map Path.GetFileName
         |> Option.defaultValue "pipeline.json"
 
+    member _.CurrentGraphFileName =
+        currentGraphPath
+        |> Option.map Path.GetFileName
+        |> Option.defaultValue ""
+
     member this.SetCurrentGraphPath(path: string) =
         currentGraphPath <- Some path
         this.RaiseGraphStateChanged()
@@ -4205,6 +4304,7 @@ type MainWindowViewModel() as this =
         this.OnPropertyChanged(PropertyChangedEventArgs(nameof this.CanClearGraph))
         this.OnPropertyChanged(PropertyChangedEventArgs(nameof this.CanRunGraph))
         this.OnPropertyChanged(PropertyChangedEventArgs(nameof this.SuggestedGraphFileName))
+        this.OnPropertyChanged(PropertyChangedEventArgs(nameof this.CurrentGraphFileName))
 
     member this.MarkGraphDirty() =
         if not graphDirty then

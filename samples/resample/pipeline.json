@@ -19,12 +19,12 @@
         },
         {
           "key": "format",
-          "value": "Image stack",
+          "value": "Volume file",
           "useInput": false
         },
         {
           "key": "input",
-          "value": "volumedata",
+          "value": "../data/volumedata",
           "useInput": false
         },
         {
@@ -92,7 +92,7 @@
       "parameters": [
         {
           "key": "output",
-          "value": "volume",
+          "value": "../data/volume",
           "useInput": false
         },
         {

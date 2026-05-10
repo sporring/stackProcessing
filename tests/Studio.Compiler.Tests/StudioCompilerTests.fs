@@ -76,8 +76,8 @@ let generatorSuite =
                 graph [ read; write ] [ edge "readVolume" "output" 0 "writeVolume" "input" 0 ]
                 |> PipelineCodeGenerator.generateSavedGraph
 
-            Expect.stringContains code "let volumeFilePath (input: string) (suffix: string) =" "Volume reads should resolve the hidden extension from the selected file type."
             Expect.stringContains code "|> readVolume<uint16> (volumeFilePath \"input.tiff\" \".tiff\")" "Read with Volume file format should generate a typed volume source."
+            Expect.isFalse (code.Contains("let volumeFilePath")) "volumeFilePath should live in StackIO/StackProcessing, not in generated code."
             Expect.stringContains code ">=> writeVolume \"output.tiff\"" "WriteVolume should generate a streaming volume writer."
             Expect.stringContains code "|> sink" "Terminal WriteVolume should be sunk."
 
@@ -982,6 +982,34 @@ let generatorSuite =
             Expect.isLessThan (code.IndexOf("let Float640")) (code.IndexOf("let Float641")) "Dependency binding should come first."
             Expect.stringContains code "printfn $\"{Float641}\"" "Print should emit interpolated printfn."
 
+        testCase "print format rejects code injection placeholders and quotes" <| fun _ ->
+            let scalar =
+                node "scalar" "Scalar"
+                    [ p "type" "Float64" false
+                      p "value" "255" false ]
+
+            let assertRejected format expected =
+                let print =
+                    node "print" "Print"
+                        [ p "format" format false
+                          p "input1" "" true ]
+
+                try
+                    graph
+                        [ scalar; print ]
+                        [ edge "scalar" "scalarOutput" 0 "print" "parameterInput" 1 ]
+                    |> PipelineCodeGenerator.generateSavedGraph
+                    |> ignore
+
+                    failtestf "Print format should have been rejected: %s" format
+                with ex ->
+                    Expect.stringContains ex.Message expected "The rejection should explain the unsafe Print format."
+
+            assertRejected "{System.IO.File.Delete(\"x\")}" "double quotes are not allowed"
+            assertRejected "{System.Environment.Exit 0}" "is not a linked Print input"
+            assertRejected "literal { brace" "must close a placeholder"
+            assertRejected "literal } brace" "must belong to a placeholder"
+
         testCase "scalar function binding lowers selected F# function" <| fun _ ->
             let scalar =
                 node "scalar" "Scalar"
@@ -1001,8 +1029,8 @@ let generatorSuite =
             let print =
                 node "print" "Print"
                     [ p "format" "{Width} {Depth}" false
-                      p "input1" "" true
-                      p "input2" "" true ]
+                      p "input1" "Width" true
+                      p "input2" "Depth" true ]
 
             let code =
                 graph
@@ -1049,8 +1077,8 @@ let generatorSuite =
             let print =
                 node "print" "Print"
                     [ p "format" "{Width} {Depth}" false
-                      p "input1" "" true
-                      p "input2" "" true ]
+                      p "input1" "Width" true
+                      p "input2" "Depth" true ]
 
             let code =
                 graph
@@ -1859,10 +1887,27 @@ let generatorSuite =
                     [ edge "histogram" "reducerOutput" 0 "chart" "parameterInput" 1 ]
                 |> PipelineCodeGenerator.generateSavedGraph
 
-            Expect.stringContains code "open Plotly.NET" "Charts need Plotly.NET."
-            Expect.stringContains code "let showChart kind points =" "Chart helper should be emitted once."
+            Expect.isFalse (code.Contains("open Plotly.NET")) "Chart helper should come from StackProcessing, so chart-only generated code does not need to open Plotly.NET."
+            Expect.isFalse (code.Contains("let showChart kind points =")) "Chart helper should not be emitted into generated programs."
             Expect.stringContains code "let Histogram0 =" "Linked histogram data should be bound before use."
-            Expect.stringContains code "showChart \"Line\" Histogram0" "Chart should use the selected chart kind and linked histogram value."
+            Expect.stringContains code "showChartWithLabels \"Line\" \"\" \"\" \"\" Histogram0" "Chart should use the selected chart kind, default empty labels, and linked histogram value."
+
+        testCase "histogram boxes can use fixed bins and chart labels" <| fun _ ->
+            let histogram =
+                node "histogram" "Histogram"
+                    [ p "firstLeftEdge" "0.0" true
+                      p "lastLeftEdge" "255.0" false
+                      p "bins" "256" false
+                      p "title" "Intensity histogram" false
+                      p "xAxis" "Intensity" false
+                      p "yAxis" "Pixels" false ]
+
+            let code =
+                graph [ histogram ] []
+                |> PipelineCodeGenerator.generateSavedGraph
+
+            Expect.stringContains code ">=> histogramFixedBins 0.0 255.0 256u" "Activating fixed-bin controls should lower to the fixed-bin reducer."
+            Expect.stringContains code "showChartXYWithLabels \"Column\" \"Intensity histogram\" \"Intensity\" \"Pixels\"" "Histogram should pass title and axis labels to the shared chart helper."
 
         testCase "estimateHistogram source exposes histogram map and diagnostics" <| fun _ ->
             let read =
@@ -2074,4 +2119,36 @@ let generatorSuite =
                 |> PipelineCodeGenerator.generateSavedGraph
 
             Expect.stringContains code ">=> intensityStretch<float> 10.0 20.0 0.0 1.0" "Intensity stretch should lower with typed linear range parameters."
+
+        testCase "numeric parameters normalize user-friendly decimal text before F# emission" <| fun _ ->
+            let read =
+                node "read" "Read"
+                    [ p "availableMemory" "1024" false
+                      p "type" "UInt8" false
+                      p "input" "input" false
+                      p "suffix" ".tiff" false ]
+
+            let stretch =
+                node "stretch" "IntensityStretch"
+                    [ p "type" "UInt8" false
+                      p "inputMinimum" "0" false
+                      p "inputMaximum" "255." false
+                      p "outputMinimum" "0" false
+                      p "outputMaximum" "1." false ]
+
+            let subtract =
+                node "subtract" "ScalarOpImage"
+                    [ p "operation" "-" false
+                      p "type" "UInt8" false
+                      p "value" "1.0" false ]
+
+            let code =
+                graph
+                    [ read; stretch; subtract ]
+                    [ edge "read" "output" 0 "stretch" "input" 0
+                      edge "stretch" "output" 0 "subtract" "input" 0 ]
+                |> PipelineCodeGenerator.generateSavedGraph
+
+            Expect.stringContains code ">=> intensityStretch<uint8> 0.0 255.0 0.0 1.0" "Float parameters should never emit trailing-dot literals."
+            Expect.stringContains code ">=> scalarSubImage 1uy" "Integer typed scalar parameters should accept decimal-looking whole numbers."
     ]

@@ -426,6 +426,7 @@ let private graphForDefinition caseIndex (definition: Function) =
         | "MomentsThresholdFromHistogram" -> [ "histogram" ]
         | "Chart" -> [ "input" ]
         | "SerialApplyTrans" -> [ "geometry" ]
+        | "Print" -> [ "input1" ]
         | _ -> []
 
     let parameterOutlets =

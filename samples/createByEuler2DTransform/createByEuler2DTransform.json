@@ -2,10 +2,10 @@
   "version": 1,
   "nodes": [
     {
-      "id": "n1",
+      "id": "node-1",
       "functionId": "CreateByEuler2DTransform",
-      "x": 40.0,
-      "y": 80.0,
+      "x": 114.82873036996976,
+      "y": 241.60545577964302,
       "parameters": [
         {
           "key": "availableMemory",
@@ -19,23 +19,23 @@
         },
         {
           "key": "width",
-          "value": "64",
-          "useInput": false
+          "value": "256",
+          "useInput": true
         },
         {
           "key": "height",
-          "value": "64",
-          "useInput": false
+          "value": "256",
+          "useInput": true
         },
         {
           "key": "depth",
-          "value": "64",
-          "useInput": false
+          "value": "256",
+          "useInput": true
         },
         {
           "key": "boxSize",
           "value": "16",
-          "useInput": false
+          "useInput": true
         },
         {
           "key": "transform",
@@ -45,10 +45,10 @@
       ]
     },
     {
-      "id": "n2",
+      "id": "node-2",
       "functionId": "CreateByEuler2DTransform",
-      "x": 40.0,
-      "y": 220.0,
+      "x": 156.87293143176984,
+      "y": 280.3256519005302,
       "parameters": [
         {
           "key": "availableMemory",
@@ -62,23 +62,23 @@
         },
         {
           "key": "width",
-          "value": "64",
-          "useInput": false
+          "value": "256",
+          "useInput": true
         },
         {
           "key": "height",
-          "value": "64",
-          "useInput": false
+          "value": "256",
+          "useInput": true
         },
         {
           "key": "depth",
-          "value": "64",
-          "useInput": false
+          "value": "256",
+          "useInput": true
         },
         {
           "key": "boxSize",
           "value": "16",
-          "useInput": false
+          "useInput": true
         },
         {
           "key": "transform",
@@ -88,10 +88,10 @@
       ]
     },
     {
-      "id": "n3",
+      "id": "node-3",
       "functionId": "CreateByEuler2DTransform",
-      "x": 40.0,
-      "y": 360.0,
+      "x": 212.12496890152605,
+      "y": 246.836832213588,
       "parameters": [
         {
           "key": "availableMemory",
@@ -105,23 +105,23 @@
         },
         {
           "key": "width",
-          "value": "64",
-          "useInput": false
+          "value": "256",
+          "useInput": true
         },
         {
           "key": "height",
-          "value": "64",
-          "useInput": false
+          "value": "256",
+          "useInput": true
         },
         {
           "key": "depth",
-          "value": "64",
-          "useInput": false
+          "value": "256",
+          "useInput": true
         },
         {
           "key": "boxSize",
           "value": "16",
-          "useInput": false
+          "useInput": true
         },
         {
           "key": "transform",
@@ -131,10 +131,10 @@
       ]
     },
     {
-      "id": "n4",
+      "id": "node-4",
       "functionId": "ImageOpImage",
-      "x": 320.0,
-      "y": 150.0,
+      "x": 318.93427238718175,
+      "y": 209.05450226818584,
       "parameters": [
         {
           "key": "operation",
@@ -149,24 +149,36 @@
       ]
     },
     {
-      "id": "n5",
+      "id": "node-5",
       "functionId": "Tap",
-      "x": 540.0,
-      "y": 150.0,
-      "parameters": []
+      "x": 483.3448208007034,
+      "y": 189.69152479704164,
+      "parameters": [
+        {
+          "key": "label",
+          "value": "tap",
+          "useInput": false
+        }
+      ]
     },
     {
-      "id": "n6",
+      "id": "node-6",
       "functionId": "Tap",
-      "x": 320.0,
-      "y": 360.0,
-      "parameters": []
+      "x": 431.1528986893118,
+      "y": 242.71938168144305,
+      "parameters": [
+        {
+          "key": "label",
+          "value": "tap",
+          "useInput": false
+        }
+      ]
     },
     {
-      "id": "n7",
+      "id": "node-7",
       "functionId": "ImageOpImage",
-      "x": 760.0,
-      "y": 230.0,
+      "x": 643.7497316249448,
+      "y": 198.64196324285916,
       "parameters": [
         {
           "key": "operation",
@@ -181,14 +193,14 @@
       ]
     },
     {
-      "id": "n8",
+      "id": "node-8",
       "functionId": "Write",
-      "x": 980.0,
-      "y": 230.0,
+      "x": 999.548952013537,
+      "y": 187.8726990517512,
       "parameters": [
         {
           "key": "output",
-          "value": "../image18",
+          "value": "../data/rotatingBoxes",
           "useInput": false
         },
         {
@@ -197,62 +209,235 @@
           "useInput": false
         }
       ]
+    },
+    {
+      "id": "node-9",
+      "functionId": "Scalar",
+      "x": 139.37391768043594,
+      "y": 157.39422848021664,
+      "parameters": [
+        {
+          "key": "type",
+          "value": "UInt32",
+          "useInput": false
+        },
+        {
+          "key": "value",
+          "value": "256",
+          "useInput": false
+        }
+      ]
+    },
+    {
+      "id": "node-10",
+      "functionId": "Scalar",
+      "x": 229.2308832315497,
+      "y": 150.83599074504127,
+      "parameters": [
+        {
+          "key": "type",
+          "value": "UInt32",
+          "useInput": false
+        },
+        {
+          "key": "value",
+          "value": "64",
+          "useInput": false
+        }
+      ]
+    },
+    {
+      "id": "node-11",
+      "functionId": "IntensityStretch",
+      "x": 833.6213942440246,
+      "y": 194.0752589065313,
+      "parameters": [
+        {
+          "key": "type",
+          "value": "UInt8",
+          "useInput": false
+        },
+        {
+          "key": "inputMinimum",
+          "value": "0.0",
+          "useInput": false
+        },
+        {
+          "key": "inputMaximum",
+          "value": "1.0",
+          "useInput": false
+        },
+        {
+          "key": "outputMinimum",
+          "value": "0.0",
+          "useInput": false
+        },
+        {
+          "key": "outputMaximum",
+          "value": "255.",
+          "useInput": false
+        }
+      ]
     }
   ],
   "edges": [
     {
-      "fromNode": "n1",
+      "fromNode": "node-4",
       "fromKind": "dataOutput",
       "fromPort": 0,
-      "toNode": "n4",
+      "toNode": "node-5",
       "toKind": "dataInput",
       "toPort": 0
     },
     {
-      "fromNode": "n2",
+      "fromNode": "node-5",
       "fromKind": "dataOutput",
       "fromPort": 0,
-      "toNode": "n4",
+      "toNode": "node-7",
+      "toKind": "dataInput",
+      "toPort": 0
+    },
+    {
+      "fromNode": "node-6",
+      "fromKind": "dataOutput",
+      "fromPort": 0,
+      "toNode": "node-7",
       "toKind": "dataInput",
       "toPort": 1
     },
     {
-      "fromNode": "n4",
+      "fromNode": "node-2",
       "fromKind": "dataOutput",
       "fromPort": 0,
-      "toNode": "n5",
-      "toKind": "dataInput",
-      "toPort": 0
-    },
-    {
-      "fromNode": "n3",
-      "fromKind": "dataOutput",
-      "fromPort": 0,
-      "toNode": "n6",
-      "toKind": "dataInput",
-      "toPort": 0
-    },
-    {
-      "fromNode": "n5",
-      "fromKind": "dataOutput",
-      "fromPort": 0,
-      "toNode": "n7",
-      "toKind": "dataInput",
-      "toPort": 0
-    },
-    {
-      "fromNode": "n6",
-      "fromKind": "dataOutput",
-      "fromPort": 0,
-      "toNode": "n7",
+      "toNode": "node-4",
       "toKind": "dataInput",
       "toPort": 1
     },
     {
-      "fromNode": "n7",
+      "fromNode": "node-9",
+      "fromKind": "scalarOutput",
+      "fromPort": 0,
+      "toNode": "node-2",
+      "toKind": "parameterInput",
+      "toPort": 2
+    },
+    {
+      "fromNode": "node-9",
+      "fromKind": "scalarOutput",
+      "fromPort": 0,
+      "toNode": "node-2",
+      "toKind": "parameterInput",
+      "toPort": 3
+    },
+    {
+      "fromNode": "node-9",
+      "fromKind": "scalarOutput",
+      "fromPort": 0,
+      "toNode": "node-2",
+      "toKind": "parameterInput",
+      "toPort": 4
+    },
+    {
+      "fromNode": "node-1",
       "fromKind": "dataOutput",
       "fromPort": 0,
-      "toNode": "n8",
+      "toNode": "node-4",
+      "toKind": "dataInput",
+      "toPort": 0
+    },
+    {
+      "fromNode": "node-9",
+      "fromKind": "scalarOutput",
+      "fromPort": 0,
+      "toNode": "node-1",
+      "toKind": "parameterInput",
+      "toPort": 2
+    },
+    {
+      "fromNode": "node-9",
+      "fromKind": "scalarOutput",
+      "fromPort": 0,
+      "toNode": "node-1",
+      "toKind": "parameterInput",
+      "toPort": 3
+    },
+    {
+      "fromNode": "node-9",
+      "fromKind": "scalarOutput",
+      "fromPort": 0,
+      "toNode": "node-1",
+      "toKind": "parameterInput",
+      "toPort": 4
+    },
+    {
+      "fromNode": "node-3",
+      "fromKind": "dataOutput",
+      "fromPort": 0,
+      "toNode": "node-6",
+      "toKind": "dataInput",
+      "toPort": 0
+    },
+    {
+      "fromNode": "node-9",
+      "fromKind": "scalarOutput",
+      "fromPort": 0,
+      "toNode": "node-3",
+      "toKind": "parameterInput",
+      "toPort": 2
+    },
+    {
+      "fromNode": "node-9",
+      "fromKind": "scalarOutput",
+      "fromPort": 0,
+      "toNode": "node-3",
+      "toKind": "parameterInput",
+      "toPort": 3
+    },
+    {
+      "fromNode": "node-9",
+      "fromKind": "scalarOutput",
+      "fromPort": 0,
+      "toNode": "node-3",
+      "toKind": "parameterInput",
+      "toPort": 4
+    },
+    {
+      "fromNode": "node-10",
+      "fromKind": "scalarOutput",
+      "fromPort": 0,
+      "toNode": "node-3",
+      "toKind": "parameterInput",
+      "toPort": 5
+    },
+    {
+      "fromNode": "node-10",
+      "fromKind": "scalarOutput",
+      "fromPort": 0,
+      "toNode": "node-1",
+      "toKind": "parameterInput",
+      "toPort": 5
+    },
+    {
+      "fromNode": "node-10",
+      "fromKind": "scalarOutput",
+      "fromPort": 0,
+      "toNode": "node-2",
+      "toKind": "parameterInput",
+      "toPort": 5
+    },
+    {
+      "fromNode": "node-7",
+      "fromKind": "dataOutput",
+      "fromPort": 0,
+      "toNode": "node-11",
+      "toKind": "dataInput",
+      "toPort": 0
+    },
+    {
+      "fromNode": "node-11",
+      "fromKind": "dataOutput",
+      "fromPort": 0,
+      "toNode": "node-8",
       "toKind": "dataInput",
       "toPort": 0
     }

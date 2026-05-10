@@ -31,6 +31,7 @@
     <ItemGroup>
         <PackageReference Include="BitMiracle.LibTiff.NET" Version="2.4.660" />
         <PackageReference Include="DIKU.Graph" Version="1.0.0" />
+        <PackageReference Include="Plotly.NET" Version="5.1.0" />
         <PackageReference Include="PureHDF" Version="2.1.1" />
         <PackageReference Include="ZarrNET" Version="0.4.0" />
         <ProjectReference Include="../TinyLinAlg/TinyLinAlg.fsproj" />
@@ -40,6 +41,7 @@
 
     <ItemGroup>
         <Compile Include="StackCore.fs" />
+        <Compile Include="StackCharts.fs" />
         <Compile Include="StackProcessingCost.fs" />
         <Compile Include="StackIO.fs" />
         <Compile Include="StackPoints.fs" />

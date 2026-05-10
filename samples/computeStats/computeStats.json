@@ -4,8 +4,8 @@
     {
       "id": "node-1",
       "functionId": "Read",
-      "x": 28.86688232421875,
-      "y": 112,
+      "x": 51.504516168638666,
+      "y": 178.6530037026802,
       "parameters": [
         {
           "key": "availableMemory",
@@ -18,13 +18,68 @@
           "useInput": false
         },
         {
+          "key": "format",
+          "value": "Image stack",
+          "useInput": false
+        },
+        {
           "key": "input",
-          "value": "../../samples/image18",
+          "value": "../data/volume",
           "useInput": false
         },
         {
           "key": "suffix",
           "value": ".tiff",
+          "useInput": false
+        },
+        {
+          "key": "slabDepth",
+          "value": "8",
+          "useInput": false
+        },
+        {
+          "key": "multiscaleIndex",
+          "value": "0",
+          "useInput": false
+        },
+        {
+          "key": "datasetIndex",
+          "value": "0",
+          "useInput": false
+        },
+        {
+          "key": "timepoint",
+          "value": "0",
+          "useInput": false
+        },
+        {
+          "key": "channel",
+          "value": "0",
+          "useInput": false
+        },
+        {
+          "key": "maxParallelChunks",
+          "value": "0",
+          "useInput": false
+        },
+        {
+          "key": "datasetPath",
+          "value": "/entry/data/data",
+          "useInput": false
+        },
+        {
+          "key": "frameAxis",
+          "value": "0",
+          "useInput": false
+        },
+        {
+          "key": "yAxis",
+          "value": "1",
+          "useInput": false
+        },
+        {
+          "key": "xAxis",
+          "value": "2",
           "useInput": false
         }
       ]
@@ -32,15 +87,15 @@
     {
       "id": "node-2",
       "functionId": "ComputeStats",
-      "x": 350,
-      "y": 199,
+      "x": 369.8698023462283,
+      "y": 177.96318241373135,
       "parameters": []
     },
     {
       "id": "node-3",
       "functionId": "Print",
-      "x": 380,
-      "y": 335.185546875,
+      "x": 339.7068288951051,
+      "y": 367.7008914571693,
       "parameters": [
         {
           "key": "format",
@@ -92,8 +147,8 @@
     {
       "id": "node-4",
       "functionId": "Tap",
-      "x": 168.86688232421875,
-      "y": 199,
+      "x": 209.09299016809527,
+      "y": 178.6530037026802,
       "parameters": [
         {
           "key": "label",
@@ -105,8 +160,8 @@
     {
       "id": "node-5",
       "functionId": "Print",
-      "x": 168.86688232421875,
-      "y": 349.3423636083803,
+      "x": 206.6526692973727,
+      "y": 276.4176104172651,
       "parameters": [
         {
           "key": "format",
@@ -158,8 +213,8 @@
     {
       "id": "node-6",
       "functionId": "Expand",
-      "x": 350,
-      "y": 267,
+      "x": 339.6475125951168,
+      "y": 271.9223848395868,
       "parameters": []
     }
   ],
@@ -229,14 +284,6 @@
       "toPort": 7
     },
     {
-      "fromNode": "node-1",
-      "fromKind": "dataOutput",
-      "fromPort": 0,
-      "toNode": "node-4",
-      "toKind": "dataInput",
-      "toPort": 0
-    },
-    {
       "fromNode": "node-4",
       "fromKind": "dataOutput",
       "fromPort": 0,
@@ -251,6 +298,14 @@
       "toNode": "node-5",
       "toKind": "parameterInput",
       "toPort": 1
+    },
+    {
+      "fromNode": "node-1",
+      "fromKind": "dataOutput",
+      "fromPort": 0,
+      "toNode": "node-4",
+      "toKind": "dataInput",
+      "toPort": 0
     }
   ]
 }

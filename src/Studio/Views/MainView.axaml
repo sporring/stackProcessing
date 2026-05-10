@@ -148,10 +148,14 @@
                             Content="Inspect">
                         <Button.Flyout>
                             <MenuFlyout>
-                                <MenuItem Header="File..."
-                                          Click="InspectFileClicked" />
-                                <MenuItem Header="Directory..."
-                                          Click="InspectDirectoryClicked" />
+                                <MenuItem Header="Stack..."
+                                          Click="InspectStackClicked" />
+                                <MenuItem Header="Volume..."
+                                          Click="InspectVolumeClicked" />
+                                <MenuItem Header="Zarr..."
+                                          Click="InspectZarrClicked" />
+                                <MenuItem Header="NeXus..."
+                                          Click="InspectNexusClicked" />
                             </MenuFlyout>
                         </Button.Flyout>
                     </Button>
@@ -177,7 +181,7 @@
                             Content="Stop" />
                 </StackPanel>
 
-                <TextBlock Text="StackProcessing Studio"
+                <TextBlock Text="{Binding CurrentGraphFileName}"
                            VerticalAlignment="Center"
                            FontSize="14"
                            FontWeight="SemiBold"

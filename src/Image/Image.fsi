@@ -36,6 +36,8 @@ module InternalHelpers =
     val importScalarImage:
       size: uint list -> pixels: 'T array -> itk.simple.Image
     val ofCastItk<'T> : itkImg: itk.simple.Image -> itk.simple.Image
+    val private identityDirection: dim: int -> float list
+    val canonicalizeSimpleItkImage: image: itk.simple.Image -> itk.simple.Image
     val array2dZip: a: 'T array2d -> b: 'U array2d -> ('T * 'U) array2d
     val pixelIdToString: id: itk.simple.PixelIDValueEnum -> string
     val flatIndices: size: uint list -> uint list seq
@@ -460,10 +462,14 @@ type BoundaryCondition =
 type OutputRegionMode =
     | Valid
     | Same
+val private convolutionBoundaryConditionType:
+  boundaryCondition: BoundaryCondition option ->
+    itk.simple.ConvolutionImageFilter.BoundaryConditionType
 val internal convolve3:
   img: itk.simple.Image ->
     ker: itk.simple.Image ->
-    outputRegionMode: OutputRegionMode option -> itk.simple.Image
+    outputRegionMode: OutputRegionMode option ->
+    boundaryCondition: BoundaryCondition option -> itk.simple.Image
 val convolve:
   outputRegionMode: OutputRegionMode option ->
     boundaryCondition: BoundaryCondition option ->
@@ -667,6 +673,10 @@ val momentsThreshold:
 /// Coordinate fields
 val generateCoordinateAxis: axis: int -> size: int list -> Image.Image<uint32>
 val histogram: img: Image.Image<'T> -> Map<'T,uint64> when 'T: comparison
+val histogramFixedBins:
+  firstLeftEdge: float ->
+    lastLeftEdge: float ->
+    bins: uint32 -> img: Image.Image<'T> -> Map<float,uint64> when 'T: equality
 val addHistogram:
   h1: Map<'T,uint64> -> h2: Map<'T,uint64> -> Map<'T,uint64> when 'T: comparison
 val map2pairs: map: Map<'T,'S> -> ('T * 'S) list when 'T: comparison

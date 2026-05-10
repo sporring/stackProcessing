@@ -1076,6 +1076,25 @@ let stackProcessingSupportSuite =
                 disposeImages slices
                 deleteDirectory outputDir
 
+        testCase "volumeFilePath resolves hidden TIFF suffix aliases" <| fun _ ->
+            let outputDir = tempDirectory "volume-file-path"
+            let tifPath = Path.Combine(outputDir, "volumedata.tif")
+
+            try
+                File.WriteAllText(tifPath, "dummy")
+
+                Expect.equal
+                    (StackIO.volumeFilePath (Path.Combine(outputDir, "volumedata")) ".tiff")
+                    tifPath
+                    "A hidden .tiff file type should resolve an existing .tif file."
+
+                Expect.equal
+                    (StackIO.volumeFilePath tifPath ".tiff")
+                    tifPath
+                    "An explicit extension should be left unchanged."
+            finally
+                deleteDirectory outputDir
+
         testCase "earthMoversDistance agrees with brute-force matching for equal-sized point sets" <| fun _ ->
             let fixedPoints =
                 [ point 0.0 0.0 0.0

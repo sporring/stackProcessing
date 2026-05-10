@@ -696,6 +696,10 @@ module Plan =
       observations: StageCostEstimate list -> float option
     val private totalCostScore: observations: StageCostEstimate list -> float
     val private printOptimizationSummary: label: 'a -> pl: Plan<'S,'T> -> unit
+    val private formatMilliseconds: milliseconds: float -> string
+    val private estimatedRunTimeText: pl: Plan<'S,'T> -> string
+    val private runMeasured:
+      label: 'a -> pl: Plan<'S,'T> -> run: (unit -> 'b) -> 'b
     val graph: pl: Plan<'S,'T> -> PipelineGraph
     /// Source type operators
     val source: availableMemory: uint64 -> Plan<unit,unit>

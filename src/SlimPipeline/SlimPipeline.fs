@@ -1551,6 +1551,32 @@ module Plan =
 
             printfn $"[{label}] Optimization {status}: estimated memory peak {pl.memPeak / 1024UL} / {pl.memAvail / 1024UL} KB{peakStageText}{timeText}; {pl.costObservations.Length} cost observations."
 
+    let private formatMilliseconds (milliseconds: float) =
+        if milliseconds >= 1000.0 then
+            $"{milliseconds / 1000.0:g} s"
+        else
+            $"{milliseconds:g} ms"
+
+    let private estimatedRunTimeText (pl: Plan<'S,'T>) =
+        match trySumEstimatedTimeMilliseconds pl.costObservations with
+        | Some milliseconds -> formatMilliseconds milliseconds
+        | None when List.isEmpty pl.costObservations -> "unavailable"
+        | None -> $"uncalibrated cost score {totalCostScore pl.costObservations:g}"
+
+    let private runMeasured label (pl: Plan<'S,'T>) run =
+        if pl.debug && pl.debugLevel >= 1u then
+            let stopwatch = System.Diagnostics.Stopwatch.StartNew()
+            let result, snapshot =
+                MemoryProbe.measure 10 run
+            stopwatch.Stop()
+
+            printfn
+                $"[{label}] Run summary: estimated peak memory {MemoryProbe.formatBytes pl.memPeak} / {MemoryProbe.formatBytes pl.memAvail}; actual process RSS peak delta {MemoryProbe.formatBytes snapshot.Delta} (baseline {MemoryProbe.formatBytes snapshot.Baseline}, peak {MemoryProbe.formatBytes snapshot.Peak}); estimated time {estimatedRunTimeText pl}; actual time {formatMilliseconds stopwatch.Elapsed.TotalMilliseconds}."
+
+            result
+        else
+            run ()
+
     let graph (pl: Plan<'S,'T>) =
         pl.graph
 
@@ -1716,13 +1742,7 @@ module Plan =
         let pipeline = Option.map (fun stage -> Stage.toPipe stage ()) pl.stage
         printOptimizationSummary "sink" pl
         if pl.debug && pl.debugLevel >= 2u then printfn $"[sink] Running pipeline with an estimated {pl.memPeak/1024UL} / {pl.memAvail/1024UL} KB of memory use"
-        if pl.debug && pl.debugLevel >= 3u then
-            let _, snapshot =
-                MemoryProbe.measure 10 (fun () ->
-                    Option.map (Pipe.run pl.debug) pipeline |> ignore)
-            printfn $"[sink] Process RSS baseline {MemoryProbe.formatBytes snapshot.Baseline}, peak {MemoryProbe.formatBytes snapshot.Peak}, delta {MemoryProbe.formatBytes snapshot.Delta}"
-        else
-            Option.map (Pipe.run pl.debug) pipeline |> ignore
+        runMeasured "sink" pl (fun () -> Option.map (Pipe.run pl.debug) pipeline |> ignore)
         if pl.debug && pl.debugLevel >= 2u then printfn "[sink] Cleaning"
         doCleaning pl |> ignore
         if pl.debug && pl.debugLevel >= 2u then printfn "[sink] Done"
@@ -1741,15 +1761,9 @@ module Plan =
                     if pl.debug && pl.debugLevel >= 2u then printfn $"[{name}] Transform plan graph with {pl.graph.Nodes.Length} nodes / {pl.graph.Edges.Length} edges to pipeline"
                     let pipeline = stg.Build ()
                     printOptimizationSummary name pl
-                    if pl.debug && pl.debugLevel >= 2u then printfn $"[{name}] Running pipeline with an estimated {pl.memPeak/1024UL} / {pl.memAvail/1024UL} KB memory use" 
-                    if pl.debug && pl.debugLevel >= 3u then
-                        let result, snapshot =
-                            MemoryProbe.measure 10 (fun () ->
-                                AsyncSeq.singleton () |> pipeline.Apply pl.debug |> reducer |> Async.RunSynchronously)
-                        printfn $"[{name}] Process RSS baseline {MemoryProbe.formatBytes snapshot.Baseline}, peak {MemoryProbe.formatBytes snapshot.Peak}, delta {MemoryProbe.formatBytes snapshot.Delta}"
-                        result
-                    else
-                        AsyncSeq.singleton () |> pipeline.Apply pl.debug |> reducer |> Async.RunSynchronously
+                    if pl.debug && pl.debugLevel >= 2u then printfn $"[{name}] Running pipeline with an estimated {pl.memPeak/1024UL} / {pl.memAvail/1024UL} KB memory use"
+                    runMeasured name pl (fun () ->
+                        AsyncSeq.singleton () |> pipeline.Apply pl.debug |> reducer |> Async.RunSynchronously)
                 | _ -> failwith $"[{name}] Plan is empty"
         doCleaning pl |> ignore
         res

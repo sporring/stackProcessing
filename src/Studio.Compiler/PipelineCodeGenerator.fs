@@ -2,6 +2,7 @@ namespace Studio.Compiler
 
 open System
 open System.Collections.Generic
+open System.Globalization
 open System.Text
 open System.Text.RegularExpressions
 open Studio.Graph
@@ -33,19 +34,43 @@ module PipelineCodeGenerator =
         suffixes
         |> List.exists (fun suffix -> value.EndsWith(suffix, StringComparison.OrdinalIgnoreCase))
 
-    let private float64Literal (value: string) =
+    let private tryParseFloat (value: string) =
+        match Double.TryParse(value.Trim(), NumberStyles.Float, CultureInfo.InvariantCulture) with
+        | true, parsed -> Some parsed
+        | false, _ -> None
+
+    let private normalizeFloatLiteral (value: string) =
         let trimmed = value.Trim()
         let lower = trimmed.ToLowerInvariant()
 
         if String.IsNullOrWhiteSpace trimmed
-           || trimmed.Contains(".", StringComparison.Ordinal)
-           || trimmed.Contains("e", StringComparison.OrdinalIgnoreCase)
            || lower = "nan"
            || lower = "infinity"
            || lower = "-infinity" then
             trimmed
+        elif trimmed.EndsWith(".", StringComparison.Ordinal) then
+            trimmed + "0"
+        elif trimmed.Contains(".", StringComparison.Ordinal)
+             || trimmed.Contains("e", StringComparison.OrdinalIgnoreCase) then
+            trimmed
         else
             $"{trimmed}.0"
+
+    let private float64Literal (value: string) =
+        normalizeFloatLiteral value
+
+    let private integerLiteralOrCast castName suffix (value: string) =
+        let trimmed = value.Trim()
+
+        if hasSuffix [ suffix ] trimmed then
+            trimmed
+        else
+            match tryParseFloat trimmed with
+            | Some parsed when Double.IsFinite parsed && parsed = Math.Truncate parsed ->
+                let integerText = parsed.ToString("0", CultureInfo.InvariantCulture)
+                $"{integerText}{suffix}"
+            | _ ->
+                $"{castName} {normalizeFloatLiteral trimmed}"
 
     let private standardNumericConstant (value: string) =
         match value.Trim().ToLowerInvariant() with
@@ -74,21 +99,25 @@ module PipelineCodeGenerator =
         | None ->
             match numericType with
             | UInt8 ->
-                if hasSuffix [ "uy" ] trimmed then trimmed else $"{trimmed}uy"
+                integerLiteralOrCast "uint8" "uy" trimmed
             | Int8 ->
-                if hasSuffix [ "y" ] trimmed then trimmed else $"{trimmed}y"
+                integerLiteralOrCast "int8" "y" trimmed
             | UInt16 ->
-                if hasSuffix [ "us" ] trimmed then trimmed else $"{trimmed}us"
+                integerLiteralOrCast "uint16" "us" trimmed
             | Int16 ->
-                if hasSuffix [ "s" ] trimmed then trimmed else $"{trimmed}s"
+                integerLiteralOrCast "int16" "s" trimmed
             | UInt32 ->
-                if hasSuffix [ "u" ] trimmed then trimmed else $"{trimmed}u"
+                integerLiteralOrCast "uint32" "u" trimmed
             | Int32 ->
-                trimmed
+                match tryParseFloat trimmed with
+                | Some parsed when Double.IsFinite parsed && parsed = Math.Truncate parsed ->
+                    parsed.ToString("0", CultureInfo.InvariantCulture)
+                | _ ->
+                    $"int {normalizeFloatLiteral trimmed}"
             | UInt64 ->
-                if hasSuffix [ "ul" ] trimmed then trimmed else $"{trimmed}UL"
+                integerLiteralOrCast "uint64" "UL" trimmed
             | Int64 ->
-                if hasSuffix [ "l" ] trimmed then trimmed else $"{trimmed}L"
+                integerLiteralOrCast "int64" "L" trimmed
             | Float32 ->
                 if hasSuffix [ "f" ] trimmed then trimmed else $"{float64Literal trimmed}f"
             | Float64
@@ -181,9 +210,6 @@ module PipelineCodeGenerator =
 
     let private sourcePrefix availableMemory line =
         $"debug 1u {uint64Literal availableMemory}{Environment.NewLine}{line}"
-
-    let private volumeFilePathExpression input suffix =
-        $"(volumeFilePath {input} {suffix})"
 
     let private imageOpImageFunctionName (node: SavedNode) =
         match savedParamValue "operation" node with
@@ -687,59 +713,64 @@ module PipelineCodeGenerator =
             if expression.IsLinked then $"(string {expression.Value})" else quote expression.Value
 
         let printInputNameForNode (printNode: SavedNode) key index =
-            graph.Edges
-            |> Seq.tryFind (fun edge ->
-                edge.ToNode = printNode.Id
-                && edge.ToKind = "parameterInput"
-                && edge.ToPort = index)
-            |> Option.bind (fun edge ->
-                match edge.FromKind with
-                | "reducerOutput" ->
-                    nodesById
-                    |> Map.tryFind edge.FromNode
-                    |> Option.bind (fun sourceNode ->
-                        if sourceNode.FunctionId = "Expand" then
-                            graph.Edges
-                            |> Array.tryFind (fun inputEdge ->
-                                inputEdge.ToNode = sourceNode.Id
-                                && inputEdge.ToKind <> "parameterInput"
-                                && inputEdge.ToPort = 0)
-                            |> Option.bind (fun inputEdge -> nodesById |> Map.tryFind inputEdge.FromNode)
-                            |> Option.map (fun recordSource ->
-                                if recordSource.FunctionId = "ComputeStats" then
-                                    PortType.Custom "ImageStats"
-                                elif isWriteStackInfoNode recordSource || isReadStackInfoNode recordSource then
-                                    PortType.Custom "StackInfo"
-                                elif isChunkInfoNode recordSource || isReadChunkInfoNode recordSource then
-                                    PortType.Custom "ChunkInfo"
-                                else
-                                    PortType.Custom "Record")
-                            |> Option.bind (fun recordType ->
-                                BuiltInCatalog.expandOutputsFor recordType
-                                |> List.tryItem edge.FromPort
-                                |> Option.map _.Name)
-                        else
-                            BuiltInCatalog.tryFind sourceNode.FunctionId
-                            |> Option.bind (fun definition ->
-                                definition.Outputs
-                                |> List.tryItem edge.FromPort
-                                |> Option.map _.Name))
-                | "scalarOutput" ->
-                    nodesById
-                    |> Map.tryFind edge.FromNode
-                    |> Option.map (fun sourceNode ->
-                            if sourceNode.FunctionId = "Tap" then
-                                "I"
-                            elif sourceNode.FunctionId = "Scalar" then
-                                savedParamValue "type" sourceNode
-                            else
-                                sourceNode.FunctionId)
-                | _ ->
-                    None)
-            |> Option.orElseWith (fun () ->
+            let configuredName =
                 printNode.Parameters
                 |> Seq.tryFind (fun parameter -> parameter.Key = key)
-                |> Option.map _.Value)
+                |> Option.map _.Value
+                |> Option.map _.Trim()
+                |> Option.filter (String.IsNullOrWhiteSpace >> not)
+
+            configuredName
+            |> Option.orElseWith (fun () ->
+                graph.Edges
+                |> Seq.tryFind (fun edge ->
+                    edge.ToNode = printNode.Id
+                    && edge.ToKind = "parameterInput"
+                    && edge.ToPort = index)
+                |> Option.bind (fun edge ->
+                    match edge.FromKind with
+                    | "reducerOutput" ->
+                        nodesById
+                        |> Map.tryFind edge.FromNode
+                        |> Option.bind (fun sourceNode ->
+                            if sourceNode.FunctionId = "Expand" then
+                                graph.Edges
+                                |> Array.tryFind (fun inputEdge ->
+                                    inputEdge.ToNode = sourceNode.Id
+                                    && inputEdge.ToKind <> "parameterInput"
+                                    && inputEdge.ToPort = 0)
+                                |> Option.bind (fun inputEdge -> nodesById |> Map.tryFind inputEdge.FromNode)
+                                |> Option.map (fun recordSource ->
+                                    if recordSource.FunctionId = "ComputeStats" then
+                                        PortType.Custom "ImageStats"
+                                    elif isWriteStackInfoNode recordSource || isReadStackInfoNode recordSource then
+                                        PortType.Custom "StackInfo"
+                                    elif isChunkInfoNode recordSource || isReadChunkInfoNode recordSource then
+                                        PortType.Custom "ChunkInfo"
+                                    else
+                                        PortType.Custom "Record")
+                                |> Option.bind (fun recordType ->
+                                    BuiltInCatalog.expandOutputsFor recordType
+                                    |> List.tryItem edge.FromPort
+                                    |> Option.map _.Name)
+                            else
+                                BuiltInCatalog.tryFind sourceNode.FunctionId
+                                |> Option.bind (fun definition ->
+                                    definition.Outputs
+                                    |> List.tryItem edge.FromPort
+                                    |> Option.map _.Name))
+                    | "scalarOutput" ->
+                        nodesById
+                        |> Map.tryFind edge.FromNode
+                        |> Option.map (fun sourceNode ->
+                                if sourceNode.FunctionId = "Tap" then
+                                    "I"
+                                elif sourceNode.FunctionId = "Scalar" then
+                                    savedParamValue "type" sourceNode
+                                else
+                                    sourceNode.FunctionId)
+                    | _ ->
+                        None))
             |> Option.map (fun name ->
                 let index = name.IndexOf(':')
 
@@ -759,6 +790,52 @@ module PipelineCodeGenerator =
                 |> List.collect (fun (key, name, expression) -> [ key, expression; name, expression ])
                 |> Map.ofList
 
+            let allowedNames =
+                byName
+                |> Map.keys
+                |> Set.ofSeq
+
+            let invalidFormat reason =
+                failwith $"Invalid Print format: {reason}"
+
+            let validateFormat () =
+                if format.Contains("\"", StringComparison.Ordinal) then
+                    invalidFormat "double quotes are not allowed."
+
+                let mutable offset = 0
+
+                while offset < format.Length do
+                    match format[offset] with
+                    | '{' ->
+                        let closeIndex = format.IndexOf('}', offset + 1)
+
+                        if closeIndex < 0 then
+                            invalidFormat "each '{' must close a placeholder."
+
+                        let name = format.Substring(offset + 1, closeIndex - offset - 1).Trim()
+
+                        if String.IsNullOrWhiteSpace name then
+                            invalidFormat "empty placeholders are not allowed."
+
+                        if name.Contains("{", StringComparison.Ordinal) then
+                            invalidFormat "nested placeholders are not allowed."
+
+                        if not (allowedNames |> Set.contains name) then
+                            let allowed =
+                                allowedNames
+                                |> Seq.sort
+                                |> String.concat ", "
+
+                            invalidFormat $"'{name}' is not a linked Print input. Allowed placeholders are: {allowed}."
+
+                        offset <- closeIndex + 1
+                    | '}' ->
+                        invalidFormat "each '}' must belong to a placeholder."
+                    | _ ->
+                        offset <- offset + 1
+
+            validateFormat()
+
             let escapeText (value: string) =
                 value
                     .Replace("\\\\", "\u0000")
@@ -774,7 +851,6 @@ module PipelineCodeGenerator =
 
             let builder = StringBuilder()
             let mutable offset = 0
-            let mutable positionalIndex = 0
 
             for m in Regex.Matches(format, @"\{([^{}]+)\}") do
                 if m.Index > offset then
@@ -785,13 +861,7 @@ module PipelineCodeGenerator =
                 match byName |> Map.tryFind name with
                 | Some expression ->
                     builder.Append("{").Append(expression).Append("}") |> ignore
-                | None ->
-                    match inputs |> List.tryItem positionalIndex with
-                    | Some (_, _, expression) when not (String.IsNullOrWhiteSpace expression) ->
-                        builder.Append("{").Append(expression).Append("}") |> ignore
-                        positionalIndex <- positionalIndex + 1
-                    | _ ->
-                        builder.Append(escapeText m.Value) |> ignore
+                | None -> invalidFormat $"'{name}' is not a linked Print input."
 
                 offset <- m.Index + m.Length
 
@@ -799,6 +869,19 @@ module PipelineCodeGenerator =
                 builder.Append(escapeText (format.Substring offset)) |> ignore
 
             "$\"" + builder.ToString() + "\""
+
+        let histogramStageExpression () =
+            let hasGraphInput key =
+                node.Parameters
+                |> Seq.exists (fun parameter -> parameter.Key = key && parameter.UseInput)
+
+            if [ "firstLeftEdge"; "lastLeftEdge"; "bins" ] |> List.exists hasGraphInput then
+                let firstLeftEdge = parameterValue "firstLeftEdge"
+                let lastLeftEdge = parameterValue "lastLeftEdge"
+                let bins = parameterValue "bins"
+                $">=> histogramFixedBins {firstLeftEdge} {lastLeftEdge} {bins}"
+            else
+                ">=> histogram ()"
 
         match node.FunctionId with
         | "Zero" ->
@@ -970,7 +1053,7 @@ module PipelineCodeGenerator =
             let xAxis = parameterValue "xAxis"
             match format with
             | "Volume file" ->
-                let volumeInput = volumeFilePathExpression input suffix
+                let volumeInput = $"(volumeFilePath {input} {suffix})"
                 $"|> readVolume<{pixelType}> {volumeInput}" |> sourcePrefix availableMemory
             | "OME-Zarr" ->
                 $"|> readZarrSlab<{pixelType}> {input} {slabDepth} {multiscaleIndex} {datasetIndex} {timepoint} {channel} {maxParallelChunks}" |> sourcePrefix availableMemory
@@ -1132,13 +1215,20 @@ module PipelineCodeGenerator =
 
             $"printfn {format}"
         | "Histogram" ->
-            ">=> histogram () >=> map2pairs --> pairs2floats --> plot (showChartXY \"Column\")"
+            let histogramStage = histogramStageExpression ()
+            let title = quotedParameter "title"
+            let xAxis = quotedParameter "xAxis"
+            let yAxis = quotedParameter "yAxis"
+            $"{histogramStage} >=> map2pairs --> pairs2floats --> plot (showChartXYWithLabels \"Column\" {title} {xAxis} {yAxis})"
         | "HistogramData" ->
-            ">=> histogram ()"
+            histogramStageExpression ()
         | "Chart" ->
             let values = parameterValue "input"
             let kind = savedParamValue "kind" node
-            $"showChart \"{kind}\" {values}"
+            let title = quotedParameter "title"
+            let xAxis = quotedParameter "xAxis"
+            let yAxis = quotedParameter "yAxis"
+            $"showChartWithLabels {quote kind} {title} {xAxis} {yAxis} {values}"
         | "ShowImage" ->
             ">=> show showImagePlot"
         | "SumProjection" ->
@@ -2238,7 +2328,7 @@ module PipelineCodeGenerator =
                             let format = savedParamValue "format" node
                             let text =
                                 if format = "Volume file" then
-                                    let volumeInput = volumeFilePathExpression input suffix
+                                    let volumeInput = $"(volumeFilePath {input} {suffix})"
                                     $"let {name} = getFileInfo {volumeInput}"
                                 else
                                     $"let {name} = getStackInfo {input} {suffix}"
@@ -2405,63 +2495,18 @@ module PipelineCodeGenerator =
         let hasShowImage =
             graph.Nodes |> Array.exists (fun node -> node.FunctionId = "ShowImage")
 
-        let hasVisualization = hasChart || hasShowImage
-
-        let hasVolumeFileRead =
-            graph.Nodes
-            |> Array.exists (fun node -> node.FunctionId = "Read" && savedParamValue "format" node = "Volume file")
-
         builder.AppendLine("open StackProcessing") |> ignore
 
-        if hasVisualization then
+        if hasShowImage then
             builder.AppendLine("open Plotly.NET") |> ignore
 
         builder.AppendLine() |> ignore
-
-        if hasChart then
-            builder.AppendLine("let showChartData kind x y =") |> ignore
-            builder.AppendLine("    match kind with") |> ignore
-            builder.AppendLine("    | \"Scatter\" -> Chart.Scatter(x = x, y = y, mode = StyleParam.Mode.Markers)") |> ignore
-            builder.AppendLine("    | \"Line\" -> Chart.Line(x = x, y = y)") |> ignore
-            builder.AppendLine("    | \"Bar\" -> Chart.Bar(values = y, Keys = x)") |> ignore
-            builder.AppendLine("    | \"Area\" -> Chart.Area(x = x, y = y)") |> ignore
-            builder.AppendLine("    | \"Pie\" -> Chart.Pie(values = y, Labels = x)") |> ignore
-            builder.AppendLine("    | \"Doughnut\" -> Chart.Doughnut(values = y, Labels = x)") |> ignore
-            builder.AppendLine("    | _ -> Chart.Column(values = y, Keys = x)") |> ignore
-            builder.AppendLine("    |> Chart.show") |> ignore
-            builder.AppendLine() |> ignore
-            builder.AppendLine("let showChart kind points =") |> ignore
-            builder.AppendLine("    let x, y = points |> Map.toList |> List.unzip") |> ignore
-            builder.AppendLine("    showChartData kind x y") |> ignore
-            builder.AppendLine() |> ignore
-            builder.AppendLine("let showChartXY kind x y =") |> ignore
-            builder.AppendLine("    showChartData kind x y") |> ignore
-            builder.AppendLine() |> ignore
 
         if hasShowImage then
             builder.AppendLine("let showImagePlot image =") |> ignore
             builder.AppendLine("    ImageFunctions.toSeqSeq image") |> ignore
             builder.AppendLine("    |> Chart.Heatmap") |> ignore
             builder.AppendLine("    |> Chart.show") |> ignore
-            builder.AppendLine() |> ignore
-
-        if hasVolumeFileRead then
-            builder.AppendLine("let volumeFilePath (input: string) (suffix: string) =") |> ignore
-            builder.AppendLine("    if System.IO.Path.HasExtension input then") |> ignore
-            builder.AppendLine("        input") |> ignore
-            builder.AppendLine("    else") |> ignore
-            builder.AppendLine("        let primary = input + suffix") |> ignore
-            builder.AppendLine("        if System.IO.File.Exists primary then") |> ignore
-            builder.AppendLine("            primary") |> ignore
-            builder.AppendLine("        else") |> ignore
-            builder.AppendLine("            match suffix.ToLowerInvariant() with") |> ignore
-            builder.AppendLine("            | \".tiff\" ->") |> ignore
-            builder.AppendLine("                let alternate = input + \".tif\"") |> ignore
-            builder.AppendLine("                if System.IO.File.Exists alternate then alternate else primary") |> ignore
-            builder.AppendLine("            | \".tif\" ->") |> ignore
-            builder.AppendLine("                let alternate = input + \".tiff\"") |> ignore
-            builder.AppendLine("                if System.IO.File.Exists alternate then alternate else primary") |> ignore
-            builder.AppendLine("            | _ -> primary") |> ignore
             builder.AppendLine() |> ignore
 
         let bindings = orderedBindings ()

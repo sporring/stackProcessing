@@ -61,6 +61,17 @@ let private visibleParameterKeys (node: PipelineNodeViewModel) =
     |> Seq.map _.Key
     |> Seq.toList
 
+let private imagePins kind (node: PipelineNodeViewModel) =
+    node.Pins
+    |> Seq.choose (function
+        | :? PipelinePinViewModel as pin when pin.Kind = kind ->
+            match pin.Port.Type with
+            | PortType.Image _ -> Some pin
+            | _ -> None
+        | _ ->
+            None)
+    |> Seq.toList
+
 let private findRepoFile relativePath =
     let rec search (directory: DirectoryInfo) =
         let candidate = Path.Combine(directory.FullName, relativePath)
@@ -117,6 +128,216 @@ let viewModelSuite =
             Expect.isFalse estimatorOptions["Float64"] "The connected estimator should gray out Float64."
             Expect.isTrue applyOptions["Float32"] "The connected Float32 apply type should remain selectable."
             Expect.isFalse applyOptions["Float64"] "The connected apply box should gray out Float64."
+
+        testCase "synthetic sources can choose every image type even when connected" <| fun _ ->
+            let sourceParameters functionId =
+                [ p "availableMemory" "2147483648UL" false
+                  p "type" "UInt8" false
+                  p "width" "64" false
+                  p "height" "64" false
+                  p "depth" "64" false ]
+                @ match functionId with
+                  | "NormalNoise" -> [ p "mean" "0.0" false; p "std" "1.0" false ]
+                  | "SaltAndPepperNoise" -> [ p "probability" "0.01" false ]
+                  | "ShotNoise" -> [ p "scale" "1.0" false ]
+                  | "SpeckleNoise" -> [ p "std" "1.0" false ]
+                  | "CreateByEuler2DTransform" -> [ p "boxSize" "16" false; p "transform" "Diagonal" false ]
+                  | _ -> []
+
+            for functionId in [ "Zero"; "NormalNoise"; "SaltAndPepperNoise"; "ShotNoise"; "SpeckleNoise"; "CreateByEuler2DTransform" ] do
+                let vm = MainWindowViewModel()
+                vm.SetDrawingSize(2000.0, 2000.0)
+
+                let source = node "source" functionId (sourceParameters functionId)
+
+                let threshold =
+                    node "threshold" "Threshold"
+                        [ p "type" "UInt8" false
+                          p "lower" "128.0" false
+                          p "upper" "infinity" false ]
+
+                vm.ImportGraph(graph [ source; threshold ] [ edge "source" "dataOutput" 0 "threshold" "dataInput" 0 ])
+
+                let sourceNode =
+                    pipelineNodes vm
+                    |> Seq.find (fun node -> node.State.Definition.Id = functionId)
+
+                let options = sourceNode |> typeParameter |> optionStates
+
+                for typeName in [ "UInt8"; "Int8"; "UInt16"; "Int16"; "UInt32"; "Int32"; "UInt64"; "Int64"; "Float32"; "Float64"; "Complex" ] do
+                    Expect.isTrue options[typeName] $"{functionId} should allow {typeName}."
+
+        testCase "intensity stretch stream pins use selected image type" <| fun _ ->
+            let vm = MainWindowViewModel()
+            vm.SetDrawingSize(2000.0, 2000.0)
+
+            let stretch =
+                node "stretch" "IntensityStretch"
+                    [ p "type" "Float32" false
+                      p "inputMinimum" "0.0" false
+                      p "inputMaximum" "1.0" false
+                      p "outputMinimum" "0.0" false
+                      p "outputMaximum" "1.0" false ]
+
+            vm.ImportGraph(graph [ stretch ] [])
+
+            let stretchNode =
+                pipelineNodes vm
+                |> Seq.exactlyOne
+
+            let inputPin =
+                stretchNode.Pins
+                |> Seq.choose (function
+                    | :? PipelinePinViewModel as pin when pin.Kind = DataInput -> Some pin
+                    | _ -> None)
+                |> Seq.exactlyOne
+
+            let outputPin =
+                stretchNode.Pins
+                |> Seq.choose (function
+                    | :? PipelinePinViewModel as pin when pin.Kind = DataOutput -> Some pin
+                    | _ -> None)
+                |> Seq.exactlyOne
+
+            Expect.equal inputPin.Port.Name "Float32" "IntensityStretch's input hover text should show the selected concrete type."
+            Expect.equal outputPin.Port.Name "Float32" "IntensityStretch's output hover text should show the selected concrete type."
+            Expect.equal inputPin.Port.Type (PortType.Image Float32) "IntensityStretch's input should guard on the selected type."
+            Expect.equal outputPin.Port.Type (PortType.Image Float32) "IntensityStretch's output should guard on the selected type."
+
+        testCase "typed same-image boxes expose concrete stream pins" <| fun _ ->
+            let sameTypeBoxes =
+                [ "Clamp"
+                  "ShiftScale"
+                  "IntensityStretch"
+                  "CreatePadding"
+                  "Crop"
+                  "SmoothWMedian"
+                  "SmoothWBilateral"
+                  "GradientMagnitude"
+                  "SobelEdge"
+                  "Laplacian"
+                  "GrayscaleErode"
+                  "GrayscaleDilate"
+                  "GrayscaleOpening"
+                  "GrayscaleClosing"
+                  "WhiteTopHat"
+                  "BlackTopHat"
+                  "MorphologicalGradient"
+                  "LabelContour"
+                  "ChangeLabel"
+                  "Resize"
+                  "Resample"
+                  "ImageOpScalar"
+                  "ScalarOpImage"
+                  "AddNormalNoise"
+                  "AddSaltAndPepperNoise"
+                  "AddShotNoise"
+                  "AddSpeckleNoise"
+                  "SerialPolynomialBiasCorrect" ]
+
+            for functionId in sameTypeBoxes do
+                let vm = MainWindowViewModel()
+                vm.SetDrawingSize(2000.0, 2000.0)
+                vm.AddElement(functionId)
+
+                let node =
+                    pipelineNodes vm
+                    |> Seq.exactlyOne
+
+                (node |> parameter "type").Value <- "Float32"
+
+                let inputs = imagePins DataInput node
+                let outputs = imagePins DataOutput node
+
+                Expect.isNonEmpty inputs $"{functionId} should have a typed image input."
+                Expect.isNonEmpty outputs $"{functionId} should have a typed image output."
+
+                for pin in inputs @ outputs do
+                    Expect.equal pin.Port.Name "Float32" $"{functionId} image pin hover text should show the selected type."
+                    Expect.equal pin.Port.Type (PortType.Image Float32) $"{functionId} image pin should guard on the selected type."
+
+        testCase "typed image-to-other boxes expose concrete image inputs" <| fun _ ->
+            let inputTypedBoxes =
+                [ "HistogramEqualization", "Float32", [ PortType.Image Float64 ]
+                  "ImageComparison", "Float32", [ PortType.Image UInt8 ]
+                  "FitBiasModel", "Float32", []
+                  "FitBiasModelMasked", "Float32", []
+                  "CorrectBias", "Float32", [ PortType.Image Float64 ]
+                  "CorrectBiasMasked", "Float32", [ PortType.Image Float64 ]
+                  "Threshold", "Float32", [ PortType.Image UInt8 ]
+                  "MarchingCubes", "Float32", []
+                  "DogKeypoints", "Float32", []
+                  "SiftKeypoints", "Float32", []
+                  "LogBlobKeypoints", "Float32", []
+                  "HessianKeypoints", "Float32", []
+                  "Harris3DKeypoints", "Float32", []
+                  "Forstner3DKeypoints", "Float32", []
+                  "PhaseCongruencyKeypoints", "Float32", []
+                  "SumProjection", "Float32", [ PortType.Image Float64 ]
+                  "FFT", "Float32", [ PortType.Image Complex ] ]
+
+            for functionId, typeName, expectedImageOutputs in inputTypedBoxes do
+                let vm = MainWindowViewModel()
+                vm.SetDrawingSize(2000.0, 2000.0)
+                vm.AddElement(functionId)
+
+                let node =
+                    pipelineNodes vm
+                    |> Seq.exactlyOne
+
+                (node |> parameter "type").Value <- typeName
+                let expectedInputType =
+                    typeName
+                    |> NumericType.tryParse
+                    |> Option.map PortType.Image
+                    |> Option.defaultWith (fun () -> failtestf "Bad test type %s" typeName)
+
+                let typedInputs =
+                    imagePins DataInput node
+                    |> List.filter (fun pin -> pin.Port.Type = expectedInputType)
+
+                Expect.isNonEmpty typedInputs $"{functionId} should guard its selected image input type."
+                typedInputs
+                |> List.iter (fun pin -> Expect.equal pin.Port.Name typeName $"{functionId} image input hover text should show the selected type.")
+
+                let actualImageOutputTypes =
+                    imagePins DataOutput node
+                    |> List.map _.Port.Type
+
+                for expectedOutput in expectedImageOutputs do
+                    Expect.contains actualImageOutputTypes expectedOutput $"{functionId} should keep its declared image output type."
+
+        testCase "typed source boxes expose concrete stream outputs" <| fun _ ->
+            let sourceBoxes =
+                [ "Read"
+                  "ReadRandom"
+                  "ReadRange"
+                  "ReadSlab"
+                  "Zero"
+                  "NormalNoise"
+                  "SaltAndPepperNoise"
+                  "ShotNoise"
+                  "SpeckleNoise"
+                  "CreateByEuler2DTransform" ]
+
+            for functionId in sourceBoxes do
+                let vm = MainWindowViewModel()
+                vm.SetDrawingSize(2000.0, 2000.0)
+                vm.AddElement(functionId)
+
+                let node =
+                    pipelineNodes vm
+                    |> Seq.exactlyOne
+
+                (node |> parameter "type").Value <- "Float32"
+
+                let outputs = imagePins DataOutput node
+
+                Expect.isNonEmpty outputs $"{functionId} should have a typed image output."
+
+                for pin in outputs do
+                    Expect.equal pin.Port.Name "Float32" $"{functionId} image output hover text should show the selected type."
+                    Expect.equal pin.Port.Type (PortType.Image Float32) $"{functionId} image output should guard on the selected type."
 
         testCase "serial estimator method is a dropdown" <| fun _ ->
             let vm = MainWindowViewModel()

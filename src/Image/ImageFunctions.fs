@@ -1,4 +1,5 @@
 module ImageFunctions
+open System
 open Image
 open Image.InternalHelpers
 open TinyLinAlg
@@ -358,14 +359,20 @@ let resample2D (interpolator: itk.simple.InterpolatorEnum) (outputWidth: uint) (
 type BoundaryCondition = ZeroPad | PerodicPad | ZeroFluxNeumannPad
 type OutputRegionMode = Valid | Same
 
-let internal convolve3 (img:itk.simple.Image) (ker:itk.simple.Image) (outputRegionMode: OutputRegionMode option) =
+let private convolutionBoundaryConditionType (boundaryCondition: BoundaryCondition option) =
+    match boundaryCondition with
+    | Some ZeroFluxNeumannPad -> itk.simple.ConvolutionImageFilter.BoundaryConditionType.ZERO_FLUX_NEUMANN_PAD
+    | Some PerodicPad ->         itk.simple.ConvolutionImageFilter.BoundaryConditionType.PERIODIC_PAD 
+    | _ ->                       itk.simple.ConvolutionImageFilter.BoundaryConditionType.ZERO_PAD
+
+let internal convolve3 (img:itk.simple.Image) (ker:itk.simple.Image) (outputRegionMode: OutputRegionMode option) (boundaryCondition: BoundaryCondition option) =
     // Let SimpleITK do the heavy SAME convolution, then discard halos only for Valid output.
     let szImg = img.GetSize() |> fromVectorUInt32 |> List.map int
     let szKer = ker.GetSize() |> fromVectorUInt32 |> List.map int
 
     use filter = new itk.simple.ConvolutionImageFilter()
     filter.SetOutputRegionMode(itk.simple.ConvolutionImageFilter.OutputRegionModeType.SAME)
-    filter.SetBoundaryCondition(itk.simple.ConvolutionImageFilter.BoundaryConditionType.ZERO_PAD)
+    filter.SetBoundaryCondition(convolutionBoundaryConditionType boundaryCondition)
     use same = filter.Execute(img, ker)
 
     let start, size =
@@ -392,11 +399,7 @@ let convolve (outputRegionMode: OutputRegionMode option) (boundaryCondition: Bou
                 match outputRegionMode with
                     | Some Valid -> itk.simple.ConvolutionImageFilter.OutputRegionModeType.VALID
                     | _ ->         itk.simple.ConvolutionImageFilter.OutputRegionModeType.SAME)
-            f.SetBoundaryCondition (
-                match boundaryCondition with
-                    | Some ZeroFluxNeumannPad -> itk.simple.ConvolutionImageFilter.BoundaryConditionType.ZERO_FLUX_NEUMANN_PAD
-                    | Some PerodicPad ->         itk.simple.ConvolutionImageFilter.BoundaryConditionType.PERIODIC_PAD 
-                    | _ ->                       itk.simple.ConvolutionImageFilter.BoundaryConditionType.ZERO_PAD)) 
+            f.SetBoundaryCondition(convolutionBoundaryConditionType boundaryCondition)) 
         (fun f img ker -> 
             // $"convolve called"
             if img.GetNumberOfComponentsPerPixel() > 1u then
@@ -417,11 +420,11 @@ let convolve (outputRegionMode: OutputRegionMode option) (boundaryCondition: Bou
                 failwith "Image must not be smaller than kernel in any dimension"
             let res =
                 if dimImg = 3u && outputRegionMode <> Some Valid then
-                    convolve3 img ker outputRegionMode
+                    convolve3 img ker outputRegionMode boundaryCondition
                 elif List.forall (fun (a,b) -> a >= b && b > 1) szZip then
                     f.Execute(img,ker)
                 elif dimImg = 3u then
-                    convolve3 img ker outputRegionMode
+                    convolve3 img ker outputRegionMode boundaryCondition
                 else
                     f.Execute(img,ker)
             res
@@ -429,7 +432,9 @@ let convolve (outputRegionMode: OutputRegionMode option) (boundaryCondition: Bou
 
 let conv (img: Image<'T>) (ker: Image<'T>) : Image<'T> = convolve None None img ker
 
-let defaultGaussWindowSize (sigma: float) : uint = 1u + 2u*2u * uint sigma
+let defaultGaussWindowSize (sigma: float) : uint =
+    let radius = System.Math.Ceiling(2.0 * sigma) |> uint
+    2u * radius + 1u
 /// Gaussian kernel convolution
 
 let gauss (dim: uint) (sigma: float) (kernelSize: uint option) : Image<'T> =
@@ -441,7 +446,22 @@ let gauss (dim: uint) (sigma: float) (kernelSize: uint option) : Image<'T> =
     f.SetMean(List.replicate (int dim) ((float (sz-1u)) / 2.0) |> toVectorFloat64)
     f.SetScale(1.0)
     f.NormalizedOn()
-    Image<'T>.ofSimpleITK(f.Execute(),"gauss")
+    let raw = Image<float>.ofSimpleITK(f.Execute(),"gauss.raw")
+    try
+        let discreteSum = sum raw
+        if discreteSum = 0.0 then
+            invalidOp "Gaussian kernel has zero discrete sum."
+
+        let normalized = imageDivScalar raw discreteSum
+        if typeof<'T> = typeof<float> then
+            unbox<Image<'T>> (box normalized)
+        else
+            try
+                Image<'T>.ofSimpleITK(normalized.toSimpleITK(),"gauss")
+            finally
+                normalized.decRefCount()
+    finally
+        raw.decRefCount()
 
 let private stensil order = 
     // https://en.wikipedia.org/wiki/Finite_difference_coefficient 
@@ -493,11 +513,12 @@ let gradientVector3D (order: uint) (img: Image<float>) : Image<float list> =
         derivatives |> List.iter (fun derivativeImage -> derivativeImage.decRefCount())
 
 let discreteGaussian (dim: uint) (sigma: float) (kernelSize: uint option) (outputRegionMode: OutputRegionMode option) (boundaryCondition: BoundaryCondition option) : Image<'T> -> Image<'T> =
-    fun (input: Image<'T>) -> 
+    fun (input: Image<'T>) ->
         let kern = gauss dim sigma kernelSize
-        let res = convolve outputRegionMode boundaryCondition input kern
-        kern.decRefCount()
-        res
+        try
+            convolve outputRegionMode boundaryCondition input kern
+        finally
+            kern.decRefCount()
 
 /// Gradient convolution using Derivative filter
 let gradientConvolve (direction: uint) (order: uint32) : Image<'T> -> Image<'T> =
@@ -515,7 +536,11 @@ let binaryErode (radius: uint) : Image<uint8> -> Image<uint8> =
     makeUnaryImageOperatorWith
         "binaryErode"
         (fun () -> new itk.simple.BinaryErodeImageFilter())
-        (fun f -> f.SetKernelRadius(radius))
+        (fun f ->
+            f.SetKernelRadius(radius)
+            f.SetKernelType(itk.simple.KernelEnum.sitkBall)
+            f.SetForegroundValue(1.0)
+            f.SetBackgroundValue(0.0))
         (fun f x -> f.Execute(x))
 
 /// Binary dilation
@@ -523,7 +548,11 @@ let binaryDilate (radius: uint) : Image<uint8> -> Image<uint8> =
     makeUnaryImageOperatorWith
         "binaryDilate"
         (fun () -> new itk.simple.BinaryDilateImageFilter())
-        (fun f -> f.SetKernelRadius(radius))
+        (fun f ->
+            f.SetKernelRadius(radius)
+            f.SetKernelType(itk.simple.KernelEnum.sitkBall)
+            f.SetForegroundValue(1.0)
+            f.SetBackgroundValue(0.0))
         (fun f x -> f.Execute(x))
 
 /// Binary opening (erode then dilate)
@@ -531,7 +560,11 @@ let binaryOpening (radius: uint) : Image<uint8> -> Image<uint8> =
     makeUnaryImageOperatorWith
         "binaryOpening"
         (fun () -> new itk.simple.BinaryMorphologicalOpeningImageFilter())
-        (fun f -> f.SetKernelRadius(radius))
+        (fun f ->
+            f.SetKernelRadius(radius)
+            f.SetKernelType(itk.simple.KernelEnum.sitkBall)
+            f.SetForegroundValue(1.0)
+            f.SetBackgroundValue(0.0))
         (fun f x -> f.Execute(x))
 
 /// Binary closing (dilate then erode)
@@ -539,7 +572,11 @@ let binaryClosing (radius: uint) : Image<uint8> -> Image<uint8> =
     makeUnaryImageOperatorWith
         "binaryClosing"
         (fun () -> new itk.simple.BinaryMorphologicalClosingImageFilter())
-        (fun f -> f.SetKernelRadius(radius))
+        (fun f ->
+            f.SetKernelRadius(radius)
+            f.SetKernelType(itk.simple.KernelEnum.sitkBall)
+            // SimpleITK's closing filter exposes foreground but not background configuration.
+            f.SetForegroundValue(1.0))
         (fun f x -> f.Execute(x))
 
 let grayscaleErode (radius: uint) : Image<'T> -> Image<'T> =
@@ -1194,6 +1231,42 @@ let histogram (img: Image<'T>) : Map<'T, uint64> =
                 acc)
         Map.empty<'T, uint64>
 
+let histogramFixedBins firstLeftEdge lastLeftEdge bins (img: Image<'T>) : Map<float, uint64> =
+    if bins = 0u then
+        invalidArg (nameof bins) "Histogram bin count must be positive."
+
+    let binWidth =
+        if bins = 1u then
+            1.0
+        else
+            let width = (lastLeftEdge - firstLeftEdge) / float (bins - 1u)
+            if width <= 0.0 then
+                invalidArg (nameof lastLeftEdge) "Last left edge must be greater than first left edge when using more than one histogram bin."
+            width
+
+    let leftEdge index = firstLeftEdge + float index * binWidth
+
+    let initial =
+        [ 0 .. int bins - 1 ]
+        |> List.map (fun index -> leftEdge index, 0UL)
+        |> Map.ofList
+
+    img.GetSize()
+    |> flatIndices
+    |> Seq.fold
+        (fun acc idx ->
+            let value = Convert.ToDouble(img.Get idx)
+            if Double.IsNaN value || Double.IsInfinity value then
+                acc
+            else
+                let binIndex = int (Math.Floor((value - firstLeftEdge) / binWidth))
+                if binIndex < 0 || binIndex >= int bins then
+                    acc
+                else
+                    let edge = leftEdge binIndex
+                    Map.change edge (function Some count -> Some(count + 1UL) | None -> Some 1UL) acc)
+        initial
+
 let addHistogram (h1: Map<'T, uint64>) (h2: Map<'T, uint64>) : Map<'T, uint64> =
     Map.fold 
         (fun acc k2 v2 -> 
@@ -1497,12 +1570,28 @@ let stack (images: Image<'T> list) : Image<'T> =
             |> List.iter (fun image ->
                 if image.GetSize() <> expectedSize then
                     failwithf "Image sizes differ: %A vs %A" (image.GetSize()) expectedSize)
+            let reference = first.toSimpleITK()
+            let referenceSpacing = reference.GetSpacing()
+            let referenceOrigin = reference.GetOrigin()
+            let referenceDirection = reference.GetDirection()
             use filter = new itk.simple.JoinSeriesImageFilter ()
             filter.SetOrigin(0.0) |> ignore
             filter.SetSpacing(1.0) |> ignore
             use v = new itk.simple.VectorOfImage()
-            images |> List.iter (fun (I:Image<'T>) -> v.Add (I.toSimpleITK()))
-            v |> filter.Execute |> (fun sitk -> Image<'T>.ofSimpleITK(sitk,"stack",first.index) )
+            let normalizedImages = ResizeArray<itk.simple.Image>()
+            try
+                images
+                |> List.iter (fun (image: Image<'T>) ->
+                    let sitk = image.toSimpleITK()
+                    let normalized = new itk.simple.Image(sitk)
+                    normalized.SetSpacing(referenceSpacing)
+                    normalized.SetOrigin(referenceOrigin)
+                    normalized.SetDirection(referenceDirection)
+                    normalizedImages.Add normalized
+                    v.Add normalized)
+                v |> filter.Execute |> (fun sitk -> Image<'T>.ofSimpleITK(sitk,"stack",first.index) )
+            finally
+                normalizedImages |> Seq.iter (fun image -> image.Dispose())
         else
             let stackDim = dim - 1u
             images |> List.reduce (concatAlong stackDim)

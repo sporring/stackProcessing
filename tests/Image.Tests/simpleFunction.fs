@@ -75,6 +75,24 @@ let simpleFunctionTests =
 
     Expect.throws (fun () -> ImageFunctions.convolve (Some ImageFunctions.Valid) None img kernel |> ignore) "Kernels larger than the image should be rejected before calling SimpleITK."
 
+  testCase "Gaussian kernels are normalized by discrete sum" <| fun _ ->
+    for sigma in [ 0.1; 1.0; 3.0 ] do
+      let kernel: Image<float> = ImageFunctions.gauss 3u sigma None
+      let kernelSum = ImageFunctions.sum kernel
+      Expect.floatClose Accuracy.high kernelSum 1.0 $"Gaussian kernel for sigma {sigma} should sum to 1 over its sampled support."
+      kernel.decRefCount()
+
+  testCase "Gaussian smoothing preserves constants with explicit zero-flux boundary" <| fun _ ->
+    let img = Image<float>.ofArray3D (Array3D.create 5 5 5 128.0)
+    let smoothed = ImageFunctions.discreteGaussian 3u 1.0 None None (Some ImageFunctions.ZeroFluxNeumannPad) img
+    let values = smoothed.toArray3D()
+    for x in 0 .. Array3D.length1 values - 1 do
+      for y in 0 .. Array3D.length2 values - 1 do
+        for z in 0 .. Array3D.length3 values - 1 do
+          Expect.floatClose Accuracy.high values[x,y,z] 128.0 "Zero-flux Gaussian boundary handling should not darken constant images."
+    smoothed.decRefCount()
+    img.decRefCount()
+
   testCase "convolve Same preserves 3D image size in every dimension" <| fun _ ->
     let img = Image<float>.ofArray3D (Array3D.init 5 6 7 (fun x y z -> float (x + y + z)))
     let kernel = Image<float>.ofArray3D (Array3D.create 3 3 3 (1.0 / 27.0))

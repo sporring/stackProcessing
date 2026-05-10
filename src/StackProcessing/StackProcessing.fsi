@@ -84,6 +84,32 @@ val tap: (string -> SlimPipeline.Stage<'a,'a>)
 
 val tapIt: (('a -> string) -> SlimPipeline.Stage<'a,'a>)
 
+val showChartData:
+  (string -> #System.IConvertible seq -> #System.IConvertible seq -> unit)
+
+val showChartDataWithLabels:
+  (string ->
+     string ->
+     string ->
+     string -> #System.IConvertible seq -> #System.IConvertible seq -> unit)
+
+val showChart:
+  (string -> Map<'a,#System.IConvertible> -> unit)
+    when 'a: comparison and 'a :> System.IConvertible
+
+val showChartWithLabels:
+  (string -> string -> string -> string -> Map<'a,#System.IConvertible> -> unit)
+    when 'a: comparison and 'a :> System.IConvertible
+
+val showChartXY:
+  (string -> #System.IConvertible seq -> #System.IConvertible seq -> unit)
+
+val showChartXYWithLabels:
+  (string ->
+     string ->
+     string ->
+     string -> #System.IConvertible seq -> #System.IConvertible seq -> unit)
+
 type FileInfo = ImageFunctions.FileInfo
 
 type ChunkInfo = StackIO.ChunkInfo
@@ -153,6 +179,8 @@ val getStackDepth: (string -> string -> uint)
 val getFileInfo: (string -> ImageFunctions.FileInfo)
 
 val getStackInfo: (string -> string -> StackIO.FileInfo)
+
+val volumeFilePath: (string -> string -> string)
 
 val getStackSize: (string -> string -> uint * uint * uint)
 
@@ -986,6 +1014,12 @@ val resample<'T when 'T: equality> :
 val histogram:
   (unit -> SlimPipeline.Stage<StackCore.Image<'a>,Map<'a,uint64>>)
     when 'a: comparison
+
+val histogramFixedBins:
+  (float ->
+     float ->
+     uint32 -> SlimPipeline.Stage<StackCore.Image<'a>,Map<float,uint64>>)
+    when 'a: equality
 
 val histogramEstimate<'T when 'T: comparison> :
   (uint32 ->

@@ -159,6 +159,21 @@ module InternalHelpers = // internal
             cast.SetOutputPixelType(expectedId)
             cast.Execute(itkImg)
 
+    let private identityDirection dim =
+        [ for row in 0 .. dim - 1 do
+            for col in 0 .. dim - 1 do
+                if row = col then 1.0 else 0.0 ]
+
+    let canonicalizeSimpleItkImage (image: itk.simple.Image) =
+        let dim = int (image.GetDimension())
+        image.SetSpacing(List.replicate dim 1.0 |> toVectorFloat64)
+        image.SetOrigin(List.replicate dim 0.0 |> toVectorFloat64)
+        image.SetDirection(identityDirection dim |> toVectorFloat64)
+        image.GetMetaDataKeys()
+        |> Seq.toArray
+        |> Array.iter (fun key -> image.EraseMetaData(key) |> ignore)
+        image
+
     let array2dZip (a: 'T[,]) (b: 'U[,]) : ('T * 'U)[,] =
         let wA, hA = a.GetLength(0), a.GetLength(1)
         let wB, hB = b.GetLength(0), b.GetLength(1)
@@ -593,7 +608,7 @@ type Image<'T when 'T : equality>(sz: uint list, ?optionalNumberComponents: uint
         let name = defaultArg optionalName ""
         let index = defaultArg optionalIndex 0
 
-        let itkImgCast = ofCastItk<'T> itkImg
+        let itkImgCast = ofCastItk<'T> itkImg |> canonicalizeSimpleItkImage
         if typeof<'T> = typeof<System.Numerics.Complex> && not (isComplexCompatibleImage itkImgCast) then
             invalidArg "itkImg" "Complex pixel type requires a native complex image."
         let img = new Image<'T>([0u;0u],itkImgCast.GetNumberOfComponentsPerPixel(),name,index, true)

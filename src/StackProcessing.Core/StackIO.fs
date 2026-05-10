@@ -309,6 +309,20 @@ let private suffixAliases (suffix: string) =
 let private suffixDescription suffix =
     suffixAliases suffix |> String.concat " or "
 
+let volumeFilePath (input: string) (suffix: string) =
+    if Path.HasExtension input then
+        input
+    else
+        let primary = input + normalizeSuffix suffix
+
+        if File.Exists primary then
+            primary
+        else
+            suffixAliases suffix
+            |> List.map (fun alias -> input + alias)
+            |> List.tryFind File.Exists
+            |> Option.defaultValue primary
+
 let private getStackFiles inputDir suffix =
     let aliases = suffixAliases suffix
 
@@ -1224,13 +1238,21 @@ let deleteIfExists dir =
     if System.IO.Directory.Exists(dir) then 
         System.IO.Directory.Delete(dir,true)
 
+let private cleanImageSeriesFiles outputDir suffix =
+    if Directory.Exists(outputDir) then
+        let pattern = sprintf "image_*%s" suffix
+        Directory.GetFiles(outputDir, pattern)
+        |> Array.iter File.Delete
+
 let write<'T when 'T: equality> (outputDir: string) (suffix: string) : Stage<Image<'T>, Image<'T>> =
     let t = typeof<'T>
     if (icompare suffix ".tif" || icompare suffix ".tiff") 
         && not (t = typeof<uint8> || t = typeof<int8> || t = typeof<uint16> || t = typeof<int16> || t = typeof<float32>) then
         failwith $"[write] tiff images only supports (u)int8, (u)int16 and float32 but was {t.Name}" 
     Directory.CreateDirectory(outputDir) |> ignore
+    let cleaned = lazy (cleanImageSeriesFiles outputDir suffix)
     let mapper (debug: bool) (idx: int64) (image: Image<'T>) =
+        cleaned.Force()
         let fileName = Path.Combine(outputDir, sprintf "image_%03d%s" idx suffix)
         if debug then printfn "[write] Saved image %d to %s as %s" idx fileName (typeof<'T>.Name) 
         image.toFile(fileName)

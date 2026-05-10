@@ -191,10 +191,10 @@ module BuiltInCatalog =
       "Applies one standard mathematical function independently to every pixel.\n\nExamples include sqrt, abs, log, exp, sin, cos, and square. The image geometry and slice order are unchanged, only the pixel values are transformed.\n\nUse this for simple intensity formulas that do not depend on neighboring pixels."
 
   let private gaussianDescription =
-      "Smooths an image with a Gaussian-shaped neighborhood.\n\nSigma controls the blur width: larger sigma removes larger-scale noise and softens edges more strongly. Boundary and output-region settings control how pixels near the edge of the available volume are treated.\n\nUse Gaussian smoothing before derivatives, feature detection, or thresholding when small noise should be suppressed."
+      "Smooths an image with a Gaussian-shaped neighborhood.\n\nSigma controls the blur width: larger sigma removes larger-scale noise and softens edges more strongly. Boundary and output-region settings control how pixels near the edge of the available volume are treated. Window size controls how many z-slices are processed per streamed chunk; leaving it as None picks a window larger than the Gaussian support for better throughput.\n\nUse Gaussian smoothing before derivatives, feature detection, or thresholding when small noise should be suppressed."
 
   let private convolveDescription =
-      "Applies a user-specified convolution kernel to the image stack.\n\nThe kernel defines how neighboring pixels are weighted and summed, so this box can implement smoothing, sharpening, derivatives, or custom local filters. Output region controls whether edge pixels are preserved or trimmed, and boundary controls how missing neighborhood values are handled.\n\nFor most users, smoothWGauss or finiteDiff are easier starting points."
+      "Applies a user-specified convolution kernel to the image stack.\n\nThe kernel defines how neighboring pixels are weighted and summed, so this box can implement smoothing, sharpening, derivatives, or custom local filters. Output region controls whether edge pixels are preserved or trimmed, boundary controls how missing neighborhood values are handled, and window size controls how many z-slices are processed per streamed chunk. Leaving window size as None picks a window larger than the kernel for better throughput.\n\nFor most users, smoothWGauss or finiteDiff are easier starting points."
 
   let private finiteDiffDescription =
       "Computes the smallest centered finite-difference derivative estimator.\n\nUse it to emphasize changes along selected axes, such as edges, ridges, or directional gradients. Smooth the image explicitly before this box when derivative noise should be suppressed.\n\nThe result is an intensity image that often needs scaling, thresholding, or visualization before interpretation."
@@ -215,7 +215,7 @@ module BuiltInCatalog =
       "Turns a numeric image into a UInt8 binary mask.\n\nPixels between lower and upper, including the limits, become foreground; pixels outside the range become background. Use infinity as the upper limit when you want a simple lower-threshold operation.\n\nThresholds can be typed directly or linked from computeStats, quantiles, otsuThresholdFromHistogram, or momentsThresholdFromHistogram."
 
   let private binaryShapeDescription =
-      "Changes the shape of a UInt8 binary mask using a local neighborhood.\n\nErode removes foreground pixels near object boundaries and can break thin connections. Dilate expands foreground regions and can close small gaps. Opening is erosion followed by dilation and tends to remove small bright objects. Closing is dilation followed by erosion and tends to fill small dark gaps.\n\nThe radius controls the neighborhood size."
+      "Changes the shape of a UInt8 binary mask using a spherical local neighborhood.\n\nBinary morphology expects a 0/1 UInt8 image: 0 is background and 1 is foreground. Erode removes foreground pixels near object boundaries and can break thin connections. Dilate expands foreground regions and can close small gaps. Opening is erosion followed by dilation and tends to remove small foreground objects. Closing is dilation followed by erosion and tends to fill small background gaps.\n\nThe radius controls the sphere size."
 
   let private connectedComponentsDescription =
       "Labels connected foreground regions in a binary mask.\n\nThe output image stores an integer label for each component, with background left as zero. The count output reports how many local components were found before any later global relabeling.\n\nUse componentTranslationTable and collapseComponentLabels when labels need to be made consistent across streamed slabs."
@@ -1138,7 +1138,13 @@ module BuiltInCatalog =
           Aliases = [ "plot"; "chart"; "histogram"; "visualize"; "show" ]
           Inputs = [ makePort "Number" imageAny ]
           Outputs = []
-          Parameters = [] }
+          Parameters =
+              [ makeParameter "firstLeftEdge" "First left edge" "0.0" (BasicType.Numeric Float64)
+                makeParameter "lastLeftEdge" "Last left edge" "255.0" (BasicType.Numeric Float64)
+                makeParameter "bins" "Bins" "256" (BasicType.Numeric UInt32)
+                makeParameter "title" "Title" "" BasicType.String
+                makeParameter "xAxis" "Horizontal axis" "" BasicType.String
+                makeParameter "yAxis" "Vertical axis" "" BasicType.String ] }
 
         { Id = "HistogramData"
           DisplayName = "histogramData"
@@ -1148,7 +1154,10 @@ module BuiltInCatalog =
           Aliases = [ "plot"; "chart"; "histogram"; "points"; "reducer" ]
           Inputs = [ makePort "Number" imageAny ]
           Outputs = [ makePort "Map" (Scalar BasicType.Map) ]
-          Parameters = [] }
+          Parameters =
+              [ makeParameter "firstLeftEdge" "First left edge" "0.0" (BasicType.Numeric Float64)
+                makeParameter "lastLeftEdge" "Last left edge" "255.0" (BasicType.Numeric Float64)
+                makeParameter "bins" "Bins" "256" (BasicType.Numeric UInt32) ] }
 
         { Id = "Quantiles"
           DisplayName = "quantiles"
@@ -1185,7 +1194,10 @@ module BuiltInCatalog =
           Outputs = []
           Parameters =
               [ makeParameter "kind" "Kind" "Column" BasicType.String
-                makeParameter "input" "Input" "map" BasicType.Map ] }
+                makeParameter "input" "Input" "map" BasicType.Map
+                makeParameter "title" "Title" "" BasicType.String
+                makeParameter "xAxis" "Horizontal axis" "" BasicType.String
+                makeParameter "yAxis" "Vertical axis" "" BasicType.String ] }
 
         { Id = "ShowImage"
           DisplayName = "showImage"

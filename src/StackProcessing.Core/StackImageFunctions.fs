@@ -572,6 +572,9 @@ let intensityStretch<'T when 'T: equality> inputMinimum inputMaximum outputMinim
     let shift = outputMinimum / scale - inputMinimum
     shiftScale<'T> shift scale
 
+let private defaultConvolutionWindowSize (kernelDepth: uint) =
+    max kernelDepth (3u * kernelDepth)
+
 let private makeWindowedLocalOp name ksz winSz core =
     let pad = ksz / 2u
     let win = max ksz winSz
@@ -968,6 +971,12 @@ let imageHistogramFold () =
 
 let histogram () =
     imageHistogram () --> imageHistogramFold ()
+
+let imageHistogramFixedBins firstLeftEdge lastLeftEdge bins =
+    Stage.map<Image<'T>,Map<float,uint64>> "histogramFixedBins: map" (fun _ -> releaseAfter (ImageFunctions.histogramFixedBins firstLeftEdge lastLeftEdge bins)) id id
+
+let histogramFixedBins firstLeftEdge lastLeftEdge bins =
+    imageHistogramFixedBins firstLeftEdge lastLeftEdge bins --> imageHistogramFold ()
 
 type HistogramEstimator =
     | DKW
@@ -1367,10 +1376,9 @@ let stackFUnstackTrim trim (f: Image<'T>->Image<'S>) (images: Image<'T> list) =
     result
 
 let smoothWGauss (sigma: float) (outputRegionMode: ImageFunctions.OutputRegionMode option) (boundaryCondition: ImageFunctions.BoundaryCondition option) (winSz: uint option) : Stage<Image<float>, Image<float>> =
-    let roundFloatToUint v = uint (v+0.5)
-
-    let ksz = 4.0 * sigma + 1.0 |> roundFloatToUint
-    let win = Option.defaultValue ksz winSz |> max ksz // max should be found by memory availability
+    let ksz = ImageFunctions.defaultGaussWindowSize sigma
+    let kernel = ImageFunctions.gauss 3u sigma (Some ksz)
+    let win = Option.defaultValue (defaultConvolutionWindowSize ksz) winSz |> max ksz // max should be found by memory availability
     let stride = win - ksz + 1u
     let pad = 
         match outputRegionMode with
@@ -1387,7 +1395,7 @@ let smoothWGauss (sigma: float) (outputRegionMode: ImageFunctions.OutputRegionMo
     // windowSize = 1, 6, 15, or 26, pad = 2, length = 22, => n = 21, 10, 1, or 0
     let f debug = 
         if debug && DebugLevel.current() >= 2u then printfn $"smoothWGauss: sigma {sigma}, ksz {ksz}, win {win}, stride {stride}, pad {pad}"
-        volFctToWindowFctReleaseAfterDebug debug (ImageFunctions.discreteGaussian 3u sigma (ksz |> Some) outputRegionMode boundaryCondition) ksz outputStart stride
+        volFctToWindowFctReleaseAfterDebug debug (fun image3D -> ImageFunctions.convolve outputRegionMode boundaryCondition image3D kernel) ksz outputStart stride
     let memoryNeed nPixels = (2UL*nPixels*(uint64 win) + (uint64 ksz))*getBytesPerComponent<float>
     let elementTransformation = id
     let memoryModel = StageMemoryModel.fromSinglePeak Map memoryNeed
@@ -1397,7 +1405,7 @@ let smoothWGauss (sigma: float) (outputRegionMode: ImageFunctions.OutputRegionMo
     let stg =
         mapWindow "smoothWGauss" f memoryNeed elementTransformation
         |> withCostModel (nativeImageStageCost $"smoothWGauss.Float64" memoryModel costUnits)
-    (window win pad stride) --> stg --> flattenList ()
+    (window win pad stride) --> stg --> flattenList () --> cleanStage "smoothWGauss.cleanup" (fun () -> kernel.decRefCount())
     |> Stage.withSliceCardinality (sliceCardinalityForConvolution ksz outputRegionMode)
 
 let structureTensor (sigma: float) (rho: float) : Stage<Image<float>, Image<float list>> =
@@ -1536,7 +1544,7 @@ let convolveOp (name: string) (kernel: Image<'T>) (outputRegionMode: ImageFuncti
     let windowFromKernel (k: Image<'T>) : uint =
         max 1u (k.GetDepth())
     let ksz = windowFromKernel kernel
-    let win = Option.defaultValue ksz winSz |> max ksz
+    let win = Option.defaultValue (defaultConvolutionWindowSize ksz) winSz |> max ksz
     let stride = win-ksz+1u
     let pad = 
         match outputRegionMode with
@@ -1570,7 +1578,7 @@ let finiteDiff (direction: uint) (order: uint) =
 let private makeMorphOp (name: string) (radius: uint) (winSz: uint option) (core: uint -> Image<'T> -> Image<'T>) : Stage<Image<'T>,Image<'T>> when 'T: equality =
     let ksz   = 2u * radius + 1u
     let pad = ksz/2u
-    let win = Option.defaultValue ksz winSz |> min ksz
+    let win = Option.defaultValue (defaultConvolutionWindowSize ksz) winSz |> max ksz
     let stride = win - ksz + 1u
 
     let f debug = volFctToWindowFctReleaseAfterDebug debug (core radius) ksz pad stride
@@ -1579,9 +1587,9 @@ let private makeMorphOp (name: string) (radius: uint) (winSz: uint option) (core
     |> Stage.withSliceCardinality (SlimPipeline.Domain(sameSliceDomainForKernelDepth ksz))
 
 let erode radius = makeMorphOp "binaryErode"  radius None ImageFunctions.binaryErode
-let dilate radius = makeMorphOp "binaryErode"  radius None ImageFunctions.binaryDilate
-let opening radius = makeMorphOp "binaryErode"  radius None ImageFunctions.binaryOpening
-let closing radius = makeMorphOp "binaryErode"  radius None ImageFunctions.binaryClosing
+let dilate radius = makeMorphOp "binaryDilate"  radius None ImageFunctions.binaryDilate
+let opening radius = makeMorphOp "binaryOpening"  radius None ImageFunctions.binaryOpening
+let closing radius = makeMorphOp "binaryClosing"  radius None ImageFunctions.binaryClosing
 
 let connectedComponents (winSz: uint) =
     let pad, stride = 0u, winSz
@@ -1687,32 +1695,29 @@ let srcPlan (debug: bool) (memAvail: uint64) (width: uint) (height: uint) (depth
     |> Plan.withSourcePeek sourcePeek
 
 let zero<'T when 'T: equality> (width: uint) (height: uint) (depth: uint) (pl: Plan<unit, unit>) : Plan<unit, Image<'T>> =
-    if pl.debug && DebugLevel.current() >= 2u then printfn $"[zero] {width}x{height}x{depth}"
     let mapper (i: int) : Image<'T> = 
         let image = new Image<'T>([width; height], 1u,$"zero[{i}]", i)
-        if pl.debug && DebugLevel.current() >= 2u then printfn "[zero] Created image %A" i
+        if pl.debug && DebugLevel.current() >= 1u then printfn "[zero] Created slice %A" i
         image
     let stage = srcStage "zero" width height depth mapper |> Some
     srcPlan pl.debug pl.memAvail width height depth stage
 
 let normalNoise<'T when 'T: equality> (width: uint) (height: uint) (depth: uint) (mean: float) (stddev: float) (pl: Plan<unit, unit>) : Plan<unit, Image<'T>> =
-    if pl.debug && DebugLevel.current() >= 2u then printfn $"[normalNoise] {width}x{height}x{depth}, mean {mean}, std {stddev}"
     let mapper (i: int) : Image<'T> =
         let zero = new Image<'T>([width; height], 1u, $"normalNoise.zero[{i}]", i)
         let image = ImageFunctions.addNormalNoise mean stddev zero
         zero.decRefCount()
-        if pl.debug && DebugLevel.current() >= 2u then printfn "[normalNoise] Created image %A" i
+        if pl.debug && DebugLevel.current() >= 1u then printfn "[normalNoise] Created slice %A" i
         image
     let stage = srcStage "normalNoise" width height depth mapper |> Some
     srcPlan pl.debug pl.memAvail width height depth stage
 
 let private noiseSource<'T when 'T: equality> name width height depth addNoise (pl: Plan<unit, unit>) : Plan<unit, Image<'T>> =
-    if pl.debug && DebugLevel.current() >= 2u then printfn $"[{name}] {width}x{height}x{depth}"
     let mapper (i: int) : Image<'T> =
         let zero = new Image<'T>([width; height], 1u, $"{name}.zero[{i}]", i)
         let image = addNoise zero
         zero.decRefCount()
-        if pl.debug && DebugLevel.current() >= 2u then printfn "[%s] Created image %A" name i
+        if pl.debug && DebugLevel.current() >= 1u then printfn "[%s] Created slice %A" name i
         image
     let stage = srcStage name width height depth mapper |> Some
     srcPlan pl.debug pl.memAvail width height depth stage
@@ -1730,11 +1735,10 @@ let createByEuler2DTransform<'T when 'T: equality> (img: Image<'T>) (depth: uint
     // width, heigth, depth should be replaced with shape and shapeUpdate, and mapper should be deferred to outside Core!!!
     let width= img.GetWidth()
     let height = img.GetHeight()
-    if pl.debug && DebugLevel.current() >= 2u then printfn $"[createByTranslation] {width}x{height}x{depth}"
     let mapper (i: int) : Image<'T> =
         let rot, trans = transform (uint i)
         let image = ImageFunctions.euler2DTransform img rot trans
-        if pl.debug && DebugLevel.current() >= 2u then printfn "[createByTranslation] Created image %A" i
+        if pl.debug && DebugLevel.current() >= 1u then printfn "[createByEuler2DTransform] Created slice %A" i
         image
     let stage = srcStage "createByEuler2DTransform" width height depth mapper |> Some
     srcPlan pl.debug pl.memAvail width height depth stage
