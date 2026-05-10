@@ -55,6 +55,12 @@ let private optionStates (parameter: PipelineParameterViewModel) =
     |> Seq.map (fun option -> option.Value, option.IsEnabled)
     |> Map.ofSeq
 
+let private visibleParameterKeys (node: PipelineNodeViewModel) =
+    node.State.Parameters
+    |> Seq.filter _.IsVisible
+    |> Seq.map _.Key
+    |> Seq.toList
+
 let private findRepoFile relativePath =
     let rec search (directory: DirectoryInfo) =
         let candidate = Path.Combine(directory.FullName, relativePath)
@@ -201,6 +207,61 @@ let viewModelSuite =
             Expect.floatClose Accuracy.high infoPin.X (readNode.Width / 2.0) "The single metadata output should be horizontally centered."
             Expect.floatClose Accuracy.high infoPin.Y readNode.Height "The metadata output should sit on the bottom edge."
 
+        testCase "read shows only parameters for selected source format and keeps all type options enabled" <| fun _ ->
+            let vm = MainWindowViewModel()
+            vm.SetDrawingSize(1200.0, 800.0)
+            vm.AddElement("Read")
+
+            let readNode =
+                pipelineNodes vm
+                |> Seq.find (fun node -> node.State.Definition.Id = "Read")
+
+            let typeOptions = readNode |> parameter "type" |> optionStates
+
+            Expect.isTrue typeOptions["UInt32"] "Read output type should be a requested cast target, not limited by file format."
+            Expect.isTrue typeOptions["Float64"] "Read should be able to emit Float64 even when reading TIFF stacks."
+
+            (readNode |> parameter "type").Value <- "Float64"
+            let stackSuffixOptions = readNode |> parameter "suffix" |> optionStates
+
+            Expect.isTrue stackSuffixOptions[".jpg"] "JPEG stack input should remain selectable when the read output type is Float64."
+            Expect.isTrue stackSuffixOptions[".png"] "PNG stack input should remain selectable when the read output type is Float64."
+            Expect.isTrue stackSuffixOptions[".bmp"] "BMP stack input should remain selectable when the read output type is Float64."
+
+            Expect.sequenceEqual
+                (visibleParameterKeys readNode)
+                [ "availableMemory"; "type"; "format"; "input"; "suffix" ]
+                "Image stack read should show only stack file parameters."
+
+            (readNode |> parameter "format").Value <- "Volume file"
+
+            Expect.sequenceEqual
+                (visibleParameterKeys readNode)
+                [ "availableMemory"; "type"; "format"; "input"; "suffix" ]
+                "Volume file read should still expose its file type selector."
+
+            let volumeSuffixOptions = readNode |> parameter "suffix" |> optionStates
+            let volumeSuffixParameter = readNode |> parameter "suffix"
+
+            Expect.isTrue volumeSuffixOptions[".tiff"] "TIFF should be the selectable volume-file type."
+            Expect.isFalse (volumeSuffixOptions.ContainsKey ".jpg") "Image-stack formats should not appear in the volume-file suffix menu."
+            Expect.equal volumeSuffixParameter.Value ".tiff" "Volume-file reads should default to TIFF when the previous file type no longer applies."
+            Expect.isNotNull volumeSuffixParameter.SelectedOption "Rebuilding the file-type menu should keep the ComboBox selection visible."
+
+            (readNode |> parameter "format").Value <- "OME-Zarr"
+
+            Expect.sequenceEqual
+                (visibleParameterKeys readNode)
+                [ "availableMemory"; "type"; "format"; "input"; "slabDepth"; "multiscaleIndex"; "datasetIndex"; "timepoint"; "channel"; "maxParallelChunks" ]
+                "OME-Zarr read should show only zarr-specific parameters."
+
+            (readNode |> parameter "format").Value <- "NeXus/HDF5"
+
+            Expect.sequenceEqual
+                (visibleParameterKeys readNode)
+                [ "availableMemory"; "type"; "format"; "input"; "slabDepth"; "datasetPath"; "frameAxis"; "yAxis"; "xAxis" ]
+                "NeXus read should show only HDF5-specific parameters."
+
         testCase "imported expand adapts output ports from connected record type" <| fun _ ->
             let vm = MainWindowViewModel()
             vm.SetDrawingSize(1200.0, 800.0)
@@ -271,6 +332,7 @@ let viewModelSuite =
 
             let readNode = nodes |> Array.find (fun node -> node.State.Definition.Id = "Read")
             let resampleNode = nodes |> Array.find (fun node -> node.State.Definition.Id = "Resample")
+            let writeNode = nodes |> Array.find (fun node -> node.State.Definition.Id = "Write")
             let expandNodes = nodes |> Array.filter (fun node -> node.State.Definition.Id = "Expand")
             let drawing = vm.Editor.Drawing :?> DrawingNodeViewModel
 
@@ -316,4 +378,49 @@ let viewModelSuite =
                         false)
 
             Expect.isTrue readMetadataStillConnected "Changing the stream type should not remove the unchanged StackInfo connection."
+
+            (readNode |> parameter "type").Value <- "Float64"
+
+            Expect.equal (resampleNode |> parameter "type").Value "Float32" "Resample should not adapt when doing so would break the downstream TIFF writer."
+
+            let readInputStillConnected =
+                drawing.Connectors
+                |> Seq.exists (fun connector ->
+                    match connector.Start, connector.End with
+                    | (:? PipelinePinViewModel as startPin), (:? PipelinePinViewModel as endPin) ->
+                        Object.ReferenceEquals(startPin.Parent, readNode)
+                        && startPin.Kind = DataOutput
+                        && Object.ReferenceEquals(endPin.Parent, resampleNode)
+                        && endPin.Kind = DataInput
+                    | _ ->
+                        false)
+
+            Expect.isFalse readInputStillConnected "Changing to Float64 should cut the changed Read-to-Resample edge before mutating the downstream chain."
+
+            let writeInputStillConnected =
+                drawing.Connectors
+                |> Seq.exists (fun connector ->
+                    match connector.Start, connector.End with
+                    | (:? PipelinePinViewModel as startPin), (:? PipelinePinViewModel as endPin) ->
+                        Object.ReferenceEquals(startPin.Parent, resampleNode)
+                        && startPin.Kind = DataOutput
+                        && Object.ReferenceEquals(endPin.Parent, writeNode)
+                        && endPin.Kind = DataInput
+                    | _ ->
+                        false)
+
+            Expect.isTrue writeInputStillConnected "The still-compatible Resample-to-Write edge should stay connected."
+
+            let writeMetadataStillConnected =
+                drawing.Connectors
+                |> Seq.exists (fun connector ->
+                    match connector.Start, connector.End with
+                    | (:? PipelinePinViewModel as startPin), (:? PipelinePinViewModel as endPin) ->
+                        Object.ReferenceEquals(startPin.Parent, writeNode)
+                        && startPin.Kind = ReducerOutput
+                        && endPin.Kind = ParameterInput
+                    | _ ->
+                        false)
+
+            Expect.isTrue writeMetadataStillConnected "Changing read stream type should not remove the unchanged Write StackInfo connection."
     ]

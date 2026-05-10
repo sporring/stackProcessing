@@ -24,7 +24,12 @@
         },
         {
           "key": "input",
-          "value": "volumedata.tif",
+          "value": "volumedata",
+          "useInput": false
+        },
+        {
+          "key": "suffix",
+          "value": ".tiff",
           "useInput": false
         }
       ]

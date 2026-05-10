@@ -19,12 +19,12 @@
         },
         {
           "key": "format",
-          "value": "Volume file",
+          "value": "Image stack",
           "useInput": false
         },
         {
           "key": "input",
-          "value": "volumedata.tif",
+          "value": "volumedata",
           "useInput": false
         },
         {
@@ -251,14 +251,6 @@
   ],
   "edges": [
     {
-      "fromNode": "node-1",
-      "fromKind": "dataOutput",
-      "fromPort": 0,
-      "toNode": "node-3",
-      "toKind": "dataInput",
-      "toPort": 0
-    },
-    {
       "fromNode": "node-3",
       "fromKind": "dataOutput",
       "fromPort": 0,
@@ -273,14 +265,6 @@
       "toNode": "node-6",
       "toKind": "parameterInput",
       "toPort": 1
-    },
-    {
-      "fromNode": "node-1",
-      "fromKind": "reducerOutput",
-      "fromPort": 0,
-      "toNode": "node-4",
-      "toKind": "dataInput",
-      "toPort": 0
     },
     {
       "fromNode": "node-4",
@@ -337,6 +321,22 @@
       "toNode": "node-5",
       "toKind": "parameterInput",
       "toPort": 7
+    },
+    {
+      "fromNode": "node-1",
+      "fromKind": "dataOutput",
+      "fromPort": 0,
+      "toNode": "node-3",
+      "toKind": "dataInput",
+      "toPort": 0
+    },
+    {
+      "fromNode": "node-1",
+      "fromKind": "reducerOutput",
+      "fromPort": 0,
+      "toNode": "node-4",
+      "toKind": "dataInput",
+      "toPort": 0
     }
   ]
 }

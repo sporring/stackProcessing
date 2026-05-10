@@ -64,19 +64,24 @@ module ImageFileFormat =
           Float32
           Float64 ]
 
-    let private tiffScalarTypes =
+    let private tiffReadScalarTypes =
         [ UInt8
           Int8
           UInt16
           Int16
-          UInt32
-          Int32
           Float32
           Float64 ]
 
+    let private tiffWriteScalarTypes =
+        [ UInt8
+          Int8
+          UInt16
+          Int16
+          Float32 ]
+
     let formats =
-        [ { Label = "TIFF (.tiff)"; Suffix = ".tiff"; SupportedTypes = tiffScalarTypes }
-          { Label = "TIFF (.tif)"; Suffix = ".tif"; SupportedTypes = tiffScalarTypes }
+        [ { Label = "TIFF (.tiff)"; Suffix = ".tiff"; SupportedTypes = tiffWriteScalarTypes }
+          { Label = "TIFF (.tif)"; Suffix = ".tif"; SupportedTypes = tiffWriteScalarTypes }
           { Label = "MetaImage (.mha)"; Suffix = ".mha"; SupportedTypes = commonScalarTypes }
           { Label = "MetaImage header (.mhd)"; Suffix = ".mhd"; SupportedTypes = commonScalarTypes }
           { Label = "NRRD (.nrrd)"; Suffix = ".nrrd"; SupportedTypes = commonScalarTypes }
@@ -88,7 +93,7 @@ module ImageFileFormat =
           { Label = "BMP (.bmp)"; Suffix = ".bmp"; SupportedTypes = [ UInt8 ] } ]
 
     let readFormats =
-        [ { Label = "TIFF (.tif or .tiff)"; Suffix = ".tiff"; SupportedTypes = tiffScalarTypes }
+        [ { Label = "TIFF (.tif or .tiff)"; Suffix = ".tiff"; SupportedTypes = tiffReadScalarTypes }
           { Label = "JPEG (.jpg or .jpeg)"; Suffix = ".jpg"; SupportedTypes = [ UInt8 ] } ]
         @ (formats
            |> List.filter (fun format ->
@@ -119,8 +124,20 @@ module ImageFileFormat =
         |> Option.map _.SupportedTypes
         |> Option.defaultValue commonScalarTypes
 
+    let readSupportedTypes suffix =
+        let suffix = normalizeSuffix suffix
+
+        readFormats
+        |> List.tryFind (fun format -> format.Suffix = suffix)
+        |> Option.map _.SupportedTypes
+        |> Option.defaultWith (fun () -> supportedTypes suffix)
+
     let supports suffix numericType =
         supportedTypes suffix
+        |> List.contains numericType
+
+    let readSupports suffix numericType =
+        readSupportedTypes suffix
         |> List.contains numericType
 
 type BasicType = 

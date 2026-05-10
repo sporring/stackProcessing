@@ -76,7 +76,8 @@ let generatorSuite =
                 graph [ read; write ] [ edge "readVolume" "output" 0 "writeVolume" "input" 0 ]
                 |> PipelineCodeGenerator.generateSavedGraph
 
-            Expect.stringContains code "|> readVolume<uint16> \"input.tiff\"" "Read with Volume file format should generate a typed volume source."
+            Expect.stringContains code "let volumeFilePath (input: string) (suffix: string) =" "Volume reads should resolve the hidden extension from the selected file type."
+            Expect.stringContains code "|> readVolume<uint16> (volumeFilePath \"input.tiff\" \".tiff\")" "Read with Volume file format should generate a typed volume source."
             Expect.stringContains code ">=> writeVolume \"output.tiff\"" "WriteVolume should generate a streaming volume writer."
             Expect.stringContains code "|> sink" "Terminal WriteVolume should be sunk."
 
@@ -319,7 +320,7 @@ let generatorSuite =
                       edge "apply" "output" 0 "write" "input" 0 ]
                 |> PipelineCodeGenerator.generateSavedGraph
 
-            Expect.stringContains code "|> readVolume<float32> \"sections.tif\"" "The source should be Float32."
+            Expect.stringContains code "|> readVolume<float32> (volumeFilePath \"sections.tif\" \".tiff\")" "The source should be Float32."
             Expect.stringContains code ">=> serialEstTrans<float32> 4 \"dogAffine\" 1.6 0.1" "SerialEstTrans should use the connected image type."
             Expect.stringContains code ">=> serialApplyTrans<float32> 0.0 None" "SerialApplyTrans should use the connected image type."
             Expect.isFalse (code.Contains("serialEstTrans<float>")) "Stale Float64 serial parameters must not leak into generated code."

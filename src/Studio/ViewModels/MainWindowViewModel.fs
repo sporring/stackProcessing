@@ -433,7 +433,7 @@ module private SourceImageNode =
         functionId = "Write" || functionId = "WriteThrough" || functionId = "WriteVolume" || functionId = "WriteInSlabs" || functionId = "WriteZarr" || functionId = "WriteNexus"
 
     let hasFormatParameter functionId =
-        (hasInputTitle functionId && functionId <> "Read")
+        hasInputTitle functionId
         || (hasOutputTitle functionId && functionId <> "WriteZarr" && functionId <> "WriteNexus")
         || functionId = "WriteSlabSlices"
         || functionId = "GetChunkInfo"
@@ -472,6 +472,88 @@ module private SourceImageNode =
           "OME-Zarr"
           "NeXus/HDF5" ]
 
+    let private readSourceFunctionIds =
+        Set.ofList [ "Read"; "ReadRandom"; "EstimateHistogram"; "ReadRange"; "ReadSlab" ]
+
+    let isReadSource functionId =
+        readSourceFunctionIds |> Set.contains functionId
+
+    let selectedFormat (state: PipelineNodeState) =
+        state.Parameters
+        |> Seq.tryFind (fun parameter -> parameter.Key = "format")
+        |> Option.map _.Value
+        |> Option.defaultValue "Image stack"
+
+    let private readVisibleParameterKeys (state: PipelineNodeState) =
+        let common = Set.ofList [ "availableMemory"; "type"; "format"; "input" ]
+
+        let zarr =
+            Set.ofList [ "slabDepth"; "multiscaleIndex"; "datasetIndex"; "timepoint"; "channel"; "maxParallelChunks" ]
+
+        let nexus =
+            Set.ofList [ "datasetPath"; "slabDepth"; "frameAxis"; "yAxis"; "xAxis" ]
+
+        match state.Definition.Id, selectedFormat state with
+        | "Read", "Image stack"
+        | "ReadSlab", "Chunked stack" ->
+            common |> Set.add "suffix"
+        | "Read", "Volume file" ->
+            common |> Set.add "suffix"
+        | ("Read" | "ReadSlab"), "OME-Zarr" ->
+            Set.union common zarr
+        | ("Read" | "ReadSlab"), "NeXus/HDF5" ->
+            Set.union common nexus
+        | _ ->
+            state.Parameters
+            |> Seq.map _.Key
+            |> Set.ofSeq
+
+    let parameterIsVisible (state: PipelineNodeState) key =
+        if state.Definition.Id = "Read" || state.Definition.Id = "ReadSlab" then
+            readVisibleParameterKeys state |> Set.contains key
+        else
+            true
+
+    let updateParameterVisibility (state: PipelineNodeState) =
+        for parameter in state.Parameters do
+            parameter.IsVisible <- parameterIsVisible state parameter.Key
+
+    let private suffixOptionsForState (state: PipelineNodeState) =
+        match state.Definition.Id, selectedFormat state with
+        | "Read", "Volume file" ->
+            readSuffixOptions
+            |> List.filter (fun (_, value) -> value = ".tiff")
+        | functionId, _ when hasInputTitle functionId ->
+            readSuffixOptions
+        | _ ->
+            suffixOptions
+
+    let updateReadSuffixOptionStates (state: PipelineNodeState) =
+        state.Parameters
+        |> Seq.tryFind (fun parameter -> parameter.Key = "suffix")
+        |> Option.iter (fun parameter ->
+            let desired = suffixOptionsForState state
+            let current = parameter.Options |> Seq.map (fun option -> option.Label, option.Value) |> Seq.toList
+            let mutable optionsChanged = false
+
+            if current <> desired then
+                parameter.Options.Clear()
+                optionsChanged <- true
+
+                for label, value in desired do
+                    parameter.Options.Add(ParameterOptionViewModel(label, value, true))
+            else
+                for option in parameter.Options do
+                    option.IsEnabled <- true
+
+            if parameter.Options |> Seq.exists (fun option -> option.Value = parameter.Value && option.IsEnabled) |> not then
+                parameter.Options
+                |> Seq.tryFind _.IsEnabled
+                |> Option.iter (fun option -> parameter.Value <- option.Value)
+
+            if optionsChanged then
+                parameter.RefreshSelectedOption())
+
     let suffixOptionsFor functionId =
         if hasInputTitle functionId || functionId = "GetChunkInfo" || functionId = "ResampleAffineTrilinearSlices" then
             readSuffixOptions
@@ -484,18 +566,17 @@ module private SourceImageNode =
         |> Option.map _.Value
         |> Option.defaultValue ".tiff"
 
-    let selectedFormat (state: PipelineNodeState) =
-        state.Parameters
-        |> Seq.tryFind (fun parameter -> parameter.Key = "format")
-        |> Option.map _.Value
-        |> Option.defaultValue "Image stack"
-
     let supportedTypes (state: PipelineNodeState) =
         match state.Definition.Id with
-        | "Read" when selectedFormat state = "OME-Zarr" -> [ UInt8; UInt16 ]
-        | "Read" when selectedFormat state = "NeXus/HDF5" -> [ UInt8; Int8; UInt16; Int16; UInt32; Int32; Float32; Float64 ]
-        | "ReadSlab" when selectedFormat state = "OME-Zarr" -> [ UInt8; UInt16 ]
-        | "ReadSlab" when selectedFormat state = "NeXus/HDF5" -> [ UInt8; Int8; UInt16; Int16; UInt32; Int32; Float32; Float64 ]
+        | functionId when isReadSource functionId ->
+            typeOptions
+            |> List.choose NumericType.tryParse
+        | "WriteVolume" -> ImageFileFormat.readSupportedTypes ".tiff"
+        | "WriteZarr" -> [ UInt8; UInt16 ]
+        | "WriteNexus" -> [ UInt8; Int8; UInt16; Int16; UInt32; Int32; Float32; Float64 ]
+        | _ when hasInputTitle state.Definition.Id ->
+            selectedSuffix state
+            |> ImageFileFormat.readSupportedTypes
         | _ ->
             selectedSuffix state
             |> ImageFileFormat.supportedTypes
@@ -533,6 +614,10 @@ module private SourceImageNode =
             { Name = "Number"
               Type = PortType.Image Number }
 
+    let supportsOutputType (state: PipelineNodeState) numericType =
+        supportedTypes state
+        |> List.contains numericType
+
     let private parameterTitle parameterKey fallback (state: PipelineNodeState) =
         state.Parameters
         |> Seq.tryFind (fun parameter -> parameter.Key = parameterKey)
@@ -544,13 +629,26 @@ module private SourceImageNode =
         |> Option.filter (String.IsNullOrWhiteSpace >> not)
         |> Option.defaultValue (NodeTitle.quotedString fallback)
 
+    let private stripVolumeFileSuffix (state: PipelineNodeState) (value: string) =
+        let trimmed = value.Trim()
+
+        if selectedFormat state = "Volume file" then
+            [ ".tiff"; ".tif" ]
+            |> List.tryFind (fun suffix -> trimmed.EndsWith(suffix, StringComparison.OrdinalIgnoreCase))
+            |> Option.map (fun suffix -> trimmed.Substring(0, trimmed.Length - suffix.Length))
+            |> Option.defaultValue trimmed
+        else
+            trimmed
+
     let title (state: PipelineNodeState) =
         let parameterText =
-            state.Parameters
-            |> Seq.exists (fun parameter -> parameter.Key = "input")
-            |> function
-                | true -> parameterTitle "input" "input" state
-                | false -> parameterTitle "output" "output" state
+            match state.Parameters |> Seq.tryFind (fun parameter -> parameter.Key = "input") with
+            | Some parameter ->
+                if parameter.UseInput then
+                    parameter.Key
+                else
+                    parameter.Value |> stripVolumeFileSuffix state |> NodeTitle.quotedString
+            | None -> parameterTitle "output" "output" state
 
         $"{state.Definition.DisplayName} {parameterText}"
 
@@ -1117,7 +1215,8 @@ type PipelineNodeViewModel(
         | _ -> state.Definition.Inputs, state.Definition.Outputs
 
     let parameterPinIsVisible (parameter: PipelineParameterViewModel) =
-        parameter.UseInput
+        parameter.IsVisible
+        && parameter.UseInput
         && (state.Definition.Id <> "Print" || PrintNode.inputIsVisible state parameter.Key)
         || (state.Definition.Id = "CollapseComponentLabels" && parameter.Key = "translationTable")
 
@@ -1286,8 +1385,7 @@ type PipelineNodeViewModel(
 
                     markGraphDirty()
                 elif SourceImageNode.hasFormatParameter state.Definition.Id && parameter.Key = "suffix" && args.PropertyName = nameof parameter.Value then
-                    if SourceImageNode.hasInputTitle state.Definition.Id
-                       || state.Definition.Id = "Zero"
+                    if state.Definition.Id = "Zero"
                        || state.Definition.Id = "NormalNoise"
                        || state.Definition.Id = "SaltAndPepperNoise"
                        || state.Definition.Id = "ShotNoise"
@@ -1311,20 +1409,10 @@ type PipelineNodeViewModel(
                     refreshNodePins this
                     markGraphDirty()
                 elif (state.Definition.Id = "Read" || state.Definition.Id = "ReadSlab") && parameter.Key = "format" && args.PropertyName = nameof parameter.Value then
-                    let supportedOptions = SourceImageNode.supportedTypeOptions state
-                    let supported = supportedOptions |> Set.ofList
-
-                    state.Parameters
-                    |> Seq.tryFind (fun parameter -> parameter.Key = "type")
-                    |> Option.iter (fun typeParameter ->
-                        for option in typeParameter.Options do
-                            option.IsEnabled <- supported |> Set.contains option.Value
-
-                        if not (supported |> Set.contains typeParameter.Value) then
-                            supportedOptions
-                            |> List.tryHead
-                            |> Option.iter (fun value -> typeParameter.Value <- value))
-
+                    SourceImageNode.updateParameterVisibility state
+                    SourceImageNode.updateReadSuffixOptionStates state
+                    state.Title <- SourceImageNode.title state
+                    this.Name <- state.Title
                     this.RebuildPins()
                     refreshNodePins this
                     markGraphDirty()
@@ -1569,6 +1657,7 @@ type MainWindowViewModel() as this =
     let mutable suppressExpandRefresh = false
     let mutable expandRefreshScheduled = false
     let mutable suppressTypePropagation = false
+    let mutable suppressConnectorCollectionRefresh = false
     let mutable selectedNode: PipelineNodeViewModel = null
     let selectedNodes = HashSet<PipelineNodeViewModel>(HashIdentity.Reference)
     let mutable graphOutput = ""
@@ -1679,16 +1768,18 @@ type MainWindowViewModel() as this =
 
                     PipelineParameterViewModel(parameter.Label, parameter.Key, parameter.DefaultValue, parameter.Type, options, false)
                 | ("Read" | "ReadSlab"), "type" ->
-                    let supported =
-                        ImageFileFormat.supportedTypes ".tiff"
-                        |> List.map NumericType.toString
-                        |> Set.ofList
                     let options =
                         SourceImageNode.typeOptions
-                        |> List.map (fun value -> ParameterOptionViewModel(value, value, supported |> Set.contains value))
+                        |> List.map (fun value -> ParameterOptionViewModel(value, value, true))
 
                     PipelineParameterViewModel(parameter.Label, parameter.Key, parameter.DefaultValue, parameter.Type, options, false)
-                | ("ReadRandom" | "EstimateHistogram" | "ReadRange" | "Zero" | "NormalNoise" | "SaltAndPepperNoise" | "ShotNoise" | "SpeckleNoise" | "CreateByEuler2DTransform" | "ResampleAffineTrilinearSlices"), "type" ->
+                | ("ReadRandom" | "EstimateHistogram" | "ReadRange"), "type" ->
+                    let options =
+                        SourceImageNode.typeOptions
+                        |> List.map (fun value -> ParameterOptionViewModel(value, value, true))
+
+                    PipelineParameterViewModel(parameter.Label, parameter.Key, parameter.DefaultValue, parameter.Type, options, false)
+                | ("Zero" | "NormalNoise" | "SaltAndPepperNoise" | "ShotNoise" | "SpeckleNoise" | "CreateByEuler2DTransform" | "ResampleAffineTrilinearSlices"), "type" ->
                     let defaultSuffix =
                         definition.Parameters
                         |> List.tryFind (fun parameter -> parameter.Key = "suffix")
@@ -1921,6 +2012,7 @@ type MainWindowViewModel() as this =
             state.Title <- ScalarImageOperationNode.title state
 
         SerialTransformNode.updateMethodParameterStates state
+        SourceImageNode.updateParameterVisibility state
         state
 
     let watchState (state: PipelineNodeState) =
@@ -2149,9 +2241,14 @@ type MainWindowViewModel() as this =
             |> Option.iter (fun parameter ->
                 for option in parameter.Options do
                     let supported = supportedTypes |> Set.contains option.Value
-                    option.IsEnabled <- supported && (not isConnected || option.Value = parameter.Value)
+                    option.IsEnabled <-
+                        if SourceImageNode.isReadSource node.State.Definition.Id then
+                            supported
+                        else
+                            supported && (not isConnected || option.Value = parameter.Value)
 
-                if not (supportedTypes |> Set.contains parameter.Value) && not isConnected then
+                if not (supportedTypes |> Set.contains parameter.Value)
+                   && (not isConnected || SourceImageNode.isReadSource node.State.Definition.Id) then
                     SourceImageNode.supportedTypeOptions node.State
                     |> List.tryHead
                     |> Option.iter (fun value -> parameter.Value <- value)))
@@ -2203,26 +2300,34 @@ type MainWindowViewModel() as this =
         |> Seq.iter (fun node ->
             refreshWriteInputPin node
 
-            let requiredType =
-                if SourceImageNode.hasOutputTitle node.State.Definition.Id then
-                    connectedWriteInputType node
-                elif SourceImageNode.hasInputTitle node.State.Definition.Id then
-                    Some(SourceImageNode.selectedType node.State)
+            let suffixOptionIsEnabled suffix =
+                if SourceImageNode.hasInputTitle node.State.Definition.Id then
+                    match node.State.Definition.Id, SourceImageNode.selectedFormat node.State with
+                    | "Read", "Volume file" -> suffix = ".tiff"
+                    | _ -> true
                 else
-                    None
+                    let requiredType =
+                        if SourceImageNode.hasOutputTitle node.State.Definition.Id then
+                            connectedWriteInputType node
+                        else
+                            None
+
+                    requiredType
+                    |> Option.forall (ImageFileFormat.supports suffix)
 
             node.State.Parameters
             |> Seq.tryFind (fun parameter -> parameter.Key = "suffix")
             |> Option.iter (fun parameter ->
-                for option in parameter.Options do
-                    option.IsEnabled <-
-                        requiredType
-                        |> Option.forall (ImageFileFormat.supports option.Value)
+                if SourceImageNode.hasInputTitle node.State.Definition.Id then
+                    SourceImageNode.updateReadSuffixOptionStates node.State
+                else
+                    for option in parameter.Options do
+                        option.IsEnabled <- suffixOptionIsEnabled option.Value
 
-                if parameter.Options |> Seq.exists (fun option -> option.Value = parameter.Value && option.IsEnabled) |> not then
-                    parameter.Options
-                    |> Seq.tryFind _.IsEnabled
-                    |> Option.iter (fun option -> parameter.Value <- option.Value)))
+                    if parameter.Options |> Seq.exists (fun option -> option.Value = parameter.Value && option.IsEnabled) |> not then
+                        parameter.Options
+                        |> Seq.tryFind _.IsEnabled
+                        |> Option.iter (fun option -> parameter.Value <- option.Value)))
 
     let refreshCastTypeOptions () =
         let hasInputConnection (node: PipelineNodeViewModel) =
@@ -2489,12 +2594,8 @@ type MainWindowViewModel() as this =
                         when SourceImageNode.hasOutputTitle inputNode.State.Definition.Id ->
                         true
                     | :? PipelineNodeViewModel as inputNode, Image numericType
-                        when inputNode.State.Definition.Id = "WriteZarr" ->
-                        numericType = UInt8 || numericType = UInt16
-                    | :? PipelineNodeViewModel as inputNode, Image numericType
                         when SourceImageNode.hasOutputTitle inputNode.State.Definition.Id ->
-                        SourceImageNode.selectedSuffix inputNode.State
-                        |> fun suffix -> ImageFileFormat.supports suffix numericType
+                        SourceImageNode.supportsOutputType inputNode.State numericType
                     | _ ->
                         true
 
@@ -2643,11 +2744,72 @@ type MainWindowViewModel() as this =
             true
         else
             suppressTypePropagation <- true
+            suppressConnectorCollectionRefresh <- true
 
             try
                 let parameterCanUseValue (parameter: PipelineParameterViewModel) =
                     parameter.Options.Count = 0
                     || (parameter.Options |> Seq.exists (fun option -> option.Value = typeValue))
+
+                let nodeHasTypeParameter (node: PipelineNodeViewModel) =
+                    node.State.Parameters
+                    |> Seq.exists (fun parameter -> parameter.Key = "type")
+
+                let nodeCanUseType (node: PipelineNodeViewModel) =
+                    node.State.Parameters
+                    |> Seq.tryFind (fun parameter -> parameter.Key = "type")
+                    |> Option.exists parameterCanUseValue
+
+                let writerAcceptsType (node: PipelineNodeViewModel) =
+                    match NumericType.tryParse typeValue with
+                    | Some numericType when SourceImageNode.hasOutputTitle node.State.Definition.Id ->
+                        SourceImageNode.supportsOutputType node.State numericType
+                    | _ ->
+                        true
+
+                let portTypeForValue =
+                    NumericType.tryParse typeValue
+                    |> Option.map PortType.numericToImage
+
+                let fixedInputAcceptsType (pin: PipelinePinViewModel) =
+                    match pin.Parent with
+                    | :? PipelineNodeViewModel as node when SourceImageNode.hasOutputTitle node.State.Definition.Id ->
+                        writerAcceptsType node
+                    | _ ->
+                        portTypeForValue
+                        |> Option.exists (fun outputType -> PortType.canConnect outputType pin.Port.Type)
+
+                let rec branchCanAcceptType (node: PipelineNodeViewModel) (visited: HashSet<PipelineNodeViewModel>) =
+                    if node.State.Definition.Id = "Cast" then
+                        true
+                    elif not (visited.Add node) then
+                        true
+                    elif SourceImageNode.hasOutputTitle node.State.Definition.Id then
+                        writerAcceptsType node
+                    elif nodeHasTypeParameter node then
+                        nodeCanUseType node
+                        && (drawing.Connectors
+                            |> Seq.choose (fun connector ->
+                                match connector.Start, connector.End with
+                                | (:? PipelinePinViewModel as startPin), (:? PipelinePinViewModel as endPin)
+                                    when Object.ReferenceEquals(startPin.Parent, node)
+                                         && startPin.Kind = DataOutput
+                                         && endPin.Kind = DataInput ->
+                                    Some endPin
+                                | _ ->
+                                    None)
+                            |> Seq.forall (fun endPin ->
+                                match endPin.Parent with
+                                | :? PipelineNodeViewModel as downstreamNode when downstreamNode.State.Definition.Id = "Cast" ->
+                                    true
+                                | :? PipelineNodeViewModel as downstreamNode when nodeHasTypeParameter downstreamNode ->
+                                    branchCanAcceptType downstreamNode visited
+                                | :? PipelineNodeViewModel as downstreamNode when SourceImageNode.hasOutputTitle downstreamNode.State.Definition.Id ->
+                                    writerAcceptsType downstreamNode
+                                | _ ->
+                                    fixedInputAcceptsType endPin))
+                    else
+                        true
 
                 let trySetParameter key (node: PipelineNodeViewModel) =
                     node.State.Parameters
@@ -2695,9 +2857,27 @@ type MainWindowViewModel() as this =
                                 if trySetParameter "sourceType" targetNode then
                                     remember targetNode
                             | :? PipelineNodeViewModel as targetNode ->
-                                if trySetParameter "type" targetNode then
-                                    remember targetNode
-                                    queue.Enqueue targetNode
+                                if nodeHasTypeParameter targetNode then
+                                    let branchIsCompatible = branchCanAcceptType targetNode (HashSet<PipelineNodeViewModel>(HashIdentity.Reference))
+
+                                    if branchIsCompatible then
+                                        if trySetParameter "type" targetNode then
+                                            remember targetNode
+                                            queue.Enqueue targetNode
+                                    else
+                                        drawing.Connectors
+                                        |> Seq.tryFind (fun connector -> Object.ReferenceEquals(connector.End, endPin))
+                                        |> Option.iter (fun connector -> drawing.Connectors.Remove(connector) |> ignore)
+                                elif not (fixedInputAcceptsType endPin) then
+                                    drawing.Connectors
+                                    |> Seq.tryFind (fun connector -> Object.ReferenceEquals(connector.End, endPin))
+                                    |> Option.iter (fun connector -> drawing.Connectors.Remove(connector) |> ignore)
+                                else
+                                    match endPin.Parent with
+                                    | :? PipelineNodeViewModel as fixedNode when SourceImageNode.hasOutputTitle fixedNode.State.Definition.Id ->
+                                        remember fixedNode
+                                    | _ ->
+                                        ()
                             | _ ->
                                 ()
 
@@ -2790,6 +2970,7 @@ type MainWindowViewModel() as this =
                 true
             finally
                 suppressTypePropagation <- false
+                suppressConnectorCollectionRefresh <- false
 
     let createNode index functionId =
         let node =
@@ -2921,18 +3102,19 @@ type MainWindowViewModel() as this =
         match drawing.Connectors with
         | :? INotifyCollectionChanged as connectors ->
             connectors.CollectionChanged.Add(fun _ ->
-                scheduleExpandNodeRecordTypeRefresh()
-                refreshScalarTypeOptions()
-                refreshScalarOpTypeOptions()
-                refreshImageFormatOptions()
-                refreshSourceImageTypeOptions()
-                refreshCastTypeOptions()
-                refreshPairOperationTypeOptions()
-                refreshScalarImageOperationTypeOptions()
-                refreshThresholdTypeOptions()
-                refreshSerialTransformTypeOptions()
-                this.RaiseGraphStateChanged()
-                this.MarkGraphDirty())
+                if not suppressConnectorCollectionRefresh then
+                    scheduleExpandNodeRecordTypeRefresh()
+                    refreshScalarTypeOptions()
+                    refreshScalarOpTypeOptions()
+                    refreshImageFormatOptions()
+                    refreshSourceImageTypeOptions()
+                    refreshCastTypeOptions()
+                    refreshPairOperationTypeOptions()
+                    refreshScalarImageOperationTypeOptions()
+                    refreshThresholdTypeOptions()
+                    refreshSerialTransformTypeOptions()
+                    this.RaiseGraphStateChanged()
+                    this.MarkGraphDirty())
         | _ -> ()
 
         //addSeedNodes()
@@ -3931,6 +4113,8 @@ type MainWindowViewModel() as this =
                     node.SyncMoveOrigin()
                     setParameterValues node.State savedNode.Parameters
                     SerialTransformNode.updateMethodParameterStates node.State
+                    SourceImageNode.updateParameterVisibility node.State
+                    node.RebuildPins()
                     drawing.Nodes.Add(node :> INode)
                     savedNode.Id, node)
             |> Map.ofArray
@@ -4114,6 +4298,7 @@ type MainWindowViewModel() as this =
                 clone.State.RecordType <- original.State.RecordType
                 setParameterValues clone.State (parameterValues original.State)
                 SerialTransformNode.updateMethodParameterStates clone.State
+                SourceImageNode.updateParameterVisibility clone.State
                 clone.ClampToDrawing()
                 clone.SyncMoveOrigin()
                 drawing.Nodes.Add(clone :> INode)

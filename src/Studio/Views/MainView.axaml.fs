@@ -547,6 +547,33 @@ type MainView() as this =
                             formatParameter.Value <- formatParameter.Value.Replace(oldPlaceholder, newPlaceholder)))))
 
     let compatiblePortTypes (outputPin: PipelinePinViewModel) (inputPin: PipelinePinViewModel) =
+        let selectedSuffix (node: PipelineNodeViewModel) =
+            node.State.Parameters
+            |> Seq.tryFind (fun parameter -> parameter.Key = "suffix")
+            |> Option.map _.Value
+            |> Option.defaultValue ".tiff"
+
+        let supportedWriterTypes (node: PipelineNodeViewModel) =
+            match node.State.Definition.Id with
+            | "WriteVolume" -> ImageFileFormat.readSupportedTypes ".tiff"
+            | "WriteZarr" -> [ UInt8; UInt16 ]
+            | "WriteNexus" -> [ UInt8; Int8; UInt16; Int16; UInt32; Int32; Float32; Float64 ]
+            | _ -> ImageFileFormat.supportedTypes (selectedSuffix node)
+
+        let writerAcceptsOutputType numericType =
+            match inputPin.Parent with
+            | :? PipelineNodeViewModel as node
+                when node.State.Definition.Id = "Write"
+                     || node.State.Definition.Id = "WriteThrough"
+                     || node.State.Definition.Id = "WriteVolume"
+                     || node.State.Definition.Id = "WriteInSlabs"
+                     || node.State.Definition.Id = "WriteZarr"
+                     || node.State.Definition.Id = "WriteNexus" ->
+                supportedWriterTypes node
+                |> List.contains numericType
+            | _ ->
+                true
+
         let isPrintParameter =
             match inputPin.Parent with
             | :? PipelineNodeViewModel as node ->
@@ -561,8 +588,19 @@ type MainView() as this =
                 |> Option.forall (PortType.canConnect outputPin.Port.Type)
             | None ->
                 true
+        elif outputPin.Kind = ReducerOutput
+             && inputPin.Kind = DataInput
+             && (match inputPin.Parent with
+                 | :? PipelineNodeViewModel as node -> node.State.Definition.Id = "Expand"
+                 | _ -> false) then
+            PortType.canConnect outputPin.Port.Type inputPin.Port.Type
         elif (outputPin.Kind = DataOutput || outputPin.Kind = ReducerOutput) && inputPin.Kind = DataInput then
             let baseCompatible = PortType.canConnect outputPin.Port.Type inputPin.Port.Type
+            let formatCompatible =
+                match outputPin.Port.Type with
+                | Image Number -> true
+                | Image numericType -> writerAcceptsOutputType numericType
+                | _ -> true
 
             let isTapNode (node: INode) =
                 match node with
@@ -599,9 +637,9 @@ type MainView() as this =
             let hasTapEndpoint = isTapNode outputPin.Parent || isTapNode inputPin.Parent
 
             if hasTapEndpoint then
-                tapTypesAreConsistent
+                tapTypesAreConsistent && formatCompatible
             else
-                baseCompatible
+                baseCompatible && formatCompatible
         elif candidateIsParameterConnector outputPin inputPin then
             PortType.canConnect outputPin.Port.Type inputPin.Port.Type
         else
@@ -1997,103 +2035,62 @@ type MainView() as this =
                 appendToOutput $"Inspection failed: {path}{Environment.NewLine}{ex.Message}{Environment.NewLine}"
         }
 
-    member this.InspectImageClicked(_sender: obj, args: RoutedEventArgs) =
+    member this.InspectFileClicked(_sender: obj, args: RoutedEventArgs) =
         task {
             args.Handled <- true
 
-            match TopLevel.GetTopLevel(this) with
-            | null -> ()
-            | topLevel ->
-                let chooser = Window()
-                chooser.Title <- "Inspect Image"
-                chooser.Width <- 360.
-                chooser.Height <- 170.
-                chooser.WindowStartupLocation <- WindowStartupLocation.CenterOwner
-                chooser.CanResize <- false
+            let appendToOutput (text: string) =
+                match this.DataContext with
+                | :? MainWindowViewModel as viewModel -> viewModel.AppendGraphOutput(text)
+                | _ -> ()
 
-                let text =
-                    TextBlock(
-                        Text = "Choose an image file or a directory-backed image.",
-                        TextWrapping = TextWrapping.Wrap,
-                        Margin = Thickness(16., 16., 16., 8.))
+            try
+                match TopLevel.GetTopLevel(this) with
+                | null -> ()
+                | topLevel ->
+                    let options =
+                        FilePickerOpenOptions(
+                            Title = "Inspect image file",
+                            AllowMultiple = false,
+                            FileTypeFilter = [ FilePickerFileTypes.All ])
 
-                let fileButton =
-                    Button(
-                        Content = "File...",
-                        Width = 110.,
-                        HorizontalAlignment = HorizontalAlignment.Center)
+                    let! files = topLevel.StorageProvider.OpenFilePickerAsync(options)
 
-                let folderButton =
-                    Button(
-                        Content = "Directory...",
-                        Width = 110.,
-                        HorizontalAlignment = HorizontalAlignment.Center)
+                    files
+                    |> Seq.tryHead
+                    |> Option.bind localPath
+                    |> Option.iter (fun path -> this.InspectImagePathAsync(path) |> ignore)
+            with ex ->
+                appendToOutput $"Inspection picker failed:{Environment.NewLine}{ex.Message}{Environment.NewLine}"
+        }
+        |> ignore
 
-                let cancelButton =
-                    Button(
-                        Content = "Cancel",
-                        Width = 110.,
-                        HorizontalAlignment = HorizontalAlignment.Center)
+    member this.InspectDirectoryClicked(_sender: obj, args: RoutedEventArgs) =
+        task {
+            args.Handled <- true
 
-                let buttons =
-                    StackPanel(
-                        Orientation = Orientation.Horizontal,
-                        HorizontalAlignment = HorizontalAlignment.Center,
-                        Spacing = 10.,
-                        Margin = Thickness(16.))
+            let appendToOutput (text: string) =
+                match this.DataContext with
+                | :? MainWindowViewModel as viewModel -> viewModel.AppendGraphOutput(text)
+                | _ -> ()
 
-                buttons.Children.Add(fileButton)
-                buttons.Children.Add(folderButton)
-                buttons.Children.Add(cancelButton)
+            try
+                match TopLevel.GetTopLevel(this) with
+                | null -> ()
+                | topLevel ->
+                    let options =
+                        FolderPickerOpenOptions(
+                            Title = "Inspect image directory",
+                            AllowMultiple = false)
 
-                let panel = DockPanel(LastChildFill = true)
-                DockPanel.SetDock(buttons, Dock.Bottom)
-                panel.Children.Add(buttons)
-                panel.Children.Add(text)
-                chooser.Content <- panel
+                    let! folders = topLevel.StorageProvider.OpenFolderPickerAsync(options)
 
-                fileButton.Click.Add(fun _ ->
-                    task {
-                        chooser.Close()
-
-                        let options =
-                            FilePickerOpenOptions(
-                                Title = "Inspect image file",
-                                AllowMultiple = false,
-                                FileTypeFilter = [ FilePickerFileTypes.All ])
-
-                        let! files = topLevel.StorageProvider.OpenFilePickerAsync(options)
-
-                        files
-                        |> Seq.tryHead
-                        |> Option.bind localPath
-                        |> Option.iter (fun path -> this.InspectImagePathAsync(path) |> ignore)
-                    }
-                    |> ignore)
-
-                folderButton.Click.Add(fun _ ->
-                    task {
-                        chooser.Close()
-
-                        let options =
-                            FolderPickerOpenOptions(
-                                Title = "Inspect image directory",
-                                AllowMultiple = false)
-
-                        let! folders = topLevel.StorageProvider.OpenFolderPickerAsync(options)
-
-                        folders
-                        |> Seq.tryHead
-                        |> Option.bind folderLocalPath
-                        |> Option.iter (fun path -> this.InspectImagePathAsync(path) |> ignore)
-                    }
-                    |> ignore)
-
-                cancelButton.Click.Add(fun _ -> chooser.Close())
-
-                match parentWindow () with
-                | null -> chooser.Show()
-                | owner -> chooser.Show(owner)
+                    folders
+                    |> Seq.tryHead
+                    |> Option.bind folderLocalPath
+                    |> Option.iter (fun path -> this.InspectImagePathAsync(path) |> ignore)
+            with ex ->
+                appendToOutput $"Inspection picker failed:{Environment.NewLine}{ex.Message}{Environment.NewLine}"
         }
         |> ignore
 

@@ -26,6 +26,7 @@ type PipelineParameterViewModel(label: string, key: string, value: string, param
     let forceUseInput = defaultArg forceUseInput false
     let mutable useInput = forceUseInput || defaultArg initialUseInput false
     let mutable isValueEnabled = true
+    let mutable isVisible = true
     let options = ObservableCollection<ParameterOptionViewModel>(defaultArg options [])
     let canUseInput = defaultArg canUseInput true
 
@@ -68,6 +69,10 @@ type PipelineParameterViewModel(label: string, key: string, value: string, param
         with get () = isValueEnabled
         and set v = this.SetProperty(&isValueEnabled, v) |> ignore
 
+    member this.IsVisible
+        with get () = isVisible
+        and set v = this.SetProperty(&isVisible, v) |> ignore
+
     member this.SelectedOption
         with get () =
             options
@@ -76,6 +81,9 @@ type PipelineParameterViewModel(label: string, key: string, value: string, param
         and set (option: ParameterOptionViewModel) =
             if not (isNull option) && option.IsEnabled then
                 this.Value <- option.Value
+
+    member this.RefreshSelectedOption() =
+        this.OnPropertyChanged(nameof this.SelectedOption)
 
 [<AllowNullLiteral>]
 type PipelineNodeState(definition: Function, parameters: PipelineParameterViewModel list) =

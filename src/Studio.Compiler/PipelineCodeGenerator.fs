@@ -182,6 +182,9 @@ module PipelineCodeGenerator =
     let private sourcePrefix availableMemory line =
         $"debug 1u {uint64Literal availableMemory}{Environment.NewLine}{line}"
 
+    let private volumeFilePathExpression input suffix =
+        $"(volumeFilePath {input} {suffix})"
+
     let private imageOpImageFunctionName (node: SavedNode) =
         match savedParamValue "operation" node with
         | "+" -> "addPair"
@@ -668,6 +671,17 @@ module PipelineCodeGenerator =
             let expression = parameterExpression key
             if expression.IsLinked then expression.Value else quote expression.Value
 
+        let quotedParameterOrDefault key fallback =
+            let expression = parameterExpression key
+
+            if expression.IsLinked then
+                expression.Value
+            else
+                let value =
+                    if String.IsNullOrWhiteSpace expression.Value then fallback else expression.Value
+
+                quote value
+
         let stringParameter key =
             let expression = parameterExpression key
             if expression.IsLinked then $"(string {expression.Value})" else quote expression.Value
@@ -916,7 +930,7 @@ module PipelineCodeGenerator =
             let pixelType = pixelTypeNameFromParameter "type" "Float64" node
             let format = savedParamValue "format" node
             let input = quotedParameter "input"
-            let suffix = quotedParameter "suffix"
+            let suffix = quotedParameterOrDefault "suffix" ".tiff"
             let slabDepth = parameterValue "slabDepth"
             let multiscaleIndex = parameterValue "multiscaleIndex"
             let datasetIndex = parameterValue "datasetIndex"
@@ -943,7 +957,7 @@ module PipelineCodeGenerator =
             let pixelType = pixelTypeNameFromParameter "type" "Float64" node
             let format = savedParamValue "format" node
             let input = quotedParameter "input"
-            let suffix = quotedParameter "suffix"
+            let suffix = quotedParameterOrDefault "suffix" ".tiff"
             let slabDepth = parameterValue "slabDepth"
             let multiscaleIndex = parameterValue "multiscaleIndex"
             let datasetIndex = parameterValue "datasetIndex"
@@ -956,7 +970,8 @@ module PipelineCodeGenerator =
             let xAxis = parameterValue "xAxis"
             match format with
             | "Volume file" ->
-                $"|> readVolume<{pixelType}> {input}" |> sourcePrefix availableMemory
+                let volumeInput = volumeFilePathExpression input suffix
+                $"|> readVolume<{pixelType}> {volumeInput}" |> sourcePrefix availableMemory
             | "OME-Zarr" ->
                 $"|> readZarrSlab<{pixelType}> {input} {slabDepth} {multiscaleIndex} {datasetIndex} {timepoint} {channel} {maxParallelChunks}" |> sourcePrefix availableMemory
             | "NeXus/HDF5" ->
@@ -2208,12 +2223,23 @@ module PipelineCodeGenerator =
                             let stringArgument key =
                                 let expression = parameter key
                                 if expression.IsLinked then expression.Value else quote expression.Value
+                            let stringArgumentOrDefault key fallback =
+                                let expression = parameter key
+
+                                if expression.IsLinked then
+                                    expression.Value
+                                else
+                                    let value =
+                                        if String.IsNullOrWhiteSpace expression.Value then fallback else expression.Value
+
+                                    quote value
                             let input = stringArgument "input"
-                            let suffix = stringArgument "suffix"
+                            let suffix = stringArgumentOrDefault "suffix" ".tiff"
                             let format = savedParamValue "format" node
                             let text =
                                 if format = "Volume file" then
-                                    $"let {name} = getFileInfo {input}"
+                                    let volumeInput = volumeFilePathExpression input suffix
+                                    $"let {name} = getFileInfo {volumeInput}"
                                 else
                                     $"let {name} = getStackInfo {input} {suffix}"
                             { Name = name
@@ -2381,6 +2407,10 @@ module PipelineCodeGenerator =
 
         let hasVisualization = hasChart || hasShowImage
 
+        let hasVolumeFileRead =
+            graph.Nodes
+            |> Array.exists (fun node -> node.FunctionId = "Read" && savedParamValue "format" node = "Volume file")
+
         builder.AppendLine("open StackProcessing") |> ignore
 
         if hasVisualization then
@@ -2413,6 +2443,25 @@ module PipelineCodeGenerator =
             builder.AppendLine("    ImageFunctions.toSeqSeq image") |> ignore
             builder.AppendLine("    |> Chart.Heatmap") |> ignore
             builder.AppendLine("    |> Chart.show") |> ignore
+            builder.AppendLine() |> ignore
+
+        if hasVolumeFileRead then
+            builder.AppendLine("let volumeFilePath (input: string) (suffix: string) =") |> ignore
+            builder.AppendLine("    if System.IO.Path.HasExtension input then") |> ignore
+            builder.AppendLine("        input") |> ignore
+            builder.AppendLine("    else") |> ignore
+            builder.AppendLine("        let primary = input + suffix") |> ignore
+            builder.AppendLine("        if System.IO.File.Exists primary then") |> ignore
+            builder.AppendLine("            primary") |> ignore
+            builder.AppendLine("        else") |> ignore
+            builder.AppendLine("            match suffix.ToLowerInvariant() with") |> ignore
+            builder.AppendLine("            | \".tiff\" ->") |> ignore
+            builder.AppendLine("                let alternate = input + \".tif\"") |> ignore
+            builder.AppendLine("                if System.IO.File.Exists alternate then alternate else primary") |> ignore
+            builder.AppendLine("            | \".tif\" ->") |> ignore
+            builder.AppendLine("                let alternate = input + \".tiff\"") |> ignore
+            builder.AppendLine("                if System.IO.File.Exists alternate then alternate else primary") |> ignore
+            builder.AppendLine("            | _ -> primary") |> ignore
             builder.AppendLine() |> ignore
 
         let bindings = orderedBindings ()

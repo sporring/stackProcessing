@@ -145,8 +145,16 @@
                             Click="LoadGraphClicked"
                             Content="Load" />
                     <Button Width="76"
-                            Click="InspectImageClicked"
-                            Content="Inspect" />
+                            Content="Inspect">
+                        <Button.Flyout>
+                            <MenuFlyout>
+                                <MenuItem Header="File..."
+                                          Click="InspectFileClicked" />
+                                <MenuItem Header="Directory..."
+                                          Click="InspectDirectoryClicked" />
+                            </MenuFlyout>
+                        </Button.Flyout>
+                    </Button>
                     <Button Width="76"
                             Click="ClearGraphClicked"
                             IsEnabled="{Binding CanClearGraph}"
@@ -292,6 +300,7 @@
                             <ItemsControl.ItemTemplate>
                                 <DataTemplate x:DataType="models:PipelineParameterViewModel">
                                     <Grid ColumnDefinitions="92,72,*"
+                                          IsVisible="{Binding IsVisible}"
                                           Margin="0,0,0,10">
                                         <SelectableTextBlock Text="{Binding Label}"
                                                              VerticalAlignment="Center"

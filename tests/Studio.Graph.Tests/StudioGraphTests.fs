@@ -38,8 +38,10 @@ let domainSuite =
             Expect.isFalse (PortType.canConnect (Scalar String) (Scalar(BasicType.Numeric Float64))) "Different concrete scalar types should not connect."
 
         testCase "image file format table captures important pixel type restrictions" <| fun _ ->
-            Expect.isTrue (ImageFileFormat.supports ".tiff" Float64) "TIFF should support floating-point image stacks."
-            Expect.isTrue (ImageFileFormat.supports ".tif" Float64) "TIF should be treated like TIFF."
+            Expect.isFalse (ImageFileFormat.supports ".tiff" Float64) "TIFF stack output should not offer Float64 because StackIO.write rejects it."
+            Expect.isFalse (ImageFileFormat.supports ".tif" Float64) "TIF output should be treated like TIFF."
+            Expect.isTrue (ImageFileFormat.readSupports ".tiff" Float64) "TIFF input should still allow Float64."
+            Expect.isTrue (ImageFileFormat.supports ".tiff" Float32) "TIFF stack output should accept Float32."
             Expect.isFalse (ImageFileFormat.supports ".tiff" UInt64) "TIFF should not be offered for 64-bit integer stack output."
             Expect.equal ImageFileFormat.readFormats.Head.Label "TIFF (.tif or .tiff)" "Read format choices should present TIFF suffixes as aliases."
             Expect.isTrue (ImageFileFormat.readFormats |> List.exists (fun format -> format.Label = "JPEG (.jpg or .jpeg)" && format.Suffix = ".jpg")) "Read format choices should present JPEG suffixes as aliases."

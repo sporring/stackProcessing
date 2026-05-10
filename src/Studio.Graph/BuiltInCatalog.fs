@@ -85,20 +85,23 @@ module BuiltInCatalog =
   let private suffixParameter defaultValue =
       makeParameter "suffix" "Format" defaultValue BasicType.String
 
+  let private readSuffixParameter defaultValue =
+      makeParameter "suffix" "File type" defaultValue BasicType.String
+
   let private readFormatDescription =
-      "Reads one image per stack slice from a directory. TIFF input accepts both .tif and .tiff files when TIFF is selected; JPEG input accepts both .jpg and .jpeg files when JPEG is selected. Format choices restrict the image type menu to combinations expected to work with SimpleITK/ITK: TIFF supports common 8/16/32-bit integer and 32/64-bit floating-point scalar images; PNG supports UInt8 and UInt16; JPEG and BMP support UInt8; MetaImage, NRRD, and NIfTI support the broad scalar numeric set used by Studio."
+      "Reads image data as a slice stream. Source selects whether input is a stack directory, a single volume file, or a chunked container. File type selects the on-disk image format where that applies. Type is the emitted stream type, so readable pixels are cast to the requested type after import."
 
   let private readVolumeDescription =
       "Reads a single 2D or 3D volume file as a normal slice stream. Multipage TIFF/BigTIFF pages are read forward-only through the streaming TIFF reader; other volume formats use SimpleITK's extract-region reader so each z-slice is requested independently rather than loading the full volume first. The Type selector is the emitted stream type, so readable TIFF pixel types are cast to that type after page import."
 
   let private readFormatParameter =
-      makeParameter "format" "Format" "Image stack" BasicType.String
+      makeParameter "format" "Source" "Image stack" BasicType.String
 
   let private readSlabFormatParameter =
-      makeParameter "format" "Format" "Chunked stack" BasicType.String
+      makeParameter "format" "Source" "Chunked stack" BasicType.String
 
   let private writeFormatDescription =
-      "Writes one image per stack slice. The selected format controls which image types can be connected to the input pin: TIFF supports common 8/16/32-bit integer and 32/64-bit floating-point scalar images; PNG supports UInt8 and UInt16; JPEG and BMP support UInt8; MetaImage, NRRD, and NIfTI support the broad scalar numeric set used by Studio. Cast before write when a format cannot store the current image type."
+      "Writes one image per stack slice. The selected format controls which image types can be connected to the input pin: TIFF output supports 8/16-bit integer and Float32 scalar images; PNG supports UInt8 and UInt16; JPEG and BMP support UInt8; MetaImage, NRRD, and NIfTI support the broad scalar numeric set used by Studio. Cast before write when a format cannot store the current image type."
 
   let private writeVolumeDescription =
       "Writes a slice stream as one volume file. The current streaming implementation writes multipage TIFF or BigTIFF pages incrementally, without materializing the full stack in memory. Use .btf or .bigtiff for BigTIFF output."
@@ -355,7 +358,7 @@ module BuiltInCatalog =
             makeParameter "type" "Type" "Float64" BasicType.String
             readFormatParameter
             makeParameter "input" "Input" "input" BasicType.String
-            suffixParameter ".tiff"
+            readSuffixParameter ".tiff"
             makeParameter "slabDepth" "Slab depth" "8" (BasicType.Numeric UInt32)
             makeParameter "multiscaleIndex" "Multiscale index" "0" (BasicType.Numeric Int32)
             makeParameter "datasetIndex" "Dataset index" "0" (BasicType.Numeric Int32)
@@ -403,7 +406,7 @@ module BuiltInCatalog =
             makeParameter "type" "Type" "Float64" BasicType.String
             makeParameter "slices" "Slices" "16" (BasicType.Numeric UInt32)
             makeParameter "input" "Input" "input" BasicType.String
-            suffixParameter ".tiff"
+            readSuffixParameter ".tiff"
             makeParameter "down" "Down" "4" (BasicType.Numeric UInt32)
             makeParameter "estimator" "Estimator" "DKWAndHoldout" BasicType.String
             makeParameter "confidence" "Confidence" "0.95" (BasicType.Numeric Float64) ] }
