@@ -1,16 +1,6 @@
-// Runs marching cubes on the synthetic object image produced by samples/objectsImage.
+// Runs marching cubes on the binary object image and writes a mesh file.
 open System.IO
 open StackProcessing
-
-let private samplePath fallback (args: string[]) =
-    if args.Length > 0 then
-        let token = args[0]
-        if token |> Seq.forall System.Char.IsDigit then
-            fallback
-        else
-            token
-    else
-        fallback
 
 [<EntryPoint>]
 let main args =
@@ -20,9 +10,9 @@ let main args =
 
     let input, output =
         match args with
-        | [| input; output |] -> samplePath "../data/rotatingBoxes" [| input |], output
-        | [| _ |] -> samplePath "../data/rotatingBoxes" args, "../tmp/objectsMesh/surface.obj"
-        | _ -> "../data/rotatingBoxes", "../tmp/objectsMesh/surface.obj"
+        | [| input; output |] -> input, output
+        | [| input |] -> input, "../tmp/surface.obj"
+        | _ -> "../data/rotatingBoxes", "../tmp/surface.obj"
 
     let directory = Path.GetDirectoryName(output)
     if not (System.String.IsNullOrWhiteSpace directory) then

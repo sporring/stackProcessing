@@ -2334,45 +2334,46 @@ FNF:8
 FNH:6
 end_of_record
 SF:/Users/jrh630/repositories/stackProcessing/src/Studio.Graph/Domain.fs
-FN:307,System.Boolean Studio.Graph.FunctionDefinition::matches(System.String,Studio.Graph.Function)
+FN:308,System.Boolean Studio.Graph.FunctionDefinition::matches(System.String,Studio.Graph.Function)
 FNDA:6,System.Boolean Studio.Graph.FunctionDefinition::matches(System.String,Studio.Graph.Function)
-DA:308,6
 DA:309,6
-DA:310,5
-DA:311,4
-DA:312,3
-DA:313,4
-BRDA:308,13,0,0
-BRDA:308,13,1,6
-BRDA:309,32,0,1
-BRDA:309,32,1,5
-BRDA:310,51,0,2
-BRDA:310,51,1,4
-BRDA:311,70,0,3
-BRDA:311,70,1,3
-BRDA:312,89,0,4
-BRDA:312,89,1,2
-FN:305,System.Boolean Studio.Graph.FunctionDefinition/contains@306::Invoke(System.String)
-FNDA:33,System.Boolean Studio.Graph.FunctionDefinition/contains@306::Invoke(System.String)
-DA:306,33
+DA:310,6
+DA:311,5
+DA:312,4
+DA:313,3
+DA:314,4
+BRDA:309,13,0,0
+BRDA:309,13,1,6
+BRDA:310,32,0,1
+BRDA:310,32,1,5
+BRDA:311,51,0,2
+BRDA:311,51,1,4
+BRDA:312,70,0,3
+BRDA:312,70,1,3
+BRDA:313,89,0,4
+BRDA:313,89,1,2
+FN:306,System.Boolean Studio.Graph.FunctionDefinition/contains@307::Invoke(System.String)
+FNDA:33,System.Boolean Studio.Graph.FunctionDefinition/contains@307::Invoke(System.String)
+DA:307,33
 FN:203,System.Boolean Studio.Graph.PortTypeModule::isRecordType(Studio.Graph.PortType)
-FNDA:0,System.Boolean Studio.Graph.PortTypeModule::isRecordType(Studio.Graph.PortType)
-DA:204,0
-DA:208,0
-DA:209,0
-BRDA:204,9,0,0
-BRDA:204,34,0,0
-BRDA:204,52,0,0
+FNDA:1,System.Boolean Studio.Graph.PortTypeModule::isRecordType(Studio.Graph.PortType)
+DA:204,1
+DA:209,1
+DA:210,0
+BRDA:204,9,0,1
+BRDA:204,34,0,1
+BRDA:204,52,0,1
 BRDA:204,70,0,0
-BRDA:204,34,1,0
-BRDA:204,52,1,0
-BRDA:204,70,1,0
 BRDA:204,88,0,0
+BRDA:204,34,1,1
+BRDA:204,52,1,1
+BRDA:204,70,1,1
+BRDA:204,88,1,1
+BRDA:204,106,0,1
 BRDA:204,9,1,0
-BRDA:204,88,1,0
-FN:211,Studio.Graph.PortType Studio.Graph.PortTypeModule::numericToImage(Studio.Graph.NumericType)
+BRDA:204,106,1,0
+FN:212,Studio.Graph.PortType Studio.Graph.PortTypeModule::numericToImage(Studio.Graph.NumericType)
 FNDA:0,Studio.Graph.PortType Studio.Graph.PortTypeModule::numericToImage(Studio.Graph.NumericType)
-DA:212,0
 DA:213,0
 DA:214,0
 DA:215,0
@@ -2385,60 +2386,61 @@ DA:221,0
 DA:222,0
 DA:223,0
 DA:224,0
-BRDA:212,7,0,0
-BRDA:212,7,1,0
-BRDA:212,7,2,0
-BRDA:212,7,3,0
-BRDA:212,7,4,0
-BRDA:212,7,5,0
-BRDA:212,7,6,0
-BRDA:212,7,7,0
-BRDA:212,7,8,0
-BRDA:212,7,9,0
-BRDA:212,7,10,0
-BRDA:212,7,11,0
-BRDA:212,7,12,0
-FN:226,System.Boolean Studio.Graph.PortTypeModule::canConnect(Studio.Graph.PortType,Studio.Graph.PortType)
-FNDA:4,System.Boolean Studio.Graph.PortTypeModule::canConnect(Studio.Graph.PortType,Studio.Graph.PortType)
-DA:227,4
-DA:229,1
-DA:230,0
-DA:231,1
+DA:225,0
+BRDA:213,7,0,0
+BRDA:213,7,1,0
+BRDA:213,7,2,0
+BRDA:213,7,3,0
+BRDA:213,7,4,0
+BRDA:213,7,5,0
+BRDA:213,7,6,0
+BRDA:213,7,7,0
+BRDA:213,7,8,0
+BRDA:213,7,9,0
+BRDA:213,7,10,0
+BRDA:213,7,11,0
+BRDA:213,7,12,0
+FN:227,System.Boolean Studio.Graph.PortTypeModule::canConnect(Studio.Graph.PortType,Studio.Graph.PortType)
+FNDA:5,System.Boolean Studio.Graph.PortTypeModule::canConnect(Studio.Graph.PortType,Studio.Graph.PortType)
+DA:228,5
+DA:230,1
+DA:231,2
 DA:232,1
 DA:233,1
-BRDA:227,19,0,1
-BRDA:227,19,2,1
-BRDA:227,19,3,1
-BRDA:227,19,4,1
-BRDA:227,19,6,1
-BRDA:227,59,4,0
-BRDA:227,121,0,0
-BRDA:227,19,1,2
-BRDA:230,173,4,0
-BRDA:230,237,0,0
-BRDA:230,254,0,0
-BRDA:230,173,1,2
-BRDA:230,291,1,1
-BRDA:227,19,5,1
-BRDA:227,59,5,1
-BRDA:230,173,5,1
-BRDA:230,139,0,0
-BRDA:230,291,0,1
-BRDA:230,308,0,1
-BRDA:227,59,0,1
-BRDA:227,59,1,1
-BRDA:227,59,2,1
-BRDA:227,59,3,1
-BRDA:227,59,6,1
-BRDA:227,121,1,1
-BRDA:230,139,1,1
-BRDA:230,173,0,1
-BRDA:230,173,2,1
-BRDA:230,173,3,1
-BRDA:230,173,6,1
-BRDA:230,237,1,1
-BRDA:230,254,1,1
-BRDA:230,308,1,1
+DA:234,1
+BRDA:228,19,0,2
+BRDA:228,19,2,2
+BRDA:228,19,3,2
+BRDA:228,19,4,2
+BRDA:228,19,6,2
+BRDA:228,59,4,1
+BRDA:228,121,0,1
+BRDA:228,19,1,2
+BRDA:231,173,4,0
+BRDA:231,237,0,0
+BRDA:231,254,0,0
+BRDA:231,173,1,2
+BRDA:231,291,1,1
+BRDA:228,19,5,1
+BRDA:228,59,5,1
+BRDA:231,173,5,1
+BRDA:231,139,0,1
+BRDA:231,291,0,1
+BRDA:231,308,0,1
+BRDA:228,59,0,1
+BRDA:228,59,1,1
+BRDA:228,59,2,1
+BRDA:228,59,3,1
+BRDA:228,59,6,1
+BRDA:228,121,1,1
+BRDA:231,139,1,1
+BRDA:231,173,0,1
+BRDA:231,173,2,1
+BRDA:231,173,3,1
+BRDA:231,173,6,1
+BRDA:231,237,1,1
+BRDA:231,254,1,1
+BRDA:231,308,1,1
 FN:151,System.String Studio.Graph.BasicTypeModule::toString(Studio.Graph.BasicType)
 FNDA:0,System.String Studio.Graph.BasicTypeModule::toString(Studio.Graph.BasicType)
 DA:152,0
@@ -2697,9 +2699,9 @@ DA:97,1
 DA:98,1
 DA:99,2
 LF:156
-LH:118
-BRF:170
-BRH:113
+LH:121
+BRF:172
+BRH:124
 FNF:18
-FNH:15
+FNH:16
 end_of_record

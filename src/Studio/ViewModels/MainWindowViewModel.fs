@@ -1132,11 +1132,20 @@ module private ChartNode =
         [ "Scatter"; "Line"; "Bar"; "Column"; "Area"; "Pie"; "Doughnut" ]
 
     let title (state: PipelineNodeState) =
-        state.Parameters
-        |> Seq.tryFind (fun parameter -> parameter.Key = "kind")
-        |> Option.map _.Value
-        |> Option.filter (fun value -> kindOptions |> List.contains value)
-        |> Option.defaultValue "Column"
+        let kind =
+            state.Parameters
+            |> Seq.tryFind (fun parameter -> parameter.Key = "kind")
+            |> Option.map _.Value
+            |> Option.filter (fun value -> kindOptions |> List.contains value)
+            |> Option.defaultValue "Column"
+
+        $"Chart: {kind}"
+
+module private PipelineNodeGeometry =
+    let defaultWidth = 110.
+    let defaultHeight = 48.
+    let pinPadding = 20.
+    let pinSpacing = 22.
 
 module private ShowImageNode =
     let colorMapOptions =
@@ -1381,8 +1390,6 @@ type PipelineNodeViewModel(
         || (state.Definition.Id = "CollapseComponentLabels" && parameter.Key = "translationTable")
 
     let computeNodeWidth () =
-        let minimumWidth = 110.
-
         let parameterPinCount =
             state.Parameters
             |> Seq.filter parameterPinIsVisible
@@ -1407,8 +1414,8 @@ type PipelineNodeViewModel(
             |> fun count -> if state.Definition.Id = "Tap" then max count 1 else count
 
         let horizontalPinCount = max topInputCount (max parameterPinCount bottomOutputCount)
-        let pinWidth = 20. + 22. * float (max 1 horizontalPinCount)
-        max minimumWidth pinWidth
+        let pinWidth = PipelineNodeGeometry.pinPadding + PipelineNodeGeometry.pinSpacing * float (max 1 horizontalPinCount)
+        max PipelineNodeGeometry.defaultWidth pinWidth
 
     let nodeWidth () = this.Width
 
@@ -1431,7 +1438,8 @@ type PipelineNodeViewModel(
 
         let portCount = max sideInputCount sideOutputCount
 
-        max 48. (20. + 22. * float (max 1 portCount))
+        let pinHeight = PipelineNodeGeometry.pinPadding + PipelineNodeGeometry.pinSpacing * float (max 1 portCount)
+        max PipelineNodeGeometry.defaultHeight pinHeight
 
     let pinPosition length index count =
         let n = float (index + 1)

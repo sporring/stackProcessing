@@ -2,10 +2,10 @@
   "version": 1,
   "nodes": [
     {
-      "id": "read",
+      "id": "node-1",
       "functionId": "Read",
-      "x": 40.0,
-      "y": 110.0,
+      "x": 167.81684751974626,
+      "y": 101.20265305234189,
       "parameters": [
         {
           "key": "availableMemory",
@@ -85,10 +85,10 @@
       ]
     },
     {
-      "id": "objects",
+      "id": "node-2",
       "functionId": "StreamConnectedObjects",
-      "x": 260.0,
-      "y": 110.0,
+      "x": 324.68035261824724,
+      "y": 101.20265305234189,
       "parameters": [
         {
           "key": "connectivity",
@@ -98,60 +98,60 @@
       ]
     },
     {
-      "id": "measure",
+      "id": "node-3",
       "functionId": "MeasureObjects",
-      "x": 500.0,
-      "y": 110.0,
+      "x": 483.4839872688218,
+      "y": 101.20265305234189,
       "parameters": []
     },
     {
-      "id": "stats",
+      "id": "node-4",
       "functionId": "ObjectSizeStats",
-      "x": 740.0,
-      "y": 40.0,
+      "x": 648.671354528043,
+      "y": 0,
       "parameters": []
     },
     {
-      "id": "expand",
+      "id": "node-5",
       "functionId": "Expand",
-      "x": 965.0,
-      "y": 40.0,
+      "x": 813.671354528043,
+      "y": 62.6671977895859,
       "parameters": []
     },
     {
-      "id": "print",
+      "id": "node-6",
       "functionId": "Print",
-      "x": 1190.0,
-      "y": 40.0,
+      "x": 813.671354528043,
+      "y": 149.20265305234187,
       "parameters": [
         {
           "key": "format",
-          "value": "Object size stats: count={count} mean={mean} variance={variance} min={minimum} max={maximum}",
+          "value": "Object size stats: count={Count} mean={Mean} variance={Variance} min={Minimum} max={Maximum}",
           "useInput": false
         },
         {
           "key": "input1",
-          "value": "count",
+          "value": "Count",
           "useInput": true
         },
         {
           "key": "input2",
-          "value": "mean",
+          "value": "Mean",
           "useInput": true
         },
         {
           "key": "input3",
-          "value": "variance",
+          "value": "Variance",
           "useInput": true
         },
         {
           "key": "input4",
-          "value": "minimum",
+          "value": "Minimum",
           "useInput": true
         },
         {
           "key": "input5",
-          "value": "maximum",
+          "value": "Maximum",
           "useInput": true
         },
         {
@@ -172,30 +172,30 @@
       ]
     },
     {
-      "id": "sizes",
+      "id": "node-7",
       "functionId": "ObjectSizes",
-      "x": 740.0,
-      "y": 210.0,
+      "x": 645.310171991744,
+      "y": 209.78339462401755,
       "parameters": []
     },
     {
-      "id": "histogram",
+      "id": "node-8",
       "functionId": "Histogram",
-      "x": 965.0,
-      "y": 210.0,
+      "x": 813.671354528043,
+      "y": 209.78339462401755,
       "parameters": [
         {
           "key": "binWidth",
-          "value": "100UL",
+          "value": "100",
           "useInput": false
         }
       ]
     },
     {
-      "id": "chart",
+      "id": "node-9",
       "functionId": "Chart",
-      "x": 1190.0,
-      "y": 210.0,
+      "x": 813.671354528043,
+      "y": 291.87150093463316,
       "parameters": [
         {
           "key": "kind",
@@ -227,98 +227,98 @@
   ],
   "edges": [
     {
-      "fromNode": "read",
+      "fromNode": "node-1",
       "fromKind": "dataOutput",
       "fromPort": 0,
-      "toNode": "objects",
+      "toNode": "node-2",
       "toKind": "dataInput",
       "toPort": 0
     },
     {
-      "fromNode": "objects",
+      "fromNode": "node-2",
       "fromKind": "dataOutput",
       "fromPort": 0,
-      "toNode": "measure",
+      "toNode": "node-3",
       "toKind": "dataInput",
       "toPort": 0
     },
     {
-      "fromNode": "measure",
+      "fromNode": "node-3",
       "fromKind": "dataOutput",
       "fromPort": 0,
-      "toNode": "stats",
+      "toNode": "node-4",
       "toKind": "dataInput",
       "toPort": 0
     },
     {
-      "fromNode": "stats",
+      "fromNode": "node-4",
       "fromKind": "reducerOutput",
       "fromPort": 0,
-      "toNode": "expand",
+      "toNode": "node-5",
       "toKind": "dataInput",
       "toPort": 0
     },
     {
-      "fromNode": "expand",
+      "fromNode": "node-5",
       "fromKind": "reducerOutput",
       "fromPort": 0,
-      "toNode": "print",
+      "toNode": "node-6",
       "toKind": "parameterInput",
       "toPort": 1
     },
     {
-      "fromNode": "expand",
+      "fromNode": "node-5",
       "fromKind": "reducerOutput",
       "fromPort": 1,
-      "toNode": "print",
+      "toNode": "node-6",
       "toKind": "parameterInput",
       "toPort": 2
     },
     {
-      "fromNode": "expand",
+      "fromNode": "node-5",
       "fromKind": "reducerOutput",
       "fromPort": 2,
-      "toNode": "print",
+      "toNode": "node-6",
       "toKind": "parameterInput",
       "toPort": 3
     },
     {
-      "fromNode": "expand",
+      "fromNode": "node-5",
       "fromKind": "reducerOutput",
       "fromPort": 3,
-      "toNode": "print",
+      "toNode": "node-6",
       "toKind": "parameterInput",
       "toPort": 4
     },
     {
-      "fromNode": "expand",
+      "fromNode": "node-5",
       "fromKind": "reducerOutput",
       "fromPort": 4,
-      "toNode": "print",
+      "toNode": "node-6",
       "toKind": "parameterInput",
       "toPort": 5
     },
     {
-      "fromNode": "measure",
+      "fromNode": "node-3",
       "fromKind": "dataOutput",
       "fromPort": 0,
-      "toNode": "sizes",
+      "toNode": "node-7",
       "toKind": "dataInput",
       "toPort": 0
     },
     {
-      "fromNode": "sizes",
+      "fromNode": "node-7",
       "fromKind": "dataOutput",
       "fromPort": 0,
-      "toNode": "histogram",
+      "toNode": "node-8",
       "toKind": "dataInput",
       "toPort": 0
     },
     {
-      "fromNode": "histogram",
+      "fromNode": "node-8",
       "fromKind": "reducerOutput",
       "fromPort": 0,
-      "toNode": "chart",
+      "toNode": "node-9",
       "toKind": "parameterInput",
       "toPort": 1
     }

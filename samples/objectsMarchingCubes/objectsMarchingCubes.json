@@ -1,0 +1,142 @@
+{
+  "version": 1,
+  "nodes": [
+    {
+      "id": "read",
+      "functionId": "Read",
+      "x": 80.0,
+      "y": 120.0,
+      "parameters": [
+        {
+          "key": "availableMemory",
+          "value": "2147483648UL",
+          "useInput": false
+        },
+        {
+          "key": "type",
+          "value": "UInt8",
+          "useInput": false
+        },
+        {
+          "key": "format",
+          "value": "Image stack",
+          "useInput": false
+        },
+        {
+          "key": "input",
+          "value": "../data/rotatingBoxes",
+          "useInput": false
+        },
+        {
+          "key": "suffix",
+          "value": ".tiff",
+          "useInput": false
+        },
+        {
+          "key": "slabDepth",
+          "value": "1",
+          "useInput": false
+        },
+        {
+          "key": "multiscaleIndex",
+          "value": "0",
+          "useInput": false
+        },
+        {
+          "key": "datasetIndex",
+          "value": "0",
+          "useInput": false
+        },
+        {
+          "key": "timepoint",
+          "value": "0",
+          "useInput": false
+        },
+        {
+          "key": "channel",
+          "value": "0",
+          "useInput": false
+        },
+        {
+          "key": "maxParallelChunks",
+          "value": "0",
+          "useInput": false
+        },
+        {
+          "key": "datasetPath",
+          "value": "/entry/data/data",
+          "useInput": false
+        },
+        {
+          "key": "frameAxis",
+          "value": "0",
+          "useInput": false
+        },
+        {
+          "key": "yAxis",
+          "value": "1",
+          "useInput": false
+        },
+        {
+          "key": "xAxis",
+          "value": "2",
+          "useInput": false
+        }
+      ]
+    },
+    {
+      "id": "marchingCubes",
+      "functionId": "MarchingCubes",
+      "x": 280.0,
+      "y": 120.0,
+      "parameters": [
+        {
+          "key": "type",
+          "value": "UInt8",
+          "useInput": false
+        },
+        {
+          "key": "surfaceValue",
+          "value": "0.5",
+          "useInput": false
+        }
+      ]
+    },
+    {
+      "id": "writeMesh",
+      "functionId": "WriteMesh",
+      "x": 520.0,
+      "y": 120.0,
+      "parameters": [
+        {
+          "key": "output",
+          "value": "../tmp/surface.obj",
+          "useInput": false
+        },
+        {
+          "key": "format",
+          "value": "auto",
+          "useInput": false
+        }
+      ]
+    }
+  ],
+  "edges": [
+    {
+      "fromNode": "read",
+      "fromKind": "dataOutput",
+      "fromPort": 0,
+      "toNode": "marchingCubes",
+      "toKind": "dataInput",
+      "toPort": 0
+    },
+    {
+      "fromNode": "marchingCubes",
+      "fromKind": "dataOutput",
+      "fromPort": 0,
+      "toNode": "writeMesh",
+      "toKind": "dataInput",
+      "toPort": 0
+    }
+  ]
+}

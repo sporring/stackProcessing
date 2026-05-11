@@ -35,6 +35,7 @@ let domainSuite =
             Expect.isTrue (PortType.canConnect Any (Scalar String)) "Any output should connect to concrete input."
             Expect.isTrue (PortType.canConnect (Image UInt8) (Image Number)) "Concrete image should connect to Number image input."
             Expect.isTrue (PortType.canConnect (Image Number) (Image Float64)) "Number image should connect to concrete image input."
+            Expect.isTrue (PortType.canConnect (Custom "ObjectSizeStats") (Custom "Record")) "Object-size statistics should connect to the generic Expand record input."
             Expect.isFalse (PortType.canConnect (Scalar String) (Scalar(BasicType.Numeric Float64))) "Different concrete scalar types should not connect."
 
         testCase "image file format table captures important pixel type restrictions" <| fun _ ->

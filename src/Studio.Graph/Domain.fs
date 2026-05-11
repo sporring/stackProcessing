@@ -204,6 +204,7 @@ module PortType =
         match portType with
         | Custom "Record"
         | Custom "ImageStats"
+        | Custom "ObjectSizeStats"
         | Custom "StackInfo"
         | Custom "ChunkInfo" -> true
         | _ -> false
