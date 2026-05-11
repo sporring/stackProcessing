@@ -97,7 +97,7 @@
         },
         {
           "key": "output",
-          "value": "../tmp/result",
+          "value": "../tmp/volume",
           "useInput": false
         },
         {

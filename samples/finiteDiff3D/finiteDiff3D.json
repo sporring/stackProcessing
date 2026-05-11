@@ -133,7 +133,7 @@
         },
         {
           "key": "output",
-          "value": "../tmp/result",
+          "value": "../tmp/finiteDiff3D",
           "useInput": false
         },
         {

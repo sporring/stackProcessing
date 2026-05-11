@@ -144,7 +144,7 @@
         },
         {
           "key": "output",
-          "value": "../tmp/result",
+          "value": "../tmp/multiplyConstant",
           "useInput": false
         },
         {

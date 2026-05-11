@@ -1130,18 +1130,15 @@ module private SerialTransformNode =
               Type = PortType.numericToImage selectedType }
 
         [ imagePort ],
-        [ imagePort
-          { Name = "SerialSliceManifest"
-            Type = PortType.Custom "SerialSliceManifest" } ]
+        [ { Name = $"{typeName} + transform"
+            Type = PortType.Tuple(imagePort.Type, PortType.Custom "SerialSliceManifest") } ]
 
     let applyPorts (state: PipelineNodeState) =
         let selectedType = selectedType state
         let typeName = NumericType.toString selectedType
 
-        [ { Name = typeName
-            Type = PortType.numericToImage selectedType }
-          { Name = "SerialSliceManifest"
-            Type = PortType.Custom "SerialSliceManifest" } ],
+        [ { Name = $"{typeName} + transform"
+            Type = PortType.Tuple(PortType.numericToImage selectedType, PortType.Custom "SerialSliceManifest") } ],
         [ { Name = typeName
             Type = PortType.numericToImage selectedType } ]
 
@@ -1149,10 +1146,8 @@ module private SerialTransformNode =
         let selectedType = selectedType state
         let typeName = NumericType.toString selectedType
 
-        [ { Name = typeName
-            Type = PortType.numericToImage selectedType }
-          { Name = "SerialSliceManifest"
-            Type = PortType.Custom "SerialSliceManifest" } ],
+        [ { Name = $"{typeName} + transform"
+            Type = PortType.Tuple(PortType.numericToImage selectedType, PortType.Custom "SerialSliceManifest") } ],
         [ { Name = "SerialVolumeGeometry"
             Type = PortType.Custom "SerialVolumeGeometry" } ]
 
@@ -2727,7 +2722,7 @@ type MainWindowViewModel() as this =
         let hasConstrainedConnection (node: PipelineNodeViewModel) =
             node.Pins
             |> Seq.exists (function
-                | :? PipelinePinViewModel as pin when pin.Kind = DataInput && pin.Port.Type <> PortType.Custom "SerialSliceManifest" ->
+                | :? PipelinePinViewModel as pin when pin.Kind = DataInput ->
                     drawing.Connectors
                     |> Seq.exists (fun connector -> Object.ReferenceEquals(connector.End, pin))
                 | :? PipelinePinViewModel as pin when pin.Kind = DataOutput ->

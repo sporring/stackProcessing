@@ -116,7 +116,7 @@
         },
         {
           "key": "output",
-          "value": "../tmp/result",
+          "value": "../tmp/threshold",
           "useInput": false
         },
         {

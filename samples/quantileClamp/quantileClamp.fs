@@ -1,0 +1,31 @@
+// Estimate robust intensity limits from a histogram, then stretch/clamp outliers for inspection.
+open StackProcessing
+
+[<EntryPoint>]
+let main args =
+    let availableMemory = 2UL * 1024UL * 1024UL * 1024UL
+    let src, args = commandLineSource availableMemory args
+
+    let input, output =
+        match args with
+        | [| input; output |] -> input, output
+        | [| input |] -> input, "../tmp/quantileClamp"
+        | _ -> "../data/volume", "../tmp/quantileClamp"
+
+    let histogram =
+        src
+        |> readRandom<float> 24u input ".tiff"
+        >=> imHistogramFixedBins 0.0 255.0 256u
+        |> drain
+
+    let limits = quantiles [0.01; 0.99] histogram
+
+    src
+    |> read<float> input ".tiff"
+    >=> intensityStretch<float> limits[0] limits[1] 0.0 255.0
+    >=> clamp<float> 0.0 255.0
+    >=> cast<float, uint8>
+    >=> write output ".tiff"
+    |> sink
+
+    0

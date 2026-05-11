@@ -9,9 +9,9 @@ let main arg =
     let src, arg = commandLineSource availableMemory arg
     let input,mask,output = 
         if arg.Length > 0 then
-            "../data/volume", "../data/rotatingBoxes", "../tmp/result"
+            "../data/volume", "../data/rotatingBoxes", "../tmp/multiplyMask"
         else
-            "../data/volume", "../data/rotatingBoxes", "../tmp/result"
+            "../data/volume", "../data/rotatingBoxes", "../tmp/multiplyMask"
 
     let imageMaker =
         src

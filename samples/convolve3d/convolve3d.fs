@@ -10,9 +10,9 @@ let main arg =
     let src, arg = commandLineSource availableMemory arg
     let input, output = 
         if arg.Length > 0 then
-            "../data/volume", "../tmp/result"
+            "../data/volume", "../tmp/convolve3d"
         else
-            "../data/volume", "../tmp/result"
+            "../data/volume", "../tmp/convolve3d"
 
     src
     |> read<float> input ".tiff"

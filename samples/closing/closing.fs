@@ -1,4 +1,4 @@
-// Compute a band-limited signed distance map from a binary stack.
+// Binary closing fills small background gaps in a 0/1 UInt8 mask.
 open StackProcessing
 
 [<EntryPoint>]
@@ -9,12 +9,12 @@ let main args =
     let input, output =
         match args with
         | [| input; output |] -> input, output
-        | [| input |] -> input, "../tmp/signedDistanceBand"
-        | _ -> "../data/rotatingBoxes", "../tmp/signedDistanceBand"
+        | [| input |] -> input, "../tmp/closing"
+        | _ -> "../data/rotatingBoxes", "../tmp/closing"
 
     src
     |> read<uint8> input ".tiff"
-    >=> signedDistanceBand 8u 4u
+    >=> closing 3u
     >=> write output ".tiff"
     |> sink
 

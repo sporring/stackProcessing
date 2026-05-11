@@ -113,8 +113,7 @@ let viewModelSuite =
                 graph
                     [ read; estimator; apply ]
                     [ edge "read" "dataOutput" 0 "estimator" "dataInput" 0
-                      edge "estimator" "dataOutput" 0 "apply" "dataInput" 0
-                      edge "estimator" "dataOutput" 1 "apply" "dataInput" 1 ])
+                      edge "estimator" "dataOutput" 0 "apply" "dataInput" 0 ])
 
             let nodesById =
                 pipelineNodes vm

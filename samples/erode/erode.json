@@ -27,7 +27,7 @@
         },
         {
           "key": "output",
-          "value": "../tmp/result",
+          "value": "../tmp/erode",
           "useInput": false
         },
         {

@@ -10,9 +10,9 @@ let main arg =
     let width, height, depth, output = 
         if arg.Length > 0 then
             let n = (int arg[0]) / 3 |> pown 2 |> uint 
-            n, n, n, "../tmp/result"
+            n, n, n, "../tmp/multiplyConstant"
         else
-            64u, 64u, 64u, "../tmp/result"
+            64u, 64u, 64u, "../tmp/multiplyConstant"
 
     let maskMaker = 
         src

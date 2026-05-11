@@ -25,7 +25,7 @@ let main arg =
     let chunkInfo = getChunkInfo output ".tiff"
     printfn $"Wrote chunks: chunks={chunkInfo.chunks} size={chunkInfo.size} componentType={chunkInfo.topLeftInfo.componentType}"
 
-    let output2 = input+"b"
+    let output2 = "../tmp/volume-copy"
     deleteIfExists output2
     src |> readSlab<uint8> output ".tiff"
     >=> write output2 ".tiff"

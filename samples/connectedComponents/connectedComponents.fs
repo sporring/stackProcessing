@@ -10,12 +10,12 @@ let main arg =
     let width, height, depth, input, output = 
         if arg.Length > 0 then
             let n = (int arg[0]) / 3 |> pown 2 |> uint 
-            n, n, n, "../data/rotatingBoxes", "../tmp/result"
+            n, n, n, "../data/rotatingBoxes", "../tmp/connectedComponents"
         else
-            64u, 64u, 64u, "../data/rotatingBoxes", "../tmp/result"
+            64u, 64u, 64u, "../data/rotatingBoxes", "../tmp/connectedComponents"
     let tmp = "../tmp/connectedComponents-labels"
     let suffix = ".tiff"
-    let tmpSuffix = ".mha"
+    let tmpSuffix = ".tiff"
 
     let wsz = (depth/8u)
 

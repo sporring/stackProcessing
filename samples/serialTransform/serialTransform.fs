@@ -1,4 +1,4 @@
-// Estimate and apply slice-wise affine transforms in one streaming pipeline.
+// Estimate a coarse output envelope, then estimate and apply slice-wise affine transforms.
 open StackProcessing
 
 [<EntryPoint>]
@@ -12,10 +12,17 @@ let main args =
         | [| input |] -> input, "../tmp/serialTransform"
         | _ -> "../data/volume", "../tmp/serialTransform"
 
+    let geometry =
+        src
+        |> readRange<float32> "0" 16 "end" input ".tiff"
+        >=> serialEstTrans<float32> 8 "dogAffine" 1.6 0.1
+        >=> serialEstBoundingBox<float32>
+        |> drain
+
     src
     |> read<float32> input ".tiff"
     >=> serialEstTrans<float32> 8 "dogAffine" 1.6 0.1
-    >=> serialApplyTrans<float32> 0.0 None
+    >=> serialApplyTrans<float32> 0.0 (Some geometry)
     >=> cast<float32, uint8>
     >=> write output ".tiff"
     |> sink

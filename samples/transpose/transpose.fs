@@ -9,9 +9,9 @@ let main arg =
     let src, arg = commandLineSource availableMemory arg
     let input,output = 
         if arg.Length > 0 then
-            "../data/volume", "../tmp/result"
+            "../data/volume", "../tmp/transpose"
         else
-            "../data/volume", "../tmp/result"
+            "../data/volume", "../tmp/transpose"
 
     (*
     src
@@ -52,7 +52,7 @@ let main arg =
     |> sink
 *)
 
-    let fname021021 = input+"b"
+    let fname021021 = output + "021021"
     deleteIfExists fname021021
     src
     |> read<uint8> fname021 ".tiff"

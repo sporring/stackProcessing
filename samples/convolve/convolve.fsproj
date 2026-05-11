@@ -5,5 +5,5 @@
   <ItemGroup Condition="$([MSBuild]::IsOSPlatform('Linux'))"><None Include="../../lib/libSimpleITKCSharpNative.so" CopyToOutputDirectory="PreserveNewest" /></ItemGroup>
   <ItemGroup Condition="$([MSBuild]::IsOSPlatform('OSX'))"><None Include="../../lib/libSimpleITKCSharpNative.dylib" CopyToOutputDirectory="PreserveNewest" /></ItemGroup>
   <ItemGroup><ProjectReference Include="../../src/StackProcessing/StackProcessing.fsproj" /></ItemGroup>
-  <ItemGroup><Compile Include="meshMeasurementLearning.fs" /></ItemGroup>
+  <ItemGroup><Compile Include="convolve.fs" /></ItemGroup>
 </Project>

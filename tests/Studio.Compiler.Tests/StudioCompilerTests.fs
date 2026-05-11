@@ -285,7 +285,6 @@ let generatorSuite =
                     [ read; manifest; apply; write ]
                     [ edge "read" "output" 0 "manifest" "input" 0
                       edge "manifest" "output" 0 "apply" "input" 0
-                      edge "manifest" "output" 1 "apply" "input" 1
                       edge "apply" "output" 0 "write" "input" 0 ]
                 |> PipelineCodeGenerator.generateSavedGraph
 
@@ -300,6 +299,19 @@ let generatorSuite =
                       p "type" "Float64" false
                       p "input" "sections" false
                       p "suffix" ".tiff" false ]
+
+            let proxyRead =
+                node "proxyRead" "ReadRange"
+                    [ p "availableMemory" "4096" false
+                      p "type" "Float64" false
+                      p "first" "0" false
+                      p "step" "16" false
+                      p "last" "end" false
+                      p "input" "sections" false
+                      p "suffix" ".tiff" false ]
+
+            let proxyManifest =
+                node "proxyManifest" "SerialEstTrans" (serialEstTransParameters "Float64")
 
             let manifest =
                 node "manifest" "SerialEstTrans" (serialEstTransParameters "Float64")
@@ -321,12 +333,11 @@ let generatorSuite =
 
             let code =
                 graph
-                    [ read; manifest; bounds; apply; write ]
-                    [ edge "read" "output" 0 "manifest" "input" 0
-                      edge "manifest" "output" 0 "bounds" "input" 0
-                      edge "manifest" "output" 1 "bounds" "input" 1
+                    [ read; proxyRead; proxyManifest; manifest; bounds; apply; write ]
+                    [ edge "proxyRead" "output" 0 "proxyManifest" "input" 0
+                      edge "proxyManifest" "output" 0 "bounds" "input" 0
+                      edge "read" "output" 0 "manifest" "input" 0
                       edge "manifest" "output" 0 "apply" "input" 0
-                      edge "manifest" "output" 1 "apply" "input" 1
                       edge "bounds" "reducerOutput" 0 "apply" "parameterInput" 2
                       edge "apply" "output" 0 "write" "input" 0 ]
                 |> PipelineCodeGenerator.generateSavedGraph
@@ -334,6 +345,38 @@ let generatorSuite =
             Expect.stringContains code "let SerialVolumeGeometry0 =" "Linked serial bounding box should be drained into a geometry binding."
             Expect.stringContains code ">=> serialEstBoundingBox<float>" "SerialEstBoundingBox should lower to the Core reducer."
             Expect.stringContains code ">=> serialApplyTrans<float> 0.0 (Some SerialVolumeGeometry0)" "SerialApplyTrans should receive the linked geometry binding."
+
+        testCase "serial bounding box rejects reducer parameter fed from the same streaming branch" <| fun _ ->
+            let read =
+                node "read" "Read"
+                    [ p "availableMemory" "4096" false
+                      p "type" "Float64" false
+                      p "input" "sections" false
+                      p "suffix" ".tiff" false ]
+
+            let manifest =
+                node "manifest" "SerialEstTrans" (serialEstTransParameters "Float64")
+
+            let bounds =
+                node "bounds" "SerialEstBoundingBox"
+                    [ p "type" "Float64" false ]
+
+            let apply =
+                node "apply" "SerialApplyTrans"
+                    [ p "type" "Float64" false
+                      p "background" "0.0" false
+                      p "geometry" "None" true ]
+
+            let code =
+                graph
+                    [ read; manifest; bounds; apply ]
+                    [ edge "read" "output" 0 "manifest" "input" 0
+                      edge "manifest" "output" 0 "bounds" "input" 0
+                      edge "manifest" "output" 0 "apply" "input" 0
+                      edge "bounds" "reducerOutput" 0 "apply" "parameterInput" 2 ]
+                |> PipelineCodeGenerator.generateSavedGraph
+
+            Expect.stringStarts code "// Cannot generate F#:" "Reducer parameter loops on the same streaming branch should be rejected."
 
         testCase "serial transform compiler infers image type from connected stream when saved box type is stale" <| fun _ ->
             let read =
@@ -361,7 +404,6 @@ let generatorSuite =
                     [ read; manifest; apply; write ]
                     [ edge "read" "output" 0 "manifest" "input" 0
                       edge "manifest" "output" 0 "apply" "input" 0
-                      edge "manifest" "output" 1 "apply" "input" 1
                       edge "apply" "output" 0 "write" "input" 0 ]
                 |> PipelineCodeGenerator.generateSavedGraph
 

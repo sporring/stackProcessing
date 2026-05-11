@@ -248,8 +248,7 @@ let rec private sourceFor caseId portType =
           Edges =
             image.Edges
             @ [ edge image.NodeId image.Kind image.Port manifest.Id "input" 0
-                edge manifest.Id "output" 0 bounds.Id "input" 0
-                edge manifest.Id "output" 1 bounds.Id "input" 1 ]
+                edge manifest.Id "output" 0 bounds.Id "input" 0 ]
           NodeId = bounds.Id
           Kind = "reducerOutput"
           Port = 0 }
@@ -309,6 +308,21 @@ let rec private sourceFor caseId portType =
         { Nodes = image.Nodes @ [ labels ]
           Edges = image.Edges @ [ edge image.NodeId image.Kind image.Port labels.Id "input" 0 ]
           NodeId = labels.Id
+          Kind = "output"
+          Port = 0 }
+    | PortType.Tuple (PortType.Image _, PortType.Custom "SerialSliceManifest") ->
+        let image = imageSource $"{caseId}_serial_image" NumericType.Float64
+        let manifest =
+            node $"source_{caseId}_serial" "SerialEstTrans"
+                [ p "type" "Float64" false
+                  p "searchRadius" "4" false
+                  p "method" "dogAffine" false
+                  p "scale" "1.6" false
+                  p "pixelFraction" "0.1" false ]
+
+        { Nodes = image.Nodes @ [ manifest ]
+          Edges = image.Edges @ [ edge image.NodeId image.Kind image.Port manifest.Id "input" 0 ]
+          NodeId = manifest.Id
           Kind = "output"
           Port = 0 }
     | PortType.Any ->
@@ -419,6 +433,11 @@ let private sinkFor caseId functionId portType =
           node $"sink_{caseId}_print" "Print" [ p "format" "{input1}" false; p "input1" "" true ] ],
         [ edge $"target_{caseId}" targetKind 0 $"sink_{caseId}_expand" "input" 0
           edge $"sink_{caseId}_expand" "reducerOutput" 1 $"sink_{caseId}_print" "parameterInput" 1 ]
+    | PortType.Tuple (PortType.Image _, PortType.Custom "SerialSliceManifest") ->
+        [ node $"sink_{caseId}_apply" "SerialApplyTrans" [ p "type" "Float64" false; p "background" "0.0" false; p "geometry" "None" false ]
+          node $"sink_{caseId}_write" "Write" [ p "output" "any" false; p "suffix" ".tiff" false ] ],
+        [ edge $"target_{caseId}" targetKind 0 $"sink_{caseId}_apply" "input" 0
+          edge $"sink_{caseId}_apply" "output" 0 $"sink_{caseId}_write" "input" 0 ]
     | PortType.Tuple _ ->
         [ node $"sink_{caseId}_table" "ComponentTranslationTable" [ p "windowSize" "3" false ] ],
         [ edge $"target_{caseId}" targetKind 0 $"sink_{caseId}_table" "input" 0 ]

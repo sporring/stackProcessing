@@ -9,9 +9,9 @@ let main arg =
     let src, arg = commandLineSource availableMemory arg
     let input,output = 
         if arg.Length > 0 then
-            "../data/volume","../tmp/result"
+            "../data/volume","../tmp/normalize"
         else
-            "../data/volume","../tmp/result"
+            "../data/volume","../tmp/normalize"
 
     let Float640 = 255.0
     let ImageStats0 =

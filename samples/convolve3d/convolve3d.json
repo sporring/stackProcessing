@@ -143,7 +143,7 @@
         },
         {
           "key": "output",
-          "value": "../tmp/result",
+          "value": "../tmp/convolve3d",
           "useInput": false
         },
         {

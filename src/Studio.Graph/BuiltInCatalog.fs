@@ -873,9 +873,7 @@ module BuiltInCatalog =
           Description = serialSectionsDescription + "\n\nserialEstTrans supports three methods. siftAffine detects 2D Difference-of-Gaussian/SIFT-style keypoints, builds orientation-histogram descriptors, matches descriptors with the closest/next-closest ratio test, filters matches with RANSAC, and accumulates affine transforms from the first slice. dogAffine uses Difference-of-Gaussian keypoint locations without descriptors, displacement voting, and RANSAC affine consensus. SSDAffine uses sampled sum-of-squared-differences image matching to estimate affine transforms from a fraction of the pixels. Scale is interpreted as feature scale for dogAffine and siftAffine; for SSDAffine it is a coarse resolution factor used for a faster smoothed/downsampled estimate before full-resolution refinement. Search radius is the maximum expected point displacement in pixels; it limits matching and SSD initialization, not the full affine scale/shear/rotation."
           Aliases = [ "serial"; "slice"; "slicewise"; "manifest"; "registration"; "translation"; "alignment"; "sift"; "keypoint"; "DoG" ]
           Inputs = [ makePort "Number" imageAny ]
-          Outputs =
-              [ makePort "Number" imageAny
-                makePort "SerialSliceManifest" serialSliceManifest ]
+          Outputs = [ makePort "Image + transform" serialTransPair ]
           Parameters =
               [ makeParameter "type" "Type" "Float64" BasicType.String
                 makeParameter "method" "Method" "dogAffine" BasicType.String
@@ -889,9 +887,7 @@ module BuiltInCatalog =
           Summary = "Apply slicewise serial-section transforms."
           Description = serialSectionsDescription + "\n\nBy default serialApplyTrans samples each transformed slice on the original slice canvas. Connect serialEstBoundingBox to the Geometry parameter to sample on an expanded canvas that contains all deformed slice boundaries."
           Aliases = [ "serial"; "slice"; "slicewise"; "manifest"; "transform"; "registration"; "apply" ]
-          Inputs =
-              [ makePort "Number" imageAny
-                makePort "SerialSliceManifest" serialSliceManifest ]
+          Inputs = [ makePort "Image + transform" serialTransPair ]
           Outputs = [ makePort "Float64" imageFloat64 ]
           Parameters =
               [ makeParameter "type" "Type" "Float64" BasicType.String
@@ -904,9 +900,7 @@ module BuiltInCatalog =
           Summary = "Estimate an output canvas containing transformed serial-section slices."
           Description = serialSectionsDescription + "\n\nConsumes the streamed image/manifest pairs from serialEstTrans, follows the transformed slice corners, and reduces them to a SerialVolumeGeometry value. Connect this value to serialApplyTrans's Geometry parameter to sample transformed slices on a canvas where all deformed boundaries stay inside."
           Aliases = [ "serial"; "slice"; "slicewise"; "manifest"; "registration"; "bounding"; "box"; "geometry"; "canvas" ]
-          Inputs =
-              [ makePort "Number" imageAny
-                makePort "SerialSliceManifest" serialSliceManifest ]
+          Inputs = [ makePort "Image + transform" serialTransPair ]
           Outputs = [ makePort "SerialVolumeGeometry" serialVolumeGeometry ]
           Parameters =
               [ makeParameter "type" "Type" "Float64" BasicType.String ] }

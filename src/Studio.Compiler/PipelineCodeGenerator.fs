@@ -707,7 +707,7 @@ module PipelineCodeGenerator =
                     |> Map.tryFind edge.FromNode
                     |> Option.bind (fun sourceNode ->
                         match sourceNode.FunctionId, edge.FromPort with
-                        | "SerialEstTrans", (0 | 1) ->
+                        | "SerialEstTrans", 0 ->
                             inferredImagePixelType visited sourceNode 0
                         | "Cast", 0 ->
                             Some(pixelTypeNameFromParameter "targetType" "Float64" sourceNode)
@@ -2056,6 +2056,64 @@ module PipelineCodeGenerator =
                       ToKind = "dataInput"
                       ToPort = 0 }
 
+        let validationError =
+            let isReducerOutputNode (node: SavedNode) =
+                isSingleValueReducerNode node
+                || isTranslationTableNode node
+                || isHistogramDataNode node
+                || isQuantilesNode node
+                || isSerialVolumeGeometryNode node
+                || node.FunctionId = "ComputeStats"
+                || node.FunctionId = "ObjectSizeStats"
+
+            let rec upstreamDataNodes visited nodeId =
+                if visited |> Set.contains nodeId then
+                    Set.empty
+                else
+                    let visited = visited |> Set.add nodeId
+
+                    dataEdges
+                    |> Array.filter (fun edge -> edge.ToNode = nodeId)
+                    |> Array.map (fun edge ->
+                        Set.add edge.FromNode (upstreamDataNodes visited edge.FromNode))
+                    |> fun sets -> if sets.Length = 0 then Set.empty else Set.unionMany sets
+
+            let rec forwardDataNodes visited nodeId =
+                if visited |> Set.contains nodeId then
+                    Set.empty
+                else
+                    let visited = visited |> Set.add nodeId
+
+                    dataEdges
+                    |> Array.filter (fun edge -> edge.FromNode = nodeId)
+                    |> Array.map (fun edge ->
+                        Set.add edge.ToNode (forwardDataNodes visited edge.ToNode))
+                    |> fun sets -> if sets.Length = 0 then Set.empty else Set.unionMany sets
+
+            graph.Edges
+            |> Array.tryPick (fun edge ->
+                if edge.FromKind = "reducerOutput" && edge.ToKind = "parameterInput" then
+                    match nodesById |> Map.tryFind edge.FromNode, nodesById |> Map.tryFind edge.ToNode with
+                    | Some reducerNode, Some targetNode when isReducerOutputNode reducerNode ->
+                        let reducerInputs =
+                            upstreamDataNodes Set.empty reducerNode.Id
+                            |> Set.filter (fun upstreamId ->
+                                dataEdges
+                                |> Array.exists (fun dataEdge -> dataEdge.ToNode = upstreamId))
+                        let targetDependsOnReducerInput =
+                            reducerInputs
+                            |> Set.exists (fun upstreamId ->
+                                forwardDataNodes Set.empty upstreamId
+                                |> Set.contains targetNode.Id)
+
+                        if targetDependsOnReducerInput then
+                            Some $"reducer '{reducerNode.FunctionId}' feeds a parameter on '{targetNode.FunctionId}' while both depend on the same streaming data path. Use a separate source/proxy branch for the reducer."
+                        else
+                            None
+                    | _ -> None
+                else
+                    None)
+
         let stageCall (node: SavedNode) =
             let line = savedElementLine graph nodesById scalarNamesByNodeId statsNamesByNodeId translationTableNamesByNodeId histogramNamesByNodeId quantileNamesByNodeId stackInfoNamesByNodeId chunkInfoNamesByNodeId serialGeometryNamesByNodeId node
 
@@ -2078,7 +2136,7 @@ module PipelineCodeGenerator =
                     |> Map.tryFind edge.FromNode
                     |> Option.bind (fun sourceNode ->
                         match sourceNode.FunctionId, edge.FromPort with
-                        | "SerialEstTrans", (0 | 1) ->
+                        | "SerialEstTrans", 0 ->
                             inferredImagePixelType visited sourceNode 0
                         | "Cast", 0 ->
                             Some(pixelTypeNameFromParameter "targetType" "Float64" sourceNode)
@@ -2115,16 +2173,6 @@ module PipelineCodeGenerator =
                                 $"{upstreamExpression}{newLine}>=> selectGroupedOutput ({components} + 1u) {edge.FromPort}u"
                             elif upstream.FunctionId = "AffineRegistration" && edge.FromPort >= 0 && edge.FromPort <= 1 then
                                 $"{upstreamExpression}{newLine}>=> selectGroupedValueOutput 2u {edge.FromPort}u"
-                            elif upstream.FunctionId = "SerialEstTrans" && edge.FromPort = 0 then
-                                let pixelType =
-                                    inferredImagePixelType Set.empty upstream 0
-                                    |> Option.defaultValue (pixelTypeNameFromParameter "type" "Float64" upstream)
-                                $"{upstreamExpression}{newLine}>=> serialTransImage<{pixelType}>"
-                            elif upstream.FunctionId = "SerialEstTrans" && edge.FromPort = 1 then
-                                let pixelType =
-                                    inferredImagePixelType Set.empty upstream 0
-                                    |> Option.defaultValue (pixelTypeNameFromParameter "type" "Float64" upstream)
-                                $"{upstreamExpression}{newLine}>=> serialTransManifest<{pixelType}>"
                             elif upstream.FunctionId = "EstimateHistogram" && edge.FromPort = 0 then
                                 $"{upstreamExpression}{newLine}>=> histogramEstimateMap"
                             else
@@ -2183,27 +2231,6 @@ module PipelineCodeGenerator =
                     | _ -> None
 
                 match node.FunctionId with
-                | "SerialApplyTrans"
-                | "SerialEstBoundingBox" ->
-                    match incomingDataEdge node.Id 0, incomingDataEdge node.Id 1, stageCall node with
-                    | Some imageEdge, Some manifestEdge, Some stage
-                        when imageEdge.FromNode = manifestEdge.FromNode
-                             && imageEdge.FromKind = manifestEdge.FromKind
-                             && imageEdge.FromPort = 0
-                             && manifestEdge.FromPort = 1 ->
-                        match nodesById |> Map.tryFind imageEdge.FromNode with
-                        | Some upstream when upstream.FunctionId = "SerialEstTrans" ->
-                            let input = pipelineExpression visited upstream
-                            $"{input}{newLine}>=> {stage}"
-                        | _ ->
-                            let left = inputExpression 0 |> parenthesizeBlock
-                            let right = inputExpression 1 |> parenthesizeBlock
-                            $"({newLine}{indentBlock 4 left},{newLine}{indentBlock 4 right}{newLine}){newLine}||> zip{newLine}>=> {stage}"
-                    | _ ->
-                        let stage = stageCall node |> Option.get
-                        let left = inputExpression 0 |> parenthesizeBlock
-                        let right = inputExpression 1 |> parenthesizeBlock
-                        $"({newLine}{indentBlock 4 left},{newLine}{indentBlock 4 right}{newLine}){newLine}||> zip{newLine}>=> {stage}"
                 | id when pairStageFunctionName node |> Option.isSome ->
                     match sharedFanOutExpression () with
                     | Some expression ->
@@ -2730,4 +2757,6 @@ module PipelineCodeGenerator =
         appendBlock (postBindings |> Array.map _.Text)
         appendBlock (postTerminals |> Array.map _.Text)
 
-        builder.ToString().TrimEnd()
+        match validationError with
+        | Some message -> $"// Cannot generate F#: {message}"
+        | None -> builder.ToString().TrimEnd()

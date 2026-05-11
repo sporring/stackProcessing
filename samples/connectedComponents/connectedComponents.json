@@ -133,7 +133,7 @@
         },
         {
           "key": "suffix",
-          "value": ".mha",
+          "value": ".tiff",
           "useInput": false
         },
         {
@@ -184,7 +184,7 @@
         },
         {
           "key": "suffix",
-          "value": ".mha",
+          "value": ".tiff",
           "useInput": false
         },
         {
@@ -311,7 +311,7 @@
         },
         {
           "key": "output",
-          "value": "../tmp/result",
+          "value": "../tmp/connectedComponents",
           "useInput": true
         },
         {
@@ -417,7 +417,7 @@
         },
         {
           "key": "value",
-          "value": "../tmp/result",
+          "value": "../tmp/connectedComponents",
           "useInput": false
         }
       ]

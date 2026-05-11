@@ -14,7 +14,7 @@
         },
         {
           "key": "output",
-          "value": "../tmp/result",
+          "value": "../tmp/normalize",
           "useInput": false
         },
         {

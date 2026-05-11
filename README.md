@@ -14,10 +14,10 @@ open StackProcessing
 let availableMemory = 2UL * 1024UL * 1024UL * 1024UL
 
 source availableMemory
-|> read<float> "image18" ".tiff"
+|> read<float> "../data/volume" ".tiff"
 >=> smoothWGauss 1.0 None None (Some 15u)
 >=> cast<float,uint8>
->=> write "result18" ".tiff"
+>=> write "../tmp/smoothedVolume" ".tiff"
 |> sink
 ```
 
@@ -39,15 +39,48 @@ dotnet run --project src/Studio/Studio.fsproj
 The samples are ordinary F# console projects. For example:
 
 ```bash
-cd samples/copy
-dotnet run -- 18
-dotnet run -- -d 1 18
+dotnet run --project samples/copy/copy.fsproj
+dotnet run --project samples/copy/copy.fsproj -- -d 1
 ```
 
 The optional `-d` flag enables debug output. Level `1` reports read and write
 progress only. Level `2` adds plan, stage, and optimization summaries. Level
 `3` adds process RSS measurements. Level `4` is the most intrusive diagnostic
 level and disables optimization choices that would hide internal structure.
+
+## Samples
+
+The `samples/` tree is an illustrative library and a smoke-test collection.
+Most sample folders contain both a compact F# program and the matching Studio
+JSON graph. The F# files show the public DSL directly; the JSON files show the
+same workflow as visual boxes.
+
+The samples follow a common convention:
+
+* samples with file inputs read from `../data/`; synthetic-source samples may
+  have no input file,
+* generated images, meshes, and temporary artifacts go to `../tmp/`,
+* image outputs prefer TIFF stacks when that makes visual inspection easy;
+  chunk-writing examples may use chunk-oriented formats such as `.mha`,
+* helper functions are kept to a minimum so the sample reads like a pipeline.
+
+Examples worth starting with:
+
+| Sample | Demonstrates |
+| ------ | ------------ |
+| `objectsSizeHistogram` | streaming connected objects, object measurements, reducer branches, histogram, and chart output |
+| `objectsMarchingCubes` | streaming object surfaces and mesh writing |
+| `structureTensor` | vector-image output from structure tensor, component range selection, and color conversion |
+| `sumProjection` | range reads and projection reducers |
+| `closing` | binary closing on a 0/1 UInt8 mask |
+| `convolve` | a custom 3D convolution kernel and boundary/window settings |
+| `quantileClamp` | histogram sampling, quantiles, intensity stretch, and outlier clamping |
+| `binaryMorphology` / `grayscaleMorphology` | morphology families with small inspectable pipelines |
+| `imageFilter`, `noiseVariants`, `keypoint`, `meshMeasurement` | focused tours through related Studio boxes |
+
+These samples are also useful when adding or changing Studio boxes:
+each exposed box should ideally appear in at least one sample graph so that the
+graph-to-DSL path stays easy to inspect.
 
 ## Projects
 
@@ -160,7 +193,7 @@ generated code uses the connected value.
 
 | Category | Examples |
 | -------- | -------- |
-| Sources / Sinks | `read`, `readVolume`, `readRandom`, `readPointSet`, `zero`, coordinate images, noise sources, `write`, `writeVolume`, `writeZarr`, `writeCSV`, `writeMesh`, `scalar`, `getStackInfo` |
+| Sources / Sinks | `read`, `readRandom`, `readRange`, `readSlab`, `readPointSet`, `zero`, coordinate images, noise sources, `write`, `writeChunks`, `writeCSV`, `writeMesh`, `scalar`, read/write info outputs |
 | Arithmetic | `scalarOp`, `imageOpScalar`, `scalarOpImage`, `imageOpImage`, `f(I)`, `f(a)` |
 | Filters | `smoothWGauss`, `smoothWMedian`, `smoothWBilateral`, `finiteDiff`, `gradient`, `structureTensor`, `FFT`, `invFFT`, `shiftFFT` |
 | Segmentation | `threshold`, morphology, connected-component stages, streaming objects |
@@ -500,7 +533,7 @@ Typical sinks:
 ```fsharp
 write outputDir suffix
 writeVolume outputFile
-writeInSlabs outputDir suffix chunkX chunkY chunkZ
+writeChunks outputDir suffix chunkX chunkY chunkZ
 writeZarr outputDir arrayPath chunkX chunkY chunkZ
 writeNexus outputFile datasetPath chunkX chunkY chunkZ
 writePointSet outputCsv
@@ -517,11 +550,12 @@ drain
 such as write-through processing, where a value is written and still passed
 downstream.
 
-`readVolume` and `writeVolume` are streaming volume-file operations. The TIFF
-path reads and writes multipage TIFFs page by page, so converting a volume file
-to ordinary slice files does not require materializing the full volume first.
-Zarr and NeXus/HDF5 accessors expose chunk/slab-oriented paths for native array
-stores.
+In Studio, `read`, `readRandom`, `readRange`, and `readSlab` expose a Format
+selector for image stacks, volume files, OME-Zarr, and NeXus/HDF5 where the
+format supports the requested access pattern. Likewise, Studio presents a
+single `write` box for ordinary stack, volume, Zarr, and NeXus outputs. The
+lower-level DSL functions remain available for explicit F# code. Zarr and
+NeXus/HDF5 accessors expose chunk/slab-oriented paths for native array stores.
 
 ### Image Stages
 
@@ -552,7 +586,7 @@ whole-stack normalization, are not part of the streaming DSL surface.
 
 | Area | DSL functions |
 | ---- | ------------- |
-| IO, creation, and coordinates | `read`, `readVolume`, `readRandom`, `readRange`, `readSlab`, `readZarrSlab`, `readNexusSlab`, `readPointSet`, `write`, `writeVolume`, `writeZarr`, `writeNexus`, `writePointSet`, `writeMatrix`, `writeCSVHistogram`, `writeMesh`, `zero`, `empty`, `coordinateX`, `coordinateY`, `coordinateZ`, `createByEuler2DTransform` |
+| IO, creation, and coordinates | `read`, `readVolume`, `readRandom`, `readRange`, `readSlab`, `readZarrSlab`, `readNexusSlab`, `readPointSet`, `write`, `writeVolume`, `writeChunks`, `writeZarr`, `writeNexus`, `writePointSet`, `writeMatrix`, `writeCSVHistogram`, `writeMesh`, `zero`, `empty`, `coordinateX`, `coordinateY`, `coordinateZ`, `createByEuler2DTransform` |
 | Type conversion and identity | `cast`, `identity`, `selectGroupedOutput`, `selectGroupedValueOutput` |
 | Arithmetic | `add`, `sub`, `mul`, `div`, `addPair`, `subPair`, `mulPair`, `divPair`, `maxOfPair`, `minOfPair` |
 | Scalar-image arithmetic | `scalarAddImage`, `imageAddScalar`, `scalarSubImage`, `imageSubScalar`, `scalarMulImage`, `imageMulScalar`, `scalarDivImage`, `imageDivScalar` |
@@ -570,7 +604,7 @@ whole-stack normalization, are not part of the streaming DSL surface.
 | Distance, surfaces, and features | `signedDistanceBand`, `marchingCubes`, `surfaceArea`, `dogKeypoints`, `logBlobKeypoints`, `hessianKeypoints`, `harris3DKeypoints`, `forstner3DKeypoints`, `phaseCongruencyKeypoints`, `siftKeypoints` |
 | Point sets, matrices, and registration | `readPointSet`, `writePointSet`, `vectorizeMatrix`, `unvectorizeMatrix`, `pointPairDistances`, `earthMoversDistance`, `transformPointSet`, `inverseAffine`, `affineToMatrix`, `matrixToAffine`, `affineRegistration`, `affineRegistrationMatrices` |
 | Manifests and stitching | `identityImageSetManifest`, `createImageSetManifest`, `imageSetGrid`, `imageSetGridIndexTransform`, `composeImageSetTransforms`, `updateMovingImageSetItemTransformFromRegistration`, manifest item constructors, `readImageSetManifest`, `writeImageSetManifest`, `createStitchPlan`, `stitchManifestImages` |
-| Bias and serial sections | `fitBiasModel`, `fitBiasModelMasked`, `correctBias`, `correctBiasMasked`, `serialIdentityManifest`, `serialPolynomialBiasCorrect`, `serialEstTrans`, `serialApplyTrans`, `serialApplyManifestInBoundingBox` |
+| Bias and serial sections | `fitBiasModel`, `fitBiasModelMasked`, `correctBias`, `correctBiasMasked`, `serialIdentityManifest`, `serialPolynomialBiasCorrect`, `serialEstTrans`, `serialEstBoundingBox`, `serialApplyTrans`, `serialApplyManifestInBoundingBox` |
 | Reducers and summaries | `computeStats`, `histogram`, `histogramEstimate`, `estimateHistogram`, `histogramEstimateMap`, `histogramEqualization`, `quantiles`, `otsuThresholdFromHistogram`, `momentsThresholdFromHistogram`, `sumProjection`, `volume` |
 | Visualization and diagnostics | `show`, `plot`, `print`, `tap`, `tapIt` |
 
