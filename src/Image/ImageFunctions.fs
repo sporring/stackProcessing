@@ -1581,13 +1581,16 @@ let smoothVectorElements3D (sigma: float) (img: Image<float list>) : Image<float
         let roundFloatToUint v = uint (v + 0.5)
         let kernelSize = max 1u (4.0 * sigma + 1.0 |> roundFloatToUint)
         let components = img.toImageList()
+        // Reuse the same Gaussian kernel for every vector component; constructing it per component is avoidable overhead.
+        let kern = gauss 3u sigma (Some kernelSize)
         let smoothed =
             components
             |> List.map (fun elementImage ->
-                discreteGaussian 3u sigma (Some kernelSize) None None elementImage)
+                convolve None None elementImage kern)
         try
             Image<float>.ofImageList smoothed
         finally
+            kern.decRefCount()
             components |> List.iter (fun elementImage -> elementImage.decRefCount())
             smoothed |> List.iter (fun elementImage -> elementImage.decRefCount())
 

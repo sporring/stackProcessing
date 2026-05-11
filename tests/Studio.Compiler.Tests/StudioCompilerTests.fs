@@ -448,6 +448,7 @@ let generatorSuite =
                 node "read" "ReadRange"
                     [ p "availableMemory" "1073741824" false
                       p "type" "UInt16" false
+                      p "format" "Image stack" false
                       p "first" "1" false
                       p "step" "2" false
                       p "last" "end-1" false
@@ -464,6 +465,55 @@ let generatorSuite =
                 |> PipelineCodeGenerator.generateSavedGraph
 
             Expect.stringContains code "|> readRange<uint16> \"1\" 2 \"end-1\" \"input\" \".tif\"" "ReadRange should generate a typed clamped range reader."
+
+        testCase "readRange supports volume, zarr, and nexus formats" <| fun _ ->
+            let volume =
+                node "volume" "ReadRange"
+                    [ p "availableMemory" "4096" false
+                      p "type" "Float32" false
+                      p "format" "Volume file" false
+                      p "first" "1" false
+                      p "step" "2" false
+                      p "last" "end-1" false
+                      p "input" "sections.tif" false
+                      p "suffix" ".tiff" false ]
+
+            let zarr =
+                node "zarr" "ReadRange"
+                    [ p "availableMemory" "4096" false
+                      p "type" "UInt16" false
+                      p "format" "OME-Zarr" false
+                      p "first" "1" false
+                      p "step" "2" false
+                      p "last" "end-1" false
+                      p "input" "input.zarr" false
+                      p "multiscaleIndex" "0" false
+                      p "datasetIndex" "1" false
+                      p "timepoint" "2" false
+                      p "channel" "3" false
+                      p "maxParallelChunks" "4" false ]
+
+            let nexus =
+                node "nexus" "ReadRange"
+                    [ p "availableMemory" "4096" false
+                      p "type" "UInt16" false
+                      p "format" "NeXus/HDF5" false
+                      p "first" "1" false
+                      p "step" "2" false
+                      p "last" "end-1" false
+                      p "input" "scan.h5" false
+                      p "datasetPath" "/entry/data/data" false
+                      p "frameAxis" "0" false
+                      p "yAxis" "1" false
+                      p "xAxis" "2" false ]
+
+            let codeFor node =
+                graph [ node ] []
+                |> PipelineCodeGenerator.generateSavedGraph
+
+            Expect.stringContains (codeFor volume) "|> readVolumeRange<float32> \"1\" 2 \"end-1\" (volumeFilePath \"sections.tif\" \".tiff\")" "ReadRange with Volume file format should generate the ranged volume reader."
+            Expect.stringContains (codeFor zarr) "|> readZarrRange<uint16> \"1\" 2 \"end-1\" \"input.zarr\" 0 1 2 3 4" "ReadRange with OME-Zarr format should generate the ranged Zarr reader."
+            Expect.stringContains (codeFor nexus) "|> readNexusRange<uint16> \"1\" 2 \"end-1\" \"scan.h5\" \"/entry/data/data\" 0 1 2" "ReadRange with NeXus/HDF5 format should generate the ranged NeXus reader."
 
         testCase "zarr boxes lower to zarr DSL functions" <| fun _ ->
             let info =

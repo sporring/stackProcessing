@@ -3,92 +3,9 @@
   "nodes": [
     {
       "id": "node-1",
-      "functionId": "Read",
-      "x": 138.31560110498583,
-      "y": 120.65250688038572,
-      "parameters": [
-        {
-          "key": "availableMemory",
-          "value": "2147483648UL",
-          "useInput": false
-        },
-        {
-          "key": "type",
-          "value": "Float64",
-          "useInput": false
-        },
-        {
-          "key": "format",
-          "value": "Image stack",
-          "useInput": false
-        },
-        {
-          "key": "input",
-          "value": "../data/volume",
-          "useInput": false
-        },
-        {
-          "key": "suffix",
-          "value": ".tiff",
-          "useInput": false
-        },
-        {
-          "key": "slabDepth",
-          "value": "1",
-          "useInput": false
-        },
-        {
-          "key": "multiscaleIndex",
-          "value": "0",
-          "useInput": false
-        },
-        {
-          "key": "datasetIndex",
-          "value": "0",
-          "useInput": false
-        },
-        {
-          "key": "timepoint",
-          "value": "0",
-          "useInput": false
-        },
-        {
-          "key": "channel",
-          "value": "0",
-          "useInput": false
-        },
-        {
-          "key": "maxParallelChunks",
-          "value": "0",
-          "useInput": false
-        },
-        {
-          "key": "datasetPath",
-          "value": "/entry/data/data",
-          "useInput": false
-        },
-        {
-          "key": "frameAxis",
-          "value": "0",
-          "useInput": false
-        },
-        {
-          "key": "yAxis",
-          "value": "1",
-          "useInput": false
-        },
-        {
-          "key": "xAxis",
-          "value": "2",
-          "useInput": false
-        }
-      ]
-    },
-    {
-      "id": "node-2",
       "functionId": "StructureTensor",
       "x": 293.858382936894,
-      "y": 120.63178346640582,
+      "y": 120.67817992251786,
       "parameters": [
         {
           "key": "sigma",
@@ -97,13 +14,13 @@
         },
         {
           "key": "rho",
-          "value": "0.0",
+          "value": "1.0",
           "useInput": false
         }
       ]
     },
     {
-      "id": "node-3",
+      "id": "node-2",
       "functionId": "VectorRange",
       "x": 449.0639875426156,
       "y": 120.95778168343043,
@@ -121,7 +38,7 @@
       ]
     },
     {
-      "id": "node-4",
+      "id": "node-3",
       "functionId": "Vector3ToColor",
       "x": 604.2467498967433,
       "y": 120.67817992251786,
@@ -139,7 +56,7 @@
       ]
     },
     {
-      "id": "node-5",
+      "id": "node-4",
       "functionId": "Write",
       "x": 759.5152785187611,
       "y": 120.95778168343043,
@@ -225,6 +142,49 @@
           "useInput": false
         }
       ]
+    },
+    {
+      "id": "node-5",
+      "functionId": "ReadRange",
+      "x": 128.4957275390625,
+      "y": 120.95778168343043,
+      "parameters": [
+        {
+          "key": "availableMemory",
+          "value": "1073741824",
+          "useInput": false
+        },
+        {
+          "key": "type",
+          "value": "Float64",
+          "useInput": false
+        },
+        {
+          "key": "first",
+          "value": "0",
+          "useInput": false
+        },
+        {
+          "key": "step",
+          "value": "1",
+          "useInput": false
+        },
+        {
+          "key": "last",
+          "value": "31",
+          "useInput": false
+        },
+        {
+          "key": "input",
+          "value": "../data/rotatingBoxes",
+          "useInput": false
+        },
+        {
+          "key": "suffix",
+          "value": ".tiff",
+          "useInput": false
+        }
+      ]
     }
   ],
   "edges": [
@@ -253,10 +213,10 @@
       "toPort": 0
     },
     {
-      "fromNode": "node-4",
+      "fromNode": "node-5",
       "fromKind": "dataOutput",
       "fromPort": 0,
-      "toNode": "node-5",
+      "toNode": "node-1",
       "toKind": "dataInput",
       "toPort": 0
     }

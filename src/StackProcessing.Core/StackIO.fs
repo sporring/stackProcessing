@@ -27,6 +27,34 @@ let private inputValue input =
 let private imageBytes<'T> nPixels =
     StackProcessingCost.imageBytes<'T> nPixels
 
+let private friendlyScalarTypeName (t: Type) =
+    if t = typeof<uint8> then "UInt8"
+    elif t = typeof<int8> then "Int8"
+    elif t = typeof<uint16> then "UInt16"
+    elif t = typeof<int16> then "Int16"
+    elif t = typeof<uint32> then "UInt32"
+    elif t = typeof<int32> then "Int32"
+    elif t = typeof<uint64> then "UInt64"
+    elif t = typeof<int64> then "Int64"
+    elif t = typeof<float32> then "Float32"
+    elif t = typeof<float> then "Float64"
+    elif t = typeof<System.Numerics.Complex> then "Complex"
+    else t.Name
+
+let private friendlyImageTypeName (image: Image<'T>) =
+    let t = typeof<'T>
+    if t.IsGenericType && t.GetGenericTypeDefinition() = typedefof<list<_>> then
+        let elementType = t.GetGenericArguments()[0]
+        let elementName = friendlyScalarTypeName elementType
+        let components = image.GetNumberOfComponentsPerPixel()
+
+        if elementType = typeof<uint8> && components = 3u then
+            "Color"
+        else
+            $"{elementName} vector[{components}]"
+    else
+        friendlyScalarTypeName t
+
 let private imageIoCost<'T> kind evaluation calibrationKey bytes ops : StageTimeCostModel =
     StackProcessingCost.imageIoCost<'T> kind evaluation calibrationKey bytes ops
 
@@ -670,12 +698,52 @@ let readVolume<'T when 'T: equality> (filename: string) (pl: Plan<unit, unit>) :
     else
         readSimpleItkVolume<'T> filename pl
 
+let private parseRangeEndpoint (depth: int) (name: string) (value: string) =
+    if depth <= 0 then
+        0
+    else
+        let trimmed = value.Trim().ToLowerInvariant().Replace(" ", "")
+        let lastIndex = depth - 1
+        let parsed =
+            if trimmed = "end" then
+                lastIndex
+            elif trimmed.StartsWith("end-") then
+                match Int32.TryParse(trimmed.Substring(4)) with
+                | true, offset -> lastIndex - offset
+                | false, _ -> invalidArg name $"Could not parse range endpoint '{value}'. Use an integer, end, or end-n."
+            elif trimmed.StartsWith("end+") then
+                match Int32.TryParse(trimmed.Substring(4)) with
+                | true, offset -> lastIndex + offset
+                | false, _ -> invalidArg name $"Could not parse range endpoint '{value}'. Use an integer, end, or end-n."
+            else
+                match Int32.TryParse(trimmed) with
+                | true, index -> index
+                | false, _ -> invalidArg name $"Could not parse range endpoint '{value}'. Use an integer, end, or end-n."
+        min lastIndex (max 0 parsed)
+
 let private randomIndices count depth =
     if depth <= 0 then
         invalidArg "depth" "Cannot sample random slices from an empty image source."
 
     let rng = Random()
     Array.init (int count) (fun _ -> rng.Next(depth))
+
+let private rangeIndices first step last depth =
+    if step = 0 then
+        invalidArg "step" "readRange step must be non-zero."
+
+    if depth <= 0 then
+        [||]
+    else
+        let startIndex = parseRangeEndpoint depth "first" first
+        let lastIndex = parseRangeEndpoint depth "last" last
+
+        if step > 0 && startIndex > lastIndex then
+            [||]
+        elif step < 0 && startIndex < lastIndex then
+            [||]
+        else
+            [| for index in startIndex .. step .. lastIndex -> index |]
 
 let private readTiffVolumeRandom<'T when 'T: equality> (count: uint) (filename: string) (pl: Plan<unit, unit>) : Plan<unit, Image<'T>> =
     use header = Tiff.Open(filename, "r")
@@ -815,6 +883,150 @@ let readVolumeRandom<'T when 'T: equality> (count: uint) (filename: string) (pl:
     else
         readSimpleItkVolumeRandom<'T> count filename pl
 
+let private readTiffVolumeRange<'T when 'T: equality> (first: string) (step: int) (last: string) (filename: string) (pl: Plan<unit, unit>) : Plan<unit, Image<'T>> =
+    use header = Tiff.Open(filename, "r")
+    if isNull header then
+        invalidOp $"Could not open '{filename}' for TIFF volume reading."
+
+    let width = uint (tiffFieldInt header TiffTag.IMAGEWIDTH 0)
+    let height = uint (tiffFieldInt header TiffTag.IMAGELENGTH 0)
+    if width = 0u || height = 0u then
+        invalidOp $"TIFF volume '{filename}' has invalid page dimensions {width}x{height}."
+
+    let bitsPerSample = tiffFieldIntDefaulted header TiffTag.BITSPERSAMPLE 1
+    let samplesPerPixel = tiffFieldIntDefaulted header TiffTag.SAMPLESPERPIXEL 1
+    let sampleFormat =
+        let raw = tiffFieldIntDefaulted header TiffTag.SAMPLEFORMAT (int SampleFormat.UINT)
+        enum<SampleFormat> raw
+
+    validateTiffSamples samplesPerPixel
+    tiffPixelLayout<'T> () |> ignore
+    let bytesPerSample = tiffBytesPerSample bitsPerSample sampleFormat
+    let sourceDepth = tiffDirectoryCount filename |> int
+    let selected = rangeIndices first step last sourceDepth
+    let pixelBytes = Image<'T>.memoryEstimate width height
+    let sourcePeek =
+        SourcePeek.create
+            "readVolumeRange"
+            pixelBytes
+            (Some (uint64 selected.Length))
+            (Map.ofList
+                [ "kind", "tiff-volume-file-range"
+                  "filename", filename
+                  "width", string width
+                  "height", string height
+                  "depth", string selected.Length
+                  "sourceDepth", string sourceDepth
+                  "pixelType", typeof<'T>.Name
+                  "first", first
+                  "step", string step
+                  "last", last ])
+
+    let mapper (outputIndex: int) =
+        let sourceIndex = selected[outputIndex]
+        if pl.debug then
+            printfn $"[readVolumeRange] Reading TIFF page {sourceIndex} from {filename} as {typeof<'T>.Name}"
+
+        use reader = Tiff.Open(filename, "r")
+        if isNull reader then
+            invalidOp $"Could not open '{filename}' for TIFF volume reading."
+        if not (reader.SetDirectory(int16 sourceIndex)) then
+            invalidOp $"Could not seek to TIFF page {sourceIndex} in '{filename}'."
+
+        let pageWidth = uint (tiffFieldInt reader TiffTag.IMAGEWIDTH 0)
+        let pageHeight = uint (tiffFieldInt reader TiffTag.IMAGELENGTH 0)
+        if pageWidth <> width || pageHeight <> height then
+            invalidOp $"readVolumeRange expected all TIFF pages to be {width}x{height}; page {sourceIndex} is {pageWidth}x{pageHeight}."
+
+        readTiffPage<'T> reader width height bitsPerSample sampleFormat bytesPerSample sourceIndex
+
+    let transition = ProfileTransition.create Unit Streaming
+    let memoryNeed _ = pixelBytes
+    let elementTransformation _ = uint64 width * uint64 height
+    let memoryModel = StageMemoryModel.fromSinglePeak Source memoryNeed
+    let timeCostModel =
+        imageIoCost<'T>
+            "readVolumeRange"
+            Source
+            $"readVolumeRange.tiff.{typeof<'T>.Name}"
+            (fun _ -> pixelBytes)
+            (fun _ -> 1UL)
+    let stage =
+        Stage.init "readVolumeRange" (uint selected.Length) mapper transition memoryNeed elementTransformation
+        |> withCostModel (StageCostModel.create memoryModel timeCostModel)
+        |> Some
+
+    Plan.create stage pl.memAvail pixelBytes (uint64 width * uint64 height) (uint64 selected.Length) pl.debug
+    |> Plan.withSourcePeek sourcePeek
+
+let private readSimpleItkVolumeRange<'T when 'T: equality> (first: string) (step: int) (last: string) (filename: string) (pl: Plan<unit, unit>) : Plan<unit, Image<'T>> =
+    use infoReader = imageFileReaderInfo filename
+    let dimension = int (infoReader.GetDimension())
+    if dimension < 2 || dimension > 3 then
+        invalidArg "filename" $"readVolumeRange expects a 2D or 3D image volume, got {dimension} dimensions in '{filename}'."
+
+    let size = infoReader.GetSize() |> fromVectorUInt64 |> List.map uint
+    let width = size[0]
+    let height = size[1]
+    let sourceDepth = if dimension = 3 then int size[2] else 1
+    let selected = rangeIndices first step last sourceDepth
+    let pixelBytes = Image<'T>.memoryEstimate width height
+    let sourcePeek =
+        SourcePeek.create
+            "readVolumeRange"
+            pixelBytes
+            (Some (uint64 selected.Length))
+            (Map.ofList
+                [ "kind", "volume-file-range"
+                  "filename", filename
+                  "width", string width
+                  "height", string height
+                  "depth", string selected.Length
+                  "sourceDepth", string sourceDepth
+                  "pixelType", typeof<'T>.Name
+                  "first", first
+                  "step", string step
+                  "last", last ])
+
+    let mapper (outputIndex: int) =
+        let sourceIndex = selected[outputIndex]
+        if pl.debug then
+            printfn $"[readVolumeRange] Reading slice {sourceIndex} from {filename} as {typeof<'T>.Name}"
+
+        use reader = new itk.simple.ImageFileReader()
+        reader.SetFileName(filename)
+        if dimension = 3 then
+            reader.SetExtractIndex([ 0; 0; sourceIndex ] |> toVectorInt32)
+            reader.SetExtractSize([ width; height; 0u ] |> toVectorUInt32)
+
+        let itkImage = reader.Execute()
+        Image<'T>.ofSimpleITK(itkImage, $"readVolumeRange[{sourceIndex}]", sourceIndex)
+
+    let transition = ProfileTransition.create Unit Streaming
+    let memoryNeed _ = pixelBytes
+    let elementTransformation _ = uint64 width * uint64 height
+    let memoryModel = StageMemoryModel.fromSinglePeak Source memoryNeed
+    let timeCostModel =
+        imageIoCost<'T>
+            "readVolumeRange"
+            Source
+            $"readVolumeRange.{typeof<'T>.Name}"
+            (fun _ -> pixelBytes)
+            (fun _ -> 1UL)
+    let stage =
+        Stage.init "readVolumeRange" (uint selected.Length) mapper transition memoryNeed elementTransformation
+        |> withCostModel (StageCostModel.create memoryModel timeCostModel)
+        |> Some
+
+    Plan.create stage pl.memAvail pixelBytes (uint64 width * uint64 height) (uint64 selected.Length) pl.debug
+    |> Plan.withSourcePeek sourcePeek
+
+let readVolumeRange<'T when 'T: equality> (first: string) (step: int) (last: string) (filename: string) (pl: Plan<unit, unit>) : Plan<unit, Image<'T>> =
+    if isTiffVolumePath filename then
+        readTiffVolumeRange<'T> first step last filename pl
+    else
+        readSimpleItkVolumeRange<'T> first step last filename pl
+
 let readFilePairs<'T when 'T: equality> (debug: bool) : Stage<string*string, Image<'T>*Image<'T>> =
     let name = "readFilePairs"
     if debug && DebugLevel.current() >= 2u then printfn $"[{name} cast to {typeof<'T>.Name}]"
@@ -875,45 +1087,10 @@ let read<'T when 'T: equality> (inputDir: string) (suffix: string) (pl: Plan<uni
 let readRandom<'T when 'T: equality> (count: uint) (inputDir: string) (suffix: string) (pl: Plan<unit, unit>) : Plan<unit, Image<'T>> =
     readFiltered<'T> inputDir suffix (Array.randomChoices (int count)) pl
 
-let private parseRangeEndpoint (depth: int) (name: string) (value: string) =
-    if depth <= 0 then
-        0
-    else
-        let trimmed = value.Trim().ToLowerInvariant().Replace(" ", "")
-        let lastIndex = depth - 1
-        let parsed =
-            if trimmed = "end" then
-                lastIndex
-            elif trimmed.StartsWith("end-") then
-                match Int32.TryParse(trimmed.Substring(4)) with
-                | true, offset -> lastIndex - offset
-                | false, _ -> invalidArg name $"Could not parse range endpoint '{value}'. Use an integer, end, or end-n."
-            elif trimmed.StartsWith("end+") then
-                match Int32.TryParse(trimmed.Substring(4)) with
-                | true, offset -> lastIndex + offset
-                | false, _ -> invalidArg name $"Could not parse range endpoint '{value}'. Use an integer, end, or end-n."
-            else
-                match Int32.TryParse(trimmed) with
-                | true, index -> index
-                | false, _ -> invalidArg name $"Could not parse range endpoint '{value}'. Use an integer, end, or end-n."
-        min lastIndex (max 0 parsed)
-
 let private rangeFilter first step last files =
-    if step = 0 then
-        invalidArg "step" "readRange step must be non-zero."
     let sorted = Array.sort files
-    let depth = sorted.Length
-    if depth = 0 then
-        [||]
-    else
-        let startIndex = parseRangeEndpoint depth "first" first
-        let lastIndex = parseRangeEndpoint depth "last" last
-        if step > 0 && startIndex > lastIndex then
-            [||]
-        elif step < 0 && startIndex < lastIndex then
-            [||]
-        else
-            [| for index in startIndex .. step .. lastIndex -> sorted[index] |]
+    rangeIndices first step last sorted.Length
+    |> Array.map (fun index -> sorted[index])
 
 let readRange<'T when 'T: equality> (first: string) (step: int) (last: string) (inputDir: string) (suffix: string) (pl: Plan<unit, unit>) : Plan<unit, Image<'T>> =
     let info = getStackInfo inputDir suffix
@@ -1343,6 +1520,93 @@ let readZarrRandom<'T when 'T: equality>
     Plan.create stage pl.memAvail memPeak memPeak (uint64 selected.Length) pl.debug
     |> Plan.withSourcePeek sourcePeek
 
+let readZarrRange<'T when 'T: equality>
+    (first: string)
+    (step: int)
+    (last: string)
+    (path: string)
+    (multiscaleIndex: int)
+    (datasetIndex: int)
+    (timepoint: int)
+    (channel: int)
+    (maxParallelChunks: int)
+    (pl: Plan<unit, unit>)
+    : Plan<unit, Image<'T>> =
+
+    suppressZarrNetDebugLogging ()
+
+    let name = "readZarrRange"
+    Image.InternalHelpers.fromType<'T> |> ignore
+    let level = openZarrResolutionLevel path multiscaleIndex datasetIndex
+    let sizeT, sizeC, sizeZ, sizeY, sizeX = zarrShapeTCZYX level.Shape
+
+    if timepoint < 0 || timepoint >= sizeT then
+        invalidArg "timepoint" $"Timepoint {timepoint} is outside the Zarr time range 0..{sizeT - 1}."
+    if channel < 0 || channel >= sizeC then
+        invalidArg "channel" $"Channel {channel} is outside the Zarr channel range 0..{sizeC - 1}."
+    if not (String.Equals(level.DataType, "uint8", StringComparison.OrdinalIgnoreCase)
+            || String.Equals(level.DataType, "uint16", StringComparison.OrdinalIgnoreCase)) then
+        failwith $"ZarrNET image IO currently supports UInt8 and UInt16 scalar datasets, but dataset type was {level.DataType}."
+
+    let selected = rangeIndices first step last sizeZ
+    let elementBytes =
+        uint64 sizeX * uint64 sizeY * (typeof<'T> |> Image.getBytesPerComponent |> uint64)
+    let parallelChunks = nullableParallelChunks maxParallelChunks
+    let sourcePeek =
+        SourcePeek.create
+            name
+            elementBytes
+            (Some (uint64 selected.Length))
+            (Map.ofList
+                [ "kind", "zarr-range"
+                  "path", path
+                  "width", string sizeX
+                  "height", string sizeY
+                  "depth", string selected.Length
+                  "sourceDepth", string sizeZ
+                  "pixelType", typeof<'T>.Name
+                  "multiscaleIndex", string multiscaleIndex
+                  "datasetIndex", string datasetIndex
+                  "timepoint", string timepoint
+                  "channel", string channel
+                  "first", first
+                  "step", string step
+                  "last", last ])
+
+    let mapper (outputIndex: int) : Image<'T> =
+        let zIndex = selected[outputIndex]
+        if pl.debug then
+            printfn $"[readZarrRange] Reading z {zIndex} from {path} as {typeof<'T>.Name}"
+
+        let region =
+            PixelRegion(
+                [| int64 timepoint; int64 channel; int64 zIndex; 0L; 0L |],
+                [| int64 (timepoint + 1); int64 (channel + 1); int64 (zIndex + 1); int64 sizeY; int64 sizeX |])
+        let result =
+            level.ReadPixelRegionAsync(region, parallelChunks, CancellationToken.None)
+            |> runTask
+        deleteZarrNetDebugLogs ()
+        let slab = zarrSlabImageAs<'T> level.DataType sizeX sizeY 1 result.Data $"readZarrRange.{outputIndex}"
+        try
+            ImageFunctions.extractSlice 2u 0 slab
+        finally
+            slab.decRefCount()
+
+    let transition = ProfileTransition.create Unit Streaming
+    let memPeak = 256UL
+    let memoryNeed = fun _ -> memPeak
+    let elementTransformation = id
+    let memoryModel = StageMemoryModel.fromSinglePeak Source memoryNeed
+    let timeCostModel =
+        StageTimeCostModel.ioRead Source (Some $"readZarrRange.{typeof<'T>.Name}") (fun _ -> elementBytes) (fun _ -> 1UL)
+    let stage =
+        Stage.init name (uint selected.Length) mapper transition memoryNeed elementTransformation
+        |> withCostModel (StageCostModel.create memoryModel timeCostModel)
+        |> Some
+
+    Plan.create stage pl.memAvail memPeak memPeak (uint64 selected.Length) pl.debug
+    |> Plan.withSourcePeek sourcePeek
+
 let readNexusSlabStacked<'T when 'T: equality>
     (path: string)
     (datasetPath: string)
@@ -1541,6 +1805,100 @@ let readNexusRandom<'T when 'T: equality>
     Plan.create stage pl.memAvail memPeak memPeak (uint64 selected.Length) pl.debug
     |> Plan.withSourcePeek sourcePeek
 
+let readNexusRange<'T when 'T: equality>
+    (first: string)
+    (step: int)
+    (last: string)
+    (path: string)
+    (datasetPath: string)
+    (frameAxis: int)
+    (yAxis: int)
+    (xAxis: int)
+    (pl: Plan<unit, unit>)
+    : Plan<unit, Image<'T>> =
+
+    let name = "readNexusRange"
+    hdfDataType<'T> () |> ignore
+    let file, dataset = hdfDataset path datasetPath
+    let rank = int dataset.Space.Rank
+    validateHdfAxes rank frameAxis yAxis xAxis
+
+    if rank <> 3 then
+        failwith $"readNexusRange currently expects a rank-3 detector stack dataset, but {datasetPath} has rank {rank}."
+
+    let dimensions = dataset.Space.Dimensions
+    let sizeZ = int dimensions[frameAxis]
+    let sizeY = int dimensions[yAxis]
+    let sizeX = int dimensions[xAxis]
+    let selected = rangeIndices first step last sizeZ
+    let elementBytes =
+        uint64 sizeX * uint64 sizeY * (typeof<'T> |> Image.getBytesPerComponent |> uint64)
+    let sourcePeek =
+        SourcePeek.create
+            name
+            elementBytes
+            (Some (uint64 selected.Length))
+            (Map.ofList
+                [ "kind", "nexus-range"
+                  "path", path
+                  "datasetPath", datasetPath
+                  "width", string sizeX
+                  "height", string sizeY
+                  "depth", string selected.Length
+                  "sourceDepth", string sizeZ
+                  "pixelType", typeof<'T>.Name
+                  "frameAxis", string frameAxis
+                  "yAxis", string yAxis
+                  "xAxis", string xAxis
+                  "first", first
+                  "step", string step
+                  "last", last ])
+
+    let mapper (outputIndex: int) : Image<'T> =
+        let zIndex = selected[outputIndex]
+        if pl.debug then
+            printfn $"[readNexusRange] Reading z {zIndex} from {path}:{datasetPath} as {typeof<'T>.Name}"
+
+        let starts = Array.zeroCreate<uint64> rank
+        let blocks = Array.create rank 1UL
+        starts[frameAxis] <- uint64 zIndex
+        blocks[frameAxis] <- 1UL
+        blocks[yAxis] <- uint64 sizeY
+        blocks[xAxis] <- uint64 sizeX
+
+        let slab =
+            hdfSlabImageAs<'T>
+                dataset
+                rank
+                starts
+                blocks
+                sizeX
+                sizeY
+                1
+                frameAxis
+                yAxis
+                xAxis
+                $"readNexusRange.{outputIndex}"
+        try
+            ImageFunctions.extractSlice 2u 0 slab
+        finally
+            slab.decRefCount()
+
+    let transition = ProfileTransition.create Unit Streaming
+    let memPeak = 256UL
+    let memoryNeed = fun _ -> memPeak
+    let elementTransformation = id
+    let memoryModel = StageMemoryModel.fromSinglePeak Source memoryNeed
+    let timeCostModel =
+        StageTimeCostModel.ioRead Source (Some $"readNexusRange.{typeof<'T>.Name}") (fun _ -> elementBytes) (fun _ -> 1UL)
+    let stage =
+        Stage.init name (uint selected.Length) mapper transition memoryNeed elementTransformation
+        |> withCostModel (StageCostModel.create memoryModel timeCostModel)
+        |> Some
+
+    Plan.create stage pl.memAvail memPeak memPeak (uint64 selected.Length) pl.debug
+    |> Plan.withSourcePeek sourcePeek
+
 let icompare s1 s2  = 
     System.String.Equals(s1, s2, System.StringComparison.CurrentCultureIgnoreCase)
 
@@ -1577,7 +1935,7 @@ let write<'T when 'T: equality> (outputDir: string) (suffix: string) : Stage<Ima
     let mapper (debug: bool) (idx: int64) (image: Image<'T>) =
         cleaned.Force()
         let fileName = Path.Combine(outputDir, sprintf "image_%03d%s" idx suffix)
-        if debug then printfn "[write] Saved image %d to %s as %s" idx fileName (typeof<'T>.Name) 
+        if debug then printfn "[write] Saved image %d to %s as %s" idx fileName (friendlyImageTypeName image)
         image.toFile(fileName)
         image
     let memoryNeed = id
@@ -1731,7 +2089,7 @@ let writeZarr<'T when 'T: equality>
 
         let planeBytes = bytesOfScalarImage2D image
         if debug then
-            printfn "[writeZarr] Saved plane %d to %s as %s" idx outputPath (typeof<'T>.Name)
+            printfn "[writeZarr] Saved plane %d to %s as %s" idx outputPath (friendlyImageTypeName image)
 
         zarrWriter.WritePlaneAsync(int idx, planeBytes, CancellationToken.None)
         |> runUnitTask
@@ -1834,7 +2192,7 @@ let writeNexus<'T when 'T: equality>
         let fileSelection = HyperslabSelection(3, fileStarts, blocks)
 
         if debug then
-            printfn "[writeNexus] Saved frame %d to %s:%s as %s" idx outputPath datasetPath (typeof<'T>.Name)
+            printfn "[writeNexus] Saved frame %d to %s:%s as %s" idx outputPath datasetPath (friendlyImageTypeName image)
 
         hdfWriter.Write(hdfDataset, data, AllSelection(), fileSelection)
 
@@ -1871,8 +2229,8 @@ let _writeSlabChunks (debug: bool) (outputDir: string) (suffix: string) (width: 
             let x20 = 0
             let x21 = winSz-1u |> int
             if x00<=x01 && x10<=x11 && x20<=x21 then
-                if debug then printfn "[write] Saved chunk %d %d %d to %s as %s" i j k fileName (typeof<'T>.Name) 
                 let chunk = stack.[x00 .. x01, x10 .. x11 , x20 .. x21]
+                if debug then printfn "[write] Saved chunk %d %d %d to %s as %s" i j k fileName (friendlyImageTypeName chunk)
                 chunk.toFile(fileName)
                 chunk.decRefCount()
 

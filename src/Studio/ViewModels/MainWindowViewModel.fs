@@ -218,6 +218,8 @@ module private PortMapping =
         match portType with
         | Scalar basicType -> BasicType.toString basicType
         | Image numericType -> NumericType.toString numericType
+        | Custom "ColorImage" -> "Color"
+        | Custom "VectorImageFloat64" -> "Vector"
         | Custom label -> label
         | Tuple _ -> "Tuple"
         | Any -> "Any"
@@ -510,6 +512,9 @@ module private SourceImageNode =
             common |> Set.add "depth" |> Set.add "suffix"
         | "ReadRandom", "Volume file" ->
             common |> Set.add "depth" |> Set.add "suffix"
+        | "ReadRange", "Image stack"
+        | "ReadRange", "Volume file" ->
+            common |> Set.add "first" |> Set.add "step" |> Set.add "last" |> Set.add "suffix"
         | "Read", "Image stack"
         | "ReadSlab", "Chunked stack" ->
             common |> Set.add "suffix"
@@ -519,6 +524,10 @@ module private SourceImageNode =
             Set.union common zarr |> Set.add "depth" |> Set.remove "slabDepth"
         | "ReadRandom", "NeXus/HDF5" ->
             Set.union common nexus |> Set.add "depth" |> Set.remove "slabDepth"
+        | "ReadRange", "OME-Zarr" ->
+            Set.union common zarr |> Set.add "first" |> Set.add "step" |> Set.add "last" |> Set.remove "slabDepth"
+        | "ReadRange", "NeXus/HDF5" ->
+            Set.union common nexus |> Set.add "first" |> Set.add "step" |> Set.add "last" |> Set.remove "slabDepth"
         | ("Read" | "ReadSlab"), "OME-Zarr" ->
             Set.union common zarr
         | ("Read" | "ReadSlab"), "NeXus/HDF5" ->
@@ -556,7 +565,7 @@ module private SourceImageNode =
             |> Set.ofSeq
 
     let parameterIsVisible (state: PipelineNodeState) key =
-        if state.Definition.Id = "Read" || state.Definition.Id = "ReadRandom" || state.Definition.Id = "ReadSlab" then
+        if state.Definition.Id = "Read" || state.Definition.Id = "ReadRandom" || state.Definition.Id = "ReadRange" || state.Definition.Id = "ReadSlab" then
             readVisibleParameterKeys state |> Set.contains key
         elif state.Definition.Id = "Write" then
             writeVisibleParameterKeys state |> Set.contains key
@@ -1370,7 +1379,8 @@ type PipelineNodeViewModel(
         | "ScalarOp" -> state.Definition.Inputs, [ ScalarOpNode.outputPort state ]
         | "ScalarFunction" -> state.Definition.Inputs, [ ScalarFunctionNode.outputPort ]
         | "Read"
-        | "ReadRandom" ->
+        | "ReadRandom"
+        | "ReadRange" ->
             let infoType =
                 match SourceImageNode.selectedFormat state with
                 | "OME-Zarr"
@@ -1380,8 +1390,6 @@ type PipelineNodeViewModel(
 
             state.Definition.Inputs, SourceImageNode.outputPort state :: [ { Name = infoName; Type = infoType } ]
         | "ReadSlab" ->
-            state.Definition.Inputs, SourceImageNode.outputPort state :: (state.Definition.Outputs |> List.skip 1)
-        | "ReadRange" ->
             state.Definition.Inputs, SourceImageNode.outputPort state :: (state.Definition.Outputs |> List.skip 1)
         | "Zero"
         | "NormalNoise"
@@ -1614,7 +1622,7 @@ type PipelineNodeViewModel(
                     this.RebuildPins()
                     refreshNodePins this
                     markGraphDirty()
-                elif (state.Definition.Id = "Read" || state.Definition.Id = "ReadRandom" || state.Definition.Id = "ReadSlab" || state.Definition.Id = "Write") && parameter.Key = "format" && args.PropertyName = nameof parameter.Value then
+                elif (state.Definition.Id = "Read" || state.Definition.Id = "ReadRandom" || state.Definition.Id = "ReadRange" || state.Definition.Id = "ReadSlab" || state.Definition.Id = "Write") && parameter.Key = "format" && args.PropertyName = nameof parameter.Value then
                     SourceImageNode.updateParameterVisibility state
                     SourceImageNode.updateReadSuffixOptionStates state
                     state.Title <- SourceImageNode.title state
@@ -1967,7 +1975,7 @@ type MainWindowViewModel() as this =
                         |> List.map (fun value -> ParameterOptionViewModel(value, value, true))
 
                     PipelineParameterViewModel(parameter.Label, parameter.Key, parameter.DefaultValue, parameter.Type, options, false)
-                | ("Read" | "ReadRandom" | "ReadSlab"), "format" ->
+                | ("Read" | "ReadRandom" | "ReadRange" | "ReadSlab"), "format" ->
                     let options =
                         (if functionId = "ReadSlab" then SourceImageNode.readSlabFormatOptions else SourceImageNode.readFormatOptions)
                         |> List.map (fun value -> ParameterOptionViewModel(value, value, true))
@@ -1979,13 +1987,13 @@ type MainWindowViewModel() as this =
                         |> List.map (fun value -> ParameterOptionViewModel(value, value, true))
 
                     PipelineParameterViewModel(parameter.Label, parameter.Key, parameter.DefaultValue, parameter.Type, options, false)
-                | ("Read" | "ReadRandom" | "ReadSlab"), "type" ->
+                | ("Read" | "ReadRandom" | "ReadRange" | "ReadSlab"), "type" ->
                     let options =
                         SourceImageNode.typeOptions
                         |> List.map (fun value -> ParameterOptionViewModel(value, value, true))
 
                     PipelineParameterViewModel(parameter.Label, parameter.Key, parameter.DefaultValue, parameter.Type, options, false)
-                | ("EstimateHistogram" | "ReadRange"), "type" ->
+                | "EstimateHistogram", "type" ->
                     let options =
                         SourceImageNode.typeOptions
                         |> List.map (fun value -> ParameterOptionViewModel(value, value, true))
@@ -2495,7 +2503,7 @@ type MainWindowViewModel() as this =
                     |> List.tryHead
                     |> Option.iter (fun value -> parameter.Value <- value)))
 
-    let connectedWriteInputType (node: PipelineNodeViewModel) =
+    let connectedWriteInputPort (node: PipelineNodeViewModel) =
         node.Pins
         |> Seq.tryPick (function
             | :? PipelinePinViewModel as inputPin when inputPin.Kind = DataInput ->
@@ -2506,7 +2514,14 @@ type MainWindowViewModel() as this =
                         | :? PipelinePinViewModel as outputPin ->
                             match outputPin.Port.Type with
                             | Image Number -> None
-                            | Image numericType -> Some numericType
+                            | Image numericType ->
+                                Some
+                                    { Name = NumericType.toString numericType
+                                      Type = PortType.numericToImage numericType }
+                            | Custom "ColorImage" ->
+                                Some
+                                    { Name = PortMapping.portTypeLabel outputPin.Port.Type
+                                      Type = outputPin.Port.Type }
                             | _ -> None
                         | _ ->
                             None
@@ -2515,6 +2530,13 @@ type MainWindowViewModel() as this =
             | _ ->
                 None)
 
+    let connectedWriteInputType (node: PipelineNodeViewModel) =
+        connectedWriteInputPort node
+        |> Option.bind (fun port ->
+            match port.Type with
+            | Image numericType -> Some numericType
+            | _ -> None)
+
     let refreshWriteInputPin (node: PipelineNodeViewModel) =
         if SourceImageNode.hasOutputTitle node.State.Definition.Id then
             let staticPort = SourceImageNode.writeInputPort node.State
@@ -2522,10 +2544,7 @@ type MainWindowViewModel() as this =
                 if staticPort.Type <> Image Number then
                     staticPort
                 else
-                    connectedWriteInputType node
-                    |> Option.map (fun numericType ->
-                        { Name = NumericType.toString numericType
-                          Type = PortType.numericToImage numericType })
+                    connectedWriteInputPort node
                     |> Option.defaultValue staticPort
 
             node.Pins
@@ -3948,12 +3967,12 @@ type MainWindowViewModel() as this =
 
                 match node.State.Definition.Id with
                 | "Read"
-                | "ReadRandom" ->
+                | "ReadRandom"
+                | "ReadRange" ->
                     match parameterValue node "format" with
                     | "Volume file" -> Some("file", normalizeFile input suffix)
                     | "NeXus/HDF5" -> Some("file", normalizeFile input "")
                     | _ -> Some("directory", normalizeDirectory input)
-                | "ReadRange"
                 | "ReadSlab" ->
                     Some("directory", normalizeDirectory input)
                 | "ReadPointSet" ->

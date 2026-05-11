@@ -440,8 +440,8 @@ module PipelineCodeGenerator =
     let private isReadStackInfoNode (node: SavedNode) =
         match node.FunctionId with
         | "Read"
-        | "ReadRandom" -> readFormat node <> "OME-Zarr" && readFormat node <> "NeXus/HDF5"
-        | "ReadRange" -> true
+        | "ReadRandom"
+        | "ReadRange" -> readFormat node <> "OME-Zarr" && readFormat node <> "NeXus/HDF5"
         | _ -> false
 
     let private isChunkInfoNode (node: SavedNode) =
@@ -450,7 +450,8 @@ module PipelineCodeGenerator =
     let private isReadChunkInfoNode (node: SavedNode) =
         match node.FunctionId with
         | "Read"
-        | "ReadRandom" -> readFormat node = "OME-Zarr" || readFormat node = "NeXus/HDF5"
+        | "ReadRandom"
+        | "ReadRange" -> readFormat node = "OME-Zarr" || readFormat node = "NeXus/HDF5"
         | "ReadSlab" -> true
         | _ -> false
 
@@ -1048,12 +1049,31 @@ module PipelineCodeGenerator =
         | "ReadRange" ->
             let availableMemory = parameterValue "availableMemory"
             let pixelType = pixelTypeNameFromParameter "type" "Float64" node
+            let format = savedParamValue "format" node
             let first = quotedParameter "first"
             let step = parameterValue "step"
             let last = quotedParameter "last"
             let input = quotedParameter "input"
-            let suffix = quotedParameter "suffix"
-            $"|> readRange<{pixelType}> {first} {step} {last} {input} {suffix}" |> sourcePrefix availableMemory
+            let suffix = quotedParameterOrDefault "suffix" ".tiff"
+            match format with
+            | "Volume file" ->
+                let volumeInput = $"(volumeFilePath {input} {suffix})"
+                $"|> readVolumeRange<{pixelType}> {first} {step} {last} {volumeInput}" |> sourcePrefix availableMemory
+            | "OME-Zarr" ->
+                let multiscaleIndex = parameterValue "multiscaleIndex"
+                let datasetIndex = parameterValue "datasetIndex"
+                let timepoint = parameterValue "timepoint"
+                let channel = parameterValue "channel"
+                let maxParallelChunks = parameterValue "maxParallelChunks"
+                $"|> readZarrRange<{pixelType}> {first} {step} {last} {input} {multiscaleIndex} {datasetIndex} {timepoint} {channel} {maxParallelChunks}" |> sourcePrefix availableMemory
+            | "NeXus/HDF5" ->
+                let datasetPath = quotedParameter "datasetPath"
+                let frameAxis = parameterValue "frameAxis"
+                let yAxis = parameterValue "yAxis"
+                let xAxis = parameterValue "xAxis"
+                $"|> readNexusRange<{pixelType}> {first} {step} {last} {input} {datasetPath} {frameAxis} {yAxis} {xAxis}" |> sourcePrefix availableMemory
+            | _ ->
+                $"|> readRange<{pixelType}> {first} {step} {last} {input} {suffix}" |> sourcePrefix availableMemory
         | "ReadSlab" ->
             let availableMemory = parameterValue "availableMemory"
             let pixelType = pixelTypeNameFromParameter "type" "Float64" node
