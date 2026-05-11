@@ -15,6 +15,7 @@ module BuiltInCatalog =
   let imageFloat64 = PortType.Image NumericType.Float64
   let imageComplex = PortType.Image NumericType.Complex
   let vectorImageFloat64 = PortType.Custom "VectorImageFloat64"
+  let colorImage = PortType.Custom "ColorImage"
   let translationTable = PortType.Custom "TranslationTable"
   let connectedComponentLabels = PortType.Tuple(imageUInt64, PortType.Scalar(BasicType.Numeric UInt64))
   let mesh = PortType.Custom "Mesh"
@@ -946,7 +947,7 @@ module BuiltInCatalog =
           Description = chunkWriteFormatDescription
           Aliases = [ "output"; "save"; "chunks"; "tiff"; "mha"; "file" ]
           Inputs = [ makePort "Number" imageAny ]
-          Outputs = []
+          Outputs = [ makePort "ChunkInfo" chunkInfo ]
           Parameters =
               [ makeParameter "output" "Output" "output" BasicType.String
                 suffixParameter ".mha"
@@ -957,14 +958,14 @@ module BuiltInCatalog =
         { Id = "WriteMesh"
           DisplayName = "writeMesh"
           Category = "Sources / Sinks"
-          Summary = "Write a streamed triangle mesh to OBJ, STL, or PLY."
-          Description = "Writes triangle sets produced by marchingCubes. OBJ and ASCII STL are written in a streaming-friendly pass. ASCII PLY is also supported, but its header needs vertex and face counts, so triangle sets are counted before the file is finalized. Use OBJ for the broadest compatibility during exploratory streaming workflows."
-          Aliases = [ "mesh"; "surface"; "triangles"; "obj"; "stl"; "ply"; "write"; "save" ]
+          Summary = "Write a streamed triangle mesh to OBJ or STL."
+          Description = "Writes triangle sets produced by marchingCubes. OBJ and ASCII STL are written in a streaming-friendly pass as triangle sets arrive, so large meshes do not need to be buffered in memory. PLY output is paused because ASCII PLY needs vertex and face counts before the header can be written."
+          Aliases = [ "mesh"; "surface"; "triangles"; "obj"; "stl"; "write"; "save" ]
           Inputs = [ makePort "Mesh" mesh ]
           Outputs = []
           Parameters =
-              [ makeParameter "output" "Output" "surface.obj" BasicType.String
-                makeParameter "format" "Format" "auto" BasicType.String ] }
+              [ makeParameter "output" "Output" "surface" BasicType.String
+                makeParameter "format" "Format" ".obj" BasicType.String ] }
 
         { Id = "SurfaceArea"
           DisplayName = "surfaceArea"
@@ -1400,6 +1401,42 @@ module BuiltInCatalog =
           Outputs = [ makePort "Float64" imageFloat64 ]
           Parameters = [ makeParameter "component" "Component" "0" (BasicType.Numeric UInt32) ] }
 
+        { Id = "VectorRange"
+          DisplayName = "vectorRange"
+          Category = "Vector Images"
+          Summary = "Extract a contiguous range of components from a vector image."
+          Description = "Extracts componentCount consecutive components starting at firstComponent from every vector-valued pixel. Component indices are zero-based. For structureTensor, the single output is a 12-component 3x4 matrix laid out as [eigenvalue0; eigenvalue1; eigenvalue2; eigenvector0.x; eigenvector0.y; eigenvector0.z; eigenvector1.x; eigenvector1.y; eigenvector1.z; eigenvector2.x; eigenvector2.y; eigenvector2.z]. Thus firstComponent=3 and componentCount=3 extracts eigenvector 0, firstComponent=6 extracts eigenvector 1, and firstComponent=9 extracts eigenvector 2."
+          Aliases = [ "vector"; "range"; "slice"; "component"; "eigenvector"; "structure"; "tensor" ]
+          Inputs = [ makePort "Vector Float64" vectorImageFloat64 ]
+          Outputs = [ makePort "Vector Float64" vectorImageFloat64 ]
+          Parameters =
+            [ makeParameter "firstComponent" "First component" "0" (BasicType.Numeric UInt32)
+              makeParameter "componentCount" "Component count" "3" (BasicType.Numeric UInt32) ] }
+
+        { Id = "Vector3ToColor"
+          DisplayName = "vector3ToColor"
+          Category = "Vector Images"
+          Summary = "Map a three-component Float64 vector image to RGB UInt8 color."
+          Description = "Converts three-component Float64 vector pixels to RGB color pixels by linearly mapping inputMinimum..inputMaximum to 0..255 and clamping outside that range. The defaults are useful for signed direction fields such as structure-tensor eigenvectors."
+          Aliases = [ "vector"; "color"; "rgb"; "direction"; "eigenvector" ]
+          Inputs = [ makePort "Vector Float64" vectorImageFloat64 ]
+          Outputs = [ makePort "Color" colorImage ]
+          Parameters =
+            [ makeParameter "inputMinimum" "Input minimum" "-1.0" (BasicType.Numeric Float64)
+              makeParameter "inputMaximum" "Input maximum" "1.0" (BasicType.Numeric Float64) ] }
+
+        { Id = "ColorToVector3"
+          DisplayName = "colorToVector3"
+          Category = "Vector Images"
+          Summary = "Map RGB UInt8 color to a three-component Float64 vector image."
+          Description = "Converts RGB color pixels to three-component Float64 vector pixels by linearly mapping 0..255 to outputMinimum..outputMaximum. The defaults invert vector3ToColor for signed direction fields."
+          Aliases = [ "color"; "rgb"; "vector"; "direction" ]
+          Inputs = [ makePort "Color" colorImage ]
+          Outputs = [ makePort "Vector Float64" vectorImageFloat64 ]
+          Parameters =
+            [ makeParameter "outputMinimum" "Output minimum" "-1.0" (BasicType.Numeric Float64)
+              makeParameter "outputMaximum" "Output maximum" "1.0" (BasicType.Numeric Float64) ] }
+
         { Id = "AppendVectorElement"
           DisplayName = "appendVectorElement"
           Category = "Vector Images"
@@ -1468,15 +1505,11 @@ module BuiltInCatalog =
         { Id = "StructureTensor"
           DisplayName = "structureTensor"
           Category = "Vector Images"
-          Summary = "Compute structure-tensor eigensystem fields."
-          Description = "Pre-smooths the scalar image with sigma, computes the finite-difference gradient, forms the six unique components of the symmetric exterior product, smooths those tensor components with rho, and emits four 3-vector streams: eigenvalues followed by the three eigenvector fields."
+          Summary = "Compute the structure-tensor eigensystem as a vectorized 3x4 matrix."
+          Description = "Pre-smooths the scalar image with sigma, computes the finite-difference gradient, forms the six unique components of the symmetric exterior product, smooths those tensor components with rho, and emits one 12-component vector image per slice. The 12 components encode a 3x4 eigensystem matrix: components 0..2 are the sorted eigenvalues; components 3..5 are eigenvector 0; components 6..8 are eigenvector 1; components 9..11 are eigenvector 2. Use vectorRange to extract a 3-component eigenvector stream before colorizing or writing a scalar component."
           Aliases = [ "structure"; "tensor"; "eigen"; "orientation"; "gradient"; "matrix" ]
           Inputs = [ makePort "Float64" imageFloat64 ]
-          Outputs =
-            [ makePort "Eigenvalues" vectorImageFloat64
-              makePort "Eigenvector 0" vectorImageFloat64
-              makePort "Eigenvector 1" vectorImageFloat64
-              makePort "Eigenvector 2" vectorImageFloat64 ]
+          Outputs = [ makePort "Eigensystem 3x4" vectorImageFloat64 ]
           Parameters =
             [ makeParameter "sigma" "Sigma" "1.0" (BasicType.Numeric Float64)
               makeParameter "rho" "Rho" "2.0" (BasicType.Numeric Float64) ] }

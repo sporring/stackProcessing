@@ -22,6 +22,9 @@ let main arg =
     >=> ignoreSingles ()
     |> sink
 
+    let chunkInfo = getChunkInfo output ".tiff"
+    printfn $"Wrote chunks: chunks={chunkInfo.chunks} size={chunkInfo.size} componentType={chunkInfo.topLeftInfo.componentType}"
+
     let output2 = input+"b"
     deleteIfExists output2
     src |> readSlab<uint8> output ".tiff"

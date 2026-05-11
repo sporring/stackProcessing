@@ -229,6 +229,7 @@ module PortType =
         | Any, _
         | _, Any -> true
         | outputType, Custom "Record" when isRecordType outputType -> true
+        | Custom "ColorImage", Image Number -> true
         | Image _, Image Number -> true
         | Image Number, Image _ -> true
         | _ -> outputType = inputType

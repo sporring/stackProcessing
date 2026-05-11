@@ -430,8 +430,9 @@ module PipelineCodeGenerator =
         && savedParamValue "format" node <> "NeXus/HDF5"
 
     let private isWriteChunkInfoNode (node: SavedNode) =
-        node.FunctionId = "Write"
-        && (savedParamValue "format" node = "OME-Zarr" || savedParamValue "format" node = "NeXus/HDF5")
+        node.FunctionId = "WriteChunks"
+        || (node.FunctionId = "Write"
+            && (savedParamValue "format" node = "OME-Zarr" || savedParamValue "format" node = "NeXus/HDF5"))
 
     let private readFormat (node: SavedNode) =
         savedParamValue "format" node
@@ -1334,6 +1335,18 @@ module PipelineCodeGenerator =
         | "VectorElement" ->
             let componentId = parameterValue "component"
             $">=> vectorElement<float> {componentId}"
+        | "VectorRange" ->
+            let firstComponent = parameterValue "firstComponent"
+            let componentCount = parameterValue "componentCount"
+            $">=> vectorRange<float> {firstComponent} {componentCount}"
+        | "Vector3ToColor" ->
+            let inputMinimum = parameterValue "inputMinimum"
+            let inputMaximum = parameterValue "inputMaximum"
+            $">=> vector3ToColor {inputMinimum} {inputMaximum}"
+        | "ColorToVector3" ->
+            let outputMinimum = parameterValue "outputMinimum"
+            let outputMaximum = parameterValue "outputMaximum"
+            $">=> colorToVector3 {outputMinimum} {outputMaximum}"
         | "VectorMapElements" ->
             let functionName = quotedParameter "function"
             $">=> vectorMapElements {functionName}"
@@ -2074,9 +2087,7 @@ module PipelineCodeGenerator =
                         match nodesById |> Map.tryFind edge.FromNode with
                         | Some upstream ->
                             let upstreamExpression = pipelineExpression visited upstream
-                            if upstream.FunctionId = "StructureTensor" && edge.FromPort >= 0 && edge.FromPort <= 3 then
-                                $"{upstreamExpression}{newLine}>=> selectGroupedOutput 4u {edge.FromPort}u"
-                            elif upstream.FunctionId = "PCA" && edge.FromPort >= 0 && edge.FromPort <= 8 then
+                            if upstream.FunctionId = "PCA" && edge.FromPort >= 0 && edge.FromPort <= 8 then
                                 let rawComponents = savedParamValue "components" upstream
                                 let components =
                                     if String.IsNullOrWhiteSpace rawComponents then "3u"
@@ -2561,6 +2572,19 @@ module PipelineCodeGenerator =
                                 | "NeXus/HDF5" -> $"getNexusInfo {output} {datasetPath} {frameAxis} {yAxis} {xAxis}"
                                 | _ -> failwith $"Write node '{node.Id}' does not produce ChunkInfo for format '{format}'."
                             let body = indentBlock 4 $"{expression}{newLine}|> sink{newLine}{infoExpression}"
+                            { Name = name
+                              Dependencies =
+                                  Set.union
+                                      (pipelineBindingDependencies Set.empty node)
+                                      (parameterBindingDependencies node)
+                                  |> Set.remove name
+                              Text = $"let {name} ={newLine}{body}" }
+                        | "WriteChunks" ->
+                            let name = chunkInfoNamesByNodeId |> Map.find node.Id
+                            let expression = pipelineExpression Set.empty node
+                            let output = stringArgument "output"
+                            let suffix = stringArgument "suffix"
+                            let body = indentBlock 4 $"{expression}{newLine}|> sink{newLine}getChunkInfo {output} {suffix}"
                             { Name = name
                               Dependencies =
                                   Set.union

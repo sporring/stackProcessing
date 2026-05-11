@@ -1392,6 +1392,72 @@ let vectorElement<'T when 'T : equality> (componentId: uint) (img: Image<'T list
         output.Set idx values[componentIndex])
     output
 
+let vectorRange<'T when 'T : equality> (firstComponent: uint) (componentCount: uint) (img: Image<'T list>) : Image<'T list> =
+    let first = int firstComponent
+    let count = int componentCount
+    let available = int (img.GetNumberOfComponentsPerPixel())
+    if count <= 0 then
+        invalidArg "componentCount" "vectorRange: componentCount must be positive."
+    if first < 0 || first + count > available then
+        invalidArg "firstComponent" $"vectorRange: requested components {first}..{first + count - 1}, but available range is 0..{available - 1}."
+
+    let output = new Image<'T list>(img.GetSize(), componentCount, "vectorRange", img.index)
+    img.GetSize()
+    |> flatIndices
+    |> Seq.iter (fun idx ->
+        img.Get idx
+        |> List.skip first
+        |> List.take count
+        |> output.Set idx)
+    output
+
+let private requireThreeComponents name (img: Image<'T list>) =
+    if img.GetNumberOfComponentsPerPixel() <> 3u then
+        invalidArg "img" $"{name}: expected a 3-component image, got {img.GetNumberOfComponentsPerPixel()} components."
+
+let private clampByte value =
+    if value <= 0.0 then 0uy
+    elif value >= 255.0 then 255uy
+    else byte (Math.Round value)
+
+let vector3ToColor (inputMinimum: float) (inputMaximum: float) (img: Image<float list>) : Image<uint8 list> =
+    requireThreeComponents "vector3ToColor" img
+    if inputMaximum <= inputMinimum then
+        invalidArg "inputMaximum" "vector3ToColor: inputMaximum must be larger than inputMinimum."
+
+    let scale = 255.0 / (inputMaximum - inputMinimum)
+    let output = new Image<uint8 list>(img.GetSize(), 3u, "vector3ToColor", img.index)
+    img.GetSize()
+    |> flatIndices
+    |> Seq.iter (fun idx ->
+        match img.Get idx with
+        | [ r; g; b ] ->
+            [ r; g; b ]
+            |> List.map (fun value -> (value - inputMinimum) * scale |> clampByte)
+            |> output.Set idx
+        | values ->
+            failwith $"vector3ToColor: expected 3 components, got {values.Length}.")
+    output
+
+let colorToVector3 (outputMinimum: float) (outputMaximum: float) (img: Image<uint8 list>) : Image<float list> =
+    requireThreeComponents "colorToVector3" img
+    if outputMaximum <= outputMinimum then
+        invalidArg "outputMaximum" "colorToVector3: outputMaximum must be larger than outputMinimum."
+
+    let scale = (outputMaximum - outputMinimum) / 255.0
+    let output = new Image<float list>(img.GetSize(), 3u, "colorToVector3", img.index)
+    img.GetSize()
+    |> flatIndices
+    |> Seq.iter (fun idx ->
+        match img.Get idx with
+        | [ r; g; b ] ->
+            [ r; g; b ]
+            |> List.map (fun value -> outputMinimum + float value * scale)
+            |> output.Set idx
+        | values ->
+            failwith $"colorToVector3: expected 3 components, got {values.Length}.")
+    output
+
 let appendVectorElement (vector: Image<float list>) (element: Image<float>) : Image<float list> =
     if vector.GetSize() <> element.GetSize() then
         invalidArg "element" $"appendVectorElement: image sizes differ: {vector.GetSize()} vs {element.GetSize()}."
@@ -1556,6 +1622,30 @@ let structureTensorEigenImages (tensor: Image<float list>) : Image<float list> l
         | values ->
             failwith $"structureTensorEigenImages: expected 6 components, got {values.Length}.")
     [ eigenvalues; eigenvector0; eigenvector1; eigenvector2 ]
+
+let structureTensorEigenMatrix (tensor: Image<float list>) : Image<float list> =
+    if tensor.GetNumberOfComponentsPerPixel() <> 6u then
+        invalidArg "tensor" $"structureTensorEigenMatrix: expected a 6-component symmetric tensor image, got {tensor.GetNumberOfComponentsPerPixel()} components."
+
+    let output = new Image<float list>(tensor.GetSize(), 12u, "structureTensorEigenMatrix", tensor.index)
+    tensor.GetSize()
+    |> flatIndices
+    |> Seq.iter (fun idx ->
+        match tensor.Get idx with
+        | [ xx; xy; xz; yy; yz; zz ] ->
+            let matrix =
+                { m00 = xx; m01 = xy; m02 = xz
+                  m10 = xy; m11 = yy; m12 = yz
+                  m20 = xz; m21 = yz; m22 = zz }
+            let eigen = symmetricEigen matrix
+            let values = eigen |> List.map fst
+            let vectors =
+                eigen
+                |> List.collect (fun (_, v) -> [ v.x; v.y; v.z ])
+            output.Set idx (values @ vectors)
+        | values ->
+            failwith $"structureTensorEigenMatrix: expected 6 components, got {values.Length}.")
+    output
 
 let stack (images: Image<'T> list) : Image<'T> =
     match images with

@@ -422,6 +422,27 @@ let generatorSuite =
             Expect.stringContains code "|> readSlab<uint8> \"chunks\" \".mha\"" "ReadSlab should generate the slab reader."
             Expect.stringContains code ">=> writeChunks \"chunks-out\" \".mha\" 12u 13u 14u" "WriteChunks should generate the chunk writer wrapper."
 
+            let expand =
+                node "expand" "Expand" []
+
+            let print =
+                node "print" "Print"
+                    [ p "format" "chunks={input1} size={input2}" false
+                      p "input1" "chunks" true
+                      p "input2" "size" true ]
+
+            let infoCode =
+                graph
+                    [ read; write; expand; print ]
+                    [ edge "read" "output" 0 "write" "input" 0
+                      edge "write" "reducerOutput" 0 "expand" "input" 0
+                      edge "expand" "reducerOutput" 0 "print" "parameterInput" 1
+                      edge "expand" "reducerOutput" 1 "print" "parameterInput" 2 ]
+                |> PipelineCodeGenerator.generateSavedGraph
+
+            Expect.stringContains infoCode "let ChunkInfo0 =" "Linked WriteChunks ChunkInfo should run the writer before binding metadata."
+            Expect.stringContains infoCode "getChunkInfo \"chunks-out\" \".mha\"" "WriteChunks should expose ChunkInfo for the written chunk directory."
+
         testCase "readRange box lowers to ranged DSL source" <| fun _ ->
             let read =
                 node "read" "ReadRange"
@@ -666,8 +687,8 @@ let generatorSuite =
 
             let write =
                 node "writeMesh" "WriteMesh"
-                    [ p "output" "surface.obj" false
-                      p "format" "auto" false ]
+                    [ p "output" "surface" false
+                      p "format" ".obj" false ]
 
             let code =
                 graph [ read; marching; write ]
@@ -676,7 +697,7 @@ let generatorSuite =
                 |> PipelineCodeGenerator.generateSavedGraph
 
             Expect.stringContains code ">=> marchingCubes<uint8> 1.0" "MarchingCubes should generate a typed streaming mesh stage."
-            Expect.stringContains code ">=> writeMesh \"surface.obj\" \"auto\"" "WriteMesh should generate the mesh writer."
+            Expect.stringContains code ">=> writeMesh \"surface\" \".obj\"" "WriteMesh should generate the mesh writer with the selected mesh format."
             Expect.stringContains code "|> sink" "Terminal WriteMesh should run the mesh writer."
 
             let surfaceArea =
@@ -1625,6 +1646,25 @@ let generatorSuite =
             Expect.stringContains vectorCode ">=> vectorMapElements \"sqrt\"" "VectorMapElements should lower with the selected function."
             Expect.stringContains vectorCode ">=> vectorElement<float> 2" "VectorElement should lower with the selected component."
 
+            let colorCode =
+                graph
+                    [ read "source" "source"
+                      node "tensor" "StructureTensor" [ p "sigma" "1.0" false; p "rho" "2.0" false ]
+                      node "range" "VectorRange" [ p "firstComponent" "3" false; p "componentCount" "3" false ]
+                      node "color" "Vector3ToColor" [ p "inputMinimum" "-1.0" false; p "inputMaximum" "1.0" false ]
+                      node "vector" "ColorToVector3" [ p "outputMinimum" "-1.0" false; p "outputMaximum" "1.0" false ]
+                      write ]
+                    [ edge "source" "output" 0 "tensor" "input" 0
+                      edge "tensor" "output" 0 "range" "input" 0
+                      edge "range" "output" 0 "color" "input" 0
+                      edge "color" "output" 0 "vector" "input" 0
+                      edge "vector" "output" 0 "write" "input" 0 ]
+                |> PipelineCodeGenerator.generateSavedGraph
+
+            Expect.stringContains colorCode ">=> vectorRange<float> 3u 3u" "VectorRange should lower with start and count."
+            Expect.stringContains colorCode ">=> vector3ToColor -1.0 1.0" "Vector3ToColor should lower with its input range."
+            Expect.stringContains colorCode ">=> colorToVector3 -1.0 1.0" "ColorToVector3 should lower with its output range."
+
             let gradientCode =
                 graph
                     [ read "source" "source"
@@ -1658,11 +1698,11 @@ let generatorSuite =
                       node "tensor" "StructureTensor" [ p "sigma" "1.0" false; p "rho" "2.0" false ]
                       write ]
                     [ edge "source" "output" 0 "tensor" "input" 0
-                      edge "tensor" "output" 2 "write" "input" 0 ]
+                      edge "tensor" "output" 0 "write" "input" 0 ]
                 |> PipelineCodeGenerator.generateSavedGraph
 
             Expect.stringContains structureTensorCode ">=> structureTensor 1.0 2.0" "StructureTensor should lower with sigma and rho."
-            Expect.stringContains structureTensorCode ">=> selectGroupedOutput 4u 2u" "Connecting a StructureTensor output port should select the corresponding 3-vector stream."
+            Expect.isFalse (structureTensorCode.Contains("selectGroupedOutput 4u")) "StructureTensor now emits one vectorized eigensystem stream."
 
             let pcaCode =
                 graph

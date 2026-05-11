@@ -2,10 +2,10 @@
   "version": 1,
   "nodes": [
     {
-      "id": "read",
+      "id": "node-1",
       "functionId": "Read",
-      "x": 80.0,
-      "y": 120.0,
+      "x": 138.8590218414755,
+      "y": 120,
       "parameters": [
         {
           "key": "availableMemory",
@@ -85,10 +85,10 @@
       ]
     },
     {
-      "id": "marchingCubes",
+      "id": "node-2",
       "functionId": "MarchingCubes",
-      "x": 280.0,
-      "y": 120.0,
+      "x": 295.7272743371931,
+      "y": 120,
       "parameters": [
         {
           "key": "type",
@@ -103,19 +103,19 @@
       ]
     },
     {
-      "id": "writeMesh",
+      "id": "node-3",
       "functionId": "WriteMesh",
-      "x": 520.0,
-      "y": 120.0,
+      "x": 452.5439025710314,
+      "y": 120,
       "parameters": [
         {
           "key": "output",
-          "value": "../tmp/surface.obj",
+          "value": "../tmp/surface",
           "useInput": false
         },
         {
           "key": "format",
-          "value": "auto",
+          "value": ".obj",
           "useInput": false
         }
       ]
@@ -123,18 +123,18 @@
   ],
   "edges": [
     {
-      "fromNode": "read",
+      "fromNode": "node-1",
       "fromKind": "dataOutput",
       "fromPort": 0,
-      "toNode": "marchingCubes",
+      "toNode": "node-2",
       "toKind": "dataInput",
       "toPort": 0
     },
     {
-      "fromNode": "marchingCubes",
+      "fromNode": "node-2",
       "fromKind": "dataOutput",
       "fromPort": 0,
-      "toNode": "writeMesh",
+      "toNode": "node-3",
       "toKind": "dataInput",
       "toPort": 0
     }

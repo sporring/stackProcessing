@@ -438,6 +438,8 @@ val selectGroupedValueOutput: (uint -> uint -> StackCore.Stage<'a,'a>)
 
 val writeMesh: (string -> string -> StackCore.Stage<StackMesh.TriangleSet,unit>)
 
+val meshFilePath: (string -> string -> string)
+
 val defaultAffineRegistrationOptions:
   StackRegistration.AffineRegistrationOptions
 
@@ -775,6 +777,19 @@ val toVectorImage<'T when 'T: equality> :
 
 val vectorElement:
   componentId: uint -> Stage<Image<'T list>,Image<'T>> when 'T: equality
+
+val vectorRange:
+  firstComponent: uint ->
+    componentCount: uint -> Stage<Image<'T list>,Image<'T list>>
+    when 'T: equality
+
+val vector3ToColor:
+  inputMinimum: float ->
+    inputMaximum: float -> Stage<Image<float list>,Image<uint8 list>>
+
+val colorToVector3:
+  outputMinimum: float ->
+    outputMaximum: float -> Stage<Image<uint8 list>,Image<float list>>
 
 val appendVectorElement:
   Stage<(Image<float list> * Image<float>),Image<float list>>

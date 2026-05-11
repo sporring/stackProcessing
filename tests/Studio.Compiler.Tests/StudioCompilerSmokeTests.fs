@@ -115,6 +115,15 @@ let rec private sourceFor caseId portType =
           NodeId = combine.Id
           Kind = "output"
           Port = 0 }
+    | PortType.Custom "ColorImage" ->
+        let vector = sourceFor $"{caseId}_vector" (PortType.Custom "VectorImageFloat64")
+        let color = node $"source_{caseId}_color" "Vector3ToColor" [ p "inputMinimum" "-1.0" false; p "inputMaximum" "1.0" false ]
+
+        { Nodes = vector.Nodes @ [ color ]
+          Edges = vector.Edges @ [ edge vector.NodeId vector.Kind vector.Port color.Id "input" 0 ]
+          NodeId = color.Id
+          Kind = "output"
+          Port = 0 }
     | PortType.Custom "PointSet" ->
         let source =
             node $"source_{caseId}_points" "ReadPointSet"
@@ -339,6 +348,7 @@ let private outputKindFor functionId portType =
         | PortType.Custom "ImageStats"
         | PortType.Custom "ObjectSizeStats"
         | PortType.Custom "TranslationTable"
+        | PortType.Custom "ChunkInfo"
         | PortType.Custom "StackInfo"
         | PortType.Custom "SerialVolumeGeometry" -> "reducerOutput"
         | _ -> "output"
@@ -360,11 +370,14 @@ let private sinkFor caseId functionId portType =
           node $"sink_{caseId}_write" "Write" [ p "output" "out" false; p "suffix" ".tiff" false ] ],
         [ edge $"target_{caseId}" targetKind 0 $"sink_{caseId}_element" "input" 0
           edge $"sink_{caseId}_element" "output" 0 $"sink_{caseId}_write" "input" 0 ]
+    | PortType.Custom "ColorImage" ->
+        [ node $"sink_{caseId}_write" "Write" [ p "output" "out" false; p "suffix" ".tiff" false ] ],
+        [ edge $"target_{caseId}" targetKind 0 $"sink_{caseId}_write" "input" 0 ]
     | PortType.Custom "PointSet" ->
         [ node $"sink_{caseId}_points" "WritePointSet" [ p "output" "points" false; p "suffix" ".csv" false ] ],
         [ edge $"target_{caseId}" targetKind 0 $"sink_{caseId}_points" "input" 0 ]
     | PortType.Custom "Mesh" ->
-        [ node $"sink_{caseId}_mesh" "WriteMesh" [ p "output" "mesh.obj" false; p "format" "auto" false ] ],
+        [ node $"sink_{caseId}_mesh" "WriteMesh" [ p "output" "mesh" false; p "format" ".obj" false ] ],
         [ edge $"target_{caseId}" targetKind 0 $"sink_{caseId}_mesh" "input" 0 ]
     | PortType.Custom "Float64Matrix" ->
         [ node $"sink_{caseId}_matrix" "WriteMatrix" [ p "output" "matrix" false; p "suffix" ".csv" false ] ],

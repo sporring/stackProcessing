@@ -349,6 +349,15 @@ let toVectorImage<'T when 'T: equality> : Stage<Image<'T> * Image<'T>, Image<'T 
 let vectorElement<'T when 'T: equality> componentId : Stage<Image<'T list>, Image<'T>> =
     liftUnaryReleaseAfter "vectorElement" (ImageFunctions.vectorElement componentId) id id
 
+let vectorRange<'T when 'T: equality> firstComponent componentCount : Stage<Image<'T list>, Image<'T list>> =
+    liftUnaryReleaseAfter "vectorRange" (ImageFunctions.vectorRange firstComponent componentCount) id id
+
+let vector3ToColor inputMinimum inputMaximum : Stage<Image<float list>, Image<uint8 list>> =
+    liftUnaryReleaseAfter "vector3ToColor" (ImageFunctions.vector3ToColor inputMinimum inputMaximum) id id
+
+let colorToVector3 outputMinimum outputMaximum : Stage<Image<uint8 list>, Image<float list>> =
+    liftUnaryReleaseAfter "colorToVector3" (ImageFunctions.colorToVector3 outputMinimum outputMaximum) id id
+
 let appendVectorElement : Stage<Image<float list> * Image<float>, Image<float list>> =
     liftPairReleaseAfter "appendVectorElement" ImageFunctions.appendVectorElement
 
@@ -627,17 +636,6 @@ let private gaussianVectorElements (sigma: float) : Stage<Image<float list>, Ima
         let stg = mapWindow "gaussianVectorElements" f memoryNeed id
         (window win pad stride) --> stg --> flattenList ()
         |> Stage.withSliceCardinality (SlimPipeline.Domain(sameSliceDomainForKernelDepth ksz))
-
-let private splitEigenImages : Stage<Image<float list>, Image<float list>> =
-    Stage.map
-        "structureTensorEigenImages"
-        (fun _ tensor ->
-            let result = ImageFunctions.structureTensorEigenImages tensor
-            tensor.decRefCount()
-            result)
-        id
-        (fun slices -> slices * 4UL)
-    --> flattenList ()
 
 type private PcaAccumulator =
     { Count: uint64
@@ -1429,7 +1427,7 @@ let structureTensor (sigma: float) (rho: float) : Stage<Image<float>, Image<floa
     --> gradient 1u None
     --> liftUnaryReleaseAfter "structureTensorOuterProduct" ImageFunctions.structureTensorOuterProduct id id
     --> gaussianVectorElements rho
-    --> splitEigenImages
+    --> liftUnaryReleaseAfter "structureTensorEigenMatrix" ImageFunctions.structureTensorEigenMatrix id id
 
 // stride calculation example
 // ker = 3, win = 7

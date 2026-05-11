@@ -96,37 +96,44 @@ let private cubeTetrahedra =
 let private voxelValue (pixels: 'T[,]) x y =
     pixels[x, y] |> Convert.ToDouble
 
+let private voxelValueOrBackground (pixels: 'T[,]) width height x y =
+    if x < 0 || y < 0 || x >= width || y >= height then
+        0.0
+    else
+        voxelValue pixels x y
+
 let private meshBetweenSlices<'T when 'T: equality> surfaceValue (lower: Image<'T>) (upper: Image<'T>) =
     let width = min (int (lower.GetWidth())) (int (upper.GetWidth()))
     let height = min (int (lower.GetHeight())) (int (upper.GetHeight()))
-    let z = float lower.index
+    let lowerZ = float lower.index
+    let upperZ = float upper.index
     let lowerPixels = lower.toArray2D()
     let upperPixels = upper.toArray2D()
 
     let triangles = ResizeArray<Triangle>()
 
-    if width >= 2 && height >= 2 then
-        for y in 0 .. height - 2 do
-            for x in 0 .. width - 2 do
+    if width >= 1 && height >= 1 then
+        for y in -1 .. height - 1 do
+            for x in -1 .. width - 1 do
                 let positions =
-                    [| point (float x) (float y) z
-                       point (float (x + 1)) (float y) z
-                       point (float (x + 1)) (float (y + 1)) z
-                       point (float x) (float (y + 1)) z
-                       point (float x) (float y) (z + 1.0)
-                       point (float (x + 1)) (float y) (z + 1.0)
-                       point (float (x + 1)) (float (y + 1)) (z + 1.0)
-                       point (float x) (float (y + 1)) (z + 1.0) |]
+                    [| point (float x) (float y) lowerZ
+                       point (float (x + 1)) (float y) lowerZ
+                       point (float (x + 1)) (float (y + 1)) lowerZ
+                       point (float x) (float (y + 1)) lowerZ
+                       point (float x) (float y) upperZ
+                       point (float (x + 1)) (float y) upperZ
+                       point (float (x + 1)) (float (y + 1)) upperZ
+                       point (float x) (float (y + 1)) upperZ |]
 
                 let values =
-                    [| voxelValue lowerPixels x y
-                       voxelValue lowerPixels (x + 1) y
-                       voxelValue lowerPixels (x + 1) (y + 1)
-                       voxelValue lowerPixels x (y + 1)
-                       voxelValue upperPixels x y
-                       voxelValue upperPixels (x + 1) y
-                       voxelValue upperPixels (x + 1) (y + 1)
-                       voxelValue upperPixels x (y + 1) |]
+                    [| voxelValueOrBackground lowerPixels width height x y
+                       voxelValueOrBackground lowerPixels width height (x + 1) y
+                       voxelValueOrBackground lowerPixels width height (x + 1) (y + 1)
+                       voxelValueOrBackground lowerPixels width height x (y + 1)
+                       voxelValueOrBackground upperPixels width height x y
+                       voxelValueOrBackground upperPixels width height (x + 1) y
+                       voxelValueOrBackground upperPixels width height (x + 1) (y + 1)
+                       voxelValueOrBackground upperPixels width height x (y + 1) |]
 
                 let cube = Array.init 8 (fun index -> positions[index], values[index])
 
@@ -153,7 +160,7 @@ let marchingCubes<'T when 'T: equality> surfaceValue : Stage<Image<'T>, Triangle
         finally
             releaseConsumed window
 
-    (StackCore.window 2u 0u 1u)
+    (StackCore.window 2u 1u 1u)
     --> StackCore.mapWindow "marchingCubes" mapper id id
 
 let private validateUnit name value =
@@ -195,7 +202,6 @@ let surfaceArea xUnit yUnit zUnit : Stage<TriangleSet, float> =
 type MeshFormat =
     | Obj
     | Stl
-    | Ply
 
 let private inferFormat (outputPath: string) (format: string) =
     let normalized = format.Trim().TrimStart('.').ToLowerInvariant()
@@ -204,77 +210,69 @@ let private inferFormat (outputPath: string) (format: string) =
     match if String.IsNullOrWhiteSpace normalized || normalized = "auto" then fromExtension() else normalized with
     | "obj" -> Obj
     | "stl" -> Stl
-    | "ply" -> Ply
-    | other -> failwith $"Unsupported mesh format '{other}'. Use obj, stl, or ply."
+    | "ply" -> failwith "PLY mesh output is paused because ASCII PLY requires vertex and face counts before writing. Use OBJ or STL for streaming mesh output."
+    | other -> failwith $"Unsupported mesh format '{other}'. Use obj or stl."
+
+let private meshSuffix meshFormat =
+    match meshFormat with
+    | Obj -> ".obj"
+    | Stl -> ".stl"
+
+let meshFilePath (outputPath: string) (format: string) =
+    if Path.HasExtension outputPath then
+        outputPath
+    else
+        outputPath + meshSuffix (inferFormat outputPath format)
 
 let private f (value: float) =
     value.ToString("R", CultureInfo.InvariantCulture)
 
-let private writeObj outputPath (triangleSets: TriangleSet seq) =
-    use writer = new StreamWriter(outputPath, false)
-    let mutable nextVertex = 1
-    triangleSets
-    |> Seq.iter (fun triangleSet ->
-        triangleSet.Triangles
-        |> List.iter (fun triangle ->
-            [ triangle.A; triangle.B; triangle.C ]
-            |> List.iter (fun p -> writer.WriteLine($"v {f p.X} {f p.Y} {f p.Z}"))
-            writer.WriteLine($"f {nextVertex} {nextVertex + 1} {nextVertex + 2}")
-            nextVertex <- nextVertex + 3))
+let private writeObjTriangle (writer: StreamWriter) nextVertex (triangle: Triangle) =
+    [ triangle.A; triangle.B; triangle.C ]
+    |> List.iter (fun p -> writer.WriteLine($"v {f p.X} {f p.Y} {f p.Z}"))
+    writer.WriteLine($"f {nextVertex} {nextVertex + 1} {nextVertex + 2}")
+    nextVertex + 3
 
-let private writeStl outputPath (triangleSets: TriangleSet seq) =
-    use writer = new StreamWriter(outputPath, false)
-    writer.WriteLine("solid stackProcessing")
-    triangleSets
-    |> Seq.iter (fun triangleSet ->
-        triangleSet.Triangles
-        |> List.iter (fun triangle ->
-            writer.WriteLine("  facet normal 0 0 0")
-            writer.WriteLine("    outer loop")
-            [ triangle.A; triangle.B; triangle.C ]
-            |> List.iter (fun p -> writer.WriteLine($"      vertex {f p.X} {f p.Y} {f p.Z}"))
-            writer.WriteLine("    endloop")
-            writer.WriteLine("  endfacet")))
-    writer.WriteLine("endsolid stackProcessing")
+let private writeStlTriangle (writer: StreamWriter) (triangle: Triangle) =
+    writer.WriteLine("  facet normal 0 0 0")
+    writer.WriteLine("    outer loop")
+    [ triangle.A; triangle.B; triangle.C ]
+    |> List.iter (fun p -> writer.WriteLine($"      vertex {f p.X} {f p.Y} {f p.Z}"))
+    writer.WriteLine("    endloop")
+    writer.WriteLine("  endfacet")
 
-let private writePly outputPath (triangleSets: TriangleSet seq) =
-    let triangles =
-        triangleSets
-        |> Seq.collect _.Triangles
-        |> Seq.toArray
+let private writeObjStreaming outputPath (input: AsyncSeq<TriangleSet>) =
+    async {
+        use writer = new StreamWriter(outputPath, false)
+        let mutable nextVertex = 1
+        do!
+            input
+            |> AsyncSeq.iterAsync (fun triangleSet ->
+                async {
+                    for triangle in triangleSet.Triangles do
+                        nextVertex <- writeObjTriangle writer nextVertex triangle
+                })
+    }
 
-    use writer = new StreamWriter(outputPath, false)
-    writer.WriteLine("ply")
-    writer.WriteLine("format ascii 1.0")
-    writer.WriteLine($"element vertex {triangles.Length * 3}")
-    writer.WriteLine("property float x")
-    writer.WriteLine("property float y")
-    writer.WriteLine("property float z")
-    writer.WriteLine($"element face {triangles.Length}")
-    writer.WriteLine("property list uchar int vertex_indices")
-    writer.WriteLine("end_header")
-
-    triangles
-    |> Array.iter (fun triangle ->
-        [ triangle.A; triangle.B; triangle.C ]
-        |> List.iter (fun p -> writer.WriteLine($"{f p.X} {f p.Y} {f p.Z}")))
-
-    triangles
-    |> Array.iteri (fun index _ ->
-        let start = index * 3
-        writer.WriteLine($"3 {start} {start + 1} {start + 2}"))
+let private writeStlStreaming outputPath (input: AsyncSeq<TriangleSet>) =
+    async {
+        use writer = new StreamWriter(outputPath, false)
+        writer.WriteLine("solid stackProcessing")
+        do!
+            input
+            |> AsyncSeq.iterAsync (fun triangleSet ->
+                async {
+                    for triangle in triangleSet.Triangles do
+                        writeStlTriangle writer triangle
+                })
+        writer.WriteLine("endsolid stackProcessing")
+    }
 
 let writeMesh (outputPath: string) (format: string) : Stage<TriangleSet, unit> =
     let reducer (debug: bool) (input: AsyncSeq<TriangleSet>) =
         async {
-            let triangleSets = ResizeArray<TriangleSet>()
-            do!
-                input
-                |> AsyncSeq.iterAsync (fun triangleSet ->
-                    async {
-                        if triangleSet.Triangles.Length > 0 then
-                            triangleSets.Add(triangleSet)
-                    })
+            let meshFormat = inferFormat outputPath format
+            let outputPath = meshFilePath outputPath format
 
             let directory = Path.GetDirectoryName(outputPath)
             if not (String.IsNullOrWhiteSpace directory) then
@@ -283,10 +281,9 @@ let writeMesh (outputPath: string) (format: string) : Stage<TriangleSet, unit> =
             if debug then
                 printfn $"[writeMesh] Writing {outputPath}"
 
-            match inferFormat outputPath format with
-            | Obj -> writeObj outputPath triangleSets
-            | Stl -> writeStl outputPath triangleSets
-            | Ply -> writePly outputPath triangleSets
+            match meshFormat with
+            | Obj -> do! writeObjStreaming outputPath input
+            | Stl -> do! writeStlStreaming outputPath input
         }
 
     Stage.reduce $"writeMesh \"{outputPath}\"" reducer Streaming (fun _ -> 0UL) (fun _ -> 1UL)

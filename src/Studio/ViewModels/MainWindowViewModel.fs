@@ -815,6 +815,20 @@ module private VectorImageNode =
                 |> Option.filter (String.IsNullOrWhiteSpace >> not)
                 |> Option.defaultValue "0"
             $"V[{componentText}]"
+        | "VectorRange" ->
+            let firstText =
+                state.Parameters
+                |> Seq.tryFind (fun parameter -> parameter.Key = "firstComponent")
+                |> Option.map _.Value
+                |> Option.filter (String.IsNullOrWhiteSpace >> not)
+                |> Option.defaultValue "0"
+            let countText =
+                state.Parameters
+                |> Seq.tryFind (fun parameter -> parameter.Key = "componentCount")
+                |> Option.map _.Value
+                |> Option.filter (String.IsNullOrWhiteSpace >> not)
+                |> Option.defaultValue "3"
+            $"V[{firstText}..+{countText}]"
         | "VectorMapElements" ->
             let functionName =
                 state.Parameters
@@ -1141,6 +1155,11 @@ module private ChartNode =
 
         $"Chart: {kind}"
 
+module private MeshNode =
+    let formatOptions =
+        [ "OBJ", ".obj"
+          "STL", ".stl" ]
+
 module private PipelineNodeGeometry =
     let defaultWidth = 110.
     let defaultHeight = 48.
@@ -1324,6 +1343,7 @@ type PipelineNodeViewModel(
         match functionId, portIndex, port.Type with
         | ("Read" | "ReadRandom" | "ReadRange" | "ReadSlab"), _, Custom _
         | "Write", _, Custom "StackInfo" -> ReducerOutput
+        | "WriteChunks", _, Custom "ChunkInfo" -> ReducerOutput
         | _ -> outputKindFor functionId
 
     let effectivePorts () =
@@ -1507,6 +1527,7 @@ type PipelineNodeViewModel(
                     this.Name <- state.Title
                     markGraphDirty()
                 elif (state.Definition.Id = "VectorElement" && parameter.Key = "component"
+                      || state.Definition.Id = "VectorRange" && (parameter.Key = "firstComponent" || parameter.Key = "componentCount")
                       || state.Definition.Id = "VectorMapElements" && parameter.Key = "function")
                      && args.PropertyName = nameof parameter.Value then
                     state.Title <- VectorImageNode.title state
@@ -2016,6 +2037,12 @@ type MainWindowViewModel() as this =
                         |> List.map (fun value -> ParameterOptionViewModel(value, value, true))
 
                     PipelineParameterViewModel(parameter.Label, parameter.Key, parameter.DefaultValue, parameter.Type, options, false)
+                | "WriteMesh", "format" ->
+                    let options =
+                        MeshNode.formatOptions
+                        |> List.map (fun (label, value) -> ParameterOptionViewModel(label, value, true))
+
+                    PipelineParameterViewModel(parameter.Label, parameter.Key, parameter.DefaultValue, parameter.Type, options, false)
                 | "Cast", ("sourceType" | "targetType") ->
                     let options =
                         CastNode.typeOptions
@@ -2196,7 +2223,7 @@ type MainWindowViewModel() as this =
             state.Title <- PairOperationNode.title state
         elif definition.Id = "UnaryImageFunction" then
             state.Title <- UnaryImageFunctionNode.title state
-        elif definition.Id = "VectorElement" || definition.Id = "VectorMapElements" then
+        elif definition.Id = "VectorElement" || definition.Id = "VectorRange" || definition.Id = "VectorMapElements" then
             state.Title <- VectorImageNode.title state
         elif definition.Id = "ImageComparison" then
             let operation = HighValueFilterNode.titleFrom "operation" ">" state

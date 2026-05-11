@@ -232,6 +232,66 @@
           "useInput": false
         }
       ]
+    },
+    {
+      "id": "n5",
+      "functionId": "Expand",
+      "x": 260.0,
+      "y": 420.0,
+      "parameters": []
+    },
+    {
+      "id": "n6",
+      "functionId": "Print",
+      "x": 260.0,
+      "y": 530.0,
+      "parameters": [
+        {
+          "key": "format",
+          "value": "chunks={input1} size={input2} componentType={input3}",
+          "useInput": false
+        },
+        {
+          "key": "input1",
+          "value": "",
+          "useInput": true
+        },
+        {
+          "key": "input2",
+          "value": "",
+          "useInput": true
+        },
+        {
+          "key": "input3",
+          "value": "",
+          "useInput": true
+        },
+        {
+          "key": "input4",
+          "value": "",
+          "useInput": false
+        },
+        {
+          "key": "input5",
+          "value": "",
+          "useInput": false
+        },
+        {
+          "key": "input6",
+          "value": "",
+          "useInput": false
+        },
+        {
+          "key": "input7",
+          "value": "",
+          "useInput": false
+        },
+        {
+          "key": "input8",
+          "value": "",
+          "useInput": false
+        }
+      ]
     }
   ],
   "edges": [
@@ -250,6 +310,38 @@
       "toNode": "n4",
       "toKind": "dataInput",
       "toPort": 0
+    },
+    {
+      "fromNode": "n2",
+      "fromKind": "reducerOutput",
+      "fromPort": 0,
+      "toNode": "n5",
+      "toKind": "dataInput",
+      "toPort": 0
+    },
+    {
+      "fromNode": "n5",
+      "fromKind": "reducerOutput",
+      "fromPort": 0,
+      "toNode": "n6",
+      "toKind": "parameterInput",
+      "toPort": 1
+    },
+    {
+      "fromNode": "n5",
+      "fromKind": "reducerOutput",
+      "fromPort": 1,
+      "toNode": "n6",
+      "toKind": "parameterInput",
+      "toPort": 2
+    },
+    {
+      "fromNode": "n5",
+      "fromKind": "reducerOutput",
+      "fromPort": 2,
+      "toNode": "n6",
+      "toKind": "parameterInput",
+      "toPort": 3
     }
   ]
 }

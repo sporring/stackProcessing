@@ -576,6 +576,48 @@ let stackProcessingSupportSuite =
                 let meshText = File.ReadAllText(outputPath)
                 Expect.stringContains meshText "v " "OBJ mesh should contain vertices."
                 Expect.stringContains meshText "f " "OBJ mesh should contain faces."
+
+                let vertexZValues =
+                    meshText.Split([| '\n'; '\r' |], StringSplitOptions.RemoveEmptyEntries)
+                    |> Array.choose (fun line ->
+                        let parts = line.Split(' ', StringSplitOptions.RemoveEmptyEntries)
+                        if parts.Length = 4 && parts[0] = "v" then
+                            Some (Double.Parse(parts[3], Globalization.CultureInfo.InvariantCulture))
+                        else
+                            None)
+
+                Expect.isGreaterThan (vertexZValues |> Array.max) 1.0 "OBJ vertices should use the streamed slice index as the z coordinate."
+
+                let stlPath = Path.Combine(outputDir, "surface.stl")
+                source (2UL * 1024UL * 1024UL * 1024UL)
+                |> read<uint8> inputDir suffix
+                >=> marchingCubes<uint8> 0.5
+                >=> writeMesh stlPath "auto"
+                |> drain
+
+                let stlText = File.ReadAllText(stlPath)
+                Expect.stringContains stlText "solid stackProcessing" "STL mesh should contain a solid header."
+                Expect.stringContains stlText "facet normal" "STL mesh should contain streamed facets."
+                Expect.stringContains stlText "endsolid stackProcessing" "STL mesh should contain a solid footer."
+
+                let boundarySlice = Image<uint8>.ofArray2D(Array2D.create 2 2 1uy, "boundary", 0)
+                let boundaryTriangles =
+                    imagePlan [ boundarySlice ]
+                    >=> marchingCubes<uint8> 0.5
+                    |> drainList
+                    |> List.collect _.Triangles
+
+                let boundaryPoints =
+                    boundaryTriangles
+                    |> List.collect (fun triangle -> [ triangle.A; triangle.B; triangle.C ])
+
+                Expect.isTrue (boundaryPoints |> List.exists (fun point -> point.X < 0.0)) "marchingCubes should close objects touching the left x boundary."
+                Expect.isTrue (boundaryPoints |> List.exists (fun point -> point.X > 1.0)) "marchingCubes should close objects touching the right x boundary."
+                Expect.isTrue (boundaryPoints |> List.exists (fun point -> point.Y < 0.0)) "marchingCubes should close objects touching the lower y boundary."
+                Expect.isTrue (boundaryPoints |> List.exists (fun point -> point.Y > 1.0)) "marchingCubes should close objects touching the upper y boundary."
+                Expect.isTrue (boundaryPoints |> List.exists (fun point -> point.Z < 0.0)) "marchingCubes should close objects touching the first z slice."
+                Expect.isTrue (boundaryPoints |> List.exists (fun point -> point.Z > 0.0)) "marchingCubes should close objects touching the last z slice."
+                boundarySlice.decRefCount()
             finally
                 disposeImages slices
                 deleteDirectory inputDir
@@ -1094,6 +1136,11 @@ let stackProcessingSupportSuite =
                     "An explicit extension should be left unchanged."
             finally
                 deleteDirectory outputDir
+
+        testCase "meshFilePath resolves hidden OBJ and STL suffixes" <| fun _ ->
+            Expect.equal (meshFilePath "surface" ".obj") "surface.obj" "OBJ format should append .obj when the output name has no extension."
+            Expect.equal (meshFilePath "surface" ".stl") "surface.stl" "STL format should append .stl when the output name has no extension."
+            Expect.equal (meshFilePath "surface.obj" ".stl") "surface.obj" "An explicit output extension should be left unchanged."
 
         testCase "earthMoversDistance agrees with brute-force matching for equal-sized point sets" <| fun _ ->
             let fixedPoints =
@@ -2449,7 +2496,7 @@ let stackProcessingSupportSuite =
                 volume.decRefCount()
                 disposeImages directSlices
 
-        testCase "StackProcessing structureTensor emits four 3-vector images per input slice" <| fun _ ->
+        testCase "StackProcessing structureTensor emits a 12-component eigensystem matrix per input slice" <| fun _ ->
             let makeDoubleSlice z =
                 Array2D.init 5 5 (fun x _ -> float x + 0.0 * float z)
                 |> Image<float>.ofArray2D
@@ -2461,24 +2508,52 @@ let stackProcessingSupportSuite =
                 |> drainList
 
             try
-                Expect.equal actual.Length (4 * inputSlices.Length) "structureTensor should emit eigenvalues plus three eigenvector images for each input slice."
-                actual |> List.iter (fun image -> Expect.equal (image.GetNumberOfComponentsPerPixel()) 3u "structureTensor outputs should be 3-vector images.")
-                Expect.equal actual[8].[2, 2] [ 1.0; 0.0; 0.0 ] "The middle eigenvalue image should detect a pure x-gradient."
-                Expect.equal actual[9].[2, 2] [ 1.0; 0.0; 0.0 ] "The first eigenvector image should point along x for a pure x-gradient."
+                Expect.equal actual.Length inputSlices.Length "structureTensor should preserve slice count."
+                actual |> List.iter (fun image -> Expect.equal (image.GetNumberOfComponentsPerPixel()) 12u "structureTensor outputs should be 12-component vectorized eigensystems.")
+                Expect.equal actual[2].[2, 2] [ 1.0; 0.0; 0.0; 1.0; 0.0; 0.0; 0.0; 1.0; 0.0; 0.0; 0.0; 1.0 ] "The eigensystem should store eigenvalues followed by the three eigenvectors."
             finally
                 disposeImages actual
 
-            let eigenvalues =
+            let eigenvector0 =
                 imagePlan ([ 0 .. 4 ] |> List.map makeDoubleSlice)
                 >=> StackProcessing.structureTensor 0.0 0.0
-                >=> StackProcessing.selectGroupedOutput 4u 0u
+                >=> StackProcessing.vectorRange<float> 3u 3u
                 |> drainList
 
             try
-                Expect.equal eigenvalues.Length inputSlices.Length "selectGroupedOutput should select one of the four output streams."
-                Expect.equal eigenvalues[2].[2, 2] [ 1.0; 0.0; 0.0 ] "selectGroupedOutput 4 0 should select eigenvalues."
+                Expect.equal eigenvector0.Length inputSlices.Length "vectorRange should preserve the selected stream length."
+                Expect.equal eigenvector0[2].[2, 2] [ 1.0; 0.0; 0.0 ] "vectorRange 3 3 should select eigenvector 0."
             finally
-                disposeImages eigenvalues
+                disposeImages eigenvector0
+
+        testCase "StackProcessing converts 3-vector images to and from color images" <| fun _ ->
+            let vector = new Image<float list>([ 2u; 1u ], 3u, "vector-color", 0)
+            vector.[0, 0] <- [ -1.0; 0.0; 1.0 ]
+            vector.[1, 0] <- [ 1.0; 0.5; -1.0 ]
+
+            let color =
+                imagePlan [ vector ]
+                >=> StackProcessing.vector3ToColor -1.0 1.0
+                |> drain
+
+            try
+                Expect.equal (color.GetNumberOfComponentsPerPixel()) 3u "vector3ToColor should emit 3-component color pixels."
+                Expect.equal color.[0, 0] [ 0uy; 128uy; 255uy ] "vector3ToColor should map the configured range to byte color channels."
+
+                let roundTrip =
+                    imagePlan [ color ]
+                    >=> StackProcessing.colorToVector3 -1.0 1.0
+                    |> drain
+
+                try
+                    let recovered = roundTrip.[0, 0]
+                    Expect.isLessThan (Math.Abs(recovered.[0] + 1.0)) 0.01 "colorToVector3 should recover the low endpoint."
+                    Expect.isLessThan (Math.Abs(recovered.[1])) 0.01 "colorToVector3 should recover the midpoint within byte quantization."
+                    Expect.isLessThan (Math.Abs(recovered.[2] - 1.0)) 0.01 "colorToVector3 should recover the high endpoint."
+                finally
+                    roundTrip.decRefCount()
+            finally
+                color.decRefCount()
 
         testCase "StackProcessing PCA reduces 3-vector images to eigensystem streams" <| fun _ ->
             let vectors = new Image<float list>([ 2u; 1u ], 3u, "pca-input", 0)

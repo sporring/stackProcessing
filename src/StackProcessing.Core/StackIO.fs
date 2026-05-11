@@ -392,9 +392,10 @@ let readFilesWithShape<'T when 'T: equality> (debug: bool) (width: uint) (height
     let mutable width = width
     let mutable height = height
 
-    let mapper (debug: bool) (fileName: string) : Image<'T> = 
+    let mapper (debug: bool) (sliceIndex: int64) (fileName: string) : Image<'T> = 
         if debug then printfn "[%s] Reading image named %s as %s" name fileName (typeof<'T>.Name)
         let image = Image<'T>.ofFile fileName
+        image.index <- int sliceIndex
         if width = 0u then
             width <- image.GetWidth()
             height <- image.GetHeight()
@@ -411,7 +412,7 @@ let readFilesWithShape<'T when 'T: equality> (debug: bool) (width: uint) (height
             $"readFiles.{typeof<'T>.Name}"
             (fun _ -> Image<'T>.memoryEstimate width height)
             (fun _ -> 1UL)
-    Stage.map name mapper memoryNeed elementTransformation
+    Stage.mapi name mapper memoryNeed elementTransformation
     |> withCostModel (StageCostModel.create memoryModel timeCostModel)
 
 let readFiles<'T when 'T: equality> (debug: bool) : Stage<string, Image<'T>> =
@@ -1569,7 +1570,7 @@ let private cleanChunkFiles outputDir suffix =
 let write<'T when 'T: equality> (outputDir: string) (suffix: string) : Stage<Image<'T>, Image<'T>> =
     let t = typeof<'T>
     if (icompare suffix ".tif" || icompare suffix ".tiff") 
-        && not (t = typeof<uint8> || t = typeof<int8> || t = typeof<uint16> || t = typeof<int16> || t = typeof<float32>) then
+        && not (t = typeof<uint8> || t = typeof<uint8 list> || t = typeof<int8> || t = typeof<uint16> || t = typeof<int16> || t = typeof<float32>) then
         failwith $"[write] tiff images only supports (u)int8, (u)int16 and float32 but was {t.Name}" 
     Directory.CreateDirectory(outputDir) |> ignore
     let cleaned = lazy (cleanImageSeriesFiles outputDir suffix)

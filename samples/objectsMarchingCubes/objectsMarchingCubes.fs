@@ -11,8 +11,8 @@ let main args =
     let input, output =
         match args with
         | [| input; output |] -> input, output
-        | [| input |] -> input, "../tmp/surface.obj"
-        | _ -> "../data/rotatingBoxes", "../tmp/surface.obj"
+        | [| input |] -> input, "../tmp/surface"
+        | _ -> "../data/rotatingBoxes", "../tmp/surface"
 
     let directory = Path.GetDirectoryName(output)
     if not (System.String.IsNullOrWhiteSpace directory) then
@@ -21,8 +21,8 @@ let main args =
     src
     |> read<uint8> input ".tiff"
     >=> marchingCubes<uint8> 0.5
-    >=> writeMesh output "auto"
+    >=> writeMesh output ".obj"
     |> sink
 
-    printfn "Wrote mesh to %s" (Path.GetFullPath output)
+    printfn "Wrote mesh to %s" (Path.GetFullPath(meshFilePath output ".obj"))
     0

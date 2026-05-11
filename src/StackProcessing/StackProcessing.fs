@@ -129,6 +129,7 @@ let writeCSVMatrix = StackPoints.writeCSVMatrix
 let writeCSVHistogram<'T when 'T: comparison> = StackPoints.writeCSVHistogram<'T>
 let selectGroupedValueOutput = StackPoints.selectGroupedValueOutput
 let writeMesh = StackMesh.writeMesh
+let meshFilePath = StackMesh.meshFilePath
 
 // //////////////////// StackRegistration
 let defaultAffineRegistrationOptions = StackRegistration.defaultAffineRegistrationOptions
@@ -215,6 +216,9 @@ let getMinMax = StackImageFunctions.getMinMax
 let failTypeMismatch<'T> = StackImageFunctions.failTypeMismatch<'T>
 let toVectorImage<'T when 'T: equality> : Stage<Image<'T> * Image<'T>, Image<'T list>> = StackImageFunctions.toVectorImage<'T>
 let vectorElement<'T when 'T: equality> componentId : Stage<Image<'T list>, Image<'T>> = StackImageFunctions.vectorElement<'T> componentId
+let vectorRange<'T when 'T: equality> firstComponent componentCount : Stage<Image<'T list>, Image<'T list>> = StackImageFunctions.vectorRange<'T> firstComponent componentCount
+let vector3ToColor inputMinimum inputMaximum : Stage<Image<float list>, Image<uint8 list>> = StackImageFunctions.vector3ToColor inputMinimum inputMaximum
+let colorToVector3 outputMinimum outputMaximum : Stage<Image<uint8 list>, Image<float list>> = StackImageFunctions.colorToVector3 outputMinimum outputMaximum
 let appendVectorElement : Stage<Image<float list> * Image<float>, Image<float list>> = StackImageFunctions.appendVectorElement
 let vectorMapElements functionName : Stage<Image<float list>, Image<float list>> = StackImageFunctions.vectorMapElements functionName
 let vectorDot : Stage<Image<float list> * Image<float list>, Image<float>> = StackImageFunctions.vectorDot

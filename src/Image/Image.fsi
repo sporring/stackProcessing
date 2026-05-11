@@ -710,6 +710,21 @@ val toVectorImage:
 val vectorElement:
   componentId: uint -> img: Image.Image<'T list> -> Image.Image<'T>
     when 'T: equality
+val vectorRange:
+  firstComponent: uint ->
+    componentCount: uint -> img: Image.Image<'T list> -> Image.Image<'T list>
+    when 'T: equality
+val private requireThreeComponents:
+  name: 'a -> img: Image.Image<'T list> -> unit when 'T: equality
+val private clampByte: value: float -> byte
+val vector3ToColor:
+  inputMinimum: float ->
+    inputMaximum: float ->
+    img: Image.Image<float list> -> Image.Image<uint8 list>
+val colorToVector3:
+  outputMinimum: float ->
+    outputMaximum: float ->
+    img: Image.Image<uint8 list> -> Image.Image<float list>
 val appendVectorElement:
   vector: Image.Image<float list> ->
     element: Image.Image<float> -> Image.Image<float list>
@@ -730,6 +745,8 @@ val smoothVectorElements3D:
   sigma: float -> img: Image.Image<float list> -> Image.Image<float list>
 val structureTensorEigenImages:
   tensor: Image.Image<float list> -> Image.Image<float list> list
+val structureTensorEigenMatrix:
+  tensor: Image.Image<float list> -> Image.Image<float list>
 val stack: images: Image.Image<'T> list -> Image.Image<'T> when 'T: equality
 val extractSub:
   topLeft: uint list ->

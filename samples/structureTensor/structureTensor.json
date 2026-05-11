@@ -4,8 +4,8 @@
     {
       "id": "node-1",
       "functionId": "Read",
-      "x": 67.63233284655495,
-      "y": 100,
+      "x": 120,
+      "y": 135,
       "parameters": [
         {
           "key": "availableMemory",
@@ -14,7 +14,7 @@
         },
         {
           "key": "type",
-          "value": "UInt8",
+          "value": "Float64",
           "useInput": false
         },
         {
@@ -86,18 +86,87 @@
     },
     {
       "id": "node-2",
-      "functionId": "WriteChunks",
-      "x": 232.36766715344504,
-      "y": 100,
+      "functionId": "StructureTensor",
+      "x": 280,
+      "y": 105,
       "parameters": [
         {
+          "key": "sigma",
+          "value": "1.0",
+          "useInput": false
+        },
+        {
+          "key": "rho",
+          "value": "2.0",
+          "useInput": false
+        }
+      ]
+    },
+    {
+      "id": "node-3",
+      "functionId": "VectorRange",
+      "x": 440,
+      "y": 135,
+      "parameters": [
+        {
+          "key": "firstComponent",
+          "value": "3",
+          "useInput": false
+        },
+        {
+          "key": "componentCount",
+          "value": "3",
+          "useInput": false
+        }
+      ]
+    },
+    {
+      "id": "node-4",
+      "functionId": "Vector3ToColor",
+      "x": 615,
+      "y": 135,
+      "parameters": [
+        {
+          "key": "inputMinimum",
+          "value": "-1.0",
+          "useInput": false
+        },
+        {
+          "key": "inputMaximum",
+          "value": "1.0",
+          "useInput": false
+        }
+      ]
+    },
+    {
+      "id": "node-5",
+      "functionId": "Write",
+      "x": 790,
+      "y": 135,
+      "parameters": [
+        {
+          "key": "format",
+          "value": "Image stack",
+          "useInput": false
+        },
+        {
           "key": "output",
-          "value": "../tmp/chunk",
+          "value": "../tmp/structureTensorEigenvector0Color",
           "useInput": false
         },
         {
           "key": "suffix",
-          "value": ".mha",
+          "value": ".tiff",
+          "useInput": false
+        },
+        {
+          "key": "name",
+          "value": "image",
+          "useInput": false
+        },
+        {
+          "key": "depth",
+          "value": "1",
           "useInput": false
         },
         {
@@ -112,67 +181,47 @@
         },
         {
           "key": "chunkZ",
-          "value": "16",
-          "useInput": false
-        }
-      ]
-    },
-    {
-      "id": "node-3",
-      "functionId": "Expand",
-      "x": 232.36766715344504,
-      "y": 220,
-      "parameters": []
-    },
-    {
-      "id": "node-4",
-      "functionId": "Print",
-      "x": 232.36766715344504,
-      "y": 330,
-      "parameters": [
-        {
-          "key": "format",
-          "value": "chunks={input1} size={input2} componentType={input3}",
+          "value": "8",
           "useInput": false
         },
         {
-          "key": "input1",
-          "value": "",
-          "useInput": true
-        },
-        {
-          "key": "input2",
-          "value": "",
-          "useInput": true
-        },
-        {
-          "key": "input3",
-          "value": "",
-          "useInput": true
-        },
-        {
-          "key": "input4",
-          "value": "",
+          "key": "physicalSizeX",
+          "value": "1.0",
           "useInput": false
         },
         {
-          "key": "input5",
-          "value": "",
+          "key": "physicalSizeY",
+          "value": "1.0",
           "useInput": false
         },
         {
-          "key": "input6",
-          "value": "",
+          "key": "physicalSizeZ",
+          "value": "1.0",
           "useInput": false
         },
         {
-          "key": "input7",
-          "value": "",
+          "key": "maxConcurrentWrites",
+          "value": "0",
           "useInput": false
         },
         {
-          "key": "input8",
-          "value": "",
+          "key": "datasetPath",
+          "value": "/entry/data/data",
+          "useInput": false
+        },
+        {
+          "key": "frameAxis",
+          "value": "0",
+          "useInput": false
+        },
+        {
+          "key": "yAxis",
+          "value": "1",
+          "useInput": false
+        },
+        {
+          "key": "xAxis",
+          "value": "2",
           "useInput": false
         }
       ]
@@ -189,7 +238,7 @@
     },
     {
       "fromNode": "node-2",
-      "fromKind": "reducerOutput",
+      "fromKind": "dataOutput",
       "fromPort": 0,
       "toNode": "node-3",
       "toKind": "dataInput",
@@ -197,27 +246,19 @@
     },
     {
       "fromNode": "node-3",
-      "fromKind": "reducerOutput",
+      "fromKind": "dataOutput",
       "fromPort": 0,
       "toNode": "node-4",
-      "toKind": "parameterInput",
-      "toPort": 1
+      "toKind": "dataInput",
+      "toPort": 0
     },
     {
-      "fromNode": "node-3",
-      "fromKind": "reducerOutput",
-      "fromPort": 1,
-      "toNode": "node-4",
-      "toKind": "parameterInput",
-      "toPort": 2
-    },
-    {
-      "fromNode": "node-3",
-      "fromKind": "reducerOutput",
-      "fromPort": 2,
-      "toNode": "node-4",
-      "toKind": "parameterInput",
-      "toPort": 3
+      "fromNode": "node-4",
+      "fromKind": "dataOutput",
+      "fromPort": 0,
+      "toNode": "node-5",
+      "toKind": "dataInput",
+      "toPort": 0
     }
   ]
 }

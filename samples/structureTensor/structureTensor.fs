@@ -1,58 +1,26 @@
-open Image
+// Computes the structure tensor eigensystem and writes the first eigenvector as an RGB image stack.
 open StackProcessing
-open System
 open System.IO
 
-let private makeRampSlice z =
-    Array2D.init 5 5 (fun x y ->
-        float x + 0.25 * float y + 0.0 * float z)
-    |> Image<float>.ofArray2D
-
-let private disposeImages images =
-    images |> List.iter (fun (image: Image<'T>) -> image.decRefCount())
-
-let private writeInput directory =
-    deleteIfExists directory
-    Directory.CreateDirectory directory |> ignore
-
-    [ 0 .. 4 ]
-    |> List.iter (fun z ->
-        let slice = makeRampSlice z
-        try
-            slice.toFile(Path.Combine(directory, $"image_{z:D3}.mha"))
-        finally
-            slice.decRefCount())
-
-let private runPart inputDir name part =
-    let result =
-        source (64UL * 1024UL * 1024UL)
-        |> read<float> inputDir ".mha"
-        >=> structureTensor 0.0 0.0
-        >=> selectGroupedOutput 4u part
-        |> drainList
-
-    try
-        printfn "%s" name
-        printfn "  slices: %d" result.Length
-        printfn "  center pixel in middle slice: %A" result[2].[2, 2]
-    finally
-        disposeImages result
-
 [<EntryPoint>]
-let main _ =
-    let inputDir = Path.Combine(Path.GetTempPath(), $"stackprocessing-structure-tensor-{Guid.NewGuid():N}")
-    writeInput inputDir
+let main args =
+    let availableMemory = 2UL * 1024UL * 1024UL * 1024UL // 2GB for example
 
-    printfn "Structure tensor sample"
-    printfn "Input: f(x,y,z) = x + 0.25 y on a 5x5x5 volume"
-    printfn "Output convention: eigenvalues, eigenvector 0, eigenvector 1, eigenvector 2"
+    let src, args = commandLineSource availableMemory args
 
-    try
-        runPart inputDir "Eigenvalues" 0u
-        runPart inputDir "Eigenvector 0" 1u
-        runPart inputDir "Eigenvector 1" 2u
-        runPart inputDir "Eigenvector 2" 3u
-    finally
-        deleteIfExists inputDir
+    let input, output =
+        match args with
+        | [| input; output |] -> input, output
+        | [| input |] -> input, "../tmp/structureTensorEigenvector0Color"
+        | _ -> "../data/volume", "../tmp/structureTensorEigenvector0Color"
 
+    src
+    |> read<float> input ".tiff"
+    >=> structureTensor 1.0 2.0
+    >=> vectorRange<float> 3u 3u
+    >=> vector3ToColor -1.0 1.0
+    >=> write output ".tiff"
+    |> sink
+
+    printfn "Wrote the first structure-tensor eigenvector as RGB color to %s" (Path.GetFullPath output)
     0
