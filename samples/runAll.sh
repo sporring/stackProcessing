@@ -15,6 +15,9 @@ Runs all sample projects. The default is sequential, which gives cleaner
 per-sample timing measurements. Use -j with a value greater than 1 to run
 multiple samples in parallel.
 
+The solution is built once before sample execution. Sample runs use
+dotnet run --no-build so parallel runs do not fight over shared build outputs.
+
 Options:
   -j, --jobs N       Run up to N samples at once.
   -p, --parallel    Run with one job per logical CPU.
@@ -96,18 +99,6 @@ run_sample() {
   ) >> "$log" 2>&1
 }
 
-build_sample() {
-  local i="$1"
-  local log="tmp/$i.out"
-  mkdir -p "${log:h}"
-
-  {
-    echo "== Build $i =="
-    cd "$i"
-    dotnet build
-  } > "$log" 2>&1
-}
-
 wait_oldest() {
   local pid="$pids[1]"
   local name="$names[1]"
@@ -130,10 +121,11 @@ wait_for_slot() {
   done
 }
 
-for i in $dirs; do
-  echo "build $i"
-  build_sample "$i"
-done
+echo "build StackProcessing.sln"
+if ! dotnet build ../StackProcessing.sln > tmp/build.out 2>&1; then
+  echo "Build failed; see samples/tmp/build.out" >&2
+  exit 1
+fi
 
 for i in $dirs; do
   wait_for_slot
