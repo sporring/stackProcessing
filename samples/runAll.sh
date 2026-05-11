@@ -94,9 +94,9 @@ run_sample() {
     dotnet build &
     child="$!"
     wait "$child"
-    local status="$?"
-    if (( status != 0 )); then
-      exit "$status"
+    local exit_code="$?"
+    if (( exit_code != 0 )); then
+      exit "$exit_code"
     fi
 
     /usr/bin/time env DYLD_LIBRARY_PATH="$(pwd)/lib" dotnet run --verbosity q -- -d 1 &
@@ -115,9 +115,9 @@ wait_oldest() {
   if wait "$pid"; then
     :
   else
-    local status="$?"
+    local exit_code="$?"
     failures=$((failures + 1))
-    echo "$name failed with exit code $status; see samples/tmp/$name.out" >&2
+    echo "$name failed with exit code $exit_code; see samples/tmp/$name.out" >&2
   fi
 }
 
