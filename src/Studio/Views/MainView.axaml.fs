@@ -1215,11 +1215,22 @@ type MainView() as this =
 
         match this.DataContext with
         | :? MainWindowViewModel as viewModel when not (isNull graphHost) && not (isNull trash) && viewModel.SelectedNodes.Length > 0 ->
+            let zoomBorder = graphZoomBorder ()
+
+            let graphContentToGraphHost point =
+                let viewportPoint = graphContentToViewport point
+
+                if isNull zoomBorder then
+                    viewportPoint
+                else
+                    let translated = zoomBorder.TranslatePoint(viewportPoint, graphHost)
+                    if translated.HasValue then translated.Value else viewportPoint
+
             let selectedBounds =
                 viewModel.SelectedNodes
                 |> Array.map (fun node ->
-                    let nodeTopLeft = Point(node.X, node.Y) |> graphContentToViewport
-                    let nodeBottomRight = Point(node.X + node.Width, node.Y + node.Height) |> graphContentToViewport
+                    let nodeTopLeft = Point(node.X, node.Y) |> graphContentToGraphHost
+                    let nodeBottomRight = Point(node.X + node.Width, node.Y + node.Height) |> graphContentToGraphHost
                     Rect(
                         min nodeTopLeft.X nodeBottomRight.X,
                         min nodeTopLeft.Y nodeBottomRight.Y,

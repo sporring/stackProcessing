@@ -2,10 +2,10 @@
   "version": 1,
   "nodes": [
     {
-      "id": "node-1",
+      "id": "read",
       "functionId": "Read",
-      "x": 138.31560110498583,
-      "y": 120.65250688038572,
+      "x": 120.0,
+      "y": 120.0,
       "parameters": [
         {
           "key": "availableMemory",
@@ -14,7 +14,7 @@
         },
         {
           "key": "type",
-          "value": "Float64",
+          "value": "UInt8",
           "useInput": false
         },
         {
@@ -24,7 +24,7 @@
         },
         {
           "key": "input",
-          "value": "../data/volume",
+          "value": "../data/rotatingBoxes",
           "useInput": false
         },
         {
@@ -85,64 +85,28 @@
       ]
     },
     {
-      "id": "node-2",
-      "functionId": "StructureTensor",
-      "x": 293.858382936894,
-      "y": 120.63178346640582,
+      "id": "projection",
+      "functionId": "SumProjection",
+      "x": 320.0,
+      "y": 120.0,
       "parameters": [
         {
-          "key": "sigma",
-          "value": "1.0",
+          "key": "type",
+          "value": "UInt8",
           "useInput": false
         },
         {
-          "key": "rho",
-          "value": "0.0",
+          "key": "function",
+          "value": "Identity",
           "useInput": false
         }
       ]
     },
     {
-      "id": "node-3",
-      "functionId": "VectorRange",
-      "x": 449.0639875426156,
-      "y": 120.95778168343043,
-      "parameters": [
-        {
-          "key": "firstComponent",
-          "value": "3",
-          "useInput": false
-        },
-        {
-          "key": "componentCount",
-          "value": "3",
-          "useInput": false
-        }
-      ]
-    },
-    {
-      "id": "node-4",
-      "functionId": "Vector3ToColor",
-      "x": 604.2467498967433,
-      "y": 120.67817992251786,
-      "parameters": [
-        {
-          "key": "inputMinimum",
-          "value": "-1.0",
-          "useInput": false
-        },
-        {
-          "key": "inputMaximum",
-          "value": "1.0",
-          "useInput": false
-        }
-      ]
-    },
-    {
-      "id": "node-5",
+      "id": "write",
       "functionId": "Write",
-      "x": 759.5152785187611,
-      "y": 120.95778168343043,
+      "x": 520.0,
+      "y": 120.0,
       "parameters": [
         {
           "key": "format",
@@ -151,7 +115,7 @@
         },
         {
           "key": "output",
-          "value": "../tmp/structureTensorEigenvector0Color",
+          "value": "../tmp/sumProjection",
           "useInput": false
         },
         {
@@ -229,34 +193,18 @@
   ],
   "edges": [
     {
-      "fromNode": "node-1",
+      "fromNode": "read",
       "fromKind": "dataOutput",
       "fromPort": 0,
-      "toNode": "node-2",
+      "toNode": "projection",
       "toKind": "dataInput",
       "toPort": 0
     },
     {
-      "fromNode": "node-2",
+      "fromNode": "projection",
       "fromKind": "dataOutput",
       "fromPort": 0,
-      "toNode": "node-3",
-      "toKind": "dataInput",
-      "toPort": 0
-    },
-    {
-      "fromNode": "node-3",
-      "fromKind": "dataOutput",
-      "fromPort": 0,
-      "toNode": "node-4",
-      "toKind": "dataInput",
-      "toPort": 0
-    },
-    {
-      "fromNode": "node-4",
-      "fromKind": "dataOutput",
-      "fromPort": 0,
-      "toNode": "node-5",
+      "toNode": "write",
       "toKind": "dataInput",
       "toPort": 0
     }

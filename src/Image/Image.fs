@@ -802,21 +802,35 @@ type Image<'T when 'T : equality>(sz: uint list, ?optionalNumberComponents: uint
 
     // Make a multicomponent image of a list
     static member ofImageList (images: Image<'S> list) : Image<'S list> =
-        let itkImages = images |> List.map (fun img -> img.toSimpleITK())
-        use filter = new itk.simple.ComposeImageFilter()
-        match itkImages with // seems no other way than unrolling them manually
-        | [i1; i2] ->
-            Image<'S list>.ofSimpleITK(filter.Execute(i1, i2),"ofImageList",images[0].index)
-        | [i1; i2; i3] ->
-            Image<'S list>.ofSimpleITK(filter.Execute(i1, i2, i3),"ofImageList",images[0].index)
-        | [i1; i2; i3; i4] ->
-            Image<'S list>.ofSimpleITK(filter.Execute(i1, i2, i3, i4),"ofImageList",images[0].index)
-        | [i1; i2; i3; i4; i5] ->
-            Image<'S list>.ofSimpleITK(filter.Execute(i1, i2, i3, i4, i5),"ofImageList",images[0].index)
-        | [] ->
+        match images with
+        | []
+        | [ _ ] ->
             invalidArg "images" "At least two images are required for ComposeImageFilter."
-        | _ ->
-            invalidArg "images" "ofImageList supports up to 5 images."
+        | first :: _ ->
+            let expectedSize = first.GetSize()
+            images
+            |> List.iter (fun img ->
+                if img.GetSize() <> expectedSize then
+                    invalidArg "images" $"Image dimensions must match: {img.GetSize()} vs {expectedSize}.")
+
+            let result = new Image<'S list>(expectedSize, uint images.Length, "ofImageList", first.index)
+            let rec indices dimensions =
+                match dimensions with
+                | [] -> Seq.singleton []
+                | n :: rest ->
+                    seq {
+                        for i in 0u .. n - 1u do
+                            for suffix in indices rest do
+                                yield i :: suffix
+                    }
+
+            expectedSize
+            |> indices
+            |> Seq.iter (fun idx ->
+                images
+                |> List.map (fun img -> img.Get idx)
+                |> result.Set idx)
+            result
 
     static member ofImagePairToComplex (realImg: Image<float>) (imagImg: Image<float>) : Image<System.Numerics.Complex> =
         if realImg.GetSize() <> imagImg.GetSize() then

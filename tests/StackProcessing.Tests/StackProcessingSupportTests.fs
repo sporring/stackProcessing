@@ -2526,6 +2526,17 @@ let stackProcessingSupportSuite =
             finally
                 disposeImages eigenvector0
 
+            let smoothed =
+                imagePlan ([ 0 .. 4 ] |> List.map makeDoubleSlice)
+                >=> StackProcessing.structureTensor 0.0 0.5
+                |> drainList
+
+            try
+                Expect.equal smoothed.Length inputSlices.Length "structureTensor smoothing should preserve the input slice count."
+                smoothed |> List.iter (fun image -> Expect.equal (image.GetNumberOfComponentsPerPixel()) 12u "Window padding must preserve vector component counts.")
+            finally
+                disposeImages smoothed
+
         testCase "StackProcessing converts 3-vector images to and from color images" <| fun _ ->
             let vector = new Image<float list>([ 2u; 1u ], 3u, "vector-color", 0)
             vector.[0, 0] <- [ -1.0; 0.0; 1.0 ]

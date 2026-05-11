@@ -262,7 +262,9 @@ let teeFst = Stage.teeFst
 let teeSnd = Stage.teeSnd
 let ignoreSingles () : Stage<_,unit> = Stage.ignore (decIfImage>>ignore)
 let ignorePairs () : Stage<_,unit> = Stage.ignorePairs<_,unit> ((decIfImage>>ignore),(decIfImage>>ignore))
-let zeroMaker (index: int) (ex: Image<'S>) : Image<'S> = new Image<'S>(ex.GetSize(), 1u, "padding", index)
+let zeroMaker (index: int) (ex: Image<'S>) : Image<'S> =
+    new Image<'S>(ex.GetSize(), ex.GetNumberOfComponentsPerPixel(), "padding", index)
+
 let window windowSize pad stride = Stage.window "window" windowSize pad zeroMaker stride
 let flatten () = Stage.flattenWindow "flatten"
 let flattenList () = Stage.flatten "flatten"

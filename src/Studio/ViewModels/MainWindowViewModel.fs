@@ -816,6 +816,23 @@ module private VectorImageNode =
                 |> Option.defaultValue "0"
             $"V[{componentText}]"
         | "VectorRange" ->
+            let rangeText firstText countText =
+                let tryUInt32 (value: string) =
+                    let trimmed =
+                        value.Trim()
+                             .TrimEnd('u', 'U', 'l', 'L')
+
+                    match UInt32.TryParse(trimmed, NumberStyles.Integer, CultureInfo.InvariantCulture) with
+                    | true, parsed -> Some parsed
+                    | false, _ -> None
+
+                match tryUInt32 firstText, tryUInt32 countText with
+                | Some first, Some count when count > 0u ->
+                    let last = first + count - 1u
+                    $"{first}..{last}"
+                | _ ->
+                    $"{firstText}..+{countText}"
+
             let firstText =
                 state.Parameters
                 |> Seq.tryFind (fun parameter -> parameter.Key = "firstComponent")
@@ -828,7 +845,7 @@ module private VectorImageNode =
                 |> Option.map _.Value
                 |> Option.filter (String.IsNullOrWhiteSpace >> not)
                 |> Option.defaultValue "3"
-            $"V[{firstText}..+{countText}]"
+            $"V[{rangeText firstText countText}]"
         | "VectorMapElements" ->
             let functionName =
                 state.Parameters
@@ -3860,6 +3877,117 @@ type MainWindowViewModel() as this =
 
             return shouldContinue
         }
+
+    member private this.ValidateReadableInputsBeforeRun() =
+        let parameter (node: PipelineNodeViewModel) key =
+            node.State.Parameters
+            |> Seq.tryFind (fun parameter -> parameter.Key = key)
+
+        let parameterValue node key =
+            parameter node key
+            |> Option.map _.Value
+            |> Option.defaultValue ""
+
+        let parameterIsLinked node key =
+            parameter node key
+            |> Option.exists _.UseInput
+
+        let resolvePath (path: string) =
+            if String.IsNullOrWhiteSpace path then
+                path
+            elif Path.IsPathRooted path then
+                Path.GetFullPath path
+            else
+                Path.GetFullPath(Path.Combine(this.GraphRunWorkingDirectory(), path))
+
+        let withSuffix input suffix =
+            if String.IsNullOrWhiteSpace input then
+                input
+            elif String.IsNullOrWhiteSpace(Path.GetExtension input) && not (String.IsNullOrWhiteSpace suffix) then
+                input + suffix
+            else
+                input
+
+        let normalizeDirectory path = resolvePath path
+        let normalizeFile path suffix = withSuffix path suffix |> resolvePath
+
+        let producedPaths =
+            pipelineNodes()
+            |> Seq.choose (fun node ->
+                match node.State.Definition.Id with
+                | "Write" ->
+                    let output = parameterValue node "output"
+                    let suffix = parameterValue node "suffix"
+                    match parameterValue node "format" with
+                    | "Volume file"
+                    | "NeXus/HDF5" -> Some(normalizeFile output suffix)
+                    | _ -> Some(normalizeDirectory output)
+                | "WriteChunks" ->
+                    Some(normalizeDirectory (parameterValue node "output"))
+                | "WriteMesh"
+                | "WritePointSet"
+                | "WriteMatrix"
+                | "WriteCSV" ->
+                    Some(normalizeFile (parameterValue node "output") (parameterValue node "suffix"))
+                | _ ->
+                    None)
+            |> Set.ofSeq
+
+        let checkExists kind path =
+            match kind with
+            | "file" -> File.Exists path
+            | "directory" -> Directory.Exists path
+            | _ -> File.Exists path || Directory.Exists path
+
+        let readTarget (node: PipelineNodeViewModel) =
+            if parameterIsLinked node "input" then
+                None
+            else
+                let input = parameterValue node "input"
+                let suffix = parameterValue node "suffix"
+
+                match node.State.Definition.Id with
+                | "Read"
+                | "ReadRandom" ->
+                    match parameterValue node "format" with
+                    | "Volume file" -> Some("file", normalizeFile input suffix)
+                    | "NeXus/HDF5" -> Some("file", normalizeFile input "")
+                    | _ -> Some("directory", normalizeDirectory input)
+                | "ReadRange"
+                | "ReadSlab" ->
+                    Some("directory", normalizeDirectory input)
+                | "ReadPointSet" ->
+                    Some("file", normalizeFile input (parameterValue node "suffix"))
+                | _ ->
+                    None
+
+        pipelineNodes()
+        |> Seq.iter (fun node -> node.State.IsProblemHighlighted <- false)
+
+        let missing =
+            pipelineNodes()
+            |> Seq.choose (fun node ->
+                readTarget node
+                |> Option.bind (fun (kind, path) ->
+                    if String.IsNullOrWhiteSpace path || producedPaths |> Set.contains path || checkExists kind path then
+                        None
+                    else
+                        Some(node, kind, path)))
+            |> Seq.toArray
+
+        match missing with
+        | [||] ->
+            true
+        | _ ->
+            let nodes = missing |> Array.map (fun (node, _, _) -> node)
+            nodes |> Array.iter (fun node -> node.State.IsProblemHighlighted <- true)
+            selectOnlyNode nodes[0]
+
+            missing
+            |> Array.iter (fun (node, kind, path) ->
+                this.AppendGraphOutputLine($"Run blocked: {node.State.Title} expects a {kind} that does not exist: {path}"))
+
+            false
     
     member _.ConnectSeedPipeline() =
         if drawing.Connectors.Count = 0 then
@@ -4367,7 +4495,7 @@ type MainWindowViewModel() as this =
 
                             if cancellation.IsCancellationRequested then
                                 this.AppendGraphOutputLine("Run stopped")
-                            elif fileDirectoryInputsResolved then
+                            elif fileDirectoryInputsResolved && this.ValidateReadableInputsBeforeRun() then
                                 let generatedProgram = PipelineCodeGenerator.generateSavedGraph (this.ExportGraph())
                                 this.AppendGeneratedProgram(generatedProgram)
                                 do! this.BuildAndRunGeneratedProgram(generatedProgram) cancellation.Token

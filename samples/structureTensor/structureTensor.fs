@@ -16,7 +16,7 @@ let main args =
 
     src
     |> read<float> input ".tiff"
-    >=> structureTensor 1.0 2.0
+    >=> structureTensor 1.0 0.0
     >=> vectorRange<float> 3u 3u
     >=> vector3ToColor -1.0 1.0
     >=> write output ".tiff"
