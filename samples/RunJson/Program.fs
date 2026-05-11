@@ -348,19 +348,53 @@ let private csvEscape (value: string) =
     else
         value
 
+let private firstStatusMessage logPath =
+    let lines =
+        if File.Exists logPath then
+            File.ReadAllLines logPath
+        else
+            [||]
+
+    let errorLine =
+        lines
+        |> Array.tryFind (fun line ->
+            line.Contains("Unhandled exception", StringComparison.OrdinalIgnoreCase)
+            || line.Contains("Build FAILED", StringComparison.OrdinalIgnoreCase)
+            || line.Contains(" error FS", StringComparison.OrdinalIgnoreCase)
+            || line.Contains(" error MSB", StringComparison.OrdinalIgnoreCase)
+            || line.Contains("Cannot generate F#", StringComparison.OrdinalIgnoreCase)
+            || line.Contains("timed out", StringComparison.OrdinalIgnoreCase))
+
+    let hasFinished =
+        lines |> Array.exists (fun line -> line.StartsWith("Run finished in ", StringComparison.Ordinal))
+
+    let status =
+        match errorLine with
+        | Some line when line.Contains("timed out", StringComparison.OrdinalIgnoreCase) -> "timeout"
+        | Some _ -> "failed"
+        | None when hasFinished -> "completed"
+        | None when lines.Length > 0 -> "incomplete"
+        | None -> "missing-log"
+
+    status, (errorLine |> Option.defaultValue "")
+
 let private writeCsv samplesRoot (results: GraphOutcome array) =
     let path = Path.Combine(samplesRoot, "tmp", "json", "gather.csv")
 
     let lines =
         seq {
-            yield [ "name"; "elapsedSeconds"; "exitCode"; "log" ]
+            yield [ "name"; "status"; "elapsedSeconds"; "exitCode"; "log"; "message" ]
 
             for result in results do
+                let status, message = firstStatusMessage result.Job.LogPath
+
                 yield
                     [ result.Job.Name
+                      status
                       sprintf "%.3f" result.Elapsed.TotalSeconds
                       string result.ExitCode
-                      relativePath samplesRoot result.Job.LogPath ]
+                      relativePath samplesRoot result.Job.LogPath
+                      message ]
         }
         |> Seq.map (List.map csvEscape >> String.concat ",")
 

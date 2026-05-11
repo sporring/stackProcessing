@@ -18,6 +18,13 @@ This is a running list of issues we have encountered in dependencies while devel
   - Needs a minimal reproduction that calls the SimpleITK speckle-noise path directly.
   - If confirmed, the expected behavior should probably be either identity output or a clear argument error.
 
+## ZarrNET
+
+- ZarrNET appears to create debug log files as ordinary filesystem side effects.
+  - We observed files named `log.txt` and a Windows-style path fragment `C:\Users\Public\biolog.txt` being created relative to the current directory or application base directory.
+  - StackProcessing currently works around this in `StackIO.suppressZarrNetDebugLogging` by deleting those files and setting ZarrNET private static debug counters (`s_writeDebugCount`, `s_readDebugCount`, and local filesystem store `s_debugCount`) high enough to suppress further logging.
+  - A minimal upstream report should check whether these logs are intentional, whether logging can be disabled through public API/configuration, and whether Windows absolute paths are being treated as relative filenames on non-Windows platforms.
+
 ## Possible But Not Yet Classified
 
 - Avalonia file dialog behavior has intermittently appeared delayed or non-selectable on macOS.

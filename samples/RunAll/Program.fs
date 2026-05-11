@@ -285,12 +285,33 @@ let private groupValue (name: string) (m: Match) =
     let group = m.Groups[name]
     if group.Success then group.Value else ""
 
-let private parseStatsFromLog name elapsedSeconds exitCode logPath =
+let private parseStatsFromLog samplesRoot name elapsedSeconds exitCode logPath =
     let lines =
         if File.Exists logPath then
             File.ReadAllLines logPath
         else
             [||]
+
+    let errorLine =
+        lines
+        |> Array.tryFind (fun line ->
+            line.Contains("Unhandled exception", StringComparison.OrdinalIgnoreCase)
+            || line.Contains("Build FAILED", StringComparison.OrdinalIgnoreCase)
+            || line.Contains(" error FS", StringComparison.OrdinalIgnoreCase)
+            || line.Contains(" error MSB", StringComparison.OrdinalIgnoreCase)
+            || line.Contains("Cannot generate F#", StringComparison.OrdinalIgnoreCase)
+            || line.Contains("timed out", StringComparison.OrdinalIgnoreCase))
+
+    let hasFinished =
+        lines |> Array.exists (fun line -> line.StartsWith("Run finished in ", StringComparison.Ordinal))
+
+    let status =
+        match errorLine with
+        | Some line when line.Contains("timed out", StringComparison.OrdinalIgnoreCase) -> "timeout"
+        | Some _ -> "failed"
+        | None when hasFinished -> "completed"
+        | None when lines.Length > 0 -> "incomplete"
+        | None -> "missing-log"
 
     let sinkSummary =
         lines
@@ -327,12 +348,15 @@ let private parseStatsFromLog name elapsedSeconds exitCode logPath =
         sinkSummary |> Option.map (groupValue "actualTime") |> Option.defaultValue ""
 
     [ name
+      status
       estimatedPeakMemory
       peakMemory
       peakImages
       actualRunSeconds
       elapsedSeconds
-      string exitCode ]
+      string exitCode
+      relativePath samplesRoot logPath
+      (errorLine |> Option.defaultValue "") ]
 
 let private csvEscape (value: string) =
     if value.Contains(',') || value.Contains('"') || value.Contains('\n') then
@@ -346,12 +370,15 @@ let private writeGatherCsv samplesRoot rows =
 
     let header =
         [ "name"
+          "status"
           "estimatedPeakMemoryKB"
           "peakMemoryKB"
           "peakImages"
           "actualRunSeconds"
           "processElapsedSeconds"
-          "exitCode" ]
+          "exitCode"
+          "log"
+          "message" ]
 
     let lines =
         seq {
@@ -372,7 +399,7 @@ let private gatherExistingLogs samplesRoot =
         |> Seq.sort
         |> Seq.map (fun path ->
             let name = Path.GetFileNameWithoutExtension path
-            parseStatsFromLog name "" "" path)
+            parseStatsFromLog samplesRoot name "" "" path)
         |> Seq.toList
     else
         []
@@ -437,6 +464,7 @@ let main argv =
                     results
                     |> Array.map (fun outcome ->
                         parseStatsFromLog
+                            samplesRoot
                             outcome.Sample.Name
                             (sprintf "%.3f" outcome.Elapsed.TotalSeconds)
                             outcome.ExitCode
