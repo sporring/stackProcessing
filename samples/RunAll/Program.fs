@@ -12,7 +12,8 @@ type Options =
       Jobs: int
       DebugLevel: int
       SkipBuild: bool
-      GatherOnly: bool }
+      GatherOnly: bool
+      Timeout: TimeSpan option }
 
 type Sample =
     { Name: string
@@ -22,7 +23,8 @@ type Sample =
 
 type ProcessResult =
     { ExitCode: int
-      Elapsed: TimeSpan }
+      Elapsed: TimeSpan
+      TimedOut: bool }
 
 type RunOutcome =
     { Sample: Sample
@@ -42,6 +44,7 @@ let usage () =
     printfn "  --skip-build      Run samples without first building them."
     printfn "  --gather-only     Regenerate tmp/gather.csv from existing sample logs."
     printfn "  --debug-level N   Pass -d N to each sample. Defaults to 1."
+    printfn "  --timeout N       Stop a build or run after N minutes. Defaults to 30. Use 0 to disable."
     printfn "  -h, --help        Show this help."
 
 let rec private parseArgs options args =
@@ -68,6 +71,14 @@ let rec private parseArgs options args =
         parseArgs { options with SkipBuild = true } rest
     | "--gather-only" :: rest ->
         parseArgs { options with GatherOnly = true } rest
+    | "--timeout" :: value :: rest
+    | "--timeout-minutes" :: value :: rest ->
+        match Double.TryParse value with
+        | true, minutes when minutes = 0.0 -> parseArgs { options with Timeout = None } rest
+        | true, minutes when minutes > 0.0 -> parseArgs { options with Timeout = Some(TimeSpan.FromMinutes minutes) } rest
+        | _ ->
+            eprintfn "runAll: --timeout expects a non-negative number of minutes"
+            Error 2
     | "--samples-root" :: value :: rest ->
         parseArgs { options with SamplesRoot = Path.GetFullPath value } rest
     | option :: _ ->
@@ -86,20 +97,21 @@ let private defaultSamplesRoot () =
 let private relativePath root path =
     Path.GetRelativePath(root, path).Replace(Path.DirectorySeparatorChar, '/')
 
-let private isRunAllProject samplesRoot project =
+let private isRunnerProject samplesRoot project =
     let relative = relativePath samplesRoot project
     relative = "RunAll/RunAll.fsproj"
+    || relative = "RunJson/RunJson.fsproj"
 
 let private discoverSamples samplesRoot =
     Directory.EnumerateFiles(samplesRoot, "*.fsproj", SearchOption.AllDirectories)
-    |> Seq.filter (fun project -> not (isRunAllProject samplesRoot project))
+    |> Seq.filter (fun project -> not (isRunnerProject samplesRoot project))
     |> Seq.map (fun project ->
         let dir = Path.GetDirectoryName project
         let name = relativePath samplesRoot dir
         { Name = name
           Directory = dir
           Project = project
-          LogPath = Path.Combine(samplesRoot, "tmp", name + ".out") })
+          LogPath = Path.Combine(samplesRoot, "tmp", "runAll", name + ".out") })
     |> Seq.sortBy _.Name
     |> Seq.toArray
 
@@ -118,6 +130,7 @@ let private runProcessAsync
     (fileName: string)
     (args: string list)
     (envPath: string option)
+    (timeout: TimeSpan option)
     =
     task {
         Directory.CreateDirectory(Path.GetDirectoryName logPath) |> ignore
@@ -153,8 +166,16 @@ let private runProcessAsync
         let stopwatch = Stopwatch.StartNew()
 
         if not (proc.Start()) then
-            return { ExitCode = 1; Elapsed = stopwatch.Elapsed }
+            return { ExitCode = 1; Elapsed = stopwatch.Elapsed; TimedOut = false }
         else
+            use linkedCancellation = CancellationTokenSource.CreateLinkedTokenSource cancellationToken
+            let mutable timedOut = false
+
+            match timeout with
+            | Some timeout ->
+                linkedCancellation.CancelAfter timeout
+            | None -> ()
+
             let copyOutput (reader: StreamReader) =
                 task {
                     let mutable finished = false
@@ -172,8 +193,10 @@ let private runProcessAsync
             let stderr = copyOutput proc.StandardError
 
             try
-                do! proc.WaitForExitAsync(cancellationToken)
+                do! proc.WaitForExitAsync(linkedCancellation.Token)
             with :? OperationCanceledException ->
+                timedOut <- not cancellationToken.IsCancellationRequested
+
                 if not proc.HasExited then
                     try
                         proc.Kill(entireProcessTree = true)
@@ -184,27 +207,32 @@ let private runProcessAsync
 
             let! _ = Task.WhenAll([| stdout; stderr |])
             stopwatch.Stop()
-            return { ExitCode = proc.ExitCode; Elapsed = stopwatch.Elapsed }
+            return
+                { ExitCode = if timedOut then 124 else proc.ExitCode
+                  Elapsed = stopwatch.Elapsed
+                  TimedOut = timedOut }
     }
 
 let private clearLog (sample: Sample) =
     Directory.CreateDirectory(Path.GetDirectoryName sample.LogPath) |> ignore
     File.WriteAllText(sample.LogPath, "")
 
-let private buildSample (cancellationToken: CancellationToken) (sample: Sample) =
+let private buildSample (cancellationToken: CancellationToken) timeout (sample: Sample) =
     task {
         clearLog sample
         File.AppendAllText(sample.LogPath, $"== Build {sample.Name} =={Environment.NewLine}")
         printfn "build %s" sample.Name
 
         let! result =
-            runProcessAsync cancellationToken sample.LogPath sample.Directory "dotnet" [ "build"; sample.Project; "--verbosity"; "q" ] None
+            runProcessAsync cancellationToken sample.LogPath sample.Directory "dotnet" [ "build"; sample.Project; "--verbosity"; "q" ] None timeout
 
         File.AppendAllText(sample.LogPath, $"Build finished in {result.Elapsed}.{Environment.NewLine}")
+        if result.TimedOut then
+            File.AppendAllText(sample.LogPath, $"Build timed out after {result.Elapsed}.{Environment.NewLine}")
         return result.ExitCode
     }
 
-let private runSample (cancellationToken: CancellationToken) debugLevel (sample: Sample) =
+let private runSample (cancellationToken: CancellationToken) timeout debugLevel (sample: Sample) =
     task {
         File.AppendAllText(sample.LogPath, $"{Environment.NewLine}== Run {sample.Name} =={Environment.NewLine}")
         printfn "run %s" sample.Name
@@ -219,15 +247,18 @@ let private runSample (cancellationToken: CancellationToken) debugLevel (sample:
                 "dotnet"
                 [ "run"; "--no-build"; "--verbosity"; "q"; "--"; "-d"; string debugLevel ]
                 (Some nativeLibPath)
+                timeout
 
         File.AppendAllText(sample.LogPath, $"Run finished in {result.Elapsed}.{Environment.NewLine}")
+        if result.TimedOut then
+            File.AppendAllText(sample.LogPath, $"Run timed out after {result.Elapsed}.{Environment.NewLine}")
         return
             { Sample = sample
               ExitCode = result.ExitCode
               Elapsed = result.Elapsed }
     }
 
-let private runWithParallelism (cancellationToken: CancellationToken) jobs debugLevel (samples: Sample array) =
+let private runWithParallelism (cancellationToken: CancellationToken) jobs timeout debugLevel (samples: Sample array) =
     task {
         use gate = new SemaphoreSlim(jobs)
 
@@ -236,7 +267,7 @@ let private runWithParallelism (cancellationToken: CancellationToken) jobs debug
                 do! gate.WaitAsync(cancellationToken)
 
                 try
-                    return! runSample cancellationToken debugLevel sample
+                    return! runSample cancellationToken timeout debugLevel sample
                 finally
                     gate.Release() |> ignore
             }
@@ -310,7 +341,7 @@ let private csvEscape (value: string) =
         value
 
 let private writeGatherCsv samplesRoot rows =
-    let csvPath = Path.Combine(samplesRoot, "tmp", "gather.csv")
+    let csvPath = Path.Combine(samplesRoot, "tmp", "runAll", "gather.csv")
     Directory.CreateDirectory(Path.GetDirectoryName csvPath) |> ignore
 
     let header =
@@ -333,7 +364,7 @@ let private writeGatherCsv samplesRoot rows =
     printfn "wrote %s" (relativePath samplesRoot csvPath)
 
 let private gatherExistingLogs samplesRoot =
-    let tmp = Path.Combine(samplesRoot, "tmp")
+    let tmp = Path.Combine(samplesRoot, "tmp", "runAll")
 
     if Directory.Exists tmp then
         Directory.EnumerateFiles(tmp, "*.out", SearchOption.TopDirectoryOnly)
@@ -353,7 +384,8 @@ let main argv =
           Jobs = 1
           DebugLevel = 1
           SkipBuild = false
-          GatherOnly = false }
+          GatherOnly = false
+          Timeout = Some(TimeSpan.FromMinutes 30.0) }
 
     match parseArgs defaults (argv |> Array.toList) with
     | Error exitCode -> exitCode
@@ -385,20 +417,20 @@ let main argv =
                     else
                         samples
                         |> Array.choose (fun sample ->
-                            let exitCode = buildSample cancellation.Token sample |> _.GetAwaiter().GetResult()
+                            let exitCode = buildSample cancellation.Token options.Timeout sample |> _.GetAwaiter().GetResult()
 
                             cancellation.Token.ThrowIfCancellationRequested()
 
                             if exitCode = 0 then
                                 Some sample
                             else
-                                eprintfn "%s failed to build; see samples/tmp/%s.out" sample.Name sample.Name
+                                eprintfn "%s failed to build; see samples/tmp/runAll/%s.out" sample.Name sample.Name
                                 None)
 
                 cancellation.Token.ThrowIfCancellationRequested()
 
                 let results =
-                    runWithParallelism cancellation.Token options.Jobs options.DebugLevel builtSamples
+                    runWithParallelism cancellation.Token options.Jobs options.Timeout options.DebugLevel builtSamples
                     |> _.GetAwaiter().GetResult()
 
                 let gatherRows =
@@ -422,7 +454,7 @@ let main argv =
                             Some(outcome.Sample, outcome.ExitCode))
 
                 for sample, exitCode in runFailures do
-                    eprintfn "%s failed with exit code %d; see samples/tmp/%s.out" sample.Name exitCode sample.Name
+                    eprintfn "%s failed with exit code %d; see samples/tmp/runAll/%s.out" sample.Name exitCode sample.Name
 
                 let buildFailures = samples.Length - builtSamples.Length
                 if buildFailures > 0 || runFailures.Length > 0 then 1 else 0
