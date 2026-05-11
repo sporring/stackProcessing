@@ -1,0 +1,53 @@
+{
+  "version": 1,
+  "nodes": [
+    { "id": "readSmooth", "functionId": "Read", "x": 80.0, "y": 70.0,
+      "parameters": [
+        { "key": "availableMemory", "value": "2147483648UL", "useInput": false },
+        { "key": "type", "value": "Float64", "useInput": false },
+        { "key": "format", "value": "Image stack", "useInput": false },
+        { "key": "input", "value": "../data/volume", "useInput": false },
+        { "key": "suffix", "value": ".tiff", "useInput": false } ] },
+    { "id": "smooth", "functionId": "SmoothWGauss", "x": 290.0, "y": 70.0,
+      "parameters": [
+        { "key": "sigma", "value": "1.25", "useInput": false },
+        { "key": "outputRegionMode", "value": "None", "useInput": false },
+        { "key": "boundaryCondition", "value": "None", "useInput": false },
+        { "key": "windowSize", "value": "16", "useInput": false } ] },
+    { "id": "writeSmooth", "functionId": "Write", "x": 520.0, "y": 70.0,
+      "parameters": [
+        { "key": "format", "value": "Image stack", "useInput": false },
+        { "key": "output", "value": "../tmp/fftGaussianSmooth", "useInput": false },
+        { "key": "suffix", "value": ".tiff", "useInput": false } ] },
+    { "id": "readFft", "functionId": "Read", "x": 80.0, "y": 220.0,
+      "parameters": [
+        { "key": "availableMemory", "value": "2147483648UL", "useInput": false },
+        { "key": "type", "value": "Float64", "useInput": false },
+        { "key": "format", "value": "Image stack", "useInput": false },
+        { "key": "input", "value": "../data/volume", "useInput": false },
+        { "key": "suffix", "value": ".tiff", "useInput": false } ] },
+    { "id": "fft", "functionId": "FFT", "x": 290.0, "y": 220.0,
+      "parameters": [
+        { "key": "type", "value": "Float64", "useInput": false },
+        { "key": "chunkX", "value": "32", "useInput": false },
+        { "key": "chunkY", "value": "32", "useInput": false },
+        { "key": "chunkZ", "value": "16", "useInput": false } ] },
+    { "id": "ifft", "functionId": "InvFFT", "x": 470.0, "y": 220.0,
+      "parameters": [
+        { "key": "chunkX", "value": "32", "useInput": false },
+        { "key": "chunkY", "value": "32", "useInput": false },
+        { "key": "chunkZ", "value": "16", "useInput": false } ] },
+    { "id": "writeRoundTrip", "functionId": "Write", "x": 670.0, "y": 220.0,
+      "parameters": [
+        { "key": "format", "value": "Image stack", "useInput": false },
+        { "key": "output", "value": "../tmp/fftRoundTrip", "useInput": false },
+        { "key": "suffix", "value": ".tiff", "useInput": false } ] }
+  ],
+  "edges": [
+    { "fromNode": "readSmooth", "fromKind": "dataOutput", "fromPort": 0, "toNode": "smooth", "toKind": "dataInput", "toPort": 0 },
+    { "fromNode": "smooth", "fromKind": "dataOutput", "fromPort": 0, "toNode": "writeSmooth", "toKind": "dataInput", "toPort": 0 },
+    { "fromNode": "readFft", "fromKind": "dataOutput", "fromPort": 0, "toNode": "fft", "toKind": "dataInput", "toPort": 0 },
+    { "fromNode": "fft", "fromKind": "dataOutput", "fromPort": 0, "toNode": "ifft", "toKind": "dataInput", "toPort": 0 },
+    { "fromNode": "ifft", "fromKind": "dataOutput", "fromPort": 0, "toNode": "writeRoundTrip", "toKind": "dataInput", "toPort": 0 }
+  ]
+}

@@ -1,0 +1,114 @@
+{
+  "version": 1,
+  "nodes": [
+    { "id": "fitRead", "functionId": "Read", "x": 60.0, "y": 90.0,
+      "parameters": [
+        { "key": "availableMemory", "value": "2147483648UL", "useInput": false },
+        { "key": "type", "value": "Float64", "useInput": false },
+        { "key": "format", "value": "Image stack", "useInput": false },
+        { "key": "input", "value": "../data/volume", "useInput": false },
+        { "key": "suffix", "value": ".tiff", "useInput": false } ] },
+    { "id": "fitModel", "functionId": "FitBiasModel", "x": 300.0, "y": 90.0,
+      "parameters": [
+        { "key": "type", "value": "Float64", "useInput": false },
+        { "key": "order", "value": "2", "useInput": false },
+        { "key": "depth", "value": "256", "useInput": false } ] },
+    { "id": "correctRead", "functionId": "Read", "x": 60.0, "y": 240.0,
+      "parameters": [
+        { "key": "availableMemory", "value": "2147483648UL", "useInput": false },
+        { "key": "type", "value": "Float64", "useInput": false },
+        { "key": "format", "value": "Image stack", "useInput": false },
+        { "key": "input", "value": "../data/volume", "useInput": false },
+        { "key": "suffix", "value": ".tiff", "useInput": false } ] },
+    { "id": "correct", "functionId": "CorrectBias", "x": 300.0, "y": 240.0,
+      "parameters": [
+        { "key": "type", "value": "Float64", "useInput": false },
+        { "key": "model", "value": "biasModel", "useInput": true } ] },
+    { "id": "stretch", "functionId": "IntensityStretch", "x": 520.0, "y": 240.0,
+      "parameters": [
+        { "key": "type", "value": "Float64", "useInput": false },
+        { "key": "inputMinimum", "value": "0.0", "useInput": false },
+        { "key": "inputMaximum", "value": "255.0", "useInput": false },
+        { "key": "outputMinimum", "value": "0.0", "useInput": false },
+        { "key": "outputMaximum", "value": "255.0", "useInput": false } ] },
+    { "id": "cast", "functionId": "Cast", "x": 740.0, "y": 240.0,
+      "parameters": [
+        { "key": "sourceType", "value": "Float64", "useInput": false },
+        { "key": "targetType", "value": "UInt8", "useInput": false } ] },
+    { "id": "write", "functionId": "Write", "x": 940.0, "y": 240.0,
+      "parameters": [
+        { "key": "format", "value": "Image stack", "useInput": false },
+        { "key": "output", "value": "../tmp/biasCorrection/unmasked", "useInput": false },
+        { "key": "suffix", "value": ".tiff", "useInput": false } ] },
+
+    { "id": "maskedImageFit", "functionId": "Read", "x": 60.0, "y": 450.0,
+      "parameters": [
+        { "key": "availableMemory", "value": "2147483648UL", "useInput": false },
+        { "key": "type", "value": "Float64", "useInput": false },
+        { "key": "format", "value": "Image stack", "useInput": false },
+        { "key": "input", "value": "../data/volume", "useInput": false },
+        { "key": "suffix", "value": ".tiff", "useInput": false } ] },
+    { "id": "maskedMaskFit", "functionId": "Read", "x": 60.0, "y": 570.0,
+      "parameters": [
+        { "key": "availableMemory", "value": "2147483648UL", "useInput": false },
+        { "key": "type", "value": "UInt8", "useInput": false },
+        { "key": "format", "value": "Image stack", "useInput": false },
+        { "key": "input", "value": "../data/rotatingBoxes", "useInput": false },
+        { "key": "suffix", "value": ".tiff", "useInput": false } ] },
+    { "id": "fitMasked", "functionId": "FitBiasModelMasked", "x": 320.0, "y": 500.0,
+      "parameters": [
+        { "key": "type", "value": "Float64", "useInput": false },
+        { "key": "order", "value": "2", "useInput": false },
+        { "key": "depth", "value": "256", "useInput": false } ] },
+    { "id": "maskedImageCorrect", "functionId": "Read", "x": 60.0, "y": 720.0,
+      "parameters": [
+        { "key": "availableMemory", "value": "2147483648UL", "useInput": false },
+        { "key": "type", "value": "Float64", "useInput": false },
+        { "key": "format", "value": "Image stack", "useInput": false },
+        { "key": "input", "value": "../data/volume", "useInput": false },
+        { "key": "suffix", "value": ".tiff", "useInput": false } ] },
+    { "id": "maskedMaskCorrect", "functionId": "Read", "x": 60.0, "y": 840.0,
+      "parameters": [
+        { "key": "availableMemory", "value": "2147483648UL", "useInput": false },
+        { "key": "type", "value": "UInt8", "useInput": false },
+        { "key": "format", "value": "Image stack", "useInput": false },
+        { "key": "input", "value": "../data/rotatingBoxes", "useInput": false },
+        { "key": "suffix", "value": ".tiff", "useInput": false } ] },
+    { "id": "correctMasked", "functionId": "CorrectBiasMasked", "x": 320.0, "y": 780.0,
+      "parameters": [
+        { "key": "type", "value": "Float64", "useInput": false },
+        { "key": "model", "value": "biasModel", "useInput": true } ] },
+    { "id": "maskedStretch", "functionId": "IntensityStretch", "x": 560.0, "y": 780.0,
+      "parameters": [
+        { "key": "type", "value": "Float64", "useInput": false },
+        { "key": "inputMinimum", "value": "0.0", "useInput": false },
+        { "key": "inputMaximum", "value": "255.0", "useInput": false },
+        { "key": "outputMinimum", "value": "0.0", "useInput": false },
+        { "key": "outputMaximum", "value": "255.0", "useInput": false } ] },
+    { "id": "maskedCast", "functionId": "Cast", "x": 780.0, "y": 780.0,
+      "parameters": [
+        { "key": "sourceType", "value": "Float64", "useInput": false },
+        { "key": "targetType", "value": "UInt8", "useInput": false } ] },
+    { "id": "maskedWrite", "functionId": "Write", "x": 980.0, "y": 780.0,
+      "parameters": [
+        { "key": "format", "value": "Image stack", "useInput": false },
+        { "key": "output", "value": "../tmp/biasCorrection/masked", "useInput": false },
+        { "key": "suffix", "value": ".tiff", "useInput": false } ] }
+  ],
+  "edges": [
+    { "fromNode": "fitRead", "fromKind": "dataOutput", "fromPort": 0, "toNode": "fitModel", "toKind": "dataInput", "toPort": 0 },
+    { "fromNode": "fitModel", "fromKind": "reducerOutput", "fromPort": 0, "toNode": "correct", "toKind": "parameterInput", "toPort": 1 },
+    { "fromNode": "correctRead", "fromKind": "dataOutput", "fromPort": 0, "toNode": "correct", "toKind": "dataInput", "toPort": 0 },
+    { "fromNode": "correct", "fromKind": "dataOutput", "fromPort": 0, "toNode": "stretch", "toKind": "dataInput", "toPort": 0 },
+    { "fromNode": "stretch", "fromKind": "dataOutput", "fromPort": 0, "toNode": "cast", "toKind": "dataInput", "toPort": 0 },
+    { "fromNode": "cast", "fromKind": "dataOutput", "fromPort": 0, "toNode": "write", "toKind": "dataInput", "toPort": 0 },
+    { "fromNode": "maskedImageFit", "fromKind": "dataOutput", "fromPort": 0, "toNode": "fitMasked", "toKind": "dataInput", "toPort": 0 },
+    { "fromNode": "maskedMaskFit", "fromKind": "dataOutput", "fromPort": 0, "toNode": "fitMasked", "toKind": "dataInput", "toPort": 1 },
+    { "fromNode": "fitMasked", "fromKind": "reducerOutput", "fromPort": 0, "toNode": "correctMasked", "toKind": "parameterInput", "toPort": 1 },
+    { "fromNode": "maskedImageCorrect", "fromKind": "dataOutput", "fromPort": 0, "toNode": "correctMasked", "toKind": "dataInput", "toPort": 0 },
+    { "fromNode": "maskedMaskCorrect", "fromKind": "dataOutput", "fromPort": 0, "toNode": "correctMasked", "toKind": "dataInput", "toPort": 1 },
+    { "fromNode": "correctMasked", "fromKind": "dataOutput", "fromPort": 0, "toNode": "maskedStretch", "toKind": "dataInput", "toPort": 0 },
+    { "fromNode": "maskedStretch", "fromKind": "dataOutput", "fromPort": 0, "toNode": "maskedCast", "toKind": "dataInput", "toPort": 0 },
+    { "fromNode": "maskedCast", "fromKind": "dataOutput", "fromPort": 0, "toNode": "maskedWrite", "toKind": "dataInput", "toPort": 0 }
+  ]
+}

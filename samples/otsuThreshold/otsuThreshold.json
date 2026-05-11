@@ -1,0 +1,44 @@
+{
+  "version": 1,
+  "nodes": [
+    { "id": "sample", "functionId": "ReadRandom", "x": 80.0, "y": 40.0,
+      "parameters": [
+        { "key": "availableMemory", "value": "2147483648UL", "useInput": false },
+        { "key": "type", "value": "UInt8", "useInput": false },
+        { "key": "format", "value": "Image stack", "useInput": false },
+        { "key": "depth", "value": "16", "useInput": false },
+        { "key": "input", "value": "../data/rotatingBoxes", "useInput": false },
+        { "key": "suffix", "value": ".tiff", "useInput": false } ] },
+    { "id": "histogram", "functionId": "ImHistogramData", "x": 260.0, "y": 40.0,
+      "parameters": [
+        { "key": "firstLeftEdge", "value": "0.0", "useInput": false },
+        { "key": "lastLeftEdge", "value": "255.0", "useInput": false },
+        { "key": "bins", "value": "256", "useInput": false } ] },
+    { "id": "otsu", "functionId": "OtsuThresholdFromHistogram", "x": 460.0, "y": 40.0,
+      "parameters": [ { "key": "histogram", "value": "", "useInput": true } ] },
+    { "id": "read", "functionId": "Read", "x": 80.0, "y": 180.0,
+      "parameters": [
+        { "key": "availableMemory", "value": "2147483648UL", "useInput": false },
+        { "key": "type", "value": "UInt8", "useInput": false },
+        { "key": "format", "value": "Image stack", "useInput": false },
+        { "key": "input", "value": "../data/rotatingBoxes", "useInput": false },
+        { "key": "suffix", "value": ".tiff", "useInput": false } ] },
+    { "id": "threshold", "functionId": "Threshold", "x": 300.0, "y": 180.0,
+      "parameters": [
+        { "key": "type", "value": "UInt8", "useInput": false },
+        { "key": "lower", "value": "0.0", "useInput": true },
+        { "key": "upper", "value": "infinity", "useInput": false } ] },
+    { "id": "write", "functionId": "Write", "x": 520.0, "y": 180.0,
+      "parameters": [
+        { "key": "format", "value": "Image stack", "useInput": false },
+        { "key": "output", "value": "../tmp/otsuThreshold", "useInput": false },
+        { "key": "suffix", "value": ".tiff", "useInput": false } ] }
+  ],
+  "edges": [
+    { "fromNode": "sample", "fromKind": "dataOutput", "fromPort": 0, "toNode": "histogram", "toKind": "dataInput", "toPort": 0 },
+    { "fromNode": "histogram", "fromKind": "reducerOutput", "fromPort": 0, "toNode": "otsu", "toKind": "parameterInput", "toPort": 0 },
+    { "fromNode": "otsu", "fromKind": "scalarOutput", "fromPort": 0, "toNode": "threshold", "toKind": "parameterInput", "toPort": 1 },
+    { "fromNode": "read", "fromKind": "dataOutput", "fromPort": 0, "toNode": "threshold", "toKind": "dataInput", "toPort": 0 },
+    { "fromNode": "threshold", "fromKind": "dataOutput", "fromPort": 0, "toNode": "write", "toKind": "dataInput", "toPort": 0 }
+  ]
+}

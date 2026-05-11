@@ -2,10 +2,10 @@
   "version": 1,
   "nodes": [
     {
-      "id": "read",
+      "id": "node-1",
       "functionId": "Read",
-      "x": 120.0,
-      "y": 120.0,
+      "x": 129.9499867203606,
+      "y": 165.4041699089534,
       "parameters": [
         {
           "key": "availableMemory",
@@ -29,12 +29,12 @@
         },
         {
           "key": "suffix",
-          "value": ".mha",
+          "value": ".tiff",
           "useInput": false
         },
         {
           "key": "slabDepth",
-          "value": "1",
+          "value": "8",
           "useInput": false
         },
         {
@@ -85,28 +85,28 @@
       ]
     },
     {
-      "id": "projection",
-      "functionId": "SumProjection",
-      "x": 320.0,
-      "y": 120.0,
+      "id": "node-2",
+      "functionId": "SignedDistanceBand",
+      "x": 285.826218129811,
+      "y": 165.51816090084503,
       "parameters": [
         {
-          "key": "type",
-          "value": "UInt8",
+          "key": "bandRadius",
+          "value": "8",
           "useInput": false
         },
         {
-          "key": "function",
-          "value": "Identity",
+          "key": "stride",
+          "value": "4",
           "useInput": false
         }
       ]
     },
     {
-      "id": "write",
+      "id": "node-3",
       "functionId": "Write",
-      "x": 920.0,
-      "y": 120.0,
+      "x": 597.1530157867356,
+      "y": 165.2275289875873,
       "parameters": [
         {
           "key": "format",
@@ -115,7 +115,7 @@
         },
         {
           "key": "output",
-          "value": "../tmp/sumProjection",
+          "value": "../tmp/signedDistanceBand",
           "useInput": false
         },
         {
@@ -191,43 +191,10 @@
       ]
     },
     {
-      "id": "stretch",
-      "functionId": "IntensityStretch",
-      "x": 520.0,
-      "y": 120.0,
-      "parameters": [
-        {
-          "key": "type",
-          "value": "Float64",
-          "useInput": false
-        },
-        {
-          "key": "inputMinimum",
-          "value": "0.0",
-          "useInput": false
-        },
-        {
-          "key": "inputMaximum",
-          "value": "255.0",
-          "useInput": false
-        },
-        {
-          "key": "outputMinimum",
-          "value": "0.0",
-          "useInput": false
-        },
-        {
-          "key": "outputMaximum",
-          "value": "255.0",
-          "useInput": false
-        }
-      ]
-    },
-    {
-      "id": "cast",
+      "id": "node-4",
       "functionId": "Cast",
-      "x": 720.0,
-      "y": 120.0,
+      "x": 441.35611931996254,
+      "y": 165.39364116717945,
       "parameters": [
         {
           "key": "sourceType",
@@ -236,7 +203,7 @@
         },
         {
           "key": "targetType",
-          "value": "UInt8",
+          "value": "Float32",
           "useInput": false
         }
       ]
@@ -244,34 +211,26 @@
   ],
   "edges": [
     {
-      "fromNode": "read",
+      "fromNode": "node-1",
       "fromKind": "dataOutput",
       "fromPort": 0,
-      "toNode": "projection",
+      "toNode": "node-2",
       "toKind": "dataInput",
       "toPort": 0
     },
     {
-      "fromNode": "projection",
+      "fromNode": "node-4",
       "fromKind": "dataOutput",
       "fromPort": 0,
-      "toNode": "stretch",
+      "toNode": "node-3",
       "toKind": "dataInput",
       "toPort": 0
     },
     {
-      "fromNode": "stretch",
+      "fromNode": "node-2",
       "fromKind": "dataOutput",
       "fromPort": 0,
-      "toNode": "cast",
-      "toKind": "dataInput",
-      "toPort": 0
-    },
-    {
-      "fromNode": "cast",
-      "fromKind": "dataOutput",
-      "fromPort": 0,
-      "toNode": "write",
+      "toNode": "node-4",
       "toKind": "dataInput",
       "toPort": 0
     }

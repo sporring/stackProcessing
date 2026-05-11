@@ -1,0 +1,38 @@
+{
+  "version": 1,
+  "nodes": [
+    { "id": "read", "functionId": "Read", "x": 80.0, "y": 120.0,
+      "parameters": [
+        { "key": "availableMemory", "value": "2147483648UL", "useInput": false },
+        { "key": "type", "value": "UInt8", "useInput": false },
+        { "key": "format", "value": "Image stack", "useInput": false },
+        { "key": "input", "value": "../data/volume", "useInput": false },
+        { "key": "suffix", "value": ".tiff", "useInput": false } ] },
+    { "id": "erode", "functionId": "GrayscaleErode", "x": 260.0, "y": 120.0,
+      "parameters": [ { "key": "type", "value": "UInt8", "useInput": false }, { "key": "radius", "value": "1", "useInput": false }, { "key": "windowSize", "value": "5", "useInput": false } ] },
+    { "id": "dilate", "functionId": "GrayscaleDilate", "x": 460.0, "y": 120.0,
+      "parameters": [ { "key": "type", "value": "UInt8", "useInput": false }, { "key": "radius", "value": "1", "useInput": false }, { "key": "windowSize", "value": "5", "useInput": false } ] },
+    { "id": "opening", "functionId": "GrayscaleOpening", "x": 660.0, "y": 120.0,
+      "parameters": [ { "key": "type", "value": "UInt8", "useInput": false }, { "key": "radius", "value": "1", "useInput": false }, { "key": "windowSize", "value": "5", "useInput": false } ] },
+    { "id": "closing", "functionId": "GrayscaleClosing", "x": 860.0, "y": 120.0,
+      "parameters": [ { "key": "type", "value": "UInt8", "useInput": false }, { "key": "radius", "value": "1", "useInput": false }, { "key": "windowSize", "value": "5", "useInput": false } ] },
+    { "id": "white", "functionId": "WhiteTopHat", "x": 1060.0, "y": 120.0,
+      "parameters": [ { "key": "type", "value": "UInt8", "useInput": false }, { "key": "radius", "value": "1", "useInput": false }, { "key": "windowSize", "value": "5", "useInput": false } ] },
+    { "id": "black", "functionId": "BlackTopHat", "x": 1260.0, "y": 120.0,
+      "parameters": [ { "key": "type", "value": "UInt8", "useInput": false }, { "key": "radius", "value": "1", "useInput": false }, { "key": "windowSize", "value": "5", "useInput": false } ] },
+    { "id": "grad", "functionId": "MorphologicalGradient", "x": 1460.0, "y": 120.0,
+      "parameters": [ { "key": "type", "value": "UInt8", "useInput": false }, { "key": "radius", "value": "1", "useInput": false }, { "key": "windowSize", "value": "5", "useInput": false } ] },
+    { "id": "write", "functionId": "Write", "x": 1680.0, "y": 120.0,
+      "parameters": [ { "key": "format", "value": "Image stack", "useInput": false }, { "key": "output", "value": "../tmp/grayscaleMorphology", "useInput": false }, { "key": "suffix", "value": ".tiff", "useInput": false } ] }
+  ],
+  "edges": [
+    { "fromNode": "read", "fromKind": "dataOutput", "fromPort": 0, "toNode": "erode", "toKind": "dataInput", "toPort": 0 },
+    { "fromNode": "erode", "fromKind": "dataOutput", "fromPort": 0, "toNode": "dilate", "toKind": "dataInput", "toPort": 0 },
+    { "fromNode": "dilate", "fromKind": "dataOutput", "fromPort": 0, "toNode": "opening", "toKind": "dataInput", "toPort": 0 },
+    { "fromNode": "opening", "fromKind": "dataOutput", "fromPort": 0, "toNode": "closing", "toKind": "dataInput", "toPort": 0 },
+    { "fromNode": "closing", "fromKind": "dataOutput", "fromPort": 0, "toNode": "white", "toKind": "dataInput", "toPort": 0 },
+    { "fromNode": "white", "fromKind": "dataOutput", "fromPort": 0, "toNode": "black", "toKind": "dataInput", "toPort": 0 },
+    { "fromNode": "black", "fromKind": "dataOutput", "fromPort": 0, "toNode": "grad", "toKind": "dataInput", "toPort": 0 },
+    { "fromNode": "grad", "fromKind": "dataOutput", "fromPort": 0, "toNode": "write", "toKind": "dataInput", "toPort": 0 }
+  ]
+}

@@ -1,4 +1,4 @@
-// Resize a stack to an explicit x/y/z size.
+// Correct slowly varying slice-wise intensity bias in an image stack.
 open StackProcessing
 
 [<EntryPoint>]
@@ -9,12 +9,12 @@ let main args =
     let input, output =
         match args with
         | [| input; output |] -> input, output
-        | [| input |] -> input, "../tmp/resize"
-        | _ -> "../data/rotatingBoxes", "../tmp/resize"
+        | [| input |] -> input, "../tmp/serialBiasCorrect"
+        | _ -> "../data/volume", "../tmp/serialBiasCorrect"
 
     src
-    |> read<uint8> input ".tiff"
-    |> resize<uint8> 96u 96u 96u "Linear"
+    |> read<float32> input ".tiff"
+    >=> serialPolynomialBiasCorrect<float32> 2
     >=> write output ".tiff"
     |> sink
 

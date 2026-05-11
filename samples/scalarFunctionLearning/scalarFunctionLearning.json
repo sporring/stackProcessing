@@ -1,0 +1,21 @@
+{
+  "version": 1,
+  "nodes": [
+    { "id": "pi", "functionId": "Scalar", "x": 80.0, "y": 100.0,
+      "parameters": [
+        { "key": "type", "value": "Float64", "useInput": false },
+        { "key": "value", "value": "pi", "useInput": false } ] },
+    { "id": "sqrt", "functionId": "ScalarFunction", "x": 260.0, "y": 100.0,
+      "parameters": [
+        { "key": "function", "value": "sqrt", "useInput": false },
+        { "key": "a", "value": "1.0", "useInput": true } ] },
+    { "id": "print", "functionId": "Print", "x": 460.0, "y": 100.0,
+      "parameters": [
+        { "key": "format", "value": "sqrt(pi) = {Value}", "useInput": false },
+        { "key": "input1", "value": "Value", "useInput": true } ] }
+  ],
+  "edges": [
+    { "fromNode": "pi", "fromKind": "scalarOutput", "fromPort": 0, "toNode": "sqrt", "toKind": "parameterInput", "toPort": 1 },
+    { "fromNode": "sqrt", "fromKind": "scalarOutput", "fromPort": 0, "toNode": "print", "toKind": "parameterInput", "toPort": 1 }
+  ]
+}

@@ -1,0 +1,128 @@
+{
+  "version": 1,
+  "nodes": [
+    { "id": "histReadRandom", "functionId": "ReadRandom", "x": 60.0, "y": 80.0,
+      "parameters": [
+        { "key": "availableMemory", "value": "2147483648UL", "useInput": false },
+        { "key": "type", "value": "UInt8", "useInput": false },
+        { "key": "format", "value": "Image stack", "useInput": false },
+        { "key": "depth", "value": "16", "useInput": false },
+        { "key": "input", "value": "../data/volume", "useInput": false },
+        { "key": "suffix", "value": ".tiff", "useInput": false } ] },
+    { "id": "histData", "functionId": "ImHistogramData", "x": 300.0, "y": 80.0,
+      "parameters": [
+        { "key": "firstLeftEdge", "value": "0.0", "useInput": false },
+        { "key": "lastLeftEdge", "value": "255.0", "useInput": false },
+        { "key": "bins", "value": "256", "useInput": false } ] },
+    { "id": "histRead", "functionId": "Read", "x": 60.0, "y": 220.0,
+      "parameters": [
+        { "key": "availableMemory", "value": "2147483648UL", "useInput": false },
+        { "key": "type", "value": "UInt8", "useInput": false },
+        { "key": "format", "value": "Image stack", "useInput": false },
+        { "key": "input", "value": "../data/volume", "useInput": false },
+        { "key": "suffix", "value": ".tiff", "useInput": false } ] },
+    { "id": "equalize", "functionId": "HistogramEqualization", "x": 300.0, "y": 220.0,
+      "parameters": [
+        { "key": "type", "value": "UInt8", "useInput": false },
+        { "key": "histogram", "value": "histogram", "useInput": true } ] },
+    { "id": "equalizeCast", "functionId": "Cast", "x": 560.0, "y": 220.0,
+      "parameters": [
+        { "key": "sourceType", "value": "Float64", "useInput": false },
+        { "key": "targetType", "value": "UInt8", "useInput": false } ] },
+    { "id": "equalizeWrite", "functionId": "Write", "x": 760.0, "y": 220.0,
+      "parameters": [
+        { "key": "format", "value": "Image stack", "useInput": false },
+        { "key": "output", "value": "../tmp/imageFilters/histogramEqualization", "useInput": false },
+        { "key": "suffix", "value": ".tiff", "useInput": false } ] },
+
+    { "id": "edgeRead", "functionId": "Read", "x": 60.0, "y": 420.0,
+      "parameters": [
+        { "key": "availableMemory", "value": "2147483648UL", "useInput": false },
+        { "key": "type", "value": "Float64", "useInput": false },
+        { "key": "format", "value": "Image stack", "useInput": false },
+        { "key": "input", "value": "../data/volume", "useInput": false },
+        { "key": "suffix", "value": ".tiff", "useInput": false } ] },
+    { "id": "median", "functionId": "SmoothWMedian", "x": 280.0, "y": 420.0,
+      "parameters": [
+        { "key": "type", "value": "Float64", "useInput": false },
+        { "key": "radius", "value": "1", "useInput": false },
+        { "key": "windowSize", "value": "5", "useInput": false } ] },
+    { "id": "bilateral", "functionId": "SmoothWBilateral", "x": 500.0, "y": 420.0,
+      "parameters": [
+        { "key": "type", "value": "Float64", "useInput": false },
+        { "key": "domainSigma", "value": "1.5", "useInput": false },
+        { "key": "rangeSigma", "value": "30.0", "useInput": false },
+        { "key": "windowSize", "value": "5", "useInput": false } ] },
+    { "id": "gradMag", "functionId": "GradientMagnitude", "x": 720.0, "y": 420.0,
+      "parameters": [
+        { "key": "type", "value": "Float64", "useInput": false },
+        { "key": "windowSize", "value": "5", "useInput": false } ] },
+    { "id": "sobel", "functionId": "SobelEdge", "x": 940.0, "y": 420.0,
+      "parameters": [
+        { "key": "type", "value": "Float64", "useInput": false },
+        { "key": "windowSize", "value": "5", "useInput": false } ] },
+    { "id": "laplacian", "functionId": "Laplacian", "x": 1140.0, "y": 420.0,
+      "parameters": [
+        { "key": "type", "value": "Float64", "useInput": false },
+        { "key": "windowSize", "value": "5", "useInput": false } ] },
+    { "id": "edgeStretch", "functionId": "IntensityStretch", "x": 1340.0, "y": 420.0,
+      "parameters": [
+        { "key": "type", "value": "Float64", "useInput": false },
+        { "key": "inputMinimum", "value": "0.0", "useInput": false },
+        { "key": "inputMaximum", "value": "255.0", "useInput": false },
+        { "key": "outputMinimum", "value": "0.0", "useInput": false },
+        { "key": "outputMaximum", "value": "255.0", "useInput": false } ] },
+    { "id": "edgeCast", "functionId": "Cast", "x": 1560.0, "y": 420.0,
+      "parameters": [
+        { "key": "sourceType", "value": "Float64", "useInput": false },
+        { "key": "targetType", "value": "UInt8", "useInput": false } ] },
+    { "id": "edgeWrite", "functionId": "Write", "x": 1760.0, "y": 420.0,
+      "parameters": [
+        { "key": "format", "value": "Image stack", "useInput": false },
+        { "key": "output", "value": "../tmp/imageFilters/edges", "useInput": false },
+        { "key": "suffix", "value": ".tiff", "useInput": false } ] },
+
+    { "id": "pcaRead", "functionId": "Read", "x": 60.0, "y": 620.0,
+      "parameters": [
+        { "key": "availableMemory", "value": "2147483648UL", "useInput": false },
+        { "key": "type", "value": "Float64", "useInput": false },
+        { "key": "format", "value": "Image stack", "useInput": false },
+        { "key": "input", "value": "../data/volume", "useInput": false },
+        { "key": "suffix", "value": ".tiff", "useInput": false } ] },
+    { "id": "gradient", "functionId": "Gradient", "x": 280.0, "y": 620.0,
+      "parameters": [
+        { "key": "order", "value": "1", "useInput": false },
+        { "key": "windowSize", "value": "5", "useInput": false } ] },
+    { "id": "pca", "functionId": "PCA", "x": 500.0, "y": 620.0,
+      "parameters": [
+        { "key": "components", "value": "3", "useInput": false } ] },
+    { "id": "pcaColor", "functionId": "Vector3ToColor", "x": 720.0, "y": 620.0,
+      "parameters": [
+        { "key": "inputMinimum", "value": "-1.0", "useInput": false },
+        { "key": "inputMaximum", "value": "1.0", "useInput": false } ] },
+    { "id": "pcaWrite", "functionId": "Write", "x": 940.0, "y": 620.0,
+      "parameters": [
+        { "key": "format", "value": "Image stack", "useInput": false },
+        { "key": "output", "value": "../tmp/imageFilters/pcaGradientDirection", "useInput": false },
+        { "key": "suffix", "value": ".tiff", "useInput": false } ] }
+  ],
+  "edges": [
+    { "fromNode": "histReadRandom", "fromKind": "dataOutput", "fromPort": 0, "toNode": "histData", "toKind": "dataInput", "toPort": 0 },
+    { "fromNode": "histData", "fromKind": "reducerOutput", "fromPort": 0, "toNode": "equalize", "toKind": "parameterInput", "toPort": 1 },
+    { "fromNode": "histRead", "fromKind": "dataOutput", "fromPort": 0, "toNode": "equalize", "toKind": "dataInput", "toPort": 0 },
+    { "fromNode": "equalize", "fromKind": "dataOutput", "fromPort": 0, "toNode": "equalizeCast", "toKind": "dataInput", "toPort": 0 },
+    { "fromNode": "equalizeCast", "fromKind": "dataOutput", "fromPort": 0, "toNode": "equalizeWrite", "toKind": "dataInput", "toPort": 0 },
+    { "fromNode": "edgeRead", "fromKind": "dataOutput", "fromPort": 0, "toNode": "median", "toKind": "dataInput", "toPort": 0 },
+    { "fromNode": "median", "fromKind": "dataOutput", "fromPort": 0, "toNode": "bilateral", "toKind": "dataInput", "toPort": 0 },
+    { "fromNode": "bilateral", "fromKind": "dataOutput", "fromPort": 0, "toNode": "gradMag", "toKind": "dataInput", "toPort": 0 },
+    { "fromNode": "gradMag", "fromKind": "dataOutput", "fromPort": 0, "toNode": "sobel", "toKind": "dataInput", "toPort": 0 },
+    { "fromNode": "sobel", "fromKind": "dataOutput", "fromPort": 0, "toNode": "laplacian", "toKind": "dataInput", "toPort": 0 },
+    { "fromNode": "laplacian", "fromKind": "dataOutput", "fromPort": 0, "toNode": "edgeStretch", "toKind": "dataInput", "toPort": 0 },
+    { "fromNode": "edgeStretch", "fromKind": "dataOutput", "fromPort": 0, "toNode": "edgeCast", "toKind": "dataInput", "toPort": 0 },
+    { "fromNode": "edgeCast", "fromKind": "dataOutput", "fromPort": 0, "toNode": "edgeWrite", "toKind": "dataInput", "toPort": 0 },
+    { "fromNode": "pcaRead", "fromKind": "dataOutput", "fromPort": 0, "toNode": "gradient", "toKind": "dataInput", "toPort": 0 },
+    { "fromNode": "gradient", "fromKind": "dataOutput", "fromPort": 0, "toNode": "pca", "toKind": "dataInput", "toPort": 0 },
+    { "fromNode": "pca", "fromKind": "dataOutput", "fromPort": 1, "toNode": "pcaColor", "toKind": "dataInput", "toPort": 0 },
+    { "fromNode": "pcaColor", "fromKind": "dataOutput", "fromPort": 0, "toNode": "pcaWrite", "toKind": "dataInput", "toPort": 0 }
+  ]
+}

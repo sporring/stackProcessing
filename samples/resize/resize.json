@@ -1,0 +1,28 @@
+{
+  "version": 1,
+  "nodes": [
+    { "id": "read", "functionId": "Read", "x": 80.0, "y": 120.0,
+      "parameters": [
+        { "key": "availableMemory", "value": "2147483648UL", "useInput": false },
+        { "key": "type", "value": "UInt8", "useInput": false },
+        { "key": "format", "value": "Image stack", "useInput": false },
+        { "key": "input", "value": "../data/rotatingBoxes", "useInput": false },
+        { "key": "suffix", "value": ".tiff", "useInput": false } ] },
+    { "id": "resize", "functionId": "Resize", "x": 280.0, "y": 120.0,
+      "parameters": [
+        { "key": "type", "value": "UInt8", "useInput": false },
+        { "key": "width", "value": "96", "useInput": false },
+        { "key": "height", "value": "96", "useInput": false },
+        { "key": "depth", "value": "96", "useInput": false },
+        { "key": "interpolation", "value": "Linear", "useInput": false } ] },
+    { "id": "write", "functionId": "Write", "x": 500.0, "y": 120.0,
+      "parameters": [
+        { "key": "format", "value": "Image stack", "useInput": false },
+        { "key": "output", "value": "../tmp/resize", "useInput": false },
+        { "key": "suffix", "value": ".tiff", "useInput": false } ] }
+  ],
+  "edges": [
+    { "fromNode": "read", "fromKind": "dataOutput", "fromPort": 0, "toNode": "resize", "toKind": "dataInput", "toPort": 0 },
+    { "fromNode": "resize", "fromKind": "dataOutput", "fromPort": 0, "toNode": "write", "toKind": "dataInput", "toPort": 0 }
+  ]
+}

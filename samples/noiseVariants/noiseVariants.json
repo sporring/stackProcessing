@@ -1,0 +1,82 @@
+{
+  "version": 1,
+  "nodes": [
+    { "id": "source", "functionId": "Zero", "x": 80.0, "y": 120.0,
+      "parameters": [
+        { "key": "availableMemory", "value": "2147483648UL", "useInput": false },
+        { "key": "type", "value": "Float64", "useInput": false },
+        { "key": "width", "value": "64", "useInput": false },
+        { "key": "height", "value": "64", "useInput": false },
+        { "key": "depth", "value": "16", "useInput": false } ] },
+    { "id": "salt", "functionId": "AddSaltAndPepperNoise", "x": 280.0, "y": 120.0,
+      "parameters": [
+        { "key": "type", "value": "Float64", "useInput": false },
+        { "key": "probability", "value": "0.02", "useInput": false } ] },
+    { "id": "shot", "functionId": "AddShotNoise", "x": 500.0, "y": 120.0,
+      "parameters": [
+        { "key": "type", "value": "Float64", "useInput": false },
+        { "key": "scale", "value": "2.0", "useInput": false } ] },
+    { "id": "speckle", "functionId": "AddSpeckleNoise", "x": 700.0, "y": 120.0,
+      "parameters": [
+        { "key": "type", "value": "Float64", "useInput": false },
+        { "key": "std", "value": "0.5", "useInput": false } ] },
+    { "id": "cast", "functionId": "Cast", "x": 900.0, "y": 120.0,
+      "parameters": [
+        { "key": "sourceType", "value": "Float64", "useInput": false },
+        { "key": "targetType", "value": "UInt8", "useInput": false } ] },
+    { "id": "write", "functionId": "Write", "x": 1080.0, "y": 120.0,
+      "parameters": [
+        { "key": "format", "value": "Image stack", "useInput": false },
+        { "key": "output", "value": "../tmp/noiseVariants/added", "useInput": false },
+        { "key": "suffix", "value": ".tiff", "useInput": false } ] },
+    { "id": "syntheticSalt", "functionId": "SaltAndPepperNoise", "x": 80.0, "y": 280.0,
+      "parameters": [
+        { "key": "availableMemory", "value": "2147483648UL", "useInput": false },
+        { "key": "type", "value": "UInt8", "useInput": false },
+        { "key": "width", "value": "64", "useInput": false },
+        { "key": "height", "value": "64", "useInput": false },
+        { "key": "depth", "value": "16", "useInput": false },
+        { "key": "probability", "value": "0.02", "useInput": false } ] },
+    { "id": "writeSalt", "functionId": "Write", "x": 300.0, "y": 280.0,
+      "parameters": [
+        { "key": "format", "value": "Image stack", "useInput": false },
+        { "key": "output", "value": "../tmp/noiseVariants/saltAndPepper", "useInput": false },
+        { "key": "suffix", "value": ".tiff", "useInput": false } ] },
+    { "id": "syntheticShot", "functionId": "ShotNoise", "x": 520.0, "y": 280.0,
+      "parameters": [
+        { "key": "availableMemory", "value": "2147483648UL", "useInput": false },
+        { "key": "type", "value": "UInt8", "useInput": false },
+        { "key": "width", "value": "64", "useInput": false },
+        { "key": "height", "value": "64", "useInput": false },
+        { "key": "depth", "value": "16", "useInput": false },
+        { "key": "scale", "value": "2.0", "useInput": false } ] },
+    { "id": "writeShot", "functionId": "Write", "x": 740.0, "y": 280.0,
+      "parameters": [
+        { "key": "format", "value": "Image stack", "useInput": false },
+        { "key": "output", "value": "../tmp/noiseVariants/shot", "useInput": false },
+        { "key": "suffix", "value": ".tiff", "useInput": false } ] },
+    { "id": "syntheticSpeckle", "functionId": "SpeckleNoise", "x": 960.0, "y": 280.0,
+      "parameters": [
+        { "key": "availableMemory", "value": "2147483648UL", "useInput": false },
+        { "key": "type", "value": "UInt8", "useInput": false },
+        { "key": "width", "value": "64", "useInput": false },
+        { "key": "height", "value": "64", "useInput": false },
+        { "key": "depth", "value": "16", "useInput": false },
+        { "key": "std", "value": "0.5", "useInput": false } ] },
+    { "id": "writeSpeckle", "functionId": "Write", "x": 1180.0, "y": 280.0,
+      "parameters": [
+        { "key": "format", "value": "Image stack", "useInput": false },
+        { "key": "output", "value": "../tmp/noiseVariants/speckle", "useInput": false },
+        { "key": "suffix", "value": ".tiff", "useInput": false } ] }
+  ],
+  "edges": [
+    { "fromNode": "source", "fromKind": "dataOutput", "fromPort": 0, "toNode": "salt", "toKind": "dataInput", "toPort": 0 },
+    { "fromNode": "salt", "fromKind": "dataOutput", "fromPort": 0, "toNode": "shot", "toKind": "dataInput", "toPort": 0 },
+    { "fromNode": "shot", "fromKind": "dataOutput", "fromPort": 0, "toNode": "speckle", "toKind": "dataInput", "toPort": 0 },
+    { "fromNode": "speckle", "fromKind": "dataOutput", "fromPort": 0, "toNode": "cast", "toKind": "dataInput", "toPort": 0 },
+    { "fromNode": "cast", "fromKind": "dataOutput", "fromPort": 0, "toNode": "write", "toKind": "dataInput", "toPort": 0 },
+    { "fromNode": "syntheticSalt", "fromKind": "dataOutput", "fromPort": 0, "toNode": "writeSalt", "toKind": "dataInput", "toPort": 0 },
+    { "fromNode": "syntheticShot", "fromKind": "dataOutput", "fromPort": 0, "toNode": "writeShot", "toKind": "dataInput", "toPort": 0 },
+    { "fromNode": "syntheticSpeckle", "fromKind": "dataOutput", "fromPort": 0, "toNode": "writeSpeckle", "toKind": "dataInput", "toPort": 0 }
+  ]
+}

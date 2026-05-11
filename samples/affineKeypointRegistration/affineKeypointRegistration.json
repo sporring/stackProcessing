@@ -1,0 +1,37 @@
+{
+  "version": 1,
+  "nodes": [
+    { "id": "read", "functionId": "Read", "x": 80.0, "y": 120.0,
+      "parameters": [
+        { "key": "availableMemory", "value": "2147483648UL", "useInput": false },
+        { "key": "type", "value": "Float32", "useInput": false },
+        { "key": "format", "value": "Image stack", "useInput": false },
+        { "key": "input", "value": "../data/volume", "useInput": false },
+        { "key": "suffix", "value": ".tiff", "useInput": false } ] },
+    { "id": "keypoints", "functionId": "DogKeypoints", "x": 290.0, "y": 120.0,
+      "parameters": [
+        { "key": "type", "value": "Float32", "useInput": false },
+        { "key": "sigma0", "value": "0.8", "useInput": false },
+        { "key": "scaleFactor", "value": "1.25", "useInput": false },
+        { "key": "scaleLevels", "value": "4", "useInput": false },
+        { "key": "contrastThreshold", "value": "0.0005", "useInput": false },
+        { "key": "stride", "value": "4", "useInput": false } ] },
+    { "id": "registration", "functionId": "AffineRegistration", "x": 520.0, "y": 120.0,
+      "parameters": [
+        { "key": "maxIterations", "value": "80", "useInput": false },
+        { "key": "initialLinearStep", "value": "0.02", "useInput": false },
+        { "key": "initialTranslationStep", "value": "1.0", "useInput": false },
+        { "key": "minStep", "value": "0.001", "useInput": false },
+        { "key": "stepShrink", "value": "0.5", "useInput": false } ] },
+    { "id": "write", "functionId": "WriteMatrix", "x": 760.0, "y": 120.0,
+      "parameters": [
+        { "key": "output", "value": "../tmp/affineKeypointRegistration", "useInput": false },
+        { "key": "suffix", "value": ".csv", "useInput": false } ] }
+  ],
+  "edges": [
+    { "fromNode": "read", "fromKind": "dataOutput", "fromPort": 0, "toNode": "keypoints", "toKind": "dataInput", "toPort": 0 },
+    { "fromNode": "keypoints", "fromKind": "dataOutput", "fromPort": 0, "toNode": "registration", "toKind": "dataInput", "toPort": 0 },
+    { "fromNode": "keypoints", "fromKind": "dataOutput", "fromPort": 0, "toNode": "registration", "toKind": "dataInput", "toPort": 1 },
+    { "fromNode": "registration", "fromKind": "reducerOutput", "fromPort": 0, "toNode": "write", "toKind": "dataInput", "toPort": 0 }
+  ]
+}

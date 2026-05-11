@@ -1,0 +1,28 @@
+{
+  "version": 1,
+  "nodes": [
+    { "id": "read", "functionId": "Read", "x": 80.0, "y": 120.0,
+      "parameters": [
+        { "key": "availableMemory", "value": "2147483648UL", "useInput": false },
+        { "key": "type", "value": "UInt8", "useInput": false },
+        { "key": "format", "value": "Image stack", "useInput": false },
+        { "key": "input", "value": "../data/rotatingBoxes", "useInput": false },
+        { "key": "suffix", "value": ".tiff", "useInput": false } ] },
+    { "id": "objects", "functionId": "StreamConnectedObjects", "x": 270.0, "y": 120.0,
+      "parameters": [ { "key": "connectivity", "value": "TwentySix", "useInput": false } ] },
+    { "id": "paint", "functionId": "PaintObjects", "x": 480.0, "y": 120.0,
+      "parameters": [
+        { "key": "width", "value": "64", "useInput": false },
+        { "key": "height", "value": "64", "useInput": false } ] },
+    { "id": "write", "functionId": "Write", "x": 680.0, "y": 120.0,
+      "parameters": [
+        { "key": "format", "value": "Image stack", "useInput": false },
+        { "key": "output", "value": "../tmp/objectsImage", "useInput": false },
+        { "key": "suffix", "value": ".tiff", "useInput": false } ] }
+  ],
+  "edges": [
+    { "fromNode": "read", "fromKind": "dataOutput", "fromPort": 0, "toNode": "objects", "toKind": "dataInput", "toPort": 0 },
+    { "fromNode": "objects", "fromKind": "dataOutput", "fromPort": 0, "toNode": "paint", "toKind": "dataInput", "toPort": 0 },
+    { "fromNode": "paint", "fromKind": "dataOutput", "fromPort": 0, "toNode": "write", "toKind": "dataInput", "toPort": 0 }
+  ]
+}
