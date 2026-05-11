@@ -14,6 +14,27 @@ type Window<'T> = SlimPipeline.Window<'T>
 //type Slice<'S when 'S: equality> = Slice.Slice<'S>
 type Image<'S when 'S: equality> = Image.Image<'S>
 
+type HistogramBinning =
+    | FixedEdges of firstLeftEdge: float * lastLeftEdge: float * bins: uint32
+    | FixedWidth of binWidth: uint64
+
+type Histogram<'T when 'T: comparison> =
+    { Counts: Map<'T, uint64>
+      Binning: HistogramBinning option }
+
+module Histogram =
+    let ofMap counts =
+        { Counts = counts
+          Binning = None }
+
+    let withFixedEdges firstLeftEdge lastLeftEdge bins counts =
+        { Counts = counts
+          Binning = Some(FixedEdges(firstLeftEdge, lastLeftEdge, bins)) }
+
+    let withFixedWidth binWidth counts =
+        { Counts = counts
+          Binning = Some(FixedWidth binWidth) }
+
 let getMem () =
     System.GC.Collect()
     System.GC.WaitForPendingFinalizers()

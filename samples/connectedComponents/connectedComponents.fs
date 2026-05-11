@@ -10,10 +10,10 @@ let main arg =
     let width, height, depth, input, output = 
         if arg.Length > 0 then
             let n = (int arg[0]) / 3 |> pown 2 |> uint 
-            n, n, n, $"../image{arg[0]}", $"../result{arg[0]}"
+            n, n, n, "../data/rotatingBoxes", "../tmp/result"
         else
-            64u, 64u, 64u, "../image18", "../result18"
-    let tmp = "tmp"
+            64u, 64u, 64u, "../data/rotatingBoxes", "../tmp/result"
+    let tmp = "../tmp/connectedComponents-labels"
     let suffix = ".tiff"
     let tmpSuffix = ".mha"
 
@@ -22,7 +22,6 @@ let main arg =
     let transTbl =
         src
         |> read<uint8> input suffix
-        >=> threshold 128.0 infinity
         >=> connectedComponents wsz
         >=> teeFst (writeSlabSlices tmp tmpSuffix wsz)
         >=> makeConnectedComponentTranslationTable wsz

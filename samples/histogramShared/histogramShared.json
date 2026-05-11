@@ -3,7 +3,7 @@
   "nodes": [
     {
       "id": "node-1",
-      "functionId": "HistogramData",
+      "functionId": "ImHistogramData",
       "x": 342.40953544028304,
       "y": 124.4240384327974,
       "parameters": [

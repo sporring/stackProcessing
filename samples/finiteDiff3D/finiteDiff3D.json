@@ -133,7 +133,7 @@
         },
         {
           "key": "output",
-          "value": "../result",
+          "value": "../tmp/result",
           "useInput": false
         },
         {

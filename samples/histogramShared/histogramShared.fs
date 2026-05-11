@@ -10,9 +10,9 @@ let main arg =
     let src, arg = commandLineSource availableMemory arg
     let input = 
         if arg.Length > 0 then
-            $"../image{arg[0]}"
+            "../data/volume"
         else
-            "../image18"
+            "../data/volume"
 
     // Plotly.Net plot function
     let plt (x:float list) (y:float list) = 
@@ -25,7 +25,7 @@ let main arg =
     let histogramMaker = 
         src
         |> read<uint8> input ".tiff"
-        >=> histogram () --> map2pairs --> pairs2floats
+        >=> imHistogram () --> histogram2pairs --> pairs2floats
     histogramMaker
     >=>> (print (),plot plt)
     //>=>> (tap "left", tap "right")

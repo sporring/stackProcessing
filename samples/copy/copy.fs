@@ -9,9 +9,9 @@ let main arg =
     let src, arg = commandLineSource availableMemory arg
     let input,output = 
         if arg.Length > 0 then
-            $"../image{arg[0]}", $"../mask{arg[0]}"
+            "../data/volume", "../tmp/mask"
         else
-            "../image18", "../mask18"
+            "../data/volume", "../tmp/mask"
 
     src
     |> read<uint8> input ".tiff"

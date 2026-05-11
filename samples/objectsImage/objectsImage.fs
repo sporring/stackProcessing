@@ -51,11 +51,11 @@ let private sampleRoot sampleName (args: string[]) =
     if args.Length > 0 then
         let token = args[0]
         if token |> Seq.forall Char.IsDigit then
-            $"../{sampleName}{token}"
+            "../tmp/{sampleName}{token}"
         else
             token
     else
-        $"../{sampleName}"
+        "../tmp/{sampleName}"
 
 let private objectSource src (objects: StreamedObject list) : SlimPipeline.Plan<unit, StreamedObject list> =
     let stage =

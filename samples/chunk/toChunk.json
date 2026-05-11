@@ -86,33 +86,33 @@
     },
     {
       "id": "node-2",
-      "functionId": "WriteInSlabs",
+      "functionId": "WriteChunks",
       "x": 232.36766715344504,
       "y": 100,
       "parameters": [
         {
           "key": "output",
-          "value": "../data/chunk",
+          "value": "../tmp/chunk",
           "useInput": false
         },
         {
           "key": "suffix",
-          "value": ".tiff",
+          "value": ".mha",
           "useInput": false
         },
         {
           "key": "chunkX",
-          "value": "12",
+          "value": "64",
           "useInput": false
         },
         {
           "key": "chunkY",
-          "value": "13",
+          "value": "64",
           "useInput": false
         },
         {
           "key": "chunkZ",
-          "value": "14",
+          "value": "16",
           "useInput": false
         }
       ]

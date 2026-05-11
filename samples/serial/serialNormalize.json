@@ -24,7 +24,7 @@
         },
         {
           "key": "input",
-          "value": "input",
+          "value": "../data/volume",
           "useInput": true
         },
         {

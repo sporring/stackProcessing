@@ -1,0 +1,326 @@
+{
+  "version": 1,
+  "nodes": [
+    {
+      "id": "read",
+      "functionId": "Read",
+      "x": 40.0,
+      "y": 110.0,
+      "parameters": [
+        {
+          "key": "availableMemory",
+          "value": "2147483648UL",
+          "useInput": false
+        },
+        {
+          "key": "type",
+          "value": "UInt8",
+          "useInput": false
+        },
+        {
+          "key": "format",
+          "value": "Image stack",
+          "useInput": false
+        },
+        {
+          "key": "input",
+          "value": "../data/rotatingBoxes",
+          "useInput": false
+        },
+        {
+          "key": "suffix",
+          "value": ".tiff",
+          "useInput": false
+        },
+        {
+          "key": "slabDepth",
+          "value": "1",
+          "useInput": false
+        },
+        {
+          "key": "multiscaleIndex",
+          "value": "0",
+          "useInput": false
+        },
+        {
+          "key": "datasetIndex",
+          "value": "0",
+          "useInput": false
+        },
+        {
+          "key": "timepoint",
+          "value": "0",
+          "useInput": false
+        },
+        {
+          "key": "channel",
+          "value": "0",
+          "useInput": false
+        },
+        {
+          "key": "maxParallelChunks",
+          "value": "0",
+          "useInput": false
+        },
+        {
+          "key": "datasetPath",
+          "value": "/entry/data/data",
+          "useInput": false
+        },
+        {
+          "key": "frameAxis",
+          "value": "0",
+          "useInput": false
+        },
+        {
+          "key": "yAxis",
+          "value": "1",
+          "useInput": false
+        },
+        {
+          "key": "xAxis",
+          "value": "2",
+          "useInput": false
+        }
+      ]
+    },
+    {
+      "id": "objects",
+      "functionId": "StreamConnectedObjects",
+      "x": 260.0,
+      "y": 110.0,
+      "parameters": [
+        {
+          "key": "connectivity",
+          "value": "TwentySix",
+          "useInput": false
+        }
+      ]
+    },
+    {
+      "id": "measure",
+      "functionId": "MeasureObjects",
+      "x": 500.0,
+      "y": 110.0,
+      "parameters": []
+    },
+    {
+      "id": "stats",
+      "functionId": "ObjectSizeStats",
+      "x": 740.0,
+      "y": 40.0,
+      "parameters": []
+    },
+    {
+      "id": "expand",
+      "functionId": "Expand",
+      "x": 965.0,
+      "y": 40.0,
+      "parameters": []
+    },
+    {
+      "id": "print",
+      "functionId": "Print",
+      "x": 1190.0,
+      "y": 40.0,
+      "parameters": [
+        {
+          "key": "format",
+          "value": "Object size stats: count={count} mean={mean} variance={variance} min={minimum} max={maximum}",
+          "useInput": false
+        },
+        {
+          "key": "input1",
+          "value": "count",
+          "useInput": true
+        },
+        {
+          "key": "input2",
+          "value": "mean",
+          "useInput": true
+        },
+        {
+          "key": "input3",
+          "value": "variance",
+          "useInput": true
+        },
+        {
+          "key": "input4",
+          "value": "minimum",
+          "useInput": true
+        },
+        {
+          "key": "input5",
+          "value": "maximum",
+          "useInput": true
+        },
+        {
+          "key": "input6",
+          "value": "input6",
+          "useInput": false
+        },
+        {
+          "key": "input7",
+          "value": "input7",
+          "useInput": false
+        },
+        {
+          "key": "input8",
+          "value": "input8",
+          "useInput": false
+        }
+      ]
+    },
+    {
+      "id": "sizes",
+      "functionId": "ObjectSizes",
+      "x": 740.0,
+      "y": 210.0,
+      "parameters": []
+    },
+    {
+      "id": "histogram",
+      "functionId": "Histogram",
+      "x": 965.0,
+      "y": 210.0,
+      "parameters": [
+        {
+          "key": "binWidth",
+          "value": "100UL",
+          "useInput": false
+        }
+      ]
+    },
+    {
+      "id": "chart",
+      "functionId": "Chart",
+      "x": 1190.0,
+      "y": 210.0,
+      "parameters": [
+        {
+          "key": "kind",
+          "value": "Column",
+          "useInput": false
+        },
+        {
+          "key": "input",
+          "value": "map",
+          "useInput": true
+        },
+        {
+          "key": "title",
+          "value": "Streamed object-size histogram",
+          "useInput": false
+        },
+        {
+          "key": "xAxis",
+          "value": "size bin",
+          "useInput": false
+        },
+        {
+          "key": "yAxis",
+          "value": "object count",
+          "useInput": false
+        }
+      ]
+    }
+  ],
+  "edges": [
+    {
+      "fromNode": "read",
+      "fromKind": "dataOutput",
+      "fromPort": 0,
+      "toNode": "objects",
+      "toKind": "dataInput",
+      "toPort": 0
+    },
+    {
+      "fromNode": "objects",
+      "fromKind": "dataOutput",
+      "fromPort": 0,
+      "toNode": "measure",
+      "toKind": "dataInput",
+      "toPort": 0
+    },
+    {
+      "fromNode": "measure",
+      "fromKind": "dataOutput",
+      "fromPort": 0,
+      "toNode": "stats",
+      "toKind": "dataInput",
+      "toPort": 0
+    },
+    {
+      "fromNode": "stats",
+      "fromKind": "reducerOutput",
+      "fromPort": 0,
+      "toNode": "expand",
+      "toKind": "dataInput",
+      "toPort": 0
+    },
+    {
+      "fromNode": "expand",
+      "fromKind": "reducerOutput",
+      "fromPort": 0,
+      "toNode": "print",
+      "toKind": "parameterInput",
+      "toPort": 1
+    },
+    {
+      "fromNode": "expand",
+      "fromKind": "reducerOutput",
+      "fromPort": 1,
+      "toNode": "print",
+      "toKind": "parameterInput",
+      "toPort": 2
+    },
+    {
+      "fromNode": "expand",
+      "fromKind": "reducerOutput",
+      "fromPort": 2,
+      "toNode": "print",
+      "toKind": "parameterInput",
+      "toPort": 3
+    },
+    {
+      "fromNode": "expand",
+      "fromKind": "reducerOutput",
+      "fromPort": 3,
+      "toNode": "print",
+      "toKind": "parameterInput",
+      "toPort": 4
+    },
+    {
+      "fromNode": "expand",
+      "fromKind": "reducerOutput",
+      "fromPort": 4,
+      "toNode": "print",
+      "toKind": "parameterInput",
+      "toPort": 5
+    },
+    {
+      "fromNode": "measure",
+      "fromKind": "dataOutput",
+      "fromPort": 0,
+      "toNode": "sizes",
+      "toKind": "dataInput",
+      "toPort": 0
+    },
+    {
+      "fromNode": "sizes",
+      "fromKind": "dataOutput",
+      "fromPort": 0,
+      "toNode": "histogram",
+      "toKind": "dataInput",
+      "toPort": 0
+    },
+    {
+      "fromNode": "histogram",
+      "fromKind": "reducerOutput",
+      "fromPort": 0,
+      "toNode": "chart",
+      "toKind": "parameterInput",
+      "toPort": 1
+    }
+  ]
+}

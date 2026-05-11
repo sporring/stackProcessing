@@ -404,7 +404,7 @@ val writeNexus:
      int -> int -> StackCore.Stage<StackCore.Image<'a>,StackCore.Image<'a>>)
     when 'a: equality
 
-val writeInSlabs:
+val writeChunks:
   (string ->
      string ->
      uint ->
@@ -648,13 +648,15 @@ val measureObjects:
   StackCore.Stage<StackObjects.StreamedObject list,
                   StackObjects.ObjectMeasurements list>
 
+val objectSizes:
+  StackCore.Stage<StackObjects.ObjectMeasurements list,uint64 list>
+
 val objectSizeStats:
   StackCore.Stage<StackObjects.ObjectMeasurements list,
                   StackObjects.ObjectSizeStats>
 
-val objectSizeHistogram:
-  (uint64 ->
-     StackCore.Stage<StackObjects.ObjectMeasurements list,Map<uint64,uint64>>)
+val histogram:
+  (uint64 -> StackCore.Stage<uint64 list,StackCore.Histogram<uint64>>)
 
 val resampleAffineTrilinearSlices:
   (string ->
@@ -1044,14 +1046,15 @@ val resample<'T when 'T: equality> :
      SlimPipeline.Plan<unit,StackCore.Image<'T>> ->
      SlimPipeline.Plan<unit,StackCore.Image<'T>>) when 'T: equality
 
-val histogram:
-  (unit -> SlimPipeline.Stage<StackCore.Image<'a>,Map<'a,uint64>>)
+val imHistogram:
+  (unit -> SlimPipeline.Stage<StackCore.Image<'a>,StackCore.Histogram<'a>>)
     when 'a: comparison
 
-val histogramFixedBins:
+val imHistogramFixedBins:
   (float ->
      float ->
-     uint32 -> SlimPipeline.Stage<StackCore.Image<'a>,Map<float,uint64>>)
+     uint32 ->
+     SlimPipeline.Stage<StackCore.Image<'a>,StackCore.Histogram<float>>)
     when 'a: equality
 
 val histogramEstimate<'T when 'T: comparison> :
@@ -1074,11 +1077,12 @@ val estimateHistogram<'T when 'T: comparison> :
     when 'T: comparison
 
 val histogramEstimateMap<'T when 'T: comparison> :
-  SlimPipeline.Stage<StackImageFunctions.HistogramEstimate<'T>,Map<'T,uint64>>
-    when 'T: comparison
+  SlimPipeline.Stage<StackImageFunctions.HistogramEstimate<'T>,
+                     StackCore.Histogram<'T>> when 'T: comparison
 
 val histogramEqualization<'T when 'T: comparison> :
-  (Map<'T,uint64> -> SlimPipeline.Stage<StackCore.Image<'T>,Image.Image<float>>)
+  (StackCore.Histogram<'T> ->
+     SlimPipeline.Stage<StackCore.Image<'T>,Image.Image<float>>)
     when 'T: comparison
 
 val sumProjection<'T when 'T: equality> :
@@ -1151,11 +1155,23 @@ val serialApplyManifestInBoundingBox<'T when 'T: equality> :
      float -> StackCore.Stage<StackCore.Image<'T>,StackCore.Image<'T>>)
     when 'T: equality
 
-val quantiles: (float list -> Map<'a,uint64> -> float list) when 'a: comparison
+val quantiles:
+  (float list -> StackCore.Histogram<'a> -> float list) when 'a: comparison
 
-val otsuThresholdFromHistogram: (Map<'a,uint64> -> float) when 'a: comparison
+val otsuThresholdFromHistogram:
+  (StackCore.Histogram<'a> -> float) when 'a: comparison
 
-val momentsThresholdFromHistogram: (Map<'a,uint64> -> float) when 'a: comparison
+val momentsThresholdFromHistogram:
+  (StackCore.Histogram<'a> -> float) when 'a: comparison
+
+val histogramCounts<'T when 'T: comparison> :
+  SlimPipeline.Stage<StackCore.Histogram<'T>,Map<'T,uint64>> when 'T: comparison
+
+val inline histogram2pairs<^T
+                             when ^T: comparison and
+                                  ^T: (static member op_Explicit: ^T -> float)> :
+  SlimPipeline.Stage<StackCore.Histogram<^T>,(^T * uint64) list>
+    when ^T: comparison and ^T: (static member op_Explicit: ^T -> float)
 
 val inline map2pairs<^T,^S
                        when ^T: comparison and

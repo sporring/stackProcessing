@@ -399,7 +399,7 @@ let generatorSuite =
             Expect.stringContains code ">=> addShotNoise 2.0" "AddShotNoise should lower with scale."
             Expect.stringContains code ">=> addSpeckleNoise 0.5" "AddSpeckleNoise should lower with std."
 
-        testCase "slab read and write boxes lower to slab DSL functions" <| fun _ ->
+        testCase "chunk read and write boxes lower to chunk DSL functions" <| fun _ ->
             let read =
                 node "read" "ReadSlab"
                     [ p "availableMemory" "1073741824" false
@@ -408,7 +408,7 @@ let generatorSuite =
                       p "suffix" ".mha" false ]
 
             let write =
-                node "write" "WriteInSlabs"
+                node "write" "WriteChunks"
                     [ p "output" "chunks-out" false
                       p "suffix" ".mha" false
                       p "chunkX" "12" false
@@ -420,7 +420,7 @@ let generatorSuite =
                 |> PipelineCodeGenerator.generateSavedGraph
 
             Expect.stringContains code "|> readSlab<uint8> \"chunks\" \".mha\"" "ReadSlab should generate the slab reader."
-            Expect.stringContains code ">=> writeInSlabs \"chunks-out\" \".mha\" 12u 13u 14u" "WriteInSlabs should generate the slab writer wrapper."
+            Expect.stringContains code ">=> writeChunks \"chunks-out\" \".mha\" 12u 13u 14u" "WriteChunks should generate the chunk writer wrapper."
 
         testCase "readRange box lowers to ranged DSL source" <| fun _ ->
             let read =
@@ -1929,7 +1929,7 @@ let generatorSuite =
 
         testCase "chart over histogram data emits visualization helper and bound histogram" <| fun _ ->
             let histogram =
-                node "histogram" "HistogramData" []
+                node "histogram" "ImHistogramData" []
 
             let chart =
                 node "chart" "Chart"
@@ -1945,11 +1945,11 @@ let generatorSuite =
             Expect.isFalse (code.Contains("open Plotly.NET")) "Chart helper should come from StackProcessing, so chart-only generated code does not need to open Plotly.NET."
             Expect.isFalse (code.Contains("let showChart kind points =")) "Chart helper should not be emitted into generated programs."
             Expect.stringContains code "let Histogram0 =" "Linked histogram data should be bound before use."
-            Expect.stringContains code "showChartWithLabels \"Line\" \"\" \"\" \"\" Histogram0" "Chart should use the selected chart kind, default empty labels, and linked histogram value."
+            Expect.stringContains code "showChartWithLabels \"Line\" \"\" \"\" \"\" Histogram0.Counts" "Chart should use the selected chart kind, default empty labels, and linked histogram counts."
 
         testCase "histogram boxes can use fixed bins and chart labels" <| fun _ ->
             let histogram =
-                node "histogram" "Histogram"
+                node "histogram" "ImHistogram"
                     [ p "firstLeftEdge" "0.0" false
                       p "lastLeftEdge" "255.0" false
                       p "bins" "256" false
@@ -1961,7 +1961,7 @@ let generatorSuite =
                 graph [ histogram ] []
                 |> PipelineCodeGenerator.generateSavedGraph
 
-            Expect.stringContains code ">=> histogramFixedBins 0.0 255.0 256u" "Configured fixed-bin controls should lower to the fixed-bin reducer."
+            Expect.stringContains code ">=> imHistogramFixedBins 0.0 255.0 256u" "Configured fixed-bin controls should lower to the fixed-bin reducer."
             Expect.stringContains code "showChartXYWithLabels \"Column\" \"Intensity histogram\" \"Intensity\" \"Pixels\"" "Histogram should pass title and axis labels to the shared chart helper."
 
         testCase "estimateHistogram source exposes histogram map and diagnostics" <| fun _ ->
@@ -2017,7 +2017,7 @@ let generatorSuite =
                       p "suffix" ".tiff" false ]
 
             let histogram =
-                node "histogram" "HistogramData" []
+                node "histogram" "ImHistogramData" []
 
             let write =
                 node "writeHistogram" "WriteCSV"
@@ -2031,8 +2031,8 @@ let generatorSuite =
                       edge "histogram" "reducerOutput" 0 "writeHistogram" "input" 0 ]
                 |> PipelineCodeGenerator.generateSavedGraph
 
-            Expect.stringContains code ">=> histogram ()" "HistogramData should still generate the histogram reducer."
-            Expect.stringContains code ">=> writeCSVHistogram \"histogram\"" "WriteCSV should lower histogram input to the histogram CSV writer."
+            Expect.stringContains code ">=> imHistogram ()" "ImHistogramData should generate the image histogram reducer."
+            Expect.stringContains code ">=> histogramCounts >=> writeCSVHistogram \"histogram\"" "WriteCSV should unwrap histogram counts before the generic histogram CSV writer."
             Expect.stringContains code "|> sink" "Terminal histogram WriteCSV should be a sink."
 
         testCase "quantiles over histogram data can feed image parameters" <| fun _ ->
@@ -2044,7 +2044,7 @@ let generatorSuite =
                       p "suffix" ".tiff" false ]
 
             let histogram =
-                node "histogram" "HistogramData" []
+                node "histogram" "ImHistogramData" []
 
             let quantiles =
                 node "quantiles" "Quantiles"
@@ -2087,7 +2087,7 @@ let generatorSuite =
                       p "suffix" ".tiff" false ]
 
             let histogram =
-                node "histogram" "HistogramData" []
+                node "histogram" "ImHistogramData" []
 
             let otsu =
                 node "otsu" "OtsuThresholdFromHistogram"
@@ -2127,7 +2127,7 @@ let generatorSuite =
                       p "suffix" ".tiff" false ]
 
             let histogram =
-                node "histogram" "HistogramData" []
+                node "histogram" "ImHistogramData" []
 
             let equalize =
                 node "equalize" "HistogramEqualization"

@@ -46,7 +46,7 @@
     },
     {
       "id": "node-2",
-      "functionId": "Histogram",
+      "functionId": "ImHistogram",
       "x": 880.4343804535167,
       "y": 331.6010935441589,
       "parameters": [

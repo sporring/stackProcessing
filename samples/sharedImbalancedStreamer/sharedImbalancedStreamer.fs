@@ -9,9 +9,9 @@ let main arg =
     let src, arg = commandLineSource availableMemory arg
     let input,output = 
         if arg.Length > 0 then
-            $"../image{arg[0]}", $"../result{arg[0]}"
+            "../data/volume", "../tmp/result"
         else
-            "../image18", "../result18"
+            "../data/volume", "../tmp/result"
 
 
     let readMaker = 

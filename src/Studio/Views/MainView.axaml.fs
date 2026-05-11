@@ -394,7 +394,9 @@ type MainView() as this =
         | :? PipelineNodeViewModel as pipelineNode ->
             pipelineNode.State.Definition.Id = "ComputeStats"
             || pipelineNode.State.Definition.Id = "ComponentTranslationTable"
-            || pipelineNode.State.Definition.Id = "HistogramData"
+            || pipelineNode.State.Definition.Id = "ImHistogramData"
+            || pipelineNode.State.Definition.Id = "Histogram"
+            || pipelineNode.State.Definition.Id = "ObjectSizeStats"
             || pipelineNode.State.Definition.Id = "SurfaceArea"
             || pipelineNode.State.Definition.Id = "Volume"
             || pipelineNode.State.Definition.Id = "PointPairDistances"
@@ -572,7 +574,7 @@ type MainView() as this =
             | :? PipelineNodeViewModel as node
                 when node.State.Definition.Id = "Write"
                      || node.State.Definition.Id = "WriteThrough"
-                     || node.State.Definition.Id = "WriteInSlabs" ->
+                     || node.State.Definition.Id = "WriteChunks" ->
                 supportedWriterTypes node
                 |> List.contains numericType
             | _ ->

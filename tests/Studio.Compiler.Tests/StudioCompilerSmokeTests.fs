@@ -158,6 +158,24 @@ let rec private sourceFor caseId portType =
           NodeId = objects.Id
           Kind = "output"
           Port = 0 }
+    | PortType.Custom "ObjectMeasurements" ->
+        let objects = sourceFor $"{caseId}_objects" (PortType.Custom "StreamedObjects")
+        let measure = node $"source_{caseId}_measure" "MeasureObjects" []
+
+        { Nodes = objects.Nodes @ [ measure ]
+          Edges = objects.Edges @ [ edge objects.NodeId objects.Kind objects.Port measure.Id "input" 0 ]
+          NodeId = measure.Id
+          Kind = "output"
+          Port = 0 }
+    | PortType.Custom "UInt64List" ->
+        let measurements = sourceFor $"{caseId}_measurements" (PortType.Custom "ObjectMeasurements")
+        let sizes = node $"source_{caseId}_sizes" "ObjectSizes" []
+
+        { Nodes = measurements.Nodes @ [ sizes ]
+          Edges = measurements.Edges @ [ edge measurements.NodeId measurements.Kind measurements.Port sizes.Id "input" 0 ]
+          NodeId = sizes.Id
+          Kind = "output"
+          Port = 0 }
     | PortType.Custom "TranslationTable" ->
         let labels = sourceFor $"{caseId}_labels" BuiltInCatalog.connectedComponentLabels
         let table = node $"source_{caseId}_table" "ComponentTranslationTable" [ p "windowSize" "3" false ]
@@ -259,7 +277,7 @@ let rec private sourceFor caseId portType =
           Port = 0 }
     | PortType.Scalar BasicType.Map ->
         let image = imageSource $"{caseId}_histogram_image" NumericType.Float64
-        let histogram = node $"source_{caseId}_histogram" "HistogramData" []
+        let histogram = node $"source_{caseId}_histogram" "ImHistogramData" []
 
         { Nodes = image.Nodes @ [ histogram ]
           Edges = image.Edges @ [ edge image.NodeId image.Kind image.Port histogram.Id "input" 0 ]
@@ -310,13 +328,16 @@ let private outputKindFor functionId portType =
     | "GetNexusInfo"
     | "ComponentTranslationTable"
     | "SerialEstBoundingBox"
-    | "HistogramData"
+    | "ImHistogramData"
     | "EstimateHistogram"
+    | "ObjectSizeStats"
+    | "Histogram"
     | "Quantiles" -> "reducerOutput"
     | _ ->
         match portType with
         | PortType.Scalar _
         | PortType.Custom "ImageStats"
+        | PortType.Custom "ObjectSizeStats"
         | PortType.Custom "TranslationTable"
         | PortType.Custom "StackInfo"
         | PortType.Custom "SerialVolumeGeometry" -> "reducerOutput"
@@ -353,6 +374,23 @@ let private sinkFor caseId functionId portType =
           node $"sink_{caseId}_write" "Write" [ p "output" "objects" false; p "suffix" ".tiff" false ] ],
         [ edge $"target_{caseId}" targetKind 0 $"sink_{caseId}_paint" "input" 0
           edge $"sink_{caseId}_paint" "output" 0 $"sink_{caseId}_write" "input" 0 ]
+    | PortType.Custom "ObjectMeasurements" ->
+        [ node $"sink_{caseId}_stats" "ObjectSizeStats" []
+          node $"sink_{caseId}_expand" "Expand" []
+          node $"sink_{caseId}_print" "Print" [ p "format" "{input1}" false; p "input1" "" true ] ],
+        [ edge $"target_{caseId}" targetKind 0 $"sink_{caseId}_stats" "input" 0
+          edge $"sink_{caseId}_stats" "reducerOutput" 0 $"sink_{caseId}_expand" "input" 0
+          edge $"sink_{caseId}_expand" "reducerOutput" 0 $"sink_{caseId}_print" "parameterInput" 1 ]
+    | PortType.Custom "UInt64List" ->
+        [ node $"sink_{caseId}_histogram" "Histogram" [ p "binWidth" "100" false ]
+          node $"sink_{caseId}_chart" "Chart" [ p "kind" "Column" false; p "input" "" true ] ],
+        [ edge $"target_{caseId}" targetKind 0 $"sink_{caseId}_histogram" "input" 0
+          edge $"sink_{caseId}_histogram" "reducerOutput" 0 $"sink_{caseId}_chart" "parameterInput" 1 ]
+    | PortType.Custom "ObjectSizeStats" ->
+        [ node $"sink_{caseId}_expand" "Expand" []
+          node $"sink_{caseId}_print" "Print" [ p "format" "{input1}" false; p "input1" "" true ] ],
+        [ edge $"target_{caseId}" targetKind 0 $"sink_{caseId}_expand" "input" 0
+          edge $"sink_{caseId}_expand" "reducerOutput" 0 $"sink_{caseId}_print" "parameterInput" 1 ]
     | PortType.Custom "StackInfo" ->
         [ node $"sink_{caseId}_expand" "Expand" []
           node $"sink_{caseId}_print" "Print" [ p "format" "{input1}" false; p "input1" "" true ] ],

@@ -53,11 +53,11 @@ let private sampleRoot sampleName (args: string[]) =
     if args.Length > 0 then
         let token = args[0]
         if token |> Seq.forall Char.IsDigit then
-            $"../{sampleName}{token}"
+            "../tmp/{sampleName}{token}"
         else
             token
     else
-        $"../{sampleName}"
+        "../tmp/{sampleName}"
 
 let private objectSource src (objects: StreamedObject list) : Plan<unit, StreamedObject list> =
     let stage =
@@ -221,7 +221,7 @@ let main args =
     >=> paintObjects width height
     >=> cast<uint8, float32>
     >=> write originalStack ".tiff"
-    >=> writeInSlabs originalChunks ".tiff" 12u 12u 12u
+    >=> writeChunks originalChunks ".tiff" 12u 12u 12u
     >=> ignoreSingles ()
     |> sink
 
@@ -234,7 +234,7 @@ let main args =
 
     imageSource src movingImages
     >=> write movingStack ".tiff"
-    >=> writeInSlabs movingChunks ".tiff" 12u 12u 12u
+    >=> writeChunks movingChunks ".tiff" 12u 12u 12u
     >=> ignoreSingles ()
     |> sink
 

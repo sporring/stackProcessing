@@ -97,7 +97,7 @@
         },
         {
           "key": "output",
-          "value": "../data/result",
+          "value": "../tmp/result",
           "useInput": false
         },
         {

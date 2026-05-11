@@ -10,9 +10,9 @@ let main arg =
     let src, arg = commandLineSource availableMemory arg
     let input = 
         if arg.Length > 0 then
-            $"../image{arg[0]}"
+            "../data/volume"
         else
-            "../image18"
+            "../data/volume"
 
     // Plotly.Net plot function
     let plt (I: Image<uint8>) = 

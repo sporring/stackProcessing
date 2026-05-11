@@ -24,7 +24,7 @@
         },
         {
           "key": "input",
-          "value": "../image18",
+          "value": "../data/volume",
           "useInput": false
         },
         {
@@ -107,7 +107,7 @@
         },
         {
           "key": "input",
-          "value": "../mask18",
+          "value": "../data/rotatingBoxes",
           "useInput": false
         },
         {
@@ -205,7 +205,7 @@
         },
         {
           "key": "output",
-          "value": "../result18",
+          "value": "../tmp/result",
           "useInput": false
         },
         {

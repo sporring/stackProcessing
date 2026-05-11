@@ -1,0 +1,121 @@
+{
+  "version": 1,
+  "nodes": [
+    {
+      "id": "node-1",
+      "functionId": "Write",
+      "x": 432,
+      "y": 112,
+      "parameters": [
+        {
+          "key": "output",
+          "value": "output",
+          "useInput": false
+        },
+        {
+          "key": "suffix",
+          "value": ".tiff",
+          "useInput": false
+        }
+      ]
+    },
+    {
+      "id": "node-2",
+      "functionId": "Read",
+      "x": 32,
+      "y": 112,
+      "parameters": [
+        {
+          "key": "availableMemory",
+          "value": "1073741824",
+          "useInput": false
+        },
+        {
+          "key": "type",
+          "value": "UInt8",
+          "useInput": false
+        },
+        {
+          "key": "input",
+          "value": "input",
+          "useInput": true
+        },
+        {
+          "key": "suffix",
+          "value": ".tiff",
+          "useInput": false
+        }
+      ]
+    },
+    {
+      "id": "node-3",
+      "functionId": "Scalar",
+      "x": 32,
+      "y": 32,
+      "parameters": [
+        {
+          "key": "type",
+          "value": "String",
+          "useInput": false
+        },
+        {
+          "key": "value",
+          "value": "test",
+          "useInput": false
+        }
+      ]
+    },
+    {
+      "id": "node-4",
+      "functionId": "ImageOpImage",
+      "x": 232,
+      "y": 112,
+      "parameters": [
+        {
+          "key": "operation",
+          "value": "*",
+          "useInput": false
+        },
+        {
+          "key": "type",
+          "value": "UInt8",
+          "useInput": false
+        }
+      ]
+    }
+  ],
+  "edges": [
+    {
+      "fromNode": "node-2",
+      "fromKind": "dataOutput",
+      "fromPort": 0,
+      "toNode": "node-4",
+      "toKind": "dataInput",
+      "toPort": 0
+    },
+    {
+      "fromNode": "node-2",
+      "fromKind": "dataOutput",
+      "fromPort": 0,
+      "toNode": "node-4",
+      "toKind": "dataInput",
+      "toPort": 1
+    },
+    {
+      "fromNode": "node-4",
+      "fromKind": "dataOutput",
+      "fromPort": 0,
+      "toNode": "node-1",
+      "toKind": "dataInput",
+      "toPort": 0
+    },
+    {
+      "fromNode": "node-3",
+      "fromKind": "scalarOutput",
+      "fromPort": 0,
+      "toNode": "node-2",
+      "toKind": "parameterInput",
+      "toPort": 2
+    }
+  ]
+}

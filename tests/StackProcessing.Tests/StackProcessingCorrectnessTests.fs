@@ -469,7 +469,7 @@ let stackProcessingCorrectnessSuite =
                 let thresholdValue =
                     source (2UL * 1024UL * 1024UL * 1024UL)
                     |> readRandom<float32> 4u inputDir suffix
-                    >=> histogram ()
+                    >=> imHistogram ()
                     |> drain
                     |> otsuThresholdFromHistogram
 
@@ -506,7 +506,7 @@ let stackProcessingCorrectnessSuite =
                 let thresholdValue =
                     source (2UL * 1024UL * 1024UL * 1024UL)
                     |> readRandom<float32> 4u inputDir suffix
-                    >=> histogram ()
+                    >=> imHistogram ()
                     |> drain
                     |> momentsThresholdFromHistogram
 
@@ -742,11 +742,11 @@ let stackProcessingCorrectnessSuite =
                 let actual =
                     source (2UL * 1024UL * 1024UL * 1024UL)
                     |> read<uint8> inputDir suffix
-                    >=> histogram ()
+                    >=> imHistogram ()
                     |> drain
 
                 let expected = ImageFunctions.histogram volume
-                Expect.equal actual expected "Streaming histogram should match direct 3D histogram."
+                Expect.equal actual.Counts expected "Streaming histogram should match direct 3D histogram."
             finally
                 volume.decRefCount()
                 if Directory.Exists inputDir then Directory.Delete(inputDir, true)

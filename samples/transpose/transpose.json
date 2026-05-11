@@ -24,7 +24,7 @@
         },
         {
           "key": "input",
-          "value": "../image18",
+          "value": "../data/volume",
           "useInput": false
         },
         {
@@ -115,7 +115,7 @@
         },
         {
           "key": "output",
-          "value": "../result18021",
+          "value": "../tmp/transpose",
           "useInput": false
         },
         {
@@ -213,7 +213,7 @@
         },
         {
           "key": "input",
-          "value": "../result18021",
+          "value": "../tmp/transpose",
           "useInput": false
         },
         {
@@ -304,7 +304,7 @@
         },
         {
           "key": "output",
-          "value": "../image18b",
+          "value": "../tmp/volume-copy",
           "useInput": false
         },
         {

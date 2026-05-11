@@ -571,6 +571,9 @@ let private measurementsOfObject (object: StreamedObject) =
 let measureObjects : Stage<StreamedObject list, ObjectMeasurements list> =
     Stage.map "measureObjects" (fun _ objects -> objects |> List.map measurementsOfObject) id id
 
+let objectSizes : Stage<ObjectMeasurements list, uint64 list> =
+    Stage.map "objectSizes" (fun _ measurements -> measurements |> List.map (fun measurement -> measurement.Size)) id id
+
 let private zeroSizeStats =
     { Count = 0UL
       Mean = 0.0
@@ -610,15 +613,16 @@ let objectSizeStats : Stage<ObjectMeasurements list, ObjectSizeStats> =
 
     Stage.reduce "objectSizeStats" reducer Streaming (fun _ -> 0UL) (fun _ -> 1UL)
 
-let objectSizeHistogram binWidth : Stage<ObjectMeasurements list, Map<uint64, uint64>> =
-    if binWidth = 0UL then invalidArg (nameof binWidth) "objectSizeHistogram binWidth must be positive."
+let histogram binWidth : Stage<uint64 list, Histogram<uint64>> =
+    if binWidth = 0UL then invalidArg (nameof binWidth) "histogram binWidth must be positive."
 
-    let addToHistogram histogram (measurement: ObjectMeasurements) =
-        let bin = measurement.Size / binWidth
+    let addToHistogram histogram (value: uint64) =
+        let bin = value / binWidth
         let current = histogram |> Map.tryFind bin |> Option.defaultValue 0UL
         histogram |> Map.add bin (current + 1UL)
 
-    let folder histogram measurements =
-        measurements |> List.fold addToHistogram histogram
+    let folder histogram values =
+        values |> List.fold addToHistogram histogram
 
-    Stage.fold "objectSizeHistogram" folder Map.empty<uint64, uint64> (fun _ -> 0UL) (fun _ -> 1UL)
+    Stage.fold "histogram" folder Map.empty<uint64, uint64> (fun _ -> 0UL) (fun _ -> 1UL)
+    --> Stage.map "histogram: metadata" (fun _ -> Histogram.withFixedWidth binWidth) id id

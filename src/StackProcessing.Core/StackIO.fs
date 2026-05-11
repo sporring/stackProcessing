@@ -1560,6 +1560,12 @@ let private cleanImageSeriesFiles outputDir suffix =
         Directory.GetFiles(outputDir, pattern)
         |> Array.iter File.Delete
 
+let private cleanChunkFiles outputDir suffix =
+    if Directory.Exists(outputDir) then
+        let pattern = sprintf "chunk*%s" suffix
+        Directory.GetFiles(outputDir, pattern)
+        |> Array.iter File.Delete
+
 let write<'T when 'T: equality> (outputDir: string) (suffix: string) : Stage<Image<'T>, Image<'T>> =
     let t = typeof<'T>
     if (icompare suffix ".tif" || icompare suffix ".tiff") 
@@ -1852,8 +1858,10 @@ let writeNexus<'T when 'T: equality>
     |> withCostModel (StageCostModel.create memoryModel timeCostModel)
 
 let _writeSlabChunks (debug: bool) (outputDir: string) (suffix: string) (width: uint) (height: uint) (winSz: uint) (k: int) (stack: Image<'T>) =
-    for i in [0u..stack.GetWidth()/width] do
-        for j in [0u..stack.GetHeight()/height] do
+    let chunksX = (stack.GetWidth() + width - 1u) / width
+    let chunksY = (stack.GetHeight() + height - 1u) / height
+    for i in 0u .. chunksX - 1u do
+        for j in 0u .. chunksY - 1u do
             let fileName = getChunkFilename outputDir suffix (int i) (int j) (int k)
             let x00 = i*width |> int
             let x01 = ((i+1u)*width-1u |> int, stack.GetWidth()-1u |> int) ||> min
@@ -1863,14 +1871,11 @@ let _writeSlabChunks (debug: bool) (outputDir: string) (suffix: string) (width: 
             let x21 = winSz-1u |> int
             if x00<=x01 && x10<=x11 && x20<=x21 then
                 if debug then printfn "[write] Saved chunk %d %d %d to %s as %s" i j k fileName (typeof<'T>.Name) 
-                let chunck = stack.[x00 .. x01, x10 .. x11 , x20 .. x21]
-                chunck.toFile(fileName)
-                chunck.decRefCount()
+                let chunk = stack.[x00 .. x01, x10 .. x11 , x20 .. x21]
+                chunk.toFile(fileName)
+                chunk.decRefCount()
 
-let _writeChunks (debug: bool) (outputDir: string) (suffix: string) (width: uint) (height: uint) (winSz: uint) (stack: Image<'T>) =
-    ()
-
-let private writeInSlabsCore<'T when 'T: equality> (outputDir: string) (suffix: string) (width: uint) (height: uint) (winSz: uint) : Stage<Image<'T>, Image<'T>> =
+let private writeChunksCore<'T when 'T: equality> (outputDir: string) (suffix: string) (width: uint) (height: uint) (winSz: uint) : Stage<Image<'T>, Image<'T>> =
     let t = typeof<'T>
     if (icompare suffix ".tif" || icompare suffix ".tiff") 
         && not (t = typeof<uint8> || t = typeof<int8> || t = typeof<uint16> || t = typeof<int16> || t = typeof<float32>) then
@@ -1878,8 +1883,10 @@ let private writeInSlabsCore<'T when 'T: equality> (outputDir: string) (suffix: 
     if not (Directory.Exists(outputDir)) then
         Directory.CreateDirectory(outputDir) |> ignore
 
+    let cleaned = lazy (cleanChunkFiles outputDir suffix)
     let pad, stride = 0u, winSz
     let f (debug: bool) (k: int64) (stack: Image<'T>) = 
+        cleaned.Force()
         if stack.GetDimensions() = 2u then
             let slab = ImageFunctions.stack [ stack ]
             _writeSlabChunks debug outputDir suffix width height 1u (int k) slab
@@ -1905,13 +1912,13 @@ let private writeInSlabsCore<'T when 'T: equality> (outputDir: string) (suffix: 
         imageIoCost<'T>
             "write"
             Iter
-            $"writeInSlabs.{typeof<'T>.Name}"
+            $"writeChunks.{typeof<'T>.Name}"
             (fun input -> inputValue input |> imageBytes<'T>)
             (fun _ -> 1UL)
     let stg =
-        Stage.mapi "writeInSlabs" mapper memoryNeed elementTransformation
+        Stage.mapi "writeChunks" mapper memoryNeed elementTransformation
         |> withCostModel (StageCostModel.create memoryModel timeCostModel)
     (window winSz pad stride) --> stg --> flattenList ()
 
-let writeInSlabs<'T when 'T: equality> outputDir suffix width height winSz =
-    writeInSlabsCore<'T> outputDir suffix width height winSz
+let writeChunks<'T when 'T: equality> outputDir suffix width height winSz =
+    writeChunksCore<'T> outputDir suffix width height winSz

@@ -373,6 +373,10 @@ module PipelineCodeGenerator =
         [| "NumPixels"; "Mean"; "Std"; "Min"; "Max"; "Sum"; "Var" |]
         |> Array.tryItem portIndex
 
+    let private objectSizeStatsFieldName portIndex =
+        [| "Count"; "Mean"; "Variance"; "Minimum"; "Maximum" |]
+        |> Array.tryItem portIndex
+
     let private isSingleValueReducerNode (node: SavedNode) =
         node.FunctionId = "SurfaceArea"
         || node.FunctionId = "Volume"
@@ -407,7 +411,9 @@ module PipelineCodeGenerator =
         node.FunctionId = "ComponentTranslationTable"
 
     let private isHistogramDataNode (node: SavedNode) =
-        node.FunctionId = "HistogramData" || node.FunctionId = "EstimateHistogram"
+        node.FunctionId = "Histogram"
+        || node.FunctionId = "ImHistogramData"
+        || node.FunctionId = "EstimateHistogram"
 
     let private isQuantilesNode (node: SavedNode) =
         node.FunctionId = "Quantiles"
@@ -479,7 +485,18 @@ module PipelineCodeGenerator =
                         match nodesById |> Map.tryFind edge.FromNode with
                         | Some reducerNode when isSingleValueReducerNode reducerNode && edge.FromPort = 0 -> Some statsName
                         | Some reducerNode when reducerNode.FunctionId = "Expand" ->
-                            computeStatsFieldName edge.FromPort |> Option.map (fun fieldName -> $"{statsName}.{fieldName}")
+                            graph.Edges
+                            |> Array.tryFind (fun inputEdge ->
+                                inputEdge.ToNode = reducerNode.Id
+                                && inputEdge.ToKind <> "parameterInput"
+                                && inputEdge.ToPort = 0)
+                            |> Option.bind (fun inputEdge -> nodesById |> Map.tryFind inputEdge.FromNode)
+                            |> Option.bind (fun sourceNode ->
+                                if sourceNode.FunctionId = "ObjectSizeStats" then
+                                    objectSizeStatsFieldName edge.FromPort
+                                else
+                                    computeStatsFieldName edge.FromPort)
+                            |> Option.map (fun fieldName -> $"{statsName}.{fieldName}")
                         | _ -> None
                     | _ ->
                         match translationTableNamesByNodeId |> Map.tryFind edge.FromNode with
@@ -750,6 +767,8 @@ module PipelineCodeGenerator =
                                 |> Option.map (fun recordSource ->
                                     if recordSource.FunctionId = "ComputeStats" then
                                         PortType.Custom "ImageStats"
+                                    elif recordSource.FunctionId = "ObjectSizeStats" then
+                                        PortType.Custom "ObjectSizeStats"
                                     elif isWriteStackInfoNode recordSource || isReadStackInfoNode recordSource then
                                         PortType.Custom "StackInfo"
                                     elif isChunkInfoNode recordSource || isReadChunkInfoNode recordSource then
@@ -886,9 +905,9 @@ module PipelineCodeGenerator =
                 let firstLeftEdge = parameterValue "firstLeftEdge"
                 let lastLeftEdge = parameterValue "lastLeftEdge"
                 let bins = parameterValue "bins"
-                $">=> histogramFixedBins {firstLeftEdge} {lastLeftEdge} {bins}"
+                $">=> imHistogramFixedBins {firstLeftEdge} {lastLeftEdge} {bins}"
             else
-                ">=> histogram ()"
+                ">=> imHistogram ()"
 
         match node.FunctionId with
         | "Zero" ->
@@ -1101,13 +1120,13 @@ module PipelineCodeGenerator =
             let factorZ = parameterValue "factorZ"
             let interpolation = quotedParameter "interpolation"
             $"|> resample<{pixelType}> {factorX} {factorY} {factorZ} {interpolation}"
-        | "WriteInSlabs" ->
+        | "WriteChunks" ->
             let output = quotedParameter "output"
             let suffix = quotedParameter "suffix"
             let chunkX = parameterValue "chunkX"
             let chunkY = parameterValue "chunkY"
             let chunkZ = parameterValue "chunkZ"
-            $">=> writeInSlabs {output} {suffix} {chunkX} {chunkY} {chunkZ}"
+            $">=> writeChunks {output} {suffix} {chunkX} {chunkY} {chunkZ}"
         | "Write" ->
             let format = savedParamValue "format" node
             let output = quotedParameter "output"
@@ -1154,7 +1173,7 @@ module PipelineCodeGenerator =
             let output = quotedParameter "output"
             match savedParamValue "dataKind" node with
             | "Matrix" -> $">=> writeCSVMatrix {output}"
-            | "Histogram" -> $">=> writeCSVHistogram {output}"
+            | "Histogram" -> $">=> histogramCounts >=> writeCSVHistogram {output}"
             | _ -> $">=> writeCSVPointSet {output}"
         | "WriteThrough" ->
             let output = quotedParameter "output"
@@ -1244,16 +1263,31 @@ module PipelineCodeGenerator =
             let format = interpolatedStringExpression (savedParamValue "format" node) inputs
 
             $"printfn {format}"
-        | "Histogram" ->
+        | "ImHistogram" ->
             let histogramStage = histogramStageExpression ()
             let title = quotedParameter "title"
             let xAxis = quotedParameter "xAxis"
             let yAxis = quotedParameter "yAxis"
-            $"{histogramStage} >=> map2pairs --> pairs2floats --> plot (showChartXYWithLabels \"Column\" {title} {xAxis} {yAxis})"
-        | "HistogramData" ->
+            $"{histogramStage} >=> histogram2pairs --> pairs2floats --> plot (showChartXYWithLabels \"Column\" {title} {xAxis} {yAxis})"
+        | "ImHistogramData" ->
             histogramStageExpression ()
+        | "Histogram" ->
+            let binWidth = parameterValue "binWidth"
+            $">=> histogram {binWidth}"
         | "Chart" ->
-            let values = parameterValue "input"
+            let inputValue = parameterValue "input"
+            let values =
+                match graph.Edges |> Array.tryFind (fun edge -> edge.ToNode = node.Id && edge.ToKind = "parameterInput" && edge.ToPort = 1) with
+                | Some edge ->
+                    match nodesById |> Map.tryFind edge.FromNode with
+                    | Some source when source.FunctionId = "EstimateHistogram" ->
+                        $"{inputValue}.Counts"
+                    | Some source when isHistogramDataNode source ->
+                        $"{inputValue}.Counts"
+                    | _ ->
+                        inputValue
+                | None ->
+                    inputValue
             let kind = savedParamValue "kind" node
             let title = quotedParameter "title"
             let xAxis = quotedParameter "xAxis"
@@ -1630,6 +1664,12 @@ module PipelineCodeGenerator =
         | "StreamConnectedObjects" ->
             let connectivity = parameterValue "connectivity"
             $">=> streamConnectedObjects<uint8> ObjectConnectivity.{connectivity}"
+        | "MeasureObjects" ->
+            ">=> measureObjects"
+        | "ObjectSizeStats" ->
+            ">=> objectSizeStats"
+        | "ObjectSizes" ->
+            ">=> objectSizes"
         | "PaintObjects" ->
             let width = parameterValue "width"
             let height = parameterValue "height"
@@ -1709,7 +1749,7 @@ module PipelineCodeGenerator =
             |> Array.distinctBy _.Id
 
         let statsExpandNodesWithLinkedOutputs =
-            expandNodesFor (fun node -> node.FunctionId = "ComputeStats")
+            expandNodesFor (fun node -> node.FunctionId = "ComputeStats" || node.FunctionId = "ObjectSizeStats")
 
         let statsProducerNodesForExpand =
             statsExpandNodesWithLinkedOutputs
@@ -1729,7 +1769,9 @@ module PipelineCodeGenerator =
         let statsNamesByNodeId =
             let producerNames =
                 statsProducerNodesForExpand
-                |> Array.mapi (fun index node -> node.Id, $"ImageStats{index}")
+                |> Array.mapi (fun index node ->
+                    let prefix = if node.FunctionId = "ObjectSizeStats" then "ObjectSizeStats" else "ImageStats"
+                    node.Id, $"{prefix}{index}")
 
             let singleValueNames =
                 statsNodesWithLinkedFields
@@ -2162,12 +2204,12 @@ module PipelineCodeGenerator =
                 match node.FunctionId with
                 | "Write"
                 | "WriteThrough"
-                | "WriteInSlabs"
+                | "WriteChunks"
                 | "WriteMesh"
                 | "WritePointSet"
                 | "WriteMatrix"
                 | "WriteCSV"
-                | "Histogram"
+                | "ImHistogram"
                 | "ShowImage" ->
                     $"{expression}{newLine}|> sink"
                 | "ComputeStats" ->
@@ -2182,9 +2224,13 @@ module PipelineCodeGenerator =
                     $"{expression}{newLine}|> drain"
                 | "ComponentTranslationTable" ->
                     $"{expression}{newLine}|> drain"
-                | "HistogramData" ->
+                | "Histogram" ->
+                    $"{expression}{newLine}|> drain"
+                | "ImHistogramData" ->
                     $"{expression}{newLine}|> drain"
                 | "EstimateHistogram" ->
+                    $"{expression}{newLine}|> drain"
+                | "ObjectSizeStats" ->
                     $"{expression}{newLine}|> drain"
                 | _ ->
                     expression

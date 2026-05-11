@@ -475,7 +475,7 @@ let private chunkedVolumeOperation
     let elementTransformation = fun _ -> 1UL
 
     prepareInput
-    --> writeInSlabs inputDir suffix chunkX chunkY chunkZ
+    --> writeChunks inputDir suffix chunkX chunkY chunkZ
     --> cleanStage name (fun () -> StackIO.deleteIfExists workspaceRoot)
     --> StackCore.ignoreSingles ()
     --> Stage.map name (fun debug _ -> operation debug inputDir outputDir suffix chunkX chunkY chunkZ) memoryNeed elementTransformation
@@ -969,14 +969,18 @@ let imageHistogram () =
 let imageHistogramFold () =
     Stage.fold<Map<'T,uint64>, Map<'T,uint64>> "histogram: fold" ImageFunctions.addHistogram (Map.empty<'T, uint64>) id (fun _ -> 1UL)
 
-let histogram () =
-    imageHistogram () --> imageHistogramFold ()
+let imHistogram () =
+    imageHistogram ()
+    --> imageHistogramFold ()
+    --> Stage.map "histogram: metadata" (fun _ -> Histogram.ofMap) id id
 
 let imageHistogramFixedBins firstLeftEdge lastLeftEdge bins =
     Stage.map<Image<'T>,Map<float,uint64>> "histogramFixedBins: map" (fun _ -> releaseAfter (ImageFunctions.histogramFixedBins firstLeftEdge lastLeftEdge bins)) id id
 
-let histogramFixedBins firstLeftEdge lastLeftEdge bins =
-    imageHistogramFixedBins firstLeftEdge lastLeftEdge bins --> imageHistogramFold ()
+let imHistogramFixedBins firstLeftEdge lastLeftEdge bins =
+    imageHistogramFixedBins firstLeftEdge lastLeftEdge bins
+    --> imageHistogramFold ()
+    --> Stage.map "histogramFixedBins: metadata" (fun _ -> Histogram.withFixedEdges firstLeftEdge lastLeftEdge bins) id id
 
 type HistogramEstimator =
     | DKW
@@ -997,14 +1001,14 @@ module HistogramEstimator =
         | _ -> invalidArg "estimator" $"Unknown histogram estimator '{value}'. Use DKW, Holdout, or DKWAndHoldout."
 
 type HistogramEstimate<'T when 'T: comparison> =
-    { Histogram: Map<'T,uint64>
+    { Histogram: Histogram<'T>
       Samples: uint64
       Confidence: float
       CdfHalfWidth: float
       HoldoutMaxCdfDelta: float }
 
 let histogramEstimateMap<'T when 'T: comparison> =
-    Stage.map<HistogramEstimate<'T>, Map<'T,uint64>> "histogramEstimateMap" (fun _ estimate -> estimate.Histogram) id id
+    Stage.map<HistogramEstimate<'T>, Histogram<'T>> "histogramEstimateMap" (fun _ estimate -> estimate.Histogram) id id
 
 let private addHistogramValue value histogram =
     histogram
@@ -1106,7 +1110,7 @@ let histogramEstimate<'T when 'T: equality and 'T: comparison> down estimatorNam
                 | DKW -> nan
 
             return
-                { Histogram = histogram
+                { Histogram = Histogram.ofMap histogram
                   Samples = samples
                   Confidence = confidence
                   CdfHalfWidth = cdfHalfWidth
@@ -1182,8 +1186,8 @@ let private histogramEqualizationLookup<'T when 'T: comparison> (histogram: Map<
                     let t = (value - keys[lower]) / span
                     equalized[lower] + t * (equalized[upper] - equalized[lower])
 
-let histogramEqualization<'T when 'T: equality and 'T: comparison> (histogram: Map<'T,uint64>) =
-    let lookup = histogramEqualizationLookup histogram
+let histogramEqualization<'T when 'T: equality and 'T: comparison> (histogram: Histogram<'T>) =
+    let lookup = histogramEqualizationLookup histogram.Counts
 
     let equalize (_debug: bool) (image: Image<'T>) =
         try
@@ -1307,14 +1311,22 @@ let volume xUnit yUnit zUnit : Stage<Image<uint8>, float> =
 
     Stage.fold "volume" folder 0.0 id (fun _ -> 1UL)
 
-let quantiles (quantileValues: float list) (histogram: Map<'T,uint64>) =
-    ImageFunctions.quantilesFromHistogram quantileValues histogram
+let quantiles (quantileValues: float list) (histogram: Histogram<'T>) =
+    ImageFunctions.quantilesFromHistogram quantileValues histogram.Counts
 
 let otsuThresholdFromHistogram histogram =
-    ImageFunctions.otsuThresholdFromHistogram histogram
+    ImageFunctions.otsuThresholdFromHistogram histogram.Counts
 
 let momentsThresholdFromHistogram histogram =
-    ImageFunctions.momentsThresholdFromHistogram histogram
+    ImageFunctions.momentsThresholdFromHistogram histogram.Counts
+
+let inline histogram2pairs< ^T when ^T: comparison and ^T: (static member op_Explicit: ^T -> float) > =
+    let histogram2pairs (histogram: Histogram<'T>) : ('T * uint64) list =
+        histogram.Counts |> Map.toList
+    liftUnary "histogram2pairs" histogram2pairs id id
+
+let histogramCounts<'T when 'T: comparison> =
+    Stage.map<Histogram<'T>, Map<'T, uint64>> "histogramCounts" (fun _ histogram -> histogram.Counts) id id
 
 let inline map2pairs< ^T, ^S when ^T: comparison and ^T: (static member op_Explicit: ^T -> float) and  ^S: (static member op_Explicit: ^S -> float) > = 
     let map2pairs (map: Map<'T, 'S>) : ('T * 'S) list =
@@ -2046,7 +2058,7 @@ let permuteAxes (i: uint, j: uint, k: uint) (winSz: uint): Stage<Image<'T>,Image
         let memoryNeed = fun _ -> memPeak
         let elementTransformation = fun _ -> chunkInfo.chunks[int k] |> uint64
 
-        (writeInSlabs tmpDir tmpSuffix winSz winSz winSz)
+        (writeChunks tmpDir tmpSuffix winSz winSz winSz)
         --> cleanStage name (fun () -> StackIO.deleteIfExists tmpDir) 
         --> StackCore.ignoreSingles () // force calculation of full stream and decrease references
         --> Stage.map name (fun _ _ -> chunkInfo <- getChunkInfo tmpDir tmpSuffix) memoryNeed elementTransformation // insert side-effect

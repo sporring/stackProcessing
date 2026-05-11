@@ -1,0 +1,34 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(dotnet build *)",
+      "Read(//private/tmp/**)",
+      "Bash(unzip -q /Users/jrh630/.nuget/packages/nodeeditoravalonia/11.2.0/nodeeditoravalonia.11.2.0.nupkg)",
+      "Bash(unzip -l /Users/jrh630/.nuget/packages/nodeeditoravalonia/11.2.0/nodeeditoravalonia.11.2.0.nupkg)",
+      "Bash(dotnet fsi *)",
+      "Bash(dotnet nuget *)",
+      "Bash(unzip -p ~/.nuget/packages/nodeeditoravalonia/11.2.0/nodeeditoravalonia.11.2.0.nupkg \"*.cs\")",
+      "Bash(unzip -l ~/.nuget/packages/nodeeditoravalonia/11.2.0/nodeeditoravalonia.11.2.0.nupkg)",
+      "Bash(unzip -l ~/.nuget/packages/avalonia.controls.panandzoom/11.2.0/avalonia.controls.panandzoom.11.2.0.nupkg)",
+      "Bash(unzip -p ~/.nuget/packages/avalonia.controls.panandzoom/11.2.0/avalonia.controls.panandzoom.11.2.0.nupkg lib/net6.0/Avalonia.Controls.PanAndZoom.xml)",
+      "Bash(grep -E \"^[A-Z][a-zA-Z]+$|^[a-z][a-zA-Z]+$\")",
+      "WebFetch(domain:github.com)",
+      "WebFetch(domain:raw.githubusercontent.com)",
+      "Bash(dotnet package *)",
+      "Bash(nuget search *)",
+      "Bash(curl -s \"https://api.nuget.org/v3/registration5-gz-semver2/avalonia.controls.panadzoom/index.json\")",
+      "Bash(curl -s \"https://api.nuget.org/v3-flatcontainer/avalonia.controls.panandZoom/index.json\")",
+      "Bash(curl -s \"https://api.nuget.org/v3-flatcontainer/nodeeditoravalonia/11.2.0/nodeeditoravalonia.nuspec\")",
+      "Bash(curl -s \"https://api.nuget.org/v3-flatcontainer/nodeeditoravalonia/index.json\")",
+      "Bash(curl -s \"https://api.nuget.org/v3-flatcontainer/nodeeditoravalonia/11.3.11/nodeeditoravalonia.nuspec\")",
+      "Bash(cat)",
+      "Bash(dotnet-ildasm \"/Users/jrh630/.nuget/packages/avalonia.controls.panandZoom/11.2.0/lib/net8.0/Avalonia.Controls.PanAndZoom.dll\")",
+      "Bash(grep -E \"^[A-Z][a-zA-Z]+$\")",
+      "Bash(dotnet tool *)",
+      "Bash(dotnet-ildasm \"/Users/jrh630/.nuget/packages/avalonia.controls.panandZoom/11.2.0/lib/net8.0/Avalonia.Controls.PanAndZoom.dll\" --class ZoomBorder --method SetMatrix)",
+      "WebFetch(domain:www.nuget.org)",
+      "Bash(awk ' *)",
+      "Bash(awk '-F[,:]' ' *)"
+    ]
+  }
+}

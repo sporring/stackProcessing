@@ -1467,7 +1467,7 @@ let stackProcessingSupportSuite =
 
             try
                 imagePlan slices
-                >=> writeInSlabs chunkDirectory ".tiff" 2u 2u 2u
+                >=> writeChunks chunkDirectory ".tiff" 2u 2u 2u
                 >=> ignoreSingles ()
                 |> sink
 
@@ -1744,12 +1744,13 @@ let stackProcessingSupportSuite =
             let histogram =
                 scalarPlan [ firstBatch; secondBatch ]
                 >=> measureObjects
-                >=> objectSizeHistogram 2UL
+                >=> objectSizes
+                >=> histogram 2UL
                 |> drain
 
-            Expect.equal histogram (Map.ofList [ 1UL, 2UL; 2UL, 1UL ]) "Size histogram should count bin index size/binWidth."
+            Expect.equal histogram.Counts (Map.ofList [ 1UL, 2UL; 2UL, 1UL ]) "Size histogram should count bin index size/binWidth."
 
-        testCase "writeInSlabs creates chunk files and chunk metadata can be read" <| fun _ ->
+        testCase "writeChunks creates chunk files and chunk metadata can be read" <| fun _ ->
             let inputDir = tempDirectory "chunks-input"
             let chunkDir = tempDirectory "chunks-output"
             let suffix = ".tiff"
@@ -1763,7 +1764,7 @@ let stackProcessingSupportSuite =
 
                 source (2UL * 1024UL * 1024UL * 1024UL)
                 |> read<uint8> inputDir suffix
-                >=> writeInSlabs chunkDir chunkSuffix 2u 2u 2u
+                >=> writeChunks chunkDir chunkSuffix 2u 2u 2u
                 |> sink
 
                 let info = getChunkInfo chunkDir chunkSuffix
@@ -2035,10 +2036,10 @@ let stackProcessingSupportSuite =
                 let actual =
                     source (2UL * 1024UL * 1024UL * 1024UL)
                     |> read<uint8> inputDir suffix
-                    >=> histogram ()
+                    >=> imHistogram ()
                     |> drain
 
-                Expect.equal actual (Map.ofList [ 0uy, 1UL; 1uy, 2UL; 2uy, 3UL; 3uy, 2UL ]) "histogram should fold all streamed slices."
+                Expect.equal actual.Counts (Map.ofList [ 0uy, 1UL; 1uy, 2UL; 2uy, 3UL; 3uy, 2UL ]) "histogram should fold all streamed slices."
             finally
                 disposeImages slices
                 deleteDirectory inputDir
@@ -2048,7 +2049,7 @@ let stackProcessingSupportSuite =
                 array2D [ [ 0uy; 10uy ]; [ 15uy; 20uy ] ]
                 |> Image<uint8>.ofArray2D
 
-            let histogram = Map.ofList [ 0uy, 1UL; 10uy, 1UL; 20uy, 2UL ]
+            let histogram = StackCore.Histogram.ofMap (Map.ofList [ 0uy, 1UL; 10uy, 1UL; 20uy, 2UL ])
             let mutable equalized: Image<float> list = []
 
             try
@@ -2078,7 +2079,7 @@ let stackProcessingSupportSuite =
                     |> drain
 
                 Expect.equal estimate.Samples 8UL "Downsampling by two should sample four pixels from each 4x4 slice."
-                Expect.equal estimate.Histogram (Map.ofList [ 0uy, 4UL; 1uy, 4UL ]) "Histogram estimate should count only sampled pixels."
+                Expect.equal estimate.Histogram.Counts (Map.ofList [ 0uy, 4UL; 1uy, 4UL ]) "Histogram estimate should count only sampled pixels."
                 Expect.isGreaterThan estimate.CdfHalfWidth 0.0 "DKW diagnostics should report a positive CDF half-width."
                 Expect.isLessThan estimate.CdfHalfWidth 1.0 "DKW diagnostics should stay bounded for this sample count."
                 Expect.isGreaterThanOrEqual estimate.HoldoutMaxCdfDelta 0.0 "Holdout diagnostics should report a valid max CDF delta."
@@ -2100,7 +2101,7 @@ let stackProcessingSupportSuite =
                 deleteDirectory outputDir
 
         testCase "histogram threshold estimators return scalar thresholds for the standard threshold stage" <| fun _ ->
-            let histogram = Map.ofList [ 0.0f, 4UL; 10.0f, 4UL ]
+            let histogram = StackCore.Histogram.ofMap (Map.ofList [ 0.0f, 4UL; 10.0f, 4UL ])
 
             let otsu = otsuThresholdFromHistogram histogram
             let moments = momentsThresholdFromHistogram histogram
@@ -2147,12 +2148,12 @@ let stackProcessingSupportSuite =
                 let pairs =
                     source (2UL * 1024UL * 1024UL * 1024UL)
                     |> read<uint8> inputDir suffix
-                    >=> histogram ()
-                    >=> map2pairs<uint8, uint64>
+                    >=> imHistogram ()
+                    >=> histogram2pairs<uint8>
                     >=> pairs2floats<uint8, uint64>
                     |> drain
 
-                Expect.equal pairs [ 1.0, 2.0; 3.0, 6.0 ] "map2pairs followed by pairs2floats should expose histogram coordinates."
+                Expect.equal pairs [ 1.0, 2.0; 3.0, 6.0 ] "histogram2pairs followed by pairs2floats should expose histogram coordinates."
             finally
                 disposeImages slices
                 deleteDirectory inputDir

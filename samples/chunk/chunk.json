@@ -24,7 +24,7 @@
         },
         {
           "key": "input",
-          "value": "../image18",
+          "value": "../data/volume",
           "useInput": false
         },
         {
@@ -86,13 +86,13 @@
     },
     {
       "id": "n2",
-      "functionId": "WriteInSlabs",
+      "functionId": "WriteChunks",
       "x": 260.0,
       "y": 100.0,
       "parameters": [
         {
           "key": "output",
-          "value": "../chunks18",
+          "value": "../tmp/chunks",
           "useInput": false
         },
         {
@@ -135,7 +135,7 @@
         },
         {
           "key": "input",
-          "value": "../chunks18",
+          "value": "../tmp/chunks",
           "useInput": false
         },
         {
@@ -158,7 +158,7 @@
         },
         {
           "key": "output",
-          "value": "../image18b",
+          "value": "../tmp/volume-copy",
           "useInput": false
         },
         {

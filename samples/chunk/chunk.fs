@@ -9,16 +9,16 @@ let main arg =
     let src, arg = commandLineSource availableMemory arg
     let input,output = 
         if arg.Length > 0 then
-            $"../image{arg[0]}", $"../chunks{arg[0]}"
+            "../data/volume", "../tmp/chunks"
         else
-            "../image18", "../chunks18"
+            "../data/volume", "../tmp/chunks"
 
     deleteIfExists output
     src
     |> read<uint8> input ".tiff"
     //|> getFilenames (input) ".tiff" Array.sort
     //>=> readFiles<uint8>
-    >=> writeInSlabs output ".tiff" 12u 13u 14u
+    >=> writeChunks output ".tiff" 12u 13u 14u
     >=> ignoreSingles ()
     |> sink
 

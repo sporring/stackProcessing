@@ -29,6 +29,8 @@ module BuiltInCatalog =
   let chunkInfo = PortType.Custom "ChunkInfo"
   let serialTransPair = PortType.Tuple(imageAny, serialSliceManifest)
   let streamedObjects = PortType.Custom "StreamedObjects"
+  let objectMeasurements = PortType.Custom "ObjectMeasurements"
+  let objectSizeStats = PortType.Custom "ObjectSizeStats"
   let intList = PortType.Custom "IntList"
   let uint64List = PortType.Custom "UInt64List"
 
@@ -72,9 +74,17 @@ module BuiltInCatalog =
         makePort "Sum: Float64" (Scalar(BasicType.Numeric Float64))
         makePort "Var: Float64" (Scalar(BasicType.Numeric Float64)) ]
 
+  let private objectSizeStatsOutputs =
+      [ makePort "Count: UInt64" (Scalar(BasicType.Numeric UInt64))
+        makePort "Mean: Float64" (Scalar(BasicType.Numeric Float64))
+        makePort "Variance: Float64" (Scalar(BasicType.Numeric Float64))
+        makePort "Minimum: UInt64" (Scalar(BasicType.Numeric UInt64))
+        makePort "Maximum: UInt64" (Scalar(BasicType.Numeric UInt64)) ]
+
   let expandOutputsFor portType =
       match portType with
       | Custom "ImageStats" -> imageStatsOutputs
+      | Custom "ObjectSizeStats" -> objectSizeStatsOutputs
       | Custom "StackInfo" -> stackInfoOutputs
       | Custom "ChunkInfo" -> chunkInfoOutputs
       | _ -> []
@@ -107,7 +117,7 @@ module BuiltInCatalog =
       "Writes image data from a slice stream. Target selects whether output is an image stack directory, one volume file, an OME-Zarr store, or a NeXus/HDF5 detector dataset. File type selects the on-disk image format where that applies. The selected target controls which image types can be connected: TIFF stack/volume output supports 8/16-bit integer and Float32 scalar images; PNG supports UInt8 and UInt16; JPEG and BMP support UInt8; OME-Zarr currently supports UInt8 and UInt16; NeXus/HDF5 supports the scalar numeric set used by Studio. Cast before write when a target cannot store the current image type."
 
   let private chunkWriteFormatDescription =
-      "Writes stack slabs split into chunk files for later slab reading. The selected format controls which image types can be connected to the input pin, using the same constraints as write. TIFF output uses the exact selected suffix, either .tif or .tiff."
+      "Writes a stack as 3D chunk files for later chunked reading. The selected format controls which image types can be connected to the input pin, using the same constraints as write. MetaImage (.mha) is usually faster than TIFF for 3D chunks because each chunk is saved as a small volume rather than a stack of image pages."
 
   let private zarrFormatDescription =
       "Reads or writes an OME-Zarr volume through ZarrNET. The current native .NET implementation is used here for UInt8 and UInt16 scalar images. readZarrSlab serves 2D slices from a selected timepoint/channel/resolution; writeZarr writes a single timepoint/channel volume and exposes chunk sizes and physical voxel spacing so Studio can be used as a stack-to-Zarr converter."
@@ -246,6 +256,18 @@ module BuiltInCatalog =
 
   let private computeStatsDescription =
       "Computes whole-stream summary statistics for an image stack.\n\nThe outputs include pixel count, mean, standard deviation, minimum, maximum, sum, and sum of squares. Use these values to choose thresholds, normalize intensities, or report basic measurements.\n\nBecause the result summarizes the input stream, it is usually used on a separate branch before a second processing pass that applies the chosen parameters."
+
+  let private objectMeasurementsDescription =
+      "Measures streamed connected objects. The input is the object stream produced by streamConnectedObjects, and the output carries per-object measurements such as voxel count and bounding box. Use objectSizeStats for summary statistics or objectSizes followed by histogram for a size distribution."
+
+  let private objectSizeStatsDescription =
+      "Reduces measured objects to size statistics: count, mean, variance, minimum, and maximum voxel count. Connect the output to expand and print to report the fields."
+
+  let private objectSizesDescription =
+      "Extracts object sizes as a streamed list of UInt64 voxel counts. This is useful before the general histogram reducer or any other numeric-stream summary."
+
+  let private numberHistogramDescription =
+      "Reduces a stream of UInt64 values to a histogram map. Bin width is measured in the input value units; for object sizes that means voxels. Connect the map to chart for a native Plotly visualization."
 
   let private localDenoiseDescription =
       "These denoising filters are local-neighborhood smoothing operations rather than global iterative solvers. smoothWMedian uses a radius in x, y, and z and is streamed through windows large enough to cover the z-neighborhood. smoothWBilateral is edge-preserving and can be slower; use the window size to give the z-neighborhood enough context. No recursive Gaussian, curvature-flow, or anisotropic-diffusion filters are included here because their iteration/global-dependency structure is less friendly to LMIP streaming."
@@ -446,7 +468,7 @@ module BuiltInCatalog =
       DisplayName = "readSlab"
       Category = "Sources / Sinks"
       Summary = "Read chunked stack files as a normal 2D slice stream."
-      Description = "Reads slab files assembled from chunks produced by writeInSlabs, then serves their 2D slices to the pipeline. Use the same format and suffix that were used when writing the chunk files; chunk filenames encode x/y/z chunk positions."
+      Description = "Reads chunk files produced by writeChunks, then serves their 2D slices to the pipeline. Use the same format and suffix that were used when writing the chunk files; chunk filenames encode x/y/z chunk positions."
       Aliases = [ "slab"; "chunks"; "input"; "tiff"; "file"; "UInt8"; "Float64"; "type" ]
       Inputs = []
       Outputs =
@@ -917,20 +939,20 @@ module BuiltInCatalog =
                 suffixParameter ".mha"
                 makeParameter "windowSize" "Window size" "8" (BasicType.Numeric UInt32) ] }
 
-        { Id = "WriteInSlabs"
-          DisplayName = "writeInSlabs"
+        { Id = "WriteChunks"
+          DisplayName = "writeChunks"
           Category = "Sources / Sinks"
-          Summary = "Write a stack as slabs split into chunk files."
+          Summary = "Write a stack as 3D chunk files."
           Description = chunkWriteFormatDescription
-          Aliases = [ "output"; "save"; "slabs"; "chunks"; "tiff"; "file" ]
+          Aliases = [ "output"; "save"; "chunks"; "tiff"; "mha"; "file" ]
           Inputs = [ makePort "Number" imageAny ]
           Outputs = []
           Parameters =
               [ makeParameter "output" "Output" "output" BasicType.String
-                suffixParameter ".tiff"
-                makeParameter "chunkX" "Chunk X" "12" (BasicType.Numeric UInt32)
-                makeParameter "chunkY" "Chunk Y" "13" (BasicType.Numeric UInt32)
-                makeParameter "chunkZ" "Chunk Z" "14" (BasicType.Numeric UInt32) ] }
+                suffixParameter ".mha"
+                makeParameter "chunkX" "Chunk X" "64" (BasicType.Numeric UInt32)
+                makeParameter "chunkY" "Chunk Y" "64" (BasicType.Numeric UInt32)
+                makeParameter "chunkZ" "Chunk Z" "16" (BasicType.Numeric UInt32) ] }
 
         { Id = "WriteMesh"
           DisplayName = "writeMesh"
@@ -1039,7 +1061,7 @@ module BuiltInCatalog =
           DisplayName = "getChunkInfo"
           Category = "Sources / Sinks"
           Summary = "Inspect a chunked stack directory and expose chunk layout and top-left file metadata."
-          Description = "Reads metadata for chunk files produced by writeInSlabs. The Chunks output is the chunk-grid dimensions, Size is the full stack size, and the component outputs come from the top-left chunk file. TIFF input accepts both .tif and .tiff files when TIFF is selected; JPEG input accepts both .jpg and .jpeg files when JPEG is selected."
+          Description = "Reads metadata for chunk files produced by writeChunks. The Chunks output is the chunk-grid dimensions, Size is the full stack size, and the component outputs come from the top-left chunk file. TIFF input accepts both .tif and .tiff files when TIFF is selected; JPEG input accepts both .jpg and .jpeg files when JPEG is selected."
           Aliases = [ "info"; "metadata"; "file"; "chunk"; "chunks"; "width"; "height"; "depth"; "size"; "component" ]
           Inputs = []
           Outputs = chunkInfoOutputs
@@ -1104,8 +1126,8 @@ module BuiltInCatalog =
                 makeParameter "input7" "Input 7" "input7" BasicType.String
                 makeParameter "input8" "Input 8" "input8" BasicType.String ] }
 
-        { Id = "Histogram"
-          DisplayName = "histogram"
+        { Id = "ImHistogram"
+          DisplayName = "imHistogram"
           Category = "Visualization"
           Summary = "Compute and show an image histogram."
           Description = histogramDescription
@@ -1120,8 +1142,8 @@ module BuiltInCatalog =
                 makeParameter "xAxis" "Horizontal axis label" "" BasicType.String
                 makeParameter "yAxis" "Vertical axis label" "" BasicType.String ] }
 
-        { Id = "HistogramData"
-          DisplayName = "histogramData"
+        { Id = "ImHistogramData"
+          DisplayName = "imHistogramData"
           Category = "Visualization"
           Summary = "Reduce an image stream to histogram points that can be printed or plotted."
           Description = histogramDataDescription
@@ -1132,6 +1154,17 @@ module BuiltInCatalog =
               [ makeParameter "firstLeftEdge" "First left edge" "0.0" (BasicType.Numeric Float64)
                 makeParameter "lastLeftEdge" "Last left edge" "255.0" (BasicType.Numeric Float64)
                 makeParameter "bins" "Bins" "256" (BasicType.Numeric UInt32) ] }
+
+        { Id = "Histogram"
+          DisplayName = "histogram"
+          Category = "Visualization"
+          Summary = "Reduce streamed numbers to histogram points."
+          Description = numberHistogramDescription
+          Aliases = [ "plot"; "chart"; "histogram"; "points"; "reducer"; "size"; "objects" ]
+          Inputs = [ makePort "UInt64 list" uint64List ]
+          Outputs = [ makePort "Map" (Scalar BasicType.Map) ]
+          Parameters =
+              [ makeParameter "binWidth" "Bin width" "100" (BasicType.Numeric UInt64) ] }
 
         { Id = "Quantiles"
           DisplayName = "quantiles"
@@ -1904,6 +1937,36 @@ module BuiltInCatalog =
           Outputs = [ makePort "Objects" streamedObjects ]
           Parameters =
               [ makeParameter "connectivity" "Connectivity" "Six" BasicType.String ] }
+
+        { Id = "MeasureObjects"
+          DisplayName = "measureObjects"
+          Category = "Segmentation"
+          Summary = "Measure streamed connected objects."
+          Description = objectMeasurementsDescription
+          Aliases = [ "objects"; "measure"; "size"; "bounds"; "volume" ]
+          Inputs = [ makePort "Objects" streamedObjects ]
+          Outputs = [ makePort "Object measurements" objectMeasurements ]
+          Parameters = [] }
+
+        { Id = "ObjectSizeStats"
+          DisplayName = "objectSizeStats"
+          Category = "Statistics"
+          Summary = "Summarize measured object sizes."
+          Description = objectSizeStatsDescription
+          Aliases = [ "objects"; "size"; "stats"; "count"; "mean"; "variance" ]
+          Inputs = [ makePort "Object measurements" objectMeasurements ]
+          Outputs = [ makePort "ObjectSizeStats" objectSizeStats ]
+          Parameters = [] }
+
+        { Id = "ObjectSizes"
+          DisplayName = "objectSizes"
+          Category = "Statistics"
+          Summary = "Extract measured object sizes."
+          Description = objectSizesDescription
+          Aliases = [ "objects"; "size"; "voxel count"; "histogram" ]
+          Inputs = [ makePort "Object measurements" objectMeasurements ]
+          Outputs = [ makePort "UInt64 list" uint64List ]
+          Parameters = [] }
 
         { Id = "PaintObjects"
           DisplayName = "paintObjects"

@@ -430,7 +430,7 @@ module private SourceImageNode =
         functionId = "Read" || functionId = "ReadRandom" || functionId = "EstimateHistogram" || functionId = "ReadRange" || functionId = "ReadSlab"
 
     let hasOutputTitle functionId =
-        functionId = "Write" || functionId = "WriteThrough" || functionId = "WriteInSlabs"
+        functionId = "Write" || functionId = "WriteThrough" || functionId = "WriteChunks"
 
     let hasFormatParameter functionId =
         hasInputTitle functionId
@@ -1304,7 +1304,9 @@ type PipelineNodeViewModel(
         | "GetChunkInfo"
         | "ComponentTranslationTable"
         | "SerialEstBoundingBox"
-        | "HistogramData"
+        | "ImHistogramData"
+        | "Histogram"
+        | "ObjectSizeStats"
         | "EstimateHistogram"
         | "Quantiles" -> ReducerOutput
         | _ -> DataOutput
@@ -1350,7 +1352,7 @@ type PipelineNodeViewModel(
             let infoName = if infoType = BuiltInCatalog.chunkInfo then "ChunkInfo" else "StackInfo"
 
             [ SourceImageNode.writeInputPort state ], [ { Name = infoName; Type = infoType } ]
-        | "WriteInSlabs" ->
+        | "WriteChunks" ->
             [ SourceImageNode.writeInputPort state ], state.Definition.Outputs
         | "ImageOpImage" -> PairOperationNode.ports state
         | "Cast" -> CastNode.ports state
@@ -2483,7 +2485,7 @@ type MainWindowViewModel() as this =
                 pin.Name <- port.Name)
 
     let refreshConnectedImageInputPins () =
-        let dynamicInputNodeIds = Set.ofList [ "Histogram"; "HistogramData" ]
+        let dynamicInputNodeIds = Set.ofList [ "ImHistogram"; "ImHistogramData" ]
 
         let connectedImageInputType (inputPin: PipelinePinViewModel) =
             drawing.Connectors
