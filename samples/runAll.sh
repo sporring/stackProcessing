@@ -51,28 +51,94 @@ done
 mkdir -p tmp
 
 dirs=(**/*.fsproj(:h))
+pids=()
+names=()
+failures=0
+
+cleanup() {
+  trap - INT TERM HUP
+
+  if (( ${#pids} > 0 )); then
+    echo "Stopping ${#pids} running sample job(s)..." >&2
+
+    for pid in $pids; do
+      kill -TERM "$pid" 2>/dev/null || true
+    done
+
+    sleep 1
+
+    for pid in $pids; do
+      kill -KILL "$pid" 2>/dev/null || true
+    done
+
+    wait $pids 2>/dev/null || true
+  fi
+
+  exit 130
+}
+
+trap cleanup INT TERM HUP
 
 run_sample() {
   local i="$1"
   local log="tmp/$i.out"
   mkdir -p "${log:h}"
 
-  {
+  (
+    local child=""
+    trap 'if [[ -n "$child" ]]; then kill -TERM "$child" 2>/dev/null || true; fi; exit 130' INT TERM HUP
+
     echo "== $i =="
-    pushd "$i" >/dev/null
-    dotnet build
-    /usr/bin/time env DYLD_LIBRARY_PATH="$(pwd)/lib" dotnet run --verbosity q -- -d 1
-    popd >/dev/null
-  } > "$log" 2>&1
+    cd "$i"
+
+    dotnet build &
+    child="$!"
+    wait "$child"
+    local status="$?"
+    if (( status != 0 )); then
+      exit "$status"
+    fi
+
+    /usr/bin/time env DYLD_LIBRARY_PATH="$(pwd)/lib" dotnet run --verbosity q -- -d 1 &
+    child="$!"
+    wait "$child"
+  ) > "$log" 2>&1
+}
+
+wait_oldest() {
+  local pid="$pids[1]"
+  local name="$names[1]"
+
+  pids=(${pids[2,-1]})
+  names=(${names[2,-1]})
+
+  if wait "$pid"; then
+    :
+  else
+    local status="$?"
+    failures=$((failures + 1))
+    echo "$name failed with exit code $status; see samples/tmp/$name.out" >&2
+  fi
+}
+
+wait_for_slot() {
+  while (( ${#pids} >= parallel_jobs )); do
+    wait_oldest
+  done
 }
 
 for i in $dirs; do
-  echo "$i"
+  wait_for_slot
   run_sample "$i" &
-
-  while [[ "$(jobs -pr | wc -l | tr -d ' ')" -ge "$parallel_jobs" ]]; do
-    sleep 0.2
-  done
+  pids+=("$!")
+  names+=("$i")
+  echo "$i"
 done
 
-wait
+while (( ${#pids} > 0 )); do
+  wait_oldest
+done
+
+if (( failures > 0 )); then
+  exit 1
+fi
