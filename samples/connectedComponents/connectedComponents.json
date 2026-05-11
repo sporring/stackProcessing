@@ -133,7 +133,7 @@
         },
         {
           "key": "suffix",
-          "value": ".tiff",
+          "value": ".mha",
           "useInput": false
         },
         {
@@ -184,7 +184,7 @@
         },
         {
           "key": "suffix",
-          "value": ".tiff",
+          "value": ".mha",
           "useInput": false
         },
         {

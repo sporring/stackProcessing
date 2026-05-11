@@ -61,7 +61,8 @@ The samples follow a common convention:
   have no input file,
 * generated images, meshes, and temporary artifacts go to `../tmp/`,
 * image outputs prefer TIFF stacks when that makes visual inspection easy;
-  chunk-writing examples may use chunk-oriented formats such as `.mha`,
+  chunk-writing examples and typed intermediates that TIFF cannot represent may
+  use formats such as `.mha`,
 * helper functions are kept to a minimum so the sample reads like a pipeline.
 
 Examples worth starting with:

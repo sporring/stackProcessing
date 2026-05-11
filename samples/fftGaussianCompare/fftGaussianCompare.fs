@@ -15,6 +15,7 @@ let main args =
     src
     |> read<float> input ".tiff"
     >=> smoothWGauss 1.25 None None (Some 16u)
+    >=> cast<float,float32>
     >=> write smoothedOutput ".tiff"
     |> sink
 
@@ -22,6 +23,7 @@ let main args =
     |> read<float> input ".tiff"
     >=> FFT<float> 32u 32u 16u
     >=> invFFT 32u 32u 16u
+    >=> cast<float,float32>
     >=> write roundTripOutput ".tiff"
     |> sink
 

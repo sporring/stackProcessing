@@ -82,27 +82,30 @@ trap cleanup INT TERM HUP
 run_sample() {
   local i="$1"
   local log="tmp/$i.out"
-  mkdir -p "${log:h}"
 
   (
     local child=""
     trap 'if [[ -n "$child" ]]; then kill -TERM "$child" 2>/dev/null || true; fi; exit 130' INT TERM HUP
 
-    echo "== $i =="
+    echo "\n== Run $i =="
     cd "$i"
 
-    dotnet build &
+    /usr/bin/time env DYLD_LIBRARY_PATH="$(pwd)/lib" dotnet run --no-build --verbosity q -- -d 1 &
     child="$!"
     wait "$child"
-    local exit_code="$?"
-    if (( exit_code != 0 )); then
-      exit "$exit_code"
-    fi
+  ) >> "$log" 2>&1
+}
 
-    /usr/bin/time env DYLD_LIBRARY_PATH="$(pwd)/lib" dotnet run --verbosity q -- -d 1 &
-    child="$!"
-    wait "$child"
-  ) > "$log" 2>&1
+build_sample() {
+  local i="$1"
+  local log="tmp/$i.out"
+  mkdir -p "${log:h}"
+
+  {
+    echo "== Build $i =="
+    cd "$i"
+    dotnet build
+  } > "$log" 2>&1
 }
 
 wait_oldest() {
@@ -128,11 +131,16 @@ wait_for_slot() {
 }
 
 for i in $dirs; do
+  echo "build $i"
+  build_sample "$i"
+done
+
+for i in $dirs; do
   wait_for_slot
   run_sample "$i" &
   pids+=("$!")
   names+=("$i")
-  echo "$i"
+  echo "run $i"
 done
 
 while (( ${#pids} > 0 )); do

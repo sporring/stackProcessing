@@ -15,7 +15,7 @@ let main arg =
             64u, 64u, 64u, "../data/rotatingBoxes", "../tmp/connectedComponents"
     let tmp = "../tmp/connectedComponents-labels"
     let suffix = ".tiff"
-    let tmpSuffix = ".tiff"
+    let tmpSuffix = ".mha"
 
     let wsz = (depth/8u)
 

@@ -19,6 +19,10 @@
         { "key": "format", "value": "Image stack", "useInput": false },
         { "key": "output", "value": "../tmp/fftGaussianSmooth", "useInput": false },
         { "key": "suffix", "value": ".tiff", "useInput": false } ] },
+    { "id": "castSmooth", "functionId": "Cast", "x": 500.0, "y": 70.0,
+      "parameters": [
+        { "key": "sourceType", "value": "Float64", "useInput": false },
+        { "key": "targetType", "value": "Float32", "useInput": false } ] },
     { "id": "readFft", "functionId": "Read", "x": 80.0, "y": 220.0,
       "parameters": [
         { "key": "availableMemory", "value": "2147483648UL", "useInput": false },
@@ -42,12 +46,19 @@
         { "key": "format", "value": "Image stack", "useInput": false },
         { "key": "output", "value": "../tmp/fftRoundTrip", "useInput": false },
         { "key": "suffix", "value": ".tiff", "useInput": false } ] }
+    ,
+    { "id": "castRoundTrip", "functionId": "Cast", "x": 630.0, "y": 220.0,
+      "parameters": [
+        { "key": "sourceType", "value": "Float64", "useInput": false },
+        { "key": "targetType", "value": "Float32", "useInput": false } ] }
   ],
   "edges": [
     { "fromNode": "readSmooth", "fromKind": "dataOutput", "fromPort": 0, "toNode": "smooth", "toKind": "dataInput", "toPort": 0 },
-    { "fromNode": "smooth", "fromKind": "dataOutput", "fromPort": 0, "toNode": "writeSmooth", "toKind": "dataInput", "toPort": 0 },
+    { "fromNode": "smooth", "fromKind": "dataOutput", "fromPort": 0, "toNode": "castSmooth", "toKind": "dataInput", "toPort": 0 },
+    { "fromNode": "castSmooth", "fromKind": "dataOutput", "fromPort": 0, "toNode": "writeSmooth", "toKind": "dataInput", "toPort": 0 },
     { "fromNode": "readFft", "fromKind": "dataOutput", "fromPort": 0, "toNode": "fft", "toKind": "dataInput", "toPort": 0 },
     { "fromNode": "fft", "fromKind": "dataOutput", "fromPort": 0, "toNode": "ifft", "toKind": "dataInput", "toPort": 0 },
-    { "fromNode": "ifft", "fromKind": "dataOutput", "fromPort": 0, "toNode": "writeRoundTrip", "toKind": "dataInput", "toPort": 0 }
+    { "fromNode": "ifft", "fromKind": "dataOutput", "fromPort": 0, "toNode": "castRoundTrip", "toKind": "dataInput", "toPort": 0 },
+    { "fromNode": "castRoundTrip", "fromKind": "dataOutput", "fromPort": 0, "toNode": "writeRoundTrip", "toKind": "dataInput", "toPort": 0 }
   ]
 }
