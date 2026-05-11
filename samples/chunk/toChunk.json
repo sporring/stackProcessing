@@ -92,7 +92,7 @@
       "parameters": [
         {
           "key": "output",
-          "value": "../tmp/chunks",
+          "value": "../tmp/toChunk",
           "useInput": false
         },
         {
