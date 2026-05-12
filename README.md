@@ -79,7 +79,7 @@ Examples worth starting with:
 | `closing` | binary closing on a 0/1 UInt8 mask |
 | `convolve` | a custom 3D convolution kernel and boundary/window settings |
 | `quantileClamp` | histogram sampling, quantiles, intensity stretch, and outlier clamping |
-| `binaryMorphology`, `grayscaleErode`, `grayscaleDilate`, `grayscaleOpening`, `grayscaleClosing`, `whiteTopHat`, `blackTopHat`, `morphologicalGradient` | morphology families with small inspectable pipelines |
+| `dilate`, `opening`, `binaryMedian`, `binaryContour`, `fillSmallHoles`, `grayscaleErode`, `grayscaleDilate`, `grayscaleOpening`, `grayscaleClosing`, `whiteTopHat`, `blackTopHat`, `morphologicalGradient` | morphology families with small inspectable pipelines |
 | `imageFilter`, `saltAndPepperNoise`, `shotNoise`, `speckleNoise`, `addSaltAndPepperNoise`, `addShotSpeckleNoise`, `keypoint`, `meshMeasurement` | focused tours through related Studio boxes |
 
 These samples are also useful when adding or changing Studio boxes:

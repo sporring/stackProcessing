@@ -38,6 +38,11 @@ type GraphOutcome =
       ExitCode: int
       Elapsed: TimeSpan }
 
+type RunSummary =
+    { EstimatedPeakMemory: string
+      PeakMemory: string
+      ActualRunSeconds: string }
+
 let private outputDirectoryName = "runJson"
 let private buildDirectoryName = "runJson-build"
 
@@ -452,6 +457,48 @@ let private secondsFromRunSummary (value: string) (unit: string) =
     | Some seconds, "s" -> formatSeconds seconds
     | _ -> value
 
+let private tryParseCurrentRunSummary (lines: string array) =
+    lines
+    |> Array.indexed
+    |> Array.rev
+    |> Array.tryPick (fun (index, line) ->
+        if line.Contains("Run summary:", StringComparison.Ordinal) && index + 3 < lines.Length then
+            let estimatedLine = lines[index + 1]
+            let measuredLine = lines[index + 2]
+            let timeLine = lines[index + 3]
+
+            match
+                tryRegex
+                    @"^estimated peak / available memory (?<estimatedPeakMemory>\S+) KB / (?<availableMemory>\S+) KB$"
+                    estimatedLine,
+                tryRegex
+                    @"^Measured peak delta, baseline, peak: (?<peakMemory>\S+) KB \(baseline (?<baselineMemory>\S+) KB, peak (?<processPeakMemory>\S+) KB\)$"
+                    measuredLine,
+                tryRegex
+                    @"^Estimated/actual time .+ / (?<actualTime>\S+) (?<actualTimeUnit>ms|s)\.?$"
+                    timeLine
+            with
+            | Some estimated, Some measured, Some timing ->
+                Some
+                    { EstimatedPeakMemory = groupValue "estimatedPeakMemory" estimated
+                      PeakMemory = groupValue "peakMemory" measured
+                      ActualRunSeconds = secondsFromRunSummary (groupValue "actualTime" timing) (groupValue "actualTimeUnit" timing) }
+            | _ -> None
+        else
+            None)
+
+let private tryParseLegacyRunSummary (lines: string array) =
+    lines
+    |> Array.rev
+    |> Array.tryPick (
+        tryRegex
+            @"estimated peak memory (?<estimatedPeakMemory>\S+) KB / .*actual process RSS peak delta (?<peakMemory>\S+) KB .*actual time (?<actualTime>\S+) (?<actualTimeUnit>ms|s)"
+    )
+    |> Option.map (fun summary ->
+        { EstimatedPeakMemory = groupValue "estimatedPeakMemory" summary
+          PeakMemory = groupValue "peakMemory" summary
+          ActualRunSeconds = secondsFromRunSummary (groupValue "actualTime" summary) (groupValue "actualTimeUnit" summary) })
+
 let private logStats logPath =
     let lines =
         if File.Exists logPath then
@@ -480,24 +527,18 @@ let private logStats logPath =
         | None when lines.Length > 0 -> "incomplete"
         | None -> "missing-log"
 
-    let sinkSummary =
-        lines
-        |> Array.rev
-        |> Array.tryPick (
-            tryRegex
-                @"estimated peak memory (?<estimatedPeakMemory>\S+) KB / .*actual process RSS peak delta (?<peakMemory>\S+) KB .*actual time (?<actualTime>\S+) (?<actualTimeUnit>ms|s)"
-        )
+    let runSummary =
+        tryParseCurrentRunSummary lines
+        |> Option.orElseWith (fun () -> tryParseLegacyRunSummary lines)
 
     let estimatedPeakMemory =
-        sinkSummary |> Option.map (groupValue "estimatedPeakMemory") |> Option.defaultValue ""
+        runSummary |> Option.map _.EstimatedPeakMemory |> Option.defaultValue ""
 
     let peakMemory =
-        sinkSummary |> Option.map (groupValue "peakMemory") |> Option.defaultValue ""
+        runSummary |> Option.map _.PeakMemory |> Option.defaultValue ""
 
     let actualRunSeconds =
-        sinkSummary
-        |> Option.map (fun m -> secondsFromRunSummary (groupValue "actualTime" m) (groupValue "actualTimeUnit" m))
-        |> Option.defaultValue ""
+        runSummary |> Option.map _.ActualRunSeconds |> Option.defaultValue ""
 
     let processElapsedSeconds =
         elapsedSecondsFromLog lines |> Option.defaultValue ""
@@ -550,13 +591,22 @@ let private writeCsv samplesRoot (results: GraphOutcome array) =
 
 let private gatherExistingLogs samplesRoot =
     let tmp = outputDirectory samplesRoot
+    let graphNames =
+        discoverGraphs samplesRoot
+        |> Array.map _.Name
+        |> Set.ofArray
 
     if Directory.Exists tmp then
         Directory.EnumerateFiles(tmp, "*.out", SearchOption.AllDirectories)
-        |> Seq.sort
-        |> Seq.map (fun path ->
+        |> Seq.choose (fun path ->
             let relative = relativePath tmp path
             let name = relative.Substring(0, relative.Length - Path.GetExtension(relative).Length)
+            if graphNames |> Set.contains name then
+                Some(name, path)
+            else
+                None)
+        |> Seq.sortBy fst
+        |> Seq.map (fun (name, path) ->
             let status, _, _, _, _, logElapsedSeconds, _ = logStats path
             let elapsed =
                 match Double.TryParse(logElapsedSeconds, Globalization.NumberStyles.Float, Globalization.CultureInfo.InvariantCulture) with
