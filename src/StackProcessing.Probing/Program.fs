@@ -118,7 +118,7 @@ type ImageSize =
       Depth: uint }
 
 let private xySizes =
-    [ 128u; 256u; 512u ]
+    [ 64u ]
 
 let private imageSize xy depth =
     { Width = xy

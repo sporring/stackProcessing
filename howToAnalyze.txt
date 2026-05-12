@@ -1,0 +1,11 @@
+# How to analyze
+dotnet run --project samples/RunJson/RunJson.fsproj -- -j 6
+dotnet run --project src/StackProcessing.Analysis/StackProcessing.Analysis.fsproj
+dotnet run --project src/StackProcessing.Probing/StackProcessing.Probing.fsproj -- samples/tmp/analysis/probing-boilerplate.json --analysis-features samples/tmp/analysis/features.csv
+dotnet run --project src/StackProcessing.Analysis/StackProcessing.Analysis.fsproj -- --probing-prefix samples/tmp/analysis/probing-boilerplate
+
+# samples/tmp/analysis/matrix.csv
+# samples/tmp/analysis/vectors.csv
+# samples/tmp/analysis/diagnostics.csv
+# samples/tmp/analysis/coefficients.csv
+# samples/tmp/analysis/predictions.csv
