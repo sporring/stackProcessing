@@ -2,6 +2,7 @@ module RunAll
 
 open System
 open System.Diagnostics
+open System.Globalization
 open System.IO
 open System.Text.RegularExpressions
 open System.Threading
@@ -31,6 +32,14 @@ type RunOutcome =
       ExitCode: int
       Elapsed: TimeSpan }
 
+let private outputDirectoryName = "runAll"
+
+let private outputDirectory samplesRoot =
+    Path.Combine(samplesRoot, "tmp", outputDirectoryName)
+
+let private outputLogPath samplesRoot sampleName =
+    Path.Combine(outputDirectory samplesRoot, sampleName + ".out")
+
 let usage () =
     printfn "Usage: ./runAll.sh [-j jobs] [--skip-build] [--debug-level N]"
     printfn ""
@@ -42,7 +51,7 @@ let usage () =
     printfn "  -j, --jobs N       Run up to N samples at once."
     printfn "  -p, --parallel    Run with one job per logical CPU."
     printfn "  --skip-build      Run samples without first building them."
-    printfn "  --gather-only     Regenerate tmp/gather.csv from existing sample logs."
+    printfn $"  --gather-only     Regenerate tmp/{outputDirectoryName}/gather.csv from existing sample logs."
     printfn "  --debug-level N   Pass -d N to each sample. Defaults to 1."
     printfn "  --timeout N       Stop a build or run after N minutes. Defaults to 30. Use 0 to disable."
     printfn "  -h, --help        Show this help."
@@ -111,7 +120,7 @@ let private discoverSamples samplesRoot =
         { Name = name
           Directory = dir
           Project = project
-          LogPath = Path.Combine(samplesRoot, "tmp", "runAll", name + ".out") })
+          LogPath = outputLogPath samplesRoot name })
     |> Seq.sortBy _.Name
     |> Seq.toArray
 
@@ -292,6 +301,40 @@ let private groupValue (name: string) (m: Match) =
     let group = m.Groups[name]
     if group.Success then group.Value else ""
 
+let private formatElapsedSeconds (elapsed: TimeSpan) =
+    elapsed.TotalSeconds.ToString("F3", CultureInfo.InvariantCulture)
+
+let private elapsedSecondsFromLog (lines: string array) =
+    lines
+    |> Array.rev
+    |> Array.tryPick (fun line ->
+        if line.StartsWith("Run finished in ", StringComparison.Ordinal) then
+            let value =
+                line.Substring("Run finished in ".Length).Trim().TrimEnd('.')
+
+            match TimeSpan.TryParse value with
+            | true, elapsed -> Some(formatElapsedSeconds elapsed)
+            | _ -> None
+        else
+            None)
+
+let private tryParseFloat (value: string) =
+    match Double.TryParse(value, NumberStyles.Float, CultureInfo.CurrentCulture) with
+    | true, parsed -> Some parsed
+    | _ ->
+        match Double.TryParse(value, NumberStyles.Float, CultureInfo.InvariantCulture) with
+        | true, parsed -> Some parsed
+        | _ -> None
+
+let private formatSeconds (seconds: float) =
+    seconds.ToString("F6", CultureInfo.InvariantCulture)
+
+let private secondsFromRunSummary (value: string) (unit: string) =
+    match tryParseFloat value, unit with
+    | Some milliseconds, "ms" -> formatSeconds (milliseconds / 1000.0)
+    | Some seconds, "s" -> formatSeconds seconds
+    | _ -> value
+
 let private parseStatsFromLog samplesRoot name elapsedSeconds exitCode logPath =
     let lines =
         if File.Exists logPath then
@@ -325,7 +368,7 @@ let private parseStatsFromLog samplesRoot name elapsedSeconds exitCode logPath =
         |> Array.rev
         |> Array.tryPick (
             tryRegex
-                @"estimated peak memory (?<estimatedPeakMemory>\S+) KB / .*actual process RSS peak delta (?<peakMemory>\S+) KB .*actual time (?<actualTime>\S+) s"
+                @"estimated peak memory (?<estimatedPeakMemory>\S+) KB / .*actual process RSS peak delta (?<peakMemory>\S+) KB .*actual time (?<actualTime>\S+) (?<actualTimeUnit>ms|s)"
         )
 
     let oldMemoryLine =
@@ -352,7 +395,15 @@ let private parseStatsFromLog samplesRoot name elapsedSeconds exitCode logPath =
         | None -> oldMemoryLine |> Option.map (token 7) |> Option.defaultValue ""
 
     let actualRunSeconds =
-        sinkSummary |> Option.map (groupValue "actualTime") |> Option.defaultValue ""
+        sinkSummary
+        |> Option.map (fun m -> secondsFromRunSummary (groupValue "actualTime" m) (groupValue "actualTimeUnit" m))
+        |> Option.defaultValue ""
+
+    let elapsedSeconds =
+        if String.IsNullOrWhiteSpace elapsedSeconds then
+            elapsedSecondsFromLog lines |> Option.defaultValue ""
+        else
+            elapsedSeconds
 
     [ name
       status
@@ -372,7 +423,7 @@ let private csvEscape (value: string) =
         value
 
 let private writeGatherCsv samplesRoot rows =
-    let csvPath = Path.Combine(samplesRoot, "tmp", "runAll", "gather.csv")
+    let csvPath = Path.Combine(outputDirectory samplesRoot, "gather.csv")
     Directory.CreateDirectory(Path.GetDirectoryName csvPath) |> ignore
 
     let header =
@@ -398,7 +449,7 @@ let private writeGatherCsv samplesRoot rows =
     printfn "wrote %s" (relativePath samplesRoot csvPath)
 
 let private gatherExistingLogs samplesRoot =
-    let tmp = Path.Combine(samplesRoot, "tmp", "runAll")
+    let tmp = outputDirectory samplesRoot
 
     if Directory.Exists tmp then
         Directory.EnumerateFiles(tmp, "*.out", SearchOption.TopDirectoryOnly)
@@ -445,7 +496,7 @@ let main argv =
             1
         else
             try
-                let runOutputDir = Path.Combine(samplesRoot, "tmp", "runAll")
+                let runOutputDir = outputDirectory samplesRoot
                 if Directory.Exists runOutputDir then
                     Directory.Delete(runOutputDir, true)
 
@@ -464,7 +515,7 @@ let main argv =
                             if exitCode = 0 then
                                 Some sample
                             else
-                                eprintfn "%s failed to build; see samples/tmp/runAll/%s.out" sample.Name sample.Name
+                                eprintfn "%s failed to build; see %s" sample.Name (relativePath samplesRoot sample.LogPath)
                                 None)
 
                 cancellation.Token.ThrowIfCancellationRequested()
@@ -479,7 +530,7 @@ let main argv =
                         parseStatsFromLog
                             samplesRoot
                             outcome.Sample.Name
-                            (sprintf "%.3f" outcome.Elapsed.TotalSeconds)
+                            (formatElapsedSeconds outcome.Elapsed)
                             outcome.ExitCode
                             outcome.Sample.LogPath)
                     |> Array.toList
@@ -495,7 +546,7 @@ let main argv =
                             Some(outcome.Sample, outcome.ExitCode))
 
                 for sample, exitCode in runFailures do
-                    eprintfn "%s failed with exit code %d; see samples/tmp/runAll/%s.out" sample.Name exitCode sample.Name
+                    eprintfn "%s failed with exit code %d; see %s" sample.Name exitCode (relativePath samplesRoot sample.LogPath)
 
                 let buildFailures = samples.Length - builtSamples.Length
                 if buildFailures > 0 || runFailures.Length > 0 then 1 else 0

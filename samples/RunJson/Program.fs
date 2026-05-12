@@ -2,6 +2,7 @@ module RunJson
 
 open System
 open System.Diagnostics
+open System.Globalization
 open System.IO
 open System.Security
 open System.Text.RegularExpressions
@@ -16,6 +17,7 @@ type Options =
       DebugLevel: int
       SkipBuild: bool
       CompileOnly: bool
+      GatherOnly: bool
       Timeout: TimeSpan option }
 
 type GraphJob =
@@ -35,17 +37,27 @@ type GraphOutcome =
       ExitCode: int
       Elapsed: TimeSpan }
 
+let private outputDirectoryName = "runJson"
+let private buildDirectoryName = "runJson-build"
+
+let private outputDirectory samplesRoot =
+    Path.Combine(samplesRoot, "tmp", outputDirectoryName)
+
+let private buildDirectory samplesRoot =
+    Path.Combine(samplesRoot, "tmp", buildDirectoryName)
+
 let usage () =
     printfn "Usage: ./runJson.sh [-j jobs] [--skip-build] [--compile-only] [--debug-level N]"
     printfn ""
     printfn "Compiles sample Studio JSON graphs to F#, runs them, and stores logs below"
-    printfn "samples/tmp/json. The default is sequential."
+    printfn $"samples/tmp/{outputDirectoryName}. The default is sequential."
     printfn ""
     printfn "Options:"
     printfn "  -j, --jobs N       Run up to N generated graphs at once."
     printfn "  -p, --parallel    Run with one job per logical CPU."
     printfn "  --skip-build      Run generated graph projects without building them first."
     printfn "  --compile-only    Generate and build F#, but do not run the programs."
+    printfn $"  --gather-only     Regenerate tmp/{outputDirectoryName}/gather.csv from existing graph logs."
     printfn "  --debug-level N   Accepted for symmetry with runAll; generated graphs carry their saved debug settings."
     printfn "  --timeout N       Stop a build or run after N minutes. Defaults to 30. Use 0 to disable."
     printfn "  -h, --help        Show this help."
@@ -81,6 +93,7 @@ let rec private parseArgs options args =
             Error 2
     | "--skip-build" :: rest -> parseArgs { options with SkipBuild = true } rest
     | "--compile-only" :: rest -> parseArgs { options with CompileOnly = true } rest
+    | "--gather-only" :: rest -> parseArgs { options with GatherOnly = true } rest
     | "--timeout" :: value :: rest
     | "--timeout-minutes" :: value :: rest ->
         match Double.TryParse value with
@@ -120,8 +133,8 @@ let private discoverGraphs samplesRoot =
         { Name = name
           JsonPath = path
           WorkingDirectory = Path.GetDirectoryName path
-          RunDirectory = Path.Combine(samplesRoot, "tmp", "json-build", safeName name)
-          LogPath = Path.Combine(samplesRoot, "tmp", "json", name + ".out") })
+          RunDirectory = Path.Combine(buildDirectory samplesRoot, safeName name)
+          LogPath = Path.Combine(outputDirectory samplesRoot, name + ".out") })
     |> Seq.sortBy _.Name
     |> Seq.toArray
 
@@ -373,7 +386,49 @@ let private csvEscape (value: string) =
     else
         value
 
-let private firstStatusMessage logPath =
+let private tryRegex (pattern: string) (line: string) =
+    let m = Regex.Match(line, pattern)
+    if m.Success then Some m else None
+
+let private groupValue (name: string) (m: Match) =
+    let group = m.Groups[name]
+    if group.Success then group.Value else ""
+
+let private formatElapsedSeconds (elapsed: TimeSpan) =
+    elapsed.TotalSeconds.ToString("F3", CultureInfo.InvariantCulture)
+
+let private elapsedSecondsFromLog (lines: string array) =
+    lines
+    |> Array.rev
+    |> Array.tryPick (fun line ->
+        if line.StartsWith("Run finished in ", StringComparison.Ordinal) then
+            let value =
+                line.Substring("Run finished in ".Length).Trim().TrimEnd('.')
+
+            match TimeSpan.TryParse value with
+            | true, elapsed -> Some(formatElapsedSeconds elapsed)
+            | _ -> None
+        else
+            None)
+
+let private tryParseFloat (value: string) =
+    match Double.TryParse(value, NumberStyles.Float, CultureInfo.CurrentCulture) with
+    | true, parsed -> Some parsed
+    | _ ->
+        match Double.TryParse(value, NumberStyles.Float, CultureInfo.InvariantCulture) with
+        | true, parsed -> Some parsed
+        | _ -> None
+
+let private formatSeconds (seconds: float) =
+    seconds.ToString("F6", CultureInfo.InvariantCulture)
+
+let private secondsFromRunSummary (value: string) (unit: string) =
+    match tryParseFloat value, unit with
+    | Some milliseconds, "ms" -> formatSeconds (milliseconds / 1000.0)
+    | Some seconds, "s" -> formatSeconds seconds
+    | _ -> value
+
+let private logStats logPath =
     let lines =
         if File.Exists logPath then
             File.ReadAllLines logPath
@@ -401,22 +456,65 @@ let private firstStatusMessage logPath =
         | None when lines.Length > 0 -> "incomplete"
         | None -> "missing-log"
 
-    status, (errorLine |> Option.defaultValue "")
+    let sinkSummary =
+        lines
+        |> Array.rev
+        |> Array.tryPick (
+            tryRegex
+                @"estimated peak memory (?<estimatedPeakMemory>\S+) KB / .*actual process RSS peak delta (?<peakMemory>\S+) KB .*actual time (?<actualTime>\S+) (?<actualTimeUnit>ms|s)"
+        )
+
+    let estimatedPeakMemory =
+        sinkSummary |> Option.map (groupValue "estimatedPeakMemory") |> Option.defaultValue ""
+
+    let peakMemory =
+        sinkSummary |> Option.map (groupValue "peakMemory") |> Option.defaultValue ""
+
+    let actualRunSeconds =
+        sinkSummary
+        |> Option.map (fun m -> secondsFromRunSummary (groupValue "actualTime" m) (groupValue "actualTimeUnit" m))
+        |> Option.defaultValue ""
+
+    let processElapsedSeconds =
+        elapsedSecondsFromLog lines |> Option.defaultValue ""
+
+    status, estimatedPeakMemory, peakMemory, "", actualRunSeconds, processElapsedSeconds, (errorLine |> Option.defaultValue "")
 
 let private writeCsv samplesRoot (results: GraphOutcome array) =
-    let path = Path.Combine(samplesRoot, "tmp", "json", "gather.csv")
+    let path = Path.Combine(outputDirectory samplesRoot, "gather.csv")
 
     let lines =
         seq {
-            yield [ "name"; "status"; "elapsedSeconds"; "exitCode"; "log"; "message" ]
+            yield
+                [ "name"
+                  "status"
+                  "estimatedPeakMemoryKB"
+                  "peakMemoryKB"
+                  "peakImages"
+                  "actualRunSeconds"
+                  "processElapsedSeconds"
+                  "exitCode"
+                  "log"
+                  "message" ]
 
             for result in results do
-                let status, message = firstStatusMessage result.Job.LogPath
+                let status, estimatedPeakMemory, peakMemory, peakImages, actualRunSeconds, logElapsedSeconds, message =
+                    logStats result.Job.LogPath
+
+                let processElapsedSeconds =
+                    if String.IsNullOrWhiteSpace logElapsedSeconds then
+                        formatElapsedSeconds result.Elapsed
+                    else
+                        logElapsedSeconds
 
                 yield
                     [ result.Job.Name
                       status
-                      sprintf "%.3f" result.Elapsed.TotalSeconds
+                      estimatedPeakMemory
+                      peakMemory
+                      peakImages
+                      actualRunSeconds
+                      processElapsedSeconds
                       string result.ExitCode
                       relativePath samplesRoot result.Job.LogPath
                       message ]
@@ -426,6 +524,34 @@ let private writeCsv samplesRoot (results: GraphOutcome array) =
     File.WriteAllLines(path, lines)
     printfn "wrote %s" (relativePath samplesRoot path)
 
+let private gatherExistingLogs samplesRoot =
+    let tmp = outputDirectory samplesRoot
+
+    if Directory.Exists tmp then
+        Directory.EnumerateFiles(tmp, "*.out", SearchOption.AllDirectories)
+        |> Seq.sort
+        |> Seq.map (fun path ->
+            let relative = relativePath tmp path
+            let name = relative.Substring(0, relative.Length - Path.GetExtension(relative).Length)
+            let status, _, _, _, _, logElapsedSeconds, _ = logStats path
+            let elapsed =
+                match Double.TryParse(logElapsedSeconds, Globalization.NumberStyles.Float, Globalization.CultureInfo.InvariantCulture) with
+                | true, seconds -> TimeSpan.FromSeconds seconds
+                | _ -> TimeSpan.Zero
+            let exitCode = if status = "completed" then 0 else 1
+
+            { Job =
+                { Name = name
+                  JsonPath = ""
+                  WorkingDirectory = ""
+                  RunDirectory = ""
+                  LogPath = path }
+              ExitCode = exitCode
+              Elapsed = elapsed })
+        |> Seq.toArray
+    else
+        [||]
+
 [<EntryPoint>]
 let main argv =
     let defaults =
@@ -434,6 +560,7 @@ let main argv =
           DebugLevel = 1
           SkipBuild = false
           CompileOnly = false
+          GatherOnly = false
           Timeout = Some(TimeSpan.FromMinutes 30.0) }
 
     match parseArgs defaults (argv |> Array.toList) with
@@ -441,43 +568,48 @@ let main argv =
     | Ok options ->
         let samplesRoot = Path.GetFullPath options.SamplesRoot
         let repositoryRoot = Path.GetFullPath(Path.Combine(samplesRoot, ".."))
-        let jsonOutputDir = Path.Combine(samplesRoot, "tmp", "json")
-        let jsonBuildDir = Path.Combine(samplesRoot, "tmp", "json-build")
+        let jsonOutputDir = outputDirectory samplesRoot
+        let jsonBuildDir = buildDirectory samplesRoot
 
-        if Directory.Exists jsonOutputDir then
-            Directory.Delete(jsonOutputDir, true)
-
-        if Directory.Exists jsonBuildDir then
-            Directory.Delete(jsonBuildDir, true)
-
-        Directory.CreateDirectory jsonOutputDir |> ignore
-        Directory.CreateDirectory jsonBuildDir |> ignore
-
-        let jobs = discoverGraphs samplesRoot
-
-        use cancellation = new CancellationTokenSource()
-
-        Console.CancelKeyPress.Add(fun args ->
-            args.Cancel <- true
-            eprintfn "Stopping running JSON graph job(s)..."
-            cancellation.Cancel())
-
-        if jobs.Length = 0 then
-            eprintfn "runJson: no JSON graphs found below %s" samplesRoot
-            1
+        if options.GatherOnly then
+            let results = gatherExistingLogs samplesRoot
+            writeCsv samplesRoot results
+            0
         else
-            try
-                let results =
-                    runWithParallelism cancellation.Token repositoryRoot options jobs
-                    |> _.GetAwaiter().GetResult()
+            if Directory.Exists jsonOutputDir then
+                Directory.Delete(jsonOutputDir, true)
 
-                writeCsv samplesRoot results
+            if Directory.Exists jsonBuildDir then
+                Directory.Delete(jsonBuildDir, true)
 
-                let failures = results |> Array.filter (fun result -> result.ExitCode <> 0)
+            Directory.CreateDirectory jsonOutputDir |> ignore
+            Directory.CreateDirectory jsonBuildDir |> ignore
 
-                for failure in failures do
-                    eprintfn "%s failed with exit code %d; see %s" failure.Job.Name failure.ExitCode (relativePath samplesRoot failure.Job.LogPath)
+            let jobs = discoverGraphs samplesRoot
 
-                if failures.Length > 0 then 1 else 0
-            with :? OperationCanceledException ->
-                130
+            use cancellation = new CancellationTokenSource()
+
+            Console.CancelKeyPress.Add(fun args ->
+                args.Cancel <- true
+                eprintfn "Stopping running JSON graph job(s)..."
+                cancellation.Cancel())
+
+            if jobs.Length = 0 then
+                eprintfn "runJson: no JSON graphs found below %s" samplesRoot
+                1
+            else
+                try
+                    let results =
+                        runWithParallelism cancellation.Token repositoryRoot options jobs
+                        |> _.GetAwaiter().GetResult()
+
+                    writeCsv samplesRoot results
+
+                    let failures = results |> Array.filter (fun result -> result.ExitCode <> 0)
+
+                    for failure in failures do
+                        eprintfn "%s failed with exit code %d; see %s" failure.Job.Name failure.ExitCode (relativePath samplesRoot failure.Job.LogPath)
+
+                    if failures.Length > 0 then 1 else 0
+                with :? OperationCanceledException ->
+                    130

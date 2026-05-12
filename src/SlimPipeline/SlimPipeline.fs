@@ -1569,7 +1569,7 @@ module Plan =
             stopwatch.Stop()
 
             printfn
-                $"[{label}] Run summary: estimated peak memory {MemoryProbe.formatBytes pl.memPeak} / {MemoryProbe.formatBytes pl.memAvail}; actual process RSS peak delta {MemoryProbe.formatBytes snapshot.Delta} (baseline {MemoryProbe.formatBytes snapshot.Baseline}, peak {MemoryProbe.formatBytes snapshot.Peak}); estimated time {estimatedRunTimeText pl}; actual time {formatMilliseconds stopwatch.Elapsed.TotalMilliseconds}."
+                $"[{label}] Run summary:\nestimated peak / available memory {MemoryProbe.formatBytes pl.memPeak} / {MemoryProbe.formatBytes pl.memAvail}\nMeasured peak delta, baseline, peak: {MemoryProbe.formatBytes snapshot.Delta} (baseline {MemoryProbe.formatBytes snapshot.Baseline}, peak {MemoryProbe.formatBytes snapshot.Peak})\nEstimated/actual time {estimatedRunTimeText pl} / {formatMilliseconds stopwatch.Elapsed.TotalMilliseconds}."
 
             result
         else
