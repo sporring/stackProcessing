@@ -250,7 +250,7 @@ let private buildSample (cancellationToken: CancellationToken) timeout (sample: 
                 sample.LogPath
                 sample.Directory
                 "dotnet"
-                [ "build"; sample.Project; "--no-restore"; "--verbosity"; "q"; "--disable-build-servers" ]
+                [ "build"; sample.Project; "--verbosity"; "q"; "--disable-build-servers" ]
                 None
                 timeout
 
@@ -270,12 +270,12 @@ let private runSample (cancellationToken: CancellationToken) timeout debugLevel 
         let! result =
             runProcessAsync
                 cancellationToken
-                    sample.LogPath
-                    sample.Directory
-                    "dotnet"
-                    [ "run"; "--no-build"; "--verbosity"; "q"; "--"; "-d"; string debugLevel; "--optimize"; string optimize ]
-                    (Some nativeLibPath)
-                    timeout
+                sample.LogPath
+                sample.Directory
+                "dotnet"
+                [ "run"; "--no-build"; "--verbosity"; "q"; "--"; "-d"; string debugLevel; "--optimize"; string optimize ]
+                (Some nativeLibPath)
+                timeout
 
         File.AppendAllText(sample.LogPath, $"Run finished in {result.Elapsed}.{Environment.NewLine}")
         if result.TimedOut then
