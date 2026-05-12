@@ -22,9 +22,15 @@ type Image<'S when 'S: equality> = Image.Image<'S>
 
 type ImageFacts = Image.ImageFacts
 
+val optimizerEnabled: (unit -> bool)
+
 val source: (uint64 -> SlimPipeline.Plan<unit,unit>)
 
-val debug: (uint32 -> uint64 -> SlimPipeline.Plan<unit,unit>)
+val sourceWithOptimizer: (bool -> uint64 -> SlimPipeline.Plan<unit,unit>)
+
+val debug: (uint32 -> bool -> uint64 -> SlimPipeline.Plan<unit,unit>)
+
+val debugDefault: (uint32 -> uint64 -> SlimPipeline.Plan<unit,unit>)
 
 val commandLineSource:
   (uint64 -> string array -> SlimPipeline.Plan<unit,unit> * string array)

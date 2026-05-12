@@ -75,6 +75,36 @@ let private image2D f =
 let private expectFloat32Close actual expected message =
     Expect.isLessThan (Math.Abs(float actual - float expected)) 1.0e-5 message
 
+let private nonlinearVoxel x y z =
+    float32 (x * x + 7 * y + 31 * z + 3 * x * y + 5 * y * z + 11 * x * z)
+
+let private trilinearArraySample (background: float32) (voxels: float32[,,]) (c: V3) =
+    let width = Array3D.length1 voxels
+    let height = Array3D.length2 voxels
+    let depth = Array3D.length3 voxels
+
+    if c.x < 0.0 || c.y < 0.0 || c.z < 0.0 || c.x >= float (width - 1) || c.y >= float (height - 1) || c.z >= float (depth - 1) then
+        background
+    else
+        let x0 = int (Math.Floor c.x)
+        let y0 = int (Math.Floor c.y)
+        let z0 = int (Math.Floor c.z)
+        let x1 = x0 + 1
+        let y1 = y0 + 1
+        let z1 = z0 + 1
+        let fx = float32 (c.x - float x0)
+        let fy = float32 (c.y - float y0)
+        let fz = float32 (c.z - float z0)
+        let lerp a b t = a + (b - a) * t
+
+        let c00 = lerp voxels[x0, y0, z0] voxels[x1, y0, z0] fx
+        let c10 = lerp voxels[x0, y1, z0] voxels[x1, y1, z0] fx
+        let c01 = lerp voxels[x0, y0, z1] voxels[x1, y0, z1] fx
+        let c11 = lerp voxels[x0, y1, z1] voxels[x1, y1, z1] fx
+        let c0 = lerp c00 c10 fy
+        let c1 = lerp c01 c11 fy
+        lerp c0 c1 fz
+
 let private expectComplexClose (actual: System.Numerics.Complex) (expected: System.Numerics.Complex) message =
     Expect.floatClose Accuracy.high actual.Real expected.Real $"{message} real"
     Expect.floatClose Accuracy.high actual.Imaginary expected.Imaginary $"{message} imaginary"
@@ -260,7 +290,20 @@ let stackProcessingSupportSuite =
 
                 Expect.isTrue plan.debug "commandLineSource should enable debug when -d is present."
                 Expect.equal plan.debugLevel 2u "commandLineSource should store the requested debug level."
+                Expect.isTrue plan.optimize "commandLineSource should keep the optimizer enabled by default."
                 Expect.equal (rest |> Array.toList) [ "alpha" ] "commandLineSource should remove the debug arguments."
+            finally
+                DebugLevel.set 0u
+                Image<uint8>.setDebugLevel 0u
+
+        testCase "command line source parses optimizer control independently" <| fun _ ->
+            try
+                let plan, rest = commandLineSource 1024UL [| "--no-optimize"; "-d"; "1"; "alpha" |]
+
+                Expect.isTrue plan.debug "Debug output should still be controlled by -d."
+                Expect.equal plan.debugLevel 1u "The debug level should still come from -d."
+                Expect.isFalse plan.optimize "Optimizer control should be independent from debug output."
+                Expect.equal (rest |> Array.toList) [ "alpha" ] "Optimizer arguments should be consumed."
             finally
                 DebugLevel.set 0u
                 Image<uint8>.setDebugLevel 0u
@@ -1549,6 +1592,107 @@ let stackProcessingSupportSuite =
                                 + 100.0f * float32 k
 
                             expectFloat32Close image[x, y] expected $"Trilinear sampling should match the known linear volume at ({x},{y},{k})."
+
+                output |> List.map snd |> disposeImages
+            finally
+                disposeImages slices
+                deleteDirectory chunkDirectory
+
+        testCase "resampleAffineTrilinearSlices matches direct sampling across uneven chunk boundaries" <| fun _ ->
+            let chunkDirectory = tempDirectory "affine-resampler-uneven-chunks"
+            let voxels = Array3D.init 5 4 3 nonlinearVoxel
+            let slices =
+                [ for z in 0 .. 2 ->
+                    let image =
+                        Array2D.init 5 4 (fun x y -> voxels[x, y, z])
+                        |> Image<float32>.ofArray2D
+
+                    image.index <- z
+                    image ]
+
+            try
+                imagePlan slices
+                >=> writeChunks chunkDirectory ".tiff" 2u 2u 2u
+                >=> ignoreSingles ()
+                |> sink
+
+                let lerp a b t = a + (b - a) * t
+                let transform: Affine =
+                    { A = identity3
+                      T = v3 0.25 0.5 0.5
+                      C = v3 0.0 0.0 0.0 }
+
+                let output =
+                    resampleAffineTrilinearSlices
+                        chunkDirectory
+                        ".tiff"
+                        lerp
+                        2
+                        (imageGeom 5 4 3)
+                        (imageGeom 4 3 2)
+                        transform
+                        -999.0f
+                    |> Seq.toList
+
+                Expect.equal (output |> List.map fst) [ 0; 1 ] "The uneven-chunk resampler should emit the requested output slices in order."
+
+                for k, image in output do
+                    for y in 0 .. int (image.GetHeight()) - 1 do
+                        for x in 0 .. int (image.GetWidth()) - 1 do
+                            let c = v3 (float x + 0.25) (float y + 0.5) (float k + 0.5)
+                            let expected = trilinearArraySample -999.0f voxels c
+                            expectFloat32Close image[x, y] expected $"Chunked resampling should match direct array sampling at ({x},{y},{k})."
+
+                output |> List.map snd |> disposeImages
+            finally
+                disposeImages slices
+                deleteDirectory chunkDirectory
+
+        testCase "resampleAffineTrilinearSlices returns background when the trilinear footprint is outside" <| fun _ ->
+            let chunkDirectory = tempDirectory "affine-resampler-background"
+            let voxels = Array3D.init 4 4 3 nonlinearVoxel
+            let slices =
+                [ for z in 0 .. 2 ->
+                    let image =
+                        Array2D.init 4 4 (fun x y -> voxels[x, y, z])
+                        |> Image<float32>.ofArray2D
+
+                    image.index <- z
+                    image ]
+
+            try
+                imagePlan slices
+                >=> writeChunks chunkDirectory ".tiff" 2u 2u 2u
+                >=> ignoreSingles ()
+                |> sink
+
+                let background = -1234.0f
+                let lerp a b t = a + (b - a) * t
+                let transform: Affine =
+                    { A = identity3
+                      T = v3 -0.25 0.5 0.5
+                      C = v3 0.0 0.0 0.0 }
+
+                let output =
+                    resampleAffineTrilinearSlices
+                        chunkDirectory
+                        ".tiff"
+                        lerp
+                        2
+                        (imageGeom 4 4 3)
+                        (imageGeom 2 2 1)
+                        transform
+                        background
+                    |> Seq.toList
+
+                Expect.equal output.Length 1 "The background test should emit one output slice."
+                let _, image = output[0]
+
+                for y in 0 .. int (image.GetHeight()) - 1 do
+                    for x in 0 .. int (image.GetWidth()) - 1 do
+                        let c = v3 (float x - 0.25) (float y + 0.5) 0.5
+                        let expected = trilinearArraySample background voxels c
+                        expectFloat32Close image[x, y] expected $"The resampler should use background consistently at ({x},{y},0)."
 
                 output |> List.map snd |> disposeImages
             finally

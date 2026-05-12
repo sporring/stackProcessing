@@ -200,14 +200,22 @@ let resourceOpsSuite =
 let debugLevelSuite =
     testList "DebugLevel" [
         testCase "level 3 includes level 1 and 2 behaviour plus RSS measurements" <| fun _ ->
+            let debugPlan = Plan.debug 3u true 1024UL
+            Expect.equal debugPlan.debugLevel 3u "The plan should store the requested debug level."
+
             let plan =
                 captureStdout (fun () ->
-                    Plan.debug 3u 1024UL
-                    |> Plan.sink)
+                    debugPlan |> Plan.sink)
 
-            Expect.stringContains plan "[debug] Preparing plan" "Level 3 should include ordinary debug output."
             Expect.stringContains plan "Optimization accepted" "Debug level 3 should keep level 2 optimization summaries."
-            Expect.stringContains plan "Process RSS baseline" "Debug level 3 should still include level 2 RSS output."
+            Expect.stringContains plan "Measured peak delta" "Debug level 3 should still include measured RSS output."
+
+        testCase "debug stores optimizer control independently of debug output" <| fun _ ->
+            let plan = Plan.debug 1u false 1024UL
+
+            Expect.isTrue plan.debug "Debug output should still be enabled."
+            Expect.equal plan.debugLevel 1u "The requested debug level should be preserved."
+            Expect.isFalse plan.optimize "Optimizer control should be stored independently."
     ]
 
 [<Tests>]

@@ -1,0 +1,25 @@
+{
+  "version": 1,
+  "nodes": [
+    { "id": "source", "functionId": "Zero", "x": 100.0, "y": 120.0,
+      "parameters": [
+        { "key": "availableMemory", "value": "2147483648UL", "useInput": false },
+        { "key": "type", "value": "UInt8", "useInput": false },
+        { "key": "width", "value": "64", "useInput": false },
+        { "key": "height", "value": "64", "useInput": false },
+        { "key": "depth", "value": "16", "useInput": false } ] },
+    { "id": "noise", "functionId": "AddSaltAndPepperNoise", "x": 320.0, "y": 120.0,
+      "parameters": [
+        { "key": "type", "value": "UInt8", "useInput": false },
+        { "key": "probability", "value": "0.02", "useInput": false } ] },
+    { "id": "write", "functionId": "Write", "x": 560.0, "y": 120.0,
+      "parameters": [
+        { "key": "format", "value": "Image stack", "useInput": false },
+        { "key": "output", "value": "../tmp/addSaltAndPepperNoise", "useInput": false },
+        { "key": "suffix", "value": ".tiff", "useInput": false } ] }
+  ],
+  "edges": [
+    { "fromNode": "source", "fromKind": "dataOutput", "fromPort": 0, "toNode": "noise", "toKind": "dataInput", "toPort": 0 },
+    { "fromNode": "noise", "fromKind": "dataOutput", "fromPort": 0, "toNode": "write", "toKind": "dataInput", "toPort": 0 }
+  ]
+}

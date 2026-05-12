@@ -41,13 +41,15 @@ The samples are ordinary F# console projects. For example:
 ```bash
 dotnet run --project samples/copy/copy.fsproj
 dotnet run --project samples/copy/copy.fsproj -- -d 1
+dotnet run --project samples/copy/copy.fsproj -- -d 1 --no-optimize
 ```
 
 The optional `-d` flag enables debug output. Level `1` reports read and write
 progress only. Level `2` adds plan, stage, and optimization summaries. Level
 `3` adds process RSS measurements. Optimizer control is intentionally separate
 from debug level so timing runs can opt out of optimization without changing
-diagnostic verbosity.
+diagnostic verbosity. The sample runners default to optimizer off; pass
+`--optimize true` to `RunAll` or `RunJson` to opt back in for comparison runs.
 
 ## Samples
 
@@ -77,8 +79,8 @@ Examples worth starting with:
 | `closing` | binary closing on a 0/1 UInt8 mask |
 | `convolve` | a custom 3D convolution kernel and boundary/window settings |
 | `quantileClamp` | histogram sampling, quantiles, intensity stretch, and outlier clamping |
-| `binaryMorphology` / `grayscaleMorphology` | morphology families with small inspectable pipelines |
-| `imageFilter`, `noiseVariants`, `keypoint`, `meshMeasurement` | focused tours through related Studio boxes |
+| `binaryMorphology`, `grayscaleErode`, `grayscaleDilate`, `grayscaleOpening`, `grayscaleClosing`, `whiteTopHat`, `blackTopHat`, `morphologicalGradient` | morphology families with small inspectable pipelines |
+| `imageFilter`, `saltAndPepperNoise`, `shotNoise`, `speckleNoise`, `addSaltAndPepperNoise`, `addShotSpeckleNoise`, `keypoint`, `meshMeasurement` | focused tours through related Studio boxes |
 
 These samples are also useful when adding or changing Studio boxes:
 each exposed box should ideally appear in at least one sample graph so that the
@@ -478,13 +480,14 @@ type Plan<'S,'T> =
       graph: PipelineGraph
       sourcePeek: SourcePeek option
       costPeak: StageCostEstimate option
-      costObservations: StageCostEstimate list
-      nElemsPerSlice: SingleOrPair
-      length: uint64
-      memAvail: uint64
-      memPeak: uint64
-      debug: bool
-      debugLevel: uint }
+          costObservations: StageCostEstimate list
+          nElemsPerSlice: SingleOrPair
+          length: uint64
+          memAvail: uint64
+          memPeak: uint64
+          debug: bool
+          debugLevel: uint
+          optimize: bool }
 ```
 
 The source creates an empty plan. Composition operators add stages. Terminal

@@ -13,13 +13,6 @@ let main arg =
         else
             "../data/volume", "../tmp/transpose"
 
-    (*
-    src
-    |> read<uint8> (input) ".tiff"
-    >=> permuteAxes (0u,1u,2u) 64u
-    >=> write (output+"012") ".tiff"
-    |> sink
-*)
     let fname021 = output+"021"
     deleteIfExists fname021
     src
@@ -28,29 +21,6 @@ let main arg =
     >=> permuteAxes (0u,2u,1u) 32u
     >=> write fname021 ".tiff"
     |> sink
-
-(*
-    src
-    |> read<uint8> (input) ".tiff"
-    >=> permuteAxes (1u,0u,2u) 64u
-    >=> write (output+"102") ".tiff"
-    |> sink
-    src
-    |> read<uint8> (input) ".tiff"
-    >=> permuteAxes (1u,2u,0u) 64u
-    >=> write (output+"120") ".tiff"
-    |> sink
-    src
-    |> read<uint8> (input) ".tiff"
-    >=> permuteAxes (2u,0u,1u) 64u
-    >=> write (output+"201") ".tiff"
-    |> sink
-    src
-    |> read<uint8> (input) ".tiff"
-    >=> permuteAxes (2u,1u,0u) 64u
-    >=> write (output+"210") ".tiff"
-    |> sink
-*)
 
     let fname021021 = output + "021021"
     deleteIfExists fname021021

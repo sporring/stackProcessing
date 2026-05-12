@@ -13,8 +13,11 @@ type Window<'T> = SlimPipeline.Window<'T>
 type Image<'S when 'S: equality> = Image.Image<'S>
 type ImageFacts = Image.ImageFacts
 
+let optimizerEnabled = StackCore.optimizerEnabled
 let source = StackCore.source
+let sourceWithOptimizer = StackCore.sourceWithOptimizer
 let debug = StackCore.debug
+let debugDefault = StackCore.debugDefault
 let commandLineSource = StackCore.commandLineSource
 let zip = StackCore.zip
 let (>=>) = StackCore.(>=>)

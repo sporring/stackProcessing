@@ -10,7 +10,7 @@ let main args =
         match args with
         | [| input; output |] -> input, output
         | [| input |] -> input, "../tmp/otsuThreshold"
-        | _ -> "../data/rotatingBoxes", "../tmp/otsuThreshold"
+        | _ -> "../data/volume", "../tmp/otsuThreshold"
 
     let thresholdValue =
         src

@@ -55,7 +55,7 @@ let generatorSuite =
                 |> PipelineCodeGenerator.generateSavedGraph
 
             Expect.stringContains code "open StackProcessing" "Generated code should open StackProcessing."
-            Expect.stringContains code "debug 1u 1073741824UL" "Read node should generate a debug source with uint64 available memory."
+            Expect.stringContains code "debug 1u (optimizerEnabled ()) 1073741824UL" "Read node should generate a debug source with uint64 available memory."
             Expect.stringContains code "|> read<uint8> \"input\" \".tiff\"" "Read node should generate typed read."
             Expect.stringContains code ">=> write \"output\" \".tiff\"" "Write node should generate write stage."
             Expect.stringContains code "|> sink" "Terminal write should be sunk."
@@ -103,7 +103,7 @@ let generatorSuite =
                 graph [ noise; write ] [ edge "noise" "output" 0 "write" "input" 0 ]
                 |> PipelineCodeGenerator.generateSavedGraph
 
-            Expect.stringContains code "debug 1u 2048UL" "NormalNoise should generate a debug source with available memory."
+            Expect.stringContains code "debug 1u (optimizerEnabled ()) 2048UL" "NormalNoise should generate a debug source with available memory."
             Expect.stringContains code "|> normalNoise<float32> 12u 13u 4u 5.0 0.25" "NormalNoise should generate typed dimensions and distribution parameters."
 
             let saltCode =
@@ -917,7 +917,7 @@ let generatorSuite =
                 graph [ readPoints ] []
                 |> PipelineCodeGenerator.generateSavedGraph
 
-            Expect.stringContains readPointCode "debug 1u 1024UL" "ReadPointSet should include a debug source."
+            Expect.stringContains readPointCode "debug 1u (optimizerEnabled ()) 1024UL" "ReadPointSet should include a debug source."
             Expect.stringContains readPointCode "|> readPointSet \"points.csv\"" "ReadPointSet should generate the CSV point reader."
 
             let distances =

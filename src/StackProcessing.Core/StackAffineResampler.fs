@@ -38,17 +38,40 @@ let inline packKey (cx:int) (cy:int) (cz:int) : int64 =
     // pack into 21 bits each (good for sizes up to ~2 million chunks/axis)
     (int64 cx <<< 42) ||| (int64 cy <<< 21) ||| (int64 cz)
 
-type ChunkCache<'T when 'T: equality> = Dictionary<int64, Image<'T>>
+type ChunkData<'T> =
+    { Pixels: 'T[,,]
+      Width: int
+      Height: int
+      Depth: int }
+
+type ChunkCache<'T when 'T: equality> = Dictionary<int64, ChunkData<'T>>
 
 module ChunkCache =
-    let create<'T when 'T: equality> () = Dictionary<int64, Image<'T>>()
+    let create<'T when 'T: equality> () = Dictionary<int64, ChunkData<'T>>()
+
+    let private readChunkData<'T when 'T: equality> inputDir suffix cx cy cz =
+        let image = _readChunk<'T> inputDir suffix cx cy cz
+        try
+            let pixels =
+                if image.GetDimensions() = 2u then
+                    let plane = image.toArray2D()
+                    Array3D.init (Array2D.length1 plane) (Array2D.length2 plane) 1 (fun x y _ -> plane[x, y])
+                else
+                    image.toArray3D()
+
+            { Pixels = pixels
+              Width = Array3D.length1 pixels
+              Height = Array3D.length2 pixels
+              Depth = Array3D.length3 pixels }
+        finally
+            image.decRefCount()
 
     let Get (inputDir: string) (suffix: string) (cx,cy,cz) (dict: ChunkCache<'T>) =
         let key = packKey cx cy cz
         match dict.TryGetValue key with
         | true, ch -> ch
         | _ ->
-            let ch = _readChunk inputDir suffix cx cy cz
+            let ch = readChunkData inputDir suffix cx cy cz
             dict.[key] <- ch
             ch
 
@@ -66,11 +89,11 @@ module ChunkCache =
             let key = packKey cx cy cz
             set.Add key |> ignore
             if not (dict.ContainsKey key) then
-                dict.[key] <- _readChunk inputDir suffix cx cy cz
+                dict.[key] <- readChunkData inputDir suffix cx cy cz
         set
 
 // Global voxel fetch from chunk cache. Assumes 0 <= x < W etc.
-let getVoxel (inputDir: string) (suffix: string) (winsz:int) (W:int) (H:int) (D:int) (background: 'T) (cache: ChunkCache<'T>) (x:int) (y:int) (z:int) (dict: ChunkCache<'T>) : 'T =
+let getVoxel (inputDir: string) (suffix: string) (winsz:int) (background: 'T) (x:int) (y:int) (z:int) (dict: ChunkCache<'T>) : 'T =
     let cx = x / winsz
     let cy = y / winsz
     let cz = z / winsz
@@ -79,10 +102,10 @@ let getVoxel (inputDir: string) (suffix: string) (winsz:int) (W:int) (H:int) (D:
     let lz = z - cz*winsz
     let ch = ChunkCache.Get inputDir suffix (cx,cy,cz) (dict: ChunkCache<'T>) 
     // handle edge chunks that may be smaller:
-    if lx < 0 || ly < 0 || lz < 0 || lx >= int (ch.GetWidth()) || ly >= int (ch.GetHeight()) || lz >= int (ch.GetDepth()) then
+    if lx < 0 || ly < 0 || lz < 0 || lx >= ch.Width || ly >= ch.Height || lz >= ch.Depth then
         background // shouldn't happen if your chunk loader sizes match the image, but safe
     else
-        ch[lx,ly,lz]
+        ch.Pixels[lx, ly, lz]
 
 // -------------------------
 // Trilinear interpolation
@@ -105,14 +128,14 @@ let trilinearSample (inputDir: string) (suffix: string) (winsz:int) (W:int) (H:i
         let fy = float32 (c.y - float y0)
         let fz = float32 (c.z - float z0)
 
-        let c000 = getVoxel inputDir suffix winsz W H D background cache x0 y0 z0 cache
-        let c100 = getVoxel inputDir suffix winsz W H D background cache x1 y0 z0 cache
-        let c010 = getVoxel inputDir suffix winsz W H D background cache x0 y1 z0 cache
-        let c110 = getVoxel inputDir suffix winsz W H D background cache x1 y1 z0 cache
-        let c001 = getVoxel inputDir suffix winsz W H D background cache x0 y0 z1 cache
-        let c101 = getVoxel inputDir suffix winsz W H D background cache x1 y0 z1 cache
-        let c011 = getVoxel inputDir suffix winsz W H D background cache x0 y1 z1 cache
-        let c111 = getVoxel inputDir suffix winsz W H D background cache x1 y1 z1 cache
+        let c000 = getVoxel inputDir suffix winsz background x0 y0 z0 cache
+        let c100 = getVoxel inputDir suffix winsz background x1 y0 z0 cache
+        let c010 = getVoxel inputDir suffix winsz background x0 y1 z0 cache
+        let c110 = getVoxel inputDir suffix winsz background x1 y1 z0 cache
+        let c001 = getVoxel inputDir suffix winsz background x0 y0 z1 cache
+        let c101 = getVoxel inputDir suffix winsz background x1 y0 z1 cache
+        let c011 = getVoxel inputDir suffix winsz background x0 y1 z1 cache
+        let c111 = getVoxel inputDir suffix winsz background x1 y1 z1 cache
 
         //let inline lerp (a: 'T) (b: 'T) (t: float32) = a + (b - a) * t
 

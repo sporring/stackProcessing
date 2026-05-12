@@ -1490,7 +1490,8 @@ type Plan<'S,'T> = {
     memAvail       : uint64 // memory available for the plan
     memPeak        : uint64 // the plan's estimated peak memory consumption
     debug          : bool
-    debugLevel     : uint }
+    debugLevel     : uint
+    optimize       : bool }
 
 module Plan =
     let private graphOfStage stage =
@@ -1499,11 +1500,17 @@ module Plan =
     let private levelOf debug =
         if debug then DebugLevel.current() |> max 1u else 0u
 
+    let createWithOptimizer<'S,'T when 'T: equality> (stage: Stage<'S,'T> option) (memAvail : uint64) (memPeak: uint64) (nElemsPerSlice: uint64) (length: uint64) (debug: bool) (optimize: bool) : Plan<'S, 'T> =
+        { stage = stage; graph = graphOfStage stage; sourcePeek = None; costPeak = None; costObservations = []; memAvail = memAvail; memPeak = memPeak; nElemsPerSlice = Single nElemsPerSlice; length = length; debug = debug; debugLevel = levelOf debug; optimize = optimize }
+
     let create<'S,'T when 'T: equality> (stage: Stage<'S,'T> option) (memAvail : uint64) (memPeak: uint64) (nElemsPerSlice: uint64) (length: uint64) (debug: bool) : Plan<'S, 'T> =
-        { stage = stage; graph = graphOfStage stage; sourcePeek = None; costPeak = None; costObservations = []; memAvail = memAvail; memPeak = memPeak; nElemsPerSlice = Single nElemsPerSlice; length = length; debug = debug; debugLevel = levelOf debug }
+        createWithOptimizer stage memAvail memPeak nElemsPerSlice length debug true
+
+    let createWrappedWithOptimizer<'S,'T when 'T: equality> (stage: Stage<'S,'T> option) (memAvail : uint64) (memPeak: uint64) (nElemsPerSlice: SingleOrPair) (length: uint64) (debug: bool) (optimize: bool) : Plan<'S, 'T> =
+        { stage = stage; graph = graphOfStage stage; sourcePeek = None; costPeak = None; costObservations = []; memAvail = memAvail; memPeak = memPeak; nElemsPerSlice = nElemsPerSlice; length = length; debug = debug; debugLevel = levelOf debug; optimize = optimize }
 
     let createWrapped<'S,'T when 'T: equality> (stage: Stage<'S,'T> option) (memAvail : uint64) (memPeak: uint64) (nElemsPerSlice: SingleOrPair) (length: uint64) (debug: bool) : Plan<'S, 'T> =
-        { stage = stage; graph = graphOfStage stage; sourcePeek = None; costPeak = None; costObservations = []; memAvail = memAvail; memPeak = memPeak; nElemsPerSlice = nElemsPerSlice; length = length; debug = debug; debugLevel = levelOf debug }
+        createWrappedWithOptimizer stage memAvail memPeak nElemsPerSlice length debug true
 
     let withSourcePeek (sourcePeek: SourcePeek) (pl: Plan<'S,'T>) =
         { pl with sourcePeek = Some sourcePeek }
@@ -1537,7 +1544,9 @@ module Plan =
     let private printOptimizationSummary label (pl: Plan<'S,'T>) =
         if pl.debug && pl.debugLevel >= 2u then
             let status =
-                if pl.memPeak <= pl.memAvail then "accepted" else "exceeds memory limit"
+                if not pl.optimize then "disabled"
+                elif pl.memPeak <= pl.memAvail then "accepted"
+                else "exceeds memory limit"
             let timeText =
                 match trySumEstimatedTimeMilliseconds pl.costObservations with
                 | Some milliseconds -> $", estimated time {milliseconds:g} ms"
@@ -1584,12 +1593,16 @@ module Plan =
         DebugLevel.set 0u
         create None availableMemory 0UL 0UL 0UL false
 
-    let debug (level: uint) (availableMemory: uint64) : Plan<unit, unit> =
+    let sourceWithOptimizer (optimize: bool) (availableMemory: uint64) : Plan<unit, unit> =
+        DebugLevel.set 0u
+        createWithOptimizer None availableMemory 0UL 0UL 0UL false optimize
+
+    let debug (level: uint) (optimize: bool) (availableMemory: uint64) : Plan<unit, unit> =
         let level = max 1u level
         DebugLevel.set level
         if level >= 2u then
-            printfn $"[debug] Preparing plan - {availableMemory} B available, level {level}"
-        let result = create None availableMemory 0UL 0UL 0UL true
+            printfn $"[debug] Preparing plan - {availableMemory} B available, level {level}, optimize {optimize}"
+        let result = { createWithOptimizer None availableMemory 0UL 0UL 0UL true optimize with debugLevel = level }
         if level >= 2u then
             printfn $"[debug] Done"
         result
@@ -1611,7 +1624,7 @@ module Plan =
         let length' =
             SliceCardinality.length pl.length stage.SliceCardinality
             |> Option.defaultValue pl.length
-        { createWrapped stage' pl.memAvail memPeak nElemsPerSlice' length' pl.debug with sourcePeek = pl.sourcePeek; costPeak = costPeak; costObservations = costObservations; debugLevel = pl.debugLevel }
+        { createWrappedWithOptimizer stage' pl.memAvail memPeak nElemsPerSlice' length' pl.debug pl.optimize with sourcePeek = pl.sourcePeek; costPeak = costPeak; costObservations = costObservations; debugLevel = pl.debugLevel }
 
     let (>=>) (pl: Plan<'a, 'b>) (stage: Stage<'b, 'c>) : Plan<'a, 'c> =
         composePlan $">=>" pl stage
@@ -1636,7 +1649,7 @@ module Plan =
         let costObservations = stageCost :: pl.costObservations
         if (not pl.debug) && memPeak > pl.memAvail then
             failwith $"Out of available memory: {stage.Name} requested {memoryNeed} B but have only {pl.memAvail} B"
-        { createWrapped (Some stage) pl.memAvail memPeak nElemsPerSlice' length' pl.debug with sourcePeek = pl.sourcePeek; costPeak = costPeak; costObservations = costObservations; debugLevel = pl.debugLevel }
+        { createWrappedWithOptimizer (Some stage) pl.memAvail memPeak nElemsPerSlice' length' pl.debug pl.optimize with sourcePeek = pl.sourcePeek; costPeak = costPeak; costObservations = costObservations; debugLevel = pl.debugLevel }
         
     /// parallel execution of non-synchronised streams
     let internal zipPlan (name: string) (pl1: Plan<'In, 'U>) (pl2: Plan<'In, 'V>) : Plan<'In, ('U * 'V)> =
@@ -1673,7 +1686,7 @@ module Plan =
                 let maxMemAvail = max pl1.memAvail pl2.memAvail // Should we max or sum? What would the most natural usage be for src?
                 if (not debug) && (memPeak > maxMemAvail) then
                     failwith $"Out of available memory: {stage.Name} requested {memNeeded|>SingleOrPair.fst}+{memNeeded|>SingleOrPair.snd}={memPeak} B but have only {maxMemAvail} B"
-                { createWrapped (Some stage) maxMemAvail memPeak nElemsPerSlice pl1.length debug with sourcePeek = pl1.sourcePeek; costPeak = costPeak; costObservations = costObservations; debugLevel = max pl1.debugLevel pl2.debugLevel }
+                { createWrappedWithOptimizer (Some stage) maxMemAvail memPeak nElemsPerSlice pl1.length debug (pl1.optimize && pl2.optimize) with sourcePeek = pl1.sourcePeek; costPeak = costPeak; costObservations = costObservations; debugLevel = max pl1.debugLevel pl2.debugLevel }
             | _,_ -> failwith $"[{name}] Cannot zip with an empty plan"
 
     /// parallel execution of non-synchronised streams

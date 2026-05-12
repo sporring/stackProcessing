@@ -670,15 +670,30 @@ type Plan<'S,'T> =
       memPeak: uint64
       debug: bool
       debugLevel: uint
+      optimize: bool
     }
 module Plan =
     val private graphOfStage: stage: Stage<'a,'b> option -> PipelineGraph
     val private levelOf: debug: bool -> uint32
+    val createWithOptimizer:
+      stage: Stage<'S,'T> option ->
+        memAvail: uint64 ->
+        memPeak: uint64 ->
+        nElemsPerSlice: uint64 ->
+        length: uint64 -> debug: bool -> optimize: bool -> Plan<'S,'T>
+        when 'T: equality
     val create:
       stage: Stage<'S,'T> option ->
         memAvail: uint64 ->
         memPeak: uint64 ->
         nElemsPerSlice: uint64 -> length: uint64 -> debug: bool -> Plan<'S,'T>
+        when 'T: equality
+    val createWrappedWithOptimizer:
+      stage: Stage<'S,'T> option ->
+        memAvail: uint64 ->
+        memPeak: uint64 ->
+        nElemsPerSlice: SingleOrPair ->
+        length: uint64 -> debug: bool -> optimize: bool -> Plan<'S,'T>
         when 'T: equality
     val createWrapped:
       stage: Stage<'S,'T> option ->
@@ -702,7 +717,11 @@ module Plan =
     val graph: pl: Plan<'S,'T> -> PipelineGraph
     /// Source type operators
     val source: availableMemory: uint64 -> Plan<unit,unit>
-    val debug: level: uint -> availableMemory: uint64 -> Plan<unit,unit>
+    val sourceWithOptimizer:
+      optimize: bool -> availableMemory: uint64 -> Plan<unit,unit>
+    val debug:
+      level: uint ->
+        optimize: bool -> availableMemory: uint64 -> Plan<unit,unit>
     /// Composition operators
     val composePlan:
       name: string -> pl: Plan<'a,'b> -> stage: Stage<'b,'c> -> Plan<'a,'c>

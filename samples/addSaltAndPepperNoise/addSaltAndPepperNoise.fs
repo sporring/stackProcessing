@@ -1,0 +1,20 @@
+// Add salt-and-pepper noise to a zero-valued stack.
+open StackProcessing
+
+[<EntryPoint>]
+let main args =
+    let availableMemory = 2UL * 1024UL * 1024UL * 1024UL
+    let src, args = commandLineSource availableMemory args
+
+    let output =
+        match args with
+        | [| output |] -> output
+        | _ -> "../tmp/addSaltAndPepperNoise"
+
+    src
+    |> zero<uint8> 64u 64u 16u
+    >=> addSaltAndPepperNoise 0.02
+    >=> write output ".tiff"
+    |> sink
+
+    0

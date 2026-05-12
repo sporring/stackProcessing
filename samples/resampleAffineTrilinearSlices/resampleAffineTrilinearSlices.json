@@ -1,17 +1,71 @@
 {
   "version": 1,
   "nodes": [
-    { "id": "resampleAffine", "functionId": "ResampleAffineTrilinearSlices", "x": 100.0, "y": 120.0,
+    {
+      "id": "read",
+      "functionId": "ReadRange",
+      "x": 120.0,
+      "y": 140.0,
+      "parameters": [
+        { "key": "availableMemory", "value": "2147483648UL", "useInput": false },
+        { "key": "type", "value": "UInt8", "useInput": false },
+        { "key": "format", "value": "Image stack", "useInput": false },
+        { "key": "first", "value": "0", "useInput": false },
+        { "key": "step", "value": "1", "useInput": false },
+        { "key": "last", "value": "15", "useInput": false },
+        { "key": "input", "value": "../data/volume", "useInput": false },
+        { "key": "suffix", "value": ".tiff", "useInput": false },
+        { "key": "slabDepth", "value": "8", "useInput": false },
+        { "key": "multiscaleIndex", "value": "0", "useInput": false },
+        { "key": "datasetIndex", "value": "0", "useInput": false },
+        { "key": "timepoint", "value": "0", "useInput": false },
+        { "key": "channel", "value": "0", "useInput": false },
+        { "key": "maxParallelChunks", "value": "0", "useInput": false },
+        { "key": "datasetPath", "value": "/entry/data/data", "useInput": false },
+        { "key": "frameAxis", "value": "0", "useInput": false },
+        { "key": "yAxis", "value": "1", "useInput": false },
+        { "key": "xAxis", "value": "2", "useInput": false }
+      ]
+    },
+    {
+      "id": "chunks",
+      "functionId": "WriteChunks",
+      "x": 330.0,
+      "y": 140.0,
+      "parameters": [
+        { "key": "output", "value": "../tmp/resampleAffineTrilinearSlicesChunks", "useInput": false },
+        { "key": "suffix", "value": ".tiff", "useInput": false },
+        { "key": "chunkX", "value": "16", "useInput": false },
+        { "key": "chunkY", "value": "16", "useInput": false },
+        { "key": "chunkZ", "value": "16", "useInput": false }
+      ]
+    },
+    {
+      "id": "resample",
+      "functionId": "ResampleAffineTrilinearSlices",
+      "x": 330.0,
+      "y": 330.0,
       "parameters": [
         { "key": "type", "value": "Float32", "useInput": false },
-        { "key": "input", "value": "../data/chunk", "useInput": false },
+        { "key": "input", "value": "../tmp/resampleAffineTrilinearSlicesChunks", "useInput": false },
         { "key": "suffix", "value": ".tiff", "useInput": false },
         { "key": "lerp", "value": "(fun a b t -> a + (b - a) * t)", "useInput": false },
         { "key": "windowSize", "value": "16", "useInput": false },
-        { "key": "inputGeometry", "value": "{ W = 256; H = 256; D = 256; Origin = TinyLinAlg.v3 0.0 0.0 0.0; Spacing = TinyLinAlg.v3 1.0 1.0 1.0; Direction = { m00 = 1.0; m01 = 0.0; m02 = 0.0; m10 = 0.0; m11 = 1.0; m12 = 0.0; m20 = 0.0; m21 = 0.0; m22 = 1.0 } }", "useInput": false },
-        { "key": "outputGeometry", "value": "{ W = 256; H = 256; D = 256; Origin = TinyLinAlg.v3 0.0 0.0 0.0; Spacing = TinyLinAlg.v3 1.0 1.0 1.0; Direction = { m00 = 1.0; m01 = 0.0; m02 = 0.0; m10 = 0.0; m11 = 1.0; m12 = 0.0; m20 = 0.0; m21 = 0.0; m22 = 1.0 } }", "useInput": false },
-        { "key": "affine", "value": "{ A = { m00 = 1.0; m01 = 0.0; m02 = 0.0; m10 = 0.0; m11 = 1.0; m12 = 0.0; m20 = 0.0; m21 = 0.0; m22 = 1.0 }; T = TinyLinAlg.v3 4.0 -2.0 0.0; C = TinyLinAlg.v3 128.0 128.0 128.0 }", "useInput": false },
-        { "key": "background", "value": "0.0f", "useInput": false } ] }
+        { "key": "inputGeometry", "value": "{ W = 512; H = 384; D = 16; Origin = TinyLinAlg.v3 0.0 0.0 0.0; Spacing = TinyLinAlg.v3 1.0 1.0 1.0; Direction = { m00 = 1.0; m01 = 0.0; m02 = 0.0; m10 = 0.0; m11 = 1.0; m12 = 0.0; m20 = 0.0; m21 = 0.0; m22 = 1.0 } }", "useInput": false },
+        { "key": "outputGeometry", "value": "{ W = 128; H = 128; D = 8; Origin = TinyLinAlg.v3 0.0 0.0 0.0; Spacing = TinyLinAlg.v3 1.0 1.0 1.0; Direction = { m00 = 1.0; m01 = 0.0; m02 = 0.0; m10 = 0.0; m11 = 1.0; m12 = 0.0; m20 = 0.0; m21 = 0.0; m22 = 1.0 } }", "useInput": false },
+        { "key": "affine", "value": "{ A = { m00 = 1.0; m01 = 0.0; m02 = 0.0; m10 = 0.0; m11 = 1.0; m12 = 0.0; m20 = 0.0; m21 = 0.0; m22 = 1.0 }; T = TinyLinAlg.v3 4.0 -2.0 0.0; C = TinyLinAlg.v3 64.0 64.0 4.0 }", "useInput": false },
+        { "key": "background", "value": "0.0f", "useInput": false }
+      ]
+    }
   ],
-  "edges": []
+  "edges": [
+    {
+      "fromNode": "read",
+      "fromKind": "dataOutput",
+      "fromPort": 0,
+      "toNode": "chunks",
+      "toKind": "dataInput",
+      "toPort": 0
+    }
+  ]
 }

@@ -12,6 +12,7 @@ type Options =
     { SamplesRoot: string
       Jobs: int
       DebugLevel: int
+      Optimize: bool
       SkipBuild: bool
       GatherOnly: bool
       Timeout: TimeSpan option }
@@ -41,7 +42,7 @@ let private outputLogPath samplesRoot sampleName =
     Path.Combine(outputDirectory samplesRoot, sampleName + ".out")
 
 let usage () =
-    printfn "Usage: ./runAll.sh [-j jobs] [--skip-build] [--debug-level N]"
+    printfn "Usage: ./runAll.sh [-j jobs] [--skip-build] [--debug-level N] [--optimize true|false]"
     printfn ""
     printfn "Runs all sample projects. The default is sequential, which gives cleaner"
     printfn "per-sample timing measurements. Use -j with a value greater than 1 to run"
@@ -53,6 +54,8 @@ let usage () =
     printfn "  --skip-build      Run samples without first building them."
     printfn $"  --gather-only     Regenerate tmp/{outputDirectoryName}/gather.csv from existing sample logs."
     printfn "  --debug-level N   Pass -d N to each sample. Defaults to 1."
+    printfn "  --optimize BOOL   Enable or disable optimizer use. Defaults to false."
+    printfn "  --no-optimize     Shortcut for --optimize false."
     printfn "  --timeout N       Stop a build or run after N minutes. Defaults to 30. Use 0 to disable."
     printfn "  -h, --help        Show this help."
 
@@ -76,6 +79,15 @@ let rec private parseArgs options args =
         | _ ->
             eprintfn "runAll: --debug-level expects a non-negative integer"
             Error 2
+    | "--optimize" :: value :: rest
+    | "--optimizer" :: value :: rest ->
+        match Boolean.TryParse value with
+        | true, optimize -> parseArgs { options with Optimize = optimize } rest
+        | _ ->
+            eprintfn "runAll: --optimize expects true or false"
+            Error 2
+    | ("--no-optimize" | "--no-optimizer") :: rest ->
+        parseArgs { options with Optimize = false } rest
     | "--skip-build" :: rest ->
         parseArgs { options with SkipBuild = true } rest
     | "--gather-only" :: rest ->
@@ -248,7 +260,7 @@ let private buildSample (cancellationToken: CancellationToken) timeout (sample: 
         return result.ExitCode
     }
 
-let private runSample (cancellationToken: CancellationToken) timeout debugLevel (sample: Sample) =
+let private runSample (cancellationToken: CancellationToken) timeout debugLevel optimize (sample: Sample) =
     task {
         File.AppendAllText(sample.LogPath, $"{Environment.NewLine}== Run {sample.Name} =={Environment.NewLine}")
         printfn "run %s" sample.Name
@@ -258,12 +270,12 @@ let private runSample (cancellationToken: CancellationToken) timeout debugLevel 
         let! result =
             runProcessAsync
                 cancellationToken
-                sample.LogPath
-                sample.Directory
-                "dotnet"
-                [ "run"; "--no-build"; "--verbosity"; "q"; "--"; "-d"; string debugLevel ]
-                (Some nativeLibPath)
-                timeout
+                    sample.LogPath
+                    sample.Directory
+                    "dotnet"
+                    [ "run"; "--no-build"; "--verbosity"; "q"; "--"; "-d"; string debugLevel; "--optimize"; string optimize ]
+                    (Some nativeLibPath)
+                    timeout
 
         File.AppendAllText(sample.LogPath, $"Run finished in {result.Elapsed}.{Environment.NewLine}")
         if result.TimedOut then
@@ -274,17 +286,17 @@ let private runSample (cancellationToken: CancellationToken) timeout debugLevel 
               Elapsed = result.Elapsed }
     }
 
-let private runWithParallelism (cancellationToken: CancellationToken) jobs timeout debugLevel (samples: Sample array) =
+let private runWithParallelism (cancellationToken: CancellationToken) jobs timeout debugLevel optimize (samples: Sample array) =
     task {
         use gate = new SemaphoreSlim(jobs)
 
         let runOne sample =
             task {
-                do! gate.WaitAsync(cancellationToken)
+                    do! gate.WaitAsync(cancellationToken)
 
-                try
-                    return! runSample cancellationToken timeout debugLevel sample
-                finally
+                    try
+                        return! runSample cancellationToken timeout debugLevel optimize sample
+                    finally
                     gate.Release() |> ignore
             }
 
@@ -468,6 +480,7 @@ let main argv =
         { SamplesRoot = defaultSamplesRoot ()
           Jobs = 1
           DebugLevel = 1
+          Optimize = false
           SkipBuild = false
           GatherOnly = false
           Timeout = Some(TimeSpan.FromMinutes 30.0) }
@@ -521,7 +534,7 @@ let main argv =
                 cancellation.Token.ThrowIfCancellationRequested()
 
                 let results =
-                    runWithParallelism cancellation.Token options.Jobs options.Timeout options.DebugLevel builtSamples
+                    runWithParallelism cancellation.Token options.Jobs options.Timeout options.DebugLevel options.Optimize builtSamples
                     |> _.GetAwaiter().GetResult()
 
                 let gatherRows =

@@ -218,7 +218,7 @@ module PipelineCodeGenerator =
             $"{trimmed}UL"
 
     let private sourcePrefix availableMemory line =
-        $"debug 1u {uint64Literal availableMemory}{Environment.NewLine}{line}"
+        $"debug 1u (optimizerEnabled ()) {uint64Literal availableMemory}{Environment.NewLine}{line}"
 
     let private imageOpImageFunctionName (node: SavedNode) =
         match savedParamValue "operation" node with
@@ -1017,7 +1017,7 @@ module PipelineCodeGenerator =
                   $"    let a = 2.0 * System.Math.PI * float i / float depth"
                   $"    let offset = float boxSize / 2.0 - 0.5"
                   $"    {transformBody}"
-                  $"debug 1u {uint64Literal availableMemory}"
+                  $"debug 1u (optimizerEnabled ()) {uint64Literal availableMemory}"
                   $"|> createByEuler2DTransform<{pixelType}> {imageName} depth {transformName}" ]
         | "ReadRandom" ->
             let availableMemory = parameterValue "availableMemory"

@@ -15,6 +15,7 @@ type Options =
     { SamplesRoot: string
       Jobs: int
       DebugLevel: int
+      Optimize: bool
       SkipBuild: bool
       CompileOnly: bool
       GatherOnly: bool
@@ -47,7 +48,7 @@ let private buildDirectory samplesRoot =
     Path.Combine(samplesRoot, "tmp", buildDirectoryName)
 
 let usage () =
-    printfn "Usage: ./runJson.sh [-j jobs] [--skip-build] [--compile-only] [--debug-level N]"
+    printfn "Usage: ./runJson.sh [-j jobs] [--skip-build] [--compile-only] [--debug-level N] [--optimize true|false]"
     printfn ""
     printfn "Compiles sample Studio JSON graphs to F#, runs them, and stores logs below"
     printfn $"samples/tmp/{outputDirectoryName}. The default is sequential."
@@ -59,6 +60,8 @@ let usage () =
     printfn "  --compile-only    Generate and build F#, but do not run the programs."
     printfn $"  --gather-only     Regenerate tmp/{outputDirectoryName}/gather.csv from existing graph logs."
     printfn "  --debug-level N   Accepted for symmetry with runAll; generated graphs carry their saved debug settings."
+    printfn "  --optimize BOOL   Enable or disable optimizer use while running generated graphs. Defaults to false."
+    printfn "  --no-optimize     Shortcut for --optimize false."
     printfn "  --timeout N       Stop a build or run after N minutes. Defaults to 30. Use 0 to disable."
     printfn "  -h, --help        Show this help."
 
@@ -91,6 +94,15 @@ let rec private parseArgs options args =
         | _ ->
             eprintfn "runJson: --debug-level expects a non-negative integer"
             Error 2
+    | "--optimize" :: value :: rest
+    | "--optimizer" :: value :: rest ->
+        match Boolean.TryParse value with
+        | true, optimize -> parseArgs { options with Optimize = optimize } rest
+        | _ ->
+            eprintfn "runJson: --optimize expects true or false"
+            Error 2
+    | ("--no-optimize" | "--no-optimizer") :: rest ->
+        parseArgs { options with Optimize = false } rest
     | "--skip-build" :: rest -> parseArgs { options with SkipBuild = true } rest
     | "--compile-only" :: rest -> parseArgs { options with CompileOnly = true } rest
     | "--gather-only" :: rest -> parseArgs { options with GatherOnly = true } rest
@@ -224,6 +236,7 @@ let private runProcessAsync
     (args: string list)
     (envPath: string option)
     (timeout: TimeSpan option)
+    (optimizer: string option)
     =
     task {
         Directory.CreateDirectory(Path.GetDirectoryName logPath) |> ignore
@@ -248,6 +261,7 @@ let private runProcessAsync
             )
 
         args |> List.iter (fun arg -> psi.ArgumentList.Add arg)
+        optimizer |> Option.iter (fun value -> psi.Environment["STACKPROCESSING_OPTIMIZE"] <- value)
 
         match envPath with
         | Some path ->
@@ -336,6 +350,7 @@ let private runGraph (cancellationToken: CancellationToken) (repositoryRoot: str
                         [ "build"; projectPath; "--verbosity"; "q"; "--disable-build-servers" ]
                         None
                         options.Timeout
+                        None
 
                 exitCode <- buildResult.ExitCode
                 elapsed <- elapsed + buildResult.Elapsed
@@ -346,8 +361,17 @@ let private runGraph (cancellationToken: CancellationToken) (repositoryRoot: str
             if exitCode = 0 && not options.CompileOnly then
                 File.AppendAllText(job.LogPath, $"{Environment.NewLine}== Run {job.Name} =={Environment.NewLine}")
 
+                let optimizerValue = if options.Optimize then "1" else "0"
                 let! runResult =
-                    runProcessAsync cancellationToken job.LogPath job.WorkingDirectory "dotnet" [ "run"; "--project"; projectPath; "--no-build"; "--verbosity"; "q" ] (Some(Path.Combine(job.WorkingDirectory, "lib"))) options.Timeout
+                    runProcessAsync
+                        cancellationToken
+                        job.LogPath
+                        job.WorkingDirectory
+                        "dotnet"
+                        [ "run"; "--project"; projectPath; "--no-build"; "--verbosity"; "q" ]
+                        (Some(Path.Combine(job.WorkingDirectory, "lib")))
+                        options.Timeout
+                        (Some optimizerValue)
 
                 exitCode <- runResult.ExitCode
                 elapsed <- elapsed + runResult.Elapsed
@@ -558,6 +582,7 @@ let main argv =
         { SamplesRoot = defaultSamplesRoot ()
           Jobs = 1
           DebugLevel = 1
+          Optimize = false
           SkipBuild = false
           CompileOnly = false
           GatherOnly = false

@@ -1,0 +1,20 @@
+{
+  "version": 1,
+  "nodes": [
+    { "id": "read", "functionId": "Read", "x": 100.0, "y": 120.0,
+      "parameters": [
+        { "key": "availableMemory", "value": "2147483648UL", "useInput": false },
+        { "key": "type", "value": "UInt8", "useInput": false },
+        { "key": "format", "value": "Image stack", "useInput": false },
+        { "key": "input", "value": "../data/volume", "useInput": false },
+        { "key": "suffix", "value": ".tiff", "useInput": false } ] },
+    { "id": "op", "functionId": "WhiteTopHat", "x": 300.0, "y": 120.0,
+      "parameters": [ { "key": "type", "value": "UInt8", "useInput": false }, { "key": "radius", "value": "1", "useInput": false }, { "key": "windowSize", "value": "5", "useInput": false } ] },
+    { "id": "write", "functionId": "Write", "x": 520.0, "y": 120.0,
+      "parameters": [ { "key": "format", "value": "Image stack", "useInput": false }, { "key": "output", "value": "../tmp/whiteTopHat", "useInput": false }, { "key": "suffix", "value": ".tiff", "useInput": false } ] }
+  ],
+  "edges": [
+    { "fromNode": "read", "fromKind": "dataOutput", "fromPort": 0, "toNode": "op", "toKind": "dataInput", "toPort": 0 },
+    { "fromNode": "op", "fromKind": "dataOutput", "fromPort": 0, "toNode": "write", "toKind": "dataInput", "toPort": 0 }
+  ]
+}

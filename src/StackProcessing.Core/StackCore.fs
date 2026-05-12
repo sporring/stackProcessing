@@ -202,20 +202,59 @@ let volFctToLstFctReleaseAfter (f: Image<'S>->Image<'T>) pad stride images =
 
 let (>=>) = Plan.(>=>)
 let (-->) = Stage.(-->)
-let source = Plan.source 
-let debug level availableMemory = 
+let private tryParseBool value =
+    match value |> string |> fun v -> v.Trim().ToLowerInvariant() with
+    | "1" | "true" | "yes" | "y" | "on" -> Some true
+    | "0" | "false" | "no" | "n" | "off" -> Some false
+    | _ -> None
+
+let optimizerEnabled () =
+    match System.Environment.GetEnvironmentVariable "STACKPROCESSING_OPTIMIZE" with
+    | null | "" -> true
+    | value ->
+        tryParseBool value
+        |> Option.defaultWith (fun () ->
+            failwith $"STACKPROCESSING_OPTIMIZE must be true/false, 1/0, yes/no, or on/off; got '{value}'")
+
+let sourceWithOptimizer optimize availableMemory =
+    Plan.sourceWithOptimizer optimize availableMemory
+
+let source availableMemory =
+    sourceWithOptimizer (optimizerEnabled ()) availableMemory
+
+let debug level optimize availableMemory =
     let level = max 1u level
     Image.Image<_>.setDebugLevel (if level > 1u then level - 1u else 0u)
-    Plan.debug level availableMemory
+    Plan.debug level optimize availableMemory
+
+let debugDefault level availableMemory =
+    debug level (optimizerEnabled ()) availableMemory
+
 let commandLineSource availableMemory (args: string array) =
-    if args.Length >= 2 && args[0] = "-d" then
-        let level =
-            match System.UInt32.TryParse(args[1]) with
-            | true, value -> value
-            | false, _ -> failwith $"Expected unsigned integer debug level after -d, got '{args[1]}'"
-        debug level availableMemory, args |> Array.skip 2
-    else
-        source availableMemory, args
+    let rec parse debugLevel optimize remaining kept =
+        match remaining with
+        | [] -> debugLevel, optimize, kept |> List.rev |> List.toArray
+        | "-d" :: value :: rest
+        | "--debug-level" :: value :: rest ->
+            match System.UInt32.TryParse value with
+            | true, level -> parse (Some level) optimize rest kept
+            | false, _ -> failwith $"Expected unsigned integer debug level after -d, got '{value}'"
+        | ("--no-optimize" | "--no-optimizer") :: rest ->
+            parse debugLevel false rest kept
+        | "--optimize" :: value :: rest
+        | "--optimizer" :: value :: rest ->
+            match tryParseBool value with
+            | Some enabled -> parse debugLevel enabled rest kept
+            | None -> failwith $"Expected boolean optimizer value after --optimize, got '{value}'"
+        | arg :: rest ->
+            parse debugLevel optimize rest (arg :: kept)
+
+    let debugLevel, optimize, rest =
+        parse None (optimizerEnabled ()) (args |> Array.toList) []
+
+    match debugLevel with
+    | Some level -> debug level optimize availableMemory, rest
+    | None -> sourceWithOptimizer optimize availableMemory, rest
  
 let zip = Plan.zip
 
