@@ -18,6 +18,11 @@ This is a running list of issues we have encountered in dependencies while devel
   - Needs a minimal reproduction that calls the SimpleITK speckle-noise path directly.
   - If confirmed, the expected behavior should probably be either identity output or a clear argument error.
 
+- `DiscreteGaussianImageFilter` may have unexpected behavior in the streaming/boundary setup we need.
+  - We saw suspicious smoothing results while using SimpleITK's discrete Gaussian path.
+  - StackProcessing currently avoids that path and builds one explicit Gaussian kernel which is reused through the existing convolution/windowing code.
+  - Before reporting, we should isolate a minimal comparison between SimpleITK discrete Gaussian filtering and explicit convolution with the same kernel and boundary assumptions.
+
 ## ZarrNET
 
 - ZarrNET appears to create debug log files as ordinary filesystem side effects.

@@ -45,8 +45,9 @@ dotnet run --project samples/copy/copy.fsproj -- -d 1
 
 The optional `-d` flag enables debug output. Level `1` reports read and write
 progress only. Level `2` adds plan, stage, and optimization summaries. Level
-`3` adds process RSS measurements. Level `4` is the most intrusive diagnostic
-level and disables optimization choices that would hide internal structure.
+`3` adds process RSS measurements. Optimizer control is intentionally separate
+from debug level so timing runs can opt out of optimization without changing
+diagnostic verbosity.
 
 ## Samples
 

@@ -931,8 +931,6 @@ module DebugLevel =
         level > 0u
     let rssEnabled () =
         level >= 3u
-    let optimizationDisabled () =
-        level >= 4u
 
 type PipelineGraphNode =
     { Id: int
@@ -1537,7 +1535,7 @@ module Plan =
         observations |> List.sumBy (fun observation -> costScore observation.Time)
 
     let private printOptimizationSummary label (pl: Plan<'S,'T>) =
-        if pl.debug && pl.debugLevel >= 2u && pl.debugLevel < 4u then
+        if pl.debug && pl.debugLevel >= 2u then
             let status =
                 if pl.memPeak <= pl.memAvail then "accepted" else "exceeds memory limit"
             let timeText =

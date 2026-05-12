@@ -359,7 +359,6 @@ module DebugLevel =
     val current: unit -> uint32
     val isEnabled: unit -> bool
     val rssEnabled: unit -> bool
-    val optimizationDisabled: unit -> bool
 type PipelineGraphNode =
     {
       Id: int
