@@ -7,7 +7,7 @@
         { "key": "type", "value": "UInt8", "useInput": false },
         { "key": "width", "value": "64", "useInput": false },
         { "key": "height", "value": "64", "useInput": false },
-        { "key": "depth", "value": "16", "useInput": false } ] },
+        { "key": "depth", "value": "64", "useInput": false } ] },
     { "id": "noise", "functionId": "AddSaltAndPepperNoise", "x": 320.0, "y": 120.0,
       "parameters": [
         { "key": "type", "value": "UInt8", "useInput": false },

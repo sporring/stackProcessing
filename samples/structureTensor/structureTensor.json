@@ -9,7 +9,7 @@
       "parameters": [
         {
           "key": "sigma",
-          "value": "1.0",
+          "value": "3.0",
           "useInput": false
         },
         {

@@ -6,7 +6,7 @@ open StackProcessing
 let main arg =
     printfn "Setting up pipeline"
     let availableMemory = 2UL * 1024UL * 1024UL * 1024UL // 1MB for example
-    let radius = 1u
+    let radius = 3u
 
     let src, arg = commandLineSource availableMemory arg
     let width, height, depth, output = 

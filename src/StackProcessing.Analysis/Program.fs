@@ -35,7 +35,7 @@ let private usage () =
     printfn "Usage: dotnet run --project src/StackProcessing.Analysis -- [--samples-root PATH] [--output PATH] [--probing-prefix PATH] [--ridge VALUE]"
     printfn ""
     printfn "Extracts Studio JSON stage keys, optionally merges Probing CSV exports,"
-    printfn "writes a system matrix, and fits least-squares coefficients for each measurement vector."
+    printfn "writes a system matrix, and fits non-negative least-squares coefficients for each measurement vector."
     printfn ""
     printfn "Defaults:"
     printfn "  --samples-root samples"
@@ -174,8 +174,26 @@ let private parameterValues (node: SavedNode) =
 
           parameter.Key, value ]
 
+let private ignoredTimingParameterKeys =
+    set
+        [ "availableMemory"
+          "input"
+          "output"
+          "title"
+          "xAxis"
+          "yAxis"
+          "label"
+          "name"
+          "datasetPath"
+          "physicalSizeX"
+          "physicalSizeY"
+          "physicalSizeZ" ]
+
 let private featureKey (node: SavedNode) =
     let definition, parameters = parameterValues node
+    let parameters =
+        parameters
+        |> List.filter (fun (key, _) -> not (ignoredTimingParameterKeys.Contains key))
 
     match parameters with
     | [] -> definition.Id
@@ -213,7 +231,7 @@ let private discoverGraphs (samplesRoot: string) =
         { RowId = rowId
           Source = "runJson"
           ItemPath = path
-          FeatureValues = features })
+          FeatureValues = features |> Map.add "intercept" 1.0 })
     |> Seq.toList
 
 let private probingRowId rowId =
@@ -247,18 +265,23 @@ let private discoverProbingRows prefixes =
                 let rowIdIndex = columnIndex "rowId" header
                 let featureIndex = columnIndex "featureKey" header
                 let valueIndex = columnIndex "value" header
+                let featureKindIndex = columnIndex "featureKind" header
+                let includedFeatureKinds =
+                    set [ "sampleCompatible"; "costUnits" ]
 
                 rows
                 |> List.choose (fun row ->
                     let rowId = columnValue rowIdIndex row
                     let feature = columnValue featureIndex row
                     let value = columnValue valueIndex row
+                    let featureKind = columnValue featureKindIndex row
 
-                    match rowId, feature, tryParseCsvFloat value with
-                    | "", _, _
-                    | _, "", _
-                    | _, _, None -> None
-                    | rowId, feature, Some value -> Some(probingRowId rowId, feature, value))
+                    match rowId, feature, includedFeatureKinds.Contains featureKind, tryParseCsvFloat value with
+                    | "", _, _, _
+                    | _, "", _, _
+                    | _, _, false, _
+                    | _, _, _, None -> None
+                    | rowId, feature, true, Some value -> Some(probingRowId rowId, feature, value))
                 |> List.groupBy (fun (rowId, _, _) -> rowId)
                 |> List.map (fun (rowId, values) ->
                     let features =
@@ -269,7 +292,7 @@ let private discoverProbingRows prefixes =
                     { RowId = rowId
                       Source = "probing"
                       ItemPath = rowPaths |> Map.tryFind rowId |> Option.defaultValue prefix
-                      FeatureValues = features })
+                      FeatureValues = features |> Map.add "intercept" 1.0 })
             | [] -> []
 
         featureGroups)
@@ -496,7 +519,7 @@ let private fitMeasurements (ridge: float) (rows: AnalysisRow list) (features: s
         if usable.Length = 0 then
             []
         else
-            let coefficients = TinyLinAlg.Dense.leastSquares ridge a y
+            let coefficients = TinyLinAlg.Dense.nonNegativeLeastSquares ridge 20000 1e-10 a y
             let predicted = TinyLinAlg.Dense.predict a coefficients
             let mean = y |> Array.average
             let residuals = Array.map2 (fun actual fit -> actual - fit) y predicted
@@ -525,6 +548,15 @@ let private writeOutputs (options: Options) (rows: AnalysisRow list) =
         @ probingMeasurements options.ProbingPrefixes
 
     let matrixValues = matrix rows features
+    let featureSupport =
+        features
+        |> List.map (fun feature ->
+            let count =
+                rows
+                |> List.sumBy (fun row -> if row.FeatureValues.ContainsKey feature then 1 else 0)
+
+            feature, count)
+        |> Map.ofList
 
     writeCsv
         (Path.Combine(options.OutputDirectory, "rows.csv"))
@@ -564,6 +596,18 @@ let private writeOutputs (options: Options) (rows: AnalysisRow list) =
                     rows[rowIndex].RowId
                     :: [ for col in 0 .. features.Length - 1 ->
                            if matrixValues[rowIndex, col] = 0.0 then "0" else "1" ]
+        })
+
+    writeCsv
+        (Path.Combine(options.OutputDirectory, "featureDiagnostics.csv"))
+        (seq {
+            yield [ "featureKey"; "supportCount"; "supportRatio" ]
+            for feature in features do
+                let count = featureSupport[feature]
+                yield
+                    [ feature
+                      string count
+                      invariant (float count / float rows.Length) ]
         })
 
     writeCsv
@@ -608,7 +652,7 @@ let private writeOutputs (options: Options) (rows: AnalysisRow list) =
     writeCsv
         (Path.Combine(options.OutputDirectory, "coefficients.csv"))
         (seq {
-            yield [ "measurement"; "featureKey"; "coefficient"; "rowCount"; "columnCount"; "rmse"; "r2"; "ridge" ]
+            yield [ "measurement"; "featureKey"; "coefficient"; "supportCount"; "rowCount"; "columnCount"; "rmse"; "r2"; "ridge"; "solver" ]
             for fit in fitRows do
                 match fit with
                 | Choice1Of2((measurement, rowCount, columnCount, rmse, r2), feature, coefficient) ->
@@ -616,18 +660,20 @@ let private writeOutputs (options: Options) (rows: AnalysisRow list) =
                         [ measurement
                           feature
                           invariant coefficient
+                          string featureSupport[feature]
                           string rowCount
                           string columnCount
                           invariant rmse
                           invariant r2
-                          invariant options.Ridge ]
+                          invariant options.Ridge
+                          "nonNegativeLeastSquares" ]
                 | Choice2Of2 _ -> ()
         })
 
     writeCsv
         (Path.Combine(options.OutputDirectory, "predictions.csv"))
         (seq {
-            yield [ "rowId"; "measurement"; "actual"; "predicted"; "residual"; "rowCount"; "columnCount"; "rmse"; "r2"; "ridge" ]
+            yield [ "rowId"; "measurement"; "actual"; "predicted"; "residual"; "rowCount"; "columnCount"; "rmse"; "r2"; "ridge"; "solver" ]
             for fit in fitRows do
                 match fit with
                 | Choice1Of2 _ -> ()
@@ -642,7 +688,8 @@ let private writeOutputs (options: Options) (rows: AnalysisRow list) =
                           string columnCount
                           invariant rmse
                           invariant r2
-                          invariant options.Ridge ]
+                          invariant options.Ridge
+                          "nonNegativeLeastSquares" ]
         })
 
     printfn "wrote %d rows, %d features, %d measurements to %s" rows.Length features.Length measurements.Length options.OutputDirectory

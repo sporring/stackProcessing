@@ -14,7 +14,7 @@ let main args =
 
     src
     |> read<uint8> input ".tiff"
-    >=> grayscaleDilate<uint8> 1u 5u
+    >=> grayscaleDilate<uint8> 3u 7u
     >=> write output ".tiff"
     |> sink
 

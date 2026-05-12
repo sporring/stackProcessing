@@ -50,7 +50,7 @@
         { "key": "input", "value": "../tmp/resampleAffineTrilinearSlicesChunks", "useInput": false },
         { "key": "suffix", "value": ".tiff", "useInput": false },
         { "key": "lerp", "value": "(fun a b t -> a + (b - a) * t)", "useInput": false },
-        { "key": "windowSize", "value": "16", "useInput": false },
+        { "key": "windowSize", "value": "7", "useInput": false },
         { "key": "inputGeometry", "value": "{ W = 512; H = 384; D = 16; Origin = TinyLinAlg.v3 0.0 0.0 0.0; Spacing = TinyLinAlg.v3 1.0 1.0 1.0; Direction = { m00 = 1.0; m01 = 0.0; m02 = 0.0; m10 = 0.0; m11 = 1.0; m12 = 0.0; m20 = 0.0; m21 = 0.0; m22 = 1.0 } }", "useInput": false },
         { "key": "outputGeometry", "value": "{ W = 128; H = 128; D = 8; Origin = TinyLinAlg.v3 0.0 0.0 0.0; Spacing = TinyLinAlg.v3 1.0 1.0 1.0; Direction = { m00 = 1.0; m01 = 0.0; m02 = 0.0; m10 = 0.0; m11 = 1.0; m12 = 0.0; m20 = 0.0; m21 = 0.0; m22 = 1.0 } }", "useInput": false },
         { "key": "affine", "value": "{ A = { m00 = 1.0; m01 = 0.0; m02 = 0.0; m10 = 0.0; m11 = 1.0; m12 = 0.0; m20 = 0.0; m21 = 0.0; m22 = 1.0 }; T = TinyLinAlg.v3 4.0 -2.0 0.0; C = TinyLinAlg.v3 64.0 64.0 4.0 }", "useInput": false },

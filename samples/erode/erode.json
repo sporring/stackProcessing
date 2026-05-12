@@ -9,7 +9,7 @@
       "parameters": [
         {
           "key": "radius",
-          "value": "16",
+          "value": "3",
           "useInput": false
         }
       ]

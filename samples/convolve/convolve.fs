@@ -16,7 +16,7 @@ let main args =
 
     src
     |> read<float> input ".tiff"
-    >=> convolve kernel (Some ImageFunctions.Same) (Some ImageFunctions.ZeroFluxNeumannPad) (Some 8u)
+    >=> convolve kernel (Some ImageFunctions.Same) (Some ImageFunctions.ZeroFluxNeumannPad) (Some 7u)
     >=> intensityStretch<float> 0.0 255.0 0.0 255.0
     >=> cast<float, uint8>
     >=> write output ".tiff"

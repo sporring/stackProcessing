@@ -1059,9 +1059,9 @@ module PipelineCodeGenerator =
             let availableMemory = parameterValue "availableMemory"
             let pixelType = pixelTypeNameFromParameter "type" "Float64" node
             let format = savedParamValue "format" node
-            let first = quotedParameter "first"
+            let first = parameterValue "first"
             let step = parameterValue "step"
-            let last = quotedParameter "last"
+            let last = parameterValue "last"
             let input = quotedParameter "input"
             let suffix = quotedParameterOrDefault "suffix" ".tiff"
             match format with

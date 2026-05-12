@@ -523,7 +523,7 @@ let stackProcessingSupportSuite =
 
                 let rangeSlices =
                     source (2UL * 1024UL * 1024UL * 1024UL)
-                    |> readRange<uint8> "1" 2 "end" inputDir suffix
+                    |> readRange<uint8> 1u 2 UInt32.MaxValue inputDir suffix
                     |> drainList
 
                 try
@@ -534,7 +534,7 @@ let stackProcessingSupportSuite =
 
                 let clampedRangeSlices =
                     source (2UL * 1024UL * 1024UL * 1024UL)
-                    |> readRange<uint8> "-10" 2 "end+10" inputDir suffix
+                    |> readRange<uint8> 0u 2 UInt32.MaxValue inputDir suffix
                     |> drainList
 
                 try
@@ -546,7 +546,7 @@ let stackProcessingSupportSuite =
 
                 let reverseRangeSlices =
                     source (2UL * 1024UL * 1024UL * 1024UL)
-                    |> readRange<uint8> "end" -1 "0" inputDir suffix
+                    |> readRange<uint8> UInt32.MaxValue -1 0u inputDir suffix
                     |> drainList
 
                 try

@@ -14,7 +14,7 @@ let main args =
 
     src
     |> read<uint8> input ".tiff"
-    >=> morphologicalGradient<uint8> 1u 5u
+    >=> morphologicalGradient<uint8> 3u 7u
     >=> write output ".tiff"
     |> sink
 

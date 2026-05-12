@@ -12,7 +12,7 @@ let main args =
         | _ -> "../tmp/speckleNoise"
 
     src
-    |> speckleNoise<float> 64u 64u 16u 0.5
+    |> speckleNoise<float> 64u 64u 64u 0.5
     >=> cast<float, uint8>
     >=> write output ".tiff"
     |> sink

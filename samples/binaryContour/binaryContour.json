@@ -11,7 +11,7 @@
     { "id": "contour", "functionId": "BinaryContour", "x": 320.0, "y": 120.0,
       "parameters": [
         { "key": "fullyConnected", "value": "false", "useInput": false },
-        { "key": "windowSize", "value": "5", "useInput": false } ] },
+        { "key": "windowSize", "value": "7", "useInput": false } ] },
     { "id": "write", "functionId": "Write", "x": 560.0, "y": 120.0,
       "parameters": [
         { "key": "format", "value": "Image stack", "useInput": false },

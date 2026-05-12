@@ -19,7 +19,7 @@ let main args =
     deleteIfExists output
 
     src
-    |> readRange<uint8> "0" 1 "15" input ".tiff"
+    |> readRange<uint8> 0u 1 15u input ".tiff"
     >=> writeChunks chunks ".tiff" 16u 16u 16u
     >=> ignoreSingles ()
     |> sink

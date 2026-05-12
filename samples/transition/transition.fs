@@ -5,7 +5,7 @@ open StackProcessing
 [<EntryPoint>]
 let main arg =
     let availableMemory = 2UL * 1024UL * 1024UL *1024UL // 1MB for example
-    let sigma = 1.0
+    let sigma = 3.0
 
     let src, arg = commandLineSource availableMemory arg
     let input,output = 

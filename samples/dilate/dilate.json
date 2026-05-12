@@ -10,7 +10,7 @@
         { "key": "suffix", "value": ".tiff", "useInput": false } ] },
     { "id": "dilate", "functionId": "Dilate", "x": 320.0, "y": 120.0,
       "parameters": [
-        { "key": "radius", "value": "2", "useInput": false } ] },
+        { "key": "radius", "value": "3", "useInput": false } ] },
     { "id": "write", "functionId": "Write", "x": 560.0, "y": 120.0,
       "parameters": [
         { "key": "format", "value": "Image stack", "useInput": false },

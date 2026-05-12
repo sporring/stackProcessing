@@ -15,7 +15,7 @@ let main args =
         | _ -> "../data/volume", "../tmp/structureTensorEigenvector0Color"
 
     src
-    |> readRange<float> "0" 1 "31" input ".tiff"
+    |> readRange<float> 0u 1 31u input ".tiff"
     >=> structureTensor 1.0 0.0
     >=> vectorRange<float> 3u 3u
     >=> vector3ToColor -1.0 1.0

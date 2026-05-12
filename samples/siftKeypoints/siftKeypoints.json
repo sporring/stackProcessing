@@ -1,0 +1,30 @@
+{
+  "version": 1,
+  "nodes": [
+    { "id": "source", "functionId": "NormalNoise", "x": 100.0, "y": 120.0,
+      "parameters": [
+        { "key": "availableMemory", "value": "2147483648UL", "useInput": false },
+        { "key": "type", "value": "Float64", "useInput": false },
+        { "key": "width", "value": "64", "useInput": false },
+        { "key": "height", "value": "64", "useInput": false },
+        { "key": "depth", "value": "64", "useInput": false },
+        { "key": "mean", "value": "128.0", "useInput": false },
+        { "key": "std", "value": "25.0", "useInput": false } ] },
+    { "id": "keypoints", "functionId": "SiftKeypoints", "x": 330.0, "y": 120.0,
+      "parameters": [
+        { "key": "type", "value": "Float64", "useInput": false },
+        { "key": "sigma0", "value": "3.0", "useInput": false },
+        { "key": "scaleFactor", "value": "1.6", "useInput": false },
+        { "key": "scaleLevels", "value": "4", "useInput": false },
+        { "key": "contrastThreshold", "value": "0.1", "useInput": false },
+        { "key": "stride", "value": "16", "useInput": false } ] },
+    { "id": "write", "functionId": "WritePointSet", "x": 580.0, "y": 120.0,
+      "parameters": [
+        { "key": "output", "value": "../tmp/siftKeypoints", "useInput": false },
+        { "key": "suffix", "value": ".csv", "useInput": false } ] }
+  ],
+  "edges": [
+    { "fromNode": "source", "fromKind": "dataOutput", "fromPort": 0, "toNode": "keypoints", "toKind": "dataInput", "toPort": 0 },
+    { "fromNode": "keypoints", "fromKind": "dataOutput", "fromPort": 0, "toNode": "write", "toKind": "dataInput", "toPort": 0 }
+  ]
+}

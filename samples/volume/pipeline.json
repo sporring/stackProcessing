@@ -19,12 +19,12 @@
         },
         {
           "key": "format",
-          "value": "Image stack",
+          "value": "Volume file",
           "useInput": false
         },
         {
           "key": "input",
-          "value": "../data/volume",
+          "value": "../data/volumedata.tif",
           "useInput": false
         },
         {
@@ -86,8 +86,41 @@
     },
     {
       "id": "node-2",
-      "functionId": "Write",
+      "functionId": "Resize",
       "x": 1480.69921875,
+      "y": 948.9993286132812,
+      "parameters": [
+        {
+          "key": "type",
+          "value": "UInt8",
+          "useInput": false
+        },
+        {
+          "key": "width",
+          "value": "64",
+          "useInput": false
+        },
+        {
+          "key": "height",
+          "value": "64",
+          "useInput": false
+        },
+        {
+          "key": "depth",
+          "value": "64",
+          "useInput": false
+        },
+        {
+          "key": "interpolation",
+          "value": "Linear",
+          "useInput": false
+        }
+      ]
+    },
+    {
+      "id": "node-3",
+      "functionId": "Write",
+      "x": 1695.69921875,
       "y": 948.9993286132812,
       "parameters": [
         {
@@ -179,6 +212,14 @@
       "fromKind": "dataOutput",
       "fromPort": 0,
       "toNode": "node-2",
+      "toKind": "dataInput",
+      "toPort": 0
+    },
+    {
+      "fromNode": "node-2",
+      "fromKind": "dataOutput",
+      "fromPort": 0,
+      "toNode": "node-3",
       "toKind": "dataInput",
       "toPort": 0
     }

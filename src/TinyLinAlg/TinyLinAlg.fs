@@ -187,6 +187,66 @@ module Dense =
 
         solveLinearSystem ata aty
 
+    let nonNegativeLeastSquares ridge maxIterations tolerance (a: float[,]) (y: float[]) =
+        checkMatrixVectorShape a y
+        if ridge < 0.0 then
+            invalidArg "ridge" "Ridge regularization must be non-negative."
+        if maxIterations <= 0 then
+            invalidArg "maxIterations" "Iteration count must be positive."
+        if tolerance < 0.0 then
+            invalidArg "tolerance" "Tolerance must be non-negative."
+
+        let rows = a.GetLength(0)
+        let cols = a.GetLength(1)
+        let x = Array.zeroCreate<float> cols
+        let residual = Array.copy y
+        let mutable largestColumnNormSquared = 0.0
+
+        let columnNormSquared col =
+            let mutable total = ridge
+            for row in 0 .. rows - 1 do
+                let value = a[row, col]
+                total <- total + value * value
+            total
+
+        let columnNorms = Array.init cols columnNormSquared
+
+        for norm in columnNorms do
+            if norm > largestColumnNormSquared then
+                largestColumnNormSquared <- norm
+
+        let toleranceScaled = tolerance * max 1.0 largestColumnNormSquared
+        let mutable iteration = 0
+        let mutable keepGoing = true
+
+        while keepGoing && iteration < maxIterations do
+            keepGoing <- false
+            iteration <- iteration + 1
+
+            for col in 0 .. cols - 1 do
+                let oldValue = x[col]
+                let mutable gradientNumerator = 0.0
+
+                for row in 0 .. rows - 1 do
+                    gradientNumerator <- gradientNumerator + a[row, col] * residual[row]
+
+                gradientNumerator <- gradientNumerator - ridge * oldValue
+
+                if columnNorms[col] > 0.0 then
+                    let newValue = max 0.0 (oldValue + gradientNumerator / columnNorms[col])
+                    let delta = newValue - oldValue
+
+                    if abs delta > toleranceScaled then
+                        keepGoing <- true
+
+                    if delta <> 0.0 then
+                        x[col] <- newValue
+
+                        for row in 0 .. rows - 1 do
+                            residual[row] <- residual[row] - a[row, col] * delta
+
+        x
+
     let predict (a: float[,]) (coefficients: float[]) =
         if a.GetLength(1) <> coefficients.Length then
             invalidArg "coefficients" $"Matrix column count {a.GetLength(1)} must match coefficient count {coefficients.Length}."

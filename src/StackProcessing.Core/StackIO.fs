@@ -698,29 +698,6 @@ let readVolume<'T when 'T: equality> (filename: string) (pl: Plan<unit, unit>) :
     else
         readSimpleItkVolume<'T> filename pl
 
-let private parseRangeEndpoint (depth: int) (name: string) (value: string) =
-    if depth <= 0 then
-        0
-    else
-        let trimmed = value.Trim().ToLowerInvariant().Replace(" ", "")
-        let lastIndex = depth - 1
-        let parsed =
-            if trimmed = "end" then
-                lastIndex
-            elif trimmed.StartsWith("end-") then
-                match Int32.TryParse(trimmed.Substring(4)) with
-                | true, offset -> lastIndex - offset
-                | false, _ -> invalidArg name $"Could not parse range endpoint '{value}'. Use an integer, end, or end-n."
-            elif trimmed.StartsWith("end+") then
-                match Int32.TryParse(trimmed.Substring(4)) with
-                | true, offset -> lastIndex + offset
-                | false, _ -> invalidArg name $"Could not parse range endpoint '{value}'. Use an integer, end, or end-n."
-            else
-                match Int32.TryParse(trimmed) with
-                | true, index -> index
-                | false, _ -> invalidArg name $"Could not parse range endpoint '{value}'. Use an integer, end, or end-n."
-        min lastIndex (max 0 parsed)
-
 let private randomIndices count depth =
     if depth <= 0 then
         invalidArg "depth" "Cannot sample random slices from an empty image source."
@@ -728,15 +705,16 @@ let private randomIndices count depth =
     let rng = Random()
     Array.init (int count) (fun _ -> rng.Next(depth))
 
-let private rangeIndices first step last depth =
+let private rangeIndices (first: uint) step (last: uint) depth =
     if step = 0 then
         invalidArg "step" "readRange step must be non-zero."
 
     if depth <= 0 then
         [||]
     else
-        let startIndex = parseRangeEndpoint depth "first" first
-        let lastIndex = parseRangeEndpoint depth "last" last
+        let maxIndex = depth - 1
+        let startIndex = min maxIndex (int first)
+        let lastIndex = min maxIndex (int last)
 
         if step > 0 && startIndex > lastIndex then
             [||]
@@ -883,7 +861,7 @@ let readVolumeRandom<'T when 'T: equality> (count: uint) (filename: string) (pl:
     else
         readSimpleItkVolumeRandom<'T> count filename pl
 
-let private readTiffVolumeRange<'T when 'T: equality> (first: string) (step: int) (last: string) (filename: string) (pl: Plan<unit, unit>) : Plan<unit, Image<'T>> =
+let private readTiffVolumeRange<'T when 'T: equality> (first: uint) (step: int) (last: uint) (filename: string) (pl: Plan<unit, unit>) : Plan<unit, Image<'T>> =
     use header = Tiff.Open(filename, "r")
     if isNull header then
         invalidOp $"Could not open '{filename}' for TIFF volume reading."
@@ -918,9 +896,9 @@ let private readTiffVolumeRange<'T when 'T: equality> (first: string) (step: int
                   "depth", string selected.Length
                   "sourceDepth", string sourceDepth
                   "pixelType", typeof<'T>.Name
-                  "first", first
+                  "first", string first
                   "step", string step
-                  "last", last ])
+                  "last", string last ])
 
     let mapper (outputIndex: int) =
         let sourceIndex = selected[outputIndex]
@@ -959,7 +937,7 @@ let private readTiffVolumeRange<'T when 'T: equality> (first: string) (step: int
     Plan.create stage pl.memAvail pixelBytes (uint64 width * uint64 height) (uint64 selected.Length) pl.debug
     |> Plan.withSourcePeek sourcePeek
 
-let private readSimpleItkVolumeRange<'T when 'T: equality> (first: string) (step: int) (last: string) (filename: string) (pl: Plan<unit, unit>) : Plan<unit, Image<'T>> =
+let private readSimpleItkVolumeRange<'T when 'T: equality> (first: uint) (step: int) (last: uint) (filename: string) (pl: Plan<unit, unit>) : Plan<unit, Image<'T>> =
     use infoReader = imageFileReaderInfo filename
     let dimension = int (infoReader.GetDimension())
     if dimension < 2 || dimension > 3 then
@@ -984,9 +962,9 @@ let private readSimpleItkVolumeRange<'T when 'T: equality> (first: string) (step
                   "depth", string selected.Length
                   "sourceDepth", string sourceDepth
                   "pixelType", typeof<'T>.Name
-                  "first", first
+                  "first", string first
                   "step", string step
-                  "last", last ])
+                  "last", string last ])
 
     let mapper (outputIndex: int) =
         let sourceIndex = selected[outputIndex]
@@ -1021,7 +999,7 @@ let private readSimpleItkVolumeRange<'T when 'T: equality> (first: string) (step
     Plan.create stage pl.memAvail pixelBytes (uint64 width * uint64 height) (uint64 selected.Length) pl.debug
     |> Plan.withSourcePeek sourcePeek
 
-let readVolumeRange<'T when 'T: equality> (first: string) (step: int) (last: string) (filename: string) (pl: Plan<unit, unit>) : Plan<unit, Image<'T>> =
+let readVolumeRange<'T when 'T: equality> (first: uint) (step: int) (last: uint) (filename: string) (pl: Plan<unit, unit>) : Plan<unit, Image<'T>> =
     if isTiffVolumePath filename then
         readTiffVolumeRange<'T> first step last filename pl
     else
@@ -1092,7 +1070,7 @@ let private rangeFilter first step last files =
     rangeIndices first step last sorted.Length
     |> Array.map (fun index -> sorted[index])
 
-let readRange<'T when 'T: equality> (first: string) (step: int) (last: string) (inputDir: string) (suffix: string) (pl: Plan<unit, unit>) : Plan<unit, Image<'T>> =
+let readRange<'T when 'T: equality> (first: uint) (step: int) (last: uint) (inputDir: string) (suffix: string) (pl: Plan<unit, unit>) : Plan<unit, Image<'T>> =
     let info = getStackInfo inputDir suffix
     let width = uint info.size[0]
     let height = uint info.size[1]
@@ -1116,9 +1094,9 @@ let readRange<'T when 'T: equality> (first: string) (step: int) (last: string) (
                   "depth", string selectedDepth
                   "sourceDepth", string info.size[2]
                   "pixelType", typeof<'T>.Name
-                  "first", first
+                  "first", string first
                   "step", string step
-                  "last", last ])
+                  "last", string last ])
 
     pl
     |> getFilenames inputDir suffix (rangeFilter first step last)
@@ -1521,9 +1499,9 @@ let readZarrRandom<'T when 'T: equality>
     |> Plan.withSourcePeek sourcePeek
 
 let readZarrRange<'T when 'T: equality>
-    (first: string)
+    (first: uint)
     (step: int)
-    (last: string)
+    (last: uint)
     (path: string)
     (multiscaleIndex: int)
     (datasetIndex: int)
@@ -1569,9 +1547,9 @@ let readZarrRange<'T when 'T: equality>
                   "datasetIndex", string datasetIndex
                   "timepoint", string timepoint
                   "channel", string channel
-                  "first", first
+                  "first", string first
                   "step", string step
-                  "last", last ])
+                  "last", string last ])
 
     let mapper (outputIndex: int) : Image<'T> =
         let zIndex = selected[outputIndex]
@@ -1806,9 +1784,9 @@ let readNexusRandom<'T when 'T: equality>
     |> Plan.withSourcePeek sourcePeek
 
 let readNexusRange<'T when 'T: equality>
-    (first: string)
+    (first: uint)
     (step: int)
-    (last: string)
+    (last: uint)
     (path: string)
     (datasetPath: string)
     (frameAxis: int)
@@ -1850,9 +1828,9 @@ let readNexusRange<'T when 'T: equality>
                   "frameAxis", string frameAxis
                   "yAxis", string yAxis
                   "xAxis", string xAxis
-                  "first", first
+                  "first", string first
                   "step", string step
-                  "last", last ])
+                  "last", string last ])
 
     let mapper (outputIndex: int) : Image<'T> =
         let zIndex = selected[outputIndex]

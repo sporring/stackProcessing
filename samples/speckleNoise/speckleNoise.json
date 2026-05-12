@@ -7,7 +7,7 @@
         { "key": "type", "value": "Float64", "useInput": false },
         { "key": "width", "value": "64", "useInput": false },
         { "key": "height", "value": "64", "useInput": false },
-        { "key": "depth", "value": "16", "useInput": false },
+        { "key": "depth", "value": "64", "useInput": false },
         { "key": "std", "value": "0.5", "useInput": false } ] },
     { "id": "cast", "functionId": "Cast", "x": 320.0, "y": 120.0,
       "parameters": [

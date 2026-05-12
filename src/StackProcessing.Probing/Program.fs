@@ -105,6 +105,12 @@ let private availableMemory = 2UL * 1024UL * 1024UL * 1024UL
 let private sampleIntervalMs = 10
 let private warmupCount = 1
 let private repetitionCount = 5
+let private canonicalDepth = 64u
+let private canonicalRadius = 3u
+let private canonicalWindowSize = 2u * canonicalRadius + 1u
+let private canonicalSigma = 3.0
+let private canonicalSigmaText = "3.0"
+let private canonicalKernelSize = canonicalWindowSize
 
 type ImageSize =
     { Width: uint
@@ -119,11 +125,11 @@ let private imageSize xy depth =
       Height = xy
       Depth = depth }
 
-let private depthsFrom baseDepth =
-    [ baseDepth; baseDepth + 1u; baseDepth + 2u ]
+let private defaultDepths =
+    [ canonicalDepth ]
 
-let private defaultDepths = depthsFrom 3u
-let private singletonDepths = depthsFrom 1u
+let private singletonDepths =
+    [ canonicalDepth ]
 
 let private inputDepths =
     defaultDepths @ singletonDepths
@@ -135,15 +141,26 @@ let private inputSizes =
           for depth in inputDepths do
               imageSize xy depth ]
 
+let private boilerplateXySizes =
+    xySizes
+
+let private boilerplateDepths =
+    defaultDepths
+
+let private boilerplateInputSizes =
+    [ for xy in boilerplateXySizes do
+          for depth in boilerplateDepths do
+              imageSize xy depth ]
+
 let private convolutionBreakdownSizes =
-    [ 16u; 32u; 64u ]
-    |> List.map (fun side -> imageSize side side)
+    xySizes
+    |> List.map (fun side -> imageSize side canonicalDepth)
 
 let private gaussianWindowSizes =
-    [ 5u; 9u; 15u ]
+    [ canonicalWindowSize ]
 
 let private unaryWindowSizes =
-    [ 1u; 5u; 9u; 15u ]
+    [ canonicalWindowSize ]
 
 let private stackUnstackWindowSizes =
     gaussianWindowSizes
@@ -278,6 +295,90 @@ let private stageFeatureKey (probe: ProbeResultJson) =
     | "" -> stageOrOperation
     | parameters -> $"{stageOrOperation}:{parameters}"
 
+let private probeParameter key (probe: ProbeResultJson) =
+    probe |> tryParameter key |> Option.defaultValue ""
+
+let private stageParameter key defaultValue (probe: ProbeResultJson) =
+    probe |> tryParameter key |> Option.defaultValue defaultValue
+
+let private sampleCompatibleProbeFeatures (probe: ProbeResultJson) =
+    let depth = probeParameter "depth" probe
+    let width = probeParameter "width" probe
+    let height = probeParameter "height" probe
+    let pixelType = probeParameter "pixelType" probe
+    let capitalizedType =
+        match pixelType.ToLowerInvariant() with
+        | "uint8" -> "UInt8"
+        | "float" -> "Float64"
+        | other -> other
+
+    let readFeature =
+        $"Read:type={capitalizedType}:format=Image stack:suffix=.tiff:slabDepth=1:multiscaleIndex=0:datasetIndex=0:timepoint=0:channel=0:maxParallelChunks=0:frameAxis=0:yAxis=1:xAxis=2"
+
+    let writeFeature =
+        "Write:format=Image stack:suffix=.tiff:depth=1:chunkX=64:chunkY=64:chunkZ=8:maxConcurrentWrites=0:frameAxis=0:yAxis=1:xAxis=2"
+
+    let zeroFeature =
+        $"Zero:type={capitalizedType}:width={width}:height={height}:depth={depth}"
+    let mean = stageParameter "mean" "128.0" probe
+    let std = stageParameter "std" "50.0" probe
+    let thresholdValue = stageParameter "threshold" "128.0" probe
+    let windowSize = stageParameter "windowSize" "1" probe
+    let sigma = stageParameter "sigma" canonicalSigmaText probe
+    let kernelSize = stageParameter "kernelSize" "<empty>" probe
+
+    seq {
+        match operationName probe with
+        | "zero" ->
+            yield zeroFeature
+        | "zero-write" ->
+            yield zeroFeature
+            yield writeFeature
+        | "noise-write" ->
+            yield zeroFeature
+            yield $"AddNormalNoise:type={capitalizedType}:mean={mean}:std={std}"
+            yield writeFeature
+        | "read-ignore" ->
+            yield readFeature
+        | "read-write" ->
+            yield readFeature
+            yield writeFeature
+        | "threshold-write" ->
+            yield zeroFeature
+            yield $"AddNormalNoise:type={capitalizedType}:mean={mean}:std={std}"
+            yield $"Threshold:type={capitalizedType}:lower={thresholdValue}:upper=infinity"
+            yield "ImageOpScalar:operation=*:type=UInt8:value=255"
+            yield writeFeature
+        | "compute-stats" ->
+            yield readFeature
+            yield "ComputeStats"
+        | "sqrt" ->
+            yield zeroFeature
+            yield $"ImageOpScalar:operation=+:type={capitalizedType}:value=4.0"
+            yield $"Sqrt:type={capitalizedType}"
+        | "sqrt-write" ->
+            yield zeroFeature
+            yield $"ImageOpScalar:operation=+:type={capitalizedType}:value=4.0"
+            yield $"Sqrt:type={capitalizedType}"
+            yield "Cast:sourceType=Float64:targetType=UInt8"
+            yield writeFeature
+        | "sqrt-windowed"
+        | "sqrt-windowed-write" ->
+            yield zeroFeature
+            yield $"ImageOpScalar:operation=+:type={capitalizedType}:value=4.0"
+            yield $"SqrtWindowed:type={capitalizedType}:windowSize={windowSize}"
+            if operationName probe = "sqrt-windowed-write" then
+                yield "Cast:sourceType=Float64:targetType=UInt8"
+                yield writeFeature
+        | "smoothWGauss-write" ->
+            yield readFeature
+            yield $"SmoothWGauss:type={capitalizedType}:sigma={sigma}:kernelSize={kernelSize}:boundary=<empty>:windowSize={windowSize}"
+            yield "Cast:sourceType=Float64:targetType=UInt8"
+            yield writeFeature
+        | _ -> ()
+    }
+    |> Seq.toList
+
 let private parseCsvLine (line: string) =
     let values = ResizeArray<string>()
     let current = System.Text.StringBuilder()
@@ -303,7 +404,7 @@ let private parseCsvLine (line: string) =
     values.Add(current.ToString())
     values |> Seq.toList
 
-let private loadAnalysisFeatureTokens path =
+let private loadAnalysisFeatureTokens supportThreshold path =
     if String.IsNullOrWhiteSpace path || not (File.Exists path) then
         Set.empty
     else
@@ -318,12 +419,21 @@ let private loadAnalysisFeatureTokens path =
             match featureIndex with
             | None -> Set.empty
             | Some featureIndex ->
-                lines
-                |> Seq.skip 1
-                |> Seq.choose (fun line ->
-                    let columns = parseCsvLine line
-                    if featureIndex < columns.Length then Some columns[featureIndex] else None)
-                |> Seq.collect (fun feature ->
+                let features =
+                    lines
+                    |> Seq.skip 1
+                    |> Seq.choose (fun line ->
+                        let columns = parseCsvLine line
+                        if featureIndex < columns.Length then Some columns[featureIndex] else None)
+                    |> Seq.countBy id
+                    |> Seq.filter (fun (feature, count) ->
+                        feature <> "intercept"
+                        && match supportThreshold with
+                           | Some threshold -> count <= threshold
+                           | None -> true)
+
+                features
+                |> Seq.collect (fun (feature, _) ->
                     let normalized = normalizedIdentifier feature
                     let operation =
                         match feature.Split([| ':' |], 2) with
@@ -358,11 +468,11 @@ let private probeMatchesAnalysisTokens tokens (probe: ProbeResultJson) =
                 candidate.Contains(token, StringComparison.Ordinal)
                 || token.Contains(candidate, StringComparison.Ordinal)))
 
-let private filterProbesByAnalysisFeatures analysisFeaturesPath probes =
+let private filterProbesByAnalysisFeatures supportThreshold analysisFeaturesPath probes =
     match analysisFeaturesPath with
     | None -> probes
     | Some path ->
-        let tokens = loadAnalysisFeatureTokens path
+        let tokens = loadAnalysisFeatureTokens supportThreshold path
         let filtered = probes |> Array.filter (probeMatchesAnalysisTokens tokens)
         printfn "Analysis feature restriction kept %d of %d probes from %s." filtered.Length probes.Length path
         filtered
@@ -695,6 +805,9 @@ let private writeProbeAnalysisCsvs reportPath (calibrations: Dictionary<string, 
                 yield [ probe.name; $"operation:{operationName probe}"; "1"; "operation" ]
                 yield [ probe.name; $"stage:{stageFeatureKey probe}"; "1"; "stage" ]
 
+                for feature in sampleCompatibleProbeFeatures probe do
+                    yield [ probe.name; feature; "1"; "sampleCompatible" ]
+
                 for timeCost in probe.costTimes do
                     yield [ probe.name; $"cost:{timeCost.calibrationKey}:present"; "1"; "costPresence" ]
 
@@ -851,7 +964,7 @@ let private stackDiscreteGaussianWindow (kernelSize: uint) (window: Window<Image
     | items ->
         let stack = ImageFunctions.stack items
         releaseConsumedImages window
-        let filtered = ImageFunctions.discreteGaussian 3u 1.0 (Some kernelSize) None None stack
+        let filtered = ImageFunctions.discreteGaussian 3u canonicalSigma (Some kernelSize) None None stack
         stack.decRefCount()
         [ filtered ]
 
@@ -917,6 +1030,7 @@ let private cleanDirectory path =
 type ProbeOptions =
     { ReportPath: string
       AnalysisFeaturesPath: string option
+      LowSupportThreshold: int option
       NonBoilerplate: bool
       SqrtOnly: bool
       StackUnstackOnly: bool
@@ -926,6 +1040,7 @@ type ProbeOptions =
 let private parseArgs (args: string array) =
     let mutable reportPath = None
     let mutable analysisFeaturesPath = None
+    let mutable lowSupportThreshold = Some 2
     let mutable nonBoilerplate = false
     let mutable sqrtOnly = false
     let mutable stackUnstackOnly = false
@@ -940,6 +1055,18 @@ let private parseArgs (args: string array) =
                 failwith "Expected a path after --analysis-features."
             analysisFeaturesPath <- Some(Path.GetFullPath args[i + 1])
             i <- i + 2
+        | "--low-support-threshold" ->
+            if i + 1 >= args.Length then
+                failwith "Expected an integer after --low-support-threshold."
+            match Int32.TryParse args[i + 1] with
+            | true, threshold when threshold >= 1 ->
+                lowSupportThreshold <- Some threshold
+                i <- i + 2
+            | _ ->
+                failwith "Expected --low-support-threshold to be a positive integer."
+        | "--all-analysis-features" ->
+            lowSupportThreshold <- None
+            i <- i + 1
         | "--boilerplate-only"
         | "--only-boilerplate" ->
             nonBoilerplate <- false
@@ -1014,6 +1141,7 @@ let private parseArgs (args: string array) =
         |> Option.defaultValue "stackprocessing-probing.json"
         |> Path.GetFullPath
       AnalysisFeaturesPath = analysisFeaturesPath
+      LowSupportThreshold = lowSupportThreshold
       NonBoilerplate = nonBoilerplate
       SqrtOnly = sqrtOnly
       StackUnstackOnly = stackUnstackOnly
@@ -1038,11 +1166,14 @@ let main args =
         || options.ConvolutionBreakdownOnly
         || options.DiscreteGaussianBreakdownOnly
 
+    let includeNonBoilerplate =
+        options.NonBoilerplate
+
     let inputDirs : Map<ImageSize, string> =
         if oldFocusedMode then
             Map.empty
         else
-            inputSizes
+            (if includeNonBoilerplate then inputSizes else boilerplateInputSizes)
             |> List.map (fun size ->
                 let path = Path.Combine(tempRoot, $"input-{sizeName size}")
                 createInputStack size path
@@ -1056,15 +1187,15 @@ let main args =
 
     let convolutionBreakdownKernel =
         if options.ConvolutionBreakdownOnly then
-            let kernel: Image<float> = ImageFunctions.gauss 3u 1.0 (Some 8u)
+            let kernel: Image<float> = ImageFunctions.gauss 3u canonicalSigma (Some canonicalKernelSize)
             Some kernel
         else
             None
 
     let probes =
-        [| for xy in xySizes do
+        [| for xy in (if includeNonBoilerplate || oldFocusedMode then xySizes else boilerplateXySizes) do
                if not oldFocusedMode then
-                   for depth in defaultDepths do
+                   for depth in (if includeNonBoilerplate then defaultDepths else boilerplateDepths) do
                        let size = imageSize xy depth
                        let inputDir = inputDirs[size]
                        let suffix = sizeName size
@@ -1091,14 +1222,15 @@ let main args =
                                      |> zero<uint8> size.Width size.Height size.Depth
                                      >=> write (outputDir size "zero-uint8-write") ".tiff")
 
-                       if options.NonBoilerplate then
+                       if includeNonBoilerplate then
                            yield runSinkProbe
                                      $"add-normal-noise-uint8-write-{suffix}"
                                      $"Synthetic UInt8 {suffix} source, additive Gaussian noise, write."
                                      (let p = defaultImageParameters size "uint8" 1u
                                       p["operation"] <- "noise-write"
-                                      p["mean"] <- "128"
-                                      p["sigma"] <- "50"
+                                      p["stage"] <- "AddNormalNoise"
+                                      p["mean"] <- "128.0"
+                                      p["std"] <- "50.0"
                                       p)
                                      (fun () ->
                                          source availableMemory
@@ -1128,13 +1260,15 @@ let main args =
                                      |> read<uint8> inputDir ".tiff"
                                      >=> write (outputDir size "read-uint8-write") ".tiff")
 
-                       if options.NonBoilerplate then
+                       if includeNonBoilerplate then
                            yield runSinkProbe
                                      $"threshold-float-write-{suffix}"
                                      $"Synthetic Float64 {suffix} source, threshold to UInt8, write."
                                      (let p = defaultImageParameters size "float" 1u
                                       p["operation"] <- "threshold-write"
-                                      p["threshold"] <- "128"
+                                      p["mean"] <- "128.0"
+                                      p["std"] <- "50.0"
+                                      p["threshold"] <- "128.0"
                                       p)
                                      (fun () ->
                                          source availableMemory
@@ -1156,7 +1290,7 @@ let main args =
                                          >=> computeStats ())
 
                if
-                   (options.NonBoilerplate || options.SqrtOnly)
+                   (includeNonBoilerplate || options.SqrtOnly)
                    && not options.StackUnstackOnly
                    && not options.ConvolutionBreakdownOnly
                    && not options.DiscreteGaussianBreakdownOnly
@@ -1267,13 +1401,13 @@ let main args =
                                          $"Read {suffix} stack as Float64, smoothWGauss windowed convolution with window size {windowSize}, cast to UInt8, write."
                                          (let p = singletonImageParameters size "float" windowSize
                                           p["operation"] <- "smoothWGauss-write"
-                                          p["sigma"] <- "1"
-                                          p["kernelSize"] <- "5"
+                                          p["sigma"] <- canonicalSigmaText
+                                          p["kernelSize"] <- string canonicalKernelSize
                                           p)
-                                         (fun () ->
-                                             source availableMemory
-                                             |> read<float> inputDir ".tiff"
-                                             >=> smoothWGauss 1.0 None None (Some windowSize)
+                                     (fun () ->
+                                         source availableMemory
+                                         |> read<float> inputDir ".tiff"
+                                             >=> smoothWGauss canonicalSigma None None (Some windowSize)
                                              >=> cast<float, uint8>
                                              >=> write (outputDir size $"convolve3d-read-float-cast-write-win-{windowSize}") ".tiff")
 
@@ -1311,7 +1445,7 @@ let main args =
 
                if options.ConvolutionBreakdownOnly && xy = List.head xySizes then
                    let kernel = convolutionBreakdownKernel |> Option.get
-                   let kernelSize = 8u
+                   let kernelSize = canonicalKernelSize
 
                    for size in convolutionBreakdownSizes do
                        let suffix = sizeName size
@@ -1378,7 +1512,7 @@ let main args =
                                      >=> ignoreSingles ())
 
                if options.DiscreteGaussianBreakdownOnly && xy = List.head xySizes then
-                   let kernelSize = 8u
+                   let kernelSize = canonicalKernelSize
 
                    for size in convolutionBreakdownSizes do
                        let suffix = sizeName size
@@ -1390,7 +1524,7 @@ let main args =
                                  (let p = imageParameters size "float" windowSize 1u
                                   p["operation"] <- "discrete-gaussian-breakdown-input"
                                   p["kernelSize"] <- string kernelSize
-                                  p["sigma"] <- "1"
+                                  p["sigma"] <- canonicalSigmaText
                                   p)
                                  (fun () ->
                                      source availableMemory
@@ -1406,7 +1540,7 @@ let main args =
                                   p["baselineOperation"] <- "discrete-gaussian-breakdown-input"
                                   p["stage"] <- "stack"
                                   p["kernelSize"] <- string kernelSize
-                                  p["sigma"] <- "1"
+                                  p["sigma"] <- canonicalSigmaText
                                   p)
                                  (fun () ->
                                      source availableMemory
@@ -1422,7 +1556,7 @@ let main args =
                                   p["baselineOperation"] <- "discrete-gaussian-breakdown-stack"
                                   p["stage"] <- "discreteGaussian"
                                   p["kernelSize"] <- string kernelSize
-                                  p["sigma"] <- "1"
+                                  p["sigma"] <- canonicalSigmaText
                                   p["outputRegionMode"] <- "Default"
                                   p)
                                  (fun () ->
@@ -1439,7 +1573,7 @@ let main args =
                                   p["baselineOperation"] <- "discrete-gaussian-breakdown-stack-filter"
                                   p["stage"] <- "unstack"
                                   p["kernelSize"] <- string kernelSize
-                                  p["sigma"] <- "1"
+                                  p["sigma"] <- canonicalSigmaText
                                   p["outputRegionMode"] <- "Default"
                                   p)
                                  (fun () ->
@@ -1451,7 +1585,7 @@ let main args =
     convolutionBreakdownKernel |> Option.iter (fun kernel -> kernel.decRefCount())
     let calibrations = buildCalibrations probes
     let probes = attachPredictions calibrations probes
-    let probes = filterProbesByAnalysisFeatures options.AnalysisFeaturesPath probes
+    let probes = filterProbesByAnalysisFeatures options.LowSupportThreshold options.AnalysisFeaturesPath probes
 
     let report =
         { generatedUtc = DateTimeOffset.UtcNow.ToString("O")

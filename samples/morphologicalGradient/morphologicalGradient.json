@@ -9,7 +9,7 @@
         { "key": "input", "value": "../data/volume", "useInput": false },
         { "key": "suffix", "value": ".tiff", "useInput": false } ] },
     { "id": "op", "functionId": "MorphologicalGradient", "x": 300.0, "y": 120.0,
-      "parameters": [ { "key": "type", "value": "UInt8", "useInput": false }, { "key": "radius", "value": "1", "useInput": false }, { "key": "windowSize", "value": "5", "useInput": false } ] },
+      "parameters": [ { "key": "type", "value": "UInt8", "useInput": false }, { "key": "radius", "value": "3", "useInput": false }, { "key": "windowSize", "value": "7", "useInput": false } ] },
     { "id": "write", "functionId": "Write", "x": 520.0, "y": 120.0,
       "parameters": [ { "key": "format", "value": "Image stack", "useInput": false }, { "key": "output", "value": "../tmp/morphologicalGradient", "useInput": false }, { "key": "suffix", "value": ".tiff", "useInput": false } ] }
   ],

@@ -19,14 +19,14 @@ let main args =
         |> drain
 
     src
-    |> readRange<uint8> "0" 1 "31" input ".tiff"
+    |> readRange<uint8> 0u 1 31u input ".tiff"
     >=> histogramEqualization histogram
     >=> cast<float, uint8>
     >=> write (outputRoot + "/histogramEqualization") ".tiff"
     |> sink
 
     src
-    |> readRange<float> "0" 1 "31" input ".tiff"
+    |> readRange<float> 0u 1 31u input ".tiff"
     >=> smoothWMedian<float> 1u 5u
     >=> smoothWBilateral<float> 1.5 30.0 5u
     >=> gradientMagnitude<float> 5u
@@ -38,8 +38,8 @@ let main args =
     |> sink
 
     src
-    |> readRange<float> "0" 1 "31" input ".tiff"
-    >=> gradient 1u (Some 5u)
+    |> readRange<float> 0u 1 31u input ".tiff"
+    >=> gradient 1u (Some 7u)
     >=> PCA 3u
     >=> selectGroupedOutput 4u 1u
     >=> vector3ToColor -1.0 1.0

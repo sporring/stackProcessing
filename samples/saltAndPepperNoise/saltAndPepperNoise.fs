@@ -12,7 +12,7 @@ let main args =
         | _ -> "../tmp/saltAndPepperNoise"
 
     src
-    |> saltAndPepperNoise<uint8> 64u 64u 16u 0.02
+    |> saltAndPepperNoise<uint8> 64u 64u 64u 0.02
     >=> write output ".tiff"
     |> sink
 

@@ -92,7 +92,7 @@
       "parameters": [
         {
           "key": "sigma",
-          "value": "1.0",
+          "value": "3.0",
           "useInput": false
         },
         {
@@ -107,7 +107,7 @@
         },
         {
           "key": "windowSize",
-          "value": "15",
+          "value": "7",
           "useInput": false
         }
       ]

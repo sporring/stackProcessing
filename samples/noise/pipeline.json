@@ -19,17 +19,17 @@
         },
         {
           "key": "width",
-          "value": "256",
+          "value": "64",
           "useInput": false
         },
         {
           "key": "height",
-          "value": "256",
+          "value": "64",
           "useInput": false
         },
         {
           "key": "depth",
-          "value": "256",
+          "value": "64",
           "useInput": false
         },
         {
@@ -108,7 +108,7 @@
       "parameters": [
         {
           "key": "sigma",
-          "value": "1.0",
+          "value": "3.0",
           "useInput": false
         },
         {

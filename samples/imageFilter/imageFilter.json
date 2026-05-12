@@ -51,26 +51,26 @@
     { "id": "median", "functionId": "SmoothWMedian", "x": 280.0, "y": 420.0,
       "parameters": [
         { "key": "type", "value": "Float64", "useInput": false },
-        { "key": "radius", "value": "1", "useInput": false },
-        { "key": "windowSize", "value": "5", "useInput": false } ] },
+        { "key": "radius", "value": "3", "useInput": false },
+        { "key": "windowSize", "value": "7", "useInput": false } ] },
     { "id": "bilateral", "functionId": "SmoothWBilateral", "x": 500.0, "y": 420.0,
       "parameters": [
         { "key": "type", "value": "Float64", "useInput": false },
         { "key": "domainSigma", "value": "1.5", "useInput": false },
         { "key": "rangeSigma", "value": "30.0", "useInput": false },
-        { "key": "windowSize", "value": "5", "useInput": false } ] },
+        { "key": "windowSize", "value": "7", "useInput": false } ] },
     { "id": "gradMag", "functionId": "GradientMagnitude", "x": 720.0, "y": 420.0,
       "parameters": [
         { "key": "type", "value": "Float64", "useInput": false },
-        { "key": "windowSize", "value": "5", "useInput": false } ] },
+        { "key": "windowSize", "value": "7", "useInput": false } ] },
     { "id": "sobel", "functionId": "SobelEdge", "x": 940.0, "y": 420.0,
       "parameters": [
         { "key": "type", "value": "Float64", "useInput": false },
-        { "key": "windowSize", "value": "5", "useInput": false } ] },
+        { "key": "windowSize", "value": "7", "useInput": false } ] },
     { "id": "laplacian", "functionId": "Laplacian", "x": 1140.0, "y": 420.0,
       "parameters": [
         { "key": "type", "value": "Float64", "useInput": false },
-        { "key": "windowSize", "value": "5", "useInput": false } ] },
+        { "key": "windowSize", "value": "7", "useInput": false } ] },
     { "id": "edgeStretch", "functionId": "IntensityStretch", "x": 1340.0, "y": 420.0,
       "parameters": [
         { "key": "type", "value": "Float64", "useInput": false },
@@ -101,7 +101,7 @@
     { "id": "gradient", "functionId": "Gradient", "x": 280.0, "y": 620.0,
       "parameters": [
         { "key": "order", "value": "1", "useInput": false },
-        { "key": "windowSize", "value": "5", "useInput": false } ] },
+        { "key": "windowSize", "value": "7", "useInput": false } ] },
     { "id": "pca", "functionId": "PCA", "x": 500.0, "y": 620.0,
       "parameters": [
         { "key": "components", "value": "3", "useInput": false } ] },

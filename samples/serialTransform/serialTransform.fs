@@ -14,13 +14,13 @@ let main args =
 
     let geometry =
         src
-        |> readRange<float32> "0" 16 "64" input ".tiff"
+        |> readRange<float32> 0u 16 64u input ".tiff"
         >=> serialEstTrans<float32> 8 "dogAffine" 1.6 0.1
         >=> serialEstBoundingBox<float32>
         |> drain
 
     src
-    |> readRange<float32> "0" 1 "31" input ".tiff"
+    |> readRange<float32> 0u 1 31u input ".tiff"
     >=> serialEstTrans<float32> 8 "dogAffine" 1.6 0.1
     >=> serialApplyTrans<float32> 0.0 (Some geometry)
     >=> cast<float32, uint8>

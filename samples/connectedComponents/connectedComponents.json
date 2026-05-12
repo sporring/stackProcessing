@@ -115,7 +115,7 @@
       "parameters": [
         {
           "key": "windowSize",
-          "value": "8",
+          "value": "7",
           "useInput": false
         }
       ]
@@ -138,7 +138,7 @@
         },
         {
           "key": "windowSize",
-          "value": "8",
+          "value": "7",
           "useInput": false
         }
       ]
@@ -151,7 +151,7 @@
       "parameters": [
         {
           "key": "windowSize",
-          "value": "8",
+          "value": "7",
           "useInput": false
         }
       ]
@@ -247,7 +247,7 @@
       "parameters": [
         {
           "key": "windowSize",
-          "value": "8",
+          "value": "7",
           "useInput": false
         },
         {

@@ -14,7 +14,7 @@ let main args =
 
     src
     |> read<uint8> input ".tiff"
-    >=> binaryMedian 1u 5u
+    >=> binaryMedian 3u 7u
     >=> write output ".tiff"
     |> sink
 

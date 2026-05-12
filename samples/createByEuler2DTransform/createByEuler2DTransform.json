@@ -19,17 +19,17 @@
         },
         {
           "key": "width",
-          "value": "256",
+          "value": "64",
           "useInput": true
         },
         {
           "key": "height",
-          "value": "256",
+          "value": "64",
           "useInput": true
         },
         {
           "key": "depth",
-          "value": "256",
+          "value": "64",
           "useInput": true
         },
         {
@@ -62,17 +62,17 @@
         },
         {
           "key": "width",
-          "value": "256",
+          "value": "64",
           "useInput": true
         },
         {
           "key": "height",
-          "value": "256",
+          "value": "64",
           "useInput": true
         },
         {
           "key": "depth",
-          "value": "256",
+          "value": "64",
           "useInput": true
         },
         {
@@ -105,17 +105,17 @@
         },
         {
           "key": "width",
-          "value": "256",
+          "value": "64",
           "useInput": true
         },
         {
           "key": "height",
-          "value": "256",
+          "value": "64",
           "useInput": true
         },
         {
           "key": "depth",
-          "value": "256",
+          "value": "64",
           "useInput": true
         },
         {

@@ -13,7 +13,7 @@
         { "key": "kernel", "value": "Image<float>.ofArray3D(Array3D.create 3 3 3 (1.0 / 27.0), \"average3x3x3\")", "useInput": false },
         { "key": "outputRegionMode", "value": "Same", "useInput": false },
         { "key": "boundaryCondition", "value": "ZeroFluxNeumannPad", "useInput": false },
-        { "key": "windowSize", "value": "8", "useInput": false } ] },
+        { "key": "windowSize", "value": "7", "useInput": false } ] },
     { "id": "stretch", "functionId": "IntensityStretch", "x": 560.0, "y": 120.0,
       "parameters": [
         { "key": "type", "value": "Float64", "useInput": false },

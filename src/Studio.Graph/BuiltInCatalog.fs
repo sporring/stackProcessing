@@ -449,8 +449,8 @@ module BuiltInCatalog =
       DisplayName = "readRange"
       Category = "Sources / Sinks"
       Summary = "Read a clamped range of image slices."
-      Description = "Reads a regular subset of slices from image stacks, single volume files, OME-Zarr datasets, or NeXus/HDF5 detector stacks. The range is first, first+step, first+2*step and so on, stopping at or before last. Indices are zero-based. First and last are clamped to the available source range, and last accepts Matlab-like notation: end is the final slice, end-1 is the second-to-last slice, and so on. Step must be non-zero; use a negative step to read backwards. The Format selector controls which core reader is used and which metadata record is exposed on the lower output."
-      Aliases = [ "range"; "subset"; "input"; "end"; "matlab"; "tiff"; "png"; "zarr"; "nexus"; "hdf5"; "volume"; "file"; "UInt8"; "Float64"; "type" ]
+      Description = "Reads a regular subset of slices from image stacks, single volume files, OME-Zarr datasets, or NeXus/HDF5 detector stacks. The range is first, first+step, first+2*step and so on, stopping at or before last. Indices are zero-based. First and last are unsigned indices clamped to the available source range. Step must be non-zero; use a negative step to read backwards. The Format selector controls which core reader is used and which metadata record is exposed on the lower output."
+      Aliases = [ "range"; "subset"; "input"; "tiff"; "png"; "zarr"; "nexus"; "hdf5"; "volume"; "file"; "UInt8"; "Float64"; "type" ]
       Inputs = []
       Outputs =
           [ makePort "Float64" imageFloat64
@@ -459,9 +459,9 @@ module BuiltInCatalog =
           [ availableMemoryParameter
             makeParameter "type" "Type" "Float64" BasicType.String
             readFormatParameter
-            makeParameter "first" "First" "0" BasicType.String
+            makeParameter "first" "First" "0" (BasicType.Numeric UInt32)
             makeParameter "step" "Step" "1" (BasicType.Numeric Int32)
-            makeParameter "last" "Last" "end" BasicType.String
+            makeParameter "last" "Last" "0" (BasicType.Numeric UInt32)
             makeParameter "input" "Input" "input" BasicType.String
             readSuffixParameter ".tiff"
             makeParameter "multiscaleIndex" "Multiscale index" "0" (BasicType.Numeric Int32)

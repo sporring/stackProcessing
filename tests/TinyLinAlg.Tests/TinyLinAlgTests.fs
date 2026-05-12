@@ -206,4 +206,18 @@ let tinyLinAlgSuite =
 
             Expect.floatClose Accuracy.medium predicted[0] 3.0 "first row"
             Expect.floatClose Accuracy.medium predicted[1] 4.0 "second row"
+
+        testCase "dense non-negative least squares keeps coefficients above lower bound" <| fun _ ->
+            let a =
+                array2D
+                    [ [ 1.0; 0.0 ]
+                      [ 0.0; 1.0 ]
+                      [ 1.0; 1.0 ] ]
+
+            let coefficients = TinyLinAlg.Dense.nonNegativeLeastSquares 1e-8 10000 1e-12 a [| 1.0; -2.0; 1.0 |]
+
+            Expect.isGreaterThanOrEqual coefficients[0] 0.0 "first coefficient should be non-negative"
+            Expect.isGreaterThanOrEqual coefficients[1] 0.0 "second coefficient should be non-negative"
+            Expect.floatClose Accuracy.medium coefficients[0] 1.0 "positive coefficient should remain close"
+            Expect.floatClose Accuracy.medium coefficients[1] 0.0 "negative contribution should be clamped away"
     ]

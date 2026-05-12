@@ -244,9 +244,9 @@ val readVolumeRandom<'T when 'T: equality> :
     when 'T: equality
 
 val readVolumeRange<'T when 'T: equality> :
-  (string ->
+  (uint ->
      int ->
-     string ->
+     uint ->
      string ->
      SlimPipeline.Plan<unit,unit> -> SlimPipeline.Plan<unit,StackCore.Image<'T>>)
     when 'T: equality
@@ -259,9 +259,9 @@ val readRandom<'T when 'T: equality> :
     when 'T: equality
 
 val readRange<'T when 'T: equality> :
-  (string ->
+  (uint ->
      int ->
-     string ->
+     uint ->
      string ->
      string ->
      SlimPipeline.Plan<unit,unit> -> SlimPipeline.Plan<unit,StackCore.Image<'T>>)
@@ -327,9 +327,9 @@ val readZarrRandom<'T when 'T: equality> :
     when 'T: equality
 
 val readZarrRange<'T when 'T: equality> :
-  (string ->
+  (uint ->
      int ->
-     string ->
+     uint ->
      string ->
      int ->
      int ->
@@ -370,9 +370,9 @@ val readNexusRandom<'T when 'T: equality> :
     when 'T: equality
 
 val readNexusRange<'T when 'T: equality> :
-  (string ->
+  (uint ->
      int ->
-     string ->
+     uint ->
      string ->
      string ->
      int ->
