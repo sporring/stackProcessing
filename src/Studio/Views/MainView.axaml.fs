@@ -1434,13 +1434,55 @@ type MainView() as this =
         let graphHost = this.FindControl<Grid>("GraphHost")
         let trash = this.FindControl<Border>("GraphTrash")
 
+        let clamp low high value =
+            if high <= low then
+                low
+            else
+                min high (max low value)
+
+        let canvasClampedViewportRect (drawing: DrawingNodeViewModel) (viewportSize: Size) (desired: Rect) =
+            if drawing.Width <= 0. || drawing.Height <= 0. || viewportSize.Width <= 0. || viewportSize.Height <= 0. then
+                desired
+            else
+                let aspect = viewportSize.Width / viewportSize.Height
+                let desiredLeft = clamp 0. drawing.Width desired.Left
+                let desiredTop = clamp 0. drawing.Height desired.Top
+                let desiredRight = clamp desiredLeft drawing.Width desired.Right
+                let desiredBottom = clamp desiredTop drawing.Height desired.Bottom
+                let desiredWidth = max 1. (desiredRight - desiredLeft)
+                let desiredHeight = max 1. (desiredBottom - desiredTop)
+                let desiredCenterX = desiredLeft + desiredWidth / 2.
+                let desiredCenterY = desiredTop + desiredHeight / 2.
+
+                let mutable targetWidth = desiredWidth
+                let mutable targetHeight = desiredHeight
+
+                if targetWidth / targetHeight > aspect then
+                    targetHeight <- targetWidth / aspect
+                else
+                    targetWidth <- targetHeight * aspect
+
+                if targetWidth > drawing.Width then
+                    targetWidth <- drawing.Width
+                    targetHeight <- targetWidth / aspect
+
+                if targetHeight > drawing.Height then
+                    targetHeight <- drawing.Height
+                    targetWidth <- targetHeight * aspect
+
+                let maxLeft = max 0. (drawing.Width - targetWidth)
+                let maxTop = max 0. (drawing.Height - targetHeight)
+                let left = clamp 0. maxLeft (desiredCenterX - targetWidth / 2.)
+                let top = clamp 0. maxTop (desiredCenterY - targetHeight / 2.)
+
+                Rect(left, top, targetWidth, targetHeight)
+
         match currentDrawing () with
         | Some drawing when not (isNull zoomBorder) && not (isNull graphHost) && drawing.Nodes.Count > 0 ->
             let left = drawing.Nodes |> Seq.map _.X |> Seq.min
             let top = drawing.Nodes |> Seq.map _.Y |> Seq.min
             let right = drawing.Nodes |> Seq.map (fun node -> node.X + node.Width) |> Seq.max
             let bottom = drawing.Nodes |> Seq.map (fun node -> node.Y + node.Height) |> Seq.max
-            let bounds = Rect(left, top, right - left, bottom - top)
             let fitPadding = 32.
             let rightPadding =
                 if isNull trash then
@@ -1454,7 +1496,15 @@ type MainView() as this =
                 else
                     trash.Bounds.Height + 12. + fitPadding
 
-            zoomBorder.ZoomToRectangle(bounds, Nullable(Thickness(fitPadding, fitPadding, rightPadding, bottomPadding)), false)
+            let paddedBounds =
+                Rect(
+                    left - fitPadding,
+                    top - fitPadding,
+                    (right - left) + fitPadding + rightPadding,
+                    (bottom - top) + fitPadding + bottomPadding)
+
+            let target = canvasClampedViewportRect drawing graphHost.Bounds.Size paddedBounds
+            zoomBorder.ZoomToRectangle(target, Nullable(Thickness(0.)), false)
             zoomBorder.Focus() |> ignore
         | _ ->
             ()
