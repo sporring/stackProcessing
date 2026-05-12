@@ -1450,7 +1450,7 @@ let generatorSuite =
                       edge "convolve" "output" 0 "write" "input" 0 ]
                 |> PipelineCodeGenerator.generateSavedGraph
 
-            Expect.stringContains code ">=> convolve kernelImage (Some ImageFunctions.Same) (Some ImageFunctions.ZeroFluxNeumannPad) (Some 8u)" "Convolve should call the StackProcessing convolve stage."
+            Expect.stringContains code ">=> convolve (kernelImage) (Some ImageFunctions.Same) (Some ImageFunctions.ZeroFluxNeumannPad) (Some 8u)" "Convolve should call the StackProcessing convolve stage."
 
         testCase "print format unescapes newline and maps linked names" <| fun _ ->
             let stats =
@@ -2137,7 +2137,7 @@ let generatorSuite =
 
             Expect.stringContains code "|> estimateHistogram<uint8> 12u \"input\" \".tiff\" 4u \"DKWAndHoldout\" 0.95" "EstimateHistogram should lower to the typed random-sampling source."
             Expect.stringContains code "let Histogram0 =" "Linked estimate outputs should be bound once."
-            Expect.stringContains code ">=> histogramEqualization<uint8> Histogram0.Histogram" "The map output should feed histogram-based image stages."
+            Expect.stringContains code ">=> histogramEqualization Histogram0.Histogram" "The map output should feed histogram-based image stages."
             Expect.stringContains code "n={Histogram0.Samples}, eps={Histogram0.CdfHalfWidth}" "Diagnostics should be addressable as scalar-like outputs."
 
         testCase "writeCSV can write histogram data" <| fun _ ->
@@ -2281,7 +2281,7 @@ let generatorSuite =
                 |> PipelineCodeGenerator.generateSavedGraph
 
             Expect.stringContains code "let Histogram0 =" "Linked histogram data should be bound before image equalization."
-            Expect.stringContains code ">=> histogramEqualization<uint16> Histogram0" "Histogram equalization should consume the linked histogram map."
+            Expect.stringContains code ">=> histogramEqualization Histogram0" "Histogram equalization should consume the linked histogram map."
 
         testCase "intensity stretch lowers to StackProcessing stage" <| fun _ ->
             let read =

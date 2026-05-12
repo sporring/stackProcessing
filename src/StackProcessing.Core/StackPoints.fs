@@ -162,10 +162,7 @@ let writeMatrix (output: string) (suffix: string) : Stage<VectorizedMatrix, unit
         async {
             let! matrices = input |> AsyncSeq.toListAsync
 
-            match matrices with
-            | [] -> invalidOp "writeMatrix expected one vectorized matrix, but the stream was empty."
-            | [ matrix ] ->
-                let outputPath = outputPathWithSuffix output suffix
+            let writeOne (outputPath: string) matrix =
                 if debug then
                     printfn $"[writeMatrix] Writing {outputPath}"
 
@@ -181,8 +178,26 @@ let writeMatrix (output: string) (suffix: string) : Stage<VectorizedMatrix, unit
                             f values[row, column] ]
                         |> String.concat ","
                     writer.WriteLine(line)
+
+            match matrices with
+            | [] -> invalidOp "writeMatrix expected at least one vectorized matrix, but the stream was empty."
+            | [ matrix ] ->
+                writeOne (outputPathWithSuffix output suffix) matrix
             | _ ->
-                invalidOp $"writeMatrix expected one vectorized matrix, but got {matrices.Length}."
+                let firstPath = outputPathWithSuffix output suffix
+                let directory = Path.GetDirectoryName(firstPath)
+                let stem = Path.GetFileNameWithoutExtension(firstPath)
+                let extension = Path.GetExtension(firstPath)
+
+                matrices
+                |> List.iteri (fun index matrix ->
+                    let fileName = sprintf "%s_%03d%s" stem index extension
+                    let outputPath =
+                        if String.IsNullOrWhiteSpace directory then
+                            fileName
+                        else
+                            Path.Combine(directory, fileName)
+                    writeOne outputPath matrix)
         }
 
     Stage.reduce $"writeMatrix \"{output}\" \"{suffix}\"" reducer Streaming (fun _ -> 0UL) (fun _ -> 1UL)

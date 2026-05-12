@@ -1,9 +1,9 @@
-// Detect 3D DoG keypoints and estimate an affine transform between two point sets.
+// Estimate an affine transform between two small 3D point sets.
 //
-// This compact version uses the same keypoints as fixed and moving points, so the
-// written matrix should be close to identity. Replace one branch with another
-// stack or point-set source to turn it into a real registration example.
+// The compact sample writes a tiny point-set CSV and feeds it through the public
+// readPointSet box twice, so the estimated matrix should be close to identity.
 open SlimPipeline
+open System.IO
 open StackProcessing
 
 [<EntryPoint>]
@@ -11,19 +11,26 @@ let main args =
     let availableMemory = 2UL * 1024UL * 1024UL * 1024UL
     let src, args = commandLineSource availableMemory args
 
-    let input, output =
+    let output =
         match args with
-        | [| input; output |] -> input, output
-        | [| input |] -> input, "../tmp/affineKeypointRegistration"
-        | _ -> "../data/volume", "../tmp/affineKeypointRegistration"
+        | [| output |] -> output
+        | _ -> "../tmp/affineKeypointRegistration"
 
-    let keypoints =
-        src
-        |> read<float32> input ".tiff"
-        >=> dogKeypoints<float32> 0.8 1.25 4u 0.0005 4u
+    let pointFile = output + "-points.csv"
+    let directory = Path.GetDirectoryName(pointFile)
+    if not (System.String.IsNullOrWhiteSpace directory) then
+        Directory.CreateDirectory(directory) |> ignore
 
-    zip keypoints keypoints
-    >=> affineRegistrationMatrices defaultAffineRegistrationOptions
+    File.WriteAllLines(
+        pointFile,
+        [| "x,y,z,scale,response"
+           "4,4,2,1,1"
+           "24,5,3,1,1"
+           "6,25,10,1,1"
+           "26,26,12,1,1" |])
+
+    zip (readPointSet pointFile src) (readPointSet pointFile src)
+    >=> affineRegistrationMatrices { defaultAffineRegistrationOptions with MaxIterations = 1 }
     >=> writeMatrix output ".csv"
     |> sink
 

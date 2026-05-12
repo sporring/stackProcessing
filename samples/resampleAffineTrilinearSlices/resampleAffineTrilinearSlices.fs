@@ -25,22 +25,33 @@ let private writeTiffStack output (slices: seq<int * StackAffineResampler.Image<
 
 [<EntryPoint>]
 let main args =
-    let input, output =
-        match args with
-        | [| input; output |] -> input, output
-        | [| input |] -> input, "../tmp/resampleAffineTrilinearSlices"
-        | _ -> "../data/volume", "../tmp/resampleAffineTrilinearSlices"
+    let availableMemory = 2UL * 1024UL * 1024UL * 1024UL
+    let src, args = commandLineSource availableMemory args
 
-    let inputGeometry = geometry 256 256 256
-    let outputGeometry = geometry 256 256 256
+    let output =
+        match args with
+        | [| output |] -> output
+        | _ -> "../tmp/resampleAffineTrilinearSlices"
+
+    let chunks = "../tmp/resampleAffineTrilinearSlicesChunks"
+    deleteIfExists chunks
+
+    src
+    |> normalNoise<float32> 80u 64u 32u 128.0 25.0
+    >=> writeChunks chunks ".tiff" 16u 16u 8u
+    >=> ignoreSingles ()
+    |> sink
+
+    let inputGeometry = geometry 80 64 32
+    let outputGeometry = geometry 56 56 28
     let affine =
         { A = identity3
-          T = v3 4.0 -2.0 0.0
-          C = v3 128.0 128.0 128.0 }
+          T = v3 0.0 0.0 0.0
+          C = v3 32.0 32.0 16.0 }
 
     let lerp (a: float32) (b: float32) (t: float32) = a + (b - a) * t
 
-    resampleAffineTrilinearSlices input ".tiff" lerp 8 inputGeometry outputGeometry affine 0.0f
+    resampleAffineTrilinearSlices chunks ".tiff" lerp 16 inputGeometry outputGeometry affine 0.0f
     |> writeTiffStack output
 
     0

@@ -6,33 +6,32 @@ let main args =
     let availableMemory = 2UL * 1024UL * 1024UL * 1024UL
     let src, args = commandLineSource availableMemory args
 
-    let input, outputRoot =
+    let outputRoot =
         match args with
-        | [| input; outputRoot |] -> input, outputRoot
-        | [| input |] -> input, "../tmp/keypoints"
-        | _ -> "../data/volume", "../tmp/keypoints"
+        | [| outputRoot |] -> outputRoot
+        | _ -> "../tmp/keypoints"
 
     src
-    |> read<float> input ".tiff"
-    >=> siftKeypoints<float> 1.0 1.6 4u 0.03 8u
+    |> normalNoise<float> 32u 32u 16u 128.0 25.0
+    >=> siftKeypoints<float> 1.0 1.6 4u 0.1 16u
     >=> writePointSet (outputRoot + "/sift") ".csv"
     |> sink
 
     src
-    |> read<float> input ".tiff"
-    >=> hessianKeypoints<float> 1.0 "Blob" 0.03 8u
+    |> normalNoise<float> 32u 32u 16u 128.0 25.0
+    >=> hessianKeypoints<float> 1.0 "Blob" 0.1 16u
     >=> writePointSet (outputRoot + "/hessian") ".csv"
     |> sink
 
     src
-    |> read<float> input ".tiff"
-    >=> harris3DKeypoints<float> 1.0 1.5 0.04 0.03 8u
+    |> normalNoise<float> 32u 32u 16u 128.0 25.0
+    >=> harris3DKeypoints<float> 1.0 1.5 0.04 0.1 16u
     >=> writePointSet (outputRoot + "/harris") ".csv"
     |> sink
 
     src
-    |> read<float> input ".tiff"
-    >=> forstner3DKeypoints<float> 1.0 1.5 0.03 8u
+    |> normalNoise<float> 32u 32u 16u 128.0 25.0
+    >=> forstner3DKeypoints<float> 1.0 1.5 0.1 16u
     >=> writePointSet (outputRoot + "/forstner") ".csv"
     |> sink
 

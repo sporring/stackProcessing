@@ -59,6 +59,15 @@ module PipelineCodeGenerator =
     let private float64Literal (value: string) =
         normalizeFloatLiteral value
 
+    let private uintTuple3Literal (value: string) =
+        let trimmed = value.Trim()
+        let m = Regex.Match(trimmed, @"^\(?\s*(\d+)u?\s*,\s*(\d+)u?\s*,\s*(\d+)u?\s*\)?$")
+
+        if m.Success then
+            $"({m.Groups[1].Value}u,{m.Groups[2].Value}u,{m.Groups[3].Value}u)"
+        else
+            trimmed
+
     let private integerLiteralOrCast castName suffix (value: string) =
         let trimmed = value.Trim()
 
@@ -1402,7 +1411,7 @@ module PipelineCodeGenerator =
             let outputRegionMode = parameterValue "outputRegionMode" |> optionQualified "ImageFunctions"
             let boundaryCondition = parameterValue "boundaryCondition" |> optionQualified "ImageFunctions"
             let windowSize = parameterValue "windowSize" |> optionUInt
-            $">=> convolve {kernel} {outputRegionMode} {boundaryCondition} {windowSize}"
+            $">=> convolve ({kernel}) {outputRegionMode} {boundaryCondition} {windowSize}"
         | "FiniteDiff" ->
             let direction = parameterValue "direction"
             let order = parameterValue "order"
@@ -1425,9 +1434,8 @@ module PipelineCodeGenerator =
             let outputMaximum = parameterValue "outputMaximum"
             $">=> intensityStretch<{pixelType}> {inputMinimum} {inputMaximum} {outputMinimum} {outputMaximum}"
         | "HistogramEqualization" ->
-            let pixelType = pixelTypeNameFromParameter "type" "Float64" node
             let histogram = parameterValue "histogram"
-            $">=> histogramEqualization<{pixelType}> {histogram}"
+            $">=> histogramEqualization {histogram}"
         | "CreatePadding" ->
             let pixelType = pixelTypeNameFromParameter "type" "Float64" node
             let beforeX = parameterValue "beforeX"
@@ -1721,7 +1729,7 @@ module PipelineCodeGenerator =
             let translationTable = parameterValue "translationTable"
             $">=> updateConnectedComponents {windowSize} {translationTable}"
         | "PermuteAxes" ->
-            let axes = parameterValue "axes"
+            let axes = parameterValue "axes" |> uintTuple3Literal
             let tileSize = parameterValue "tileSize"
             $">=> permuteAxes {axes} {tileSize}"
         | "ResampleAffineTrilinearSlices" ->

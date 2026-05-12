@@ -1128,10 +1128,10 @@ val histogramEstimateMap<'T when 'T: comparison> :
   SlimPipeline.Stage<StackImageFunctions.HistogramEstimate<'T>,
                      StackCore.Histogram<'T>> when 'T: comparison
 
-val histogramEqualization<'T when 'T: comparison> :
-  (StackCore.Histogram<'T> ->
-     SlimPipeline.Stage<StackCore.Image<'T>,Image.Image<float>>)
-    when 'T: comparison
+val histogramEqualization:
+  histogram: StackCore.Histogram<'a> ->
+    SlimPipeline.Stage<StackCore.Image<'b>,Image.Image<float>>
+    when 'a: comparison and 'b: equality
 
 val sumProjection<'T when 'T: equality> :
   (string -> StackCore.Stage<StackCore.Image<'T>,StackCore.Image<float>>)

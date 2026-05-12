@@ -19,7 +19,7 @@
         },
         {
           "key": "format",
-          "value": "Volume file",
+          "value": "Image stack",
           "useInput": false
         },
         {

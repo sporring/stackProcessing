@@ -3,7 +3,7 @@
   "nodes": [
     {
       "id": "n1",
-      "functionId": "Read",
+      "functionId": "ReadRange",
       "x": 40.0,
       "y": 100.0,
       "parameters": [
@@ -20,6 +20,21 @@
         {
           "key": "format",
           "value": "Image stack",
+          "useInput": false
+        },
+        {
+          "key": "first",
+          "value": "0",
+          "useInput": false
+        },
+        {
+          "key": "step",
+          "value": "1",
+          "useInput": false
+        },
+        {
+          "key": "last",
+          "value": "31",
           "useInput": false
         },
         {

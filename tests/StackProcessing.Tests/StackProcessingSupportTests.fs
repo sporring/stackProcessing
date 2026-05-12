@@ -2102,7 +2102,7 @@ let stackProcessingSupportSuite =
             try
                 equalized <-
                     imagePlan [ input ]
-                    >=> histogramEqualization<uint8> histogram
+                    >=> histogramEqualization histogram
                     |> drainList
 
                 Expect.hasLength equalized 1 "Equalization should preserve slice cardinality."

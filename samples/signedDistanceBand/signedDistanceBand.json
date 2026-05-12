@@ -3,7 +3,7 @@
   "nodes": [
     {
       "id": "node-1",
-      "functionId": "Read",
+      "functionId": "ReadRange",
       "x": 129.9499867203606,
       "y": 165.4041699089534,
       "parameters": [
@@ -20,6 +20,21 @@
         {
           "key": "format",
           "value": "Image stack",
+          "useInput": false
+        },
+        {
+          "key": "first",
+          "value": "0",
+          "useInput": false
+        },
+        {
+          "key": "step",
+          "value": "1",
+          "useInput": false
+        },
+        {
+          "key": "last",
+          "value": "63",
           "useInput": false
         },
         {
@@ -80,6 +95,29 @@
         {
           "key": "xAxis",
           "value": "2",
+          "useInput": false
+        }
+      ]
+    },
+    {
+      "id": "node-div",
+      "functionId": "ImageOpScalar",
+      "x": 210.0,
+      "y": 165.0,
+      "parameters": [
+        {
+          "key": "operation",
+          "value": "/",
+          "useInput": false
+        },
+        {
+          "key": "type",
+          "value": "UInt8",
+          "useInput": false
+        },
+        {
+          "key": "value",
+          "value": "255",
           "useInput": false
         }
       ]
@@ -211,10 +249,18 @@
   ],
   "edges": [
     {
-      "fromNode": "node-1",
+      "fromNode": "node-div",
       "fromKind": "dataOutput",
       "fromPort": 0,
       "toNode": "node-2",
+      "toKind": "dataInput",
+      "toPort": 0
+    },
+    {
+      "fromNode": "node-1",
+      "fromKind": "dataOutput",
+      "fromPort": 0,
+      "toNode": "node-div",
       "toKind": "dataInput",
       "toPort": 0
     },

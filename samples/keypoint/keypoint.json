@@ -1,31 +1,34 @@
 {
   "version": 1,
   "nodes": [
-    { "id": "readSift", "functionId": "Read", "x": 80.0, "y": 80.0, "parameters": [
-      { "key": "availableMemory", "value": "2147483648UL", "useInput": false }, { "key": "type", "value": "Float64", "useInput": false }, { "key": "format", "value": "Image stack", "useInput": false }, { "key": "input", "value": "../data/volume", "useInput": false }, { "key": "suffix", "value": ".tiff", "useInput": false } ] },
+    { "id": "noiseSift", "functionId": "NormalNoise", "x": 80.0, "y": 80.0, "parameters": [
+      { "key": "availableMemory", "value": "2147483648UL", "useInput": false }, { "key": "type", "value": "Float64", "useInput": false }, { "key": "width", "value": "32", "useInput": false }, { "key": "height", "value": "32", "useInput": false }, { "key": "depth", "value": "16", "useInput": false }, { "key": "mean", "value": "128.0", "useInput": false }, { "key": "std", "value": "25.0", "useInput": false } ] },
     { "id": "sift", "functionId": "SiftKeypoints", "x": 280.0, "y": 80.0, "parameters": [
-      { "key": "type", "value": "Float64", "useInput": false }, { "key": "sigma0", "value": "1.0", "useInput": false }, { "key": "scaleFactor", "value": "1.6", "useInput": false }, { "key": "scaleLevels", "value": "4", "useInput": false }, { "key": "contrastThreshold", "value": "0.03", "useInput": false }, { "key": "stride", "value": "8", "useInput": false } ] },
+      { "key": "type", "value": "Float64", "useInput": false }, { "key": "sigma0", "value": "1.0", "useInput": false }, { "key": "scaleFactor", "value": "1.6", "useInput": false }, { "key": "scaleLevels", "value": "4", "useInput": false }, { "key": "contrastThreshold", "value": "0.1", "useInput": false }, { "key": "stride", "value": "16", "useInput": false } ] },
     { "id": "writeSift", "functionId": "WritePointSet", "x": 520.0, "y": 80.0, "parameters": [ { "key": "output", "value": "../tmp/keypoints/sift", "useInput": false }, { "key": "suffix", "value": ".csv", "useInput": false } ] },
-    { "id": "readHessian", "functionId": "Read", "x": 80.0, "y": 220.0, "parameters": [
-      { "key": "availableMemory", "value": "2147483648UL", "useInput": false }, { "key": "type", "value": "Float64", "useInput": false }, { "key": "format", "value": "Image stack", "useInput": false }, { "key": "input", "value": "../data/volume", "useInput": false }, { "key": "suffix", "value": ".tiff", "useInput": false } ] },
+
+    { "id": "noiseHessian", "functionId": "NormalNoise", "x": 80.0, "y": 220.0, "parameters": [
+      { "key": "availableMemory", "value": "2147483648UL", "useInput": false }, { "key": "type", "value": "Float64", "useInput": false }, { "key": "width", "value": "32", "useInput": false }, { "key": "height", "value": "32", "useInput": false }, { "key": "depth", "value": "16", "useInput": false }, { "key": "mean", "value": "128.0", "useInput": false }, { "key": "std", "value": "25.0", "useInput": false } ] },
     { "id": "hessian", "functionId": "HessianKeypoints", "x": 280.0, "y": 220.0, "parameters": [
-      { "key": "type", "value": "Float64", "useInput": false }, { "key": "sigma", "value": "1.0", "useInput": false }, { "key": "responseKind", "value": "Blob", "useInput": false }, { "key": "threshold", "value": "0.03", "useInput": false }, { "key": "stride", "value": "8", "useInput": false } ] },
+      { "key": "type", "value": "Float64", "useInput": false }, { "key": "sigma", "value": "1.0", "useInput": false }, { "key": "responseKind", "value": "Blob", "useInput": false }, { "key": "threshold", "value": "0.1", "useInput": false }, { "key": "stride", "value": "16", "useInput": false } ] },
     { "id": "writeHessian", "functionId": "WritePointSet", "x": 520.0, "y": 220.0, "parameters": [ { "key": "output", "value": "../tmp/keypoints/hessian", "useInput": false }, { "key": "suffix", "value": ".csv", "useInput": false } ] },
-    { "id": "readHarris", "functionId": "Read", "x": 80.0, "y": 360.0, "parameters": [
-      { "key": "availableMemory", "value": "2147483648UL", "useInput": false }, { "key": "type", "value": "Float64", "useInput": false }, { "key": "format", "value": "Image stack", "useInput": false }, { "key": "input", "value": "../data/volume", "useInput": false }, { "key": "suffix", "value": ".tiff", "useInput": false } ] },
+
+    { "id": "noiseHarris", "functionId": "NormalNoise", "x": 80.0, "y": 360.0, "parameters": [
+      { "key": "availableMemory", "value": "2147483648UL", "useInput": false }, { "key": "type", "value": "Float64", "useInput": false }, { "key": "width", "value": "32", "useInput": false }, { "key": "height", "value": "32", "useInput": false }, { "key": "depth", "value": "16", "useInput": false }, { "key": "mean", "value": "128.0", "useInput": false }, { "key": "std", "value": "25.0", "useInput": false } ] },
     { "id": "harris", "functionId": "Harris3DKeypoints", "x": 280.0, "y": 360.0, "parameters": [
-      { "key": "type", "value": "Float64", "useInput": false }, { "key": "sigma", "value": "1.0", "useInput": false }, { "key": "rho", "value": "1.5", "useInput": false }, { "key": "k", "value": "0.04", "useInput": false }, { "key": "threshold", "value": "0.03", "useInput": false }, { "key": "stride", "value": "8", "useInput": false } ] },
+      { "key": "type", "value": "Float64", "useInput": false }, { "key": "sigma", "value": "1.0", "useInput": false }, { "key": "rho", "value": "1.5", "useInput": false }, { "key": "k", "value": "0.04", "useInput": false }, { "key": "threshold", "value": "0.1", "useInput": false }, { "key": "stride", "value": "16", "useInput": false } ] },
     { "id": "writeHarris", "functionId": "WritePointSet", "x": 520.0, "y": 360.0, "parameters": [ { "key": "output", "value": "../tmp/keypoints/harris", "useInput": false }, { "key": "suffix", "value": ".csv", "useInput": false } ] },
-    { "id": "readForstner", "functionId": "Read", "x": 80.0, "y": 500.0, "parameters": [
-      { "key": "availableMemory", "value": "2147483648UL", "useInput": false }, { "key": "type", "value": "Float64", "useInput": false }, { "key": "format", "value": "Image stack", "useInput": false }, { "key": "input", "value": "../data/volume", "useInput": false }, { "key": "suffix", "value": ".tiff", "useInput": false } ] },
+
+    { "id": "noiseForstner", "functionId": "NormalNoise", "x": 80.0, "y": 500.0, "parameters": [
+      { "key": "availableMemory", "value": "2147483648UL", "useInput": false }, { "key": "type", "value": "Float64", "useInput": false }, { "key": "width", "value": "32", "useInput": false }, { "key": "height", "value": "32", "useInput": false }, { "key": "depth", "value": "16", "useInput": false }, { "key": "mean", "value": "128.0", "useInput": false }, { "key": "std", "value": "25.0", "useInput": false } ] },
     { "id": "forstner", "functionId": "Forstner3DKeypoints", "x": 280.0, "y": 500.0, "parameters": [
-      { "key": "type", "value": "Float64", "useInput": false }, { "key": "sigma", "value": "1.0", "useInput": false }, { "key": "rho", "value": "1.5", "useInput": false }, { "key": "threshold", "value": "0.03", "useInput": false }, { "key": "stride", "value": "8", "useInput": false } ] },
+      { "key": "type", "value": "Float64", "useInput": false }, { "key": "sigma", "value": "1.0", "useInput": false }, { "key": "rho", "value": "1.5", "useInput": false }, { "key": "threshold", "value": "0.1", "useInput": false }, { "key": "stride", "value": "16", "useInput": false } ] },
     { "id": "writeForstner", "functionId": "WritePointSet", "x": 520.0, "y": 500.0, "parameters": [ { "key": "output", "value": "../tmp/keypoints/forstner", "useInput": false }, { "key": "suffix", "value": ".csv", "useInput": false } ] }
   ],
   "edges": [
-    { "fromNode": "readSift", "fromKind": "dataOutput", "fromPort": 0, "toNode": "sift", "toKind": "dataInput", "toPort": 0 }, { "fromNode": "sift", "fromKind": "dataOutput", "fromPort": 0, "toNode": "writeSift", "toKind": "dataInput", "toPort": 0 },
-    { "fromNode": "readHessian", "fromKind": "dataOutput", "fromPort": 0, "toNode": "hessian", "toKind": "dataInput", "toPort": 0 }, { "fromNode": "hessian", "fromKind": "dataOutput", "fromPort": 0, "toNode": "writeHessian", "toKind": "dataInput", "toPort": 0 },
-    { "fromNode": "readHarris", "fromKind": "dataOutput", "fromPort": 0, "toNode": "harris", "toKind": "dataInput", "toPort": 0 }, { "fromNode": "harris", "fromKind": "dataOutput", "fromPort": 0, "toNode": "writeHarris", "toKind": "dataInput", "toPort": 0 },
-    { "fromNode": "readForstner", "fromKind": "dataOutput", "fromPort": 0, "toNode": "forstner", "toKind": "dataInput", "toPort": 0 }, { "fromNode": "forstner", "fromKind": "dataOutput", "fromPort": 0, "toNode": "writeForstner", "toKind": "dataInput", "toPort": 0 }
+    { "fromNode": "noiseSift", "fromKind": "dataOutput", "fromPort": 0, "toNode": "sift", "toKind": "dataInput", "toPort": 0 }, { "fromNode": "sift", "fromKind": "dataOutput", "fromPort": 0, "toNode": "writeSift", "toKind": "dataInput", "toPort": 0 },
+    { "fromNode": "noiseHessian", "fromKind": "dataOutput", "fromPort": 0, "toNode": "hessian", "toKind": "dataInput", "toPort": 0 }, { "fromNode": "hessian", "fromKind": "dataOutput", "fromPort": 0, "toNode": "writeHessian", "toKind": "dataInput", "toPort": 0 },
+    { "fromNode": "noiseHarris", "fromKind": "dataOutput", "fromPort": 0, "toNode": "harris", "toKind": "dataInput", "toPort": 0 }, { "fromNode": "harris", "fromKind": "dataOutput", "fromPort": 0, "toNode": "writeHarris", "toKind": "dataInput", "toPort": 0 },
+    { "fromNode": "noiseForstner", "fromKind": "dataOutput", "fromPort": 0, "toNode": "forstner", "toKind": "dataInput", "toPort": 0 }, { "fromNode": "forstner", "fromKind": "dataOutput", "fromPort": 0, "toNode": "writeForstner", "toKind": "dataInput", "toPort": 0 }
   ]
 }

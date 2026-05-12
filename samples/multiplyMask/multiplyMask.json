@@ -24,7 +24,7 @@
         },
         {
           "key": "input",
-          "value": "../data/volume",
+          "value": "../data/rotatingBoxes",
           "useInput": false
         },
         {

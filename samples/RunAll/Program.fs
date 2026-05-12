@@ -224,7 +224,14 @@ let private buildSample (cancellationToken: CancellationToken) timeout (sample: 
         printfn "build %s" sample.Name
 
         let! result =
-            runProcessAsync cancellationToken sample.LogPath sample.Directory "dotnet" [ "build"; sample.Project; "--verbosity"; "q" ] None timeout
+            runProcessAsync
+                cancellationToken
+                sample.LogPath
+                sample.Directory
+                "dotnet"
+                [ "build"; sample.Project; "--no-restore"; "--verbosity"; "q"; "--disable-build-servers" ]
+                None
+                timeout
 
         File.AppendAllText(sample.LogPath, $"Build finished in {result.Elapsed}.{Environment.NewLine}")
         if result.TimedOut then
@@ -438,6 +445,12 @@ let main argv =
             1
         else
             try
+                let runOutputDir = Path.Combine(samplesRoot, "tmp", "runAll")
+                if Directory.Exists runOutputDir then
+                    Directory.Delete(runOutputDir, true)
+
+                Directory.CreateDirectory runOutputDir |> ignore
+
                 let builtSamples =
                     if options.SkipBuild then
                         samples

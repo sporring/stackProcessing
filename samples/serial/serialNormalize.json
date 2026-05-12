@@ -62,7 +62,7 @@
         },
         {
           "key": "value",
-          "value": "",
+          "value": "../data/volume",
           "useInput": false
         }
       ]

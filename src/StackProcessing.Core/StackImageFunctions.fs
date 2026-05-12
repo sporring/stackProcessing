@@ -1184,7 +1184,7 @@ let private histogramEqualizationLookup<'T when 'T: comparison> (histogram: Map<
                     let t = (value - keys[lower]) / span
                     equalized[lower] + t * (equalized[upper] - equalized[lower])
 
-let histogramEqualization<'T when 'T: equality and 'T: comparison> (histogram: Histogram<'T>) =
+let histogramEqualization<'T, 'H when 'T: equality and 'H: comparison> (histogram: Histogram<'H>) =
     let lookup = histogramEqualizationLookup histogram.Counts
 
     let equalize (_debug: bool) (image: Image<'T>) =

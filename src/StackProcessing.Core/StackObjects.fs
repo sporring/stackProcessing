@@ -413,7 +413,7 @@ let private bufferedBinaryComponentEdit
                         invalidOp $"{name} requires a stream with constant x-y slice size."
 
                     let bufferedIndex = image.index
-                    buffer.Add(bufferedIndex, image.toArray2D())
+                    buffer[bufferedIndex] <- image.toArray2D()
 
                     let componentInput = componentImage image
                     let nextState, completed =

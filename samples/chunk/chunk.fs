@@ -15,7 +15,7 @@ let main arg =
 
     deleteIfExists output
     src
-    |> read<uint8> input ".tiff"
+    |> readRange<uint8> "0" 1 "31" input ".tiff"
     //|> getFilenames (input) ".tiff" Array.sort
     //>=> readFiles<uint8>
     >=> writeChunks output ".tiff" 12u 13u 14u

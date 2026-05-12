@@ -10,24 +10,24 @@ let main args =
         match args with
         | [| input; mask; outputRoot |] -> input, mask, outputRoot
         | [| input; mask |] -> input, mask, "../tmp/biasCorrection"
-        | [| input |] -> input, "../data/rotatingBoxes", "../tmp/biasCorrection"
-        | _ -> "../data/volume", "../data/rotatingBoxes", "../tmp/biasCorrection"
+        | [| input |] -> input, input, "../tmp/biasCorrection"
+        | _ -> "../data/rotatingBoxes", "../data/rotatingBoxes", "../tmp/biasCorrection"
 
     let model =
         src
-        |> read<float> input ".tiff"
+        |> readRange<float> "0" 1 "255" input ".tiff"
         >=> fitBiasModel<float> 2 256u
         |> drain
 
     src
-    |> read<float> input ".tiff"
+    |> readRange<float> "0" 1 "255" input ".tiff"
     >=> correctBias<float> model
     >=> intensityStretch<float> 0.0 255.0 0.0 255.0
     >=> cast<float, uint8>
     >=> write (outputRoot + "/unmasked") ".tiff"
     |> sink
 
-    let image = src |> read<float> input ".tiff"
+    let image = src |> readRange<float> "0" 1 "255" input ".tiff"
     let maskStream = src |> read<uint8> mask ".tiff"
     let maskedModel =
         zip image maskStream

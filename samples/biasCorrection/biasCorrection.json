@@ -6,7 +6,7 @@
         { "key": "availableMemory", "value": "2147483648UL", "useInput": false },
         { "key": "type", "value": "Float64", "useInput": false },
         { "key": "format", "value": "Image stack", "useInput": false },
-        { "key": "input", "value": "../data/volume", "useInput": false },
+        { "key": "input", "value": "../data/rotatingBoxes", "useInput": false },
         { "key": "suffix", "value": ".tiff", "useInput": false } ] },
     { "id": "fitModel", "functionId": "FitBiasModel", "x": 300.0, "y": 90.0,
       "parameters": [
@@ -18,7 +18,7 @@
         { "key": "availableMemory", "value": "2147483648UL", "useInput": false },
         { "key": "type", "value": "Float64", "useInput": false },
         { "key": "format", "value": "Image stack", "useInput": false },
-        { "key": "input", "value": "../data/volume", "useInput": false },
+        { "key": "input", "value": "../data/rotatingBoxes", "useInput": false },
         { "key": "suffix", "value": ".tiff", "useInput": false } ] },
     { "id": "correct", "functionId": "CorrectBias", "x": 300.0, "y": 240.0,
       "parameters": [
@@ -46,7 +46,7 @@
         { "key": "availableMemory", "value": "2147483648UL", "useInput": false },
         { "key": "type", "value": "Float64", "useInput": false },
         { "key": "format", "value": "Image stack", "useInput": false },
-        { "key": "input", "value": "../data/volume", "useInput": false },
+        { "key": "input", "value": "../data/rotatingBoxes", "useInput": false },
         { "key": "suffix", "value": ".tiff", "useInput": false } ] },
     { "id": "maskedMaskFit", "functionId": "Read", "x": 60.0, "y": 570.0,
       "parameters": [
@@ -65,7 +65,7 @@
         { "key": "availableMemory", "value": "2147483648UL", "useInput": false },
         { "key": "type", "value": "Float64", "useInput": false },
         { "key": "format", "value": "Image stack", "useInput": false },
-        { "key": "input", "value": "../data/volume", "useInput": false },
+        { "key": "input", "value": "../data/rotatingBoxes", "useInput": false },
         { "key": "suffix", "value": ".tiff", "useInput": false } ] },
     { "id": "maskedMaskCorrect", "functionId": "Read", "x": 60.0, "y": 840.0,
       "parameters": [

@@ -14,6 +14,7 @@ let main args =
 
     src
     |> read<uint8> input ".tiff"
+    >=> imageDivScalar<uint8> 255uy
     >=> dilate 2u
     >=> opening 2u
     >=> binaryMedian 1u 5u

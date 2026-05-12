@@ -15,7 +15,7 @@ let main args =
     src
     |> read<uint8> input ".tiff"
     >=> streamConnectedObjects<uint8> ObjectConnectivity.TwentySix
-    >=> paintObjects 64u 64u
+    >=> paintObjects 512u 384u
     >=> write output ".tiff"
     |> sink
 

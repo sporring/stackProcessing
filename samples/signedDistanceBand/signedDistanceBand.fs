@@ -13,8 +13,10 @@ let main args =
         | _ -> "../data/rotatingBoxes", "../tmp/signedDistanceBand"
 
     src
-    |> read<uint8> input ".tiff"
+    |> readRange<uint8> "0" 1 "63" input ".tiff"
+    >=> imageDivScalar<uint8> 255uy
     >=> signedDistanceBand 8u 4u
+    >=> cast<float, float32>
     >=> write output ".tiff"
     |> sink
 

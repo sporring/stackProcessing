@@ -105,7 +105,14 @@ let private discoverGraphs samplesRoot =
     Directory.EnumerateFiles(samplesRoot, "*.json", SearchOption.AllDirectories)
     |> Seq.filter (fun path ->
         let relative = relativePath samplesRoot path
-        not (relative.StartsWith("tmp/", StringComparison.OrdinalIgnoreCase)))
+        let parts = relative.Split('/')
+
+        not (relative.StartsWith("tmp/", StringComparison.OrdinalIgnoreCase))
+        && not (parts |> Array.exists (fun part ->
+            part.Equals("bin", StringComparison.OrdinalIgnoreCase)
+            || part.Equals("obj", StringComparison.OrdinalIgnoreCase)))
+        && not (relative.StartsWith("RunAll/", StringComparison.OrdinalIgnoreCase))
+        && not (relative.StartsWith("RunJson/", StringComparison.OrdinalIgnoreCase)))
     |> Seq.map (fun path ->
         let relative = relativePath samplesRoot path
         let name = relative.Substring(0, relative.Length - Path.GetExtension(relative).Length)
@@ -125,12 +132,28 @@ let private ensureRunProject repositoryRoot job =
     Directory.CreateDirectory job.RunDirectory |> ignore
 
     let projectPath = Path.Combine(job.RunDirectory, "GraphRun.fsproj")
-    let stackProcessingProject = Path.Combine(repositoryRoot, "src", "StackProcessing", "StackProcessing.fsproj")
-    let stackProcessingCoreProject = Path.Combine(repositoryRoot, "src", "StackProcessing.Core", "StackProcessing.Core.fsproj")
+    let probingOutput = Path.Combine(repositoryRoot, "src", "StackProcessing.Probing", "bin", "Debug", "net10.0")
     let simpleItkManaged = Path.Combine(repositoryRoot, "lib", "SimpleITKCSharpManaged.dll")
     let simpleItkWindowsNative = Path.Combine(repositoryRoot, "lib", "SimpleITKCSharpNative.dll")
     let simpleItkLinuxNative = Path.Combine(repositoryRoot, "lib", "libSimpleITKCSharpNative.so")
     let simpleItkMacNative = Path.Combine(repositoryRoot, "lib", "libSimpleITKCSharpNative.dylib")
+
+    let referenceItems =
+        if Directory.Exists probingOutput then
+            Directory.GetFiles(probingOutput, "*.dll")
+            |> Array.sort
+            |> Array.map (fun dll ->
+                let includeName = Path.GetFileNameWithoutExtension dll
+                $"""    <Reference Include="{xml includeName}">
+      <HintPath>{xml dll}</HintPath>
+      <Private>true</Private>
+    </Reference>""")
+            |> String.concat Environment.NewLine
+        else
+            $"""    <Reference Include="SimpleITKCSharp">
+      <HintPath>{xml simpleItkManaged}</HintPath>
+      <Private>true</Private>
+    </Reference>"""
 
     let projectFile =
         $"""<Project Sdk="Microsoft.NET.Sdk">
@@ -139,12 +162,7 @@ let private ensureRunProject repositoryRoot job =
     <TargetFramework>net10.0</TargetFramework>
   </PropertyGroup>
   <ItemGroup>
-    <Reference Include="SimpleITKCSharp">
-      <HintPath>{xml simpleItkManaged}</HintPath>
-      <Private>true</Private>
-    </Reference>
-    <ProjectReference Include="{xml stackProcessingProject}" />
-    <ProjectReference Include="{xml stackProcessingCoreProject}" />
+{referenceItems}
   </ItemGroup>
   <ItemGroup Condition="$([MSBuild]::IsOSPlatform('Windows'))">
     <None Include="{xml simpleItkWindowsNative}">
@@ -297,7 +315,14 @@ let private runGraph (cancellationToken: CancellationToken) (repositoryRoot: str
             if not options.SkipBuild then
                 File.AppendAllText(job.LogPath, $"== Build {job.Name} =={Environment.NewLine}")
                 let! buildResult =
-                    runProcessAsync cancellationToken job.LogPath job.RunDirectory "dotnet" [ "build"; projectPath; "--verbosity"; "q" ] None options.Timeout
+                    runProcessAsync
+                        cancellationToken
+                        job.LogPath
+                        job.RunDirectory
+                        "dotnet"
+                        [ "build"; projectPath; "--verbosity"; "q"; "--disable-build-servers" ]
+                        None
+                        options.Timeout
 
                 exitCode <- buildResult.ExitCode
                 elapsed <- elapsed + buildResult.Elapsed
@@ -416,6 +441,18 @@ let main argv =
     | Ok options ->
         let samplesRoot = Path.GetFullPath options.SamplesRoot
         let repositoryRoot = Path.GetFullPath(Path.Combine(samplesRoot, ".."))
+        let jsonOutputDir = Path.Combine(samplesRoot, "tmp", "json")
+        let jsonBuildDir = Path.Combine(samplesRoot, "tmp", "json-build")
+
+        if Directory.Exists jsonOutputDir then
+            Directory.Delete(jsonOutputDir, true)
+
+        if Directory.Exists jsonBuildDir then
+            Directory.Delete(jsonBuildDir, true)
+
+        Directory.CreateDirectory jsonOutputDir |> ignore
+        Directory.CreateDirectory jsonBuildDir |> ignore
+
         let jobs = discoverGraphs samplesRoot
 
         use cancellation = new CancellationTokenSource()

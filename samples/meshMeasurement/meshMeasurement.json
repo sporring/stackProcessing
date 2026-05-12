@@ -2,18 +2,22 @@
   "version": 1,
   "nodes": [
     { "id": "readArea", "functionId": "Read", "x": 80.0, "y": 90.0, "parameters": [ { "key": "availableMemory", "value": "2147483648UL", "useInput": false }, { "key": "type", "value": "UInt8", "useInput": false }, { "key": "format", "value": "Image stack", "useInput": false }, { "key": "input", "value": "../data/rotatingBoxes", "useInput": false }, { "key": "suffix", "value": ".tiff", "useInput": false } ] },
+    { "id": "areaMask", "functionId": "ImageOpScalar", "x": 180.0, "y": 90.0, "parameters": [ { "key": "operation", "value": "/", "useInput": false }, { "key": "type", "value": "UInt8", "useInput": false }, { "key": "value", "value": "255", "useInput": false } ] },
     { "id": "cubes", "functionId": "MarchingCubes", "x": 280.0, "y": 90.0, "parameters": [ { "key": "type", "value": "UInt8", "useInput": false }, { "key": "surfaceValue", "value": "0.5", "useInput": false } ] },
     { "id": "area", "functionId": "SurfaceArea", "x": 500.0, "y": 90.0, "parameters": [ { "key": "xUnit", "value": "1.0", "useInput": false }, { "key": "yUnit", "value": "1.0", "useInput": false }, { "key": "zUnit", "value": "1.0", "useInput": false } ] },
     { "id": "printArea", "functionId": "Print", "x": 720.0, "y": 90.0, "parameters": [ { "key": "format", "value": "Surface area: {Area}", "useInput": false }, { "key": "input1", "value": "Area", "useInput": true } ] },
     { "id": "readVolume", "functionId": "Read", "x": 80.0, "y": 250.0, "parameters": [ { "key": "availableMemory", "value": "2147483648UL", "useInput": false }, { "key": "type", "value": "UInt8", "useInput": false }, { "key": "format", "value": "Image stack", "useInput": false }, { "key": "input", "value": "../data/rotatingBoxes", "useInput": false }, { "key": "suffix", "value": ".tiff", "useInput": false } ] },
+    { "id": "volumeMask", "functionId": "ImageOpScalar", "x": 190.0, "y": 250.0, "parameters": [ { "key": "operation", "value": "/", "useInput": false }, { "key": "type", "value": "UInt8", "useInput": false }, { "key": "value", "value": "255", "useInput": false } ] },
     { "id": "volume", "functionId": "Volume", "x": 300.0, "y": 250.0, "parameters": [ { "key": "xUnit", "value": "1.0", "useInput": false }, { "key": "yUnit", "value": "1.0", "useInput": false }, { "key": "zUnit", "value": "1.0", "useInput": false } ] },
     { "id": "printVolume", "functionId": "Print", "x": 520.0, "y": 250.0, "parameters": [ { "key": "format", "value": "Volume: {Volume}", "useInput": false }, { "key": "input1", "value": "Volume", "useInput": true } ] }
   ],
   "edges": [
-    { "fromNode": "readArea", "fromKind": "dataOutput", "fromPort": 0, "toNode": "cubes", "toKind": "dataInput", "toPort": 0 },
+    { "fromNode": "readArea", "fromKind": "dataOutput", "fromPort": 0, "toNode": "areaMask", "toKind": "dataInput", "toPort": 0 },
+    { "fromNode": "areaMask", "fromKind": "dataOutput", "fromPort": 0, "toNode": "cubes", "toKind": "dataInput", "toPort": 0 },
     { "fromNode": "cubes", "fromKind": "dataOutput", "fromPort": 0, "toNode": "area", "toKind": "dataInput", "toPort": 0 },
     { "fromNode": "area", "fromKind": "reducerOutput", "fromPort": 0, "toNode": "printArea", "toKind": "parameterInput", "toPort": 1 },
-    { "fromNode": "readVolume", "fromKind": "dataOutput", "fromPort": 0, "toNode": "volume", "toKind": "dataInput", "toPort": 0 },
+    { "fromNode": "readVolume", "fromKind": "dataOutput", "fromPort": 0, "toNode": "volumeMask", "toKind": "dataInput", "toPort": 0 },
+    { "fromNode": "volumeMask", "fromKind": "dataOutput", "fromPort": 0, "toNode": "volume", "toKind": "dataInput", "toPort": 0 },
     { "fromNode": "volume", "fromKind": "reducerOutput", "fromPort": 0, "toNode": "printVolume", "toKind": "parameterInput", "toPort": 1 }
   ]
 }
