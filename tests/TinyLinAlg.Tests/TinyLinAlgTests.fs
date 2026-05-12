@@ -179,4 +179,31 @@ let tinyLinAlgSuite =
                   C = v3 1.0 2.0 -3.0 }
 
             expectV3 (affinePoint affine (v3 2.0 4.0 -1.0)) (v3 3.5 7.0 -3.0) "scaled affine"
+
+        testCase "dense least squares recovers coefficients for overdetermined systems" <| fun _ ->
+            let a =
+                array2D
+                    [ [ 1.0; 0.0 ]
+                      [ 1.0; 1.0 ]
+                      [ 1.0; 2.0 ] ]
+
+            let coefficients = TinyLinAlg.Dense.leastSquares 0.0 a [| 2.0; 5.0; 8.0 |]
+
+            Expect.floatClose Accuracy.high coefficients[0] 2.0 "intercept"
+            Expect.floatClose Accuracy.high coefficients[1] 3.0 "slope"
+
+            let predicted = TinyLinAlg.Dense.predict a coefficients
+            Expect.sequenceEqual predicted [| 2.0; 5.0; 8.0 |] "Predictions should match exactly."
+
+        testCase "dense least squares supports ridge regularized underdetermined systems" <| fun _ ->
+            let a =
+                array2D
+                    [ [ 1.0; 1.0; 0.0 ]
+                      [ 1.0; 0.0; 1.0 ] ]
+
+            let coefficients = TinyLinAlg.Dense.leastSquares 1e-6 a [| 3.0; 4.0 |]
+            let predicted = TinyLinAlg.Dense.predict a coefficients
+
+            Expect.floatClose Accuracy.medium predicted[0] 3.0 "first row"
+            Expect.floatClose Accuracy.medium predicted[1] 4.0 "second row"
     ]

@@ -5,6 +5,7 @@ open System.Collections.Generic
 open System.Diagnostics
 open System.IO
 open System.Runtime.InteropServices
+open System.Globalization
 open System.Text.Json
 open System.Text.Json.Serialization
 open SlimPipeline
@@ -195,6 +196,30 @@ let private parameters pairs =
     pairs |> List.iter (fun (key, value) -> dict[key] <- value)
     dict
 
+let private csvEscape (value: string) =
+    if value.Contains(',') || value.Contains('"') || value.Contains('\n') || value.Contains('\r') then
+        "\"" + value.Replace("\"", "\"\"") + "\""
+    else
+        value
+
+let private writeCsv path (rows: seq<string list>) =
+    let directory = Path.GetDirectoryName(path: string)
+    if not (String.IsNullOrWhiteSpace directory) then
+        Directory.CreateDirectory directory |> ignore
+
+    rows
+    |> Seq.map (List.map csvEscape >> String.concat ",")
+    |> fun lines -> File.WriteAllLines(path, lines)
+
+let private invariant (value: float) =
+    value.ToString("G17", CultureInfo.InvariantCulture)
+
+let private invariantInt64 (value: int64) =
+    value.ToString(CultureInfo.InvariantCulture)
+
+let private invariantUInt64 (value: uint64) =
+    value.ToString(CultureInfo.InvariantCulture)
+
 let private tryParameter key (probe: ProbeResultJson) =
     if isNull probe.parameters then
         None
@@ -232,6 +257,115 @@ let private calibrationParameterKey (probe: ProbeResultJson) =
                 Some $"{kvp.Key}={kvp.Value}")
         |> Seq.sort
         |> String.concat "|"
+
+let private analysisParameterText (probe: ProbeResultJson) =
+    if isNull probe.parameters then
+        ""
+    else
+        probe.parameters
+        |> Seq.cast<KeyValuePair<string, string>>
+        |> Seq.sortBy (fun kvp -> kvp.Key)
+        |> Seq.map (fun kvp -> $"{kvp.Key}={kvp.Value}")
+        |> String.concat "|"
+
+let private stageFeatureKey (probe: ProbeResultJson) =
+    let stageOrOperation =
+        probe
+        |> tryParameter "stage"
+        |> Option.defaultValue (operationName probe)
+
+    match calibrationParameterKey probe with
+    | "" -> stageOrOperation
+    | parameters -> $"{stageOrOperation}:{parameters}"
+
+let private parseCsvLine (line: string) =
+    let values = ResizeArray<string>()
+    let current = System.Text.StringBuilder()
+    let mutable quoted = false
+    let mutable i = 0
+
+    while i < line.Length do
+        match line[i] with
+        | '"' when quoted && i + 1 < line.Length && line[i + 1] = '"' ->
+            current.Append('"') |> ignore
+            i <- i + 2
+        | '"' ->
+            quoted <- not quoted
+            i <- i + 1
+        | ',' when not quoted ->
+            values.Add(current.ToString())
+            current.Clear() |> ignore
+            i <- i + 1
+        | ch ->
+            current.Append(ch) |> ignore
+            i <- i + 1
+
+    values.Add(current.ToString())
+    values |> Seq.toList
+
+let private loadAnalysisFeatureTokens path =
+    if String.IsNullOrWhiteSpace path || not (File.Exists path) then
+        Set.empty
+    else
+        let lines = File.ReadAllLines path
+
+        match lines |> Array.tryHead with
+        | None -> Set.empty
+        | Some header ->
+            let columns = parseCsvLine header
+            let featureIndex = columns |> List.tryFindIndex ((=) "featureKey")
+
+            match featureIndex with
+            | None -> Set.empty
+            | Some featureIndex ->
+                lines
+                |> Seq.skip 1
+                |> Seq.choose (fun line ->
+                    let columns = parseCsvLine line
+                    if featureIndex < columns.Length then Some columns[featureIndex] else None)
+                |> Seq.collect (fun feature ->
+                    let normalized = normalizedIdentifier feature
+                    let operation =
+                        match feature.Split([| ':' |], 2) with
+                        | [| first; _ |] -> normalizedIdentifier first
+                        | _ -> normalized
+
+                    [ normalized; operation ])
+                |> Set.ofSeq
+
+let private probeMatchesAnalysisTokens tokens (probe: ProbeResultJson) =
+    if Set.isEmpty tokens then
+        true
+    else
+        let candidates =
+            seq {
+                operationName probe
+                stageFeatureKey probe
+                match tryParameter "stage" probe with
+                | Some stage -> stage
+                | None -> ()
+
+                for timeCost in probe.costTimes do
+                    timeCost.calibrationKey
+            }
+            |> Seq.map normalizedIdentifier
+            |> Seq.toList
+
+        tokens
+        |> Set.exists (fun (token: string) ->
+            candidates
+            |> List.exists (fun (candidate: string) ->
+                candidate.Contains(token, StringComparison.Ordinal)
+                || token.Contains(candidate, StringComparison.Ordinal)))
+
+let private filterProbesByAnalysisFeatures analysisFeaturesPath probes =
+    match analysisFeaturesPath with
+    | None -> probes
+    | Some path ->
+        let tokens = loadAnalysisFeatureTokens path
+        let filtered = probes |> Array.filter (probeMatchesAnalysisTokens tokens)
+        printfn "Analysis feature restriction kept %d of %d probes from %s." filtered.Length probes.Length path
+        filtered
 
 let private imageParameters size pixelType windowSize baseDepth =
     let p =
@@ -506,6 +640,150 @@ let private attachPredictions calibrations probes =
             actualMemoryDeltaBytes = probe.rssDeltaMedianBytes
             actualElapsedMedianMilliseconds = probe.elapsedMedianMilliseconds })
 
+let private probingCsvPrefix reportPath =
+    let directory = Path.GetDirectoryName(reportPath: string)
+    let name = Path.GetFileNameWithoutExtension reportPath
+
+    if String.IsNullOrWhiteSpace directory then
+        name
+    else
+        Path.Combine(directory, name)
+
+let private writeProbeAnalysisCsvs reportPath (calibrations: Dictionary<string, StageTimeCoefficients>) (probes: ProbeResultJson array) =
+    let prefix = probingCsvPrefix reportPath
+    let rowsPath = prefix + "-rows.csv"
+    let featuresPath = prefix + "-features.csv"
+    let vectorsPath = prefix + "-vectors.csv"
+    let calibrationsPath = prefix + "-calibrations.csv"
+    let predictionsPath = prefix + "-predictions.csv"
+
+    writeCsv
+        rowsPath
+        (seq {
+            yield
+                [ "rowId"
+                  "source"
+                  "description"
+                  "operation"
+                  "stage"
+                  "baselineOperation"
+                  "parameterKey"
+                  "parameters"
+                  "warmupCount"
+                  "repetitionCount" ]
+
+            for probe in probes do
+                yield
+                    [ probe.name
+                      "probing"
+                      probe.description
+                      operationName probe
+                      tryParameter "stage" probe |> Option.defaultValue ""
+                      tryParameter "baselineOperation" probe |> Option.defaultValue ""
+                      calibrationParameterKey probe
+                      analysisParameterText probe
+                      string probe.warmupCount
+                      string probe.repetitionCount ]
+        })
+
+    writeCsv
+        featuresPath
+        (seq {
+            yield [ "rowId"; "featureKey"; "value"; "featureKind" ]
+
+            for probe in probes do
+                yield [ probe.name; $"operation:{operationName probe}"; "1"; "operation" ]
+                yield [ probe.name; $"stage:{stageFeatureKey probe}"; "1"; "stage" ]
+
+                for timeCost in probe.costTimes do
+                    yield [ probe.name; $"cost:{timeCost.calibrationKey}:present"; "1"; "costPresence" ]
+
+                    if timeCost.cpuCostUnits <> 0.0 then
+                        yield [ probe.name; $"cost:{timeCost.calibrationKey}:cpuCostUnits"; invariant timeCost.cpuCostUnits; "costUnits" ]
+
+                    if timeCost.nativeCostUnits <> 0.0 then
+                        yield [ probe.name; $"cost:{timeCost.calibrationKey}:nativeCostUnits"; invariant timeCost.nativeCostUnits; "costUnits" ]
+
+                    if timeCost.ioReadBytes <> 0UL then
+                        yield [ probe.name; $"cost:{timeCost.calibrationKey}:ioReadBytes"; invariantUInt64 timeCost.ioReadBytes; "costUnits" ]
+
+                    if timeCost.ioWriteBytes <> 0UL then
+                        yield [ probe.name; $"cost:{timeCost.calibrationKey}:ioWriteBytes"; invariantUInt64 timeCost.ioWriteBytes; "costUnits" ]
+
+                    if timeCost.ioReadOps <> 0UL then
+                        yield [ probe.name; $"cost:{timeCost.calibrationKey}:ioReadOps"; invariantUInt64 timeCost.ioReadOps; "costUnits" ]
+
+                    if timeCost.ioWriteOps <> 0UL then
+                        yield [ probe.name; $"cost:{timeCost.calibrationKey}:ioWriteOps"; invariantUInt64 timeCost.ioWriteOps; "costUnits" ]
+        })
+
+    writeCsv
+        vectorsPath
+        (seq {
+            yield [ "rowId"; "measurement"; "value"; "source" ]
+
+            for probe in probes do
+                yield [ probe.name; "actualElapsedMedianMilliseconds"; invariant probe.elapsedMedianMilliseconds; "probing" ]
+                yield [ probe.name; "actualElapsedMinMilliseconds"; invariant probe.elapsedMinMilliseconds; "probing" ]
+                yield [ probe.name; "actualElapsedMaxMilliseconds"; invariant probe.elapsedMaxMilliseconds; "probing" ]
+                yield [ probe.name; "rssDeltaMedianBytes"; invariantUInt64 probe.rssDeltaMedianBytes; "probing" ]
+                yield [ probe.name; "rssDeltaMinBytes"; invariantUInt64 probe.rssDeltaMinBytes; "probing" ]
+                yield [ probe.name; "rssDeltaMaxBytes"; invariantUInt64 probe.rssDeltaMaxBytes; "probing" ]
+                yield [ probe.name; "rssRetainedDeltaMedianBytes"; invariantUInt64 probe.rssRetainedDeltaMedianBytes; "probing" ]
+                yield [ probe.name; "predictedMemoryPeakBytes"; invariantUInt64 probe.predictedMemoryPeakBytes; "probing" ]
+                yield [ probe.name; "observedElements"; invariantUInt64 probe.observedElements; "probing" ]
+                yield [ probe.name; "observedBytes"; invariantUInt64 probe.observedBytes; "probing" ]
+                yield [ probe.name; "throughputMedianElementsPerSecond"; invariant probe.throughputMedianElementsPerSecond; "probing" ]
+                yield [ probe.name; "throughputMedianBytesPerSecond"; invariant probe.throughputMedianBytesPerSecond; "probing" ]
+
+                match probe.predictedElapsedMilliseconds with
+                | Some predicted -> yield [ probe.name; "predictedElapsedMilliseconds"; invariant predicted; "probing" ]
+                | None -> ()
+        })
+
+    writeCsv
+        calibrationsPath
+        (seq {
+            yield
+                [ "calibrationKey"
+                  "cpuMillisecondsPerUnit"
+                  "nativeMillisecondsPerUnit"
+                  "ioReadMillisecondsPerByte"
+                  "ioWriteMillisecondsPerByte"
+                  "ioReadMillisecondsPerOp"
+                  "ioWriteMillisecondsPerOp" ]
+
+            for kvp in calibrations |> Seq.cast<KeyValuePair<string, StageTimeCoefficients>> |> Seq.sortBy (fun kvp -> kvp.Key) do
+                let coefficients = kvp.Value
+
+                yield
+                    [ kvp.Key
+                      invariant coefficients.CpuMillisecondsPerUnit
+                      invariant coefficients.NativeMillisecondsPerUnit
+                      invariant coefficients.IoReadMillisecondsPerByte
+                      invariant coefficients.IoWriteMillisecondsPerByte
+                      invariant coefficients.IoReadMillisecondsPerOp
+                      invariant coefficients.IoWriteMillisecondsPerOp ]
+        })
+
+    writeCsv
+        predictionsPath
+        (seq {
+            yield [ "rowId"; "actualElapsedMedianMilliseconds"; "predictedElapsedMilliseconds"; "residualMilliseconds" ]
+
+            for probe in probes do
+                match probe.predictedElapsedMilliseconds with
+                | Some predicted ->
+                    yield
+                        [ probe.name
+                          invariant probe.elapsedMedianMilliseconds
+                          invariant predicted
+                          invariant (probe.elapsedMedianMilliseconds - predicted) ]
+                | None -> ()
+        })
+
+    printfn "Wrote probing analysis CSVs to %s-*.csv" prefix
+
 let private releaseImages (images: Image<float> list) =
     images |> List.iter (fun image -> image.decRefCount())
 
@@ -638,6 +916,8 @@ let private cleanDirectory path =
 
 type ProbeOptions =
     { ReportPath: string
+      AnalysisFeaturesPath: string option
+      NonBoilerplate: bool
       SqrtOnly: bool
       StackUnstackOnly: bool
       ConvolutionBreakdownOnly: bool
@@ -645,6 +925,8 @@ type ProbeOptions =
 
 let private parseArgs (args: string array) =
     let mutable reportPath = None
+    let mutable analysisFeaturesPath = None
+    let mutable nonBoilerplate = false
     let mutable sqrtOnly = false
     let mutable stackUnstackOnly = false
     let mutable convolutionBreakdownOnly = false
@@ -653,6 +935,18 @@ let private parseArgs (args: string array) =
 
     while i < args.Length do
         match args[i] with
+        | "--analysis-features" ->
+            if i + 1 >= args.Length then
+                failwith "Expected a path after --analysis-features."
+            analysisFeaturesPath <- Some(Path.GetFullPath args[i + 1])
+            i <- i + 2
+        | "--boilerplate-only"
+        | "--only-boilerplate" ->
+            nonBoilerplate <- false
+            i <- i + 1
+        | "--non-boilerplate" ->
+            nonBoilerplate <- true
+            i <- i + 1
         | "--sqrt-only"
         | "--only-sqrt" ->
             sqrtOnly <- true
@@ -676,6 +970,13 @@ let private parseArgs (args: string array) =
             | "sqrt" ->
                 sqrtOnly <- true
                 i <- i + 2
+            | "boilerplate" ->
+                nonBoilerplate <- false
+                i <- i + 2
+            | "non-boilerplate"
+            | "nonboilerplate" ->
+                nonBoilerplate <- true
+                i <- i + 2
             | "stack-unstack"
             | "stackunstack" ->
                 stackUnstackOnly <- true
@@ -689,7 +990,7 @@ let private parseArgs (args: string array) =
                 discreteGaussianBreakdownOnly <- true
                 i <- i + 2
             | operation ->
-                failwith $"Unsupported probing operation '{operation}'. Currently supported: sqrt, stack-unstack, convolution-breakdown, discrete-gaussian-breakdown."
+                failwith $"Unsupported probing operation '{operation}'. Currently supported: boilerplate, sqrt, stack-unstack, convolution-breakdown, discrete-gaussian-breakdown."
         | arg when arg.StartsWith("-") ->
             failwith $"Unknown probing argument '{arg}'."
         | path ->
@@ -712,6 +1013,8 @@ let private parseArgs (args: string array) =
         reportPath
         |> Option.defaultValue "stackprocessing-probing.json"
         |> Path.GetFullPath
+      AnalysisFeaturesPath = analysisFeaturesPath
+      NonBoilerplate = nonBoilerplate
       SqrtOnly = sqrtOnly
       StackUnstackOnly = stackUnstackOnly
       ConvolutionBreakdownOnly = convolutionBreakdownOnly
@@ -729,8 +1032,14 @@ let main args =
 
     cleanDirectory tempRoot
 
+    let oldFocusedMode =
+        options.SqrtOnly
+        || options.StackUnstackOnly
+        || options.ConvolutionBreakdownOnly
+        || options.DiscreteGaussianBreakdownOnly
+
     let inputDirs : Map<ImageSize, string> =
-        if options.SqrtOnly || options.StackUnstackOnly || options.ConvolutionBreakdownOnly || options.DiscreteGaussianBreakdownOnly then
+        if oldFocusedMode then
             Map.empty
         else
             inputSizes
@@ -754,7 +1063,7 @@ let main args =
 
     let probes =
         [| for xy in xySizes do
-               if not options.SqrtOnly && not options.StackUnstackOnly && not options.ConvolutionBreakdownOnly && not options.DiscreteGaussianBreakdownOnly then
+               if not oldFocusedMode then
                    for depth in defaultDepths do
                        let size = imageSize xy depth
                        let inputDir = inputDirs[size]
@@ -782,19 +1091,20 @@ let main args =
                                      |> zero<uint8> size.Width size.Height size.Depth
                                      >=> write (outputDir size "zero-uint8-write") ".tiff")
 
-                       yield runSinkProbe
-                                 $"add-normal-noise-uint8-write-{suffix}"
-                                 $"Synthetic UInt8 {suffix} source, additive Gaussian noise, write."
-                                 (let p = defaultImageParameters size "uint8" 1u
-                                  p["operation"] <- "noise-write"
-                                  p["mean"] <- "128"
-                                  p["sigma"] <- "50"
-                                  p)
-                                 (fun () ->
-                                     source availableMemory
-                                     |> zero<uint8> size.Width size.Height size.Depth
-                                     >=> addNormalNoise 128.0 50.0
-                                     >=> write (outputDir size "add-normal-noise-uint8-write") ".tiff")
+                       if options.NonBoilerplate then
+                           yield runSinkProbe
+                                     $"add-normal-noise-uint8-write-{suffix}"
+                                     $"Synthetic UInt8 {suffix} source, additive Gaussian noise, write."
+                                     (let p = defaultImageParameters size "uint8" 1u
+                                      p["operation"] <- "noise-write"
+                                      p["mean"] <- "128"
+                                      p["sigma"] <- "50"
+                                      p)
+                                     (fun () ->
+                                         source availableMemory
+                                         |> zero<uint8> size.Width size.Height size.Depth
+                                         >=> addNormalNoise 128.0 50.0
+                                         >=> write (outputDir size "add-normal-noise-uint8-write") ".tiff")
 
                        yield runSinkProbe
                                  $"read-uint8-ignore-{suffix}"
@@ -818,33 +1128,39 @@ let main args =
                                      |> read<uint8> inputDir ".tiff"
                                      >=> write (outputDir size "read-uint8-write") ".tiff")
 
-                       yield runSinkProbe
-                                 $"threshold-float-write-{suffix}"
-                                 $"Synthetic Float64 {suffix} source, threshold to UInt8, write."
-                                 (let p = defaultImageParameters size "float" 1u
-                                  p["operation"] <- "threshold-write"
-                                  p["threshold"] <- "128"
-                                  p)
-                                 (fun () ->
-                                     source availableMemory
-                                     |> zero<float> size.Width size.Height size.Depth
-                                     >=> addNormalNoise 128.0 50.0
-                                     >=> threshold 128.0 infinity
-                                     >=> imageMulScalar 255uy
-                                     >=> write (outputDir size "threshold-float-write") ".tiff")
+                       if options.NonBoilerplate then
+                           yield runSinkProbe
+                                     $"threshold-float-write-{suffix}"
+                                     $"Synthetic Float64 {suffix} source, threshold to UInt8, write."
+                                     (let p = defaultImageParameters size "float" 1u
+                                      p["operation"] <- "threshold-write"
+                                      p["threshold"] <- "128"
+                                      p)
+                                     (fun () ->
+                                         source availableMemory
+                                         |> zero<float> size.Width size.Height size.Depth
+                                         >=> addNormalNoise 128.0 50.0
+                                         >=> threshold 128.0 infinity
+                                         >=> imageMulScalar 255uy
+                                         >=> write (outputDir size "threshold-float-write") ".tiff")
 
-                       yield runDrainProbe
-                                 $"compute-stats-read-float-{suffix}"
-                                 $"Read {suffix} stack as Float64 and drain computeStats reducer."
-                                 (let p = defaultImageParameters size "float" 1u
-                                  p["operation"] <- "compute-stats"
-                                  p)
-                                 (fun () ->
-                                     source availableMemory
-                                     |> read<float> inputDir ".tiff"
-                                     >=> computeStats ())
+                           yield runDrainProbe
+                                     $"compute-stats-read-float-{suffix}"
+                                     $"Read {suffix} stack as Float64 and drain computeStats reducer."
+                                     (let p = defaultImageParameters size "float" 1u
+                                      p["operation"] <- "compute-stats"
+                                      p)
+                                     (fun () ->
+                                         source availableMemory
+                                         |> read<float> inputDir ".tiff"
+                                         >=> computeStats ())
 
-               if not options.StackUnstackOnly && not options.ConvolutionBreakdownOnly && not options.DiscreteGaussianBreakdownOnly then
+               if
+                   (options.NonBoilerplate || options.SqrtOnly)
+                   && not options.StackUnstackOnly
+                   && not options.ConvolutionBreakdownOnly
+                   && not options.DiscreteGaussianBreakdownOnly
+               then
                    for depth in singletonDepths do
                        let size = imageSize xy depth
                        let suffix = sizeName size
@@ -1135,6 +1451,7 @@ let main args =
     convolutionBreakdownKernel |> Option.iter (fun kernel -> kernel.decRefCount())
     let calibrations = buildCalibrations probes
     let probes = attachPredictions calibrations probes
+    let probes = filterProbesByAnalysisFeatures options.AnalysisFeaturesPath probes
 
     let report =
         { generatedUtc = DateTimeOffset.UtcNow.ToString("O")
@@ -1154,6 +1471,7 @@ let main args =
     options.Converters.Add(JsonStringEnumConverter())
     let json = JsonSerializer.Serialize(report, options)
     File.WriteAllText(reportPath, json)
+    writeProbeAnalysisCsvs reportPath calibrations probes
 
     printfn "Wrote probing report to %s" reportPath
     0

@@ -113,3 +113,86 @@ type Affine =
 
 let affinePoint (a:Affine) (p:V3) : V3 =
     add (add (mulMV a.A (sub p a.C)) a.T) a.C
+
+module Dense =
+    let private checkMatrixVectorShape (a: float[,]) (b: float[]) =
+        if a.GetLength(0) <> b.Length then
+            invalidArg "b" $"Matrix row count {a.GetLength(0)} must match vector length {b.Length}."
+
+    let solveLinearSystem (a: float[,]) (b: float[]) =
+        let n = a.GetLength(0)
+        if a.GetLength(1) <> n then
+            invalidArg "a" "Linear solve expects a square matrix."
+        checkMatrixVectorShape a b
+
+        let m = Array2D.zeroCreate<float> n (n + 1)
+        for row in 0 .. n - 1 do
+            for col in 0 .. n - 1 do
+                m[row, col] <- a[row, col]
+            m[row, n] <- b[row]
+
+        for col in 0 .. n - 1 do
+            let mutable pivotRow = col
+            let mutable pivotValue = abs m[col, col]
+
+            for row in col + 1 .. n - 1 do
+                let candidate = abs m[row, col]
+                if candidate > pivotValue then
+                    pivotRow <- row
+                    pivotValue <- candidate
+
+            if pivotValue < 1e-12 then
+                failwith "Singular matrix"
+
+            if pivotRow <> col then
+                for k in col .. n do
+                    let tmp = m[col, k]
+                    m[col, k] <- m[pivotRow, k]
+                    m[pivotRow, k] <- tmp
+
+            let pivot = m[col, col]
+            for k in col .. n do
+                m[col, k] <- m[col, k] / pivot
+
+            for row in 0 .. n - 1 do
+                if row <> col then
+                    let factor = m[row, col]
+                    if factor <> 0.0 then
+                        for k in col .. n do
+                            m[row, k] <- m[row, k] - factor * m[col, k]
+
+        Array.init n (fun row -> m[row, n])
+
+    let leastSquares ridge (a: float[,]) (y: float[]) =
+        checkMatrixVectorShape a y
+        if ridge < 0.0 then
+            invalidArg "ridge" "Ridge regularization must be non-negative."
+
+        let rows = a.GetLength(0)
+        let cols = a.GetLength(1)
+        let ata = Array2D.zeroCreate<float> cols cols
+        let aty = Array.zeroCreate<float> cols
+
+        for row in 0 .. rows - 1 do
+            for col in 0 .. cols - 1 do
+                let value = a[row, col]
+                aty[col] <- aty[col] + value * y[row]
+
+                for other in 0 .. cols - 1 do
+                    ata[col, other] <- ata[col, other] + value * a[row, other]
+
+        if ridge > 0.0 then
+            for col in 0 .. cols - 1 do
+                ata[col, col] <- ata[col, col] + ridge
+
+        solveLinearSystem ata aty
+
+    let predict (a: float[,]) (coefficients: float[]) =
+        if a.GetLength(1) <> coefficients.Length then
+            invalidArg "coefficients" $"Matrix column count {a.GetLength(1)} must match coefficient count {coefficients.Length}."
+
+        Array.init (a.GetLength(0)) (fun row ->
+            let mutable total = 0.0
+            for col in 0 .. coefficients.Length - 1 do
+                total <- total + a[row, col] * coefficients[col]
+            total)

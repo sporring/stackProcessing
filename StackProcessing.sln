@@ -187,6 +187,8 @@ Project("{F2A71F9B-5D33-465A-A702-920D77279786}") = "binaryContour", "samples\bi
 EndProject
 Project("{F2A71F9B-5D33-465A-A702-920D77279786}") = "fillSmallHoles", "samples\fillSmallHoles\fillSmallHoles.fsproj", "{6E90CB51-0DC9-436D-A650-1102E95F7010}"
 EndProject
+Project("{F2A71F9B-5D33-465A-A702-920D77279786}") = "StackProcessing.Analysis", "src\StackProcessing.Analysis\StackProcessing.Analysis.fsproj", "{50D80830-780E-4F7F-9A8B-E595505DFC2D}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -1253,6 +1255,18 @@ Global
 		{6E90CB51-0DC9-436D-A650-1102E95F7010}.Release|x64.Build.0 = Release|Any CPU
 		{6E90CB51-0DC9-436D-A650-1102E95F7010}.Release|x86.ActiveCfg = Release|Any CPU
 		{6E90CB51-0DC9-436D-A650-1102E95F7010}.Release|x86.Build.0 = Release|Any CPU
+		{50D80830-780E-4F7F-9A8B-E595505DFC2D}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{50D80830-780E-4F7F-9A8B-E595505DFC2D}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{50D80830-780E-4F7F-9A8B-E595505DFC2D}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{50D80830-780E-4F7F-9A8B-E595505DFC2D}.Debug|x64.Build.0 = Debug|Any CPU
+		{50D80830-780E-4F7F-9A8B-E595505DFC2D}.Debug|x86.ActiveCfg = Debug|Any CPU
+		{50D80830-780E-4F7F-9A8B-E595505DFC2D}.Debug|x86.Build.0 = Debug|Any CPU
+		{50D80830-780E-4F7F-9A8B-E595505DFC2D}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{50D80830-780E-4F7F-9A8B-E595505DFC2D}.Release|Any CPU.Build.0 = Release|Any CPU
+		{50D80830-780E-4F7F-9A8B-E595505DFC2D}.Release|x64.ActiveCfg = Release|Any CPU
+		{50D80830-780E-4F7F-9A8B-E595505DFC2D}.Release|x64.Build.0 = Release|Any CPU
+		{50D80830-780E-4F7F-9A8B-E595505DFC2D}.Release|x86.ActiveCfg = Release|Any CPU
+		{50D80830-780E-4F7F-9A8B-E595505DFC2D}.Release|x86.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
@@ -1347,5 +1361,6 @@ Global
 		{32E472DA-2EE5-499A-B1EC-7C8B77DFC5E7} = {5D20AA90-6969-D8BD-9DCD-8634F4692FDA}
 		{94C336A9-D3CF-46D3-9F6C-5DD3930BFA6F} = {5D20AA90-6969-D8BD-9DCD-8634F4692FDA}
 		{6E90CB51-0DC9-436D-A650-1102E95F7010} = {5D20AA90-6969-D8BD-9DCD-8634F4692FDA}
+		{50D80830-780E-4F7F-9A8B-E595505DFC2D} = {827E0CD3-B72D-47B6-A68D-7590B98EB39B}
 	EndGlobalSection
 EndGlobal
