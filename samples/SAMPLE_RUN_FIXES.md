@@ -5,19 +5,12 @@ graphs as user-facing examples.
 
 ## RunAll
 
-- Added `--disable-build-servers` and `--no-restore` to child sample builds in
-  `RunAll`. Direct builds of the same projects succeeded quickly, while nested
-  builds from the runner could otherwise stall and end with `Build FAILED` after
-  several minutes and zero compiler errors. For the current sweep, the solution
-  is prebuilt and `RunAll` is run with `--skip-build`.
 - Trimmed the heavier learning samples to representative ranges so they behave
   like examples rather than stress tests:
   `affineKeypointRegistration`, `fftGaussianCompare`, and `keypoint` now use
   smaller inputs in both their F# scripts and JSON graphs. `fftGaussianCompare`
   now uses a small synthetic noise volume instead of the full sample stack, and
   `chunk` chunks a representative range before reading the chunks back.
-- Fixed `RunAll --skip-build` log handling. It now clears sample logs before
-  running, instead of appending new evidence to old build/run failures.
 - Adjusted samples that accidentally combined incompatible teaching inputs:
   `biasCorrection` and `multiplyMask` now use matching image/mask stacks by
   default, and mask-valued measurements convert the `0/255` rotating-box masks
@@ -42,16 +35,8 @@ graphs as user-facing examples.
 
 ## RunJson
 
-- Applied child-build isolation to `RunJson`, because generated graph projects
-  are built in the same nested runner pattern.
-- Tightened `RunJson` graph discovery so it ignores generated `bin`, `obj`,
-  `RunAll`, `RunJson`, and `tmp` JSON files. Only real sample Studio graphs are
-  compiled and run.
 - `RunAll` completed cleanly after the fixes above: every sample reported
   `completed` with exit code `0` in `samples/tmp/runAll/gather.csv`.
-- Generated graph projects now reference the already-built StackProcessing DLLs
-  directly instead of using nested project references. This avoids restore/build
-  stalls in generated JSON projects while still exercising the graph compiler.
 - Fixed two graph-code generation issues found by JSON compile-only runs:
   histogram equalization now accepts fixed-bin histograms keyed by `float`, and
   `permuteAxes` emits unsigned axis tuples such as `(0u,2u,1u)`.
