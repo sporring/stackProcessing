@@ -12,7 +12,8 @@ type Options =
       OutputDirectory: string
       ExtraJsonRoots: string list
       ProbingPrefixes: string list
-      Ridge: float }
+      Ridge: float
+      DiagnosticsOnly: bool }
 
 type AnalysisRow =
     { RowId: string
@@ -33,7 +34,7 @@ type RunSummary =
       ProcessElapsedSeconds: float option }
 
 let private usage () =
-    printfn "Usage: dotnet run --project src/StackProcessing.Analysis -- [--samples-root PATH] [--output PATH] [--probing-prefix PATH] [--ridge VALUE]"
+    printfn "Usage: dotnet run --project src/StackProcessing.Analysis -- [--samples-root PATH] [--output PATH] [--probing-prefix PATH] [--ridge VALUE] [--diagnostics-only]"
     printfn ""
     printfn "Extracts Studio JSON stage keys, optionally merges Probing CSV exports,"
     printfn "writes a system matrix, and fits non-negative least-squares coefficients for each measurement vector."
@@ -44,6 +45,8 @@ let private usage () =
     printfn "  --extra-json-root PATH"
     printfn "                 Include generated Studio JSON graphs from PATH."
     printfn "  --ridge        1e-8"
+    printfn "  --diagnostics-only"
+    printfn "                 Write matrix/coverage diagnostics without parsing run logs or fitting coefficients."
 
 let private defaultSamplesRoot () =
     let cwd = Directory.GetCurrentDirectory()
@@ -62,7 +65,8 @@ let private defaultOptions () =
       OutputDirectory = Path.Combine(samplesRoot, "tmp", "analysis")
       ExtraJsonRoots = []
       ProbingPrefixes = []
-      Ridge = 1e-8 }
+      Ridge = 1e-8
+      DiagnosticsOnly = false }
 
 let rec private parseArgs options args =
     match args with
@@ -86,6 +90,8 @@ let rec private parseArgs options args =
         | _ ->
             eprintfn "analysis: --ridge expects a non-negative floating-point value"
             Error 2
+    | "--diagnostics-only" :: rest ->
+        parseArgs { options with DiagnosticsOnly = true } rest
     | option :: _ ->
         eprintfn "analysis: unknown option %s" option
         usage ()
@@ -159,13 +165,19 @@ let private tryParseCsvFloat (value: string) =
 let private normalizeValue (value: string) =
     Regex.Replace(value.Trim(), @"\s+", " ")
 
+let private preservedInputParameterKeys =
+    // Studio can mark size parameters as graph inputs while still saving the
+    // concrete sample value. For timing features, those values matter more than
+    // the fact that they were exposed as inputs.
+    set [ "width"; "height"; "depth"; "boxSize" ]
+
 let private parameterValues (node: SavedNode) =
     let definition = BuiltInCatalog.find node.FunctionId
     let saved =
         node.Parameters
         |> Array.map (fun parameter ->
             let value =
-                if parameter.UseInput then
+                if parameter.UseInput && not (preservedInputParameterKeys.Contains parameter.Key) then
                     "<input>"
                 else
                     normalizeValue parameter.Value
@@ -187,6 +199,7 @@ let private ignoredTimingParameterKeys =
         [ "availableMemory"
           "input"
           "output"
+          "suffix"
           "title"
           "xAxis"
           "yAxis"
@@ -552,6 +565,116 @@ let private matrixRank tolerance (a: float[,]) =
 
     rank
 
+let private subMatrix (rowIndexes: int list) (colIndexes: int list) (a: float[,]) =
+    let b = Array2D.zeroCreate<float> rowIndexes.Length colIndexes.Length
+
+    rowIndexes
+    |> List.iteri (fun targetRow sourceRow ->
+        colIndexes
+        |> List.iteri (fun targetCol sourceCol ->
+            b[targetRow, targetCol] <- a[sourceRow, sourceCol]))
+
+    b
+
+let private activeColumnIndexes (rowIndexes: int list) (a: float[,]) =
+    [ for col in 0 .. a.GetLength(1) - 1 do
+          if rowIndexes |> List.exists (fun row -> a[row, col] <> 0.0) then
+              col ]
+
+let private gramMatrix (a: float[,]) =
+    let rows = a.GetLength(0)
+    let cols = a.GetLength(1)
+    let gram = Array2D.zeroCreate<float> cols cols
+
+    for row in 0 .. rows - 1 do
+        for i in 0 .. cols - 1 do
+            let ai = a[row, i]
+
+            if ai <> 0.0 then
+                for j in i .. cols - 1 do
+                    gram[i, j] <- gram[i, j] + ai * a[row, j]
+
+    for i in 0 .. cols - 1 do
+        for j in i + 1 .. cols - 1 do
+            gram[j, i] <- gram[i, j]
+
+    gram
+
+let private symmetricEigenvalues tolerance (a: float[,]) =
+    let n = a.GetLength(0)
+    let m = Array2D.copy a
+    let maxIterations = max 100 (20 * n * n)
+    let mutable iteration = 0
+    let mutable doneRotating = false
+
+    while iteration < maxIterations && not doneRotating do
+        let mutable p = 0
+        let mutable q = 0
+        let mutable largest = 0.0
+
+        for i in 0 .. n - 1 do
+            for j in i + 1 .. n - 1 do
+                let value = abs m[i, j]
+                if value > largest then
+                    largest <- value
+                    p <- i
+                    q <- j
+
+        if largest <= tolerance then
+            doneRotating <- true
+        else
+            let app = m[p, p]
+            let aqq = m[q, q]
+            let apq = m[p, q]
+            let tau = (aqq - app) / (2.0 * apq)
+            let sign = if tau >= 0.0 then 1.0 else -1.0
+            let t = sign / (abs tau + sqrt (1.0 + tau * tau))
+            let c = 1.0 / sqrt (1.0 + t * t)
+            let s = t * c
+
+            for k in 0 .. n - 1 do
+                if k <> p && k <> q then
+                    let mkp = m[k, p]
+                    let mkq = m[k, q]
+                    m[k, p] <- c * mkp - s * mkq
+                    m[p, k] <- m[k, p]
+                    m[k, q] <- s * mkp + c * mkq
+                    m[q, k] <- m[k, q]
+
+            m[p, p] <- c * c * app - 2.0 * s * c * apq + s * s * aqq
+            m[q, q] <- s * s * app + 2.0 * s * c * apq + c * c * aqq
+            m[p, q] <- 0.0
+            m[q, p] <- 0.0
+
+        iteration <- iteration + 1
+
+    [ for i in 0 .. n - 1 -> m[i, i] ]
+    |> List.sortDescending
+
+let private conditionNumbers tolerance (a: float[,]) =
+    let cols = a.GetLength(1)
+
+    if cols = 0 then
+        0, Double.PositiveInfinity, Double.PositiveInfinity
+    else
+        let eigenvalues = gramMatrix a |> symmetricEigenvalues tolerance
+        let maxEigenvalue = eigenvalues |> List.max
+        let eigenTolerance = max tolerance (float (max (a.GetLength(0)) cols) * Double.Epsilon * maxEigenvalue)
+        let positive = eigenvalues |> List.filter (fun value -> value > eigenTolerance)
+        let rank = positive.Length
+
+        if rank = 0 then
+            rank, Double.PositiveInfinity, Double.PositiveInfinity
+        else
+            let effectiveCondition = sqrt (maxEigenvalue / (positive |> List.min))
+            let fullCondition =
+                if rank = cols then
+                    effectiveCondition
+                else
+                    Double.PositiveInfinity
+
+            rank, fullCondition, effectiveCondition
+
 let private measurementMatrix (rows: AnalysisRow list) (features: string list) (measurements: Measurement list) =
     let rowIndex =
         rows
@@ -612,8 +735,11 @@ let private writeOutputs (options: Options) (rows: AnalysisRow list) =
         |> List.sort
 
     let measurements =
-        (rows |> List.collect (measurementsForRow options.SamplesRoot))
-        @ probingMeasurements options.ProbingPrefixes
+        if options.DiagnosticsOnly then
+            []
+        else
+            (rows |> List.collect (measurementsForRow options.SamplesRoot))
+            @ probingMeasurements options.ProbingPrefixes
 
     let matrixValues = matrix rows features
     let featureSupport =
@@ -713,6 +839,72 @@ let private writeOutputs (options: Options) (rows: AnalysisRow list) =
                       string (a.GetLength(1))
                       string (matrixRank 1e-10 a)
                       invariant options.Ridge ]
+        })
+
+    let subsetDefinitions: (string * (AnalysisRow -> bool)) list =
+        [ "generated-all", fun row -> row.RowId.StartsWith("generated/probingGraphs/", StringComparison.Ordinal)
+          "generated-bio-filter", fun row -> row.RowId.StartsWith("generated/probingGraphs/bio-filter", StringComparison.Ordinal)
+          "generated-bio-grayscale", fun row -> row.RowId.StartsWith("generated/probingGraphs/bio-grayscale", StringComparison.Ordinal)
+          "generated-bio-threshold", fun row -> row.RowId.StartsWith("generated/probingGraphs/bio-threshold", StringComparison.Ordinal)
+          "generated-bio-threshold+grayscale",
+          fun row ->
+              row.RowId.StartsWith("generated/probingGraphs/bio-threshold", StringComparison.Ordinal)
+              || row.RowId.StartsWith("generated/probingGraphs/bio-grayscale", StringComparison.Ordinal)
+          "generated-bio-filter+projection",
+          fun row ->
+              row.RowId.StartsWith("generated/probingGraphs/bio-filter", StringComparison.Ordinal)
+              || row.RowId.StartsWith("generated/probingGraphs/bio-projection", StringComparison.Ordinal)
+          "generated-boilerplate",
+          fun row ->
+              row.RowId.StartsWith("generated/probingGraphs/zero-", StringComparison.Ordinal)
+              || row.RowId.StartsWith("generated/probingGraphs/read-", StringComparison.Ordinal) ]
+
+    writeCsv
+        (Path.Combine(options.OutputDirectory, "subsetDiagnostics.csv"))
+        (seq {
+            yield
+                [ "subset"
+                  "rowCount"
+                  "activeColumnCount"
+                  "rank"
+                  "rankRatio"
+                  "fullColumnConditionNumber"
+                  "effectiveConditionNumber"
+                  "density" ]
+
+            for name, predicate in subsetDefinitions do
+                let rowIndexes =
+                    rows
+                    |> List.mapi (fun index row -> index, row)
+                    |> List.choose (fun (index, row) -> if predicate row then Some index else None)
+
+                if not rowIndexes.IsEmpty then
+                    let activeColumns = activeColumnIndexes rowIndexes matrixValues
+
+                    if not activeColumns.IsEmpty then
+                        let subsetMatrix = subMatrix rowIndexes activeColumns matrixValues
+                        let rank, fullCondition, effectiveCondition = conditionNumbers 1e-10 subsetMatrix
+                        let nonzero =
+                            seq {
+                                for row in 0 .. subsetMatrix.GetLength(0) - 1 do
+                                    for col in 0 .. subsetMatrix.GetLength(1) - 1 do
+                                        subsetMatrix[row, col]
+                            }
+                            |> Seq.sumBy (fun value -> if value <> 0.0 then 1 else 0)
+
+                        let density =
+                            float nonzero
+                            / float (subsetMatrix.GetLength(0) * subsetMatrix.GetLength(1))
+
+                        yield
+                            [ name
+                              string rowIndexes.Length
+                              string activeColumns.Length
+                              string rank
+                              invariant (float rank / float activeColumns.Length)
+                              invariant fullCondition
+                              invariant effectiveCondition
+                              invariant density ]
         })
 
     let fitRows = fitMeasurements options.Ridge rows features measurements

@@ -1250,6 +1250,12 @@ let private graphForLinearPipeline name nodes =
         |> List.map (fun (left, right) -> savedEdge left.Id right.Id)
         |> List.toArray }
 
+type GraphTemplate =
+    { Name: string
+      Description: string
+      Features: string list
+      Graph: SavedGraph }
+
 let private sourceNode probe =
     let width = probeParameter "width" probe
     let height = probeParameter "height" probe
@@ -1307,6 +1313,186 @@ let private intensityStretchNode id pixelType inputMinimum inputMaximum =
       "inputMaximum", inputMaximum
       "outputMinimum", "0.0"
       "outputMaximum", "255.0" ]
+
+let private graphTemplateMatchesAnalysisTokens tokens (template: GraphTemplate) =
+    if Set.isEmpty tokens then
+        true
+    else
+        let candidates =
+            seq {
+                template.Name
+                template.Description
+                for feature in template.Features do
+                    feature
+                    match feature.Split([| ':' |], 2) with
+                    | [| operation; _ |] -> operation
+                    | _ -> ()
+            }
+            |> Seq.map normalizedIdentifier
+            |> Seq.toList
+
+        tokens
+        |> Set.exists (fun (token: string) ->
+            candidates
+            |> List.exists (fun candidate ->
+                candidate.Contains(token, StringComparison.Ordinal)
+                || token.Contains(candidate, StringComparison.Ordinal)))
+
+let private generatedGraphTemplates () =
+    let readUInt8Feature =
+        "Read:type=UInt8:format=Image stack:suffix=.tiff:slabDepth=1:multiscaleIndex=0:datasetIndex=0:timepoint=0:channel=0:maxParallelChunks=0:frameAxis=0"
+    let readFloatFeature =
+        "Read:type=Float64:format=Image stack:suffix=.tiff:slabDepth=1:multiscaleIndex=0:datasetIndex=0:timepoint=0:channel=0:maxParallelChunks=0:frameAxis=0"
+    let writeFeature =
+        "Write:format=Image stack:suffix=.tiff:depth=1:chunkX=64:chunkY=64:chunkZ=8:maxConcurrentWrites=0:frameAxis=0"
+    let thresholdFeature = "Threshold:type=UInt8:lower=128.0:upper=infinity"
+    let castFloatToUInt8 = "Cast:sourceType=Float64:targetType=UInt8"
+    let stretchFloat0255 = "IntensityStretch:type=Float64:inputMinimum=0.0:inputMaximum=255.0:outputMinimum=0.0:outputMaximum=255.0"
+
+    let template name description features nodes =
+        { Name = name
+          Description = description
+          Features = features @ [ writeFeature; "intercept" ]
+          Graph = graphForLinearPipeline name (nodes @ [ writeNode name ]) }
+
+    let uint8Template name description features nodes =
+        template
+            name
+            description
+            (readUInt8Feature :: features)
+            (readNode "UInt8" :: nodes)
+
+    let floatTemplate name description features nodes =
+        template
+            name
+            description
+            (readFloatFeature :: features)
+            (readNode "Float64" :: nodes)
+
+    let binaryOp functionId parameters =
+        "op", functionId, parameters
+
+    let thresholdNode' = thresholdNode "UInt8" "128.0"
+    let stretchCastNodes =
+        [ intensityStretchNode "stretch" "Float64" "0.0" "255.0"
+          castNode "Float64" "UInt8" ]
+
+    let uint8Morphology =
+        [ "opening", "Opening", [ "radius", "3" ], "Opening:radius=3"
+          "closing", "Closing", [ "radius", "3" ], "Closing:radius=3"
+          "erode", "Erode", [ "radius", "3" ], "Erode:radius=3"
+          "dilate", "Dilate", [ "radius", "3" ], "Dilate:radius=3"
+          "binaryMedian", "BinaryMedian", [ "radius", "3"; "windowSize", "7" ], "BinaryMedian:radius=3:windowSize=7"
+          "binaryContour", "BinaryContour", [ "fullyConnected", "false"; "windowSize", "7" ], "BinaryContour:fullyConnected=false:windowSize=7"
+          "fillSmallHoles", "FillSmallHoles", [ "maximumVolume", "128"; "connectivity", "TwentySix" ], "FillSmallHoles:maximumVolume=128:connectivity=TwentySix" ]
+
+    let grayscaleMorphology =
+        [ "grayErode", "GrayscaleErode", [ "type", "UInt8"; "radius", "3"; "windowSize", "7" ], "GrayscaleErode:type=UInt8:radius=3:windowSize=7"
+          "grayDilate", "GrayscaleDilate", [ "type", "UInt8"; "radius", "3"; "windowSize", "7" ], "GrayscaleDilate:type=UInt8:radius=3:windowSize=7"
+          "grayOpening", "GrayscaleOpening", [ "type", "UInt8"; "radius", "3"; "windowSize", "7" ], "GrayscaleOpening:type=UInt8:radius=3:windowSize=7"
+          "grayClosing", "GrayscaleClosing", [ "type", "UInt8"; "radius", "3"; "windowSize", "7" ], "GrayscaleClosing:type=UInt8:radius=3:windowSize=7"
+          "blackTopHat", "BlackTopHat", [ "type", "UInt8"; "radius", "3"; "windowSize", "7" ], "BlackTopHat:type=UInt8:radius=3:windowSize=7"
+          "whiteTopHat", "WhiteTopHat", [ "type", "UInt8"; "radius", "3"; "windowSize", "7" ], "WhiteTopHat:type=UInt8:radius=3:windowSize=7"
+          "morphGradient", "MorphologicalGradient", [ "type", "UInt8"; "radius", "3"; "windowSize", "7" ], "MorphologicalGradient:type=UInt8:radius=3:windowSize=7" ]
+
+    let filterOps =
+        [ "median", "SmoothWMedian", [ "type", "Float64"; "radius", "3"; "windowSize", "7" ], "SmoothWMedian:type=Float64:radius=3:windowSize=7"
+          "bilateral", "SmoothWBilateral", [ "type", "Float64"; "domainSigma", "1.5"; "rangeSigma", "30.0"; "windowSize", "7" ], "SmoothWBilateral:type=Float64:domainSigma=1.5:rangeSigma=30.0:windowSize=7"
+          "gradient", "GradientMagnitude", [ "type", "Float64"; "windowSize", "7" ], "GradientMagnitude:type=Float64:windowSize=7"
+          "sobel", "SobelEdge", [ "type", "Float64"; "windowSize", "7" ], "SobelEdge:type=Float64:windowSize=7"
+          "laplacian", "Laplacian", [ "type", "Float64"; "windowSize", "7" ], "Laplacian:type=Float64:windowSize=7"
+          "gauss", "SmoothWGauss", [ "sigma", "3.0"; "outputRegionMode", "None"; "boundaryCondition", "None"; "windowSize", "7" ], "SmoothWGauss:sigma=3.0:outputRegionMode=None:boundaryCondition=None:windowSize=7" ]
+
+    [|
+        for id, functionId, parameters, feature in uint8Morphology do
+            yield
+                uint8Template
+                    $"bio-threshold-{id}-64x64x64"
+                    $"Threshold then {functionId} cleanup."
+                    [ thresholdFeature; feature ]
+                    [ thresholdNode'; binaryOp functionId parameters ]
+
+        for idA, functionA, parametersA, featureA in uint8Morphology do
+            for idB, functionB, parametersB, featureB in uint8Morphology do
+                if idA <> idB then
+                    yield
+                        uint8Template
+                            $"bio-threshold-{idA}-{idB}-64x64x64"
+                            $"Threshold then {functionA} and {functionB} cleanup."
+                            [ thresholdFeature; featureA; featureB ]
+                            [ thresholdNode'
+                              $"{idA}A", functionA, parametersA
+                              $"{idB}B", functionB, parametersB ]
+
+        for id, functionId, parameters, feature in grayscaleMorphology do
+            yield
+                uint8Template
+                    $"bio-grayscale-{id}-64x64x64"
+                    $"Grayscale morphology probe using {functionId}."
+                    [ feature ]
+                    [ binaryOp functionId parameters ]
+
+        for idA, functionA, parametersA, featureA in grayscaleMorphology do
+            for idB, functionB, parametersB, featureB in grayscaleMorphology do
+                if idA <> idB then
+                    yield
+                        uint8Template
+                            $"bio-grayscale-{idA}-{idB}-64x64x64"
+                            $"Grayscale morphology chain using {functionA} and {functionB}."
+                            [ featureA; featureB ]
+                            [ $"{idA}A", functionA, parametersA
+                              $"{idB}B", functionB, parametersB ]
+
+        for id, functionId, parameters, feature in filterOps do
+            yield
+                floatTemplate
+                    $"bio-filter-{id}-64x64x64"
+                    $"Float filter probe using {functionId}."
+                    [ feature; stretchFloat0255; castFloatToUInt8 ]
+                    ([ binaryOp functionId parameters ] @ stretchCastNodes)
+
+        for idA, functionA, parametersA, featureA in filterOps do
+            for idB, functionB, parametersB, featureB in filterOps do
+                if idA <> idB then
+                    yield
+                        floatTemplate
+                            $"bio-filter-{idA}-{idB}-64x64x64"
+                            $"Float filter chain using {functionA} and {functionB}."
+                            [ featureA; featureB; stretchFloat0255; castFloatToUInt8 ]
+                            ([ $"{idA}A", functionA, parametersA
+                               $"{idB}B", functionB, parametersB ] @ stretchCastNodes)
+
+        yield
+            uint8Template
+                "bio-projection-threshold-64x64x64"
+                "Sum projection followed by stretch and threshold."
+                [ "SumProjection:type=UInt8:function=Identity"; stretchFloat0255; castFloatToUInt8; thresholdFeature ]
+                ([ "projection", "SumProjection", [ "type", "UInt8"; "function", "Identity" ] ] @ stretchCastNodes @ [ thresholdNode' ])
+
+        yield
+            uint8Template
+                "bio-resize-threshold-write-64x64x64"
+                "Resize to canonical 64^3 then threshold."
+                [ "Resize:type=UInt8:width=64:height=64:depth=64:interpolation=Linear"; thresholdFeature ]
+                [ "resize", "Resize", [ "type", "UInt8"; "width", "64"; "height", "64"; "depth", "64"; "interpolation", "Linear" ]
+                  thresholdNode' ]
+
+        yield
+            floatTemplate
+                "bio-gauss-threshold-morphology-64x64x64"
+                "Gaussian smoothing, cast-to-mask, then morphology cleanup."
+                [ "SmoothWGauss:sigma=3.0:outputRegionMode=None:boundaryCondition=None:windowSize=7"
+                  stretchFloat0255
+                  castFloatToUInt8
+                  thresholdFeature
+                  "Opening:radius=3"
+                  "Closing:radius=3" ]
+                ([ "gauss", "SmoothWGauss", [ "sigma", "3.0"; "outputRegionMode", "None"; "boundaryCondition", "None"; "windowSize", "7" ] ]
+                 @ stretchCastNodes
+                 @ [ thresholdNode'
+                     "opening", "Opening", [ "radius", "3" ]
+                     "closing", "Closing", [ "radius", "3" ] ])
+    |]
 
 let private operationGraph (probe: ProbeResultJson) =
     let op = operationName probe
@@ -1472,12 +1658,12 @@ let private operationGraph (probe: ProbeResultJson) =
                   castNode "Float64" "UInt8" ])
     | _ -> None
 
-let private writeProbeGraphs outputDir probes =
+let private writeProbeGraphs outputDir analysisTokens probes graphTemplates =
     if Directory.Exists outputDir then
         Directory.Delete(outputDir, true)
     Directory.CreateDirectory outputDir |> ignore
 
-    let written =
+    let measuredWritten =
         probes
         |> Array.choose (fun probe ->
             operationGraph probe
@@ -1486,7 +1672,18 @@ let private writeProbeGraphs outputDir probes =
                 PipelineGraphStorage.save path graph
                 path))
 
-    printfn "Wrote %d probing graph(s) to %s." written.Length outputDir
+    let templateWritten =
+        graphTemplates
+        |> Array.filter (graphTemplateMatchesAnalysisTokens analysisTokens)
+        |> Array.choose (fun template ->
+            let path = Path.Combine(outputDir, template.Name + ".json")
+            if measuredWritten |> Array.exists (fun written -> Path.GetFileNameWithoutExtension written = template.Name) then
+                None
+            else
+                PipelineGraphStorage.save path template.Graph
+                Some path)
+
+    printfn "Wrote %d measured probing graph(s) and %d generated template graph(s) to %s." measuredWritten.Length templateWritten.Length outputDir
 
 let private createInputStack size inputDir =
     Directory.CreateDirectory(inputDir) |> ignore
@@ -2507,9 +2704,13 @@ let main args =
     let calibrations = buildCalibrations probes
     let probes = attachPredictions calibrations probes
     let probes = filterProbesByAnalysisFeatures options.LowSupportThreshold options.AnalysisFeaturesPath probes
+    let analysisTokens =
+        options.AnalysisFeaturesPath
+        |> Option.map (loadAnalysisFeatureTokens options.LowSupportThreshold)
+        |> Option.defaultValue Set.empty
 
     options.EmitJsonDirectory
-    |> Option.iter (fun outputDir -> writeProbeGraphs outputDir probes)
+    |> Option.iter (fun outputDir -> writeProbeGraphs outputDir analysisTokens probes (generatedGraphTemplates ()))
 
     let report =
         { generatedUtc = DateTimeOffset.UtcNow.ToString("O")
