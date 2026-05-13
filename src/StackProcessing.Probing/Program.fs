@@ -113,6 +113,13 @@ let private canonicalSigma = 3.0
 let private canonicalSigmaText = "3.0"
 let private canonicalKernelSize = canonicalWindowSize
 
+// Workflow-shape inspiration for realistic boilerplate probes:
+// - Robert Haase et al., Bio-image Analysis Notebooks
+// - NEUBIAS Bioimage Analysis Training Resources
+// - BIAFLOWS curated microscopy workflow benchmarks
+// These probes are hand-written StackProcessing equivalents for now; later we may scrape/import
+// community workflows and map their steps onto this limited StackProcessing vocabulary.
+
 type ImageSize =
     { Width: uint
       Height: uint
@@ -628,6 +635,9 @@ let private probeMatchesAnalysisTokens tokens (probe: ProbeResultJson) =
 
                 for timeCost in probe.costTimes do
                     timeCost.calibrationKey
+
+                for feature in sampleCompatibleProbeFeatures probe do
+                    feature
             }
             |> Seq.map normalizedIdentifier
             |> Seq.toList
@@ -1282,6 +1292,22 @@ let private castNode sourceType targetType =
     [ "sourceType", sourceType
       "targetType", targetType ]
 
+let private thresholdNode pixelType lower =
+    "threshold",
+    "Threshold",
+    [ "type", pixelType
+      "lower", lower
+      "upper", "infinity" ]
+
+let private intensityStretchNode id pixelType inputMinimum inputMaximum =
+    id,
+    "IntensityStretch",
+    [ "type", pixelType
+      "inputMinimum", inputMinimum
+      "inputMaximum", inputMaximum
+      "outputMinimum", "0.0"
+      "outputMaximum", "255.0" ]
+
 let private operationGraph (probe: ProbeResultJson) =
     let op = operationName probe
     let name = probe.name
@@ -1414,6 +1440,36 @@ let private operationGraph (probe: ProbeResultJson) =
                 [ source
                   "resample", "Resample", [ "type", "Float32"; "factorX", "1.5"; "factorY", "1.5"; "factorZ", "1.5"; "interpolation", "Linear" ]
                   castNode "Float32" "UInt8" ])
+    | "bio-threshold-morphology-write" ->
+        Some(
+            withWrite
+                [ readNode "UInt8"
+                  thresholdNode "UInt8" "128.0"
+                  "opening", "Opening", [ "radius", "3" ]
+                  "closing", "Closing", [ "radius", "3" ] ])
+    | "bio-edge-filter-write" ->
+        Some(
+            withWrite
+                [ readNode "Float64"
+                  "median", "SmoothWMedian", [ "type", "Float64"; "radius", "3"; "windowSize", "7" ]
+                  "gradient", "GradientMagnitude", [ "type", "Float64"; "windowSize", "7" ]
+                  intensityStretchNode "stretch" "Float64" "0.0" "255.0"
+                  castNode "Float64" "UInt8" ])
+    | "bio-background-mask-write" ->
+        Some(
+            withWrite
+                [ readNode "Float64"
+                  "gauss", "SmoothWGauss", [ "sigma", "3.0"; "outputRegionMode", "None"; "boundaryCondition", "None"; "windowSize", "7" ]
+                  intensityStretchNode "stretch" "Float64" "0.0" "255.0"
+                  castNode "Float64" "UInt8"
+                  thresholdNode "UInt8" "128.0" ])
+    | "bio-projection-inspection-write" ->
+        Some(
+            withWrite
+                [ readNode "UInt8"
+                  "projection", "SumProjection", [ "type", "UInt8"; "function", "Identity" ]
+                  intensityStretchNode "stretch" "Float64" "0.0" "255.0"
+                  castNode "Float64" "UInt8" ])
     | _ -> None
 
 let private writeProbeGraphs outputDir probes =
@@ -1687,6 +1743,115 @@ let main args =
                                      source availableMemory
                                      |> read<uint8> inputDir ".tiff"
                                      >=> write (outputDir size "read-uint8-write") ".tiff")
+
+                       let readUInt8Feature =
+                           "Read:type=UInt8:format=Image stack:suffix=.tiff:slabDepth=1:multiscaleIndex=0:datasetIndex=0:timepoint=0:channel=0:maxParallelChunks=0:frameAxis=0"
+                       let readUInt8FeatureWithAxes =
+                           "Read:type=UInt8:format=Image stack:suffix=.tiff:slabDepth=1:multiscaleIndex=0:datasetIndex=0:timepoint=0:channel=0:maxParallelChunks=0:frameAxis=0:yAxis=1:xAxis=2"
+                       let readFloatFeature =
+                           "Read:type=Float64:format=Image stack:suffix=.tiff:slabDepth=1:multiscaleIndex=0:datasetIndex=0:timepoint=0:channel=0:maxParallelChunks=0:frameAxis=0"
+                       let readFloatFeatureWithAxes =
+                           "Read:type=Float64:format=Image stack:suffix=.tiff:slabDepth=1:multiscaleIndex=0:datasetIndex=0:timepoint=0:channel=0:maxParallelChunks=0:frameAxis=0:yAxis=1:xAxis=2"
+                       let writeStackFeature =
+                           "Write:format=Image stack:suffix=.tiff:depth=1:chunkX=64:chunkY=64:chunkZ=8:maxConcurrentWrites=0:frameAxis=0"
+                       let writeStackFeatureWithAxes =
+                           "Write:format=Image stack:suffix=.tiff:depth=1:chunkX=64:chunkY=64:chunkZ=8:maxConcurrentWrites=0:frameAxis=0:yAxis=1:xAxis=2"
+
+                       yield runSinkProbe
+                                 $"bio-threshold-morphology-uint8-write-{suffix}"
+                                 $"Community-inspired 3D nuclei-style threshold, morphology cleanup, and write for {suffix}."
+                                 (let p = defaultImageParameters size "uint8" 7u
+                                  p["operation"] <- "bio-threshold-morphology-write"
+                                  p["features"] <-
+                                      encodedFeatures
+                                          [ readUInt8Feature
+                                            readUInt8FeatureWithAxes
+                                            "Threshold:type=UInt8:lower=128.0:upper=infinity"
+                                            "Opening:radius=3"
+                                            "Closing:radius=3"
+                                            writeStackFeature
+                                            writeStackFeatureWithAxes ]
+                                  p)
+                                 (fun () ->
+                                     source availableMemory
+                                     |> read<uint8> inputDir ".tiff"
+                                     >=> threshold 128.0 infinity
+                                     >=> opening 3u
+                                     >=> closing 3u
+                                     >=> write (outputDir size "bio-threshold-morphology-uint8-write") ".tiff")
+
+                       yield runSinkProbe
+                                 $"bio-edge-filter-float-write-{suffix}"
+                                 $"Community-inspired denoise, edge enhancement, stretch, cast, and write for {suffix}."
+                                 (let p = defaultImageParameters size "float" 7u
+                                  p["operation"] <- "bio-edge-filter-write"
+                                  p["features"] <-
+                                      encodedFeatures
+                                          [ readFloatFeature
+                                            readFloatFeatureWithAxes
+                                            "SmoothWMedian:type=Float64:radius=3:windowSize=7"
+                                            "GradientMagnitude:type=Float64:windowSize=7"
+                                            "IntensityStretch:type=Float64:inputMinimum=0.0:inputMaximum=255.0:outputMinimum=0.0:outputMaximum=255.0"
+                                            "Cast:sourceType=Float64:targetType=UInt8"
+                                            writeStackFeature
+                                            writeStackFeatureWithAxes ]
+                                  p)
+                                 (fun () ->
+                                     source availableMemory
+                                     |> read<float> inputDir ".tiff"
+                                     >=> smoothWMedian<float> 3u 7u
+                                     >=> gradientMagnitude<float> 7u
+                                     >=> intensityStretch<float> 0.0 255.0 0.0 255.0
+                                     >=> cast<float, uint8>
+                                     >=> write (outputDir size "bio-edge-filter-float-write") ".tiff")
+
+                       yield runSinkProbe
+                                 $"bio-background-mask-float-write-{suffix}"
+                                 $"Community-inspired smooth background mask workflow for {suffix}."
+                                 (let p = defaultImageParameters size "float" 7u
+                                  p["operation"] <- "bio-background-mask-write"
+                                  p["features"] <-
+                                      encodedFeatures
+                                          [ readFloatFeature
+                                            readFloatFeatureWithAxes
+                                            "SmoothWGauss:sigma=3.0:outputRegionMode=None:boundaryCondition=None:windowSize=7"
+                                            "IntensityStretch:type=Float64:inputMinimum=0.0:inputMaximum=255.0:outputMinimum=0.0:outputMaximum=255.0"
+                                            "Cast:sourceType=Float64:targetType=UInt8"
+                                            "Threshold:type=UInt8:lower=128.0:upper=infinity"
+                                            writeStackFeature
+                                            writeStackFeatureWithAxes ]
+                                  p)
+                                 (fun () ->
+                                     source availableMemory
+                                     |> read<float> inputDir ".tiff"
+                                     >=> smoothWGauss canonicalSigma None None (Some canonicalWindowSize)
+                                     >=> intensityStretch<float> 0.0 255.0 0.0 255.0
+                                     >=> cast<float, uint8>
+                                     >=> threshold 128.0 infinity
+                                     >=> write (outputDir size "bio-background-mask-float-write") ".tiff")
+
+                       yield runSinkProbe
+                                 $"bio-projection-inspection-uint8-write-{suffix}"
+                                 $"Community-inspired 3D-to-2D projection inspection workflow for {suffix}."
+                                 (let p = defaultImageParameters size "uint8" 1u
+                                  p["operation"] <- "bio-projection-inspection-write"
+                                  p["features"] <-
+                                      encodedFeatures
+                                          [ readUInt8Feature
+                                            readUInt8FeatureWithAxes
+                                            "SumProjection:type=UInt8:function=Identity"
+                                            "IntensityStretch:type=Float64:inputMinimum=0.0:inputMaximum=255.0:outputMinimum=0.0:outputMaximum=255.0"
+                                            "Cast:sourceType=Float64:targetType=UInt8"
+                                            writeStackFeature
+                                            writeStackFeatureWithAxes ]
+                                  p)
+                                 (fun () ->
+                                     source availableMemory
+                                     |> read<uint8> inputDir ".tiff"
+                                     >=> sumProjection<uint8> "Identity"
+                                     >=> intensityStretch<float> 0.0 255.0 0.0 255.0
+                                     >=> cast<float, uint8>
+                                     >=> write (outputDir size "bio-projection-inspection-uint8-write") ".tiff")
 
                        if includeNonBoilerplate then
                            yield runSinkProbe

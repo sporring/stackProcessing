@@ -1,11 +1,10 @@
 # How to analyze
 # Run on samples
-dotnet run --project samples/RunJson/RunJson.fsproj -- --repeat 5 -j 6
+dotnet run --project samples/RunJson/RunJson.fsproj -- --repeat 3 -j 6
 # measure analytics
 dotnet run --project src/StackProcessing.Analysis/StackProcessing.Analysis.fsproj
 # generate boiler plate additions
-dotnet run --project src/StackProcessing.Probing/StackProcessing.Probing.fsproj -- samples/tmp/analysis/probing-boilerplate.json --analysis-features samples/tmp/analysis/featureDiagnostics.csv --low-support-threshold 2 \
-  --emit-json samples/tmp/probingGraphs
+dotnet run --project src/StackProcessing.Probing/StackProcessing.Probing.fsproj -- samples/tmp/analysis/probing-boilerplate.json --analysis-features samples/tmp/analysis/featureDiagnostics.csv --low-support-threshold 2 --emit-json samples/tmp/probingGraphs
 # run on new
 dotnet run --project samples/RunJson/RunJson.fsproj -- --repeat 3 --extra-json-only --extra-json-root samples/tmp/probingGraphs -j 6
 # update analysis
