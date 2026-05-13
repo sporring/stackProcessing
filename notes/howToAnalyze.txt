@@ -32,5 +32,6 @@ tmp/analysis/greedyCoverage.csv
 tmp/analysis/probeTargets.csv
 tmp/analysis/probePlan.csv
 
-dotnet run --project src/StackProcessing.RunSamples/RunSamples.fsproj -- --json --repeat 2 -j 6
-dotnet run --project src/StackProcessing.Probe/StackProcessing.Probe.fsproj -- calibrate --iterations 5 --repeat 2 -j 6
+## Cut'n'paste
+dotnet run --project src/StackProcessing.RunSamples/RunSamples.fsproj -- --json --repeat 3 -j 1
+dotnet run --project src/StackProcessing.Probe/StackProcessing.Probe.fsproj -- calibrate --iterations 5 --repeat 3 -j 1

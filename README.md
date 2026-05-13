@@ -97,8 +97,8 @@ directory. Temporary generated JSON runner projects still live below
 outputs.
 
 ```bash
-dotnet run --project src/StackProcessing.RunSamples/RunSamples.fsproj -- --repeat 3
-dotnet run --project src/StackProcessing.RunSamples/RunSamples.fsproj -- --json --repeat 3
+dotnet run --project src/StackProcessing.RunSamples/RunSamples.fsproj -- --repeat 3 -j 1
+dotnet run --project src/StackProcessing.RunSamples/RunSamples.fsproj -- --json --repeat 3 -j 1
 ```
 
 `StackProcessing.Probe` is the front door for cost-model work. The usual
@@ -109,7 +109,7 @@ workflow is:
    coefficients, emit calibration graphs, run those graphs, and repeat.
 
 ```bash
-dotnet run --project src/StackProcessing.Probe/StackProcessing.Probe.fsproj -- calibrate --repeat 3 -j 6
+dotnet run --project src/StackProcessing.Probe/StackProcessing.Probe.fsproj -- calibrate --iterations 5 --repeat 3 -j 1
 ```
 
 For development-only graph emission without running the generated probes:
@@ -132,6 +132,11 @@ group, fixed sink. Probe writes batches below
 overwrites another run's graph files. The final calibration pass recomputes
 `sampleEstimates.csv` after the last probe batch has run.
 
+For timing calibration, prefer `-j 1` so sample and probe graphs do not compete
+for CPU, memory bandwidth, or SimpleITK worker threads. Do not clean `tmp/`
+between the sample run and calibration run: the timestamped `runJson_*`
+directories are the measurement evidence used by Probe.
+
 ## Projects
 
 | Project | Role |
@@ -153,6 +158,7 @@ overwrites another run's graph files. The final calibration pass recomputes
 ```mermaid
 flowchart TD
     UserFSharp["F# user code / samples"]
+    SampleJson["sample Studio JSON graphs"]
     Studio["Studio\nAvalonia graph editor"]
     StudioGraph["Studio.Graph\ncatalog + saved graph JSON"]
     StudioCompiler["Studio.Compiler\ngraph -> F# DSL"]
@@ -165,11 +171,14 @@ flowchart TD
     TinyLinAlg["TinyLinAlg\naffine/vector helpers"]
     ZarrNexus["ZarrNET + PureHDF\nZarr / HDF5-NeXus IO"]
     RunSamples["StackProcessing.RunSamples\nsample/JSON measurement runner"]
-    Probe["StackProcessing.Probe\nanalysis + probe generation + reports"]
+    TmpMeasurements["tmp/runJson_* + tmp/analysis\nmeasurement evidence"]
+    Probe["StackProcessing.Probe\nanalysis + calibration graph generation"]
+    ProbeGraphs["tmp/probingGraphs\ncalibration JSON graphs"]
 
     UserFSharp --> StackProcessing
     Studio --> StudioGraph
     StudioGraph --> StudioCompiler
+    StudioGraph --> SampleJson
     StudioCompiler --> StackProcessing
 
     StackProcessing --> Core
@@ -181,17 +190,20 @@ flowchart TD
     Core --> TinyLinAlg
     Core --> ZarrNexus
 
-    StudioCompiler --> RunSamples
-    RunSamples --> Probe
-    StackProcessing --> Probe
+    UserFSharp --> RunSamples
+    SampleJson --> RunSamples
+    RunSamples --> TmpMeasurements
+    TmpMeasurements --> Probe
+    Probe --> ProbeGraphs
+    ProbeGraphs --> RunSamples
 ```
 
 There are two user-facing entry points. Programmers can write the
 `StackProcessing` DSL directly; non-programmers can build the same DSL through
 Studio graphs. Both routes end in `SlimPipeline` plans and stages. The image
 work is implemented in `StackProcessing.Core` and `Image`. File formats,
-registration helpers, manifests, stitching, serial-section tools, measurement
-runners, probing, and reports sit beside that core path.
+registration helpers, manifests, stitching, serial-section tools, sample
+measurement, and calibration sit beside that core path.
 
 ## Studio For Users
 
