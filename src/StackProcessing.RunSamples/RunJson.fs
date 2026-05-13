@@ -627,6 +627,7 @@ let private logStats logPath =
 
 let private writeCsv samplesRoot outputDir (results: GraphOutcome array) =
     let path = Path.Combine(outputDir, "gather.csv")
+    Directory.CreateDirectory(Path.GetDirectoryName(path: string)) |> ignore
 
     let lines =
         seq {
@@ -721,7 +722,10 @@ let private gatherExistingLogs samplesRoot extraJsonRoots =
                 yield!
                     Directory.EnumerateDirectories(tmp, outputDirectoryName + "_*", SearchOption.TopDirectoryOnly)
                     |> Seq.collect (fun batch ->
-                        Directory.EnumerateDirectories(batch, "repeat_*", SearchOption.TopDirectoryOnly))
+                        if Directory.Exists batch then
+                            Directory.EnumerateDirectories(batch, "repeat_*", SearchOption.TopDirectoryOnly)
+                        else
+                            Seq.empty)
     }
     |> Seq.collect (gatherExistingLogsInDirectory samplesRoot extraJsonRoots)
     |> Seq.sortBy _.Job.Name

@@ -21,6 +21,25 @@ let private usage () =
 let private isOption (value: string) =
     value.StartsWith("-", StringComparison.Ordinal)
 
+let private optionTakesValue value =
+    match value with
+    | "-j"
+    | "--jobs"
+    | "--debug-level"
+    | "--optimize"
+    | "--optimizer"
+    | "--repeat"
+    | "--repeats"
+    | "--run-id"
+    | "--timeout"
+    | "--timeout-minutes"
+    | "--samples-root"
+    | "--extra-json-root"
+    | "--extra-samples-root"
+    | "--generated-samples-root"
+    | "--probe-samples-root" -> true
+    | _ -> false
+
 let private normalizeArgs (argv: string array) =
     let mutable json = false
     let mutable samplesRoot: string option = None
@@ -35,6 +54,10 @@ let private normalizeArgs (argv: string array) =
         | "--samples-root" when i + 1 < argv.Length ->
             samplesRoot <- Some argv[i + 1]
             forwarded.Add argv[i]
+            forwarded.Add argv[i + 1]
+            i <- i + 2
+        | value when optionTakesValue value && i + 1 < argv.Length ->
+            forwarded.Add value
             forwarded.Add argv[i + 1]
             i <- i + 2
         | "-h"

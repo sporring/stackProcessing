@@ -602,7 +602,10 @@ let private gatherExistingLogs samplesRoot extraSamplesRoots =
                 yield!
                     Directory.EnumerateDirectories(tmp, outputDirectoryName + "_*", SearchOption.TopDirectoryOnly)
                     |> Seq.collect (fun batch ->
-                        Directory.EnumerateDirectories(batch, "repeat_*", SearchOption.TopDirectoryOnly))
+                        if Directory.Exists batch then
+                            Directory.EnumerateDirectories(batch, "repeat_*", SearchOption.TopDirectoryOnly)
+                        else
+                            Seq.empty)
     }
     |> Seq.collect (gatherExistingLogsInDirectory samplesRoot extraSamplesRoots)
     |> Seq.sortBy (fun row -> row[0])
