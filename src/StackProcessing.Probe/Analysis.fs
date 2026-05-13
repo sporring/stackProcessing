@@ -249,6 +249,16 @@ let private featureKey (node: SavedNode) =
 let private safeName (value: string) =
     Regex.Replace(value.Replace('\\', '/'), @"[^A-Za-z0-9_.-]+", "_")
 
+let private generatedPrefixForRoot (root: string) =
+    let rootName =
+        root.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar)
+        |> Path.GetFileName
+
+    if rootName.StartsWith("calibration_", StringComparison.OrdinalIgnoreCase) then
+        "generated"
+    else
+        "generated/" + safeName rootName
+
 let private discoverGraphsInRoot (samplesRoot: string) (scanRoot: string) includeTmp namePrefix =
     Directory.EnumerateFiles(scanRoot, "*.json", SearchOption.AllDirectories)
     |> Seq.filter (fun path ->
@@ -292,13 +302,19 @@ let private discoverGraphs (samplesRoot: string) extraJsonRoots =
         extraJsonRoots
         |> List.collect (fun root ->
             if Directory.Exists root then
-                let prefix = "generated/" + safeName (Path.GetFileName(root.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar)))
+                let prefix = generatedPrefixForRoot root
                 discoverGraphsInRoot samplesRoot root true prefix
             else
                 eprintfn "analysis: extra JSON root does not exist: %s" root
                 [])
 
     sampleGraphs @ generatedGraphs
+
+let private isGeneratedRow (rowId: string) =
+    rowId.StartsWith("generated/", StringComparison.Ordinal)
+
+let private generatedRowContains (marker: string) (rowId: string) =
+    isGeneratedRow rowId && rowId.Contains(marker, StringComparison.Ordinal)
 
 let private probingRowId rowId =
     $"probing/{rowId}"
@@ -859,22 +875,22 @@ let private writeOutputs (options: Options) (rows: AnalysisRow list) =
         })
 
     let subsetDefinitions: (string * (AnalysisRow -> bool)) list =
-        [ "generated-all", fun row -> row.RowId.StartsWith("generated/probingGraphs/", StringComparison.Ordinal)
-          "generated-bio-filter", fun row -> row.RowId.StartsWith("generated/probingGraphs/bio-filter", StringComparison.Ordinal)
-          "generated-bio-grayscale", fun row -> row.RowId.StartsWith("generated/probingGraphs/bio-grayscale", StringComparison.Ordinal)
-          "generated-bio-threshold", fun row -> row.RowId.StartsWith("generated/probingGraphs/bio-threshold", StringComparison.Ordinal)
+        [ "generated-all", fun row -> isGeneratedRow row.RowId
+          "generated-bio-filter", fun row -> generatedRowContains "/bio-filter" row.RowId
+          "generated-bio-grayscale", fun row -> generatedRowContains "/bio-grayscale" row.RowId
+          "generated-bio-threshold", fun row -> generatedRowContains "/bio-threshold" row.RowId
           "generated-bio-threshold+grayscale",
           fun row ->
-              row.RowId.StartsWith("generated/probingGraphs/bio-threshold", StringComparison.Ordinal)
-              || row.RowId.StartsWith("generated/probingGraphs/bio-grayscale", StringComparison.Ordinal)
+              generatedRowContains "/bio-threshold" row.RowId
+              || generatedRowContains "/bio-grayscale" row.RowId
           "generated-bio-filter+projection",
           fun row ->
-              row.RowId.StartsWith("generated/probingGraphs/bio-filter", StringComparison.Ordinal)
-              || row.RowId.StartsWith("generated/probingGraphs/bio-projection", StringComparison.Ordinal)
+              generatedRowContains "/bio-filter" row.RowId
+              || generatedRowContains "/bio-projection" row.RowId
           "generated-boilerplate",
           fun row ->
-              row.RowId.StartsWith("generated/probingGraphs/zero-", StringComparison.Ordinal)
-              || row.RowId.StartsWith("generated/probingGraphs/read-", StringComparison.Ordinal) ]
+              generatedRowContains "/zero-" row.RowId
+              || generatedRowContains "/read-" row.RowId ]
 
     writeCsv
         (Path.Combine(options.OutputDirectory, "subsetDiagnostics.csv"))
