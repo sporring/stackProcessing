@@ -1,17 +1,34 @@
 # How to analyze
-# Run on samples
-dotnet run --project src/StackProcessing.Probe/StackProcessing.Probe.fsproj -- samples --json --repeat 3 -j 6
-# measure analytics
-dotnet run --project src/StackProcessing.Probe/StackProcessing.Probe.fsproj -- analysis
-# generate boiler plate additions
-dotnet run --project src/StackProcessing.Probe/StackProcessing.Probe.fsproj -- probing tmp/analysis/probing-boilerplate.json --analysis-features tmp/analysis/featureDiagnostics.csv --low-support-threshold 2 --emit-json tmp/probingGraphs
-# run on new
-dotnet run --project src/StackProcessing.Probe/StackProcessing.Probe.fsproj -- samples --json --repeat 3 --extra-json-only --extra-json-root tmp/probingGraphs -j 6
-# update analysis
-dotnet run --project src/StackProcessing.Probe/StackProcessing.Probe.fsproj -- analysis --extra-json-root tmp/probingGraphs
 
-# tmp/analysis/matrix.csv
-# tmp/analysis/vectors.csv
-# tmp/analysis/diagnostics.csv
-# tmp/analysis/coefficients.csv
-# tmp/analysis/predictions.csv
+## 1. Run the sample workloads
+
+Optionally, run the F# sample projects:
+
+dotnet run --project src/StackProcessing.RunSamples/RunSamples.fsproj -- --repeat 3 -j 6
+
+Run the Studio JSON sample graphs:
+
+dotnet run --project src/StackProcessing.RunSamples/RunSamples.fsproj -- --json --repeat 3 -j 6
+
+## 2. Run Probe
+
+Probe analyzes the sample measurements, freezes reliable coefficients, emits
+designed calibration probes, runs those probes, repeats the analysis, and writes
+the final sample estimates.
+
+dotnet run --project src/StackProcessing.Probe/StackProcessing.Probe.fsproj -- calibrate --iterations 5 --run-probes --probe-repeats 3
+
+## Main outputs
+
+tmp/analysis/matrix.csv
+tmp/analysis/vectors.csv
+tmp/analysis/diagnostics.csv
+tmp/analysis/subsetDiagnostics.csv
+tmp/analysis/coefficients.csv
+tmp/analysis/predictions.csv
+tmp/analysis/frozenCoefficients.csv
+tmp/analysis/sampleEstimates.csv
+tmp/analysis/greedyCoverage.csv
+tmp/analysis/probeTargets.csv
+tmp/analysis/probePlan.csv
+
