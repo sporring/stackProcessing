@@ -13,12 +13,16 @@ open Studio.Graph
 
 type Options =
     { SamplesRoot: string
+      ExtraJsonRoots: string list
+      IncludeSamples: bool
       Jobs: int
       DebugLevel: int
       Optimize: bool
       SkipBuild: bool
       CompileOnly: bool
       GatherOnly: bool
+      Repeat: int
+      RunId: string option
       Timeout: TimeSpan option }
 
 type GraphJob =
@@ -46,11 +50,29 @@ type RunSummary =
 let private outputDirectoryName = "runJson"
 let private buildDirectoryName = "runJson-build"
 
+let private timestampRunId () =
+    DateTime.Now.ToString("yyyyMMdd_HHmmss", CultureInfo.InvariantCulture)
+
+let private batchDirectoryName runId =
+    $"{outputDirectoryName}_{runId}"
+
+let private batchBuildDirectoryName runId =
+    $"{buildDirectoryName}_{runId}"
+
 let private outputDirectory samplesRoot =
     Path.Combine(samplesRoot, "tmp", outputDirectoryName)
 
 let private buildDirectory samplesRoot =
     Path.Combine(samplesRoot, "tmp", buildDirectoryName)
+
+let private batchDirectory samplesRoot runId =
+    Path.Combine(samplesRoot, "tmp", batchDirectoryName runId)
+
+let private batchBuildDirectory samplesRoot runId =
+    Path.Combine(samplesRoot, "tmp", batchBuildDirectoryName runId)
+
+let private repeatDirectory batchDir repeatIndex =
+    Path.Combine(batchDir, sprintf "repeat_%03d" repeatIndex)
 
 let usage () =
     printfn "Usage: ./runJson.sh [-j jobs] [--skip-build] [--compile-only] [--debug-level N] [--optimize true|false]"
@@ -63,7 +85,13 @@ let usage () =
     printfn "  -p, --parallel    Run with one job per logical CPU."
     printfn "  --skip-build      Run generated graph projects without building them first."
     printfn "  --compile-only    Generate and build F#, but do not run the programs."
-    printfn $"  --gather-only     Regenerate tmp/{outputDirectoryName}/gather.csv from existing graph logs."
+    printfn "  --extra-json-root PATH"
+    printfn "                    Also run JSON graphs from PATH, e.g. Probe-generated graphs."
+    printfn "  --extra-json-only"
+    printfn "                    Run only graphs from --extra-json-root."
+    printfn "  --gather-only     Regenerate gather.csv files from existing graph logs."
+    printfn "  --repeat N        Run the full graph set N times. Defaults to 1."
+    printfn "  --run-id VALUE    Use VALUE in tmp/runJson_VALUE. Defaults to a timestamp."
     printfn "  --debug-level N   Accepted for symmetry with runAll; generated graphs carry their saved debug settings."
     printfn "  --optimize BOOL   Enable or disable optimizer use while running generated graphs. Defaults to false."
     printfn "  --no-optimize     Shortcut for --optimize false."
@@ -111,6 +139,14 @@ let rec private parseArgs options args =
     | "--skip-build" :: rest -> parseArgs { options with SkipBuild = true } rest
     | "--compile-only" :: rest -> parseArgs { options with CompileOnly = true } rest
     | "--gather-only" :: rest -> parseArgs { options with GatherOnly = true } rest
+    | "--repeat" :: value :: rest
+    | "--repeats" :: value :: rest ->
+        match Int32.TryParse value with
+        | true, repeat when repeat > 0 -> parseArgs { options with Repeat = repeat } rest
+        | _ ->
+            eprintfn "runJson: --repeat expects a positive integer"
+            Error 2
+    | "--run-id" :: value :: rest -> parseArgs { options with RunId = Some value } rest
     | "--timeout" :: value :: rest
     | "--timeout-minutes" :: value :: rest ->
         match Double.TryParse value with
@@ -120,6 +156,14 @@ let rec private parseArgs options args =
             eprintfn "runJson: --timeout expects a non-negative number of minutes"
             Error 2
     | "--samples-root" :: value :: rest -> parseArgs { options with SamplesRoot = Path.GetFullPath value } rest
+    | "--extra-json-root" :: value :: rest
+    | "--generated-json-root" :: value :: rest
+    | "--probe-json-root" :: value :: rest ->
+        parseArgs { options with ExtraJsonRoots = options.ExtraJsonRoots @ [ Path.GetFullPath value ] } rest
+    | "--extra-json-only" :: rest
+    | "--generated-json-only" :: rest
+    | "--probe-json-only" :: rest ->
+        parseArgs { options with IncludeSamples = false } rest
     | option :: _ ->
         eprintfn "runJson: unknown option %s" option
         usage ()
@@ -131,29 +175,55 @@ let private relativePath root path =
 let private safeName (value: string) =
     Regex.Replace(value.Replace('\\', '/'), @"[^A-Za-z0-9_.-]+", "_")
 
-let private discoverGraphs samplesRoot =
-    Directory.EnumerateFiles(samplesRoot, "*.json", SearchOption.AllDirectories)
+let private discoverGraphsInRoot samplesRoot scanRoot outputDir buildDir includeTmp namePrefix =
+    Directory.EnumerateFiles(scanRoot, "*.json", SearchOption.AllDirectories)
     |> Seq.filter (fun path ->
-        let relative = relativePath samplesRoot path
+        let relative = relativePath scanRoot path
         let parts = relative.Split('/')
 
-        not (relative.StartsWith("tmp/", StringComparison.OrdinalIgnoreCase))
+        (includeTmp || not (relative.StartsWith("tmp/", StringComparison.OrdinalIgnoreCase)))
         && not (parts |> Array.exists (fun part ->
             part.Equals("bin", StringComparison.OrdinalIgnoreCase)
             || part.Equals("obj", StringComparison.OrdinalIgnoreCase)))
         && not (relative.StartsWith("RunAll/", StringComparison.OrdinalIgnoreCase))
         && not (relative.StartsWith("RunJson/", StringComparison.OrdinalIgnoreCase)))
     |> Seq.map (fun path ->
-        let relative = relativePath samplesRoot path
-        let name = relative.Substring(0, relative.Length - Path.GetExtension(relative).Length)
+        let relative = relativePath scanRoot path
+        let localName = relative.Substring(0, relative.Length - Path.GetExtension(relative).Length)
+        let name =
+            if String.IsNullOrWhiteSpace namePrefix then
+                localName
+            else
+                namePrefix.TrimEnd('/') + "/" + localName
 
         { Name = name
           JsonPath = path
           WorkingDirectory = Path.GetDirectoryName path
-          RunDirectory = Path.Combine(buildDirectory samplesRoot, safeName name)
-          LogPath = Path.Combine(outputDirectory samplesRoot, name + ".out") })
+          RunDirectory = Path.Combine(buildDir, safeName name)
+          LogPath = Path.Combine(outputDir, name + ".out") })
     |> Seq.sortBy _.Name
     |> Seq.toArray
+
+let private discoverGraphs samplesRoot extraJsonRoots includeSamples outputDir buildDir =
+    let sampleGraphs =
+        if includeSamples then
+            discoverGraphsInRoot samplesRoot samplesRoot outputDir buildDir false ""
+        else
+            [||]
+
+    let generatedGraphs =
+        extraJsonRoots
+        |> List.toArray
+        |> Array.collect (fun root ->
+            if Directory.Exists root then
+                let prefix = "generated/" + safeName (Path.GetFileName(root.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar)))
+                discoverGraphsInRoot samplesRoot root outputDir buildDir true prefix
+            else
+                eprintfn "runJson: extra JSON root does not exist: %s" root
+                [||])
+
+    Array.append sampleGraphs generatedGraphs
+    |> Array.sortBy _.Name
 
 let private xml value =
     SecurityElement.Escape(value)
@@ -545,8 +615,8 @@ let private logStats logPath =
 
     status, estimatedPeakMemory, peakMemory, "", actualRunSeconds, processElapsedSeconds, (errorLine |> Option.defaultValue "")
 
-let private writeCsv samplesRoot (results: GraphOutcome array) =
-    let path = Path.Combine(outputDirectory samplesRoot, "gather.csv")
+let private writeCsv samplesRoot outputDir (results: GraphOutcome array) =
+    let path = Path.Combine(outputDir, "gather.csv")
 
     let lines =
         seq {
@@ -589,17 +659,16 @@ let private writeCsv samplesRoot (results: GraphOutcome array) =
     File.WriteAllLines(path, lines)
     printfn "wrote %s" (relativePath samplesRoot path)
 
-let private gatherExistingLogs samplesRoot =
-    let tmp = outputDirectory samplesRoot
+let private gatherExistingLogsInDirectory samplesRoot extraJsonRoots outputDir =
     let graphNames =
-        discoverGraphs samplesRoot
+        discoverGraphs samplesRoot extraJsonRoots true outputDir (buildDirectory samplesRoot)
         |> Array.map _.Name
         |> Set.ofArray
 
-    if Directory.Exists tmp then
-        Directory.EnumerateFiles(tmp, "*.out", SearchOption.AllDirectories)
+    if Directory.Exists outputDir then
+        Directory.EnumerateFiles(outputDir, "*.out", SearchOption.AllDirectories)
         |> Seq.choose (fun path ->
-            let relative = relativePath tmp path
+            let relative = relativePath outputDir path
             let name = relative.Substring(0, relative.Length - Path.GetExtension(relative).Length)
             if graphNames |> Set.contains name then
                 Some(name, path)
@@ -626,16 +695,38 @@ let private gatherExistingLogs samplesRoot =
     else
         [||]
 
+let private gatherExistingLogs samplesRoot extraJsonRoots =
+    let tmp = Path.Combine(samplesRoot, "tmp")
+
+    seq {
+        let legacy = outputDirectory samplesRoot
+        if Directory.Exists legacy then
+            yield legacy
+
+        if Directory.Exists tmp then
+            yield!
+                Directory.EnumerateDirectories(tmp, outputDirectoryName + "_*", SearchOption.TopDirectoryOnly)
+                |> Seq.collect (fun batch ->
+                    Directory.EnumerateDirectories(batch, "repeat_*", SearchOption.TopDirectoryOnly))
+    }
+    |> Seq.collect (gatherExistingLogsInDirectory samplesRoot extraJsonRoots)
+    |> Seq.sortBy _.Job.Name
+    |> Seq.toArray
+
 [<EntryPoint>]
 let main argv =
     let defaults =
         { SamplesRoot = defaultSamplesRoot ()
+          ExtraJsonRoots = []
+          IncludeSamples = true
           Jobs = 1
           DebugLevel = 1
           Optimize = false
           SkipBuild = false
           CompileOnly = false
           GatherOnly = false
+          Repeat = 1
+          RunId = None
           Timeout = Some(TimeSpan.FromMinutes 30.0) }
 
     match parseArgs defaults (argv |> Array.toList) with
@@ -643,24 +734,19 @@ let main argv =
     | Ok options ->
         let samplesRoot = Path.GetFullPath options.SamplesRoot
         let repositoryRoot = Path.GetFullPath(Path.Combine(samplesRoot, ".."))
-        let jsonOutputDir = outputDirectory samplesRoot
-        let jsonBuildDir = buildDirectory samplesRoot
 
         if options.GatherOnly then
-            let results = gatherExistingLogs samplesRoot
-            writeCsv samplesRoot results
+            let results = gatherExistingLogs samplesRoot options.ExtraJsonRoots
+            writeCsv samplesRoot (outputDirectory samplesRoot) results
             0
         else
-            if Directory.Exists jsonOutputDir then
-                Directory.Delete(jsonOutputDir, true)
+            let runId = options.RunId |> Option.defaultWith timestampRunId
+            let batchDir = batchDirectory samplesRoot runId
+            let batchBuildDir = batchBuildDirectory samplesRoot runId
+            Directory.CreateDirectory batchDir |> ignore
+            Directory.CreateDirectory batchBuildDir |> ignore
 
-            if Directory.Exists jsonBuildDir then
-                Directory.Delete(jsonBuildDir, true)
-
-            Directory.CreateDirectory jsonOutputDir |> ignore
-            Directory.CreateDirectory jsonBuildDir |> ignore
-
-            let jobs = discoverGraphs samplesRoot
+            let jobs = discoverGraphs samplesRoot options.ExtraJsonRoots options.IncludeSamples batchDir batchBuildDir
 
             use cancellation = new CancellationTokenSource()
 
@@ -674,17 +760,31 @@ let main argv =
                 1
             else
                 try
-                    let results =
-                        runWithParallelism cancellation.Token repositoryRoot options jobs
-                        |> _.GetAwaiter().GetResult()
+                    let mutable failed = false
 
-                    writeCsv samplesRoot results
+                    for repeatIndex in 1 .. options.Repeat do
+                        cancellation.Token.ThrowIfCancellationRequested()
 
-                    let failures = results |> Array.filter (fun result -> result.ExitCode <> 0)
+                        let repeatOutputDir = repeatDirectory batchDir repeatIndex
+                        let repeatBuildDir = repeatDirectory batchBuildDir repeatIndex
+                        Directory.CreateDirectory repeatOutputDir |> ignore
+                        Directory.CreateDirectory repeatBuildDir |> ignore
+                        printfn "runJson repeat %d/%d -> %s" repeatIndex options.Repeat (relativePath samplesRoot repeatOutputDir)
 
-                    for failure in failures do
-                        eprintfn "%s failed with exit code %d; see %s" failure.Job.Name failure.ExitCode (relativePath samplesRoot failure.Job.LogPath)
+                        let repeatJobs = discoverGraphs samplesRoot options.ExtraJsonRoots options.IncludeSamples repeatOutputDir repeatBuildDir
 
-                    if failures.Length > 0 then 1 else 0
+                        let results =
+                            runWithParallelism cancellation.Token repositoryRoot options repeatJobs
+                            |> _.GetAwaiter().GetResult()
+
+                        writeCsv samplesRoot repeatOutputDir results
+
+                        let failures = results |> Array.filter (fun result -> result.ExitCode <> 0)
+
+                        for failure in failures do
+                            failed <- true
+                            eprintfn "%s failed with exit code %d; see %s" failure.Job.Name failure.ExitCode (relativePath samplesRoot failure.Job.LogPath)
+
+                    if failed then 1 else 0
                 with :? OperationCanceledException ->
                     130

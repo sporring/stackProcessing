@@ -10,6 +10,7 @@ open System.Text.Json
 open System.Text.Json.Serialization
 open SlimPipeline
 open StackProcessing
+open Studio.Graph
 
 [<CLIMutable>]
 type ProbeSourceJson =
@@ -309,13 +310,20 @@ let private sampleCompatibleProbeFeatures (probe: ProbeResultJson) =
     let capitalizedType =
         match pixelType.ToLowerInvariant() with
         | "uint8" -> "UInt8"
+        | "float32" -> "Float32"
         | "float" -> "Float64"
         | other -> other
 
     let readFeature =
+        $"Read:type={capitalizedType}:format=Image stack:suffix=.tiff:slabDepth=1:multiscaleIndex=0:datasetIndex=0:timepoint=0:channel=0:maxParallelChunks=0:frameAxis=0"
+
+    let readFeatureWithAxes =
         $"Read:type={capitalizedType}:format=Image stack:suffix=.tiff:slabDepth=1:multiscaleIndex=0:datasetIndex=0:timepoint=0:channel=0:maxParallelChunks=0:frameAxis=0:yAxis=1:xAxis=2"
 
     let writeFeature =
+        "Write:format=Image stack:suffix=.tiff:depth=1:chunkX=64:chunkY=64:chunkZ=8:maxConcurrentWrites=0:frameAxis=0"
+
+    let writeFeatureWithAxes =
         "Write:format=Image stack:suffix=.tiff:depth=1:chunkX=64:chunkY=64:chunkZ=8:maxConcurrentWrites=0:frameAxis=0:yAxis=1:xAxis=2"
 
     let zeroFeature =
@@ -328,30 +336,190 @@ let private sampleCompatibleProbeFeatures (probe: ProbeResultJson) =
     let kernelSize = stageParameter "kernelSize" "<empty>" probe
 
     seq {
+        match tryParameter "features" probe with
+        | Some features ->
+            for feature in features.Split([| "||" |], StringSplitOptions.RemoveEmptyEntries) do
+                yield feature
+        | None -> ()
+
         match operationName probe with
         | "zero" ->
             yield zeroFeature
         | "zero-write" ->
             yield zeroFeature
             yield writeFeature
+            yield writeFeatureWithAxes
         | "noise-write" ->
             yield zeroFeature
             yield $"AddNormalNoise:type={capitalizedType}:mean={mean}:std={std}"
             yield writeFeature
+            yield writeFeatureWithAxes
         | "read-ignore" ->
             yield readFeature
+            yield readFeatureWithAxes
         | "read-write" ->
             yield readFeature
+            yield readFeatureWithAxes
             yield writeFeature
+            yield writeFeatureWithAxes
         | "threshold-write" ->
             yield zeroFeature
             yield $"AddNormalNoise:type={capitalizedType}:mean={mean}:std={std}"
             yield $"Threshold:type={capitalizedType}:lower={thresholdValue}:upper=infinity"
             yield "ImageOpScalar:operation=*:type=UInt8:value=255"
             yield writeFeature
+            yield writeFeatureWithAxes
         | "compute-stats" ->
             yield readFeature
+            yield readFeatureWithAxes
             yield "ComputeStats"
+        | "add-salt-and-pepper-write" ->
+            yield zeroFeature
+            yield $"AddSaltAndPepperNoise:type={capitalizedType}:probability=0.02"
+            yield writeFeature
+            yield writeFeatureWithAxes
+        | "salt-and-pepper-write" ->
+            yield $"SaltAndPepperNoise:type={capitalizedType}:width={width}:height={height}:depth={depth}:probability=0.02"
+            yield writeFeature
+            yield writeFeatureWithAxes
+        | "shot-noise-write" ->
+            yield $"ShotNoise:type={capitalizedType}:width={width}:height={height}:depth={depth}:scale=2.0"
+            yield "Cast:sourceType=Float64:targetType=UInt8"
+            yield writeFeature
+            yield writeFeatureWithAxes
+        | "speckle-noise-write" ->
+            yield $"SpeckleNoise:type={capitalizedType}:width={width}:height={height}:depth={depth}:std=0.5"
+            yield "Cast:sourceType=Float64:targetType=UInt8"
+            yield writeFeature
+            yield writeFeatureWithAxes
+        | "add-shot-speckle-write" ->
+            yield zeroFeature
+            yield "AddShotNoise:type=Float64:scale=2.0"
+            yield "AddSpeckleNoise:type=Float64:std=0.5"
+            yield "Cast:sourceType=Float64:targetType=UInt8"
+            yield writeFeature
+            yield writeFeatureWithAxes
+        | "fft-roundtrip-write" ->
+            yield $"NormalNoise:type={capitalizedType}:width={width}:height={height}:depth={depth}:mean=128.0:std=25.0"
+            yield "FFT:type=Float64:chunkX=16:chunkY=16:chunkZ=8"
+            yield "InvFFT:chunkX=16:chunkY=16:chunkZ=8"
+            yield "Cast:sourceType=Float64:targetType=Float32"
+            yield writeFeature
+            yield writeFeatureWithAxes
+        | "grayscale-erode-write" ->
+            yield readFeature
+            yield readFeatureWithAxes
+            yield $"GrayscaleErode:type={capitalizedType}:radius=3:windowSize=7"
+            yield writeFeature
+            yield writeFeatureWithAxes
+        | "grayscale-dilate-write" ->
+            yield readFeature
+            yield readFeatureWithAxes
+            yield $"GrayscaleDilate:type={capitalizedType}:radius=3:windowSize=7"
+            yield writeFeature
+            yield writeFeatureWithAxes
+        | "grayscale-opening-write" ->
+            yield readFeature
+            yield readFeatureWithAxes
+            yield $"GrayscaleOpening:type={capitalizedType}:radius=3:windowSize=7"
+            yield writeFeature
+            yield writeFeatureWithAxes
+        | "grayscale-closing-write" ->
+            yield readFeature
+            yield readFeatureWithAxes
+            yield $"GrayscaleClosing:type={capitalizedType}:radius=3:windowSize=7"
+            yield writeFeature
+            yield writeFeatureWithAxes
+        | "binary-median-write" ->
+            yield readFeature
+            yield readFeatureWithAxes
+            yield "BinaryMedian:radius=3:windowSize=7"
+            yield writeFeature
+            yield writeFeatureWithAxes
+        | "fill-small-holes-write" ->
+            yield readFeature
+            yield readFeatureWithAxes
+            yield "FillSmallHoles:maximumVolume=128:connectivity=TwentySix"
+            yield writeFeature
+            yield writeFeatureWithAxes
+        | "binary-contour-write" ->
+            yield readFeature
+            yield readFeatureWithAxes
+            yield "BinaryContour:fullyConnected=false:windowSize=7"
+            yield writeFeature
+            yield writeFeatureWithAxes
+        | "erode-write" ->
+            yield readFeature
+            yield readFeatureWithAxes
+            yield "Erode:radius=3"
+            yield writeFeature
+            yield writeFeatureWithAxes
+        | "dilate-write" ->
+            yield readFeature
+            yield readFeatureWithAxes
+            yield "Dilate:radius=3"
+            yield writeFeature
+            yield writeFeatureWithAxes
+        | "opening-write" ->
+            yield readFeature
+            yield readFeatureWithAxes
+            yield "Opening:radius=3"
+            yield writeFeature
+            yield writeFeatureWithAxes
+        | "closing-write" ->
+            yield readFeature
+            yield readFeatureWithAxes
+            yield "Closing:radius=3"
+            yield writeFeature
+            yield writeFeatureWithAxes
+        | "black-top-hat-write" ->
+            yield readFeature
+            yield readFeatureWithAxes
+            yield $"BlackTopHat:type={capitalizedType}:radius=3:windowSize=7"
+            yield writeFeature
+            yield writeFeatureWithAxes
+        | "white-top-hat-write" ->
+            yield readFeature
+            yield readFeatureWithAxes
+            yield $"WhiteTopHat:type={capitalizedType}:radius=3:windowSize=7"
+            yield writeFeature
+            yield writeFeatureWithAxes
+        | "morphological-gradient-write" ->
+            yield readFeature
+            yield readFeatureWithAxes
+            yield $"MorphologicalGradient:type={capitalizedType}:radius=3:windowSize=7"
+            yield writeFeature
+            yield writeFeatureWithAxes
+        | "filters-write" ->
+            yield readFeature
+            yield readFeatureWithAxes
+            yield "SmoothWMedian:type=Float64:radius=3:windowSize=7"
+            yield "SmoothWBilateral:type=Float64:domainSigma=1.5:rangeSigma=30.0:windowSize=7"
+            yield "GradientMagnitude:type=Float64:windowSize=7"
+            yield "SobelEdge:type=Float64:windowSize=7"
+            yield "Laplacian:type=Float64:windowSize=7"
+            yield "IntensityStretch:type=Float64:inputMinimum=0.0:inputMaximum=255.0:outputMinimum=0.0:outputMaximum=255.0"
+            yield "Cast:sourceType=Float64:targetType=UInt8"
+            yield writeFeature
+            yield writeFeatureWithAxes
+        | "resize-write" ->
+            yield readFeature
+            yield readFeatureWithAxes
+            yield $"Resize:type={capitalizedType}:width=96:height=96:depth=96:interpolation=Linear"
+            yield writeFeature
+            yield writeFeatureWithAxes
+        | "resize64-write" ->
+            yield readFeature
+            yield readFeatureWithAxes
+            yield $"Resize:type={capitalizedType}:width=64:height=64:depth=64:interpolation=Linear"
+            yield writeFeature
+            yield writeFeatureWithAxes
+        | "resample-write" ->
+            yield $"NormalNoise:type={capitalizedType}:width={width}:height={height}:depth={depth}:mean=128.0:std=25.0"
+            yield $"Resample:type={capitalizedType}:factorX=1.5:factorY=1.5:factorZ=1.5:interpolation=Linear"
+            yield "Cast:sourceType=Float32:targetType=UInt8"
+            yield writeFeature
+            yield writeFeatureWithAxes
         | "sqrt" ->
             yield zeroFeature
             yield $"ImageOpScalar:operation=+:type={capitalizedType}:value=4.0"
@@ -370,11 +538,14 @@ let private sampleCompatibleProbeFeatures (probe: ProbeResultJson) =
             if operationName probe = "sqrt-windowed-write" then
                 yield "Cast:sourceType=Float64:targetType=UInt8"
                 yield writeFeature
+                yield writeFeatureWithAxes
         | "smoothWGauss-write" ->
             yield readFeature
+            yield readFeatureWithAxes
             yield $"SmoothWGauss:type={capitalizedType}:sigma={sigma}:kernelSize={kernelSize}:boundary=<empty>:windowSize={windowSize}"
             yield "Cast:sourceType=Float64:targetType=UInt8"
             yield writeFeature
+            yield writeFeatureWithAxes
         | _ -> ()
     }
     |> Seq.toList
@@ -498,6 +669,9 @@ let private defaultImageParameters size pixelType windowSize =
 let private singletonImageParameters size pixelType windowSize =
     imageParameters size pixelType windowSize 1u
 
+let private encodedFeatures (features: string list) =
+    String.concat "||" features
+
 let private timeCostToJson (timeCost: StageTimeCostEstimate) =
     timeCost.CalibrationKey
     |> Option.map (fun key ->
@@ -508,6 +682,16 @@ let private timeCostToJson (timeCost: StageTimeCostEstimate) =
           ioWriteBytes = timeCost.IoWriteBytes
           ioReadOps = timeCost.IoReadOps
           ioWriteOps = timeCost.IoWriteOps })
+
+let private scaleTimeCostEstimate (factor: uint64) (timeCost: StageTimeCostEstimate) =
+    let factorFloat = float factor
+    { timeCost with
+        CpuCostUnits = timeCost.CpuCostUnits * factorFloat
+        NativeCostUnits = timeCost.NativeCostUnits * factorFloat
+        IoReadBytes = timeCost.IoReadBytes * factor
+        IoWriteBytes = timeCost.IoWriteBytes * factor
+        IoReadOps = timeCost.IoReadOps * factor
+        IoWriteOps = timeCost.IoWriteOps * factor }
 
 let private timeCostFromJson (timeCost: ProbeTimeCostJson) =
     { CpuCostUnits = timeCost.cpuCostUnits
@@ -608,11 +792,16 @@ let private runProbe name description probeParameters execute (planFactory: unit
             let elapsedDistance = Math.Abs(iteration.elapsedTotalMilliseconds - medianElapsed)
             float (deltaDistance + retainedDistance) + elapsedDistance)
         |> Array.head
-    let costPeakTime = metadataPlan.costPeak |> Option.bind (fun cost -> timeCostToJson cost.Time)
+    let totalTimeUnitScale = max 1UL metadataPlan.length
+    let toTotalTimeUnits timeCost =
+        timeCost
+        |> scaleTimeCostEstimate totalTimeUnitScale
+        |> timeCostToJson
+    let costPeakTime = metadataPlan.costPeak |> Option.bind (fun cost -> toTotalTimeUnits cost.Time)
     let costTimes =
         metadataPlan.costObservations
         |> List.rev
-        |> List.choose (fun cost -> timeCostToJson cost.Time)
+        |> List.choose (fun cost -> toTotalTimeUnits cost.Time)
         |> List.toArray
 
     { name = name
@@ -809,25 +998,25 @@ let private writeProbeAnalysisCsvs reportPath (calibrations: Dictionary<string, 
                     yield [ probe.name; feature; "1"; "sampleCompatible" ]
 
                 for timeCost in probe.costTimes do
-                    yield [ probe.name; $"cost:{timeCost.calibrationKey}:present"; "1"; "costPresence" ]
+                    yield [ probe.name; $"time:{timeCost.calibrationKey}:present"; "1"; "timePresence" ]
 
                     if timeCost.cpuCostUnits <> 0.0 then
-                        yield [ probe.name; $"cost:{timeCost.calibrationKey}:cpuCostUnits"; invariant timeCost.cpuCostUnits; "costUnits" ]
+                        yield [ probe.name; $"time:{timeCost.calibrationKey}:cpuUnits"; invariant timeCost.cpuCostUnits; "timeUnits" ]
 
                     if timeCost.nativeCostUnits <> 0.0 then
-                        yield [ probe.name; $"cost:{timeCost.calibrationKey}:nativeCostUnits"; invariant timeCost.nativeCostUnits; "costUnits" ]
+                        yield [ probe.name; $"time:{timeCost.calibrationKey}:nativeUnits"; invariant timeCost.nativeCostUnits; "timeUnits" ]
 
                     if timeCost.ioReadBytes <> 0UL then
-                        yield [ probe.name; $"cost:{timeCost.calibrationKey}:ioReadBytes"; invariantUInt64 timeCost.ioReadBytes; "costUnits" ]
+                        yield [ probe.name; $"time:{timeCost.calibrationKey}:ioReadBytes"; invariantUInt64 timeCost.ioReadBytes; "timeUnits" ]
 
                     if timeCost.ioWriteBytes <> 0UL then
-                        yield [ probe.name; $"cost:{timeCost.calibrationKey}:ioWriteBytes"; invariantUInt64 timeCost.ioWriteBytes; "costUnits" ]
+                        yield [ probe.name; $"time:{timeCost.calibrationKey}:ioWriteBytes"; invariantUInt64 timeCost.ioWriteBytes; "timeUnits" ]
 
                     if timeCost.ioReadOps <> 0UL then
-                        yield [ probe.name; $"cost:{timeCost.calibrationKey}:ioReadOps"; invariantUInt64 timeCost.ioReadOps; "costUnits" ]
+                        yield [ probe.name; $"time:{timeCost.calibrationKey}:ioReadOps"; invariantUInt64 timeCost.ioReadOps; "timeUnits" ]
 
                     if timeCost.ioWriteOps <> 0UL then
-                        yield [ probe.name; $"cost:{timeCost.calibrationKey}:ioWriteOps"; invariantUInt64 timeCost.ioWriteOps; "costUnits" ]
+                        yield [ probe.name; $"time:{timeCost.calibrationKey}:ioWriteOps"; invariantUInt64 timeCost.ioWriteOps; "timeUnits" ]
         })
 
     writeCsv
@@ -1014,6 +1203,235 @@ let private discreteGaussianBreakdownStackFilterUnstackStage (windowSize: uint) 
 let private sizeName size =
     $"{size.Width}x{size.Height}x{size.Depth}"
 
+let private savedParameter key value =
+    { Key = key
+      Value = value
+      UseInput = false }
+
+let private savedNode id functionId x y parameters =
+    { Id = id
+      FunctionId = functionId
+      X = x
+      Y = y
+      Parameters = parameters |> List.map (fun (key, value) -> savedParameter key value) |> List.toArray }
+
+let private savedEdge fromNode toNode =
+    { FromNode = fromNode
+      FromKind = "dataOutput"
+      FromPort = 0
+      ToNode = toNode
+      ToKind = "dataInput"
+      ToPort = 0 }
+
+let private outputPathForProbe name =
+    Path.Combine("outputs", name).Replace('\\', '/')
+
+let private graphForLinearPipeline name nodes =
+    let spacedNodes =
+        nodes
+        |> List.mapi (fun index (id, functionId, parameters) ->
+            savedNode id functionId (100.0 + float index * 220.0) 120.0 parameters)
+
+    { Version = 1
+      Nodes = spacedNodes |> List.toArray
+      Edges =
+        spacedNodes
+        |> List.pairwise
+        |> List.map (fun (left, right) -> savedEdge left.Id right.Id)
+        |> List.toArray }
+
+let private sourceNode probe =
+    let width = probeParameter "width" probe
+    let height = probeParameter "height" probe
+    let depth = probeParameter "depth" probe
+    let pixelType = probeParameter "pixelType" probe
+    let capitalizedType =
+        match pixelType.ToLowerInvariant() with
+        | "uint8" -> "UInt8"
+        | "float32" -> "Float32"
+        | "float" -> "Float64"
+        | other -> other
+
+    "source",
+    "Zero",
+    [ "availableMemory", string availableMemory + "UL"
+      "type", capitalizedType
+      "width", width
+      "height", height
+      "depth", depth ]
+
+let private writeNode name =
+    "write",
+    "Write",
+    [ "format", "Image stack"
+      "output", outputPathForProbe name
+      "suffix", ".tiff" ]
+
+let private readNode pixelType =
+    "read",
+    "Read",
+    [ "availableMemory", string availableMemory + "UL"
+      "type", pixelType
+      "format", "Image stack"
+      "input", "../../data/rotatingBoxes"
+      "suffix", ".tiff" ]
+
+let private castNode sourceType targetType =
+    "cast",
+    "Cast",
+    [ "sourceType", sourceType
+      "targetType", targetType ]
+
+let private operationGraph (probe: ProbeResultJson) =
+    let op = operationName probe
+    let name = probe.name
+    let pixelType =
+        match (probeParameter "pixelType" probe).ToLowerInvariant() with
+        | "uint8" -> "UInt8"
+        | "float32" -> "Float32"
+        | "float" -> "Float64"
+        | other -> other
+
+    let source = sourceNode probe
+    let write = writeNode name
+    let withWrite nodes = graphForLinearPipeline name (nodes @ [ write ])
+    let withUInt8Write nodes =
+        if pixelType = "UInt8" then
+            withWrite nodes
+        else
+            graphForLinearPipeline name (nodes @ [ castNode pixelType "UInt8"; write ])
+
+    match op with
+    | "zero"
+    | "zero-write" ->
+        Some(withWrite [ source ])
+    | "read-ignore"
+    | "read-write" ->
+        Some(withWrite [ readNode pixelType ])
+    | "noise-write" ->
+        Some(
+            withUInt8Write
+                [ source
+                  "noise", "AddNormalNoise", [ "type", pixelType; "mean", "128.0"; "std", "50.0" ] ])
+    | "add-salt-and-pepper-write" ->
+        Some(
+            withWrite
+                [ source
+                  "noise", "AddSaltAndPepperNoise", [ "type", "UInt8"; "probability", "0.02" ] ])
+    | "salt-and-pepper-write" ->
+        Some(
+            withWrite
+                [ "noise",
+                  "SaltAndPepperNoise",
+                  [ "availableMemory", string availableMemory + "UL"
+                    "type", "UInt8"
+                    "width", probeParameter "width" probe
+                    "height", probeParameter "height" probe
+                    "depth", probeParameter "depth" probe
+                    "probability", "0.02" ] ])
+    | "shot-noise-write" ->
+        Some(
+            withWrite
+                [ "noise",
+                  "ShotNoise",
+                  [ "availableMemory", string availableMemory + "UL"
+                    "type", "Float64"
+                    "width", probeParameter "width" probe
+                    "height", probeParameter "height" probe
+                    "depth", probeParameter "depth" probe
+                    "scale", "2.0" ]
+                  castNode "Float64" "UInt8" ])
+    | "speckle-noise-write" ->
+        Some(
+            withWrite
+                [ "noise",
+                  "SpeckleNoise",
+                  [ "availableMemory", string availableMemory + "UL"
+                    "type", "Float64"
+                    "width", probeParameter "width" probe
+                    "height", probeParameter "height" probe
+                    "depth", probeParameter "depth" probe
+                    "std", "0.5" ]
+                  castNode "Float64" "UInt8" ])
+    | "add-shot-speckle-write" ->
+        Some(
+            withWrite
+                [ source
+                  "shot", "AddShotNoise", [ "type", "Float64"; "scale", "2.0" ]
+                  "speckle", "AddSpeckleNoise", [ "type", "Float64"; "std", "0.5" ]
+                  castNode "Float64" "UInt8" ])
+    | "threshold-write" ->
+        Some(
+            withWrite
+                [ source
+                  "noise", "AddNormalNoise", [ "type", pixelType; "mean", "128.0"; "std", "50.0" ]
+                  "threshold", "Threshold", [ "type", pixelType; "lower", "128.0"; "upper", "infinity" ]
+                  "scale", "ImageOpScalar", [ "operation", "*"; "type", "UInt8"; "value", "255" ] ])
+    | "erode-write"
+    | "dilate-write"
+    | "opening-write"
+    | "closing-write" ->
+        let functionId =
+            match op with
+            | "erode-write" -> "Erode"
+            | "dilate-write" -> "Dilate"
+            | "opening-write" -> "Opening"
+            | _ -> "Closing"
+        Some(withWrite [ source; "op", functionId, [ "radius", "3" ] ])
+    | "grayscale-erode-write"
+    | "grayscale-dilate-write"
+    | "grayscale-opening-write"
+    | "grayscale-closing-write" ->
+        let functionId =
+            match op with
+            | "grayscale-erode-write" -> "GrayscaleErode"
+            | "grayscale-dilate-write" -> "GrayscaleDilate"
+            | "grayscale-opening-write" -> "GrayscaleOpening"
+            | _ -> "GrayscaleClosing"
+        Some(withWrite [ source; "op", functionId, [ "type", "UInt8"; "radius", "3" ] ])
+    | "black-top-hat-write"
+    | "white-top-hat-write"
+    | "morphological-gradient-write" ->
+        let functionId =
+            match op with
+            | "black-top-hat-write" -> "BlackTopHat"
+            | "white-top-hat-write" -> "WhiteTopHat"
+            | _ -> "MorphologicalGradient"
+        Some(withWrite [ source; "op", functionId, [ "type", "UInt8"; "radius", "3" ] ])
+    | "binary-median-write" ->
+        Some(withWrite [ source; "op", "BinaryMedian", [ "radius", "3" ] ])
+    | "binary-contour-write" ->
+        Some(withWrite [ source; "op", "BinaryContour", [ "fullyConnected", "false" ] ])
+    | "fill-small-holes-write" ->
+        Some(withWrite [ source; "op", "FillSmallHoles", [ "maximumVolume", "128"; "connectivity", "TwentySix" ] ])
+    | "resize-write"
+    | "resize64-write" ->
+        let side = if op = "resize-write" then "96" else "64"
+        Some(withWrite [ source; "resize", "Resize", [ "type", "UInt8"; "width", side; "height", side; "depth", side; "interpolation", "Linear" ] ])
+    | "resample-write" ->
+        Some(
+            withWrite
+                [ source
+                  "resample", "Resample", [ "type", "Float32"; "factorX", "1.5"; "factorY", "1.5"; "factorZ", "1.5"; "interpolation", "Linear" ]
+                  castNode "Float32" "UInt8" ])
+    | _ -> None
+
+let private writeProbeGraphs outputDir probes =
+    if Directory.Exists outputDir then
+        Directory.Delete(outputDir, true)
+    Directory.CreateDirectory outputDir |> ignore
+
+    let written =
+        probes
+        |> Array.choose (fun probe ->
+            operationGraph probe
+            |> Option.map (fun graph ->
+                let path = Path.Combine(outputDir, probe.name + ".json")
+                PipelineGraphStorage.save path graph
+                path))
+
+    printfn "Wrote %d probing graph(s) to %s." written.Length outputDir
+
 let private createInputStack size inputDir =
     Directory.CreateDirectory(inputDir) |> ignore
     source availableMemory
@@ -1030,6 +1448,7 @@ let private cleanDirectory path =
 type ProbeOptions =
     { ReportPath: string
       AnalysisFeaturesPath: string option
+      EmitJsonDirectory: string option
       LowSupportThreshold: int option
       NonBoilerplate: bool
       SqrtOnly: bool
@@ -1040,6 +1459,7 @@ type ProbeOptions =
 let private parseArgs (args: string array) =
     let mutable reportPath = None
     let mutable analysisFeaturesPath = None
+    let mutable emitJsonDirectory = None
     let mutable lowSupportThreshold = Some 2
     let mutable nonBoilerplate = false
     let mutable sqrtOnly = false
@@ -1054,6 +1474,13 @@ let private parseArgs (args: string array) =
             if i + 1 >= args.Length then
                 failwith "Expected a path after --analysis-features."
             analysisFeaturesPath <- Some(Path.GetFullPath args[i + 1])
+            i <- i + 2
+        | "--emit-json"
+        | "--emit-json-dir"
+        | "--write-json" ->
+            if i + 1 >= args.Length then
+                failwith "Expected a directory after --emit-json."
+            emitJsonDirectory <- Some(Path.GetFullPath args[i + 1])
             i <- i + 2
         | "--low-support-threshold" ->
             if i + 1 >= args.Length then
@@ -1141,6 +1568,7 @@ let private parseArgs (args: string array) =
         |> Option.defaultValue "stackprocessing-probing.json"
         |> Path.GetFullPath
       AnalysisFeaturesPath = analysisFeaturesPath
+      EmitJsonDirectory = emitJsonDirectory
       LowSupportThreshold = lowSupportThreshold
       NonBoilerplate = nonBoilerplate
       SqrtOnly = sqrtOnly
@@ -1288,6 +1716,334 @@ let main args =
                                          source availableMemory
                                          |> read<float> inputDir ".tiff"
                                          >=> computeStats ())
+
+                           yield runSinkProbe
+                                     $"add-salt-and-pepper-uint8-write-{suffix}"
+                                     $"Synthetic UInt8 {suffix} source, add salt-and-pepper noise, write."
+                                     (let p = defaultImageParameters size "uint8" 1u
+                                      p["operation"] <- "add-salt-and-pepper-write"
+                                      p)
+                                     (fun () ->
+                                         source availableMemory
+                                         |> zero<uint8> size.Width size.Height size.Depth
+                                         >=> addSaltAndPepperNoise 0.02
+                                         >=> write (outputDir size "add-salt-and-pepper-uint8-write") ".tiff")
+
+                           yield runSinkProbe
+                                     $"salt-and-pepper-uint8-write-{suffix}"
+                                     $"Synthetic UInt8 {suffix} salt-and-pepper source, write."
+                                     (let p = defaultImageParameters size "uint8" 1u
+                                      p["operation"] <- "salt-and-pepper-write"
+                                      p)
+                                     (fun () ->
+                                         source availableMemory
+                                         |> saltAndPepperNoise<uint8> size.Width size.Height size.Depth 0.02
+                                         >=> write (outputDir size "salt-and-pepper-uint8-write") ".tiff")
+
+                           yield runSinkProbe
+                                     $"shot-noise-float-write-{suffix}"
+                                     $"Synthetic Float64 {suffix} shot noise source, cast to UInt8, write."
+                                     (let p = defaultImageParameters size "float" 1u
+                                      p["operation"] <- "shot-noise-write"
+                                      p)
+                                     (fun () ->
+                                         source availableMemory
+                                         |> shotNoise<float> size.Width size.Height size.Depth 2.0
+                                         >=> cast<float, uint8>
+                                         >=> write (outputDir size "shot-noise-float-write") ".tiff")
+
+                           yield runSinkProbe
+                                     $"speckle-noise-float-write-{suffix}"
+                                     $"Synthetic Float64 {suffix} speckle noise source, cast to UInt8, write."
+                                     (let p = defaultImageParameters size "float" 1u
+                                      p["operation"] <- "speckle-noise-write"
+                                      p)
+                                     (fun () ->
+                                         source availableMemory
+                                         |> speckleNoise<float> size.Width size.Height size.Depth 0.5
+                                         >=> cast<float, uint8>
+                                         >=> write (outputDir size "speckle-noise-float-write") ".tiff")
+
+                           yield runSinkProbe
+                                     $"add-shot-speckle-float-write-{suffix}"
+                                     $"Synthetic Float64 {suffix} source, add shot and speckle noise, cast, write."
+                                     (let p = defaultImageParameters size "float" 1u
+                                      p["operation"] <- "add-shot-speckle-write"
+                                      p)
+                                     (fun () ->
+                                         source availableMemory
+                                         |> zero<float> size.Width size.Height size.Depth
+                                         >=> addShotNoise 2.0
+                                         >=> addSpeckleNoise 0.5
+                                         >=> cast<float, uint8>
+                                         >=> write (outputDir size "add-shot-speckle-float-write") ".tiff")
+
+                           yield runSinkProbe
+                                     $"grayscale-erode-uint8-write-{suffix}"
+                                     $"Read UInt8 {suffix}, grayscale erode, write."
+                                     (let p = defaultImageParameters size "uint8" 7u
+                                      p["operation"] <- "grayscale-erode-write"
+                                      p)
+                                     (fun () ->
+                                         source availableMemory
+                                         |> read<uint8> inputDir ".tiff"
+                                         >=> grayscaleErode<uint8> 3u 7u
+                                         >=> write (outputDir size "grayscale-erode-uint8-write") ".tiff")
+
+                           yield runSinkProbe
+                                     $"grayscale-dilate-uint8-write-{suffix}"
+                                     $"Read UInt8 {suffix}, grayscale dilate, write."
+                                     (let p = defaultImageParameters size "uint8" 7u
+                                      p["operation"] <- "grayscale-dilate-write"
+                                      p)
+                                     (fun () ->
+                                         source availableMemory
+                                         |> read<uint8> inputDir ".tiff"
+                                         >=> grayscaleDilate<uint8> 3u 7u
+                                         >=> write (outputDir size "grayscale-dilate-uint8-write") ".tiff")
+
+                           yield runSinkProbe
+                                     $"grayscale-opening-uint8-write-{suffix}"
+                                     $"Read UInt8 {suffix}, grayscale opening, write."
+                                     (let p = defaultImageParameters size "uint8" 7u
+                                      p["operation"] <- "grayscale-opening-write"
+                                      p)
+                                     (fun () ->
+                                         source availableMemory
+                                         |> read<uint8> inputDir ".tiff"
+                                         >=> grayscaleOpening<uint8> 3u 7u
+                                         >=> write (outputDir size "grayscale-opening-uint8-write") ".tiff")
+
+                           yield runSinkProbe
+                                     $"grayscale-closing-uint8-write-{suffix}"
+                                     $"Read UInt8 {suffix}, grayscale closing, write."
+                                     (let p = defaultImageParameters size "uint8" 7u
+                                      p["operation"] <- "grayscale-closing-write"
+                                      p)
+                                     (fun () ->
+                                         source availableMemory
+                                         |> read<uint8> inputDir ".tiff"
+                                         >=> grayscaleClosing<uint8> 3u 7u
+                                         >=> write (outputDir size "grayscale-closing-uint8-write") ".tiff")
+
+                           yield runSinkProbe
+                                     $"binary-median-uint8-write-{suffix}"
+                                     $"Read UInt8 {suffix}, binary median, write."
+                                     (let p = defaultImageParameters size "uint8" 7u
+                                      p["operation"] <- "binary-median-write"
+                                      p)
+                                     (fun () ->
+                                         source availableMemory
+                                         |> read<uint8> inputDir ".tiff"
+                                         >=> binaryMedian 3u 7u
+                                         >=> write (outputDir size "binary-median-uint8-write") ".tiff")
+
+                           yield runSinkProbe
+                                     $"fill-small-holes-uint8-write-{suffix}"
+                                     $"Read UInt8 {suffix}, fill small holes, write."
+                                     (let p = defaultImageParameters size "uint8" 1u
+                                      p["operation"] <- "fill-small-holes-write"
+                                      p)
+                                     (fun () ->
+                                         source availableMemory
+                                         |> read<uint8> inputDir ".tiff"
+                                         >=> fillSmallHoles 128UL ObjectConnectivity.TwentySix
+                                         >=> write (outputDir size "fill-small-holes-uint8-write") ".tiff")
+
+                           yield runSinkProbe
+                                     $"binary-contour-uint8-write-{suffix}"
+                                     $"Read UInt8 {suffix}, binary contour, write."
+                                     (let p = defaultImageParameters size "uint8" 7u
+                                      p["operation"] <- "binary-contour-write"
+                                      p)
+                                     (fun () ->
+                                         source availableMemory
+                                         |> read<uint8> inputDir ".tiff"
+                                         >=> binaryContour false 7u
+                                         >=> write (outputDir size "binary-contour-uint8-write") ".tiff")
+
+                           yield runSinkProbe
+                                     $"erode-uint8-write-{suffix}"
+                                     $"Read UInt8 {suffix}, binary erode, write."
+                                     (let p = defaultImageParameters size "uint8" 1u
+                                      p["operation"] <- "erode-write"
+                                      p)
+                                     (fun () ->
+                                         source availableMemory
+                                         |> read<uint8> inputDir ".tiff"
+                                         >=> erode 3u
+                                         >=> write (outputDir size "erode-uint8-write") ".tiff")
+
+                           yield runSinkProbe
+                                     $"dilate-uint8-write-{suffix}"
+                                     $"Read UInt8 {suffix}, binary dilate, write."
+                                     (let p = defaultImageParameters size "uint8" 1u
+                                      p["operation"] <- "dilate-write"
+                                      p)
+                                     (fun () ->
+                                         source availableMemory
+                                         |> read<uint8> inputDir ".tiff"
+                                         >=> dilate 3u
+                                         >=> write (outputDir size "dilate-uint8-write") ".tiff")
+
+                           yield runSinkProbe
+                                     $"opening-uint8-write-{suffix}"
+                                     $"Read UInt8 {suffix}, binary opening, write."
+                                     (let p = defaultImageParameters size "uint8" 1u
+                                      p["operation"] <- "opening-write"
+                                      p)
+                                     (fun () ->
+                                         source availableMemory
+                                         |> read<uint8> inputDir ".tiff"
+                                         >=> opening 3u
+                                         >=> write (outputDir size "opening-uint8-write") ".tiff")
+
+                           yield runSinkProbe
+                                     $"closing-uint8-write-{suffix}"
+                                     $"Read UInt8 {suffix}, binary closing, write."
+                                     (let p = defaultImageParameters size "uint8" 1u
+                                      p["operation"] <- "closing-write"
+                                      p)
+                                     (fun () ->
+                                         source availableMemory
+                                         |> read<uint8> inputDir ".tiff"
+                                         >=> closing 3u
+                                         >=> write (outputDir size "closing-uint8-write") ".tiff")
+
+                           yield runSinkProbe
+                                     $"black-top-hat-uint8-write-{suffix}"
+                                     $"Read UInt8 {suffix}, black top-hat, write."
+                                     (let p = defaultImageParameters size "uint8" 7u
+                                      p["operation"] <- "black-top-hat-write"
+                                      p)
+                                     (fun () ->
+                                         source availableMemory
+                                         |> read<uint8> inputDir ".tiff"
+                                         >=> blackTopHat<uint8> 3u 7u
+                                         >=> write (outputDir size "black-top-hat-uint8-write") ".tiff")
+
+                           yield runSinkProbe
+                                     $"white-top-hat-uint8-write-{suffix}"
+                                     $"Read UInt8 {suffix}, white top-hat, write."
+                                     (let p = defaultImageParameters size "uint8" 7u
+                                      p["operation"] <- "white-top-hat-write"
+                                      p)
+                                     (fun () ->
+                                         source availableMemory
+                                         |> read<uint8> inputDir ".tiff"
+                                         >=> whiteTopHat<uint8> 3u 7u
+                                         >=> write (outputDir size "white-top-hat-uint8-write") ".tiff")
+
+                           yield runSinkProbe
+                                     $"morphological-gradient-uint8-write-{suffix}"
+                                     $"Read UInt8 {suffix}, morphological gradient, write."
+                                     (let p = defaultImageParameters size "uint8" 7u
+                                      p["operation"] <- "morphological-gradient-write"
+                                      p)
+                                     (fun () ->
+                                         source availableMemory
+                                         |> read<uint8> inputDir ".tiff"
+                                         >=> morphologicalGradient<uint8> 3u 7u
+                                         >=> write (outputDir size "morphological-gradient-uint8-write") ".tiff")
+
+                           yield runSinkProbe
+                                     $"filters-float-write-{suffix}"
+                                     $"Read Float64 {suffix}, common image filters, cast, write."
+                                     (let p = defaultImageParameters size "float" 7u
+                                      p["operation"] <- "filters-write"
+                                      p)
+                                     (fun () ->
+                                         source availableMemory
+                                         |> read<float> inputDir ".tiff"
+                                         >=> smoothWMedian<float> 3u 7u
+                                         >=> smoothWBilateral<float> 1.5 30.0 7u
+                                         >=> gradientMagnitude<float> 7u
+                                         >=> sobelEdge<float> 7u
+                                         >=> laplacian<float> 7u
+                                         >=> intensityStretch<float> 0.0 255.0 0.0 255.0
+                                         >=> cast<float, uint8>
+                                         >=> write (outputDir size "filters-float-write") ".tiff")
+
+                           let readUInt8Feature =
+                               "Read:type=UInt8:format=Image stack:suffix=.tiff:slabDepth=1:multiscaleIndex=0:datasetIndex=0:timepoint=0:channel=0:maxParallelChunks=0:frameAxis=0"
+                           let readUInt8FeatureWithAxes =
+                               "Read:type=UInt8:format=Image stack:suffix=.tiff:slabDepth=1:multiscaleIndex=0:datasetIndex=0:timepoint=0:channel=0:maxParallelChunks=0:frameAxis=0:yAxis=1:xAxis=2"
+                           let writeStackFeature =
+                               "Write:format=Image stack:suffix=.tiff:depth=1:chunkX=64:chunkY=64:chunkZ=8:maxConcurrentWrites=0:frameAxis=0"
+                           let writeStackFeatureWithAxes =
+                               "Write:format=Image stack:suffix=.tiff:depth=1:chunkX=64:chunkY=64:chunkZ=8:maxConcurrentWrites=0:frameAxis=0:yAxis=1:xAxis=2"
+                           let mixedPairs =
+                               [ "erode-dilate", "Erode:radius=3", erode 3u, "Dilate:radius=3", dilate 3u
+                                 "dilate-erode", "Dilate:radius=3", dilate 3u, "Erode:radius=3", erode 3u
+                                 "opening-closing", "Opening:radius=3", opening 3u, "Closing:radius=3", closing 3u
+                                 "closing-opening", "Closing:radius=3", closing 3u, "Opening:radius=3", opening 3u
+                                 "grayscale-erode-dilate", "GrayscaleErode:type=UInt8:radius=3:windowSize=7", grayscaleErode<uint8> 3u 7u, "GrayscaleDilate:type=UInt8:radius=3:windowSize=7", grayscaleDilate<uint8> 3u 7u
+                                 "grayscale-dilate-erode", "GrayscaleDilate:type=UInt8:radius=3:windowSize=7", grayscaleDilate<uint8> 3u 7u, "GrayscaleErode:type=UInt8:radius=3:windowSize=7", grayscaleErode<uint8> 3u 7u
+                                 "black-white-top-hat", "BlackTopHat:type=UInt8:radius=3:windowSize=7", blackTopHat<uint8> 3u 7u, "WhiteTopHat:type=UInt8:radius=3:windowSize=7", whiteTopHat<uint8> 3u 7u
+                                 "white-black-top-hat", "WhiteTopHat:type=UInt8:radius=3:windowSize=7", whiteTopHat<uint8> 3u 7u, "BlackTopHat:type=UInt8:radius=3:windowSize=7", blackTopHat<uint8> 3u 7u
+                                 "binary-contour-median", "BinaryContour:fullyConnected=false:windowSize=7", binaryContour false 7u, "BinaryMedian:radius=3:windowSize=7", binaryMedian 3u 7u
+                                 "median-contour", "BinaryMedian:radius=3:windowSize=7", binaryMedian 3u 7u, "BinaryContour:fullyConnected=false:windowSize=7", binaryContour false 7u
+                                 "morph-gradient-contour", "MorphologicalGradient:type=UInt8:radius=3:windowSize=7", morphologicalGradient<uint8> 3u 7u, "BinaryContour:fullyConnected=false:windowSize=7", binaryContour false 7u
+                                 "fill-holes-contour", "FillSmallHoles:maximumVolume=128:connectivity=TwentySix", fillSmallHoles 128UL ObjectConnectivity.TwentySix, "BinaryContour:fullyConnected=false:windowSize=7", binaryContour false 7u ]
+
+                           for name, featureA, stageA, featureB, stageB in mixedPairs do
+                               yield runSinkProbe
+                                         $"mixed-{name}-uint8-write-{suffix}"
+                                         $"Read UInt8 {suffix}, run {name}, write."
+                                         (let p = defaultImageParameters size "uint8" 7u
+                                          p["operation"] <- "mixed-uint8-write"
+                                          p["features"] <-
+                                              encodedFeatures
+                                                  [ readUInt8Feature
+                                                    readUInt8FeatureWithAxes
+                                                    featureA
+                                                    featureB
+                                                    writeStackFeature
+                                                    writeStackFeatureWithAxes ]
+                                          p)
+                                         (fun () ->
+                                             source availableMemory
+                                             |> read<uint8> inputDir ".tiff"
+                                             >=> stageA
+                                             >=> stageB
+                                             >=> write (outputDir size $"mixed-{name}-uint8-write") ".tiff")
+
+                           yield runSinkProbe
+                                     $"resize-uint8-write-{suffix}"
+                                     $"Read UInt8 {suffix}, resize to 96^3, write."
+                                     (let p = defaultImageParameters size "uint8" 1u
+                                      p["operation"] <- "resize-write"
+                                      p)
+                                     (fun () ->
+                                         source availableMemory
+                                         |> read<uint8> inputDir ".tiff"
+                                         |> resize<uint8> 96u 96u 96u "Linear"
+                                         >=> write (outputDir size "resize-uint8-write") ".tiff")
+
+                           yield runSinkProbe
+                                     $"resize64-uint8-write-{suffix}"
+                                     $"Read UInt8 {suffix}, resize to 64^3, write."
+                                     (let p = defaultImageParameters size "uint8" 1u
+                                      p["operation"] <- "resize64-write"
+                                      p)
+                                     (fun () ->
+                                         source availableMemory
+                                         |> read<uint8> inputDir ".tiff"
+                                         |> resize<uint8> 64u 64u 64u "Linear"
+                                         >=> write (outputDir size "resize64-uint8-write") ".tiff")
+
+                           yield runSinkProbe
+                                     $"resample-float32-write-{suffix}"
+                                     $"Synthetic Float32 {suffix} normal noise, resample by 1.5, cast, write."
+                                     (let p = defaultImageParameters size "float32" 1u
+                                      p["operation"] <- "resample-write"
+                                      p)
+                                     (fun () ->
+                                         source availableMemory
+                                         |> normalNoise<float32> size.Width size.Height size.Depth 128.0 25.0
+                                         |> resample<float32> 1.5 1.5 1.5 "Linear"
+                                         >=> cast<float32, uint8>
+                                         >=> write (outputDir size "resample-float32-write") ".tiff")
 
                if
                    (includeNonBoilerplate || options.SqrtOnly)
@@ -1586,6 +2342,9 @@ let main args =
     let calibrations = buildCalibrations probes
     let probes = attachPredictions calibrations probes
     let probes = filterProbesByAnalysisFeatures options.LowSupportThreshold options.AnalysisFeaturesPath probes
+
+    options.EmitJsonDirectory
+    |> Option.iter (fun outputDir -> writeProbeGraphs outputDir probes)
 
     let report =
         { generatedUtc = DateTimeOffset.UtcNow.ToString("O")

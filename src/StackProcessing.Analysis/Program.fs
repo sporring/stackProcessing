@@ -10,6 +10,7 @@ open Studio.Graph
 type Options =
     { SamplesRoot: string
       OutputDirectory: string
+      ExtraJsonRoots: string list
       ProbingPrefixes: string list
       Ridge: float }
 
@@ -40,6 +41,8 @@ let private usage () =
     printfn "Defaults:"
     printfn "  --samples-root samples"
     printfn "  --output       samples/tmp/analysis"
+    printfn "  --extra-json-root PATH"
+    printfn "                 Include generated Studio JSON graphs from PATH."
     printfn "  --ridge        1e-8"
 
 let private defaultSamplesRoot () =
@@ -57,6 +60,7 @@ let private defaultOptions () =
 
     { SamplesRoot = samplesRoot
       OutputDirectory = Path.Combine(samplesRoot, "tmp", "analysis")
+      ExtraJsonRoots = []
       ProbingPrefixes = []
       Ridge = 1e-8 }
 
@@ -70,6 +74,10 @@ let rec private parseArgs options args =
         parseArgs { options with SamplesRoot = Path.GetFullPath value } rest
     | "--output" :: value :: rest ->
         parseArgs { options with OutputDirectory = Path.GetFullPath value } rest
+    | "--extra-json-root" :: value :: rest
+    | "--generated-json-root" :: value :: rest
+    | "--probe-json-root" :: value :: rest ->
+        parseArgs { options with ExtraJsonRoots = options.ExtraJsonRoots @ [ Path.GetFullPath value ] } rest
     | "--probing-prefix" :: value :: rest ->
         parseArgs { options with ProbingPrefixes = options.ProbingPrefixes @ [ Path.GetFullPath value ] } rest
     | "--ridge" :: value :: rest ->
@@ -189,27 +197,39 @@ let private ignoredTimingParameterKeys =
           "physicalSizeY"
           "physicalSizeZ" ]
 
+let private ignoredTimingFunctionIds =
+    set [ "Expand"; "FileDirectory"; "Scalar"; "Tap" ]
+
+let private collapsedTimingFunctionIds =
+    set [ "Print" ]
+
 let private featureKey (node: SavedNode) =
     let definition, parameters = parameterValues node
-    let parameters =
-        parameters
-        |> List.filter (fun (key, _) -> not (ignoredTimingParameterKeys.Contains key))
+    if collapsedTimingFunctionIds.Contains definition.Id then
+        definition.Id
+    else
+        let parameters =
+            parameters
+            |> List.filter (fun (key, _) -> not (ignoredTimingParameterKeys.Contains key))
 
-    match parameters with
-    | [] -> definition.Id
-    | _ ->
-        parameters
-        |> List.map (fun (key, value) -> $"{key}={value}")
-        |> String.concat ":"
-        |> fun suffix -> $"{definition.Id}:{suffix}"
+        match parameters with
+        | [] -> definition.Id
+        | _ ->
+            parameters
+            |> List.map (fun (key, value) -> $"{key}={value}")
+            |> String.concat ":"
+            |> fun suffix -> $"{definition.Id}:{suffix}"
 
-let private discoverGraphs (samplesRoot: string) =
-    Directory.EnumerateFiles(samplesRoot, "*.json", SearchOption.AllDirectories)
+let private safeName (value: string) =
+    Regex.Replace(value.Replace('\\', '/'), @"[^A-Za-z0-9_.-]+", "_")
+
+let private discoverGraphsInRoot (samplesRoot: string) (scanRoot: string) includeTmp namePrefix =
+    Directory.EnumerateFiles(scanRoot, "*.json", SearchOption.AllDirectories)
     |> Seq.filter (fun path ->
-        let relative = relativePath samplesRoot path
+        let relative = relativePath scanRoot path
         let parts = relative.Split('/')
 
-        not (relative.StartsWith("tmp/", StringComparison.OrdinalIgnoreCase))
+        (includeTmp || not (relative.StartsWith("tmp/", StringComparison.OrdinalIgnoreCase)))
         && not (relative.StartsWith("RunAll/", StringComparison.OrdinalIgnoreCase))
         && not (relative.StartsWith("RunJson/", StringComparison.OrdinalIgnoreCase))
         && not (parts |> Array.exists (fun part ->
@@ -217,11 +237,17 @@ let private discoverGraphs (samplesRoot: string) =
             || part.Equals("obj", StringComparison.OrdinalIgnoreCase))))
     |> Seq.sort
     |> Seq.map (fun path ->
-        let relative = relativePath samplesRoot path
-        let rowId = relative.Substring(0, relative.Length - Path.GetExtension(relative).Length)
+        let relative = relativePath scanRoot path
+        let localRowId = relative.Substring(0, relative.Length - Path.GetExtension(relative).Length)
+        let rowId =
+            if String.IsNullOrWhiteSpace namePrefix then
+                localRowId
+            else
+                namePrefix.TrimEnd('/') + "/" + localRowId
         let graph = PipelineGraphStorage.load path
         let features =
             graph.Nodes
+            |> Array.filter (fun node -> not (ignoredTimingFunctionIds.Contains node.FunctionId))
             |> Array.map featureKey
             |> Array.distinct
             |> Array.sort
@@ -233,6 +259,20 @@ let private discoverGraphs (samplesRoot: string) =
           ItemPath = path
           FeatureValues = features |> Map.add "intercept" 1.0 })
     |> Seq.toList
+
+let private discoverGraphs (samplesRoot: string) extraJsonRoots =
+    let sampleGraphs = discoverGraphsInRoot samplesRoot samplesRoot false ""
+    let generatedGraphs =
+        extraJsonRoots
+        |> List.collect (fun root ->
+            if Directory.Exists root then
+                let prefix = "generated/" + safeName (Path.GetFileName(root.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar)))
+                discoverGraphsInRoot samplesRoot root true prefix
+            else
+                eprintfn "analysis: extra JSON root does not exist: %s" root
+                [])
+
+    sampleGraphs @ generatedGraphs
 
 let private probingRowId rowId =
     $"probing/{rowId}"
@@ -267,7 +307,7 @@ let private discoverProbingRows prefixes =
                 let valueIndex = columnIndex "value" header
                 let featureKindIndex = columnIndex "featureKind" header
                 let includedFeatureKinds =
-                    set [ "sampleCompatible"; "costUnits" ]
+                    set [ "sampleCompatible" ]
 
                 rows
                 |> List.choose (fun row ->
@@ -358,12 +398,33 @@ let private parseRunSummary (logPath: string) =
             else
                 None)
 
-let private measurementsForRow (samplesRoot: string) (row: AnalysisRow) =
-    let logPath = Path.Combine(samplesRoot, "tmp", "runJson", row.RowId + ".out")
+let private runOutputDirectories samplesRoot prefix =
+    let tmp = Path.Combine(samplesRoot, "tmp")
 
-    if row.Source <> "runJson" then
-        []
-    else
+    seq {
+        let legacy = Path.Combine(tmp, prefix)
+        if Directory.Exists legacy then
+            yield legacy
+
+        if Directory.Exists tmp then
+            yield!
+                Directory.EnumerateDirectories(tmp, prefix + "_*", SearchOption.TopDirectoryOnly)
+                |> Seq.collect (fun batch ->
+                    Directory.EnumerateDirectories(batch, "repeat_*", SearchOption.TopDirectoryOnly))
+    }
+    |> Seq.distinct
+    |> Seq.toList
+
+let private logPathsForRow samplesRoot rowId =
+    [ "runJson"; "runAll" ]
+    |> List.collect (fun prefix ->
+        runOutputDirectories samplesRoot prefix
+        |> List.choose (fun outputDir ->
+            let logPath = Path.Combine(outputDir, rowId + ".out")
+            if File.Exists logPath then Some logPath else None))
+    |> List.distinct
+
+let private measurementsForLog rowId logPath =
     match parseRunSummary logPath with
     | None -> []
     | Some summary ->
@@ -378,10 +439,17 @@ let private measurementsForRow (samplesRoot: string) (row: AnalysisRow) =
         |> List.choose (fun (name, value) ->
             value
             |> Option.map (fun value ->
-                { RowId = row.RowId
+                { RowId = rowId
                   Name = name
                   Value = value
                   SourcePath = logPath }))
+
+let private measurementsForRow (samplesRoot: string) (row: AnalysisRow) =
+    if row.Source <> "runJson" then
+        []
+    else
+        logPathsForRow samplesRoot row.RowId
+        |> List.collect (measurementsForLog row.RowId)
 
 let private probingMeasurementAliases measurement value =
     seq {
@@ -700,7 +768,7 @@ let main argv =
     | Error exitCode -> exitCode
     | Ok options ->
         let rows =
-            discoverGraphs options.SamplesRoot
+            discoverGraphs options.SamplesRoot options.ExtraJsonRoots
             @ discoverProbingRows options.ProbingPrefixes
 
         writeOutputs options rows

@@ -10,11 +10,15 @@ open System.Threading.Tasks
 
 type Options =
     { SamplesRoot: string
+      ExtraSamplesRoots: string list
+      IncludeSamples: bool
       Jobs: int
       DebugLevel: int
       Optimize: bool
       SkipBuild: bool
       GatherOnly: bool
+      Repeat: int
+      RunId: string option
       Timeout: TimeSpan option }
 
 type Sample =
@@ -40,11 +44,23 @@ type RunSummary =
 
 let private outputDirectoryName = "runAll"
 
+let private timestampRunId () =
+    DateTime.Now.ToString("yyyyMMdd_HHmmss", CultureInfo.InvariantCulture)
+
+let private batchDirectoryName runId =
+    $"{outputDirectoryName}_{runId}"
+
 let private outputDirectory samplesRoot =
     Path.Combine(samplesRoot, "tmp", outputDirectoryName)
 
-let private outputLogPath samplesRoot sampleName =
-    Path.Combine(outputDirectory samplesRoot, sampleName + ".out")
+let private batchDirectory samplesRoot runId =
+    Path.Combine(samplesRoot, "tmp", batchDirectoryName runId)
+
+let private repeatDirectory batchDir repeatIndex =
+    Path.Combine(batchDir, sprintf "repeat_%03d" repeatIndex)
+
+let private outputLogPath outputDir sampleName =
+    Path.Combine(outputDir, sampleName + ".out")
 
 let usage () =
     printfn "Usage: ./runAll.sh [-j jobs] [--skip-build] [--debug-level N] [--optimize true|false]"
@@ -57,7 +73,13 @@ let usage () =
     printfn "  -j, --jobs N       Run up to N samples at once."
     printfn "  -p, --parallel    Run with one job per logical CPU."
     printfn "  --skip-build      Run samples without first building them."
-    printfn $"  --gather-only     Regenerate tmp/{outputDirectoryName}/gather.csv from existing sample logs."
+    printfn "  --extra-samples-root PATH"
+    printfn "                    Also run sample projects from PATH."
+    printfn "  --extra-samples-only"
+    printfn "                    Run only projects from --extra-samples-root."
+    printfn $"  --gather-only     Regenerate gather.csv files from existing sample logs."
+    printfn "  --repeat N        Run the full sample set N times. Defaults to 1."
+    printfn "  --run-id VALUE    Use VALUE in tmp/runAll_VALUE. Defaults to a timestamp."
     printfn "  --debug-level N   Pass -d N to each sample. Defaults to 1."
     printfn "  --optimize BOOL   Enable or disable optimizer use. Defaults to false."
     printfn "  --no-optimize     Shortcut for --optimize false."
@@ -97,6 +119,15 @@ let rec private parseArgs options args =
         parseArgs { options with SkipBuild = true } rest
     | "--gather-only" :: rest ->
         parseArgs { options with GatherOnly = true } rest
+    | "--repeat" :: value :: rest
+    | "--repeats" :: value :: rest ->
+        match Int32.TryParse value with
+        | true, repeat when repeat > 0 -> parseArgs { options with Repeat = repeat } rest
+        | _ ->
+            eprintfn "runAll: --repeat expects a positive integer"
+            Error 2
+    | "--run-id" :: value :: rest ->
+        parseArgs { options with RunId = Some value } rest
     | "--timeout" :: value :: rest
     | "--timeout-minutes" :: value :: rest ->
         match Double.TryParse value with
@@ -107,6 +138,14 @@ let rec private parseArgs options args =
             Error 2
     | "--samples-root" :: value :: rest ->
         parseArgs { options with SamplesRoot = Path.GetFullPath value } rest
+    | "--extra-samples-root" :: value :: rest
+    | "--generated-samples-root" :: value :: rest
+    | "--probe-samples-root" :: value :: rest ->
+        parseArgs { options with ExtraSamplesRoots = options.ExtraSamplesRoots @ [ Path.GetFullPath value ] } rest
+    | "--extra-samples-only" :: rest
+    | "--generated-samples-only" :: rest
+    | "--probe-samples-only" :: rest ->
+        parseArgs { options with IncludeSamples = false } rest
     | option :: _ ->
         eprintfn "runAll: unknown option %s" option
         usage ()
@@ -128,18 +167,46 @@ let private isRunnerProject samplesRoot project =
     relative = "RunAll/RunAll.fsproj"
     || relative = "RunJson/RunJson.fsproj"
 
-let private discoverSamples samplesRoot =
-    Directory.EnumerateFiles(samplesRoot, "*.fsproj", SearchOption.AllDirectories)
+let private discoverSamplesInRoot samplesRoot scanRoot outputDir namePrefix =
+    Directory.EnumerateFiles(scanRoot, "*.fsproj", SearchOption.AllDirectories)
     |> Seq.filter (fun project -> not (isRunnerProject samplesRoot project))
     |> Seq.map (fun project ->
         let dir = Path.GetDirectoryName project
-        let name = relativePath samplesRoot dir
+        let localName = relativePath scanRoot dir
+        let name =
+            if String.IsNullOrWhiteSpace namePrefix then
+                localName
+            else
+                namePrefix.TrimEnd('/') + "/" + localName
         { Name = name
           Directory = dir
           Project = project
-          LogPath = outputLogPath samplesRoot name })
+          LogPath = outputLogPath outputDir name })
     |> Seq.sortBy _.Name
     |> Seq.toArray
+
+let private safeName (value: string) =
+    Regex.Replace(value.Replace('\\', '/'), @"[^A-Za-z0-9_.-]+", "_")
+
+let private discoverSamples samplesRoot extraSamplesRoots includeSamples outputDir =
+    let sampleProjects =
+        if includeSamples then
+            discoverSamplesInRoot samplesRoot samplesRoot outputDir ""
+        else
+            [||]
+    let extraProjects =
+        extraSamplesRoots
+        |> List.toArray
+        |> Array.collect (fun root ->
+            if Directory.Exists root then
+                let prefix = "generated/" + safeName (Path.GetFileName(root.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar)))
+                discoverSamplesInRoot samplesRoot root outputDir prefix
+            else
+                eprintfn "runAll: extra samples root does not exist: %s" root
+                [||])
+
+    Array.append sampleProjects extraProjects
+    |> Array.sortBy _.Name
 
 let private prependEnvironmentPath (psi: ProcessStartInfo) name value =
     let separator = string Path.PathSeparator
@@ -477,8 +544,8 @@ let private csvEscape (value: string) =
     else
         value
 
-let private writeGatherCsv samplesRoot rows =
-    let csvPath = Path.Combine(outputDirectory samplesRoot, "gather.csv")
+let private writeGatherCsv samplesRoot outputDir rows =
+    let csvPath = Path.Combine(outputDir, "gather.csv")
     Directory.CreateDirectory(Path.GetDirectoryName csvPath) |> ignore
 
     let header =
@@ -503,15 +570,14 @@ let private writeGatherCsv samplesRoot rows =
     File.WriteAllLines(csvPath, lines)
     printfn "wrote %s" (relativePath samplesRoot csvPath)
 
-let private gatherExistingLogs samplesRoot =
-    let tmp = outputDirectory samplesRoot
+let private gatherExistingLogsInDirectory samplesRoot extraSamplesRoots outputDir =
     let sampleNames =
-        discoverSamples samplesRoot
+        discoverSamples samplesRoot extraSamplesRoots true outputDir
         |> Array.map _.Name
         |> Set.ofArray
 
-    if Directory.Exists tmp then
-        Directory.EnumerateFiles(tmp, "*.out", SearchOption.TopDirectoryOnly)
+    if Directory.Exists outputDir then
+        Directory.EnumerateFiles(outputDir, "*.out", SearchOption.TopDirectoryOnly)
         |> Seq.filter (fun path -> Path.GetFileName path <> "build.out")
         |> Seq.choose (fun path ->
             let name = Path.GetFileNameWithoutExtension path
@@ -525,15 +591,37 @@ let private gatherExistingLogs samplesRoot =
     else
         []
 
+let private gatherExistingLogs samplesRoot extraSamplesRoots =
+    let tmp = Path.Combine(samplesRoot, "tmp")
+
+    seq {
+        let legacy = outputDirectory samplesRoot
+        if Directory.Exists legacy then
+            yield legacy
+
+        if Directory.Exists tmp then
+            yield!
+                Directory.EnumerateDirectories(tmp, outputDirectoryName + "_*", SearchOption.TopDirectoryOnly)
+                |> Seq.collect (fun batch ->
+                    Directory.EnumerateDirectories(batch, "repeat_*", SearchOption.TopDirectoryOnly))
+    }
+    |> Seq.collect (gatherExistingLogsInDirectory samplesRoot extraSamplesRoots)
+    |> Seq.sortBy (fun row -> row[0])
+    |> Seq.toList
+
 [<EntryPoint>]
 let main argv =
     let defaults =
         { SamplesRoot = defaultSamplesRoot ()
+          ExtraSamplesRoots = []
+          IncludeSamples = true
           Jobs = 1
           DebugLevel = 1
           Optimize = false
           SkipBuild = false
           GatherOnly = false
+          Repeat = 1
+          RunId = None
           Timeout = Some(TimeSpan.FromMinutes 30.0) }
 
     match parseArgs defaults (argv |> Array.toList) with
@@ -550,69 +638,83 @@ let main argv =
             eprintfn "Stopping running sample job(s)..."
             cancellation.Cancel())
 
-        let samples = discoverSamples samplesRoot
+        let legacyOutputDir = outputDirectory samplesRoot
+        let samples = discoverSamples samplesRoot options.ExtraSamplesRoots options.IncludeSamples legacyOutputDir
 
         if options.GatherOnly then
-            writeGatherCsv samplesRoot (gatherExistingLogs samplesRoot)
+            writeGatherCsv samplesRoot (outputDirectory samplesRoot) (gatherExistingLogs samplesRoot options.ExtraSamplesRoots)
             0
         elif samples.Length = 0 then
             eprintfn "runAll: no sample projects found below %s" samplesRoot
             1
         else
             try
-                let runOutputDir = outputDirectory samplesRoot
-                if Directory.Exists runOutputDir then
-                    Directory.Delete(runOutputDir, true)
+                let runId = options.RunId |> Option.defaultWith timestampRunId
+                let batchDir = batchDirectory samplesRoot runId
+                Directory.CreateDirectory batchDir |> ignore
 
-                Directory.CreateDirectory runOutputDir |> ignore
+                let mutable failed = false
 
-                let builtSamples =
-                    if options.SkipBuild then
-                        samples
-                    else
-                        samples
-                        |> Array.choose (fun sample ->
-                            let exitCode = buildSample cancellation.Token options.Timeout sample |> _.GetAwaiter().GetResult()
+                for repeatIndex in 1 .. options.Repeat do
+                    cancellation.Token.ThrowIfCancellationRequested()
 
-                            cancellation.Token.ThrowIfCancellationRequested()
+                    let runOutputDir = repeatDirectory batchDir repeatIndex
+                    Directory.CreateDirectory runOutputDir |> ignore
+                    printfn "runAll repeat %d/%d -> %s" repeatIndex options.Repeat (relativePath samplesRoot runOutputDir)
 
-                            if exitCode = 0 then
-                                Some sample
-                            else
-                                eprintfn "%s failed to build; see %s" sample.Name (relativePath samplesRoot sample.LogPath)
-                                None)
+                    let repeatSamples = discoverSamples samplesRoot options.ExtraSamplesRoots options.IncludeSamples runOutputDir
 
-                cancellation.Token.ThrowIfCancellationRequested()
-
-                let results =
-                    runWithParallelism cancellation.Token options.Jobs options.Timeout options.DebugLevel options.Optimize builtSamples
-                    |> _.GetAwaiter().GetResult()
-
-                let gatherRows =
-                    results
-                    |> Array.map (fun outcome ->
-                        parseStatsFromLog
-                            samplesRoot
-                            outcome.Sample.Name
-                            (formatElapsedSeconds outcome.Elapsed)
-                            outcome.ExitCode
-                            outcome.Sample.LogPath)
-                    |> Array.toList
-
-                writeGatherCsv samplesRoot gatherRows
-
-                let runFailures =
-                    results
-                    |> Array.choose (fun outcome ->
-                        if outcome.ExitCode = 0 then
-                            None
+                    let builtSamples =
+                        if options.SkipBuild then
+                            repeatSamples
                         else
-                            Some(outcome.Sample, outcome.ExitCode))
+                            repeatSamples
+                            |> Array.choose (fun sample ->
+                                let exitCode = buildSample cancellation.Token options.Timeout sample |> _.GetAwaiter().GetResult()
 
-                for sample, exitCode in runFailures do
-                    eprintfn "%s failed with exit code %d; see %s" sample.Name exitCode (relativePath samplesRoot sample.LogPath)
+                                cancellation.Token.ThrowIfCancellationRequested()
 
-                let buildFailures = samples.Length - builtSamples.Length
-                if buildFailures > 0 || runFailures.Length > 0 then 1 else 0
+                                if exitCode = 0 then
+                                    Some sample
+                                else
+                                    failed <- true
+                                    eprintfn "%s failed to build; see %s" sample.Name (relativePath samplesRoot sample.LogPath)
+                                    None)
+
+                    cancellation.Token.ThrowIfCancellationRequested()
+
+                    let results =
+                        runWithParallelism cancellation.Token options.Jobs options.Timeout options.DebugLevel options.Optimize builtSamples
+                        |> _.GetAwaiter().GetResult()
+
+                    let gatherRows =
+                        results
+                        |> Array.map (fun outcome ->
+                            parseStatsFromLog
+                                samplesRoot
+                                outcome.Sample.Name
+                                (formatElapsedSeconds outcome.Elapsed)
+                                outcome.ExitCode
+                                outcome.Sample.LogPath)
+                        |> Array.toList
+
+                    writeGatherCsv samplesRoot runOutputDir gatherRows
+
+                    let runFailures =
+                        results
+                        |> Array.choose (fun outcome ->
+                            if outcome.ExitCode = 0 then
+                                None
+                            else
+                                Some(outcome.Sample, outcome.ExitCode))
+
+                    for sample, exitCode in runFailures do
+                        failed <- true
+                        eprintfn "%s failed with exit code %d; see %s" sample.Name exitCode (relativePath samplesRoot sample.LogPath)
+
+                    if repeatSamples.Length - builtSamples.Length > 0 then
+                        failed <- true
+
+                if failed then 1 else 0
             with :? OperationCanceledException ->
                 130
