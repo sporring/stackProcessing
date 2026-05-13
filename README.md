@@ -102,26 +102,20 @@ dotnet run --project src/StackProcessing.RunSamples/RunSamples.fsproj -- --json 
 ```
 
 `StackProcessing.Probe` is the front door for cost-model work. The usual
-development loop is:
+workflow is:
 
 1. run meaningful sample JSON pipelines with `RunSamples --json`,
-2. run `Probe calibrate` to analyze the current feature matrix,
-3. inspect the emitted calibration graphs in `tmp/probingGraphs`,
-4. run those generated graphs with `RunSamples --json --extra-json-only`,
-5. repeat until the original sample vocabulary has stable time and memory
-   coefficients.
+2. run `Probe calibrate` to analyze the current feature matrix, freeze reliable
+   coefficients, emit calibration graphs, run those graphs, and repeat.
 
 ```bash
-dotnet run --project src/StackProcessing.Probe/StackProcessing.Probe.fsproj -- calibrate
-dotnet run --project src/StackProcessing.Probe/StackProcessing.Probe.fsproj -- samples --json --extra-json-root tmp/probingGraphs --extra-json-only --repeat 3
-dotnet run --project src/StackProcessing.Probe/StackProcessing.Probe.fsproj -- calibrate --skip-analysis
+dotnet run --project src/StackProcessing.Probe/StackProcessing.Probe.fsproj -- calibrate --repeat 3 -j 6
 ```
 
-For unattended calibration experiments, `calibrate` can run the emitted probes
-between iterations:
+For development-only graph emission without running the generated probes:
 
 ```bash
-dotnet run --project src/StackProcessing.Probe/StackProcessing.Probe.fsproj -- calibrate --iterations 5 --run-probes --probe-repeats 3
+dotnet run --project src/StackProcessing.Probe/StackProcessing.Probe.fsproj -- calibrate --no-run-probes
 ```
 
 The calibration loop writes `tmp/analysis/frozenCoefficients.csv`,
@@ -133,9 +127,10 @@ coefficients back to the original samples and compares estimated memory/time
 with the real measurements, including any features still missing from the
 estimate. The emitted probe graphs are calibration workloads rather than
 representative user pipelines: fixed source, one unknown or a small triangular
-group, fixed sink. Multi-iteration runs write batches below
-`tmp/probingGraphs/iteration_###` so earlier probe rows remain available to the
-next analysis pass.
+group, fixed sink. Probe writes batches below
+`tmp/probingGraphs/calibration_*/iteration_###` so one calibration run never
+overwrites another run's graph files. The final calibration pass recomputes
+`sampleEstimates.csv` after the last probe batch has run.
 
 ## Projects
 

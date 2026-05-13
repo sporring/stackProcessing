@@ -19,6 +19,7 @@ type Options =
       MaxGraphs: int
       RunProbes: bool
       ProbeRepeats: int
+      Jobs: int
       SkipAnalysis: bool }
 
 type RowInfo =
@@ -66,16 +67,18 @@ let private usage () =
     printfn "Usage: dotnet run --project src/StackProcessing.Probe -- calibrate [options]"
     printfn ""
     printfn "Runs the greedy calibration loop over existing sample/probe measurements."
-    printfn "It analyzes the current matrix, freezes reliable coefficients, proposes the next target stages,"
-    printfn "and emits one-unknown or small triangular JSON probe batches."
+    printfn "It analyzes the current matrix, freezes reliable coefficients, emits and runs"
+    printfn "one-unknown or small triangular JSON probe batches, then writes final estimates."
     printfn ""
     printfn "Options:"
     printfn "  --samples-root PATH     Sample root. Defaults to samples."
     printfn "  --analysis-dir PATH     Analysis output/read directory. Defaults to tmp/analysis."
     printfn "  --probe-json-root PATH  Probe JSON output directory. Defaults to tmp/probingGraphs."
-    printfn "  --iterations N          Greedy loop iterations. Defaults to 1 unless --run-probes is set."
-    printfn "  --run-probes            Run emitted probe graphs with RunSamples --json between iterations."
-    printfn "  --probe-repeats N       Repeat emitted probe runs when --run-probes is set. Defaults to 1."
+    printfn "  --iterations N          Greedy loop iterations. Defaults to 5."
+    printfn "  --no-run-probes         Emit probe graphs without running them."
+    printfn "  --repeat N              Repeat emitted probe runs. Defaults to 1."
+    printfn "  --probe-repeats N       Alias for --repeat."
+    printfn "  -j, --jobs N            Run up to N emitted probe graphs at once. Defaults to 1."
     printfn "  --skip-analysis         Use existing analysis CSVs without rerunning analysis first."
     printfn "  --min-support N         Minimum feature support for freezing. Defaults to 3."
     printfn "  --max-condition VALUE   Maximum effective condition number for a stable subset. Defaults to 50."
@@ -112,7 +115,7 @@ let private defaultOptions () =
     { SamplesRoot = samplesRoot
       AnalysisDirectory = Path.Combine(root, "tmp", "analysis")
       ProbeJsonRoot = Path.Combine(root, "tmp", "probingGraphs")
-      Iterations = 1
+      Iterations = 5
       MinSupport = 3
       MaxCondition = 50.0
       MinRankRatio = 0.8
@@ -120,9 +123,13 @@ let private defaultOptions () =
       ResidualMultiple = 2.0
       MaxUnknowns = 3
       MaxGraphs = 200
-      RunProbes = false
+      RunProbes = true
       ProbeRepeats = 1
+      Jobs = 1
       SkipAnalysis = false }
+
+let private timestamp () =
+    DateTime.Now.ToString("yyyyMMdd_HHmmss", CultureInfo.InvariantCulture)
 
 let rec private parseArgs options args =
     match args with
@@ -187,6 +194,15 @@ let rec private parseArgs options args =
         | _ -> Error 2
     | "--run-probes" :: rest ->
         parseArgs { options with RunProbes = true } rest
+    | "--no-run-probes" :: rest
+    | "--emit-only" :: rest ->
+        parseArgs { options with RunProbes = false } rest
+    | ("-j" | "--jobs") :: value :: rest ->
+        match Int32.TryParse value with
+        | true, n when n > 0 -> parseArgs { options with Jobs = n } rest
+        | _ -> Error 2
+    | "--repeat" :: value :: rest
+    | "--repeats" :: value :: rest
     | "--probe-repeats" :: value :: rest ->
         match Int32.TryParse value with
         | true, n when n > 0 -> parseArgs { options with ProbeRepeats = n } rest
@@ -355,21 +371,27 @@ let private median values =
         let right = sorted.Length / 2
         0.5 * (sorted[right - 1] + sorted[right])
 
+let private isGeneratedRow (rowId: string) =
+    rowId.StartsWith("generated/", StringComparison.Ordinal)
+
+let private generatedRowContains (marker: string) (rowId: string) =
+    isGeneratedRow rowId && rowId.Contains(marker, StringComparison.Ordinal)
+
 let private rowMatchesSubset subsetName (rowId: string) =
     match subsetName with
-    | "generated-all" -> rowId.StartsWith("generated/probingGraphs/", StringComparison.Ordinal)
-    | "generated-bio-filter" -> rowId.StartsWith("generated/probingGraphs/bio-filter", StringComparison.Ordinal)
-    | "generated-bio-grayscale" -> rowId.StartsWith("generated/probingGraphs/bio-grayscale", StringComparison.Ordinal)
-    | "generated-bio-threshold" -> rowId.StartsWith("generated/probingGraphs/bio-threshold", StringComparison.Ordinal)
+    | "generated-all" -> isGeneratedRow rowId
+    | "generated-bio-filter" -> generatedRowContains "/bio-filter" rowId
+    | "generated-bio-grayscale" -> generatedRowContains "/bio-grayscale" rowId
+    | "generated-bio-threshold" -> generatedRowContains "/bio-threshold" rowId
     | "generated-bio-threshold+grayscale" ->
-        rowId.StartsWith("generated/probingGraphs/bio-threshold", StringComparison.Ordinal)
-        || rowId.StartsWith("generated/probingGraphs/bio-grayscale", StringComparison.Ordinal)
+        generatedRowContains "/bio-threshold" rowId
+        || generatedRowContains "/bio-grayscale" rowId
     | "generated-bio-filter+projection" ->
-        rowId.StartsWith("generated/probingGraphs/bio-filter", StringComparison.Ordinal)
-        || rowId.StartsWith("generated/probingGraphs/bio-projection", StringComparison.Ordinal)
+        generatedRowContains "/bio-filter" rowId
+        || generatedRowContains "/bio-projection" rowId
     | "generated-boilerplate" ->
-        rowId.StartsWith("generated/probingGraphs/zero-", StringComparison.Ordinal)
-        || rowId.StartsWith("generated/probingGraphs/read-", StringComparison.Ordinal)
+        generatedRowContains "/zero-" rowId
+        || generatedRowContains "/read-" rowId
     | _ -> false
 
 let private measurementKind (measurement: string) =
@@ -411,9 +433,11 @@ let private runProbeGraphs options probeJsonRoot =
            probeJsonRoot
            "--extra-json-only"
            "--repeat"
-           string options.ProbeRepeats |]
+           string options.ProbeRepeats
+           "-j"
+           string options.Jobs |]
 
-let private analyzeIteration options iteration =
+let private analyzeIteration options iteration emitProbes =
     if not options.SkipAnalysis || iteration > 1 then
         let exitCode = runAnalysis options
         if exitCode <> 0 then
@@ -509,7 +533,7 @@ let private analyzeIteration options iteration =
 
     let sampleRows =
         rows
-        |> List.filter (fun row -> not (row.RowId.StartsWith("generated/probingGraphs/", StringComparison.Ordinal)))
+        |> List.filter (fun row -> not (isGeneratedRow row.RowId))
 
     let sampleVocabulary =
         sampleRows
@@ -568,10 +592,13 @@ let private analyzeIteration options iteration =
             modeRank, unknowns.Count, targets.Count)
 
     let emitted =
-        templatePlans
-        |> Seq.distinctBy (fun (template, _, _, _) -> template.Name)
-        |> Seq.truncate options.MaxGraphs
-        |> Seq.toArray
+        if emitProbes then
+            templatePlans
+            |> Seq.distinctBy (fun (template, _, _, _) -> template.Name)
+            |> Seq.truncate options.MaxGraphs
+            |> Seq.toArray
+        else
+            [||]
 
     let coveredByEmitted =
         emitted
@@ -723,7 +750,9 @@ let private analyzeIteration options iteration =
         else
             options.ProbeJsonRoot
 
-    if emitted.Length > 0 then
+    if not emitProbes then
+        printfn "Final estimate pass: no new calibration probes emitted."
+    elif emitted.Length > 0 then
         ProbeProbing.writeGraphTemplates emitDirectory (emitted |> Array.map (fun (template, _, _, _) -> template))
     else
         printfn "No calibration probes could be emitted from the current template set."
@@ -742,13 +771,23 @@ let main args =
     | Error exitCode -> exitCode
     | Ok options ->
         try
+            let options =
+                if options.RunProbes then
+                    { options with ProbeJsonRoot = Path.Combine(options.ProbeJsonRoot, "calibration_" + timestamp ()) }
+                else
+                    options
+
+            if options.RunProbes then
+                printfn "Calibration probe root: %s" options.ProbeJsonRoot
+
             let mutable doneLoop = false
             let mutable iteration = 1
             let mutable exitCode = 0
+            let mutable ranProbeBatch = false
 
             while not doneLoop && iteration <= options.Iterations do
                 printfn "Calibration iteration %d/%d" iteration options.Iterations
-                let vocabularyCount, solvedCount, remainingCount, emittedCount, emitDirectory = analyzeIteration options iteration
+                let vocabularyCount, solvedCount, remainingCount, emittedCount, emitDirectory = analyzeIteration options iteration true
 
                 if remainingCount = 0 then
                     printfn "Calibration complete: all %d sample feature(s) have frozen time and memory estimates." vocabularyCount
@@ -756,13 +795,14 @@ let main args =
                 elif emittedCount = 0 then
                     printfn "Calibration stopped: %d feature(s) still need a new probe pattern or manual intervention." remainingCount
                     doneLoop <- true
-                elif options.RunProbes && iteration < options.Iterations then
+                elif options.RunProbes then
                     let runExit = runProbeGraphs options emitDirectory
                     if runExit <> 0 then
                         eprintfn "probe graph run failed with exit code %d" runExit
                         exitCode <- runExit
                         doneLoop <- true
                     else
+                        ranProbeBatch <- true
                         iteration <- iteration + 1
                 else
                     if not options.RunProbes then
@@ -771,6 +811,14 @@ let main args =
 
                 if options.RunProbes && not doneLoop && solvedCount >= vocabularyCount then
                     doneLoop <- true
+
+            if exitCode = 0 && ranProbeBatch then
+                printfn "Final calibration estimate pass"
+                let vocabularyCount, _, remainingCount, _, _ = analyzeIteration options iteration false
+                if remainingCount = 0 then
+                    printfn "Calibration complete: all %d sample feature(s) have frozen time and memory estimates." vocabularyCount
+                else
+                    printfn "Calibration finished with %d sample feature(s) still unresolved." remainingCount
 
             exitCode
         with ex ->

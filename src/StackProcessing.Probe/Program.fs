@@ -17,7 +17,7 @@ let private usage () =
     printfn "  dotnet run --project src/StackProcessing.Probe -- samples --json --extra-json-root tmp/probingGraphs"
     printfn "  dotnet run --project src/StackProcessing.Probe -- analysis --extra-json-root tmp/probingGraphs"
     printfn "  dotnet run --project src/StackProcessing.Probe -- probing tmp/analysis/probing-boilerplate.json --emit-json tmp/probingGraphs"
-    printfn "  dotnet run --project src/StackProcessing.Probe -- calibrate --iterations 1"
+    printfn "  dotnet run --project src/StackProcessing.Probe -- calibrate --repeat 3 -j 6"
 
 let private dispatch command args =
     match command with
