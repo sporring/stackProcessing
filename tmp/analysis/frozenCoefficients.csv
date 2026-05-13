@@ -1,9 +1,0 @@
-measurement,featureKey,coefficient,supportCount,rmse,r2,medianAbsResidual,reason
-elapsedMilliseconds,intercept,0,68,992.42316319046938,0.99348587947263323,240.8014639725734,stable-subset+support+residual
-actualRunSeconds,intercept,0,68,0.9924231631904693,0.99348587947263323,0.24080146397256863,stable-subset+support+residual
-processElapsedMilliseconds,intercept,0.0033468008308230827,68,2479.6957703364396,0.95681706931721511,1406.915002998453,stable-subset+support+residual
-processElapsedSeconds,intercept,3.3468008303752611E-06,68,2.4796957703364395,0.95681706931721511,1.4069150029984527,stable-subset+support+residual
-rssDeltaBytes,intercept,0,68,5025064.6116504325,0.97565299614433076,2491609.1799922073,stable-subset+support+residual
-rssPeakDeltaKB,intercept,0,68,4907.2896598148754,0.97565299614433076,2433.21208983614,stable-subset+support+residual
-predictedMemoryPeakBytes,intercept,0,68,0.0022695832194317392,1,0.00010922566798399203,stable-subset+support+residual
-estimatedPeakMemoryKB,intercept,0,68,2.2163898627263078E-06,1,1.0666569139061721E-07,stable-subset+support+residual

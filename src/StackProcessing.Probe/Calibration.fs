@@ -56,6 +56,12 @@ type Prediction =
       Predicted: float
       Residual: float }
 
+type MeasurementValue =
+    { RowId: string
+      Measurement: string
+      Value: float
+      Log: string }
+
 let private usage () =
     printfn "Usage: dotnet run --project src/StackProcessing.Probe -- calibrate [options]"
     printfn ""
@@ -330,6 +336,14 @@ let private loadPredictions dir =
           Predicted = floatField "predicted" row
           Residual = floatField "residual" row })
 
+let private loadMeasurements dir =
+    readCsvMaps (Path.Combine(dir, "vectors.csv"))
+    |> List.map (fun row ->
+        { RowId = field "rowId" row
+          Measurement = field "measurement" row
+          Value = floatField "value" row
+          Log = field "log" row })
+
 let private median values =
     let sorted = values |> Seq.filter Double.IsFinite |> Seq.sort |> Seq.toArray
 
@@ -411,6 +425,7 @@ let private analyzeIteration options iteration =
     let subsets = loadSubsets options.AnalysisDirectory
     let coefficients = loadCoefficients options.AnalysisDirectory
     let predictions = loadPredictions options.AnalysisDirectory
+    let measurements = loadMeasurements options.AnalysisDirectory
 
     let supportByFeature =
         featureDiagnostics
@@ -586,6 +601,68 @@ let private analyzeIteration options iteration =
                       invariant coefficient.R2
                       invariant medianResidual
                       "stable-subset+support+residual" ]
+        })
+
+    let frozenCoefficientMap =
+        frozen
+        |> List.map (fun (coefficient, _) -> (coefficient.Measurement, coefficient.FeatureKey), coefficient.Coefficient)
+        |> Map.ofList
+
+    let sampleRowIds = sampleRows |> List.map _.RowId |> Set.ofList
+
+    writeCsv
+        (Path.Combine(options.AnalysisDirectory, "sampleEstimates.csv"))
+        (seq {
+            yield
+                [ "rowId"
+                  "measurement"
+                  "actual"
+                  "estimated"
+                  "residual"
+                  "relativeResidual"
+                  "knownFeatureCount"
+                  "missingFeatureCount"
+                  "missingFeatures"
+                  "log" ]
+
+            for measurement in measurements do
+                if sampleRowIds.Contains measurement.RowId then
+                    let features =
+                        rowFeatures
+                        |> Map.tryFind measurement.RowId
+                        |> Option.defaultValue Map.empty
+                        |> Map.add "intercept" 1.0
+
+                    let mutable estimated = 0.0
+                    let mutable knownFeatureCount = 0
+                    let missingFeatures = ResizeArray<string>()
+
+                    for KeyValue(feature, value) in features do
+                        match frozenCoefficientMap |> Map.tryFind (measurement.Measurement, feature) with
+                        | Some coefficient ->
+                            estimated <- estimated + value * coefficient
+                            knownFeatureCount <- knownFeatureCount + 1
+                        | None ->
+                            missingFeatures.Add feature
+
+                    let residual = measurement.Value - estimated
+                    let relativeResidual =
+                        if measurement.Value = 0.0 then
+                            Double.NaN
+                        else
+                            residual / measurement.Value
+
+                    yield
+                        [ measurement.RowId
+                          measurement.Measurement
+                          invariant measurement.Value
+                          invariant estimated
+                          invariant residual
+                          invariant relativeResidual
+                          string knownFeatureCount
+                          string missingFeatures.Count
+                          String.concat ";" (missingFeatures |> Seq.sort)
+                          measurement.Log ]
         })
 
     writeCsv

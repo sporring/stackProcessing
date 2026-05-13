@@ -8,11 +8,12 @@
 **/out
 /Image.Tests/coverage-report
 /test/tmp
+/tmp
 .fake
 
-/samples/connectedComponents/tmp
 /samples/tmp
 samples/data
 *.tif
 *.tiff
 *.mha
+/tmp2

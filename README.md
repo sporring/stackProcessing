@@ -125,13 +125,17 @@ dotnet run --project src/StackProcessing.Probe/StackProcessing.Probe.fsproj -- c
 ```
 
 The calibration loop writes `tmp/analysis/frozenCoefficients.csv`,
-`greedyCoverage.csv`, `probeTargets.csv`, and `probePlan.csv`. It freezes
-coefficients only when support, subset conditioning, repeat residuals, and
-non-negative time/memory estimates pass the configured thresholds. The emitted
-probe graphs are calibration workloads rather than representative user
-pipelines: fixed source, one unknown or a small triangular group, fixed sink.
-Multi-iteration runs write batches below `tmp/probingGraphs/iteration_###` so
-earlier probe rows remain available to the next analysis pass.
+`sampleEstimates.csv`, `greedyCoverage.csv`, `probeTargets.csv`, and
+`probePlan.csv`. It freezes coefficients only when support, subset
+conditioning, repeat residuals, and non-negative time/memory estimates pass the
+configured thresholds. `sampleEstimates.csv` applies the currently frozen
+coefficients back to the original samples and compares estimated memory/time
+with the real measurements, including any features still missing from the
+estimate. The emitted probe graphs are calibration workloads rather than
+representative user pipelines: fixed source, one unknown or a small triangular
+group, fixed sink. Multi-iteration runs write batches below
+`tmp/probingGraphs/iteration_###` so earlier probe rows remain available to the
+next analysis pass.
 
 ## Projects
 
