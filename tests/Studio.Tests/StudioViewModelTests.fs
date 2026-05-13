@@ -523,14 +523,14 @@ let viewModelSuite =
             let vm = MainWindowViewModel()
             vm.SetDrawingSize(2000.0, 1400.0)
 
-            let samplePath = findRepoFile (Path.Combine("samples", "resample", "pipeline.json"))
+            let samplePath = findRepoFile (Path.Combine("samples", "resample", "resample.json"))
             let graph = PipelineGraphStorage.load samplePath
 
             Expect.isTrue (File.Exists samplePath) "The resample sample should exist."
             try
                 vm.ImportGraph graph
             with ex ->
-                failtestf "Importing resample/pipeline.json should not throw, but got: %s" ex.Message
+                failtestf "Importing resample/resample.json should not throw, but got: %s" ex.Message
 
             let exported = vm.ExportGraph()
 
@@ -560,7 +560,7 @@ let viewModelSuite =
             let vm = MainWindowViewModel()
             vm.SetDrawingSize(2000.0, 1400.0)
 
-            let samplePath = findRepoFile (Path.Combine("samples", "resample", "pipeline.json"))
+            let samplePath = findRepoFile (Path.Combine("samples", "resample", "resample.json"))
             vm.ImportGraph(PipelineGraphStorage.load samplePath)
 
             let nodes =

@@ -9,7 +9,7 @@
       "parameters": [
         {
           "key": "availableMemory",
-          "value": "1073741824",
+          "value": "1073741824UL",
           "useInput": false
         },
         {

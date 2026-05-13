@@ -228,10 +228,24 @@ let private discoverGraphs samplesRoot extraJsonRoots includeSamples outputDir b
 let private xml value =
     SecurityElement.Escape(value)
 
+let private processNameForGraph (graphName: string) =
+    let parts =
+        graphName.Split([| '/'; '\\' |], StringSplitOptions.RemoveEmptyEntries)
+
+    let compactName =
+        match parts with
+        | [| only |] -> only
+        | _ when parts.Length >= 2 && String.Equals(parts[parts.Length - 1], parts[parts.Length - 2], StringComparison.OrdinalIgnoreCase) ->
+            parts[parts.Length - 1]
+        | _ -> String.concat "_" parts
+
+    "GraphRun_" + safeName compactName
+
 let private ensureRunProject repositoryRoot job =
     Directory.CreateDirectory job.RunDirectory |> ignore
 
     let projectPath = Path.Combine(job.RunDirectory, "GraphRun.fsproj")
+    let assemblyName = processNameForGraph job.Name
     let probingOutput = Path.Combine(repositoryRoot, "src", "StackProcessing.Probing", "bin", "Debug", "net10.0")
     let simpleItkManaged = Path.Combine(repositoryRoot, "lib", "SimpleITKCSharpManaged.dll")
     let simpleItkWindowsNative = Path.Combine(repositoryRoot, "lib", "SimpleITKCSharpNative.dll")
@@ -260,6 +274,7 @@ let private ensureRunProject repositoryRoot job =
   <PropertyGroup>
     <OutputType>Exe</OutputType>
     <TargetFramework>net10.0</TargetFramework>
+    <AssemblyName>{xml assemblyName}</AssemblyName>
   </PropertyGroup>
   <ItemGroup>
 {referenceItems}

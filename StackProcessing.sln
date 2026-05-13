@@ -137,7 +137,7 @@ Project("{F2A71F9B-5D33-465A-A702-920D77279786}") = "shotNoise", "samples\shotNo
 EndProject
 Project("{F2A71F9B-5D33-465A-A702-920D77279786}") = "RunJson", "samples\RunJson\RunJson.fsproj", "{D0633274-96EF-49FC-BB5A-313EA533D399}"
 EndProject
-Project("{F2A71F9B-5D33-465A-A702-920D77279786}") = "fftGaussianCompare", "samples\fftGaussianCompare\fftGaussianCompare.fsproj", "{CC3736BD-353D-4EBA-8A9A-452F0280E545}"
+Project("{F2A71F9B-5D33-465A-A702-920D77279786}") = "fft", "samples\fft\fft.fsproj", "{CC3736BD-353D-4EBA-8A9A-452F0280E545}"
 EndProject
 Project("{F2A71F9B-5D33-465A-A702-920D77279786}") = "saltAndPepperNoise", "samples\saltAndPepperNoise\saltAndPepperNoise.fsproj", "{3FEE22FE-4ABD-4EB9-98F9-E49726A992CF}"
 EndProject

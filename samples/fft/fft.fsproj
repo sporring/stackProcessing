@@ -36,7 +36,7 @@
   </ItemGroup>
 
   <ItemGroup>
-    <Compile Include="fftGaussianCompare.fs" />
+    <Compile Include="fft.fs" />
   </ItemGroup>
 
 </Project>
