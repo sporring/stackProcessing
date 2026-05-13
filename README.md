@@ -157,8 +157,7 @@ directories are the measurement evidence used by Probe.
 
 ```mermaid
 flowchart TD
-    UserFSharp["F# user code / samples"]
-    SampleJson["sample Studio JSON graphs"]
+    UserFSharp["F# user code"]
     Studio["Studio\nAvalonia graph editor"]
     StudioGraph["Studio.Graph\ncatalog + saved graph JSON"]
     StudioCompiler["Studio.Compiler\ngraph -> F# DSL"]
@@ -171,14 +170,11 @@ flowchart TD
     TinyLinAlg["TinyLinAlg\naffine/vector helpers"]
     ZarrNexus["ZarrNET + PureHDF\nZarr / HDF5-NeXus IO"]
     RunSamples["StackProcessing.RunSamples\nsample/JSON measurement runner"]
-    TmpMeasurements["tmp/runJson_* + tmp/analysis\nmeasurement evidence"]
     Probe["StackProcessing.Probe\nanalysis + calibration graph generation"]
-    ProbeGraphs["tmp/probingGraphs\ncalibration JSON graphs"]
 
     UserFSharp --> StackProcessing
     Studio --> StudioGraph
     StudioGraph --> StudioCompiler
-    StudioGraph --> SampleJson
     StudioCompiler --> StackProcessing
 
     StackProcessing --> Core
@@ -190,12 +186,10 @@ flowchart TD
     Core --> TinyLinAlg
     Core --> ZarrNexus
 
-    UserFSharp --> RunSamples
-    SampleJson --> RunSamples
-    RunSamples --> TmpMeasurements
-    TmpMeasurements --> Probe
-    Probe --> ProbeGraphs
-    ProbeGraphs --> RunSamples
+    RunSamples --> StudioCompiler
+    RunSamples --> StackProcessing
+    Probe --> RunSamples
+    Probe --> StudioGraph
 ```
 
 There are two user-facing entry points. Programmers can write the
