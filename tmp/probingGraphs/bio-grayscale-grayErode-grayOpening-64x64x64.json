@@ -1,0 +1,133 @@
+{
+  "version": 1,
+  "nodes": [
+    {
+      "id": "read",
+      "functionId": "Read",
+      "x": 100,
+      "y": 120,
+      "parameters": [
+        {
+          "key": "availableMemory",
+          "value": "2147483648UL",
+          "useInput": false
+        },
+        {
+          "key": "type",
+          "value": "UInt8",
+          "useInput": false
+        },
+        {
+          "key": "format",
+          "value": "Image stack",
+          "useInput": false
+        },
+        {
+          "key": "input",
+          "value": "../../data/rotatingBoxes",
+          "useInput": false
+        },
+        {
+          "key": "suffix",
+          "value": ".tiff",
+          "useInput": false
+        }
+      ]
+    },
+    {
+      "id": "grayErodeA",
+      "functionId": "GrayscaleErode",
+      "x": 320,
+      "y": 120,
+      "parameters": [
+        {
+          "key": "type",
+          "value": "UInt8",
+          "useInput": false
+        },
+        {
+          "key": "radius",
+          "value": "3",
+          "useInput": false
+        },
+        {
+          "key": "windowSize",
+          "value": "7",
+          "useInput": false
+        }
+      ]
+    },
+    {
+      "id": "grayOpeningB",
+      "functionId": "GrayscaleOpening",
+      "x": 540,
+      "y": 120,
+      "parameters": [
+        {
+          "key": "type",
+          "value": "UInt8",
+          "useInput": false
+        },
+        {
+          "key": "radius",
+          "value": "3",
+          "useInput": false
+        },
+        {
+          "key": "windowSize",
+          "value": "7",
+          "useInput": false
+        }
+      ]
+    },
+    {
+      "id": "write",
+      "functionId": "Write",
+      "x": 760,
+      "y": 120,
+      "parameters": [
+        {
+          "key": "format",
+          "value": "Image stack",
+          "useInput": false
+        },
+        {
+          "key": "output",
+          "value": "outputs/bio-grayscale-grayErode-grayOpening-64x64x64",
+          "useInput": false
+        },
+        {
+          "key": "suffix",
+          "value": ".tiff",
+          "useInput": false
+        }
+      ]
+    }
+  ],
+  "edges": [
+    {
+      "fromNode": "read",
+      "fromKind": "dataOutput",
+      "fromPort": 0,
+      "toNode": "grayErodeA",
+      "toKind": "dataInput",
+      "toPort": 0
+    },
+    {
+      "fromNode": "grayErodeA",
+      "fromKind": "dataOutput",
+      "fromPort": 0,
+      "toNode": "grayOpeningB",
+      "toKind": "dataInput",
+      "toPort": 0
+    },
+    {
+      "fromNode": "grayOpeningB",
+      "fromKind": "dataOutput",
+      "fromPort": 0,
+      "toNode": "write",
+      "toKind": "dataInput",
+      "toPort": 0
+    }
+  ]
+}

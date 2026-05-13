@@ -1,0 +1,8 @@
+kind,count
+sampleVocabulary,152
+sampleStageVocabulary,141
+stableSubsets,0
+featuresSolvedForTimeAndMemory,1
+remainingSampleFeatures,141
+targetsCoveredByEmittedProbes,5
+emittedProbeGraphs,5

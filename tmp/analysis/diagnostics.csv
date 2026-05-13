@@ -1,0 +1,10 @@
+measurement,rowCount,columnCount,rank,ridge
+allGraphs,68,153,68,1E-08
+elapsedMilliseconds,198,153,66,1E-08
+actualRunSeconds,198,153,66,1E-08
+processElapsedMilliseconds,198,153,66,1E-08
+processElapsedSeconds,198,153,66,1E-08
+rssDeltaBytes,198,153,66,1E-08
+rssPeakDeltaKB,198,153,66,1E-08
+predictedMemoryPeakBytes,198,153,66,1E-08
+estimatedPeakMemoryKB,198,153,66,1E-08

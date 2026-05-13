@@ -1,0 +1,153 @@
+featureKey,supportCount,status
+AddNormalNoise:type=Float64:mean=128.0:std=50.0,1,needs-probe-pattern-or-more-context
+AddNormalNoise:type=UInt8:mean=128.0:std=50.0,1,needs-probe-pattern-or-more-context
+AddSaltAndPepperNoise:type=UInt8:probability=0.02,1,needs-probe-pattern-or-more-context
+AddShotNoise:type=Float64:scale=2.0,1,needs-probe-pattern-or-more-context
+AddSpeckleNoise:type=Float64:std=0.5,1,needs-probe-pattern-or-more-context
+AffineRegistration:maxIterations=1:initialLinearStep=0.02:initialTranslationStep=1.0:minStep=0.001:stepShrink=0.5,1,needs-probe-pattern-or-more-context
+BinaryContour:fullyConnected=false:windowSize=7,1,needs-probe-pattern-or-more-context
+BinaryMedian:radius=3:windowSize=7,1,needs-probe-pattern-or-more-context
+BlackTopHat:type=UInt8:radius=3:windowSize=7,1,probe-emitted
+Cast:sourceType=Float32:targetType=UInt8,2,needs-probe-pattern-or-more-context
+Cast:sourceType=Float64:targetType=Float32,2,needs-probe-pattern-or-more-context
+Cast:sourceType=Float64:targetType=Int8,2,needs-probe-pattern-or-more-context
+Cast:sourceType=Float64:targetType=UInt8,13,needs-probe-pattern-or-more-context
+Cast:sourceType=UInt64:targetType=UInt8,1,needs-probe-pattern-or-more-context
+Cast:sourceType=UInt8:targetType=Float64,1,needs-probe-pattern-or-more-context
+Chart:kind=Column,2,needs-probe-pattern-or-more-context
+Clamp:type=Float64:lower=0.0:upper=255.0,1,needs-probe-pattern-or-more-context
+Closing:radius=3,1,needs-probe-pattern-or-more-context
+CollapseComponentLabels:windowSize=7:translationTable=<input>,1,needs-probe-pattern-or-more-context
+ComponentTranslationTable:windowSize=7,1,needs-probe-pattern-or-more-context
+ComputeStats,2,needs-probe-pattern-or-more-context
+ConnectedComponents:windowSize=7,1,needs-probe-pattern-or-more-context
+"Convolve:kernel=Image<float>.ofArray3D(Array3D.create 3 3 3 (1.0 / 27.0), ""average3x3x3""):outputRegionMode=Same:boundaryCondition=ZeroFluxNeumannPad:windowSize=7",1,needs-probe-pattern-or-more-context
+CorrectBias:type=Float64:model=<input>,1,needs-probe-pattern-or-more-context
+CorrectBiasMasked:type=Float64:model=<input>,1,needs-probe-pattern-or-more-context
+CreateByEuler2DTransform:type=UInt8:width=64:height=64:depth=64:boxSize=16:transform=AntiDiagonal,1,needs-probe-pattern-or-more-context
+CreateByEuler2DTransform:type=UInt8:width=64:height=64:depth=64:boxSize=16:transform=Diagonal,1,needs-probe-pattern-or-more-context
+CreateByEuler2DTransform:type=UInt8:width=64:height=64:depth=64:boxSize=16:transform=TopDown,1,needs-probe-pattern-or-more-context
+Dilate:radius=3,1,needs-probe-pattern-or-more-context
+Erode:radius=3,1,needs-probe-pattern-or-more-context
+EstimateHistogram:type=Float64:slices=16:down=4:estimator=DKWAndHoldout:confidence=0.95,1,needs-probe-pattern-or-more-context
+FFT:type=Float64:chunkX=16:chunkY=16:chunkZ=8,1,needs-probe-pattern-or-more-context
+FillSmallHoles:maximumVolume=128:connectivity=TwentySix,1,needs-probe-pattern-or-more-context
+FiniteDiff:direction=0:order=1,1,needs-probe-pattern-or-more-context
+FitBiasModel:type=Float64:order=2:depth=256,1,needs-probe-pattern-or-more-context
+FitBiasModelMasked:type=Float64:order=2:depth=256,1,needs-probe-pattern-or-more-context
+Forstner3DKeypoints:type=Float64:sigma=3.0:rho=1.5:threshold=0.1:stride=16,1,needs-probe-pattern-or-more-context
+Gradient:order=1:windowSize=7,1,needs-probe-pattern-or-more-context
+GradientMagnitude:type=Float64:windowSize=7,1,needs-probe-pattern-or-more-context
+GrayscaleClosing:type=UInt8:radius=3:windowSize=7,1,probe-emitted
+GrayscaleDilate:type=UInt8:radius=3:windowSize=7,1,needs-probe-pattern-or-more-context
+GrayscaleErode:type=UInt8:radius=3:windowSize=7,1,needs-probe-pattern-or-more-context
+GrayscaleOpening:type=UInt8:radius=3:windowSize=7,1,probe-emitted
+Harris3DKeypoints:type=Float64:sigma=3.0:rho=1.5:k=0.04:threshold=0.1:stride=16,1,needs-probe-pattern-or-more-context
+HessianKeypoints:type=Float64:sigma=3.0:responseKind=Blob:threshold=0.1:stride=16,1,needs-probe-pattern-or-more-context
+Histogram:binWidth=100,1,needs-probe-pattern-or-more-context
+HistogramEqualization:type=UInt8:histogram=<input>,1,needs-probe-pattern-or-more-context
+ImHistogram:firstLeftEdge=0.0:lastLeftEdge=255.0:bins=256,1,needs-probe-pattern-or-more-context
+ImHistogram:firstLeftEdge=50.0:lastLeftEdge=255.0:bins=64,1,needs-probe-pattern-or-more-context
+ImHistogramData:firstLeftEdge=0.0:lastLeftEdge=255.0:bins=256,5,needs-probe-pattern-or-more-context
+ImageOpImage:operation=*:type=Float64,2,needs-probe-pattern-or-more-context
+ImageOpImage:operation=*:type=UInt8,2,needs-probe-pattern-or-more-context
+ImageOpImage:operation=max:type=UInt8,1,needs-probe-pattern-or-more-context
+ImageOpScalar:operation=*:type=Float64:value=<input>,1,needs-probe-pattern-or-more-context
+ImageOpScalar:operation=*:type=UInt8:value=2,1,needs-probe-pattern-or-more-context
+ImageOpScalar:operation=*:type=UInt8:value=255,1,needs-probe-pattern-or-more-context
+ImageOpScalar:operation=+:type=Float64:value=1.0,2,needs-probe-pattern-or-more-context
+ImageOpScalar:operation=+:type=Float64:value=2.0,1,needs-probe-pattern-or-more-context
+ImageOpScalar:operation=+:type=UInt8:value=1,1,needs-probe-pattern-or-more-context
+ImageOpScalar:operation=-:type=Float64:value=<input>,1,needs-probe-pattern-or-more-context
+ImageOpScalar:operation=/:type=UInt8:value=255,2,needs-probe-pattern-or-more-context
+IntensityStretch:type=Float64:inputMinimum=0.0:inputMaximum=255.0:outputMinimum=0.0:outputMaximum=255.0,4,needs-probe-pattern-or-more-context
+IntensityStretch:type=Float64:inputMinimum=<input>:inputMaximum=<input>:outputMinimum=0.0:outputMaximum=255.0,1,needs-probe-pattern-or-more-context
+IntensityStretch:type=UInt8:inputMinimum=0.0:inputMaximum=1.0:outputMinimum=0.0:outputMaximum=255.,2,needs-probe-pattern-or-more-context
+IntensityStretch:type=UInt8:inputMinimum=0.0:inputMaximum=255.:outputMinimum=0.0:outputMaximum=1.0,1,needs-probe-pattern-or-more-context
+InvFFT:chunkX=16:chunkY=16:chunkZ=8,1,needs-probe-pattern-or-more-context
+Laplacian:type=Float64:windowSize=7,1,needs-probe-pattern-or-more-context
+MarchingCubes:type=UInt8:surfaceValue=0.5,2,needs-probe-pattern-or-more-context
+MeasureObjects,1,needs-probe-pattern-or-more-context
+MomentsThresholdFromHistogram:histogram=<input>,1,needs-probe-pattern-or-more-context
+MorphologicalGradient:type=UInt8:radius=3:windowSize=7,1,probe-emitted
+NormalNoise:type=Float32:width=64:height=64:depth=64:mean=128.0:std=25.0,1,needs-probe-pattern-or-more-context
+NormalNoise:type=Float64:width=64:height=64:depth=64:mean=0.0:std=50.0,1,needs-probe-pattern-or-more-context
+NormalNoise:type=Float64:width=64:height=64:depth=64:mean=128.0:std=25.0,5,needs-probe-pattern-or-more-context
+ObjectSizeStats,1,needs-probe-pattern-or-more-context
+ObjectSizes,1,needs-probe-pattern-or-more-context
+Opening:radius=3,1,needs-probe-pattern-or-more-context
+OtsuThresholdFromHistogram:histogram=<input>,1,needs-probe-pattern-or-more-context
+PCA:components=3,1,needs-probe-pattern-or-more-context
+PaintObjects:width=512:height=384,1,needs-probe-pattern-or-more-context
+"PermuteAxes:axes=(0,2,1):tileSize=32",1,needs-probe-pattern-or-more-context
+"PermuteAxes:axes=(0,2,1):tileSize=64",1,needs-probe-pattern-or-more-context
+Print,7,needs-probe-pattern-or-more-context
+Quantiles:histogram=<input>:q1=0.01:useQ2=true:q2=0.99:useQ3=false:q3=0.99:useQ4=false:q4=0.25:useQ5=false:q5=0.75,1,needs-probe-pattern-or-more-context
+Read:type=Float32:format=Image stack:slabDepth=1:multiscaleIndex=0:datasetIndex=0:timepoint=0:channel=0:maxParallelChunks=0:frameAxis=0,1,calibration-boilerplate
+Read:type=Float64:format=Image stack:slabDepth=1:multiscaleIndex=0:datasetIndex=0:timepoint=0:channel=0:maxParallelChunks=0:frameAxis=0,2,calibration-boilerplate
+Read:type=Float64:format=Image stack:slabDepth=8:multiscaleIndex=0:datasetIndex=0:timepoint=0:channel=0:maxParallelChunks=0:frameAxis=0,6,calibration-boilerplate
+Read:type=UInt64:format=Image stack:slabDepth=1:multiscaleIndex=0:datasetIndex=0:timepoint=0:channel=0:maxParallelChunks=0:frameAxis=0,1,calibration-boilerplate
+Read:type=UInt8:format=Image stack:slabDepth=1:multiscaleIndex=0:datasetIndex=0:timepoint=0:channel=0:maxParallelChunks=0:frameAxis=0,7,calibration-boilerplate
+Read:type=UInt8:format=Image stack:slabDepth=8:multiscaleIndex=0:datasetIndex=0:timepoint=0:channel=0:maxParallelChunks=0:frameAxis=0,24,calibration-boilerplate
+Read:type=UInt8:format=Volume file:slabDepth=1:multiscaleIndex=0:datasetIndex=0:timepoint=0:channel=0:maxParallelChunks=0:frameAxis=0,1,calibration-boilerplate
+ReadPointSet,1,needs-probe-pattern-or-more-context
+ReadRandom:type=Float64:format=Image stack:depth=20:multiscaleIndex=0:datasetIndex=0:timepoint=0:channel=0:maxParallelChunks=0:frameAxis=0,1,needs-probe-pattern-or-more-context
+ReadRandom:type=Float64:format=Image stack:depth=24:multiscaleIndex=0:datasetIndex=0:timepoint=0:channel=0:maxParallelChunks=0:frameAxis=0,1,needs-probe-pattern-or-more-context
+ReadRandom:type=UInt8:format=Image stack:depth=10:multiscaleIndex=0:datasetIndex=0:timepoint=0:channel=0:maxParallelChunks=0:frameAxis=0,2,needs-probe-pattern-or-more-context
+ReadRandom:type=UInt8:format=Image stack:depth=16:multiscaleIndex=0:datasetIndex=0:timepoint=0:channel=0:maxParallelChunks=0:frameAxis=0,3,needs-probe-pattern-or-more-context
+ReadRandom:type=UInt8:format=Image stack:depth=1:multiscaleIndex=0:datasetIndex=0:timepoint=0:channel=0:maxParallelChunks=0:frameAxis=0,1,needs-probe-pattern-or-more-context
+ReadRange:type=Float32:format=Image stack:first=0:step=16:last=64:multiscaleIndex=0:datasetIndex=0:timepoint=0:channel=0:maxParallelChunks=0:frameAxis=0,1,needs-probe-pattern-or-more-context
+ReadRange:type=Float32:format=Image stack:first=0:step=1:last=31:multiscaleIndex=0:datasetIndex=0:timepoint=0:channel=0:maxParallelChunks=0:frameAxis=0,1,needs-probe-pattern-or-more-context
+ReadRange:type=Float64:format=Image stack:first=0:step=1:last=31:multiscaleIndex=0:datasetIndex=0:timepoint=0:channel=0:maxParallelChunks=0:frameAxis=0,2,needs-probe-pattern-or-more-context
+ReadRange:type=UInt8:format=Image stack:first=0:step=1:last=15:multiscaleIndex=0:datasetIndex=0:timepoint=0:channel=0:maxParallelChunks=0:frameAxis=0,1,needs-probe-pattern-or-more-context
+ReadRange:type=UInt8:format=Image stack:first=0:step=1:last=31:multiscaleIndex=0:datasetIndex=0:timepoint=0:channel=0:maxParallelChunks=0:frameAxis=0,2,needs-probe-pattern-or-more-context
+ReadRange:type=UInt8:format=Image stack:first=0:step=1:last=63:multiscaleIndex=0:datasetIndex=0:timepoint=0:channel=0:maxParallelChunks=0:frameAxis=0,1,needs-probe-pattern-or-more-context
+ReadSlab:type=UInt8:format=Chunked stack:slabDepth=8:multiscaleIndex=0:datasetIndex=0:timepoint=0:channel=0:maxParallelChunks=0:frameAxis=0,1,needs-probe-pattern-or-more-context
+RemoveSmallObjects:maximumVolume=1000:connectivity=TwentySix,1,needs-probe-pattern-or-more-context
+Resample:type=Float32:factorX=1.5:factorY=1.5:factorZ=1.5:interpolation=Linear,1,needs-probe-pattern-or-more-context
+ResampleAffineTrilinearSlices:type=Float32:lerp=(fun a b t -> a + (b - a) * t):windowSize=7:inputGeometry={ W = 512; H = 384; D = 16; Origin = TinyLinAlg.v3 0.0 0.0 0.0; Spacing = TinyLinAlg.v3 1.0 1.0 1.0; Direction = { m00 = 1.0; m01 = 0.0; m02 = 0.0; m10 = 0.0; m11 = 1.0; m12 = 0.0; m20 = 0.0; m21 = 0.0; m22 = 1.0 } }:outputGeometry={ W = 128; H = 128; D = 8; Origin = TinyLinAlg.v3 0.0 0.0 0.0; Spacing = TinyLinAlg.v3 1.0 1.0 1.0; Direction = { m00 = 1.0; m01 = 0.0; m02 = 0.0; m10 = 0.0; m11 = 1.0; m12 = 0.0; m20 = 0.0; m21 = 0.0; m22 = 1.0 } }:affine={ A = { m00 = 1.0; m01 = 0.0; m02 = 0.0; m10 = 0.0; m11 = 1.0; m12 = 0.0; m20 = 0.0; m21 = 0.0; m22 = 1.0 }; T = TinyLinAlg.v3 4.0 -2.0 0.0; C = TinyLinAlg.v3 64.0 64.0 4.0 }:background=0.0f,1,needs-probe-pattern-or-more-context
+Resize:type=UInt8:width=64:height=64:depth=64:interpolation=Linear,1,needs-probe-pattern-or-more-context
+Resize:type=UInt8:width=96:height=96:depth=96:interpolation=Linear,1,needs-probe-pattern-or-more-context
+SaltAndPepperNoise:type=UInt8:width=64:height=64:depth=64:probability=0.02,1,needs-probe-pattern-or-more-context
+ScalarFunction:function=sqrt:a=<input>,1,needs-probe-pattern-or-more-context
+ScalarOp:operation=-:type=Float64:a=<input>:b=<input>,1,needs-probe-pattern-or-more-context
+ScalarOp:operation=/:type=Float64:a=<input>:b=<input>,1,needs-probe-pattern-or-more-context
+ScalarOpImage:operation=*:type=UInt8:value=85,1,needs-probe-pattern-or-more-context
+SerialApplyTrans:type=Float32:background=0.0:geometry=<input>,1,needs-probe-pattern-or-more-context
+SerialEstBoundingBox:type=Float32,1,needs-probe-pattern-or-more-context
+SerialEstTrans:type=Float32:method=dogAffine:searchRadius=8:scale=1.6:pixelFraction=0.1,1,needs-probe-pattern-or-more-context
+SerialPolynomialBiasCorrect:type=Float32:order=2,1,needs-probe-pattern-or-more-context
+ShotNoise:type=Float64:width=64:height=64:depth=64:scale=2.0,1,needs-probe-pattern-or-more-context
+ShowImage:colorMap=Greys,1,needs-probe-pattern-or-more-context
+SiftKeypoints:type=Float64:sigma0=3.0:scaleFactor=1.6:scaleLevels=4:contrastThreshold=0.1:stride=16,1,needs-probe-pattern-or-more-context
+SignedDistanceBand:bandRadius=8:stride=4,1,needs-probe-pattern-or-more-context
+SmoothWBilateral:type=Float64:domainSigma=1.5:rangeSigma=30.0:windowSize=7,1,needs-probe-pattern-or-more-context
+SmoothWGauss:sigma=3.0:outputRegionMode=None:boundaryCondition=None:windowSize=7,1,needs-probe-pattern-or-more-context
+SmoothWGauss:sigma=3.0:outputRegionMode=None:boundaryCondition=None:windowSize=None,2,needs-probe-pattern-or-more-context
+SmoothWGauss:sigma=3.0:outputRegionMode=Valid:boundaryCondition=None:windowSize=None,1,needs-probe-pattern-or-more-context
+SmoothWMedian:type=Float64:radius=3:windowSize=7,1,needs-probe-pattern-or-more-context
+SobelEdge:type=Float64:windowSize=7,1,needs-probe-pattern-or-more-context
+SpeckleNoise:type=Float64:width=64:height=64:depth=64:std=0.5,1,needs-probe-pattern-or-more-context
+StreamConnectedObjects:connectivity=TwentySix,2,needs-probe-pattern-or-more-context
+StructureTensor:sigma=3.0:rho=1.0,1,needs-probe-pattern-or-more-context
+SumProjection:type=UInt8:function=Identity,1,needs-probe-pattern-or-more-context
+SurfaceArea:xUnit=1.0:yUnit=1.0:zUnit=1.0,1,needs-probe-pattern-or-more-context
+Threshold:type=Float64:lower=128.0:upper=infinity,1,needs-probe-pattern-or-more-context
+Threshold:type=UInt8:lower=128.0:upper=infinity,1,needs-probe-pattern-or-more-context
+Threshold:type=UInt8:lower=<input>:upper=infinity,2,needs-probe-pattern-or-more-context
+UnaryImageFunction:function=sqrt,1,needs-probe-pattern-or-more-context
+Vector3ToColor:inputMinimum=-1.0:inputMaximum=1.0,2,needs-probe-pattern-or-more-context
+VectorRange:firstComponent=3:componentCount=3,1,needs-probe-pattern-or-more-context
+Volume:xUnit=1.0:yUnit=1.0:zUnit=1.0,1,needs-probe-pattern-or-more-context
+WhiteTopHat:type=UInt8:radius=3:windowSize=7,1,probe-emitted
+Write:format=Image stack:depth=1:chunkX=64:chunkY=64:chunkZ=8:maxConcurrentWrites=0:frameAxis=0,51,calibration-boilerplate
+WriteChunks:chunkX=12:chunkY=13:chunkZ=14,1,needs-probe-pattern-or-more-context
+WriteChunks:chunkX=16:chunkY=16:chunkZ=16,1,needs-probe-pattern-or-more-context
+WriteChunks:chunkX=64:chunkY=64:chunkZ=16,1,needs-probe-pattern-or-more-context
+WriteMatrix,1,needs-probe-pattern-or-more-context
+WriteMesh:format=.obj,1,needs-probe-pattern-or-more-context
+WritePointSet,4,needs-probe-pattern-or-more-context
+WriteSlabSlices:windowSize=7,1,needs-probe-pattern-or-more-context
+Zero:type=Float64:width=64:height=64:depth=16,1,calibration-boilerplate
+Zero:type=Float64:width=64:height=64:depth=64,1,calibration-boilerplate
+Zero:type=UInt8:width=64:height=64:depth=64,3,calibration-boilerplate

@@ -49,7 +49,8 @@ progress only. Level `2` adds plan, stage, and optimization summaries. Level
 `3` adds process RSS measurements. Optimizer control is intentionally separate
 from debug level so timing runs can opt out of optimization without changing
 diagnostic verbosity. The sample runners default to optimizer off; pass
-`--optimize true` to `RunAll` or `RunJson` to opt back in for comparison runs.
+`--optimize true` to `StackProcessing.RunSamples` to opt back in for
+comparison runs.
 
 ## Samples
 
@@ -86,6 +87,52 @@ These samples are also useful when adding or changing Studio boxes:
 each exposed box should ideally appear in at least one sample graph so that the
 graph-to-DSL path stays easy to inspect.
 
+## Measurement And Calibration
+
+`StackProcessing.RunSamples` is the shared runner for sample measurements. It
+runs F# sample projects by default and Studio JSON graphs with `--json`.
+Runner logs and gathered CSVs are written below the repository-level `tmp/`
+directory. Temporary generated JSON runner projects still live below
+`samples/tmp/`, keeping sample-local scratch files separate from analysis
+outputs.
+
+```bash
+dotnet run --project src/StackProcessing.RunSamples/RunSamples.fsproj -- --repeat 3
+dotnet run --project src/StackProcessing.RunSamples/RunSamples.fsproj -- --json --repeat 3
+```
+
+`StackProcessing.Probe` is the front door for cost-model work. The usual
+development loop is:
+
+1. run meaningful sample JSON pipelines with `RunSamples --json`,
+2. run `Probe calibrate` to analyze the current feature matrix,
+3. inspect the emitted calibration graphs in `tmp/probingGraphs`,
+4. run those generated graphs with `RunSamples --json --extra-json-only`,
+5. repeat until the original sample vocabulary has stable time and memory
+   coefficients.
+
+```bash
+dotnet run --project src/StackProcessing.Probe/StackProcessing.Probe.fsproj -- calibrate
+dotnet run --project src/StackProcessing.Probe/StackProcessing.Probe.fsproj -- samples --json --extra-json-root tmp/probingGraphs --extra-json-only --repeat 3
+dotnet run --project src/StackProcessing.Probe/StackProcessing.Probe.fsproj -- calibrate --skip-analysis
+```
+
+For unattended calibration experiments, `calibrate` can run the emitted probes
+between iterations:
+
+```bash
+dotnet run --project src/StackProcessing.Probe/StackProcessing.Probe.fsproj -- calibrate --iterations 5 --run-probes --probe-repeats 3
+```
+
+The calibration loop writes `tmp/analysis/frozenCoefficients.csv`,
+`greedyCoverage.csv`, `probeTargets.csv`, and `probePlan.csv`. It freezes
+coefficients only when support, subset conditioning, repeat residuals, and
+non-negative time/memory estimates pass the configured thresholds. The emitted
+probe graphs are calibration workloads rather than representative user
+pipelines: fixed source, one unknown or a small triangular group, fixed sink.
+Multi-iteration runs write batches below `tmp/probingGraphs/iteration_###` so
+earlier probe rows remain available to the next analysis pass.
+
 ## Projects
 
 | Project | Role |
@@ -96,8 +143,8 @@ graph-to-DSL path stays easy to inspect.
 | `TinyLinAlg` | Small affine/vector/matrix helper library used by registration and resampling code. |
 | `StackProcessing.Core` | Streaming image-stack algorithms, IO, manifests, stitching, points, meshes, bias correction, and serial-section tools. |
 | `StackProcessing` | Public F# DSL over `StackProcessing.Core` and `SlimPipeline`. |
-| `StackProcessing.Probing` | Runs calibration-style pipelines and writes JSON with memory and timing observations for cost-model learning. |
-| `StackProcessing.Probing.Report` | Reads probing JSON and writes Plotly.NET scatter plots for memory and speed versus window size or other parameters. |
+| `StackProcessing.RunSamples` | Runs sample F# projects by default, or Studio JSON graphs with `--json`, and writes repeatable timing/memory logs. |
+| `StackProcessing.Probe` | Calibration front door: analyzes sample/probe measurements, emits probe graphs, and writes reports for cost-model learning. |
 | `Studio.Graph` | Pure graph domain model, built-in function catalog, and JSON persistence for Studio. |
 | `Studio.Compiler` | Compiler from Studio graph JSON to executable StackProcessing F# DSL code. |
 | `Studio` | Avalonia visual editor for building, saving, arranging, compiling, and running processing graphs. |
@@ -118,8 +165,8 @@ flowchart TD
     SimpleITK["SimpleITK\nnative image IO + filters"]
     TinyLinAlg["TinyLinAlg\naffine/vector helpers"]
     ZarrNexus["ZarrNET + PureHDF\nZarr / HDF5-NeXus IO"]
-    Probing["StackProcessing.Probing\nruntime measurements"]
-    Report["StackProcessing.Probing.Report\nPlotly.NET reports"]
+    RunSamples["StackProcessing.RunSamples\nsample/JSON measurement runner"]
+    Probe["StackProcessing.Probe\nanalysis + probe generation + reports"]
 
     UserFSharp --> StackProcessing
     Studio --> StudioGraph
@@ -135,16 +182,17 @@ flowchart TD
     Core --> TinyLinAlg
     Core --> ZarrNexus
 
-    StackProcessing --> Probing
-    Probing --> Report
+    StudioCompiler --> RunSamples
+    RunSamples --> Probe
+    StackProcessing --> Probe
 ```
 
 There are two user-facing entry points. Programmers can write the
 `StackProcessing` DSL directly; non-programmers can build the same DSL through
 Studio graphs. Both routes end in `SlimPipeline` plans and stages. The image
 work is implemented in `StackProcessing.Core` and `Image`. File formats,
-registration helpers, manifests, stitching, serial-section tools, probing, and
-reports sit beside that core path.
+registration helpers, manifests, stitching, serial-section tools, measurement
+runners, probing, and reports sit beside that core path.
 
 ## Studio For Users
 

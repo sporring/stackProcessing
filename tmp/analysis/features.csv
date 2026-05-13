@@ -1,0 +1,360 @@
+rowId,featureKey,value,path
+addSaltAndPepperNoise/addSaltAndPepperNoise,AddSaltAndPepperNoise:type=UInt8:probability=0.02,1,addSaltAndPepperNoise/addSaltAndPepperNoise.json
+addSaltAndPepperNoise/addSaltAndPepperNoise,Write:format=Image stack:depth=1:chunkX=64:chunkY=64:chunkZ=8:maxConcurrentWrites=0:frameAxis=0,1,addSaltAndPepperNoise/addSaltAndPepperNoise.json
+addSaltAndPepperNoise/addSaltAndPepperNoise,Zero:type=UInt8:width=64:height=64:depth=64,1,addSaltAndPepperNoise/addSaltAndPepperNoise.json
+addSaltAndPepperNoise/addSaltAndPepperNoise,intercept,1,addSaltAndPepperNoise/addSaltAndPepperNoise.json
+addShotSpeckleNoise/addShotSpeckleNoise,AddShotNoise:type=Float64:scale=2.0,1,addShotSpeckleNoise/addShotSpeckleNoise.json
+addShotSpeckleNoise/addShotSpeckleNoise,AddSpeckleNoise:type=Float64:std=0.5,1,addShotSpeckleNoise/addShotSpeckleNoise.json
+addShotSpeckleNoise/addShotSpeckleNoise,Cast:sourceType=Float64:targetType=UInt8,1,addShotSpeckleNoise/addShotSpeckleNoise.json
+addShotSpeckleNoise/addShotSpeckleNoise,Write:format=Image stack:depth=1:chunkX=64:chunkY=64:chunkZ=8:maxConcurrentWrites=0:frameAxis=0,1,addShotSpeckleNoise/addShotSpeckleNoise.json
+addShotSpeckleNoise/addShotSpeckleNoise,Zero:type=Float64:width=64:height=64:depth=16,1,addShotSpeckleNoise/addShotSpeckleNoise.json
+addShotSpeckleNoise/addShotSpeckleNoise,intercept,1,addShotSpeckleNoise/addShotSpeckleNoise.json
+affineKeypointRegistration/affineKeypointRegistration,AffineRegistration:maxIterations=1:initialLinearStep=0.02:initialTranslationStep=1.0:minStep=0.001:stepShrink=0.5,1,affineKeypointRegistration/affineKeypointRegistration.json
+affineKeypointRegistration/affineKeypointRegistration,ReadPointSet,1,affineKeypointRegistration/affineKeypointRegistration.json
+affineKeypointRegistration/affineKeypointRegistration,WriteMatrix,1,affineKeypointRegistration/affineKeypointRegistration.json
+affineKeypointRegistration/affineKeypointRegistration,intercept,1,affineKeypointRegistration/affineKeypointRegistration.json
+biasCorrection/biasCorrection,Cast:sourceType=Float64:targetType=UInt8,1,biasCorrection/biasCorrection.json
+biasCorrection/biasCorrection,CorrectBias:type=Float64:model=<input>,1,biasCorrection/biasCorrection.json
+biasCorrection/biasCorrection,CorrectBiasMasked:type=Float64:model=<input>,1,biasCorrection/biasCorrection.json
+biasCorrection/biasCorrection,FitBiasModel:type=Float64:order=2:depth=256,1,biasCorrection/biasCorrection.json
+biasCorrection/biasCorrection,FitBiasModelMasked:type=Float64:order=2:depth=256,1,biasCorrection/biasCorrection.json
+biasCorrection/biasCorrection,IntensityStretch:type=Float64:inputMinimum=0.0:inputMaximum=255.0:outputMinimum=0.0:outputMaximum=255.0,1,biasCorrection/biasCorrection.json
+biasCorrection/biasCorrection,Read:type=Float64:format=Image stack:slabDepth=8:multiscaleIndex=0:datasetIndex=0:timepoint=0:channel=0:maxParallelChunks=0:frameAxis=0,1,biasCorrection/biasCorrection.json
+biasCorrection/biasCorrection,Read:type=UInt8:format=Image stack:slabDepth=8:multiscaleIndex=0:datasetIndex=0:timepoint=0:channel=0:maxParallelChunks=0:frameAxis=0,1,biasCorrection/biasCorrection.json
+biasCorrection/biasCorrection,Write:format=Image stack:depth=1:chunkX=64:chunkY=64:chunkZ=8:maxConcurrentWrites=0:frameAxis=0,1,biasCorrection/biasCorrection.json
+biasCorrection/biasCorrection,intercept,1,biasCorrection/biasCorrection.json
+binaryContour/binaryContour,BinaryContour:fullyConnected=false:windowSize=7,1,binaryContour/binaryContour.json
+binaryContour/binaryContour,Read:type=UInt8:format=Image stack:slabDepth=8:multiscaleIndex=0:datasetIndex=0:timepoint=0:channel=0:maxParallelChunks=0:frameAxis=0,1,binaryContour/binaryContour.json
+binaryContour/binaryContour,Write:format=Image stack:depth=1:chunkX=64:chunkY=64:chunkZ=8:maxConcurrentWrites=0:frameAxis=0,1,binaryContour/binaryContour.json
+binaryContour/binaryContour,intercept,1,binaryContour/binaryContour.json
+binaryMedian/binaryMedian,BinaryMedian:radius=3:windowSize=7,1,binaryMedian/binaryMedian.json
+binaryMedian/binaryMedian,Read:type=UInt8:format=Image stack:slabDepth=8:multiscaleIndex=0:datasetIndex=0:timepoint=0:channel=0:maxParallelChunks=0:frameAxis=0,1,binaryMedian/binaryMedian.json
+binaryMedian/binaryMedian,Write:format=Image stack:depth=1:chunkX=64:chunkY=64:chunkZ=8:maxConcurrentWrites=0:frameAxis=0,1,binaryMedian/binaryMedian.json
+binaryMedian/binaryMedian,intercept,1,binaryMedian/binaryMedian.json
+blackTopHat/blackTopHat,BlackTopHat:type=UInt8:radius=3:windowSize=7,1,blackTopHat/blackTopHat.json
+blackTopHat/blackTopHat,Read:type=UInt8:format=Image stack:slabDepth=8:multiscaleIndex=0:datasetIndex=0:timepoint=0:channel=0:maxParallelChunks=0:frameAxis=0,1,blackTopHat/blackTopHat.json
+blackTopHat/blackTopHat,Write:format=Image stack:depth=1:chunkX=64:chunkY=64:chunkZ=8:maxConcurrentWrites=0:frameAxis=0,1,blackTopHat/blackTopHat.json
+blackTopHat/blackTopHat,intercept,1,blackTopHat/blackTopHat.json
+chunk/chunk,Print,1,chunk/chunk.json
+chunk/chunk,ReadRange:type=UInt8:format=Image stack:first=0:step=1:last=31:multiscaleIndex=0:datasetIndex=0:timepoint=0:channel=0:maxParallelChunks=0:frameAxis=0,1,chunk/chunk.json
+chunk/chunk,ReadSlab:type=UInt8:format=Chunked stack:slabDepth=8:multiscaleIndex=0:datasetIndex=0:timepoint=0:channel=0:maxParallelChunks=0:frameAxis=0,1,chunk/chunk.json
+chunk/chunk,Write:format=Image stack:depth=1:chunkX=64:chunkY=64:chunkZ=8:maxConcurrentWrites=0:frameAxis=0,1,chunk/chunk.json
+chunk/chunk,WriteChunks:chunkX=12:chunkY=13:chunkZ=14,1,chunk/chunk.json
+chunk/chunk,intercept,1,chunk/chunk.json
+chunk/toChunk,Print,1,chunk/toChunk.json
+chunk/toChunk,Read:type=UInt8:format=Image stack:slabDepth=1:multiscaleIndex=0:datasetIndex=0:timepoint=0:channel=0:maxParallelChunks=0:frameAxis=0,1,chunk/toChunk.json
+chunk/toChunk,WriteChunks:chunkX=64:chunkY=64:chunkZ=16,1,chunk/toChunk.json
+chunk/toChunk,intercept,1,chunk/toChunk.json
+closing/closing,Closing:radius=3,1,closing/closing.json
+closing/closing,Read:type=UInt8:format=Image stack:slabDepth=8:multiscaleIndex=0:datasetIndex=0:timepoint=0:channel=0:maxParallelChunks=0:frameAxis=0,1,closing/closing.json
+closing/closing,Write:format=Image stack:depth=1:chunkX=64:chunkY=64:chunkZ=8:maxConcurrentWrites=0:frameAxis=0,1,closing/closing.json
+closing/closing,intercept,1,closing/closing.json
+computeStats/computeStats,ComputeStats,1,computeStats/computeStats.json
+computeStats/computeStats,Print,1,computeStats/computeStats.json
+computeStats/computeStats,Read:type=UInt8:format=Image stack:slabDepth=8:multiscaleIndex=0:datasetIndex=0:timepoint=0:channel=0:maxParallelChunks=0:frameAxis=0,1,computeStats/computeStats.json
+computeStats/computeStats,intercept,1,computeStats/computeStats.json
+connectedComponents/connectedComponents,Cast:sourceType=UInt64:targetType=UInt8,1,connectedComponents/connectedComponents.json
+connectedComponents/connectedComponents,CollapseComponentLabels:windowSize=7:translationTable=<input>,1,connectedComponents/connectedComponents.json
+connectedComponents/connectedComponents,ComponentTranslationTable:windowSize=7,1,connectedComponents/connectedComponents.json
+connectedComponents/connectedComponents,ConnectedComponents:windowSize=7,1,connectedComponents/connectedComponents.json
+connectedComponents/connectedComponents,Read:type=UInt64:format=Image stack:slabDepth=1:multiscaleIndex=0:datasetIndex=0:timepoint=0:channel=0:maxParallelChunks=0:frameAxis=0,1,connectedComponents/connectedComponents.json
+connectedComponents/connectedComponents,Read:type=UInt8:format=Image stack:slabDepth=1:multiscaleIndex=0:datasetIndex=0:timepoint=0:channel=0:maxParallelChunks=0:frameAxis=0,1,connectedComponents/connectedComponents.json
+connectedComponents/connectedComponents,ScalarOpImage:operation=*:type=UInt8:value=85,1,connectedComponents/connectedComponents.json
+connectedComponents/connectedComponents,Threshold:type=UInt8:lower=128.0:upper=infinity,1,connectedComponents/connectedComponents.json
+connectedComponents/connectedComponents,Write:format=Image stack:depth=1:chunkX=64:chunkY=64:chunkZ=8:maxConcurrentWrites=0:frameAxis=0,1,connectedComponents/connectedComponents.json
+connectedComponents/connectedComponents,WriteSlabSlices:windowSize=7,1,connectedComponents/connectedComponents.json
+connectedComponents/connectedComponents,intercept,1,connectedComponents/connectedComponents.json
+convolve/convolve,Cast:sourceType=Float64:targetType=UInt8,1,convolve/convolve.json
+convolve/convolve,"Convolve:kernel=Image<float>.ofArray3D(Array3D.create 3 3 3 (1.0 / 27.0), ""average3x3x3""):outputRegionMode=Same:boundaryCondition=ZeroFluxNeumannPad:windowSize=7",1,convolve/convolve.json
+convolve/convolve,IntensityStretch:type=Float64:inputMinimum=0.0:inputMaximum=255.0:outputMinimum=0.0:outputMaximum=255.0,1,convolve/convolve.json
+convolve/convolve,Read:type=Float64:format=Image stack:slabDepth=8:multiscaleIndex=0:datasetIndex=0:timepoint=0:channel=0:maxParallelChunks=0:frameAxis=0,1,convolve/convolve.json
+convolve/convolve,Write:format=Image stack:depth=1:chunkX=64:chunkY=64:chunkZ=8:maxConcurrentWrites=0:frameAxis=0,1,convolve/convolve.json
+convolve/convolve,intercept,1,convolve/convolve.json
+convolve3d/convolve3d,Cast:sourceType=Float64:targetType=UInt8,1,convolve3d/convolve3d.json
+convolve3d/convolve3d,Read:type=Float64:format=Image stack:slabDepth=8:multiscaleIndex=0:datasetIndex=0:timepoint=0:channel=0:maxParallelChunks=0:frameAxis=0,1,convolve3d/convolve3d.json
+convolve3d/convolve3d,SmoothWGauss:sigma=3.0:outputRegionMode=None:boundaryCondition=None:windowSize=7,1,convolve3d/convolve3d.json
+convolve3d/convolve3d,Write:format=Image stack:depth=1:chunkX=64:chunkY=64:chunkZ=8:maxConcurrentWrites=0:frameAxis=0,1,convolve3d/convolve3d.json
+convolve3d/convolve3d,intercept,1,convolve3d/convolve3d.json
+copy/copy,Read:type=UInt8:format=Image stack:slabDepth=8:multiscaleIndex=0:datasetIndex=0:timepoint=0:channel=0:maxParallelChunks=0:frameAxis=0,1,copy/copy.json
+copy/copy,Write:format=Image stack:depth=1:chunkX=64:chunkY=64:chunkZ=8:maxConcurrentWrites=0:frameAxis=0,1,copy/copy.json
+copy/copy,intercept,1,copy/copy.json
+createByEuler2DTransform/createByEuler2DTransform,CreateByEuler2DTransform:type=UInt8:width=64:height=64:depth=64:boxSize=16:transform=AntiDiagonal,1,createByEuler2DTransform/createByEuler2DTransform.json
+createByEuler2DTransform/createByEuler2DTransform,CreateByEuler2DTransform:type=UInt8:width=64:height=64:depth=64:boxSize=16:transform=Diagonal,1,createByEuler2DTransform/createByEuler2DTransform.json
+createByEuler2DTransform/createByEuler2DTransform,CreateByEuler2DTransform:type=UInt8:width=64:height=64:depth=64:boxSize=16:transform=TopDown,1,createByEuler2DTransform/createByEuler2DTransform.json
+createByEuler2DTransform/createByEuler2DTransform,ImageOpImage:operation=max:type=UInt8,1,createByEuler2DTransform/createByEuler2DTransform.json
+createByEuler2DTransform/createByEuler2DTransform,IntensityStretch:type=UInt8:inputMinimum=0.0:inputMaximum=1.0:outputMinimum=0.0:outputMaximum=255.,1,createByEuler2DTransform/createByEuler2DTransform.json
+createByEuler2DTransform/createByEuler2DTransform,Write:format=Image stack:depth=1:chunkX=64:chunkY=64:chunkZ=8:maxConcurrentWrites=0:frameAxis=0,1,createByEuler2DTransform/createByEuler2DTransform.json
+createByEuler2DTransform/createByEuler2DTransform,intercept,1,createByEuler2DTransform/createByEuler2DTransform.json
+dilate/dilate,Dilate:radius=3,1,dilate/dilate.json
+dilate/dilate,Read:type=UInt8:format=Image stack:slabDepth=8:multiscaleIndex=0:datasetIndex=0:timepoint=0:channel=0:maxParallelChunks=0:frameAxis=0,1,dilate/dilate.json
+dilate/dilate,Write:format=Image stack:depth=1:chunkX=64:chunkY=64:chunkZ=8:maxConcurrentWrites=0:frameAxis=0,1,dilate/dilate.json
+dilate/dilate,intercept,1,dilate/dilate.json
+erode/erode,Erode:radius=3,1,erode/erode.json
+erode/erode,IntensityStretch:type=UInt8:inputMinimum=0.0:inputMaximum=1.0:outputMinimum=0.0:outputMaximum=255.,1,erode/erode.json
+erode/erode,IntensityStretch:type=UInt8:inputMinimum=0.0:inputMaximum=255.:outputMinimum=0.0:outputMaximum=1.0,1,erode/erode.json
+erode/erode,Read:type=UInt8:format=Image stack:slabDepth=8:multiscaleIndex=0:datasetIndex=0:timepoint=0:channel=0:maxParallelChunks=0:frameAxis=0,1,erode/erode.json
+erode/erode,Write:format=Image stack:depth=1:chunkX=64:chunkY=64:chunkZ=8:maxConcurrentWrites=0:frameAxis=0,1,erode/erode.json
+erode/erode,intercept,1,erode/erode.json
+fft/fft,Cast:sourceType=Float64:targetType=Float32,1,fft/fft.json
+fft/fft,FFT:type=Float64:chunkX=16:chunkY=16:chunkZ=8,1,fft/fft.json
+fft/fft,InvFFT:chunkX=16:chunkY=16:chunkZ=8,1,fft/fft.json
+fft/fft,NormalNoise:type=Float64:width=64:height=64:depth=64:mean=128.0:std=25.0,1,fft/fft.json
+fft/fft,Write:format=Image stack:depth=1:chunkX=64:chunkY=64:chunkZ=8:maxConcurrentWrites=0:frameAxis=0,1,fft/fft.json
+fft/fft,intercept,1,fft/fft.json
+fillSmallHoles/fillSmallHoles,FillSmallHoles:maximumVolume=128:connectivity=TwentySix,1,fillSmallHoles/fillSmallHoles.json
+fillSmallHoles/fillSmallHoles,Read:type=UInt8:format=Image stack:slabDepth=8:multiscaleIndex=0:datasetIndex=0:timepoint=0:channel=0:maxParallelChunks=0:frameAxis=0,1,fillSmallHoles/fillSmallHoles.json
+fillSmallHoles/fillSmallHoles,Write:format=Image stack:depth=1:chunkX=64:chunkY=64:chunkZ=8:maxConcurrentWrites=0:frameAxis=0,1,fillSmallHoles/fillSmallHoles.json
+fillSmallHoles/fillSmallHoles,intercept,1,fillSmallHoles/fillSmallHoles.json
+finiteDiff3D/finiteDiff3D,Cast:sourceType=Float64:targetType=UInt8,1,finiteDiff3D/finiteDiff3D.json
+finiteDiff3D/finiteDiff3D,FiniteDiff:direction=0:order=1,1,finiteDiff3D/finiteDiff3D.json
+finiteDiff3D/finiteDiff3D,Read:type=Float64:format=Image stack:slabDepth=8:multiscaleIndex=0:datasetIndex=0:timepoint=0:channel=0:maxParallelChunks=0:frameAxis=0,1,finiteDiff3D/finiteDiff3D.json
+finiteDiff3D/finiteDiff3D,Write:format=Image stack:depth=1:chunkX=64:chunkY=64:chunkZ=8:maxConcurrentWrites=0:frameAxis=0,1,finiteDiff3D/finiteDiff3D.json
+finiteDiff3D/finiteDiff3D,intercept,1,finiteDiff3D/finiteDiff3D.json
+forstner3DKeypoints/forstner3DKeypoints,Forstner3DKeypoints:type=Float64:sigma=3.0:rho=1.5:threshold=0.1:stride=16,1,forstner3DKeypoints/forstner3DKeypoints.json
+forstner3DKeypoints/forstner3DKeypoints,NormalNoise:type=Float64:width=64:height=64:depth=64:mean=128.0:std=25.0,1,forstner3DKeypoints/forstner3DKeypoints.json
+forstner3DKeypoints/forstner3DKeypoints,WritePointSet,1,forstner3DKeypoints/forstner3DKeypoints.json
+forstner3DKeypoints/forstner3DKeypoints,intercept,1,forstner3DKeypoints/forstner3DKeypoints.json
+grayscaleClosing/grayscaleClosing,GrayscaleClosing:type=UInt8:radius=3:windowSize=7,1,grayscaleClosing/grayscaleClosing.json
+grayscaleClosing/grayscaleClosing,Read:type=UInt8:format=Image stack:slabDepth=8:multiscaleIndex=0:datasetIndex=0:timepoint=0:channel=0:maxParallelChunks=0:frameAxis=0,1,grayscaleClosing/grayscaleClosing.json
+grayscaleClosing/grayscaleClosing,Write:format=Image stack:depth=1:chunkX=64:chunkY=64:chunkZ=8:maxConcurrentWrites=0:frameAxis=0,1,grayscaleClosing/grayscaleClosing.json
+grayscaleClosing/grayscaleClosing,intercept,1,grayscaleClosing/grayscaleClosing.json
+grayscaleDilate/grayscaleDilate,GrayscaleDilate:type=UInt8:radius=3:windowSize=7,1,grayscaleDilate/grayscaleDilate.json
+grayscaleDilate/grayscaleDilate,Read:type=UInt8:format=Image stack:slabDepth=8:multiscaleIndex=0:datasetIndex=0:timepoint=0:channel=0:maxParallelChunks=0:frameAxis=0,1,grayscaleDilate/grayscaleDilate.json
+grayscaleDilate/grayscaleDilate,Write:format=Image stack:depth=1:chunkX=64:chunkY=64:chunkZ=8:maxConcurrentWrites=0:frameAxis=0,1,grayscaleDilate/grayscaleDilate.json
+grayscaleDilate/grayscaleDilate,intercept,1,grayscaleDilate/grayscaleDilate.json
+grayscaleErode/grayscaleErode,GrayscaleErode:type=UInt8:radius=3:windowSize=7,1,grayscaleErode/grayscaleErode.json
+grayscaleErode/grayscaleErode,Read:type=UInt8:format=Image stack:slabDepth=8:multiscaleIndex=0:datasetIndex=0:timepoint=0:channel=0:maxParallelChunks=0:frameAxis=0,1,grayscaleErode/grayscaleErode.json
+grayscaleErode/grayscaleErode,Write:format=Image stack:depth=1:chunkX=64:chunkY=64:chunkZ=8:maxConcurrentWrites=0:frameAxis=0,1,grayscaleErode/grayscaleErode.json
+grayscaleErode/grayscaleErode,intercept,1,grayscaleErode/grayscaleErode.json
+grayscaleOpening/grayscaleOpening,GrayscaleOpening:type=UInt8:radius=3:windowSize=7,1,grayscaleOpening/grayscaleOpening.json
+grayscaleOpening/grayscaleOpening,Read:type=UInt8:format=Image stack:slabDepth=8:multiscaleIndex=0:datasetIndex=0:timepoint=0:channel=0:maxParallelChunks=0:frameAxis=0,1,grayscaleOpening/grayscaleOpening.json
+grayscaleOpening/grayscaleOpening,Write:format=Image stack:depth=1:chunkX=64:chunkY=64:chunkZ=8:maxConcurrentWrites=0:frameAxis=0,1,grayscaleOpening/grayscaleOpening.json
+grayscaleOpening/grayscaleOpening,intercept,1,grayscaleOpening/grayscaleOpening.json
+harris3DKeypoints/harris3DKeypoints,Harris3DKeypoints:type=Float64:sigma=3.0:rho=1.5:k=0.04:threshold=0.1:stride=16,1,harris3DKeypoints/harris3DKeypoints.json
+harris3DKeypoints/harris3DKeypoints,NormalNoise:type=Float64:width=64:height=64:depth=64:mean=128.0:std=25.0,1,harris3DKeypoints/harris3DKeypoints.json
+harris3DKeypoints/harris3DKeypoints,WritePointSet,1,harris3DKeypoints/harris3DKeypoints.json
+harris3DKeypoints/harris3DKeypoints,intercept,1,harris3DKeypoints/harris3DKeypoints.json
+hessianKeypoints/hessianKeypoints,HessianKeypoints:type=Float64:sigma=3.0:responseKind=Blob:threshold=0.1:stride=16,1,hessianKeypoints/hessianKeypoints.json
+hessianKeypoints/hessianKeypoints,NormalNoise:type=Float64:width=64:height=64:depth=64:mean=128.0:std=25.0,1,hessianKeypoints/hessianKeypoints.json
+hessianKeypoints/hessianKeypoints,WritePointSet,1,hessianKeypoints/hessianKeypoints.json
+hessianKeypoints/hessianKeypoints,intercept,1,hessianKeypoints/hessianKeypoints.json
+histogram/histogram,ImHistogram:firstLeftEdge=50.0:lastLeftEdge=255.0:bins=64,1,histogram/histogram.json
+histogram/histogram,ReadRandom:type=UInt8:format=Image stack:depth=10:multiscaleIndex=0:datasetIndex=0:timepoint=0:channel=0:maxParallelChunks=0:frameAxis=0,1,histogram/histogram.json
+histogram/histogram,intercept,1,histogram/histogram.json
+histogramShared/histogramShared,Chart:kind=Column,1,histogramShared/histogramShared.json
+histogramShared/histogramShared,ImHistogramData:firstLeftEdge=0.0:lastLeftEdge=255.0:bins=256,1,histogramShared/histogramShared.json
+histogramShared/histogramShared,Print,1,histogramShared/histogramShared.json
+histogramShared/histogramShared,ReadRandom:type=UInt8:format=Image stack:depth=10:multiscaleIndex=0:datasetIndex=0:timepoint=0:channel=0:maxParallelChunks=0:frameAxis=0,1,histogramShared/histogramShared.json
+histogramShared/histogramShared,intercept,1,histogramShared/histogramShared.json
+imageFilter/imageFilter,Cast:sourceType=Float64:targetType=UInt8,1,imageFilter/imageFilter.json
+imageFilter/imageFilter,Gradient:order=1:windowSize=7,1,imageFilter/imageFilter.json
+imageFilter/imageFilter,GradientMagnitude:type=Float64:windowSize=7,1,imageFilter/imageFilter.json
+imageFilter/imageFilter,HistogramEqualization:type=UInt8:histogram=<input>,1,imageFilter/imageFilter.json
+imageFilter/imageFilter,ImHistogramData:firstLeftEdge=0.0:lastLeftEdge=255.0:bins=256,1,imageFilter/imageFilter.json
+imageFilter/imageFilter,IntensityStretch:type=Float64:inputMinimum=0.0:inputMaximum=255.0:outputMinimum=0.0:outputMaximum=255.0,1,imageFilter/imageFilter.json
+imageFilter/imageFilter,Laplacian:type=Float64:windowSize=7,1,imageFilter/imageFilter.json
+imageFilter/imageFilter,PCA:components=3,1,imageFilter/imageFilter.json
+imageFilter/imageFilter,ReadRandom:type=UInt8:format=Image stack:depth=16:multiscaleIndex=0:datasetIndex=0:timepoint=0:channel=0:maxParallelChunks=0:frameAxis=0,1,imageFilter/imageFilter.json
+imageFilter/imageFilter,ReadRange:type=Float64:format=Image stack:first=0:step=1:last=31:multiscaleIndex=0:datasetIndex=0:timepoint=0:channel=0:maxParallelChunks=0:frameAxis=0,1,imageFilter/imageFilter.json
+imageFilter/imageFilter,ReadRange:type=UInt8:format=Image stack:first=0:step=1:last=31:multiscaleIndex=0:datasetIndex=0:timepoint=0:channel=0:maxParallelChunks=0:frameAxis=0,1,imageFilter/imageFilter.json
+imageFilter/imageFilter,SmoothWBilateral:type=Float64:domainSigma=1.5:rangeSigma=30.0:windowSize=7,1,imageFilter/imageFilter.json
+imageFilter/imageFilter,SmoothWMedian:type=Float64:radius=3:windowSize=7,1,imageFilter/imageFilter.json
+imageFilter/imageFilter,SobelEdge:type=Float64:windowSize=7,1,imageFilter/imageFilter.json
+imageFilter/imageFilter,Vector3ToColor:inputMinimum=-1.0:inputMaximum=1.0,1,imageFilter/imageFilter.json
+imageFilter/imageFilter,Write:format=Image stack:depth=1:chunkX=64:chunkY=64:chunkZ=8:maxConcurrentWrites=0:frameAxis=0,1,imageFilter/imageFilter.json
+imageFilter/imageFilter,intercept,1,imageFilter/imageFilter.json
+meshMeasurement/meshMeasurement,ImageOpScalar:operation=/:type=UInt8:value=255,1,meshMeasurement/meshMeasurement.json
+meshMeasurement/meshMeasurement,MarchingCubes:type=UInt8:surfaceValue=0.5,1,meshMeasurement/meshMeasurement.json
+meshMeasurement/meshMeasurement,Print,1,meshMeasurement/meshMeasurement.json
+meshMeasurement/meshMeasurement,Read:type=UInt8:format=Image stack:slabDepth=8:multiscaleIndex=0:datasetIndex=0:timepoint=0:channel=0:maxParallelChunks=0:frameAxis=0,1,meshMeasurement/meshMeasurement.json
+meshMeasurement/meshMeasurement,SurfaceArea:xUnit=1.0:yUnit=1.0:zUnit=1.0,1,meshMeasurement/meshMeasurement.json
+meshMeasurement/meshMeasurement,Volume:xUnit=1.0:yUnit=1.0:zUnit=1.0,1,meshMeasurement/meshMeasurement.json
+meshMeasurement/meshMeasurement,intercept,1,meshMeasurement/meshMeasurement.json
+momentsThreshold/momentsThreshold,ImHistogramData:firstLeftEdge=0.0:lastLeftEdge=255.0:bins=256,1,momentsThreshold/momentsThreshold.json
+momentsThreshold/momentsThreshold,MomentsThresholdFromHistogram:histogram=<input>,1,momentsThreshold/momentsThreshold.json
+momentsThreshold/momentsThreshold,Read:type=UInt8:format=Image stack:slabDepth=8:multiscaleIndex=0:datasetIndex=0:timepoint=0:channel=0:maxParallelChunks=0:frameAxis=0,1,momentsThreshold/momentsThreshold.json
+momentsThreshold/momentsThreshold,ReadRandom:type=UInt8:format=Image stack:depth=16:multiscaleIndex=0:datasetIndex=0:timepoint=0:channel=0:maxParallelChunks=0:frameAxis=0,1,momentsThreshold/momentsThreshold.json
+momentsThreshold/momentsThreshold,Threshold:type=UInt8:lower=<input>:upper=infinity,1,momentsThreshold/momentsThreshold.json
+momentsThreshold/momentsThreshold,Write:format=Image stack:depth=1:chunkX=64:chunkY=64:chunkZ=8:maxConcurrentWrites=0:frameAxis=0,1,momentsThreshold/momentsThreshold.json
+momentsThreshold/momentsThreshold,intercept,1,momentsThreshold/momentsThreshold.json
+morphologicalGradient/morphologicalGradient,MorphologicalGradient:type=UInt8:radius=3:windowSize=7,1,morphologicalGradient/morphologicalGradient.json
+morphologicalGradient/morphologicalGradient,Read:type=UInt8:format=Image stack:slabDepth=8:multiscaleIndex=0:datasetIndex=0:timepoint=0:channel=0:maxParallelChunks=0:frameAxis=0,1,morphologicalGradient/morphologicalGradient.json
+morphologicalGradient/morphologicalGradient,Write:format=Image stack:depth=1:chunkX=64:chunkY=64:chunkZ=8:maxConcurrentWrites=0:frameAxis=0,1,morphologicalGradient/morphologicalGradient.json
+morphologicalGradient/morphologicalGradient,intercept,1,morphologicalGradient/morphologicalGradient.json
+multiplyConstant/multiplyConstant,ImageOpImage:operation=*:type=UInt8,1,multiplyConstant/multiplyConstant.json
+multiplyConstant/multiplyConstant,ImageOpScalar:operation=*:type=UInt8:value=2,1,multiplyConstant/multiplyConstant.json
+multiplyConstant/multiplyConstant,ImageOpScalar:operation=+:type=UInt8:value=1,1,multiplyConstant/multiplyConstant.json
+multiplyConstant/multiplyConstant,Write:format=Image stack:depth=1:chunkX=64:chunkY=64:chunkZ=8:maxConcurrentWrites=0:frameAxis=0,1,multiplyConstant/multiplyConstant.json
+multiplyConstant/multiplyConstant,Zero:type=UInt8:width=64:height=64:depth=64,1,multiplyConstant/multiplyConstant.json
+multiplyConstant/multiplyConstant,intercept,1,multiplyConstant/multiplyConstant.json
+multiplyMask/multiplyMask,ImageOpImage:operation=*:type=UInt8,1,multiplyMask/multiplyMask.json
+multiplyMask/multiplyMask,Read:type=UInt8:format=Image stack:slabDepth=1:multiscaleIndex=0:datasetIndex=0:timepoint=0:channel=0:maxParallelChunks=0:frameAxis=0,1,multiplyMask/multiplyMask.json
+multiplyMask/multiplyMask,Write:format=Image stack:depth=1:chunkX=64:chunkY=64:chunkZ=8:maxConcurrentWrites=0:frameAxis=0,1,multiplyMask/multiplyMask.json
+multiplyMask/multiplyMask,intercept,1,multiplyMask/multiplyMask.json
+noise/noise,Cast:sourceType=Float64:targetType=UInt8,1,noise/noise.json
+noise/noise,ImHistogram:firstLeftEdge=0.0:lastLeftEdge=255.0:bins=256,1,noise/noise.json
+noise/noise,NormalNoise:type=Float64:width=64:height=64:depth=64:mean=0.0:std=50.0,1,noise/noise.json
+noise/noise,SmoothWGauss:sigma=3.0:outputRegionMode=Valid:boundaryCondition=None:windowSize=None,1,noise/noise.json
+noise/noise,intercept,1,noise/noise.json
+normalize/normalize,Cast:sourceType=Float64:targetType=UInt8,1,normalize/normalize.json
+normalize/normalize,ComputeStats,1,normalize/normalize.json
+normalize/normalize,ImageOpScalar:operation=*:type=Float64:value=<input>,1,normalize/normalize.json
+normalize/normalize,ImageOpScalar:operation=-:type=Float64:value=<input>,1,normalize/normalize.json
+normalize/normalize,Read:type=Float64:format=Image stack:slabDepth=1:multiscaleIndex=0:datasetIndex=0:timepoint=0:channel=0:maxParallelChunks=0:frameAxis=0,1,normalize/normalize.json
+normalize/normalize,ReadRandom:type=Float64:format=Image stack:depth=20:multiscaleIndex=0:datasetIndex=0:timepoint=0:channel=0:maxParallelChunks=0:frameAxis=0,1,normalize/normalize.json
+normalize/normalize,ScalarOp:operation=-:type=Float64:a=<input>:b=<input>,1,normalize/normalize.json
+normalize/normalize,ScalarOp:operation=/:type=Float64:a=<input>:b=<input>,1,normalize/normalize.json
+normalize/normalize,Write:format=Image stack:depth=1:chunkX=64:chunkY=64:chunkZ=8:maxConcurrentWrites=0:frameAxis=0,1,normalize/normalize.json
+normalize/normalize,intercept,1,normalize/normalize.json
+objectsImage/objectsImage,PaintObjects:width=512:height=384,1,objectsImage/objectsImage.json
+objectsImage/objectsImage,Read:type=UInt8:format=Image stack:slabDepth=8:multiscaleIndex=0:datasetIndex=0:timepoint=0:channel=0:maxParallelChunks=0:frameAxis=0,1,objectsImage/objectsImage.json
+objectsImage/objectsImage,StreamConnectedObjects:connectivity=TwentySix,1,objectsImage/objectsImage.json
+objectsImage/objectsImage,Write:format=Image stack:depth=1:chunkX=64:chunkY=64:chunkZ=8:maxConcurrentWrites=0:frameAxis=0,1,objectsImage/objectsImage.json
+objectsImage/objectsImage,intercept,1,objectsImage/objectsImage.json
+objectsMarchingCubes/objectsMarchingCubes,MarchingCubes:type=UInt8:surfaceValue=0.5,1,objectsMarchingCubes/objectsMarchingCubes.json
+objectsMarchingCubes/objectsMarchingCubes,Read:type=UInt8:format=Image stack:slabDepth=1:multiscaleIndex=0:datasetIndex=0:timepoint=0:channel=0:maxParallelChunks=0:frameAxis=0,1,objectsMarchingCubes/objectsMarchingCubes.json
+objectsMarchingCubes/objectsMarchingCubes,WriteMesh:format=.obj,1,objectsMarchingCubes/objectsMarchingCubes.json
+objectsMarchingCubes/objectsMarchingCubes,intercept,1,objectsMarchingCubes/objectsMarchingCubes.json
+objectsSizeHistogram/objectsSizeHistogram,Chart:kind=Column,1,objectsSizeHistogram/objectsSizeHistogram.json
+objectsSizeHistogram/objectsSizeHistogram,Histogram:binWidth=100,1,objectsSizeHistogram/objectsSizeHistogram.json
+objectsSizeHistogram/objectsSizeHistogram,MeasureObjects,1,objectsSizeHistogram/objectsSizeHistogram.json
+objectsSizeHistogram/objectsSizeHistogram,ObjectSizeStats,1,objectsSizeHistogram/objectsSizeHistogram.json
+objectsSizeHistogram/objectsSizeHistogram,ObjectSizes,1,objectsSizeHistogram/objectsSizeHistogram.json
+objectsSizeHistogram/objectsSizeHistogram,Print,1,objectsSizeHistogram/objectsSizeHistogram.json
+objectsSizeHistogram/objectsSizeHistogram,Read:type=UInt8:format=Image stack:slabDepth=1:multiscaleIndex=0:datasetIndex=0:timepoint=0:channel=0:maxParallelChunks=0:frameAxis=0,1,objectsSizeHistogram/objectsSizeHistogram.json
+objectsSizeHistogram/objectsSizeHistogram,StreamConnectedObjects:connectivity=TwentySix,1,objectsSizeHistogram/objectsSizeHistogram.json
+objectsSizeHistogram/objectsSizeHistogram,intercept,1,objectsSizeHistogram/objectsSizeHistogram.json
+opening/opening,Opening:radius=3,1,opening/opening.json
+opening/opening,Read:type=UInt8:format=Image stack:slabDepth=8:multiscaleIndex=0:datasetIndex=0:timepoint=0:channel=0:maxParallelChunks=0:frameAxis=0,1,opening/opening.json
+opening/opening,Write:format=Image stack:depth=1:chunkX=64:chunkY=64:chunkZ=8:maxConcurrentWrites=0:frameAxis=0,1,opening/opening.json
+opening/opening,intercept,1,opening/opening.json
+otsuThreshold/otsuThreshold,ImHistogramData:firstLeftEdge=0.0:lastLeftEdge=255.0:bins=256,1,otsuThreshold/otsuThreshold.json
+otsuThreshold/otsuThreshold,OtsuThresholdFromHistogram:histogram=<input>,1,otsuThreshold/otsuThreshold.json
+otsuThreshold/otsuThreshold,Read:type=UInt8:format=Image stack:slabDepth=8:multiscaleIndex=0:datasetIndex=0:timepoint=0:channel=0:maxParallelChunks=0:frameAxis=0,1,otsuThreshold/otsuThreshold.json
+otsuThreshold/otsuThreshold,ReadRandom:type=UInt8:format=Image stack:depth=16:multiscaleIndex=0:datasetIndex=0:timepoint=0:channel=0:maxParallelChunks=0:frameAxis=0,1,otsuThreshold/otsuThreshold.json
+otsuThreshold/otsuThreshold,Threshold:type=UInt8:lower=<input>:upper=infinity,1,otsuThreshold/otsuThreshold.json
+otsuThreshold/otsuThreshold,Write:format=Image stack:depth=1:chunkX=64:chunkY=64:chunkZ=8:maxConcurrentWrites=0:frameAxis=0,1,otsuThreshold/otsuThreshold.json
+otsuThreshold/otsuThreshold,intercept,1,otsuThreshold/otsuThreshold.json
+quantileClamp/quantileClamp,Cast:sourceType=Float64:targetType=UInt8,1,quantileClamp/quantileClamp.json
+quantileClamp/quantileClamp,Clamp:type=Float64:lower=0.0:upper=255.0,1,quantileClamp/quantileClamp.json
+quantileClamp/quantileClamp,ImHistogramData:firstLeftEdge=0.0:lastLeftEdge=255.0:bins=256,1,quantileClamp/quantileClamp.json
+quantileClamp/quantileClamp,IntensityStretch:type=Float64:inputMinimum=<input>:inputMaximum=<input>:outputMinimum=0.0:outputMaximum=255.0,1,quantileClamp/quantileClamp.json
+quantileClamp/quantileClamp,Quantiles:histogram=<input>:q1=0.01:useQ2=true:q2=0.99:useQ3=false:q3=0.99:useQ4=false:q4=0.25:useQ5=false:q5=0.75,1,quantileClamp/quantileClamp.json
+quantileClamp/quantileClamp,Read:type=Float64:format=Image stack:slabDepth=8:multiscaleIndex=0:datasetIndex=0:timepoint=0:channel=0:maxParallelChunks=0:frameAxis=0,1,quantileClamp/quantileClamp.json
+quantileClamp/quantileClamp,ReadRandom:type=Float64:format=Image stack:depth=24:multiscaleIndex=0:datasetIndex=0:timepoint=0:channel=0:maxParallelChunks=0:frameAxis=0,1,quantileClamp/quantileClamp.json
+quantileClamp/quantileClamp,Write:format=Image stack:depth=1:chunkX=64:chunkY=64:chunkZ=8:maxConcurrentWrites=0:frameAxis=0,1,quantileClamp/quantileClamp.json
+quantileClamp/quantileClamp,intercept,1,quantileClamp/quantileClamp.json
+random/random,AddNormalNoise:type=UInt8:mean=128.0:std=50.0,1,random/random.json
+random/random,Write:format=Image stack:depth=1:chunkX=64:chunkY=64:chunkZ=8:maxConcurrentWrites=0:frameAxis=0,1,random/random.json
+random/random,Zero:type=UInt8:width=64:height=64:depth=64,1,random/random.json
+random/random,intercept,1,random/random.json
+removeSmallObjects/removeSmallObjects,Read:type=UInt8:format=Image stack:slabDepth=8:multiscaleIndex=0:datasetIndex=0:timepoint=0:channel=0:maxParallelChunks=0:frameAxis=0,1,removeSmallObjects/removeSmallObjects.json
+removeSmallObjects/removeSmallObjects,RemoveSmallObjects:maximumVolume=1000:connectivity=TwentySix,1,removeSmallObjects/removeSmallObjects.json
+removeSmallObjects/removeSmallObjects,Write:format=Image stack:depth=1:chunkX=64:chunkY=64:chunkZ=8:maxConcurrentWrites=0:frameAxis=0,1,removeSmallObjects/removeSmallObjects.json
+removeSmallObjects/removeSmallObjects,intercept,1,removeSmallObjects/removeSmallObjects.json
+resample/resample,Cast:sourceType=Float32:targetType=UInt8,1,resample/resample.json
+resample/resample,NormalNoise:type=Float32:width=64:height=64:depth=64:mean=128.0:std=25.0,1,resample/resample.json
+resample/resample,Resample:type=Float32:factorX=1.5:factorY=1.5:factorZ=1.5:interpolation=Linear,1,resample/resample.json
+resample/resample,Write:format=Image stack:depth=1:chunkX=64:chunkY=64:chunkZ=8:maxConcurrentWrites=0:frameAxis=0,1,resample/resample.json
+resample/resample,intercept,1,resample/resample.json
+resampleAffineTrilinearSlices/resampleAffineTrilinearSlices,ReadRange:type=UInt8:format=Image stack:first=0:step=1:last=15:multiscaleIndex=0:datasetIndex=0:timepoint=0:channel=0:maxParallelChunks=0:frameAxis=0,1,resampleAffineTrilinearSlices/resampleAffineTrilinearSlices.json
+resampleAffineTrilinearSlices/resampleAffineTrilinearSlices,ResampleAffineTrilinearSlices:type=Float32:lerp=(fun a b t -> a + (b - a) * t):windowSize=7:inputGeometry={ W = 512; H = 384; D = 16; Origin = TinyLinAlg.v3 0.0 0.0 0.0; Spacing = TinyLinAlg.v3 1.0 1.0 1.0; Direction = { m00 = 1.0; m01 = 0.0; m02 = 0.0; m10 = 0.0; m11 = 1.0; m12 = 0.0; m20 = 0.0; m21 = 0.0; m22 = 1.0 } }:outputGeometry={ W = 128; H = 128; D = 8; Origin = TinyLinAlg.v3 0.0 0.0 0.0; Spacing = TinyLinAlg.v3 1.0 1.0 1.0; Direction = { m00 = 1.0; m01 = 0.0; m02 = 0.0; m10 = 0.0; m11 = 1.0; m12 = 0.0; m20 = 0.0; m21 = 0.0; m22 = 1.0 } }:affine={ A = { m00 = 1.0; m01 = 0.0; m02 = 0.0; m10 = 0.0; m11 = 1.0; m12 = 0.0; m20 = 0.0; m21 = 0.0; m22 = 1.0 }; T = TinyLinAlg.v3 4.0 -2.0 0.0; C = TinyLinAlg.v3 64.0 64.0 4.0 }:background=0.0f,1,resampleAffineTrilinearSlices/resampleAffineTrilinearSlices.json
+resampleAffineTrilinearSlices/resampleAffineTrilinearSlices,WriteChunks:chunkX=16:chunkY=16:chunkZ=16,1,resampleAffineTrilinearSlices/resampleAffineTrilinearSlices.json
+resampleAffineTrilinearSlices/resampleAffineTrilinearSlices,intercept,1,resampleAffineTrilinearSlices/resampleAffineTrilinearSlices.json
+resize/resize,Read:type=UInt8:format=Image stack:slabDepth=8:multiscaleIndex=0:datasetIndex=0:timepoint=0:channel=0:maxParallelChunks=0:frameAxis=0,1,resize/resize.json
+resize/resize,Resize:type=UInt8:width=96:height=96:depth=96:interpolation=Linear,1,resize/resize.json
+resize/resize,Write:format=Image stack:depth=1:chunkX=64:chunkY=64:chunkZ=8:maxConcurrentWrites=0:frameAxis=0,1,resize/resize.json
+resize/resize,intercept,1,resize/resize.json
+saltAndPepperNoise/saltAndPepperNoise,SaltAndPepperNoise:type=UInt8:width=64:height=64:depth=64:probability=0.02,1,saltAndPepperNoise/saltAndPepperNoise.json
+saltAndPepperNoise/saltAndPepperNoise,Write:format=Image stack:depth=1:chunkX=64:chunkY=64:chunkZ=8:maxConcurrentWrites=0:frameAxis=0,1,saltAndPepperNoise/saltAndPepperNoise.json
+saltAndPepperNoise/saltAndPepperNoise,intercept,1,saltAndPepperNoise/saltAndPepperNoise.json
+scalarFunction/scalarFunction,Print,1,scalarFunction/scalarFunction.json
+scalarFunction/scalarFunction,ScalarFunction:function=sqrt:a=<input>,1,scalarFunction/scalarFunction.json
+scalarFunction/scalarFunction,intercept,1,scalarFunction/scalarFunction.json
+serial/serial,EstimateHistogram:type=Float64:slices=16:down=4:estimator=DKWAndHoldout:confidence=0.95,1,serial/serial.json
+serial/serial,intercept,1,serial/serial.json
+serialBiasCorrect/serialBiasCorrect,Read:type=Float32:format=Image stack:slabDepth=1:multiscaleIndex=0:datasetIndex=0:timepoint=0:channel=0:maxParallelChunks=0:frameAxis=0,1,serialBiasCorrect/serialBiasCorrect.json
+serialBiasCorrect/serialBiasCorrect,SerialPolynomialBiasCorrect:type=Float32:order=2,1,serialBiasCorrect/serialBiasCorrect.json
+serialBiasCorrect/serialBiasCorrect,Write:format=Image stack:depth=1:chunkX=64:chunkY=64:chunkZ=8:maxConcurrentWrites=0:frameAxis=0,1,serialBiasCorrect/serialBiasCorrect.json
+serialBiasCorrect/serialBiasCorrect,intercept,1,serialBiasCorrect/serialBiasCorrect.json
+serialTransform/serialTransform,Cast:sourceType=Float32:targetType=UInt8,1,serialTransform/serialTransform.json
+serialTransform/serialTransform,ReadRange:type=Float32:format=Image stack:first=0:step=16:last=64:multiscaleIndex=0:datasetIndex=0:timepoint=0:channel=0:maxParallelChunks=0:frameAxis=0,1,serialTransform/serialTransform.json
+serialTransform/serialTransform,ReadRange:type=Float32:format=Image stack:first=0:step=1:last=31:multiscaleIndex=0:datasetIndex=0:timepoint=0:channel=0:maxParallelChunks=0:frameAxis=0,1,serialTransform/serialTransform.json
+serialTransform/serialTransform,SerialApplyTrans:type=Float32:background=0.0:geometry=<input>,1,serialTransform/serialTransform.json
+serialTransform/serialTransform,SerialEstBoundingBox:type=Float32,1,serialTransform/serialTransform.json
+serialTransform/serialTransform,SerialEstTrans:type=Float32:method=dogAffine:searchRadius=8:scale=1.6:pixelFraction=0.1,1,serialTransform/serialTransform.json
+serialTransform/serialTransform,Write:format=Image stack:depth=1:chunkX=64:chunkY=64:chunkZ=8:maxConcurrentWrites=0:frameAxis=0,1,serialTransform/serialTransform.json
+serialTransform/serialTransform,intercept,1,serialTransform/serialTransform.json
+sharedImbalancedStreamer/sharedImbalancedStreamer,Cast:sourceType=Float64:targetType=Int8,1,sharedImbalancedStreamer/sharedImbalancedStreamer.json
+sharedImbalancedStreamer/sharedImbalancedStreamer,ImageOpImage:operation=*:type=Float64,1,sharedImbalancedStreamer/sharedImbalancedStreamer.json
+sharedImbalancedStreamer/sharedImbalancedStreamer,ImageOpScalar:operation=+:type=Float64:value=1.0,1,sharedImbalancedStreamer/sharedImbalancedStreamer.json
+sharedImbalancedStreamer/sharedImbalancedStreamer,Read:type=Float64:format=Image stack:slabDepth=8:multiscaleIndex=0:datasetIndex=0:timepoint=0:channel=0:maxParallelChunks=0:frameAxis=0,1,sharedImbalancedStreamer/sharedImbalancedStreamer.json
+sharedImbalancedStreamer/sharedImbalancedStreamer,SmoothWGauss:sigma=3.0:outputRegionMode=None:boundaryCondition=None:windowSize=None,1,sharedImbalancedStreamer/sharedImbalancedStreamer.json
+sharedImbalancedStreamer/sharedImbalancedStreamer,Write:format=Image stack:depth=1:chunkX=64:chunkY=64:chunkZ=8:maxConcurrentWrites=0:frameAxis=0,1,sharedImbalancedStreamer/sharedImbalancedStreamer.json
+sharedImbalancedStreamer/sharedImbalancedStreamer,intercept,1,sharedImbalancedStreamer/sharedImbalancedStreamer.json
+sharedStreamer/sharedStreamer,Cast:sourceType=Float64:targetType=Int8,1,sharedStreamer/sharedStreamer.json
+sharedStreamer/sharedStreamer,Cast:sourceType=UInt8:targetType=Float64,1,sharedStreamer/sharedStreamer.json
+sharedStreamer/sharedStreamer,ImageOpImage:operation=*:type=Float64,1,sharedStreamer/sharedStreamer.json
+sharedStreamer/sharedStreamer,ImageOpScalar:operation=+:type=Float64:value=1.0,1,sharedStreamer/sharedStreamer.json
+sharedStreamer/sharedStreamer,ImageOpScalar:operation=+:type=Float64:value=2.0,1,sharedStreamer/sharedStreamer.json
+sharedStreamer/sharedStreamer,Read:type=UInt8:format=Image stack:slabDepth=8:multiscaleIndex=0:datasetIndex=0:timepoint=0:channel=0:maxParallelChunks=0:frameAxis=0,1,sharedStreamer/sharedStreamer.json
+sharedStreamer/sharedStreamer,Write:format=Image stack:depth=1:chunkX=64:chunkY=64:chunkZ=8:maxConcurrentWrites=0:frameAxis=0,1,sharedStreamer/sharedStreamer.json
+sharedStreamer/sharedStreamer,intercept,1,sharedStreamer/sharedStreamer.json
+shotNoise/shotNoise,Cast:sourceType=Float64:targetType=UInt8,1,shotNoise/shotNoise.json
+shotNoise/shotNoise,ShotNoise:type=Float64:width=64:height=64:depth=64:scale=2.0,1,shotNoise/shotNoise.json
+shotNoise/shotNoise,Write:format=Image stack:depth=1:chunkX=64:chunkY=64:chunkZ=8:maxConcurrentWrites=0:frameAxis=0,1,shotNoise/shotNoise.json
+shotNoise/shotNoise,intercept,1,shotNoise/shotNoise.json
+showImage/showImage,ReadRandom:type=UInt8:format=Image stack:depth=1:multiscaleIndex=0:datasetIndex=0:timepoint=0:channel=0:maxParallelChunks=0:frameAxis=0,1,showImage/showImage.json
+showImage/showImage,ShowImage:colorMap=Greys,1,showImage/showImage.json
+showImage/showImage,intercept,1,showImage/showImage.json
+siftKeypoints/siftKeypoints,NormalNoise:type=Float64:width=64:height=64:depth=64:mean=128.0:std=25.0,1,siftKeypoints/siftKeypoints.json
+siftKeypoints/siftKeypoints,SiftKeypoints:type=Float64:sigma0=3.0:scaleFactor=1.6:scaleLevels=4:contrastThreshold=0.1:stride=16,1,siftKeypoints/siftKeypoints.json
+siftKeypoints/siftKeypoints,WritePointSet,1,siftKeypoints/siftKeypoints.json
+siftKeypoints/siftKeypoints,intercept,1,siftKeypoints/siftKeypoints.json
+signedDistanceBand/signedDistanceBand,Cast:sourceType=Float64:targetType=Float32,1,signedDistanceBand/signedDistanceBand.json
+signedDistanceBand/signedDistanceBand,ImageOpScalar:operation=/:type=UInt8:value=255,1,signedDistanceBand/signedDistanceBand.json
+signedDistanceBand/signedDistanceBand,ReadRange:type=UInt8:format=Image stack:first=0:step=1:last=63:multiscaleIndex=0:datasetIndex=0:timepoint=0:channel=0:maxParallelChunks=0:frameAxis=0,1,signedDistanceBand/signedDistanceBand.json
+signedDistanceBand/signedDistanceBand,SignedDistanceBand:bandRadius=8:stride=4,1,signedDistanceBand/signedDistanceBand.json
+signedDistanceBand/signedDistanceBand,Write:format=Image stack:depth=1:chunkX=64:chunkY=64:chunkZ=8:maxConcurrentWrites=0:frameAxis=0,1,signedDistanceBand/signedDistanceBand.json
+signedDistanceBand/signedDistanceBand,intercept,1,signedDistanceBand/signedDistanceBand.json
+speckleNoise/speckleNoise,Cast:sourceType=Float64:targetType=UInt8,1,speckleNoise/speckleNoise.json
+speckleNoise/speckleNoise,SpeckleNoise:type=Float64:width=64:height=64:depth=64:std=0.5,1,speckleNoise/speckleNoise.json
+speckleNoise/speckleNoise,Write:format=Image stack:depth=1:chunkX=64:chunkY=64:chunkZ=8:maxConcurrentWrites=0:frameAxis=0,1,speckleNoise/speckleNoise.json
+speckleNoise/speckleNoise,intercept,1,speckleNoise/speckleNoise.json
+structureTensor/structureTensor,ReadRange:type=Float64:format=Image stack:first=0:step=1:last=31:multiscaleIndex=0:datasetIndex=0:timepoint=0:channel=0:maxParallelChunks=0:frameAxis=0,1,structureTensor/structureTensor.json
+structureTensor/structureTensor,StructureTensor:sigma=3.0:rho=1.0,1,structureTensor/structureTensor.json
+structureTensor/structureTensor,Vector3ToColor:inputMinimum=-1.0:inputMaximum=1.0,1,structureTensor/structureTensor.json
+structureTensor/structureTensor,VectorRange:firstComponent=3:componentCount=3,1,structureTensor/structureTensor.json
+structureTensor/structureTensor,Write:format=Image stack:depth=1:chunkX=64:chunkY=64:chunkZ=8:maxConcurrentWrites=0:frameAxis=0,1,structureTensor/structureTensor.json
+structureTensor/structureTensor,intercept,1,structureTensor/structureTensor.json
+sumProjection/sumProjection,Cast:sourceType=Float64:targetType=UInt8,1,sumProjection/sumProjection.json
+sumProjection/sumProjection,IntensityStretch:type=Float64:inputMinimum=0.0:inputMaximum=255.0:outputMinimum=0.0:outputMaximum=255.0,1,sumProjection/sumProjection.json
+sumProjection/sumProjection,Read:type=UInt8:format=Image stack:slabDepth=1:multiscaleIndex=0:datasetIndex=0:timepoint=0:channel=0:maxParallelChunks=0:frameAxis=0,1,sumProjection/sumProjection.json
+sumProjection/sumProjection,SumProjection:type=UInt8:function=Identity,1,sumProjection/sumProjection.json
+sumProjection/sumProjection,Write:format=Image stack:depth=1:chunkX=64:chunkY=64:chunkZ=8:maxConcurrentWrites=0:frameAxis=0,1,sumProjection/sumProjection.json
+sumProjection/sumProjection,intercept,1,sumProjection/sumProjection.json
+threshold/threshold,AddNormalNoise:type=Float64:mean=128.0:std=50.0,1,threshold/threshold.json
+threshold/threshold,ImageOpScalar:operation=*:type=UInt8:value=255,1,threshold/threshold.json
+threshold/threshold,Threshold:type=Float64:lower=128.0:upper=infinity,1,threshold/threshold.json
+threshold/threshold,Write:format=Image stack:depth=1:chunkX=64:chunkY=64:chunkZ=8:maxConcurrentWrites=0:frameAxis=0,1,threshold/threshold.json
+threshold/threshold,Zero:type=Float64:width=64:height=64:depth=64,1,threshold/threshold.json
+threshold/threshold,intercept,1,threshold/threshold.json
+transition/transition,Cast:sourceType=Float64:targetType=UInt8,1,transition/transition.json
+transition/transition,Read:type=Float64:format=Image stack:slabDepth=1:multiscaleIndex=0:datasetIndex=0:timepoint=0:channel=0:maxParallelChunks=0:frameAxis=0,1,transition/transition.json
+transition/transition,SmoothWGauss:sigma=3.0:outputRegionMode=None:boundaryCondition=None:windowSize=None,1,transition/transition.json
+transition/transition,UnaryImageFunction:function=sqrt,1,transition/transition.json
+transition/transition,Write:format=Image stack:depth=1:chunkX=64:chunkY=64:chunkZ=8:maxConcurrentWrites=0:frameAxis=0,1,transition/transition.json
+transition/transition,intercept,1,transition/transition.json
+transpose/transpose,"PermuteAxes:axes=(0,2,1):tileSize=32",1,transpose/transpose.json
+transpose/transpose,"PermuteAxes:axes=(0,2,1):tileSize=64",1,transpose/transpose.json
+transpose/transpose,Read:type=UInt8:format=Image stack:slabDepth=1:multiscaleIndex=0:datasetIndex=0:timepoint=0:channel=0:maxParallelChunks=0:frameAxis=0,1,transpose/transpose.json
+transpose/transpose,Write:format=Image stack:depth=1:chunkX=64:chunkY=64:chunkZ=8:maxConcurrentWrites=0:frameAxis=0,1,transpose/transpose.json
+transpose/transpose,intercept,1,transpose/transpose.json
+volume/volume,Read:type=UInt8:format=Volume file:slabDepth=1:multiscaleIndex=0:datasetIndex=0:timepoint=0:channel=0:maxParallelChunks=0:frameAxis=0,1,volume/volume.json
+volume/volume,Resize:type=UInt8:width=64:height=64:depth=64:interpolation=Linear,1,volume/volume.json
+volume/volume,Write:format=Image stack:depth=1:chunkX=64:chunkY=64:chunkZ=8:maxConcurrentWrites=0:frameAxis=0,1,volume/volume.json
+volume/volume,intercept,1,volume/volume.json
+whiteTopHat/whiteTopHat,Read:type=UInt8:format=Image stack:slabDepth=8:multiscaleIndex=0:datasetIndex=0:timepoint=0:channel=0:maxParallelChunks=0:frameAxis=0,1,whiteTopHat/whiteTopHat.json
+whiteTopHat/whiteTopHat,WhiteTopHat:type=UInt8:radius=3:windowSize=7,1,whiteTopHat/whiteTopHat.json
+whiteTopHat/whiteTopHat,Write:format=Image stack:depth=1:chunkX=64:chunkY=64:chunkZ=8:maxConcurrentWrites=0:frameAxis=0,1,whiteTopHat/whiteTopHat.json
+whiteTopHat/whiteTopHat,intercept,1,whiteTopHat/whiteTopHat.json
