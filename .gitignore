@@ -12,8 +12,7 @@
 .fake
 
 /samples/tmp
-samples/data
+/samples/data
 *.tif
 *.tiff
 *.mha
-/tmp2
