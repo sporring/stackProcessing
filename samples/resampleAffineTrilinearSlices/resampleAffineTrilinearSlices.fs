@@ -30,18 +30,18 @@ let main args =
           m20 = 0.0; m21 = 0.0; m22 = 1.0 }
 
     let inputGeometry : StackAffineResampler.ImageGeom =
-        { W = 512; H = 384; D = 16
+        { W = 64; H = 64; D = 16
           Origin = v3 0.0 0.0 0.0
           Spacing = v3 1.0 1.0 1.0
           Direction = identity }
 
     let outputGeometry =
-        { inputGeometry with W = 128; H = 128; D = 8 }
+        { inputGeometry with D = 8 }
 
     let affine =
         { A = identity
           T = v3 4.0 -2.0 0.0
-          C = v3 64.0 64.0 4.0 }
+          C = v3 32.0 32.0 4.0 }
 
     let lerp a b t = a + (b - a) * t
 

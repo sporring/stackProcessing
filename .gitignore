@@ -16,3 +16,4 @@
 *.tif
 *.tiff
 *.mha
+/samples/resampleAffineTrilinearSlices/tmp

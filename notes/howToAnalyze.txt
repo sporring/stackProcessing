@@ -16,7 +16,7 @@ Probe analyzes the sample measurements, freezes reliable coefficients, emits
 designed calibration probes, runs those probes, repeats the analysis, and writes
 the final sample estimates.
 
-dotnet run --project src/StackProcessing.Probe/StackProcessing.Probe.fsproj -- calibrate --repeat 3 -j 6
+dotnet run --project src/StackProcessing.Probe/StackProcessing.Probe.fsproj -- calibrate --iterations 5 --repeat 3 -j 6
 
 ## Main outputs
 
@@ -31,3 +31,6 @@ tmp/analysis/sampleEstimates.csv
 tmp/analysis/greedyCoverage.csv
 tmp/analysis/probeTargets.csv
 tmp/analysis/probePlan.csv
+
+dotnet run --project src/StackProcessing.RunSamples/RunSamples.fsproj -- --json --repeat 2 -j 6
+dotnet run --project src/StackProcessing.Probe/StackProcessing.Probe.fsproj -- calibrate --iterations 5 --repeat 2 -j 6

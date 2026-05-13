@@ -1236,6 +1236,25 @@ let private savedEdge fromNode toNode =
 let private outputPathForProbe name =
     Path.Combine("outputs", name).Replace('\\', '/')
 
+let private repositoryRoot () =
+    let cwd = Directory.GetCurrentDirectory()
+
+    if File.Exists(Path.Combine(cwd, "StackProcessing.sln")) then
+        cwd
+    else
+        let rec walk (dir: DirectoryInfo) =
+            if isNull dir then
+                cwd
+            elif File.Exists(Path.Combine(dir.FullName, "StackProcessing.sln")) then
+                dir.FullName
+            else
+                walk dir.Parent
+
+        walk (DirectoryInfo cwd)
+
+let private sampleDataPath name =
+    Path.Combine(repositoryRoot (), "samples", "data", name).Replace('\\', '/')
+
 let private graphForLinearPipeline name nodes =
     let spacedNodes =
         nodes
@@ -1289,7 +1308,7 @@ let private readNode pixelType =
     [ "availableMemory", string availableMemory + "UL"
       "type", pixelType
       "format", "Image stack"
-      "input", "../../data/rotatingBoxes"
+      "input", sampleDataPath "rotatingBoxes"
       "suffix", ".tiff" ]
 
 let private castNode sourceType targetType =

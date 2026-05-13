@@ -713,8 +713,12 @@ let private rangeIndices (first: uint) step (last: uint) depth =
         [||]
     else
         let maxIndex = depth - 1
-        let startIndex = min maxIndex (int first)
-        let lastIndex = min maxIndex (int last)
+        let clampIndex value =
+            let value64 = int64 value
+            if value64 > int64 maxIndex then maxIndex else int value64
+
+        let startIndex = clampIndex first
+        let lastIndex = clampIndex last
 
         if step > 0 && startIndex > lastIndex then
             [||]

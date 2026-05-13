@@ -854,14 +854,12 @@ let changeLabel (fromLabel: double) (toLabel: double) : Image<'T> -> Image<'T> =
         (fun f x -> f.Execute(x))
 
 /// Compute signed Maurer distance map (positive outside, negative inside)
-// ApproximateSignedDistanceMapImageFilter has an error. These cast an exception: 
-//   [[1uy;0uy;1uy;0uy;1uy;0uy]] and [[1uy;0uy;1uy;0uy;0uy;0uy]]
-// but these don't
-//   [[1uy;0uy;1uy;1uy;1uy;0uy]] and [[1uy;0uy;0uy;0uy;1uy;0uy]]
 let signedDistanceMap (inside: uint8) (outside: uint8) (img: Image<uint8>) : Image<float> =
-    use f = new itk.simple.ApproximateSignedDistanceMapImageFilter()
-    f.SetInsideValue(float inside)
-    f.SetOutsideValue(float outside)
+    ignore inside
+    use f = new itk.simple.SignedMaurerDistanceMapImageFilter()
+    f.SetBackgroundValue(float outside)
+    f.SetSquaredDistance(false)
+    f.SetInsideIsPositive(false)
     Image<float>.ofSimpleITK(f.Execute(img.toSimpleITK()),"signedDistanceMap",img.index)
 
 let bandSignedDistanceMap (bandRadius: uint) (img: Image<uint8>) : Image<float> =
