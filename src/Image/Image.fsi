@@ -170,14 +170,16 @@ type Image<'T when 'T: equality> =
       ofArray3DComplex: arr: float array3d * ?name: string ->
                           Image<System.Numerics.Complex>
     static member
-      ofArray3DVector: arr: 'S array3d * ?name: string -> Image<'S list>
-                         when 'S: equality
+      ofArray3DVector: arr: 'S array3d * ?name: string * ?index: int ->
+                         Image<'S list> when 'S: equality
     static member
-      ofComplexArray2D: arr: System.Numerics.Complex array2d * ?name: string ->
-                          Image<System.Numerics.Complex>
+      ofArray4D: arr: 'T array4d * ?name: string * ?index: int -> Image<'T>
     static member
-      ofComplexArray3D: arr: System.Numerics.Complex array3d * ?name: string ->
-                          Image<System.Numerics.Complex>
+      ofComplexArray2D: arr: System.Numerics.Complex array2d * ?name: string *
+                        ?index: int -> Image<System.Numerics.Complex>
+    static member
+      ofComplexArray3D: arr: System.Numerics.Complex array3d * ?name: string *
+                        ?index: int -> Image<System.Numerics.Complex>
     static member
       ofFile: filename: string * ?optionalName: string * ?optionalIndex: int ->
                 Image<'T>
@@ -232,6 +234,7 @@ type Image<'T when 'T: equality> =
     member incRefCount: unit -> unit
     member toArray2D: unit -> 'T array2d
     member toArray3D: unit -> 'T array3d
+    member toArray4D: unit -> 'T array4d
     member toComplex: unit -> Image<System.Numerics.Complex>
     member toComplexArray2D: unit -> System.Numerics.Complex array2d
     member toComplexArray3D: unit -> System.Numerics.Complex array3d
@@ -266,6 +269,8 @@ type Image<'T when 'T: equality> =
     member Item: i0: int * i1: int -> 'T with set
     member Item: i0: int * i1: int * i2: int -> 'T with get
     member Item: i0: int * i1: int * i2: int -> 'T with set
+    member Item: i0: int * i1: int * i2: int * i3: int -> 'T with get
+    member Item: i0: int * i1: int * i2: int * i3: int -> 'T with set
     member Name: string
     member index: int with get, set
 val Re: img: Image<System.Numerics.Complex> -> Image<float>
@@ -645,6 +650,7 @@ type ImageStats =
 val computeStats: img: Image.Image<'T> -> ImageStats when 'T: equality
 val addComputeStats: s1: ImageStats -> s2: ImageStats -> ImageStats
 val unique: img: Image.Image<'T> -> 'T list when 'T: comparison
+val private imageValues: img: Image.Image<'T> -> 'T seq when 'T: equality
 val private valuesFromImages:
   bins: uint32 -> images: Image.Image<'T> list -> operation: 'a -> float list
     when 'T: equality
@@ -707,6 +713,14 @@ val threshold:
     when 'T: equality
 val toVectorImage:
   images: Image.Image<'T> list -> Image.Image<'T list> when 'T: equality
+val private composeVectorAndRelease:
+  components: Image.Image<'T> list -> Image.Image<'T list> when 'T: equality
+val private mapScalarComponentsAndCompose:
+  f: (Image.Image<float> -> Image.Image<float>) ->
+    img: Image.Image<float list> -> Image.Image<float list>
+val private scalarMapArray:
+  name: string ->
+    f: (float -> float) -> img: Image.Image<float> -> Image.Image<float>
 val vectorElement:
   componentId: uint -> img: Image.Image<'T list> -> Image.Image<'T>
     when 'T: equality
@@ -745,6 +759,9 @@ val smoothVectorElements3D:
   sigma: float -> img: Image.Image<float list> -> Image.Image<float list>
 val structureTensorEigenImages:
   tensor: Image.Image<float list> -> Image.Image<float list> list
+val private tensorEigenMatrixValues:
+  xx: float ->
+    xy: float -> xz: float -> yy: float -> yz: float -> zz: float -> float list
 val structureTensorEigenMatrix:
   tensor: Image.Image<float list> -> Image.Image<float list>
 val stack: images: Image.Image<'T> list -> Image.Image<'T> when 'T: equality
@@ -775,6 +792,17 @@ val permuteAxes:
 val FFTXY:
   image: Image.Image<'T> -> Image.Image<System.Numerics.Complex>
     when 'T: equality
+val private dftLine:
+  inverse: bool ->
+    line: System.Numerics.Complex array -> System.Numerics.Complex array
+val private directionalDftComplex2D:
+  dir: uint32 ->
+    inverse: bool ->
+    input: System.Numerics.Complex array2d -> System.Numerics.Complex array2d
+val private directionalDftComplex3D:
+  dir: uint32 ->
+    inverse: bool ->
+    input: System.Numerics.Complex array3d -> System.Numerics.Complex array3d
 val directionalFFT:
   dir: uint -> image: Image.Image<'T> -> Image.Image<System.Numerics.Complex>
     when 'T: equality
@@ -784,6 +812,10 @@ val directionalFFTComplex:
     image: Image.Image<System.Numerics.Complex> ->
     Image.Image<System.Numerics.Complex>
 val inverseFFTXY:
+  image: Image.Image<System.Numerics.Complex> ->
+    Image.Image<System.Numerics.Complex>
+val realPart: image: Image.Image<System.Numerics.Complex> -> Image.Image<float>
+val inverseFFTXYReal:
   image: Image.Image<System.Numerics.Complex> -> Image.Image<float>
 val shiftFFT:
   image: Image.Image<System.Numerics.Complex> ->

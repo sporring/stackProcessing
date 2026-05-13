@@ -688,20 +688,61 @@ type Image<'T when 'T : equality>(sz: uint list, ?optionalNumberComponents: uint
             img |> Image.iteri (fun idxLst _ -> img.Set idxLst arr[int idxLst[0],int idxLst[1],int idxLst[2]])
             img
 
-    static member ofArray3DVector (arr: 'S[,,], ?name:string) : Image<'S list> =
+    static member ofArray4D (arr: 'T[,,,], ?name:string, ?index:int) : Image<'T> =
         let _name = defaultArg name ""
+        let _index = defaultArg index 0
+        let sz = [arr.GetLength(0); arr.GetLength(1); arr.GetLength(2); arr.GetLength(3)] |> List.map uint
+        if isScalarImportSupported<'T> then
+            let width = arr.GetLength(0)
+            let height = arr.GetLength(1)
+            let depth = arr.GetLength(2)
+            let length = arr.GetLength(3)
+            // SimpleITK's ImportImageFilter only supports 2D/3D buffers here, so import 3D chunks and join them into a hidden 4D image.
+            use filter = new itk.simple.JoinSeriesImageFilter()
+            filter.SetOrigin(0.0) |> ignore
+            filter.SetSpacing(1.0) |> ignore
+            use v = new itk.simple.VectorOfImage()
+            let chunks = ResizeArray<itk.simple.Image>()
+            try
+                for t in 0 .. length - 1 do
+                    let pixels = Array.zeroCreate<'T> (width * height * depth)
+                    let mutable offset = 0
+                    for z in 0 .. depth - 1 do
+                        for y in 0 .. height - 1 do
+                            for x in 0 .. width - 1 do
+                                pixels[offset] <- arr[x, y, z, t]
+                                offset <- offset + 1
+                    let chunk = importScalarImage [ uint width; uint height; uint depth ] pixels
+                    chunks.Add chunk
+                    v.Add chunk
+
+                Image<'T>.ofSimpleITK(filter.Execute(v), _name, _index)
+            finally
+                chunks |> Seq.iter (fun chunk -> chunk.Dispose())
+        else
+            let img = new Image<'T>(sz,1u,_name,_index)
+            img |> Image.iteri (fun idxLst _ -> img.Set idxLst arr[int idxLst[0],int idxLst[1],int idxLst[2],int idxLst[3]])
+            img
+
+    static member ofArray3DVector (arr: 'S[,,], ?name:string, ?index:int) : Image<'S list> =
+        let _name = defaultArg name ""
+        let _index = defaultArg index 0
         let w = arr.GetLength(0)
         let h = arr.GetLength(1)
         let c = arr.GetLength(2)
         let componentCount = max 2 c
-        let img = new Image<'S list>([uint w; uint h], uint componentCount, _name)
-        for i0 in 0 .. w - 1 do
-            for i1 in 0 .. h - 1 do
-                let comps =
-                    [ for k in 0 .. componentCount - 1 ->
-                          if k < c then arr[i0, i1, k] else Unchecked.defaultof<'S> ]
-                img.Set [uint i0; uint i1] comps
-        img
+        let components =
+            [ for k in 0 .. componentCount - 1 ->
+                Array2D.init w h (fun i0 i1 ->
+                    if k < c then arr[i0, i1, k] else Unchecked.defaultof<'S>)
+                |> fun values -> Image<'S>.ofArray2D(values, $"{_name}.Component{k}", _index + k) ]
+        use filter = new itk.simple.ComposeImageFilter()
+        use v = new itk.simple.VectorOfImage()
+        try
+            components |> List.iter (fun image -> v.Add(image.toSimpleITK()))
+            Image<'S list>.ofSimpleITK(filter.Execute(v), _name, _index)
+        finally
+            components |> List.iter (fun image -> image.decRefCount())
 
     static member ofArray3DComplex (arr: float[,,], ?name:string) : Image<System.Numerics.Complex> =
         let _name = defaultArg name ""
@@ -709,30 +750,28 @@ type Image<'T when 'T : equality>(sz: uint list, ?optionalNumberComponents: uint
         let h = arr.GetLength(1)
         let c = arr.GetLength(2)
         if c <> 2 then invalidArg "arr" "ofArray3DComplex expects last dimension size 2 (real, imag)."
-        let img = new Image<System.Numerics.Complex>([uint w; uint h], 1u, _name)
-        for i0 in 0 .. w - 1 do
-            for i1 in 0 .. h - 1 do
-                let cplx = System.Numerics.Complex(arr[i0, i1, 0], arr[i0, i1, 1])
-                img.Set [uint i0; uint i1] cplx
-        img
+        Array2D.init w h (fun i0 i1 -> System.Numerics.Complex(arr[i0, i1, 0], arr[i0, i1, 1]))
+        |> fun values -> Image<System.Numerics.Complex>.ofComplexArray2D(values, _name)
 
-    static member ofComplexArray2D (arr: System.Numerics.Complex[,], ?name:string) : Image<System.Numerics.Complex> =
+    static member ofComplexArray2D (arr: System.Numerics.Complex[,], ?name:string, ?index:int) : Image<System.Numerics.Complex> =
         let _name = defaultArg name "ofComplexArray2D"
+        let _index = defaultArg index 0
         let real = Array2D.init (arr.GetLength 0) (arr.GetLength 1) (fun x y -> arr[x, y].Real)
         let imag = Array2D.init (arr.GetLength 0) (arr.GetLength 1) (fun x y -> arr[x, y].Imaginary)
-        let realImg = Image<float>.ofArray2D(real, $"{_name}.Re")
-        let imagImg = Image<float>.ofArray2D(imag, $"{_name}.Im")
+        let realImg = Image<float>.ofArray2D(real, $"{_name}.Re", _index)
+        let imagImg = Image<float>.ofArray2D(imag, $"{_name}.Im", _index)
         let result = Image<float>.ofImagePairToComplex realImg imagImg
         realImg.decRefCount()
         imagImg.decRefCount()
         result
 
-    static member ofComplexArray3D (arr: System.Numerics.Complex[,,], ?name:string) : Image<System.Numerics.Complex> =
+    static member ofComplexArray3D (arr: System.Numerics.Complex[,,], ?name:string, ?index:int) : Image<System.Numerics.Complex> =
         let _name = defaultArg name "ofComplexArray3D"
+        let _index = defaultArg index 0
         let real = Array3D.init (arr.GetLength 0) (arr.GetLength 1) (arr.GetLength 2) (fun x y z -> arr[x, y, z].Real)
         let imag = Array3D.init (arr.GetLength 0) (arr.GetLength 1) (arr.GetLength 2) (fun x y z -> arr[x, y, z].Imaginary)
-        let realImg = Image<float>.ofArray3D(real, $"{_name}.Re")
-        let imagImg = Image<float>.ofArray3D(imag, $"{_name}.Im")
+        let realImg = Image<float>.ofArray3D(real, $"{_name}.Re", _index)
+        let imagImg = Image<float>.ofArray3D(imag, $"{_name}.Im", _index)
         let result = Image<float>.ofImagePairToComplex realImg imagImg
         realImg.decRefCount()
         imagImg.decRefCount()
@@ -767,11 +806,19 @@ type Image<'T when 'T : equality>(sz: uint list, ?optionalNumberComponents: uint
     static member toArray3DVector<'S when 'S: equality> (img: Image<'S list>) : 'S[,,] =
         if img.GetDimensions() <> 2u then
             failwith $"toArray3DVector: image must be 2D, got {img.GetDimensions()}D"
-        let sz = img.GetSize() |> List.map int
-        let comps = img.GetNumberOfComponentsPerPixel() |> int
-        Array3D.init sz[0] sz[1] comps (fun i0 i1 k ->
-            let lst = img.Get([uint i0; uint i1])
-            lst[k])
+        use filter = new itk.simple.VectorIndexSelectionCastImageFilter()
+        let components =
+            [ for i in 0 .. int (img.GetNumberOfComponentsPerPixel()) - 1 ->
+                filter.SetIndex(uint i)
+                let scalarItk = filter.Execute(img.toSimpleITK())
+                Image<'S>.ofSimpleITK(scalarItk, $"toArray3DVector.Component{i}", img.index + i) ]
+        try
+            let values = components |> List.map (fun image -> image.toArray2D())
+            let width = values.Head.GetLength(0)
+            let height = values.Head.GetLength(1)
+            Array3D.init width height values.Length (fun i0 i1 k -> values[k][i0, i1])
+        finally
+            components |> List.iter (fun image -> image.decRefCount())
 
     member this.toArray3D (): 'T[,,] =
         let sz = this.GetSize() |> List.map int
@@ -783,6 +830,18 @@ type Image<'T when 'T : equality>(sz: uint list, ?optionalNumberComponents: uint
             Array3D.init width height depth (fun x y z -> pixels[(z * height + y) * width + x])
         else
             Array3D.init sz[0] sz[1] sz[2] (fun i0 i1 i2 -> this.Get([uint i0; uint i1; uint i2]))
+
+    member this.toArray4D (): 'T[,,,] =
+        let sz = this.GetSize() |> List.map int
+        if this.GetDimensions() = 4u && isScalarImportSupported<'T> && this.Image.GetPixelID() = fromType<'T> then
+            let width = sz[0]
+            let height = sz[1]
+            let depth = sz[2]
+            let length = sz[3]
+            let pixels = copyScalarPixels<'T> this.Image (width * height * depth * length)
+            Array4D.init width height depth length (fun x y z t -> pixels[((t * depth + z) * height + y) * width + x])
+        else
+            Array4D.init sz[0] sz[1] sz[2] sz[3] (fun i0 i1 i2 i3 -> this.Get([uint i0; uint i1; uint i2; uint i3]))
 
     member this.toComplexArray3D () : System.Numerics.Complex[,,] =
         if typeof<'T> <> typeof<System.Numerics.Complex> then
@@ -813,35 +872,17 @@ type Image<'T when 'T : equality>(sz: uint list, ?optionalNumberComponents: uint
                 if img.GetSize() <> expectedSize then
                     invalidArg "images" $"Image dimensions must match: {img.GetSize()} vs {expectedSize}.")
 
-            let result = new Image<'S list>(expectedSize, uint images.Length, "ofImageList", first.index)
-            let rec indices dimensions =
-                match dimensions with
-                | [] -> Seq.singleton []
-                | n :: rest ->
-                    seq {
-                        for i in 0u .. n - 1u do
-                            for suffix in indices rest do
-                                yield i :: suffix
-                    }
-
-            expectedSize
-            |> indices
-            |> Seq.iter (fun idx ->
-                images
-                |> List.map (fun img -> img.Get idx)
-                |> result.Set idx)
-            result
+            use filter = new itk.simple.ComposeImageFilter()
+            use v = new itk.simple.VectorOfImage()
+            images |> List.iter (fun image -> v.Add(image.toSimpleITK()))
+            Image<'S list>.ofSimpleITK(filter.Execute(v), "ofImageList", first.index)
 
     static member ofImagePairToComplex (realImg: Image<float>) (imagImg: Image<float>) : Image<System.Numerics.Complex> =
         if realImg.GetSize() <> imagImg.GetSize() then
             invalidArg "imagImg" $"Image dimensions must match: {realImg.GetSize()} vs {imagImg.GetSize()}"
 
-        let result = new Image<System.Numerics.Complex>(realImg.GetSize(), 1u, "ofImagePairToComplex", realImg.index)
-        realImg.GetSize()
-        |> flatIndices
-        |> Seq.iter (fun idx ->
-            result.Set idx (System.Numerics.Complex(realImg.Get idx, imagImg.Get idx)))
-        result
+        use filter = new itk.simple.RealAndImaginaryToComplexImageFilter()
+        Image<System.Numerics.Complex>.ofSimpleITK(filter.Execute(realImg.toSimpleITK(), imagImg.toSimpleITK()), "ofImagePairToComplex", realImg.index)
 
     member this.toImageList () : Image<'S> list =
         use filter = new itk.simple.VectorIndexSelectionCastImageFilter()
@@ -952,76 +993,181 @@ type Image<'T when 'T : equality>(sz: uint list, ?optionalNumberComponents: uint
 
     // Collection type
     static member map (f:'T->'T) (im1: Image<'T>) : Image<'T> =
-        let sz = im1.GetSize()
-        let comp = im1.GetNumberOfComponentsPerPixel()
-        let im = new Image<'T>(sz,comp)
-        sz
-        |> flatIndices
-        |> Seq.iter (fun idx -> im1.Get idx |> f |> (im.Set idx))
-        im
+        match im1.GetDimensions() with
+        | 2u ->
+            im1.toArray2D()
+            |> Array2D.map f
+            |> fun values -> Image<'T>.ofArray2D(values, "map", im1.index)
+        | 3u ->
+            im1.toArray3D()
+            |> Array3D.map f
+            |> fun values -> Image<'T>.ofArray3D(values, "map", im1.index)
+        | 4u ->
+            let values = im1.toArray4D()
+            Array4D.init (values.GetLength 0) (values.GetLength 1) (values.GetLength 2) (values.GetLength 3) (fun i0 i1 i2 i3 ->
+                f values[i0, i1, i2, i3])
+            |> fun output -> Image<'T>.ofArray4D(output, "map", im1.index)
+        | _ ->
+            let sz = im1.GetSize()
+            let comp = im1.GetNumberOfComponentsPerPixel()
+            let im = new Image<'T>(sz,comp)
+            sz
+            |> flatIndices
+            |> Seq.iter (fun idx -> im1.Get idx |> f |> (im.Set idx))
+            im
 
     static member mapi (f:uint list->'T->'T) (im1: Image<'T>) : Image<'T> =
-        let sz = im1.GetSize()
-        let comp = im1.GetNumberOfComponentsPerPixel()
-        let im = new Image<'T>(sz,comp)
-        sz
-        |> flatIndices
-        |> Seq.iter (fun idx -> im1.Get idx |> f idx |> (im.Set idx))
-        im
+        match im1.GetDimensions() with
+        | 2u ->
+            let values = im1.toArray2D()
+            Array2D.init (values.GetLength 0) (values.GetLength 1) (fun i0 i1 ->
+                f [ uint i0; uint i1 ] values[i0, i1])
+            |> fun output -> Image<'T>.ofArray2D(output, "mapi", im1.index)
+        | 3u ->
+            let values = im1.toArray3D()
+            Array3D.init (values.GetLength 0) (values.GetLength 1) (values.GetLength 2) (fun i0 i1 i2 ->
+                f [ uint i0; uint i1; uint i2 ] values[i0, i1, i2])
+            |> fun output -> Image<'T>.ofArray3D(output, "mapi", im1.index)
+        | 4u ->
+            let values = im1.toArray4D()
+            Array4D.init (values.GetLength 0) (values.GetLength 1) (values.GetLength 2) (values.GetLength 3) (fun i0 i1 i2 i3 ->
+                f [ uint i0; uint i1; uint i2; uint i3 ] values[i0, i1, i2, i3])
+            |> fun output -> Image<'T>.ofArray4D(output, "mapi", im1.index)
+        | _ ->
+            let sz = im1.GetSize()
+            let comp = im1.GetNumberOfComponentsPerPixel()
+            let im = new Image<'T>(sz,comp)
+            sz
+            |> flatIndices
+            |> Seq.iter (fun idx -> im1.Get idx |> f idx |> (im.Set idx))
+            im
 
     static member iter (f:'T->unit) (im1: Image<'T>) : unit = 
-        let sz = im1.GetSize()
-        sz
-        |> flatIndices
-        |> Seq.iter (fun idx -> im1.Get idx |> f)
+        match im1.GetDimensions() with
+        | 2u -> im1.toArray2D() |> Seq.cast<'T> |> Seq.iter f
+        | 3u -> im1.toArray3D() |> Seq.cast<'T> |> Seq.iter f
+        | 4u -> im1.toArray4D() |> Seq.cast<'T> |> Seq.iter f
+        | _ ->
+            let sz = im1.GetSize()
+            sz
+            |> flatIndices
+            |> Seq.iter (fun idx -> im1.Get idx |> f)
 
     static member iteri (f:uint list->'T->unit) (im1: Image<'T>) : unit = 
-        let sz = im1.GetSize()
-        sz
-        |> flatIndices
-        |> Seq.iter (fun idx -> im1.Get idx |> f idx)
+        match im1.GetDimensions() with
+        | 2u ->
+            let values = im1.toArray2D()
+            for i0 in 0 .. values.GetLength 0 - 1 do
+                for i1 in 0 .. values.GetLength 1 - 1 do
+                    f [ uint i0; uint i1 ] values[i0, i1]
+        | 3u ->
+            let values = im1.toArray3D()
+            for i0 in 0 .. values.GetLength 0 - 1 do
+                for i1 in 0 .. values.GetLength 1 - 1 do
+                    for i2 in 0 .. values.GetLength 2 - 1 do
+                        f [ uint i0; uint i1; uint i2 ] values[i0, i1, i2]
+        | 4u ->
+            let values = im1.toArray4D()
+            for i0 in 0 .. values.GetLength 0 - 1 do
+                for i1 in 0 .. values.GetLength 1 - 1 do
+                    for i2 in 0 .. values.GetLength 2 - 1 do
+                        for i3 in 0 .. values.GetLength 3 - 1 do
+                            f [ uint i0; uint i1; uint i2; uint i3 ] values[i0, i1, i2, i3]
+        | _ ->
+            let sz = im1.GetSize()
+            sz
+            |> flatIndices
+            |> Seq.iter (fun idx -> im1.Get idx |> f idx)
 
     static member fold (f:'S->'T->'S) (acc0: 'S) (im1: Image<'T>) : 'S = 
-        let sz = im1.GetSize()
-        sz
-        |> flatIndices
-        |> Seq.fold (fun acc idx -> im1.Get idx |> f acc) acc0
+        match im1.GetDimensions() with
+        | 2u -> im1.toArray2D() |> Seq.cast<'T> |> Seq.fold f acc0
+        | 3u -> im1.toArray3D() |> Seq.cast<'T> |> Seq.fold f acc0
+        | 4u -> im1.toArray4D() |> Seq.cast<'T> |> Seq.fold f acc0
+        | _ ->
+            let sz = im1.GetSize()
+            sz
+            |> flatIndices
+            |> Seq.fold (fun acc idx -> im1.Get idx |> f acc) acc0
 
     static member fold2 (f:'S->'T->'T->'S) (acc0: 'S) (im1: Image<'T>) (im2: Image<'T>) : 'S = 
         let sz1 = im1.GetSize()
         let sz2 = im2.GetSize()
         if List.exists2 (<>) sz1 sz2 then failwith "[Image.fold2] cannot fold over 2 images of unequal sizes"
-        sz1
-        |> flatIndices
-        |> Seq.fold (fun acc idx -> (im1.Get idx, im2.Get idx) ||> f acc) acc0
+        match im1.GetDimensions(), im2.GetDimensions() with
+        | 2u, 2u ->
+            let v1 = im1.toArray2D()
+            let v2 = im2.toArray2D()
+            let mutable acc = acc0
+            for i0 in 0 .. v1.GetLength 0 - 1 do
+                for i1 in 0 .. v1.GetLength 1 - 1 do
+                    acc <- f acc v1[i0, i1] v2[i0, i1]
+            acc
+        | 3u, 3u ->
+            let v1 = im1.toArray3D()
+            let v2 = im2.toArray3D()
+            let mutable acc = acc0
+            for i0 in 0 .. v1.GetLength 0 - 1 do
+                for i1 in 0 .. v1.GetLength 1 - 1 do
+                    for i2 in 0 .. v1.GetLength 2 - 1 do
+                        acc <- f acc v1[i0, i1, i2] v2[i0, i1, i2]
+            acc
+        | 4u, 4u ->
+            let v1 = im1.toArray4D()
+            let v2 = im2.toArray4D()
+            let mutable acc = acc0
+            for i0 in 0 .. v1.GetLength 0 - 1 do
+                for i1 in 0 .. v1.GetLength 1 - 1 do
+                    for i2 in 0 .. v1.GetLength 2 - 1 do
+                        for i3 in 0 .. v1.GetLength 3 - 1 do
+                            acc <- f acc v1[i0, i1, i2, i3] v2[i0, i1, i2, i3]
+            acc
+        | _ ->
+            sz1
+            |> flatIndices
+            |> Seq.fold (fun acc idx -> (im1.Get idx, im2.Get idx) ||> f acc) acc0
 
     static member foldi (f:uint list->'S->'T->'S) (acc0: 'S) (im1: Image<'T>) : 'S =
-        let sz = im1.GetSize()
-        sz
-        |> flatIndices
-        |> Seq.fold (fun acc idx -> im1.Get idx |> f idx acc) acc0
+        match im1.GetDimensions() with
+        | 2u ->
+            let values = im1.toArray2D()
+            let mutable acc = acc0
+            for i0 in 0 .. values.GetLength 0 - 1 do
+                for i1 in 0 .. values.GetLength 1 - 1 do
+                    acc <- f [ uint i0; uint i1 ] acc values[i0, i1]
+            acc
+        | 3u ->
+            let values = im1.toArray3D()
+            let mutable acc = acc0
+            for i0 in 0 .. values.GetLength 0 - 1 do
+                for i1 in 0 .. values.GetLength 1 - 1 do
+                    for i2 in 0 .. values.GetLength 2 - 1 do
+                        acc <- f [ uint i0; uint i1; uint i2 ] acc values[i0, i1, i2]
+            acc
+        | 4u ->
+            let values = im1.toArray4D()
+            let mutable acc = acc0
+            for i0 in 0 .. values.GetLength 0 - 1 do
+                for i1 in 0 .. values.GetLength 1 - 1 do
+                    for i2 in 0 .. values.GetLength 2 - 1 do
+                        for i3 in 0 .. values.GetLength 3 - 1 do
+                            acc <- f [ uint i0; uint i1; uint i2; uint i3 ] acc values[i0, i1, i2, i3]
+            acc
+        | _ ->
+            let sz = im1.GetSize()
+            sz
+            |> flatIndices
+            |> Seq.fold (fun acc idx -> im1.Get idx |> f idx acc) acc0
 
     static member zip (imLst: Image<'T> list) : Image<'T list> =
         let nComp = imLst.Length
         if nComp < 2 then 
             failwith "can't zip list of less than 2 elements"
         else
-            let sz = imLst[0].GetSize()
-            let result = new Image<'T list>(sz,uint nComp)
-            sz
-            |> flatIndices
-            |> Seq.iter (fun idxLst -> 
-                List.map (fun (im: Image<'T>) -> im.Get idxLst) imLst
-                |> result.Set idxLst)
-            result
+            Image<'T>.ofImageList imLst
 
     static member unzip (im: Image<'T list>) : Image<'T> list =
-        let sz = im.GetSize()
-        let comp = im.GetNumberOfComponentsPerPixel()
-        let imLst = List.init (int comp) (fun i -> new Image<'T>(sz,1u))
-        im |> Image.iteri (fun idxLst vLst ->
-            List.iteri (fun i v -> imLst[i].Set idxLst v) vLst )
-        imLst
+        im.toImageList()
 
     member this.Get (coords: uint list) : 'T =
         let u = coords |> toVectorUInt32
@@ -1109,6 +1255,11 @@ type Image<'T when 'T : equality>(sz: uint list, ?optionalNumberComponents: uint
             this.Get([ uint i0; uint i1; uint i2 ])
         and set(i0: int, i1: int, i2: int) (value: 'T) : unit =
             this.Set [ uint i0; uint i1; uint i2 ] value
+    member this.Item
+        with get(i0: int, i1: int, i2: int, i3: int) : 'T =
+            this.Get([ uint i0; uint i1; uint i2; uint i3 ])
+        and set(i0: int, i1: int, i2: int, i3: int) (value: 'T) : unit =
+            this.Set [ uint i0; uint i1; uint i2; uint i3 ] value
     member this.forAll (p: 'T -> bool) : bool =
         this |> Image.fold (fun acc elm -> acc && p elm) true
 
@@ -1123,8 +1274,10 @@ type Image<'T when 'T : equality>(sz: uint list, ?optionalNumberComponents: uint
             hash (this.toArray2D())
         elif dim = 3u then
             hash (this.toArray3D())
+        elif dim = 4u then
+            hash (this.toArray4D())
         else
-            failwith "No hashcode defined for images with dimensions less than 2 or greater than 3"
+            failwith "No hashcode defined for images with dimensions less than 2 or greater than 4"
 
     member this.CompareTo(other: Image<'T>) =
         let diff : Image<'T> = this - other

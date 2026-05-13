@@ -147,8 +147,9 @@ let complexSuite =
         expectComplexClose zTransformed.[0,0,1] Complex.Zero "z FFT should cancel equal z samples at Nyquist frequency."
         Expect.floatClose Accuracy.high zRecovered.[1,1,0].Real spectrum.[1,1].Real "inverse directionalFFTComplex should recover real values."
         Expect.floatClose Accuracy.high zRecovered.[1,1,0].Imaginary spectrum.[1,1].Imaginary "inverse directionalFFTComplex should recover imaginary values."
-        Expect.floatClose Accuracy.high xyRecovered.[0,0] 1.0 "inverseFFTXY should recover the original impulse."
-        Expect.floatClose Accuracy.high xyRecovered.[1,0] 0.0 "inverseFFTXY should recover zero pixels."
+        Expect.floatClose Accuracy.high xyRecovered.[0,0].Real 1.0 "inverseFFTXY should recover the original impulse real part."
+        Expect.floatClose Accuracy.high xyRecovered.[0,0].Imaginary 0.0 "inverseFFTXY should recover the original impulse imaginary part."
+        Expect.floatClose Accuracy.high xyRecovered.[1,0].Real 0.0 "inverseFFTXY should recover zero pixels."
         Expect.equal shifted.[1,1,1] zTransformed.[0,0,0] "shiftFFT should move zero frequency to the center for even-sized volumes."
       finally
         spectrum.decRefCount()

@@ -413,7 +413,7 @@ let private readChunkVolume<'T when 'T: equality> inputDir suffix =
     slabs |> List.iter (fun slab -> slab.decRefCount())
     volume, chunkInfo
 
-let private chunkedFFT3D debug inputDir outputDir suffix chunkX chunkY chunkZ =
+let private chunkedFFTAlongZ debug inputDir outputDir suffix chunkX chunkY chunkZ =
     if Directory.Exists(outputDir) then Directory.Delete(outputDir, true)
     Directory.CreateDirectory(outputDir) |> ignore
     let volume, _ = readChunkVolume<System.Numerics.Complex> inputDir suffix
@@ -422,24 +422,14 @@ let private chunkedFFT3D debug inputDir outputDir suffix chunkX chunkY chunkZ =
     writeVolumeAsChunks debug outputDir suffix chunkX chunkY chunkZ zTransformed
     zTransformed.decRefCount()
 
-let private chunkedInvFFT3D debug inputDir outputDir suffix chunkX chunkY chunkZ =
+let private chunkedInvFFTAlongZ debug inputDir outputDir suffix chunkX chunkY chunkZ =
     if Directory.Exists(outputDir) then Directory.Delete(outputDir, true)
     Directory.CreateDirectory(outputDir) |> ignore
     let volume, _ = readChunkVolume<System.Numerics.Complex> inputDir suffix
     let zInverse = ImageFunctions.directionalFFTComplex 2u true volume
     volume.decRefCount()
-    let slices = ImageFunctions.unstack 2u zInverse
+    writeVolumeAsChunks debug outputDir suffix chunkX chunkY chunkZ zInverse
     zInverse.decRefCount()
-    let realSlices =
-        slices
-        |> List.map (fun slice ->
-            let real = ImageFunctions.inverseFFTXY slice
-            slice.decRefCount()
-            real)
-    let realVolume = ImageFunctions.stack realSlices
-    realSlices |> List.iter (fun slice -> slice.decRefCount())
-    writeVolumeAsChunks debug outputDir suffix chunkX chunkY chunkZ realVolume
-    realVolume.decRefCount()
 
 let private chunkedShiftFFT debug inputDir outputDir suffix chunkX chunkY chunkZ =
     if Directory.Exists(outputDir) then Directory.Delete(outputDir, true)
@@ -494,19 +484,20 @@ let FFT<'T when 'T: equality> chunkX chunkY chunkZ : Stage<Image<'T>, Image<Syst
     chunkedVolumeOperation
         "FFT"
         (liftUnaryReleaseAfter "FFTXY" ImageFunctions.FFTXY id id)
-        chunkedFFT3D
+        chunkedFFTAlongZ
         chunkX
         chunkY
         chunkZ
 
 let invFFT chunkX chunkY chunkZ : Stage<Image<System.Numerics.Complex>, Image<float>> =
-    chunkedVolumeOperation
+    (chunkedVolumeOperation
         "invFFT"
-        (identityStage "invFFT.input")
-        chunkedInvFFT3D
+        (liftUnaryReleaseAfter "inverseFFTXY" ImageFunctions.inverseFFTXY id id)
+        chunkedInvFFTAlongZ
         chunkX
         chunkY
-        chunkZ
+        chunkZ)
+    --> liftUnaryReleaseAfter "invFFT.realPart" ImageFunctions.realPart id id
 
 let shiftFFT chunkX chunkY chunkZ : Stage<Image<System.Numerics.Complex>, Image<System.Numerics.Complex>> =
     chunkedVolumeOperation

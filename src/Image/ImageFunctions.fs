@@ -943,6 +943,13 @@ let unique (img: Image<'T>) : 'T list when 'T : comparison =
     |> Seq.cast<'T>            // flatten to a seq<'T>
     |> Set.ofSeq               // remove duplicates
     |> Set.toList              // back to an ordered list
+
+let private imageValues (img: Image<'T>) : 'T seq =
+    match img.GetDimensions() with
+    | 2u -> img.toArray2D() |> Seq.cast<'T>
+    | 3u -> img.toArray3D() |> Seq.cast<'T>
+    | 4u -> img.toArray4D() |> Seq.cast<'T>
+    | _ -> Image.fold (fun acc value -> value :: acc) [] img |> List.rev :> seq<'T>
     
 let private valuesFromImages bins (images: Image<'T> list) operation =
     if bins < 2u then
@@ -954,9 +961,8 @@ let private valuesFromImages bins (images: Image<'T> list) operation =
     let values =
         images
         |> List.collect (fun image ->
-            image.GetSize()
-            |> flatIndices
-            |> Seq.map (image.Get >> toFloat)
+            imageValues image
+            |> Seq.map toFloat
             |> Seq.toList)
 
     match values with
@@ -1219,17 +1225,14 @@ let generateCoordinateAxis (axis: int) (size: int list) : Image<uint32> =
         failwith $"Unsupported dimensionality {size.Length}"
 
 let histogram (img: Image<'T>) : Map<'T, uint64> =
-    img.GetSize()
-    |> flatIndices
-    |> Seq.fold 
-        (fun acc idx ->
-            let elm = img.Get idx 
-            Map.change elm (fun vopt -> 
-                match vopt with 
-                    Some v -> Some (v+1uL) 
-                    | None -> Some (1uL)) 
-                acc)
-        Map.empty<'T, uint64>
+    let addValue acc elm =
+        Map.change elm (fun vopt -> 
+            match vopt with 
+                Some v -> Some (v+1uL) 
+                | None -> Some (1uL)) 
+            acc
+
+    imageValues img |> Seq.fold addValue Map.empty<'T, uint64>
 
 let histogramFixedBins firstLeftEdge lastLeftEdge bins (img: Image<'T>) : Map<float, uint64> =
     if bins = 0u then
@@ -1251,21 +1254,19 @@ let histogramFixedBins firstLeftEdge lastLeftEdge bins (img: Image<'T>) : Map<fl
         |> List.map (fun index -> leftEdge index, 0UL)
         |> Map.ofList
 
-    img.GetSize()
-    |> flatIndices
-    |> Seq.fold
-        (fun acc idx ->
-            let value = Convert.ToDouble(img.Get idx)
-            if Double.IsNaN value || Double.IsInfinity value then
+    let addValue acc (pixel: 'T) =
+        let value = Convert.ToDouble(box pixel)
+        if Double.IsNaN value || Double.IsInfinity value then
+            acc
+        else
+            let binIndex = int (Math.Floor((value - firstLeftEdge) / binWidth))
+            if binIndex < 0 || binIndex >= int bins then
                 acc
             else
-                let binIndex = int (Math.Floor((value - firstLeftEdge) / binWidth))
-                if binIndex < 0 || binIndex >= int bins then
-                    acc
-                else
-                    let edge = leftEdge binIndex
-                    Map.change edge (function Some count -> Some(count + 1UL) | None -> Some 1UL) acc)
-        initial
+                let edge = leftEdge binIndex
+                Map.change edge (function Some count -> Some(count + 1UL) | None -> Some 1UL) acc
+
+    imageValues img |> Seq.fold addValue initial
 
 let addHistogram (h1: Map<'T, uint64>) (h2: Map<'T, uint64>) : Map<'T, uint64> =
     Map.fold 
@@ -1378,19 +1379,40 @@ let threshold (lower: float) (upper: float) (img: Image<'T>) : Image<uint8> =
 let toVectorImage (images: Image<'T> list) : Image<'T list> =
     Image<'T>.ofImageList images
 
+let private composeVectorAndRelease<'T when 'T : equality> (components: Image<'T> list) =
+    try
+        Image<'T>.ofImageList components
+    finally
+        components |> List.iter (fun comp -> comp.decRefCount())
+
+let private mapScalarComponentsAndCompose (f: Image<float> -> Image<float>) (img: Image<float list>) =
+    let components = img.toImageList()
+    let mapped = components |> List.map f
+    components |> List.iter (fun comp -> comp.decRefCount())
+    composeVectorAndRelease mapped
+
+let private scalarMapArray name (f: float -> float) (img: Image<float>) =
+    match img.GetDimensions() with
+    | 2u ->
+        img.toArray2D()
+        |> Array2D.map f
+        |> fun output -> Image<float>.ofArray2D(output, name, img.index)
+    | 3u ->
+        img.toArray3D()
+        |> Array3D.map f
+        |> fun output -> Image<float>.ofArray3D(output, name, img.index)
+    | dims ->
+        failwith $"{name}: only 2D and 3D images are supported, got {dims}D"
+
 let vectorElement<'T when 'T : equality> (componentId: uint) (img: Image<'T list>) : Image<'T> =
     let componentIndex = int componentId
     let componentCount = int (img.GetNumberOfComponentsPerPixel())
     if componentIndex < 0 || componentIndex >= componentCount then
         invalidArg "componentId" $"vectorElement: component {componentId} is outside the available component range 0..{componentCount - 1}."
 
-    let output = new Image<'T>(img.GetSize(), 1u, "vectorElement", img.index)
-    img.GetSize()
-    |> flatIndices
-    |> Seq.iter (fun idx ->
-        let values = img.Get idx
-        output.Set idx values[componentIndex])
-    output
+    use filter = new itk.simple.VectorIndexSelectionCastImageFilter()
+    filter.SetIndex(componentId)
+    Image<'T>.ofSimpleITK(filter.Execute(img.toSimpleITK()), "vectorElement", img.index)
 
 let vectorRange<'T when 'T : equality> (firstComponent: uint) (componentCount: uint) (img: Image<'T list>) : Image<'T list> =
     let first = int firstComponent
@@ -1401,15 +1423,12 @@ let vectorRange<'T when 'T : equality> (firstComponent: uint) (componentCount: u
     if first < 0 || first + count > available then
         invalidArg "firstComponent" $"vectorRange: requested components {first}..{first + count - 1}, but available range is 0..{available - 1}."
 
-    let output = new Image<'T list>(img.GetSize(), componentCount, "vectorRange", img.index)
-    img.GetSize()
-    |> flatIndices
-    |> Seq.iter (fun idx ->
-        img.Get idx
-        |> List.skip first
-        |> List.take count
-        |> output.Set idx)
-    output
+    let components = img.toImageList()
+    let selected = components |> List.skip first |> List.take count
+    try
+        Image<'T>.ofImageList selected
+    finally
+        components |> List.iter (fun comp -> comp.decRefCount())
 
 let private requireThreeComponents name (img: Image<'T list>) =
     if img.GetNumberOfComponentsPerPixel() <> 3u then
@@ -1426,18 +1445,23 @@ let vector3ToColor (inputMinimum: float) (inputMaximum: float) (img: Image<float
         invalidArg "inputMaximum" "vector3ToColor: inputMaximum must be larger than inputMinimum."
 
     let scale = 255.0 / (inputMaximum - inputMinimum)
-    let output = new Image<uint8 list>(img.GetSize(), 3u, "vector3ToColor", img.index)
-    img.GetSize()
-    |> flatIndices
-    |> Seq.iter (fun idx ->
-        match img.Get idx with
-        | [ r; g; b ] ->
-            [ r; g; b ]
-            |> List.map (fun value -> (value - inputMinimum) * scale |> clampByte)
-            |> output.Set idx
-        | values ->
-            failwith $"vector3ToColor: expected 3 components, got {values.Length}.")
-    output
+    let components = img.toImageList()
+    let mapped =
+        components
+        |> List.map (fun comp ->
+            match comp.GetDimensions() with
+            | 2u ->
+                comp.toArray2D()
+                |> Array2D.map (fun value -> (value - inputMinimum) * scale |> clampByte)
+                |> fun output -> Image<uint8>.ofArray2D(output, "vector3ToColor", comp.index)
+            | 3u ->
+                comp.toArray3D()
+                |> Array3D.map (fun value -> (value - inputMinimum) * scale |> clampByte)
+                |> fun output -> Image<uint8>.ofArray3D(output, "vector3ToColor", comp.index)
+            | dims ->
+                failwith $"vector3ToColor: only 2D and 3D images are supported, got {dims}D")
+    components |> List.iter (fun comp -> comp.decRefCount())
+    composeVectorAndRelease mapped
 
 let colorToVector3 (outputMinimum: float) (outputMaximum: float) (img: Image<uint8 list>) : Image<float list> =
     requireThreeComponents "colorToVector3" img
@@ -1445,46 +1469,36 @@ let colorToVector3 (outputMinimum: float) (outputMaximum: float) (img: Image<uin
         invalidArg "outputMaximum" "colorToVector3: outputMaximum must be larger than outputMinimum."
 
     let scale = (outputMaximum - outputMinimum) / 255.0
-    let output = new Image<float list>(img.GetSize(), 3u, "colorToVector3", img.index)
-    img.GetSize()
-    |> flatIndices
-    |> Seq.iter (fun idx ->
-        match img.Get idx with
-        | [ r; g; b ] ->
-            [ r; g; b ]
-            |> List.map (fun value -> outputMinimum + float value * scale)
-            |> output.Set idx
-        | values ->
-            failwith $"colorToVector3: expected 3 components, got {values.Length}.")
-    output
+    let components = img.toImageList()
+    let mapped =
+        components
+        |> List.map (fun comp ->
+            match comp.GetDimensions() with
+            | 2u ->
+                comp.toArray2D()
+                |> Array2D.map (fun value -> outputMinimum + float value * scale)
+                |> fun output -> Image<float>.ofArray2D(output, "colorToVector3", comp.index)
+            | 3u ->
+                comp.toArray3D()
+                |> Array3D.map (fun value -> outputMinimum + float value * scale)
+                |> fun output -> Image<float>.ofArray3D(output, "colorToVector3", comp.index)
+            | dims ->
+                failwith $"colorToVector3: only 2D and 3D images are supported, got {dims}D")
+    components |> List.iter (fun comp -> comp.decRefCount())
+    composeVectorAndRelease mapped
 
 let appendVectorElement (vector: Image<float list>) (element: Image<float>) : Image<float list> =
     if vector.GetSize() <> element.GetSize() then
         invalidArg "element" $"appendVectorElement: image sizes differ: {vector.GetSize()} vs {element.GetSize()}."
 
-    let output =
-        new Image<float list>(
-            vector.GetSize(),
-            vector.GetNumberOfComponentsPerPixel() + 1u,
-            "appendVectorElement",
-            vector.index)
-
-    vector.GetSize()
-    |> flatIndices
-    |> Seq.iter (fun idx ->
-        vector.Get idx @ [ element.Get idx ]
-        |> output.Set idx)
-    output
+    let components = vector.toImageList()
+    try
+        Image<float>.ofImageList (components @ [ element ])
+    finally
+        components |> List.iter (fun comp -> comp.decRefCount())
 
 let mapVectorElements (f: float -> float) (img: Image<float list>) : Image<float list> =
-    let output = new Image<float list>(img.GetSize(), img.GetNumberOfComponentsPerPixel(), "mapVectorElements", img.index)
-    img.GetSize()
-    |> flatIndices
-    |> Seq.iter (fun idx ->
-        img.Get idx
-        |> List.map f
-        |> output.Set idx)
-    output
+    mapScalarComponentsAndCompose (scalarMapArray "mapVectorElements" f) img
 
 let private ensureMatchingVectorImages name (a: Image<float list>) (b: Image<float list>) =
     if a.GetSize() <> b.GetSize() then
@@ -1494,34 +1508,56 @@ let private ensureMatchingVectorImages name (a: Image<float list>) (b: Image<flo
 
 let vectorDot (a: Image<float list>) (b: Image<float list>) : Image<float> =
     ensureMatchingVectorImages "vectorDot" a b
-    let output = new Image<float>(a.GetSize(), 1u, "vectorDot", a.index)
-    a.GetSize()
-    |> flatIndices
-    |> Seq.iter (fun idx ->
-        let av = a.Get idx
-        let bv = b.Get idx
-        let value = List.map2 (*) av bv |> List.sum
-        output.Set idx value)
-    output
+    let aComponents = a.toImageList()
+    let bComponents = b.toImageList()
+    try
+        match a.GetDimensions() with
+        | 2u ->
+            let av = aComponents |> List.map (fun comp -> comp.toArray2D())
+            let bv = bComponents |> List.map (fun comp -> comp.toArray2D())
+            Array2D.init (av.Head.GetLength 0) (av.Head.GetLength 1) (fun x y ->
+                List.zip av bv |> List.sumBy (fun (aValues, bValues) -> aValues[x, y] * bValues[x, y]))
+            |> fun output -> Image<float>.ofArray2D(output, "vectorDot", a.index)
+        | 3u ->
+            let av = aComponents |> List.map (fun comp -> comp.toArray3D())
+            let bv = bComponents |> List.map (fun comp -> comp.toArray3D())
+            Array3D.init (av.Head.GetLength 0) (av.Head.GetLength 1) (av.Head.GetLength 2) (fun x y z ->
+                List.zip av bv |> List.sumBy (fun (aValues, bValues) -> aValues[x, y, z] * bValues[x, y, z]))
+            |> fun output -> Image<float>.ofArray3D(output, "vectorDot", a.index)
+        | dims ->
+            failwith $"vectorDot: only 2D and 3D images are supported, got {dims}D"
+    finally
+        aComponents |> List.iter (fun comp -> comp.decRefCount())
+        bComponents |> List.iter (fun comp -> comp.decRefCount())
 
 let vectorCross3D (a: Image<float list>) (b: Image<float list>) : Image<float list> =
     ensureMatchingVectorImages "vectorCross3D" a b
     if a.GetNumberOfComponentsPerPixel() <> 3u then
         invalidArg "a" $"vectorCross3D: expected 3-component vector images, got {a.GetNumberOfComponentsPerPixel()} components."
 
-    let output = new Image<float list>(a.GetSize(), 3u, "vectorCross3D", a.index)
-    a.GetSize()
-    |> flatIndices
-    |> Seq.iter (fun idx ->
-        match a.Get idx, b.Get idx with
-        | [ ax; ay; az ], [ bx; by; bz ] ->
-            [ ay * bz - az * by
-              az * bx - ax * bz
-              ax * by - ay * bx ]
-            |> output.Set idx
-        | av, bv ->
-            failwith $"vectorCross3D: expected 3-component vectors, got {av.Length} and {bv.Length}.")
-    output
+    let aComponents = a.toImageList()
+    let bComponents = b.toImageList()
+    let make2D (ax: float[,]) (ay: float[,]) (az: float[,]) (bx: float[,]) (by: float[,]) (bz: float[,]) =
+        [ Array2D.init (ax.GetLength 0) (ax.GetLength 1) (fun x y -> ay[x, y] * bz[x, y] - az[x, y] * by[x, y]) |> fun values -> Image<float>.ofArray2D(values, "vectorCross3D", a.index)
+          Array2D.init (ax.GetLength 0) (ax.GetLength 1) (fun x y -> az[x, y] * bx[x, y] - ax[x, y] * bz[x, y]) |> fun values -> Image<float>.ofArray2D(values, "vectorCross3D", a.index)
+          Array2D.init (ax.GetLength 0) (ax.GetLength 1) (fun x y -> ax[x, y] * by[x, y] - ay[x, y] * bx[x, y]) |> fun values -> Image<float>.ofArray2D(values, "vectorCross3D", a.index) ]
+    let make3D (ax: float[,,]) (ay: float[,,]) (az: float[,,]) (bx: float[,,]) (by: float[,,]) (bz: float[,,]) =
+        [ Array3D.init (ax.GetLength 0) (ax.GetLength 1) (ax.GetLength 2) (fun x y z -> ay[x, y, z] * bz[x, y, z] - az[x, y, z] * by[x, y, z]) |> fun values -> Image<float>.ofArray3D(values, "vectorCross3D", a.index)
+          Array3D.init (ax.GetLength 0) (ax.GetLength 1) (ax.GetLength 2) (fun x y z -> az[x, y, z] * bx[x, y, z] - ax[x, y, z] * bz[x, y, z]) |> fun values -> Image<float>.ofArray3D(values, "vectorCross3D", a.index)
+          Array3D.init (ax.GetLength 0) (ax.GetLength 1) (ax.GetLength 2) (fun x y z -> ax[x, y, z] * by[x, y, z] - ay[x, y, z] * bx[x, y, z]) |> fun values -> Image<float>.ofArray3D(values, "vectorCross3D", a.index) ]
+    try
+        let resultComponents =
+            match aComponents, bComponents, a.GetDimensions() with
+            | [ ax; ay; az ], [ bx; by; bz ], 2u ->
+                make2D (ax.toArray2D()) (ay.toArray2D()) (az.toArray2D()) (bx.toArray2D()) (by.toArray2D()) (bz.toArray2D())
+            | [ ax; ay; az ], [ bx; by; bz ], 3u ->
+                make3D (ax.toArray3D()) (ay.toArray3D()) (az.toArray3D()) (bx.toArray3D()) (by.toArray3D()) (bz.toArray3D())
+            | _, _, dims ->
+                failwith $"vectorCross3D: only 2D and 3D images are supported, got {dims}D"
+        composeVectorAndRelease resultComponents
+    finally
+        aComponents |> List.iter (fun comp -> comp.decRefCount())
+        bComponents |> List.iter (fun comp -> comp.decRefCount())
 
 let vectorAngleTo (reference: float list) (img: Image<float list>) : Image<float> =
     if reference.Length <> int (img.GetNumberOfComponentsPerPixel()) then
@@ -1531,46 +1567,65 @@ let vectorAngleTo (reference: float list) (img: Image<float list>) : Image<float
     if referenceNorm < 1e-18 then
         invalidArg "reference" "vectorAngleTo: reference vector must be non-zero."
 
-    let output = new Image<float>(img.GetSize(), 1u, "vectorAngleTo", img.index)
-    img.GetSize()
-    |> flatIndices
-    |> Seq.iter (fun idx ->
-        let values = img.Get idx
-        let valueNorm = values |> List.sumBy (fun value -> value * value) |> sqrt
-        let angle =
-            if valueNorm < 1e-18 then
-                System.Double.NaN
-            else
-                let cosTheta =
-                    List.map2 (*) values reference
-                    |> List.sum
-                    |> fun dot -> dot / (valueNorm * referenceNorm)
-                    |> max -1.0
-                    |> min 1.0
-                acos cosTheta
-        output.Set idx angle)
-    output
+    let angle values =
+        let valueNorm = values |> Seq.sumBy (fun value -> value * value) |> sqrt
+        if valueNorm < 1e-18 then
+            System.Double.NaN
+        else
+            let cosTheta =
+                Seq.zip values reference
+                |> Seq.sumBy (fun (value, refValue) -> value * refValue)
+                |> fun dot -> dot / (valueNorm * referenceNorm)
+                |> max -1.0
+                |> min 1.0
+            acos cosTheta
+
+    let components = img.toImageList()
+    try
+        match img.GetDimensions() with
+        | 2u ->
+            let values = components |> List.map (fun comp -> comp.toArray2D())
+            Array2D.init (values.Head.GetLength 0) (values.Head.GetLength 1) (fun x y ->
+                values |> Seq.map (fun comp -> comp[x, y]) |> angle)
+            |> fun output -> Image<float>.ofArray2D(output, "vectorAngleTo", img.index)
+        | 3u ->
+            let values = components |> List.map (fun comp -> comp.toArray3D())
+            Array3D.init (values.Head.GetLength 0) (values.Head.GetLength 1) (values.Head.GetLength 2) (fun x y z ->
+                values |> Seq.map (fun comp -> comp[x, y, z]) |> angle)
+            |> fun output -> Image<float>.ofArray3D(output, "vectorAngleTo", img.index)
+        | dims ->
+            failwith $"vectorAngleTo: only 2D and 3D images are supported, got {dims}D"
+    finally
+        components |> List.iter (fun comp -> comp.decRefCount())
 
 let structureTensorOuterProduct (gradient: Image<float list>) : Image<float list> =
     if gradient.GetNumberOfComponentsPerPixel() <> 3u then
         invalidArg "gradient" $"structureTensorOuterProduct: expected a 3-component gradient image, got {gradient.GetNumberOfComponentsPerPixel()} components."
 
-    let output = new Image<float list>(gradient.GetSize(), 6u, "structureTensorOuterProduct", gradient.index)
-    gradient.GetSize()
-    |> flatIndices
-    |> Seq.iter (fun idx ->
-        match gradient.Get idx with
-        | [ gx; gy; gz ] ->
-            [ gx * gx
-              gx * gy
-              gx * gz
-              gy * gy
-              gy * gz
-              gz * gz ]
-            |> output.Set idx
-        | values ->
-            failwith $"structureTensorOuterProduct: expected 3 components, got {values.Length}.")
-    output
+    let components = gradient.toImageList()
+    let make2D (gx: float[,]) (gy: float[,]) (gz: float[,]) =
+        [ Array2D.init (gx.GetLength 0) (gx.GetLength 1) (fun x y -> gx[x, y] * gx[x, y]) |> fun values -> Image<float>.ofArray2D(values, "structureTensorOuterProduct", gradient.index)
+          Array2D.init (gx.GetLength 0) (gx.GetLength 1) (fun x y -> gx[x, y] * gy[x, y]) |> fun values -> Image<float>.ofArray2D(values, "structureTensorOuterProduct", gradient.index)
+          Array2D.init (gx.GetLength 0) (gx.GetLength 1) (fun x y -> gx[x, y] * gz[x, y]) |> fun values -> Image<float>.ofArray2D(values, "structureTensorOuterProduct", gradient.index)
+          Array2D.init (gx.GetLength 0) (gx.GetLength 1) (fun x y -> gy[x, y] * gy[x, y]) |> fun values -> Image<float>.ofArray2D(values, "structureTensorOuterProduct", gradient.index)
+          Array2D.init (gx.GetLength 0) (gx.GetLength 1) (fun x y -> gy[x, y] * gz[x, y]) |> fun values -> Image<float>.ofArray2D(values, "structureTensorOuterProduct", gradient.index)
+          Array2D.init (gx.GetLength 0) (gx.GetLength 1) (fun x y -> gz[x, y] * gz[x, y]) |> fun values -> Image<float>.ofArray2D(values, "structureTensorOuterProduct", gradient.index) ]
+    let make3D (gx: float[,,]) (gy: float[,,]) (gz: float[,,]) =
+        [ Array3D.init (gx.GetLength 0) (gx.GetLength 1) (gx.GetLength 2) (fun x y z -> gx[x, y, z] * gx[x, y, z]) |> fun values -> Image<float>.ofArray3D(values, "structureTensorOuterProduct", gradient.index)
+          Array3D.init (gx.GetLength 0) (gx.GetLength 1) (gx.GetLength 2) (fun x y z -> gx[x, y, z] * gy[x, y, z]) |> fun values -> Image<float>.ofArray3D(values, "structureTensorOuterProduct", gradient.index)
+          Array3D.init (gx.GetLength 0) (gx.GetLength 1) (gx.GetLength 2) (fun x y z -> gx[x, y, z] * gz[x, y, z]) |> fun values -> Image<float>.ofArray3D(values, "structureTensorOuterProduct", gradient.index)
+          Array3D.init (gx.GetLength 0) (gx.GetLength 1) (gx.GetLength 2) (fun x y z -> gy[x, y, z] * gy[x, y, z]) |> fun values -> Image<float>.ofArray3D(values, "structureTensorOuterProduct", gradient.index)
+          Array3D.init (gx.GetLength 0) (gx.GetLength 1) (gx.GetLength 2) (fun x y z -> gy[x, y, z] * gz[x, y, z]) |> fun values -> Image<float>.ofArray3D(values, "structureTensorOuterProduct", gradient.index)
+          Array3D.init (gx.GetLength 0) (gx.GetLength 1) (gx.GetLength 2) (fun x y z -> gz[x, y, z] * gz[x, y, z]) |> fun values -> Image<float>.ofArray3D(values, "structureTensorOuterProduct", gradient.index) ]
+    try
+        let resultComponents =
+            match components, gradient.GetDimensions() with
+            | [ gx; gy; gz ], 2u -> make2D (gx.toArray2D()) (gy.toArray2D()) (gz.toArray2D())
+            | [ gx; gy; gz ], 3u -> make3D (gx.toArray3D()) (gy.toArray3D()) (gz.toArray3D())
+            | _, dims -> failwith $"structureTensorOuterProduct: only 2D and 3D images are supported, got {dims}D"
+        composeVectorAndRelease resultComponents
+    finally
+        components |> List.iter (fun comp -> comp.decRefCount())
 
 let smoothVectorElements3D (sigma: float) (img: Image<float list>) : Image<float list> =
     if img.GetDimensions() <> 3u then
@@ -1598,57 +1653,180 @@ let structureTensorEigenImages (tensor: Image<float list>) : Image<float list> l
     if tensor.GetNumberOfComponentsPerPixel() <> 6u then
         invalidArg "tensor" $"structureTensorEigenImages: expected a 6-component symmetric tensor image, got {tensor.GetNumberOfComponentsPerPixel()} components."
 
-    let eigenvalues = new Image<float list>(tensor.GetSize(), 3u, "structureTensorEigenValues", tensor.index)
-    let eigenvector0 = new Image<float list>(tensor.GetSize(), 3u, "structureTensorEigenvector0", tensor.index)
-    let eigenvector1 = new Image<float list>(tensor.GetSize(), 3u, "structureTensorEigenvector1", tensor.index)
-    let eigenvector2 = new Image<float list>(tensor.GetSize(), 3u, "structureTensorEigenvector2", tensor.index)
-    tensor.GetSize()
-    |> flatIndices
-    |> Seq.iter (fun idx ->
-        match tensor.Get idx with
-        | [ xx; xy; xz; yy; yz; zz ] ->
-            let matrix =
-                { m00 = xx; m01 = xy; m02 = xz
-                  m10 = xy; m11 = yy; m12 = yz
-                  m20 = xz; m21 = yz; m22 = zz }
-            let eigen = symmetricEigen matrix
-            let values = eigen |> List.map fst
-            eigenvalues.Set idx values
-            eigen
-            |> List.map snd
-            |> function
-                | [ v0; v1; v2 ] ->
-                    eigenvector0.Set idx [ v0.x; v0.y; v0.z ]
-                    eigenvector1.Set idx [ v1.x; v1.y; v1.z ]
-                    eigenvector2.Set idx [ v2.x; v2.y; v2.z ]
-                | _ -> failwith "structureTensorEigenImages: expected three eigenvectors."
-        | values ->
-            failwith $"structureTensorEigenImages: expected 6 components, got {values.Length}.")
-    [ eigenvalues; eigenvector0; eigenvector1; eigenvector2 ]
+    if tensor.GetDimensions() = 2u then
+        let input = Image<float>.toArray3DVector tensor
+        let width = input.GetLength 0
+        let height = input.GetLength 1
+        let eigenvalues = Array3D.zeroCreate<float> width height 3
+        let eigenvector0 = Array3D.zeroCreate<float> width height 3
+        let eigenvector1 = Array3D.zeroCreate<float> width height 3
+        let eigenvector2 = Array3D.zeroCreate<float> width height 3
+
+        for x in 0 .. width - 1 do
+            for y in 0 .. height - 1 do
+                let xx = input[x, y, 0]
+                let xy = input[x, y, 1]
+                let xz = input[x, y, 2]
+                let yy = input[x, y, 3]
+                let yz = input[x, y, 4]
+                let zz = input[x, y, 5]
+                let matrix =
+                    { m00 = xx; m01 = xy; m02 = xz
+                      m10 = xy; m11 = yy; m12 = yz
+                      m20 = xz; m21 = yz; m22 = zz }
+                let eigen = symmetricEigen matrix
+                let values = eigen |> List.map fst
+                for k in 0 .. 2 do
+                    eigenvalues[x, y, k] <- values[k]
+                eigen
+                |> List.map snd
+                |> function
+                    | [ v0; v1; v2 ] ->
+                        eigenvector0[x, y, 0] <- v0.x
+                        eigenvector0[x, y, 1] <- v0.y
+                        eigenvector0[x, y, 2] <- v0.z
+                        eigenvector1[x, y, 0] <- v1.x
+                        eigenvector1[x, y, 1] <- v1.y
+                        eigenvector1[x, y, 2] <- v1.z
+                        eigenvector2[x, y, 0] <- v2.x
+                        eigenvector2[x, y, 1] <- v2.y
+                        eigenvector2[x, y, 2] <- v2.z
+                    | _ -> failwith "structureTensorEigenImages: expected three eigenvectors."
+
+        [ Image<float>.ofArray3DVector(eigenvalues, "structureTensorEigenValues", tensor.index)
+          Image<float>.ofArray3DVector(eigenvector0, "structureTensorEigenvector0", tensor.index)
+          Image<float>.ofArray3DVector(eigenvector1, "structureTensorEigenvector1", tensor.index)
+          Image<float>.ofArray3DVector(eigenvector2, "structureTensorEigenvector2", tensor.index) ]
+    elif tensor.GetDimensions() = 3u then
+        let components = tensor.toImageList()
+        try
+            match components with
+            | [ xxImg; xyImg; xzImg; yyImg; yzImg; zzImg ] ->
+                let xxValues = xxImg.toArray3D()
+                let xyValues = xyImg.toArray3D()
+                let xzValues = xzImg.toArray3D()
+                let yyValues = yyImg.toArray3D()
+                let yzValues = yzImg.toArray3D()
+                let zzValues = zzImg.toArray3D()
+                let width = xxValues.GetLength 0
+                let height = xxValues.GetLength 1
+                let depth = xxValues.GetLength 2
+                let eigenvalues = [ for _ in 1 .. 3 -> Array3D.zeroCreate<float> width height depth ]
+                let eigenvector0 = [ for _ in 1 .. 3 -> Array3D.zeroCreate<float> width height depth ]
+                let eigenvector1 = [ for _ in 1 .. 3 -> Array3D.zeroCreate<float> width height depth ]
+                let eigenvector2 = [ for _ in 1 .. 3 -> Array3D.zeroCreate<float> width height depth ]
+
+                for x in 0 .. width - 1 do
+                    for y in 0 .. height - 1 do
+                        for z in 0 .. depth - 1 do
+                            let matrix =
+                                { m00 = xxValues[x, y, z]; m01 = xyValues[x, y, z]; m02 = xzValues[x, y, z]
+                                  m10 = xyValues[x, y, z]; m11 = yyValues[x, y, z]; m12 = yzValues[x, y, z]
+                                  m20 = xzValues[x, y, z]; m21 = yzValues[x, y, z]; m22 = zzValues[x, y, z] }
+                            let eigen = symmetricEigen matrix
+                            let values = eigen |> List.map fst
+                            for k in 0 .. 2 do
+                                eigenvalues[k][x, y, z] <- values[k]
+                            eigen
+                            |> List.map snd
+                            |> function
+                                | [ v0; v1; v2 ] ->
+                                    eigenvector0[0][x, y, z] <- v0.x
+                                    eigenvector0[1][x, y, z] <- v0.y
+                                    eigenvector0[2][x, y, z] <- v0.z
+                                    eigenvector1[0][x, y, z] <- v1.x
+                                    eigenvector1[1][x, y, z] <- v1.y
+                                    eigenvector1[2][x, y, z] <- v1.z
+                                    eigenvector2[0][x, y, z] <- v2.x
+                                    eigenvector2[1][x, y, z] <- v2.y
+                                    eigenvector2[2][x, y, z] <- v2.z
+                                | _ -> failwith "structureTensorEigenImages: expected three eigenvectors."
+
+                let compose name arrays =
+                    arrays
+                    |> List.map (fun values -> Image<float>.ofArray3D(values, name, tensor.index))
+                    |> composeVectorAndRelease
+
+                [ compose "structureTensorEigenValues" eigenvalues
+                  compose "structureTensorEigenvector0" eigenvector0
+                  compose "structureTensorEigenvector1" eigenvector1
+                  compose "structureTensorEigenvector2" eigenvector2 ]
+            | values ->
+                failwith $"structureTensorEigenImages: expected 6 components, got {values.Length}."
+        finally
+            components |> List.iter (fun comp -> comp.decRefCount())
+    else
+        failwith $"structureTensorEigenImages: only 2D and 3D images are supported, got {tensor.GetDimensions()}D"
+
+let private tensorEigenMatrixValues xx xy xz yy yz zz =
+    let matrix =
+        { m00 = xx; m01 = xy; m02 = xz
+          m10 = xy; m11 = yy; m12 = yz
+          m20 = xz; m21 = yz; m22 = zz }
+    let eigen = symmetricEigen matrix
+    let values = eigen |> List.map fst
+    let vectors =
+        eigen
+        |> List.collect (fun (_, v) -> [ v.x; v.y; v.z ])
+    values @ vectors
 
 let structureTensorEigenMatrix (tensor: Image<float list>) : Image<float list> =
     if tensor.GetNumberOfComponentsPerPixel() <> 6u then
         invalidArg "tensor" $"structureTensorEigenMatrix: expected a 6-component symmetric tensor image, got {tensor.GetNumberOfComponentsPerPixel()} components."
 
-    let output = new Image<float list>(tensor.GetSize(), 12u, "structureTensorEigenMatrix", tensor.index)
-    tensor.GetSize()
-    |> flatIndices
-    |> Seq.iter (fun idx ->
-        match tensor.Get idx with
-        | [ xx; xy; xz; yy; yz; zz ] ->
-            let matrix =
-                { m00 = xx; m01 = xy; m02 = xz
-                  m10 = xy; m11 = yy; m12 = yz
-                  m20 = xz; m21 = yz; m22 = zz }
-            let eigen = symmetricEigen matrix
-            let values = eigen |> List.map fst
-            let vectors =
-                eigen
-                |> List.collect (fun (_, v) -> [ v.x; v.y; v.z ])
-            output.Set idx (values @ vectors)
-        | values ->
-            failwith $"structureTensorEigenMatrix: expected 6 components, got {values.Length}.")
-    output
+    if tensor.GetDimensions() = 2u then
+        let input = Image<float>.toArray3DVector tensor
+        let output = Array3D.zeroCreate<float> (input.GetLength 0) (input.GetLength 1) 12
+        for x in 0 .. input.GetLength 0 - 1 do
+            for y in 0 .. input.GetLength 1 - 1 do
+                let values =
+                    tensorEigenMatrixValues
+                        input[x, y, 0]
+                        input[x, y, 1]
+                        input[x, y, 2]
+                        input[x, y, 3]
+                        input[x, y, 4]
+                        input[x, y, 5]
+                for k in 0 .. 11 do
+                    output[x, y, k] <- values[k]
+        Image<float>.ofArray3DVector(output, "structureTensorEigenMatrix", tensor.index)
+    elif tensor.GetDimensions() = 3u then
+        let components = tensor.toImageList()
+        try
+            match components with
+            | [ xxImg; xyImg; xzImg; yyImg; yzImg; zzImg ] ->
+                let xxValues = xxImg.toArray3D()
+                let xyValues = xyImg.toArray3D()
+                let xzValues = xzImg.toArray3D()
+                let yyValues = yyImg.toArray3D()
+                let yzValues = yzImg.toArray3D()
+                let zzValues = zzImg.toArray3D()
+                let width = xxValues.GetLength 0
+                let height = xxValues.GetLength 1
+                let depth = xxValues.GetLength 2
+                let output = [ for _ in 1 .. 12 -> Array3D.zeroCreate<float> width height depth ]
+                for x in 0 .. width - 1 do
+                    for y in 0 .. height - 1 do
+                        for z in 0 .. depth - 1 do
+                            let values =
+                                tensorEigenMatrixValues
+                                    xxValues[x, y, z]
+                                    xyValues[x, y, z]
+                                    xzValues[x, y, z]
+                                    yyValues[x, y, z]
+                                    yzValues[x, y, z]
+                                    zzValues[x, y, z]
+                            for k in 0 .. 11 do
+                                output[k][x, y, z] <- values[k]
+                output
+                |> List.map (fun values -> Image<float>.ofArray3D(values, "structureTensorEigenMatrix", tensor.index))
+                |> composeVectorAndRelease
+            | values ->
+                failwith $"structureTensorEigenMatrix: expected 6 components, got {values.Length}."
+        finally
+            components |> List.iter (fun comp -> comp.decRefCount())
+    else
+        failwith $"structureTensorEigenMatrix: only 2D and 3D images are supported, got {tensor.GetDimensions()}D"
 
 let stack (images: Image<'T> list) : Image<'T> =
     match images with
@@ -1777,107 +1955,157 @@ let FFTXY (image: Image<'T>) : Image<System.Numerics.Complex> =
     let complexImg = fft.Execute(input)
     Image<System.Numerics.Complex>.ofSimpleITK(complexImg, "FFTXY", image.index)
 
+let private dftLine inverse (line: System.Numerics.Complex[]) =
+    let lineLength = line.Length
+    let lineLengthFloat = float lineLength
+    let sign = if inverse then 1.0 else -1.0
+    let scale = if inverse then 1.0 / lineLengthFloat else 1.0
+    let twiddles =
+        Array2D.init lineLength lineLength (fun k n ->
+            let theta = sign * 2.0 * System.Math.PI * float (k * n) / lineLengthFloat
+            System.Numerics.Complex(System.Math.Cos theta, System.Math.Sin theta))
+
+    Array.init lineLength (fun k ->
+        let mutable value = System.Numerics.Complex.Zero
+        for n in 0 .. lineLength - 1 do
+            value <- value + line[n] * twiddles[k, n]
+        value * scale)
+
+let private directionalDftComplex2D dir inverse (input: System.Numerics.Complex[,]) =
+    let width = input.GetLength 0
+    let height = input.GetLength 1
+    let output = Array2D.zeroCreate<System.Numerics.Complex> width height
+
+    match dir with
+    | 0u ->
+        for y in 0 .. height - 1 do
+            let transformed = dftLine inverse [| for x in 0 .. width - 1 -> input[x, y] |]
+            for x in 0 .. width - 1 do
+                output[x, y] <- transformed[x]
+    | 1u ->
+        for x in 0 .. width - 1 do
+            let transformed = dftLine inverse [| for y in 0 .. height - 1 -> input[x, y] |]
+            for y in 0 .. height - 1 do
+                output[x, y] <- transformed[y]
+    | _ ->
+        failwith $"directionalDftComplex2D: dir={dir} is out of range for 2D image"
+
+    output
+
+let private directionalDftComplex3D dir inverse (input: System.Numerics.Complex[,,]) =
+    let width = input.GetLength 0
+    let height = input.GetLength 1
+    let depth = input.GetLength 2
+    let output = Array3D.zeroCreate<System.Numerics.Complex> width height depth
+
+    match dir with
+    | 0u ->
+        for y in 0 .. height - 1 do
+            for z in 0 .. depth - 1 do
+                let transformed = dftLine inverse [| for x in 0 .. width - 1 -> input[x, y, z] |]
+                for x in 0 .. width - 1 do
+                    output[x, y, z] <- transformed[x]
+    | 1u ->
+        for x in 0 .. width - 1 do
+            for z in 0 .. depth - 1 do
+                let transformed = dftLine inverse [| for y in 0 .. height - 1 -> input[x, y, z] |]
+                for y in 0 .. height - 1 do
+                    output[x, y, z] <- transformed[y]
+    | 2u ->
+        for x in 0 .. width - 1 do
+            for y in 0 .. height - 1 do
+                let transformed = dftLine inverse [| for z in 0 .. depth - 1 -> input[x, y, z] |]
+                for z in 0 .. depth - 1 do
+                    output[x, y, z] <- transformed[z]
+    | _ ->
+        failwith $"directionalDftComplex3D: dir={dir} is out of range for 3D image"
+
+    output
+
 // Fourier transform a 3d image along a specified axis direction
 let directionalFFT (dir: uint) (image: Image<'T>) : Image<System.Numerics.Complex> =
     let dims = image.GetDimensions()
     if dir >= dims then
         failwith $"directionalFFT: dir={dir} is out of range for {dims}D image"
-    let size = image.GetSize()
     let input = ofCastItk<float> (image.toSimpleITK())
     let inputImage = Image<float>.ofSimpleITK(input, "directionalFFTInput", image.index)
-    let outputReal = new Image<float>(size, 1u, "directionalFFTReal", image.index, true)
-    let outputImag = new Image<float>(size, 1u, "directionalFFTImag", image.index, true)
 
-    let dimInt = int dims
-    let rec baseCoords i acc =
-        if i = dimInt then
-            [List.rev acc]
-        else
-            if uint i = dir then
-                baseCoords (i + 1) (0u :: acc)
-            else
-                [0u .. size[i] - 1u]
-                |> List.collect (fun v -> baseCoords (i + 1) (v :: acc))
-
-    let lineLength = size[int dir] |> int
-    let lineLengthFloat = float lineLength
-    for baseCoord in baseCoords 0 [] do
-        let line =
-            [| for n in 0 .. lineLength - 1 ->
-                let coord = baseCoord |> List.mapi (fun i v -> if uint i = dir then uint n else v)
-                inputImage.Get coord |]
-
-        for k in 0 .. lineLength - 1 do
-            let mutable re = 0.0
-            let mutable im = 0.0
-            for n in 0 .. lineLength - 1 do
-                let theta = -2.0 * System.Math.PI * float (k * n) / lineLengthFloat
-                re <- re + line[n] * cos theta
-                im <- im + line[n] * sin theta
-            let coord = baseCoord |> List.mapi (fun i v -> if uint i = dir then uint k else v)
-            outputReal.Set coord re
-            outputImag.Set coord im
-
-    Image<float>.ofImagePairToComplex outputReal outputImag
+    match dims with
+    | 2u ->
+        let input = inputImage.toArray2D() |> Array2D.map (fun value -> System.Numerics.Complex(value, 0.0))
+        let output = directionalDftComplex2D dir false input
+        Image<System.Numerics.Complex>.ofComplexArray2D(output, "directionalFFT", image.index)
+    | 3u ->
+        let input = inputImage.toArray3D() |> Array3D.map (fun value -> System.Numerics.Complex(value, 0.0))
+        let output = directionalDftComplex3D dir false input
+        Image<System.Numerics.Complex>.ofComplexArray3D(output, "directionalFFT", image.index)
+    | _ ->
+        failwith $"directionalFFT: only 2D and 3D images are supported, got {dims}D"
 
 let directionalFFTComplex (dir: uint) (inverse: bool) (image: Image<System.Numerics.Complex>) : Image<System.Numerics.Complex> =
     let dims = image.GetDimensions()
     if dir >= dims then
         failwith $"directionalFFTComplex: dir={dir} is out of range for {dims}D image"
 
-    let size = image.GetSize()
-    let output = new Image<System.Numerics.Complex>(size, 1u, "directionalFFTComplex", image.index, true)
-    let dimInt = int dims
+    match dims with
+    | 2u ->
+        let output = image.toComplexArray2D() |> directionalDftComplex2D dir inverse
+        Image<System.Numerics.Complex>.ofComplexArray2D(output, "directionalFFTComplex", image.index)
+    | 3u ->
+        let output = image.toComplexArray3D() |> directionalDftComplex3D dir inverse
+        Image<System.Numerics.Complex>.ofComplexArray3D(output, "directionalFFTComplex", image.index)
+    | _ ->
+        failwith $"directionalFFTComplex: only 2D and 3D images are supported, got {dims}D"
 
-    let rec baseCoords i acc =
-        if i = dimInt then
-            [List.rev acc]
-        else
-            if uint i = dir then
-                baseCoords (i + 1) (0u :: acc)
-            else
-                [0u .. size[i] - 1u]
-                |> List.collect (fun v -> baseCoords (i + 1) (v :: acc))
-
-    let lineLength = size[int dir] |> int
-    let lineLengthFloat = float lineLength
-    let sign = if inverse then 1.0 else -1.0
-    let scale = if inverse then 1.0 / lineLengthFloat else 1.0
-
-    for baseCoord in baseCoords 0 [] do
-        let line =
-            [| for n in 0 .. lineLength - 1 ->
-                let coord = baseCoord |> List.mapi (fun i v -> if uint i = dir then uint n else v)
-                image.Get coord |]
-
-        for k in 0 .. lineLength - 1 do
-            let mutable value = System.Numerics.Complex.Zero
-            for n in 0 .. lineLength - 1 do
-                let theta = sign * 2.0 * System.Math.PI * float (k * n) / lineLengthFloat
-                value <- value + line[n] * System.Numerics.Complex(System.Math.Cos theta, System.Math.Sin theta)
-
-            let coord = baseCoord |> List.mapi (fun i v -> if uint i = dir then uint k else v)
-            output.Set coord (value * scale)
-
-    output
-
-let inverseFFTXY (image: Image<System.Numerics.Complex>) : Image<float> =
+let inverseFFTXY (image: Image<System.Numerics.Complex>) : Image<System.Numerics.Complex> =
     if image.GetDimensions() <> 2u then
         failwith $"inverseFFTXY: image must be 2D, got {image.GetDimensions()}D"
 
-    let xInv = directionalFFTComplex 0u true image
-    let xyInv = directionalFFTComplex 1u true xInv
-    let real = Image.Re xyInv
-    xInv.decRefCount()
-    xyInv.decRefCount()
+    image.toComplexArray2D()
+    |> directionalDftComplex2D 0u true
+    |> directionalDftComplex2D 1u true
+    |> fun recovered -> Image<System.Numerics.Complex>.ofComplexArray2D(recovered, "inverseFFTXY", image.index)
+
+let realPart (image: Image<System.Numerics.Complex>) : Image<float> =
+    match image.GetDimensions() with
+    | 2u ->
+        let values = image.toComplexArray2D()
+        Array2D.init (values.GetLength 0) (values.GetLength 1) (fun x y -> values[x, y].Real)
+        |> fun real -> Image<float>.ofArray2D(real, "realPart", image.index)
+    | 3u ->
+        let values = image.toComplexArray3D()
+        Array3D.init (values.GetLength 0) (values.GetLength 1) (values.GetLength 2) (fun x y z -> values[x, y, z].Real)
+        |> fun real -> Image<float>.ofArray3D(real, "realPart", image.index)
+    | dims ->
+        failwith $"realPart: only 2D and 3D images are supported, got {dims}D"
+
+let inverseFFTXYReal (image: Image<System.Numerics.Complex>) : Image<float> =
+    if image.GetDimensions() <> 2u then
+        failwith $"inverseFFTXYReal: image must be 2D, got {image.GetDimensions()}D"
+
+    let complex = inverseFFTXY image
+    let real = realPart complex
+    complex.decRefCount()
     real
 
 let shiftFFT (image: Image<System.Numerics.Complex>) : Image<System.Numerics.Complex> =
-    let size = image.GetSize()
-    let output = new Image<System.Numerics.Complex>(size, 1u, "shiftFFT", image.index, true)
-    for src in flatIndices size do
-        let dst =
-            src
-            |> List.mapi (fun axis value -> (value + size[axis] / 2u) % size[axis])
-        output.Set dst (image.Get src)
-    output
+    match image.GetDimensions() with
+    | 2u ->
+        let input = image.toComplexArray2D()
+        let width = input.GetLength 0
+        let height = input.GetLength 1
+        Array2D.init width height (fun x y ->
+            input[(x + width - width / 2) % width, (y + height - height / 2) % height])
+        |> fun output -> Image<System.Numerics.Complex>.ofComplexArray2D(output, "shiftFFT", image.index)
+    | 3u ->
+        let input = image.toComplexArray3D()
+        let width = input.GetLength 0
+        let height = input.GetLength 1
+        let depth = input.GetLength 2
+        Array3D.init width height depth (fun x y z ->
+            input[(x + width - width / 2) % width,
+                  (y + height - height / 2) % height,
+                  (z + depth - depth / 2) % depth])
+        |> fun output -> Image<System.Numerics.Complex>.ofComplexArray3D(output, "shiftFFT", image.index)
+    | dims ->
+        failwith $"shiftFFT: only 2D and 3D images are supported, got {dims}D"

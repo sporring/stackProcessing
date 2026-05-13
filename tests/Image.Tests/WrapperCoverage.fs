@@ -18,6 +18,24 @@ let private tinyFloatImage () =
 let wrapperCoverage =
   testList "Image public wrapper coverage" [
 
+    testCase "4D array roundtrip and collection helpers" <| fun _ ->
+      let source = Array4D.init 2 3 2 2 (fun x y z t -> x + 10 * y + 100 * z + 1000 * t)
+      let img = Image<int>.ofArray4D (source, "fourD", 7)
+      let roundtrip = img.toArray4D()
+      let mapped = Image.map ((+) 1) img
+      let indexed = Image.mapi (fun idx value -> value + int idx[3]) img
+      let sum = Image.fold (+) 0 img
+      let delta = Image.fold2 (fun acc before after -> acc + after - before) 0 img mapped
+      let indexedSum = Image.foldi (fun idx acc value -> acc + int idx[0] + int idx[3] + value) 0 img
+
+      Expect.equal (img.GetSize()) [ 2u; 3u; 2u; 2u ] "ofArray4D should preserve all four dimensions."
+      Expect.equal roundtrip source "toArray4D should preserve 4D pixel order."
+      Expect.equal mapped.[1,2,1,1] (source[1,2,1,1] + 1) "Image.map should use the 4D array path."
+      Expect.equal indexed.[0,0,0,1] (source[0,0,0,1] + 1) "Image.mapi should include the fourth index."
+      Expect.equal sum (source |> Seq.cast<int> |> Seq.sum) "Image.fold should cover all 4D values."
+      Expect.equal delta source.Length "Image.fold2 should pair all 4D values."
+      Expect.equal indexedSum (source |> Seq.cast<int> |> Seq.sumBy id |> fun total -> total + 24) "Image.foldi should include 4D indices."
+
     testCase "prod and simple shape manipulation wrappers" <| fun _ ->
       let img = Image<uint8>.ofArray2D (array2D [ [ 1uy; 2uy ]; [ 3uy; 4uy ] ])
       let padded = ImageFunctions.constantPad2D [ 1u; 2u ] [ 0u; 1u ] 9.0 img
@@ -159,12 +177,14 @@ let wrapperCoverage =
       finally
         if File.Exists tmp then File.Delete tmp
 
-    testCase "ofImageList covers four and five component composition plus invalid counts" <| fun _ ->
+    testCase "ofImageList covers multi-component composition plus invalid counts" <| fun _ ->
       let make value = Image<uint8>.ofArray2D (array2D [ [ value; value + 1uy ]; [ value + 2uy; value + 3uy ] ])
       let four = [ 0uy; 10uy; 20uy; 30uy ] |> List.map make
       let five = [ 0uy; 10uy; 20uy; 30uy; 40uy ] |> List.map make
+      let six = [ 0uy; 10uy; 20uy; 30uy; 40uy; 50uy ] |> List.map make
       let composed4 = Image<uint8>.ofImageList four
       let composed5 = Image<uint8>.ofImageList five
+      let composed6 = Image<uint8>.ofImageList six
       let vectorImage = ImageFunctions.toVectorImage four
       let split5 = composed5.toImageList()
 
@@ -173,10 +193,11 @@ let wrapperCoverage =
       Expect.equal vectorImage.[1,1] [ 3uy; 13uy; 23uy; 33uy ] "toVectorImage should make a vector-valued image, not add a stack dimension."
       Expect.equal (vectorImage.GetSize()) [ 2u; 2u ] "toVectorImage should preserve the input image domain."
       Expect.equal (composed5.GetNumberOfComponentsPerPixel()) 5u "Five scalar images should compose into a five-component vector image."
+      Expect.equal (composed6.GetNumberOfComponentsPerPixel()) 6u "Six scalar images should compose through VectorOfImage."
+      Expect.equal composed6.[1,1] [ 3uy; 13uy; 23uy; 33uy; 43uy; 53uy ] "The six-component composed pixel should preserve source order."
       Expect.equal split5[4].[1,1] 43uy "toImageList should recover the fifth component."
       Expect.throws (fun () -> Image<uint8>.ofImageList [] |> ignore) "ofImageList should reject an empty input list."
       Expect.throws (fun () -> Image<uint8>.ofImageList [ make 1uy ] |> ignore) "ofImageList should reject one image."
-      Expect.throws (fun () -> Image<uint8>.ofImageList ([ 0uy; 1uy; 2uy; 3uy; 4uy; 5uy ] |> List.map make) |> ignore) "ofImageList should reject more than five images."
 
     testCase "scalar and vector conversion methods cover public cast helpers" <| fun _ ->
       let scalar = Image<int>.ofArray2D (array2D [ [ 1; 2 ]; [ 3; 4 ] ])
