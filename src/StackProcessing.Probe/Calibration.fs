@@ -20,7 +20,8 @@ type Options =
       RunProbes: bool
       ProbeRepeats: int
       Jobs: int
-      SkipAnalysis: bool }
+      SkipAnalysis: bool
+      EstimateOnly: bool }
 
 type RowInfo =
     { RowId: string
@@ -76,6 +77,7 @@ let private usage () =
     printfn "  --probe-json-root PATH  Probe JSON output directory. Defaults to tmp/probingGraphs."
     printfn "  --iterations N          Greedy loop iterations. Defaults to 5."
     printfn "  --no-run-probes         Emit probe graphs without running them."
+    printfn "  --estimate-only         Analyze measurements and write estimates without emitting or running probes."
     printfn "  --repeat N              Repeat emitted probe runs. Defaults to 1."
     printfn "  --probe-repeats N       Alias for --repeat."
     printfn "  -j, --jobs N            Run up to N emitted probe graphs at once. Defaults to 1."
@@ -126,7 +128,8 @@ let private defaultOptions () =
       RunProbes = true
       ProbeRepeats = 1
       Jobs = 1
-      SkipAnalysis = false }
+      SkipAnalysis = false
+      EstimateOnly = false }
 
 let private timestamp () =
     DateTime.Now.ToString("yyyyMMdd_HHmmss", CultureInfo.InvariantCulture)
@@ -209,6 +212,9 @@ let rec private parseArgs options args =
         | _ -> Error 2
     | "--skip-analysis" :: rest ->
         parseArgs { options with SkipAnalysis = true } rest
+    | "--estimate-only" :: rest
+    | "--validate-only" :: rest ->
+        parseArgs { options with EstimateOnly = true; RunProbes = false; Iterations = 1 } rest
     | value :: _ ->
         eprintfn "calibrate: unknown argument '%s'" value
         Error 2
@@ -432,6 +438,8 @@ let private runProbeGraphs options probeJsonRoot =
            "--extra-json-root"
            probeJsonRoot
            "--extra-json-only"
+           "--optimize"
+           "false"
            "--repeat"
            string options.ProbeRepeats
            "-j"
@@ -787,9 +795,13 @@ let main args =
 
             while not doneLoop && iteration <= options.Iterations do
                 printfn "Calibration iteration %d/%d" iteration options.Iterations
-                let vocabularyCount, solvedCount, remainingCount, emittedCount, emitDirectory = analyzeIteration options iteration true
+                let vocabularyCount, solvedCount, remainingCount, emittedCount, emitDirectory =
+                    analyzeIteration options iteration (not options.EstimateOnly)
 
-                if remainingCount = 0 then
+                if options.EstimateOnly then
+                    printfn "Estimate-only pass complete: %d/%d sample feature(s) have frozen time and memory estimates." solvedCount vocabularyCount
+                    doneLoop <- true
+                elif remainingCount = 0 then
                     printfn "Calibration complete: all %d sample feature(s) have frozen time and memory estimates." vocabularyCount
                     doneLoop <- true
                 elif emittedCount = 0 then

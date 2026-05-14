@@ -13,7 +13,8 @@ type Options =
       ExtraJsonRoots: string list
       ProbingPrefixes: string list
       Ridge: float
-      DiagnosticsOnly: bool }
+      DiagnosticsOnly: bool
+      IncludeSamples: bool }
 
 type AnalysisRow =
     { RowId: string
@@ -47,6 +48,7 @@ let private usage () =
     printfn "  --ridge        1e-8"
     printfn "  --diagnostics-only"
     printfn "                 Write matrix/coverage diagnostics without parsing run logs or fitting coefficients."
+    printfn "  --no-samples   Analyze only extra/probe JSON roots."
 
 let private defaultSamplesRoot () =
     let cwd = Directory.GetCurrentDirectory()
@@ -79,7 +81,8 @@ let private defaultOptions () =
       ExtraJsonRoots = []
       ProbingPrefixes = []
       Ridge = 1e-8
-      DiagnosticsOnly = false }
+      DiagnosticsOnly = false
+      IncludeSamples = true }
 
 let rec private parseArgs options args =
     match args with
@@ -105,6 +108,8 @@ let rec private parseArgs options args =
             Error 2
     | "--diagnostics-only" :: rest ->
         parseArgs { options with DiagnosticsOnly = true } rest
+    | "--no-samples" :: rest ->
+        parseArgs { options with IncludeSamples = false } rest
     | option :: _ ->
         eprintfn "analysis: unknown option %s" option
         usage ()
@@ -254,10 +259,22 @@ let private generatedPrefixForRoot (root: string) =
         root.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar)
         |> Path.GetFileName
 
-    if rootName.StartsWith("calibration_", StringComparison.OrdinalIgnoreCase) then
+    if rootName.StartsWith("calibration_", StringComparison.OrdinalIgnoreCase)
+       || rootName.StartsWith("bottomup_", StringComparison.OrdinalIgnoreCase)
+       || rootName.Equals("probingGraphs", StringComparison.OrdinalIgnoreCase) then
         "generated"
     else
         "generated/" + safeName rootName
+
+let private stripGeneratedSessionPrefix (rowId: string) =
+    let parts = rowId.Split([| '/' |], StringSplitOptions.RemoveEmptyEntries)
+
+    if parts.Length > 1
+       && (parts[0].StartsWith("calibration_", StringComparison.OrdinalIgnoreCase)
+           || parts[0].StartsWith("bottomup_", StringComparison.OrdinalIgnoreCase)) then
+        String.concat "/" parts[1..]
+    else
+        rowId
 
 let private discoverGraphsInRoot (samplesRoot: string) (scanRoot: string) includeTmp namePrefix =
     Directory.EnumerateFiles(scanRoot, "*.json", SearchOption.AllDirectories)
@@ -274,7 +291,10 @@ let private discoverGraphsInRoot (samplesRoot: string) (scanRoot: string) includ
     |> Seq.sort
     |> Seq.map (fun path ->
         let relative = relativePath scanRoot path
-        let localRowId = relative.Substring(0, relative.Length - Path.GetExtension(relative).Length)
+        let localRowId =
+            relative.Substring(0, relative.Length - Path.GetExtension(relative).Length)
+            |> fun rowId -> if includeTmp then stripGeneratedSessionPrefix rowId else rowId
+
         let rowId =
             if String.IsNullOrWhiteSpace namePrefix then
                 localRowId
@@ -296,8 +316,13 @@ let private discoverGraphsInRoot (samplesRoot: string) (scanRoot: string) includ
           FeatureValues = features |> Map.add "intercept" 1.0 })
     |> Seq.toList
 
-let private discoverGraphs (samplesRoot: string) extraJsonRoots =
-    let sampleGraphs = discoverGraphsInRoot samplesRoot samplesRoot false ""
+let private discoverGraphs (samplesRoot: string) includeSamples extraJsonRoots =
+    let sampleGraphs =
+        if includeSamples then
+            discoverGraphsInRoot samplesRoot samplesRoot false ""
+        else
+            []
+
     let generatedGraphs =
         extraJsonRoots
         |> List.collect (fun root ->
@@ -992,7 +1017,7 @@ let main argv =
     | Error exitCode -> exitCode
     | Ok options ->
         let rows =
-            discoverGraphs options.SamplesRoot options.ExtraJsonRoots
+            discoverGraphs options.SamplesRoot options.IncludeSamples options.ExtraJsonRoots
             @ discoverProbingRows options.ProbingPrefixes
 
         writeOutputs options rows

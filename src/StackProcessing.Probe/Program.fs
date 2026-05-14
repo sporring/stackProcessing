@@ -10,6 +10,7 @@ let private usage () =
     printfn "  analysis   Extract feature matrices, diagnostics, coefficients, and predictions."
     printfn "  probing    Measure or emit probe graphs."
     printfn "  calibrate  Run the greedy analysis/freezing/probe-emission loop."
+    printfn "  bottom-up  Run controlled bottom-up calibration probe layers."
     printfn "  report     Render legacy probing HTML reports."
     printfn ""
     printfn "Examples:"
@@ -17,7 +18,8 @@ let private usage () =
     printfn "  dotnet run --project src/StackProcessing.Probe -- samples --json --extra-json-root tmp/probingGraphs"
     printfn "  dotnet run --project src/StackProcessing.Probe -- analysis --extra-json-root tmp/probingGraphs"
     printfn "  dotnet run --project src/StackProcessing.Probe -- probing tmp/analysis/probing-boilerplate.json --emit-json tmp/probingGraphs"
-    printfn "  dotnet run --project src/StackProcessing.Probe -- calibrate --repeat 3 -j 6"
+    printfn "  dotnet run --project src/StackProcessing.Probe -- bottom-up --repeat 3 -j 1"
+    printfn "  dotnet run --project src/StackProcessing.Probe -- calibrate --repeat 3 -j 1"
 
 let private dispatch command args =
     match command with
@@ -45,6 +47,10 @@ let private dispatch command args =
     | "calibration"
     | "loop" ->
         ProbeCalibration.main args
+    | "bottom-up"
+    | "bottomup"
+    | "ladder" ->
+        ProbeBottomUpCalibration.main args
     | "report"
     | "reports" ->
         ProbeProbingReport.main args

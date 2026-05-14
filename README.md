@@ -97,43 +97,45 @@ directory. Temporary generated JSON runner projects still live below
 outputs.
 
 ```bash
-dotnet run --project src/StackProcessing.RunSamples/RunSamples.fsproj -- --repeat 3 -j 1
-dotnet run --project src/StackProcessing.RunSamples/RunSamples.fsproj -- --json --repeat 3 -j 1
+dotnet run --project src/StackProcessing.RunSamples/RunSamples.fsproj -- --repeat 3 -j 1 --optimize false
+dotnet run --project src/StackProcessing.RunSamples/RunSamples.fsproj -- --json --repeat 3 -j 1 --optimize false
 ```
 
 `StackProcessing.Probe` is the front door for cost-model work. The usual
 workflow is:
 
-1. run meaningful sample JSON pipelines with `RunSamples --json`,
-2. run `Probe calibrate` to analyze the current feature matrix, freeze reliable
-   coefficients, emit calibration graphs, run those graphs, and repeat.
+1. run bottom-up calibration probes to learn controlled baseline and one-more
+   stage costs,
+2. run meaningful sample JSON pipelines with `RunSamples --json`,
+3. refresh Probe estimates to validate the learned coefficients on real sample
+   pipelines.
 
 ```bash
-dotnet run --project src/StackProcessing.Probe/StackProcessing.Probe.fsproj -- calibrate --iterations 5 --repeat 3 -j 1
+dotnet run --project src/StackProcessing.Probe/StackProcessing.Probe.fsproj -- bottom-up --repeat 3 -j 1
+dotnet run --project src/StackProcessing.RunSamples/RunSamples.fsproj -- --json --repeat 3 -j 1 --optimize false
+dotnet run --project src/StackProcessing.Probe/StackProcessing.Probe.fsproj -- calibrate --estimate-only
 ```
 
 For development-only graph emission without running the generated probes:
 
 ```bash
-dotnet run --project src/StackProcessing.Probe/StackProcessing.Probe.fsproj -- calibrate --no-run-probes
+dotnet run --project src/StackProcessing.Probe/StackProcessing.Probe.fsproj -- bottom-up --no-run-probes
 ```
 
-The calibration loop writes `tmp/analysis/frozenCoefficients.csv`,
-`sampleEstimates.csv`, `greedyCoverage.csv`, `probeTargets.csv`, and
-`probePlan.csv`. It freezes coefficients only when support, subset
-conditioning, repeat residuals, and non-negative time/memory estimates pass the
-configured thresholds. `sampleEstimates.csv` applies the currently frozen
-coefficients back to the original samples and compares estimated memory/time
+The bottom-up calibration path writes controlled graph batches below
+`tmp/probingGraphs/bottomup_*/layer_###_*`. The first layer measures empty,
+minimal traversal, read, and write patterns; later layers add synthetic
+sources, scalar/unary stages, and common windowed stages. The analysis outputs
+include `tmp/analysis/coefficients.csv`, `predictions.csv`, `diagnostics.csv`,
+and `sampleEstimates.csv`. `sampleEstimates.csv` applies the currently learned
+coefficients back to the sample workloads and compares estimated memory/time
 with the real measurements, including any features still missing from the
-estimate. The emitted probe graphs are calibration workloads rather than
-representative user pipelines: fixed source, one unknown or a small triangular
-group, fixed sink. Probe writes batches below
-`tmp/probingGraphs/calibration_*/iteration_###` so one calibration run never
-overwrites another run's graph files. The final calibration pass recomputes
-`sampleEstimates.csv` after the last probe batch has run.
+estimate.
 
 For timing calibration, prefer `-j 1` so sample and probe graphs do not compete
-for CPU, memory bandwidth, or SimpleITK worker threads. Do not clean `tmp/`
+for CPU, memory bandwidth, or SimpleITK worker threads. Calibration and
+validation runs should keep the optimizer off; `Probe bottom-up` passes
+`--optimize false` when it runs emitted probe graphs. Do not clean `tmp/`
 between the sample run and calibration run: the timestamped `runJson_*`
 directories are the measurement evidence used by Probe.
 

@@ -1112,6 +1112,16 @@ module BuiltInCatalog =
           Outputs = [ makePort "Any" any ]
           Parameters = [ makeParameter "label" "Label" "tap" BasicType.String ] }
 
+        { Id = "Ignore"
+          DisplayName = "ignore"
+          Category = "Debug"
+          Summary = "Consume a stream without writing it."
+          Description = "Consumes the incoming stream with sink and produces no output. This is mainly useful for controlled timing probes where traversal should be measured separately from writing."
+          Aliases = [ "debug"; "sink"; "consume"; "discard"; "timing"; "probe" ]
+          Inputs = [ makePort "Any" any ]
+          Outputs = []
+          Parameters = [] }
+
         { Id = "Print"
           DisplayName = "print"
           Category = "Visualization"

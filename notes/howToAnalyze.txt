@@ -1,37 +1,47 @@
 # How to analyze
 
-## 1. Run the sample workloads
+Probe calibration should measure unoptimized execution. Keep `-j 1` for timing
+runs so graphs do not compete for CPU, memory bandwidth, or SimpleITK worker
+threads.
 
-Optionally, run the F# sample projects:
+## 1. Build calibration data
 
-dotnet run --project src/StackProcessing.RunSamples/RunSamples.fsproj -- --repeat 3 -j 6
+Probe emits controlled bottom-up calibration graphs, runs them with the
+optimizer off, repeats the measurements, and writes the current estimates. The
+layers start with empty/minimal traversal/read/write probes and then add
+sources and one-more stage probes.
 
-Run the Studio JSON sample graphs:
+```bash
+dotnet run --project src/StackProcessing.Probe/StackProcessing.Probe.fsproj -- bottom-up --repeat 3 -j 1
+```
 
-dotnet run --project src/StackProcessing.RunSamples/RunSamples.fsproj -- --json --repeat 3 -j 6
+## 2. Validate on sample workloads
 
-## 2. Run Probe
+After calibration, run the user-facing sample JSON graphs, also with the
+optimizer off. These sample runs are validation data: they test whether the
+learned coefficients predict real pipelines.
 
-Probe analyzes the sample measurements, freezes reliable coefficients, emits
-designed calibration probes, runs those probes, repeats the analysis, and writes
-the final sample estimates.
+```bash
+dotnet run --project src/StackProcessing.RunSamples/RunSamples.fsproj -- --json --repeat 3 -j 1 --optimize false
+dotnet run --project src/StackProcessing.Probe/StackProcessing.Probe.fsproj -- calibrate --estimate-only
+```
 
-dotnet run --project src/StackProcessing.Probe/StackProcessing.Probe.fsproj -- calibrate --iterations 5 --repeat 3 -j 6
+The second command refreshes `tmp/analysis/sampleEstimates.csv` using the
+available measurements without emitting or running another probe batch.
 
 ## Main outputs
 
-tmp/analysis/matrix.csv
-tmp/analysis/vectors.csv
-tmp/analysis/diagnostics.csv
-tmp/analysis/subsetDiagnostics.csv
-tmp/analysis/coefficients.csv
-tmp/analysis/predictions.csv
+```text
 tmp/analysis/frozenCoefficients.csv
 tmp/analysis/sampleEstimates.csv
 tmp/analysis/greedyCoverage.csv
 tmp/analysis/probeTargets.csv
 tmp/analysis/probePlan.csv
+tmp/analysis/diagnostics.csv
+tmp/analysis/subsetDiagnostics.csv
+tmp/analysis/matrix.csv
+tmp/analysis/vectors.csv
+```
 
-## Cut'n'paste
-dotnet run --project src/StackProcessing.RunSamples/RunSamples.fsproj -- --json --repeat 3 -j 1
-dotnet run --project src/StackProcessing.Probe/StackProcessing.Probe.fsproj -- calibrate --iterations 5 --repeat 3 -j 1
+Do not clean `tmp/` between calibration and validation. The timestamped
+`runJson_*` folders are the measurement evidence used by Probe.

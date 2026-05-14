@@ -1209,6 +1209,8 @@ module PipelineCodeGenerator =
             let output = quotedParameter "output"
             let suffix = quotedParameter "suffix"
             $">=> writeThrough {output} {suffix}"
+        | "Ignore" ->
+            ""
         | "WriteSlabSlices" ->
             let output = quotedParameter "output"
             let suffix = quotedParameter "suffix"
@@ -2276,7 +2278,8 @@ module PipelineCodeGenerator =
                 | "WriteMatrix"
                 | "WriteCSV"
                 | "ImHistogram"
-                | "ShowImage" ->
+                | "ShowImage"
+                | "Ignore" ->
                     $"{expression}{newLine}|> sink"
                 | "ComputeStats" ->
                     $"{expression}{newLine}|> drain"

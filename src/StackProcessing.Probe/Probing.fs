@@ -1302,6 +1302,18 @@ let private writeNode name =
       "output", outputPathForProbe name
       "suffix", ".tiff" ]
 
+let private ignoreNode =
+    "ignore", "Ignore", []
+
+let private zeroNode pixelType width height depth =
+    "source",
+    "Zero",
+    [ "availableMemory", string availableMemory + "UL"
+      "type", pixelType
+      "width", string width
+      "height", string height
+      "depth", string depth ]
+
 let private readNode pixelType =
     "read",
     "Read",
@@ -1356,6 +1368,155 @@ let private graphTemplateMatchesAnalysisTokens tokens (template: GraphTemplate) 
             |> List.exists (fun candidate ->
                 candidate.Contains(token, StringComparison.Ordinal)
                 || token.Contains(candidate, StringComparison.Ordinal)))
+
+let private bottomUpGraphTemplates () =
+    let sizeSuffix = "64x64x64"
+    let writeFeature = "Write:format=Image stack:depth=1:chunkX=64:chunkY=64:chunkZ=8:maxConcurrentWrites=0:frameAxis=0"
+    let ignoreFeature = "Ignore"
+
+    let emptyTemplate name description =
+        { Name = name
+          Description = description
+          Features = [ "intercept" ]
+          Graph = { Version = 1; Nodes = [||]; Edges = [||] } }
+
+    let templateWithSink name description sinkFeature nodes sink =
+        { Name = name
+          Description = description
+          Features = "intercept" :: sinkFeature :: []
+          Graph = graphForLinearPipeline name (nodes @ [ sink ]) }
+
+    let ignoreTemplate name description nodes =
+        templateWithSink name description ignoreFeature nodes ignoreNode
+
+    let writeTemplate name description nodes =
+        templateWithSink name description writeFeature nodes (writeNode name)
+
+    let writeUInt8Template name description nodes outputType =
+        if outputType = "UInt8" then
+            writeTemplate name description nodes
+        else
+            writeTemplate name description (nodes @ [ castNode outputType "UInt8" ])
+
+    let zeroUInt8 = zeroNode "UInt8" 64 64 64
+    let zeroFloat = zeroNode "Float64" 64 64 64
+    let readUInt8 = readNode "UInt8"
+    let readFloat = readNode "Float64"
+    let readFloat32 = readNode "Float32"
+
+    let sourceLayer =
+        [| emptyTemplate "bottomup-00-empty" "Empty graph for process startup/shutdown intercept."
+           ignoreTemplate $"bottomup-01-zero-uint8-ignore-{sizeSuffix}" "Minimal UInt8 traversal through ignore." [ zeroUInt8 ]
+           writeTemplate $"bottomup-02-zero-uint8-write-{sizeSuffix}" "UInt8 zero source written to stack." [ zeroUInt8 ]
+           ignoreTemplate $"bottomup-03-read-uint8-ignore-{sizeSuffix}" "UInt8 read consumed without writing." [ readUInt8 ]
+           writeTemplate $"bottomup-04-read-uint8-write-{sizeSuffix}" "UInt8 read then write." [ readUInt8 ]
+           ignoreTemplate $"bottomup-05-zero-float-ignore-{sizeSuffix}" "Float64 zero source consumed without writing." [ zeroFloat ]
+           writeUInt8Template $"bottomup-06-zero-float-write-{sizeSuffix}" "Float64 zero source cast and written." [ zeroFloat ] "Float64"
+           ignoreTemplate $"bottomup-07-read-float-ignore-{sizeSuffix}" "Float64 read consumed without writing." [ readFloat ]
+           writeUInt8Template $"bottomup-08-read-float-write-{sizeSuffix}" "Float64 read cast and written." [ readFloat ] "Float64" |]
+
+    let syntheticSourcesLayer =
+        [| ignoreTemplate
+               $"bottomup-10-normalNoise-float-ignore-{sizeSuffix}"
+               "Float64 normalNoise source consumed without writing."
+               [ "noise", "NormalNoise", [ "availableMemory", string availableMemory + "UL"; "type", "Float64"; "width", "64"; "height", "64"; "depth", "64"; "mean", "128.0"; "std", "25.0" ] ]
+           writeUInt8Template
+               $"bottomup-11-normalNoise-float-write-{sizeSuffix}"
+               "Float64 normalNoise source cast and written."
+               [ "noise", "NormalNoise", [ "availableMemory", string availableMemory + "UL"; "type", "Float64"; "width", "64"; "height", "64"; "depth", "64"; "mean", "128.0"; "std", "25.0" ] ]
+               "Float64"
+           ignoreTemplate
+               $"bottomup-12-addNormalNoise-uint8-ignore-{sizeSuffix}"
+               "UInt8 zero plus addNormalNoise consumed without writing."
+               [ zeroUInt8; "noise", "AddNormalNoise", [ "type", "UInt8"; "mean", "128.0"; "std", "50.0" ] ]
+           writeTemplate
+               $"bottomup-13-addNormalNoise-uint8-write-{sizeSuffix}"
+               "UInt8 zero plus addNormalNoise written."
+               [ zeroUInt8; "noise", "AddNormalNoise", [ "type", "UInt8"; "mean", "128.0"; "std", "50.0" ] ]
+           ignoreTemplate
+               $"bottomup-14-saltAndPepper-source-ignore-{sizeSuffix}"
+               "UInt8 saltAndPepperNoise source consumed without writing."
+               [ "noise", "SaltAndPepperNoise", [ "availableMemory", string availableMemory + "UL"; "type", "UInt8"; "width", "64"; "height", "64"; "depth", "64"; "probability", "0.02" ] ]
+           writeTemplate
+               $"bottomup-15-saltAndPepper-source-write-{sizeSuffix}"
+               "UInt8 saltAndPepperNoise source written."
+               [ "noise", "SaltAndPepperNoise", [ "availableMemory", string availableMemory + "UL"; "type", "UInt8"; "width", "64"; "height", "64"; "depth", "64"; "probability", "0.02" ] ]
+           ignoreTemplate
+               $"bottomup-16-shotNoise-source-ignore-{sizeSuffix}"
+               "Float64 shotNoise source consumed without writing."
+               [ "noise", "ShotNoise", [ "availableMemory", string availableMemory + "UL"; "type", "Float64"; "width", "64"; "height", "64"; "depth", "64"; "scale", "2.0" ] ]
+           writeUInt8Template
+               $"bottomup-17-shotNoise-source-write-{sizeSuffix}"
+               "Float64 shotNoise source cast and written."
+               [ "noise", "ShotNoise", [ "availableMemory", string availableMemory + "UL"; "type", "Float64"; "width", "64"; "height", "64"; "depth", "64"; "scale", "2.0" ] ]
+               "Float64"
+           ignoreTemplate
+               $"bottomup-18-speckleNoise-source-ignore-{sizeSuffix}"
+               "Float64 speckleNoise source consumed without writing."
+               [ "noise", "SpeckleNoise", [ "availableMemory", string availableMemory + "UL"; "type", "Float64"; "width", "64"; "height", "64"; "depth", "64"; "std", "0.5" ] ]
+           writeUInt8Template
+               $"bottomup-19-speckleNoise-source-write-{sizeSuffix}"
+               "Float64 speckleNoise source cast and written."
+               [ "noise", "SpeckleNoise", [ "availableMemory", string availableMemory + "UL"; "type", "Float64"; "width", "64"; "height", "64"; "depth", "64"; "std", "0.5" ] ]
+               "Float64" |]
+
+    let simpleUnaryLayer =
+        [| ignoreTemplate $"bottomup-20-cast-float-uint8-ignore-{sizeSuffix}" "Float64 read cast to UInt8 and consumed." [ readFloat; castNode "Float64" "UInt8" ]
+           writeTemplate $"bottomup-21-cast-float-uint8-write-{sizeSuffix}" "Float64 read cast to UInt8 and written." [ readFloat; castNode "Float64" "UInt8" ]
+           ignoreTemplate $"bottomup-22-threshold-uint8-ignore-{sizeSuffix}" "UInt8 read threshold consumed without writing." [ readUInt8; thresholdNode "UInt8" "128.0" ]
+           writeTemplate $"bottomup-23-threshold-uint8-write-{sizeSuffix}" "UInt8 read threshold written." [ readUInt8; thresholdNode "UInt8" "128.0" ]
+           ignoreTemplate $"bottomup-24-imageOpScalar-uint8-ignore-{sizeSuffix}" "UInt8 read multiplied by scalar and consumed." [ readUInt8; "op", "ImageOpScalar", [ "operation", "*"; "type", "UInt8"; "value", "2" ] ]
+           writeTemplate $"bottomup-25-imageOpScalar-uint8-write-{sizeSuffix}" "UInt8 read multiplied by scalar and written." [ readUInt8; "op", "ImageOpScalar", [ "operation", "*"; "type", "UInt8"; "value", "2" ] ]
+           ignoreTemplate $"bottomup-26-imageOpScalar-float-ignore-{sizeSuffix}" "Float64 read shifted by scalar and consumed." [ readFloat; "op", "ImageOpScalar", [ "operation", "+"; "type", "Float64"; "value", "1.0" ] ]
+           writeUInt8Template $"bottomup-27-imageOpScalar-float-write-{sizeSuffix}" "Float64 read shifted, cast, and written." [ readFloat; "op", "ImageOpScalar", [ "operation", "+"; "type", "Float64"; "value", "1.0" ] ] "Float64"
+           ignoreTemplate $"bottomup-28-unarySqrt-float-ignore-{sizeSuffix}" "Float64 read square-rooted and consumed." [ readFloat; "op", "UnaryImageFunction", [ "function", "sqrt" ] ]
+           writeUInt8Template $"bottomup-29-unarySqrt-float-write-{sizeSuffix}" "Float64 read square-rooted, cast, and written." [ readFloat; "op", "UnaryImageFunction", [ "function", "sqrt" ] ] "Float64" |]
+
+    let windowLayer =
+        let floatFilters =
+            [ "gauss", "SmoothWGauss", [ "sigma", "3.0"; "outputRegionMode", "None"; "boundaryCondition", "None"; "windowSize", "7" ], "Float64"
+              "median", "SmoothWMedian", [ "type", "Float64"; "radius", "3"; "windowSize", "7" ], "Float64"
+              "gradient", "GradientMagnitude", [ "type", "Float64"; "windowSize", "7" ], "Float64"
+              "laplacian", "Laplacian", [ "type", "Float64"; "windowSize", "7" ], "Float64"
+              "sobel", "SobelEdge", [ "type", "Float64"; "windowSize", "7" ], "Float64" ]
+
+        let binaryOps =
+            [ "erode", "Erode", [ "radius", "3" ]
+              "dilate", "Dilate", [ "radius", "3" ]
+              "opening", "Opening", [ "radius", "3" ]
+              "closing", "Closing", [ "radius", "3" ]
+              "binaryMedian", "BinaryMedian", [ "radius", "3"; "windowSize", "7" ]
+              "binaryContour", "BinaryContour", [ "fullyConnected", "false"; "windowSize", "7" ]
+              "fillSmallHoles", "FillSmallHoles", [ "maximumVolume", "128"; "connectivity", "TwentySix" ] ]
+
+        let grayscaleOps =
+            [ "grayErode", "GrayscaleErode", [ "type", "UInt8"; "radius", "3"; "windowSize", "7" ]
+              "grayDilate", "GrayscaleDilate", [ "type", "UInt8"; "radius", "3"; "windowSize", "7" ]
+              "grayOpening", "GrayscaleOpening", [ "type", "UInt8"; "radius", "3"; "windowSize", "7" ]
+              "grayClosing", "GrayscaleClosing", [ "type", "UInt8"; "radius", "3"; "windowSize", "7" ]
+              "blackTopHat", "BlackTopHat", [ "type", "UInt8"; "radius", "3"; "windowSize", "7" ]
+              "whiteTopHat", "WhiteTopHat", [ "type", "UInt8"; "radius", "3"; "windowSize", "7" ]
+              "morphGradient", "MorphologicalGradient", [ "type", "UInt8"; "radius", "3"; "windowSize", "7" ] ]
+
+        [| for id, functionId, parameters, outputType in floatFilters do
+               let nodes = [ readFloat; "op", functionId, parameters ]
+               yield ignoreTemplate $"bottomup-30-{id}-float-ignore-{sizeSuffix}" $"Float64 {functionId} consumed without writing." nodes
+               yield writeUInt8Template $"bottomup-31-{id}-float-write-{sizeSuffix}" $"Float64 {functionId} cast and written." nodes outputType
+
+           for id, functionId, parameters in binaryOps do
+               let nodes = [ readUInt8; thresholdNode "UInt8" "128.0"; "op", functionId, parameters ]
+               yield ignoreTemplate $"bottomup-32-{id}-uint8-ignore-{sizeSuffix}" $"UInt8 threshold then {functionId} consumed." nodes
+               yield writeTemplate $"bottomup-33-{id}-uint8-write-{sizeSuffix}" $"UInt8 threshold then {functionId} written." nodes
+
+           for id, functionId, parameters in grayscaleOps do
+               let nodes = [ readUInt8; "op", functionId, parameters ]
+               yield ignoreTemplate $"bottomup-34-{id}-uint8-ignore-{sizeSuffix}" $"UInt8 {functionId} consumed without writing." nodes
+               yield writeTemplate $"bottomup-35-{id}-uint8-write-{sizeSuffix}" $"UInt8 {functionId} written." nodes |]
+
+    [| "01-starters", sourceLayer
+       "02-sources", syntheticSourcesLayer
+       "03-simple-unary", simpleUnaryLayer
+       "04-windowed-unary", windowLayer |]
 
 let private generatedGraphTemplates () =
     let readUInt8Feature =
@@ -1706,6 +1867,12 @@ let private writeProbeGraphs outputDir analysisTokens probes graphTemplates =
 
 let graphTemplatesForCalibration () =
     generatedGraphTemplates ()
+
+let graphTemplateLayersForBottomUp () =
+    bottomUpGraphTemplates ()
+
+let graphTemplatesForBottomUp () =
+    bottomUpGraphTemplates () |> Array.collect snd
 
 let writeGraphTemplates outputDir (graphTemplates: GraphTemplate array) =
     if Directory.Exists outputDir then
