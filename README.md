@@ -111,7 +111,7 @@ workflow is:
    pipelines.
 
 ```bash
-dotnet run --project src/StackProcessing.Probe/StackProcessing.Probe.fsproj -- bottom-up --repeat 3 -j 1
+dotnet run --project src/StackProcessing.Probe/StackProcessing.Probe.fsproj -- bottom-up --size 128 --noisy-type Float32 --repeat 3 -j 1
 dotnet run --project src/StackProcessing.RunSamples/RunSamples.fsproj -- --json --repeat 3 -j 1 --optimize false
 dotnet run --project src/StackProcessing.Probe/StackProcessing.Probe.fsproj -- calibrate --estimate-only
 ```
@@ -119,25 +119,35 @@ dotnet run --project src/StackProcessing.Probe/StackProcessing.Probe.fsproj -- c
 For development-only graph emission without running the generated probes:
 
 ```bash
-dotnet run --project src/StackProcessing.Probe/StackProcessing.Probe.fsproj -- bottom-up --no-run-probes
+dotnet run --project src/StackProcessing.Probe/StackProcessing.Probe.fsproj -- bottom-up --size 64 --no-run-probes
 ```
 
-The bottom-up calibration path writes controlled graph batches below
+The bottom-up calibration path clears repository `tmp/` by default, generates
+its own binary shape and noisy gray-valued input stacks below
+`tmp/probeInputs`, and writes controlled graph batches below
 `tmp/probingGraphs/bottomup_*/layer_###_*`. The first layer measures empty,
-minimal traversal, read, and write patterns; later layers add synthetic
-sources, scalar/unary stages, and common windowed stages. The analysis outputs
-include `tmp/analysis/coefficients.csv`, `predictions.csv`, `diagnostics.csv`,
-and `sampleEstimates.csv`. `sampleEstimates.csv` applies the currently learned
+minimal traversal, read, and write patterns; later layers add sources,
+scalar/unary stages, windowed stages, geometry, FFT/vector/keypoint probes, and
+dependency-breakers for under-isolated features. The analysis outputs include
+`tmp/analysis/coefficients.csv`, `predictions.csv`, `diagnostics.csv`, and
+`sampleEstimates.csv`. `sampleEstimates.csv` applies the currently learned
 coefficients back to the sample workloads and compares estimated memory/time
 with the real measurements, including any features still missing from the
-estimate.
+estimate. Use `--keep-tmp` only when deliberately preserving existing
+measurements.
+
+During fitting, the empty graph defines the common intercept and `Ignore` is
+fixed at zero cost. This keeps the baseline from being absorbed into the
+minimal traversal sink and gives read/write/stage estimates a stable anchor.
 
 For timing calibration, prefer `-j 1` so sample and probe graphs do not compete
 for CPU, memory bandwidth, or SimpleITK worker threads. Calibration and
 validation runs should keep the optimizer off; `Probe bottom-up` passes
 `--optimize false` when it runs emitted probe graphs. Do not clean `tmp/`
-between the sample run and calibration run: the timestamped `runJson_*`
-directories are the measurement evidence used by Probe.
+between the calibration run and validation run: the generated inputs and
+timestamped `runJson_*` directories are the measurement evidence used by Probe. `Probe calibrate
+--estimate-only` uses the latest `tmp/probingGraphs/bottomup_*` root by default;
+pass `--probe-json-root PATH` to validate against a specific calibration root.
 
 ## Projects
 

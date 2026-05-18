@@ -9,6 +9,7 @@ type Options =
     { SamplesRoot: string
       AnalysisDirectory: string
       ProbeJsonRoot: string
+      ProbeJsonRootExplicit: bool
       Iterations: int
       MinSupport: int
       MaxCondition: float
@@ -117,6 +118,7 @@ let private defaultOptions () =
     { SamplesRoot = samplesRoot
       AnalysisDirectory = Path.Combine(root, "tmp", "analysis")
       ProbeJsonRoot = Path.Combine(root, "tmp", "probingGraphs")
+      ProbeJsonRootExplicit = false
       Iterations = 5
       MinSupport = 3
       MaxCondition = 50.0
@@ -133,6 +135,14 @@ let private defaultOptions () =
 
 let private timestamp () =
     DateTime.Now.ToString("yyyyMMdd_HHmmss", CultureInfo.InvariantCulture)
+
+let private latestBottomUpRoot probeJsonRoot =
+    if Directory.Exists probeJsonRoot then
+        Directory.GetDirectories(probeJsonRoot, "bottomup_*", SearchOption.TopDirectoryOnly)
+        |> Array.sortBy Path.GetFileName
+        |> Array.tryLast
+    else
+        None
 
 let rec private parseArgs options args =
     match args with
@@ -155,14 +165,15 @@ let rec private parseArgs options args =
                     if options.ProbeJsonRoot = (defaultOptions ()).ProbeJsonRoot then
                         Path.Combine(root, "tmp", "probingGraphs")
                     else
-                        options.ProbeJsonRoot }
+                        options.ProbeJsonRoot
+                ProbeJsonRootExplicit = options.ProbeJsonRootExplicit }
             rest
     | "--analysis-dir" :: value :: rest
     | "--output" :: value :: rest ->
         parseArgs { options with AnalysisDirectory = Path.GetFullPath value } rest
     | "--probe-json-root" :: value :: rest
     | "--emit-json" :: value :: rest ->
-        parseArgs { options with ProbeJsonRoot = Path.GetFullPath value } rest
+        parseArgs { options with ProbeJsonRoot = Path.GetFullPath value; ProbeJsonRootExplicit = true } rest
     | "--iterations" :: value :: rest ->
         match Int32.TryParse value with
         | true, n when n > 0 -> parseArgs { options with Iterations = n } rest
@@ -780,7 +791,15 @@ let main args =
     | Ok options ->
         try
             let options =
-                if options.RunProbes then
+                if options.EstimateOnly && not options.ProbeJsonRootExplicit then
+                    match latestBottomUpRoot options.ProbeJsonRoot with
+                    | Some root ->
+                        printfn "Estimate-only using latest bottom-up probe root: %s" root
+                        { options with ProbeJsonRoot = root }
+                    | None ->
+                        printfn "Estimate-only found no bottom-up probe root below %s; using all graphs from that root." options.ProbeJsonRoot
+                        options
+                elif options.RunProbes then
                     { options with ProbeJsonRoot = Path.Combine(options.ProbeJsonRoot, "calibration_" + timestamp ()) }
                 else
                     options

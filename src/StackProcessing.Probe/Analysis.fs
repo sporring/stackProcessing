@@ -759,6 +759,73 @@ let private measurementMatrix (rows: AnalysisRow list) (features: string list) (
 
     usable, a, y
 
+let private emptyInterceptValue (rows: AnalysisRow list) (usable: (int * Measurement) list) =
+    usable
+    |> List.choose (fun (rowIndex, measurement) ->
+        let row = rows[rowIndex]
+
+        if row.FeatureValues.Count = 1 && row.FeatureValues.ContainsKey "intercept" then
+            Some measurement.Value
+        else
+            None)
+    |> function
+        | [] -> None
+        | values -> Some(List.average values)
+
+let private fixedCoefficientsForFit (rows: AnalysisRow list) (features: string list) (usable: (int * Measurement) list) =
+    seq {
+        if features |> List.contains "Ignore" then
+            yield "Ignore", 0.0
+
+        match emptyInterceptValue rows usable with
+        | Some value when features |> List.contains "intercept" ->
+            yield "intercept", value
+        | _ -> ()
+    }
+    |> Map.ofSeq
+
+let private solveWithFixedCoefficients ridge rows features usable (a: float[,]) (y: float[]) =
+    // Calibration anchors: empty measures common startup/shutdown, while Ignore
+    // is defined to have zero stage cost.
+    let fixedCoefficients = fixedCoefficientsForFit rows features usable
+    let featureIndexes = features |> List.mapi (fun index feature -> feature, index) |> Map.ofList
+    let solvedFeatures = features |> List.filter (fun feature -> not (fixedCoefficients.ContainsKey feature))
+    let solvedFeatureIndexes = solvedFeatures |> List.map (fun feature -> featureIndexes[feature])
+    let adjustedY = Array.copy y
+
+    for row in 0 .. a.GetLength(0) - 1 do
+        let fixedContribution =
+            fixedCoefficients
+            |> Seq.sumBy (fun (KeyValue(feature, coefficient)) ->
+                let col = featureIndexes[feature]
+                a[row, col] * coefficient)
+
+        adjustedY[row] <- adjustedY[row] - fixedContribution
+
+    let solvedMatrix = Array2D.zeroCreate<float> y.Length solvedFeatures.Length
+
+    solvedFeatureIndexes
+    |> List.iteri (fun targetCol sourceCol ->
+        for row in 0 .. y.Length - 1 do
+            solvedMatrix[row, targetCol] <- a[row, sourceCol])
+
+    let solvedCoefficients =
+        if solvedFeatures.IsEmpty then
+            [||]
+        else
+            TinyLinAlg.Dense.nonNegativeLeastSquares ridge 20000 1e-10 solvedMatrix adjustedY
+
+    let coefficientByFeature =
+        seq {
+            yield! fixedCoefficients |> Seq.map (fun (KeyValue(feature, coefficient)) -> feature, coefficient)
+            yield! solvedFeatures |> List.mapi (fun index feature -> feature, solvedCoefficients[index])
+        }
+        |> Map.ofSeq
+
+    features
+    |> List.map (fun feature -> coefficientByFeature |> Map.tryFind feature |> Option.defaultValue 0.0)
+    |> List.toArray
+
 let private fitMeasurements (ridge: float) (rows: AnalysisRow list) (features: string list) (measurements: Measurement list) =
     measurements
     |> List.groupBy _.Name
@@ -768,7 +835,7 @@ let private fitMeasurements (ridge: float) (rows: AnalysisRow list) (features: s
         if usable.Length = 0 then
             []
         else
-            let coefficients = TinyLinAlg.Dense.nonNegativeLeastSquares ridge 20000 1e-10 a y
+            let coefficients = solveWithFixedCoefficients ridge rows features usable a y
             let predicted = TinyLinAlg.Dense.predict a coefficients
             let mean = y |> Array.average
             let residuals = Array.map2 (fun actual fit -> actual - fit) y predicted

@@ -1275,6 +1275,12 @@ type GraphTemplate =
       Features: string list
       Graph: SavedGraph }
 
+type BottomUpInputConfig =
+    { Size: uint
+      ShapeInput: string
+      NoisyInput: string
+      NoisyPixelType: string }
+
 let private sourceNode probe =
     let width = probeParameter "width" probe
     let height = probeParameter "height" probe
@@ -1314,14 +1320,17 @@ let private zeroNode pixelType width height depth =
       "height", string height
       "depth", string depth ]
 
-let private readNode pixelType =
+let private readNodeFrom input pixelType =
     "read",
     "Read",
     [ "availableMemory", string availableMemory + "UL"
       "type", pixelType
       "format", "Image stack"
-      "input", sampleDataPath "rotatingBoxes"
+      "input", input
       "suffix", ".tiff" ]
+
+let private readNode pixelType =
+    readNodeFrom (sampleDataPath "rotatingBoxes") pixelType
 
 let private castNode sourceType targetType =
     "cast",
@@ -1369,8 +1378,9 @@ let private graphTemplateMatchesAnalysisTokens tokens (template: GraphTemplate) 
                 candidate.Contains(token, StringComparison.Ordinal)
                 || token.Contains(candidate, StringComparison.Ordinal)))
 
-let private bottomUpGraphTemplates () =
-    let sizeSuffix = "64x64x64"
+let private bottomUpGraphTemplates config =
+    let sizeText = string config.Size
+    let sizeSuffix = $"{config.Size}x{config.Size}x{config.Size}"
     let writeFeature = "Write:format=Image stack:depth=1:chunkX=64:chunkY=64:chunkZ=8:maxConcurrentWrites=0:frameAxis=0"
     let ignoreFeature = "Ignore"
 
@@ -1398,11 +1408,11 @@ let private bottomUpGraphTemplates () =
         else
             writeTemplate name description (nodes @ [ castNode outputType "UInt8" ])
 
-    let zeroUInt8 = zeroNode "UInt8" 64 64 64
-    let zeroFloat = zeroNode "Float64" 64 64 64
-    let readUInt8 = readNode "UInt8"
-    let readFloat = readNode "Float64"
-    let readFloat32 = readNode "Float32"
+    let zeroUInt8 = zeroNode "UInt8" config.Size config.Size config.Size
+    let zeroFloat = zeroNode "Float64" config.Size config.Size config.Size
+    let readUInt8 = readNodeFrom config.ShapeInput "UInt8"
+    let readFloat = readNodeFrom config.NoisyInput "Float64"
+    let readFloat32 = readNodeFrom config.NoisyInput "Float32"
 
     let sourceLayer =
         [| emptyTemplate "bottomup-00-empty" "Empty graph for process startup/shutdown intercept."
@@ -1419,11 +1429,11 @@ let private bottomUpGraphTemplates () =
         [| ignoreTemplate
                $"bottomup-10-normalNoise-float-ignore-{sizeSuffix}"
                "Float64 normalNoise source consumed without writing."
-               [ "noise", "NormalNoise", [ "availableMemory", string availableMemory + "UL"; "type", "Float64"; "width", "64"; "height", "64"; "depth", "64"; "mean", "128.0"; "std", "25.0" ] ]
+               [ "noise", "NormalNoise", [ "availableMemory", string availableMemory + "UL"; "type", "Float64"; "width", sizeText; "height", sizeText; "depth", sizeText; "mean", "128.0"; "std", "25.0" ] ]
            writeUInt8Template
                $"bottomup-11-normalNoise-float-write-{sizeSuffix}"
                "Float64 normalNoise source cast and written."
-               [ "noise", "NormalNoise", [ "availableMemory", string availableMemory + "UL"; "type", "Float64"; "width", "64"; "height", "64"; "depth", "64"; "mean", "128.0"; "std", "25.0" ] ]
+               [ "noise", "NormalNoise", [ "availableMemory", string availableMemory + "UL"; "type", "Float64"; "width", sizeText; "height", sizeText; "depth", sizeText; "mean", "128.0"; "std", "25.0" ] ]
                "Float64"
            ignoreTemplate
                $"bottomup-12-addNormalNoise-uint8-ignore-{sizeSuffix}"
@@ -1436,28 +1446,28 @@ let private bottomUpGraphTemplates () =
            ignoreTemplate
                $"bottomup-14-saltAndPepper-source-ignore-{sizeSuffix}"
                "UInt8 saltAndPepperNoise source consumed without writing."
-               [ "noise", "SaltAndPepperNoise", [ "availableMemory", string availableMemory + "UL"; "type", "UInt8"; "width", "64"; "height", "64"; "depth", "64"; "probability", "0.02" ] ]
+               [ "noise", "SaltAndPepperNoise", [ "availableMemory", string availableMemory + "UL"; "type", "UInt8"; "width", sizeText; "height", sizeText; "depth", sizeText; "probability", "0.02" ] ]
            writeTemplate
                $"bottomup-15-saltAndPepper-source-write-{sizeSuffix}"
                "UInt8 saltAndPepperNoise source written."
-               [ "noise", "SaltAndPepperNoise", [ "availableMemory", string availableMemory + "UL"; "type", "UInt8"; "width", "64"; "height", "64"; "depth", "64"; "probability", "0.02" ] ]
+               [ "noise", "SaltAndPepperNoise", [ "availableMemory", string availableMemory + "UL"; "type", "UInt8"; "width", sizeText; "height", sizeText; "depth", sizeText; "probability", "0.02" ] ]
            ignoreTemplate
                $"bottomup-16-shotNoise-source-ignore-{sizeSuffix}"
                "Float64 shotNoise source consumed without writing."
-               [ "noise", "ShotNoise", [ "availableMemory", string availableMemory + "UL"; "type", "Float64"; "width", "64"; "height", "64"; "depth", "64"; "scale", "2.0" ] ]
+               [ "noise", "ShotNoise", [ "availableMemory", string availableMemory + "UL"; "type", "Float64"; "width", sizeText; "height", sizeText; "depth", sizeText; "scale", "2.0" ] ]
            writeUInt8Template
                $"bottomup-17-shotNoise-source-write-{sizeSuffix}"
                "Float64 shotNoise source cast and written."
-               [ "noise", "ShotNoise", [ "availableMemory", string availableMemory + "UL"; "type", "Float64"; "width", "64"; "height", "64"; "depth", "64"; "scale", "2.0" ] ]
+               [ "noise", "ShotNoise", [ "availableMemory", string availableMemory + "UL"; "type", "Float64"; "width", sizeText; "height", sizeText; "depth", sizeText; "scale", "2.0" ] ]
                "Float64"
            ignoreTemplate
                $"bottomup-18-speckleNoise-source-ignore-{sizeSuffix}"
                "Float64 speckleNoise source consumed without writing."
-               [ "noise", "SpeckleNoise", [ "availableMemory", string availableMemory + "UL"; "type", "Float64"; "width", "64"; "height", "64"; "depth", "64"; "std", "0.5" ] ]
+               [ "noise", "SpeckleNoise", [ "availableMemory", string availableMemory + "UL"; "type", "Float64"; "width", sizeText; "height", sizeText; "depth", sizeText; "std", "0.5" ] ]
            writeUInt8Template
                $"bottomup-19-speckleNoise-source-write-{sizeSuffix}"
                "Float64 speckleNoise source cast and written."
-               [ "noise", "SpeckleNoise", [ "availableMemory", string availableMemory + "UL"; "type", "Float64"; "width", "64"; "height", "64"; "depth", "64"; "std", "0.5" ] ]
+               [ "noise", "SpeckleNoise", [ "availableMemory", string availableMemory + "UL"; "type", "Float64"; "width", sizeText; "height", sizeText; "depth", sizeText; "std", "0.5" ] ]
                "Float64" |]
 
     let simpleUnaryLayer =
@@ -1513,10 +1523,324 @@ let private bottomUpGraphTemplates () =
                yield ignoreTemplate $"bottomup-34-{id}-uint8-ignore-{sizeSuffix}" $"UInt8 {functionId} consumed without writing." nodes
                yield writeTemplate $"bottomup-35-{id}-uint8-write-{sizeSuffix}" $"UInt8 {functionId} written." nodes |]
 
+    let intensityAndAdditiveLayer =
+        [| ignoreTemplate
+               $"bottomup-40-addSaltAndPepper-uint8-ignore-{sizeSuffix}"
+               "UInt8 read plus addSaltAndPepperNoise consumed without writing."
+               [ readUInt8; "noise", "AddSaltAndPepperNoise", [ "type", "UInt8"; "probability", "0.02" ] ]
+           writeTemplate
+               $"bottomup-41-addSaltAndPepper-uint8-write-{sizeSuffix}"
+               "UInt8 read plus addSaltAndPepperNoise written."
+               [ readUInt8; "noise", "AddSaltAndPepperNoise", [ "type", "UInt8"; "probability", "0.02" ] ]
+           ignoreTemplate
+               $"bottomup-42-addShotNoise-float-ignore-{sizeSuffix}"
+               "Float64 read plus addShotNoise consumed without writing."
+               [ readFloat; "noise", "AddShotNoise", [ "type", "Float64"; "scale", "2.0" ] ]
+           writeUInt8Template
+               $"bottomup-43-addShotNoise-float-write-{sizeSuffix}"
+               "Float64 read plus addShotNoise cast and written."
+               [ readFloat; "noise", "AddShotNoise", [ "type", "Float64"; "scale", "2.0" ] ]
+               "Float64"
+           ignoreTemplate
+               $"bottomup-44-addSpeckleNoise-float-ignore-{sizeSuffix}"
+               "Float64 read plus addSpeckleNoise consumed without writing."
+               [ readFloat; "noise", "AddSpeckleNoise", [ "type", "Float64"; "std", "0.5" ] ]
+           writeUInt8Template
+               $"bottomup-45-addSpeckleNoise-float-write-{sizeSuffix}"
+               "Float64 read plus addSpeckleNoise cast and written."
+               [ readFloat; "noise", "AddSpeckleNoise", [ "type", "Float64"; "std", "0.5" ] ]
+               "Float64"
+           ignoreTemplate
+               $"bottomup-46-shiftScale-float-ignore-{sizeSuffix}"
+               "Float64 read shifted and scaled, then consumed."
+               [ readFloat; "intensity", "ShiftScale", [ "type", "Float64"; "shift", "10.0"; "scale", "0.5" ] ]
+           writeUInt8Template
+               $"bottomup-47-shiftScale-float-write-{sizeSuffix}"
+               "Float64 read shifted/scaled, cast, and written."
+               [ readFloat; "intensity", "ShiftScale", [ "type", "Float64"; "shift", "10.0"; "scale", "0.5" ] ]
+               "Float64"
+           ignoreTemplate
+               $"bottomup-48-intensityStretch-float-ignore-{sizeSuffix}"
+               "Float64 read intensity-stretched, then consumed."
+               [ readFloat; intensityStretchNode "stretch" "Float64" "0.0" "255.0" ]
+           writeUInt8Template
+               $"bottomup-49-intensityStretch-float-write-{sizeSuffix}"
+               "Float64 read intensity-stretched, cast, and written."
+               [ readFloat; intensityStretchNode "stretch" "Float64" "0.0" "255.0" ]
+               "Float64" |]
+
+    let geometryAndProjectionLayer =
+        [| ignoreTemplate
+               $"bottomup-50-crop-uint8-ignore-{sizeSuffix}"
+               "UInt8 read cropped on every side and consumed."
+               [ readUInt8; "geometry", "Crop", [ "type", "UInt8"; "beforeX", "4"; "afterX", "4"; "beforeY", "4"; "afterY", "4"; "beforeZ", "4"; "afterZ", "4" ] ]
+           writeTemplate
+               $"bottomup-51-crop-uint8-write-{sizeSuffix}"
+               "UInt8 read cropped on every side and written."
+               [ readUInt8; "geometry", "Crop", [ "type", "UInt8"; "beforeX", "4"; "afterX", "4"; "beforeY", "4"; "afterY", "4"; "beforeZ", "4"; "afterZ", "4" ] ]
+           ignoreTemplate
+               $"bottomup-52-padding-uint8-ignore-{sizeSuffix}"
+               "UInt8 read padded on every side and consumed."
+               [ readUInt8; "geometry", "CreatePadding", [ "type", "UInt8"; "beforeX", "4"; "afterX", "4"; "beforeY", "4"; "afterY", "4"; "beforeZ", "4"; "afterZ", "4"; "value", "0.0" ] ]
+           writeTemplate
+               $"bottomup-53-padding-uint8-write-{sizeSuffix}"
+               "UInt8 read padded on every side and written."
+               [ readUInt8; "geometry", "CreatePadding", [ "type", "UInt8"; "beforeX", "4"; "afterX", "4"; "beforeY", "4"; "afterY", "4"; "beforeZ", "4"; "afterZ", "4"; "value", "0.0" ] ]
+           ignoreTemplate
+               $"bottomup-54-resize-uint8-ignore-{sizeSuffix}"
+               "UInt8 read resized to 48^3 and consumed."
+               [ readUInt8; "geometry", "Resize", [ "type", "UInt8"; "width", "48"; "height", "48"; "depth", "48"; "interpolation", "Linear" ] ]
+           writeTemplate
+               $"bottomup-55-resize-uint8-write-{sizeSuffix}"
+               "UInt8 read resized to 48^3 and written."
+               [ readUInt8; "geometry", "Resize", [ "type", "UInt8"; "width", "48"; "height", "48"; "depth", "48"; "interpolation", "Linear" ] ]
+           ignoreTemplate
+               $"bottomup-56-resample-float-ignore-{sizeSuffix}"
+               "Float64 read resampled by 0.75 and consumed."
+               [ readFloat32; "geometry", "Resample", [ "type", "Float32"; "factorX", "0.75"; "factorY", "0.75"; "factorZ", "0.75"; "interpolation", "Linear" ] ]
+           writeUInt8Template
+               $"bottomup-57-resample-float-write-{sizeSuffix}"
+               "Float32 read resampled by 0.75, cast, and written."
+               [ readFloat32; "geometry", "Resample", [ "type", "Float32"; "factorX", "0.75"; "factorY", "0.75"; "factorZ", "0.75"; "interpolation", "Linear" ] ]
+               "Float32"
+           ignoreTemplate
+               $"bottomup-58-permuteAxes-uint8-ignore-{sizeSuffix}"
+               "UInt8 read with x/y axes swapped and consumed."
+               [ readUInt8; "geometry", "PermuteAxes", [ "axes", "(1,0,2)"; "tileSize", "64" ] ]
+           writeTemplate
+               $"bottomup-59-permuteAxes-uint8-write-{sizeSuffix}"
+               "UInt8 read with x/y axes swapped and written."
+               [ readUInt8; "geometry", "PermuteAxes", [ "axes", "(1,0,2)"; "tileSize", "64" ] ]
+           ignoreTemplate
+               $"bottomup-60-sumProjection-uint8-ignore-{sizeSuffix}"
+               "UInt8 read reduced to a sum projection and consumed."
+               [ readUInt8; "projection", "SumProjection", [ "type", "UInt8"; "function", "Identity" ] ]
+           writeUInt8Template
+               $"bottomup-61-sumProjection-uint8-write-{sizeSuffix}"
+               "UInt8 read reduced to a sum projection, cast, and written."
+               [ readUInt8; "projection", "SumProjection", [ "type", "UInt8"; "function", "Identity" ] ]
+               "Float64" |]
+
+    let fourierAndVectorLayer =
+        [| ignoreTemplate
+               $"bottomup-70-fft-float-ignore-{sizeSuffix}"
+               "Float64 read transformed with FFT and consumed."
+               [ readFloat; "fft", "FFT", [ "type", "Float64"; "chunkX", "64"; "chunkY", "64"; "chunkZ", "16" ] ]
+           ignoreTemplate
+               $"bottomup-71-fft-shift-ignore-{sizeSuffix}"
+               "Float64 read transformed with FFT, shifted, and consumed."
+               [ readFloat
+                 "fft", "FFT", [ "type", "Float64"; "chunkX", "64"; "chunkY", "64"; "chunkZ", "16" ]
+                 "shift", "ShiftFFT", [ "chunkX", "64"; "chunkY", "64"; "chunkZ", "16" ] ]
+           ignoreTemplate
+               $"bottomup-72-fft-invfft-ignore-{sizeSuffix}"
+               "Float64 read transformed with FFT/invFFT and consumed."
+               [ readFloat
+                 "fft", "FFT", [ "type", "Float64"; "chunkX", "64"; "chunkY", "64"; "chunkZ", "16" ]
+                 "ifft", "InvFFT", [ "chunkX", "64"; "chunkY", "64"; "chunkZ", "16" ] ]
+           writeUInt8Template
+               $"bottomup-73-fft-invfft-write-{sizeSuffix}"
+               "Float64 read transformed with FFT/invFFT, cast, and written."
+               [ readFloat
+                 "fft", "FFT", [ "type", "Float64"; "chunkX", "64"; "chunkY", "64"; "chunkZ", "16" ]
+                 "ifft", "InvFFT", [ "chunkX", "64"; "chunkY", "64"; "chunkZ", "16" ] ]
+               "Float64"
+           ignoreTemplate
+               $"bottomup-74-fft-modulus-ignore-{sizeSuffix}"
+               "Float64 read transformed with FFT, converted to modulus, and consumed."
+               [ readFloat
+                 "fft", "FFT", [ "type", "Float64"; "chunkX", "64"; "chunkY", "64"; "chunkZ", "16" ]
+                 "modulus", "ComplexModulus", [] ]
+           writeUInt8Template
+               $"bottomup-75-fft-modulus-write-{sizeSuffix}"
+               "Float64 read transformed with FFT, converted to modulus, cast, and written."
+               [ readFloat
+                 "fft", "FFT", [ "type", "Float64"; "chunkX", "64"; "chunkY", "64"; "chunkZ", "16" ]
+                 "modulus", "ComplexModulus", [] ]
+               "Float64"
+           ignoreTemplate
+               $"bottomup-76-gradient-vector-ignore-{sizeSuffix}"
+               "Float64 read converted to a gradient vector field and consumed."
+               [ readFloat; "gradient", "Gradient", [ "order", "1"; "windowSize", "3" ] ]
+           ignoreTemplate
+               $"bottomup-77-gradient-vectorElement-ignore-{sizeSuffix}"
+               "Float64 read gradient x-component consumed."
+               [ readFloat
+                 "gradient", "Gradient", [ "order", "1"; "windowSize", "3" ]
+                 "component", "VectorElement", [ "component", "0" ] ]
+           writeUInt8Template
+               $"bottomup-78-gradient-vectorElement-write-{sizeSuffix}"
+               "Float64 read gradient x-component cast and written."
+               [ readFloat
+                 "gradient", "Gradient", [ "order", "1"; "windowSize", "3" ]
+                 "component", "VectorElement", [ "component", "0" ] ]
+               "Float64"
+           ignoreTemplate
+               $"bottomup-79-structureTensor-vector-ignore-{sizeSuffix}"
+               "Float64 read structure tensor eigensystem consumed."
+               [ readFloat; "tensor", "StructureTensor", [ "sigma", "1.0"; "rho", "2.0" ] ]
+           ignoreTemplate
+               $"bottomup-80-structureTensor-vectorElement-ignore-{sizeSuffix}"
+               "Float64 read structure tensor first component consumed."
+               [ readFloat
+                 "tensor", "StructureTensor", [ "sigma", "1.0"; "rho", "2.0" ]
+                 "component", "VectorElement", [ "component", "0" ] ]
+           writeUInt8Template
+               $"bottomup-81-structureTensor-vectorElement-write-{sizeSuffix}"
+               "Float64 read structure tensor first component cast and written."
+               [ readFloat
+                 "tensor", "StructureTensor", [ "sigma", "1.0"; "rho", "2.0" ]
+                 "component", "VectorElement", [ "component", "0" ] ]
+               "Float64" |]
+
+    let keypointAndDistanceLayer =
+        [| ignoreTemplate
+               $"bottomup-90-signedDistanceBand-uint8-ignore-{sizeSuffix}"
+               "UInt8 threshold then signed distance band consumed."
+               [ readUInt8; thresholdNode "UInt8" "128.0"; "distance", "SignedDistanceBand", [ "bandRadius", "8"; "stride", "8" ] ]
+           writeUInt8Template
+               $"bottomup-91-signedDistanceBand-uint8-write-{sizeSuffix}"
+               "UInt8 threshold then signed distance band cast and written."
+               [ readUInt8; thresholdNode "UInt8" "128.0"; "distance", "SignedDistanceBand", [ "bandRadius", "8"; "stride", "8" ] ]
+               "Float64"
+           ignoreTemplate
+               $"bottomup-92-siftKeypoints-float-ignore-{sizeSuffix}"
+               "Float64 read SIFT keypoints consumed."
+               [ readFloat; "keypoints", "SiftKeypoints", [ "type", "Float64"; "sigma0", "1.0"; "scaleFactor", "1.6"; "scaleLevels", "4"; "contrastThreshold", "0.03"; "stride", "8" ] ]
+           ignoreTemplate
+               $"bottomup-93-hessianKeypoints-float-ignore-{sizeSuffix}"
+               "Float64 read Hessian keypoints consumed."
+               [ readFloat; "keypoints", "HessianKeypoints", [ "type", "Float64"; "sigma", "1.0"; "responseKind", "Blob"; "threshold", "0.03"; "stride", "8" ] ]
+           ignoreTemplate
+               $"bottomup-94-harrisKeypoints-float-ignore-{sizeSuffix}"
+               "Float64 read Harris keypoints consumed."
+               [ readFloat; "keypoints", "Harris3DKeypoints", [ "type", "Float64"; "sigma", "1.0"; "rho", "1.5"; "k", "0.04"; "threshold", "0.03"; "stride", "8" ] ]
+           ignoreTemplate
+               $"bottomup-95-forstnerKeypoints-float-ignore-{sizeSuffix}"
+               "Float64 read Forstner keypoints consumed."
+               [ readFloat; "keypoints", "Forstner3DKeypoints", [ "type", "Float64"; "sigma", "1.0"; "rho", "1.5"; "threshold", "0.03"; "stride", "8" ] ] |]
+
+    let dependencyBreakerLayer =
+        [| ignoreTemplate
+               $"bottomup-100-read-float32-ignore-{sizeSuffix}"
+               "Float32 read consumed without writing, to anchor Float32 read/cast probes."
+               [ readFloat32 ]
+           ignoreTemplate
+               $"bottomup-101-cast-float32-uint8-ignore-{sizeSuffix}"
+               "Float32 read cast to UInt8 and consumed."
+               [ readFloat32; castNode "Float32" "UInt8" ]
+           writeTemplate
+               $"bottomup-102-cast-float32-uint8-write-{sizeSuffix}"
+               "Float32 read cast to UInt8 and written."
+               [ readFloat32; castNode "Float32" "UInt8" ]
+           ignoreTemplate
+               $"bottomup-103-addNormalNoise-uint8-read-ignore-{sizeSuffix}"
+               "UInt8 read plus addNormalNoise consumed without writing."
+               [ readUInt8; "noise", "AddNormalNoise", [ "type", "UInt8"; "mean", "128.0"; "std", "50.0" ] ]
+           writeTemplate
+               $"bottomup-104-addNormalNoise-uint8-read-write-{sizeSuffix}"
+               "UInt8 read plus addNormalNoise written."
+               [ readUInt8; "noise", "AddNormalNoise", [ "type", "UInt8"; "mean", "128.0"; "std", "50.0" ] ]
+           ignoreTemplate
+               $"bottomup-105-fft-modulus-only-ignore-{sizeSuffix}"
+               "Float64 read FFT then modulus, isolating ComplexModulus against FFT."
+               [ readFloat
+                 "fft", "FFT", [ "type", "Float64"; "chunkX", "64"; "chunkY", "64"; "chunkZ", "16" ]
+                 "modulus", "ComplexModulus", [] ]
+           ignoreTemplate
+               $"bottomup-106-fft-shift-modulus-ignore-{sizeSuffix}"
+               "Float64 read FFT, shifted spectrum, then modulus, isolating ShiftFFT."
+               [ readFloat
+                 "fft", "FFT", [ "type", "Float64"; "chunkX", "64"; "chunkY", "64"; "chunkZ", "16" ]
+                 "shift", "ShiftFFT", [ "chunkX", "64"; "chunkY", "64"; "chunkZ", "16" ]
+                 "modulus", "ComplexModulus", [] ]
+           writeUInt8Template
+               $"bottomup-107-fft-modulus-write-{sizeSuffix}"
+               "Float64 read FFT modulus cast and written."
+               [ readFloat
+                 "fft", "FFT", [ "type", "Float64"; "chunkX", "64"; "chunkY", "64"; "chunkZ", "16" ]
+                 "modulus", "ComplexModulus", [] ]
+               "Float64"
+           ignoreTemplate
+               $"bottomup-108-sumProjection-only-ignore-{sizeSuffix}"
+               "UInt8 read sumProjection consumed without cast/write."
+               [ readUInt8; "projection", "SumProjection", [ "type", "UInt8"; "function", "Identity" ] ]
+           ignoreTemplate
+               $"bottomup-109-sumProjection-cast-ignore-{sizeSuffix}"
+               "UInt8 read sumProjection cast to UInt8 and consumed."
+               [ readUInt8
+                 "projection", "SumProjection", [ "type", "UInt8"; "function", "Identity" ]
+                 castNode "Float64" "UInt8" ]
+           writeTemplate
+               $"bottomup-110-sumProjection-cast-write-{sizeSuffix}"
+               "UInt8 read sumProjection cast to UInt8 and written."
+               [ readUInt8
+                 "projection", "SumProjection", [ "type", "UInt8"; "function", "Identity" ]
+                 castNode "Float64" "UInt8" ]
+           ignoreTemplate
+               $"bottomup-111-permuteAxes-only-ignore-{sizeSuffix}"
+               "UInt8 read x/y axis swap consumed without writing."
+               [ readUInt8; "permute", "PermuteAxes", [ "axes", "(1,0,2)"; "tileSize", "64" ] ]
+           ignoreTemplate
+               $"bottomup-112-permuteAxes-back-ignore-{sizeSuffix}"
+               "UInt8 read x/y swap and swap back consumed, isolating repeated transpose behavior."
+               [ readUInt8
+                 "permuteA", "PermuteAxes", [ "axes", "(1,0,2)"; "tileSize", "64" ]
+                 "permuteB", "PermuteAxes", [ "axes", "(1,0,2)"; "tileSize", "64" ] ]
+           writeTemplate
+               $"bottomup-113-permuteAxes-back-write-{sizeSuffix}"
+               "UInt8 read x/y swap and swap back written."
+               [ readUInt8
+                 "permuteA", "PermuteAxes", [ "axes", "(1,0,2)"; "tileSize", "64" ]
+                 "permuteB", "PermuteAxes", [ "axes", "(1,0,2)"; "tileSize", "64" ] ] |]
+
+    let reducerLayer =
+        [| ignoreTemplate
+               $"bottomup-120-computeStats-uint8-ignore-{sizeSuffix}"
+               "UInt8 read reduced to image statistics."
+               [ readUInt8; "stats", "ComputeStats", [] ]
+           ignoreTemplate
+               $"bottomup-121-computeStats-float-ignore-{sizeSuffix}"
+               "Float64 read reduced to image statistics."
+               [ readFloat; "stats", "ComputeStats", [] ]
+           ignoreTemplate
+               $"bottomup-122-estimateHistogram-float-ignore-{sizeSuffix}"
+               "Float32 noisy input sampled into a histogram estimate."
+               [ "histogram",
+                 "EstimateHistogram",
+                 [ "availableMemory", string availableMemory + "UL"
+                   "type", "Float64"
+                   "slices", string (min 16u config.Size)
+                   "input", config.NoisyInput
+                   "suffix", ".tiff"
+                   "down", "4"
+                   "estimator", "DKWAndHoldout"
+                   "confidence", "0.95" ] ]
+           ignoreTemplate
+               $"bottomup-123-connectedComponents-uint8-ignore-{sizeSuffix}"
+               "UInt8 threshold then connected components consumed."
+               [ readUInt8
+                 thresholdNode "UInt8" "128.0"
+                 "components", "ConnectedComponents", [ "windowSize", "3" ] ]
+           ignoreTemplate
+               $"bottomup-124-objectSizeStats-uint8-ignore-{sizeSuffix}"
+               "UInt8 threshold streamed as objects and reduced to object-size statistics."
+               [ readUInt8
+                 thresholdNode "UInt8" "128.0"
+                 "objects", "StreamConnectedObjects", [ "connectivity", "Six" ]
+                 "measure", "MeasureObjects", []
+                 "sizes", "ObjectSizeStats", [] ] |]
+
     [| "01-starters", sourceLayer
        "02-sources", syntheticSourcesLayer
        "03-simple-unary", simpleUnaryLayer
-       "04-windowed-unary", windowLayer |]
+       "04-windowed-unary", windowLayer
+       "05-intensity-and-additive", intensityAndAdditiveLayer
+       "06-geometry-and-projection", geometryAndProjectionLayer
+       "07-fourier-and-vector", fourierAndVectorLayer
+       "08-keypoint-and-distance", keypointAndDistanceLayer
+       "09-dependency-breakers", dependencyBreakerLayer
+       "10-reducers", reducerLayer |]
 
 let private generatedGraphTemplates () =
     let readUInt8Feature =
@@ -1868,11 +2192,11 @@ let private writeProbeGraphs outputDir analysisTokens probes graphTemplates =
 let graphTemplatesForCalibration () =
     generatedGraphTemplates ()
 
-let graphTemplateLayersForBottomUp () =
-    bottomUpGraphTemplates ()
+let graphTemplateLayersForBottomUp config =
+    bottomUpGraphTemplates config
 
-let graphTemplatesForBottomUp () =
-    bottomUpGraphTemplates () |> Array.collect snd
+let graphTemplatesForBottomUp config =
+    bottomUpGraphTemplates config |> Array.collect snd
 
 let writeGraphTemplates outputDir (graphTemplates: GraphTemplate array) =
     if Directory.Exists outputDir then
@@ -1889,6 +2213,97 @@ let writeGraphTemplates outputDir (graphTemplates: GraphTemplate array) =
 
     printfn "Wrote %d calibration graph(s) to %s." written.Length outputDir
 
+let private cleanDirectory path =
+    if Directory.Exists(path) then
+        Directory.Delete(path, true)
+    Directory.CreateDirectory(path) |> ignore
+
+let private createMovingBoxes<'T when 'T: equality> foreground size output =
+    cleanDirectory output
+
+    let boxSize = max 4 (int size.Width / 4)
+    let img = Image.Image<'T>([ size.Width; size.Height ])
+
+    for i in 0 .. boxSize - 1 do
+        for j in 0 .. boxSize - 1 do
+            img[i, j] <- foreground
+
+    let transformDiagonal (i: uint) : (float * float * float) * (float * float) =
+        let angle = 2.0 * Math.PI * float i / float size.Depth
+        let offset = float boxSize / 2.0 - 0.5
+        (offset, offset, angle), (0.0, 0.0)
+
+    let transformAntiDiagonal (i: uint) : (float * float * float) * (float * float) =
+        let dx = float i
+        let angle = 2.0 * Math.PI * float i / float size.Depth
+        let offset = float boxSize / 2.0 - 0.5
+        (offset, offset, angle), (float size.Width - dx - offset, dx - offset)
+
+    let transformTopDown (i: uint) : (float * float * float) * (float * float) =
+        let dx = float i
+        let angle = 2.0 * Math.PI * float i / float size.Depth
+        let offset = float boxSize / 2.0 - 0.5
+        (offset, offset, angle), (float size.Width / 2.0 - offset, dx - offset)
+
+    let diagonal =
+        source availableMemory
+        |> createByEuler2DTransform<'T> img size.Depth transformDiagonal
+
+    let topDown =
+        source availableMemory
+        |> createByEuler2DTransform<'T> img size.Depth transformTopDown
+
+    let antiDiagonal =
+        source availableMemory
+        |> createByEuler2DTransform<'T> img size.Depth transformAntiDiagonal
+
+    ((diagonal, topDown) ||> zip >>=> maxOfPair, antiDiagonal)
+    ||> zip >>=> maxOfPair
+    >=> write output ".tiff"
+    |> sink
+
+let private createNoisyFromShape<'T when 'T: equality> foreground mean std size output =
+    let temp = output + "_shape_tmp"
+    createMovingBoxes<'T> foreground size temp
+    cleanDirectory output
+
+    source availableMemory
+    |> read<'T> temp ".tiff"
+    >=> addNormalNoise mean std
+    >=> write output ".tiff"
+    |> sink
+
+    if Directory.Exists temp then
+        Directory.Delete(temp, true)
+
+let private createNoisyMovingBoxes noisyPixelType size output =
+    match noisyPixelType with
+    | "UInt8" -> createNoisyFromShape<uint8> 255uy 128.0 50.0 size output
+    | "UInt16" -> createNoisyFromShape<uint16> 4096us 2048.0 512.0 size output
+    | "Float32" -> createNoisyFromShape<float32> 255.0f 128.0 50.0 size output
+    | _ -> failwithf "Unsupported noisy input type '%s'. Use UInt8, UInt16, or Float32." noisyPixelType
+
+let createBottomUpInputs (size: uint) (noisyPixelType: string) (inputRoot: string) =
+    let normalizedNoisyType =
+        match noisyPixelType.ToLowerInvariant() with
+        | "uint8" -> "UInt8"
+        | "uint16" -> "UInt16"
+        | "float32" | "float" -> "Float32"
+        | other -> failwithf "Unsupported noisy input type '%s'. Use UInt8, UInt16, or Float32." other
+
+    cleanDirectory inputRoot
+    let shapeInput = Path.Combine(inputRoot, "shapes").Replace('\\', '/')
+    let noisyInput = Path.Combine(inputRoot, "noisy").Replace('\\', '/')
+    let imageSize = { Width = size; Height = size; Depth = size }
+
+    createMovingBoxes<uint8> 255uy imageSize shapeInput
+    createNoisyMovingBoxes normalizedNoisyType imageSize noisyInput
+
+    { Size = size
+      ShapeInput = shapeInput
+      NoisyInput = noisyInput
+      NoisyPixelType = normalizedNoisyType }
+
 let private createInputStack size inputDir =
     Directory.CreateDirectory(inputDir) |> ignore
     source availableMemory
@@ -1896,11 +2311,6 @@ let private createInputStack size inputDir =
     >=> addNormalNoise 128.0 50.0
     >=> write inputDir ".tiff"
     |> sink
-
-let private cleanDirectory path =
-    if Directory.Exists(path) then
-        Directory.Delete(path, true)
-    Directory.CreateDirectory(path) |> ignore
 
 type ProbeOptions =
     { ReportPath: string

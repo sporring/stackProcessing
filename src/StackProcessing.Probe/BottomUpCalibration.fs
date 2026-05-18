@@ -8,25 +8,33 @@ type Options =
     { SamplesRoot: string
       AnalysisDirectory: string
       ProbeJsonRoot: string
+      InputDirectory: string
+      ImageSize: uint
+      NoisyType: string
       Repeat: int
       Jobs: int
       Layers: int
+      CleanTmp: bool
       RunProbes: bool }
 
 let private usage () =
     printfn "Usage: dotnet run --project src/StackProcessing.Probe -- bottom-up [options]"
     printfn ""
-    printfn "Runs controlled bottom-up calibration batches with optimizer off."
-    printfn "The batches build from intercept/traversal/read/write probes toward sources"
-    printfn "and one-more stage probes. Sample workloads are left for validation."
+    printfn "Runs a fresh controlled bottom-up calibration with optimizer off."
+    printfn "The command clears repository tmp by default, generates calibration input"
+    printfn "stacks, emits probe graphs, measures them, and writes analysis CSVs."
     printfn ""
     printfn "Options:"
     printfn "  --samples-root PATH     Sample root. Defaults to samples."
     printfn "  --analysis-dir PATH     Analysis output/read directory. Defaults to tmp/analysis."
     printfn "  --probe-json-root PATH  Probe JSON output directory. Defaults to tmp/probingGraphs."
+    printfn "  --input-dir PATH        Generated calibration input root. Defaults to tmp/probeInputs."
+    printfn "  --size N                Width/height/depth of generated probe images. Defaults to 64."
+    printfn "  --noisy-type TYPE       TIFF-compatible noisy image type: UInt8, UInt16, or Float32. Defaults to Float32."
     printfn "  --repeat N              Repeat emitted probe runs. Defaults to 3."
     printfn "  -j, --jobs N            Run up to N emitted probe graphs at once. Defaults to 1."
     printfn "  --layers N              Number of bottom-up layers to run. Defaults to all."
+    printfn "  --keep-tmp              Do not clear repository tmp before starting."
     printfn "  --no-run-probes         Emit probe graphs and analyze only."
 
 let private defaultSamplesRoot () =
@@ -59,10 +67,21 @@ let private defaultOptions () =
     { SamplesRoot = samplesRoot
       AnalysisDirectory = Path.Combine(root, "tmp", "analysis")
       ProbeJsonRoot = Path.Combine(root, "tmp", "probingGraphs")
+      InputDirectory = Path.Combine(root, "tmp", "probeInputs")
+      ImageSize = 64u
+      NoisyType = "Float32"
       Repeat = 3
       Jobs = 1
       Layers = Int32.MaxValue
+      CleanTmp = true
       RunProbes = true }
+
+let private normalizeNoisyType (value: string) =
+    match value.ToLowerInvariant() with
+    | "uint8" -> Some "UInt8"
+    | "uint16" -> Some "UInt16"
+    | "float32" | "float" -> Some "Float32"
+    | _ -> None
 
 let rec private parseArgs options args =
     match args with
@@ -73,19 +92,25 @@ let rec private parseArgs options args =
     | "--samples-root" :: value :: rest ->
         let samplesRoot = Path.GetFullPath value
         let root = repositoryRootFromSamplesRoot samplesRoot
+        let defaults = defaultOptions ()
         parseArgs
             { options with
                 SamplesRoot = samplesRoot
                 AnalysisDirectory =
-                    if options.AnalysisDirectory = (defaultOptions ()).AnalysisDirectory then
+                    if options.AnalysisDirectory = defaults.AnalysisDirectory then
                         Path.Combine(root, "tmp", "analysis")
                     else
                         options.AnalysisDirectory
                 ProbeJsonRoot =
-                    if options.ProbeJsonRoot = (defaultOptions ()).ProbeJsonRoot then
+                    if options.ProbeJsonRoot = defaults.ProbeJsonRoot then
                         Path.Combine(root, "tmp", "probingGraphs")
                     else
-                        options.ProbeJsonRoot }
+                        options.ProbeJsonRoot
+                InputDirectory =
+                    if options.InputDirectory = defaults.InputDirectory then
+                        Path.Combine(root, "tmp", "probeInputs")
+                    else
+                        options.InputDirectory }
             rest
     | "--analysis-dir" :: value :: rest
     | "--output" :: value :: rest ->
@@ -93,6 +118,22 @@ let rec private parseArgs options args =
     | "--probe-json-root" :: value :: rest
     | "--emit-json" :: value :: rest ->
         parseArgs { options with ProbeJsonRoot = Path.GetFullPath value } rest
+    | "--input-dir" :: value :: rest ->
+        parseArgs { options with InputDirectory = Path.GetFullPath value } rest
+    | "--size" :: value :: rest
+    | "--image-size" :: value :: rest ->
+        match UInt32.TryParse value with
+        | true, n when n > 0u -> parseArgs { options with ImageSize = n } rest
+        | _ ->
+            eprintfn "bottom-up: --size expects a positive integer"
+            Error 2
+    | "--noisy-type" :: value :: rest
+    | "--gray-type" :: value :: rest ->
+        match normalizeNoisyType value with
+        | Some noisyType -> parseArgs { options with NoisyType = noisyType } rest
+        | None ->
+            eprintfn "bottom-up: --noisy-type expects UInt8, UInt16, or Float32"
+            Error 2
     | "--repeat" :: value :: rest
     | "--repeats" :: value :: rest ->
         match Int32.TryParse value with
@@ -112,6 +153,8 @@ let rec private parseArgs options args =
         | _ ->
             eprintfn "bottom-up: --layers expects a positive integer"
             Error 2
+    | "--keep-tmp" :: rest ->
+        parseArgs { options with CleanTmp = false } rest
     | "--run-probes" :: rest ->
         parseArgs { options with RunProbes = true } rest
     | "--no-run-probes" :: rest
@@ -121,6 +164,15 @@ let rec private parseArgs options args =
         eprintfn "bottom-up: unknown argument '%s'" value
         usage ()
         Error 2
+
+let private cleanTmp options =
+    let root = repositoryRootFromSamplesRoot options.SamplesRoot
+    let tmpRoot = Path.Combine(root, "tmp")
+
+    if options.CleanTmp && Directory.Exists tmpRoot then
+        Directory.Delete(tmpRoot, true)
+
+    Directory.CreateDirectory tmpRoot |> ignore
 
 let private runAnalysis options probeRoot =
     ProbeAnalysis.main
@@ -164,7 +216,18 @@ let main argv =
     | Error exitCode -> exitCode
     | Ok options ->
         try
-            let allLayers = ProbeProbing.graphTemplateLayersForBottomUp ()
+            cleanTmp options
+
+            printfn
+                "Generating calibration inputs in %s (%ux%ux%u, noisy %s)."
+                options.InputDirectory
+                options.ImageSize
+                options.ImageSize
+                options.ImageSize
+                options.NoisyType
+
+            let inputConfig = ProbeProbing.createBottomUpInputs options.ImageSize options.NoisyType options.InputDirectory
+            let allLayers = ProbeProbing.graphTemplateLayersForBottomUp inputConfig
             let selectedLayers = allLayers |> Array.truncate options.Layers
             let probeRoot = Path.Combine(options.ProbeJsonRoot, "bottomup_" + timestamp ())
 
@@ -175,8 +238,9 @@ let main argv =
 
             for layerIndex, (layerName, templates) in selectedLayers |> Array.indexed do
                 if exitCode = 0 then
-                    let layerDir = Path.Combine(probeRoot, sprintf "layer_%03d_%s" (layerIndex + 1) layerName)
-                    printfn "Bottom-up layer %d/%d: %s (%d graph(s))" (layerIndex + 1) selectedLayers.Length layerName templates.Length
+                    let layerNumber = layerIndex + 1
+                    let layerDir = Path.Combine(probeRoot, sprintf "layer_%03d_%s" layerNumber layerName)
+                    printfn "Bottom-up layer %d/%d: %s (%d graph(s))" layerNumber selectedLayers.Length layerName templates.Length
                     ProbeProbing.writeGraphTemplates layerDir templates
 
                     if options.RunProbes then

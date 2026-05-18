@@ -6,14 +6,20 @@ threads.
 
 ## 1. Build calibration data
 
-Probe emits controlled bottom-up calibration graphs, runs them with the
-optimizer off, repeats the measurements, and writes the current estimates. The
-layers start with empty/minimal traversal/read/write probes and then add
-sources and one-more stage probes.
+Probe clears `tmp/` by default, generates calibration input stacks, emits
+controlled bottom-up calibration graphs, runs them with the optimizer off,
+repeats the measurements, and writes the current estimates. The generated
+inputs are a binary moving-box shape stack and a noisy gray-valued stack.
 
 ```bash
-dotnet run --project src/StackProcessing.Probe/StackProcessing.Probe.fsproj -- bottom-up --repeat 3 -j 1
+dotnet run --project src/StackProcessing.Probe/StackProcessing.Probe.fsproj -- bottom-up --size 128 --noisy-type Float32 --repeat 3 -j 1
 ```
+
+The fit treats the empty graph as the common intercept measurement and fixes
+`Ignore` to zero cost. The starter layer is therefore the anchor for separating
+startup/shutdown overhead from read, write, and later stage costs.
+Use `--keep-tmp` only when deliberately adding measurements to an existing
+working directory. The normal calibration run should start fresh.
 
 ## 2. Validate on sample workloads
 
@@ -27,7 +33,10 @@ dotnet run --project src/StackProcessing.Probe/StackProcessing.Probe.fsproj -- c
 ```
 
 The second command refreshes `tmp/analysis/sampleEstimates.csv` using the
-available measurements without emitting or running another probe batch.
+available measurements without emitting or running another probe batch. By
+default it uses the latest `tmp/probingGraphs/bottomup_*` calibration root, so
+older greedy `calibration_*` folders do not pollute the validation fit. Pass
+`--probe-json-root PATH` to validate against a specific probe root.
 
 ## Main outputs
 
@@ -44,4 +53,5 @@ tmp/analysis/vectors.csv
 ```
 
 Do not clean `tmp/` between calibration and validation. The timestamped
-`runJson_*` folders are the measurement evidence used by Probe.
+`runJson_*` folders and `tmp/probeInputs` are the measurement evidence and
+input data used by Probe.
