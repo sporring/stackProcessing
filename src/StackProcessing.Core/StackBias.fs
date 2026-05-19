@@ -312,7 +312,7 @@ let private coordinateSource name width height depth mapper (pl: Plan<unit, unit
         Image<float>.ofArray2D(values, $"{name}[{z}]", z)
 
     let stage = StackImageFunctions.srcStage name width height depth makeSlice |> Some
-    StackImageFunctions.srcPlan pl.debug pl.memAvail width height depth stage
+    StackImageFunctions.srcPlan pl width height depth stage
 
 let coordinateX width height depth =
     coordinateSource "coordinateX" width height depth (fun x _ _ -> float x)

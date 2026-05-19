@@ -412,7 +412,8 @@ let getFilenames (inputDir: string) (suffix: string) (filter: string[]->string[]
 
     let memPerElem = 256UL // surrugate string length
     let length = depth
-    Plan.create stage pl.memAvail memPeak memPerElem length pl.debug
+    Plan.createWithOptimizer stage pl.memAvail memPeak memPerElem length pl.debug pl.optimize
+    |> Plan.withRuntimeOptionsFrom pl
 
 let readFilesWithShape<'T when 'T: equality> (debug: bool) (width: uint) (height: uint) : Stage<string, Image<'T>> =
     let name = "readFiles"
@@ -632,7 +633,8 @@ let private readTiffVolume<'T when 'T: equality> (filename: string) (pl: Plan<un
         |> withCostModel (StageCostModel.create memoryModel timeCostModel)
         |> Some
 
-    Plan.create stage pl.memAvail pixelBytes (uint64 width * uint64 height) (uint64 depth) pl.debug
+    Plan.createWithOptimizer stage pl.memAvail pixelBytes (uint64 width * uint64 height) (uint64 depth) pl.debug pl.optimize
+    |> Plan.withRuntimeOptionsFrom pl
     |> Plan.withSourcePeek sourcePeek
 
 let private readSimpleItkVolume<'T when 'T: equality> (filename: string) (pl: Plan<unit, unit>) : Plan<unit, Image<'T>> =
@@ -689,7 +691,8 @@ let private readSimpleItkVolume<'T when 'T: equality> (filename: string) (pl: Pl
         |> withCostModel (StageCostModel.create memoryModel timeCostModel)
         |> Some
 
-    Plan.create stage pl.memAvail pixelBytes (uint64 width * uint64 height) (uint64 depth) pl.debug
+    Plan.createWithOptimizer stage pl.memAvail pixelBytes (uint64 width * uint64 height) (uint64 depth) pl.debug pl.optimize
+    |> Plan.withRuntimeOptionsFrom pl
     |> Plan.withSourcePeek sourcePeek
 
 let readVolume<'T when 'T: equality> (filename: string) (pl: Plan<unit, unit>) : Plan<unit, Image<'T>> =
@@ -797,7 +800,8 @@ let private readTiffVolumeRandom<'T when 'T: equality> (count: uint) (filename: 
         |> withCostModel (StageCostModel.create memoryModel timeCostModel)
         |> Some
 
-    Plan.create stage pl.memAvail pixelBytes (uint64 width * uint64 height) (uint64 selected.Length) pl.debug
+    Plan.createWithOptimizer stage pl.memAvail pixelBytes (uint64 width * uint64 height) (uint64 selected.Length) pl.debug pl.optimize
+    |> Plan.withRuntimeOptionsFrom pl
     |> Plan.withSourcePeek sourcePeek
 
 let private readSimpleItkVolumeRandom<'T when 'T: equality> (count: uint) (filename: string) (pl: Plan<unit, unit>) : Plan<unit, Image<'T>> =
@@ -856,7 +860,8 @@ let private readSimpleItkVolumeRandom<'T when 'T: equality> (count: uint) (filen
         |> withCostModel (StageCostModel.create memoryModel timeCostModel)
         |> Some
 
-    Plan.create stage pl.memAvail pixelBytes (uint64 width * uint64 height) (uint64 selected.Length) pl.debug
+    Plan.createWithOptimizer stage pl.memAvail pixelBytes (uint64 width * uint64 height) (uint64 selected.Length) pl.debug pl.optimize
+    |> Plan.withRuntimeOptionsFrom pl
     |> Plan.withSourcePeek sourcePeek
 
 let readVolumeRandom<'T when 'T: equality> (count: uint) (filename: string) (pl: Plan<unit, unit>) : Plan<unit, Image<'T>> =
@@ -938,7 +943,8 @@ let private readTiffVolumeRange<'T when 'T: equality> (first: uint) (step: int) 
         |> withCostModel (StageCostModel.create memoryModel timeCostModel)
         |> Some
 
-    Plan.create stage pl.memAvail pixelBytes (uint64 width * uint64 height) (uint64 selected.Length) pl.debug
+    Plan.createWithOptimizer stage pl.memAvail pixelBytes (uint64 width * uint64 height) (uint64 selected.Length) pl.debug pl.optimize
+    |> Plan.withRuntimeOptionsFrom pl
     |> Plan.withSourcePeek sourcePeek
 
 let private readSimpleItkVolumeRange<'T when 'T: equality> (first: uint) (step: int) (last: uint) (filename: string) (pl: Plan<unit, unit>) : Plan<unit, Image<'T>> =
@@ -1000,7 +1006,8 @@ let private readSimpleItkVolumeRange<'T when 'T: equality> (first: uint) (step: 
         |> withCostModel (StageCostModel.create memoryModel timeCostModel)
         |> Some
 
-    Plan.create stage pl.memAvail pixelBytes (uint64 width * uint64 height) (uint64 selected.Length) pl.debug
+    Plan.createWithOptimizer stage pl.memAvail pixelBytes (uint64 width * uint64 height) (uint64 selected.Length) pl.debug pl.optimize
+    |> Plan.withRuntimeOptionsFrom pl
     |> Plan.withSourcePeek sourcePeek
 
 let readVolumeRange<'T when 'T: equality> (first: uint) (step: int) (last: uint) (filename: string) (pl: Plan<unit, unit>) : Plan<unit, Image<'T>> =
@@ -1298,7 +1305,8 @@ let readSlabStacked<'T when 'T: equality> (inputDir: string) (suffix: string) (p
 
     let memPerElem = 256UL // surrugate string length
     let length = depth
-    Plan.create stage pl.memAvail memPeak memPerElem depth pl.debug
+    Plan.createWithOptimizer stage pl.memAvail memPeak memPerElem depth pl.debug pl.optimize
+    |> Plan.withRuntimeOptionsFrom pl
     |> Plan.withSourcePeek sourcePeek
 
 let readSlabAsWindows<'T when 'T: equality> (inputDir: string) (suffix: string) (pl: Plan<unit, unit>) : Plan<unit, Image<'T> list> =
@@ -1394,7 +1402,8 @@ let readZarrSlabStacked<'T when 'T: equality>
         |> withCostModel (StageCostModel.create memoryModel timeCostModel)
         |> Some
 
-    Plan.create stage pl.memAvail memPeak memPeak depth pl.debug
+    Plan.createWithOptimizer stage pl.memAvail memPeak memPeak depth pl.debug pl.optimize
+    |> Plan.withRuntimeOptionsFrom pl
     |> Plan.withSourcePeek sourcePeek
 
 let readZarrSlab<'T when 'T: equality>
@@ -1499,7 +1508,8 @@ let readZarrRandom<'T when 'T: equality>
         |> withCostModel (StageCostModel.create memoryModel timeCostModel)
         |> Some
 
-    Plan.create stage pl.memAvail memPeak memPeak (uint64 selected.Length) pl.debug
+    Plan.createWithOptimizer stage pl.memAvail memPeak memPeak (uint64 selected.Length) pl.debug pl.optimize
+    |> Plan.withRuntimeOptionsFrom pl
     |> Plan.withSourcePeek sourcePeek
 
 let readZarrRange<'T when 'T: equality>
@@ -1586,7 +1596,8 @@ let readZarrRange<'T when 'T: equality>
         |> withCostModel (StageCostModel.create memoryModel timeCostModel)
         |> Some
 
-    Plan.create stage pl.memAvail memPeak memPeak (uint64 selected.Length) pl.debug
+    Plan.createWithOptimizer stage pl.memAvail memPeak memPeak (uint64 selected.Length) pl.debug pl.optimize
+    |> Plan.withRuntimeOptionsFrom pl
     |> Plan.withSourcePeek sourcePeek
 
 let readNexusSlabStacked<'T when 'T: equality>
@@ -1673,7 +1684,8 @@ let readNexusSlabStacked<'T when 'T: equality>
         |> withCostModel (StageCostModel.create memoryModel timeCostModel)
         |> Some
 
-    Plan.create stage pl.memAvail memPeak memPeak depth pl.debug
+    Plan.createWithOptimizer stage pl.memAvail memPeak memPeak depth pl.debug pl.optimize
+    |> Plan.withRuntimeOptionsFrom pl
     |> Plan.withSourcePeek sourcePeek
 
 let readNexusSlab<'T when 'T: equality>
@@ -1784,7 +1796,8 @@ let readNexusRandom<'T when 'T: equality>
         |> withCostModel (StageCostModel.create memoryModel timeCostModel)
         |> Some
 
-    Plan.create stage pl.memAvail memPeak memPeak (uint64 selected.Length) pl.debug
+    Plan.createWithOptimizer stage pl.memAvail memPeak memPeak (uint64 selected.Length) pl.debug pl.optimize
+    |> Plan.withRuntimeOptionsFrom pl
     |> Plan.withSourcePeek sourcePeek
 
 let readNexusRange<'T when 'T: equality>
@@ -1878,7 +1891,8 @@ let readNexusRange<'T when 'T: equality>
         |> withCostModel (StageCostModel.create memoryModel timeCostModel)
         |> Some
 
-    Plan.create stage pl.memAvail memPeak memPeak (uint64 selected.Length) pl.debug
+    Plan.createWithOptimizer stage pl.memAvail memPeak memPeak (uint64 selected.Length) pl.debug pl.optimize
+    |> Plan.withRuntimeOptionsFrom pl
     |> Plan.withSourcePeek sourcePeek
 
 let icompare s1 s2  = 

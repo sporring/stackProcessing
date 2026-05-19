@@ -231,30 +231,37 @@ let debugDefault level availableMemory =
     debug level (optimizerEnabled ()) availableMemory
 
 let commandLineSource availableMemory (args: string array) =
-    let rec parse debugLevel optimize remaining kept =
+    let rec parse debugLevel optimize costDiscrepancies remaining kept =
         match remaining with
-        | [] -> debugLevel, optimize, kept |> List.rev |> List.toArray
+        | [] -> debugLevel, optimize, costDiscrepancies, kept |> List.rev |> List.toArray
         | "-d" :: value :: rest
         | "--debug-level" :: value :: rest ->
             match System.UInt32.TryParse value with
-            | true, level -> parse (Some level) optimize rest kept
+            | true, level -> parse (Some level) optimize costDiscrepancies rest kept
             | false, _ -> failwith $"Expected unsigned integer debug level after -d, got '{value}'"
         | ("--no-optimize" | "--no-optimizer") :: rest ->
-            parse debugLevel false rest kept
+            parse debugLevel false costDiscrepancies rest kept
         | "--optimize" :: value :: rest
         | "--optimizer" :: value :: rest ->
             match tryParseBool value with
-            | Some enabled -> parse debugLevel enabled rest kept
+            | Some enabled -> parse debugLevel enabled costDiscrepancies rest kept
             | None -> failwith $"Expected boolean optimizer value after --optimize, got '{value}'"
+        | ("--cost-discrepancies" | "--cost-discrepancy-report") :: rest ->
+            parse (debugLevel |> Option.orElse (Some 1u)) optimize true rest kept
+        | ("--no-cost-discrepancies" | "--no-cost-discrepancy-report") :: rest ->
+            parse debugLevel optimize false rest kept
         | arg :: rest ->
-            parse debugLevel optimize rest (arg :: kept)
+            parse debugLevel optimize costDiscrepancies rest (arg :: kept)
 
-    let debugLevel, optimize, rest =
-        parse None (optimizerEnabled ()) (args |> Array.toList) []
+    let debugLevel, optimize, costDiscrepancies, rest =
+        parse None (optimizerEnabled ()) false (args |> Array.toList) []
 
-    match debugLevel with
-    | Some level -> debug level optimize availableMemory, rest
-    | None -> sourceWithOptimizer optimize availableMemory, rest
+    let plan =
+        match debugLevel with
+        | Some level -> debug level optimize availableMemory
+        | None -> sourceWithOptimizer optimize availableMemory
+
+    Plan.withCostDiscrepancyReporting costDiscrepancies plan, rest
  
 let zip = Plan.zip
 

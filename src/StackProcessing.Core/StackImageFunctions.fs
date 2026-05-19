@@ -1696,7 +1696,7 @@ let srcStage (name: string) (width: uint) (height: uint) (depth: uint) (mapper: 
     let elementTransformation = id
     Stage.init name depth mapper transition memoryNeed elementTransformation
 
-let srcPlan (debug: bool) (memAvail: uint64) (width: uint) (height: uint) (depth: uint) (stage: Stage<unit,Image<'T>> option) =
+let srcPlan (pl: Plan<unit, unit>) (width: uint) (height: uint) (depth: uint) (stage: Stage<unit,Image<'T>> option) =
     let nElems = (uint64 width) * (uint64 height)
     let memPeak = Image<'T>.memoryEstimate width height
     let sourcePeek =
@@ -1710,7 +1710,8 @@ let srcPlan (debug: bool) (memAvail: uint64) (width: uint) (height: uint) (depth
                   "height", string height
                   "depth", string depth
                   "pixelType", typeof<'T>.Name ])
-    Plan.create stage memAvail memPeak nElems (uint64 depth)  debug
+    Plan.createWithOptimizer stage pl.memAvail memPeak nElems (uint64 depth) pl.debug pl.optimize
+    |> Plan.withRuntimeOptionsFrom pl
     |> Plan.withSourcePeek sourcePeek
 
 let zero<'T when 'T: equality> (width: uint) (height: uint) (depth: uint) (pl: Plan<unit, unit>) : Plan<unit, Image<'T>> =
@@ -1719,7 +1720,7 @@ let zero<'T when 'T: equality> (width: uint) (height: uint) (depth: uint) (pl: P
         if pl.debug && DebugLevel.current() >= 1u then printfn "[zero] Created slice %A" i
         image
     let stage = srcStage "zero" width height depth mapper |> Some
-    srcPlan pl.debug pl.memAvail width height depth stage
+    srcPlan pl width height depth stage
 
 let normalNoise<'T when 'T: equality> (width: uint) (height: uint) (depth: uint) (mean: float) (stddev: float) (pl: Plan<unit, unit>) : Plan<unit, Image<'T>> =
     let mapper (i: int) : Image<'T> =
@@ -1729,7 +1730,7 @@ let normalNoise<'T when 'T: equality> (width: uint) (height: uint) (depth: uint)
         if pl.debug && DebugLevel.current() >= 1u then printfn "[normalNoise] Created slice %A" i
         image
     let stage = srcStage "normalNoise" width height depth mapper |> Some
-    srcPlan pl.debug pl.memAvail width height depth stage
+    srcPlan pl width height depth stage
 
 let private noiseSource<'T when 'T: equality> name width height depth addNoise (pl: Plan<unit, unit>) : Plan<unit, Image<'T>> =
     let mapper (i: int) : Image<'T> =
@@ -1739,7 +1740,7 @@ let private noiseSource<'T when 'T: equality> name width height depth addNoise (
         if pl.debug && DebugLevel.current() >= 1u then printfn "[%s] Created slice %A" name i
         image
     let stage = srcStage name width height depth mapper |> Some
-    srcPlan pl.debug pl.memAvail width height depth stage
+    srcPlan pl width height depth stage
 
 let saltAndPepperNoise<'T when 'T: equality> (width: uint) (height: uint) (depth: uint) (probability: float) (pl: Plan<unit, unit>) : Plan<unit, Image<'T>> =
     noiseSource "saltAndPepperNoise" width height depth (ImageFunctions.addSaltAndPepperNoise probability) pl
@@ -1760,12 +1761,13 @@ let createByEuler2DTransform<'T when 'T: equality> (img: Image<'T>) (depth: uint
         if pl.debug && DebugLevel.current() >= 1u then printfn "[createByEuler2DTransform] Created slice %A" i
         image
     let stage = srcStage "createByEuler2DTransform" width height depth mapper |> Some
-    srcPlan pl.debug pl.memAvail width height depth stage
+    srcPlan pl width height depth stage
 
 
 let empty (pl: Plan<unit, unit>) : Plan<unit, unit> =
     let stage = "empty" |> Stage.empty |> Some
-    Plan.create stage pl.memAvail 0UL 0UL 0UL  pl.debug
+    Plan.createWithOptimizer stage pl.memAvail 0UL 0UL 0UL pl.debug pl.optimize
+    |> Plan.withRuntimeOptionsFrom pl
 
 let writeSlabSlices (outputDir: string) (suffix: string) (winSz: uint) : Stage<Image<'T>, Image<'T>> =
     if (outputDir |> System.IO.Directory.Exists) |> not then

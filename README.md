@@ -130,11 +130,14 @@ minimal traversal, read, and write patterns; later layers add sources,
 scalar/unary stages, windowed stages, geometry, FFT/vector/keypoint probes, and
 dependency-breakers for under-isolated features. The analysis outputs include
 `tmp/analysis/coefficients.csv`, `predictions.csv`, `diagnostics.csv`, and
-`sampleEstimates.csv`. `sampleEstimates.csv` applies the currently learned
-coefficients back to the sample workloads and compares estimated memory/time
-with the real measurements, including any features still missing from the
-estimate. Use `--keep-tmp` only when deliberately preserving existing
-measurements.
+`sampleEstimates.csv`. Probe also writes fitting evidence to
+`tmp/analysis/costEvidence.csv` and a reusable fitted model to
+`tmp/analysis/stackprocessing.cost.json`; the repository default model lives in
+`models/default/stackprocessing.cost.json`. `sampleEstimates.csv` applies the
+currently learned coefficients back to the sample workloads and compares
+estimated memory/time with the real measurements, including any features still
+missing from the estimate. Use `--keep-tmp` only when deliberately preserving
+existing measurements.
 
 During fitting, the empty graph defines the common intercept and `Ignore` is
 fixed at zero cost. This keeps the baseline from being absorbed into the
@@ -149,6 +152,12 @@ timestamped `runJson_*` directories are the measurement evidence used by Probe. 
 --estimate-only` uses the latest `tmp/probingGraphs/bottomup_*` root by default;
 pass `--probe-json-root PATH` to validate against a specific calibration root.
 
+Runtime debug can flag large model discrepancies for later analysis:
+
+```bash
+dotnet run --project samples/someSample/someSample.fsproj -- -d 1 --cost-discrepancies --no-optimize
+```
+
 ## Projects
 
 | Project | Role |
@@ -157,6 +166,7 @@ pass `--probe-json-root PATH` to validate against a specific calibration root.
 | `AsyncSeqExtensions` | Streaming helpers used by the pipeline engine. |
 | `SlimPipeline` | Element-agnostic streaming pipeline model, graph metadata, memory estimates, and execution. |
 | `TinyLinAlg` | Small affine/vector/matrix helper library used by registration and resampling code. |
+| `StackProcessing.Cost` | StackProcessing cost-model helpers, default/fitted model serialization, and Probe fitting evidence output. |
 | `StackProcessing.Core` | Streaming image-stack algorithms, IO, manifests, stitching, points, meshes, bias correction, and serial-section tools. |
 | `StackProcessing` | Public F# DSL over `StackProcessing.Core` and `SlimPipeline`. |
 | `StackProcessing.RunSamples` | Runs sample F# projects by default, or Studio JSON graphs with `--json`, and writes repeatable timing/memory logs. |
@@ -174,6 +184,7 @@ flowchart TD
     StudioGraph["Studio.Graph\ncatalog + saved graph JSON"]
     StudioCompiler["Studio.Compiler\ngraph -> F# DSL"]
     StackProcessing["StackProcessing\npublic DSL"]
+    Cost["StackProcessing.Cost\ncost model + fitting evidence"]
     Core["StackProcessing.Core\nLMIP image-stack algorithms"]
     Slim["SlimPipeline\nstreaming plans, stages, windows, cost metadata"]
     AsyncSeq["FSharp.Control.AsyncSeq\nasync stream substrate"]
@@ -191,6 +202,9 @@ flowchart TD
 
     StackProcessing --> Core
     StackProcessing --> Slim
+    Core --> Cost
+    Cost --> Slim
+    Cost --> Image
     Core --> Slim
     Slim --> AsyncSeq
     Core --> Image
@@ -202,6 +216,7 @@ flowchart TD
     RunSamples --> StackProcessing
     Probe --> RunSamples
     Probe --> StudioGraph
+    Probe --> Cost
 ```
 
 There are two user-facing entry points. Programmers can write the

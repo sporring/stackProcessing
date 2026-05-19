@@ -244,4 +244,5 @@ let stitchManifestImages<'T when 'T: equality>
     let transition = ProfileTransition.create Unit Streaming
     let memoryNeed = fun _ -> Image<'T>.memoryEstimate width height
     let stage = Stage.init "stitchManifestImages" depth mapper transition memoryNeed id |> Some
-    Plan.create stage pl.memAvail (Image<'T>.memoryEstimate width height) (uint64 width * uint64 height) (uint64 depth) pl.debug
+    Plan.createWithOptimizer stage pl.memAvail (Image<'T>.memoryEstimate width height) (uint64 width * uint64 height) (uint64 depth) pl.debug pl.optimize
+    |> Plan.withRuntimeOptionsFrom pl

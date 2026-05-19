@@ -103,7 +103,8 @@ let readPointSet (path: string) (pl: Plan<unit, unit>) : Plan<unit, PointSet> =
         Stage.init "readPointSet" 1u mapper (ProfileTransition.create Unit Streaming) (fun _ -> 0UL) id
         |> Some
 
-    Plan.create stage pl.memAvail 0UL 0UL 1UL pl.debug
+    Plan.createWithOptimizer stage pl.memAvail 0UL 0UL 1UL pl.debug pl.optimize
+    |> Plan.withRuntimeOptionsFrom pl
 
 let writePointSet (output: string) (suffix: string) : Stage<PointSet, unit> =
     let reducer (debug: bool) (input: AsyncSeq<PointSet>) =

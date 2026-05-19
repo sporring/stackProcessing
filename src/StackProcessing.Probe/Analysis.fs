@@ -6,6 +6,7 @@ open System.IO
 open System.Text
 open System.Text.RegularExpressions
 open Studio.Graph
+open StackProcessingCost
 
 type Options =
     { SamplesRoot: string
@@ -944,6 +945,36 @@ let private writeOutputs (options: Options) (rows: AnalysisRow list) =
                           measurement.SourcePath ]
         })
 
+    Fitting.writeEvidenceCsv
+        (Path.Combine(options.OutputDirectory, "costEvidence.csv"))
+        (seq {
+            let rowsById =
+                rows
+                |> List.map (fun row -> row.RowId, row)
+                |> Map.ofList
+
+            for measurement in measurements do
+                match rowsById |> Map.tryFind measurement.RowId with
+                | None -> ()
+                | Some row ->
+                    let sourcePath =
+                        if Path.IsPathFullyQualified measurement.SourcePath then
+                            relativePath options.SamplesRoot measurement.SourcePath
+                        else
+                            measurement.SourcePath
+
+                    for KeyValue(feature, value) in row.FeatureValues do
+                        let evidence: Fitting.EvidenceRow =
+                            { RowId = measurement.RowId
+                              Measurement = measurement.Name
+                              Value = measurement.Value
+                              SourcePath = sourcePath
+                              FeatureKey = feature
+                              FeatureValue = value }
+
+                        yield evidence
+        })
+
     writeCsv
         (Path.Combine(options.OutputDirectory, "diagnostics.csv"))
         (seq {
@@ -1075,6 +1106,30 @@ let private writeOutputs (options: Options) (rows: AnalysisRow list) =
                           invariant r2
                           invariant options.Ridge
                           "nonNegativeLeastSquares" ]
+        })
+
+    Fitting.writeCoefficientModel
+        (Path.Combine(options.OutputDirectory, "stackprocessing.cost.json"))
+        "StackProcessing fitted cost model"
+        [ "Coefficients are fitted from Probe and RunSamples evidence."
+          "Empty graph defines the intercept row."
+          "Ignore sinks are treated as zero-cost sinks by the analysis constraints." ]
+        (seq {
+            for fit in fitRows do
+                match fit with
+                | Choice1Of2((measurement, rowCount, _columnCount, rmse, r2), feature, coefficient) ->
+                    let costCoefficient: CostCoefficient =
+                        { Measurement = measurement
+                          FeatureKey = feature
+                          Coefficient = coefficient
+                          SupportCount = featureSupport[feature]
+                          RowCount = rowCount
+                          Rmse = rmse
+                          R2 = r2
+                          Solver = "nonNegativeLeastSquares" }
+
+                    yield costCoefficient
+                | Choice2Of2 _ -> ()
         })
 
     printfn "wrote %d rows, %d features, %d measurements to %s" rows.Length features.Length measurements.Length options.OutputDirectory

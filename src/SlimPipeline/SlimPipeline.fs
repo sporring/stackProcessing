@@ -1491,7 +1491,8 @@ type Plan<'S,'T> = {
     memPeak        : uint64 // the plan's estimated peak memory consumption
     debug          : bool
     debugLevel     : uint
-    optimize       : bool }
+    optimize       : bool
+    costDiscrepancy: bool }
 
 module Plan =
     let private graphOfStage stage =
@@ -1501,19 +1502,28 @@ module Plan =
         if debug then DebugLevel.current() |> max 1u else 0u
 
     let createWithOptimizer<'S,'T when 'T: equality> (stage: Stage<'S,'T> option) (memAvail : uint64) (memPeak: uint64) (nElemsPerSlice: uint64) (length: uint64) (debug: bool) (optimize: bool) : Plan<'S, 'T> =
-        { stage = stage; graph = graphOfStage stage; sourcePeek = None; costPeak = None; costObservations = []; memAvail = memAvail; memPeak = memPeak; nElemsPerSlice = Single nElemsPerSlice; length = length; debug = debug; debugLevel = levelOf debug; optimize = optimize }
+        { stage = stage; graph = graphOfStage stage; sourcePeek = None; costPeak = None; costObservations = []; memAvail = memAvail; memPeak = memPeak; nElemsPerSlice = Single nElemsPerSlice; length = length; debug = debug; debugLevel = levelOf debug; optimize = optimize; costDiscrepancy = false }
 
     let create<'S,'T when 'T: equality> (stage: Stage<'S,'T> option) (memAvail : uint64) (memPeak: uint64) (nElemsPerSlice: uint64) (length: uint64) (debug: bool) : Plan<'S, 'T> =
         createWithOptimizer stage memAvail memPeak nElemsPerSlice length debug true
 
     let createWrappedWithOptimizer<'S,'T when 'T: equality> (stage: Stage<'S,'T> option) (memAvail : uint64) (memPeak: uint64) (nElemsPerSlice: SingleOrPair) (length: uint64) (debug: bool) (optimize: bool) : Plan<'S, 'T> =
-        { stage = stage; graph = graphOfStage stage; sourcePeek = None; costPeak = None; costObservations = []; memAvail = memAvail; memPeak = memPeak; nElemsPerSlice = nElemsPerSlice; length = length; debug = debug; debugLevel = levelOf debug; optimize = optimize }
+        { stage = stage; graph = graphOfStage stage; sourcePeek = None; costPeak = None; costObservations = []; memAvail = memAvail; memPeak = memPeak; nElemsPerSlice = nElemsPerSlice; length = length; debug = debug; debugLevel = levelOf debug; optimize = optimize; costDiscrepancy = false }
 
     let createWrapped<'S,'T when 'T: equality> (stage: Stage<'S,'T> option) (memAvail : uint64) (memPeak: uint64) (nElemsPerSlice: SingleOrPair) (length: uint64) (debug: bool) : Plan<'S, 'T> =
         createWrappedWithOptimizer stage memAvail memPeak nElemsPerSlice length debug true
 
     let withSourcePeek (sourcePeek: SourcePeek) (pl: Plan<'S,'T>) =
         { pl with sourcePeek = Some sourcePeek }
+
+    let withCostDiscrepancyReporting enabled (pl: Plan<'S,'T>) =
+        { pl with costDiscrepancy = enabled }
+
+    let withRuntimeOptionsFrom (source: Plan<'A,'B>) (target: Plan<'S,'T>) =
+        { target with
+            debugLevel = source.debugLevel
+            optimize = source.optimize
+            costDiscrepancy = source.costDiscrepancy }
 
     let private mergeCostPeak (current: StageCostEstimate option) (candidate: StageCostEstimate) =
         match current with
@@ -1570,6 +1580,35 @@ module Plan =
         | None when List.isEmpty pl.costObservations -> "unavailable"
         | None -> $"uncalibrated cost score {totalCostScore pl.costObservations:g}"
 
+    let private ratioAway expected actual =
+        if expected <= 0.0 || actual <= 0.0 then
+            1.0
+        else
+            max (actual / expected) (expected / actual)
+
+    let private printCostDiscrepancies label (pl: Plan<'S,'T>) estimatedTime actualTime actualMemoryDelta =
+        if pl.costDiscrepancy then
+            let timeRatioLimit = 4.0
+            let memoryRatioLimit = 4.0
+            let minimumTimeMs = 100.0
+            let minimumMemoryBytes = 64UL * 1024UL * 1024UL
+
+            match estimatedTime with
+            | Some expected when max expected actualTime >= minimumTimeMs ->
+                let ratio = ratioAway expected actualTime
+                if ratio >= timeRatioLimit then
+                    printfn $"[{label}] Cost discrepancy: estimated/actual time {formatMilliseconds expected} / {formatMilliseconds actualTime} (ratio {ratio:g})."
+            | None when not (List.isEmpty pl.costObservations) ->
+                printfn $"[{label}] Cost model incomplete: time estimate is uncalibrated, so discrepancy reporting cannot compare predicted and actual runtime yet."
+            | _ -> ()
+
+            if pl.memPeak > 0UL && max pl.memPeak actualMemoryDelta >= minimumMemoryBytes then
+                let ratio = ratioAway (float pl.memPeak) (float actualMemoryDelta)
+                if ratio >= memoryRatioLimit then
+                    printfn $"[{label}] Cost discrepancy: estimated/actual peak memory delta {MemoryProbe.formatBytes pl.memPeak} / {MemoryProbe.formatBytes actualMemoryDelta} (ratio {ratio:g})."
+            elif pl.memPeak > 0UL && actualMemoryDelta > pl.memPeak && actualMemoryDelta >= 8UL * 1024UL * 1024UL then
+                printfn $"[{label}] Cost model note: measured peak memory delta {MemoryProbe.formatBytes actualMemoryDelta} is above the estimate {MemoryProbe.formatBytes pl.memPeak}, but below the discrepancy threshold."
+
     let private runMeasured label (pl: Plan<'S,'T>) run =
         if pl.debug && pl.debugLevel >= 1u then
             let stopwatch = System.Diagnostics.Stopwatch.StartNew()
@@ -1579,6 +1618,8 @@ module Plan =
 
             printfn
                 $"[{label}] Run summary:\nestimated peak / available memory {MemoryProbe.formatBytes pl.memPeak} / {MemoryProbe.formatBytes pl.memAvail}\nMeasured peak delta, baseline, peak: {MemoryProbe.formatBytes snapshot.Delta} (baseline {MemoryProbe.formatBytes snapshot.Baseline}, peak {MemoryProbe.formatBytes snapshot.Peak})\nEstimated/actual time {estimatedRunTimeText pl} / {formatMilliseconds stopwatch.Elapsed.TotalMilliseconds}."
+
+            printCostDiscrepancies label pl (trySumEstimatedTimeMilliseconds pl.costObservations) stopwatch.Elapsed.TotalMilliseconds snapshot.Delta
 
             result
         else
@@ -1624,7 +1665,7 @@ module Plan =
         let length' =
             SliceCardinality.length pl.length stage.SliceCardinality
             |> Option.defaultValue pl.length
-        { createWrappedWithOptimizer stage' pl.memAvail memPeak nElemsPerSlice' length' pl.debug pl.optimize with sourcePeek = pl.sourcePeek; costPeak = costPeak; costObservations = costObservations; debugLevel = pl.debugLevel }
+        { createWrappedWithOptimizer stage' pl.memAvail memPeak nElemsPerSlice' length' pl.debug pl.optimize with sourcePeek = pl.sourcePeek; costPeak = costPeak; costObservations = costObservations; debugLevel = pl.debugLevel; costDiscrepancy = pl.costDiscrepancy }
 
     let (>=>) (pl: Plan<'a, 'b>) (stage: Stage<'b, 'c>) : Plan<'a, 'c> =
         composePlan $">=>" pl stage
@@ -1649,7 +1690,7 @@ module Plan =
         let costObservations = stageCost :: pl.costObservations
         if (not pl.debug) && memPeak > pl.memAvail then
             failwith $"Out of available memory: {stage.Name} requested {memoryNeed} B but have only {pl.memAvail} B"
-        { createWrappedWithOptimizer (Some stage) pl.memAvail memPeak nElemsPerSlice' length' pl.debug pl.optimize with sourcePeek = pl.sourcePeek; costPeak = costPeak; costObservations = costObservations; debugLevel = pl.debugLevel }
+        { createWrappedWithOptimizer (Some stage) pl.memAvail memPeak nElemsPerSlice' length' pl.debug pl.optimize with sourcePeek = pl.sourcePeek; costPeak = costPeak; costObservations = costObservations; debugLevel = pl.debugLevel; costDiscrepancy = pl.costDiscrepancy }
         
     /// parallel execution of non-synchronised streams
     let internal zipPlan (name: string) (pl1: Plan<'In, 'U>) (pl2: Plan<'In, 'V>) : Plan<'In, ('U * 'V)> =
@@ -1686,7 +1727,7 @@ module Plan =
                 let maxMemAvail = max pl1.memAvail pl2.memAvail // Should we max or sum? What would the most natural usage be for src?
                 if (not debug) && (memPeak > maxMemAvail) then
                     failwith $"Out of available memory: {stage.Name} requested {memNeeded|>SingleOrPair.fst}+{memNeeded|>SingleOrPair.snd}={memPeak} B but have only {maxMemAvail} B"
-                { createWrappedWithOptimizer (Some stage) maxMemAvail memPeak nElemsPerSlice pl1.length debug (pl1.optimize && pl2.optimize) with sourcePeek = pl1.sourcePeek; costPeak = costPeak; costObservations = costObservations; debugLevel = max pl1.debugLevel pl2.debugLevel }
+                { createWrappedWithOptimizer (Some stage) maxMemAvail memPeak nElemsPerSlice pl1.length debug (pl1.optimize && pl2.optimize) with sourcePeek = pl1.sourcePeek; costPeak = costPeak; costObservations = costObservations; debugLevel = max pl1.debugLevel pl2.debugLevel; costDiscrepancy = pl1.costDiscrepancy || pl2.costDiscrepancy }
             | _,_ -> failwith $"[{name}] Cannot zip with an empty plan"
 
     /// parallel execution of non-synchronised streams

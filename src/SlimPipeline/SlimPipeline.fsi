@@ -671,6 +671,7 @@ type Plan<'S,'T> =
       debug: bool
       debugLevel: uint
       optimize: bool
+      costDiscrepancy: bool
     }
 module Plan =
     val private graphOfStage: stage: Stage<'a,'b> option -> PipelineGraph
@@ -702,6 +703,10 @@ module Plan =
         nElemsPerSlice: SingleOrPair ->
         length: uint64 -> debug: bool -> Plan<'S,'T> when 'T: equality
     val withSourcePeek: sourcePeek: SourcePeek -> pl: Plan<'S,'T> -> Plan<'S,'T>
+    val withCostDiscrepancyReporting:
+      enabled: bool -> pl: Plan<'S,'T> -> Plan<'S,'T>
+    val withRuntimeOptionsFrom:
+      source: Plan<'A,'B> -> target: Plan<'S,'T> -> Plan<'S,'T>
     val private mergeCostPeak:
       current: StageCostEstimate option ->
         candidate: StageCostEstimate -> StageCostEstimate option
@@ -712,6 +717,12 @@ module Plan =
     val private printOptimizationSummary: label: 'a -> pl: Plan<'S,'T> -> unit
     val private formatMilliseconds: milliseconds: float -> string
     val private estimatedRunTimeText: pl: Plan<'S,'T> -> string
+    val private ratioAway: expected: float -> actual: float -> float
+    val private printCostDiscrepancies:
+      label: 'a ->
+        pl: Plan<'S,'T> ->
+        estimatedTime: float option ->
+        actualTime: float -> actualMemoryDelta: uint64 -> unit
     val private runMeasured:
       label: 'a -> pl: Plan<'S,'T> -> run: (unit -> 'b) -> 'b
     val graph: pl: Plan<'S,'T> -> PipelineGraph

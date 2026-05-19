@@ -37,12 +37,12 @@
         <ProjectReference Include="../TinyLinAlg/TinyLinAlg.fsproj" />
         <ProjectReference Include="../Image/Image.fsproj" />
         <ProjectReference Include="../SlimPipeline/SlimPipeline.fsproj" />
+        <ProjectReference Include="../StackProcessing.Cost/StackProcessing.Cost.fsproj" />
     </ItemGroup>
 
     <ItemGroup>
         <Compile Include="StackCore.fs" />
         <Compile Include="StackCharts.fs" />
-        <Compile Include="StackProcessingCost.fs" />
         <Compile Include="StackIO.fs" />
         <Compile Include="StackPoints.fs" />
         <Compile Include="StackRegistration.fs" />
