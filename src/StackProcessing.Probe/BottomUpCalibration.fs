@@ -9,7 +9,7 @@ type Options =
       AnalysisDirectory: string
       ProbeJsonRoot: string
       InputDirectory: string
-      ImageSize: uint
+      ImageSizes: uint list
       NoisyType: string
       Repeat: int
       Jobs: int
@@ -30,6 +30,7 @@ let private usage () =
     printfn "  --probe-json-root PATH  Probe JSON output directory. Defaults to tmp/probingGraphs."
     printfn "  --input-dir PATH        Generated calibration input root. Defaults to tmp/probeInputs."
     printfn "  --size N                Width/height/depth of generated probe images. Defaults to 64."
+    printfn "  --sizes A,B,C           Run the same probe layers for multiple cubic image sizes."
     printfn "  --noisy-type TYPE       TIFF-compatible noisy image type: UInt8, UInt16, or Float32. Defaults to Float32."
     printfn "  --repeat N              Repeat emitted probe runs. Defaults to 3."
     printfn "  -j, --jobs N            Run up to N emitted probe graphs at once. Defaults to 1."
@@ -68,7 +69,7 @@ let private defaultOptions () =
       AnalysisDirectory = Path.Combine(root, "tmp", "analysis")
       ProbeJsonRoot = Path.Combine(root, "tmp", "probingGraphs")
       InputDirectory = Path.Combine(root, "tmp", "probeInputs")
-      ImageSize = 64u
+      ImageSizes = [ 64u ]
       NoisyType = "Float32"
       Repeat = 3
       Jobs = 1
@@ -82,6 +83,28 @@ let private normalizeNoisyType (value: string) =
     | "uint16" -> Some "UInt16"
     | "float32" | "float" -> Some "Float32"
     | _ -> None
+
+let private parseSizes (value: string) =
+    let parts =
+        value.Split([| ',' |], StringSplitOptions.RemoveEmptyEntries)
+        |> Array.map _.Trim()
+
+    if parts.Length = 0 then
+        None
+    else
+        let parsed =
+            parts
+            |> Array.map UInt32.TryParse
+
+        if parsed |> Array.forall (fun (ok, n) -> ok && n > 0u) then
+            parsed
+            |> Array.map snd
+            |> Array.distinct
+            |> Array.sort
+            |> Array.toList
+            |> Some
+        else
+            None
 
 let rec private parseArgs options args =
     match args with
@@ -123,9 +146,16 @@ let rec private parseArgs options args =
     | "--size" :: value :: rest
     | "--image-size" :: value :: rest ->
         match UInt32.TryParse value with
-        | true, n when n > 0u -> parseArgs { options with ImageSize = n } rest
+        | true, n when n > 0u -> parseArgs { options with ImageSizes = [ n ] } rest
         | _ ->
             eprintfn "bottom-up: --size expects a positive integer"
+            Error 2
+    | "--sizes" :: value :: rest
+    | "--image-sizes" :: value :: rest ->
+        match parseSizes value with
+        | Some sizes -> parseArgs { options with ImageSizes = sizes } rest
+        | None ->
+            eprintfn "bottom-up: --sizes expects a comma-separated list of positive integers, for example 64,128,256"
             Error 2
     | "--noisy-type" :: value :: rest
     | "--gray-type" :: value :: rest ->
@@ -198,15 +228,16 @@ let private runProbeGraphs options layerDir =
            "-j"
            string options.Jobs |]
 
-let private writePlan (path: string) (layers: (string * ProbeProbing.GraphTemplate array) array) =
+let private writePlan (path: string) (layersBySize: (uint * (string * ProbeProbing.GraphTemplate array) array) array) =
     Directory.CreateDirectory(Path.GetDirectoryName path) |> ignore
 
     let lines =
         seq {
-            yield "layer,graph"
-            for layerName, templates in layers do
-                for template in templates do
-                    yield $"{layerName},{template.Name}"
+            yield "size,layer,graph"
+            for size, layers in layersBySize do
+                for layerName, templates in layers do
+                    for template in templates do
+                        yield $"{size},{layerName},{template.Name}"
         }
 
     File.WriteAllLines(path, lines)
@@ -218,42 +249,66 @@ let main argv =
         try
             cleanTmp options
 
-            printfn
-                "Generating calibration inputs in %s (%ux%ux%u, noisy %s)."
-                options.InputDirectory
-                options.ImageSize
-                options.ImageSize
-                options.ImageSize
-                options.NoisyType
-
-            let inputConfig = ProbeProbing.createBottomUpInputs options.ImageSize options.NoisyType options.InputDirectory
-            let allLayers = ProbeProbing.graphTemplateLayersForBottomUp inputConfig
-            let selectedLayers = allLayers |> Array.truncate options.Layers
             let probeRoot = Path.Combine(options.ProbeJsonRoot, "bottomup_" + timestamp ())
+            let layersBySize =
+                options.ImageSizes
+                |> List.map (fun size ->
+                    let inputDir = Path.Combine(options.InputDirectory, sprintf "%ux%ux%u" size size size)
+
+                    printfn
+                        "Generating calibration inputs in %s (%ux%ux%u, noisy %s)."
+                        inputDir
+                        size
+                        size
+                        size
+                        options.NoisyType
+
+                    let inputConfig = ProbeProbing.createBottomUpInputs size options.NoisyType inputDir
+                    let selectedLayers =
+                        ProbeProbing.graphTemplateLayersForBottomUp inputConfig
+                        |> Array.truncate options.Layers
+
+                    size, selectedLayers)
+                |> List.toArray
 
             printfn "Bottom-up probe root: %s" probeRoot
-            writePlan (Path.Combine(probeRoot, "bottomUpPlan.csv")) selectedLayers
+            writePlan (Path.Combine(probeRoot, "bottomUpPlan.csv")) layersBySize
 
             let mutable exitCode = 0
 
-            for layerIndex, (layerName, templates) in selectedLayers |> Array.indexed do
-                if exitCode = 0 then
-                    let layerNumber = layerIndex + 1
-                    let layerDir = Path.Combine(probeRoot, sprintf "layer_%03d_%s" layerNumber layerName)
-                    printfn "Bottom-up layer %d/%d: %s (%d graph(s))" layerNumber selectedLayers.Length layerName templates.Length
-                    ProbeProbing.writeGraphTemplates layerDir templates
-
-                    if options.RunProbes then
-                        let runExit = runProbeGraphs options layerDir
-                        if runExit <> 0 then
-                            eprintfn "bottom-up probe graph run failed with exit code %d" runExit
-                            exitCode <- runExit
-
+            for size, selectedLayers in layersBySize do
+                for layerIndex, (layerName, templates) in selectedLayers |> Array.indexed do
                     if exitCode = 0 then
-                        let analysisExit = runAnalysis options probeRoot
-                        if analysisExit <> 0 then
-                            eprintfn "bottom-up analysis failed with exit code %d" analysisExit
-                            exitCode <- analysisExit
+                        let layerNumber = layerIndex + 1
+                        let layerDir =
+                            Path.Combine(
+                                probeRoot,
+                                sprintf "size_%ux%ux%u" size size size,
+                                sprintf "layer_%03d_%s" layerNumber layerName)
+
+                        printfn
+                            "Bottom-up size %ux%ux%u layer %d/%d: %s (%d graph(s))"
+                            size
+                            size
+                            size
+                            layerNumber
+                            selectedLayers.Length
+                            layerName
+                            templates.Length
+
+                        ProbeProbing.writeGraphTemplates layerDir templates
+
+                        if options.RunProbes then
+                            let runExit = runProbeGraphs options layerDir
+                            if runExit <> 0 then
+                                eprintfn "bottom-up probe graph run failed with exit code %d" runExit
+                                exitCode <- runExit
+
+                        if exitCode = 0 then
+                            let analysisExit = runAnalysis options probeRoot
+                            if analysisExit <> 0 then
+                                eprintfn "bottom-up analysis failed with exit code %d" analysisExit
+                                exitCode <- analysisExit
 
             if exitCode = 0 then
                 printfn "Bottom-up calibration pass complete. Analysis written to %s." options.AnalysisDirectory

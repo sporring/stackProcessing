@@ -1734,17 +1734,15 @@ module PipelineCodeGenerator =
             let axes = parameterValue "axes" |> uintTuple3Literal
             let tileSize = parameterValue "tileSize"
             $">=> permuteAxes {axes} {tileSize}"
+        | "ResampleAffine"
         | "ResampleAffineTrilinearSlices" ->
-            let pixelType = pixelTypeNameFromParameter "type" "Float32" node
-            let input = quotedParameter "input"
-            let suffix = quotedParameter "suffix"
             let lerp = parameterValue "lerp"
             let windowSize = parameterValue "windowSize"
             let inputGeometry = parameterValue "inputGeometry"
             let outputGeometry = parameterValue "outputGeometry"
             let affine = parameterValue "affine"
             let background = parameterValue "background"
-            $"resampleAffineTrilinearSlices<{pixelType}> {input} {suffix} {lerp} {windowSize} {inputGeometry} {outputGeometry} {affine} {background} |> Seq.iter ignore"
+            $">=> resampleAffine {lerp} {windowSize} {inputGeometry} {outputGeometry} {affine} {background}"
         | "Cast" ->
             let sourceType = pixelTypeNameFromParameter "sourceType" "Float64" node
             let targetType = pixelTypeNameFromParameter "targetType" "Float64" node

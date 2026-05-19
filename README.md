@@ -116,6 +116,12 @@ dotnet run --project src/StackProcessing.RunSamples/RunSamples.fsproj -- --json 
 dotnet run --project src/StackProcessing.Probe/StackProcessing.Probe.fsproj -- calibrate --estimate-only
 ```
 
+To gather scale evidence for model fitting, use the multi-size form:
+
+```bash
+dotnet run --project src/StackProcessing.Probe/StackProcessing.Probe.fsproj -- bottom-up --sizes 64,128,256 --noisy-type Float32 --repeat 3 -j 1
+```
+
 For development-only graph emission without running the generated probes:
 
 ```bash

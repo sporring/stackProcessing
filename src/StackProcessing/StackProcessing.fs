@@ -194,7 +194,8 @@ let objectSizeStats = StackObjects.objectSizeStats
 let histogram = StackObjects.histogram
 
 // //////////////////// StackAffineResampler
-let resampleAffineTrilinearSlices = StackAffineResampler.resampleAffineTrilinearSlices
+let resampleAffine = StackAffineResampler.resampleAffine
+let resampleAffineTrilinearSlices = resampleAffine
 
 // //////////////////// StackImageFunctions
 type ImageStats = ImageFunctions.ImageStats

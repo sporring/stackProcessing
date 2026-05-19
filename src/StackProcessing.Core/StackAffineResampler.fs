@@ -2,6 +2,9 @@ module StackAffineResampler
 
 open System
 open System.Collections.Generic
+open System.IO
+open FSharp.Control
+open SlimPipeline
 open TinyLinAlg
 open StackIO
 
@@ -202,7 +205,7 @@ let requiredChunksForSliceTrilinear (winsz:int) (inG:ImageGeom) (outG:ImageGeom)
 // Uses affine incremental stepping for speed.
 // Returns a sequence of float32[] slices, x-fastest, length = outW*outH.
 // -------------------------
-let resampleAffineTrilinearSlices (inputDir: string) (suffix: string) (lerp: 'T->'T->float32->'T) 
+let resampleAffineFromChunks (inputDir: string) (suffix: string) (lerp: 'T->'T->float32->'T) 
     (winsz:int)
     (inG:ImageGeom) (outG:ImageGeom)
     (affOutToIn: Affine)   // output -> input
@@ -259,3 +262,67 @@ let resampleAffineTrilinearSlices (inputDir: string) (suffix: string) (lerp: 'T-
 
             yield (k, Image<'T>.ofArray2D(slice, $"resampleAffine[{k}]", k))
     }
+
+let resampleAffine
+    (lerp: 'T -> 'T -> float32 -> 'T)
+    (chunkSize: int)
+    (inG: ImageGeom)
+    (outG: ImageGeom)
+    (affOutToIn: Affine)
+    (background: 'T)
+    : Stage<Image<'T>, Image<'T>> =
+
+    let name = $"resampleAffine.{typeof<'T>.Name}"
+    let chunkSize = max 1 chunkSize
+    let chunkSizeU = uint chunkSize
+    let memoryNeed nPixels =
+        let bytes = Image.ImageFacts.memoryBytesForType<'T> nPixels 1u
+        bytes * uint64 chunkSizeU
+
+    let elementTransformation _ = uint64 outG.D
+
+    let apply debug (input: AsyncSeq<Image<'T>>) =
+        asyncSeq {
+            let workspaceRoot =
+                Path.Combine(Path.GetTempPath(), $"stackprocessing-{name}-{Guid.NewGuid():N}")
+            let chunkDir = Path.Combine(workspaceRoot, "chunks")
+            let suffix = ".mha"
+
+            try
+                let writer =
+                    writeChunks<'T> chunkDir suffix chunkSizeU chunkSizeU chunkSizeU
+
+                let writerPipe = writer.Build()
+
+                do!
+                    writerPipe.Apply debug input
+                    |> AsyncSeq.iterAsync (fun image ->
+                        async {
+                            image.decRefCount()
+                        })
+
+                for index, image in
+                    resampleAffineFromChunks
+                        chunkDir
+                        suffix
+                        lerp
+                        chunkSize
+                        inG
+                        outG
+                        affOutToIn
+                        background do
+                    image.index <- index
+                    yield image
+            finally
+                deleteIfExists workspaceRoot
+        }
+
+    let pipe =
+        { Name = name
+          Apply = apply
+          Profile = Streaming }
+
+    Stage.fromPipe name (ProfileTransition.create Streaming Streaming) memoryNeed elementTransformation pipe
+    |> Stage.withSliceCardinality (SliceCardinality.reduceTo (uint64 outG.D))
+
+let resampleAffineTrilinearSlices = resampleAffine

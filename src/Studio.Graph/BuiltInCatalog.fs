@@ -2294,18 +2294,16 @@ module BuiltInCatalog =
                 makeParameter "factorZ" "Factor Z" "1.0" (BasicType.Numeric Float64)
                 makeParameter "interpolation" "Interpolation" "Linear" BasicType.String ] }
 
-        { Id = "ResampleAffineTrilinearSlices"
-          DisplayName = "resampleAffineTrilinearSlices"
+        { Id = "ResampleAffine"
+          DisplayName = "resampleAffine"
           Category = "Geometry"
-          Summary = "Run the chunked affine trilinear resampler over chunk files."
-          Description = "Advanced chunk utility. This DSL function returns a sequence of output slices rather than a streaming Plan stage, so the Studio box is terminal and exposes the geometry, affine, interpolation, and background arguments as raw F# expressions."
+          Summary = "Reslice an image stack with affine trilinear interpolation."
+          Description = "Streams the input stack into an internal chunk workspace, reads the chunks in the requested output slicing direction, and emits resampled slices. Geometry, affine transform, interpolation, and background are raw F# expressions."
           Aliases = [ "resample"; "affine"; "trilinear"; "chunks"; "geometry"; "transform" ]
-          Inputs = []
-          Outputs = []
+          Inputs = [ makePort "Image" imageAny ]
+          Outputs = [ makePort "Image" imageAny ]
           Parameters =
               [ makeParameter "type" "Type" "Float32" BasicType.String
-                makeParameter "input" "Input" "input" BasicType.String
-                suffixParameter ".tiff"
                 makeParameter "lerp" "Lerp" "(fun a b t -> a + (b - a) * t)" BasicType.String
                 makeParameter "windowSize" "Window size" "8" (BasicType.Numeric Int32)
                 makeParameter "inputGeometry" "Input geometry" "{ W = 64; H = 64; D = 64; Origin = TinyLinAlg.v3 0.0 0.0 0.0; Spacing = TinyLinAlg.v3 1.0 1.0 1.0; Direction = { m00 = 1.0; m01 = 0.0; m02 = 0.0; m10 = 0.0; m11 = 1.0; m12 = 0.0; m20 = 0.0; m21 = 0.0; m22 = 1.0 } }" BasicType.String

@@ -15,6 +15,13 @@ inputs are a binary moving-box shape stack and a noisy gray-valued stack.
 dotnet run --project src/StackProcessing.Probe/StackProcessing.Probe.fsproj -- bottom-up --size 128 --noisy-type Float32 --repeat 3 -j 1
 ```
 
+For the first scale-model fitting run, gather the same layers at several cubic
+image sizes:
+
+```bash
+dotnet run --project src/StackProcessing.Probe/StackProcessing.Probe.fsproj -- bottom-up --sizes 64,128,256 --noisy-type Float32 --repeat 3 -j 1
+```
+
 The fit treats the empty graph as the common intercept measurement and fixes
 `Ignore` to zero cost. The starter layer is therefore the anchor for separating
 startup/shutdown overhead from read, write, and later stage costs.
