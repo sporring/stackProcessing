@@ -1,0 +1,65 @@
+{
+  "version": 1,
+  "nodes": [
+    {
+      "id": "affine",
+      "functionId": "RandomRigidTransform",
+      "x": 120.0,
+      "y": 40.0,
+      "parameters": [
+        { "key": "seed", "value": "7", "useInput": false },
+        { "key": "width", "value": "64", "useInput": false },
+        { "key": "height", "value": "64", "useInput": false },
+        { "key": "depth", "value": "16", "useInput": false },
+        { "key": "maxTranslation", "value": "0.0", "useInput": false }
+      ]
+    },
+    {
+      "id": "read",
+      "functionId": "ReadRange",
+      "x": 120.0,
+      "y": 180.0,
+      "parameters": [
+        { "key": "availableMemory", "value": "2147483648UL", "useInput": false },
+        { "key": "type", "value": "Float32", "useInput": false },
+        { "key": "format", "value": "Image stack", "useInput": false },
+        { "key": "first", "value": "0", "useInput": false },
+        { "key": "step", "value": "1", "useInput": false },
+        { "key": "last", "value": "15", "useInput": false },
+        { "key": "input", "value": "../data/volume", "useInput": false },
+        { "key": "suffix", "value": ".tiff", "useInput": false }
+      ]
+    },
+    {
+      "id": "resample",
+      "functionId": "ResampleAffine",
+      "x": 380.0,
+      "y": 180.0,
+      "parameters": [
+        { "key": "type", "value": "Float32", "useInput": false },
+        { "key": "lerp", "value": "(fun a b t -> a + (b - a) * t)", "useInput": false },
+        { "key": "windowSize", "value": "16", "useInput": false },
+        { "key": "inputGeometry", "value": "{ W = 64; H = 64; D = 16; Origin = TinyLinAlg.v3 0.0 0.0 0.0; Spacing = TinyLinAlg.v3 1.0 1.0 1.0; Direction = TinyLinAlg.identity3 }", "useInput": false },
+        { "key": "outputGeometry", "value": "{ W = 64; H = 64; D = 16; Origin = TinyLinAlg.v3 0.0 0.0 0.0; Spacing = TinyLinAlg.v3 1.0 1.0 1.0; Direction = TinyLinAlg.identity3 }", "useInput": false },
+        { "key": "affine", "value": "{ A = TinyLinAlg.identity3; T = TinyLinAlg.v3 0.0 0.0 0.0; C = TinyLinAlg.v3 31.5 31.5 7.5 }", "useInput": true },
+        { "key": "background", "value": "0.0f", "useInput": false }
+      ]
+    },
+    {
+      "id": "write",
+      "functionId": "Write",
+      "x": 640.0,
+      "y": 180.0,
+      "parameters": [
+        { "key": "format", "value": "Image stack", "useInput": false },
+        { "key": "output", "value": "../tmp/randomRigidTransform", "useInput": false },
+        { "key": "suffix", "value": ".tiff", "useInput": false }
+      ]
+    }
+  ],
+  "edges": [
+    { "fromNode": "affine", "fromKind": "scalarOutput", "fromPort": 0, "toNode": "resample", "toKind": "parameterInput", "toPort": 5 },
+    { "fromNode": "read", "fromKind": "dataOutput", "fromPort": 0, "toNode": "resample", "toKind": "dataInput", "toPort": 0 },
+    { "fromNode": "resample", "fromKind": "dataOutput", "fromPort": 0, "toNode": "write", "toKind": "dataInput", "toPort": 0 }
+  ]
+}

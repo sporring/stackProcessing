@@ -22,6 +22,10 @@ type Image<'S when 'S: equality> = Image.Image<'S>
 
 type ImageFacts = Image.ImageFacts
 
+type Point2D = StackCore.Point2D
+
+type Polygon2D = StackCore.Polygon2D
+
 val optimizerEnabled: (unit -> bool)
 
 val source: (uint64 -> SlimPipeline.Plan<unit,unit>)
@@ -406,6 +410,14 @@ val coordinateZ:
      uint32 ->
      SlimPipeline.Plan<unit,unit> ->
      SlimPipeline.Plan<unit,StackCore.Image<float>>)
+
+val imageCenter: (uint -> uint -> uint -> TinyLinAlg.V3)
+
+val randomRigidTransformAround:
+  (int -> TinyLinAlg.V3 -> float -> TinyLinAlg.Affine)
+
+val randomRigidTransform:
+  (int -> uint -> uint -> uint -> float -> TinyLinAlg.Affine)
 
 val deleteIfExists: (string -> unit)
 
@@ -1374,6 +1386,17 @@ val zero<'T when 'T: equality> :
      uint ->
      uint ->
      SlimPipeline.Plan<unit,unit> -> SlimPipeline.Plan<unit,StackCore.Image<'T>>)
+    when 'T: equality
+
+val polygonMask:
+  (uint ->
+     uint ->
+     StackCore.Polygon2D ->
+     SlimPipeline.Plan<unit,unit> ->
+     SlimPipeline.Plan<unit,StackCore.Image<uint8>>)
+
+val repeat<'T when 'T: equality> :
+  (uint -> StackCore.Stage<StackCore.Image<'T>,StackCore.Image<'T>>)
     when 'T: equality
 
 val normalNoise<'T when 'T: equality> :

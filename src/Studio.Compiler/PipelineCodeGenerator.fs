@@ -600,6 +600,19 @@ module PipelineCodeGenerator =
                         literalValue (BasicType.Numeric Float64) parameterExpression.Value
 
                 scalarFunctionExpression (unaryImageFunctionName node) argument
+            | "RandomRigidTransform" ->
+                let parameterExpression key =
+                    node.Parameters
+                    |> Seq.tryFindIndex (fun parameter -> parameter.Key = key)
+                    |> Option.map (fun index -> parameterExpression graph nodesById scalarNamesByNodeId statsNamesByNodeId translationTableNamesByNodeId histogramNamesByNodeId quantileNamesByNodeId stackInfoNamesByNodeId chunkInfoNamesByNodeId serialGeometryNamesByNodeId node index key)
+                    |> Option.defaultValue { Value = ""; IsLinked = false }
+
+                let seed = (parameterExpression "seed").Value
+                let width = (parameterExpression "width").Value
+                let height = (parameterExpression "height").Value
+                let depth = (parameterExpression "depth").Value
+                let maxTranslation = (parameterExpression "maxTranslation").Value
+                $"randomRigidTransform (int {seed}) (uint {width}) (uint {height}) (uint {depth}) (float {maxTranslation})"
             | "OtsuThresholdFromHistogram"
             | "MomentsThresholdFromHistogram" ->
                 let functionName =
@@ -928,6 +941,12 @@ module PipelineCodeGenerator =
             let height = parameterValue "height"
             let depth = parameterValue "depth"
             $"|> zero<{pixelType}> {width} {height} {depth}" |> sourcePrefix availableMemory
+        | "PolygonMask" ->
+            let availableMemory = parameterValue "availableMemory"
+            let width = parameterValue "width"
+            let height = parameterValue "height"
+            let polygon = parameterValue "polygon"
+            $"|> polygonMask {width} {height} {polygon}" |> sourcePrefix availableMemory
         | "CoordinateX" ->
             let availableMemory = parameterValue "availableMemory"
             let width = parameterValue "width"
@@ -1150,6 +1169,9 @@ module PipelineCodeGenerator =
             let factorZ = parameterValue "factorZ"
             let interpolation = quotedParameter "interpolation"
             $"|> resample<{pixelType}> {factorX} {factorY} {factorZ} {interpolation}"
+        | "Repeat" ->
+            let depth = parameterValue "depth"
+            $">=> repeat {depth}"
         | "WriteChunks" ->
             let output = quotedParameter "output"
             let suffix = quotedParameter "suffix"
@@ -1760,6 +1782,7 @@ module PipelineCodeGenerator =
                 node.FunctionId = "Scalar"
                 || node.FunctionId = "ScalarOp"
                 || node.FunctionId = "ScalarFunction"
+                || node.FunctionId = "RandomRigidTransform"
                 || node.FunctionId = "OtsuThresholdFromHistogram"
                 || node.FunctionId = "MomentsThresholdFromHistogram")
 

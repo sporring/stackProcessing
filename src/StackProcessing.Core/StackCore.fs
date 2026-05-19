@@ -14,6 +14,12 @@ type Window<'T> = SlimPipeline.Window<'T>
 //type Slice<'S when 'S: equality> = Slice.Slice<'S>
 type Image<'S when 'S: equality> = Image.Image<'S>
 
+type Point2D =
+    { X: float
+      Y: float }
+
+type Polygon2D = Point2D list
+
 type HistogramBinning =
     | FixedEdges of firstLeftEdge: float * lastLeftEdge: float * bins: uint32
     | FixedWidth of binWidth: uint64

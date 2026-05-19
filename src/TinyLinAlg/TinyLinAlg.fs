@@ -17,6 +17,11 @@ let add (a:V3) (b:V3) = v3 (a.x+b.x) (a.y+b.y) (a.z+b.z)
 let sub (a:V3) (b:V3) = v3 (a.x-b.x) (a.y-b.y) (a.z-b.z)
 let scale s (a:V3) = v3 (s*a.x) (s*a.y) (s*a.z)
 let dot (a: V3) (b: V3) = a.x*b.x + a.y*b.y + a.z*b.z
+let cross (a: V3) (b: V3) =
+    v3
+        (a.y * b.z - a.z * b.y)
+        (a.z * b.x - a.x * b.z)
+        (a.x * b.y - a.y * b.x)
 let norm (a: V3) = sqrt (dot a a)
 
 let normalize (a: V3) =
@@ -113,6 +118,56 @@ type Affine =
 
 let affinePoint (a:Affine) (p:V3) : V3 =
     add (add (mulMV a.A (sub p a.C)) a.T) a.C
+
+let identity3 =
+    { m00 = 1.0; m01 = 0.0; m02 = 0.0
+      m10 = 0.0; m11 = 1.0; m12 = 0.0
+      m20 = 0.0; m21 = 0.0; m22 = 1.0 }
+
+let matrixFromColumnAxes (xAxis: V3) (yAxis: V3) (zAxis: V3) =
+    { m00 = xAxis.x; m01 = yAxis.x; m02 = zAxis.x
+      m10 = xAxis.y; m11 = yAxis.y; m12 = zAxis.y
+      m20 = xAxis.z; m21 = yAxis.z; m22 = zAxis.z }
+
+let imageCenter (width: uint) (height: uint) (depth: uint) =
+    v3
+        ((float width - 1.0) / 2.0)
+        ((float height - 1.0) / 2.0)
+        ((float depth - 1.0) / 2.0)
+
+let randomUnitVectorOnSphere (rng: System.Random) =
+    let z = 2.0 * rng.NextDouble() - 1.0
+    let theta = 2.0 * System.Math.PI * rng.NextDouble()
+    let r = sqrt (max 0.0 (1.0 - z * z))
+    v3 (r * cos theta) (r * sin theta) z
+
+let randomRigidTransformAround (seed: int) (center: V3) (maxTranslation: float) =
+    if maxTranslation < 0.0 then invalidArg "maxTranslation" "Translation radius must be non-negative."
+
+    let rng = System.Random(seed)
+    let normal = randomUnitVectorOnSphere rng
+    let originalX = v3 1.0 0.0 0.0
+    let originalY = v3 0.0 1.0 0.0
+    let reference = if abs (dot normal originalX) < 0.95 then originalX else originalY
+    let firstAxis = sub reference (scale (dot reference normal) normal) |> normalize
+    let secondAxis = cross normal firstAxis |> normalize
+    let rotation = matrixFromColumnAxes firstAxis secondAxis normal
+
+    let translation =
+        if maxTranslation = 0.0 then
+            v3 0.0 0.0 0.0
+        else
+            v3
+                ((2.0 * rng.NextDouble() - 1.0) * maxTranslation)
+                ((2.0 * rng.NextDouble() - 1.0) * maxTranslation)
+                ((2.0 * rng.NextDouble() - 1.0) * maxTranslation)
+
+    { A = rotation
+      T = translation
+      C = center }
+
+let randomRigidTransform (seed: int) (width: uint) (height: uint) (depth: uint) (maxTranslation: float) =
+    randomRigidTransformAround seed (imageCenter width height depth) maxTranslation
 
 module Dense =
     let private checkMatrixVectorShape (a: float[,]) (b: float[]) =

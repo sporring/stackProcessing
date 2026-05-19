@@ -198,6 +198,9 @@ type Image<'T when 'T: equality> =
     static member
       ofSimpleITK: itkImg: itk.simple.Image * ?optionalName: string *
                    ?optionalIndex: int -> Image<'T>
+    static member
+      polygonMask: width: uint * height: uint * polygon: (float * float) list *
+                   ?name: string * ?index: int -> Image<uint8>
     static member setDebug: d: bool -> unit
     static member setDebugLevel: level: uint32 -> unit
     static member

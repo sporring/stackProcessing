@@ -365,6 +365,22 @@ module BuiltInCatalog =
           [ makeParameter "function" "Function" "sqrt" BasicType.String
             makeParameter "a" "A" (numericDefaultValue Float64) (BasicType.Numeric Float64) ] }
 
+  let makeRandomRigidTransform () =
+    { Id = "RandomRigidTransform"
+      DisplayName = "randomRigidTransform"
+      Category = "Geometry"
+      Summary = "Generate a seeded random rigid affine transform."
+      Description = "Creates one affine transform for resampleAffine. The transform is centered on the image center from width, height, and depth. The output plane normal is sampled uniformly on the sphere; the first in-plane axis is the projection most aligned with the original x-axis, falling back to y near degeneracy."
+      Aliases = [ "affine"; "rigid"; "random"; "resample"; "normal"; "sphere"; "transform" ]
+      Inputs = []
+      Outputs = [ makePort "Affine" (Scalar BasicType.String) ]
+      Parameters =
+          [ makeParameter "seed" "Seed" "1" (BasicType.Numeric Int32)
+            makeParameter "width" "Width" "64" (BasicType.Numeric UInt32)
+            makeParameter "height" "Height" "64" (BasicType.Numeric UInt32)
+            makeParameter "depth" "Depth" "64" (BasicType.Numeric UInt32)
+            makeParameter "maxTranslation" "Max translation" "0.0" (BasicType.Numeric Float64) ] }
+
   let makeGenericRead () =
     { Id = "Read"
       DisplayName = "read"
@@ -530,6 +546,21 @@ module BuiltInCatalog =
             makeParameter "width" "Width" "64" (BasicType.Numeric UInt32)
             makeParameter "height" "Height" "64" (BasicType.Numeric UInt32)
             makeParameter "depth" "Depth" "1" (BasicType.Numeric UInt32) ] }
+
+  let makePolygonMask () =
+    { Id = "PolygonMask"
+      DisplayName = "polygonMask"
+      Category = "Sources / Sinks"
+      Summary = "Create a binary 2D mask from a closed polygon."
+      Description = "Rasterizes the closed polygon into one UInt8 image slice. Vertex coordinates are x/y pixel coordinates; pixels whose centers lie inside the polygon, plus boundary pixels, are set to 1."
+      Aliases = [ "polygon"; "roi"; "roipoly"; "mask"; "binary"; "source"; "UInt8" ]
+      Inputs = []
+      Outputs = [ makePort "UInt8" imageUInt8 ]
+      Parameters =
+          [ availableMemoryParameter
+            makeParameter "width" "Width" "64" (BasicType.Numeric UInt32)
+            makeParameter "height" "Height" "64" (BasicType.Numeric UInt32)
+            makeParameter "polygon" "Polygon" "[ { X = 16.0; Y = 12.0 }; { X = 50.0; Y = 18.0 }; { X = 44.0; Y = 50.0 }; { X = 12.0; Y = 42.0 } ]" BasicType.String ] }
 
   let makeGenericNormalNoise () =
     { Id = "NormalNoise"
@@ -705,6 +736,8 @@ module BuiltInCatalog =
 
         makeScalarFunction()
 
+        makeRandomRigidTransform()
+
         makeGenericRead()
 
         makeGenericReadRandom()
@@ -728,6 +761,8 @@ module BuiltInCatalog =
                 makeParameter "input" "Input" "points.csv" BasicType.String ] }
 
         makeGenericZero()
+
+        makePolygonMask()
 
         { Id = "CoordinateX"
           DisplayName = "coordinateX"
@@ -2278,6 +2313,17 @@ module BuiltInCatalog =
                 makeParameter "height" "Height" "64" (BasicType.Numeric UInt32)
                 makeParameter "depth" "Depth" "64" (BasicType.Numeric UInt32)
                 makeParameter "interpolation" "Interpolation" "Linear" BasicType.String ] }
+
+        { Id = "Repeat"
+          DisplayName = "repeat"
+          Category = "Geometry"
+          Summary = "Repeat each 2D image along z."
+          Description = "Duplicates each incoming 2D image the requested number of times. It is useful for lifting a single 2D mask or generated slice into a small 3D stack."
+          Aliases = [ "repeat"; "duplicate"; "z"; "stack"; "slice"; "volume" ]
+          Inputs = [ makePort "Image" imageAny ]
+          Outputs = [ makePort "Image" imageAny ]
+          Parameters =
+              [ makeParameter "depth" "Depth" "16" (BasicType.Numeric UInt32) ] }
 
         { Id = "Resample"
           DisplayName = "resample"

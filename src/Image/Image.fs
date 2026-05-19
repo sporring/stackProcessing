@@ -666,6 +666,50 @@ type Image<'T when 'T : equality>(sz: uint list, ?optionalNumberComponents: uint
             img |> Image.iteri (fun idxLst _ -> img.Set idxLst arr[int idxLst[0],int idxLst[1]])
             img
 
+    static member polygonMask (width: uint, height: uint, polygon: (float * float) list, ?name: string, ?index: int) : Image<uint8> =
+        if width = 0u then invalidArg "width" "polygonMask requires a positive width."
+        if height = 0u then invalidArg "height" "polygonMask requires a positive height."
+        if polygon.Length < 3 then invalidArg "polygon" "polygonMask requires at least three polygon vertices."
+
+        let _name = defaultArg name "polygonMask"
+        let _index = defaultArg index 0
+        let eps = 1e-9
+
+        let pointOnSegment px py (x0, y0) (x1, y1) =
+            let cross = (px - x0) * (y1 - y0) - (py - y0) * (x1 - x0)
+            abs cross <= eps
+            && px >= min x0 x1 - eps && px <= max x0 x1 + eps
+            && py >= min y0 y1 - eps && py <= max y0 y1 + eps
+
+        let contains px py =
+            let rec loop previous remaining inside =
+                match remaining with
+                | [] -> inside
+                | current :: tail ->
+                    if pointOnSegment px py previous current then
+                        true
+                    else
+                        let x0, y0 = previous
+                        let x1, y1 = current
+                        let crosses = (y0 > py) <> (y1 > py)
+                        let inside' =
+                            if crosses then
+                                let xCross = (x1 - x0) * (py - y0) / (y1 - y0) + x0
+                                if px < xCross then not inside else inside
+                            else
+                                inside
+                        loop current tail inside'
+
+            loop (List.last polygon) polygon false
+
+        let pixels =
+            Array2D.init (int width) (int height) (fun x y ->
+                let px = float x + 0.5
+                let py = float y + 0.5
+                if contains px py then 1uy else 0uy)
+
+        Image<uint8>.ofArray2D(pixels, _name, _index)
+
     static member ofArray3D (arr: 'T[,,], ?name:string, ?index:int) : Image<'T> =
         let _name = defaultArg name ""
         let _index = defaultArg index 0

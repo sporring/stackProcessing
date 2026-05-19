@@ -1,0 +1,23 @@
+{
+  "version": 1,
+  "nodes": [
+    { "id": "mask", "functionId": "PolygonMask", "x": 100.0, "y": 120.0,
+      "parameters": [
+        { "key": "availableMemory", "value": "2147483648UL", "useInput": false },
+        { "key": "width", "value": "64", "useInput": false },
+        { "key": "height", "value": "64", "useInput": false },
+        { "key": "polygon", "value": "[ { X = 16.0; Y = 12.0 }; { X = 50.0; Y = 18.0 }; { X = 44.0; Y = 50.0 }; { X = 12.0; Y = 42.0 } ]", "useInput": false } ] },
+    { "id": "repeat", "functionId": "Repeat", "x": 320.0, "y": 120.0,
+      "parameters": [
+        { "key": "depth", "value": "16", "useInput": false } ] },
+    { "id": "write", "functionId": "Write", "x": 500.0, "y": 120.0,
+      "parameters": [
+        { "key": "format", "value": "Image stack", "useInput": false },
+        { "key": "output", "value": "../tmp/polygonMask", "useInput": false },
+        { "key": "suffix", "value": ".tiff", "useInput": false } ] }
+  ],
+  "edges": [
+    { "fromNode": "mask", "fromKind": "dataOutput", "fromPort": 0, "toNode": "repeat", "toKind": "dataInput", "toPort": 0 },
+    { "fromNode": "repeat", "fromKind": "dataOutput", "fromPort": 0, "toNode": "write", "toKind": "dataInput", "toPort": 0 }
+  ]
+}

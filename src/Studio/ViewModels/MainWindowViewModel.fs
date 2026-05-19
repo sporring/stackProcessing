@@ -488,7 +488,7 @@ module private SourceImageNode =
         readSourceFunctionIds |> Set.contains functionId
 
     let private syntheticSourceFunctionIds =
-        Set.ofList [ "Zero"; "NormalNoise"; "SaltAndPepperNoise"; "ShotNoise"; "SpeckleNoise"; "CreateByEuler2DTransform" ]
+        Set.ofList [ "Zero"; "PolygonMask"; "NormalNoise"; "SaltAndPepperNoise"; "ShotNoise"; "SpeckleNoise"; "CreateByEuler2DTransform" ]
 
     let isSyntheticSource functionId =
         syntheticSourceFunctionIds |> Set.contains functionId
@@ -1340,6 +1340,7 @@ type PipelineNodeViewModel(
         | "FileDirectory"
         | "ScalarOp"
         | "ScalarFunction"
+        | "RandomRigidTransform"
         | "OtsuThresholdFromHistogram"
         | "MomentsThresholdFromHistogram" -> ScalarOutput
         | "ComputeStats"
@@ -1387,6 +1388,7 @@ type PipelineNodeViewModel(
             state.Definition.Inputs, SourceImageNode.outputPort state :: [ { Name = infoName; Type = infoType } ]
         | "ReadSlab" ->
             state.Definition.Inputs, SourceImageNode.outputPort state :: (state.Definition.Outputs |> List.skip 1)
+        | "PolygonMask" -> state.Definition.Inputs, state.Definition.Outputs
         | "Zero"
         | "NormalNoise"
         | "SaltAndPepperNoise"
@@ -2227,6 +2229,8 @@ type MainWindowViewModel() as this =
             state.Title <- ScalarOpNode.title state
         elif definition.Id = "ScalarFunction" then
             state.Title <- ScalarFunctionNode.title state
+        elif definition.Id = "RandomRigidTransform" then
+            state.Title <- definition.DisplayName
         elif SourceImageNode.hasInputTitle definition.Id then
             state.Title <- SourceImageNode.title state
         elif SourceImageNode.hasOutputTitle definition.Id then

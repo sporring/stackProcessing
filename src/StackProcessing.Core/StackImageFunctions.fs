@@ -1722,6 +1722,35 @@ let zero<'T when 'T: equality> (width: uint) (height: uint) (depth: uint) (pl: P
     let stage = srcStage "zero" width height depth mapper |> Some
     srcPlan pl width height depth stage
 
+let polygonMask (width: uint) (height: uint) (polygon: Polygon2D) (pl: Plan<unit, unit>) : Plan<unit, Image<uint8>> =
+    let vertices = polygon |> List.map (fun p -> p.X, p.Y)
+    let mapper (i: int) : Image<uint8> =
+        let image = Image<uint8>.polygonMask(width, height, vertices, "polygonMask", i)
+        if pl.debug && DebugLevel.current() >= 1u then printfn "[polygonMask] Created slice %A" i
+        image
+    let stage = srcStage "polygonMask" width height 1u mapper |> Some
+    srcPlan pl width height 1u stage
+
+let repeat<'T when 'T: equality> (depth: uint) : Stage<Image<'T>, Image<'T>> =
+    if depth = 0u then invalidArg "depth" "repeat requires a positive depth."
+
+    let copySlice (image: Image<'T>) =
+        if image.GetDimensions() <> 2u then
+            invalidArg "image" $"repeat expects 2D images, got {image.GetDimensions()}D."
+
+        let values = image.toArray2D()
+        try
+            [ for i in 0 .. int depth - 1 ->
+                let outputIndex = image.index * int depth + i
+                Image<'T>.ofArray2D(values, $"repeat[{outputIndex}]", outputIndex) ]
+        finally
+            image.decRefCount()
+
+    let memoryNeed input = input * uint64 depth
+    Stage.map $"repeat {depth}" (fun _ image -> copySlice image) memoryNeed id
+    --> flattenList ()
+    |> Stage.withSliceCardinality SliceCardinality.unknown
+
 let normalNoise<'T when 'T: equality> (width: uint) (height: uint) (depth: uint) (mean: float) (stddev: float) (pl: Plan<unit, unit>) : Plan<unit, Image<'T>> =
     let mapper (i: int) : Image<'T> =
         let zero = new Image<'T>([width; height], 1u, $"normalNoise.zero[{i}]", i)

@@ -12,6 +12,8 @@ type Window<'T> = SlimPipeline.Window<'T>
 //type Slice<'S when 'S: equality> = Slice.Slice<'S>
 type Image<'S when 'S: equality> = Image.Image<'S>
 type ImageFacts = Image.ImageFacts
+type Point2D = StackCore.Point2D
+type Polygon2D = StackCore.Polygon2D
 
 let optimizerEnabled = StackCore.optimizerEnabled
 let source = StackCore.source
@@ -117,6 +119,9 @@ let readPointSet = StackPoints.readPointSet
 let coordinateX = StackBias.coordinateX
 let coordinateY = StackBias.coordinateY
 let coordinateZ = StackBias.coordinateZ
+let imageCenter = TinyLinAlg.imageCenter
+let randomRigidTransformAround = TinyLinAlg.randomRigidTransformAround
+let randomRigidTransform = TinyLinAlg.randomRigidTransform
 
 let deleteIfExists = StackIO.deleteIfExists
 let write = StackIO.write
@@ -351,6 +356,8 @@ let show = StackImageFunctions.show
 let plot = StackImageFunctions.plot
 let print = StackImageFunctions.print
 let zero<'T when 'T: equality>= StackImageFunctions.zero<'T>
+let polygonMask = StackImageFunctions.polygonMask
+let repeat<'T when 'T: equality> = StackImageFunctions.repeat<'T>
 let normalNoise<'T when 'T: equality> = StackImageFunctions.normalNoise<'T>
 let saltAndPepperNoise<'T when 'T: equality> = StackImageFunctions.saltAndPepperNoise<'T>
 let shotNoise<'T when 'T: equality> = StackImageFunctions.shotNoise<'T>
