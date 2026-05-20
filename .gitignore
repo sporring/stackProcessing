@@ -17,3 +17,4 @@
 *.tiff
 *.mha
 /samples/resampleAffineTrilinearSlices/tmp
+/samples/resampleAffine/tmp

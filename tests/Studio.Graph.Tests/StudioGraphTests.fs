@@ -82,7 +82,7 @@ let catalogSuite =
             Expect.isFalse (ids |> List.contains "WriteThrough") "writeThrough is a DSL/internal primitive and should stay hidden from Studio."
             Expect.equal (BuiltInCatalog.find "WriteChunks").Outputs.[0].Type (PortType.Custom "ChunkInfo") "writeChunks should expose ChunkInfo for downstream print/expand branches."
             Expect.containsAll ids ["AddNormalNoise"; "AddSaltAndPepperNoise"; "AddShotNoise"; "AddSpeckleNoise"] "Noise add-stage boxes should be available in Studio."
-            Expect.containsAll ids ["Convolve"; "RelabelComponents"; "SignedDistanceBand"; "OtsuThresholdFromHistogram"; "MomentsThresholdFromHistogram"; "ResampleAffineTrilinearSlices"] "The StackProcessing DSL algorithms requested for Studio should be in the palette catalog."
+            Expect.containsAll ids ["Convolve"; "RelabelComponents"; "SignedDistanceBand"; "OtsuThresholdFromHistogram"; "MomentsThresholdFromHistogram"; "ResampleAffine"] "The StackProcessing DSL algorithms requested for Studio should be in the palette catalog."
             Expect.isFalse (ids |> List.contains "BinaryFillHoles") "binaryFillHoles is a whole-stack SimpleITK operation and should not be exposed as an LMIP Studio box."
             Expect.isFalse (ids |> List.contains "SignedDistanceMap") "signedDistanceMap is the lower-level whole-image name; Studio should expose signedDistanceBand."
             Expect.isFalse (ids |> List.contains "Watershed") "watershed is not exposed as an LMIP Studio box because basin labels are not local to independent z-windows."

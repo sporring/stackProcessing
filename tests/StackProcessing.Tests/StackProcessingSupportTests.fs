@@ -1547,7 +1547,7 @@ let stackProcessingSupportSuite =
                 disposeImages slices
                 deleteDirectory rootDir
 
-        testCase "resampleAffineTrilinearSlices samples chunked slabs with the supplied output-to-input affine" <| fun _ ->
+        testCase "resampleAffineFromChunks samples chunked slabs with the supplied output-to-input affine" <| fun _ ->
             let chunkDirectory = tempDirectory "affine-resampler-chunks"
             let slices =
                 [ for z in 0 .. 3 ->
@@ -1570,7 +1570,7 @@ let stackProcessingSupportSuite =
                       C = v3 0.0 0.0 0.0 }
 
                 let output =
-                    resampleAffineTrilinearSlices
+                    resampleAffineFromChunks
                         chunkDirectory
                         ".tiff"
                         lerp
@@ -1598,7 +1598,7 @@ let stackProcessingSupportSuite =
                 disposeImages slices
                 deleteDirectory chunkDirectory
 
-        testCase "resampleAffineTrilinearSlices matches direct sampling across uneven chunk boundaries" <| fun _ ->
+        testCase "resampleAffineFromChunks matches direct sampling across uneven chunk boundaries" <| fun _ ->
             let chunkDirectory = tempDirectory "affine-resampler-uneven-chunks"
             let voxels = Array3D.init 5 4 3 nonlinearVoxel
             let slices =
@@ -1623,7 +1623,7 @@ let stackProcessingSupportSuite =
                       C = v3 0.0 0.0 0.0 }
 
                 let output =
-                    resampleAffineTrilinearSlices
+                    resampleAffineFromChunks
                         chunkDirectory
                         ".tiff"
                         lerp
@@ -1648,7 +1648,7 @@ let stackProcessingSupportSuite =
                 disposeImages slices
                 deleteDirectory chunkDirectory
 
-        testCase "resampleAffineTrilinearSlices returns background when the trilinear footprint is outside" <| fun _ ->
+        testCase "resampleAffineFromChunks returns background when the trilinear footprint is outside" <| fun _ ->
             let chunkDirectory = tempDirectory "affine-resampler-background"
             let voxels = Array3D.init 4 4 3 nonlinearVoxel
             let slices =
@@ -1674,7 +1674,7 @@ let stackProcessingSupportSuite =
                       C = v3 0.0 0.0 0.0 }
 
                 let output =
-                    resampleAffineTrilinearSlices
+                    resampleAffineFromChunks
                         chunkDirectory
                         ".tiff"
                         lerp

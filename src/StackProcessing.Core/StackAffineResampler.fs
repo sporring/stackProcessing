@@ -324,5 +324,3 @@ let resampleAffine
 
     Stage.fromPipe name (ProfileTransition.create Streaming Streaming) memoryNeed elementTransformation pipe
     |> Stage.withSliceCardinality (SliceCardinality.reduceTo (uint64 outG.D))
-
-let resampleAffineTrilinearSlices = resampleAffine

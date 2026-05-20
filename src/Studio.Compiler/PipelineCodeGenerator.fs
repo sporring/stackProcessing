@@ -1756,8 +1756,7 @@ module PipelineCodeGenerator =
             let axes = parameterValue "axes" |> uintTuple3Literal
             let tileSize = parameterValue "tileSize"
             $">=> permuteAxes {axes} {tileSize}"
-        | "ResampleAffine"
-        | "ResampleAffineTrilinearSlices" ->
+        | "ResampleAffine" ->
             let lerp = parameterValue "lerp"
             let windowSize = parameterValue "windowSize"
             let inputGeometry = parameterValue "inputGeometry"

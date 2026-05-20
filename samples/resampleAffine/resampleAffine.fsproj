@@ -7,5 +7,5 @@
   <ItemGroup Condition="$([MSBuild]::IsOSPlatform('Windows'))"><None Include="../../lib/SimpleITKCSharpNative.dll"><CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory><TargetPath>libSimpleITKCSharpNative.dll</TargetPath></None></ItemGroup>
   <ItemGroup Condition="$([MSBuild]::IsOSPlatform('Linux'))"><None Include="../../lib/libSimpleITKCSharpNative.so" CopyToOutputDirectory="PreserveNewest" /></ItemGroup>
   <ItemGroup Condition="$([MSBuild]::IsOSPlatform('OSX'))"><None Include="../../lib/libSimpleITKCSharpNative.dylib" CopyToOutputDirectory="PreserveNewest" /></ItemGroup>
-  <ItemGroup><Compile Include="resampleAffineTrilinearSlices.fs" /></ItemGroup>
+  <ItemGroup><Compile Include="resampleAffine.fs" /></ItemGroup>
 </Project>

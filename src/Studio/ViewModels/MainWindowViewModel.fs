@@ -440,7 +440,6 @@ module private SourceImageNode =
         || functionId = "WriteSlabSlices"
         || functionId = "GetChunkInfo"
         || functionId = "ResampleAffine"
-        || functionId = "ResampleAffineTrilinearSlices"
 
     let typeOptions =
         [ UInt8
@@ -1585,7 +1584,7 @@ type PipelineNodeViewModel(
                     state.Title <- ScalarImageOperationNode.title state
                     this.Name <- state.Title
                     markGraphDirty()
-                elif (state.Definition.Id = "Scalar" || state.Definition.Id = "ScalarOp" || state.Definition.Id = "Read" || state.Definition.Id = "ReadRandom" || state.Definition.Id = "EstimateHistogram" || state.Definition.Id = "ReadRange" || state.Definition.Id = "ReadSlab" || state.Definition.Id = "Zero" || state.Definition.Id = "NormalNoise" || state.Definition.Id = "SaltAndPepperNoise" || state.Definition.Id = "ShotNoise" || state.Definition.Id = "SpeckleNoise" || state.Definition.Id = "CreateByEuler2DTransform" || state.Definition.Id = "Threshold" || state.Definition.Id = "ImageOpImage" || state.Definition.Id = "Resize" || state.Definition.Id = "Resample" || state.Definition.Id = "ResampleAffine" || state.Definition.Id = "ResampleAffineTrilinearSlices" || HighValueFilterNode.typedImageFunctionIds.Contains state.Definition.Id || ScalarImageOperationNode.isOperation state.Definition.Id) && parameter.Key = "type" && args.PropertyName = nameof parameter.Value then
+                elif (state.Definition.Id = "Scalar" || state.Definition.Id = "ScalarOp" || state.Definition.Id = "Read" || state.Definition.Id = "ReadRandom" || state.Definition.Id = "EstimateHistogram" || state.Definition.Id = "ReadRange" || state.Definition.Id = "ReadSlab" || state.Definition.Id = "Zero" || state.Definition.Id = "NormalNoise" || state.Definition.Id = "SaltAndPepperNoise" || state.Definition.Id = "ShotNoise" || state.Definition.Id = "SpeckleNoise" || state.Definition.Id = "CreateByEuler2DTransform" || state.Definition.Id = "Threshold" || state.Definition.Id = "ImageOpImage" || state.Definition.Id = "Resize" || state.Definition.Id = "Resample" || state.Definition.Id = "ResampleAffine" || HighValueFilterNode.typedImageFunctionIds.Contains state.Definition.Id || ScalarImageOperationNode.isOperation state.Definition.Id) && parameter.Key = "type" && args.PropertyName = nameof parameter.Value then
                     if state.Definition.Id = "Scalar" then
                         ScalarNode.ensureValueMatchesType state
                         state.Title <- ScalarNode.title state
@@ -2003,7 +2002,7 @@ type MainWindowViewModel() as this =
                         |> List.map (fun value -> ParameterOptionViewModel(value, value, true))
 
                     PipelineParameterViewModel(parameter.Label, parameter.Key, parameter.DefaultValue, parameter.Type, options, false)
-                | ("ResampleAffine" | "ResampleAffineTrilinearSlices"), "type" ->
+                | "ResampleAffine", "type" ->
                     let options =
                         SourceImageNode.typeOptions
                         |> List.map (fun value -> ParameterOptionViewModel(value, value, true))

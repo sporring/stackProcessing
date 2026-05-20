@@ -146,7 +146,18 @@ module Fitting =
           Value: float
           SourcePath: string
           FeatureKey: string
-          FeatureValue: float }
+          FeatureValue: float
+          Operator: string
+          PixelType: string option
+          Width: uint64 option
+          Height: uint64 option
+          Depth: uint64 option
+          Voxels: uint64 option
+          SlicePixels: uint64 option
+          SliceBytes: uint64 option
+          VolumeBytes: uint64 option
+          WindowSize: float option
+          Radius: float option }
 
     let private invariant (value: float) =
         Convert.ToString(value, CultureInfo.InvariantCulture)
@@ -165,7 +176,13 @@ module Fitting =
             Directory.CreateDirectory directory |> ignore
 
         use writer = new StreamWriter(path)
-        writer.WriteLine("rowId,measurement,value,sourcePath,featureKey,featureValue")
+        writer.WriteLine("rowId,measurement,value,sourcePath,featureKey,featureValue,operator,pixelType,width,height,depth,voxels,slicePixels,sliceBytes,volumeBytes,windowSize,radius")
+
+        let uintOption value =
+            value |> Option.map string |> Option.defaultValue ""
+
+        let floatOption value =
+            value |> Option.map invariant |> Option.defaultValue ""
 
         for row in rows do
             [ row.RowId
@@ -173,7 +190,18 @@ module Fitting =
               invariant row.Value
               row.SourcePath
               row.FeatureKey
-              invariant row.FeatureValue ]
+              invariant row.FeatureValue
+              row.Operator
+              row.PixelType |> Option.defaultValue ""
+              uintOption row.Width
+              uintOption row.Height
+              uintOption row.Depth
+              uintOption row.Voxels
+              uintOption row.SlicePixels
+              uintOption row.SliceBytes
+              uintOption row.VolumeBytes
+              floatOption row.WindowSize
+              floatOption row.Radius ]
             |> List.map csvEscape
             |> String.concat ","
             |> writer.WriteLine

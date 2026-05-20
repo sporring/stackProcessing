@@ -677,7 +677,7 @@ whole-stack normalization, are not part of the streaming DSL surface.
 
 | Area | DSL functions |
 | ---- | ------------- |
-| IO, creation, and coordinates | `read`, `readVolume`, `readRandom`, `readRange`, `readSlab`, `readZarrSlab`, `readNexusSlab`, `readPointSet`, `write`, `writeVolume`, `writeChunks`, `writeZarr`, `writeNexus`, `writePointSet`, `writeMatrix`, `writeCSVHistogram`, `writeMesh`, `zero`, `empty`, `coordinateX`, `coordinateY`, `coordinateZ`, `createByEuler2DTransform` |
+| IO, creation, and coordinates | `read`, `readVolume`, `readRandom`, `readRange`, `readSlab`, `readZarrSlab`, `readNexusSlab`, `readPointSet`, `write`, `writeVolume`, `writeChunks`, `writeZarr`, `writeNexus`, `writePointSet`, `writeMatrix`, `writeCSVHistogram`, `writeMesh`, `zero`, `empty`, `coordinateX`, `coordinateY`, `coordinateZ`, `polygonMask`, `repeat`, `createByEuler2DTransform`, `randomRigidTransform` |
 | Type conversion and identity | `cast`, `identity`, `selectGroupedOutput`, `selectGroupedValueOutput` |
 | Arithmetic | `add`, `sub`, `mul`, `div`, `addPair`, `subPair`, `mulPair`, `divPair`, `maxOfPair`, `minOfPair` |
 | Scalar-image arithmetic | `scalarAddImage`, `imageAddScalar`, `scalarSubImage`, `imageSubScalar`, `scalarMulImage`, `imageMulScalar`, `scalarDivImage`, `imageDivScalar` |
@@ -689,7 +689,7 @@ whole-stack normalization, are not part of the streaming DSL surface.
 | Local filtering | `smoothWMedian`, `smoothWBilateral`, `gradientMagnitude`, `gradient`, `sobelEdge`, `laplacian`, `smoothWGauss`, `convolve`, `conv`, `finiteDiff`, `structureTensor` |
 | Binary morphology | `erode`, `dilate`, `opening`, `closing`, `binaryContour`, `binaryMedian` |
 | Grayscale morphology | `grayscaleErode`, `grayscaleDilate`, `grayscaleOpening`, `grayscaleClosing`, `whiteTopHat`, `blackTopHat`, `morphologicalGradient` |
-| Padding, cropping, axes, and geometry | `createPadding`, `crop`, `resize`, `resample`, `resampleAffineTrilinearSlices`, `permuteAxes` |
+| Padding, cropping, axes, and geometry | `createPadding`, `crop`, `resize`, `resample`, `resampleAffine`, `permuteAxes` |
 | Connected components and labels | `connectedComponents`, `relabelComponents`, `makeConnectedComponentTranslationTable`, `updateConnectedComponents`, `labelContour`, `changeLabel` |
 | Streaming object processing | `streamConnectedObjects`, `removeSmallObjects`, `fillSmallHoles`, `paintObjects`, `paintObjectsCropped`, `measureObjects`, `objectSizeStats`, `objectSizeHistogram` |
 | Distance, surfaces, and features | `signedDistanceBand`, `marchingCubes`, `surfaceArea`, `dogKeypoints`, `logBlobKeypoints`, `hessianKeypoints`, `harris3DKeypoints`, `forstner3DKeypoints`, `phaseCongruencyKeypoints`, `siftKeypoints` |

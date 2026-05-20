@@ -711,17 +711,17 @@ val objectSizeStats:
 val histogram:
   (uint64 -> StackCore.Stage<uint64 list,StackCore.Histogram<uint64>>)
 
-val resampleAffine:
-  (('a -> 'a -> float32 -> 'a) ->
+val resampleAffineFromChunks:
+  (string ->
+     string ->
+     ('a -> 'a -> float32 -> 'a) ->
      int ->
      StackAffineResampler.ImageGeom ->
      StackAffineResampler.ImageGeom ->
-     TinyLinAlg.Affine ->
-     'a ->
-     SlimPipeline.Stage<StackAffineResampler.Image<'a>,
-                        StackAffineResampler.Image<'a>>) when 'a: equality
+     TinyLinAlg.Affine -> 'a -> (int * StackAffineResampler.Image<'a>) seq)
+    when 'a: equality
 
-val resampleAffineTrilinearSlices:
+val resampleAffine:
   (('a -> 'a -> float32 -> 'a) ->
      int ->
      StackAffineResampler.ImageGeom ->

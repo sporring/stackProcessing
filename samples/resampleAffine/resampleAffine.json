@@ -49,7 +49,7 @@
       "y": 160.0,
       "parameters": [
         { "key": "format", "value": "Image stack", "useInput": false },
-        { "key": "output", "value": "../tmp/resampleAffineTrilinearSlices", "useInput": false },
+        { "key": "output", "value": "../tmp/resampleAffine", "useInput": false },
         { "key": "suffix", "value": ".tiff", "useInput": false },
         { "key": "chunkX", "value": "64", "useInput": false },
         { "key": "chunkY", "value": "64", "useInput": false },

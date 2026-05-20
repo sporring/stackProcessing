@@ -40,7 +40,7 @@ let main args =
             outputGeometry
             affine
             0.0f
-    >=> write "../tmp/resampleAffineTrilinearSlices" ".tiff"
+    >=> write "../tmp/resampleAffine" ".tiff"
     |> sink
 
     0

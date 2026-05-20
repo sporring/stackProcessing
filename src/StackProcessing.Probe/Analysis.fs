@@ -488,12 +488,21 @@ let private runOutputDirectories samplesRoot prefix =
     |> Seq.toList
 
 let private logPathsForRow samplesRoot rowId =
+    let rowIdCandidates =
+        let m = Regex.Match(rowId, @"^generated/size_[^/]+/(.+)$")
+        if m.Success then
+            [ rowId; "generated/" + m.Groups[1].Value ]
+        else
+            [ rowId ]
+
     [ "runJson"; "runAll" ]
     |> List.collect (fun prefix ->
         runOutputDirectories samplesRoot prefix
         |> List.choose (fun outputDir ->
-            let logPath = Path.Combine(outputDir, rowId + ".out")
-            if File.Exists logPath then Some logPath else None))
+            rowIdCandidates
+            |> List.tryPick (fun candidate ->
+                let logPath = Path.Combine(outputDir, candidate + ".out")
+                if File.Exists logPath then Some logPath else None)))
     |> List.distinct
 
 let private measurementsForLog rowId logPath =
@@ -853,6 +862,205 @@ let private fitMeasurements (ridge: float) (rows: AnalysisRow list) (features: s
 let private invariant (value: float) =
     value.ToString("G17", CultureInfo.InvariantCulture)
 
+type private FeatureMetadata =
+    { Operator: string
+      Parameters: Map<string, string> }
+
+type private EvidenceContext =
+    { PixelType: string option
+      Width: uint64 option
+      Height: uint64 option
+      Depth: uint64 option }
+
+let private parseFeatureMetadata (feature: string) : FeatureMetadata =
+    let parts = feature.Split(':', StringSplitOptions.RemoveEmptyEntries)
+
+    let operator =
+        if parts.Length = 0 then feature else parts[0]
+
+    let parameters =
+        parts
+        |> Seq.skip 1
+        |> Seq.choose (fun part ->
+            let index = part.IndexOf('=')
+            if index <= 0 then
+                None
+            else
+                Some(part.Substring(0, index), part.Substring(index + 1)))
+        |> Map.ofSeq
+
+    { Operator = operator
+      Parameters = parameters }
+
+let private tryParseUInt64Text (value: string) =
+    let m = Regex.Match(value, @"^\s*(\d+)")
+
+    if m.Success then
+        match UInt64.TryParse(m.Groups[1].Value, NumberStyles.Integer, CultureInfo.InvariantCulture) with
+        | true, parsed -> Some parsed
+        | _ -> None
+    else
+        None
+
+let private tryParseFloatText (value: string) =
+    let m = Regex.Match(value, @"^\s*[-+]?\d+(?:\.\d+)?(?:[eE][-+]?\d+)?")
+
+    if m.Success then
+        match Double.TryParse(m.Value, NumberStyles.Float, CultureInfo.InvariantCulture) with
+        | true, parsed -> Some parsed
+        | _ -> None
+    else
+        None
+
+let private parameterUInt64 key (metadata: FeatureMetadata) =
+    metadata.Parameters
+    |> Map.tryFind key
+    |> Option.bind tryParseUInt64Text
+
+let private parameterFloat key (metadata: FeatureMetadata) =
+    metadata.Parameters
+    |> Map.tryFind key
+    |> Option.bind tryParseFloatText
+
+let private normalizePixelType (value: string) =
+    match value with
+    | null -> None
+    | text ->
+        match text.Trim().ToLowerInvariant() with
+        | "" -> None
+        | "byte" | "uint8" -> Some "UInt8"
+        | "sbyte" | "int8" -> Some "Int8"
+        | "uint16" -> Some "UInt16"
+        | "int16" -> Some "Int16"
+        | "uint32" -> Some "UInt32"
+        | "int32" -> Some "Int32"
+        | "uint64" -> Some "UInt64"
+        | "int64" -> Some "Int64"
+        | "single" | "float32" -> Some "Float32"
+        | "double" | "float" | "float64" -> Some "Float64"
+        | "complex" -> Some "Complex"
+        | other -> Some other
+
+let private pixelTypeBytes (pixelType: string) =
+    match pixelType with
+    | "UInt8" | "Int8" -> Some 1UL
+    | "UInt16" | "Int16" -> Some 2UL
+    | "UInt32" | "Int32" | "Float32" -> Some 4UL
+    | "UInt64" | "Int64" | "Float64" -> Some 8UL
+    | "Complex" -> Some 16UL
+    | _ -> None
+
+let private featureSize metadata =
+    match parameterUInt64 "width" metadata, parameterUInt64 "height" metadata, parameterUInt64 "depth" metadata with
+    | Some width, Some height, Some depth -> Some(width, height, depth)
+    | _ -> None
+
+let private rowIdSize (rowId: string) =
+    let sizePrefix = Regex.Match(rowId, @"(?:^|/)size_(\d+)x(\d+)x(\d+)(?:/|$)")
+
+    let toSize (m: Match) =
+        match tryParseUInt64Text m.Groups[1].Value, tryParseUInt64Text m.Groups[2].Value, tryParseUInt64Text m.Groups[3].Value with
+        | Some width, Some height, Some depth -> Some(width, height, depth)
+        | _ -> None
+
+    if sizePrefix.Success then
+        toSize sizePrefix
+    else
+        let matches = Regex.Matches(rowId, @"(\d+)x(\d+)x(\d+)")
+        if matches.Count = 0 then
+            None
+        else
+            toSize (matches.Item(matches.Count - 1))
+
+let private inferEvidenceContext (row: AnalysisRow) =
+    let metadata =
+        row.FeatureValues
+        |> Map.toList
+        |> List.map (fst >> parseFeatureMetadata)
+
+    let size =
+        rowIdSize row.RowId
+        |> Option.orElseWith (fun () -> metadata |> List.tryPick featureSize)
+
+    let pixelType =
+        metadata
+        |> List.tryPick (fun metadata ->
+            metadata.Parameters
+            |> Map.tryFind "type"
+            |> Option.bind normalizePixelType)
+
+    match size with
+    | Some(width, height, depth) ->
+        { PixelType = pixelType
+          Width = Some width
+          Height = Some height
+          Depth = Some depth }
+    | None ->
+        { PixelType = pixelType
+          Width = None
+          Height = None
+          Depth = None }
+
+let private evidenceRow (rowContext: EvidenceContext) rowId measurementName measurementValue sourcePath feature featureValue : Fitting.EvidenceRow =
+    let metadata = parseFeatureMetadata feature
+    let featurePixelType =
+        metadata.Parameters
+        |> Map.tryFind "type"
+        |> Option.bind normalizePixelType
+
+    let featureSize = featureSize metadata
+
+    let width, height, depth =
+        match rowContext.Width, rowContext.Height, rowContext.Depth with
+        | Some width, Some height, Some depth -> Some width, Some height, Some depth
+        | _ ->
+            match featureSize with
+            | Some(width, height, depth) -> Some width, Some height, Some depth
+            | None -> rowContext.Width, rowContext.Height, rowContext.Depth
+
+    let pixelType =
+        featurePixelType |> Option.orElse rowContext.PixelType
+
+    let slicePixels =
+        match width, height with
+        | Some width, Some height -> Some(width * height)
+        | _ -> None
+
+    let voxels =
+        match slicePixels, depth with
+        | Some slicePixels, Some depth -> Some(slicePixels * depth)
+        | _ -> None
+
+    let bytesPerPixel = pixelType |> Option.bind pixelTypeBytes
+
+    let sliceBytes =
+        match slicePixels, bytesPerPixel with
+        | Some slicePixels, Some bytesPerPixel -> Some(slicePixels * bytesPerPixel)
+        | _ -> None
+
+    let volumeBytes =
+        match voxels, bytesPerPixel with
+        | Some voxels, Some bytesPerPixel -> Some(voxels * bytesPerPixel)
+        | _ -> None
+
+    { RowId = rowId
+      Measurement = measurementName
+      Value = measurementValue
+      SourcePath = sourcePath
+      FeatureKey = feature
+      FeatureValue = featureValue
+      Operator = metadata.Operator
+      PixelType = pixelType
+      Width = width
+      Height = height
+      Depth = depth
+      Voxels = voxels
+      SlicePixels = slicePixels
+      SliceBytes = sliceBytes
+      VolumeBytes = volumeBytes
+      WindowSize = parameterFloat "windowSize" metadata
+      Radius = parameterFloat "radius" metadata }
+
 let private writeOutputs (options: Options) (rows: AnalysisRow list) =
     let features =
         rows
@@ -962,17 +1170,10 @@ let private writeOutputs (options: Options) (rows: AnalysisRow list) =
                             relativePath options.SamplesRoot measurement.SourcePath
                         else
                             measurement.SourcePath
+                    let rowContext = inferEvidenceContext row
 
                     for KeyValue(feature, value) in row.FeatureValues do
-                        let evidence: Fitting.EvidenceRow =
-                            { RowId = measurement.RowId
-                              Measurement = measurement.Name
-                              Value = measurement.Value
-                              SourcePath = sourcePath
-                              FeatureKey = feature
-                              FeatureValue = value }
-
-                        yield evidence
+                        yield evidenceRow rowContext measurement.RowId measurement.Name measurement.Value sourcePath feature value
         })
 
     writeCsv
