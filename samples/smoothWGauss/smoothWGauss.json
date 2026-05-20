@@ -143,7 +143,7 @@
         },
         {
           "key": "output",
-          "value": "../tmp/convolve3d",
+          "value": "../tmp/smoothWGauss",
           "useInput": false
         },
         {

@@ -22,7 +22,7 @@ let main args =
         randomRigidTransform 7 64u 64u 16u 0.0
 
     src
-    |> readRange<float32> 0u 1 15u input ".tiff"
+    |> read<float32> input ".tiff"
     >=> resampleAffine
             (fun a b t -> a + (b - a) * t)
             16

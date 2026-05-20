@@ -32,7 +32,7 @@ let main args =
           C = v3 32.0 32.0 4.0 }
 
     src
-    |> readRange<float32> 0u 1 15u input ".tiff"
+    |> read<float32> input ".tiff"
     >=> resampleAffine
             (fun a b t -> a + (b - a) * t)
             16

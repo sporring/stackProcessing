@@ -13,9 +13,8 @@ let main args =
         | _ -> "../data/volume", "../tmp/sobelEdge"
 
     src
-    |> readRange<float> 0u 1 31u input ".tiff"
+    |> read<float> input ".tiff"
     >=> sobelEdge<float> 5u
-    >=> intensityStretch<float> 0.0 255.0 0.0 255.0
     >=> cast<float, uint8>
     >=> write output ".tiff"
     |> sink

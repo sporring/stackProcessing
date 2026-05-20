@@ -12,9 +12,8 @@
 .fake
 
 /samples/tmp
+/samples/*/tmp
 /samples/data
 *.tif
 *.tiff
 *.mha
-/samples/resampleAffineTrilinearSlices/tmp
-/samples/resampleAffine/tmp

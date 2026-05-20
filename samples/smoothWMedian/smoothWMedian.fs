@@ -13,9 +13,8 @@ let main args =
         | _ -> "../data/volume", "../tmp/smoothWMedian"
 
     src
-    |> readRange<float> 0u 1 31u input ".tiff"
+    |> read<float> input ".tiff"
     >=> smoothWMedian<float> 1u 5u
-    >=> intensityStretch<float> 0.0 255.0 0.0 255.0
     >=> cast<float, uint8>
     >=> write output ".tiff"
     |> sink

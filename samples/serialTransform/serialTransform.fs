@@ -20,7 +20,7 @@ let main args =
         |> drain
 
     src
-    |> readRange<float32> 0u 1 31u input ".tiff"
+    |> read<float32> input ".tiff"
     >=> serialEstTrans<float32> 8 "dogAffine" 1.6 0.1
     >=> serialApplyTrans<float32> 0.0 (Some geometry)
     >=> cast<float32, uint8>

@@ -1,14 +1,11 @@
 {
   "version": 1,
   "nodes": [
-    { "id": "read", "functionId": "ReadRange", "x": 60.0, "y": 120.0,
+    { "id": "read", "functionId": "Read", "x": 60.0, "y": 120.0,
       "parameters": [
         { "key": "availableMemory", "value": "2147483648UL", "useInput": false },
         { "key": "type", "value": "Float64", "useInput": false },
         { "key": "format", "value": "Image stack", "useInput": false },
-        { "key": "first", "value": "0", "useInput": false },
-        { "key": "step", "value": "1", "useInput": false },
-        { "key": "last", "value": "31", "useInput": false },
         { "key": "input", "value": "../data/volume", "useInput": false },
         { "key": "suffix", "value": ".tiff", "useInput": false } ] },
     { "id": "filter", "functionId": "SmoothWBilateral", "x": 300.0, "y": 120.0,
@@ -17,18 +14,11 @@
         { "key": "domainSigma", "value": "1.5", "useInput": false },
         { "key": "rangeSigma", "value": "30.0", "useInput": false },
         { "key": "windowSize", "value": "5", "useInput": false } ] },
-    { "id": "stretch", "functionId": "IntensityStretch", "x": 520.0, "y": 120.0,
-      "parameters": [
-        { "key": "type", "value": "Float64", "useInput": false },
-        { "key": "inputMinimum", "value": "0.0", "useInput": false },
-        { "key": "inputMaximum", "value": "255.0", "useInput": false },
-        { "key": "outputMinimum", "value": "0.0", "useInput": false },
-        { "key": "outputMaximum", "value": "255.0", "useInput": false } ] },
-    { "id": "cast", "functionId": "Cast", "x": 740.0, "y": 120.0,
+    { "id": "cast", "functionId": "Cast", "x": 520.0, "y": 120.0,
       "parameters": [
         { "key": "sourceType", "value": "Float64", "useInput": false },
         { "key": "targetType", "value": "UInt8", "useInput": false } ] },
-    { "id": "write", "functionId": "Write", "x": 940.0, "y": 120.0,
+    { "id": "write", "functionId": "Write", "x": 740.0, "y": 120.0,
       "parameters": [
         { "key": "format", "value": "Image stack", "useInput": false },
         { "key": "output", "value": "../tmp/smoothWBilateral", "useInput": false },
@@ -36,8 +26,7 @@
   ],
   "edges": [
     { "fromNode": "read", "fromKind": "dataOutput", "fromPort": 0, "toNode": "filter", "toKind": "dataInput", "toPort": 0 },
-    { "fromNode": "filter", "fromKind": "dataOutput", "fromPort": 0, "toNode": "stretch", "toKind": "dataInput", "toPort": 0 },
-    { "fromNode": "stretch", "fromKind": "dataOutput", "fromPort": 0, "toNode": "cast", "toKind": "dataInput", "toPort": 0 },
+    { "fromNode": "filter", "fromKind": "dataOutput", "fromPort": 0, "toNode": "cast", "toKind": "dataInput", "toPort": 0 },
     { "fromNode": "cast", "fromKind": "dataOutput", "fromPort": 0, "toNode": "write", "toKind": "dataInput", "toPort": 0 }
   ]
 }

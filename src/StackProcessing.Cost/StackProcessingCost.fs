@@ -343,6 +343,31 @@ module Fitting =
             tryFindRepositoryModelPath name
             |> Option.defaultValue (Path.Combine(Directory.GetCurrentDirectory(), "models", name, "stackprocessing.operator-cost.json"))
 
+        let private tryFindRelativePathFromParents (path: string) =
+            if Path.IsPathRooted path then
+                None
+            else
+                let rec loop (directory: DirectoryInfo) =
+                    let candidate = Path.Combine(directory.FullName, path)
+
+                    if File.Exists candidate then
+                        Some candidate
+                    elif isNull directory.Parent then
+                        None
+                    else
+                        loop directory.Parent
+
+                loop (DirectoryInfo(Directory.GetCurrentDirectory()))
+
+        let private resolveModelPath (path: string) =
+            if String.IsNullOrWhiteSpace path then
+                path
+            elif File.Exists path then
+                path
+            else
+                tryFindRelativePathFromParents path
+                |> Option.defaultValue path
+
         let defaultSearchPaths () =
             [ Environment.GetEnvironmentVariable("STACKPROCESSING_COST_MODEL")
               userModelPath ()
@@ -351,8 +376,9 @@ module Fitting =
             |> List.filter (String.IsNullOrWhiteSpace >> not)
 
         let load path =
-            activeModel <- OperatorCostModel.loadOrDefault path
-            activePath <- if File.Exists path then Some(Path.GetFullPath path) else None
+            let resolvedPath = resolveModelPath path
+            activeModel <- OperatorCostModel.loadOrDefault resolvedPath
+            activePath <- if File.Exists resolvedPath then Some(Path.GetFullPath resolvedPath) else None
             loadedDefault <- true
             registerMillisecondsCalibration ()
             activeModel

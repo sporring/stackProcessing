@@ -15,6 +15,7 @@ type Options =
       ExtraJsonRoots: string list
       ProbingPrefixes: string list
       Ridge: float
+      MinSupport: int
       DiagnosticsOnly: bool
       IncludeSamples: bool }
 
@@ -50,6 +51,8 @@ let private usage () =
     printfn "  --extra-json-root PATH"
     printfn "                 Include generated Studio JSON graphs from PATH."
     printfn "  --ridge        1e-8"
+    printfn "  --min-support  N"
+    printfn "                 Minimum feature support for fitted operator terms. Defaults to 3."
     printfn "  --diagnostics-only"
     printfn "                 Write matrix/coverage diagnostics without parsing run logs or fitting coefficients."
     printfn "  --no-samples   Analyze only extra/probe JSON roots."
@@ -87,6 +90,7 @@ let private defaultOptions () =
       ExtraJsonRoots = []
       ProbingPrefixes = []
       Ridge = 1e-8
+      MinSupport = 3
       DiagnosticsOnly = false
       IncludeSamples = true }
 
@@ -113,6 +117,12 @@ let rec private parseArgs options args =
         | true, ridge when ridge >= 0.0 -> parseArgs { options with Ridge = ridge } rest
         | _ ->
             eprintfn "analysis: --ridge expects a non-negative floating-point value"
+            Error 2
+    | "--min-support" :: value :: rest ->
+        match Int32.TryParse value with
+        | true, minSupport when minSupport > 0 -> parseArgs { options with MinSupport = minSupport } rest
+        | _ ->
+            eprintfn "analysis: --min-support expects a positive integer"
             Error 2
     | "--diagnostics-only" :: rest ->
         parseArgs { options with DiagnosticsOnly = true } rest
@@ -1186,7 +1196,7 @@ let private writeOutputs (options: Options) (rows: AnalysisRow list) =
         })
 
     if not options.DiagnosticsOnly then
-        Fitting.fitOperatorTermsFromCsv costEvidencePath options.Ridge 3 options.OutputDirectory options.ModelOutputPath
+        Fitting.fitOperatorTermsFromCsv costEvidencePath options.Ridge options.MinSupport options.OutputDirectory options.ModelOutputPath
         |> ignore
 
     writeCsv

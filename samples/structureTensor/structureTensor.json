@@ -9,12 +9,12 @@
       "parameters": [
         {
           "key": "sigma",
-          "value": "3.0",
+          "value": "1.0",
           "useInput": false
         },
         {
           "key": "rho",
-          "value": "1.0",
+          "value": "0.0",
           "useInput": false
         }
       ]
@@ -145,7 +145,7 @@
     },
     {
       "id": "node-5",
-      "functionId": "ReadRange",
+      "functionId": "Read",
       "x": 128.4957275390625,
       "y": 120.95778168343043,
       "parameters": [
@@ -160,23 +160,8 @@
           "useInput": false
         },
         {
-          "key": "first",
-          "value": "0",
-          "useInput": false
-        },
-        {
-          "key": "step",
-          "value": "1",
-          "useInput": false
-        },
-        {
-          "key": "last",
-          "value": "31",
-          "useInput": false
-        },
-        {
           "key": "input",
-          "value": "../data/rotatingBoxes",
+          "value": "../data/volume",
           "useInput": false
         },
         {

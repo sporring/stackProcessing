@@ -46,6 +46,7 @@
     <Compile Include="ProbingReport.fs" />
     <Compile Include="Calibration.fs" />
     <Compile Include="BottomUpCalibration.fs" />
+    <Compile Include="LocalUpdate.fs" />
     <Compile Include="Program.fs" />
   </ItemGroup>
 

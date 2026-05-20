@@ -11,6 +11,8 @@ let private usage () =
     printfn "  probing    Measure or emit probe graphs."
     printfn "  calibrate  Run the greedy analysis/freezing/probe-emission loop."
     printfn "  bottom-up  Run controlled bottom-up calibration probe layers."
+    printfn "  local-update"
+    printfn "             Emit targeted probes for flagged pipelines and write a local model overlay."
     printfn "  report     Render legacy probing HTML reports."
     printfn ""
     printfn "Examples:"
@@ -20,6 +22,7 @@ let private usage () =
     printfn "  dotnet run --project src/StackProcessing.Probe -- probing tmp/analysis/probing-boilerplate.json --emit-json tmp/probingGraphs"
     printfn "  dotnet run --project src/StackProcessing.Probe -- bottom-up --repeat 3 -j 1"
     printfn "  dotnet run --project src/StackProcessing.Probe -- calibrate --repeat 3 -j 1"
+    printfn "  dotnet run --project src/StackProcessing.Probe -- local-update --operators SmoothWGauss --sizes 128"
 
 let private dispatch command args =
     match command with
@@ -51,6 +54,11 @@ let private dispatch command args =
     | "bottomup"
     | "ladder" ->
         ProbeBottomUpCalibration.main args
+    | "local-update"
+    | "localupdate"
+    | "update-local"
+    | "repair" ->
+        ProbeLocalUpdate.main args
     | "report"
     | "reports" ->
         ProbeProbingReport.main args

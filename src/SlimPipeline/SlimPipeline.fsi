@@ -721,13 +721,27 @@ module Plan =
     val private formatMilliseconds: milliseconds: float -> string
     val private estimatedRunTimeText: pl: Plan<'S,'T> -> string
     val private ratioAway: expected: float -> actual: float -> float
+    val private csvEscape: value: string -> string
+    val private invariantFloat: value: float -> string
+    val private invariantUInt64: value: uint64 -> string
+    val private tryFindRepositoryRoot: unit -> string option
+    val private resolveCostFlagPath: path: string -> string
+    val private defaultCostFlagPath: unit -> string option
+    val private appendCostFlag:
+      label: string ->
+        kind: string ->
+        expected: float option ->
+        actual: float ->
+        ratio: float option ->
+        pl: Plan<'S,'T> ->
+        actualTime: float -> actualMemoryDelta: uint64 -> unit
     val private printCostDiscrepancies:
-      label: 'a ->
+      label: string ->
         pl: Plan<'S,'T> ->
         estimatedTime: float option ->
         actualTime: float -> actualMemoryDelta: uint64 -> unit
     val private runMeasured:
-      label: 'a -> pl: Plan<'S,'T> -> run: (unit -> 'b) -> 'b
+      label: string -> pl: Plan<'S,'T> -> run: (unit -> 'a) -> 'a
     val graph: pl: Plan<'S,'T> -> PipelineGraph
     /// Source type operators
     val source: availableMemory: uint64 -> Plan<unit,unit>

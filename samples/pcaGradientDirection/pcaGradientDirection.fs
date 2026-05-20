@@ -13,7 +13,7 @@ let main args =
         | _ -> "../data/volume", "../tmp/pcaGradientDirection"
 
     src
-    |> readRange<float> 0u 1 31u input ".tiff"
+    |> read<float> input ".tiff"
     >=> gradient 1u (Some 7u)
     >=> PCA 3u
     >=> selectGroupedOutput 4u 1u

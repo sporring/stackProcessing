@@ -1,6 +1,9 @@
 module SlimPipeline
 
+open System
 open System.Collections.Generic
+open System.Globalization
+open System.IO
 open FSharp.Control
 open AsyncSeqExtensions
 
@@ -1623,6 +1626,117 @@ module Plan =
         else
             max (actual / expected) (expected / actual)
 
+    let private csvEscape (value: string) =
+        if isNull value then
+            ""
+        elif value.Contains(",") || value.Contains("\"") || value.Contains("\n") || value.Contains("\r") then
+            "\"" + value.Replace("\"", "\"\"") + "\""
+        else
+            value
+
+    let private invariantFloat (value: float) =
+        Convert.ToString(value, CultureInfo.InvariantCulture)
+
+    let private invariantUInt64 (value: uint64) =
+        Convert.ToString(value, CultureInfo.InvariantCulture)
+
+    let private tryFindRepositoryRoot () =
+        let rec loop (directory: DirectoryInfo) =
+            let solutionPath = Path.Combine(directory.FullName, "StackProcessing.sln")
+            let modelsPath = Path.Combine(directory.FullName, "models")
+            let samplesPath = Path.Combine(directory.FullName, "samples")
+
+            if File.Exists solutionPath && Directory.Exists modelsPath && Directory.Exists samplesPath then
+                Some directory.FullName
+            elif isNull directory.Parent then
+                None
+            else
+                loop directory.Parent
+
+        loop (DirectoryInfo(Directory.GetCurrentDirectory()))
+
+    let private resolveCostFlagPath (path: string) =
+        if Path.IsPathRooted path then
+            path
+        else
+            match tryFindRepositoryRoot () with
+            | Some root -> Path.Combine(root, path)
+            | None -> Path.GetFullPath path
+
+    let private defaultCostFlagPath () =
+        let envPath = Environment.GetEnvironmentVariable("STACKPROCESSING_COST_FLAGS")
+        if String.IsNullOrWhiteSpace envPath then
+            None
+        else
+            Some(resolveCostFlagPath envPath)
+
+    let private appendCostFlag label kind expected actual ratio (pl: Plan<'S,'T>) actualTime actualMemoryDelta =
+        match defaultCostFlagPath () with
+        | None -> ()
+        | Some path ->
+            try
+                let directory = Path.GetDirectoryName path
+                if not (String.IsNullOrWhiteSpace directory) then
+                    Directory.CreateDirectory directory |> ignore
+
+                let exists = File.Exists path
+                use writer = new StreamWriter(File.Open(path, FileMode.Append, FileAccess.Write, FileShare.ReadWrite))
+                if not exists then
+                    writer.WriteLine(
+                        "timestampUtc,label,kind,expected,actual,ratio,estimatedTimeMilliseconds,actualTimeMilliseconds,estimatedPeakMemoryBytes,actualPeakMemoryBytes,nElemsPerSlice,length,sourceName,sourceShape,graphNodes,costKeys")
+
+                let nElemsText =
+                    match pl.nElemsPerSlice with
+                    | Single value -> invariantUInt64 value
+                    | Pair(left, right) -> invariantUInt64 left + "|" + invariantUInt64 right
+
+                let sourceName =
+                    pl.sourcePeek
+                    |> Option.map _.Name
+                    |> Option.defaultValue ""
+
+                let sourceShape =
+                    pl.sourcePeek
+                    |> Option.map (fun source ->
+                        source.Shape
+                        |> Map.toList
+                        |> List.map (fun (key, value) -> key + "=" + value)
+                        |> String.concat "|")
+                    |> Option.defaultValue ""
+
+                let graphNodes =
+                    pl.graph.Nodes
+                    |> List.map _.Name
+                    |> String.concat "|"
+
+                let costKeys =
+                    pl.costObservations
+                    |> List.choose _.Time.CalibrationKey
+                    |> List.distinct
+                    |> String.concat "|"
+
+                [ DateTimeOffset.UtcNow.ToString("O", CultureInfo.InvariantCulture)
+                  label
+                  kind
+                  expected |> Option.map invariantFloat |> Option.defaultValue ""
+                  invariantFloat actual
+                  ratio |> Option.map invariantFloat |> Option.defaultValue ""
+                  trySumEstimatedTimeMilliseconds pl.costObservations |> Option.map invariantFloat |> Option.defaultValue ""
+                  invariantFloat actualTime
+                  invariantUInt64 pl.memPeak
+                  invariantUInt64 actualMemoryDelta
+                  nElemsText
+                  invariantUInt64 pl.length
+                  sourceName
+                  sourceShape
+                  graphNodes
+                  costKeys ]
+                |> List.map csvEscape
+                |> String.concat ","
+                |> writer.WriteLine
+            with _ ->
+                ()
+
     let private printCostDiscrepancies label (pl: Plan<'S,'T>) estimatedTime actualTime actualMemoryDelta =
         if pl.costDiscrepancy then
             let timeRatioLimit = 4.0
@@ -1635,16 +1749,20 @@ module Plan =
                 let ratio = ratioAway expected actualTime
                 if ratio >= timeRatioLimit then
                     printfn $"[{label}] Cost discrepancy: estimated/actual time {formatMilliseconds expected} / {formatMilliseconds actualTime} (ratio {ratio:g})."
+                    appendCostFlag label "time" (Some expected) actualTime (Some ratio) pl actualTime actualMemoryDelta
             | None when not (List.isEmpty pl.costObservations) ->
                 printfn $"[{label}] Cost model incomplete: time estimate is uncalibrated, so discrepancy reporting cannot compare predicted and actual runtime yet."
+                appendCostFlag label "timeUncalibrated" None actualTime None pl actualTime actualMemoryDelta
             | _ -> ()
 
             if pl.memPeak > 0UL && max pl.memPeak actualMemoryDelta >= minimumMemoryBytes then
                 let ratio = ratioAway (float pl.memPeak) (float actualMemoryDelta)
                 if ratio >= memoryRatioLimit then
                     printfn $"[{label}] Cost discrepancy: estimated/actual peak memory delta {MemoryProbe.formatBytes pl.memPeak} / {MemoryProbe.formatBytes actualMemoryDelta} (ratio {ratio:g})."
+                    appendCostFlag label "memory" (Some(float pl.memPeak)) (float actualMemoryDelta) (Some ratio) pl actualTime actualMemoryDelta
             elif pl.memPeak > 0UL && actualMemoryDelta > pl.memPeak && actualMemoryDelta >= 8UL * 1024UL * 1024UL then
                 printfn $"[{label}] Cost model note: measured peak memory delta {MemoryProbe.formatBytes actualMemoryDelta} is above the estimate {MemoryProbe.formatBytes pl.memPeak}, but below the discrepancy threshold."
+                appendCostFlag label "memoryNote" (Some(float pl.memPeak)) (float actualMemoryDelta) None pl actualTime actualMemoryDelta
 
     let private runMeasured label (pl: Plan<'S,'T>) run =
         if pl.debug && pl.debugLevel >= 1u then

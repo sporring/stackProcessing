@@ -191,42 +191,9 @@
       ]
     },
     {
-      "id": "stretch",
-      "functionId": "IntensityStretch",
-      "x": 520.0,
-      "y": 120.0,
-      "parameters": [
-        {
-          "key": "type",
-          "value": "Float64",
-          "useInput": false
-        },
-        {
-          "key": "inputMinimum",
-          "value": "0.0",
-          "useInput": false
-        },
-        {
-          "key": "inputMaximum",
-          "value": "255.0",
-          "useInput": false
-        },
-        {
-          "key": "outputMinimum",
-          "value": "0.0",
-          "useInput": false
-        },
-        {
-          "key": "outputMaximum",
-          "value": "255.0",
-          "useInput": false
-        }
-      ]
-    },
-    {
       "id": "cast",
       "functionId": "Cast",
-      "x": 720.0,
+      "x": 520.0,
       "y": 120.0,
       "parameters": [
         {
@@ -253,14 +220,6 @@
     },
     {
       "fromNode": "projection",
-      "fromKind": "dataOutput",
-      "fromPort": 0,
-      "toNode": "stretch",
-      "toKind": "dataInput",
-      "toPort": 0
-    },
-    {
-      "fromNode": "stretch",
       "fromKind": "dataOutput",
       "fromPort": 0,
       "toNode": "cast",

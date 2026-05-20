@@ -38,7 +38,7 @@
   </ItemGroup>
 
   <ItemGroup>
-    <Compile Include="convolve3d.fs" />
+    <Compile Include="smoothWGauss.fs" />
   </ItemGroup>
 
 </Project>

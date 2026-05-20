@@ -13,7 +13,7 @@ let main args =
         | _ -> "../data/volume", "../tmp/laplacian"
 
     src
-    |> readRange<float> 0u 1 31u input ".tiff"
+    |> read<float> input ".tiff"
     >=> laplacian<float> 5u
     >=> intensityStretch<float> 0.0 255.0 0.0 255.0
     >=> cast<float, uint8>

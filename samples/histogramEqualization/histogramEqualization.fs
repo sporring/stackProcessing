@@ -19,7 +19,7 @@ let main args =
         |> drain
 
     src
-    |> readRange<uint8> 0u 1 31u input ".tiff"
+    |> read<uint8> input ".tiff"
     >=> histogramEqualization histogram
     >=> cast<float, uint8>
     >=> write output ".tiff"
