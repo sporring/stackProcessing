@@ -185,13 +185,13 @@ dotnet run --project samples/someSample/someSample.fsproj -- -d 1 --cost-discrep
 
 ```mermaid
 flowchart TD
-    UserFSharp["F# DSL code/graphs"]
-    Studio["Studio graph editor"]
+    UserFSharp["User F# DSL/graphs"]
+    Studio["Studio\ngraph editor"]
     StudioGraph["Studio.Graph\ncatalog"]
     StudioCompiler["Studio.Compiler\ngraph -> F# DSL"]
     StackProcessing["StackProcessing\nF# DSL"]
     Cost["StackProcessing.Cost\ncost model + fitting evidence"]
-    Core["StackProcessing.Core\nLMIP SlimPipeline implementation"]
+    Core["StackProcessing.Core\nLMIP SlimPipeline"]
     Slim["SlimPipeline\nstreaming plans, stages, windows, cost metadata"]
     AsyncSeq["FSharp.Control.AsyncSeq\nasync stream substrate"]
     Image["Image\nF# wrapper over SimpleITK"]
