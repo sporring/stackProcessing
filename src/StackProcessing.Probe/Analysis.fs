@@ -11,6 +11,7 @@ open StackProcessingCost
 type Options =
     { SamplesRoot: string
       OutputDirectory: string
+      ModelOutputPath: string
       ExtraJsonRoots: string list
       ProbingPrefixes: string list
       Ridge: float
@@ -44,6 +45,8 @@ let private usage () =
     printfn "Defaults:"
     printfn "  --samples-root samples"
     printfn "  --output       tmp/analysis"
+    printfn "  --model-output models/fitted/stackprocessing.operator-cost.json"
+    printfn "                 Write the fitted operator-term model outside tmp."
     printfn "  --extra-json-root PATH"
     printfn "                 Include generated Studio JSON graphs from PATH."
     printfn "  --ridge        1e-8"
@@ -76,9 +79,11 @@ let private probeOutputRoot samplesRoot =
 
 let private defaultOptions () =
     let samplesRoot = defaultSamplesRoot ()
+    let repositoryRoot = repositoryRootFromSamplesRoot samplesRoot
 
     { SamplesRoot = samplesRoot
       OutputDirectory = Path.Combine(probeOutputRoot samplesRoot, "analysis")
+      ModelOutputPath = Path.Combine(repositoryRoot, "models", "fitted", "stackprocessing.operator-cost.json")
       ExtraJsonRoots = []
       ProbingPrefixes = []
       Ridge = 1e-8
@@ -95,6 +100,8 @@ let rec private parseArgs options args =
         parseArgs { options with SamplesRoot = Path.GetFullPath value } rest
     | "--output" :: value :: rest ->
         parseArgs { options with OutputDirectory = Path.GetFullPath value } rest
+    | "--model-output" :: value :: rest ->
+        parseArgs { options with ModelOutputPath = Path.GetFullPath value } rest
     | "--extra-json-root" :: value :: rest
     | "--generated-json-root" :: value :: rest
     | "--probe-json-root" :: value :: rest ->
@@ -1153,8 +1160,10 @@ let private writeOutputs (options: Options) (rows: AnalysisRow list) =
                           measurement.SourcePath ]
         })
 
+    let costEvidencePath = Path.Combine(options.OutputDirectory, "costEvidence.csv")
+
     Fitting.writeEvidenceCsv
-        (Path.Combine(options.OutputDirectory, "costEvidence.csv"))
+        costEvidencePath
         (seq {
             let rowsById =
                 rows
@@ -1175,6 +1184,10 @@ let private writeOutputs (options: Options) (rows: AnalysisRow list) =
                     for KeyValue(feature, value) in row.FeatureValues do
                         yield evidenceRow rowContext measurement.RowId measurement.Name measurement.Value sourcePath feature value
         })
+
+    if not options.DiagnosticsOnly then
+        Fitting.fitOperatorTermsFromCsv costEvidencePath options.Ridge 3 options.OutputDirectory options.ModelOutputPath
+        |> ignore
 
     writeCsv
         (Path.Combine(options.OutputDirectory, "diagnostics.csv"))

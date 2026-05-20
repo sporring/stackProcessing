@@ -185,23 +185,22 @@ dotnet run --project samples/someSample/someSample.fsproj -- -d 1 --cost-discrep
 
 ```mermaid
 flowchart TD
-    UserFSharp["F# user code"]
-    Studio["Studio\nAvalonia graph editor"]
-    StudioGraph["Studio.Graph\ncatalog + saved graph JSON"]
+    UserFSharp["F# DSL code/graphs"]
+    Studio["Studio graph editor"]
+    StudioGraph["Studio.Graph\ncatalog"]
     StudioCompiler["Studio.Compiler\ngraph -> F# DSL"]
-    StackProcessing["StackProcessing\npublic DSL"]
+    StackProcessing["StackProcessing\nF# DSL"]
     Cost["StackProcessing.Cost\ncost model + fitting evidence"]
-    Core["StackProcessing.Core\nLMIP image-stack algorithms"]
+    Core["StackProcessing.Core\nLMIP SlimPipeline implementation"]
     Slim["SlimPipeline\nstreaming plans, stages, windows, cost metadata"]
     AsyncSeq["FSharp.Control.AsyncSeq\nasync stream substrate"]
     Image["Image\nF# wrapper over SimpleITK"]
-    SimpleITK["SimpleITK\nnative image IO + filters"]
-    TinyLinAlg["TinyLinAlg\naffine/vector helpers"]
-    ZarrNexus["ZarrNET + PureHDF\nZarr / HDF5-NeXus IO"]
-    RunSamples["StackProcessing.RunSamples\nsample/JSON measurement runner"]
-    Probe["StackProcessing.Probe\nanalysis + calibration graph generation"]
+    TinyLinAlg["TinyLinAlg\nSimple Linear Algebra"]
+    RunSamples["StackProcessing.RunSamples\nDSL/Graph measurement runner"]
+    Probe["StackProcessing.Probe\nMemory and Time analysis"]
 
     UserFSharp --> StackProcessing
+    UserFSharp --> Studio
     Studio --> StudioGraph
     StudioGraph --> StudioCompiler
     StudioCompiler --> StackProcessing
@@ -214,9 +213,7 @@ flowchart TD
     Core --> Slim
     Slim --> AsyncSeq
     Core --> Image
-    Image --> SimpleITK
     Core --> TinyLinAlg
-    Core --> ZarrNexus
 
     RunSamples --> StudioCompiler
     RunSamples --> StackProcessing

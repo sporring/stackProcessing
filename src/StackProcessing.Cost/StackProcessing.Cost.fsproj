@@ -8,6 +8,7 @@
   <ItemGroup>
     <ProjectReference Include="../Image/Image.fsproj" />
     <ProjectReference Include="../SlimPipeline/SlimPipeline.fsproj" />
+    <ProjectReference Include="../TinyLinAlg/TinyLinAlg.fsproj" />
   </ItemGroup>
 
   <ItemGroup>
