@@ -841,7 +841,7 @@ module StageCostModel =
           Time = time }
 
     let fromMemory memory =
-        create memory (StageTimeCostModel.fromEvaluation memory.Evaluation None)
+        create memory (StageTimeCostModel.zero memory.Evaluation)
 
     let estimate (model: StageCostModel) input : StageCostEstimate =
         { Memory = model.Memory.Estimate input
@@ -1690,7 +1690,7 @@ module Plan =
                 use writer = new StreamWriter(File.Open(path, FileMode.Append, FileAccess.Write, FileShare.ReadWrite))
                 if not exists then
                     writer.WriteLine(
-                        "timestampUtc,label,kind,expected,actual,ratio,estimatedTimeMilliseconds,actualTimeMilliseconds,estimatedPeakMemoryBytes,actualPeakMemoryBytes,nElemsPerSlice,length,sourceName,sourceShape,graphNodes,costKeys,costContexts")
+                        "timestampUtc,label,kind,expected,actual,ratio,estimatedTimeMilliseconds,actualTimeMilliseconds,estimatedPeakMemoryBytes,actualPeakMemoryBytes,nElemsPerSlice,length,sourceName,sourceShape,graphNodes,costKeys,costContexts,costBreakdown")
 
                 let nElemsText =
                     match pl.nElemsPerSlice with
@@ -1735,6 +1735,27 @@ module Plan =
                     |> List.distinct
                     |> String.concat "|"
 
+                let costBreakdown =
+                    pl.costObservations
+                    |> List.map (fun observation ->
+                        let label =
+                            match observation.Time.Tags with
+                            | [] ->
+                                observation.Time.CalibrationKey
+                                |> Option.defaultValue "uncalibrated"
+                            | tags ->
+                                tags
+                                |> List.map (fun (key, value) -> key + "=" + value)
+                                |> String.concat ";"
+
+                        let milliseconds =
+                            StageTimeCalibration.estimateMilliseconds observation.Time
+                            |> Option.map invariantFloat
+                            |> Option.defaultValue "uncalibrated"
+
+                        label + ":" + milliseconds)
+                    |> String.concat "|"
+
                 [ DateTimeOffset.UtcNow.ToString("O", CultureInfo.InvariantCulture)
                   label
                   kind
@@ -1751,7 +1772,8 @@ module Plan =
                   sourceShape
                   graphNodes
                   costKeys
-                  costContexts ]
+                  costContexts
+                  costBreakdown ]
                 |> List.map csvEscape
                 |> String.concat ","
                 |> writer.WriteLine

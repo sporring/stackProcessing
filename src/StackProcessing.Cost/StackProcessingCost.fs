@@ -500,6 +500,9 @@ module Fitting =
                           match estimateContext.PixelType with
                           | Some value -> yield "pixelType", value
                           | None -> ()
+                          match estimateContext.Voxels with
+                          | Some value -> yield "voxels", string value
+                          | None -> ()
                           match estimateContext.WindowSize with
                           | Some value -> yield "windowSize", Convert.ToString(value, CultureInfo.InvariantCulture)
                           | None -> ()

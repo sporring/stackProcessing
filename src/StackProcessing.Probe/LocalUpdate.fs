@@ -584,7 +584,7 @@ let private runAnalysis options probeRunRoot localAnalysisDir localModelPath =
 
     ProbeAnalysis.main args
 
-let private mergeModels basePath localPath outputPath =
+let private mergeModels basePath localPath outputPath suspects =
     let baseModel =
         basePath
         |> Option.filter File.Exists
@@ -592,9 +592,17 @@ let private mergeModels basePath localPath outputPath =
         |> Option.defaultValue Fitting.OperatorCostModel.empty
 
     let localModel = Fitting.OperatorCostModel.loadOrDefault localPath
+    let suspectOperators =
+        suspects
+        |> List.map (fun suspect -> normalizeToken suspect.Operator)
+        |> Set.ofList
+
+    let localCoefficients =
+        localModel.Coefficients
+        |> Array.filter (fun row -> suspectOperators.Contains(normalizeToken row.Operator))
 
     let localKeys =
-        localModel.Coefficients
+        localCoefficients
         |> Array.map (fun row -> row.Measurement, row.TermKey)
         |> Set.ofArray
 
@@ -607,12 +615,12 @@ let private mergeModels basePath localPath outputPath =
                 Array.append
                     baseModel.Assumptions
                     [| $"Local update merged from {localPath}."
-                       "Coefficients measured by local probes override matching base measurement/term keys." |]
+                       "Only coefficients for the flagged local-update suspect operators override matching base measurement/term keys." |]
             Coefficients =
                 Array.append
                     (baseModel.Coefficients
                      |> Array.filter (fun row -> not (localKeys.Contains(row.Measurement, row.TermKey))))
-                    localModel.Coefficients }
+                    localCoefficients }
 
     Fitting.OperatorCostModel.save outputPath merged
 
@@ -664,7 +672,7 @@ let main argv =
                         exitCode <- runAnalysis options probeRunRoot localAnalysisDir localModelPath
 
                         if exitCode = 0 then
-                            mergeModels options.ModelInputPath localModelPath options.ModelOutputPath
+                            mergeModels options.ModelInputPath localModelPath options.ModelOutputPath suspects
                             printfn "Wrote locally updated cost model to %s" options.ModelOutputPath
 
                     if exitCode = 0 then

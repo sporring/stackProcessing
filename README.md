@@ -1,8 +1,10 @@
 # FSharp.StackProcessing
 
-`StackProcessing` is a toolkit for larger-than-memory image processing in F#.
-It combines a streaming execution core (`SlimPipeline`), image-stack operations
-(`StackProcessing` and `Image`), and a visual graph editor (`Studio`).
+`StackProcessing` is a toolkit for larger-than-memory image processing (LMIP) in F#.
+It targets analysis of 3-dimensional volume images such as microscope, medical, and synchrotron volumes. It combines a streaming execution core, image-stack operations, and a visual graph editor. You do not need to know F# to use `StackProcessing`.
+
+The central idea is simple: describe an image-processing workflow as a graph or
+pipeline, then execute it slice by slice or chunk by chunk so that memory use stays bounded. 
 
 ## Installation
 
@@ -17,41 +19,19 @@ dotnet run --project src/Studio/Studio.fsproj
 ```
 
 `StackProcessing` relies on the SimpleITK C# binaries, which can be downloaded from the
-[SimpleITK GitHub releases](https://github.com/SimpleITK/SimpleITK/releases);
+[SimpleITK GitHub releases](https://github.com/SimpleITK/SimpleITK/releases) - 
 look for a CSharp archive for your platform. It should contain
 `SimpleITKCSharpManaged.dll` and the matching native library
 (`libSimpleITKCSharpNative.dylib`, `libSimpleITKCSharpNative.so`, or
 `SimpleITKCSharpNative.dll`). The repository `lib/` directory is where the
 sample projects expect those files.
 
-
-## Domain Specific Language (DSL)
-The central idea is simple: describe an image-processing workflow as a graph or
-pipeline, then execute it slice by slice or chunk by chunk so that memory use
-stays bounded. An example of the Domain Specific Language (DSL) implemented in F# is given below.
-
-```fsharp
-open StackProcessing
-
-let availableMemory = 2UL * 1024UL * 1024UL * 1024UL
-
-source availableMemory
-|> read<float> "../data/volume" ".tiff"
->=> smoothWGauss 1.0 None None (Some 15u)
->=> cast<float,uint8>
->=> write "../tmp/smoothedVolume" ".tiff"
-|> sink
-```
-
-The pipeline is constructed in a single pass. When
-`sink`, `drain`, or another terminal operation is called, then the pipeline is optimized for fastest running time within the limits of the specified available memory, and then the pipeline is executed.
-
 ## Studio For Users
-
-![Studio graph editor showing a StackProcessing workflow](images/StudioExample.png)
 
 Studio is the visual way to build StackProcessing programs. It lets a user
 compose useful larger-than-memory image workflows without writing F# by hand.
+
+![Studio graph editor showing a StackProcessing workflow](images/StudioExample.png)
 
 From the user's point of view, a Studio graph is a recipe: boxes describe where
 data comes from, what processing should happen, what scalar values or statistics
@@ -142,6 +122,25 @@ Pressing `Run`:
 This keeps the generated program visible for debugging while making Studio a
 one-button path from graph to execution.
 
+## Domain Specific Language (DSL)
+Underneath Studio is the Domain Specific Language (DSL) implemented in F#. An example is given below.
+
+```fsharp
+open StackProcessing
+
+let availableMemory = 2UL * 1024UL * 1024UL * 1024UL
+
+source availableMemory
+|> read<float> "../data/volume" ".tiff"
+>=> smoothWGauss 1.0 None None (Some 15u)
+>=> cast<float,uint8>
+>=> write "../tmp/smoothedVolume" ".tiff"
+|> sink
+```
+
+The pipeline is constructed in a single pass. When
+`sink`, `drain`, or another terminal operation is called, then the pipeline is optimized for fastest running time within the limits of the specified available memory, and then the pipeline is executed.
+
 ## Samples
 
 The `samples/` tree is an illustrative library and a smoke-test collection.
@@ -160,7 +159,6 @@ dotnet run
 The optional `-d` flag enables debug output:
 
 ```bash
-cd samples/copy
 dotnet run -- -d 1
 ```
 Level `1` reports read and write
