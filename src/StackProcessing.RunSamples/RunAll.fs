@@ -20,6 +20,7 @@ type Options =
       GatherOnly: bool
       Repeat: int
       RunId: string option
+      CostModel: string option
       Timeout: TimeSpan option }
 
 type Sample =
@@ -82,6 +83,7 @@ let usage () =
     printfn "  --repeat N        Run the full sample set N times. Defaults to 1."
     printfn "  --run-id VALUE    Use VALUE in tmp/runAll_VALUE. Defaults to a timestamp."
     printfn "  --debug-level N   Pass -d N to each sample. Defaults to 1."
+    printfn "  --cost-model PATH Pass PATH as the runtime fitted operator cost model."
     printfn "  --optimize BOOL   Enable or disable optimizer use. Defaults to false."
     printfn "  --no-optimize     Shortcut for --optimize false."
     printfn "  --timeout N       Stop a build or run after N minutes. Defaults to 30. Use 0 to disable."
@@ -129,6 +131,8 @@ let rec private parseArgs options args =
             Error 2
     | "--run-id" :: value :: rest ->
         parseArgs { options with RunId = Some value } rest
+    | "--cost-model" :: value :: rest ->
+        parseArgs { options with CostModel = Some(Path.GetFullPath value) } rest
     | "--timeout" :: value :: rest
     | "--timeout-minutes" :: value :: rest ->
         match Double.TryParse value with
@@ -327,12 +331,19 @@ let private buildSample (cancellationToken: CancellationToken) timeout (sample: 
         return result.ExitCode
     }
 
-let private runSample (cancellationToken: CancellationToken) timeout debugLevel optimize (sample: Sample) =
+let private runSample (cancellationToken: CancellationToken) timeout debugLevel optimize costModel (sample: Sample) =
     task {
         File.AppendAllText(sample.LogPath, $"{Environment.NewLine}== Run {sample.Name} =={Environment.NewLine}")
         printfn "run %s" sample.Name
 
         let nativeLibPath = Path.Combine(sample.Directory, "lib")
+
+        let sampleArgs =
+            [ "run"; "--no-build"; "--verbosity"; "q"; "--"; "-d"; string debugLevel; "--optimize"; string optimize ]
+            @
+            match costModel with
+            | Some path -> [ "--cost-model"; path ]
+            | None -> []
 
         let! result =
             runProcessAsync
@@ -340,7 +351,7 @@ let private runSample (cancellationToken: CancellationToken) timeout debugLevel 
                 sample.LogPath
                 sample.Directory
                 "dotnet"
-                [ "run"; "--no-build"; "--verbosity"; "q"; "--"; "-d"; string debugLevel; "--optimize"; string optimize ]
+                sampleArgs
                 (Some nativeLibPath)
                 timeout
 
@@ -353,7 +364,7 @@ let private runSample (cancellationToken: CancellationToken) timeout debugLevel 
               Elapsed = result.Elapsed }
     }
 
-let private runWithParallelism (cancellationToken: CancellationToken) jobs timeout debugLevel optimize (samples: Sample array) =
+let private runWithParallelism (cancellationToken: CancellationToken) jobs timeout debugLevel optimize costModel (samples: Sample array) =
     task {
         use gate = new SemaphoreSlim(jobs)
 
@@ -362,7 +373,7 @@ let private runWithParallelism (cancellationToken: CancellationToken) jobs timeo
                     do! gate.WaitAsync(cancellationToken)
 
                     try
-                        return! runSample cancellationToken timeout debugLevel optimize sample
+                        return! runSample cancellationToken timeout debugLevel optimize costModel sample
                     finally
                     gate.Release() |> ignore
             }
@@ -623,6 +634,7 @@ let main (argv: string array) =
           GatherOnly = false
           Repeat = 1
           RunId = None
+          CostModel = None
           Timeout = Some(TimeSpan.FromMinutes 30.0) }
 
     match parseArgs defaults (argv |> Array.toList) with
@@ -685,7 +697,14 @@ let main (argv: string array) =
                     cancellation.Token.ThrowIfCancellationRequested()
 
                     let results =
-                        runWithParallelism cancellation.Token options.Jobs options.Timeout options.DebugLevel options.Optimize builtSamples
+                        runWithParallelism
+                            cancellation.Token
+                            options.Jobs
+                            options.Timeout
+                            options.DebugLevel
+                            options.Optimize
+                            options.CostModel
+                            builtSamples
                         |> _.GetAwaiter().GetResult()
 
                     let gatherRows =

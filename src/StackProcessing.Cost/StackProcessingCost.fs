@@ -270,10 +270,181 @@ module Fitting =
             if String.IsNullOrWhiteSpace path || not (File.Exists path) then
                 empty
             else
-                let json = File.ReadAllText path
-                JsonSerializer.Deserialize<OperatorCostModel>(json, jsonOptions)
-                |> Option.ofObj
-                |> Option.defaultValue empty
+                try
+                    let json = File.ReadAllText path
+                    JsonSerializer.Deserialize<OperatorCostModel>(json, jsonOptions)
+                    |> Option.ofObj
+                    |> Option.defaultValue empty
+                with _ ->
+                    empty
+
+    type OperatorEstimateContext =
+        { Operator: string
+          PixelType: string option
+          Voxels: uint64 option
+          VolumeBytes: uint64 option
+          WindowSize: float option
+          Radius: float option }
+
+    module OperatorEstimateContext =
+        let create operator pixelType voxels volumeBytes windowSize radius =
+            { Operator = operator
+              PixelType = pixelType
+              Voxels = voxels
+              VolumeBytes = volumeBytes
+              WindowSize = windowSize
+              Radius = radius }
+
+    module OperatorCostRuntime =
+        let private calibratedMillisecondsKey = "__stackprocessing_operator_cost_model_milliseconds"
+        let mutable private activeModel = OperatorCostModel.empty
+        let mutable private activePath: string option = None
+        let mutable private loadedDefault = false
+
+        let private registerMillisecondsCalibration () =
+            StageTimeCalibration.register
+                calibratedMillisecondsKey
+                { StageTimeCoefficients.zero with NativeMillisecondsPerUnit = 1.0 }
+
+        let private userModelPath () =
+            let home =
+                Environment.GetFolderPath(Environment.SpecialFolder.UserProfile)
+
+            if String.IsNullOrWhiteSpace home then
+                ""
+            else
+                Path.Combine(home, ".stackprocessing", "cost", "stackprocessing.operator-cost.json")
+
+        let private tryFindRepositoryModelPath name =
+            let rec loop (directory: DirectoryInfo) =
+                let candidate = Path.Combine(directory.FullName, "models", name, "stackprocessing.operator-cost.json")
+
+                if File.Exists candidate then
+                    Some candidate
+                elif isNull directory.Parent then
+                    None
+                else
+                    loop directory.Parent
+
+            loop (DirectoryInfo(Directory.GetCurrentDirectory()))
+
+        let private repositoryModelPath name =
+            tryFindRepositoryModelPath name
+            |> Option.defaultValue (Path.Combine(Directory.GetCurrentDirectory(), "models", name, "stackprocessing.operator-cost.json"))
+
+        let defaultSearchPaths () =
+            [ Environment.GetEnvironmentVariable("STACKPROCESSING_COST_MODEL")
+              userModelPath ()
+              repositoryModelPath "fitted"
+              repositoryModelPath "default" ]
+            |> List.filter (String.IsNullOrWhiteSpace >> not)
+
+        let load path =
+            activeModel <- OperatorCostModel.loadOrDefault path
+            activePath <- if File.Exists path then Some(Path.GetFullPath path) else None
+            loadedDefault <- true
+            registerMillisecondsCalibration ()
+            activeModel
+
+        let loadFirstAvailable paths =
+            match paths |> List.tryFind File.Exists with
+            | Some path -> load path
+            | None ->
+                activeModel <- OperatorCostModel.empty
+                activePath <- None
+                loadedDefault <- true
+                registerMillisecondsCalibration ()
+                activeModel
+
+        let ensureLoaded () =
+            if not loadedDefault then
+                loadFirstAvailable (defaultSearchPaths ()) |> ignore
+
+        let currentPath () =
+            ensureLoaded ()
+            activePath
+
+        let currentModel () =
+            ensureLoaded ()
+            activeModel
+
+        let private termKey (operator: string) (pixelType: string) (term: string) =
+            $"operator={operator}|pixelType={pixelType}|term={term}"
+
+        let private coefficient (measurement: string) key =
+            currentModel().Coefficients
+            |> Array.tryFind (fun coefficient ->
+                String.Equals(coefficient.Measurement, measurement, StringComparison.OrdinalIgnoreCase)
+                && String.Equals(coefficient.TermKey, key, StringComparison.Ordinal))
+            |> Option.map _.Coefficient
+            |> Option.defaultValue 0.0
+
+        let private isMemoryMeasurement (measurement: string) =
+            measurement.Contains("memory", StringComparison.OrdinalIgnoreCase)
+            || measurement.Contains("rss", StringComparison.OrdinalIgnoreCase)
+            || measurement.Contains("bytes", StringComparison.OrdinalIgnoreCase)
+            || measurement.Contains("kb", StringComparison.OrdinalIgnoreCase)
+
+        let estimate (measurement: string) (context: OperatorEstimateContext) =
+            ensureLoaded ()
+            let pixelType = context.PixelType |> Option.defaultValue ""
+            let add term value =
+                coefficient measurement (termKey context.Operator pixelType term) * value
+
+            let constant = add "constant" 1.0
+
+            let scaled =
+                if isMemoryMeasurement measurement then
+                    let volumeMB =
+                        context.VolumeBytes
+                        |> Option.map (fun bytes -> float bytes / 1.0e6)
+                        |> Option.defaultValue 0.0
+
+                    let windowVolumeMB =
+                        match context.WindowSize with
+                        | Some windowSize -> windowSize * volumeMB
+                        | None -> 0.0
+
+                    let radius2VolumeMB =
+                        match context.Radius with
+                        | Some radius -> radius * radius * volumeMB
+                        | None -> 0.0
+
+                    add "volumeMB" volumeMB
+                    + add "windowVolumeMB" windowVolumeMB
+                    + add "radius2VolumeMB" radius2VolumeMB
+                else
+                    let voxelsM =
+                        context.Voxels
+                        |> Option.map (fun voxels -> float voxels / 1.0e6)
+                        |> Option.defaultValue 0.0
+
+                    let windowVoxelsM =
+                        match context.WindowSize with
+                        | Some windowSize -> windowSize * voxelsM
+                        | None -> 0.0
+
+                    let radius2VoxelsM =
+                        match context.Radius with
+                        | Some radius -> radius * radius * voxelsM
+                        | None -> 0.0
+
+                    add "voxelsM" voxelsM
+                    + add "windowVoxelsM" windowVoxelsM
+                    + add "radius2VoxelsM" radius2VoxelsM
+
+            let estimate = constant + scaled
+            if estimate > 0.0 then Some estimate else None
+
+        let timeCostModel evaluation context fallback =
+            { Kind = Native
+              Evaluation = evaluation
+              Estimate =
+                fun input ->
+                    match estimate "elapsedMilliseconds" (context input) with
+                    | Some milliseconds ->
+                        StageTimeCostEstimate.create 0.0 milliseconds 0UL 0UL 0UL 0UL (Some calibratedMillisecondsKey)
+                    | None -> fallback input }
 
     let private parseCsvLine (line: string) =
         let values = ResizeArray<string>()
@@ -681,6 +852,19 @@ module Fitting =
               "Ignore sinks are treated as zero-cost evidence terms." ]
             fits
         fits
+
+let operatorImageTimeCost<'T> operator evaluation windowSize radius fallback : StageTimeCostModel =
+    let context input =
+        let voxels = inputVoxels input
+        Fitting.OperatorEstimateContext.create
+            operator
+            (Some(pixelTypeName<'T>))
+            (Some voxels)
+            (Some(imageBytes<'T> voxels))
+            windowSize
+            radius
+
+    Fitting.OperatorCostRuntime.timeCostModel evaluation context fallback
 
 type CostDiscrepancyPolicy =
     { Enabled: bool

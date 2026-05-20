@@ -6,7 +6,7 @@ It combines a streaming execution core (`SlimPipeline`), image-stack operations
 
 The central idea is simple: describe an image-processing workflow as a graph or
 pipeline, then execute it slice by slice or chunk by chunk so that memory use
-stays bounded.
+stays bounded. An example of the Domain Specific Language (DSL) implemented in F# is given below.
 
 ```fsharp
 open StackProcessing
@@ -21,8 +21,8 @@ source availableMemory
 |> sink
 ```
 
-Nothing runs while the pipeline is being built. Execution starts only when
-`sink`, `drain`, or another terminal operation is called.
+The pipeline is constructed in a single pass. When
+`sink`, `drain`, or another terminal operation is called, then the pipeline is optimized for fastest running time within the limits of the specified available memory, and then the pipeline is executed.
 
 ## Installation
 
@@ -137,9 +137,10 @@ scalar/unary stages, windowed stages, geometry, FFT/vector/keypoint probes, and
 dependency-breakers for under-isolated features. The analysis outputs include
 `tmp/analysis/coefficients.csv`, `predictions.csv`, `diagnostics.csv`, and
 `sampleEstimates.csv`. Probe also writes fitting evidence to
-`tmp/analysis/costEvidence.csv` and a reusable fitted model to
-`tmp/analysis/stackprocessing.cost.json`; the repository default model lives in
-`models/default/stackprocessing.cost.json`. `sampleEstimates.csv` applies the
+`tmp/analysis/costEvidence.csv` and a reusable fitted operator model to
+`models/fitted/stackprocessing.operator-cost.json`; the repository fallback
+model lives in `models/default/stackprocessing.operator-cost.json`.
+`sampleEstimates.csv` applies the
 currently learned coefficients back to the sample workloads and compares
 estimated memory/time with the real measurements, including any features still
 missing from the estimate. Use `--keep-tmp` only when deliberately preserving
@@ -161,8 +162,13 @@ pass `--probe-json-root PATH` to validate against a specific calibration root.
 Runtime debug can flag large model discrepancies for later analysis:
 
 ```bash
-dotnet run --project samples/someSample/someSample.fsproj -- -d 1 --cost-discrepancies --no-optimize
+dotnet run --project samples/someSample/someSample.fsproj -- -d 1 --cost-discrepancies --cost-model models/fitted/stackprocessing.operator-cost.json --no-optimize
 ```
+
+When `--cost-model` is omitted, StackProcessing looks for a model in
+`STACKPROCESSING_COST_MODEL`, `~/.stackprocessing/cost/`, `models/fitted/`, and
+finally `models/default/`. This lets local calibration replace the model
+without changing code.
 
 ## Projects
 
@@ -187,17 +193,17 @@ dotnet run --project samples/someSample/someSample.fsproj -- -d 1 --cost-discrep
 flowchart TD
     UserFSharp["User F# DSL/graphs"]
     Studio["Studio\ngraph editor"]
-    StudioGraph["Studio.Graph\ncatalog"]
+    StudioGraph["Studio.Graph\ngraph model"]
     StudioCompiler["Studio.Compiler\ngraph -> F# DSL"]
     StackProcessing["StackProcessing\nF# DSL"]
-    Cost["StackProcessing.Cost\ncost model + fitting evidence"]
+    Cost["StackProcessing.Cost\ncost model & fitting"]
     Core["StackProcessing.Core\nLMIP SlimPipeline"]
-    Slim["SlimPipeline\nstreaming plans, stages, windows, cost metadata"]
+    Slim["SlimPipeline\nAgnostic streaming model"]
     AsyncSeq["FSharp.Control.AsyncSeq\nasync stream substrate"]
-    Image["Image\nF# wrapper over SimpleITK"]
+    Image["Image\nF# wrap of SimpleITK"]
     TinyLinAlg["TinyLinAlg\nSimple Linear Algebra"]
-    RunSamples["StackProcessing.RunSamples\nDSL/Graph measurement runner"]
-    Probe["StackProcessing.Probe\nMemory and Time analysis"]
+    RunSamples["StackProcessing.RunSamples\nBulk DSL & graph runner"]
+    Probe["StackProcessing.Probe\nDSL cost analysis"]
 
     UserFSharp --> StackProcessing
     UserFSharp --> Studio
@@ -206,14 +212,13 @@ flowchart TD
     StudioCompiler --> StackProcessing
 
     StackProcessing --> Core
-    StackProcessing --> Slim
     Core --> Cost
-    Cost --> Slim
-    Cost --> Image
     Core --> Slim
-    Slim --> AsyncSeq
     Core --> Image
     Core --> TinyLinAlg
+    Cost --> Slim
+    Cost --> Image
+    Slim --> AsyncSeq
 
     RunSamples --> StudioCompiler
     RunSamples --> StackProcessing

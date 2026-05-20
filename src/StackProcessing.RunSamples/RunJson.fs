@@ -24,6 +24,7 @@ type Options =
       GatherOnly: bool
       Repeat: int
       RunId: string option
+      CostModel: string option
       Timeout: TimeSpan option }
 
 type GraphJob =
@@ -96,6 +97,7 @@ let usage () =
     printfn "  --debug-level N   Accepted for symmetry with runAll; generated graphs carry their saved debug settings."
     printfn "  --optimize BOOL   Enable or disable optimizer use while running generated graphs. Defaults to false."
     printfn "  --no-optimize     Shortcut for --optimize false."
+    printfn "  --cost-model PATH Pass PATH as the runtime fitted operator cost model."
     printfn "  --timeout N       Stop a build or run after N minutes. Defaults to 30. Use 0 to disable."
     printfn "  -h, --help        Show this help."
 
@@ -148,6 +150,8 @@ let rec private parseArgs options args =
             eprintfn "runJson: --repeat expects a positive integer"
             Error 2
     | "--run-id" :: value :: rest -> parseArgs { options with RunId = Some value } rest
+    | "--cost-model" :: value :: rest ->
+        parseArgs { options with CostModel = Some(Path.GetFullPath value) } rest
     | "--timeout" :: value :: rest
     | "--timeout-minutes" :: value :: rest ->
         match Double.TryParse value with
@@ -447,13 +451,20 @@ let private runGraph (cancellationToken: CancellationToken) (repositoryRoot: str
                 File.AppendAllText(job.LogPath, $"{Environment.NewLine}== Run {job.Name} =={Environment.NewLine}")
 
                 let optimizerValue = if options.Optimize then "1" else "0"
+                let runArgs =
+                    [ "run"; "--project"; projectPath; "--no-build"; "--verbosity"; "q" ]
+                    @
+                    match options.CostModel with
+                    | Some path -> [ "--"; "--cost-model"; path ]
+                    | None -> []
+
                 let! runResult =
                     runProcessAsync
                         cancellationToken
                         job.LogPath
                         job.WorkingDirectory
                         "dotnet"
-                        [ "run"; "--project"; projectPath; "--no-build"; "--verbosity"; "q" ]
+                        runArgs
                         (Some(Path.Combine(job.WorkingDirectory, "lib")))
                         options.Timeout
                         (Some optimizerValue)
@@ -744,6 +755,7 @@ let main (argv: string array) =
           GatherOnly = false
           Repeat = 1
           RunId = None
+          CostModel = None
           Timeout = Some(TimeSpan.FromMinutes 30.0) }
 
     match parseArgs defaults (argv |> Array.toList) with

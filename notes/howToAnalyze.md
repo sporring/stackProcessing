@@ -49,8 +49,13 @@ To flag pipelines where the runtime model and measured cost disagree strongly,
 run the graph with debug level 1 and cost discrepancy reporting:
 
 ```bash
-dotnet run --project samples/someSample/someSample.fsproj -- -d 1 --cost-discrepancies --no-optimize
+dotnet run --project samples/someSample/someSample.fsproj -- -d 1 --cost-discrepancies --cost-model models/fitted/stackprocessing.operator-cost.json --no-optimize
 ```
+
+If `--cost-model` is omitted, StackProcessing tries `STACKPROCESSING_COST_MODEL`,
+then `~/.stackprocessing/cost/stackprocessing.operator-cost.json`, then
+`models/fitted/stackprocessing.operator-cost.json`, and finally the repository
+fallback in `models/default/`.
 
 ## Main outputs
 
@@ -65,7 +70,8 @@ tmp/analysis/subsetDiagnostics.csv
 tmp/analysis/matrix.csv
 tmp/analysis/vectors.csv
 tmp/analysis/costEvidence.csv
-tmp/analysis/stackprocessing.cost.json
+models/fitted/stackprocessing.operator-cost.json
+models/default/stackprocessing.operator-cost.json
 ```
 
 Do not clean `tmp/` between calibration and validation. The timestamped

@@ -337,6 +337,12 @@ let private suffixAliases (suffix: string) =
 let private suffixDescription suffix =
     suffixAliases suffix |> String.concat " or "
 
+let private stopWithInputError (message: string) =
+    Console.Error.WriteLine(message)
+    Environment.ExitCode <- 2
+    Environment.Exit 2
+    failwith message
+
 let volumeFilePath (input: string) (suffix: string) =
     if Path.HasExtension input then
         input
@@ -354,6 +360,12 @@ let volumeFilePath (input: string) (suffix: string) =
 let private getStackFiles inputDir suffix =
     let aliases = suffixAliases suffix
 
+    if String.IsNullOrWhiteSpace inputDir then
+        stopWithInputError "Input stack directory was empty. Please provide a directory containing image slices."
+
+    if not (Directory.Exists inputDir) then
+        stopWithInputError $"Input stack directory does not exist: {inputDir}"
+
     Directory.EnumerateFiles(inputDir)
     |> Seq.filter (fun file ->
         aliases
@@ -370,7 +382,7 @@ let getStackInfo (inputDir: string) (suffix: string) : FileInfo =
     let files = getStackFiles inputDir suffix
     let depth = files.Length |> uint64
     if depth = 0uL then
-        failwith $"No {suffixDescription suffix} files found in directory: {inputDir}"
+        stopWithInputError $"No {suffixDescription suffix} files found in input stack directory: {inputDir}"
     let fi = ImageFunctions.getFileInfo(files[0])
     {fi with dimensions = fi.dimensions+1u; size = fi.size @ [depth]}
 

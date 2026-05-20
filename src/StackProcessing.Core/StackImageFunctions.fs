@@ -46,6 +46,14 @@ let private nativeImageStageCost name memoryModel costUnits =
         memoryModel
         (StageTimeCostModel.native Map (Some name) costUnits)
 
+let private operatorImageStageCost<'T> operator memoryModel windowSize radius costUnits =
+    let fallback =
+        StageTimeCostModel.native Map (Some $"{operator}.{typeof<'T>.Name}") costUnits
+
+    StageCostModel.create
+        memoryModel
+        (StackProcessingCost.operatorImageTimeCost<'T> operator Map windowSize radius fallback.Estimate)
+
 let identityStage name =
     Stage.map name (fun _ value -> value) id id
 
@@ -551,7 +559,7 @@ let sqrtWindowed<'T when 'T: equality> (winSz: uint) : Stage<Image<'T>,Image<'T>
     let memoryModel = StageMemoryModel.fromSinglePeak Map memoryNeed
     let costUnits input = float (inputValue input * uint64 win)
     liftWindowedUnaryReleaseAfter "sqrtWindowed" win ImageFunctions.sqrtImage memoryNeed id
-    |> withCostModel (nativeImageStageCost $"sqrtWindowed.{typeof<'T>.Name}" memoryModel costUnits)
+    |> withCostModel (operatorImageStageCost<'T> "SqrtWindowed" memoryModel (Some(float win)) None costUnits)
 let square<'T when 'T: equality> : Stage<Image<'T>,Image<'T>> =      
     failTypeMismatch<'T> "square" floatNintTypes
     liftUnaryReleaseAfter "square" ImageFunctions.squareImage id id
@@ -1405,7 +1413,7 @@ let smoothWGauss (sigma: float) (outputRegionMode: ImageFunctions.OutputRegionMo
         float (inputValue input * uint64 win * kernelVoxels)
     let stg =
         mapWindow "smoothWGauss" f memoryNeed elementTransformation
-        |> withCostModel (nativeImageStageCost $"smoothWGauss.Float64" memoryModel costUnits)
+        |> withCostModel (operatorImageStageCost<float> "SmoothWGauss" memoryModel (Some(float win)) None costUnits)
     (window win pad stride) --> stg --> flattenList () --> cleanStage "smoothWGauss.cleanup" (fun () -> kernel.decRefCount())
     |> Stage.withSliceCardinality (sliceCardinalityForConvolution ksz outputRegionMode)
 
@@ -1558,7 +1566,7 @@ let convolveOp (name: string) (kernel: Image<'T>) (outputRegionMode: ImageFuncti
             float (inputValue input * kernelVoxels)
 
         liftUnaryReleaseAfter name (fun image -> ImageFunctions.convolve outputRegionMode bc image kernel) memoryNeed id
-        |> withCostModel (nativeImageStageCost $"convolve.{typeof<'T>.Name}" memoryModel costUnits)
+        |> withCostModel (operatorImageStageCost<'T> "Convolve" memoryModel None None costUnits)
     else
         let windowFromKernel (k: Image<'T>) : uint =
             max 1u (k.GetDepth())
@@ -1582,7 +1590,7 @@ let convolveOp (name: string) (kernel: Image<'T>) (outputRegionMode: ImageFuncti
             float (inputValue input * uint64 win * kernelVoxels)
         let stg =
             mapWindow name f memoryNeed elementTransformation
-            |> withCostModel (nativeImageStageCost $"convolve.{typeof<'T>.Name}" memoryModel costUnits)
+            |> withCostModel (operatorImageStageCost<'T> "Convolve" memoryModel (Some(float win)) None costUnits)
         (window win pad stride) --> stg --> flattenList ()
         |> Stage.withSliceCardinality (sliceCardinalityForConvolution ksz outputRegionMode)
 

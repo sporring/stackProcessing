@@ -1,0 +1,10 @@
+{
+  "SchemaVersion": 1,
+  "Name": "StackProcessing empty operator cost model",
+  "CreatedUtc": "1970-01-01T00:00:00+00:00",
+  "Assumptions": [
+    "No fitted operator-term coefficients are available.",
+    "Runtime falls back to structural memory estimates and uncalibrated time scores."
+  ],
+  "Coefficients": []
+}

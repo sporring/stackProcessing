@@ -33,6 +33,7 @@ let private optionTakesValue value =
     | "--run-id"
     | "--timeout"
     | "--timeout-minutes"
+    | "--cost-model"
     | "--samples-root"
     | "--extra-json-root"
     | "--extra-samples-root"
