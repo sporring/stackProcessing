@@ -648,14 +648,37 @@ module StageTimeCostEstimate =
           IoWriteOps = ioWriteOps
           CalibrationKey = calibrationKey }
 
+    let private isZero estimate =
+        estimate.CpuCostUnits = 0.0
+        && estimate.NativeCostUnits = 0.0
+        && estimate.IoReadBytes = 0UL
+        && estimate.IoWriteBytes = 0UL
+        && estimate.IoReadOps = 0UL
+        && estimate.IoWriteOps = 0UL
+
+    let private hasNoIo estimate =
+        estimate.IoReadBytes = 0UL
+        && estimate.IoWriteBytes = 0UL
+        && estimate.IoReadOps = 0UL
+        && estimate.IoWriteOps = 0UL
+
     let add left right =
+        let calibrationKey =
+            match left.CalibrationKey, right.CalibrationKey with
+            | Some leftKey, Some rightKey when leftKey = rightKey -> Some leftKey
+            | Some leftKey, None when isZero right -> Some leftKey
+            | None, Some rightKey when isZero left -> Some rightKey
+            | Some leftKey, None when hasNoIo right -> Some leftKey
+            | None, Some rightKey when hasNoIo left -> Some rightKey
+            | _ -> None
+
         { CpuCostUnits = left.CpuCostUnits + right.CpuCostUnits
           NativeCostUnits = left.NativeCostUnits + right.NativeCostUnits
           IoReadBytes = left.IoReadBytes + right.IoReadBytes
           IoWriteBytes = left.IoWriteBytes + right.IoWriteBytes
           IoReadOps = left.IoReadOps + right.IoReadOps
           IoWriteOps = left.IoWriteOps + right.IoWriteOps
-          CalibrationKey = None }
+          CalibrationKey = calibrationKey }
 
 type StageTimeCostModel =
     { Kind: StageTimeCostKind
@@ -702,6 +725,13 @@ module StageTimeCalibration =
     let estimateMilliseconds estimate =
         match estimate.CalibrationKey |> Option.bind tryFind with
         | Some coefficients -> Some (StageTimeCoefficients.estimateMilliseconds coefficients estimate)
+        | None
+            when estimate.CpuCostUnits = 0.0
+                 && estimate.NativeCostUnits = 0.0
+                 && estimate.IoReadBytes = 0UL
+                 && estimate.IoWriteBytes = 0UL
+                 && estimate.IoReadOps = 0UL
+                 && estimate.IoWriteOps = 0UL -> Some 0.0
         | None -> None
 
     let private propertyDouble (name: string) (element: System.Text.Json.JsonElement) =
@@ -1539,12 +1569,19 @@ module Plan =
         + float estimate.IoReadOps
         + float estimate.IoWriteOps
 
+    let private hasNoIoCost estimate =
+        estimate.IoReadBytes = 0UL
+        && estimate.IoWriteBytes = 0UL
+        && estimate.IoReadOps = 0UL
+        && estimate.IoWriteOps = 0UL
+
     let private trySumEstimatedTimeMilliseconds (observations: StageCostEstimate list) =
         observations
         |> List.fold
             (fun state observation ->
                 match state, StageTimeCalibration.estimateMilliseconds observation.Time with
                 | Some total, Some milliseconds -> Some(total + milliseconds)
+                | Some total, None when hasNoIoCost observation.Time -> Some total
                 | _ -> None)
             (Some 0.0)
 

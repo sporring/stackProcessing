@@ -232,6 +232,8 @@ module StageTimeCostEstimate =
         ioReadOps: uint64 ->
         ioWriteOps: uint64 ->
         calibrationKey: string option -> StageTimeCostEstimate
+    val private isZero: estimate: StageTimeCostEstimate -> bool
+    val private hasNoIo: estimate: StageTimeCostEstimate -> bool
     val add:
       left: StageTimeCostEstimate ->
         right: StageTimeCostEstimate -> StageTimeCostEstimate
@@ -711,6 +713,7 @@ module Plan =
       current: StageCostEstimate option ->
         candidate: StageCostEstimate -> StageCostEstimate option
     val private costScore: estimate: StageTimeCostEstimate -> float
+    val private hasNoIoCost: estimate: StageTimeCostEstimate -> bool
     val private trySumEstimatedTimeMilliseconds:
       observations: StageCostEstimate list -> float option
     val private totalCostScore: observations: StageCostEstimate list -> float

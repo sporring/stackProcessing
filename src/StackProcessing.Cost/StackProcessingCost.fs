@@ -36,7 +36,18 @@ let inputVoxels input =
     input |> SingleOrPair.sum |> SingleOrPair.fst
 
 let pixelTypeName<'T> =
-    typeof<'T>.Name
+    let t = typeof<'T>
+    if t = typeof<float> then "Float64"
+    elif t = typeof<float32> then "Float32"
+    elif t = typeof<uint8> then "UInt8"
+    elif t = typeof<int8> then "Int8"
+    elif t = typeof<uint16> then "UInt16"
+    elif t = typeof<int16> then "Int16"
+    elif t = typeof<uint32> || t = typeof<uint> then "UInt32"
+    elif t = typeof<int32> || t = typeof<int> then "Int32"
+    elif t = typeof<uint64> then "UInt64"
+    elif t = typeof<int64> then "Int64"
+    else t.Name
 
 let imageBytes<'T> (nVoxels: uint64) =
     Image.ImageFacts.memoryBytesForType<'T> nVoxels 1u
@@ -379,6 +390,12 @@ module Fitting =
             |> Option.map _.Coefficient
             |> Option.defaultValue 0.0
 
+        let private hasCoefficient (measurement: string) key =
+            currentModel().Coefficients
+            |> Array.exists (fun coefficient ->
+                String.Equals(coefficient.Measurement, measurement, StringComparison.OrdinalIgnoreCase)
+                && String.Equals(coefficient.TermKey, key, StringComparison.Ordinal))
+
         let private isMemoryMeasurement (measurement: string) =
             measurement.Contains("memory", StringComparison.OrdinalIgnoreCase)
             || measurement.Contains("rss", StringComparison.OrdinalIgnoreCase)
@@ -390,6 +407,16 @@ module Fitting =
             let pixelType = context.PixelType |> Option.defaultValue ""
             let add term value =
                 coefficient measurement (termKey context.Operator pixelType term) * value
+
+            let hasAnyCoefficient =
+                [ "constant"
+                  "voxelsM"
+                  "windowVoxelsM"
+                  "radius2VoxelsM"
+                  "volumeMB"
+                  "windowVolumeMB"
+                  "radius2VolumeMB" ]
+                |> List.exists (fun term -> hasCoefficient measurement (termKey context.Operator pixelType term))
 
             let constant = add "constant" 1.0
 
@@ -434,7 +461,7 @@ module Fitting =
                     + add "radius2VoxelsM" radius2VoxelsM
 
             let estimate = constant + scaled
-            if estimate > 0.0 then Some estimate else None
+            if hasAnyCoefficient then Some(max 0.0 estimate) else None
 
         let timeCostModel evaluation context fallback =
             { Kind = Native

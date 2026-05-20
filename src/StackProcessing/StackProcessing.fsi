@@ -956,59 +956,51 @@ val intensityStretch:
     when 'T: equality
 
 val smoothWMedian:
-  radius: uint32 -> winSz: uint32 -> Stage<Image<'T>,Image<'T>>
-    when 'T: equality
+  radius: uint32 -> winSz: uint -> Stage<Image<'T>,Image<'T>> when 'T: equality
 
 val smoothWBilateral:
   domainSigma: double ->
-    rangeSigma: double -> winSz: uint32 -> Stage<Image<'T>,Image<'T>>
+    rangeSigma: double -> winSz: uint -> Stage<Image<'T>,Image<'T>>
     when 'T: equality
 
 val gradientMagnitude:
-  winSz: uint32 -> Stage<Image<'T>,Image<'T>> when 'T: equality
+  winSz: uint -> Stage<Image<'T>,Image<'T>> when 'T: equality
 
 val gradient:
   order: uint -> winSz: uint option -> Stage<Image<float>,Image<float list>>
 
-val sobelEdge: winSz: uint32 -> Stage<Image<'T>,Image<'T>> when 'T: equality
+val sobelEdge: winSz: uint -> Stage<Image<'T>,Image<'T>> when 'T: equality
 
-val laplacian: winSz: uint32 -> Stage<Image<'T>,Image<'T>> when 'T: equality
+val laplacian: winSz: uint -> Stage<Image<'T>,Image<'T>> when 'T: equality
 
 val grayscaleErode:
-  radius: uint32 -> winSz: uint32 -> Stage<Image<'T>,Image<'T>>
-    when 'T: equality
+  radius: uint32 -> winSz: uint -> Stage<Image<'T>,Image<'T>> when 'T: equality
 
 val grayscaleDilate:
-  radius: uint32 -> winSz: uint32 -> Stage<Image<'T>,Image<'T>>
-    when 'T: equality
+  radius: uint32 -> winSz: uint -> Stage<Image<'T>,Image<'T>> when 'T: equality
 
 val grayscaleOpening:
-  radius: uint32 -> winSz: uint32 -> Stage<Image<'T>,Image<'T>>
-    when 'T: equality
+  radius: uint32 -> winSz: uint -> Stage<Image<'T>,Image<'T>> when 'T: equality
 
 val grayscaleClosing:
-  radius: uint32 -> winSz: uint32 -> Stage<Image<'T>,Image<'T>>
-    when 'T: equality
+  radius: uint32 -> winSz: uint -> Stage<Image<'T>,Image<'T>> when 'T: equality
 
 val whiteTopHat:
-  radius: uint32 -> winSz: uint32 -> Stage<Image<'T>,Image<'T>>
-    when 'T: equality
+  radius: uint32 -> winSz: uint -> Stage<Image<'T>,Image<'T>> when 'T: equality
 
 val blackTopHat:
-  radius: uint32 -> winSz: uint32 -> Stage<Image<'T>,Image<'T>>
-    when 'T: equality
+  radius: uint32 -> winSz: uint -> Stage<Image<'T>,Image<'T>> when 'T: equality
 
 val morphologicalGradient:
-  radius: uint32 -> winSz: uint32 -> Stage<Image<'T>,Image<'T>>
-    when 'T: equality
+  radius: uint32 -> winSz: uint -> Stage<Image<'T>,Image<'T>> when 'T: equality
 
 val binaryContour:
   (bool ->
-     uint -> SlimPipeline.Stage<StackCore.Image<uint8>,StackCore.Image<uint8>>)
+     uint -> StackCore.Stage<StackCore.Image<uint8>,StackCore.Image<uint8>>)
 
 val binaryMedian:
   (uint32 ->
-     uint32 -> SlimPipeline.Stage<StackCore.Image<uint8>,StackCore.Image<uint8>>)
+     uint -> StackCore.Stage<StackCore.Image<uint8>,StackCore.Image<uint8>>)
 
 val equal<'T when 'T: equality> :
   StackCore.Stage<(StackCore.Image<'T> * StackCore.Image<'T>),
@@ -1351,24 +1343,23 @@ val signedDistanceBand:
      uint -> SlimPipeline.Stage<StackCore.Image<uint8>,StackCore.Image<float>>)
 
 val threshold:
-  (float ->
-     float -> SlimPipeline.Stage<StackCore.Image<'a>,StackCore.Image<uint8>>)
+  (float -> float -> StackCore.Stage<StackCore.Image<'a>,StackCore.Image<uint8>>)
     when 'a: equality
 
 val addNormalNoise:
-  (float -> float -> SlimPipeline.Stage<StackCore.Image<'a>,StackCore.Image<'a>>)
+  (float -> float -> StackCore.Stage<StackCore.Image<'a>,StackCore.Image<'a>>)
     when 'a: equality
 
 val addSaltAndPepperNoise:
-  (float -> SlimPipeline.Stage<StackCore.Image<'a>,StackCore.Image<'a>>)
+  (float -> StackCore.Stage<StackCore.Image<'a>,StackCore.Image<'a>>)
     when 'a: equality
 
 val addShotNoise:
-  (float -> SlimPipeline.Stage<StackCore.Image<'a>,StackCore.Image<'a>>)
+  (float -> StackCore.Stage<StackCore.Image<'a>,StackCore.Image<'a>>)
     when 'a: equality
 
 val addSpeckleNoise:
-  (float -> SlimPipeline.Stage<StackCore.Image<'a>,StackCore.Image<'a>>)
+  (float -> StackCore.Stage<StackCore.Image<'a>,StackCore.Image<'a>>)
     when 'a: equality
 
 val show:

@@ -326,6 +326,7 @@ let private runProcessAsync
     (envPath: string option)
     (timeout: TimeSpan option)
     (optimizer: string option)
+    (costModel: string option)
     =
     task {
         Directory.CreateDirectory(Path.GetDirectoryName logPath) |> ignore
@@ -351,6 +352,7 @@ let private runProcessAsync
 
         args |> List.iter (fun arg -> psi.ArgumentList.Add arg)
         optimizer |> Option.iter (fun value -> psi.Environment["STACKPROCESSING_OPTIMIZE"] <- value)
+        costModel |> Option.iter (fun value -> psi.Environment["STACKPROCESSING_COST_MODEL"] <- value)
 
         match envPath with
         | Some path ->
@@ -440,6 +442,7 @@ let private runGraph (cancellationToken: CancellationToken) (repositoryRoot: str
                         None
                         options.Timeout
                         None
+                        None
 
                 exitCode <- buildResult.ExitCode
                 elapsed <- elapsed + buildResult.Elapsed
@@ -468,6 +471,7 @@ let private runGraph (cancellationToken: CancellationToken) (repositoryRoot: str
                         (Some(Path.Combine(job.WorkingDirectory, "lib")))
                         options.Timeout
                         (Some optimizerValue)
+                        options.CostModel
 
                 exitCode <- runResult.ExitCode
                 elapsed <- elapsed + runResult.Elapsed

@@ -58,6 +58,18 @@ let private friendlyImageTypeName (image: Image<'T>) =
 let private imageIoCost<'T> kind evaluation calibrationKey bytes ops : StageTimeCostModel =
     StackProcessingCost.imageIoCost<'T> kind evaluation calibrationKey bytes ops
 
+let private fixedImageOperatorTimeCost<'T> operator evaluation voxels fallback =
+    let context _ =
+        StackProcessingCost.Fitting.OperatorEstimateContext.create
+            operator
+            (Some(StackProcessingCost.pixelTypeName<'T>))
+            (Some voxels)
+            (Some(StackProcessingCost.imageBytes<'T> voxels))
+            None
+            None
+
+    StackProcessingCost.Fitting.OperatorCostRuntime.timeCostModel evaluation context fallback
+
 let private withCostModel costModel stage =
     StackProcessingCost.withCostModel costModel stage
 
@@ -416,7 +428,7 @@ let getFilenames (inputDir: string) (suffix: string) (filter: string[]->string[]
     let elementTransformation = id
     let memoryModel = StageMemoryModel.fromSinglePeak Source memoryNeed
     let timeCostModel =
-        StageTimeCostModel.cpu Source (Some "getFilenames") (fun _ -> float depth)
+        StageTimeCostModel.zero Source
     let stage =
         Stage.init $"{name}" (uint depth) mapper transition memoryNeed elementTransformation
         |> withCostModel (StageCostModel.create memoryModel timeCostModel)
@@ -446,13 +458,22 @@ let readFilesWithShape<'T when 'T: equality> (debug: bool) (width: uint) (height
     let elementTransformation _ = uint64 width * uint64 height
 
     let memoryModel = StageMemoryModel.fromSinglePeak Map memoryNeed
-    let timeCostModel =
+    let fallbackTimeCostModel =
         imageIoCost<'T>
             "read"
             Map
             $"readFiles.{typeof<'T>.Name}"
             (fun _ -> Image<'T>.memoryEstimate width height)
             (fun _ -> 1UL)
+    let timeCostModel =
+        if width > 0u && height > 0u then
+            fixedImageOperatorTimeCost<'T>
+                "Read"
+                Map
+                (uint64 width * uint64 height)
+                fallbackTimeCostModel.Estimate
+        else
+            fallbackTimeCostModel
     Stage.mapi name mapper memoryNeed elementTransformation
     |> withCostModel (StageCostModel.create memoryModel timeCostModel)
 
@@ -1948,13 +1969,20 @@ let write<'T when 'T: equality> (outputDir: string) (suffix: string) : Stage<Ima
         image
     let memoryNeed = id
     let memoryModel = StageMemoryModel.fromSinglePeak Iter memoryNeed
-    let timeCostModel =
+    let fallbackTimeCostModel =
         imageIoCost<'T>
             "write"
             Iter
             $"write.{typeof<'T>.Name}"
             (fun input -> inputValue input |> imageBytes<'T>)
             (fun _ -> 1UL)
+    let timeCostModel =
+        StackProcessingCost.operatorImageTimeCost<'T>
+            "Write"
+            Iter
+            None
+            None
+            fallbackTimeCostModel.Estimate
     Stage.mapi $"write \"{outputDir}/*{suffix}\"" mapper memoryNeed id
     |> withCostModel (StageCostModel.create memoryModel timeCostModel)
 

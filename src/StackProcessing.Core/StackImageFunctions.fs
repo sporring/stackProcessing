@@ -46,13 +46,34 @@ let private nativeImageStageCost name memoryModel costUnits =
         memoryModel
         (StageTimeCostModel.native Map (Some name) costUnits)
 
-let private operatorImageStageCost<'T> operator memoryModel windowSize radius costUnits =
+let private operatorImageStageCostForPixelWithEvaluation<'T> operator evaluation memoryModel windowSize radius costUnits =
     let fallback =
-        StageTimeCostModel.native Map (Some $"{operator}.{typeof<'T>.Name}") costUnits
+        StageTimeCostModel.native evaluation (Some $"{operator}.{StackProcessingCost.pixelTypeName<'T>}") costUnits
 
     StageCostModel.create
         memoryModel
-        (StackProcessingCost.operatorImageTimeCost<'T> operator Map windowSize radius fallback.Estimate)
+        (StackProcessingCost.operatorImageTimeCost<'T> operator evaluation windowSize radius fallback.Estimate)
+
+let private operatorImageStageCostForPixel<'T> operator memoryModel windowSize radius costUnits =
+    operatorImageStageCostForPixelWithEvaluation<'T> operator Map memoryModel windowSize radius costUnits
+
+let private operatorImageStageCost<'T> operator memoryModel windowSize radius costUnits =
+    operatorImageStageCostForPixel<'T> operator memoryModel windowSize radius costUnits
+
+let private operatorUnaryStageCost<'T> operator memoryNeed =
+    let memoryModel = StageMemoryModel.fromSinglePeak Map memoryNeed
+    let costUnits input = inputValue input |> float
+    operatorImageStageCost<'T> operator memoryModel None None costUnits
+
+let private liftOperatorUnaryReleaseAfter<'T when 'T: equality>
+    name
+    operator
+    (f: Image<'T> -> Image<'T>)
+    : Stage<Image<'T>, Image<'T>> =
+    let memoryNeed nPixels = 2UL * nPixels * getBytesPerComponent<'T>
+
+    liftUnaryReleaseAfter name f memoryNeed id
+    |> withCostModel (operatorUnaryStageCost<'T> operator memoryNeed)
 
 let identityStage name =
     Stage.map name (fun _ value -> value) id id
@@ -271,7 +292,9 @@ let cast<'S,'T when 'S: equality and 'T: equality> =
         let result = I.castTo<'T> ()
         I.decRefCount()
         result
+    let memoryNeed nPixels = 2UL * nPixels * getBytesPerComponent<'S>
     Stage.cast<Image<'S>,Image<'T>> name f id
+    |> withCostModel (operatorUnaryStageCost<'S> "Cast" memoryNeed)
 
 /// Basic arithmetic
 let liftRelease2 f I J = releaseAfter2 (fun a b -> f a b) I J
@@ -355,13 +378,19 @@ let toVectorImage<'T when 'T: equality> : Stage<Image<'T> * Image<'T>, Image<'T 
     liftPairReleaseAfter "toVectorImage" (fun a b -> ImageFunctions.toVectorImage [ a; b ])
 
 let vectorElement<'T when 'T: equality> componentId : Stage<Image<'T list>, Image<'T>> =
-    liftUnaryReleaseAfter "vectorElement" (ImageFunctions.vectorElement componentId) id id
+    let memoryNeed nPixels = 2UL * nPixels * getBytesPerComponent<'T>
+    let memoryModel = StageMemoryModel.fromSinglePeak Map memoryNeed
+    let costUnits input = inputValue input |> float
+    liftUnaryReleaseAfter "vectorElement" (ImageFunctions.vectorElement componentId) memoryNeed id
+    |> withCostModel (operatorImageStageCost<'T> "VectorElement" memoryModel None None costUnits)
 
 let vectorRange<'T when 'T: equality> firstComponent componentCount : Stage<Image<'T list>, Image<'T list>> =
     liftUnaryReleaseAfter "vectorRange" (ImageFunctions.vectorRange firstComponent componentCount) id id
 
 let vector3ToColor inputMinimum inputMaximum : Stage<Image<float list>, Image<uint8 list>> =
-    liftUnaryReleaseAfter "vector3ToColor" (ImageFunctions.vector3ToColor inputMinimum inputMaximum) id id
+    let memoryNeed nPixels = 2UL * nPixels * getBytesPerComponent<float>
+    liftUnaryReleaseAfter "vector3ToColor" (ImageFunctions.vector3ToColor inputMinimum inputMaximum) memoryNeed id
+    |> withCostModel (operatorUnaryStageCost<float> "VectorElement" memoryNeed)
 
 let colorToVector3 outputMinimum outputMaximum : Stage<Image<uint8 list>, Image<float list>> =
     liftUnaryReleaseAfter "colorToVector3" (ImageFunctions.colorToVector3 outputMinimum outputMaximum) id id
@@ -388,7 +417,11 @@ let Im : Stage<Image<System.Numerics.Complex>, Image<float>> =
     liftUnaryReleaseAfter "Im" Image.Im id id
 
 let modulus : Stage<Image<System.Numerics.Complex>, Image<float>> =
-    liftUnaryReleaseAfter "modulus" Image.modulus id id
+    let memoryNeed nPixels = 2UL * nPixels * getBytesPerComponent<float>
+    let memoryModel = StageMemoryModel.fromSinglePeak Map memoryNeed
+    let costUnits input = inputValue input |> float
+    liftUnaryReleaseAfter "modulus" Image.modulus memoryNeed id
+    |> withCostModel (operatorImageStageCostForPixel<float> "ComplexModulus" memoryModel None None costUnits)
 
 let arg : Stage<Image<System.Numerics.Complex>, Image<float>> =
     liftUnaryReleaseAfter "arg" Image.arg id id
@@ -489,69 +522,87 @@ let private chunkedVolumeOperation
     --> readChunksAsSlices<'T> name outputDir suffix
 
 let FFT<'T when 'T: equality> chunkX chunkY chunkZ : Stage<Image<'T>, Image<System.Numerics.Complex>> =
-    chunkedVolumeOperation
-        "FFT"
-        (liftUnaryReleaseAfter "FFTXY" ImageFunctions.FFTXY id id)
-        chunkedFFTAlongZ
-        chunkX
-        chunkY
-        chunkZ
+    let stage =
+        chunkedVolumeOperation
+            "FFT"
+            (liftUnaryReleaseAfter "FFTXY" ImageFunctions.FFTXY id id)
+            chunkedFFTAlongZ
+            chunkX
+            chunkY
+            chunkZ
+    let memoryNeed nPixels = 2UL * nPixels * getBytesPerComponent<'T>
+    let memoryModel = StageMemoryModel.fromSinglePeak Map memoryNeed
+    let costUnits input = inputValue input |> float
+    stage
+    |> withCostModel (operatorImageStageCost<'T> "FFT" memoryModel None None costUnits)
 
 let invFFT chunkX chunkY chunkZ : Stage<Image<System.Numerics.Complex>, Image<float>> =
-    (chunkedVolumeOperation
-        "invFFT"
-        (liftUnaryReleaseAfter "inverseFFTXY" ImageFunctions.inverseFFTXY id id)
-        chunkedInvFFTAlongZ
-        chunkX
-        chunkY
-        chunkZ)
-    --> liftUnaryReleaseAfter "invFFT.realPart" ImageFunctions.realPart id id
+    let stage =
+        (chunkedVolumeOperation
+            "invFFT"
+            (liftUnaryReleaseAfter "inverseFFTXY" ImageFunctions.inverseFFTXY id id)
+            chunkedInvFFTAlongZ
+            chunkX
+            chunkY
+            chunkZ)
+        --> liftUnaryReleaseAfter "invFFT.realPart" ImageFunctions.realPart id id
+    let memoryNeed nPixels = 2UL * nPixels * getBytesPerComponent<float>
+    let memoryModel = StageMemoryModel.fromSinglePeak Map memoryNeed
+    let costUnits input = inputValue input |> float
+    stage
+    |> withCostModel (operatorImageStageCostForPixel<float> "InvFFT" memoryModel None None costUnits)
 
 let shiftFFT chunkX chunkY chunkZ : Stage<Image<System.Numerics.Complex>, Image<System.Numerics.Complex>> =
-    chunkedVolumeOperation
-        "shiftFFT"
-        (identityStage "shiftFFT.input")
-        chunkedShiftFFT
-        chunkX
-        chunkY
-        chunkZ
+    let stage =
+        chunkedVolumeOperation
+            "shiftFFT"
+            (identityStage "shiftFFT.input")
+            chunkedShiftFFT
+            chunkX
+            chunkY
+            chunkZ
+    let memoryNeed nPixels = 2UL * nPixels * getBytesPerComponent<float>
+    let memoryModel = StageMemoryModel.fromSinglePeak Map memoryNeed
+    let costUnits input = inputValue input |> float
+    stage
+    |> withCostModel (operatorImageStageCostForPixel<float> "ShiftFFT" memoryModel None None costUnits)
 
 let abs<'T when 'T: equality>    : Stage<Image<'T>,Image<'T>> = 
     failTypeMismatch<'T> "abs" floatNintTypes
-    liftUnaryReleaseAfter "abs"    ImageFunctions.absImage id id
+    liftOperatorUnaryReleaseAfter "abs" "UnaryImageFunction" ImageFunctions.absImage
 let acos<'T when 'T: equality>   : Stage<Image<'T>,Image<'T>> =      
     failTypeMismatch<'T> "acos" floatTypes
-    liftUnaryReleaseAfter "acos"   ImageFunctions.acosImage id id
+    liftOperatorUnaryReleaseAfter "acos" "UnaryImageFunction" ImageFunctions.acosImage
 let asin<'T when 'T: equality>   : Stage<Image<'T>,Image<'T>> =      
     failTypeMismatch<'T> "asin" floatTypes
-    liftUnaryReleaseAfter "asin"   ImageFunctions.asinImage id id
+    liftOperatorUnaryReleaseAfter "asin" "UnaryImageFunction" ImageFunctions.asinImage
 let atan<'T when 'T: equality>   : Stage<Image<'T>,Image<'T>> =      
     failTypeMismatch<'T> "atan" floatTypes
-    liftUnaryReleaseAfter "atan"   ImageFunctions.atanImage id id
+    liftOperatorUnaryReleaseAfter "atan" "UnaryImageFunction" ImageFunctions.atanImage
 let cos<'T when 'T: equality>    : Stage<Image<'T>,Image<'T>> =      
     failTypeMismatch<'T> "cos" floatTypes
-    liftUnaryReleaseAfter "cos"    ImageFunctions.cosImage id id
+    liftOperatorUnaryReleaseAfter "cos" "UnaryImageFunction" ImageFunctions.cosImage
 let sin<'T when 'T: equality>    : Stage<Image<'T>,Image<'T>> =      
     failTypeMismatch<'T> "sin" floatTypes
-    liftUnaryReleaseAfter "sin"    ImageFunctions.sinImage id id
+    liftOperatorUnaryReleaseAfter "sin" "UnaryImageFunction" ImageFunctions.sinImage
 let tan<'T when 'T: equality>    : Stage<Image<'T>,Image<'T>> =      
     failTypeMismatch<'T> "tan" floatTypes
-    liftUnaryReleaseAfter "tan"    ImageFunctions.tanImage id id
+    liftOperatorUnaryReleaseAfter "tan" "UnaryImageFunction" ImageFunctions.tanImage
 let exp<'T when 'T: equality>    : Stage<Image<'T>,Image<'T>> =      
     failTypeMismatch<'T> "exp" floatTypes
-    liftUnaryReleaseAfter "exp"    ImageFunctions.expImage id id
+    liftOperatorUnaryReleaseAfter "exp" "UnaryImageFunction" ImageFunctions.expImage
 let log10<'T when 'T: equality>  : Stage<Image<'T>,Image<'T>> =      
     failTypeMismatch<'T> "log10" floatTypes
-    liftUnaryReleaseAfter "log10"  ImageFunctions.log10Image id id
+    liftOperatorUnaryReleaseAfter "log10" "UnaryImageFunction" ImageFunctions.log10Image
 let log<'T when 'T: equality>    : Stage<Image<'T>,Image<'T>> =      
     failTypeMismatch<'T> "log" floatTypes
-    liftUnaryReleaseAfter "log"    ImageFunctions.logImage id id
+    liftOperatorUnaryReleaseAfter "log" "UnaryImageFunction" ImageFunctions.logImage
 let round<'T when 'T: equality>  : Stage<Image<'T>,Image<'T>> =      
     failTypeMismatch<'T> "round" floatTypes
-    liftUnaryReleaseAfter "round"  ImageFunctions.roundImage id id
+    liftOperatorUnaryReleaseAfter "round" "UnaryImageFunction" ImageFunctions.roundImage
 let sqrt<'T when 'T: equality>   : Stage<Image<'T>,Image<'T>> =      
     failTypeMismatch<'T> "sqrt" floatNintTypes
-    liftUnaryReleaseAfter "sqrt"   ImageFunctions.sqrtImage id id
+    liftOperatorUnaryReleaseAfter "sqrt" "UnaryImageFunction" ImageFunctions.sqrtImage
 let sqrtWindowed<'T when 'T: equality> (winSz: uint) : Stage<Image<'T>,Image<'T>> =
     failTypeMismatch<'T> "sqrtWindowed" floatNintTypes
     let win = max 1u winSz
@@ -562,13 +613,13 @@ let sqrtWindowed<'T when 'T: equality> (winSz: uint) : Stage<Image<'T>,Image<'T>
     |> withCostModel (operatorImageStageCost<'T> "SqrtWindowed" memoryModel (Some(float win)) None costUnits)
 let square<'T when 'T: equality> : Stage<Image<'T>,Image<'T>> =      
     failTypeMismatch<'T> "square" floatNintTypes
-    liftUnaryReleaseAfter "square" ImageFunctions.squareImage id id
+    liftOperatorUnaryReleaseAfter "square" "UnaryImageFunction" ImageFunctions.squareImage
 
 let clamp<'T when 'T: equality> lower upper : Stage<Image<'T>, Image<'T>> =
     liftUnaryReleaseAfter "clamp" (ImageFunctions.clampImage lower upper) id id
 
 let shiftScale<'T when 'T: equality> shift scale : Stage<Image<'T>, Image<'T>> =
-    liftUnaryReleaseAfter "shiftScale" (ImageFunctions.shiftScale shift scale) id id
+    liftOperatorUnaryReleaseAfter "shiftScale" "ShiftScale" (ImageFunctions.shiftScale shift scale)
 
 let intensityStretch<'T when 'T: equality> inputMinimum inputMaximum outputMinimum outputMaximum : Stage<Image<'T>, Image<'T>> =
     if inputMinimum = inputMaximum then
@@ -578,7 +629,7 @@ let intensityStretch<'T when 'T: equality> inputMinimum inputMaximum outputMinim
 
     let scale = (outputMaximum - outputMinimum) / (inputMaximum - inputMinimum)
     let shift = outputMinimum / scale - inputMinimum
-    shiftScale<'T> shift scale
+    liftOperatorUnaryReleaseAfter "intensityStretch" "IntensityStretch" (ImageFunctions.shiftScale shift scale)
 
 let private defaultConvolutionWindowSize (kernelDepth: uint) =
     max kernelDepth (3u * kernelDepth)
@@ -592,15 +643,37 @@ let private makeWindowedLocalOp name ksz winSz core =
     (window win pad stride) --> stg --> flattenList ()
     |> Stage.withSliceCardinality (SlimPipeline.Domain(sameSliceDomainForKernelDepth ksz))
 
+let private makeWindowedOperatorOp<'T when 'T: equality>
+    (name: string)
+    (operator: string)
+    (radius: float option)
+    (ksz: uint)
+    (winSz: uint)
+    (core: Image<'T> -> Image<'T>)
+    : Stage<Image<'T>, Image<'T>> =
+    let pad = ksz / 2u
+    let win = max ksz winSz
+    let stride = win - ksz + 1u
+    let f debug = volFctToWindowFctReleaseAfterDebug debug core ksz pad stride
+    let memoryNeed nPixels = 2UL * nPixels * uint64 win * getBytesPerComponent<'T>
+    let memoryModel = StageMemoryModel.fromSinglePeak Map memoryNeed
+    let costUnits input = float (inputValue input * uint64 win)
+    let stg =
+        mapWindow name f memoryNeed id
+        |> withCostModel (operatorImageStageCost<'T> operator memoryModel (Some(float win)) radius costUnits)
+
+    (window win pad stride) --> stg --> flattenList ()
+    |> Stage.withSliceCardinality (SlimPipeline.Domain(sameSliceDomainForKernelDepth ksz))
+
 let smoothWMedian<'T when 'T: equality> radius winSz : Stage<Image<'T>, Image<'T>> =
     let ksz = 2u * radius + 1u
-    makeWindowedLocalOp "smoothWMedian" ksz winSz (ImageFunctions.median radius)
+    makeWindowedOperatorOp<'T> "smoothWMedian" "SmoothWMedian" (Some(float radius)) ksz winSz (ImageFunctions.median radius)
 
 let smoothWBilateral<'T when 'T: equality> domainSigma rangeSigma winSz : Stage<Image<'T>, Image<'T>> =
-    makeWindowedLocalOp "smoothWBilateral" (max 1u winSz) winSz (ImageFunctions.bilateral domainSigma rangeSigma)
+    makeWindowedOperatorOp<'T> "smoothWBilateral" "SmoothWBilateral" None (max 1u winSz) winSz (ImageFunctions.bilateral domainSigma rangeSigma)
 
 let gradientMagnitude<'T when 'T: equality> winSz : Stage<Image<'T>, Image<'T>> =
-    makeWindowedLocalOp "gradientMagnitude" 3u winSz ImageFunctions.gradientMagnitude
+    makeWindowedOperatorOp<'T> "gradientMagnitude" "GradientMagnitude" None 3u winSz ImageFunctions.gradientMagnitude
 
 let private finiteDiffKernelDepth order =
     let kernel = ImageFunctions.finiteDiffFilter3D 2u order
@@ -808,45 +881,45 @@ let selectGroupedOutput (groupSize: uint) (part: uint) : Stage<Image<'T>, Image<
     --> flattenList ()
 
 let sobelEdge<'T when 'T: equality> winSz : Stage<Image<'T>, Image<'T>> =
-    makeWindowedLocalOp "sobelEdge" 3u winSz ImageFunctions.sobelEdge
+    makeWindowedOperatorOp<'T> "sobelEdge" "SobelEdge" None 3u winSz ImageFunctions.sobelEdge
 
 let laplacian<'T when 'T: equality> winSz : Stage<Image<'T>, Image<'T>> =
-    makeWindowedLocalOp "laplacian" 3u winSz ImageFunctions.laplacian
+    makeWindowedOperatorOp<'T> "laplacian" "Laplacian" None 3u winSz ImageFunctions.laplacian
 
 let grayscaleErode<'T when 'T: equality> radius winSz : Stage<Image<'T>, Image<'T>> =
     let ksz = 2u * radius + 1u
-    makeWindowedLocalOp "grayscaleErode" ksz winSz (ImageFunctions.grayscaleErode radius)
+    makeWindowedOperatorOp<'T> "grayscaleErode" "GrayscaleErode" (Some(float radius)) ksz winSz (ImageFunctions.grayscaleErode radius)
 
 let grayscaleDilate<'T when 'T: equality> radius winSz : Stage<Image<'T>, Image<'T>> =
     let ksz = 2u * radius + 1u
-    makeWindowedLocalOp "grayscaleDilate" ksz winSz (ImageFunctions.grayscaleDilate radius)
+    makeWindowedOperatorOp<'T> "grayscaleDilate" "GrayscaleDilate" (Some(float radius)) ksz winSz (ImageFunctions.grayscaleDilate radius)
 
 let grayscaleOpening<'T when 'T: equality> radius winSz : Stage<Image<'T>, Image<'T>> =
     let ksz = 2u * radius + 1u
-    makeWindowedLocalOp "grayscaleOpening" ksz winSz (ImageFunctions.grayscaleOpening radius)
+    makeWindowedOperatorOp<'T> "grayscaleOpening" "GrayscaleOpening" (Some(float radius)) ksz winSz (ImageFunctions.grayscaleOpening radius)
 
 let grayscaleClosing<'T when 'T: equality> radius winSz : Stage<Image<'T>, Image<'T>> =
     let ksz = 2u * radius + 1u
-    makeWindowedLocalOp "grayscaleClosing" ksz winSz (ImageFunctions.grayscaleClosing radius)
+    makeWindowedOperatorOp<'T> "grayscaleClosing" "GrayscaleClosing" (Some(float radius)) ksz winSz (ImageFunctions.grayscaleClosing radius)
 
 let whiteTopHat<'T when 'T: equality> radius winSz : Stage<Image<'T>, Image<'T>> =
     let ksz = 2u * radius + 1u
-    makeWindowedLocalOp "whiteTopHat" ksz winSz (ImageFunctions.whiteTopHat radius)
+    makeWindowedOperatorOp<'T> "whiteTopHat" "WhiteTopHat" (Some(float radius)) ksz winSz (ImageFunctions.whiteTopHat radius)
 
 let blackTopHat<'T when 'T: equality> radius winSz : Stage<Image<'T>, Image<'T>> =
     let ksz = 2u * radius + 1u
-    makeWindowedLocalOp "blackTopHat" ksz winSz (ImageFunctions.blackTopHat radius)
+    makeWindowedOperatorOp<'T> "blackTopHat" "BlackTopHat" (Some(float radius)) ksz winSz (ImageFunctions.blackTopHat radius)
 
 let morphologicalGradient<'T when 'T: equality> radius winSz : Stage<Image<'T>, Image<'T>> =
     let ksz = 2u * radius + 1u
-    makeWindowedLocalOp "morphologicalGradient" ksz winSz (ImageFunctions.morphologicalGradient radius)
+    makeWindowedOperatorOp<'T> "morphologicalGradient" "MorphologicalGradient" (Some(float radius)) ksz winSz (ImageFunctions.morphologicalGradient radius)
 
 let binaryContour (fullyConnected: bool) (winSz: uint) =
-    makeWindowedLocalOp "binaryContour" 3u winSz (ImageFunctions.binaryContour fullyConnected)
+    makeWindowedOperatorOp<uint8> "binaryContour" "BinaryContour" None 3u winSz (fun image -> ImageFunctions.binaryContour fullyConnected image)
 
 let binaryMedian radius winSz =
     let ksz = 2u * radius + 1u
-    makeWindowedLocalOp "binaryMedian" ksz winSz (ImageFunctions.binaryMedian radius)
+    makeWindowedOperatorOp<uint8> "binaryMedian" "BinaryMedian" (Some(float radius)) ksz winSz (fun image -> ImageFunctions.binaryMedian radius image)
 
 let equal<'T when 'T: equality> : Stage<Image<'T> * Image<'T>, Image<uint8>> =
     liftPairReleaseAfter "equal" ImageFunctions.equalImage
@@ -1114,7 +1187,10 @@ let histogramEstimate<'T when 'T: equality and 'T: comparison> down estimatorNam
                   HoldoutMaxCdfDelta = holdoutDelta }
         }
 
+    let memoryModel = StageMemoryModel.fromSinglePeak Reduce id
+    let costUnits input = inputValue input |> float
     Stage.reduce $"histogramEstimate.{typeof<'T>.Name}" reducer Streaming id id
+    |> withCostModel (operatorImageStageCostForPixelWithEvaluation<'T> "EstimateHistogram" Reduce memoryModel None None costUnits)
 
 let estimateHistogram<'T when 'T: equality and 'T: comparison>
     slices
@@ -1203,7 +1279,10 @@ let histogramEqualization<'T, 'H when 'T: equality and 'H: comparison> (histogra
         finally
             image.decRefCount()
 
+    let memoryModel = StageMemoryModel.fromSinglePeak Map imageBytes<float>
+    let costUnits input = inputValue input |> float
     Stage.map "histogramEqualization" equalize imageBytes<float> id
+    |> withCostModel (operatorImageStageCostForPixel<float> "HistogramEqualization" memoryModel None None costUnits)
 
 module ProjectionTransform =
     let values =
@@ -1279,7 +1358,10 @@ let sumProjection<'T when 'T: equality> transformName : Stage<Image<'T>, Image<f
     let memoryNeed nElems =
         imageBytes<float> nElems
 
+    let memoryModel = StageMemoryModel.fromSinglePeak Reduce memoryNeed
+    let costUnits input = inputValue input |> float
     Stage.reduce $"sumProjection {transformName}" reducer Streaming memoryNeed id
+    |> withCostModel (operatorImageStageCostForPixelWithEvaluation<'T> "SumProjection" Reduce memoryModel None None costUnits)
 
 let volume xUnit yUnit zUnit : Stage<Image<uint8>, float> =
     if xUnit <= 0.0 then invalidArg (nameof xUnit) "xUnit must be positive."
@@ -1340,7 +1422,10 @@ let inline pairs2ints< ^T, ^S when ^T: (static member op_Explicit: ^T -> int) an
 
 type ImageStats = ImageFunctions.ImageStats
 let imageComputeStats () =
+    let memoryModel = StageMemoryModel.fromSinglePeak Map id
+    let costUnits input = inputValue input |> float
     Stage.map<Image<'T>,ImageStats> "computeStats: map" (fun _ -> releaseAfter ImageFunctions.computeStats) id id
+    |> withCostModel (operatorImageStageCost<'T> "ComputeStats" memoryModel None None costUnits)
 
 let imageComputeStatsFold () =
     let zeroStats: ImageStats = { 
@@ -1513,8 +1598,11 @@ let createPadding<'T when 'T: equality> beforeX afterX beforeY afterY beforeZ af
 
     let transition = ProfileTransition.create Streaming Streaming
     let memoryNeed nPixels = 2UL * nPixels * getBytesPerComponent<'T>
+    let memoryModel = StageMemoryModel.fromSinglePeak Map memoryNeed
+    let costUnits input = inputValue input |> float
     let pipe = { Name = name; Apply = apply; Profile = Streaming }
     Stage.fromPipe name transition memoryNeed id pipe
+    |> withCostModel (operatorImageStageCost<'T> "CreatePadding" memoryModel None None costUnits)
     |> Stage.withSliceCardinality (SlimPipeline.Domain(SlimPipeline.SliceDomain.expand beforeZ afterZ))
 
 let crop<'T when 'T: equality> beforeX afterX beforeY afterY beforeZ afterZ : Stage<Image<'T>, Image<'T>> =
@@ -1545,8 +1633,11 @@ let crop<'T when 'T: equality> beforeX afterX beforeY afterY beforeZ afterZ : St
 
     let transition = ProfileTransition.create Streaming Streaming
     let memoryNeed nPixels = nPixels * getBytesPerComponent<'T>
+    let memoryModel = StageMemoryModel.fromSinglePeak Map memoryNeed
+    let costUnits input = inputValue input |> float
     let pipe = { Name = name; Apply = apply; Profile = Streaming }
     Stage.fromPipe name transition memoryNeed id pipe
+    |> withCostModel (operatorImageStageCost<'T> "Crop" memoryModel None None costUnits)
     |> Stage.withSliceCardinality (SlimPipeline.Domain(SlimPipeline.SliceDomain.trim beforeZ afterZ))
 
 let convolveOp (name: string) (kernel: Image<'T>) (outputRegionMode: ImageFunctions.OutputRegionMode option) (bc: ImageFunctions.BoundaryCondition option) (winSz: uint option) : Stage<Image<'T>, Image<'T>> =
@@ -1602,21 +1693,26 @@ let finiteDiff (direction: uint) (order: uint) =
     convolveOp "finiteDiff" kernel None None None
 
 // these only works on uint8
-let private makeMorphOp (name: string) (radius: uint) (winSz: uint option) (core: uint -> Image<'T> -> Image<'T>) : Stage<Image<'T>,Image<'T>> when 'T: equality =
+let private makeMorphOp (name: string) (operator: string) (radius: uint) (winSz: uint option) (core: uint -> Image<'T> -> Image<'T>) : Stage<Image<'T>,Image<'T>> when 'T: equality =
     let ksz   = 2u * radius + 1u
     let pad = ksz/2u
     let win = Option.defaultValue (defaultConvolutionWindowSize ksz) winSz |> max ksz
     let stride = win - ksz + 1u
 
     let f debug = volFctToWindowFctReleaseAfterDebug debug (core radius) ksz pad stride
-    let stg = mapWindow name f id id
+    let memoryNeed nPixels = 2UL * nPixels * uint64 win * getBytesPerComponent<'T>
+    let memoryModel = StageMemoryModel.fromSinglePeak Map memoryNeed
+    let costUnits input = float (inputValue input * uint64 win)
+    let stg =
+        mapWindow name f memoryNeed id
+        |> withCostModel (operatorImageStageCost<'T> operator memoryModel (Some(float win)) (Some(float radius)) costUnits)
     (window win pad stride) --> stg --> flattenList ()
     |> Stage.withSliceCardinality (SlimPipeline.Domain(sameSliceDomainForKernelDepth ksz))
 
-let erode radius = makeMorphOp "binaryErode"  radius None ImageFunctions.binaryErode
-let dilate radius = makeMorphOp "binaryDilate"  radius None ImageFunctions.binaryDilate
-let opening radius = makeMorphOp "binaryOpening"  radius None ImageFunctions.binaryOpening
-let closing radius = makeMorphOp "binaryClosing"  radius None ImageFunctions.binaryClosing
+let erode radius = makeMorphOp "binaryErode" "Erode" radius None ImageFunctions.binaryErode
+let dilate radius = makeMorphOp "binaryDilate" "Dilate" radius None ImageFunctions.binaryDilate
+let opening radius = makeMorphOp "binaryOpening" "Opening" radius None ImageFunctions.binaryOpening
+let closing radius = makeMorphOp "binaryClosing" "Closing" radius None ImageFunctions.binaryClosing
 
 let connectedComponents (winSz: uint) =
     let pad, stride = 0u, winSz
@@ -1646,7 +1742,13 @@ let connectedComponents (winSz: uint) =
         result.Labels.index <- int chunkIndex * int stride
         result.Labels, result.ObjectCount
 
-    (window winSz pad stride) --> Stage.mapi "connectedComponents" mapper memoryNeed id
+    let memoryModel = StageMemoryModel.fromSinglePeak Map memoryNeed
+    let costUnits input = float (inputValue input * uint64 winSz)
+    let stg =
+        Stage.mapi "connectedComponents" mapper memoryNeed id
+        |> withCostModel (operatorImageStageCost<uint8> "ConnectedComponents" memoryModel (Some(float winSz)) None costUnits)
+
+    (window winSz pad stride) --> stg
 
 let relabelComponents a (winSz: uint) = 
     let pad, stride = 0u, winSz
@@ -1663,14 +1765,24 @@ let signedDistanceBand (bandRadius: uint) (stride: uint) =
     let pad = bandRadius
     let winSz = stride + 2u * bandRadius
     let f debug = volFctToWindowFctReleaseAfterDebug debug (ImageFunctions.bandSignedDistanceMap bandRadius) 1u pad stride
-    let stg = mapWindow "signedDistanceBand" f id id
+    let memoryNeed nPixels = 2UL * nPixels * uint64 winSz * getBytesPerComponent<uint8>
+    let memoryModel = StageMemoryModel.fromSinglePeak Map memoryNeed
+    let costUnits input = float (inputValue input * uint64 winSz)
+    let stg =
+        mapWindow "signedDistanceBand" f memoryNeed id
+        |> withCostModel (operatorImageStageCost<uint8> "SignedDistanceBand" memoryModel (Some(float winSz)) (Some(float bandRadius)) costUnits)
     (window winSz pad stride) --> stg --> flattenList ()
-let threshold a b = liftUnaryReleaseAfter "threshold" (ImageFunctions.threshold a b) id id
+let threshold<'T when 'T: equality> a b : Stage<Image<'T>, Image<uint8>> =
+    let memoryNeed nPixels = 2UL * nPixels * getBytesPerComponent<'T>
+    let memoryModel = StageMemoryModel.fromSinglePeak Map memoryNeed
+    let costUnits input = inputValue input |> float
+    liftUnaryReleaseAfter "threshold" (ImageFunctions.threshold a b) memoryNeed id
+    |> withCostModel (operatorImageStageCost<'T> "Threshold" memoryModel None None costUnits)
 
-let addNormalNoise a b = liftUnaryReleaseAfter "addNormalNoise" (ImageFunctions.addNormalNoise a b) id id
-let addSaltAndPepperNoise probability = liftUnaryReleaseAfter "addSaltAndPepperNoise" (ImageFunctions.addSaltAndPepperNoise probability) id id
-let addShotNoise scale = liftUnaryReleaseAfter "addShotNoise" (ImageFunctions.addShotNoise scale) id id
-let addSpeckleNoise stddev = liftUnaryReleaseAfter "addSpeckleNoise" (ImageFunctions.addSpeckleNoise stddev) id id
+let addNormalNoise a b = liftOperatorUnaryReleaseAfter "addNormalNoise" "AddNormalNoise" (ImageFunctions.addNormalNoise a b)
+let addSaltAndPepperNoise probability = liftOperatorUnaryReleaseAfter "addSaltAndPepperNoise" "AddSaltAndPepperNoise" (ImageFunctions.addSaltAndPepperNoise probability)
+let addShotNoise scale = liftOperatorUnaryReleaseAfter "addShotNoise" "AddShotNoise" (ImageFunctions.addShotNoise scale)
+let addSpeckleNoise stddev = liftOperatorUnaryReleaseAfter "addSpeckleNoise" "AddSpeckleNoise" (ImageFunctions.addSpeckleNoise stddev)
 
 let show (plt: Image<'T> -> unit) : Stage<Image<'T>, unit> =
     let consumer (debug: bool) (idx: int) (image: Image<'T>) =
