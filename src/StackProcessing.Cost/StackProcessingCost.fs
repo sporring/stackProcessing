@@ -494,10 +494,24 @@ module Fitting =
               Evaluation = evaluation
               Estimate =
                 fun input ->
-                    match estimate "elapsedMilliseconds" (context input) with
+                    let estimateContext = context input
+                    let tags =
+                        [ yield "operator", estimateContext.Operator
+                          match estimateContext.PixelType with
+                          | Some value -> yield "pixelType", value
+                          | None -> ()
+                          match estimateContext.WindowSize with
+                          | Some value -> yield "windowSize", Convert.ToString(value, CultureInfo.InvariantCulture)
+                          | None -> ()
+                          match estimateContext.Radius with
+                          | Some value -> yield "radius", Convert.ToString(value, CultureInfo.InvariantCulture)
+                          | None -> () ]
+
+                    match estimate "elapsedMilliseconds" estimateContext with
                     | Some milliseconds ->
                         StageTimeCostEstimate.create 0.0 milliseconds 0UL 0UL 0UL 0UL (Some calibratedMillisecondsKey)
-                    | None -> fallback input }
+                        |> StageTimeCostEstimate.withTags tags
+                    | None -> fallback input |> StageTimeCostEstimate.withTags tags }
 
     let private parseCsvLine (line: string) =
         let values = ResizeArray<string>()

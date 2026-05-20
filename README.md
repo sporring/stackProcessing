@@ -4,6 +4,28 @@
 It combines a streaming execution core (`SlimPipeline`), image-stack operations
 (`StackProcessing` and `Image`), and a visual graph editor (`Studio`).
 
+## Installation
+
+StackProcessing is a .NET 10 F# solution. Install the .NET 10 SDK, clone the
+repository, and run Studio from the `src/Studio` project:
+
+```bash
+git clone https://github.com/sporring/stackProcessing.git
+cd stackProcessing
+dotnet build StackProcessing.sln
+dotnet run --project src/Studio/Studio.fsproj
+```
+
+`StackProcessing` relies on the SimpleITK C# binaries, which can be downloaded from the
+[SimpleITK GitHub releases](https://github.com/SimpleITK/SimpleITK/releases);
+look for a CSharp archive for your platform. It should contain
+`SimpleITKCSharpManaged.dll` and the matching native library
+(`libSimpleITKCSharpNative.dylib`, `libSimpleITKCSharpNative.so`, or
+`SimpleITKCSharpNative.dll`). The repository `lib/` directory is where the
+sample projects expect those files.
+
+
+## Domain Specific Language (DSL)
 The central idea is simple: describe an image-processing workflow as a graph or
 pipeline, then execute it slice by slice or chunk by chunk so that memory use
 stays bounded. An example of the Domain Specific Language (DSL) implemented in F# is given below.
@@ -23,216 +45,6 @@ source availableMemory
 
 The pipeline is constructed in a single pass. When
 `sink`, `drain`, or another terminal operation is called, then the pipeline is optimized for fastest running time within the limits of the specified available memory, and then the pipeline is executed.
-
-## Installation
-
-StackProcessing is a .NET 10 F# solution. Install the .NET 10 SDK, clone the
-repository, and run Studio from the `src/Studio` project:
-
-```bash
-git clone https://github.com/sporring/stackProcessing.git
-cd stackProcessing
-dotnet build StackProcessing.sln
-dotnet run --project src/Studio/Studio.fsproj
-```
-
-The samples are ordinary F# console projects. For example:
-
-```bash
-dotnet run --project samples/copy/copy.fsproj
-dotnet run --project samples/copy/copy.fsproj -- -d 1
-dotnet run --project samples/copy/copy.fsproj -- -d 1 --no-optimize
-```
-
-The optional `-d` flag enables debug output. Level `1` reports read and write
-progress only. Level `2` adds plan, stage, and optimization summaries. Level
-`3` adds process RSS measurements. Optimizer control is intentionally separate
-from debug level so timing runs can opt out of optimization without changing
-diagnostic verbosity. The sample runners default to optimizer off; pass
-`--optimize true` to `StackProcessing.RunSamples` to opt back in for
-comparison runs.
-
-## Samples
-
-The `samples/` tree is an illustrative library and a smoke-test collection.
-Most sample folders contain both a compact F# program and the matching Studio
-JSON graph. The F# files show the public DSL directly; the JSON files show the
-same workflow as visual boxes.
-
-The samples follow a common convention:
-
-* samples with file inputs read from `../data/`; synthetic-source samples may
-  have no input file,
-* generated images, meshes, and temporary artifacts go to `../tmp/`,
-* image outputs prefer TIFF stacks when that makes visual inspection easy;
-  chunk-writing examples and typed intermediates that TIFF cannot represent may
-  use formats such as `.mha`,
-* helper functions are kept to a minimum so the sample reads like a pipeline.
-
-Examples worth starting with:
-
-| Sample | Demonstrates |
-| ------ | ------------ |
-| `objectsSizeHistogram` | streaming connected objects, object measurements, reducer branches, histogram, and chart output |
-| `objectsMarchingCubes` | streaming object surfaces and mesh writing |
-| `structureTensor` | vector-image output from structure tensor, component range selection, and color conversion |
-| `sumProjection` | range reads and projection reducers |
-| `closing` | binary closing on a 0/1 UInt8 mask |
-| `convolve` | a custom 3D convolution kernel and boundary/window settings |
-| `quantileClamp` | histogram sampling, quantiles, intensity stretch, and outlier clamping |
-| `dilate`, `opening`, `binaryMedian`, `binaryContour`, `fillSmallHoles`, `grayscaleErode`, `grayscaleDilate`, `grayscaleOpening`, `grayscaleClosing`, `whiteTopHat`, `blackTopHat`, `morphologicalGradient` | morphology families with small inspectable pipelines |
-| `imageFilter`, `saltAndPepperNoise`, `shotNoise`, `speckleNoise`, `addSaltAndPepperNoise`, `addShotSpeckleNoise`, `keypoint`, `meshMeasurement` | focused tours through related Studio boxes |
-
-These samples are also useful when adding or changing Studio boxes:
-each exposed box should ideally appear in at least one sample graph so that the
-graph-to-DSL path stays easy to inspect.
-
-## Measurement And Calibration
-
-`StackProcessing.RunSamples` is the shared runner for sample measurements. It
-runs F# sample projects by default and Studio JSON graphs with `--json`.
-Runner logs and gathered CSVs are written below the repository-level `tmp/`
-directory. Temporary generated JSON runner projects still live below
-`samples/tmp/`, keeping sample-local scratch files separate from analysis
-outputs.
-
-```bash
-dotnet run --project src/StackProcessing.RunSamples/RunSamples.fsproj -- --repeat 3 -j 1 --optimize false
-dotnet run --project src/StackProcessing.RunSamples/RunSamples.fsproj -- --json --repeat 3 -j 1 --optimize false
-```
-
-`StackProcessing.Probe` is the front door for cost-model work. The usual
-workflow is:
-
-1. run bottom-up calibration probes to learn controlled baseline and one-more
-   stage costs,
-2. run meaningful sample JSON pipelines with `RunSamples --json`,
-3. refresh Probe estimates to validate the learned coefficients on real sample
-   pipelines.
-
-```bash
-dotnet run --project src/StackProcessing.Probe/StackProcessing.Probe.fsproj -- bottom-up --size 128 --noisy-type Float32 --repeat 3 -j 1
-dotnet run --project src/StackProcessing.RunSamples/RunSamples.fsproj -- --json --repeat 3 -j 1 --optimize false
-dotnet run --project src/StackProcessing.Probe/StackProcessing.Probe.fsproj -- calibrate --estimate-only
-```
-
-To gather scale evidence for model fitting, use the multi-size form:
-
-```bash
-dotnet run --project src/StackProcessing.Probe/StackProcessing.Probe.fsproj -- bottom-up --sizes 64,128,256 --noisy-type Float32 --repeat 3 -j 1
-```
-
-For development-only graph emission without running the generated probes:
-
-```bash
-dotnet run --project src/StackProcessing.Probe/StackProcessing.Probe.fsproj -- bottom-up --size 64 --no-run-probes
-```
-
-The bottom-up calibration path clears repository `tmp/` by default, generates
-its own binary shape and noisy gray-valued input stacks below
-`tmp/probeInputs`, and writes controlled graph batches below
-`tmp/probingGraphs/bottomup_*/layer_###_*`. The first layer measures empty,
-minimal traversal, read, and write patterns; later layers add sources,
-scalar/unary stages, windowed stages, geometry, FFT/vector/keypoint probes, and
-dependency-breakers for under-isolated features. The analysis outputs include
-`tmp/analysis/coefficients.csv`, `predictions.csv`, `diagnostics.csv`, and
-`sampleEstimates.csv`. Probe also writes fitting evidence to
-`tmp/analysis/costEvidence.csv` and a reusable fitted operator model to
-`models/fitted/stackprocessing.operator-cost.json`; the repository fallback
-model lives in `models/default/stackprocessing.operator-cost.json`.
-`sampleEstimates.csv` applies the
-currently learned coefficients back to the sample workloads and compares
-estimated memory/time with the real measurements, including any features still
-missing from the estimate. Use `--keep-tmp` only when deliberately preserving
-existing measurements.
-
-During fitting, the empty graph defines the common intercept and `Ignore` is
-fixed at zero cost. This keeps the baseline from being absorbed into the
-minimal traversal sink and gives read/write/stage estimates a stable anchor.
-
-For timing calibration, prefer `-j 1` so sample and probe graphs do not compete
-for CPU, memory bandwidth, or SimpleITK worker threads. Calibration and
-validation runs should keep the optimizer off; `Probe bottom-up` passes
-`--optimize false` when it runs emitted probe graphs. Do not clean `tmp/`
-between the calibration run and validation run: the generated inputs and
-timestamped `runJson_*` directories are the measurement evidence used by Probe. `Probe calibrate
---estimate-only` uses the latest `tmp/probingGraphs/bottomup_*` root by default;
-pass `--probe-json-root PATH` to validate against a specific calibration root.
-
-Runtime debug can flag large model discrepancies for later analysis:
-
-```bash
-dotnet run --project samples/someSample/someSample.fsproj -- -d 1 --cost-discrepancies --cost-model models/fitted/stackprocessing.operator-cost.json --no-optimize
-```
-
-When `--cost-model` is omitted, StackProcessing looks for a model in
-`STACKPROCESSING_COST_MODEL`, `~/.stackprocessing/cost/`, `models/fitted/`, and
-finally `models/default/`. This lets local calibration replace the model
-without changing code.
-
-## Projects
-
-| Project | Role |
-| ------- | ---- |
-| `Image` | Thin F# image abstraction over SimpleITK, including typed pixel access and image functions. |
-| `AsyncSeqExtensions` | Streaming helpers used by the pipeline engine. |
-| `SlimPipeline` | Element-agnostic streaming pipeline model, graph metadata, memory estimates, and execution. |
-| `TinyLinAlg` | Small affine/vector/matrix helper library used by registration and resampling code. |
-| `StackProcessing.Cost` | StackProcessing cost-model helpers, default/fitted model serialization, and Probe fitting evidence output. |
-| `StackProcessing.Core` | Streaming image-stack algorithms, IO, manifests, stitching, points, meshes, bias correction, and serial-section tools. |
-| `StackProcessing` | Public F# DSL over `StackProcessing.Core` and `SlimPipeline`. |
-| `StackProcessing.RunSamples` | Runs sample F# projects by default, or Studio JSON graphs with `--json`, and writes repeatable timing/memory logs. |
-| `StackProcessing.Probe` | Calibration front door: analyzes sample/probe measurements, emits probe graphs, and writes reports for cost-model learning. |
-| `Studio.Graph` | Pure graph domain model, built-in function catalog, and JSON persistence for Studio. |
-| `Studio.Compiler` | Compiler from Studio graph JSON to executable StackProcessing F# DSL code. |
-| `Studio` | Avalonia visual editor for building, saving, arranging, compiling, and running processing graphs. |
-
-## Component Overview
-
-```mermaid
-flowchart TD
-    UserFSharp["User F# DSL/graphs"]
-    Studio["Studio\ngraph editor"]
-    StudioGraph["Studio.Graph\ngraph model"]
-    StudioCompiler["Studio.Compiler\ngraph -> F# DSL"]
-    StackProcessing["StackProcessing\nF# DSL"]
-    Cost["StackProcessing.Cost\ncost model & fitting"]
-    Core["StackProcessing.Core\nLMIP SlimPipeline"]
-    Slim["SlimPipeline\nAgnostic streaming model"]
-    AsyncSeq["FSharp.Control.AsyncSeq\nasync stream substrate"]
-    Image["Image\nF# wrap of SimpleITK"]
-    TinyLinAlg["TinyLinAlg\nSimple Linear Algebra"]
-    RunSamples["StackProcessing.RunSamples\nBulk DSL & graph runner"]
-    Probe["StackProcessing.Probe\nDSL cost analysis"]
-
-    UserFSharp --> StackProcessing
-    UserFSharp --> Studio
-    Studio --> StudioGraph
-    StudioGraph --> StudioCompiler
-    StudioCompiler --> StackProcessing
-
-    StackProcessing --> Core
-    Core --> Cost
-    Core --> Slim
-    Core --> Image
-    Core --> TinyLinAlg
-    Cost --> Slim
-    Cost --> Image
-    Slim --> AsyncSeq
-
-    RunSamples --> StudioCompiler
-    RunSamples --> StackProcessing
-    Probe --> RunSamples
-    Probe --> StudioGraph
-    Probe --> Cost
-```
-
-There are two user-facing entry points. Programmers can write the
-`StackProcessing` DSL directly; non-programmers can build the same DSL through
-Studio graphs. Both routes end in `SlimPipeline` plans and stages. The image
-work is implemented in `StackProcessing.Core` and `Image`. File formats,
-registration helpers, manifests, stitching, serial-section tools, sample
-measurement, and calibration sit beside that core path.
 
 ## Studio For Users
 
@@ -329,6 +141,273 @@ Pressing `Run`:
 
 This keeps the generated program visible for debugging while making Studio a
 one-button path from graph to execution.
+
+## Samples
+
+The `samples/` tree is an illustrative library and a smoke-test collection.
+Most sample folders contain both a compact F# program and the matching Studio
+JSON graph. The F# files show the public DSL directly; the JSON files show the
+same workflow as visual boxes.
+
+The samples are ordinary F# console projects. Most sample paths are written
+relative to the sample folder, so run individual samples from their own
+directory:
+
+```bash
+cd samples/copy
+dotnet run
+```
+The optional `-d` flag enables debug output:
+
+```bash
+cd samples/copy
+dotnet run -- -d 1
+```
+Level `1` reports read and write
+progress only. Level `2` adds plan, stage, and optimization summaries. Level
+`3` adds process RSS measurements. Optimizer control is intentionally separate
+from debug level so timing runs can opt out of optimization without changing
+diagnostic verbosity. The sample runners default to optimizer off; pass
+`--optimize true` to `StackProcessing.RunSamples` to opt back in for
+comparison runs.
+
+The samples follow a common convention:
+
+* samples with file inputs read from `../data/`; synthetic-source samples may
+  have no input file,
+* generated images, meshes, and temporary artifacts go to `../tmp/`,
+* image outputs prefer TIFF stacks when that makes visual inspection easy;
+  chunk-writing examples and typed intermediates that TIFF cannot represent may
+  use formats such as `.mha`,
+* helper functions are kept to a minimum so the sample reads like a pipeline.
+
+Examples worth starting with:
+
+| Sample | Demonstrates |
+| ------ | ------------ |
+| `objectsSizeHistogram` | streaming connected objects, object measurements, reducer branches, histogram, and chart output |
+| `objectsMarchingCubes` | streaming object surfaces and mesh writing |
+| `structureTensor` | vector-image output from structure tensor, component range selection, and color conversion |
+| `sumProjection` | projection reducers |
+| `closing` | binary closing on a 0/1 UInt8 mask |
+| `convolve` | a custom 3D convolution kernel and boundary/window settings |
+| `quantileClamp` | histogram sampling, quantiles, intensity stretch, and outlier clamping |
+| `dilate`, `opening`, `binaryMedian`, `binaryContour`, `fillSmallHoles`, `grayscaleErode`, `grayscaleDilate`, `grayscaleOpening`, `grayscaleClosing`, `whiteTopHat`, `blackTopHat`, `morphologicalGradient` | morphology families with small inspectable pipelines |
+| `smoothWGauss`, `smoothWMedian`, `smoothWBilateral`, `sobelEdge`, `laplacian`, `gradientMagnitude` | focused filter smoke tests |
+| `saltAndPepperNoise`, `shotNoise`, `speckleNoise`, `addSaltAndPepperNoise`, `addShotSpeckleNoise`, `meshMeasurement` | focused tours through related Studio boxes |
+| `siftKeypoints`, `hessianKeypoints`, `harris3DKeypoints`, `forstner3DKeypoints` | one keypoint detector per sample |
+
+These samples are also useful when adding or changing Studio boxes:
+each exposed box should ideally appear in at least one sample graph so that the
+graph-to-DSL path stays easy to inspect.
+
+## F# Interactive
+
+You can experiment with the DSL in F# Interactive (fsi) after building the
+`StackProcessing` project. Start `dotnet fsi` from the repository root and make
+sure the native SimpleITK library is visible before fsi starts.
+
+On macOS:
+
+```bash
+dotnet build src/StackProcessing/StackProcessing.fsproj
+DYLD_LIBRARY_PATH="$(pwd)/src/StackProcessing/bin/Debug/net10.0:$(pwd)/lib" dotnet fsi
+```
+
+On Linux use `LD_LIBRARY_PATH` in the same way. On Windows, start fsi from an
+environment where the build output and `lib/` are on `PATH`.
+
+Inside F# Interactive write:
+
+```fsharp
+#I "src/StackProcessing/bin/Debug/net10.0";;
+#r "FSharp.Control.AsyncSeq.dll";;
+#r "SimpleITKCSharpManaged.dll";;
+#r "AsyncSeqExtensions.dll";;
+#r "TinyLinAlg.dll";;
+#r "Image.dll";;
+#r "SlimPipeline.dll";;
+#r "StackProcessing.Cost.dll";;
+#r "StackProcessing.Core.dll";;
+#r "StackProcessing.dll";;
+
+open StackProcessing;;
+
+let availableMemory = 2UL * 1024UL * 1024UL * 1024UL;;
+
+source availableMemory
+|> zero<uint8> 64u 64u 8u
+>=> write "tmp/fsi-zero" ".tiff"
+|> sink;;
+```
+
+Paths in fsi are resolved relative to the directory where `dotnet fsi` was
+started. If you want to paste a sample program that uses paths such as
+`../data/volume`, start fsi from that sample folder and use absolute `#I`
+paths back to the built assemblies.
+
+## Measurement And Calibration
+
+`StackProcessing.RunSamples` is the shared runner for sample measurements. It
+runs F# sample projects by default and Studio JSON graphs with `--json`.
+Runner logs and gathered CSVs are written below the repository-level `tmp/`
+directory. Temporary generated JSON runner projects still live below
+`samples/tmp/`, keeping sample-local scratch files separate from analysis
+outputs.
+
+```bash
+dotnet run --project src/StackProcessing.RunSamples/RunSamples.fsproj -- --repeat 3 -j 1 --optimize false
+dotnet run --project src/StackProcessing.RunSamples/RunSamples.fsproj -- --json --repeat 3 -j 1 --optimize false
+```
+
+`StackProcessing.Probe` is the front door for cost-model work. The usual
+workflow is:
+
+1. run bottom-up calibration probes to learn controlled baseline and one-more
+   stage costs,
+2. run meaningful sample JSON pipelines with `RunSamples --json`,
+3. refresh Probe estimates to validate the learned coefficients on real sample
+   pipelines.
+
+```bash
+dotnet run --project src/StackProcessing.Probe/StackProcessing.Probe.fsproj -- bottom-up --size 128 --noisy-type Float32 --repeat 3 -j 1
+dotnet run --project src/StackProcessing.RunSamples/RunSamples.fsproj -- --json --repeat 3 -j 1 --optimize false
+dotnet run --project src/StackProcessing.Probe/StackProcessing.Probe.fsproj -- calibrate --estimate-only
+```
+
+To gather scale evidence for model fitting, use the multi-size form:
+
+```bash
+dotnet run --project src/StackProcessing.Probe/StackProcessing.Probe.fsproj -- bottom-up --sizes 64,128,256 --noisy-type Float32 --repeat 3 -j 1
+```
+
+For development-only graph emission without running the generated probes:
+
+```bash
+dotnet run --project src/StackProcessing.Probe/StackProcessing.Probe.fsproj -- bottom-up --size 64 --no-run-probes
+```
+
+The bottom-up calibration path clears repository `tmp/` by default, generates
+its own binary shape and noisy gray-valued input stacks below
+`tmp/probeInputs`, and writes controlled graph batches below
+`tmp/probingGraphs/bottomup_*/layer_###_*`. The first layer measures empty,
+minimal traversal, read, and write patterns; later layers add sources,
+scalar/unary stages, windowed stages, geometry, FFT/vector/keypoint probes, and
+dependency-breakers for under-isolated features. The analysis outputs include
+`tmp/analysis/coefficients.csv`, `predictions.csv`, `diagnostics.csv`, and
+`sampleEstimates.csv`. Probe also writes fitting evidence to
+`tmp/analysis/costEvidence.csv` and a reusable fitted operator model to
+`models/fitted/stackprocessing.operator-cost.json`; the repository fallback
+model lives in `models/default/stackprocessing.operator-cost.json`.
+`sampleEstimates.csv` applies the
+currently learned coefficients back to the sample workloads and compares
+estimated memory/time with the real measurements, including any features still
+missing from the estimate. Use `--keep-tmp` only when deliberately preserving
+existing measurements.
+
+During fitting, the empty graph defines the common intercept and `Ignore` is
+fixed at zero cost. This keeps the baseline from being absorbed into the
+minimal traversal sink and gives read/write/stage estimates a stable anchor.
+
+For timing calibration, prefer `-j 1` so sample and probe graphs do not compete
+for CPU, memory bandwidth, or SimpleITK worker threads. Calibration and
+validation runs should keep the optimizer off; `Probe bottom-up` passes
+`--optimize false` when it runs emitted probe graphs. Do not clean `tmp/`
+between the calibration run and validation run: the generated inputs and
+timestamped `runJson_*` directories are the measurement evidence used by Probe. `Probe calibrate
+--estimate-only` uses the latest `tmp/probingGraphs/bottomup_*` root by default;
+pass `--probe-json-root PATH` to validate against a specific calibration root.
+
+Runtime debug can flag large model discrepancies for later analysis:
+
+```bash
+cd samples/someSample
+STACKPROCESSING_COST_FLAGS=tmp/costDiscrepancies.csv \
+dotnet run -- -d 1 --cost-discrepancies --cost-model models/fitted/stackprocessing.operator-cost.json --no-optimize
+```
+
+Relative `STACKPROCESSING_COST_FLAGS` and `--cost-model` paths are resolved from
+the repository root when possible, so sample-root execution can still write
+flags to repository `tmp/` and read models from repository `models/`.
+
+For a targeted local update after one or more flagged sample runs:
+
+```bash
+dotnet run --project src/StackProcessing.Probe/StackProcessing.Probe.fsproj -- local-update --operators SmoothWMedian --sizes 64 --repeat 3 -j 1
+```
+
+This writes a local overlay model to
+`models/local/stackprocessing.operator-cost.json`. Use that path explicitly when
+testing the updated estimate on the flagged sample.
+
+When `--cost-model` is omitted, StackProcessing looks for a model in
+`STACKPROCESSING_COST_MODEL`, `~/.stackprocessing/cost/`, `models/fitted/`, and
+finally `models/default/`. This lets local calibration replace the model
+without changing code.
+
+## Projects
+
+| Project | Role |
+| ------- | ---- |
+| `Image` | Thin F# image abstraction over SimpleITK, including typed pixel access and image functions. |
+| `AsyncSeqExtensions` | Streaming helpers used by the pipeline engine. |
+| `SlimPipeline` | Element-agnostic streaming pipeline model, graph metadata, memory estimates, and execution. |
+| `TinyLinAlg` | Small affine/vector/matrix helper library used by registration and resampling code. |
+| `StackProcessing.Cost` | StackProcessing cost-model helpers, default/fitted model serialization, and Probe fitting evidence output. |
+| `StackProcessing.Core` | Streaming image-stack algorithms, IO, manifests, stitching, points, meshes, bias correction, and serial-section tools. |
+| `StackProcessing` | Public F# DSL over `StackProcessing.Core` and `SlimPipeline`. |
+| `StackProcessing.RunSamples` | Runs sample F# projects by default, or Studio JSON graphs with `--json`, and writes repeatable timing/memory logs. |
+| `StackProcessing.Probe` | Calibration front door: analyzes sample/probe measurements, emits probe graphs, and writes reports for cost-model learning. |
+| `Studio.Graph` | Pure graph domain model, built-in function catalog, and JSON persistence for Studio. |
+| `Studio.Compiler` | Compiler from Studio graph JSON to executable StackProcessing F# DSL code. |
+| `Studio` | Avalonia visual editor for building, saving, arranging, compiling, and running processing graphs. |
+
+## Component Overview
+
+```mermaid
+flowchart TD
+    UserFSharp["User F# DSL/graphs"]
+    Studio["Studio\ngraph editor"]
+    StudioGraph["Studio.Graph\ngraph model"]
+    StudioCompiler["Studio.Compiler\ngraph -> F# DSL"]
+    StackProcessing["StackProcessing\nF# DSL"]
+    Cost["StackProcessing.Cost\ncost model & fitting"]
+    Core["StackProcessing.Core\nLMIP SlimPipeline"]
+    Slim["SlimPipeline\nAgnostic streaming model"]
+    AsyncSeq["FSharp.Control.AsyncSeq\nasync stream substrate"]
+    Image["Image\nF# wrap of SimpleITK"]
+    TinyLinAlg["TinyLinAlg\nSimple Linear Algebra"]
+    RunSamples["StackProcessing.RunSamples\nBulk DSL & graph runner"]
+    Probe["StackProcessing.Probe\nDSL cost analysis"]
+
+    UserFSharp --> StackProcessing
+    UserFSharp --> Studio
+    Studio --> StudioGraph
+    StudioGraph --> StudioCompiler
+    StudioCompiler --> StackProcessing
+
+    StackProcessing --> Core
+    Core --> Cost
+    Core --> Slim
+    Core --> Image
+    Core --> TinyLinAlg
+    Cost --> Slim
+    Cost --> Image
+    Slim --> AsyncSeq
+
+    RunSamples --> StudioCompiler
+    RunSamples --> StackProcessing
+    Probe --> RunSamples
+    Probe --> StudioGraph
+    Probe --> Cost
+```
+
+There are two user-facing entry points. Programmers can write the
+`StackProcessing` DSL directly; non-programmers can build the same DSL through
+Studio graphs. Both routes end in `SlimPipeline` plans and stages. The image
+work is implemented in `StackProcessing.Core` and `Image`. File formats,
+registration helpers, manifests, stitching, serial-section tools, sample
+measurement, and calibration sit beside that core path.
 
 ## Studio Design
 

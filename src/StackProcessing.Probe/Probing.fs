@@ -710,7 +710,8 @@ let private timeCostFromJson (timeCost: ProbeTimeCostJson) =
       IoWriteBytes = timeCost.ioWriteBytes
       IoReadOps = timeCost.ioReadOps
       IoWriteOps = timeCost.ioWriteOps
-      CalibrationKey = Some timeCost.calibrationKey }
+      CalibrationKey = Some timeCost.calibrationKey
+      Tags = [] }
 
 let private coefficientsFromTimeCost elapsedMilliseconds (timeCost: StageTimeCostEstimate) =
     let elapsed = elapsedMilliseconds

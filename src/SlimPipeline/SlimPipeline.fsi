@@ -221,6 +221,7 @@ type StageTimeCostEstimate =
       IoReadOps: uint64
       IoWriteOps: uint64
       CalibrationKey: string option
+      Tags: (string * string) list
     }
 module StageTimeCostEstimate =
     val zero: StageTimeCostEstimate
@@ -232,6 +233,9 @@ module StageTimeCostEstimate =
         ioReadOps: uint64 ->
         ioWriteOps: uint64 ->
         calibrationKey: string option -> StageTimeCostEstimate
+    val withTags:
+      tags: (string * string) list ->
+        estimate: StageTimeCostEstimate -> StageTimeCostEstimate
     val private isZero: estimate: StageTimeCostEstimate -> bool
     val private hasNoIo: estimate: StageTimeCostEstimate -> bool
     val add:

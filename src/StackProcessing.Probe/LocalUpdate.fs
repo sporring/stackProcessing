@@ -29,6 +29,11 @@ type Options =
       RunProbes: bool
       FitModel: bool }
 
+type Suspect =
+    { Operator: string
+      Count: int
+      Parameters: Map<string, string> }
+
 let private usage () =
     printfn "Usage: dotnet run --project src/StackProcessing.Probe -- local-update [options]"
     printfn ""
@@ -282,17 +287,47 @@ let rec private parseArgs options args =
         usage ()
         Error 2
 
-let private suspectOperatorsFromRuntimeFlags (path: string option) =
+let private parseTaggedContext (context: string) =
+    context.Split([| ';' |], StringSplitOptions.RemoveEmptyEntries ||| StringSplitOptions.TrimEntries)
+    |> Array.choose (fun part ->
+        let pieces = part.Split([| '=' |], 2, StringSplitOptions.TrimEntries)
+        if pieces.Length = 2 && not (String.IsNullOrWhiteSpace pieces[0]) then
+            Some(pieces[0], pieces[1])
+        else
+            None)
+    |> Map.ofArray
+
+let private suspectObservationsFromRuntimeFlags (path: string option) =
     match path with
     | None -> []
     | Some path ->
         readCsvMaps path
         |> List.collect (fun row ->
-            field "graphNodes" row
-            |> fun value -> value.Split([| '|' |], StringSplitOptions.RemoveEmptyEntries ||| StringSplitOptions.TrimEntries)
-            |> Array.toList)
+            let contextObservations =
+                field "costContexts" row
+                |> fun value -> value.Split([| '|' |], StringSplitOptions.RemoveEmptyEntries ||| StringSplitOptions.TrimEntries)
+                |> Array.toList
+                |> List.choose (fun context ->
+                    let tags = parseTaggedContext context
+                    match tags |> Map.tryFind "operator" with
+                    | Some operator when not (String.IsNullOrWhiteSpace operator) ->
+                        let parameters =
+                            tags
+                            |> Map.remove "operator"
+                            |> Map.remove "pixelType"
 
-let private suspectOperatorsFromAnalysis analysisDirectory =
+                        Some(canonicalOperatorName operator, parameters)
+                    | _ -> None)
+
+            if contextObservations.IsEmpty then
+                field "graphNodes" row
+                |> fun value -> value.Split([| '|' |], StringSplitOptions.RemoveEmptyEntries ||| StringSplitOptions.TrimEntries)
+                |> Array.toList
+                |> List.map (fun operator -> canonicalOperatorName operator, Map.empty)
+            else
+                contextObservations)
+
+let private suspectObservationsFromAnalysis analysisDirectory =
     let discrepanciesPath = Path.Combine(analysisDirectory, "operatorModelDiscrepancies.csv")
     let evidencePath = Path.Combine(analysisDirectory, "costEvidence.csv")
     let flaggedRowIds =
@@ -310,7 +345,17 @@ let private suspectOperatorsFromAnalysis analysisDirectory =
         |> List.choose (fun row ->
             if flaggedRowIds.Contains(field "rowId" row) then
                 let operator = field "operator" row
-                if String.IsNullOrWhiteSpace operator then None else Some operator
+                if String.IsNullOrWhiteSpace operator then
+                    None
+                else
+                    let parameters =
+                        [ "windowSize", field "windowSize" row
+                          "radius", field "radius" row ]
+                        |> List.choose (fun (key, value) ->
+                            if String.IsNullOrWhiteSpace value then None else Some(key, value))
+                        |> Map.ofList
+
+                    Some(canonicalOperatorName operator, parameters)
             else
                 None)
 
@@ -327,19 +372,36 @@ let private nonSuspectOperators =
          |> List.map normalizeToken)
 
 let private inferSuspects options =
-    let operators =
+    let observations =
         if not options.Operators.IsEmpty then
-            options.Operators
+            options.Operators |> List.map (fun operator -> canonicalOperatorName operator, Map.empty)
         else
-            suspectOperatorsFromRuntimeFlags options.DiscrepancyCsv
-            @ suspectOperatorsFromAnalysis options.AnalysisDirectory
+            suspectObservationsFromRuntimeFlags options.DiscrepancyCsv
+            @ suspectObservationsFromAnalysis options.AnalysisDirectory
 
-    operators
-    |> List.map canonicalOperatorName
-    |> List.filter (String.IsNullOrWhiteSpace >> not)
-    |> List.filter (fun operator -> not (nonSuspectOperators.Contains(normalizeToken operator)))
-    |> List.countBy id
-    |> List.sortByDescending snd
+    observations
+    |> List.filter (fun (operator, _) -> not (String.IsNullOrWhiteSpace operator))
+    |> List.filter (fun (operator, _) -> not (nonSuspectOperators.Contains(normalizeToken operator)))
+    |> List.groupBy fst
+    |> List.map (fun (operator, rows) ->
+        let parameters =
+            rows
+            |> List.collect (snd >> Map.toList)
+            |> List.groupBy fst
+            |> List.choose (fun (key, values) ->
+                values
+                |> List.map snd
+                |> List.filter (String.IsNullOrWhiteSpace >> not)
+                |> List.countBy id
+                |> List.sortByDescending snd
+                |> List.tryHead
+                |> Option.map (fun (value, _) -> key, value))
+            |> Map.ofList
+
+        { Operator = operator
+          Count = rows.Length
+          Parameters = parameters })
+    |> List.sortByDescending _.Count
     |> List.truncate options.MaxOperators
 
 let private templateTokens (template: ProbeProbing.GraphTemplate) =
@@ -370,9 +432,28 @@ let private uniqueTemplates (templates: ProbeProbing.GraphTemplate seq) =
     |> Seq.sortBy _.Name
     |> Seq.toArray
 
-let private parameterOverridesForFunction options functionId =
+let private parameterValue key (parameters: Map<string, string>) =
+    parameters
+    |> Map.tryFind key
+    |> Option.filter (String.IsNullOrWhiteSpace >> not)
+
+let private optionOrInferred explicitValue key parameters =
+    explicitValue |> Option.map string |> Option.orElseWith (fun () -> parameterValue key parameters)
+
+let private floatOptionOrInferred (explicitValue: float option) key parameters =
+    explicitValue
+    |> Option.map (fun value -> Convert.ToString(value, CultureInfo.InvariantCulture))
+    |> Option.orElseWith (fun () -> parameterValue key parameters)
+
+let private parameterOverridesForFunction options parameters functionId =
+    let radius = optionOrInferred options.Radius "radius" parameters
+    let windowSize = optionOrInferred options.WindowSize "windowSize" parameters
+
     match functionId with
-    | "SmoothWMedian"
+    | "SmoothWMedian" ->
+        [ radius |> Option.map (fun value -> "radius", value)
+          windowSize |> Option.map (fun value -> "windowSize", value) ]
+        |> List.choose id
     | "BinaryMedian"
     | "GrayscaleErode"
     | "GrayscaleDilate"
@@ -381,30 +462,39 @@ let private parameterOverridesForFunction options functionId =
     | "WhiteTopHat"
     | "BlackTopHat"
     | "MorphologicalGradient" ->
-        [ options.Radius |> Option.map (fun value -> "radius", string value)
-          options.WindowSize |> Option.map (fun value -> "windowSize", string value) ]
+        [ radius |> Option.map (fun value -> "radius", value)
+          windowSize |> Option.map (fun value -> "windowSize", value) ]
         |> List.choose id
     | "SmoothWGauss" ->
-        [ options.Sigma |> Option.map (fun value -> "sigma", Convert.ToString(value, CultureInfo.InvariantCulture))
-          options.WindowSize |> Option.map (fun value -> "windowSize", string value) ]
+        [ floatOptionOrInferred options.Sigma "sigma" parameters |> Option.map (fun value -> "sigma", value)
+          windowSize |> Option.map (fun value -> "windowSize", value) ]
         |> List.choose id
     | "GradientMagnitude"
     | "SobelEdge"
     | "Laplacian"
     | "BinaryContour" ->
-        [ options.WindowSize |> Option.map (fun value -> "windowSize", string value) ]
+        [ windowSize |> Option.map (fun value -> "windowSize", value) ]
         |> List.choose id
     | _ -> []
 
-let private applyLocalParameterOverrides options (template: ProbeProbing.GraphTemplate) =
+let private parametersForFunction suspects functionId =
+    suspects
+    |> List.tryFind (fun suspect -> String.Equals(normalizeToken suspect.Operator, normalizeToken functionId, StringComparison.Ordinal))
+    |> Option.map _.Parameters
+    |> Option.defaultValue Map.empty
+
+let private applyLocalParameterOverrides options suspects (template: ProbeProbing.GraphTemplate) =
     let mutable changed = false
+    let applied = ResizeArray<string * string>()
 
     let rewriteParameter functionId (parameter: Studio.Graph.SavedParameter) =
-        parameterOverridesForFunction options functionId
+        let parameters = parametersForFunction suspects functionId
+        parameterOverridesForFunction options parameters functionId
         |> List.tryFind (fun (key, _) -> String.Equals(key, parameter.Key, StringComparison.OrdinalIgnoreCase))
         |> function
             | Some(_, value) when parameter.Value <> value ->
                 changed <- true
+                applied.Add(parameter.Key, value)
                 { parameter with Value = value }
             | _ -> parameter
 
@@ -416,13 +506,15 @@ let private applyLocalParameterOverrides options (template: ProbeProbing.GraphTe
 
     if changed then
         let suffix =
-            [ options.Radius |> Option.map (fun value -> $"r{value}")
-              options.WindowSize |> Option.map (fun value -> $"w{value}")
-              options.Sigma
-              |> Option.map (fun value ->
-                  let sigmaText = Convert.ToString(value, CultureInfo.InvariantCulture).Replace(".", "p")
-                  "s" + sigmaText) ]
-            |> List.choose id
+            applied
+            |> Seq.distinct
+            |> Seq.map (fun (key, value) ->
+                let safeValue = value.Replace(".", "p").Replace(",", "p")
+                match key with
+                | key when String.Equals(key, "radius", StringComparison.OrdinalIgnoreCase) -> "r" + safeValue
+                | key when String.Equals(key, "windowSize", StringComparison.OrdinalIgnoreCase) -> "w" + safeValue
+                | key when String.Equals(key, "sigma", StringComparison.OrdinalIgnoreCase) -> "s" + safeValue
+                | _ -> normalizeToken key + safeValue)
             |> String.concat "-"
 
         { template with
@@ -449,8 +541,8 @@ let private localTemplatesForSize options suspects probeRunRoot size =
     let suspectTemplates =
         layers
         |> Array.collect snd
-        |> Array.filter (templateMatches (suspects |> List.map fst))
-        |> Array.map (applyLocalParameterOverrides options)
+        |> Array.filter (templateMatches (suspects |> List.map _.Operator))
+        |> Array.map (applyLocalParameterOverrides options suspects)
 
     Array.append sourceTemplates suspectTemplates
     |> uniqueTemplates
@@ -535,7 +627,7 @@ let main argv =
                 eprintfn "local-update: no suspect operators found. Use --operators A,B or run analysis/discrepancy reporting first."
                 1
             else
-                printfn "Local update suspects: %s" (suspects |> List.map (fun (name, count) -> $"{name}({count})") |> String.concat ", ")
+                printfn "Local update suspects: %s" (suspects |> List.map (fun suspect -> $"{suspect.Operator}({suspect.Count})") |> String.concat ", ")
 
                 let runId = "local_" + timestamp()
                 let probeRunRoot = Path.Combine(options.ProbeJsonRoot, runId)
@@ -553,10 +645,10 @@ let main argv =
                         template.Name.Contains("bottomup-00-empty", StringComparison.OrdinalIgnoreCase)
                         || template.Name.Contains("zero-", StringComparison.OrdinalIgnoreCase)
                         || template.Name.Contains("read-", StringComparison.OrdinalIgnoreCase)
-                        || templateMatches (suspects |> List.map fst) template)
+                        || templateMatches (suspects |> List.map _.Operator) template)
 
                 if selected.Length = 0 then
-                    eprintfn "local-update: no matching probe templates found for %s" (suspects |> List.map fst |> String.concat ", ")
+                    eprintfn "local-update: no matching probe templates found for %s" (suspects |> List.map _.Operator |> String.concat ", ")
                     1
                 else
                     ProbeProbing.writeGraphTemplates probeRunRoot selected

@@ -630,7 +630,8 @@ type StageTimeCostEstimate =
       IoWriteBytes: uint64
       IoReadOps: uint64
       IoWriteOps: uint64
-      CalibrationKey: string option }
+      CalibrationKey: string option
+      Tags: (string * string) list }
 
 module StageTimeCostEstimate =
     let zero =
@@ -640,7 +641,8 @@ module StageTimeCostEstimate =
           IoWriteBytes = 0UL
           IoReadOps = 0UL
           IoWriteOps = 0UL
-          CalibrationKey = None }
+          CalibrationKey = None
+          Tags = [] }
 
     let create cpuCostUnits nativeCostUnits ioReadBytes ioWriteBytes ioReadOps ioWriteOps calibrationKey =
         { CpuCostUnits = cpuCostUnits
@@ -649,7 +651,11 @@ module StageTimeCostEstimate =
           IoWriteBytes = ioWriteBytes
           IoReadOps = ioReadOps
           IoWriteOps = ioWriteOps
-          CalibrationKey = calibrationKey }
+          CalibrationKey = calibrationKey
+          Tags = [] }
+
+    let withTags tags estimate =
+        { estimate with Tags = tags @ estimate.Tags }
 
     let private isZero estimate =
         estimate.CpuCostUnits = 0.0
@@ -681,7 +687,8 @@ module StageTimeCostEstimate =
           IoWriteBytes = left.IoWriteBytes + right.IoWriteBytes
           IoReadOps = left.IoReadOps + right.IoReadOps
           IoWriteOps = left.IoWriteOps + right.IoWriteOps
-          CalibrationKey = calibrationKey }
+          CalibrationKey = calibrationKey
+          Tags = (left.Tags @ right.Tags) |> List.distinct }
 
 type StageTimeCostModel =
     { Kind: StageTimeCostKind
@@ -1683,7 +1690,7 @@ module Plan =
                 use writer = new StreamWriter(File.Open(path, FileMode.Append, FileAccess.Write, FileShare.ReadWrite))
                 if not exists then
                     writer.WriteLine(
-                        "timestampUtc,label,kind,expected,actual,ratio,estimatedTimeMilliseconds,actualTimeMilliseconds,estimatedPeakMemoryBytes,actualPeakMemoryBytes,nElemsPerSlice,length,sourceName,sourceShape,graphNodes,costKeys")
+                        "timestampUtc,label,kind,expected,actual,ratio,estimatedTimeMilliseconds,actualTimeMilliseconds,estimatedPeakMemoryBytes,actualPeakMemoryBytes,nElemsPerSlice,length,sourceName,sourceShape,graphNodes,costKeys,costContexts")
 
                 let nElemsText =
                     match pl.nElemsPerSlice with
@@ -1715,6 +1722,19 @@ module Plan =
                     |> List.distinct
                     |> String.concat "|"
 
+                let costContexts =
+                    pl.costObservations
+                    |> List.choose (fun observation ->
+                        match observation.Time.Tags with
+                        | [] -> None
+                        | tags ->
+                            tags
+                            |> List.map (fun (key, value) -> key + "=" + value)
+                            |> String.concat ";"
+                            |> Some)
+                    |> List.distinct
+                    |> String.concat "|"
+
                 [ DateTimeOffset.UtcNow.ToString("O", CultureInfo.InvariantCulture)
                   label
                   kind
@@ -1730,7 +1750,8 @@ module Plan =
                   sourceName
                   sourceShape
                   graphNodes
-                  costKeys ]
+                  costKeys
+                  costContexts ]
                 |> List.map csvEscape
                 |> String.concat ","
                 |> writer.WriteLine
