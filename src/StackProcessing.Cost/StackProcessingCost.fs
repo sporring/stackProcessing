@@ -576,6 +576,10 @@ module Fitting =
 
             let hasAnyCoefficient =
                 [ "constant"
+                  "operationCount"
+                  "dataMB"
+                  "windowDataMB"
+                  "radius2DataMB"
                   "voxelsM"
                   "windowVoxelsM"
                   "radius2VoxelsM"
@@ -593,6 +597,8 @@ module Fitting =
                         |> Option.map (fun bytes -> float bytes / 1.0e6)
                         |> Option.defaultValue 0.0
 
+                    let dataMB = volumeMB
+
                     let windowVolumeMB =
                         match context.WindowSize with
                         | Some windowSize -> windowSize * volumeMB
@@ -603,13 +609,22 @@ module Fitting =
                         | Some radius -> radius * radius * volumeMB
                         | None -> 0.0
 
-                    add "volumeMB" volumeMB
+                    add "operationCount" 1.0
+                    + add "dataMB" dataMB
+                    + add "windowDataMB" windowVolumeMB
+                    + add "radius2DataMB" radius2VolumeMB
+                    + add "volumeMB" volumeMB
                     + add "windowVolumeMB" windowVolumeMB
                     + add "radius2VolumeMB" radius2VolumeMB
                 else
                     let voxelsM =
                         context.Voxels
                         |> Option.map (fun voxels -> float voxels / 1.0e6)
+                        |> Option.defaultValue 0.0
+
+                    let dataMB =
+                        context.VolumeBytes
+                        |> Option.map (fun bytes -> float bytes / 1.0e6)
                         |> Option.defaultValue 0.0
 
                     let windowVoxelsM =
@@ -622,7 +637,21 @@ module Fitting =
                         | Some radius -> radius * radius * voxelsM
                         | None -> 0.0
 
-                    add "voxelsM" voxelsM
+                    let windowDataMB =
+                        match context.WindowSize with
+                        | Some windowSize -> windowSize * dataMB
+                        | None -> 0.0
+
+                    let radius2DataMB =
+                        match context.Radius with
+                        | Some radius -> radius * radius * dataMB
+                        | None -> 0.0
+
+                    add "operationCount" 1.0
+                    + add "dataMB" dataMB
+                    + add "windowDataMB" windowDataMB
+                    + add "radius2DataMB" radius2DataMB
+                    + add "voxelsM" voxelsM
                     + add "windowVoxelsM" windowVoxelsM
                     + add "radius2VoxelsM" radius2VoxelsM
 
@@ -774,35 +803,42 @@ module Fitting =
             let pixelType = row.PixelType |> Option.defaultValue ""
             let scale = row.FeatureValue
             let mutable terms = []
-            terms <- addTerm terms (termKey operator pixelType "constant") scale
+
+            if String.Equals(operator, "intercept", StringComparison.OrdinalIgnoreCase) then
+                terms <- addTerm terms (termKey operator pixelType "constant") scale
+            else
+                let operationCount =
+                    row.Depth
+                    |> Option.map (fun depth -> scale * float depth)
+                    |> Option.defaultValue scale
+
+                terms <- addTerm terms (termKey operator pixelType "operationCount") operationCount
+
+                match row.WindowSize, row.Radius, row.VolumeBytes with
+                | None, None, Some value ->
+                    let dataMB = scale * float value / 1.0e6
+                    terms <- addTerm terms (termKey operator pixelType "dataMB") dataMB
+                | _ -> ()
 
             if isMemoryMeasurement measurement then
-                match row.VolumeBytes with
-                | Some value -> terms <- addTerm terms (termKey operator pixelType "volumeMB") (scale * float value / 1.0e6)
-                | None -> ()
-
                 match row.WindowSize, row.VolumeBytes with
                 | Some windowSize, Some volumeBytes ->
-                    terms <- addTerm terms (termKey operator pixelType "windowVolumeMB") (scale * windowSize * float volumeBytes / 1.0e6)
+                    terms <- addTerm terms (termKey operator pixelType "windowDataMB") (scale * windowSize * float volumeBytes / 1.0e6)
                 | _ -> ()
 
                 match row.Radius, row.VolumeBytes with
                 | Some radius, Some volumeBytes ->
-                    terms <- addTerm terms (termKey operator pixelType "radius2VolumeMB") (scale * radius * radius * float volumeBytes / 1.0e6)
+                    terms <- addTerm terms (termKey operator pixelType "radius2DataMB") (scale * radius * radius * float volumeBytes / 1.0e6)
                 | _ -> ()
             else
-                match row.Voxels with
-                | Some value -> terms <- addTerm terms (termKey operator pixelType "voxelsM") (scale * float value / 1.0e6)
-                | None -> ()
-
-                match row.WindowSize, row.Voxels with
-                | Some windowSize, Some voxels ->
-                    terms <- addTerm terms (termKey operator pixelType "windowVoxelsM") (scale * windowSize * float voxels / 1.0e6)
+                match row.WindowSize, row.VolumeBytes with
+                | Some windowSize, Some volumeBytes ->
+                    terms <- addTerm terms (termKey operator pixelType "windowDataMB") (scale * windowSize * float volumeBytes / 1.0e6)
                 | _ -> ()
 
-                match row.Radius, row.Voxels with
-                | Some radius, Some voxels ->
-                    terms <- addTerm terms (termKey operator pixelType "radius2VoxelsM") (scale * radius * radius * float voxels / 1.0e6)
+                match row.Radius, row.VolumeBytes with
+                | Some radius, Some volumeBytes ->
+                    terms <- addTerm terms (termKey operator pixelType "radius2DataMB") (scale * radius * radius * float volumeBytes / 1.0e6)
                 | _ -> ()
 
             terms
@@ -1057,8 +1093,9 @@ module Fitting =
             modelPath
             "StackProcessing fitted operator cost model"
             [ "Fitted from Probe costEvidence.csv."
-              "Time-like measurements use constant, voxelsM, windowVoxelsM, and radius2VoxelsM terms."
-              "Memory-like measurements use constant, volumeMB, windowVolumeMB, and radius2VolumeMB terms."
+              "Streaming operators use operationCount plus dataMB-derived terms so whole-volume probe evidence can be applied per emitted slice."
+              "Windowed and radius-dependent operators add windowDataMB and radius2DataMB terms."
+              "The intercept feature is the only fitted whole-graph constant."
               "Ignore sinks are treated as zero-cost evidence terms." ]
             fits
         fits
