@@ -5,6 +5,7 @@ open System.IO
 open Expecto
 open FSharp.Control
 open SlimPipeline
+open StackProcessingCost
 
 let private source availableMemory = Plan.source availableMemory
 
@@ -34,15 +35,33 @@ let private costedWindowLikeMap name windowSize memoryPeak costUnits calibration
         MemoryModel = memoryModel
         CostModel = costModel }
 
-let private candidate name memoryPeak costUnits =
+let private costScore estimate =
+    estimate.CpuCostUnits
+    + estimate.NativeCostUnits
+    + float estimate.IoReadBytes
+    + float estimate.IoWriteBytes
+    + float estimate.IoReadOps
+    + float estimate.IoWriteOps
+
+let private optimizerCandidate kind windowSize name stage =
+    let cost = StageCostModel.estimate stage.CostModel (Single 1UL)
     { Name = name
-      Stage = costedMap name memoryPeak costUnits None
+      Payload = stage
+      Kind = kind
+      SemanticsPreserving = true
+      EstimatedMemoryBytes = cost.Memory.Peak
+      EstimatedTimeMilliseconds = StageTimeCalibration.estimateMilliseconds cost.Time
+      EstimatedCostScore = costScore cost.Time
+      WindowSize = windowSize
       Explanation = "" }
 
+let private candidate name memoryPeak costUnits =
+    let stage = costedMap name memoryPeak costUnits None
+    optimizerCandidate OtherExecutionChoice None name stage
+
 let private windowCandidate name windowSize memoryPeak costUnits =
-    { Name = name
-      Stage = costedWindowLikeMap name windowSize memoryPeak costUnits None
-      Explanation = "" }
+    let stage = costedWindowLikeMap name windowSize memoryPeak costUnits None
+    optimizerCandidate WindowSize (Some windowSize) name stage
 
 let private apply stage plan =
     Plan.composePlan ">=>" plan stage
@@ -308,7 +327,7 @@ let optimizerSuite =
                 [ candidate "fast-too-large" 200UL 1.0
                   candidate "balanced" 80UL 2.0
                   candidate "small-slow" 10UL 10.0 ]
-                |> Optimizer.chooseStage 100UL (Single 1UL)
+                |> Optimizer.choose 100UL
 
             Expect.equal (result.Selected |> Option.map _.Name) (Some "balanced") "Optimizer should reject the oversized candidate and choose the lowest-cost accepted one."
             Expect.equal (result.Decisions |> List.filter _.Accepted |> List.map _.CandidateName) ["balanced"; "small-slow"] "Only candidates under the memory ceiling should be accepted."
@@ -317,7 +336,7 @@ let optimizerSuite =
             let result =
                 [ candidate "large" 200UL 1.0
                   candidate "larger" 300UL 0.5 ]
-                |> Optimizer.chooseStage 100UL (Single 1UL)
+                |> Optimizer.choose 100UL
 
             Expect.isNone result.Selected "No candidate should be selected if none fit the memory ceiling."
             Expect.isTrue (result.Decisions |> List.forall (fun decision -> not decision.Accepted)) "Every decision should be rejected."
@@ -328,10 +347,10 @@ let optimizerSuite =
             StageTimeCalibration.register "fast-calibrated" { StageTimeCoefficients.zero with CpuMillisecondsPerUnit = 0.1 }
 
             let candidates =
-                [ { Name = "slow-calibrated"; Stage = costedMap "slow-calibrated" 10UL 1.0 (Some "slow-calibrated"); Explanation = "" }
-                  { Name = "fast-calibrated"; Stage = costedMap "fast-calibrated" 10UL 10.0 (Some "fast-calibrated"); Explanation = "" } ]
+                [ optimizerCandidate OtherExecutionChoice None "slow-calibrated" (costedMap "slow-calibrated" 10UL 1.0 (Some "slow-calibrated"))
+                  optimizerCandidate OtherExecutionChoice None "fast-calibrated" (costedMap "fast-calibrated" 10UL 10.0 (Some "fast-calibrated")) ]
 
-            let result = Optimizer.chooseStage 100UL (Single 1UL) candidates
+            let result = Optimizer.choose 100UL candidates
             StageTimeCalibration.clear()
 
             Expect.equal (result.Selected |> Option.map _.Name) (Some "fast-calibrated") "Calibrated elapsed time should beat raw cost units."
@@ -340,7 +359,7 @@ let optimizerSuite =
             let result =
                 [ windowCandidate "small-window" 3u 10UL 100.0
                   windowCandidate "large-window" 9u 10UL 102.0 ]
-                |> Optimizer.chooseStage 100UL (Single 1UL)
+                |> Optimizer.choose 100UL
 
             Expect.equal (result.Selected |> Option.map _.Name) (Some "large-window") "The optimizer should prefer larger windows when the estimated cost is within the tie tolerance."
 
@@ -348,7 +367,7 @@ let optimizerSuite =
             let result =
                 [ windowCandidate "small-window" 3u 10UL 100.0
                   windowCandidate "large-window" 9u 10UL 130.0 ]
-                |> Optimizer.chooseStage 100UL (Single 1UL)
+                |> Optimizer.choose 100UL
 
             Expect.equal (result.Selected |> Option.map _.Name) (Some "small-window") "Window preference should not override a clearly cheaper candidate."
     ]

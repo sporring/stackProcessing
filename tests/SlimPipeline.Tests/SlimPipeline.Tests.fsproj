@@ -20,6 +20,7 @@
 
   <ItemGroup>
     <ProjectReference Include="../../src/SlimPipeline/SlimPipeline.fsproj" />
+    <ProjectReference Include="../../src/StackProcessing.Cost/StackProcessing.Cost.fsproj" />
   </ItemGroup>
 
   <ItemGroup>

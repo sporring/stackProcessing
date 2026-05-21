@@ -92,6 +92,146 @@ let tryLoadTimeCalibration path =
 let tryLoadFirstTimeCalibration paths =
     paths |> List.tryFind tryLoadTimeCalibration |> Option.isSome
 
+type OptimizationKind =
+    | WindowSize
+    | MaterializationPoint
+    | OtherExecutionChoice
+
+type OptimizationCandidate<'T> =
+    { Name: string
+      Payload: 'T
+      Kind: OptimizationKind
+      SemanticsPreserving: bool
+      EstimatedMemoryBytes: uint64
+      EstimatedTimeMilliseconds: float option
+      EstimatedCostScore: float
+      WindowSize: uint option
+      Explanation: string }
+
+type OptimizationDecision =
+    { CandidateName: string
+      Kind: OptimizationKind
+      Accepted: bool
+      EstimatedMemoryBytes: uint64
+      EstimatedTimeMilliseconds: float option
+      EstimatedCostScore: float
+      Reason: string }
+
+type OptimizationResult<'T> =
+    { Selected: OptimizationCandidate<'T> option
+      Decisions: OptimizationDecision list }
+
+type OptimizationPolicy =
+    { RelativeTieTolerance: float
+      PreferLargerWindowWhenTied: bool
+      AllowMaterialization: bool }
+
+module Optimizer =
+    let defaultPolicy =
+        { RelativeTieTolerance = 0.05
+          PreferLargerWindowWhenTied = true
+          AllowMaterialization = true }
+
+    module Candidate =
+        let executionChoice name kind payload estimatedMemoryBytes estimatedTimeMilliseconds estimatedCostScore windowSize explanation =
+            { Name = name
+              Payload = payload
+              Kind = kind
+              SemanticsPreserving = true
+              EstimatedMemoryBytes = estimatedMemoryBytes
+              EstimatedTimeMilliseconds = estimatedTimeMilliseconds
+              EstimatedCostScore = estimatedCostScore
+              WindowSize = windowSize
+              Explanation = explanation }
+
+        let windowSize name payload estimatedMemoryBytes estimatedTimeMilliseconds estimatedCostScore windowSize explanation =
+            executionChoice name WindowSize payload estimatedMemoryBytes estimatedTimeMilliseconds estimatedCostScore (Some windowSize) explanation
+
+        let materializationPoint name payload estimatedMemoryBytes estimatedTimeMilliseconds estimatedCostScore explanation =
+            executionChoice name MaterializationPoint payload estimatedMemoryBytes estimatedTimeMilliseconds estimatedCostScore None explanation
+
+    let private nearlyEqual tolerance left right =
+        let scale = max 1.0 (max (abs left) (abs right))
+        abs (left - right) <= scale * tolerance
+
+    let private windowPreference (candidate: OptimizationCandidate<'T>) =
+        candidate.WindowSize |> Option.defaultValue 0u
+
+    let private compareWindowPreference leftCandidate rightCandidate =
+        compare (windowPreference rightCandidate) (windowPreference leftCandidate)
+
+    let private compareAccepted (_leftCandidate, leftDecision) (_rightCandidate, rightDecision) =
+        match leftDecision.EstimatedTimeMilliseconds, rightDecision.EstimatedTimeMilliseconds with
+        | Some leftMs, Some rightMs -> compare leftMs rightMs
+        | Some _, None -> -1
+        | None, Some _ -> 1
+        | None, None -> compare leftDecision.EstimatedCostScore rightDecision.EstimatedCostScore
+
+    let private compareAcceptedWithWindowPreference policy (leftCandidate, leftDecision) (rightCandidate, rightDecision) =
+        let tiedByTime leftMs rightMs =
+            policy.PreferLargerWindowWhenTied && nearlyEqual policy.RelativeTieTolerance leftMs rightMs
+
+        let tiedByScore leftScore rightScore =
+            policy.PreferLargerWindowWhenTied && nearlyEqual policy.RelativeTieTolerance leftScore rightScore
+
+        match leftDecision.EstimatedTimeMilliseconds, rightDecision.EstimatedTimeMilliseconds with
+        | Some leftMs, Some rightMs when tiedByTime leftMs rightMs ->
+            let preference = compareWindowPreference leftCandidate rightCandidate
+            if preference <> 0 then preference else compare leftMs rightMs
+        | Some _, Some _ ->
+            compareAccepted (leftCandidate, leftDecision) (rightCandidate, rightDecision)
+        | Some _, None -> -1
+        | None, Some _ -> 1
+        | None, None when tiedByScore leftDecision.EstimatedCostScore rightDecision.EstimatedCostScore ->
+            let preference = compareWindowPreference leftCandidate rightCandidate
+            if preference <> 0 then preference else compare leftDecision.EstimatedCostScore rightDecision.EstimatedCostScore
+        | None, None ->
+            compare leftDecision.EstimatedCostScore rightDecision.EstimatedCostScore
+
+    let chooseWithPolicy policy (availableMemory: uint64) (candidates: OptimizationCandidate<'T> list) : OptimizationResult<'T> =
+        let evaluated =
+            candidates
+            |> List.map (fun candidate ->
+                let accepted, reason =
+                    if not candidate.SemanticsPreserving then
+                        false, "Rejected: candidate can change the pipeline result."
+                    elif candidate.Kind = MaterializationPoint && not policy.AllowMaterialization then
+                        false, "Rejected: materialization candidates are disabled by policy."
+                    elif candidate.EstimatedMemoryBytes > availableMemory then
+                        false, $"Rejected: estimated memory {candidate.EstimatedMemoryBytes} B exceeds available memory {availableMemory} B."
+                    else
+                        match candidate.EstimatedTimeMilliseconds with
+                        | Some ms -> true, $"Accepted: estimated {ms:g} ms within {availableMemory} B."
+                        | None -> true, $"Accepted: estimated cost score {candidate.EstimatedCostScore:g} within {availableMemory} B."
+
+                candidate,
+                { CandidateName = candidate.Name
+                  Kind = candidate.Kind
+                  Accepted = accepted
+                  EstimatedMemoryBytes = candidate.EstimatedMemoryBytes
+                  EstimatedTimeMilliseconds = candidate.EstimatedTimeMilliseconds
+                  EstimatedCostScore = candidate.EstimatedCostScore
+                  Reason = reason })
+
+        let selected =
+            evaluated
+            |> List.filter (fun (_, decision) -> decision.Accepted)
+            |> List.sortWith (compareAcceptedWithWindowPreference policy)
+            |> List.tryHead
+            |> Option.map fst
+
+        { Selected = selected
+          Decisions = evaluated |> List.map snd }
+
+    let choose availableMemory candidates =
+        chooseWithPolicy defaultPolicy availableMemory candidates
+
+    let chooseOrThrow availableMemory candidates =
+        let result = choose availableMemory candidates
+        match result.Selected with
+        | Some candidate -> candidate.Payload, result
+        | None -> failwith $"No optimization candidate fits within {availableMemory} B."
+
 type CostCoefficient =
     { Measurement: string
       FeatureKey: string

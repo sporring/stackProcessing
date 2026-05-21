@@ -240,6 +240,7 @@ let private runProcessAsync
     (fileName: string)
     (args: string list)
     (envPath: string option)
+    (environment: (string * string option) list)
     (timeout: TimeSpan option)
     =
     task {
@@ -271,6 +272,11 @@ let private runProcessAsync
             prependEnvironmentPath psi "DYLD_LIBRARY_PATH" path
             prependEnvironmentPath psi "LD_LIBRARY_PATH" path
         | None -> ()
+
+        for name, value in environment do
+            match value with
+            | Some value -> psi.Environment[name] <- value
+            | None -> psi.Environment.Remove name |> ignore
 
         use proc = new Process(StartInfo = psi, EnableRaisingEvents = true)
         let stopwatch = Stopwatch.StartNew()
@@ -327,8 +333,18 @@ let private clearLog (sample: Sample) =
     Directory.CreateDirectory(Path.GetDirectoryName sample.LogPath) |> ignore
     File.WriteAllText(sample.LogPath, "")
 
+let private cleanSampleTmp (sample: Sample) =
+    let tmp = Path.Combine(sample.Directory, "tmp")
+
+    if Directory.Exists tmp then
+        try
+            Directory.Delete(tmp, recursive = true)
+        with ex ->
+            eprintfn "runAll: could not clean %s: %s" (relativePath (Directory.GetCurrentDirectory()) tmp) ex.Message
+
 let private buildSample (cancellationToken: CancellationToken) timeout (sample: Sample) =
     task {
+        cleanSampleTmp sample
         clearLog sample
         File.AppendAllText(sample.LogPath, $"== Build {sample.Name} =={Environment.NewLine}")
         printfn "build %s" sample.Name
@@ -341,6 +357,7 @@ let private buildSample (cancellationToken: CancellationToken) timeout (sample: 
                 "dotnet"
                 [ "build"; sample.Project; "--verbosity"; "q"; "--disable-build-servers" ]
                 None
+                [ "STACKPROCESSING_COST_FLAGS", None ]
                 timeout
 
         File.AppendAllText(sample.LogPath, $"Build finished in {result.Elapsed}.{Environment.NewLine}")
@@ -349,7 +366,7 @@ let private buildSample (cancellationToken: CancellationToken) timeout (sample: 
         return result.ExitCode
     }
 
-let private runSample (cancellationToken: CancellationToken) timeout debugLevel optimize costModel costDiscrepancies (sample: Sample) =
+let private runSample (cancellationToken: CancellationToken) timeout debugLevel optimize costModel costDiscrepancies costFlagsPath (sample: Sample) =
     task {
         File.AppendAllText(sample.LogPath, $"{Environment.NewLine}== Run {sample.Name} =={Environment.NewLine}")
         printfn "run %s" sample.Name
@@ -376,18 +393,20 @@ let private runSample (cancellationToken: CancellationToken) timeout debugLevel 
                 "dotnet"
                 sampleArgs
                 (Some nativeLibPath)
+                (if costDiscrepancies then [ "STACKPROCESSING_COST_FLAGS", Some costFlagsPath ] else [])
                 timeout
 
         File.AppendAllText(sample.LogPath, $"Run finished in {result.Elapsed}.{Environment.NewLine}")
         if result.TimedOut then
             File.AppendAllText(sample.LogPath, $"Run timed out after {result.Elapsed}.{Environment.NewLine}")
+        cleanSampleTmp sample
         return
             { Sample = sample
               ExitCode = result.ExitCode
               Elapsed = result.Elapsed }
     }
 
-let private runWithParallelism (cancellationToken: CancellationToken) jobs timeout debugLevel optimize costModel costDiscrepancies (samples: Sample array) =
+let private runWithParallelism (cancellationToken: CancellationToken) jobs timeout debugLevel optimize costModel costDiscrepancies costFlagsPath (samples: Sample array) =
     task {
         use gate = new SemaphoreSlim(jobs)
 
@@ -396,7 +415,7 @@ let private runWithParallelism (cancellationToken: CancellationToken) jobs timeo
                     do! gate.WaitAsync(cancellationToken)
 
                     try
-                        return! runSample cancellationToken timeout debugLevel optimize costModel costDiscrepancies sample
+                        return! runSample cancellationToken timeout debugLevel optimize costModel costDiscrepancies costFlagsPath sample
                     finally
                     gate.Release() |> ignore
             }
@@ -645,6 +664,16 @@ let private gatherExistingLogs samplesRoot extraSamplesRoots =
     |> Seq.sortBy (fun row -> row[0])
     |> Seq.toList
 
+let private resolveCostFlagsPath samplesRoot =
+    let envPath = Environment.GetEnvironmentVariable("STACKPROCESSING_COST_FLAGS")
+
+    if String.IsNullOrWhiteSpace envPath then
+        Path.Combine(runOutputRoot samplesRoot, "costDiscrepancies.csv")
+    elif Path.IsPathRooted envPath then
+        envPath
+    else
+        Path.Combine(repositoryRootFromSamplesRoot samplesRoot, envPath)
+
 let main (argv: string array) =
     let defaults =
         { SamplesRoot = defaultSamplesRoot ()
@@ -688,6 +717,7 @@ let main (argv: string array) =
             try
                 let runId = options.RunId |> Option.defaultWith timestampRunId
                 let batchDir = batchDirectory samplesRoot runId
+                let costFlagsPath = resolveCostFlagsPath samplesRoot
                 Directory.CreateDirectory batchDir |> ignore
 
                 let mutable failed = false
@@ -729,6 +759,7 @@ let main (argv: string array) =
                             options.Optimize
                             options.CostModel
                             options.CostDiscrepancies
+                            costFlagsPath
                             builtSamples
                         |> _.GetAwaiter().GetResult()
 
