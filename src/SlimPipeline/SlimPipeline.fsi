@@ -236,6 +236,8 @@ module StageTimeCostEstimate =
     val withTags:
       tags: (string * string) list ->
         estimate: StageTimeCostEstimate -> StageTimeCostEstimate
+    val scale:
+      factor: uint64 -> estimate: StageTimeCostEstimate -> StageTimeCostEstimate
     val private isZero: estimate: StageTimeCostEstimate -> bool
     val private hasNoIo: estimate: StageTimeCostEstimate -> bool
     val add:
@@ -670,6 +672,7 @@ type Plan<'S,'T> =
       sourcePeek: SourcePeek option
       costPeak: StageCostEstimate option
       costObservations: StageCostEstimate list
+      costTerms: PipelineCostTerm list
       nElemsPerSlice: SingleOrPair
       length: uint64
       memAvail: uint64
@@ -678,6 +681,15 @@ type Plan<'S,'T> =
       debugLevel: uint
       optimize: bool
       costDiscrepancy: bool
+    }
+and PipelineCostTerm =
+    {
+      StageName: string
+      InputLength: uint64
+      OutputLength: uint64
+      Multiplicity: uint64
+      Memory: StageMemoryEstimate
+      Time: StageTimeCostEstimate
     }
 module Plan =
     val private graphOfStage: stage: Stage<'a,'b> option -> PipelineGraph
@@ -718,9 +730,19 @@ module Plan =
         candidate: StageCostEstimate -> StageCostEstimate option
     val private costScore: estimate: StageTimeCostEstimate -> float
     val private hasNoIoCost: estimate: StageTimeCostEstimate -> bool
-    val private trySumEstimatedTimeMilliseconds:
-      observations: StageCostEstimate list -> float option
-    val private totalCostScore: observations: StageCostEstimate list -> float
+    val private tryParseTagFloat:
+      name: string -> tags: (string * string) list -> float option
+    val private ceilDiv: value: uint64 -> divisor: uint64 -> uint64
+    val private termMultiplicity:
+      inputLength: uint64 ->
+        outputLength: uint64 -> time: StageTimeCostEstimate -> uint64
+    val private makeCostTerm:
+      stageName: string ->
+        inputLength: uint64 ->
+        outputLength: uint64 -> stageCost: StageCostEstimate -> PipelineCostTerm
+    val private trySumEstimatedTimeMillisecondsFromTerms:
+      terms: PipelineCostTerm list -> float option
+    val private totalCostScoreFromTerms: terms: PipelineCostTerm list -> float
     val private printOptimizationSummary: label: 'a -> pl: Plan<'S,'T> -> unit
     val private formatMilliseconds: milliseconds: float -> string
     val private estimatedRunTimeText: pl: Plan<'S,'T> -> string

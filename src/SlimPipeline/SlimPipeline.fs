@@ -657,6 +657,15 @@ module StageTimeCostEstimate =
     let withTags tags estimate =
         { estimate with Tags = tags @ estimate.Tags }
 
+    let scale factor estimate =
+        { estimate with
+            CpuCostUnits = estimate.CpuCostUnits * float factor
+            NativeCostUnits = estimate.NativeCostUnits * float factor
+            IoReadBytes = estimate.IoReadBytes * factor
+            IoWriteBytes = estimate.IoWriteBytes * factor
+            IoReadOps = estimate.IoReadOps * factor
+            IoWriteOps = estimate.IoWriteOps * factor }
+
     let private isZero estimate =
         estimate.CpuCostUnits = 0.0
         && estimate.NativeCostUnits = 0.0
@@ -1525,6 +1534,7 @@ type Plan<'S,'T> = {
     sourcePeek     : SourcePeek option // source metadata available to future optimizers
     costPeak       : StageCostEstimate option // peak stage cost seen while composing the plan
     costObservations: StageCostEstimate list // individual stage costs seen while composing the plan
+    costTerms      : PipelineCostTerm list // pipeline equation terms with stage multiplicities
     nElemsPerSlice : SingleOrPair // number of elments (pixels) before transformation - this could be single or pair
     length         : uint64 // length of the sequence, the plan is applied to
     memAvail       : uint64 // memory available for the plan
@@ -1534,6 +1544,14 @@ type Plan<'S,'T> = {
     optimize       : bool
     costDiscrepancy: bool }
 
+and PipelineCostTerm =
+    { StageName: string
+      InputLength: uint64
+      OutputLength: uint64
+      Multiplicity: uint64
+      Memory: StageMemoryEstimate
+      Time: StageTimeCostEstimate }
+
 module Plan =
     let private graphOfStage stage =
         stage |> Option.map (fun stg -> stg.Graph) |> Option.defaultValue PipelineGraph.empty
@@ -1542,13 +1560,13 @@ module Plan =
         if debug then DebugLevel.current() |> max 1u else 0u
 
     let createWithOptimizer<'S,'T when 'T: equality> (stage: Stage<'S,'T> option) (memAvail : uint64) (memPeak: uint64) (nElemsPerSlice: uint64) (length: uint64) (debug: bool) (optimize: bool) : Plan<'S, 'T> =
-        { stage = stage; graph = graphOfStage stage; sourcePeek = None; costPeak = None; costObservations = []; memAvail = memAvail; memPeak = memPeak; nElemsPerSlice = Single nElemsPerSlice; length = length; debug = debug; debugLevel = levelOf debug; optimize = optimize; costDiscrepancy = false }
+        { stage = stage; graph = graphOfStage stage; sourcePeek = None; costPeak = None; costObservations = []; costTerms = []; memAvail = memAvail; memPeak = memPeak; nElemsPerSlice = Single nElemsPerSlice; length = length; debug = debug; debugLevel = levelOf debug; optimize = optimize; costDiscrepancy = false }
 
     let create<'S,'T when 'T: equality> (stage: Stage<'S,'T> option) (memAvail : uint64) (memPeak: uint64) (nElemsPerSlice: uint64) (length: uint64) (debug: bool) : Plan<'S, 'T> =
         createWithOptimizer stage memAvail memPeak nElemsPerSlice length debug true
 
     let createWrappedWithOptimizer<'S,'T when 'T: equality> (stage: Stage<'S,'T> option) (memAvail : uint64) (memPeak: uint64) (nElemsPerSlice: SingleOrPair) (length: uint64) (debug: bool) (optimize: bool) : Plan<'S, 'T> =
-        { stage = stage; graph = graphOfStage stage; sourcePeek = None; costPeak = None; costObservations = []; memAvail = memAvail; memPeak = memPeak; nElemsPerSlice = nElemsPerSlice; length = length; debug = debug; debugLevel = levelOf debug; optimize = optimize; costDiscrepancy = false }
+        { stage = stage; graph = graphOfStage stage; sourcePeek = None; costPeak = None; costObservations = []; costTerms = []; memAvail = memAvail; memPeak = memPeak; nElemsPerSlice = nElemsPerSlice; length = length; debug = debug; debugLevel = levelOf debug; optimize = optimize; costDiscrepancy = false }
 
     let createWrapped<'S,'T when 'T: equality> (stage: Stage<'S,'T> option) (memAvail : uint64) (memPeak: uint64) (nElemsPerSlice: SingleOrPair) (length: uint64) (debug: bool) : Plan<'S, 'T> =
         createWrappedWithOptimizer stage memAvail memPeak nElemsPerSlice length debug true
@@ -1585,18 +1603,53 @@ module Plan =
         && estimate.IoReadOps = 0UL
         && estimate.IoWriteOps = 0UL
 
-    let private trySumEstimatedTimeMilliseconds (observations: StageCostEstimate list) =
-        observations
+    let private tryParseTagFloat name tags =
+        tags
+        |> List.tryPick (fun (key: string, value: string) ->
+            if String.Equals(key, name, StringComparison.OrdinalIgnoreCase) then
+                match Double.TryParse(value, NumberStyles.Float, CultureInfo.InvariantCulture) with
+                | true, parsed -> Some parsed
+                | _ -> None
+            else
+                None)
+
+    let private ceilDiv value divisor =
+        if value = 0UL then 0UL else (value + divisor - 1UL) / divisor
+
+    let private termMultiplicity inputLength outputLength (time: StageTimeCostEstimate) =
+        let effectiveLength =
+            if inputLength > 0UL then inputLength
+            elif outputLength > 0UL then outputLength
+            else 1UL
+
+        match tryParseTagFloat "stride" time.Tags with
+        | Some stride when stride > 0.0 ->
+            let stride = uint64 (Math.Ceiling stride)
+            let outputLength = if outputLength > 0UL then outputLength else effectiveLength
+            max 1UL (ceilDiv outputLength stride)
+        | _ -> effectiveLength
+
+    let private makeCostTerm stageName inputLength outputLength (stageCost: StageCostEstimate) =
+        let multiplicity = termMultiplicity inputLength outputLength stageCost.Time
+        { StageName = stageName
+          InputLength = inputLength
+          OutputLength = outputLength
+          Multiplicity = multiplicity
+          Memory = stageCost.Memory
+          Time = StageTimeCostEstimate.scale multiplicity stageCost.Time }
+
+    let private trySumEstimatedTimeMillisecondsFromTerms (terms: PipelineCostTerm list) =
+        terms
         |> List.fold
-            (fun state observation ->
-                match state, StageTimeCalibration.estimateMilliseconds observation.Time with
+            (fun state term ->
+                match state, StageTimeCalibration.estimateMilliseconds term.Time with
                 | Some total, Some milliseconds -> Some(total + milliseconds)
-                | Some total, None when hasNoIoCost observation.Time -> Some total
+                | Some total, None when hasNoIoCost term.Time -> Some total
                 | _ -> None)
             (Some 0.0)
 
-    let private totalCostScore (observations: StageCostEstimate list) =
-        observations |> List.sumBy (fun observation -> costScore observation.Time)
+    let private totalCostScoreFromTerms (terms: PipelineCostTerm list) =
+        terms |> List.sumBy (fun term -> costScore term.Time)
 
     let private printOptimizationSummary label (pl: Plan<'S,'T>) =
         if pl.debug && pl.debugLevel >= 2u then
@@ -1605,15 +1658,15 @@ module Plan =
                 elif pl.memPeak <= pl.memAvail then "accepted"
                 else "exceeds memory limit"
             let timeText =
-                match trySumEstimatedTimeMilliseconds pl.costObservations with
+                match trySumEstimatedTimeMillisecondsFromTerms pl.costTerms with
                 | Some milliseconds -> $", estimated time {milliseconds:g} ms"
-                | None -> $", uncalibrated cost score {totalCostScore pl.costObservations:g}"
+                | None -> $", uncalibrated cost score {totalCostScoreFromTerms pl.costTerms:g}"
             let peakStageText =
                 match pl.costPeak with
                 | Some peak -> $", peak stage {peak.Memory.Peak / 1024UL} KB"
                 | None -> ""
 
-            printfn $"[{label}] Optimization {status}: estimated memory peak {pl.memPeak / 1024UL} / {pl.memAvail / 1024UL} KB{peakStageText}{timeText}; {pl.costObservations.Length} cost observations."
+            printfn $"[{label}] Optimization {status}: estimated memory peak {pl.memPeak / 1024UL} / {pl.memAvail / 1024UL} KB{peakStageText}{timeText}; {pl.costTerms.Length} pipeline cost terms."
 
     let private formatMilliseconds (milliseconds: float) =
         if milliseconds >= 1000.0 then
@@ -1622,10 +1675,10 @@ module Plan =
             $"{milliseconds:g} ms"
 
     let private estimatedRunTimeText (pl: Plan<'S,'T>) =
-        match trySumEstimatedTimeMilliseconds pl.costObservations with
+        match trySumEstimatedTimeMillisecondsFromTerms pl.costTerms with
         | Some milliseconds -> formatMilliseconds milliseconds
-        | None when List.isEmpty pl.costObservations -> "unavailable"
-        | None -> $"uncalibrated cost score {totalCostScore pl.costObservations:g}"
+        | None when List.isEmpty pl.costTerms -> "unavailable"
+        | None -> $"uncalibrated cost score {totalCostScoreFromTerms pl.costTerms:g}"
 
     let private ratioAway expected actual =
         if expected <= 0.0 || actual <= 0.0 then
@@ -1690,7 +1743,7 @@ module Plan =
                 use writer = new StreamWriter(File.Open(path, FileMode.Append, FileAccess.Write, FileShare.ReadWrite))
                 if not exists then
                     writer.WriteLine(
-                        "timestampUtc,label,kind,expected,actual,ratio,estimatedTimeMilliseconds,actualTimeMilliseconds,estimatedPeakMemoryBytes,actualPeakMemoryBytes,nElemsPerSlice,length,sourceName,sourceShape,graphNodes,costKeys,costContexts,costBreakdown")
+                        "timestampUtc,label,kind,expected,actual,ratio,estimatedTimeMilliseconds,actualTimeMilliseconds,estimatedPeakMemoryBytes,actualPeakMemoryBytes,nElemsPerSlice,length,sourceName,sourceShape,graphNodes,costKeys,costContexts,costBreakdown,pipelineCostTerms")
 
                 let nElemsText =
                     match pl.nElemsPerSlice with
@@ -1717,15 +1770,15 @@ module Plan =
                     |> String.concat "|"
 
                 let costKeys =
-                    pl.costObservations
+                    pl.costTerms
                     |> List.choose _.Time.CalibrationKey
                     |> List.distinct
                     |> String.concat "|"
 
                 let costContexts =
-                    pl.costObservations
-                    |> List.choose (fun observation ->
-                        match observation.Time.Tags with
+                    pl.costTerms
+                    |> List.choose (fun term ->
+                        match term.Time.Tags with
                         | [] -> None
                         | tags ->
                             tags
@@ -1736,12 +1789,12 @@ module Plan =
                     |> String.concat "|"
 
                 let costBreakdown =
-                    pl.costObservations
-                    |> List.map (fun observation ->
+                    pl.costTerms
+                    |> List.map (fun term ->
                         let label =
-                            match observation.Time.Tags with
+                            match term.Time.Tags with
                             | [] ->
-                                observation.Time.CalibrationKey
+                                term.Time.CalibrationKey
                                 |> Option.defaultValue "uncalibrated"
                             | tags ->
                                 tags
@@ -1749,11 +1802,35 @@ module Plan =
                                 |> String.concat ";"
 
                         let milliseconds =
-                            StageTimeCalibration.estimateMilliseconds observation.Time
+                            StageTimeCalibration.estimateMilliseconds term.Time
                             |> Option.map invariantFloat
                             |> Option.defaultValue "uncalibrated"
 
-                        label + ":" + milliseconds)
+                        label
+                        + $"*{term.Multiplicity}"
+                        + ":" + milliseconds)
+                    |> String.concat "|"
+
+                let pipelineCostTerms =
+                    pl.costTerms
+                    |> List.map (fun term ->
+                        let tags =
+                            term.Time.Tags
+                            |> List.map (fun (key, value) -> key + "=" + value)
+                            |> String.concat ";"
+
+                        [ "stage=" + term.StageName
+                          "inputLength=" + invariantUInt64 term.InputLength
+                          "outputLength=" + invariantUInt64 term.OutputLength
+                          "multiplicity=" + invariantUInt64 term.Multiplicity
+                          "memoryPeakBytes=" + invariantUInt64 term.Memory.Peak
+                          "estimatedMilliseconds="
+                            + (StageTimeCalibration.estimateMilliseconds term.Time
+                               |> Option.map invariantFloat
+                               |> Option.defaultValue "uncalibrated")
+                          tags ]
+                        |> List.filter (String.IsNullOrWhiteSpace >> not)
+                        |> String.concat ";")
                     |> String.concat "|"
 
                 [ DateTimeOffset.UtcNow.ToString("O", CultureInfo.InvariantCulture)
@@ -1762,7 +1839,7 @@ module Plan =
                   expected |> Option.map invariantFloat |> Option.defaultValue ""
                   invariantFloat actual
                   ratio |> Option.map invariantFloat |> Option.defaultValue ""
-                  trySumEstimatedTimeMilliseconds pl.costObservations |> Option.map invariantFloat |> Option.defaultValue ""
+                  trySumEstimatedTimeMillisecondsFromTerms pl.costTerms |> Option.map invariantFloat |> Option.defaultValue ""
                   invariantFloat actualTime
                   invariantUInt64 pl.memPeak
                   invariantUInt64 actualMemoryDelta
@@ -1773,7 +1850,8 @@ module Plan =
                   graphNodes
                   costKeys
                   costContexts
-                  costBreakdown ]
+                  costBreakdown
+                  pipelineCostTerms ]
                 |> List.map csvEscape
                 |> String.concat ","
                 |> writer.WriteLine
@@ -1793,7 +1871,7 @@ module Plan =
                 if ratio >= timeRatioLimit then
                     printfn $"[{label}] Cost discrepancy: estimated/actual time {formatMilliseconds expected} / {formatMilliseconds actualTime} (ratio {ratio:g})."
                     appendCostFlag label "time" (Some expected) actualTime (Some ratio) pl actualTime actualMemoryDelta
-            | None when not (List.isEmpty pl.costObservations) ->
+            | None when not (List.isEmpty pl.costTerms) ->
                 printfn $"[{label}] Cost model incomplete: time estimate is uncalibrated, so discrepancy reporting cannot compare predicted and actual runtime yet."
                 appendCostFlag label "timeUncalibrated" None actualTime None pl actualTime actualMemoryDelta
             | _ -> ()
@@ -1817,7 +1895,7 @@ module Plan =
             printfn
                 $"[{label}] Run summary:\nestimated peak / available memory {MemoryProbe.formatBytes pl.memPeak} / {MemoryProbe.formatBytes pl.memAvail}\nMeasured peak delta, baseline, peak: {MemoryProbe.formatBytes snapshot.Delta} (baseline {MemoryProbe.formatBytes snapshot.Baseline}, peak {MemoryProbe.formatBytes snapshot.Peak})\nEstimated/actual time {estimatedRunTimeText pl} / {formatMilliseconds stopwatch.Elapsed.TotalMilliseconds}."
 
-            printCostDiscrepancies label pl (trySumEstimatedTimeMilliseconds pl.costObservations) stopwatch.Elapsed.TotalMilliseconds snapshot.Delta
+            printCostDiscrepancies label pl (trySumEstimatedTimeMillisecondsFromTerms pl.costTerms) stopwatch.Elapsed.TotalMilliseconds snapshot.Delta
 
             result
         else
@@ -1857,13 +1935,14 @@ module Plan =
         let stageCost = StageCostModel.estimate stage.CostModel pl.nElemsPerSlice
         let costPeak = mergeCostPeak pl.costPeak stageCost
         let costObservations = stageCost :: pl.costObservations
-        if (not pl.debug) && memPeak > pl.memAvail then
-            failwith $"Out of available memory: {stage.Name} requested {memNeeded} B but have only {pl.memAvail} B"
-        let nElemsPerSlice' = SingleOrPair.map stage.ElementTransformation pl.nElemsPerSlice
         let length' =
             SliceCardinality.length pl.length stage.SliceCardinality
             |> Option.defaultValue pl.length
-        { createWrappedWithOptimizer stage' pl.memAvail memPeak nElemsPerSlice' length' pl.debug pl.optimize with sourcePeek = pl.sourcePeek; costPeak = costPeak; costObservations = costObservations; debugLevel = pl.debugLevel; costDiscrepancy = pl.costDiscrepancy }
+        let costTerms = makeCostTerm stage.Name pl.length length' stageCost :: pl.costTerms
+        if (not pl.debug) && memPeak > pl.memAvail then
+            failwith $"Out of available memory: {stage.Name} requested {memNeeded} B but have only {pl.memAvail} B"
+        let nElemsPerSlice' = SingleOrPair.map stage.ElementTransformation pl.nElemsPerSlice
+        { createWrappedWithOptimizer stage' pl.memAvail memPeak nElemsPerSlice' length' pl.debug pl.optimize with sourcePeek = pl.sourcePeek; costPeak = costPeak; costObservations = costObservations; costTerms = costTerms; debugLevel = pl.debugLevel; costDiscrepancy = pl.costDiscrepancy }
 
     let (>=>) (pl: Plan<'a, 'b>) (stage: Stage<'b, 'c>) : Plan<'a, 'c> =
         composePlan $">=>" pl stage
@@ -1886,9 +1965,10 @@ module Plan =
         let stageCost = StageCostModel.estimate stage.CostModel pl.nElemsPerSlice
         let costPeak = mergeCostPeak pl.costPeak stageCost
         let costObservations = stageCost :: pl.costObservations
+        let costTerms = makeCostTerm stage.Name pl.length length' stageCost :: pl.costTerms
         if (not pl.debug) && memPeak > pl.memAvail then
             failwith $"Out of available memory: {stage.Name} requested {memoryNeed} B but have only {pl.memAvail} B"
-        { createWrappedWithOptimizer (Some stage) pl.memAvail memPeak nElemsPerSlice' length' pl.debug pl.optimize with sourcePeek = pl.sourcePeek; costPeak = costPeak; costObservations = costObservations; debugLevel = pl.debugLevel; costDiscrepancy = pl.costDiscrepancy }
+        { createWrappedWithOptimizer (Some stage) pl.memAvail memPeak nElemsPerSlice' length' pl.debug pl.optimize with sourcePeek = pl.sourcePeek; costPeak = costPeak; costObservations = costObservations; costTerms = costTerms; debugLevel = pl.debugLevel; costDiscrepancy = pl.costDiscrepancy }
         
     /// parallel execution of non-synchronised streams
     let internal zipPlan (name: string) (pl1: Plan<'In, 'U>) (pl2: Plan<'In, 'V>) : Plan<'In, ('U * 'V)> =
@@ -1922,10 +2002,11 @@ module Plan =
                         | Some rightPeak -> mergeCostPeak peak rightPeak
                         | None -> peak
                 let costObservations = stageCost :: (pl1.costObservations @ pl2.costObservations)
+                let costTerms = makeCostTerm stage.Name pl1.length pl1.length stageCost :: (pl1.costTerms @ pl2.costTerms)
                 let maxMemAvail = max pl1.memAvail pl2.memAvail // Should we max or sum? What would the most natural usage be for src?
                 if (not debug) && (memPeak > maxMemAvail) then
                     failwith $"Out of available memory: {stage.Name} requested {memNeeded|>SingleOrPair.fst}+{memNeeded|>SingleOrPair.snd}={memPeak} B but have only {maxMemAvail} B"
-                { createWrappedWithOptimizer (Some stage) maxMemAvail memPeak nElemsPerSlice pl1.length debug (pl1.optimize && pl2.optimize) with sourcePeek = pl1.sourcePeek; costPeak = costPeak; costObservations = costObservations; debugLevel = max pl1.debugLevel pl2.debugLevel; costDiscrepancy = pl1.costDiscrepancy || pl2.costDiscrepancy }
+                { createWrappedWithOptimizer (Some stage) maxMemAvail memPeak nElemsPerSlice pl1.length debug (pl1.optimize && pl2.optimize) with sourcePeek = pl1.sourcePeek; costPeak = costPeak; costObservations = costObservations; costTerms = costTerms; debugLevel = max pl1.debugLevel pl2.debugLevel; costDiscrepancy = pl1.costDiscrepancy || pl2.costDiscrepancy }
             | _,_ -> failwith $"[{name}] Cannot zip with an empty plan"
 
     /// parallel execution of non-synchronised streams

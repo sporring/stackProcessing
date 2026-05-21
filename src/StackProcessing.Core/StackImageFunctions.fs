@@ -3,6 +3,7 @@ module StackImageFunctions
 open FSharp.Control
 open SlimPipeline // Core processing model
 open System
+open System.Globalization
 open System.IO
 open System.Collections.Generic
 open StackCore
@@ -59,6 +60,15 @@ let private operatorImageStageCostForPixel<'T> operator memoryModel windowSize r
 
 let private operatorImageStageCost<'T> operator memoryModel windowSize radius costUnits =
     operatorImageStageCostForPixel<'T> operator memoryModel windowSize radius costUnits
+
+let private withTimeTags tags (costModel: StageCostModel) =
+    { costModel with
+        Time =
+            { costModel.Time with
+                Estimate =
+                    fun input ->
+                        costModel.Time.Estimate input
+                        |> StageTimeCostEstimate.withTags tags } }
 
 let private operatorUnaryStageCost<'T> operator memoryNeed =
     let memoryModel = StageMemoryModel.fromSinglePeak Map memoryNeed
@@ -660,7 +670,12 @@ let private makeWindowedOperatorOp<'T when 'T: equality>
     let costUnits input = float (inputValue input * uint64 win)
     let stg =
         mapWindow name f memoryNeed id
-        |> withCostModel (operatorImageStageCost<'T> operator memoryModel (Some(float win)) radius costUnits)
+        |> withCostModel
+            (operatorImageStageCost<'T> operator memoryModel (Some(float win)) radius costUnits
+             |> withTimeTags
+                 [ "kernelSize", string ksz
+                   "stride", string stride
+                   "pad", string pad ])
 
     (window win pad stride) --> stg --> flattenList ()
     |> Stage.withSliceCardinality (SlimPipeline.Domain(sameSliceDomainForKernelDepth ksz))
@@ -1498,7 +1513,13 @@ let smoothWGauss (sigma: float) (outputRegionMode: ImageFunctions.OutputRegionMo
         float (inputValue input * uint64 win * kernelVoxels)
     let stg =
         mapWindow "smoothWGauss" f memoryNeed elementTransformation
-        |> withCostModel (operatorImageStageCost<float> "SmoothWGauss" memoryModel (Some(float win)) None costUnits)
+        |> withCostModel
+            (operatorImageStageCost<float> "SmoothWGauss" memoryModel (Some(float win)) None costUnits
+             |> withTimeTags
+                 [ "kernelSize", string ksz
+                   "stride", string stride
+                   "pad", string pad
+                   "sigma", Convert.ToString(sigma, CultureInfo.InvariantCulture) ])
     (window win pad stride) --> stg --> flattenList () --> cleanStage "smoothWGauss.cleanup" (fun () -> kernel.decRefCount())
     |> Stage.withSliceCardinality (sliceCardinalityForConvolution ksz outputRegionMode)
 

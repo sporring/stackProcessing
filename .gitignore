@@ -17,3 +17,5 @@
 *.tif
 *.tiff
 *.mha
+/samples/signedDistanceBand/tmp
+/samples/signedDistanceBand/tmp

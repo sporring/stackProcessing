@@ -176,9 +176,20 @@ let private isRunnerProject samplesRoot project =
     relative = "RunAll/RunAll.fsproj"
     || relative = "RunJson/RunJson.fsproj"
 
-let private discoverSamplesInRoot samplesRoot scanRoot outputDir namePrefix =
+let private hasPathSegment (segment: string) (relativePath: string) =
+    relativePath.Split([| '/'; '\\' |], StringSplitOptions.RemoveEmptyEntries)
+    |> Array.exists (fun part -> String.Equals(part, segment, StringComparison.OrdinalIgnoreCase))
+
+let private isBuildOrSampleTmpProject excludeTmp scanRoot project =
+    let relative = relativePath scanRoot project
+    hasPathSegment "bin" relative
+    || hasPathSegment "obj" relative
+    || (excludeTmp && hasPathSegment "tmp" relative)
+
+let private discoverSamplesInRoot samplesRoot scanRoot outputDir namePrefix excludeTmp =
     Directory.EnumerateFiles(scanRoot, "*.fsproj", SearchOption.AllDirectories)
     |> Seq.filter (fun project -> not (isRunnerProject samplesRoot project))
+    |> Seq.filter (fun project -> not (isBuildOrSampleTmpProject excludeTmp scanRoot project))
     |> Seq.map (fun project ->
         let dir = Path.GetDirectoryName project
         let localName = relativePath scanRoot dir
@@ -197,7 +208,7 @@ let private discoverSamplesInRoot samplesRoot scanRoot outputDir namePrefix =
 let private discoverSamples samplesRoot extraSamplesRoots includeSamples outputDir =
     let sampleProjects =
         if includeSamples then
-            discoverSamplesInRoot samplesRoot samplesRoot outputDir ""
+            discoverSamplesInRoot samplesRoot samplesRoot outputDir "" true
         else
             [||]
     let extraProjects =
@@ -206,7 +217,7 @@ let private discoverSamples samplesRoot extraSamplesRoots includeSamples outputD
         |> Array.collect (fun root ->
             if Directory.Exists root then
                 let prefix = "generated/" + safeName (Path.GetFileName(root.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar)))
-                discoverSamplesInRoot samplesRoot root outputDir prefix
+                discoverSamplesInRoot samplesRoot root outputDir prefix false
             else
                 eprintfn "runAll: extra samples root does not exist: %s" root
                 [||])

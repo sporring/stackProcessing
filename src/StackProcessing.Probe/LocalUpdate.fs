@@ -297,6 +297,30 @@ let private parseTaggedContext (context: string) =
             None)
     |> Map.ofArray
 
+let private suspectFromTaggedContext (context: string) =
+    let tags = parseTaggedContext context
+    match tags |> Map.tryFind "operator" with
+    | Some operator when not (String.IsNullOrWhiteSpace operator) ->
+        let parameters =
+            tags
+            |> Map.remove "operator"
+            |> Map.remove "pixelType"
+            |> Map.remove "stage"
+            |> Map.remove "inputLength"
+            |> Map.remove "outputLength"
+            |> Map.remove "multiplicity"
+            |> Map.remove "memoryPeakBytes"
+            |> Map.remove "estimatedMilliseconds"
+
+        Some(canonicalOperatorName operator, parameters)
+    | _ -> None
+
+let private taggedContextsFromField fieldName row =
+    field fieldName row
+    |> fun value -> value.Split([| '|' |], StringSplitOptions.RemoveEmptyEntries ||| StringSplitOptions.TrimEntries)
+    |> Array.toList
+    |> List.choose suspectFromTaggedContext
+
 let private suspectObservationsFromRuntimeFlags (path: string option) =
     match path with
     | None -> []
@@ -304,20 +328,11 @@ let private suspectObservationsFromRuntimeFlags (path: string option) =
         readCsvMaps path
         |> List.collect (fun row ->
             let contextObservations =
-                field "costContexts" row
-                |> fun value -> value.Split([| '|' |], StringSplitOptions.RemoveEmptyEntries ||| StringSplitOptions.TrimEntries)
-                |> Array.toList
-                |> List.choose (fun context ->
-                    let tags = parseTaggedContext context
-                    match tags |> Map.tryFind "operator" with
-                    | Some operator when not (String.IsNullOrWhiteSpace operator) ->
-                        let parameters =
-                            tags
-                            |> Map.remove "operator"
-                            |> Map.remove "pixelType"
-
-                        Some(canonicalOperatorName operator, parameters)
-                    | _ -> None)
+                let pipelineTerms = taggedContextsFromField "pipelineCostTerms" row
+                if pipelineTerms.IsEmpty then
+                    taggedContextsFromField "costContexts" row
+                else
+                    pipelineTerms
 
             if contextObservations.IsEmpty then
                 field "graphNodes" row
@@ -368,6 +383,7 @@ let private nonSuspectOperators =
            "Zero"
            "Scalar"
            "Cast"
+           "window"
            "Print" ]
          |> List.map normalizeToken)
 
