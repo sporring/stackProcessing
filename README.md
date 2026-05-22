@@ -378,8 +378,6 @@ flowchart TD
     TinyLinAlg["TinyLinAlg\nSimple Linear Algebra"]
     RunSamples["StackProcessing.RunSamples\nBulk DSL & graph runner"]
     Probe["StackProcessing.Probe\nprobe design & local updates"]
-    Models["models/default|fitted|local\noperator-cost JSON"]
-    Flags["tmp/costDiscrepancies.csv\nflagged pipeline evidence"]
 
     UserFSharp --> StackProcessing
     UserFSharp --> Studio
@@ -398,12 +396,10 @@ flowchart TD
 
     RunSamples --> StudioCompiler
     RunSamples --> StackProcessing
-    RunSamples --> Flags
     Flags --> Probe
     Probe --> RunSamples
     Probe --> StudioGraph
     Probe --> Cost
-    Cost --> Models
     Models --> Core
 ```
 
