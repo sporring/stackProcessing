@@ -15,43 +15,27 @@ let main arg =
         else
             64u, 64u, 64u, "../tmp/rotatingBoxes"
 
-    let boxSz = 16;
+    let polygon : Polygon2D =
+        [ { X = 24.0; Y = 24.0 }
+          { X = 40.0; Y = 24.0 }
+          { X = 40.0; Y = 40.0 }
+          { X = 24.0; Y = 40.0 } ]
 
-    let img = Image<uint8>([width;height])
-    for i in [0..boxSz-1] do
-        for j in [0..boxSz-1] do
-            img[i,j] <- 255uy
+    let mask = polygonMask width height polygon
 
-    let transFctDiag (i:uint) : (float*float*float)*(float*float) =
-        let dx = float i
-        let a = 2.0*3.141592*(float i)/(float depth)
-        let offset = (float boxSz)/2.0-0.5
-        //(offset,offset,a),(dx-offset,dx-offset)
-        (offset,offset,a),(0.0,0.0)
-
-    let transFctAntiDiag (i:uint) : (float*float*float)*(float*float) =
-        let dx = float i
-        let a = 2.0*3.141592*(float i)/(float depth)
-        let offset = (float boxSz)/2.0-0.5
-        (offset,offset,a),(float(width)-dx-offset,dx-offset)
-
-    let transFctTopDown (i:uint) : (float*float*float)*(float*float) =
-        let dx = float i
-        let a = 2.0*3.141592*(float i)/(float depth)
-        let offset = (float boxSz)/2.0-0.5
-        (offset,offset,a),(float width/2.0-offset,dx-offset)
+    let movingMask transformName =
+        src
+        |> repeat mask 1u
+        >=> createByEuler2DTransformFromImage<uint8> depth (euler2DTransformPath width height depth transformName)
 
     let diagonal =
-        src
-        |> createByEuler2DTransform<uint8> img depth transFctDiag
+        movingMask "Diagonal"
 
     let topDown =
-        src
-        |> createByEuler2DTransform<uint8> img depth transFctTopDown
+        movingMask "TopDown"
 
     let antiDiagonal =
-        src
-        |> createByEuler2DTransform<uint8> img depth transFctAntiDiag
+        movingMask "AntiDiagonal"
 
     (
         (diagonal, topDown) ||> zip >>=> maxOfPair >=> tap "first",

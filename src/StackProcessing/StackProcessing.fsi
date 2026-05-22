@@ -1379,16 +1379,26 @@ val zero<'T when 'T: equality> :
      SlimPipeline.Plan<unit,unit> -> SlimPipeline.Plan<unit,StackCore.Image<'T>>)
     when 'T: equality
 
-val polygonMask:
-  (uint ->
-     uint ->
-     StackCore.Polygon2D ->
-     SlimPipeline.Plan<unit,unit> ->
-     SlimPipeline.Plan<unit,StackCore.Image<uint8>>)
+val polygonMask: (uint -> uint -> StackCore.Polygon2D -> StackCore.Image<uint8>)
 
 val repeat<'T when 'T: equality> :
+  (StackCore.Image<'T> ->
+     uint ->
+     SlimPipeline.Plan<unit,unit> -> SlimPipeline.Plan<unit,StackCore.Image<'T>>)
+    when 'T: equality
+
+val repeatStage<'T when 'T: equality> :
   (uint -> StackCore.Stage<StackCore.Image<'T>,StackCore.Image<'T>>)
     when 'T: equality
+
+val euler2DTransformPath:
+  (uint ->
+     uint -> uint -> string -> uint -> (float * float * float) * (float * float))
+
+val createByEuler2DTransformFromImage<'T when 'T: equality> :
+  (uint ->
+     (uint -> (float * float * float) * (float * float)) ->
+     StackCore.Stage<StackCore.Image<'T>,StackCore.Image<'T>>) when 'T: equality
 
 val normalNoise<'T when 'T: equality> :
   (uint ->

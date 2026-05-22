@@ -346,6 +346,7 @@ module PipelineCodeGenerator =
     let private scalarTypeName (node: SavedNode) =
         match node.FunctionId with
         | "ScalarFunction" -> "Float64"
+        | "RandomRigidTransform" -> "Affine"
         | "OtsuThresholdFromHistogram"
         | "MomentsThresholdFromHistogram" -> "Float64"
         | _ -> savedParamValue "type" node
@@ -946,7 +947,13 @@ module PipelineCodeGenerator =
             let width = parameterValue "width"
             let height = parameterValue "height"
             let polygon = parameterValue "polygon"
-            $"|> polygonMask {width} {height} {polygon}" |> sourcePrefix availableMemory
+            let suffix = safeIdentifier node.Id
+            let maskName = $"polygonMask_{suffix}"
+
+            String.concat Environment.NewLine
+                [ $"let {maskName} = polygonMask {width} {height} {polygon}"
+                  $"debug 1u (optimizerEnabled ()) {uint64Literal availableMemory}"
+                  $"|> repeat {maskName} 1u" ]
         | "CoordinateX" ->
             let availableMemory = parameterValue "availableMemory"
             let width = parameterValue "width"
@@ -1004,40 +1011,19 @@ module PipelineCodeGenerator =
             let width = parameterValue "width"
             let height = parameterValue "height"
             let depth = parameterValue "depth"
-            let boxSize = parameterValue "boxSize"
+            let polygon = parameterValue "polygon"
             let transform = savedParamValue "transform" node
             let suffix = safeIdentifier node.Id
-            let imageName = $"eulerImage_{suffix}"
+            let maskName = $"eulerMask_{suffix}"
             let transformName = $"eulerTransform_{suffix}"
-            let transformBody =
-                match transform.Trim().ToLowerInvariant() with
-                | "antidiagonal"
-                | "anti diagonal"
-                | "anti-diagonal" ->
-                    $"(offset, offset, a), (float width - dx - offset, dx - offset)"
-                | "topdown"
-                | "top down"
-                | "top-down" ->
-                    $"(offset, offset, a), (float width / 2.0 - offset, dx - offset)"
-                | _ ->
-                    $"(offset, offset, a), (0.0, 0.0)"
 
             String.concat Environment.NewLine
-                [ $"let width = {width}"
-                  $"let height = {height}"
-                  $"let depth = {depth}"
-                  $"let boxSize = int {boxSize}"
-                  $"let {imageName} = Image<{pixelType}>([width; height])"
-                  $"for i in [0..boxSize-1] do"
-                  $"    for j in [0..boxSize-1] do"
-                  $"        {imageName}[i,j] <- LanguagePrimitives.GenericOne"
-                  $"let {transformName} (i: uint) : (float * float * float) * (float * float) ="
-                  $"    let dx = float i"
-                  $"    let a = 2.0 * System.Math.PI * float i / float depth"
-                  $"    let offset = float boxSize / 2.0 - 0.5"
-                  $"    {transformBody}"
+                [ $"let {maskName} = polygonMask {width} {height} {polygon}"
+                  $"let {transformName} = euler2DTransformPath {width} {height} {depth} {quote transform}"
                   $"debug 1u (optimizerEnabled ()) {uint64Literal availableMemory}"
-                  $"|> createByEuler2DTransform<{pixelType}> {imageName} depth {transformName}" ]
+                  $"|> repeat {maskName} 1u"
+                  $">=> cast<uint8,{pixelType}>"
+                  $">=> createByEuler2DTransformFromImage {depth} {transformName}" ]
         | "ReadRandom" ->
             let availableMemory = parameterValue "availableMemory"
             let pixelType = pixelTypeNameFromParameter "type" "Float64" node
@@ -1171,7 +1157,7 @@ module PipelineCodeGenerator =
             $"|> resample<{pixelType}> {factorX} {factorY} {factorZ} {interpolation}"
         | "Repeat" ->
             let depth = parameterValue "depth"
-            $">=> repeat {depth}"
+            $">=> repeatStage {depth}"
         | "WriteChunks" ->
             let output = quotedParameter "output"
             let suffix = quotedParameter "suffix"
@@ -2330,6 +2316,7 @@ module PipelineCodeGenerator =
                     node.FunctionId <> "Scalar"
                     && node.FunctionId <> "ScalarOp"
                     && node.FunctionId <> "ScalarFunction"
+                    && node.FunctionId <> "RandomRigidTransform"
                     && node.FunctionId <> "OtsuThresholdFromHistogram"
                     && node.FunctionId <> "MomentsThresholdFromHistogram"
                     && node.FunctionId <> "GetChunkInfo"

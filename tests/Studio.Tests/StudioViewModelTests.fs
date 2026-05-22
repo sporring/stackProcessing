@@ -140,7 +140,9 @@ let viewModelSuite =
                   | "SaltAndPepperNoise" -> [ p "probability" "0.01" false ]
                   | "ShotNoise" -> [ p "scale" "1.0" false ]
                   | "SpeckleNoise" -> [ p "std" "1.0" false ]
-                  | "CreateByEuler2DTransform" -> [ p "boxSize" "16" false; p "transform" "Diagonal" false ]
+                  | "CreateByEuler2DTransform" ->
+                      [ p "polygon" "[ { X = 16.0; Y = 16.0 }; { X = 48.0; Y = 16.0 }; { X = 48.0; Y = 48.0 }; { X = 16.0; Y = 48.0 } ]" false
+                        p "transform" "Diagonal" false ]
                   | _ -> []
 
             for functionId in [ "Zero"; "NormalNoise"; "SaltAndPepperNoise"; "ShotNoise"; "SpeckleNoise"; "CreateByEuler2DTransform" ] do

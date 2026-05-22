@@ -1886,21 +1886,33 @@ let zero<'T when 'T: equality> (width: uint) (height: uint) (depth: uint) (pl: P
     let stage = srcStage "zero" width height depth mapper |> Some
     srcPlan pl width height depth stage
 
-let polygonMask (width: uint) (height: uint) (polygon: Polygon2D) (pl: Plan<unit, unit>) : Plan<unit, Image<uint8>> =
+let polygonMask (width: uint) (height: uint) (polygon: Polygon2D) : Image<uint8> =
     let vertices = polygon |> List.map (fun p -> p.X, p.Y)
-    let mapper (i: int) : Image<uint8> =
-        let image = Image<uint8>.polygonMask(width, height, vertices, "polygonMask", i)
-        if pl.debug && DebugLevel.current() >= 1u then printfn "[polygonMask] Created slice %A" i
-        image
-    let stage = srcStage "polygonMask" width height 1u mapper |> Some
-    srcPlan pl width height 1u stage
+    Image<uint8>.polygonMask(width, height, vertices, "polygonMask", 0)
 
-let repeat<'T when 'T: equality> (depth: uint) : Stage<Image<'T>, Image<'T>> =
+let repeat<'T when 'T: equality> (image: Image<'T>) (depth: uint) (pl: Plan<unit, unit>) : Plan<unit, Image<'T>> =
     if depth = 0u then invalidArg "depth" "repeat requires a positive depth."
+    if image.GetDimensions() <> 2u then
+        invalidArg "image" $"repeat expects a 2D image, got {image.GetDimensions()}D."
+
+    let values = image.toArray2D()
+    let width = image.GetWidth()
+    let height = image.GetHeight()
+
+    let mapper (i: int) : Image<'T> =
+        let output = Image<'T>.ofArray2D(values, $"repeat[{i}]", i)
+        if pl.debug && DebugLevel.current() >= 1u then printfn "[repeat] Created slice %A" i
+        output
+
+    let stage = srcStage "repeat" width height depth mapper |> Some
+    srcPlan pl width height depth stage
+
+let repeatStage<'T when 'T: equality> (depth: uint) : Stage<Image<'T>, Image<'T>> =
+    if depth = 0u then invalidArg "depth" "repeatStage requires a positive depth."
 
     let copySlice (image: Image<'T>) =
         if image.GetDimensions() <> 2u then
-            invalidArg "image" $"repeat expects 2D images, got {image.GetDimensions()}D."
+            invalidArg "image" $"repeatStage expects 2D images, got {image.GetDimensions()}D."
 
         let values = image.toArray2D()
         try
@@ -1911,9 +1923,53 @@ let repeat<'T when 'T: equality> (depth: uint) : Stage<Image<'T>, Image<'T>> =
             image.decRefCount()
 
     let memoryNeed input = input * uint64 depth
-    Stage.map $"repeat {depth}" (fun _ image -> copySlice image) memoryNeed id
+    Stage.map $"repeatStage {depth}" (fun _ image -> copySlice image) memoryNeed id
     --> flattenList ()
     |> Stage.withSliceCardinality SliceCardinality.unknown
+
+let euler2DTransformPath (width: uint) (height: uint) (depth: uint) (transform: string) =
+    if width = 0u then invalidArg "width" "euler2DTransformPath requires a positive width."
+    if height = 0u then invalidArg "height" "euler2DTransformPath requires a positive height."
+    if depth = 0u then invalidArg "depth" "euler2DTransformPath requires a positive depth."
+
+    let centerX = float width / 2.0 - 0.5
+    let centerY = float height / 2.0 - 0.5
+
+    fun (i: uint) ->
+        let dx = float i
+        let angle = 2.0 * Math.PI * float i / float depth
+
+        match transform.Trim().ToLowerInvariant() with
+        | "antidiagonal"
+        | "anti diagonal"
+        | "anti-diagonal" ->
+            (centerX, centerY, angle), (float width - dx - centerX, dx - centerY)
+        | "topdown"
+        | "top down"
+        | "top-down" ->
+            (centerX, centerY, angle), (0.0, dx - centerY)
+        | _ ->
+            (centerX, centerY, angle), (0.0, 0.0)
+
+let createByEuler2DTransformFromImage<'T when 'T: equality> (depth: uint) (transform: uint -> (float*float*float) * (float*float)) : Stage<Image<'T>, Image<'T>> =
+    if depth = 0u then invalidArg "depth" "createByEuler2DTransformFromImage requires a positive depth."
+
+    let mapper (_debug: bool) (_idx: int64) (img: Image<'T>) =
+        try
+            if img.GetDimensions() <> 2u then
+                invalidArg "img" $"createByEuler2DTransformFromImage expects 2D images, got {img.GetDimensions()}D."
+
+            [ for i in 0 .. int depth - 1 ->
+                let rot, trans = transform (uint i)
+                ImageFunctions.euler2DTransform img rot trans ]
+        finally
+            img.decRefCount()
+
+    let memoryNeed input = input * uint64 depth
+
+    Stage.mapi $"createByEuler2DTransformFromImage {depth}" mapper memoryNeed id
+    --> flattenList ()
+    |> Stage.withSliceCardinality (SliceCardinality.reduceTo (uint64 depth))
 
 let normalNoise<'T when 'T: equality> (width: uint) (height: uint) (depth: uint) (mean: float) (stddev: float) (pl: Plan<unit, unit>) : Plan<unit, Image<'T>> =
     let mapper (i: int) : Image<'T> =

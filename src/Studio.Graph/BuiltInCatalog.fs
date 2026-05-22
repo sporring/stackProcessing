@@ -550,10 +550,10 @@ module BuiltInCatalog =
   let makePolygonMask () =
     { Id = "PolygonMask"
       DisplayName = "polygonMask"
-      Category = "Sources / Sinks"
+      Category = "Geometry"
       Summary = "Create a binary 2D mask from a closed polygon."
       Description = "Rasterizes the closed polygon into one UInt8 image slice. Vertex coordinates are x/y pixel coordinates; pixels whose centers lie inside the polygon, plus boundary pixels, are set to 1."
-      Aliases = [ "polygon"; "roi"; "roipoly"; "mask"; "binary"; "source"; "UInt8" ]
+      Aliases = [ "polygon"; "roi"; "roipoly"; "mask"; "binary"; "UInt8" ]
       Inputs = []
       Outputs = [ makePort "UInt8" imageUInt8 ]
       Parameters =
@@ -635,7 +635,7 @@ module BuiltInCatalog =
     { Id = "CreateByEuler2DTransform"
       DisplayName = "createByEuler2DTransform"
       Category = "Sources / Sinks"
-      Summary = "Create a synthetic stack by applying an Euler 2D transform to a seed image."
+      Summary = "Create a synthetic stack by applying an Euler 2D transform to a polygon mask."
       Description = euler2DDescription
       Aliases = [ "synthetic"; "source"; "euler"; "transform"; "rotation"; "UInt8"; "Float64"; "type" ]
       Inputs = []
@@ -646,7 +646,7 @@ module BuiltInCatalog =
             makeParameter "width" "Width" "64" (BasicType.Numeric UInt32)
             makeParameter "height" "Height" "64" (BasicType.Numeric UInt32)
             makeParameter "depth" "Depth" "64" (BasicType.Numeric UInt32)
-            makeParameter "boxSize" "Box size" "16" (BasicType.Numeric UInt32)
+            makeParameter "polygon" "Polygon" "[ { X = 24.0; Y = 24.0 }; { X = 40.0; Y = 24.0 }; { X = 40.0; Y = 40.0 }; { X = 24.0; Y = 40.0 } ]" BasicType.Map
             makeParameter "transform" "Transform" "Diagonal" BasicType.String ] }
 
   let makeScalarImageOperation id displayName description aliases =

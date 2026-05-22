@@ -2,514 +2,138 @@
   "version": 1,
   "nodes": [
     {
-      "id": "node-1",
+      "id": "diagonal",
       "functionId": "CreateByEuler2DTransform",
-      "x": 114.82873036996976,
-      "y": 241.60545577964302,
+      "x": 120.0,
+      "y": 180.0,
       "parameters": [
-        {
-          "key": "availableMemory",
-          "value": "2147483648UL",
-          "useInput": false
-        },
-        {
-          "key": "type",
-          "value": "UInt8",
-          "useInput": false
-        },
-        {
-          "key": "width",
-          "value": "64",
-          "useInput": true
-        },
-        {
-          "key": "height",
-          "value": "64",
-          "useInput": true
-        },
-        {
-          "key": "depth",
-          "value": "64",
-          "useInput": true
-        },
-        {
-          "key": "boxSize",
-          "value": "16",
-          "useInput": true
-        },
-        {
-          "key": "transform",
-          "value": "Diagonal",
-          "useInput": false
-        }
+        { "key": "availableMemory", "value": "2147483648UL", "useInput": false },
+        { "key": "type", "value": "UInt8", "useInput": false },
+        { "key": "width", "value": "64", "useInput": false },
+        { "key": "height", "value": "64", "useInput": false },
+        { "key": "depth", "value": "64", "useInput": false },
+        { "key": "polygon", "value": "[ { X = 24.0; Y = 24.0 }; { X = 40.0; Y = 24.0 }; { X = 40.0; Y = 40.0 }; { X = 24.0; Y = 40.0 } ]", "useInput": false },
+        { "key": "transform", "value": "Diagonal", "useInput": false }
       ]
     },
     {
-      "id": "node-2",
+      "id": "topDown",
       "functionId": "CreateByEuler2DTransform",
-      "x": 156.87293143176984,
-      "y": 280.3256519005302,
+      "x": 120.0,
+      "y": 300.0,
       "parameters": [
-        {
-          "key": "availableMemory",
-          "value": "2147483648UL",
-          "useInput": false
-        },
-        {
-          "key": "type",
-          "value": "UInt8",
-          "useInput": false
-        },
-        {
-          "key": "width",
-          "value": "64",
-          "useInput": true
-        },
-        {
-          "key": "height",
-          "value": "64",
-          "useInput": true
-        },
-        {
-          "key": "depth",
-          "value": "64",
-          "useInput": true
-        },
-        {
-          "key": "boxSize",
-          "value": "16",
-          "useInput": true
-        },
-        {
-          "key": "transform",
-          "value": "TopDown",
-          "useInput": false
-        }
+        { "key": "availableMemory", "value": "2147483648UL", "useInput": false },
+        { "key": "type", "value": "UInt8", "useInput": false },
+        { "key": "width", "value": "64", "useInput": false },
+        { "key": "height", "value": "64", "useInput": false },
+        { "key": "depth", "value": "64", "useInput": false },
+        { "key": "polygon", "value": "[ { X = 24.0; Y = 24.0 }; { X = 40.0; Y = 24.0 }; { X = 40.0; Y = 40.0 }; { X = 24.0; Y = 40.0 } ]", "useInput": false },
+        { "key": "transform", "value": "TopDown", "useInput": false }
       ]
     },
     {
-      "id": "node-3",
+      "id": "antiDiagonal",
       "functionId": "CreateByEuler2DTransform",
-      "x": 212.12496890152605,
-      "y": 246.836832213588,
+      "x": 120.0,
+      "y": 420.0,
       "parameters": [
-        {
-          "key": "availableMemory",
-          "value": "2147483648UL",
-          "useInput": false
-        },
-        {
-          "key": "type",
-          "value": "UInt8",
-          "useInput": false
-        },
-        {
-          "key": "width",
-          "value": "64",
-          "useInput": true
-        },
-        {
-          "key": "height",
-          "value": "64",
-          "useInput": true
-        },
-        {
-          "key": "depth",
-          "value": "64",
-          "useInput": true
-        },
-        {
-          "key": "boxSize",
-          "value": "16",
-          "useInput": true
-        },
-        {
-          "key": "transform",
-          "value": "AntiDiagonal",
-          "useInput": false
-        }
+        { "key": "availableMemory", "value": "2147483648UL", "useInput": false },
+        { "key": "type", "value": "UInt8", "useInput": false },
+        { "key": "width", "value": "64", "useInput": false },
+        { "key": "height", "value": "64", "useInput": false },
+        { "key": "depth", "value": "64", "useInput": false },
+        { "key": "polygon", "value": "[ { X = 24.0; Y = 24.0 }; { X = 40.0; Y = 24.0 }; { X = 40.0; Y = 40.0 }; { X = 24.0; Y = 40.0 } ]", "useInput": false },
+        { "key": "transform", "value": "AntiDiagonal", "useInput": false }
       ]
     },
     {
-      "id": "node-4",
+      "id": "maxA",
       "functionId": "ImageOpImage",
-      "x": 318.93427238718175,
-      "y": 209.05450226818584,
+      "x": 360.0,
+      "y": 240.0,
       "parameters": [
-        {
-          "key": "operation",
-          "value": "max",
-          "useInput": false
-        },
-        {
-          "key": "type",
-          "value": "UInt8",
-          "useInput": false
-        }
+        { "key": "operation", "value": "max", "useInput": false },
+        { "key": "type", "value": "UInt8", "useInput": false }
       ]
     },
     {
-      "id": "node-5",
+      "id": "tapA",
       "functionId": "Tap",
-      "x": 483.3448208007034,
-      "y": 189.69152479704164,
+      "x": 540.0,
+      "y": 240.0,
       "parameters": [
-        {
-          "key": "label",
-          "value": "tap",
-          "useInput": false
-        }
+        { "key": "label", "value": "first two masks", "useInput": false }
       ]
     },
     {
-      "id": "node-6",
+      "id": "tapB",
       "functionId": "Tap",
-      "x": 431.1528986893118,
-      "y": 242.71938168144305,
+      "x": 540.0,
+      "y": 420.0,
       "parameters": [
-        {
-          "key": "label",
-          "value": "tap",
-          "useInput": false
-        }
+        { "key": "label", "value": "anti diagonal mask", "useInput": false }
       ]
     },
     {
-      "id": "node-7",
+      "id": "maxB",
       "functionId": "ImageOpImage",
-      "x": 643.7497316249448,
-      "y": 198.64196324285916,
+      "x": 720.0,
+      "y": 300.0,
       "parameters": [
-        {
-          "key": "operation",
-          "value": "max",
-          "useInput": false
-        },
-        {
-          "key": "type",
-          "value": "UInt8",
-          "useInput": false
-        }
+        { "key": "operation", "value": "max", "useInput": false },
+        { "key": "type", "value": "UInt8", "useInput": false }
       ]
     },
     {
-      "id": "node-8",
-      "functionId": "Write",
-      "x": 999.548952013537,
-      "y": 187.8726990517512,
-      "parameters": [
-        {
-          "key": "format",
-          "value": "Image stack",
-          "useInput": false
-        },
-        {
-          "key": "output",
-          "value": "../tmp/rotatingBoxes",
-          "useInput": false
-        },
-        {
-          "key": "suffix",
-          "value": ".tiff",
-          "useInput": false
-        },
-        {
-          "key": "name",
-          "value": "image",
-          "useInput": false
-        },
-        {
-          "key": "depth",
-          "value": "1",
-          "useInput": false
-        },
-        {
-          "key": "chunkX",
-          "value": "64",
-          "useInput": false
-        },
-        {
-          "key": "chunkY",
-          "value": "64",
-          "useInput": false
-        },
-        {
-          "key": "chunkZ",
-          "value": "8",
-          "useInput": false
-        },
-        {
-          "key": "physicalSizeX",
-          "value": "1.0",
-          "useInput": false
-        },
-        {
-          "key": "physicalSizeY",
-          "value": "1.0",
-          "useInput": false
-        },
-        {
-          "key": "physicalSizeZ",
-          "value": "1.0",
-          "useInput": false
-        },
-        {
-          "key": "maxConcurrentWrites",
-          "value": "0",
-          "useInput": false
-        },
-        {
-          "key": "datasetPath",
-          "value": "/entry/data/data",
-          "useInput": false
-        },
-        {
-          "key": "frameAxis",
-          "value": "0",
-          "useInput": false
-        },
-        {
-          "key": "yAxis",
-          "value": "1",
-          "useInput": false
-        },
-        {
-          "key": "xAxis",
-          "value": "2",
-          "useInput": false
-        }
-      ]
-    },
-    {
-      "id": "node-9",
-      "functionId": "Scalar",
-      "x": 139.37391768043594,
-      "y": 157.39422848021664,
-      "parameters": [
-        {
-          "key": "type",
-          "value": "UInt32",
-          "useInput": false
-        },
-        {
-          "key": "value",
-          "value": "256",
-          "useInput": false
-        }
-      ]
-    },
-    {
-      "id": "node-10",
-      "functionId": "Scalar",
-      "x": 229.2308832315497,
-      "y": 150.83599074504127,
-      "parameters": [
-        {
-          "key": "type",
-          "value": "UInt32",
-          "useInput": false
-        },
-        {
-          "key": "value",
-          "value": "64",
-          "useInput": false
-        }
-      ]
-    },
-    {
-      "id": "node-11",
+      "id": "stretch",
       "functionId": "IntensityStretch",
-      "x": 833.6213942440246,
-      "y": 194.0752589065313,
+      "x": 900.0,
+      "y": 300.0,
       "parameters": [
-        {
-          "key": "type",
-          "value": "UInt8",
-          "useInput": false
-        },
-        {
-          "key": "inputMinimum",
-          "value": "0.0",
-          "useInput": false
-        },
-        {
-          "key": "inputMaximum",
-          "value": "1.0",
-          "useInput": false
-        },
-        {
-          "key": "outputMinimum",
-          "value": "0.0",
-          "useInput": false
-        },
-        {
-          "key": "outputMaximum",
-          "value": "255.",
-          "useInput": false
-        }
+        { "key": "type", "value": "UInt8", "useInput": false },
+        { "key": "inputMinimum", "value": "0.0", "useInput": false },
+        { "key": "inputMaximum", "value": "1.0", "useInput": false },
+        { "key": "outputMinimum", "value": "0.0", "useInput": false },
+        { "key": "outputMaximum", "value": "255.0", "useInput": false }
+      ]
+    },
+    {
+      "id": "write",
+      "functionId": "Write",
+      "x": 1080.0,
+      "y": 300.0,
+      "parameters": [
+        { "key": "format", "value": "Image stack", "useInput": false },
+        { "key": "output", "value": "../tmp/rotatingBoxes", "useInput": false },
+        { "key": "suffix", "value": ".tiff", "useInput": false },
+        { "key": "name", "value": "image", "useInput": false },
+        { "key": "dimension", "value": "3", "useInput": false },
+        { "key": "elementType", "value": "UInt8", "useInput": false },
+        { "key": "width", "value": "1", "useInput": false },
+        { "key": "height", "value": "1", "useInput": false },
+        { "key": "depth", "value": "1", "useInput": false },
+        { "key": "chunkX", "value": "64", "useInput": false },
+        { "key": "chunkY", "value": "64", "useInput": false },
+        { "key": "chunkZ", "value": "8", "useInput": false },
+        { "key": "physicalSizeX", "value": "1.0", "useInput": false },
+        { "key": "physicalSizeY", "value": "1.0", "useInput": false },
+        { "key": "physicalSizeZ", "value": "1.0", "useInput": false },
+        { "key": "maxConcurrentWrites", "value": "0", "useInput": false },
+        { "key": "datasetPath", "value": "/entry/data/data", "useInput": false },
+        { "key": "frameAxis", "value": "0", "useInput": false },
+        { "key": "yAxis", "value": "1", "useInput": false },
+        { "key": "xAxis", "value": "2", "useInput": false }
       ]
     }
   ],
   "edges": [
-    {
-      "fromNode": "node-4",
-      "fromKind": "dataOutput",
-      "fromPort": 0,
-      "toNode": "node-5",
-      "toKind": "dataInput",
-      "toPort": 0
-    },
-    {
-      "fromNode": "node-5",
-      "fromKind": "dataOutput",
-      "fromPort": 0,
-      "toNode": "node-7",
-      "toKind": "dataInput",
-      "toPort": 0
-    },
-    {
-      "fromNode": "node-6",
-      "fromKind": "dataOutput",
-      "fromPort": 0,
-      "toNode": "node-7",
-      "toKind": "dataInput",
-      "toPort": 1
-    },
-    {
-      "fromNode": "node-2",
-      "fromKind": "dataOutput",
-      "fromPort": 0,
-      "toNode": "node-4",
-      "toKind": "dataInput",
-      "toPort": 1
-    },
-    {
-      "fromNode": "node-9",
-      "fromKind": "scalarOutput",
-      "fromPort": 0,
-      "toNode": "node-2",
-      "toKind": "parameterInput",
-      "toPort": 2
-    },
-    {
-      "fromNode": "node-9",
-      "fromKind": "scalarOutput",
-      "fromPort": 0,
-      "toNode": "node-2",
-      "toKind": "parameterInput",
-      "toPort": 3
-    },
-    {
-      "fromNode": "node-9",
-      "fromKind": "scalarOutput",
-      "fromPort": 0,
-      "toNode": "node-2",
-      "toKind": "parameterInput",
-      "toPort": 4
-    },
-    {
-      "fromNode": "node-1",
-      "fromKind": "dataOutput",
-      "fromPort": 0,
-      "toNode": "node-4",
-      "toKind": "dataInput",
-      "toPort": 0
-    },
-    {
-      "fromNode": "node-9",
-      "fromKind": "scalarOutput",
-      "fromPort": 0,
-      "toNode": "node-1",
-      "toKind": "parameterInput",
-      "toPort": 2
-    },
-    {
-      "fromNode": "node-9",
-      "fromKind": "scalarOutput",
-      "fromPort": 0,
-      "toNode": "node-1",
-      "toKind": "parameterInput",
-      "toPort": 3
-    },
-    {
-      "fromNode": "node-9",
-      "fromKind": "scalarOutput",
-      "fromPort": 0,
-      "toNode": "node-1",
-      "toKind": "parameterInput",
-      "toPort": 4
-    },
-    {
-      "fromNode": "node-3",
-      "fromKind": "dataOutput",
-      "fromPort": 0,
-      "toNode": "node-6",
-      "toKind": "dataInput",
-      "toPort": 0
-    },
-    {
-      "fromNode": "node-9",
-      "fromKind": "scalarOutput",
-      "fromPort": 0,
-      "toNode": "node-3",
-      "toKind": "parameterInput",
-      "toPort": 2
-    },
-    {
-      "fromNode": "node-9",
-      "fromKind": "scalarOutput",
-      "fromPort": 0,
-      "toNode": "node-3",
-      "toKind": "parameterInput",
-      "toPort": 3
-    },
-    {
-      "fromNode": "node-9",
-      "fromKind": "scalarOutput",
-      "fromPort": 0,
-      "toNode": "node-3",
-      "toKind": "parameterInput",
-      "toPort": 4
-    },
-    {
-      "fromNode": "node-10",
-      "fromKind": "scalarOutput",
-      "fromPort": 0,
-      "toNode": "node-3",
-      "toKind": "parameterInput",
-      "toPort": 5
-    },
-    {
-      "fromNode": "node-10",
-      "fromKind": "scalarOutput",
-      "fromPort": 0,
-      "toNode": "node-1",
-      "toKind": "parameterInput",
-      "toPort": 5
-    },
-    {
-      "fromNode": "node-10",
-      "fromKind": "scalarOutput",
-      "fromPort": 0,
-      "toNode": "node-2",
-      "toKind": "parameterInput",
-      "toPort": 5
-    },
-    {
-      "fromNode": "node-7",
-      "fromKind": "dataOutput",
-      "fromPort": 0,
-      "toNode": "node-11",
-      "toKind": "dataInput",
-      "toPort": 0
-    },
-    {
-      "fromNode": "node-11",
-      "fromKind": "dataOutput",
-      "fromPort": 0,
-      "toNode": "node-8",
-      "toKind": "dataInput",
-      "toPort": 0
-    }
+    { "fromNode": "diagonal", "fromKind": "dataOutput", "fromPort": 0, "toNode": "maxA", "toKind": "dataInput", "toPort": 0 },
+    { "fromNode": "topDown", "fromKind": "dataOutput", "fromPort": 0, "toNode": "maxA", "toKind": "dataInput", "toPort": 1 },
+    { "fromNode": "maxA", "fromKind": "dataOutput", "fromPort": 0, "toNode": "tapA", "toKind": "dataInput", "toPort": 0 },
+    { "fromNode": "antiDiagonal", "fromKind": "dataOutput", "fromPort": 0, "toNode": "tapB", "toKind": "dataInput", "toPort": 0 },
+    { "fromNode": "tapA", "fromKind": "dataOutput", "fromPort": 0, "toNode": "maxB", "toKind": "dataInput", "toPort": 0 },
+    { "fromNode": "tapB", "fromKind": "dataOutput", "fromPort": 0, "toNode": "maxB", "toKind": "dataInput", "toPort": 1 },
+    { "fromNode": "maxB", "fromKind": "dataOutput", "fromPort": 0, "toNode": "stretch", "toKind": "dataInput", "toPort": 0 },
+    { "fromNode": "stretch", "fromKind": "dataOutput", "fromPort": 0, "toNode": "write", "toKind": "dataInput", "toPort": 0 }
   ]
 }

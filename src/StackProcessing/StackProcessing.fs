@@ -122,7 +122,6 @@ let coordinateZ = StackBias.coordinateZ
 let imageCenter = TinyLinAlg.imageCenter
 let randomRigidTransformAround = TinyLinAlg.randomRigidTransformAround
 let randomRigidTransform = TinyLinAlg.randomRigidTransform
-
 let deleteIfExists = StackIO.deleteIfExists
 let write = StackIO.write
 let writeThrough = StackIO.write
@@ -358,6 +357,9 @@ let print = StackImageFunctions.print
 let zero<'T when 'T: equality>= StackImageFunctions.zero<'T>
 let polygonMask = StackImageFunctions.polygonMask
 let repeat<'T when 'T: equality> = StackImageFunctions.repeat<'T>
+let repeatStage<'T when 'T: equality> = StackImageFunctions.repeatStage<'T>
+let euler2DTransformPath = StackImageFunctions.euler2DTransformPath
+let createByEuler2DTransformFromImage<'T when 'T: equality> = StackImageFunctions.createByEuler2DTransformFromImage<'T>
 let normalNoise<'T when 'T: equality> = StackImageFunctions.normalNoise<'T>
 let saltAndPepperNoise<'T when 'T: equality> = StackImageFunctions.saltAndPepperNoise<'T>
 let shotNoise<'T when 'T: equality> = StackImageFunctions.shotNoise<'T>

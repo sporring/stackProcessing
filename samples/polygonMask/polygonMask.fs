@@ -17,9 +17,10 @@ let main args =
           { X = 44.0; Y = 50.0 }
           { X = 12.0; Y = 42.0 } ]
 
+    let mask = polygonMask 64u 64u polygon
+
     src
-    |> polygonMask 64u 64u polygon
-    >=> repeat 16u
+    |> repeat mask 16u
     >=> write output ".tiff"
     |> sink
 

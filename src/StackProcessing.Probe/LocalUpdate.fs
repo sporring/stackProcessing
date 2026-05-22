@@ -695,6 +695,59 @@ let private runAnalysis options probeRunRoot localAnalysisDir localModelPath =
 
     ProbeAnalysis.main args
 
+let private clamp minValue maxValue value =
+    if value < minValue then minValue
+    elif value > maxValue then maxValue
+    else value
+
+let private finiteOr fallback value =
+    if Double.IsFinite value then value else fallback
+
+let private coefficientConfidence (row: Fitting.OperatorTermCoefficient) =
+    let support = max 1 row.SupportCount |> float
+    let rows = max 1 row.RowCount |> float
+    let columns = max 1 row.ColumnCount |> float
+
+    let r2 =
+        row.R2
+        |> finiteOr 0.0
+        |> clamp 0.0 1.0
+
+    let fitQuality =
+        // Keep poor-but-finite fits from becoming immovable, while still
+        // letting stable fits carry noticeably more inertia.
+        0.1 + 0.9 * r2
+
+    let coverageQuality =
+        rows / (rows + columns)
+        |> clamp 0.1 0.95
+
+    support * fitQuality * coverageQuality
+
+let private weightedAverage valueA weightA valueB weightB =
+    let total = weightA + weightB
+    if total <= 0.0 then valueB
+    else (valueA * weightA + valueB * weightB) / total
+
+let private blendCoefficient (baseRow: Fitting.OperatorTermCoefficient) (localRow: Fitting.OperatorTermCoefficient) =
+    let baseConfidence = coefficientConfidence baseRow
+    let localConfidence = coefficientConfidence localRow
+    let localFraction =
+        if baseConfidence + localConfidence <= 0.0 then 1.0
+        else localConfidence / (baseConfidence + localConfidence)
+    let localFractionText = localFraction.ToString("G6", CultureInfo.InvariantCulture)
+
+    { localRow with
+        Coefficient =
+            baseRow.Coefficient * (1.0 - localFraction)
+            + localRow.Coefficient * localFraction
+        SupportCount = baseRow.SupportCount + localRow.SupportCount
+        RowCount = baseRow.RowCount + localRow.RowCount
+        ColumnCount = max baseRow.ColumnCount localRow.ColumnCount
+        Rmse = weightedAverage baseRow.Rmse baseConfidence localRow.Rmse localConfidence
+        R2 = weightedAverage baseRow.R2 baseConfidence localRow.R2 localConfidence
+        Solver = $"momentum({baseRow.Solver},{localRow.Solver},localFraction={localFractionText})" }
+
 let private mergeModels basePath localPath outputPath suspects =
     let baseModel =
         basePath
@@ -717,6 +770,18 @@ let private mergeModels basePath localPath outputPath suspects =
         |> Array.map (fun row -> row.Measurement, row.TermKey)
         |> Set.ofArray
 
+    let baseByKey =
+        baseModel.Coefficients
+        |> Array.map (fun row -> (row.Measurement, row.TermKey), row)
+        |> Map.ofArray
+
+    let blendedLocalCoefficients =
+        localCoefficients
+        |> Array.map (fun localRow ->
+            match baseByKey |> Map.tryFind (localRow.Measurement, localRow.TermKey) with
+            | Some baseRow -> blendCoefficient baseRow localRow
+            | None -> localRow)
+
     let merged =
         { baseModel with
             SchemaVersion = max baseModel.SchemaVersion localModel.SchemaVersion
@@ -726,12 +791,13 @@ let private mergeModels basePath localPath outputPath suspects =
                 Array.append
                     baseModel.Assumptions
                     [| $"Local update merged from {localPath}."
-                       "Only coefficients for the flagged local-update suspect operators override matching base measurement/term keys." |]
+                       "Only coefficients for the flagged local-update suspect operators update matching base measurement/term keys."
+                       "Existing coefficients are updated with confidence-weighted momentum: high-support, high-quality terms move slowly; weak or new terms move faster." |]
             Coefficients =
                 Array.append
                     (baseModel.Coefficients
                      |> Array.filter (fun row -> not (localKeys.Contains(row.Measurement, row.TermKey))))
-                    localCoefficients }
+                    blendedLocalCoefficients }
 
     Fitting.OperatorCostModel.save outputPath merged
 

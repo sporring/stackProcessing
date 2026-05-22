@@ -52,7 +52,12 @@ let private savedNodeFromDefinition caseId (definition: Function) =
     let overrides =
         match definition.Id with
         | "Convolve" -> Map.ofList [ "kernel", "(Image<float>([1u; 1u]))" ]
-        | "CreateByEuler2DTransform" -> Map.ofList [ "width", "16"; "height", "16"; "depth", "4"; "boxSize", "4" ]
+        | "CreateByEuler2DTransform" ->
+            Map.ofList
+                [ "width", "16"
+                  "height", "16"
+                  "depth", "4"
+                  "polygon", "[ { X = 4.0; Y = 4.0 }; { X = 12.0; Y = 4.0 }; { X = 12.0; Y = 12.0 }; { X = 4.0; Y = 12.0 } ]" ]
         | "PermuteAxes" -> Map.ofList [ "axes", "(0u, 1u, 2u)" ]
         | _ -> Map.empty
 
@@ -336,6 +341,7 @@ let private outputKindFor functionId portType =
     | "FileDirectory"
     | "ScalarOp"
     | "ScalarFunction"
+    | "RandomRigidTransform"
     | "OtsuThresholdFromHistogram"
     | "MomentsThresholdFromHistogram" -> "scalarOutput"
     | "ComputeStats"

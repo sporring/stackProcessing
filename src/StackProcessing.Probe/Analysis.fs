@@ -215,7 +215,7 @@ let private preservedInputParameterKeys =
     // Studio can mark size parameters as graph inputs while still saving the
     // concrete sample value. For timing features, those values matter more than
     // the fact that they were exposed as inputs.
-    set [ "width"; "height"; "depth"; "boxSize" ]
+    set [ "width"; "height"; "depth"; "polygon" ]
 
 let private parameterValues (node: SavedNode) =
     let definition = BuiltInCatalog.find node.FunctionId
