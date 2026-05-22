@@ -396,11 +396,9 @@ flowchart TD
 
     RunSamples --> StudioCompiler
     RunSamples --> StackProcessing
-    Flags --> Probe
     Probe --> RunSamples
     Probe --> StudioGraph
     Probe --> Cost
-    Models --> Core
 ```
 
 There are two user-facing entry points. Programmers can write the
@@ -408,9 +406,14 @@ There are two user-facing entry points. Programmers can write the
 Studio graphs. Both routes end in `SlimPipeline` plans and stages. The image
 work is implemented in `StackProcessing.Core` and `Image`. `StackProcessing.Cost`
 provides the image-specific cost model consumed by Core at runtime and updated
-by Probe from measured evidence. `RunSamples` supplies repeatable sample
-measurements and discrepancy logs; Probe turns those logs into focused local
-probe batches and updated model JSON.
+by Probe from measured evidence. Cost still uses a few SlimPipeline cost and
+graph types internally, but image stages acquire cost behavior through Core
+rather than through generic SlimPipeline code. This is a pragmatic split:
+Cost is a model of the Core image implementation, so if the boundary becomes
+too awkward, the cleaner direction is to fold Cost into Core rather than make
+Cost depend on Core while Core also depends on Cost. `RunSamples` supplies
+repeatable sample measurements and discrepancy logs; Probe turns those logs
+into focused local probe batches and updated model JSON.
 
 ## Studio Design
 
