@@ -203,6 +203,35 @@ let stackProcessingSupportSuite =
 
             Expect.equal actual [ 4; 6; 8 ] "--> should compose stages left-to-right."
 
+        testCase "fork builds a synchronized fan-out stage" <| fun _ ->
+            let stage =
+                fork (scalarStage "increment" ((+) 1), scalarStage "double" ((*) 2))
+
+            let actual =
+                scalarPlan [ 1; 2; 3 ]
+                >=> stage
+                |> drainList
+
+            Expect.equal actual [ 2, 2; 3, 4; 4, 6 ] "fork should produce paired branch outputs as a reusable stage."
+
+        testCase "ignorePairs consumes arbitrary paired branch outputs" <| fun _ ->
+            scalarPlan [ 1; 2; 3 ]
+            >=> fork (scalarStage "increment" ((+) 1), scalarStage "double" ((*) 2))
+            >=> ignorePairs ()
+            |> sink
+
+        testCase "-->> composes a stage with a synchronized fan-out" <| fun _ ->
+            let stage =
+                scalarStage "increment" ((+) 1)
+                -->> (scalarStage "left" ((+) 10), scalarStage "right" ((*) 10))
+
+            let actual =
+                scalarPlan [ 1; 2; 3 ]
+                >=> stage
+                |> drainList
+
+            Expect.equal actual [ 12, 20; 13, 30; 14, 40 ] "-->> should compose a stage with a reusable fan-out."
+
         testCase ">=>> forks a synchronized stream into two stages" <| fun _ ->
             let actual =
                 scalarPlan [ 1; 2; 3 ]
@@ -230,6 +259,18 @@ let stackProcessingSupportSuite =
                 |> drainList
 
             Expect.equal actual [ 11, 1; 12, 2; 13, 3 ] ">=>> should queue early requests from the fast branch."
+
+        testCase "fork does not deadlock when one branch waits for a window" <| fun _ ->
+            let delayed =
+                Stage.window "delayed fork window" 3u 1u (fun _ _ -> 0) 1u
+                --> Stage.flattenWindow "delayed fork flatten"
+
+            let actual =
+                scalarPlan [ 1; 2; 3 ]
+                >=> fork (scalarStage "fast fork" ((+) 10), delayed)
+                |> drainList
+
+            Expect.equal actual [ 11, 1; 12, 2; 13, 3 ] "fork should use synchronized distribution and queue early requests."
 
         testCase ">=>> rejects branches with different slice domains" <| fun _ ->
             Expect.throws

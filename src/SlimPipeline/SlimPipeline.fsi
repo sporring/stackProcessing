@@ -557,6 +557,13 @@ module Stage =
         stage2: Stage<'In,'V> ->
         memoryNeed: MemoryNeedWrapped ->
         elementTransformation: ElementTransformation -> Stage<'In,'W>
+    val forkWithDebug:
+      debug: bool ->
+        stage1: Stage<'S,'U> * stage2: Stage<'S,'V> -> Stage<'S,('U * 'V)>
+    val fork: Stage<'a,'b> * Stage<'a,'c> -> Stage<'a,('b * 'c)>
+    val (-->>) :
+      stage: Stage<'S,'T> ->
+        stage1: Stage<'T,'U> * stage2: Stage<'T,'V> -> Stage<'S,('U * 'V)>
     val mapPairSync:
       name: string ->
         debug: bool ->

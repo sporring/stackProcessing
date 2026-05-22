@@ -321,12 +321,50 @@ let (>=>>) (pl: Plan<'In, 'S>) (stage1: Stage<'S, 'U>, stage2: Stage<'S, 'V>) : 
         | _,_ -> failwith $"[>=>>] does not know how to combine the stage-profiles: {stage1.Transition.From} vs {stage2.Transition.From}"
 
     Plan.(>=>>) (pl >=> incRef ()) (stg1, stg2)
+
+let private alignForkStages name debug (stage1: Stage<'S, 'U>) (stage2: Stage<'S, 'V>) =
+    let stream2Window winSz pad stride (stg: Stage<'T,'Out>) : Stage<'T,'Out> =
+        let zeroMaker _ = id
+        Stage.window "makeWindow: window" winSz pad zeroMaker stride
+        --> Stage.map "makeWindow: select delayed emit range"
+                (fun _ window ->
+                    let start = 0
+                    let count = 1
+                    let result =
+                        window.Items
+                        |> List.skip start
+                        |> List.take (min count (max 0 (window.Items.Length - start)))
+                    window.Items |> List.take (min (int stride) window.Items.Length) |> List.iter (decIfImage >> ignore)
+                    result)
+                id
+                id
+        --> Stage.flatten "makeWindow: flatten"
+        --> stg
+
+    match stage1.Transition.From, stage2.Transition.From with
+    | Streaming, Streaming -> stage1, stage2
+    | Window (a1,b1,c1,d1,e1), Window (a2,b2,c2,d2,e2) when a1=a2 && b1=b2 && c1=c2 && d1=d2 && e1=e2 -> stage1, stage2
+    | Streaming, Window (winSz, stride, pad, _, _) ->
+        if debug && DebugLevel.current() >= 2u then printfn $"{name}: left is promoted"
+        stream2Window winSz pad stride stage1, stage2
+    | Window (winSz, stride, pad, _, _), Streaming ->
+        if debug && DebugLevel.current() >= 2u then printfn $"{name}: right is promoted"
+        stage1, stream2Window winSz pad stride stage2
+    | _,_ -> failwith $"[{name}] does not know how to combine the stage-profiles: {stage1.Transition.From} vs {stage2.Transition.From}"
+
+let fork (stage1: Stage<'S, 'U>, stage2: Stage<'S, 'V>) : Stage<'S, 'U * 'V> =
+    let stg1, stg2 = alignForkStages "fork" false stage1 stage2
+    incRef () --> Stage.fork (stg1, stg2)
+
+let (-->>) (stage: Stage<'S, 'T>) (stage1: Stage<'T, 'U>, stage2: Stage<'T, 'V>) : Stage<'S, 'U * 'V> =
+    stage --> fork (stage1, stage2)
+
 let (>>=>) = Plan.(>>=>)
 let (>>=>>) = Plan.(>>=>>)
 let teeFst = Stage.teeFst
 let teeSnd = Stage.teeSnd
 let ignoreSingles () : Stage<_,unit> = Stage.ignore (decIfImage>>ignore)
-let ignorePairs () : Stage<_,unit> = Stage.ignorePairs<_,unit> ((decIfImage>>ignore),(decIfImage>>ignore))
+let ignorePairs () : Stage<_,unit> = Stage.ignorePairs ((decIfImage>>ignore),(decIfImage>>ignore))
 let zeroMaker (index: int) (ex: Image<'S>) : Image<'S> =
     new Image<'S>(ex.GetSize(), ex.GetNumberOfComponentsPerPixel(), "padding", index)
 

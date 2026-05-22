@@ -1234,6 +1234,30 @@ module Stage =
         createWrappedWithCostModelAndSlice name build transition (StageCostModel.create memoryModel timeCostModel) elementTransformation sliceCardinality (stage1.Cleaning@stage2.Cleaning)
         |> withGraph (PipelineGraph.parallelJoin name stage1.Graph stage2.Graph)
 
+    let forkWithDebug (debug: bool) (stage1: Stage<'S,'U>, stage2: Stage<'S,'V>) : Stage<'S,'U * 'V> =
+        if stage1.Transition.From <> stage2.Transition.From then
+            failwith $"[fork] can only apply stages with the same streaming profile ({stage1.Transition.From} <> {stage2.Transition.From})"
+
+        if stage1.SliceCardinality <> stage2.SliceCardinality then
+            failwith $"[fork] Cannot synchronize branches with different slice domains {stage1.SliceCardinality} vs {stage2.SliceCardinality}"
+
+        let memoryNeed nElemsPerSlice =
+            SingleOrPair.add (nElemsPerSlice |> stage1.MemoryNeed) (nElemsPerSlice |> stage2.MemoryNeed)
+
+        let elementTransformation nElems =
+            let left = stage1.ElementTransformation nElems
+            let right = stage2.ElementTransformation nElems
+            if left <> right then
+                failwith $"[fork] Cannot zip branch outputs with different number of elements {left} vs {right}"
+            left
+
+        map2Sync $"({stage1.Name},{stage2.Name})" debug (fun u v -> (u, v)) stage1 stage2 memoryNeed elementTransformation
+
+    let fork stages = forkWithDebug false stages
+
+    let (-->>) (stage: Stage<'S,'T>) (stage1: Stage<'T,'U>, stage2: Stage<'T,'V>) : Stage<'S,'U * 'V> =
+        stage --> fork (stage1, stage2)
+
     let mapPairSync (name: string) (debug: bool) (stage1: Stage<'U, 'S>) (stage2: Stage<'V, 'T>) (memoryNeed: MemoryNeedWrapped) (elementTransformation: ElementTransformation) : Stage<'U * 'V, 'S * 'T> =
         let build () =
             let stage1Pipe = stage1.Build ()

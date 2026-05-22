@@ -73,9 +73,18 @@ val teeFst:
 val teeSnd:
   (SlimPipeline.Stage<'a,'a> -> SlimPipeline.Stage<('b * 'a),('b * 'a)>)
 
+val fork:
+  (StackCore.Stage<'a,'b> * StackCore.Stage<'a,'c> ->
+     StackCore.Stage<'a,('b * 'c)>)
+
+val (-->>) :
+  (StackCore.Stage<'a,'b> ->
+     StackCore.Stage<'b,'c> * StackCore.Stage<'b,'d> ->
+       StackCore.Stage<'a,('c * 'd)>)
+
 val ignoreSingles: (unit -> StackCore.Stage<'a,unit>)
 
-val ignorePairs: (unit -> StackCore.Stage<('a * unit),unit>)
+val ignorePairs: (unit -> StackCore.Stage<('a * 'b),unit>)
 
 val zeroMaker:
   (int -> StackCore.Image<'a> -> StackCore.Image<'a>) when 'a: equality

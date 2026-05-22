@@ -29,6 +29,8 @@ let (>>=>) = StackCore.(>>=>)
 let (>>=>>) = StackCore.(>>=>>)
 let teeFst = StackCore.teeFst
 let teeSnd = StackCore.teeSnd
+let fork = StackCore.fork
+let (-->>) = StackCore.(-->>)
 let ignoreSingles = StackCore.ignoreSingles
 let ignorePairs = StackCore.ignorePairs
 let zeroMaker = StackCore.zeroMaker

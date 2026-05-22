@@ -86,9 +86,46 @@ let generatorSuite =
                 |> PipelineCodeGenerator.generateSavedGraph
 
             Expect.equal (code.Split("|> read<uint8>").Length - 1) 1 "The shared read source should be generated once."
-            Expect.stringContains code ">=>> (write \"output-a\" \".tiff\", write \"output-b\" \".tiff\")" "Terminal writes should be emitted as shared fan-out branches."
-            Expect.stringContains code ">=> ignorePairs ()" "The paired write outputs should be consumed by a single sink."
+            Expect.stringContains code "-->> (" "Terminal writes should be emitted as a shared stage-level fan-out."
+            Expect.stringContains code ">=> (" "The shared fan-out should be composed as one terminal stage."
+            Expect.stringContains code "--> ignorePairs ()" "The paired write outputs should be consumed by typed cleanup."
             Expect.equal (code.Split("|> sink").Length - 1) 1 "The shared terminal fan-out should run as one pipeline."
+
+        testCase "shared read feeding three terminal writes generates nested typed cleanup" <| fun _ ->
+            let read =
+                node "read" "Read"
+                    [ p "availableMemory" "1073741824" false
+                      p "type" "UInt8" false
+                      p "input" "input" false
+                      p "suffix" ".tiff" false ]
+
+            let writeA =
+                node "writeA" "Write"
+                    [ p "output" "output-a" false
+                      p "suffix" ".tiff" false ]
+
+            let writeB =
+                node "writeB" "Write"
+                    [ p "output" "output-b" false
+                      p "suffix" ".tiff" false ]
+
+            let writeC =
+                node "writeC" "Write"
+                    [ p "output" "output-c" false
+                      p "suffix" ".tiff" false ]
+
+            let code =
+                graph
+                    [ read; writeA; writeB; writeC ]
+                    [ edge "read" "output" 0 "writeA" "input" 0
+                      edge "read" "output" 0 "writeB" "input" 0
+                      edge "read" "output" 0 "writeC" "input" 0 ]
+                |> PipelineCodeGenerator.generateSavedGraph
+
+            Expect.equal (code.Split("|> read<uint8>").Length - 1) 1 "The shared read source should still be generated once."
+            Expect.equal (code.Split("-->>").Length - 1) 2 "Three terminal branches should lower to two nested binary forks."
+            Expect.equal (code.Split("--> ignorePairs ()").Length - 1) 2 "Each nested fork should have a statically typed cleanup stage."
+            Expect.equal (code.Split("|> sink").Length - 1) 1 "The nested terminal fan-out should run as one pipeline."
 
         testCase "read volume format writes streaming volume conversion" <| fun _ ->
             let read =

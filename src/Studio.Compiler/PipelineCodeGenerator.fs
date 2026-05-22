@@ -2368,7 +2368,7 @@ module PipelineCodeGenerator =
                 |> Array.groupBy fst
                 |> Array.choose (fun (_, entries) ->
                     let branches = entries |> Array.map snd
-                    if branches.Length = 2 then Some branches else None)
+                    if branches.Length >= 2 then Some branches else None)
 
             let groupedTerminalIds =
                 sharedSinkGroups
@@ -2376,20 +2376,42 @@ module PipelineCodeGenerator =
                 |> Set.ofArray
 
             let sharedSinkExpressions =
+                let formatForkStageTuple (left: string) (right: string) =
+                    if left.Contains(newLine, StringComparison.Ordinal) || right.Contains(newLine, StringComparison.Ordinal) then
+                        $"-->> ({newLine}{indentBlock 4 left},{newLine}{indentBlock 4 right}{newLine})"
+                    else
+                        $"-->> ({left}, {right})"
+
+                let rec sinkTreeStageExpression (stageCalls: string list) =
+                    match stageCalls with
+                    | [] ->
+                        "ignoreSingles ()"
+                    | [ call ] ->
+                        $"{call}{newLine}--> ignoreSingles ()"
+                    | left :: right ->
+                        let rightStage = sinkTreeStageExpression right
+                        let rightStage =
+                            if right.Length = 1 then
+                                rightStage
+                            else
+                                parenthesizeBlock rightStage
+
+                        $"identity{newLine}{formatForkStageTuple left rightStage}{newLine}--> ignorePairs ()"
+
                 sharedSinkGroups
                 |> Array.map (fun branches ->
                     let nodes = branches |> Array.map (fun (node, _, _) -> node)
                     let commonEdge = branches |> Array.head |> fun (_, edge, _) -> edge
-                    let leftCall = branches[0] |> fun (_, _, call) -> call
-                    let rightCall = branches[1] |> fun (_, _, call) -> call
+                    let stageCalls = branches |> Array.map (fun (_, _, call) -> call) |> Array.toList
                     let shared = expressionFromOutputEdge commonEdge
+                    let sinkStage = sinkTreeStageExpression stageCalls |> parenthesizeBlock
 
                     { Dependencies =
                           nodes
                           |> Array.map (pipelineBindingDependencies Set.empty)
                           |> Set.unionMany
                       Text =
-                          $"{shared}{newLine}{formatStageTuple leftCall rightCall}{newLine}>=> ignorePairs (){newLine}|> sink" })
+                          $"{shared}{newLine}>=> {sinkStage}{newLine}|> sink" })
 
             let singleTerminalExpressions =
                 terminalNodes
