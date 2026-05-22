@@ -438,48 +438,52 @@
                                       VerticalScrollBarVisibility="Auto">
                             <StackPanel Spacing="5">
                                 <Grid ColumnDefinitions="116,*,58">
-                                    <TextBlock Text="Compact" VerticalAlignment="Center" FontSize="11" />
-                                    <TextBox Grid.Column="1" Text="{Binding BoundingBoxCompact, Mode=TwoWay}" FontSize="11" MinHeight="24" />
+                                    <TextBlock Text="Left margin" VerticalAlignment="Center" FontSize="11" />
+                                    <TextBox Grid.Column="1" Text="{Binding LeftMargin, Mode=TwoWay}" FontSize="11" MinHeight="24" />
                                 </Grid>
                                 <Grid ColumnDefinitions="116,*,58">
-                                    <TextBlock Text="Square" VerticalAlignment="Center" FontSize="11" />
-                                    <TextBox Grid.Column="1" Text="{Binding BoundingBoxSquare, Mode=TwoWay}" FontSize="11" MinHeight="24" />
+                                    <TextBlock Text="Top margin" VerticalAlignment="Center" FontSize="11" />
+                                    <TextBox Grid.Column="1" Text="{Binding TopMargin, Mode=TwoWay}" FontSize="11" MinHeight="24" />
                                 </Grid>
                                 <Grid ColumnDefinitions="116,*,58">
-                                    <TextBlock Text="Spacing" VerticalAlignment="Center" FontSize="11" />
-                                    <TextBox Grid.Column="1" Text="{Binding BoxSpacing, Mode=TwoWay}" FontSize="11" MinHeight="24" />
+                                    <TextBlock Text="Node separation" VerticalAlignment="Center" FontSize="11" />
+                                    <TextBox Grid.Column="1" Text="{Binding NodeSeparation, Mode=TwoWay}" FontSize="11" MinHeight="24" />
                                 </Grid>
                                 <Grid ColumnDefinitions="116,*,58">
-                                    <TextBlock Text="Sharpness" VerticalAlignment="Center" FontSize="11" />
-                                    <TextBox Grid.Column="1" Text="{Binding BoxSpacingSharpness, Mode=TwoWay}" FontSize="11" MinHeight="24" />
+                                    <TextBlock Text="Layer separation" VerticalAlignment="Center" FontSize="11" />
+                                    <TextBox Grid.Column="1" Text="{Binding LayerSeparation, Mode=TwoWay}" FontSize="11" MinHeight="24" />
                                 </Grid>
                                 <Grid ColumnDefinitions="116,*,58">
-                                    <TextBlock Text="Direction" VerticalAlignment="Center" FontSize="11" />
-                                    <TextBox Grid.Column="1" Text="{Binding ConnectorDirection, Mode=TwoWay}" FontSize="11" MinHeight="24" />
+                                    <TextBlock Text="Min node width" VerticalAlignment="Center" FontSize="11" />
+                                    <TextBox Grid.Column="1" Text="{Binding MinNodeWidth, Mode=TwoWay}" FontSize="11" MinHeight="24" />
                                 </Grid>
                                 <Grid ColumnDefinitions="116,*,58">
-                                    <TextBlock Text="Length" VerticalAlignment="Center" FontSize="11" />
-                                    <TextBox Grid.Column="1" Text="{Binding ConnectorLength, Mode=TwoWay}" FontSize="11" MinHeight="24" />
+                                    <TextBlock Text="Min node height" VerticalAlignment="Center" FontSize="11" />
+                                    <TextBox Grid.Column="1" Text="{Binding MinNodeHeight, Mode=TwoWay}" FontSize="11" MinHeight="24" />
                                 </Grid>
                                 <Grid ColumnDefinitions="116,*,58">
-                                    <TextBlock Text="Avoid boxes" VerticalAlignment="Center" FontSize="11" />
-                                    <TextBox Grid.Column="1" Text="{Binding ConnectorAvoidsBoxes, Mode=TwoWay}" FontSize="11" MinHeight="24" />
+                                    <TextBlock Text="Aspect ratio" VerticalAlignment="Center" FontSize="11" />
+                                    <TextBox Grid.Column="1" Text="{Binding AspectRatio, Mode=TwoWay}" FontSize="11" MinHeight="24" />
                                 </Grid>
                                 <Grid ColumnDefinitions="116,*,58">
-                                    <TextBlock Text="Crossings" VerticalAlignment="Center" FontSize="11" />
-                                    <TextBox Grid.Column="1" Text="{Binding ConnectorCrossings, Mode=TwoWay}" FontSize="11" MinHeight="24" />
+                                    <TextBlock Text="Left-align layers" VerticalAlignment="Center" FontSize="11" />
+                                    <CheckBox Grid.Column="1" IsChecked="{Binding LeftAlignLayers, Mode=TwoWay}" />
                                 </Grid>
                                 <Grid ColumnDefinitions="116,*,58">
-                                    <TextBlock Text="Stay near" VerticalAlignment="Center" FontSize="11" />
-                                    <TextBox Grid.Column="1" Text="{Binding StayNearUserLayout, Mode=TwoWay}" FontSize="11" MinHeight="24" />
+                                    <TextBlock Text="Ordering passes" VerticalAlignment="Center" FontSize="11" />
+                                    <TextBox Grid.Column="1" Text="{Binding MaxNumberOfPassesInOrdering, Mode=TwoWay}" FontSize="11" MinHeight="24" />
                                 </Grid>
                                 <Grid ColumnDefinitions="116,*,58">
-                                    <TextBlock Text="Damping" VerticalAlignment="Center" FontSize="11" />
-                                    <TextBox Grid.Column="1" Text="{Binding Damping, Mode=TwoWay}" FontSize="11" MinHeight="24" />
+                                    <TextBlock Text="Ordering repeats" VerticalAlignment="Center" FontSize="11" />
+                                    <TextBox Grid.Column="1" Text="{Binding RepetitionCoefficientForOrdering, Mode=TwoWay}" FontSize="11" MinHeight="24" />
                                 </Grid>
                                 <Grid ColumnDefinitions="116,*,58">
-                                    <TextBlock Text="Delay ms" VerticalAlignment="Center" FontSize="11" />
-                                    <TextBox Grid.Column="1" Text="{Binding VisualizationDelayMs, Mode=TwoWay}" FontSize="11" MinHeight="24" />
+                                    <TextBlock Text="No-gain swaps" VerticalAlignment="Center" FontSize="11" />
+                                    <TextBox Grid.Column="1" Text="{Binding NoGainAdjacentSwapStepsBound, Mode=TwoWay}" FontSize="11" MinHeight="24" />
+                                </Grid>
+                                <Grid ColumnDefinitions="116,*,58">
+                                    <TextBlock Text="Brandes threshold" VerticalAlignment="Center" FontSize="11" />
+                                    <TextBox Grid.Column="1" Text="{Binding BrandesThreshold, Mode=TwoWay}" FontSize="11" MinHeight="24" />
                                 </Grid>
                             </StackPanel>
                         </ScrollViewer>

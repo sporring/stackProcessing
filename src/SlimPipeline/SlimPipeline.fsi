@@ -634,6 +634,7 @@ type Plan<'S,'T> =
       debugLevel: uint
       optimize: bool
       costDiscrepancy: bool
+      costFlagPath: string option
     }
 and PipelineCostTerm =
     {
@@ -676,6 +677,8 @@ module Plan =
     val withSourcePeek: sourcePeek: SourcePeek -> pl: Plan<'S,'T> -> Plan<'S,'T>
     val withCostDiscrepancyReporting:
       enabled: bool -> pl: Plan<'S,'T> -> Plan<'S,'T>
+    val withCostDiscrepancyFlagPath:
+      path: string -> pl: Plan<'S,'T> -> Plan<'S,'T>
     val withRuntimeOptionsFrom:
       source: Plan<'A,'B> -> target: Plan<'S,'T> -> Plan<'S,'T>
     val private mergeCostPeak:
@@ -705,7 +708,7 @@ module Plan =
     val private invariantUInt64: value: uint64 -> string
     val private tryFindRepositoryRoot: unit -> string option
     val private resolveCostFlagPath: path: string -> string
-    val private defaultCostFlagPath: unit -> string option
+    val private defaultCostFlagPath: unit -> string
     val private pipelineCostTermsText: pl: Plan<'S,'T> -> string
     val private appendCostFlag:
       label: string ->

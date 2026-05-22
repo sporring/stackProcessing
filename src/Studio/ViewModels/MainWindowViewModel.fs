@@ -21,6 +21,13 @@ open NodeEditor.Mvvm
 open NodeEditor.Model
 open Studio.Models
 open Studio.Services
+open Microsoft.Msagl.Core.Geometry
+open Microsoft.Msagl.Core.Geometry.Curves
+open Microsoft.Msagl.Layout.Layered
+
+type private MsaglEdge = Microsoft.Msagl.Core.Layout.Edge
+type private MsaglGeometryGraph = Microsoft.Msagl.Core.Layout.GeometryGraph
+type private MsaglNode = Microsoft.Msagl.Core.Layout.Node
 
 type private SimpleCommand(execute: obj -> unit, canExecute: obj -> bool) =
     let canExecuteChanged = Event<EventHandler, EventArgs>()
@@ -112,86 +119,93 @@ type PipelinePinViewModel(alignment: PinAlignment, port: Port, kind: PipelinePin
 type ArrangeSettingsViewModel() =
     inherit ViewModelBase()
 
-    let defaultBoundingBoxCompact = 0.005
-    let defaultBoundingBoxSquare = 0.
-    let defaultBoxSpacing = 5.
-    let defaultBoxSpacingSharpness = 1.
-    let defaultConnectorDirection = 1.
-    let defaultConnectorLength = 0.01
-    let defaultConnectorAvoidsBoxes = 1.
-    let defaultConnectorCrossings = 0.
-    let defaultStayNearUserLayout = 0.
-    let defaultDamping = 0.75
-    let defaultVisualizationDelayMs = 28.0
+    let defaultLeftMargin = 32.
+    let defaultTopMargin = 32.
+    let defaultNodeSeparation = 40.
+    let defaultLayerSeparation = 32.
+    let defaultMinNodeWidth = 120.
+    let defaultMinNodeHeight = 48.
+    let defaultAspectRatio = 2.
+    let defaultLeftAlignLayers = false
+    let defaultMaxNumberOfPassesInOrdering = 24
+    let defaultRepetitionCoefficientForOrdering = 8
+    let defaultNoGainAdjacentSwapStepsBound = 5
+    let defaultBrandesThreshold = 600
 
-    let mutable boundingBoxCompact = defaultBoundingBoxCompact
-    let mutable boundingBoxSquare = defaultBoundingBoxSquare
-    let mutable boxSpacing = defaultBoxSpacing
-    let mutable boxSpacingSharpness = defaultBoxSpacingSharpness
-    let mutable connectorDirection = defaultConnectorDirection
-    let mutable connectorLength = defaultConnectorLength
-    let mutable connectorAvoidsBoxes = defaultConnectorAvoidsBoxes
-    let mutable connectorCrossings = defaultConnectorCrossings
-    let mutable stayNearUserLayout = defaultStayNearUserLayout
-    let mutable damping = defaultDamping
-    let mutable visualizationDelayMs = defaultVisualizationDelayMs
+    let mutable leftMargin = defaultLeftMargin
+    let mutable topMargin = defaultTopMargin
+    let mutable nodeSeparation = defaultNodeSeparation
+    let mutable layerSeparation = defaultLayerSeparation
+    let mutable minNodeWidth = defaultMinNodeWidth
+    let mutable minNodeHeight = defaultMinNodeHeight
+    let mutable aspectRatio = defaultAspectRatio
+    let mutable leftAlignLayers = defaultLeftAlignLayers
+    let mutable maxNumberOfPassesInOrdering = defaultMaxNumberOfPassesInOrdering
+    let mutable repetitionCoefficientForOrdering = defaultRepetitionCoefficientForOrdering
+    let mutable noGainAdjacentSwapStepsBound = defaultNoGainAdjacentSwapStepsBound
+    let mutable brandesThreshold = defaultBrandesThreshold
 
-    member this.BoundingBoxCompact
-        with get () = boundingBoxCompact
-        and set value = this.SetProperty(&boundingBoxCompact, value) |> ignore
+    member this.LeftMargin
+        with get () = leftMargin
+        and set value = this.SetProperty(&leftMargin, value) |> ignore
 
-    member this.BoundingBoxSquare
-        with get () = boundingBoxSquare
-        and set value = this.SetProperty(&boundingBoxSquare, value) |> ignore
+    member this.TopMargin
+        with get () = topMargin
+        and set value = this.SetProperty(&topMargin, value) |> ignore
 
-    member this.BoxSpacing
-        with get () = boxSpacing
-        and set value = this.SetProperty(&boxSpacing, value) |> ignore
+    member this.NodeSeparation
+        with get () = nodeSeparation
+        and set value = this.SetProperty(&nodeSeparation, value) |> ignore
 
-    member this.BoxSpacingSharpness
-        with get () = boxSpacingSharpness
-        and set value = this.SetProperty(&boxSpacingSharpness, value) |> ignore
+    member this.LayerSeparation
+        with get () = layerSeparation
+        and set value = this.SetProperty(&layerSeparation, value) |> ignore
 
-    member this.ConnectorDirection
-        with get () = connectorDirection
-        and set value = this.SetProperty(&connectorDirection, value) |> ignore
+    member this.MinNodeWidth
+        with get () = minNodeWidth
+        and set value = this.SetProperty(&minNodeWidth, value) |> ignore
 
-    member this.ConnectorLength
-        with get () = connectorLength
-        and set value = this.SetProperty(&connectorLength, value) |> ignore
+    member this.MinNodeHeight
+        with get () = minNodeHeight
+        and set value = this.SetProperty(&minNodeHeight, value) |> ignore
 
-    member this.ConnectorAvoidsBoxes
-        with get () = connectorAvoidsBoxes
-        and set value = this.SetProperty(&connectorAvoidsBoxes, value) |> ignore
+    member this.AspectRatio
+        with get () = aspectRatio
+        and set value = this.SetProperty(&aspectRatio, value) |> ignore
 
-    member this.ConnectorCrossings
-        with get () = connectorCrossings
-        and set value = this.SetProperty(&connectorCrossings, value) |> ignore
+    member this.LeftAlignLayers
+        with get () = leftAlignLayers
+        and set value = this.SetProperty(&leftAlignLayers, value) |> ignore
 
-    member this.StayNearUserLayout
-        with get () = stayNearUserLayout
-        and set value = this.SetProperty(&stayNearUserLayout, value) |> ignore
+    member this.MaxNumberOfPassesInOrdering
+        with get () = maxNumberOfPassesInOrdering
+        and set value = this.SetProperty(&maxNumberOfPassesInOrdering, value) |> ignore
 
-    member this.Damping
-        with get () = damping
-        and set value = this.SetProperty(&damping, value) |> ignore
+    member this.RepetitionCoefficientForOrdering
+        with get () = repetitionCoefficientForOrdering
+        and set value = this.SetProperty(&repetitionCoefficientForOrdering, value) |> ignore
 
-    member this.VisualizationDelayMs
-        with get () = visualizationDelayMs
-        and set value = this.SetProperty(&visualizationDelayMs, value) |> ignore
+    member this.NoGainAdjacentSwapStepsBound
+        with get () = noGainAdjacentSwapStepsBound
+        and set value = this.SetProperty(&noGainAdjacentSwapStepsBound, value) |> ignore
+
+    member this.BrandesThreshold
+        with get () = brandesThreshold
+        and set value = this.SetProperty(&brandesThreshold, value) |> ignore
 
     member this.ResetDefaults() =
-        this.BoundingBoxCompact <- defaultBoundingBoxCompact
-        this.BoundingBoxSquare <- defaultBoundingBoxSquare
-        this.BoxSpacing <- defaultBoxSpacing
-        this.BoxSpacingSharpness <- defaultBoxSpacingSharpness
-        this.ConnectorDirection <- defaultConnectorDirection
-        this.ConnectorLength <- defaultConnectorLength
-        this.ConnectorAvoidsBoxes <- defaultConnectorAvoidsBoxes
-        this.ConnectorCrossings <- defaultConnectorCrossings
-        this.StayNearUserLayout <- defaultStayNearUserLayout
-        this.Damping <- defaultDamping
-        this.VisualizationDelayMs <- defaultVisualizationDelayMs
+        this.LeftMargin <- defaultLeftMargin
+        this.TopMargin <- defaultTopMargin
+        this.NodeSeparation <- defaultNodeSeparation
+        this.LayerSeparation <- defaultLayerSeparation
+        this.MinNodeWidth <- defaultMinNodeWidth
+        this.MinNodeHeight <- defaultMinNodeHeight
+        this.AspectRatio <- defaultAspectRatio
+        this.LeftAlignLayers <- defaultLeftAlignLayers
+        this.MaxNumberOfPassesInOrdering <- defaultMaxNumberOfPassesInOrdering
+        this.RepetitionCoefficientForOrdering <- defaultRepetitionCoefficientForOrdering
+        this.NoGainAdjacentSwapStepsBound <- defaultNoGainAdjacentSwapStepsBound
+        this.BrandesThreshold <- defaultBrandesThreshold
 
 module private PortMapping =
     let private basicTypeLabel basicType =
@@ -4051,412 +4065,141 @@ type MainWindowViewModel() as this =
                         | _ -> None)
                     |> Seq.toArray
 
-                let arrangeWeights =
-                    {| BoundingBoxCompact = arrangeSettings.BoundingBoxCompact
-                       BoundingBoxSquare = arrangeSettings.BoundingBoxSquare
-                       BoxSpacing = arrangeSettings.BoxSpacing
-                       BoxSpacingSharpness = arrangeSettings.BoxSpacingSharpness
-                       ConnectorDirection = arrangeSettings.ConnectorDirection
-                       ConnectorLength = arrangeSettings.ConnectorLength
-                       ConnectorAvoidsBoxes = arrangeSettings.ConnectorAvoidsBoxes
-                       ConnectorCrossings = arrangeSettings.ConnectorCrossings
-                       StayNearUserLayout = arrangeSettings.StayNearUserLayout
-                       Damping = arrangeSettings.Damping
-                       VisualizationDelayMs = int arrangeSettings.VisualizationDelayMs |}
-
-                let arrangeTiming =
-                    {| Iterations = 1000
-                       VisualizeEvery = 3
-                       StopWhenMaxMoveBelow = 0.5
-                       InitialMaxMove = 8.0
-                       FinalMaxMove = 1.0 |}
-
-                let leftMargin = 32.
-                let topMargin = 32.
-
-                let connectorAxis (startPin: PipelinePinViewModel) (endPin: PipelinePinViewModel) =
-                    match startPin.Alignment, endPin.Alignment with
-                    | PinAlignment.Right, PinAlignment.Left -> Some "horizontal"
-                    | PinAlignment.Bottom, PinAlignment.Top -> Some "vertical"
-                    | _ -> None
+                let leftMargin = max 0. arrangeSettings.LeftMargin
+                let topMargin = max 0. arrangeSettings.TopMargin
+                let nodeGap = max 0. arrangeSettings.NodeSeparation
+                let rankGap = max 0. arrangeSettings.LayerSeparation
+                let minNodeWidth = max 1. arrangeSettings.MinNodeWidth
+                let minNodeHeight = max 1. arrangeSettings.MinNodeHeight
 
                 let nodeIndexes = Dictionary<PipelineNodeViewModel, int>(HashIdentity.Reference)
                 nodes |> Array.iteri (fun index node -> nodeIndexes[node] <- index)
 
-                let connectedNodePairs = HashSet<int * int>()
+                let geometryGraph = MsaglGeometryGraph()
+                let layoutNodes =
+                    nodes
+                    |> Array.mapi (fun index node ->
+                        let width = max minNodeWidth node.Width
+                        let height = max minNodeHeight node.Height
+                        let curve = CurveFactory.CreateRectangle(width, height, Point())
+                        let layoutNode = MsaglNode(curve, box index)
+                        geometryGraph.Nodes.Add(layoutNode)
+                        layoutNode)
 
-                connectorEdges
-                |> Array.iter (fun (_, _, startNode, endNode) ->
-                    match nodeIndexes.TryGetValue startNode, nodeIndexes.TryGetValue endNode with
-                    | (true, startIndex), (true, endIndex) ->
-                        let pair = if startIndex < endIndex then startIndex, endIndex else endIndex, startIndex
-                        connectedNodePairs.Add(pair) |> ignore
-                    | _ -> ())
+                let settings = SugiyamaLayoutSettings()
+                settings.NodeSeparation <- nodeGap
+                settings.LayerSeparation <- rankGap
+                settings.MinNodeWidth <- minNodeWidth
+                settings.MinNodeHeight <- minNodeHeight
+                settings.AspectRatio <- max 0.1 arrangeSettings.AspectRatio
+                settings.MaxNumberOfPassesInOrdering <- max 1 arrangeSettings.MaxNumberOfPassesInOrdering
+                settings.RepetitionCoefficientForOrdering <- max 1 arrangeSettings.RepetitionCoefficientForOrdering
+                settings.NoGainAdjacentSwapStepsBound <- max 0 arrangeSettings.NoGainAdjacentSwapStepsBound
+                settings.BrandesThreshold <- max 0 arrangeSettings.BrandesThreshold
 
-                let verticalFanoutOffsets = Dictionary<int, float>()
-                let horizontalFanoutOffsets = Dictionary<int, float>()
+                let isStreamEdge (startPin: PipelinePinViewModel) (endPin: PipelinePinViewModel) =
+                    match startPin.Kind, endPin.Kind with
+                    | DataOutput, DataInput -> true
+                    | _ -> false
 
-                connectorEdges
-                |> Array.indexed
-                |> Array.choose (fun (edgeIndex, (startPin, endPin, startNode, endNode)) ->
-                    match connectorAxis startPin endPin, nodeIndexes.TryGetValue startNode, nodeIndexes.TryGetValue endNode with
-                    | Some "vertical", (true, startIndex), (true, endIndex) ->
-                        Some(edgeIndex, startPin, startIndex, endIndex)
-                    | _ ->
-                        None)
-                |> Seq.groupBy (fun (_, startPin, _, _) -> startPin)
-                |> Seq.iter (fun (_, edges) ->
-                    let edges =
-                        edges
-                        |> Seq.sortBy (fun (_, _, _, endIndex) -> nodes[endIndex].X + nodes[endIndex].Width / 2.)
-                        |> Seq.toArray
+                let isParameterEdge (startPin: PipelinePinViewModel) (endPin: PipelinePinViewModel) =
+                    match startPin.Kind, endPin.Kind with
+                    | (ScalarOutput | ReducerOutput), ParameterInput
+                    | ReducerOutput, DataInput -> true
+                    | _ -> false
 
-                    if edges.Length > 1 then
-                        let positions = Array.zeroCreate<float> edges.Length
+                let leftRightConstraints = HashSet<int * int>()
 
-                        for i in 1 .. edges.Length - 1 do
-                            let _, _, _, previousEnd = edges[i - 1]
-                            let _, _, _, currentEnd = edges[i]
-                            let siblingGap = max nodes[previousEnd].Height nodes[currentEnd].Height
-                            let centerSpacing =
-                                nodes[previousEnd].Width / 2.
-                                + nodes[currentEnd].Width / 2.
-                                + siblingGap
+                let addLeftRightConstraint startIndex endIndex =
+                    if startIndex <> endIndex
+                       && not (leftRightConstraints.Contains(endIndex, startIndex))
+                       && leftRightConstraints.Add(startIndex, endIndex) then
+                        settings.AddLeftRightConstraint(layoutNodes[startIndex], layoutNodes[endIndex])
 
-                            positions[i] <- positions[i - 1] + centerSpacing
+                let addConstraint (startPin: PipelinePinViewModel) (endPin: PipelinePinViewModel) startIndex endIndex =
+                    if isStreamEdge startPin endPin then
+                        settings.AddSameLayerNeighbors(layoutNodes[startIndex], layoutNodes[endIndex])
+                        addLeftRightConstraint startIndex endIndex
+                    elif isParameterEdge startPin endPin then
+                        settings.AddUpDownConstraint(layoutNodes[startIndex], layoutNodes[endIndex])
 
-                        let center = (positions[0] + positions[positions.Length - 1]) / 2.
-
-                        edges
-                        |> Array.iteri (fun i (edgeIndex, _, _, _) ->
-                            verticalFanoutOffsets[edgeIndex] <- positions[i] - center))
-
-                connectorEdges
-                |> Array.indexed
-                |> Array.choose (fun (edgeIndex, (startPin, endPin, startNode, endNode)) ->
-                    match connectorAxis startPin endPin, nodeIndexes.TryGetValue startNode, nodeIndexes.TryGetValue endNode with
-                    | Some "horizontal", (true, startIndex), (true, endIndex) ->
-                        Some(edgeIndex, endPin, startIndex, endIndex)
-                    | _ ->
-                        None)
-                |> Seq.groupBy (fun (_, _, _, endIndex) -> endIndex)
-                |> Seq.iter (fun (_, edges) ->
-                    let edges =
-                        edges
-                        |> Seq.sortBy (fun (_, endPin, _, _) -> endPin.Y)
-                        |> Seq.toArray
-
-                    if edges.Length > 1 then
-                        let positions = Array.zeroCreate<float> edges.Length
-
-                        for i in 1 .. edges.Length - 1 do
-                            let _, _, previousStart, _ = edges[i - 1]
-                            let _, _, currentStart, _ = edges[i]
-                            let siblingGap = max nodes[previousStart].Height nodes[currentStart].Height
-                            let centerSpacing =
-                                nodes[previousStart].Height / 2.
-                                + nodes[currentStart].Height / 2.
-                                + siblingGap
-
-                            positions[i] <- positions[i - 1] + centerSpacing
-
-                        let spreadCenter = (positions[0] + positions[positions.Length - 1]) / 2.
-                        let targetCenter = edges |> Array.averageBy (fun (_, endPin, _, _) -> endPin.Y)
-
-                        edges
-                        |> Array.iteri (fun i (edgeIndex, endPin, _, _) ->
-                            horizontalFanoutOffsets[edgeIndex] <- endPin.Y - targetCenter - (positions[i] - spreadCenter)))
-
-                let startX = nodes |> Array.map _.X
-                let startY = nodes |> Array.map _.Y
-                let x = Array.copy startX
-                let y = Array.copy startY
-                let fx = Array.zeroCreate<float> nodes.Length
-                let fy = Array.zeroCreate<float> nodes.Length
-                let vx = Array.zeroCreate<float> nodes.Length
-                let vy = Array.zeroCreate<float> nodes.Length
-
-                let inline clamp lo hi value = min hi (max lo value)
-                let inline signOrOne value = if value < 0. then -1. else 1.
-                let inline square value = value * value
-
-                let inline nodeCenterX i = x[i] + nodes[i].Width / 2.
-                let inline nodeCenterY i = y[i] + nodes[i].Height / 2.
-                let inline rectLeft i = x[i]
-                let inline rectTop i = y[i]
-                let inline rectRight i = x[i] + nodes[i].Width
-                let inline rectBottom i = y[i] + nodes[i].Height
-
-                let addForce index dx dy scale =
-                    fx[index] <- fx[index] + dx * scale
-                    fy[index] <- fy[index] + dy * scale
-
-                let addPairForce first second dx dy scale =
-                    addForce first -dx -dy scale
-                    addForce second dx dy scale
-
-                let applyPositions () =
-                    for i in 0 .. nodes.Length - 1 do
-                        nodes[i].X <- x[i]
-                        nodes[i].Y <- y[i]
-
-                let pinPoint (positionsX: float array) (positionsY: float array) index (pin: PipelinePinViewModel) =
-                    positionsX[index] + pin.X, positionsY[index] + pin.Y
-
-                let connectorSegments () =
+                let layoutEdges =
                     connectorEdges
                     |> Array.choose (fun (startPin, endPin, startNode, endNode) ->
                         match nodeIndexes.TryGetValue startNode, nodeIndexes.TryGetValue endNode with
-                        | (true, startIndex), (true, endIndex) ->
-                            let sx, sy = pinPoint x y startIndex startPin
-                            let ex, ey = pinPoint x y endIndex endPin
-                            Some(startIndex, endIndex, sx, sy, ex, ey)
+                        | (true, startIndex), (true, endIndex) -> Some(startPin, endPin, startIndex, endIndex)
                         | _ -> None)
 
-                let distanceFromPointToSegment px py ax ay bx by =
-                    let vx = bx - ax
-                    let vy = by - ay
-                    let lengthSquared = vx * vx + vy * vy
+                layoutEdges
+                |> Array.iter (fun (startPin, endPin, startIndex, endIndex) ->
+                    if isParameterEdge startPin endPin then
+                        geometryGraph.Edges.Add(MsaglEdge(layoutNodes[startIndex], layoutNodes[endIndex]))
+                    addConstraint startPin endPin startIndex endIndex)
 
-                    let t =
-                        if lengthSquared <= 0.000001 then
-                            0.
-                        else
-                            ((px - ax) * vx + (py - ay) * vy) / lengthSquared
-                            |> clamp 0. 1.
+                layoutEdges
+                |> Array.filter (fun (startPin, endPin, _, _) -> isParameterEdge startPin endPin && not (isStreamEdge startPin endPin))
+                |> Seq.groupBy (fun (_, _, startIndex, _) -> startIndex)
+                |> Seq.iter (fun (_, edges) ->
+                    edges
+                    |> Seq.sortBy (fun (startPin, _, _, endIndex) -> startPin.X, nodes[endIndex].X)
+                    |> Seq.pairwise
+                    |> Seq.iter (fun ((_, _, _, leftEndIndex), (_, _, _, rightEndIndex)) ->
+                        addLeftRightConstraint leftEndIndex rightEndIndex))
 
-                    let cx = ax + t * vx
-                    let cy = ay + t * vy
-                    let dx = px - cx
-                    let dy = py - cy
-                    sqrt (dx * dx + dy * dy), dx, dy
+                layoutEdges
+                |> Array.filter (fun (startPin, endPin, _, _) -> isParameterEdge startPin endPin && not (isStreamEdge startPin endPin))
+                |> Seq.groupBy (fun (_, _, _, endIndex) -> endIndex)
+                |> Seq.iter (fun (_, edges) ->
+                    edges
+                    |> Seq.sortBy (fun (_, endPin, startIndex, _) -> endPin.X, nodes[startIndex].X)
+                    |> Seq.pairwise
+                    |> Seq.iter (fun ((_, _, leftStartIndex, _), (_, _, rightStartIndex, _)) ->
+                        addLeftRightConstraint leftStartIndex rightStartIndex))
 
-                let ccw ax ay bx by cx cy =
-                    (cy - ay) * (bx - ax) > (by - ay) * (cx - ax)
+                let layout = LayeredLayout(geometryGraph, settings)
+                layout.Run()
 
-                let segmentsCross ax ay bx by cx cy dx dy =
-                    ccw ax ay cx cy dx dy <> ccw bx by cx cy dx dy
-                    && ccw ax ay bx by cx cy <> ccw ax ay bx by dx dy
+                let lefts =
+                    layoutNodes
+                    |> Array.mapi (fun index layoutNode ->
+                        layoutNode.Center.X - (max minNodeWidth nodes[index].Width) / 2.)
 
-                let mutable iteration = 0
-                let mutable isConverged = false
+                let tops =
+                    layoutNodes
+                    |> Array.mapi (fun index layoutNode ->
+                        layoutNode.Center.Y + (max minNodeHeight nodes[index].Height) / 2.)
 
-                while iteration < arrangeTiming.Iterations && not isConverged do
-                    Array.Clear(fx, 0, fx.Length)
-                    Array.Clear(fy, 0, fy.Length)
-
-                    let minX = nodes |> Array.mapi (fun i _ -> rectLeft i) |> Array.min
-                    let minY = nodes |> Array.mapi (fun i _ -> rectTop i) |> Array.min
-                    let maxX = nodes |> Array.mapi (fun i _ -> rectRight i) |> Array.max
-                    let maxY = nodes |> Array.mapi (fun i _ -> rectBottom i) |> Array.max
-                    let width = max 1. (maxX - minX)
-                    let height = max 1. (maxY - minY)
-                    let centerX = minX + width / 2.
-                    let centerY = minY + height / 2.
-                    let squareBias = width - height
-                    let boundaryTolerance = 0.5
-                    let compactPerimeterScale =
-                        arrangeWeights.BoundingBoxCompact * 0.5 * (width + height)
-                    let compactCenterScale =
-                        compactPerimeterScale / max width height
-
-                    for i in 0 .. nodes.Length - 1 do
-                        let cx = nodeCenterX i
-                        let cy = nodeCenterY i
-
-                        if abs (rectLeft i - minX) <= boundaryTolerance then
-                            addForce i 1. 0. compactPerimeterScale
-
-                        if abs (rectRight i - maxX) <= boundaryTolerance then
-                            addForce i -1. 0. compactPerimeterScale
-
-                        if abs (rectTop i - minY) <= boundaryTolerance then
-                            addForce i 0. 1. compactPerimeterScale
-
-                        if abs (rectBottom i - maxY) <= boundaryTolerance then
-                            addForce i 0. -1. compactPerimeterScale
-
-                        // Bounding-box compactness uses perimeter, not area. Area rewards collapsing
-                        // one dimension when the graph is already elongated; perimeter keeps the
-                        // inward pressure symmetric in x and y.
-                        //
-                        // The exact bounding-box gradient only touches nodes on the current
-                        // min/max borders. This soft companion keeps interior nodes from drifting
-                        // far apart when another node temporarily owns the graph boundary.
-                        addForce i (centerX - cx) 0. compactCenterScale
-                        addForce i 0. (centerY - cy) compactCenterScale
-                        addForce i (startX[i] - x[i]) (startY[i] - y[i]) arrangeWeights.StayNearUserLayout
-                        addForce i (centerX - cx) 0. (arrangeWeights.BoundingBoxSquare * squareBias / width)
-                        addForce i 0. (centerY - cy) (arrangeWeights.BoundingBoxSquare * -squareBias / height)
-
-                    for i in 0 .. nodes.Length - 2 do
-                        for j in i + 1 .. nodes.Length - 1 do
-                            let isConnectedPair = connectedNodePairs.Contains(i, j)
-                            let dx = nodeCenterX j - nodeCenterX i
-                            let dy = nodeCenterY j - nodeCenterY i
-                            let horizontalLimit = (nodes[i].Width + nodes[j].Width) / 2.
-                            let verticalLimit = (nodes[i].Height + nodes[j].Height) / 2.
-                            let standardGap = max nodes[i].Height nodes[j].Height
-                            let overlapX = horizontalLimit - abs dx
-                            let overlapY = verticalLimit - abs dy
-
-                            let clearance =
-                                if overlapX > 0. && overlapY > 0. then
-                                    -min overlapX overlapY
-                                else
-                                    let gapX = max 0. -overlapX
-                                    let gapY = max 0. -overlapY
-                                    sqrt (square gapX + square gapY)
-
-                            let directionX, directionY =
-                                if overlapX > 0. && overlapY > 0. then
-                                    if overlapX < overlapY then
-                                        signOrOne dx, 0.
-                                    else
-                                        0., signOrOne dy
-                                else
-                                    let gapX = max 0. -overlapX
-                                    let gapY = max 0. -overlapY
-
-                                    if gapX > 0. && gapY > 0. then
-                                        let length = max 0.0001 (sqrt (square gapX + square gapY))
-                                        signOrOne dx * gapX / length, signOrOne dy * gapY / length
-                                    elif gapX > 0. then
-                                        signOrOne dx, 0.
-                                    elif gapY > 0. then
-                                        0., signOrOne dy
-                                    else
-                                        0., 0.
-
-                            let normalizedClearance = clearance / max 1. standardGap
-                            let spacingForce =
-                                arrangeWeights.BoxSpacing
-                                * exp (-arrangeWeights.BoxSpacingSharpness * normalizedClearance)
-
-                            if overlapX > 0. && overlapY > 0. then
-                                addPairForce i j directionX directionY (spacingForce * (1. + min overlapX overlapY))
-                            elif not isConnectedPair && clearance < 3.0 * standardGap then
-                                addPairForce i j directionX directionY spacingForce
-
-                    for edgeIndex in 0 .. connectorEdges.Length - 1 do
-                        let startPin, endPin, startNode, endNode = connectorEdges[edgeIndex]
-
-                        match nodeIndexes.TryGetValue startNode, nodeIndexes.TryGetValue endNode with
-                        | (true, startIndex), (true, endIndex) ->
-                            let preferredGap = max nodes[startIndex].Height nodes[endIndex].Height
-                            let sx, sy = pinPoint x y startIndex startPin
-                            let ex, ey = pinPoint x y endIndex endPin
-                            let pinDx = ex - sx
-                            let pinDy = ey - sy
-
-                            match connectorAxis startPin endPin with
-                            | Some "horizontal" ->
-                                let horizontalError = preferredGap - pinDx
-                                let desiredDy =
-                                    match horizontalFanoutOffsets.TryGetValue edgeIndex with
-                                    | true, offset -> offset
-                                    | _ -> 0.
-
-                                addPairForce startIndex endIndex 1. 0. (arrangeWeights.ConnectorDirection * horizontalError)
-                                addPairForce startIndex endIndex 0. 1. (arrangeWeights.ConnectorDirection * (desiredDy - pinDy))
-                            | Some "vertical" ->
-                                let verticalError = preferredGap - pinDy
-                                let desiredDx =
-                                    match verticalFanoutOffsets.TryGetValue edgeIndex with
-                                    | true, offset -> offset
-                                    | _ -> 0.
-
-                                addPairForce startIndex endIndex 0. 1. (arrangeWeights.ConnectorDirection * verticalError)
-                                addPairForce startIndex endIndex 1. 0. (arrangeWeights.ConnectorDirection * (desiredDx - pinDx))
-                            | _ -> ()
-
-                            let length = sqrt (square pinDx + square pinDy)
-                            let preferredLength = max nodes[startIndex].Height nodes[endIndex].Height
-                            let excess = length - preferredLength
-
-                            if excess > 0. && length > 0.0001 then
-                                addPairForce startIndex endIndex -(pinDx / length) -(pinDy / length) (arrangeWeights.ConnectorLength * excess)
-                            | _ -> ()
-
-                    let segments = connectorSegments()
-
-                    for startIndex, endIndex, sx, sy, ex, ey in segments do
-                        for i in 0 .. nodes.Length - 1 do
-                            if i <> startIndex && i <> endIndex then
-                                let cx = nodeCenterX i
-                                let cy = nodeCenterY i
-                                let radius = 0.5 * sqrt (square nodes[i].Width + square nodes[i].Height) + 18.
-                                let distance, dx, dy = distanceFromPointToSegment cx cy sx sy ex ey
-
-                                if distance < radius then
-                                    let nx, ny =
-                                        if distance <= 0.0001 then
-                                            0., 1.
-                                        else
-                                            dx / distance, dy / distance
-
-                                    addForce i nx ny (arrangeWeights.ConnectorAvoidsBoxes * (radius - distance))
-
-                    for a in 0 .. segments.Length - 2 do
-                        let aStart, aEnd, ax, ay, bx, by = segments[a]
-
-                        for b in a + 1 .. segments.Length - 1 do
-                            let bStart, bEnd, cx, cy, dx, dy = segments[b]
-                            let sharesNode = aStart = bStart || aStart = bEnd || aEnd = bStart || aEnd = bEnd
-
-                            if not sharesNode && segmentsCross ax ay bx by cx cy dx dy then
-                                let anx = -(by - ay)
-                                let any = bx - ax
-                                let bnx = -(dy - cy)
-                                let bny = dx - cx
-                                let alen = max 1. (sqrt (square anx + square any))
-                                let blen = max 1. (sqrt (square bnx + square bny))
-
-                                addForce aStart (anx / alen) (any / alen) arrangeWeights.ConnectorCrossings
-                                addForce aEnd (anx / alen) (any / alen) arrangeWeights.ConnectorCrossings
-                                addForce bStart -(bnx / blen) -(bny / blen) arrangeWeights.ConnectorCrossings
-                                addForce bEnd -(bnx / blen) -(bny / blen) arrangeWeights.ConnectorCrossings
-
-                    // Most arrange terms are translation-invariant. Remove their shared drift so the
-                    // graph settles in place instead of slowly flowing when boundary-node counts differ.
-                    let meanForceX = fx |> Array.average
-                    let meanForceY = fy |> Array.average
-
-                    for i in 0 .. nodes.Length - 1 do
-                        fx[i] <- fx[i] - meanForceX
-                        fy[i] <- fy[i] - meanForceY
-
-                    let progress = 1. - float iteration / float arrangeTiming.Iterations
-                    let step = 0.75 * progress + 0.08
-                    let maxMove = arrangeTiming.InitialMaxMove * progress + arrangeTiming.FinalMaxMove * (1. - progress)
-                    let damping = clamp 0. 0.98 arrangeWeights.Damping
-                    let mutable maxStepMove = 0.
-
-                    for i in 0 .. nodes.Length - 1 do
-                        vx[i] <- damping * vx[i] + (1. - damping) * fx[i] * step
-                        vy[i] <- damping * vy[i] + (1. - damping) * fy[i] * step
-
-                        let dx = clamp -maxMove maxMove vx[i]
-                        let dy = clamp -maxMove maxMove vy[i]
-                        vx[i] <- dx
-                        vy[i] <- dy
-                        maxStepMove <- max maxStepMove (sqrt (square dx + square dy))
-                        x[i] <- max leftMargin (x[i] + dx)
-                        y[i] <- max topMargin (y[i] + dy)
-
-                    if iteration % arrangeTiming.VisualizeEvery = 0 || iteration = arrangeTiming.Iterations - 1 then
-                        if runSerial = arrangeRunSerial then
-                            applyPositions()
-
-                        do! Async.Sleep arrangeWeights.VisualizationDelayMs
-
-                    if iteration > 3 && maxStepMove < arrangeTiming.StopWhenMaxMoveBelow then
-                        isConverged <- true
-
-                    iteration <- iteration + 1
+                let minLeft = lefts |> Array.min
+                let maxTop = tops |> Array.max
 
                 if runSerial = arrangeRunSerial then
-                    applyPositions()
+                    let arranged =
+                        layoutNodes
+                        |> Array.mapi (fun i layoutNode ->
+                            let width = max minNodeWidth nodes[i].Width
+                            let height = max minNodeHeight nodes[i].Height
+                            let left = layoutNode.Center.X - width / 2.
+                            let top = layoutNode.Center.Y + height / 2.
+                            {| Index = i
+                               X = leftMargin + left - minLeft
+                               Y = topMargin + maxTop - top |})
+
+                    let xOffsets = Array.zeroCreate<float> nodes.Length
+
+                    if arrangeSettings.LeftAlignLayers then
+                        arranged
+                        |> Seq.groupBy (fun item -> Math.Round(item.Y, 3))
+                        |> Seq.iter (fun (_, layer) ->
+                            let layer = layer |> Seq.toArray
+                            if layer.Length > 0 then
+                                let minLayerX = layer |> Array.minBy _.X |> fun item -> item.X
+                                let offset = leftMargin - minLayerX
+                                layer
+                                |> Array.iter (fun item -> xOffsets[item.Index] <- offset))
+
+                    for i in 0 .. nodes.Length - 1 do
+                        nodes[i].X <- arranged[i].X + xOffsets[i]
+                        nodes[i].Y <- arranged[i].Y
 
                     let requiredWidth =
                         nodes

@@ -22,6 +22,7 @@ type Options =
       RunId: string option
       CostModel: string option
       CostDiscrepancies: bool
+      CostFlagsPath: string option
       Timeout: TimeSpan option }
 
 type Sample =
@@ -87,6 +88,7 @@ let usage () =
     printfn "  --cost-model PATH Pass PATH as the runtime fitted operator cost model."
     printfn "  --cost-discrepancies"
     printfn "                    Ask each sample to append cost discrepancy rows when flagged."
+    printfn "  --cost-flags PATH Write cost discrepancy rows to PATH. Implies --cost-discrepancies."
     printfn "  --optimize BOOL   Enable or disable optimizer use. Defaults to false."
     printfn "  --no-optimize     Shortcut for --optimize false."
     printfn "  --timeout N       Stop a build or run after N minutes. Defaults to 30. Use 0 to disable."
@@ -140,6 +142,8 @@ let rec private parseArgs options args =
         parseArgs { options with CostDiscrepancies = true } rest
     | ("--no-cost-discrepancies" | "--no-cost-discrepancy-report") :: rest ->
         parseArgs { options with CostDiscrepancies = false } rest
+    | ("--cost-flags" | "--cost-discrepancy-path" | "--cost-discrepancy-file") :: value :: rest ->
+        parseArgs { options with CostDiscrepancies = true; CostFlagsPath = Some value } rest
     | "--timeout" :: value :: rest
     | "--timeout-minutes" :: value :: rest ->
         match Double.TryParse value with
@@ -381,7 +385,7 @@ let private runSample (cancellationToken: CancellationToken) timeout debugLevel 
             | None -> []
             @
             if costDiscrepancies then
-                [ "--cost-discrepancies" ]
+                [ "--cost-discrepancies"; "--cost-flags"; costFlagsPath ]
             else
                 []
 
@@ -393,7 +397,7 @@ let private runSample (cancellationToken: CancellationToken) timeout debugLevel 
                 "dotnet"
                 sampleArgs
                 (Some nativeLibPath)
-                (if costDiscrepancies then [ "STACKPROCESSING_COST_FLAGS", Some costFlagsPath ] else [])
+                []
                 timeout
 
         File.AppendAllText(sample.LogPath, $"Run finished in {result.Elapsed}.{Environment.NewLine}")
@@ -664,15 +668,15 @@ let private gatherExistingLogs samplesRoot extraSamplesRoots =
     |> Seq.sortBy (fun row -> row[0])
     |> Seq.toList
 
-let private resolveCostFlagsPath samplesRoot =
-    let envPath = Environment.GetEnvironmentVariable("STACKPROCESSING_COST_FLAGS")
-
-    if String.IsNullOrWhiteSpace envPath then
+let private resolveCostFlagsPath samplesRoot configuredPath =
+    match configuredPath with
+    | None
+    | Some "" ->
         Path.Combine(runOutputRoot samplesRoot, "costDiscrepancies.csv")
-    elif Path.IsPathRooted envPath then
-        envPath
-    else
-        Path.Combine(repositoryRootFromSamplesRoot samplesRoot, envPath)
+    | Some path when Path.IsPathRooted path ->
+        path
+    | Some path ->
+        Path.Combine(repositoryRootFromSamplesRoot samplesRoot, path)
 
 let main (argv: string array) =
     let defaults =
@@ -688,6 +692,7 @@ let main (argv: string array) =
           RunId = None
           CostModel = None
           CostDiscrepancies = false
+          CostFlagsPath = None
           Timeout = Some(TimeSpan.FromMinutes 30.0) }
 
     match parseArgs defaults (argv |> Array.toList) with
@@ -717,7 +722,7 @@ let main (argv: string array) =
             try
                 let runId = options.RunId |> Option.defaultWith timestampRunId
                 let batchDir = batchDirectory samplesRoot runId
-                let costFlagsPath = resolveCostFlagsPath samplesRoot
+                let costFlagsPath = resolveCostFlagsPath samplesRoot options.CostFlagsPath
                 Directory.CreateDirectory batchDir |> ignore
 
                 let mutable failed = false

@@ -1439,7 +1439,8 @@ type Plan<'S,'T> = {
     debug          : bool
     debugLevel     : uint
     optimize       : bool
-    costDiscrepancy: bool }
+    costDiscrepancy: bool
+    costFlagPath   : string option }
 
 and PipelineCostTerm =
     { StageName: string
@@ -1457,13 +1458,13 @@ module Plan =
         if debug then DebugLevel.current() |> max 1u else 0u
 
     let createWithOptimizer<'S,'T when 'T: equality> (stage: Stage<'S,'T> option) (memAvail : uint64) (memPeak: uint64) (nElemsPerSlice: uint64) (length: uint64) (debug: bool) (optimize: bool) : Plan<'S, 'T> =
-        { stage = stage; graph = graphOfStage stage; sourcePeek = None; costPeak = None; costObservations = []; costTerms = []; memAvail = memAvail; memPeak = memPeak; nElemsPerSlice = Single nElemsPerSlice; length = length; debug = debug; debugLevel = levelOf debug; optimize = optimize; costDiscrepancy = false }
+        { stage = stage; graph = graphOfStage stage; sourcePeek = None; costPeak = None; costObservations = []; costTerms = []; memAvail = memAvail; memPeak = memPeak; nElemsPerSlice = Single nElemsPerSlice; length = length; debug = debug; debugLevel = levelOf debug; optimize = optimize; costDiscrepancy = false; costFlagPath = None }
 
     let create<'S,'T when 'T: equality> (stage: Stage<'S,'T> option) (memAvail : uint64) (memPeak: uint64) (nElemsPerSlice: uint64) (length: uint64) (debug: bool) : Plan<'S, 'T> =
         createWithOptimizer stage memAvail memPeak nElemsPerSlice length debug true
 
     let createWrappedWithOptimizer<'S,'T when 'T: equality> (stage: Stage<'S,'T> option) (memAvail : uint64) (memPeak: uint64) (nElemsPerSlice: SingleOrPair) (length: uint64) (debug: bool) (optimize: bool) : Plan<'S, 'T> =
-        { stage = stage; graph = graphOfStage stage; sourcePeek = None; costPeak = None; costObservations = []; costTerms = []; memAvail = memAvail; memPeak = memPeak; nElemsPerSlice = nElemsPerSlice; length = length; debug = debug; debugLevel = levelOf debug; optimize = optimize; costDiscrepancy = false }
+        { stage = stage; graph = graphOfStage stage; sourcePeek = None; costPeak = None; costObservations = []; costTerms = []; memAvail = memAvail; memPeak = memPeak; nElemsPerSlice = nElemsPerSlice; length = length; debug = debug; debugLevel = levelOf debug; optimize = optimize; costDiscrepancy = false; costFlagPath = None }
 
     let createWrapped<'S,'T when 'T: equality> (stage: Stage<'S,'T> option) (memAvail : uint64) (memPeak: uint64) (nElemsPerSlice: SingleOrPair) (length: uint64) (debug: bool) : Plan<'S, 'T> =
         createWrappedWithOptimizer stage memAvail memPeak nElemsPerSlice length debug true
@@ -1474,11 +1475,15 @@ module Plan =
     let withCostDiscrepancyReporting enabled (pl: Plan<'S,'T>) =
         { pl with costDiscrepancy = enabled }
 
+    let withCostDiscrepancyFlagPath path (pl: Plan<'S,'T>) =
+        { pl with costFlagPath = Some path }
+
     let withRuntimeOptionsFrom (source: Plan<'A,'B>) (target: Plan<'S,'T>) =
         { target with
             debugLevel = source.debugLevel
             optimize = source.optimize
-            costDiscrepancy = source.costDiscrepancy }
+            costDiscrepancy = source.costDiscrepancy
+            costFlagPath = source.costFlagPath }
 
     let private mergeCostPeak (current: StageCostEstimate option) (candidate: StageCostEstimate) =
         match current with
@@ -1621,11 +1626,9 @@ module Plan =
             | None -> Path.GetFullPath path
 
     let private defaultCostFlagPath () =
-        let envPath = Environment.GetEnvironmentVariable("STACKPROCESSING_COST_FLAGS")
-        if String.IsNullOrWhiteSpace envPath then
-            None
-        else
-            Some(resolveCostFlagPath envPath)
+        match tryFindRepositoryRoot () with
+        | Some root -> Path.Combine(root, "tmp", "costDiscrepancies.csv")
+        | None -> Path.GetFullPath(Path.Combine("tmp", "costDiscrepancies.csv"))
 
     let private pipelineCostTermsText (pl: Plan<'S,'T>) =
         pl.costTerms
@@ -1650,9 +1653,12 @@ module Plan =
         |> String.concat "|"
 
     let private appendCostFlag label kind expected actual ratio (pl: Plan<'S,'T>) actualTime actualMemoryDelta =
-        match defaultCostFlagPath () with
-        | None -> ()
-        | Some path ->
+        let path =
+            pl.costFlagPath
+            |> Option.map resolveCostFlagPath
+            |> Option.defaultWith defaultCostFlagPath
+
+        if not (String.IsNullOrWhiteSpace path) then
             try
                 let directory = Path.GetDirectoryName path
                 if not (String.IsNullOrWhiteSpace directory) then
@@ -1843,7 +1849,7 @@ module Plan =
         if (not pl.debug) && memPeak > pl.memAvail then
             failwith $"Out of available memory: {stage.Name} requested {memNeeded} B but have only {pl.memAvail} B"
         let nElemsPerSlice' = SingleOrPair.map stage.ElementTransformation pl.nElemsPerSlice
-        { createWrappedWithOptimizer stage' pl.memAvail memPeak nElemsPerSlice' length' pl.debug pl.optimize with sourcePeek = pl.sourcePeek; costPeak = costPeak; costObservations = costObservations; costTerms = costTerms; debugLevel = pl.debugLevel; costDiscrepancy = pl.costDiscrepancy }
+        { createWrappedWithOptimizer stage' pl.memAvail memPeak nElemsPerSlice' length' pl.debug pl.optimize with sourcePeek = pl.sourcePeek; costPeak = costPeak; costObservations = costObservations; costTerms = costTerms; debugLevel = pl.debugLevel; costDiscrepancy = pl.costDiscrepancy; costFlagPath = pl.costFlagPath }
 
     let (>=>) (pl: Plan<'a, 'b>) (stage: Stage<'b, 'c>) : Plan<'a, 'c> =
         composePlan $">=>" pl stage
@@ -1869,7 +1875,7 @@ module Plan =
         let costTerms = makeCostTerm stage.Name pl.length length' stageCost :: pl.costTerms
         if (not pl.debug) && memPeak > pl.memAvail then
             failwith $"Out of available memory: {stage.Name} requested {memoryNeed} B but have only {pl.memAvail} B"
-        { createWrappedWithOptimizer (Some stage) pl.memAvail memPeak nElemsPerSlice' length' pl.debug pl.optimize with sourcePeek = pl.sourcePeek; costPeak = costPeak; costObservations = costObservations; costTerms = costTerms; debugLevel = pl.debugLevel; costDiscrepancy = pl.costDiscrepancy }
+        { createWrappedWithOptimizer (Some stage) pl.memAvail memPeak nElemsPerSlice' length' pl.debug pl.optimize with sourcePeek = pl.sourcePeek; costPeak = costPeak; costObservations = costObservations; costTerms = costTerms; debugLevel = pl.debugLevel; costDiscrepancy = pl.costDiscrepancy; costFlagPath = pl.costFlagPath }
         
     /// parallel execution of non-synchronised streams
     let internal zipPlan (name: string) (pl1: Plan<'In, 'U>) (pl2: Plan<'In, 'V>) : Plan<'In, ('U * 'V)> =
@@ -1907,7 +1913,7 @@ module Plan =
                 let maxMemAvail = max pl1.memAvail pl2.memAvail // Should we max or sum? What would the most natural usage be for src?
                 if (not debug) && (memPeak > maxMemAvail) then
                     failwith $"Out of available memory: {stage.Name} requested {memNeeded|>SingleOrPair.fst}+{memNeeded|>SingleOrPair.snd}={memPeak} B but have only {maxMemAvail} B"
-                { createWrappedWithOptimizer (Some stage) maxMemAvail memPeak nElemsPerSlice pl1.length debug (pl1.optimize && pl2.optimize) with sourcePeek = pl1.sourcePeek; costPeak = costPeak; costObservations = costObservations; costTerms = costTerms; debugLevel = max pl1.debugLevel pl2.debugLevel; costDiscrepancy = pl1.costDiscrepancy || pl2.costDiscrepancy }
+                { createWrappedWithOptimizer (Some stage) maxMemAvail memPeak nElemsPerSlice pl1.length debug (pl1.optimize && pl2.optimize) with sourcePeek = pl1.sourcePeek; costPeak = costPeak; costObservations = costObservations; costTerms = costTerms; debugLevel = max pl1.debugLevel pl2.debugLevel; costDiscrepancy = pl1.costDiscrepancy || pl2.costDiscrepancy; costFlagPath = pl1.costFlagPath |> Option.orElse pl2.costFlagPath }
             | _,_ -> failwith $"[{name}] Cannot zip with an empty plan"
 
     /// parallel execution of non-synchronised streams

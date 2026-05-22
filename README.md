@@ -270,9 +270,9 @@ workflow is:
 ```bash
 dotnet run --project src/StackProcessing.Probe/StackProcessing.Probe.fsproj -- bottom-up --sizes 64,128,256 --noisy-type Float32 --repeat 3 -j 1
 rm -f tmp/costDiscrepancies.csv
-STACKPROCESSING_COST_FLAGS=tmp/costDiscrepancies.csv \
 dotnet run --project src/StackProcessing.RunSamples/RunSamples.fsproj -- \
   --skip-build --repeat 1 -j 1 --debug-level 1 --cost-discrepancies \
+  --cost-flags tmp/costDiscrepancies.csv \
   --cost-model models/fitted/stackprocessing.operator-cost.json --no-optimize
 dotnet run --project src/StackProcessing.Probe/StackProcessing.Probe.fsproj -- local-update --sizes 64 --repeat 3 -j 1
 ```
@@ -317,13 +317,15 @@ Runtime debug can flag large model discrepancies for later analysis:
 
 ```bash
 cd samples/someSample
-STACKPROCESSING_COST_FLAGS=tmp/costDiscrepancies.csv \
-dotnet run -- -d 1 --cost-discrepancies --cost-model models/fitted/stackprocessing.operator-cost.json --no-optimize
+dotnet run -- -d 1 --cost-discrepancies \
+  --cost-flags tmp/costDiscrepancies.csv \
+  --cost-model models/fitted/stackprocessing.operator-cost.json \
+  --no-optimize
 ```
 
-Relative `STACKPROCESSING_COST_FLAGS` and `--cost-model` paths are resolved from
-the repository root when possible, so sample-root execution can still write
-flags to repository `tmp/` and read models from repository `models/`.
+Relative `--cost-flags` and `--cost-model` paths are resolved from the
+repository root when possible, so sample-root execution can still write flags to
+repository `tmp/` and read models from repository `models/`.
 
 For a targeted local update after one or more flagged sample runs:
 

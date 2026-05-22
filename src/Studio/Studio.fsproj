@@ -17,6 +17,7 @@
     <PackageReference Include="Avalonia.Themes.Fluent" Version="12.0.1" />
     <PackageReference Include="Avalonia.Fonts.Inter" Version="12.0.1" />
     <PackageReference Include="CommunityToolkit.Mvvm" Version="8.4.0" />
+    <PackageReference Include="Microsoft.Msagl" Version="1.1.6" />
     <PackageReference Include="NodeEditorAvalonia" Version="12.0.0" />
     <PackageReference Include="NodeEditorAvalonia.Mvvm" Version="12.0.0" />
     <PackageReference Include="PanAndZoom" Version="12.0.0.1" />

@@ -237,32 +237,34 @@ let debugDefault level availableMemory =
     debug level (optimizerEnabled ()) availableMemory
 
 let commandLineSource availableMemory (args: string array) =
-    let rec parse debugLevel optimize costDiscrepancies costModel remaining kept =
+    let rec parse debugLevel optimize costDiscrepancies costFlags costModel remaining kept =
         match remaining with
-        | [] -> debugLevel, optimize, costDiscrepancies, costModel, kept |> List.rev |> List.toArray
+        | [] -> debugLevel, optimize, costDiscrepancies, costFlags, costModel, kept |> List.rev |> List.toArray
         | "-d" :: value :: rest
         | "--debug-level" :: value :: rest ->
             match System.UInt32.TryParse value with
-            | true, level -> parse (Some level) optimize costDiscrepancies costModel rest kept
+            | true, level -> parse (Some level) optimize costDiscrepancies costFlags costModel rest kept
             | false, _ -> failwith $"Expected unsigned integer debug level after -d, got '{value}'"
         | ("--no-optimize" | "--no-optimizer") :: rest ->
-            parse debugLevel false costDiscrepancies costModel rest kept
+            parse debugLevel false costDiscrepancies costFlags costModel rest kept
         | "--optimize" :: value :: rest
         | "--optimizer" :: value :: rest ->
             match tryParseBool value with
-            | Some enabled -> parse debugLevel enabled costDiscrepancies costModel rest kept
+            | Some enabled -> parse debugLevel enabled costDiscrepancies costFlags costModel rest kept
             | None -> failwith $"Expected boolean optimizer value after --optimize, got '{value}'"
         | ("--cost-discrepancies" | "--cost-discrepancy-report") :: rest ->
-            parse (debugLevel |> Option.orElse (Some 1u)) optimize true costModel rest kept
+            parse (debugLevel |> Option.orElse (Some 1u)) optimize true costFlags costModel rest kept
         | ("--no-cost-discrepancies" | "--no-cost-discrepancy-report") :: rest ->
-            parse debugLevel optimize false costModel rest kept
+            parse debugLevel optimize false costFlags costModel rest kept
+        | ("--cost-flags" | "--cost-discrepancy-path" | "--cost-discrepancy-file") :: value :: rest ->
+            parse (debugLevel |> Option.orElse (Some 1u)) optimize true (Some value) costModel rest kept
         | "--cost-model" :: value :: rest ->
-            parse debugLevel optimize costDiscrepancies (Some value) rest kept
+            parse debugLevel optimize costDiscrepancies costFlags (Some value) rest kept
         | arg :: rest ->
-            parse debugLevel optimize costDiscrepancies costModel rest (arg :: kept)
+            parse debugLevel optimize costDiscrepancies costFlags costModel rest (arg :: kept)
 
-    let debugLevel, optimize, costDiscrepancies, costModel, rest =
-        parse None (optimizerEnabled ()) false None (args |> Array.toList) []
+    let debugLevel, optimize, costDiscrepancies, costFlags, costModel, rest =
+        parse None (optimizerEnabled ()) false None None (args |> Array.toList) []
 
     match costModel with
     | Some path -> StackProcessingCost.Fitting.OperatorCostRuntime.load path |> ignore
@@ -273,7 +275,12 @@ let commandLineSource availableMemory (args: string array) =
         | Some level -> debug level optimize availableMemory
         | None -> sourceWithOptimizer optimize availableMemory
 
-    Plan.withCostDiscrepancyReporting costDiscrepancies plan, rest
+    let plan =
+        match costFlags with
+        | Some path -> plan |> Plan.withCostDiscrepancyReporting true |> Plan.withCostDiscrepancyFlagPath path
+        | None -> plan |> Plan.withCostDiscrepancyReporting costDiscrepancies
+
+    plan, rest
  
 let zip = Plan.zip
 
