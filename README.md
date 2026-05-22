@@ -261,22 +261,26 @@ dotnet run --project src/StackProcessing.RunSamples/RunSamples.fsproj -- --json 
 `StackProcessing.Probe` is the front door for cost-model work. The usual
 workflow is:
 
-1. run bottom-up calibration probes to learn controlled baseline and one-more
-   stage costs,
-2. run meaningful sample JSON pipelines with `RunSamples --json`,
-3. refresh Probe estimates to validate the learned coefficients on real sample
-   pipelines.
-
-```bash
-dotnet run --project src/StackProcessing.Probe/StackProcessing.Probe.fsproj -- bottom-up --size 128 --noisy-type Float32 --repeat 3 -j 1
-dotnet run --project src/StackProcessing.RunSamples/RunSamples.fsproj -- --json --repeat 3 -j 1 --optimize false
-dotnet run --project src/StackProcessing.Probe/StackProcessing.Probe.fsproj -- calibrate --estimate-only
-```
-
-To gather scale evidence for model fitting, use the multi-size form:
+1. run bottom-up calibration probes to learn controlled baseline and isolated
+   stage costs across one or more image sizes,
+2. run the sample suite with discrepancy reporting enabled,
+3. let Probe emit a compact local probe batch around the flagged operators and
+   blend the new evidence into a local model.
 
 ```bash
 dotnet run --project src/StackProcessing.Probe/StackProcessing.Probe.fsproj -- bottom-up --sizes 64,128,256 --noisy-type Float32 --repeat 3 -j 1
+rm -f tmp/costDiscrepancies.csv
+STACKPROCESSING_COST_FLAGS=tmp/costDiscrepancies.csv \
+dotnet run --project src/StackProcessing.RunSamples/RunSamples.fsproj -- \
+  --skip-build --repeat 1 -j 1 --debug-level 1 --cost-discrepancies \
+  --cost-model models/fitted/stackprocessing.operator-cost.json --no-optimize
+dotnet run --project src/StackProcessing.Probe/StackProcessing.Probe.fsproj -- local-update --sizes 64 --repeat 3 -j 1
+```
+
+For a first, faster calibration pass, use a single size:
+
+```bash
+dotnet run --project src/StackProcessing.Probe/StackProcessing.Probe.fsproj -- bottom-up --size 128 --noisy-type Float32 --repeat 3 -j 1
 ```
 
 For development-only graph emission without running the generated probes:
@@ -291,17 +295,12 @@ its own binary shape and noisy gray-valued input stacks below
 `tmp/probingGraphs/bottomup_*/layer_###_*`. The first layer measures empty,
 minimal traversal, read, and write patterns; later layers add sources,
 scalar/unary stages, windowed stages, geometry, FFT/vector/keypoint probes, and
-dependency-breakers for under-isolated features. The analysis outputs include
-`tmp/analysis/coefficients.csv`, `predictions.csv`, `diagnostics.csv`, and
-`sampleEstimates.csv`. Probe also writes fitting evidence to
-`tmp/analysis/costEvidence.csv` and a reusable fitted operator model to
-`models/fitted/stackprocessing.operator-cost.json`; the repository fallback
-model lives in `models/default/stackprocessing.operator-cost.json`.
-`sampleEstimates.csv` applies the
-currently learned coefficients back to the sample workloads and compares
-estimated memory/time with the real measurements, including any features still
-missing from the estimate. Use `--keep-tmp` only when deliberately preserving
-existing measurements.
+dependency-breakers for under-isolated features. Probe writes normalized fitting
+evidence to `tmp/analysis/costEvidence.csv` and a reusable fitted operator model
+to `models/fitted/stackprocessing.operator-cost.json`. The repository fallback
+model lives in `models/default/stackprocessing.operator-cost.json`, and
+targeted updates are written to `models/local/stackprocessing.operator-cost.json`.
+Use `--keep-tmp` only when deliberately preserving existing measurements.
 
 During fitting, the empty graph defines the common intercept and `Ignore` is
 fixed at zero cost. This keeps the baseline from being absorbed into the
@@ -309,12 +308,10 @@ minimal traversal sink and gives read/write/stage estimates a stable anchor.
 
 For timing calibration, prefer `-j 1` so sample and probe graphs do not compete
 for CPU, memory bandwidth, or SimpleITK worker threads. Calibration and
-validation runs should keep the optimizer off; `Probe bottom-up` passes
-`--optimize false` when it runs emitted probe graphs. Do not clean `tmp/`
-between the calibration run and validation run: the generated inputs and
-timestamped `runJson_*` directories are the measurement evidence used by Probe. `Probe calibrate
---estimate-only` uses the latest `tmp/probingGraphs/bottomup_*` root by default;
-pass `--probe-json-root PATH` to validate against a specific calibration root.
+validation runs should keep the optimizer off; `Probe bottom-up` and
+`Probe local-update` pass `--optimize false` when they run emitted probe graphs.
+Do not clean `tmp/` during a single calibration or local-update command: the
+timestamped `runJson_*` directories are the measurement evidence used by Probe.
 
 Runtime debug can flag large model discrepancies for later analysis:
 
@@ -335,8 +332,12 @@ dotnet run --project src/StackProcessing.Probe/StackProcessing.Probe.fsproj -- l
 ```
 
 This writes a local overlay model to
-`models/local/stackprocessing.operator-cost.json`. Use that path explicitly when
-testing the updated estimate on the flagged sample.
+`models/local/stackprocessing.operator-cost.json`. When `--operators` is
+omitted, Probe reads `tmp/costDiscrepancies.csv`, identifies likely suspects
+from the flagged pipeline terms, emits focused read/zero/ignore/write probes,
+and blends the new coefficients with the current model using
+confidence-weighted momentum. Well-supported coefficients move slowly; sparse
+or newly measured coefficients can move faster.
 
 When `--cost-model` is omitted, StackProcessing looks for a model in
 `STACKPROCESSING_COST_MODEL`, `~/.stackprocessing/cost/`, `models/fitted/`, and
@@ -351,7 +352,7 @@ without changing code.
 | `AsyncSeqExtensions` | Streaming helpers used by the pipeline engine. |
 | `SlimPipeline` | Element-agnostic streaming pipeline model, graph metadata, memory estimates, and execution. |
 | `TinyLinAlg` | Small affine/vector/matrix helper library used by registration and resampling code. |
-| `StackProcessing.Cost` | StackProcessing cost-model helpers, default/fitted model serialization, and Probe fitting evidence output. |
+| `StackProcessing.Cost` | Image-stage cost terms, model loading/serialization, fitted/local/default model evaluation, discrepancy helpers, and semantics-preserving optimization choices. |
 | `StackProcessing.Core` | Streaming image-stack algorithms, IO, manifests, stitching, points, meshes, bias correction, and serial-section tools. |
 | `StackProcessing` | Public F# DSL over `StackProcessing.Core` and `SlimPipeline`. |
 | `StackProcessing.RunSamples` | Runs sample F# projects by default, or Studio JSON graphs with `--json`, and writes repeatable timing/memory logs. |
@@ -369,14 +370,16 @@ flowchart TD
     StudioGraph["Studio.Graph\ngraph model"]
     StudioCompiler["Studio.Compiler\ngraph -> F# DSL"]
     StackProcessing["StackProcessing\nF# DSL"]
-    Cost["StackProcessing.Cost\ncost model & fitting"]
-    Core["StackProcessing.Core\nLMIP SlimPipeline"]
+    Cost["StackProcessing.Cost\noperator model, pipeline estimates,\nlocal fitting & optimizer"]
+    Core["StackProcessing.Core\nimage stages over SlimPipeline"]
     Slim["SlimPipeline\nAgnostic streaming model"]
     AsyncSeq["FSharp.Control.AsyncSeq\nasync stream substrate"]
     Image["Image\nF# wrap of SimpleITK"]
     TinyLinAlg["TinyLinAlg\nSimple Linear Algebra"]
     RunSamples["StackProcessing.RunSamples\nBulk DSL & graph runner"]
-    Probe["StackProcessing.Probe\nDSL cost analysis"]
+    Probe["StackProcessing.Probe\nprobe design & local updates"]
+    Models["models/default|fitted|local\noperator-cost JSON"]
+    Flags["tmp/costDiscrepancies.csv\nflagged pipeline evidence"]
 
     UserFSharp --> StackProcessing
     UserFSharp --> Studio
@@ -395,17 +398,23 @@ flowchart TD
 
     RunSamples --> StudioCompiler
     RunSamples --> StackProcessing
+    RunSamples --> Flags
+    Flags --> Probe
     Probe --> RunSamples
     Probe --> StudioGraph
     Probe --> Cost
+    Cost --> Models
+    Models --> Core
 ```
 
 There are two user-facing entry points. Programmers can write the
 `StackProcessing` DSL directly; non-programmers can build the same DSL through
 Studio graphs. Both routes end in `SlimPipeline` plans and stages. The image
-work is implemented in `StackProcessing.Core` and `Image`. File formats,
-registration helpers, manifests, stitching, serial-section tools, sample
-measurement, and calibration sit beside that core path.
+work is implemented in `StackProcessing.Core` and `Image`. `StackProcessing.Cost`
+provides the image-specific cost model consumed by Core at runtime and updated
+by Probe from measured evidence. `RunSamples` supplies repeatable sample
+measurements and discrepancy logs; Probe turns those logs into focused local
+probe batches and updated model JSON.
 
 ## Studio Design
 
