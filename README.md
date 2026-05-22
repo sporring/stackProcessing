@@ -504,6 +504,11 @@ The compiler also orders generated `let` bindings so that F# lexical scope is
 respected. For example, if a string scalar is used by both `read` and
 `readRandom`, its binding is emitted before either dependent pipeline.
 
+When several terminal sink boxes share the same streaming output, the compiler
+keeps the source shared. It lowers the sink fan-out to nested stage-level
+`fork`/`-->>` branches with typed `ignorePairs ()` cleanup, so a common
+upstream `read` is executed once rather than once per sink.
+
 The compiler is also where compact visual boxes are expanded back to the lower
 level DSL. For example, an `imageOpImage` box with operator `*`, `max`, or `min`
 becomes the corresponding pair operation (`mulPair`, `maxOfPair`, or
@@ -619,13 +624,15 @@ Windowed stages use a first-class low-level representation:
 ```fsharp
 type Window<'T> =
     { Items: 'T list
-      EmitRange: uint * uint }
+      EmitRange: uint * uint
+      ReleaseCount: uint }
 ```
 
 `Items` is the retained context for the current window. `EmitRange` identifies
-the subrange that should be released when the window is flattened back into the
-ordinary element stream. Singleton streaming can be treated as a one-item
-window when stages need synchronized window semantics.
+the subrange emitted from the window, while `ReleaseCount` tells the flattening
+step how many leading real stream items can be released. Singleton streaming
+can be treated as a one-item window when stages need synchronized window
+semantics.
 
 Each stage also has:
 
@@ -665,14 +672,17 @@ type Plan<'S,'T> =
       graph: PipelineGraph
       sourcePeek: SourcePeek option
       costPeak: StageCostEstimate option
-          costObservations: StageCostEstimate list
-          nElemsPerSlice: SingleOrPair
-          length: uint64
-          memAvail: uint64
-          memPeak: uint64
-          debug: bool
-          debugLevel: uint
-          optimize: bool }
+      costObservations: StageCostEstimate list
+      costTerms: PipelineCostTerm list
+      nElemsPerSlice: SingleOrPair
+      length: uint64
+      memAvail: uint64
+      memPeak: uint64
+      debug: bool
+      debugLevel: uint32
+      optimize: bool
+      costDiscrepancy: bool
+      costFlagPath: string option }
 ```
 
 The source creates an empty plan. Composition operators add stages. Terminal
@@ -685,10 +695,16 @@ operators build and execute the final pipe.
 | `>=>` | Append a stage to a plan. |
 | `-->` | Compose two stages directly. |
 | `>=>>` | Split one stream into two synchronized branches. |
-| `zip` | Combine two compatible plans elementwise. |
+| `fork` | Build a reusable synchronized two-branch stage. |
+| `-->>` | Compose a stage with a synchronized stage-level fan-out. |
+| `zip` | Combine two compatible, independently built plans elementwise. |
 | `>>=>` | Combine paired results with a function. |
 | `>>=>>` | Apply synchronized stages to the two sides of an existing paired stream. |
 | `teeFst` / `teeSnd` | Apply a side-effecting identity stage to one side of a pair. |
+
+`>=>>` and `fork` share one upstream stream and distribute each element to both
+branches. `zip` is different: it combines two already-built plans, so duplicated
+sources in those plans are executed independently.
 
 ## StackProcessing Design
 
