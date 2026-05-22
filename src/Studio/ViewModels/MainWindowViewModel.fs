@@ -578,11 +578,38 @@ module private SourceImageNode =
             |> Seq.map _.Key
             |> Set.ofSeq
 
+    let private studioManagedWindowFunctionIds =
+        Set.ofList
+            [ "Gradient"
+              "SmoothWGauss"
+              "Convolve"
+              "SmoothWMedian"
+              "SmoothWBilateral"
+              "GradientMagnitude"
+              "SobelEdge"
+              "Laplacian"
+              "GrayscaleErode"
+              "GrayscaleDilate"
+              "GrayscaleOpening"
+              "GrayscaleClosing"
+              "WhiteTopHat"
+              "BlackTopHat"
+              "MorphologicalGradient"
+              "BinaryContour"
+              "BinaryMedian"
+              "LabelContour"
+              "ConnectedComponents"
+              "RelabelComponents"
+              "MakeConnectedComponentTranslationTable"
+              "UpdateConnectedComponents" ]
+
     let parameterIsVisible (state: PipelineNodeState) key =
         if state.Definition.Id = "Read" || state.Definition.Id = "ReadRandom" || state.Definition.Id = "ReadRange" || state.Definition.Id = "ReadSlab" then
             readVisibleParameterKeys state |> Set.contains key
         elif state.Definition.Id = "Write" then
             writeVisibleParameterKeys state |> Set.contains key
+        elif key = "windowSize" && studioManagedWindowFunctionIds.Contains state.Definition.Id then
+            false
         else
             true
 

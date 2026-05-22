@@ -634,6 +634,15 @@ step how many leading real stream items can be released. Singleton streaming
 can be treated as a one-item window when stages need synchronized window
 semantics.
 
+High-level image stages choose a minimum window from their algorithmic
+parameters, for example kernel depth or morphology radius. Optional window
+arguments in the F# DSL use that minimum when `None` is passed. If an explicit
+window is smaller than the minimum, StackProcessing reports a short
+configuration error; in F# Interactive this is a catchable exception, while
+command-line runs stop without a long .NET stack trace. Studio keeps ordinary
+execution windows managed by the stage defaults, while Probe may still set them
+explicitly when measuring window-size effects.
+
 Each stage also has:
 
 * `MemoryNeed`: estimate of required memory for a slice or pair of slices.

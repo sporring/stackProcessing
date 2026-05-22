@@ -644,6 +644,29 @@ let intensityStretch<'T when 'T: equality> inputMinimum inputMaximum outputMinim
 let private defaultConvolutionWindowSize (kernelDepth: uint) =
     max 1u kernelDepth
 
+let private isInteractiveProcess () =
+    AppDomain.CurrentDomain.FriendlyName.IndexOf("fsi", StringComparison.OrdinalIgnoreCase) >= 0
+    || Environment.GetCommandLineArgs()
+       |> Array.exists (fun arg -> arg.IndexOf("fsi", StringComparison.OrdinalIgnoreCase) >= 0)
+
+let private stopWithConfigurationError message =
+    if isInteractiveProcess () then
+        invalidOp message
+    else
+        Console.Error.WriteLine(message)
+        Environment.ExitCode <- 2
+        Environment.Exit 2
+        failwith message
+
+let private effectiveWindowSize stageName minimumWindowSize requestedWindowSize =
+    let minimumWindowSize = max 1u minimumWindowSize
+    match requestedWindowSize with
+    | None -> minimumWindowSize
+    | Some windowSize when windowSize >= minimumWindowSize -> windowSize
+    | Some windowSize ->
+        stopWithConfigurationError
+            $"{stageName}: requested window size {windowSize} is smaller than the minimum {minimumWindowSize} required by the stage parameters."
+
 let private requestedWindowTag (winSz: uint option) =
     winSz |> Option.map (fun value -> "requestedWindowSize", string value)
 
@@ -657,9 +680,13 @@ let private windowCostTags ksz winSz =
 let private fixedWindowCostTags ksz winSz =
     windowCostTags ksz (Some winSz)
 
+let private effectiveWindowTags win =
+    [ "windowSize", string win
+      "effectiveWindowSize", string win ]
+
 let private makeWindowedLocalOp name ksz winSz core =
     let pad = ksz / 2u
-    let win = max ksz winSz
+    let win = effectiveWindowSize name ksz (Some winSz)
     let stride = win - ksz + 1u
     let f debug = volFctToWindowFctReleaseAfterDebug debug core ksz pad stride
     let stg = mapWindow name f id id
@@ -675,7 +702,7 @@ let private makeWindowedOperatorOp<'T when 'T: equality>
     (core: Image<'T> -> Image<'T>)
     : Stage<Image<'T>, Image<'T>> =
     let pad = ksz / 2u
-    let win = max ksz winSz
+    let win = effectiveWindowSize name ksz (Some winSz)
     let stride = win - ksz + 1u
     let f debug = volFctToWindowFctReleaseAfterDebug debug core ksz pad stride
     let memoryNeed nPixels = 2UL * nPixels * uint64 win * getBytesPerComponent<'T>
@@ -687,6 +714,7 @@ let private makeWindowedOperatorOp<'T when 'T: equality>
             (operatorImageStageCost<'T> operator memoryModel (Some(float win)) radius costUnits
              |> withTimeTags
                  [ yield! fixedWindowCostTags ksz winSz
+                   yield! effectiveWindowTags win
                    yield "stride", string stride
                    yield "pad", string pad ])
 
@@ -713,7 +741,7 @@ let private finiteDiffKernelDepth order =
 let gradient (order: uint) (winSz: uint option) : Stage<Image<float>, Image<float list>> =
     let ksz = finiteDiffKernelDepth order
     let pad = ksz / 2u
-    let win = Option.defaultValue ksz winSz |> max ksz
+    let win = effectiveWindowSize "gradient" ksz winSz
     let stride = win - ksz + 1u
     let f debug = volFctToWindowFctReleaseAfterDebug debug (ImageFunctions.gradientVector3D order) ksz pad stride
     let memoryNeed nPixels = (4UL * nPixels * uint64 win) * getBytesPerComponent<float>
@@ -1500,7 +1528,7 @@ let stackFUnstackTrim trim (f: Image<'T>->Image<'S>) (images: Image<'T> list) =
 let smoothWGauss (sigma: float) (outputRegionMode: ImageFunctions.OutputRegionMode option) (boundaryCondition: ImageFunctions.BoundaryCondition option) (winSz: uint option) : Stage<Image<float>, Image<float>> =
     let ksz = ImageFunctions.defaultGaussWindowSize sigma
     let kernel = ImageFunctions.gauss 3u sigma (Some ksz)
-    let win = Option.defaultValue (defaultConvolutionWindowSize ksz) winSz |> max ksz // max should be found by memory availability
+    let win = effectiveWindowSize "smoothWGauss" (defaultConvolutionWindowSize ksz) winSz
     let stride = win - ksz + 1u
     let pad = 
         match outputRegionMode with
@@ -1530,6 +1558,7 @@ let smoothWGauss (sigma: float) (outputRegionMode: ImageFunctions.OutputRegionMo
             (operatorImageStageCost<float> "SmoothWGauss" memoryModel (Some(float win)) None costUnits
              |> withTimeTags
                  [ yield! windowCostTags ksz winSz
+                   yield! effectiveWindowTags win
                    yield "stride", string stride
                    yield "pad", string pad
                    yield "sigma", Convert.ToString(sigma, CultureInfo.InvariantCulture) ])
@@ -1696,7 +1725,7 @@ let convolveOp (name: string) (kernel: Image<'T>) (outputRegionMode: ImageFuncti
         let windowFromKernel (k: Image<'T>) : uint =
             max 1u (k.GetDepth())
         let ksz = windowFromKernel kernel
-        let win = Option.defaultValue (defaultConvolutionWindowSize ksz) winSz |> max ksz
+        let win = effectiveWindowSize name (defaultConvolutionWindowSize ksz) winSz
         let stride = win-ksz+1u
         let pad =
             match outputRegionMode with
@@ -1719,6 +1748,7 @@ let convolveOp (name: string) (kernel: Image<'T>) (outputRegionMode: ImageFuncti
                 (operatorImageStageCost<'T> "Convolve" memoryModel (Some(float win)) None costUnits
                  |> withTimeTags
                      [ yield! windowCostTags ksz winSz
+                       yield! effectiveWindowTags win
                        yield "stride", string stride
                        yield "pad", string pad ])
         (window win pad stride) --> stg --> flattenList ()
@@ -1735,7 +1765,7 @@ let finiteDiff (direction: uint) (order: uint) =
 let private makeMorphOp (name: string) (operator: string) (radius: uint) (winSz: uint option) (core: uint -> Image<'T> -> Image<'T>) : Stage<Image<'T>,Image<'T>> when 'T: equality =
     let ksz   = 2u * radius + 1u
     let pad = ksz/2u
-    let win = Option.defaultValue (defaultConvolutionWindowSize ksz) winSz |> max ksz
+    let win = effectiveWindowSize name (defaultConvolutionWindowSize ksz) winSz
     let stride = win - ksz + 1u
 
     let f debug = volFctToWindowFctReleaseAfterDebug debug (core radius) ksz pad stride
@@ -1748,6 +1778,7 @@ let private makeMorphOp (name: string) (operator: string) (radius: uint) (winSz:
             (operatorImageStageCost<'T> operator memoryModel (Some(float win)) (Some(float radius)) costUnits
              |> withTimeTags
                  [ yield! windowCostTags ksz winSz
+                   yield! effectiveWindowTags win
                    yield "stride", string stride
                    yield "pad", string pad ])
     (window win pad stride) --> stg --> flattenList ()
@@ -1759,6 +1790,7 @@ let opening radius = makeMorphOp "binaryOpening" "Opening" radius None ImageFunc
 let closing radius = makeMorphOp "binaryClosing" "Closing" radius None ImageFunctions.binaryClosing
 
 let connectedComponents (winSz: uint) =
+    let winSz = effectiveWindowSize "connectedComponents" 1u (Some winSz)
     let pad, stride = 0u, winSz
     let btUint8 = typeof<uint8>|>Image.getBytesPerComponent |> uint64
     let btUint64 = typeof<uint64> |> Image.getBytesPerComponent |> uint64
