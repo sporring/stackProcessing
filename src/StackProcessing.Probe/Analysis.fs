@@ -25,17 +25,27 @@ type AnalysisRow =
       ItemPath: string
       FeatureValues: Map<string, float> }
 
+type RuntimeCostTerm =
+    { StageName: string
+      InputLength: uint64 option
+      OutputLength: uint64 option
+      Multiplicity: uint64
+      MemoryPeakBytes: uint64 option
+      Tags: Map<string, string> }
+
 type Measurement =
     { RowId: string
       Name: string
       Value: float
-      SourcePath: string }
+      SourcePath: string
+      RuntimeCostTerms: RuntimeCostTerm list }
 
 type RunSummary =
     { EstimatedPeakMemoryKB: float option
       RssPeakDeltaKB: float option
       ActualRunSeconds: float option
-      ProcessElapsedSeconds: float option }
+      ProcessElapsedSeconds: float option
+      RuntimeCostTerms: RuntimeCostTerm list }
 
 let private usage () =
     printfn "Usage: dotnet run --project src/StackProcessing.Probe -- analysis [--samples-root PATH] [--output PATH] [--probing-prefix PATH] [--ridge VALUE] [--diagnostics-only]"
@@ -457,11 +467,71 @@ let private elapsedSecondsFromLog (lines: string array) =
         else
             None)
 
+let private tryParseInvariantUInt64 (value: string) =
+    match UInt64.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture) with
+    | true, parsed -> Some parsed
+    | _ -> None
+
+let private parseRuntimeTerm (text: string) =
+    let fields =
+        text.Split(';', StringSplitOptions.RemoveEmptyEntries)
+        |> Array.choose (fun part ->
+            let index = part.IndexOf('=')
+            if index <= 0 then
+                None
+            else
+                Some(part.Substring(0, index), part.Substring(index + 1)))
+        |> Map.ofArray
+
+    if fields.IsEmpty then
+        None
+    else
+        let field key = fields |> Map.tryFind key
+
+        let tags =
+            fields
+            |> Map.remove "stage"
+            |> Map.remove "inputLength"
+            |> Map.remove "outputLength"
+            |> Map.remove "multiplicity"
+            |> Map.remove "memoryPeakBytes"
+            |> Map.remove "estimatedMilliseconds"
+
+        Some
+            { StageName = field "stage" |> Option.defaultValue ""
+              InputLength = field "inputLength" |> Option.bind tryParseInvariantUInt64
+              OutputLength = field "outputLength" |> Option.bind tryParseInvariantUInt64
+              Multiplicity = field "multiplicity" |> Option.bind tryParseInvariantUInt64 |> Option.defaultValue 1UL
+              MemoryPeakBytes = field "memoryPeakBytes" |> Option.bind tryParseInvariantUInt64
+              Tags = tags }
+
+let private parseRuntimeTermsText (text: string) =
+    if String.IsNullOrWhiteSpace text then
+        []
+    else
+        text.Split('|', StringSplitOptions.RemoveEmptyEntries)
+        |> Array.choose parseRuntimeTerm
+        |> Array.toList
+
+let private runtimeCostTermsFromLog (lines: string array) =
+    let marker = "Pipeline cost terms:"
+
+    lines
+    |> Array.rev
+    |> Array.tryPick (fun line ->
+        let index = line.IndexOf(marker, StringComparison.Ordinal)
+        if index < 0 then
+            None
+        else
+            Some(line.Substring(index + marker.Length).Trim() |> parseRuntimeTermsText))
+    |> Option.defaultValue []
+
 let private parseRunSummary (logPath: string) =
     if not (File.Exists logPath) then
         None
     else
         let lines = File.ReadAllLines logPath
+        let runtimeCostTerms = runtimeCostTermsFromLog lines
 
         lines
         |> Array.indexed
@@ -478,7 +548,8 @@ let private parseRunSummary (logPath: string) =
                         { EstimatedPeakMemoryKB = groupValue "estimatedPeakMemory" estimated |> tryParseFloat
                           RssPeakDeltaKB = groupValue "peakMemory" measured |> tryParseFloat
                           ActualRunSeconds = secondsFromRunSummary (groupValue "actualTime" timing) (groupValue "actualTimeUnit" timing)
-                          ProcessElapsedSeconds = elapsedSecondsFromLog lines }
+                          ProcessElapsedSeconds = elapsedSecondsFromLog lines
+                          RuntimeCostTerms = runtimeCostTerms }
                 | _ -> None
             else
                 None)
@@ -540,7 +611,8 @@ let private measurementsForLog rowId logPath =
                 { RowId = rowId
                   Name = name
                   Value = value
-                  SourcePath = logPath }))
+                  SourcePath = logPath
+                  RuntimeCostTerms = summary.RuntimeCostTerms }))
 
 let private measurementsForRow (samplesRoot: string) (row: AnalysisRow) =
     if row.Source <> "runJson" then
@@ -585,7 +657,8 @@ let private probingMeasurements prefixes =
                             { RowId = probingRowId rowId
                               Name = name
                               Value = value
-                              SourcePath = prefix + "-vectors.csv" } ])
+                              SourcePath = prefix + "-vectors.csv"
+                              RuntimeCostTerms = [] } ])
             |> List.concat
         | [] -> [])
 
@@ -1078,6 +1151,53 @@ let private evidenceRow (rowContext: EvidenceContext) rowId measurementName meas
       WindowSize = parameterFloat "windowSize" metadata
       Radius = parameterFloat "radius" metadata }
 
+let private runtimeTermEvidenceRow (measurement: Measurement) (term: RuntimeCostTerm) : Fitting.EvidenceRow option =
+    let tag key = term.Tags |> Map.tryFind key
+    let operator =
+        tag "operator"
+        |> Option.orElseWith (fun () ->
+            if String.IsNullOrWhiteSpace term.StageName then None else Some term.StageName)
+
+    operator
+    |> Option.map (fun operator ->
+        let pixelType = tag "pixelType" |> Option.bind normalizePixelType
+        let voxels = tag "voxels" |> Option.bind tryParseUInt64Text
+        let bytesPerPixel = pixelType |> Option.bind pixelTypeBytes
+
+        let volumeBytes =
+            match voxels, bytesPerPixel with
+            | Some voxels, Some bytesPerPixel -> Some(voxels * bytesPerPixel)
+            | _ -> None
+
+        let featureKey =
+            let tags =
+                term.Tags
+                |> Map.toList
+                |> List.sortBy fst
+                |> List.map (fun (key, value) -> key + "=" + value)
+
+            match tags with
+            | [] -> operator
+            | _ -> operator + ":" + String.concat ":" tags
+
+        { RowId = measurement.RowId
+          Measurement = measurement.Name
+          Value = measurement.Value
+          SourcePath = measurement.SourcePath
+          FeatureKey = featureKey
+          FeatureValue = float term.Multiplicity
+          Operator = operator
+          PixelType = pixelType
+          Width = None
+          Height = None
+          Depth = None
+          Voxels = voxels
+          SlicePixels = None
+          SliceBytes = None
+          VolumeBytes = volumeBytes
+          WindowSize = tag "windowSize" |> Option.bind tryParseFloatText
+          Radius = tag "radius" |> Option.bind tryParseFloatText })
+
 let private writeOutputs (options: Options) (rows: AnalysisRow list) =
     let features =
         rows
@@ -1189,10 +1309,20 @@ let private writeOutputs (options: Options) (rows: AnalysisRow list) =
                             relativePath options.SamplesRoot measurement.SourcePath
                         else
                             measurement.SourcePath
-                    let rowContext = inferEvidenceContext row
 
-                    for KeyValue(feature, value) in row.FeatureValues do
-                        yield evidenceRow rowContext measurement.RowId measurement.Name measurement.Value sourcePath feature value
+                    match measurement.RuntimeCostTerms with
+                    | _ :: _ ->
+                        let measurement = { measurement with SourcePath = sourcePath }
+
+                        for term in measurement.RuntimeCostTerms do
+                            match runtimeTermEvidenceRow measurement term with
+                            | Some row -> yield row
+                            | None -> ()
+                    | [] ->
+                        let rowContext = inferEvidenceContext row
+
+                        for KeyValue(feature, value) in row.FeatureValues do
+                            yield evidenceRow rowContext measurement.RowId measurement.Name measurement.Value sourcePath feature value
         })
 
     if not options.DiagnosticsOnly then

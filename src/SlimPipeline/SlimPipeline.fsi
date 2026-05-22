@@ -706,6 +706,7 @@ module Plan =
     val private tryFindRepositoryRoot: unit -> string option
     val private resolveCostFlagPath: path: string -> string
     val private defaultCostFlagPath: unit -> string option
+    val private pipelineCostTermsText: pl: Plan<'S,'T> -> string
     val private appendCostFlag:
       label: string ->
         kind: string ->

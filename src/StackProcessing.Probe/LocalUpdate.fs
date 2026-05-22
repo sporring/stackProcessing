@@ -21,6 +21,7 @@ type Options =
       NoisyType: string
       Radius: uint option
       WindowSize: uint option
+      WindowSizes: uint list
       Sigma: float option
       Repeat: int
       Jobs: int
@@ -46,6 +47,7 @@ let private usage () =
     printfn "  --depth N              Probe depth. Defaults to each size, e.g. --size 64 --depth 32."
     printfn "  --radius N             Override radius for local radius-dependent templates."
     printfn "  --window-size N        Override windowSize for local window-dependent templates."
+    printfn "  --window-sizes A,B,C   Probe window-size dependence with suspect -> ignore graphs."
     printfn "  --sigma VALUE          Override sigma for local Gaussian templates."
     printfn "  --repeat N             Probe repeats. Defaults to 3."
     printfn "  -j, --jobs N           Parallel probe runs. Defaults to 1."
@@ -98,6 +100,7 @@ let private defaultOptions () =
       NoisyType = "Float32"
       Radius = None
       WindowSize = None
+      WindowSizes = []
       Sigma = None
       Repeat = 3
       Jobs = 1
@@ -243,6 +246,13 @@ let rec private parseArgs options args =
         | _ ->
             eprintfn "local-update: --window-size expects a positive integer"
             Error 2
+    | "--window-sizes" :: value :: rest
+    | "--windows" :: value :: rest ->
+        match parseSizes value with
+        | [] ->
+            eprintfn "local-update: --window-sizes expects a comma-separated list of positive integers"
+            Error 2
+        | sizes -> parseArgs { options with WindowSizes = sizes } rest
     | "--sigma" :: value :: rest ->
         match Double.TryParse(value, NumberStyles.Float, CultureInfo.InvariantCulture) with
         | true, sigma when sigma > 0.0 -> parseArgs { options with Sigma = Some sigma } rest
@@ -461,9 +471,19 @@ let private floatOptionOrInferred (explicitValue: float option) key parameters =
     |> Option.map (fun value -> Convert.ToString(value, CultureInfo.InvariantCulture))
     |> Option.orElseWith (fun () -> parameterValue key parameters)
 
-let private parameterOverridesForFunction options parameters functionId =
-    let radius = optionOrInferred options.Radius "radius" parameters
-    let windowSize = optionOrInferred options.WindowSize "windowSize" parameters
+let private overrideValue key (overrides: Map<string, string>) =
+    overrides
+    |> Map.tryFind key
+    |> Option.filter (String.IsNullOrWhiteSpace >> not)
+
+let private parameterOverridesForFunction options overrides parameters functionId =
+    let radius =
+        overrideValue "radius" overrides
+        |> Option.orElseWith (fun () -> optionOrInferred options.Radius "radius" parameters)
+
+    let windowSize =
+        overrideValue "windowSize" overrides
+        |> Option.orElseWith (fun () -> optionOrInferred options.WindowSize "windowSize" parameters)
 
     match functionId with
     | "SmoothWMedian" ->
@@ -499,13 +519,13 @@ let private parametersForFunction suspects functionId =
     |> Option.map _.Parameters
     |> Option.defaultValue Map.empty
 
-let private applyLocalParameterOverrides options suspects (template: ProbeProbing.GraphTemplate) =
+let private applyLocalParameterOverrides options suspects overrides (template: ProbeProbing.GraphTemplate) =
     let mutable changed = false
     let applied = ResizeArray<string * string>()
 
     let rewriteParameter functionId (parameter: Studio.Graph.SavedParameter) =
         let parameters = parametersForFunction suspects functionId
-        parameterOverridesForFunction options parameters functionId
+        parameterOverridesForFunction options overrides parameters functionId
         |> List.tryFind (fun (key, _) -> String.Equals(key, parameter.Key, StringComparison.OrdinalIgnoreCase))
         |> function
             | Some(_, value) when parameter.Value <> value ->
@@ -540,6 +560,81 @@ let private applyLocalParameterOverrides options suspects (template: ProbeProbin
     else
         template
 
+let private isIgnoreProbe (template: ProbeProbing.GraphTemplate) =
+    template.Graph.Nodes
+    |> Array.exists (fun node -> String.Equals(node.FunctionId, "Ignore", StringComparison.OrdinalIgnoreCase))
+
+let private templateParameterValue functionId key (template: ProbeProbing.GraphTemplate) =
+    template.Graph.Nodes
+    |> Array.tryPick (fun node ->
+        if String.Equals(normalizeToken node.FunctionId, normalizeToken functionId, StringComparison.Ordinal) then
+            node.Parameters
+            |> Array.tryPick (fun parameter ->
+                if String.Equals(parameter.Key, key, StringComparison.OrdinalIgnoreCase) then
+                    Some parameter.Value
+                else
+                    None)
+        else
+            None)
+
+let private templateHasParameter functionId key template =
+    templateParameterValue functionId key template |> Option.isSome
+
+let private templateWindowedSuspect suspects (template: ProbeProbing.GraphTemplate) =
+    suspects
+    |> List.tryFind (fun suspect ->
+        templateHasParameter suspect.Operator "windowSize" template
+        || templateHasParameter suspect.Operator "radius" template)
+
+let private tryParseUInt (value: string) =
+    match UInt32.TryParse value with
+    | true, parsed when parsed > 0u -> Some parsed
+    | _ -> None
+
+let private oddAtLeast minimum value =
+    let value = max minimum value
+    if value % 2u = 1u then value else value + 1u
+
+let private defaultWindowSweep current =
+    let current = current |> Option.defaultValue 7u |> oddAtLeast 3u
+    [ if current > 4u then yield oddAtLeast 3u (current - 4u) else yield 3u
+      yield current
+      yield oddAtLeast 3u (current + 4u) ]
+    |> List.distinct
+
+let private windowSweepForTemplate options suspect template =
+    if not options.WindowSizes.IsEmpty then
+        options.WindowSizes |> List.map (oddAtLeast 1u) |> List.distinct
+    else
+        match options.WindowSize with
+        | Some windowSize -> [ oddAtLeast 1u windowSize ]
+        | None ->
+            templateParameterValue suspect.Operator "windowSize" template
+            |> Option.orElseWith (fun () -> parameterValue "windowSize" suspect.Parameters)
+            |> Option.bind tryParseUInt
+            |> defaultWindowSweep
+
+let private radiusForWindow windowSize =
+    if windowSize <= 1u then 1u else (windowSize - 1u) / 2u
+
+let private expandLocalParameterSweeps options suspects (template: ProbeProbing.GraphTemplate) =
+    match templateWindowedSuspect suspects template with
+    | Some suspect when isIgnoreProbe template ->
+        windowSweepForTemplate options suspect template
+        |> List.map (fun windowSize ->
+            let overrides =
+                [ yield "windowSize", string windowSize
+                  if templateHasParameter suspect.Operator "radius" template then
+                      yield "radius", string (radiusForWindow windowSize) ]
+                |> Map.ofList
+
+            applyLocalParameterOverrides options suspects overrides template)
+        |> List.toArray
+    | Some _ ->
+        [||]
+    | None ->
+        [| applyLocalParameterOverrides options suspects Map.empty template |]
+
 let private sourceLayerTemplates (layers: (string * ProbeProbing.GraphTemplate array) array) =
     layers
     |> Array.tryFind (fun (name, _) -> name.StartsWith("01-", StringComparison.Ordinal))
@@ -558,7 +653,7 @@ let private localTemplatesForSize options suspects probeRunRoot size =
         layers
         |> Array.collect snd
         |> Array.filter (templateMatches (suspects |> List.map _.Operator))
-        |> Array.map (applyLocalParameterOverrides options suspects)
+        |> Array.collect (expandLocalParameterSweeps options suspects)
 
     Array.append sourceTemplates suspectTemplates
     |> uniqueTemplates
@@ -682,7 +777,7 @@ let main argv =
                     if options.RunProbes then
                         exitCode <- runSamplesJson options probeRunRoot
 
-                    if exitCode = 0 && options.FitModel then
+                    if exitCode = 0 && options.RunProbes && options.FitModel then
                         let localAnalysisDir = Path.Combine(options.AnalysisDirectory, runId)
                         let localModelPath = Path.Combine(localAnalysisDir, "stackprocessing.operator-cost.local-only.json")
                         exitCode <- runAnalysis options probeRunRoot localAnalysisDir localModelPath

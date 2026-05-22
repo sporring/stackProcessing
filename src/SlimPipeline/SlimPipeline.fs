@@ -1627,6 +1627,28 @@ module Plan =
         else
             Some(resolveCostFlagPath envPath)
 
+    let private pipelineCostTermsText (pl: Plan<'S,'T>) =
+        pl.costTerms
+        |> List.map (fun term ->
+            let tags =
+                term.Time.Tags
+                |> List.map (fun (key, value) -> key + "=" + value)
+                |> String.concat ";"
+
+            [ "stage=" + term.StageName
+              "inputLength=" + invariantUInt64 term.InputLength
+              "outputLength=" + invariantUInt64 term.OutputLength
+              "multiplicity=" + invariantUInt64 term.Multiplicity
+              "memoryPeakBytes=" + invariantUInt64 term.Memory.Peak
+              "estimatedMilliseconds="
+                + (StageTimeCalibration.estimateMilliseconds term.Time
+                   |> Option.map invariantFloat
+                   |> Option.defaultValue "uncalibrated")
+              tags ]
+            |> List.filter (String.IsNullOrWhiteSpace >> not)
+            |> String.concat ";")
+        |> String.concat "|"
+
     let private appendCostFlag label kind expected actual ratio (pl: Plan<'S,'T>) actualTime actualMemoryDelta =
         match defaultCostFlagPath () with
         | None -> ()
@@ -1708,28 +1730,6 @@ module Plan =
                         + ":" + milliseconds)
                     |> String.concat "|"
 
-                let pipelineCostTerms =
-                    pl.costTerms
-                    |> List.map (fun term ->
-                        let tags =
-                            term.Time.Tags
-                            |> List.map (fun (key, value) -> key + "=" + value)
-                            |> String.concat ";"
-
-                        [ "stage=" + term.StageName
-                          "inputLength=" + invariantUInt64 term.InputLength
-                          "outputLength=" + invariantUInt64 term.OutputLength
-                          "multiplicity=" + invariantUInt64 term.Multiplicity
-                          "memoryPeakBytes=" + invariantUInt64 term.Memory.Peak
-                          "estimatedMilliseconds="
-                            + (StageTimeCalibration.estimateMilliseconds term.Time
-                               |> Option.map invariantFloat
-                               |> Option.defaultValue "uncalibrated")
-                          tags ]
-                        |> List.filter (String.IsNullOrWhiteSpace >> not)
-                        |> String.concat ";")
-                    |> String.concat "|"
-
                 [ DateTimeOffset.UtcNow.ToString("O", CultureInfo.InvariantCulture)
                   label
                   kind
@@ -1748,7 +1748,7 @@ module Plan =
                   costKeys
                   costContexts
                   costBreakdown
-                  pipelineCostTerms ]
+                  pipelineCostTermsText pl ]
                 |> List.map csvEscape
                 |> String.concat ","
                 |> writer.WriteLine
@@ -1791,6 +1791,10 @@ module Plan =
 
             printfn
                 $"[{label}] Run summary:\nestimated peak / available memory {MemoryProbe.formatBytes pl.memPeak} / {MemoryProbe.formatBytes pl.memAvail}\nMeasured peak delta, baseline, peak: {MemoryProbe.formatBytes snapshot.Delta} (baseline {MemoryProbe.formatBytes snapshot.Baseline}, peak {MemoryProbe.formatBytes snapshot.Peak})\nEstimated/actual time {estimatedRunTimeText pl} / {formatMilliseconds stopwatch.Elapsed.TotalMilliseconds}."
+
+            match pipelineCostTermsText pl with
+            | "" -> ()
+            | terms -> printfn $"[{label}] Pipeline cost terms: {terms}"
 
             printCostDiscrepancies label pl (trySumEstimatedTimeMillisecondsFromTerms pl.costTerms) stopwatch.Elapsed.TotalMilliseconds snapshot.Delta
 

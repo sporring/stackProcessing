@@ -642,7 +642,20 @@ let intensityStretch<'T when 'T: equality> inputMinimum inputMaximum outputMinim
     liftOperatorUnaryReleaseAfter "intensityStretch" "IntensityStretch" (ImageFunctions.shiftScale shift scale)
 
 let private defaultConvolutionWindowSize (kernelDepth: uint) =
-    max kernelDepth (3u * kernelDepth)
+    max 1u kernelDepth
+
+let private requestedWindowTag (winSz: uint option) =
+    winSz |> Option.map (fun value -> "requestedWindowSize", string value)
+
+let private windowCostTags ksz winSz =
+    [ yield "kernelSize", string ksz
+      yield "minimumWindowSize", string ksz
+      match requestedWindowTag winSz with
+      | Some tag -> yield tag
+      | None -> () ]
+
+let private fixedWindowCostTags ksz winSz =
+    windowCostTags ksz (Some winSz)
 
 let private makeWindowedLocalOp name ksz winSz core =
     let pad = ksz / 2u
@@ -673,9 +686,9 @@ let private makeWindowedOperatorOp<'T when 'T: equality>
         |> withCostModel
             (operatorImageStageCost<'T> operator memoryModel (Some(float win)) radius costUnits
              |> withTimeTags
-                 [ "kernelSize", string ksz
-                   "stride", string stride
-                   "pad", string pad ])
+                 [ yield! fixedWindowCostTags ksz winSz
+                   yield "stride", string stride
+                   yield "pad", string pad ])
 
     (window win pad stride) --> stg --> flattenList ()
     |> Stage.withSliceCardinality (SlimPipeline.Domain(sameSliceDomainForKernelDepth ksz))
@@ -1516,10 +1529,10 @@ let smoothWGauss (sigma: float) (outputRegionMode: ImageFunctions.OutputRegionMo
         |> withCostModel
             (operatorImageStageCost<float> "SmoothWGauss" memoryModel (Some(float win)) None costUnits
              |> withTimeTags
-                 [ "kernelSize", string ksz
-                   "stride", string stride
-                   "pad", string pad
-                   "sigma", Convert.ToString(sigma, CultureInfo.InvariantCulture) ])
+                 [ yield! windowCostTags ksz winSz
+                   yield "stride", string stride
+                   yield "pad", string pad
+                   yield "sigma", Convert.ToString(sigma, CultureInfo.InvariantCulture) ])
     (window win pad stride) --> stg --> flattenList () --> cleanStage "smoothWGauss.cleanup" (fun () -> kernel.decRefCount())
     |> Stage.withSliceCardinality (sliceCardinalityForConvolution ksz outputRegionMode)
 
@@ -1702,7 +1715,12 @@ let convolveOp (name: string) (kernel: Image<'T>) (outputRegionMode: ImageFuncti
             float (inputValue input * uint64 win * kernelVoxels)
         let stg =
             mapWindow name f memoryNeed elementTransformation
-            |> withCostModel (operatorImageStageCost<'T> "Convolve" memoryModel (Some(float win)) None costUnits)
+            |> withCostModel
+                (operatorImageStageCost<'T> "Convolve" memoryModel (Some(float win)) None costUnits
+                 |> withTimeTags
+                     [ yield! windowCostTags ksz winSz
+                       yield "stride", string stride
+                       yield "pad", string pad ])
         (window win pad stride) --> stg --> flattenList ()
         |> Stage.withSliceCardinality (sliceCardinalityForConvolution ksz outputRegionMode)
 
@@ -1726,7 +1744,12 @@ let private makeMorphOp (name: string) (operator: string) (radius: uint) (winSz:
     let costUnits input = float (inputValue input * uint64 win)
     let stg =
         mapWindow name f memoryNeed id
-        |> withCostModel (operatorImageStageCost<'T> operator memoryModel (Some(float win)) (Some(float radius)) costUnits)
+        |> withCostModel
+            (operatorImageStageCost<'T> operator memoryModel (Some(float win)) (Some(float radius)) costUnits
+             |> withTimeTags
+                 [ yield! windowCostTags ksz winSz
+                   yield "stride", string stride
+                   yield "pad", string pad ])
     (window win pad stride) --> stg --> flattenList ()
     |> Stage.withSliceCardinality (SlimPipeline.Domain(sameSliceDomainForKernelDepth ksz))
 
