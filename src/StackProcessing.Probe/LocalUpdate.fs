@@ -17,6 +17,7 @@ type Options =
       DiscrepancyCsv: string option
       Operators: string list
       Sizes: uint list
+      Shapes: ProbeProbing.ImageSize list
       Depth: uint option
       NoisyType: string
       Radius: uint option
@@ -45,6 +46,8 @@ let private usage () =
     printfn "  --operators A,B        Explicit operator/function ids to probe."
     printfn "  --sizes 64,128,256     Image sizes to probe. Defaults to 128."
     printfn "  --depth N              Probe depth. Defaults to each size, e.g. --size 64 --depth 32."
+    printfn "  --shape WxHxD          Probe one rectangular image shape."
+    printfn "  --shapes LIST          Comma-separated shapes, e.g. 256x256x256,512x512x128,1024x1024x64."
     printfn "  --radius N             Override radius for local radius-dependent templates."
     printfn "  --window-size N        Override windowSize for local window-dependent templates."
     printfn "  --window-sizes A,B,C   Probe window-size dependence with suspect -> ignore graphs."
@@ -96,6 +99,7 @@ let private defaultOptions () =
         if File.Exists path then Some path else None
       Operators = []
       Sizes = [ 128u ]
+      Shapes = []
       Depth = None
       NoisyType = "Float32"
       Radius = None
@@ -184,6 +188,62 @@ let private parseSizes value =
         | true, size when size > 0u -> Some size
         | _ -> None)
 
+let private mkShape width height depth : ProbeProbing.ImageSize =
+    { Width = width
+      Height = height
+      Depth = depth }
+
+let private cubeShape size =
+    mkShape size size size
+
+let private tryParsePositiveUInt (text: string) =
+    match UInt32.TryParse text with
+    | true, value when value > 0u -> Some value
+    | _ -> None
+
+let private tryParseShape (value: string) =
+    let text = value.Trim().ToLowerInvariant().Replace(" ", "")
+    let parts (separator: char) =
+        text.Split([| separator |], StringSplitOptions.RemoveEmptyEntries)
+        |> Array.toList
+
+    match parts 'x' with
+    | [ w; h; d ] ->
+        match tryParsePositiveUInt w, tryParsePositiveUInt h, tryParsePositiveUInt d with
+        | Some width, Some height, Some depth -> Some(mkShape width height depth)
+        | _ -> None
+    | _ ->
+        match parts '*' with
+        | [ xyPower; d ] when xyPower.EndsWith("^2", StringComparison.Ordinal) ->
+            let sideText = xyPower.Substring(0, xyPower.Length - 2)
+            match tryParsePositiveUInt sideText, tryParsePositiveUInt d with
+            | Some side, Some depth -> Some(mkShape side side depth)
+            | _ -> None
+        | [ w; h; d ] ->
+            match tryParsePositiveUInt w, tryParsePositiveUInt h, tryParsePositiveUInt d with
+            | Some width, Some height, Some depth -> Some(mkShape width height depth)
+            | _ -> None
+        | _ when text.EndsWith("^3", StringComparison.Ordinal) ->
+            text.Substring(0, text.Length - 2)
+            |> tryParsePositiveUInt
+            |> Option.map cubeShape
+        | _ ->
+            None
+
+let private parseShapes value =
+    let tokens = splitCsvList value
+    if tokens.IsEmpty then
+        []
+    else
+        let parsed = tokens |> List.map tryParseShape
+        if parsed |> List.forall Option.isSome then
+            parsed |> List.choose id |> List.distinct
+        else
+            []
+
+let private shapeName (shape: ProbeProbing.ImageSize) =
+    $"{shape.Width}x{shape.Height}x{shape.Depth}"
+
 let rec private parseArgs options args =
     match args with
     | [] -> Ok options
@@ -225,6 +285,18 @@ let rec private parseArgs options args =
         | _ ->
             eprintfn "local-update: --size expects a positive integer"
             Error 2
+    | "--shape" :: value :: rest ->
+        match tryParseShape value with
+        | Some shape -> parseArgs { options with Shapes = [ shape ] } rest
+        | None ->
+            eprintfn "local-update: --shape expects WxHxD, N^3, or W^2*D, for example 512x512x128"
+            Error 2
+    | "--shapes" :: value :: rest ->
+        match parseShapes value with
+        | [] ->
+            eprintfn "local-update: --shapes expects comma-separated shapes, for example 256x256x256,512x512x128,1024x1024x64"
+            Error 2
+        | shapes -> parseArgs { options with Shapes = shapes } rest
     | "--noisy-type" :: value :: rest ->
         parseArgs { options with NoisyType = value } rest
     | "--depth" :: value :: rest ->
@@ -641,12 +713,11 @@ let private sourceLayerTemplates (layers: (string * ProbeProbing.GraphTemplate a
     |> Option.map snd
     |> Option.defaultValue [||]
 
-let private localTemplatesForSize options suspects probeRunRoot size =
-    let depth = options.Depth |> Option.defaultValue size
+let private localTemplatesForShape options suspects probeRunRoot (shape: ProbeProbing.ImageSize) =
     let inputDir =
-        Path.Combine(options.InputDirectory, $"local_{timestamp()}", $"size_{size}x{size}x{depth}")
+        Path.Combine(options.InputDirectory, $"local_{timestamp()}", $"size_{shapeName shape}")
 
-    let inputConfig = ProbeProbing.createBottomUpInputsWithDepth size depth options.NoisyType inputDir
+    let inputConfig = ProbeProbing.createBottomUpInputsForShape shape options.NoisyType inputDir
     let layers = ProbeProbing.graphTemplateLayersForBottomUp inputConfig
     let sourceTemplates = sourceLayerTemplates layers
     let suspectTemplates =
@@ -657,6 +728,14 @@ let private localTemplatesForSize options suspects probeRunRoot size =
 
     Array.append sourceTemplates suspectTemplates
     |> uniqueTemplates
+
+let private localShapes options =
+    if not options.Shapes.IsEmpty then
+        options.Shapes
+    else
+        options.Sizes
+        |> List.map (fun size ->
+            mkShape size size (options.Depth |> Option.defaultValue size))
 
 let private runSamplesJson options probeRunRoot =
     let args =
@@ -819,9 +898,9 @@ let main argv =
                 Directory.CreateDirectory probeRunRoot |> ignore
 
                 let templates =
-                    options.Sizes
+                    localShapes options
                     |> List.toArray
-                    |> Array.collect (localTemplatesForSize options suspects probeRunRoot)
+                    |> Array.collect (localTemplatesForShape options suspects probeRunRoot)
                     |> uniqueTemplates
 
                 let selected =

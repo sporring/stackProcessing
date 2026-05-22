@@ -271,20 +271,62 @@ dotnet run --project src/StackProcessing.RunSamples/RunSamples.fsproj -- --json 
 `StackProcessing.Probe` is the front door for cost-model work. The usual
 workflow is:
 
-1. run bottom-up calibration probes to learn controlled baseline and isolated
-   stage costs across one or more image sizes,
-2. run the sample suite with discrepancy reporting enabled,
-3. let Probe emit a compact local probe batch around the flagged operators and
+1. clean old generated measurements and, when starting a new fitting cycle,
+   archive previous fitted/local models,
+2. ground the model with bottom-up IO probes,
+3. add singleton and then neighbourhood phases once read/write behavior is
+   plausible,
+4. run the sample suite with discrepancy reporting enabled,
+5. let Probe emit a compact local probe batch around the flagged operators and
    blend the new evidence into a local model.
 
 ```bash
-dotnet run --project src/StackProcessing.Probe/StackProcessing.Probe.fsproj -- bottom-up --sizes 64,128,256 --noisy-type Float32 --repeat 3 -j 1
+rm -rf tmp/*
+mkdir -p models/archive
+mv models/fitted models/archive/fitted_$(date +%Y%m%d_%H%M%S) 2>/dev/null || true
+mv models/local models/archive/local_$(date +%Y%m%d_%H%M%S) 2>/dev/null || true
+dotnet run --project src/StackProcessing.Probe/StackProcessing.Probe.fsproj -- \
+  bottom-up --phase io \
+  --shapes 256x256x256,512x512x128,1024x1024x64 \
+  --noisy-type Float32 --repeat 3 -j 1
+dotnet run --project src/StackProcessing.Probe/StackProcessing.Probe.fsproj -- \
+  bottom-up --phases io,singleton \
+  --shapes 256x256x256,512x512x128,1024x1024x64 \
+  --noisy-type Float32 --repeat 3 -j 1
+dotnet run --project src/StackProcessing.Probe/StackProcessing.Probe.fsproj -- \
+  bottom-up --phases io,singleton,neighbourhood \
+  --shapes 256x256x256,512x512x128,1024x1024x64 \
+  --noisy-type Float32 --repeat 3 -j 1
 rm -f tmp/costDiscrepancies.csv
 dotnet run --project src/StackProcessing.RunSamples/RunSamples.fsproj -- \
   --skip-build --repeat 1 -j 1 --debug-level 1 --cost-discrepancies \
   --cost-flags tmp/costDiscrepancies.csv \
   --cost-model models/fitted/stackprocessing.operator-cost.json --no-optimize
-dotnet run --project src/StackProcessing.Probe/StackProcessing.Probe.fsproj -- local-update --sizes 64 --repeat 3 -j 1
+dotnet run --project src/StackProcessing.Probe/StackProcessing.Probe.fsproj -- \
+  local-update --shape 256x256x256 --repeat 3 -j 1
+```
+
+`--sizes` is a cubic shortcut. For rectangular volumes, use `--shape` or
+`--shapes`. Probe also accepts shorthand such as `256^3` and `512^2*128`,
+but `WxHxD` spelling is clearer and avoids shell globbing surprises:
+
+```bash
+dotnet run --project src/StackProcessing.Probe/StackProcessing.Probe.fsproj -- \
+  bottom-up --shapes 256x256x256,512x512x128,1024x1024x64 --noisy-type Float32 --repeat 3 -j 1
+```
+
+For slower model development, use explicit phases instead of running every
+stage class at once. The three commands in the workflow above intentionally
+re-run the IO phase while adding later phases, so fitted read/write terms stay
+anchored as new stage families are introduced:
+
+```bash
+dotnet run --project src/StackProcessing.Probe/StackProcessing.Probe.fsproj -- \
+  bottom-up --phase io --shapes 256x256x256,512x512x128,1024x1024x64 --noisy-type Float32 --repeat 3 -j 1
+dotnet run --project src/StackProcessing.Probe/StackProcessing.Probe.fsproj -- \
+  bottom-up --phases io,singleton --shapes 256x256x256,512x512x128,1024x1024x64 --noisy-type Float32 --repeat 3 -j 1
+dotnet run --project src/StackProcessing.Probe/StackProcessing.Probe.fsproj -- \
+  bottom-up --phases io,singleton,neighbourhood --shapes 256x256x256,512x512x128,1024x1024x64 --noisy-type Float32 --repeat 3 -j 1
 ```
 
 For a first, faster calibration pass, use a single size:
@@ -310,7 +352,10 @@ evidence to `tmp/analysis/costEvidence.csv` and a reusable fitted operator model
 to `models/fitted/stackprocessing.operator-cost.json`. The repository fallback
 model lives in `models/default/stackprocessing.operator-cost.json`, and
 targeted updates are written to `models/local/stackprocessing.operator-cost.json`.
-Use `--keep-tmp` only when deliberately preserving existing measurements.
+Use `--phase` or `--phases` to restrict bottom-up calibration to `io`,
+`sources`, `singleton`, `neighbourhood`, `geometry`, `fourier`, `keypoints`,
+`dependency`, `reducers`, or `all`. Use `--keep-tmp` only when deliberately
+preserving existing measurements.
 
 During fitting, the empty graph defines the common intercept and `Ignore` is
 fixed at zero cost. This keeps the baseline from being absorbed into the

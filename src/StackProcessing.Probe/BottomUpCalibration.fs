@@ -9,11 +9,12 @@ type Options =
       AnalysisDirectory: string
       ProbeJsonRoot: string
       InputDirectory: string
-      ImageSizes: uint list
+      ImageShapes: ProbeProbing.ImageSize list
       NoisyType: string
       Repeat: int
       Jobs: int
       Layers: int
+      Phases: string list
       CleanTmp: bool
       RunProbes: bool }
 
@@ -29,12 +30,16 @@ let private usage () =
     printfn "  --analysis-dir PATH     Analysis output/read directory. Defaults to tmp/analysis."
     printfn "  --probe-json-root PATH  Probe JSON output directory. Defaults to tmp/probingGraphs."
     printfn "  --input-dir PATH        Generated calibration input root. Defaults to tmp/probeInputs."
-    printfn "  --size N                Width/height/depth of generated probe images. Defaults to 64."
+    printfn "  --size N                Width/height/depth of generated cubic probe images. Defaults to 64."
     printfn "  --sizes A,B,C           Run the same probe layers for multiple cubic image sizes."
+    printfn "  --shape WxHxD           Run the probe layers for one rectangular image shape."
+    printfn "  --shapes LIST           Comma-separated shapes, e.g. 256x256x256,512x512x128,1024x1024x64."
     printfn "  --noisy-type TYPE       TIFF-compatible noisy image type: UInt8, UInt16, or Float32. Defaults to Float32."
     printfn "  --repeat N              Repeat emitted probe runs. Defaults to 3."
     printfn "  -j, --jobs N            Run up to N emitted probe graphs at once. Defaults to 1."
     printfn "  --layers N              Number of bottom-up layers to run. Defaults to all."
+    printfn "  --phase NAME            Probe phase: io, sources, singleton, neighbourhood, geometry, fourier, keypoints, dependency, reducers, or all."
+    printfn "  --phases LIST           Comma-separated phases. Defaults to all."
     printfn "  --keep-tmp              Do not clear repository tmp before starting."
     printfn "  --no-run-probes         Emit probe graphs and analyze only."
 
@@ -69,11 +74,12 @@ let private defaultOptions () =
       AnalysisDirectory = Path.Combine(root, "tmp", "analysis")
       ProbeJsonRoot = Path.Combine(root, "tmp", "probingGraphs")
       InputDirectory = Path.Combine(root, "tmp", "probeInputs")
-      ImageSizes = [ 64u ]
+      ImageShapes = [ { Width = 64u; Height = 64u; Depth = 64u } ]
       NoisyType = "Float32"
       Repeat = 3
       Jobs = 1
       Layers = Int32.MaxValue
+      Phases = [ "all" ]
       CleanTmp = true
       RunProbes = true }
 
@@ -84,10 +90,14 @@ let private normalizeNoisyType (value: string) =
     | "float32" | "float" -> Some "Float32"
     | _ -> None
 
+let private splitCsvList (value: string) =
+    value.Split([| ','; ';' |], StringSplitOptions.RemoveEmptyEntries ||| StringSplitOptions.TrimEntries)
+    |> Array.toList
+
 let private parseSizes (value: string) =
     let parts =
-        value.Split([| ',' |], StringSplitOptions.RemoveEmptyEntries)
-        |> Array.map _.Trim()
+        splitCsvList value
+        |> List.toArray
 
     if parts.Length = 0 then
         None
@@ -105,6 +115,114 @@ let private parseSizes (value: string) =
             |> Some
         else
             None
+
+let private mkShape width height depth : ProbeProbing.ImageSize =
+    { Width = width
+      Height = height
+      Depth = depth }
+
+let private cubeShape size =
+    mkShape size size size
+
+let private tryParsePositiveUInt (text: string) =
+    match UInt32.TryParse text with
+    | true, value when value > 0u -> Some value
+    | _ -> None
+
+let private tryParseShape (value: string) =
+    let text = value.Trim().ToLowerInvariant().Replace(" ", "")
+
+    let parts (separator: char) =
+        text.Split([| separator |], StringSplitOptions.RemoveEmptyEntries)
+        |> Array.toList
+
+    match parts 'x' with
+    | [ w; h; d ] ->
+        match tryParsePositiveUInt w, tryParsePositiveUInt h, tryParsePositiveUInt d with
+        | Some width, Some height, Some depth -> Some(mkShape width height depth)
+        | _ -> None
+    | _ ->
+        match parts '*' with
+        | [ xyPower; d ] when xyPower.EndsWith("^2", StringComparison.Ordinal) ->
+            let sideText = xyPower.Substring(0, xyPower.Length - 2)
+            match tryParsePositiveUInt sideText, tryParsePositiveUInt d with
+            | Some side, Some depth -> Some(mkShape side side depth)
+            | _ -> None
+        | [ w; h; d ] ->
+            match tryParsePositiveUInt w, tryParsePositiveUInt h, tryParsePositiveUInt d with
+            | Some width, Some height, Some depth -> Some(mkShape width height depth)
+            | _ -> None
+        | _ when text.EndsWith("^3", StringComparison.Ordinal) ->
+            text.Substring(0, text.Length - 2)
+            |> tryParsePositiveUInt
+            |> Option.map cubeShape
+        | _ ->
+            None
+
+let private parseShapes value =
+    let tokens = splitCsvList value
+    if tokens.IsEmpty then
+        None
+    else
+        let parsed = tokens |> List.map tryParseShape
+        if parsed |> List.forall Option.isSome then
+            parsed
+            |> List.choose id
+            |> List.distinct
+            |> Some
+        else
+            None
+
+let private shapeName (shape: ProbeProbing.ImageSize) =
+    $"{shape.Width}x{shape.Height}x{shape.Depth}"
+
+let private phaseForLayer layerName =
+    match layerName with
+    | "01-starters" -> "io"
+    | "02-sources" -> "sources"
+    | "03-simple-unary" -> "singleton"
+    | "04-windowed-unary" -> "neighbourhood"
+    | "05-intensity-and-additive" -> "singleton"
+    | "06-geometry-and-projection" -> "geometry"
+    | "07-fourier-and-vector" -> "fourier"
+    | "08-keypoint-and-distance" -> "keypoints"
+    | "09-dependency-breakers" -> "dependency"
+    | "10-reducers" -> "reducers"
+    | _ -> "other"
+
+let private normalizePhase (value: string) =
+    match value.Trim().ToLowerInvariant().Replace("_", "-") with
+    | "all" -> Some "all"
+    | "io" | "read-write" | "readwrite" -> Some "io"
+    | "sources" | "source" -> Some "sources"
+    | "singleton" | "singletons" | "simple" | "simple-unary" -> Some "singleton"
+    | "neighbourhood" | "neighborhood" | "window" | "windowed" | "windowed-unary" -> Some "neighbourhood"
+    | "geometry" | "projection" | "geometry-and-projection" -> Some "geometry"
+    | "fourier" | "vector" | "fourier-and-vector" -> Some "fourier"
+    | "keypoints" | "keypoint" | "distance" | "keypoint-and-distance" -> Some "keypoints"
+    | "dependency" | "dependency-breakers" -> Some "dependency"
+    | "reducers" | "reducer" -> Some "reducers"
+    | _ -> None
+
+let private parsePhases value =
+    let tokens = splitCsvList value
+    if tokens.IsEmpty then
+        None
+    else
+        let parsed = tokens |> List.map normalizePhase
+        if parsed |> List.forall Option.isSome then
+            parsed |> List.choose id |> List.distinct |> Some
+        else
+            None
+
+let private selectPhaseLayers phases (layers: (string * ProbeProbing.GraphTemplate array) array) =
+    if phases |> List.exists ((=) "all") then
+        layers
+    else
+        let phaseSet = phases |> Set.ofList
+        layers
+        |> Array.filter (fun (layerName, _) ->
+            phaseSet.Contains(phaseForLayer layerName))
 
 let rec private parseArgs options args =
     match args with
@@ -146,16 +264,28 @@ let rec private parseArgs options args =
     | "--size" :: value :: rest
     | "--image-size" :: value :: rest ->
         match UInt32.TryParse value with
-        | true, n when n > 0u -> parseArgs { options with ImageSizes = [ n ] } rest
+        | true, n when n > 0u -> parseArgs { options with ImageShapes = [ cubeShape n ] } rest
         | _ ->
             eprintfn "bottom-up: --size expects a positive integer"
             Error 2
     | "--sizes" :: value :: rest
     | "--image-sizes" :: value :: rest ->
         match parseSizes value with
-        | Some sizes -> parseArgs { options with ImageSizes = sizes } rest
+        | Some sizes -> parseArgs { options with ImageShapes = sizes |> List.map cubeShape } rest
         | None ->
             eprintfn "bottom-up: --sizes expects a comma-separated list of positive integers, for example 64,128,256"
+            Error 2
+    | "--shape" :: value :: rest ->
+        match tryParseShape value with
+        | Some shape -> parseArgs { options with ImageShapes = [ shape ] } rest
+        | None ->
+            eprintfn "bottom-up: --shape expects WxHxD, N^3, or W^2*D, for example 512x512x128"
+            Error 2
+    | "--shapes" :: value :: rest ->
+        match parseShapes value with
+        | Some shapes -> parseArgs { options with ImageShapes = shapes } rest
+        | None ->
+            eprintfn "bottom-up: --shapes expects comma-separated shapes, for example 256x256x256,512x512x128,1024x1024x64"
             Error 2
     | "--noisy-type" :: value :: rest
     | "--gray-type" :: value :: rest ->
@@ -182,6 +312,18 @@ let rec private parseArgs options args =
         | true, n when n > 0 -> parseArgs { options with Layers = n } rest
         | _ ->
             eprintfn "bottom-up: --layers expects a positive integer"
+            Error 2
+    | "--phase" :: value :: rest ->
+        match normalizePhase value with
+        | Some phase -> parseArgs { options with Phases = [ phase ] } rest
+        | None ->
+            eprintfn "bottom-up: unknown phase '%s'" value
+            Error 2
+    | "--phases" :: value :: rest ->
+        match parsePhases value with
+        | Some phases -> parseArgs { options with Phases = phases } rest
+        | None ->
+            eprintfn "bottom-up: --phases expects io,sources,singleton,neighbourhood,geometry,fourier,keypoints,dependency,reducers, or all"
             Error 2
     | "--keep-tmp" :: rest ->
         parseArgs { options with CleanTmp = false } rest
@@ -228,16 +370,16 @@ let private runProbeGraphs options layerDir =
            "-j"
            string options.Jobs |]
 
-let private writePlan (path: string) (layersBySize: (uint * (string * ProbeProbing.GraphTemplate array) array) array) =
+let private writePlan (path: string) (layersBySize: (ProbeProbing.ImageSize * (string * ProbeProbing.GraphTemplate array) array) array) =
     Directory.CreateDirectory(Path.GetDirectoryName path) |> ignore
 
     let lines =
         seq {
-            yield "size,layer,graph"
-            for size, layers in layersBySize do
+            yield "width,height,depth,shape,layer,graph"
+            for shape, layers in layersBySize do
                 for layerName, templates in layers do
                     for template in templates do
-                        yield $"{size},{layerName},{template.Name}"
+                        yield $"{shape.Width},{shape.Height},{shape.Depth},{shapeName shape},{layerName},{template.Name}"
         }
 
     File.WriteAllLines(path, lines)
@@ -251,24 +393,26 @@ let main argv =
 
             let probeRoot = Path.Combine(options.ProbeJsonRoot, "bottomup_" + timestamp ())
             let layersBySize =
-                options.ImageSizes
-                |> List.map (fun size ->
-                    let inputDir = Path.Combine(options.InputDirectory, sprintf "%ux%ux%u" size size size)
+                options.ImageShapes
+                |> List.map (fun shape ->
+                    let shapeText = shapeName shape
+                    let inputDir = Path.Combine(options.InputDirectory, shapeText)
 
                     printfn
                         "Generating calibration inputs in %s (%ux%ux%u, noisy %s)."
                         inputDir
-                        size
-                        size
-                        size
+                        shape.Width
+                        shape.Height
+                        shape.Depth
                         options.NoisyType
 
-                    let inputConfig = ProbeProbing.createBottomUpInputs size options.NoisyType inputDir
+                    let inputConfig = ProbeProbing.createBottomUpInputsForShape shape options.NoisyType inputDir
                     let selectedLayers =
                         ProbeProbing.graphTemplateLayersForBottomUp inputConfig
+                        |> selectPhaseLayers options.Phases
                         |> Array.truncate options.Layers
 
-                    size, selectedLayers)
+                    shape, selectedLayers)
                 |> List.toArray
 
             printfn "Bottom-up probe root: %s" probeRoot
@@ -276,21 +420,21 @@ let main argv =
 
             let mutable exitCode = 0
 
-            for size, selectedLayers in layersBySize do
+            for shape, selectedLayers in layersBySize do
                 for layerIndex, (layerName, templates) in selectedLayers |> Array.indexed do
                     if exitCode = 0 then
                         let layerNumber = layerIndex + 1
                         let layerDir =
                             Path.Combine(
                                 probeRoot,
-                                sprintf "size_%ux%ux%u" size size size,
+                                sprintf "size_%s" (shapeName shape),
                                 sprintf "layer_%03d_%s" layerNumber layerName)
 
                         printfn
                             "Bottom-up size %ux%ux%u layer %d/%d: %s (%d graph(s))"
-                            size
-                            size
-                            size
+                            shape.Width
+                            shape.Height
+                            shape.Depth
                             layerNumber
                             selectedLayers.Length
                             layerName

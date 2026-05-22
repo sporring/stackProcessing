@@ -1277,7 +1277,7 @@ type GraphTemplate =
       Graph: SavedGraph }
 
 type BottomUpInputConfig =
-    { Size: uint
+    { Shape: ImageSize
       Depth: uint
       ShapeInput: string
       NoisyInput: string
@@ -1381,9 +1381,10 @@ let private graphTemplateMatchesAnalysisTokens tokens (template: GraphTemplate) 
                 || token.Contains(candidate, StringComparison.Ordinal)))
 
 let private bottomUpGraphTemplates config =
-    let sizeText = string config.Size
+    let sizeText = string config.Shape.Width
+    let heightText = string config.Shape.Height
     let depthText = string config.Depth
-    let sizeSuffix = $"{config.Size}x{config.Size}x{config.Depth}"
+    let sizeSuffix = sizeName config.Shape
     let writeFeature = "Write:format=Image stack:depth=1:chunkX=64:chunkY=64:chunkZ=8:maxConcurrentWrites=0:frameAxis=0"
     let ignoreFeature = "Ignore"
 
@@ -1411,8 +1412,8 @@ let private bottomUpGraphTemplates config =
         else
             writeTemplate name description (nodes @ [ castNode outputType "UInt8" ])
 
-    let zeroUInt8 = zeroNode "UInt8" config.Size config.Size config.Depth
-    let zeroFloat = zeroNode "Float64" config.Size config.Size config.Depth
+    let zeroUInt8 = zeroNode "UInt8" config.Shape.Width config.Shape.Height config.Depth
+    let zeroFloat = zeroNode "Float64" config.Shape.Width config.Shape.Height config.Depth
     let readUInt8 = readNodeFrom config.ShapeInput "UInt8"
     let readFloat = readNodeFrom config.NoisyInput "Float64"
     let readFloat32 = readNodeFrom config.NoisyInput "Float32"
@@ -1432,11 +1433,11 @@ let private bottomUpGraphTemplates config =
         [| ignoreTemplate
                $"bottomup-10-normalNoise-float-ignore-{sizeSuffix}"
                "Float64 normalNoise source consumed without writing."
-               [ "noise", "NormalNoise", [ "availableMemory", string availableMemory + "UL"; "type", "Float64"; "width", sizeText; "height", sizeText; "depth", depthText; "mean", "128.0"; "std", "25.0" ] ]
+               [ "noise", "NormalNoise", [ "availableMemory", string availableMemory + "UL"; "type", "Float64"; "width", sizeText; "height", heightText; "depth", depthText; "mean", "128.0"; "std", "25.0" ] ]
            writeUInt8Template
                $"bottomup-11-normalNoise-float-write-{sizeSuffix}"
                "Float64 normalNoise source cast and written."
-               [ "noise", "NormalNoise", [ "availableMemory", string availableMemory + "UL"; "type", "Float64"; "width", sizeText; "height", sizeText; "depth", depthText; "mean", "128.0"; "std", "25.0" ] ]
+               [ "noise", "NormalNoise", [ "availableMemory", string availableMemory + "UL"; "type", "Float64"; "width", sizeText; "height", heightText; "depth", depthText; "mean", "128.0"; "std", "25.0" ] ]
                "Float64"
            ignoreTemplate
                $"bottomup-12-addNormalNoise-uint8-ignore-{sizeSuffix}"
@@ -1449,28 +1450,28 @@ let private bottomUpGraphTemplates config =
            ignoreTemplate
                $"bottomup-14-saltAndPepper-source-ignore-{sizeSuffix}"
                "UInt8 saltAndPepperNoise source consumed without writing."
-               [ "noise", "SaltAndPepperNoise", [ "availableMemory", string availableMemory + "UL"; "type", "UInt8"; "width", sizeText; "height", sizeText; "depth", depthText; "probability", "0.02" ] ]
+               [ "noise", "SaltAndPepperNoise", [ "availableMemory", string availableMemory + "UL"; "type", "UInt8"; "width", sizeText; "height", heightText; "depth", depthText; "probability", "0.02" ] ]
            writeTemplate
                $"bottomup-15-saltAndPepper-source-write-{sizeSuffix}"
                "UInt8 saltAndPepperNoise source written."
-               [ "noise", "SaltAndPepperNoise", [ "availableMemory", string availableMemory + "UL"; "type", "UInt8"; "width", sizeText; "height", sizeText; "depth", depthText; "probability", "0.02" ] ]
+               [ "noise", "SaltAndPepperNoise", [ "availableMemory", string availableMemory + "UL"; "type", "UInt8"; "width", sizeText; "height", heightText; "depth", depthText; "probability", "0.02" ] ]
            ignoreTemplate
                $"bottomup-16-shotNoise-source-ignore-{sizeSuffix}"
                "Float64 shotNoise source consumed without writing."
-               [ "noise", "ShotNoise", [ "availableMemory", string availableMemory + "UL"; "type", "Float64"; "width", sizeText; "height", sizeText; "depth", depthText; "scale", "2.0" ] ]
+               [ "noise", "ShotNoise", [ "availableMemory", string availableMemory + "UL"; "type", "Float64"; "width", sizeText; "height", heightText; "depth", depthText; "scale", "2.0" ] ]
            writeUInt8Template
                $"bottomup-17-shotNoise-source-write-{sizeSuffix}"
                "Float64 shotNoise source cast and written."
-               [ "noise", "ShotNoise", [ "availableMemory", string availableMemory + "UL"; "type", "Float64"; "width", sizeText; "height", sizeText; "depth", depthText; "scale", "2.0" ] ]
+               [ "noise", "ShotNoise", [ "availableMemory", string availableMemory + "UL"; "type", "Float64"; "width", sizeText; "height", heightText; "depth", depthText; "scale", "2.0" ] ]
                "Float64"
            ignoreTemplate
                $"bottomup-18-speckleNoise-source-ignore-{sizeSuffix}"
                "Float64 speckleNoise source consumed without writing."
-               [ "noise", "SpeckleNoise", [ "availableMemory", string availableMemory + "UL"; "type", "Float64"; "width", sizeText; "height", sizeText; "depth", depthText; "std", "0.5" ] ]
+               [ "noise", "SpeckleNoise", [ "availableMemory", string availableMemory + "UL"; "type", "Float64"; "width", sizeText; "height", heightText; "depth", depthText; "std", "0.5" ] ]
            writeUInt8Template
                $"bottomup-19-speckleNoise-source-write-{sizeSuffix}"
                "Float64 speckleNoise source cast and written."
-               [ "noise", "SpeckleNoise", [ "availableMemory", string availableMemory + "UL"; "type", "Float64"; "width", sizeText; "height", sizeText; "depth", depthText; "std", "0.5" ] ]
+               [ "noise", "SpeckleNoise", [ "availableMemory", string availableMemory + "UL"; "type", "Float64"; "width", sizeText; "height", heightText; "depth", depthText; "std", "0.5" ] ]
                "Float64" |]
 
     let simpleUnaryLayer =
@@ -1813,7 +1814,7 @@ let private bottomUpGraphTemplates config =
                  "EstimateHistogram",
                  [ "availableMemory", string availableMemory + "UL"
                    "type", "Float64"
-                   "slices", string (min 16u config.Size)
+                   "slices", string (min 16u config.Shape.Depth)
                    "input", config.NoisyInput
                    "suffix", ".tiff"
                    "down", "4"
@@ -2286,7 +2287,7 @@ let private createNoisyMovingBoxes noisyPixelType size output =
     | "Float32" -> createNoisyFromShape<float32> 255.0f 128.0 50.0 size output
     | _ -> failwithf "Unsupported noisy input type '%s'. Use UInt8, UInt16, or Float32." noisyPixelType
 
-let createBottomUpInputsWithDepth (size: uint) (depth: uint) (noisyPixelType: string) (inputRoot: string) =
+let createBottomUpInputsForShape (imageSize: ImageSize) (noisyPixelType: string) (inputRoot: string) =
     let normalizedNoisyType =
         match noisyPixelType.ToLowerInvariant() with
         | "uint8" -> "UInt8"
@@ -2297,16 +2298,18 @@ let createBottomUpInputsWithDepth (size: uint) (depth: uint) (noisyPixelType: st
     cleanDirectory inputRoot
     let shapeInput = Path.Combine(inputRoot, "shapes").Replace('\\', '/')
     let noisyInput = Path.Combine(inputRoot, "noisy").Replace('\\', '/')
-    let imageSize = { Width = size; Height = size; Depth = depth }
 
     createMovingBoxes<uint8> 255uy imageSize shapeInput
     createNoisyMovingBoxes normalizedNoisyType imageSize noisyInput
 
-    { Size = size
-      Depth = depth
+    { Shape = imageSize
+      Depth = imageSize.Depth
       ShapeInput = shapeInput
       NoisyInput = noisyInput
       NoisyPixelType = normalizedNoisyType }
+
+let createBottomUpInputsWithDepth (size: uint) (depth: uint) (noisyPixelType: string) (inputRoot: string) =
+    createBottomUpInputsForShape { Width = size; Height = size; Depth = depth } noisyPixelType inputRoot
 
 let createBottomUpInputs (size: uint) (noisyPixelType: string) (inputRoot: string) =
     createBottomUpInputsWithDepth size size noisyPixelType inputRoot
