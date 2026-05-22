@@ -202,22 +202,40 @@ graph-to-DSL path stays easy to inspect.
 ## F# Interactive
 
 You can experiment with the DSL in F# Interactive (fsi) after building the
-`StackProcessing` project. Start `dotnet fsi` from the repository root and make
-sure the native SimpleITK library is visible before fsi starts.
+`StackProcessing` and `StackProcessing.Probe` projects. The Probe output folder
+is used here only because it contains the copied NuGet dependency
+`FSharp.Control.AsyncSeq.dll`. Start `dotnet fsi` from the repository root and
+make sure the native SimpleITK library is visible before fsi starts.
 
 On macOS:
 
 ```bash
-dotnet build src/StackProcessing/StackProcessing.fsproj
+cd <root of StackProcessing>
+dotnet build
 DYLD_LIBRARY_PATH="$(pwd)/src/StackProcessing/bin/Debug/net10.0:$(pwd)/lib" dotnet fsi
 ```
 
 On Linux use `LD_LIBRARY_PATH` in the same way. On Windows, start fsi from an
 environment where the build output and `lib/` are on `PATH`.
 
-Inside F# Interactive write:
+Inside F# Interactive, the shortest setup is:
 
 ```fsharp
+#load "scripts/stackprocessing.fsx";;
+open StackProcessing;;
+
+let availableMemory = 2UL * 1024UL * 1024UL * 1024UL;;
+
+source availableMemory
+|> zero<uint8> 64u 64u 8u
+>=> write "tmp/fsi-zero" ".tiff"
+|> sink;;
+```
+
+The helper script loads the same assemblies as this manual setup:
+
+```fsharp
+#I "src/StackProcessing.Probe/bin/Debug/net10.0";;
 #I "src/StackProcessing/bin/Debug/net10.0";;
 #r "FSharp.Control.AsyncSeq.dll";;
 #r "SimpleITKCSharpManaged.dll";;
@@ -229,14 +247,6 @@ Inside F# Interactive write:
 #r "StackProcessing.Core.dll";;
 #r "StackProcessing.dll";;
 
-open StackProcessing;;
-
-let availableMemory = 2UL * 1024UL * 1024UL * 1024UL;;
-
-source availableMemory
-|> zero<uint8> 64u 64u 8u
->=> write "tmp/fsi-zero" ".tiff"
-|> sink;;
 ```
 
 Paths in fsi are resolved relative to the directory where `dotnet fsi` was

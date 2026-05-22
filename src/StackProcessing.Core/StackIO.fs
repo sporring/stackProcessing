@@ -349,11 +349,26 @@ let private suffixAliases (suffix: string) =
 let private suffixDescription suffix =
     suffixAliases suffix |> String.concat " or "
 
+let private isFSharpInteractiveProcess () =
+    let friendlyName =
+        try AppDomain.CurrentDomain.FriendlyName
+        with _ -> ""
+
+    let commandLine =
+        try Environment.GetCommandLineArgs() |> String.concat " "
+        with _ -> ""
+
+    friendlyName.Contains("fsi", StringComparison.OrdinalIgnoreCase)
+    || commandLine.Contains("fsi", StringComparison.OrdinalIgnoreCase)
+
 let private stopWithInputError (message: string) =
-    Console.Error.WriteLine(message)
-    Environment.ExitCode <- 2
-    Environment.Exit 2
-    failwith message
+    if isFSharpInteractiveProcess() then
+        invalidOp message
+    else
+        Console.Error.WriteLine(message)
+        Environment.ExitCode <- 2
+        Environment.Exit 2
+        failwith message
 
 let volumeFilePath (input: string) (suffix: string) =
     if Path.HasExtension input then
@@ -374,6 +389,9 @@ let private getStackFiles inputDir suffix =
 
     if String.IsNullOrWhiteSpace inputDir then
         stopWithInputError "Input stack directory was empty. Please provide a directory containing image slices."
+
+    if File.Exists inputDir then
+        stopWithInputError $"Input path is a file, not an image stack directory: {inputDir}. getStackInfo expects a directory containing one image file per slice. For a single image or volume file, use getFileInfo or readVolume with the file path."
 
     if not (Directory.Exists inputDir) then
         stopWithInputError $"Input stack directory does not exist: {inputDir}"

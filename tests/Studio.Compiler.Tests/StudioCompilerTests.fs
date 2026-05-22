@@ -60,6 +60,36 @@ let generatorSuite =
             Expect.stringContains code ">=> write \"output\" \".tiff\"" "Write node should generate write stage."
             Expect.stringContains code "|> sink" "Terminal write should be sunk."
 
+        testCase "shared read feeding two terminal writes generates one fan-out pipeline" <| fun _ ->
+            let read =
+                node "read" "Read"
+                    [ p "availableMemory" "1073741824" false
+                      p "type" "UInt8" false
+                      p "input" "input" false
+                      p "suffix" ".tiff" false ]
+
+            let writeA =
+                node "writeA" "Write"
+                    [ p "output" "output-a" false
+                      p "suffix" ".tiff" false ]
+
+            let writeB =
+                node "writeB" "Write"
+                    [ p "output" "output-b" false
+                      p "suffix" ".tiff" false ]
+
+            let code =
+                graph
+                    [ read; writeA; writeB ]
+                    [ edge "read" "output" 0 "writeA" "input" 0
+                      edge "read" "output" 0 "writeB" "input" 0 ]
+                |> PipelineCodeGenerator.generateSavedGraph
+
+            Expect.equal (code.Split("|> read<uint8>").Length - 1) 1 "The shared read source should be generated once."
+            Expect.stringContains code ">=>> (write \"output-a\" \".tiff\", write \"output-b\" \".tiff\")" "Terminal writes should be emitted as shared fan-out branches."
+            Expect.stringContains code ">=> ignorePairs ()" "The paired write outputs should be consumed by a single sink."
+            Expect.equal (code.Split("|> sink").Length - 1) 1 "The shared terminal fan-out should run as one pipeline."
+
         testCase "read volume format writes streaming volume conversion" <| fun _ ->
             let read =
                 node "readVolume" "Read"

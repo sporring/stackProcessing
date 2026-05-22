@@ -2274,7 +2274,7 @@ module PipelineCodeGenerator =
                         line
 
         let generatedPipelines () =
-            let appendSinkIfTerminalWrite (node: SavedNode) expression =
+            let isSinkTerminal (node: SavedNode) =
                 match node.FunctionId with
                 | "Write"
                 | "WriteThrough"
@@ -2285,30 +2285,54 @@ module PipelineCodeGenerator =
                 | "WriteCSV"
                 | "ImHistogram"
                 | "ShowImage"
-                | "Ignore" ->
+                | "Ignore" -> true
+                | _ -> false
+
+            let appendSinkIfTerminalWrite (node: SavedNode) expression =
+                if isSinkTerminal node then
                     $"{expression}{newLine}|> sink"
-                | "ComputeStats" ->
-                    $"{expression}{newLine}|> drain"
-                | "SurfaceArea"
-                | "Volume"
-                | "PointPairDistances"
-                | "FitBiasModel"
-                | "FitBiasModelMasked"
-                | "AffineRegistration"
-                | "SerialEstBoundingBox" ->
-                    $"{expression}{newLine}|> drain"
-                | "ComponentTranslationTable" ->
-                    $"{expression}{newLine}|> drain"
-                | "Histogram" ->
-                    $"{expression}{newLine}|> drain"
-                | "ImHistogramData" ->
-                    $"{expression}{newLine}|> drain"
-                | "EstimateHistogram" ->
-                    $"{expression}{newLine}|> drain"
-                | "ObjectSizeStats" ->
-                    $"{expression}{newLine}|> drain"
-                | _ ->
-                    expression
+                else
+                    match node.FunctionId with
+                    | "ComputeStats" ->
+                        $"{expression}{newLine}|> drain"
+                    | "SurfaceArea"
+                    | "Volume"
+                    | "PointPairDistances"
+                    | "FitBiasModel"
+                    | "FitBiasModelMasked"
+                    | "AffineRegistration"
+                    | "SerialEstBoundingBox" ->
+                        $"{expression}{newLine}|> drain"
+                    | "ComponentTranslationTable" ->
+                        $"{expression}{newLine}|> drain"
+                    | "Histogram" ->
+                        $"{expression}{newLine}|> drain"
+                    | "ImHistogramData" ->
+                        $"{expression}{newLine}|> drain"
+                    | "EstimateHistogram" ->
+                        $"{expression}{newLine}|> drain"
+                    | "ObjectSizeStats" ->
+                        $"{expression}{newLine}|> drain"
+                    | _ ->
+                        expression
+
+            let expressionFromOutputEdge (edge: SavedEdge) =
+                match nodesById |> Map.tryFind edge.FromNode with
+                | Some upstream ->
+                    let upstreamExpression = pipelineExpression Set.empty upstream
+                    if upstream.FunctionId = "PCA" && edge.FromPort >= 0 && edge.FromPort <= 8 then
+                        let rawComponents = savedParamValue "components" upstream
+                        let components =
+                            if String.IsNullOrWhiteSpace rawComponents then "3u"
+                            else numericLiteral UInt32 rawComponents
+                        $"{upstreamExpression}{newLine}>=> selectGroupedOutput ({components} + 1u) {edge.FromPort}u"
+                    elif upstream.FunctionId = "AffineRegistration" && edge.FromPort >= 0 && edge.FromPort <= 1 then
+                        $"{upstreamExpression}{newLine}>=> selectGroupedValueOutput 2u {edge.FromPort}u"
+                    elif upstream.FunctionId = "EstimateHistogram" && edge.FromPort = 0 then
+                        $"{upstreamExpression}{newLine}>=> histogramEstimateMap"
+                    else
+                        upstreamExpression
+                | None -> $"// Cannot generate F#: missing upstream node {edge.FromNode}"
 
             let terminalNodes =
                 graph.Nodes
@@ -2333,10 +2357,48 @@ module PipelineCodeGenerator =
                     && not (serialGeometryNamesByNodeId |> Map.containsKey node.Id)
                     && not (dataEdges |> Array.exists (fun edge -> edge.FromNode = node.Id)))
 
-            terminalNodes
-            |> Array.map (fun node ->
-                { Dependencies = pipelineBindingDependencies Set.empty node
-                  Text = pipelineExpression Set.empty node |> appendSinkIfTerminalWrite node })
+            let sharedSinkGroups =
+                terminalNodes
+                |> Array.choose (fun node ->
+                    match incomingDataEdge node.Id 0, stageCall node with
+                    | Some edge, Some call when isSinkTerminal node ->
+                        Some((edge.FromNode, edge.FromKind, edge.FromPort), (node, edge, call))
+                    | _ ->
+                        None)
+                |> Array.groupBy fst
+                |> Array.choose (fun (_, entries) ->
+                    let branches = entries |> Array.map snd
+                    if branches.Length = 2 then Some branches else None)
+
+            let groupedTerminalIds =
+                sharedSinkGroups
+                |> Array.collect (Array.map (fun (node, _, _) -> node.Id))
+                |> Set.ofArray
+
+            let sharedSinkExpressions =
+                sharedSinkGroups
+                |> Array.map (fun branches ->
+                    let nodes = branches |> Array.map (fun (node, _, _) -> node)
+                    let commonEdge = branches |> Array.head |> fun (_, edge, _) -> edge
+                    let leftCall = branches[0] |> fun (_, _, call) -> call
+                    let rightCall = branches[1] |> fun (_, _, call) -> call
+                    let shared = expressionFromOutputEdge commonEdge
+
+                    { Dependencies =
+                          nodes
+                          |> Array.map (pipelineBindingDependencies Set.empty)
+                          |> Set.unionMany
+                      Text =
+                          $"{shared}{newLine}{formatStageTuple leftCall rightCall}{newLine}>=> ignorePairs (){newLine}|> sink" })
+
+            let singleTerminalExpressions =
+                terminalNodes
+                |> Array.filter (fun node -> not (groupedTerminalIds |> Set.contains node.Id))
+                |> Array.map (fun node ->
+                    { Dependencies = pipelineBindingDependencies Set.empty node
+                      Text = pipelineExpression Set.empty node |> appendSinkIfTerminalWrite node })
+
+            Array.append sharedSinkExpressions singleTerminalExpressions
 
         let orderedBindings () =
             let statsBindings =
