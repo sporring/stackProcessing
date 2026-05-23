@@ -331,9 +331,31 @@ let selectorMatchesRecord selector (record: ProbeAnalysis.StoredMeasurementRecor
 let evidenceRowsFromRecord (record: ProbeAnalysis.StoredMeasurementRecord) =
     match record.RuntimeCostTerms |> Array.toList with
     | _ :: _ ->
-        record.RuntimeCostTerms
-        |> Array.choose (runtimeTermEvidenceRow record)
-        |> Array.toList
+        let runtimeRows =
+            record.RuntimeCostTerms
+            |> Array.choose (runtimeTermEvidenceRow record)
+            |> Array.toList
+
+        let runtimeOperators =
+            runtimeRows
+            |> List.map (fun row -> row.Operator.Trim().ToLowerInvariant())
+            |> Set.ofList
+
+        let context = contextFromInputJson record
+        let supplementalRows =
+            record.Features
+            |> Array.toList
+            |> List.choose (fun feature ->
+                let metadata = parseFeatureMetadata feature.Key
+                let operator = metadata.Operator.Trim().ToLowerInvariant()
+                if operator = "ignore" then
+                    None
+                elif operator = "intercept" || not (runtimeOperators.Contains operator) then
+                    Some(featureEvidenceRow context record feature)
+                else
+                    None)
+
+        runtimeRows @ supplementalRows
     | [] ->
         let context = contextFromInputJson record
         record.Features

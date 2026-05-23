@@ -1560,11 +1560,24 @@ let private writeOutputs (options: Options) (rows: AnalysisRow list) =
                     match measurement.RuntimeCostTerms with
                     | _ :: _ ->
                         let measurement = { measurement with SourcePath = sourcePath }
+                        let runtimeRows =
+                            measurement.RuntimeCostTerms
+                            |> List.choose (runtimeTermEvidenceRow measurement)
 
-                        for term in measurement.RuntimeCostTerms do
-                            match runtimeTermEvidenceRow measurement term with
-                            | Some row -> yield row
-                            | None -> ()
+                        let runtimeOperators =
+                            runtimeRows
+                            |> List.map (fun row -> row.Operator.Trim().ToLowerInvariant())
+                            |> Set.ofList
+
+                        yield! runtimeRows
+
+                        let rowContext = inferEvidenceContext row
+                        for KeyValue(feature, value) in row.FeatureValues do
+                            let metadata = parseFeatureMetadata feature
+                            let operator = metadata.Operator.Trim().ToLowerInvariant()
+                            if operator <> "ignore"
+                               && (operator = "intercept" || not (runtimeOperators.Contains operator)) then
+                                yield evidenceRow rowContext measurement.RowId measurement.Name measurement.Value sourcePath feature value
                     | [] ->
                         let rowContext = inferEvidenceContext row
 

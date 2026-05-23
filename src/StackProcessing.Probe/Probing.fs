@@ -1450,9 +1450,12 @@ let private bottomUpGraphTemplates config =
              | _ -> config.NoisyInput)
 
     let zeroUInt8 = zeroNode "UInt8" config.Shape.Width config.Shape.Height config.Depth
-    let readUInt8 = readNodeFrom (typedInput "UInt8") "UInt8"
-    let readFloat = readNodeFrom (typedInput "Float64") "Float64"
-    let readFloat32 = readNodeFrom (typedInput "Float32") "Float32"
+    let readTyped pixelType =
+        readNodeFromWithSuffix (typedInput pixelType) pixelType (bottomUpIoSuffix pixelType)
+
+    let readUInt8 = readTyped "UInt8"
+    let readFloat = readTyped "Float64"
+    let readFloat32 = readTyped "Float32"
 
     let sourceLayer =
         [| yield emptyTemplate "bottomup-00-empty" "Empty graph for process startup/shutdown intercept."

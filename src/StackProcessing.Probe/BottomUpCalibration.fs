@@ -15,6 +15,7 @@ type Options =
       Jobs: int
       Layers: int
       Phases: string list
+      Members: string list
       CleanTmp: bool
       RunProbes: bool
       FitModel: bool }
@@ -41,6 +42,7 @@ let private usage () =
     printfn "  --layers N              Number of bottom-up layers to run. Defaults to all."
     printfn "  --phase NAME            Probe phase: io, io-cast, sources, singleton, neighbourhood, geometry, fourier, keypoints, dependency, reducers, or all."
     printfn "  --phases LIST           Comma-separated phases. Defaults to all."
+    printfn "  --member LIST           Restrict generated probe graphs by graph/member/operator name."
     printfn "  --keep-tmp              Do not clear repository tmp before starting."
     printfn "                          Generated input stacks are still removed after each measured shape."
     printfn "  --no-run-probes         Emit probe graphs and analyze only."
@@ -83,6 +85,7 @@ let private defaultOptions () =
       Jobs = 1
       Layers = Int32.MaxValue
       Phases = [ "all" ]
+      Members = []
       CleanTmp = true
       RunProbes = true
       FitModel = true }
@@ -230,6 +233,42 @@ let private selectPhaseLayers phases (layers: (string * ProbeProbing.GraphTempla
         |> Array.filter (fun (layerName, _) ->
             phaseSet.Contains(phaseForLayer layerName))
 
+let private templateMatchesMembers members (template: ProbeProbing.GraphTemplate) =
+    if members |> List.isEmpty then
+        true
+    else
+        let candidates =
+            seq {
+                template.Name
+                template.Description
+                for feature in template.Features do
+                    feature
+                for node in template.Graph.Nodes do
+                    node.Id
+                    node.FunctionId
+            }
+            |> Seq.map ProbeSelection.normalizeMember
+            |> Seq.toList
+
+        members
+        |> List.map ProbeSelection.normalizeMember
+        |> List.exists (fun memberName ->
+            candidates
+            |> List.exists (fun candidate ->
+                candidate.Contains(memberName, StringComparison.Ordinal)))
+
+let private selectMemberTemplates members (layers: (string * ProbeProbing.GraphTemplate array) array) =
+    layers
+    |> Array.choose (fun (layerName, templates) ->
+        let selected =
+            templates
+            |> Array.filter (templateMatchesMembers members)
+
+        if selected.Length = 0 then
+            None
+        else
+            Some(layerName, selected))
+
 let rec private parseArgs options args =
     match args with
     | [] -> Ok options
@@ -331,6 +370,11 @@ let rec private parseArgs options args =
         | None ->
             eprintfn "bottom-up: --phases expects io,io-cast,sources,singleton,neighbourhood,geometry,fourier,keypoints,dependency,reducers, or all"
             Error 2
+    | "--member" :: value :: rest
+    | "--members" :: value :: rest
+    | "--operator" :: value :: rest
+    | "--operators" :: value :: rest ->
+        parseArgs { options with Members = options.Members @ ProbeSelection.splitCsvList value } rest
     | "--keep-tmp" :: rest ->
         parseArgs { options with CleanTmp = false } rest
     | "--run-probes" :: rest ->
@@ -433,6 +477,7 @@ let main argv =
                     let selectedLayers =
                         ProbeProbing.graphTemplateLayersForBottomUp inputConfig
                         |> selectPhaseLayers options.Phases
+                        |> selectMemberTemplates options.Members
                         |> Array.truncate options.Layers
 
                     plannedLayers.Add(shape, selectedLayers)
