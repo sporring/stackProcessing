@@ -1257,16 +1257,9 @@ let getChunkFilename (path: string) (suffix: string) (i: int) (j: int) (k: int) 
 let _readChunk<'T when 'T: equality>  (inputDir: string) (suffix: string) i j k = 
     let filename = getChunkFilename inputDir suffix i j k
     if typeof<'T> = typeof<System.Numerics.Complex> then
-        let vector: Image<float list> = Image<float>.ofFileVector filename
-        let parts = vector.toImageList()
-        if parts.Length < 2 then
-            vector.decRefCount()
-            parts |> List.iter (fun part -> part.decRefCount())
-            failwith $"Complex chunk {filename} must contain real and imaginary vector components."
-        let complex = Image.toComplex parts[0] parts[1]
-        vector.decRefCount()
-        parts |> List.iter (fun part -> part.decRefCount())
-        unbox<Image<'T>> (box complex)
+        Image<System.Numerics.Complex>.ofFileComplex filename
+        |> box
+        |> unbox<Image<'T>>
     else
         Image<'T>.ofFile filename
 

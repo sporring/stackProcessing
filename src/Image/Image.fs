@@ -953,8 +953,21 @@ type Image<'T when 'T : equality>(sz: uint list, ?optionalNumberComponents: uint
 
         // Validate number of components matches expectations
         match isComplexType, isVectorType, numComp with
-        | true, _, _ when not (isComplexCompatibleImage itkImg) ->
-            failwithf "Pixel type '%O' expects a native complex image, but got %O with %d component(s)." tType (itkImg.GetPixelID()) numComp
+        | true, _, _ when isComplexCompatibleImage itkImg ->
+            Image<'T>.ofSimpleITK(itkImg, name, index)
+        | true, _, n when n >= 2u ->
+            let vector = Image<float list>.ofSimpleITK(itkImg, name + ".vector", index)
+            let parts = vector.toImageList()
+            if parts.Length < 2 then
+                vector.decRefCount()
+                parts |> List.iter (fun part -> part.decRefCount())
+                failwithf "Pixel type '%O' expects native complex or a vector with real and imaginary components, but image has %d component(s)." tType n
+            let complex = Image<float>.ofImagePairToComplex parts[0] parts[1]
+            vector.decRefCount()
+            parts |> List.iter (fun part -> part.decRefCount())
+            complex |> box |> unbox<Image<'T>>
+        | true, _, n ->
+            failwithf "Pixel type '%O' expects native complex or a vector with real and imaginary components, but got %O with %d component(s)." tType (itkImg.GetPixelID()) n
         | false, true, n when n < 2u ->
             failwithf "Pixel type '%O' expects a vector (>=2 components), but image has %d component(s)." tType n
         | false, false, n when n > 1u ->
@@ -975,15 +988,7 @@ type Image<'T when 'T : equality>(sz: uint list, ?optionalNumberComponents: uint
         Image<'S list>.ofSimpleITK(itkImg, name, index)
 
     static member ofFileComplex (filename: string, ?optionalName: string, ?optionalIndex: int) : Image<System.Numerics.Complex> =
-        let name = defaultArg optionalName filename
-        let index = defaultArg optionalIndex 0
-
-        use reader = new itk.simple.ImageFileReader()
-        reader.SetFileName(filename)
-        let itkImg = reader.Execute()
-        if not (isComplexCompatibleImage itkImg) then
-            failwithf "Complex pixel type expects a native complex image, but got %O with %d component(s)." (itkImg.GetPixelID()) (itkImg.GetNumberOfComponentsPerPixel())
-        Image<System.Numerics.Complex>.ofSimpleITK(itkImg, name, index)
+        Image<System.Numerics.Complex>.ofFile(filename, ?optionalName = optionalName, ?optionalIndex = optionalIndex)
 
     member this.toFile(filename: string, ?optionalFormat: string) =
         use writer = new itk.simple.ImageFileWriter()

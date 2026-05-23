@@ -41,6 +41,7 @@ let private usage () =
     printfn "  --phase NAME            Probe phase: io, sources, singleton, neighbourhood, geometry, fourier, keypoints, dependency, reducers, or all."
     printfn "  --phases LIST           Comma-separated phases. Defaults to all."
     printfn "  --keep-tmp              Do not clear repository tmp before starting."
+    printfn "                          Generated input stacks are still removed after each measured shape."
     printfn "  --no-run-probes         Emit probe graphs and analyze only."
 
 let private defaultSamplesRoot () =
@@ -384,6 +385,11 @@ let private writePlan (path: string) (layersBySize: (ProbeProbing.ImageSize * (s
 
     File.WriteAllLines(path, lines)
 
+let private cleanupInputDirectory (inputDir: string) =
+    if Directory.Exists inputDir then
+        Directory.Delete(inputDir, true)
+        printfn "Removed generated calibration inputs %s." inputDir
+
 let main argv =
     match parseArgs (defaultOptions ()) (Array.toList argv) with
     | Error exitCode -> exitCode
@@ -392,9 +398,13 @@ let main argv =
             cleanTmp options
 
             let probeRoot = Path.Combine(options.ProbeJsonRoot, "bottomup_" + timestamp ())
-            let layersBySize =
-                options.ImageShapes
-                |> List.map (fun shape ->
+            printfn "Bottom-up probe root: %s" probeRoot
+
+            let plannedLayers = ResizeArray<ProbeProbing.ImageSize * (string * ProbeProbing.GraphTemplate array) array>()
+            let mutable exitCode = 0
+
+            for shape in options.ImageShapes do
+                if exitCode = 0 then
                     let shapeText = shapeName shape
                     let inputDir = Path.Combine(options.InputDirectory, shapeText)
 
@@ -412,47 +422,45 @@ let main argv =
                         |> selectPhaseLayers options.Phases
                         |> Array.truncate options.Layers
 
-                    shape, selectedLayers)
-                |> List.toArray
+                    plannedLayers.Add(shape, selectedLayers)
+                    writePlan (Path.Combine(probeRoot, "bottomUpPlan.csv")) (plannedLayers.ToArray())
 
-            printfn "Bottom-up probe root: %s" probeRoot
-            writePlan (Path.Combine(probeRoot, "bottomUpPlan.csv")) layersBySize
+                    try
+                        for layerIndex, (layerName, templates) in selectedLayers |> Array.indexed do
+                            if exitCode = 0 then
+                                let layerNumber = layerIndex + 1
+                                let layerDir =
+                                    Path.Combine(
+                                        probeRoot,
+                                        sprintf "size_%s" (shapeName shape),
+                                        sprintf "layer_%03d_%s" layerNumber layerName)
 
-            let mutable exitCode = 0
+                                printfn
+                                    "Bottom-up size %ux%ux%u layer %d/%d: %s (%d graph(s))"
+                                    shape.Width
+                                    shape.Height
+                                    shape.Depth
+                                    layerNumber
+                                    selectedLayers.Length
+                                    layerName
+                                    templates.Length
 
-            for shape, selectedLayers in layersBySize do
-                for layerIndex, (layerName, templates) in selectedLayers |> Array.indexed do
-                    if exitCode = 0 then
-                        let layerNumber = layerIndex + 1
-                        let layerDir =
-                            Path.Combine(
-                                probeRoot,
-                                sprintf "size_%s" (shapeName shape),
-                                sprintf "layer_%03d_%s" layerNumber layerName)
+                                ProbeProbing.writeGraphTemplates layerDir templates
 
-                        printfn
-                            "Bottom-up size %ux%ux%u layer %d/%d: %s (%d graph(s))"
-                            shape.Width
-                            shape.Height
-                            shape.Depth
-                            layerNumber
-                            selectedLayers.Length
-                            layerName
-                            templates.Length
+                                if options.RunProbes then
+                                    let runExit = runProbeGraphs options layerDir
+                                    if runExit <> 0 then
+                                        eprintfn "bottom-up probe graph run failed with exit code %d" runExit
+                                        exitCode <- runExit
 
-                        ProbeProbing.writeGraphTemplates layerDir templates
-
+                                if exitCode = 0 then
+                                    let analysisExit = runAnalysis options
+                                    if analysisExit <> 0 then
+                                        eprintfn "bottom-up analysis failed with exit code %d" analysisExit
+                                        exitCode <- analysisExit
+                    finally
                         if options.RunProbes then
-                            let runExit = runProbeGraphs options layerDir
-                            if runExit <> 0 then
-                                eprintfn "bottom-up probe graph run failed with exit code %d" runExit
-                                exitCode <- runExit
-
-                        if exitCode = 0 then
-                            let analysisExit = runAnalysis options
-                            if analysisExit <> 0 then
-                                eprintfn "bottom-up analysis failed with exit code %d" analysisExit
-                                exitCode <- analysisExit
+                            cleanupInputDirectory inputDir
 
             if exitCode = 0 then
                 printfn "Bottom-up calibration pass complete. Analysis written to %s." options.AnalysisDirectory

@@ -1282,7 +1282,8 @@ type BottomUpInputConfig =
       Depth: uint
       ShapeInput: string
       NoisyInput: string
-      NoisyPixelType: string }
+      NoisyPixelType: string
+      TypedInputs: Map<string, string> }
 
 let private sourceNode probe =
     let width = probeParameter "width" probe
@@ -1311,6 +1312,13 @@ let private writeNode name =
       "output", outputPathForProbe name
       "suffix", ".tiff" ]
 
+let private writeNodeWithSuffix name suffix =
+    "write",
+    "Write",
+    [ "format", "Image stack"
+      "output", outputPathForProbe name
+      "suffix", suffix ]
+
 let private ignoreNode =
     "ignore", "Ignore", []
 
@@ -1323,17 +1331,33 @@ let private zeroNode pixelType width height depth =
       "height", string height
       "depth", string depth ]
 
-let private readNodeFrom input pixelType =
+let private readNodeFromWithSuffix input pixelType suffix =
     "read",
     "Read",
     [ "availableMemory", string availableMemory + "UL"
       "type", pixelType
       "format", "Image stack"
       "input", input
-      "suffix", ".tiff" ]
+      "suffix", suffix ]
+
+let private readNodeFrom input pixelType =
+    readNodeFromWithSuffix input pixelType ".tiff"
 
 let private readNode pixelType =
     readNodeFrom (sampleDataPath "rotatingBoxes") pixelType
+
+let private bottomUpIoPixelTypes =
+    [ "UInt8"; "UInt16"; "Int32"; "Float32"; "Float64" ]
+
+let private bottomUpIoSuffix pixelType =
+    match pixelType with
+    | "UInt8"
+    | "UInt16"
+    | "Float32" -> ".tiff"
+    | "Int32"
+    | "Float64"
+    | "Complex" -> ".mha"
+    | _ -> ".tiff"
 
 let private castNode sourceType targetType =
     "cast",
@@ -1386,7 +1410,8 @@ let private bottomUpGraphTemplates config =
     let heightText = string config.Shape.Height
     let depthText = string config.Depth
     let sizeSuffix = sizeName config.Shape
-    let writeFeature = "Write:format=Image stack:depth=1:chunkX=64:chunkY=64:chunkZ=8:maxConcurrentWrites=0:frameAxis=0"
+    let writeFeatureFor suffix = $"Write:format=Image stack:suffix={suffix}:depth=1:chunkX=64:chunkY=64:chunkZ=8:maxConcurrentWrites=0:frameAxis=0"
+    let writeFeature = writeFeatureFor ".tiff"
     let ignoreFeature = "Ignore"
 
     let emptyTemplate name description =
@@ -1407,28 +1432,89 @@ let private bottomUpGraphTemplates config =
     let writeTemplate name description nodes =
         templateWithSink name description writeFeature nodes (writeNode name)
 
+    let writeTemplateWithSuffix name description suffix nodes =
+        templateWithSink name description (writeFeatureFor suffix) nodes (writeNodeWithSuffix name suffix)
+
     let writeUInt8Template name description nodes outputType =
         if outputType = "UInt8" then
             writeTemplate name description nodes
         else
             writeTemplate name description (nodes @ [ castNode outputType "UInt8" ])
 
+    let typedInput pixelType =
+        config.TypedInputs
+        |> Map.tryFind pixelType
+        |> Option.defaultValue
+            (match pixelType with
+             | "UInt8" -> config.ShapeInput
+             | _ -> config.NoisyInput)
+
     let zeroUInt8 = zeroNode "UInt8" config.Shape.Width config.Shape.Height config.Depth
-    let zeroFloat = zeroNode "Float64" config.Shape.Width config.Shape.Height config.Depth
-    let readUInt8 = readNodeFrom config.ShapeInput "UInt8"
-    let readFloat = readNodeFrom config.NoisyInput "Float64"
-    let readFloat32 = readNodeFrom config.NoisyInput "Float32"
+    let readUInt8 = readNodeFrom (typedInput "UInt8") "UInt8"
+    let readFloat = readNodeFrom (typedInput "Float64") "Float64"
+    let readFloat32 = readNodeFrom (typedInput "Float32") "Float32"
 
     let sourceLayer =
-        [| emptyTemplate "bottomup-00-empty" "Empty graph for process startup/shutdown intercept."
-           ignoreTemplate $"bottomup-01-zero-uint8-ignore-{sizeSuffix}" "Minimal UInt8 traversal through ignore." [ zeroUInt8 ]
-           writeTemplate $"bottomup-02-zero-uint8-write-{sizeSuffix}" "UInt8 zero source written to stack." [ zeroUInt8 ]
-           ignoreTemplate $"bottomup-03-read-uint8-ignore-{sizeSuffix}" "UInt8 read consumed without writing." [ readUInt8 ]
-           writeTemplate $"bottomup-04-read-uint8-write-{sizeSuffix}" "UInt8 read then write." [ readUInt8 ]
-           ignoreTemplate $"bottomup-05-zero-float-ignore-{sizeSuffix}" "Float64 zero source consumed without writing." [ zeroFloat ]
-           writeUInt8Template $"bottomup-06-zero-float-write-{sizeSuffix}" "Float64 zero source cast and written." [ zeroFloat ] "Float64"
-           ignoreTemplate $"bottomup-07-read-float-ignore-{sizeSuffix}" "Float64 read consumed without writing." [ readFloat ]
-           writeUInt8Template $"bottomup-08-read-float-write-{sizeSuffix}" "Float64 read cast and written." [ readFloat ] "Float64" |]
+        [| yield emptyTemplate "bottomup-00-empty" "Empty graph for process startup/shutdown intercept."
+
+           let mutable index = 1
+           for pixelType in bottomUpIoPixelTypes do
+               let typeKey = pixelType.ToLowerInvariant()
+               let suffix = bottomUpIoSuffix pixelType
+               let zero = zeroNode pixelType config.Shape.Width config.Shape.Height config.Depth
+               let read = readNodeFromWithSuffix (typedInput pixelType) pixelType suffix
+
+               yield
+                   ignoreTemplate
+                       (sprintf "bottomup-%02d-zero-%s-ignore-%s" index typeKey sizeSuffix)
+                       $"Minimal {pixelType} zero traversal through ignore."
+                       [ zero ]
+               index <- index + 1
+
+               yield
+                   writeTemplateWithSuffix
+                       (sprintf "bottomup-%02d-zero-%s-write-%s" index typeKey sizeSuffix)
+                       $"{pixelType} zero source written to stack."
+                       suffix
+                       [ zero ]
+               index <- index + 1
+
+               yield
+                   ignoreTemplate
+                       (sprintf "bottomup-%02d-read-%s-ignore-%s" index typeKey sizeSuffix)
+                       $"{pixelType} read consumed without writing."
+                       [ read ]
+               index <- index + 1
+
+               yield
+                   writeTemplateWithSuffix
+                       (sprintf "bottomup-%02d-read-%s-write-%s" index typeKey sizeSuffix)
+                       $"{pixelType} read then write."
+                       suffix
+                       [ read ]
+               index <- index + 1
+
+           match config.TypedInputs |> Map.tryFind "Complex" with
+           | Some complexInput ->
+               let typeKey = "complex"
+               let suffix = ".mha"
+               let read = readNodeFromWithSuffix complexInput "Complex" suffix
+
+               yield
+                   ignoreTemplate
+                       (sprintf "bottomup-%02d-read-%s-ignore-%s" index typeKey sizeSuffix)
+                       "Complex read consumed without writing."
+                       [ read ]
+               index <- index + 1
+
+               yield
+                   writeTemplateWithSuffix
+                       (sprintf "bottomup-%02d-read-%s-write-%s" index typeKey sizeSuffix)
+                       "Complex read then write."
+                       suffix
+                       [ read ]
+               index <- index + 1
+           | None -> () |]
 
     let syntheticSourcesLayer =
         [| ignoreTemplate
@@ -2267,6 +2353,16 @@ let private createMovingBoxes<'T when 'T: equality> foreground size output =
     >=> write output ".tiff"
     |> sink
 
+let private createMovingBoxesWithSuffix<'T when 'T: equality> foreground size output suffix =
+    if suffix = ".tiff" || suffix = ".tif" then
+        createMovingBoxes<'T> foreground size output
+    else
+        cleanDirectory output
+        source availableMemory
+        |> zero<'T> size.Width size.Height size.Depth
+        >=> write output suffix
+        |> sink
+
 let private createNoisyFromShape<'T when 'T: equality> foreground mean std size output =
     let temp = output + "_shape_tmp"
     createMovingBoxes<'T> foreground size temp
@@ -2288,6 +2384,42 @@ let private createNoisyMovingBoxes noisyPixelType size output =
     | "Float32" -> createNoisyFromShape<float32> 255.0f 128.0 50.0 size output
     | _ -> failwithf "Unsupported noisy input type '%s'. Use UInt8, UInt16, or Float32." noisyPixelType
 
+let private createTypedMovingBoxes pixelType size output =
+    match pixelType with
+    | "UInt8" -> createMovingBoxesWithSuffix<uint8> 255uy size output (bottomUpIoSuffix pixelType)
+    | "UInt16" -> createMovingBoxesWithSuffix<uint16> 4096us size output (bottomUpIoSuffix pixelType)
+    | "Int32" -> createMovingBoxesWithSuffix<int32> 255 size output (bottomUpIoSuffix pixelType)
+    | "Float32" -> createMovingBoxesWithSuffix<float32> 255.0f size output (bottomUpIoSuffix pixelType)
+    | "Float64" -> createMovingBoxesWithSuffix<float> 255.0 size output (bottomUpIoSuffix pixelType)
+    | _ -> failwithf "Unsupported IO probe input type '%s'." pixelType
+
+let private createComplexMovingBoxes size output =
+    cleanDirectory output
+
+    let boxSize = max 4 (int size.Width / 4)
+
+    for z in 0u .. size.Depth - 1u do
+        let phase = 2.0 * Math.PI * float z / float size.Depth
+        let dx = int z % max 1 (int size.Width)
+        let dy = int ((z * 3u) % max 1u size.Height)
+        let values =
+            Array2D.init (int size.Width) (int size.Height) (fun x y ->
+                let inBox =
+                    x >= dx
+                    && x < min (int size.Width) (dx + boxSize)
+                    && y >= dy
+                    && y < min (int size.Height) (dy + boxSize)
+                if inBox then
+                    System.Numerics.Complex(Math.Cos phase, Math.Sin phase)
+                else
+                    System.Numerics.Complex.Zero)
+
+        let image =
+            Image.Image<System.Numerics.Complex>.ofComplexArray2D(values, "complexMovingBoxes", int z)
+        let fileName = Path.Combine(output, sprintf "image_%03d.mha" z)
+        image.toFileComplex(fileName)
+        image.decRefCount()
+
 let createBottomUpInputsForShape (imageSize: ImageSize) (noisyPixelType: string) (inputRoot: string) =
     let normalizedNoisyType =
         match noisyPixelType.ToLowerInvariant() with
@@ -2299,15 +2431,33 @@ let createBottomUpInputsForShape (imageSize: ImageSize) (noisyPixelType: string)
     cleanDirectory inputRoot
     let shapeInput = Path.Combine(inputRoot, "shapes").Replace('\\', '/')
     let noisyInput = Path.Combine(inputRoot, "noisy").Replace('\\', '/')
+    let typedInputRoot = Path.Combine(inputRoot, "typed")
 
     createMovingBoxes<uint8> 255uy imageSize shapeInput
     createNoisyMovingBoxes normalizedNoisyType imageSize noisyInput
+    let typedInputs =
+        bottomUpIoPixelTypes
+        |> List.map (fun pixelType ->
+            let output =
+                Path.Combine(typedInputRoot, pixelType.ToLowerInvariant()).Replace('\\', '/')
+            createTypedMovingBoxes pixelType imageSize output
+            pixelType, output)
+        |> Map.ofList
+
+    let complexInput =
+        Path.Combine(typedInputRoot, "complex").Replace('\\', '/')
+    createComplexMovingBoxes imageSize complexInput
+
+    let typedInputs =
+        typedInputs
+        |> Map.add "Complex" complexInput
 
     { Shape = imageSize
       Depth = imageSize.Depth
       ShapeInput = shapeInput
       NoisyInput = noisyInput
-      NoisyPixelType = normalizedNoisyType }
+      NoisyPixelType = normalizedNoisyType
+      TypedInputs = typedInputs }
 
 let createBottomUpInputsWithDepth (size: uint) (depth: uint) (noisyPixelType: string) (inputRoot: string) =
     createBottomUpInputsForShape { Width = size; Height = size; Depth = depth } noisyPixelType inputRoot
