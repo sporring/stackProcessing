@@ -1925,12 +1925,11 @@ let repeat<'T when 'T: equality> (image: Image<'T>) (depth: uint) (pl: Plan<unit
     if image.GetDimensions() <> 2u then
         invalidArg "image" $"repeat expects a 2D image, got {image.GetDimensions()}D."
 
-    let values = image.toArray2D()
     let width = image.GetWidth()
     let height = image.GetHeight()
 
     let mapper (i: int) : Image<'T> =
-        let output = Image<'T>.ofArray2D(values, $"repeat[{i}]", i)
+        let output = image.copy($"repeat[{i}]", i)
         if pl.debug && DebugLevel.current() >= 1u then printfn "[repeat] Created slice %A" i
         output
 
@@ -1944,11 +1943,10 @@ let repeatStage<'T when 'T: equality> (depth: uint) : Stage<Image<'T>, Image<'T>
         if image.GetDimensions() <> 2u then
             invalidArg "image" $"repeatStage expects 2D images, got {image.GetDimensions()}D."
 
-        let values = image.toArray2D()
         try
             [ for i in 0 .. int depth - 1 ->
                 let outputIndex = image.index * int depth + i
-                Image<'T>.ofArray2D(values, $"repeat[{outputIndex}]", outputIndex) ]
+                image.copy($"repeat[{outputIndex}]", outputIndex) ]
         finally
             image.decRefCount()
 

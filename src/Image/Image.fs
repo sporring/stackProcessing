@@ -623,6 +623,11 @@ type Image<'T when 'T : equality>(sz: uint list, ?optionalNumberComponents: uint
             invalidOp "Complex pixel type requires a native complex image."
         img
 
+    member this.copy (?optionalName: string, ?optionalIndex: int) : Image<'T> =
+        let name = defaultArg optionalName "copy"
+        let index = defaultArg optionalIndex this.index
+        Image<'T>.ofSimpleITK(new itk.simple.Image(this.toSimpleITK()), name, index)
+
     member this.castTo<'S when 'S: equality> () : Image<'S> = Image<'S>.ofSimpleITK(this.toSimpleITK(),"cast",this.index)
     member this.toUInt8 ()   : Image<uint8>   = Image<uint8>.ofSimpleITK(this.toSimpleITK(),"toUInt8",this.index)
     member this.toInt8 ()    : Image<int8>    = Image<int8>.ofSimpleITK(this.toSimpleITK(),"toInt8",this.index)

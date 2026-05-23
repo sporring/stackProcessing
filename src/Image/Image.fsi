@@ -231,6 +231,7 @@ type Image<'T when 'T: equality> =
                   src: Image<'T> -> unit
     override ToString: unit -> string
     member castTo: unit -> Image<'S> when 'S: equality
+    member copy: ?optionalName: string * ?optionalIndex: int -> Image<'T>
     member decRefCount: unit -> unit
     member forAll: p: ('T -> bool) -> bool
     member getNReferences: unit -> int
