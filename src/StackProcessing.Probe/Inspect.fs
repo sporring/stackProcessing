@@ -226,6 +226,14 @@ let private tryParseFloat (value: string) =
     | true, parsed -> Some parsed
     | _ -> None
 
+let private actionableElapsedDiscrepancy ratio predicted =
+    match predicted with
+    | Some value when value = 0.0 -> true
+    | _ ->
+        match ratio with
+        | Some value -> value >= 1.25
+        | None -> false
+
 let private earliestFamily families =
     let order =
         ProbeSelection.ladder
@@ -300,13 +308,14 @@ let private diagnoseDiscrepancies discrepanciesPath =
         let rowIdIndex = columnIndex "rowId" header
         let measurementIndex = columnIndex "measurement" header
         let predictedIndex = columnIndex "predicted" header
-        let flaggedIndex = columnIndex "flagged" header
-
+        let ratioIndex = columnIndex "ratio" header
         let elapsedFlagged =
             rows
             |> List.filter (fun row ->
                 columnValue measurementIndex row = "elapsedMilliseconds"
-                && String.Equals(columnValue flaggedIndex row, "True", StringComparison.OrdinalIgnoreCase))
+                && actionableElapsedDiscrepancy
+                    (columnValue ratioIndex row |> tryParseFloat)
+                    (columnValue predictedIndex row |> tryParseFloat))
 
         let familyForRow row =
             columnValue rowIdIndex row
@@ -401,12 +410,23 @@ let private inspectFitQuality (options: Options) =
         let flaggedRows, predictionRows =
             match csvRows discrepanciesPath with
             | header :: rows ->
-                let flaggedIndex = columnIndex "flagged" header
+                let measurementIndex = columnIndex "measurement" header
+                let ratioIndex = columnIndex "ratio" header
+                let predictedIndex = columnIndex "predicted" header
                 let flagged =
                     rows
                     |> List.sumBy (fun row ->
-                        if String.Equals(columnValue flaggedIndex row, "True", StringComparison.OrdinalIgnoreCase) then 1 else 0)
-                flagged, rows.Length
+                        if columnValue measurementIndex row = "elapsedMilliseconds"
+                           && actionableElapsedDiscrepancy
+                               (columnValue ratioIndex row |> tryParseFloat)
+                               (columnValue predictedIndex row |> tryParseFloat) then
+                            1
+                        else
+                            0)
+                let elapsedRows =
+                    rows
+                    |> List.sumBy (fun row -> if columnValue measurementIndex row = "elapsedMilliseconds" then 1 else 0)
+                flagged, elapsedRows
             | [] -> 0, 0
 
         let flaggedRatio =
