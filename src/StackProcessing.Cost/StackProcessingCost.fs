@@ -309,10 +309,22 @@ module Fitting =
           SliceBytes: uint64 option
           VolumeBytes: uint64 option
           WindowSize: float option
-          Radius: float option }
+          Radius: float option
+          KernelSize: float option
+          Sigma: float option }
 
     let private invariant (value: float) =
         Convert.ToString(value, CultureInfo.InvariantCulture)
+
+    let private medianFloat (values: float list) =
+        match values |> List.sort with
+        | [] -> 0.0
+        | sorted ->
+            let n = sorted.Length
+            if n % 2 = 1 then
+                sorted[n / 2]
+            else
+                0.5 * (sorted[n / 2 - 1] + sorted[n / 2])
 
     let private csvEscape (value: string) =
         if isNull value then
@@ -328,7 +340,7 @@ module Fitting =
             Directory.CreateDirectory directory |> ignore
 
         use writer = new StreamWriter(path)
-        writer.WriteLine("rowId,measurement,value,sourcePath,featureKey,featureValue,operator,pixelType,width,height,depth,voxels,slicePixels,sliceBytes,volumeBytes,windowSize,radius")
+        writer.WriteLine("rowId,measurement,value,sourcePath,featureKey,featureValue,operator,pixelType,width,height,depth,voxels,slicePixels,sliceBytes,volumeBytes,windowSize,radius,kernelSize,sigma")
 
         let uintOption value =
             value |> Option.map string |> Option.defaultValue ""
@@ -353,7 +365,9 @@ module Fitting =
               uintOption row.SliceBytes
               uintOption row.VolumeBytes
               floatOption row.WindowSize
-              floatOption row.Radius ]
+              floatOption row.Radius
+              floatOption row.KernelSize
+              floatOption row.Sigma ]
             |> List.map csvEscape
             |> String.concat ","
             |> writer.WriteLine
@@ -435,16 +449,20 @@ module Fitting =
           Voxels: uint64 option
           VolumeBytes: uint64 option
           WindowSize: float option
-          Radius: float option }
+          Radius: float option
+          KernelSize: float option
+          Sigma: float option }
 
     module OperatorEstimateContext =
-        let create operator pixelType voxels volumeBytes windowSize radius =
+        let create operator pixelType voxels volumeBytes windowSize radius kernelSize sigma =
             { Operator = operator
               PixelType = pixelType
               Voxels = voxels
               VolumeBytes = volumeBytes
               WindowSize = windowSize
-              Radius = radius }
+              Radius = radius
+              KernelSize = kernelSize
+              Sigma = sigma }
 
     module OperatorCostRuntime =
         let private calibratedMillisecondsKey = "__stackprocessing_operator_cost_model_milliseconds"
@@ -580,6 +598,12 @@ module Fitting =
                   "dataMB"
                   "windowDataMB"
                   "radius2DataMB"
+                  "radiusDataMB"
+                  "radius3DataMB"
+                  "kernelDiameterDataMB"
+                  "kernelVoxelsDataMB"
+                  "dataMBLog2Voxels"
+                  "voxelsMLog2Voxels"
                   "voxelsM"
                   "windowVoxelsM"
                   "radius2VoxelsM"
@@ -609,10 +633,39 @@ module Fitting =
                         | Some radius -> radius * radius * volumeMB
                         | None -> 0.0
 
+                    let radiusVolumeMB =
+                        match context.Radius with
+                        | Some radius -> radius * volumeMB
+                        | None -> 0.0
+
+                    let radius3VolumeMB =
+                        match context.Radius with
+                        | Some radius -> radius * radius * radius * volumeMB
+                        | None -> 0.0
+
+                    let kernelDiameter =
+                        context.KernelSize
+                        |> Option.orElseWith (fun () ->
+                            context.Radius |> Option.map (fun radius -> 2.0 * radius + 1.0))
+                        |> Option.orElseWith (fun () ->
+                            context.Sigma |> Option.map (fun sigma -> 2.0 * Math.Ceiling(2.0 * sigma) + 1.0))
+                        |> Option.defaultValue 0.0
+
+                    let logVoxels =
+                        context.Voxels
+                        |> Option.filter (fun voxels -> voxels > 1UL)
+                        |> Option.map (fun voxels -> Math.Log(float voxels, 2.0))
+                        |> Option.defaultValue 0.0
+
                     add "operationCount" 1.0
                     + add "dataMB" dataMB
                     + add "windowDataMB" windowVolumeMB
                     + add "radius2DataMB" radius2VolumeMB
+                    + add "radiusDataMB" radiusVolumeMB
+                    + add "radius3DataMB" radius3VolumeMB
+                    + add "kernelDiameterDataMB" (kernelDiameter * dataMB)
+                    + add "kernelVoxelsDataMB" (kernelDiameter * kernelDiameter * kernelDiameter * dataMB)
+                    + add "dataMBLog2Voxels" (dataMB * logVoxels)
                     + add "volumeMB" volumeMB
                     + add "windowVolumeMB" windowVolumeMB
                     + add "radius2VolumeMB" radius2VolumeMB
@@ -647,10 +700,40 @@ module Fitting =
                         | Some radius -> radius * radius * dataMB
                         | None -> 0.0
 
+                    let radiusDataMB =
+                        match context.Radius with
+                        | Some radius -> radius * dataMB
+                        | None -> 0.0
+
+                    let radius3DataMB =
+                        match context.Radius with
+                        | Some radius -> radius * radius * radius * dataMB
+                        | None -> 0.0
+
+                    let kernelDiameter =
+                        context.KernelSize
+                        |> Option.orElseWith (fun () ->
+                            context.Radius |> Option.map (fun radius -> 2.0 * radius + 1.0))
+                        |> Option.orElseWith (fun () ->
+                            context.Sigma |> Option.map (fun sigma -> 2.0 * Math.Ceiling(2.0 * sigma) + 1.0))
+                        |> Option.defaultValue 0.0
+
+                    let logVoxels =
+                        context.Voxels
+                        |> Option.filter (fun voxels -> voxels > 1UL)
+                        |> Option.map (fun voxels -> Math.Log(float voxels, 2.0))
+                        |> Option.defaultValue 0.0
+
                     add "operationCount" 1.0
                     + add "dataMB" dataMB
                     + add "windowDataMB" windowDataMB
                     + add "radius2DataMB" radius2DataMB
+                    + add "radiusDataMB" radiusDataMB
+                    + add "radius3DataMB" radius3DataMB
+                    + add "kernelDiameterDataMB" (kernelDiameter * dataMB)
+                    + add "kernelVoxelsDataMB" (kernelDiameter * kernelDiameter * kernelDiameter * dataMB)
+                    + add "dataMBLog2Voxels" (dataMB * logVoxels)
+                    + add "voxelsMLog2Voxels" (voxelsM * logVoxels)
                     + add "voxelsM" voxelsM
                     + add "windowVoxelsM" windowVoxelsM
                     + add "radius2VoxelsM" radius2VoxelsM
@@ -677,6 +760,12 @@ module Fitting =
                           | None -> ()
                           match estimateContext.Radius with
                           | Some value -> yield "radius", Convert.ToString(value, CultureInfo.InvariantCulture)
+                          | None -> ()
+                          match estimateContext.KernelSize with
+                          | Some value -> yield "kernelSize", Convert.ToString(value, CultureInfo.InvariantCulture)
+                          | None -> ()
+                          match estimateContext.Sigma with
+                          | Some value -> yield "sigma", Convert.ToString(value, CultureInfo.InvariantCulture)
                           | None -> () ]
 
                     match estimate "elapsedMilliseconds" estimateContext with
@@ -775,7 +864,9 @@ module Fitting =
                       SliceBytes = optionUInt64 "sliceBytes" row
                       VolumeBytes = optionUInt64 "volumeBytes" row
                       WindowSize = optionFloat "windowSize" row
-                      Radius = optionFloat "radius" row }
+                      Radius = optionFloat "radius" row
+                      KernelSize = optionFloat "kernelSize" row
+                      Sigma = optionFloat "sigma" row }
             | _ -> None)
 
     let private termKey operator pixelType term =
@@ -792,6 +883,44 @@ module Fitting =
         || measurement.Contains("rss", StringComparison.OrdinalIgnoreCase)
         || measurement.Contains("bytes", StringComparison.OrdinalIgnoreCase)
         || measurement.Contains("kb", StringComparison.OrdinalIgnoreCase)
+
+    let private log2 (value: float) =
+        Math.Log(value, 2.0)
+
+    let private kernelDiameter (row: EvidenceRow) =
+        row.KernelSize
+        |> Option.orElseWith (fun () ->
+            row.Radius |> Option.map (fun radius -> 2.0 * radius + 1.0))
+        |> Option.orElseWith (fun () ->
+            row.Sigma |> Option.map (fun sigma -> 2.0 * Math.Ceiling(2.0 * sigma) + 1.0))
+
+    let private addSizeAndKernelTerms scale operator pixelType (row: EvidenceRow) terms =
+        let mutable terms = terms
+
+        match row.VolumeBytes, row.Voxels with
+        | Some volumeBytes, Some voxels when voxels > 1UL ->
+            let dataMB = scale * float volumeBytes / 1.0e6
+            let voxelsM = scale * float voxels / 1.0e6
+            let logVoxels = log2 (float voxels)
+            terms <- addTerm terms (termKey operator pixelType "dataMBLog2Voxels") (dataMB * logVoxels)
+            terms <- addTerm terms (termKey operator pixelType "voxelsMLog2Voxels") (voxelsM * logVoxels)
+        | _ -> ()
+
+        match kernelDiameter row, row.VolumeBytes with
+        | Some diameter, Some volumeBytes ->
+            let dataMB = scale * float volumeBytes / 1.0e6
+            terms <- addTerm terms (termKey operator pixelType "kernelDiameterDataMB") (diameter * dataMB)
+            terms <- addTerm terms (termKey operator pixelType "kernelVoxelsDataMB") (diameter * diameter * diameter * dataMB)
+        | _ -> ()
+
+        match row.Radius, row.VolumeBytes with
+        | Some radius, Some volumeBytes ->
+            let dataMB = scale * float volumeBytes / 1.0e6
+            terms <- addTerm terms (termKey operator pixelType "radiusDataMB") (radius * dataMB)
+            terms <- addTerm terms (termKey operator pixelType "radius3DataMB") (radius * radius * radius * dataMB)
+        | _ -> ()
+
+        terms
 
     let private evidenceTerms measurement (row: EvidenceRow) =
         let operator =
@@ -830,6 +959,8 @@ module Fitting =
                 | Some radius, Some volumeBytes ->
                     terms <- addTerm terms (termKey operator pixelType "radius2DataMB") (scale * radius * radius * float volumeBytes / 1.0e6)
                 | _ -> ()
+
+                terms <- addSizeAndKernelTerms scale operator pixelType row terms
             else
                 match row.WindowSize, row.VolumeBytes with
                 | Some windowSize, Some volumeBytes ->
@@ -840,6 +971,8 @@ module Fitting =
                 | Some radius, Some volumeBytes ->
                     terms <- addTerm terms (termKey operator pixelType "radius2DataMB") (scale * radius * radius * float volumeBytes / 1.0e6)
                 | _ -> ()
+
+                terms <- addSizeAndKernelTerms scale operator pixelType row terms
 
             terms
 
@@ -852,6 +985,44 @@ module Fitting =
             else
                 state |> Map.add (part.Substring(0, index)) (part.Substring(index + 1))) Map.empty<string, string>
 
+    let private aggregateEvidenceRows (evidence: EvidenceRow seq) =
+        let runTerms =
+            evidence
+            |> Seq.groupBy (fun row -> row.Measurement, row.RowId, row.SourcePath)
+            |> Seq.choose (fun ((measurement, rowId, _), rows) ->
+                let rows = rows |> Seq.toList
+
+                match rows with
+                | [] -> None
+                | first :: _ ->
+                    let terms =
+                        rows
+                        |> List.collect (evidenceTerms measurement)
+                        |> List.groupBy fst
+                        |> List.map (fun (key, values) -> key, values |> List.sumBy snd)
+                        |> List.filter (fun (_, value) -> value <> 0.0)
+
+                    Some(measurement, rowId, first.Value, terms))
+            |> Seq.toList
+
+        runTerms
+        |> List.groupBy (fun (measurement, rowId, _, _) -> measurement, rowId)
+        |> List.choose (fun ((measurement, rowId), rows) ->
+            match rows with
+            | [] -> None
+            | _ ->
+                let value =
+                    rows
+                    |> List.map (fun (_, _, value, _) -> value)
+                    |> medianFloat
+
+                let terms =
+                    rows
+                    |> List.map (fun (_, _, _, terms) -> terms)
+                    |> List.maxBy List.length
+
+                Some(measurement, rowId, value, terms))
+
     let private predictionRowsFromCoefficients (coefficients: OperatorTermCoefficient seq) (evidence: EvidenceRow seq) =
         let coefficientByTerm =
             coefficients
@@ -859,28 +1030,21 @@ module Fitting =
             |> Map.ofSeq
 
         evidence
-        |> Seq.groupBy (fun row -> row.Measurement, row.RowId)
-        |> Seq.choose (fun ((measurement, rowId), rows) ->
-            let rows = rows |> Seq.toList
-
-            match rows with
-            | [] -> None
-            | first :: _ ->
+        |> aggregateEvidenceRows
+        |> Seq.map (fun (measurement, rowId, actual, terms) ->
                 let predicted =
-                    rows
-                    |> List.collect (evidenceTerms measurement)
+                    terms
                     |> List.sumBy (fun (key, value) ->
                         coefficientByTerm
                         |> Map.tryFind key
                         |> Option.map (fun coefficient -> coefficient * value)
                         |> Option.defaultValue 0.0)
 
-                Some
-                    { RowId = rowId
-                      Measurement = measurement
-                      Actual = first.Value
-                      Predicted = predicted
-                      Residual = first.Value - predicted })
+                { RowId = rowId
+                  Measurement = measurement
+                  Actual = actual
+                  Predicted = predicted
+                  Residual = actual - predicted })
 
     let private rmseAndR2 (actual: float[]) (predicted: float[]) =
         let mean = actual |> Array.average
@@ -894,21 +1058,7 @@ module Fitting =
     let fitOperatorTerms ridge minSupport (evidence: EvidenceRow seq) =
         let rowTerms =
             evidence
-            |> Seq.groupBy (fun row -> row.Measurement, row.RowId)
-            |> Seq.choose (fun ((measurement, rowId), rows) ->
-                let rows = rows |> Seq.toList
-                match rows with
-                | [] -> None
-                | first :: _ ->
-                    let terms =
-                        rows
-                        |> List.collect (evidenceTerms measurement)
-                        |> List.groupBy fst
-                        |> List.map (fun (key, values) -> key, values |> List.sumBy snd)
-                        |> List.filter (fun (_, value) -> value <> 0.0)
-
-                    Some(measurement, rowId, first.Value, terms))
-            |> Seq.toList
+            |> aggregateEvidenceRows
 
         rowTerms
         |> List.groupBy (fun (measurement, _, _, _) -> measurement)
@@ -1094,13 +1244,13 @@ module Fitting =
             "StackProcessing fitted operator cost model"
             [ "Fitted from Probe costEvidence.csv."
               "Streaming operators use operationCount plus dataMB-derived terms so whole-volume probe evidence can be applied per emitted slice."
-              "Windowed and radius-dependent operators add windowDataMB and radius2DataMB terms."
+              "Windowed and radius-dependent operators add windowDataMB, radius/kernel terms, and n log n terms when the graph exposes those variables."
               "The intercept feature is the only fitted whole-graph constant."
               "Ignore sinks are treated as zero-cost evidence terms." ]
             fits
         fits
 
-let operatorImageTimeCost<'T> operator evaluation windowSize radius fallback : StageTimeCostModel =
+let operatorImageTimeCost<'T> operator evaluation windowSize radius kernelSize sigma fallback : StageTimeCostModel =
     let context input =
         let voxels = inputVoxels input
         Fitting.OperatorEstimateContext.create
@@ -1110,6 +1260,8 @@ let operatorImageTimeCost<'T> operator evaluation windowSize radius fallback : S
             (Some(imageBytes<'T> voxels))
             windowSize
             radius
+            kernelSize
+            sigma
 
     Fitting.OperatorCostRuntime.timeCostModel evaluation context fallback
 

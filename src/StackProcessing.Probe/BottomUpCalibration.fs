@@ -16,7 +16,8 @@ type Options =
       Layers: int
       Phases: string list
       CleanTmp: bool
-      RunProbes: bool }
+      RunProbes: bool
+      FitModel: bool }
 
 let private usage () =
     printfn "Usage: dotnet run --project src/StackProcessing.Probe -- bottom-up [options]"
@@ -38,11 +39,12 @@ let private usage () =
     printfn "  --repeat N              Repeat emitted probe runs. Defaults to 3."
     printfn "  -j, --jobs N            Run up to N emitted probe graphs at once. Defaults to 1."
     printfn "  --layers N              Number of bottom-up layers to run. Defaults to all."
-    printfn "  --phase NAME            Probe phase: io, sources, singleton, neighbourhood, geometry, fourier, keypoints, dependency, reducers, or all."
+    printfn "  --phase NAME            Probe phase: io, io-cast, sources, singleton, neighbourhood, geometry, fourier, keypoints, dependency, reducers, or all."
     printfn "  --phases LIST           Comma-separated phases. Defaults to all."
     printfn "  --keep-tmp              Do not clear repository tmp before starting."
     printfn "                          Generated input stacks are still removed after each measured shape."
     printfn "  --no-run-probes         Emit probe graphs and analyze only."
+    printfn "  --no-fit                Append evidence/measurements without fitting a model."
 
 let private defaultSamplesRoot () =
     let cwd = Directory.GetCurrentDirectory()
@@ -82,7 +84,8 @@ let private defaultOptions () =
       Layers = Int32.MaxValue
       Phases = [ "all" ]
       CleanTmp = true
-      RunProbes = true }
+      RunProbes = true
+      FitModel = true }
 
 let private normalizeNoisyType (value: string) =
     match value.ToLowerInvariant() with
@@ -180,6 +183,7 @@ let private shapeName (shape: ProbeProbing.ImageSize) =
 let private phaseForLayer layerName =
     match layerName with
     | "01-starters" -> "io"
+    | "02-io-casts" -> "io-cast"
     | "02-sources" -> "sources"
     | "03-simple-unary" -> "singleton"
     | "04-windowed-unary" -> "neighbourhood"
@@ -195,6 +199,7 @@ let private normalizePhase (value: string) =
     match value.Trim().ToLowerInvariant().Replace("_", "-") with
     | "all" -> Some "all"
     | "io" | "read-write" | "readwrite" -> Some "io"
+    | "io-cast" | "io-casts" | "read-cast" | "readcast" | "conversion" | "conversions" -> Some "io-cast"
     | "sources" | "source" -> Some "sources"
     | "singleton" | "singletons" | "simple" | "simple-unary" -> Some "singleton"
     | "neighbourhood" | "neighborhood" | "window" | "windowed" | "windowed-unary" -> Some "neighbourhood"
@@ -324,7 +329,7 @@ let rec private parseArgs options args =
         match parsePhases value with
         | Some phases -> parseArgs { options with Phases = phases } rest
         | None ->
-            eprintfn "bottom-up: --phases expects io,sources,singleton,neighbourhood,geometry,fourier,keypoints,dependency,reducers, or all"
+            eprintfn "bottom-up: --phases expects io,io-cast,sources,singleton,neighbourhood,geometry,fourier,keypoints,dependency,reducers, or all"
             Error 2
     | "--keep-tmp" :: rest ->
         parseArgs { options with CleanTmp = false } rest
@@ -333,6 +338,10 @@ let rec private parseArgs options args =
     | "--no-run-probes" :: rest
     | "--emit-only" :: rest ->
         parseArgs { options with RunProbes = false } rest
+    | "--no-fit" :: rest ->
+        parseArgs { options with FitModel = false } rest
+    | "--fit" :: rest ->
+        parseArgs { options with FitModel = true } rest
     | value :: _ ->
         eprintfn "bottom-up: unknown argument '%s'" value
         usage ()
@@ -348,14 +357,18 @@ let private cleanTmp options =
     Directory.CreateDirectory tmpRoot |> ignore
 
 let private runAnalysis options =
-    ProbeAnalysis.main
-        [| "--samples-root"
-           options.SamplesRoot
-           "--output"
-           options.AnalysisDirectory
-           "--extra-json-root"
-           options.ProbeJsonRoot
-           "--no-samples" |]
+    let args =
+        [ yield "--samples-root"
+          yield options.SamplesRoot
+          yield "--output"
+          yield options.AnalysisDirectory
+          yield "--extra-json-root"
+          yield options.ProbeJsonRoot
+          yield "--no-samples"
+          if not options.FitModel then
+              yield "--no-fit" ]
+
+    ProbeAnalysis.main (args |> List.toArray)
 
 let private runProbeGraphs options layerDir =
     RunSamples.main

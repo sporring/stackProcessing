@@ -268,17 +268,36 @@ dotnet run --project src/StackProcessing.RunSamples/RunSamples.fsproj -- --repea
 dotnet run --project src/StackProcessing.RunSamples/RunSamples.fsproj -- --json --repeat 3 -j 1 --optimize false
 ```
 
-`StackProcessing.Probe` is the front door for cost-model work. The usual
-workflow is:
+`StackProcessing.Probe` is the front door for cost-model work. Probe now keeps
+measurement collection and model fitting separate. Collection appends durable
+raw measurements to `measurements/stackprocessing-probe.jsonl`; fitting can then
+select any subset of that evidence without rerunning the same probe graphs.
 
-1. clean old generated measurements and, when starting a new fitting cycle,
+The intended control split is:
+
+* `collect` proposes/runs probe programs for a selected ladder family or member
+  and logs the raw evidence;
+* `fit` reads selected evidence from the measurement store and writes a fitted
+  model plus diagnostics;
+* `inspect` summarizes stored coverage and suggests the next collection step.
+
+The calibration ladder is:
+
+```text
+io -> io-cast -> sources -> singleton -> neighbourhood -> geometry -> fourier -> keypoints -> dependency -> reducers
+```
+
+The usual workflow is:
+
+1. clean old generated scratch data and, when starting a new fitting cycle,
    archive previous fitted/local models,
-2. ground the model with bottom-up IO probes,
-3. add singleton and then neighbourhood phases once read/write behavior is
-   plausible,
-4. run the sample suite with discrepancy reporting enabled,
-5. let Probe emit a compact local probe batch around the flagged operators and
-   blend the new evidence into a local model.
+2. collect IO evidence across the relevant shapes and types,
+3. fit and inspect the model through IO,
+4. move upward through `io-cast`, `singleton`, and `neighbourhood` only when the
+   lower layer looks plausible,
+5. run the sample suite with discrepancy reporting enabled,
+6. use `inspect`/`collect --member ...` or `local-update` for compact targeted
+   evidence around flagged operators.
 
 ```bash
 rm -rf tmp/*
@@ -286,17 +305,19 @@ mkdir -p models/archive
 mv models/fitted models/archive/fitted_$(date +%Y%m%d_%H%M%S) 2>/dev/null || true
 mv models/local models/archive/local_$(date +%Y%m%d_%H%M%S) 2>/dev/null || true
 dotnet run --project src/StackProcessing.Probe/StackProcessing.Probe.fsproj -- \
-  bottom-up --phase io \
+  collect --family io \
   --shapes 256x256x256,512x512x128,1024x1024x64 \
   --noisy-type Float32 --repeat 3 -j 1
 dotnet run --project src/StackProcessing.Probe/StackProcessing.Probe.fsproj -- \
-  bottom-up --phases io,singleton \
+  fit --up-to io
+dotnet run --project src/StackProcessing.Probe/StackProcessing.Probe.fsproj -- \
+  inspect --max-step io --min-repeats 3
+dotnet run --project src/StackProcessing.Probe/StackProcessing.Probe.fsproj -- \
+  collect --family io-cast \
   --shapes 256x256x256,512x512x128,1024x1024x64 \
   --noisy-type Float32 --repeat 3 -j 1
 dotnet run --project src/StackProcessing.Probe/StackProcessing.Probe.fsproj -- \
-  bottom-up --phases io,singleton,neighbourhood \
-  --shapes 256x256x256,512x512x128,1024x1024x64 \
-  --noisy-type Float32 --repeat 3 -j 1
+  fit --up-to io-cast
 rm -f tmp/costDiscrepancies.csv
 dotnet run --project src/StackProcessing.RunSamples/RunSamples.fsproj -- \
   --skip-build --repeat 1 -j 1 --debug-level 1 --cost-discrepancies \
@@ -312,50 +333,53 @@ but `WxHxD` spelling is clearer and avoids shell globbing surprises:
 
 ```bash
 dotnet run --project src/StackProcessing.Probe/StackProcessing.Probe.fsproj -- \
-  bottom-up --shapes 256x256x256,512x512x128,1024x1024x64 --noisy-type Float32 --repeat 3 -j 1
+  collect --all --shapes 256x256x256,512x512x128,1024x1024x64 --noisy-type Float32 --repeat 3 -j 1
 ```
 
 For slower model development, use explicit phases instead of running every
-stage class at once. The three commands in the workflow above intentionally
-re-run the IO phase while adding later phases, so fitted read/write terms stay
-anchored as new stage families are introduced:
+stage class at once. Because `collect` appends to the durable measurement store
+and `fit` selects from it, later model experiments do not require recollecting
+IO unless `inspect` reports missing or stale evidence:
 
 ```bash
 dotnet run --project src/StackProcessing.Probe/StackProcessing.Probe.fsproj -- \
-  bottom-up --phase io --shapes 256x256x256,512x512x128,1024x1024x64 --noisy-type Float32 --repeat 3 -j 1
+  collect --family io --shapes 256x256x256,512x512x128,1024x1024x64 --noisy-type Float32 --repeat 3 -j 1
 dotnet run --project src/StackProcessing.Probe/StackProcessing.Probe.fsproj -- \
-  bottom-up --phases io,singleton --shapes 256x256x256,512x512x128,1024x1024x64 --noisy-type Float32 --repeat 3 -j 1
+  collect --family io-cast --shapes 256x256x256,512x512x128,1024x1024x64 --noisy-type Float32 --repeat 3 -j 1
 dotnet run --project src/StackProcessing.Probe/StackProcessing.Probe.fsproj -- \
-  bottom-up --phases io,singleton,neighbourhood --shapes 256x256x256,512x512x128,1024x1024x64 --noisy-type Float32 --repeat 3 -j 1
+  collect --family singleton --shapes 256x256x256,512x512x128,1024x1024x64 --noisy-type Float32 --repeat 3 -j 1
+dotnet run --project src/StackProcessing.Probe/StackProcessing.Probe.fsproj -- \
+  fit --up-to singleton
 ```
 
 For a first, faster calibration pass, use a single size:
 
 ```bash
-dotnet run --project src/StackProcessing.Probe/StackProcessing.Probe.fsproj -- bottom-up --size 128 --noisy-type Float32 --repeat 3 -j 1
+dotnet run --project src/StackProcessing.Probe/StackProcessing.Probe.fsproj -- collect --family io --size 128 --noisy-type Float32 --repeat 3 -j 1
 ```
 
 For development-only graph emission without running the generated probes:
 
 ```bash
-dotnet run --project src/StackProcessing.Probe/StackProcessing.Probe.fsproj -- bottom-up --size 64 --no-run-probes
+dotnet run --project src/StackProcessing.Probe/StackProcessing.Probe.fsproj -- collect --family io --size 64 --no-run-probes
 ```
 
-The bottom-up calibration path clears repository `tmp/` by default, generates
+The controlled collection path clears repository `tmp/` by default, generates
 its own binary shape and noisy gray-valued input stacks below
 `tmp/probeInputs`, and writes controlled graph batches below
 `tmp/probingGraphs/bottomup_*/layer_###_*`. The first layer measures empty,
 minimal traversal, read, and write patterns; later layers add sources,
 scalar/unary stages, windowed stages, geometry, FFT/vector/keypoint probes, and
 dependency-breakers for under-isolated features. Probe writes normalized fitting
-evidence to `tmp/analysis/costEvidence.csv` and a reusable fitted operator model
-to `models/fitted/stackprocessing.operator-cost.json`. The repository fallback
-model lives in `models/default/stackprocessing.operator-cost.json`, and
-targeted updates are written to `models/local/stackprocessing.operator-cost.json`.
-Use `--phase` or `--phases` to restrict bottom-up calibration to `io`,
+evidence to `tmp/analysis/costEvidence.csv` and appends durable raw measurements
+to `measurements/stackprocessing-probe.jsonl`. `fit` writes the reusable fitted
+operator model to `models/fitted/stackprocessing.operator-cost.json`. The
+repository fallback model lives in `models/default/stackprocessing.operator-cost.json`,
+and targeted updates are written to `models/local/stackprocessing.operator-cost.json`.
+Use `collect --family` to restrict controlled collection to `io`, `io-cast`,
 `sources`, `singleton`, `neighbourhood`, `geometry`, `fourier`, `keypoints`,
 `dependency`, `reducers`, or `all`. Use `--keep-tmp` only when deliberately
-preserving existing measurements.
+preserving existing generated scratch files.
 
 During fitting, the empty graph defines the common intercept and `Ignore` is
 fixed at zero cost. This keeps the baseline from being absorbed into the

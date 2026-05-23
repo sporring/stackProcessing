@@ -1516,6 +1516,55 @@ let private bottomUpGraphTemplates config =
                index <- index + 1
            | None -> () |]
 
+    let readCastLayer =
+        let castPairs =
+            [ "uint8-float32", "UInt8", "Float32"
+              "uint8-float64", "UInt8", "Float64"
+              "uint16-float32", "UInt16", "Float32"
+              "uint16-float64", "UInt16", "Float64"
+              "int32-float64", "Int32", "Float64"
+              "float32-float64", "Float32", "Float64"
+              "float64-float32", "Float64", "Float32" ]
+
+        [| let mutable index = 1
+           for caseName, diskType, targetType in castPairs do
+               let diskSuffix = bottomUpIoSuffix diskType
+               let targetSuffix = bottomUpIoSuffix targetType
+               let diskInput = typedInput diskType
+               let implicitRead = readNodeFromWithSuffix diskInput targetType diskSuffix
+               let explicitRead = readNodeFromWithSuffix diskInput diskType diskSuffix
+               let explicitNodes = [ explicitRead; castNode diskType targetType ]
+
+               yield
+                   ignoreTemplate
+                       (sprintf "bottomup-%02d-read-%s-implicit-ignore-%s" index caseName sizeSuffix)
+                       $"{diskType} on disk read directly as {targetType}, consumed without writing."
+                       [ implicitRead ]
+               index <- index + 1
+
+               yield
+                   ignoreTemplate
+                       (sprintf "bottomup-%02d-read-%s-explicit-cast-ignore-%s" index caseName sizeSuffix)
+                       $"{diskType} on disk read as {diskType}, cast to {targetType}, consumed without writing."
+                       explicitNodes
+               index <- index + 1
+
+               yield
+                   writeTemplateWithSuffix
+                       (sprintf "bottomup-%02d-read-%s-implicit-write-%s" index caseName sizeSuffix)
+                       $"{diskType} on disk read directly as {targetType}, then written."
+                       targetSuffix
+                       [ implicitRead ]
+               index <- index + 1
+
+               yield
+                   writeTemplateWithSuffix
+                       (sprintf "bottomup-%02d-read-%s-explicit-cast-write-%s" index caseName sizeSuffix)
+                       $"{diskType} on disk read as {diskType}, cast to {targetType}, then written."
+                       targetSuffix
+                       explicitNodes
+               index <- index + 1 |]
+
     let syntheticSourcesLayer =
         [| ignoreTemplate
                $"bottomup-10-normalNoise-float-ignore-{sizeSuffix}"
@@ -1923,6 +1972,7 @@ let private bottomUpGraphTemplates config =
                  "sizes", "ObjectSizeStats", [] ] |]
 
     [| "01-starters", sourceLayer
+       "02-io-casts", readCastLayer
        "02-sources", syntheticSourcesLayer
        "03-simple-unary", simpleUnaryLayer
        "04-windowed-unary", windowLayer

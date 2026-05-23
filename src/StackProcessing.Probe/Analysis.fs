@@ -3,7 +3,9 @@ module ProbeAnalysis
 open System
 open System.Globalization
 open System.IO
+open System.Security.Cryptography
 open System.Text
+open System.Text.Json
 open System.Text.RegularExpressions
 open Studio.Graph
 open StackProcessingCost
@@ -17,7 +19,9 @@ type Options =
       Ridge: float
       MinSupport: int
       DiagnosticsOnly: bool
-      IncludeSamples: bool }
+      FitModel: bool
+      IncludeSamples: bool
+      MeasurementStorePath: string option }
 
 type AnalysisRow =
     { RowId: string
@@ -39,6 +43,41 @@ type Measurement =
       Value: float
       SourcePath: string
       RuntimeCostTerms: RuntimeCostTerm list }
+
+type StoredRuntimeCostTerm =
+    { StageName: string
+      InputLength: uint64 option
+      OutputLength: uint64 option
+      Multiplicity: uint64
+      MemoryPeakBytes: uint64 option
+      Tags: StoredStringValue array }
+
+and StoredStringValue =
+    { Key: string
+      Value: string }
+
+type StoredFloatValue =
+    { Key: string
+      Value: float }
+
+type StoredMeasurementRecord =
+    { SchemaVersion: int
+      MeasurementId: string
+      TimestampUtc: DateTimeOffset
+      GitCommit: string option
+      GitDirty: bool option
+      ProbeVersion: string
+      CommandLine: string
+      RowId: string
+      Source: string
+      ItemPath: string
+      GraphJson: string option
+      InputDescriptionJson: string
+      Measurement: string
+      Value: float
+      SourcePath: string
+      RuntimeCostTerms: StoredRuntimeCostTerm array
+      Features: StoredFloatValue array }
 
 type RunSummary =
     { EstimatedPeakMemoryKB: float option
@@ -65,7 +104,13 @@ let private usage () =
     printfn "                 Minimum feature support for fitted operator terms. Defaults to 3."
     printfn "  --diagnostics-only"
     printfn "                 Write matrix/coverage diagnostics without parsing run logs or fitting coefficients."
+    printfn "  --no-fit"
+    printfn "                 Write evidence and append measurements without fitting a model."
     printfn "  --no-samples   Analyze only extra/probe JSON roots."
+    printfn "  --measurement-store PATH"
+    printfn "                 Append unique raw measurement records. Defaults to measurements/stackprocessing-probe.jsonl."
+    printfn "  --no-measurement-store"
+    printfn "                 Do not append records to the measurement store."
 
 let private defaultSamplesRoot () =
     let cwd = Directory.GetCurrentDirectory()
@@ -102,7 +147,9 @@ let private defaultOptions () =
       Ridge = 1e-8
       MinSupport = 3
       DiagnosticsOnly = false
-      IncludeSamples = true }
+      FitModel = true
+      IncludeSamples = true
+      MeasurementStorePath = Some(Path.Combine(repositoryRoot, "measurements", "stackprocessing-probe.jsonl")) }
 
 let rec private parseArgs options args =
     match args with
@@ -136,8 +183,16 @@ let rec private parseArgs options args =
             Error 2
     | "--diagnostics-only" :: rest ->
         parseArgs { options with DiagnosticsOnly = true } rest
+    | "--no-fit" :: rest ->
+        parseArgs { options with FitModel = false } rest
+    | "--fit" :: rest ->
+        parseArgs { options with FitModel = true } rest
     | "--no-samples" :: rest ->
         parseArgs { options with IncludeSamples = false } rest
+    | "--measurement-store" :: value :: rest ->
+        parseArgs { options with MeasurementStorePath = Some(Path.GetFullPath value) } rest
+    | "--no-measurement-store" :: rest ->
+        parseArgs { options with MeasurementStorePath = None } rest
     | option :: _ ->
         eprintfn "analysis: unknown option %s" option
         usage ()
@@ -157,6 +212,41 @@ let private writeCsv (path: string) (rows: seq<string list>) =
     rows
     |> Seq.map (List.map csvEscape >> String.concat ",")
     |> fun lines -> File.WriteAllLines(path, lines)
+
+let private runProcessCapture (fileName: string) (arguments: string) =
+    try
+        let startInfo: Diagnostics.ProcessStartInfo = Diagnostics.ProcessStartInfo(fileName, arguments)
+        startInfo.RedirectStandardOutput <- true
+        startInfo.RedirectStandardError <- true
+        startInfo.UseShellExecute <- false
+        startInfo.CreateNoWindow <- true
+
+        use proc: Diagnostics.Process = Diagnostics.Process.Start(startInfo)
+        let output = proc.StandardOutput.ReadToEnd()
+        let _ = proc.StandardError.ReadToEnd()
+        proc.WaitForExit(2000) |> ignore
+
+        if proc.ExitCode = 0 then
+            let text = output.Trim()
+            if String.IsNullOrWhiteSpace text then None else Some text
+        else
+            None
+    with _ ->
+        None
+
+let private gitCommit () =
+    runProcessCapture "git" "rev-parse HEAD"
+
+let private gitDirty () =
+    runProcessCapture "git" "status --porcelain"
+    |> Option.map (String.IsNullOrWhiteSpace >> not)
+
+let private sha256Text (text: string) =
+    let bytes = Encoding.UTF8.GetBytes text
+    use sha = SHA256.Create()
+    sha.ComputeHash bytes
+    |> Array.map (fun b -> b.ToString("x2", CultureInfo.InvariantCulture))
+    |> String.concat ""
 
 let private parseCsvLine (line: string) =
     let values = ResizeArray<string>()
@@ -472,7 +562,7 @@ let private tryParseInvariantUInt64 (value: string) =
     | true, parsed -> Some parsed
     | _ -> None
 
-let private parseRuntimeTerm (text: string) =
+let private parseRuntimeTerm (text: string) : RuntimeCostTerm option =
     let fields =
         text.Split(';', StringSplitOptions.RemoveEmptyEntries)
         |> Array.choose (fun part ->
@@ -497,13 +587,15 @@ let private parseRuntimeTerm (text: string) =
             |> Map.remove "memoryPeakBytes"
             |> Map.remove "estimatedMilliseconds"
 
-        Some
+        let term: RuntimeCostTerm =
             { StageName = field "stage" |> Option.defaultValue ""
               InputLength = field "inputLength" |> Option.bind tryParseInvariantUInt64
               OutputLength = field "outputLength" |> Option.bind tryParseInvariantUInt64
               Multiplicity = field "multiplicity" |> Option.bind tryParseInvariantUInt64 |> Option.defaultValue 1UL
               MemoryPeakBytes = field "memoryPeakBytes" |> Option.bind tryParseInvariantUInt64
               Tags = tags }
+
+        Some term
 
 let private parseRuntimeTermsText (text: string) =
     if String.IsNullOrWhiteSpace text then
@@ -620,6 +712,49 @@ let private measurementsForRow (samplesRoot: string) (row: AnalysisRow) =
     else
         logPathsForRow samplesRoot row.RowId
         |> List.collect (measurementsForLog row.RowId)
+
+let private graphJsonForRow (row: AnalysisRow) =
+    if File.Exists row.ItemPath && Path.GetExtension(row.ItemPath).Equals(".json", StringComparison.OrdinalIgnoreCase) then
+        try Some(File.ReadAllText row.ItemPath)
+        with _ -> None
+    else
+        None
+
+let private appendMeasurementStore (path: string) (records: StoredMeasurementRecord seq) =
+    let directory = Path.GetDirectoryName path
+    if not (String.IsNullOrWhiteSpace directory) then
+        Directory.CreateDirectory directory |> ignore
+
+    let existingIds =
+        if File.Exists path then
+            File.ReadLines path
+            |> Seq.choose (fun line ->
+                try
+                    use doc = JsonDocument.Parse line
+                    let mutable value = Unchecked.defaultof<JsonElement>
+                    if doc.RootElement.TryGetProperty("measurementId", &value)
+                       || doc.RootElement.TryGetProperty("MeasurementId", &value) then
+                        value.GetString() |> Option.ofObj
+                    else
+                        None
+                with _ ->
+                    None)
+            |> Set.ofSeq
+        else
+            Set.empty
+
+    let options = JsonSerializerOptions(PropertyNamingPolicy = JsonNamingPolicy.CamelCase)
+    options.WriteIndented <- false
+
+    use writer = new StreamWriter(path, append = true)
+    let mutable written = 0
+
+    for record in records do
+        if not (existingIds.Contains record.MeasurementId) then
+            writer.WriteLine(JsonSerializer.Serialize(record, options))
+            written <- written + 1
+
+    written
 
 let private probingMeasurementAliases measurement value =
     seq {
@@ -962,6 +1097,26 @@ type private EvidenceContext =
       Height: uint64 option
       Depth: uint64 option }
 
+let private inputDescriptionJson (rowContext: EvidenceContext) (row: AnalysisRow) =
+    let invariantValue (value: float) =
+        Convert.ToString(value, CultureInfo.InvariantCulture)
+
+    let features =
+        row.FeatureValues
+        |> Map.toArray
+        |> Array.map (fun (key, value) -> dict [ "key", key; "value", invariantValue value ])
+
+    let payload =
+        dict
+            [ "pixelType", box (rowContext.PixelType |> Option.defaultValue "")
+              "width", box (rowContext.Width |> Option.map string |> Option.defaultValue "")
+              "height", box (rowContext.Height |> Option.map string |> Option.defaultValue "")
+              "depth", box (rowContext.Depth |> Option.map string |> Option.defaultValue "")
+              "itemPath", box row.ItemPath
+              "features", box features ]
+
+    JsonSerializer.Serialize(payload)
+
 let private parseFeatureMetadata (feature: string) : FeatureMetadata =
     let parts = feature.Split(':', StringSplitOptions.RemoveEmptyEntries)
 
@@ -1133,6 +1288,11 @@ let private evidenceRow (rowContext: EvidenceContext) rowId measurementName meas
         | Some voxels, Some bytesPerPixel -> Some(voxels * bytesPerPixel)
         | _ -> None
 
+    let sigma = parameterFloat "sigma" metadata
+    let gaussianKernelSizeFromSigma =
+        sigma
+        |> Option.map (fun sigma -> 2.0 * Math.Ceiling(2.0 * sigma) + 1.0)
+
     { RowId = rowId
       Measurement = measurementName
       Value = measurementValue
@@ -1149,7 +1309,12 @@ let private evidenceRow (rowContext: EvidenceContext) rowId measurementName meas
       SliceBytes = sliceBytes
       VolumeBytes = volumeBytes
       WindowSize = parameterFloat "windowSize" metadata
-      Radius = parameterFloat "radius" metadata }
+      Radius = parameterFloat "radius" metadata
+      KernelSize =
+        parameterFloat "kernelSize" metadata
+        |> Option.orElseWith (fun () -> parameterFloat "minimumWindowSize" metadata)
+        |> Option.orElse gaussianKernelSizeFromSigma
+      Sigma = sigma }
 
 let private runtimeTermEvidenceRow (measurement: Measurement) (term: RuntimeCostTerm) : Fitting.EvidenceRow option =
     let tag key = term.Tags |> Map.tryFind key
@@ -1196,7 +1361,12 @@ let private runtimeTermEvidenceRow (measurement: Measurement) (term: RuntimeCost
           SliceBytes = None
           VolumeBytes = volumeBytes
           WindowSize = tag "windowSize" |> Option.bind tryParseFloatText
-          Radius = tag "radius" |> Option.bind tryParseFloatText })
+          Radius = tag "radius" |> Option.bind tryParseFloatText
+          KernelSize =
+            tag "kernelSize"
+            |> Option.orElseWith (fun () -> tag "minimumWindowSize")
+            |> Option.bind tryParseFloatText
+          Sigma = tag "sigma" |> Option.bind tryParseFloatText })
 
 let private writeOutputs (options: Options) (rows: AnalysisRow list) =
     let features =
@@ -1290,6 +1460,83 @@ let private writeOutputs (options: Options) (rows: AnalysisRow list) =
                           measurement.SourcePath ]
         })
 
+    match options.MeasurementStorePath with
+    | Some measurementStorePath when not options.DiagnosticsOnly ->
+        let rowsById =
+            rows
+            |> List.map (fun row -> row.RowId, row)
+            |> Map.ofList
+
+        let gitCommit = gitCommit ()
+        let gitDirty = gitDirty ()
+        let commandLine = String.concat " " (Environment.GetCommandLineArgs())
+        let timestamp = DateTimeOffset.UtcNow
+
+        let records =
+            measurements
+            |> Seq.choose (fun measurement ->
+                rowsById
+                |> Map.tryFind measurement.RowId
+                |> Option.map (fun row ->
+                    let rowContext = inferEvidenceContext row
+                    let graphJson = graphJsonForRow row
+                    let sourcePath =
+                        if Path.IsPathFullyQualified measurement.SourcePath then
+                            relativePath options.SamplesRoot measurement.SourcePath
+                        else
+                            measurement.SourcePath
+
+                    let runtimeTerms =
+                        measurement.RuntimeCostTerms
+                        |> List.map (fun term ->
+                            { StageName = term.StageName
+                              InputLength = term.InputLength
+                              OutputLength = term.OutputLength
+                              Multiplicity = term.Multiplicity
+                              MemoryPeakBytes = term.MemoryPeakBytes
+                              Tags =
+                                term.Tags
+                                |> Map.toArray
+                                |> Array.map (fun (key, value) -> { Key = key; Value = value }) })
+                        |> List.toArray
+
+                    let features =
+                        row.FeatureValues
+                        |> Map.toArray
+                        |> Array.map (fun (key, value) -> { Key = key; Value = value })
+                    let inputJson = inputDescriptionJson rowContext row
+                    let idText =
+                        String.concat
+                            "\u001f"
+                            [ measurement.RowId
+                              measurement.Name
+                              sourcePath
+                              measurement.Value |> invariant
+                              gitCommit |> Option.defaultValue ""
+                              graphJson |> Option.defaultValue "" ]
+
+                    { SchemaVersion = 1
+                      MeasurementId = sha256Text idText
+                      TimestampUtc = timestamp
+                      GitCommit = gitCommit
+                      GitDirty = gitDirty
+                      ProbeVersion = "measurement-store-v1"
+                      CommandLine = commandLine
+                      RowId = measurement.RowId
+                      Source = row.Source
+                      ItemPath = row.ItemPath
+                      GraphJson = graphJson
+                      InputDescriptionJson = inputJson
+                      Measurement = measurement.Name
+                      Value = measurement.Value
+                      SourcePath = sourcePath
+                      RuntimeCostTerms = runtimeTerms
+                      Features = features }))
+
+        let written = appendMeasurementStore measurementStorePath records
+        printfn "appended %d new raw measurement record(s) to %s" written measurementStorePath
+    | _ -> ()
+
     let costEvidencePath = Path.Combine(options.OutputDirectory, "costEvidence.csv")
 
     Fitting.writeEvidenceCsv
@@ -1325,7 +1572,7 @@ let private writeOutputs (options: Options) (rows: AnalysisRow list) =
                             yield evidenceRow rowContext measurement.RowId measurement.Name measurement.Value sourcePath feature value
         })
 
-    if not options.DiagnosticsOnly then
+    if options.FitModel && not options.DiagnosticsOnly then
         Fitting.fitOperatorTermsFromCsv costEvidencePath options.Ridge options.MinSupport options.OutputDirectory options.ModelOutputPath
         |> ignore
 

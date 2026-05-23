@@ -8,6 +8,9 @@ let private usage () =
     printfn "Commands:"
     printfn "  samples    Run sample F# projects, or Studio JSON graphs with --json."
     printfn "  analysis   Extract feature matrices, diagnostics, coefficients, and predictions."
+    printfn "  collect    Collect durable measurement evidence for families or members."
+    printfn "  fit        Fit a cost model from the durable measurement store."
+    printfn "  inspect    Inspect stored evidence and suggest the next collection step."
     printfn "  probing    Measure or emit probe graphs."
     printfn "  calibrate  Run the greedy analysis/freezing/probe-emission loop."
     printfn "  bottom-up  Run controlled bottom-up calibration probe layers."
@@ -19,6 +22,9 @@ let private usage () =
     printfn "  dotnet run --project src/StackProcessing.Probe -- samples --repeat 3"
     printfn "  dotnet run --project src/StackProcessing.Probe -- samples --json --extra-json-root tmp/probingGraphs"
     printfn "  dotnet run --project src/StackProcessing.Probe -- analysis --extra-json-root tmp/probingGraphs"
+    printfn "  dotnet run --project src/StackProcessing.Probe -- collect --family io --repeat 6"
+    printfn "  dotnet run --project src/StackProcessing.Probe -- fit --up-to io-cast"
+    printfn "  dotnet run --project src/StackProcessing.Probe -- inspect --max-step singleton"
     printfn "  dotnet run --project src/StackProcessing.Probe -- probing tmp/analysis/probing-boilerplate.json --emit-json tmp/probingGraphs"
     printfn "  dotnet run --project src/StackProcessing.Probe -- bottom-up --repeat 3 -j 1"
     printfn "  dotnet run --project src/StackProcessing.Probe -- calibrate --repeat 3 -j 1"
@@ -42,6 +48,17 @@ let private dispatch command args =
     | "analyze"
     | "analyse" ->
         ProbeAnalysis.main args
+    | "collect"
+    | "collection" ->
+        ProbeCollect.main args
+    | "fit"
+    | "fit-model"
+    | "model" ->
+        ProbeFit.main args
+    | "inspect"
+    | "inspection"
+    | "coverage" ->
+        ProbeInspect.main args
     | "probing"
     | "probe"
     | "emit" ->

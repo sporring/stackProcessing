@@ -42,11 +42,15 @@
 
   <ItemGroup>
     <Compile Include="Analysis.fs" />
+    <Compile Include="Selection.fs" />
     <Compile Include="Probing.fs" />
     <Compile Include="ProbingReport.fs" />
     <Compile Include="Calibration.fs" />
     <Compile Include="BottomUpCalibration.fs" />
     <Compile Include="LocalUpdate.fs" />
+    <Compile Include="Fit.fs" />
+    <Compile Include="Collect.fs" />
+    <Compile Include="Inspect.fs" />
     <Compile Include="Program.fs" />
   </ItemGroup>
 

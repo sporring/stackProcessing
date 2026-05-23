@@ -67,6 +67,8 @@ let private fixedImageOperatorTimeCost<'T> operator evaluation voxels fallback =
             (Some(StackProcessingCost.imageBytes<'T> voxels))
             None
             None
+            None
+            None
 
     StackProcessingCost.Fitting.OperatorCostRuntime.timeCostModel evaluation context fallback
 
@@ -1991,6 +1993,8 @@ let write<'T when 'T: equality> (outputDir: string) (suffix: string) : Stage<Ima
         StackProcessingCost.operatorImageTimeCost<'T>
             "Write"
             Iter
+            None
+            None
             None
             None
             fallbackTimeCostModel.Estimate

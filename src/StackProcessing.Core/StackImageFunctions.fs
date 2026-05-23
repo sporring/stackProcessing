@@ -47,19 +47,25 @@ let private nativeImageStageCost name memoryModel costUnits =
         memoryModel
         (StageTimeCostModel.native Map (Some name) costUnits)
 
-let private operatorImageStageCostForPixelWithEvaluation<'T> operator evaluation memoryModel windowSize radius costUnits =
+let private operatorImageStageCostForPixelWithEvaluationAndKernel<'T> operator evaluation memoryModel windowSize radius kernelSize sigma costUnits =
     let fallback =
         StageTimeCostModel.native evaluation (Some $"{operator}.{StackProcessingCost.pixelTypeName<'T>}") costUnits
 
     StageCostModel.create
         memoryModel
-        (StackProcessingCost.operatorImageTimeCost<'T> operator evaluation windowSize radius fallback.Estimate)
+        (StackProcessingCost.operatorImageTimeCost<'T> operator evaluation windowSize radius kernelSize sigma fallback.Estimate)
+
+let private operatorImageStageCostForPixelWithEvaluation<'T> operator evaluation memoryModel windowSize radius costUnits =
+    operatorImageStageCostForPixelWithEvaluationAndKernel<'T> operator evaluation memoryModel windowSize radius None None costUnits
 
 let private operatorImageStageCostForPixel<'T> operator memoryModel windowSize radius costUnits =
     operatorImageStageCostForPixelWithEvaluation<'T> operator Map memoryModel windowSize radius costUnits
 
 let private operatorImageStageCost<'T> operator memoryModel windowSize radius costUnits =
     operatorImageStageCostForPixel<'T> operator memoryModel windowSize radius costUnits
+
+let private operatorImageStageCostWithKernel<'T> operator memoryModel windowSize radius kernelSize sigma costUnits =
+    operatorImageStageCostForPixelWithEvaluationAndKernel<'T> operator Map memoryModel windowSize radius kernelSize sigma costUnits
 
 let private withTimeTags tags (costModel: StageCostModel) =
     { costModel with
@@ -708,7 +714,7 @@ let private makeWindowedOperatorOp<'T when 'T: equality>
     let stg =
         mapWindow name f memoryNeed id
         |> withCostModel
-            (operatorImageStageCost<'T> operator memoryModel (Some(float win)) radius costUnits
+            (operatorImageStageCostWithKernel<'T> operator memoryModel (Some(float win)) radius (Some(float ksz)) None costUnits
              |> withTimeTags
                  [ yield! windowCostTags ksz winSz
                    yield! effectiveWindowTags win
@@ -1552,7 +1558,7 @@ let smoothWGauss (sigma: float) (outputRegionMode: ImageFunctions.OutputRegionMo
     let stg =
         mapWindow "smoothWGauss" f memoryNeed elementTransformation
         |> withCostModel
-            (operatorImageStageCost<float> "SmoothWGauss" memoryModel (Some(float win)) None costUnits
+            (operatorImageStageCostWithKernel<float> "SmoothWGauss" memoryModel (Some(float win)) None (Some(float ksz)) (Some sigma) costUnits
              |> withTimeTags
                  [ yield! windowCostTags ksz winSz
                    yield! effectiveWindowTags win
@@ -1717,7 +1723,7 @@ let convolveOp (name: string) (kernel: Image<'T>) (outputRegionMode: ImageFuncti
             float (inputValue input * kernelVoxels)
 
         liftUnaryReleaseAfter name (fun image -> ImageFunctions.convolve outputRegionMode bc image kernel) memoryNeed id
-        |> withCostModel (operatorImageStageCost<'T> "Convolve" memoryModel None None costUnits)
+        |> withCostModel (operatorImageStageCostWithKernel<'T> "Convolve" memoryModel None None (Some(float (max (kernel.GetWidth()) (kernel.GetHeight())))) None costUnits)
     else
         let windowFromKernel (k: Image<'T>) : uint =
             max 1u (k.GetDepth())
@@ -1742,7 +1748,7 @@ let convolveOp (name: string) (kernel: Image<'T>) (outputRegionMode: ImageFuncti
         let stg =
             mapWindow name f memoryNeed elementTransformation
             |> withCostModel
-                (operatorImageStageCost<'T> "Convolve" memoryModel (Some(float win)) None costUnits
+                (operatorImageStageCostWithKernel<'T> "Convolve" memoryModel (Some(float win)) None (Some(float ksz)) None costUnits
                  |> withTimeTags
                      [ yield! windowCostTags ksz winSz
                        yield! effectiveWindowTags win
@@ -1772,7 +1778,7 @@ let private makeMorphOp (name: string) (operator: string) (radius: uint) (winSz:
     let stg =
         mapWindow name f memoryNeed id
         |> withCostModel
-            (operatorImageStageCost<'T> operator memoryModel (Some(float win)) (Some(float radius)) costUnits
+            (operatorImageStageCostWithKernel<'T> operator memoryModel (Some(float win)) (Some(float radius)) (Some(float ksz)) None costUnits
              |> withTimeTags
                  [ yield! windowCostTags ksz winSz
                    yield! effectiveWindowTags win
