@@ -14,7 +14,7 @@ let main args =
 
     src
     |> read<float> input ".tiff"
-    >=> smoothWMedian<float> 1u 5u
+    >=> smoothWMedian<float> 1u None
     >=> cast<float, uint8>
     >=> write output ".tiff"
     |> sink

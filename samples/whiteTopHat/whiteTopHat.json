@@ -102,7 +102,7 @@
         },
         {
           "key": "windowSize",
-          "value": "7",
+          "value": "None",
           "useInput": false
         }
       ]

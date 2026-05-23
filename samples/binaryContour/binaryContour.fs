@@ -14,7 +14,7 @@ let main args =
 
     src
     |> read<uint8> input ".tiff"
-    >=> binaryContour false 7u
+    >=> binaryContour false None
     >=> write output ".tiff"
     |> sink
 

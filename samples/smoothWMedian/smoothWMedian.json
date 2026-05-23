@@ -12,7 +12,7 @@
       "parameters": [
         { "key": "type", "value": "Float64", "useInput": false },
         { "key": "radius", "value": "1", "useInput": false },
-        { "key": "windowSize", "value": "5", "useInput": false } ] },
+        { "key": "windowSize", "value": "None", "useInput": false } ] },
     { "id": "cast", "functionId": "Cast", "x": 520.0, "y": 120.0,
       "parameters": [
         { "key": "sourceType", "value": "Float64", "useInput": false },

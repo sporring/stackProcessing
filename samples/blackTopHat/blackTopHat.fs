@@ -14,7 +14,7 @@ let main args =
 
     src
     |> read<uint8> input ".tiff"
-    >=> blackTopHat<uint8> 3u 7u
+    >=> blackTopHat<uint8> 3u None
     >=> write output ".tiff"
     |> sink
 

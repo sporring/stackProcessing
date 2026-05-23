@@ -11,7 +11,7 @@
     { "id": "median", "functionId": "BinaryMedian", "x": 320.0, "y": 120.0,
       "parameters": [
         { "key": "radius", "value": "3", "useInput": false },
-        { "key": "windowSize", "value": "7", "useInput": false } ] },
+        { "key": "windowSize", "value": "None", "useInput": false } ] },
     { "id": "write", "functionId": "Write", "x": 560.0, "y": 120.0,
       "parameters": [
         { "key": "format", "value": "Image stack", "useInput": false },

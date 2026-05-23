@@ -17,13 +17,14 @@ let main arg =
     let suffix = ".tiff"
     let tmpSuffix = ".mha"
 
-    let wsz = (depth/8u)
+    let wsz = Some (depth/8u)
+    let slabWindow = wsz |> Option.defaultValue 1u
 
     let transTbl =
         src
         |> read<uint8> input suffix
         >=> connectedComponents wsz
-        >=> teeFst (writeSlabSlices tmp tmpSuffix wsz)
+        >=> teeFst (writeSlabSlices tmp tmpSuffix slabWindow)
         >=> makeConnectedComponentTranslationTable wsz
         |> drain
     printfn "Translation Table drain:\n%A" transTbl

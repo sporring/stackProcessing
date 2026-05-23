@@ -14,7 +14,7 @@ let main args =
 
     src
     |> read<float> input ".tiff"
-    >=> smoothWBilateral<float> 1.5 30.0 5u
+    >=> smoothWBilateral<float> 1.5 30.0 None
     >=> cast<float, uint8>
     >=> write output ".tiff"
     |> sink

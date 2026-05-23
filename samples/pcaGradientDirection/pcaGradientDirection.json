@@ -11,7 +11,7 @@
     { "id": "gradient", "functionId": "Gradient", "x": 300.0, "y": 120.0,
       "parameters": [
         { "key": "order", "value": "1", "useInput": false },
-        { "key": "windowSize", "value": "7", "useInput": false } ] },
+        { "key": "windowSize", "value": "None", "useInput": false } ] },
     { "id": "pca", "functionId": "PCA", "x": 520.0, "y": 120.0,
       "parameters": [
         { "key": "components", "value": "3", "useInput": false } ] },

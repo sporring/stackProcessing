@@ -111,6 +111,7 @@ let private canonicalRadius = 3u
 let private canonicalWindowSize = 2u * canonicalRadius + 1u
 let private canonicalSigma = 3.0
 let private canonicalSigmaText = "3.0"
+let private canonicalGaussianWindowSize = 13u
 let private canonicalKernelSize = canonicalWindowSize
 
 // Workflow-shape inspiration for realistic boilerplate probes:
@@ -165,7 +166,7 @@ let private convolutionBreakdownSizes =
     |> List.map (fun side -> imageSize side canonicalDepth)
 
 let private gaussianWindowSizes =
-    [ canonicalWindowSize ]
+    [ canonicalGaussianWindowSize ]
 
 let private unaryWindowSizes =
     [ canonicalWindowSize ]
@@ -1488,7 +1489,7 @@ let private bottomUpGraphTemplates config =
 
     let windowLayer =
         let floatFilters =
-            [ "gauss", "SmoothWGauss", [ "sigma", "3.0"; "outputRegionMode", "None"; "boundaryCondition", "None"; "windowSize", "7" ], "Float64"
+            [ "gauss", "SmoothWGauss", [ "sigma", "3.0"; "outputRegionMode", "None"; "boundaryCondition", "None"; "windowSize", "None" ], "Float64"
               "median", "SmoothWMedian", [ "type", "Float64"; "radius", "3"; "windowSize", "7" ], "Float64"
               "gradient", "GradientMagnitude", [ "type", "Float64"; "windowSize", "7" ], "Float64"
               "laplacian", "Laplacian", [ "type", "Float64"; "windowSize", "7" ], "Float64"
@@ -1909,7 +1910,7 @@ let private generatedGraphTemplates () =
           "gradient", "GradientMagnitude", [ "type", "Float64"; "windowSize", "7" ], "GradientMagnitude:type=Float64:windowSize=7"
           "sobel", "SobelEdge", [ "type", "Float64"; "windowSize", "7" ], "SobelEdge:type=Float64:windowSize=7"
           "laplacian", "Laplacian", [ "type", "Float64"; "windowSize", "7" ], "Laplacian:type=Float64:windowSize=7"
-          "gauss", "SmoothWGauss", [ "sigma", "3.0"; "outputRegionMode", "None"; "boundaryCondition", "None"; "windowSize", "7" ], "SmoothWGauss:sigma=3.0:outputRegionMode=None:boundaryCondition=None:windowSize=7" ]
+          "gauss", "SmoothWGauss", [ "sigma", "3.0"; "outputRegionMode", "None"; "boundaryCondition", "None"; "windowSize", "None" ], "SmoothWGauss:sigma=3.0:outputRegionMode=None:boundaryCondition=None:windowSize=None" ]
 
     [|
         for id, functionId, parameters, feature in uint8Morphology do
@@ -1989,13 +1990,13 @@ let private generatedGraphTemplates () =
             floatTemplate
                 "bio-gauss-threshold-morphology-64x64x64"
                 "Gaussian smoothing, cast-to-mask, then morphology cleanup."
-                [ "SmoothWGauss:sigma=3.0:outputRegionMode=None:boundaryCondition=None:windowSize=7"
+                [ "SmoothWGauss:sigma=3.0:outputRegionMode=None:boundaryCondition=None:windowSize=None"
                   stretchFloat0255
                   castFloatToUInt8
                   thresholdFeature
                   "Opening:radius=3"
                   "Closing:radius=3" ]
-                ([ "gauss", "SmoothWGauss", [ "sigma", "3.0"; "outputRegionMode", "None"; "boundaryCondition", "None"; "windowSize", "7" ] ]
+                ([ "gauss", "SmoothWGauss", [ "sigma", "3.0"; "outputRegionMode", "None"; "boundaryCondition", "None"; "windowSize", "None" ] ]
                  @ stretchCastNodes
                  @ [ thresholdNode'
                      "opening", "Opening", [ "radius", "3" ]
@@ -2153,7 +2154,7 @@ let private operationGraph (probe: ProbeResultJson) =
         Some(
             withWrite
                 [ readNode "Float64"
-                  "gauss", "SmoothWGauss", [ "sigma", "3.0"; "outputRegionMode", "None"; "boundaryCondition", "None"; "windowSize", "7" ]
+                  "gauss", "SmoothWGauss", [ "sigma", "3.0"; "outputRegionMode", "None"; "boundaryCondition", "None"; "windowSize", "None" ]
                   intensityStretchNode "stretch" "Float64" "0.0" "255.0"
                   castNode "Float64" "UInt8"
                   thresholdNode "UInt8" "128.0" ])
@@ -2619,8 +2620,8 @@ let main args =
                                  (fun () ->
                                      source availableMemory
                                      |> read<float> inputDir ".tiff"
-                                     >=> smoothWMedian<float> 3u 7u
-                                     >=> gradientMagnitude<float> 7u
+                                     >=> smoothWMedian<float> 3u (Some 7u)
+                                     >=> gradientMagnitude<float> (Some 7u)
                                      >=> intensityStretch<float> 0.0 255.0 0.0 255.0
                                      >=> cast<float, uint8>
                                      >=> write (outputDir size "bio-edge-filter-float-write") ".tiff")
@@ -2634,7 +2635,7 @@ let main args =
                                       encodedFeatures
                                           [ readFloatFeature
                                             readFloatFeatureWithAxes
-                                            "SmoothWGauss:sigma=3.0:outputRegionMode=None:boundaryCondition=None:windowSize=7"
+                                            "SmoothWGauss:sigma=3.0:outputRegionMode=None:boundaryCondition=None:windowSize=None"
                                             "IntensityStretch:type=Float64:inputMinimum=0.0:inputMaximum=255.0:outputMinimum=0.0:outputMaximum=255.0"
                                             "Cast:sourceType=Float64:targetType=UInt8"
                                             "Threshold:type=UInt8:lower=128.0:upper=infinity"
@@ -2644,7 +2645,7 @@ let main args =
                                  (fun () ->
                                      source availableMemory
                                      |> read<float> inputDir ".tiff"
-                                     >=> smoothWGauss canonicalSigma None None (Some canonicalWindowSize)
+                                     >=> smoothWGauss canonicalSigma None None None
                                      >=> intensityStretch<float> 0.0 255.0 0.0 255.0
                                      >=> cast<float, uint8>
                                      >=> threshold 128.0 infinity
@@ -2772,7 +2773,7 @@ let main args =
                                      (fun () ->
                                          source availableMemory
                                          |> read<uint8> inputDir ".tiff"
-                                         >=> grayscaleErode<uint8> 3u 7u
+                                         >=> grayscaleErode<uint8> 3u (Some 7u)
                                          >=> write (outputDir size "grayscale-erode-uint8-write") ".tiff")
 
                            yield runSinkProbe
@@ -2784,7 +2785,7 @@ let main args =
                                      (fun () ->
                                          source availableMemory
                                          |> read<uint8> inputDir ".tiff"
-                                         >=> grayscaleDilate<uint8> 3u 7u
+                                         >=> grayscaleDilate<uint8> 3u (Some 7u)
                                          >=> write (outputDir size "grayscale-dilate-uint8-write") ".tiff")
 
                            yield runSinkProbe
@@ -2796,7 +2797,7 @@ let main args =
                                      (fun () ->
                                          source availableMemory
                                          |> read<uint8> inputDir ".tiff"
-                                         >=> grayscaleOpening<uint8> 3u 7u
+                                         >=> grayscaleOpening<uint8> 3u (Some 7u)
                                          >=> write (outputDir size "grayscale-opening-uint8-write") ".tiff")
 
                            yield runSinkProbe
@@ -2808,7 +2809,7 @@ let main args =
                                      (fun () ->
                                          source availableMemory
                                          |> read<uint8> inputDir ".tiff"
-                                         >=> grayscaleClosing<uint8> 3u 7u
+                                         >=> grayscaleClosing<uint8> 3u (Some 7u)
                                          >=> write (outputDir size "grayscale-closing-uint8-write") ".tiff")
 
                            yield runSinkProbe
@@ -2820,7 +2821,7 @@ let main args =
                                      (fun () ->
                                          source availableMemory
                                          |> read<uint8> inputDir ".tiff"
-                                         >=> binaryMedian 3u 7u
+                                         >=> binaryMedian 3u (Some 7u)
                                          >=> write (outputDir size "binary-median-uint8-write") ".tiff")
 
                            yield runSinkProbe
@@ -2844,7 +2845,7 @@ let main args =
                                      (fun () ->
                                          source availableMemory
                                          |> read<uint8> inputDir ".tiff"
-                                         >=> binaryContour false 7u
+                                         >=> binaryContour false (Some 7u)
                                          >=> write (outputDir size "binary-contour-uint8-write") ".tiff")
 
                            yield runSinkProbe
@@ -2904,7 +2905,7 @@ let main args =
                                      (fun () ->
                                          source availableMemory
                                          |> read<uint8> inputDir ".tiff"
-                                         >=> blackTopHat<uint8> 3u 7u
+                                         >=> blackTopHat<uint8> 3u (Some 7u)
                                          >=> write (outputDir size "black-top-hat-uint8-write") ".tiff")
 
                            yield runSinkProbe
@@ -2916,7 +2917,7 @@ let main args =
                                      (fun () ->
                                          source availableMemory
                                          |> read<uint8> inputDir ".tiff"
-                                         >=> whiteTopHat<uint8> 3u 7u
+                                         >=> whiteTopHat<uint8> 3u (Some 7u)
                                          >=> write (outputDir size "white-top-hat-uint8-write") ".tiff")
 
                            yield runSinkProbe
@@ -2928,7 +2929,7 @@ let main args =
                                      (fun () ->
                                          source availableMemory
                                          |> read<uint8> inputDir ".tiff"
-                                         >=> morphologicalGradient<uint8> 3u 7u
+                                         >=> morphologicalGradient<uint8> 3u (Some 7u)
                                          >=> write (outputDir size "morphological-gradient-uint8-write") ".tiff")
 
                            yield runSinkProbe
@@ -2940,11 +2941,11 @@ let main args =
                                      (fun () ->
                                          source availableMemory
                                          |> read<float> inputDir ".tiff"
-                                         >=> smoothWMedian<float> 3u 7u
-                                         >=> smoothWBilateral<float> 1.5 30.0 7u
-                                         >=> gradientMagnitude<float> 7u
-                                         >=> sobelEdge<float> 7u
-                                         >=> laplacian<float> 7u
+                                         >=> smoothWMedian<float> 3u (Some 7u)
+                                         >=> smoothWBilateral<float> 1.5 30.0 (Some 7u)
+                                         >=> gradientMagnitude<float> (Some 7u)
+                                         >=> sobelEdge<float> (Some 7u)
+                                         >=> laplacian<float> (Some 7u)
                                          >=> intensityStretch<float> 0.0 255.0 0.0 255.0
                                          >=> cast<float, uint8>
                                          >=> write (outputDir size "filters-float-write") ".tiff")
@@ -2962,14 +2963,14 @@ let main args =
                                  "dilate-erode", "Dilate:radius=3", dilate 3u, "Erode:radius=3", erode 3u
                                  "opening-closing", "Opening:radius=3", opening 3u, "Closing:radius=3", closing 3u
                                  "closing-opening", "Closing:radius=3", closing 3u, "Opening:radius=3", opening 3u
-                                 "grayscale-erode-dilate", "GrayscaleErode:type=UInt8:radius=3:windowSize=7", grayscaleErode<uint8> 3u 7u, "GrayscaleDilate:type=UInt8:radius=3:windowSize=7", grayscaleDilate<uint8> 3u 7u
-                                 "grayscale-dilate-erode", "GrayscaleDilate:type=UInt8:radius=3:windowSize=7", grayscaleDilate<uint8> 3u 7u, "GrayscaleErode:type=UInt8:radius=3:windowSize=7", grayscaleErode<uint8> 3u 7u
-                                 "black-white-top-hat", "BlackTopHat:type=UInt8:radius=3:windowSize=7", blackTopHat<uint8> 3u 7u, "WhiteTopHat:type=UInt8:radius=3:windowSize=7", whiteTopHat<uint8> 3u 7u
-                                 "white-black-top-hat", "WhiteTopHat:type=UInt8:radius=3:windowSize=7", whiteTopHat<uint8> 3u 7u, "BlackTopHat:type=UInt8:radius=3:windowSize=7", blackTopHat<uint8> 3u 7u
-                                 "binary-contour-median", "BinaryContour:fullyConnected=false:windowSize=7", binaryContour false 7u, "BinaryMedian:radius=3:windowSize=7", binaryMedian 3u 7u
-                                 "median-contour", "BinaryMedian:radius=3:windowSize=7", binaryMedian 3u 7u, "BinaryContour:fullyConnected=false:windowSize=7", binaryContour false 7u
-                                 "morph-gradient-contour", "MorphologicalGradient:type=UInt8:radius=3:windowSize=7", morphologicalGradient<uint8> 3u 7u, "BinaryContour:fullyConnected=false:windowSize=7", binaryContour false 7u
-                                 "fill-holes-contour", "FillSmallHoles:maximumVolume=128:connectivity=TwentySix", fillSmallHoles 128UL ObjectConnectivity.TwentySix, "BinaryContour:fullyConnected=false:windowSize=7", binaryContour false 7u ]
+                                 "grayscale-erode-dilate", "GrayscaleErode:type=UInt8:radius=3:windowSize=7", grayscaleErode<uint8> 3u (Some 7u), "GrayscaleDilate:type=UInt8:radius=3:windowSize=7", grayscaleDilate<uint8> 3u (Some 7u)
+                                 "grayscale-dilate-erode", "GrayscaleDilate:type=UInt8:radius=3:windowSize=7", grayscaleDilate<uint8> 3u (Some 7u), "GrayscaleErode:type=UInt8:radius=3:windowSize=7", grayscaleErode<uint8> 3u (Some 7u)
+                                 "black-white-top-hat", "BlackTopHat:type=UInt8:radius=3:windowSize=7", blackTopHat<uint8> 3u (Some 7u), "WhiteTopHat:type=UInt8:radius=3:windowSize=7", whiteTopHat<uint8> 3u (Some 7u)
+                                 "white-black-top-hat", "WhiteTopHat:type=UInt8:radius=3:windowSize=7", whiteTopHat<uint8> 3u (Some 7u), "BlackTopHat:type=UInt8:radius=3:windowSize=7", blackTopHat<uint8> 3u (Some 7u)
+                                 "binary-contour-median", "BinaryContour:fullyConnected=false:windowSize=7", binaryContour false (Some 7u), "BinaryMedian:radius=3:windowSize=7", binaryMedian 3u (Some 7u)
+                                 "median-contour", "BinaryMedian:radius=3:windowSize=7", binaryMedian 3u (Some 7u), "BinaryContour:fullyConnected=false:windowSize=7", binaryContour false (Some 7u)
+                                 "morph-gradient-contour", "MorphologicalGradient:type=UInt8:radius=3:windowSize=7", morphologicalGradient<uint8> 3u (Some 7u), "BinaryContour:fullyConnected=false:windowSize=7", binaryContour false (Some 7u)
+                                 "fill-holes-contour", "FillSmallHoles:maximumVolume=128:connectivity=TwentySix", fillSmallHoles 128UL ObjectConnectivity.TwentySix, "BinaryContour:fullyConnected=false:windowSize=7", binaryContour false (Some 7u) ]
 
                            for name, featureA, stageA, featureB, stageB in mixedPairs do
                                yield runSinkProbe

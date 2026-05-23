@@ -1487,7 +1487,7 @@ let generatorSuite =
                       edge "signed" "output" 0 "write" "input" 0 ]
                 |> PipelineCodeGenerator.generateSavedGraph
 
-            Expect.stringContains code ">=> relabelComponents 10u 5u" "relabelComponents should lower with size threshold and window size."
+            Expect.stringContains code ">=> relabelComponents 10u (Some 5u)" "relabelComponents should lower with size threshold and window size."
             Expect.stringContains code ">=> signedDistanceBand 9u 5u" "signedDistanceBand should lower with band radius and stride."
 
         testCase "convolve lowers to StackProcessing stage" <| fun _ ->
@@ -1706,10 +1706,10 @@ let generatorSuite =
                 |> PipelineCodeGenerator.generateSavedGraph
 
             Expect.stringContains code ">=> clamp<float> 0.0 1.0" "Clamp should lower with type and bounds."
-            Expect.stringContains code ">=> smoothWMedian<float> 1u 3u" "smoothWMedian should lower with radius and window size."
-            Expect.stringContains code ">=> smoothWBilateral<float> 2.0 10.0 5u" "smoothWBilateral should lower with sigmas and window size."
+            Expect.stringContains code ">=> smoothWMedian<float> 1u (Some 3u)" "smoothWMedian should lower with radius and window size."
+            Expect.stringContains code ">=> smoothWBilateral<float> 2.0 10.0 (Some 5u)" "smoothWBilateral should lower with sigmas and window size."
             Expect.stringContains code ">=> smoothWGauss 1.0 None None None" "smoothWGauss should lower with explicit options."
-            Expect.stringContains code ">=> gradientMagnitude<float> 5u" "Gradient magnitude should lower with its window size."
+            Expect.stringContains code ">=> gradientMagnitude<float> (Some 5u)" "Gradient magnitude should lower with its window size."
 
         testCase "sum projection lowers to a Float64 image reducer" <| fun _ ->
             let read =
@@ -2056,8 +2056,8 @@ let generatorSuite =
                       edge "gray" "output" 0 "contour" "input" 0 ]
                 |> PipelineCodeGenerator.generateSavedGraph
 
-            Expect.stringContains code ">=> grayscaleErode<float> 2u 5u" "Grayscale morphology should lower with type, radius, and window size."
-            Expect.stringContains code ">=> binaryContour true 3u" "Binary contour should lower with connectivity and window size."
+            Expect.stringContains code ">=> grayscaleErode<float> 2u (Some 5u)" "Grayscale morphology should lower with type, radius, and window size."
+            Expect.stringContains code ">=> binaryContour true (Some 3u)" "Binary contour should lower with connectivity and window size."
             Expect.stringContains code ">=> removeSmallObjects 11UL ObjectConnectivity.TwentySix" "removeSmallObjects should lower with maximum volume and connectivity."
             Expect.stringContains code ">=> fillSmallHoles 13UL ObjectConnectivity.Six" "fillSmallHoles should lower with maximum volume and connectivity."
 
@@ -2089,9 +2089,9 @@ let generatorSuite =
                       edge "writeSlabSlices" "output" 0 "table" "input" 0 ]
                 |> PipelineCodeGenerator.generateSavedGraph
 
-            Expect.stringContains code ">=> connectedComponents 15u" "Connected components should produce label/count pairs."
+            Expect.stringContains code ">=> connectedComponents (Some 15u)" "Connected components should produce label/count pairs."
             Expect.stringContains code ">=> teeFst (writeSlabSlices \"tmp\" \".mha\" 15u)" "Slab-slice writing should be an explicit tee over the first tuple element."
-            Expect.stringContains code ">=> makeConnectedComponentTranslationTable 15u" "Translation table should consume the pair stream."
+            Expect.stringContains code ">=> makeConnectedComponentTranslationTable (Some 15u)" "Translation table should consume the pair stream."
             Expect.stringContains code "|> drain" "The reducer should be drained."
 
         testCase "tap connected to print becomes tapIt lambda with stream value name" <| fun _ ->

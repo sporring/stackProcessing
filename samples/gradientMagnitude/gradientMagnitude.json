@@ -11,7 +11,7 @@
     { "id": "filter", "functionId": "GradientMagnitude", "x": 300.0, "y": 120.0,
       "parameters": [
         { "key": "type", "value": "Float64", "useInput": false },
-        { "key": "windowSize", "value": "5", "useInput": false } ] },
+        { "key": "windowSize", "value": "None", "useInput": false } ] },
     { "id": "stretch", "functionId": "IntensityStretch", "x": 520.0, "y": 120.0,
       "parameters": [
         { "key": "type", "value": "Float64", "useInput": false },

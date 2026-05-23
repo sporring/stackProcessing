@@ -35,7 +35,7 @@
       "parameters": [
         { "key": "type", "value": "Float32", "useInput": false },
         { "key": "lerp", "value": "(fun a b t -> a + (b - a) * t)", "useInput": false },
-        { "key": "windowSize", "value": "16", "useInput": false },
+        { "key": "windowSize", "value": "None", "useInput": false },
         { "key": "inputGeometry", "value": "{ W = 64; H = 64; D = 16; Origin = TinyLinAlg.v3 0.0 0.0 0.0; Spacing = TinyLinAlg.v3 1.0 1.0 1.0; Direction = TinyLinAlg.identity3 }", "useInput": false },
         { "key": "outputGeometry", "value": "{ W = 64; H = 64; D = 16; Origin = TinyLinAlg.v3 0.0 0.0 0.0; Spacing = TinyLinAlg.v3 1.0 1.0 1.0; Direction = TinyLinAlg.identity3 }", "useInput": false },
         { "key": "affine", "value": "{ A = TinyLinAlg.identity3; T = TinyLinAlg.v3 0.0 0.0 0.0; C = TinyLinAlg.v3 31.5 31.5 7.5 }", "useInput": true },

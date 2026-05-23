@@ -732,7 +732,7 @@ val resampleAffineFromChunks:
 
 val resampleAffine:
   (('a -> 'a -> float32 -> 'a) ->
-     int ->
+     int option ->
      StackAffineResampler.ImageGeom ->
      StackAffineResampler.ImageGeom ->
      TinyLinAlg.Affine ->
@@ -965,51 +965,63 @@ val intensityStretch:
     when 'T: equality
 
 val smoothWMedian:
-  radius: uint32 -> winSz: uint -> Stage<Image<'T>,Image<'T>> when 'T: equality
+  radius: uint32 -> winSz: uint option -> Stage<Image<'T>,Image<'T>>
+    when 'T: equality
 
 val smoothWBilateral:
   domainSigma: double ->
-    rangeSigma: double -> winSz: uint -> Stage<Image<'T>,Image<'T>>
+    rangeSigma: double -> winSz: uint option -> Stage<Image<'T>,Image<'T>>
     when 'T: equality
 
 val gradientMagnitude:
-  winSz: uint -> Stage<Image<'T>,Image<'T>> when 'T: equality
+  winSz: uint option -> Stage<Image<'T>,Image<'T>> when 'T: equality
 
 val gradient:
   order: uint -> winSz: uint option -> Stage<Image<float>,Image<float list>>
 
-val sobelEdge: winSz: uint -> Stage<Image<'T>,Image<'T>> when 'T: equality
+val sobelEdge:
+  winSz: uint option -> Stage<Image<'T>,Image<'T>> when 'T: equality
 
-val laplacian: winSz: uint -> Stage<Image<'T>,Image<'T>> when 'T: equality
+val laplacian:
+  winSz: uint option -> Stage<Image<'T>,Image<'T>> when 'T: equality
 
 val grayscaleErode:
-  radius: uint32 -> winSz: uint -> Stage<Image<'T>,Image<'T>> when 'T: equality
+  radius: uint32 -> winSz: uint option -> Stage<Image<'T>,Image<'T>>
+    when 'T: equality
 
 val grayscaleDilate:
-  radius: uint32 -> winSz: uint -> Stage<Image<'T>,Image<'T>> when 'T: equality
+  radius: uint32 -> winSz: uint option -> Stage<Image<'T>,Image<'T>>
+    when 'T: equality
 
 val grayscaleOpening:
-  radius: uint32 -> winSz: uint -> Stage<Image<'T>,Image<'T>> when 'T: equality
+  radius: uint32 -> winSz: uint option -> Stage<Image<'T>,Image<'T>>
+    when 'T: equality
 
 val grayscaleClosing:
-  radius: uint32 -> winSz: uint -> Stage<Image<'T>,Image<'T>> when 'T: equality
+  radius: uint32 -> winSz: uint option -> Stage<Image<'T>,Image<'T>>
+    when 'T: equality
 
 val whiteTopHat:
-  radius: uint32 -> winSz: uint -> Stage<Image<'T>,Image<'T>> when 'T: equality
+  radius: uint32 -> winSz: uint option -> Stage<Image<'T>,Image<'T>>
+    when 'T: equality
 
 val blackTopHat:
-  radius: uint32 -> winSz: uint -> Stage<Image<'T>,Image<'T>> when 'T: equality
+  radius: uint32 -> winSz: uint option -> Stage<Image<'T>,Image<'T>>
+    when 'T: equality
 
 val morphologicalGradient:
-  radius: uint32 -> winSz: uint -> Stage<Image<'T>,Image<'T>> when 'T: equality
+  radius: uint32 -> winSz: uint option -> Stage<Image<'T>,Image<'T>>
+    when 'T: equality
 
 val binaryContour:
   (bool ->
-     uint -> StackCore.Stage<StackCore.Image<uint8>,StackCore.Image<uint8>>)
+     uint option ->
+     StackCore.Stage<StackCore.Image<uint8>,StackCore.Image<uint8>>)
 
 val binaryMedian:
   (uint32 ->
-     uint -> StackCore.Stage<StackCore.Image<uint8>,StackCore.Image<uint8>>)
+     uint option ->
+     StackCore.Stage<StackCore.Image<uint8>,StackCore.Image<uint8>>)
 
 val equal<'T when 'T: equality> :
   StackCore.Stage<(StackCore.Image<'T> * StackCore.Image<'T>),
@@ -1050,7 +1062,7 @@ val maskXor:
 val maskNot: StackCore.Stage<StackCore.Image<uint8>,StackCore.Image<uint8>>
 
 val labelContour:
-  fullyConnected: bool -> winSz: uint32 -> Stage<Image<'T>,Image<'T>>
+  fullyConnected: bool -> winSz: uint32 option -> Stage<Image<'T>,Image<'T>>
     when 'T: equality
 
 val changeLabel:
@@ -1339,12 +1351,14 @@ val closing:
   (uint -> StackCore.Stage<StackCore.Image<uint8>,StackCore.Image<uint8>>)
 
 val connectedComponents:
-  (uint ->
+  (uint32 option ->
      SlimPipeline.Stage<StackCore.Image<uint8>,
                         (StackCore.Image<uint64> * uint64)>)
 
 val relabelComponents:
-  (uint -> uint -> SlimPipeline.Stage<StackCore.Image<'a>,StackCore.Image<'a>>)
+  (uint ->
+     uint32 option ->
+     SlimPipeline.Stage<StackCore.Image<'a>,StackCore.Image<'a>>)
     when 'a: equality
 
 val signedDistanceBand:
@@ -1462,12 +1476,12 @@ type ConnectedComponentTranslationTable =
     StackImageFunctions.ConnectedComponentTranslationTable
 
 val makeConnectedComponentTranslationTable:
-  (uint ->
+  (uint32 option ->
      StackCore.Stage<(StackCore.Image<uint64> * uint64),
                      StackImageFunctions.ConnectedComponentTranslationTable>)
 
 val updateConnectedComponents:
-  (uint ->
+  (uint32 option ->
      StackImageFunctions.ConnectedComponentTranslationTable ->
      StackCore.Stage<StackCore.Image<uint64>,StackCore.Image<uint64>>)
 

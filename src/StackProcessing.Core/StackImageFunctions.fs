@@ -677,16 +677,13 @@ let private windowCostTags ksz winSz =
       | Some tag -> yield tag
       | None -> () ]
 
-let private fixedWindowCostTags ksz winSz =
-    windowCostTags ksz (Some winSz)
-
 let private effectiveWindowTags win =
     [ "windowSize", string win
       "effectiveWindowSize", string win ]
 
 let private makeWindowedLocalOp name ksz winSz core =
     let pad = ksz / 2u
-    let win = effectiveWindowSize name ksz (Some winSz)
+    let win = effectiveWindowSize name ksz winSz
     let stride = win - ksz + 1u
     let f debug = volFctToWindowFctReleaseAfterDebug debug core ksz pad stride
     let stg = mapWindow name f id id
@@ -698,11 +695,11 @@ let private makeWindowedOperatorOp<'T when 'T: equality>
     (operator: string)
     (radius: float option)
     (ksz: uint)
-    (winSz: uint)
+    (winSz: uint option)
     (core: Image<'T> -> Image<'T>)
     : Stage<Image<'T>, Image<'T>> =
     let pad = ksz / 2u
-    let win = effectiveWindowSize name ksz (Some winSz)
+    let win = effectiveWindowSize name ksz winSz
     let stride = win - ksz + 1u
     let f debug = volFctToWindowFctReleaseAfterDebug debug core ksz pad stride
     let memoryNeed nPixels = 2UL * nPixels * uint64 win * getBytesPerComponent<'T>
@@ -713,7 +710,7 @@ let private makeWindowedOperatorOp<'T when 'T: equality>
         |> withCostModel
             (operatorImageStageCost<'T> operator memoryModel (Some(float win)) radius costUnits
              |> withTimeTags
-                 [ yield! fixedWindowCostTags ksz winSz
+                 [ yield! windowCostTags ksz winSz
                    yield! effectiveWindowTags win
                    yield "stride", string stride
                    yield "pad", string pad ])
@@ -726,7 +723,7 @@ let smoothWMedian<'T when 'T: equality> radius winSz : Stage<Image<'T>, Image<'T
     makeWindowedOperatorOp<'T> "smoothWMedian" "SmoothWMedian" (Some(float radius)) ksz winSz (ImageFunctions.median radius)
 
 let smoothWBilateral<'T when 'T: equality> domainSigma rangeSigma winSz : Stage<Image<'T>, Image<'T>> =
-    makeWindowedOperatorOp<'T> "smoothWBilateral" "SmoothWBilateral" None (max 1u winSz) winSz (ImageFunctions.bilateral domainSigma rangeSigma)
+    makeWindowedOperatorOp<'T> "smoothWBilateral" "SmoothWBilateral" None 7u winSz (ImageFunctions.bilateral domainSigma rangeSigma)
 
 let gradientMagnitude<'T when 'T: equality> winSz : Stage<Image<'T>, Image<'T>> =
     makeWindowedOperatorOp<'T> "gradientMagnitude" "GradientMagnitude" None 3u winSz ImageFunctions.gradientMagnitude
@@ -970,7 +967,7 @@ let morphologicalGradient<'T when 'T: equality> radius winSz : Stage<Image<'T>, 
     let ksz = 2u * radius + 1u
     makeWindowedOperatorOp<'T> "morphologicalGradient" "MorphologicalGradient" (Some(float radius)) ksz winSz (ImageFunctions.morphologicalGradient radius)
 
-let binaryContour (fullyConnected: bool) (winSz: uint) =
+let binaryContour (fullyConnected: bool) winSz =
     makeWindowedOperatorOp<uint8> "binaryContour" "BinaryContour" None 3u winSz (fun image -> ImageFunctions.binaryContour fullyConnected image)
 
 let binaryMedian radius winSz =
@@ -1789,8 +1786,8 @@ let dilate radius = makeMorphOp "binaryDilate" "Dilate" radius None ImageFunctio
 let opening radius = makeMorphOp "binaryOpening" "Opening" radius None ImageFunctions.binaryOpening
 let closing radius = makeMorphOp "binaryClosing" "Closing" radius None ImageFunctions.binaryClosing
 
-let connectedComponents (winSz: uint) =
-    let winSz = effectiveWindowSize "connectedComponents" 1u (Some winSz)
+let connectedComponents winSz =
+    let winSz = effectiveWindowSize "connectedComponents" 1u winSz
     let pad, stride = 0u, winSz
     let btUint8 = typeof<uint8>|>Image.getBytesPerComponent |> uint64
     let btUint64 = typeof<uint64> |> Image.getBytesPerComponent |> uint64
@@ -1826,7 +1823,8 @@ let connectedComponents (winSz: uint) =
 
     (window winSz pad stride) --> stg
 
-let relabelComponents a (winSz: uint) = 
+let relabelComponents a winSz = 
+    let winSz = effectiveWindowSize "relabelComponents" 1u winSz
     let pad, stride = 0u, winSz
     let f debug = volFctToWindowFctReleaseAfterDebug debug (ImageFunctions.relabelComponents a) 1u pad stride
     let stg = mapWindow "relabelComponents" f id id
@@ -2144,8 +2142,9 @@ let private labelChunkStatistics chunk (labelChunk: Image<uint64>) =
         Map.empty
         labelChunk
 
-let makeConnectedComponentTranslationTable (winSz: uint) : Stage<Image<uint64> * uint64, ConnectedComponentTranslationTable> =
+let makeConnectedComponentTranslationTable winSz : Stage<Image<uint64> * uint64, ConnectedComponentTranslationTable> =
     let name = "makeConnectedComponentTranslationTable"
+    let winSz = effectiveWindowSize name 1u winSz
 
     let addBoundaryEdges graph previousChunk (previous: Image<uint64>) (current: Image<uint64>) =
         Image.fold2
@@ -2266,8 +2265,9 @@ let makeConnectedComponentTranslationTable (winSz: uint) : Stage<Image<uint64> *
 
 let trd (_,_,c) = c
 
-let updateConnectedComponents (winSz: uint) (translationTable: ConnectedComponentTranslationTable) : Stage<Image<uint64>,Image<uint64>> =
+let updateConnectedComponents winSz (translationTable: ConnectedComponentTranslationTable) : Stage<Image<uint64>,Image<uint64>> =
     let name = "updateConnectedComponents"
+    let winSz = effectiveWindowSize name 1u winSz
     let translationTableChunked = List.groupBy (fun (c,_,_) -> c) translationTable.Labels
     let translationMap =
         translationTableChunked

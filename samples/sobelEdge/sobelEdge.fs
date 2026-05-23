@@ -14,7 +14,7 @@ let main args =
 
     src
     |> read<float> input ".tiff"
-    >=> sobelEdge<float> 5u
+    >=> sobelEdge<float> None
     >=> cast<float, uint8>
     >=> write output ".tiff"
     |> sink

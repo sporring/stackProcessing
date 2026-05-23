@@ -167,6 +167,15 @@ module PipelineCodeGenerator =
         else
             $"(Some {trimmed.TrimEnd('u', 'U')}u)"
 
+    let private optionInt (value: string) =
+        let trimmed = value.Trim()
+        if System.String.IsNullOrWhiteSpace trimmed || System.String.Equals(trimmed, "None", StringComparison.OrdinalIgnoreCase) then
+            "None"
+        elif trimmed.StartsWith("Some", StringComparison.Ordinal) then
+            trimmed
+        else
+            $"(Some {trimmed})"
+
     let private optionQualified moduleName (value: string) =
         let trimmed = value.Trim()
 
@@ -714,6 +723,23 @@ module PipelineCodeGenerator =
         let parameterValue key =
             parameterValueForNode node key
 
+        let isNoneValue (value: string) =
+            let trimmed = value.Trim()
+            String.IsNullOrWhiteSpace trimmed
+            || String.Equals(trimmed, "None", StringComparison.OrdinalIgnoreCase)
+
+        let uintWindowOrDefault defaultValue value =
+            if isNoneValue value then
+                defaultValue
+            else
+                let trimmed = value.Trim()
+                let digits = trimmed.TrimEnd('u', 'U')
+
+                if digits.Length > 0 && digits |> Seq.forall Char.IsDigit then
+                    $"{digits}u"
+                else
+                    trimmed
+
         let rec inferredImagePixelType visited (targetNode: SavedNode) inputPort =
             if visited |> Set.contains targetNode.Id then
                 None
@@ -1222,7 +1248,7 @@ module PipelineCodeGenerator =
         | "WriteSlabSlices" ->
             let output = quotedParameter "output"
             let suffix = quotedParameter "suffix"
-            let windowSize = parameterValue "windowSize"
+            let windowSize = parameterValue "windowSize" |> uintWindowOrDefault "1u"
             $">=> teeFst (writeSlabSlices {output} {suffix} {windowSize})"
         | "Tap" ->
             let tapPrintNode =
@@ -1396,8 +1422,8 @@ module PipelineCodeGenerator =
             $">=> vectorAngleTo [ {x}; {y}; {z} ]"
         | "Gradient" ->
             let order = parameterValue "order"
-            let windowSize = parameterValue "windowSize"
-            $">=> gradient {order} (Some {windowSize})"
+            let windowSize = parameterValue "windowSize" |> optionUInt
+            $">=> gradient {order} {windowSize}"
         | "StructureTensor" ->
             let sigma = parameterValue "sigma"
             let rho = parameterValue "rho"
@@ -1468,60 +1494,60 @@ module PipelineCodeGenerator =
         | "SmoothWMedian" ->
             let pixelType = pixelTypeNameFromParameter "type" "Float64" node
             let radius = parameterValue "radius"
-            let windowSize = parameterValue "windowSize"
+            let windowSize = parameterValue "windowSize" |> optionUInt
             $">=> smoothWMedian<{pixelType}> {radius} {windowSize}"
         | "SmoothWBilateral" ->
             let pixelType = pixelTypeNameFromParameter "type" "Float64" node
             let domainSigma = parameterValue "domainSigma"
             let rangeSigma = parameterValue "rangeSigma"
-            let windowSize = parameterValue "windowSize"
+            let windowSize = parameterValue "windowSize" |> optionUInt
             $">=> smoothWBilateral<{pixelType}> {domainSigma} {rangeSigma} {windowSize}"
         | "GradientMagnitude" ->
             let pixelType = pixelTypeNameFromParameter "type" "Float64" node
-            let windowSize = parameterValue "windowSize"
+            let windowSize = parameterValue "windowSize" |> optionUInt
             $">=> gradientMagnitude<{pixelType}> {windowSize}"
         | "SobelEdge" ->
             let pixelType = pixelTypeNameFromParameter "type" "Float64" node
-            let windowSize = parameterValue "windowSize"
+            let windowSize = parameterValue "windowSize" |> optionUInt
             $">=> sobelEdge<{pixelType}> {windowSize}"
         | "Laplacian" ->
             let pixelType = pixelTypeNameFromParameter "type" "Float64" node
-            let windowSize = parameterValue "windowSize"
+            let windowSize = parameterValue "windowSize" |> optionUInt
             $">=> laplacian<{pixelType}> {windowSize}"
         | "GrayscaleErode" ->
             let pixelType = pixelTypeNameFromParameter "type" "Float64" node
             let radius = parameterValue "radius"
-            let windowSize = parameterValue "windowSize"
+            let windowSize = parameterValue "windowSize" |> optionUInt
             $">=> grayscaleErode<{pixelType}> {radius} {windowSize}"
         | "GrayscaleDilate" ->
             let pixelType = pixelTypeNameFromParameter "type" "Float64" node
             let radius = parameterValue "radius"
-            let windowSize = parameterValue "windowSize"
+            let windowSize = parameterValue "windowSize" |> optionUInt
             $">=> grayscaleDilate<{pixelType}> {radius} {windowSize}"
         | "GrayscaleOpening" ->
             let pixelType = pixelTypeNameFromParameter "type" "Float64" node
             let radius = parameterValue "radius"
-            let windowSize = parameterValue "windowSize"
+            let windowSize = parameterValue "windowSize" |> optionUInt
             $">=> grayscaleOpening<{pixelType}> {radius} {windowSize}"
         | "GrayscaleClosing" ->
             let pixelType = pixelTypeNameFromParameter "type" "Float64" node
             let radius = parameterValue "radius"
-            let windowSize = parameterValue "windowSize"
+            let windowSize = parameterValue "windowSize" |> optionUInt
             $">=> grayscaleClosing<{pixelType}> {radius} {windowSize}"
         | "WhiteTopHat" ->
             let pixelType = pixelTypeNameFromParameter "type" "Float64" node
             let radius = parameterValue "radius"
-            let windowSize = parameterValue "windowSize"
+            let windowSize = parameterValue "windowSize" |> optionUInt
             $">=> whiteTopHat<{pixelType}> {radius} {windowSize}"
         | "BlackTopHat" ->
             let pixelType = pixelTypeNameFromParameter "type" "Float64" node
             let radius = parameterValue "radius"
-            let windowSize = parameterValue "windowSize"
+            let windowSize = parameterValue "windowSize" |> optionUInt
             $">=> blackTopHat<{pixelType}> {radius} {windowSize}"
         | "MorphologicalGradient" ->
             let pixelType = pixelTypeNameFromParameter "type" "Float64" node
             let radius = parameterValue "radius"
-            let windowSize = parameterValue "windowSize"
+            let windowSize = parameterValue "windowSize" |> optionUInt
             $">=> morphologicalGradient<{pixelType}> {radius} {windowSize}"
         | "ImageComparison" ->
             let pixelType = pixelTypeNameFromParameter "type" "Float64" node
@@ -1532,11 +1558,11 @@ module PipelineCodeGenerator =
             ">=> maskNot"
         | "BinaryContour" ->
             let fullyConnected = parameterValue "fullyConnected"
-            let windowSize = parameterValue "windowSize"
+            let windowSize = parameterValue "windowSize" |> optionUInt
             $">=> binaryContour {fullyConnected} {windowSize}"
         | "BinaryMedian" ->
             let radius = parameterValue "radius"
-            let windowSize = parameterValue "windowSize"
+            let windowSize = parameterValue "windowSize" |> optionUInt
             $">=> binaryMedian {radius} {windowSize}"
         | "RemoveSmallObjects" ->
             let maximumVolume = parameterValue "maximumVolume"
@@ -1549,7 +1575,7 @@ module PipelineCodeGenerator =
         | "LabelContour" ->
             let pixelType = pixelTypeNameFromParameter "type" "UInt64" node
             let fullyConnected = parameterValue "fullyConnected"
-            let windowSize = parameterValue "windowSize"
+            let windowSize = parameterValue "windowSize" |> optionUInt
             $">=> labelContour<{pixelType}> {fullyConnected} {windowSize}"
         | "ChangeLabel" ->
             let pixelType = pixelTypeNameFromParameter "type" "UInt64" node
@@ -1652,11 +1678,11 @@ module PipelineCodeGenerator =
             let radius = parameterValue "radius"
             $">=> closing {radius}"
         | "ConnectedComponents" ->
-            let windowSize = parameterValue "windowSize"
+            let windowSize = parameterValue "windowSize" |> optionUInt
             $">=> connectedComponents {windowSize}"
         | "RelabelComponents" ->
             let minimumObjectSize = parameterValue "minimumObjectSize"
-            let windowSize = parameterValue "windowSize"
+            let windowSize = parameterValue "windowSize" |> optionUInt
             $">=> relabelComponents {minimumObjectSize} {windowSize}"
         | "MarchingCubes" ->
             let pixelType = pixelTypeNameFromParameter "type" "Float64" node
@@ -1732,10 +1758,10 @@ module PipelineCodeGenerator =
             let stride = parameterValue "stride"
             $">=> signedDistanceBand {bandRadius} {stride}"
         | "ComponentTranslationTable" ->
-            let windowSize = parameterValue "windowSize"
+            let windowSize = parameterValue "windowSize" |> optionUInt
             $">=> makeConnectedComponentTranslationTable {windowSize}"
         | "CollapseComponentLabels" ->
-            let windowSize = parameterValue "windowSize"
+            let windowSize = parameterValue "windowSize" |> optionUInt
             let translationTable = parameterValue "translationTable"
             $">=> updateConnectedComponents {windowSize} {translationTable}"
         | "PermuteAxes" ->
@@ -1744,7 +1770,7 @@ module PipelineCodeGenerator =
             $">=> permuteAxes {axes} {tileSize}"
         | "ResampleAffine" ->
             let lerp = parameterValue "lerp"
-            let windowSize = parameterValue "windowSize"
+            let windowSize = parameterValue "windowSize" |> optionInt
             let inputGeometry = parameterValue "inputGeometry"
             let outputGeometry = parameterValue "outputGeometry"
             let affine = parameterValue "affine"

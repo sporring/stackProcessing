@@ -2430,9 +2430,9 @@ let stackProcessingSupportSuite =
                 let table =
                     source (2UL * 1024UL * 1024UL * 1024UL)
                     |> read<uint8> inputDir suffix
-                    >=> connectedComponents 2u
+                    >=> connectedComponents (Some 2u)
                     >=> teeFst (writeSlabSlices labelDir labelSuffix 2u)
-                    >=> makeConnectedComponentTranslationTable 2u
+                    >=> makeConnectedComponentTranslationTable (Some 2u)
                     |> drain
 
                 Expect.isNonEmpty table.Labels "Connected component translation table should contain label mappings."
@@ -2953,20 +2953,20 @@ let stackProcessingSupportSuite =
                 let clampStage : Stage<Image<float32>, Image<float32>> = StackProcessing.clamp<float32> 0.0 120.0
                 let shiftScaleStage : Stage<Image<float32>, Image<float32>> = StackProcessing.shiftScale<float32> 1.0 2.0
                 let stretchStage : Stage<Image<float32>, Image<float32>> = StackProcessing.intensityStretch<float32> 0.0 200.0 0.0 1.0
-                let medianStage : Stage<Image<uint8>, Image<uint8>> = StackProcessing.smoothWMedian<uint8> 1u 3u
-                let gradientStage : Stage<Image<float32>, Image<float32>> = StackProcessing.gradientMagnitude<float32> 3u
-                let sobelStage : Stage<Image<float32>, Image<float32>> = StackProcessing.sobelEdge<float32> 3u
-                let laplacianStage : Stage<Image<float32>, Image<float32>> = StackProcessing.laplacian<float32> 3u
-                let erodeStage : Stage<Image<uint8>, Image<uint8>> = StackProcessing.grayscaleErode<uint8> 1u 3u
-                let dilateStage : Stage<Image<uint8>, Image<uint8>> = StackProcessing.grayscaleDilate<uint8> 1u 3u
-                let openingStage : Stage<Image<uint8>, Image<uint8>> = StackProcessing.grayscaleOpening<uint8> 1u 3u
-                let closingStage : Stage<Image<uint8>, Image<uint8>> = StackProcessing.grayscaleClosing<uint8> 1u 3u
-                let whiteTopHatStage : Stage<Image<uint8>, Image<uint8>> = StackProcessing.whiteTopHat<uint8> 1u 3u
-                let blackTopHatStage : Stage<Image<uint8>, Image<uint8>> = StackProcessing.blackTopHat<uint8> 1u 3u
-                let morphGradientStage : Stage<Image<uint8>, Image<uint8>> = StackProcessing.morphologicalGradient<uint8> 1u 3u
-                let binaryContourStage : Stage<Image<uint8>, Image<uint8>> = StackProcessing.binaryContour false 3u
-                let binaryMedianStage : Stage<Image<uint8>, Image<uint8>> = StackProcessing.binaryMedian 1u 3u
-                let labelContourStage : Stage<Image<uint8>, Image<uint8>> = StackProcessing.labelContour<uint8> false 3u
+                let medianStage : Stage<Image<uint8>, Image<uint8>> = StackProcessing.smoothWMedian<uint8> 1u (Some 3u)
+                let gradientStage : Stage<Image<float32>, Image<float32>> = StackProcessing.gradientMagnitude<float32> (Some 3u)
+                let sobelStage : Stage<Image<float32>, Image<float32>> = StackProcessing.sobelEdge<float32> (Some 3u)
+                let laplacianStage : Stage<Image<float32>, Image<float32>> = StackProcessing.laplacian<float32> (Some 3u)
+                let erodeStage : Stage<Image<uint8>, Image<uint8>> = StackProcessing.grayscaleErode<uint8> 1u (Some 3u)
+                let dilateStage : Stage<Image<uint8>, Image<uint8>> = StackProcessing.grayscaleDilate<uint8> 1u (Some 3u)
+                let openingStage : Stage<Image<uint8>, Image<uint8>> = StackProcessing.grayscaleOpening<uint8> 1u (Some 3u)
+                let closingStage : Stage<Image<uint8>, Image<uint8>> = StackProcessing.grayscaleClosing<uint8> 1u (Some 3u)
+                let whiteTopHatStage : Stage<Image<uint8>, Image<uint8>> = StackProcessing.whiteTopHat<uint8> 1u (Some 3u)
+                let blackTopHatStage : Stage<Image<uint8>, Image<uint8>> = StackProcessing.blackTopHat<uint8> 1u (Some 3u)
+                let morphGradientStage : Stage<Image<uint8>, Image<uint8>> = StackProcessing.morphologicalGradient<uint8> 1u (Some 3u)
+                let binaryContourStage : Stage<Image<uint8>, Image<uint8>> = StackProcessing.binaryContour false (Some 3u)
+                let binaryMedianStage : Stage<Image<uint8>, Image<uint8>> = StackProcessing.binaryMedian 1u (Some 3u)
+                let labelContourStage : Stage<Image<uint8>, Image<uint8>> = StackProcessing.labelContour<uint8> false (Some 3u)
                 let changeLabelStage : Stage<Image<uint8>, Image<uint8>> = StackProcessing.changeLabel<uint8> 255.0 128.0
                 let saltAndPepperStage : Stage<Image<float32>, Image<float32>> = StackProcessing.addSaltAndPepperNoise 0.0
                 let shotStage : Stage<Image<float32>, Image<float32>> = StackProcessing.addShotNoise 0.0

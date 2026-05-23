@@ -14,7 +14,7 @@ let main args =
 
     src
     |> read<float> input ".tiff"
-    >=> laplacian<float> 5u
+    >=> laplacian<float> None
     >=> intensityStretch<float> 0.0 255.0 0.0 255.0
     >=> cast<float, uint8>
     >=> write output ".tiff"

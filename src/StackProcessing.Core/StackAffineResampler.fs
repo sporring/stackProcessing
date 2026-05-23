@@ -265,7 +265,7 @@ let resampleAffineFromChunks (inputDir: string) (suffix: string) (lerp: 'T->'T->
 
 let resampleAffine
     (lerp: 'T -> 'T -> float32 -> 'T)
-    (chunkSize: int)
+    (chunkSize: int option)
     (inG: ImageGeom)
     (outG: ImageGeom)
     (affOutToIn: Affine)
@@ -273,7 +273,7 @@ let resampleAffine
     : Stage<Image<'T>, Image<'T>> =
 
     let name = $"resampleAffine.{typeof<'T>.Name}"
-    let chunkSize = max 1 chunkSize
+    let chunkSize = chunkSize |> Option.defaultValue 8 |> max 1
     let chunkSizeU = uint chunkSize
     let memoryNeed nPixels =
         let bytes = Image.ImageFacts.memoryBytesForType<'T> nPixels 1u

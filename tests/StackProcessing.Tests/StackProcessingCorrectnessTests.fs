@@ -763,7 +763,7 @@ let stackProcessingCorrectnessSuite =
                 let actual =
                     source (2UL * 1024UL * 1024UL * 1024UL)
                     |> read<uint8> inputDir suffix
-                    >=> connectedComponents 10u
+                    >=> connectedComponents (Some 10u)
                     |> drainList
 
                 let expected = ImageFunctions.connectedComponents volume
@@ -796,8 +796,8 @@ let stackProcessingCorrectnessSuite =
                 let actual =
                     source (2UL * 1024UL * 1024UL * 1024UL)
                     |> read<uint8> inputDir suffix
-                    >=> connectedComponents 3u
-                    >=> makeConnectedComponentTranslationTable 3u
+                    >=> connectedComponents (Some 3u)
+                    >=> makeConnectedComponentTranslationTable (Some 3u)
                     |> drain
 
                 let expectedLabels = (ImageFunctions.connectedComponents volume).Labels
@@ -827,7 +827,7 @@ let stackProcessingCorrectnessSuite =
                     suffix
                     0.5
                     labels
-                    (relabelComponents 1u 10u)
+                    (relabelComponents 1u (Some 10u))
                     (ImageFunctions.relabelComponents 1u)
             finally
                 labelsOpt |> Option.iter (fun image -> image.decRefCount())

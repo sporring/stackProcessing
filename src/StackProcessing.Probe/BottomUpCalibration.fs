@@ -346,14 +346,14 @@ let private cleanTmp options =
 
     Directory.CreateDirectory tmpRoot |> ignore
 
-let private runAnalysis options probeRoot =
+let private runAnalysis options =
     ProbeAnalysis.main
         [| "--samples-root"
            options.SamplesRoot
            "--output"
            options.AnalysisDirectory
            "--extra-json-root"
-           probeRoot
+           options.ProbeJsonRoot
            "--no-samples" |]
 
 let private runProbeGraphs options layerDir =
@@ -449,7 +449,7 @@ let main argv =
                                 exitCode <- runExit
 
                         if exitCode = 0 then
-                            let analysisExit = runAnalysis options probeRoot
+                            let analysisExit = runAnalysis options
                             if analysisExit <> 0 then
                                 eprintfn "bottom-up analysis failed with exit code %d" analysisExit
                                 exitCode <- analysisExit

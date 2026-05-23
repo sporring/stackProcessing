@@ -1549,7 +1549,7 @@ module BuiltInCatalog =
           Outputs = [ makePort "Vector Float64" vectorImageFloat64 ]
           Parameters =
             [ makeParameter "order" "Order" "1" (BasicType.Numeric UInt32)
-              makeParameter "windowSize" "Window size" "3" (BasicType.Numeric UInt32) ] }
+              makeParameter "windowSize" "Window size" "None" BasicType.String ] }
 
         { Id = "StructureTensor"
           DisplayName = "structureTensor"
@@ -1721,7 +1721,7 @@ module BuiltInCatalog =
           Parameters =
               [ makeParameter "type" "Type" "Float64" BasicType.String
                 makeParameter "radius" "Radius" "1" (BasicType.Numeric UInt32)
-                makeParameter "windowSize" "Window size" "3" (BasicType.Numeric UInt32) ] }
+                makeParameter "windowSize" "Window size" "None" BasicType.String ] }
 
         { Id = "SmoothWBilateral"
           DisplayName = "smoothWBilateral"
@@ -1735,7 +1735,7 @@ module BuiltInCatalog =
               [ makeParameter "type" "Type" "Float64" BasicType.String
                 makeParameter "domainSigma" "Domain sigma" "2.0" (BasicType.Numeric Float64)
                 makeParameter "rangeSigma" "Range sigma" "50.0" (BasicType.Numeric Float64)
-                makeParameter "windowSize" "Window size" "7" (BasicType.Numeric UInt32) ] }
+                makeParameter "windowSize" "Window size" "None" BasicType.String ] }
 
         { Id = "GradientMagnitude"
           DisplayName = "gradientMagnitude"
@@ -1747,7 +1747,7 @@ module BuiltInCatalog =
           Outputs = [ makePort "Number" imageAny ]
           Parameters =
               [ makeParameter "type" "Type" "Float64" BasicType.String
-                makeParameter "windowSize" "Window size" "3" (BasicType.Numeric UInt32) ] }
+                makeParameter "windowSize" "Window size" "None" BasicType.String ] }
 
         { Id = "SobelEdge"
           DisplayName = "sobelEdge"
@@ -1759,7 +1759,7 @@ module BuiltInCatalog =
           Outputs = [ makePort "Number" imageAny ]
           Parameters =
               [ makeParameter "type" "Type" "Float64" BasicType.String
-                makeParameter "windowSize" "Window size" "3" (BasicType.Numeric UInt32) ] }
+                makeParameter "windowSize" "Window size" "None" BasicType.String ] }
 
         { Id = "Laplacian"
           DisplayName = "laplacian"
@@ -1771,7 +1771,7 @@ module BuiltInCatalog =
           Outputs = [ makePort "Number" imageAny ]
           Parameters =
               [ makeParameter "type" "Type" "Float64" BasicType.String
-                makeParameter "windowSize" "Window size" "3" (BasicType.Numeric UInt32) ] }
+                makeParameter "windowSize" "Window size" "None" BasicType.String ] }
 
         { Id = "ImageComparison"
           DisplayName = "I cmp J"
@@ -1816,7 +1816,7 @@ module BuiltInCatalog =
           Parameters =
               [ makeParameter "type" "Type" "Float64" BasicType.String
                 makeParameter "radius" "Radius" "1" (BasicType.Numeric UInt32)
-                makeParameter "windowSize" "Window size" "3" (BasicType.Numeric UInt32) ] }
+                makeParameter "windowSize" "Window size" "None" BasicType.String ] }
 
         { Id = "GrayscaleDilate"
           DisplayName = "grayscaleDilate"
@@ -1829,7 +1829,7 @@ module BuiltInCatalog =
           Parameters =
               [ makeParameter "type" "Type" "Float64" BasicType.String
                 makeParameter "radius" "Radius" "1" (BasicType.Numeric UInt32)
-                makeParameter "windowSize" "Window size" "3" (BasicType.Numeric UInt32) ] }
+                makeParameter "windowSize" "Window size" "None" BasicType.String ] }
 
         { Id = "GrayscaleOpening"
           DisplayName = "grayscaleOpening"
@@ -1842,7 +1842,7 @@ module BuiltInCatalog =
           Parameters =
               [ makeParameter "type" "Type" "Float64" BasicType.String
                 makeParameter "radius" "Radius" "1" (BasicType.Numeric UInt32)
-                makeParameter "windowSize" "Window size" "3" (BasicType.Numeric UInt32) ] }
+                makeParameter "windowSize" "Window size" "None" BasicType.String ] }
 
         { Id = "GrayscaleClosing"
           DisplayName = "grayscaleClosing"
@@ -1855,7 +1855,7 @@ module BuiltInCatalog =
           Parameters =
               [ makeParameter "type" "Type" "Float64" BasicType.String
                 makeParameter "radius" "Radius" "1" (BasicType.Numeric UInt32)
-                makeParameter "windowSize" "Window size" "3" (BasicType.Numeric UInt32) ] }
+                makeParameter "windowSize" "Window size" "None" BasicType.String ] }
 
         { Id = "WhiteTopHat"
           DisplayName = "whiteTopHat"
@@ -1868,7 +1868,7 @@ module BuiltInCatalog =
           Parameters =
               [ makeParameter "type" "Type" "Float64" BasicType.String
                 makeParameter "radius" "Radius" "1" (BasicType.Numeric UInt32)
-                makeParameter "windowSize" "Window size" "3" (BasicType.Numeric UInt32) ] }
+                makeParameter "windowSize" "Window size" "None" BasicType.String ] }
 
         { Id = "BlackTopHat"
           DisplayName = "blackTopHat"
@@ -1881,7 +1881,7 @@ module BuiltInCatalog =
           Parameters =
               [ makeParameter "type" "Type" "Float64" BasicType.String
                 makeParameter "radius" "Radius" "1" (BasicType.Numeric UInt32)
-                makeParameter "windowSize" "Window size" "3" (BasicType.Numeric UInt32) ] }
+                makeParameter "windowSize" "Window size" "None" BasicType.String ] }
 
         { Id = "MorphologicalGradient"
           DisplayName = "morphologicalGradient"
@@ -1894,7 +1894,7 @@ module BuiltInCatalog =
           Parameters =
               [ makeParameter "type" "Type" "Float64" BasicType.String
                 makeParameter "radius" "Radius" "1" (BasicType.Numeric UInt32)
-                makeParameter "windowSize" "Window size" "3" (BasicType.Numeric UInt32) ] }
+                makeParameter "windowSize" "Window size" "None" BasicType.String ] }
 
         { Id = "BinaryContour"
           DisplayName = "binaryContour"
@@ -1906,7 +1906,7 @@ module BuiltInCatalog =
           Outputs = [ makePort "UInt8" imageUInt8 ]
           Parameters =
               [ makeParameter "fullyConnected" "Fully connected" "false" BasicType.Bool
-                makeParameter "windowSize" "Window size" "3" (BasicType.Numeric UInt32) ] }
+                makeParameter "windowSize" "Window size" "None" BasicType.String ] }
 
         { Id = "BinaryMedian"
           DisplayName = "binaryMedian"
@@ -1918,7 +1918,7 @@ module BuiltInCatalog =
           Outputs = [ makePort "UInt8" imageUInt8 ]
           Parameters =
               [ makeParameter "radius" "Radius" "1" (BasicType.Numeric UInt32)
-                makeParameter "windowSize" "Window size" "3" (BasicType.Numeric UInt32) ] }
+                makeParameter "windowSize" "Window size" "None" BasicType.String ] }
 
         { Id = "RemoveSmallObjects"
           DisplayName = "removeSmallObjects"
@@ -2007,7 +2007,7 @@ module BuiltInCatalog =
           Aliases = [ "components"; "labels"; "segmentation" ]
           Inputs = [ makePort "UInt8" imageUInt8 ]
           Outputs = [ makePort "Labels + count" connectedComponentLabels ]
-          Parameters = [ makeParameter "windowSize" "Window size" "3" (BasicType.Numeric UInt32) ] }
+          Parameters = [ makeParameter "windowSize" "Window size" "None" BasicType.String ] }
 
         { Id = "StreamConnectedObjects"
           DisplayName = "streamConnectedObjects"
@@ -2082,7 +2082,7 @@ module BuiltInCatalog =
           Outputs = [ makePort "UInt64" imageUInt64 ]
           Parameters =
               [ makeParameter "minimumObjectSize" "Minimum object size" "1" (BasicType.Numeric UInt32)
-                makeParameter "windowSize" "Window size" "3" (BasicType.Numeric UInt32) ] }
+                makeParameter "windowSize" "Window size" "None" BasicType.String ] }
 
         { Id = "MarchingCubes"
           DisplayName = "marchingCubes"
@@ -2247,7 +2247,7 @@ module BuiltInCatalog =
           Aliases = [ "connected"; "components"; "translation"; "table"; "statistics"; "stats"; "reducer"; "labels" ]
           Inputs = [ makePort "Labels + count" connectedComponentLabels ]
           Outputs = [ makePort "TranslationTable" translationTable ]
-          Parameters = [ makeParameter "windowSize" "Window size" "3" (BasicType.Numeric UInt32) ] }
+          Parameters = [ makeParameter "windowSize" "Window size" "None" BasicType.String ] }
 
         { Id = "CollapseComponentLabels"
           DisplayName = "collapseComponentLabels"
@@ -2258,7 +2258,7 @@ module BuiltInCatalog =
           Inputs = [ makePort "UInt64" imageUInt64 ]
           Outputs = [ makePort "UInt64" imageUInt64 ]
           Parameters =
-              [ makeParameter "windowSize" "Window size" "3" (BasicType.Numeric UInt32)
+              [ makeParameter "windowSize" "Window size" "None" BasicType.String
                 makeParameter "translationTable" "Translation table" "" BasicType.String ] }
 
         { Id = "LabelContour"
@@ -2272,7 +2272,7 @@ module BuiltInCatalog =
           Parameters =
               [ makeParameter "type" "Type" "UInt64" BasicType.String
                 makeParameter "fullyConnected" "Fully connected" "false" BasicType.Bool
-                makeParameter "windowSize" "Window size" "3" (BasicType.Numeric UInt32) ] }
+                makeParameter "windowSize" "Window size" "None" BasicType.String ] }
 
         { Id = "ChangeLabel"
           DisplayName = "changeLabel"
@@ -2351,7 +2351,7 @@ module BuiltInCatalog =
           Parameters =
               [ makeParameter "type" "Type" "Float32" BasicType.String
                 makeParameter "lerp" "Lerp" "(fun a b t -> a + (b - a) * t)" BasicType.String
-                makeParameter "windowSize" "Window size" "8" (BasicType.Numeric Int32)
+                makeParameter "windowSize" "Window size" "None" BasicType.String
                 makeParameter "inputGeometry" "Input geometry" "{ W = 64; H = 64; D = 64; Origin = TinyLinAlg.v3 0.0 0.0 0.0; Spacing = TinyLinAlg.v3 1.0 1.0 1.0; Direction = { m00 = 1.0; m01 = 0.0; m02 = 0.0; m10 = 0.0; m11 = 1.0; m12 = 0.0; m20 = 0.0; m21 = 0.0; m22 = 1.0 } }" BasicType.String
                 makeParameter "outputGeometry" "Output geometry" "{ W = 64; H = 64; D = 64; Origin = TinyLinAlg.v3 0.0 0.0 0.0; Spacing = TinyLinAlg.v3 1.0 1.0 1.0; Direction = { m00 = 1.0; m01 = 0.0; m02 = 0.0; m10 = 0.0; m11 = 1.0; m12 = 0.0; m20 = 0.0; m21 = 0.0; m22 = 1.0 } }" BasicType.String
                 makeParameter "affine" "Affine" "{ A = { m00 = 1.0; m01 = 0.0; m02 = 0.0; m10 = 0.0; m11 = 1.0; m12 = 0.0; m20 = 0.0; m21 = 0.0; m22 = 1.0 }; T = TinyLinAlg.v3 0.0 0.0 0.0; C = TinyLinAlg.v3 0.0 0.0 0.0 }" BasicType.String
