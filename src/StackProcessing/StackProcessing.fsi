@@ -1382,6 +1382,10 @@ val slabToWindow<'T when 'T: equality> :
   StackCore.Stage<StackCore.Image<'T>,StackCore.Window<StackCore.Image<'T>>>
     when 'T: equality
 
+val windowSkipTakeM:
+  outputStart: uint ->
+    outputCount: uint32 -> StackCore.Stage<StackCore.Window<'a>,'a list>
+
 val slabSkipTakeM<'T when 'T: equality> :
   (uint ->
      uint32 ->

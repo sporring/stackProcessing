@@ -1264,26 +1264,6 @@ let computeStats () =
 open type ImageFunctions.OutputRegionMode
 open type ImageFunctions.BoundaryCondition
 
-let stackFUnstack f (images: Image<'T> list) =
-    let stck = images |> ImageFunctions.stack 
-    stck |> releaseAfter (f >> ImageFunctions.unstack)
-
-let skipNTakeM (n: uint) (m: uint) (lst: 'a list) : 'a list =
-    let m = uint lst.Length - 2u*n;
-    if m = 0u then []
-    else lst |> List.skip (int n) |> List.take (int m) // This needs releaseAfter!!!
-
-let stackFUnstackTrim trim (f: Image<'T>->Image<'S>) (images: Image<'T> list) =
-    let stck = images |> ImageFunctions.stack 
-    let result = 
-        let volRes = f stck
-        stck.decRefCount()
-        let m = uint images.Length - 2u*trim // last stack may be smaller if stride > 1
-        let imageLst = ImageFunctions.unstackSkipNTakeM trim m volRes
-        volRes.decRefCount()
-        imageLst
-    result
-
 let smoothWGauss (sigma: float) (outputRegionMode: ImageFunctions.OutputRegionMode option) (boundaryCondition: ImageFunctions.BoundaryCondition option) (winSz: uint option) : Stage<Image<float>, Image<float>> =
     let ksz = ImageFunctions.defaultGaussWindowSize sigma
     let kernel = ImageFunctions.gauss 3u sigma (Some ksz)
@@ -1592,12 +1572,12 @@ let connectedComponents winSz =
         let str = uint64 stride
         max (nPixels*(wsz*(2UL*bt8+bt64)-str*bt8)) (nPixels*(wsz*(bt8+bt64)+str*(bt64-bt8)))
 
-    let mapper (_debug: bool) (chunkIndex: int64) (window: Window<Image<uint8>>) : Image<uint64> * uint64 =
-        let images = window.Items
-        let stack = ImageFunctions.stack images
-        images |> List.take (min (int stride) images.Length) |> List.iter (fun image -> image.decRefCount())
-        let result = ImageFunctions.connectedComponents stack
-        stack.decRefCount()
+    let mapper (_debug: bool) (chunkIndex: int64) (slab: Image<uint8>) : Image<uint64> * uint64 =
+        let result =
+            try
+                ImageFunctions.connectedComponents slab
+            finally
+                slab.decRefCount()
         result.Labels.index <- int chunkIndex * int stride
         result.Labels, result.ObjectCount
 
@@ -1607,7 +1587,7 @@ let connectedComponents winSz =
         Stage.mapi "connectedComponents" mapper memoryNeed id
         |> withCostModel (imageOperatorCost<uint8> "ConnectedComponents" Map memoryModel (Some(float winSz)) None None None [] costUnits)
 
-    (window winSz pad stride) --> stg
+    (window winSz pad stride) --> windowToSlab<uint8> --> stg
 
 let relabelComponents a winSz = 
     let winSz = effectiveWindowSize "relabelComponents" 1u winSz
@@ -2092,26 +2072,25 @@ let permuteAxes (i: uint, j: uint, k: uint) (winSz: uint): Stage<Image<'T>,Image
         let tmpDir = getUnusedDirectoryName "tmp"
         let tmpSuffix = ".tiff"
 
-        let mapper (chunkInfo: ChunkInfo) (debug: bool) (idx: int): Image<'T> list = 
-            let slab = _readSlabStacked<'T> tmpDir tmpSuffix chunkInfo k (int idx)
-            let sz = slab.GetSize ()
-            let stack =  ImageFunctions.unstack k slab
-            slab.decRefCount()
-            let res = 
-                if j < i then // since we use unstack, we need to transpose some
-                    stack 
-                    |> List.map (fun im -> 
-                        let trnsp = ImageFunctions.permuteAxes [1u;0u;2u] im
-                        im.decRefCount()
-                        trnsp)
-                else
-                    stack
-            res
-
         let mutable chunkInfo : ChunkInfo = {chunks = [0;0;0] ; size = [0UL;0UL;0UL]; topLeftInfo = {dimensions = 0u; size = [0UL;0UL;0UL]; componentType = ""; numberOfComponents = 0u}}
         let memPeak = 256UL // surrugate string length
         let memoryNeed = fun _ -> memPeak
         let elementTransformation = fun _ -> chunkInfo.chunks[int k] |> uint64
+
+        let readSlabStage =
+            Stage.map name (fun _ idx -> _readSlabStacked<'T> tmpDir tmpSuffix chunkInfo k idx) memoryNeed id
+
+        let transposeSlicesStage =
+            Stage.map
+                name
+                (fun _ stack ->
+                    stack
+                    |> List.map (fun im ->
+                        let trnsp = ImageFunctions.permuteAxes [1u;0u;2u] im
+                        im.decRefCount()
+                        trnsp))
+                memoryNeed
+                id
 
         (writeChunks tmpDir tmpSuffix winSz winSz winSz)
         --> cleanStage name (fun () -> StackIO.deleteIfExists tmpDir) 
@@ -2119,5 +2098,8 @@ let permuteAxes (i: uint, j: uint, k: uint) (winSz: uint): Stage<Image<'T>,Image
         --> Stage.map name (fun _ _ -> chunkInfo <- getChunkInfo tmpDir tmpSuffix) memoryNeed elementTransformation // insert side-effect
         --> Stage.map name (fun _ _ -> [0..(chunkInfo.chunks[int k]-1)]) memoryNeed elementTransformation
         --> flattenList () // expand to a new, non-empty stream
-        --> Stage.map name (fun debug idx -> mapper chunkInfo debug idx) memoryNeed elementTransformation // mapper chunkInfo does not work, since argument is copied at compile time
+        --> readSlabStage
+        --> slabToWindowAlong<'T> k
+        --> windowItems ()
+        --> (if j < i then transposeSlicesStage else identityStage name)
         --> flattenList ()

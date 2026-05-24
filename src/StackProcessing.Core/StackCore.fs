@@ -455,15 +455,15 @@ let windowToSlab<'T when 'T: equality> : Stage<Window<Image<'T>>, Image<'T>> =
 
     Stage.map "windowToSlab" mapper memoryNeed id
 
-let slabToWindow<'T when 'T: equality> : Stage<Image<'T>, Window<Image<'T>>> =
+let slabToWindowAlong<'T when 'T: equality> axis : Stage<Image<'T>, Window<Image<'T>>> =
     let mapper (_debug: bool) (slab: Image<'T>) =
         let items =
             try
-                if slab.GetDimensions() < 3u then
+                if slab.GetDimensions() <= axis then
                     slab.incRefCount()
                     [ slab ]
                 else
-                    ImageFunctions.unstack 2u slab
+                    ImageFunctions.unstack axis slab
             finally
                 slab.decRefCount()
 
@@ -472,10 +472,13 @@ let slabToWindow<'T when 'T: equality> : Stage<Image<'T>, Window<Image<'T>>> =
     let memoryNeed nPixels = 2UL * nPixels * (typeof<'T> |> Image.getBytesPerComponent |> uint64)
     Stage.map "slabToWindow" mapper memoryNeed id
 
-let slabSkipTakeM<'T when 'T: equality> outputStart outputCount : Stage<Window<Image<'T>>, Image<'T> list> =
-    let mapper (_debug: bool) (window: Window<Image<'T>>) =
+let slabToWindow<'T when 'T: equality> : Stage<Image<'T>, Window<Image<'T>>> =
+    slabToWindowAlong<'T> 2u
+
+let windowSkipTakeMReleaseAfterWithMemory outputStart outputCount releaseItem memoryNeed : Stage<Window<'T>, 'T list> =
+    let mapper (_debug: bool) (window: Window<'T>) =
         if outputCount = 0u || int outputStart >= window.Items.Length then
-            releaseWindowItems window.Items
+            window.Items |> List.iter releaseItem
             []
         else
             let selected =
@@ -488,14 +491,26 @@ let slabSkipTakeM<'T when 'T: equality> outputStart outputCount : Stage<Window<I
                 selected
                 |> List.exists (fun selectedImage -> Object.ReferenceEquals(selectedImage, image))
                 |> not)
-            |> releaseWindowItems
+            |> List.iter releaseItem
 
             selected
 
+    Stage.map "windowSkipTakeM" mapper memoryNeed id
+
+let windowSkipTakeMReleaseAfter outputStart outputCount releaseItem : Stage<Window<'T>, 'T list> =
+    let memoryNeed nElements = nElements * uint64 (max 1u outputCount)
+    windowSkipTakeMReleaseAfterWithMemory outputStart outputCount releaseItem memoryNeed
+
+let windowSkipTakeM outputStart outputCount : Stage<Window<'T>, 'T list> =
+    windowSkipTakeMReleaseAfter outputStart outputCount ignore
+
+let windowItems () : Stage<Window<'T>, 'T list> =
+    Stage.map "windowItems" (fun _ (window: Window<'T>) -> window.Items) id id
+
+let slabSkipTakeM<'T when 'T: equality> outputStart outputCount : Stage<Window<Image<'T>>, Image<'T> list> =
     let memoryNeed nPixels =
         2UL * nPixels * uint64 (max 1u outputCount) * (typeof<'T> |> Image.getBytesPerComponent |> uint64)
-
-    Stage.map "slabSkipTakeM" mapper memoryNeed id
+    windowSkipTakeMReleaseAfterWithMemory outputStart outputCount (fun (image: Image<'T>) -> image.decRefCount()) memoryNeed
 
 let mapWindow (name: string) (f: bool -> Window<'T> -> 'S) memoryNeed elementTransformation =
     Stage.map name (fun debug (window: Window<'T>) -> f debug window) memoryNeed elementTransformation

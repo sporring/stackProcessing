@@ -1353,16 +1353,9 @@ let readSlabStacked<'T when 'T: equality> (inputDir: string) (suffix: string) (p
     |> Plan.withSourcePeek sourcePeek
 
 let readSlabAsWindows<'T when 'T: equality> (inputDir: string) (suffix: string) (pl: Plan<unit, unit>) : Plan<unit, Image<'T> list> =
-    let memoryNeed = fun _ -> 256UL
-    let elementTransformation = id
-    let unstackSlab (slab: Image<'T>) =
-        let result = ImageFunctions.unstack 2u slab
-        slab.decRefCount()
-        result
-
     pl
     |> readSlabStacked<'T> inputDir suffix
-    >=> Stage.map $"readSlabAsWindows.{typeof<'T>.Name}" (fun _ slab -> unstackSlab slab) memoryNeed elementTransformation
+    >=> (slabToWindow<'T> --> windowItems ())
 
 let readSlab<'T when 'T: equality> (inputDir: string) (suffix: string) (pl: Plan<unit, unit>) : Plan<unit, Image<'T>> =
     pl |> readSlabAsWindows<'T> inputDir suffix >=> flattenList ()
@@ -1460,16 +1453,9 @@ let readZarrSlab<'T when 'T: equality>
     (pl: Plan<unit, unit>)
     : Plan<unit, Image<'T>> =
 
-    let memoryNeed = fun _ -> 256UL
-    let elementTransformation = id
-    let unstackSlab (slab: Image<'T>) =
-        let result = ImageFunctions.unstack 2u slab
-        slab.decRefCount()
-        result
-
     pl
     |> readZarrSlabStacked<'T> path slabDepth multiscaleIndex datasetIndex timepoint channel maxParallelChunks
-    >=> Stage.map $"readZarrSlab.{typeof<'T>.Name}" (fun _ slab -> unstackSlab slab) memoryNeed elementTransformation
+    >=> (slabToWindow<'T> --> windowItems ())
     >=> flattenList ()
 
 let readZarrRandom<'T when 'T: equality>
@@ -1741,16 +1727,9 @@ let readNexusSlab<'T when 'T: equality>
     (pl: Plan<unit, unit>)
     : Plan<unit, Image<'T>> =
 
-    let memoryNeed = fun _ -> 256UL
-    let elementTransformation = id
-    let unstackSlab (slab: Image<'T>) =
-        let result = ImageFunctions.unstack 2u slab
-        slab.decRefCount()
-        result
-
     pl
     |> readNexusSlabStacked<'T> path datasetPath slabDepth frameAxis yAxis xAxis
-    >=> Stage.map $"readNexusSlab.{typeof<'T>.Name}" (fun _ slab -> unstackSlab slab) memoryNeed elementTransformation
+    >=> (slabToWindow<'T> --> windowItems ())
     >=> flattenList ()
 
 let readNexusRandom<'T when 'T: equality>

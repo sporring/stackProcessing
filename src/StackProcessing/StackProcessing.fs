@@ -352,6 +352,7 @@ let signedDistanceBand = StackImageFunctions.signedDistanceBand
 let threshold = StackImageFunctions.threshold
 let windowToSlab<'T when 'T: equality> = StackCore.windowToSlab<'T>
 let slabToWindow<'T when 'T: equality> = StackCore.slabToWindow<'T>
+let windowSkipTakeM outputStart outputCount = StackCore.windowSkipTakeM outputStart outputCount
 let slabSkipTakeM<'T when 'T: equality> = StackCore.slabSkipTakeM<'T>
 let windowedViaSlab<'S, 'T when 'S: equality and 'T: equality> = StackImageFunctions.windowedViaSlab<'S, 'T>
 let windowSlabRoundtrip<'T when 'T: equality> = StackImageFunctions.windowSlabRoundtrip<'T>

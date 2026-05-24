@@ -805,6 +805,21 @@ let stackProcessingCorrectnessSuite =
             finally
                 volume.decRefCount()
 
+        testCase "streamed permuteAxes yz swap matches direct 3D permuteAxes" <| fun _ ->
+            let suffix = ".tiff"
+            let volume = makePositiveFloat32Volume 8
+
+            try
+                assertStreamingMatchesDirect
+                    "permute-axes-yz"
+                    suffix
+                    0.5
+                    volume
+                    (permuteAxes (0u, 2u, 1u) 4u)
+                    (ImageFunctions.permuteAxes [0u; 2u; 1u])
+            finally
+                volume.decRefCount()
+
         testCase "streamed computeStats matches direct 3D computeStats" <| fun _ ->
             let inputDir = tempDirectory "compute-stats-input"
             let suffix = ".tiff"
