@@ -271,21 +271,30 @@ dotnet run --project src/StackProcessing.RunSamples/RunSamples.fsproj -- --json 
 `StackProcessing.Probe` is the front door for cost-model work. Probe now keeps
 measurement collection and model fitting separate. Collection appends durable
 raw measurements to `measurements/stackprocessing-probe.jsonl`; fitting can then
-select any subset of that evidence without rerunning the same probe graphs.
+select any subset of that evidence without rerunning the same probe graphs. The
+measurement store is deliberately ignored by git because it can grow quickly.
 
 The intended control split is:
 
-* `collect` proposes/runs probe programs for a selected ladder family or member
-  and logs the raw evidence;
+* `collect` proposes/runs probe programs for a selected ladder family, member,
+  or inspect-generated request and logs the raw evidence;
 * `fit` reads selected evidence from the measurement store and writes a fitted
   model plus diagnostics;
-* `inspect` summarizes stored coverage and suggests the next collection step.
+* `inspect` summarizes stored coverage, evaluates fit quality in the selected
+  scope, and can write a request JSON for the next `collect --request` run.
 
-The calibration ladder is:
+The implicit calibration ladder is:
 
 ```text
 io -> io-cast -> sources -> singleton -> neighbourhood -> geometry -> fourier -> keypoints -> dependency -> reducers
 ```
+
+There is also an explicit `window-slab` family for measuring window-to-slab,
+slab-to-window, and z-agnostic singleton-on-slab scaffolding. It is intentionally
+not included by `fit --up-to`, `inspect --max-step`, or the implicit fit
+selector for `--family all`, because those measurements are useful for
+implementation experiments but can otherwise blur the ordinary operator fit.
+Request it by name when you want it.
 
 The usual workflow is:
 
@@ -296,8 +305,8 @@ The usual workflow is:
 4. move upward through `io-cast`, `singleton`, and `neighbourhood` only when the
    lower layer looks plausible,
 5. run the sample suite with discrepancy reporting enabled,
-6. use `inspect`/`collect --member ...` or `local-update` for compact targeted
-   evidence around flagged operators.
+6. use `inspect --suggest ...` followed by `collect --request ...`, or
+   `local-update`, for compact targeted evidence around flagged operators.
 
 ```bash
 rm -rf tmp/*
@@ -311,13 +320,15 @@ dotnet run --project src/StackProcessing.Probe/StackProcessing.Probe.fsproj -- \
 dotnet run --project src/StackProcessing.Probe/StackProcessing.Probe.fsproj -- \
   fit --up-to io
 dotnet run --project src/StackProcessing.Probe/StackProcessing.Probe.fsproj -- \
-  inspect --max-step io --min-repeats 3
+  inspect --max-step io --min-repeats 3 --suggest tmp/inspect/io-request.json
 dotnet run --project src/StackProcessing.Probe/StackProcessing.Probe.fsproj -- \
   collect --family io-cast \
   --shapes 256x256x256,512x512x128,1024x1024x64 \
   --noisy-type Float32 --repeat 3 -j 1
 dotnet run --project src/StackProcessing.Probe/StackProcessing.Probe.fsproj -- \
   fit --up-to io-cast
+dotnet run --project src/StackProcessing.Probe/StackProcessing.Probe.fsproj -- \
+  inspect --max-step io-cast --min-repeats 3 --suggest tmp/inspect/io-cast-request.json
 rm -f tmp/costDiscrepancies.csv
 dotnet run --project src/StackProcessing.RunSamples/RunSamples.fsproj -- \
   --skip-build --repeat 1 -j 1 --debug-level 1 --cost-discrepancies \
@@ -325,6 +336,13 @@ dotnet run --project src/StackProcessing.RunSamples/RunSamples.fsproj -- \
   --cost-model models/fitted/stackprocessing.operator-cost.json --no-optimize
 dotnet run --project src/StackProcessing.Probe/StackProcessing.Probe.fsproj -- \
   local-update --shape 256x256x256 --repeat 3 -j 1
+```
+
+When `inspect` writes a request, collect it directly:
+
+```bash
+dotnet run --project src/StackProcessing.Probe/StackProcessing.Probe.fsproj -- \
+  collect --request tmp/inspect/io-cast-request.json -j 1
 ```
 
 `--sizes` is a cubic shortcut. For rectangular volumes, use `--shape` or
@@ -336,10 +354,15 @@ dotnet run --project src/StackProcessing.Probe/StackProcessing.Probe.fsproj -- \
   collect --all --shapes 256x256x256,512x512x128,1024x1024x64 --noisy-type Float32 --repeat 3 -j 1
 ```
 
-For slower model development, use explicit phases instead of running every
+For fitting and inspection, `all` follows the implicit ladder and excludes
+`window-slab`. Collection is lower-level: `collect --all` delegates to the
+bottom-up probe phases and includes every phase. Prefer explicit `--family`
+collections when building the model slowly.
+
+For slower model development, use explicit families instead of running every
 stage class at once. Because `collect` appends to the durable measurement store
 and `fit` selects from it, later model experiments do not require recollecting
-IO unless `inspect` reports missing or stale evidence:
+IO unless `inspect` reports missing, stale, or poor-quality evidence:
 
 ```bash
 dotnet run --project src/StackProcessing.Probe/StackProcessing.Probe.fsproj -- \
@@ -368,18 +391,19 @@ The controlled collection path clears repository `tmp/` by default, generates
 its own binary shape and noisy gray-valued input stacks below
 `tmp/probeInputs`, and writes controlled graph batches below
 `tmp/probingGraphs/bottomup_*/layer_###_*`. The first layer measures empty,
-minimal traversal, read, and write patterns; later layers add sources,
-scalar/unary stages, windowed stages, geometry, FFT/vector/keypoint probes, and
-dependency-breakers for under-isolated features. Probe writes normalized fitting
-evidence to `tmp/analysis/costEvidence.csv` and appends durable raw measurements
-to `measurements/stackprocessing-probe.jsonl`. `fit` writes the reusable fitted
+minimal traversal, read, write, and typed IO patterns; later layers add
+sources, scalar/unary stages, optional window-slab scaffolding, neighbourhood
+stages, geometry, FFT/vector/keypoint probes, and dependency-breakers for
+under-isolated features. Probe writes normalized fitting evidence to
+`tmp/analysis/costEvidence.csv` and appends durable raw measurements to
+`measurements/stackprocessing-probe.jsonl`. `fit` writes the reusable fitted
 operator model to `models/fitted/stackprocessing.operator-cost.json`. The
 repository fallback model lives in `models/default/stackprocessing.operator-cost.json`,
 and targeted updates are written to `models/local/stackprocessing.operator-cost.json`.
 Use `collect --family` to restrict controlled collection to `io`, `io-cast`,
-`sources`, `singleton`, `neighbourhood`, `geometry`, `fourier`, `keypoints`,
-`dependency`, `reducers`, or `all`. Use `--keep-tmp` only when deliberately
-preserving existing generated scratch files.
+`sources`, `singleton`, `window-slab`, `neighbourhood`, `geometry`, `fourier`,
+`keypoints`, `dependency`, `reducers`, or `all`. Use `--keep-tmp` only when
+deliberately preserving existing generated scratch files.
 
 During fitting, the empty graph defines the common intercept and `Ignore` is
 fixed at zero cost. This keeps the baseline from being absorbed into the
@@ -387,10 +411,11 @@ minimal traversal sink and gives read/write/stage estimates a stable anchor.
 
 For timing calibration, prefer `-j 1` so sample and probe graphs do not compete
 for CPU, memory bandwidth, or SimpleITK worker threads. Calibration and
-validation runs should keep the optimizer off; `Probe bottom-up` and
-`Probe local-update` pass `--optimize false` when they run emitted probe graphs.
-Do not clean `tmp/` during a single calibration or local-update command: the
-timestamped `runJson_*` directories are the measurement evidence used by Probe.
+validation runs should keep the optimizer off; `collect`, `bottom-up`, and
+`local-update` pass `--optimize false` when they run emitted probe graphs.
+Do not clean `tmp/` during a single collection or local-update command: the
+timestamped `runJson_*` directories are the scratch evidence consumed by Probe
+before durable records are appended.
 
 Runtime debug can flag large model discrepancies for later analysis:
 
@@ -430,14 +455,14 @@ without changing code.
 | Project | Role |
 | ------- | ---- |
 | `Image` | Thin F# image abstraction over SimpleITK, including typed pixel access and image functions. |
-| `AsyncSeqExtensions` | Streaming helpers used by the pipeline engine. |
-| `SlimPipeline` | Element-agnostic streaming pipeline model, graph metadata, memory estimates, and execution. |
+| `AsyncSeqExtensions` | Low-level async sequence helpers used behind the pipeline engine. |
+| `SlimPipeline` | Element-agnostic streaming pipeline model, graph metadata, resource-aware stream combinators, memory estimates, and execution. |
 | `TinyLinAlg` | Small affine/vector/matrix helper library used by registration and resampling code. |
 | `StackProcessing.Cost` | Image-stage cost terms, model loading/serialization, fitted/local/default model evaluation, discrepancy helpers, and semantics-preserving optimization choices. |
 | `StackProcessing.Core` | Streaming image-stack algorithms, IO, manifests, stitching, points, meshes, bias correction, and serial-section tools. |
 | `StackProcessing` | Public F# DSL over `StackProcessing.Core` and `SlimPipeline`. |
 | `StackProcessing.RunSamples` | Runs sample F# projects by default, or Studio JSON graphs with `--json`, and writes repeatable timing/memory logs. |
-| `StackProcessing.Probe` | Calibration front door: analyzes sample/probe measurements, emits probe graphs, and writes reports for cost-model learning. |
+| `StackProcessing.Probe` | Calibration front door: collects durable measurements, fits cost models, inspects fit quality, emits probe graphs, and writes reports for cost-model learning. |
 | `Studio.Graph` | Pure graph domain model, built-in function catalog, and JSON persistence for Studio. |
 | `Studio.Compiler` | Compiler from Studio graph JSON to executable StackProcessing F# DSL code. |
 | `Studio` | Avalonia visual editor for building, saving, arranging, compiling, and running processing graphs. |
@@ -451,14 +476,14 @@ flowchart TD
     StudioGraph["Studio.Graph\ngraph model"]
     StudioCompiler["Studio.Compiler\ngraph -> F# DSL"]
     StackProcessing["StackProcessing\nF# DSL"]
-    Cost["StackProcessing.Cost\noperator model, pipeline estimates,\nlocal fitting & optimizer"]
+    Cost["StackProcessing.Cost\noperator terms, model loading,\ndiscrepancy helpers & optimizer"]
     Core["StackProcessing.Core\nimage stages over SlimPipeline"]
     Slim["SlimPipeline\nAgnostic streaming model"]
     AsyncSeq["FSharp.Control.AsyncSeq\nasync stream substrate"]
     Image["Image\nF# wrap of SimpleITK"]
     TinyLinAlg["TinyLinAlg\nSimple Linear Algebra"]
     RunSamples["StackProcessing.RunSamples\nBulk DSL & graph runner"]
-    Probe["StackProcessing.Probe\nprobe design & local updates"]
+    Probe["StackProcessing.Probe\ncollect, fit, inspect,\nprobe design & local updates"]
 
     UserFSharp --> StackProcessing
     UserFSharp --> Studio
@@ -493,8 +518,9 @@ rather than through generic SlimPipeline code. This is a pragmatic split:
 Cost is a model of the Core image implementation, so if the boundary becomes
 too awkward, the cleaner direction is to fold Cost into Core rather than make
 Cost depend on Core while Core also depends on Cost. `RunSamples` supplies
-repeatable sample measurements and discrepancy logs; Probe turns those logs
-into focused local probe batches and updated model JSON.
+repeatable sample measurements and discrepancy logs; Probe keeps durable raw
+measurements separate from model fitting, then uses `inspect` to request
+focused additional collection when the selected evidence is weak.
 
 ## Studio Design
 
@@ -566,6 +592,7 @@ This JSON format is the stable boundary between Studio's UI and the compiler.
 * reducer outputs such as `ImageStats0.Mean`,
 * linked parameter pins,
 * branch and pair syntax such as `>=>>`, `zip`, and `>>=>`,
+* sink fan-out through stage-level `fork`/`-->>` and nested `ignorePairs`,
 * print and tap formatting,
 * terminal `sink` or `drain` calls.
 
@@ -593,7 +620,8 @@ The Avalonia project is responsible for interaction:
 * Group movement with canvas-boundary clamping.
 * Type-aware connection highlighting.
 * Connection guards, including cycle detection and reducer-stream misuse.
-* Arrange and fit-view commands.
+* Arrange and fit-view commands. Arrange uses MSAGL layered graph layout, with
+  streaming edges biased left-to-right and parameter edges biased vertically.
 * Save/load/dirty-state workflow.
 * Pan, zoom, minimap, and Output panel behavior.
 * Running the compiler and external `dotnet` build/run process.
@@ -703,6 +731,11 @@ step how many leading real stream items can be released. Singleton streaming
 can be treated as a one-item window when stages need synchronized window
 semantics.
 
+SlimPipeline also owns generic stream-shape stages such as `skip`, `take`, and
+resource-aware `trim`. Higher layers pass release functions into these helpers,
+so image slices dropped from a stream can still decrement their native image
+reference counts without making SlimPipeline image-specific.
+
 High-level image stages choose a minimum window from their algorithmic
 parameters, for example kernel depth or morphology radius. Optional window
 arguments in the F# DSL use that minimum when `None` is passed. If an explicit
@@ -723,6 +756,12 @@ Each stage also has:
 `SliceCardinality` uses small composable slice domains such as preserve, trim,
 expand, skip, and take. Branch synchronization uses these domains to reject
 incompatible stream lengths before a deadlock-prone pipeline is run.
+
+Image-specific window and slab conversion lives in `StackProcessing.Core`, not
+in SlimPipeline. Core defines `Slab<'T>` plus helpers such as
+`windowToSlabWithRange`, `mapSlabWithStage`, and `slabWithRangeToWindow` so
+z-windowed image stages can be written as ordinary `-->` compositions while
+preserving emit ranges, slice indices, and reference-count ownership.
 
 ### `ResourceOps<'T>`
 
@@ -802,9 +841,9 @@ readSlab<'T> inputDir suffix
 readZarrSlab<'T> inputDir arrayPath
 readNexusSlab<'T> inputFile datasetPath
 readPointSet inputCsv
-coordinateX width height depth
-coordinateY width height depth
-coordinateZ width height depth
+coordinateX<'T> width height depth
+coordinateY<'T> width height depth
+coordinateZ<'T> width height depth
 zero<'T> width height depth
 normalNoise<'T> width height depth mean stddev
 saltAndPepperNoise<'T> width height depth probability
@@ -860,6 +899,12 @@ StackProcessing wraps image functions as `Stage`s:
 Studio may present several of these concrete functions as one generic box with
 an operator or type dropdown. The generated code still targets the concrete
 StackProcessing DSL functions.
+
+Core also exposes a small set of image-aware stream scaffolding stages for
+advanced DSL use: `windowToSlab`, `windowToSlabWithRange`, `mapSlabWithStage`,
+`slabWithRangeToWindow`, `slabSkipTakeM`, and `windowedViaSlab`. These are
+mostly implementation tools for writing and measuring z-windowed or slabbed
+operators; ordinary Studio graphs use the higher-level filter boxes.
 
 ### Image Processing Algorithm Inventory
 
