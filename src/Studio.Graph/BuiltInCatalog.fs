@@ -1959,6 +1959,45 @@ module BuiltInCatalog =
                 makeParameter "lower" "Lower" "128.0" (BasicType.Numeric Float64)
                 makeParameter "upper" "Upper" "infinity" (BasicType.Numeric Float64) ] }
 
+        { Id = "WindowSlabRoundtrip"
+          DisplayName = "windowSlabRoundtrip"
+          Category = "Windowing"
+          Summary = "Pass an image stream through explicit window-to-slab and slab-to-window conversion."
+          Description = "Diagnostic/probing stage for measuring explicit window, slab, and flatten costs around z-agnostic image operations."
+          Aliases = [ "window"; "slab"; "roundtrip"; "identity"; "probe" ]
+          Inputs = [ makePort "Float64" imageFloat64 ]
+          Outputs = [ makePort "Float64" imageFloat64 ]
+          Parameters =
+              [ makeParameter "type" "Type" "Float64" BasicType.String
+                makeParameter "windowSize" "Window size" "5u" (BasicType.Numeric UInt32) ] }
+
+        { Id = "WindowedCast"
+          DisplayName = "windowedCast"
+          Category = "Windowing"
+          Summary = "Cast an image stream while explicitly passing through a z-window slab."
+          Description = "Diagnostic/probing stage for comparing z-agnostic cast execution on slabs against slice-wise execution."
+          Aliases = [ "window"; "slab"; "cast"; "probe" ]
+          Inputs = [ makePort "Float64" imageFloat64 ]
+          Outputs = [ makePort "UInt8" imageUInt8 ]
+          Parameters =
+              [ makeParameter "sourceType" "Source type" "Float64" BasicType.String
+                makeParameter "targetType" "Target type" "UInt8" BasicType.String
+                makeParameter "windowSize" "Window size" "5u" (BasicType.Numeric UInt32) ] }
+
+        { Id = "WindowedThreshold"
+          DisplayName = "windowedThreshold"
+          Category = "Windowing"
+          Summary = "Threshold an image stream while explicitly passing through a z-window slab."
+          Description = "Diagnostic/probing stage for comparing z-agnostic threshold execution on slabs against slice-wise execution."
+          Aliases = [ "window"; "slab"; "threshold"; "probe" ]
+          Inputs = [ makePort "Float64" imageFloat64 ]
+          Outputs = [ makePort "UInt8" imageUInt8 ]
+          Parameters =
+              [ makeParameter "type" "Type" "Float64" BasicType.String
+                makeParameter "lower" "Lower" "128.0" (BasicType.Numeric Float64)
+                makeParameter "upper" "Upper" "infinity" (BasicType.Numeric Float64)
+                makeParameter "windowSize" "Window size" "5u" (BasicType.Numeric UInt32) ] }
+
         { Id = "Erode"
           DisplayName = "erode"
           Category = "Binary Morphology"

@@ -1372,6 +1372,27 @@ let private thresholdNode pixelType lower =
       "lower", lower
       "upper", "infinity" ]
 
+let private windowSlabRoundtripNode pixelType windowSize =
+    "windowSlabRoundtrip",
+    "WindowSlabRoundtrip",
+    [ "type", pixelType
+      "windowSize", string windowSize ]
+
+let private windowedCastNode sourceType targetType windowSize =
+    "windowedCast",
+    "WindowedCast",
+    [ "sourceType", sourceType
+      "targetType", targetType
+      "windowSize", string windowSize ]
+
+let private windowedThresholdNode pixelType lower windowSize =
+    "windowedThreshold",
+    "WindowedThreshold",
+    [ "type", pixelType
+      "lower", lower
+      "upper", "infinity"
+      "windowSize", string windowSize ]
+
 let private intensityStretchNode id pixelType inputMinimum inputMaximum =
     id,
     "IntensityStretch",
@@ -1624,6 +1645,19 @@ let private bottomUpGraphTemplates config =
            writeUInt8Template $"bottomup-27-imageOpScalar-float-write-{sizeSuffix}" "Float64 read shifted, cast, and written." [ readFloat; "op", "ImageOpScalar", [ "operation", "+"; "type", "Float64"; "value", "1.0" ] ] "Float64"
            ignoreTemplate $"bottomup-28-unarySqrt-float-ignore-{sizeSuffix}" "Float64 read square-rooted and consumed." [ readFloat; "op", "UnaryImageFunction", [ "function", "sqrt" ] ]
            writeUInt8Template $"bottomup-29-unarySqrt-float-write-{sizeSuffix}" "Float64 read square-rooted, cast, and written." [ readFloat; "op", "UnaryImageFunction", [ "function", "sqrt" ] ] "Float64" |]
+
+    let windowSlabLayer =
+        let windowSizes =
+            [ 3u; 5u; 9u ]
+            |> List.filter (fun windowSize -> windowSize <= config.Shape.Depth)
+
+        [| for windowSize in windowSizes do
+               yield ignoreTemplate $"bottomup-20-windowSlab-roundtrip-float-ignore-w{windowSize}-{sizeSuffix}" $"Float64 read through window-to-slab roundtrip with window {windowSize}, then consumed." [ readFloat; windowSlabRoundtripNode "Float64" windowSize ]
+               yield writeUInt8Template $"bottomup-21-windowSlab-roundtrip-float-write-w{windowSize}-{sizeSuffix}" $"Float64 read through window-to-slab roundtrip with window {windowSize}, cast, and written." [ readFloat; windowSlabRoundtripNode "Float64" windowSize ] "Float64"
+               yield ignoreTemplate $"bottomup-22-windowSlab-cast-float-uint8-ignore-w{windowSize}-{sizeSuffix}" $"Float64 read windowed through slab cast to UInt8 with window {windowSize}, then consumed." [ readFloat; windowedCastNode "Float64" "UInt8" windowSize ]
+               yield writeTemplate $"bottomup-23-windowSlab-cast-float-uint8-write-w{windowSize}-{sizeSuffix}" $"Float64 read windowed through slab cast to UInt8 with window {windowSize}, then written." [ readFloat; windowedCastNode "Float64" "UInt8" windowSize ]
+               yield ignoreTemplate $"bottomup-24-windowSlab-threshold-uint8-ignore-w{windowSize}-{sizeSuffix}" $"UInt8 read windowed through slab threshold with window {windowSize}, then consumed." [ readUInt8; windowedThresholdNode "UInt8" "128.0" windowSize ]
+               yield writeTemplate $"bottomup-25-windowSlab-threshold-uint8-write-w{windowSize}-{sizeSuffix}" $"UInt8 read windowed through slab threshold with window {windowSize}, then written." [ readUInt8; windowedThresholdNode "UInt8" "128.0" windowSize ] |]
 
     let windowLayer =
         let floatFilters =
@@ -1978,6 +2012,7 @@ let private bottomUpGraphTemplates config =
        "02-io-casts", readCastLayer
        "02-sources", syntheticSourcesLayer
        "03-simple-unary", simpleUnaryLayer
+       "04-window-slab", windowSlabLayer
        "04-windowed-unary", windowLayer
        "05-intensity-and-additive", intensityAndAdditiveLayer
        "06-geometry-and-projection", geometryAndProjectionLayer

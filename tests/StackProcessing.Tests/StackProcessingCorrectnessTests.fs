@@ -90,6 +90,10 @@ let private makeAveragingKernel64 () =
     Array3D.create 3 3 3 (1.0 / 27.0)
     |> Image<float>.ofArray3D
 
+let private makeAveragingKernelSingletonZ () =
+    Array3D.create 3 3 1 (single (1.0 / 9.0))
+    |> Image<float32>.ofArray3D
+
 let private makeBinaryVolumeWithHole side =
     Array3D.init side side side (fun x y z ->
         let dx = x - side / 2
@@ -230,6 +234,47 @@ let private assertStreamingMatchesDirect name suffix tolerance (input: Image<'In
         expectedOpt |> Option.iter (fun image -> image.decRefCount())
         cleanupResult keepTempDirs inputDir outputDir
 
+let private assertStreamingStagesMatch name suffix tolerance (input: Image<'In>) (expectedStage: Stage<Image<'In>, Image<'Out>>) (actualStage: Stage<Image<'In>, Image<'Out>>) =
+    let mutable expectedInputDir = ""
+    let mutable expectedOutputDir = ""
+    let mutable actualInputDir = ""
+    let mutable actualOutputDir = ""
+    let mutable keepTempDirs = false
+    let mutable expectedOpt : Image<'Out> option = None
+    let mutable actualOpt : Image<'Out> option = None
+
+    try
+        let expected, eInputDir, eOutputDir = runSlicePipeline $"{name}-expected" suffix input expectedStage
+        let actual, aInputDir, aOutputDir = runSlicePipeline $"{name}-actual" suffix input actualStage
+
+        expectedInputDir <- eInputDir
+        expectedOutputDir <- eOutputDir
+        actualInputDir <- aInputDir
+        actualOutputDir <- aOutputDir
+        expectedOpt <- Some expected
+        actualOpt <- Some actual
+
+        let expectedSize = expected.GetSize()
+        let actualSize = actual.GetSize()
+
+        if expectedSize <> actualSize then
+            keepTempDirs <- true
+
+        Expect.equal actualSize expectedSize $"{name}: compared streaming stages should produce the same volume shape."
+
+        let maxDiff = maxAbsDifference expected actual
+
+        if maxDiff >= tolerance then
+            keepTempDirs <- true
+
+        Expect.isLessThan maxDiff tolerance $"{name}: compared streaming stages should produce the same pixels. Max difference: {maxDiff}."
+    finally
+        expectedOpt |> Option.iter (fun image -> image.decRefCount())
+        actualOpt |> Option.iter (fun image -> image.decRefCount())
+
+        cleanupResult keepTempDirs expectedInputDir expectedOutputDir
+        cleanupResult keepTempDirs actualInputDir actualOutputDir
+
 let private assertPairStreamingMatchesDirect name suffix tolerance (left: Image<'In>) (right: Image<'In>) (combine: Image<'In> -> Image<'In> -> Image<'Out>) (direct: Image<'In> -> Image<'In> -> Image<'Out>) =
     let mutable leftDir = ""
     let mutable rightDir = ""
@@ -337,6 +382,40 @@ let stackProcessingCorrectnessSuite =
                 kernel.decRefCount()
                 volume.decRefCount()
 
+        testCase "streamed singleton-z 3D convolution matches direct 3D SimpleITK convolution" <| fun _ ->
+            let suffix = ".tiff"
+            let volume = makeFloat32Volume 12
+            let kernel = makeAveragingKernelSingletonZ ()
+
+            try
+                assertStreamingMatchesDirect
+                    "convolve-singleton-z-valid"
+                    suffix
+                    1.0e-4
+                    volume
+                    (convolve kernel (Some ImageFunctions.Valid) None None)
+                    (fun input -> ImageFunctions.convolve (Some ImageFunctions.Valid) None input kernel)
+            finally
+                kernel.decRefCount()
+                volume.decRefCount()
+
+        testCase "streamed valid 3D convolution handles partial final window" <| fun _ ->
+            let suffix = ".tiff"
+            let volume = makeFloat32Volume 12
+            let kernel = makeAveragingKernel ()
+
+            try
+                assertStreamingMatchesDirect
+                    "convolve-valid-partial-final-window"
+                    suffix
+                    1.0e-4
+                    volume
+                    (convolve kernel (Some ImageFunctions.Valid) None (Some 5u))
+                    (fun input -> ImageFunctions.convolve (Some ImageFunctions.Valid) None input kernel)
+            finally
+                kernel.decRefCount()
+                volume.decRefCount()
+
         testCase "streamed threshold matches direct 3D threshold" <| fun _ ->
             let suffix = ".tiff"
             let volume = makeFloat32Volume 12
@@ -349,6 +428,21 @@ let stackProcessingCorrectnessSuite =
                     volume
                     (threshold 0.2 2.0)
                     (ImageFunctions.threshold 0.2 2.0)
+            finally
+                volume.decRefCount()
+
+        testCase "windowed threshold via slab matches regular streamed threshold" <| fun _ ->
+            let suffix = ".tiff"
+            let volume = makeFloat32Volume 12
+
+            try
+                assertStreamingStagesMatch
+                    "windowed-threshold"
+                    suffix
+                    0.5
+                    volume
+                    (threshold 0.2 2.0)
+                    (windowedThreshold 5u 0.2 2.0)
             finally
                 volume.decRefCount()
 

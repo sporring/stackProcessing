@@ -123,6 +123,21 @@ let simpleFunctionTests =
     kernel.decRefCount()
     img.decRefCount()
 
+  testCase "convolve accepts 3D kernels with singleton z extent" <| fun _ ->
+    let img = Image<float>.ofArray3D (Array3D.init 5 6 7 (fun x y z -> float (x + 10 * y + 100 * z)))
+    let kernel = Image<float>.ofArray3D (Array3D.create 3 3 1 (1.0 / 9.0))
+
+    let same = ImageFunctions.convolve None None img kernel
+    let valid = ImageFunctions.convolve (Some ImageFunctions.Valid) None img kernel
+
+    Expect.equal (same.GetSize()) [5u; 6u; 7u] "Same convolution with a singleton-z 3D kernel should preserve z size."
+    Expect.equal (valid.GetSize()) [3u; 4u; 7u] "Valid convolution with a singleton-z 3D kernel should not trim z."
+
+    same.decRefCount()
+    valid.decRefCount()
+    kernel.decRefCount()
+    img.decRefCount()
+
   testCase "finiteDiffFilter3D creates directional stencil kernels" <| fun _ ->
     let x = ImageFunctions.finiteDiffFilter3D 0u 1u
     let z = ImageFunctions.finiteDiffFilter3D 2u 2u

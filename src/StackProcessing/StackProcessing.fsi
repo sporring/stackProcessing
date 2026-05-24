@@ -1369,6 +1369,40 @@ val threshold:
   (float -> float -> StackCore.Stage<StackCore.Image<'a>,StackCore.Image<uint8>>)
     when 'a: equality
 
+val windowToSlab<'T when 'T: equality> :
+  StackCore.Stage<StackCore.Window<StackCore.Image<'T>>,StackCore.Image<'T>>
+    when 'T: equality
+
+val slabToWindow<'T when 'T: equality> :
+  StackCore.Stage<StackCore.Image<'T>,StackCore.Window<StackCore.Image<'T>>>
+    when 'T: equality
+
+val slabSkipTakeM<'T when 'T: equality> :
+  (uint32 ->
+     uint32 ->
+     StackCore.Stage<StackCore.Window<StackCore.Image<'T>>,
+                     StackCore.Image<'T> list>) when 'T: equality
+
+val windowedViaSlab<'S,'T when 'S: equality and 'T: equality> :
+  (uint32 ->
+     StackCore.Stage<StackCore.Image<'S>,StackCore.Image<'T>> ->
+     StackCore.Stage<StackCore.Image<'S>,StackCore.Image<'T>>)
+    when 'S: equality and 'T: equality
+
+val windowSlabRoundtrip<'T when 'T: equality> :
+  (uint32 -> StackCore.Stage<StackCore.Image<'T>,StackCore.Image<'T>>)
+    when 'T: equality
+
+val windowedCast<'S,'T when 'S: equality and 'T: equality> :
+  (uint32 -> StackCore.Stage<StackCore.Image<'S>,StackCore.Image<'T>>)
+    when 'S: equality and 'T: equality
+
+val windowedThreshold<'T when 'T: equality> :
+  (uint32 ->
+     float ->
+     float -> StackCore.Stage<StackCore.Image<'T>,StackCore.Image<uint8>>)
+    when 'T: equality
+
 val addNormalNoise:
   (float -> float -> StackCore.Stage<StackCore.Image<'a>,StackCore.Image<'a>>)
     when 'a: equality

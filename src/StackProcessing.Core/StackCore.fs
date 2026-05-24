@@ -72,6 +72,25 @@ let incIfImage x =
     | :? Image<System.Numerics.Complex> as im -> im.incRefCount()
     | _ -> ()
     x
+
+let private copyIfImageForPadding index x =
+    let copyImage (image: Image<'T>) =
+        image.copy($"padding[{index}]", index) :> obj |> unbox
+
+    match box x with
+    | :? Image<uint8> as im -> copyImage im
+    | :? Image<int8> as im -> copyImage im
+    | :? Image<uint16> as im -> copyImage im
+    | :? Image<int16> as im -> copyImage im
+    | :? Image<uint> as im -> copyImage im
+    | :? Image<int> as im -> copyImage im
+    | :? Image<uint64> as im -> copyImage im
+    | :? Image<int64> as im -> copyImage im
+    | :? Image<float32> as im -> copyImage im
+    | :? Image<float> as im -> copyImage im
+    | :? Image<System.Numerics.Complex> as im -> copyImage im
+    | _ -> x
+
 let incRef () =
     Stage.map "incRefCountOp" (fun _ -> incIfImage) id id
 let decIfImage x =
@@ -291,7 +310,8 @@ let inline isExactlyImage<'T> () =
 *)
 let (>=>>) (pl: Plan<'In, 'S>) (stage1: Stage<'S, 'U>, stage2: Stage<'S, 'V>) : Plan<'In, 'U * 'V> = 
     let stream2Window winSz pad stride (stg: Stage<'T,'Out>) : Stage<'T,'Out> =
-        let zeroMaker _ = id
+        let zeroMaker index item =
+            copyIfImageForPadding index item
         Stage.window "makeWindow: window" winSz pad zeroMaker stride
         --> Stage.map "makeWindow: select delayed emit range"
                 (fun _ window ->
@@ -301,6 +321,7 @@ let (>=>>) (pl: Plan<'In, 'S>) (stage1: Stage<'S, 'U>, stage2: Stage<'S, 'V>) : 
                         window.Items
                         |> List.skip start
                         |> List.take (min count (max 0 (window.Items.Length - start)))
+                    result |> List.iter (incIfImage >> ignore)
                     window.Items |> List.take (min (int stride) window.Items.Length) |> List.iter (decIfImage >> ignore)
                     result)
                 id
@@ -324,7 +345,8 @@ let (>=>>) (pl: Plan<'In, 'S>) (stage1: Stage<'S, 'U>, stage2: Stage<'S, 'V>) : 
 
 let private alignForkStages name debug (stage1: Stage<'S, 'U>) (stage2: Stage<'S, 'V>) =
     let stream2Window winSz pad stride (stg: Stage<'T,'Out>) : Stage<'T,'Out> =
-        let zeroMaker _ = id
+        let zeroMaker index item =
+            copyIfImageForPadding index item
         Stage.window "makeWindow: window" winSz pad zeroMaker stride
         --> Stage.map "makeWindow: select delayed emit range"
                 (fun _ window ->
@@ -334,6 +356,7 @@ let private alignForkStages name debug (stage1: Stage<'S, 'U>) (stage2: Stage<'S
                         window.Items
                         |> List.skip start
                         |> List.take (min count (max 0 (window.Items.Length - start)))
+                    result |> List.iter (incIfImage >> ignore)
                     window.Items |> List.take (min (int stride) window.Items.Length) |> List.iter (decIfImage >> ignore)
                     result)
                 id

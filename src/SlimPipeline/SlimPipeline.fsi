@@ -530,6 +530,16 @@ module Stage =
         f: (bool -> 'S -> 'T) ->
         memoryNeed: MemoryNeed ->
         elementTransformation: ElementTransformation -> Stage<'S,'T>
+    val choose:
+      name: string ->
+        f: (bool -> 'S -> 'T option) ->
+        releaseDropped: ('S -> unit) ->
+        memoryNeed: MemoryNeed ->
+        elementTransformation: ElementTransformation -> Stage<'S,'T>
+    val filter:
+      name: string ->
+        predicate: (bool -> 'S -> bool) ->
+        releaseDropped: ('S -> unit) -> Stage<'S,'S>
     val mapi:
       name: string ->
         f: (bool -> int64 -> 'S -> 'T) ->

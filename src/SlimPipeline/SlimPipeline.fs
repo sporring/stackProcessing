@@ -1192,6 +1192,24 @@ module Stage =
         let transition = ProfileTransition.create Streaming Streaming
         createWithModel name build transition (StageMemoryModel.fromSinglePeak Map memoryNeed) elementTransformation []
 
+    let choose<'S,'T> (name: string) (f: bool -> 'S -> 'T option) (releaseDropped: 'S -> unit) (memoryNeed: MemoryNeed) (elementTransformation: ElementTransformation) : Stage<'S, 'T> =
+        let apply debug (input: AsyncSeq<'S>) =
+            asyncSeq {
+                for item in input do
+                    match f debug item with
+                    | Some output ->
+                        yield output
+                    | None ->
+                        releaseDropped item
+            }
+
+        let build () : Pipe<'S,'T> = Pipe.create name apply Streaming
+        let transition = ProfileTransition.create Streaming Streaming
+        createWithModel name build transition (StageMemoryModel.fromSinglePeak Map memoryNeed) elementTransformation []
+
+    let filter<'S> (name: string) (predicate: bool -> 'S -> bool) (releaseDropped: 'S -> unit) : Stage<'S, 'S> =
+        choose name (fun debug item -> if predicate debug item then Some item else None) releaseDropped id id
+
     let mapi<'S,'T> (name: string) (f: bool -> int64 -> 'S -> 'T) (memoryNeed: MemoryNeed) (elementTransformation: ElementTransformation) : Stage<'S, 'T> =
         let apply debug input = input |> AsyncSeq.mapi (f debug)
         let build () : Pipe<'S,'T> = Pipe.create name apply Streaming

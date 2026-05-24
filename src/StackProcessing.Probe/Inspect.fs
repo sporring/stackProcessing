@@ -77,7 +77,7 @@ let rec private parseArgs options args =
         match ProbeSelection.parseFamilies value with
         | Some families -> parseArgs { options with Selector = { options.Selector with Families = families; UpTo = None } } rest
         | None ->
-            eprintfn "inspect: --family expects io,io-cast,singleton,neighbourhood,geometry,fourier,keypoints,dependency,reducers, or all"
+            eprintfn "inspect: --family expects io,io-cast,singleton,window-slab,neighbourhood,geometry,fourier,keypoints,dependency,reducers, or all"
             Error 2
     | "--member" :: value :: rest
     | "--members" :: value :: rest

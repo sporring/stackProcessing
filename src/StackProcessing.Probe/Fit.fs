@@ -60,7 +60,7 @@ let rec private parseArgs options args =
         match ProbeSelection.parseFamilies value with
         | Some families -> parseArgs { options with Selector = { options.Selector with Families = families; UpTo = None } } rest
         | None ->
-            eprintfn "fit: --family expects io,io-cast,singleton,neighbourhood,geometry,fourier,keypoints,dependency,reducers, or all"
+            eprintfn "fit: --family expects io,io-cast,singleton,window-slab,neighbourhood,geometry,fourier,keypoints,dependency,reducers, or all"
             Error 2
     | "--up-to" :: value :: rest
     | "--max-step" :: value :: rest ->
@@ -209,6 +209,33 @@ let private contextFromInputJson (record: ProbeAnalysis.StoredMeasurementRecord)
         ()
     { PixelType = pixelType; Width = width; Height = height; Depth = depth }
 
+type private ReadCastCase =
+    { SourceType: string
+      TargetType: string
+      Mode: string }
+
+let private graphNameFromRowId (rowId: string) =
+    let normalized = rowId.Replace('\\', '/')
+    let slash = normalized.LastIndexOf('/')
+    if slash >= 0 then normalized.Substring(slash + 1) else normalized
+
+let private tryReadCastCase (rowId: string) =
+    let name = graphNameFromRowId rowId
+    let parts = name.Split('-', StringSplitOptions.RemoveEmptyEntries) |> Array.toList
+
+    match parts with
+    | _bottomup :: _index :: "read" :: sourceType :: targetType :: "implicit" :: _ ->
+        match normalizePixelType sourceType, normalizePixelType targetType with
+        | Some sourceType, Some targetType ->
+            Some { SourceType = sourceType; TargetType = targetType; Mode = "Implicit" }
+        | _ -> None
+    | _bottomup :: _index :: "read" :: sourceType :: targetType :: "explicit" :: "cast" :: _ ->
+        match normalizePixelType sourceType, normalizePixelType targetType with
+        | Some sourceType, Some targetType ->
+            Some { SourceType = sourceType; TargetType = targetType; Mode = "Explicit" }
+        | _ -> None
+    | _ -> None
+
 let private tag key (term: ProbeAnalysis.StoredRuntimeCostTerm) =
     term.Tags |> Array.tryFind (fun tag -> tag.Key = key) |> Option.map _.Value
 
@@ -306,6 +333,49 @@ let private featureEvidenceRow (context: EvidenceContext) (record: ProbeAnalysis
         |> Option.orElse gaussianKernelSizeFromSigma
       Sigma = sigma }
 
+let private readCastEvidenceRow (context: EvidenceContext) (record: ProbeAnalysis.StoredMeasurementRecord) (case: ReadCastCase) : Fitting.EvidenceRow =
+    let slicePixels =
+        match context.Width, context.Height with
+        | Some width, Some height -> Some(width * height)
+        | _ -> None
+
+    let voxels =
+        match slicePixels, context.Depth with
+        | Some slicePixels, Some depth -> Some(slicePixels * depth)
+        | _ -> None
+
+    let bytesPerPixel = pixelTypeBytes case.TargetType
+    let sliceBytes =
+        match slicePixels, bytesPerPixel with
+        | Some slicePixels, Some bytesPerPixel -> Some(slicePixels * bytesPerPixel)
+        | _ -> None
+
+    let volumeBytes =
+        match voxels, bytesPerPixel with
+        | Some voxels, Some bytesPerPixel -> Some(voxels * bytesPerPixel)
+        | _ -> None
+
+    let operator = $"ReadCast{case.Mode}.{case.SourceType}To{case.TargetType}"
+    { RowId = record.RowId
+      Measurement = record.Measurement
+      Value = record.Value
+      SourcePath = record.SourcePath
+      FeatureKey = $"{operator}:sourceType={case.SourceType}:targetType={case.TargetType}:mode={case.Mode}"
+      FeatureValue = 1.0
+      Operator = operator
+      PixelType = Some case.TargetType
+      Width = context.Width
+      Height = context.Height
+      Depth = context.Depth
+      Voxels = voxels
+      SlicePixels = slicePixels
+      SliceBytes = sliceBytes
+      VolumeBytes = volumeBytes
+      WindowSize = None
+      Radius = None
+      KernelSize = None
+      Sigma = None }
+
 let membersOfRecord (record: ProbeAnalysis.StoredMeasurementRecord) =
     seq {
         for term in record.RuntimeCostTerms do
@@ -342,6 +412,11 @@ let evidenceRowsFromRecord (record: ProbeAnalysis.StoredMeasurementRecord) =
             |> Set.ofList
 
         let context = contextFromInputJson record
+        let readCastRows =
+            match tryReadCastCase record.RowId with
+            | Some case -> [ readCastEvidenceRow context record case ]
+            | None -> []
+
         let supplementalRows =
             record.Features
             |> Array.toList
@@ -355,7 +430,7 @@ let evidenceRowsFromRecord (record: ProbeAnalysis.StoredMeasurementRecord) =
                 else
                     None)
 
-        runtimeRows @ supplementalRows
+        runtimeRows @ readCastRows @ supplementalRows
     | [] ->
         let context = contextFromInputJson record
         record.Features

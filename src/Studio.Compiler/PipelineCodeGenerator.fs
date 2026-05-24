@@ -1665,6 +1665,21 @@ module PipelineCodeGenerator =
             let lower = parameterValue "lower"
             let upper = parameterValue "upper"
             $">=> threshold {lower} {upper}"
+        | "WindowSlabRoundtrip" ->
+            let pixelType = pixelTypeNameFromParameter "type" "Float64" node
+            let windowSize = parameterValue "windowSize"
+            $">=> windowSlabRoundtrip<{pixelType}> {windowSize}"
+        | "WindowedCast" ->
+            let sourceType = pixelTypeNameFromParameter "sourceType" "Float64" node
+            let targetType = pixelTypeNameFromParameter "targetType" "UInt8" node
+            let windowSize = parameterValue "windowSize"
+            $">=> windowedCast<{sourceType}, {targetType}> {windowSize}"
+        | "WindowedThreshold" ->
+            let pixelType = pixelTypeNameFromParameter "type" "Float64" node
+            let lower = parameterValue "lower"
+            let upper = parameterValue "upper"
+            let windowSize = parameterValue "windowSize"
+            $">=> windowedThreshold<{pixelType}> {windowSize} {lower} {upper}"
         | "Erode" ->
             let radius = parameterValue "radius"
             $">=> erode {radius}"

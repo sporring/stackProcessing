@@ -1131,6 +1131,135 @@ module Fitting =
                       Coefficients = coefficientRows
                       Predictions = predictionRows })
 
+    let fitOperatorTermsWithFixed ridge minSupport (fixedCoefficients: OperatorTermCoefficient seq) (evidence: EvidenceRow seq) =
+        let fixedByMeasurement =
+            fixedCoefficients
+            |> Seq.groupBy _.Measurement
+            |> Seq.map (fun (measurement, coefficients) ->
+                measurement,
+                coefficients
+                |> Seq.map (fun coefficient -> coefficient.TermKey, coefficient)
+                |> Map.ofSeq)
+            |> Map.ofSeq
+
+        let rowTerms =
+            evidence
+            |> aggregateEvidenceRows
+
+        rowTerms
+        |> List.groupBy (fun (measurement, _, _, _) -> measurement)
+        |> List.choose (fun (measurement, measurementRows) ->
+            let fixedForMeasurement =
+                fixedByMeasurement
+                |> Map.tryFind measurement
+                |> Option.defaultValue Map.empty
+
+            let support =
+                measurementRows
+                |> List.collect (fun (_, _, _, terms) -> terms |> List.map fst |> List.distinct)
+                |> List.countBy id
+                |> Map.ofList
+
+            let columns =
+                support
+                |> Map.toList
+                |> List.filter (fun (key, count) -> count >= minSupport && not (fixedForMeasurement.ContainsKey key))
+                |> List.map fst
+                |> List.sort
+
+            if measurementRows.IsEmpty && columns.IsEmpty then
+                None
+            else
+                let columnIndex =
+                    columns |> List.mapi (fun index key -> key, index) |> Map.ofList
+
+                let a = Array2D.zeroCreate<float> measurementRows.Length columns.Length
+                let y = Array.zeroCreate<float> measurementRows.Length
+                let fixedContribution = Array.zeroCreate<float> measurementRows.Length
+
+                measurementRows
+                |> List.iteri (fun rowIndex (_, _, value, terms) ->
+                    let fixedValue =
+                        terms
+                        |> List.sumBy (fun (key, value) ->
+                            fixedForMeasurement
+                            |> Map.tryFind key
+                            |> Option.map (fun coefficient -> coefficient.Coefficient * value)
+                            |> Option.defaultValue 0.0)
+
+                    fixedContribution[rowIndex] <- fixedValue
+                    y[rowIndex] <- value - fixedValue
+
+                    for key, value in terms do
+                        match columnIndex |> Map.tryFind key with
+                        | Some col -> a[rowIndex, col] <- value
+                        | None -> ())
+
+                let solvedCoefficients =
+                    if columns.IsEmpty then
+                        Array.empty
+                    else
+                        TinyLinAlg.Dense.nonNegativeLeastSquares ridge 20000 1e-10 a y
+
+                let solvedPredicted =
+                    if columns.IsEmpty then
+                        Array.zeroCreate<float> measurementRows.Length
+                    else
+                        TinyLinAlg.Dense.predict a solvedCoefficients
+
+                let predicted =
+                    Array.mapi (fun index value -> value + solvedPredicted[index]) fixedContribution
+
+                let actual =
+                    measurementRows
+                    |> List.map (fun (_, _, value, _) -> value)
+                    |> List.toArray
+
+                let rmse, r2, residuals = rmseAndR2 actual predicted
+
+                let fixedRows =
+                    fixedForMeasurement
+                    |> Map.toList
+                    |> List.map (fun (key, coefficient) ->
+                        { coefficient with
+                            SupportCount = support |> Map.tryFind key |> Option.defaultValue coefficient.SupportCount
+                            RowCount = measurementRows.Length
+                            ColumnCount = fixedForMeasurement.Count + columns.Length
+                            Rmse = rmse
+                            R2 = r2
+                            Solver = "fixed" })
+
+                let solvedRows =
+                    columns
+                    |> List.mapi (fun index key ->
+                        let parts = termParts key
+                        { Measurement = measurement
+                          TermKey = key
+                          Operator = parts |> Map.tryFind "operator" |> Option.defaultValue ""
+                          PixelType = parts |> Map.tryFind "pixelType" |> Option.defaultValue ""
+                          Term = parts |> Map.tryFind "term" |> Option.defaultValue ""
+                          Coefficient = solvedCoefficients[index]
+                          SupportCount = support[key]
+                          RowCount = measurementRows.Length
+                          ColumnCount = fixedForMeasurement.Count + columns.Length
+                          Rmse = rmse
+                          R2 = r2
+                          Solver = "nonNegativeLeastSquaresWithFixed" })
+
+                let predictionRows =
+                    measurementRows
+                    |> List.mapi (fun index (_, rowId, actual, _) ->
+                        { RowId = rowId
+                          Measurement = measurement
+                          Actual = actual
+                          Predicted = predicted[index]
+                          Residual = residuals[index] })
+
+                Some
+                    { Measurement = measurement
+                      Coefficients = fixedRows @ solvedRows
+                      Predictions = predictionRows })
+
     let writeOperatorTermCoefficientsCsv (path: string) (fits: OperatorTermFit seq) =
         use writer = new StreamWriter(path)
         writer.WriteLine("measurement,termKey,operator,pixelType,term,coefficient,supportCount,rowCount,columnCount,rmse,r2,solver")
@@ -1264,6 +1393,63 @@ let operatorImageTimeCost<'T> operator evaluation windowSize radius kernelSize s
             sigma
 
     Fitting.OperatorCostRuntime.timeCostModel evaluation context fallback
+
+type ImageOperatorCostSpec =
+    { Operator: string
+      Evaluation: StageEvaluation
+      Memory: StageMemoryModel
+      WindowSize: float option
+      Radius: float option
+      KernelSize: float option
+      Sigma: float option
+      Tags: (string * string) list
+      FallbackCostUnits: SingleOrPair -> float }
+
+let imageOperatorStageCost<'T> (spec: ImageOperatorCostSpec) =
+    let fallback =
+        StageTimeCostModel.native
+            spec.Evaluation
+            (Some $"{spec.Operator}.{pixelTypeName<'T>}")
+            spec.FallbackCostUnits
+
+    let time =
+        operatorImageTimeCost<'T>
+            spec.Operator
+            spec.Evaluation
+            spec.WindowSize
+            spec.Radius
+            spec.KernelSize
+            spec.Sigma
+            fallback.Estimate
+
+    let time =
+        if List.isEmpty spec.Tags then
+            time
+        else
+            { time with
+                Estimate =
+                    fun input ->
+                        time.Estimate input
+                        |> StageTimeCostEstimate.withTags spec.Tags }
+
+    StageCostModel.create spec.Memory time
+
+let imageUnaryStageCost<'T> operator memoryNeed =
+    let memoryModel = StageMemoryModel.fromSinglePeak Map memoryNeed
+    let costUnits input = inputVoxels input |> float
+    imageOperatorStageCost<'T>
+        { Operator = operator
+          Evaluation = Map
+          Memory = memoryModel
+          WindowSize = None
+          Radius = None
+          KernelSize = None
+          Sigma = None
+          Tags = []
+          FallbackCostUnits = costUnits }
+
+let annotateImageOperator<'T> spec stage =
+    withCostModel (imageOperatorStageCost<'T> spec) stage
 
 type CostDiscrepancyPolicy =
     { Enabled: bool

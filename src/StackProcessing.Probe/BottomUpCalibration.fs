@@ -40,7 +40,7 @@ let private usage () =
     printfn "  --repeat N              Repeat emitted probe runs. Defaults to 3."
     printfn "  -j, --jobs N            Run up to N emitted probe graphs at once. Defaults to 1."
     printfn "  --layers N              Number of bottom-up layers to run. Defaults to all."
-    printfn "  --phase NAME            Probe phase: io, io-cast, sources, singleton, neighbourhood, geometry, fourier, keypoints, dependency, reducers, or all."
+    printfn "  --phase NAME            Probe phase: io, io-cast, sources, singleton, window-slab, neighbourhood, geometry, fourier, keypoints, dependency, reducers, or all."
     printfn "  --phases LIST           Comma-separated phases. Defaults to all."
     printfn "  --member LIST           Restrict generated probe graphs by graph/member/operator name."
     printfn "  --keep-tmp              Do not clear repository tmp before starting."
@@ -189,6 +189,7 @@ let private phaseForLayer layerName =
     | "02-io-casts" -> "io-cast"
     | "02-sources" -> "sources"
     | "03-simple-unary" -> "singleton"
+    | "04-window-slab" -> "window-slab"
     | "04-windowed-unary" -> "neighbourhood"
     | "05-intensity-and-additive" -> "singleton"
     | "06-geometry-and-projection" -> "geometry"
@@ -205,6 +206,7 @@ let private normalizePhase (value: string) =
     | "io-cast" | "io-casts" | "read-cast" | "readcast" | "conversion" | "conversions" -> Some "io-cast"
     | "sources" | "source" -> Some "sources"
     | "singleton" | "singletons" | "simple" | "simple-unary" -> Some "singleton"
+    | "window-slab" | "windowslab" | "slab" | "slabs" | "z-agnostic-slab" | "zagnostic-slab" -> Some "window-slab"
     | "neighbourhood" | "neighborhood" | "window" | "windowed" | "windowed-unary" -> Some "neighbourhood"
     | "geometry" | "projection" | "geometry-and-projection" -> Some "geometry"
     | "fourier" | "vector" | "fourier-and-vector" -> Some "fourier"
@@ -368,7 +370,7 @@ let rec private parseArgs options args =
         match parsePhases value with
         | Some phases -> parseArgs { options with Phases = phases } rest
         | None ->
-            eprintfn "bottom-up: --phases expects io,io-cast,sources,singleton,neighbourhood,geometry,fourier,keypoints,dependency,reducers, or all"
+            eprintfn "bottom-up: --phases expects io,io-cast,sources,singleton,window-slab,neighbourhood,geometry,fourier,keypoints,dependency,reducers, or all"
             Error 2
     | "--member" :: value :: rest
     | "--members" :: value :: rest
