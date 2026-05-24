@@ -147,6 +147,15 @@ let windowSuite =
         testCase "rejects zero window size and zero stride" <| fun _ ->
             Expect.throws (fun () -> Stage.window "window" 0u 0u (fun _ x -> x) 1u |> ignore) "Window size must be positive."
             Expect.throws (fun () -> Stage.window "window" 1u 0u (fun _ x -> x) 0u |> ignore) "Window stride must be positive."
+
+        testCase "trim releases dropped prefix and suffix elements" <| fun _ ->
+            let released = ResizeArray<int>()
+            let output =
+                [ 0; 1; 2; 3; 4 ]
+                |> runStageOnList (Stage.trim "trim" 1u 2u released.Add)
+
+            Expect.equal output [ 1; 2 ] "Trim should keep the middle of the stream."
+            Expect.sequenceEqual released [ 0; 3; 4 ] "Trim should release prefix and suffix elements that do not pass through."
     ]
 
 [<Tests>]

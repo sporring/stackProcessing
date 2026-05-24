@@ -86,6 +86,10 @@ module private Pipe =
     val compose: p1: Pipe<'S,'T> -> p2: Pipe<'T,'U> -> Pipe<'S,'U>
     val skip: name: string -> count: uint -> Pipe<'a,'a>
     val take: name: string -> count: uint -> Pipe<'a,'a>
+    val trim:
+      name: string ->
+        before: uint ->
+        after: uint -> releaseDropped: ('T -> unit) -> Pipe<'T,'T>
     val map:
       name: string -> mapper: ('U -> 'V) -> pipe: Pipe<'In,'U> -> Pipe<'In,'V>
     /// Prepend a sequence produced by a Pipe<unit,'S> to the input stream.
@@ -517,6 +521,8 @@ module Stage =
     val prepend: name: string -> pre: Stage<unit,'S> -> Stage<'S,'S>
     val append: name: string -> app: Stage<unit,'S> -> Stage<'S,'S>
     val toPipe: stage: Stage<'a,'b> -> (unit -> Pipe<'a,'b>)
+    val runSingletonToList:
+      debug: bool -> input: 'S -> stage: Stage<'S,'T> -> 'T list
     val fromPipe:
       name: string ->
         transition: ProfileTransition ->
@@ -525,6 +531,10 @@ module Stage =
         pipe: Pipe<'S,'T> -> Stage<'S,'T>
     val skip: name: string -> n: uint -> Stage<'S,'S>
     val take: name: string -> n: uint -> Stage<'S,'S>
+    val trim:
+      name: string ->
+        before: uint ->
+        after: uint -> releaseDropped: ('S -> unit) -> Stage<'S,'S>
     val map:
       name: string ->
         f: (bool -> 'S -> 'T) ->

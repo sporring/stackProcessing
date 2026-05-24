@@ -1317,7 +1317,7 @@ val crop<'T when 'T: equality> :
      uint ->
      uint ->
      uint ->
-     uint32 -> uint -> StackCore.Stage<StackCore.Image<'T>,StackCore.Image<'T>>)
+     uint -> uint -> StackCore.Stage<StackCore.Image<'T>,StackCore.Image<'T>>)
     when 'T: equality
 
 val convolve:

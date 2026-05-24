@@ -193,6 +193,28 @@ module private Pipe =
         let apply debug input = input |> AsyncSeq.take (int count)
         create name apply Streaming
 
+    let trim (name: string) (before: uint) (after: uint) (releaseDropped: 'T -> unit) =
+        let apply _debug (input: AsyncSeq<'T>) =
+            asyncSeq {
+                let pending = Queue<'T>()
+                let mutable skipped = 0u
+
+                for item in input do
+                    if skipped < before then
+                        skipped <- skipped + 1u
+                        releaseDropped item
+                    else
+                        pending.Enqueue item
+
+                        if pending.Count > int after then
+                            yield pending.Dequeue()
+
+                while pending.Count > 0 do
+                    releaseDropped (pending.Dequeue())
+            }
+
+        create name apply Streaming
+
     let map (name: string) (mapper: 'U -> 'V) (pipe: Pipe<'In, 'U>) : Pipe<'In, 'V> =
         let apply debug input = input |> pipe.Apply debug |> AsyncSeq.map mapper
         create name apply pipe.Profile
@@ -1251,6 +1273,11 @@ module Stage =
 
     let toPipe (stage : Stage<_,_>) = stage.Build
 
+    let runSingletonToList debug input (stage: Stage<'S, 'T>) : 'T list =
+        (stage.Build()).Apply debug (AsyncSeq.singleton input)
+        |> AsyncSeq.toListAsync
+        |> Async.RunSynchronously
+
     let fromPipe (name: string) (transition: ProfileTransition) (memoryNeed: MemoryNeed) (elementTransformation: ElementTransformation) (pipe: Pipe<'S, 'T>) : Stage<'S, 'T> =
         create name (fun () -> pipe) transition memoryNeed elementTransformation []
 
@@ -1263,6 +1290,11 @@ module Stage =
         let build () = Pipe.take name n 
         let transition = ProfileTransition.create Streaming Streaming
         createWithSlice name build transition id id (Domain(SliceDomain.take (uint64 n))) []
+
+    let trim<'S> (name: string) (before: uint) (after: uint) (releaseDropped: 'S -> unit) : Stage<'S, 'S> =
+        let build () = Pipe.trim name before after releaseDropped
+        let transition = ProfileTransition.create Streaming Streaming
+        createWithSlice name build transition id id (Domain(SliceDomain.trim before after)) []
 
     let map<'S,'T> (name: string) (f: bool -> 'S -> 'T) (memoryNeed: MemoryNeed) (elementTransformation: ElementTransformation) : Stage<'S, 'T> =
         let apply debug input = input |> AsyncSeq.map (f debug)

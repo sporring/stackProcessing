@@ -771,7 +771,7 @@ module BuiltInCatalog =
           Description = coordinateDescription "x"
           Aliases = [ "coordinate"; "x"; "source"; "synthetic"; "position" ]
           Inputs = []
-          Outputs = [ makePort "Number" imageAny ]
+          Outputs = [ makePort "Float64" imageFloat64 ]
           Parameters =
               [ availableMemoryParameter
                 makeParameter "width" "Width" "64" (BasicType.Numeric UInt32)

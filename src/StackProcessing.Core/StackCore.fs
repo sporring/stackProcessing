@@ -1,6 +1,5 @@
 module StackCore
 
-open FSharp.Control
 open SlimPipeline // Core processing model
 open System
 
@@ -478,12 +477,7 @@ let windowToSlabWithRange<'T when 'T: equality> : Stage<Window<Image<'T>>, Slab<
 
 let mapSlabWithStage<'S, 'T when 'S: equality and 'T: equality> (stage: Stage<Image<'S>, Image<'T>>) : Stage<Slab<'S>, Slab<'T>> =
     let mapper debug (slab: Slab<'S>) =
-        let output =
-            (stage.Build()).Apply debug (AsyncSeq.ofSeq [ slab.Image ])
-            |> AsyncSeq.toListAsync
-            |> Async.RunSynchronously
-
-        match output with
+        match Stage.runSingletonToList debug slab.Image stage with
         | [ image ] ->
             { Image = image
               EmitRange = slab.EmitRange }

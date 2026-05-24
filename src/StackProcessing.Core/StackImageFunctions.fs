@@ -5,7 +5,6 @@ open SlimPipeline // Core processing model
 open System
 open System.Globalization
 open System.IO
-open System.Collections.Generic
 open StackCore
 open StackIO
 open TinyLinAlg
@@ -1413,37 +1412,18 @@ let createPadding<'T when 'T: equality> beforeX afterX beforeY afterY beforeZ af
 let crop<'T when 'T: equality> beforeX afterX beforeY afterY beforeZ afterZ : Stage<Image<'T>, Image<'T>> =
     let name = "crop"
     let cropXY (image: Image<'T>) =
-        try
-            ImageFunctions.crop2D [ beforeX; beforeY ] [ afterX; afterY ] image
-        finally
-            image.decRefCount()
+        ImageFunctions.crop2D [ beforeX; beforeY ] [ afterX; afterY ] image
 
-    let apply (_debug: bool) (input: AsyncSeq<Image<'T>>) =
-        asyncSeq {
-            let pending = Queue<Image<'T>>()
-            let mutable skipped = 0u
-
-            for image in input do
-                if skipped < beforeZ then
-                    skipped <- skipped + 1u
-                    image.decRefCount()
-                else
-                    pending.Enqueue(cropXY image)
-                    if pending.Count > int afterZ then
-                        yield pending.Dequeue()
-
-            while pending.Count > 0 do
-                pending.Dequeue().decRefCount()
-        }
-
-    let transition = ProfileTransition.create Streaming Streaming
     let memoryNeed nPixels = nPixels * getBytesPerComponent<'T>
     let memoryModel = StageMemoryModel.fromSinglePeak Map memoryNeed
     let costUnits input = inputValue input |> float
-    let pipe = { Name = name; Apply = apply; Profile = Streaming }
-    Stage.fromPipe name transition memoryNeed id pipe
-    |> withCostModel (imageOperatorCost<'T> "Crop" Map memoryModel None None None None [] costUnits)
-    |> Stage.withSliceCardinality (SlimPipeline.Domain(SlimPipeline.SliceDomain.trim beforeZ afterZ))
+
+    let cropXYStage =
+        liftUnaryReleaseAfter name cropXY memoryNeed id
+        |> withCostModel (imageOperatorCost<'T> "Crop" Map memoryModel None None None None [] costUnits)
+
+    Stage.trim "cropZ" beforeZ afterZ (fun image -> image.decRefCount())
+    --> cropXYStage
 
 let private convolveSliceOp (name: string) (kernel: Image<'T>) (outputRegionMode: ImageFunctions.OutputRegionMode option) (bc: ImageFunctions.BoundaryCondition option) =
     let memoryNeed nPixels =
@@ -1697,6 +1677,29 @@ let private validateCoordinateDimensions name width height depth =
     if height = 0u then invalidArg "height" $"{name} height must be positive."
     if depth = 0u then invalidArg "depth" $"{name} depth must be positive."
 
+let private repeatedImageSource<'T when 'T: equality>
+    name
+    sliceName
+    depth
+    cleaning
+    (image: Image<'T>)
+    (pl: Plan<unit, unit>)
+    : Plan<unit, Image<'T>> =
+    if depth = 0u then invalidArg "depth" $"{name} requires a positive depth."
+    if image.GetDimensions() <> 2u then
+        invalidArg "image" $"{name} expects a 2D image, got {image.GetDimensions()}D."
+
+    let width = image.GetWidth()
+    let height = image.GetHeight()
+
+    let mapper (i: int) : Image<'T> =
+        let output = image.copy($"{sliceName}[{i}]", i)
+        if pl.debug && DebugLevel.current() >= 1u then printfn "[%s] Created slice %A" name i
+        output
+
+    let stage = { srcStage name width height depth mapper with Cleaning = cleaning } |> Some
+    srcPlan pl width height depth stage
+
 let private coordinatePlan<'T when 'T: equality> name width height depth makeSlice cleaning (pl: Plan<unit, unit>) : Plan<unit, Image<'T>> =
     validateCoordinateDimensions name width height depth
     let stage = { srcStage name width height depth makeSlice with Cleaning = cleaning } |> Some
@@ -1705,20 +1708,16 @@ let private coordinatePlan<'T when 'T: equality> name width height depth makeSli
 let coordinateX<'T when 'T: equality> width height depth =
     let name = "coordinateX"
     let baseImage = Image<'T>.coordinateAxis2D(width, height, 0, $"{name}.base", 0)
-    let makeSlice (z: int) =
-        baseImage.copy($"{name}[{z}]", z)
     let cleanup () =
         baseImage.decRefCount()
-    coordinatePlan name width height depth makeSlice [ cleanup ]
+    repeatedImageSource name name depth [ cleanup ] baseImage
 
 let coordinateY<'T when 'T: equality> width height depth =
     let name = "coordinateY"
     let baseImage = Image<'T>.coordinateAxis2D(width, height, 1, $"{name}.base", 0)
-    let makeSlice (z: int) =
-        baseImage.copy($"{name}[{z}]", z)
     let cleanup () =
         baseImage.decRefCount()
-    coordinatePlan name width height depth makeSlice [ cleanup ]
+    repeatedImageSource name name depth [ cleanup ] baseImage
 
 let coordinateZ<'T when 'T: equality> width height depth =
     let name = "coordinateZ"
@@ -1740,20 +1739,7 @@ let polygonMask (width: uint) (height: uint) (polygon: Polygon2D) : Image<uint8>
     Image<uint8>.polygonMask(width, height, vertices, "polygonMask", 0)
 
 let repeat<'T when 'T: equality> (image: Image<'T>) (depth: uint) (pl: Plan<unit, unit>) : Plan<unit, Image<'T>> =
-    if depth = 0u then invalidArg "depth" "repeat requires a positive depth."
-    if image.GetDimensions() <> 2u then
-        invalidArg "image" $"repeat expects a 2D image, got {image.GetDimensions()}D."
-
-    let width = image.GetWidth()
-    let height = image.GetHeight()
-
-    let mapper (i: int) : Image<'T> =
-        let output = image.copy($"repeat[{i}]", i)
-        if pl.debug && DebugLevel.current() >= 1u then printfn "[repeat] Created slice %A" i
-        output
-
-    let stage = srcStage "repeat" width height depth mapper |> Some
-    srcPlan pl width height depth stage
+    repeatedImageSource "repeat" "repeat" depth [] image pl
 
 let repeatStage<'T when 'T: equality> (depth: uint) : Stage<Image<'T>, Image<'T>> =
     if depth = 0u then invalidArg "depth" "repeatStage requires a positive depth."

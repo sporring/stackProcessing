@@ -1331,6 +1331,14 @@ let private zeroNode pixelType width height depth =
       "height", string height
       "depth", string depth ]
 
+let private coordinateNode axis width height depth =
+    "source",
+    $"Coordinate{axis}",
+    [ "availableMemory", string availableMemory + "UL"
+      "width", string width
+      "height", string height
+      "depth", string depth ]
+
 let private readNodeFromWithSuffix input pixelType suffix =
     "read",
     "Read",
@@ -1590,49 +1598,76 @@ let private bottomUpGraphTemplates config =
                index <- index + 1 |]
 
     let syntheticSourcesLayer =
-        [| ignoreTemplate
+        [| yield
+               ignoreTemplate
                $"bottomup-10-normalNoise-float-ignore-{sizeSuffix}"
                "Float64 normalNoise source consumed without writing."
                [ "noise", "NormalNoise", [ "availableMemory", string availableMemory + "UL"; "type", "Float64"; "width", sizeText; "height", heightText; "depth", depthText; "mean", "128.0"; "std", "25.0" ] ]
-           writeUInt8Template
+           yield
+               writeUInt8Template
                $"bottomup-11-normalNoise-float-write-{sizeSuffix}"
                "Float64 normalNoise source cast and written."
                [ "noise", "NormalNoise", [ "availableMemory", string availableMemory + "UL"; "type", "Float64"; "width", sizeText; "height", heightText; "depth", depthText; "mean", "128.0"; "std", "25.0" ] ]
                "Float64"
-           ignoreTemplate
+           yield
+               ignoreTemplate
                $"bottomup-12-addNormalNoise-uint8-ignore-{sizeSuffix}"
                "UInt8 zero plus addNormalNoise consumed without writing."
                [ zeroUInt8; "noise", "AddNormalNoise", [ "type", "UInt8"; "mean", "128.0"; "std", "50.0" ] ]
-           writeTemplate
+           yield
+               writeTemplate
                $"bottomup-13-addNormalNoise-uint8-write-{sizeSuffix}"
                "UInt8 zero plus addNormalNoise written."
                [ zeroUInt8; "noise", "AddNormalNoise", [ "type", "UInt8"; "mean", "128.0"; "std", "50.0" ] ]
-           ignoreTemplate
+           yield
+               ignoreTemplate
                $"bottomup-14-saltAndPepper-source-ignore-{sizeSuffix}"
                "UInt8 saltAndPepperNoise source consumed without writing."
                [ "noise", "SaltAndPepperNoise", [ "availableMemory", string availableMemory + "UL"; "type", "UInt8"; "width", sizeText; "height", heightText; "depth", depthText; "probability", "0.02" ] ]
-           writeTemplate
+           yield
+               writeTemplate
                $"bottomup-15-saltAndPepper-source-write-{sizeSuffix}"
                "UInt8 saltAndPepperNoise source written."
                [ "noise", "SaltAndPepperNoise", [ "availableMemory", string availableMemory + "UL"; "type", "UInt8"; "width", sizeText; "height", heightText; "depth", depthText; "probability", "0.02" ] ]
-           ignoreTemplate
+           yield
+               ignoreTemplate
                $"bottomup-16-shotNoise-source-ignore-{sizeSuffix}"
                "Float64 shotNoise source consumed without writing."
                [ "noise", "ShotNoise", [ "availableMemory", string availableMemory + "UL"; "type", "Float64"; "width", sizeText; "height", heightText; "depth", depthText; "scale", "2.0" ] ]
-           writeUInt8Template
+           yield
+               writeUInt8Template
                $"bottomup-17-shotNoise-source-write-{sizeSuffix}"
                "Float64 shotNoise source cast and written."
                [ "noise", "ShotNoise", [ "availableMemory", string availableMemory + "UL"; "type", "Float64"; "width", sizeText; "height", heightText; "depth", depthText; "scale", "2.0" ] ]
                "Float64"
-           ignoreTemplate
+           yield
+               ignoreTemplate
                $"bottomup-18-speckleNoise-source-ignore-{sizeSuffix}"
                "Float64 speckleNoise source consumed without writing."
                [ "noise", "SpeckleNoise", [ "availableMemory", string availableMemory + "UL"; "type", "Float64"; "width", sizeText; "height", heightText; "depth", depthText; "std", "0.5" ] ]
-           writeUInt8Template
+           yield
+               writeUInt8Template
                $"bottomup-19-speckleNoise-source-write-{sizeSuffix}"
                "Float64 speckleNoise source cast and written."
                [ "noise", "SpeckleNoise", [ "availableMemory", string availableMemory + "UL"; "type", "Float64"; "width", sizeText; "height", heightText; "depth", depthText; "std", "0.5" ] ]
-               "Float64" |]
+               "Float64"
+
+           for axis in [ "X"; "Y"; "Z" ] do
+               let axisLower = axis.ToLowerInvariant()
+               let node = coordinateNode axis config.Shape.Width config.Shape.Height config.Depth
+
+               yield
+                   ignoreTemplate
+                       $"bottomup-20-coordinate{axisLower}-float-ignore-{sizeSuffix}"
+                       $"Float64 coordinate{axis} source consumed without writing."
+                       [ node ]
+
+               yield
+                   writeUInt8Template
+                       $"bottomup-21-coordinate{axisLower}-float-write-{sizeSuffix}"
+                       $"Float64 coordinate{axis} source cast and written."
+                       [ node ]
+                       "Float64" |]
 
     let simpleUnaryLayer =
         [| ignoreTemplate $"bottomup-20-cast-float-uint8-ignore-{sizeSuffix}" "Float64 read cast to UInt8 and consumed." [ readFloat; castNode "Float64" "UInt8" ]

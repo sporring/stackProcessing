@@ -11364,111 +11364,108 @@ BRDA:1697,57,0,0
 BRDA:1697,57,1,0
 BRDA:1698,112,0,0
 BRDA:1698,112,1,0
-FN:1700,SlimPipeline/Plan`2<Microsoft.FSharp.Core.Unit,Image/Image`1<T>> StackImageFunctions::coordinatePlan(System.String,System.UInt32,System.UInt32,System.UInt32,Microsoft.FSharp.Core.FSharpFunc`2<System.Int32,Image/Image`1<T>>,Microsoft.FSharp.Collections.FSharpList`1<Microsoft.FSharp.Core.FSharpFunc`2<Microsoft.FSharp.Core.Unit,Microsoft.FSharp.Core.Unit>>,SlimPipeline/Plan`2<Microsoft.FSharp.Core.Unit,Microsoft.FSharp.Core.Unit>)
-FNDA:0,SlimPipeline/Plan`2<Microsoft.FSharp.Core.Unit,Image/Image`1<T>> StackImageFunctions::coordinatePlan(System.String,System.UInt32,System.UInt32,System.UInt32,Microsoft.FSharp.Core.FSharpFunc`2<System.Int32,Image/Image`1<T>>,Microsoft.FSharp.Collections.FSharpList`1<Microsoft.FSharp.Core.FSharpFunc`2<Microsoft.FSharp.Core.Unit,Microsoft.FSharp.Core.Unit>>,SlimPipeline/Plan`2<Microsoft.FSharp.Core.Unit,Microsoft.FSharp.Core.Unit>)
-DA:1701,0
-DA:1702,0
-DA:1703,0
-FN:1705,Microsoft.FSharp.Core.FSharpFunc`2<SlimPipeline/Plan`2<Microsoft.FSharp.Core.Unit,Microsoft.FSharp.Core.Unit>,SlimPipeline/Plan`2<Microsoft.FSharp.Core.Unit,Image/Image`1<T>>> StackImageFunctions::coordinateX(System.UInt32,System.UInt32,System.UInt32)
-FNDA:0,Microsoft.FSharp.Core.FSharpFunc`2<SlimPipeline/Plan`2<Microsoft.FSharp.Core.Unit,Microsoft.FSharp.Core.Unit>,SlimPipeline/Plan`2<Microsoft.FSharp.Core.Unit,Image/Image`1<T>>> StackImageFunctions::coordinateX(System.UInt32,System.UInt32,System.UInt32)
-DA:1706,0
-DA:1707,0
+FN:1707,SlimPipeline/Plan`2<Microsoft.FSharp.Core.Unit,Image/Image`1<T>> StackImageFunctions::repeatedImageSource(System.String,System.String,System.UInt32,Microsoft.FSharp.Collections.FSharpList`1<Microsoft.FSharp.Core.FSharpFunc`2<Microsoft.FSharp.Core.Unit,Microsoft.FSharp.Core.Unit>>,Image/Image`1<T>,SlimPipeline/Plan`2<Microsoft.FSharp.Core.Unit,Microsoft.FSharp.Core.Unit>)
+FNDA:0,SlimPipeline/Plan`2<Microsoft.FSharp.Core.Unit,Image/Image`1<T>> StackImageFunctions::repeatedImageSource(System.String,System.String,System.UInt32,Microsoft.FSharp.Collections.FSharpList`1<Microsoft.FSharp.Core.FSharpFunc`2<Microsoft.FSharp.Core.Unit,Microsoft.FSharp.Core.Unit>>,Image/Image`1<T>,SlimPipeline/Plan`2<Microsoft.FSharp.Core.Unit,Microsoft.FSharp.Core.Unit>)
+DA:1708,0
+DA:1709,0
+DA:1710,0
 DA:1712,0
-FN:1714,Microsoft.FSharp.Core.FSharpFunc`2<SlimPipeline/Plan`2<Microsoft.FSharp.Core.Unit,Microsoft.FSharp.Core.Unit>,SlimPipeline/Plan`2<Microsoft.FSharp.Core.Unit,Image/Image`1<T>>> StackImageFunctions::coordinateY(System.UInt32,System.UInt32,System.UInt32)
-FNDA:0,Microsoft.FSharp.Core.FSharpFunc`2<SlimPipeline/Plan`2<Microsoft.FSharp.Core.Unit,Microsoft.FSharp.Core.Unit>,SlimPipeline/Plan`2<Microsoft.FSharp.Core.Unit,Image/Image`1<T>>> StackImageFunctions::coordinateY(System.UInt32,System.UInt32,System.UInt32)
-DA:1715,0
-DA:1716,0
+DA:1713,0
+DA:1720,0
 DA:1721,0
-FN:1723,Microsoft.FSharp.Core.FSharpFunc`2<SlimPipeline/Plan`2<Microsoft.FSharp.Core.Unit,Microsoft.FSharp.Core.Unit>,SlimPipeline/Plan`2<Microsoft.FSharp.Core.Unit,Image/Image`1<T>>> StackImageFunctions::coordinateZ(System.UInt32,System.UInt32,System.UInt32)
-FNDA:0,Microsoft.FSharp.Core.FSharpFunc`2<SlimPipeline/Plan`2<Microsoft.FSharp.Core.Unit,Microsoft.FSharp.Core.Unit>,SlimPipeline/Plan`2<Microsoft.FSharp.Core.Unit,Image/Image`1<T>>> StackImageFunctions::coordinateZ(System.UInt32,System.UInt32,System.UInt32)
+BRDA:1708,2,0,0
+BRDA:1708,2,1,0
+BRDA:1709,64,0,0
+BRDA:1709,64,1,0
+FN:1723,SlimPipeline/Plan`2<Microsoft.FSharp.Core.Unit,Image/Image`1<T>> StackImageFunctions::coordinatePlan(System.String,System.UInt32,System.UInt32,System.UInt32,Microsoft.FSharp.Core.FSharpFunc`2<System.Int32,Image/Image`1<T>>,Microsoft.FSharp.Collections.FSharpList`1<Microsoft.FSharp.Core.FSharpFunc`2<Microsoft.FSharp.Core.Unit,Microsoft.FSharp.Core.Unit>>,SlimPipeline/Plan`2<Microsoft.FSharp.Core.Unit,Microsoft.FSharp.Core.Unit>)
+FNDA:0,SlimPipeline/Plan`2<Microsoft.FSharp.Core.Unit,Image/Image`1<T>> StackImageFunctions::coordinatePlan(System.String,System.UInt32,System.UInt32,System.UInt32,Microsoft.FSharp.Core.FSharpFunc`2<System.Int32,Image/Image`1<T>>,Microsoft.FSharp.Collections.FSharpList`1<Microsoft.FSharp.Core.FSharpFunc`2<Microsoft.FSharp.Core.Unit,Microsoft.FSharp.Core.Unit>>,SlimPipeline/Plan`2<Microsoft.FSharp.Core.Unit,Microsoft.FSharp.Core.Unit>)
 DA:1724,0
-DA:1728,0
-FN:1734,SlimPipeline/Plan`2<Microsoft.FSharp.Core.Unit,Image/Image`1<T>> StackImageFunctions::zero(System.UInt32,System.UInt32,System.UInt32,SlimPipeline/Plan`2<Microsoft.FSharp.Core.Unit,Microsoft.FSharp.Core.Unit>)
-FNDA:0,SlimPipeline/Plan`2<Microsoft.FSharp.Core.Unit,Image/Image`1<T>> StackImageFunctions::zero(System.UInt32,System.UInt32,System.UInt32,SlimPipeline/Plan`2<Microsoft.FSharp.Core.Unit,Microsoft.FSharp.Core.Unit>)
-DA:1735,0
+DA:1725,0
+DA:1726,0
+FN:1728,Microsoft.FSharp.Core.FSharpFunc`2<SlimPipeline/Plan`2<Microsoft.FSharp.Core.Unit,Microsoft.FSharp.Core.Unit>,SlimPipeline/Plan`2<Microsoft.FSharp.Core.Unit,Image/Image`1<T>>> StackImageFunctions::coordinateX(System.UInt32,System.UInt32,System.UInt32)
+FNDA:0,Microsoft.FSharp.Core.FSharpFunc`2<SlimPipeline/Plan`2<Microsoft.FSharp.Core.Unit,Microsoft.FSharp.Core.Unit>,SlimPipeline/Plan`2<Microsoft.FSharp.Core.Unit,Image/Image`1<T>>> StackImageFunctions::coordinateX(System.UInt32,System.UInt32,System.UInt32)
+DA:1729,0
+DA:1730,0
+DA:1733,0
+FN:1735,Microsoft.FSharp.Core.FSharpFunc`2<SlimPipeline/Plan`2<Microsoft.FSharp.Core.Unit,Microsoft.FSharp.Core.Unit>,SlimPipeline/Plan`2<Microsoft.FSharp.Core.Unit,Image/Image`1<T>>> StackImageFunctions::coordinateY(System.UInt32,System.UInt32,System.UInt32)
+FNDA:0,Microsoft.FSharp.Core.FSharpFunc`2<SlimPipeline/Plan`2<Microsoft.FSharp.Core.Unit,Microsoft.FSharp.Core.Unit>,SlimPipeline/Plan`2<Microsoft.FSharp.Core.Unit,Image/Image`1<T>>> StackImageFunctions::coordinateY(System.UInt32,System.UInt32,System.UInt32)
 DA:1736,0
-FN:1738,Image/Image`1<System.Byte> StackImageFunctions::polygonMask(System.UInt32,System.UInt32,Microsoft.FSharp.Collections.FSharpList`1<StackCore/Point2D>)
-FNDA:0,Image/Image`1<System.Byte> StackImageFunctions::polygonMask(System.UInt32,System.UInt32,Microsoft.FSharp.Collections.FSharpList`1<StackCore/Point2D>)
-DA:1739,0
+DA:1737,0
 DA:1740,0
-FN:1742,SlimPipeline/Plan`2<Microsoft.FSharp.Core.Unit,Image/Image`1<T>> StackImageFunctions::repeat(Image/Image`1<T>,System.UInt32,SlimPipeline/Plan`2<Microsoft.FSharp.Core.Unit,Microsoft.FSharp.Core.Unit>)
-FNDA:0,SlimPipeline/Plan`2<Microsoft.FSharp.Core.Unit,Image/Image`1<T>> StackImageFunctions::repeat(Image/Image`1<T>,System.UInt32,SlimPipeline/Plan`2<Microsoft.FSharp.Core.Unit,Microsoft.FSharp.Core.Unit>)
+FN:1742,Microsoft.FSharp.Core.FSharpFunc`2<SlimPipeline/Plan`2<Microsoft.FSharp.Core.Unit,Microsoft.FSharp.Core.Unit>,SlimPipeline/Plan`2<Microsoft.FSharp.Core.Unit,Image/Image`1<T>>> StackImageFunctions::coordinateZ(System.UInt32,System.UInt32,System.UInt32)
+FNDA:0,Microsoft.FSharp.Core.FSharpFunc`2<SlimPipeline/Plan`2<Microsoft.FSharp.Core.Unit,Microsoft.FSharp.Core.Unit>,SlimPipeline/Plan`2<Microsoft.FSharp.Core.Unit,Image/Image`1<T>>> StackImageFunctions::coordinateZ(System.UInt32,System.UInt32,System.UInt32)
 DA:1743,0
-DA:1744,0
-DA:1745,0
 DA:1747,0
-DA:1748,0
+FN:1753,SlimPipeline/Plan`2<Microsoft.FSharp.Core.Unit,Image/Image`1<T>> StackImageFunctions::zero(System.UInt32,System.UInt32,System.UInt32,SlimPipeline/Plan`2<Microsoft.FSharp.Core.Unit,Microsoft.FSharp.Core.Unit>)
+FNDA:0,SlimPipeline/Plan`2<Microsoft.FSharp.Core.Unit,Image/Image`1<T>> StackImageFunctions::zero(System.UInt32,System.UInt32,System.UInt32,SlimPipeline/Plan`2<Microsoft.FSharp.Core.Unit,Microsoft.FSharp.Core.Unit>)
+DA:1754,0
 DA:1755,0
-DA:1756,0
-BRDA:1743,2,0,0
-BRDA:1743,2,1,0
-BRDA:1744,33,0,0
-BRDA:1744,33,1,0
-FN:1758,SlimPipeline/Stage`2<Image/Image`1<T>,Image/Image`1<T>> StackImageFunctions::repeatStage(System.UInt32)
-FNDA:0,SlimPipeline/Stage`2<Image/Image`1<T>,Image/Image`1<T>> StackImageFunctions::repeatStage(System.UInt32)
+FN:1757,Image/Image`1<System.Byte> StackImageFunctions::polygonMask(System.UInt32,System.UInt32,Microsoft.FSharp.Collections.FSharpList`1<StackCore/Point2D>)
+FNDA:0,Image/Image`1<System.Byte> StackImageFunctions::polygonMask(System.UInt32,System.UInt32,Microsoft.FSharp.Collections.FSharpList`1<StackCore/Point2D>)
+DA:1758,0
 DA:1759,0
-DA:1773,0
-DA:1774,0
-DA:1775,0
-BRDA:1759,2,0,0
-BRDA:1759,2,1,0
-FN:1777,Microsoft.FSharp.Core.FSharpFunc`2<System.UInt32,System.Tuple`2<System.Tuple`3<System.Double,System.Double,System.Double>,System.Tuple`2<System.Double,System.Double>>> StackImageFunctions::euler2DTransformPath(System.UInt32,System.UInt32,System.UInt32,System.String)
-FNDA:0,Microsoft.FSharp.Core.FSharpFunc`2<System.UInt32,System.Tuple`2<System.Tuple`3<System.Double,System.Double,System.Double>,System.Tuple`2<System.Double,System.Double>>> StackImageFunctions::euler2DTransformPath(System.UInt32,System.UInt32,System.UInt32,System.String)
-DA:1778,0
+FN:1761,SlimPipeline/Plan`2<Microsoft.FSharp.Core.Unit,Image/Image`1<T>> StackImageFunctions::repeat(Image/Image`1<T>,System.UInt32,SlimPipeline/Plan`2<Microsoft.FSharp.Core.Unit,Microsoft.FSharp.Core.Unit>)
+FNDA:0,SlimPipeline/Plan`2<Microsoft.FSharp.Core.Unit,Image/Image`1<T>> StackImageFunctions::repeat(Image/Image`1<T>,System.UInt32,SlimPipeline/Plan`2<Microsoft.FSharp.Core.Unit,Microsoft.FSharp.Core.Unit>)
+DA:1762,0
+FN:1764,SlimPipeline/Stage`2<Image/Image`1<T>,Image/Image`1<T>> StackImageFunctions::repeatStage(System.UInt32)
+FNDA:0,SlimPipeline/Stage`2<Image/Image`1<T>,Image/Image`1<T>> StackImageFunctions::repeatStage(System.UInt32)
+DA:1765,0
 DA:1779,0
 DA:1780,0
-DA:1782,0
-DA:1783,0
-BRDA:1778,2,0,0
-BRDA:1778,2,1,0
-BRDA:1779,27,0,0
-BRDA:1779,27,1,0
-BRDA:1780,52,0,0
-BRDA:1780,52,1,0
-FN:1801,SlimPipeline/Stage`2<Image/Image`1<T>,Image/Image`1<T>> StackImageFunctions::createByEuler2DTransformFromImage(System.UInt32,Microsoft.FSharp.Core.FSharpFunc`2<System.UInt32,System.Tuple`2<System.Tuple`3<System.Double,System.Double,System.Double>,System.Tuple`2<System.Double,System.Double>>>)
+DA:1781,0
+BRDA:1765,2,0,0
+BRDA:1765,2,1,0
+FN:1783,Microsoft.FSharp.Core.FSharpFunc`2<System.UInt32,System.Tuple`2<System.Tuple`3<System.Double,System.Double,System.Double>,System.Tuple`2<System.Double,System.Double>>> StackImageFunctions::euler2DTransformPath(System.UInt32,System.UInt32,System.UInt32,System.String)
+FNDA:0,Microsoft.FSharp.Core.FSharpFunc`2<System.UInt32,System.Tuple`2<System.Tuple`3<System.Double,System.Double,System.Double>,System.Tuple`2<System.Double,System.Double>>> StackImageFunctions::euler2DTransformPath(System.UInt32,System.UInt32,System.UInt32,System.String)
+DA:1784,0
+DA:1785,0
+DA:1786,0
+DA:1788,0
+DA:1789,0
+BRDA:1784,2,0,0
+BRDA:1784,2,1,0
+BRDA:1785,27,0,0
+BRDA:1785,27,1,0
+BRDA:1786,52,0,0
+BRDA:1786,52,1,0
+FN:1807,SlimPipeline/Stage`2<Image/Image`1<T>,Image/Image`1<T>> StackImageFunctions::createByEuler2DTransformFromImage(System.UInt32,Microsoft.FSharp.Core.FSharpFunc`2<System.UInt32,System.Tuple`2<System.Tuple`3<System.Double,System.Double,System.Double>,System.Tuple`2<System.Double,System.Double>>>)
 FNDA:0,SlimPipeline/Stage`2<Image/Image`1<T>,Image/Image`1<T>> StackImageFunctions::createByEuler2DTransformFromImage(System.UInt32,Microsoft.FSharp.Core.FSharpFunc`2<System.UInt32,System.Tuple`2<System.Tuple`3<System.Double,System.Double,System.Double>,System.Tuple`2<System.Double,System.Double>>>)
-DA:1802,0
-DA:1817,0
-DA:1818,0
-DA:1819,0
-BRDA:1802,2,0,0
-BRDA:1802,2,1,0
-FN:1827,SlimPipeline/Plan`2<Microsoft.FSharp.Core.Unit,Image/Image`1<T>> StackImageFunctions::normalNoise(System.UInt32,System.UInt32,System.UInt32,System.Double,System.Double,SlimPipeline/Plan`2<Microsoft.FSharp.Core.Unit,Microsoft.FSharp.Core.Unit>)
+DA:1808,0
+DA:1823,0
+DA:1824,0
+DA:1825,0
+BRDA:1808,2,0,0
+BRDA:1808,2,1,0
+FN:1833,SlimPipeline/Plan`2<Microsoft.FSharp.Core.Unit,Image/Image`1<T>> StackImageFunctions::normalNoise(System.UInt32,System.UInt32,System.UInt32,System.Double,System.Double,SlimPipeline/Plan`2<Microsoft.FSharp.Core.Unit,Microsoft.FSharp.Core.Unit>)
 FNDA:0,SlimPipeline/Plan`2<Microsoft.FSharp.Core.Unit,Image/Image`1<T>> StackImageFunctions::normalNoise(System.UInt32,System.UInt32,System.UInt32,System.Double,System.Double,SlimPipeline/Plan`2<Microsoft.FSharp.Core.Unit,Microsoft.FSharp.Core.Unit>)
-DA:1828,0
-DA:1829,0
-FN:1837,SlimPipeline/Plan`2<Microsoft.FSharp.Core.Unit,Image/Image`1<T>> StackImageFunctions::noiseSource(System.String,System.UInt32,System.UInt32,System.UInt32,Microsoft.FSharp.Core.FSharpFunc`2<Image/Image`1<T>,Image/Image`1<T>>,SlimPipeline/Plan`2<Microsoft.FSharp.Core.Unit,Microsoft.FSharp.Core.Unit>)
+DA:1834,0
+DA:1835,0
+FN:1843,SlimPipeline/Plan`2<Microsoft.FSharp.Core.Unit,Image/Image`1<T>> StackImageFunctions::noiseSource(System.String,System.UInt32,System.UInt32,System.UInt32,Microsoft.FSharp.Core.FSharpFunc`2<Image/Image`1<T>,Image/Image`1<T>>,SlimPipeline/Plan`2<Microsoft.FSharp.Core.Unit,Microsoft.FSharp.Core.Unit>)
 FNDA:0,SlimPipeline/Plan`2<Microsoft.FSharp.Core.Unit,Image/Image`1<T>> StackImageFunctions::noiseSource(System.String,System.UInt32,System.UInt32,System.UInt32,Microsoft.FSharp.Core.FSharpFunc`2<Image/Image`1<T>,Image/Image`1<T>>,SlimPipeline/Plan`2<Microsoft.FSharp.Core.Unit,Microsoft.FSharp.Core.Unit>)
-DA:1838,0
-DA:1839,0
-FN:1841,SlimPipeline/Plan`2<Microsoft.FSharp.Core.Unit,Image/Image`1<T>> StackImageFunctions::saltAndPepperNoise(System.UInt32,System.UInt32,System.UInt32,System.Double,SlimPipeline/Plan`2<Microsoft.FSharp.Core.Unit,Microsoft.FSharp.Core.Unit>)
-FNDA:0,SlimPipeline/Plan`2<Microsoft.FSharp.Core.Unit,Image/Image`1<T>> StackImageFunctions::saltAndPepperNoise(System.UInt32,System.UInt32,System.UInt32,System.Double,SlimPipeline/Plan`2<Microsoft.FSharp.Core.Unit,Microsoft.FSharp.Core.Unit>)
-DA:1842,0
-FN:1844,SlimPipeline/Plan`2<Microsoft.FSharp.Core.Unit,Image/Image`1<T>> StackImageFunctions::shotNoise(System.UInt32,System.UInt32,System.UInt32,System.Double,SlimPipeline/Plan`2<Microsoft.FSharp.Core.Unit,Microsoft.FSharp.Core.Unit>)
-FNDA:0,SlimPipeline/Plan`2<Microsoft.FSharp.Core.Unit,Image/Image`1<T>> StackImageFunctions::shotNoise(System.UInt32,System.UInt32,System.UInt32,System.Double,SlimPipeline/Plan`2<Microsoft.FSharp.Core.Unit,Microsoft.FSharp.Core.Unit>)
+DA:1844,0
 DA:1845,0
-FN:1847,SlimPipeline/Plan`2<Microsoft.FSharp.Core.Unit,Image/Image`1<T>> StackImageFunctions::speckleNoise(System.UInt32,System.UInt32,System.UInt32,System.Double,SlimPipeline/Plan`2<Microsoft.FSharp.Core.Unit,Microsoft.FSharp.Core.Unit>)
-FNDA:0,SlimPipeline/Plan`2<Microsoft.FSharp.Core.Unit,Image/Image`1<T>> StackImageFunctions::speckleNoise(System.UInt32,System.UInt32,System.UInt32,System.Double,SlimPipeline/Plan`2<Microsoft.FSharp.Core.Unit,Microsoft.FSharp.Core.Unit>)
+FN:1847,SlimPipeline/Plan`2<Microsoft.FSharp.Core.Unit,Image/Image`1<T>> StackImageFunctions::saltAndPepperNoise(System.UInt32,System.UInt32,System.UInt32,System.Double,SlimPipeline/Plan`2<Microsoft.FSharp.Core.Unit,Microsoft.FSharp.Core.Unit>)
+FNDA:0,SlimPipeline/Plan`2<Microsoft.FSharp.Core.Unit,Image/Image`1<T>> StackImageFunctions::saltAndPepperNoise(System.UInt32,System.UInt32,System.UInt32,System.Double,SlimPipeline/Plan`2<Microsoft.FSharp.Core.Unit,Microsoft.FSharp.Core.Unit>)
 DA:1848,0
-FN:1851,SlimPipeline/Plan`2<Microsoft.FSharp.Core.Unit,Image/Image`1<T>> StackImageFunctions::createByEuler2DTransform(Image/Image`1<T>,System.UInt32,Microsoft.FSharp.Core.FSharpFunc`2<System.UInt32,System.Tuple`2<System.Tuple`3<System.Double,System.Double,System.Double>,System.Tuple`2<System.Double,System.Double>>>,SlimPipeline/Plan`2<Microsoft.FSharp.Core.Unit,Microsoft.FSharp.Core.Unit>)
+FN:1850,SlimPipeline/Plan`2<Microsoft.FSharp.Core.Unit,Image/Image`1<T>> StackImageFunctions::shotNoise(System.UInt32,System.UInt32,System.UInt32,System.Double,SlimPipeline/Plan`2<Microsoft.FSharp.Core.Unit,Microsoft.FSharp.Core.Unit>)
+FNDA:0,SlimPipeline/Plan`2<Microsoft.FSharp.Core.Unit,Image/Image`1<T>> StackImageFunctions::shotNoise(System.UInt32,System.UInt32,System.UInt32,System.Double,SlimPipeline/Plan`2<Microsoft.FSharp.Core.Unit,Microsoft.FSharp.Core.Unit>)
+DA:1851,0
+FN:1853,SlimPipeline/Plan`2<Microsoft.FSharp.Core.Unit,Image/Image`1<T>> StackImageFunctions::speckleNoise(System.UInt32,System.UInt32,System.UInt32,System.Double,SlimPipeline/Plan`2<Microsoft.FSharp.Core.Unit,Microsoft.FSharp.Core.Unit>)
+FNDA:0,SlimPipeline/Plan`2<Microsoft.FSharp.Core.Unit,Image/Image`1<T>> StackImageFunctions::speckleNoise(System.UInt32,System.UInt32,System.UInt32,System.Double,SlimPipeline/Plan`2<Microsoft.FSharp.Core.Unit,Microsoft.FSharp.Core.Unit>)
+DA:1854,0
+FN:1857,SlimPipeline/Plan`2<Microsoft.FSharp.Core.Unit,Image/Image`1<T>> StackImageFunctions::createByEuler2DTransform(Image/Image`1<T>,System.UInt32,Microsoft.FSharp.Core.FSharpFunc`2<System.UInt32,System.Tuple`2<System.Tuple`3<System.Double,System.Double,System.Double>,System.Tuple`2<System.Double,System.Double>>>,SlimPipeline/Plan`2<Microsoft.FSharp.Core.Unit,Microsoft.FSharp.Core.Unit>)
 FNDA:0,SlimPipeline/Plan`2<Microsoft.FSharp.Core.Unit,Image/Image`1<T>> StackImageFunctions::createByEuler2DTransform(Image/Image`1<T>,System.UInt32,Microsoft.FSharp.Core.FSharpFunc`2<System.UInt32,System.Tuple`2<System.Tuple`3<System.Double,System.Double,System.Double>,System.Tuple`2<System.Double,System.Double>>>,SlimPipeline/Plan`2<Microsoft.FSharp.Core.Unit,Microsoft.FSharp.Core.Unit>)
-DA:1852,0
-DA:1853,0
+DA:1858,0
 DA:1859,0
-DA:1860,0
-FN:1863,SlimPipeline/Plan`2<Microsoft.FSharp.Core.Unit,Microsoft.FSharp.Core.Unit> StackImageFunctions::empty(SlimPipeline/Plan`2<Microsoft.FSharp.Core.Unit,Microsoft.FSharp.Core.Unit>)
-FNDA:0,SlimPipeline/Plan`2<Microsoft.FSharp.Core.Unit,Microsoft.FSharp.Core.Unit> StackImageFunctions::empty(SlimPipeline/Plan`2<Microsoft.FSharp.Core.Unit,Microsoft.FSharp.Core.Unit>)
-DA:1864,0
 DA:1865,0
 DA:1866,0
-FN:1930,Microsoft.FSharp.Collections.FSharpMap`2<System.Tuple`2<a,System.UInt64>,StackImageFunctions/ComponentStatistics> StackImageFunctions::labelChunkStatistics(a,Image/Image`1<System.UInt64>)
+FN:1869,SlimPipeline/Plan`2<Microsoft.FSharp.Core.Unit,Microsoft.FSharp.Core.Unit> StackImageFunctions::empty(SlimPipeline/Plan`2<Microsoft.FSharp.Core.Unit,Microsoft.FSharp.Core.Unit>)
+FNDA:0,SlimPipeline/Plan`2<Microsoft.FSharp.Core.Unit,Microsoft.FSharp.Core.Unit> StackImageFunctions::empty(SlimPipeline/Plan`2<Microsoft.FSharp.Core.Unit,Microsoft.FSharp.Core.Unit>)
+DA:1870,0
+DA:1871,0
+DA:1872,0
+FN:1936,Microsoft.FSharp.Collections.FSharpMap`2<System.Tuple`2<a,System.UInt64>,StackImageFunctions/ComponentStatistics> StackImageFunctions::labelChunkStatistics(a,Image/Image`1<System.UInt64>)
 FNDA:0,Microsoft.FSharp.Collections.FSharpMap`2<System.Tuple`2<a,System.UInt64>,StackImageFunctions/ComponentStatistics> StackImageFunctions::labelChunkStatistics(a,Image/Image`1<System.UInt64>)
-DA:1931,0
-DA:1932,0
-DA:1933,0
-DA:1934,0
-DA:1935,0
-DA:1936,0
 DA:1937,0
 DA:1938,0
 DA:1939,0
@@ -11476,78 +11473,84 @@ DA:1940,0
 DA:1941,0
 DA:1942,0
 DA:1943,0
-FN:1945,SlimPipeline/Stage`2<System.Tuple`2<Image/Image`1<System.UInt64>,System.UInt64>,StackImageFunctions/ConnectedComponentTranslationTable> StackImageFunctions::makeConnectedComponentTranslationTable(Microsoft.FSharp.Core.FSharpOption`1<System.UInt32>)
-FNDA:0,SlimPipeline/Stage`2<System.Tuple`2<Image/Image`1<System.UInt64>,System.UInt64>,StackImageFunctions/ConnectedComponentTranslationTable> StackImageFunctions::makeConnectedComponentTranslationTable(Microsoft.FSharp.Core.FSharpOption`1<System.UInt32>)
+DA:1944,0
+DA:1945,0
 DA:1946,0
 DA:1947,0
-DA:2064,0
-FN:2066,SlimPipeline/Stage`2<Image/Image`1<System.UInt64>,Image/Image`1<System.UInt64>> StackImageFunctions::updateConnectedComponents(Microsoft.FSharp.Core.FSharpOption`1<System.UInt32>,StackImageFunctions/ConnectedComponentTranslationTable)
+DA:1948,0
+DA:1949,0
+FN:1951,SlimPipeline/Stage`2<System.Tuple`2<Image/Image`1<System.UInt64>,System.UInt64>,StackImageFunctions/ConnectedComponentTranslationTable> StackImageFunctions::makeConnectedComponentTranslationTable(Microsoft.FSharp.Core.FSharpOption`1<System.UInt32>)
+FNDA:0,SlimPipeline/Stage`2<System.Tuple`2<Image/Image`1<System.UInt64>,System.UInt64>,StackImageFunctions/ConnectedComponentTranslationTable> StackImageFunctions::makeConnectedComponentTranslationTable(Microsoft.FSharp.Core.FSharpOption`1<System.UInt32>)
+DA:1952,0
+DA:1953,0
+DA:2070,0
+FN:2072,SlimPipeline/Stage`2<Image/Image`1<System.UInt64>,Image/Image`1<System.UInt64>> StackImageFunctions::updateConnectedComponents(Microsoft.FSharp.Core.FSharpOption`1<System.UInt32>,StackImageFunctions/ConnectedComponentTranslationTable)
 FNDA:0,SlimPipeline/Stage`2<Image/Image`1<System.UInt64>,Image/Image`1<System.UInt64>> StackImageFunctions::updateConnectedComponents(Microsoft.FSharp.Core.FSharpOption`1<System.UInt32>,StackImageFunctions/ConnectedComponentTranslationTable)
-DA:2067,0
-DA:2068,0
-DA:2069,0
-DA:2071,0
-DA:2072,0
 DA:2073,0
 DA:2074,0
 DA:2075,0
-DA:2076,0
 DA:2077,0
 DA:2078,0
-DA:2091,0
-FN:2093,SlimPipeline/Stage`2<Image/Image`1<T>,Image/Image`1<T>> StackImageFunctions::permuteAxes(System.UInt32,System.UInt32,System.UInt32,System.UInt32)
-FNDA:0,SlimPipeline/Stage`2<Image/Image`1<T>,Image/Image`1<T>> StackImageFunctions::permuteAxes(System.UInt32,System.UInt32,System.UInt32,System.UInt32)
-DA:2094,0
-DA:2096,0
+DA:2079,0
+DA:2080,0
+DA:2081,0
+DA:2082,0
+DA:2083,0
+DA:2084,0
 DA:2097,0
-DA:2098,0
-DA:2099,0
+FN:2099,SlimPipeline/Stage`2<Image/Image`1<T>,Image/Image`1<T>> StackImageFunctions::permuteAxes(System.UInt32,System.UInt32,System.UInt32,System.UInt32)
+FNDA:0,SlimPipeline/Stage`2<Image/Image`1<T>,Image/Image`1<T>> StackImageFunctions::permuteAxes(System.UInt32,System.UInt32,System.UInt32,System.UInt32)
 DA:2100,0
+DA:2102,0
+DA:2103,0
 DA:2104,0
-DA:2107,0
-DA:2108,0
+DA:2105,0
+DA:2106,0
 DA:2110,0
-DA:2111,0
-DA:2115,0
+DA:2113,0
+DA:2114,0
 DA:2116,0
-DA:2118,0
-DA:2119,0
-DA:2120,0
+DA:2117,0
 DA:2121,0
 DA:2122,0
-DA:2123,0
 DA:2124,0
 DA:2125,0
 DA:2126,0
 DA:2127,0
 DA:2128,0
+DA:2129,0
 DA:2130,0
 DA:2131,0
 DA:2132,0
 DA:2133,0
 DA:2134,0
-DA:2135,0
 DA:2136,0
 DA:2137,0
 DA:2138,0
 DA:2139,0
 DA:2140,0
-BRDA:2096,9,0,0
-BRDA:2096,9,1,0
-BRDA:2096,20,0,0
-BRDA:2096,20,1,0
-BRDA:2096,31,0,0
-BRDA:2096,31,1,0
-BRDA:2098,48,0,0
-BRDA:2098,48,1,0
-BRDA:2098,59,0,0
-BRDA:2098,59,1,0
-BRDA:2100,71,0,0
-BRDA:2100,71,1,0
-BRDA:2100,82,0,0
-BRDA:2100,82,1,0
-BRDA:2139,617,0,0
-BRDA:2139,617,1,0
+DA:2141,0
+DA:2142,0
+DA:2143,0
+DA:2144,0
+DA:2145,0
+DA:2146,0
+BRDA:2102,9,0,0
+BRDA:2102,9,1,0
+BRDA:2102,20,0,0
+BRDA:2102,20,1,0
+BRDA:2102,31,0,0
+BRDA:2102,31,1,0
+BRDA:2104,48,0,0
+BRDA:2104,48,1,0
+BRDA:2104,59,0,0
+BRDA:2104,59,1,0
+BRDA:2106,71,0,0
+BRDA:2106,71,1,0
+BRDA:2106,82,0,0
+BRDA:2106,82,1,0
+BRDA:2145,617,0,0
+BRDA:2145,617,1,0
 FN:383,System.UInt64 StackImageFunctions/memoryNeed@384::Invoke(System.UInt64)
 FNDA:0,System.UInt64 StackImageFunctions/memoryNeed@384::Invoke(System.UInt64)
 DA:384,0
@@ -12147,343 +12150,331 @@ BRDA:1665,27,1,0
 FN:1672,System.UInt64 StackImageFunctions/memoryNeed@1673-27T::Invoke(a)
 FNDA:0,System.UInt64 StackImageFunctions/memoryNeed@1673-27T::Invoke(a)
 DA:1673,0
-FN:1708,Image/Image`1<T> StackImageFunctions/makeSlice@1709::Invoke(System.Int32)
-FNDA:0,Image/Image`1<T> StackImageFunctions/makeSlice@1709::Invoke(System.Int32)
-DA:1709,0
-FN:1710,Microsoft.FSharp.Core.Unit StackImageFunctions/cleanup@1711::Invoke(Microsoft.FSharp.Core.Unit)
-FNDA:0,Microsoft.FSharp.Core.Unit StackImageFunctions/cleanup@1711::Invoke(Microsoft.FSharp.Core.Unit)
-DA:1711,0
-FN:1717,Image/Image`1<T> StackImageFunctions/makeSlice@1718-1::Invoke(System.Int32)
-FNDA:0,Image/Image`1<T> StackImageFunctions/makeSlice@1718-1::Invoke(System.Int32)
+FN:1715,Image/Image`1<T> StackImageFunctions/mapper@1716-2::Invoke(System.Int32)
+FNDA:0,Image/Image`1<T> StackImageFunctions/mapper@1716-2::Invoke(System.Int32)
+DA:1716,0
+DA:1717,0
 DA:1718,0
-FN:1719,Microsoft.FSharp.Core.Unit StackImageFunctions/cleanup@1720-1::Invoke(Microsoft.FSharp.Core.Unit)
-FNDA:0,Microsoft.FSharp.Core.Unit StackImageFunctions/cleanup@1720-1::Invoke(Microsoft.FSharp.Core.Unit)
-DA:1720,0
-FN:1725,Image/Image`1<T> StackImageFunctions/makeSlice@1726-2::Invoke(System.Int32)
-FNDA:0,Image/Image`1<T> StackImageFunctions/makeSlice@1726-2::Invoke(System.Int32)
-DA:1726,0
-DA:1727,0
-FN:1731,Image/Image`1<T> StackImageFunctions/mapper@1732-2::Invoke(System.Int32)
-FNDA:0,Image/Image`1<T> StackImageFunctions/mapper@1732-2::Invoke(System.Int32)
+BRDA:1717,88,0,0
+BRDA:1717,88,1,0
+BRDA:1717,106,0,0
+BRDA:1717,106,1,0
+FN:1731,Microsoft.FSharp.Core.Unit StackImageFunctions/cleanup@1732::Invoke(Microsoft.FSharp.Core.Unit)
+FNDA:0,Microsoft.FSharp.Core.Unit StackImageFunctions/cleanup@1732::Invoke(Microsoft.FSharp.Core.Unit)
 DA:1732,0
-DA:1733,0
-DA:1734,0
-BRDA:1733,98,0,0
-BRDA:1733,98,1,0
-BRDA:1733,116,0,0
-BRDA:1733,116,1,0
-FN:1750,Image/Image`1<T> StackImageFunctions/mapper@1751-3::Invoke(System.Int32)
-FNDA:0,Image/Image`1<T> StackImageFunctions/mapper@1751-3::Invoke(System.Int32)
+FN:1738,Microsoft.FSharp.Core.Unit StackImageFunctions/cleanup@1739-1::Invoke(Microsoft.FSharp.Core.Unit)
+FNDA:0,Microsoft.FSharp.Core.Unit StackImageFunctions/cleanup@1739-1::Invoke(Microsoft.FSharp.Core.Unit)
+DA:1739,0
+FN:1744,Image/Image`1<T> StackImageFunctions/makeSlice@1745::Invoke(System.Int32)
+FNDA:0,Image/Image`1<T> StackImageFunctions/makeSlice@1745::Invoke(System.Int32)
+DA:1745,0
+DA:1746,0
+FN:1750,Image/Image`1<T> StackImageFunctions/mapper@1751-5::Invoke(System.Int32)
+FNDA:0,Image/Image`1<T> StackImageFunctions/mapper@1751-5::Invoke(System.Int32)
 DA:1751,0
 DA:1752,0
 DA:1753,0
-BRDA:1752,70,0,0
-BRDA:1752,70,1,0
-BRDA:1752,88,0,0
-BRDA:1752,88,1,0
-FN:1761,Microsoft.FSharp.Collections.FSharpList`1<Image/Image`1<T>> StackImageFunctions/copySlice@1762::Invoke(Image/Image`1<T>)
-FNDA:0,Microsoft.FSharp.Collections.FSharpList`1<Image/Image`1<T>> StackImageFunctions/copySlice@1762::Invoke(Image/Image`1<T>)
-DA:1762,0
-DA:1763,0
-DA:1765,0
-DA:1766,0
-DA:1767,0
+BRDA:1752,98,0,0
+BRDA:1752,98,1,0
+BRDA:1752,116,0,0
+BRDA:1752,116,1,0
+FN:1767,Microsoft.FSharp.Collections.FSharpList`1<Image/Image`1<T>> StackImageFunctions/copySlice@1768::Invoke(Image/Image`1<T>)
+FNDA:0,Microsoft.FSharp.Collections.FSharpList`1<Image/Image`1<T>> StackImageFunctions/copySlice@1768::Invoke(Image/Image`1<T>)
 DA:1768,0
 DA:1769,0
-DA:1770,0
-BRDA:1762,8,0,0
-BRDA:1762,8,1,0
-BRDA:1766,78,0,0
-BRDA:1766,78,1,0
-BRDA:1766,205,1,0
-BRDA:1766,205,0,0
-FN:1771,System.UInt64 StackImageFunctions/memoryNeed@1772-28::Invoke(System.UInt64)
-FNDA:0,System.UInt64 StackImageFunctions/memoryNeed@1772-28::Invoke(System.UInt64)
+DA:1771,0
 DA:1772,0
-FN:1785,System.Tuple`2<System.Tuple`3<System.Double,System.Double,System.Double>,System.Tuple`2<System.Double,System.Double>> StackImageFunctions/euler2DTransformPath@1785::Invoke(System.UInt32)
-FNDA:0,System.Tuple`2<System.Tuple`3<System.Double,System.Double,System.Double>,System.Tuple`2<System.Double,System.Double>> StackImageFunctions/euler2DTransformPath@1785::Invoke(System.UInt32)
-DA:1786,0
-DA:1787,0
-DA:1789,0
+DA:1773,0
+DA:1774,0
+DA:1775,0
+DA:1776,0
+BRDA:1768,8,0,0
+BRDA:1768,8,1,0
+BRDA:1772,78,0,0
+BRDA:1772,78,1,0
+BRDA:1772,205,1,0
+BRDA:1772,205,0,0
+FN:1777,System.UInt64 StackImageFunctions/memoryNeed@1778-28::Invoke(System.UInt64)
+FNDA:0,System.UInt64 StackImageFunctions/memoryNeed@1778-28::Invoke(System.UInt64)
+DA:1778,0
+FN:1791,System.Tuple`2<System.Tuple`3<System.Double,System.Double,System.Double>,System.Tuple`2<System.Double,System.Double>> StackImageFunctions/euler2DTransformPath@1791::Invoke(System.UInt32)
+FNDA:0,System.Tuple`2<System.Tuple`3<System.Double,System.Double,System.Double>,System.Tuple`2<System.Double,System.Double>> StackImageFunctions/euler2DTransformPath@1791::Invoke(System.UInt32)
+DA:1792,0
 DA:1793,0
-DA:1797,0
+DA:1795,0
 DA:1799,0
-BRDA:1789,65,0,0
-BRDA:1789,78,0,0
-BRDA:1789,91,0,0
-BRDA:1789,104,0,0
-BRDA:1789,117,0,0
-BRDA:1789,65,1,0
-BRDA:1789,78,1,0
-BRDA:1789,91,1,0
-BRDA:1789,104,1,0
-BRDA:1789,117,1,0
-BRDA:1789,130,0,0
-BRDA:1789,130,1,0
-FN:1804,Microsoft.FSharp.Collections.FSharpList`1<Image/Image`1<T>> StackImageFunctions/mapper@1805-4::Invoke(System.Boolean,System.Int64,Image/Image`1<T>)
-FNDA:0,Microsoft.FSharp.Collections.FSharpList`1<Image/Image`1<T>> StackImageFunctions/mapper@1805-4::Invoke(System.Boolean,System.Int64,Image/Image`1<T>)
+DA:1803,0
 DA:1805,0
-DA:1806,0
-DA:1807,0
-DA:1809,0
-DA:1810,0
+BRDA:1795,65,0,0
+BRDA:1795,78,0,0
+BRDA:1795,91,0,0
+BRDA:1795,104,0,0
+BRDA:1795,117,0,0
+BRDA:1795,65,1,0
+BRDA:1795,78,1,0
+BRDA:1795,91,1,0
+BRDA:1795,104,1,0
+BRDA:1795,117,1,0
+BRDA:1795,130,0,0
+BRDA:1795,130,1,0
+FN:1810,Microsoft.FSharp.Collections.FSharpList`1<Image/Image`1<T>> StackImageFunctions/mapper@1811-6::Invoke(System.Boolean,System.Int64,Image/Image`1<T>)
+FNDA:0,Microsoft.FSharp.Collections.FSharpList`1<Image/Image`1<T>> StackImageFunctions/mapper@1811-6::Invoke(System.Boolean,System.Int64,Image/Image`1<T>)
 DA:1811,0
 DA:1812,0
 DA:1813,0
-BRDA:1806,9,0,0
-BRDA:1806,9,1,0
-BRDA:1809,78,0,0
-BRDA:1809,78,1,0
-BRDA:1809,215,1,0
-BRDA:1809,215,0,0
-FN:1814,System.UInt64 StackImageFunctions/memoryNeed@1815-29::Invoke(System.UInt64)
-FNDA:0,System.UInt64 StackImageFunctions/memoryNeed@1815-29::Invoke(System.UInt64)
 DA:1815,0
-FN:1822,Image/Image`1<T> StackImageFunctions/mapper@1823-5::Invoke(System.Int32)
-FNDA:0,Image/Image`1<T> StackImageFunctions/mapper@1823-5::Invoke(System.Int32)
-DA:1823,0
-DA:1824,0
-DA:1825,0
-DA:1826,0
-DA:1827,0
-BRDA:1826,129,0,0
-BRDA:1826,129,1,0
-BRDA:1826,147,0,0
-BRDA:1826,147,1,0
-FN:1832,Image/Image`1<T> StackImageFunctions/mapper@1833-6::Invoke(System.Int32)
-FNDA:0,Image/Image`1<T> StackImageFunctions/mapper@1833-6::Invoke(System.Int32)
+DA:1816,0
+DA:1817,0
+DA:1818,0
+DA:1819,0
+BRDA:1812,9,0,0
+BRDA:1812,9,1,0
+BRDA:1815,78,0,0
+BRDA:1815,78,1,0
+BRDA:1815,215,1,0
+BRDA:1815,215,0,0
+FN:1820,System.UInt64 StackImageFunctions/memoryNeed@1821-29::Invoke(System.UInt64)
+FNDA:0,System.UInt64 StackImageFunctions/memoryNeed@1821-29::Invoke(System.UInt64)
+DA:1821,0
+FN:1828,Image/Image`1<T> StackImageFunctions/mapper@1829-7::Invoke(System.Int32)
+FNDA:0,Image/Image`1<T> StackImageFunctions/mapper@1829-7::Invoke(System.Int32)
+DA:1829,0
+DA:1830,0
+DA:1831,0
+DA:1832,0
 DA:1833,0
-DA:1834,0
-DA:1835,0
-DA:1836,0
-DA:1837,0
-BRDA:1836,136,0,0
-BRDA:1836,136,1,0
-BRDA:1836,154,0,0
-BRDA:1836,154,1,0
-FN:1854,Image/Image`1<T> StackImageFunctions/mapper@1855-9::Invoke(System.Int32)
-FNDA:0,Image/Image`1<T> StackImageFunctions/mapper@1855-9::Invoke(System.Int32)
-DA:1855,0
-DA:1856,0
-DA:1857,0
-DA:1858,0
-BRDA:1857,92,0,0
-BRDA:1857,92,1,0
-BRDA:1857,110,0,0
-BRDA:1857,110,1,0
-FN:1951,Microsoft.FSharp.Collections.FSharpMap`2<System.Tuple`2<System.UInt32,System.UInt64>,Microsoft.FSharp.Collections.FSharpSet`1<System.Tuple`2<System.UInt32,System.UInt64>>> StackImageFunctions/addBoundaryEdges@1951-1::Invoke(Microsoft.FSharp.Collections.FSharpMap`2<System.Tuple`2<System.UInt32,System.UInt64>,Microsoft.FSharp.Collections.FSharpSet`1<System.Tuple`2<System.UInt32,System.UInt64>>>,System.UInt64,System.UInt64)
-FNDA:0,Microsoft.FSharp.Collections.FSharpMap`2<System.Tuple`2<System.UInt32,System.UInt64>,Microsoft.FSharp.Collections.FSharpSet`1<System.Tuple`2<System.UInt32,System.UInt64>>> StackImageFunctions/addBoundaryEdges@1951-1::Invoke(Microsoft.FSharp.Collections.FSharpMap`2<System.Tuple`2<System.UInt32,System.UInt64>,Microsoft.FSharp.Collections.FSharpSet`1<System.Tuple`2<System.UInt32,System.UInt64>>>,System.UInt64,System.UInt64)
-DA:1952,0
-DA:1953,0
-DA:1955,0
-BRDA:1952,2,0,0
-BRDA:1952,2,1,0
-BRDA:1952,17,0,0
-BRDA:1952,17,1,0
-FN:1949,Microsoft.FSharp.Collections.FSharpMap`2<System.Tuple`2<System.UInt32,System.UInt64>,Microsoft.FSharp.Collections.FSharpSet`1<System.Tuple`2<System.UInt32,System.UInt64>>> StackImageFunctions/addBoundaryEdges@1950::Invoke(Microsoft.FSharp.Collections.FSharpMap`2<System.Tuple`2<System.UInt32,System.UInt64>,Microsoft.FSharp.Collections.FSharpSet`1<System.Tuple`2<System.UInt32,System.UInt64>>>,System.UInt32,Image/Image`1<System.UInt64>,Image/Image`1<System.UInt64>)
-FNDA:0,Microsoft.FSharp.Collections.FSharpMap`2<System.Tuple`2<System.UInt32,System.UInt64>,Microsoft.FSharp.Collections.FSharpSet`1<System.Tuple`2<System.UInt32,System.UInt64>>> StackImageFunctions/addBoundaryEdges@1950::Invoke(Microsoft.FSharp.Collections.FSharpMap`2<System.Tuple`2<System.UInt32,System.UInt64>,Microsoft.FSharp.Collections.FSharpSet`1<System.Tuple`2<System.UInt32,System.UInt64>>>,System.UInt32,Image/Image`1<System.UInt64>,Image/Image`1<System.UInt64>)
-DA:1950,0
-DA:1951,0
-DA:1954,0
+BRDA:1832,129,0,0
+BRDA:1832,129,1,0
+BRDA:1832,147,0,0
+BRDA:1832,147,1,0
+FN:1838,Image/Image`1<T> StackImageFunctions/mapper@1839-8::Invoke(System.Int32)
+FNDA:0,Image/Image`1<T> StackImageFunctions/mapper@1839-8::Invoke(System.Int32)
+DA:1839,0
+DA:1840,0
+DA:1841,0
+DA:1842,0
+DA:1843,0
+BRDA:1842,136,0,0
+BRDA:1842,136,1,0
+BRDA:1842,154,0,0
+BRDA:1842,154,1,0
+FN:1860,Image/Image`1<T> StackImageFunctions/mapper@1861-11::Invoke(System.Int32)
+FNDA:0,Image/Image`1<T> StackImageFunctions/mapper@1861-11::Invoke(System.Int32)
+DA:1861,0
+DA:1862,0
+DA:1863,0
+DA:1864,0
+BRDA:1863,92,0,0
+BRDA:1863,92,1,0
+BRDA:1863,110,0,0
+BRDA:1863,110,1,0
+FN:1957,Microsoft.FSharp.Collections.FSharpMap`2<System.Tuple`2<System.UInt32,System.UInt64>,Microsoft.FSharp.Collections.FSharpSet`1<System.Tuple`2<System.UInt32,System.UInt64>>> StackImageFunctions/addBoundaryEdges@1957-1::Invoke(Microsoft.FSharp.Collections.FSharpMap`2<System.Tuple`2<System.UInt32,System.UInt64>,Microsoft.FSharp.Collections.FSharpSet`1<System.Tuple`2<System.UInt32,System.UInt64>>>,System.UInt64,System.UInt64)
+FNDA:0,Microsoft.FSharp.Collections.FSharpMap`2<System.Tuple`2<System.UInt32,System.UInt64>,Microsoft.FSharp.Collections.FSharpSet`1<System.Tuple`2<System.UInt32,System.UInt64>>> StackImageFunctions/addBoundaryEdges@1957-1::Invoke(Microsoft.FSharp.Collections.FSharpMap`2<System.Tuple`2<System.UInt32,System.UInt64>,Microsoft.FSharp.Collections.FSharpSet`1<System.Tuple`2<System.UInt32,System.UInt64>>>,System.UInt64,System.UInt64)
+DA:1958,0
+DA:1959,0
+DA:1961,0
+BRDA:1958,2,0,0
+BRDA:1958,2,1,0
+BRDA:1958,17,0,0
+BRDA:1958,17,1,0
+FN:1955,Microsoft.FSharp.Collections.FSharpMap`2<System.Tuple`2<System.UInt32,System.UInt64>,Microsoft.FSharp.Collections.FSharpSet`1<System.Tuple`2<System.UInt32,System.UInt64>>> StackImageFunctions/addBoundaryEdges@1956::Invoke(Microsoft.FSharp.Collections.FSharpMap`2<System.Tuple`2<System.UInt32,System.UInt64>,Microsoft.FSharp.Collections.FSharpSet`1<System.Tuple`2<System.UInt32,System.UInt64>>>,System.UInt32,Image/Image`1<System.UInt64>,Image/Image`1<System.UInt64>)
+FNDA:0,Microsoft.FSharp.Collections.FSharpMap`2<System.Tuple`2<System.UInt32,System.UInt64>,Microsoft.FSharp.Collections.FSharpSet`1<System.Tuple`2<System.UInt32,System.UInt64>>> StackImageFunctions/addBoundaryEdges@1956::Invoke(Microsoft.FSharp.Collections.FSharpMap`2<System.Tuple`2<System.UInt32,System.UInt64>,Microsoft.FSharp.Collections.FSharpSet`1<System.Tuple`2<System.UInt32,System.UInt64>>>,System.UInt32,Image/Image`1<System.UInt64>,Image/Image`1<System.UInt64>)
 DA:1956,0
 DA:1957,0
-DA:1958,0
-FN:1966,System.Tuple`3<System.UInt32,System.UInt64,Microsoft.FSharp.Collections.FSharpList`1<System.Tuple`2<System.Tuple`2<System.UInt32,System.UInt64>,System.UInt64>>> StackImageFunctions/Pipe #1 stage #3 at line 1964@1965-1::Invoke(System.Tuple`2<System.UInt32,System.UInt64>)
-FNDA:0,System.Tuple`3<System.UInt32,System.UInt64,Microsoft.FSharp.Collections.FSharpList`1<System.Tuple`2<System.Tuple`2<System.UInt32,System.UInt64>,System.UInt64>>> StackImageFunctions/Pipe #1 stage #3 at line 1964@1965-1::Invoke(System.Tuple`2<System.UInt32,System.UInt64>)
-DA:1967,0
-DA:1968,0
-DA:1970,0
-DA:1971,0
-DA:1972,0
-DA:1973,0
-BRDA:1967,16,0,0
-BRDA:1967,16,1,0
-BRDA:1971,142,1,0
-BRDA:1971,142,0,0
-FN:1974,Microsoft.FSharp.Collections.FSharpList`1<System.Tuple`2<System.Tuple`2<System.UInt32,System.UInt64>,System.UInt64>> StackImageFunctions/Pipe #1 stage #4 at line 1975@1975::Invoke(System.Tuple`3<System.UInt32,System.UInt64,Microsoft.FSharp.Collections.FSharpList`1<System.Tuple`2<System.Tuple`2<System.UInt32,System.UInt64>,System.UInt64>>>)
-FNDA:0,Microsoft.FSharp.Collections.FSharpList`1<System.Tuple`2<System.Tuple`2<System.UInt32,System.UInt64>,System.UInt64>> StackImageFunctions/Pipe #1 stage #4 at line 1975@1975::Invoke(System.Tuple`3<System.UInt32,System.UInt64,Microsoft.FSharp.Collections.FSharpList`1<System.Tuple`2<System.Tuple`2<System.UInt32,System.UInt64>,System.UInt64>>>)
-DA:1975,0
-FN:1960,Microsoft.FSharp.Collections.FSharpMap`2<System.Tuple`2<System.UInt32,System.UInt64>,System.UInt64> StackImageFunctions/makeBaseMap@1961::Invoke(Microsoft.FSharp.Collections.FSharpMap`2<System.UInt32,System.UInt64>)
-FNDA:0,Microsoft.FSharp.Collections.FSharpMap`2<System.Tuple`2<System.UInt32,System.UInt64>,System.UInt64> StackImageFunctions/makeBaseMap@1961::Invoke(Microsoft.FSharp.Collections.FSharpMap`2<System.UInt32,System.UInt64>)
-DA:1961,0
+DA:1960,0
 DA:1962,0
 DA:1963,0
 DA:1964,0
-DA:1965,0
-DA:1966,0
-DA:1969,0
+FN:1972,System.Tuple`3<System.UInt32,System.UInt64,Microsoft.FSharp.Collections.FSharpList`1<System.Tuple`2<System.Tuple`2<System.UInt32,System.UInt64>,System.UInt64>>> StackImageFunctions/Pipe #1 stage #3 at line 1970@1971-1::Invoke(System.Tuple`2<System.UInt32,System.UInt64>)
+FNDA:0,System.Tuple`3<System.UInt32,System.UInt64,Microsoft.FSharp.Collections.FSharpList`1<System.Tuple`2<System.Tuple`2<System.UInt32,System.UInt64>,System.UInt64>>> StackImageFunctions/Pipe #1 stage #3 at line 1970@1971-1::Invoke(System.Tuple`2<System.UInt32,System.UInt64>)
+DA:1973,0
 DA:1974,0
 DA:1976,0
-FN:1983,Microsoft.FSharp.Core.FSharpOption`1<System.UInt64> StackImageFunctions/Pipe #1 stage #1 at line 1984@1984::Invoke(a)
-FNDA:0,Microsoft.FSharp.Core.FSharpOption`1<System.UInt64> StackImageFunctions/Pipe #1 stage #1 at line 1984@1984::Invoke(a)
-DA:1984,0
-FN:1989,Microsoft.FSharp.Collections.FSharpMap`2<a,System.UInt64> StackImageFunctions/collapseTouchingComponents@1990-2::Invoke(Microsoft.FSharp.Collections.FSharpMap`2<a,System.UInt64>,a)
-FNDA:0,Microsoft.FSharp.Collections.FSharpMap`2<a,System.UInt64> StackImageFunctions/collapseTouchingComponents@1990-2::Invoke(Microsoft.FSharp.Collections.FSharpMap`2<a,System.UInt64>,a)
+DA:1977,0
+DA:1978,0
+DA:1979,0
+BRDA:1973,16,0,0
+BRDA:1973,16,1,0
+BRDA:1977,142,1,0
+BRDA:1977,142,0,0
+FN:1980,Microsoft.FSharp.Collections.FSharpList`1<System.Tuple`2<System.Tuple`2<System.UInt32,System.UInt64>,System.UInt64>> StackImageFunctions/Pipe #1 stage #4 at line 1981@1981::Invoke(System.Tuple`3<System.UInt32,System.UInt64,Microsoft.FSharp.Collections.FSharpList`1<System.Tuple`2<System.Tuple`2<System.UInt32,System.UInt64>,System.UInt64>>>)
+FNDA:0,Microsoft.FSharp.Collections.FSharpList`1<System.Tuple`2<System.Tuple`2<System.UInt32,System.UInt64>,System.UInt64>> StackImageFunctions/Pipe #1 stage #4 at line 1981@1981::Invoke(System.Tuple`3<System.UInt32,System.UInt64,Microsoft.FSharp.Collections.FSharpList`1<System.Tuple`2<System.Tuple`2<System.UInt32,System.UInt64>,System.UInt64>>>)
+DA:1981,0
+FN:1966,Microsoft.FSharp.Collections.FSharpMap`2<System.Tuple`2<System.UInt32,System.UInt64>,System.UInt64> StackImageFunctions/makeBaseMap@1967::Invoke(Microsoft.FSharp.Collections.FSharpMap`2<System.UInt32,System.UInt64>)
+FNDA:0,Microsoft.FSharp.Collections.FSharpMap`2<System.Tuple`2<System.UInt32,System.UInt64>,System.UInt64> StackImageFunctions/makeBaseMap@1967::Invoke(Microsoft.FSharp.Collections.FSharpMap`2<System.UInt32,System.UInt64>)
+DA:1967,0
+DA:1968,0
+DA:1969,0
+DA:1970,0
+DA:1971,0
+DA:1972,0
+DA:1975,0
+DA:1980,0
+DA:1982,0
+FN:1989,Microsoft.FSharp.Core.FSharpOption`1<System.UInt64> StackImageFunctions/Pipe #1 stage #1 at line 1990@1990::Invoke(a)
+FNDA:0,Microsoft.FSharp.Core.FSharpOption`1<System.UInt64> StackImageFunctions/Pipe #1 stage #1 at line 1990@1990::Invoke(a)
 DA:1990,0
-FN:1982,Microsoft.FSharp.Collections.FSharpMap`2<a,System.UInt64> StackImageFunctions/collapseTouchingComponents@1981-1::Invoke(Microsoft.FSharp.Collections.FSharpMap`2<a,System.UInt64>,Microsoft.FSharp.Collections.FSharpList`1<a>)
-FNDA:0,Microsoft.FSharp.Collections.FSharpMap`2<a,System.UInt64> StackImageFunctions/collapseTouchingComponents@1981-1::Invoke(Microsoft.FSharp.Collections.FSharpMap`2<a,System.UInt64>,Microsoft.FSharp.Collections.FSharpList`1<a>)
-DA:1983,0
+FN:1995,Microsoft.FSharp.Collections.FSharpMap`2<a,System.UInt64> StackImageFunctions/collapseTouchingComponents@1996-2::Invoke(Microsoft.FSharp.Collections.FSharpMap`2<a,System.UInt64>,a)
+FNDA:0,Microsoft.FSharp.Collections.FSharpMap`2<a,System.UInt64> StackImageFunctions/collapseTouchingComponents@1996-2::Invoke(Microsoft.FSharp.Collections.FSharpMap`2<a,System.UInt64>,a)
+DA:1996,0
+FN:1988,Microsoft.FSharp.Collections.FSharpMap`2<a,System.UInt64> StackImageFunctions/collapseTouchingComponents@1987-1::Invoke(Microsoft.FSharp.Collections.FSharpMap`2<a,System.UInt64>,Microsoft.FSharp.Collections.FSharpList`1<a>)
+FNDA:0,Microsoft.FSharp.Collections.FSharpMap`2<a,System.UInt64> StackImageFunctions/collapseTouchingComponents@1987-1::Invoke(Microsoft.FSharp.Collections.FSharpMap`2<a,System.UInt64>,Microsoft.FSharp.Collections.FSharpList`1<a>)
+DA:1989,0
+DA:1991,0
+DA:1992,0
+DA:1993,0
+DA:1995,0
+BRDA:1991,27,0,0
+BRDA:1991,27,1,0
+BRDA:1993,52,1,0
+BRDA:1993,52,0,0
+BRDA:1993,151,1,0
+BRDA:1993,126,0,0
+BRDA:1993,126,1,0
+BRDA:1993,151,0,0
+FN:1984,Microsoft.FSharp.Collections.FSharpMap`2<a,System.UInt64> StackImageFunctions/collapseTouchingComponents@1984T::Invoke(Microsoft.FSharp.Collections.FSharpMap`2<a,Microsoft.FSharp.Collections.FSharpSet`1<a>>,Microsoft.FSharp.Collections.FSharpMap`2<a,System.UInt64>)
+FNDA:0,Microsoft.FSharp.Collections.FSharpMap`2<a,System.UInt64> StackImageFunctions/collapseTouchingComponents@1984T::Invoke(Microsoft.FSharp.Collections.FSharpMap`2<a,Microsoft.FSharp.Collections.FSharpSet`1<a>>,Microsoft.FSharp.Collections.FSharpMap`2<a,System.UInt64>)
 DA:1985,0
 DA:1986,0
 DA:1987,0
-DA:1989,0
-BRDA:1985,27,0,0
-BRDA:1985,27,1,0
-BRDA:1987,52,1,0
-BRDA:1987,52,0,0
-BRDA:1987,151,1,0
-BRDA:1987,126,0,0
-BRDA:1987,126,1,0
-BRDA:1987,151,0,0
-FN:1978,Microsoft.FSharp.Collections.FSharpMap`2<a,System.UInt64> StackImageFunctions/collapseTouchingComponents@1978T::Invoke(Microsoft.FSharp.Collections.FSharpMap`2<a,Microsoft.FSharp.Collections.FSharpSet`1<a>>,Microsoft.FSharp.Collections.FSharpMap`2<a,System.UInt64>)
-FNDA:0,Microsoft.FSharp.Collections.FSharpMap`2<a,System.UInt64> StackImageFunctions/collapseTouchingComponents@1978T::Invoke(Microsoft.FSharp.Collections.FSharpMap`2<a,Microsoft.FSharp.Collections.FSharpSet`1<a>>,Microsoft.FSharp.Collections.FSharpMap`2<a,System.UInt64>)
-DA:1979,0
-DA:1980,0
-DA:1981,0
-DA:1982,0
 DA:1988,0
-DA:1991,0
-FN:1995,System.Tuple`3<a,b,c> StackImageFunctions/Pipe #1 stage #2 at line 1996@1996::Invoke(System.Tuple`2<System.Tuple`2<a,b>,c>)
-FNDA:0,System.Tuple`3<a,b,c> StackImageFunctions/Pipe #1 stage #2 at line 1996@1996::Invoke(System.Tuple`2<System.Tuple`2<a,b>,c>)
-DA:1996,0
-FN:1993,Microsoft.FSharp.Collections.FSharpList`1<System.Tuple`3<a,b,c>> StackImageFunctions/toTranslationList@1993TTT::Invoke(Microsoft.FSharp.Collections.FSharpMap`2<System.Tuple`2<a,b>,c>)
-FNDA:0,Microsoft.FSharp.Collections.FSharpList`1<System.Tuple`3<a,b,c>> StackImageFunctions/toTranslationList@1993TTT::Invoke(Microsoft.FSharp.Collections.FSharpMap`2<System.Tuple`2<a,b>,c>)
 DA:1994,0
-DA:1995,0
 DA:1997,0
-FN:2003,Microsoft.FSharp.Collections.FSharpMap`2<System.UInt64,StackImageFunctions/ComponentStatistics> StackImageFunctions/Pipe #1 stage #2 at line 2002@2003::Invoke(Microsoft.FSharp.Collections.FSharpMap`2<System.UInt64,StackImageFunctions/ComponentStatistics>,System.Tuple`2<a,StackImageFunctions/ComponentStatistics>)
-FNDA:0,Microsoft.FSharp.Collections.FSharpMap`2<System.UInt64,StackImageFunctions/ComponentStatistics> StackImageFunctions/Pipe #1 stage #2 at line 2002@2003::Invoke(Microsoft.FSharp.Collections.FSharpMap`2<System.UInt64,StackImageFunctions/ComponentStatistics>,System.Tuple`2<a,StackImageFunctions/ComponentStatistics>)
-DA:2004,0
-DA:2005,0
+FN:2001,System.Tuple`3<a,b,c> StackImageFunctions/Pipe #1 stage #2 at line 2002@2002::Invoke(System.Tuple`2<System.Tuple`2<a,b>,c>)
+FNDA:0,System.Tuple`3<a,b,c> StackImageFunctions/Pipe #1 stage #2 at line 2002@2002::Invoke(System.Tuple`2<System.Tuple`2<a,b>,c>)
+DA:2002,0
+FN:1999,Microsoft.FSharp.Collections.FSharpList`1<System.Tuple`3<a,b,c>> StackImageFunctions/toTranslationList@1999TTT::Invoke(Microsoft.FSharp.Collections.FSharpMap`2<System.Tuple`2<a,b>,c>)
+FNDA:0,Microsoft.FSharp.Collections.FSharpList`1<System.Tuple`3<a,b,c>> StackImageFunctions/toTranslationList@1999TTT::Invoke(Microsoft.FSharp.Collections.FSharpMap`2<System.Tuple`2<a,b>,c>)
+DA:2000,0
+DA:2001,0
+DA:2003,0
+FN:2009,Microsoft.FSharp.Collections.FSharpMap`2<System.UInt64,StackImageFunctions/ComponentStatistics> StackImageFunctions/Pipe #1 stage #2 at line 2008@2009::Invoke(Microsoft.FSharp.Collections.FSharpMap`2<System.UInt64,StackImageFunctions/ComponentStatistics>,System.Tuple`2<a,StackImageFunctions/ComponentStatistics>)
+FNDA:0,Microsoft.FSharp.Collections.FSharpMap`2<System.UInt64,StackImageFunctions/ComponentStatistics> StackImageFunctions/Pipe #1 stage #2 at line 2008@2009::Invoke(Microsoft.FSharp.Collections.FSharpMap`2<System.UInt64,StackImageFunctions/ComponentStatistics>,System.Tuple`2<a,StackImageFunctions/ComponentStatistics>)
+DA:2010,0
+DA:2011,0
+DA:2012,0
+DA:2013,0
+DA:2014,0
+BRDA:2010,31,0,0
+BRDA:2011,54,0,0
+BRDA:2010,31,1,0
+BRDA:2011,54,1,0
+FN:2017,System.UInt64 StackImageFunctions/mergeTranslatedStats@2018-1::Invoke(StackImageFunctions/ComponentStatistics)
+FNDA:0,System.UInt64 StackImageFunctions/mergeTranslatedStats@2018-1::Invoke(StackImageFunctions/ComponentStatistics)
+DA:2018,0
+FN:2005,Microsoft.FSharp.Collections.FSharpList`1<StackImageFunctions/ComponentStatistics> StackImageFunctions/mergeTranslatedStats@2005T::Invoke(Microsoft.FSharp.Collections.FSharpMap`2<a,System.UInt64>,Microsoft.FSharp.Collections.FSharpMap`2<a,StackImageFunctions/ComponentStatistics>)
+FNDA:0,Microsoft.FSharp.Collections.FSharpList`1<StackImageFunctions/ComponentStatistics> StackImageFunctions/mergeTranslatedStats@2005T::Invoke(Microsoft.FSharp.Collections.FSharpMap`2<a,System.UInt64>,Microsoft.FSharp.Collections.FSharpMap`2<a,StackImageFunctions/ComponentStatistics>)
 DA:2006,0
 DA:2007,0
 DA:2008,0
-BRDA:2004,31,0,0
-BRDA:2005,54,0,0
-BRDA:2004,31,1,0
-BRDA:2005,54,1,0
-FN:2011,System.UInt64 StackImageFunctions/mergeTranslatedStats@2012-1::Invoke(StackImageFunctions/ComponentStatistics)
-FNDA:0,System.UInt64 StackImageFunctions/mergeTranslatedStats@2012-1::Invoke(StackImageFunctions/ComponentStatistics)
-DA:2012,0
-FN:1999,Microsoft.FSharp.Collections.FSharpList`1<StackImageFunctions/ComponentStatistics> StackImageFunctions/mergeTranslatedStats@1999T::Invoke(Microsoft.FSharp.Collections.FSharpMap`2<a,System.UInt64>,Microsoft.FSharp.Collections.FSharpMap`2<a,StackImageFunctions/ComponentStatistics>)
-FNDA:0,Microsoft.FSharp.Collections.FSharpList`1<StackImageFunctions/ComponentStatistics> StackImageFunctions/mergeTranslatedStats@1999T::Invoke(Microsoft.FSharp.Collections.FSharpMap`2<a,System.UInt64>,Microsoft.FSharp.Collections.FSharpMap`2<a,StackImageFunctions/ComponentStatistics>)
-DA:2000,0
-DA:2001,0
-DA:2002,0
-DA:2003,0
 DA:2009,0
-DA:2010,0
-DA:2011,0
-FN:2029,Microsoft.FSharp.Collections.FSharpMap`2<System.Tuple`2<System.UInt32,System.UInt64>,StackImageFunctions/ComponentStatistics> StackImageFunctions/reducer@2030-51::Invoke(Microsoft.FSharp.Collections.FSharpMap`2<System.Tuple`2<System.UInt32,System.UInt64>,StackImageFunctions/ComponentStatistics>,System.Tuple`2<System.UInt32,System.UInt64>,StackImageFunctions/ComponentStatistics)
-FNDA:0,Microsoft.FSharp.Collections.FSharpMap`2<System.Tuple`2<System.UInt32,System.UInt64>,StackImageFunctions/ComponentStatistics> StackImageFunctions/reducer@2030-51::Invoke(Microsoft.FSharp.Collections.FSharpMap`2<System.Tuple`2<System.UInt32,System.UInt64>,StackImageFunctions/ComponentStatistics>,System.Tuple`2<System.UInt32,System.UInt64>,StackImageFunctions/ComponentStatistics)
-DA:2030,0
-FN:2041,Microsoft.FSharp.Control.FSharpAsync`1<Microsoft.FSharp.Core.Unit> StackImageFunctions/reducer@2042-52::Invoke(Microsoft.FSharp.Core.Unit)
-FNDA:0,Microsoft.FSharp.Control.FSharpAsync`1<Microsoft.FSharp.Core.Unit> StackImageFunctions/reducer@2042-52::Invoke(Microsoft.FSharp.Core.Unit)
-DA:2042,0
-DA:2044,0
-DA:2045,0
-DA:2046,0
-DA:2047,0
-FN:2024,Microsoft.FSharp.Control.FSharpAsync`1<Microsoft.FSharp.Core.Unit> StackImageFunctions/reducer@2025-50::Invoke(Microsoft.FSharp.Core.Unit)
-FNDA:0,Microsoft.FSharp.Control.FSharpAsync`1<Microsoft.FSharp.Core.Unit> StackImageFunctions/reducer@2025-50::Invoke(Microsoft.FSharp.Core.Unit)
-DA:2025,0
-DA:2026,0
-DA:2027,0
-DA:2028,0
-DA:2029,0
-DA:2032,0
-DA:2034,0
-DA:2035,0
-DA:2036,0
-DA:2037,0
-DA:2039,0
-BRDA:2034,141,1,0
-BRDA:2035,187,0,0
-BRDA:2035,187,1,0
-BRDA:2034,141,0,0
-FN:2023,Microsoft.FSharp.Control.FSharpAsync`1<Microsoft.FSharp.Core.Unit> StackImageFunctions/reducer@2023-49::Invoke(System.Tuple`2<Image/Image`1<System.UInt64>,System.UInt64>)
-FNDA:0,Microsoft.FSharp.Control.FSharpAsync`1<Microsoft.FSharp.Core.Unit> StackImageFunctions/reducer@2023-49::Invoke(System.Tuple`2<Image/Image`1<System.UInt64>,System.UInt64>)
-DA:2024,0
-FN:2049,Microsoft.FSharp.Control.FSharpAsync`1<StackImageFunctions/ConnectedComponentTranslationTable> StackImageFunctions/reducer@2050-55::Invoke(Microsoft.FSharp.Core.Unit)
-FNDA:0,Microsoft.FSharp.Control.FSharpAsync`1<StackImageFunctions/ConnectedComponentTranslationTable> StackImageFunctions/reducer@2050-55::Invoke(Microsoft.FSharp.Core.Unit)
-DA:2050,0
-DA:2053,0
-DA:2054,0
-DA:2055,0
-DA:2057,0
-DA:2058,0
-DA:2059,0
-BRDA:2050,17,1,0
-BRDA:2050,17,0,0
-FN:2015,Microsoft.FSharp.Control.FSharpAsync`1<StackImageFunctions/ConnectedComponentTranslationTable> StackImageFunctions/reducer@2016-48::Invoke(Microsoft.FSharp.Core.Unit)
-FNDA:0,Microsoft.FSharp.Control.FSharpAsync`1<StackImageFunctions/ConnectedComponentTranslationTable> StackImageFunctions/reducer@2016-48::Invoke(Microsoft.FSharp.Core.Unit)
+DA:2015,0
 DA:2016,0
 DA:2017,0
-DA:2018,0
-DA:2019,0
-DA:2021,0
-DA:2022,0
-DA:2023,0
+FN:2035,Microsoft.FSharp.Collections.FSharpMap`2<System.Tuple`2<System.UInt32,System.UInt64>,StackImageFunctions/ComponentStatistics> StackImageFunctions/reducer@2036-51::Invoke(Microsoft.FSharp.Collections.FSharpMap`2<System.Tuple`2<System.UInt32,System.UInt64>,StackImageFunctions/ComponentStatistics>,System.Tuple`2<System.UInt32,System.UInt64>,StackImageFunctions/ComponentStatistics)
+FNDA:0,Microsoft.FSharp.Collections.FSharpMap`2<System.Tuple`2<System.UInt32,System.UInt64>,StackImageFunctions/ComponentStatistics> StackImageFunctions/reducer@2036-51::Invoke(Microsoft.FSharp.Collections.FSharpMap`2<System.Tuple`2<System.UInt32,System.UInt64>,StackImageFunctions/ComponentStatistics>,System.Tuple`2<System.UInt32,System.UInt64>,StackImageFunctions/ComponentStatistics)
+DA:2036,0
+FN:2047,Microsoft.FSharp.Control.FSharpAsync`1<Microsoft.FSharp.Core.Unit> StackImageFunctions/reducer@2048-52::Invoke(Microsoft.FSharp.Core.Unit)
+FNDA:0,Microsoft.FSharp.Control.FSharpAsync`1<Microsoft.FSharp.Core.Unit> StackImageFunctions/reducer@2048-52::Invoke(Microsoft.FSharp.Core.Unit)
+DA:2048,0
+DA:2050,0
+DA:2051,0
+DA:2052,0
+DA:2053,0
+FN:2030,Microsoft.FSharp.Control.FSharpAsync`1<Microsoft.FSharp.Core.Unit> StackImageFunctions/reducer@2031-50::Invoke(Microsoft.FSharp.Core.Unit)
+FNDA:0,Microsoft.FSharp.Control.FSharpAsync`1<Microsoft.FSharp.Core.Unit> StackImageFunctions/reducer@2031-50::Invoke(Microsoft.FSharp.Core.Unit)
 DA:2031,0
+DA:2032,0
 DA:2033,0
+DA:2034,0
+DA:2035,0
 DA:2038,0
 DA:2040,0
 DA:2041,0
+DA:2042,0
 DA:2043,0
-DA:2048,0
-FN:2014,Microsoft.FSharp.Control.FSharpAsync`1<StackImageFunctions/ConnectedComponentTranslationTable> StackImageFunctions/reducer@2015-47::Invoke(System.Boolean,System.Collections.Generic.IAsyncEnumerable`1<System.Tuple`2<Image/Image`1<System.UInt64>,System.UInt64>>)
-FNDA:0,Microsoft.FSharp.Control.FSharpAsync`1<StackImageFunctions/ConnectedComponentTranslationTable> StackImageFunctions/reducer@2015-47::Invoke(System.Boolean,System.Collections.Generic.IAsyncEnumerable`1<System.Tuple`2<Image/Image`1<System.UInt64>,System.UInt64>>)
-DA:2015,0
-FN:2061,System.UInt64 StackImageFunctions/memoryNeed@2062-30::Invoke(System.UInt64)
-FNDA:0,System.UInt64 StackImageFunctions/memoryNeed@2062-30::Invoke(System.UInt64)
-DA:2062,0
-FN:2062,System.UInt64 StackImageFunctions/elementTransformation@2063-2T::Invoke(a)
-FNDA:0,System.UInt64 StackImageFunctions/elementTransformation@2063-2T::Invoke(a)
+DA:2045,0
+BRDA:2040,141,1,0
+BRDA:2041,187,0,0
+BRDA:2041,187,1,0
+BRDA:2040,141,0,0
+FN:2029,Microsoft.FSharp.Control.FSharpAsync`1<Microsoft.FSharp.Core.Unit> StackImageFunctions/reducer@2029-49::Invoke(System.Tuple`2<Image/Image`1<System.UInt64>,System.UInt64>)
+FNDA:0,Microsoft.FSharp.Control.FSharpAsync`1<Microsoft.FSharp.Core.Unit> StackImageFunctions/reducer@2029-49::Invoke(System.Tuple`2<Image/Image`1<System.UInt64>,System.UInt64>)
+DA:2030,0
+FN:2055,Microsoft.FSharp.Control.FSharpAsync`1<StackImageFunctions/ConnectedComponentTranslationTable> StackImageFunctions/reducer@2056-55::Invoke(Microsoft.FSharp.Core.Unit)
+FNDA:0,Microsoft.FSharp.Control.FSharpAsync`1<StackImageFunctions/ConnectedComponentTranslationTable> StackImageFunctions/reducer@2056-55::Invoke(Microsoft.FSharp.Core.Unit)
+DA:2056,0
+DA:2059,0
+DA:2060,0
+DA:2061,0
 DA:2063,0
-FN:2084,System.UInt64 StackImageFunctions/res@2085::Invoke(System.UInt64)
-FNDA:0,System.UInt64 StackImageFunctions/res@2085::Invoke(System.UInt64)
-DA:2085,0
-FN:2080,Image/Image`1<System.UInt64> StackImageFunctions/mapper@2081-10::Invoke(System.Boolean,System.Int64,Image/Image`1<System.UInt64>)
-FNDA:0,Image/Image`1<System.UInt64> StackImageFunctions/mapper@2081-10::Invoke(System.Boolean,System.Int64,Image/Image`1<System.UInt64>)
-DA:2081,0
-DA:2084,0
-DA:2086,0
+DA:2064,0
+DA:2065,0
+BRDA:2056,17,1,0
+BRDA:2056,17,0,0
+FN:2021,Microsoft.FSharp.Control.FSharpAsync`1<StackImageFunctions/ConnectedComponentTranslationTable> StackImageFunctions/reducer@2022-48::Invoke(Microsoft.FSharp.Core.Unit)
+FNDA:0,Microsoft.FSharp.Control.FSharpAsync`1<StackImageFunctions/ConnectedComponentTranslationTable> StackImageFunctions/reducer@2022-48::Invoke(Microsoft.FSharp.Core.Unit)
+DA:2022,0
+DA:2023,0
+DA:2024,0
+DA:2025,0
+DA:2027,0
+DA:2028,0
+DA:2029,0
+DA:2037,0
+DA:2039,0
+DA:2044,0
+DA:2046,0
+DA:2047,0
+DA:2049,0
+DA:2054,0
+FN:2020,Microsoft.FSharp.Control.FSharpAsync`1<StackImageFunctions/ConnectedComponentTranslationTable> StackImageFunctions/reducer@2021-47::Invoke(System.Boolean,System.Collections.Generic.IAsyncEnumerable`1<System.Tuple`2<Image/Image`1<System.UInt64>,System.UInt64>>)
+FNDA:0,Microsoft.FSharp.Control.FSharpAsync`1<StackImageFunctions/ConnectedComponentTranslationTable> StackImageFunctions/reducer@2021-47::Invoke(System.Boolean,System.Collections.Generic.IAsyncEnumerable`1<System.Tuple`2<Image/Image`1<System.UInt64>,System.UInt64>>)
+DA:2021,0
+FN:2067,System.UInt64 StackImageFunctions/memoryNeed@2068-30::Invoke(System.UInt64)
+FNDA:0,System.UInt64 StackImageFunctions/memoryNeed@2068-30::Invoke(System.UInt64)
+DA:2068,0
+FN:2068,System.UInt64 StackImageFunctions/elementTransformation@2069-2T::Invoke(a)
+FNDA:0,System.UInt64 StackImageFunctions/elementTransformation@2069-2T::Invoke(a)
+DA:2069,0
+FN:2090,System.UInt64 StackImageFunctions/res@2091::Invoke(System.UInt64)
+FNDA:0,System.UInt64 StackImageFunctions/res@2091::Invoke(System.UInt64)
+DA:2091,0
+FN:2086,Image/Image`1<System.UInt64> StackImageFunctions/mapper@2087-12::Invoke(System.Boolean,System.Int64,Image/Image`1<System.UInt64>)
+FNDA:0,Image/Image`1<System.UInt64> StackImageFunctions/mapper@2087-12::Invoke(System.Boolean,System.Int64,Image/Image`1<System.UInt64>)
 DA:2087,0
-BRDA:2084,56,1,0
-BRDA:2084,56,0,0
-FN:2088,System.UInt64 StackImageFunctions/memoryNeed@2089-31T::Invoke(a)
-FNDA:0,System.UInt64 StackImageFunctions/memoryNeed@2089-31T::Invoke(a)
-DA:2089,0
-FN:2101,System.UInt64 StackImageFunctions/memoryNeed@2102-32T::Invoke(a)
-FNDA:0,System.UInt64 StackImageFunctions/memoryNeed@2102-32T::Invoke(a)
-DA:2102,0
-FN:2111,System.UInt64 StackImageFunctions/memoryNeed@2112-33T::Invoke(a)
-FNDA:0,System.UInt64 StackImageFunctions/memoryNeed@2112-33T::Invoke(a)
-DA:2112,0
-FN:2112,System.UInt64 StackImageFunctions/elementTransformation@2113-5T::Invoke(a)
-FNDA:0,System.UInt64 StackImageFunctions/elementTransformation@2113-5T::Invoke(a)
-DA:2113,0
-FN:1886,StackImageFunctions/ComponentStatistics StackImageFunctions/ComponentStatisticsModule::create(System.UInt64,System.UInt32,System.UInt32,System.UInt32)
+DA:2090,0
+DA:2092,0
+DA:2093,0
+BRDA:2090,56,1,0
+BRDA:2090,56,0,0
+FN:2094,System.UInt64 StackImageFunctions/memoryNeed@2095-31T::Invoke(a)
+FNDA:0,System.UInt64 StackImageFunctions/memoryNeed@2095-31T::Invoke(a)
+DA:2095,0
+FN:2107,System.UInt64 StackImageFunctions/memoryNeed@2108-32T::Invoke(a)
+FNDA:0,System.UInt64 StackImageFunctions/memoryNeed@2108-32T::Invoke(a)
+DA:2108,0
+FN:2117,System.UInt64 StackImageFunctions/memoryNeed@2118-33T::Invoke(a)
+FNDA:0,System.UInt64 StackImageFunctions/memoryNeed@2118-33T::Invoke(a)
+DA:2118,0
+FN:2118,System.UInt64 StackImageFunctions/elementTransformation@2119-5T::Invoke(a)
+FNDA:0,System.UInt64 StackImageFunctions/elementTransformation@2119-5T::Invoke(a)
+DA:2119,0
+FN:1892,StackImageFunctions/ComponentStatistics StackImageFunctions/ComponentStatisticsModule::create(System.UInt64,System.UInt32,System.UInt32,System.UInt32)
 FNDA:0,StackImageFunctions/ComponentStatistics StackImageFunctions/ComponentStatisticsModule::create(System.UInt64,System.UInt32,System.UInt32,System.UInt32)
-DA:1887,0
-DA:1888,0
-DA:1889,0
-DA:1890,0
-DA:1891,0
-DA:1892,0
 DA:1893,0
 DA:1894,0
 DA:1895,0
 DA:1896,0
 DA:1897,0
-FN:1899,StackImageFunctions/ComponentStatistics StackImageFunctions/ComponentStatisticsModule::add(StackImageFunctions/ComponentStatistics,StackImageFunctions/ComponentStatistics)
-FNDA:0,StackImageFunctions/ComponentStatistics StackImageFunctions/ComponentStatisticsModule::add(StackImageFunctions/ComponentStatistics,StackImageFunctions/ComponentStatistics)
+DA:1898,0
+DA:1899,0
 DA:1900,0
 DA:1901,0
 DA:1902,0
 DA:1903,0
-DA:1904,0
-DA:1905,0
+FN:1905,StackImageFunctions/ComponentStatistics StackImageFunctions/ComponentStatisticsModule::add(StackImageFunctions/ComponentStatistics,StackImageFunctions/ComponentStatistics)
+FNDA:0,StackImageFunctions/ComponentStatistics StackImageFunctions/ComponentStatisticsModule::add(StackImageFunctions/ComponentStatistics,StackImageFunctions/ComponentStatistics)
 DA:1906,0
 DA:1907,0
 DA:1908,0
@@ -12491,37 +12482,43 @@ DA:1909,0
 DA:1910,0
 DA:1911,0
 DA:1912,0
-BRDA:1900,13,0,0
-BRDA:1900,13,1,0
-BRDA:1902,110,0,0
-BRDA:1902,110,1,0
-BRDA:1902,138,0,0
-BRDA:1902,138,1,0
-BRDA:1902,168,0,0
-BRDA:1902,168,1,0
-BRDA:1902,198,0,0
-BRDA:1902,198,1,0
-BRDA:1902,228,0,0
-BRDA:1902,228,1,0
-BRDA:1902,258,0,0
-BRDA:1902,258,1,0
-FN:1914,Microsoft.FSharp.Collections.FSharpMap`2<a,StackImageFunctions/ComponentStatistics> StackImageFunctions/ComponentStatisticsModule::addToMap(a,StackImageFunctions/ComponentStatistics,Microsoft.FSharp.Collections.FSharpMap`2<a,StackImageFunctions/ComponentStatistics>)
-FNDA:0,Microsoft.FSharp.Collections.FSharpMap`2<a,StackImageFunctions/ComponentStatistics> StackImageFunctions/ComponentStatisticsModule::addToMap(a,StackImageFunctions/ComponentStatistics,Microsoft.FSharp.Collections.FSharpMap`2<a,StackImageFunctions/ComponentStatistics>)
+DA:1913,0
+DA:1914,0
 DA:1915,0
 DA:1916,0
 DA:1917,0
 DA:1918,0
-FN:1920,StackImageFunctions/ComponentStatistics StackImageFunctions/ComponentStatisticsModule::relabel(System.UInt64,StackImageFunctions/ComponentStatistics)
-FNDA:0,StackImageFunctions/ComponentStatistics StackImageFunctions/ComponentStatisticsModule::relabel(System.UInt64,StackImageFunctions/ComponentStatistics)
+BRDA:1906,13,0,0
+BRDA:1906,13,1,0
+BRDA:1908,110,0,0
+BRDA:1908,110,1,0
+BRDA:1908,138,0,0
+BRDA:1908,138,1,0
+BRDA:1908,168,0,0
+BRDA:1908,168,1,0
+BRDA:1908,198,0,0
+BRDA:1908,198,1,0
+BRDA:1908,228,0,0
+BRDA:1908,228,1,0
+BRDA:1908,258,0,0
+BRDA:1908,258,1,0
+FN:1920,Microsoft.FSharp.Collections.FSharpMap`2<a,StackImageFunctions/ComponentStatistics> StackImageFunctions/ComponentStatisticsModule::addToMap(a,StackImageFunctions/ComponentStatistics,Microsoft.FSharp.Collections.FSharpMap`2<a,StackImageFunctions/ComponentStatistics>)
+FNDA:0,Microsoft.FSharp.Collections.FSharpMap`2<a,StackImageFunctions/ComponentStatistics> StackImageFunctions/ComponentStatisticsModule::addToMap(a,StackImageFunctions/ComponentStatistics,Microsoft.FSharp.Collections.FSharpMap`2<a,StackImageFunctions/ComponentStatistics>)
 DA:1921,0
-FN:1923,System.Tuple`3<System.Double,System.Double,System.Double> StackImageFunctions/ComponentStatisticsModule::centroid(StackImageFunctions/ComponentStatistics)
-FNDA:0,System.Tuple`3<System.Double,System.Double,System.Double> StackImageFunctions/ComponentStatisticsModule::centroid(StackImageFunctions/ComponentStatistics)
+DA:1922,0
+DA:1923,0
 DA:1924,0
-DA:1925,0
+FN:1926,StackImageFunctions/ComponentStatistics StackImageFunctions/ComponentStatisticsModule::relabel(System.UInt64,StackImageFunctions/ComponentStatistics)
+FNDA:0,StackImageFunctions/ComponentStatistics StackImageFunctions/ComponentStatisticsModule::relabel(System.UInt64,StackImageFunctions/ComponentStatistics)
 DA:1927,0
-DA:1928,0
-BRDA:1924,7,0,0
-BRDA:1924,7,1,0
+FN:1929,System.Tuple`3<System.Double,System.Double,System.Double> StackImageFunctions/ComponentStatisticsModule::centroid(StackImageFunctions/ComponentStatistics)
+FNDA:0,System.Tuple`3<System.Double,System.Double,System.Double> StackImageFunctions/ComponentStatisticsModule::centroid(StackImageFunctions/ComponentStatistics)
+DA:1930,0
+DA:1931,0
+DA:1933,0
+DA:1934,0
+BRDA:1930,7,0,0
+BRDA:1930,7,1,0
 FN:1110,Microsoft.FSharp.Core.FSharpFunc`2<System.Double,System.Double> StackImageFunctions/ProjectionTransform::apply(System.String)
 FNDA:0,Microsoft.FSharp.Core.FSharpFunc`2<System.Double,System.Double> StackImageFunctions/ProjectionTransform::apply(System.String)
 DA:1111,0
@@ -12652,11 +12649,11 @@ DA:1105,0
 DA:1106,0
 DA:1107,0
 DA:1108,0
-LF:1351
+LF:1350
 LH:0
 BRF:620
 BRH:0
-FNF:367
+FNF:366
 FNH:0
 end_of_record
 SF:/Users/jrh630/repositories/stackProcessing/src/StackProcessing.Core/StackMesh.fs
