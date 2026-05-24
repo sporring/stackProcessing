@@ -671,6 +671,27 @@ type Image<'T when 'T : equality>(sz: uint list, ?optionalNumberComponents: uint
             img |> Image.iteri (fun idxLst _ -> img.Set idxLst arr[int idxLst[0],int idxLst[1]])
             img
 
+    static member constant2D (width: uint, height: uint, value: 'T, ?name: string, ?index: int) : Image<'T> =
+        if width = 0u then invalidArg "width" "constant2D requires a positive width."
+        if height = 0u then invalidArg "height" "constant2D requires a positive height."
+
+        let _name = defaultArg name "constant2D"
+        let _index = defaultArg index 0
+        Array2D.create (int width) (int height) value
+        |> fun values -> Image<'T>.ofArray2D(values, _name, _index)
+
+    static member coordinateAxis2D (width: uint, height: uint, axis: int, ?name: string, ?index: int) : Image<'T> =
+        if width = 0u then invalidArg "width" "coordinateAxis2D requires a positive width."
+        if height = 0u then invalidArg "height" "coordinateAxis2D requires a positive height."
+        if axis < 0 || axis > 1 then invalidArg "axis" "coordinateAxis2D axis must be 0 or 1."
+
+        let _name = defaultArg name "coordinateAxis2D"
+        let _index = defaultArg index 0
+        Array2D.init (int width) (int height) (fun x y ->
+            let value = if axis = 0 then x else y
+            Convert.ChangeType(value, typeof<'T>) :?> 'T)
+        |> fun values -> Image<'T>.ofArray2D(values, _name, _index)
+
     static member polygonMask (width: uint, height: uint, polygon: (float * float) list, ?name: string, ?index: int) : Image<uint8> =
         if width = 0u then invalidArg "width" "polygonMask requires a positive width."
         if height = 0u then invalidArg "height" "polygonMask requires a positive height."

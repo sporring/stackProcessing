@@ -558,6 +558,30 @@ let imageCoreTests =
       let back = img.toArray2D()
       Expect.equal back arr "Array should roundtrip via image"
 
+    testCase "constant2D creates a filled image" <| fun _ ->
+      let img = Image<float>.constant2D(3u, 2u, 7.5, "constant", 4)
+      try
+        Expect.equal (img.GetSize()) [ 3u; 2u ] "constant2D should preserve requested size."
+        Expect.equal img.index 4 "constant2D should preserve requested index."
+        let values = img.toArray2D()
+        for y in 0 .. 1 do
+          for x in 0 .. 2 do
+            Expect.floatClose Accuracy.high values[x, y] 7.5 "constant2D should fill every pixel."
+      finally
+        img.decRefCount()
+
+    testCase "coordinateAxis2D creates x and y coordinate images" <| fun _ ->
+      let xAxis = Image<float>.coordinateAxis2D(3u, 2u, 0, "xAxis", 2)
+      let yAxis = Image<uint16>.coordinateAxis2D(3u, 2u, 1, "yAxis", 3)
+      try
+        Expect.equal xAxis.index 2 "coordinateAxis2D should preserve x-axis image index."
+        Expect.equal yAxis.index 3 "coordinateAxis2D should preserve y-axis image index."
+        Expect.floatClose Accuracy.high (xAxis.Get [ 2u; 1u ]) 2.0 "axis 0 should store x coordinates."
+        Expect.equal (yAxis.Get [ 2u; 1u ]) 1us "axis 1 should store y coordinates."
+      finally
+        xAxis.decRefCount()
+        yAxis.decRefCount()
+
     testCase "ToString includes size info" <| fun _ ->
       let arr = array2D [| [| 1.0f; 2.0f |]; [| 3.0f; 4.0f |] |]
       let img = Image<float32>.ofArray2D arr

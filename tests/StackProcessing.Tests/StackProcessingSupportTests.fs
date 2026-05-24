@@ -881,17 +881,17 @@ let stackProcessingSupportSuite =
         testCase "coordinate sources emit x y and z slice coordinates" <| fun _ ->
             let xs =
                 source 1024UL
-                |> coordinateX 3u 2u 2u
+                |> coordinateX<float> 3u 2u 2u
                 |> drainList
 
             let ys =
                 source 1024UL
-                |> coordinateY 3u 2u 2u
+                |> coordinateY<float> 3u 2u 2u
                 |> drainList
 
             let zs =
                 source 1024UL
-                |> coordinateZ 3u 2u 2u
+                |> coordinateZ<float> 3u 2u 2u
                 |> drainList
 
             try

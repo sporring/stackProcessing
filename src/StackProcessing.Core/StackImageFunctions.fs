@@ -1692,6 +1692,41 @@ let srcPlan (pl: Plan<unit, unit>) (width: uint) (height: uint) (depth: uint) (s
     |> Plan.withRuntimeOptionsFrom pl
     |> Plan.withSourcePeek sourcePeek
 
+let private validateCoordinateDimensions name width height depth =
+    if width = 0u then invalidArg "width" $"{name} width must be positive."
+    if height = 0u then invalidArg "height" $"{name} height must be positive."
+    if depth = 0u then invalidArg "depth" $"{name} depth must be positive."
+
+let private coordinatePlan<'T when 'T: equality> name width height depth makeSlice cleaning (pl: Plan<unit, unit>) : Plan<unit, Image<'T>> =
+    validateCoordinateDimensions name width height depth
+    let stage = { srcStage name width height depth makeSlice with Cleaning = cleaning } |> Some
+    srcPlan pl width height depth stage
+
+let coordinateX<'T when 'T: equality> width height depth =
+    let name = "coordinateX"
+    let baseImage = Image<'T>.coordinateAxis2D(width, height, 0, $"{name}.base", 0)
+    let makeSlice (z: int) =
+        baseImage.copy($"{name}[{z}]", z)
+    let cleanup () =
+        baseImage.decRefCount()
+    coordinatePlan name width height depth makeSlice [ cleanup ]
+
+let coordinateY<'T when 'T: equality> width height depth =
+    let name = "coordinateY"
+    let baseImage = Image<'T>.coordinateAxis2D(width, height, 1, $"{name}.base", 0)
+    let makeSlice (z: int) =
+        baseImage.copy($"{name}[{z}]", z)
+    let cleanup () =
+        baseImage.decRefCount()
+    coordinatePlan name width height depth makeSlice [ cleanup ]
+
+let coordinateZ<'T when 'T: equality> width height depth =
+    let name = "coordinateZ"
+    let makeSlice (z: int) =
+        let value = Convert.ChangeType(z, typeof<'T>) :?> 'T
+        Image<'T>.constant2D(width, height, value, $"{name}[{z}]", z)
+    coordinatePlan name width height depth makeSlice []
+
 let zero<'T when 'T: equality> (width: uint) (height: uint) (depth: uint) (pl: Plan<unit, unit>) : Plan<unit, Image<'T>> =
     let mapper (i: int) : Image<'T> = 
         let image = new Image<'T>([width; height], 1u,$"zero[{i}]", i)

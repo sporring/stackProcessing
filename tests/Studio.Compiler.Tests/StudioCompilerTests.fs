@@ -233,9 +233,9 @@ let generatorSuite =
                 graph [ coord; write ] [ edge id "output" 0 "write" "input" 0 ]
                 |> PipelineCodeGenerator.generateSavedGraph
 
-            Expect.stringContains (codeFor "x" "CoordinateX") "|> coordinateX 12u 13u 4u" "CoordinateX should generate a coordinate source."
-            Expect.stringContains (codeFor "y" "CoordinateY") "|> coordinateY 12u 13u 4u" "CoordinateY should generate a coordinate source."
-            Expect.stringContains (codeFor "z" "CoordinateZ") "|> coordinateZ 12u 13u 4u" "CoordinateZ should generate a coordinate source."
+            Expect.stringContains (codeFor "x" "CoordinateX") "|> coordinateX<float> 12u 13u 4u" "CoordinateX should generate a coordinate source."
+            Expect.stringContains (codeFor "y" "CoordinateY") "|> coordinateY<float> 12u 13u 4u" "CoordinateY should generate a coordinate source."
+            Expect.stringContains (codeFor "z" "CoordinateZ") "|> coordinateZ<float> 12u 13u 4u" "CoordinateZ should generate a coordinate source."
 
         testCase "bias model reducer can feed correction stage" <| fun _ ->
             let sample =

@@ -985,19 +985,19 @@ module PipelineCodeGenerator =
             let width = parameterValue "width"
             let height = parameterValue "height"
             let depth = parameterValue "depth"
-            $"|> coordinateX {width} {height} {depth}" |> sourcePrefix availableMemory
+            $"|> coordinateX<float> {width} {height} {depth}" |> sourcePrefix availableMemory
         | "CoordinateY" ->
             let availableMemory = parameterValue "availableMemory"
             let width = parameterValue "width"
             let height = parameterValue "height"
             let depth = parameterValue "depth"
-            $"|> coordinateY {width} {height} {depth}" |> sourcePrefix availableMemory
+            $"|> coordinateY<float> {width} {height} {depth}" |> sourcePrefix availableMemory
         | "CoordinateZ" ->
             let availableMemory = parameterValue "availableMemory"
             let width = parameterValue "width"
             let height = parameterValue "height"
             let depth = parameterValue "depth"
-            $"|> coordinateZ {width} {height} {depth}" |> sourcePrefix availableMemory
+            $"|> coordinateZ<float> {width} {height} {depth}" |> sourcePrefix availableMemory
         | "NormalNoise" ->
             let availableMemory = parameterValue "availableMemory"
             let pixelType = pixelTypeNameFromParameter "type" "Float64" node

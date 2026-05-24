@@ -400,25 +400,25 @@ val readPointSet:
      SlimPipeline.Plan<unit,StackPoints.PointSet>)
 
 val coordinateX:
-  (uint32 ->
-     uint32 ->
-     uint32 ->
-     SlimPipeline.Plan<unit,unit> ->
-     SlimPipeline.Plan<unit,StackCore.Image<float>>)
+  width: uint ->
+    height: uint ->
+    depth: uint32 ->
+    (SlimPipeline.Plan<unit,unit> -> SlimPipeline.Plan<unit,StackCore.Image<'T>>)
+    when 'T: equality
 
 val coordinateY:
-  (uint32 ->
-     uint32 ->
-     uint32 ->
-     SlimPipeline.Plan<unit,unit> ->
-     SlimPipeline.Plan<unit,StackCore.Image<float>>)
+  width: uint ->
+    height: uint ->
+    depth: uint32 ->
+    (SlimPipeline.Plan<unit,unit> -> SlimPipeline.Plan<unit,StackCore.Image<'T>>)
+    when 'T: equality
 
 val coordinateZ:
-  (uint32 ->
-     uint32 ->
-     uint32 ->
-     SlimPipeline.Plan<unit,unit> ->
-     SlimPipeline.Plan<unit,StackCore.Image<float>>)
+  width: uint ->
+    height: uint ->
+    depth: uint32 ->
+    (SlimPipeline.Plan<unit,unit> -> SlimPipeline.Plan<unit,StackCore.Image<'T>>)
+    when 'T: equality
 
 val imageCenter: (uint -> uint -> uint -> TinyLinAlg.V3)
 

@@ -298,27 +298,3 @@ let correctBias<'T when 'T: equality> model : Stage<Image<'T>, Image<float>> =
 
 let correctBiasMasked<'T when 'T: equality> model : Stage<Image<'T> * Image<uint8>, Image<float>> =
     Stage.map "correctBiasMasked" (fun _ (image, mask) -> correctedImage model image (Some mask)) id id
-
-let private coordinateSource name width height depth mapper (pl: Plan<unit, unit>) : Plan<unit, Image<float>> =
-    if width = 0u then invalidArg "width" $"{name} width must be positive."
-    if height = 0u then invalidArg "height" $"{name} height must be positive."
-    if depth = 0u then invalidArg "depth" $"{name} depth must be positive."
-
-    let makeSlice (z: int) =
-        let values = Array2D.zeroCreate<float> (int width) (int height)
-        for y in 0u .. height - 1u do
-            for x in 0u .. width - 1u do
-                values[int x, int y] <- mapper x y (uint z)
-        Image<float>.ofArray2D(values, $"{name}[{z}]", z)
-
-    let stage = StackImageFunctions.srcStage name width height depth makeSlice |> Some
-    StackImageFunctions.srcPlan pl width height depth stage
-
-let coordinateX width height depth =
-    coordinateSource "coordinateX" width height depth (fun x _ _ -> float x)
-
-let coordinateY width height depth =
-    coordinateSource "coordinateY" width height depth (fun _ y _ -> float y)
-
-let coordinateZ width height depth =
-    coordinateSource "coordinateZ" width height depth (fun _ _ z -> float z)

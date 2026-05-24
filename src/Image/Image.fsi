@@ -124,6 +124,12 @@ type Image<'T when 'T: equality> =
     static member (~~~) : f: Image<'S> -> Image<'S> when 'S: equality
     static member
       Pow: f1: Image<'S> * f2: Image<'S> -> Image<'S> when 'S: equality
+    static member
+      constant2D: width: uint * height: uint * value: 'T * ?name: string *
+                  ?index: int -> Image<'T>
+    static member
+      coordinateAxis2D: width: uint * height: uint * axis: int * ?name: string *
+                        ?index: int -> Image<'T>
     static member eq: f1: Image<'S> * f2: Image<'S> -> bool when 'S: equality
     static member fold: f: ('S -> 'T -> 'S) -> acc0: 'S -> im1: Image<'T> -> 'S
     static member

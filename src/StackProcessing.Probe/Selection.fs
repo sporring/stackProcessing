@@ -20,6 +20,9 @@ let ladder =
       "dependency"
       "reducers" ]
 
+let implicitLadder =
+    ladder |> List.filter ((<>) "window-slab")
+
 let splitCsvList (value: string) =
     value.Split([| ','; ';' |], StringSplitOptions.RemoveEmptyEntries ||| StringSplitOptions.TrimEntries)
     |> Array.toList
@@ -53,11 +56,15 @@ let parseFamilies value =
 
 let familiesUpTo maxStep =
     match normalizeFamily maxStep with
-    | Some "all" -> Some ladder
-    | Some family ->
+    | Some "all" -> Some implicitLadder
+    | Some "window-slab" ->
         ladder
-        |> List.tryFindIndex ((=) family)
+        |> List.tryFindIndex ((=) "window-slab")
         |> Option.map (fun index -> ladder |> List.take (index + 1))
+    | Some family ->
+        implicitLadder
+        |> List.tryFindIndex ((=) family)
+        |> Option.map (fun index -> implicitLadder |> List.take (index + 1))
     | None -> None
 
 let familyForRowId (rowId: string) =
@@ -85,7 +92,8 @@ let selectedFamilies selector =
         |> Option.defaultValue selector.Families
     | None ->
         if selector.Families.IsEmpty || selector.Families |> List.exists ((=) "all") then
-            ladder
+            let explicitFamilies = selector.Families |> List.filter ((<>) "all")
+            implicitLadder @ explicitFamilies |> List.distinct
         else
             selector.Families
 
