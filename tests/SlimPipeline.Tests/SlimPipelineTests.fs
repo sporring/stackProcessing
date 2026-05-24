@@ -72,6 +72,10 @@ let private planFrom stage length =
 let private asyncSeqToList seq =
     seq |> AsyncSeq.toListAsync |> Async.RunSynchronously
 
+let private runStageOnList stage values =
+    (stage.Build()).Apply false (values |> AsyncSeq.ofSeq)
+    |> asyncSeqToList
+
 let private captureStdout f =
     let original = Console.Out
     use writer = new StringWriter()
@@ -108,6 +112,41 @@ let profileSuite =
             Expect.equal (Profile.combine Unit Streaming) Streaming "Streaming should dominate Unit."
             Expect.equal (Profile.combine Constant Streaming) Streaming "Streaming should dominate Constant."
             Expect.equal (Profile.combine (Window(3u, 2u, 1u, 0u, 1u)) Streaming) (Window(3u, 2u, 1u, 0u, 1u)) "Window should dominate Streaming."
+    ]
+
+[<Tests>]
+let windowSuite =
+    testList "Window stage" [
+        testCase "pads inside the window stage and preserves partial tail windows" <| fun _ ->
+            let zeroMaker i _ = i
+            let windows =
+                [10; 20; 30]
+                |> runStageOnList (Stage.window "window" 3u 1u zeroMaker 1u)
+
+            let actual = windows |> List.map (fun w -> w.Items, w.EmitRange, w.ReleaseCount)
+            Expect.equal actual
+                [ ([-1; 10; 20], (1u, 1u), 1u)
+                  ([10; 20; 30], (1u, 1u), 1u)
+                  ([20; 30; 3], (1u, 1u), 1u)
+                  ([30; 3], (1u, 0u), 1u) ]
+                "Window should own padding while preserving the existing partial-tail contract."
+
+        testCase "preserves strided final remainder windows" <| fun _ ->
+            let zeroMaker i _ = i
+            let windows =
+                [1; 2; 3; 4; 5]
+                |> runStageOnList (Stage.window "window" 3u 0u zeroMaker 2u)
+
+            let actual = windows |> List.map (fun w -> w.Items, w.EmitRange, w.ReleaseCount)
+            Expect.equal actual
+                [ ([1; 2; 3], (0u, 2u), 2u)
+                  ([3; 4; 5], (0u, 2u), 2u)
+                  ([5], (0u, 1u), 2u) ]
+                "The final strided window should keep the previous partial-tail behavior."
+
+        testCase "rejects zero window size and zero stride" <| fun _ ->
+            Expect.throws (fun () -> Stage.window "window" 0u 0u (fun _ x -> x) 1u |> ignore) "Window size must be positive."
+            Expect.throws (fun () -> Stage.window "window" 1u 0u (fun _ x -> x) 0u |> ignore) "Window stride must be positive."
     ]
 
 [<Tests>]
@@ -274,10 +313,15 @@ let asyncStreamSemanticsSuite =
 
             let actual =
                 (window.Build()).Apply false source
-                |> AsyncSeq.map _.Items
+                |> AsyncSeq.map (fun w -> w.Items, w.EmitRange)
                 |> asyncSeqToList
 
-            Expect.equal actual [[-1; 10; 20]; [10; 20; 30]; [20; 30; 3]; [30; 3]] "Pipe.window should preserve AsyncSeqExtensions padding semantics."
+            Expect.equal actual
+                [ ([-1; 10; 20], (1u, 1u))
+                  ([10; 20; 30], (1u, 1u))
+                  ([20; 30; 3], (1u, 1u))
+                  ([30; 3], (1u, 0u)) ]
+                "Pipe.window should preserve the existing padding semantics without delegating zeroMaker to AsyncSeqExtensions."
     ]
 
 [<Tests>]

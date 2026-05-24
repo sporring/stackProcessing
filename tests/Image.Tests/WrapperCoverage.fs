@@ -170,7 +170,11 @@ let wrapperCoverage =
         Expect.throws (fun () -> toComplexFloat32 [ 1.0f; 2.0f; 3.0f ] |> ignore) "toComplexFloat32 should reject ambiguous component counts."
         Expect.equal (fft.GetNumberOfComponentsPerPixel()) 1u "FFTXY should return a native one-component complex image."
         Expect.equal (directional.GetNumberOfComponentsPerPixel()) 1u "directionalFFT should return a native one-component complex image."
-        Expect.throws (fun () -> Image<Complex>.ofFileComplex tmp |> ignore) "ofFileComplex should reject formats read back as two-component vector images."
+        let readBack = Image<Complex>.ofFileComplex tmp
+        try
+          Expect.equal (readBack.GetNumberOfComponentsPerPixel()) 1u "ofFileComplex should recover a native complex image from a persisted complex/vector representation."
+        finally
+          readBack.decRefCount()
         Expect.throws (fun () -> scalar.toFileComplex tmp) "toFileComplex should reject scalar non-complex images."
         Expect.throws (fun () -> ImageFunctions.FFTXY (Image<float>.ofArray3D (Array3D.zeroCreate 2 2 2)) |> ignore) "FFTXY should reject non-2D images."
         Expect.throws (fun () -> ImageFunctions.directionalFFT 2u src |> ignore) "directionalFFT should reject directions outside the image dimensions."

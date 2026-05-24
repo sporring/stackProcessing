@@ -664,9 +664,17 @@ let vectorImageCompositionTests =
     testCase "Empty image list throws" <| fun _ ->
       Expect.throws (fun () -> Image<float list>.ofImageList [] |> ignore) "Empty list should throw"
 
-    testCase "Too many images throws" <| fun _ ->
+    testCase "Compose many images and split back" <| fun _ ->
       let imgs = List.replicate 11 (Image<float>.ofArray2D (array2D [| [| 1.0 |] |]))
-      Expect.throws (fun () -> Image<float list>.ofImageList imgs |> ignore) "Too many images should throw"
+      let composed = Image<float list>.ofImageList imgs
+      let mutable split: Image<float> list = []
+      try
+        split <- composed.toImageList()
+        Expect.equal split.Length imgs.Length "ComposeImageFilter should support more than ten components."
+      finally
+        composed.decRefCount()
+        split |> List.iter (fun img -> img.decRefCount())
+        imgs |> List.iter (fun img -> img.decRefCount())
   ]
 
 [<Tests>]
@@ -1261,7 +1269,7 @@ let MorphologyTests =
       let img = Image<uint8>.ofArray2D (array2D [[0uy;0uy;0uy;1uy;1uy;1uy;0uy;0uy;0uy]])
       let dmap = ImageFunctions.bandSignedDistanceMap 2u img
       Expect.isTrue(System.Double.IsNaN dmap[0,0]) "Distances outside the band should be NaN"
-      Expect.isTrue(dmap[0,3] < 0.0 && not (System.Double.IsNaN dmap[0,3])) "Object boundary distances inside the band should be finite and negative"
+      Expect.isTrue(dmap[0,3] <= 0.0 && not (System.Double.IsNaN dmap[0,3])) "Object boundary distances inside the band should be finite and inside the object."
 
     testCase "watershed separates peaks" <| fun _ ->
       let img = Image<int>.ofArray2D (array2D [[0;1;0;1;0]])

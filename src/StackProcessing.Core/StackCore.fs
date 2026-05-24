@@ -1,5 +1,6 @@
 module StackCore
 
+open FSharp.Control
 open SlimPipeline // Core processing model
 open System
 
@@ -14,6 +15,10 @@ type ResourceOps<'T> = SlimPipeline.ResourceOps<'T>
 type Window<'T> = SlimPipeline.Window<'T>
 //type Slice<'S when 'S: equality> = Slice.Slice<'S>
 type Image<'S when 'S: equality> = Image.Image<'S>
+
+type Slab<'T when 'T: equality> =
+    { Image: Image<'T>
+      EmitRange: uint * uint }
 
 type Point2D =
     { X: float
@@ -455,6 +460,46 @@ let windowToSlab<'T when 'T: equality> : Stage<Window<Image<'T>>, Image<'T>> =
 
     Stage.map "windowToSlab" mapper memoryNeed id
 
+let windowToSlabWithRange<'T when 'T: equality> : Stage<Window<Image<'T>>, Slab<'T>> =
+    let mapper (_debug: bool) (window: Window<Image<'T>>) =
+        match window.Items with
+        | [] ->
+            invalidOp "windowToSlabWithRange requires a non-empty window."
+        | images ->
+            let slab = ImageFunctions.stack images
+            releaseConsumedWindowItems window
+            { Image = slab
+              EmitRange = window.EmitRange }
+
+    let memoryNeed nPixels =
+        2UL * nPixels * (typeof<'T> |> Image.getBytesPerComponent |> uint64)
+
+    Stage.map "windowToSlabWithRange" mapper memoryNeed id
+
+let mapSlabWithStage<'S, 'T when 'S: equality and 'T: equality> (stage: Stage<Image<'S>, Image<'T>>) : Stage<Slab<'S>, Slab<'T>> =
+    let mapper debug (slab: Slab<'S>) =
+        let output =
+            (stage.Build()).Apply debug (AsyncSeq.ofSeq [ slab.Image ])
+            |> AsyncSeq.toListAsync
+            |> Async.RunSynchronously
+
+        match output with
+        | [ image ] ->
+            { Image = image
+              EmitRange = slab.EmitRange }
+        | [] ->
+            invalidOp $"mapSlabWithStage expected stage '{stage.Name}' to emit one slab image, but it emitted none."
+        | many ->
+            many |> List.iter (fun image -> image.decRefCount())
+            invalidOp $"mapSlabWithStage expected stage '{stage.Name}' to emit one slab image, but it emitted {many.Length}."
+
+    let memoryNeed nPixels =
+        stage.MemoryNeed (SlimPipeline.Single nPixels)
+        |> SingleOrPair.sum
+        |> SingleOrPair.fst
+
+    Stage.map $"mapSlabWithStage ({stage.Name})" mapper memoryNeed id
+
 let slabToWindowAlong<'T when 'T: equality> axis : Stage<Image<'T>, Window<Image<'T>>> =
     let mapper (_debug: bool) (slab: Image<'T>) =
         let items =
@@ -467,6 +512,9 @@ let slabToWindowAlong<'T when 'T: equality> axis : Stage<Image<'T>, Window<Image
             finally
                 slab.decRefCount()
 
+        items
+        |> List.iteri (fun offset item -> item.index <- slab.index + offset)
+
         Window.create 0u (uint items.Length) items
 
     let memoryNeed nPixels = 2UL * nPixels * (typeof<'T> |> Image.getBytesPerComponent |> uint64)
@@ -475,16 +523,49 @@ let slabToWindowAlong<'T when 'T: equality> axis : Stage<Image<'T>, Window<Image
 let slabToWindow<'T when 'T: equality> : Stage<Image<'T>, Window<Image<'T>>> =
     slabToWindowAlong<'T> 2u
 
+let slabWithRangeToWindowAlong<'T when 'T: equality> axis : Stage<Slab<'T>, Window<Image<'T>>> =
+    let mapper (_debug: bool) (slab: Slab<'T>) =
+        let items =
+            try
+                if slab.Image.GetDimensions() <= axis then
+                    slab.Image.incRefCount()
+                    [ slab.Image ]
+                else
+                    ImageFunctions.unstack axis slab.Image
+            finally
+                slab.Image.decRefCount()
+
+        items
+        |> List.iteri (fun offset item -> item.index <- slab.Image.index + offset)
+
+        let _, emitCount = slab.EmitRange
+        let boundedEmitCount = min emitCount (uint items.Length)
+        Window.create (fst slab.EmitRange) boundedEmitCount items
+
+    let memoryNeed nPixels = 2UL * nPixels * (typeof<'T> |> Image.getBytesPerComponent |> uint64)
+    Stage.map "slabWithRangeToWindow" mapper memoryNeed id
+
+let slabWithRangeToWindow<'T when 'T: equality> : Stage<Slab<'T>, Window<Image<'T>>> =
+    slabWithRangeToWindowAlong<'T> 2u
+
 let windowSkipTakeMReleaseAfterWithMemory outputStart outputCount releaseItem memoryNeed : Stage<Window<'T>, 'T list> =
     let mapper (_debug: bool) (window: Window<'T>) =
-        if outputCount = 0u || int outputStart >= window.Items.Length then
+        let emitStart, emitCount = window.EmitRange
+        let requestedStart = outputStart
+        let requestedEnd = outputStart + outputCount
+        let emitEnd = emitStart + emitCount
+        let effectiveStart = max requestedStart emitStart
+        let effectiveEnd = min requestedEnd emitEnd
+        let effectiveCount = if effectiveEnd > effectiveStart then effectiveEnd - effectiveStart else 0u
+
+        if effectiveCount = 0u || int effectiveStart >= window.Items.Length then
             window.Items |> List.iter releaseItem
             []
         else
             let selected =
                 window.Items
-                |> List.skip (int outputStart)
-                |> List.take (min (int outputCount) (max 0 (window.Items.Length - int outputStart)))
+                |> List.skip (int effectiveStart)
+                |> List.take (min (int effectiveCount) (max 0 (window.Items.Length - int effectiveStart)))
 
             window.Items
             |> List.filter (fun image ->
@@ -550,9 +631,9 @@ let windowedViaSlabRequired<'S, 'T when 'S: equality and 'T: equality>
     : Stage<Image<'S>, Image<'T>> =
     (window windowSize pad stride)
     --> requireWindowSize requiredInputDepth
-    --> windowToSlab<'S>
-    --> stage
-    --> slabToWindow<'T>
+    --> windowToSlabWithRange<'S>
+    --> mapSlabWithStage stage
+    --> slabWithRangeToWindow<'T>
     --> slabSkipTakeM outputStart outputCount
     --> flattenList ()
 

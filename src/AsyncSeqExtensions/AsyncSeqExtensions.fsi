@@ -1,25 +1,5 @@
 namespace FSharp
 module AsyncSeqExtensions
-type WindowItem<'T> =
-    {
-      Value: 'T
-      IsReal: bool
-    }
-val windowedWithPadClassified:
-  windowSize: uint ->
-    stride: uint ->
-    prePad: uint ->
-    postPad: uint ->
-    zeroMaker: (int -> 'T -> 'T) ->
-    source: FSharp.Control.AsyncSeq<'T> ->
-    FSharp.Control.AsyncSeq<WindowItem<'T> list>
-val windowedWithPad:
-  windowSize: uint ->
-    stride: uint ->
-    prePad: uint ->
-    postPad: uint ->
-    zeroMaker: (int -> 'T -> 'T) ->
-    source: FSharp.Control.AsyncSeq<'T> -> FSharp.Control.AsyncSeq<'T list>
 /// Converts an asynchronous computation of a single value into an asynchronous sequence containing one item.
 val ofAsync: computation: Async<'T> -> FSharp.Control.AsyncSeq<'T>
 val zipConcurrent:

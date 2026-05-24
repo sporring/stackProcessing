@@ -1935,6 +1935,42 @@ let stackProcessingSupportSuite =
                 disposeImages distances
                 disposeImages slices
 
+        testCase "windowedThreshold preserves the slice-wise threshold result through the tail window" <| fun _ ->
+            let makeSlices () =
+                [ for z in 0 .. 4 ->
+                    let image =
+                        Array2D.init 4 3 (fun x y -> uint8 (x + 2 * y + 5 * z))
+                        |> Image<uint8>.ofArray2D
+                    image.index <- z
+                    image ]
+
+            let sliceInputs = makeSlices ()
+            let slabInputs = makeSlices ()
+            let mutable sliceWise: Image<uint8> list = []
+            let mutable slabWise: Image<uint8> list = []
+
+            try
+                sliceWise <-
+                    imagePlan sliceInputs
+                    >=> threshold 7.0 255.0
+                    |> drainList
+
+                slabWise <-
+                    imagePlan slabInputs
+                    >=> windowedThreshold<uint8> 3u 7.0 255.0
+                    |> drainList
+
+                Expect.equal slabWise.Length sliceWise.Length "Windowed threshold should emit one output per input slice, including the final partial window."
+                Expect.equal (slabWise |> List.map _.index) (sliceWise |> List.map _.index) "Windowed threshold should preserve slice indices."
+
+                for expected, actual in List.zip sliceWise slabWise do
+                    Expect.equal (actual.toArray2D()) (expected.toArray2D()) $"Windowed threshold slice {actual.index} should match the slice-wise threshold."
+            finally
+                disposeImages slabWise
+                disposeImages sliceWise
+                disposeImages slabInputs
+                disposeImages sliceInputs
+
         testCase "measureObjects derives per-object measurements and reducers summarize sizes" <| fun _ ->
             let firstBatch: StreamedObject list =
                 [ { Label = 1UL
@@ -2230,6 +2266,8 @@ let stackProcessingSupportSuite =
             let runPair f =
                 let a = image2D (fun x y -> float32 (1 + x + 2 * y))
                 let b = image2D (fun x y -> 2.0f * float32 (1 + x + 2 * y))
+                a.index <- 7
+                b.index <- 99
                 f a b
 
             let results =
@@ -2247,6 +2285,7 @@ let stackProcessingSupportSuite =
                 expectFloat32Close results[3].[1, 1] 2.0f "divPair should divide images."
                 expectFloat32Close results[4].[1, 1] 8.0f "maxOfPair should choose the larger value."
                 expectFloat32Close results[5].[1, 1] 4.0f "minOfPair should choose the smaller value."
+                Expect.equal (results |> List.map _.index) [ 7; 99; 7; 99; 7; 7 ] "Two-image operators should preserve the first input image index."
 
                 let extremaImage = image2D (fun x y -> 2.0f * float32 (1 + x + 2 * y))
                 let minValue, maxValue = getMinMax extremaImage
@@ -2683,8 +2722,11 @@ let stackProcessingSupportSuite =
 
         testCase "StackProcessing structureTensor emits a 12-component eigensystem matrix per input slice" <| fun _ ->
             let makeDoubleSlice z =
-                Array2D.init 5 5 (fun x _ -> float x + 0.0 * float z)
-                |> Image<float>.ofArray2D
+                let image =
+                    Array2D.init 5 5 (fun x _ -> float x + 0.0 * float z)
+                    |> Image<float>.ofArray2D
+                image.index <- z
+                image
 
             let inputSlices = [ 0 .. 4 ] |> List.map makeDoubleSlice
             let actual =
@@ -2707,6 +2749,7 @@ let stackProcessingSupportSuite =
 
             try
                 Expect.equal eigenvector0.Length inputSlices.Length "vectorRange should preserve the selected stream length."
+                Expect.equal (eigenvector0 |> List.map _.index) [ 0 .. 4 ] "vectorRange should preserve the input image index even when selecting later components."
                 Expect.equal eigenvector0[2].[2, 2] [ 1.0; 0.0; 0.0 ] "vectorRange 3 3 should select eigenvector 0."
             finally
                 disposeImages eigenvector0

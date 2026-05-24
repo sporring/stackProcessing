@@ -381,23 +381,101 @@ module private Pipe =
         create name apply profile
 *)
 
-    // window : wraps AsyncSeqExtensions.windowedWithPad
     let window (name: string) (winSz: uint) (pad: uint) (zeroMaker: int -> 'T -> 'T) (stride: uint) : Pipe<'T, Window<'T>> =
+        if winSz = 0u then invalidArg "winSz" "Window size must be positive."
+        if stride = 0u then invalidArg "stride" "Window stride must be positive."
 
         let apply _debug (input: AsyncSeq<'T>) : AsyncSeq<Window<'T>> =
-            // Produces an AsyncSeq of windows with the default emitted range.
-            AsyncSeqExtensions.windowedWithPadClassified winSz stride pad pad zeroMaker input
-            |> AsyncSeq.map (fun classified ->
-                let emitCount =
-                    classified
-                    |> List.skip (min (int pad) classified.Length)
-                    |> List.take (min (int stride) (max 0 (classified.Length - int pad)))
-                    |> List.filter _.IsReal
-                    |> List.length
-                    |> uint
+            let windowedWithPipelinePadding (source: AsyncSeq<'T>) =
+                asyncSeq {
+                    let! firstItems, rest = AsyncSeq.splitAt 1 source
 
-                let items = classified |> List.map _.Value
-                Window.createWithRelease pad emitCount stride items)
+                    match firstItems |> Array.tryHead with
+                    | None ->
+                        ()
+                    | Some first ->
+                        let mutable last = first
+                        let mutable realCount = 0
+
+                        let body =
+                            rest
+                            |> AsyncSeq.prependSeq firstItems
+                            |> AsyncSeq.map (fun item ->
+                                last <- item
+                                realCount <- realCount + 1
+                                item, true)
+
+                        let prePadding =
+                            seq {
+                                for i in 0 .. int pad - 1 do
+                                    yield zeroMaker (i - int pad) first, false
+                            }
+
+                        let postPadding =
+                            seq {
+                                for i in 0 .. int pad - 1 do
+                                    yield zeroMaker (realCount + i) last, false
+                            }
+
+                        let trailingEmptySlots =
+                            seq {
+                                for _ in 1 .. int winSz - 1 do
+                                    yield None
+                            }
+
+                        let padded =
+                            body
+                            |> AsyncSeq.map Some
+                            |> AsyncSeq.prependSeq (prePadding |> Seq.map Some)
+                            |> AsyncSeq.appendSeq (
+                                seq {
+                                    yield! postPadding |> Seq.map Some
+                                    yield! trailingEmptySlots
+                                })
+
+                        let mutable emittedPartial = false
+
+                        yield!
+                            padded
+                            |> AsyncSeq.windowed (int winSz)
+                            |> AsyncSeq.indexed
+                            |> AsyncSeq.choose (fun (index, window) ->
+                                if emittedPartial || index % int64 stride <> 0L then
+                                    None
+                                else
+                                    let classified =
+                                        window
+                                        |> Array.choose (fun item -> item)
+                                        |> Array.toList
+
+                                    if classified.Length = int winSz then
+                                        let emitCount =
+                                            classified
+                                            |> List.skip (min (int pad) classified.Length)
+                                            |> List.take (min (int stride) (max 0 (classified.Length - int pad)))
+                                            |> List.filter snd
+                                            |> List.length
+                                            |> uint
+
+                                        let items = classified |> List.map fst
+                                        Some(Window.createWithRelease pad emitCount stride items)
+                                    elif classified.Length > 0 then
+                                        emittedPartial <- true
+                                        let emitCount =
+                                            classified
+                                            |> List.skip (min (int pad) classified.Length)
+                                            |> List.take (min (int stride) (max 0 (classified.Length - int pad)))
+                                            |> List.filter snd
+                                            |> List.length
+                                            |> uint
+
+                                        let items = classified |> List.map fst
+                                        Some(Window.createWithRelease pad emitCount stride items)
+                                    else
+                                        None)
+                }
+
+            windowedWithPipelinePadding input
         let profile = Window (winSz, stride, pad, 0u, winSz)
         create name apply profile
 

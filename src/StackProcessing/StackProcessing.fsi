@@ -18,6 +18,8 @@ type StageTimeCoefficients = SlimPipeline.StageTimeCoefficients
 
 type Window<'T> = SlimPipeline.Window<'T>
 
+type Slab<'T when 'T: equality> = StackCore.Slab<'T>
+
 type Image<'S when 'S: equality> = Image.Image<'S>
 
 type ImageFacts = Image.ImageFacts
@@ -1378,8 +1380,21 @@ val windowToSlab<'T when 'T: equality> :
   StackCore.Stage<StackCore.Window<StackCore.Image<'T>>,StackCore.Image<'T>>
     when 'T: equality
 
+val windowToSlabWithRange<'T when 'T: equality> :
+  StackCore.Stage<StackCore.Window<StackCore.Image<'T>>,StackCore.Slab<'T>>
+    when 'T: equality
+
+val mapSlabWithStage<'S,'T when 'S: equality and 'T: equality> :
+  (StackCore.Stage<StackCore.Image<'S>,StackCore.Image<'T>> ->
+     StackCore.Stage<StackCore.Slab<'S>,StackCore.Slab<'T>>)
+    when 'S: equality and 'T: equality
+
 val slabToWindow<'T when 'T: equality> :
   StackCore.Stage<StackCore.Image<'T>,StackCore.Window<StackCore.Image<'T>>>
+    when 'T: equality
+
+val slabWithRangeToWindow<'T when 'T: equality> :
+  StackCore.Stage<StackCore.Slab<'T>,StackCore.Window<StackCore.Image<'T>>>
     when 'T: equality
 
 val windowSkipTakeM:

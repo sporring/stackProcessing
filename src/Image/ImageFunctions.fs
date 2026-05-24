@@ -1372,7 +1372,7 @@ let threshold (lower: float) (upper: float) (img: Image<'T>) : Image<uint8> =
     filter.SetLowerThreshold lower
     filter.SetUpperThreshold upper
     let res = filter.Execute(img.toSimpleITK()); 
-    Image<uint8>.ofSimpleITK(res,"threshold",0)
+    Image<uint8>.ofSimpleITK(res,"threshold",img.index)
 
 let toVectorImage (images: Image<'T> list) : Image<'T list> =
     Image<'T>.ofImageList images
@@ -1424,7 +1424,9 @@ let vectorRange<'T when 'T : equality> (firstComponent: uint) (componentCount: u
     let components = img.toImageList()
     let selected = components |> List.skip first |> List.take count
     try
-        Image<'T>.ofImageList selected
+        let result = Image<'T>.ofImageList selected
+        result.index <- img.index
+        result
     finally
         components |> List.iter (fun comp -> comp.decRefCount())
 

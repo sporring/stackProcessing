@@ -1498,9 +1498,9 @@ let private convolveSlabOp (name: string) (kernel: Image<'T>) (outputRegionMode:
 
     (window win pad stride)
     --> requireWindowSize ksz
-    --> windowToSlab
-    --> stg
-    --> slabToWindow
+    --> windowToSlabWithRange
+    --> mapSlabWithStage stg
+    --> slabWithRangeToWindow
     --> slabSkipTakeM outputStart stride
     --> flattenList ()
     |> Stage.withSliceCardinality (sliceCardinalityForConvolution ksz outputRegionMode)
@@ -1622,9 +1622,9 @@ let threshold<'T when 'T: equality> a b : Stage<Image<'T>, Image<uint8>> =
 let windowedViaSlab<'S, 'T when 'S: equality and 'T: equality> (windowSize: uint) (stage: Stage<Image<'S>, Image<'T>>) : Stage<Image<'S>, Image<'T>> =
     let win = max 1u windowSize
     (window win 0u win)
-    --> windowToSlab<'S>
-    --> stage
-    --> slabToWindow<'T>
+    --> windowToSlabWithRange<'S>
+    --> mapSlabWithStage stage
+    --> slabWithRangeToWindow<'T>
     --> slabSkipTakeM 0u win
     --> flattenList ()
 

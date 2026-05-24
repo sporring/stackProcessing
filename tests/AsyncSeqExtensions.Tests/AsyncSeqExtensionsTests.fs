@@ -77,16 +77,7 @@ let asyncSeqExtensionsSuite =
             Expect.isTrue leftDisposed "Disposing the zipped stream should dispose the left input."
             Expect.isTrue rightDisposed "Disposing the zipped stream should dispose the right input."
 
-        testCase "windowedWithPad creates padded sliding windows" <| fun _ ->
-            let zeroMaker i _ = i
-            let actual =
-                ofList [10; 20; 30]
-                |> windowedWithPad 3u 1u 1u 1u zeroMaker
-                |> toList
-
-            Expect.equal actual [[-1; 10; 20]; [10; 20; 30]; [20; 30; 3]; [30; 3]] "Padded windows should include pre/post padding and the final remainder window."
-
-        testCase "windowedWithPad has bounded read-ahead for first window" <| fun _ ->
+        testCase "AsyncSeq.windowed has bounded read-ahead for first window" <| fun _ ->
             let mutable pulls = 0
             let source =
                 asyncSeq {
@@ -97,25 +88,17 @@ let asyncSeqExtensionsSuite =
 
             let enum =
                 (source
-                 |> windowedWithPad 3u 1u 0u 0u (fun _ x -> x))
+                 |> AsyncSeq.windowed 3)
                     .GetAsyncEnumerator()
 
             try
                 Expect.isTrue (moveNext enum) "The first window should be available."
-                Expect.equal enum.Current [1; 2; 3] "The first window should contain the first three values."
+                Expect.equal (enum.Current |> Array.toList) [1; 2; 3] "The first window should contain the first three values."
                 Expect.isLessThanOrEqual pulls 4 "The first window should need only the window plus one look-ahead item."
             finally
                 dispose enum
 
-        testCase "windowedWithPad preserves strided final remainder windows" <| fun _ ->
-            let actual =
-                ofList [1; 2; 3; 4; 5]
-                |> windowedWithPad 3u 2u 0u 0u (fun _ x -> x)
-                |> toList
-
-            Expect.equal actual [[1; 2; 3]; [3; 4; 5]; [5]] "Strided windows should include the final partial tail window."
-
-        testCase "windowedWithPad disposes input enumerator when consumer stops early" <| fun _ ->
+        testCase "AsyncSeq.windowed disposes input enumerator when consumer stops early" <| fun _ ->
             let mutable disposed = false
             let source =
                 asyncSeq {
@@ -129,25 +112,11 @@ let asyncSeqExtensionsSuite =
 
             let enum =
                 (source
-                 |> windowedWithPad 2u 1u 0u 0u (fun _ x -> x))
+                 |> AsyncSeq.windowed 2)
                     .GetAsyncEnumerator()
 
             Expect.isTrue (moveNext enum) "The first window should be available."
             dispose enum
 
             Expect.isTrue disposed "Disposing the windowed stream should dispose the input sequence."
-
-        testCase "windowedWithPad rejects zero window size" <| fun _ ->
-            Expect.throws (fun () ->
-                ofList [1]
-                |> windowedWithPad 0u 1u 0u 0u (fun _ x -> x)
-                |> toList
-                |> ignore) "windowSize must be positive."
-
-        testCase "windowedWithPad rejects zero stride" <| fun _ ->
-            Expect.throws (fun () ->
-                ofList [1]
-                |> windowedWithPad 1u 0u 0u 0u (fun _ x -> x)
-                |> toList
-                |> ignore) "stride must be positive."
     ]

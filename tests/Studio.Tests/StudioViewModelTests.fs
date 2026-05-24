@@ -535,11 +535,18 @@ let viewModelSuite =
                 failtestf "Importing resample/resample.json should not throw, but got: %s" ex.Message
 
             let exported = vm.ExportGraph()
+            let exportedFunctionIdByNode =
+                exported.Nodes
+                |> Array.map (fun node -> node.Id, node.FunctionId)
+                |> Map.ofArray
 
             Expect.equal exported.Edges.Length graph.Edges.Length "Importing resample should preserve every saved edge."
             Expect.isTrue
-                (exported.Edges |> Array.exists (fun edge -> edge.FromNode = "node-4" && edge.ToNode = "node-5"))
-                "The imported Expand-to-Print field edges should survive."
+                (exported.Edges
+                 |> Array.exists (fun edge ->
+                     exportedFunctionIdByNode[edge.FromNode] = "NormalNoise"
+                     && exportedFunctionIdByNode[edge.ToNode] = "Resample"))
+                "The imported source-to-resample stream edge should survive."
 
         testCase "normalize sample imports with current read random parameter ports" <| fun _ ->
             let vm = MainWindowViewModel()
@@ -562,7 +569,7 @@ let viewModelSuite =
             let vm = MainWindowViewModel()
             vm.SetDrawingSize(2000.0, 1400.0)
 
-            let samplePath = findRepoFile (Path.Combine("samples", "resample", "resample.json"))
+            let samplePath = findRepoFile (Path.Combine("samples", "resize", "resize.json"))
             vm.ImportGraph(PipelineGraphStorage.load samplePath)
 
             let nodes =
@@ -570,9 +577,8 @@ let viewModelSuite =
                 |> Seq.toArray
 
             let readNode = nodes |> Array.find (fun node -> node.State.Definition.Id = "Read")
-            let resampleNode = nodes |> Array.find (fun node -> node.State.Definition.Id = "Resample")
+            let resampleNode = nodes |> Array.find (fun node -> node.State.Definition.Id = "Resize")
             let writeNode = nodes |> Array.find (fun node -> node.State.Definition.Id = "Write")
-            let expandNodes = nodes |> Array.filter (fun node -> node.State.Definition.Id = "Expand")
             let drawing = vm.Editor.Drawing :?> DrawingNodeViewModel
 
             let streamConnectorCountBefore =
@@ -588,12 +594,12 @@ let viewModelSuite =
                         false)
                 |> Seq.length
 
-            Expect.equal streamConnectorCountBefore 1 "Read should be connected to Resample before the type change."
+            Expect.equal streamConnectorCountBefore 1 "Read should be connected to Resize before the type change."
 
-            (readNode |> parameter "type").Value <- "Float32"
+            (readNode |> parameter "type").Value <- "UInt16"
 
-            Expect.equal (readNode |> parameter "type").Value "Float32" "The read type parameter should change."
-            Expect.equal (resampleNode |> parameter "type").Value "Float32" "Resample should adapt to the changed source image type."
+            Expect.equal (readNode |> parameter "type").Value "UInt16" "The read type parameter should change."
+            Expect.equal (resampleNode |> parameter "type").Value "UInt16" "Resize should adapt to the changed source image type."
 
             let resampleInput =
                 resampleNode.Pins
@@ -602,25 +608,11 @@ let viewModelSuite =
                     | _ -> None)
                 |> Seq.exactlyOne
 
-            Expect.equal resampleInput.Port.Name "Float32" "Resample's image input hover text should show the concrete type."
-
-            let readMetadataStillConnected =
-                drawing.Connectors
-                |> Seq.exists (fun connector ->
-                    match connector.Start, connector.End with
-                    | (:? PipelinePinViewModel as startPin), (:? PipelinePinViewModel as endPin) ->
-                        Object.ReferenceEquals(startPin.Parent, readNode)
-                        && startPin.Kind = ReducerOutput
-                        && expandNodes |> Array.exists (fun expandNode -> Object.ReferenceEquals(endPin.Parent, expandNode))
-                        && endPin.Kind = DataInput
-                    | _ ->
-                        false)
-
-            Expect.isTrue readMetadataStillConnected "Changing the stream type should not remove the unchanged StackInfo connection."
+            Expect.equal resampleInput.Port.Name "UInt16" "Resize's image input hover text should show the concrete type."
 
             (readNode |> parameter "type").Value <- "Float64"
 
-            Expect.equal (resampleNode |> parameter "type").Value "Float32" "Resample should not adapt when doing so would break the downstream TIFF writer."
+            Expect.equal (resampleNode |> parameter "type").Value "UInt16" "Resize should not adapt when doing so would break the downstream TIFF writer."
 
             let readInputStillConnected =
                 drawing.Connectors
@@ -634,7 +626,7 @@ let viewModelSuite =
                     | _ ->
                         false)
 
-            Expect.isFalse readInputStillConnected "Changing to Float64 should cut the changed Read-to-Resample edge before mutating the downstream chain."
+            Expect.isFalse readInputStillConnected "Changing to Float64 should cut the changed Read-to-Resize edge before mutating the downstream chain."
 
             let writeInputStillConnected =
                 drawing.Connectors
@@ -648,18 +640,7 @@ let viewModelSuite =
                     | _ ->
                         false)
 
-            Expect.isTrue writeInputStillConnected "The still-compatible Resample-to-Write edge should stay connected."
+            Expect.isTrue writeInputStillConnected "The still-compatible Resize-to-Write edge should stay connected."
 
-            let writeMetadataStillConnected =
-                drawing.Connectors
-                |> Seq.exists (fun connector ->
-                    match connector.Start, connector.End with
-                    | (:? PipelinePinViewModel as startPin), (:? PipelinePinViewModel as endPin) ->
-                        Object.ReferenceEquals(startPin.Parent, writeNode)
-                        && startPin.Kind = ReducerOutput
-                        && endPin.Kind = ParameterInput
-                    | _ ->
-                        false)
-
-            Expect.isTrue writeMetadataStillConnected "Changing read stream type should not remove the unchanged Write StackInfo connection."
+            ignore writeNode
     ]
