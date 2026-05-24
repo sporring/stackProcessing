@@ -8,10 +8,7 @@ open System.IO
 open System.Collections.Generic
 open StackCore
 open StackIO
-
-let liftUnary name  = Stage.liftReleaseUnary name ignore
-let liftUnaryReleaseAfter (name: string) (f: Image<'S> -> Image<'T>) (memoryNeed: MemoryNeed) (elementTransformation: ElementTransformation) = 
-    Stage.liftResourceUnary name imageResourceOps f memoryNeed elementTransformation
+open TinyLinAlg
 
 let getBytesPerComponent<'T> = (typeof<'T> |> Image.getBytesPerComponent |> uint64)
 let getImageFacts<'T when 'T: equality> (image: Image<'T>) = image.GetFacts()
@@ -66,9 +63,6 @@ let private liftOperatorUnaryReleaseAfter<'T when 'T: equality>
 
     liftUnaryReleaseAfter name f memoryNeed id
     |> withCostModel (operatorUnaryStageCost<'T> operator memoryNeed)
-
-let identityStage name =
-    Stage.map name (fun _ value -> value) id id
 
 let private cleanStage name cleanup =
     { identityStage name with Cleaning = [ cleanup ] }
@@ -226,113 +220,6 @@ let private zResampleStage<'T when 'T: equality> inputDepth outputDepth factor i
 
     (window windowSize 0u 1u) --> stage --> flattenList ()
 
-let private liftWindowedUnaryReleaseAfter
-        (name: string)
-        (winSz: uint)
-        (f: Image<'S> -> Image<'T>)
-        (memoryNeed: MemoryNeed)
-        (elementTransformation: ElementTransformation)
-        : Stage<Image<'S>, Image<'T>> =
-    let win = max 1u winSz
-    let mapper debug =
-        volFctToWindowFctReleaseAfterDebug debug f 1u 0u win
-    let stg = mapWindow name mapper memoryNeed elementTransformation
-    (window win 0u win) --> stg --> flattenList ()
-
-let private releaseWindowItems (items: Image<'T> list) =
-    items |> List.iter (fun image -> image.decRefCount())
-
-let private releaseConsumedWindowItems (window: Window<Image<'T>>) =
-    window.Items
-    |> List.take (min (int window.ReleaseCount) window.Items.Length)
-    |> releaseWindowItems
-
-let private requireWindowSize<'T when 'T: equality> requiredInputDepth : Stage<Window<Image<'T>>, Window<Image<'T>>> =
-    Stage.filter
-        "requireWindowSize"
-        (fun _ window -> uint window.Items.Length >= requiredInputDepth)
-        (fun window -> releaseWindowItems window.Items)
-
-let windowToSlab<'T when 'T: equality> : Stage<Window<Image<'T>>, Image<'T>> =
-    let releaseConsumed (window: Window<Image<'T>>) =
-        window.Items
-        |> List.take (min (int window.ReleaseCount) window.Items.Length)
-        |> List.iter (fun image -> image.decRefCount())
-
-    let mapper (_debug: bool) (window: Window<Image<'T>>) =
-        match window.Items with
-        | [] ->
-            invalidOp "windowToSlab requires a non-empty window."
-        | images ->
-            let slab = ImageFunctions.stack images
-            releaseConsumed window
-            slab
-
-    let memoryNeed nPixels =
-        2UL * nPixels * getBytesPerComponent<'T>
-
-    Stage.map "windowToSlab" mapper memoryNeed id
-
-let slabToWindow<'T when 'T: equality> : Stage<Image<'T>, Window<Image<'T>>> =
-    let mapper (_debug: bool) (slab: Image<'T>) =
-        let items =
-            try
-                if slab.GetDimensions() < 3u then
-                    slab.incRefCount()
-                    [ slab ]
-                else
-                    ImageFunctions.unstack 2u slab
-            finally
-                slab.decRefCount()
-
-        Window.create 0u (uint items.Length) items
-
-    let memoryNeed nPixels = 2UL * nPixels * getBytesPerComponent<'T>
-    Stage.map "slabToWindow" mapper memoryNeed id
-
-let slabSkipTakeM<'T when 'T: equality> outputStart outputCount : Stage<Window<Image<'T>>, Image<'T> list> =
-    let mapper (_debug: bool) (window: Window<Image<'T>>) =
-        if outputCount = 0u || int outputStart >= window.Items.Length then
-            releaseWindowItems window.Items
-            []
-        else
-            let selected =
-                window.Items
-                |> List.skip (int outputStart)
-                |> List.take (min (int outputCount) (max 0 (window.Items.Length - int outputStart)))
-
-            window.Items
-            |> List.filter (fun image ->
-                selected
-                |> List.exists (fun selectedImage -> Object.ReferenceEquals(selectedImage, image))
-                |> not)
-            |> releaseWindowItems
-
-            selected
-
-    let memoryNeed nPixels = 2UL * nPixels * uint64 (max 1u outputCount) * getBytesPerComponent<'T>
-    Stage.map "slabSkipTakeM" mapper memoryNeed id
-
-let private liftSlabReleaseAfter<'S, 'T when 'S: equality and 'T: equality> name f memoryNeed elementTransformation : Stage<Image<'S>, Image<'T>> =
-    liftUnaryReleaseAfter name f memoryNeed elementTransformation
-
-let private windowedViaSlabRequired<'S, 'T when 'S: equality and 'T: equality>
-    windowSize
-    pad
-    stride
-    requiredInputDepth
-    outputStart
-    outputCount
-    (stage: Stage<Image<'S>, Image<'T>>)
-    : Stage<Image<'S>, Image<'T>> =
-    (window windowSize pad stride)
-    --> requireWindowSize requiredInputDepth
-    --> windowToSlab<'S>
-    --> stage
-    --> slabToWindow<'T>
-    --> slabSkipTakeM outputStart outputCount
-    --> flattenList ()
-
 type System.String with // From https: //stackoverflow.com/questions/1936767/f-case-insensitive-string-compare
     member s1.icompare(s2: string) =
         System.String.Equals(s1, s2, System.StringComparison.CurrentCultureIgnoreCase)
@@ -383,9 +270,6 @@ let cast<'S,'T when 'S: equality and 'T: equality> =
     |> withCostModel (operatorUnaryStageCost<'S> "Cast" memoryNeed)
 
 /// Basic arithmetic
-let liftRelease2 f I J = releaseAfter2 (fun a b -> f a b) I J
-
-let memNeeded<'T> nTimes nElems = 3UL*nElems*nTimes*getBytesPerComponent<'T> // We need input, output, and potentially a cast in between
 let add (image: Image<'T>) = 
     liftUnaryReleaseAfter "add" ((+) image) id id
 let addPair I J = liftRelease2 ( + ) I J
@@ -432,12 +316,6 @@ let private releaseImagePair (f: Image<'S> -> Image<'T> -> 'U) (a: Image<'S>, b:
 
 let private liftPairReleaseAfter name f : Stage<Image<'S> * Image<'T>, 'U> =
     Stage.map name (fun _ pair -> releaseImagePair f pair) id id
-
-let failTypeMismatch<'T> name lst =
-    let t = typeof<'T>
-    if lst |> List.exists ((=) t) |> not then
-        let names = List.map (fun (t: System.Type) -> t.Name) lst
-        failwith $"[{name}] wrong type. Type {t} must be one of {names}"
 
 /// Simple functions
 let private floatNintTypes = [typeof<float>;typeof<float32>;typeof<int>]
@@ -521,98 +399,12 @@ let toComplex : Stage<Image<float> * Image<float>, Image<System.Numerics.Complex
 let polarToComplex : Stage<Image<float> * Image<float>, Image<System.Numerics.Complex>> =
     liftPairReleaseAfter "polarToComplex" Image.polarToComplex
 
-let private writeVolumeAsChunks debug outputDir suffix chunkX chunkY chunkZ (volume: Image<'T>) =
-    let depth = volume.GetDepth()
-    let mutable k = 0u
-    while k < depth do
-        let last = min (depth - 1u) (k + chunkZ - 1u)
-        let slab = ImageFunctions.extractSub [ 0u; 0u; k ] [ volume.GetWidth() - 1u; volume.GetHeight() - 1u; last ] volume
-        _writeSlabChunks debug outputDir suffix chunkX chunkY (last - k + 1u) (int (k / chunkZ)) slab
-        slab.decRefCount()
-        k <- k + chunkZ
-
-let private readChunkVolume<'T when 'T: equality> inputDir suffix =
-    let chunkInfo = getChunkInfo inputDir suffix
-    let slabs =
-        [ for k in 0 .. chunkInfo.chunks[2] - 1 ->
-            _readSlabStacked<'T> inputDir suffix chunkInfo 2u k ]
-    let volume = ImageFunctions.stack slabs
-    slabs |> List.iter (fun slab -> slab.decRefCount())
-    volume, chunkInfo
-
-let private chunkedFFTAlongZ debug inputDir outputDir suffix chunkX chunkY chunkZ =
-    if Directory.Exists(outputDir) then Directory.Delete(outputDir, true)
-    Directory.CreateDirectory(outputDir) |> ignore
-    let volume, _ = readChunkVolume<System.Numerics.Complex> inputDir suffix
-    let zTransformed = ImageFunctions.directionalFFTComplex 2u false volume
-    volume.decRefCount()
-    writeVolumeAsChunks debug outputDir suffix chunkX chunkY chunkZ zTransformed
-    zTransformed.decRefCount()
-
-let private chunkedInvFFTAlongZ debug inputDir outputDir suffix chunkX chunkY chunkZ =
-    if Directory.Exists(outputDir) then Directory.Delete(outputDir, true)
-    Directory.CreateDirectory(outputDir) |> ignore
-    let volume, _ = readChunkVolume<System.Numerics.Complex> inputDir suffix
-    let zInverse = ImageFunctions.directionalFFTComplex 2u true volume
-    volume.decRefCount()
-    writeVolumeAsChunks debug outputDir suffix chunkX chunkY chunkZ zInverse
-    zInverse.decRefCount()
-
-let private chunkedShiftFFT debug inputDir outputDir suffix chunkX chunkY chunkZ =
-    if Directory.Exists(outputDir) then Directory.Delete(outputDir, true)
-    Directory.CreateDirectory(outputDir) |> ignore
-    let volume, _ = readChunkVolume<System.Numerics.Complex> inputDir suffix
-    let shifted = ImageFunctions.shiftFFT volume
-    volume.decRefCount()
-    writeVolumeAsChunks debug outputDir suffix chunkX chunkY chunkZ shifted
-    shifted.decRefCount()
-
-let private readChunksAsSlices<'T when 'T: equality> name outputDir suffix =
-    let mutable chunkInfo : ChunkInfo = { chunks = [0;0;0]; size = [0UL;0UL;0UL]; topLeftInfo = { dimensions = 0u; size = [0UL;0UL;0UL]; componentType = ""; numberOfComponents = 0u } }
-    let memoryNeed = fun _ -> 256UL
-    let elementTransformation = fun _ -> chunkInfo.chunks[2] |> uint64
-    Stage.map name (fun _ _ -> chunkInfo <- getChunkInfo outputDir suffix) memoryNeed elementTransformation
-    --> Stage.map name (fun _ _ -> [ 0 .. chunkInfo.chunks[2] - 1 ]) memoryNeed elementTransformation
-    --> flattenList ()
-    --> Stage.map name (fun _ idx ->
-        let slab = _readSlabStacked<'T> outputDir suffix chunkInfo 2u idx
-        let slices = ImageFunctions.unstack 2u slab
-        slab.decRefCount()
-        slices) memoryNeed elementTransformation
-    --> flattenList ()
-
-let private chunkedVolumeOperation
-    name
-    (prepareInput: Stage<Image<'S>, Image<'I>>)
-    (operation: bool -> string -> string -> string -> uint -> uint -> uint -> unit)
-    (chunkX: uint)
-    (chunkY: uint)
-    (chunkZ: uint)
-    : Stage<Image<'S>, Image<'T>> =
-    let workspaceRoot =
-        Path.Combine(Path.GetTempPath(), $"stackprocessing-{name}-{Guid.NewGuid():N}")
-    let inputDir = Path.Combine(workspaceRoot, "input")
-    let outputDir = Path.Combine(workspaceRoot, "output")
-    let suffix = ".mha"
-    let chunkX = max 1u chunkX
-    let chunkY = max 1u chunkY
-    let chunkZ = max 1u chunkZ
-    let memoryNeed = fun _ -> 256UL
-    let elementTransformation = fun _ -> 1UL
-
-    prepareInput
-    --> writeChunks inputDir suffix chunkX chunkY chunkZ
-    --> cleanStage name (fun () -> StackIO.deleteIfExists workspaceRoot)
-    --> StackCore.ignoreSingles ()
-    --> Stage.map name (fun debug _ -> operation debug inputDir outputDir suffix chunkX chunkY chunkZ) memoryNeed elementTransformation
-    --> readChunksAsSlices<'T> name outputDir suffix
-
 let FFT<'T when 'T: equality> chunkX chunkY chunkZ : Stage<Image<'T>, Image<System.Numerics.Complex>> =
     let stage =
-        chunkedVolumeOperation
+        StackIO.chunkedVolumeOperation
             "FFT"
             (liftUnaryReleaseAfter "FFTXY" ImageFunctions.FFTXY id id)
-            chunkedFFTAlongZ
+            StackIO.chunkedFFTAlongZ
             chunkX
             chunkY
             chunkZ
@@ -624,10 +416,10 @@ let FFT<'T when 'T: equality> chunkX chunkY chunkZ : Stage<Image<'T>, Image<Syst
 
 let invFFT chunkX chunkY chunkZ : Stage<Image<System.Numerics.Complex>, Image<float>> =
     let stage =
-        (chunkedVolumeOperation
+        (StackIO.chunkedVolumeOperation
             "invFFT"
             (liftUnaryReleaseAfter "inverseFFTXY" ImageFunctions.inverseFFTXY id id)
-            chunkedInvFFTAlongZ
+            StackIO.chunkedInvFFTAlongZ
             chunkX
             chunkY
             chunkZ)
@@ -640,10 +432,10 @@ let invFFT chunkX chunkY chunkZ : Stage<Image<System.Numerics.Complex>, Image<fl
 
 let shiftFFT chunkX chunkY chunkZ : Stage<Image<System.Numerics.Complex>, Image<System.Numerics.Complex>> =
     let stage =
-        chunkedVolumeOperation
+        StackIO.chunkedVolumeOperation
             "shiftFFT"
             (identityStage "shiftFFT.input")
-            chunkedShiftFFT
+            StackIO.chunkedShiftFFT
             chunkX
             chunkY
             chunkZ
@@ -719,20 +511,6 @@ let intensityStretch<'T when 'T: equality> inputMinimum inputMaximum outputMinim
 
 let private defaultConvolutionWindowSize (kernelDepth: uint) =
     max 1u kernelDepth
-
-let private isInteractiveProcess () =
-    AppDomain.CurrentDomain.FriendlyName.IndexOf("fsi", StringComparison.OrdinalIgnoreCase) >= 0
-    || Environment.GetCommandLineArgs()
-       |> Array.exists (fun arg -> arg.IndexOf("fsi", StringComparison.OrdinalIgnoreCase) >= 0)
-
-let private stopWithConfigurationError message =
-    if isInteractiveProcess () then
-        invalidOp message
-    else
-        Console.Error.WriteLine(message)
-        Environment.ExitCode <- 2
-        Environment.Exit 2
-        failwith message
 
 let private effectiveWindowSize stageName minimumWindowSize requestedWindowSize =
     let minimumWindowSize = max 1u minimumWindowSize
@@ -840,37 +618,6 @@ let private gaussianVectorElements (sigma: float) : Stage<Image<float list>, Ima
         windowedViaSlabRequired win pad stride ksz pad stride stg
         |> Stage.withSliceCardinality (SlimPipeline.Domain(sameSliceDomainForKernelDepth ksz))
 
-type private PcaAccumulator =
-    { Count: uint64
-      Components: int
-      Sums: float[]
-      Products: float[,] }
-
-let private zeroPcaAccumulator (components: int) : PcaAccumulator =
-    { Count = 0UL
-      Components = components
-      Sums = Array.zeroCreate components
-      Products = Array2D.zeroCreate components components }
-
-let private addPcaVector (state: PcaAccumulator) (values: float list) : PcaAccumulator =
-    let values = values |> List.toArray
-    if values.Length <> state.Components then
-        failwith $"PCA: expected {state.Components}-component vectors, got {values.Length}."
-
-    let sums = Array.copy state.Sums
-    let products = Array2D.copy state.Products
-    values |> Array.iteri (fun i value -> sums[i] <- sums[i] + value)
-    for i in 0 .. state.Components - 1 do
-        for j in i .. state.Components - 1 do
-            let product = values[i] * values[j]
-            products[i, j] <- products[i, j] + product
-            if i <> j then products[j, i] <- products[j, i] + product
-
-    { state with
-        Count = state.Count + 1UL
-        Sums = sums
-        Products = products }
-
 let private vectorImageIndices (image: Image<float list>) =
     match image.GetSize() with
     | [ width; height ] ->
@@ -894,71 +641,8 @@ let private pcaOutputImage name components values =
     image.Set [ 0u; 0u ] values
     image
 
-let private symmetricEigenN (matrix: float[,]) : (float * float list) list =
-    let n = matrix.GetLength(0)
-    if n <> matrix.GetLength(1) then invalidArg "matrix" "PCA eigen decomposition expects a square matrix."
-    if n < 2 then invalidArg "matrix" "PCA eigen decomposition expects at least two components."
-
-    let a = Array2D.copy matrix
-    let v = Array2D.zeroCreate<float> n n
-    for i in 0 .. n - 1 do
-        v[i, i] <- 1.0
-
-    let rotate p q =
-        if System.Math.Abs a[p, q] > 1e-14 then
-            let tau = (a[q, q] - a[p, p]) / (2.0 * a[p, q])
-            let sign = if tau >= 0.0 then 1.0 else -1.0
-            let t = sign / (System.Math.Abs tau + System.Math.Sqrt (1.0 + tau * tau))
-            let c = 1.0 / System.Math.Sqrt (1.0 + t * t)
-            let s = t * c
-            let app = a[p, p]
-            let aqq = a[q, q]
-            let apq = a[p, q]
-
-            a[p, p] <- app - t * apq
-            a[q, q] <- aqq + t * apq
-            a[p, q] <- 0.0
-            a[q, p] <- 0.0
-
-            for r in 0 .. n - 1 do
-                if r <> p && r <> q then
-                    let arp = a[r, p]
-                    let arq = a[r, q]
-                    a[r, p] <- c * arp - s * arq
-                    a[p, r] <- a[r, p]
-                    a[r, q] <- s * arp + c * arq
-                    a[q, r] <- a[r, q]
-
-            for r in 0 .. n - 1 do
-                let vrp = v[r, p]
-                let vrq = v[r, q]
-                v[r, p] <- c * vrp - s * vrq
-                v[r, q] <- s * vrp + c * vrq
-
-    for _ in 1 .. System.Math.Max(32, 8 * n * n) do
-        for p in 0 .. n - 2 do
-            for q in p + 1 .. n - 1 do
-                rotate p q
-
-    [ for i in 0 .. n - 1 ->
-        let vector = [ for r in 0 .. n - 1 -> v[r, i] ]
-        let norm = vector |> List.sumBy (fun value -> value * value) |> System.Math.Sqrt
-        let vector = if norm < 1e-18 then vector else vector |> List.map (fun value -> value / norm)
-        a[i, i], vector ]
-    |> List.sortByDescending fst
-
 let private pcaImages (state: PcaAccumulator) : Image<float list> list =
-    if state.Count = 0UL then
-        invalidOp "PCA cannot reduce an empty vector image stream."
-
-    let n = float state.Count
-    let means = state.Sums |> Array.map (fun sum -> sum / n)
-    let covariance = Array2D.zeroCreate<float> state.Components state.Components
-    for i in 0 .. state.Components - 1 do
-        for j in 0 .. state.Components - 1 do
-            covariance[i, j] <- state.Products[i, j] / n - means[i] * means[j]
-
-    let eigen = symmetricEigenN covariance
+    let eigen = pcaEigenSystem state
     let eigenvalues = eigen |> List.map fst
     [ yield pcaOutputImage "PCAEigenvalues" state.Components eigenvalues
       for index, (_, vector) in eigen |> List.indexed do
@@ -1955,7 +1639,7 @@ let threshold<'T when 'T: equality> a b : Stage<Image<'T>, Image<uint8>> =
     liftUnaryReleaseAfter "threshold" (ImageFunctions.threshold a b) memoryNeed id
     |> withCostModel (imageOperatorCost<'T> "Threshold" Map memoryModel None None None None [] costUnits)
 
-let windowedViaSlab<'S, 'T when 'S: equality and 'T: equality> windowSize (stage: Stage<Image<'S>, Image<'T>>) : Stage<Image<'S>, Image<'T>> =
+let windowedViaSlab<'S, 'T when 'S: equality and 'T: equality> (windowSize: uint) (stage: Stage<Image<'S>, Image<'T>>) : Stage<Image<'S>, Image<'T>> =
     let win = max 1u windowSize
     (window win 0u win)
     --> windowToSlab<'S>
@@ -2166,23 +1850,6 @@ let empty (pl: Plan<unit, unit>) : Plan<unit, unit> =
     Plan.createWithOptimizer stage pl.memAvail 0UL 0UL 0UL pl.debug pl.optimize
     |> Plan.withRuntimeOptionsFrom pl
 
-let writeSlabSlices (outputDir: string) (suffix: string) (winSz: uint) : Stage<Image<'T>, Image<'T>> =
-    if (outputDir |> System.IO.Directory.Exists) |> not then
-        System.IO.Directory.CreateDirectory(outputDir) |> ignore
-
-    let mapper (debug: bool) (_idx: int64) (labelChunk: Image<'T>) =
-        let slices = ImageFunctions.unstack 2u labelChunk
-        slices
-        |> List.iteri (fun localIndex slice ->
-            let globalIndex = labelChunk.index + localIndex
-            let fileName = System.IO.Path.Combine(outputDir, sprintf "image_%03d%s" globalIndex suffix)
-            if debug then printfn "[writeSlabSlices] Saved image %d to %s as %s" globalIndex fileName (typeof<'T>.Name)
-            slice.toFile(fileName)
-            slice.decRefCount())
-        labelChunk
-
-    Stage.mapi $"writeSlabSlices \"{outputDir}/*{suffix}\"" mapper id id
-
 type ComponentStatistics =
     { Label: uint64
       NumberOfPixels: uint64
@@ -2380,8 +2047,6 @@ let makeConnectedComponentTranslationTable winSz : Stage<Image<uint64> * uint64,
     let memoryNeed nPixels = 2UL * nPixels * uint64 sizeof<uint64>
     let elementTransformation = fun _ -> 1UL
     Stage.reduce name reducer Streaming memoryNeed elementTransformation
-
-let trd (_,_,c) = c
 
 let updateConnectedComponents winSz (translationTable: ConnectedComponentTranslationTable) : Stage<Image<uint64>,Image<uint64>> =
     let name = "updateConnectedComponents"

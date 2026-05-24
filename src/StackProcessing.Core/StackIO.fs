@@ -75,9 +75,6 @@ let private fixedImageOperatorTimeCost<'T> operator evaluation voxels fallback =
 let private withCostModel costModel stage =
     StackProcessingCost.withCostModel costModel stage
 
-let private identityStage name =
-    Stage.map name (fun _ value -> value) id id
-
 let private cleanStage name cleanup =
     { identityStage name with Cleaning = [ cleanup ] }
 
@@ -2001,6 +1998,22 @@ let write<'T when 'T: equality> (outputDir: string) (suffix: string) : Stage<Ima
     Stage.mapi $"write \"{outputDir}/*{suffix}\"" mapper memoryNeed id
     |> withCostModel (StageCostModel.create memoryModel timeCostModel)
 
+let writeSlabSlices<'T when 'T: equality> (outputDir: string) (suffix: string) (_winSz: uint) : Stage<Image<'T>, Image<'T>> =
+    Directory.CreateDirectory(outputDir) |> ignore
+
+    let mapper (debug: bool) (_idx: int64) (labelChunk: Image<'T>) =
+        let slices = ImageFunctions.unstack 2u labelChunk
+        slices
+        |> List.iteri (fun localIndex slice ->
+            let globalIndex = labelChunk.index + localIndex
+            let fileName = Path.Combine(outputDir, sprintf "image_%03d%s" globalIndex suffix)
+            if debug then printfn "[writeSlabSlices] Saved image %d to %s as %s" globalIndex fileName (typeof<'T>.Name)
+            slice.toFile(fileName)
+            slice.decRefCount())
+        labelChunk
+
+    Stage.mapi $"writeSlabSlices \"{outputDir}/*{suffix}\"" mapper id id
+
 let private tiffMode (filename: string) =
     let ext = Path.GetExtension(filename).ToLowerInvariant()
     if ext = ".btf" || ext = ".bigtiff" then "w8" else "w"
@@ -2332,3 +2345,89 @@ let private writeChunksCore<'T when 'T: equality> (outputDir: string) (suffix: s
 
 let writeChunks<'T when 'T: equality> outputDir suffix width height winSz =
     writeChunksCore<'T> outputDir suffix width height winSz
+
+let writeVolumeAsChunks debug outputDir suffix chunkX chunkY chunkZ (volume: Image<'T>) =
+    let depth = volume.GetDepth()
+    let mutable k = 0u
+    while k < depth do
+        let last = min (depth - 1u) (k + chunkZ - 1u)
+        let slab = ImageFunctions.extractSub [ 0u; 0u; k ] [ volume.GetWidth() - 1u; volume.GetHeight() - 1u; last ] volume
+        _writeSlabChunks debug outputDir suffix chunkX chunkY (last - k + 1u) (int (k / chunkZ)) slab
+        slab.decRefCount()
+        k <- k + chunkZ
+
+let readChunkVolume<'T when 'T: equality> inputDir suffix =
+    let chunkInfo = getChunkInfo inputDir suffix
+    let slabs =
+        [ for k in 0 .. chunkInfo.chunks[2] - 1 ->
+            _readSlabStacked<'T> inputDir suffix chunkInfo 2u k ]
+    let volume = ImageFunctions.stack slabs
+    slabs |> List.iter (fun slab -> slab.decRefCount())
+    volume, chunkInfo
+
+let chunkedFFTAlongZ debug inputDir outputDir suffix chunkX chunkY chunkZ =
+    if Directory.Exists(outputDir) then Directory.Delete(outputDir, true)
+    Directory.CreateDirectory(outputDir) |> ignore
+    let volume, _ = readChunkVolume<System.Numerics.Complex> inputDir suffix
+    let zTransformed = ImageFunctions.directionalFFTComplex 2u false volume
+    volume.decRefCount()
+    writeVolumeAsChunks debug outputDir suffix chunkX chunkY chunkZ zTransformed
+    zTransformed.decRefCount()
+
+let chunkedInvFFTAlongZ debug inputDir outputDir suffix chunkX chunkY chunkZ =
+    if Directory.Exists(outputDir) then Directory.Delete(outputDir, true)
+    Directory.CreateDirectory(outputDir) |> ignore
+    let volume, _ = readChunkVolume<System.Numerics.Complex> inputDir suffix
+    let zInverse = ImageFunctions.directionalFFTComplex 2u true volume
+    volume.decRefCount()
+    writeVolumeAsChunks debug outputDir suffix chunkX chunkY chunkZ zInverse
+    zInverse.decRefCount()
+
+let chunkedShiftFFT debug inputDir outputDir suffix chunkX chunkY chunkZ =
+    if Directory.Exists(outputDir) then Directory.Delete(outputDir, true)
+    Directory.CreateDirectory(outputDir) |> ignore
+    let volume, _ = readChunkVolume<System.Numerics.Complex> inputDir suffix
+    let shifted = ImageFunctions.shiftFFT volume
+    volume.decRefCount()
+    writeVolumeAsChunks debug outputDir suffix chunkX chunkY chunkZ shifted
+    shifted.decRefCount()
+
+let readChunksAsSlices<'T when 'T: equality> name outputDir suffix =
+    let mutable chunkInfo : ChunkInfo = { chunks = [0;0;0]; size = [0UL;0UL;0UL]; topLeftInfo = { dimensions = 0u; size = [0UL;0UL;0UL]; componentType = ""; numberOfComponents = 0u } }
+    let memoryNeed = fun _ -> 256UL
+    let elementTransformation = fun _ -> chunkInfo.chunks[2] |> uint64
+    Stage.map name (fun _ _ -> chunkInfo <- getChunkInfo outputDir suffix) memoryNeed elementTransformation
+    --> Stage.map name (fun _ _ -> [ 0 .. chunkInfo.chunks[2] - 1 ]) memoryNeed elementTransformation
+    --> flattenList ()
+    --> Stage.map name (fun _ idx ->
+        let slab = _readSlabStacked<'T> outputDir suffix chunkInfo 2u idx
+        let slices = ImageFunctions.unstack 2u slab
+        slab.decRefCount()
+        slices) memoryNeed elementTransformation
+    --> flattenList ()
+
+let chunkedVolumeOperation
+    name
+    (prepareInput: Stage<Image<'S>, Image<'I>>)
+    (operation: bool -> string -> string -> string -> uint -> uint -> uint -> unit)
+    (chunkX: uint)
+    (chunkY: uint)
+    (chunkZ: uint)
+    : Stage<Image<'S>, Image<'T>> =
+    let workspaceRoot =
+        Path.Combine(Path.GetTempPath(), $"stackprocessing-{name}-{Guid.NewGuid():N}")
+    let inputDir = Path.Combine(workspaceRoot, "input")
+    let outputDir = Path.Combine(workspaceRoot, "output")
+    let suffix = ".mha"
+    let chunkX = max 1u chunkX
+    let chunkY = max 1u chunkY
+    let chunkZ = max 1u chunkZ
+    let memoryNeed = fun _ -> 256UL
+    let elementTransformation = fun _ -> 1UL
+
+    prepareInput
+    --> writeChunks inputDir suffix chunkX chunkY chunkZ
+    --> cleanStage name (fun () -> deleteIfExists workspaceRoot)
+    --> ignoreSingles ()
+    --> Stage.map name (fun debug _ -> operation debug inputDir outputDir suffix chunkX chunkY chunkZ) memoryNeed elementTransformation
+    --> readChunksAsSlices<'T> name outputDir suffix

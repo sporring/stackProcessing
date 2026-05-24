@@ -471,6 +471,11 @@ val writeChunks:
      uint -> uint -> StackCore.Stage<StackCore.Image<'a>,StackCore.Image<'a>>)
     when 'a: equality
 
+val writeSlabSlices<'T when 'T: equality> :
+  (string ->
+     string -> uint -> StackCore.Stage<StackCore.Image<'T>,StackCore.Image<'T>>)
+    when 'T: equality
+
 val writePointSet:
   (string -> string -> StackCore.Stage<StackPoints.PointSet,unit>)
 
@@ -840,7 +845,7 @@ val minOfPair:
 
 val getMinMax: (StackCore.Image<'a> -> float * float) when 'a: equality
 
-val failTypeMismatch<'T> : (string -> System.Type list -> unit)
+val failTypeMismatch<'T> : (obj -> System.Type list -> unit)
 
 val toVectorImage<'T when 'T: equality> :
   Stage<(Image<'T> * Image<'T>),Image<'T list>> when 'T: equality
@@ -1378,27 +1383,27 @@ val slabToWindow<'T when 'T: equality> :
     when 'T: equality
 
 val slabSkipTakeM<'T when 'T: equality> :
-  (uint32 ->
+  (uint ->
      uint32 ->
      StackCore.Stage<StackCore.Window<StackCore.Image<'T>>,
                      StackCore.Image<'T> list>) when 'T: equality
 
 val windowedViaSlab<'S,'T when 'S: equality and 'T: equality> :
-  (uint32 ->
+  (uint ->
      StackCore.Stage<StackCore.Image<'S>,StackCore.Image<'T>> ->
      StackCore.Stage<StackCore.Image<'S>,StackCore.Image<'T>>)
     when 'S: equality and 'T: equality
 
 val windowSlabRoundtrip<'T when 'T: equality> :
-  (uint32 -> StackCore.Stage<StackCore.Image<'T>,StackCore.Image<'T>>)
+  (uint -> StackCore.Stage<StackCore.Image<'T>,StackCore.Image<'T>>)
     when 'T: equality
 
 val windowedCast<'S,'T when 'S: equality and 'T: equality> :
-  (uint32 -> StackCore.Stage<StackCore.Image<'S>,StackCore.Image<'T>>)
+  (uint -> StackCore.Stage<StackCore.Image<'S>,StackCore.Image<'T>>)
     when 'S: equality and 'T: equality
 
 val windowedThreshold<'T when 'T: equality> :
-  (uint32 ->
+  (uint ->
      float ->
      float -> StackCore.Stage<StackCore.Image<'T>,StackCore.Image<uint8>>)
     when 'T: equality
@@ -1498,11 +1503,6 @@ val createByEuler2DTransform<'T when 'T: equality> :
     when 'T: equality
 
 val empty: (SlimPipeline.Plan<unit,unit> -> SlimPipeline.Plan<unit,unit>)
-
-val writeSlabSlices:
-  (string ->
-     string -> uint -> StackCore.Stage<StackCore.Image<'a>,StackCore.Image<'a>>)
-    when 'a: equality
 
 type ComponentStatistics = StackImageFunctions.ComponentStatistics
 

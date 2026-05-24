@@ -1,6 +1,7 @@
 module StackCore
 
 open SlimPipeline // Core processing model
+open System
 
 // Whole-slice stages should do their pixel work in managed arrays and cross
 // the ITK boundary once per slice. Per-pixel Image.Get/setter calls are kept
@@ -56,6 +57,15 @@ let releaseAfterWith (ops: ResourceOps<'S>) (f: 'S -> 'T) (value: 'S) =
         f value
     finally
         ops.Release value
+
+let liftUnary name =
+    Stage.liftReleaseUnary name ignore
+
+let liftUnaryReleaseAfter (name: string) (f: Image<'S> -> Image<'T>) (memoryNeed: MemoryNeed) (elementTransformation: ElementTransformation) =
+    Stage.liftResourceUnary name imageResourceOps f memoryNeed elementTransformation
+
+let identityStage name =
+    Stage.map name (fun _ value -> value) id id
 
 let incIfImage x =
     match box x with
@@ -118,6 +128,34 @@ let releaseAfter2 (f: Image<'S>->Image<'S>->'T) (I: Image<'S>) (J: Image<'S>) =
     finally
         imageResourceOps.Release I
         imageResourceOps.Release J
+
+let liftRelease2 f I J =
+    releaseAfter2 (fun a b -> f a b) I J
+
+let memNeeded<'T> nTimes nElems =
+    3UL * nElems * nTimes * (typeof<'T> |> Image.getBytesPerComponent |> uint64)
+
+let failTypeMismatch<'T> name supportedTypes =
+    let t = typeof<'T>
+    if supportedTypes |> List.exists ((=) t) |> not then
+        let names = List.map (fun (t: Type) -> t.Name) supportedTypes
+        failwith $"[{name}] wrong type. Type {t} must be one of {names}"
+
+let isInteractiveProcess () =
+    AppDomain.CurrentDomain.FriendlyName.IndexOf("fsi", StringComparison.OrdinalIgnoreCase) >= 0
+    || Environment.GetCommandLineArgs()
+       |> Array.exists (fun arg -> arg.IndexOf("fsi", StringComparison.OrdinalIgnoreCase) >= 0)
+
+let stopWithConfigurationError message =
+    if isInteractiveProcess () then
+        invalidOp message
+    else
+        Console.Error.WriteLine(message)
+        Environment.ExitCode <- 2
+        Environment.Exit 2
+        failwith message
+
+let trd (_, _, c) = c
 (*
 let releaseNAfter (n: int) (f: Image<'S> list->'T list) (sLst: Image<'S> list) : 'T list =
     let tLst = f sLst;
@@ -394,10 +432,115 @@ let zeroMaker (index: int) (ex: Image<'S>) : Image<'S> =
 let window windowSize pad stride = Stage.window "window" windowSize pad zeroMaker stride
 let flatten () = Stage.flattenWindow "flatten"
 let flattenList () = Stage.flatten "flatten"
+let releaseWindowItems (items: Image<'T> list) =
+    items |> List.iter (fun image -> image.decRefCount())
+
+let releaseConsumedWindowItems (window: Window<Image<'T>>) =
+    window.Items
+    |> List.take (min (int window.ReleaseCount) window.Items.Length)
+    |> releaseWindowItems
+
+let windowToSlab<'T when 'T: equality> : Stage<Window<Image<'T>>, Image<'T>> =
+    let mapper (_debug: bool) (window: Window<Image<'T>>) =
+        match window.Items with
+        | [] ->
+            invalidOp "windowToSlab requires a non-empty window."
+        | images ->
+            let slab = ImageFunctions.stack images
+            releaseConsumedWindowItems window
+            slab
+
+    let memoryNeed nPixels =
+        2UL * nPixels * (typeof<'T> |> Image.getBytesPerComponent |> uint64)
+
+    Stage.map "windowToSlab" mapper memoryNeed id
+
+let slabToWindow<'T when 'T: equality> : Stage<Image<'T>, Window<Image<'T>>> =
+    let mapper (_debug: bool) (slab: Image<'T>) =
+        let items =
+            try
+                if slab.GetDimensions() < 3u then
+                    slab.incRefCount()
+                    [ slab ]
+                else
+                    ImageFunctions.unstack 2u slab
+            finally
+                slab.decRefCount()
+
+        Window.create 0u (uint items.Length) items
+
+    let memoryNeed nPixels = 2UL * nPixels * (typeof<'T> |> Image.getBytesPerComponent |> uint64)
+    Stage.map "slabToWindow" mapper memoryNeed id
+
+let slabSkipTakeM<'T when 'T: equality> outputStart outputCount : Stage<Window<Image<'T>>, Image<'T> list> =
+    let mapper (_debug: bool) (window: Window<Image<'T>>) =
+        if outputCount = 0u || int outputStart >= window.Items.Length then
+            releaseWindowItems window.Items
+            []
+        else
+            let selected =
+                window.Items
+                |> List.skip (int outputStart)
+                |> List.take (min (int outputCount) (max 0 (window.Items.Length - int outputStart)))
+
+            window.Items
+            |> List.filter (fun image ->
+                selected
+                |> List.exists (fun selectedImage -> Object.ReferenceEquals(selectedImage, image))
+                |> not)
+            |> releaseWindowItems
+
+            selected
+
+    let memoryNeed nPixels =
+        2UL * nPixels * uint64 (max 1u outputCount) * (typeof<'T> |> Image.getBytesPerComponent |> uint64)
+
+    Stage.map "slabSkipTakeM" mapper memoryNeed id
+
 let mapWindow (name: string) (f: bool -> Window<'T> -> 'S) memoryNeed elementTransformation =
     Stage.map name (fun debug (window: Window<'T>) -> f debug window) memoryNeed elementTransformation
 let mapWindowItems (name: string) (f: bool -> 'T list -> 'S) memoryNeed elementTransformation =
     Stage.map name (fun debug (window: Window<'T>) -> f debug window.Items) memoryNeed elementTransformation
+
+let liftWindowedUnaryReleaseAfter
+    (name: string)
+    (windowSize: uint)
+    (f: Image<'S> -> Image<'T>)
+    (memoryNeed: MemoryNeed)
+    (elementTransformation: ElementTransformation)
+    : Stage<Image<'S>, Image<'T>> =
+    let win = max 1u windowSize
+    let mapper debug =
+        volFctToWindowFctReleaseAfterDebug debug f 1u 0u win
+    let stg = mapWindow name mapper memoryNeed elementTransformation
+    (window win 0u win) --> stg --> flattenList ()
+
+let requireWindowSize<'T when 'T: equality> requiredInputDepth : Stage<Window<Image<'T>>, Window<Image<'T>>> =
+    Stage.filter
+        "requireWindowSize"
+        (fun _ window -> uint window.Items.Length >= requiredInputDepth)
+        (fun window -> releaseWindowItems window.Items)
+
+let liftSlabReleaseAfter<'S, 'T when 'S: equality and 'T: equality> name f memoryNeed elementTransformation : Stage<Image<'S>, Image<'T>> =
+    liftUnaryReleaseAfter name f memoryNeed elementTransformation
+
+let windowedViaSlabRequired<'S, 'T when 'S: equality and 'T: equality>
+    (windowSize: uint)
+    (pad: uint)
+    (stride: uint)
+    (requiredInputDepth: uint)
+    (outputStart: uint)
+    (outputCount: uint)
+    (stage: Stage<Image<'S>, Image<'T>>)
+    : Stage<Image<'S>, Image<'T>> =
+    (window windowSize pad stride)
+    --> requireWindowSize requiredInputDepth
+    --> windowToSlab<'S>
+    --> stage
+    --> slabToWindow<'T>
+    --> slabSkipTakeM outputStart outputCount
+    --> flattenList ()
+
 let map f = Stage.map "map" f id id
 let sinkOp (pl: Plan<unit,unit>) : unit = 
     Plan.sink pl

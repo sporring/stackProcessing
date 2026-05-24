@@ -107,6 +107,104 @@ let symmetricEigen (m: M3) : (float * V3) list =
         a[i,i], vector ]
     |> List.sortByDescending fst
 
+let symmetricEigenN (matrix: float[,]) : (float * float list) list =
+    let n = matrix.GetLength(0)
+    if n <> matrix.GetLength(1) then invalidArg "matrix" "Symmetric eigen decomposition expects a square matrix."
+    if n < 2 then invalidArg "matrix" "Symmetric eigen decomposition expects at least two components."
+
+    let a = Array2D.copy matrix
+    let v = Array2D.zeroCreate<float> n n
+    for i in 0 .. n - 1 do
+        v[i, i] <- 1.0
+
+    let rotate p q =
+        if System.Math.Abs a[p, q] > 1e-14 then
+            let tau = (a[q, q] - a[p, p]) / (2.0 * a[p, q])
+            let sign = if tau >= 0.0 then 1.0 else -1.0
+            let t = sign / (System.Math.Abs tau + System.Math.Sqrt (1.0 + tau * tau))
+            let c = 1.0 / System.Math.Sqrt (1.0 + t * t)
+            let s = t * c
+            let app = a[p, p]
+            let aqq = a[q, q]
+            let apq = a[p, q]
+
+            a[p, p] <- app - t * apq
+            a[q, q] <- aqq + t * apq
+            a[p, q] <- 0.0
+            a[q, p] <- 0.0
+
+            for r in 0 .. n - 1 do
+                if r <> p && r <> q then
+                    let arp = a[r, p]
+                    let arq = a[r, q]
+                    a[r, p] <- c * arp - s * arq
+                    a[p, r] <- a[r, p]
+                    a[r, q] <- s * arp + c * arq
+                    a[q, r] <- a[r, q]
+
+            for r in 0 .. n - 1 do
+                let vrp = v[r, p]
+                let vrq = v[r, q]
+                v[r, p] <- c * vrp - s * vrq
+                v[r, q] <- s * vrp + c * vrq
+
+    for _ in 1 .. System.Math.Max(32, 8 * n * n) do
+        for p in 0 .. n - 2 do
+            for q in p + 1 .. n - 1 do
+                rotate p q
+
+    [ for i in 0 .. n - 1 ->
+        let vector = [ for r in 0 .. n - 1 -> v[r, i] ]
+        let norm = vector |> List.sumBy (fun value -> value * value) |> System.Math.Sqrt
+        let vector = if norm < 1e-18 then vector else vector |> List.map (fun value -> value / norm)
+        a[i, i], vector ]
+    |> List.sortByDescending fst
+
+type PcaAccumulator =
+    { Count: uint64
+      Components: int
+      Sums: float[]
+      Products: float[,] }
+
+let zeroPcaAccumulator components : PcaAccumulator =
+    if components < 2 then invalidArg "components" "PCA needs at least two vector components."
+    { Count = 0UL
+      Components = components
+      Sums = Array.zeroCreate components
+      Products = Array2D.zeroCreate components components }
+
+let addPcaVector (state: PcaAccumulator) (values: float list) : PcaAccumulator =
+    let values = values |> List.toArray
+    if values.Length <> state.Components then
+        invalidArg "values" $"PCA: expected {state.Components}-component vectors, got {values.Length}."
+
+    let sums = Array.copy state.Sums
+    let products = Array2D.copy state.Products
+    values |> Array.iteri (fun i value -> sums[i] <- sums[i] + value)
+    for i in 0 .. state.Components - 1 do
+        for j in i .. state.Components - 1 do
+            let product = values[i] * values[j]
+            products[i, j] <- products[i, j] + product
+            if i <> j then products[j, i] <- products[j, i] + product
+
+    { state with
+        Count = state.Count + 1UL
+        Sums = sums
+        Products = products }
+
+let pcaEigenSystem (state: PcaAccumulator) : (float * float list) list =
+    if state.Count = 0UL then
+        invalidOp "PCA cannot reduce an empty vector sequence."
+
+    let n = float state.Count
+    let means = state.Sums |> Array.map (fun sum -> sum / n)
+    let covariance = Array2D.zeroCreate<float> state.Components state.Components
+    for i in 0 .. state.Components - 1 do
+        for j in 0 .. state.Components - 1 do
+            covariance[i, j] <- state.Products[i, j] / n - means[i] * means[j]
+
+    symmetricEigenN covariance
+
 // -------------------------
 // Affine transform (output -> input)
 // SimpleITK's AffineTransform uses center: p' = A*(p - c) + t + c

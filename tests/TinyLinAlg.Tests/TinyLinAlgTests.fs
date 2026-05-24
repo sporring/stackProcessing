@@ -146,6 +146,43 @@ let tinyLinAlgSuite =
             Expect.floatClose Accuracy.high (abs ((rotatedEigen[0] |> snd).x)) (1.0 / sqrt 2.0) "rotated eigenvector x magnitude"
             Expect.floatClose Accuracy.high (abs ((rotatedEigen[0] |> snd).y)) (1.0 / sqrt 2.0) "rotated eigenvector y magnitude"
 
+        testCase "symmetricEigenN sorts eigenpairs for dense symmetric matrices" <| fun _ ->
+            let diagonal =
+                array2D
+                    [ [ 9.0; 0.0; 0.0; 0.0 ]
+                      [ 0.0; 4.0; 0.0; 0.0 ]
+                      [ 0.0; 0.0; 1.0; 0.0 ]
+                      [ 0.0; 0.0; 0.0; 0.5 ] ]
+
+            let eigen = symmetricEigenN diagonal
+
+            Expect.equal (eigen |> List.map fst) [ 9.0; 4.0; 1.0; 0.5 ] "Eigenvalues should be sorted descending."
+            Expect.equal (eigen[0] |> snd) [ 1.0; 0.0; 0.0; 0.0 ] "largest eigenvector"
+            Expect.equal (eigen[3] |> snd) [ 0.0; 0.0; 0.0; 1.0 ] "smallest eigenvector"
+
+            let rotated =
+                array2D
+                    [ [ 5.0; 2.0; 0.0 ]
+                      [ 2.0; 5.0; 0.0 ]
+                      [ 0.0; 0.0; 1.0 ] ]
+            let rotatedEigen = symmetricEigenN rotated
+            Expect.floatClose Accuracy.high (rotatedEigen[0] |> fst) 7.0 "rotated largest eigenvalue"
+            Expect.floatClose Accuracy.high (rotatedEigen[1] |> fst) 3.0 "rotated middle eigenvalue"
+            Expect.floatClose Accuracy.high (abs ((rotatedEigen[0] |> snd)[0])) (1.0 / sqrt 2.0) "rotated eigenvector x magnitude"
+            Expect.floatClose Accuracy.high (abs ((rotatedEigen[0] |> snd)[1])) (1.0 / sqrt 2.0) "rotated eigenvector y magnitude"
+
+        testCase "PCA accumulator builds covariance eigensystem" <| fun _ ->
+            let state =
+                [ [ -1.0; 0.0; 0.0 ]; [ 1.0; 0.0; 0.0 ] ]
+                |> List.fold addPcaVector (zeroPcaAccumulator 3)
+
+            let eigen = pcaEigenSystem state
+
+            Expect.equal (eigen |> List.map fst) [ 1.0; 0.0; 0.0 ] "Variance should be isolated along x."
+            Expect.floatClose Accuracy.high (abs ((eigen[0] |> snd)[0])) 1.0 "First PCA eigenvector should align with x."
+            Expect.floatClose Accuracy.high (abs ((eigen[0] |> snd)[1])) 0.0 "First PCA eigenvector y"
+            Expect.floatClose Accuracy.high (abs ((eigen[0] |> snd)[2])) 0.0 "First PCA eigenvector z"
+
         testCase "affinePoint follows SimpleITK center convention" <| fun _ ->
             let rotateZ90 =
                 { m00 = 0.0; m01 = -1.0; m02 = 0.0
