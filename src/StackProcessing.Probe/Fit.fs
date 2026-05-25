@@ -212,6 +212,7 @@ let private contextFromInputJson (record: ProbeAnalysis.StoredMeasurementRecord)
 type private ReadCastCase =
     { SourceType: string
       TargetType: string
+      SourceFormat: string option
       Mode: string }
 
 let private graphNameFromRowId (rowId: string) =
@@ -227,12 +228,22 @@ let private tryReadCastCase (rowId: string) =
     | _bottomup :: _index :: "read" :: sourceType :: targetType :: "implicit" :: _ ->
         match normalizePixelType sourceType, normalizePixelType targetType with
         | Some sourceType, Some targetType ->
-            Some { SourceType = sourceType; TargetType = targetType; Mode = "Implicit" }
+            Some { SourceType = sourceType; TargetType = targetType; SourceFormat = None; Mode = "Implicit" }
+        | _ -> None
+    | _bottomup :: _index :: "read" :: sourceType :: targetType :: format :: "implicit" :: _ ->
+        match normalizePixelType sourceType, normalizePixelType targetType with
+        | Some sourceType, Some targetType ->
+            Some { SourceType = sourceType; TargetType = targetType; SourceFormat = Some format; Mode = "Implicit" }
         | _ -> None
     | _bottomup :: _index :: "read" :: sourceType :: targetType :: "explicit" :: "cast" :: _ ->
         match normalizePixelType sourceType, normalizePixelType targetType with
         | Some sourceType, Some targetType ->
-            Some { SourceType = sourceType; TargetType = targetType; Mode = "Explicit" }
+            Some { SourceType = sourceType; TargetType = targetType; SourceFormat = None; Mode = "Explicit" }
+        | _ -> None
+    | _bottomup :: _index :: "read" :: sourceType :: targetType :: format :: "explicit" :: "cast" :: _ ->
+        match normalizePixelType sourceType, normalizePixelType targetType with
+        | Some sourceType, Some targetType ->
+            Some { SourceType = sourceType; TargetType = targetType; SourceFormat = Some format; Mode = "Explicit" }
         | _ -> None
     | _ -> None
 
@@ -333,7 +344,7 @@ let private featureEvidenceRow (context: EvidenceContext) (record: ProbeAnalysis
         |> Option.orElse gaussianKernelSizeFromSigma
       Sigma = sigma }
 
-let private readCastEvidenceRow (context: EvidenceContext) (record: ProbeAnalysis.StoredMeasurementRecord) (case: ReadCastCase) : Fitting.EvidenceRow =
+let private imageGeometry context pixelType =
     let slicePixels =
         match context.Width, context.Height with
         | Some width, Some height -> Some(width * height)
@@ -344,7 +355,7 @@ let private readCastEvidenceRow (context: EvidenceContext) (record: ProbeAnalysi
         | Some slicePixels, Some depth -> Some(slicePixels * depth)
         | _ -> None
 
-    let bytesPerPixel = pixelTypeBytes case.TargetType
+    let bytesPerPixel = pixelTypeBytes pixelType
     let sliceBytes =
         match slicePixels, bytesPerPixel with
         | Some slicePixels, Some bytesPerPixel -> Some(slicePixels * bytesPerPixel)
@@ -355,26 +366,59 @@ let private readCastEvidenceRow (context: EvidenceContext) (record: ProbeAnalysi
         | Some voxels, Some bytesPerPixel -> Some(voxels * bytesPerPixel)
         | _ -> None
 
-    let operator = $"ReadCast{case.Mode}.{case.SourceType}To{case.TargetType}"
-    { RowId = record.RowId
-      Measurement = record.Measurement
-      Value = record.Value
-      SourcePath = record.SourcePath
-      FeatureKey = $"{operator}:sourceType={case.SourceType}:targetType={case.TargetType}:mode={case.Mode}"
-      FeatureValue = 1.0
-      Operator = operator
-      PixelType = Some case.TargetType
-      Width = context.Width
-      Height = context.Height
-      Depth = context.Depth
-      Voxels = voxels
-      SlicePixels = slicePixels
-      SliceBytes = sliceBytes
-      VolumeBytes = volumeBytes
-      WindowSize = None
-      Radius = None
-      KernelSize = None
-      Sigma = None }
+    slicePixels, voxels, sliceBytes, volumeBytes
+
+let private readCastEvidenceRows (context: EvidenceContext) (record: ProbeAnalysis.StoredMeasurementRecord) (case: ReadCastCase) : Fitting.EvidenceRow list =
+    let sourceSlicePixels, sourceVoxels, sourceSliceBytes, sourceVolumeBytes =
+        imageGeometry context case.SourceType
+
+    let targetSlicePixels, targetVoxels, targetSliceBytes, targetVolumeBytes =
+        imageGeometry context case.TargetType
+
+    let castPixelType = $"{case.SourceType}To{case.TargetType}"
+    let readPixelType =
+        case.SourceFormat
+        |> Option.map (fun format -> $"{case.SourceType}.{format}")
+        |> Option.defaultValue case.SourceType
+
+    [ { RowId = record.RowId
+        Measurement = record.Measurement
+        Value = record.Value
+        SourcePath = record.SourcePath
+        FeatureKey = $"Read:sourceType={case.SourceType}:readCastMode={case.Mode}"
+        FeatureValue = 1.0
+        Operator = "Read"
+        PixelType = Some readPixelType
+        Width = context.Width
+        Height = context.Height
+        Depth = context.Depth
+        Voxels = sourceVoxels
+        SlicePixels = sourceSlicePixels
+        SliceBytes = sourceSliceBytes
+        VolumeBytes = sourceVolumeBytes
+        WindowSize = None
+        Radius = None
+        KernelSize = None
+        Sigma = None }
+      { RowId = record.RowId
+        Measurement = record.Measurement
+        Value = record.Value
+        SourcePath = record.SourcePath
+        FeatureKey = $"Cast:sourceType={case.SourceType}:targetType={case.TargetType}:mode={case.Mode}"
+        FeatureValue = 1.0
+        Operator = "Cast"
+        PixelType = Some castPixelType
+        Width = context.Width
+        Height = context.Height
+        Depth = context.Depth
+        Voxels = targetVoxels
+        SlicePixels = targetSlicePixels
+        SliceBytes = targetSliceBytes
+        VolumeBytes = targetVolumeBytes
+        WindowSize = None
+        Radius = None
+        KernelSize = None
+        Sigma = None } ]
 
 let membersOfRecord (record: ProbeAnalysis.StoredMeasurementRecord) =
     seq {
@@ -401,9 +445,14 @@ let selectorMatchesRecord selector (record: ProbeAnalysis.StoredMeasurementRecor
 let evidenceRowsFromRecord (record: ProbeAnalysis.StoredMeasurementRecord) =
     match record.RuntimeCostTerms |> Array.toList with
     | _ :: _ ->
+        let readCastCase = tryReadCastCase record.RowId
+
         let runtimeRows =
             record.RuntimeCostTerms
-            |> Array.choose (runtimeTermEvidenceRow record)
+            |> Array.choose (fun term ->
+                match readCastCase, tag "operator" term |> Option.map (fun value -> value.Trim().ToLowerInvariant()) with
+                | Some _, Some("read" | "cast") -> None
+                | _ -> runtimeTermEvidenceRow record term)
             |> Array.toList
 
         let runtimeOperators =
@@ -413,8 +462,8 @@ let evidenceRowsFromRecord (record: ProbeAnalysis.StoredMeasurementRecord) =
 
         let context = contextFromInputJson record
         let readCastRows =
-            match tryReadCastCase record.RowId with
-            | Some case -> [ readCastEvidenceRow context record case ]
+            match readCastCase with
+            | Some case -> readCastEvidenceRows context record case
             | None -> []
 
         let supplementalRows =
@@ -424,6 +473,8 @@ let evidenceRowsFromRecord (record: ProbeAnalysis.StoredMeasurementRecord) =
                 let metadata = parseFeatureMetadata feature.Key
                 let operator = metadata.Operator.Trim().ToLowerInvariant()
                 if operator = "ignore" then
+                    None
+                elif readCastCase.IsSome && (operator = "read" || operator = "cast") then
                     None
                 elif operator = "intercept" || not (runtimeOperators.Contains operator) then
                     Some(featureEvidenceRow context record feature)
@@ -456,6 +507,7 @@ let fit options =
         [ "Fitted from the durable Probe measurement store."
           "Fit selection can be restricted by ladder family/member."
           "Streaming operators use operationCount plus dataMB-derived terms so whole-volume probe evidence can be applied per emitted slice."
+          "Read-cast probes decompose read<T> and read<diskT> followed by cast<diskT,T> into Read(sourceType) plus Cast(sourceType->targetType) evidence."
           "Windowed and radius-dependent operators add windowDataMB, radius/kernel terms, and n log n terms when the graph exposes those variables."
           "The intercept feature is the only fitted whole-graph constant."
           "Ignore sinks are treated as zero-cost evidence terms." ]

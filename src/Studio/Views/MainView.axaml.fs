@@ -115,13 +115,12 @@ type MainView() as this =
         | _ -> null
 
     let imageSuffixes =
-        [ ".tiff"; ".tif"; ".png"; ".jpg"; ".jpeg"; ".bmp"; ".mha"; ".mhd"; ".nrrd"; ".nii"; ".nii.gz" ]
+        [ ".tiff"; ".tif"; ".png"; ".jpg"; ".jpeg"; ".bmp"; ".mha"; ".mhd"; ".nrrd"; ".nhdr"; ".nii"; ".nii.gz"; ".hdr"; ".img"; ".img.gz"; ".gipl"; ".gipl.gz"; ".mrc"; ".rec"; ".vtk" ]
 
     let extensionOf (path: string) =
-        if path.EndsWith(".nii.gz", StringComparison.OrdinalIgnoreCase) then
-            ".nii.gz"
-        else
-            Path.GetExtension(path)
+        [ ".nii.gz"; ".img.gz"; ".gipl.gz" ]
+        |> List.tryFind (fun suffix -> path.EndsWith(suffix, StringComparison.OrdinalIgnoreCase))
+        |> Option.defaultWith (fun () -> Path.GetExtension(path))
 
     let formatList values =
         values |> Seq.map string |> String.concat " x "
@@ -2176,7 +2175,7 @@ type MainView() as this =
     member this.InspectVolumeClicked(_sender: obj, args: RoutedEventArgs) =
         let volumeTypes =
             let fileType = FilePickerFileType("Volume image")
-            fileType.Patterns <- [ "*.tif"; "*.tiff"; "*.mha"; "*.mhd"; "*.nrrd"; "*.nii"; "*.nii.gz" ]
+            fileType.Patterns <- [ "*.tif"; "*.tiff"; "*.mha"; "*.mhd"; "*.nrrd"; "*.nhdr"; "*.nii"; "*.nii.gz"; "*.hdr"; "*.img"; "*.img.gz"; "*.gipl"; "*.gipl.gz"; "*.mrc"; "*.rec"; "*.vtk" ]
             fileType
 
         this.InspectFileAsync("Inspect volume image file", [ volumeTypes ], args) |> ignore

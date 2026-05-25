@@ -53,6 +53,30 @@ let private imageOperatorCost<'T> operator evaluation memoryModel windowSize rad
 let private operatorUnaryStageCost<'T> operator memoryNeed =
     StackProcessingCost.imageUnaryStageCost<'T> operator memoryNeed
 
+let private castStageCost<'S, 'T> memoryNeed =
+    let memoryModel = StageMemoryModel.fromSinglePeak Map memoryNeed
+    let pixelType = $"{StackProcessingCost.pixelTypeName<'S>}To{StackProcessingCost.pixelTypeName<'T>}"
+    let fallback =
+        StageTimeCostModel.native
+            Map
+            (Some $"Cast.{pixelType}")
+            (fun input -> inputValue input |> float)
+    let context input =
+        let voxels = inputValue input
+        StackProcessingCost.Fitting.OperatorEstimateContext.create
+            "Cast"
+            (Some pixelType)
+            (Some voxels)
+            (Some(StackProcessingCost.imageBytes<'T> voxels))
+            None
+            None
+            None
+            None
+
+    StageCostModel.create
+        memoryModel
+        (StackProcessingCost.Fitting.OperatorCostRuntime.timeCostModel Map context fallback.Estimate)
+
 let private liftOperatorUnaryReleaseAfter<'T when 'T: equality>
     name
     operator
@@ -264,9 +288,9 @@ let cast<'S,'T when 'S: equality and 'T: equality> =
         let result = I.castTo<'T> ()
         I.decRefCount()
         result
-    let memoryNeed nPixels = 2UL * nPixels * getBytesPerComponent<'S>
+    let memoryNeed nPixels = nPixels * (getBytesPerComponent<'S> + getBytesPerComponent<'T>)
     Stage.cast<Image<'S>,Image<'T>> name f id
-    |> withCostModel (operatorUnaryStageCost<'S> "Cast" memoryNeed)
+    |> withCostModel (castStageCost<'S, 'T> memoryNeed)
 
 /// Basic arithmetic
 let add (image: Image<'T>) = 

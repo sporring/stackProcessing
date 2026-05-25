@@ -894,17 +894,27 @@ module Fitting =
         |> Option.orElseWith (fun () ->
             row.Sigma |> Option.map (fun sigma -> 2.0 * Math.Ceiling(2.0 * sigma) + 1.0))
 
+    let private usesSimpleLinearTermsOnly (operator: string) =
+        match operator.Trim().ToLowerInvariant() with
+        | "read"
+        | "write"
+        | "cast"
+        | "zero"
+        | "ignore" -> true
+        | _ -> false
+
     let private addSizeAndKernelTerms scale operator pixelType (row: EvidenceRow) terms =
         let mutable terms = terms
 
-        match row.VolumeBytes, row.Voxels with
-        | Some volumeBytes, Some voxels when voxels > 1UL ->
-            let dataMB = scale * float volumeBytes / 1.0e6
-            let voxelsM = scale * float voxels / 1.0e6
-            let logVoxels = log2 (float voxels)
-            terms <- addTerm terms (termKey operator pixelType "dataMBLog2Voxels") (dataMB * logVoxels)
-            terms <- addTerm terms (termKey operator pixelType "voxelsMLog2Voxels") (voxelsM * logVoxels)
-        | _ -> ()
+        if not (usesSimpleLinearTermsOnly operator) then
+            match row.VolumeBytes, row.Voxels with
+            | Some volumeBytes, Some voxels when voxels > 1UL ->
+                let dataMB = scale * float volumeBytes / 1.0e6
+                let voxelsM = scale * float voxels / 1.0e6
+                let logVoxels = log2 (float voxels)
+                terms <- addTerm terms (termKey operator pixelType "dataMBLog2Voxels") (dataMB * logVoxels)
+                terms <- addTerm terms (termKey operator pixelType "voxelsMLog2Voxels") (voxelsM * logVoxels)
+            | _ -> ()
 
         match kernelDiameter row, row.VolumeBytes with
         | Some diameter, Some volumeBytes ->
@@ -933,8 +943,10 @@ module Fitting =
             let scale = row.FeatureValue
             let mutable terms = []
 
-            if String.Equals(operator, "intercept", StringComparison.OrdinalIgnoreCase) then
-                terms <- addTerm terms (termKey operator pixelType "constant") scale
+            let isIntercept = String.Equals(operator, "intercept", StringComparison.OrdinalIgnoreCase)
+
+            if isIntercept then
+                terms <- addTerm terms (termKey operator "" "constant") scale
             else
                 let operationCount =
                     row.Depth
@@ -949,30 +961,31 @@ module Fitting =
                     terms <- addTerm terms (termKey operator pixelType "dataMB") dataMB
                 | _ -> ()
 
-            if isMemoryMeasurement measurement then
-                match row.WindowSize, row.VolumeBytes with
-                | Some windowSize, Some volumeBytes ->
-                    terms <- addTerm terms (termKey operator pixelType "windowDataMB") (scale * windowSize * float volumeBytes / 1.0e6)
-                | _ -> ()
+            if not isIntercept then
+                if isMemoryMeasurement measurement then
+                    match row.WindowSize, row.VolumeBytes with
+                    | Some windowSize, Some volumeBytes ->
+                        terms <- addTerm terms (termKey operator pixelType "windowDataMB") (scale * windowSize * float volumeBytes / 1.0e6)
+                    | _ -> ()
 
-                match row.Radius, row.VolumeBytes with
-                | Some radius, Some volumeBytes ->
-                    terms <- addTerm terms (termKey operator pixelType "radius2DataMB") (scale * radius * radius * float volumeBytes / 1.0e6)
-                | _ -> ()
+                    match row.Radius, row.VolumeBytes with
+                    | Some radius, Some volumeBytes ->
+                        terms <- addTerm terms (termKey operator pixelType "radius2DataMB") (scale * radius * radius * float volumeBytes / 1.0e6)
+                    | _ -> ()
 
-                terms <- addSizeAndKernelTerms scale operator pixelType row terms
-            else
-                match row.WindowSize, row.VolumeBytes with
-                | Some windowSize, Some volumeBytes ->
-                    terms <- addTerm terms (termKey operator pixelType "windowDataMB") (scale * windowSize * float volumeBytes / 1.0e6)
-                | _ -> ()
+                    terms <- addSizeAndKernelTerms scale operator pixelType row terms
+                else
+                    match row.WindowSize, row.VolumeBytes with
+                    | Some windowSize, Some volumeBytes ->
+                        terms <- addTerm terms (termKey operator pixelType "windowDataMB") (scale * windowSize * float volumeBytes / 1.0e6)
+                    | _ -> ()
 
-                match row.Radius, row.VolumeBytes with
-                | Some radius, Some volumeBytes ->
-                    terms <- addTerm terms (termKey operator pixelType "radius2DataMB") (scale * radius * radius * float volumeBytes / 1.0e6)
-                | _ -> ()
+                    match row.Radius, row.VolumeBytes with
+                    | Some radius, Some volumeBytes ->
+                        terms <- addTerm terms (termKey operator pixelType "radius2DataMB") (scale * radius * radius * float volumeBytes / 1.0e6)
+                    | _ -> ()
 
-                terms <- addSizeAndKernelTerms scale operator pixelType row terms
+                    terms <- addSizeAndKernelTerms scale operator pixelType row terms
 
             terms
 

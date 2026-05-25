@@ -1019,6 +1019,7 @@ type Image<'T when 'T : equality>(sz: uint list, ?optionalNumberComponents: uint
     member this.toFile(filename: string, ?optionalFormat: string) =
         use writer = new itk.simple.ImageFileWriter()
         writer.SetFileName(filename)
+        writer.SetUseCompression(false)
         match optionalFormat with
         | Some fmt -> writer.SetImageIO(fmt)
         | None -> ()

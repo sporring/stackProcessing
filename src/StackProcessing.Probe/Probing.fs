@@ -1283,7 +1283,8 @@ type BottomUpInputConfig =
       ShapeInput: string
       NoisyInput: string
       NoisyPixelType: string
-      TypedInputs: Map<string, string> }
+      TypedInputs: Map<string, string>
+      TypedFormatInputs: Map<string * string, string> }
 
 let private sourceNode probe =
     let width = probeParameter "width" probe
@@ -1355,17 +1356,36 @@ let private readNode pixelType =
     readNodeFrom (sampleDataPath "rotatingBoxes") pixelType
 
 let private bottomUpIoPixelTypes =
-    [ "UInt8"; "UInt16"; "Int32"; "Float32"; "Float64" ]
+    [ "UInt8"
+      "Int8"
+      "UInt16"
+      "Int16"
+      "UInt32"
+      "Int32"
+      "UInt64"
+      "Int64"
+      "Float32"
+      "Float64" ]
+
+let private bottomUpTiffPixelTypes =
+    Set.ofList [ "UInt8"; "Int8"; "UInt16"; "Int16"; "Float32" ]
+
+let private bottomUpMhaPixelTypes =
+    Set.ofList (bottomUpIoPixelTypes @ [ "Complex" ])
+
+let private bottomUpSupportedFormats pixelType =
+    [ if bottomUpTiffPixelTypes.Contains pixelType then
+          ".tiff"
+      if bottomUpMhaPixelTypes.Contains pixelType then
+          ".mha" ]
 
 let private bottomUpIoSuffix pixelType =
-    match pixelType with
-    | "UInt8"
-    | "UInt16"
-    | "Float32" -> ".tiff"
-    | "Int32"
-    | "Float64"
-    | "Complex" -> ".mha"
-    | _ -> ".tiff"
+    bottomUpSupportedFormats pixelType
+    |> List.tryHead
+    |> Option.defaultValue ".mha"
+
+let private formatLabel (suffix: string) =
+    suffix.TrimStart('.').ToLowerInvariant()
 
 let private castNode sourceType targetType =
     "cast",
@@ -1478,6 +1498,11 @@ let private bottomUpGraphTemplates config =
              | "UInt8" -> config.ShapeInput
              | _ -> config.NoisyInput)
 
+    let typedInputWithSuffix pixelType suffix =
+        config.TypedFormatInputs
+        |> Map.tryFind (pixelType, suffix)
+        |> Option.defaultWith (fun () -> typedInput pixelType)
+
     let zeroUInt8 = zeroNode "UInt8" config.Shape.Width config.Shape.Height config.Depth
     let readTyped pixelType =
         readNodeFromWithSuffix (typedInput pixelType) pixelType (bottomUpIoSuffix pixelType)
@@ -1492,9 +1517,7 @@ let private bottomUpGraphTemplates config =
            let mutable index = 1
            for pixelType in bottomUpIoPixelTypes do
                let typeKey = pixelType.ToLowerInvariant()
-               let suffix = bottomUpIoSuffix pixelType
                let zero = zeroNode pixelType config.Shape.Width config.Shape.Height config.Depth
-               let read = readNodeFromWithSuffix (typedInput pixelType) pixelType suffix
 
                yield
                    ignoreTemplate
@@ -1503,46 +1526,51 @@ let private bottomUpGraphTemplates config =
                        [ zero ]
                index <- index + 1
 
-               yield
-                   writeTemplateWithSuffix
-                       (sprintf "bottomup-%02d-zero-%s-write-%s" index typeKey sizeSuffix)
-                       $"{pixelType} zero source written to stack."
-                       suffix
-                       [ zero ]
-               index <- index + 1
+               for suffix in bottomUpSupportedFormats pixelType do
+                   let formatKey = formatLabel suffix
+                   let read = readNodeFromWithSuffix (typedInputWithSuffix pixelType suffix) pixelType suffix
 
-               yield
-                   ignoreTemplate
-                       (sprintf "bottomup-%02d-read-%s-ignore-%s" index typeKey sizeSuffix)
-                       $"{pixelType} read consumed without writing."
-                       [ read ]
-               index <- index + 1
+                   yield
+                       writeTemplateWithSuffix
+                           (sprintf "bottomup-%02d-zero-%s-%s-write-%s" index typeKey formatKey sizeSuffix)
+                           $"{pixelType} zero source written to {suffix} stack."
+                           suffix
+                           [ zero ]
+                   index <- index + 1
 
-               yield
-                   writeTemplateWithSuffix
-                       (sprintf "bottomup-%02d-read-%s-write-%s" index typeKey sizeSuffix)
-                       $"{pixelType} read then write."
-                       suffix
-                       [ read ]
-               index <- index + 1
+                   yield
+                       ignoreTemplate
+                           (sprintf "bottomup-%02d-read-%s-%s-ignore-%s" index typeKey formatKey sizeSuffix)
+                           $"{pixelType} {suffix} read consumed without writing."
+                           [ read ]
+                   index <- index + 1
 
-           match config.TypedInputs |> Map.tryFind "Complex" with
+                   yield
+                       writeTemplateWithSuffix
+                           (sprintf "bottomup-%02d-read-%s-%s-write-%s" index typeKey formatKey sizeSuffix)
+                           $"{pixelType} {suffix} read then write."
+                           suffix
+                           [ read ]
+                   index <- index + 1
+
+           match config.TypedFormatInputs |> Map.tryFind ("Complex", ".mha") with
            | Some complexInput ->
                let typeKey = "complex"
                let suffix = ".mha"
+               let formatKey = formatLabel suffix
                let read = readNodeFromWithSuffix complexInput "Complex" suffix
 
                yield
                    ignoreTemplate
-                       (sprintf "bottomup-%02d-read-%s-ignore-%s" index typeKey sizeSuffix)
-                       "Complex read consumed without writing."
+                       (sprintf "bottomup-%02d-read-%s-%s-ignore-%s" index typeKey formatKey sizeSuffix)
+                       "Complex .mha read consumed without writing."
                        [ read ]
                index <- index + 1
 
                yield
                    writeTemplateWithSuffix
-                       (sprintf "bottomup-%02d-read-%s-write-%s" index typeKey sizeSuffix)
-                       "Complex read then write."
+                       (sprintf "bottomup-%02d-read-%s-%s-write-%s" index typeKey formatKey sizeSuffix)
+                       "Complex .mha read then write."
                        suffix
                        [ read ]
                index <- index + 1
@@ -1560,42 +1588,43 @@ let private bottomUpGraphTemplates config =
 
         [| let mutable index = 1
            for caseName, diskType, targetType in castPairs do
-               let diskSuffix = bottomUpIoSuffix diskType
                let targetSuffix = bottomUpIoSuffix targetType
-               let diskInput = typedInput diskType
-               let implicitRead = readNodeFromWithSuffix diskInput targetType diskSuffix
-               let explicitRead = readNodeFromWithSuffix diskInput diskType diskSuffix
-               let explicitNodes = [ explicitRead; castNode diskType targetType ]
+               for diskSuffix in bottomUpSupportedFormats diskType do
+                   let formatKey = formatLabel diskSuffix
+                   let diskInput = typedInputWithSuffix diskType diskSuffix
+                   let implicitRead = readNodeFromWithSuffix diskInput targetType diskSuffix
+                   let explicitRead = readNodeFromWithSuffix diskInput diskType diskSuffix
+                   let explicitNodes = [ explicitRead; castNode diskType targetType ]
 
-               yield
-                   ignoreTemplate
-                       (sprintf "bottomup-%02d-read-%s-implicit-ignore-%s" index caseName sizeSuffix)
-                       $"{diskType} on disk read directly as {targetType}, consumed without writing."
-                       [ implicitRead ]
-               index <- index + 1
+                   yield
+                       ignoreTemplate
+                           (sprintf "bottomup-%02d-read-%s-%s-implicit-ignore-%s" index caseName formatKey sizeSuffix)
+                           $"{diskType} {diskSuffix} on disk read directly as {targetType}, consumed without writing."
+                           [ implicitRead ]
+                   index <- index + 1
 
-               yield
-                   ignoreTemplate
-                       (sprintf "bottomup-%02d-read-%s-explicit-cast-ignore-%s" index caseName sizeSuffix)
-                       $"{diskType} on disk read as {diskType}, cast to {targetType}, consumed without writing."
-                       explicitNodes
-               index <- index + 1
+                   yield
+                       ignoreTemplate
+                           (sprintf "bottomup-%02d-read-%s-%s-explicit-cast-ignore-%s" index caseName formatKey sizeSuffix)
+                           $"{diskType} {diskSuffix} on disk read as {diskType}, cast to {targetType}, consumed without writing."
+                           explicitNodes
+                   index <- index + 1
 
-               yield
-                   writeTemplateWithSuffix
-                       (sprintf "bottomup-%02d-read-%s-implicit-write-%s" index caseName sizeSuffix)
-                       $"{diskType} on disk read directly as {targetType}, then written."
-                       targetSuffix
-                       [ implicitRead ]
-               index <- index + 1
+                   yield
+                       writeTemplateWithSuffix
+                           (sprintf "bottomup-%02d-read-%s-%s-implicit-write-%s" index caseName formatKey sizeSuffix)
+                           $"{diskType} {diskSuffix} on disk read directly as {targetType}, then written."
+                           targetSuffix
+                           [ implicitRead ]
+                   index <- index + 1
 
-               yield
-                   writeTemplateWithSuffix
-                       (sprintf "bottomup-%02d-read-%s-explicit-cast-write-%s" index caseName sizeSuffix)
-                       $"{diskType} on disk read as {diskType}, cast to {targetType}, then written."
-                       targetSuffix
-                       explicitNodes
-               index <- index + 1 |]
+                   yield
+                       writeTemplateWithSuffix
+                           (sprintf "bottomup-%02d-read-%s-%s-explicit-cast-write-%s" index caseName formatKey sizeSuffix)
+                           $"{diskType} {diskSuffix} on disk read as {diskType}, cast to {targetType}, then written."
+                           targetSuffix
+                           explicitNodes
+                   index <- index + 1 |]
 
     let syntheticSourcesLayer =
         [| yield
@@ -2510,10 +2539,29 @@ let private createNoisyMovingBoxes noisyPixelType size output =
 let private createTypedMovingBoxes pixelType size output =
     match pixelType with
     | "UInt8" -> createMovingBoxesWithSuffix<uint8> 255uy size output (bottomUpIoSuffix pixelType)
+    | "Int8" -> createMovingBoxesWithSuffix<int8> 127y size output (bottomUpIoSuffix pixelType)
     | "UInt16" -> createMovingBoxesWithSuffix<uint16> 4096us size output (bottomUpIoSuffix pixelType)
+    | "Int16" -> createMovingBoxesWithSuffix<int16> 4096s size output (bottomUpIoSuffix pixelType)
+    | "UInt32" -> createMovingBoxesWithSuffix<uint32> 4096u size output (bottomUpIoSuffix pixelType)
     | "Int32" -> createMovingBoxesWithSuffix<int32> 255 size output (bottomUpIoSuffix pixelType)
+    | "UInt64" -> createMovingBoxesWithSuffix<uint64> 4096UL size output (bottomUpIoSuffix pixelType)
+    | "Int64" -> createMovingBoxesWithSuffix<int64> 4096L size output (bottomUpIoSuffix pixelType)
     | "Float32" -> createMovingBoxesWithSuffix<float32> 255.0f size output (bottomUpIoSuffix pixelType)
     | "Float64" -> createMovingBoxesWithSuffix<float> 255.0 size output (bottomUpIoSuffix pixelType)
+    | _ -> failwithf "Unsupported IO probe input type '%s'." pixelType
+
+let private createTypedMovingBoxesWithSuffix pixelType suffix size output =
+    match pixelType with
+    | "UInt8" -> createMovingBoxesWithSuffix<uint8> 255uy size output suffix
+    | "Int8" -> createMovingBoxesWithSuffix<int8> 127y size output suffix
+    | "UInt16" -> createMovingBoxesWithSuffix<uint16> 4096us size output suffix
+    | "Int16" -> createMovingBoxesWithSuffix<int16> 4096s size output suffix
+    | "UInt32" -> createMovingBoxesWithSuffix<uint32> 4096u size output suffix
+    | "Int32" -> createMovingBoxesWithSuffix<int32> 255 size output suffix
+    | "UInt64" -> createMovingBoxesWithSuffix<uint64> 4096UL size output suffix
+    | "Int64" -> createMovingBoxesWithSuffix<int64> 4096L size output suffix
+    | "Float32" -> createMovingBoxesWithSuffix<float32> 255.0f size output suffix
+    | "Float64" -> createMovingBoxesWithSuffix<float> 255.0 size output suffix
     | _ -> failwithf "Unsupported IO probe input type '%s'." pixelType
 
 let private createComplexMovingBoxes size output =
@@ -2558,13 +2606,24 @@ let createBottomUpInputsForShape (imageSize: ImageSize) (noisyPixelType: string)
 
     createMovingBoxes<uint8> 255uy imageSize shapeInput
     createNoisyMovingBoxes normalizedNoisyType imageSize noisyInput
+    let typedFormatInputs =
+        bottomUpIoPixelTypes
+        |> List.collect (fun pixelType ->
+            bottomUpSupportedFormats pixelType
+            |> List.map (fun suffix ->
+                let output =
+                    Path.Combine(typedInputRoot, pixelType.ToLowerInvariant(), formatLabel suffix).Replace('\\', '/')
+                createTypedMovingBoxesWithSuffix pixelType suffix imageSize output
+                (pixelType, suffix), output))
+        |> Map.ofList
+
     let typedInputs =
         bottomUpIoPixelTypes
-        |> List.map (fun pixelType ->
-            let output =
-                Path.Combine(typedInputRoot, pixelType.ToLowerInvariant()).Replace('\\', '/')
-            createTypedMovingBoxes pixelType imageSize output
-            pixelType, output)
+        |> List.choose (fun pixelType ->
+            let suffix = bottomUpIoSuffix pixelType
+            typedFormatInputs
+            |> Map.tryFind (pixelType, suffix)
+            |> Option.map (fun output -> pixelType, output))
         |> Map.ofList
 
     let complexInput =
@@ -2575,12 +2634,17 @@ let createBottomUpInputsForShape (imageSize: ImageSize) (noisyPixelType: string)
         typedInputs
         |> Map.add "Complex" complexInput
 
+    let typedFormatInputs =
+        typedFormatInputs
+        |> Map.add ("Complex", ".mha") complexInput
+
     { Shape = imageSize
       Depth = imageSize.Depth
       ShapeInput = shapeInput
       NoisyInput = noisyInput
       NoisyPixelType = normalizedNoisyType
-      TypedInputs = typedInputs }
+      TypedInputs = typedInputs
+      TypedFormatInputs = typedFormatInputs }
 
 let createBottomUpInputsWithDepth (size: uint) (depth: uint) (noisyPixelType: string) (inputRoot: string) =
     createBottomUpInputsForShape { Width = size; Height = size; Depth = depth } noisyPixelType inputRoot

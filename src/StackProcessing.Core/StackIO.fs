@@ -59,10 +59,51 @@ let private imageIoCost<'T> kind evaluation calibrationKey bytes ops : StageTime
     StackProcessingCost.imageIoCost<'T> kind evaluation calibrationKey bytes ops
 
 let private fixedImageOperatorTimeCost<'T> operator evaluation voxels fallback =
+    let pixelType = StackProcessingCost.pixelTypeName<'T>
     let context _ =
         StackProcessingCost.Fitting.OperatorEstimateContext.create
             operator
-            (Some(StackProcessingCost.pixelTypeName<'T>))
+            (Some pixelType)
+            (Some voxels)
+            (Some(StackProcessingCost.imageBytes<'T> voxels))
+            None
+            None
+            None
+            None
+
+    StackProcessingCost.Fitting.OperatorCostRuntime.timeCostModel evaluation context fallback
+
+let private suffixCostLabel (suffix: string) =
+    if String.IsNullOrWhiteSpace suffix then
+        "unknown"
+    else
+        suffix.Trim().TrimStart('.').ToLowerInvariant()
+
+let private imageStackPixelTypeName<'T> suffix =
+    $"{StackProcessingCost.pixelTypeName<'T>}.{suffixCostLabel suffix}"
+
+let private fixedImageStackOperatorTimeCost<'T> operator evaluation suffix voxels fallback =
+    let pixelType = imageStackPixelTypeName<'T> suffix
+    let context _ =
+        StackProcessingCost.Fitting.OperatorEstimateContext.create
+            operator
+            (Some pixelType)
+            (Some voxels)
+            (Some(StackProcessingCost.imageBytes<'T> voxels))
+            None
+            None
+            None
+            None
+
+    StackProcessingCost.Fitting.OperatorCostRuntime.timeCostModel evaluation context fallback
+
+let private imageStackOperatorTimeCost<'T> operator evaluation suffix fallback =
+    let pixelType = imageStackPixelTypeName<'T> suffix
+    let context input =
+        let voxels = inputValue input
+        StackProcessingCost.Fitting.OperatorEstimateContext.create
+            operator
+            (Some pixelType)
             (Some voxels)
             (Some(StackProcessingCost.imageBytes<'T> voxels))
             None
@@ -456,7 +497,7 @@ let getFilenames (inputDir: string) (suffix: string) (filter: string[]->string[]
     Plan.createWithOptimizer stage pl.memAvail memPeak memPerElem length pl.debug pl.optimize
     |> Plan.withRuntimeOptionsFrom pl
 
-let readFilesWithShape<'T when 'T: equality> (debug: bool) (width: uint) (height: uint) : Stage<string, Image<'T>> =
+let private readFilesWithShapeCore<'T when 'T: equality> suffix (debug: bool) (width: uint) (height: uint) : Stage<string, Image<'T>> =
     let name = "readFiles"
     if debug && DebugLevel.current() >= 2u then printfn $"[{name} cast to {typeof<'T>.Name}]"
     let mutable width = width
@@ -475,24 +516,40 @@ let readFilesWithShape<'T when 'T: equality> (debug: bool) (width: uint) (height
     let elementTransformation _ = uint64 width * uint64 height
 
     let memoryModel = StageMemoryModel.fromSinglePeak Map memoryNeed
+    let suffixKey = suffix |> Option.map suffixCostLabel |> Option.defaultValue "stack"
     let fallbackTimeCostModel =
         imageIoCost<'T>
             "read"
             Map
-            $"readFiles.{typeof<'T>.Name}"
+            $"readFiles.{suffixKey}.{typeof<'T>.Name}"
             (fun _ -> Image<'T>.memoryEstimate width height)
             (fun _ -> 1UL)
     let timeCostModel =
         if width > 0u && height > 0u then
-            fixedImageOperatorTimeCost<'T>
-                "Read"
-                Map
-                (uint64 width * uint64 height)
-                fallbackTimeCostModel.Estimate
+            match suffix with
+            | Some suffix ->
+                fixedImageStackOperatorTimeCost<'T>
+                    "Read"
+                    Map
+                    suffix
+                    (uint64 width * uint64 height)
+                    fallbackTimeCostModel.Estimate
+            | None ->
+                fixedImageOperatorTimeCost<'T>
+                    "Read"
+                    Map
+                    (uint64 width * uint64 height)
+                    fallbackTimeCostModel.Estimate
         else
             fallbackTimeCostModel
     Stage.mapi name mapper memoryNeed elementTransformation
     |> withCostModel (StageCostModel.create memoryModel timeCostModel)
+
+let readFilesWithShape<'T when 'T: equality> (debug: bool) (width: uint) (height: uint) : Stage<string, Image<'T>> =
+    readFilesWithShapeCore<'T> None debug width height
+
+let private readFilesWithShapeForSuffix<'T when 'T: equality> suffix (debug: bool) (width: uint) (height: uint) : Stage<string, Image<'T>> =
+    readFilesWithShapeCore<'T> (Some suffix) debug width height
 
 let readFiles<'T when 'T: equality> (debug: bool) : Stage<string, Image<'T>> =
     readFilesWithShape<'T> debug 0u 0u
@@ -1117,7 +1174,7 @@ let readFiltered<'T when 'T: equality> (inputDir: string) (suffix: string) (filt
 
     pl
     |> getFilenames inputDir suffix filter
-    >=> readFilesWithShape<'T> pl.debug width height
+    >=> readFilesWithShapeForSuffix<'T> suffix pl.debug width height
     |> Plan.withSourcePeek sourcePeek
 
 let read<'T when 'T: equality> (inputDir: string) (suffix: string) (pl: Plan<unit, unit>) : Plan<unit, Image<'T>> =
@@ -1161,7 +1218,7 @@ let readRange<'T when 'T: equality> (first: uint) (step: int) (last: uint) (inpu
 
     pl
     |> getFilenames inputDir suffix (rangeFilter first step last)
-    >=> readFilesWithShape<'T> pl.debug width height
+    >=> readFilesWithShapeForSuffix<'T> suffix pl.debug width height
     |> Plan.withSourcePeek sourcePeek
 
 let getChunkInfo (inputDir: string) (suffix: string) : ChunkInfo =
@@ -1962,17 +2019,14 @@ let write<'T when 'T: equality> (outputDir: string) (suffix: string) : Stage<Ima
         imageIoCost<'T>
             "write"
             Iter
-            $"write.{typeof<'T>.Name}"
+            $"write.{suffixCostLabel suffix}.{typeof<'T>.Name}"
             (fun input -> inputValue input |> imageBytes<'T>)
             (fun _ -> 1UL)
     let timeCostModel =
-        StackProcessingCost.operatorImageTimeCost<'T>
+        imageStackOperatorTimeCost<'T>
             "Write"
             Iter
-            None
-            None
-            None
-            None
+            suffix
             fallbackTimeCostModel.Estimate
     Stage.mapi $"write \"{outputDir}/*{suffix}\"" mapper memoryNeed id
     |> withCostModel (StageCostModel.create memoryModel timeCostModel)

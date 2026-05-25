@@ -296,6 +296,20 @@ selector for `--family all`, because those measurements are useful for
 implementation experiments but can otherwise blur the ordinary operator fit.
 Request it by name when you want it.
 
+The `io` family measures native image-stack read/write behavior without
+intentional casting. It now expands supported pixel type and suffix combinations
+instead of treating IO as a single type-only surface. TIFF is measured for the
+types StackProcessing exposes as TIFF-compatible, while `.mha` covers the wider
+scalar set and complex images. SimpleITK image writes are requested without
+compression by default so the fitted IO model reflects the ordinary user-facing
+DSL behavior.
+
+The `io-cast` family compares implicit `read<T>` conversion with explicit
+`read<diskT> --> cast<diskT,T>` graphs. Fitting decomposes those measurements
+into `Read(diskT.suffix)` evidence plus `Cast(diskT->T)` evidence, so widening
+reads are modeled as source-format IO followed by conversion rather than as a
+pure target-type read.
+
 The usual workflow is:
 
 1. clean old generated scratch data and, when starting a new fitting cycle,

@@ -85,8 +85,17 @@ module ImageFileFormat =
           { Label = "MetaImage (.mha)"; Suffix = ".mha"; SupportedTypes = commonScalarTypes }
           { Label = "MetaImage header (.mhd)"; Suffix = ".mhd"; SupportedTypes = commonScalarTypes }
           { Label = "NRRD (.nrrd)"; Suffix = ".nrrd"; SupportedTypes = commonScalarTypes }
+          { Label = "NRRD header (.nhdr)"; Suffix = ".nhdr"; SupportedTypes = commonScalarTypes }
           { Label = "NIfTI (.nii)"; Suffix = ".nii"; SupportedTypes = commonScalarTypes }
           { Label = "NIfTI compressed (.nii.gz)"; Suffix = ".nii.gz"; SupportedTypes = commonScalarTypes }
+          { Label = "Analyze/NIfTI header (.hdr)"; Suffix = ".hdr"; SupportedTypes = commonScalarTypes }
+          { Label = "Analyze/NIfTI image (.img)"; Suffix = ".img"; SupportedTypes = commonScalarTypes }
+          { Label = "Analyze/NIfTI image compressed (.img.gz)"; Suffix = ".img.gz"; SupportedTypes = commonScalarTypes }
+          { Label = "GIPL (.gipl)"; Suffix = ".gipl"; SupportedTypes = commonScalarTypes }
+          { Label = "GIPL compressed (.gipl.gz)"; Suffix = ".gipl.gz"; SupportedTypes = commonScalarTypes }
+          { Label = "MRC (.mrc)"; Suffix = ".mrc"; SupportedTypes = commonScalarTypes }
+          { Label = "MRC REC (.rec)"; Suffix = ".rec"; SupportedTypes = commonScalarTypes }
+          { Label = "VTK (.vtk)"; Suffix = ".vtk"; SupportedTypes = commonScalarTypes }
           { Label = "PNG (.png)"; Suffix = ".png"; SupportedTypes = [ UInt8; UInt16 ] }
           { Label = "JPEG (.jpg)"; Suffix = ".jpg"; SupportedTypes = [ UInt8 ] }
           { Label = "JPEG (.jpeg)"; Suffix = ".jpeg"; SupportedTypes = [ UInt8 ] }
