@@ -1,6 +1,9 @@
 #include <algorithm>
+#include <chrono>
+#include <cstdlib>
 #include <cstdint>
 #include <filesystem>
+#include <fstream>
 #include <iostream>
 #include <string>
 #include <vector>
@@ -251,9 +254,20 @@ static void runTyped(const Options& options) {
   writeVolumeSlices<Image>(output, options.output, paths);
 }
 
+static void writeInternalSeconds(std::chrono::duration<double> elapsed) {
+  const char* path = std::getenv("BENCHMARK_INTERNAL_SECONDS_PATH");
+  if (path == nullptr || path[0] == '\0') {
+    return;
+  }
+  std::ofstream out(path);
+  out.precision(9);
+  out << std::fixed << elapsed.count();
+}
+
 int main(int argc, char** argv) {
   try {
     auto options = parseOptions(argc, argv);
+    const auto start = std::chrono::steady_clock::now();
     if (options.pixelType == "UInt8") {
       runTyped<std::uint8_t>(options);
     } else if (options.pixelType == "UInt16") {
@@ -263,6 +277,7 @@ int main(int argc, char** argv) {
     } else {
       throw std::runtime_error("unsupported pixel type: " + options.pixelType);
     }
+    writeInternalSeconds(std::chrono::steady_clock::now() - start);
     return 0;
   } catch (const std::exception& ex) {
     std::cerr << ex.what() << std::endl;

@@ -1,5 +1,7 @@
 #!/usr/bin/env python3
 import argparse
+import os
+import time
 from pathlib import Path
 
 import numpy as np
@@ -72,9 +74,17 @@ def process(stack, args):
 
 def main():
     args = parse_args()
+    start = time.perf_counter()
     paths, stack = read_stack(args.input)
     out = process(stack, args)
     write_stack(paths, args.output, out)
+    write_internal_seconds(time.perf_counter() - start)
+
+
+def write_internal_seconds(seconds):
+    path = os.environ.get("BENCHMARK_INTERNAL_SECONDS_PATH")
+    if path:
+        Path(path).write_text(f"{seconds:.9f}")
 
 
 if __name__ == "__main__":

@@ -48,6 +48,10 @@ def main() -> int:
                 "successes",
                 "medianWallSeconds",
                 "meanWallSeconds",
+                "medianInternalSeconds",
+                "meanInternalSeconds",
+                "medianStartupOverheadSeconds",
+                "meanStartupOverheadSeconds",
                 "medianPeakRssMiB",
                 "meanPeakRssMiB",
             ]
@@ -56,6 +60,12 @@ def main() -> int:
         for key, rows in sorted(groups.items()):
             successful = [row for row in rows if row["exitCode"] == "0"]
             wall = [float(row["wallSeconds"]) for row in successful]
+            internal = [float(row["internalSeconds"]) for row in successful if row.get("internalSeconds")]
+            overhead = [
+                float(row["wallSeconds"]) - float(row["internalSeconds"])
+                for row in successful
+                if row.get("internalSeconds")
+            ]
             rss_mib = [float(row["peakRssKiB"]) / 1024.0 for row in successful]
             writer.writerow(
                 [
@@ -64,6 +74,10 @@ def main() -> int:
                     len(successful),
                     f"{median(wall):.9f}",
                     f"{statistics.mean(wall):.9f}" if wall else "nan",
+                    f"{median(internal):.9f}" if internal else "nan",
+                    f"{statistics.mean(internal):.9f}" if internal else "nan",
+                    f"{median(overhead):.9f}" if overhead else "nan",
+                    f"{statistics.mean(overhead):.9f}" if overhead else "nan",
                     f"{median(rss_mib):.3f}",
                     f"{statistics.mean(rss_mib):.3f}" if rss_mib else "nan",
                 ]
@@ -74,4 +88,3 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
-

@@ -14,6 +14,8 @@ if args.operation == "" || args.input == "" || args.output == ""
     error("operation, input, and output are required");
 end
 
+internalTimer = tic;
+
 if ~exist(args.output, "dir")
     mkdir(args.output);
 end
@@ -57,6 +59,19 @@ end
 
 for i = 1:size(out, 3)
     writeTiffSlice(out(:, :, i), fullfile(args.output, files(i).name));
+end
+writeInternalSeconds(toc(internalTimer));
+end
+
+function writeInternalSeconds(seconds)
+path = getenv("BENCHMARK_INTERNAL_SECONDS_PATH");
+if ~isempty(path)
+    fid = fopen(path, "w");
+    if fid < 0
+        error("could not open internal timing path %s", path);
+    end
+    cleanup = onCleanup(@() fclose(fid));
+    fprintf(fid, "%.9f", seconds);
 end
 end
 

@@ -1,4 +1,5 @@
 open System
+open System.Diagnostics
 open System.Globalization
 open System.IO
 open StackProcessing
@@ -52,6 +53,11 @@ let private require name (opts: Map<string,string>) =
 
 let private optional name fallback (opts: Map<string,string>) =
     opts.TryFind name |> Option.defaultValue fallback
+
+let private writeInternalSeconds (elapsed: TimeSpan) =
+    let path = Environment.GetEnvironmentVariable("BENCHMARK_INTERNAL_SECONDS_PATH")
+    if not (String.IsNullOrWhiteSpace path) then
+        File.WriteAllText(path, elapsed.TotalSeconds.ToString("F9", invariant))
 
 let private parsePixelType value =
     match value with
@@ -198,15 +204,20 @@ let private run opts =
     let sigma = optional "sigma" "1.5" opts |> fun s -> Double.Parse(s, invariant)
     let thresholdValue = optional "threshold" "128" opts |> fun s -> Double.Parse(s, invariant)
     let availableMemory = optional "available-memory" (string (8UL * 1024UL * 1024UL * 1024UL)) opts |> UInt64.Parse
-    match operation, pixelType with
-    | "smoothWGauss", UInt8 -> runGaussianTyped<uint8> input output sigma availableMemory
-    | "smoothWGauss", UInt16 -> runGaussianTyped<uint16> input output sigma availableMemory
-    | "smoothWGauss", Float32 -> runGaussianTyped<float32> input output sigma availableMemory
-    | "connectedComponents", UInt8 -> runConnectedComponents input output windowSize availableMemory
-    | "connectedComponents", _ -> failwith "connectedComponents benchmark is currently defined for UInt8 masks only"
-    | _, UInt8 -> runTyped<uint8> operation input output radius thresholdValue availableMemory
-    | _, UInt16 -> runTyped<uint16> operation input output radius thresholdValue availableMemory
-    | _, Float32 -> runTyped<float32> operation input output radius thresholdValue availableMemory
+    let stopwatch = Stopwatch.StartNew()
+    let exitCode =
+        match operation, pixelType with
+        | "smoothWGauss", UInt8 -> runGaussianTyped<uint8> input output sigma availableMemory
+        | "smoothWGauss", UInt16 -> runGaussianTyped<uint16> input output sigma availableMemory
+        | "smoothWGauss", Float32 -> runGaussianTyped<float32> input output sigma availableMemory
+        | "connectedComponents", UInt8 -> runConnectedComponents input output windowSize availableMemory
+        | "connectedComponents", _ -> failwith "connectedComponents benchmark is currently defined for UInt8 masks only"
+        | _, UInt8 -> runTyped<uint8> operation input output radius thresholdValue availableMemory
+        | _, UInt16 -> runTyped<uint16> operation input output radius thresholdValue availableMemory
+        | _, Float32 -> runTyped<float32> operation input output radius thresholdValue availableMemory
+    stopwatch.Stop()
+    writeInternalSeconds stopwatch.Elapsed
+    exitCode
 
 [<EntryPoint>]
 let main args =

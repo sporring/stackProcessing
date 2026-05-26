@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 import argparse
+import os
 import shutil
+import time
 from pathlib import Path
 
 import dask.array as da
@@ -78,6 +80,7 @@ def write_ome_metadata(root, arr):
 
 def main():
     args = parse_args()
+    start = time.perf_counter()
     input_array = array_path(args.input)
     output_root = Path(args.output)
     output_array = array_path(output_root)
@@ -90,6 +93,13 @@ def main():
     out = process(arr, args)
     out.to_zarr(str(output_array), overwrite=True)
     write_ome_metadata(output_root, out)
+    write_internal_seconds(time.perf_counter() - start)
+
+
+def write_internal_seconds(seconds):
+    path = os.environ.get("BENCHMARK_INTERNAL_SECONDS_PATH")
+    if path:
+        Path(path).write_text(f"{seconds:.9f}")
 
 
 if __name__ == "__main__":

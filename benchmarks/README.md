@@ -8,7 +8,7 @@ The benchmark contract is deliberately simple:
 read TIFF slice stack -> assemble/process as a 3D volume -> write TIFF slice stack
 ```
 
-Each backend should measure the same user-visible task, with the same input stack, and report wall-clock time plus peak resident memory through `tools/measure.py`.
+Each backend should measure the same user-visible task, with the same input stack, and report wall-clock time plus peak resident memory through `tools/measure.py`. The raw results include both outer wall time, measured from launching `dotnet`, `python3`, `matlab`, or the C++ executable, and backend-reported internal time for the read-process-write work after process startup.
 
 ## Backends
 
@@ -85,6 +85,8 @@ benchmarks/results/raw.csv
 benchmarks/results/summary.csv
 ```
 
+`raw.csv` contains `wallSeconds`, `internalSeconds`, and `peakRssKiB`. `summary.csv` reports median and mean wall time, internal time, startup overhead (`wallSeconds - internalSeconds`), and peak resident memory.
+
 Use `--dry-run` to print the exact commands without executing them:
 
 ```bash
@@ -100,6 +102,29 @@ bash benchmarks/run_all.sh \
   --build-itk \
   --include-special
 ```
+
+## C++/ITK Setup
+
+The C++ backend uses CMake and a local ITK installation. On macOS with Homebrew, the usual setup is:
+
+```bash
+brew install cmake itk
+cmake -S benchmarks/cpp-itk -B benchmarks/cpp-itk/build \
+  -DCMAKE_BUILD_TYPE=Release \
+  -DCMAKE_PREFIX_PATH="$(brew --prefix itk)"
+cmake --build benchmarks/cpp-itk/build --config Release -j
+```
+
+Then include the backend:
+
+```bash
+bash benchmarks/run_all.sh \
+  --repeat 3 \
+  --backends cpp-itk \
+  --itk-exe benchmarks/cpp-itk/build/benchmark_itk
+```
+
+If ITK was installed from source or another package manager, pass the installation prefix through `CMAKE_PREFIX_PATH`, or set `ITK_DIR` to the directory containing `ITKConfig.cmake`.
 
 The default backend set is intentionally modest:
 
