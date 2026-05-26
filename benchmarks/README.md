@@ -53,10 +53,21 @@ The special cases are listed in `config/special-cases.csv`. The initial subset i
 
 ## Suggested Workflow
 
-For repeatable full runs, use the top-level benchmark driver:
+For repeatable full runs, use the top-level benchmark driver. Install python packages once:
 
 ```bash
+python3 -m venv .venv-benchmarks
+source .venv-benchmarks/bin/activate
+python -m pip install --upgrade pip
+python -m pip install numpy scipy scikit-image tifffile
+python -m pip install dask zarr
+source .venv-benchmarks/bin/activate
+```
+Then run:
+```bash
+source .venv-benchmarks/bin/activate
 bash benchmarks/run_all.sh --repeat 3
+source .venv-benchmarks/bin/activate
 ```
 
 This generates deterministic TIFF inputs, runs the default baseline backends, and writes:
