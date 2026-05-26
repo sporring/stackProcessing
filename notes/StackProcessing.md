@@ -1,259 +1,367 @@
+# StackProcessing
 
-# FSharp.StackProcessing
+`StackProcessing` is the image-domain binding layer between the `Image` project and `SlimPipeline`. It turns typed SimpleITK-backed `Image<'T>` values into memory-aware, deferred, streaming stages and plans.
 
-> **Namespace:** `FSharp`
-> **Module:** `StackProcessing`
-> **Purpose:** Memory-efficient, sequence-based 3D image processing pipelines built on top of `SlimPipeline`, connected seamlessly with the `Image` module.
+The user-facing module is [src/StackProcessing/StackProcessing.fs](/Users/jrh630/repositories/stackProcessing/src/StackProcessing/StackProcessing.fs:1). Most implementation lives in `src/StackProcessing.Core`.
 
- 
+## Role
 
-## Overview
+`Image` owns single-image representation and SimpleITK interop.
 
-`StackProcessing` provides a **functional, streaming abstraction** for constructing large-scale image processing pipelines.
+`SlimPipeline` owns generic asynchronous streaming, stages, plans, cost models, graphs, and deferred execution.
 
-It allows users to define a flow like:
+`StackProcessing` binds them:
+
+```text
+Image<'T>
+    +
+SlimPipeline.Stage / SlimPipeline.Plan
+    =
+StackProcessing image stream DSL
+```
+
+Its job is to make image processing feel like a high-level functional DSL while still preserving:
+
+- bounded memory use
+- explicit native-resource release
+- stream cardinality
+- cost and memory models
+- source metadata
+- graph/debug information
+- IO-aware read/write stages
+
+## Public Shape
+
+The public module re-exports the main concepts:
 
 ```fsharp
+type Stage<'S,'T> = SlimPipeline.Stage<'S,'T>
+type Window<'T> = SlimPipeline.Window<'T>
+type Slab<'T> = StackCore.Slab<'T>
+type Image<'T> = Image.Image<'T>
+```
+
+It also re-exports the main composition and execution functions:
+
+```fsharp
+source
+debug
+>=>       // Plan composition
+-->       // Stage composition
+>=>>      // synchronized fan-out
+>>=>      // pair combine
+>>=>>     // paired branch mapping
+sink
+drain
+```
+
+From the user's point of view, a pipeline looks like:
+
+```fsharp
+open StackProcessing
+
 source availableMemory
-|> read<float> "input" ".tiff"
->=> discreteGaussian 1.0 None None (Some 15u)
->=> cast<float,uint8>
+|> read<float32> "input" ".tiff"
+>=> smoothWGauss<float32> 1.5 None
+>=> cast<float32,uint8>
 >=> write "output" ".tiff"
 |> sink
 ```
 
-Each pipeline consists of:
+Nothing is processed until `sink` or `drain` runs.
 
-* A **source** of image data (typically a stack of TIFF slices),
-* A sequence of **plans** (`>=>` operator) transforming data,
-* A final **sink** that consumes or writes the processed results.
+## Binding Image To SlimPipeline
 
- 
+The central binding is in [StackCore.fs](/Users/jrh630/repositories/stackProcessing/src/StackProcessing.Core/StackCore.fs:1).
 
-## Key Concepts
-
-### `Plan<'S, 'T>`
-
-A **plan** represents one processing step, transforming a stream of items of type `'S` into `'T`.
-Plans are composable, enabling streaming dataflow pipelines that minimize memory usage.
+StackCore defines image-specific resource operations:
 
 ```fsharp
-type Plan<'S,'T> = SlimPipeline.Plan<'S,'T>
+ResourceOps<Image<'T>>
 ```
 
-### `Pipeline<'In,'Out>`
+These tell SlimPipeline how to:
 
-A complete dataflow, created from a source and extended via the composition operators:
+- retain an image
+- release an image
+- estimate image memory
 
-* `>=>`:  append a plan to a pipeline
-* `-->`:  compose two plans
-* `|>`:   attach a source or a sink to a pipeline
+This is where the generic `ResourceOps<'T>` abstraction becomes concrete for SimpleITK-backed images.
 
- 
+The key lifecycle rule is:
 
-## Pipeline Composition Operators
+> A stage releases an input image after consuming it, unless the image was explicitly retained or copied first.
 
-| Operator | Description |
-| -------- | ----------- |
-| `>=>`    | Append a plan to an existing pipeline. (`Pipeline<'a,'b> -> Plan<'b,'c> -> Pipeline<'a,'c>`)                                           |
-| `-->`    | Compose two plans directly. (`Plan<'a,'b> -> Plan<'b,'c> -> Plan<'a,'c>`)                                                            |
-| `>=>>`   | Parallelize two branches from the same pipeline source. (`Pipeline<'In,'S> -> (Plan<'S,'U> * Plan<'S,'V>) -> Pipeline<'In,('U * 'V)>`) |
-| `>>=>`   | Combine paired results using a binary function. (`Pipeline<'a,('b * 'c)> -> ('b -> 'c -> 'd) -> Pipeline<'a,'d>`)                        |
-| `>>=>>`  | Apply synchronized stages to both sides of an existing paired stream.                                                                  |
+That rule lets StackProcessing stream large images without relying on the garbage collector to discover native-memory pressure.
 
-These operators let users declaratively build complex, memory-aware workflows.
+## Stages As Lifted Image Operations
 
- 
-
-## Core Pipeline Components
-
-### `source`
+Most image algorithms start as ordinary functions over materialized images:
 
 ```fsharp
-val source : (uint64 -> SlimPipeline.Pipeline<unit, unit>)
+Image<'S> -> Image<'T>
 ```
 
-Creates a pipeline source with the specified **memory budget** (in bytes).
-
-Example:
+StackProcessing lifts them into stages:
 
 ```fsharp
-let src = source (2UL * 1024UL * 1024UL * 1024UL) // 2 GB
+Stage<Image<'S>, Image<'T>>
 ```
 
- 
+The lifting adds:
 
-### `sink`
+- input release after successful computation
+- memory estimates
+- cost model labels
+- element-size transformation
+- graph nodes
+- compatibility with `>=>` and `-->`
+
+Examples include:
+
+- `cast`
+- arithmetic and scalar image operations
+- thresholding
+- intensity transforms
+- smoothing
+- morphology
+- FFT
+- connected components
+- signed distance maps
+- object measurement
+
+The raw image algorithms generally live in `ImageFunctions`, while the lifted streaming stages live in `StackImageFunctions`.
+
+## IO As Plan Sources And Stage Sinks
+
+IO is handled mostly by [StackIO.fs](/Users/jrh630/repositories/stackProcessing/src/StackProcessing.Core/StackIO.fs:1).
+
+Read functions usually have the shape:
 
 ```fsharp
-val sink : SlimPipeline.Pipeline<unit,unit> -> unit
+Plan<unit, unit> -> Plan<unit, Image<'T>>
 ```
 
-Executes the pipeline, pulling data from the source through all connected plans.
-It is the terminal operator. Nothing is processed until the sink runs.
+They create source plans because they establish:
 
-Example:
+- source length
+- elements per slice
+- source shape metadata
+- memory peak
+- IO cost model
+- read format and pixel type context
+
+Examples:
+
+- `read`
+- `readVolume`
+- `readRandom`
+- `readRange`
+- `readSlab`
+- `readZarrSlab`
+- `readNexusSlab`
+
+Write functions are usually stages:
 
 ```fsharp
-pipeline |> sink
+Stage<Image<'T>, Image<'T>>
 ```
 
- 
-
-### `map`
+or reducers:
 
 ```fsharp
-val map : f:('a -> 'b) -> Plan<'a,'b>
+Stage<Image<'T>, unit>
 ```
 
-Applies a pure function to each element in the stream.
-Acts as the functional `map` lifted to a streaming context.
+They consume image streams while preserving enough stream structure for continued composition when appropriate.
 
-Example:
+## Windows
+
+`Window<'T>` is generic in SlimPipeline, but StackProcessing uses it primarily as:
 
 ```fsharp
->=> map (fun img -> img * 2.0)
+Window<Image<'T>>
 ```
 
- 
+This represents a local z-neighbourhood of slices. It supports one-dimensional streaming over the z-axis while expressing 3D algorithms that require halos.
 
-### `window`
+The important benefit is that many 3D local operations only need a small number of adjacent slices in memory, rather than the whole volume.
+
+Example structure:
+
+```text
+slice stream
+  -> window of adjacent slices
+  -> local operation
+  -> emitted slice stream
+```
+
+Padding, emit ranges, and release counts are carried by the window machinery so stages can release consumed images correctly.
+
+## Slabs
+
+`Slab<'T>` is defined in StackCore:
 
 ```fsharp
-val window :
-    windowSize:uint ->
-    pad:uint ->
-    stride:uint ->
-    Plan<Image<'a>, Window<Image<'a>>>
+type Slab<'T> =
+    { Image: Image<'T>
+      EmitRange: uint * uint }
 ```
 
-Converts a stream of 2D image slices into a **sliding window** value. The window
-contains the retained slice list plus an emit range used by `flatten`.
-Useful for localized processing (e.g., convolution or denoising across slices).
+A slab is a small 3D image built from a window of adjacent 2D slices. It exists because some image operations are more naturally or efficiently expressed as operations on a 3D SimpleITK image rather than as a list of slices.
 
-Example:
+The usual pattern is:
 
 ```fsharp
->=> window 5u 1u 1u
+window
+--> windowToSlabWithRange
+--> mapSlabWithStage imageStage
+--> slabWithRangeToWindow
+--> slabSkipTakeM
+--> flattenList ()
 ```
 
- 
+This lets StackProcessing apply ordinary image stages to local 3D slabs while still returning to a stream of slices.
 
-### `flatten`
+## Internal And Public Composition
+
+StackProcessing uses two composition levels:
 
 ```fsharp
-val flatten : unit -> Plan<Window<'a>,'a>
+-->   // Stage composition
+>=>   // Plan composition
 ```
 
-Reverses `window` by emitting the window's selected range back into a single
-stream.
+`-->` is mostly used inside Core to build compound stages from smaller stages.
 
- 
+`>=>` is the user-facing plan composition operator. It is where SlimPipeline updates the deferred plan with memory, cost, graph, and cardinality information.
 
-### `releaseAfter` and `releaseAfter2`
-
-Automatically free image memory once a processing function completes, enabling efficient out-of-core computation.
-
-| Function                    | Description                                             |
-| --------------------------- | ------------------------------------------------------- |
-| `releaseAfter f img`        | Executes `f` on `img` and releases `img` afterward.     |
-| `releaseAfter2 f img1 img2` | Executes `f` on two images and releases both afterward. |
-
- 
-
-### `zip`
+This split keeps the public DSL compact:
 
 ```fsharp
-val zip :
-  (SlimPipeline.Pipeline<'a,'b> ->
-   SlimPipeline.Pipeline<'a,'c> ->
-   SlimPipeline.Pipeline<'a,('b * 'c)>)
+>=> smoothWGauss sigma None
 ```
 
-Combines two pipelines elementwise, yielding paired outputs - analogous to `Seq.zip` but for streaming image data.
-
- 
-
-### `promoteStreamingToWindow`
+rather than exposing implementation scaffolding:
 
 ```fsharp
-val promoteStreamingToWindow :
-  name:string ->
-  winSz:uint -> pad:uint -> stride:uint ->
-  emitStart:uint -> emitCount:uint ->
-  plan:Plan<'T,'S> -> Plan<'T,'S>
+>=> window ...
+>=> windowToSlab ...
+>=> mapSlabWithStage ...
+>=> slabToWindow ...
+>=> flatten ...
 ```
 
-Delays a **streaming** stage so it follows the cadence of a matching windowed
-stage. This is used when synchronized branch operators must keep paired outputs
-aligned even if one branch has to collect a window before emitting.
+Future optimizer work may enrich the internal stage graph so the optimizer can still see this structure without making the DSL unpleasant.
 
- 
+## Cost And Memory Binding
 
-## Utility Plans
+StackProcessing supplies domain-specific cost models to SlimPipeline.
 
-| Function        | Description                                                                |
-| --------------- | -------------------------------------------------------------------------- |
-| `tap name`      | Inject a debugging/logging plan that prints or inspects elements.         |
-| `tapIt f`       | Tap plan with a custom element-to-string converter.                       |
-| `ignoreSingles` | Discard single-image elements in the stream.                               |
-| `ignorePairs`   | Discard paired tuples in the stream.                                       |
-| `zeroMaker`     | Create a zero-filled image of the same size and type as a reference image. |
-| `idOp`          | Identity plan with a name — useful for profiling or marking plans.       |
+For example:
 
- 
+- reads are tagged by format and pixel type
+- writes are tagged by format and pixel type
+- casts are tagged by source and target type
+- image operators are tagged by operator family
+- windowed operations carry window/stride context
 
-## Example: Building a Gaussian Filter Pipeline
+The probe tools collect measurements, fit a model, and load calibration coefficients back into the runtime. SlimPipeline then turns stage cost terms into estimated time and memory during plan composition.
 
-```fsharp
-open FSharp.StackProcessing
+This is why StackProcessing stages are not just functions. They are functions plus enough modelling information to support memory checks, inspection, and future optimization.
 
-let availableMemory = 2UL * 1024UL * 1024UL * 1024UL // 2 GB
-let sigma = 1.0
-let input, output = "image18", "result18"
+## Source Families
 
-source availableMemory
-|> read<float> input ".tiff"
->=> discreteGaussian sigma None None (Some 15u)
->=> cast<float,uint8>
->=> write output ".tiff"
-|> sink
+StackProcessing's probe ladder groups operations into families such as:
+
+- `io`
+- `io-cast`
+- `sources`
+- `singleton`
+- `window-slab`
+- `neighbourhood`
+- reducers and higher-level operations
+
+These families are not part of the core runtime abstraction, but they are important for fitting and inspecting the cost model. They reflect the way the runtime's image stages are measured and calibrated.
+
+## Studio Binding
+
+Studio builds user-facing graphs and generates StackProcessing DSL code.
+
+The boundary is:
+
+- Studio expresses user intent and UI graph structure.
+- StackProcessing provides the typed DSL functions.
+- SlimPipeline executes deferred plans.
+- The Optimiser should work from structured stage/plan metadata, not from fragile generated-code string rewrites.
+
+This keeps Studio useful as an authoring environment without making it responsible for execution semantics.
+
+## Important Modules
+
+The implementation is split into focused Core modules:
+
+- `StackCore`: aliases, resource operations, composition helpers, windows/slabs, sink/drain bindings.
+- `StackIO`: stack, volume, slab, TIFF, MHA, OME-Zarr, NeXus/HDF5, chunk, and write stages.
+- `StackImageFunctions`: lifted image operations and image-processing stages.
+- `StackObjects`: streamed connected objects and object measurements.
+- `StackPoints`: point-set IO and point operations.
+- `StackRegistration`: affine registration and distance metrics.
+- `StackAffineResampler`: chunk-backed affine resampling.
+- `StackManifest`, `StackStitching`, `StackSerialSections`: metadata-driven workflows.
+- `StackOptimizer`: candidate selection helpers over costed stages.
+
+The top-level `StackProcessing.fs` module re-exports these pieces as the public API.
+
+## Design Boundaries
+
+`Image` should own:
+
+- SimpleITK image representation
+- single-image algorithms
+- file IO for one image object
+- array conversion
+- native image reference counting
+
+`SlimPipeline` should own:
+
+- generic stream execution
+- stages and plans
+- deferred composition
+- graph and cost metadata
+- memory/time modelling infrastructure
+
+`StackProcessing` should own:
+
+- image stream stages
+- stack/volume IO
+- window/slab image adaptation
+- lifted image algorithms
+- domain cost labels
+- user-facing image DSL
+
+This boundary is the reason StackProcessing can remain both image-specific and pipeline-aware without either `Image` or `SlimPipeline` absorbing all of the complexity.
+
+## Mental Model
+
+The shortest useful mental model is:
+
+```text
+Image<'T>
+    one SimpleITK-backed image or slice
+
+Window<Image<'T>>
+    adjacent streamed slices
+
+Slab<'T>
+    a small 3D image made from adjacent slices
+
+Stage<Image<'S>, Image<'T>>
+    a reusable image stream operation
+
+Plan<unit, Image<'T>>
+    a deferred image stream computation
 ```
 
-In this example:
+StackProcessing is the layer that makes those pieces work together.
 
-* The input image is streamed slice by slice from disk.
-* Each slice is processed through a Gaussian filter.
-* The result is written back as a TIFF stack.
-* Memory never exceeds the specified budget.
-
- 
-
-## Advanced: Parallel and Combined Processing
-
-You can branch and recombine pipelines:
-
-```fsharp
-source availableMemory
-|> read<float> input ".tiff"
->=>> (discreteGaussian sigma None None (Some 15u),
-      medianFilter 3u)
->>=> (fun gauss med -> gauss - med)
->=> write output ".tiff"
-|> sink
-```
-
-Here:
-
-* The input stream is split into two branches (Gaussian and Median filtering),
-* Their results are combined pixel-wise,
-* The final image is written to disk - all streaming safely.
-
- 
-
-## Design Philosophy
-
-* **Functional composition:** pipelines are pure transformations of streams.
-* **Controlled memory footprint:** each plan releases data as soon as possible.
-* **Seamless IO:** TIFF stack reading/writing acts as the natural boundary between memory and disk.
-* **Hidden complexity:** the underlying `SlimPipeline` machinery is fully abstracted from the user.

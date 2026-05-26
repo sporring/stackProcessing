@@ -1,147 +1,222 @@
+# Image Project
 
-# FSharp.Image Library
+The `src/Image` project is StackProcessing's typed wrapper around SimpleITK. It provides the low-level image value used by `StackProcessing.Core`, while keeping most direct SimpleITK interop, pixel type conversion, bulk array import/export, and image arithmetic in one place.
 
-> **Namespace:** `FSharp`
-> **Module:** `Image`
-> **Purpose:** A functional F# wrapper around **SimpleITK** for efficient manipulation of large (possibly larger-than-memory) 3D and multidimensional images with minimal I/O overhead.
-
- 
-
-## Overview
-
-The `Image` module provides a high-level F# interface to the [SimpleITK](https://simpleitk.org) imaging library. It includes utilities for:
-
-* Typed conversions between F# lists and SimpleITK vectors.
-* Type-safe creation, manipulation, and arithmetic of `Image<'T>` objects.
-* Efficient pixel-level access, memory usage tracking, and safe interop with ITK data structures.
-* Handling large image datasets where both **memory** and **I/O bandwidth** are limiting factors.
-
- 
-
-## InternalHelpers Module
-
-> Utilities for bridging between F# types and SimpleITK types.
-> Most users won't need to call these directly.
-
-### Vector Conversion
-
-| Function                                                      | Description                                                      |
-| ------------------------------------------------------------- | ---------------------------------------------------------------- |
-| `toVectorUInt8`, `toVectorInt8`, ..., `toVectorFloat64`       | Convert F# lists to the corresponding `itk.simple.Vector*` type. |
-| `fromVectorUInt8`, `fromVectorInt8`, ..., `fromVectorFloat64` | Convert an ITK vector back to an F# list.                        |
-| `fromItkVector f v`                                           | Generic vector transformation using function `f`.                |
-
-### Image and Type Helpers
-
-| Function             | Description                                                            |
-| -------------------- | ---------------------------------------------------------------------- |
-| `fromType<'T>`       | Returns the corresponding `itk.simple.PixelIDValueEnum` for type `'T`. |
-| `ofCastItk<'T>`      | Cast an existing ITK image to a new pixel type `'T`.                   |
-| `array2dZip a b`     | Zip two 2D arrays elementwise.                                         |
-| `pixelIdToString id` | Get string representation of a SimpleITK pixel ID.                     |
-| `flatIndices size`   | Enumerate all flattened indices for an N-dimensional image size.       |
-
-### Boxed Pixel Access
-
-| Function                        | Description                                         |
-| ------------------------------- | --------------------------------------------------- |
-| `setBoxedPixel img t idx value` | Set a pixel value using boxed (generic) objects.    |
-| `getBoxedPixel img t idx`       | Get a boxed pixel value from an image.              |
-| `getBoxedZero t vSize`          | Create a boxed zero value for a pixel type.         |
-| `mulAdd t acc k p`              | Multiply and add operation (used for accumulation). |
-
- 
-
-## Global Functions
-
-| Function                     | Description                                              |
-| ---------------------------- | -------------------------------------------------------- |
-| `getBytesPerComponent t`     | Get the number of bytes per F# component type.           |
-| `getBytesPerSItkComponent t` | Get bytes per SimpleITK pixel type.                      |
-| `equalOne v`                 | Returns `true` if `v` equals one.                        |
-| `printDebugMessage str`      | Print internal debug output (when debugging is enabled). |
-
- 
-
-## Internal State
-
-| Value         | Description                               |
-| ------------- | ----------------------------------------- |
-| `syncRoot`    | Synchronization object for thread safety. |
-| `totalImages` | Mutable counter for total images managed. |
-| `memUsed`     | Tracks total allocated image memory.      |
-| `debug`       | Global debug flag.                        |
-
- 
-
-## Image<'T> Type
-
-> Represents a typed, possibly large, N-dimensional image.
+The public namespace is:
 
 ```fsharp
-type Image<'T when 'T: equality> =
-    new : sz:uint list
-        * ?optionalNumberComponents:uint
-        * ?optionalName:string
-        * ?optionalIndex:int
-        * ?optionalQuiet:bool -> Image<'T>
+namespace FSharp
+module Image
+module ImageFunctions
 ```
 
-### Interfaces
+The project targets `net10.0`, references the bundled SimpleITK C# bindings from `lib/`, and exposes a generated signature file at [src/Image/Image.fsi](/Users/jrh630/repositories/stackProcessing/src/Image/Image.fsi:1).
 
-* `System.IComparable`
-* `System.IEquatable<Image<'T>>`
+## Role In StackProcessing
 
-### Example
+`Image<'T>` is the image object that flows through StackProcessing stages. It wraps an `itk.simple.Image` and adds:
+
+- a static F# pixel type, such as `uint8`, `uint16`, `float32`, `float`, or `System.Numerics.Complex`
+- a `Name`
+- a mutable slice/volume `index`
+- reference counting used by StackProcessing streaming stages
+- memory facts and debug accounting
+- typed conversion to and from arrays, files, vectors, and SimpleITK images
+
+`Image` is intentionally lower level than the public StackProcessing DSL. It knows how to represent and manipulate images, but it does not know about plans, streaming windows, slabs, cost fitting, Studio graphs, or the optimiser. Those belong in `SlimPipeline`, `StackProcessing.Core`, and the probe/optimizer projects.
+
+## Main Files
+
+- [Image.fs](/Users/jrh630/repositories/stackProcessing/src/Image/Image.fs:1): the `Image<'T>` wrapper, SimpleITK interop helpers, array conversion, file IO, scalar pixel access, reference counting, and basic operators.
+- [ImageFunctions.fs](/Users/jrh630/repositories/stackProcessing/src/Image/ImageFunctions.fs:1): functional wrappers around SimpleITK filters and image algorithms.
+- [Image.fsi](/Users/jrh630/repositories/stackProcessing/src/Image/Image.fsi:1): generated/public interface.
+- [Image.fsproj](/Users/jrh630/repositories/stackProcessing/src/Image/Image.fsproj:1): project definition and SimpleITK native-library handling.
+- [tests/Image.Tests](/Users/jrh630/repositories/stackProcessing/tests/Image.Tests/Tests.fs:1): unit tests for arithmetic, casting, indexing, vector helpers, array helpers, complex support, iteration, and wrapper coverage.
+
+## Image<'T>
+
+`Image<'T>` is a typed owner/wrapper for a SimpleITK image:
 
 ```fsharp
-open FSharp.Image
-
-let img = Image<float>([256u; 256u; 128u], optionalName="BrainMRI")
+type Image<'T when 'T: equality>
 ```
 
-### Properties (inferred from ITK integration)
+Common construction paths:
 
-| Property     | Type            | Description                     |
-| ------------ | --------------- | ------------------------------- |
-| `Size`       | `uint list`     | Size of each dimension.         |
-| `PixelType`  | `'T`            | Pixel data type.                |
-| `Name`       | `string option` | Optional image identifier.      |
-| `Components` | `uint`          | Number of components per pixel. |
+- `Image<'T>(size, ?optionalNumberComponents, ?optionalName, ?optionalIndex)`
+- `Image<'T>.ofSimpleITK`
+- `Image<'T>.ofFile`
+- `Image<'T>.ofArray2D`
+- `Image<'T>.ofArray3D`
+- `Image<'T>.ofArray4D`
+- `Image<'T>.constant2D`
+- `Image<'T>.coordinateAxis2D`
 
-### Operators
+Common export paths:
 
-| Operator | Signature                            | Description                     |
-| -------- | ------------------------------------ | ------------------------------- |
-| `(&&&)`  | `Image<'T> * Image<'T> -> Image<'T>` | Logical AND between two images. |
-| `(*)`    | `Image<'T> * Image<'T> -> Image<'T>` | Elementwise multiplication.     |
-| `(+)`    | `Image<'T> * Image<'T> -> Image<'T>` | Elementwise addition.           |
-| `(-)`    | `Image<'T> * Image<'T> -> Image<'T>` | Elementwise subtraction.        |
-| `(/)`    | `Image<'T> * Image<'T> -> Image<'T>` | Elementwise division.           |
+- `toSimpleITK`
+- `toFile`
+- `toArray2D`
+- `toArray3D`
+- `toArray4D`
 
- 
+The wrapper preserves the image index through many conversions and operators. This is important when 2D slices are streamed through StackProcessing and later reassembled, written, or inspected.
 
-## Usage Example
+## Pixel Types
+
+The project maps F# types to SimpleITK pixel IDs using `InternalHelpers.fromType<'T>`. Supported scalar types include:
+
+- `uint8`, `int8`
+- `uint16`, `int16`
+- `uint`, `int`
+- `uint64`, `int64`
+- `float32`, `float`
+- `System.Numerics.Complex`
+
+Vector-valued images are represented as `Image<'T list>` where supported by the conversion helpers.
+
+The type mapping is central to the read/cast/write model used by StackProcessing's cost calibration. Explicit casts use `Image<'T>.castTo<'S>()`, while many file reads also cast through `Image<'T>.ofSimpleITK`.
+
+## Reference Counting
+
+`Image<'T>` currently owns mutable reference-count state:
+
+- `incRefCount`
+- `decRefCount`
+- `getNReferences`
+
+StackProcessing stages follow the rule that a stage releases its consumed input image after producing the output image, unless the image is retained for reuse first. This makes `Image` slightly object-oriented inside an otherwise functional pipeline style.
+
+This is a deliberate implementation compromise: SimpleITK images are native resources, and StackProcessing needs predictable release points when streaming large images. Longer term, the wrapper may benefit from separating immutable image metadata from the managed native ownership handle, but the present model is explicit and works with the streaming DSL.
+
+## Memory Facts And Debugging
+
+`ImageFacts` describes the backend, pixel type, component size, image size, voxel count, and estimated memory. It is used to keep memory estimates explicit and close to the image representation.
+
+Debug support includes:
+
+- total image count
+- peak image count
+- estimated image memory
+- process RSS sampling
+- printable memory facts
+
+This support is useful when validating StackProcessing's memory model against actual runs.
+
+## Bulk Array Paths
+
+Bulk array conversion is one of the most important performance boundaries in the project.
+
+Preferred paths:
+
+- `Image<'T>.ofArray2D`
+- `Image<'T>.ofArray3D`
+- `Image<'T>.toArray2D`
+- `Image<'T>.toArray3D`
+
+For supported scalar types these use SimpleITK buffer access/import paths where possible, avoiding per-pixel `Get` and `Set` calls.
+
+Scalar pixel access through:
 
 ```fsharp
-open FSharp.Image
-
-// Create two large images
-let a = Image<float>([512u; 512u; 256u], optionalName="A")
-let b = Image<float>([512u; 512u; 256u], optionalName="B")
-
-// Perform pixelwise arithmetic
-let result = a + b * 2.0
-
-// Access individual pixels (boxed)
-let value = Image.InternalHelpers.getBoxedPixel a a.PixelType (itk.simple.VectorUInt32([|0u; 0u; 0u|]))
-printfn "First pixel: %A" value
+image.Get [x; y; z]
+image.Set [x; y; z] value
+image[x, y]
+image[x, y, z]
 ```
 
- 
+is convenient but should not be used in hot loops over large images. The chunk/resampling speedup notes are a good example: millions of SimpleITK scalar `Get` calls can dominate runtime, while bulk array extraction changes the cost class of the algorithm.
 
-## Performance Notes
+## ImageFunctions
 
-* The module is optimized for **chunked access** and **lazy evaluation** when possible.
-* Avoid copying large images; prefer in-place operations and type-safe conversions.
-* Use `debug <- true` to enable detailed memory usage tracking and performance metrics.
+`ImageFunctions` collects functional wrappers around SimpleITK filters and image operations. It is intentionally not the streaming DSL; it operates on already materialized `Image<'T>` values.
+
+Main groups:
+
+- scalar-image arithmetic, such as image/scalar add, subtract, multiply, divide, and power
+- reductions, such as `sum`, `prod`, and `computeStats`
+- intensity and unary functions, such as `sqrtImage`, `logImage`, `expImage`, `shiftScale`, `normalizeImage`, and intensity windowing
+- comparisons and mask logic
+- FFT and complex-image helpers
+- 2D resampling and transforms
+- convolution and Gaussian kernels
+- finite difference filters and gradient helpers
+- median, bilateral, Sobel, Laplacian, and gradient magnitude filters
+- binary and grayscale morphology
+- connected components and label statistics
+- signed distance maps and watershed
+
+StackProcessing.Core lifts many of these functions into streaming `Stage`s, adding reference-count handling, memory models, and cost terms.
+
+## Complex And Vector Images
+
+Complex images are supported with:
+
+- `Image<System.Numerics.Complex>`
+- `ofComplexArray2D`
+- `ofComplexArray3D`
+- `toComplexArray2D`
+- `toComplexArray3D`
+- `Re`, `Im`, `modulus`, `arg`, `toComplex`, `polarToComplex`, `conjugate`
+
+Vector images are supported through `Image<'T list>` helpers, including image-list zip/unzip conversions. This is useful for gradient-vector and multi-component operations, while keeping the main scalar image path simple.
+
+## IO Scope
+
+`Image<'T>.ofFile` and `toFile` are thin SimpleITK-backed image file operations. StackProcessing's higher-level streaming IO lives in `StackProcessing.Core.StackIO`, where file stacks, TIFF/MHA format details, slab reads, OME-Zarr, NeXus/HDF5, and write stages are modeled.
+
+The distinction matters:
+
+- `Image` reads or writes a single SimpleITK image object.
+- `StackIO` reads or writes streams, stacks, slabs, chunks, and plan-aware stages.
+
+## Design Boundaries
+
+`Image` should own:
+
+- SimpleITK pixel type mapping
+- single-image creation and conversion
+- bulk array import/export
+- direct SimpleITK filter wrappers
+- native image ownership and reference counting
+- low-level memory facts
+
+`Image` should not own:
+
+- streaming window/slab semantics
+- plan composition
+- cost fitting
+- DSL graph rewrites
+- Studio-specific graph/code generation
+- multi-file stack scheduling
+
+Keeping this boundary clean prevents Image from becoming a second pipeline framework.
+
+## Testing
+
+The `Image.Tests` project covers the wrapper and filter surface from several angles:
+
+- arithmetic operators and support operations
+- casting and pixel type conversion
+- indexing and scalar access
+- array helper roundtrips
+- vector helper conversion
+- complex image conversion
+- iteration and folds
+- memory/debug helper behavior
+- wrapper coverage against SimpleITK behavior
+
+Run with:
+
+```sh
+dotnet test tests/Image.Tests/Image.Tests.fsproj
+```
+
+## Performance Guidance
+
+Use SimpleITK filter wrappers for whole-image operations. Use bulk array conversion for custom hot loops. Avoid per-pixel `Image.Get`/`Image.Set` in performance-sensitive code unless the operation is sparse or diagnostic.
+
+The most important practical rule:
+
+> Cross the SimpleITK boundary once per image or slab when possible, not once per pixel.
+

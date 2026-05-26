@@ -1,781 +1,356 @@
-#  F# Image Processing Pipelines: Core Types & Patterns
+# Core Concepts
 
-We are working with asynchronous computation. 
+This note summarizes the high-level concepts still in active use across StackProcessing. It is intentionally more conceptual than [SlimPipeline.md](SlimPipeline.md), [Image.md](Image.md), or [StackProcessing.md](StackProcessing.md).
 
-##  Data Abstraction Layers
+## Values, Effects, And Streams
 
-###  1. `'T` - **Concrete Value**
+### Plain Values
 
-This is your ordinary value. For example:
+`'T` is an ordinary value:
 
 ```fsharp
 let x: int = 42
 ```
 
-No computation or delay involved.
+There is no delay, no stream, and no resource protocol attached to the value itself.
 
-#### What is unit?
-`'T = unit` means "no meaningful value" - like void in other languages. It's used for:
+### `unit`
 
-- Indicating side effects,
+`unit` means "no meaningful value". It is used for:
 
-- Placeholder return values,
+- source inputs that need no value
+- sinks that produce no data result
+- side-effect completion
+- synchronization points
 
-- Control flow (e.g. in loops or task pipelines).
+For example, `Plan<unit, Image<float32>>` is a source-like plan, while `Stage<Image<uint8>, unit>` is a sink-like stage.
 
- 
+### `Async<'T>`
 
-###  2. `Async<'T>` - **Single Async Computation**
-
-This represents a **computation** that *will eventually produce* a value of type `'T`.
-
-* Think of it as a task or a promise in other languages (like `Task<'T>` in C# or `Promise<T>` in JS).
-* The computation may involve I/O, threading, etc.
-
-Example:
+`Async<'T>` is a delayed computation that eventually produces one value:
 
 ```fsharp
-let getIntAsync: Async<int> =
-    async { return 42 }
+Async<'T>
 ```
 
-To *extract* the value, you need to **run it**:
+It represents time and possible effects, not sequence structure. Running it requires an evaluator such as `Async.RunSynchronously`.
+
+### `AsyncSeq<'T>`
+
+`AsyncSeq<'T>` is a delayed asynchronous sequence:
 
 ```fsharp
-let value = Async.RunSynchronously getIntAsync  // value = 42
+AsyncSeq<'T>
 ```
 
-#### What is `Async<unit>`?
-`Async<unit>` means:
+It represents both:
 
-> **An asynchronous operation** that completes in the future and produces *no meaningful result*.
+- structure: a sequence of values
+- time: each value may arrive later
 
-Examples:
+StackProcessing uses `AsyncSeq` as the underlying execution model for streams of image slices, windows, slabs, points, scalar outputs, and side-effect steps.
 
-```fsharp
-async { do! someSideEffect(); return () } : Async<unit>
-```
+## Pipe
 
-
- 
-
-###  3. `AsyncSeq<'T>` - **Sequence of Async Values**
-
-Represents **a sequence of values over time**. This is like a lazy `seq<'T>`, but asynchronous.
-This models *both time and structure* - but in practice:
-
-* The *structure* is the sequence (`[]`, `[x]`, `[x; y]`, …)
-* The *time* is when each value becomes available
-* Each element may be delayed, fetched from disk/network, etc.
-
-So for clarity:
-
-*  `Async<'T>` -> *time-only* (delayed single value)
-*  `AsyncSeq<'T>` -> *structured data arriving over time*
-
-
-Example:
-
-```fsharp
-let nums: AsyncSeq<int> =
-    asyncSeq {
-        yield 1
-        do! Async.Sleep 1000
-        yield 2
-    }
-```
-
-#### What is `AsyncSeq<unit>`?
-`AsyncSeq<unit>` means:
-
-> **A sequence of asynchronous steps**, each step producing a `unit`.
-> So it represents **a structured stream of side-effects**.
-
-Think of it like a pipeline where each item doesn't carry data - it's just there to represent *a step*, e.g.:
-
-```fsharp
-asyncSeq {
-    do! someIO ()
-    yield ()         // Step 1
-    do! someMore ()
-    yield ()         // Step 2
-}
-```
-
-Use Cases for `AsyncSeq<unit>`
-
-This is common when you:
-
-* Process a stream for **side effects only**, not results,
-* Discard intermediate values but keep track of structure,
-* Want to synchronize execution without emitting values.
-
-#### Example:
-
-In your context:
-
-```fsharp
-run pipe : AsyncSeq<unit>
-```
-
-This means: "run this pipeline - it has side effects, but no result values."
-
- 
-
-###  4. `Pipe<'S, 'T>` - **Stream Transformer Over Structured Async Data**
-
-A `Pipe<'S, 'T>` represents a **stream processor** that transforms a sequence of type `'S` into a sequence of type `'T`, while preserving the asynchronous nature of the data.
-
-It wraps the transformation:
+`Pipe<'S,'T>` is the lowest SlimPipeline abstraction above `AsyncSeq`:
 
 ```fsharp
 AsyncSeq<'S> -> AsyncSeq<'T>
 ```
 
-So it's **not just a function** - it's a *composable building block* that also carries:
+It is the executable stream transformer. A pipe has:
 
-* A **name** (for debugging / tracing),
-* A **memory profile** (Streaming, Window, Buffered, Constant),
-* An **execution model** via the `Apply` field.
+- a name
+- an `Apply` function
+- a coarse streaming `Profile`
 
- 
+Examples:
 
-####  Structure + Time + Context
+- `Pipe<unit, Image<uint8>>`: source-like producer
+- `Pipe<Image<uint8>, Image<float32>>`: transformer
+- `Pipe<Image<uint8>, unit>`: sink-like consumer
 
-We can think of a `Pipe<'S, 'T>` as a higher-level abstraction over `AsyncSeq<'S>`:
+Pipes execute streams. They do not by themselves carry the full planning metadata used by StackProcessing.
 
-| Aspect        | Meaning in `Pipe<'S, 'T>`                                                          |
-| ------------- | ---------------------------------------------------------------------------------- |
-| **Structure** | The transformation preserves or reshapes the stream - map, filter, windowing, etc. |
-| **Time**      | Each value in the stream may arrive asynchronously                                 |
-| **Context**   | The `Pipe` may manage memory profiles, disk IO, or composition                     |
+## Stage
 
-> `Pipe<'S, 'T>` transforms structured asynchronous data (`AsyncSeq<'S>`) into new structured asynchronous data (`AsyncSeq<'T>`), with added metadata and composition tools.
-
-It's a **streaming computation**, aware of:
-
-* **Timing** (via async values),
-* **Structure** (sequences over time),
-* **Resources** (via memory profiles).
-
-####  What is `Pipe<unit, 'T>`?
-
-This is a pipeline that takes **no input**, and **produces** a stream of `'T`. It represents a **producer**, **generator**, or a **data source**.
-
-It is analogous to:
+`Stage<'S,'T>` is the main reusable operation unit:
 
 ```fsharp
-unit -> AsyncSeq<'T>
+Stage<'S,'T>
 ```
 
- 
+A stage contains a delayed pipe builder plus metadata:
 
-####  What is `Pipe<'T, unit>`?
+- profile transition
+- memory model
+- time cost model
+- element-size transformation
+- slice-cardinality transformation
+- graph nodes and edges
+- cleanup actions
 
-This is the **dual**: it takes a stream of `'T` and **produces nothing** - or more precisely, it **consumes** the input.
-
-It corresponds to:
+Stages are composed internally with:
 
 ```fsharp
-AsyncSeq<'T> -> AsyncSeq<unit>
+-->
 ```
 
-But more semantically:
-
->  `Pipe<'T, unit>` is a **Sink** - a consumer.
-
-| Pipe Type        | Interpretation  | Analogous to                                   |
-| ---------------- | --------------- | ---------------------------------------------- |
-| `Pipe<unit, 'T>` | **Source**      | `unit -> AsyncSeq<'T>`                         |
-| `Pipe<'T, unit>` | **Sink**        | `AsyncSeq<'T> -> Async<unit>` (after reducing) |
-| `Pipe<'A, 'B>`   | **Transformer** | `AsyncSeq<'A> -> AsyncSeq<'B>`                 |
-
-Often, these are terminal operations in your pipeline:
-
-* `print : Pipe<'T, unit>`
-* `ignore : Pipe<'T, unit>`
-* `saveToDisk : Pipe<Slice<'T>, unit>`
-
-They're often passed to `sink`, e.g.:
-
-```fsharp
-myPipe >=> print |> sink
-```
-
-| Type             | Role          | Description                         |
-| ---------------- | ------------- | ----------------------------------- |
-| `Pipe<unit, 'T>` | **Source**    | Produces data without needing input |
-| `Pipe<'T, unit>` | **Sink**      | Consumes data, no further output    |
-| `Pipe<'A, 'B>`   | **Processor** | General stream transformer          |
-
- 
-
-###  `Plan<'S,'T>` - Pipeline Plan With Memory Profile Planning
-
-An `Plan<'S, 'T>` wraps a `Pipe<'S, 'T>` with **planning information**:
-
-```fsharp
-type Plan<'S,'T> =
-  { Name       : string
-    Transition : MemoryTransition
-    Pipe       : Pipe<'S,'T> }
-```
-
-Use it when:
-
-* You need to compose pipelines with **explicit control** over memory usage.
-* You want to check **transition compatibility** between plans (e.g. Window -> Streaming).
-* You're planning for **3D windowed operations** or full-buffer transforms.
-
-It preserves the `Pipe` interface, but enables smart graph validation.
-
- 
-
-###  `MemoryTransition`
-
-Encapsulates how an operation **expects** memory to be shaped across the pipeline.
-
-```fsharp
-type MemoryTransition =
-  { From  : MemoryProfile
-    To    : MemoryProfile
-    Check : SliceShape -> bool }
-```
-
-Used to ensure compatibility between composed `Plan`s:
-
-```fsharp
-validate op1 op2
-```
-
-## `Pipeline<'In,'Out>` - Structured Composition of Plans
-
-A `Pipeline<'In,'Out>` represents a **composed execution graph** of multiple processing plans that operate on streaming asynchronous data.
-It's the **user-facing construct** built from `Plan<'S,'T>` components via composition operators like `>=>` and terminated by `sink`.
-
-```fsharp
-type Pipeline<'In,'Out> =
-  { Name: string
-    Memory: MemoryProfile
-    Run: AsyncSeq<'In> -> AsyncSeq<'Out>
-    Plans: PlanList }
-```
+This operator is used heavily inside `StackProcessing.Core` to build ergonomic compound stages. For example, a window/slab operation can be implemented as several internal stages while remaining one public DSL function.
 
 Conceptually:
 
-* A `Pipeline` is to `Plan` what a **program** is to an **instruction**.
-* Each plan contributes one transformation, memory transition, and potentially asynchronous or IO-bound computation.
-* The pipeline collects these plans into a connected, validated flow that can be **executed**, **analyzed**, or **parallelized**.
+```text
+Stage = executable stream operation + model + graph + cleanup
+```
 
- 
+## Plan
 
-### Relationship between `Pipeline<'S,'T>`, `Pipe<'S,'T>`, and `Plan<'S,'T>`
-
-| Type | Role | Description |
-| ---- | ---- | ----------- |
-| `Pipe<'S,'T>` | Core Transformer | A stream-to-stream computation (`AsyncSeq<'S> -> AsyncSeq<'T>`) with metadata |
-| `Plan<'S,'T>` | Planning Unit | A `Pipe` wrapped with memory transition information |
-| `Pipeline<'In,'Out>` | Execution Graph  | A composed, executable collection of plans forming a complete dataflow |
-
-So:
+`Plan<'S,'T>` is the user-facing deferred computation:
 
 ```fsharp
-Pipe<'S,'T> -> Plan<'S,'T> -> Pipeline<'In,'Out>
+Plan<'S,'T>
 ```
 
-You lift pure transformations to `Pipe`s, annotate them as `Plan`s with memory context, then compose them into full pipelines.
-
- 
-
-## Data Relations
-Async<'T> defines a Monad, AsyncSeq<'T> a stream of Monads, and Pipe<'S,'T> a stream transformer or a morphism. This may be called a Kleisli category over morphisms.
-
-###  `'T -> Async<'T>`
-
-* **Monad's `return` / `pure`**
-* Wraps a plain value in the minimal effect
-* **No transformation**, just lifting
+A plan is what users build when they write:
 
 ```fsharp
-async.Return x  // 'T -> Async<'T>
-```
-
- 
-
-###  `Async<'T> -> 'T`
-
-* **Reducer / evaluator of async**
-* Extracts value from the effect
-* Loses laziness or concurrency
-
-```fsharp
-Async.RunSynchronously : Async<'T> -> 'T
-```
-
- 
-
-###  `'T -> Async<'U>`
-
-* **Effectful mapper / Kleisli arrow**
-* Applies a function *that introduces* asynchronous behavior or IO
-
-This is the **core of "monadic bind"**:
-
-```fsharp
-let bind (f: 'T -> Async<'U>) (x: Async<'T>) : Async<'U> =
-    async {
-        let! t = x
-        return! f t
-    }
-```
-
-*Think of this as a mapper with side effects or delayed computations.*
-
- 
-
-###  `Async<'T> -> 'U`
-
-* This is **not a standard monadic construct**
-* Conceptually, this **breaks** the monad
-* You're running the async and extracting a value - it's *interpreting* the effect
-
-So:
-
-* It **looks like a reducer** of the monad.
-* But **unlike `reduce`**, it typically means you're collapsing the async structure early.
-* It's generally not composable (not pure) and ties you to evaluation strategies.
-
-**Examples:**
-
-```fsharp
-let asyncToValue : Async<int> -> int = Async.RunSynchronously
-```
-
- 
-
-###  What does `Async<'U> -> AsyncSeq<'T>` mean?
-
-It's a function that:
-
-* **Waits for an asynchronous result** of type `'U`,
-* And then **starts emitting a stream** of `'T` values.
-
- 
-
-####  Conceptually, it is:
-
-| Perspective           | Interpretation                                                                    |
-| --------------------- | --------------------------------------------------------------------------------- |
-| **Monad Perspective** | A function *from a single promise to a stream* - it lifts time into structure.    |
-| **Producer**          | A stream **generator** based on the result of a one-time async computation.       |
-| **Dual to `reduce`**  | If `AsyncSeq<'T> -> Async<'U>` is a *reduction* (fold), then this is *expansion*. |
-| **"Unfolding"**       | Like `unfoldAsync` but with the seed coming from an async computation.            |
-| **Stream Builder**    | It transforms a future into a source of many values.                              |
-
- 
-
-####  Example Use Case
-
-```fsharp
-let fetchAndStream (asyncData: Async<string>) : AsyncSeq<char> =
-    asyncSeq {
-        let! data = asyncData
-        for c in data do
-            yield c
-    }
-```
-
-Here, we wait for a string to arrive (an `Async<string>`) and turn it into a stream of characters (`AsyncSeq<char>`).
-
- 
-
-####  Possible Names or Roles
-
-Although no single canonical name exists, here are reasonable terms:
-
-* **UnfoldAsync**-style transformer
-* **Stream generator**
-* **Async-to-stream adapter**
-* **Delayed source**
-* **AsyncExpander**
-* **StreamifyAsync** (in library naming)
-
- 
-
-####  Not a Kleisli Arrow
-
-* Kleisli arrows are of the form `'A -> M<'B>` for *some monad* `M`.
-* This is **not** such a form because `Async<'U>` is already inside a monad.
-
- 
-
-
-### What About `AsyncSeq<'T> -> Async<'U>`?
-
-This is a **structural reduction**:
-
-####  It's a **general consumption of the stream**:
-
-* Aggregation (`fold`, `reduce`)
-* Summarization (e.g., `mean`, `min`, `max`)
-* Exporting data (e.g., writing to disk)
-* Side-effectful execution (e.g., `printAsync`)
-
-**Why confusing?** Because it *looks* like you're mapping (`'T -> 'U`), but you're:
-
-* **consuming many items**
-* **producing a single result**
-* and doing it **asynchronously**
-
-```fsharp
-// E.g., mean over stream
-let computeMean (stream: AsyncSeq<float>) : Async<float> = async {
-    let! items = stream |> AsyncSeq.toListAsync
-    return List.average items
-}
-```
- 
-
-###  Why `'T -> AsyncSeq<'U>` is Special
-
-* It differs from `'T -> 'U` because it **produces multiple results** (zero or more), not just one.
-* In monad terms, it's equivalent to `flatMap` or `bind`.
-* This enables **dynamic expansion**: one slice in, many slices out.
-* Key for operations like `windowing`, `duplication`, or **scatter/gather**.
-
- 
-
-###  What is `AsyncSeq<'T> -> Pipe<'U, 'V>`?
-
-#### What does this mean?
-
-This would be a function that, **given a stream**, constructs a `Pipe`.
-
-But this **doesn't make sense in general**, because a `Pipe` is **not built from a concrete stream** - it is a **function that transforms a stream**, not one constructed *from* a stream.
-
-####  Valid Specialized Interpretation
-
-You could imagine something like:
-
-```fsharp
-let injectStream (external: AsyncSeq<'T>) : Pipe<unit, 'T>
-```
-
-Which **wraps a fixed stream** as a pipeline - effectively a **source**.
-
-This is what your `source` and `lift` do:
-
-* It turns `AsyncSeq<'T>` into a `Pipe<unit, 'T>`
-
-This is equivalent to **embedding a static stream** into a pipeline:
-
-```fsharp
-let sourceFromStream name stream =
-  { Name = name; Profile = Streaming; Apply = fun _ -> stream }
-```
-
-So:
-
->  `AsyncSeq<'T> -> Pipe<unit, 'T>`
-> is like a **stream source**.
-
- 
-
-###  And what is the inverse `Pipe<'U, 'V> -> AsyncSeq<'T>`?
-
-#### What does this mean?
-
-You have a stream transformer, and you want to turn it into an **actual stream**. This requires an **input stream**, i.e., `Pipe.Apply : AsyncSeq<'U> -> AsyncSeq<'V>`.
-
-You already have:
-
-```fsharp
-let run (p: Pipe<unit, 'T>) : AsyncSeq<'T> =
-    p.Apply (AsyncSeq.singleton ())
-```
-
-So:
-
-> `Pipe<unit, 'T> -> AsyncSeq<'T>` is a **pipeline runner** for pipelines that take no stream input.
-
-If you have `Pipe<'U, 'V>`, then you must supply a stream of `'U` to get a stream of `'V`.
-
- 
-###  Core Relationship: `Pipe<'S,'T>` vs. `AsyncSeq<'T>`
-
-- `AsyncSeq<'T>` is a **value**
-
-       - A lazy, asynchronous sequence of elements of type `'T`
-       - It's *data* in an effectful context
-
--  `Pipe<'S,'T>` is a **computation**
-
-       - A **transformer** from an `AsyncSeq<'S>` -> `AsyncSeq<'T>`
-       - Encapsulates:
-              - A **name**
-              - A **memory profile**
-              - An `Apply` function
-
- 
-
-###  Summary Table
-
-| Signature                                      | Meaning/Role             | Notes                                             |
-| ---------------------------------------------- | ------------------------ | ------------------------------------------------- |
-| `AsyncSeq<'T> -> Pipe<unit, 'T>`               | Stream -> Source          | Wraps a stream as a pipeline                      |
-| `Pipe<unit, 'T> -> AsyncSeq<'T>`               | Source -> Stream          | Run pipeline with no input                        |
-| `Pipe<'U, 'V> -> AsyncSeq<'U> -> AsyncSeq<'V>` | General pipe application | Core of `Pipe.Apply`                              |
-| `AsyncSeq<'T> -> Pipe<'U,'V>`                  |  ill-defined in general | Would imply dynamic pipeline creation from stream |
-
-
- 
-
-
-###  Conceptual Interpretation
-
-| Layer          | Effect Kind      | Meaning                    |
-| -------------- | ---------------- | -------------------------- |
-| `'T`           | none             | raw data                   |
-| `Async<'T>`    | time             | delayed value (a future)   |
-| `AsyncSeq<'T>` | structure        | stream of values over time |
-| `Pipe<'S,'T>`                        | Stream-to-stream pipeline | Composition Wrapper     |
-| `'T -> Async<'U>`                    | Async computation         | Async Function / Mapper |
-| `AsyncSeq<'T> -> Async<'U>`          | Reduce/Fold over stream   | Structural Reduction    |
-| `run: Pipe<unit,'T> -> AsyncSeq<'T>` | Execute pipeline          | Realize Stream          |
-
-> So, `AsyncSeq<'T> -> Async<'U>` is a **reduction over structure**, producing a **summary**.
-
-
-###  Graphical overview of relations
-
-```
-       ┌───────────────┐
-       │ Pipe<'In, 'T> │
-       └──────┬────────┘
-              │  Apply to stream input
-              ▼
-       ┌──────────────┐
-       │ AsyncSeq<'T> │ ← Stream of results
-       └──────┬───────┘
-              │  Reduce, fold, or head/last
-              ▼
-       ┌────────────┐
-       │ Async<'T>  │ ← A delayed single result
-       └──────┬─────┘
-              │  Run asynchronously or synchronously
-              ▼
-       ┌────────────┐
-       │     'T     │ ← The actual final value
-       └────────────┘
-```
-
-```
-        ┌──────────────┐
-        │      'T      │  ← Plain value (e.g., ImageStats)
-        └──────┬───────┘
-               │ Async.Return
-               ▼
-        ┌──────────────┐
-        │  Async<'T>   │  ← Single value computed asynchronously
-        └──────┬───────┘
-               │ AsyncSeq.ofAsync
-               ▼
-        ┌──────────────────┐
-        │ AsyncSeq<'T>     │  ← Stream of values computed asynchronously
-        └──────────────────┘
-               │ Pipe.Apply or lift
-               ▼
-        ┌────────────────────┐
-        │ Pipe<'In, 'Out>    │  ← Stream-to-stream transformation
-        └────────────────────┘
-```
-
- 
-
-
-##  `Pipe<'S,'T>` as a First-Class Computation and more
-
-A `Pipe` is:
-
-```fsharp
-type Pipe<'S,'T> =
-  {
-    Name: string
-    Profile: MemoryProfile
-    Apply: AsyncSeq<'S> -> AsyncSeq<'T>
-  }
-```
-
-So it's:
-
-* A **wrapped function** from `AsyncSeq<'S>` to `AsyncSeq<'T>`
-* But also **metadata-aware** (`Profile`) and **debuggable** (`Name`)
-* It's your system's **domain-specific Kleisli arrow**
-
- 
-
-> The pipeline layer **abstracts the streaming context** and **enables composition**, in the same way a monad abstracts and controls effects.
-
- 
-
-###  Example
-
-Let's say you have this:
-
-```fsharp
-let normalizeSlice (slice: Slice<float>) : Slice<float> = ...
-```
-
-If you want to apply it to every streamed slice, you lift it:
-
-```fsharp
-let normalize : Pipe<Slice<float>, Slice<float>> =
-  lift "normalize" Streaming (fun s -> async.Return (normalizeSlice s))
-```
-
-Then you can compose:
-
-```fsharp
-source >=> normalize >=> filter >=> print
-```
-
-All without seeing `AsyncSeq` - *it's hidden in the plumbing.*
-
- 
-
-## Composition and Execution
-
-Pipelines are constructed using **monadic composition** (Kleisli-style bind):
-
-```fsharp
-val (>=>) :
-  Pipeline<'a,'b> -> Plan<'b,'c> -> Pipeline<'a,'c>
-```
-
-This operator links a plan to the end of a pipeline, producing a new pipeline.
-
-Example:
-
-```fsharp
-source memory
-|> read<float> "input" ".tiff"
->=> discreteGaussian sigma None None (Some 15u)
->=> cast<float,uint8>
->=> write "output" ".tiff"
+source availableMemory
+>=> readStage
+>=> processStage
+>=> writeStage
 |> sink
 ```
 
-Each `>=>` adds a node to the execution graph, and `sink` **runs** the entire pipeline by evaluating its `Run` function.
+The stages are not run while the plan is built. Instead, the plan accumulates:
 
- 
+- the composed stage
+- graph structure
+- estimated memory peak
+- cost observations and cost terms
+- sequence length estimates
+- element-size estimates
+- debug and optimization flags
+- optional source metadata
 
-### Parallel Composition
+Execution happens only at:
 
-`Pipeline` also supports *fan-out* and *zip* operations:
+- `sink`
+- `drainSingle`
+- `drainList`
+- `drainLast`
 
-| Operator | Type                                                                           | Description                      |
-| -------- | ------------------------------------------------------------------------------ | -------------------------------- |
-| `>=>>`   | `Pipeline<'In,'S> -> (Plan<'S,'U> * Plan<'S,'V>) -> Pipeline<'In,('U * 'V)>` | Split a stream into two branches |
-| `>>=>`   | `Pipeline<'a,('b * 'c)> -> ('b -> 'c -> 'd) -> Pipeline<'a,'d>`                | Combine paired outputs           |
-| `zip`    | `Pipeline<'a,'b> -> Pipeline<'a,'c> -> Pipeline<'a,('b * 'c)>`                 | Merge outputs of two pipelines   |
+This is StackProcessing's implemented deferred-computation model.
 
-These let you define **branching and recombining flows** while maintaining streaming semantics and controlled memory use.
+## Two Composition Levels
 
- 
-
-### Memory Profile and Validation
-
-Each pipeline carries a `MemoryProfile` summarizing the resource expectations of its plans.
-During composition, transitions (`ProfileTransition`) are validated to ensure that, for example, a sliding-window plan can legally follow a streaming plan.
-
-This ensures **compile-time safety** for large-scale, memory-aware processing.
-
- 
-
-### Execution Semantics
-
-Running a pipeline involves applying its `Run` function to a source stream (usually `AsyncSeq.singleton ()` for a source):
+There are two important composition operators:
 
 ```fsharp
-val run : Pipeline<unit,'T> -> AsyncSeq<'T>
+-->   // Stage -> Stage -> Stage
+>=>   // Plan -> Stage -> Plan
 ```
 
-The pipeline defines:
+Use `-->` for internal implementation structure.
 
-* **When** each element is produced (asynchronous time),
-* **How** each element is transformed (functional structure),
-* **Where** data resides (memory profile / streaming model).
+Use `>=>` for user-facing pipeline structure.
 
- 
+The distinction matters:
 
-### Summary
+- `-->` keeps public DSL functions ergonomic.
+- `>=>` gives the plan layer a chance to record memory, time, graph, and cardinality information.
 
-| Aspect            | Description                                          |
-| ----------------- | ---------------------------------------------------- |
-| **Type**          | `Pipeline<'In,'Out>`                                 |
-| **Core Function** | `AsyncSeq<'In> -> AsyncSeq<'Out>`                    |
-| **Composition**   | Via `>=>`, `>=>>`, `>>=>`, etc.                      |
-| **Metadata**      | Includes name, memory profile, and validation info   |
-| **Purpose**       | Build and execute structured streaming dataflows     |
-| **User Role**     | Represents an *entire* workflow, from source to sink |
+A current architecture question is how much of the internal `-->` graph should become visible to the Optimiser without forcing users to write low-level scaffolding. The preferred direction is to enrich the existing stage graph rather than invent a separate shadow representation.
 
-> A `Pipeline<'In,'Out>` is the **orchestrated, executable stream processor** formed by chaining `Plan`s — it’s the top-level abstraction in the F# image processing architecture.
+## Profile
 
+`Profile` describes the broad shape of a stream:
 
- 
+```fsharp
+type Profile =
+    | Unit
+    | Constant
+    | Streaming
+    | Window of uint * uint * uint * uint * uint
+```
 
-##  Summary
+Common interpretations:
 
-| Concept        | Description                              | Signature / Example                              |
-| -------------- | ---------------------------------------- | ------------------------------------------------ |
-| `'T`           | A value                                         | `42`, `"hello"`               |
-| `Async<'T>`    | A computation that will eventually give `'T`    | `async { return 42 }`         |
-| `AsyncSeq<'T>` | A stream of `'T` values, yielded asynchronously | `asyncSeq { yield! [1..10] }` |
-| `AsyncSeq<'T>` | Lazy async stream                        | `readSlices<float>` returns this                 |
-| `Pipe<'S,'T>`  | Transform from stream to stream          | `map`, `lift`, `reduce`, etc.                    |
-| `lift`         | Embed `T -> Async<'U>` into a pipeline   | `lift "name" profile f`                          |
-| `run`          | Turn `Pipe<unit,'T>` into `AsyncSeq<'T>` | Used at the start or sink of pipeline            |
-| `>=>`         | Compose `Pipeline`s and `Pipe`s           | Like monadic bind (`Pipe<'A,'B> -> Pipe<'B,'C>`) |
+- `Unit`: no meaningful stream payload
+- `Constant`: scalar or constant result
+- `Streaming`: ordinary one-element-at-a-time stream
+- `Window`: streaming windows along one axis
 
+Profiles are deliberately coarse. Detailed memory and time estimates live in stage cost models.
 
-| Step                             | Description                                | Example Functions         |
-| -------------------------------- | ------------------------------------------ | ------------------------- |
-| `Pipe<'In, 'T>`                  | A reusable pipeline                        | `map`, `reduce`, etc.     |
-| `pipe.Apply input`               | Transforms input to a stream               | Internal logic of `Pipe`  |
-| `AsyncSeq<'T>`                   | A stream of values (asynchronous iterator) | `printAsync`, `iterAsync` |
-| `AsyncSeq.head`, `tryLast`, etc. | Reduces stream to a single result          | Used in `reduce`, `cache` |
-| `Async<'T>`                      | Async result waiting to be run             | `Async.RunSynchronously`  |
-| `'T`                             | Final value                                | Concrete scalar result    |
+## Window
 
- 
+`Window<'T>` is a generic SlimPipeline concept:
 
-##  Monad close terminology
+```fsharp
+type Window<'T> =
+    { Items: 'T list
+      EmitRange: uint * uint
+      ReleaseCount: uint }
+```
 
-From a **monadic** perspective:
+It represents a local group of stream elements, usually adjacent image slices in StackProcessing.
 
-* `Async<'T>` is a monad over time.
-* `AsyncSeq<'T>` is a monad over time *and* order - it's like `List` + `Async`.
+Important fields:
 
-Both allow you to:
+- `Items`: the retained elements
+- `EmitRange`: which part of the window should be emitted later
+- `ReleaseCount`: how many consumed elements should be released by resource-aware stages
 
-* Lift a pure `'T` into their context (`async.Return`, `AsyncSeq.singleton`)
-* Compose computations (`let!`, `bind`, etc.)
+Windows are central to StackProcessing's 1D streaming model for 3D image processing. A 3D operation can be expressed as a z-window over streamed 2D slices, which makes halo management local and memory bounded.
 
-Use
-* **`reduce`** for `AsyncSeq<'T> -> Async<'R>`
-* **`collect`** or **`toList`** for `AsyncSeq<'T> -> Async<'T list>`
-* **`aggregate`** if you want something more general
+## Slab
 
+`Slab<'T>` is a StackProcessing.Core concept:
 
-| Concept            | Type Signature                                    | Role / Description                                   |
-| ------------------ | ------------------------------------------------- | ---------------------------------------------------- |
-| Mapper             | `'T -> 'U`                                        | Basic value-to-value transformation                  |
-| Async Mapper       | `'T -> Async<'U>`                                 | Transformation requiring asynchronous context        |
-| Stream Mapper      | `AsyncSeq<'T> -> AsyncSeq<'U>`                    | Whole-stream transformation                          |
-| FlatMap / Binder   | `'T -> AsyncSeq<'U>`                              | Emits **0 or more** results per input (monadic bind) |
-| Reducer            | `AsyncSeq<'T> -> Async<'U>`                       | Collapses a stream into a single result              |
-| Batch Reducer      | `AsyncSeq<'T> -> Async<'T list>` or similar       | Gathers stream into a list                           |
-| Pipe (stream proc) | `Pipe<'S, 'T>`                                    | Stream transformer, used in composition              |
-| Scalar Injector    | `Pipe<'In, 'A> -> Pipe<'In, 'B> -> Pipe<'In, 'C>` | Merges scalar and stream (e.g. via `zipWith`)        |
+```fsharp
+type Slab<'T> =
+    { Image: Image<'T>
+      EmitRange: uint * uint }
+```
 
- 
+A slab is a stack of adjacent slices represented as one `Image<'T>`. It preserves enough range information to turn the slab back into a window and then into a slice stream.
+
+Slabs are used when an operation is easier or faster to express as a whole 3D image operation, while still fitting into the streaming model:
+
+```text
+slice stream -> window -> slab -> image operation -> slab/window -> slice stream
+```
+
+This is especially useful for applying singleton-style image stages to small 3D slabs.
+
+## Image
+
+`Image<'T>` is StackProcessing's typed wrapper around SimpleITK images. It lives in the `Image` project and adds:
+
+- a static F# pixel type
+- name and index metadata
+- reference counting
+- bulk array conversion
+- file IO for single image objects
+- SimpleITK interoperability
+
+`Image` should own single-image representation and operations. It should not own streaming, plans, cost fitting, or Studio graph logic.
+
+## Resources And Reference Counting
+
+Images wrap native resources, so StackProcessing uses explicit retain/release semantics:
+
+- a stage releases input images after consuming them
+- reusable images are retained first
+- windows release the consumed prefix according to `ReleaseCount`
+
+SlimPipeline keeps this generic through `ResourceOps<'T>`. StackProcessing.Core supplies the image-specific retain/release operations.
+
+The practical rule is:
+
+> If a stage consumes an image, it releases it after use unless it has explicitly retained or copied it.
+
+## Memory Model
+
+SlimPipeline estimates memory through `StageMemoryModel` and `StageMemoryEstimate`.
+
+Memory estimates distinguish:
+
+- input live memory
+- output live memory
+- work memory
+- retained memory
+- peak memory
+
+Plans accumulate the maximum estimated stage peak and reject plans that exceed the available memory budget unless debug mode is being used for exploration.
+
+## Time Cost Model
+
+Time is represented using `StageTimeCostModel` and `StageTimeCostEstimate`.
+
+Cost estimates can include:
+
+- CPU cost units
+- native cost units
+- IO read/write bytes
+- IO read/write operations
+- calibration keys
+- contextual tags
+
+Calibration coefficients turn cost units into estimated milliseconds. The probe/fitting workflow learns these coefficients from measurements.
+
+## Slice Cardinality
+
+`SliceCardinality` describes how a stage changes stream length:
+
+- preserves the domain
+- trims/skips/takes from the domain
+- reduces to a fixed count
+- falls back to unknown
+
+This is used to scale cost terms. A per-slice map, a strided window, and a reducer should not contribute the same number of cost events.
+
+## Graph
+
+Stages and plans carry a lightweight `PipelineGraph`.
+
+The graph is used for:
+
+- debug explanation
+- cost discrepancy logs
+- future optimizer visibility
+
+It is currently mostly name/transition based. A likely future direction is to enrich graph nodes with semantic tags such as `Cast`, `WindowToSlab`, `SlabToWindow`, `Read`, and `Write`.
+
+## Optimiser
+
+The current optimiser work is measurement-driven. The probe tool collects evidence, fit estimates a calibrated cost model, and inspect checks quality and suggests additional measurements.
+
+The runtime plan layer already records cost terms and graph structure, but it does not yet perform general rewrite search or alternative-plan generation.
+
+The intended direction is:
+
+- keep the public DSL ergonomic
+- preserve internal stage structure through enriched graphs
+- let the Optimiser choose among safe alternatives
+- use measured cost models rather than hand-waving
+
+## Studio
+
+Studio is the visual/user-facing graph environment. It generates StackProcessing DSL code from saved graphs.
+
+Important boundary:
+
+- Studio should express user intent.
+- StackProcessing/SlimPipeline should own execution semantics.
+- Optimiser-facing rewrites should not rely on fragile generated-code string rewriting.
+
+Studio graph normalization may still be useful for obvious UI-level simplifications, but semantic optimization should happen in the stage/plan model.
+
+## Core Mental Model
+
+The active architecture can be summarized as:
+
+```text
+Image<'T>
+    single image object, SimpleITK-backed
+
+AsyncSeq<'T>
+    asynchronous stream of values
+
+Pipe<'S,'T>
+    executable stream transformer
+
+Stage<'S,'T>
+    pipe builder plus memory/time/graph/cardinality metadata
+
+Plan<'S,'T>
+    deferred composed computation
+
+sink/drain
+    lower plan to pipe and execute
+```
+
+The main design theme is to keep high-level image-processing DSLs pleasant while making enough structure visible for memory-safe streaming, measurement, and future optimization.
+

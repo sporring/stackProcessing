@@ -1,0 +1,55 @@
+# Chunk Speedup Notes
+
+The main speedup target is exactly analogous to the `Image.convolve` lesson: `resampleAffine` still does scalar pixel access in the hot loop.
+
+Hot path:
+
+- [StackAffineResampler.fs](/Users/jrh630/repositories/stackProcessing/src/StackProcessing.Core/StackAffineResampler.fs:227) allocates an output `Array2D`.
+- For every output pixel it calls `trilinearSample`.
+- `trilinearSample` fetches 8 voxels.
+- Each voxel goes through `getVoxel`, then `ch[lx,ly,lz]`.
+- That lands in [Image.fs](/Users/jrh630/repositories/stackProcessing/src/Image/Image.fs:1102), which calls `Image.Get`.
+- `Image.Get` does SimpleITK scalar access plus type dispatch/vector construction at [Image.fs](/Users/jrh630/repositories/stackProcessing/src/Image/Image.fs:1026).
+
+So for a 256x256x256 output, that is roughly 134 million scalar `Image.Get` calls. That will dominate everything.
+
+Suggested speedups, in priority order:
+
+1. **Cache chunks as bulk arrays, not `Image<'T>`**
+
+   Change `ChunkCache<'T>` from `Dictionary<int64, Image<'T>>` to something like:
+
+   ```fsharp
+   type ChunkData<'T> =
+       { Pixels: 'T[,,]
+         W: int
+         H: int
+         D: int }
+   ```
+
+   Load with `_readChunk`, immediately call `toArray3D()`, store the array, then dispose/decrement the image if appropriate. `Image.toArray3D()` already has the fast bulk-copy path for scalar supported types at [Image.fs](/Users/jrh630/repositories/stackProcessing/src/Image/Image.fs:778).
+
+2. **Prefer flattened chunk arrays**
+
+   For even less overhead, store `Pixels: 'T[]` and index manually:
+
+   ```fsharp
+   pixels[(lz * h + ly) * w + lx]
+   ```
+
+   That avoids `Array3D` bounds/indexer overhead in the innermost loop.
+
+3. **Reduce per-voxel dictionary/division work**
+
+   `getVoxel` currently recomputes chunk coordinates, packs keys, dictionary-lookups, and calls chunk dimensions for each of the 8 neighbors. A faster `trilinearSample` should compute `x0/x1`, `y0/y1`, `z0/z1`, resolve the needed chunk data once per neighbor coordinate, then read raw arrays.
+
+4. **Add a `float32` specialized path**
+
+   The sample uses `float32`. The generic `lerp: 'T -> 'T -> float32 -> 'T` means 7 function calls per output pixel. A specialized float32 trilinear path can do direct arithmetic and will likely matter once scalar `Image.Get` is gone.
+
+5. **Optional later: parallelize output rows/slices**
+
+   After chunk access is array-backed, the per-slice loops are pure CPU work. `Array.Parallel` or row partitioning could help, but do this after fixing scalar access because the current SimpleITK scalar calls are the bigger bottleneck.
+
+Strongest recommendation: first implement `ChunkCache` as bulk copied chunk arrays. That should be the same class of win as the `convolve` change, and it keeps the algorithm intact.
+
