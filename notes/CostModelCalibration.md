@@ -17,6 +17,15 @@ The cost model should estimate runtime and memory from user-visible pipeline str
 - reducer behaviour
 - IO and native-operation costs
 
+For singleton and higher ladder families, make sure the representative user-facing TIFF types are well covered:
+
+- `UInt8`: masks, binary images, labels, and 8-bit grayscale.
+- `UInt16`: common microscopy and synchrotron grayscale TIFF data.
+- `Int32`: representative signed-integer data and label-like intermediate values.
+- `Float32`: high-end microscopy/scientific TIFF data and compact floating-point processing.
+
+Do not restrict StackProcessing itself to these types. The point is calibration emphasis: Probe should strongly cover the common large-image cases while retaining broader type support where the library exposes it. `Float64` remains useful as an explicit high-precision anchor, but it should not accidentally stand in for the normal floating TIFF workflow. Complex Float32 is represented separately as `ComplexFloat32` so FFT-like workflows can model the 8-byte/pixel complex path instead of always widening to `System.Numerics.Complex`/complex Float64.
+
 The model is fitted from measured probe programs. The important design split is:
 
 - `collect` gathers durable measurement evidence.

@@ -146,6 +146,7 @@ let wrapperCoverage =
       Expect.equal (getBytesPerSItkComponent PixelIDValueEnum.sitkLabelUInt16) 2u "LabelUInt16 components should be two bytes."
       Expect.equal (getBytesPerSItkComponent PixelIDValueEnum.sitkLabelUInt32) 4u "LabelUInt32 components should be four bytes."
       Expect.equal (getBytesPerSItkComponent PixelIDValueEnum.sitkLabelUInt64) 8u "LabelUInt64 components should be eight bytes."
+      Expect.equal (ImageFacts.memoryBytesForType<ComplexFloat32> 6UL 1u) 48UL "ComplexFloat32 memory estimates should use eight bytes per pixel."
       Expect.equal (ImageFacts.memoryBytesForType<Complex> 6UL 1u) 96UL "Complex memory estimates should use sixteen bytes per pixel."
 
     testCase "complex array conversions" <| fun _ ->
@@ -164,7 +165,7 @@ let wrapperCoverage =
 
       try
         fft.toFileComplex tmp
-        Expect.equal (toComplexFloat32 [ 1.0f; -2.0f ]) (Complex(1.0, -2.0)) "toComplexFloat32 should map two components to real/imaginary parts."
+        Expect.equal (toComplexFloat32 [ 1.0f; -2.0f ]) (ComplexFloat32(1.0f, -2.0f)) "toComplexFloat32 should map two components to real/imaginary parts."
         Expect.equal (toComplexFloat64 [ 3.0 ]) (Complex(3.0, 0.0)) "toComplexFloat64 should default a missing imaginary component to zero."
         Expect.equal (toComplexFloat64 []) Complex.Zero "toComplexFloat64 should default an empty value to zero."
         Expect.throws (fun () -> toComplexFloat32 [ 1.0f; 2.0f; 3.0f ] |> ignore) "toComplexFloat32 should reject ambiguous component counts."

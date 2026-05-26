@@ -1955,6 +1955,14 @@ let FFTXY (image: Image<'T>) : Image<System.Numerics.Complex> =
     let complexImg = fft.Execute(input)
     Image<System.Numerics.Complex>.ofSimpleITK(complexImg, "FFTXY", image.index)
 
+let FFTXYFloat32 (image: Image<'T>) : Image<ComplexFloat32> =
+    if image.GetDimensions() <> 2u then
+        failwith $"FFTXYFloat32: image must be 2D, got {image.GetDimensions()}D"
+    let input = ofCastItk<float32> (image.toSimpleITK())
+    use fft = new itk.simple.ForwardFFTImageFilter()
+    let complexImg = fft.Execute(input)
+    Image<ComplexFloat32>.ofSimpleITK(complexImg, "FFTXYFloat32", image.index)
+
 let private dftLine inverse (line: System.Numerics.Complex[]) =
     let lineLength = line.Length
     let lineLengthFloat = float lineLength
@@ -2022,6 +2030,24 @@ let private directionalDftComplex3D dir inverse (input: System.Numerics.Complex[
 
     output
 
+let private toComplex64 (value: ComplexFloat32) =
+    System.Numerics.Complex(float value.Real, float value.Imaginary)
+
+let private toComplex32 (value: System.Numerics.Complex) =
+    ComplexFloat32(float32 value.Real, float32 value.Imaginary)
+
+let private directionalDftComplexFloat322D dir inverse (input: ComplexFloat32[,]) =
+    input
+    |> Array2D.map toComplex64
+    |> directionalDftComplex2D dir inverse
+    |> Array2D.map toComplex32
+
+let private directionalDftComplexFloat323D dir inverse (input: ComplexFloat32[,,]) =
+    input
+    |> Array3D.map toComplex64
+    |> directionalDftComplex3D dir inverse
+    |> Array3D.map toComplex32
+
 // Fourier transform a 3d image along a specified axis direction
 let directionalFFT (dir: uint) (image: Image<'T>) : Image<System.Numerics.Complex> =
     let dims = image.GetDimensions()
@@ -2042,6 +2068,25 @@ let directionalFFT (dir: uint) (image: Image<'T>) : Image<System.Numerics.Comple
     | _ ->
         failwith $"directionalFFT: only 2D and 3D images are supported, got {dims}D"
 
+let directionalFFTFloat32 (dir: uint) (image: Image<'T>) : Image<ComplexFloat32> =
+    let dims = image.GetDimensions()
+    if dir >= dims then
+        failwith $"directionalFFTFloat32: dir={dir} is out of range for {dims}D image"
+    let input = ofCastItk<float32> (image.toSimpleITK())
+    let inputImage = Image<float32>.ofSimpleITK(input, "directionalFFTFloat32Input", image.index)
+
+    match dims with
+    | 2u ->
+        let input = inputImage.toArray2D() |> Array2D.map (fun value -> ComplexFloat32(value, 0.0f))
+        let output = directionalDftComplexFloat322D dir false input
+        Image<ComplexFloat32>.ofComplexFloat32Array2D(output, "directionalFFTFloat32", image.index)
+    | 3u ->
+        let input = inputImage.toArray3D() |> Array3D.map (fun value -> ComplexFloat32(value, 0.0f))
+        let output = directionalDftComplexFloat323D dir false input
+        Image<ComplexFloat32>.ofComplexFloat32Array3D(output, "directionalFFTFloat32", image.index)
+    | _ ->
+        failwith $"directionalFFTFloat32: only 2D and 3D images are supported, got {dims}D"
+
 let directionalFFTComplex (dir: uint) (inverse: bool) (image: Image<System.Numerics.Complex>) : Image<System.Numerics.Complex> =
     let dims = image.GetDimensions()
     if dir >= dims then
@@ -2057,6 +2102,21 @@ let directionalFFTComplex (dir: uint) (inverse: bool) (image: Image<System.Numer
     | _ ->
         failwith $"directionalFFTComplex: only 2D and 3D images are supported, got {dims}D"
 
+let directionalFFTComplexFloat32 (dir: uint) (inverse: bool) (image: Image<ComplexFloat32>) : Image<ComplexFloat32> =
+    let dims = image.GetDimensions()
+    if dir >= dims then
+        failwith $"directionalFFTComplexFloat32: dir={dir} is out of range for {dims}D image"
+
+    match dims with
+    | 2u ->
+        let output = image.toComplexFloat32Array2D() |> directionalDftComplexFloat322D dir inverse
+        Image<ComplexFloat32>.ofComplexFloat32Array2D(output, "directionalFFTComplexFloat32", image.index)
+    | 3u ->
+        let output = image.toComplexFloat32Array3D() |> directionalDftComplexFloat323D dir inverse
+        Image<ComplexFloat32>.ofComplexFloat32Array3D(output, "directionalFFTComplexFloat32", image.index)
+    | _ ->
+        failwith $"directionalFFTComplexFloat32: only 2D and 3D images are supported, got {dims}D"
+
 let inverseFFTXY (image: Image<System.Numerics.Complex>) : Image<System.Numerics.Complex> =
     if image.GetDimensions() <> 2u then
         failwith $"inverseFFTXY: image must be 2D, got {image.GetDimensions()}D"
@@ -2065,6 +2125,15 @@ let inverseFFTXY (image: Image<System.Numerics.Complex>) : Image<System.Numerics
     |> directionalDftComplex2D 0u true
     |> directionalDftComplex2D 1u true
     |> fun recovered -> Image<System.Numerics.Complex>.ofComplexArray2D(recovered, "inverseFFTXY", image.index)
+
+let inverseFFTXYFloat32 (image: Image<ComplexFloat32>) : Image<ComplexFloat32> =
+    if image.GetDimensions() <> 2u then
+        failwith $"inverseFFTXYFloat32: image must be 2D, got {image.GetDimensions()}D"
+
+    image.toComplexFloat32Array2D()
+    |> directionalDftComplexFloat322D 0u true
+    |> directionalDftComplexFloat322D 1u true
+    |> fun recovered -> Image<ComplexFloat32>.ofComplexFloat32Array2D(recovered, "inverseFFTXYFloat32", image.index)
 
 let realPart (image: Image<System.Numerics.Complex>) : Image<float> =
     match image.GetDimensions() with
@@ -2078,6 +2147,19 @@ let realPart (image: Image<System.Numerics.Complex>) : Image<float> =
         |> fun real -> Image<float>.ofArray3D(real, "realPart", image.index)
     | dims ->
         failwith $"realPart: only 2D and 3D images are supported, got {dims}D"
+
+let realPartFloat32 (image: Image<ComplexFloat32>) : Image<float32> =
+    match image.GetDimensions() with
+    | 2u ->
+        let values = image.toComplexFloat32Array2D()
+        Array2D.init (values.GetLength 0) (values.GetLength 1) (fun x y -> values[x, y].Real)
+        |> fun real -> Image<float32>.ofArray2D(real, "realPartFloat32", image.index)
+    | 3u ->
+        let values = image.toComplexFloat32Array3D()
+        Array3D.init (values.GetLength 0) (values.GetLength 1) (values.GetLength 2) (fun x y z -> values[x, y, z].Real)
+        |> fun real -> Image<float32>.ofArray3D(real, "realPartFloat32", image.index)
+    | dims ->
+        failwith $"realPartFloat32: only 2D and 3D images are supported, got {dims}D"
 
 let inverseFFTXYReal (image: Image<System.Numerics.Complex>) : Image<float> =
     if image.GetDimensions() <> 2u then
@@ -2109,3 +2191,25 @@ let shiftFFT (image: Image<System.Numerics.Complex>) : Image<System.Numerics.Com
         |> fun output -> Image<System.Numerics.Complex>.ofComplexArray3D(output, "shiftFFT", image.index)
     | dims ->
         failwith $"shiftFFT: only 2D and 3D images are supported, got {dims}D"
+
+let shiftFFTFloat32 (image: Image<ComplexFloat32>) : Image<ComplexFloat32> =
+    match image.GetDimensions() with
+    | 2u ->
+        let input = image.toComplexFloat32Array2D()
+        let width = input.GetLength 0
+        let height = input.GetLength 1
+        Array2D.init width height (fun x y ->
+            input[(x + width - width / 2) % width, (y + height - height / 2) % height])
+        |> fun output -> Image<ComplexFloat32>.ofComplexFloat32Array2D(output, "shiftFFTFloat32", image.index)
+    | 3u ->
+        let input = image.toComplexFloat32Array3D()
+        let width = input.GetLength 0
+        let height = input.GetLength 1
+        let depth = input.GetLength 2
+        Array3D.init width height depth (fun x y z ->
+            input[(x + width - width / 2) % width,
+                  (y + height - height / 2) % height,
+                  (z + depth - depth / 2) % depth])
+        |> fun output -> Image<ComplexFloat32>.ofComplexFloat32Array3D(output, "shiftFFTFloat32", image.index)
+    | dims ->
+        failwith $"shiftFFTFloat32: only 2D and 3D images are supported, got {dims}D"

@@ -1,5 +1,11 @@
 namespace FSharp
 module Image
+[<Struct>]
+type ComplexFloat32 =
+    new: real: float32 * imaginary: float32 -> ComplexFloat32
+    val Real: float32
+    val Imaginary: float32
+    static member Zero: ComplexFloat32
 module InternalHelpers =
     val toVectorUInt8: lst: uint8 list -> itk.simple.VectorUInt8
     val toVectorInt8: lst: int8 list -> itk.simple.VectorInt8
@@ -11,7 +17,7 @@ module InternalHelpers =
     val toVectorInt64: lst: int64 list -> itk.simple.VectorInt64
     val toVectorFloat32: lst: float32 list -> itk.simple.VectorFloat
     val toVectorFloat64: lst: float list -> itk.simple.VectorDouble
-    val toComplexFloat32: lst: float32 list -> System.Numerics.Complex
+    val toComplexFloat32: lst: float32 list -> ComplexFloat32
     val toComplexFloat64: lst: float list -> System.Numerics.Complex
     val fromItkVector: f: ('a -> 'b) -> v: 'a seq -> 'b list
     val fromVectorUInt8: v: itk.simple.VectorUInt8 -> uint8 list
@@ -187,11 +193,20 @@ type Image<'T when 'T: equality> =
       ofComplexArray3D: arr: System.Numerics.Complex array3d * ?name: string *
                         ?index: int -> Image<System.Numerics.Complex>
     static member
+      ofComplexFloat32Array2D: arr: ComplexFloat32 array2d * ?name: string *
+                               ?index: int -> Image<ComplexFloat32>
+    static member
+      ofComplexFloat32Array3D: arr: ComplexFloat32 array3d * ?name: string *
+                               ?index: int -> Image<ComplexFloat32>
+    static member
       ofFile: filename: string * ?optionalName: string * ?optionalIndex: int ->
                 Image<'T>
     static member
       ofFileComplex: filename: string * ?optionalName: string *
                      ?optionalIndex: int -> Image<System.Numerics.Complex>
+    static member
+      ofFileComplexFloat32: filename: string * ?optionalName: string *
+                            ?optionalIndex: int -> Image<ComplexFloat32>
     static member
       ofFileVector: filename: string * ?optionalName: string *
                     ?optionalIndex: int -> Image<'S list> when 'S: equality
@@ -201,6 +216,10 @@ type Image<'T when 'T: equality> =
       ofImagePairToComplex: realImg: Image<float> ->
                               imagImg: Image<float> ->
                               Image<System.Numerics.Complex>
+    static member
+      ofImagePairToComplexFloat32: realImg: Image<float32> ->
+                                     imagImg: Image<float32> ->
+                                     Image<ComplexFloat32>
     static member
       ofSimpleITK: itkImg: itk.simple.Image * ?optionalName: string *
                    ?optionalIndex: int -> Image<'T>
@@ -248,6 +267,9 @@ type Image<'T when 'T: equality> =
     member toComplex: unit -> Image<System.Numerics.Complex>
     member toComplexArray2D: unit -> System.Numerics.Complex array2d
     member toComplexArray3D: unit -> System.Numerics.Complex array3d
+    member toComplexFloat32: unit -> Image<ComplexFloat32>
+    member toComplexFloat32Array2D: unit -> ComplexFloat32 array2d
+    member toComplexFloat32Array3D: unit -> ComplexFloat32 array3d
     member toFile: filename: string * ?optionalFormat: string -> unit
     member toFileComplex: filename: string * ?optionalFormat: string -> unit
     member toFileVector: filename: string * ?optionalFormat: string -> unit
@@ -802,6 +824,8 @@ val permuteAxes:
 val FFTXY:
   image: Image.Image<'T> -> Image.Image<System.Numerics.Complex>
     when 'T: equality
+val FFTXYFloat32:
+  image: Image.Image<'T> -> Image.Image<Image.ComplexFloat32> when 'T: equality
 val private dftLine:
   inverse: bool ->
     line: System.Numerics.Complex array -> System.Numerics.Complex array
@@ -813,20 +837,44 @@ val private directionalDftComplex3D:
   dir: uint32 ->
     inverse: bool ->
     input: System.Numerics.Complex array3d -> System.Numerics.Complex array3d
+val private toComplex64: value: Image.ComplexFloat32 -> System.Numerics.Complex
+val private toComplex32: value: System.Numerics.Complex -> Image.ComplexFloat32
+val private directionalDftComplexFloat322D:
+  dir: uint32 ->
+    inverse: bool ->
+    input: Image.ComplexFloat32 array2d -> Image.ComplexFloat32 array2d
+val private directionalDftComplexFloat323D:
+  dir: uint32 ->
+    inverse: bool ->
+    input: Image.ComplexFloat32 array3d -> Image.ComplexFloat32 array3d
 val directionalFFT:
   dir: uint -> image: Image.Image<'T> -> Image.Image<System.Numerics.Complex>
+    when 'T: equality
+val directionalFFTFloat32:
+  dir: uint -> image: Image.Image<'T> -> Image.Image<Image.ComplexFloat32>
     when 'T: equality
 val directionalFFTComplex:
   dir: uint ->
     inverse: bool ->
     image: Image.Image<System.Numerics.Complex> ->
     Image.Image<System.Numerics.Complex>
+val directionalFFTComplexFloat32:
+  dir: uint ->
+    inverse: bool ->
+    image: Image.Image<Image.ComplexFloat32> ->
+    Image.Image<Image.ComplexFloat32>
 val inverseFFTXY:
   image: Image.Image<System.Numerics.Complex> ->
     Image.Image<System.Numerics.Complex>
+val inverseFFTXYFloat32:
+  image: Image.Image<Image.ComplexFloat32> -> Image.Image<Image.ComplexFloat32>
 val realPart: image: Image.Image<System.Numerics.Complex> -> Image.Image<float>
+val realPartFloat32:
+  image: Image.Image<Image.ComplexFloat32> -> Image.Image<float32>
 val inverseFFTXYReal:
   image: Image.Image<System.Numerics.Complex> -> Image.Image<float>
 val shiftFFT:
   image: Image.Image<System.Numerics.Complex> ->
     Image.Image<System.Numerics.Complex>
+val shiftFFTFloat32:
+  image: Image.Image<Image.ComplexFloat32> -> Image.Image<Image.ComplexFloat32>

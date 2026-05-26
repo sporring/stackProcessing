@@ -47,6 +47,8 @@ let pixelTypeName<'T> =
     elif t = typeof<int32> || t = typeof<int> then "Int32"
     elif t = typeof<uint64> then "UInt64"
     elif t = typeof<int64> then "Int64"
+    elif t = typeof<Image.ComplexFloat32> then "ComplexFloat32"
+    elif t = typeof<System.Numerics.Complex> then "ComplexFloat64"
     else t.Name
 
 let imageBytes<'T> (nVoxels: uint64) =

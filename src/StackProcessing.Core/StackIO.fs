@@ -38,7 +38,8 @@ let private friendlyScalarTypeName (t: Type) =
     elif t = typeof<int64> then "Int64"
     elif t = typeof<float32> then "Float32"
     elif t = typeof<float> then "Float64"
-    elif t = typeof<System.Numerics.Complex> then "Complex"
+    elif t = typeof<Image.ComplexFloat32> then "ComplexFloat32"
+    elif t = typeof<System.Numerics.Complex> then "ComplexFloat64"
     else t.Name
 
 let private friendlyImageTypeName (image: Image<'T>) =
@@ -1314,7 +1315,11 @@ let getChunkFilename (path: string) (suffix: string) (i: int) (j: int) (k: int) 
 
 let _readChunk<'T when 'T: equality>  (inputDir: string) (suffix: string) i j k = 
     let filename = getChunkFilename inputDir suffix i j k
-    if typeof<'T> = typeof<System.Numerics.Complex> then
+    if typeof<'T> = typeof<Image.ComplexFloat32> then
+        Image<Image.ComplexFloat32>.ofFileComplexFloat32 filename
+        |> box
+        |> unbox<Image<'T>>
+    elif typeof<'T> = typeof<System.Numerics.Complex> then
         Image<System.Numerics.Complex>.ofFileComplex filename
         |> box
         |> unbox<Image<'T>>
@@ -1341,7 +1346,7 @@ let _readSlabStacked<'T when 'T: equality>  (inputDir: string) (suffix: string) 
             [chunkInfo.size[0]; chunkInfo.size[1]; lastSz], [chunkInfo.chunks[0]; chunkInfo.chunks[1]; 1]
 
     let numberOfComponents =
-        if typeof<'T> = typeof<System.Numerics.Complex> then 1u
+        if typeof<'T> = typeof<System.Numerics.Complex> || typeof<'T> = typeof<Image.ComplexFloat32> then 1u
         else chunkInfo.topLeftInfo.numberOfComponents
 
     let slab = Image<'T>(sz |> List.map uint, numberOfComponents)

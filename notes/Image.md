@@ -16,7 +16,7 @@ The project targets `net10.0`, references the bundled SimpleITK C# bindings from
 
 `Image<'T>` is the image object that flows through StackProcessing stages. It wraps an `itk.simple.Image` and adds:
 
-- a static F# pixel type, such as `uint8`, `uint16`, `float32`, `float`, or `System.Numerics.Complex`
+- a static F# pixel type, such as `uint8`, `uint16`, `float32`, `float`, `ComplexFloat32`, or `System.Numerics.Complex`
 - a `Name`
 - a mutable slice/volume `index`
 - reference counting used by StackProcessing streaming stages
@@ -71,6 +71,7 @@ The project maps F# types to SimpleITK pixel IDs using `InternalHelpers.fromType
 - `uint`, `int`
 - `uint64`, `int64`
 - `float32`, `float`
+- `ComplexFloat32`
 - `System.Numerics.Complex`
 
 Vector-valued images are represented as `Image<'T list>` where supported by the conversion helpers.
@@ -152,12 +153,19 @@ StackProcessing.Core lifts many of these functions into streaming `Stage`s, addi
 
 Complex images are supported with:
 
+- `Image<ComplexFloat32>`, mapped to SimpleITK `sitkComplexFloat32`
 - `Image<System.Numerics.Complex>`
+- `ofComplexFloat32Array2D`
+- `ofComplexFloat32Array3D`
 - `ofComplexArray2D`
 - `ofComplexArray3D`
+- `toComplexFloat32Array2D`
+- `toComplexFloat32Array3D`
 - `toComplexArray2D`
 - `toComplexArray3D`
 - `Re`, `Im`, `modulus`, `arg`, `toComplex`, `polarToComplex`, `conjugate`
+
+`System.Numerics.Complex` is double precision and maps to SimpleITK `sitkComplexFloat64`, so it uses 16 bytes per pixel. `ComplexFloat32` stores real and imaginary parts as `float32` and maps to `sitkComplexFloat32`, so it uses 8 bytes per pixel. The Float32 complex path is important for large TIFF and FFT-like workflows where widening to complex Float64 would double memory traffic and working-set size.
 
 Vector images are supported through `Image<'T list>` helpers, including image-list zip/unzip conversions. This is useful for gradient-vector and multi-component operations, while keeping the main scalar image path simple.
 
@@ -219,4 +227,3 @@ Use SimpleITK filter wrappers for whole-image operations. Use bulk array convers
 The most important practical rule:
 
 > Cross the SimpleITK boundary once per image or slab when possible, not once per pixel.
-

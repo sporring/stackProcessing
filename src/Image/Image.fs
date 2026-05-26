@@ -3,6 +3,13 @@ open FSharp.Collections
 open System
 open System.Runtime.InteropServices
 
+[<Struct>]
+type ComplexFloat32 =
+    val Real: float32
+    val Imaginary: float32
+    new(real: float32, imaginary: float32) = { Real = real; Imaginary = imaginary }
+    static member Zero = ComplexFloat32(0.0f, 0.0f)
+
 module InternalHelpers = // internal
     let toVectorUInt8 (lst: uint8 list)     = new itk.simple.VectorUInt8(lst)
     let toVectorInt8 (lst: int8 list)       = new itk.simple.VectorInt8(lst)
@@ -16,9 +23,9 @@ module InternalHelpers = // internal
     let toVectorFloat64 (lst: float list) = new itk.simple.VectorDouble(lst)
     let toComplexFloat32 (lst: float32 list) =
         match lst with
-        | [re; im] -> System.Numerics.Complex(float re, float im)
-        | [re] -> System.Numerics.Complex(float re, 0.0)
-        | [] -> System.Numerics.Complex(0.0, 0.0)
+        | [re; im] -> ComplexFloat32(re, im)
+        | [re] -> ComplexFloat32(re, 0.0f)
+        | [] -> ComplexFloat32.Zero
         | _ -> invalidArg "lst" "Expected 0, 1, or 2 elements for complex value."
     let toComplexFloat64 (lst: float list) =
         match lst with
@@ -52,6 +59,7 @@ module InternalHelpers = // internal
         elif t = typeof<int64> then itk.simple.PixelIDValueEnum.sitkInt64
         elif t = typeof<float32> then itk.simple.PixelIDValueEnum.sitkFloat32
         elif t = typeof<float> then itk.simple.PixelIDValueEnum.sitkFloat64
+        elif t = typeof<ComplexFloat32> then itk.simple.PixelIDValueEnum.sitkComplexFloat32
         elif t = typeof<System.Numerics.Complex> then itk.simple.PixelIDValueEnum.sitkComplexFloat64
         elif t = typeof<uint8 list> then itk.simple.PixelIDValueEnum.sitkVectorUInt8
         elif t = typeof<int8 list> then itk.simple.PixelIDValueEnum.sitkVectorInt8
@@ -150,7 +158,7 @@ module InternalHelpers = // internal
 
     let ofCastItk<'T> (itkImg: itk.simple.Image) : itk.simple.Image =
         let expectedId = fromType<'T>
-        if typeof<'T> = typeof<System.Numerics.Complex> && isComplexCompatibleImage itkImg then
+        if (typeof<'T> = typeof<System.Numerics.Complex> || typeof<'T> = typeof<ComplexFloat32>) && isComplexCompatibleImage itkImg then
             new itk.simple.Image(itkImg)
         elif itkImg.GetPixelID() = expectedId then
             new itk.simple.Image(itkImg) // Preserve independent wrapper ownership when no cast is needed.
@@ -236,7 +244,7 @@ module InternalHelpers = // internal
         elif    t = fromType<int64>                   then box (img.GetPixelAsInt64   u)
         elif    t = fromType<float32>                 then box (img.GetPixelAsFloat   u)
         elif    t = fromType<float>                   then box (img.GetPixelAsDouble  u)
-        elif    t = fromType<System.Numerics.Complex>                 then
+        elif    t = fromType<ComplexFloat32> || t = fromType<System.Numerics.Complex> then
             let pid = img.GetPixelID()
             if not (isComplexPixelId pid) then
                 failwithf "Unsupported complex backing pixel type: %O" pid
@@ -252,7 +260,10 @@ module InternalHelpers = // internal
                     failwithf "Unsupported real/imaginary complex component type: %O" componentPid
             let re = realFilter.Execute(img) |> getComponent
             let im = imagFilter.Execute(img) |> getComponent
-            System.Numerics.Complex(re, im) |> box
+            if t = fromType<ComplexFloat32> then
+                ComplexFloat32(float32 re, float32 im) |> box
+            else
+                System.Numerics.Complex(re, im) |> box
         elif    t = fromType<uint8   list>            then box (img.GetPixelAsVectorUInt8   u |> fromVectorUInt8)
         elif    t = fromType<int8    list>            then box (img.GetPixelAsVectorInt8    u |> fromVectorInt8)
         elif    t = fromType<uint16  list>            then box (img.GetPixelAsVectorUInt16  u |> fromVectorUInt16)
@@ -279,6 +290,7 @@ module InternalHelpers = // internal
         elif    t = fromType<int64>                   then box 0L
         elif    t = fromType<float32>                 then box 0.0f
         elif    t = fromType<float>                   then box 0.0
+        elif    t = fromType<ComplexFloat32>          then box ComplexFloat32.Zero
         elif    t = fromType<System.Numerics.Complex> then box (System.Numerics.Complex(0.0, 0.0))
         elif    t = fromType<uint8   list>            then box (List.replicate ncomp 0uy)
         elif    t = fromType<int8    list>            then box (List.replicate ncomp 0u)
@@ -336,6 +348,11 @@ module InternalHelpers = // internal
         elif    t = fromType<int64>                   then box ((unbox acc : int64)   + (unbox k : int64)   * (unbox p : int64))
         elif    t = fromType<float32>                 then box ((unbox acc : float32) + (unbox k : float32) * (unbox p : float32))
         elif    t = fromType<float>                   then box ((unbox acc : float)   + (unbox k : float)   * (unbox p : float))
+        elif    t = fromType<ComplexFloat32>          then
+            let acc = unbox<ComplexFloat32> acc
+            let k = unbox<ComplexFloat32> k
+            let p = unbox<ComplexFloat32> p
+            box (ComplexFloat32(acc.Real + k.Real * p.Real - k.Imaginary * p.Imaginary, acc.Imaginary + k.Real * p.Imaginary + k.Imaginary * p.Real))
         elif    t = fromType<System.Numerics.Complex> then box ((unbox acc : System.Numerics.Complex) + (unbox k : System.Numerics.Complex) * (unbox p : System.Numerics.Complex))
         else failwithf "mulAdd: unsupported pixel type %A" t
 
@@ -361,6 +378,7 @@ let getBytesPerComponent t =
     elif t = typeof<uint64 list> then 8u
     elif t = typeof<int64 list> then 8u
     elif t = typeof<float list> then 8u
+    elif t = typeof<ComplexFloat32> then 8u
     elif t = typeof<System.Numerics.Complex> then 16u
     else 8u // guessing here
 
@@ -507,7 +525,7 @@ let mutable private debug = false
 [<StructuredFormatDisplay("{Display}")>] // Prevent fsi printing information about its members such as img
 type Image<'T when 'T : equality>(sz: uint list, ?optionalNumberComponents: uint, ?optionalName: string, ?optionalIndex: int, ?optionalQuiet: bool) =
     do if sz.Length > 3 then invalidArg "sz" $"Image supports at most 3 dimensions; got {sz.Length}."
-    let isComplexType = typeof<'T> = typeof<System.Numerics.Complex>
+    let isComplexType = typeof<'T> = typeof<System.Numerics.Complex> || typeof<'T> = typeof<ComplexFloat32>
     let numberCompDefault = 1u
     let numberComp = defaultArg optionalNumberComponents numberCompDefault
     do if isComplexType && numberComp <> 1u then invalidArg "optionalNumberComponents" "Complex pixel type requires 1 native component."
@@ -609,7 +627,8 @@ type Image<'T when 'T : equality>(sz: uint list, ?optionalNumberComponents: uint
         let index = defaultArg optionalIndex 0
 
         let itkImgCast = ofCastItk<'T> itkImg |> canonicalizeSimpleItkImage
-        if typeof<'T> = typeof<System.Numerics.Complex> && not (isComplexCompatibleImage itkImgCast) then
+        let isComplexType = typeof<'T> = typeof<System.Numerics.Complex> || typeof<'T> = typeof<ComplexFloat32>
+        if isComplexType && not (isComplexCompatibleImage itkImgCast) then
             invalidArg "itkImg" "Complex pixel type requires a native complex image."
         let img = new Image<'T>([0u;0u],itkImgCast.GetNumberOfComponentsPerPixel(),name,index, true)
 
@@ -619,7 +638,7 @@ type Image<'T when 'T : equality>(sz: uint list, ?optionalNumberComponents: uint
         img
 
     member this.toSimpleITK () : itk.simple.Image =
-        if typeof<'T> = typeof<System.Numerics.Complex> && not (isComplexCompatibleImage img) then
+        if isComplexType && not (isComplexCompatibleImage img) then
             invalidOp "Complex pixel type requires a native complex image."
         img
 
@@ -639,6 +658,7 @@ type Image<'T when 'T : equality>(sz: uint list, ?optionalNumberComponents: uint
     member this.toInt64 ()   : Image<int64>   = Image<int64>.ofSimpleITK(this.toSimpleITK(),"toInt64",this.index)
     member this.toFloat32 () : Image<float32> = Image<float32>.ofSimpleITK(this.toSimpleITK(),"toFloat32",this.index)
     member this.toFloat ()   : Image<float>   = Image<float>.ofSimpleITK(this.toSimpleITK(),"toFloat",this.index)
+    member this.toComplexFloat32 () : Image<ComplexFloat32> = Image<ComplexFloat32>.ofSimpleITK(this.toSimpleITK(),"toComplexFloat32",this.index)
     member this.toComplex () : Image<System.Numerics.Complex> = Image<System.Numerics.Complex>.ofSimpleITK(this.toSimpleITK(),"toComplex",this.index)
     member this.toVectorUInt8 ()   : Image<uint8 list>   = Image<uint8 list>.ofSimpleITK(this.toSimpleITK(),"toVectorUInt8",this.index)
     member this.toVectorInt8 ()    : Image<int8 list>    = Image<int8 list>.ofSimpleITK(this.toSimpleITK(),"toVectorInt8",this.index)
@@ -835,6 +855,30 @@ type Image<'T when 'T : equality>(sz: uint list, ?optionalNumberComponents: uint
         imagImg.decRefCount()
         result
 
+    static member ofComplexFloat32Array2D (arr: ComplexFloat32[,], ?name:string, ?index:int) : Image<ComplexFloat32> =
+        let _name = defaultArg name "ofComplexFloat32Array2D"
+        let _index = defaultArg index 0
+        let real = Array2D.init (arr.GetLength 0) (arr.GetLength 1) (fun x y -> arr[x, y].Real)
+        let imag = Array2D.init (arr.GetLength 0) (arr.GetLength 1) (fun x y -> arr[x, y].Imaginary)
+        let realImg = Image<float32>.ofArray2D(real, $"{_name}.Re", _index)
+        let imagImg = Image<float32>.ofArray2D(imag, $"{_name}.Im", _index)
+        let result = Image<float32>.ofImagePairToComplexFloat32 realImg imagImg
+        realImg.decRefCount()
+        imagImg.decRefCount()
+        result
+
+    static member ofComplexFloat32Array3D (arr: ComplexFloat32[,,], ?name:string, ?index:int) : Image<ComplexFloat32> =
+        let _name = defaultArg name "ofComplexFloat32Array3D"
+        let _index = defaultArg index 0
+        let real = Array3D.init (arr.GetLength 0) (arr.GetLength 1) (arr.GetLength 2) (fun x y z -> arr[x, y, z].Real)
+        let imag = Array3D.init (arr.GetLength 0) (arr.GetLength 1) (arr.GetLength 2) (fun x y z -> arr[x, y, z].Imaginary)
+        let realImg = Image<float32>.ofArray3D(real, $"{_name}.Re", _index)
+        let imagImg = Image<float32>.ofArray3D(imag, $"{_name}.Im", _index)
+        let result = Image<float32>.ofImagePairToComplexFloat32 realImg imagImg
+        realImg.decRefCount()
+        imagImg.decRefCount()
+        result
+
     static member ofComplexArray3D (arr: System.Numerics.Complex[,,], ?name:string, ?index:int) : Image<System.Numerics.Complex> =
         let _name = defaultArg name "ofComplexArray3D"
         let _index = defaultArg index 0
@@ -872,6 +916,22 @@ type Image<'T when 'T : equality>(sz: uint list, ?optionalNumberComponents: uint
         realImg.decRefCount()
         imagImg.decRefCount()
         Array2D.init (real.GetLength 0) (real.GetLength 1) (fun x y -> System.Numerics.Complex(real[x, y], imag[x, y]))
+
+    member this.toComplexFloat32Array2D () : ComplexFloat32[,] =
+        if typeof<'T> <> typeof<ComplexFloat32> then
+            invalidOp "toComplexFloat32Array2D: image pixel type must be ComplexFloat32."
+        if this.GetDimensions() <> 2u then
+            invalidOp $"toComplexFloat32Array2D: image must be 2D, got {this.GetDimensions()}D."
+
+        use realItk = extractComplexRealImage this.Image
+        use imagItk = extractComplexImagImage this.Image
+        let realImg = Image<float32>.ofSimpleITK(realItk, "toComplexFloat32Array2D.Re", this.index)
+        let imagImg = Image<float32>.ofSimpleITK(imagItk, "toComplexFloat32Array2D.Im", this.index)
+        let real = realImg.toArray2D()
+        let imag = imagImg.toArray2D()
+        realImg.decRefCount()
+        imagImg.decRefCount()
+        Array2D.init (real.GetLength 0) (real.GetLength 1) (fun x y -> ComplexFloat32(real[x, y], imag[x, y]))
 
     static member toArray3DVector<'S when 'S: equality> (img: Image<'S list>) : 'S[,,] =
         if img.GetDimensions() <> 2u then
@@ -929,6 +989,22 @@ type Image<'T when 'T : equality>(sz: uint list, ?optionalNumberComponents: uint
         imagImg.decRefCount()
         Array3D.init (real.GetLength 0) (real.GetLength 1) (real.GetLength 2) (fun x y z -> System.Numerics.Complex(real[x, y, z], imag[x, y, z]))
 
+    member this.toComplexFloat32Array3D () : ComplexFloat32[,,] =
+        if typeof<'T> <> typeof<ComplexFloat32> then
+            invalidOp "toComplexFloat32Array3D: image pixel type must be ComplexFloat32."
+        if this.GetDimensions() <> 3u then
+            invalidOp $"toComplexFloat32Array3D: image must be 3D, got {this.GetDimensions()}D."
+
+        use realItk = extractComplexRealImage this.Image
+        use imagItk = extractComplexImagImage this.Image
+        let realImg = Image<float32>.ofSimpleITK(realItk, "toComplexFloat32Array3D.Re", this.index)
+        let imagImg = Image<float32>.ofSimpleITK(imagItk, "toComplexFloat32Array3D.Im", this.index)
+        let real = realImg.toArray3D()
+        let imag = imagImg.toArray3D()
+        realImg.decRefCount()
+        imagImg.decRefCount()
+        Array3D.init (real.GetLength 0) (real.GetLength 1) (real.GetLength 2) (fun x y z -> ComplexFloat32(real[x, y, z], imag[x, y, z]))
+
     // Make a multicomponent image of a list
     static member ofImageList (images: Image<'S> list) : Image<'S list> =
         match images with
@@ -954,6 +1030,13 @@ type Image<'T when 'T : equality>(sz: uint list, ?optionalNumberComponents: uint
         use filter = new itk.simple.RealAndImaginaryToComplexImageFilter()
         Image<System.Numerics.Complex>.ofSimpleITK(filter.Execute(realImg.toSimpleITK(), imagImg.toSimpleITK()), "ofImagePairToComplex", realImg.index)
 
+    static member ofImagePairToComplexFloat32 (realImg: Image<float32>) (imagImg: Image<float32>) : Image<ComplexFloat32> =
+        if realImg.GetSize() <> imagImg.GetSize() then
+            invalidArg "imagImg" $"Image dimensions must match: {realImg.GetSize()} vs {imagImg.GetSize()}"
+
+        use filter = new itk.simple.RealAndImaginaryToComplexImageFilter()
+        Image<ComplexFloat32>.ofSimpleITK(filter.Execute(realImg.toSimpleITK(), imagImg.toSimpleITK()), "ofImagePairToComplexFloat32", realImg.index)
+
     member this.toImageList () : Image<'S> list =
         use filter = new itk.simple.VectorIndexSelectionCastImageFilter()
         let n = this.Image.GetNumberOfComponentsPerPixel() |> int
@@ -972,7 +1055,7 @@ type Image<'T when 'T : equality>(sz: uint list, ?optionalNumberComponents: uint
         let itkImg = reader.Execute()
         let numComp = itkImg.GetNumberOfComponentsPerPixel()
         let tType = typeof<'T>
-        let isComplexType = tType = typeof<System.Numerics.Complex>
+        let isComplexType = tType = typeof<System.Numerics.Complex> || tType = typeof<ComplexFloat32>
         let isVectorType =
             (tType.IsGenericType && tType.GetGenericTypeDefinition() = typedefof<list<_>>)
             || tType.IsArray
@@ -988,10 +1071,20 @@ type Image<'T when 'T : equality>(sz: uint list, ?optionalNumberComponents: uint
                 vector.decRefCount()
                 parts |> List.iter (fun part -> part.decRefCount())
                 failwithf "Pixel type '%O' expects native complex or a vector with real and imaginary components, but image has %d component(s)." tType n
-            let complex = Image<float>.ofImagePairToComplex parts[0] parts[1]
+            let complex =
+                if tType = typeof<ComplexFloat32> then
+                    let real = parts[0].toFloat32()
+                    let imag = parts[1].toFloat32()
+                    try
+                        Image<float32>.ofImagePairToComplexFloat32 real imag |> box
+                    finally
+                        real.decRefCount()
+                        imag.decRefCount()
+                else
+                    Image<float>.ofImagePairToComplex parts[0] parts[1] |> box
             vector.decRefCount()
             parts |> List.iter (fun part -> part.decRefCount())
-            complex |> box |> unbox<Image<'T>>
+            complex |> unbox<Image<'T>>
         | true, _, n ->
             failwithf "Pixel type '%O' expects native complex or a vector with real and imaginary components, but got %O with %d component(s)." tType (itkImg.GetPixelID()) n
         | false, true, n when n < 2u ->
@@ -1016,6 +1109,9 @@ type Image<'T when 'T : equality>(sz: uint list, ?optionalNumberComponents: uint
     static member ofFileComplex (filename: string, ?optionalName: string, ?optionalIndex: int) : Image<System.Numerics.Complex> =
         Image<System.Numerics.Complex>.ofFile(filename, ?optionalName = optionalName, ?optionalIndex = optionalIndex)
 
+    static member ofFileComplexFloat32 (filename: string, ?optionalName: string, ?optionalIndex: int) : Image<ComplexFloat32> =
+        Image<ComplexFloat32>.ofFile(filename, ?optionalName = optionalName, ?optionalIndex = optionalIndex)
+
     member this.toFile(filename: string, ?optionalFormat: string) =
         use writer = new itk.simple.ImageFileWriter()
         writer.SetFileName(filename)
@@ -1034,8 +1130,8 @@ type Image<'T when 'T : equality>(sz: uint list, ?optionalNumberComponents: uint
         this.toFile(filename, ?optionalFormat = optionalFormat)
 
     member this.toFileComplex(filename: string, ?optionalFormat: string) =
-        if typeof<'T> <> typeof<System.Numerics.Complex> then
-            failwith "toFileComplex: image pixel type must be System.Numerics.Complex."
+        if typeof<'T> <> typeof<System.Numerics.Complex> && typeof<'T> <> typeof<ComplexFloat32> then
+            failwith "toFileComplex: image pixel type must be System.Numerics.Complex or ComplexFloat32."
         if not (isComplexCompatibleImage this.Image) then
             failwithf "toFileComplex: expected a native complex image, got %O with %d component(s)." (this.Image.GetPixelID()) (this.GetNumberOfComponentsPerPixel())
         this.toFile(filename, ?optionalFormat = optionalFormat)

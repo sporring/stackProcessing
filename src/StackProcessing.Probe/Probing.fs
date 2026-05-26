@@ -1509,8 +1509,20 @@ let private bottomUpGraphTemplates config =
         readNodeFromWithSuffix (typedInput pixelType) pixelType (bottomUpIoSuffix pixelType)
 
     let readUInt8 = readTyped "UInt8"
+    let readUInt16 = readTyped "UInt16"
+    let readInt32 = readTyped "Int32"
     let readFloat = readTyped "Float64"
     let readFloat32 = readTyped "Float32"
+
+    let coreScalarTypes =
+        [ "uint8", "UInt8", readUInt8, "128.0", "2"
+          "uint16", "UInt16", readUInt16, "32768.0", "2"
+          "int32", "Int32", readInt32, "128.0", "2"
+          "float32", "Float32", readFloat32, "0.5", "1.25" ]
+
+    let primaryFloatTypes =
+        [ "float32", "Float32", readFloat32
+          "float64", "Float64", readFloat ]
 
     let sourceLayer =
         [| yield emptyTemplate "bottomup-00-empty" "Empty graph for process startup/shutdown intercept."
@@ -1700,16 +1712,58 @@ let private bottomUpGraphTemplates config =
                        "Float64" |]
 
     let simpleUnaryLayer =
-        [| ignoreTemplate $"bottomup-20-cast-float-uint8-ignore-{sizeSuffix}" "Float64 read cast to UInt8 and consumed." [ readFloat; castNode "Float64" "UInt8" ]
-           writeTemplate $"bottomup-21-cast-float-uint8-write-{sizeSuffix}" "Float64 read cast to UInt8 and written." [ readFloat; castNode "Float64" "UInt8" ]
-           ignoreTemplate $"bottomup-22-threshold-uint8-ignore-{sizeSuffix}" "UInt8 read threshold consumed without writing." [ readUInt8; thresholdNode "UInt8" "128.0" ]
-           writeTemplate $"bottomup-23-threshold-uint8-write-{sizeSuffix}" "UInt8 read threshold written." [ readUInt8; thresholdNode "UInt8" "128.0" ]
-           ignoreTemplate $"bottomup-24-imageOpScalar-uint8-ignore-{sizeSuffix}" "UInt8 read multiplied by scalar and consumed." [ readUInt8; "op", "ImageOpScalar", [ "operation", "*"; "type", "UInt8"; "value", "2" ] ]
-           writeTemplate $"bottomup-25-imageOpScalar-uint8-write-{sizeSuffix}" "UInt8 read multiplied by scalar and written." [ readUInt8; "op", "ImageOpScalar", [ "operation", "*"; "type", "UInt8"; "value", "2" ] ]
-           ignoreTemplate $"bottomup-26-imageOpScalar-float-ignore-{sizeSuffix}" "Float64 read shifted by scalar and consumed." [ readFloat; "op", "ImageOpScalar", [ "operation", "+"; "type", "Float64"; "value", "1.0" ] ]
-           writeUInt8Template $"bottomup-27-imageOpScalar-float-write-{sizeSuffix}" "Float64 read shifted, cast, and written." [ readFloat; "op", "ImageOpScalar", [ "operation", "+"; "type", "Float64"; "value", "1.0" ] ] "Float64"
-           ignoreTemplate $"bottomup-28-unarySqrt-float-ignore-{sizeSuffix}" "Float64 read square-rooted and consumed." [ readFloat; "op", "UnaryImageFunction", [ "function", "sqrt" ] ]
-           writeUInt8Template $"bottomup-29-unarySqrt-float-write-{sizeSuffix}" "Float64 read square-rooted, cast, and written." [ readFloat; "op", "UnaryImageFunction", [ "function", "sqrt" ] ] "Float64" |]
+        [| yield ignoreTemplate $"bottomup-20-cast-float32-uint8-ignore-{sizeSuffix}" "Float32 read cast to UInt8 and consumed." [ readFloat32; castNode "Float32" "UInt8" ]
+           yield writeTemplate $"bottomup-21-cast-float32-uint8-write-{sizeSuffix}" "Float32 read cast to UInt8 and written." [ readFloat32; castNode "Float32" "UInt8" ]
+           yield ignoreTemplate $"bottomup-22-cast-uint16-uint8-ignore-{sizeSuffix}" "UInt16 read cast to UInt8 and consumed." [ readUInt16; castNode "UInt16" "UInt8" ]
+           yield writeTemplate $"bottomup-23-cast-uint16-uint8-write-{sizeSuffix}" "UInt16 read cast to UInt8 and written." [ readUInt16; castNode "UInt16" "UInt8" ]
+
+           let mutable index = 24
+           for typeKey, pixelType, read, threshold, scalar in coreScalarTypes do
+               yield
+                   ignoreTemplate
+                       (sprintf "bottomup-%02d-threshold-%s-ignore-%s" index typeKey sizeSuffix)
+                       $"{pixelType} read threshold consumed without writing."
+                       [ read; thresholdNode pixelType threshold ]
+               index <- index + 1
+
+               yield
+                   writeUInt8Template
+                       (sprintf "bottomup-%02d-threshold-%s-write-%s" index typeKey sizeSuffix)
+                       $"{pixelType} read threshold cast and written."
+                       [ read; thresholdNode pixelType threshold ]
+                       "UInt8"
+               index <- index + 1
+
+               yield
+                   ignoreTemplate
+                       (sprintf "bottomup-%02d-imageOpScalar-%s-ignore-%s" index typeKey sizeSuffix)
+                       $"{pixelType} read multiplied by scalar and consumed."
+                       [ read; "op", "ImageOpScalar", [ "operation", "*"; "type", pixelType; "value", scalar ] ]
+               index <- index + 1
+
+               yield
+                   writeUInt8Template
+                       (sprintf "bottomup-%02d-imageOpScalar-%s-write-%s" index typeKey sizeSuffix)
+                       $"{pixelType} read multiplied by scalar, cast, and written."
+                       [ read; "op", "ImageOpScalar", [ "operation", "*"; "type", pixelType; "value", scalar ] ]
+                       pixelType
+               index <- index + 1
+
+           for typeKey, pixelType, read in primaryFloatTypes do
+               yield
+                   ignoreTemplate
+                       (sprintf "bottomup-%02d-unarySqrt-%s-ignore-%s" index typeKey sizeSuffix)
+                       $"{pixelType} read square-rooted and consumed."
+                       [ read; "op", "UnaryImageFunction", [ "function", "sqrt" ] ]
+               index <- index + 1
+
+               yield
+                   writeUInt8Template
+                       (sprintf "bottomup-%02d-unarySqrt-%s-write-%s" index typeKey sizeSuffix)
+                       $"{pixelType} read square-rooted, cast, and written."
+                       [ read; "op", "UnaryImageFunction", [ "function", "sqrt" ] ]
+                       pixelType
+               index <- index + 1 |]
 
     let windowSlabLayer =
         let windowSizes =
@@ -1717,20 +1771,22 @@ let private bottomUpGraphTemplates config =
             |> List.filter (fun windowSize -> windowSize <= config.Shape.Depth)
 
         [| for windowSize in windowSizes do
-               yield ignoreTemplate $"bottomup-20-windowSlab-roundtrip-float-ignore-w{windowSize}-{sizeSuffix}" $"Float64 read through window-to-slab roundtrip with window {windowSize}, then consumed." [ readFloat; windowSlabRoundtripNode "Float64" windowSize ]
-               yield writeUInt8Template $"bottomup-21-windowSlab-roundtrip-float-write-w{windowSize}-{sizeSuffix}" $"Float64 read through window-to-slab roundtrip with window {windowSize}, cast, and written." [ readFloat; windowSlabRoundtripNode "Float64" windowSize ] "Float64"
-               yield ignoreTemplate $"bottomup-22-windowSlab-cast-float-uint8-ignore-w{windowSize}-{sizeSuffix}" $"Float64 read windowed through slab cast to UInt8 with window {windowSize}, then consumed." [ readFloat; windowedCastNode "Float64" "UInt8" windowSize ]
-               yield writeTemplate $"bottomup-23-windowSlab-cast-float-uint8-write-w{windowSize}-{sizeSuffix}" $"Float64 read windowed through slab cast to UInt8 with window {windowSize}, then written." [ readFloat; windowedCastNode "Float64" "UInt8" windowSize ]
+               yield ignoreTemplate $"bottomup-20-windowSlab-roundtrip-float32-ignore-w{windowSize}-{sizeSuffix}" $"Float32 read through window-to-slab roundtrip with window {windowSize}, then consumed." [ readFloat32; windowSlabRoundtripNode "Float32" windowSize ]
+               yield writeUInt8Template $"bottomup-21-windowSlab-roundtrip-float32-write-w{windowSize}-{sizeSuffix}" $"Float32 read through window-to-slab roundtrip with window {windowSize}, cast, and written." [ readFloat32; windowSlabRoundtripNode "Float32" windowSize ] "Float32"
+               yield ignoreTemplate $"bottomup-22-windowSlab-cast-float32-uint8-ignore-w{windowSize}-{sizeSuffix}" $"Float32 read windowed through slab cast to UInt8 with window {windowSize}, then consumed." [ readFloat32; windowedCastNode "Float32" "UInt8" windowSize ]
+               yield writeTemplate $"bottomup-23-windowSlab-cast-float32-uint8-write-w{windowSize}-{sizeSuffix}" $"Float32 read windowed through slab cast to UInt8 with window {windowSize}, then written." [ readFloat32; windowedCastNode "Float32" "UInt8" windowSize ]
                yield ignoreTemplate $"bottomup-24-windowSlab-threshold-uint8-ignore-w{windowSize}-{sizeSuffix}" $"UInt8 read windowed through slab threshold with window {windowSize}, then consumed." [ readUInt8; windowedThresholdNode "UInt8" "128.0" windowSize ]
-               yield writeTemplate $"bottomup-25-windowSlab-threshold-uint8-write-w{windowSize}-{sizeSuffix}" $"UInt8 read windowed through slab threshold with window {windowSize}, then written." [ readUInt8; windowedThresholdNode "UInt8" "128.0" windowSize ] |]
+               yield writeTemplate $"bottomup-25-windowSlab-threshold-uint8-write-w{windowSize}-{sizeSuffix}" $"UInt8 read windowed through slab threshold with window {windowSize}, then written." [ readUInt8; windowedThresholdNode "UInt8" "128.0" windowSize ]
+               yield ignoreTemplate $"bottomup-26-windowSlab-threshold-uint16-ignore-w{windowSize}-{sizeSuffix}" $"UInt16 read windowed through slab threshold with window {windowSize}, then consumed." [ readUInt16; windowedThresholdNode "UInt16" "32768.0" windowSize ]
+               yield writeUInt8Template $"bottomup-27-windowSlab-threshold-uint16-write-w{windowSize}-{sizeSuffix}" $"UInt16 read windowed through slab threshold with window {windowSize}, then cast and written." [ readUInt16; windowedThresholdNode "UInt16" "32768.0" windowSize ] "UInt8" |]
 
     let windowLayer =
         let floatFilters =
-            [ "gauss", "SmoothWGauss", [ "sigma", "3.0"; "outputRegionMode", "None"; "boundaryCondition", "None"; "windowSize", "None" ], "Float64"
-              "median", "SmoothWMedian", [ "type", "Float64"; "radius", "3"; "windowSize", "7" ], "Float64"
-              "gradient", "GradientMagnitude", [ "type", "Float64"; "windowSize", "7" ], "Float64"
-              "laplacian", "Laplacian", [ "type", "Float64"; "windowSize", "7" ], "Float64"
-              "sobel", "SobelEdge", [ "type", "Float64"; "windowSize", "7" ], "Float64" ]
+            [ "gauss", "SmoothWGauss", [ "sigma", "3.0"; "outputRegionMode", "None"; "boundaryCondition", "None"; "windowSize", "None" ]
+              "median", "SmoothWMedian", [ "radius", "3"; "windowSize", "7" ]
+              "gradient", "GradientMagnitude", [ "windowSize", "7" ]
+              "laplacian", "Laplacian", [ "windowSize", "7" ]
+              "sobel", "SobelEdge", [ "windowSize", "7" ] ]
 
         let binaryOps =
             [ "erode", "Erode", [ "radius", "3" ]
@@ -1742,28 +1798,50 @@ let private bottomUpGraphTemplates config =
               "fillSmallHoles", "FillSmallHoles", [ "maximumVolume", "128"; "connectivity", "TwentySix" ] ]
 
         let grayscaleOps =
-            [ "grayErode", "GrayscaleErode", [ "type", "UInt8"; "radius", "3"; "windowSize", "7" ]
-              "grayDilate", "GrayscaleDilate", [ "type", "UInt8"; "radius", "3"; "windowSize", "7" ]
-              "grayOpening", "GrayscaleOpening", [ "type", "UInt8"; "radius", "3"; "windowSize", "7" ]
-              "grayClosing", "GrayscaleClosing", [ "type", "UInt8"; "radius", "3"; "windowSize", "7" ]
-              "blackTopHat", "BlackTopHat", [ "type", "UInt8"; "radius", "3"; "windowSize", "7" ]
-              "whiteTopHat", "WhiteTopHat", [ "type", "UInt8"; "radius", "3"; "windowSize", "7" ]
-              "morphGradient", "MorphologicalGradient", [ "type", "UInt8"; "radius", "3"; "windowSize", "7" ] ]
+            [ "grayErode", "GrayscaleErode", [ "radius", "3"; "windowSize", "7" ]
+              "grayDilate", "GrayscaleDilate", [ "radius", "3"; "windowSize", "7" ]
+              "grayOpening", "GrayscaleOpening", [ "radius", "3"; "windowSize", "7" ]
+              "grayClosing", "GrayscaleClosing", [ "radius", "3"; "windowSize", "7" ]
+              "blackTopHat", "BlackTopHat", [ "radius", "3"; "windowSize", "7" ]
+              "whiteTopHat", "WhiteTopHat", [ "radius", "3"; "windowSize", "7" ]
+              "morphGradient", "MorphologicalGradient", [ "radius", "3"; "windowSize", "7" ] ]
 
-        [| for id, functionId, parameters, outputType in floatFilters do
-               let nodes = [ readFloat; "op", functionId, parameters ]
-               yield ignoreTemplate $"bottomup-30-{id}-float-ignore-{sizeSuffix}" $"Float64 {functionId} consumed without writing." nodes
-               yield writeUInt8Template $"bottomup-31-{id}-float-write-{sizeSuffix}" $"Float64 {functionId} cast and written." nodes outputType
+        [| let mutable index = 30
+           for id, functionId, parameters in floatFilters do
+               for typeKey, pixelType, read in primaryFloatTypes do
+                   let typedParameters = ("type", pixelType) :: parameters
+                   let nodes = [ read; "op", functionId, typedParameters ]
+
+                   yield
+                       ignoreTemplate
+                           (sprintf "bottomup-%02d-%s-%s-ignore-%s" index id typeKey sizeSuffix)
+                           $"{pixelType} {functionId} consumed without writing."
+                           nodes
+                   index <- index + 1
+
+                   yield
+                       writeUInt8Template
+                           (sprintf "bottomup-%02d-%s-%s-write-%s" index id typeKey sizeSuffix)
+                           $"{pixelType} {functionId} cast and written."
+                           nodes
+                           pixelType
+                   index <- index + 1
 
            for id, functionId, parameters in binaryOps do
                let nodes = [ readUInt8; thresholdNode "UInt8" "128.0"; "op", functionId, parameters ]
-               yield ignoreTemplate $"bottomup-32-{id}-uint8-ignore-{sizeSuffix}" $"UInt8 threshold then {functionId} consumed." nodes
-               yield writeTemplate $"bottomup-33-{id}-uint8-write-{sizeSuffix}" $"UInt8 threshold then {functionId} written." nodes
+               yield ignoreTemplate (sprintf "bottomup-%02d-%s-uint8-ignore-%s" index id sizeSuffix) $"UInt8 threshold then {functionId} consumed." nodes
+               index <- index + 1
+               yield writeTemplate (sprintf "bottomup-%02d-%s-uint8-write-%s" index id sizeSuffix) $"UInt8 threshold then {functionId} written." nodes
+               index <- index + 1
 
            for id, functionId, parameters in grayscaleOps do
-               let nodes = [ readUInt8; "op", functionId, parameters ]
-               yield ignoreTemplate $"bottomup-34-{id}-uint8-ignore-{sizeSuffix}" $"UInt8 {functionId} consumed without writing." nodes
-               yield writeTemplate $"bottomup-35-{id}-uint8-write-{sizeSuffix}" $"UInt8 {functionId} written." nodes |]
+               for typeKey, pixelType, read, _, _ in coreScalarTypes do
+                   if pixelType <> "Float32" then
+                       let nodes = [ read; "op", functionId, ("type", pixelType) :: parameters ]
+                       yield ignoreTemplate (sprintf "bottomup-%02d-%s-%s-ignore-%s" index id typeKey sizeSuffix) $"{pixelType} {functionId} consumed without writing." nodes
+                       index <- index + 1
+                       yield writeUInt8Template (sprintf "bottomup-%02d-%s-%s-write-%s" index id typeKey sizeSuffix) $"{pixelType} {functionId} cast and written." nodes pixelType
+                       index <- index + 1 |]
 
     let intensityAndAdditiveLayer =
         [| ignoreTemplate
@@ -1775,41 +1853,41 @@ let private bottomUpGraphTemplates config =
                "UInt8 read plus addSaltAndPepperNoise written."
                [ readUInt8; "noise", "AddSaltAndPepperNoise", [ "type", "UInt8"; "probability", "0.02" ] ]
            ignoreTemplate
-               $"bottomup-42-addShotNoise-float-ignore-{sizeSuffix}"
-               "Float64 read plus addShotNoise consumed without writing."
-               [ readFloat; "noise", "AddShotNoise", [ "type", "Float64"; "scale", "2.0" ] ]
+               $"bottomup-42-addShotNoise-float32-ignore-{sizeSuffix}"
+               "Float32 read plus addShotNoise consumed without writing."
+               [ readFloat32; "noise", "AddShotNoise", [ "type", "Float32"; "scale", "2.0" ] ]
            writeUInt8Template
-               $"bottomup-43-addShotNoise-float-write-{sizeSuffix}"
-               "Float64 read plus addShotNoise cast and written."
-               [ readFloat; "noise", "AddShotNoise", [ "type", "Float64"; "scale", "2.0" ] ]
-               "Float64"
+               $"bottomup-43-addShotNoise-float32-write-{sizeSuffix}"
+               "Float32 read plus addShotNoise cast and written."
+               [ readFloat32; "noise", "AddShotNoise", [ "type", "Float32"; "scale", "2.0" ] ]
+               "Float32"
            ignoreTemplate
-               $"bottomup-44-addSpeckleNoise-float-ignore-{sizeSuffix}"
-               "Float64 read plus addSpeckleNoise consumed without writing."
-               [ readFloat; "noise", "AddSpeckleNoise", [ "type", "Float64"; "std", "0.5" ] ]
+               $"bottomup-44-addSpeckleNoise-float32-ignore-{sizeSuffix}"
+               "Float32 read plus addSpeckleNoise consumed without writing."
+               [ readFloat32; "noise", "AddSpeckleNoise", [ "type", "Float32"; "std", "0.5" ] ]
            writeUInt8Template
-               $"bottomup-45-addSpeckleNoise-float-write-{sizeSuffix}"
-               "Float64 read plus addSpeckleNoise cast and written."
-               [ readFloat; "noise", "AddSpeckleNoise", [ "type", "Float64"; "std", "0.5" ] ]
-               "Float64"
+               $"bottomup-45-addSpeckleNoise-float32-write-{sizeSuffix}"
+               "Float32 read plus addSpeckleNoise cast and written."
+               [ readFloat32; "noise", "AddSpeckleNoise", [ "type", "Float32"; "std", "0.5" ] ]
+               "Float32"
            ignoreTemplate
-               $"bottomup-46-shiftScale-float-ignore-{sizeSuffix}"
-               "Float64 read shifted and scaled, then consumed."
-               [ readFloat; "intensity", "ShiftScale", [ "type", "Float64"; "shift", "10.0"; "scale", "0.5" ] ]
+               $"bottomup-46-shiftScale-float32-ignore-{sizeSuffix}"
+               "Float32 read shifted and scaled, then consumed."
+               [ readFloat32; "intensity", "ShiftScale", [ "type", "Float32"; "shift", "10.0"; "scale", "0.5" ] ]
            writeUInt8Template
-               $"bottomup-47-shiftScale-float-write-{sizeSuffix}"
-               "Float64 read shifted/scaled, cast, and written."
-               [ readFloat; "intensity", "ShiftScale", [ "type", "Float64"; "shift", "10.0"; "scale", "0.5" ] ]
-               "Float64"
+               $"bottomup-47-shiftScale-float32-write-{sizeSuffix}"
+               "Float32 read shifted/scaled, cast, and written."
+               [ readFloat32; "intensity", "ShiftScale", [ "type", "Float32"; "shift", "10.0"; "scale", "0.5" ] ]
+               "Float32"
            ignoreTemplate
-               $"bottomup-48-intensityStretch-float-ignore-{sizeSuffix}"
-               "Float64 read intensity-stretched, then consumed."
-               [ readFloat; intensityStretchNode "stretch" "Float64" "0.0" "255.0" ]
+               $"bottomup-48-intensityStretch-float32-ignore-{sizeSuffix}"
+               "Float32 read intensity-stretched, then consumed."
+               [ readFloat32; intensityStretchNode "stretch" "Float32" "0.0" "255.0" ]
            writeUInt8Template
-               $"bottomup-49-intensityStretch-float-write-{sizeSuffix}"
-               "Float64 read intensity-stretched, cast, and written."
-               [ readFloat; intensityStretchNode "stretch" "Float64" "0.0" "255.0" ]
-               "Float64" |]
+               $"bottomup-49-intensityStretch-float32-write-{sizeSuffix}"
+               "Float32 read intensity-stretched, cast, and written."
+               [ readFloat32; intensityStretchNode "stretch" "Float32" "0.0" "255.0" ]
+               "Float32" |]
 
     let geometryAndProjectionLayer =
         [| ignoreTemplate
