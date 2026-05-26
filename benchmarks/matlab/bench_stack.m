@@ -26,7 +26,7 @@ if isempty(files)
     error("no TIFF files found in %s", args.input);
 end
 
-radius = double(args.radius);
+radius = numericArg(args.radius);
 kernelSize = max(1, 2 * radius + 1);
 
 first = imread(fullfile(files(1).folder, files(1).name));
@@ -40,9 +40,9 @@ switch char(args.operation)
     case "copy"
         out = volume;
     case "threshold"
-        out = uint8(volume > double(args.threshold)) .* uint8(255);
+        out = uint8(volume > numericArg(args.threshold)) .* uint8(255);
     case "smoothWGauss"
-        out = imgaussfilt3(volume, double(args.sigma));
+        out = imgaussfilt3(volume, numericArg(args.sigma));
     case "median"
         out = medfilt3(volume, [kernelSize kernelSize kernelSize], "symmetric");
     case "dilate"
@@ -56,6 +56,61 @@ switch char(args.operation)
 end
 
 for i = 1:size(out, 3)
-    imwrite(out(:, :, i), fullfile(args.output, files(i).name), "tif", "Compression", "none");
+    writeTiffSlice(out(:, :, i), fullfile(args.output, files(i).name));
+end
+end
+
+function value = numericArg(value)
+if ischar(value) || isstring(value)
+    value = str2double(value);
+else
+    value = double(value);
+end
+if ~isscalar(value) || isnan(value)
+    error("expected scalar numeric argument");
+end
+end
+
+function writeTiffSlice(slice, path)
+t = Tiff(path, "w");
+cleanup = onCleanup(@() close(t));
+tags.ImageLength = size(slice, 1);
+tags.ImageWidth = size(slice, 2);
+tags.Photometric = Tiff.Photometric.MinIsBlack;
+tags.SamplesPerPixel = 1;
+tags.BitsPerSample = bitsPerSample(slice);
+tags.SampleFormat = sampleFormat(slice);
+tags.PlanarConfiguration = Tiff.PlanarConfiguration.Chunky;
+tags.Compression = Tiff.Compression.None;
+tags.RowsPerStrip = size(slice, 1);
+setTag(t, tags);
+write(t, slice);
+end
+
+function bits = bitsPerSample(slice)
+switch class(slice)
+    case {"uint8", "int8"}
+        bits = 8;
+    case {"uint16", "int16"}
+        bits = 16;
+    case {"uint32", "int32", "single"}
+        bits = 32;
+    case {"uint64", "int64", "double"}
+        bits = 64;
+    otherwise
+        error("unsupported TIFF slice class %s", class(slice));
+end
+end
+
+function format = sampleFormat(slice)
+switch class(slice)
+    case {"uint8", "uint16", "uint32", "uint64"}
+        format = Tiff.SampleFormat.UInt;
+    case {"int8", "int16", "int32", "int64"}
+        format = Tiff.SampleFormat.Int;
+    case {"single", "double"}
+        format = Tiff.SampleFormat.IEEEFP;
+    otherwise
+        error("unsupported TIFF slice class %s", class(slice));
 end
 end

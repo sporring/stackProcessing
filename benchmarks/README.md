@@ -15,7 +15,7 @@ Each backend should measure the same user-visible task, with the same input stac
 - `StackProcessing.Benchmarks`: F# StackProcessing executable.
 - `python-skimage-scipy`: Python/scikit-image/SciPy implementation.
 - `cpp-itk`: C++/ITK implementation skeleton and CMake project.
-- `matlab`: MATLAB script using Image Processing Toolbox.
+- `matlab`: MATLAB script using Image Processing Toolbox, invoked as `matlab -nodisplay -nojvm -batch`.
 - `python-dask-omezarr`: special-case chunk-native Dask/OME-Zarr implementation.
 
 ## Initial Operation Set
@@ -100,6 +100,12 @@ stackprocessing,python-skimage-scipy
 ```
 
 This keeps a first run possible on ordinary developer machines. Add `cpp-itk`, `matlab`, and `--include-special` when those environments are installed.
+
+If MATLAB is not named `matlab` on the current shell `PATH`, pass it explicitly:
+
+```bash
+bash benchmarks/run_all.sh --backends matlab --matlab-exe /path/to/matlab
+```
 
 Generate a deterministic input stack with StackProcessing:
 
