@@ -895,8 +895,14 @@ module Fitting =
             row.Sigma |> Option.map (fun sigma -> 2.0 * Math.Ceiling(2.0 * sigma) + 1.0))
 
     let private usesSimpleLinearTermsOnly (operator: string) =
-        match operator.Trim().ToLowerInvariant() with
+        let baseOperator =
+            operator.Trim().ToLowerInvariant().Split('.', StringSplitOptions.RemoveEmptyEntries)
+            |> Array.tryHead
+            |> Option.defaultValue ""
+
+        match baseOperator with
         | "read"
+        | "readcast"
         | "write"
         | "cast"
         | "zero"

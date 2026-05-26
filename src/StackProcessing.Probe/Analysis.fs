@@ -1167,11 +1167,20 @@ let private parameterFloat key (metadata: FeatureMetadata) =
     |> Map.tryFind key
     |> Option.bind tryParseFloatText
 
-let private normalizePixelType (value: string) =
+let rec private normalizePixelType (value: string) =
     match value with
     | null -> None
     | text ->
-        match text.Trim().ToLowerInvariant() with
+        let trimmed = text.Trim()
+        let lower = trimmed.ToLowerInvariant()
+        let compoundMatch = Regex.Match(trimmed, @"^(.+?)To(.+)$", RegexOptions.IgnoreCase)
+
+        if compoundMatch.Success then
+            match normalizePixelType compoundMatch.Groups[1].Value, normalizePixelType compoundMatch.Groups[2].Value with
+            | Some sourceType, Some targetType -> Some $"{sourceType}To{targetType}"
+            | _ -> Some trimmed
+        else
+        match lower with
         | "" -> None
         | "byte" | "uint8" -> Some "UInt8"
         | "sbyte" | "int8" -> Some "Int8"
@@ -1187,13 +1196,87 @@ let private normalizePixelType (value: string) =
         | other -> Some other
 
 let private pixelTypeBytes (pixelType: string) =
-    match pixelType with
-    | "UInt8" | "Int8" -> Some 1UL
-    | "UInt16" | "Int16" -> Some 2UL
-    | "UInt32" | "Int32" | "Float32" -> Some 4UL
-    | "UInt64" | "Int64" | "Float64" -> Some 8UL
-    | "Complex" -> Some 16UL
+    let baseType =
+        let trimmed = pixelType.Trim()
+        let compoundMatch = Regex.Match(trimmed, @"^(.+?)To(.+)$", RegexOptions.IgnoreCase)
+
+        if compoundMatch.Success then
+            compoundMatch.Groups[2].Value
+        else
+            trimmed.Split('.', StringSplitOptions.RemoveEmptyEntries)
+            |> Array.tryHead
+            |> Option.defaultValue trimmed
+        |> fun text -> text.Trim().ToLowerInvariant()
+
+    match baseType with
+    | "byte" | "uint8" | "sbyte" | "int8" -> Some 1UL
+    | "uint16" | "int16" -> Some 2UL
+    | "uint32" | "int32" | "single" | "float32" -> Some 4UL
+    | "uint64" | "int64" | "double" | "float" | "float64" -> Some 8UL
+    | "complex" -> Some 16UL
     | _ -> None
+
+let private splitPixelTypeFormat (pixelType: string) =
+    let parts =
+        pixelType.Split('.', StringSplitOptions.RemoveEmptyEntries)
+        |> Array.map (fun part -> part.Trim())
+        |> Array.filter (fun part -> not (String.IsNullOrWhiteSpace part))
+
+    match parts with
+    | [| baseType; format |] -> normalizePixelType baseType, Some(format.ToLowerInvariant())
+    | [| baseType |] -> normalizePixelType baseType, None
+    | _ -> normalizePixelType pixelType, None
+
+let private formatOperator operator format =
+    match format with
+    | Some format when
+        (String.Equals(operator, "Read", StringComparison.OrdinalIgnoreCase)
+         || String.Equals(operator, "Write", StringComparison.OrdinalIgnoreCase)) ->
+        $"{operator}.{format}"
+    | _ -> operator
+
+let private formatFromSuffixText (suffix: string) =
+    if String.IsNullOrWhiteSpace suffix then
+        None
+    else
+        let format = suffix.Trim().TrimStart('.').ToLowerInvariant()
+        if String.IsNullOrWhiteSpace format then None else Some format
+
+let private metadataFormat (metadata: FeatureMetadata) =
+    metadata.Parameters
+    |> Map.tryFind "suffix"
+    |> Option.bind formatFromSuffixText
+
+let private parameterPixelType key (metadata: FeatureMetadata) =
+    metadata.Parameters
+    |> Map.tryFind key
+    |> Option.bind normalizePixelType
+
+let private castPairPixelType (metadata: FeatureMetadata) =
+    match parameterPixelType "sourceType" metadata, parameterPixelType "targetType" metadata with
+    | Some sourceType, Some targetType -> Some $"{sourceType}To{targetType}"
+    | _ -> None
+
+let private specializeOperator (metadata: FeatureMetadata) =
+    match metadata.Operator.Trim(), metadata.Parameters |> Map.tryFind "function", metadata.Parameters |> Map.tryFind "operation" with
+    | operator, Some functionName, _ when String.Equals(operator, "UnaryImageFunction", StringComparison.OrdinalIgnoreCase) ->
+        $"{operator}.{functionName.Trim().ToLowerInvariant()}"
+    | operator, _, Some operation when String.Equals(operator, "ImageOpScalar", StringComparison.OrdinalIgnoreCase) ->
+        let operationName =
+            match operation.Trim() with
+            | "+" -> "add"
+            | "-" -> "subtract"
+            | "*" -> "multiply"
+            | "/" -> "divide"
+            | other -> other.ToLowerInvariant()
+
+        $"{operator}.{operationName}"
+    | operator, _, _ -> formatOperator operator (metadataFormat metadata)
+
+let private operatorCoveredByRuntime (runtimeOperators: Set<string>) (operator: string) =
+    let normalized = operator.Trim().ToLowerInvariant()
+    runtimeOperators.Contains normalized
+    || runtimeOperators |> Seq.exists (fun runtimeOperator -> runtimeOperator.StartsWith(normalized + ".", StringComparison.OrdinalIgnoreCase))
 
 let private featureSize metadata =
     match parameterUInt64 "width" metadata, parameterUInt64 "height" metadata, parameterUInt64 "depth" metadata with
@@ -1248,10 +1331,16 @@ let private inferEvidenceContext (row: AnalysisRow) =
 
 let private evidenceRow (rowContext: EvidenceContext) rowId measurementName measurementValue sourcePath feature featureValue : Fitting.EvidenceRow =
     let metadata = parseFeatureMetadata feature
+    let operator = specializeOperator metadata
     let featurePixelType =
         metadata.Parameters
         |> Map.tryFind "type"
         |> Option.bind normalizePixelType
+        |> Option.orElseWith (fun () ->
+            if String.Equals(metadata.Operator, "Cast", StringComparison.OrdinalIgnoreCase) then
+                castPairPixelType metadata
+            else
+                None)
 
     let featureSize = featureSize metadata
 
@@ -1299,7 +1388,7 @@ let private evidenceRow (rowContext: EvidenceContext) rowId measurementName meas
       SourcePath = sourcePath
       FeatureKey = feature
       FeatureValue = featureValue
-      Operator = metadata.Operator
+      Operator = operator
       PixelType = pixelType
       Width = width
       Height = height
@@ -1316,7 +1405,7 @@ let private evidenceRow (rowContext: EvidenceContext) rowId measurementName meas
         |> Option.orElse gaussianKernelSizeFromSigma
       Sigma = sigma }
 
-let private runtimeTermEvidenceRow (measurement: Measurement) (term: RuntimeCostTerm) : Fitting.EvidenceRow option =
+let private runtimeTermEvidenceRow (featureMetadata: FeatureMetadata list) (measurement: Measurement) (term: RuntimeCostTerm) : Fitting.EvidenceRow option =
     let tag key = term.Tags |> Map.tryFind key
     let operator =
         tag "operator"
@@ -1325,7 +1414,18 @@ let private runtimeTermEvidenceRow (measurement: Measurement) (term: RuntimeCost
 
     operator
     |> Option.map (fun operator ->
-        let pixelType = tag "pixelType" |> Option.bind normalizePixelType
+        let metadata =
+            featureMetadata
+            |> List.tryFind (fun metadata -> String.Equals(metadata.Operator, operator, StringComparison.OrdinalIgnoreCase))
+        let operator =
+            metadata
+            |> Option.map specializeOperator
+            |> Option.defaultValue operator
+        let pixelType, format =
+            match tag "pixelType" with
+            | Some value -> splitPixelTypeFormat value
+            | None -> None, None
+        let operator = formatOperator operator format
         let voxels = tag "voxels" |> Option.bind tryParseUInt64Text
         let bytesPerPixel = pixelType |> Option.bind pixelTypeBytes
 
@@ -1560,9 +1660,14 @@ let private writeOutputs (options: Options) (rows: AnalysisRow list) =
                     match measurement.RuntimeCostTerms with
                     | _ :: _ ->
                         let measurement = { measurement with SourcePath = sourcePath }
+                        let featureMetadata =
+                            row.FeatureValues
+                            |> Map.toList
+                            |> List.map (fst >> parseFeatureMetadata)
+
                         let runtimeRows =
                             measurement.RuntimeCostTerms
-                            |> List.choose (runtimeTermEvidenceRow measurement)
+                            |> List.choose (runtimeTermEvidenceRow featureMetadata measurement)
 
                         let runtimeOperators =
                             runtimeRows
@@ -1576,7 +1681,7 @@ let private writeOutputs (options: Options) (rows: AnalysisRow list) =
                             let metadata = parseFeatureMetadata feature
                             let operator = metadata.Operator.Trim().ToLowerInvariant()
                             if operator <> "ignore"
-                               && (operator = "intercept" || not (runtimeOperators.Contains operator)) then
+                               && (operator = "intercept" || not (operatorCoveredByRuntime runtimeOperators metadata.Operator)) then
                                 yield evidenceRow rowContext measurement.RowId measurement.Name measurement.Value sourcePath feature value
                     | [] ->
                         let rowContext = inferEvidenceContext row

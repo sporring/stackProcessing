@@ -79,14 +79,15 @@ let private suffixCostLabel (suffix: string) =
     else
         suffix.Trim().TrimStart('.').ToLowerInvariant()
 
-let private imageStackPixelTypeName<'T> suffix =
-    $"{StackProcessingCost.pixelTypeName<'T>}.{suffixCostLabel suffix}"
+let private imageStackOperatorName operator suffix =
+    $"{operator}.{suffixCostLabel suffix}"
 
 let private fixedImageStackOperatorTimeCost<'T> operator evaluation suffix voxels fallback =
-    let pixelType = imageStackPixelTypeName<'T> suffix
+    let stackOperator = imageStackOperatorName operator suffix
+    let pixelType = StackProcessingCost.pixelTypeName<'T>
     let context _ =
         StackProcessingCost.Fitting.OperatorEstimateContext.create
-            operator
+            stackOperator
             (Some pixelType)
             (Some voxels)
             (Some(StackProcessingCost.imageBytes<'T> voxels))
@@ -98,11 +99,12 @@ let private fixedImageStackOperatorTimeCost<'T> operator evaluation suffix voxel
     StackProcessingCost.Fitting.OperatorCostRuntime.timeCostModel evaluation context fallback
 
 let private imageStackOperatorTimeCost<'T> operator evaluation suffix fallback =
-    let pixelType = imageStackPixelTypeName<'T> suffix
+    let stackOperator = imageStackOperatorName operator suffix
+    let pixelType = StackProcessingCost.pixelTypeName<'T>
     let context input =
         let voxels = inputValue input
         StackProcessingCost.Fitting.OperatorEstimateContext.create
-            operator
+            stackOperator
             (Some pixelType)
             (Some voxels)
             (Some(StackProcessingCost.imageBytes<'T> voxels))

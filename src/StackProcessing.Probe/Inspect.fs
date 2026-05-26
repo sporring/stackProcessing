@@ -12,6 +12,7 @@ type Options =
       MinRepeats: int
       MinTimeR2: float
       MaxFlaggedRatio: float
+      FixedThrough: string option
       Selector: ProbeSelection.EvidenceSelector
       RequestOutputPath: string option }
 
@@ -33,8 +34,11 @@ let private usage () =
     printfn "  --measurement-store PATH  Measurement JSONL store. Defaults to measurements/stackprocessing-probe.jsonl."
     printfn "  --output PATH             Inspection output directory. Defaults to tmp/inspect."
     printfn "  --max-step FAMILY         Highest ladder family to consider."
+    printfn "  --fixed-through FAMILY    Inspect fit quality with FAMILY and earlier coefficients fixed."
     printfn "  --family LIST             Restrict inspected families."
     printfn "  --member LIST             Restrict inspected members/operators."
+    printfn "  --shape WxHxD             Restrict to one probed image shape."
+    printfn "  --shapes LIST             Restrict to comma-separated probed image shapes."
     printfn "  --min-repeats N           Desired repeats per graph/measurement. Defaults to 3."
     printfn "  --min-time-r2 VALUE       Minimum elapsedMilliseconds R2. Defaults to 0.8."
     printfn "  --max-flagged-ratio VALUE Maximum operator discrepancy flagged ratio. Defaults to 0.1."
@@ -52,7 +56,8 @@ let private defaultOptions () =
       MinRepeats = 3
       MinTimeR2 = 0.8
       MaxFlaggedRatio = 0.1
-      Selector = { Families = [ "all" ]; Members = []; UpTo = None }
+      FixedThrough = None
+      Selector = { Families = [ "all" ]; Members = []; UpTo = None; Shapes = [] }
       RequestOutputPath = None }
 
 let rec private parseArgs options args =
@@ -79,11 +84,34 @@ let rec private parseArgs options args =
         | None ->
             eprintfn "inspect: --family expects io,io-cast,singleton,window-slab,neighbourhood,geometry,fourier,keypoints,dependency,reducers, or all"
             Error 2
+    | "--fixed-through" :: value :: rest
+    | "--fixed-up-to" :: value :: rest
+    | "--up-to-fixed" :: value :: rest ->
+        match ProbeSelection.normalizeFamily value with
+        | Some "all" ->
+            eprintfn "inspect: --fixed-through expects a concrete ladder family, not all"
+            Error 2
+        | Some family -> parseArgs { options with FixedThrough = Some family } rest
+        | None ->
+            eprintfn "inspect: unknown fixed ladder family '%s'" value
+            Error 2
     | "--member" :: value :: rest
     | "--members" :: value :: rest
     | "--operator" :: value :: rest
     | "--operators" :: value :: rest ->
         parseArgs { options with Selector = { options.Selector with Members = options.Selector.Members @ ProbeSelection.splitCsvList value } } rest
+    | "--shape" :: value :: rest ->
+        match ProbeSelection.normalizeShape value with
+        | Some shape -> parseArgs { options with Selector = { options.Selector with Shapes = [ shape ] } } rest
+        | None ->
+            eprintfn "inspect: --shape expects WxHxD, for example 512x512x128"
+            Error 2
+    | "--shapes" :: value :: rest ->
+        match ProbeSelection.parseShapes value with
+        | Some shapes -> parseArgs { options with Selector = { options.Selector with Shapes = shapes } } rest
+        | None ->
+            eprintfn "inspect: --shapes expects comma-separated shapes, for example 256x256x256,512x512x128,1024x1024x64"
+            Error 2
     | "--min-repeats" :: value :: rest ->
         match Int32.TryParse value with
         | true, minRepeats when minRepeats > 0 -> parseArgs { options with MinRepeats = minRepeats } rest
@@ -246,24 +274,10 @@ let private earliestFamily families =
     |> List.tryHead
 
 let private graphNameFromRowId (rowId: string) =
-    let normalized = rowId.Replace('\\', '/')
-    let slash = normalized.LastIndexOf('/')
-    if slash >= 0 then normalized.Substring(slash + 1) else normalized
+    ProbeSelection.graphNameFromRowId rowId
 
 let private shapeFromRowId (rowId: string) =
-    let normalized = rowId.Replace('\\', '/')
-    let marker = "/size_"
-    let markerIndex = normalized.IndexOf(marker, StringComparison.OrdinalIgnoreCase)
-    if markerIndex >= 0 then
-        let start = markerIndex + marker.Length
-        let finish = normalized.IndexOf('/', start)
-        if finish > start then Some(normalized.Substring(start, finish - start)) else None
-    else
-        let graphName = graphNameFromRowId rowId
-        let parts = graphName.Split('-', StringSplitOptions.RemoveEmptyEntries)
-        parts
-        |> Array.tryLast
-        |> Option.filter (fun value -> value.Contains('x'))
+    ProbeSelection.shapeForRowId rowId
 
 type private DiscrepancySuggestion =
     { Families: string list
@@ -378,6 +392,7 @@ let private inspectFitQuality (options: Options) =
           ModelOutputPath = modelOutput
           Ridge = 1e-8
           MinSupport = 3
+          FixedThrough = options.FixedThrough
           Selector = options.Selector }
 
     let _, _, fits = ProbeFit.fit fitOptions
@@ -454,6 +469,18 @@ let private inspectFitQuality (options: Options) =
           SuggestedMembers = discrepancySuggestion.Members
           SuggestedExtraArgs = discrepancySuggestion.ExtraArgs }
 
+let private shapeExtraArgs (selector: ProbeSelection.EvidenceSelector) =
+    match selector.Shapes with
+    | [] -> []
+    | shapes -> [ "--shapes"; String.concat "," shapes ]
+
+let private requestExtraArgs (options: Options) (extraArgs: string list) =
+    let hasShapeArgs =
+        extraArgs
+        |> List.exists (fun arg -> arg = "--shape" || arg = "--shapes" || arg = "--sizes")
+
+    if hasShapeArgs then extraArgs else shapeExtraArgs options.Selector @ extraArgs
+
 let private writeRequest (path: string) (options: Options) (families: string list) (members: string list) (reason: string) (extraArgs: string list) =
     Directory.CreateDirectory(Path.GetDirectoryName path) |> ignore
     let request =
@@ -463,7 +490,7 @@ let private writeRequest (path: string) (options: Options) (families: string lis
           Members = members |> List.toArray
           MinRepeats = options.MinRepeats
           Reason = reason
-          ExtraArgs = extraArgs |> List.toArray }
+          ExtraArgs = requestExtraArgs options extraArgs |> List.toArray }
     let json = JsonSerializer.Serialize(request, JsonSerializerOptions(WriteIndented = true))
     File.WriteAllText(path, json)
     printfn "wrote collection request to %s" path

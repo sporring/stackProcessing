@@ -25,6 +25,7 @@ type Options =
       Repeat: int
       RunId: string option
       CostModel: string option
+      Shuffle: bool
       Timeout: TimeSpan option }
 
 type GraphJob =
@@ -94,6 +95,7 @@ let usage () =
     printfn "  --gather-only     Regenerate gather.csv files from existing graph logs."
     printfn "  --repeat N        Run the full graph set N times. Defaults to 1."
     printfn "  --run-id VALUE    Use VALUE in tmp/runJson_VALUE. Defaults to a timestamp."
+    printfn "  --shuffle         Shuffle graph order independently for each repeat."
     printfn "  --debug-level N   Accepted for symmetry with runAll; generated graphs carry their saved debug settings."
     printfn "  --optimize BOOL   Enable or disable optimizer use while running generated graphs. Defaults to false."
     printfn "  --no-optimize     Shortcut for --optimize false."
@@ -150,6 +152,7 @@ let rec private parseArgs options args =
             eprintfn "runJson: --repeat expects a positive integer"
             Error 2
     | "--run-id" :: value :: rest -> parseArgs { options with RunId = Some value } rest
+    | "--shuffle" :: rest -> parseArgs { options with Shuffle = true } rest
     | "--cost-model" :: value :: rest ->
         parseArgs { options with CostModel = Some(Path.GetFullPath value) } rest
     | "--timeout" :: value :: rest
@@ -223,6 +226,28 @@ let private discoverGraphs samplesRoot extraJsonRoots includeSamples outputDir b
 
     Array.append sampleGraphs generatedGraphs
     |> Array.sortBy _.Name
+
+let private shuffleJobs seed (jobs: GraphJob array) =
+    let rng = Random(seed)
+    let shuffled = Array.copy jobs
+
+    for i in shuffled.Length - 1 .. -1 .. 1 do
+        let j = rng.Next(i + 1)
+        let tmp = shuffled[i]
+        shuffled[i] <- shuffled[j]
+        shuffled[j] <- tmp
+
+    shuffled
+
+let private jobsForRepeat samplesRoot options runId repeatIndex repeatOutputDir repeatBuildDir =
+    let jobs =
+        discoverGraphs samplesRoot options.ExtraJsonRoots options.IncludeSamples repeatOutputDir repeatBuildDir
+
+    if options.Shuffle then
+        let seed = HashCode.Combine(runId, repeatIndex)
+        shuffleJobs seed jobs
+    else
+        jobs
 
 let private xml value =
     SecurityElement.Escape(value)
@@ -760,6 +785,7 @@ let main (argv: string array) =
           Repeat = 1
           RunId = None
           CostModel = None
+          Shuffle = false
           Timeout = Some(TimeSpan.FromMinutes 30.0) }
 
     match parseArgs defaults (argv |> Array.toList) with
@@ -804,7 +830,7 @@ let main (argv: string array) =
                         Directory.CreateDirectory repeatBuildDir |> ignore
                         printfn "runJson repeat %d/%d -> %s" repeatIndex options.Repeat (relativePath samplesRoot repeatOutputDir)
 
-                        let repeatJobs = discoverGraphs samplesRoot options.ExtraJsonRoots options.IncludeSamples repeatOutputDir repeatBuildDir
+                        let repeatJobs = jobsForRepeat samplesRoot options runId repeatIndex repeatOutputDir repeatBuildDir
 
                         let results =
                             runWithParallelism cancellation.Token repositoryRoot options repeatJobs

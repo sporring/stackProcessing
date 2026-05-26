@@ -5,7 +5,8 @@ open System
 type EvidenceSelector =
     { Families: string list
       Members: string list
-      UpTo: string option }
+      UpTo: string option
+      Shapes: string list }
 
 let ladder =
     [ "io"
@@ -26,6 +27,20 @@ let implicitLadder =
 let splitCsvList (value: string) =
     value.Split([| ','; ';' |], StringSplitOptions.RemoveEmptyEntries ||| StringSplitOptions.TrimEntries)
     |> Array.toList
+
+let normalizeShape (value: string) =
+    let text = value.Trim().ToLowerInvariant()
+    if String.IsNullOrWhiteSpace text then None else Some text
+
+let parseShapes value =
+    let tokens = splitCsvList value
+    if tokens.IsEmpty then
+        None
+    else
+        tokens
+        |> List.choose normalizeShape
+        |> List.distinct
+        |> Some
 
 let normalizeFamily (value: string) =
     match value.Trim().ToLowerInvariant().Replace("_", "-") with
@@ -82,6 +97,27 @@ let familyForRowId (rowId: string) =
     elif text.Contains("10-reducers") then Some "reducers"
     else None
 
+let graphNameFromRowId (rowId: string) =
+    let normalized = rowId.Replace('\\', '/')
+    let slash = normalized.LastIndexOf('/')
+    if slash >= 0 then normalized.Substring(slash + 1) else normalized
+
+let shapeForRowId (rowId: string) =
+    let normalized = rowId.Replace('\\', '/')
+    let marker = "/size_"
+    let markerIndex = normalized.IndexOf(marker, StringComparison.OrdinalIgnoreCase)
+    if markerIndex >= 0 then
+        let start = markerIndex + marker.Length
+        let finish = normalized.IndexOf('/', start)
+        if finish > start then Some(normalized.Substring(start, finish - start).ToLowerInvariant()) else None
+    else
+        let graphName = graphNameFromRowId rowId
+        let parts = graphName.Split('-', StringSplitOptions.RemoveEmptyEntries)
+        parts
+        |> Array.tryLast
+        |> Option.filter (fun value -> value.Contains('x'))
+        |> Option.map (fun value -> value.ToLowerInvariant())
+
 let normalizeMember (value: string) =
     value.Trim().ToLowerInvariant()
 
@@ -106,3 +142,12 @@ let selectorMatchesMembers selector members =
     else
         let memberSet = selector.Members |> List.map normalizeMember |> Set.ofList
         members |> List.exists (normalizeMember >> memberSet.Contains)
+
+let selectorMatchesShape selector rowId =
+    if selector.Shapes.IsEmpty then
+        true
+    else
+        let shapeSet = selector.Shapes |> List.choose normalizeShape |> Set.ofList
+        shapeForRowId rowId
+        |> Option.map shapeSet.Contains
+        |> Option.defaultValue false

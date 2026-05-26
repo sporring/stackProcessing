@@ -1,0 +1,134 @@
+# Comparative Benchmarks
+
+This directory contains a report-facing benchmark harness for comparing StackProcessing with common image-processing environments on 3D TIFF-stack workflows.
+
+The benchmark contract is deliberately simple:
+
+```text
+read TIFF slice stack -> assemble/process as a 3D volume -> write TIFF slice stack
+```
+
+Each backend should measure the same user-visible task, with the same input stack, and report wall-clock time plus peak resident memory through `tools/measure.py`.
+
+## Backends
+
+- `StackProcessing.Benchmarks`: F# StackProcessing executable.
+- `python-skimage-scipy`: Python/scikit-image/SciPy implementation.
+- `cpp-itk`: C++/ITK implementation skeleton and CMake project.
+- `matlab`: MATLAB script using Image Processing Toolbox.
+- `python-dask-omezarr`: special-case chunk-native Dask/OME-Zarr implementation.
+
+## Initial Operation Set
+
+The first benchmark set avoids operations that demonstrate StackProcessing-specific mechanics directly. It focuses on common image-analysis tasks:
+
+- `copy`: IO baseline.
+- `threshold`: scalar map producing `UInt8` output.
+- `smoothWGauss`: 3D Gaussian smoothing.
+- `median`: 3D median filter.
+- `dilate`: representative 3D mathematical morphology operation.
+- `connectedComponents`: 3D connected-component labelling.
+
+The initial type set is:
+
+- `UInt8`: binary and 256-level grayscale images.
+- `UInt16`: common microscopy TIFF data.
+- `Float32`: high-end microscopy and scientific image data.
+
+The initial benchmark intentionally focuses on TIFF only. Format-specific behavior is large enough that TIFF should be understood before expanding to MHA, OME-Zarr, or HDF5/NeXus.
+
+`smoothWGauss` is represented in StackProcessing by the current Float64-backed Gaussian stage and written back as Float32 for the benchmark. `connectedComponents` is included because it is an important dependency-sensitive operation. The semantic target for all TIFF-stack backends is 3D component labelling: StackProcessing may stream internally, while MATLAB, Python/scikit-image/SciPy, and C++/ITK read the full stack into a volume before processing.
+
+## Special-Case Chunk-Native Benchmark
+
+OME-Zarr is an essential user-facing technology for microscopy and adjacent large-volume imaging communities, but it is not universally supported by the TIFF-stack tools in the baseline comparison. It therefore lives in a separate special-case matrix:
+
+```text
+read chunked OME-Zarr array -> process with Dask -> write chunked OME-Zarr array
+```
+
+This is intentionally not mixed into the TIFF-stack baseline. The special-case benchmarks answer a different user question: what happens if the workflow starts in a chunk-native ecosystem instead of a directory of TIFF slices?
+
+The special cases are listed in `config/special-cases.csv`. The initial subset includes `copy`, `threshold`, and small-radius 3D neighbourhood operations implemented with Dask overlap. These require `dask`, `zarr`, `numpy`, and `scipy`.
+
+## Suggested Workflow
+
+Generate a deterministic input stack with StackProcessing:
+
+```bash
+dotnet run --project benchmarks/StackProcessing.Benchmarks/StackProcessing.Benchmarks.fsproj -- \
+  generate --output tmp/benchmarks/input/uint8_512x512x64 \
+  --shape 512x512x64 --pixel-type UInt8 --pattern ramp
+```
+
+Run one measured StackProcessing case:
+
+```bash
+python3 benchmarks/tools/measure.py \
+  --output benchmarks/results/raw.csv \
+  --backend stackprocessing \
+  --operation median \
+  --pixel-type UInt8 \
+  --shape 512x512x64 \
+  --parameter radius=3 \
+  -- \
+  dotnet run --project benchmarks/StackProcessing.Benchmarks/StackProcessing.Benchmarks.fsproj -- \
+    run --operation median --pixel-type UInt8 \
+    --input tmp/benchmarks/input/uint8_512x512x64 \
+    --output tmp/benchmarks/output/stackprocessing/median_uint8_512x512x64_r3 \
+    --radius 3
+```
+
+Aggregate results:
+
+```bash
+python3 benchmarks/tools/summarize_results.py \
+  --input benchmarks/results/raw.csv \
+  --output benchmarks/results/summary.csv
+```
+
+For the full case matrix, generate the needed inputs once per shape/type, then run a backend through `run_manifest.py`:
+
+```bash
+python3 benchmarks/tools/prepare_inputs.py
+
+python3 benchmarks/tools/run_manifest.py \
+  --backend stackprocessing \
+  --repeat 3
+```
+
+Use `--dry-run` to print the exact commands without executing them.
+
+Run the Dask/OME-Zarr special cases by converting the TIFF inputs to OME-Zarr stores, then using `config/special-cases.csv`:
+
+```bash
+python3 benchmarks/tools/tiff_stack_to_omezarr.py \
+  --input tmp/benchmarks/input/UInt8_512x512x64 \
+  --output tmp/benchmarks/input-omezarr/UInt8_512x512x64 \
+  --shape 512x512x64 --pixel-type UInt8
+
+python3 benchmarks/tools/run_manifest.py \
+  --cases benchmarks/config/special-cases.csv \
+  --backend python-dask-omezarr \
+  --input-root tmp/benchmarks/input-omezarr \
+  --repeat 3
+```
+
+The C++/ITK backend is built separately:
+
+```bash
+cmake -S benchmarks/cpp-itk -B benchmarks/cpp-itk/build
+cmake --build benchmarks/cpp-itk/build --config Release
+```
+
+## Notes on Fairness
+
+- All tools read the same TIFF stack and write a TIFF stack.
+- The default operation semantics are 3D volume operations. Non-StackProcessing TIFF baselines read the full stack, process a 3D volume, and write the result as slices; StackProcessing is allowed to stream internally as long as the user-visible operation is the same 3D operation.
+- Peak memory is measured at the process level by `tools/measure.py`.
+- Startup costs are included by default because they matter for user-facing command-line workflows. For long-running batch studies, add separate warm-process measurements.
+- MATLAB benchmarks assume Image Processing Toolbox.
+- Python/scikit-image benchmarks assume `scikit-image`, `scipy`, and `numpy`.
+- Python helper scripts use `tifffile` for TIFF stack generation and conversion.
+- C++/ITK benchmarks assume a local ITK installation discoverable by CMake.
+- Dask/OME-Zarr is reported as a special case because it uses a chunked array store instead of a TIFF stack.

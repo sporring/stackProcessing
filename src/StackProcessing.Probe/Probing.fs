@@ -1336,6 +1336,7 @@ let private coordinateNode axis width height depth =
     "source",
     $"Coordinate{axis}",
     [ "availableMemory", string availableMemory + "UL"
+      "type", "Float64"
       "width", string width
       "height", string height
       "depth", string depth ]

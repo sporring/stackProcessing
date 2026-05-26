@@ -13,6 +13,7 @@ type Options =
       ModelOutputPath: string
       Ridge: float
       MinSupport: int
+      FixedThrough: string option
       Selector: ProbeSelection.EvidenceSelector }
 
 let private usage () =
@@ -26,7 +27,10 @@ let private usage () =
     printfn "  --model-output PATH       Fitted model path. Defaults to models/fitted/stackprocessing.operator-cost.json."
     printfn "  --family LIST             Families to fit, e.g. io,io-cast."
     printfn "  --up-to FAMILY            Fit ladder families through FAMILY."
+    printfn "  --fixed-through FAMILY    Fit FAMILY and earlier first, then hold those coefficients fixed."
     printfn "  --member LIST             Restrict to operator/member ids."
+    printfn "  --shape WxHxD             Restrict to one probed image shape."
+    printfn "  --shapes LIST             Restrict to comma-separated probed image shapes."
     printfn "  --ridge VALUE             Non-negative ridge value. Defaults to 1e-8."
     printfn "  --min-support N           Minimum term support. Defaults to 3."
 
@@ -41,7 +45,8 @@ let private defaultOptions () =
       ModelOutputPath = Path.Combine(root, "models", "fitted", "stackprocessing.operator-cost.json")
       Ridge = 1e-8
       MinSupport = 3
-      Selector = { Families = [ "all" ]; Members = []; UpTo = None } }
+      FixedThrough = None
+      Selector = { Families = [ "all" ]; Members = []; UpTo = None; Shapes = [] } }
 
 let rec private parseArgs options args =
     match args with
@@ -69,11 +74,34 @@ let rec private parseArgs options args =
         | None ->
             eprintfn "fit: unknown ladder family '%s'" value
             Error 2
+    | "--fixed-through" :: value :: rest
+    | "--fixed-up-to" :: value :: rest
+    | "--up-to-fixed" :: value :: rest ->
+        match ProbeSelection.normalizeFamily value with
+        | Some "all" ->
+            eprintfn "fit: --fixed-through expects a concrete ladder family, not all"
+            Error 2
+        | Some family -> parseArgs { options with FixedThrough = Some family } rest
+        | None ->
+            eprintfn "fit: unknown fixed ladder family '%s'" value
+            Error 2
     | "--member" :: value :: rest
     | "--members" :: value :: rest
     | "--operator" :: value :: rest
     | "--operators" :: value :: rest ->
         parseArgs { options with Selector = { options.Selector with Members = options.Selector.Members @ ProbeSelection.splitCsvList value } } rest
+    | "--shape" :: value :: rest ->
+        match ProbeSelection.normalizeShape value with
+        | Some shape -> parseArgs { options with Selector = { options.Selector with Shapes = [ shape ] } } rest
+        | None ->
+            eprintfn "fit: --shape expects WxHxD, for example 512x512x128"
+            Error 2
+    | "--shapes" :: value :: rest ->
+        match ProbeSelection.parseShapes value with
+        | Some shapes -> parseArgs { options with Selector = { options.Selector with Shapes = shapes } } rest
+        | None ->
+            eprintfn "fit: --shapes expects comma-separated shapes, for example 256x256x256,512x512x128,1024x1024x64"
+            Error 2
     | "--ridge" :: value :: rest ->
         match Double.TryParse(value, NumberStyles.Float, CultureInfo.InvariantCulture) with
         | true, ridge when ridge >= 0.0 -> parseArgs { options with Ridge = ridge } rest
@@ -128,11 +156,20 @@ let private tryParseFloatText (value: string) =
     else
         None
 
-let private normalizePixelType (value: string) =
+let rec private normalizePixelType (value: string) =
     match value with
     | null -> None
     | text ->
-        match text.Trim().ToLowerInvariant() with
+        let trimmed = text.Trim()
+        let lower = trimmed.ToLowerInvariant()
+        let compoundMatch = Regex.Match(trimmed, @"^(.+?)To(.+)$", RegexOptions.IgnoreCase)
+
+        if compoundMatch.Success then
+            match normalizePixelType compoundMatch.Groups[1].Value, normalizePixelType compoundMatch.Groups[2].Value with
+            | Some sourceType, Some targetType -> Some $"{sourceType}To{targetType}"
+            | _ -> Some trimmed
+        else
+        match lower with
         | "" -> None
         | "byte" | "uint8" -> Some "UInt8"
         | "sbyte" | "int8" -> Some "Int8"
@@ -147,18 +184,93 @@ let private normalizePixelType (value: string) =
         | "complex" -> Some "Complex"
         | other -> Some other
 
-let private pixelTypeBytes pixelType =
-    match pixelType with
-    | "UInt8" | "Int8" -> Some 1UL
-    | "UInt16" | "Int16" -> Some 2UL
-    | "UInt32" | "Int32" | "Float32" -> Some 4UL
-    | "UInt64" | "Int64" | "Float64" -> Some 8UL
-    | "Complex" -> Some 16UL
+let private pixelTypeBytes (pixelType: string) =
+    let baseType =
+        let trimmed = pixelType.Trim()
+        let compoundMatch = Regex.Match(trimmed, @"^(.+?)To(.+)$", RegexOptions.IgnoreCase)
+
+        if compoundMatch.Success then
+            compoundMatch.Groups[2].Value
+        else
+            trimmed.Split('.', StringSplitOptions.RemoveEmptyEntries)
+            |> Array.tryHead
+            |> Option.defaultValue trimmed
+        |> fun text -> text.Trim().ToLowerInvariant()
+
+    match baseType with
+    | "byte" | "uint8" | "sbyte" | "int8" -> Some 1UL
+    | "uint16" | "int16" -> Some 2UL
+    | "uint32" | "int32" | "single" | "float32" -> Some 4UL
+    | "uint64" | "int64" | "double" | "float" | "float64" -> Some 8UL
+    | "complex" -> Some 16UL
     | _ -> None
+
+let private splitPixelTypeFormat (pixelType: string) =
+    let parts =
+        pixelType.Split('.', StringSplitOptions.RemoveEmptyEntries)
+        |> Array.map (fun part -> part.Trim())
+        |> Array.filter (fun part -> not (String.IsNullOrWhiteSpace part))
+
+    match parts with
+    | [| baseType; format |] -> normalizePixelType baseType, Some(format.ToLowerInvariant())
+    | [| baseType |] -> normalizePixelType baseType, None
+    | _ -> normalizePixelType pixelType, None
+
+let private formatOperator operator format =
+    match format with
+    | Some format when
+        (String.Equals(operator, "Read", StringComparison.OrdinalIgnoreCase)
+         || String.Equals(operator, "ReadCast", StringComparison.OrdinalIgnoreCase)
+         || String.Equals(operator, "Write", StringComparison.OrdinalIgnoreCase)) ->
+        $"{operator}.{format}"
+    | _ -> operator
+
+let private formatFromSuffixText (suffix: string) =
+    if String.IsNullOrWhiteSpace suffix then
+        None
+    else
+        let format = suffix.Trim().TrimStart('.').ToLowerInvariant()
+        if String.IsNullOrWhiteSpace format then None else Some format
 
 type private FeatureMetadata =
     { Operator: string
       Parameters: Map<string, string> }
+
+let private metadataFormat (metadata: FeatureMetadata) =
+    metadata.Parameters
+    |> Map.tryFind "suffix"
+    |> Option.bind formatFromSuffixText
+
+let private parameterPixelType key (metadata: FeatureMetadata) =
+    metadata.Parameters
+    |> Map.tryFind key
+    |> Option.bind normalizePixelType
+
+let private castPairPixelType (metadata: FeatureMetadata) =
+    match parameterPixelType "sourceType" metadata, parameterPixelType "targetType" metadata with
+    | Some sourceType, Some targetType -> Some $"{sourceType}To{targetType}"
+    | _ -> None
+
+let private specializeOperator (metadata: FeatureMetadata) =
+    match metadata.Operator.Trim(), metadata.Parameters |> Map.tryFind "function", metadata.Parameters |> Map.tryFind "operation" with
+    | operator, Some functionName, _ when String.Equals(operator, "UnaryImageFunction", StringComparison.OrdinalIgnoreCase) ->
+        $"{operator}.{functionName.Trim().ToLowerInvariant()}"
+    | operator, _, Some operation when String.Equals(operator, "ImageOpScalar", StringComparison.OrdinalIgnoreCase) ->
+        let operationName =
+            match operation.Trim() with
+            | "+" -> "add"
+            | "-" -> "subtract"
+            | "*" -> "multiply"
+            | "/" -> "divide"
+            | other -> other.ToLowerInvariant()
+
+        $"{operator}.{operationName}"
+    | operator, _, _ -> formatOperator operator (metadataFormat metadata)
+
+let private operatorCoveredByRuntime (runtimeOperators: Set<string>) (operator: string) =
+    let normalized = operator.Trim().ToLowerInvariant()
+    runtimeOperators.Contains normalized
+    || runtimeOperators |> Seq.exists (fun runtimeOperator -> runtimeOperator.StartsWith(normalized + ".", StringComparison.OrdinalIgnoreCase))
 
 type private EvidenceContext =
     { PixelType: string option
@@ -250,14 +362,26 @@ let private tryReadCastCase (rowId: string) =
 let private tag key (term: ProbeAnalysis.StoredRuntimeCostTerm) =
     term.Tags |> Array.tryFind (fun tag -> tag.Key = key) |> Option.map _.Value
 
-let private runtimeTermEvidenceRow (record: ProbeAnalysis.StoredMeasurementRecord) (term: ProbeAnalysis.StoredRuntimeCostTerm) : Fitting.EvidenceRow option =
+let private runtimeTermEvidenceRow (record: ProbeAnalysis.StoredMeasurementRecord) (featureMetadata: FeatureMetadata list) (term: ProbeAnalysis.StoredRuntimeCostTerm) : Fitting.EvidenceRow option =
     let operator =
         tag "operator" term
         |> Option.orElseWith (fun () -> if String.IsNullOrWhiteSpace term.StageName then None else Some term.StageName)
 
     operator
     |> Option.map (fun operator ->
-        let pixelType = tag "pixelType" term |> Option.bind normalizePixelType
+        let metadata =
+            featureMetadata
+            |> List.tryFind (fun metadata -> String.Equals(metadata.Operator, operator, StringComparison.OrdinalIgnoreCase))
+        let operator =
+            metadata
+            |> Option.map specializeOperator
+            |> Option.defaultValue operator
+        let rawPixelType = tag "pixelType" term
+        let pixelType, format =
+            match rawPixelType with
+            | Some value -> splitPixelTypeFormat value
+            | None -> None, None
+        let operator = formatOperator operator format
         let voxels = tag "voxels" term |> Option.bind tryParseUInt64Text
         let bytesPerPixel = pixelType |> Option.bind pixelTypeBytes
         let volumeBytes =
@@ -293,7 +417,22 @@ let private runtimeTermEvidenceRow (record: ProbeAnalysis.StoredMeasurementRecor
 
 let private featureEvidenceRow (context: EvidenceContext) (record: ProbeAnalysis.StoredMeasurementRecord) (feature: ProbeAnalysis.StoredFloatValue) : Fitting.EvidenceRow =
     let metadata = parseFeatureMetadata feature.Key
-    let featurePixelType = metadata.Parameters |> Map.tryFind "type" |> Option.bind normalizePixelType
+    let operator = specializeOperator metadata
+    let featurePixelType =
+        metadata.Parameters
+        |> Map.tryFind "type"
+        |> Option.bind normalizePixelType
+        |> Option.orElseWith (fun () ->
+            if String.Equals(metadata.Operator, "Cast", StringComparison.OrdinalIgnoreCase) then
+                castPairPixelType metadata
+            else
+                None)
+        |> Option.orElseWith (fun () ->
+            match metadata.Operator.Trim().ToLowerInvariant() with
+            | "coordinatex"
+            | "coordinatey"
+            | "coordinatez" -> Some "Float64"
+            | _ -> None)
     let width, height, depth =
         match context.Width, context.Height, context.Depth with
         | Some width, Some height, Some depth -> Some width, Some height, Some depth
@@ -327,7 +466,7 @@ let private featureEvidenceRow (context: EvidenceContext) (record: ProbeAnalysis
       SourcePath = record.SourcePath
       FeatureKey = feature.Key
       FeatureValue = feature.Value
-      Operator = metadata.Operator
+      Operator = operator
       PixelType = pixelType
       Width = width
       Height = height
@@ -376,49 +515,69 @@ let private readCastEvidenceRows (context: EvidenceContext) (record: ProbeAnalys
         imageGeometry context case.TargetType
 
     let castPixelType = $"{case.SourceType}To{case.TargetType}"
-    let readPixelType =
-        case.SourceFormat
-        |> Option.map (fun format -> $"{case.SourceType}.{format}")
-        |> Option.defaultValue case.SourceType
+    let readOperator = formatOperator "Read" case.SourceFormat
+    let readCastOperator = formatOperator "ReadCast" case.SourceFormat
+    let readFormat = case.SourceFormat |> Option.defaultValue ""
 
-    [ { RowId = record.RowId
-        Measurement = record.Measurement
-        Value = record.Value
-        SourcePath = record.SourcePath
-        FeatureKey = $"Read:sourceType={case.SourceType}:readCastMode={case.Mode}"
-        FeatureValue = 1.0
-        Operator = "Read"
-        PixelType = Some readPixelType
-        Width = context.Width
-        Height = context.Height
-        Depth = context.Depth
-        Voxels = sourceVoxels
-        SlicePixels = sourceSlicePixels
-        SliceBytes = sourceSliceBytes
-        VolumeBytes = sourceVolumeBytes
-        WindowSize = None
-        Radius = None
-        KernelSize = None
-        Sigma = None }
-      { RowId = record.RowId
-        Measurement = record.Measurement
-        Value = record.Value
-        SourcePath = record.SourcePath
-        FeatureKey = $"Cast:sourceType={case.SourceType}:targetType={case.TargetType}:mode={case.Mode}"
-        FeatureValue = 1.0
-        Operator = "Cast"
-        PixelType = Some castPixelType
-        Width = context.Width
-        Height = context.Height
-        Depth = context.Depth
-        Voxels = targetVoxels
-        SlicePixels = targetSlicePixels
-        SliceBytes = targetSliceBytes
-        VolumeBytes = targetVolumeBytes
-        WindowSize = None
-        Radius = None
-        KernelSize = None
-        Sigma = None } ]
+    if String.Equals(case.Mode, "Implicit", StringComparison.OrdinalIgnoreCase) then
+        [ { RowId = record.RowId
+            Measurement = record.Measurement
+            Value = record.Value
+            SourcePath = record.SourcePath
+            FeatureKey = $"ReadCast:sourceType={case.SourceType}:targetType={case.TargetType}:format={readFormat}:mode={case.Mode}"
+            FeatureValue = 1.0
+            Operator = readCastOperator
+            PixelType = Some castPixelType
+            Width = context.Width
+            Height = context.Height
+            Depth = context.Depth
+            Voxels = targetVoxels
+            SlicePixels = targetSlicePixels
+            SliceBytes = targetSliceBytes
+            VolumeBytes = targetVolumeBytes
+            WindowSize = None
+            Radius = None
+            KernelSize = None
+            Sigma = None } ]
+    else
+        [ { RowId = record.RowId
+            Measurement = record.Measurement
+            Value = record.Value
+            SourcePath = record.SourcePath
+            FeatureKey = $"Read:sourceType={case.SourceType}:format={readFormat}:readCastMode={case.Mode}"
+            FeatureValue = 1.0
+            Operator = readOperator
+            PixelType = Some case.SourceType
+            Width = context.Width
+            Height = context.Height
+            Depth = context.Depth
+            Voxels = sourceVoxels
+            SlicePixels = sourceSlicePixels
+            SliceBytes = sourceSliceBytes
+            VolumeBytes = sourceVolumeBytes
+            WindowSize = None
+            Radius = None
+            KernelSize = None
+            Sigma = None }
+          { RowId = record.RowId
+            Measurement = record.Measurement
+            Value = record.Value
+            SourcePath = record.SourcePath
+            FeatureKey = $"Cast:sourceType={case.SourceType}:targetType={case.TargetType}:mode={case.Mode}"
+            FeatureValue = 1.0
+            Operator = "Cast"
+            PixelType = Some castPixelType
+            Width = context.Width
+            Height = context.Height
+            Depth = context.Depth
+            Voxels = targetVoxels
+            SlicePixels = targetSlicePixels
+            SliceBytes = targetSliceBytes
+            VolumeBytes = targetVolumeBytes
+            WindowSize = None
+            Radius = None
+            KernelSize = None
+            Sigma = None } ]
 
 let membersOfRecord (record: ProbeAnalysis.StoredMeasurementRecord) =
     seq {
@@ -440,9 +599,16 @@ let selectorMatchesRecord selector (record: ProbeAnalysis.StoredMeasurementRecor
         ProbeSelection.familyForRowId record.RowId
         |> Option.map (ProbeSelection.selectorMatchesFamily selector)
         |> Option.defaultValue true
-    familyOk && ProbeSelection.selectorMatchesMembers selector (membersOfRecord record)
+    familyOk
+    && ProbeSelection.selectorMatchesMembers selector (membersOfRecord record)
+    && ProbeSelection.selectorMatchesShape selector record.RowId
 
 let evidenceRowsFromRecord (record: ProbeAnalysis.StoredMeasurementRecord) =
+    let featureMetadata =
+        record.Features
+        |> Array.toList
+        |> List.map (fun feature -> parseFeatureMetadata feature.Key)
+
     match record.RuntimeCostTerms |> Array.toList with
     | _ :: _ ->
         let readCastCase = tryReadCastCase record.RowId
@@ -451,8 +617,8 @@ let evidenceRowsFromRecord (record: ProbeAnalysis.StoredMeasurementRecord) =
             record.RuntimeCostTerms
             |> Array.choose (fun term ->
                 match readCastCase, tag "operator" term |> Option.map (fun value -> value.Trim().ToLowerInvariant()) with
-                | Some _, Some("read" | "cast") -> None
-                | _ -> runtimeTermEvidenceRow record term)
+                | Some _, Some operator when operator = "cast" || operator = "read" || operator.StartsWith("read.") -> None
+                | _ -> runtimeTermEvidenceRow record featureMetadata term)
             |> Array.toList
 
         let runtimeOperators =
@@ -476,7 +642,7 @@ let evidenceRowsFromRecord (record: ProbeAnalysis.StoredMeasurementRecord) =
                     None
                 elif readCastCase.IsSome && (operator = "read" || operator = "cast") then
                     None
-                elif operator = "intercept" || not (runtimeOperators.Contains operator) then
+                elif operator = "intercept" || not (operatorCoveredByRuntime runtimeOperators metadata.Operator) then
                     Some(featureEvidenceRow context record feature)
                 else
                     None)
@@ -488,15 +654,83 @@ let evidenceRowsFromRecord (record: ProbeAnalysis.StoredMeasurementRecord) =
         |> Array.toList
         |> List.map (featureEvidenceRow context record)
 
+let private median values =
+    let sorted = values |> List.sort
+    let n = sorted.Length
+
+    if n = 0 then
+        0.0
+    elif n % 2 = 1 then
+        sorted[n / 2]
+    else
+        0.5 * (sorted[n / 2 - 1] + sorted[n / 2])
+
+let private aggregateEvidenceRows (rows: Fitting.EvidenceRow list) =
+    rows
+    |> List.groupBy (fun row ->
+        row.RowId,
+        row.Measurement,
+        row.FeatureKey,
+        row.FeatureValue,
+        row.Operator,
+        row.PixelType,
+        row.Width,
+        row.Height,
+        row.Depth,
+        row.Voxels,
+        row.SlicePixels,
+        row.SliceBytes,
+        row.VolumeBytes,
+        row.WindowSize,
+        row.Radius,
+        row.KernelSize,
+        row.Sigma)
+    |> List.map (fun (_, group) ->
+        let first = group.Head
+        { first with
+            Value = group |> List.map _.Value |> median
+            SourcePath = group |> List.map _.SourcePath |> List.tryHead |> Option.defaultValue first.SourcePath })
+
 let fit options =
+    let allRecords = readMeasurementStore options.MeasurementStorePath
+
     let records =
-        readMeasurementStore options.MeasurementStorePath
+        allRecords
         |> List.filter (selectorMatchesRecord options.Selector)
 
-    let evidence = records |> List.collect evidenceRowsFromRecord
+    let evidence =
+        records
+        |> List.collect evidenceRowsFromRecord
+        |> aggregateEvidenceRows
+
+    let fixedCoefficients =
+        match options.FixedThrough with
+        | None -> []
+        | Some family ->
+            let fixedSelector : ProbeSelection.EvidenceSelector =
+                { Families = [ "all" ]
+                  Members = []
+                  UpTo = Some family
+                  Shapes = options.Selector.Shapes }
+
+            let fixedEvidence =
+                allRecords
+                |> List.filter (selectorMatchesRecord fixedSelector)
+                |> List.collect evidenceRowsFromRecord
+                |> aggregateEvidenceRows
+
+            let fixedFits =
+                Fitting.fitOperatorTerms options.Ridge options.MinSupport fixedEvidence
+
+            fixedFits |> List.collect _.Coefficients
+
     Directory.CreateDirectory options.OutputDirectory |> ignore
     Fitting.writeEvidenceCsv (Path.Combine(options.OutputDirectory, "costEvidence.csv")) evidence
-    let fits = Fitting.fitOperatorTerms options.Ridge options.MinSupport evidence
+    let fits =
+        match fixedCoefficients with
+        | [] -> Fitting.fitOperatorTerms options.Ridge options.MinSupport evidence
+        | fixedCoefficients -> Fitting.fitOperatorTermsWithFixed options.Ridge options.MinSupport fixedCoefficients evidence
+
     Fitting.writeOperatorTermCoefficientsCsv (Path.Combine(options.OutputDirectory, "operatorModelCoefficients.csv")) fits
     Fitting.writeOperatorTermPredictionsCsv (Path.Combine(options.OutputDirectory, "operatorModelPredictions.csv")) fits
     Fitting.writeOperatorTermDiscrepanciesCsv (Path.Combine(options.OutputDirectory, "operatorModelDiscrepancies.csv")) 100.0 4.0 fits
@@ -506,6 +740,10 @@ let fit options =
         "StackProcessing fitted operator cost model"
         [ "Fitted from the durable Probe measurement store."
           "Fit selection can be restricted by ladder family/member."
+          "Repeated collection is collapsed to median evidence per graph, measurement, and feature before fitting."
+          match options.FixedThrough with
+          | Some family -> $"Coefficients through ladder family '{family}' were fitted first and held fixed while fitting the selected scope."
+          | None -> "No ladder coefficients were held fixed during fitting."
           "Streaming operators use operationCount plus dataMB-derived terms so whole-volume probe evidence can be applied per emitted slice."
           "Read-cast probes decompose read<T> and read<diskT> followed by cast<diskT,T> into Read(sourceType) plus Cast(sourceType->targetType) evidence."
           "Windowed and radius-dependent operators add windowDataMB, radius/kernel terms, and n log n terms when the graph exposes those variables."

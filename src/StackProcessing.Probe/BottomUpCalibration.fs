@@ -427,6 +427,7 @@ let private runProbeGraphs options layerDir =
            "false"
            "--repeat"
            string options.Repeat
+           "--shuffle"
            "-j"
            string options.Jobs |]
 
