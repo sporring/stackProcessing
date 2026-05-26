@@ -202,6 +202,218 @@ dotnet run --project src/StackProcessing.Probe/StackProcessing.Probe.fsproj -- \
 
 The same pattern continues for later families.
 
+## Standalone Ladder-Climb Protocol
+
+When calibrating a new computing environment, use a self-contained ladder climb. Each ladder family is treated as a local convergence problem:
+
+```text
+for family in ladder:
+    collect initial family evidence
+    repeat:
+        fit up to family
+        inspect up to family and write request
+        if inspect says sufficient:
+            accept family and move on
+        if request repeats without improvement:
+            mark plateau and decide whether to accept or diagnose model terms
+        collect request
+    cleanup generated scratch
+```
+
+The key idea is that one family should be made locally stable before moving upward. Higher families can otherwise push cost back into lower terms and make interpretation ambiguous.
+
+Probe implements this protocol as the `climb` command:
+
+```bash
+dotnet run --project src/StackProcessing.Probe/StackProcessing.Probe.fsproj -- \
+  --log tmp/climb/climb.log \
+  climb --through singleton \
+  --shapes 256x256x256,512x512x128,1024x1024x64 \
+  --repeat 6 --min-repeats 6 --max-request-rounds 3 -j 1
+```
+
+`--log PATH` is a global Probe option, so it can be used with any command. It tees both stdout and stderr to the file while still printing to the console. For long macOS climbs, combine it with `caffeinate`:
+
+```bash
+caffeinate -dimsu dotnet run --project src/StackProcessing.Probe/StackProcessing.Probe.fsproj -- \
+  --log tmp/climb/climb.log \
+  climb --through singleton \
+  --shapes 256x256x256,512x512x128,1024x1024x64 \
+  --repeat 6 --min-repeats 6 --max-request-rounds 3 -j 1
+```
+
+By default, `climb` starts at `io`, walks the implicit ladder, performs one initial `collect --family`, then repeats `fit`, `inspect`, and `collect --request` until the step converges or plateaus. It cleans generated probe scratch between accepted or plateaued families while keeping the durable measurement store and fitted model.
+
+Recommended ladder:
+
+```text
+io
+io-cast
+sources
+singleton
+neighbourhood
+geometry
+fourier
+keypoints
+dependency
+reducers
+```
+
+Optional/experimental:
+
+```text
+window-slab
+```
+
+Keep `window-slab` explicit rather than part of the default climb unless the goal is to study slab/window scaffolding.
+
+### Per-Step Template
+
+For a family named `FAMILY` and a request file `tmp/inspect/FAMILY-request.json`:
+
+```bash
+caffeinate -dimsu dotnet run --project src/StackProcessing.Probe/StackProcessing.Probe.fsproj -- \
+  collect --family FAMILY \
+  --shapes 256x256x256,512x512x128,1024x1024x64 \
+  --noisy-type Float32 --repeat 6 -j 1
+
+dotnet run --project src/StackProcessing.Probe/StackProcessing.Probe.fsproj -- \
+  fit --up-to FAMILY \
+  --shapes 256x256x256,512x512x128,1024x1024x64 \
+  --model-output models/fitted/stackprocessing.operator-cost.json
+
+dotnet run --project src/StackProcessing.Probe/StackProcessing.Probe.fsproj -- \
+  inspect --max-step FAMILY --min-repeats 6 \
+  --shapes 256x256x256,512x512x128,1024x1024x64 \
+  --suggest tmp/inspect/FAMILY-request.json
+```
+
+If `inspect` requests more evidence:
+
+```bash
+caffeinate -dimsu dotnet run --project src/StackProcessing.Probe/StackProcessing.Probe.fsproj -- \
+  collect --request tmp/inspect/FAMILY-request.json -j 1
+```
+
+Then rerun `fit` and `inspect`.
+
+### Convergence Criteria
+
+Accept a ladder step when:
+
+- coverage is sufficient through the selected scope,
+- every family through the current step has `minRepeats >= 6`,
+- `inspect` reports fit quality sufficient,
+- flagged prediction ratio is below the active threshold,
+- the request file is not asking for repeated collection of the same members,
+- the improvement from the last request round is small but already within tolerance.
+
+In practice, a good inspect line looks like:
+
+```text
+coverage looks sufficient through the selected ladder scope.
+fit quality elapsedMilliseconds R2=...
+fit quality flagged predictions=.../...
+fit quality looks sufficient through the selected ladder scope.
+```
+
+### Plateau Criteria
+
+Stop repeating a step aggressively when any of these happen:
+
+- the same members are requested for two or three consecutive request rounds,
+- R2 changes only in the third or fourth decimal place,
+- flagged prediction count does not decrease meaningfully,
+- the flagged rows concentrate in a lower family that was already accepted,
+- the flagged rows are mostly old or tiny shapes outside the active shape scope,
+- collected record count grows but evidence-row count and fit quality barely move.
+
+Suggested hard limit:
+
+```text
+initial family collect + at most 3 request rounds
+```
+
+For a clean machine-to-machine comparison, prefer this aggressive cap. If a family has not converged after three targeted request rounds, treat it as a modelling question rather than a measurement-volume question.
+
+### Plateau Actions
+
+When a step plateaus:
+
+1. Re-run `fit` and `inspect` with explicit `--shapes`.
+2. Inspect whether the request is stuck on old shapes or old graph names.
+3. Try `--fixed-through` one level below the current family to see whether the strain is moving down the ladder.
+4. Check whether the flagged rows share a missing model factor, such as file format, pixel type, cast direction, write-vs-ignore, coordinate axis, or window radius.
+5. If the model explanation is clear, update the model terms before collecting more.
+6. If the model explanation is not clear but the fit is usable, mark the step accepted-with-warning and continue.
+
+Example diagnostic freeze:
+
+```bash
+dotnet run --project src/StackProcessing.Probe/StackProcessing.Probe.fsproj -- \
+  fit --up-to sources --fixed-through io-cast \
+  --shapes 256x256x256,512x512x128,1024x1024x64 \
+  --model-output models/fitted/stackprocessing.operator-cost.json
+
+dotnet run --project src/StackProcessing.Probe/StackProcessing.Probe.fsproj -- \
+  inspect --max-step sources --fixed-through io-cast --min-repeats 6 \
+  --shapes 256x256x256,512x512x128,1024x1024x64 \
+  --suggest tmp/inspect/sources-request.json
+```
+
+### Cleanup Between Steps
+
+Do not clean `tmp/` during a running `collect` command. Once `collect` has appended durable records and the following `fit`/`inspect` has completed, it is fine to clean generated scratch before moving to the next family:
+
+```bash
+rm -rf tmp/runJson_* tmp/probingGraphs tmp/probeInputs tmp/analysis
+mkdir -p tmp/inspect
+```
+
+Do not remove:
+
+```text
+measurements/stackprocessing-probe.jsonl
+models/fitted/stackprocessing.operator-cost.json
+```
+
+unless intentionally starting a new calibration cycle.
+
+### Environment Comparison
+
+For comparing machines, keep these fixed:
+
+- same git commit,
+- same SimpleITK version and native library,
+- same .NET SDK/runtime,
+- same shapes,
+- same repeat count,
+- same ladder order,
+- same max request rounds,
+- same active model terms,
+- same optimizer-off probe execution,
+- same `-j 1` timing policy.
+
+Record environment metadata with the final model:
+
+```text
+machine name
+CPU
+RAM
+storage type
+operating system
+.NET version
+SimpleITK version
+git commit
+date
+shape scope
+repeat count
+ladder families completed
+families accepted with warning
+```
+
+This makes it possible to compare fitted coefficients across machines without confusing hardware differences with procedure differences.
+
 ## Request-Based Collection
 
 If `inspect` reports that fit quality or coverage is weak, it writes a request JSON. Collect that request directly:
@@ -387,4 +599,3 @@ models/default/stackprocessing.operator-cost.json
 ```
 
 Do not clean `tmp/` during a single `collect` or `local-update` run. The command may still need its generated `runJson_*` directories before appending durable records.
-

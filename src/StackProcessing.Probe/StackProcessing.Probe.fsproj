@@ -51,6 +51,7 @@
     <Compile Include="Fit.fs" />
     <Compile Include="Collect.fs" />
     <Compile Include="Inspect.fs" />
+    <Compile Include="LadderClimb.fs" />
     <Compile Include="Program.fs" />
   </ItemGroup>
 

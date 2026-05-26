@@ -53,6 +53,43 @@ The special cases are listed in `config/special-cases.csv`. The initial subset i
 
 ## Suggested Workflow
 
+For repeatable full runs, use the top-level benchmark driver:
+
+```bash
+bash benchmarks/run_all.sh --repeat 3
+```
+
+This generates deterministic TIFF inputs, runs the default baseline backends, and writes:
+
+```text
+benchmarks/results/raw.csv
+benchmarks/results/summary.csv
+```
+
+Use `--dry-run` to print the exact commands without executing them:
+
+```bash
+bash benchmarks/run_all.sh --repeat 3 --dry-run
+```
+
+A broader report-facing run can include all baseline backends and the OME-Zarr special case:
+
+```bash
+bash benchmarks/run_all.sh \
+  --repeat 3 \
+  --backends stackprocessing,python-skimage-scipy,cpp-itk,matlab \
+  --build-itk \
+  --include-special
+```
+
+The default backend set is intentionally modest:
+
+```text
+stackprocessing,python-skimage-scipy
+```
+
+This keeps a first run possible on ordinary developer machines. Add `cpp-itk`, `matlab`, and `--include-special` when those environments are installed.
+
 Generate a deterministic input stack with StackProcessing:
 
 ```bash
