@@ -153,13 +153,14 @@ let private runTyped<'T when 'T: equality> operation input output radius thresho
     | _ -> failwith $"unsupported operation '{operation}'"
     0
 
-let private runGaussian input output sigma availableMemory =
+let private runGaussianTyped<'T when 'T: equality> input output sigma availableMemory =
     ensureCleanDirectory output
     let src, _ = commandLineSource availableMemory [||]
     src
-    |> read<float> input ".tiff"
+    |> read<'T> input ".tiff"
+    >=> cast<'T, float>
     >=> smoothWGauss sigma None None None
-    >=> cast<float, float32>
+    >=> cast<float, 'T>
     >=> write output ".tiff"
     |> sink
     0
@@ -198,7 +199,9 @@ let private run opts =
     let thresholdValue = optional "threshold" "128" opts |> fun s -> Double.Parse(s, invariant)
     let availableMemory = optional "available-memory" (string (8UL * 1024UL * 1024UL * 1024UL)) opts |> UInt64.Parse
     match operation, pixelType with
-    | "smoothWGauss", _ -> runGaussian input output sigma availableMemory
+    | "smoothWGauss", UInt8 -> runGaussianTyped<uint8> input output sigma availableMemory
+    | "smoothWGauss", UInt16 -> runGaussianTyped<uint16> input output sigma availableMemory
+    | "smoothWGauss", Float32 -> runGaussianTyped<float32> input output sigma availableMemory
     | "connectedComponents", UInt8 -> runConnectedComponents input output windowSize availableMemory
     | "connectedComponents", _ -> failwith "connectedComponents benchmark is currently defined for UInt8 masks only"
     | _, UInt8 -> runTyped<uint8> operation input output radius thresholdValue availableMemory

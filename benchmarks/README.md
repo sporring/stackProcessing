@@ -35,9 +35,17 @@ The initial type set is:
 - `UInt16`: common microscopy TIFF data.
 - `Float32`: high-end microscopy and scientific image data.
 
+The baseline size sweep is:
+
+- `256x256x256`
+- `512x512x512`
+- `1024x1024x1024`
+
+For `median` and `dilate`, the benchmark uses radii `1`, `3`, and `9`, corresponding to `3x3x3`, `7x7x7`, and `19x19x19` neighbourhoods. For `smoothWGauss`, it uses standard deviations `1`, `3`, and `9`.
+
 The initial benchmark intentionally focuses on TIFF only. Format-specific behavior is large enough that TIFF should be understood before expanding to MHA, OME-Zarr, or HDF5/NeXus.
 
-`smoothWGauss` is represented in StackProcessing by the current Float64-backed Gaussian stage and written back as Float32 for the benchmark. `connectedComponents` is included because it is an important dependency-sensitive operation. The semantic target for all TIFF-stack backends is 3D component labelling: StackProcessing may stream internally, while MATLAB, Python/scikit-image/SciPy, and C++/ITK read the full stack into a volume before processing.
+`smoothWGauss` is represented in StackProcessing by the current Float64-backed Gaussian stage, with typed benchmark cases casting into the operation and back to the requested output type. `connectedComponents` is included because it is an important dependency-sensitive operation. The semantic target for all TIFF-stack backends is 3D component labelling: StackProcessing may stream internally, while MATLAB, Python/scikit-image/SciPy, and C++/ITK read the full stack into a volume before processing.
 
 ## Special-Case Chunk-Native Benchmark
 
