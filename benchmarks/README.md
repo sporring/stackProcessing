@@ -23,17 +23,17 @@ Each backend should measure the same user-visible task, with the same input stac
 The first benchmark set avoids operations that demonstrate StackProcessing-specific mechanics directly. It focuses on common image-analysis tasks:
 
 - `copy`: IO baseline.
-- `threshold`: scalar map producing `UInt8` output.
-- `smoothWGauss`: 3D Gaussian smoothing.
+- `threshold`: scalar map producing a binary `UInt8` mask with values `0` and `1`.
+- `uniformConvolve`: 3D convolution with a uniform kernel.
 - `median`: 3D median filter.
-- `dilate`: representative 3D mathematical morphology operation.
+- `dilate`: binary 3D dilation producing a binary `UInt8` mask with values `0` and `1`.
 - `connectedComponents`: 3D connected-component labelling.
 
 The initial type set is:
 
-- `UInt8`: binary and 256-level grayscale images.
-- `UInt16`: common microscopy TIFF data.
-- `Float32`: high-end microscopy and scientific image data.
+- `UInt8`: values in the range `0..255`.
+- `UInt16`: the same `0..255` values stored as `UInt16`.
+- `Float32`: the same `0..255` values stored as `Float32`.
 
 The baseline size sweep is:
 
@@ -41,11 +41,15 @@ The baseline size sweep is:
 - `512x512x512`
 - `1024x1024x1024`
 
-For `median` and `dilate`, the benchmark uses radii `1`, `3`, and `9`, corresponding to `3x3x3`, `7x7x7`, and `19x19x19` neighbourhoods. For `smoothWGauss`, it uses standard deviations `1`, `3`, and `9`.
+For `median`, the benchmark uses radii `1`, `3`, and `9`, corresponding to `3x3x3`, `7x7x7`, and `19x19x19` neighbourhoods. For `dilate`, every backend first interprets the input as a binary mask using `input >= 128`, then applies spherical/ball structuring elements with radii `1`, `3`, and `9`, and writes a `UInt8` mask. For `uniformConvolve`, it uses uniform kernels of size `3`, `5`, and `7`.
 
 The initial benchmark intentionally focuses on TIFF only. Format-specific behavior is large enough that TIFF should be understood before expanding to MHA, OME-Zarr, or HDF5/NeXus.
 
-`smoothWGauss` is represented in StackProcessing by the current Float64-backed Gaussian stage, with typed benchmark cases casting into the operation and back to the requested output type. `connectedComponents` is included because it is an important dependency-sensitive operation. The semantic target for all TIFF-stack backends is 3D component labelling: StackProcessing may stream internally, while MATLAB, Python/scikit-image/SciPy, and C++/ITK read the full stack into a volume before processing.
+The fairness rule is that a case should read the same stack type, use the simplest native 3D operator available in that environment, and write the same output type across all backends. All generated inputs are deterministic ramps over the same value range `0..255`, regardless of storage type. `threshold` uses an inclusive lower threshold (`input >= 128`). `dilate` and `connectedComponents` use `input >= 128` to form their binary masks.
+
+`uniformConvolve` is represented in StackProcessing by constructing a Float64 uniform kernel, casting typed benchmark inputs into the operation, and casting back to the requested output type. `copy`, `uniformConvolve`, and `median` write the same pixel type they read (`UInt8`, `UInt16`, or `Float32`). `threshold`, `dilate`, and `connectedComponents` write `UInt8` mask/label-style outputs for all backends. `connectedComponents` is included because it is an important dependency-sensitive operation. The semantic target for all TIFF-stack backends is 3D component labelling: StackProcessing may stream internally, while MATLAB, Python/scikit-image/SciPy, and C++/ITK read the full stack into a volume before processing.
+
+The StackProcessing backend deliberately runs with the StackProcessing optimiser disabled. This keeps the benchmark focused on the current streaming implementation and avoids mixing benchmark results with experimental optimiser choices.
 
 ## Special-Case Chunk-Native Benchmark
 
@@ -57,7 +61,7 @@ read chunked OME-Zarr array -> process with Dask -> write chunked OME-Zarr array
 
 This is intentionally not mixed into the TIFF-stack baseline. The special-case benchmarks answer a different user question: what happens if the workflow starts in a chunk-native ecosystem instead of a directory of TIFF slices?
 
-The special cases are listed in `config/special-cases.csv`. The initial subset includes `copy`, `threshold`, and small-radius 3D neighbourhood operations implemented with Dask overlap. These require `dask`, `zarr`, `numpy`, and `scipy`.
+The special cases are listed in `config/special-cases.csv`. The initial subset includes `copy`, `threshold`, uniform convolution, and small-radius 3D neighbourhood operations implemented with Dask overlap. These require `dask`, `zarr`, `numpy`, and `scipy`; spherical dilation uses `scikit-image` when available and otherwise falls back to an equivalent NumPy footprint.
 
 ## Suggested Workflow
 

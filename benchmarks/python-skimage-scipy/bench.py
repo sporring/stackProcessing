@@ -11,12 +11,12 @@ from skimage import io, measure, morphology
 
 def parse_args():
     parser = argparse.ArgumentParser(description="scikit-image/SciPy TIFF-stack benchmark backend.")
-    parser.add_argument("--operation", required=True, choices=["copy", "threshold", "smoothWGauss", "median", "dilate", "connectedComponents"])
+    parser.add_argument("--operation", required=True, choices=["copy", "threshold", "uniformConvolve", "median", "dilate", "connectedComponents"])
     parser.add_argument("--pixel-type", required=True, choices=["UInt8", "UInt16", "Float32"])
     parser.add_argument("--input", required=True)
     parser.add_argument("--output", required=True)
     parser.add_argument("--radius", type=int, default=1)
-    parser.add_argument("--sigma", type=float, default=1.5)
+    parser.add_argument("--kernel-size", type=int, default=3)
     parser.add_argument("--threshold", type=float, default=128.0)
     parser.add_argument("--window", type=int, default=16)
     parser.add_argument("--mode", choices=["3d", "slice"], default="3d")
@@ -48,26 +48,28 @@ def process(stack, args):
     if args.operation == "copy":
         return stack.copy()
     if args.operation == "threshold":
-        return (stack > args.threshold).astype(np.uint8) * np.uint8(255)
-    if args.operation == "smoothWGauss":
-        sigma = (0.0, args.sigma, args.sigma) if args.mode == "slice" else args.sigma
-        return ndi.gaussian_filter(stack, sigma=sigma).astype(stack.dtype, copy=False)
+        return (stack >= args.threshold).astype(np.uint8)
+    if args.operation == "uniformConvolve":
+        kernel_size = max(1, args.kernel_size)
+        size = (1, kernel_size, kernel_size) if args.mode == "slice" else (kernel_size,) * 3
+        return ndi.uniform_filter(stack, size=size, mode="reflect").astype(stack.dtype, copy=False)
     if args.operation == "median":
         radius = max(1, args.radius)
         size = (1, 2 * radius + 1, 2 * radius + 1) if args.mode == "slice" else (2 * radius + 1,) * 3
         return ndi.median_filter(stack, size=size, mode="reflect")
     if args.operation == "dilate":
         radius = max(1, args.radius)
+        mask = stack >= 128
         if args.mode == "slice":
             footprint = morphology.square(2 * radius + 1)
-            return per_slice(stack, lambda image: morphology.dilation(image, footprint=footprint))
-        footprint = morphology.cube(2 * radius + 1)
-        return morphology.dilation(stack, footprint=footprint)
+            return per_slice(mask, lambda image: morphology.binary_dilation(image, footprint=footprint)).astype(np.uint8)
+        footprint = morphology.ball(radius)
+        return ndi.binary_dilation(mask, structure=footprint).astype(np.uint8)
     if args.operation == "connectedComponents":
         if args.mode == "slice":
-            labels = per_slice(stack, lambda image: measure.label(image > 0, connectivity=1))
+            labels = per_slice(stack, lambda image: measure.label(image >= 128, connectivity=1))
         else:
-            labels = measure.label(stack > 0, connectivity=1)
+            labels = measure.label(stack >= 128, connectivity=1)
         return np.mod(labels, 256).astype(np.uint8)
     raise ValueError(args.operation)
 

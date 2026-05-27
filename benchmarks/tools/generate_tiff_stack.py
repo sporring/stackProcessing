@@ -33,14 +33,14 @@ def make_slice(width: int, height: int, z: int, depth: int, dtype, pattern: str)
     if pattern == "binary":
         values = ((xx + yy + z) % 17 < 8).astype(np.uint8) * 255
     else:
-        values = (xx * 13 + yy * 7 + z * 31) % 65536
+        values = (xx * 3 + yy * 5 + z * 11) % 256
 
     if dtype == np.uint8:
         return (values % 256).astype(np.uint8)
     if dtype == np.uint16:
         return values.astype(np.uint16)
     if dtype == np.float32:
-        return (values.astype(np.float32) / np.float32(65535.0))
+        return values.astype(np.float32)
     raise ValueError(dtype)
 
 

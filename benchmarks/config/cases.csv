@@ -8,42 +8,42 @@ copy,Float32,512x512x512,,,IO baseline
 copy,UInt8,1024x1024x1024,,,IO baseline
 copy,UInt16,1024x1024x1024,,,IO baseline
 copy,Float32,1024x1024x1024,,,IO baseline
-threshold,UInt8,256x256x256,threshold,128,Binary output
-threshold,UInt16,256x256x256,threshold,32768,Binary output
-threshold,Float32,256x256x256,threshold,0.5,Binary output
-threshold,UInt8,512x512x512,threshold,128,Binary output
-threshold,UInt16,512x512x512,threshold,32768,Binary output
-threshold,Float32,512x512x512,threshold,0.5,Binary output
-threshold,UInt8,1024x1024x1024,threshold,128,Binary output
-threshold,UInt16,1024x1024x1024,threshold,32768,Binary output
-threshold,Float32,1024x1024x1024,threshold,0.5,Binary output
-smoothWGauss,UInt8,256x256x256,sigma,1,3D Gaussian smoothing
-smoothWGauss,UInt8,256x256x256,sigma,3,3D Gaussian smoothing
-smoothWGauss,UInt8,256x256x256,sigma,9,3D Gaussian smoothing
-smoothWGauss,UInt16,256x256x256,sigma,1,3D Gaussian smoothing
-smoothWGauss,UInt16,256x256x256,sigma,3,3D Gaussian smoothing
-smoothWGauss,UInt16,256x256x256,sigma,9,3D Gaussian smoothing
-smoothWGauss,Float32,256x256x256,sigma,1,3D Gaussian smoothing
-smoothWGauss,Float32,256x256x256,sigma,3,3D Gaussian smoothing
-smoothWGauss,Float32,256x256x256,sigma,9,3D Gaussian smoothing
-smoothWGauss,UInt8,512x512x512,sigma,1,3D Gaussian smoothing
-smoothWGauss,UInt8,512x512x512,sigma,3,3D Gaussian smoothing
-smoothWGauss,UInt8,512x512x512,sigma,9,3D Gaussian smoothing
-smoothWGauss,UInt16,512x512x512,sigma,1,3D Gaussian smoothing
-smoothWGauss,UInt16,512x512x512,sigma,3,3D Gaussian smoothing
-smoothWGauss,UInt16,512x512x512,sigma,9,3D Gaussian smoothing
-smoothWGauss,Float32,512x512x512,sigma,1,3D Gaussian smoothing
-smoothWGauss,Float32,512x512x512,sigma,3,3D Gaussian smoothing
-smoothWGauss,Float32,512x512x512,sigma,9,3D Gaussian smoothing
-smoothWGauss,UInt8,1024x1024x1024,sigma,1,3D Gaussian smoothing
-smoothWGauss,UInt8,1024x1024x1024,sigma,3,3D Gaussian smoothing
-smoothWGauss,UInt8,1024x1024x1024,sigma,9,3D Gaussian smoothing
-smoothWGauss,UInt16,1024x1024x1024,sigma,1,3D Gaussian smoothing
-smoothWGauss,UInt16,1024x1024x1024,sigma,3,3D Gaussian smoothing
-smoothWGauss,UInt16,1024x1024x1024,sigma,9,3D Gaussian smoothing
-smoothWGauss,Float32,1024x1024x1024,sigma,1,3D Gaussian smoothing
-smoothWGauss,Float32,1024x1024x1024,sigma,3,3D Gaussian smoothing
-smoothWGauss,Float32,1024x1024x1024,sigma,9,3D Gaussian smoothing
+threshold,UInt8,256x256x256,threshold,128,"Binary UInt8 output mask (0/1), input >= 128"
+threshold,UInt16,256x256x256,threshold,128,"Binary UInt8 output mask (0/1), input >= 128"
+threshold,Float32,256x256x256,threshold,128,"Binary UInt8 output mask (0/1), input >= 128"
+threshold,UInt8,512x512x512,threshold,128,"Binary UInt8 output mask (0/1), input >= 128"
+threshold,UInt16,512x512x512,threshold,128,"Binary UInt8 output mask (0/1), input >= 128"
+threshold,Float32,512x512x512,threshold,128,"Binary UInt8 output mask (0/1), input >= 128"
+threshold,UInt8,1024x1024x1024,threshold,128,"Binary UInt8 output mask (0/1), input >= 128"
+threshold,UInt16,1024x1024x1024,threshold,128,"Binary UInt8 output mask (0/1), input >= 128"
+threshold,Float32,1024x1024x1024,threshold,128,"Binary UInt8 output mask (0/1), input >= 128"
+uniformConvolve,UInt8,256x256x256,kernelSize,3,3x3x3 uniform convolution
+uniformConvolve,UInt8,256x256x256,kernelSize,5,5x5x5 uniform convolution
+uniformConvolve,UInt8,256x256x256,kernelSize,7,7x7x7 uniform convolution
+uniformConvolve,UInt16,256x256x256,kernelSize,3,3x3x3 uniform convolution
+uniformConvolve,UInt16,256x256x256,kernelSize,5,5x5x5 uniform convolution
+uniformConvolve,UInt16,256x256x256,kernelSize,7,7x7x7 uniform convolution
+uniformConvolve,Float32,256x256x256,kernelSize,3,3x3x3 uniform convolution
+uniformConvolve,Float32,256x256x256,kernelSize,5,5x5x5 uniform convolution
+uniformConvolve,Float32,256x256x256,kernelSize,7,7x7x7 uniform convolution
+uniformConvolve,UInt8,512x512x512,kernelSize,3,3x3x3 uniform convolution
+uniformConvolve,UInt8,512x512x512,kernelSize,5,5x5x5 uniform convolution
+uniformConvolve,UInt8,512x512x512,kernelSize,7,7x7x7 uniform convolution
+uniformConvolve,UInt16,512x512x512,kernelSize,3,3x3x3 uniform convolution
+uniformConvolve,UInt16,512x512x512,kernelSize,5,5x5x5 uniform convolution
+uniformConvolve,UInt16,512x512x512,kernelSize,7,7x7x7 uniform convolution
+uniformConvolve,Float32,512x512x512,kernelSize,3,3x3x3 uniform convolution
+uniformConvolve,Float32,512x512x512,kernelSize,5,5x5x5 uniform convolution
+uniformConvolve,Float32,512x512x512,kernelSize,7,7x7x7 uniform convolution
+uniformConvolve,UInt8,1024x1024x1024,kernelSize,3,3x3x3 uniform convolution
+uniformConvolve,UInt8,1024x1024x1024,kernelSize,5,5x5x5 uniform convolution
+uniformConvolve,UInt8,1024x1024x1024,kernelSize,7,7x7x7 uniform convolution
+uniformConvolve,UInt16,1024x1024x1024,kernelSize,3,3x3x3 uniform convolution
+uniformConvolve,UInt16,1024x1024x1024,kernelSize,5,5x5x5 uniform convolution
+uniformConvolve,UInt16,1024x1024x1024,kernelSize,7,7x7x7 uniform convolution
+uniformConvolve,Float32,1024x1024x1024,kernelSize,3,3x3x3 uniform convolution
+uniformConvolve,Float32,1024x1024x1024,kernelSize,5,5x5x5 uniform convolution
+uniformConvolve,Float32,1024x1024x1024,kernelSize,7,7x7x7 uniform convolution
 median,UInt8,256x256x256,radius,1,3x3x3 volume median
 median,UInt8,256x256x256,radius,3,7x7x7 volume median
 median,UInt8,256x256x256,radius,9,19x19x19 volume median
@@ -71,33 +71,33 @@ median,UInt16,1024x1024x1024,radius,9,19x19x19 volume median
 median,Float32,1024x1024x1024,radius,1,3x3x3 volume median
 median,Float32,1024x1024x1024,radius,3,7x7x7 volume median
 median,Float32,1024x1024x1024,radius,9,19x19x19 volume median
-dilate,UInt8,256x256x256,radius,1,3x3x3 volume grayscale dilation
-dilate,UInt8,256x256x256,radius,3,7x7x7 volume grayscale dilation
-dilate,UInt8,256x256x256,radius,9,19x19x19 volume grayscale dilation
-dilate,UInt16,256x256x256,radius,1,3x3x3 volume grayscale dilation
-dilate,UInt16,256x256x256,radius,3,7x7x7 volume grayscale dilation
-dilate,UInt16,256x256x256,radius,9,19x19x19 volume grayscale dilation
-dilate,Float32,256x256x256,radius,1,3x3x3 volume grayscale dilation
-dilate,Float32,256x256x256,radius,3,7x7x7 volume grayscale dilation
-dilate,Float32,256x256x256,radius,9,19x19x19 volume grayscale dilation
-dilate,UInt8,512x512x512,radius,1,3x3x3 volume grayscale dilation
-dilate,UInt8,512x512x512,radius,3,7x7x7 volume grayscale dilation
-dilate,UInt8,512x512x512,radius,9,19x19x19 volume grayscale dilation
-dilate,UInt16,512x512x512,radius,1,3x3x3 volume grayscale dilation
-dilate,UInt16,512x512x512,radius,3,7x7x7 volume grayscale dilation
-dilate,UInt16,512x512x512,radius,9,19x19x19 volume grayscale dilation
-dilate,Float32,512x512x512,radius,1,3x3x3 volume grayscale dilation
-dilate,Float32,512x512x512,radius,3,7x7x7 volume grayscale dilation
-dilate,Float32,512x512x512,radius,9,19x19x19 volume grayscale dilation
-dilate,UInt8,1024x1024x1024,radius,1,3x3x3 volume grayscale dilation
-dilate,UInt8,1024x1024x1024,radius,3,7x7x7 volume grayscale dilation
-dilate,UInt8,1024x1024x1024,radius,9,19x19x19 volume grayscale dilation
-dilate,UInt16,1024x1024x1024,radius,1,3x3x3 volume grayscale dilation
-dilate,UInt16,1024x1024x1024,radius,3,7x7x7 volume grayscale dilation
-dilate,UInt16,1024x1024x1024,radius,9,19x19x19 volume grayscale dilation
-dilate,Float32,1024x1024x1024,radius,1,3x3x3 volume grayscale dilation
-dilate,Float32,1024x1024x1024,radius,3,7x7x7 volume grayscale dilation
-dilate,Float32,1024x1024x1024,radius,9,19x19x19 volume grayscale dilation
-connectedComponents,UInt8,256x256x256,window,16,Connected-component labelling
-connectedComponents,UInt8,512x512x512,window,16,Connected-component labelling
-connectedComponents,UInt8,1024x1024x1024,window,16,Connected-component labelling
+dilate,UInt8,256x256x256,radius,1,binary dilation of input >= 128 with ball radius 1; UInt8 output mask (0/1)
+dilate,UInt8,256x256x256,radius,3,binary dilation of input >= 128 with ball radius 3; UInt8 output mask (0/1)
+dilate,UInt8,256x256x256,radius,9,binary dilation of input >= 128 with ball radius 9; UInt8 output mask (0/1)
+dilate,UInt16,256x256x256,radius,1,binary dilation of input >= 128 with ball radius 1; UInt8 output mask (0/1)
+dilate,UInt16,256x256x256,radius,3,binary dilation of input >= 128 with ball radius 3; UInt8 output mask (0/1)
+dilate,UInt16,256x256x256,radius,9,binary dilation of input >= 128 with ball radius 9; UInt8 output mask (0/1)
+dilate,Float32,256x256x256,radius,1,binary dilation of input >= 128 with ball radius 1; UInt8 output mask (0/1)
+dilate,Float32,256x256x256,radius,3,binary dilation of input >= 128 with ball radius 3; UInt8 output mask (0/1)
+dilate,Float32,256x256x256,radius,9,binary dilation of input >= 128 with ball radius 9; UInt8 output mask (0/1)
+dilate,UInt8,512x512x512,radius,1,binary dilation of input >= 128 with ball radius 1; UInt8 output mask (0/1)
+dilate,UInt8,512x512x512,radius,3,binary dilation of input >= 128 with ball radius 3; UInt8 output mask (0/1)
+dilate,UInt8,512x512x512,radius,9,binary dilation of input >= 128 with ball radius 9; UInt8 output mask (0/1)
+dilate,UInt16,512x512x512,radius,1,binary dilation of input >= 128 with ball radius 1; UInt8 output mask (0/1)
+dilate,UInt16,512x512x512,radius,3,binary dilation of input >= 128 with ball radius 3; UInt8 output mask (0/1)
+dilate,UInt16,512x512x512,radius,9,binary dilation of input >= 128 with ball radius 9; UInt8 output mask (0/1)
+dilate,Float32,512x512x512,radius,1,binary dilation of input >= 128 with ball radius 1; UInt8 output mask (0/1)
+dilate,Float32,512x512x512,radius,3,binary dilation of input >= 128 with ball radius 3; UInt8 output mask (0/1)
+dilate,Float32,512x512x512,radius,9,binary dilation of input >= 128 with ball radius 9; UInt8 output mask (0/1)
+dilate,UInt8,1024x1024x1024,radius,1,binary dilation of input >= 128 with ball radius 1; UInt8 output mask (0/1)
+dilate,UInt8,1024x1024x1024,radius,3,binary dilation of input >= 128 with ball radius 3; UInt8 output mask (0/1)
+dilate,UInt8,1024x1024x1024,radius,9,binary dilation of input >= 128 with ball radius 9; UInt8 output mask (0/1)
+dilate,UInt16,1024x1024x1024,radius,1,binary dilation of input >= 128 with ball radius 1; UInt8 output mask (0/1)
+dilate,UInt16,1024x1024x1024,radius,3,binary dilation of input >= 128 with ball radius 3; UInt8 output mask (0/1)
+dilate,UInt16,1024x1024x1024,radius,9,binary dilation of input >= 128 with ball radius 9; UInt8 output mask (0/1)
+dilate,Float32,1024x1024x1024,radius,1,binary dilation of input >= 128 with ball radius 1; UInt8 output mask (0/1)
+dilate,Float32,1024x1024x1024,radius,3,binary dilation of input >= 128 with ball radius 3; UInt8 output mask (0/1)
+dilate,Float32,1024x1024x1024,radius,9,binary dilation of input >= 128 with ball radius 9; UInt8 output mask (0/1)
+connectedComponents,UInt8,256x256x256,window,16,Connected-component labelling of input >= 128
+connectedComponents,UInt8,512x512x512,window,16,Connected-component labelling of input >= 128
+connectedComponents,UInt8,1024x1024x1024,window,16,Connected-component labelling of input >= 128

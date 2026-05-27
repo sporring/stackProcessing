@@ -58,8 +58,8 @@ def parameter_args(case):
         return ["--radius", value]
     if key == "threshold":
         return ["--threshold", value]
-    if key == "sigma":
-        return ["--sigma", value]
+    if key == "kernelSize":
+        return ["--kernel-size", value]
     if key == "window":
         return ["--window", value]
     return []
@@ -90,8 +90,8 @@ def backend_command(args, case, repeat):
             matlab_args["radius"] = case["parameterValue"]
         if case.get("parameterName") == "threshold":
             matlab_args["threshold"] = case["parameterValue"]
-        if case.get("parameterName") == "sigma":
-            matlab_args["sigma"] = case["parameterValue"]
+        if case.get("parameterName") == "kernelSize":
+            matlab_args["kernelSize"] = case["parameterValue"]
         if case.get("parameterName") == "window":
             matlab_args["window"] = case["parameterValue"]
         call = "addpath('%s'); bench_stack(%s)" % (

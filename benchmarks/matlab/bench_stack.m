@@ -3,7 +3,7 @@ function bench_stack(varargin)
 % Example:
 %   bench_stack("operation","threshold","pixelType","UInt8","input","in","output","out")
 
-args = struct("operation", "", "pixelType", "", "input", "", "output", "", "radius", 1, "sigma", 1.5, "threshold", 128, "window", 16);
+args = struct("operation", "", "pixelType", "", "input", "", "output", "", "radius", 1, "kernelSize", 3, "threshold", 128, "window", 16);
 for k = 1:2:numel(varargin)
     key = char(varargin{k});
     value = varargin{k + 1};
@@ -42,16 +42,18 @@ switch char(args.operation)
     case "copy"
         out = volume;
     case "threshold"
-        out = uint8(volume > numericArg(args.threshold)) .* uint8(255);
-    case "smoothWGauss"
-        out = imgaussfilt3(volume, numericArg(args.sigma));
+        out = uint8(volume >= numericArg(args.threshold));
+    case "uniformConvolve"
+        kernelSize = max(1, numericArg(args.kernelSize));
+        kernel = ones(kernelSize, kernelSize, kernelSize, "double") ./ (kernelSize ^ 3);
+        out = cast(convn(double(volume), kernel, "same"), class(volume));
     case "median"
         out = medfilt3(volume, [kernelSize kernelSize kernelSize], "symmetric");
     case "dilate"
-        se = strel("cube", kernelSize);
-        out = imdilate(volume, se);
+        se = strel("sphere", radius);
+        out = uint8(imdilate(volume >= 128, se));
     case "connectedComponents"
-        components = bwconncomp(volume > 0, 6);
+        components = bwconncomp(volume >= 128, 6);
         out = uint8(mod(labelmatrix(components), 256));
     otherwise
         error("unsupported operation %s", args.operation);

@@ -11,12 +11,12 @@ import numpy as np
 
 def parse_args():
     parser = argparse.ArgumentParser(description="Dask/OME-Zarr chunk-native benchmark backend.")
-    parser.add_argument("--operation", required=True, choices=["copy", "threshold", "smoothWGauss", "median", "dilate"])
+    parser.add_argument("--operation", required=True, choices=["copy", "threshold", "uniformConvolve", "median", "dilate"])
     parser.add_argument("--pixel-type", required=True, choices=["UInt8", "UInt16", "Float32"])
     parser.add_argument("--input", required=True)
     parser.add_argument("--output", required=True)
     parser.add_argument("--radius", type=int, default=1)
-    parser.add_argument("--sigma", type=float, default=1.5)
+    parser.add_argument("--kernel-size", type=int, default=3)
     parser.add_argument("--threshold", type=float, default=128.0)
     return parser.parse_args()
 
@@ -29,22 +29,23 @@ def process(arr, args):
     if args.operation == "copy":
         return arr
     if args.operation == "threshold":
-        return (arr > args.threshold).astype(np.uint8) * np.uint8(255)
+        return (arr >= args.threshold).astype(np.uint8)
 
     try:
         import scipy.ndimage as ndi
     except ImportError as exc:
-        raise RuntimeError("smoothWGauss/median/dilate require scipy for this Dask backend") from exc
+        raise RuntimeError("uniformConvolve/median/dilate require scipy for this Dask backend") from exc
 
     radius = max(1, args.radius)
-    if args.operation == "smoothWGauss":
-        halo = max(1, int(4.0 * args.sigma + 0.5))
+    if args.operation == "uniformConvolve":
+        kernel_size = max(1, args.kernel_size)
+        halo = kernel_size // 2
         return arr.map_overlap(
-            ndi.gaussian_filter,
+            ndi.uniform_filter,
             depth={0: halo, 1: halo, 2: halo},
             boundary="reflect",
             dtype=arr.dtype,
-            sigma=(args.sigma, args.sigma, args.sigma),
+            size=(kernel_size, kernel_size, kernel_size),
         )
 
     depth = {0: radius, 1: radius, 2: radius}
@@ -52,8 +53,19 @@ def process(arr, args):
         size = (2 * radius + 1, 2 * radius + 1, 2 * radius + 1)
         return arr.map_overlap(ndi.median_filter, depth=depth, boundary="reflect", dtype=arr.dtype, size=size)
     if args.operation == "dilate":
-        size = (2 * radius + 1, 2 * radius + 1, 2 * radius + 1)
-        return arr.map_overlap(ndi.grey_dilation, depth=depth, boundary="reflect", dtype=arr.dtype, size=size)
+        mask = arr >= 128
+        footprint = ndi.generate_binary_structure(3, 1)
+        try:
+            from skimage import morphology
+
+            footprint = morphology.ball(radius)
+        except ImportError:
+            grid = np.ogrid[-radius : radius + 1, -radius : radius + 1, -radius : radius + 1]
+            footprint = sum(axis * axis for axis in grid) <= radius * radius
+        return (
+            mask.map_overlap(ndi.binary_dilation, depth=depth, boundary="none", dtype=bool, structure=footprint)
+            .astype(np.uint8)
+        )
     raise ValueError(args.operation)
 
 

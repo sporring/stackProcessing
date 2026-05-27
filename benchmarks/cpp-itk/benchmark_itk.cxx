@@ -9,18 +9,18 @@
 #include <vector>
 
 #include "itkBinaryThresholdImageFilter.h"
+#include "itkBinaryDilateImageFilter.h"
 #include "itkCastImageFilter.h"
 #include "itkConnectedComponentImageFilter.h"
-#include "itkDiscreteGaussianImageFilter.h"
 #include "itkExtractImageFilter.h"
 #include "itkFlatStructuringElement.h"
-#include "itkGrayscaleDilateImageFilter.h"
 #include "itkImage.h"
 #include "itkImageFileReader.h"
 #include "itkImageFileWriter.h"
 #include "itkImageRegionConstIterator.h"
 #include "itkImageRegionIterator.h"
 #include "itkMedianImageFilter.h"
+#include "itkMeanImageFilter.h"
 
 namespace fs = std::filesystem;
 
@@ -31,7 +31,7 @@ struct Options {
   fs::path output;
   unsigned radius = 1;
   double threshold = 128.0;
-  double sigma = 1.5;
+  unsigned kernelSize = 3;
   unsigned window = 16;
 };
 
@@ -52,12 +52,17 @@ static Options parseOptions(int argc, char** argv) {
   options.output = argValue(argc, argv, "--output");
   options.radius = static_cast<unsigned>(std::stoul(argValue(argc, argv, "--radius", "1")));
   options.threshold = std::stod(argValue(argc, argv, "--threshold", "128"));
-  options.sigma = std::stod(argValue(argc, argv, "--sigma", "1.5"));
+  options.kernelSize = static_cast<unsigned>(std::stoul(argValue(argc, argv, "--kernel-size", "3")));
   options.window = static_cast<unsigned>(std::stoul(argValue(argc, argv, "--window", "16")));
   if (options.operation.empty() || options.pixelType.empty() || options.input.empty() || options.output.empty()) {
     throw std::runtime_error("required arguments: --operation --pixel-type --input --output");
   }
   return options;
+}
+
+template <typename T>
+static T binaryMaskLowerThreshold() {
+  return static_cast<T>(128);
 }
 
 static std::vector<fs::path> tiffFiles(const fs::path& input) {
@@ -191,7 +196,7 @@ static void runTyped(const Options& options) {
   using Element = itk::FlatStructuringElement<3>;
   Element::RadiusType elementRadius;
   elementRadius.Fill(radiusValue);
-  auto element = Element::Box(elementRadius);
+  auto element = Element::Ball(elementRadius);
 
   if (options.operation == "threshold") {
     using Threshold = itk::BinaryThresholdImageFilter<Image, Mask>;
@@ -199,8 +204,25 @@ static void runTyped(const Options& options) {
     filter->SetInput(input);
     filter->SetLowerThreshold(static_cast<T>(options.threshold));
     filter->SetUpperThreshold(itk::NumericTraits<T>::max());
-    filter->SetInsideValue(255);
+    filter->SetInsideValue(1);
     filter->SetOutsideValue(0);
+    writeVolumeSlices<Mask>(filter->GetOutput(), options.output, paths);
+    return;
+  }
+
+  if (options.operation == "dilate") {
+    using Threshold = itk::BinaryThresholdImageFilter<Image, Mask>;
+    using Dilate = itk::BinaryDilateImageFilter<Mask, Mask, Element>;
+    auto mask = Threshold::New();
+    mask->SetInput(input);
+    mask->SetLowerThreshold(binaryMaskLowerThreshold<T>());
+    mask->SetUpperThreshold(itk::NumericTraits<T>::max());
+    mask->SetInsideValue(1);
+    mask->SetOutsideValue(0);
+    auto filter = Dilate::New();
+    filter->SetInput(mask->GetOutput());
+    filter->SetKernel(element);
+    filter->SetForegroundValue(1);
     writeVolumeSlices<Mask>(filter->GetOutput(), options.output, paths);
     return;
   }
@@ -211,7 +233,7 @@ static void runTyped(const Options& options) {
     using Cast = itk::CastImageFilter<Label, Mask>;
     auto mask = Threshold::New();
     mask->SetInput(input);
-    mask->SetLowerThreshold(static_cast<T>(1));
+    mask->SetLowerThreshold(binaryMaskLowerThreshold<T>());
     mask->SetUpperThreshold(itk::NumericTraits<T>::max());
     mask->SetInsideValue(1);
     mask->SetOutsideValue(0);
@@ -226,11 +248,14 @@ static void runTyped(const Options& options) {
   typename Image::Pointer output;
   if (options.operation == "copy") {
     output = input;
-  } else if (options.operation == "smoothWGauss") {
-    using Filter = itk::DiscreteGaussianImageFilter<Image, Image>;
+  } else if (options.operation == "uniformConvolve") {
+    using Filter = itk::MeanImageFilter<Image, Image>;
     auto filter = Filter::New();
+    const auto meanRadiusValue = static_cast<typename Image::SizeValueType>(std::max(1u, options.kernelSize) / 2u);
+    typename Image::SizeType meanRadius;
+    meanRadius.Fill(meanRadiusValue);
     filter->SetInput(input);
-    filter->SetVariance(options.sigma * options.sigma);
+    filter->SetRadius(meanRadius);
     filter->Update();
     output = filter->GetOutput();
   } else if (options.operation == "median") {
@@ -238,13 +263,6 @@ static void runTyped(const Options& options) {
     auto filter = Filter::New();
     filter->SetInput(input);
     filter->SetRadius(radius);
-    filter->Update();
-    output = filter->GetOutput();
-  } else if (options.operation == "dilate") {
-    using Filter = itk::GrayscaleDilateImageFilter<Image, Image, Element>;
-    auto filter = Filter::New();
-    filter->SetInput(input);
-    filter->SetKernel(element);
     filter->Update();
     output = filter->GetOutput();
   } else {

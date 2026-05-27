@@ -28,7 +28,7 @@ Generate:
   dotnet run --project benchmarks/StackProcessing.Benchmarks -- generate --output DIR --shape 512x512x64 --pixel-type UInt8 [--pattern ramp|binary]
 
 Run:
-  dotnet run --project benchmarks/StackProcessing.Benchmarks -- run --operation copy|threshold|smoothWGauss|median|dilate|connectedComponents --pixel-type UInt8|UInt16|Float32 --input DIR --output DIR [--radius N] [--sigma X] [--threshold X] [--window N] [--available-memory BYTES]
+  dotnet run --project benchmarks/StackProcessing.Benchmarks -- run --operation copy|threshold|uniformConvolve|median|dilate|connectedComponents --pixel-type UInt8|UInt16|Float32 --input DIR --output DIR [--radius N] [--kernel-size N] [--threshold X] [--window N] [--available-memory BYTES]
 """
     |> printfn "%s"
     0
@@ -58,6 +58,9 @@ let private writeInternalSeconds (elapsed: TimeSpan) =
     let path = Environment.GetEnvironmentVariable("BENCHMARK_INTERNAL_SECONDS_PATH")
     if not (String.IsNullOrWhiteSpace path) then
         File.WriteAllText(path, elapsed.TotalSeconds.ToString("F9", invariant))
+
+let private benchmarkSource availableMemory =
+    sourceWithOptimizer false availableMemory
 
 let private parsePixelType value =
     match value with
@@ -100,8 +103,8 @@ let private generateUInt16 pattern shape outputDir =
         let arr =
             Array2D.init (int shape.Width) (int shape.Height) (fun x y ->
                 match pattern with
-                | "binary" -> if (x + y + int z) % 7 = 0 then 65535us else 0us
-                | _ -> uint16 ((x * 97 + y * 193 + int z * 389) % 65536))
+                | "binary" -> if (x + y + int z) % 7 = 0 then 255us else 0us
+                | _ -> uint16 ((x * 3 + y * 5 + int z * 11) % 256))
         let img = Image<uint16>.ofArray2D(arr, name = "input", index = int z)
         img.toFile(outputFile outputDir (int z))
         img.decRefCount()
@@ -112,8 +115,8 @@ let private generateFloat32 pattern shape outputDir =
         let arr =
             Array2D.init (int shape.Width) (int shape.Height) (fun x y ->
                 match pattern with
-                | "binary" -> if (x + y + int z) % 7 = 0 then 1.0f else 0.0f
-                | _ -> float32 ((x * 3 + y * 5 + int z * 11) % 4096) / 4095.0f)
+                | "binary" -> if (x + y + int z) % 7 = 0 then 255.0f else 0.0f
+                | _ -> float32 ((x * 3 + y * 5 + int z * 11) % 256))
         let img = Image<float32>.ofArray2D(arr, name = "input", index = int z)
         img.toFile(outputFile outputDir (int z))
         img.decRefCount()
@@ -131,7 +134,7 @@ let private generate opts =
 
 let private runTyped<'T when 'T: equality> operation input output radius thresholdValue availableMemory =
     ensureCleanDirectory output
-    let src, _ = commandLineSource availableMemory [||]
+    let src = benchmarkSource availableMemory
     match operation with
     | "copy" ->
         src
@@ -150,25 +153,40 @@ let private runTyped<'T when 'T: equality> operation input output radius thresho
         >=> smoothWMedian<'T> radius None
         >=> write output ".tiff"
         |> sink
-    | "dilate" ->
-        src
-        |> read<'T> input ".tiff"
-        >=> grayscaleDilate<'T> radius None
-        >=> write output ".tiff"
-        |> sink
     | _ -> failwith $"unsupported operation '{operation}'"
     0
 
-let private runGaussianTyped<'T when 'T: equality> input output sigma availableMemory =
+let private runBinaryDilateTyped<'T when 'T: equality> input output radius availableMemory =
     ensureCleanDirectory output
-    let src, _ = commandLineSource availableMemory [||]
+    let src = benchmarkSource availableMemory
     src
     |> read<'T> input ".tiff"
-    >=> cast<'T, float>
-    >=> smoothWGauss sigma None None None
-    >=> cast<float, 'T>
+    >=> threshold 128.0 infinity
+    >=> dilate radius
     >=> write output ".tiff"
     |> sink
+    0
+
+let private uniformKernel3D (kernelSize: uint) =
+    let size = max 1u kernelSize
+    let value = 1.0 / float (size * size * size)
+    Array3D.create (int size) (int size) (int size) value
+    |> fun values -> Image<float>.ofArray3D(values, name = $"uniformKernel{size}")
+
+let private runUniformConvolveTyped<'T when 'T: equality> input output kernelSize availableMemory =
+    ensureCleanDirectory output
+    let kernel = uniformKernel3D kernelSize
+    let src = benchmarkSource availableMemory
+    try
+        src
+        |> read<'T> input ".tiff"
+        >=> cast<'T, float>
+        >=> convolve kernel None None None
+        >=> cast<float, 'T>
+        >=> write output ".tiff"
+        |> sink
+    finally
+        kernel.decRefCount()
     0
 
 let private runConnectedComponents input output windowSize availableMemory =
@@ -177,10 +195,11 @@ let private runConnectedComponents input output windowSize availableMemory =
     ensureCleanDirectory tmp
     let tmpSuffix = ".mha"
     let window = max 1u windowSize
-    let src, _ = commandLineSource availableMemory [||]
+    let src = benchmarkSource availableMemory
     let table =
         src
         |> read<uint8> input ".tiff"
+        >=> threshold 128.0 infinity
         >=> connectedComponents (Some window)
         >=> teeFst (writeSlabSlices tmp tmpSuffix window)
         >=> makeConnectedComponentTranslationTable (Some window)
@@ -201,15 +220,18 @@ let private run opts =
     let output = require "output" opts
     let radius = optional "radius" "1" opts |> UInt32.Parse
     let windowSize = optional "window" "16" opts |> UInt32.Parse
-    let sigma = optional "sigma" "1.5" opts |> fun s -> Double.Parse(s, invariant)
+    let kernelSize = optional "kernel-size" "3" opts |> UInt32.Parse
     let thresholdValue = optional "threshold" "128" opts |> fun s -> Double.Parse(s, invariant)
     let availableMemory = optional "available-memory" (string (8UL * 1024UL * 1024UL * 1024UL)) opts |> UInt64.Parse
     let stopwatch = Stopwatch.StartNew()
     let exitCode =
         match operation, pixelType with
-        | "smoothWGauss", UInt8 -> runGaussianTyped<uint8> input output sigma availableMemory
-        | "smoothWGauss", UInt16 -> runGaussianTyped<uint16> input output sigma availableMemory
-        | "smoothWGauss", Float32 -> runGaussianTyped<float32> input output sigma availableMemory
+        | "uniformConvolve", UInt8 -> runUniformConvolveTyped<uint8> input output kernelSize availableMemory
+        | "uniformConvolve", UInt16 -> runUniformConvolveTyped<uint16> input output kernelSize availableMemory
+        | "uniformConvolve", Float32 -> runUniformConvolveTyped<float32> input output kernelSize availableMemory
+        | "dilate", UInt8 -> runBinaryDilateTyped<uint8> input output radius availableMemory
+        | "dilate", UInt16 -> runBinaryDilateTyped<uint16> input output radius availableMemory
+        | "dilate", Float32 -> runBinaryDilateTyped<float32> input output radius availableMemory
         | "connectedComponents", UInt8 -> runConnectedComponents input output windowSize availableMemory
         | "connectedComponents", _ -> failwith "connectedComponents benchmark is currently defined for UInt8 masks only"
         | _, UInt8 -> runTyped<uint8> operation input output radius thresholdValue availableMemory

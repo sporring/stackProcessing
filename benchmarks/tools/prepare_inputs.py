@@ -33,7 +33,6 @@ def main():
         if output.exists() and any(output.glob("*.tif*")) and not args.force:
             print(f"exists {output}")
             continue
-        pattern = "binary" if pixel_type == "UInt8" else "ramp"
         command = [
             "dotnet",
             "run",
@@ -48,7 +47,7 @@ def main():
             "--pixel-type",
             pixel_type,
             "--pattern",
-            pattern,
+            "ramp",
         ]
         print(" ".join(command), flush=True)
         completed = subprocess.run(command, cwd=ROOT)
