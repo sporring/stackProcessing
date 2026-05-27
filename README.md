@@ -16,6 +16,7 @@ More technical notes are in:
 - [notes/Image.md](notes/Image.md): the SimpleITK-backed image wrapper.
 - [notes/SlimPipeline.md](notes/SlimPipeline.md): the streaming and deferred execution engine.
 - [notes/StackProcessing.md](notes/StackProcessing.md): how image operations are bound to the streaming engine.
+- [notes/supportingSoftware.md](notes/supportingSoftware.md): build, test, calibration, and benchmark support tools.
 - [notes/dsl-stage-graph-enrichment.md](notes/dsl-stage-graph-enrichment.md): possible future optimizer/DSL graph work.
 
 Those notes are written for programmers, maintainers, and theoretically minded readers.
@@ -227,30 +228,6 @@ source availableMemory
 |> sink;;
 ```
 
-## Measurement And Calibration
-
-StackProcessing includes tools for measuring operation costs and fitting a runtime model. This is mainly for developers and performance work.
-
-The short version:
-
-- `StackProcessing.RunSamples` runs sample workflows and can collect repeat timings.
-- `StackProcessing.Probe` can collect controlled measurements, fit cost models, inspect fit quality, and request targeted additional measurements.
-- raw measurement files can grow large and are ignored by git.
-
-Start here only if you are calibrating the optimizer or investigating performance:
-
-```bash
-dotnet run --project src/StackProcessing.Probe/StackProcessing.Probe.fsproj -- \
-  inspect --max-step io --min-repeats 3
-```
-
-For the current architecture and calibration design, see:
-
-- [notes/SlimPipeline.md](notes/SlimPipeline.md)
-- [notes/StackProcessing.md](notes/StackProcessing.md)
-- [notes/CostModelCalibration.md](notes/CostModelCalibration.md)
-- [notes/dsl-stage-graph-enrichment.md](notes/dsl-stage-graph-enrichment.md)
-
 ## Repository Layout
 
 | Path | Purpose |
@@ -268,27 +245,7 @@ For the current architecture and calibration design, see:
 | `notes` | Programmer/theory notes and future-development design notes. |
 | `benchmarks` | Benchmark side project for comparing read-process-write workflows. |
 
-## Build And Test
-
-Build everything:
-
-```bash
-dotnet build StackProcessing.sln
-```
-
-Run all tests:
-
-```bash
-dotnet test
-```
-
-Run a specific test project:
-
-```bash
-dotnet test tests/Image.Tests/Image.Tests.fsproj
-dotnet test tests/SlimPipeline.Tests/SlimPipeline.Tests.fsproj
-dotnet test tests/StackProcessing.Tests/StackProcessing.Tests.fsproj
-```
+Build, test, calibration, and benchmark support commands are collected in [notes/supportingSoftware.md](notes/supportingSoftware.md).
 
 ## Design Principles
 
@@ -308,7 +265,6 @@ StackProcessing builds on excellent open-source work, including:
 - Avalonia, NodeEditorAvalonia, PanAndZoom, and CommunityToolkit.Mvvm for Studio.
 - Plotly.NET for charts and reports.
 - PureHDF and ZarrNET for HDF5/NeXus and Zarr-style array storage.
-- Expecto, YoloDev.Expecto.TestSdk, Microsoft.NET.Test.Sdk, and coverlet for tests.
 - DIKU.Graph for graph algorithms used in the core.
 
 ## How To Cite

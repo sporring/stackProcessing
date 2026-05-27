@@ -32,7 +32,7 @@ Its job is to make image processing feel like a high-level functional DSL while 
 
 ## Public Shape
 
-The public module re-exports the main concepts:
+The public module re-exports the main stream and image concepts:
 
 ```fsharp
 type Stage<'S,'T> = SlimPipeline.Stage<'S,'T>
@@ -40,6 +40,8 @@ type Window<'T> = SlimPipeline.Window<'T>
 type Slab<'T> = StackCore.Slab<'T>
 type Image<'T> = Image.Image<'T>
 ```
+
+Core also contains chunk representations such as `ChunkData<'T>` for block-backed random-access workflows. They are described below because they sit beside `Window<'T>` and `Slab<'T>` in the implementation model, even though they are not usually part of the surface DSL.
 
 It also re-exports the main composition and execution functions:
 
@@ -223,6 +225,42 @@ window
 
 This lets StackProcessing apply ordinary image stages to local 3D slabs while still returning to a stream of slices.
 
+## Chunks
+
+Chunks are the block-oriented counterpart to windows and slabs. A window is a z-neighbourhood in the active stream, and a slab is a small 3D image assembled from adjacent streamed slices. A chunk is a bounded 3D block from a larger volume or chunked backing store.
+
+The current implementation uses two related chunk concepts:
+
+```fsharp
+type ChunkInfo =
+    { chunks: int list
+      size: uint64 list
+      topLeftInfo: FileInfo }
+
+type ChunkData<'T> =
+    { Pixels: 'T[,,]
+      Width: int
+      Height: int
+      Depth: int }
+```
+
+`ChunkInfo` describes an on-disk chunk layout. `ChunkData<'T>` is the in-memory cached representation used by chunk-backed affine resampling and similar random-access workflows.
+
+Chunks are useful when an operation cannot be expressed as a simple forward stream of z-windows. For example, affine resampling may need to fetch source voxels from several spatial blocks while producing one output slice. In that case StackProcessing writes or reads bounded chunks, caches only the blocks needed for the current work, and avoids materializing the full input volume.
+
+Conceptually:
+
+```text
+Window<Image<'T>>
+    streaming local z-neighbourhood
+
+Slab<'T>
+    small adjacent z-neighbourhood packed as one Image<'T>
+
+ChunkData<'T>
+    spatial block cache for random-access or chunk-backed operations
+```
+
 ## Internal And Public Composition
 
 StackProcessing uses two composition levels:
@@ -335,7 +373,7 @@ The top-level `StackProcessing.fs` module re-exports these pieces as the public 
 
 - image stream stages
 - stack/volume IO
-- window/slab image adaptation
+- window/slab/chunk image adaptation
 - lifted image algorithms
 - domain cost labels
 - user-facing image DSL
@@ -356,6 +394,9 @@ Window<Image<'T>>
 Slab<'T>
     a small 3D image made from adjacent slices
 
+ChunkData<'T>
+    a bounded 3D block used for chunked IO and random-access caches
+
 Stage<Image<'S>, Image<'T>>
     a reusable image stream operation
 
@@ -364,4 +405,3 @@ Plan<unit, Image<'T>>
 ```
 
 StackProcessing is the layer that makes those pieces work together.
-
