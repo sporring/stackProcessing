@@ -20,6 +20,8 @@ Options:
   --include-special       Also run python-dask-omezarr special cases.
   --cases PATH            Baseline cases CSV. Defaults to benchmarks/config/cases.csv.
   --special-cases PATH    Special cases CSV. Defaults to benchmarks/config/special-cases.csv.
+  --pixel-types LIST      Optional comma-separated pixel type filter, for example UInt8 or UInt8,Float32.
+  --shapes LIST           Optional comma-separated shape filter, for example 256x256x256.
   --input-root PATH       TIFF input root. Defaults to tmp/benchmarks/input.
   --output-root PATH      Output root. Defaults to tmp/benchmarks/output.
   --omezarr-root PATH     OME-Zarr input root. Defaults to tmp/benchmarks/input-omezarr.
@@ -52,6 +54,8 @@ backends="stackprocessing,python-skimage-scipy"
 include_special=0
 cases="benchmarks/config/cases.csv"
 special_cases="benchmarks/config/special-cases.csv"
+pixel_types=""
+shapes=""
 input_root="tmp/benchmarks/input"
 output_root="tmp/benchmarks/output"
 omezarr_root="tmp/benchmarks/input-omezarr"
@@ -84,6 +88,14 @@ while [[ $# -gt 0 ]]; do
       ;;
     --special-cases)
       special_cases="$2"
+      shift 2
+      ;;
+    --pixel-types)
+      pixel_types="$2"
+      shift 2
+      ;;
+    --shapes)
+      shapes="$2"
       shift 2
       ;;
     --input-root)
@@ -160,6 +172,12 @@ run_cmd() {
 
 if [[ "$skip_inputs" -eq 0 ]]; then
   input_args=(python3 benchmarks/tools/prepare_inputs.py --cases "$cases" --input-root "$input_root")
+  if [[ -n "$pixel_types" ]]; then
+    input_args+=(--pixel-types "$pixel_types")
+  fi
+  if [[ -n "$shapes" ]]; then
+    input_args+=(--shapes "$shapes")
+  fi
   if [[ "$force_inputs" -eq 1 ]]; then
     input_args+=(--force)
   fi
@@ -196,6 +214,12 @@ for backend in "${backend_array[@]}"; do
     --itk-exe "$itk_exe"
     --matlab-exe "$matlab_exe"
   )
+  if [[ -n "$pixel_types" ]]; then
+    manifest_args+=(--pixel-types "$pixel_types")
+  fi
+  if [[ -n "$shapes" ]]; then
+    manifest_args+=(--shapes "$shapes")
+  fi
   if [[ "$dry_run" -eq 1 ]]; then
     manifest_args+=(--dry-run)
     printf '+'
@@ -208,7 +232,7 @@ for backend in "${backend_array[@]}"; do
 done
 
 if [[ "$include_special" -eq 1 ]]; then
-  python3 - "$special_cases" "$input_root" "$omezarr_root" "$dry_run" <<'PY'
+  python3 - "$special_cases" "$input_root" "$omezarr_root" "$dry_run" "$pixel_types" "$shapes" <<'PY'
 import csv
 import subprocess
 import sys
@@ -218,8 +242,15 @@ cases_path = Path(sys.argv[1])
 input_root = Path(sys.argv[2])
 omezarr_root = Path(sys.argv[3])
 dry_run = sys.argv[4] == "1"
+pixel_types = {item.strip().lower() for item in sys.argv[5].split(",") if item.strip()}
+shapes = {item.strip().lower() for item in sys.argv[6].split(",") if item.strip()}
 
-seen = sorted({(row["pixelType"], row["shape"]) for row in csv.DictReader(cases_path.open(newline=""))})
+seen = sorted({
+    (row["pixelType"], row["shape"])
+    for row in csv.DictReader(cases_path.open(newline=""))
+    if not pixel_types or row["pixelType"].lower() in pixel_types
+    if not shapes or row["shape"].lower() in shapes
+})
 for pixel_type, shape in seen:
     command = [
         "python3",
@@ -249,6 +280,12 @@ PY
     --output-root "$output_root"
     --repeat "$repeat"
   )
+  if [[ -n "$pixel_types" ]]; then
+    special_args+=(--pixel-types "$pixel_types")
+  fi
+  if [[ -n "$shapes" ]]; then
+    special_args+=(--shapes "$shapes")
+  fi
   if [[ "$dry_run" -eq 1 ]]; then
     special_args+=(--dry-run)
     printf '+'

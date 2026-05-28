@@ -13,6 +13,7 @@ import csv
 import os
 import platform
 import resource
+import signal
 import subprocess
 import sys
 import tempfile
@@ -69,9 +70,11 @@ def main(argv: list[str]) -> int:
     parser.add_argument("--pixel-type", required=True)
     parser.add_argument("--shape", required=True)
     parser.add_argument("--parameter", default="")
-    parser.add_argument("--repeat", type=int, default=1)
+    parser.add_argument("--repeat-index", type=int, default=None)
+    parser.add_argument("--repeat", type=int, default=None, help=argparse.SUPPRESS)
     parser.add_argument("command", nargs=argparse.REMAINDER)
     args = parser.parse_args(argv)
+    repeat_index = args.repeat_index if args.repeat_index is not None else (args.repeat if args.repeat is not None else 1)
 
     command = args.command
     if command and command[0] == "--":
@@ -90,8 +93,14 @@ def main(argv: list[str]) -> int:
 
     before = resource.getrusage(resource.RUSAGE_CHILDREN).ru_maxrss
     start = time.perf_counter()
-    completed = subprocess.run(command, env=env)
-    elapsed = time.perf_counter() - start
+    process = subprocess.Popen(command, env=env, start_new_session=(os.name == "posix"))
+    try:
+        exit_code = process.wait()
+    except KeyboardInterrupt:
+        terminate_process_tree(process)
+        exit_code = 130
+    finally:
+        elapsed = time.perf_counter() - start
     after = resource.getrusage(resource.RUSAGE_CHILDREN).ru_maxrss
 
     internal_seconds = ""
@@ -115,8 +124,8 @@ def main(argv: list[str]) -> int:
                 "pixelType": args.pixel_type,
                 "shape": args.shape,
                 "parameter": args.parameter,
-                "repeat": args.repeat,
-                "exitCode": completed.returncode,
+                "repeat": repeat_index,
+                "exitCode": exit_code,
                 "wallSeconds": f"{elapsed:.9f}",
                 "internalSeconds": internal_seconds,
                 "peakRssKiB": peak_rss_kib(before, after),
@@ -124,7 +133,35 @@ def main(argv: list[str]) -> int:
             }
         )
 
-    return completed.returncode
+    return exit_code
+
+
+def terminate_process_tree(process: subprocess.Popen) -> None:
+    if process.poll() is not None:
+        return
+
+    if os.name == "posix":
+        try:
+            os.killpg(process.pid, signal.SIGTERM)
+        except ProcessLookupError:
+            return
+    else:
+        process.terminate()
+
+    try:
+        process.wait(timeout=5)
+        return
+    except subprocess.TimeoutExpired:
+        pass
+
+    if os.name == "posix":
+        try:
+            os.killpg(process.pid, signal.SIGKILL)
+        except ProcessLookupError:
+            return
+    else:
+        process.kill()
+    process.wait()
 
 
 if __name__ == "__main__":

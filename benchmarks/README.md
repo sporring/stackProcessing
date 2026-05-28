@@ -41,7 +41,7 @@ The baseline size sweep is:
 - `512x512x512`
 - `1024x1024x1024`
 
-For `median`, the benchmark uses radii `1`, `3`, and `9`, corresponding to `3x3x3`, `7x7x7`, and `19x19x19` neighbourhoods. For `dilate`, every backend first interprets the input as a binary mask using `input >= 128`, then applies spherical/ball structuring elements with radii `1`, `3`, and `9`, and writes a `UInt8` mask. For `uniformConvolve`, it uses uniform kernels of size `3`, `5`, and `7`.
+For `median`, the benchmark uses radii `1`, `2`, and `3`, corresponding to `3x3x3`, `5x5x5`, and `7x7x7` neighbourhoods. For `dilate`, every backend first interprets the input as a binary mask using `input >= 128`, then applies spherical/ball structuring elements with radii `1`, `2`, and `3`, and writes a `UInt8` mask. For `uniformConvolve`, it uses uniform kernels of size `3`, `5`, and `7`.
 
 The initial benchmark intentionally focuses on TIFF only. Format-specific behavior is large enough that TIFF should be understood before expanding to MHA, OME-Zarr, or HDF5/NeXus.
 
@@ -96,6 +96,29 @@ Use `--dry-run` to print the exact commands without executing them:
 ```bash
 bash benchmarks/run_all.sh --repeat 3 --dry-run
 ```
+
+Use `--backends` to run only selected implementations, and `--pixel-types` to restrict the case matrix while exploring:
+
+```bash
+bash benchmarks/run_all.sh \
+  --repeat 3 \
+  --backends python-skimage-scipy \
+  --pixel-types UInt8
+```
+
+The pixel-type filter is comma-separated, for example `--pixel-types UInt8,Float32`.
+
+Use `--shapes` to restrict the size matrix:
+
+```bash
+bash benchmarks/run_all.sh \
+  --repeat 3 \
+  --backends stackprocessing,python-skimage-scipy,cpp-itk,matlab \
+  --pixel-types UInt8 \
+  --shapes 256x256x256
+```
+
+The shape filter is also comma-separated, for example `--shapes 256x256x256,512x512x512`.
 
 A broader report-facing run can include all baseline backends and the OME-Zarr special case:
 

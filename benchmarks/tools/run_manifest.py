@@ -2,6 +2,7 @@
 import argparse
 import csv
 import os
+import signal
 import shlex
 import subprocess
 import sys
@@ -23,6 +24,8 @@ def parse_args():
     parser.add_argument("--input-root", default=str(ROOT / "tmp/benchmarks/input"))
     parser.add_argument("--output-root", default=str(ROOT / "tmp/benchmarks/output"))
     parser.add_argument("--repeat", type=int, default=1)
+    parser.add_argument("--pixel-types", default="", help="Optional comma-separated pixel type filter, for example UInt8,Float32.")
+    parser.add_argument("--shapes", default="", help="Optional comma-separated shape filter, for example 256x256x256,512x512x512.")
     parser.add_argument("--dry-run", action="store_true")
     parser.add_argument("--itk-exe", default=str(ROOT / "benchmarks/cpp-itk/build/benchmark_itk"))
     parser.add_argument("--matlab-exe", default="matlab")
@@ -32,6 +35,17 @@ def parse_args():
 def read_cases(path):
     with open(path, newline="") as handle:
         return list(csv.DictReader(handle))
+
+
+def filter_cases(cases, pixel_types, shapes):
+    selected = {item.strip().lower() for item in pixel_types.split(",") if item.strip()}
+    selected_shapes = {item.strip().lower() for item in shapes.split(",") if item.strip()}
+    return [
+        case
+        for case in cases
+        if (not selected or case["pixelType"].lower() in selected)
+        and (not selected_shapes or case["shape"].lower() in selected_shapes)
+    ]
 
 
 def input_dir(args, case):
@@ -119,15 +133,56 @@ def measured_command(args, case, repeat):
         case["shape"],
         "--parameter",
         case_parameter(case),
-        "--repeat",
+        "--repeat-index",
         str(repeat),
         "--",
     ] + command
 
 
+def terminate_process_tree(process):
+    if process.poll() is not None:
+        return
+
+    if os.name == "posix":
+        try:
+            os.killpg(process.pid, signal.SIGTERM)
+        except ProcessLookupError:
+            return
+    else:
+        process.terminate()
+
+    try:
+        process.wait(timeout=5)
+        return
+    except subprocess.TimeoutExpired:
+        pass
+
+    if os.name == "posix":
+        try:
+            os.killpg(process.pid, signal.SIGKILL)
+        except ProcessLookupError:
+            return
+    else:
+        process.kill()
+    process.wait()
+
+
+def run_measured_command(command):
+    process = subprocess.Popen(command, cwd=ROOT, env=os.environ.copy(), start_new_session=(os.name == "posix"))
+    try:
+        return process.wait()
+    except KeyboardInterrupt:
+        terminate_process_tree(process)
+        return 130
+
+
 def main():
     args = parse_args()
-    cases = read_cases(args.cases)
+    cases = filter_cases(read_cases(args.cases), args.pixel_types, args.shapes)
+    if not cases:
+        print(f"run_manifest.py: no cases matched --pixel-types {args.pixel_types!r} --shapes {args.shapes!r}", file=sys.stderr)
+        return 2
+
     Path(args.results).parent.mkdir(parents=True, exist_ok=True)
     for repeat in range(1, args.repeat + 1):
         for case in cases:
@@ -135,9 +190,9 @@ def main():
             printable = " ".join(shlex.quote(part) for part in command)
             print(printable, flush=True)
             if not args.dry_run:
-                completed = subprocess.run(command, cwd=ROOT, env=os.environ.copy())
-                if completed.returncode != 0:
-                    return completed.returncode
+                return_code = run_measured_command(command)
+                if return_code != 0:
+                    return return_code
     return 0
 
 
