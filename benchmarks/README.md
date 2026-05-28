@@ -15,7 +15,7 @@ Each backend should measure the same user-visible task, with the same input stac
 - `StackProcessing.Benchmarks`: F# StackProcessing executable.
 - `python-skimage-scipy`: Python/scikit-image/SciPy implementation.
 - `cpp-itk`: C++/ITK implementation skeleton and CMake project.
-- `matlab`: MATLAB script using Image Processing Toolbox, invoked as `matlab -nodisplay -nojvm -batch`.
+- `matlab`: MATLAB script using Image Processing Toolbox, invoked as `matlab -batch`.
 - `python-dask-omezarr`: special-case chunk-native Dask/OME-Zarr implementation.
 
 ## Initial Operation Set
@@ -82,7 +82,11 @@ bash benchmarks/run_all.sh --repeat 3
 source .venv-benchmarks/bin/activate
 ```
 
-This generates deterministic TIFF inputs, runs the default baseline backends, and writes:
+`run_all.sh` prebuilds compiled benchmark backends before generating inputs or measuring cases. It builds the F# benchmark project when StackProcessing is selected, or when TIFF inputs need to be generated, and it configures/builds `cpp-itk` when that backend is selected. These build steps are outside the measured commands. StackProcessing benchmark commands then use `dotnet run --no-build`, so MSBuild checks are not folded into the wall-time rows. Use `--skip-builds` only when you intentionally want to trust existing binaries.
+
+The runner also removes stale `benchmark-internal-*.txt` files in the results directory at the start and end of a non-dry run. Those files are temporary handoff files for backend-reported internal timing and normally disappear immediately.
+
+This generates deterministic TIFF inputs, runs the default regular TIFF-stack baseline backends, and writes:
 
 ```text
 benchmarks/results/raw.csv
@@ -126,7 +130,6 @@ A broader report-facing run can include all baseline backends and the OME-Zarr s
 bash benchmarks/run_all.sh \
   --repeat 3 \
   --backends stackprocessing,python-skimage-scipy,cpp-itk,matlab \
-  --build-itk \
   --include-special
 ```
 
@@ -142,6 +145,8 @@ cmake -S benchmarks/cpp-itk -B benchmarks/cpp-itk/build \
 cmake --build benchmarks/cpp-itk/build --config Release -j
 ```
 
+The all-in-one runner performs the CMake configure/build automatically when `cpp-itk` is selected, but the explicit commands above are useful for installation checks or when calling `benchmarks/tools/run_manifest.py` directly.
+
 Then include the backend:
 
 ```bash
@@ -153,13 +158,13 @@ bash benchmarks/run_all.sh \
 
 If ITK was installed from source or another package manager, pass the installation prefix through `CMAKE_PREFIX_PATH`, or set `ITK_DIR` to the directory containing `ITKConfig.cmake`.
 
-The default backend set is intentionally modest:
+The default backend set is the full regular TIFF-stack comparison set:
 
 ```text
-stackprocessing,python-skimage-scipy
+stackprocessing,python-skimage-scipy,cpp-itk,matlab
 ```
 
-This keeps a first run possible on ordinary developer machines. Add `cpp-itk`, `matlab`, and `--include-special` when those environments are installed.
+Use `--backends` to run a smaller subset while debugging, for example `--backends stackprocessing,python-skimage-scipy`. Add `--include-special` when the OME-Zarr/Dask special case should be included.
 
 If MATLAB is not named `matlab` on the current shell `PATH`, pass it explicitly:
 

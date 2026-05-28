@@ -7,7 +7,7 @@ Usage: bash benchmarks/run_all.sh [options]
 
 Run the comparative benchmark workflow end-to-end:
   1. Generate deterministic TIFF-stack inputs.
-  2. Optionally build the C++/ITK backend.
+  2. Build selected compiled benchmark backends before measurement.
   3. Run selected baseline TIFF-stack backends.
   4. Optionally convert inputs and run Dask/OME-Zarr special cases.
   5. Summarize raw measurements.
@@ -15,7 +15,7 @@ Run the comparative benchmark workflow end-to-end:
 Options:
   --repeat N              Repeats per manifest case. Defaults to 3.
   --backends LIST         Comma-separated baseline backends.
-                          Defaults to stackprocessing,python-skimage-scipy.
+                          Defaults to stackprocessing,python-skimage-scipy,cpp-itk,matlab.
                           Valid baseline backends: stackprocessing,python-skimage-scipy,cpp-itk,matlab.
   --include-special       Also run python-dask-omezarr special cases.
   --cases PATH            Baseline cases CSV. Defaults to benchmarks/config/cases.csv.
@@ -29,7 +29,8 @@ Options:
   --summary PATH          Summary output CSV. Defaults to benchmarks/results/summary.csv.
   --force-inputs          Regenerate TIFF inputs even if present.
   --skip-inputs           Do not generate TIFF inputs.
-  --build-itk             Configure and build benchmarks/cpp-itk before running.
+  --skip-builds           Do not prebuild compiled benchmark backends.
+  --build-itk             Accepted for compatibility; cpp-itk is now built automatically when selected.
   --itk-exe PATH          C++/ITK executable path.
   --matlab-exe PATH       MATLAB executable. Defaults to matlab.
   --dry-run               Print commands without executing benchmark cases.
@@ -41,7 +42,6 @@ Examples:
   bash benchmarks/run_all.sh \
     --repeat 3 \
     --backends stackprocessing,python-skimage-scipy,cpp-itk,matlab \
-    --build-itk \
     --include-special
 EOF
 }
@@ -50,7 +50,7 @@ repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$repo_root"
 
 repeat=3
-backends="stackprocessing,python-skimage-scipy"
+backends="stackprocessing,python-skimage-scipy,cpp-itk,matlab"
 include_special=0
 cases="benchmarks/config/cases.csv"
 special_cases="benchmarks/config/special-cases.csv"
@@ -64,6 +64,7 @@ summary="benchmarks/results/summary.csv"
 force_inputs=0
 skip_inputs=0
 build_itk=0
+skip_builds=0
 dry_run=0
 itk_exe="benchmarks/cpp-itk/build/benchmark_itk"
 matlab_exe="matlab"
@@ -126,6 +127,10 @@ while [[ $# -gt 0 ]]; do
       skip_inputs=1
       shift
       ;;
+    --skip-builds)
+      skip_builds=1
+      shift
+      ;;
     --build-itk)
       build_itk=1
       shift
@@ -161,6 +166,15 @@ fi
 
 mkdir -p "$(dirname "$results")" "$(dirname "$summary")" "$output_root"
 
+cleanup_internal_files() {
+  if [[ "$dry_run" -eq 0 ]]; then
+    find "$(dirname "$results")" -maxdepth 1 -type f -name 'benchmark-internal-*.txt' -delete
+  fi
+}
+
+trap cleanup_internal_files EXIT
+cleanup_internal_files
+
 run_cmd() {
   printf '+'
   printf ' %q' "$@"
@@ -169,6 +183,43 @@ run_cmd() {
     "$@"
   fi
 }
+
+IFS=',' read -r -a backend_array <<< "$backends"
+
+has_backend() {
+  local candidate="$1"
+  local backend
+  for backend in "${backend_array[@]}"; do
+    if [[ "$backend" == "$candidate" ]]; then
+      return 0
+    fi
+  done
+  return 1
+}
+
+for backend in "${backend_array[@]}"; do
+  case "$backend" in
+    stackprocessing|python-skimage-scipy|cpp-itk|matlab)
+      ;;
+    "")
+      continue
+      ;;
+    *)
+      echo "run_all.sh: unknown baseline backend '$backend'" >&2
+      exit 2
+      ;;
+  esac
+done
+
+if [[ "$skip_builds" -eq 0 ]]; then
+  if [[ "$skip_inputs" -eq 0 ]] || has_backend stackprocessing; then
+    run_cmd dotnet build benchmarks/StackProcessing.Benchmarks/StackProcessing.Benchmarks.fsproj --nologo
+  fi
+  if has_backend cpp-itk || [[ "$build_itk" -eq 1 ]]; then
+    run_cmd cmake -S benchmarks/cpp-itk -B benchmarks/cpp-itk/build
+    run_cmd cmake --build benchmarks/cpp-itk/build --config Release
+  fi
+fi
 
 if [[ "$skip_inputs" -eq 0 ]]; then
   input_args=(python3 benchmarks/tools/prepare_inputs.py --cases "$cases" --input-root "$input_root")
@@ -184,24 +235,8 @@ if [[ "$skip_inputs" -eq 0 ]]; then
   run_cmd "${input_args[@]}"
 fi
 
-if [[ "$build_itk" -eq 1 ]]; then
-  run_cmd cmake -S benchmarks/cpp-itk -B benchmarks/cpp-itk/build
-  run_cmd cmake --build benchmarks/cpp-itk/build --config Release
-fi
-
-IFS=',' read -r -a backend_array <<< "$backends"
 for backend in "${backend_array[@]}"; do
-  case "$backend" in
-    stackprocessing|python-skimage-scipy|cpp-itk|matlab)
-      ;;
-    "")
-      continue
-      ;;
-    *)
-      echo "run_all.sh: unknown baseline backend '$backend'" >&2
-      exit 2
-      ;;
-  esac
+  [[ -z "$backend" ]] && continue
 
   manifest_args=(
     python3 benchmarks/tools/run_manifest.py

@@ -54,6 +54,7 @@ def main():
         command = [
             "dotnet",
             "run",
+            "--no-build",
             "--project",
             str(ROOT / "benchmarks/StackProcessing.Benchmarks/StackProcessing.Benchmarks.fsproj"),
             "--",

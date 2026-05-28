@@ -86,7 +86,7 @@ def backend_command(args, case, repeat):
     params = parameter_args(case)
 
     if args.backend == "stackprocessing":
-        return ["dotnet", "run", "--project", str(ROOT / "benchmarks/StackProcessing.Benchmarks/StackProcessing.Benchmarks.fsproj"), "--", "run"] + common + params
+        return ["dotnet", "run", "--no-build", "--project", str(ROOT / "benchmarks/StackProcessing.Benchmarks/StackProcessing.Benchmarks.fsproj"), "--", "run"] + common + params
     if args.backend == "python-skimage-scipy":
         return ["python3", str(ROOT / "benchmarks/python-skimage-scipy/bench.py")] + common + params
     if args.backend == "python-dask-omezarr":
@@ -112,7 +112,7 @@ def backend_command(args, case, repeat):
             str(ROOT / "benchmarks/matlab").replace("'", "''"),
             ",".join("'%s','%s'" % (k, str(v).replace("'", "''")) for k, v in matlab_args.items()),
         )
-        return [args.matlab_exe, "-nodisplay", "-nojvm", "-batch", call]
+        return [args.matlab_exe, "-batch", call]
     raise AssertionError(args.backend)
 
 

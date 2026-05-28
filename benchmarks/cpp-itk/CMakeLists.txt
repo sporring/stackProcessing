@@ -1,7 +1,22 @@
 cmake_minimum_required(VERSION 3.20)
 project(StackProcessingItkBenchmarks LANGUAGES CXX)
 
-find_package(ITK REQUIRED)
+if(NOT CMAKE_BUILD_TYPE AND NOT CMAKE_CONFIGURATION_TYPES)
+  set(CMAKE_BUILD_TYPE Release CACHE STRING "Build type" FORCE)
+endif()
+
+find_package(
+  ITK
+  REQUIRED
+  COMPONENTS
+    ITKCommon
+    ITKIOTIFF
+    ITKThresholding
+    ITKBinaryMathematicalMorphology
+    ITKConnectedComponents
+    ITKConvolution
+    ITKSmoothing
+)
 include(${ITK_USE_FILE})
 
 add_executable(benchmark_itk benchmark_itk.cxx)

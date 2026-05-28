@@ -14,14 +14,12 @@
 #include "itkConnectedComponentImageFilter.h"
 #include "itkConstantBoundaryCondition.h"
 #include "itkConvolutionImageFilter.h"
-#include "itkExtractImageFilter.h"
-#include "itkFlatStructuringElement.h"
+#include "itkBinaryBallStructuringElement.h"
 #include "itkImage.h"
 #include "itkImageFileReader.h"
 #include "itkImageFileWriter.h"
-#include "itkImageRegionConstIterator.h"
-#include "itkImageRegionIterator.h"
 #include "itkMedianImageFilter.h"
+#include "itkTIFFImageIO.h"
 
 namespace fs = std::filesystem;
 
@@ -90,8 +88,10 @@ static typename itk::Image<T, 3>::Pointer readVolume(const std::vector<fs::path>
   using Image2 = itk::Image<T, 2>;
   using Image3 = itk::Image<T, 3>;
   using Reader = itk::ImageFileReader<Image2>;
+  using ImageIO = itk::TIFFImageIO;
 
   auto firstReader = Reader::New();
+  firstReader->SetImageIO(ImageIO::New());
   firstReader->SetFileName(paths.front().string());
   firstReader->Update();
   auto first = firstReader->GetOutput();
@@ -113,30 +113,24 @@ static typename itk::Image<T, 3>::Pointer readVolume(const std::vector<fs::path>
   volume->SetRegions(volumeRegion);
   volume->Allocate();
 
-  for (std::size_t z = 0; z < paths.size(); ++z) {
-    typename Image2::Pointer slice;
-    if (z == 0) {
-      slice = first;
-    } else {
-      auto reader = Reader::New();
-      reader->SetFileName(paths[z].string());
-      reader->Update();
-      slice = reader->GetOutput();
-    }
+  const auto pixelsPerSlice = static_cast<std::size_t>(sliceSize[0] * sliceSize[1]);
+  T* volumeBuffer = volume->GetBufferPointer();
+  const T* firstBuffer = first->GetBufferPointer();
+  std::copy(firstBuffer, firstBuffer + pixelsPerSlice, volumeBuffer);
+
+  for (std::size_t z = 1; z < paths.size(); ++z) {
+    auto reader = Reader::New();
+    reader->SetImageIO(ImageIO::New());
+    reader->SetFileName(paths[z].string());
+    reader->Update();
+    auto slice = reader->GetOutput();
 
     if (slice->GetLargestPossibleRegion().GetSize() != sliceSize) {
       throw std::runtime_error("all TIFF slices must have the same size");
     }
 
-    itk::ImageRegionConstIterator<Image2> src(slice, slice->GetLargestPossibleRegion());
-    for (src.GoToBegin(); !src.IsAtEnd(); ++src) {
-      const auto index2 = src.GetIndex();
-      typename Image3::IndexType index3;
-      index3[0] = index2[0];
-      index3[1] = index2[1];
-      index3[2] = static_cast<typename Image3::IndexValueType>(z);
-      volume->SetPixel(index3, src.Get());
-    }
+    const T* sliceBuffer = slice->GetBufferPointer();
+    std::copy(sliceBuffer, sliceBuffer + pixelsPerSlice, volumeBuffer + z * pixelsPerSlice);
   }
 
   return volume;
@@ -145,30 +139,39 @@ static typename itk::Image<T, 3>::Pointer readVolume(const std::vector<fs::path>
 template <typename Image3>
 static void writeVolumeSlices(typename Image3::Pointer volume, const fs::path& output, const std::vector<fs::path>& inputNames) {
   using Image2 = itk::Image<typename Image3::PixelType, 2>;
-  using Extract = itk::ExtractImageFilter<Image3, Image2>;
   using Writer = itk::ImageFileWriter<Image2>;
+  using ImageIO = itk::TIFFImageIO;
 
   volume->Update();
+
   const auto region = volume->GetLargestPossibleRegion();
-  auto size = region.GetSize();
-  auto index = region.GetIndex();
-  const auto depth = size[2];
-  size[2] = 0;
+  const auto size3 = region.GetSize();
+  const auto depth = size3[2];
+  const auto pixelsPerSlice = static_cast<std::size_t>(size3[0] * size3[1]);
+  const auto* volumeBuffer = volume->GetBufferPointer();
+
+  typename Image2::IndexType sliceStart;
+  sliceStart.Fill(0);
+  typename Image2::SizeType sliceSize;
+  sliceSize[0] = size3[0];
+  sliceSize[1] = size3[1];
+  typename Image2::RegionType sliceRegion;
+  sliceRegion.SetIndex(sliceStart);
+  sliceRegion.SetSize(sliceSize);
 
   for (typename Image3::SizeValueType z = 0; z < depth; ++z) {
-    index[2] = static_cast<typename Image3::IndexValueType>(z);
-    typename Image3::RegionType sliceRegion;
-    sliceRegion.SetIndex(index);
-    sliceRegion.SetSize(size);
+    auto slice = Image2::New();
+    slice->SetRegions(sliceRegion);
+    slice->Allocate();
 
-    auto extract = Extract::New();
-    extract->SetInput(volume);
-    extract->SetExtractionRegion(sliceRegion);
-    extract->SetDirectionCollapseToSubmatrix();
+    auto* sliceBuffer = slice->GetBufferPointer();
+    const auto* source = volumeBuffer + static_cast<std::size_t>(z) * pixelsPerSlice;
+    std::copy(source, source + pixelsPerSlice, sliceBuffer);
 
     auto writer = Writer::New();
+    writer->SetImageIO(ImageIO::New());
     writer->SetFileName((output / inputNames[static_cast<std::size_t>(z)].filename()).string());
-    writer->SetInput(extract->GetOutput());
+    writer->SetInput(slice);
     writer->UseCompressionOff();
     writer->Update();
   }
@@ -212,10 +215,12 @@ static void runTyped(const Options& options) {
   typename Image::SizeType radius;
   radius.Fill(radiusValue);
 
-  using Element = itk::FlatStructuringElement<3>;
+  using Element = itk::BinaryBallStructuringElement<std::uint8_t, 3>;
   Element::RadiusType elementRadius;
   elementRadius.Fill(radiusValue);
-  auto element = Element::Ball(elementRadius);
+  Element element;
+  element.SetRadius(elementRadius);
+  element.CreateStructuringElement();
 
   if (options.operation == "threshold") {
     using Threshold = itk::BinaryThresholdImageFilter<Image, Mask>;
