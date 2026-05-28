@@ -5,7 +5,7 @@ copy,Float32,512x512x64,,,Chunk-native IO baseline
 threshold,UInt8,512x512x64,threshold,128,"Binary UInt8 output mask (0/1), input >= 128"
 threshold,UInt16,512x512x64,threshold,128,"Binary UInt8 output mask (0/1), input >= 128"
 threshold,Float32,512x512x64,threshold,128,"Binary UInt8 output mask (0/1), input >= 128"
-uniformConvolve,Float32,512x512x64,kernelSize,3,Dask map_overlap uniform convolution
-uniformConvolve,Float32,512x512x64,kernelSize,5,Dask map_overlap uniform convolution
+uniformConvolve,Float32,512x512x64,kernelSize,3,Dask map_overlap regular convolution with an explicit uniform kernel
+uniformConvolve,Float32,512x512x64,kernelSize,5,Dask map_overlap regular convolution with an explicit uniform kernel
 median,UInt8,512x512x64,radius,1,"Dask map_overlap, 3x3x3 volume median"
 dilate,UInt8,512x512x64,radius,1,binary dilation of input >= 128 with ball radius 1; UInt8 output mask (0/1)

@@ -12,6 +12,8 @@
 #include "itkBinaryDilateImageFilter.h"
 #include "itkCastImageFilter.h"
 #include "itkConnectedComponentImageFilter.h"
+#include "itkConstantBoundaryCondition.h"
+#include "itkConvolutionImageFilter.h"
 #include "itkExtractImageFilter.h"
 #include "itkFlatStructuringElement.h"
 #include "itkImage.h"
@@ -20,7 +22,6 @@
 #include "itkImageRegionConstIterator.h"
 #include "itkImageRegionIterator.h"
 #include "itkMedianImageFilter.h"
-#include "itkMeanImageFilter.h"
 
 namespace fs = std::filesystem;
 
@@ -173,6 +174,24 @@ static void writeVolumeSlices(typename Image3::Pointer volume, const fs::path& o
   }
 }
 
+static itk::Image<double, 3>::Pointer makeUniformKernel(unsigned kernelSize) {
+  using Kernel = itk::Image<double, 3>;
+  const auto sizeValue = static_cast<Kernel::SizeValueType>(std::max(1u, kernelSize));
+  Kernel::SizeType size;
+  size.Fill(sizeValue);
+  Kernel::IndexType start;
+  start.Fill(0);
+  Kernel::RegionType region;
+  region.SetIndex(start);
+  region.SetSize(size);
+
+  auto kernel = Kernel::New();
+  kernel->SetRegions(region);
+  kernel->Allocate();
+  kernel->FillBuffer(1.0 / static_cast<double>(sizeValue * sizeValue * sizeValue));
+  return kernel;
+}
+
 template <typename T>
 static void runTyped(const Options& options) {
   using Image = itk::Image<T, 3>;
@@ -249,13 +268,17 @@ static void runTyped(const Options& options) {
   if (options.operation == "copy") {
     output = input;
   } else if (options.operation == "uniformConvolve") {
-    using Filter = itk::MeanImageFilter<Image, Image>;
+    using Kernel = itk::Image<double, 3>;
+    using Filter = itk::ConvolutionImageFilter<Image, Kernel, Image>;
+    itk::ConstantBoundaryCondition<Image> boundary;
+    boundary.SetConstant(T{});
+    auto kernel = makeUniformKernel(options.kernelSize);
     auto filter = Filter::New();
-    const auto meanRadiusValue = static_cast<typename Image::SizeValueType>(std::max(1u, options.kernelSize) / 2u);
-    typename Image::SizeType meanRadius;
-    meanRadius.Fill(meanRadiusValue);
     filter->SetInput(input);
-    filter->SetRadius(meanRadius);
+    filter->SetKernelImage(kernel);
+    filter->SetBoundaryCondition(&boundary);
+    filter->SetOutputRegionMode(Filter::OutputRegionModeEnum::SAME);
+    filter->NormalizeOff();
     filter->Update();
     output = filter->GetOutput();
   } else if (options.operation == "median") {

@@ -40,13 +40,16 @@ def process(arr, args):
     if args.operation == "uniformConvolve":
         kernel_size = max(1, args.kernel_size)
         halo = kernel_size // 2
+        kernel = np.full((kernel_size, kernel_size, kernel_size), 1.0 / float(kernel_size ** 3), dtype=np.float32)
         return arr.map_overlap(
-            ndi.uniform_filter,
+            ndi.convolve,
             depth={0: halo, 1: halo, 2: halo},
-            boundary="reflect",
-            dtype=arr.dtype,
-            size=(kernel_size, kernel_size, kernel_size),
-        )
+            boundary=0,
+            dtype=np.float32,
+            weights=kernel,
+            mode="constant",
+            cval=0.0,
+        ).astype(arr.dtype)
 
     depth = {0: radius, 1: radius, 2: radius}
     if args.operation == "median":

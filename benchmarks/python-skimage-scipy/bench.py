@@ -51,8 +51,10 @@ def process(stack, args):
         return (stack >= args.threshold).astype(np.uint8)
     if args.operation == "uniformConvolve":
         kernel_size = max(1, args.kernel_size)
-        size = (1, kernel_size, kernel_size) if args.mode == "slice" else (kernel_size,) * 3
-        return ndi.uniform_filter(stack, size=size, mode="reflect").astype(stack.dtype, copy=False)
+        kernel_shape = (1, kernel_size, kernel_size) if args.mode == "slice" else (kernel_size,) * 3
+        kernel = np.full(kernel_shape, 1.0 / np.prod(kernel_shape), dtype=np.float32)
+        convolved = ndi.convolve(stack, weights=kernel, output=np.float32, mode="constant", cval=0.0)
+        return convolved.astype(stack.dtype, copy=False)
     if args.operation == "median":
         radius = max(1, args.radius)
         size = (1, 2 * radius + 1, 2 * radius + 1) if args.mode == "slice" else (2 * radius + 1,) * 3

@@ -24,7 +24,7 @@ The first benchmark set avoids operations that demonstrate StackProcessing-speci
 
 - `copy`: IO baseline.
 - `threshold`: scalar map producing a binary `UInt8` mask with values `0` and `1`.
-- `uniformConvolve`: 3D convolution with a uniform kernel.
+- `uniformConvolve`: regular 3D convolution with an explicit uniform kernel.
 - `median`: 3D median filter.
 - `dilate`: binary 3D dilation producing a binary `UInt8` mask with values `0` and `1`.
 - `connectedComponents`: 3D connected-component labelling.
@@ -41,7 +41,7 @@ The baseline size sweep is:
 - `512x512x512`
 - `1024x1024x1024`
 
-For `median`, the benchmark uses radii `1`, `2`, and `3`, corresponding to `3x3x3`, `5x5x5`, and `7x7x7` neighbourhoods. For `dilate`, every backend first interprets the input as a binary mask using `input >= 128`, then applies spherical/ball structuring elements with radii `1`, `2`, and `3`, and writes a `UInt8` mask. For `uniformConvolve`, it uses uniform kernels of size `3`, `5`, and `7`.
+For `median`, the benchmark uses radii `1`, `2`, and `3`, corresponding to `3x3x3`, `5x5x5`, and `7x7x7` neighbourhoods. For `dilate`, every backend first interprets the input as a binary mask using `input >= 128`, then applies spherical/ball structuring elements with radii `1`, `2`, and `3`, and writes a `UInt8` mask. For `uniformConvolve`, it uses explicit uniform kernels of size `3`, `5`, and `7` through each backend's regular convolution operator, with same-size output and zero padding.
 
 The initial benchmark intentionally focuses on TIFF only. Format-specific behavior is large enough that TIFF should be understood before expanding to MHA, OME-Zarr, or HDF5/NeXus.
 
