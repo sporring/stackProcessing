@@ -1,0 +1,2 @@
+set(__QT_DEPLOY_TARGET_benchmark_itk_FILE /Users/jrh630/repositories/stackProcessing/benchmarks/cpp-itk/build/benchmark_itk)
+set(__QT_DEPLOY_TARGET_benchmark_itk_TYPE EXECUTABLE)

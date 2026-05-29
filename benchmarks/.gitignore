@@ -1,5 +1,0 @@
-**/bin/
-**/obj/
-**/__pycache__/
-results/*.csv
-cpp-itk/build/

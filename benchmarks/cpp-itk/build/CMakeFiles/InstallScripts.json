@@ -1,0 +1,7 @@
+{
+	"InstallScripts" : 
+	[
+		"/Users/jrh630/repositories/stackProcessing/benchmarks/cpp-itk/build/cmake_install.cmake"
+	],
+	"Parallel" : false
+}
