@@ -133,6 +133,40 @@ let private tiffPixelLayout<'T> () =
     else
         invalidArg "T" $"TIFF volume streaming currently supports UInt8, Int8, UInt16, Int16, Float32, and Float64 images; got {t.Name}."
 
+let private isTiffStackSuffix (suffix: string) =
+    let trimmed = suffix.Trim()
+    let normalized =
+        if trimmed.StartsWith(".", StringComparison.Ordinal) then
+            trimmed
+        else
+            "." + trimmed
+
+    String.Equals(normalized, ".tif", StringComparison.OrdinalIgnoreCase)
+    || String.Equals(normalized, ".tiff", StringComparison.OrdinalIgnoreCase)
+
+let private canReadDirectTiffStack<'T> suffix =
+    if not (isTiffStackSuffix suffix) then
+        false
+    else
+        let t = typeof<'T>
+        t = typeof<uint8>
+        || t = typeof<int8>
+        || t = typeof<uint16>
+        || t = typeof<int16>
+        || t = typeof<float32>
+        || t = typeof<float>
+
+let private canWriteDirectTiffStack<'T> suffix =
+    if not (isTiffStackSuffix suffix) then
+        false
+    else
+        let t = typeof<'T>
+        t = typeof<uint8>
+        || t = typeof<int8>
+        || t = typeof<uint16>
+        || t = typeof<int16>
+        || t = typeof<float32>
+
 let private runTask (task: Task<'T>) : 'T =
     task.GetAwaiter().GetResult()
 
@@ -500,63 +534,6 @@ let getFilenames (inputDir: string) (suffix: string) (filter: string[]->string[]
     Plan.createWithOptimizer stage pl.memAvail memPeak memPerElem length pl.debug pl.optimize
     |> Plan.withRuntimeOptionsFrom pl
 
-let private readFilesWithShapeCore<'T when 'T: equality> suffix (debug: bool) (width: uint) (height: uint) : Stage<string, Image<'T>> =
-    let name = "readFiles"
-    if debug && DebugLevel.current() >= 2u then printfn $"[{name} cast to {typeof<'T>.Name}]"
-    let mutable width = width
-    let mutable height = height
-
-    let mapper (debug: bool) (sliceIndex: int64) (fileName: string) : Image<'T> = 
-        if debug then printfn "[%s] Reading image named %s as %s" name fileName (typeof<'T>.Name)
-        let image = Image<'T>.ofFile fileName
-        image.index <- int sliceIndex
-        if width = 0u then
-            width <- image.GetWidth()
-            height <- image.GetHeight()
-        image
-
-    let memoryNeed = fun _ -> Image<'T>.memoryEstimate width height
-    let elementTransformation _ = uint64 width * uint64 height
-
-    let memoryModel = StageMemoryModel.fromSinglePeak Map memoryNeed
-    let suffixKey = suffix |> Option.map suffixCostLabel |> Option.defaultValue "stack"
-    let fallbackTimeCostModel =
-        imageIoCost<'T>
-            "read"
-            Map
-            $"readFiles.{suffixKey}.{typeof<'T>.Name}"
-            (fun _ -> Image<'T>.memoryEstimate width height)
-            (fun _ -> 1UL)
-    let timeCostModel =
-        if width > 0u && height > 0u then
-            match suffix with
-            | Some suffix ->
-                fixedImageStackOperatorTimeCost<'T>
-                    "Read"
-                    Map
-                    suffix
-                    (uint64 width * uint64 height)
-                    fallbackTimeCostModel.Estimate
-            | None ->
-                fixedImageOperatorTimeCost<'T>
-                    "Read"
-                    Map
-                    (uint64 width * uint64 height)
-                    fallbackTimeCostModel.Estimate
-        else
-            fallbackTimeCostModel
-    Stage.mapi name mapper memoryNeed elementTransformation
-    |> withCostModel (StageCostModel.create memoryModel timeCostModel)
-
-let readFilesWithShape<'T when 'T: equality> (debug: bool) (width: uint) (height: uint) : Stage<string, Image<'T>> =
-    readFilesWithShapeCore<'T> None debug width height
-
-let private readFilesWithShapeForSuffix<'T when 'T: equality> suffix (debug: bool) (width: uint) (height: uint) : Stage<string, Image<'T>> =
-    readFilesWithShapeCore<'T> (Some suffix) debug width height
-
-let readFiles<'T when 'T: equality> (debug: bool) : Stage<string, Image<'T>> =
-    readFilesWithShape<'T> debug 0u 0u
-
 let private imageFileReaderInfo filename =
     let reader = new itk.simple.ImageFileReader()
     reader.SetFileName(filename)
@@ -663,6 +640,94 @@ let private readTiffPage<'T when 'T: equality> (tiff: Tiff) width height bitsPer
         Image<'T>.ofSimpleITK(itkImage, $"readVolume[{index}]", index)
     finally
         handle.Free()
+
+let private readTiffSliceFile<'T when 'T: equality> (fileName: string) (sliceIndex: int64) =
+    use tiff = Tiff.Open(fileName, "r")
+    if isNull tiff then
+        invalidOp $"Could not open '{fileName}' for TIFF slice reading."
+
+    let width = uint (tiffFieldInt tiff TiffTag.IMAGEWIDTH 0)
+    let height = uint (tiffFieldInt tiff TiffTag.IMAGELENGTH 0)
+    if width = 0u || height = 0u then
+        invalidOp $"TIFF slice '{fileName}' has invalid page dimensions {width}x{height}."
+
+    let bitsPerSample = tiffFieldIntDefaulted tiff TiffTag.BITSPERSAMPLE 1
+    let samplesPerPixel = tiffFieldIntDefaulted tiff TiffTag.SAMPLESPERPIXEL 1
+    let sampleFormat =
+        let raw = tiffFieldIntDefaulted tiff TiffTag.SAMPLEFORMAT (int SampleFormat.UINT)
+        enum<SampleFormat> raw
+
+    validateTiffSamples samplesPerPixel
+    let bytesPerSample = tiffBytesPerSample bitsPerSample sampleFormat
+    let image = readTiffPage<'T> tiff width height bitsPerSample sampleFormat bytesPerSample (int sliceIndex)
+    image.index <- int sliceIndex
+    image
+
+let private readFilesWithShapeCore<'T when 'T: equality> suffix (debug: bool) (width: uint) (height: uint) : Stage<string, Image<'T>> =
+    let name = "readFiles"
+    if debug && DebugLevel.current() >= 2u then printfn $"[{name} cast to {typeof<'T>.Name}]"
+    let mutable width = width
+    let mutable height = height
+    let useFastTiff =
+        suffix
+        |> Option.exists (canReadDirectTiffStack<'T>)
+
+    let mapper (debug: bool) (sliceIndex: int64) (fileName: string) : Image<'T> =
+        if debug then printfn "[%s] Reading image named %s as %s" name fileName (typeof<'T>.Name)
+        let image =
+            if useFastTiff then
+                readTiffSliceFile<'T> fileName sliceIndex
+            else
+                let image = Image<'T>.ofFile fileName
+                image.index <- int sliceIndex
+                image
+
+        if width = 0u then
+            width <- image.GetWidth()
+            height <- image.GetHeight()
+        image
+
+    let memoryNeed = fun _ -> Image<'T>.memoryEstimate width height
+    let elementTransformation _ = uint64 width * uint64 height
+
+    let memoryModel = StageMemoryModel.fromSinglePeak Map memoryNeed
+    let suffixKey = suffix |> Option.map suffixCostLabel |> Option.defaultValue "stack"
+    let fallbackTimeCostModel =
+        imageIoCost<'T>
+            "read"
+            Map
+            $"readFiles.{suffixKey}.{typeof<'T>.Name}"
+            (fun _ -> Image<'T>.memoryEstimate width height)
+            (fun _ -> 1UL)
+    let timeCostModel =
+        if width > 0u && height > 0u then
+            match suffix with
+            | Some suffix ->
+                fixedImageStackOperatorTimeCost<'T>
+                    "Read"
+                    Map
+                    suffix
+                    (uint64 width * uint64 height)
+                    fallbackTimeCostModel.Estimate
+            | None ->
+                fixedImageOperatorTimeCost<'T>
+                    "Read"
+                    Map
+                    (uint64 width * uint64 height)
+                    fallbackTimeCostModel.Estimate
+        else
+            fallbackTimeCostModel
+    Stage.mapi name mapper memoryNeed elementTransformation
+    |> withCostModel (StageCostModel.create memoryModel timeCostModel)
+
+let readFilesWithShape<'T when 'T: equality> (debug: bool) (width: uint) (height: uint) : Stage<string, Image<'T>> =
+    readFilesWithShapeCore<'T> None debug width height
+
+let private readFilesWithShapeForSuffix<'T when 'T: equality> suffix (debug: bool) (width: uint) (height: uint) : Stage<string, Image<'T>> =
+    readFilesWithShapeCore<'T> (Some suffix) debug width height
+
+let readFiles<'T when 'T: equality> (debug: bool) : Stage<string, Image<'T>> =
+    readFilesWithShape<'T> debug 0u 0u
 
 let private readTiffVolume<'T when 'T: equality> (filename: string) (pl: Plan<unit, unit>) : Plan<unit, Image<'T>> =
     use header = Tiff.Open(filename, "r")
@@ -2007,6 +2072,44 @@ let private cleanChunkFiles outputDir suffix =
         Directory.GetFiles(outputDir, pattern)
         |> Array.iter File.Delete
 
+let private tiffWriteMode (filename: string) =
+    let ext = Path.GetExtension(filename).ToLowerInvariant()
+    if ext = ".btf" || ext = ".bigtiff" then "w8" else "w"
+
+let private writeTiffSliceFile<'T when 'T: equality> (fileName: string) (image: Image<'T>) =
+    if image.GetDimensions() <> 2u then
+        invalidOp $"write TIFF stack expects 2D slices, got {image.GetDimensions()}D at slice {image.index}."
+
+    let bitsPerSample, sampleFormat, bytesPerSample = tiffPixelLayout<'T> ()
+    let width = image.GetWidth()
+    let height = image.GetHeight()
+
+    use tiff = Tiff.Open(fileName, tiffWriteMode fileName)
+    if isNull tiff then
+        invalidOp $"Could not open '{fileName}' for TIFF slice writing."
+
+    tiff.SetField(TiffTag.IMAGEWIDTH, int width) |> ignore
+    tiff.SetField(TiffTag.IMAGELENGTH, int height) |> ignore
+    tiff.SetField(TiffTag.SAMPLESPERPIXEL, 1) |> ignore
+    tiff.SetField(TiffTag.BITSPERSAMPLE, bitsPerSample) |> ignore
+    tiff.SetField(TiffTag.SAMPLEFORMAT, sampleFormat) |> ignore
+    tiff.SetField(TiffTag.PHOTOMETRIC, Photometric.MINISBLACK) |> ignore
+    tiff.SetField(TiffTag.PLANARCONFIG, PlanarConfig.CONTIG) |> ignore
+    tiff.SetField(TiffTag.ROWSPERSTRIP, int height) |> ignore
+    tiff.SetField(TiffTag.COMPRESSION, Compression.NONE) |> ignore
+
+    let pageBytes = bytesOfScalarImage2D image
+    let rowBytes = int width * bytesPerSample
+
+    for row in 0 .. int height - 1 do
+        let buffer = Array.zeroCreate<byte> rowBytes
+        Buffer.BlockCopy(pageBytes, row * rowBytes, buffer, 0, rowBytes)
+        if not (tiff.WriteScanline(buffer, int row)) then
+            invalidOp $"Failed to write TIFF scanline {row} for '{fileName}'."
+
+    if not (tiff.WriteDirectory()) then
+        invalidOp $"Failed to write TIFF directory for '{fileName}'."
+
 let write<'T when 'T: equality> (outputDir: string) (suffix: string) : Stage<Image<'T>, Image<'T>> =
     let t = typeof<'T>
     if (icompare suffix ".tif" || icompare suffix ".tiff") 
@@ -2018,7 +2121,10 @@ let write<'T when 'T: equality> (outputDir: string) (suffix: string) : Stage<Ima
         cleaned.Force()
         let fileName = Path.Combine(outputDir, sprintf "image_%03d%s" idx suffix)
         if debug then printfn "[write] Saved image %d to %s as %s" idx fileName (friendlyImageTypeName image)
-        image.toFile(fileName)
+        if canWriteDirectTiffStack<'T> suffix then
+            writeTiffSliceFile fileName image
+        else
+            image.toFile(fileName)
         image
     let memoryNeed = id
     let memoryModel = StageMemoryModel.fromSinglePeak Iter memoryNeed
@@ -2054,10 +2160,6 @@ let writeSlabSlices<'T when 'T: equality> (outputDir: string) (suffix: string) (
 
     Stage.mapi $"writeSlabSlices \"{outputDir}/*{suffix}\"" mapper id id
 
-let private tiffMode (filename: string) =
-    let ext = Path.GetExtension(filename).ToLowerInvariant()
-    if ext = ".btf" || ext = ".bigtiff" then "w8" else "w"
-
 let writeVolume<'T when 'T: equality> (filename: string) : Stage<Image<'T>, unit> =
     let extension = Path.GetExtension(filename).ToLowerInvariant()
     if extension <> ".tif" && extension <> ".tiff" && extension <> ".btf" && extension <> ".bigtiff" then
@@ -2071,7 +2173,7 @@ let writeVolume<'T when 'T: equality> (filename: string) : Stage<Image<'T>, unit
             if not (String.IsNullOrWhiteSpace directory) then
                 Directory.CreateDirectory(directory) |> ignore
 
-            use tiff = Tiff.Open(filename, tiffMode filename)
+            use tiff = Tiff.Open(filename, tiffWriteMode filename)
             if isNull tiff then
                 invalidOp $"Could not open '{filename}' for TIFF volume writing."
 

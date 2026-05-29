@@ -600,6 +600,53 @@ let stackProcessingSupportSuite =
                 disposeImages slices
                 deleteDirectory inputDir
 
+        testCase "StackIO TIFF stack backend roundtrips scalar slices" <| fun _ ->
+            let simpleItkInputDir = tempDirectory "fast-tiff-input"
+            let fastOutputDir = tempDirectory "fast-tiff-output"
+            let suffix = ".tiff"
+            let slices = [ for z in 0 .. 2 -> makeSlice 6 5 z ]
+
+            try
+                writeSlices simpleItkInputDir suffix slices
+
+                let fastRead =
+                    source (2UL * 1024UL * 1024UL * 1024UL)
+                    |> read<uint8> simpleItkInputDir suffix
+                    |> drainList
+
+                try
+                    Expect.equal fastRead.Length slices.Length "TIFF read should emit every slice."
+                    Expect.equal (fastRead[2].GetSize()) [ 6u; 5u ] "TIFF read should preserve x/y shape."
+                    Expect.equal fastRead[2].[4, 3] slices[2].[4, 3] "TIFF read should preserve pixel values."
+
+                    let written =
+                        imagePlan fastRead
+                        >=> write fastOutputDir suffix
+                        |> drainList
+
+                    try
+                        disposeImages written
+
+                        let simpleItkReadBack =
+                            source (2UL * 1024UL * 1024UL * 1024UL)
+                            |> read<uint8> fastOutputDir suffix
+                            |> drainList
+
+                        try
+                            Expect.equal simpleItkReadBack.Length slices.Length "TIFF write should create a normal TIFF stack."
+                            Expect.equal (simpleItkReadBack[1].GetSize()) [ 6u; 5u ] "TIFF-written slices should be readable."
+                            Expect.equal simpleItkReadBack[1].[5, 4] slices[1].[5, 4] "TIFF write should preserve pixel values."
+                        finally
+                            disposeImages simpleItkReadBack
+                    finally
+                        ()
+                finally
+                    disposeImages fastRead
+            finally
+                disposeImages slices
+                deleteDirectory simpleItkInputDir
+                deleteDirectory fastOutputDir
+
         testCase "createPadding and crop update x/y/z volume geometry in streaming order" <| fun _ ->
             let slices = [ for z in 0 .. 2 -> makeSlice 3 3 z ]
 
