@@ -26,6 +26,7 @@ type Options =
       RunId: string option
       CostModel: string option
       Shuffle: bool
+      KeepBuilds: bool
       Timeout: TimeSpan option }
 
 type GraphJob =
@@ -100,6 +101,7 @@ let usage () =
     printfn "  --optimize BOOL   Enable or disable optimizer use while running generated graphs. Defaults to false."
     printfn "  --no-optimize     Shortcut for --optimize false."
     printfn "  --cost-model PATH Pass PATH as the runtime fitted operator cost model."
+    printfn "  --keep-builds     Keep generated graph project directories after running."
     printfn "  --timeout N       Stop a build or run after N minutes. Defaults to 30. Use 0 to disable."
     printfn "  -h, --help        Show this help."
 
@@ -155,6 +157,8 @@ let rec private parseArgs options args =
     | "--shuffle" :: rest -> parseArgs { options with Shuffle = true } rest
     | "--cost-model" :: value :: rest ->
         parseArgs { options with CostModel = Some(Path.GetFullPath value) } rest
+    | "--keep-builds" :: rest ->
+        parseArgs { options with KeepBuilds = true } rest
     | "--timeout" :: value :: rest
     | "--timeout-minutes" :: value :: rest ->
         match Double.TryParse value with
@@ -771,6 +775,13 @@ let private gatherExistingLogs samplesRoot extraJsonRoots =
     |> Seq.sortBy _.Job.Name
     |> Seq.toArray
 
+let private cleanDirectoryIfExists path =
+    if Directory.Exists path then
+        try
+            Directory.Delete(path, recursive = true)
+        with ex ->
+            eprintfn "runJson: could not clean %s: %s" path ex.Message
+
 let main (argv: string array) =
     let defaults =
         { SamplesRoot = defaultSamplesRoot ()
@@ -786,6 +797,7 @@ let main (argv: string array) =
           RunId = None
           CostModel = None
           Shuffle = false
+          KeepBuilds = false
           Timeout = Some(TimeSpan.FromMinutes 30.0) }
 
     match parseArgs defaults (argv |> Array.toList) with
@@ -830,19 +842,23 @@ let main (argv: string array) =
                         Directory.CreateDirectory repeatBuildDir |> ignore
                         printfn "runJson repeat %d/%d -> %s" repeatIndex options.Repeat (relativePath samplesRoot repeatOutputDir)
 
-                        let repeatJobs = jobsForRepeat samplesRoot options runId repeatIndex repeatOutputDir repeatBuildDir
+                        try
+                            let repeatJobs = jobsForRepeat samplesRoot options runId repeatIndex repeatOutputDir repeatBuildDir
 
-                        let results =
-                            runWithParallelism cancellation.Token repositoryRoot options repeatJobs
-                            |> _.GetAwaiter().GetResult()
+                            let results =
+                                runWithParallelism cancellation.Token repositoryRoot options repeatJobs
+                                |> _.GetAwaiter().GetResult()
 
-                        writeCsv samplesRoot repeatOutputDir results
+                            writeCsv samplesRoot repeatOutputDir results
 
-                        let failures = results |> Array.filter (fun result -> result.ExitCode <> 0)
+                            let failures = results |> Array.filter (fun result -> result.ExitCode <> 0)
 
-                        for failure in failures do
-                            failed <- true
-                            eprintfn "%s failed with exit code %d; see %s" failure.Job.Name failure.ExitCode (relativePath samplesRoot failure.Job.LogPath)
+                            for failure in failures do
+                                failed <- true
+                                eprintfn "%s failed with exit code %d; see %s" failure.Job.Name failure.ExitCode (relativePath samplesRoot failure.Job.LogPath)
+                        finally
+                            if not options.KeepBuilds then
+                                cleanDirectoryIfExists repeatBuildDir
 
                     if failed then 1 else 0
                 with :? OperationCanceledException ->

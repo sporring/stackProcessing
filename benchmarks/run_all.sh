@@ -14,6 +14,8 @@ Run the comparative benchmark workflow end-to-end:
 
 Options:
   --repeat N              Repeats per manifest case. Defaults to 3.
+  --repeat-start N        First repeat index to run. Defaults to 1.
+  --repeat-end N          Last repeat index to run. Defaults to --repeat.
   --backends LIST         Comma-separated baseline backends.
                           Defaults to stackprocessing,python-skimage-scipy,cpp-itk,matlab.
                           Valid baseline backends: stackprocessing,python-skimage-scipy,cpp-itk,matlab.
@@ -22,11 +24,14 @@ Options:
   --special-cases PATH    Special cases CSV. Defaults to benchmarks/config/special-cases.csv.
   --pixel-types LIST      Optional comma-separated pixel type filter, for example UInt8 or UInt8,Float32.
   --shapes LIST           Optional comma-separated shape filter, for example 256x256x256.
+  --operations LIST       Optional comma-separated operation filter, for example median,dilate.
+  --parameters LIST       Optional comma-separated parameter filter, for example radius=1,radius=2.
   --input-root PATH       TIFF input root. Defaults to tmp/benchmarks/input.
   --output-root PATH      Output root. Defaults to tmp/benchmarks/output.
   --omezarr-root PATH     OME-Zarr input root. Defaults to tmp/benchmarks/input-omezarr.
   --results PATH          Raw output CSV. Defaults to benchmarks/results/raw.csv.
   --summary PATH          Summary output CSV. Defaults to benchmarks/results/summary.csv.
+  --keep-outputs          Keep per-case output stacks. Defaults to deleting them after timing.
   --force-inputs          Regenerate TIFF inputs even if present.
   --skip-inputs           Do not generate TIFF inputs.
   --skip-builds           Do not prebuild compiled benchmark backends.
@@ -50,12 +55,16 @@ repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$repo_root"
 
 repeat=3
+repeat_start=""
+repeat_end=""
 backends="stackprocessing,python-skimage-scipy,cpp-itk,matlab"
 include_special=0
 cases="benchmarks/config/cases.csv"
 special_cases="benchmarks/config/special-cases.csv"
 pixel_types=""
 shapes=""
+operations=""
+parameters=""
 input_root="tmp/benchmarks/input"
 output_root="tmp/benchmarks/output"
 omezarr_root="tmp/benchmarks/input-omezarr"
@@ -63,6 +72,7 @@ results="benchmarks/results/raw.csv"
 summary="benchmarks/results/summary.csv"
 force_inputs=0
 skip_inputs=0
+keep_outputs=0
 build_itk=0
 skip_builds=0
 dry_run=0
@@ -73,6 +83,14 @@ while [[ $# -gt 0 ]]; do
   case "$1" in
     --repeat)
       repeat="$2"
+      shift 2
+      ;;
+    --repeat-start)
+      repeat_start="$2"
+      shift 2
+      ;;
+    --repeat-end)
+      repeat_end="$2"
       shift 2
       ;;
     --backends)
@@ -99,6 +117,14 @@ while [[ $# -gt 0 ]]; do
       shapes="$2"
       shift 2
       ;;
+    --operations)
+      operations="$2"
+      shift 2
+      ;;
+    --parameters)
+      parameters="$2"
+      shift 2
+      ;;
     --input-root)
       input_root="$2"
       shift 2
@@ -118,6 +144,10 @@ while [[ $# -gt 0 ]]; do
     --summary)
       summary="$2"
       shift 2
+      ;;
+    --keep-outputs)
+      keep_outputs=1
+      shift
       ;;
     --force-inputs)
       force_inputs=1
@@ -161,6 +191,14 @@ done
 
 if ! [[ "$repeat" =~ ^[0-9]+$ ]] || [[ "$repeat" -lt 1 ]]; then
   echo "run_all.sh: --repeat expects a positive integer" >&2
+  exit 2
+fi
+if [[ -n "$repeat_start" ]] && (! [[ "$repeat_start" =~ ^[0-9]+$ ]] || [[ "$repeat_start" -lt 1 ]]); then
+  echo "run_all.sh: --repeat-start expects a positive integer" >&2
+  exit 2
+fi
+if [[ -n "$repeat_end" ]] && (! [[ "$repeat_end" =~ ^[0-9]+$ ]] || [[ "$repeat_end" -lt 1 ]]); then
+  echo "run_all.sh: --repeat-end expects a positive integer" >&2
   exit 2
 fi
 
@@ -255,8 +293,25 @@ for backend in "${backend_array[@]}"; do
   if [[ -n "$shapes" ]]; then
     manifest_args+=(--shapes "$shapes")
   fi
+  if [[ -n "$operations" ]]; then
+    manifest_args+=(--operations "$operations")
+  fi
+  if [[ -n "$parameters" ]]; then
+    manifest_args+=(--parameters "$parameters")
+  fi
+  if [[ -n "$repeat_start" ]]; then
+    manifest_args+=(--repeat-start "$repeat_start")
+  fi
+  if [[ -n "$repeat_end" ]]; then
+    manifest_args+=(--repeat-end "$repeat_end")
+  fi
   if [[ "$dry_run" -eq 1 ]]; then
     manifest_args+=(--dry-run)
+  fi
+  if [[ "$keep_outputs" -eq 1 ]]; then
+    manifest_args+=(--keep-outputs)
+  fi
+  if [[ "$dry_run" -eq 1 ]]; then
     printf '+'
     printf ' %q' "${manifest_args[@]}"
     printf '\n'
@@ -321,8 +376,25 @@ PY
   if [[ -n "$shapes" ]]; then
     special_args+=(--shapes "$shapes")
   fi
+  if [[ -n "$operations" ]]; then
+    special_args+=(--operations "$operations")
+  fi
+  if [[ -n "$parameters" ]]; then
+    special_args+=(--parameters "$parameters")
+  fi
+  if [[ -n "$repeat_start" ]]; then
+    special_args+=(--repeat-start "$repeat_start")
+  fi
+  if [[ -n "$repeat_end" ]]; then
+    special_args+=(--repeat-end "$repeat_end")
+  fi
   if [[ "$dry_run" -eq 1 ]]; then
     special_args+=(--dry-run)
+  fi
+  if [[ "$keep_outputs" -eq 1 ]]; then
+    special_args+=(--keep-outputs)
+  fi
+  if [[ "$dry_run" -eq 1 ]]; then
     printf '+'
     printf ' %q' "${special_args[@]}"
     printf '\n'

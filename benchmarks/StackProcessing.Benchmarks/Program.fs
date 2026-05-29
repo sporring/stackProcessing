@@ -196,22 +196,26 @@ let private runConnectedComponents input output windowSize availableMemory =
     let tmpSuffix = ".mha"
     let window = max 1u windowSize
     let src = benchmarkSource availableMemory
-    let table =
-        src
-        |> read<uint8> input ".tiff"
-        >=> threshold 128.0 infinity
-        >=> connectedComponents (Some window)
-        >=> teeFst (writeSlabSlices tmp tmpSuffix window)
-        >=> makeConnectedComponentTranslationTable (Some window)
-        |> drain
+    try
+        let table =
+            src
+            |> read<uint8> input ".tiff"
+            >=> threshold 128.0 infinity
+            >=> connectedComponents (Some window)
+            >=> teeFst (writeSlabSlices tmp tmpSuffix window)
+            >=> makeConnectedComponentTranslationTable (Some window)
+            |> drain
 
-    src
-    |> read<uint64> tmp tmpSuffix
-    >=> updateConnectedComponents (Some window) table
-    >=> cast<uint64, uint8>
-    >=> write output ".tiff"
-    |> sink
-    0
+        src
+        |> read<uint64> tmp tmpSuffix
+        >=> updateConnectedComponents (Some window) table
+        >=> cast<uint64, uint8>
+        >=> write output ".tiff"
+        |> sink
+        0
+    finally
+        if Directory.Exists tmp then
+            Directory.Delete(tmp, true)
 
 let private run opts =
     let operation = require "operation" opts

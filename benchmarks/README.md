@@ -86,6 +86,8 @@ source .venv-benchmarks/bin/activate
 
 The runner also removes stale `benchmark-internal-*.txt` files in the results directory at the start and end of a non-dry run. Those files are temporary handoff files for backend-reported internal timing and normally disappear immediately.
 
+Per-case output stacks are deleted after each timed command by default. This cleanup happens after `measure.py` has recorded `wallSeconds`, `internalSeconds`, and peak RSS, so cleanup time is not included in the benchmark timing. Use `--keep-outputs` only when you need to inspect output images; large runs can otherwise leave hundreds of gigabytes below `tmp/benchmarks/output`.
+
 This generates deterministic TIFF inputs, runs the default regular TIFF-stack baseline backends, and writes:
 
 ```text
@@ -120,6 +122,20 @@ bash benchmarks/run_all.sh \
   --backends stackprocessing,python-skimage-scipy,cpp-itk,matlab \
   --pixel-types UInt8 \
   --shapes 256x256x256
+```
+
+Interrupted runs can be resumed by combining shape, backend, pixel type, operation, parameter, and repeat-index filters. For example, to rerun only repeat 3 of median and dilation radius cases:
+
+```bash
+bash benchmarks/run_all.sh \
+  --repeat 3 \
+  --repeat-start 3 \
+  --repeat-end 3 \
+  --shapes 1024x1024x1024 \
+  --backends cpp-itk \
+  --pixel-types UInt16,Float32 \
+  --operations median,dilate \
+  --parameters radius=1,radius=2,radius=3
 ```
 
 The shape filter is also comma-separated, for example `--shapes 256x256x256,512x512x512`.

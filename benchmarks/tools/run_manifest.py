@@ -2,6 +2,7 @@
 import argparse
 import csv
 import os
+import shutil
 import signal
 import shlex
 import subprocess
@@ -24,9 +25,14 @@ def parse_args():
     parser.add_argument("--input-root", default=str(ROOT / "tmp/benchmarks/input"))
     parser.add_argument("--output-root", default=str(ROOT / "tmp/benchmarks/output"))
     parser.add_argument("--repeat", type=int, default=1)
+    parser.add_argument("--repeat-start", type=int, default=None, help="First repeat index to run. Defaults to 1.")
+    parser.add_argument("--repeat-end", type=int, default=None, help="Last repeat index to run. Defaults to --repeat.")
     parser.add_argument("--pixel-types", default="", help="Optional comma-separated pixel type filter, for example UInt8,Float32.")
     parser.add_argument("--shapes", default="", help="Optional comma-separated shape filter, for example 256x256x256,512x512x512.")
+    parser.add_argument("--operations", default="", help="Optional comma-separated operation filter, for example median,dilate.")
+    parser.add_argument("--parameters", default="", help="Optional comma-separated parameter filter, for example radius=1,radius=2.")
     parser.add_argument("--dry-run", action="store_true")
+    parser.add_argument("--keep-outputs", action="store_true", help="Keep backend output stacks after each measured case.")
     parser.add_argument("--itk-exe", default=str(ROOT / "benchmarks/cpp-itk/build/benchmark_itk"))
     parser.add_argument("--matlab-exe", default="matlab")
     return parser.parse_args()
@@ -37,14 +43,18 @@ def read_cases(path):
         return list(csv.DictReader(handle))
 
 
-def filter_cases(cases, pixel_types, shapes):
+def filter_cases(cases, pixel_types, shapes, operations, parameters):
     selected = {item.strip().lower() for item in pixel_types.split(",") if item.strip()}
     selected_shapes = {item.strip().lower() for item in shapes.split(",") if item.strip()}
+    selected_operations = {item.strip().lower() for item in operations.split(",") if item.strip()}
+    selected_parameters = {item.strip().lower() for item in parameters.split(",") if item.strip()}
     return [
         case
         for case in cases
         if (not selected or case["pixelType"].lower() in selected)
         and (not selected_shapes or case["shape"].lower() in selected_shapes)
+        and (not selected_operations or case["operation"].lower() in selected_operations)
+        and (not selected_parameters or case_parameter(case).lower() in selected_parameters)
     ]
 
 
@@ -176,21 +186,43 @@ def run_measured_command(command):
         return 130
 
 
+def cleanup_case_output(args, case, repeat):
+    if args.keep_outputs:
+        return
+
+    out = output_dir(args, case, repeat)
+    for path in [out, Path(str(out) + "-labels")]:
+        if path.exists():
+            shutil.rmtree(path)
+
+
 def main():
     args = parse_args()
-    cases = filter_cases(read_cases(args.cases), args.pixel_types, args.shapes)
+    repeat_start = args.repeat_start if args.repeat_start is not None else 1
+    repeat_end = args.repeat_end if args.repeat_end is not None else args.repeat
+    if repeat_start < 1 or repeat_end < repeat_start:
+        print("run_manifest.py: repeat range must satisfy 1 <= --repeat-start <= --repeat-end", file=sys.stderr)
+        return 2
+
+    cases = filter_cases(read_cases(args.cases), args.pixel_types, args.shapes, args.operations, args.parameters)
     if not cases:
-        print(f"run_manifest.py: no cases matched --pixel-types {args.pixel_types!r} --shapes {args.shapes!r}", file=sys.stderr)
+        print(
+            "run_manifest.py: no cases matched "
+            f"--pixel-types {args.pixel_types!r} --shapes {args.shapes!r} "
+            f"--operations {args.operations!r} --parameters {args.parameters!r}",
+            file=sys.stderr,
+        )
         return 2
 
     Path(args.results).parent.mkdir(parents=True, exist_ok=True)
-    for repeat in range(1, args.repeat + 1):
+    for repeat in range(repeat_start, repeat_end + 1):
         for case in cases:
             command = measured_command(args, case, repeat)
             printable = " ".join(shlex.quote(part) for part in command)
             print(printable, flush=True)
             if not args.dry_run:
                 return_code = run_measured_command(command)
+                cleanup_case_output(args, case, repeat)
                 if return_code != 0:
                     return return_code
     return 0
