@@ -226,7 +226,7 @@ let private run opts =
     let windowSize = optional "window" "16" opts |> UInt32.Parse
     let kernelSize = optional "kernel-size" "3" opts |> UInt32.Parse
     let thresholdValue = optional "threshold" "128" opts |> fun s -> Double.Parse(s, invariant)
-    let availableMemory = optional "available-memory" (string (8UL * 1024UL * 1024UL * 1024UL)) opts |> UInt64.Parse
+    let availableMemory = optional "available-memory" (string (1024UL * 1024UL * 1024UL * 1024UL)) opts |> UInt64.Parse
     let stopwatch = Stopwatch.StartNew()
     let exitCode =
         match operation, pixelType with

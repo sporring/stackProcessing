@@ -97,6 +97,18 @@ benchmarks/results/summary.csv
 
 `raw.csv` contains `wallSeconds`, `internalSeconds`, and `peakRssKiB`. `summary.csv` reports median and mean wall time, internal time, startup overhead (`wallSeconds - internalSeconds`), and peak resident memory.
 
+Generate paper-oriented PDF figures from the summary table:
+
+```bash
+python3 -m pip install matplotlib
+
+python3 benchmarks/tools/plot_results.py \
+  --input benchmarks/results/summary.csv \
+  --output-dir benchmarks/results/figures
+```
+
+The figure script writes tight-bounding-box PDFs for runtime scaling by image size, runtime scaling by neighbourhood complexity, runtime versus peak memory, and internal-versus-wall-time overhead.
+
 Use `--dry-run` to print the exact commands without executing them:
 
 ```bash
@@ -220,6 +232,10 @@ Aggregate results:
 python3 benchmarks/tools/summarize_results.py \
   --input benchmarks/results/raw.csv \
   --output benchmarks/results/summary.csv
+
+python3 benchmarks/tools/plot_results.py \
+  --input benchmarks/results/summary.csv \
+  --output-dir benchmarks/results/figures
 ```
 
 For the full case matrix, generate the needed inputs once per shape/type, then run a backend through `run_manifest.py`:
