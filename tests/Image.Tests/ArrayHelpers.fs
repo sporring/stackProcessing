@@ -17,11 +17,11 @@ let arrayAndTypeTests =
       let idFloat = fromType<float>
       Expect.equal idFloat PixelIDValueEnum.sitkFloat64 "Expected sitkFloat64"
 
-    // ofCastItk<'T>
-    testCase "ofCastItk to float32" <| fun _ ->
+    // ofCastITK<'T>
+    testCase "ofCastITK to float32" <| fun _ ->
       let arr = Array2D.init 5 5 (fun _ _ -> 1uy)
       let img = Image<uint8>.ofArray2D arr
-      let casted = ofCastItk<float32> (img.toSimpleITK())
+      let casted = ofCastITK<float32> (img.toSimpleITK())
       Expect.equal (casted.GetPixelID()) PixelIDValueEnum.sitkFloat32 "Pixel ID changed to float32"
 
     testCase "same-type cast keeps independent native image ownership" <| fun _ ->

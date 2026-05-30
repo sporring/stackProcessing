@@ -65,13 +65,19 @@ Window<'T>
 Slab<'T>
 ```
 
-but chunks are represented more indirectly:
+and chunks now have a first-class type-level hook:
+
+```fsharp
+Chunk<'T>
+```
+
+Some implementation paths still represent chunks more indirectly:
 
 - `ChunkInfo` describes an on-disk chunk layout.
 - `ChunkData<'T>` stores cached array-backed chunk pixels for affine resampling.
 - TIFF chunk folders, Zarr arrays, HDF5/NeXus datasets, and affine-resampling caches each carry some chunk logic locally.
 
-A possible cleanup is to introduce a first-class chunk model in `StackProcessing.Core`.
+The first cosmetic cleanup has introduced a first-class chunk model in `StackProcessing.Core`.
 
 ```fsharp
 type ChunkIndex = int * int * int
@@ -101,8 +107,56 @@ The storage choice should probably remain explicit:
 
 With this split, `StackIO` could own layout discovery and chunk read/write mechanics for TIFF chunk folders, Zarr, HDF5, and NeXus. Algorithm modules such as `StackAffineResampler` could then depend on a chunk cache API rather than path conventions and low-level `_readChunk` helpers.
 
-This is a larger cleanup than the immediate speed fix. It touches IO, Zarr/HDF5/NeXus layout mapping, affine resampling, and cache semantics. The practical order should be:
+Fully using this model is still a larger cleanup than the immediate speed fix. It touches IO, Zarr/HDF5/NeXus layout mapping, affine resampling, and cache semantics. The practical order should be:
 
 1. Keep the immediate speedup local by making `ChunkCache` array-backed.
 2. Extract a common `ChunkLayout` once the fast path is stable.
-3. Introduce `Chunk<'T>` only when multiple chunked backends can share it without forcing unnecessary conversions between `Image<'T>` and arrays.
+3. Connect the existing `Chunk<'T>` type to multiple chunked backends only when they can share it without forcing unnecessary conversions between `Image<'T>` and arrays.
+
+## Updated Direction After SimpleITK Ownership Cleanup
+
+The SimpleITK ownership cleanup changes the priority of this discussion. `Image<'T>` is now more explicitly the wrapper around SimpleITK-backed images, with separate constructors for deep-copy, aliasing, and consuming temporary SimpleITK values. That makes the chunk representation gap more visible: chunked algorithms currently pass through path conventions, temporary files, `ChunkInfo`, and ad-hoc caches instead of consistently flowing through the new chunk resource type.
+
+The current FFT/inverse FFT path is the strongest example. `FFT` first applies a 2D FFT slice-wise, writes intermediate chunks to a temporary folder, reads those chunks back into a full volume, performs the Z-direction transform, writes chunks again, and finally reads chunks back as slices. This works, but it is structurally awkward:
+
+- chunks are represented as files plus `ChunkInfo`, not as pipeline values;
+- memory use is described only approximately by the surrounding stage, while the full-volume read inside the chunked operation is hidden;
+- cleanup is tied to temporary directories rather than resource ownership;
+- the optimizer cannot reason about chunk layout, chunk storage, or conversions between `Image<'T>` and array-backed chunks.
+
+With the new insight, the right long-term direction is to wire the new first-class `Chunk<'T>` in gradually, while keeping the first version deliberately small. It should not try to solve all Zarr/HDF5/NeXus semantics at once. The current minimal model is:
+
+```fsharp
+type ChunkIndex = int * int * int
+
+type ChunkLayout =
+    { VolumeSize: uint64 * uint64 * uint64
+      ChunkSize: uint64 * uint64 * uint64
+      ChunkCounts: int * int * int
+      PixelType: string
+      Components: uint }
+
+type ChunkStorage<'T when 'T : equality> =
+    | ImageChunk of Image<'T>
+    | ArrayChunk of 'T[,,]
+
+type Chunk<'T when 'T : equality> =
+    { Index: ChunkIndex
+      Origin: uint64 * uint64 * uint64
+      Size: uint64 * uint64 * uint64
+      Data: ChunkStorage<'T> }
+```
+
+This mirrors the role of `Window<'T>` and `Slab<'T>`: it names the representation and gives the pipeline something real to account for. `ImageChunk` should be used when the next operation is SimpleITK/Image-level. `ArrayChunk` should be used when the next operation is random access, interpolation, or custom managed loops.
+
+The immediate FFT concern is not that it must be rewritten at once. The safer interpretation is:
+
+1. Do not add more path-based chunk algorithms.
+2. Keep `FFT`/`invFFT` working as-is until benchmarks and calibration settle.
+3. Use the newly introduced `ChunkLayout`, `ChunkStorage<'T>`, and `Chunk<'T>` in `StackProcessing.Core`.
+4. Refactor affine resampling first, because it already has an array-backed chunk cache and will validate the representation with low risk.
+5. Then revisit `FFT`/`invFFT` as chunk-native stages that expose the intermediate chunk stream instead of hiding full-volume reconstruction inside a directory operation.
+
+The FFT path also raises a second question: some operations are genuinely global along one axis. A chunk representation does not magically make a Z-direction FFT local; it only makes the dependency and memory shape explicit. The optimizer should be able to see that an XY FFT is slice-local, while the Z FFT requires all chunks along each `(x,y)` column group or a transposed/chunk-reorganized representation. That is exactly the kind of distinction that is hard to express while chunks are only filenames.
+
+So the recommended next step is not a sweeping rewrite. It is to promote the existing `ChunkData<'T>` idea into a small shared chunk model, use it first where the code already wants arrays, and let FFT become the second consumer once the type has proven itself.

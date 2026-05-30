@@ -224,6 +224,31 @@ slice stream -> window -> slab -> image operation -> slab/window -> slice stream
 
 This is especially useful for applying singleton-style image stages to small 3D slabs.
 
+## Chunk
+
+`Chunk<'T>` is a StackProcessing.Core concept:
+
+```fsharp
+type ChunkStorage<'T> =
+    | ImageChunk of Image<'T>
+    | ArrayChunk of 'T[,,]
+
+type Chunk<'T> =
+    { Index: int * int * int
+      Origin: uint64 * uint64 * uint64
+      Size: uint64 * uint64 * uint64
+      Data: ChunkStorage<'T> }
+```
+
+A chunk is a bounded 3D block from a larger volume or chunked backing store. It sits beside `Window<'T>` and `Slab<'T>` as a representation for algorithms that need random access, multiple passes, or block-oriented IO.
+
+The storage choice is explicit:
+
+- `ImageChunk` stays close to Image/SimpleITK operations.
+- `ArrayChunk` is for managed hot loops, interpolation, and cache-heavy algorithms.
+
+The type currently acts as a structural hook. Existing affine resampling and FFT code still use some older path-based chunk helpers, but the intended direction is for chunk-native stages to expose their memory shape through `Chunk<'T>` rather than hiding it in temporary directories or local caches.
+
 ## Image
 
 `Image<'T>` is StackProcessing's typed wrapper around SimpleITK images. It lives in the `Image` project and adds:
@@ -234,6 +259,7 @@ This is especially useful for applying singleton-style image stages to small 3D 
 - bulk array conversion
 - file IO for single image objects
 - SimpleITK interoperability
+- explicit SimpleITK ownership paths for deep-copy, aliasing, and consuming temporary images
 
 `Image` should own single-image representation and operations. It should not own streaming, plans, cost fitting, or Studio graph logic.
 
@@ -353,4 +379,3 @@ sink/drain
 ```
 
 The main design theme is to keep high-level image-processing DSLs pleasant while making enough structure visible for memory-safe streaming, measurement, and future optimization.
-

@@ -41,7 +41,20 @@ module InternalHelpers =
     val copyScalarPixels: image: itk.simple.Image -> pixelCount: int -> 'T array
     val importScalarImage:
       size: uint list -> pixels: 'T array -> itk.simple.Image
-    val ofCastItk<'T> : itkImg: itk.simple.Image -> itk.simple.Image
+    val private deepCopyItkImage: itkImg: itk.simple.Image -> itk.simple.Image
+    /// <summary>
+    /// Creates a shallow SimpleITK image wrapper for an image whose pixel type already matches <typeparamref name="'T" />.
+    /// The returned SimpleITK image shares the same pixel container until SimpleITK copy-on-write forces uniqueness.
+    /// No cast, deep copy, or disposal of <paramref name="itkImg" /> is performed.
+    /// </summary>
+    val aliasSimpleITKImage<'T> : itkImg: itk.simple.Image -> itk.simple.Image
+    /// <summary>
+    /// Creates an independent SimpleITK image with pixel type <typeparamref name="'T" />.
+    /// If <paramref name="itkImg" /> already has the requested pixel type, a shallow copy is first made and then
+    /// <c>MakeUnique</c> is called to force a deep pixel-buffer copy. If the pixel type differs, SimpleITK's cast filter
+    /// is used, which allocates a new output image. The argument is not disposed.
+    /// </summary>
+    val ofCastITK<'T> : itkImg: itk.simple.Image -> itk.simple.Image
     val private identityDirection: dim: int -> float list
     val canonicalizeSimpleItkImage: image: itk.simple.Image -> itk.simple.Image
     val array2dZip: a: 'T array2d -> b: 'U array2d -> ('T * 'U) array2d
@@ -220,9 +233,45 @@ type Image<'T when 'T: equality> =
       ofImagePairToComplexFloat32: realImg: Image<float32> ->
                                      imagImg: Image<float32> ->
                                      Image<ComplexFloat32>
+    /// <summary>
+    /// Creates a safe, independent <c>Image&lt;'T&gt;</c> from a SimpleITK image.
+    /// The resulting image does not share its pixel buffer with <paramref name="itkImg" />. Matching pixel types are
+    /// deep-copied; non-matching pixel types are converted with SimpleITK's cast filter. Physical metadata is normalized
+    /// to StackProcessing defaults. The argument is borrowed and is not disposed.
+    /// </summary>
     static member
       ofSimpleITK: itkImg: itk.simple.Image * ?optionalName: string *
                    ?optionalIndex: int -> Image<'T>
+    /// <summary>
+    /// Creates an aliasing <c>Image&lt;'T&gt;</c> from a SimpleITK image whose pixel type already matches <c>'T</c>.
+    /// The returned image uses a shallow SimpleITK copy and may share the same pixel container as
+    /// <paramref name="itkImg" /> until SimpleITK copy-on-write forces uniqueness. No cast, deep copy, metadata
+    /// canonicalization, or disposal of the argument is performed. This is intended for internal hot paths where
+    /// aliasing is acceptable and explicit.
+    /// </summary>
+    static member
+      ofSimpleITKAlias: itkImg: itk.simple.Image * ?optionalName: string *
+                        ?optionalIndex: int -> Image<'T>
+    /// <summary>
+    /// Creates an aliasing <c>Image&lt;'T&gt;</c> by taking over a SimpleITK image whose pixel type already matches <c>'T</c>.
+    /// No SimpleITK wrapper copy, deep copy, cast, or metadata canonicalization is performed. The returned image stores
+    /// <paramref name="itkImg" /> directly and will dispose it when the image reference count reaches zero. The caller
+    /// must not dispose or continue using <paramref name="itkImg" /> after a successful call.
+    /// </summary>
+    static member
+      private ofSimpleITKAliasTransfer: itkImg: itk.simple.Image *
+                                        ?optionalName: string *
+                                        ?optionalIndex: int -> Image<'T>
+    /// <summary>
+    /// Creates an <c>Image&lt;'T&gt;</c> from a temporary SimpleITK image and consumes that temporary.
+    /// If the pixel type already matches <c>'T</c>, the SimpleITK wrapper is transferred directly into the returned
+    /// image with no copy or cast; the returned image will dispose it when its reference count reaches zero. If a cast is
+    /// needed, the result is deep-copied through <c>ofSimpleITK</c> and <paramref name="itkImg" /> is disposed before
+    /// returning. The caller must not dispose or continue using <paramref name="itkImg" /> after calling this function.
+    /// </summary>
+    static member
+      ofSimpleITKNDispose: itkImg: itk.simple.Image * ?optionalName: string *
+                           ?optionalIndex: int -> Image<'T>
     static member
       polygonMask: width: uint * height: uint * polygon: (float * float) list *
                    ?name: string * ?index: int -> Image<uint8>
@@ -317,7 +366,61 @@ val polarToComplex:
     argImg: Image<float> -> Image<System.Numerics.Complex>
 val conjugate:
   img: Image<System.Numerics.Complex> -> Image<System.Numerics.Complex>
+module ImageIO
+type ImageFileInfo =
+    {
+      Dimension: int
+      Size: uint list
+    }
+val validatePixelType<'T> : unit -> unit
+val imageFileInfo: filename: string -> ImageFileInfo
+val readSimpleItkSlice:
+  filename: string ->
+    dimension: int ->
+    width: uint ->
+    height: uint ->
+    sourceIndex: int -> name: string -> index: int -> Image.Image<'T>
+    when 'T: equality
+val tiffPixelLayout<'T> :
+  unit -> int * BitMiracle.LibTiff.Classic.SampleFormat * int
+val supportsDirectTiffRead<'T> : bool
+val supportsDirectTiffWrite<'T> : bool
+val tiffWriteMode: filename: string -> string
+val tiffFieldInt:
+  tiff: BitMiracle.LibTiff.Classic.Tiff ->
+    tag: BitMiracle.LibTiff.Classic.TiffTag -> fallback: int -> int
+val tiffFieldIntDefaulted:
+  tiff: BitMiracle.LibTiff.Classic.Tiff ->
+    tag: BitMiracle.LibTiff.Classic.TiffTag -> fallback: int -> int
+val tiffDirectoryCount: filename: string -> uint32
+val tiffBytesPerSample:
+  bitsPerSample: int ->
+    sampleFormat: BitMiracle.LibTiff.Classic.SampleFormat -> int
+val validateTiffSamples: samplesPerPixel: int -> unit
+val private setImportImageBufferFromTiffLayout:
+  importer: itk.simple.ImportImageFilter ->
+    bitsPerSample: int ->
+    sampleFormat: BitMiracle.LibTiff.Classic.SampleFormat ->
+    buffer: System.IntPtr -> unit
+val bytesOfScalarImage2D: image: Image.Image<'T> -> byte array when 'T: equality
+val readTiffPage:
+  tiff: BitMiracle.LibTiff.Classic.Tiff ->
+    width: uint32 ->
+    height: uint32 ->
+    bitsPerSample: int ->
+    sampleFormat: BitMiracle.LibTiff.Classic.SampleFormat ->
+    bytesPerSample: int -> index: int -> Image.Image<'T> when 'T: equality
+val readTiffSliceFile:
+  fileName: string -> sliceIndex: int64 -> Image.Image<'T> when 'T: equality
+val writeTiffPage:
+  tiff: BitMiracle.LibTiff.Classic.Tiff ->
+    image: Image.Image<'T> -> page: int option -> unit when 'T: equality
+val writeTiffSliceFile:
+  fileName: string -> image: Image.Image<'T> -> unit when 'T: equality
 module ImageFunctions
+val imageFromTemporarySimpleITK:
+  name: string -> index: int -> itkImage: itk.simple.Image -> Image.Image<'T>
+    when 'T: equality
 val inline imageAddScalar:
   img: Image.Image<^S> -> i: ^S -> Image.Image<^S>
     when ^S: equality and ^S: (static member op_Explicit: ^S -> float)
@@ -478,6 +581,13 @@ val mask:
   outsideValue: double ->
     img: Image.Image<'T> -> mask: Image.Image<uint8> -> Image.Image<'T>
     when 'T: equality
+type ResampleInterpolation =
+    | NearestNeighbor
+    | Linear
+module ResampleInterpolation =
+    val parse: value: string -> ResampleInterpolation
+    val internal toItk:
+      _arg1: ResampleInterpolation -> itk.simple.InterpolatorEnum
 val euler2DTransform:
   img: Image.Image<'T> ->
     cx: float * cy: float * a: float -> dx: float * dy: float -> Image.Image<'T>
@@ -486,7 +596,7 @@ val euler2DRotate:
   img: Image.Image<'T> -> cx: float * cy: float -> a: float -> Image.Image<'T>
     when 'T: equality
 val resample2D:
-  interpolator: itk.simple.InterpolatorEnum ->
+  interpolation: ResampleInterpolation ->
     outputWidth: uint ->
     outputHeight: uint ->
     outputSpacingX: float ->
@@ -802,8 +912,8 @@ val extractSub:
     bottomRight: uint list -> img: Image.Image<'T> -> Image.Image<'T>
     when 'T: equality
 val extractSlice:
-  dir: uint -> i: int -> img: Image.Image<'T> -> Image.Image<'T>
-    when 'T: equality
+  dir: uint -> i: int -> img: Image.Image<'T> -> Image.Image<'a>
+    when 'T: equality and 'a: equality
 val unstack:
   dir: uint -> vol: Image.Image<'T> -> Image.Image<'T> list when 'T: equality
 val unstackSkipNTakeM:
@@ -819,8 +929,8 @@ type FileInfo =
 val getFileInfo: filename: string -> FileInfo
 val toSeqSeq: I: Image.Image<'T> -> float seq seq when 'T: equality
 val permuteAxes:
-  order: uint list -> img: Image.Image<'T> -> Image.Image<'S>
-    when 'T: equality and 'S: equality
+  order: uint list -> img: Image.Image<'T> -> Image.Image<'a>
+    when 'T: equality and 'a: equality
 val FFTXY:
   image: Image.Image<'T> -> Image.Image<System.Numerics.Complex>
     when 'T: equality

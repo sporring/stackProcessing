@@ -20,6 +20,14 @@ type Window<'T> = SlimPipeline.Window<'T>
 
 type Slab<'T when 'T: equality> = StackCore.Slab<'T>
 
+type ChunkIndex = StackCore.ChunkIndex
+
+type ChunkLayout = StackCore.ChunkLayout
+
+type ChunkStorage<'T when 'T: equality> = StackCore.ChunkStorage<'T>
+
+type Chunk<'T when 'T: equality> = StackCore.Chunk<'T>
+
 type Image<'S when 'S: equality> = Image.Image<'S>
 
 type ImageFacts = Image.ImageFacts

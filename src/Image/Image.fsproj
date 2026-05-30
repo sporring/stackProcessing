@@ -56,8 +56,10 @@
   </ItemGroup>
 
   <ItemGroup>
+    <PackageReference Include="BitMiracle.LibTiff.NET" Version="2.4.660" />
     <ProjectReference Include="../TinyLinAlg/TinyLinAlg.fsproj" />
     <Compile Include="Image.fs" />
+    <Compile Include="ImageIO.fs" />
     <Compile Include="ImageFunctions.fs" />
   </ItemGroup>
 

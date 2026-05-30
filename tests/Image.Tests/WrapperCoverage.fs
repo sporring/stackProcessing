@@ -115,7 +115,7 @@ let wrapperCoverage =
       let masked = ImageFunctions.mask 9.0 a ones
       let transformed = ImageFunctions.euler2DTransform a (0.0, 0.0, 0.0) (0.0, 0.0)
       let rotated = ImageFunctions.euler2DRotate a (0.0, 0.0) 0.0
-      let resampled = ImageFunctions.resample2D InterpolatorEnum.sitkNearestNeighbor 4u 3u 0.5 0.5 a
+      let resampled = ImageFunctions.resample2D ImageFunctions.ResampleInterpolation.NearestNeighbor 4u 3u 0.5 0.5 a
 
       Expect.equal eq.[0,0] 1uy "equalImage should mark equal pixels."
       Expect.equal neq.[0,1] 1uy "notEqualImage should mark unequal pixels."
@@ -133,7 +133,7 @@ let wrapperCoverage =
       Expect.equal (resampled.GetSize()) [ 4u; 3u ] "resample2D should use the requested output size."
       Expect.throws (fun () ->
         Image<uint8>.ofArray3D (Array3D.zeroCreate 2 2 2)
-        |> ImageFunctions.resample2D InterpolatorEnum.sitkNearestNeighbor 2u 2u 1.0 1.0
+        |> ImageFunctions.resample2D ImageFunctions.ResampleInterpolation.NearestNeighbor 2u 2u 1.0 1.0
         |> ignore) "resample2D should reject non-2D images."
 
     testCase "byte facts cover vector complex label and fallback branches" <| fun _ ->

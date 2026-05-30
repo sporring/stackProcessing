@@ -38,10 +38,11 @@ The public module re-exports the main stream and image concepts:
 type Stage<'S,'T> = SlimPipeline.Stage<'S,'T>
 type Window<'T> = SlimPipeline.Window<'T>
 type Slab<'T> = StackCore.Slab<'T>
+type Chunk<'T> = StackCore.Chunk<'T>
 type Image<'T> = Image.Image<'T>
 ```
 
-Core also contains chunk representations such as `ChunkData<'T>` for block-backed random-access workflows. They are described below because they sit beside `Window<'T>` and `Slab<'T>` in the implementation model, even though they are not usually part of the surface DSL.
+Core also contains a first-class `Chunk<'T>` representation for block-backed workflows. It currently provides a type-level hook beside `Window<'T>` and `Slab<'T>`; older path-based chunk machinery is still used by some implementations while the chunk-native interface matures.
 
 It also re-exports the main composition and execution functions:
 
@@ -229,22 +230,36 @@ This lets StackProcessing apply ordinary image stages to local 3D slabs while st
 
 Chunks are the block-oriented counterpart to windows and slabs. A window is a z-neighbourhood in the active stream, and a slab is a small 3D image assembled from adjacent streamed slices. A chunk is a bounded 3D block from a larger volume or chunked backing store.
 
-The current implementation uses two related chunk concepts:
+`StackCore` defines the high-level chunk shape:
 
 ```fsharp
-type ChunkInfo =
-    { chunks: int list
-      size: uint64 list
-      topLeftInfo: FileInfo }
+type ChunkIndex = int * int * int
 
-type ChunkData<'T> =
-    { Pixels: 'T[,,]
-      Width: int
-      Height: int
-      Depth: int }
+type ChunkLayout =
+    { VolumeSize: uint64 * uint64 * uint64
+      ChunkSize: uint64 * uint64 * uint64
+      ChunkCounts: int * int * int
+      PixelType: string
+      Components: uint }
+
+type ChunkStorage<'T> =
+    | ImageChunk of Image<'T>
+    | ArrayChunk of 'T[,,]
+
+type Chunk<'T> =
+    { Index: ChunkIndex
+      Origin: uint64 * uint64 * uint64
+      Size: uint64 * uint64 * uint64
+      Data: ChunkStorage<'T> }
 ```
 
-`ChunkInfo` describes an on-disk chunk layout. `ChunkData<'T>` is the in-memory cached representation used by chunk-backed affine resampling and similar random-access workflows.
+The storage choice is explicit. `ImageChunk` is for workflows that should stay close to Image/SimpleITK operations or file IO. `ArrayChunk` is for random access, interpolation, and managed hot loops where per-pixel SimpleITK access would be too expensive.
+
+Some older implementation pieces still use related local forms:
+
+- `ChunkInfo` describes existing on-disk chunk layouts.
+- `ChunkData<'T>` is the current in-memory cached representation used by chunk-backed affine resampling.
+- path-based chunk folders are still used by the existing FFT/inverse FFT implementation.
 
 Chunks are useful when an operation cannot be expressed as a simple forward stream of z-windows. For example, affine resampling may need to fetch source voxels from several spatial blocks while producing one output slice. In that case StackProcessing writes or reads bounded chunks, caches only the blocks needed for the current work, and avoids materializing the full input volume.
 
@@ -257,9 +272,11 @@ Window<Image<'T>>
 Slab<'T>
     small adjacent z-neighbourhood packed as one Image<'T>
 
-ChunkData<'T>
-    spatial block cache for random-access or chunk-backed operations
+Chunk<'T>
+    bounded 3D block with explicit storage, origin, size, and index
 ```
+
+The chunk type is intentionally minimal at present. It is a structural placeholder for the next cleanup: making affine resampling and FFT-like multi-pass algorithms expose their memory shape through typed chunk streams rather than hidden temporary directories.
 
 ## Internal And Public Composition
 
@@ -394,8 +411,8 @@ Window<Image<'T>>
 Slab<'T>
     a small 3D image made from adjacent slices
 
-ChunkData<'T>
-    a bounded 3D block used for chunked IO and random-access caches
+Chunk<'T>
+    a bounded 3D block used for chunked IO, random-access caches, and future chunk-native multi-pass algorithms
 
 Stage<Image<'S>, Image<'T>>
     a reusable image stream operation

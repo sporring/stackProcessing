@@ -28,6 +28,7 @@ The project targets `net10.0`, references the bundled SimpleITK C# bindings from
 ## Main Files
 
 - [Image.fs](/Users/jrh630/repositories/stackProcessing/src/Image/Image.fs:1): the `Image<'T>` wrapper, SimpleITK interop helpers, array conversion, file IO, scalar pixel access, reference counting, and basic operators.
+- [ImageIO.fs](/Users/jrh630/repositories/stackProcessing/src/Image/ImageIO.fs:1): low-level TIFF and SimpleITK image-file helpers used by StackProcessing IO without exposing SimpleITK in `StackProcessing.Core`.
 - [ImageFunctions.fs](/Users/jrh630/repositories/stackProcessing/src/Image/ImageFunctions.fs:1): functional wrappers around SimpleITK filters and image algorithms.
 - [Image.fsi](/Users/jrh630/repositories/stackProcessing/src/Image/Image.fsi:1): generated/public interface.
 - [Image.fsproj](/Users/jrh630/repositories/stackProcessing/src/Image/Image.fsproj:1): project definition and SimpleITK native-library handling.
@@ -45,6 +46,8 @@ Common construction paths:
 
 - `Image<'T>(size, ?optionalNumberComponents, ?optionalName, ?optionalIndex)`
 - `Image<'T>.ofSimpleITK`
+- `Image<'T>.ofSimpleITKAlias`
+- `Image<'T>.ofSimpleITKNDispose`
 - `Image<'T>.ofFile`
 - `Image<'T>.ofArray2D`
 - `Image<'T>.ofArray3D`
@@ -77,6 +80,17 @@ The project maps F# types to SimpleITK pixel IDs using `InternalHelpers.fromType
 Vector-valued images are represented as `Image<'T list>` where supported by the conversion helpers.
 
 The type mapping is central to the read/cast/write model used by StackProcessing's cost calibration. Explicit casts use `Image<'T>.castTo<'S>()`, while many file reads also cast through `Image<'T>.ofSimpleITK`.
+
+## SimpleITK Ownership
+
+`Image<'T>` now makes SimpleITK ownership explicit:
+
+- `ofSimpleITK` is the safe constructor. It deep-copies or casts into an independent `Image<'T>` and does not dispose the argument.
+- `ofSimpleITKAlias` is an internal fast path for exact pixel-type matches where aliasing is acceptable. It does not cast, copy deeply, or dispose the argument.
+- `ofSimpleITKNDispose` consumes a temporary SimpleITK image. If the type already matches, ownership of the wrapper is transferred into the returned `Image<'T>`; if a cast is needed, the temporary is disposed after the deep-copy/cast path.
+- `ofCastITK` always returns an independent SimpleITK image and leaves the argument alone.
+
+This split is important because SimpleITK wrapper copies may share pixel containers until copy-on-write, while cast filters allocate new images. The API names are deliberately explicit so hot paths can use alias/consume behavior without making ordinary `ofSimpleITK` unsafe.
 
 ## Reference Counting
 
@@ -171,12 +185,15 @@ Vector images are supported through `Image<'T list>` helpers, including image-li
 
 ## IO Scope
 
-`Image<'T>.ofFile` and `toFile` are thin SimpleITK-backed image file operations. StackProcessing's higher-level streaming IO lives in `StackProcessing.Core.StackIO`, where file stacks, TIFF/MHA format details, slab reads, OME-Zarr, NeXus/HDF5, and write stages are modeled.
+`Image<'T>.ofFile` and `toFile` are thin SimpleITK-backed image file operations. `ImageIO` contains lower-level single-image and slice helpers, including direct TIFF scalar read/write paths and SimpleITK file-information/slice-read wrappers. This keeps SimpleITK and libtiff details inside the Image project.
+
+StackProcessing's higher-level streaming IO lives in `StackProcessing.Core.StackIO`, where file stacks, slab reads, OME-Zarr, NeXus/HDF5, chunk orchestration, and write stages are modeled.
 
 The distinction matters:
 
 - `Image` reads or writes a single SimpleITK image object.
-- `StackIO` reads or writes streams, stacks, slabs, chunks, and plan-aware stages.
+- `ImageIO` provides low-level image/slice IO primitives and owns direct TIFF/SimpleITK interop.
+- `StackIO` reads or writes streams, stacks, slabs, chunks, and plan-aware stages using Image-level helpers.
 
 ## Design Boundaries
 
@@ -186,6 +203,7 @@ The distinction matters:
 - single-image creation and conversion
 - bulk array import/export
 - direct SimpleITK filter wrappers
+- direct TIFF scalar slice IO
 - native image ownership and reference counting
 - low-level memory facts
 

@@ -90,23 +90,6 @@ let private liftOperatorUnaryReleaseAfter<'T when 'T: equality>
 let private cleanStage name cleanup =
     { identityStage name with Cleaning = [ cleanup ] }
 
-type ResampleInterpolation =
-    | NearestNeighbor
-    | Linear
-
-module ResampleInterpolation =
-    let parse (value: string) =
-        match value.Trim().ToLowerInvariant().Replace("_", "").Replace("-", "").Replace(" ", "") with
-        | "nearest"
-        | "nearestneighbor"
-        | "nn" -> NearestNeighbor
-        | "linear" -> Linear
-        | _ -> failwith $"Unknown resampling interpolation '{value}'. Use NearestNeighbor or Linear."
-
-    let toItk = function
-        | NearestNeighbor -> itk.simple.InterpolatorEnum.sitkNearestNeighbor
-        | Linear -> itk.simple.InterpolatorEnum.sitkLinear
-
 let private roundPositiveToUInt (value: float) =
     Math.Round(value, MidpointRounding.AwayFromZero)
     |> max 1.0
@@ -162,9 +145,8 @@ let private blendImages<'T when 'T: equality> (t: float) (a: Image<'T>) (b: Imag
     Image<'T>.ofArray2D(arr, "resampleZLinear")
 
 let private resampleXYStage<'T when 'T: equality> outputWidth outputHeight spacingX spacingY interpolation =
-    let itkInterpolator = ResampleInterpolation.toItk interpolation
     let mapper (image: Image<'T>) =
-        ImageFunctions.resample2D itkInterpolator outputWidth outputHeight spacingX spacingY image
+        ImageFunctions.resample2D interpolation outputWidth outputHeight spacingX spacingY image
 
     let memoryNeed nPixels =
         3UL * nPixels * getBytesPerComponent<'T>
@@ -217,11 +199,11 @@ let private zResampleStage<'T when 'T: equality> inputDepth outputDepth factor i
                 |> List.map (fun (_, sourceZ) ->
                     let fraction = sourceZ - float z0
                     match interpolation with
-                    | NearestNeighbor ->
+                    | ImageFunctions.ResampleInterpolation.NearestNeighbor ->
                         let chosen = if fraction < 0.5 then first else second
                         chosen.incRefCount()
                         chosen
-                    | Linear ->
+                    | ImageFunctions.ResampleInterpolation.Linear ->
                         if fraction = 0.0 then
                             first.incRefCount()
                             first
@@ -806,7 +788,7 @@ let resize<'T when 'T: equality>
     let outputWidth = max 1u outputWidth
     let outputHeight = max 1u outputHeight
     let outputDepth = max 1u outputDepth
-    let interpolation = ResampleInterpolation.parse interpolationName
+    let interpolation = ImageFunctions.ResampleInterpolation.parse interpolationName
 
     let inputWidth =
         pl.sourcePeek
@@ -844,7 +826,7 @@ let resample<'T when 'T: equality>
     if factorX <= 0.0 || factorY <= 0.0 || factorZ <= 0.0 then
         invalidArg "factor" "resample factors must be positive."
 
-    let interpolation = ResampleInterpolation.parse interpolationName
+    let interpolation = ImageFunctions.ResampleInterpolation.parse interpolationName
     let outputDepth = max 1u (uint (Math.Round(float pl.length * factorZ, MidpointRounding.AwayFromZero)))
     let inputWidth =
         pl.sourcePeek

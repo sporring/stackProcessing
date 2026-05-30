@@ -4,12 +4,15 @@ open Image
 open Image.InternalHelpers
 open TinyLinAlg
 
+let imageFromTemporarySimpleITK<'T when 'T: equality> name index (itkImage: itk.simple.Image) : Image<'T> =
+    Image<'T>.ofSimpleITKNDispose(itkImage, name, index)
+
 // Image constant arithmetic operations
 let inline imageAddScalar<'S when ^S : equality
                              and  ^S : (static member op_Explicit : ^S -> float)
                              > (img: Image<'S>) (i: ^S) =
     use filter = new itk.simple.AddImageFilter()
-    Image<'S>.ofSimpleITK(filter.Execute(img.toSimpleITK(), float i),"imageAddScalar",img.index)
+    imageFromTemporarySimpleITK<'S> "imageAddScalar" img.index (filter.Execute(img.toSimpleITK(), float i))
 let inline scalarAddImage<'S when ^S : equality
                              and  ^S : (static member op_Explicit : ^S -> float)
                              > (i: ^S) (img: Image<'S>) =
@@ -18,17 +21,17 @@ let inline imageSubScalar<'S when ^S : equality
                              and  ^S : (static member op_Explicit : ^S -> float)
                              > (img: Image<'S>) (i: ^S) =
     use filter = new itk.simple.SubtractImageFilter()
-    Image<'S>.ofSimpleITK(filter.Execute(img.toSimpleITK(), float i),"imageSubScalar",img.index)
+    imageFromTemporarySimpleITK<'S> "imageSubScalar" img.index (filter.Execute(img.toSimpleITK(), float i))
 let inline scalarSubImage<'S when ^S : equality
                              and  ^S : (static member op_Explicit : ^S -> float)
                              > (i: ^S) (img: Image<'S>) =
     use filter = new itk.simple.SubtractImageFilter()
-    Image<'S>.ofSimpleITK(filter.Execute(float i, img.toSimpleITK()),"scalarSubImage",img.index)
+    imageFromTemporarySimpleITK<'S> "scalarSubImage" img.index (filter.Execute(float i, img.toSimpleITK()))
 let inline imageMulScalar<'S when ^S : equality
                              and  ^S : (static member op_Explicit : ^S -> float)
                              > (img: Image<'S>) (i: ^S) =
     use filter = new itk.simple.MultiplyImageFilter()
-    Image<'S>.ofSimpleITK(filter.Execute(img.toSimpleITK(), float i),"imageMulScalar",img.index)
+    imageFromTemporarySimpleITK<'S> "imageMulScalar" img.index (filter.Execute(img.toSimpleITK(), float i))
 let inline scalarMulImage<'S when ^S : equality
                              and  ^S : (static member op_Explicit : ^S -> float)
                              > (i: ^S) (img: Image<'S>) =
@@ -37,25 +40,25 @@ let inline imageDivScalar<'S when ^S : equality
                              and  ^S : (static member op_Explicit : ^S -> float)
                              > (img: Image<'S>) (i: ^S) =
     use filter = new itk.simple.DivideImageFilter()
-    Image<'S>.ofSimpleITK(filter.Execute(img.toSimpleITK(), float i),"imageDivScalar",img.index)
+    imageFromTemporarySimpleITK<'S> "imageDivScalar" img.index (filter.Execute(img.toSimpleITK(), float i))
 let inline scalarDivImage<'S when ^S : equality
                              and  ^S : (static member op_Explicit : ^S -> float)
                              > (i: ^S) (img: Image<'S>) =
     use filter = new itk.simple.DivideImageFilter()
-    Image<'S>.ofSimpleITK(filter.Execute(float i, img.toSimpleITK()),"scalarDivImage",img.index)
+    imageFromTemporarySimpleITK<'S> "scalarDivImage" img.index (filter.Execute(float i, img.toSimpleITK()))
 
 let inline imagePowScalar<'S when ^S : equality
                   and  ^S : (static member op_Explicit : ^S -> float)
                   > (img: Image<'S>, i: 'S) =
     use filter = new itk.simple.PowImageFilter()
-    Image<'S>.ofSimpleITK(filter.Execute(img.toSimpleITK(), float i),"imagePowScalar",img.index)
+    imageFromTemporarySimpleITK<'S> "imagePowScalar" img.index (filter.Execute(img.toSimpleITK(), float i))
 
 
 let inline scalarPowImage<'S when ^S : equality
                   and  ^S : (static member op_Explicit : ^S -> float)
                   > (i: 'S, img: Image<'S>) =
     use filter = new itk.simple.PowImageFilter()
-    Image<'S>.ofSimpleITK(filter.Execute(float i, img.toSimpleITK()),"scalarPowImage",img.index)
+    imageFromTemporarySimpleITK<'S> "scalarPowImage" img.index (filter.Execute(float i, img.toSimpleITK()))
 
 let inline sum (img: Image<'T>) : ^T
     when ^T : (static member ( + ) : ^T * ^T -> ^T)
@@ -80,7 +83,7 @@ let squeeze (img: Image<'T>) : Image<'T> =
     let size = img.GetSize()
     let squeezedSize = size |> List.map (fun dim -> if dim = 1u then 0u else dim)
     filter.SetSize(squeezedSize |> toVectorUInt32)
-    Image<'T>.ofSimpleITK(filter.Execute(img.toSimpleITK()),"squeeze",img.index)
+    imageFromTemporarySimpleITK "squeeze" img.index (filter.Execute(img.toSimpleITK()))
 
 let expand (dim: uint) (zero: 'S) (a: 'S list) = 
     List.concat [a; List.replicate (max 0 ((int dim)-a.Length)) zero]
@@ -119,8 +122,7 @@ let concatAlong (dim: uint) (a: Image<'T>) (b: Image<'T>) : Image<'T> =
     paste.SetDestinationIndex(offset |> toVectorInt32)
     paste.SetSourceSize(b.GetSize() |> toVectorUInt32)
     let outWithBoth = paste.Execute(outWithA, b.toSimpleITK())
-
-    Image<'T>.ofSimpleITK(outWithBoth,"concatAlong",a.index)
+    imageFromTemporarySimpleITK "concatAlong" a.index outWithBoth
 
 let constantPad2D<'T when 'T : equality> (padLower : uint list) (padUpper : uint list) (c : double) (img : Image<'T>) : Image<'T> =
     if padLower.Length <> 2 || padUpper.Length <> 2 then
@@ -130,7 +132,7 @@ let constantPad2D<'T when 'T : equality> (padLower : uint list) (padUpper : uint
     filter.SetPadUpperBound(padUpper |> toVectorUInt32)
     filter.SetConstant(c)
     let padded = filter.Execute(img.toSimpleITK())
-    Image<'T>.ofSimpleITK(padded,"constantPad2D",img.index)
+    imageFromTemporarySimpleITK "constantPad2D" img.index padded
 
 let crop2D<'T when 'T : equality> (cropLower : uint list) (cropUpper : uint list) (img : Image<'T>) : Image<'T> =
     if cropLower.Length <> 2 || cropUpper.Length <> 2 then
@@ -139,7 +141,7 @@ let crop2D<'T when 'T : equality> (cropLower : uint list) (cropUpper : uint list
     filter.SetLowerBoundaryCropSize(cropLower |> toVectorUInt32)
     filter.SetUpperBoundaryCropSize(cropUpper |> toVectorUInt32)
     let cropped = filter.Execute(img.toSimpleITK())
-    Image<'T>.ofSimpleITK(cropped,"crop2D",img.index)
+    imageFromTemporarySimpleITK "crop2D" img.index cropped
 
 
 // ----- basic mathematical helper functions -----
@@ -152,7 +154,7 @@ let inline makeUnaryImageOperatorWith
         fun (img: Image<'T>) ->
             use filter = createFilter()
             setup filter
-            Image<'S>.ofSimpleITK(invoke filter (img.toSimpleITK()),name,img.index)
+            imageFromTemporarySimpleITK<'S> name img.index (invoke filter (img.toSimpleITK()))
 
 let inline makeUnaryImageOperator name createFilter invoke = makeUnaryImageOperatorWith name createFilter (fun _ -> ()) invoke
 
@@ -165,7 +167,7 @@ let inline makeBinaryImageOperatorWith
     fun (a: Image<'T>) (b: Image<'T>) ->
         use filter = createFilter()
         setup filter
-        let img = Image<'T>.ofSimpleITK(invoke filter (a.toSimpleITK()) (b.toSimpleITK()),name,a.index)
+        let img = imageFromTemporarySimpleITK<'T> name a.index (invoke filter (a.toSimpleITK()) (b.toSimpleITK()))
         img
 
 let makeBinaryImageOperator name createFilter invoke = makeBinaryImageOperatorWith name createFilter (fun _ -> ()) invoke
@@ -216,7 +218,7 @@ let intensityWindow (windowMinimum: double) (windowMaximum: double) (outputMinim
 
 let normalizeImage (img: Image<'T>) : Image<float> =
     use filter = new itk.simple.NormalizeImageFilter()
-    Image<float>.ofSimpleITK(filter.Execute(img.toSimpleITK()), "normalizeImage", img.index)
+    imageFromTemporarySimpleITK "normalizeImage" img.index (filter.Execute(img.toSimpleITK()))
 
 let shiftScale (shift: double) (scale: double) : Image<'T> -> Image<'T> =
     makeUnaryImageOperatorWith
@@ -261,48 +263,48 @@ let laplacian (img: Image<'T>) : Image<'T> =
 
 let equalImage (a: Image<'T>) (b: Image<'T>) : Image<uint8> =
     use filter = new itk.simple.EqualImageFilter()
-    Image<uint8>.ofSimpleITK(filter.Execute(a.toSimpleITK(), b.toSimpleITK()), "equalImage", a.index)
+    imageFromTemporarySimpleITK "equalImage" a.index (filter.Execute(a.toSimpleITK(), b.toSimpleITK()))
 
 let notEqualImage (a: Image<'T>) (b: Image<'T>) : Image<uint8> =
     use filter = new itk.simple.NotEqualImageFilter()
-    Image<uint8>.ofSimpleITK(filter.Execute(a.toSimpleITK(), b.toSimpleITK()), "notEqualImage", a.index)
+    imageFromTemporarySimpleITK "notEqualImage" a.index (filter.Execute(a.toSimpleITK(), b.toSimpleITK()))
 
 let greaterImage (a: Image<'T>) (b: Image<'T>) : Image<uint8> =
     use filter = new itk.simple.GreaterImageFilter()
-    Image<uint8>.ofSimpleITK(filter.Execute(a.toSimpleITK(), b.toSimpleITK()), "greaterImage", a.index)
+    imageFromTemporarySimpleITK "greaterImage" a.index (filter.Execute(a.toSimpleITK(), b.toSimpleITK()))
 
 let greaterEqualImage (a: Image<'T>) (b: Image<'T>) : Image<uint8> =
     use filter = new itk.simple.GreaterEqualImageFilter()
-    Image<uint8>.ofSimpleITK(filter.Execute(a.toSimpleITK(), b.toSimpleITK()), "greaterEqualImage", a.index)
+    imageFromTemporarySimpleITK "greaterEqualImage" a.index (filter.Execute(a.toSimpleITK(), b.toSimpleITK()))
 
 let lessImage (a: Image<'T>) (b: Image<'T>) : Image<uint8> =
     use filter = new itk.simple.LessImageFilter()
-    Image<uint8>.ofSimpleITK(filter.Execute(a.toSimpleITK(), b.toSimpleITK()), "lessImage", a.index)
+    imageFromTemporarySimpleITK "lessImage" a.index (filter.Execute(a.toSimpleITK(), b.toSimpleITK()))
 
 let lessEqualImage (a: Image<'T>) (b: Image<'T>) : Image<uint8> =
     use filter = new itk.simple.LessEqualImageFilter()
-    Image<uint8>.ofSimpleITK(filter.Execute(a.toSimpleITK(), b.toSimpleITK()), "lessEqualImage", a.index)
+    imageFromTemporarySimpleITK "lessEqualImage" a.index (filter.Execute(a.toSimpleITK(), b.toSimpleITK()))
 
 let andImage (a: Image<uint8>) (b: Image<uint8>) : Image<uint8> =
     use filter = new itk.simple.AndImageFilter()
-    Image<uint8>.ofSimpleITK(filter.Execute(a.toSimpleITK(), b.toSimpleITK()), "andImage", a.index)
+    imageFromTemporarySimpleITK "andImage" a.index (filter.Execute(a.toSimpleITK(), b.toSimpleITK()))
 
 let orImage (a: Image<uint8>) (b: Image<uint8>) : Image<uint8> =
     use filter = new itk.simple.OrImageFilter()
-    Image<uint8>.ofSimpleITK(filter.Execute(a.toSimpleITK(), b.toSimpleITK()), "orImage", a.index)
+    imageFromTemporarySimpleITK "orImage" a.index (filter.Execute(a.toSimpleITK(), b.toSimpleITK()))
 
 let xorImage (a: Image<uint8>) (b: Image<uint8>) : Image<uint8> =
     use filter = new itk.simple.XorImageFilter()
-    Image<uint8>.ofSimpleITK(filter.Execute(a.toSimpleITK(), b.toSimpleITK()), "xorImage", a.index)
+    imageFromTemporarySimpleITK "xorImage" a.index (filter.Execute(a.toSimpleITK(), b.toSimpleITK()))
 
 let notImage (img: Image<uint8>) : Image<uint8> =
     use filter = new itk.simple.NotImageFilter()
-    Image<uint8>.ofSimpleITK(filter.Execute(img.toSimpleITK()), "notImage", img.index)
+    imageFromTemporarySimpleITK "notImage" img.index (filter.Execute(img.toSimpleITK()))
 
 let mask (outsideValue: double) (img: Image<'T>) (mask: Image<uint8>) : Image<'T> =
     use filter = new itk.simple.MaskImageFilter()
     filter.SetOutsideValue(outsideValue)
-    Image<'T>.ofSimpleITK(filter.Execute(img.toSimpleITK(), mask.toSimpleITK()), "mask", img.index)
+    imageFromTemporarySimpleITK "mask" img.index (filter.Execute(img.toSimpleITK(), mask.toSimpleITK()))
 
 // ----- basic image analysis functions -----
 (* // I'm waiting with proper support of complex values
@@ -316,6 +318,23 @@ let carg (img: Image<'T>) = makeUnaryImageOperator (fun () -> new itk.simple.Com
 
 
 // Basic transformations
+type ResampleInterpolation =
+    | NearestNeighbor
+    | Linear
+
+module ResampleInterpolation =
+    let parse (value: string) =
+        match value.Trim().ToLowerInvariant().Replace("_", "").Replace("-", "").Replace(" ", "") with
+        | "nearest"
+        | "nearestneighbor"
+        | "nn" -> NearestNeighbor
+        | "linear" -> Linear
+        | _ -> failwith $"Unknown resampling interpolation '{value}'. Use NearestNeighbor or Linear."
+
+    let internal toItk = function
+        | NearestNeighbor -> itk.simple.InterpolatorEnum.sitkNearestNeighbor
+        | Linear -> itk.simple.InterpolatorEnum.sitkLinear
+
 let euler2DTransform (img: Image<'T>) (cx:float,cy:float,a:float) (dx:float,dy:float): Image<'T> =
     use t = new itk.simple.Euler2DTransform()
     t.SetAngle(a)
@@ -327,7 +346,7 @@ let euler2DTransform (img: Image<'T>) (cx:float,cy:float,a:float) (dx:float,dy:f
     f.SetInterpolator(itk.simple.InterpolatorEnum.sitkLinear) // sitkNearestNeighbor, sitkLinear, sitkBSpline
     f.SetDefaultPixelValue(0.0) // This will probably break for vector valued functions...
     f.SetTransform(t.GetInverse()) 
-    Image<'T>.ofSimpleITK(f.Execute (img.toSimpleITK()),"euler2DTransform",img.index)
+    imageFromTemporarySimpleITK "euler2DTransform" img.index (f.Execute (img.toSimpleITK()))
 
 let euler2DRotate (img: Image<'T>) (cx:float,cy:float) (a:float): Image<'T> =
     use t = new itk.simple.Euler2DTransform()
@@ -339,9 +358,9 @@ let euler2DRotate (img: Image<'T>) (cx:float,cy:float) (a:float): Image<'T> =
     f.SetInterpolator(itk.simple.InterpolatorEnum.sitkLinear)
     f.SetDefaultPixelValue(0.0) // This will probably break for vector valued functions...
     f.SetTransform(t) 
-    Image<'T>.ofSimpleITK(f.Execute (img.toSimpleITK()),"euler2DRotate",img.index)
+    imageFromTemporarySimpleITK "euler2DRotate" img.index (f.Execute (img.toSimpleITK()))
 
-let resample2D (interpolator: itk.simple.InterpolatorEnum) (outputWidth: uint) (outputHeight: uint) (outputSpacingX: float) (outputSpacingY: float) (img: Image<'T>) : Image<'T> =
+let resample2D (interpolation: ResampleInterpolation) (outputWidth: uint) (outputHeight: uint) (outputSpacingX: float) (outputSpacingY: float) (img: Image<'T>) : Image<'T> =
     if img.GetDimensions() <> 2u then
         failwith $"resample2D expects a 2D image, but got {img.GetDimensions()}D."
 
@@ -351,10 +370,10 @@ let resample2D (interpolator: itk.simple.InterpolatorEnum) (outputWidth: uint) (
     filter.SetOutputOrigin([ 0.0; 0.0 ] |> toVectorFloat64)
     filter.SetOutputSpacing([ outputSpacingX; outputSpacingY ] |> toVectorFloat64)
     filter.SetOutputDirection([ 1.0; 0.0; 0.0; 1.0 ] |> toVectorFloat64)
-    filter.SetInterpolator(interpolator)
+    filter.SetInterpolator(ResampleInterpolation.toItk interpolation)
     filter.SetDefaultPixelValue(0.0)
     filter.SetTransform(transform)
-    Image<'T>.ofSimpleITK(filter.Execute(img.toSimpleITK()), "resample2D", img.index)
+    imageFromTemporarySimpleITK "resample2D" img.index (filter.Execute(img.toSimpleITK()))
 
 type BoundaryCondition = ZeroPad | PerodicPad | ZeroFluxNeumannPad
 type OutputRegionMode = Valid | Same
@@ -446,7 +465,7 @@ let gauss (dim: uint) (sigma: float) (kernelSize: uint option) : Image<'T> =
     f.SetMean(List.replicate (int dim) ((float (sz-1u)) / 2.0) |> toVectorFloat64)
     f.SetScale(1.0)
     f.NormalizedOn()
-    let raw = Image<float>.ofSimpleITK(f.Execute(),"gauss.raw")
+    let raw = imageFromTemporarySimpleITK "gauss.raw" 0 (f.Execute())
     try
         let discreteSum = sum raw
         if discreteSum = 0.0 then
@@ -631,7 +650,7 @@ let morphologicalGradient (radius: uint) : Image<'T> -> Image<'T> =
 /// Fill holes in binary regions
 let binaryFillHoles (img : Image<uint8>) : Image<uint8> =
     use filter = new itk.simple.BinaryFillholeImageFilter()
-    Image<uint8>.ofSimpleITK(filter.Execute(img.toSimpleITK()),"binaryFillHoles",img.index)
+    imageFromTemporarySimpleITK "binaryFillHoles" img.index (filter.Execute(img.toSimpleITK()))
 
 let binaryContour (fullyConnected: bool) : Image<uint8> -> Image<uint8> =
     makeUnaryImageOperatorWith
@@ -642,7 +661,7 @@ let binaryContour (fullyConnected: bool) : Image<uint8> -> Image<uint8> =
 
 let binaryThinning (img: Image<uint8>) : Image<uint8> =
     use filter = new itk.simple.BinaryThinningImageFilter()
-    Image<uint8>.ofSimpleITK(filter.Execute(img.toSimpleITK()), "binaryThinning", img.index)
+    imageFromTemporarySimpleITK "binaryThinning" img.index (filter.Execute(img.toSimpleITK()))
 
 let binaryMedian (radius: uint) : Image<uint8> -> Image<uint8> =
     makeUnaryImageOperatorWith
@@ -672,12 +691,12 @@ let binaryClosingByReconstruction (radius: uint) (fullyConnected: bool) : Image<
 let binaryReconstructionByDilation (fullyConnected: bool) (marker: Image<uint8>) (mask: Image<uint8>) : Image<uint8> =
     use filter = new itk.simple.BinaryReconstructionByDilationImageFilter()
     filter.SetFullyConnected(fullyConnected)
-    Image<uint8>.ofSimpleITK(filter.Execute(marker.toSimpleITK(), mask.toSimpleITK()), "binaryReconstructionByDilation", marker.index)
+    imageFromTemporarySimpleITK "binaryReconstructionByDilation" marker.index (filter.Execute(marker.toSimpleITK(), mask.toSimpleITK()))
 
 let binaryReconstructionByErosion (fullyConnected: bool) (marker: Image<uint8>) (mask: Image<uint8>) : Image<uint8> =
     use filter = new itk.simple.BinaryReconstructionByErosionImageFilter()
     filter.SetFullyConnected(fullyConnected)
-    Image<uint8>.ofSimpleITK(filter.Execute(marker.toSimpleITK(), mask.toSimpleITK()), "binaryReconstructionByErosion", marker.index)
+    imageFromTemporarySimpleITK "binaryReconstructionByErosion" marker.index (filter.Execute(marker.toSimpleITK(), mask.toSimpleITK()))
 
 let votingBinaryHoleFilling (radius: uint) (majorityThreshold: uint) : Image<uint8> -> Image<uint8> =
     makeUnaryImageOperatorWith
@@ -696,7 +715,7 @@ type ConnectedComponentsResult =
 // Currying and generic arguments causes value restriction error
 let connectedComponents (img : Image<uint8>) : ConnectedComponentsResult =
     use filter = new itk.simple.ConnectedComponentImageFilter()
-    { Labels = Image<uint64>.ofSimpleITK(filter.Execute(img.toSimpleITK()), "connectedComponents",img.index)
+    { Labels = imageFromTemporarySimpleITK "connectedComponents" img.index (filter.Execute(img.toSimpleITK()))
       ObjectCount = uint64 (filter.GetObjectCount()) }
 
 /// Relabel components by size, optionally remove small objects
@@ -860,7 +879,7 @@ let signedDistanceMap (inside: uint8) (outside: uint8) (img: Image<uint8>) : Ima
     f.SetBackgroundValue(float outside)
     f.SetSquaredDistance(false)
     f.SetInsideIsPositive(false)
-    Image<float>.ofSimpleITK(f.Execute(img.toSimpleITK()),"signedDistanceMap",img.index)
+    imageFromTemporarySimpleITK "signedDistanceMap" img.index (f.Execute(img.toSimpleITK()))
 
 let bandSignedDistanceMap (bandRadius: uint) (img: Image<uint8>) : Image<float> =
     if bandRadius = 0u then
@@ -1076,13 +1095,13 @@ let otsuThreshold (img: Image<'T>) : Image<uint8> =
     filter.SetUpperThreshold(System.Double.PositiveInfinity)
     filter.SetInsideValue(1uy)
     filter.SetOutsideValue(0uy)
-    Image<uint8>.ofSimpleITK(filter.Execute(img.toSimpleITK()),"otsuThreshold",img.index)
+    imageFromTemporarySimpleITK "otsuThreshold" img.index (filter.Execute(img.toSimpleITK()))
 
 /// Otsu multiple thresholds (returns a label map)
 let otsuMultiThreshold (numThresholds: byte) (img: Image<'T>) : Image<uint8> =
     use filter = new itk.simple.OtsuMultipleThresholdsImageFilter()
     filter.SetNumberOfThresholds(numThresholds)
-    Image<uint8>.ofSimpleITK(filter.Execute(img.toSimpleITK()),"otsuMultiThreshold",img.index)
+    imageFromTemporarySimpleITK "otsuMultiThreshold" img.index (filter.Execute(img.toSimpleITK()))
 
 /// Moments-based threshold
 let momentsThresholdFromHistogram (histogram: Map<'T, uint64>) : float =
@@ -1200,7 +1219,7 @@ let momentsThreshold (img: Image<'T>) : Image<uint8> =
     filter.SetUpperThreshold(System.Double.PositiveInfinity)
     filter.SetInsideValue(1uy)
     filter.SetOutsideValue(0uy)
-    Image<uint8>.ofSimpleITK(filter.Execute(img.toSimpleITK()),"momentsThreshold",img.index)
+    imageFromTemporarySimpleITK "momentsThreshold" img.index (filter.Execute(img.toSimpleITK()))
 
 /// Coordinate fields
 // Cannot get TransformToDisplacementFieldFilter to work, so making it by hand.
@@ -1372,7 +1391,7 @@ let threshold (lower: float) (upper: float) (img: Image<'T>) : Image<uint8> =
     filter.SetLowerThreshold lower
     filter.SetUpperThreshold upper
     let res = filter.Execute(img.toSimpleITK()); 
-    Image<uint8>.ofSimpleITK(res,"threshold",img.index)
+    imageFromTemporarySimpleITK "threshold" img.index res
 
 let toVectorImage (images: Image<'T> list) : Image<'T list> =
     Image<'T>.ofImageList images
@@ -1410,7 +1429,7 @@ let vectorElement<'T when 'T : equality> (componentId: uint) (img: Image<'T list
 
     use filter = new itk.simple.VectorIndexSelectionCastImageFilter()
     filter.SetIndex(componentId)
-    Image<'T>.ofSimpleITK(filter.Execute(img.toSimpleITK()), "vectorElement", img.index)
+    imageFromTemporarySimpleITK "vectorElement" img.index (filter.Execute(img.toSimpleITK()))
 
 let vectorRange<'T when 'T : equality> (firstComponent: uint) (componentCount: uint) (img: Image<'T list>) : Image<'T list> =
     let first = int firstComponent
@@ -1860,7 +1879,7 @@ let stack (images: Image<'T> list) : Image<'T> =
                     normalized.SetDirection(referenceDirection)
                     normalizedImages.Add normalized
                     v.Add normalized)
-                v |> filter.Execute |> (fun sitk -> Image<'T>.ofSimpleITK(sitk,"stack",first.index) )
+                v |> filter.Execute |> imageFromTemporarySimpleITK "stack" first.index
             finally
                 normalizedImages |> Seq.iter (fun image -> image.Dispose())
         else
@@ -1879,8 +1898,7 @@ let extractSub (topLeft : uint list) (bottomRight: uint list) (img: Image<'T>) :
     use extractor = new itk.simple.ExtractImageFilter()
     extractor.SetSize(sz |> toVectorUInt32)
     extractor.SetIndex( topLeft |> List.map int |> toVectorInt32)
-    let res = Image<'T>.ofSimpleITK(extractor.Execute(img.toSimpleITK()),"extractSub",img.index)
-    res
+    imageFromTemporarySimpleITK "extractSub" img.index (extractor.Execute(img.toSimpleITK()))
 
 let extractSlice (dir: uint) (i: int) (img: Image<'T>) =
     if img.GetDimensions() <> 3u then
@@ -1894,8 +1912,7 @@ let extractSlice (dir: uint) (i: int) (img: Image<'T>) =
     extractor.SetSize( sz |> toVectorUInt32)
     extractor.SetIndex( idx |> toVectorInt32)
     extractor.SetDirectionCollapseToStrategy(itk.simple.ExtractImageFilter.DirectionCollapseToStrategyType.DIRECTIONCOLLAPSETOIDENTITY)
-    let res = Image<'T>.ofSimpleITK(extractor.Execute(img.toSimpleITK()),"extractSlice",i)
-    res
+    imageFromTemporarySimpleITK "extractSlice" i (extractor.Execute(img.toSimpleITK()))
 
 let unstack (dir: uint) (vol: Image<'T>): Image<'T> list =
     let sz = vol.GetSize()
@@ -1944,24 +1961,24 @@ let toSeqSeq (I: Image<'T>): seq<seq<float>> =
 let permuteAxes (order: uint list) (img: Image<'T>) = 
     use filter = new itk.simple.PermuteAxesImageFilter()
     filter.SetOrder(order|>toVectorUInt32)
-    Image<'S>.ofSimpleITK(filter.Execute(img.toSimpleITK()),"permuteAxes",img.index)
+    imageFromTemporarySimpleITK "permuteAxes" img.index (filter.Execute(img.toSimpleITK()))
 
 // Fourier transform a 2d image
 let FFTXY (image: Image<'T>) : Image<System.Numerics.Complex> =
     if image.GetDimensions() <> 2u then
         failwith $"FFTXY: image must be 2D, got {image.GetDimensions()}D"
-    let input = ofCastItk<float> (image.toSimpleITK())
+    use input = ofCastITK<float> (image.toSimpleITK())
     use fft = new itk.simple.ForwardFFTImageFilter()
     let complexImg = fft.Execute(input)
-    Image<System.Numerics.Complex>.ofSimpleITK(complexImg, "FFTXY", image.index)
+    imageFromTemporarySimpleITK "FFTXY" image.index complexImg
 
 let FFTXYFloat32 (image: Image<'T>) : Image<ComplexFloat32> =
     if image.GetDimensions() <> 2u then
         failwith $"FFTXYFloat32: image must be 2D, got {image.GetDimensions()}D"
-    let input = ofCastItk<float32> (image.toSimpleITK())
+    use input = ofCastITK<float32> (image.toSimpleITK())
     use fft = new itk.simple.ForwardFFTImageFilter()
     let complexImg = fft.Execute(input)
-    Image<ComplexFloat32>.ofSimpleITK(complexImg, "FFTXYFloat32", image.index)
+    imageFromTemporarySimpleITK "FFTXYFloat32" image.index complexImg
 
 let private dftLine inverse (line: System.Numerics.Complex[]) =
     let lineLength = line.Length
@@ -2053,39 +2070,44 @@ let directionalFFT (dir: uint) (image: Image<'T>) : Image<System.Numerics.Comple
     let dims = image.GetDimensions()
     if dir >= dims then
         failwith $"directionalFFT: dir={dir} is out of range for {dims}D image"
-    let input = ofCastItk<float> (image.toSimpleITK())
-    let inputImage = Image<float>.ofSimpleITK(input, "directionalFFTInput", image.index)
-
-    match dims with
-    | 2u ->
-        let input = inputImage.toArray2D() |> Array2D.map (fun value -> System.Numerics.Complex(value, 0.0))
-        let output = directionalDftComplex2D dir false input
-        Image<System.Numerics.Complex>.ofComplexArray2D(output, "directionalFFT", image.index)
-    | 3u ->
-        let input = inputImage.toArray3D() |> Array3D.map (fun value -> System.Numerics.Complex(value, 0.0))
-        let output = directionalDftComplex3D dir false input
-        Image<System.Numerics.Complex>.ofComplexArray3D(output, "directionalFFT", image.index)
-    | _ ->
-        failwith $"directionalFFT: only 2D and 3D images are supported, got {dims}D"
+    use input = ofCastITK<float> (image.toSimpleITK())
+    let inputImage = Image<float>.ofSimpleITKAlias(input, "directionalFFTInput", image.index)
+    try
+        match dims with
+        | 2u ->
+            let input = inputImage.toArray2D() |> Array2D.map (fun value -> System.Numerics.Complex(value, 0.0))
+            let output = directionalDftComplex2D dir false input
+            Image<System.Numerics.Complex>.ofComplexArray2D(output, "directionalFFT", image.index)
+        | 3u ->
+            let input = inputImage.toArray3D() |> Array3D.map (fun value -> System.Numerics.Complex(value, 0.0))
+            let output = directionalDftComplex3D dir false input
+            Image<System.Numerics.Complex>.ofComplexArray3D(output, "directionalFFT", image.index)
+        | _ ->
+            failwith $"directionalFFT: only 2D and 3D images are supported, got {dims}D"
+    finally
+        inputImage.decRefCount()
 
 let directionalFFTFloat32 (dir: uint) (image: Image<'T>) : Image<ComplexFloat32> =
     let dims = image.GetDimensions()
     if dir >= dims then
         failwith $"directionalFFTFloat32: dir={dir} is out of range for {dims}D image"
-    let input = ofCastItk<float32> (image.toSimpleITK())
-    let inputImage = Image<float32>.ofSimpleITK(input, "directionalFFTFloat32Input", image.index)
+    use input = ofCastITK<float32> (image.toSimpleITK())
+    let inputImage = Image<float32>.ofSimpleITKAlias(input, "directionalFFTFloat32Input", image.index)
 
-    match dims with
-    | 2u ->
-        let input = inputImage.toArray2D() |> Array2D.map (fun value -> ComplexFloat32(value, 0.0f))
-        let output = directionalDftComplexFloat322D dir false input
-        Image<ComplexFloat32>.ofComplexFloat32Array2D(output, "directionalFFTFloat32", image.index)
-    | 3u ->
-        let input = inputImage.toArray3D() |> Array3D.map (fun value -> ComplexFloat32(value, 0.0f))
-        let output = directionalDftComplexFloat323D dir false input
-        Image<ComplexFloat32>.ofComplexFloat32Array3D(output, "directionalFFTFloat32", image.index)
-    | _ ->
-        failwith $"directionalFFTFloat32: only 2D and 3D images are supported, got {dims}D"
+    try
+        match dims with
+        | 2u ->
+            let input = inputImage.toArray2D() |> Array2D.map (fun value -> ComplexFloat32(value, 0.0f))
+            let output = directionalDftComplexFloat322D dir false input
+            Image<ComplexFloat32>.ofComplexFloat32Array2D(output, "directionalFFTFloat32", image.index)
+        | 3u ->
+            let input = inputImage.toArray3D() |> Array3D.map (fun value -> ComplexFloat32(value, 0.0f))
+            let output = directionalDftComplexFloat323D dir false input
+            Image<ComplexFloat32>.ofComplexFloat32Array3D(output, "directionalFFTFloat32", image.index)
+        | _ ->
+            failwith $"directionalFFTFloat32: only 2D and 3D images are supported, got {dims}D"
+    finally
+        inputImage.decRefCount()
 
 let directionalFFTComplex (dir: uint) (inverse: bool) (image: Image<System.Numerics.Complex>) : Image<System.Numerics.Complex> =
     let dims = image.GetDimensions()

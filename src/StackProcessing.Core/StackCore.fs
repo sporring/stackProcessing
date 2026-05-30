@@ -19,6 +19,25 @@ type Slab<'T when 'T: equality> =
     { Image: Image<'T>
       EmitRange: uint * uint }
 
+type ChunkIndex = int * int * int
+
+type ChunkLayout =
+    { VolumeSize: uint64 * uint64 * uint64
+      ChunkSize: uint64 * uint64 * uint64
+      ChunkCounts: int * int * int
+      PixelType: string
+      Components: uint }
+
+type ChunkStorage<'T when 'T: equality> =
+    | ImageChunk of Image<'T>
+    | ArrayChunk of 'T[,,]
+
+type Chunk<'T when 'T: equality> =
+    { Index: ChunkIndex
+      Origin: uint64 * uint64 * uint64
+      Size: uint64 * uint64 * uint64
+      Data: ChunkStorage<'T> }
+
 type Point2D =
     { X: float
       Y: float }

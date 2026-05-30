@@ -222,259 +222,259 @@ let FromTypeTests =
   ]
 
 [<Tests>]
-let ofCastItkTests =
+let ofCastITKTests =
   let sz = [3u;2u] |> toVectorUInt32
   let imgInt32 = new itk.simple.Image(sz, fromType<int32>)
   let imgFloat64 = new itk.simple.Image(sz, fromType<float>)
-  testList "FromofCastItk Tests" [
+  testList "FromofCastITK Tests" [
     testCase "int32->uint8" <| fun _ ->
-      let cast = ofCastItk<uint8> imgInt32
+      let cast = ofCastITK<uint8> imgInt32
       let result = cast.GetPixelIDTypeAsString()
       let expected = "8-bit unsigned integer"
       Expect.equal result expected $"Got {result} expected {expected}"
 
     testCase "int32->int8" <| fun _ ->
-      let cast = ofCastItk<int8> imgInt32
+      let cast = ofCastITK<int8> imgInt32
       let result = cast.GetPixelIDTypeAsString()
       let expected = "8-bit signed integer"
       Expect.equal result expected $"Got {result} expected {expected}"
 
     testCase "int32->uint16" <| fun _ ->
-      let cast = ofCastItk<uint16> imgInt32
+      let cast = ofCastITK<uint16> imgInt32
       let result = cast.GetPixelIDTypeAsString()
       let expected = "16-bit unsigned integer"
       Expect.equal result expected $"Got {result} expected {expected}"
 
     testCase "int32->int16" <| fun _ ->
-      let cast = ofCastItk<int16> imgInt32
+      let cast = ofCastITK<int16> imgInt32
       let result = cast.GetPixelIDTypeAsString()
       let expected = "16-bit signed integer"
       Expect.equal result expected $"Got {result} expected {expected}"
 
     testCase "int32->uint32" <| fun _ ->
-      let cast = ofCastItk<uint32> imgInt32
+      let cast = ofCastITK<uint32> imgInt32
       let result = cast.GetPixelIDTypeAsString()
       let expected = "32-bit unsigned integer"
       Expect.equal result expected $"Got {result} expected {expected}"
 
     testCase "int32->int32" <| fun _ ->
-      let cast = ofCastItk<int32> imgInt32
+      let cast = ofCastITK<int32> imgInt32
       let result = cast.GetPixelIDTypeAsString()
       let expected = "32-bit signed integer"
       Expect.equal result expected $"Got {result} expected {expected}"
 
     testCase "int32->uint64" <| fun _ ->
-      let cast = ofCastItk<uint64> imgInt32
+      let cast = ofCastITK<uint64> imgInt32
       let result = cast.GetPixelIDTypeAsString()
       let expected = "64-bit unsigned integer"
       Expect.equal result expected $"Got {result} expected {expected}"
 
     testCase "int32->int64" <| fun _ ->
-      let cast = ofCastItk<int64> imgInt32
+      let cast = ofCastITK<int64> imgInt32
       let result = cast.GetPixelIDTypeAsString()
       let expected = "64-bit signed integer"
       Expect.equal result expected $"Got {result} expected {expected}"
 
     testCase "int32->float32" <| fun _ ->
-      let cast = ofCastItk<float32> imgInt32
+      let cast = ofCastITK<float32> imgInt32
       let result = cast.GetPixelIDTypeAsString()
       let expected = "32-bit float"
       Expect.equal result expected $"Got {result} expected {expected}"
 
     testCase "int32->float64" <| fun _ ->
-      let cast = ofCastItk<float> imgInt32
+      let cast = ofCastITK<float> imgInt32
       let result = cast.GetPixelIDTypeAsString()
       let expected = "64-bit float"
       Expect.equal result expected $"Got {result} expected {expected}"
 
 //    testCase "int32->System.Numerics.Complex" <| fun _ ->
-//      let cast = ofCastItk<System.Numerics.Complex> imgInt32
+//      let cast = ofCastITK<System.Numerics.Complex> imgInt32
 //      let result = cast.GetPixelIDTypeAsString()
 //      let expected = "vector of 64-bit float"
 //      Expect.equal result expected $"Got {result} expected {expected}"
 
     testCase "int32->uint8 list" <| fun _ ->
-      let cast = ofCastItk<uint8 list> imgInt32
+      let cast = ofCastITK<uint8 list> imgInt32
       let result = cast.GetPixelIDTypeAsString()
       let expected = "vector of 8-bit unsigned integer"
       Expect.equal result expected $"Got {result} expected {expected}"
 
     testCase "int32->int8 list" <| fun _ ->
-      let cast = ofCastItk<int8 list> imgInt32
+      let cast = ofCastITK<int8 list> imgInt32
       let result = cast.GetPixelIDTypeAsString()
       let expected = "vector of 8-bit signed integer"
       Expect.equal result expected $"Got {result} expected {expected}"
 
     testCase "int32->uint16 list" <| fun _ ->
-      let cast = ofCastItk<uint16 list> imgInt32
+      let cast = ofCastITK<uint16 list> imgInt32
       let result = cast.GetPixelIDTypeAsString()
       let expected = "vector of 16-bit unsigned integer"
       Expect.equal result expected $"Got {result} expected {expected}"
 
     testCase "int32->int16 list" <| fun _ ->
-      let cast = ofCastItk<int16 list> imgInt32
+      let cast = ofCastITK<int16 list> imgInt32
       let result = cast.GetPixelIDTypeAsString()
       let expected = "vector of 16-bit signed integer"
       Expect.equal result expected $"Got {result} expected {expected}"
 
     testCase "int32->uint32 list" <| fun _ ->
-      let cast = ofCastItk<uint32 list> imgInt32
+      let cast = ofCastITK<uint32 list> imgInt32
       let result = cast.GetPixelIDTypeAsString()
       let expected = "vector of 32-bit unsigned integer"
       Expect.equal result expected $"Got {result} expected {expected}"
 
     testCase "int32->int32 list" <| fun _ ->
-      let cast = ofCastItk<int32 list> imgInt32
+      let cast = ofCastITK<int32 list> imgInt32
       let result = cast.GetPixelIDTypeAsString()
       let expected = "vector of 32-bit signed integer"
       Expect.equal result expected $"Got {result} expected {expected}"
 
     testCase "int32->uint64 list" <| fun _ ->
-      let cast = ofCastItk<uint64 list> imgInt32
+      let cast = ofCastITK<uint64 list> imgInt32
       let result = cast.GetPixelIDTypeAsString()
       let expected = "vector of 64-bit unsigned integer"
       Expect.equal result expected $"Got {result} expected {expected}"
 
     testCase "int32->int64 list" <| fun _ ->
-      let cast = ofCastItk<int64 list> imgInt32
+      let cast = ofCastITK<int64 list> imgInt32
       let result = cast.GetPixelIDTypeAsString()
       let expected = "vector of 64-bit signed integer"
       Expect.equal result expected $"Got {result} expected {expected}"
 
     testCase "int32->float32 list" <| fun _ ->
-      let cast = ofCastItk<float32 list> imgInt32
+      let cast = ofCastITK<float32 list> imgInt32
       let result = cast.GetPixelIDTypeAsString()
       let expected = "vector of 32-bit float"
       Expect.equal result expected $"Got {result} expected {expected}"
 
     testCase "int32->float64 list" <| fun _ ->
-      let cast = ofCastItk<float list> imgInt32
+      let cast = ofCastITK<float list> imgInt32
       let result = cast.GetPixelIDTypeAsString()
       let expected = "vector of 64-bit float"
       Expect.equal result expected $"Got {result} expected {expected}"
 
     testCase "float->uint8" <| fun _ ->
-      let cast = ofCastItk<uint8> imgFloat64
+      let cast = ofCastITK<uint8> imgFloat64
       let result = cast.GetPixelIDTypeAsString()
       let expected = "8-bit unsigned integer"
       Expect.equal result expected $"Got {result} expected {expected}"
 
     testCase "float->int8" <| fun _ ->
-      let cast = ofCastItk<int8> imgFloat64
+      let cast = ofCastITK<int8> imgFloat64
       let result = cast.GetPixelIDTypeAsString()
       let expected = "8-bit signed integer"
       Expect.equal result expected $"Got {result} expected {expected}"
 
     testCase "float->uint16" <| fun _ ->
-      let cast = ofCastItk<uint16> imgFloat64
+      let cast = ofCastITK<uint16> imgFloat64
       let result = cast.GetPixelIDTypeAsString()
       let expected = "16-bit unsigned integer"
       Expect.equal result expected $"Got {result} expected {expected}"
 
     testCase "float->int16" <| fun _ ->
-      let cast = ofCastItk<int16> imgFloat64
+      let cast = ofCastITK<int16> imgFloat64
       let result = cast.GetPixelIDTypeAsString()
       let expected = "16-bit signed integer"
       Expect.equal result expected $"Got {result} expected {expected}"
 
     testCase "float->uint32" <| fun _ ->
-      let cast = ofCastItk<uint32> imgFloat64
+      let cast = ofCastITK<uint32> imgFloat64
       let result = cast.GetPixelIDTypeAsString()
       let expected = "32-bit unsigned integer"
       Expect.equal result expected $"Got {result} expected {expected}"
 
     testCase "float->int32" <| fun _ ->
-      let cast = ofCastItk<int32> imgFloat64
+      let cast = ofCastITK<int32> imgFloat64
       let result = cast.GetPixelIDTypeAsString()
       let expected = "32-bit signed integer"
       Expect.equal result expected $"Got {result} expected {expected}"
 
     testCase "float->uint64" <| fun _ ->
-      let cast = ofCastItk<uint64> imgFloat64
+      let cast = ofCastITK<uint64> imgFloat64
       let result = cast.GetPixelIDTypeAsString()
       let expected = "64-bit unsigned integer"
       Expect.equal result expected $"Got {result} expected {expected}"
 
     testCase "float->int64" <| fun _ ->
-      let cast = ofCastItk<int64> imgFloat64
+      let cast = ofCastITK<int64> imgFloat64
       let result = cast.GetPixelIDTypeAsString()
       let expected = "64-bit signed integer"
       Expect.equal result expected $"Got {result} expected {expected}"
 
     testCase "float->float32" <| fun _ ->
-      let cast = ofCastItk<float32> imgFloat64
+      let cast = ofCastITK<float32> imgFloat64
       let result = cast.GetPixelIDTypeAsString()
       let expected = "32-bit float"
       Expect.equal result expected $"Got {result} expected {expected}"
 
     testCase "float->float64" <| fun _ ->
-      let cast = ofCastItk<float> imgFloat64
+      let cast = ofCastITK<float> imgFloat64
       let result = cast.GetPixelIDTypeAsString()
       let expected = "64-bit float"
       Expect.equal result expected $"Got {result} expected {expected}"
 
 //    testCase "float->System.Numerics.Complex" <| fun _ ->
-//      let cast = ofCastItk<System.Numerics.Complex> imgFloat64
+//      let cast = ofCastITK<System.Numerics.Complex> imgFloat64
 //      let result = cast.GetPixelIDTypeAsString()
 //      let expected = "vector of 64-bit float"
 //      Expect.equal result expected $"Got {result} expected {expected}"
 
     testCase "float->uint8 list" <| fun _ ->
-      let cast = ofCastItk<uint8 list> imgFloat64
+      let cast = ofCastITK<uint8 list> imgFloat64
       let result = cast.GetPixelIDTypeAsString()
       let expected = "vector of 8-bit unsigned integer"
       Expect.equal result expected $"Got {result} expected {expected}"
 
     testCase "float->int8 list" <| fun _ ->
-      let cast = ofCastItk<int8 list> imgFloat64
+      let cast = ofCastITK<int8 list> imgFloat64
       let result = cast.GetPixelIDTypeAsString()
       let expected = "vector of 8-bit signed integer"
       Expect.equal result expected $"Got {result} expected {expected}"
 
     testCase "float->uint16 list" <| fun _ ->
-      let cast = ofCastItk<uint16 list> imgFloat64
+      let cast = ofCastITK<uint16 list> imgFloat64
       let result = cast.GetPixelIDTypeAsString()
       let expected = "vector of 16-bit unsigned integer"
       Expect.equal result expected $"Got {result} expected {expected}"
 
     testCase "float->int16 list" <| fun _ ->
-      let cast = ofCastItk<int16 list> imgFloat64
+      let cast = ofCastITK<int16 list> imgFloat64
       let result = cast.GetPixelIDTypeAsString()
       let expected = "vector of 16-bit signed integer"
       Expect.equal result expected $"Got {result} expected {expected}"
 
     testCase "float->uint32 list" <| fun _ ->
-      let cast = ofCastItk<uint32 list> imgFloat64
+      let cast = ofCastITK<uint32 list> imgFloat64
       let result = cast.GetPixelIDTypeAsString()
       let expected = "vector of 32-bit unsigned integer"
       Expect.equal result expected $"Got {result} expected {expected}"
 
     testCase "float->int32 list" <| fun _ ->
-      let cast = ofCastItk<int32 list> imgFloat64
+      let cast = ofCastITK<int32 list> imgFloat64
       let result = cast.GetPixelIDTypeAsString()
       let expected = "vector of 32-bit signed integer"
       Expect.equal result expected $"Got {result} expected {expected}"
 
     testCase "float->uint64 list" <| fun _ ->
-      let cast = ofCastItk<uint64 list> imgFloat64
+      let cast = ofCastITK<uint64 list> imgFloat64
       let result = cast.GetPixelIDTypeAsString()
       let expected = "vector of 64-bit unsigned integer"
       Expect.equal result expected $"Got {result} expected {expected}"
 
     testCase "float->int64 list" <| fun _ ->
-      let cast = ofCastItk<int64 list> imgFloat64
+      let cast = ofCastITK<int64 list> imgFloat64
       let result = cast.GetPixelIDTypeAsString()
       let expected = "vector of 64-bit signed integer"
       Expect.equal result expected $"Got {result} expected {expected}"
 
     testCase "float->float32 list" <| fun _ ->
-      let cast = ofCastItk<float32 list> imgFloat64
+      let cast = ofCastITK<float32 list> imgFloat64
       let result = cast.GetPixelIDTypeAsString()
       let expected = "vector of 32-bit float"
       Expect.equal result expected $"Got {result} expected {expected}"
 
     testCase "float->float64 list" <| fun _ ->
-      let cast = ofCastItk<float list> imgFloat64
+      let cast = ofCastITK<float list> imgFloat64
       let result = cast.GetPixelIDTypeAsString()
       let expected = "vector of 64-bit float"
       Expect.equal result expected $"Got {result} expected {expected}"
@@ -592,7 +592,37 @@ let imageCoreTests =
       let arr = array2D [| [| 5.0f; 6.0f |]; [| 7.0f; 8.0f |] |]
       let orig = Image<float32>.ofArray2D arr
       let roundtrip = Image<float32>.ofSimpleITK(orig.toSimpleITK())
-      Expect.equal (roundtrip.toArray2D()) arr "Expected roundtrip to preserve array"
+      try
+        Expect.equal (roundtrip.toArray2D()) arr "Expected roundtrip to preserve array"
+        Expect.isTrue (orig.toSimpleITK().IsUnique()) "Safe ofSimpleITK should not leave the source SimpleITK image shared."
+        Expect.isTrue (roundtrip.toSimpleITK().IsUnique()) "Safe ofSimpleITK should create an independent SimpleITK image."
+      finally
+        roundtrip.decRefCount()
+        orig.decRefCount()
+
+    testCase "ofSimpleITKAlias requires exact pixel type and keeps a shared SimpleITK image" <| fun _ ->
+      let arr = array2D [| [| 5.0f; 6.0f |]; [| 7.0f; 8.0f |] |]
+      let orig = Image<float32>.ofArray2D arr
+      let alias = Image<float32>.ofSimpleITKAlias(orig.toSimpleITK())
+      try
+        Expect.isFalse (orig.toSimpleITK().IsUnique()) "Alias constructor should keep the source SimpleITK image shared."
+        Expect.isFalse (alias.toSimpleITK().IsUnique()) "Alias constructor should keep the returned SimpleITK image shared."
+        Expect.throws (fun () -> Image<float>.ofSimpleITKAlias(orig.toSimpleITK()) |> ignore) "Alias constructor should reject implicit casts."
+      finally
+        alias.decRefCount()
+        orig.decRefCount()
+
+    testCase "ofSimpleITKNDispose stores exact-type temporary wrappers directly" <| fun _ ->
+      let arr = array2D [| [| 5.0f; 6.0f |]; [| 7.0f; 8.0f |] |]
+      let orig = Image<float32>.ofArray2D arr
+      let sitk = new itk.simple.Image(orig.toSimpleITK())
+      let transferred = Image<float32>.ofSimpleITKNDispose(sitk)
+      try
+        Expect.isTrue (obj.ReferenceEquals(sitk, transferred.toSimpleITK())) "Transfer constructor should store the supplied wrapper directly."
+        Expect.equal (transferred.toArray2D()) arr "Transferred alias should preserve pixel values."
+      finally
+        transferred.decRefCount()
+        orig.decRefCount()
 
     testCase "ofSimpleITK strips physical metadata" <| fun _ ->
       let arr = array2D [| [| 5.0f; 6.0f |]; [| 7.0f; 8.0f |] |]
@@ -616,6 +646,40 @@ let imageCoreTests =
       img.toFile tmp
       let reloaded = Image<float32>.ofFile tmp
       Expect.equal (reloaded.toArray2D()) arr $"Expected file I/O roundtrip {tmp}"
+
+    testCase "ImageIO TIFF slice roundtrip uses direct scalar writer and reader" <| fun _ ->
+      let arr = Array2D.init 3 2 (fun x y -> uint16 (x + 10 * y))
+      let img = Image<uint16>.ofArray2D arr
+      let tmp = System.IO.Path.Combine(System.IO.Path.GetTempPath(), $"stackprocessing-imageio-{System.Guid.NewGuid():N}.tif")
+      try
+        ImageIO.writeTiffSliceFile tmp img
+        Expect.equal (ImageIO.tiffDirectoryCount tmp) 1u "Expected one TIFF directory."
+        let reloaded = ImageIO.readTiffSliceFile<uint16> tmp 7L
+        try
+          Expect.equal reloaded.index 7 "Slice reader should apply the requested slice index."
+          Expect.equal (reloaded.toArray2D()) arr "Expected direct TIFF roundtrip to preserve UInt16 pixels."
+          Expect.equal (ImageIO.bytesOfScalarImage2D img).Length (3 * 2 * 2) "Expected UInt16 byte count."
+        finally
+          reloaded.decRefCount()
+      finally
+        img.decRefCount()
+        if System.IO.File.Exists tmp then System.IO.File.Delete tmp
+
+    testCase "ImageIO TIFF slice reader casts to requested Image pixel type" <| fun _ ->
+      let arr = Array2D.init 2 2 (fun x y -> uint16 (x + 10 * y))
+      let expected = Array2D.init 2 2 (fun x y -> float32 (x + 10 * y))
+      let img = Image<uint16>.ofArray2D arr
+      let tmp = System.IO.Path.Combine(System.IO.Path.GetTempPath(), $"stackprocessing-imageio-cast-{System.Guid.NewGuid():N}.tif")
+      try
+        ImageIO.writeTiffSliceFile tmp img
+        let reloaded = ImageIO.readTiffSliceFile<float32> tmp 0L
+        try
+          Expect.equal (reloaded.toArray2D()) expected "Expected TIFF reader to cast through Image.ofSimpleITKNDispose."
+        finally
+          reloaded.decRefCount()
+      finally
+        img.decRefCount()
+        if System.IO.File.Exists tmp then System.IO.File.Delete tmp
   ]
 
 let floatArray2DFloatClose arr1 arr2 tol str = 

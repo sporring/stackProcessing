@@ -2464,140 +2464,131 @@ FNF:8
 FNH:3
 end_of_record
 SF:/Users/jrh630/repositories/stackProcessing/src/Studio.Graph/Domain.fs
-FN:309,System.Boolean Studio.Graph.FunctionDefinition::matches(System.String,Studio.Graph.Function)
+FN:318,System.Boolean Studio.Graph.FunctionDefinition::matches(System.String,Studio.Graph.Function)
 FNDA:0,System.Boolean Studio.Graph.FunctionDefinition::matches(System.String,Studio.Graph.Function)
-DA:310,0
-DA:311,0
-DA:312,0
-DA:313,0
-DA:314,0
-DA:315,0
-BRDA:310,13,0,0
-BRDA:310,13,1,0
-BRDA:311,32,0,0
-BRDA:311,32,1,0
-BRDA:312,51,0,0
-BRDA:312,51,1,0
-BRDA:313,70,0,0
-BRDA:313,70,1,0
-BRDA:314,89,0,0
-BRDA:314,89,1,0
-FN:307,System.Boolean Studio.Graph.FunctionDefinition/contains@308::Invoke(System.String)
-FNDA:0,System.Boolean Studio.Graph.FunctionDefinition/contains@308::Invoke(System.String)
-DA:308,0
-FN:203,System.Boolean Studio.Graph.PortTypeModule::isRecordType(Studio.Graph.PortType)
+DA:319,0
+DA:320,0
+DA:321,0
+DA:322,0
+DA:323,0
+DA:324,0
+BRDA:319,13,0,0
+BRDA:319,13,1,0
+BRDA:320,32,0,0
+BRDA:320,32,1,0
+BRDA:321,51,0,0
+BRDA:321,51,1,0
+BRDA:322,70,0,0
+BRDA:322,70,1,0
+BRDA:323,89,0,0
+BRDA:323,89,1,0
+FN:316,System.Boolean Studio.Graph.FunctionDefinition/contains@317::Invoke(System.String)
+FNDA:0,System.Boolean Studio.Graph.FunctionDefinition/contains@317::Invoke(System.String)
+DA:317,0
+FN:212,System.Boolean Studio.Graph.PortTypeModule::isRecordType(Studio.Graph.PortType)
 FNDA:0,System.Boolean Studio.Graph.PortTypeModule::isRecordType(Studio.Graph.PortType)
-DA:204,0
-DA:209,0
-DA:210,0
-BRDA:204,9,0,0
-BRDA:204,34,0,0
-BRDA:204,52,0,0
-BRDA:204,70,0,0
-BRDA:204,88,0,0
-BRDA:204,34,1,0
-BRDA:204,52,1,0
-BRDA:204,70,1,0
-BRDA:204,88,1,0
-BRDA:204,106,0,0
-BRDA:204,9,1,0
-BRDA:204,106,1,0
-FN:212,Studio.Graph.PortType Studio.Graph.PortTypeModule::numericToImage(Studio.Graph.NumericType)
-FNDA:0,Studio.Graph.PortType Studio.Graph.PortTypeModule::numericToImage(Studio.Graph.NumericType)
 DA:213,0
-DA:214,0
-DA:215,0
-DA:216,0
-DA:217,0
 DA:218,0
 DA:219,0
-DA:220,0
-DA:221,0
+BRDA:213,9,0,0
+BRDA:213,34,0,0
+BRDA:213,52,0,0
+BRDA:213,70,0,0
+BRDA:213,88,0,0
+BRDA:213,34,1,0
+BRDA:213,52,1,0
+BRDA:213,70,1,0
+BRDA:213,88,1,0
+BRDA:213,106,0,0
+BRDA:213,9,1,0
+BRDA:213,106,1,0
+FN:221,Studio.Graph.PortType Studio.Graph.PortTypeModule::numericToImage(Studio.Graph.NumericType)
+FNDA:0,Studio.Graph.PortType Studio.Graph.PortTypeModule::numericToImage(Studio.Graph.NumericType)
 DA:222,0
 DA:223,0
 DA:224,0
 DA:225,0
-BRDA:213,7,0,0
-BRDA:213,7,1,0
-BRDA:213,7,2,0
-BRDA:213,7,3,0
-BRDA:213,7,4,0
-BRDA:213,7,5,0
-BRDA:213,7,6,0
-BRDA:213,7,7,0
-BRDA:213,7,8,0
-BRDA:213,7,9,0
-BRDA:213,7,10,0
-BRDA:213,7,11,0
-BRDA:213,7,12,0
-FN:227,System.Boolean Studio.Graph.PortTypeModule::canConnect(Studio.Graph.PortType,Studio.Graph.PortType)
-FNDA:0,System.Boolean Studio.Graph.PortTypeModule::canConnect(Studio.Graph.PortType,Studio.Graph.PortType)
+DA:226,0
+DA:227,0
 DA:228,0
+DA:229,0
 DA:230,0
 DA:231,0
 DA:232,0
 DA:233,0
 DA:234,0
-DA:235,0
-BRDA:228,19,0,0
-BRDA:228,19,2,0
-BRDA:228,19,3,0
-BRDA:228,19,6,0
-BRDA:228,59,4,0
-BRDA:228,121,0,0
-BRDA:228,19,4,0
-BRDA:231,173,4,0
-BRDA:231,237,0,0
-BRDA:231,257,0,0
-BRDA:231,173,1,0
-BRDA:231,300,0,0
-BRDA:228,19,1,0
-BRDA:231,356,4,0
-BRDA:231,420,0,0
-BRDA:231,437,0,0
-BRDA:231,356,1,0
-BRDA:231,474,1,0
-BRDA:228,19,5,0
-BRDA:228,59,5,0
-BRDA:231,173,5,0
-BRDA:231,356,5,0
-BRDA:231,139,0,0
-BRDA:231,322,0,0
-BRDA:231,474,0,0
-BRDA:231,491,0,0
-BRDA:228,59,0,0
-BRDA:228,59,1,0
-BRDA:228,59,2,0
-BRDA:228,59,3,0
-BRDA:228,59,6,0
-BRDA:228,121,1,0
-BRDA:231,139,1,0
-BRDA:231,173,0,0
-BRDA:231,173,2,0
-BRDA:231,173,3,0
-BRDA:231,173,6,0
-BRDA:231,237,1,0
-BRDA:231,257,1,0
-BRDA:231,300,1,0
-BRDA:231,322,1,0
-BRDA:231,356,0,0
-BRDA:231,356,2,0
-BRDA:231,356,3,0
-BRDA:231,356,6,0
-BRDA:231,420,1,0
-BRDA:231,437,1,0
-BRDA:231,491,1,0
-FN:151,System.String Studio.Graph.BasicTypeModule::toString(Studio.Graph.BasicType)
+BRDA:222,7,0,0
+BRDA:222,7,1,0
+BRDA:222,7,2,0
+BRDA:222,7,3,0
+BRDA:222,7,4,0
+BRDA:222,7,5,0
+BRDA:222,7,6,0
+BRDA:222,7,7,0
+BRDA:222,7,8,0
+BRDA:222,7,9,0
+BRDA:222,7,10,0
+BRDA:222,7,11,0
+BRDA:222,7,12,0
+FN:236,System.Boolean Studio.Graph.PortTypeModule::canConnect(Studio.Graph.PortType,Studio.Graph.PortType)
+FNDA:0,System.Boolean Studio.Graph.PortTypeModule::canConnect(Studio.Graph.PortType,Studio.Graph.PortType)
+DA:237,0
+DA:239,0
+DA:240,0
+DA:241,0
+DA:242,0
+DA:243,0
+DA:244,0
+BRDA:237,19,0,0
+BRDA:237,19,2,0
+BRDA:237,19,3,0
+BRDA:237,19,6,0
+BRDA:237,59,4,0
+BRDA:237,121,0,0
+BRDA:237,19,4,0
+BRDA:240,173,4,0
+BRDA:240,237,0,0
+BRDA:240,257,0,0
+BRDA:240,173,1,0
+BRDA:240,300,0,0
+BRDA:237,19,1,0
+BRDA:240,356,4,0
+BRDA:240,420,0,0
+BRDA:240,437,0,0
+BRDA:240,356,1,0
+BRDA:240,474,1,0
+BRDA:237,19,5,0
+BRDA:237,59,5,0
+BRDA:240,173,5,0
+BRDA:240,356,5,0
+BRDA:240,139,0,0
+BRDA:240,322,0,0
+BRDA:240,474,0,0
+BRDA:240,491,0,0
+BRDA:237,59,0,0
+BRDA:237,59,1,0
+BRDA:237,59,2,0
+BRDA:237,59,3,0
+BRDA:237,59,6,0
+BRDA:237,121,1,0
+BRDA:240,139,1,0
+BRDA:240,173,0,0
+BRDA:240,173,2,0
+BRDA:240,173,3,0
+BRDA:240,173,6,0
+BRDA:240,237,1,0
+BRDA:240,257,1,0
+BRDA:240,300,1,0
+BRDA:240,322,1,0
+BRDA:240,356,0,0
+BRDA:240,356,2,0
+BRDA:240,356,3,0
+BRDA:240,356,6,0
+BRDA:240,420,1,0
+BRDA:240,437,1,0
+BRDA:240,491,1,0
+FN:160,System.String Studio.Graph.BasicTypeModule::toString(Studio.Graph.BasicType)
 FNDA:0,System.String Studio.Graph.BasicTypeModule::toString(Studio.Graph.BasicType)
-DA:152,0
-DA:153,0
-DA:154,0
-DA:155,0
-DA:156,0
-DA:157,0
-DA:158,0
-DA:159,0
-DA:160,0
 DA:161,0
 DA:162,0
 DA:163,0
@@ -2606,133 +2597,142 @@ DA:165,0
 DA:166,0
 DA:167,0
 DA:168,0
-BRDA:152,8,0,0
-BRDA:152,8,1,0
-BRDA:152,51,0,0
-BRDA:152,51,1,0
-BRDA:152,51,2,0
-BRDA:152,51,3,0
-BRDA:152,51,4,0
-BRDA:152,51,5,0
-BRDA:152,51,6,0
-BRDA:152,51,7,0
-BRDA:152,51,8,0
-BRDA:152,51,9,0
-BRDA:152,51,10,0
-BRDA:152,51,11,0
-BRDA:152,51,12,0
-BRDA:152,8,2,0
-BRDA:152,8,3,0
-BRDA:152,8,4,0
-BRDA:152,8,5,0
-FN:170,Microsoft.FSharp.Core.FSharpOption`1<Studio.Graph.BasicType> Studio.Graph.BasicTypeModule::tryParse(System.String)
-FNDA:16,Microsoft.FSharp.Core.FSharpOption`1<Studio.Graph.BasicType> Studio.Graph.BasicTypeModule::tryParse(System.String)
-DA:171,16
+DA:169,0
+DA:170,0
+DA:171,0
 DA:172,0
 DA:173,0
 DA:174,0
 DA:175,0
 DA:176,0
 DA:177,0
-DA:178,0
-DA:179,0
-DA:180,0
+BRDA:161,8,0,0
+BRDA:161,8,1,0
+BRDA:161,51,0,0
+BRDA:161,51,1,0
+BRDA:161,51,2,0
+BRDA:161,51,3,0
+BRDA:161,51,4,0
+BRDA:161,51,5,0
+BRDA:161,51,6,0
+BRDA:161,51,7,0
+BRDA:161,51,8,0
+BRDA:161,51,9,0
+BRDA:161,51,10,0
+BRDA:161,51,11,0
+BRDA:161,51,12,0
+BRDA:161,8,2,0
+BRDA:161,8,3,0
+BRDA:161,8,4,0
+BRDA:161,8,5,0
+FN:179,Microsoft.FSharp.Core.FSharpOption`1<Studio.Graph.BasicType> Studio.Graph.BasicTypeModule::tryParse(System.String)
+FNDA:16,Microsoft.FSharp.Core.FSharpOption`1<Studio.Graph.BasicType> Studio.Graph.BasicTypeModule::tryParse(System.String)
+DA:180,16
 DA:181,0
-DA:182,11
+DA:182,0
 DA:183,0
 DA:184,0
-DA:185,5
+DA:185,0
 DA:186,0
 DA:187,0
 DA:188,0
-BRDA:171,13,0,16
-BRDA:171,29,0,16
-BRDA:171,45,0,16
-BRDA:171,61,0,16
-BRDA:171,77,0,16
-BRDA:171,93,0,16
-BRDA:171,109,0,16
-BRDA:171,125,0,16
-BRDA:171,141,0,16
-BRDA:171,157,0,16
-BRDA:171,173,0,5
-BRDA:171,189,0,5
-BRDA:171,205,0,5
-BRDA:171,221,0,0
-BRDA:171,237,0,0
-BRDA:171,13,1,0
-BRDA:171,29,1,0
-BRDA:171,45,1,0
-BRDA:171,61,1,0
-BRDA:171,77,1,0
-BRDA:171,93,1,0
-BRDA:171,109,1,0
-BRDA:171,125,1,0
-BRDA:171,141,1,0
-BRDA:171,157,1,0
-BRDA:171,173,1,11
-BRDA:171,189,1,0
-BRDA:171,205,1,0
-BRDA:171,221,1,5
-BRDA:171,237,1,0
-BRDA:171,253,0,0
-BRDA:171,253,1,0
-FN:108,System.String Studio.Graph.ImageFileFormat::normalizeSuffix(System.String)
+DA:189,0
+DA:190,0
+DA:191,11
+DA:192,0
+DA:193,0
+DA:194,5
+DA:195,0
+DA:196,0
+DA:197,0
+BRDA:180,13,0,16
+BRDA:180,29,0,16
+BRDA:180,45,0,16
+BRDA:180,61,0,16
+BRDA:180,77,0,16
+BRDA:180,93,0,16
+BRDA:180,109,0,16
+BRDA:180,125,0,16
+BRDA:180,141,0,16
+BRDA:180,157,0,16
+BRDA:180,173,0,5
+BRDA:180,189,0,5
+BRDA:180,205,0,5
+BRDA:180,221,0,0
+BRDA:180,237,0,0
+BRDA:180,13,1,0
+BRDA:180,29,1,0
+BRDA:180,45,1,0
+BRDA:180,61,1,0
+BRDA:180,77,1,0
+BRDA:180,93,1,0
+BRDA:180,109,1,0
+BRDA:180,125,1,0
+BRDA:180,141,1,0
+BRDA:180,157,1,0
+BRDA:180,173,1,11
+BRDA:180,189,1,0
+BRDA:180,205,1,0
+BRDA:180,221,1,5
+BRDA:180,237,1,0
+BRDA:180,253,0,0
+BRDA:180,253,1,0
+FN:117,System.String Studio.Graph.ImageFileFormat::normalizeSuffix(System.String)
 FNDA:0,System.String Studio.Graph.ImageFileFormat::normalizeSuffix(System.String)
-DA:109,0
-DA:111,0
-DA:112,0
-DA:114,0
-BRDA:111,20,0,0
-BRDA:111,20,1,0
-FN:116,Microsoft.FSharp.Core.FSharpOption`1<Studio.Graph.ImageFileFormat/Format> Studio.Graph.ImageFileFormat::tryFind(System.String)
-FNDA:0,Microsoft.FSharp.Core.FSharpOption`1<Studio.Graph.ImageFileFormat/Format> Studio.Graph.ImageFileFormat::tryFind(System.String)
-DA:117,0
-DA:119,0
+DA:118,0
 DA:120,0
-FN:122,Microsoft.FSharp.Collections.FSharpList`1<Studio.Graph.NumericType> Studio.Graph.ImageFileFormat::supportedTypes(System.String)
-FNDA:0,Microsoft.FSharp.Collections.FSharpList`1<Studio.Graph.NumericType> Studio.Graph.ImageFileFormat::supportedTypes(System.String)
+DA:121,0
 DA:123,0
-DA:124,0
-DA:125,0
-BRDA:124,10,1,0
-BRDA:124,10,0,0
-BRDA:125,54,1,0
-BRDA:125,54,0,0
-FN:127,Microsoft.FSharp.Collections.FSharpList`1<Studio.Graph.NumericType> Studio.Graph.ImageFileFormat::readSupportedTypes(System.String)
-FNDA:0,Microsoft.FSharp.Collections.FSharpList`1<Studio.Graph.NumericType> Studio.Graph.ImageFileFormat::readSupportedTypes(System.String)
+BRDA:120,20,0,0
+BRDA:120,20,1,0
+FN:125,Microsoft.FSharp.Core.FSharpOption`1<Studio.Graph.ImageFileFormat/Format> Studio.Graph.ImageFileFormat::tryFind(System.String)
+FNDA:0,Microsoft.FSharp.Core.FSharpOption`1<Studio.Graph.ImageFileFormat/Format> Studio.Graph.ImageFileFormat::tryFind(System.String)
+DA:126,0
 DA:128,0
-DA:130,0
-DA:131,0
+DA:129,0
+FN:131,Microsoft.FSharp.Collections.FSharpList`1<Studio.Graph.NumericType> Studio.Graph.ImageFileFormat::supportedTypes(System.String)
+FNDA:0,Microsoft.FSharp.Collections.FSharpList`1<Studio.Graph.NumericType> Studio.Graph.ImageFileFormat::supportedTypes(System.String)
 DA:132,0
 DA:133,0
-BRDA:132,31,1,0
-BRDA:132,31,0,0
-BRDA:133,71,1,0
-BRDA:133,71,0,0
-FN:135,System.Boolean Studio.Graph.ImageFileFormat::supports(System.String,Studio.Graph.NumericType)
-FNDA:0,System.Boolean Studio.Graph.ImageFileFormat::supports(System.String,Studio.Graph.NumericType)
-DA:136,0
+DA:134,0
+BRDA:133,10,1,0
+BRDA:133,10,0,0
+BRDA:134,54,1,0
+BRDA:134,54,0,0
+FN:136,Microsoft.FSharp.Collections.FSharpList`1<Studio.Graph.NumericType> Studio.Graph.ImageFileFormat::readSupportedTypes(System.String)
+FNDA:0,Microsoft.FSharp.Collections.FSharpList`1<Studio.Graph.NumericType> Studio.Graph.ImageFileFormat::readSupportedTypes(System.String)
 DA:137,0
-FN:139,System.Boolean Studio.Graph.ImageFileFormat::readSupports(System.String,Studio.Graph.NumericType)
-FNDA:0,System.Boolean Studio.Graph.ImageFileFormat::readSupports(System.String,Studio.Graph.NumericType)
+DA:139,0
 DA:140,0
 DA:141,0
-FN:99,System.Boolean Studio.Graph.ImageFileFormat/readFormats@99::Invoke(Studio.Graph.ImageFileFormat/Format)
-FNDA:0,System.Boolean Studio.Graph.ImageFileFormat/readFormats@99::Invoke(Studio.Graph.ImageFileFormat/Format)
-DA:100,0
-DA:101,0
-DA:102,0
-DA:103,0
-BRDA:100,16,0,0
-BRDA:100,16,1,0
-BRDA:101,42,0,0
-BRDA:101,42,1,0
-BRDA:102,68,0,0
-BRDA:102,68,1,0
-FN:105,System.String Studio.Graph.ImageFileFormat/suffixes@106::Invoke(Studio.Graph.ImageFileFormat/Format)
-FNDA:0,System.String Studio.Graph.ImageFileFormat/suffixes@106::Invoke(Studio.Graph.ImageFileFormat/Format)
-DA:106,0
+DA:142,0
+BRDA:141,31,1,0
+BRDA:141,31,0,0
+BRDA:142,71,1,0
+BRDA:142,71,0,0
+FN:144,System.Boolean Studio.Graph.ImageFileFormat::supports(System.String,Studio.Graph.NumericType)
+FNDA:0,System.Boolean Studio.Graph.ImageFileFormat::supports(System.String,Studio.Graph.NumericType)
+DA:145,0
+DA:146,0
+FN:148,System.Boolean Studio.Graph.ImageFileFormat::readSupports(System.String,Studio.Graph.NumericType)
+FNDA:0,System.Boolean Studio.Graph.ImageFileFormat::readSupports(System.String,Studio.Graph.NumericType)
+DA:149,0
+DA:150,0
+FN:108,System.Boolean Studio.Graph.ImageFileFormat/readFormats@108::Invoke(Studio.Graph.ImageFileFormat/Format)
+FNDA:0,System.Boolean Studio.Graph.ImageFileFormat/readFormats@108::Invoke(Studio.Graph.ImageFileFormat/Format)
+DA:109,0
+DA:110,0
+DA:111,0
+DA:112,0
+BRDA:109,16,0,0
+BRDA:109,16,1,0
+BRDA:110,42,0,0
+BRDA:110,42,1,0
+BRDA:111,68,0,0
+BRDA:111,68,1,0
+FN:114,System.String Studio.Graph.ImageFileFormat/suffixes@115::Invoke(Studio.Graph.ImageFileFormat/Format)
+FNDA:0,System.String Studio.Graph.ImageFileFormat/suffixes@115::Invoke(Studio.Graph.ImageFileFormat/Format)
+DA:115,0
 FN:18,System.String Studio.Graph.NumericTypeModule::toString(Studio.Graph.NumericType)
 FNDA:153,System.String Studio.Graph.NumericTypeModule::toString(Studio.Graph.NumericType)
 DA:19,153
@@ -2839,12 +2839,21 @@ DA:90,0
 DA:91,0
 DA:92,0
 DA:93,0
+DA:94,0
 DA:95,0
 DA:96,0
 DA:97,0
 DA:98,0
 DA:99,0
-LF:157
+DA:100,0
+DA:101,0
+DA:102,0
+DA:104,0
+DA:105,0
+DA:106,0
+DA:107,0
+DA:108,0
+LF:166
 LH:13
 BRF:187
 BRH:33

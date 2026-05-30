@@ -156,12 +156,33 @@ module InternalHelpers = // internal
         finally
             handle.Free()
 
-    let ofCastItk<'T> (itkImg: itk.simple.Image) : itk.simple.Image =
+    let private deepCopyItkImage (itkImg: itk.simple.Image) : itk.simple.Image =
+        let copy = new itk.simple.Image(itkImg)
+        copy.MakeUnique()
+        copy
+
+    /// <summary>
+    /// Creates a shallow SimpleITK image wrapper for an image whose pixel type already matches <typeparamref name="'T" />.
+    /// The returned SimpleITK image shares the same pixel container until SimpleITK copy-on-write forces uniqueness.
+    /// No cast, deep copy, or disposal of <paramref name="itkImg" /> is performed.
+    /// </summary>
+    let aliasSimpleITKImage<'T> (itkImg: itk.simple.Image) : itk.simple.Image =
         let expectedId = fromType<'T>
-        if (typeof<'T> = typeof<System.Numerics.Complex> || typeof<'T> = typeof<ComplexFloat32>) && isComplexCompatibleImage itkImg then
+        if itkImg.GetPixelID() = expectedId then
             new itk.simple.Image(itkImg)
-        elif itkImg.GetPixelID() = expectedId then
-            new itk.simple.Image(itkImg) // Preserve independent wrapper ownership when no cast is needed.
+        else
+            invalidArg "itkImg" $"Expected {expectedId} image for aliasing, got {itkImg.GetPixelID()}."
+
+    /// <summary>
+    /// Creates an independent SimpleITK image with pixel type <typeparamref name="'T" />.
+    /// If <paramref name="itkImg" /> already has the requested pixel type, a shallow copy is first made and then
+    /// <c>MakeUnique</c> is called to force a deep pixel-buffer copy. If the pixel type differs, SimpleITK's cast filter
+    /// is used, which allocates a new output image. The argument is not disposed.
+    /// </summary>
+    let ofCastITK<'T> (itkImg: itk.simple.Image) : itk.simple.Image =
+        let expectedId = fromType<'T>
+        if itkImg.GetPixelID() = expectedId then
+            deepCopyItkImage itkImg
         else
             use cast = new itk.simple.CastImageFilter()
             cast.SetOutputPixelType(expectedId)
@@ -258,8 +279,10 @@ module InternalHelpers = // internal
                     componentImg.GetPixelAsDouble u
                 else
                     failwithf "Unsupported real/imaginary complex component type: %O" componentPid
-            let re = realFilter.Execute(img) |> getComponent
-            let im = imagFilter.Execute(img) |> getComponent
+            use realComponent = realFilter.Execute(img)
+            use imagComponent = imagFilter.Execute(img)
+            let re = getComponent realComponent
+            let im = getComponent imagComponent
             if t = fromType<ComplexFloat32> then
                 ComplexFloat32(float32 re, float32 im) |> box
             else
@@ -622,20 +645,88 @@ type Image<'T when 'T : equality>(sz: uint list, ?optionalNumberComponents: uint
             | :? Image<'T> as other -> this.CompareTo(other)
             | _ -> invalidArg "obj" "Expected Image<'T>"
 
+    /// <summary>
+    /// Creates a safe, independent <c>Image&lt;'T&gt;</c> from a SimpleITK image.
+    /// The resulting image does not share its pixel buffer with <paramref name="itkImg" />. Matching pixel types are
+    /// deep-copied; non-matching pixel types are converted with SimpleITK's cast filter. Physical metadata is normalized
+    /// to StackProcessing defaults. The argument is borrowed and is not disposed.
+    /// </summary>
     static member ofSimpleITK (itkImg: itk.simple.Image, ?optionalName: string, ?optionalIndex: int) : Image<'T> =
         let name = defaultArg optionalName ""
         let index = defaultArg optionalIndex 0
 
-        let itkImgCast = ofCastItk<'T> itkImg |> canonicalizeSimpleItkImage
-        let isComplexType = typeof<'T> = typeof<System.Numerics.Complex> || typeof<'T> = typeof<ComplexFloat32>
-        if isComplexType && not (isComplexCompatibleImage itkImgCast) then
-            invalidArg "itkImg" "Complex pixel type requires a native complex image."
-        let img = new Image<'T>([0u;0u],itkImgCast.GetNumberOfComponentsPerPixel(),name,index, true)
+        let itkImgCast = ofCastITK<'T> itkImg |> canonicalizeSimpleItkImage
+        try
+            let isComplexType = typeof<'T> = typeof<System.Numerics.Complex> || typeof<'T> = typeof<ComplexFloat32>
+            if isComplexType && not (isComplexCompatibleImage itkImgCast) then
+                invalidArg "itkImg" "Complex pixel type requires a native complex image."
+            let img = new Image<'T>([0u;0u],itkImgCast.GetNumberOfComponentsPerPixel(),name,index, true)
 
-        img.SetImg itkImgCast
+            img.SetImg itkImgCast
+            incMemUsed (Image<_>.memoryEstimateSItk img.Image)
+            if debug then printDebugMessage $"Created {img.Name} ({itkImgCast.GetSize()|> fromVectorUInt32}, {fromType<'T>} {itkImgCast.GetPixelID()}, {itkImgCast.GetNumberOfComponentsPerPixel()}->{Image<'T>.memoryEstimateSItk itkImgCast})"
+            img
+        with
+        | ex ->
+            itkImgCast.Dispose()
+            reraise()
+
+    /// <summary>
+    /// Creates an aliasing <c>Image&lt;'T&gt;</c> from a SimpleITK image whose pixel type already matches <c>'T</c>.
+    /// The returned image uses a shallow SimpleITK copy and may share the same pixel container as
+    /// <paramref name="itkImg" /> until SimpleITK copy-on-write forces uniqueness. No cast, deep copy, metadata
+    /// canonicalization, or disposal of the argument is performed. This is intended for internal hot paths where
+    /// aliasing is acceptable and explicit.
+    /// </summary>
+    static member ofSimpleITKAlias (itkImg: itk.simple.Image, ?optionalName: string, ?optionalIndex: int) : Image<'T> =
+        let name = defaultArg optionalName ""
+        let index = defaultArg optionalIndex 0
+
+        let itkImgAlias = aliasSimpleITKImage<'T> itkImg
+        let img = new Image<'T>([0u;0u], itkImgAlias.GetNumberOfComponentsPerPixel(), name, index, true)
+
+        img.SetImg itkImgAlias
         incMemUsed (Image<_>.memoryEstimateSItk img.Image)
-        if debug then printDebugMessage $"Created {img.Name} ({itkImgCast.GetSize()|> fromVectorUInt32}, {fromType<'T>} {itkImgCast.GetPixelID()}, {itkImgCast.GetNumberOfComponentsPerPixel()}->{Image<'T>.memoryEstimateSItk itkImgCast})"
+        if debug then printDebugMessage $"Created alias {img.Name} ({itkImgAlias.GetSize()|> fromVectorUInt32}, {fromType<'T>} {itkImgAlias.GetPixelID()}, {itkImgAlias.GetNumberOfComponentsPerPixel()}->{Image<'T>.memoryEstimateSItk itkImgAlias})"
         img
+
+    /// <summary>
+    /// Creates an aliasing <c>Image&lt;'T&gt;</c> by taking over a SimpleITK image whose pixel type already matches <c>'T</c>.
+    /// No SimpleITK wrapper copy, deep copy, cast, or metadata canonicalization is performed. The returned image stores
+    /// <paramref name="itkImg" /> directly and will dispose it when the image reference count reaches zero. The caller
+    /// must not dispose or continue using <paramref name="itkImg" /> after a successful call.
+    /// </summary>
+    static member private ofSimpleITKAliasTransfer (itkImg: itk.simple.Image, ?optionalName: string, ?optionalIndex: int) : Image<'T> =
+        let name = defaultArg optionalName ""
+        let index = defaultArg optionalIndex 0
+        let expectedId = fromType<'T>
+        if itkImg.GetPixelID() <> expectedId then
+            invalidArg "itkImg" $"Expected {expectedId} image for alias transfer, got {itkImg.GetPixelID()}."
+
+        let img = new Image<'T>([0u;0u], itkImg.GetNumberOfComponentsPerPixel(), name, index, true)
+
+        img.SetImg itkImg
+        incMemUsed (Image<_>.memoryEstimateSItk img.Image)
+        if debug then printDebugMessage $"Created transferred alias {img.Name} ({itkImg.GetSize()|> fromVectorUInt32}, {fromType<'T>} {itkImg.GetPixelID()}, {itkImg.GetNumberOfComponentsPerPixel()}->{Image<'T>.memoryEstimateSItk itkImg})"
+        img
+
+    /// <summary>
+    /// Creates an <c>Image&lt;'T&gt;</c> from a temporary SimpleITK image and consumes that temporary.
+    /// If the pixel type already matches <c>'T</c>, the SimpleITK wrapper is transferred directly into the returned
+    /// image with no copy or cast; the returned image will dispose it when its reference count reaches zero. If a cast is
+    /// needed, the result is deep-copied through <c>ofSimpleITK</c> and <paramref name="itkImg" /> is disposed before
+    /// returning. The caller must not dispose or continue using <paramref name="itkImg" /> after calling this function.
+    /// </summary>
+    static member ofSimpleITKNDispose (itkImg: itk.simple.Image, ?optionalName: string, ?optionalIndex: int) : Image<'T> =
+        let name = defaultArg optionalName ""
+        let index = defaultArg optionalIndex 0
+        if itkImg.GetPixelID() = fromType<'T> then
+            Image<'T>.ofSimpleITKAliasTransfer(itkImg, name, index)
+        else
+            try
+                Image<'T>.ofSimpleITK(itkImg, name, index)
+            finally
+                itkImg.Dispose()
 
     member this.toSimpleITK () : itk.simple.Image =
         if isComplexType && not (isComplexCompatibleImage img) then
@@ -645,7 +736,7 @@ type Image<'T when 'T : equality>(sz: uint list, ?optionalNumberComponents: uint
     member this.copy (?optionalName: string, ?optionalIndex: int) : Image<'T> =
         let name = defaultArg optionalName "copy"
         let index = defaultArg optionalIndex this.index
-        Image<'T>.ofSimpleITK(new itk.simple.Image(this.toSimpleITK()), name, index)
+        Image<'T>.ofSimpleITK(this.toSimpleITK(), name, index)
 
     member this.castTo<'S when 'S: equality> () : Image<'S> = Image<'S>.ofSimpleITK(this.toSimpleITK(),"cast",this.index)
     member this.toUInt8 ()   : Image<uint8>   = Image<uint8>.ofSimpleITK(this.toSimpleITK(),"toUInt8",this.index)
@@ -685,7 +776,7 @@ type Image<'T when 'T : equality>(sz: uint list, ?optionalNumberComponents: uint
                     pixels[offset] <- arr[x, y]
                     offset <- offset + 1
 
-            Image<'T>.ofSimpleITK(importScalarImage sz pixels, _name, _index)
+            Image<'T>.ofSimpleITKNDispose(importScalarImage sz pixels, _name, _index)
         else
             let img = new Image<'T>(sz,1u,_name,_index)
             img |> Image.iteri (fun idxLst _ -> img.Set idxLst arr[int idxLst[0],int idxLst[1]])
@@ -772,7 +863,7 @@ type Image<'T when 'T : equality>(sz: uint list, ?optionalNumberComponents: uint
                         pixels[offset] <- arr[x, y, z]
                         offset <- offset + 1
 
-            Image<'T>.ofSimpleITK(importScalarImage sz pixels, _name, _index)
+            Image<'T>.ofSimpleITKNDispose(importScalarImage sz pixels, _name, _index)
         else
             let img = new Image<'T>(sz,1u,_name,_index)
             img |> Image.iteri (fun idxLst _ -> img.Set idxLst arr[int idxLst[0],int idxLst[1],int idxLst[2]])
@@ -806,7 +897,7 @@ type Image<'T when 'T : equality>(sz: uint list, ?optionalNumberComponents: uint
                     chunks.Add chunk
                     v.Add chunk
 
-                Image<'T>.ofSimpleITK(filter.Execute(v), _name, _index)
+                Image<'T>.ofSimpleITKNDispose(filter.Execute(v), _name, _index)
             finally
                 chunks |> Seq.iter (fun chunk -> chunk.Dispose())
         else
@@ -830,7 +921,7 @@ type Image<'T when 'T : equality>(sz: uint list, ?optionalNumberComponents: uint
         use v = new itk.simple.VectorOfImage()
         try
             components |> List.iter (fun image -> v.Add(image.toSimpleITK()))
-            Image<'S list>.ofSimpleITK(filter.Execute(v), _name, _index)
+            Image<'S list>.ofSimpleITKNDispose(filter.Execute(v), _name, _index)
         finally
             components |> List.iter (fun image -> image.decRefCount())
 
@@ -907,10 +998,10 @@ type Image<'T when 'T : equality>(sz: uint list, ?optionalNumberComponents: uint
         if this.GetDimensions() <> 2u then
             invalidOp $"toComplexArray2D: image must be 2D, got {this.GetDimensions()}D."
 
-        use realItk = extractComplexRealImage this.Image
-        use imagItk = extractComplexImagImage this.Image
-        let realImg = Image<float>.ofSimpleITK(realItk, "toComplexArray2D.Re", this.index)
-        let imagImg = Image<float>.ofSimpleITK(imagItk, "toComplexArray2D.Im", this.index)
+        let realItk = extractComplexRealImage this.Image
+        let imagItk = extractComplexImagImage this.Image
+        let realImg = Image<float>.ofSimpleITKNDispose(realItk, "toComplexArray2D.Re", this.index)
+        let imagImg = Image<float>.ofSimpleITKNDispose(imagItk, "toComplexArray2D.Im", this.index)
         let real = realImg.toArray2D()
         let imag = imagImg.toArray2D()
         realImg.decRefCount()
@@ -923,10 +1014,10 @@ type Image<'T when 'T : equality>(sz: uint list, ?optionalNumberComponents: uint
         if this.GetDimensions() <> 2u then
             invalidOp $"toComplexFloat32Array2D: image must be 2D, got {this.GetDimensions()}D."
 
-        use realItk = extractComplexRealImage this.Image
-        use imagItk = extractComplexImagImage this.Image
-        let realImg = Image<float32>.ofSimpleITK(realItk, "toComplexFloat32Array2D.Re", this.index)
-        let imagImg = Image<float32>.ofSimpleITK(imagItk, "toComplexFloat32Array2D.Im", this.index)
+        let realItk = extractComplexRealImage this.Image
+        let imagItk = extractComplexImagImage this.Image
+        let realImg = Image<float32>.ofSimpleITKNDispose(realItk, "toComplexFloat32Array2D.Re", this.index)
+        let imagImg = Image<float32>.ofSimpleITKNDispose(imagItk, "toComplexFloat32Array2D.Im", this.index)
         let real = realImg.toArray2D()
         let imag = imagImg.toArray2D()
         realImg.decRefCount()
@@ -941,7 +1032,7 @@ type Image<'T when 'T : equality>(sz: uint list, ?optionalNumberComponents: uint
             [ for i in 0 .. int (img.GetNumberOfComponentsPerPixel()) - 1 ->
                 filter.SetIndex(uint i)
                 let scalarItk = filter.Execute(img.toSimpleITK())
-                Image<'S>.ofSimpleITK(scalarItk, $"toArray3DVector.Component{i}", img.index + i) ]
+                Image<'S>.ofSimpleITKNDispose(scalarItk, $"toArray3DVector.Component{i}", img.index + i) ]
         try
             let values = components |> List.map (fun image -> image.toArray2D())
             let width = values.Head.GetLength(0)
@@ -979,10 +1070,10 @@ type Image<'T when 'T : equality>(sz: uint list, ?optionalNumberComponents: uint
         if this.GetDimensions() <> 3u then
             invalidOp $"toComplexArray3D: image must be 3D, got {this.GetDimensions()}D."
 
-        use realItk = extractComplexRealImage this.Image
-        use imagItk = extractComplexImagImage this.Image
-        let realImg = Image<float>.ofSimpleITK(realItk, "toComplexArray3D.Re", this.index)
-        let imagImg = Image<float>.ofSimpleITK(imagItk, "toComplexArray3D.Im", this.index)
+        let realItk = extractComplexRealImage this.Image
+        let imagItk = extractComplexImagImage this.Image
+        let realImg = Image<float>.ofSimpleITKNDispose(realItk, "toComplexArray3D.Re", this.index)
+        let imagImg = Image<float>.ofSimpleITKNDispose(imagItk, "toComplexArray3D.Im", this.index)
         let real = realImg.toArray3D()
         let imag = imagImg.toArray3D()
         realImg.decRefCount()
@@ -995,10 +1086,10 @@ type Image<'T when 'T : equality>(sz: uint list, ?optionalNumberComponents: uint
         if this.GetDimensions() <> 3u then
             invalidOp $"toComplexFloat32Array3D: image must be 3D, got {this.GetDimensions()}D."
 
-        use realItk = extractComplexRealImage this.Image
-        use imagItk = extractComplexImagImage this.Image
-        let realImg = Image<float32>.ofSimpleITK(realItk, "toComplexFloat32Array3D.Re", this.index)
-        let imagImg = Image<float32>.ofSimpleITK(imagItk, "toComplexFloat32Array3D.Im", this.index)
+        let realItk = extractComplexRealImage this.Image
+        let imagItk = extractComplexImagImage this.Image
+        let realImg = Image<float32>.ofSimpleITKNDispose(realItk, "toComplexFloat32Array3D.Re", this.index)
+        let imagImg = Image<float32>.ofSimpleITKNDispose(imagItk, "toComplexFloat32Array3D.Im", this.index)
         let real = realImg.toArray3D()
         let imag = imagImg.toArray3D()
         realImg.decRefCount()
@@ -1021,21 +1112,21 @@ type Image<'T when 'T : equality>(sz: uint list, ?optionalNumberComponents: uint
             use filter = new itk.simple.ComposeImageFilter()
             use v = new itk.simple.VectorOfImage()
             images |> List.iter (fun image -> v.Add(image.toSimpleITK()))
-            Image<'S list>.ofSimpleITK(filter.Execute(v), "ofImageList", first.index)
+            Image<'S list>.ofSimpleITKNDispose(filter.Execute(v), "ofImageList", first.index)
 
     static member ofImagePairToComplex (realImg: Image<float>) (imagImg: Image<float>) : Image<System.Numerics.Complex> =
         if realImg.GetSize() <> imagImg.GetSize() then
             invalidArg "imagImg" $"Image dimensions must match: {realImg.GetSize()} vs {imagImg.GetSize()}"
 
         use filter = new itk.simple.RealAndImaginaryToComplexImageFilter()
-        Image<System.Numerics.Complex>.ofSimpleITK(filter.Execute(realImg.toSimpleITK(), imagImg.toSimpleITK()), "ofImagePairToComplex", realImg.index)
+        Image<System.Numerics.Complex>.ofSimpleITKNDispose(filter.Execute(realImg.toSimpleITK(), imagImg.toSimpleITK()), "ofImagePairToComplex", realImg.index)
 
     static member ofImagePairToComplexFloat32 (realImg: Image<float32>) (imagImg: Image<float32>) : Image<ComplexFloat32> =
         if realImg.GetSize() <> imagImg.GetSize() then
             invalidArg "imagImg" $"Image dimensions must match: {realImg.GetSize()} vs {imagImg.GetSize()}"
 
         use filter = new itk.simple.RealAndImaginaryToComplexImageFilter()
-        Image<ComplexFloat32>.ofSimpleITK(filter.Execute(realImg.toSimpleITK(), imagImg.toSimpleITK()), "ofImagePairToComplexFloat32", realImg.index)
+        Image<ComplexFloat32>.ofSimpleITKNDispose(filter.Execute(realImg.toSimpleITK(), imagImg.toSimpleITK()), "ofImagePairToComplexFloat32", realImg.index)
 
     member this.toImageList () : Image<'S> list =
         use filter = new itk.simple.VectorIndexSelectionCastImageFilter()
@@ -1043,7 +1134,7 @@ type Image<'T when 'T : equality>(sz: uint list, ?optionalNumberComponents: uint
         List.init n (fun i ->
             filter.SetIndex(uint i)
             let scalarItk = filter.Execute(this.Image)
-            Image<'S>.ofSimpleITK(scalarItk,"toImageList",this.index+i)
+            Image<'S>.ofSimpleITKNDispose(scalarItk,"toImageList",this.index+i)
         )
 
     static member ofFile(filename: string, ?optionalName: string, ?optionalIndex: int) : Image<'T> =
@@ -1053,46 +1144,54 @@ type Image<'T when 'T : equality>(sz: uint list, ?optionalNumberComponents: uint
         use reader = new itk.simple.ImageFileReader()
         reader.SetFileName(filename)
         let itkImg = reader.Execute()
-        let numComp = itkImg.GetNumberOfComponentsPerPixel()
-        let tType = typeof<'T>
-        let isComplexType = tType = typeof<System.Numerics.Complex> || tType = typeof<ComplexFloat32>
-        let isVectorType =
-            (tType.IsGenericType && tType.GetGenericTypeDefinition() = typedefof<list<_>>)
-            || tType.IsArray
+        let mutable consumed = false
+        try
+            let numComp = itkImg.GetNumberOfComponentsPerPixel()
+            let tType = typeof<'T>
+            let isComplexType = tType = typeof<System.Numerics.Complex> || tType = typeof<ComplexFloat32>
+            let isVectorType =
+                (tType.IsGenericType && tType.GetGenericTypeDefinition() = typedefof<list<_>>)
+                || tType.IsArray
 
-        // Validate number of components matches expectations
-        match isComplexType, isVectorType, numComp with
-        | true, _, _ when isComplexCompatibleImage itkImg ->
-            Image<'T>.ofSimpleITK(itkImg, name, index)
-        | true, _, n when n >= 2u ->
-            let vector = Image<float list>.ofSimpleITK(itkImg, name + ".vector", index)
-            let parts = vector.toImageList()
-            if parts.Length < 2 then
+            // Validate number of components matches expectations
+            match isComplexType, isVectorType, numComp with
+            | true, _, _ when isComplexCompatibleImage itkImg ->
+                let image = Image<'T>.ofSimpleITKNDispose(itkImg, name, index)
+                consumed <- true
+                image
+            | true, _, n when n >= 2u ->
+                let vector = Image<float list>.ofSimpleITK(itkImg, name + ".vector", index)
+                let parts = vector.toImageList()
+                if parts.Length < 2 then
+                    vector.decRefCount()
+                    parts |> List.iter (fun part -> part.decRefCount())
+                    failwithf "Pixel type '%O' expects native complex or a vector with real and imaginary components, but image has %d component(s)." tType n
+                let complex =
+                    if tType = typeof<ComplexFloat32> then
+                        let real = parts[0].toFloat32()
+                        let imag = parts[1].toFloat32()
+                        try
+                            Image<float32>.ofImagePairToComplexFloat32 real imag |> box
+                        finally
+                            real.decRefCount()
+                            imag.decRefCount()
+                    else
+                        Image<float>.ofImagePairToComplex parts[0] parts[1] |> box
                 vector.decRefCount()
                 parts |> List.iter (fun part -> part.decRefCount())
-                failwithf "Pixel type '%O' expects native complex or a vector with real and imaginary components, but image has %d component(s)." tType n
-            let complex =
-                if tType = typeof<ComplexFloat32> then
-                    let real = parts[0].toFloat32()
-                    let imag = parts[1].toFloat32()
-                    try
-                        Image<float32>.ofImagePairToComplexFloat32 real imag |> box
-                    finally
-                        real.decRefCount()
-                        imag.decRefCount()
-                else
-                    Image<float>.ofImagePairToComplex parts[0] parts[1] |> box
-            vector.decRefCount()
-            parts |> List.iter (fun part -> part.decRefCount())
-            complex |> unbox<Image<'T>>
-        | true, _, n ->
-            failwithf "Pixel type '%O' expects native complex or a vector with real and imaginary components, but got %O with %d component(s)." tType (itkImg.GetPixelID()) n
-        | false, true, n when n < 2u ->
-            failwithf "Pixel type '%O' expects a vector (>=2 components), but image has %d component(s)." tType n
-        | false, false, n when n > 1u ->
-            failwithf "Pixel type '%O' expects a scalar (1 component), but image has %d component(s)." tType n
-        | _ ->
-            Image<'T>.ofSimpleITK(itkImg,name,index)
+                complex |> unbox<Image<'T>>
+            | true, _, n ->
+                failwithf "Pixel type '%O' expects native complex or a vector with real and imaginary components, but got %O with %d component(s)." tType (itkImg.GetPixelID()) n
+            | false, true, n when n < 2u ->
+                failwithf "Pixel type '%O' expects a vector (>=2 components), but image has %d component(s)." tType n
+            | false, false, n when n > 1u ->
+                failwithf "Pixel type '%O' expects a scalar (1 component), but image has %d component(s)." tType n
+            | _ ->
+                let image = Image<'T>.ofSimpleITKNDispose(itkImg,name,index)
+                consumed <- true
+                image
+        finally
+            if not consumed then itkImg.Dispose()
 
     static member ofFileVector<'S when 'S: equality> (filename: string, ?optionalName: string, ?optionalIndex: int) : Image<'S list> =
         let name = defaultArg optionalName filename
@@ -1101,10 +1200,16 @@ type Image<'T when 'T : equality>(sz: uint list, ?optionalNumberComponents: uint
         use reader = new itk.simple.ImageFileReader()
         reader.SetFileName(filename)
         let itkImg = reader.Execute()
-        let numComp = itkImg.GetNumberOfComponentsPerPixel()
-        if numComp < 2u then
-            failwithf "Vector pixel type expects >=2 components, but image has %d component(s)." numComp
-        Image<'S list>.ofSimpleITK(itkImg, name, index)
+        let mutable consumed = false
+        try
+            let numComp = itkImg.GetNumberOfComponentsPerPixel()
+            if numComp < 2u then
+                failwithf "Vector pixel type expects >=2 components, but image has %d component(s)." numComp
+            let image = Image<'S list>.ofSimpleITKNDispose(itkImg, name, index)
+            consumed <- true
+            image
+        finally
+            if not consumed then itkImg.Dispose()
 
     static member ofFileComplex (filename: string, ?optionalName: string, ?optionalIndex: int) : Image<System.Numerics.Complex> =
         Image<System.Numerics.Complex>.ofFile(filename, ?optionalName = optionalName, ?optionalIndex = optionalIndex)
@@ -1139,24 +1244,24 @@ type Image<'T when 'T : equality>(sz: uint list, ?optionalNumberComponents: uint
     // Arithmatic
     static member (+) (f1: Image<'T>, f2: Image<'T>) =
         use filter = new itk.simple.AddImageFilter()
-        Image<'T>.ofSimpleITK(filter.Execute(f1.toSimpleITK(), f2.toSimpleITK()), "add", f1.index)
+        Image<'T>.ofSimpleITKNDispose(filter.Execute(f1.toSimpleITK(), f2.toSimpleITK()), "add", f1.index)
     static member (-) (f1: Image<'T>, f2: Image<'T>) =
         use filter = new itk.simple.SubtractImageFilter()
-        Image<'T>.ofSimpleITK(filter.Execute(f1.toSimpleITK(), f2.toSimpleITK()), "subtract", f1.index)
+        Image<'T>.ofSimpleITKNDispose(filter.Execute(f1.toSimpleITK(), f2.toSimpleITK()), "subtract", f1.index)
     static member ( * ) (f1: Image<'T>, f2: Image<'T>) =
         use filter = new itk.simple.MultiplyImageFilter()
-        Image<'T>.ofSimpleITK(filter.Execute(f1.toSimpleITK(), f2.toSimpleITK()), "multiply", f1.index)
+        Image<'T>.ofSimpleITKNDispose(filter.Execute(f1.toSimpleITK(), f2.toSimpleITK()), "multiply", f1.index)
     static member (/) (f1: Image<'T>, f2: Image<'T>) =
         use filter = new itk.simple.DivideImageFilter()
-        Image<'T>.ofSimpleITK(filter.Execute(f1.toSimpleITK(), f2.toSimpleITK()), "divide", f1.index)
+        Image<'T>.ofSimpleITKNDispose(filter.Execute(f1.toSimpleITK(), f2.toSimpleITK()), "divide", f1.index)
 
     static member maximumImage (f1: Image<'T>) (f2: Image<'T>) =
         use filter = new itk.simple.MaximumImageFilter()
-        Image<'T>.ofSimpleITK(filter.Execute(f1.toSimpleITK(), f2.toSimpleITK()), "maximumImage", f1.index)
+        Image<'T>.ofSimpleITKNDispose(filter.Execute(f1.toSimpleITK(), f2.toSimpleITK()), "maximumImage", f1.index)
 
     static member minimumImage (f1: Image<'T>) (f2: Image<'T>) =
         use filter = new itk.simple.MinimumImageFilter()
-        Image<'T>.ofSimpleITK(filter.Execute(f1.toSimpleITK(), f2.toSimpleITK()), "minimumImage", f1.index)
+        Image<'T>.ofSimpleITKNDispose(filter.Execute(f1.toSimpleITK(), f2.toSimpleITK()), "minimumImage", f1.index)
 
     static member getMinMax (img: Image<'T>) =
         use filter = new itk.simple.MinimumMaximumImageFilter()
@@ -1349,8 +1454,10 @@ type Image<'T when 'T : equality>(sz: uint list, ?optionalNumberComponents: uint
                 failwithf "Unsupported complex backing pixel type: %O" pid
             use realFilter = new itk.simple.ComplexToRealImageFilter()
             use imagFilter = new itk.simple.ComplexToImaginaryImageFilter()
-            let re = realFilter.Execute(this.Image) |> fun img -> getFloatPixel img u
-            let im = imagFilter.Execute(this.Image) |> fun img -> getFloatPixel img u
+            use realComponent = realFilter.Execute(this.Image)
+            use imagComponent = imagFilter.Execute(this.Image)
+            let re = getFloatPixel realComponent u
+            let im = getFloatPixel imagComponent u
             let c = System.Numerics.Complex(re, im)
             unbox<'T> c
         elif typeof<'T> = typeof<uint8 list> then
@@ -1386,8 +1493,7 @@ type Image<'T when 'T : equality>(sz: uint list, ?optionalNumberComponents: uint
         filter.SetStart(x0 |> toVectorInt32)
         filter.SetStop(x1 |> toVectorInt32)
         let img = filter.Execute (this.toSimpleITK())
-        let res = Image<'T>.ofSimpleITK(img,"GetSlice")
-        res
+        Image<'T>.ofSimpleITKNDispose(img,"GetSlice")
 
     member this.Set (coords: uint list) (value: 'T) : unit =
         let u = toVectorUInt32 coords
@@ -1403,7 +1509,9 @@ type Image<'T when 'T : equality>(sz: uint list, ?optionalNumberComponents: uint
             use imagImg = imagFilter.Execute(this.Image)
             setFloatPixel realImg u c.Real
             setFloatPixel imagImg u c.Imaginary
+            let previous = img
             img <- compose.Execute(realImg, imagImg)
+            previous.Dispose()
         else
             let t = fromType<'T>
             setBoxedPixel this.Image t u value
@@ -1466,83 +1574,83 @@ type Image<'T when 'T : equality>(sz: uint list, ?optionalNumberComponents: uint
     /// Comparison operators
     static member isEqual (f1: Image<'S>, f2: Image<'S>) = // Curried form confuses fsharp
         use filter = new itk.simple.EqualImageFilter()
-        Image<'S>.ofSimpleITK(filter.Execute(f1.toSimpleITK(), f2.toSimpleITK()),"isEqual", f1.index)
+        Image<'S>.ofSimpleITKNDispose(filter.Execute(f1.toSimpleITK(), f2.toSimpleITK()),"isEqual", f1.index)
     static member eq (f1: Image<'S>, f2: Image<'S>) =
         (Image<'S>.isEqual(f1, f2)).forAll equalOne
 
     static member isNotEqual (f1: Image<'S>, f2: Image<'S>) =
         use filter = new itk.simple.NotEqualImageFilter()
-        Image<'S>.ofSimpleITK(filter.Execute(f1.toSimpleITK(), f2.toSimpleITK()),"isNotEqual", f1.index)
+        Image<'S>.ofSimpleITKNDispose(filter.Execute(f1.toSimpleITK(), f2.toSimpleITK()),"isNotEqual", f1.index)
     static member neq (f1: Image<'S>, f2: Image<'S>) =
         (Image<float>.isNotEqual(f1, f2)).forAll equalOne
 
     static member isLessThan (f1: Image<'S>, f2: Image<'S>) =
         use filter = new itk.simple.LessImageFilter()
-        Image<'S>.ofSimpleITK(filter.Execute(f1.toSimpleITK(), f2.toSimpleITK()),"isLessThan", f1.index)
+        Image<'S>.ofSimpleITKNDispose(filter.Execute(f1.toSimpleITK(), f2.toSimpleITK()),"isLessThan", f1.index)
     static member lt (f1: Image<'S>, f2: Image<'S>) =
         (Image<'S>.isLessThan(f1, f2)).forAll equalOne
 
     static member isLessThanEqual (f1: Image<'S>, f2: Image<'S>) =
         use filter = new itk.simple.LessEqualImageFilter()
-        Image<'S>.ofSimpleITK(filter.Execute(f1.toSimpleITK(), f2.toSimpleITK()),"isLessThanEqual", f1.index)
+        Image<'S>.ofSimpleITKNDispose(filter.Execute(f1.toSimpleITK(), f2.toSimpleITK()),"isLessThanEqual", f1.index)
     static member lte (f1: Image<'S>, f2: Image<'S>) =
         (Image<'S>.isLessThanEqual(f1, f2)).forAll equalOne
 
     static member isGreater (f1: Image<'S>, f2: Image<'S>) =
         use filter = new itk.simple.GreaterImageFilter()
-        Image<'S>.ofSimpleITK(filter.Execute(f1.toSimpleITK(), f2.toSimpleITK()),"isGreater", f1.index)
+        Image<'S>.ofSimpleITKNDispose(filter.Execute(f1.toSimpleITK(), f2.toSimpleITK()),"isGreater", f1.index)
     static member gt (f1: Image<'S>, f2: Image<'S>) =
         (Image<'S>.isGreater(f1, f2)).forAll equalOne
 
     // greater than or equal
     static member isGreaterEqual (f1: Image<'S>, f2: Image<'S>) =
         use filter = new itk.simple.GreaterEqualImageFilter()
-        Image<'S>.ofSimpleITK(filter.Execute(f1.toSimpleITK(), f2.toSimpleITK()),"isGreaterEqual", f1.index)
+        Image<'S>.ofSimpleITKNDispose(filter.Execute(f1.toSimpleITK(), f2.toSimpleITK()),"isGreaterEqual", f1.index)
     static member gte (f1: Image<'S>, f2: Image<'S>) =
         (Image<'S>.isGreaterEqual(f1, f2)).forAll equalOne
 
     // Power (no direct operator for ** in .NET) - provide a named method instead
     static member Pow (f1: Image<'S>, f2: Image<'S>) =
         use filter = new itk.simple.PowImageFilter()
-        Image<'S>.ofSimpleITK(filter.Execute(f1.toSimpleITK(), f2.toSimpleITK()),"Pow", f1.index)
+        Image<'S>.ofSimpleITKNDispose(filter.Execute(f1.toSimpleITK(), f2.toSimpleITK()),"Pow", f1.index)
 
     // Bitwise AND ( &&& )
     static member op_BitwiseAnd (f1: Image<'S>, f2: Image<'S>) =
         use filter = new itk.simple.AndImageFilter()
-        Image<'S>.ofSimpleITK(filter.Execute(f1.toSimpleITK(), f2.toSimpleITK()),"op_BitwiseAnd", f1.index)
+        Image<'S>.ofSimpleITKNDispose(filter.Execute(f1.toSimpleITK(), f2.toSimpleITK()),"op_BitwiseAnd", f1.index)
 
     // Bitwise XOR ( ^^^ )
     static member op_ExclusiveOr (f1: Image<'S>, f2: Image<'S>) =
         use filter = new itk.simple.XorImageFilter()
-        Image<'S>.ofSimpleITK(filter.Execute(f1.toSimpleITK(), f2.toSimpleITK()),"op_ExclusiveOr", f1.index)
+        Image<'S>.ofSimpleITKNDispose(filter.Execute(f1.toSimpleITK(), f2.toSimpleITK()),"op_ExclusiveOr", f1.index)
 
     // Bitwise OR ( ||| )
     static member op_BitwiseOr (f1: Image<'S>, f2: Image<'S>) =
         use filter = new itk.simple.OrImageFilter()
-        Image<'S>.ofSimpleITK(filter.Execute(f1.toSimpleITK(), f2.toSimpleITK()),"op_BitwiseOr", f1.index)
+        Image<'S>.ofSimpleITKNDispose(filter.Execute(f1.toSimpleITK(), f2.toSimpleITK()),"op_BitwiseOr", f1.index)
 
     // Unary bitwise NOT ( ~~~ )
     static member op_LogicalNot (f: Image<'S>) =
         use filter = new itk.simple.InvertIntensityImageFilter()
-        Image<'S>.ofSimpleITK(filter.Execute(f.toSimpleITK()),"op_LogicalNot", f.index)
+        Image<'S>.ofSimpleITKNDispose(filter.Execute(f.toSimpleITK()),"op_LogicalNot", f.index)
 
 let Re (img: Image<System.Numerics.Complex>) : Image<float> =
-    use realItk = extractComplexRealImage (img.toSimpleITK())
-    Image<float>.ofSimpleITK(realItk, "Re", img.index)
+    let realItk = extractComplexRealImage (img.toSimpleITK())
+    Image<float>.ofSimpleITKNDispose(realItk, "Re", img.index)
 
 let Im (img: Image<System.Numerics.Complex>) : Image<float> =
-    use imagItk = extractComplexImagImage (img.toSimpleITK())
-    Image<float>.ofSimpleITK(imagItk, "Im", img.index)
+    let imagItk = extractComplexImagImage (img.toSimpleITK())
+    Image<float>.ofSimpleITKNDispose(imagItk, "Im", img.index)
 
 let modulus (img: Image<System.Numerics.Complex>) : Image<float> =
     use filter = new itk.simple.ComplexToModulusImageFilter()
     let modulusItk = filter.Execute(img.toSimpleITK())
-    Image<float>.ofSimpleITK(modulusItk, "modulus", img.index)
+    Image<float>.ofSimpleITKNDispose(modulusItk, "modulus", img.index)
 
 let arg (img: Image<System.Numerics.Complex>) : Image<float> =
     use filter = new itk.simple.ComplexToPhaseImageFilter()
     let phaseItk = filter.Execute(img.toSimpleITK())
-    Image<float>.ofSimpleITK(phaseItk, "arg", img.index)
+    Image<float>.ofSimpleITKNDispose(phaseItk, "arg", img.index)
 
 let toComplex (realImg: Image<float>) (imagImg: Image<float>) : Image<System.Numerics.Complex> =
     Image<float>.ofImagePairToComplex realImg imagImg
@@ -1550,14 +1658,14 @@ let toComplex (realImg: Image<float>) (imagImg: Image<float>) : Image<System.Num
 let polarToComplex (modulusImg: Image<float>) (argImg: Image<float>) : Image<System.Numerics.Complex> =
     use filter = new itk.simple.MagnitudeAndPhaseToComplexImageFilter()
     let complexItk = filter.Execute(modulusImg.toSimpleITK(), argImg.toSimpleITK())
-    Image<System.Numerics.Complex>.ofSimpleITK(complexItk, "polarToComplex", modulusImg.index)
+    Image<System.Numerics.Complex>.ofSimpleITKNDispose(complexItk, "polarToComplex", modulusImg.index)
 
 let conjugate (img: Image<System.Numerics.Complex>) : Image<System.Numerics.Complex> =
     let realImg = Re img
     let imagImg = Im img
     use negate = new itk.simple.MultiplyImageFilter()
     let negImagItk = negate.Execute(imagImg.toSimpleITK(), -1.0)
-    let negImagImg = Image<float>.ofSimpleITK(negImagItk, "conjugate.Im", img.index)
+    let negImagImg = Image<float>.ofSimpleITKNDispose(negImagItk, "conjugate.Im", img.index)
     try
         toComplex realImg negImagImg
     finally
