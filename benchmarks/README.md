@@ -8,7 +8,7 @@ The benchmark contract is deliberately simple:
 read TIFF slice stack -> assemble/process as a 3D volume -> write TIFF slice stack
 ```
 
-Each backend should measure the same user-visible task, with the same input stack, and report wall-clock time plus peak resident memory through `tools/measure.py`. The raw results include both outer wall time, measured from launching `dotnet`, `python3`, `matlab`, or the C++ executable, and backend-reported internal time for the read-process-write work after process startup.
+Each backend should measure the same user-visible task, with the same input stack, and report wall-clock time plus peak resident memory through `tools/measure.py`. The raw results include both outer wall time, measured from launching `dotnet`, `python3`, `matlab`, or the C++ executable, and backend-reported internal time for the read-process-write work after backend setup.
 
 ## Backends
 
@@ -95,7 +95,7 @@ benchmarks/results/raw.csv
 benchmarks/results/summary.csv
 ```
 
-`raw.csv` contains `wallSeconds`, `internalSeconds`, and `peakRssKiB`. `summary.csv` reports median and mean wall time, internal time, startup overhead (`wallSeconds - internalSeconds`), and peak resident memory.
+`raw.csv` contains `wallSeconds`, `internalSeconds`, and `peakRssKiB`. `summary.csv` reports median and mean wall time, internal time, wrapper overhead (`wallSeconds - internalSeconds`), and peak resident memory.
 
 Generate paper-oriented PDF figures from the summary table:
 
@@ -277,7 +277,7 @@ cmake --build benchmarks/cpp-itk/build --config Release
 - All tools read the same TIFF stack and write a TIFF stack.
 - The default operation semantics are 3D volume operations. Non-StackProcessing TIFF baselines read the full stack, process a 3D volume, and write the result as slices; StackProcessing is allowed to stream internally as long as the user-visible operation is the same 3D operation.
 - Peak memory is measured at the process level by `tools/measure.py`.
-- Startup costs are included by default because they matter for user-facing command-line workflows. For long-running batch studies, add separate warm-process measurements.
+- Wrapper overhead is included by default because one-shot command-line launch, runtime setup, and runtime teardown matter for user-facing workflows. For long-running batch studies, add separate warm-process measurements.
 - MATLAB benchmarks assume Image Processing Toolbox.
 - Python/scikit-image benchmarks assume `scikit-image`, `scipy`, and `numpy`.
 - Python helper scripts use `tifffile` for TIFF stack generation and conversion.

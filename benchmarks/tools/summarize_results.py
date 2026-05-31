@@ -50,8 +50,8 @@ def main() -> int:
                 "meanWallSeconds",
                 "medianInternalSeconds",
                 "meanInternalSeconds",
-                "medianStartupOverheadSeconds",
-                "meanStartupOverheadSeconds",
+                "medianWrapperOverheadSeconds",
+                "meanWrapperOverheadSeconds",
                 "medianPeakRssMiB",
                 "meanPeakRssMiB",
             ]

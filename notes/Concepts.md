@@ -2,6 +2,43 @@
 
 This note summarizes the high-level concepts still in active use across StackProcessing. It is intentionally more conceptual than [SlimPipeline.md](SlimPipeline.md), [Image.md](Image.md), or [StackProcessing.md](StackProcessing.md).
 
+## Project Map
+
+The repository is organized around a small set of layers. `Image` owns SimpleITK-facing image representation and single-image algorithms. `SlimPipeline` owns generic deferred stream execution. `StackProcessing.Core` binds those two layers into image-stack stages, plans, IO, cost terms, and higher-level algorithms. The public `StackProcessing` project re-exports the user-facing DSL. Studio, Probe, samples, and benchmarks sit around that core rather than inside it.
+
+```mermaid
+flowchart TB
+    AsyncSeq["AsyncSeqExtensions\nasync stream helpers"]
+    Tiny["TinyLinAlg\nsmall numeric utilities"]
+    Image["Image\nImage<'T>, ImageIO, ImageFunctions\nSimpleITK/libtiff boundary"]
+    Slim["SlimPipeline\nPipe, Stage, Plan\nresource/cost/graph metadata"]
+    Core["StackProcessing.Core\nimage-stack IO, windows, slabs, chunks\nstreaming algorithms"]
+    Public["StackProcessing\npublic DSL re-exports"]
+    Cost["StackProcessing.Cost\ncost-model support"]
+    Probe["StackProcessing.Probe\ncollect, fit, inspect, climb"]
+    StudioGraph["Studio.Graph\nvisual graph model and catalog"]
+    StudioCompiler["Studio.Compiler\ngraph-to-F# compiler"]
+    Studio["Studio\nvisual editor"]
+    Samples["samples\nexample programs and Studio graphs"]
+    Bench["benchmarks\ncross-tool read-process-write runs"]
+
+    AsyncSeq --> Slim
+    Tiny --> Image
+    Image --> Core
+    Slim --> Core
+    Cost --> Core
+    Core --> Public
+    Public --> Samples
+    Public --> Bench
+    Public --> StudioCompiler
+    StudioGraph --> StudioCompiler
+    StudioCompiler --> Studio
+    Probe --> Cost
+    Probe --> Public
+```
+
+The important boundary is that only `Image` should talk directly to SimpleITK and low-level TIFF helpers where possible. `SlimPipeline` should remain image-agnostic. `StackProcessing.Core` is the binding layer where image values become resource-aware, memory-aware stream elements.
+
 ## Values, Effects, And Streams
 
 ### Plain Values
