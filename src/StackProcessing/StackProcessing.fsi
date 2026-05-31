@@ -1370,6 +1370,14 @@ val connectedComponents:
      SlimPipeline.Stage<StackCore.Image<uint8>,
                         (StackCore.Image<uint64> * uint64)>)
 
+val connectedComponentsLabels:
+  (uint32 option ->
+     SlimPipeline.Stage<StackCore.Image<uint8>,StackCore.Image<uint64>>)
+
+val connectedComponentsFullVolumeMemoryBytes: (uint -> uint -> uint -> uint64)
+
+val connectedComponentsFullVolumeFits: (uint64 -> uint -> uint -> uint -> bool)
+
 val relabelComponents:
   (uint ->
      uint32 option ->

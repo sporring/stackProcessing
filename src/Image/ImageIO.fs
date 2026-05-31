@@ -152,8 +152,8 @@ let readTiffPage<'T when 'T: equality> (tiff: Tiff) width height bitsPerSample s
     let handle = GCHandle.Alloc(pageBuffer, GCHandleType.Pinned)
     try
         setImportImageBufferFromTiffLayout importer bitsPerSample sampleFormat (handle.AddrOfPinnedObject())
-        let imported = importer.Execute()
-        Image<'T>.ofSimpleITKNDispose(imported, $"readVolume[{index}]", index)
+        use imported = importer.Execute()
+        Image<'T>.ofSimpleITK(imported, $"readVolume[{index}]", index)
     finally
         handle.Free()
 

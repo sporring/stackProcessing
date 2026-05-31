@@ -1925,16 +1925,26 @@ let write<'T when 'T: equality> (outputDir: string) (suffix: string) : Stage<Ima
 let writeSlabSlices<'T when 'T: equality> (outputDir: string) (suffix: string) (_winSz: uint) : Stage<Image<'T>, Image<'T>> =
     Directory.CreateDirectory(outputDir) |> ignore
 
-    let mapper (debug: bool) (_idx: int64) (labelChunk: Image<'T>) =
-        let slices = ImageFunctions.unstack 2u labelChunk
-        slices
-        |> List.iteri (fun localIndex slice ->
-            let globalIndex = labelChunk.index + localIndex
+    let mapper (debug: bool) (_idx: int64) (slab: Image<'T>) =
+        let depth =
+            if slab.GetDimensions() = 2u then 1
+            else slab.GetDepth() |> int
+
+        for localIndex in 0 .. depth - 1 do
+            let slice =
+                if slab.GetDimensions() = 2u then
+                    slab.incRefCount()
+                    slab
+                else
+                    ImageFunctions.extractSlice 2u localIndex slab
+
+            let globalIndex = slab.index + localIndex
             let fileName = Path.Combine(outputDir, sprintf "image_%03d%s" globalIndex suffix)
             if debug then printfn "[writeSlabSlices] Saved image %d to %s as %s" globalIndex fileName (typeof<'T>.Name)
             slice.toFile(fileName)
-            slice.decRefCount())
-        labelChunk
+            slice.decRefCount()
+
+        slab
 
     Stage.mapi $"writeSlabSlices \"{outputDir}/*{suffix}\"" mapper id id
 

@@ -191,31 +191,43 @@ let private runUniformConvolveTyped<'T when 'T: equality> input output kernelSiz
 
 let private runConnectedComponents input output windowSize availableMemory =
     ensureCleanDirectory output
-    let tmp = output + "-labels"
-    ensureCleanDirectory tmp
-    let tmpSuffix = ".mha"
     let window = max 1u windowSize
+    let width, height, depth = getStackSize input ".tiff"
     let src = benchmarkSource availableMemory
-    try
-        let table =
-            src
-            |> read<uint8> input ".tiff"
-            >=> threshold 128.0 infinity
-            >=> connectedComponents (Some window)
-            >=> teeFst (writeSlabSlices tmp tmpSuffix window)
-            >=> makeConnectedComponentTranslationTable (Some window)
-            |> drain
 
+    if connectedComponentsFullVolumeFits availableMemory width height depth then
         src
-        |> read<uint64> tmp tmpSuffix
-        >=> updateConnectedComponents (Some window) table
+        |> read<uint8> input ".tiff"
+        >=> threshold 128.0 infinity
+        >=> connectedComponentsLabels (Some depth)
         >=> cast<uint64, uint8>
-        >=> write output ".tiff"
+        >=> writeSlabSlices output ".tiff" depth
         |> sink
         0
-    finally
-        if Directory.Exists tmp then
-            Directory.Delete(tmp, true)
+    else
+        let tmp = output + "-labels"
+        ensureCleanDirectory tmp
+        let tmpSuffix = ".mha"
+        try
+            let table =
+                src
+                |> read<uint8> input ".tiff"
+                >=> threshold 128.0 infinity
+                >=> connectedComponents (Some window)
+                >=> teeFst (writeSlabSlices tmp tmpSuffix window)
+                >=> makeConnectedComponentTranslationTable (Some window)
+                |> drain
+
+            src
+            |> read<uint64> tmp tmpSuffix
+            >=> updateConnectedComponents (Some window) table
+            >=> cast<uint64, uint8>
+            >=> write output ".tiff"
+            |> sink
+            0
+        finally
+            if Directory.Exists tmp then
+                Directory.Delete(tmp, true)
 
 let private run opts =
     let operation = require "operation" opts

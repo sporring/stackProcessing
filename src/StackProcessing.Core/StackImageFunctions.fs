@@ -1575,6 +1575,21 @@ let connectedComponents winSz =
 
     (window winSz pad stride) --> windowToSlab<uint8> --> stg
 
+let connectedComponentsLabels winSz =
+    connectedComponents winSz
+    --> Stage.map "connectedComponentsLabels" (fun _ (labels, _objectCount) -> labels) id id
+
+let connectedComponentsFullVolumeMemoryBytes (width: uint) (height: uint) (depth: uint) =
+    let voxels = uint64 width * uint64 height * uint64 depth
+    let inputMask = voxels * getBytesPerComponent<uint8>
+    let thresholdMask = voxels * getBytesPerComponent<uint8>
+    let labels = voxels * getBytesPerComponent<uint64>
+    let outputMask = voxels * getBytesPerComponent<uint8>
+    inputMask + thresholdMask + (2UL * labels) + outputMask
+
+let connectedComponentsFullVolumeFits availableMemory (width: uint) (height: uint) (depth: uint) =
+    connectedComponentsFullVolumeMemoryBytes width height depth <= availableMemory
+
 let relabelComponents a winSz = 
     let winSz = effectiveWindowSize "relabelComponents" 1u winSz
     let pad, stride = 0u, winSz
@@ -1919,7 +1934,7 @@ module ComponentStatistics =
             let n = float stats.NumberOfPixels
             float stats.SumX / n, float stats.SumY / n, float stats.SumZ / n
 
-let private labelChunkStatistics chunk (labelChunk: Image<uint64>) =
+let private labelSlabStatistics slabIndex (labelSlab: Image<uint64>) =
     Image.foldi
         (fun index acc label ->
             if label = 0UL then
@@ -1928,41 +1943,41 @@ let private labelChunkStatistics chunk (labelChunk: Image<uint64>) =
                 let x = index |> List.tryItem 0 |> Option.defaultValue 0u
                 let y = index |> List.tryItem 1 |> Option.defaultValue 0u
                 let localZ = index |> List.tryItem 2 |> Option.defaultValue 0u
-                let z = uint (labelChunk.index + int localZ)
+                let z = uint (labelSlab.index + int localZ)
                 let stats = ComponentStatistics.create label x y z
-                acc |> ComponentStatistics.addToMap (chunk, label) stats)
+                acc |> ComponentStatistics.addToMap (slabIndex, label) stats)
         Map.empty
-        labelChunk
+        labelSlab
 
 let makeConnectedComponentTranslationTable winSz : Stage<Image<uint64> * uint64, ConnectedComponentTranslationTable> =
     let name = "makeConnectedComponentTranslationTable"
     let winSz = effectiveWindowSize name 1u winSz
 
-    let addBoundaryEdges graph previousChunk (previous: Image<uint64>) (current: Image<uint64>) =
+    let addBoundaryEdges graph previousSlab (previous: Image<uint64>) (current: Image<uint64>) =
         Image.fold2
             (fun g p1 p2 ->
                 if p1 <> 0UL && p2 <> 0UL then
-                    simpleGraph.addEdge (previousChunk,p1) (previousChunk+1u,p2) g
+                    simpleGraph.addEdge (previousSlab,p1) (previousSlab+1u,p2) g
                 else
                     g)
             graph
             previous
             current
 
-    let makeBaseMap chunkCounts =
-        chunkCounts
+    let makeBaseMap slabCounts =
+        slabCounts
         |> Map.toList
         |> List.sortBy fst
         |> List.scan
-            (fun (_, nextLabel, _) (chunk, objectCount) ->
+            (fun (_, nextLabel, _) (slabIndex, objectCount) ->
                 let labels =
                     if objectCount = 0UL then
-                        [ (chunk, 0UL), 0UL ]
+                        [ (slabIndex, 0UL), 0UL ]
                     else
-                        [ yield (chunk, 0UL), 0UL
+                        [ yield (slabIndex, 0UL), 0UL
                           for label in 1UL .. objectCount do
-                              yield (chunk, label), nextLabel + label - 1UL ]
-                chunk, nextLabel + objectCount, labels)
+                              yield (slabIndex, label), nextLabel + label - 1UL ]
+                slabIndex, nextLabel + objectCount, labels)
             (0u, 1UL, [])
         |> List.collect (fun (_, _, labels) -> labels)
         |> Map.ofList
@@ -1985,7 +2000,7 @@ let makeConnectedComponentTranslationTable winSz : Stage<Image<uint64> * uint64,
     let toTranslationList translation =
         translation
         |> Map.toList
-        |> List.map (fun ((chunk, oldLabel), newLabel) -> chunk, oldLabel, newLabel)
+        |> List.map (fun ((slabIndex, oldLabel), newLabel) -> slabIndex, oldLabel, newLabel)
         |> List.sort
 
     let mergeTranslatedStats translation localStatistics =
@@ -2007,25 +2022,25 @@ let makeConnectedComponentTranslationTable winSz : Stage<Image<uint64> * uint64,
         async {
             let mutable previousBoundary : (uint * Image<uint64>) option = None
             let mutable graph = simpleGraph.empty
-            let mutable chunkCounts = Map.empty<uint,uint64>
+            let mutable slabCounts = Map.empty<uint,uint64>
             let mutable localStatistics = Map.empty<uint * uint64, ComponentStatistics>
 
             do!
                 input
-                |> AsyncSeq.iterAsync (fun (labelChunk, objectCount) ->
+                |> AsyncSeq.iterAsync (fun (labelSlab, objectCount) ->
                     async {
-                        let chunk = uint (labelChunk.index / int winSz)
-                        chunkCounts <- chunkCounts |> Map.add chunk objectCount
+                        let slabIndex = uint (labelSlab.index / int winSz)
+                        slabCounts <- slabCounts |> Map.add slabIndex objectCount
                         localStatistics <-
-                            labelChunk
-                            |> labelChunkStatistics chunk
+                            labelSlab
+                            |> labelSlabStatistics slabIndex
                             |> Map.fold (fun acc key stats -> acc |> ComponentStatistics.addToMap key stats) localStatistics
 
-                        let firstSlice = ImageFunctions.extractSlice 2u 0 labelChunk
+                        let firstSlice = ImageFunctions.extractSlice 2u 0 labelSlab
 
                         match previousBoundary with
-                        | Some (previousChunk, previousSlice) when chunk = previousChunk + 1u ->
-                            graph <- addBoundaryEdges graph previousChunk previousSlice firstSlice
+                        | Some (previousSlab, previousSlice) when slabIndex = previousSlab + 1u ->
+                            graph <- addBoundaryEdges graph previousSlab previousSlice firstSlice
                             previousSlice.decRefCount()
                         | Some (_, previousSlice) ->
                             previousSlice.decRefCount()
@@ -2033,16 +2048,16 @@ let makeConnectedComponentTranslationTable winSz : Stage<Image<uint64> * uint64,
 
                         firstSlice.decRefCount()
 
-                        let depth = labelChunk.GetDepth() |> int
-                        let lastSlice = ImageFunctions.extractSlice 2u (depth - 1) labelChunk
-                        labelChunk.decRefCount()
-                        previousBoundary <- Some (chunk, lastSlice)
+                        let depth = labelSlab.GetDepth() |> int
+                        let lastSlice = ImageFunctions.extractSlice 2u (depth - 1) labelSlab
+                        labelSlab.decRefCount()
+                        previousBoundary <- Some (slabIndex, lastSlice)
                     })
 
             previousBoundary |> Option.iter (fun (_, image) -> image.decRefCount())
 
             let translation =
-                chunkCounts
+                slabCounts
                 |> makeBaseMap
                 |> collapseTouchingComponents graph
 
@@ -2058,22 +2073,21 @@ let makeConnectedComponentTranslationTable winSz : Stage<Image<uint64> * uint64,
 let updateConnectedComponents winSz (translationTable: ConnectedComponentTranslationTable) : Stage<Image<uint64>,Image<uint64>> =
     let name = "updateConnectedComponents"
     let winSz = effectiveWindowSize name 1u winSz
-    let translationTableChunked = List.groupBy (fun (c,_,_) -> c) translationTable.Labels
+    let translationTableSlabbed = List.groupBy (fun (slabIndex,_,_) -> slabIndex) translationTable.Labels
     let translationMap =
-        translationTableChunked
-        |> List.map (fun (chunk,lst) ->
-            let chunkTranslation =
+        translationTableSlabbed
+        |> List.map (fun (slabIndex,lst) ->
+            let slabTranslation =
                 (0u,0UL,0UL)::lst
                 |> List.map (fun (_,i,j)->(i,j))
                 |> Map.ofList
-            chunk, chunkTranslation)
+            slabIndex, slabTranslation)
         |> Map.ofList
 
     let mapper (debug: bool) (sliceIndex: int64) (image: Image<uint64>) : Image<uint64> = 
-        let chunk = int sliceIndex / int winSz
-        //let _,trans = translationTableChunked[chunk]
+        let slabIndex = int sliceIndex / int winSz
         //let res = Image.map (fun v -> if v=0UL then 0UL else trans |> List.find (fun (_,w,_) -> v = w) |> trd) image
-        let trans = translationMap |> Map.tryFind (uint chunk) |> Option.defaultValue (Map.ofList [(0UL,0UL)])
+        let trans = translationMap |> Map.tryFind (uint slabIndex) |> Option.defaultValue (Map.ofList [(0UL,0UL)])
         let res = Image.map (fun v -> Map.find v trans) image
         image.decRefCount()
         res
