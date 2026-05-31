@@ -192,16 +192,16 @@ let private runConvolveTyped<'T when 'T: equality> input output kernelSize avail
 let private runConnectedComponents input output windowSize availableMemory =
     ensureCleanDirectory output
     let window = max 1u windowSize
-    let width, height, depth = getStackSize input ".tiff"
+    let _, _, depth = getStackSize input ".tiff"
     let src = benchmarkSource availableMemory
 
-    if connectedComponentsFullVolumeFits availableMemory width height depth then
+    if depth <= window then
         src
         |> read<uint8> input ".tiff"
         >=> threshold 128.0 infinity
         >=> connectedComponentsLabels (Some depth)
         >=> cast<uint64, uint8>
-        >=> writeSlabSlices output ".tiff" depth
+        >=> writeSlabSlices output ".tiff" 1u
         |> sink
         0
     else
@@ -215,14 +215,14 @@ let private runConnectedComponents input output windowSize availableMemory =
                 >=> threshold 128.0 infinity
                 >=> connectedComponents (Some window)
                 >=> teeFst (writeSlabSlices tmp tmpSuffix window)
-                >=> makeConnectedComponentTranslationTable (Some window)
+                >=> makeConnectedComponentLabelTranslationTable (Some window)
                 |> drain
 
             src
-            |> read<uint64> tmp tmpSuffix
+            |> readRange<uint64> (depth - 1u) (-1) 0u tmp tmpSuffix
             >=> updateConnectedComponents (Some window) table
             >=> cast<uint64, uint8>
-            >=> write output ".tiff"
+            >=> writeSlabSlices output ".tiff" 1u
             |> sink
             0
         finally

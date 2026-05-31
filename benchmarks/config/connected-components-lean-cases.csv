@@ -1,0 +1,4 @@
+operation,pixelType,shape,parameterName,parameterValue,notes
+connectedComponentsLean,UInt8,256x256x256,window,256,Lean StackProcessing connected-component labelling with union-find equivalence collapse
+connectedComponentsLean,UInt8,512x512x512,window,256,Lean StackProcessing connected-component labelling with union-find equivalence collapse
+connectedComponentsLean,UInt8,1024x1024x1024,window,256,Lean StackProcessing connected-component labelling with union-find equivalence collapse

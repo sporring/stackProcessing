@@ -1569,6 +1569,11 @@ val makeConnectedComponentTranslationTable:
      StackCore.Stage<(StackCore.Image<uint64> * uint64),
                      StackImageFunctions.ConnectedComponentTranslationTable>)
 
+val makeConnectedComponentLabelTranslationTable:
+  (uint32 option ->
+     StackCore.Stage<(StackCore.Image<uint64> * uint64),
+                     StackImageFunctions.ConnectedComponentTranslationTable>)
+
 val updateConnectedComponents:
   (uint32 option ->
      StackImageFunctions.ConnectedComponentTranslationTable ->

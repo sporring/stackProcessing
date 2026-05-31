@@ -151,6 +151,20 @@ The benchmark comparison now records that the four tools use different, library-
 - MATLAB: `strel("sphere", r)` with MATLAB's structuring-element decomposition machinery.
 - C++/ITK: ITK's binary ball structuring element, currently kept as the exact-ball comparison point.
 
+## Connected Components
+
+`connectedComponents` is the main dependency-breaking streaming example. When the requested window covers the full depth, StackProcessing uses a single full-slab SimpleITK connected-component pass. Otherwise it labels each slab independently, writes the provisional labels to temporary slab storage, records only boundary collisions between adjacent slabs, and streams the temporary labels back in reverse for relabelling.
+
+The final larger-than-memory path is intentionally label-only. The first pass stores:
+
+- the object count for each slab,
+- slab-local boundary equivalences of the form `(previousSlab, previousLabel, currentLabel)`,
+- no dense translation table for labels that never cross a slab boundary.
+
+For a label that does not appear in a boundary equivalence, the final label is computed directly from the slab base offset plus the local label. For labels that do cross a boundary, the equivalence resolver chooses the latest/default-largest global label as the canonical representative. This choice matches the reverse relabel pass: relabel decisions flow from later slabs toward earlier slabs while the temporary label stack is read from the end.
+
+The resulting memory bound is slab shaped rather than volume shaped. With slice area `A`, slab depth `w`, input bytes per voxel `b`, and 64-bit provisional labels, resident image data is dominated by an input slab, a label slab, boundary label slices, and sparse boundary-equivalence state: roughly `O(A*w*b) + O(8*A*w) + O(A) + O(boundary labels + equivalences)`. The last term is topology dependent, but the full labelled volume and the former dense all-label translation table are not resident.
+
 ## IO As Plan Sources And Stage Sinks
 
 IO is handled mostly by [StackIO.fs](/Users/jrh630/repositories/stackProcessing/src/StackProcessing.Core/StackIO.fs:1).

@@ -95,6 +95,12 @@ def pixel_slug(pixel_type: str) -> str:
     return pixel_label(pixel_type).lower()
 
 
+def operation_label(operation: str) -> str:
+    return {
+        "connectedComponents": "connected components",
+    }.get(operation, operation)
+
+
 def load_rows(path: Path) -> list[dict[str, object]]:
     rows: list[dict[str, object]] = []
     with path.open(newline="") as handle:
@@ -214,26 +220,44 @@ def plot_by_size(rows: list[dict[str, object]], output_dir: Path, pixel_type: st
         ])
         representatives.append(("connectedComponents", "window=256"))
 
-    if len(representatives) == 9:
-        rows_count, cols_count = 3, 3
-    elif len(representatives) == 6:
+    if len(representatives) <= 6:
         rows_count, cols_count = 2, 3
     else:
-        rows_count, cols_count = 2, 4
+        cols_count = 3
+        rows_count = math.ceil(len(representatives) / cols_count)
 
-    figure_height = 7.0 if rows_count == 3 else 5.1
+    figure_height = 2.2 * rows_count + 0.5
     fig, axes = plt.subplots(rows_count, cols_count, figsize=(7.8, figure_height), sharex=True)
     backends = backend_sequence(rows)
     xticks, xticklabels = volume_ticks(rows)
 
     for ax, (operation, parameter) in zip(axes.flat, representatives):
-        subset = [
-            row
-            for row in rows
-            if row["operation"] == operation
-            and row["parameter"] == parameter
-            and row["pixelType"] == pixel_type
-        ]
+        if operation == "connectedComponents" and pixel_type == "UInt8" and metric == "peak":
+            lmip_windows = {
+                "256x256x256": "window=256",
+                "512x512x512": "window=64",
+                "1024x1024x1024": "window=16",
+            }
+            subset = [
+                row
+                for row in rows
+                if row["operation"] == operation
+                and row["pixelType"] == pixel_type
+                and (
+                    (row["backend"] == "stackprocessing" and row["parameter"] == lmip_windows.get(str(row["shape"])))
+                    or (row["backend"] != "stackprocessing" and row["parameter"] == parameter)
+                )
+            ]
+            title_parameter = "window 256/64/16"
+        else:
+            subset = [
+                row
+                for row in rows
+                if row["operation"] == operation
+                and row["parameter"] == parameter
+                and row["pixelType"] == pixel_type
+            ]
+            title_parameter = parameter_label(parameter)
         for backend in backends:
             points = sorted(
                 [row for row in subset if row["backend"] == backend],
@@ -250,7 +274,7 @@ def plot_by_size(rows: list[dict[str, object]], output_dir: Path, pixel_type: st
                 label=BACKEND_LABELS.get(backend, backend),
                 color=BACKEND_COLORS.get(backend),
             )
-        ax.set_title(f"{operation}\n{parameter_label(parameter)}", pad=8)
+        ax.set_title(f"{operation_label(operation)}\n{title_parameter}", pad=8)
         ax.set_xscale("log", base=2)
         ax.set_xticks(xticks, xticklabels)
         ax.set_yscale("log")
@@ -319,7 +343,7 @@ def plot_complexity_scaling(rows: list[dict[str, object]], output_dir: Path, pix
             if r == len(operations) - 1:
                 ax.set_xlabel("kernel size / radius")
             ax.grid(True, which="major", alpha=0.25)
-        axes[r, 0].set_ylabel(f"{operation}\n{metric_ylabel(metric)}")
+        axes[r, 0].set_ylabel(f"{operation_label(operation)}\n{metric_ylabel(metric)}")
 
     handles, labels = axes[0, 0].get_legend_handles_labels()
     fig.subplots_adjust(left=0.10, right=0.98, bottom=0.08, top=0.78, hspace=0.42, wspace=0.24)
@@ -431,6 +455,64 @@ def plot_wrapper_overhead(rows: list[dict[str, object]], output_dir: Path):
     plt.close(fig)
 
 
+def plot_connected_components_window_policy(rows: list[dict[str, object]], output_dir: Path):
+    plt = setup_matplotlib()
+    subset = [
+        row
+        for row in rows
+        if row["backend"] == "stackprocessing"
+        and row["operation"] == "connectedComponents"
+        and row["pixelType"] == "UInt8"
+        and str(row["parameter"]).startswith("window=")
+    ]
+    if not subset:
+        return
+
+    policies = [
+        ("window=256", "fixed window 256", {"256x256x256": "window=256", "512x512x512": "window=256", "1024x1024x1024": "window=256"}),
+        (
+            "constant",
+            "constant slab budget",
+            {"256x256x256": "window=256", "512x512x512": "window=64", "1024x1024x1024": "window=16"},
+        ),
+    ]
+    shapes = ["256x256x256", "512x512x512", "1024x1024x1024"]
+
+    fig, axes = plt.subplots(1, 2, figsize=(7.8, 3.2), sharex=True)
+    for ax, metric in zip(axes, ["internal", "peak"]):
+        for _, label, shape_parameters in policies:
+            points = []
+            for shape in shapes:
+                parameter = shape_parameters[shape]
+                matches = [row for row in subset if row["shape"] == shape and row["parameter"] == parameter]
+                if matches:
+                    points.append(matches[0])
+            if not points:
+                continue
+            ax.plot(
+                [int(row["voxels"]) for row in points],
+                [metric_value(row, metric) for row in points],
+                marker="o" if label.startswith("fixed") else "s",
+                linewidth=1.4,
+                markersize=3.5,
+                label=label,
+            )
+        ax.set_xscale("log", base=2)
+        ax.set_xticks([shape_voxels(shape) for shape in shapes], [shape_label(shape) for shape in shapes])
+        ax.set_yscale("log")
+        ax.set_xlabel("volume")
+        ax.set_ylabel(metric_ylabel(metric))
+        ax.set_title(metric_title(metric), pad=8)
+        ax.grid(True, which="major", alpha=0.25)
+
+    handles, labels = axes[0].get_legend_handles_labels()
+    fig.subplots_adjust(left=0.09, right=0.98, bottom=0.16, top=0.70, wspace=0.30)
+    fig.suptitle("Connected-components window policy, uint8", y=0.98)
+    top_legend(fig, handles, labels, y=0.88)
+    save(fig, output_dir / "connected-components-window-policy.pdf")
+    plt.close(fig)
+
+
 def main() -> int:
     args = parse_args()
     rows = load_rows(Path(args.input))
@@ -444,6 +526,7 @@ def main() -> int:
             plot_complexity_scaling(rows, output_dir, pixel_type, metric)
     plot_memory_time_scatter(rows, output_dir)
     plot_wrapper_overhead(rows, output_dir)
+    plot_connected_components_window_policy(rows, output_dir)
 
     print(f"wrote figures to {output_dir}")
     return 0

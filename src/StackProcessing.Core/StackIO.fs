@@ -509,14 +509,23 @@ let private readFilesWithShapeCore<'T when 'T: equality> suffix (debug: bool) (w
         suffix
         |> Option.exists (canReadDirectTiffStack<'T>)
 
+    let imageSeriesIndex fallbackIndex (fileName: string) =
+        let name = Path.GetFileNameWithoutExtension(fileName)
+        let m = Regex.Match(name, @"(\d+)$")
+        if m.Success then
+            int64 (Int32.Parse(m.Groups.[1].Value, System.Globalization.CultureInfo.InvariantCulture))
+        else
+            fallbackIndex
+
     let mapper (debug: bool) (sliceIndex: int64) (fileName: string) : Image<'T> =
         if debug then printfn "[%s] Reading image named %s as %s" name fileName (typeof<'T>.Name)
+        let imageIndex = imageSeriesIndex sliceIndex fileName
         let image =
             if useFastTiff then
-                ImageIO.readTiffSliceFile<'T> fileName sliceIndex
+                ImageIO.readTiffSliceFile<'T> fileName imageIndex
             else
                 let image = Image<'T>.ofFile fileName
-                image.index <- int sliceIndex
+                image.index <- int imageIndex
                 image
 
         if width = 0u then
@@ -1926,6 +1935,8 @@ let writeSlabSlices<'T when 'T: equality> (outputDir: string) (suffix: string) (
     Directory.CreateDirectory(outputDir) |> ignore
 
     let mapper (debug: bool) (_idx: int64) (slab: Image<'T>) =
+        Directory.CreateDirectory(outputDir) |> ignore
+
         let depth =
             if slab.GetDimensions() = 2u then 1
             else slab.GetDepth() |> int

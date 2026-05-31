@@ -395,5 +395,6 @@ let empty = StackImageFunctions.empty
 type ComponentStatistics = StackImageFunctions.ComponentStatistics
 type ConnectedComponentTranslationTable = StackImageFunctions.ConnectedComponentTranslationTable
 let makeConnectedComponentTranslationTable = StackImageFunctions.makeConnectedComponentTranslationTable
+let makeConnectedComponentLabelTranslationTable = StackImageFunctions.makeConnectedComponentLabelTranslationTable
 let updateConnectedComponents = StackImageFunctions.updateConnectedComponents
 let permuteAxes = StackImageFunctions.permuteAxes

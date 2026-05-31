@@ -3,6 +3,7 @@ module StackImageFunctions
 open FSharp.Control
 open SlimPipeline // Core processing model
 open System
+open System.Collections.Generic
 open System.Globalization
 open System.IO
 open StackCore
@@ -2063,7 +2064,124 @@ type ComponentStatistics =
 
 type ConnectedComponentTranslationTable =
     { Labels: (uint * uint64 * uint64) list
+      BoundaryEquivalences: (uint * uint64 * uint64) list
+      SlabCounts: Map<uint, uint64>
       Statistics: ComponentStatistics list }
+
+type private ComponentLabelKey = uint * uint64
+
+type private ComponentLabelUnionFind() =
+    let parent = Dictionary<ComponentLabelKey, ComponentLabelKey>()
+    let rank = Dictionary<ComponentLabelKey, byte>()
+
+    member _.Add(key: ComponentLabelKey) =
+        if not (parent.ContainsKey key) then
+            parent.[key] <- key
+            rank.[key] <- 0uy
+
+    member this.Find(key: ComponentLabelKey) =
+        let mutable p = Unchecked.defaultof<ComponentLabelKey>
+
+        if not (parent.TryGetValue(key, &p)) then
+            parent.[key] <- key
+            rank.[key] <- 0uy
+            key
+        elif p = key then
+            key
+        else
+            let root = this.Find p
+            parent.[key] <- root
+            root
+
+    member this.Union(left: ComponentLabelKey, right: ComponentLabelKey) =
+        let leftRoot = this.Find left
+        let rightRoot = this.Find right
+
+        if leftRoot <> rightRoot then
+            let leftRank = rank.[leftRoot]
+            let rightRank = rank.[rightRoot]
+
+            if leftRank < rightRank then
+                parent.[leftRoot] <- rightRoot
+            elif leftRank > rightRank then
+                parent.[rightRoot] <- leftRoot
+            elif leftRoot < rightRoot then
+                parent.[rightRoot] <- leftRoot
+                rank.[leftRoot] <- leftRank + 1uy
+            else
+                parent.[leftRoot] <- rightRoot
+                rank.[rightRoot] <- rightRank + 1uy
+
+    member _.Keys =
+        parent.Keys :> seq<ComponentLabelKey>
+
+let private slabBaseLabels slabCounts =
+    let _, _, bases =
+        slabCounts
+        |> Map.toList
+        |> List.sortBy fst
+        |> List.fold
+            (fun (_, nextLabel, acc) (slabIndex, objectCount) ->
+                slabIndex, nextLabel + objectCount, acc |> Map.add slabIndex nextLabel)
+            (0u, 1UL, Map.empty<uint, uint64>)
+    bases
+
+let private defaultComponentLabel bases slabIndex oldLabel =
+    if oldLabel = 0UL then
+        0UL
+    else
+        (bases |> Map.find slabIndex) + oldLabel - 1UL
+
+let private makeConnectedComponentLocalRelabels slabCounts boundaryEquivalences =
+    let bases = slabBaseLabels slabCounts
+    let unionFind = ComponentLabelUnionFind()
+    let touched = HashSet<ComponentLabelKey>()
+
+    boundaryEquivalences
+    |> List.iter (fun (previousSlab, previousLabel, currentLabel) ->
+        if previousLabel <> 0UL && currentLabel <> 0UL then
+            let previousKey = previousSlab, previousLabel
+            let currentKey = previousSlab + 1u, currentLabel
+            touched.Add(previousKey) |> ignore
+            touched.Add(currentKey) |> ignore
+            unionFind.Union(previousKey, currentKey))
+
+    let rootLabels = Dictionary<ComponentLabelKey, uint64>()
+
+    // Reverse relabelling reads labelled slabs from the end of the stack, so
+    // crossing components use the latest/default-largest label as canonical.
+    touched
+    |> Seq.iter (fun ((slabIndex, label) as key) ->
+        let root = unionFind.Find key
+        let candidate = defaultComponentLabel bases slabIndex label
+        let mutable existing = 0UL
+        if rootLabels.TryGetValue(root, &existing) then
+            if candidate > existing then
+                rootLabels.[root] <- candidate
+        else
+            rootLabels.[root] <- candidate)
+
+    let slabRelabels = Dictionary<uint, Dictionary<uint64, uint64>>()
+
+    touched
+    |> Seq.iter (fun ((slabIndex, label) as key) ->
+        let root = unionFind.Find key
+        let newLabel = rootLabels.[root]
+        let defaultNewLabel = defaultComponentLabel bases slabIndex label
+        if newLabel <> defaultNewLabel then
+            let mutable slabMap = Unchecked.defaultof<Dictionary<uint64, uint64>>
+            if not (slabRelabels.TryGetValue(slabIndex, &slabMap)) then
+                slabMap <- Dictionary<uint64, uint64>()
+                slabRelabels.[slabIndex] <- slabMap
+            slabMap.[label] <- newLabel)
+
+    slabRelabels
+
+let private flattenConnectedComponentLocalRelabels (slabRelabels: Dictionary<uint, Dictionary<uint64, uint64>>) =
+    [ for KeyValue(slabIndex, slabMap) in slabRelabels do
+          for KeyValue(oldLabel, newLabel) in slabMap do
+              yield slabIndex, oldLabel, newLabel ]
+    |> List.sortBy (fun (slabIndex, oldLabel, _) -> slabIndex, oldLabel)
 
 module ComponentStatistics =
     let create label x y z : ComponentStatistics =
@@ -2129,57 +2247,62 @@ let makeConnectedComponentTranslationTable winSz : Stage<Image<uint64> * uint64,
     let name = "makeConnectedComponentTranslationTable"
     let winSz = effectiveWindowSize name 1u winSz
 
-    let addBoundaryEdges graph previousSlab (previous: Image<uint64>) (current: Image<uint64>) =
+    let addBoundaryEquivalences (boundaryEquivalences: ResizeArray<uint * uint64 * uint64>) (unionFind: ComponentLabelUnionFind) previousSlab (previous: Image<uint64>) (current: Image<uint64>) =
         Image.fold2
-            (fun g p1 p2 ->
+            (fun () p1 p2 ->
                 if p1 <> 0UL && p2 <> 0UL then
-                    simpleGraph.addEdge (previousSlab,p1) (previousSlab+1u,p2) g
-                else
-                    g)
-            graph
+                    boundaryEquivalences.Add(previousSlab, p1, p2)
+                    unionFind.Union((previousSlab, p1), (previousSlab + 1u, p2)))
+            ()
             previous
             current
 
-    let makeBaseMap slabCounts =
+    let slabBaseLabels slabCounts =
+        let _, _, bases =
+            slabCounts
+            |> Map.toList
+            |> List.sortBy fst
+            |> List.fold
+                (fun (lastSlab, nextLabel, acc) (slabIndex, objectCount) ->
+                    slabIndex, nextLabel + objectCount, acc |> Map.add slabIndex nextLabel)
+                (0u, 1UL, Map.empty<uint, uint64>)
+        bases
+
+    let baseLabel bases slabIndex oldLabel =
+        if oldLabel = 0UL then
+            0UL
+        else
+            (bases |> Map.find slabIndex) + oldLabel - 1UL
+
+    let collapseEquivalences (unionFind: ComponentLabelUnionFind) slabCounts =
+        let bases = slabBaseLabels slabCounts
+        let rootLabels = Dictionary<ComponentLabelKey, uint64>()
+
         slabCounts
         |> Map.toList
-        |> List.sortBy fst
-        |> List.scan
-            (fun (_, nextLabel, _) (slabIndex, objectCount) ->
-                let labels =
-                    if objectCount = 0UL then
-                        [ (slabIndex, 0UL), 0UL ]
-                    else
-                        [ yield (slabIndex, 0UL), 0UL
-                          for label in 1UL .. objectCount do
-                              yield (slabIndex, label), nextLabel + label - 1UL ]
-                slabIndex, nextLabel + objectCount, labels)
-            (0u, 1UL, [])
-        |> List.collect (fun (_, _, labels) -> labels)
-        |> Map.ofList
+        |> List.iter (fun (slabIndex, objectCount) ->
+            for label in 1UL .. objectCount do
+                let key = slabIndex, label
+                let root = unionFind.Find key
+                let candidate = baseLabel bases slabIndex label
+                let mutable existing = 0UL
+                if rootLabels.TryGetValue(root, &existing) then
+                    if candidate < existing then
+                        rootLabels.[root] <- candidate
+                else
+                    rootLabels.[root] <- candidate)
 
-    let collapseTouchingComponents graph baseMap =
-        simpleGraph.connectedComponents graph
-        |> List.fold
-            (fun translation componentNodes ->
-                let target =
-                    componentNodes
-                    |> List.choose (fun key -> translation |> Map.tryFind key)
-                    |> function
-                        | [] -> 0UL
-                        | values -> List.min values
-
-                componentNodes
-                |> List.fold (fun acc key -> acc |> Map.add key target) translation)
-            baseMap
-
-    let toTranslationList translation =
-        translation
-        |> Map.toList
-        |> List.map (fun ((slabIndex, oldLabel), newLabel) -> slabIndex, oldLabel, newLabel)
-        |> List.sort
+        // Emit later slabs first. This gives the second pass a reverse-ordered
+        // translation table, matching the direction in which slab supersets are
+        // resolved when temporary label slices are read back from the end.
+        [ for slabIndex, objectCount in slabCounts |> Map.toList |> List.sortByDescending fst do
+              yield slabIndex, 0UL, 0UL
+              for label in 1UL .. objectCount do
+                  let root = unionFind.Find(slabIndex, label)
+                  yield slabIndex, label, rootLabels.[root] ]
 
     let mergeTranslatedStats translation localStatistics =
+        let translation = translation |> Map.ofList
         localStatistics
         |> Map.toSeq
         |> Seq.fold
@@ -2197,7 +2320,8 @@ let makeConnectedComponentTranslationTable winSz : Stage<Image<uint64> * uint64,
     let reducer (debug: bool) (input: AsyncSeq<Image<uint64> * uint64>) =
         async {
             let mutable previousBoundary : (uint * Image<uint64>) option = None
-            let mutable graph = simpleGraph.empty
+            let unionFind = ComponentLabelUnionFind()
+            let boundaryEquivalences = ResizeArray<uint * uint64 * uint64>()
             let mutable slabCounts = Map.empty<uint,uint64>
             let mutable localStatistics = Map.empty<uint * uint64, ComponentStatistics>
 
@@ -2216,7 +2340,7 @@ let makeConnectedComponentTranslationTable winSz : Stage<Image<uint64> * uint64,
 
                         match previousBoundary with
                         | Some (previousSlab, previousSlice) when slabIndex = previousSlab + 1u ->
-                            graph <- addBoundaryEdges graph previousSlab previousSlice firstSlice
+                            addBoundaryEquivalences boundaryEquivalences unionFind previousSlab previousSlice firstSlice
                             previousSlice.decRefCount()
                         | Some (_, previousSlice) ->
                             previousSlice.decRefCount()
@@ -2233,13 +2357,76 @@ let makeConnectedComponentTranslationTable winSz : Stage<Image<uint64> * uint64,
             previousBoundary |> Option.iter (fun (_, image) -> image.decRefCount())
 
             let translation =
-                slabCounts
-                |> makeBaseMap
-                |> collapseTouchingComponents graph
+                collapseEquivalences unionFind slabCounts
 
             return
-                { Labels = translation |> toTranslationList
-                  Statistics = localStatistics |> mergeTranslatedStats translation }
+                { Labels = translation
+                  BoundaryEquivalences = boundaryEquivalences |> Seq.toList
+                  SlabCounts = slabCounts
+                  Statistics =
+                      localStatistics
+                      |> mergeTranslatedStats (translation |> List.map (fun (slabIndex, oldLabel, newLabel) -> (slabIndex, oldLabel), newLabel)) }
+        }
+
+    let memoryNeed nPixels = 2UL * nPixels * uint64 sizeof<uint64>
+    let elementTransformation = fun _ -> 1UL
+    Stage.reduce name reducer Streaming memoryNeed elementTransformation
+
+let makeConnectedComponentLabelTranslationTable winSz : Stage<Image<uint64> * uint64, ConnectedComponentTranslationTable> =
+    let name = "makeConnectedComponentLabelTranslationTable"
+    let winSz = effectiveWindowSize name 1u winSz
+
+    let addBoundaryEquivalences (boundaryEquivalences: ResizeArray<uint * uint64 * uint64>) previousSlab (previous: Image<uint64>) (current: Image<uint64>) =
+        Image.fold2
+            (fun () p1 p2 ->
+                if p1 <> 0UL && p2 <> 0UL then
+                    boundaryEquivalences.Add(previousSlab, p1, p2))
+            ()
+            previous
+            current
+
+    let reducer (_debug: bool) (input: AsyncSeq<Image<uint64> * uint64>) =
+        async {
+            let mutable previousBoundary : (uint * Image<uint64>) option = None
+            let boundaryEquivalences = ResizeArray<uint * uint64 * uint64>()
+            let mutable slabCounts = Map.empty<uint,uint64>
+
+            do!
+                input
+                |> AsyncSeq.iterAsync (fun (labelSlab, objectCount) ->
+                    async {
+                        let slabIndex = uint (labelSlab.index / int winSz)
+                        slabCounts <- slabCounts |> Map.add slabIndex objectCount
+
+                        let firstSlice = ImageFunctions.extractSlice 2u 0 labelSlab
+
+                        match previousBoundary with
+                        | Some (previousSlab, previousSlice) when slabIndex = previousSlab + 1u ->
+                            addBoundaryEquivalences boundaryEquivalences previousSlab previousSlice firstSlice
+                            previousSlice.decRefCount()
+                        | Some (_, previousSlice) ->
+                            previousSlice.decRefCount()
+                        | None -> ()
+
+                        firstSlice.decRefCount()
+
+                        let depth = labelSlab.GetDepth() |> int
+                        let lastSlice = ImageFunctions.extractSlice 2u (depth - 1) labelSlab
+                        labelSlab.decRefCount()
+                        previousBoundary <- Some (slabIndex, lastSlice)
+                    })
+
+            previousBoundary |> Option.iter (fun (_, image) -> image.decRefCount())
+            let boundaryEquivalences = boundaryEquivalences |> Seq.toList
+            let localRelabels =
+                makeConnectedComponentLocalRelabels slabCounts boundaryEquivalences
+                |> flattenConnectedComponentLocalRelabels
+
+            return
+                { Labels = localRelabels
+                  BoundaryEquivalences = boundaryEquivalences
+                  SlabCounts = slabCounts
+                  Statistics = [] }
         }
 
     let memoryNeed nPixels = 2UL * nPixels * uint64 sizeof<uint64>
@@ -2249,22 +2436,46 @@ let makeConnectedComponentTranslationTable winSz : Stage<Image<uint64> * uint64,
 let updateConnectedComponents winSz (translationTable: ConnectedComponentTranslationTable) : Stage<Image<uint64>,Image<uint64>> =
     let name = "updateConnectedComponents"
     let winSz = effectiveWindowSize name 1u winSz
-    let translationTableSlabbed = List.groupBy (fun (slabIndex,_,_) -> slabIndex) translationTable.Labels
+
+    let slabBases = slabBaseLabels translationTable.SlabCounts
+    let localRelabels =
+        if translationTable.BoundaryEquivalences.IsEmpty then
+            translationTable.Labels
+        else
+            makeConnectedComponentLocalRelabels translationTable.SlabCounts translationTable.BoundaryEquivalences
+            |> flattenConnectedComponentLocalRelabels
+
+    let translationTableSlabbed = List.groupBy (fun (slabIndex,_,_) -> slabIndex) localRelabels
     let translationMap =
         translationTableSlabbed
         |> List.map (fun (slabIndex,lst) ->
-            let slabTranslation =
-                (0u,0UL,0UL)::lst
-                |> List.map (fun (_,i,j)->(i,j))
-                |> Map.ofList
+            let slabTranslation = Dictionary<uint64, uint64>()
+            lst
+            |> List.iter (fun (_, oldLabel, newLabel) ->
+                slabTranslation.[oldLabel] <- newLabel)
             slabIndex, slabTranslation)
         |> Map.ofList
 
-    let mapper (debug: bool) (sliceIndex: int64) (image: Image<uint64>) : Image<uint64> = 
-        let slabIndex = int sliceIndex / int winSz
-        //let res = Image.map (fun v -> if v=0UL then 0UL else trans |> List.find (fun (_,w,_) -> v = w) |> trd) image
-        let trans = translationMap |> Map.tryFind (uint slabIndex) |> Option.defaultValue (Map.ofList [(0UL,0UL)])
-        let res = Image.map (fun v -> Map.find v trans) image
+    let mapper (debug: bool) (_sliceIndex: int64) (image: Image<uint64>) : Image<uint64> =
+        let slabIndex = uint (image.index / int winSz)
+        let baseLabel = slabBases |> Map.tryFind slabIndex |> Option.defaultValue 1UL
+        let trans = translationMap |> Map.tryFind slabIndex
+        let res =
+            Image.map
+                (fun oldLabel ->
+                    if oldLabel = 0UL then
+                        0UL
+                    else
+                        match trans with
+                        | Some slabTranslation ->
+                            let mutable newLabel = 0UL
+                            if slabTranslation.TryGetValue(oldLabel, &newLabel) then
+                                newLabel
+                            else
+                                baseLabel + oldLabel - 1UL
+                        | None ->
+                            baseLabel + oldLabel - 1UL)
+                image
         image.decRefCount()
         res
 

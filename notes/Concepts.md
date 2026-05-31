@@ -243,6 +243,8 @@ Windows are central to StackProcessing's 1D streaming model for 3D image process
 
 This is the key representation behind the streaming zonohedral binary morphology stages. Instead of converting each window into a full slab and applying a dense spherical operation, the zonohedral dilation and erosion stages compose short one-dimensional line operations. Each line stage uses the window halo it needs, emits only the valid center slices, and lets the resource rules release consumed images. The result is an approximation to a spherical structuring element that fits the streaming model more naturally than exact whole-slab morphology.
 
+Connected components uses windows/slabs differently. Each slab is labelled independently, while only the first and last label slices are needed to discover which provisional labels touch across slab boundaries. The relabelling table is therefore local to slab boundaries rather than dense over all labels. In the reverse pass, unchanged labels are converted by slab base offset and only crossing labels consult the sparse equivalence-derived map.
+
 ## Slab
 
 `Slab<'T>` is a StackProcessing.Core concept:

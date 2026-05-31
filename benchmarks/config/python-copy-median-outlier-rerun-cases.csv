@@ -1,0 +1,9 @@
+operation,pixelType,shape,parameterName,parameterValue,notes
+copy,UInt8,256x256x256,,,Rerun Python/scikit-image copy group with wrapper-overhead outlier
+copy,UInt8,1024x1024x1024,,,Rerun Python/scikit-image copy group with wrapper-overhead outlier
+copy,UInt16,1024x1024x1024,,,Rerun Python/scikit-image copy group with wrapper-overhead outlier
+median,Float32,256x256x256,radius,3,Rerun Python/scikit-image median group with wrapper-overhead outlier
+median,Float32,512x512x512,radius,3,Rerun Python/scikit-image median group with wrapper-overhead outlier
+median,Float32,1024x1024x1024,radius,1,Rerun Python/scikit-image median group with wrapper-overhead outlier
+median,Float32,1024x1024x1024,radius,3,Rerun Python/scikit-image median group with wrapper-overhead outlier
+median,UInt16,1024x1024x1024,radius,3,Rerun Python/scikit-image median group with wrapper-overhead outlier

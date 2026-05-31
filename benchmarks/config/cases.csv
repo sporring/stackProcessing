@@ -81,5 +81,5 @@ dilate,UInt8,1024x1024x1024,radius,1,binary dilation of input >= 128 with ball r
 dilate,UInt8,1024x1024x1024,radius,2,binary dilation of input >= 128 with ball radius 2; UInt8 output mask (0/1)
 dilate,UInt8,1024x1024x1024,radius,3,binary dilation of input >= 128 with ball radius 3; UInt8 output mask (0/1)
 connectedComponents,UInt8,256x256x256,window,256,Connected-component labelling of input >= 128
-connectedComponents,UInt8,512x512x512,window,256,Connected-component labelling of input >= 128
-connectedComponents,UInt8,1024x1024x1024,window,256,Connected-component labelling of input >= 128
+connectedComponents,UInt8,512x512x512,window,64,Connected-component labelling of input >= 128 with reduced slab depth
+connectedComponents,UInt8,1024x1024x1024,window,16,Connected-component labelling of input >= 128 with reduced slab depth
