@@ -135,6 +135,22 @@ Examples include:
 
 The raw image algorithms generally live in `ImageFunctions`, while the lifted streaming stages live in `StackImageFunctions`.
 
+## Streaming Binary Morphology
+
+Binary dilation has two implementations with deliberately different roles:
+
+- `dilate` is the older SimpleITK-backed spherical dilation path. It builds local slabs from z-windows, applies the image-level morphology operation, and emits the valid central slices.
+- `dilateZonohedral` is the streaming benchmark path for binary `UInt8` masks. It approximates a spherical structuring element by composing one-dimensional line dilations using the Jensen/Gorpho zonohedral coefficients and a van Herk/Gil-Werman style line pass.
+
+The zonohedral path is closer to StackProcessing's preferred streaming shape. It keeps only the slices required by the current line halo, copies each input slice into a flat buffer once, emits only valid output slices, and releases consumed images through the usual window resource rules. This avoids materializing a whole 3D slab for each local neighbourhood. `erodeZonohedral` mirrors the same structure with an all-foreground line predicate, while `openingZonohedral` and `closingZonohedral` are stage compositions of erosion/dilation and dilation/erosion.
+
+The benchmark comparison now records that the four tools use different, library-native choices for binary dilation:
+
+- StackProcessing: streaming zonohedral/VHGW line approximation.
+- Python/scikit-image/SciPy: scikit-image's 3D `ball(..., decomposition="sequence")` footprint.
+- MATLAB: `strel("sphere", r)` with MATLAB's structuring-element decomposition machinery.
+- C++/ITK: ITK's binary ball structuring element, currently kept as the exact-ball comparison point.
+
 ## IO As Plan Sources And Stage Sinks
 
 IO is handled mostly by [StackIO.fs](/Users/jrh630/repositories/stackProcessing/src/StackProcessing.Core/StackIO.fs:1).

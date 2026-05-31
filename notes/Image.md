@@ -163,6 +163,8 @@ Main groups:
 
 StackProcessing.Core lifts many of these functions into streaming `Stage`s, adding reference-count handling, memory models, and cost terms.
 
+Binary morphology now also contains native experimental paths for spherical approximations. `binaryDilateZonohedralNative`, `binaryErodeZonohedralNative`, and the valid-slice helpers use a composition of one-dimensional line operations rather than a dense ball footprint. These functions are still Image-level operations over materialized images or explicit slice windows; StackProcessing.Core is responsible for turning the same idea into streaming stages with release-aware window handling.
+
 ## Complex And Vector Images
 
 Complex images are supported with:

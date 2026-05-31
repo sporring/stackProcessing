@@ -1690,12 +1690,24 @@ module PipelineCodeGenerator =
             let radius = parameterValue "radius"
             let windowSize = parameterValue "windowSize" |> optionUInt
             $">=> dilateZonohedral {radius} {windowSize}"
+        | "ErodeZonohedral" ->
+            let radius = parameterValue "radius"
+            let windowSize = parameterValue "windowSize" |> optionUInt
+            $">=> erodeZonohedral {radius} {windowSize}"
         | "Opening" ->
             let radius = parameterValue "radius"
             $">=> opening {radius}"
+        | "OpeningZonohedral" ->
+            let radius = parameterValue "radius"
+            let windowSize = parameterValue "windowSize" |> optionUInt
+            $">=> openingZonohedral {radius} {windowSize}"
         | "Closing" ->
             let radius = parameterValue "radius"
             $">=> closing {radius}"
+        | "ClosingZonohedral" ->
+            let radius = parameterValue "radius"
+            let windowSize = parameterValue "windowSize" |> optionUInt
+            $">=> closingZonohedral {radius} {windowSize}"
         | "ConnectedComponents" ->
             let windowSize = parameterValue "windowSize" |> optionUInt
             $">=> connectedComponents {windowSize}"

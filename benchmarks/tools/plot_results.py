@@ -202,18 +202,27 @@ def plot_by_size(rows: list[dict[str, object]], output_dir: Path, pixel_type: st
     representatives = [
         ("copy", "none"),
         ("threshold", "threshold=128"),
-        ("uniformConvolve", "kernelSize=3"),
-        ("uniformConvolve", "kernelSize=7"),
+        ("convolve", "kernelSize=3"),
+        ("convolve", "kernelSize=7"),
         ("median", "radius=1"),
         ("median", "radius=3"),
-        ("dilate", "radius=1"),
-        ("dilate", "radius=3"),
     ]
     if pixel_type == "UInt8":
+        representatives.extend([
+            ("dilate", "radius=1"),
+            ("dilate", "radius=3"),
+        ])
         representatives.append(("connectedComponents", "window=256"))
 
-    rows_count, cols_count = (3, 3) if len(representatives) == 9 else (2, 4)
-    fig, axes = plt.subplots(rows_count, cols_count, figsize=(7.8, 7.0 if rows_count == 3 else 5.1), sharex=True)
+    if len(representatives) == 9:
+        rows_count, cols_count = 3, 3
+    elif len(representatives) == 6:
+        rows_count, cols_count = 2, 3
+    else:
+        rows_count, cols_count = 2, 4
+
+    figure_height = 7.0 if rows_count == 3 else 5.1
+    fig, axes = plt.subplots(rows_count, cols_count, figsize=(7.8, figure_height), sharex=True)
     backends = backend_sequence(rows)
     xticks, xticklabels = volume_ticks(rows)
 
@@ -267,14 +276,16 @@ def plot_by_size(rows: list[dict[str, object]], output_dir: Path, pixel_type: st
 def plot_complexity_scaling(rows: list[dict[str, object]], output_dir: Path, pixel_type: str, metric: str):
     plt = setup_matplotlib()
     operations = [
-        ("uniformConvolve", "kernelSize", "kernel size"),
+        ("convolve", "kernelSize", "kernel size"),
         ("median", "radius", "radius"),
-        ("dilate", "radius", "radius"),
     ]
+    if pixel_type == "UInt8":
+        operations.append(("dilate", "radius", "radius"))
     shapes = ["256x256x256", "512x512x512", "1024x1024x1024"]
     backends = backend_sequence(rows)
 
-    fig, axes = plt.subplots(len(operations), len(shapes), figsize=(7.8, 6.7), sharey="row")
+    figure_height = 6.7 if len(operations) == 3 else 4.9
+    fig, axes = plt.subplots(len(operations), len(shapes), figsize=(7.8, figure_height), sharey="row")
     for r, (operation, key, xlabel) in enumerate(operations):
         for c, shape in enumerate(shapes):
             ax = axes[r, c]

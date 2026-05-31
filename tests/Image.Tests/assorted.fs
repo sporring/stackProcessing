@@ -1,5 +1,7 @@
 module Tests.assorted
 
+open System
+open System.Diagnostics
 open Expecto
 open Image 
 open Image.InternalHelpers
@@ -1077,6 +1079,67 @@ let UnaryFunctionTests =
 let ImageProcessingTests =
   //testList "ImageFunctions advanced image operations" [
   testSequenced <| testList "ImageFunctions advanced image operations" [
+
+    let measureImage label (run: unit -> Image<float>) =
+      GC.Collect()
+      GC.WaitForPendingFinalizers()
+      GC.Collect()
+      let stopwatch = Stopwatch.StartNew()
+      let result = run()
+      stopwatch.Stop()
+      printfn "%s elapsed %.3f ms" label stopwatch.Elapsed.TotalMilliseconds
+      result
+
+    let nativeConvolveSame3D (img: Image<float>) (ker: Image<float>) =
+      let input3 = img.toArray3D()
+      let kernel3 = ker.toArray3D()
+      let width = Array3D.length1 input3
+      let height = Array3D.length2 input3
+      let depth = Array3D.length3 input3
+      let kernelWidth = Array3D.length1 kernel3
+      let kernelHeight = Array3D.length2 kernel3
+      let kernelDepth = Array3D.length3 kernel3
+      let kernelCenterX = kernelWidth / 2
+      let kernelCenterY = kernelHeight / 2
+      let kernelCenterZ = kernelDepth / 2
+      let plane = width * height
+      let input = Array.zeroCreate<float> (width * height * depth)
+      let kernel = Array.zeroCreate<float> (kernelWidth * kernelHeight * kernelDepth)
+      let output = Array.zeroCreate<float> input.Length
+
+      for z in 0 .. depth - 1 do
+        for y in 0 .. height - 1 do
+          for x in 0 .. width - 1 do
+            input[z * plane + y * width + x] <- input3[x, y, z]
+
+      for kz in 0 .. kernelDepth - 1 do
+        for ky in 0 .. kernelHeight - 1 do
+          for kx in 0 .. kernelWidth - 1 do
+            kernel[(kz * kernelHeight + ky) * kernelWidth + kx] <- kernel3[kx, ky, kz]
+
+      for z in 0 .. depth - 1 do
+        for y in 0 .. height - 1 do
+          for x in 0 .. width - 1 do
+            let mutable value = 0.0
+            for kz in 0 .. kernelDepth - 1 do
+              let zz = z + kz - kernelCenterZ
+              if zz >= 0 && zz < depth then
+                for ky in 0 .. kernelHeight - 1 do
+                  let yy = y + ky - kernelCenterY
+                  if yy >= 0 && yy < height then
+                    for kx in 0 .. kernelWidth - 1 do
+                      let xx = x + kx - kernelCenterX
+                      if xx >= 0 && xx < width then
+                        value <- value + input[zz * plane + yy * width + xx] * kernel[(kz * kernelHeight + ky) * kernelWidth + kx]
+            output[z * plane + y * width + x] <- value
+
+      let output3 = Array3D.zeroCreate<float> width height depth
+      for z in 0 .. depth - 1 do
+        for y in 0 .. height - 1 do
+          for x in 0 .. width - 1 do
+            output3[x, y, z] <- output[z * plane + y * width + x]
+      Image<float>.ofArray3D(output3, name = "nativeConvolveSame3D")
+
     // squeeze
     testCase "squeeze lowers dimensions" <| fun _ ->
         let img = Image<int>([10u;1u;12u])
@@ -1181,6 +1244,30 @@ let ImageProcessingTests =
         let img = Image<float>.ofArray3D (Array3D.create 3 3 3 1.0)
         let ker = Image<float>.ofArray3D (Array3D.create 1 2 2 2.0)
         Expect.throws (fun _ -> ImageFunctions.convolve (Some ImageFunctions.Valid) None ker img |> ignore) $"Expected an exception for images ({ker.GetSize()}) smaller than the kernel ({img.GetSize()})\n"
+
+    testCase "Image-level convolution timing compares SimpleITK wrapping and native flat-array path" <| fun _ ->
+        let img =
+          Image<float>.ofArray3D (
+            Array3D.init 24 24 24 (fun x y z ->
+              sin (float (x + 3 * y + 7 * z)) + 0.01 * float ((x * y + z) % 11)))
+
+        let ker =
+          Image<float>.ofArray3D (
+            Array3D.init 3 3 3 (fun x y z ->
+              let dx = abs (x - 1)
+              let dy = abs (y - 1)
+              let dz = abs (z - 1)
+              1.0 / float (1 + dx + 2 * dy + 3 * dz)))
+
+        let simpleItk =
+          measureImage "SimpleITK convolve same 3D 24^3 k=3" (fun () ->
+            ImageFunctions.convolve (Some ImageFunctions.Same) None img ker)
+
+        let native =
+          measureImage "F# flat-array convolve same 3D 24^3 k=3" (fun () ->
+            nativeConvolveSame3D img ker)
+
+        floatArray3DFloatClose (native.toArray3D()) (simpleItk.toArray3D()) 1e-8 "Native flat-array convolution should match SimpleITK for a symmetric arbitrary kernel."
 
     // conv
     testCase "conv 2D with identity kernel" <| fun _ ->
@@ -1340,6 +1427,14 @@ let MorphologyTests =
       let smallCount = small.toArray3D() |> Seq.cast<uint8> |> Seq.sumBy int
       let largeCount = large.toArray3D() |> Seq.cast<uint8> |> Seq.sumBy int
       Expect.notEqual largeCount smallCount "Different zonohedral radii should produce different approximation footprints for an isolated voxel."
+
+    testCase "zonohedral binary erosion removes boundary foreground" <| fun _ ->
+      let values = Array3D.create 9 9 9 1uy
+      let img = Image<uint8>.ofArray3D values
+      let eroded = ImageFunctions.binaryErodeZonohedralNative 2u img
+      let arr = eroded.toArray3D()
+      Expect.equal arr[4, 4, 4] 1uy "Interior foreground should survive zonohedral erosion."
+      Expect.equal arr[0, 4, 4] 0uy "Boundary foreground should be eroded because outside-image pixels are background."
 
     testCase "binaryOpening removes small regions" <| fun _ ->
       let img = Image<uint8>.ofArray2D (array2D [[0uy;1uy;0uy;1uy;0uy]])

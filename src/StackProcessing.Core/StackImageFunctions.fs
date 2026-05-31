@@ -1574,7 +1574,30 @@ let private dilateLineSlice width height (window: FlatSlice[]) center dx dy dz l
 
     output
 
-let private streamingZonohedralLineStage (radius: uint) (lineIndex: int) (dx: int, dy: int, dz: int, length: int) =
+let private erodeLineSlice width height (window: FlatSlice[]) center dx dy dz length =
+    let output = Array.zeroCreate<uint8> (width * height)
+    let centerIndex = center
+    let left = length - length / 2 - 1
+    let right = length / 2
+
+    for y in 0 .. height - 1 do
+        let row = y * width
+        for x in 0 .. width - 1 do
+            let mutable inside = true
+            let mutable t = -left
+            while inside && t <= right do
+                let xx = x + t * dx
+                let yy = y + t * dy
+                let zz = centerIndex + t * dz
+                if xx < 0 || xx >= width || yy < 0 || yy >= height || zz < 0 || zz >= window.Length || window[zz].Pixels[yy * width + xx] <> 1uy then
+                    inside <- false
+                t <- t + 1
+            if inside then
+                output[row + x] <- 1uy
+
+    output
+
+let private streamingZonohedralLineStage operationName operatorName lineOperator radius (lineIndex: int) (dx: int, dy: int, dz: int, length: int) =
     let prePad, postPad = lineHalo dz length
     let windowLength = prePad + 1 + postPad
     let memoryNeed nPixels =
@@ -1605,16 +1628,16 @@ let private streamingZonohedralLineStage (radius: uint) (lineIndex: int) (dx: in
                         queue.Add({ Index = -i; Pixels = Array.zeroCreate<uint8> plane })
                     initialized <- true
                 elif int (image.GetWidth()) <> width || int (image.GetHeight()) <> height then
-                    invalidArg "input" "All slices in streaming zonohedral dilation must have the same width and height."
+                    invalidArg "input" $"All slices in streaming zonohedral {operationName} must have the same width and height."
 
             let tryEmit () =
                 if initialized && queue.Count >= windowLength && emittedCount < realCount then
                     let centerSlice = queue[prePad]
                     let window = queue |> Seq.truncate windowLength |> Seq.toArray
-                    let pixels = dilateLineSlice width height window prePad dx dy dz length
+                    let pixels = lineOperator width height window prePad dx dy dz length
                     queue.RemoveAt(0)
                     emittedCount <- emittedCount + 1
-                    Some(Image<uint8>.ofSimpleITKNDispose(importScalarImage [ uint width; uint height ] pixels, $"binaryDilateZonohedral.line{lineIndex}", centerSlice.Index))
+                    Some(Image<uint8>.ofSimpleITKNDispose(importScalarImage [ uint width; uint height ] pixels, $"binary{operatorName}Zonohedral.line{lineIndex}", centerSlice.Index))
                 else
                     None
 
@@ -1642,14 +1665,14 @@ let private streamingZonohedralLineStage (radius: uint) (lineIndex: int) (dx: in
         }
 
     Stage.fromAsyncSeq
-        $"binaryDilateZonohedral.line{lineIndex}"
+        $"binary{operatorName}Zonohedral.line{lineIndex}"
         apply
         transition
         memoryModel
         id
     |> withCostModel
         (imageOperatorCost<uint8>
-            "DilateZonohedralLine"
+            $"{operatorName}ZonohedralLine"
             Map
             memoryModel
             (Some(float windowLength))
@@ -1667,8 +1690,27 @@ let dilateZonohedral radius (_winSz: uint option) =
     let lines = ImageFunctions.zonohedralBestLines radius
     let stage =
         lines
-        |> Array.mapi (streamingZonohedralLineStage radius)
+        |> Array.mapi (streamingZonohedralLineStage "dilation" "Dilate" dilateLineSlice radius)
         |> Array.fold (fun acc lineStage -> acc --> lineStage) (identityStage "binaryDilateZonohedral.start")
+    stage
+    |> Stage.withSliceCardinality (SlimPipeline.Domain SlimPipeline.SliceDomain.preserve)
+
+let erodeZonohedral radius (_winSz: uint option) =
+    let lines = ImageFunctions.zonohedralBestLines radius
+    let stage =
+        lines
+        |> Array.mapi (streamingZonohedralLineStage "erosion" "Erode" erodeLineSlice radius)
+        |> Array.fold (fun acc lineStage -> acc --> lineStage) (identityStage "binaryErodeZonohedral.start")
+    stage
+    |> Stage.withSliceCardinality (SlimPipeline.Domain SlimPipeline.SliceDomain.preserve)
+
+let openingZonohedral radius winSz =
+    let stage = erodeZonohedral radius winSz --> dilateZonohedral radius winSz
+    stage
+    |> Stage.withSliceCardinality (SlimPipeline.Domain SlimPipeline.SliceDomain.preserve)
+
+let closingZonohedral radius winSz =
+    let stage = dilateZonohedral radius winSz --> erodeZonohedral radius winSz
     stage
     |> Stage.withSliceCardinality (SlimPipeline.Domain SlimPipeline.SliceDomain.preserve)
 

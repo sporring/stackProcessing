@@ -272,7 +272,7 @@ static void runTyped(const Options& options) {
   typename Image::Pointer output;
   if (options.operation == "copy") {
     output = input;
-  } else if (options.operation == "uniformConvolve") {
+  } else if (options.operation == "convolve") {
     using Kernel = itk::Image<double, 3>;
     using Filter = itk::ConvolutionImageFilter<Image, Kernel, Image>;
     itk::ConstantBoundaryCondition<Image> boundary;

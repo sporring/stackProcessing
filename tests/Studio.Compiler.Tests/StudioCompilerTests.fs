@@ -2080,6 +2080,37 @@ let generatorSuite =
 
             Expect.stringContains code ">=> dilateZonohedral 3u None" "Zonohedral binary dilation should lower with radius and optional window size."
 
+        testCase "zonohedral erosion opening and closing lower to StackProcessing stages" <| fun _ ->
+            let read =
+                node "read" "Read"
+                    [ p "availableMemory" "1024" false
+                      p "type" "UInt8" false
+                      p "input" "input" false
+                      p "suffix" ".tiff" false ]
+            let erode =
+                node "erode" "ErodeZonohedral"
+                    [ p "radius" "2" false
+                      p "windowSize" "None" false ]
+            let opening =
+                node "opening" "OpeningZonohedral"
+                    [ p "radius" "2" false
+                      p "windowSize" "None" false ]
+            let closing =
+                node "closing" "ClosingZonohedral"
+                    [ p "radius" "2" false
+                      p "windowSize" "None" false ]
+            let code =
+                graph
+                    [ read; erode; opening; closing ]
+                    [ edge "read" "output" 0 "erode" "input" 0
+                      edge "erode" "output" 0 "opening" "input" 0
+                      edge "opening" "output" 0 "closing" "input" 0 ]
+                |> PipelineCodeGenerator.generateSavedGraph
+
+            Expect.stringContains code ">=> erodeZonohedral 2u None" "Zonohedral binary erosion should lower with radius and optional window size."
+            Expect.stringContains code ">=> openingZonohedral 2u None" "Zonohedral binary opening should lower with radius and optional window size."
+            Expect.stringContains code ">=> closingZonohedral 2u None" "Zonohedral binary closing should lower with radius and optional window size."
+
         testCase "connected component pair stream writes chunk labels through teeFst before reducing" <| fun _ ->
             let read =
                 node "read" "Read"

@@ -14,37 +14,4 @@ How to distribute the system to a wide range of platforms taking simpleITK dynam
 \
 \pard\tx560\tx1120\tx1680\tx2240\tx2800\tx3360\tx3920\tx4480\tx5040\tx5600\tx6160\tx6720\pardeftab720\pardirnatural\partightenfactor0
 
-\f1 \cf3 \kerning1\expnd0\expndtw0 \CocoaLigature0 caffeinate -dimsu bash benchmarks/run_all.sh \\\
-  --repeat 3 --shapes 1024x1024x1024 --backends matlab --pixel-types uint16,float32\
-\
-\
-caffeinate -dimsu bash benchmarks/run_all.sh \\\
-  --repeat 3 \\\
-  --backends python-skimage-scipy \\\
-  --pixel-types UInt8 \\\
-  --shapes 1024x1024x1024 \\\
-  --operations copy,threshold,uniformConvolve,median,dilate\
-\
-caffeinate -dimsu bash benchmarks/run_all.sh \\\
-  --repeat 3 \\\
-  --backends python-skimage-scipy \\\
-  --pixel-types UInt8 \\\
-  --shapes 1024x1024x1024 \\\
-  --operations connectedComponents \\\
-  --parameters window=256\
-\
-caffeinate -dimsu bash benchmarks/run_all.sh \\\
-  --repeat 3 \\\
-  --repeat-start 2 \\\
-  --repeat-end 3 \\\
-  --backends stackprocessing\
-\
-caffeinate -dimsu bash benchmarks/run_all.sh \\\
-  --repeat 3 \\\
-  --repeat-start 1 \\\
-  --repeat-end 1 \\\
-  --backends stackprocessing \\\
-  --pixel-types UInt8 \\\
-  --shapes 1024x1024x1024 \\\
-  --operations connectedComponents \\\
-  --parameters window=256}
+\f1 \cf3 \kerning1\expnd0\expndtw0 \CocoaLigature0 I'm thinking about a memory efficient connected component algorithm. It's still a 2 pass, where the first gives a superset of components with a confusion map, and the second pass can apply the confusion map to collapse the superset of components. The idea of a first pass of a fold type loop, where the 2d connected component of the first slice and an empty confusion map is the accumulator, and when the next slice is presented, it's 2d connected component is compared with the accumulator, the labels are transported from the accumulator to the next slice, collisions are noted in the confusion map, and the relabelled connected component is the new accumulator and the previous is streamed. This would mean we only need 2 slices in memory plus the confusion map. How does this sound?}

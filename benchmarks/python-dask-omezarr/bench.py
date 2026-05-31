@@ -11,7 +11,7 @@ import numpy as np
 
 def parse_args():
     parser = argparse.ArgumentParser(description="Dask/OME-Zarr chunk-native benchmark backend.")
-    parser.add_argument("--operation", required=True, choices=["copy", "threshold", "uniformConvolve", "median", "dilate"])
+    parser.add_argument("--operation", required=True, choices=["copy", "threshold", "convolve", "median", "dilate"])
     parser.add_argument("--pixel-type", required=True, choices=["UInt8", "UInt16", "Float32"])
     parser.add_argument("--input", required=True)
     parser.add_argument("--output", required=True)
@@ -34,10 +34,10 @@ def process(arr, args):
     try:
         import scipy.ndimage as ndi
     except ImportError as exc:
-        raise RuntimeError("uniformConvolve/median/dilate require scipy for this Dask backend") from exc
+        raise RuntimeError("convolve/median/dilate require scipy for this Dask backend") from exc
 
     radius = max(1, args.radius)
-    if args.operation == "uniformConvolve":
+    if args.operation == "convolve":
         kernel_size = max(1, args.kernel_size)
         halo = kernel_size // 2
         kernel = np.full((kernel_size, kernel_size, kernel_size), 1.0 / float(kernel_size ** 3), dtype=np.float32)

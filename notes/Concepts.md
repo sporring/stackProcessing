@@ -241,6 +241,8 @@ Important fields:
 
 Windows are central to StackProcessing's 1D streaming model for 3D image processing. A 3D operation can be expressed as a z-window over streamed 2D slices, which makes halo management local and memory bounded.
 
+This is the key representation behind the streaming zonohedral binary morphology stages. Instead of converting each window into a full slab and applying a dense spherical operation, the zonohedral dilation and erosion stages compose short one-dimensional line operations. Each line stage uses the window halo it needs, emits only the valid center slices, and lets the resource rules release consumed images. The result is an approximation to a spherical structuring element that fits the streaming model more naturally than exact whole-slab morphology.
+
 ## Slab
 
 `Slab<'T>` is a StackProcessing.Core concept:

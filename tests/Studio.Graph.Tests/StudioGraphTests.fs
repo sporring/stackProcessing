@@ -120,7 +120,7 @@ let catalogSuite =
             Expect.isFalse (ids |> List.contains "IntensityWindow") "intensityWindow overlaps with intensityStretch and should not be exposed as a separate Studio box."
             Expect.isFalse (ids |> List.contains "InvertIntensity") "invertIntensity requires a known maximum; use estimated statistics plus shiftScale."
             Expect.containsAll ids ["GrayscaleErode"; "GrayscaleDilate"; "GrayscaleOpening"; "GrayscaleClosing"; "WhiteTopHat"; "BlackTopHat"; "MorphologicalGradient"] "Grayscale morphology filters should be available in Studio."
-            Expect.containsAll ids ["DilateZonohedral"; "BinaryContour"; "BinaryMedian"; "RemoveSmallObjects"; "FillSmallHoles"; "LabelContour"; "ChangeLabel"] "Extra binary morphology and label analysis filters should be available in Studio."
+            Expect.containsAll ids ["DilateZonohedral"; "ErodeZonohedral"; "OpeningZonohedral"; "ClosingZonohedral"; "BinaryContour"; "BinaryMedian"; "RemoveSmallObjects"; "FillSmallHoles"; "LabelContour"; "ChangeLabel"] "Extra binary morphology and label analysis filters should be available in Studio."
             Expect.isFalse (ids |> List.contains "BinaryOpeningByReconstruction") "reconstruction filters are not exposed as LMIP Studio boxes because geodesic propagation is not bounded by a local z-window."
             Expect.isFalse (ids |> List.contains "BinaryClosingByReconstruction") "reconstruction filters are not exposed as LMIP Studio boxes because geodesic propagation is not bounded by a local z-window."
             Expect.isFalse (ids |> List.contains "BinaryReconstructionByDilation") "binary reconstruction by dilation is intentionally kept out of Studio's LMIP layer."

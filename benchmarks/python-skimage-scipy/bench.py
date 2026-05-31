@@ -11,7 +11,7 @@ from skimage import io, measure, morphology
 
 def parse_args():
     parser = argparse.ArgumentParser(description="scikit-image/SciPy TIFF-stack benchmark backend.")
-    parser.add_argument("--operation", required=True, choices=["copy", "threshold", "uniformConvolve", "median", "dilate", "connectedComponents"])
+    parser.add_argument("--operation", required=True, choices=["copy", "threshold", "convolve", "median", "dilate", "connectedComponents"])
     parser.add_argument("--pixel-type", required=True, choices=["UInt8", "UInt16", "Float32"])
     parser.add_argument("--input", required=True)
     parser.add_argument("--output", required=True)
@@ -44,12 +44,19 @@ def per_slice(stack, func):
     return np.stack([func(stack[z]) for z in range(stack.shape[0])], axis=0)
 
 
+def decomposed_ball(radius):
+    try:
+        return morphology.ball(radius, decomposition="sequence")
+    except TypeError:
+        return morphology.ball(radius)
+
+
 def process(stack, args):
     if args.operation == "copy":
         return stack.copy()
     if args.operation == "threshold":
         return (stack >= args.threshold).astype(np.uint8)
-    if args.operation == "uniformConvolve":
+    if args.operation == "convolve":
         kernel_size = max(1, args.kernel_size)
         kernel_shape = (1, kernel_size, kernel_size) if args.mode == "slice" else (kernel_size,) * 3
         kernel = np.full(kernel_shape, 1.0 / np.prod(kernel_shape), dtype=np.float32)
@@ -65,8 +72,8 @@ def process(stack, args):
         if args.mode == "slice":
             footprint = morphology.square(2 * radius + 1)
             return per_slice(mask, lambda image: morphology.binary_dilation(image, footprint=footprint)).astype(np.uint8)
-        footprint = morphology.ball(radius)
-        return ndi.binary_dilation(mask, structure=footprint).astype(np.uint8)
+        footprint = decomposed_ball(radius)
+        return morphology.dilation(mask, footprint=footprint).astype(np.uint8)
     if args.operation == "connectedComponents":
         if args.mode == "slice":
             labels = per_slice(stack, lambda image: measure.label(image >= 128, connectivity=1))

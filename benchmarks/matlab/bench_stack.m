@@ -43,7 +43,7 @@ switch char(args.operation)
         out = volume;
     case "threshold"
         out = uint8(volume >= numericArg(args.threshold));
-    case "uniformConvolve"
+    case "convolve"
         kernelSize = max(1, numericArg(args.kernelSize));
         kernel = ones(kernelSize, kernelSize, kernelSize, "double") ./ (kernelSize ^ 3);
         out = cast(convn(double(volume), kernel, "same"), class(volume));

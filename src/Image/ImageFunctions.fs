@@ -820,6 +820,30 @@ let private lineDilate3D (width: int) (height: int) (depth: int) (input: uint8[]
 
     output
 
+let private lineErode3D (width: int) (height: int) (depth: int) (input: uint8[]) (dx: int, dy: int, dz: int, length: int) =
+    let output = Array.zeroCreate<uint8> input.Length
+    let plane = width * height
+    let left = length - length / 2 - 1
+    let right = length / 2
+
+    for z in 0 .. depth - 1 do
+        for y in 0 .. height - 1 do
+            let row = z * plane + y * width
+            for x in 0 .. width - 1 do
+                let mutable inside = true
+                let mutable t = -left
+                while inside && t <= right do
+                    let xx = x + t * dx
+                    let yy = y + t * dy
+                    let zz = z + t * dz
+                    if xx < 0 || xx >= width || yy < 0 || yy >= height || zz < 0 || zz >= depth || input[zz * plane + yy * width + xx] <> 1uy then
+                        inside <- false
+                    t <- t + 1
+                if inside then
+                    output[row + x] <- 1uy
+
+    output
+
 let private lineDilate3DRange
     (width: int)
     (height: int)
@@ -948,6 +972,23 @@ let binaryDilateZonohedralNative (radius: uint) (img: Image<uint8>) : Image<uint
         current <- lineDilate3D width height depth current line
 
     Image<uint8>.ofSimpleITKNDispose(importScalarImage (img.GetSize()) current, "binaryDilateZonohedralNative", img.index)
+
+/// Experimental binary erosion using the same zonohedral approximation as
+/// <c>binaryDilateZonohedralNative</c>.
+let binaryErodeZonohedralNative (radius: uint) (img: Image<uint8>) : Image<uint8> =
+    if img.GetDimensions() <> 3u then
+        invalidArg "img" $"binaryErodeZonohedralNative supports 3D images, got {img.GetDimensions()}D."
+
+    let width = int (img.GetWidth())
+    let height = int (img.GetHeight())
+    let depth = int (img.GetDepth())
+    let lines = zonohedralBestLines radius
+
+    let mutable current = copyScalarPixels<uint8> img.Image (width * height * depth)
+    for line in lines do
+        current <- lineErode3D width height depth current line
+
+    Image<uint8>.ofSimpleITKNDispose(importScalarImage (img.GetSize()) current, "binaryErodeZonohedralNative", img.index)
 
 /// Binary opening (erode then dilate)
 let binaryOpening (radius: uint) : Image<uint8> -> Image<uint8> =

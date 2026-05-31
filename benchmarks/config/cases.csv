@@ -17,33 +17,33 @@ threshold,Float32,512x512x512,threshold,128,"Binary UInt8 output mask (0/1), inp
 threshold,UInt8,1024x1024x1024,threshold,128,"Binary UInt8 output mask (0/1), input >= 128"
 threshold,UInt16,1024x1024x1024,threshold,128,"Binary UInt8 output mask (0/1), input >= 128"
 threshold,Float32,1024x1024x1024,threshold,128,"Binary UInt8 output mask (0/1), input >= 128"
-uniformConvolve,UInt8,256x256x256,kernelSize,3,3x3x3 uniform convolution
-uniformConvolve,UInt8,256x256x256,kernelSize,5,5x5x5 uniform convolution
-uniformConvolve,UInt8,256x256x256,kernelSize,7,7x7x7 uniform convolution
-uniformConvolve,UInt16,256x256x256,kernelSize,3,3x3x3 uniform convolution
-uniformConvolve,UInt16,256x256x256,kernelSize,5,5x5x5 uniform convolution
-uniformConvolve,UInt16,256x256x256,kernelSize,7,7x7x7 uniform convolution
-uniformConvolve,Float32,256x256x256,kernelSize,3,3x3x3 uniform convolution
-uniformConvolve,Float32,256x256x256,kernelSize,5,5x5x5 uniform convolution
-uniformConvolve,Float32,256x256x256,kernelSize,7,7x7x7 uniform convolution
-uniformConvolve,UInt8,512x512x512,kernelSize,3,3x3x3 uniform convolution
-uniformConvolve,UInt8,512x512x512,kernelSize,5,5x5x5 uniform convolution
-uniformConvolve,UInt8,512x512x512,kernelSize,7,7x7x7 uniform convolution
-uniformConvolve,UInt16,512x512x512,kernelSize,3,3x3x3 uniform convolution
-uniformConvolve,UInt16,512x512x512,kernelSize,5,5x5x5 uniform convolution
-uniformConvolve,UInt16,512x512x512,kernelSize,7,7x7x7 uniform convolution
-uniformConvolve,Float32,512x512x512,kernelSize,3,3x3x3 uniform convolution
-uniformConvolve,Float32,512x512x512,kernelSize,5,5x5x5 uniform convolution
-uniformConvolve,Float32,512x512x512,kernelSize,7,7x7x7 uniform convolution
-uniformConvolve,UInt8,1024x1024x1024,kernelSize,3,3x3x3 uniform convolution
-uniformConvolve,UInt8,1024x1024x1024,kernelSize,5,5x5x5 uniform convolution
-uniformConvolve,UInt8,1024x1024x1024,kernelSize,7,7x7x7 uniform convolution
-uniformConvolve,UInt16,1024x1024x1024,kernelSize,3,3x3x3 uniform convolution
-uniformConvolve,UInt16,1024x1024x1024,kernelSize,5,5x5x5 uniform convolution
-uniformConvolve,UInt16,1024x1024x1024,kernelSize,7,7x7x7 uniform convolution
-uniformConvolve,Float32,1024x1024x1024,kernelSize,3,3x3x3 uniform convolution
-uniformConvolve,Float32,1024x1024x1024,kernelSize,5,5x5x5 uniform convolution
-uniformConvolve,Float32,1024x1024x1024,kernelSize,7,7x7x7 uniform convolution
+convolve,UInt8,256x256x256,kernelSize,3,3x3x3 convolution
+convolve,UInt8,256x256x256,kernelSize,5,5x5x5 convolution
+convolve,UInt8,256x256x256,kernelSize,7,7x7x7 convolution
+convolve,UInt16,256x256x256,kernelSize,3,3x3x3 convolution
+convolve,UInt16,256x256x256,kernelSize,5,5x5x5 convolution
+convolve,UInt16,256x256x256,kernelSize,7,7x7x7 convolution
+convolve,Float32,256x256x256,kernelSize,3,3x3x3 convolution
+convolve,Float32,256x256x256,kernelSize,5,5x5x5 convolution
+convolve,Float32,256x256x256,kernelSize,7,7x7x7 convolution
+convolve,UInt8,512x512x512,kernelSize,3,3x3x3 convolution
+convolve,UInt8,512x512x512,kernelSize,5,5x5x5 convolution
+convolve,UInt8,512x512x512,kernelSize,7,7x7x7 convolution
+convolve,UInt16,512x512x512,kernelSize,3,3x3x3 convolution
+convolve,UInt16,512x512x512,kernelSize,5,5x5x5 convolution
+convolve,UInt16,512x512x512,kernelSize,7,7x7x7 convolution
+convolve,Float32,512x512x512,kernelSize,3,3x3x3 convolution
+convolve,Float32,512x512x512,kernelSize,5,5x5x5 convolution
+convolve,Float32,512x512x512,kernelSize,7,7x7x7 convolution
+convolve,UInt8,1024x1024x1024,kernelSize,3,3x3x3 convolution
+convolve,UInt8,1024x1024x1024,kernelSize,5,5x5x5 convolution
+convolve,UInt8,1024x1024x1024,kernelSize,7,7x7x7 convolution
+convolve,UInt16,1024x1024x1024,kernelSize,3,3x3x3 convolution
+convolve,UInt16,1024x1024x1024,kernelSize,5,5x5x5 convolution
+convolve,UInt16,1024x1024x1024,kernelSize,7,7x7x7 convolution
+convolve,Float32,1024x1024x1024,kernelSize,3,3x3x3 convolution
+convolve,Float32,1024x1024x1024,kernelSize,5,5x5x5 convolution
+convolve,Float32,1024x1024x1024,kernelSize,7,7x7x7 convolution
 median,UInt8,256x256x256,radius,1,3x3x3 volume median
 median,UInt8,256x256x256,radius,2,5x5x5 volume median
 median,UInt8,256x256x256,radius,3,7x7x7 volume median
@@ -74,30 +74,12 @@ median,Float32,1024x1024x1024,radius,3,7x7x7 volume median
 dilate,UInt8,256x256x256,radius,1,binary dilation of input >= 128 with ball radius 1; UInt8 output mask (0/1)
 dilate,UInt8,256x256x256,radius,2,binary dilation of input >= 128 with ball radius 2; UInt8 output mask (0/1)
 dilate,UInt8,256x256x256,radius,3,binary dilation of input >= 128 with ball radius 3; UInt8 output mask (0/1)
-dilate,UInt16,256x256x256,radius,1,binary dilation of input >= 128 with ball radius 1; UInt8 output mask (0/1)
-dilate,UInt16,256x256x256,radius,2,binary dilation of input >= 128 with ball radius 2; UInt8 output mask (0/1)
-dilate,UInt16,256x256x256,radius,3,binary dilation of input >= 128 with ball radius 3; UInt8 output mask (0/1)
-dilate,Float32,256x256x256,radius,1,binary dilation of input >= 128 with ball radius 1; UInt8 output mask (0/1)
-dilate,Float32,256x256x256,radius,2,binary dilation of input >= 128 with ball radius 2; UInt8 output mask (0/1)
-dilate,Float32,256x256x256,radius,3,binary dilation of input >= 128 with ball radius 3; UInt8 output mask (0/1)
 dilate,UInt8,512x512x512,radius,1,binary dilation of input >= 128 with ball radius 1; UInt8 output mask (0/1)
 dilate,UInt8,512x512x512,radius,2,binary dilation of input >= 128 with ball radius 2; UInt8 output mask (0/1)
 dilate,UInt8,512x512x512,radius,3,binary dilation of input >= 128 with ball radius 3; UInt8 output mask (0/1)
-dilate,UInt16,512x512x512,radius,1,binary dilation of input >= 128 with ball radius 1; UInt8 output mask (0/1)
-dilate,UInt16,512x512x512,radius,2,binary dilation of input >= 128 with ball radius 2; UInt8 output mask (0/1)
-dilate,UInt16,512x512x512,radius,3,binary dilation of input >= 128 with ball radius 3; UInt8 output mask (0/1)
-dilate,Float32,512x512x512,radius,1,binary dilation of input >= 128 with ball radius 1; UInt8 output mask (0/1)
-dilate,Float32,512x512x512,radius,2,binary dilation of input >= 128 with ball radius 2; UInt8 output mask (0/1)
-dilate,Float32,512x512x512,radius,3,binary dilation of input >= 128 with ball radius 3; UInt8 output mask (0/1)
 dilate,UInt8,1024x1024x1024,radius,1,binary dilation of input >= 128 with ball radius 1; UInt8 output mask (0/1)
 dilate,UInt8,1024x1024x1024,radius,2,binary dilation of input >= 128 with ball radius 2; UInt8 output mask (0/1)
 dilate,UInt8,1024x1024x1024,radius,3,binary dilation of input >= 128 with ball radius 3; UInt8 output mask (0/1)
-dilate,UInt16,1024x1024x1024,radius,1,binary dilation of input >= 128 with ball radius 1; UInt8 output mask (0/1)
-dilate,UInt16,1024x1024x1024,radius,2,binary dilation of input >= 128 with ball radius 2; UInt8 output mask (0/1)
-dilate,UInt16,1024x1024x1024,radius,3,binary dilation of input >= 128 with ball radius 3; UInt8 output mask (0/1)
-dilate,Float32,1024x1024x1024,radius,1,binary dilation of input >= 128 with ball radius 1; UInt8 output mask (0/1)
-dilate,Float32,1024x1024x1024,radius,2,binary dilation of input >= 128 with ball radius 2; UInt8 output mask (0/1)
-dilate,Float32,1024x1024x1024,radius,3,binary dilation of input >= 128 with ball radius 3; UInt8 output mask (0/1)
 connectedComponents,UInt8,256x256x256,window,256,Connected-component labelling of input >= 128
 connectedComponents,UInt8,512x512x512,window,256,Connected-component labelling of input >= 128
 connectedComponents,UInt8,1024x1024x1024,window,256,Connected-component labelling of input >= 128

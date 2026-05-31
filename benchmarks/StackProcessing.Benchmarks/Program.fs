@@ -28,7 +28,7 @@ Generate:
   dotnet run --project benchmarks/StackProcessing.Benchmarks -- generate --output DIR --shape 512x512x64 --pixel-type UInt8 [--pattern ramp|binary]
 
 Run:
-  dotnet run --project benchmarks/StackProcessing.Benchmarks -- run --operation copy|threshold|uniformConvolve|median|dilate|connectedComponents --pixel-type UInt8|UInt16|Float32 --input DIR --output DIR [--radius N] [--kernel-size N] [--threshold X] [--window N] [--available-memory BYTES]
+  dotnet run --project benchmarks/StackProcessing.Benchmarks -- run --operation copy|threshold|convolve|median|dilate|connectedComponents --pixel-type UInt8|UInt16|Float32 --input DIR --output DIR [--radius N] [--kernel-size N] [--threshold X] [--window N] [--available-memory BYTES]
 """
     |> printfn "%s"
     0
@@ -162,7 +162,7 @@ let private runBinaryDilateTyped<'T when 'T: equality> input output radius avail
     src
     |> read<'T> input ".tiff"
     >=> threshold 128.0 infinity
-    >=> dilateZonohedral radius (Some 64u)
+    >=> dilateZonohedral radius None
     >=> write output ".tiff"
     |> sink
     0
@@ -173,7 +173,7 @@ let private uniformKernel3D (kernelSize: uint) =
     Array3D.create (int size) (int size) (int size) value
     |> fun values -> Image<float>.ofArray3D(values, name = $"uniformKernel{size}")
 
-let private runUniformConvolveTyped<'T when 'T: equality> input output kernelSize availableMemory =
+let private runConvolveTyped<'T when 'T: equality> input output kernelSize availableMemory =
     ensureCleanDirectory output
     let kernel = uniformKernel3D kernelSize
     let src = benchmarkSource availableMemory
@@ -242,9 +242,9 @@ let private run opts =
     let stopwatch = Stopwatch.StartNew()
     let exitCode =
         match operation, pixelType with
-        | "uniformConvolve", UInt8 -> runUniformConvolveTyped<uint8> input output kernelSize availableMemory
-        | "uniformConvolve", UInt16 -> runUniformConvolveTyped<uint16> input output kernelSize availableMemory
-        | "uniformConvolve", Float32 -> runUniformConvolveTyped<float32> input output kernelSize availableMemory
+        | "convolve", UInt8 -> runConvolveTyped<uint8> input output kernelSize availableMemory
+        | "convolve", UInt16 -> runConvolveTyped<uint16> input output kernelSize availableMemory
+        | "convolve", Float32 -> runConvolveTyped<float32> input output kernelSize availableMemory
         | "dilate", UInt8 -> runBinaryDilateTyped<uint8> input output radius availableMemory
         | "dilate", UInt16 -> runBinaryDilateTyped<uint16> input output radius availableMemory
         | "dilate", Float32 -> runBinaryDilateTyped<float32> input output radius availableMemory

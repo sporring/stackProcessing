@@ -679,6 +679,12 @@ val private lineDilate3D:
     depth: int ->
     input: uint8 array ->
     dx: int * dy: int * dz: int * length: int -> uint8 array
+val private lineErode3D:
+  width: int ->
+    height: int ->
+    depth: int ->
+    input: uint8 array ->
+    dx: int * dy: int * dz: int * length: int -> uint8 array
 val private lineDilate3DRange:
   width: int ->
     height: int ->
@@ -704,6 +710,10 @@ val binaryDilateZonohedralValidSlicesNative:
 /// The approximation is represented as a composition of line dilations in the 13 directions used by
 /// Gorpho/pygorpho. It is only a 3D experimental baseline for now.
 val binaryDilateZonohedralNative:
+  radius: uint -> img: Image.Image<uint8> -> Image.Image<uint8>
+/// Experimental binary erosion using the same zonohedral approximation as
+/// <c>binaryDilateZonohedralNative</c>.
+val binaryErodeZonohedralNative:
   radius: uint -> img: Image.Image<uint8> -> Image.Image<uint8>
 /// Binary opening (erode then dilate)
 val binaryOpening: radius: uint -> (Image.Image<uint8> -> Image.Image<uint8>)

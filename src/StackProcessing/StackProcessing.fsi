@@ -1364,11 +1364,26 @@ val dilateZonohedral:
      uint option ->
      SlimPipeline.Stage<StackCore.Image<uint8>,StackCore.Image<uint8>>)
 
+val erodeZonohedral:
+  (uint32 ->
+     uint option ->
+     SlimPipeline.Stage<StackCore.Image<uint8>,StackCore.Image<uint8>>)
+
 val opening:
   (uint -> StackCore.Stage<StackCore.Image<uint8>,StackCore.Image<uint8>>)
 
+val openingZonohedral:
+  (uint32 ->
+     uint option ->
+     SlimPipeline.Stage<StackCore.Image<uint8>,StackCore.Image<uint8>>)
+
 val closing:
   (uint -> StackCore.Stage<StackCore.Image<uint8>,StackCore.Image<uint8>>)
+
+val closingZonohedral:
+  (uint32 ->
+     uint option ->
+     SlimPipeline.Stage<StackCore.Image<uint8>,StackCore.Image<uint8>>)
 
 val connectedComponents:
   (uint32 option ->

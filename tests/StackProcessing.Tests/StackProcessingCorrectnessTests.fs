@@ -554,6 +554,33 @@ let stackProcessingCorrectnessSuite =
             finally
                 volume.decRefCount()
 
+        testCase "streamed zonohedral morphology stages match direct zonohedral morphology" <| fun _ ->
+            let suffix = ".tiff"
+            let volume =
+                Array3D.init 14 14 14 (fun x y z ->
+                    let dx = x - 7
+                    let dy = y - 7
+                    let dz = z - 7
+                    if dx * dx + dy * dy + dz * dz < 16 then 1uy else 0uy)
+                |> Image<uint8>.ofArray3D
+
+            let directOpening (image: Image<uint8>) =
+                let eroded = ImageFunctions.binaryErodeZonohedralNative 2u image
+                try
+                    ImageFunctions.binaryDilateZonohedralNative 2u eroded
+                finally
+                    eroded.decRefCount()
+
+            let cases : (string * Stage<Image<uint8>, Image<uint8>> * (Image<uint8> -> Image<uint8>)) list =
+                [ "binary-erode-zonohedral", erodeZonohedral 2u None, ImageFunctions.binaryErodeZonohedralNative 2u
+                  "binary-opening-zonohedral", openingZonohedral 2u None, directOpening ]
+
+            try
+                for name, stage, direct in cases do
+                    assertStreamingMatchesDirect name suffix 0.5 volume stage direct
+            finally
+                volume.decRefCount()
+
         testCase "streamed binary morphology stages match direct 3D morphology" <| fun _ ->
             let suffix = ".tiff"
             let volume = makeBinaryVolume 10

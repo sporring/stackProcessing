@@ -2030,6 +2030,18 @@ module BuiltInCatalog =
               [ makeParameter "radius" "Radius" "1" (BasicType.Numeric UInt32)
                 makeParameter "windowSize" "Window size" "None" BasicType.String ] }
 
+        { Id = "ErodeZonohedral"
+          DisplayName = "erodeZonohedral"
+          Category = "Binary Morphology"
+          Summary = "Erode a binary UInt8 image using a streaming zonohedral approximation."
+          Description = "Approximate spherical binary erosion by composing 1D line erosions from a zonohedral decomposition. This follows the same streaming line-stage structure as dilateZonohedral."
+          Aliases = [ "morphology"; "binary"; "mask"; "zonohedral"; "streaming"; "VHGW" ]
+          Inputs = [ makePort "UInt8" imageUInt8 ]
+          Outputs = [ makePort "UInt8" imageUInt8 ]
+          Parameters =
+              [ makeParameter "radius" "Radius" "1" (BasicType.Numeric UInt32)
+                makeParameter "windowSize" "Window size" "None" BasicType.String ] }
+
         { Id = "Opening"
           DisplayName = "opening"
           Category = "Binary Morphology"
@@ -2040,6 +2052,18 @@ module BuiltInCatalog =
           Outputs = [ makePort "UInt8" imageUInt8 ]
           Parameters = [ makeParameter "radius" "Radius" "1" (BasicType.Numeric UInt32) ] }
 
+        { Id = "OpeningZonohedral"
+          DisplayName = "openingZonohedral"
+          Category = "Binary Morphology"
+          Summary = "Open a binary UInt8 image using streaming zonohedral morphology."
+          Description = "Approximate spherical binary opening by composing erodeZonohedral followed by dilateZonohedral."
+          Aliases = [ "morphology"; "binary"; "mask"; "zonohedral"; "streaming"; "VHGW" ]
+          Inputs = [ makePort "UInt8" imageUInt8 ]
+          Outputs = [ makePort "UInt8" imageUInt8 ]
+          Parameters =
+              [ makeParameter "radius" "Radius" "1" (BasicType.Numeric UInt32)
+                makeParameter "windowSize" "Window size" "None" BasicType.String ] }
+
         { Id = "Closing"
           DisplayName = "closing"
           Category = "Binary Morphology"
@@ -2049,6 +2073,18 @@ module BuiltInCatalog =
           Inputs = [ makePort "UInt8" imageUInt8 ]
           Outputs = [ makePort "UInt8" imageUInt8 ]
           Parameters = [ makeParameter "radius" "Radius" "1" (BasicType.Numeric UInt32) ] }
+
+        { Id = "ClosingZonohedral"
+          DisplayName = "closingZonohedral"
+          Category = "Binary Morphology"
+          Summary = "Close a binary UInt8 image using streaming zonohedral morphology."
+          Description = "Approximate spherical binary closing by composing dilateZonohedral followed by erodeZonohedral."
+          Aliases = [ "morphology"; "binary"; "mask"; "zonohedral"; "streaming"; "VHGW" ]
+          Inputs = [ makePort "UInt8" imageUInt8 ]
+          Outputs = [ makePort "UInt8" imageUInt8 ]
+          Parameters =
+              [ makeParameter "radius" "Radius" "1" (BasicType.Numeric UInt32)
+                makeParameter "windowSize" "Window size" "None" BasicType.String ] }
 
         { Id = "ConnectedComponents"
           DisplayName = "connectedComponents"
