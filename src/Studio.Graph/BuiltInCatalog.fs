@@ -2018,6 +2018,18 @@ module BuiltInCatalog =
           Outputs = [ makePort "UInt8" imageUInt8 ]
           Parameters = [ makeParameter "radius" "Radius" "1" (BasicType.Numeric UInt32) ] }
 
+        { Id = "DilateZonohedral"
+          DisplayName = "dilateZonohedral"
+          Category = "Binary Morphology"
+          Summary = "Dilate a binary UInt8 image using a streaming zonohedral approximation."
+          Description = "Approximate spherical binary dilation by composing 1D line dilations from a zonohedral decomposition. The implementation uses z-windows and only emits valid center slices, which avoids materializing whole slabs for the dilation step."
+          Aliases = [ "morphology"; "binary"; "mask"; "zonohedral"; "streaming"; "VHGW" ]
+          Inputs = [ makePort "UInt8" imageUInt8 ]
+          Outputs = [ makePort "UInt8" imageUInt8 ]
+          Parameters =
+              [ makeParameter "radius" "Radius" "1" (BasicType.Numeric UInt32)
+                makeParameter "windowSize" "Window size" "None" BasicType.String ] }
+
         { Id = "Opening"
           DisplayName = "opening"
           Category = "Binary Morphology"

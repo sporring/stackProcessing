@@ -1686,6 +1686,10 @@ module PipelineCodeGenerator =
         | "Dilate" ->
             let radius = parameterValue "radius"
             $">=> dilate {radius}"
+        | "DilateZonohedral" ->
+            let radius = parameterValue "radius"
+            let windowSize = parameterValue "windowSize" |> optionUInt
+            $">=> dilateZonohedral {radius} {windowSize}"
         | "Opening" ->
             let radius = parameterValue "radius"
             $">=> opening {radius}"

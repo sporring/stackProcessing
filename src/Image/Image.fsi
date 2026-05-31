@@ -650,6 +650,61 @@ val gradientConvolve:
 val binaryErode: radius: uint -> (Image.Image<uint8> -> Image.Image<uint8>)
 /// Binary dilation
 val binaryDilate: radius: uint -> (Image.Image<uint8> -> Image.Image<uint8>)
+val private sphericalOffsets:
+  dimensions: uint32 -> radius: uint -> (int * int * int) array
+/// CPU implementation of binary dilation with a digital spherical structuring element.
+///
+/// This is intended as an experimental native baseline beside the SimpleITK implementation.
+/// It uses the same binary convention as <c>binaryDilate</c>: foreground pixels have value 1
+/// and the output contains only 0/1 values. The footprint follows SimpleITK's <c>sitkBall</c>
+/// convention so results can be compared directly.
+val binaryDilateSphericalNative:
+  radius: uint -> img: Image.Image<uint8> -> Image.Image<uint8>
+val private zonohedralBestCoefficients: (int * int * int) array
+val private zonohedralLineSteps: (int * int * int) array
+val zonohedralBestLines: radius: uint32 -> (int * int * int * int) array
+val private vhgwDilateLine:
+  length: int ->
+    count: int ->
+    line: uint8 array ->
+    prefix: uint8 array ->
+    suffix: uint8 array -> lineOutput: uint8 array -> unit
+val private lineStarts3D:
+  width: int ->
+    height: int ->
+    depth: int -> dx: int -> dy: int -> dz: int -> (int * int * int) array
+val private lineDilate3D:
+  width: int ->
+    height: int ->
+    depth: int ->
+    input: uint8 array ->
+    dx: int * dy: int * dz: int * length: int -> uint8 array
+val private lineDilate3DRange:
+  width: int ->
+    height: int ->
+    depth: int ->
+    inputValidLow: int ->
+    inputValidHigh: int ->
+    outputLow: int ->
+    outputHigh: int ->
+    input: uint8 array ->
+    dx: int * dy: int * dz: int * length: int -> uint8 array
+val private expandZRangeForLine:
+  depth: int ->
+    outputLow: int ->
+    outputHigh: int -> _dx: int * _dy: int * dz: int * length: int -> int * int
+val zonohedralZHalo: radius: uint32 -> int
+val binaryDilateZonohedralValidSlicesNative:
+  radius: uint ->
+    outputStart: uint ->
+    outputCount: uint ->
+    images: Image.Image<uint8> list -> Image.Image<uint8> list
+/// Experimental binary dilation using Jensen et al.'s zonohedral best approximation of a spherical structuring element.
+///
+/// The approximation is represented as a composition of line dilations in the 13 directions used by
+/// Gorpho/pygorpho. It is only a 3D experimental baseline for now.
+val binaryDilateZonohedralNative:
+  radius: uint -> img: Image.Image<uint8> -> Image.Image<uint8>
 /// Binary opening (erode then dilate)
 val binaryOpening: radius: uint -> (Image.Image<uint8> -> Image.Image<uint8>)
 /// Binary closing (dilate then erode)

@@ -595,6 +595,7 @@ module private SourceImageNode =
               "WhiteTopHat"
               "BlackTopHat"
               "MorphologicalGradient"
+              "DilateZonohedral"
               "BinaryContour"
               "BinaryMedian"
               "LabelContour"

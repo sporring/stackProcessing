@@ -162,7 +162,7 @@ let private runBinaryDilateTyped<'T when 'T: equality> input output radius avail
     src
     |> read<'T> input ".tiff"
     >=> threshold 128.0 infinity
-    >=> dilate radius
+    >=> dilateZonohedral radius (Some 64u)
     >=> write output ".tiff"
     |> sink
     0

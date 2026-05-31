@@ -1281,6 +1281,16 @@ module Stage =
     let fromPipe (name: string) (transition: ProfileTransition) (memoryNeed: MemoryNeed) (elementTransformation: ElementTransformation) (pipe: Pipe<'S, 'T>) : Stage<'S, 'T> =
         create name (fun () -> pipe) transition memoryNeed elementTransformation []
 
+    let fromAsyncSeq
+        (name: string)
+        (apply: bool -> AsyncSeq<'S> -> AsyncSeq<'T>)
+        (transition: ProfileTransition)
+        (memoryModel: StageMemoryModel)
+        (elementTransformation: ElementTransformation)
+        : Stage<'S, 'T> =
+        let build () = Pipe.create name apply transition.To
+        createWithModel name build transition memoryModel elementTransformation []
+
     let skip (name: string) (n: uint) : Stage<'S, 'S> =
         let build () = Pipe.skip name n 
         let transition = ProfileTransition.create Streaming Streaming

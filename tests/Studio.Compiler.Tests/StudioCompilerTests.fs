@@ -2061,6 +2061,25 @@ let generatorSuite =
             Expect.stringContains code ">=> removeSmallObjects 11UL ObjectConnectivity.TwentySix" "removeSmallObjects should lower with maximum volume and connectivity."
             Expect.stringContains code ">=> fillSmallHoles 13UL ObjectConnectivity.Six" "fillSmallHoles should lower with maximum volume and connectivity."
 
+        testCase "zonohedral dilation lowers to StackProcessing stage" <| fun _ ->
+            let read =
+                node "read" "Read"
+                    [ p "availableMemory" "1024" false
+                      p "type" "UInt8" false
+                      p "input" "input" false
+                      p "suffix" ".tiff" false ]
+            let dilate =
+                node "dilate" "DilateZonohedral"
+                    [ p "radius" "3" false
+                      p "windowSize" "None" false ]
+            let code =
+                graph
+                    [ read; dilate ]
+                    [ edge "read" "output" 0 "dilate" "input" 0 ]
+                |> PipelineCodeGenerator.generateSavedGraph
+
+            Expect.stringContains code ">=> dilateZonohedral 3u None" "Zonohedral binary dilation should lower with radius and optional window size."
+
         testCase "connected component pair stream writes chunk labels through teeFst before reducing" <| fun _ ->
             let read =
                 node "read" "Read"

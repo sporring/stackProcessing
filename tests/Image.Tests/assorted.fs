@@ -1298,6 +1298,49 @@ let MorphologyTests =
       let dilated = ImageFunctions.binaryDilate 1u img
       Expect.isTrue(dilated[0,0] > 0uy && dilated[0,2] > 0uy) "Foreground should grow"
 
+    testCase "native spherical binary dilation matches SimpleITK in 2D" <| fun _ ->
+      let img =
+        Image<uint8>.ofArray2D (
+          array2D [
+            [0uy; 0uy; 0uy; 0uy; 0uy]
+            [0uy; 1uy; 0uy; 0uy; 0uy]
+            [0uy; 0uy; 0uy; 1uy; 0uy]
+            [0uy; 0uy; 0uy; 0uy; 0uy] ])
+
+      let expected = ImageFunctions.binaryDilate 2u img
+      let actual = ImageFunctions.binaryDilateSphericalNative 2u img
+      Expect.equal (actual.toArray2D()) (expected.toArray2D()) "Native 2D spherical dilation should match SimpleITK."
+
+    testCase "native spherical binary dilation matches SimpleITK in 3D" <| fun _ ->
+      let values =
+        Array3D.init 7 6 5 (fun x y z ->
+          if (x = 2 && y = 2 && z = 1) || (x = 5 && y = 4 && z = 3) then 1uy else 0uy)
+      let img = Image<uint8>.ofArray3D values
+      let expected = ImageFunctions.binaryDilate 2u img
+      let actual = ImageFunctions.binaryDilateSphericalNative 2u img
+      Expect.equal (actual.toArray3D()) (expected.toArray3D()) "Native 3D spherical dilation should match SimpleITK."
+
+    testCase "zonohedral binary dilation produces a non-empty 3D approximation" <| fun _ ->
+      let values = Array3D.zeroCreate<uint8> 9 9 9
+      values[4, 4, 4] <- 1uy
+      let img = Image<uint8>.ofArray3D values
+      let exact = ImageFunctions.binaryDilate 3u img
+      let zono = ImageFunctions.binaryDilateZonohedralNative 3u img
+      let exactCount = exact.toArray3D() |> Seq.cast<uint8> |> Seq.sumBy int
+      let zonoCount = zono.toArray3D() |> Seq.cast<uint8> |> Seq.sumBy int
+      Expect.isGreaterThan zonoCount 0 "Zonohedral approximation should produce foreground voxels."
+      Expect.isLessThan (abs (zonoCount - exactCount)) exactCount "The zonohedral approximation should have the same order of footprint size as the exact digital ball."
+
+    testCase "zonohedral binary dilation changes with radius" <| fun _ ->
+      let values = Array3D.zeroCreate<uint8> 11 11 11
+      values[5, 5, 5] <- 1uy
+      let img = Image<uint8>.ofArray3D values
+      let small = ImageFunctions.binaryDilateZonohedralNative 2u img
+      let large = ImageFunctions.binaryDilateZonohedralNative 3u img
+      let smallCount = small.toArray3D() |> Seq.cast<uint8> |> Seq.sumBy int
+      let largeCount = large.toArray3D() |> Seq.cast<uint8> |> Seq.sumBy int
+      Expect.notEqual largeCount smallCount "Different zonohedral radii should produce different approximation footprints for an isolated voxel."
+
     testCase "binaryOpening removes small regions" <| fun _ ->
       let img = Image<uint8>.ofArray2D (array2D [[0uy;1uy;0uy;1uy;0uy]])
       let opened = ImageFunctions.binaryOpening 1u img

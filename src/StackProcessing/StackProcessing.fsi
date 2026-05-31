@@ -1359,6 +1359,11 @@ val erode:
 val dilate:
   (uint -> StackCore.Stage<StackCore.Image<uint8>,StackCore.Image<uint8>>)
 
+val dilateZonohedral:
+  (uint32 ->
+     uint option ->
+     SlimPipeline.Stage<StackCore.Image<uint8>,StackCore.Image<uint8>>)
+
 val opening:
   (uint -> StackCore.Stage<StackCore.Image<uint8>,StackCore.Image<uint8>>)
 

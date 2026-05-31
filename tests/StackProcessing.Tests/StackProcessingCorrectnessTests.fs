@@ -533,6 +533,27 @@ let stackProcessingCorrectnessSuite =
             finally
                 volume.decRefCount()
 
+        testCase "streamed zonohedral dilation matches direct zonohedral dilation" <| fun _ ->
+            let suffix = ".tiff"
+            let volume =
+                Array3D.init 14 14 14 (fun x y z ->
+                    let dx = x - 7
+                    let dy = y - 7
+                    let dz = z - 7
+                    if dx * dx + dy * dy + dz * dz < 9 then 1uy else 0uy)
+                |> Image<uint8>.ofArray3D
+
+            try
+                assertStreamingMatchesDirect
+                    "binary-dilate-zonohedral"
+                    suffix
+                    0.5
+                    volume
+                    (dilateZonohedral 2u None)
+                    (ImageFunctions.binaryDilateZonohedralNative 2u)
+            finally
+                volume.decRefCount()
+
         testCase "streamed binary morphology stages match direct 3D morphology" <| fun _ ->
             let suffix = ".tiff"
             let volume = makeBinaryVolume 10

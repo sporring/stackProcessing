@@ -349,6 +349,7 @@ let selectGroupedOutput groupSize part : Stage<Image<'T>, Image<'T>> = StackImag
 let identity<'T> : Stage<'T, 'T> = StackCore.identityStage "identity"
 let erode = StackImageFunctions.erode
 let dilate = StackImageFunctions.dilate
+let dilateZonohedral = StackImageFunctions.dilateZonohedral
 let opening = StackImageFunctions.opening
 let closing = StackImageFunctions.closing
 let connectedComponents = StackImageFunctions.connectedComponents

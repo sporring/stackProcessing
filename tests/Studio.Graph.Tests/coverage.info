@@ -1,14 +1,14 @@
 SF:/Users/jrh630/repositories/stackProcessing/src/Studio.Graph/BuiltInCatalog.fs
 FN:38,Studio.Graph.Port Studio.Graph.BuiltInCatalog::makePort(System.String,Studio.Graph.PortType)
-FNDA:321,Studio.Graph.Port Studio.Graph.BuiltInCatalog::makePort(System.String,Studio.Graph.PortType)
-DA:39,321
-DA:40,321
+FNDA:323,Studio.Graph.Port Studio.Graph.BuiltInCatalog::makePort(System.String,Studio.Graph.PortType)
+DA:39,323
+DA:40,323
 FN:42,Studio.Graph.Parameter Studio.Graph.BuiltInCatalog::makeParameter(System.String,System.String,System.String,Studio.Graph.BasicType)
-FNDA:463,Studio.Graph.Parameter Studio.Graph.BuiltInCatalog::makeParameter(System.String,System.String,System.String,Studio.Graph.BasicType)
-DA:43,463
-DA:44,463
-DA:45,463
-DA:46,463
+FNDA:465,Studio.Graph.Parameter Studio.Graph.BuiltInCatalog::makeParameter(System.String,System.String,System.String,Studio.Graph.BasicType)
+DA:43,465
+DA:44,465
+DA:45,465
+DA:46,465
 FN:85,Microsoft.FSharp.Collections.FSharpList`1<Studio.Graph.Port> Studio.Graph.BuiltInCatalog::expandOutputsFor(Studio.Graph.PortType)
 FNDA:0,Microsoft.FSharp.Collections.FSharpList`1<Studio.Graph.Port> Studio.Graph.BuiltInCatalog::expandOutputsFor(Studio.Graph.PortType)
 DA:86,0
@@ -487,20 +487,20 @@ DA:725,1
 DA:726,1
 DA:727,1
 DA:728,1
-FN:2406,Microsoft.FSharp.Core.FSharpOption`1<Studio.Graph.Function> Studio.Graph.BuiltInCatalog::tryFind(System.String)
+FN:2418,Microsoft.FSharp.Core.FSharpOption`1<Studio.Graph.Function> Studio.Graph.BuiltInCatalog::tryFind(System.String)
 FNDA:38,Microsoft.FSharp.Core.FSharpOption`1<Studio.Graph.Function> Studio.Graph.BuiltInCatalog::tryFind(System.String)
-DA:2407,38
-DA:2408,38
-FN:2410,Studio.Graph.Function Studio.Graph.BuiltInCatalog::find(System.String)
+DA:2419,38
+DA:2420,38
+FN:2422,Studio.Graph.Function Studio.Graph.BuiltInCatalog::find(System.String)
 FNDA:38,Studio.Graph.Function Studio.Graph.BuiltInCatalog::find(System.String)
-DA:2411,38
-DA:2412,37
-DA:2413,1
-BRDA:2411,8,1,37
-BRDA:2411,8,0,1
-FN:2402,System.Tuple`2<System.String,Studio.Graph.Function> Studio.Graph.BuiltInCatalog/Pipe #3 stage #1 at line 2403@2403::Invoke(Studio.Graph.Function)
-FNDA:152,System.Tuple`2<System.String,Studio.Graph.Function> Studio.Graph.BuiltInCatalog/Pipe #3 stage #1 at line 2403@2403::Invoke(Studio.Graph.Function)
-DA:2403,152
+DA:2423,38
+DA:2424,37
+DA:2425,1
+BRDA:2423,8,1,37
+BRDA:2423,8,0,1
+FN:2414,System.Tuple`2<System.String,Studio.Graph.Function> Studio.Graph.BuiltInCatalog/Pipe #3 stage #1 at line 2415@2415::Invoke(Studio.Graph.Function)
+FNDA:153,System.Tuple`2<System.String,Studio.Graph.Function> Studio.Graph.BuiltInCatalog/Pipe #3 stage #1 at line 2415@2415::Invoke(Studio.Graph.Function)
+DA:2415,153
 FN:3,System.Void <StartupCode$Studio-Graph>.$BuiltInCatalog::.cctor()
 FNDA:1,System.Void <StartupCode$Studio-Graph>.$BuiltInCatalog::.cctor()
 DA:4,1
@@ -2365,8 +2365,20 @@ DA:2396,1
 DA:2397,1
 DA:2398,1
 DA:2399,1
+DA:2400,1
+DA:2401,1
 DA:2402,1
+DA:2403,1
 DA:2404,1
+DA:2405,1
+DA:2406,1
+DA:2407,1
+DA:2408,1
+DA:2409,1
+DA:2410,1
+DA:2411,1
+DA:2414,1
+DA:2416,1
 BRDA:93,1510,0,1
 BRDA:93,1515,0,1
 BRDA:93,1521,0,1
@@ -2375,8 +2387,8 @@ BRDA:93,1515,1,0
 BRDA:93,1521,1,0
 BRDA:93,1536,0,0
 BRDA:93,1536,1,0
-LF:2265
-LH:2251
+LF:2277
+LH:2263
 BRF:39
 BRH:8
 FNF:36

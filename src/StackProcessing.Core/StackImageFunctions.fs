@@ -8,6 +8,7 @@ open System.IO
 open StackCore
 open StackIO
 open TinyLinAlg
+open Image.InternalHelpers
 
 let getBytesPerComponent<'T> = (typeof<'T> |> Image.getBytesPerComponent |> uint64)
 let getImageFacts<'T when 'T: equality> (image: Image<'T>) = image.GetFacts()
@@ -1537,6 +1538,139 @@ let erode radius = makeMorphOp "binaryErode" "Erode" radius None ImageFunctions.
 let dilate radius = makeMorphOp "binaryDilate" "Dilate" radius None ImageFunctions.binaryDilate
 let opening radius = makeMorphOp "binaryOpening" "Opening" radius None ImageFunctions.binaryOpening
 let closing radius = makeMorphOp "binaryClosing" "Closing" radius None ImageFunctions.binaryClosing
+
+type private FlatSlice =
+    { Index: int
+      Pixels: uint8[] }
+
+let private lineHalo dz length =
+    let left = length - length / 2 - 1
+    let right = length / 2
+    let a = -left * dz
+    let b = right * dz
+    max 0 (-min a b), max 0 (max a b)
+
+let private dilateLineSlice width height (window: FlatSlice[]) center dx dy dz length =
+    let output = Array.zeroCreate<uint8> (width * height)
+    let centerIndex = center
+    let left = length - length / 2 - 1
+    let right = length / 2
+
+    for y in 0 .. height - 1 do
+        let row = y * width
+        for x in 0 .. width - 1 do
+            let mutable found = false
+            let mutable t = -left
+            while not found && t <= right do
+                let xx = x + t * dx
+                let yy = y + t * dy
+                let zz = centerIndex + t * dz
+                if xx >= 0 && xx < width && yy >= 0 && yy < height && zz >= 0 && zz < window.Length then
+                    if window[zz].Pixels[yy * width + xx] = 1uy then
+                        found <- true
+                t <- t + 1
+            if found then
+                output[row + x] <- 1uy
+
+    output
+
+let private streamingZonohedralLineStage (radius: uint) (lineIndex: int) (dx: int, dy: int, dz: int, length: int) =
+    let prePad, postPad = lineHalo dz length
+    let windowLength = prePad + 1 + postPad
+    let memoryNeed nPixels =
+        uint64 (windowLength + 1) * nPixels * getBytesPerComponent<uint8>
+
+    let transition = ProfileTransition.create Streaming Streaming
+    let memoryModel = StageMemoryModel.fromSinglePeak Map memoryNeed
+    let costUnits input =
+        float (inputValue input * uint64 (max 1 length))
+
+    let apply (_debug: bool) (input: AsyncSeq<Image<uint8>>) =
+        asyncSeq {
+            let queue = ResizeArray<FlatSlice>()
+            let mutable width = 0
+            let mutable height = 0
+            let mutable plane = 0
+            let mutable initialized = false
+            let mutable realCount = 0
+            let mutable emittedCount = 0
+            let mutable lastIndex = -1
+
+            let ensureInitialized (image: Image<uint8>) =
+                if not initialized then
+                    width <- int (image.GetWidth())
+                    height <- int (image.GetHeight())
+                    plane <- width * height
+                    for i in prePad .. -1 .. 1 do
+                        queue.Add({ Index = -i; Pixels = Array.zeroCreate<uint8> plane })
+                    initialized <- true
+                elif int (image.GetWidth()) <> width || int (image.GetHeight()) <> height then
+                    invalidArg "input" "All slices in streaming zonohedral dilation must have the same width and height."
+
+            let tryEmit () =
+                if initialized && queue.Count >= windowLength && emittedCount < realCount then
+                    let centerSlice = queue[prePad]
+                    let window = queue |> Seq.truncate windowLength |> Seq.toArray
+                    let pixels = dilateLineSlice width height window prePad dx dy dz length
+                    queue.RemoveAt(0)
+                    emittedCount <- emittedCount + 1
+                    Some(Image<uint8>.ofSimpleITKNDispose(importScalarImage [ uint width; uint height ] pixels, $"binaryDilateZonohedral.line{lineIndex}", centerSlice.Index))
+                else
+                    None
+
+            for image in input do
+                ensureInitialized image
+                let pixels =
+                    try
+                        copyScalarPixels<uint8> image.Image plane
+                    finally
+                        image.decRefCount()
+                queue.Add({ Index = realCount; Pixels = pixels })
+                lastIndex <- realCount
+                realCount <- realCount + 1
+
+                match tryEmit () with
+                | Some output -> yield output
+                | None -> ()
+
+            if initialized then
+                for i in 1 .. postPad do
+                    queue.Add({ Index = lastIndex + i; Pixels = Array.zeroCreate<uint8> plane })
+                    match tryEmit () with
+                    | Some output -> yield output
+                    | None -> ()
+        }
+
+    Stage.fromAsyncSeq
+        $"binaryDilateZonohedral.line{lineIndex}"
+        apply
+        transition
+        memoryModel
+        id
+    |> withCostModel
+        (imageOperatorCost<uint8>
+            "DilateZonohedralLine"
+            Map
+            memoryModel
+            (Some(float windowLength))
+            (Some(float radius))
+            (Some(float length))
+            None
+            [ "direction", $"{dx},{dy},{dz}"
+              "lineLength", string length
+              "prePad", string prePad
+              "postPad", string postPad
+              "approximation", "zonohedral" ]
+            costUnits)
+
+let dilateZonohedral radius (_winSz: uint option) =
+    let lines = ImageFunctions.zonohedralBestLines radius
+    let stage =
+        lines
+        |> Array.mapi (streamingZonohedralLineStage radius)
+        |> Array.fold (fun acc lineStage -> acc --> lineStage) (identityStage "binaryDilateZonohedral.start")
+    stage
+    |> Stage.withSliceCardinality (SlimPipeline.Domain SlimPipeline.SliceDomain.preserve)
 
 let connectedComponents winSz =
     let winSz = effectiveWindowSize "connectedComponents" 1u winSz

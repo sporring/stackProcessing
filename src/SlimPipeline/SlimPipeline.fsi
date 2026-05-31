@@ -529,6 +529,13 @@ module Stage =
         memoryNeed: MemoryNeed ->
         elementTransformation: ElementTransformation ->
         pipe: Pipe<'S,'T> -> Stage<'S,'T>
+    val fromAsyncSeq:
+      name: string ->
+        apply: (bool ->
+                  FSharp.Control.AsyncSeq<'S> -> FSharp.Control.AsyncSeq<'T>) ->
+        transition: ProfileTransition ->
+        memoryModel: StageMemoryModel ->
+        elementTransformation: ElementTransformation -> Stage<'S,'T>
     val skip: name: string -> n: uint -> Stage<'S,'S>
     val take: name: string -> n: uint -> Stage<'S,'S>
     val trim:

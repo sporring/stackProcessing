@@ -1,5 +1,6 @@
 module ImageFunctions
 open System
+open System.Collections.Generic
 open Image
 open Image.InternalHelpers
 open TinyLinAlg
@@ -573,6 +574,380 @@ let binaryDilate (radius: uint) : Image<uint8> -> Image<uint8> =
             f.SetForegroundValue(1.0)
             f.SetBackgroundValue(0.0))
         (fun f x -> f.Execute(x))
+
+let private sphericalOffsets dimensions (radius: uint) =
+    if dimensions <> 2u && dimensions <> 3u then
+        invalidArg "dimensions" $"Spherical binary dilation supports 2D and 3D images, got {dimensions}D."
+
+    let r = int radius
+    let radiusLimit = r * r + r
+    let offsets = ResizeArray<int * int * int>()
+    let zMin, zMax = if dimensions = 2u then 0, 0 else -r, r
+
+    for dz in zMin .. zMax do
+        for dy in -r .. r do
+            for dx in -r .. r do
+                let d2 = dx * dx + dy * dy + dz * dz
+                if d2 <= radiusLimit then
+                    offsets.Add(dx, dy, dz)
+
+    offsets
+    |> Seq.sortBy (fun (dx, dy, dz) -> dx * dx + dy * dy + dz * dz)
+    |> Seq.toArray
+
+/// CPU implementation of binary dilation with a digital spherical structuring element.
+///
+/// This is intended as an experimental native baseline beside the SimpleITK implementation.
+/// It uses the same binary convention as <c>binaryDilate</c>: foreground pixels have value 1
+/// and the output contains only 0/1 values. The footprint follows SimpleITK's <c>sitkBall</c>
+/// convention so results can be compared directly.
+let binaryDilateSphericalNative (radius: uint) (img: Image<uint8>) : Image<uint8> =
+    let dimensions = img.GetDimensions()
+    if dimensions <> 2u && dimensions <> 3u then
+        invalidArg "img" $"binaryDilateSphericalNative supports 2D and 3D images, got {dimensions}D."
+
+    let offsets = sphericalOffsets dimensions radius
+
+    if dimensions = 2u then
+        let width = int (img.GetWidth())
+        let height = int (img.GetHeight())
+        let input = copyScalarPixels<uint8> img.Image (width * height)
+        let output = Array.zeroCreate<uint8> (width * height)
+
+        for y in 0 .. height - 1 do
+            for x in 0 .. width - 1 do
+                let mutable found = false
+                let mutable i = 0
+                while not found && i < offsets.Length do
+                    let dx, dy, _dz = offsets[i]
+                    let xx = x + dx
+                    let yy = y + dy
+                    if xx >= 0 && xx < width && yy >= 0 && yy < height && input[yy * width + xx] = 1uy then
+                        found <- true
+                    else
+                        i <- i + 1
+
+                if found then
+                    output[y * width + x] <- 1uy
+
+        Image<uint8>.ofSimpleITKNDispose(importScalarImage (img.GetSize()) output, "binaryDilateSphericalNative", img.index)
+    else
+        let width = int (img.GetWidth())
+        let height = int (img.GetHeight())
+        let depth = int (img.GetDepth())
+        let input = copyScalarPixels<uint8> img.Image (width * height * depth)
+        let output = Array.zeroCreate<uint8> (width * height * depth)
+        let plane = width * height
+
+        for z in 0 .. depth - 1 do
+            for y in 0 .. height - 1 do
+                for x in 0 .. width - 1 do
+                    let mutable found = false
+                    let mutable i = 0
+                    while not found && i < offsets.Length do
+                        let dx, dy, dz = offsets[i]
+                        let xx = x + dx
+                        let yy = y + dy
+                        let zz = z + dz
+                        if xx >= 0 && xx < width && yy >= 0 && yy < height && zz >= 0 && zz < depth && input[zz * plane + yy * width + xx] = 1uy then
+                            found <- true
+                        else
+                            i <- i + 1
+
+                    if found then
+                        output[z * plane + y * width + x] <- 1uy
+
+        Image<uint8>.ofSimpleITKNDispose(importScalarImage (img.GetSize()) output, "binaryDilateSphericalNative", img.index)
+
+let private zonohedralBestCoefficients =
+    // Best-approximation coefficients from Gorpho/pygorpho's implementation of
+    // Jensen et al., "Zonohedral Approximation of Spherical Structuring Element
+    // for Volumetric Morphology" (SCIA 2019).
+    [| 2, 0, 0
+       4, 0, 0
+       3, 0, 2
+       4, 0, 2
+       3, 2, 2
+       4, 2, 2
+       3, 2, 3
+       4, 3, 2
+       3, 3, 3
+       4, 4, 2
+       6, 3, 3
+       4, 4, 3
+       6, 4, 3
+       8, 3, 4
+       6, 4, 4
+       7, 5, 3
+       6, 5, 4
+       7, 6, 3
+       9, 5, 4
+       7, 6, 4
+       9, 5, 5
+       7, 7, 4
+       9, 6, 5
+       11, 5, 6
+       9, 7, 5
+       11, 6, 6
+       12, 7, 5
+       10, 8, 5
+       9, 8, 6
+       10, 9, 5
+       12, 8, 6
+       14, 7, 7 |]
+
+let private zonohedralLineSteps =
+    [| ( 1,  0,  0)
+       ( 0, -1,  0)
+       ( 0,  0,  1)
+       ( 1,  1,  0)
+       (-1,  1,  0)
+       (-1,  0, -1)
+       ( 1,  0, -1)
+       ( 0,  1,  1)
+       ( 0, -1,  1)
+       (-1, -1, -1)
+       ( 1,  1, -1)
+       ( 1, -1,  1)
+       (-1,  1,  1) |]
+
+let zonohedralBestLines radius =
+    if radius = 0u then
+        [||]
+    elif int radius <= zonohedralBestCoefficients.Length then
+        let a1, a2, a3 = zonohedralBestCoefficients[int radius - 1]
+        let lengths =
+            [| a1; a1; a1
+               a2; a2; a2; a2; a2; a2
+               a3; a3; a3; a3 |]
+
+        Array.zip zonohedralLineSteps lengths
+        |> Array.choose (fun ((dx, dy, dz), length) ->
+            if length > 1 then Some(dx, dy, dz, length) else None)
+    else
+        invalidArg "radius" $"binaryDilateZonohedralNative currently has best-approximation coefficients through radius {zonohedralBestCoefficients.Length}; got radius {radius}."
+
+let private vhgwDilateLine (length: int) (count: int) (line: uint8[]) (prefix: uint8[]) (suffix: uint8[]) (lineOutput: uint8[]) =
+    if count > 0 then
+        let left = length - length / 2 - 1
+        let right = length / 2
+
+        for i in 0 .. count - 1 do
+            if i % length = 0 then
+                prefix[i] <- line[i]
+            else
+                prefix[i] <- max prefix[i - 1] line[i]
+
+        for i in count - 1 .. -1 .. 0 do
+            if i = count - 1 || i % length = length - 1 then
+                suffix[i] <- line[i]
+            else
+                suffix[i] <- max suffix[i + 1] line[i]
+
+        for i in 0 .. count - 1 do
+            let lo = max 0 (i - left)
+            let hi = min (count - 1) (i + right)
+            lineOutput[i] <- max suffix[lo] prefix[hi]
+
+let private lineStarts3D width height depth dx dy dz =
+    let seen = HashSet<int>()
+    let starts = ResizeArray<int * int * int>()
+    let add x y z =
+        if x >= 0 && x < width && y >= 0 && y < height && z >= 0 && z < depth then
+            let key = z * width * height + y * width + x
+            if seen.Add key then
+                starts.Add(x, y, z)
+
+    if dx > 0 then
+        for z in 0 .. depth - 1 do
+            for y in 0 .. height - 1 do
+                add 0 y z
+    elif dx < 0 then
+        for z in 0 .. depth - 1 do
+            for y in 0 .. height - 1 do
+                add (width - 1) y z
+
+    if dy > 0 then
+        for z in 0 .. depth - 1 do
+            for x in 0 .. width - 1 do
+                add x 0 z
+    elif dy < 0 then
+        for z in 0 .. depth - 1 do
+            for x in 0 .. width - 1 do
+                add x (height - 1) z
+
+    if dz > 0 then
+        for y in 0 .. height - 1 do
+            for x in 0 .. width - 1 do
+                add x y 0
+    elif dz < 0 then
+        for y in 0 .. height - 1 do
+            for x in 0 .. width - 1 do
+                add x y (depth - 1)
+
+    starts
+    |> Seq.toArray
+
+let private lineDilate3D (width: int) (height: int) (depth: int) (input: uint8[]) (dx: int, dy: int, dz: int, length: int) =
+    let output = Array.zeroCreate<uint8> input.Length
+    let plane = width * height
+    let maxLine = max width (max height depth)
+    let indices = Array.zeroCreate<int> maxLine
+    let line = Array.zeroCreate<uint8> maxLine
+    let prefix = Array.zeroCreate<uint8> maxLine
+    let suffix = Array.zeroCreate<uint8> maxLine
+    let lineOutput = Array.zeroCreate<uint8> maxLine
+
+    for x0, y0, z0 in lineStarts3D width height depth dx dy dz do
+        let mutable x = x0
+        let mutable y = y0
+        let mutable z = z0
+        let mutable count = 0
+
+        while x >= 0 && x < width && y >= 0 && y < height && z >= 0 && z < depth do
+            let index = z * plane + y * width + x
+            indices[count] <- index
+            line[count] <- input[index]
+            count <- count + 1
+            x <- x + dx
+            y <- y + dy
+            z <- z + dz
+
+        vhgwDilateLine length count line prefix suffix lineOutput
+
+        for i in 0 .. count - 1 do
+            output[indices[i]] <- lineOutput[i]
+
+    output
+
+let private lineDilate3DRange
+    (width: int)
+    (height: int)
+    (depth: int)
+    (inputValidLow: int)
+    (inputValidHigh: int)
+    (outputLow: int)
+    (outputHigh: int)
+    (input: uint8[])
+    (dx: int, dy: int, dz: int, length: int) =
+    let output = Array.zeroCreate<uint8> input.Length
+    let plane = width * height
+    let maxLine = max width (max height depth)
+    let indices = Array.zeroCreate<int> maxLine
+    let zValues = Array.zeroCreate<int> maxLine
+    let line = Array.zeroCreate<uint8> maxLine
+    let prefix = Array.zeroCreate<uint8> maxLine
+    let suffix = Array.zeroCreate<uint8> maxLine
+    let lineOutput = Array.zeroCreate<uint8> maxLine
+
+    for x0, y0, z0 in lineStarts3D width height depth dx dy dz do
+        let mutable x = x0
+        let mutable y = y0
+        let mutable z = z0
+        let mutable count = 0
+
+        while x >= 0 && x < width && y >= 0 && y < height && z >= 0 && z < depth do
+            if z >= inputValidLow && z <= inputValidHigh then
+                let index = z * plane + y * width + x
+                indices[count] <- index
+                zValues[count] <- z
+                line[count] <- input[index]
+                count <- count + 1
+            x <- x + dx
+            y <- y + dy
+            z <- z + dz
+
+        vhgwDilateLine length count line prefix suffix lineOutput
+
+        for i in 0 .. count - 1 do
+            let z = zValues[i]
+            if z >= outputLow && z <= outputHigh then
+                output[indices[i]] <- lineOutput[i]
+
+    output
+
+let private expandZRangeForLine depth outputLow outputHigh (_dx: int, _dy: int, dz: int, length: int) =
+    let left = length - length / 2 - 1
+    let right = length / 2
+    let zA = -left * dz
+    let zB = right * dz
+    max 0 (outputLow + min zA zB), min (depth - 1) (outputHigh + max zA zB)
+
+let zonohedralZHalo radius =
+    zonohedralBestLines radius
+    |> Array.sumBy (fun (_dx, _dy, dz, length) ->
+        let left = length - length / 2 - 1
+        let right = length / 2
+        max (abs (left * dz)) (abs (right * dz)))
+
+let binaryDilateZonohedralValidSlicesNative (radius: uint) (outputStart: uint) (outputCount: uint) (images: Image<uint8> list) : Image<uint8> list =
+    match images with
+    | [] -> []
+    | first :: _ ->
+        let width = int (first.GetWidth())
+        let height = int (first.GetHeight())
+        let depth = images.Length
+        let plane = width * height
+        let requestedLow = int outputStart
+        let requestedHigh = min (depth - 1) (requestedLow + int outputCount - 1)
+
+        if requestedLow > requestedHigh then
+            []
+        else
+            let lines = zonohedralBestLines radius
+            let neededAfter = Array.zeroCreate<int * int> lines.Length
+            let mutable neededLow = requestedLow
+            let mutable neededHigh = requestedHigh
+
+            for i in lines.Length - 1 .. -1 .. 0 do
+                neededAfter[i] <- neededLow, neededHigh
+                let lo, hi = expandZRangeForLine depth neededLow neededHigh lines[i]
+                neededLow <- lo
+                neededHigh <- hi
+
+            let mutable current = Array.zeroCreate<uint8> (plane * depth)
+            images
+            |> List.iteri (fun z image ->
+                if image.GetWidth() <> first.GetWidth() || image.GetHeight() <> first.GetHeight() then
+                    invalidArg "images" "All slices in a zonohedral dilation window must have the same width and height."
+                let slice = copyScalarPixels<uint8> image.Image plane
+                Array.Copy(slice, 0, current, z * plane, plane))
+
+            let mutable validLow = 0
+            let mutable validHigh = depth - 1
+
+            for i in 0 .. lines.Length - 1 do
+                let outLow, outHigh = neededAfter[i]
+                current <- lineDilate3DRange width height depth validLow validHigh outLow outHigh current lines[i]
+                validLow <- outLow
+                validHigh <- outHigh
+
+            [ for z in requestedLow .. requestedHigh do
+                let slice = Array.zeroCreate<uint8> plane
+                Array.Copy(current, z * plane, slice, 0, plane)
+                let index =
+                    if z < images.Length then images[z].index
+                    else first.index + z
+                yield Image<uint8>.ofSimpleITKNDispose(importScalarImage [ uint width; uint height ] slice, "binaryDilateZonohedralValidSlicesNative", index) ]
+
+/// Experimental binary dilation using Jensen et al.'s zonohedral best approximation of a spherical structuring element.
+///
+/// The approximation is represented as a composition of line dilations in the 13 directions used by
+/// Gorpho/pygorpho. It is only a 3D experimental baseline for now.
+let binaryDilateZonohedralNative (radius: uint) (img: Image<uint8>) : Image<uint8> =
+    if img.GetDimensions() <> 3u then
+        invalidArg "img" $"binaryDilateZonohedralNative supports 3D images, got {img.GetDimensions()}D."
+
+    let width = int (img.GetWidth())
+    let height = int (img.GetHeight())
+    let depth = int (img.GetDepth())
+    let lines = zonohedralBestLines radius
+
+    let mutable current = copyScalarPixels<uint8> img.Image (width * height * depth)
+    for line in lines do
+        current <- lineDilate3D width height depth current line
+
+    Image<uint8>.ofSimpleITKNDispose(importScalarImage (img.GetSize()) current, "binaryDilateZonohedralNative", img.index)
 
 /// Binary opening (erode then dilate)
 let binaryOpening (radius: uint) : Image<uint8> -> Image<uint8> =
