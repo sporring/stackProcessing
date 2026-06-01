@@ -280,33 +280,49 @@ let cast<'S,'T when 'S: equality and 'T: equality> =
 let add (image: Image<'T>) = 
     liftUnaryReleaseAfter "add" ((+) image) id id
 let addPair I J = liftRelease2 ( + ) I J
-let inline scalarAddImage<^T when ^T: equality and ^T: (static member op_Explicit: ^T -> float)> (i: ^T) = 
+let inline scalarAddImage<^T when ^T: equality
+                              and ^T: (static member op_Explicit: ^T -> float)
+                              and ^T: (static member (+) : ^T * ^T -> ^T)> (i: ^T) = 
     liftUnaryReleaseAfter "scalarAddImage" (fun (s: Image<^T>)->ImageFunctions.scalarAddImage<^T> i s) id id
-let inline imageAddScalar<^T when ^T: equality and ^T: (static member op_Explicit: ^T -> float)> (i: ^T) =
+let inline imageAddScalar<^T when ^T: equality
+                              and ^T: (static member op_Explicit: ^T -> float)
+                              and ^T: (static member (+) : ^T * ^T -> ^T)> (i: ^T) =
     liftUnaryReleaseAfter "imageAddScalar" (fun (s: Image<^T>)->ImageFunctions.imageAddScalar<^T> s i) id id
 
 let sub (image: Image<'T>) = 
     liftUnaryReleaseAfter "sub" ((-) image) id id
 
 let subPair I J = liftRelease2 ( - ) I J
-let inline scalarSubImage<^T when ^T: equality and ^T: (static member op_Explicit: ^T -> float)> (i: ^T) =
+let inline scalarSubImage<^T when ^T: equality
+                              and ^T: (static member op_Explicit: ^T -> float)
+                              and ^T: (static member (-) : ^T * ^T -> ^T)> (i: ^T) =
     liftUnaryReleaseAfter "scalarSubImage" (fun (s: Image<^T>)->ImageFunctions.scalarSubImage<^T> i s) id id
-let inline imageSubScalar<^T when ^T: equality and ^T: (static member op_Explicit: ^T -> float)> (i: ^T) =
+let inline imageSubScalar<^T when ^T: equality
+                              and ^T: (static member op_Explicit: ^T -> float)
+                              and ^T: (static member (-) : ^T * ^T -> ^T)> (i: ^T) =
     liftUnaryReleaseAfter "imageSubScalar" (fun (s: Image<^T>)->ImageFunctions.imageSubScalar<^T> s i) id id
 
 let mul (image: Image<'T>) = liftUnaryReleaseAfter "mul" (( * ) image) id id
 let mulPair I J = liftRelease2 ( * ) I J
-let inline scalarMulImage<^T when ^T: equality and ^T: (static member op_Explicit: ^T -> float)> (i: ^T) =
+let inline scalarMulImage<^T when ^T: equality
+                              and ^T: (static member op_Explicit: ^T -> float)
+                              and ^T: (static member ( * ) : ^T * ^T -> ^T)> (i: ^T) =
     liftUnaryReleaseAfter "scalarMulImage" (fun (s: Image<^T>)->ImageFunctions.scalarMulImage<^T> i s) id id
-let inline imageMulScalar<^T when ^T: equality and ^T: (static member op_Explicit: ^T -> float)> (i: ^T) =
+let inline imageMulScalar<^T when ^T: equality
+                              and ^T: (static member op_Explicit: ^T -> float)
+                              and ^T: (static member ( * ) : ^T * ^T -> ^T)> (i: ^T) =
     liftUnaryReleaseAfter "imageMulScalar" (fun (s: Image<^T>)->ImageFunctions.imageMulScalar<^T> s i) id id
 
 let div (image: Image<'T>) = liftUnaryReleaseAfter "div" ((/) image) id id
 
 let divPair I J = liftRelease2 ( / ) I J
-let inline scalarDivImage<^T when ^T: equality and ^T: (static member op_Explicit: ^T -> float)> (i: ^T) =
+let inline scalarDivImage<^T when ^T: equality
+                              and ^T: (static member op_Explicit: ^T -> float)
+                              and ^T: (static member (/) : ^T * ^T -> ^T)> (i: ^T) =
     liftUnaryReleaseAfter "scalarDivImage" (fun (s: Image<^T>)->ImageFunctions.scalarDivImage<^T> i s) id id
-let inline imageDivScalar<^T when ^T: equality and ^T: (static member op_Explicit: ^T -> float)> (i: ^T) =
+let inline imageDivScalar<^T when ^T: equality
+                              and ^T: (static member op_Explicit: ^T -> float)
+                              and ^T: (static member (/) : ^T * ^T -> ^T)> (i: ^T) =
     liftUnaryReleaseAfter "imageDivScalar" (fun (s: Image<^T>)->ImageFunctions.imageDivScalar<^T> s i) id id
 
 let maxOfPair I J = liftRelease2 Image.maximumImage I J
@@ -1646,7 +1662,7 @@ let private streamingZonohedralLineStage operationName operatorName lineOperator
                 ensureInitialized image
                 let pixels =
                     try
-                        copyScalarPixels<uint8> image.Image plane
+                        copyScalarPixels<uint8> (image.toSimpleITK()) plane
                     finally
                         image.decRefCount()
                 queue.Add({ Index = realCount; Pixels = pixels })

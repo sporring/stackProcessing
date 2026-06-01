@@ -215,20 +215,36 @@ type ImageStats = ImageFunctions.ImageStats
 let cast<'S,'T when 'S: equality and 'T: equality> = StackImageFunctions.cast<'S,'T>
 let add = StackImageFunctions.add
 let addPair = StackImageFunctions.addPair
-let inline scalarAddImage<^T when ^T: equality and ^T: (static member op_Explicit: ^T -> float)> = StackImageFunctions.scalarAddImage<^T>
-let inline imageAddScalar<^T when ^T: equality and ^T: (static member op_Explicit: ^T -> float)> = StackImageFunctions.imageAddScalar<^T>
+let inline scalarAddImage<^T when ^T: equality
+                              and ^T: (static member op_Explicit: ^T -> float)
+                              and ^T: (static member (+) : ^T * ^T -> ^T)> = StackImageFunctions.scalarAddImage<^T>
+let inline imageAddScalar<^T when ^T: equality
+                              and ^T: (static member op_Explicit: ^T -> float)
+                              and ^T: (static member (+) : ^T * ^T -> ^T)> = StackImageFunctions.imageAddScalar<^T>
 let sub = StackImageFunctions.sub
 let subPair = StackImageFunctions.subPair
-let inline scalarSubImage<^T when ^T: equality and ^T: (static member op_Explicit: ^T -> float)> = StackImageFunctions.scalarSubImage<^T>
-let inline imageSubScalar<^T when ^T: equality and ^T: (static member op_Explicit: ^T -> float)> = StackImageFunctions.imageSubScalar<^T>
+let inline scalarSubImage<^T when ^T: equality
+                              and ^T: (static member op_Explicit: ^T -> float)
+                              and ^T: (static member (-) : ^T * ^T -> ^T)> = StackImageFunctions.scalarSubImage<^T>
+let inline imageSubScalar<^T when ^T: equality
+                              and ^T: (static member op_Explicit: ^T -> float)
+                              and ^T: (static member (-) : ^T * ^T -> ^T)> = StackImageFunctions.imageSubScalar<^T>
 let mul = StackImageFunctions.mul
 let mulPair = StackImageFunctions.mulPair
-let inline scalarMulImage<^T when ^T: equality and ^T: (static member op_Explicit: ^T -> float)> = StackImageFunctions.scalarMulImage<^T>
-let inline imageMulScalar<^T when ^T: equality and ^T: (static member op_Explicit: ^T -> float)> = StackImageFunctions.imageMulScalar<^T>
+let inline scalarMulImage<^T when ^T: equality
+                              and ^T: (static member op_Explicit: ^T -> float)
+                              and ^T: (static member ( * ) : ^T * ^T -> ^T)> = StackImageFunctions.scalarMulImage<^T>
+let inline imageMulScalar<^T when ^T: equality
+                              and ^T: (static member op_Explicit: ^T -> float)
+                              and ^T: (static member ( * ) : ^T * ^T -> ^T)> = StackImageFunctions.imageMulScalar<^T>
 let div = StackImageFunctions.div
 let divPair = StackImageFunctions.divPair
-let inline scalarDivImage<^T when ^T: equality and ^T: (static member op_Explicit: ^T -> float)> = StackImageFunctions.scalarDivImage<^T>
-let inline imageDivScalar<^T when ^T: equality and ^T: (static member op_Explicit: ^T -> float)> = StackImageFunctions.imageDivScalar<^T>
+let inline scalarDivImage<^T when ^T: equality
+                              and ^T: (static member op_Explicit: ^T -> float)
+                              and ^T: (static member (/) : ^T * ^T -> ^T)> = StackImageFunctions.scalarDivImage<^T>
+let inline imageDivScalar<^T when ^T: equality
+                              and ^T: (static member op_Explicit: ^T -> float)
+                              and ^T: (static member (/) : ^T * ^T -> ^T)> = StackImageFunctions.imageDivScalar<^T>
 let maxOfPair = StackImageFunctions.maxOfPair
 let minOfPair = StackImageFunctions.minOfPair
 let getMinMax = StackImageFunctions.getMinMax

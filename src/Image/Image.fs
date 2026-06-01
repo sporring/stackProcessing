@@ -1,6 +1,7 @@
 module Image
 open FSharp.Collections
 open System
+open System.Buffers
 open System.Runtime.InteropServices
 
 [<Struct>]
@@ -545,6 +546,101 @@ let private printDebugMessage str =
            printfn "%8d KB / %8d KB %3d / %3d Images %s" (memUsed/1024u) (peakMemUsed/1024u) totalImages peakTotalImages str) (*(String.replicate totalImages "*")*)
 let mutable private debug = false
 
+type PooledImageDebugCounters =
+    { Rents: int64
+      Returns: int64
+      Live: int64
+      PeakLive: int64 }
+
+let mutable private pooledRents = 0L
+let mutable private pooledReturns = 0L
+let mutable private pooledLive = 0L
+let mutable private pooledPeakLive = 0L
+
+let private notePooledRent () =
+    lock syncRoot (fun () ->
+        pooledRents <- pooledRents + 1L
+        pooledLive <- pooledLive + 1L
+        pooledPeakLive <- max pooledPeakLive pooledLive)
+
+let private notePooledReturn () =
+    lock syncRoot (fun () ->
+        pooledReturns <- pooledReturns + 1L
+        pooledLive <- pooledLive - 1L)
+
+let resetPooledImageDebugCounters () =
+    lock syncRoot (fun () ->
+        pooledRents <- 0L
+        pooledReturns <- 0L
+        pooledLive <- 0L
+        pooledPeakLive <- 0L)
+
+let getPooledImageDebugCounters () =
+    lock syncRoot (fun () ->
+        { Rents = pooledRents
+          Returns = pooledReturns
+          Live = pooledLive
+          PeakLive = pooledPeakLive })
+
+let private poisonPooledBuffersOnReturn () =
+    match Environment.GetEnvironmentVariable("STACKPROCESSING_ARRAYPOOL_POISON_ON_RETURN") with
+    | null -> false
+    | value -> value.Equals("1", StringComparison.OrdinalIgnoreCase) || value.Equals("true", StringComparison.OrdinalIgnoreCase)
+
+let private poisonPooledBuffer<'T> logicalLength (buffer: 'T[]) =
+    if poisonPooledBuffersOnReturn() then
+        match box buffer with
+        | :? (uint8[]) as typed -> Array.Fill(typed, 0xCCuy, 0, logicalLength)
+        | :? (int8[]) as typed -> Array.Fill(typed, -52y, 0, logicalLength)
+        | :? (uint16[]) as typed -> Array.Fill(typed, 0xCCCCus, 0, logicalLength)
+        | :? (int16[]) as typed -> Array.Fill(typed, -13108s, 0, logicalLength)
+        | :? (uint32[]) as typed -> Array.Fill(typed, 0xCCCCCCCCu, 0, logicalLength)
+        | :? (int32[]) as typed -> Array.Fill(typed, -858993460, 0, logicalLength)
+        | :? (uint64[]) as typed -> Array.Fill(typed, 0xCCCCCCCCCCCCCCCCUL, 0, logicalLength)
+        | :? (int64[]) as typed -> Array.Fill(typed, -3689348814741910324L, 0, logicalLength)
+        | :? (float32[]) as typed -> Array.Fill(typed, Single.NaN, 0, logicalLength)
+        | :? (float[]) as typed -> Array.Fill(typed, Double.NaN, 0, logicalLength)
+        | _ -> ()
+
+let private pooledMemoryEstimate<'T> logicalLength =
+    let bytes = uint64 logicalLength * uint64 (scalarComponentByteSize<'T>)
+    if bytes > uint64 System.UInt32.MaxValue then
+        System.UInt32.MaxValue
+    else
+        uint32 bytes
+
+type private PooledBufferOwner<'T>(buffer: 'T[], logicalLength: int) =
+    let mutable refCount = 1
+    let mutable returned = false
+    do
+        incMemUsed (pooledMemoryEstimate<'T> logicalLength)
+        notePooledRent()
+
+    member _.Buffer = buffer
+    member _.LogicalLength = logicalLength
+    member _.AddRef() =
+        lock syncRoot (fun () ->
+            if returned then invalidOp "Cannot retain a pooled buffer after it has been returned."
+            refCount <- refCount + 1)
+    member _.Release() =
+        let shouldReturn =
+            lock syncRoot (fun () ->
+                if returned then
+                    false
+                else
+                    refCount <- refCount - 1
+                    if refCount < 0 then invalidOp "Pooled buffer owner reference count became negative."
+                    if refCount = 0 then
+                        returned <- true
+                        true
+                    else
+                        false)
+        if shouldReturn then
+            decMemUsed (pooledMemoryEstimate<'T> logicalLength)
+            poisonPooledBuffer logicalLength buffer
+            ArrayPool<'T>.Shared.Return(buffer)
+            notePooledReturn()
+
 [<StructuredFormatDisplay("{Display}")>] // Prevent fsi printing information about its members such as img
 type Image<'T when 'T : equality>(sz: uint list, ?optionalNumberComponents: uint, ?optionalName: string, ?optionalIndex: int, ?optionalQuiet: bool) =
     do if sz.Length > 3 then invalidArg "sz" $"Image supports at most 3 dimensions; got {sz.Length}."
@@ -560,12 +656,18 @@ type Image<'T when 'T : equality>(sz: uint list, ?optionalNumberComponents: uint
     let idx = defaultArg optionalIndex 0 
     let quiet = defaultArg optionalQuiet false
 
-    let itkId = fromType<'T>
     let isListType = typeof<'T>.IsGenericType && typeof<'T>.GetGenericTypeDefinition() = typedefof<list<_>>
-    let mutable img = 
-        if isListType then new itk.simple.Image(sz |> toVectorUInt32, itkId, max 2u numberComp)
-        else new itk.simple.Image(sz |> toVectorUInt32, itkId, numberComp)
-    do incMemUsed (Image<_>.memoryEstimateSItk img)
+    let initialComponents = if isListType then max 2u numberComp else numberComp
+    let initialLength =
+        sz
+        |> List.fold (fun acc value -> acc * int64 value) 1L
+        |> fun voxels -> voxels * int64 initialComponents
+    do if initialLength > int64 Int32.MaxValue then invalidArg "sz" $"Image buffer is too large for a single managed array: {initialLength} elements."
+    let initialBuffer = ArrayPool<'T>.Shared.Rent(int initialLength)
+    do if initialLength > 0L then Array.Clear(initialBuffer, 0, int initialLength)
+    let mutable owner = PooledBufferOwner(initialBuffer, int initialLength)
+    let mutable pooledSize = sz
+    let mutable pooledComponents = initialComponents
     // count how many references there is to this image.
 
     let clampStartStop (img: Image<'T>) start0 stop0 start1 stop1 start2 stop2 = 
@@ -579,7 +681,7 @@ type Image<'T when 'T : equality>(sz: uint list, ?optionalNumberComponents: uint
     let mutable nReferences = 1 
  
     do incTotalImages()
-    do if debug && not quiet then printDebugMessage $"Created {name} ({img.GetSize()|> fromVectorUInt32}, {fromType<'T>} {img.GetPixelID()}, {img.GetNumberOfComponentsPerPixel()}->{Image<'T>.memoryEstimateSItk img})"
+    do if debug && not quiet then printDebugMessage $"Created {name} ({pooledSize}, {typeof<'T>.Name}, {pooledComponents}->{Image<'T>.pooledMemoryEstimate owner.LogicalLength})"
     let now = System.DateTime.UtcNow.ToString("HH:mm:ss.ffffff'Z'")
 
     static member setDebugLevel level =
@@ -588,11 +690,19 @@ type Image<'T when 'T : equality>(sz: uint list, ?optionalNumberComponents: uint
         debug <- level > 0u
     static member setDebug d =
         Image<'T>.setDebugLevel(if d then 1u else 0u)
-    member this.Image = img
     member this.Name = name
     member val index = idx with get, set
-    member private this.SetImg (itkImg: itk.simple.Image) : unit =
-        img <- itkImg
+    member private this.SetPooled1D (owner: PooledBufferOwner<'T>, size: uint list, components: uint) : unit =
+        if owner.LogicalLength < 0 then invalidArg "owner" "Logical length must be non-negative."
+        if components <> 1u then invalidArg "components" "Pooled image storage currently supports scalar images only."
+        this.ReleasePooledOwner()
+        this.SetPooledOwner(owner, size, components)
+    member private this.SetPooledOwner(newOwner: PooledBufferOwner<'T>, size: uint list, components: uint) : unit =
+        owner <- newOwner
+        pooledSize <- size
+        pooledComponents <- components
+    member private this.ReleasePooledOwner() =
+        owner.Release()
     // add a use of this image
     member this.getNReferences() = nReferences
     member this.incRefCount() = 
@@ -604,10 +714,8 @@ type Image<'T when 'T : equality>(sz: uint list, ?optionalNumberComponents: uint
         nReferences<-nReferences-1
         if nReferences = 0 then
             decTotalImages()
-            decMemUsed (Image<_>.memoryEstimateSItk img)
+            owner.Release()
             if debug then printDebugMessage $"Disposed of {this.Name}"
-            img.Dispose()
-            img <- new itk.simple.Image([0u;0u] |> toVectorUInt32, itkId)
 
     static member memoryEstimateSItk (sitk : itk.simple.Image) = 
         let facts = ImageFacts.ofSimpleITK sitk
@@ -616,24 +724,92 @@ type Image<'T when 'T : equality>(sz: uint list, ?optionalNumberComponents: uint
         else
             uint32 facts.MemoryBytes
 
+    static member private pooledMemoryEstimate logicalLength =
+        pooledMemoryEstimate<'T> logicalLength
+
     static member memoryEstimate (width: uint) (height: uint) =
         ImageFacts.sliceBytesForType<'T> width height
 
-    member this.GetSize () = img.GetSize() |> fromVectorUInt32
-    member this.GetFacts () = ImageFacts.ofSimpleITK img
+    member this.GetSize () = pooledSize
+    member this.GetFacts () =
+        ImageFacts.create "ArrayPool" typeof<'T>.Name (uint64 (scalarComponentByteSize<'T>)) (uint64 pooledComponents) (pooledSize |> List.map uint64)
     member this.GetMemoryBytes () = this.GetFacts().MemoryBytes
-    member this.GetDepth() = max 1u (img.GetDepth()) // Non-vector images returns 0
-    member this.GetDimensions() = img.GetDimension()
-    member this.GetHeight() = img.GetHeight()
-    member this.GetWidth() = img.GetWidth()
-    member this.GetNumberOfComponentsPerPixel() = img.GetNumberOfComponentsPerPixel()
+    member this.GetDepth() =
+        match this.GetSize() with
+        | _ :: _ :: depth :: _ -> depth
+        | _ -> 1u
+    member this.GetDimensions() = uint32 (this.GetSize().Length)
+    member this.GetHeight() =
+        match this.GetSize() with
+        | _ :: height :: _ -> height
+        | _ -> 0u
+    member this.GetWidth() =
+        match this.GetSize() with
+        | width :: _ -> width
+        | _ -> 0u
+    member this.GetNumberOfComponentsPerPixel() = pooledComponents
+    member internal this.TryGetPooled1D () =
+        Some(owner.Buffer, owner.LogicalLength, pooledSize, pooledComponents)
+    member this.TryMapPooled1D<'U when 'U : equality> (name: string, f: 'T -> 'U) : Image<'U> option =
+        match this.TryGetPooled1D() with
+        | Some(input, logicalLength, size, 1u) ->
+            let output = ArrayPool<'U>.Shared.Rent(logicalLength)
+            try
+                for i in 0 .. logicalLength - 1 do
+                    output[i] <- f input[i]
+                Some(Image<'U>.ofPooled1D(output, logicalLength, size, name, this.index))
+            with
+            | _ ->
+                poisonPooledBuffer logicalLength output
+                ArrayPool<'U>.Shared.Return(output)
+                reraise()
+        | _ -> None
+    member this.TryMap2Pooled1D<'U, 'V when 'U : equality and 'V : equality> (other: Image<'U>, name: string, f: 'T -> 'U -> 'V) : Image<'V> option =
+        match this.TryGetPooled1D(), other.TryGetPooled1D() with
+        | Some(inputA, logicalLengthA, sizeA, 1u), Some(inputB, logicalLengthB, sizeB, 1u)
+            when logicalLengthA = logicalLengthB && sizeA = sizeB ->
+            let output = ArrayPool<'V>.Shared.Rent(logicalLengthA)
+            try
+                for i in 0 .. logicalLengthA - 1 do
+                    output[i] <- f inputA[i] inputB[i]
+                Some(Image<'V>.ofPooled1D(output, logicalLengthA, sizeA, name, this.index))
+            with
+            | _ ->
+                poisonPooledBuffer logicalLengthA output
+                ArrayPool<'V>.Shared.Return(output)
+                reraise()
+        | _ -> None
+    member this.TryFoldPooled1D<'S> (f: 'S -> 'T -> 'S, acc0: 'S) : 'S option =
+        match this.TryGetPooled1D() with
+        | Some(input, logicalLength, _, 1u) ->
+            let mutable acc = acc0
+            for i in 0 .. logicalLength - 1 do
+                acc <- f acc input[i]
+            Some acc
+        | _ -> None
+    member this.TryFold2Pooled1D<'S, 'U when 'U : equality> (other: Image<'U>, f: 'S -> 'T -> 'U -> 'S, acc0: 'S) : 'S option =
+        match this.TryGetPooled1D(), other.TryGetPooled1D() with
+        | Some(inputA, logicalLengthA, sizeA, 1u), Some(inputB, logicalLengthB, sizeB, 1u)
+            when logicalLengthA = logicalLengthB && sizeA = sizeB ->
+            let mutable acc = acc0
+            for i in 0 .. logicalLengthA - 1 do
+                acc <- f acc inputA[i] inputB[i]
+            Some acc
+        | _ -> None
+    member this.TryIterPooled1D (f: 'T -> unit) : bool =
+        match this.TryGetPooled1D() with
+        | Some(input, logicalLength, _, 1u) ->
+            for i in 0 .. logicalLength - 1 do
+                f input[i]
+            true
+        | _ -> false
 
     override this.ToString() = 
         let sz = this.GetSize()
         let szStr = List.fold (fun acc elm -> acc + $"x{elm}") (sz |> List.head |> string) (List.tail sz)
         let comp = this.GetNumberOfComponentsPerPixel()
         let vecStr = if comp = 1u then "Scalar" else sprintf $"{comp}-Vector "
-        sprintf "%s %s<%s=%A>" szStr vecStr (typeof<'T>.Name) (img.GetPixelID())
+        sprintf "%s %s<%s=ArrayPool>" szStr vecStr (typeof<'T>.Name)
     member this.Display = this.ToString() // related to [<StructuredFormatDisplay>]
 
     interface System.IEquatable<Image<'T>> with
@@ -660,14 +836,16 @@ type Image<'T when 'T : equality>(sz: uint list, ?optionalNumberComponents: uint
             let isComplexType = typeof<'T> = typeof<System.Numerics.Complex> || typeof<'T> = typeof<ComplexFloat32>
             if isComplexType && not (isComplexCompatibleImage itkImgCast) then
                 invalidArg "itkImg" "Complex pixel type requires a native complex image."
-            let img = new Image<'T>([0u;0u],itkImgCast.GetNumberOfComponentsPerPixel(),name,index, true)
-
-            img.SetImg itkImgCast
-            incMemUsed (Image<_>.memoryEstimateSItk img.Image)
-            if debug then printDebugMessage $"Created {img.Name} ({itkImgCast.GetSize()|> fromVectorUInt32}, {fromType<'T>} {itkImgCast.GetPixelID()}, {itkImgCast.GetNumberOfComponentsPerPixel()}->{Image<'T>.memoryEstimateSItk itkImgCast})"
-            img
+            if itkImgCast.GetNumberOfComponentsPerPixel() <> 1u then
+                invalidArg "itkImg" "ArrayPool-backed Image currently supports scalar SimpleITK conversion only."
+            let size = itkImgCast.GetSize() |> fromVectorUInt32
+            let logicalLength = size |> List.fold (fun acc value -> acc * int value) 1
+            let pixels = copyScalarPixels<'T> itkImgCast logicalLength
+            let buffer = ArrayPool<'T>.Shared.Rent(logicalLength)
+            Array.Copy(pixels, buffer, logicalLength)
+            Image<'T>.ofPooled1D(buffer, logicalLength, size, name, index)
         with
-        | ex ->
+        | _ ->
             itkImgCast.Dispose()
             reraise()
 
@@ -681,14 +859,7 @@ type Image<'T when 'T : equality>(sz: uint list, ?optionalNumberComponents: uint
     static member ofSimpleITKAlias (itkImg: itk.simple.Image, ?optionalName: string, ?optionalIndex: int) : Image<'T> =
         let name = defaultArg optionalName ""
         let index = defaultArg optionalIndex 0
-
-        let itkImgAlias = aliasSimpleITKImage<'T> itkImg
-        let img = new Image<'T>([0u;0u], itkImgAlias.GetNumberOfComponentsPerPixel(), name, index, true)
-
-        img.SetImg itkImgAlias
-        incMemUsed (Image<_>.memoryEstimateSItk img.Image)
-        if debug then printDebugMessage $"Created alias {img.Name} ({itkImgAlias.GetSize()|> fromVectorUInt32}, {fromType<'T>} {itkImgAlias.GetPixelID()}, {itkImgAlias.GetNumberOfComponentsPerPixel()}->{Image<'T>.memoryEstimateSItk itkImgAlias})"
-        img
+        Image<'T>.ofSimpleITK(itkImg, name, index)
 
     /// <summary>
     /// Creates an aliasing <c>Image&lt;'T&gt;</c> by taking over a SimpleITK image whose pixel type already matches <c>'T</c>.
@@ -702,13 +873,7 @@ type Image<'T when 'T : equality>(sz: uint list, ?optionalNumberComponents: uint
         let expectedId = fromType<'T>
         if itkImg.GetPixelID() <> expectedId then
             invalidArg "itkImg" $"Expected {expectedId} image for alias transfer, got {itkImg.GetPixelID()}."
-
-        let img = new Image<'T>([0u;0u], itkImg.GetNumberOfComponentsPerPixel(), name, index, true)
-
-        img.SetImg itkImg
-        incMemUsed (Image<_>.memoryEstimateSItk img.Image)
-        if debug then printDebugMessage $"Created transferred alias {img.Name} ({itkImg.GetSize()|> fromVectorUInt32}, {fromType<'T>} {itkImg.GetPixelID()}, {itkImg.GetNumberOfComponentsPerPixel()}->{Image<'T>.memoryEstimateSItk itkImg})"
-        img
+        Image<'T>.ofSimpleITK(itkImg, name, index)
 
     /// <summary>
     /// Creates an <c>Image&lt;'T&gt;</c> from a temporary SimpleITK image and consumes that temporary.
@@ -720,23 +885,45 @@ type Image<'T when 'T : equality>(sz: uint list, ?optionalNumberComponents: uint
     static member ofSimpleITKNDispose (itkImg: itk.simple.Image, ?optionalName: string, ?optionalIndex: int) : Image<'T> =
         let name = defaultArg optionalName ""
         let index = defaultArg optionalIndex 0
-        if itkImg.GetPixelID() = fromType<'T> then
-            Image<'T>.ofSimpleITKAliasTransfer(itkImg, name, index)
-        else
-            try
-                Image<'T>.ofSimpleITK(itkImg, name, index)
-            finally
-                itkImg.Dispose()
+        try
+            Image<'T>.ofSimpleITK(itkImg, name, index)
+        finally
+            itkImg.Dispose()
+
+    /// <summary>
+    /// Creates an <c>Image&lt;'T&gt;</c> backed by an ArrayPool-rented one-dimensional scalar buffer.
+    /// Ownership of <paramref name="buffer" /> is transferred to the image and returned to the pool when the image is
+    /// released. Only the first <paramref name="logicalLength" /> values are part of the image.
+    /// </summary>
+    static member internal ofPooled1D (buffer: 'T[], logicalLength: int, size: uint list, ?optionalName: string, ?optionalIndex: int) : Image<'T> =
+        let name = defaultArg optionalName ""
+        let index = defaultArg optionalIndex 0
+        let expectedLength =
+            size
+            |> List.fold (fun acc value -> acc * int64 value) 1L
+        if expectedLength <> int64 logicalLength then
+            invalidArg "logicalLength" $"Logical length {logicalLength} does not match image size {size}."
+        let image = new Image<'T>([0u;0u], 1u, name, index, true)
+        let owner = PooledBufferOwner(buffer, logicalLength)
+        image.SetPooled1D(owner, size, 1u)
+        if debug then printDebugMessage $"Created pooled {image.Name} ({size}, {typeof<'T>.Name}->{Image<'T>.pooledMemoryEstimate logicalLength})"
+        image
 
     member this.toSimpleITK () : itk.simple.Image =
-        if isComplexType && not (isComplexCompatibleImage img) then
-            invalidOp "Complex pixel type requires a native complex image."
-        img
+        if isComplexType then
+            invalidOp "ArrayPool-backed Image currently supports scalar toSimpleITK conversion only."
+        if pooledComponents <> 1u then
+            invalidOp "ArrayPool-backed Image currently supports scalar toSimpleITK conversion only."
+        importScalarImage pooledSize owner.Buffer
 
     member this.copy (?optionalName: string, ?optionalIndex: int) : Image<'T> =
         let name = defaultArg optionalName "copy"
         let index = defaultArg optionalIndex this.index
-        Image<'T>.ofSimpleITK(this.toSimpleITK(), name, index)
+        let buffer = owner.Buffer
+        let logicalLength = owner.LogicalLength
+        let output = ArrayPool<'T>.Shared.Rent(logicalLength)
+        Array.Copy(buffer, output, logicalLength)
+        Image<'T>.ofPooled1D(output, logicalLength, pooledSize, name, index)
 
     member this.castTo<'S when 'S: equality> () : Image<'S> = Image<'S>.ofSimpleITK(this.toSimpleITK(),"cast",this.index)
     member this.toUInt8 ()   : Image<uint8>   = Image<uint8>.ofSimpleITK(this.toSimpleITK(),"toUInt8",this.index)
@@ -769,14 +956,14 @@ type Image<'T when 'T : equality>(sz: uint list, ?optionalNumberComponents: uint
         if isScalarImportSupported<'T> then
             let width = arr.GetLength(0)
             let height = arr.GetLength(1)
-            let pixels = Array.zeroCreate<'T> (width * height)
+            let pixels = ArrayPool<'T>.Shared.Rent(width * height)
             let mutable offset = 0
             for y in 0 .. height - 1 do
                 for x in 0 .. width - 1 do
                     pixels[offset] <- arr[x, y]
                     offset <- offset + 1
 
-            Image<'T>.ofSimpleITKNDispose(importScalarImage sz pixels, _name, _index)
+            Image<'T>.ofPooled1D(pixels, width * height, sz, _name, _index)
         else
             let img = new Image<'T>(sz,1u,_name,_index)
             img |> Image.iteri (fun idxLst _ -> img.Set idxLst arr[int idxLst[0],int idxLst[1]])
@@ -855,7 +1042,7 @@ type Image<'T when 'T : equality>(sz: uint list, ?optionalNumberComponents: uint
             let width = arr.GetLength(0)
             let height = arr.GetLength(1)
             let depth = arr.GetLength(2)
-            let pixels = Array.zeroCreate<'T> (width * height * depth)
+            let pixels = ArrayPool<'T>.Shared.Rent(width * height * depth)
             let mutable offset = 0
             for z in 0 .. depth - 1 do
                 for y in 0 .. height - 1 do
@@ -863,7 +1050,7 @@ type Image<'T when 'T : equality>(sz: uint list, ?optionalNumberComponents: uint
                         pixels[offset] <- arr[x, y, z]
                         offset <- offset + 1
 
-            Image<'T>.ofSimpleITKNDispose(importScalarImage sz pixels, _name, _index)
+            Image<'T>.ofPooled1D(pixels, width * height * depth, sz, _name, _index)
         else
             let img = new Image<'T>(sz,1u,_name,_index)
             img |> Image.iteri (fun idxLst _ -> img.Set idxLst arr[int idxLst[0],int idxLst[1],int idxLst[2]])
@@ -984,12 +1171,16 @@ type Image<'T when 'T : equality>(sz: uint list, ?optionalNumberComponents: uint
 
     member this.toArray2D (): 'T[,] =
         let sz = this.GetSize() |> List.map int
-        if this.GetDimensions() = 2u && isScalarImportSupported<'T> && this.Image.GetPixelID() = fromType<'T> then
+        match this.TryGetPooled1D() with
+        | Some(buffer, logicalLength, _, 1u) when this.GetDimensions() = 2u && logicalLength = sz[0] * sz[1] ->
+            let width = sz[0]
+            Array2D.init sz[0] sz[1] (fun x y -> buffer[y * width + x])
+        | _ when this.GetDimensions() = 2u && isScalarImportSupported<'T> && this.toSimpleITK().GetPixelID() = fromType<'T> ->
             let width = sz[0]
             let height = sz[1]
-            let pixels = copyScalarPixels<'T> this.Image (width * height)
+            let pixels = copyScalarPixels<'T> (this.toSimpleITK()) (width * height)
             Array2D.init width height (fun x y -> pixels[y * width + x])
-        else
+        | _ ->
             Array2D.init sz[0] sz[1] (fun i0 i1 -> this.Get([uint i0; uint i1]))
 
     member this.toComplexArray2D () : System.Numerics.Complex[,] =
@@ -998,8 +1189,8 @@ type Image<'T when 'T : equality>(sz: uint list, ?optionalNumberComponents: uint
         if this.GetDimensions() <> 2u then
             invalidOp $"toComplexArray2D: image must be 2D, got {this.GetDimensions()}D."
 
-        let realItk = extractComplexRealImage this.Image
-        let imagItk = extractComplexImagImage this.Image
+        let realItk = extractComplexRealImage (this.toSimpleITK())
+        let imagItk = extractComplexImagImage (this.toSimpleITK())
         let realImg = Image<float>.ofSimpleITKNDispose(realItk, "toComplexArray2D.Re", this.index)
         let imagImg = Image<float>.ofSimpleITKNDispose(imagItk, "toComplexArray2D.Im", this.index)
         let real = realImg.toArray2D()
@@ -1014,8 +1205,8 @@ type Image<'T when 'T : equality>(sz: uint list, ?optionalNumberComponents: uint
         if this.GetDimensions() <> 2u then
             invalidOp $"toComplexFloat32Array2D: image must be 2D, got {this.GetDimensions()}D."
 
-        let realItk = extractComplexRealImage this.Image
-        let imagItk = extractComplexImagImage this.Image
+        let realItk = extractComplexRealImage (this.toSimpleITK())
+        let imagItk = extractComplexImagImage (this.toSimpleITK())
         let realImg = Image<float32>.ofSimpleITKNDispose(realItk, "toComplexFloat32Array2D.Re", this.index)
         let imagImg = Image<float32>.ofSimpleITKNDispose(imagItk, "toComplexFloat32Array2D.Im", this.index)
         let real = realImg.toArray2D()
@@ -1043,23 +1234,28 @@ type Image<'T when 'T : equality>(sz: uint list, ?optionalNumberComponents: uint
 
     member this.toArray3D (): 'T[,,] =
         let sz = this.GetSize() |> List.map int
-        if this.GetDimensions() = 3u && isScalarImportSupported<'T> && this.Image.GetPixelID() = fromType<'T> then
+        match this.TryGetPooled1D() with
+        | Some(buffer, logicalLength, _, 1u) when this.GetDimensions() = 3u && logicalLength = sz[0] * sz[1] * sz[2] ->
+            let width = sz[0]
+            let height = sz[1]
+            Array3D.init sz[0] sz[1] sz[2] (fun x y z -> buffer[(z * height + y) * width + x])
+        | _ when this.GetDimensions() = 3u && isScalarImportSupported<'T> && this.toSimpleITK().GetPixelID() = fromType<'T> ->
             let width = sz[0]
             let height = sz[1]
             let depth = sz[2]
-            let pixels = copyScalarPixels<'T> this.Image (width * height * depth)
+            let pixels = copyScalarPixels<'T> (this.toSimpleITK()) (width * height * depth)
             Array3D.init width height depth (fun x y z -> pixels[(z * height + y) * width + x])
-        else
+        | _ ->
             Array3D.init sz[0] sz[1] sz[2] (fun i0 i1 i2 -> this.Get([uint i0; uint i1; uint i2]))
 
     member this.toArray4D (): 'T[,,,] =
         let sz = this.GetSize() |> List.map int
-        if this.GetDimensions() = 4u && isScalarImportSupported<'T> && this.Image.GetPixelID() = fromType<'T> then
+        if this.GetDimensions() = 4u && isScalarImportSupported<'T> && this.toSimpleITK().GetPixelID() = fromType<'T> then
             let width = sz[0]
             let height = sz[1]
             let depth = sz[2]
             let length = sz[3]
-            let pixels = copyScalarPixels<'T> this.Image (width * height * depth * length)
+            let pixels = copyScalarPixels<'T> (this.toSimpleITK()) (width * height * depth * length)
             Array4D.init width height depth length (fun x y z t -> pixels[((t * depth + z) * height + y) * width + x])
         else
             Array4D.init sz[0] sz[1] sz[2] sz[3] (fun i0 i1 i2 i3 -> this.Get([uint i0; uint i1; uint i2; uint i3]))
@@ -1070,8 +1266,8 @@ type Image<'T when 'T : equality>(sz: uint list, ?optionalNumberComponents: uint
         if this.GetDimensions() <> 3u then
             invalidOp $"toComplexArray3D: image must be 3D, got {this.GetDimensions()}D."
 
-        let realItk = extractComplexRealImage this.Image
-        let imagItk = extractComplexImagImage this.Image
+        let realItk = extractComplexRealImage (this.toSimpleITK())
+        let imagItk = extractComplexImagImage (this.toSimpleITK())
         let realImg = Image<float>.ofSimpleITKNDispose(realItk, "toComplexArray3D.Re", this.index)
         let imagImg = Image<float>.ofSimpleITKNDispose(imagItk, "toComplexArray3D.Im", this.index)
         let real = realImg.toArray3D()
@@ -1086,8 +1282,8 @@ type Image<'T when 'T : equality>(sz: uint list, ?optionalNumberComponents: uint
         if this.GetDimensions() <> 3u then
             invalidOp $"toComplexFloat32Array3D: image must be 3D, got {this.GetDimensions()}D."
 
-        let realItk = extractComplexRealImage this.Image
-        let imagItk = extractComplexImagImage this.Image
+        let realItk = extractComplexRealImage (this.toSimpleITK())
+        let imagItk = extractComplexImagImage (this.toSimpleITK())
         let realImg = Image<float32>.ofSimpleITKNDispose(realItk, "toComplexFloat32Array3D.Re", this.index)
         let imagImg = Image<float32>.ofSimpleITKNDispose(imagItk, "toComplexFloat32Array3D.Im", this.index)
         let real = realImg.toArray3D()
@@ -1130,10 +1326,10 @@ type Image<'T when 'T : equality>(sz: uint list, ?optionalNumberComponents: uint
 
     member this.toImageList () : Image<'S> list =
         use filter = new itk.simple.VectorIndexSelectionCastImageFilter()
-        let n = this.Image.GetNumberOfComponentsPerPixel() |> int
+        let n = this.toSimpleITK().GetNumberOfComponentsPerPixel() |> int
         List.init n (fun i ->
             filter.SetIndex(uint i)
-            let scalarItk = filter.Execute(this.Image)
+            let scalarItk = filter.Execute(this.toSimpleITK())
             Image<'S>.ofSimpleITKNDispose(scalarItk,"toImageList",this.index+i)
         )
 
@@ -1224,7 +1420,7 @@ type Image<'T when 'T : equality>(sz: uint list, ?optionalNumberComponents: uint
         match optionalFormat with
         | Some fmt -> writer.SetImageIO(fmt)
         | None -> ()
-        writer.Execute(this.Image)
+        writer.Execute(this.toSimpleITK())
 
     member this.toFileVector(filename: string, ?optionalFormat: string) =
         let isListType = typeof<'T>.IsGenericType && typeof<'T>.GetGenericTypeDefinition() = typedefof<list<_>>
@@ -1237,8 +1433,8 @@ type Image<'T when 'T : equality>(sz: uint list, ?optionalNumberComponents: uint
     member this.toFileComplex(filename: string, ?optionalFormat: string) =
         if typeof<'T> <> typeof<System.Numerics.Complex> && typeof<'T> <> typeof<ComplexFloat32> then
             failwith "toFileComplex: image pixel type must be System.Numerics.Complex or ComplexFloat32."
-        if not (isComplexCompatibleImage this.Image) then
-            failwithf "toFileComplex: expected a native complex image, got %O with %d component(s)." (this.Image.GetPixelID()) (this.GetNumberOfComponentsPerPixel())
+        if not (isComplexCompatibleImage (this.toSimpleITK())) then
+            failwithf "toFileComplex: expected a native complex image, got %O with %d component(s)." (this.toSimpleITK().GetPixelID()) (this.GetNumberOfComponentsPerPixel())
         this.toFile(filename, ?optionalFormat = optionalFormat)
 
     // Arithmatic
@@ -1270,6 +1466,9 @@ type Image<'T when 'T : equality>(sz: uint list, ?optionalNumberComponents: uint
 
     // Collection type
     static member map (f:'T->'T) (im1: Image<'T>) : Image<'T> =
+        match im1.TryMapPooled1D("map", f) with
+        | Some output -> output
+        | None ->
         match im1.GetDimensions() with
         | 2u ->
             im1.toArray2D()
@@ -1320,15 +1519,18 @@ type Image<'T when 'T : equality>(sz: uint list, ?optionalNumberComponents: uint
             im
 
     static member iter (f:'T->unit) (im1: Image<'T>) : unit = 
-        match im1.GetDimensions() with
-        | 2u -> im1.toArray2D() |> Seq.cast<'T> |> Seq.iter f
-        | 3u -> im1.toArray3D() |> Seq.cast<'T> |> Seq.iter f
-        | 4u -> im1.toArray4D() |> Seq.cast<'T> |> Seq.iter f
-        | _ ->
-            let sz = im1.GetSize()
-            sz
-            |> flatIndices
-            |> Seq.iter (fun idx -> im1.Get idx |> f)
+        if im1.TryIterPooled1D(f) then
+            ()
+        else
+            match im1.GetDimensions() with
+            | 2u -> im1.toArray2D() |> Seq.cast<'T> |> Seq.iter f
+            | 3u -> im1.toArray3D() |> Seq.cast<'T> |> Seq.iter f
+            | 4u -> im1.toArray4D() |> Seq.cast<'T> |> Seq.iter f
+            | _ ->
+                let sz = im1.GetSize()
+                sz
+                |> flatIndices
+                |> Seq.iter (fun idx -> im1.Get idx |> f)
 
     static member iteri (f:uint list->'T->unit) (im1: Image<'T>) : unit = 
         match im1.GetDimensions() with
@@ -1357,52 +1559,58 @@ type Image<'T when 'T : equality>(sz: uint list, ?optionalNumberComponents: uint
             |> Seq.iter (fun idx -> im1.Get idx |> f idx)
 
     static member fold (f:'S->'T->'S) (acc0: 'S) (im1: Image<'T>) : 'S = 
-        match im1.GetDimensions() with
-        | 2u -> im1.toArray2D() |> Seq.cast<'T> |> Seq.fold f acc0
-        | 3u -> im1.toArray3D() |> Seq.cast<'T> |> Seq.fold f acc0
-        | 4u -> im1.toArray4D() |> Seq.cast<'T> |> Seq.fold f acc0
-        | _ ->
-            let sz = im1.GetSize()
-            sz
-            |> flatIndices
-            |> Seq.fold (fun acc idx -> im1.Get idx |> f acc) acc0
+        match im1.TryFoldPooled1D(f, acc0) with
+        | Some acc -> acc
+        | None ->
+            match im1.GetDimensions() with
+            | 2u -> im1.toArray2D() |> Seq.cast<'T> |> Seq.fold f acc0
+            | 3u -> im1.toArray3D() |> Seq.cast<'T> |> Seq.fold f acc0
+            | 4u -> im1.toArray4D() |> Seq.cast<'T> |> Seq.fold f acc0
+            | _ ->
+                let sz = im1.GetSize()
+                sz
+                |> flatIndices
+                |> Seq.fold (fun acc idx -> im1.Get idx |> f acc) acc0
 
     static member fold2 (f:'S->'T->'T->'S) (acc0: 'S) (im1: Image<'T>) (im2: Image<'T>) : 'S = 
         let sz1 = im1.GetSize()
         let sz2 = im2.GetSize()
         if List.exists2 (<>) sz1 sz2 then failwith "[Image.fold2] cannot fold over 2 images of unequal sizes"
-        match im1.GetDimensions(), im2.GetDimensions() with
-        | 2u, 2u ->
-            let v1 = im1.toArray2D()
-            let v2 = im2.toArray2D()
-            let mutable acc = acc0
-            for i0 in 0 .. v1.GetLength 0 - 1 do
-                for i1 in 0 .. v1.GetLength 1 - 1 do
-                    acc <- f acc v1[i0, i1] v2[i0, i1]
-            acc
-        | 3u, 3u ->
-            let v1 = im1.toArray3D()
-            let v2 = im2.toArray3D()
-            let mutable acc = acc0
-            for i0 in 0 .. v1.GetLength 0 - 1 do
-                for i1 in 0 .. v1.GetLength 1 - 1 do
-                    for i2 in 0 .. v1.GetLength 2 - 1 do
-                        acc <- f acc v1[i0, i1, i2] v2[i0, i1, i2]
-            acc
-        | 4u, 4u ->
-            let v1 = im1.toArray4D()
-            let v2 = im2.toArray4D()
-            let mutable acc = acc0
-            for i0 in 0 .. v1.GetLength 0 - 1 do
-                for i1 in 0 .. v1.GetLength 1 - 1 do
-                    for i2 in 0 .. v1.GetLength 2 - 1 do
-                        for i3 in 0 .. v1.GetLength 3 - 1 do
-                            acc <- f acc v1[i0, i1, i2, i3] v2[i0, i1, i2, i3]
-            acc
-        | _ ->
-            sz1
-            |> flatIndices
-            |> Seq.fold (fun acc idx -> (im1.Get idx, im2.Get idx) ||> f acc) acc0
+        match im1.TryFold2Pooled1D(im2, f, acc0) with
+        | Some acc -> acc
+        | None ->
+            match im1.GetDimensions(), im2.GetDimensions() with
+            | 2u, 2u ->
+                let v1 = im1.toArray2D()
+                let v2 = im2.toArray2D()
+                let mutable acc = acc0
+                for i0 in 0 .. v1.GetLength 0 - 1 do
+                    for i1 in 0 .. v1.GetLength 1 - 1 do
+                        acc <- f acc v1[i0, i1] v2[i0, i1]
+                acc
+            | 3u, 3u ->
+                let v1 = im1.toArray3D()
+                let v2 = im2.toArray3D()
+                let mutable acc = acc0
+                for i0 in 0 .. v1.GetLength 0 - 1 do
+                    for i1 in 0 .. v1.GetLength 1 - 1 do
+                        for i2 in 0 .. v1.GetLength 2 - 1 do
+                            acc <- f acc v1[i0, i1, i2] v2[i0, i1, i2]
+                acc
+            | 4u, 4u ->
+                let v1 = im1.toArray4D()
+                let v2 = im2.toArray4D()
+                let mutable acc = acc0
+                for i0 in 0 .. v1.GetLength 0 - 1 do
+                    for i1 in 0 .. v1.GetLength 1 - 1 do
+                        for i2 in 0 .. v1.GetLength 2 - 1 do
+                            for i3 in 0 .. v1.GetLength 3 - 1 do
+                                acc <- f acc v1[i0, i1, i2, i3] v2[i0, i1, i2, i3]
+                acc
+            | _ ->
+                sz1
+                |> flatIndices
+                |> Seq.fold (fun acc idx -> (im1.Get idx, im2.Get idx) ||> f acc) acc0
 
     static member foldi (f:uint list->'S->'T->'S) (acc0: 'S) (im1: Image<'T>) : 'S =
         match im1.GetDimensions() with
@@ -1447,43 +1655,14 @@ type Image<'T when 'T : equality>(sz: uint list, ?optionalNumberComponents: uint
         im.toImageList()
 
     member this.Get (coords: uint list) : 'T =
-        let u = coords |> toVectorUInt32
-        if typeof<'T> = typeof<System.Numerics.Complex> then
-            let pid = this.Image.GetPixelID()
-            if not (isComplexPixelId pid) then
-                failwithf "Unsupported complex backing pixel type: %O" pid
-            use realFilter = new itk.simple.ComplexToRealImageFilter()
-            use imagFilter = new itk.simple.ComplexToImaginaryImageFilter()
-            use realComponent = realFilter.Execute(this.Image)
-            use imagComponent = imagFilter.Execute(this.Image)
-            let re = getFloatPixel realComponent u
-            let im = getFloatPixel imagComponent u
-            let c = System.Numerics.Complex(re, im)
-            unbox<'T> c
-        elif typeof<'T> = typeof<uint8 list> then
-            this.Image.GetPixelAsVectorUInt8(u) |> fromVectorUInt8 |> box :?> 'T
-        elif typeof<'T> = typeof<int8 list> then
-            this.Image.GetPixelAsVectorInt8(u) |> fromVectorInt8 |> box :?> 'T
-        elif typeof<'T> = typeof<uint16 list> then
-            this.Image.GetPixelAsVectorUInt16(u) |> fromVectorUInt16 |> box :?> 'T
-        elif typeof<'T> = typeof<int16 list> then
-            this.Image.GetPixelAsVectorInt16(u) |> fromVectorInt16 |> box :?> 'T
-        elif typeof<'T> = typeof<uint32 list> then
-            this.Image.GetPixelAsVectorUInt32(u) |> fromVectorUInt32 |> box :?> 'T
-        elif typeof<'T> = typeof<int32 list> then
-            this.Image.GetPixelAsVectorInt32(u) |> fromVectorInt32 |> box :?> 'T
-        elif typeof<'T> = typeof<uint64 list> then
-            this.Image.GetPixelAsVectorUInt64(u) |> fromVectorUInt64 |> box :?> 'T
-        elif typeof<'T> = typeof<int64 list> then
-            this.Image.GetPixelAsVectorInt64(u) |> fromVectorInt64 |> box :?> 'T
-        elif typeof<'T> = typeof<float32 list> then
-            this.Image.GetPixelAsVectorFloat32(u) |> fromVectorFloat32 |> box :?> 'T
-        elif typeof<'T> = typeof<float list> then
-            this.Image.GetPixelAsVectorFloat64(u) |> fromVectorFloat64 |> box :?> 'T
-        else
-            let t = fromType<'T>
-            let raw = getBoxedPixel this.Image t u
-            raw :?> 'T
+        if pooledComponents <> 1u || coords.Length <> pooledSize.Length then
+            invalidOp "Get currently supports scalar ArrayPool-backed images only."
+        let offset =
+            (pooledSize, coords)
+            ||> List.zip
+            |> List.fold (fun (stride, acc) (dim, coord) -> stride * int dim, acc + int coord * stride) (1, 0)
+            |> snd
+        owner.Buffer[offset]
 
     // Slicing is available as https://learn.microsoft.com/en-us/dotnet/fsharp/language-reference/arrays
     member this.GetSlice (start0: int option, stop0: int option, start1: int option, stop1: int option, start2: int option, stop2: int option) : Image<'T> =
@@ -1496,25 +1675,14 @@ type Image<'T when 'T : equality>(sz: uint list, ?optionalNumberComponents: uint
         Image<'T>.ofSimpleITKNDispose(img,"GetSlice")
 
     member this.Set (coords: uint list) (value: 'T) : unit =
-        let u = toVectorUInt32 coords
-        if typeof<'T> = typeof<System.Numerics.Complex> then
-            let c = unbox<System.Numerics.Complex> value
-            let pid = this.Image.GetPixelID()
-            if not (isComplexPixelId pid) then
-                failwithf "Unsupported complex backing pixel type: %O" pid
-            use realFilter = new itk.simple.ComplexToRealImageFilter()
-            use imagFilter = new itk.simple.ComplexToImaginaryImageFilter()
-            use compose = new itk.simple.RealAndImaginaryToComplexImageFilter()
-            use realImg = realFilter.Execute(this.Image)
-            use imagImg = imagFilter.Execute(this.Image)
-            setFloatPixel realImg u c.Real
-            setFloatPixel imagImg u c.Imaginary
-            let previous = img
-            img <- compose.Execute(realImg, imagImg)
-            previous.Dispose()
-        else
-            let t = fromType<'T>
-            setBoxedPixel this.Image t u value
+        if pooledComponents <> 1u || coords.Length <> pooledSize.Length then
+            invalidOp "Set currently supports scalar ArrayPool-backed images only."
+        let offset =
+            (pooledSize, coords)
+            ||> List.zip
+            |> List.fold (fun (stride, acc) (dim, coord) -> stride * int dim, acc + int coord * stride) (1, 0)
+            |> snd
+        owner.Buffer[offset] <- value
 
     member this.SetSlice (start0: int option, stop0: int option, start1: int option, stop1: int option, start2: int option, stop2: int option) (src: Image<'T>): unit=
         use filter = new itk.simple.PasteImageFilter()
@@ -1523,7 +1691,15 @@ type Image<'T when 'T : equality>(sz: uint list, ?optionalNumberComponents: uint
         filter.SetDestinationIndex(x0 |> toVectorInt32)
         filter.SetSourceIndex([0;0;0] |> toVectorInt32)
         filter.SetSourceSize(sz |> toVectorUInt32)
-        img <- filter.Execute (img,src.toSimpleITK())
+        use pasted = filter.Execute (this.toSimpleITK(),src.toSimpleITK())
+        let replacement = Image<'T>.ofSimpleITKNDispose(pasted, "SetSlice", this.index)
+        match replacement.TryGetPooled1D() with
+        | Some(buffer, logicalLength, size, components) ->
+            let newBuffer = ArrayPool<'T>.Shared.Rent(logicalLength)
+            Array.Copy(buffer, newBuffer, logicalLength)
+            this.SetPooled1D(PooledBufferOwner(newBuffer, logicalLength), size, components)
+        | None -> invalidOp "SetSlice expected an ArrayPool-backed replacement."
+        replacement.decRefCount()
 
     member this.Item
         with get(i0: int, i1: int) : 'T =

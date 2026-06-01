@@ -18,7 +18,7 @@ Options:
   --repeat-end N          Last repeat index to run. Defaults to --repeat.
   --backends LIST         Comma-separated baseline backends.
                           Defaults to stackprocessing,python-skimage-scipy,cpp-itk,matlab.
-                          Valid baseline backends: stackprocessing,stackprocessing-arraypool,stackprocessing-arraypool-slice,stackprocessing-arraypool-slice-reuse,stackprocessing-byte-slice-reuse,stackprocessing-byte-float32-slice-reuse,python-skimage-scipy,cpp-itk,matlab.
+                          Valid baseline backends: stackprocessing,stackprocessing-image-arraypool,stackprocessing-arraypool,stackprocessing-arraypool-slice,stackprocessing-arraypool-slice-reuse,stackprocessing-byte-slice-reuse,stackprocessing-byte-float32-slice-reuse,python-skimage-scipy,cpp-itk,matlab.
   --include-special       Also run python-dask-omezarr special cases.
   --cases PATH            Baseline cases CSV. Defaults to benchmarks/config/cases.csv.
   --special-cases PATH    Special cases CSV. Defaults to benchmarks/config/special-cases.csv.
@@ -250,7 +250,7 @@ has_backend() {
 
 for backend in "${backend_array[@]}"; do
   case "$backend" in
-    stackprocessing|stackprocessing-arraypool|stackprocessing-arraypool-slice|stackprocessing-arraypool-slice-reuse|stackprocessing-byte-slice-reuse|stackprocessing-byte-float32-slice-reuse|python-skimage-scipy|cpp-itk|matlab)
+    stackprocessing|stackprocessing-image-arraypool|stackprocessing-arraypool|stackprocessing-arraypool-slice|stackprocessing-arraypool-slice-reuse|stackprocessing-byte-slice-reuse|stackprocessing-byte-float32-slice-reuse|python-skimage-scipy|cpp-itk|matlab)
       ;;
     "")
       continue
@@ -263,7 +263,7 @@ for backend in "${backend_array[@]}"; do
 done
 
 if [[ "$skip_builds" -eq 0 ]]; then
-  if [[ "$skip_inputs" -eq 0 ]] || has_backend stackprocessing || has_backend stackprocessing-arraypool || has_backend stackprocessing-arraypool-slice || has_backend stackprocessing-arraypool-slice-reuse || has_backend stackprocessing-byte-slice-reuse || has_backend stackprocessing-byte-float32-slice-reuse; then
+  if [[ "$skip_inputs" -eq 0 ]] || has_backend stackprocessing || has_backend stackprocessing-image-arraypool || has_backend stackprocessing-arraypool || has_backend stackprocessing-arraypool-slice || has_backend stackprocessing-arraypool-slice-reuse || has_backend stackprocessing-byte-slice-reuse || has_backend stackprocessing-byte-float32-slice-reuse; then
     run_cmd dotnet build benchmarks/StackProcessing.Benchmarks/StackProcessing.Benchmarks.fsproj --nologo
   fi
   if has_backend cpp-itk || [[ "$build_itk" -eq 1 ]]; then

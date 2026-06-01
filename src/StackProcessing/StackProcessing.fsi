@@ -772,15 +772,19 @@ val addPair:
 
 val inline scalarAddImage<^T
                             when ^T: equality and
-                                 ^T: (static member op_Explicit: ^T -> float)> :
+                                 ^T: (static member op_Explicit: ^T -> float) and
+                                 ^T: (static member (+) : ^T * ^T -> ^T)> :
   (^T -> SlimPipeline.Stage<StackCore.Image<^T>,StackCore.Image<^T>>)
-    when ^T: equality and ^T: (static member op_Explicit: ^T -> float)
+    when ^T: equality and ^T: (static member op_Explicit: ^T -> float) and
+         ^T: (static member (+) : ^T * ^T -> ^T)
 
 val inline imageAddScalar<^T
                             when ^T: equality and
-                                 ^T: (static member op_Explicit: ^T -> float)> :
+                                 ^T: (static member op_Explicit: ^T -> float) and
+                                 ^T: (static member (+) : ^T * ^T -> ^T)> :
   (^T -> SlimPipeline.Stage<StackCore.Image<^T>,StackCore.Image<^T>>)
-    when ^T: equality and ^T: (static member op_Explicit: ^T -> float)
+    when ^T: equality and ^T: (static member op_Explicit: ^T -> float) and
+         ^T: (static member (+) : ^T * ^T -> ^T)
 
 val sub:
   (StackCore.Image<'a> ->
@@ -793,15 +797,19 @@ val subPair:
 
 val inline scalarSubImage<^T
                             when ^T: equality and
-                                 ^T: (static member op_Explicit: ^T -> float)> :
+                                 ^T: (static member op_Explicit: ^T -> float) and
+                                 ^T: (static member (-) : ^T * ^T -> ^T)> :
   (^T -> SlimPipeline.Stage<StackCore.Image<^T>,StackCore.Image<^T>>)
-    when ^T: equality and ^T: (static member op_Explicit: ^T -> float)
+    when ^T: equality and ^T: (static member op_Explicit: ^T -> float) and
+         ^T: (static member (-) : ^T * ^T -> ^T)
 
 val inline imageSubScalar<^T
                             when ^T: equality and
-                                 ^T: (static member op_Explicit: ^T -> float)> :
+                                 ^T: (static member op_Explicit: ^T -> float) and
+                                 ^T: (static member (-) : ^T * ^T -> ^T)> :
   (^T -> SlimPipeline.Stage<StackCore.Image<^T>,StackCore.Image<^T>>)
-    when ^T: equality and ^T: (static member op_Explicit: ^T -> float)
+    when ^T: equality and ^T: (static member op_Explicit: ^T -> float) and
+         ^T: (static member (-) : ^T * ^T -> ^T)
 
 val mul:
   (StackCore.Image<'a> ->
@@ -814,15 +822,19 @@ val mulPair:
 
 val inline scalarMulImage<^T
                             when ^T: equality and
-                                 ^T: (static member op_Explicit: ^T -> float)> :
+                                 ^T: (static member op_Explicit: ^T -> float) and
+                                 ^T: (static member ( * ) : ^T * ^T -> ^T)> :
   (^T -> SlimPipeline.Stage<StackCore.Image<^T>,StackCore.Image<^T>>)
-    when ^T: equality and ^T: (static member op_Explicit: ^T -> float)
+    when ^T: equality and ^T: (static member op_Explicit: ^T -> float) and
+         ^T: (static member ( * ) : ^T * ^T -> ^T)
 
 val inline imageMulScalar<^T
                             when ^T: equality and
-                                 ^T: (static member op_Explicit: ^T -> float)> :
+                                 ^T: (static member op_Explicit: ^T -> float) and
+                                 ^T: (static member ( * ) : ^T * ^T -> ^T)> :
   (^T -> SlimPipeline.Stage<StackCore.Image<^T>,StackCore.Image<^T>>)
-    when ^T: equality and ^T: (static member op_Explicit: ^T -> float)
+    when ^T: equality and ^T: (static member op_Explicit: ^T -> float) and
+         ^T: (static member ( * ) : ^T * ^T -> ^T)
 
 val div:
   (StackCore.Image<'a> ->
@@ -835,15 +847,19 @@ val divPair:
 
 val inline scalarDivImage<^T
                             when ^T: equality and
-                                 ^T: (static member op_Explicit: ^T -> float)> :
+                                 ^T: (static member op_Explicit: ^T -> float) and
+                                 ^T: (static member (/) : ^T * ^T -> ^T)> :
   (^T -> SlimPipeline.Stage<StackCore.Image<^T>,StackCore.Image<^T>>)
-    when ^T: equality and ^T: (static member op_Explicit: ^T -> float)
+    when ^T: equality and ^T: (static member op_Explicit: ^T -> float) and
+         ^T: (static member (/) : ^T * ^T -> ^T)
 
 val inline imageDivScalar<^T
                             when ^T: equality and
-                                 ^T: (static member op_Explicit: ^T -> float)> :
+                                 ^T: (static member op_Explicit: ^T -> float) and
+                                 ^T: (static member (/) : ^T * ^T -> ^T)> :
   (^T -> SlimPipeline.Stage<StackCore.Image<^T>,StackCore.Image<^T>>)
-    when ^T: equality and ^T: (static member op_Explicit: ^T -> float)
+    when ^T: equality and ^T: (static member op_Explicit: ^T -> float) and
+         ^T: (static member (/) : ^T * ^T -> ^T)
 
 val maxOfPair:
   (StackCore.Image<'a> -> StackCore.Image<'a> -> Image.Image<'a>)

@@ -32,7 +32,7 @@ Generate:
   dotnet run --project benchmarks/StackProcessing.Benchmarks -- generate --output DIR --shape 512x512x64 --pixel-type UInt8 [--pattern ramp|binary]
 
 Run:
-  dotnet run --project benchmarks/StackProcessing.Benchmarks -- run --operation copy|threshold|convolve|median|dilate|connectedComponents --pixel-type UInt8|UInt16|Float32 --input DIR --output DIR [--radius N] [--kernel-size N] [--threshold X] [--window N] [--available-memory BYTES]
+  dotnet run --project benchmarks/StackProcessing.Benchmarks -- run --operation copy|threshold|windowedThreshold|convolve|median|dilate|connectedComponents --pixel-type UInt8|UInt16|Float32 --input DIR --output DIR [--radius N] [--kernel-size N] [--threshold X] [--window N] [--available-memory BYTES]
 
 ArrayPool experiment:
   dotnet run --project benchmarks/StackProcessing.Benchmarks -- run-arraypool --operation copy|threshold|connectedComponents --pixel-type UInt8|UInt16|Float32 --input DIR --output DIR [--threshold X]
@@ -499,7 +499,7 @@ let private generate opts =
     | Float32 -> generateFloat32 pattern shape output
     0
 
-let private runTyped<'T when 'T: equality> operation input output radius thresholdValue availableMemory =
+let private runTyped<'T when 'T: equality> operation input output radius thresholdValue windowSize availableMemory =
     ensureCleanDirectory output
     let src = benchmarkSource availableMemory
     match operation with
@@ -512,6 +512,12 @@ let private runTyped<'T when 'T: equality> operation input output radius thresho
         src
         |> read<'T> input ".tiff"
         >=> threshold thresholdValue infinity
+        >=> write output ".tiff"
+        |> sink
+    | "windowedThreshold" ->
+        src
+        |> read<'T> input ".tiff"
+        >=> windowedThreshold<'T> windowSize thresholdValue infinity
         >=> write output ".tiff"
         |> sink
     | "median" ->
@@ -617,9 +623,9 @@ let private run opts =
         | "dilate", Float32 -> runBinaryDilateTyped<float32> input output radius availableMemory
         | "connectedComponents", UInt8 -> runConnectedComponents input output windowSize availableMemory
         | "connectedComponents", _ -> failwith "connectedComponents benchmark is currently defined for UInt8 masks only"
-        | _, UInt8 -> runTyped<uint8> operation input output radius thresholdValue availableMemory
-        | _, UInt16 -> runTyped<uint16> operation input output radius thresholdValue availableMemory
-        | _, Float32 -> runTyped<float32> operation input output radius thresholdValue availableMemory
+        | _, UInt8 -> runTyped<uint8> operation input output radius thresholdValue windowSize availableMemory
+        | _, UInt16 -> runTyped<uint16> operation input output radius thresholdValue windowSize availableMemory
+        | _, Float32 -> runTyped<float32> operation input output radius thresholdValue windowSize availableMemory
     stopwatch.Stop()
     writeInternalSeconds stopwatch.Elapsed
     exitCode
@@ -903,6 +909,9 @@ let main args =
         | [| |] -> usage ()
         | _ when args[0] = "generate" -> args[1..] |> parseArgs |> generate
         | _ when args[0] = "run" -> args[1..] |> parseArgs |> run
+        | _ when args[0] = "run-image-arraypool" ->
+            Environment.SetEnvironmentVariable("STACKPROCESSING_IMAGE_BACKEND", "arraypool")
+            args[1..] |> parseArgs |> run
         | _ when args[0] = "run-arraypool" -> args[1..] |> parseArgs |> runArrayPool
         | _ when args[0] = "run-arraypool-slice" -> args[1..] |> parseArgs |> runArrayPoolSlice
         | _ when args[0] = "run-arraypool-slice-reuse" -> args[1..] |> parseArgs |> runArrayPoolSliceReuse

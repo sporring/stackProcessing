@@ -73,7 +73,7 @@ let getMem () =
 let imageResourceOps<'S when 'S: equality> : ResourceOps<Image<'S>> =
     { Retain = fun image -> image.incRefCount()
       Release = fun image -> image.decRefCount()
-      MemoryOf = fun image -> Image<'S>.memoryEstimateSItk image.Image |> uint64 |> Some }
+      MemoryOf = fun image -> image.GetMemoryBytes() |> Some }
 
 let releaseAfterWith (ops: ResourceOps<'S>) (f: 'S -> 'T) (value: 'S) =
     try
@@ -310,7 +310,7 @@ let source availableMemory =
 
 let debug level optimize availableMemory =
     let level = max 1u level
-    Image.Image<_>.setDebugLevel (if level > 1u then level - 1u else 0u)
+    Image<_>.setDebugLevel (if level > 1u then level - 1u else 0u)
     Plan.debug level optimize availableMemory
 
 let debugDefault level availableMemory =

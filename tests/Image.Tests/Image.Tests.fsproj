@@ -68,6 +68,7 @@
     <Compile Include="mathFunction.fs" />
     <Compile Include="memoryHelper.fs" />
     <Compile Include="simpleFunction.fs" />
+    <Compile Include="PooledImageBackend.fs" />
     <Compile Include="WrapperCoverage.fs" />
     <Compile Include="Tests.fs" />
   </ItemGroup>

@@ -12,7 +12,7 @@ let memoryHelperTests =
       let arr = array2D [ [1uy; 2uy]; [3uy; 4uy] ]
       let img = Image<uint8>.ofArray2D arr
       let expectedSize = uint32 (2 * 2 * 1 * sizeof<uint8>)
-      Expect.equal (Image.memoryEstimateSItk img.Image) expectedSize "Memory estimate for 2x2 uint8"
+      Expect.equal (Image.memoryEstimateSItk (img.toSimpleITK())) expectedSize "Memory estimate for 2x2 uint8"
 
     testCase "ImageFacts reports size, voxel count, and memory bytes" <| fun _ ->
       let img = Image<uint16>.ofArray2D (array2D [ [1us; 2us; 3us]; [4us; 5us; 6us] ])

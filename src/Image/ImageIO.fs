@@ -1,11 +1,13 @@
 module ImageIO
 
 open System
+open System.Buffers
 open System.IO
 open System.Runtime.InteropServices
 open BitMiracle.LibTiff.Classic
 open Image
 open Image.InternalHelpers
+open SixLabors.ImageSharp.PixelFormats
 
 type ImageFileInfo =
     { Dimension: int
@@ -21,6 +23,72 @@ let imageFileInfo (filename: string) =
     { Dimension = int (reader.GetDimension())
       Size = reader.GetSize() |> fromVectorUInt64 |> List.map uint }
 
+let usePooledImageBackend () =
+    match Environment.GetEnvironmentVariable("STACKPROCESSING_IMAGE_BACKEND") with
+    | null -> false
+    | value -> value.Equals("arraypool", StringComparison.OrdinalIgnoreCase)
+
+let private isTiffFileName (filename: string) =
+    let ext = Path.GetExtension(filename).ToLowerInvariant()
+    ext = ".tif" || ext = ".tiff" || ext = ".btf" || ext = ".bigtiff"
+
+let private isImageSharpFileName (filename: string) =
+    match Path.GetExtension(filename).ToLowerInvariant() with
+    | ".png"
+    | ".jpg"
+    | ".jpeg"
+    | ".bmp"
+    | ".gif"
+    | ".tga"
+    | ".webp" -> true
+    | _ -> false
+
+let private tryReadImageSharpPooled<'T when 'T: equality> (filename: string) (name: string) (index: int) : Image<'T> option =
+    if not (usePooledImageBackend()) || isTiffFileName filename || not (isImageSharpFileName filename) then
+        None
+    elif typeof<'T> = typeof<uint8> then
+        use image = SixLabors.ImageSharp.Image.Load<L8>(filename)
+        let width = image.Width
+        let height = image.Height
+        let pixelCount = width * height
+        let buffer = ArrayPool<uint8>.Shared.Rent(pixelCount)
+        try
+            image.ProcessPixelRows(fun accessor ->
+                for y in 0 .. height - 1 do
+                    let row = accessor.GetRowSpan(y)
+                    for x in 0 .. width - 1 do
+                        buffer[y * width + x] <- row[x].PackedValue)
+            Image<uint8>.ofPooled1D(buffer, pixelCount, [ uint width; uint height ], name, index)
+            |> box
+            |> unbox<Image<'T>>
+            |> Some
+        with
+        | _ ->
+            ArrayPool<uint8>.Shared.Return(buffer)
+            reraise()
+    elif typeof<'T> = typeof<uint16> then
+        use image = SixLabors.ImageSharp.Image.Load<L16>(filename)
+        let width = image.Width
+        let height = image.Height
+        let pixelCount = width * height
+        let buffer = ArrayPool<uint16>.Shared.Rent(pixelCount)
+        try
+            image.ProcessPixelRows(fun accessor ->
+                for y in 0 .. height - 1 do
+                    let row = accessor.GetRowSpan(y)
+                    for x in 0 .. width - 1 do
+                        buffer[y * width + x] <- row[x].PackedValue)
+            Image<uint16>.ofPooled1D(buffer, pixelCount, [ uint width; uint height ], name, index)
+            |> box
+            |> unbox<Image<'T>>
+            |> Some
+        with
+        | _ ->
+            ArrayPool<uint16>.Shared.Return(buffer)
+            reraise()
+    else
+        None
+
 let readSimpleItkSlice<'T when 'T: equality>
     (filename: string)
     (dimension: int)
@@ -31,14 +99,17 @@ let readSimpleItkSlice<'T when 'T: equality>
     (index: int)
     =
 
-    use reader = new itk.simple.ImageFileReader()
-    reader.SetFileName(filename)
-    if dimension = 3 then
-        reader.SetExtractIndex([ 0; 0; sourceIndex ] |> toVectorInt32)
-        reader.SetExtractSize([ width; height; 0u ] |> toVectorUInt32)
+    match if dimension = 2 then tryReadImageSharpPooled<'T> filename name index else None with
+    | Some image -> image
+    | None ->
+        use reader = new itk.simple.ImageFileReader()
+        reader.SetFileName(filename)
+        if dimension = 3 then
+            reader.SetExtractIndex([ 0; 0; sourceIndex ] |> toVectorInt32)
+            reader.SetExtractSize([ width; height; 0u ] |> toVectorUInt32)
 
-    let itkImage = reader.Execute()
-    Image<'T>.ofSimpleITKNDispose(itkImage, name, index)
+        let itkImage = reader.Execute()
+        Image<'T>.ofSimpleITKNDispose(itkImage, name, index)
 
 let tiffPixelLayout<'T> () =
     let t = typeof<'T>
@@ -129,33 +200,56 @@ let bytesOfScalarImage2D<'T when 'T: equality> (image: Image<'T>) =
     let width = int (image.GetWidth())
     let height = int (image.GetHeight())
     let byteCount = width * height * scalarComponentByteSize<'T>
-    let pixels = copyScalarPixels<'T> image.Image (width * height)
     let bytes = Array.zeroCreate<byte> byteCount
-    Buffer.BlockCopy(pixels, 0, bytes, 0, byteCount)
+    match image.TryGetPooled1D() with
+    | Some(buffer, logicalLength, _, _) when logicalLength >= width * height ->
+        Buffer.BlockCopy(buffer, 0, bytes, 0, byteCount)
+    | _ ->
+        let pixels = copyScalarPixels<'T> (image.toSimpleITK()) (width * height)
+        Buffer.BlockCopy(pixels, 0, bytes, 0, byteCount)
     bytes
 
 let readTiffPage<'T when 'T: equality> (tiff: Tiff) width height bitsPerSample sampleFormat bytesPerSample index =
     let rowBytes = int width * bytesPerSample
     let scanlineSize = max rowBytes (tiff.ScanlineSize())
-    let buffer = Array.zeroCreate<byte> scanlineSize
-    let pageBuffer = Array.zeroCreate<byte> (rowBytes * int height)
-
-    for row in 0 .. int height - 1 do
-        if not (tiff.ReadScanline(buffer, row)) then
-            invalidOp $"Failed to read TIFF scanline {row} from page {index}."
-
-        Buffer.BlockCopy(buffer, 0, pageBuffer, row * rowBytes, rowBytes)
-
-    use importer = new itk.simple.ImportImageFilter()
-    importer.SetSize([ width; height ] |> toVectorUInt32)
-
-    let handle = GCHandle.Alloc(pageBuffer, GCHandleType.Pinned)
+    let scanlineBuffer = ArrayPool<byte>.Shared.Rent(scanlineSize)
+    let expectedBits, expectedFormat, _ = tiffPixelLayout<'T> ()
     try
-        setImportImageBufferFromTiffLayout importer bitsPerSample sampleFormat (handle.AddrOfPinnedObject())
-        use imported = importer.Execute()
-        Image<'T>.ofSimpleITK(imported, $"readVolume[{index}]", index)
+        if usePooledImageBackend() && bitsPerSample = expectedBits && sampleFormat = expectedFormat then
+            let pixelCount = int width * int height
+            let typedBuffer = ArrayPool<'T>.Shared.Rent(pixelCount)
+            try
+                for row in 0 .. int height - 1 do
+                    if not (tiff.ReadScanline(scanlineBuffer, row)) then
+                        invalidOp $"Failed to read TIFF scanline {row} from page {index}."
+
+                    Buffer.BlockCopy(scanlineBuffer, 0, typedBuffer, row * rowBytes, rowBytes)
+
+                Image<'T>.ofPooled1D(typedBuffer, pixelCount, [ width; height ], $"readVolume[{index}]", index)
+            with
+            | _ ->
+                ArrayPool<'T>.Shared.Return(typedBuffer)
+                reraise()
+        else
+            let pageBuffer = Array.zeroCreate<byte> (rowBytes * int height)
+            for row in 0 .. int height - 1 do
+                if not (tiff.ReadScanline(scanlineBuffer, row)) then
+                    invalidOp $"Failed to read TIFF scanline {row} from page {index}."
+
+                Buffer.BlockCopy(scanlineBuffer, 0, pageBuffer, row * rowBytes, rowBytes)
+
+            use importer = new itk.simple.ImportImageFilter()
+            importer.SetSize([ width; height ] |> toVectorUInt32)
+
+            let handle = GCHandle.Alloc(pageBuffer, GCHandleType.Pinned)
+            try
+                setImportImageBufferFromTiffLayout importer bitsPerSample sampleFormat (handle.AddrOfPinnedObject())
+                use imported = importer.Execute()
+                Image<'T>.ofSimpleITK(imported, $"readVolume[{index}]", index)
+            finally
+                handle.Free()
     finally
-        handle.Free()
+        ArrayPool<byte>.Shared.Return(scanlineBuffer)
 
 let readTiffSliceFile<'T when 'T: equality> (fileName: string) (sliceIndex: int64) =
     use tiff = Tiff.Open(fileName, "r")
@@ -202,14 +296,23 @@ let writeTiffPage<'T when 'T: equality> (tiff: Tiff) (image: Image<'T>) (page: i
         tiff.SetField(TiffTag.PAGENUMBER, pageNumber, 0) |> ignore
     | None -> ()
 
-    let pageBytes = bytesOfScalarImage2D image
     let rowBytes = int width * bytesPerSample
-
-    for row in 0 .. int height - 1 do
-        let buffer = Array.zeroCreate<byte> rowBytes
-        Buffer.BlockCopy(pageBytes, row * rowBytes, buffer, 0, rowBytes)
-        if not (tiff.WriteScanline(buffer, int row)) then
-            invalidOp $"Failed to write TIFF scanline {row}."
+    let rowBuffer = ArrayPool<byte>.Shared.Rent(rowBytes)
+    try
+        match image.TryGetPooled1D() with
+        | Some(buffer, logicalLength, _, _) when logicalLength >= int width * int height ->
+            for row in 0 .. int height - 1 do
+                Buffer.BlockCopy(buffer, row * rowBytes, rowBuffer, 0, rowBytes)
+                if not (tiff.WriteScanline(rowBuffer, int row)) then
+                    invalidOp $"Failed to write TIFF scanline {row}."
+        | _ ->
+            let pageBytes = bytesOfScalarImage2D image
+            for row in 0 .. int height - 1 do
+                Buffer.BlockCopy(pageBytes, row * rowBytes, rowBuffer, 0, rowBytes)
+                if not (tiff.WriteScanline(rowBuffer, int row)) then
+                    invalidOp $"Failed to write TIFF scanline {row}."
+    finally
+        ArrayPool<byte>.Shared.Return(rowBuffer)
 
     if not (tiff.WriteDirectory()) then
         invalidOp "Failed to write TIFF directory."

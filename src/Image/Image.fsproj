@@ -57,6 +57,7 @@
 
   <ItemGroup>
     <PackageReference Include="BitMiracle.LibTiff.NET" Version="2.4.660" />
+    <PackageReference Include="SixLabors.ImageSharp" Version="3.*" />
     <ProjectReference Include="../TinyLinAlg/TinyLinAlg.fsproj" />
     <Compile Include="Image.fs" />
     <Compile Include="ImageIO.fs" />

@@ -21,6 +21,7 @@ def parse_args():
         required=True,
         choices=[
             "stackprocessing",
+            "stackprocessing-image-arraypool",
             "stackprocessing-arraypool",
             "stackprocessing-arraypool-slice",
             "stackprocessing-arraypool-slice-reuse",
@@ -118,6 +119,8 @@ def backend_command(args, case, repeat):
 
     if args.backend == "stackprocessing":
         return ["dotnet", args.stackprocessing_dll, "run"] + common + params
+    if args.backend == "stackprocessing-image-arraypool":
+        return ["dotnet", args.stackprocessing_dll, "run-image-arraypool"] + common + params
     if args.backend == "stackprocessing-arraypool":
         return ["dotnet", args.stackprocessing_dll, "run-arraypool"] + common + params
     if args.backend == "stackprocessing-arraypool-slice":
@@ -153,7 +156,7 @@ def backend_command(args, case, repeat):
             str(ROOT / "benchmarks/matlab").replace("'", "''"),
             ",".join("'%s','%s'" % (k, str(v).replace("'", "''")) for k, v in matlab_args.items()),
         )
-        return [args.matlab_exe, "-batch", call]
+        return [args.matlab_exe, "-nojvm", "-batch", call]
     raise AssertionError(args.backend)
 
 

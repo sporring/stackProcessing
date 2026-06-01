@@ -1,65 +1,78 @@
 module ImageFunctions
 open System
+open System.Buffers
 open System.Collections.Generic
 open Image
 open Image.InternalHelpers
 open TinyLinAlg
 
-let imageFromTemporarySimpleITK<'T when 'T: equality> name index (itkImage: itk.simple.Image) : Image<'T> =
+let toITK<'T when 'T: equality> (img: Image<'T>) : itk.simple.Image =
+    img.toSimpleITK()
+
+let ofITK<'T when 'T: equality> name index (itkImage: itk.simple.Image) : Image<'T> =
     Image<'T>.ofSimpleITKNDispose(itkImage, name, index)
 
+let imageFromTemporarySimpleITK<'T when 'T: equality> name index (itkImage: itk.simple.Image) : Image<'T> =
+    ofITK<'T> name index itkImage
+
 // Image constant arithmetic operations
+let private scalarToFloat (value: 'S) =
+    match box value with
+    | :? uint8 as v -> float v
+    | :? int8 as v -> float v
+    | :? uint16 as v -> float v
+    | :? int16 as v -> float v
+    | :? uint32 as v -> float v
+    | :? int32 as v -> float v
+    | :? uint64 as v -> float v
+    | :? int64 as v -> float v
+    | :? float32 as v -> float v
+    | :? float as v -> v
+    | _ -> invalidArg "value" $"Unsupported scalar pixel type: {typeof<'S>.Name}"
+
+let inline private convertFloatToScalar<'S when 'S : equality> (value: float) : 'S =
+    Convert.ChangeType(value, typeof<'S>) :?> 'S
+
 let inline imageAddScalar<'S when ^S : equality
-                             and  ^S : (static member op_Explicit : ^S -> float)
+                             and  ^S : (static member (+) : ^S * ^S -> ^S)
                              > (img: Image<'S>) (i: ^S) =
-    use filter = new itk.simple.AddImageFilter()
-    imageFromTemporarySimpleITK<'S> "imageAddScalar" img.index (filter.Execute(img.toSimpleITK(), float i))
+    Image.map (fun x -> x + i) img
 let inline scalarAddImage<'S when ^S : equality
-                             and  ^S : (static member op_Explicit : ^S -> float)
+                             and  ^S : (static member (+) : ^S * ^S -> ^S)
                              > (i: ^S) (img: Image<'S>) =
     imageAddScalar img i
 let inline imageSubScalar<'S when ^S : equality
-                             and  ^S : (static member op_Explicit : ^S -> float)
+                             and  ^S : (static member (-) : ^S * ^S -> ^S)
                              > (img: Image<'S>) (i: ^S) =
-    use filter = new itk.simple.SubtractImageFilter()
-    imageFromTemporarySimpleITK<'S> "imageSubScalar" img.index (filter.Execute(img.toSimpleITK(), float i))
+    Image.map (fun x -> x - i) img
 let inline scalarSubImage<'S when ^S : equality
-                             and  ^S : (static member op_Explicit : ^S -> float)
+                             and  ^S : (static member (-) : ^S * ^S -> ^S)
                              > (i: ^S) (img: Image<'S>) =
-    use filter = new itk.simple.SubtractImageFilter()
-    imageFromTemporarySimpleITK<'S> "scalarSubImage" img.index (filter.Execute(float i, img.toSimpleITK()))
+    Image.map (fun x -> i - x) img
 let inline imageMulScalar<'S when ^S : equality
-                             and  ^S : (static member op_Explicit : ^S -> float)
+                             and  ^S : (static member (*) : ^S * ^S -> ^S)
                              > (img: Image<'S>) (i: ^S) =
-    use filter = new itk.simple.MultiplyImageFilter()
-    imageFromTemporarySimpleITK<'S> "imageMulScalar" img.index (filter.Execute(img.toSimpleITK(), float i))
+    Image.map (fun x -> x * i) img
 let inline scalarMulImage<'S when ^S : equality
-                             and  ^S : (static member op_Explicit : ^S -> float)
+                             and  ^S : (static member (*) : ^S * ^S -> ^S)
                              > (i: ^S) (img: Image<'S>) =
     imageMulScalar img i
 let inline imageDivScalar<'S when ^S : equality
-                             and  ^S : (static member op_Explicit : ^S -> float)
+                             and  ^S : (static member (/) : ^S * ^S -> ^S)
                              > (img: Image<'S>) (i: ^S) =
-    use filter = new itk.simple.DivideImageFilter()
-    imageFromTemporarySimpleITK<'S> "imageDivScalar" img.index (filter.Execute(img.toSimpleITK(), float i))
+    Image.map (fun x -> x / i) img
 let inline scalarDivImage<'S when ^S : equality
-                             and  ^S : (static member op_Explicit : ^S -> float)
+                             and  ^S : (static member (/) : ^S * ^S -> ^S)
                              > (i: ^S) (img: Image<'S>) =
-    use filter = new itk.simple.DivideImageFilter()
-    imageFromTemporarySimpleITK<'S> "scalarDivImage" img.index (filter.Execute(float i, img.toSimpleITK()))
+    Image.map (fun x -> i / x) img
 
-let inline imagePowScalar<'S when ^S : equality
-                  and  ^S : (static member op_Explicit : ^S -> float)
-                  > (img: Image<'S>, i: 'S) =
-    use filter = new itk.simple.PowImageFilter()
-    imageFromTemporarySimpleITK<'S> "imagePowScalar" img.index (filter.Execute(img.toSimpleITK(), float i))
+let imagePowScalar<'S when 'S : equality> (img: Image<'S>, i: 'S) =
+    let p = scalarToFloat i
+    Image.map (fun x -> Math.Pow(scalarToFloat x, p) |> convertFloatToScalar<'S>) img
 
-
-let inline scalarPowImage<'S when ^S : equality
-                  and  ^S : (static member op_Explicit : ^S -> float)
-                  > (i: 'S, img: Image<'S>) =
-    use filter = new itk.simple.PowImageFilter()
-    imageFromTemporarySimpleITK<'S> "scalarPowImage" img.index (filter.Execute(float i, img.toSimpleITK()))
+let scalarPowImage<'S when 'S : equality> (i: 'S, img: Image<'S>) =
+    let b = scalarToFloat i
+    Image.map (fun x -> Math.Pow(b, scalarToFloat x) |> convertFloatToScalar<'S>) img
 
 let inline sum (img: Image<'T>) : ^T
     when ^T : (static member ( + ) : ^T * ^T -> ^T)
@@ -75,8 +88,6 @@ let inline prod (img: Image<'T>) : ^T
 
 let dump (img: Image<'T>) : string =
     img |> Image.foldi (fun idxLst acc elm -> acc+(sprintf "%A -> %A; " idxLst elm)) ""
-
-
 
 // --- basic manipulations ---
 let squeeze (img: Image<'T>) : Image<'T> =
@@ -262,45 +273,110 @@ let sobelEdge (img: Image<'T>) : Image<'T> =
 let laplacian (img: Image<'T>) : Image<'T> =
     makeUnaryImageOperator "laplacian" (fun () -> new itk.simple.LaplacianImageFilter()) (fun f x -> f.Execute(x)) img
 
+let private maskValue predicate = if predicate then 1uy else 0uy
+
+let private mapPooledCompareToUInt8<'U when 'U : equality>
+    name
+    index
+    logicalLength
+    size
+    (inputA: 'U[])
+    (inputB: 'U[])
+    predicate
+    =
+    let output = ArrayPool<uint8>.Shared.Rent(logicalLength)
+    try
+        for i in 0 .. logicalLength - 1 do
+            output[i] <- maskValue (predicate inputA[i] inputB[i])
+        Image<uint8>.ofPooled1D(output, logicalLength, size, name, index)
+    with
+    | _ ->
+        ArrayPool<uint8>.Shared.Return(output)
+        reraise()
+
+let private tryPooledCompare<'T when 'T : equality>
+    (name: string)
+    (a: Image<'T>)
+    (b: Image<'T>)
+    (predicateUInt8: uint8 -> uint8 -> bool)
+    (predicateUInt16: uint16 -> uint16 -> bool)
+    (predicateFloat32: float32 -> float32 -> bool)
+    (predicateFloat: float -> float -> bool)
+    =
+    match a.TryGetPooled1D(), b.TryGetPooled1D() with
+    | Some(inputA, logicalLengthA, sizeA, 1u), Some(inputB, logicalLengthB, sizeB, 1u)
+        when logicalLengthA = logicalLengthB && sizeA = sizeB && typeof<'T> = typeof<uint8> ->
+        Some(mapPooledCompareToUInt8 name a.index logicalLengthA sizeA (unbox<uint8[]> (box inputA)) (unbox<uint8[]> (box inputB)) predicateUInt8)
+    | Some(inputA, logicalLengthA, sizeA, 1u), Some(inputB, logicalLengthB, sizeB, 1u)
+        when logicalLengthA = logicalLengthB && sizeA = sizeB && typeof<'T> = typeof<uint16> ->
+        Some(mapPooledCompareToUInt8 name a.index logicalLengthA sizeA (unbox<uint16[]> (box inputA)) (unbox<uint16[]> (box inputB)) predicateUInt16)
+    | Some(inputA, logicalLengthA, sizeA, 1u), Some(inputB, logicalLengthB, sizeB, 1u)
+        when logicalLengthA = logicalLengthB && sizeA = sizeB && typeof<'T> = typeof<float32> ->
+        Some(mapPooledCompareToUInt8 name a.index logicalLengthA sizeA (unbox<float32[]> (box inputA)) (unbox<float32[]> (box inputB)) predicateFloat32)
+    | Some(inputA, logicalLengthA, sizeA, 1u), Some(inputB, logicalLengthB, sizeB, 1u)
+        when logicalLengthA = logicalLengthB && sizeA = sizeB && typeof<'T> = typeof<float> ->
+        Some(mapPooledCompareToUInt8 name a.index logicalLengthA sizeA (unbox<float[]> (box inputA)) (unbox<float[]> (box inputB)) predicateFloat)
+    | _ -> None
+
 let equalImage (a: Image<'T>) (b: Image<'T>) : Image<uint8> =
-    use filter = new itk.simple.EqualImageFilter()
-    imageFromTemporarySimpleITK "equalImage" a.index (filter.Execute(a.toSimpleITK(), b.toSimpleITK()))
+    tryPooledCompare "equalImage" a b (=) (=) (=) (=)
+    |> Option.defaultWith (fun () ->
+        use filter = new itk.simple.EqualImageFilter()
+        imageFromTemporarySimpleITK "equalImage" a.index (filter.Execute(a.toSimpleITK(), b.toSimpleITK())))
 
 let notEqualImage (a: Image<'T>) (b: Image<'T>) : Image<uint8> =
-    use filter = new itk.simple.NotEqualImageFilter()
-    imageFromTemporarySimpleITK "notEqualImage" a.index (filter.Execute(a.toSimpleITK(), b.toSimpleITK()))
+    tryPooledCompare "notEqualImage" a b (<>) (<>) (<>) (<>)
+    |> Option.defaultWith (fun () ->
+        use filter = new itk.simple.NotEqualImageFilter()
+        imageFromTemporarySimpleITK "notEqualImage" a.index (filter.Execute(a.toSimpleITK(), b.toSimpleITK())))
 
 let greaterImage (a: Image<'T>) (b: Image<'T>) : Image<uint8> =
-    use filter = new itk.simple.GreaterImageFilter()
-    imageFromTemporarySimpleITK "greaterImage" a.index (filter.Execute(a.toSimpleITK(), b.toSimpleITK()))
+    tryPooledCompare "greaterImage" a b (>) (>) (>) (>)
+    |> Option.defaultWith (fun () ->
+        use filter = new itk.simple.GreaterImageFilter()
+        imageFromTemporarySimpleITK "greaterImage" a.index (filter.Execute(a.toSimpleITK(), b.toSimpleITK())))
 
 let greaterEqualImage (a: Image<'T>) (b: Image<'T>) : Image<uint8> =
-    use filter = new itk.simple.GreaterEqualImageFilter()
-    imageFromTemporarySimpleITK "greaterEqualImage" a.index (filter.Execute(a.toSimpleITK(), b.toSimpleITK()))
+    tryPooledCompare "greaterEqualImage" a b (>=) (>=) (>=) (>=)
+    |> Option.defaultWith (fun () ->
+        use filter = new itk.simple.GreaterEqualImageFilter()
+        imageFromTemporarySimpleITK "greaterEqualImage" a.index (filter.Execute(a.toSimpleITK(), b.toSimpleITK())))
 
 let lessImage (a: Image<'T>) (b: Image<'T>) : Image<uint8> =
-    use filter = new itk.simple.LessImageFilter()
-    imageFromTemporarySimpleITK "lessImage" a.index (filter.Execute(a.toSimpleITK(), b.toSimpleITK()))
+    tryPooledCompare "lessImage" a b (<) (<) (<) (<)
+    |> Option.defaultWith (fun () ->
+        use filter = new itk.simple.LessImageFilter()
+        imageFromTemporarySimpleITK "lessImage" a.index (filter.Execute(a.toSimpleITK(), b.toSimpleITK())))
 
 let lessEqualImage (a: Image<'T>) (b: Image<'T>) : Image<uint8> =
-    use filter = new itk.simple.LessEqualImageFilter()
-    imageFromTemporarySimpleITK "lessEqualImage" a.index (filter.Execute(a.toSimpleITK(), b.toSimpleITK()))
+    tryPooledCompare "lessEqualImage" a b (<=) (<=) (<=) (<=)
+    |> Option.defaultWith (fun () ->
+        use filter = new itk.simple.LessEqualImageFilter()
+        imageFromTemporarySimpleITK "lessEqualImage" a.index (filter.Execute(a.toSimpleITK(), b.toSimpleITK())))
 
 let andImage (a: Image<uint8>) (b: Image<uint8>) : Image<uint8> =
-    use filter = new itk.simple.AndImageFilter()
-    imageFromTemporarySimpleITK "andImage" a.index (filter.Execute(a.toSimpleITK(), b.toSimpleITK()))
+    a.TryMap2Pooled1D(b, "andImage", fun x y -> maskValue (x <> 0uy && y <> 0uy))
+    |> Option.defaultWith (fun () ->
+        use filter = new itk.simple.AndImageFilter()
+        imageFromTemporarySimpleITK "andImage" a.index (filter.Execute(a.toSimpleITK(), b.toSimpleITK())))
 
 let orImage (a: Image<uint8>) (b: Image<uint8>) : Image<uint8> =
-    use filter = new itk.simple.OrImageFilter()
-    imageFromTemporarySimpleITK "orImage" a.index (filter.Execute(a.toSimpleITK(), b.toSimpleITK()))
+    a.TryMap2Pooled1D(b, "orImage", fun x y -> maskValue (x <> 0uy || y <> 0uy))
+    |> Option.defaultWith (fun () ->
+        use filter = new itk.simple.OrImageFilter()
+        imageFromTemporarySimpleITK "orImage" a.index (filter.Execute(a.toSimpleITK(), b.toSimpleITK())))
 
 let xorImage (a: Image<uint8>) (b: Image<uint8>) : Image<uint8> =
-    use filter = new itk.simple.XorImageFilter()
-    imageFromTemporarySimpleITK "xorImage" a.index (filter.Execute(a.toSimpleITK(), b.toSimpleITK()))
+    a.TryMap2Pooled1D(b, "xorImage", fun x y -> maskValue ((x <> 0uy) <> (y <> 0uy)))
+    |> Option.defaultWith (fun () ->
+        use filter = new itk.simple.XorImageFilter()
+        imageFromTemporarySimpleITK "xorImage" a.index (filter.Execute(a.toSimpleITK(), b.toSimpleITK())))
 
 let notImage (img: Image<uint8>) : Image<uint8> =
-    use filter = new itk.simple.NotImageFilter()
-    imageFromTemporarySimpleITK "notImage" img.index (filter.Execute(img.toSimpleITK()))
+    img.TryMapPooled1D("notImage", fun x -> maskValue (x = 0uy))
+    |> Option.defaultWith (fun () ->
+        use filter = new itk.simple.NotImageFilter()
+        imageFromTemporarySimpleITK "notImage" img.index (filter.Execute(img.toSimpleITK())))
 
 let mask (outsideValue: double) (img: Image<'T>) (mask: Image<uint8>) : Image<'T> =
     use filter = new itk.simple.MaskImageFilter()
@@ -611,7 +687,7 @@ let binaryDilateSphericalNative (radius: uint) (img: Image<uint8>) : Image<uint8
     if dimensions = 2u then
         let width = int (img.GetWidth())
         let height = int (img.GetHeight())
-        let input = copyScalarPixels<uint8> img.Image (width * height)
+        let input = copyScalarPixels<uint8> (img.toSimpleITK()) (width * height)
         let output = Array.zeroCreate<uint8> (width * height)
 
         for y in 0 .. height - 1 do
@@ -635,7 +711,7 @@ let binaryDilateSphericalNative (radius: uint) (img: Image<uint8>) : Image<uint8
         let width = int (img.GetWidth())
         let height = int (img.GetHeight())
         let depth = int (img.GetDepth())
-        let input = copyScalarPixels<uint8> img.Image (width * height * depth)
+        let input = copyScalarPixels<uint8> (img.toSimpleITK()) (width * height * depth)
         let output = Array.zeroCreate<uint8> (width * height * depth)
         let plane = width * height
 
@@ -934,7 +1010,7 @@ let binaryDilateZonohedralValidSlicesNative (radius: uint) (outputStart: uint) (
             |> List.iteri (fun z image ->
                 if image.GetWidth() <> first.GetWidth() || image.GetHeight() <> first.GetHeight() then
                     invalidArg "images" "All slices in a zonohedral dilation window must have the same width and height."
-                let slice = copyScalarPixels<uint8> image.Image plane
+                let slice = copyScalarPixels<uint8> (image.toSimpleITK()) plane
                 Array.Copy(slice, 0, current, z * plane, plane))
 
             let mutable validLow = 0
@@ -967,7 +1043,7 @@ let binaryDilateZonohedralNative (radius: uint) (img: Image<uint8>) : Image<uint
     let depth = int (img.GetDepth())
     let lines = zonohedralBestLines radius
 
-    let mutable current = copyScalarPixels<uint8> img.Image (width * height * depth)
+    let mutable current = copyScalarPixels<uint8> (img.toSimpleITK()) (width * height * depth)
     for line in lines do
         current <- lineDilate3D width height depth current line
 
@@ -984,7 +1060,7 @@ let binaryErodeZonohedralNative (radius: uint) (img: Image<uint8>) : Image<uint8
     let depth = int (img.GetDepth())
     let lines = zonohedralBestLines radius
 
-    let mutable current = copyScalarPixels<uint8> img.Image (width * height * depth)
+    let mutable current = copyScalarPixels<uint8> (img.toSimpleITK()) (width * height * depth)
     for line in lines do
         current <- lineErode3D width height depth current line
 
@@ -1802,12 +1878,65 @@ let addSpeckleNoise (stddev: float) : Image<'T> -> Image<'T> =
             (fun f -> f.SetStandardDeviation(stddev))
             (fun f x -> f.Execute(x))
 
+let private thresholdUInt8 (lower: float) (upper: float) (input: uint8[]) length (output: uint8[]) =
+    let lo = int (Math.Ceiling lower)
+    let hi = int (Math.Floor upper)
+    if lo > 255 || hi < 0 || lo > hi then
+        Array.Clear(output, 0, length)
+    else
+        let lo = max 0 lo
+        let hi = min 255 hi
+        for i in 0 .. length - 1 do
+            let value = int input[i]
+            output[i] <- if value >= lo && value <= hi then 1uy else 0uy
+
+let private thresholdUInt16 (lower: float) (upper: float) (input: uint16[]) length (output: uint8[]) =
+    let lo = int (Math.Ceiling lower)
+    let hi = int (Math.Floor upper)
+    if lo > 65535 || hi < 0 || lo > hi then
+        Array.Clear(output, 0, length)
+    else
+        let lo = max 0 lo
+        let hi = min 65535 hi
+        for i in 0 .. length - 1 do
+            let value = int input[i]
+            output[i] <- if value >= lo && value <= hi then 1uy else 0uy
+
+let private thresholdFloat32 (lower: float) (upper: float) (input: float32[]) length (output: uint8[]) =
+    let lo = float32 lower
+    let hi = float32 upper
+    for i in 0 .. length - 1 do
+        let value = input[i]
+        output[i] <- if value >= lo && value <= hi then 1uy else 0uy
+
+let private tryPooledThreshold lower upper (img: Image<'T>) =
+    match img.TryGetPooled1D() with
+    | Some(buffer, logicalLength, size, _) ->
+        match box buffer with
+        | :? (uint8[]) as input ->
+            let output = ArrayPool<uint8>.Shared.Rent(logicalLength)
+            thresholdUInt8 lower upper input logicalLength output
+            Some(Image<uint8>.ofPooled1D(output, logicalLength, size, "threshold", img.index))
+        | :? (uint16[]) as input ->
+            let output = ArrayPool<uint8>.Shared.Rent(logicalLength)
+            thresholdUInt16 lower upper input logicalLength output
+            Some(Image<uint8>.ofPooled1D(output, logicalLength, size, "threshold", img.index))
+        | :? (float32[]) as input ->
+            let output = ArrayPool<uint8>.Shared.Rent(logicalLength)
+            thresholdFloat32 lower upper input logicalLength output
+            Some(Image<uint8>.ofPooled1D(output, logicalLength, size, "threshold", img.index))
+        | _ -> None
+    | None -> None
+
 let threshold (lower: float) (upper: float) (img: Image<'T>) : Image<uint8> =
-    use filter = new itk.simple.BinaryThresholdImageFilter()
-    filter.SetLowerThreshold lower
-    filter.SetUpperThreshold upper
-    let res = filter.Execute(img.toSimpleITK()); 
-    imageFromTemporarySimpleITK "threshold" img.index res
+    match tryPooledThreshold lower upper img with
+    | Some image -> image
+    | None ->
+        use filter = new itk.simple.BinaryThresholdImageFilter()
+        filter.SetLowerThreshold lower
+        filter.SetUpperThreshold upper
+        let res = filter.Execute(img.toSimpleITK()); 
+        imageFromTemporarySimpleITK "threshold" img.index res
 
 let toVectorImage (images: Image<'T> list) : Image<'T list> =
     Image<'T>.ofImageList images

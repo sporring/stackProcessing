@@ -11,6 +11,7 @@ from pathlib import Path
 
 BACKEND_ORDER = [
     "stackprocessing",
+    "stackprocessing-image-arraypool",
     "stackprocessing-arraypool",
     "stackprocessing-arraypool-slice",
     "stackprocessing-arraypool-slice-reuse",
@@ -22,6 +23,7 @@ BACKEND_ORDER = [
 ]
 BACKEND_LABELS = {
     "stackprocessing": "StackProcessing",
+    "stackprocessing-image-arraypool": "StackProcessing Image ArrayPool",
     "stackprocessing-arraypool": "StackProcessing ArrayPool",
     "stackprocessing-arraypool-slice": "StackProcessing ArrayPool slice",
     "stackprocessing-arraypool-slice-reuse": "StackProcessing ArrayPool slice reuse",
@@ -33,6 +35,7 @@ BACKEND_LABELS = {
 }
 BACKEND_COLORS = {
     "stackprocessing": "#1f77b4",
+    "stackprocessing-image-arraypool": "#0f5f9f",
     "stackprocessing-arraypool": "#17becf",
     "stackprocessing-arraypool-slice": "#8c564b",
     "stackprocessing-arraypool-slice-reuse": "#7f7f7f",
@@ -44,6 +47,7 @@ BACKEND_COLORS = {
 }
 BACKEND_MARKERS = {
     "stackprocessing": "o",
+    "stackprocessing-image-arraypool": "h",
     "stackprocessing-arraypool": "P",
     "stackprocessing-arraypool-slice": "X",
     "stackprocessing-arraypool-slice-reuse": "*",

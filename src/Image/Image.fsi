@@ -124,6 +124,30 @@ val private rssDeltaBytes: unit -> uint64
 val private sampleRssDeltaBytes: unit -> uint64 * uint64
 val private printDebugMessage: str: string -> unit
 val mutable private debug: bool
+type PooledImageDebugCounters =
+    {
+      Rents: int64
+      Returns: int64
+      Live: int64
+      PeakLive: int64
+    }
+val mutable private pooledRents: int64
+val mutable private pooledReturns: int64
+val mutable private pooledLive: int64
+val mutable private pooledPeakLive: int64
+val private notePooledRent: unit -> unit
+val private notePooledReturn: unit -> unit
+val resetPooledImageDebugCounters: unit -> unit
+val getPooledImageDebugCounters: unit -> PooledImageDebugCounters
+val private poisonPooledBuffersOnReturn: unit -> bool
+val private poisonPooledBuffer: logicalLength: int -> buffer: 'T array -> unit
+val private pooledMemoryEstimate<'T> : logicalLength: int -> uint32
+type private PooledBufferOwner<'T> =
+    new: buffer: 'T array * logicalLength: int -> PooledBufferOwner<'T>
+    member AddRef: unit -> unit
+    member Release: unit -> unit
+    member Buffer: 'T array
+    member LogicalLength: int
 [<StructuredFormatDisplay ("{Display}")>]
 type Image<'T when 'T: equality> =
     interface System.IComparable
@@ -234,6 +258,15 @@ type Image<'T when 'T: equality> =
                                      imagImg: Image<float32> ->
                                      Image<ComplexFloat32>
     /// <summary>
+    /// Creates an <c>Image&lt;'T&gt;</c> backed by an ArrayPool-rented one-dimensional scalar buffer.
+    /// Ownership of <paramref name="buffer" /> is transferred to the image and returned to the pool when the image is
+    /// released. Only the first <paramref name="logicalLength" /> values are part of the image.
+    /// </summary>
+    static member
+      internal ofPooled1D: buffer: 'T array * logicalLength: int *
+                           size: uint list * ?optionalName: string *
+                           ?optionalIndex: int -> Image<'T>
+    /// <summary>
     /// Creates a safe, independent <c>Image&lt;'T&gt;</c> from a SimpleITK image.
     /// The resulting image does not share its pixel buffer with <paramref name="itkImg" />. Matching pixel types are
     /// deep-copied; non-matching pixel types are converted with SimpleITK's cast filter. Physical metadata is normalized
@@ -275,6 +308,7 @@ type Image<'T when 'T: equality> =
     static member
       polygonMask: width: uint * height: uint * polygon: (float * float) list *
                    ?name: string * ?index: int -> Image<uint8>
+    static member private pooledMemoryEstimate: logicalLength: int -> uint32
     static member setDebug: d: bool -> unit
     static member setDebugLevel: level: uint32 -> unit
     static member
@@ -284,11 +318,11 @@ type Image<'T when 'T: equality> =
     member CompareTo: other: Image<'T> -> int
     override Equals: obj: obj -> bool
     member Get: coords: uint list -> 'T
-    member GetDepth: unit -> uint32
+    member GetDepth: unit -> uint
     member GetDimensions: unit -> uint32
     member GetFacts: unit -> ImageFacts
     override GetHashCode: unit -> int
-    member GetHeight: unit -> uint32
+    member GetHeight: unit -> uint
     member GetMemoryBytes: unit -> uint64
     member GetNumberOfComponentsPerPixel: unit -> uint32
     member GetSize: unit -> uint list
@@ -296,14 +330,34 @@ type Image<'T when 'T: equality> =
       GetSlice: start0: int option * stop0: int option * start1: int option *
                 stop1: int option * start2: int option * stop2: int option ->
                   Image<'T>
-    member GetWidth: unit -> uint32
+    member GetWidth: unit -> uint
+    member private ReleasePooledOwner: unit -> unit
     member Set: coords: uint list -> value: 'T -> unit
-    member private SetImg: itkImg: itk.simple.Image -> unit
+    member
+      private SetPooled1D: owner: PooledBufferOwner<'T> * size: uint list *
+                           components: uint -> unit
+    member
+      private SetPooledOwner: newOwner: PooledBufferOwner<'T> * size: uint list *
+                              components: uint -> unit
     member
       SetSlice: start0: int option * stop0: int option * start1: int option *
                 stop1: int option * start2: int option * stop2: int option ->
                   src: Image<'T> -> unit
     override ToString: unit -> string
+    member
+      TryFold2Pooled1D: other: Image<'U> * f: ('S -> 'T -> 'U -> 'S) * acc0: 'S ->
+                          'S option when 'U: equality
+    member TryFoldPooled1D: f: ('S -> 'T -> 'S) * acc0: 'S -> 'S option
+    member
+      internal TryGetPooled1D: unit ->
+                                 ('T array * int * uint list * uint32) option
+    member TryIterPooled1D: f: ('T -> unit) -> bool
+    member
+      TryMap2Pooled1D: other: Image<'U> * name: string * f: ('T -> 'U -> 'V) ->
+                         Image<'V> option when 'U: equality and 'V: equality
+    member
+      TryMapPooled1D: name: string * f: ('T -> 'U) -> Image<'U> option
+                        when 'U: equality
     member castTo: unit -> Image<'S> when 'S: equality
     member copy: ?optionalName: string * ?optionalIndex: int -> Image<'T>
     member decRefCount: unit -> unit
@@ -345,7 +399,6 @@ type Image<'T when 'T: equality> =
     member toVectorUInt64: unit -> Image<uint64 list>
     member toVectorUInt8: unit -> Image<uint8 list>
     member Display: string
-    member Image: itk.simple.Image
     member Item: i0: int * i1: int -> 'T with get
     member Item: i0: int * i1: int -> 'T with set
     member Item: i0: int * i1: int * i2: int -> 'T with get
@@ -374,6 +427,12 @@ type ImageFileInfo =
     }
 val validatePixelType<'T> : unit -> unit
 val imageFileInfo: filename: string -> ImageFileInfo
+val usePooledImageBackend: unit -> bool
+val private isTiffFileName: filename: string -> bool
+val private isImageSharpFileName: filename: string -> bool
+val private tryReadImageSharpPooled:
+  filename: string -> name: string -> index: int -> Image.Image<'T> option
+    when 'T: equality
 val readSimpleItkSlice:
   filename: string ->
     dimension: int ->
@@ -405,8 +464,8 @@ val private setImportImageBufferFromTiffLayout:
 val bytesOfScalarImage2D: image: Image.Image<'T> -> byte array when 'T: equality
 val readTiffPage:
   tiff: BitMiracle.LibTiff.Classic.Tiff ->
-    width: uint32 ->
-    height: uint32 ->
+    width: uint ->
+    height: uint ->
     bitsPerSample: int ->
     sampleFormat: BitMiracle.LibTiff.Classic.SampleFormat ->
     bytesPerSample: int -> index: int -> Image.Image<'T> when 'T: equality
@@ -418,39 +477,43 @@ val writeTiffPage:
 val writeTiffSliceFile:
   fileName: string -> image: Image.Image<'T> -> unit when 'T: equality
 module ImageFunctions
+val toITK: img: Image.Image<'T> -> itk.simple.Image when 'T: equality
+val ofITK:
+  name: string -> index: int -> itkImage: itk.simple.Image -> Image.Image<'T>
+    when 'T: equality
 val imageFromTemporarySimpleITK:
   name: string -> index: int -> itkImage: itk.simple.Image -> Image.Image<'T>
     when 'T: equality
+val private scalarToFloat: value: 'S -> float
+val inline private convertFloatToScalar: value: float -> 'S when 'S: equality
 val inline imageAddScalar:
   img: Image.Image<^S> -> i: ^S -> Image.Image<^S>
-    when ^S: equality and ^S: (static member op_Explicit: ^S -> float)
+    when ^S: equality and ^S: (static member (+) : ^S * ^S -> ^S)
 val inline scalarAddImage:
   i: ^S -> img: Image.Image<^S> -> Image.Image<^S>
-    when ^S: equality and ^S: (static member op_Explicit: ^S -> float)
+    when ^S: equality and ^S: (static member (+) : ^S * ^S -> ^S)
 val inline imageSubScalar:
   img: Image.Image<^S> -> i: ^S -> Image.Image<^S>
-    when ^S: equality and ^S: (static member op_Explicit: ^S -> float)
+    when ^S: equality and ^S: (static member (-) : ^S * ^S -> ^S)
 val inline scalarSubImage:
   i: ^S -> img: Image.Image<^S> -> Image.Image<^S>
-    when ^S: equality and ^S: (static member op_Explicit: ^S -> float)
+    when ^S: equality and ^S: (static member (-) : ^S * ^S -> ^S)
 val inline imageMulScalar:
   img: Image.Image<^S> -> i: ^S -> Image.Image<^S>
-    when ^S: equality and ^S: (static member op_Explicit: ^S -> float)
+    when ^S: equality and ^S: (static member ( * ) : ^S * ^S -> ^S)
 val inline scalarMulImage:
   i: ^S -> img: Image.Image<^S> -> Image.Image<^S>
-    when ^S: equality and ^S: (static member op_Explicit: ^S -> float)
+    when ^S: equality and ^S: (static member ( * ) : ^S * ^S -> ^S)
 val inline imageDivScalar:
   img: Image.Image<^S> -> i: ^S -> Image.Image<^S>
-    when ^S: equality and ^S: (static member op_Explicit: ^S -> float)
+    when ^S: equality and ^S: (static member (/) : ^S * ^S -> ^S)
 val inline scalarDivImage:
   i: ^S -> img: Image.Image<^S> -> Image.Image<^S>
-    when ^S: equality and ^S: (static member op_Explicit: ^S -> float)
-val inline imagePowScalar:
-  img: Image.Image<^S> * i: ^S -> Image.Image<^S>
-    when ^S: equality and ^S: (static member op_Explicit: ^S -> float)
-val inline scalarPowImage:
-  i: ^S * img: Image.Image<^S> -> Image.Image<^S>
-    when ^S: equality and ^S: (static member op_Explicit: ^S -> float)
+    when ^S: equality and ^S: (static member (/) : ^S * ^S -> ^S)
+val imagePowScalar:
+  img: Image.Image<'S> * i: 'S -> Image.Image<'S> when 'S: equality
+val scalarPowImage:
+  i: 'S * img: Image.Image<'S> -> Image.Image<'S> when 'S: equality
 val inline sum:
   img: Image.Image<^T> -> ^T
     when ^T: equality and ^T: (static member (+) : ^T * ^T -> ^T) and
@@ -552,6 +615,24 @@ val bilateral:
 val gradientMagnitude: img: Image.Image<'T> -> Image.Image<'T> when 'T: equality
 val sobelEdge: img: Image.Image<'T> -> Image.Image<'T> when 'T: equality
 val laplacian: img: Image.Image<'T> -> Image.Image<'T> when 'T: equality
+val private maskValue: predicate: bool -> byte
+val private mapPooledCompareToUInt8:
+  name: string ->
+    index: int ->
+    logicalLength: int ->
+    size: uint list ->
+    inputA: 'U array ->
+    inputB: 'U array -> predicate: ('U -> 'U -> bool) -> Image.Image<uint8>
+    when 'U: equality
+val private tryPooledCompare:
+  name: string ->
+    a: Image.Image<'T> ->
+    b: Image.Image<'T> ->
+    predicateUInt8: (uint8 -> uint8 -> bool) ->
+    predicateUInt16: (uint16 -> uint16 -> bool) ->
+    predicateFloat32: (float32 -> float32 -> bool) ->
+    predicateFloat: (float -> float -> bool) -> Image.Image<uint8> option
+    when 'T: equality
 val equalImage:
   a: Image.Image<'T> -> b: Image.Image<'T> -> Image.Image<uint8>
     when 'T: equality
@@ -915,6 +996,22 @@ val addShotNoise:
   scale: float -> (Image.Image<'T> -> Image.Image<'T>) when 'T: equality
 val addSpeckleNoise:
   stddev: float -> (Image.Image<'T> -> Image.Image<'T>) when 'T: equality
+val private thresholdUInt8:
+  lower: float ->
+    upper: float ->
+    input: uint8 array -> length: int -> output: uint8 array -> unit
+val private thresholdUInt16:
+  lower: float ->
+    upper: float ->
+    input: uint16 array -> length: int -> output: uint8 array -> unit
+val private thresholdFloat32:
+  lower: float ->
+    upper: float ->
+    input: float32 array -> length: int -> output: uint8 array -> unit
+val private tryPooledThreshold:
+  lower: float ->
+    upper: float -> img: Image.Image<'T> -> Image.Image<uint8> option
+    when 'T: equality
 val threshold:
   lower: float -> upper: float -> img: Image.Image<'T> -> Image.Image<uint8>
     when 'T: equality
