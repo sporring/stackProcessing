@@ -363,6 +363,7 @@ def plot_memory_time_scatter(rows: list[dict[str, object]], output_dir: Path):
 
     for ax, shape in zip(axes, shapes):
         subset = [row for row in rows if row["shape"] == shape]
+        raw_uint8_gib = shape_voxels(shape) / 1024.0**3
         for backend in backends:
             points = [row for row in subset if row["backend"] == backend]
             if not points:
@@ -378,11 +379,26 @@ def plot_memory_time_scatter(rows: list[dict[str, object]], output_dir: Path):
                 linewidths=0.3,
                 edgecolors="white",
             )
+        ax.axvline(raw_uint8_gib, color="black", linestyle="--", linewidth=0.8, alpha=0.35)
+        ax.text(
+            raw_uint8_gib,
+            0.98,
+            f"{shape_label(shape)} UInt8",
+            transform=ax.get_xaxis_transform(),
+            rotation=90,
+            va="top",
+            ha="right",
+            fontsize=6,
+            color="black",
+            alpha=0.55,
+        )
         ax.set_title(shape_label(shape), pad=8)
         ax.set_xscale("log")
         ax.set_yscale("log")
         ax.grid(True, which="major", alpha=0.25)
         ax.set_xlabel("peak RSS (GiB)")
+        left, right = ax.get_xlim()
+        ax.set_xlim(min(left, raw_uint8_gib * 0.75), right)
     axes[0].set_ylabel("internal seconds")
 
     handles, labels = axes[0].get_legend_handles_labels()
