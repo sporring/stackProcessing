@@ -19,7 +19,18 @@ def parse_args():
     parser.add_argument(
         "--backend",
         required=True,
-        choices=["stackprocessing", "python-skimage-scipy", "cpp-itk", "matlab", "python-dask-omezarr"],
+        choices=[
+            "stackprocessing",
+            "stackprocessing-arraypool",
+            "stackprocessing-arraypool-slice",
+            "stackprocessing-arraypool-slice-reuse",
+            "stackprocessing-byte-slice-reuse",
+            "stackprocessing-byte-float32-slice-reuse",
+            "python-skimage-scipy",
+            "cpp-itk",
+            "matlab",
+            "python-dask-omezarr",
+        ],
     )
     parser.add_argument("--results", default=str(ROOT / "benchmarks/results/raw.csv"))
     parser.add_argument("--input-root", default=str(ROOT / "tmp/benchmarks/input"))
@@ -107,6 +118,16 @@ def backend_command(args, case, repeat):
 
     if args.backend == "stackprocessing":
         return ["dotnet", args.stackprocessing_dll, "run"] + common + params
+    if args.backend == "stackprocessing-arraypool":
+        return ["dotnet", args.stackprocessing_dll, "run-arraypool"] + common + params
+    if args.backend == "stackprocessing-arraypool-slice":
+        return ["dotnet", args.stackprocessing_dll, "run-arraypool-slice"] + common + params
+    if args.backend == "stackprocessing-arraypool-slice-reuse":
+        return ["dotnet", args.stackprocessing_dll, "run-arraypool-slice-reuse"] + common + params
+    if args.backend == "stackprocessing-byte-slice-reuse":
+        return ["dotnet", args.stackprocessing_dll, "run-byte-slice-reuse"] + common + params
+    if args.backend == "stackprocessing-byte-float32-slice-reuse":
+        return ["dotnet", args.stackprocessing_dll, "run-byte-float32-slice-reuse"] + common + params
     if args.backend == "python-skimage-scipy":
         return ["python3", str(ROOT / "benchmarks/python-skimage-scipy/bench.py")] + common + params
     if args.backend == "python-dask-omezarr":

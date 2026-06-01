@@ -1,7 +1,11 @@
 open System
+open System.Buffers
 open System.Diagnostics
 open System.Globalization
 open System.IO
+open System.Runtime.CompilerServices
+open System.Runtime.InteropServices
+open BitMiracle.LibTiff.Classic
 open StackProcessing
 
 type PixelType =
@@ -29,6 +33,13 @@ Generate:
 
 Run:
   dotnet run --project benchmarks/StackProcessing.Benchmarks -- run --operation copy|threshold|convolve|median|dilate|connectedComponents --pixel-type UInt8|UInt16|Float32 --input DIR --output DIR [--radius N] [--kernel-size N] [--threshold X] [--window N] [--available-memory BYTES]
+
+ArrayPool experiment:
+  dotnet run --project benchmarks/StackProcessing.Benchmarks -- run-arraypool --operation copy|threshold|connectedComponents --pixel-type UInt8|UInt16|Float32 --input DIR --output DIR [--threshold X]
+  dotnet run --project benchmarks/StackProcessing.Benchmarks -- run-arraypool-slice --operation copy|threshold --pixel-type UInt8|UInt16|Float32 --input DIR --output DIR [--threshold X]
+  dotnet run --project benchmarks/StackProcessing.Benchmarks -- run-arraypool-slice-reuse --operation copy|threshold --pixel-type UInt8|UInt16|Float32 --input DIR --output DIR [--threshold X]
+  dotnet run --project benchmarks/StackProcessing.Benchmarks -- run-byte-slice-reuse --operation copy|threshold --pixel-type UInt8 --input DIR --output DIR [--threshold X]
+  dotnet run --project benchmarks/StackProcessing.Benchmarks -- run-byte-float32-slice-reuse --operation copy|threshold --pixel-type Float32 --input DIR --output DIR [--threshold X]
 """
     |> printfn "%s"
     0
@@ -84,6 +95,362 @@ let private ensureCleanDirectory path =
 
 let private outputFile outputDir z =
     Path.Combine(outputDir, sprintf "slice_%05d.tiff" z)
+
+type private PooledVolume<'T>(width: uint, height: uint, depth: uint, buffer: 'T[], length: int, name: string) =
+    let mutable refCount = 1
+    let mutable returned = false
+
+    member _.Width = width
+    member _.Height = height
+    member _.Depth = depth
+    member _.Buffer = buffer
+    member _.Length = length
+    member _.Name = name
+    member _.Span = buffer.AsSpan(0, length)
+
+    member _.incRefCount() =
+        if returned then
+            invalidOp $"Cannot increment reference count for returned pooled volume '{name}'."
+        refCount <- refCount + 1
+
+    member _.decRefCount() =
+        if returned then
+            ()
+        else
+            refCount <- refCount - 1
+            if refCount < 0 then
+                invalidOp $"Reference count became negative for pooled volume '{name}'."
+            elif refCount = 0 then
+                returned <- true
+                ArrayPool<'T>.Shared.Return(buffer, RuntimeHelpers.IsReferenceOrContainsReferences<'T>())
+
+let private rentVolume<'T> width height depth name =
+    let length64 = uint64 width * uint64 height * uint64 depth
+    if length64 > uint64 Int32.MaxValue then
+        invalidArg "shape" $"ArrayPool experiment currently expects fewer than {Int32.MaxValue} elements per volume; got {length64}."
+    let length = int length64
+    let buffer = ArrayPool<'T>.Shared.Rent(length)
+    PooledVolume<'T>(width, height, depth, buffer, length, name)
+
+let private scalarTiffLayout<'T> () =
+    let t = typeof<'T>
+    if t = typeof<uint8> then 8, SampleFormat.UINT, 1
+    elif t = typeof<uint16> then 16, SampleFormat.UINT, 2
+    elif t = typeof<float32> then 32, SampleFormat.IEEEFP, 4
+    else
+        invalidArg "T" $"ArrayPool benchmark supports UInt8, UInt16, and Float32 TIFF stacks; got {t.Name}."
+
+let private tiffFieldInt (tiff: Tiff) tag fallback =
+    let field = tiff.GetField(tag)
+    if isNull field || field.Length = 0 then fallback else field[0].ToInt()
+
+let private tiffFieldIntDefaulted (tiff: Tiff) tag fallback =
+    let field = tiff.GetFieldDefaulted(tag)
+    if isNull field || field.Length = 0 then fallback else field[0].ToInt()
+
+let private stackTiffFiles inputDir =
+    if not (Directory.Exists inputDir) then
+        invalidOp $"Input stack directory does not exist: {inputDir}"
+
+    Directory.EnumerateFiles(inputDir)
+    |> Seq.filter (fun path ->
+        path.EndsWith(".tif", StringComparison.OrdinalIgnoreCase)
+        || path.EndsWith(".tiff", StringComparison.OrdinalIgnoreCase))
+    |> Seq.sort
+    |> Seq.toArray
+
+let private readTiffPageBytes (fileName: string) =
+    use tiff = Tiff.Open(fileName, "r")
+    if isNull tiff then
+        invalidOp $"Could not open '{fileName}' for TIFF reading."
+
+    let width = uint (tiffFieldInt tiff TiffTag.IMAGEWIDTH 0)
+    let height = uint (tiffFieldInt tiff TiffTag.IMAGELENGTH 0)
+    if width = 0u || height = 0u then
+        invalidOp $"TIFF slice '{fileName}' has invalid page dimensions {width}x{height}."
+
+    let bitsPerSample = tiffFieldIntDefaulted tiff TiffTag.BITSPERSAMPLE 1
+    let samplesPerPixel = tiffFieldIntDefaulted tiff TiffTag.SAMPLESPERPIXEL 1
+    if samplesPerPixel <> 1 then
+        invalidOp $"TIFF slice '{fileName}' has {samplesPerPixel} samples per pixel; the ArrayPool benchmark expects scalar images."
+
+    let sampleFormat =
+        tiffFieldIntDefaulted tiff TiffTag.SAMPLEFORMAT (int SampleFormat.UINT)
+        |> enum<SampleFormat>
+
+    let actualBytesPerSample =
+        match sampleFormat, bitsPerSample with
+        | SampleFormat.UINT, 8 -> 1
+        | SampleFormat.UINT, 16 -> 2
+        | SampleFormat.IEEEFP, 32 -> 4
+        | _ -> invalidOp $"Unsupported TIFF scalar layout in '{fileName}': {bitsPerSample}-bit {sampleFormat}."
+
+    let rowBytes = int width * actualBytesPerSample
+    let scanlineSize = max rowBytes (tiff.ScanlineSize())
+    let scanline = Array.zeroCreate<byte> scanlineSize
+    let pageBytes = Array.zeroCreate<byte> (rowBytes * int height)
+
+    for row in 0 .. int height - 1 do
+        if not (tiff.ReadScanline(scanline, row)) then
+            invalidOp $"Failed to read TIFF scanline {row} from '{fileName}'."
+        Buffer.BlockCopy(scanline, 0, pageBytes, row * rowBytes, rowBytes)
+
+    width, height, bitsPerSample, sampleFormat, actualBytesPerSample, pageBytes
+
+let private readArrayPoolTiffSlice<'T> fileName name =
+    let expectedBits, expectedFormat, expectedBytesPerSample = scalarTiffLayout<'T> ()
+    use tiff = Tiff.Open(fileName, "r")
+    if isNull tiff then
+        invalidOp $"Could not open '{fileName}' for TIFF reading."
+
+    let width = uint (tiffFieldInt tiff TiffTag.IMAGEWIDTH 0)
+    let height = uint (tiffFieldInt tiff TiffTag.IMAGELENGTH 0)
+    if width = 0u || height = 0u then
+        invalidOp $"TIFF slice '{fileName}' has invalid page dimensions {width}x{height}."
+
+    let bitsPerSample = tiffFieldIntDefaulted tiff TiffTag.BITSPERSAMPLE 1
+    let samplesPerPixel = tiffFieldIntDefaulted tiff TiffTag.SAMPLESPERPIXEL 1
+    if samplesPerPixel <> 1 then
+        invalidOp $"TIFF slice '{fileName}' has {samplesPerPixel} samples per pixel; the ArrayPool benchmark expects scalar images."
+
+    let sampleFormat =
+        tiffFieldIntDefaulted tiff TiffTag.SAMPLEFORMAT (int SampleFormat.UINT)
+        |> enum<SampleFormat>
+
+    if bitsPerSample <> expectedBits || sampleFormat <> expectedFormat then
+        invalidOp $"Input slice '{fileName}' does not match {typeof<'T>.Name}: got {bitsPerSample}-bit {sampleFormat}."
+
+    let rowBytes = int width * expectedBytesPerSample
+    let scanlineSize = max rowBytes (tiff.ScanlineSize())
+    let scanline = ArrayPool<byte>.Shared.Rent(scanlineSize)
+    let slice = rentVolume<'T> width height 1u name
+    try
+        try
+            for row in 0 .. int height - 1 do
+                if not (tiff.ReadScanline(scanline, row)) then
+                    invalidOp $"Failed to read TIFF scanline {row} from '{fileName}'."
+                Buffer.BlockCopy(scanline, 0, slice.Buffer, row * rowBytes, rowBytes)
+            slice
+        with
+        | ex ->
+            slice.decRefCount()
+            raise ex
+    finally
+        ArrayPool<byte>.Shared.Return(scanline)
+
+let private inspectTiffSlice<'T> fileName =
+    let expectedBits, expectedFormat, expectedBytesPerSample = scalarTiffLayout<'T> ()
+    use tiff = Tiff.Open(fileName, "r")
+    if isNull tiff then
+        invalidOp $"Could not open '{fileName}' for TIFF reading."
+
+    let width = uint (tiffFieldInt tiff TiffTag.IMAGEWIDTH 0)
+    let height = uint (tiffFieldInt tiff TiffTag.IMAGELENGTH 0)
+    if width = 0u || height = 0u then
+        invalidOp $"TIFF slice '{fileName}' has invalid page dimensions {width}x{height}."
+
+    let bitsPerSample = tiffFieldIntDefaulted tiff TiffTag.BITSPERSAMPLE 1
+    let samplesPerPixel = tiffFieldIntDefaulted tiff TiffTag.SAMPLESPERPIXEL 1
+    if samplesPerPixel <> 1 then
+        invalidOp $"TIFF slice '{fileName}' has {samplesPerPixel} samples per pixel; the ArrayPool benchmark expects scalar images."
+
+    let sampleFormat =
+        tiffFieldIntDefaulted tiff TiffTag.SAMPLEFORMAT (int SampleFormat.UINT)
+        |> enum<SampleFormat>
+
+    if bitsPerSample <> expectedBits || sampleFormat <> expectedFormat then
+        invalidOp $"Input slice '{fileName}' does not match {typeof<'T>.Name}: got {bitsPerSample}-bit {sampleFormat}."
+
+    let rowBytes = int width * expectedBytesPerSample
+    width, height, rowBytes, max rowBytes (tiff.ScanlineSize())
+
+let private readArrayPoolTiffSliceInto<'T> fileName expectedWidth expectedHeight rowBytes (scanline: byte[]) (slice: PooledVolume<'T>) =
+    use tiff = Tiff.Open(fileName, "r")
+    if isNull tiff then
+        invalidOp $"Could not open '{fileName}' for TIFF reading."
+
+    let width = uint (tiffFieldInt tiff TiffTag.IMAGEWIDTH 0)
+    let height = uint (tiffFieldInt tiff TiffTag.IMAGELENGTH 0)
+    if width <> expectedWidth || height <> expectedHeight then
+        invalidOp $"Input slice '{fileName}' has shape {width}x{height}, expected {expectedWidth}x{expectedHeight}."
+
+    for row in 0 .. int expectedHeight - 1 do
+        if not (tiff.ReadScanline(scanline, row)) then
+            invalidOp $"Failed to read TIFF scanline {row} from '{fileName}'."
+        Buffer.BlockCopy(scanline, 0, slice.Buffer, row * rowBytes, rowBytes)
+
+let private writeArrayPoolTiffPageWithRowBuffer<'T> fileName width height rowBytes (rowBuffer: byte[]) (buffer: 'T[]) elementOffset =
+    let bitsPerSample, sampleFormat, bytesPerSample = scalarTiffLayout<'T> ()
+    use tiff = Tiff.Open(fileName, ImageIO.tiffWriteMode fileName)
+    if isNull tiff then
+        invalidOp $"Could not open '{fileName}' for TIFF writing."
+
+    tiff.SetField(TiffTag.IMAGEWIDTH, int width) |> ignore
+    tiff.SetField(TiffTag.IMAGELENGTH, int height) |> ignore
+    tiff.SetField(TiffTag.SAMPLESPERPIXEL, 1) |> ignore
+    tiff.SetField(TiffTag.BITSPERSAMPLE, bitsPerSample) |> ignore
+    tiff.SetField(TiffTag.SAMPLEFORMAT, sampleFormat) |> ignore
+    tiff.SetField(TiffTag.PHOTOMETRIC, Photometric.MINISBLACK) |> ignore
+    tiff.SetField(TiffTag.PLANARCONFIG, PlanarConfig.CONTIG) |> ignore
+    tiff.SetField(TiffTag.ROWSPERSTRIP, int height) |> ignore
+    tiff.SetField(TiffTag.COMPRESSION, Compression.NONE) |> ignore
+
+    for row in 0 .. int height - 1 do
+        Buffer.BlockCopy(buffer, (elementOffset * bytesPerSample) + (row * rowBytes), rowBuffer, 0, rowBytes)
+        if not (tiff.WriteScanline(rowBuffer, row)) then
+            invalidOp $"Failed to write TIFF scanline {row} to '{fileName}'."
+
+    if not (tiff.WriteDirectory()) then
+        invalidOp $"Failed to write TIFF directory to '{fileName}'."
+
+let private writeByteTiffPageFor<'T> fileName width height rowBytes (pageBuffer: byte[]) =
+    let bitsPerSample, sampleFormat, _bytesPerSample = scalarTiffLayout<'T> ()
+    use tiff = Tiff.Open(fileName, ImageIO.tiffWriteMode fileName)
+    if isNull tiff then
+        invalidOp $"Could not open '{fileName}' for TIFF writing."
+
+    tiff.SetField(TiffTag.IMAGEWIDTH, int width) |> ignore
+    tiff.SetField(TiffTag.IMAGELENGTH, int height) |> ignore
+    tiff.SetField(TiffTag.SAMPLESPERPIXEL, 1) |> ignore
+    tiff.SetField(TiffTag.BITSPERSAMPLE, bitsPerSample) |> ignore
+    tiff.SetField(TiffTag.SAMPLEFORMAT, sampleFormat) |> ignore
+    tiff.SetField(TiffTag.PHOTOMETRIC, Photometric.MINISBLACK) |> ignore
+    tiff.SetField(TiffTag.PLANARCONFIG, PlanarConfig.CONTIG) |> ignore
+    tiff.SetField(TiffTag.ROWSPERSTRIP, int height) |> ignore
+    tiff.SetField(TiffTag.COMPRESSION, Compression.NONE) |> ignore
+
+    for row in 0 .. int height - 1 do
+        if not (tiff.WriteScanline(pageBuffer, row * rowBytes, row, int16 0)) then
+            invalidOp $"Failed to write TIFF scanline {row} to '{fileName}'."
+
+    if not (tiff.WriteDirectory()) then
+        invalidOp $"Failed to write TIFF directory to '{fileName}'."
+
+let private readByteTiffSliceInto fileName expectedWidth expectedHeight rowBytes (pageBuffer: byte[]) =
+    use tiff = Tiff.Open(fileName, "r")
+    if isNull tiff then
+        invalidOp $"Could not open '{fileName}' for TIFF reading."
+
+    let width = uint (tiffFieldInt tiff TiffTag.IMAGEWIDTH 0)
+    let height = uint (tiffFieldInt tiff TiffTag.IMAGELENGTH 0)
+    if width <> expectedWidth || height <> expectedHeight then
+        invalidOp $"Input slice '{fileName}' has shape {width}x{height}, expected {expectedWidth}x{expectedHeight}."
+
+    for row in 0 .. int expectedHeight - 1 do
+        if not (tiff.ReadScanline(pageBuffer, row * rowBytes, row, int16 0)) then
+            invalidOp $"Failed to read TIFF scanline {row} from '{fileName}'."
+
+let private readArrayPoolTiffStack<'T> inputDir =
+    let expectedBits, expectedFormat, expectedBytesPerSample = scalarTiffLayout<'T> ()
+    let files = stackTiffFiles inputDir
+    if files.Length = 0 then
+        invalidOp $"No TIFF files found in input stack directory: {inputDir}"
+
+    let width, height, bits, sampleFormat, bytesPerSample, firstPage = readTiffPageBytes files[0]
+    if bits <> expectedBits || sampleFormat <> expectedFormat || bytesPerSample <> expectedBytesPerSample then
+        invalidOp $"Input pixel layout does not match {typeof<'T>.Name}: got {bits}-bit {sampleFormat}."
+
+    let depth = uint files.Length
+    let volume = rentVolume<'T> width height depth "arraypool.read"
+    let sliceElements = int width * int height
+    let sliceBytes = sliceElements * expectedBytesPerSample
+    Buffer.BlockCopy(firstPage, 0, volume.Buffer, 0, sliceBytes)
+
+    for z in 1 .. files.Length - 1 do
+        let w, h, b, sf, bps, page = readTiffPageBytes files[z]
+        if w <> width || h <> height then
+            invalidOp $"Input slice '{files[z]}' has shape {w}x{h}, expected {width}x{height}."
+        if b <> expectedBits || sf <> expectedFormat || bps <> expectedBytesPerSample then
+            invalidOp $"Input slice '{files[z]}' has layout {b}-bit {sf}, expected {expectedBits}-bit {expectedFormat}."
+        Buffer.BlockCopy(page, 0, volume.Buffer, z * sliceBytes, sliceBytes)
+
+    volume
+
+let private writeArrayPoolTiffPage<'T> fileName width height (buffer: 'T[]) elementOffset =
+    let bitsPerSample, sampleFormat, bytesPerSample = scalarTiffLayout<'T> ()
+    use tiff = Tiff.Open(fileName, ImageIO.tiffWriteMode fileName)
+    if isNull tiff then
+        invalidOp $"Could not open '{fileName}' for TIFF writing."
+
+    tiff.SetField(TiffTag.IMAGEWIDTH, int width) |> ignore
+    tiff.SetField(TiffTag.IMAGELENGTH, int height) |> ignore
+    tiff.SetField(TiffTag.SAMPLESPERPIXEL, 1) |> ignore
+    tiff.SetField(TiffTag.BITSPERSAMPLE, bitsPerSample) |> ignore
+    tiff.SetField(TiffTag.SAMPLEFORMAT, sampleFormat) |> ignore
+    tiff.SetField(TiffTag.PHOTOMETRIC, Photometric.MINISBLACK) |> ignore
+    tiff.SetField(TiffTag.PLANARCONFIG, PlanarConfig.CONTIG) |> ignore
+    tiff.SetField(TiffTag.ROWSPERSTRIP, int height) |> ignore
+    tiff.SetField(TiffTag.COMPRESSION, Compression.NONE) |> ignore
+
+    let rowBytes = int width * bytesPerSample
+    let sliceBytes = rowBytes * int height
+    let pageBytes = ArrayPool<byte>.Shared.Rent(sliceBytes)
+    let rowBuffer = ArrayPool<byte>.Shared.Rent(rowBytes)
+    try
+        Buffer.BlockCopy(buffer, elementOffset * bytesPerSample, pageBytes, 0, sliceBytes)
+        for row in 0 .. int height - 1 do
+            Buffer.BlockCopy(pageBytes, row * rowBytes, rowBuffer, 0, rowBytes)
+            if not (tiff.WriteScanline(rowBuffer, row)) then
+                invalidOp $"Failed to write TIFF scanline {row} to '{fileName}'."
+
+        if not (tiff.WriteDirectory()) then
+            invalidOp $"Failed to write TIFF directory to '{fileName}'."
+    finally
+        ArrayPool<byte>.Shared.Return(rowBuffer)
+        ArrayPool<byte>.Shared.Return(pageBytes)
+
+let private writeArrayPoolTiffStack<'T> outputDir (volume: PooledVolume<'T>) =
+    ensureCleanDirectory outputDir
+    let sliceElements = int volume.Width * int volume.Height
+    for z in 0 .. int volume.Depth - 1 do
+        writeArrayPoolTiffPage (outputFile outputDir z) volume.Width volume.Height volume.Buffer (z * sliceElements)
+
+let private copyArrayPoolVolume<'T> (volume: PooledVolume<'T>) =
+    let output = rentVolume<'T> volume.Width volume.Height volume.Depth "arraypool.copy"
+    volume.Span.CopyTo(output.Span)
+    output
+
+let private thresholdArrayPoolVolume<'T> thresholdValue (volume: PooledVolume<'T>) =
+    let output = rentVolume<uint8> volume.Width volume.Height volume.Depth "arraypool.threshold"
+    if typeof<'T> = typeof<uint8> then
+        let input = box volume.Buffer :?> uint8[]
+        let threshold8 = byte thresholdValue
+        for i in 0 .. volume.Length - 1 do
+            output.Buffer[i] <- if input[i] >= threshold8 then 255uy else 0uy
+    elif typeof<'T> = typeof<uint16> then
+        let input = box volume.Buffer :?> uint16[]
+        let threshold16 = uint16 thresholdValue
+        for i in 0 .. volume.Length - 1 do
+            output.Buffer[i] <- if input[i] >= threshold16 then 255uy else 0uy
+    elif typeof<'T> = typeof<float32> then
+        let input = box volume.Buffer :?> float32[]
+        let threshold32 = float32 thresholdValue
+        for i in 0 .. volume.Length - 1 do
+            output.Buffer[i] <- if input[i] >= threshold32 then 255uy else 0uy
+    else
+        invalidArg "T" $"Unsupported ArrayPool threshold type {typeof<'T>.Name}."
+    output
+
+let private pooledUInt8VolumeToImage (volume: PooledVolume<uint8>) name =
+    use importer = new itk.simple.ImportImageFilter()
+    importer.SetSize(new itk.simple.VectorUInt32([ volume.Width; volume.Height; volume.Depth ]))
+    let handle = GCHandle.Alloc(volume.Buffer, GCHandleType.Pinned)
+    try
+        importer.SetBufferAsUInt8(handle.AddrOfPinnedObject())
+        Image<uint8>.ofSimpleITKNDispose(importer.Execute(), name, 0)
+    finally
+        handle.Free()
+
+let private labelImageToUInt8Volume (labels: Image<uint64>) width height depth =
+    let labelArray = labels.toArray3D()
+    let output = rentVolume<uint8> width height depth "arraypool.connectedComponents.output"
+    let mutable offset = 0
+    for z in 0 .. int depth - 1 do
+        for y in 0 .. int height - 1 do
+            for x in 0 .. int width - 1 do
+                output.Buffer[offset] <- byte labelArray[x, y, z]
+                offset <- offset + 1
+    output
 
 let private generateUInt8 pattern shape outputDir =
     ensureCleanDirectory outputDir
@@ -257,6 +624,278 @@ let private run opts =
     writeInternalSeconds stopwatch.Elapsed
     exitCode
 
+let private runArrayPoolTyped<'T when 'T: equality> operation input output thresholdValue =
+    let volume = readArrayPoolTiffStack<'T> input
+    try
+        match operation with
+        | "copy" ->
+            let copied = copyArrayPoolVolume volume
+            try
+                writeArrayPoolTiffStack output copied
+            finally
+                copied.decRefCount()
+        | "threshold" ->
+            let mask = thresholdArrayPoolVolume thresholdValue volume
+            try
+                writeArrayPoolTiffStack output mask
+            finally
+                mask.decRefCount()
+        | _ -> failwith $"unsupported ArrayPool operation '{operation}' for {typeof<'T>.Name}"
+        0
+    finally
+        volume.decRefCount()
+
+let private runArrayPoolConnectedComponents input output thresholdValue =
+    let volume = readArrayPoolTiffStack<uint8> input
+    try
+        let mask = thresholdArrayPoolVolume thresholdValue volume
+        try
+            let maskImage = pooledUInt8VolumeToImage mask "arraypool.connectedComponents.input"
+            try
+                let connected = ImageFunctions.connectedComponents maskImage
+                try
+                    let labels = labelImageToUInt8Volume connected.Labels mask.Width mask.Height mask.Depth
+                    try
+                        writeArrayPoolTiffStack output labels
+                    finally
+                        labels.decRefCount()
+                finally
+                    connected.Labels.decRefCount()
+            finally
+                maskImage.decRefCount()
+        finally
+            mask.decRefCount()
+        0
+    finally
+        volume.decRefCount()
+
+let private runArrayPool opts =
+    let operation = require "operation" opts
+    let pixelType = require "pixel-type" opts |> parsePixelType
+    let input = require "input" opts
+    let output = require "output" opts
+    let thresholdValue = optional "threshold" "128" opts |> fun s -> Double.Parse(s, invariant)
+    let stopwatch = Stopwatch.StartNew()
+    let exitCode =
+        match operation, pixelType with
+        | "connectedComponents", UInt8 -> runArrayPoolConnectedComponents input output thresholdValue
+        | "connectedComponents", _ -> failwith "ArrayPool connectedComponents benchmark is currently defined for UInt8 masks only"
+        | _, UInt8 -> runArrayPoolTyped<uint8> operation input output thresholdValue
+        | _, UInt16 -> runArrayPoolTyped<uint16> operation input output thresholdValue
+        | _, Float32 -> runArrayPoolTyped<float32> operation input output thresholdValue
+    stopwatch.Stop()
+    writeInternalSeconds stopwatch.Elapsed
+    exitCode
+
+let private runArrayPoolSliceTyped<'T when 'T: equality> operation input output thresholdValue =
+    let files = stackTiffFiles input
+    if files.Length = 0 then
+        invalidOp $"No TIFF files found in input stack directory: {input}"
+
+    ensureCleanDirectory output
+    for i in 0 .. files.Length - 1 do
+        let slice = readArrayPoolTiffSlice<'T> files[i] $"arraypool.slice.read[{i}]"
+        try
+            match operation with
+            | "copy" ->
+                writeArrayPoolTiffPage (outputFile output i) slice.Width slice.Height slice.Buffer 0
+            | "threshold" ->
+                let mask = thresholdArrayPoolVolume thresholdValue slice
+                try
+                    writeArrayPoolTiffPage (outputFile output i) mask.Width mask.Height mask.Buffer 0
+                finally
+                    mask.decRefCount()
+            | _ -> failwith $"unsupported slice ArrayPool operation '{operation}' for {typeof<'T>.Name}"
+        finally
+            slice.decRefCount()
+    0
+
+let private runArrayPoolSlice opts =
+    let operation = require "operation" opts
+    let pixelType = require "pixel-type" opts |> parsePixelType
+    let input = require "input" opts
+    let output = require "output" opts
+    let thresholdValue = optional "threshold" "128" opts |> fun s -> Double.Parse(s, invariant)
+    let stopwatch = Stopwatch.StartNew()
+    let exitCode =
+        match operation, pixelType with
+        | "connectedComponents", _ -> failwith "Slice ArrayPool backend is intended for copy/threshold allocation experiments, not connected components."
+        | _, UInt8 -> runArrayPoolSliceTyped<uint8> operation input output thresholdValue
+        | _, UInt16 -> runArrayPoolSliceTyped<uint16> operation input output thresholdValue
+        | _, Float32 -> runArrayPoolSliceTyped<float32> operation input output thresholdValue
+    stopwatch.Stop()
+    writeInternalSeconds stopwatch.Elapsed
+    exitCode
+
+let private runArrayPoolSliceReuseTyped<'T when 'T: equality> operation input output thresholdValue =
+    let files = stackTiffFiles input
+    if files.Length = 0 then
+        invalidOp $"No TIFF files found in input stack directory: {input}"
+
+    let width, height, rowBytes, scanlineSize = inspectTiffSlice<'T> files[0]
+    let inputSlice = rentVolume<'T> width height 1u "arraypool.slice-reuse.input"
+    let outputMask =
+        if operation = "threshold" then
+            Some(rentVolume<uint8> width height 1u "arraypool.slice-reuse.threshold")
+        else
+            None
+    let readScanline = ArrayPool<byte>.Shared.Rent(scanlineSize)
+    let writeRow = ArrayPool<byte>.Shared.Rent(rowBytes)
+    let writeMaskRow =
+        if operation = "threshold" && typeof<'T> <> typeof<uint8> then
+            Some(ArrayPool<byte>.Shared.Rent(int width))
+        else
+            None
+
+    ensureCleanDirectory output
+    try
+        for i in 0 .. files.Length - 1 do
+            readArrayPoolTiffSliceInto<'T> files[i] width height rowBytes readScanline inputSlice
+            match operation with
+            | "copy" ->
+                writeArrayPoolTiffPageWithRowBuffer (outputFile output i) width height rowBytes writeRow inputSlice.Buffer 0
+            | "threshold" ->
+                let mask = outputMask.Value
+                if typeof<'T> = typeof<uint8> then
+                    let inputBuffer = box inputSlice.Buffer :?> uint8[]
+                    let maskBuffer = mask.Buffer
+                    let threshold8 = byte thresholdValue
+                    for p in 0 .. inputSlice.Length - 1 do
+                        maskBuffer[p] <- if inputBuffer[p] >= threshold8 then 255uy else 0uy
+                    writeArrayPoolTiffPageWithRowBuffer (outputFile output i) width height (int width) writeRow mask.Buffer 0
+                elif typeof<'T> = typeof<uint16> then
+                    let inputBuffer = box inputSlice.Buffer :?> uint16[]
+                    let maskBuffer = mask.Buffer
+                    let threshold16 = uint16 thresholdValue
+                    for p in 0 .. inputSlice.Length - 1 do
+                        maskBuffer[p] <- if inputBuffer[p] >= threshold16 then 255uy else 0uy
+                    writeArrayPoolTiffPageWithRowBuffer (outputFile output i) width height (int width) writeMaskRow.Value mask.Buffer 0
+                elif typeof<'T> = typeof<float32> then
+                    let inputBuffer = box inputSlice.Buffer :?> float32[]
+                    let maskBuffer = mask.Buffer
+                    let threshold32 = float32 thresholdValue
+                    for p in 0 .. inputSlice.Length - 1 do
+                        maskBuffer[p] <- if inputBuffer[p] >= threshold32 then 255uy else 0uy
+                    writeArrayPoolTiffPageWithRowBuffer (outputFile output i) width height (int width) writeMaskRow.Value mask.Buffer 0
+                else
+                    invalidArg "T" $"Unsupported ArrayPool threshold type {typeof<'T>.Name}."
+            | _ -> failwith $"unsupported reusable slice ArrayPool operation '{operation}' for {typeof<'T>.Name}"
+        0
+    finally
+        inputSlice.decRefCount()
+        outputMask |> Option.iter (fun volume -> volume.decRefCount())
+        writeMaskRow |> Option.iter ArrayPool<byte>.Shared.Return
+        ArrayPool<byte>.Shared.Return(writeRow)
+        ArrayPool<byte>.Shared.Return(readScanline)
+
+let private runArrayPoolSliceReuse opts =
+    let operation = require "operation" opts
+    let pixelType = require "pixel-type" opts |> parsePixelType
+    let input = require "input" opts
+    let output = require "output" opts
+    let thresholdValue = optional "threshold" "128" opts |> fun s -> Double.Parse(s, invariant)
+    let stopwatch = Stopwatch.StartNew()
+    let exitCode =
+        match operation, pixelType with
+        | "connectedComponents", _ -> failwith "Reusable slice ArrayPool backend is intended for copy/threshold allocation experiments, not connected components."
+        | _, UInt8 -> runArrayPoolSliceReuseTyped<uint8> operation input output thresholdValue
+        | _, UInt16 -> runArrayPoolSliceReuseTyped<uint16> operation input output thresholdValue
+        | _, Float32 -> runArrayPoolSliceReuseTyped<float32> operation input output thresholdValue
+    stopwatch.Stop()
+    writeInternalSeconds stopwatch.Elapsed
+    exitCode
+
+let private runByteSliceReuse opts =
+    let operation = require "operation" opts
+    let pixelType = require "pixel-type" opts |> parsePixelType
+    let input = require "input" opts
+    let output = require "output" opts
+    let thresholdValue = optional "threshold" "128" opts |> fun s -> Double.Parse(s, invariant)
+
+    if pixelType <> UInt8 then
+        failwith "Byte-slice reuse backend is only defined for UInt8."
+
+    let stopwatch = Stopwatch.StartNew()
+    let files = stackTiffFiles input
+    if files.Length = 0 then
+        invalidOp $"No TIFF files found in input stack directory: {input}"
+
+    let width, height, rowBytes, _scanlineSize = inspectTiffSlice<uint8> files[0]
+    let pageBytes = rowBytes * int height
+    let inputPage = ArrayPool<byte>.Shared.Rent(pageBytes)
+    let outputPage =
+        if operation = "threshold" then
+            Some(ArrayPool<byte>.Shared.Rent(pageBytes))
+        else
+            None
+
+    ensureCleanDirectory output
+    try
+        for i in 0 .. files.Length - 1 do
+            readByteTiffSliceInto files[i] width height rowBytes inputPage
+            match operation with
+            | "copy" ->
+                writeByteTiffPageFor<uint8> (outputFile output i) width height rowBytes inputPage
+            | "threshold" ->
+                let out = outputPage.Value
+                let threshold8 = byte thresholdValue
+                for p in 0 .. pageBytes - 1 do
+                    out[p] <- if inputPage[p] >= threshold8 then 255uy else 0uy
+                writeByteTiffPageFor<uint8> (outputFile output i) width height rowBytes out
+            | _ -> failwith $"unsupported byte-slice operation '{operation}'"
+        stopwatch.Stop()
+        writeInternalSeconds stopwatch.Elapsed
+        0
+    finally
+        outputPage |> Option.iter ArrayPool<byte>.Shared.Return
+        ArrayPool<byte>.Shared.Return(inputPage)
+
+let private runByteFloat32SliceReuse opts =
+    let operation = require "operation" opts
+    let pixelType = require "pixel-type" opts |> parsePixelType
+    let input = require "input" opts
+    let output = require "output" opts
+    let thresholdValue = optional "threshold" "128" opts |> fun s -> Double.Parse(s, invariant)
+
+    if pixelType <> Float32 then
+        failwith "Byte-float32 slice reuse backend is only defined for Float32."
+
+    let stopwatch = Stopwatch.StartNew()
+    let files = stackTiffFiles input
+    if files.Length = 0 then
+        invalidOp $"No TIFF files found in input stack directory: {input}"
+
+    let width, height, rowBytes, _scanlineSize = inspectTiffSlice<float32> files[0]
+    let pageBytes = rowBytes * int height
+    let inputPage = ArrayPool<byte>.Shared.Rent(pageBytes)
+    let outputPage =
+        if operation = "threshold" then
+            Some(ArrayPool<byte>.Shared.Rent(int width * int height))
+        else
+            None
+
+    ensureCleanDirectory output
+    try
+        for i in 0 .. files.Length - 1 do
+            readByteTiffSliceInto files[i] width height rowBytes inputPage
+            match operation with
+            | "copy" ->
+                writeByteTiffPageFor<float32> (outputFile output i) width height rowBytes inputPage
+            | "threshold" ->
+                let out = outputPage.Value
+                let inputSpan = MemoryMarshal.Cast<byte, float32>(inputPage.AsSpan(0, pageBytes))
+                let threshold32 = float32 thresholdValue
+                for p in 0 .. inputSpan.Length - 1 do
+                    out[p] <- if inputSpan[p] >= threshold32 then 255uy else 0uy
+                writeByteTiffPageFor<uint8> (outputFile output i) width height (int width) out
+            | _ -> failwith $"unsupported byte-float32-slice operation '{operation}'"
+        stopwatch.Stop()
+        writeInternalSeconds stopwatch.Elapsed
+        0
+    finally
+        outputPage |> Option.iter ArrayPool<byte>.Shared.Return
+        ArrayPool<byte>.Shared.Return(inputPage)
+
 [<EntryPoint>]
 let main args =
     try
@@ -264,6 +903,11 @@ let main args =
         | [| |] -> usage ()
         | _ when args[0] = "generate" -> args[1..] |> parseArgs |> generate
         | _ when args[0] = "run" -> args[1..] |> parseArgs |> run
+        | _ when args[0] = "run-arraypool" -> args[1..] |> parseArgs |> runArrayPool
+        | _ when args[0] = "run-arraypool-slice" -> args[1..] |> parseArgs |> runArrayPoolSlice
+        | _ when args[0] = "run-arraypool-slice-reuse" -> args[1..] |> parseArgs |> runArrayPoolSliceReuse
+        | _ when args[0] = "run-byte-slice-reuse" -> args[1..] |> parseArgs |> runByteSliceReuse
+        | _ when args[0] = "run-byte-float32-slice-reuse" -> args[1..] |> parseArgs |> runByteFloat32SliceReuse
         | _ -> usage ()
     with ex ->
         fail ex.Message

@@ -9,21 +9,46 @@ import math
 from pathlib import Path
 
 
-BACKEND_ORDER = ["stackprocessing", "cpp-itk", "python-skimage-scipy", "matlab"]
+BACKEND_ORDER = [
+    "stackprocessing",
+    "stackprocessing-arraypool",
+    "stackprocessing-arraypool-slice",
+    "stackprocessing-arraypool-slice-reuse",
+    "stackprocessing-byte-slice-reuse",
+    "stackprocessing-byte-float32-slice-reuse",
+    "cpp-itk",
+    "python-skimage-scipy",
+    "matlab",
+]
 BACKEND_LABELS = {
     "stackprocessing": "StackProcessing",
+    "stackprocessing-arraypool": "StackProcessing ArrayPool",
+    "stackprocessing-arraypool-slice": "StackProcessing ArrayPool slice",
+    "stackprocessing-arraypool-slice-reuse": "StackProcessing ArrayPool slice reuse",
+    "stackprocessing-byte-slice-reuse": "StackProcessing byte slice reuse",
+    "stackprocessing-byte-float32-slice-reuse": "StackProcessing byte Float32 view",
     "cpp-itk": "C++ ITK",
     "python-skimage-scipy": "Python scipy/skimage",
     "matlab": "MATLAB",
 }
 BACKEND_COLORS = {
     "stackprocessing": "#1f77b4",
+    "stackprocessing-arraypool": "#17becf",
+    "stackprocessing-arraypool-slice": "#8c564b",
+    "stackprocessing-arraypool-slice-reuse": "#7f7f7f",
+    "stackprocessing-byte-slice-reuse": "#bcbd22",
+    "stackprocessing-byte-float32-slice-reuse": "#e377c2",
     "cpp-itk": "#2ca02c",
     "python-skimage-scipy": "#ff7f0e",
     "matlab": "#9467bd",
 }
 BACKEND_MARKERS = {
     "stackprocessing": "o",
+    "stackprocessing-arraypool": "P",
+    "stackprocessing-arraypool-slice": "X",
+    "stackprocessing-arraypool-slice-reuse": "*",
+    "stackprocessing-byte-slice-reuse": "v",
+    "stackprocessing-byte-float32-slice-reuse": "<",
     "cpp-itk": "s",
     "python-skimage-scipy": "^",
     "matlab": "D",
