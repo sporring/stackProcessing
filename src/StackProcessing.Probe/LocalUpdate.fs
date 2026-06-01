@@ -37,7 +37,7 @@ type Suspect =
       Parameters: Map<string, string> }
 
 let private usage () =
-    printfn "Usage: dotnet run --project src/StackProcessing.Probe -- local-update [options]"
+    printfn "Usage: dotnet src/StackProcessing.Probe/bin/Debug/net10.0/StackProcessing.Probe.dll local-update [options]"
     printfn ""
     printfn "Emits targeted probe graphs around operators implicated by current discrepancy evidence,"
     printfn "optionally runs them, fits a local model, and overlays it on the existing model."

@@ -26,7 +26,7 @@ type CollectionRequest =
       ExtraArgs: string array }
 
 let private usage () =
-    printfn "Usage: dotnet run --project src/StackProcessing.Probe -- inspect [options]"
+    printfn "Usage: dotnet src/StackProcessing.Probe/bin/Debug/net10.0/StackProcessing.Probe.dll inspect [options]"
     printfn ""
     printfn "Inspects durable measurement coverage and suggests the next collection step."
     printfn ""

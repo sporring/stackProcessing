@@ -21,7 +21,7 @@ type CollectionRequest =
       ExtraArgs: string array }
 
 let private usage () =
-    printfn "Usage: dotnet run --project src/StackProcessing.Probe -- collect [options]"
+    printfn "Usage: dotnet src/StackProcessing.Probe/bin/Debug/net10.0/StackProcessing.Probe.dll collect [options]"
     printfn ""
     printfn "Collects Probe measurements for selected ladder families or members."
     printfn "Family collection delegates to the controlled probe ladder; member collection delegates to local-update."

@@ -21,7 +21,7 @@ type Options =
       FitModel: bool }
 
 let private usage () =
-    printfn "Usage: dotnet run --project src/StackProcessing.Probe -- bottom-up [options]"
+    printfn "Usage: dotnet src/StackProcessing.Probe/bin/Debug/net10.0/StackProcessing.Probe.dll bottom-up [options]"
     printfn ""
     printfn "Runs a fresh controlled bottom-up calibration with optimizer off."
     printfn "The command clears repository tmp by default, generates calibration input"

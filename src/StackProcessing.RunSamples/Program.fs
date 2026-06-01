@@ -4,7 +4,7 @@ open System
 open System.IO
 
 let private usage () =
-    printfn "Usage: dotnet run --project src/StackProcessing.RunSamples -- [DIRECTORY] [options]"
+    printfn "Usage: dotnet src/StackProcessing.RunSamples/bin/Debug/net10.0/RunSamples.dll [DIRECTORY] [options]"
     printfn ""
     printfn "Runs sample pipelines below DIRECTORY. DIRECTORY defaults to samples."
     printfn "By default, runs F# sample projects. Use --json to compile and run Studio JSON graphs."

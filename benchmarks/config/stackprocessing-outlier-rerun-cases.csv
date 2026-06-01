@@ -1,0 +1,16 @@
+operation,pixelType,shape,parameterName,parameterValue,notes
+connectedComponents,UInt8,256x256x256,window,256,Rerun StackProcessing group with wrapper-overhead outlier
+convolve,Float32,256x256x256,kernelSize,3,Rerun StackProcessing group with wrapper-overhead outlier
+convolve,Float32,512x512x512,kernelSize,3,Rerun StackProcessing group with wrapper-overhead outlier
+convolve,Float32,1024x1024x1024,kernelSize,3,Rerun StackProcessing group with wrapper-overhead outlier
+convolve,Float32,1024x1024x1024,kernelSize,7,Rerun StackProcessing group with wrapper-overhead outlier
+convolve,UInt16,1024x1024x1024,kernelSize,5,Rerun StackProcessing group with wrapper-overhead outlier
+convolve,UInt16,1024x1024x1024,kernelSize,7,Rerun StackProcessing group with wrapper-overhead outlier
+convolve,UInt8,1024x1024x1024,kernelSize,7,Rerun StackProcessing group with wrapper-overhead outlier
+dilate,UInt8,256x256x256,radius,1,Rerun StackProcessing group with wrapper-overhead outlier
+median,Float32,512x512x512,radius,1,Rerun StackProcessing group with wrapper-overhead outlier
+median,Float32,1024x1024x1024,radius,1,Rerun StackProcessing group with wrapper-overhead outlier
+median,Float32,1024x1024x1024,radius,2,Rerun StackProcessing group with wrapper-overhead outlier
+median,Float32,1024x1024x1024,radius,3,Rerun StackProcessing group with wrapper-overhead outlier
+median,UInt8,512x512x512,radius,1,Rerun StackProcessing group with wrapper-overhead outlier
+median,UInt8,1024x1024x1024,radius,3,Rerun StackProcessing group with wrapper-overhead outlier

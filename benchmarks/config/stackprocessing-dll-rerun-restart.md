@@ -33,8 +33,18 @@ CSV for the same backend, operation, pixel type, shape, parameter, and repeat.
 
 After the StackProcessing DLL rerun is complete, replace old StackProcessing
 rows in `benchmarks/results/raw.csv` with rows from
-`benchmarks/results/raw.stackprocessing-dll-rerun.csv`, then regenerate
-`summary.csv` and figures.
+`benchmarks/results/raw.stackprocessing-dll-rerun.csv`:
+
+```sh
+python3 benchmarks/tools/replace_raw_rows.py \
+  --input benchmarks/results/raw.csv \
+  --replacement benchmarks/results/raw.stackprocessing-dll-rerun.csv \
+  --output benchmarks/results/raw.csv \
+  --backup benchmarks/results/raw.before-stackprocessing-dll-replacement.csv \
+  --drop-backend stackprocessing
+```
+
+Then regenerate `summary.csv` and figures.
 
 ## Remaining Python/skimage reruns
 

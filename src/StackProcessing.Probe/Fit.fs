@@ -17,7 +17,7 @@ type Options =
       Selector: ProbeSelection.EvidenceSelector }
 
 let private usage () =
-    printfn "Usage: dotnet run --project src/StackProcessing.Probe -- fit [options]"
+    printfn "Usage: dotnet src/StackProcessing.Probe/bin/Debug/net10.0/StackProcessing.Probe.dll fit [options]"
     printfn ""
     printfn "Fits an operator cost model from the durable measurement store without recollecting data."
     printfn ""

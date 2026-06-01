@@ -87,7 +87,7 @@ type RunSummary =
       RuntimeCostTerms: RuntimeCostTerm list }
 
 let private usage () =
-    printfn "Usage: dotnet run --project src/StackProcessing.Probe -- analysis [--samples-root PATH] [--output PATH] [--probing-prefix PATH] [--ridge VALUE] [--diagnostics-only]"
+    printfn "Usage: dotnet src/StackProcessing.Probe/bin/Debug/net10.0/StackProcessing.Probe.dll analysis [--samples-root PATH] [--output PATH] [--probing-prefix PATH] [--ridge VALUE] [--diagnostics-only]"
     printfn ""
     printfn "Extracts Studio JSON stage keys, optionally merges Probing CSV exports,"
     printfn "writes a system matrix, and fits non-negative least-squares coefficients for each measurement vector."

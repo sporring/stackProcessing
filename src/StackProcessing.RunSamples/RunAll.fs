@@ -346,6 +346,30 @@ let private cleanSampleTmp (sample: Sample) =
         with ex ->
             eprintfn "runAll: could not clean %s: %s" (relativePath (Directory.GetCurrentDirectory()) tmp) ex.Message
 
+let private sampleAssemblyName (sample: Sample) =
+    let projectPath =
+        if Path.IsPathRooted sample.Project then
+            sample.Project
+        else
+            Path.Combine(sample.Directory, sample.Project)
+
+    if File.Exists projectPath then
+        let projectText = File.ReadAllText projectPath
+        let matchAssemblyName = Regex.Match(projectText, @"<AssemblyName>\s*(?<name>[^<]+)\s*</AssemblyName>")
+
+        if matchAssemblyName.Success then
+            matchAssemblyName.Groups["name"].Value.Trim()
+        else
+            Path.GetFileNameWithoutExtension projectPath
+    else
+        Path.GetFileNameWithoutExtension sample.Project
+
+let private sampleOutputDirectory sample =
+    Path.Combine(sample.Directory, "bin", "Debug", "net10.0")
+
+let private sampleDllPath sample =
+    Path.Combine(sampleOutputDirectory sample, sampleAssemblyName sample + ".dll")
+
 let private buildSample (cancellationToken: CancellationToken) timeout (sample: Sample) =
     task {
         cleanSampleTmp sample
@@ -375,10 +399,8 @@ let private runSample (cancellationToken: CancellationToken) timeout debugLevel 
         File.AppendAllText(sample.LogPath, $"{Environment.NewLine}== Run {sample.Name} =={Environment.NewLine}")
         printfn "run %s" sample.Name
 
-        let nativeLibPath = Path.Combine(sample.Directory, "lib")
-
         let sampleArgs =
-            [ "run"; "--no-build"; "--verbosity"; "q"; "--"; "-d"; string debugLevel; "--optimize"; string optimize ]
+            [ sampleDllPath sample; "-d"; string debugLevel; "--optimize"; string optimize ]
             @
             match costModel with
             | Some path -> [ "--cost-model"; path ]
@@ -396,7 +418,7 @@ let private runSample (cancellationToken: CancellationToken) timeout debugLevel 
                 sample.Directory
                 "dotnet"
                 sampleArgs
-                (Some nativeLibPath)
+                (Some(sampleOutputDirectory sample))
                 []
                 timeout
 

@@ -269,6 +269,12 @@ let private processNameForGraph (graphName: string) =
 
     "GraphRun_" + safeName compactName
 
+let private graphRunOutputDirectory job =
+    Path.Combine(job.RunDirectory, "bin", "Debug", "net10.0")
+
+let private graphRunDllPath job =
+    Path.Combine(graphRunOutputDirectory job, processNameForGraph job.Name + ".dll")
+
 let private ensureRunProject repositoryRoot job =
     Directory.CreateDirectory job.RunDirectory |> ignore
 
@@ -484,10 +490,10 @@ let private runGraph (cancellationToken: CancellationToken) (repositoryRoot: str
 
                 let optimizerValue = if options.Optimize then "1" else "0"
                 let runArgs =
-                    [ "run"; "--project"; projectPath; "--no-build"; "--verbosity"; "q" ]
+                    [ graphRunDllPath job ]
                     @
                     match options.CostModel with
-                    | Some path -> [ "--"; "--cost-model"; path ]
+                    | Some path -> [ "--cost-model"; path ]
                     | None -> []
 
                 let! runResult =
@@ -497,7 +503,7 @@ let private runGraph (cancellationToken: CancellationToken) (repositoryRoot: str
                         job.WorkingDirectory
                         "dotnet"
                         runArgs
-                        (Some(Path.Combine(job.WorkingDirectory, "lib")))
+                        (Some(graphRunOutputDirectory job))
                         options.Timeout
                         (Some optimizerValue)
                         options.CostModel

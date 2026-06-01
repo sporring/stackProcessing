@@ -66,7 +66,7 @@ type MeasurementValue =
       Log: string }
 
 let private usage () =
-    printfn "Usage: dotnet run --project src/StackProcessing.Probe -- calibrate [options]"
+    printfn "Usage: dotnet src/StackProcessing.Probe/bin/Debug/net10.0/StackProcessing.Probe.dll calibrate [options]"
     printfn ""
     printfn "Runs the greedy calibration loop over existing sample/probe measurements."
     printfn "It analyzes the current matrix, freezes reliable coefficients, emits and runs"

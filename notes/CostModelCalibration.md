@@ -72,6 +72,18 @@ models/default/stackprocessing.operator-cost.json
 
 Use unoptimized execution for calibration. The point is to measure the cost of the implementation, not the cost after a changing optimizer decision.
 
+Build Probe once before timing-oriented calibration runs, then execute the built DLL directly:
+
+```bash
+dotnet build src/StackProcessing.Probe/StackProcessing.Probe.fsproj --nologo
+```
+
+```bash
+dotnet src/StackProcessing.Probe/bin/Debug/net10.0/StackProcessing.Probe.dll <command> [args]
+```
+
+Avoid `dotnet run` for cost-model evidence. Even with `--no-build`, it still goes through the SDK/project runner and can add unpredictable fixed overhead to short probe rows. That overhead is not part of StackProcessing's execution model and should not be fitted as operator cost. The same rule applies to Studio-generated pipelines once compiled: run the built artifact that represents the workflow, not a project-runner convenience command.
+
 Use `-j 1` for timing runs. Parallel probe graphs compete for CPU, memory bandwidth, disk IO, and SimpleITK worker threads, which makes the evidence noisier.
 
 Prefer the current larger shapes:
@@ -85,7 +97,7 @@ Avoid small `64x64x64` measurements for model fitting unless a specific debuggin
 On macOS, use `caffeinate` for long collection runs:
 
 ```bash
-caffeinate -dimsu dotnet run --project src/StackProcessing.Probe/StackProcessing.Probe.fsproj -- \
+caffeinate -dimsu dotnet src/StackProcessing.Probe/bin/Debug/net10.0/StackProcessing.Probe.dll \
   collect --family io \
   --shapes 256x256x256,512x512x128,1024x1024x64 \
   --noisy-type Float32 --repeat 6 -j 1
@@ -136,17 +148,17 @@ Typical families:
 For a ladder step, run:
 
 ```bash
-caffeinate -dimsu dotnet run --project src/StackProcessing.Probe/StackProcessing.Probe.fsproj -- \
+caffeinate -dimsu dotnet src/StackProcessing.Probe/bin/Debug/net10.0/StackProcessing.Probe.dll \
   collect --family io \
   --shapes 256x256x256,512x512x128,1024x1024x64 \
   --noisy-type Float32 --repeat 6 -j 1
 
-dotnet run --project src/StackProcessing.Probe/StackProcessing.Probe.fsproj -- \
+dotnet src/StackProcessing.Probe/bin/Debug/net10.0/StackProcessing.Probe.dll \
   fit --up-to io \
   --shapes 256x256x256,512x512x128,1024x1024x64 \
   --model-output models/fitted/stackprocessing.operator-cost.json
 
-dotnet run --project src/StackProcessing.Probe/StackProcessing.Probe.fsproj -- \
+dotnet src/StackProcessing.Probe/bin/Debug/net10.0/StackProcessing.Probe.dll \
   inspect --max-step io --min-repeats 6 \
   --shapes 256x256x256,512x512x128,1024x1024x64 \
   --suggest tmp/inspect/io-request.json
@@ -155,17 +167,17 @@ dotnet run --project src/StackProcessing.Probe/StackProcessing.Probe.fsproj -- \
 Then move up one family at a time:
 
 ```bash
-caffeinate -dimsu dotnet run --project src/StackProcessing.Probe/StackProcessing.Probe.fsproj -- \
+caffeinate -dimsu dotnet src/StackProcessing.Probe/bin/Debug/net10.0/StackProcessing.Probe.dll \
   collect --family io-cast \
   --shapes 256x256x256,512x512x128,1024x1024x64 \
   --noisy-type Float32 --repeat 6 -j 1
 
-dotnet run --project src/StackProcessing.Probe/StackProcessing.Probe.fsproj -- \
+dotnet src/StackProcessing.Probe/bin/Debug/net10.0/StackProcessing.Probe.dll \
   fit --up-to io-cast \
   --shapes 256x256x256,512x512x128,1024x1024x64 \
   --model-output models/fitted/stackprocessing.operator-cost.json
 
-dotnet run --project src/StackProcessing.Probe/StackProcessing.Probe.fsproj -- \
+dotnet src/StackProcessing.Probe/bin/Debug/net10.0/StackProcessing.Probe.dll \
   inspect --max-step io-cast --min-repeats 6 \
   --shapes 256x256x256,512x512x128,1024x1024x64 \
   --suggest tmp/inspect/io-cast-request.json
@@ -174,17 +186,17 @@ dotnet run --project src/StackProcessing.Probe/StackProcessing.Probe.fsproj -- \
 For `sources`:
 
 ```bash
-caffeinate -dimsu dotnet run --project src/StackProcessing.Probe/StackProcessing.Probe.fsproj -- \
+caffeinate -dimsu dotnet src/StackProcessing.Probe/bin/Debug/net10.0/StackProcessing.Probe.dll \
   collect --family sources \
   --shapes 256x256x256,512x512x128,1024x1024x64 \
   --noisy-type Float32 --repeat 6 -j 1
 
-dotnet run --project src/StackProcessing.Probe/StackProcessing.Probe.fsproj -- \
+dotnet src/StackProcessing.Probe/bin/Debug/net10.0/StackProcessing.Probe.dll \
   fit --up-to sources \
   --shapes 256x256x256,512x512x128,1024x1024x64 \
   --model-output models/fitted/stackprocessing.operator-cost.json
 
-dotnet run --project src/StackProcessing.Probe/StackProcessing.Probe.fsproj -- \
+dotnet src/StackProcessing.Probe/bin/Debug/net10.0/StackProcessing.Probe.dll \
   inspect --max-step sources --min-repeats 6 \
   --shapes 256x256x256,512x512x128,1024x1024x64 \
   --suggest tmp/inspect/sources-request.json
@@ -193,17 +205,17 @@ dotnet run --project src/StackProcessing.Probe/StackProcessing.Probe.fsproj -- \
 For `singleton`:
 
 ```bash
-caffeinate -dimsu dotnet run --project src/StackProcessing.Probe/StackProcessing.Probe.fsproj -- \
+caffeinate -dimsu dotnet src/StackProcessing.Probe/bin/Debug/net10.0/StackProcessing.Probe.dll \
   collect --family singleton \
   --shapes 256x256x256,512x512x128,1024x1024x64 \
   --noisy-type Float32 --repeat 6 -j 1
 
-dotnet run --project src/StackProcessing.Probe/StackProcessing.Probe.fsproj -- \
+dotnet src/StackProcessing.Probe/bin/Debug/net10.0/StackProcessing.Probe.dll \
   fit --up-to singleton \
   --shapes 256x256x256,512x512x128,1024x1024x64 \
   --model-output models/fitted/stackprocessing.operator-cost.json
 
-dotnet run --project src/StackProcessing.Probe/StackProcessing.Probe.fsproj -- \
+dotnet src/StackProcessing.Probe/bin/Debug/net10.0/StackProcessing.Probe.dll \
   inspect --max-step singleton --min-repeats 6 \
   --shapes 256x256x256,512x512x128,1024x1024x64 \
   --suggest tmp/inspect/singleton-request.json
@@ -234,7 +246,7 @@ The key idea is that one family should be made locally stable before moving upwa
 Probe implements this protocol as the `climb` command:
 
 ```bash
-dotnet run --project src/StackProcessing.Probe/StackProcessing.Probe.fsproj -- \
+dotnet src/StackProcessing.Probe/bin/Debug/net10.0/StackProcessing.Probe.dll \
   --log tmp/climb/climb.log \
   climb --through singleton \
   --shapes 256x256x256,512x512x128,1024x1024x64 \
@@ -244,7 +256,7 @@ dotnet run --project src/StackProcessing.Probe/StackProcessing.Probe.fsproj -- \
 `--log PATH` is a global Probe option, so it can be used with any command. It tees both stdout and stderr to the file while still printing to the console. For long macOS climbs, combine it with `caffeinate`:
 
 ```bash
-caffeinate -dimsu dotnet run --project src/StackProcessing.Probe/StackProcessing.Probe.fsproj -- \
+caffeinate -dimsu dotnet src/StackProcessing.Probe/bin/Debug/net10.0/StackProcessing.Probe.dll \
   --log tmp/climb/climb.log \
   climb --through singleton \
   --shapes 256x256x256,512x512x128,1024x1024x64 \
@@ -281,17 +293,17 @@ Keep `window-slab` explicit rather than part of the default climb unless the goa
 For a family named `FAMILY` and a request file `tmp/inspect/FAMILY-request.json`:
 
 ```bash
-caffeinate -dimsu dotnet run --project src/StackProcessing.Probe/StackProcessing.Probe.fsproj -- \
+caffeinate -dimsu dotnet src/StackProcessing.Probe/bin/Debug/net10.0/StackProcessing.Probe.dll \
   collect --family FAMILY \
   --shapes 256x256x256,512x512x128,1024x1024x64 \
   --noisy-type Float32 --repeat 6 -j 1
 
-dotnet run --project src/StackProcessing.Probe/StackProcessing.Probe.fsproj -- \
+dotnet src/StackProcessing.Probe/bin/Debug/net10.0/StackProcessing.Probe.dll \
   fit --up-to FAMILY \
   --shapes 256x256x256,512x512x128,1024x1024x64 \
   --model-output models/fitted/stackprocessing.operator-cost.json
 
-dotnet run --project src/StackProcessing.Probe/StackProcessing.Probe.fsproj -- \
+dotnet src/StackProcessing.Probe/bin/Debug/net10.0/StackProcessing.Probe.dll \
   inspect --max-step FAMILY --min-repeats 6 \
   --shapes 256x256x256,512x512x128,1024x1024x64 \
   --suggest tmp/inspect/FAMILY-request.json
@@ -300,7 +312,7 @@ dotnet run --project src/StackProcessing.Probe/StackProcessing.Probe.fsproj -- \
 If `inspect` requests more evidence:
 
 ```bash
-caffeinate -dimsu dotnet run --project src/StackProcessing.Probe/StackProcessing.Probe.fsproj -- \
+caffeinate -dimsu dotnet src/StackProcessing.Probe/bin/Debug/net10.0/StackProcessing.Probe.dll \
   collect --request tmp/inspect/FAMILY-request.json -j 1
 ```
 
@@ -359,12 +371,12 @@ When a step plateaus:
 Example diagnostic freeze:
 
 ```bash
-dotnet run --project src/StackProcessing.Probe/StackProcessing.Probe.fsproj -- \
+dotnet src/StackProcessing.Probe/bin/Debug/net10.0/StackProcessing.Probe.dll \
   fit --up-to sources --fixed-through io-cast \
   --shapes 256x256x256,512x512x128,1024x1024x64 \
   --model-output models/fitted/stackprocessing.operator-cost.json
 
-dotnet run --project src/StackProcessing.Probe/StackProcessing.Probe.fsproj -- \
+dotnet src/StackProcessing.Probe/bin/Debug/net10.0/StackProcessing.Probe.dll \
   inspect --max-step sources --fixed-through io-cast --min-repeats 6 \
   --shapes 256x256x256,512x512x128,1024x1024x64 \
   --suggest tmp/inspect/sources-request.json
@@ -428,19 +440,19 @@ This makes it possible to compare fitted coefficients across machines without co
 If `inspect` reports that fit quality or coverage is weak, it writes a request JSON. Collect that request directly:
 
 ```bash
-caffeinate -dimsu dotnet run --project src/StackProcessing.Probe/StackProcessing.Probe.fsproj -- \
+caffeinate -dimsu dotnet src/StackProcessing.Probe/bin/Debug/net10.0/StackProcessing.Probe.dll \
   collect --request tmp/inspect/singleton-request.json -j 1
 ```
 
 Then immediately refit and reinspect the same scope:
 
 ```bash
-dotnet run --project src/StackProcessing.Probe/StackProcessing.Probe.fsproj -- \
+dotnet src/StackProcessing.Probe/bin/Debug/net10.0/StackProcessing.Probe.dll \
   fit --up-to singleton \
   --shapes 256x256x256,512x512x128,1024x1024x64 \
   --model-output models/fitted/stackprocessing.operator-cost.json
 
-dotnet run --project src/StackProcessing.Probe/StackProcessing.Probe.fsproj -- \
+dotnet src/StackProcessing.Probe/bin/Debug/net10.0/StackProcessing.Probe.dll \
   inspect --max-step singleton --min-repeats 6 \
   --shapes 256x256x256,512x512x128,1024x1024x64 \
   --suggest tmp/inspect/singleton-request.json
@@ -453,12 +465,12 @@ Request files may carry the active shape scope. If a request appears to revisit 
 When diagnosing whether a higher ladder step is pushing cost down into lower steps, use `--fixed-through`:
 
 ```bash
-dotnet run --project src/StackProcessing.Probe/StackProcessing.Probe.fsproj -- \
+dotnet src/StackProcessing.Probe/bin/Debug/net10.0/StackProcessing.Probe.dll \
   fit --up-to sources --fixed-through io-cast \
   --shapes 256x256x256,512x512x128,1024x1024x64 \
   --model-output models/fitted/stackprocessing.operator-cost.json
 
-dotnet run --project src/StackProcessing.Probe/StackProcessing.Probe.fsproj -- \
+dotnet src/StackProcessing.Probe/bin/Debug/net10.0/StackProcessing.Probe.dll \
   inspect --max-step sources --fixed-through io-cast --min-repeats 6 \
   --shapes 256x256x256,512x512x128,1024x1024x64 \
   --suggest tmp/inspect/sources-request.json
@@ -534,7 +546,7 @@ After the ladder looks plausible, validate on user-facing samples with discrepan
 ```bash
 rm -f tmp/costDiscrepancies.csv
 
-dotnet run --project src/StackProcessing.RunSamples/RunSamples.fsproj -- \
+dotnet src/StackProcessing.RunSamples/bin/Debug/net10.0/RunSamples.dll \
   --skip-build --repeat 1 -j 1 --debug-level 1 --cost-discrepancies \
   --cost-flags tmp/costDiscrepancies.csv \
   --cost-model models/fitted/stackprocessing.operator-cost.json --no-optimize
@@ -544,7 +556,7 @@ For an individual sample:
 
 ```bash
 cd samples/someSample
-dotnet run -- -d 1 --cost-discrepancies \
+dotnet bin/Debug/net10.0/someSample.dll -d 1 --cost-discrepancies \
   --cost-flags tmp/costDiscrepancies.csv \
   --cost-model models/fitted/stackprocessing.operator-cost.json \
   --no-optimize
@@ -557,14 +569,14 @@ Relative `--cost-flags` and `--cost-model` paths are resolved from the repositor
 For targeted local updates after discrepancy flags:
 
 ```bash
-dotnet run --project src/StackProcessing.Probe/StackProcessing.Probe.fsproj -- \
+dotnet src/StackProcessing.Probe/bin/Debug/net10.0/StackProcessing.Probe.dll \
   local-update --shape 256x256x256 --repeat 3 -j 1
 ```
 
 Or target specific operators:
 
 ```bash
-dotnet run --project src/StackProcessing.Probe/StackProcessing.Probe.fsproj -- \
+dotnet src/StackProcessing.Probe/bin/Debug/net10.0/StackProcessing.Probe.dll \
   local-update --operators SmoothWMedian --shape 256x256x256 --repeat 3 -j 1
 ```
 
@@ -583,7 +595,7 @@ Older notes and scripts may refer to `bottom-up` and `calibrate --estimate-only`
 Example:
 
 ```bash
-dotnet run --project src/StackProcessing.Probe/StackProcessing.Probe.fsproj -- \
+dotnet src/StackProcessing.Probe/bin/Debug/net10.0/StackProcessing.Probe.dll \
   bottom-up --size 128 --noisy-type Float32 --repeat 3 -j 1
 ```
 

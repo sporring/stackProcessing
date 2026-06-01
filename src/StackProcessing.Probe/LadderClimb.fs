@@ -23,7 +23,7 @@ type Options =
       ExtraCollectArgs: string list }
 
 let private usage () =
-    printfn "Usage: dotnet run --project src/StackProcessing.Probe -- climb [options]"
+    printfn "Usage: dotnet src/StackProcessing.Probe/bin/Debug/net10.0/StackProcessing.Probe.dll climb [options]"
     printfn ""
     printfn "Runs the collect-fit-inspect ladder protocol family by family."
     printfn ""

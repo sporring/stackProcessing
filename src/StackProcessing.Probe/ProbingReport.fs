@@ -285,7 +285,7 @@ let private makeScatter title xCandidates yTitle ySelector (probes: ProbeResultJ
     |> Chart.withYAxisStyle yTitle
 
 let private usage () =
-    printfn "Usage: dotnet run --project src/StackProcessing.Probe -- report <probing-report.json> [output-directory]"
+    printfn "Usage: dotnet src/StackProcessing.Probe/bin/Debug/net10.0/StackProcessing.Probe.dll report <probing-report.json> [output-directory]"
 
 let main (args: string array) =
     if args.Length < 1 then

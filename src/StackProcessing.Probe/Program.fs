@@ -5,7 +5,7 @@ open System.IO
 open System.Text
 
 let private usage () =
-    printfn "Usage: dotnet run --project src/StackProcessing.Probe -- [--log PATH] <command> [args]"
+    printfn "Usage: dotnet src/StackProcessing.Probe/bin/Debug/net10.0/StackProcessing.Probe.dll [--log PATH] <command> [args]"
     printfn ""
     printfn "Global options:"
     printfn "  --log PATH  Tee stdout and stderr to PATH while still printing to the console."
@@ -25,17 +25,17 @@ let private usage () =
     printfn "  report     Render legacy probing HTML reports."
     printfn ""
     printfn "Examples:"
-    printfn "  dotnet run --project src/StackProcessing.Probe -- samples --repeat 3"
-    printfn "  dotnet run --project src/StackProcessing.Probe -- samples --json --extra-json-root tmp/probingGraphs"
-    printfn "  dotnet run --project src/StackProcessing.Probe -- analysis --extra-json-root tmp/probingGraphs"
-    printfn "  dotnet run --project src/StackProcessing.Probe -- collect --family io --repeat 6"
-    printfn "  dotnet run --project src/StackProcessing.Probe -- fit --up-to io-cast"
-    printfn "  dotnet run --project src/StackProcessing.Probe -- inspect --max-step singleton"
-    printfn "  dotnet run --project src/StackProcessing.Probe -- climb --through singleton"
-    printfn "  dotnet run --project src/StackProcessing.Probe -- probing tmp/analysis/probing-boilerplate.json --emit-json tmp/probingGraphs"
-    printfn "  dotnet run --project src/StackProcessing.Probe -- bottom-up --repeat 3 -j 1"
-    printfn "  dotnet run --project src/StackProcessing.Probe -- calibrate --repeat 3 -j 1"
-    printfn "  dotnet run --project src/StackProcessing.Probe -- local-update --operators SmoothWGauss --sizes 128"
+    printfn "  dotnet src/StackProcessing.Probe/bin/Debug/net10.0/StackProcessing.Probe.dll samples --repeat 3"
+    printfn "  dotnet src/StackProcessing.Probe/bin/Debug/net10.0/StackProcessing.Probe.dll samples --json --extra-json-root tmp/probingGraphs"
+    printfn "  dotnet src/StackProcessing.Probe/bin/Debug/net10.0/StackProcessing.Probe.dll analysis --extra-json-root tmp/probingGraphs"
+    printfn "  dotnet src/StackProcessing.Probe/bin/Debug/net10.0/StackProcessing.Probe.dll collect --family io --repeat 6"
+    printfn "  dotnet src/StackProcessing.Probe/bin/Debug/net10.0/StackProcessing.Probe.dll fit --up-to io-cast"
+    printfn "  dotnet src/StackProcessing.Probe/bin/Debug/net10.0/StackProcessing.Probe.dll inspect --max-step singleton"
+    printfn "  dotnet src/StackProcessing.Probe/bin/Debug/net10.0/StackProcessing.Probe.dll climb --through singleton"
+    printfn "  dotnet src/StackProcessing.Probe/bin/Debug/net10.0/StackProcessing.Probe.dll probing tmp/analysis/probing-boilerplate.json --emit-json tmp/probingGraphs"
+    printfn "  dotnet src/StackProcessing.Probe/bin/Debug/net10.0/StackProcessing.Probe.dll bottom-up --repeat 3 -j 1"
+    printfn "  dotnet src/StackProcessing.Probe/bin/Debug/net10.0/StackProcessing.Probe.dll calibrate --repeat 3 -j 1"
+    printfn "  dotnet src/StackProcessing.Probe/bin/Debug/net10.0/StackProcessing.Probe.dll local-update --operators SmoothWGauss --sizes 128"
 
 type private TeeTextWriter(primary: TextWriter, secondary: TextWriter) =
     inherit TextWriter()

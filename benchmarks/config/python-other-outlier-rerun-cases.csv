@@ -1,0 +1,4 @@
+operation,pixelType,shape,parameterName,parameterValue,notes
+convolve,UInt8,1024x1024x1024,kernelSize,7,Rerun Python/scikit-image group with wrapper-overhead outlier
+convolve,UInt16,1024x1024x1024,kernelSize,5,Rerun Python/scikit-image group with wrapper-overhead outlier
+dilate,UInt8,1024x1024x1024,radius,1,Rerun Python/scikit-image group with wrapper-overhead outlier
