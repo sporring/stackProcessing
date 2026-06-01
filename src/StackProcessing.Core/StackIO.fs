@@ -2283,23 +2283,48 @@ let readChunkVolume<'T when 'T: equality> inputDir suffix =
     slabs |> List.iter (fun slab -> slab.decRefCount())
     volume, chunkInfo
 
-let chunkedFFTAlongZ debug inputDir outputDir suffix chunkX chunkY chunkZ =
+let private readChunkColumn<'T when 'T: equality> inputDir suffix (chunkInfo: ChunkInfo) i j =
+    let chunks =
+        [ for k in 0 .. chunkInfo.chunks[2] - 1 ->
+            _readChunk<'T> inputDir suffix i j k ]
+
+    let column = ImageFunctions.stack chunks
+    chunks |> List.iter (fun chunk -> chunk.decRefCount())
+    column
+
+let private writeChunkColumn debug outputDir suffix i j chunkZ (column: Image<'T>) =
+    let depth = column.GetDepth()
+    let mutable k = 0u
+
+    while k < depth do
+        let last = min (depth - 1u) (k + chunkZ - 1u)
+        let chunk = ImageFunctions.extractSub [ 0u; 0u; k ] [ column.GetWidth() - 1u; column.GetHeight() - 1u; last ] column
+        let fileName = getChunkFilename outputDir suffix i j (int (k / chunkZ))
+        if debug then printfn "[write] Saved chunk %d %d %d to %s as %s" i j (int (k / chunkZ)) fileName (friendlyImageTypeName chunk)
+        chunk.toFile(fileName)
+        chunk.decRefCount()
+        k <- k + chunkZ
+
+let private chunkedFFTAlongZCore inverse debug inputDir outputDir suffix _chunkX _chunkY chunkZ =
     if Directory.Exists(outputDir) then Directory.Delete(outputDir, true)
     Directory.CreateDirectory(outputDir) |> ignore
-    let volume, _ = readChunkVolume<System.Numerics.Complex> inputDir suffix
-    let zTransformed = ImageFunctions.directionalFFTComplex 2u false volume
-    volume.decRefCount()
-    writeVolumeAsChunks debug outputDir suffix chunkX chunkY chunkZ zTransformed
-    zTransformed.decRefCount()
+
+    let chunkInfo = getChunkInfo inputDir suffix
+    let chunkZ = max 1u chunkZ
+
+    for i in 0 .. chunkInfo.chunks[0] - 1 do
+        for j in 0 .. chunkInfo.chunks[1] - 1 do
+            let column = readChunkColumn<System.Numerics.Complex> inputDir suffix chunkInfo i j
+            let transformed = ImageFunctions.directionalFFTComplex 2u inverse column
+            column.decRefCount()
+            writeChunkColumn debug outputDir suffix i j chunkZ transformed
+            transformed.decRefCount()
+
+let chunkedFFTAlongZ debug inputDir outputDir suffix chunkX chunkY chunkZ =
+    chunkedFFTAlongZCore false debug inputDir outputDir suffix chunkX chunkY chunkZ
 
 let chunkedInvFFTAlongZ debug inputDir outputDir suffix chunkX chunkY chunkZ =
-    if Directory.Exists(outputDir) then Directory.Delete(outputDir, true)
-    Directory.CreateDirectory(outputDir) |> ignore
-    let volume, _ = readChunkVolume<System.Numerics.Complex> inputDir suffix
-    let zInverse = ImageFunctions.directionalFFTComplex 2u true volume
-    volume.decRefCount()
-    writeVolumeAsChunks debug outputDir suffix chunkX chunkY chunkZ zInverse
-    zInverse.decRefCount()
+    chunkedFFTAlongZCore true debug inputDir outputDir suffix chunkX chunkY chunkZ
 
 let chunkedShiftFFT debug inputDir outputDir suffix chunkX chunkY chunkZ =
     if Directory.Exists(outputDir) then Directory.Delete(outputDir, true)
