@@ -33,8 +33,18 @@ def parse_args():
     parser.add_argument("--parameters", default="", help="Optional comma-separated parameter filter, for example radius=1,radius=2.")
     parser.add_argument("--dry-run", action="store_true")
     parser.add_argument("--keep-outputs", action="store_true", help="Keep backend output stacks after each measured case.")
+    parser.add_argument(
+        "--skip-existing",
+        action="store_true",
+        help="Skip cases that already have a successful row in --results for the same backend, operation, pixel type, shape, parameter, and repeat.",
+    )
     parser.add_argument("--itk-exe", default=str(ROOT / "benchmarks/cpp-itk/build/benchmark_itk"))
     parser.add_argument("--matlab-exe", default="matlab")
+    parser.add_argument(
+        "--stackprocessing-dll",
+        default=str(ROOT / "benchmarks/StackProcessing.Benchmarks/bin/Debug/net10.0/StackProcessing.Benchmarks.dll"),
+        help="Built StackProcessing benchmark DLL used by the stackprocessing backend.",
+    )
     return parser.parse_args()
 
 
@@ -96,7 +106,7 @@ def backend_command(args, case, repeat):
     params = parameter_args(case)
 
     if args.backend == "stackprocessing":
-        return ["dotnet", "run", "--no-build", "--project", str(ROOT / "benchmarks/StackProcessing.Benchmarks/StackProcessing.Benchmarks.fsproj"), "--", "run"] + common + params
+        return ["dotnet", args.stackprocessing_dll, "run"] + common + params
     if args.backend == "python-skimage-scipy":
         return ["python3", str(ROOT / "benchmarks/python-skimage-scipy/bench.py")] + common + params
     if args.backend == "python-dask-omezarr":
@@ -147,6 +157,40 @@ def measured_command(args, case, repeat):
         str(repeat),
         "--",
     ] + command
+
+
+def successful_result_keys(path):
+    result_path = Path(path)
+    if not result_path.exists():
+        return set()
+
+    keys = set()
+    with result_path.open(newline="") as handle:
+        for row in csv.DictReader(handle):
+            if row.get("exitCode") != "0":
+                continue
+            keys.add(
+                (
+                    row["backend"],
+                    row["operation"],
+                    row["pixelType"],
+                    row["shape"],
+                    row["parameter"],
+                    row["repeat"],
+                )
+            )
+    return keys
+
+
+def result_key(args, case, repeat):
+    return (
+        args.backend,
+        case["operation"],
+        case["pixelType"],
+        case["shape"],
+        case_parameter(case),
+        str(repeat),
+    )
 
 
 def terminate_process_tree(process):
@@ -215,8 +259,18 @@ def main():
         return 2
 
     Path(args.results).parent.mkdir(parents=True, exist_ok=True)
+    existing_successes = successful_result_keys(args.results) if args.skip_existing else set()
     for repeat in range(repeat_start, repeat_end + 1):
         for case in cases:
+            if result_key(args, case, repeat) in existing_successes:
+                print(
+                    "skip existing "
+                    f"{args.backend} {case['operation']} {case['pixelType']} {case['shape']} "
+                    f"{case_parameter(case)} r{repeat:02d}",
+                    flush=True,
+                )
+                continue
+
             command = measured_command(args, case, repeat)
             printable = " ".join(shlex.quote(part) for part in command)
             print(printable, flush=True)

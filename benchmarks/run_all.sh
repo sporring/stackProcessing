@@ -32,11 +32,14 @@ Options:
   --results PATH          Raw output CSV. Defaults to benchmarks/results/raw.csv.
   --summary PATH          Summary output CSV. Defaults to benchmarks/results/summary.csv.
   --keep-outputs          Keep per-case output stacks. Defaults to deleting them after timing.
+  --skip-existing         Skip successful rows already present in --results.
   --force-inputs          Regenerate TIFF inputs even if present.
   --skip-inputs           Do not generate TIFF inputs.
   --skip-builds           Do not prebuild compiled benchmark backends.
   --build-itk             Accepted for compatibility; cpp-itk is now built automatically when selected.
   --itk-exe PATH          C++/ITK executable path.
+  --stackprocessing-dll PATH
+                          Built StackProcessing benchmark DLL.
   --matlab-exe PATH       MATLAB executable. Defaults to matlab.
   --dry-run               Print commands without executing benchmark cases.
   -h, --help              Show this help.
@@ -73,10 +76,12 @@ summary="benchmarks/results/summary.csv"
 force_inputs=0
 skip_inputs=0
 keep_outputs=0
+skip_existing=0
 build_itk=0
 skip_builds=0
 dry_run=0
 itk_exe="benchmarks/cpp-itk/build/benchmark_itk"
+stackprocessing_dll="benchmarks/StackProcessing.Benchmarks/bin/Debug/net10.0/StackProcessing.Benchmarks.dll"
 matlab_exe="matlab"
 
 while [[ $# -gt 0 ]]; do
@@ -149,6 +154,10 @@ while [[ $# -gt 0 ]]; do
       keep_outputs=1
       shift
       ;;
+    --skip-existing)
+      skip_existing=1
+      shift
+      ;;
     --force-inputs)
       force_inputs=1
       shift
@@ -167,6 +176,10 @@ while [[ $# -gt 0 ]]; do
       ;;
     --itk-exe)
       itk_exe="$2"
+      shift 2
+      ;;
+    --stackprocessing-dll)
+      stackprocessing_dll="$2"
       shift 2
       ;;
     --matlab-exe)
@@ -285,6 +298,7 @@ for backend in "${backend_array[@]}"; do
     --output-root "$output_root"
     --repeat "$repeat"
     --itk-exe "$itk_exe"
+    --stackprocessing-dll "$stackprocessing_dll"
     --matlab-exe "$matlab_exe"
   )
   if [[ -n "$pixel_types" ]]; then
@@ -310,6 +324,9 @@ for backend in "${backend_array[@]}"; do
   fi
   if [[ "$keep_outputs" -eq 1 ]]; then
     manifest_args+=(--keep-outputs)
+  fi
+  if [[ "$skip_existing" -eq 1 ]]; then
+    manifest_args+=(--skip-existing)
   fi
   if [[ "$dry_run" -eq 1 ]]; then
     printf '+'

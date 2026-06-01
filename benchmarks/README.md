@@ -82,7 +82,7 @@ bash benchmarks/run_all.sh --repeat 3
 source .venv-benchmarks/bin/activate
 ```
 
-`run_all.sh` prebuilds compiled benchmark backends before generating inputs or measuring cases. It builds the F# benchmark project when StackProcessing is selected, or when TIFF inputs need to be generated, and it configures/builds `cpp-itk` when that backend is selected. These build steps are outside the measured commands. StackProcessing benchmark commands then use `dotnet run --no-build`, so MSBuild checks are not folded into the wall-time rows. Use `--skip-builds` only when you intentionally want to trust existing binaries.
+`run_all.sh` prebuilds compiled benchmark backends before generating inputs or measuring cases. It builds the F# benchmark project when StackProcessing is selected, or when TIFF inputs need to be generated, and it configures/builds `cpp-itk` when that backend is selected. These build steps are outside the measured commands. StackProcessing benchmark commands then execute the already-built benchmark DLL with `dotnet`, avoiding the SDK/project-runner overhead from `dotnet run`. Use `--skip-builds` only when you intentionally want to trust existing binaries.
 
 The runner also removes stale `benchmark-internal-*.txt` files in the results directory at the start and end of a non-dry run. Those files are temporary handoff files for backend-reported internal timing and normally disappear immediately.
 
@@ -219,7 +219,7 @@ python3 benchmarks/tools/measure.py \
   --shape 512x512x64 \
   --parameter radius=3 \
   -- \
-  dotnet run --project benchmarks/StackProcessing.Benchmarks/StackProcessing.Benchmarks.fsproj -- \
+  dotnet benchmarks/StackProcessing.Benchmarks/bin/Debug/net10.0/StackProcessing.Benchmarks.dll \
     run --operation median --pixel-type UInt8 \
     --input tmp/benchmarks/input/uint8_512x512x64 \
     --output tmp/benchmarks/output/stackprocessing/median_uint8_512x512x64_r3 \
