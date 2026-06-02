@@ -51,6 +51,15 @@ This is a running list of issues we have encountered in dependencies while devel
   - Removing `-nodisplay -nojvm` and invoking MATLAB as `matlab -batch ...` made the same benchmark path work in the local setup.
   - Before reporting upstream, prepare a minimal reproduction that runs a tiny `-batch` script with and without `-nojvm`, ideally without StackProcessing benchmark inputs, to confirm that the crash is tied to MATLAB startup flags rather than memory pressure from the median benchmark.
 
+- MATLAB R2026a on the same macOS setup still fails immediately with the `-nojvm` benchmark command shape.
+  - Observed on 2026-06-02 with `/Applications/MATLAB_R2026a.app/bin/matlab -nodisplay -nojvm -batch ...` during the first benchmark row, `copy UInt8 256x256x256`.
+  - MATLAB printed:
+    `Incompatible processor. This Qt build requires the following features: neon`
+    followed by `Could not create on-disk crash report: failed opening file: Operation not permitted: unspecified iostream_category error` and `MATLAB is exiting because of fatal error`.
+  - The benchmark wrapper recorded exit code `-9` before any successful R2026a measurement was produced.
+  - The separate R2026a rerun CSV was discarded, leaving the existing MATLAB measurements in `benchmarks/results/raw.csv` unchanged.
+  - This suggests that R2026a did not fix the local `-nojvm` brittleness. For the benchmark, keep using the existing non-`-nojvm` MATLAB measurements unless a smaller minimal reproduction shows a safe startup flag combination.
+
 ## Possible But Not Yet Classified
 
 - Avalonia file dialog behavior has intermittently appeared delayed or non-selectable on macOS.
