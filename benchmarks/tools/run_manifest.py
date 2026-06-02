@@ -153,7 +153,7 @@ def backend_command(args, case, repeat):
             str(ROOT / "benchmarks/matlab").replace("'", "''"),
             ",".join("'%s','%s'" % (k, str(v).replace("'", "''")) for k, v in matlab_args.items()),
         )
-        return [args.matlab_exe, "-batch", call]
+        return [args.matlab_exe, "-nodisplay", "-nojvm", "-batch", call]
     raise AssertionError(args.backend)
 
 

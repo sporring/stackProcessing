@@ -3,6 +3,7 @@ module StackBias
 open System
 open System.Globalization
 open Image
+open Image.InternalHelpers
 open SlimPipeline
 open StackCore
 
@@ -198,8 +199,8 @@ let private addImageObservations state (image: Image<'T>) mask =
         if z >= state.Depth then
             invalidOp $"Bias model fit got slice index {image.index}, outside declared depth {state.Depth}."
 
-        let pixels = image.toArray2D()
-        let maskPixels = mask |> Option.map (fun (maskImage: Image<uint8>) -> maskImage.toArray2D())
+        let pixels = image.toFlatArray()
+        let maskPixels = mask |> Option.map (fun (maskImage: Image<uint8>) -> maskImage.toFlatArray())
         let terms = state.Terms |> List.toArray
         let xPowers = coordinatePowers width state.Order
         let yPowers = coordinatePowers height state.Order
@@ -211,11 +212,11 @@ let private addImageObservations state (image: Image<'T>) mask =
                 let includePixel =
                     match maskPixels with
                     | None -> true
-                    | Some maskValues -> maskValues[x, y] <> 0uy
+                    | Some maskValues -> maskValues[flatIndex2 (int width) x y] <> 0uy
 
                 if includePixel then
                     let values = basisValues terms xPowers yPowers zPowers x y zIndex
-                    observePixelValues state values (pixels[x, y] |> toDouble)
+                    observePixelValues state values (pixels[flatIndex2 (int width) x y] |> toDouble)
     finally
         image.decRefCount()
         mask |> Option.iter (fun (maskImage: Image<uint8>) -> maskImage.decRefCount())
@@ -266,9 +267,11 @@ let private correctedImage (model: BiasPolynomialModel) (image: Image<'T>) mask 
         if z >= model.Depth then
             invalidOp $"Bias correction got slice index {image.index}, outside model depth {model.Depth}."
 
-        let output = Array2D.zeroCreate<float> (int width) (int height)
-        let pixels = image.toArray2D()
-        let maskPixels = mask |> Option.map (fun (maskImage: Image<uint8>) -> maskImage.toArray2D())
+        let widthI = int width
+        let heightI = int height
+        let output = Array.zeroCreate<float> (widthI * heightI)
+        let pixels = image.toFlatArray()
+        let maskPixels = mask |> Option.map (fun (maskImage: Image<uint8>) -> maskImage.toFlatArray())
         let terms = model.Terms |> List.toArray
         let coefficients = model.Coefficients |> List.toArray
         let xPowers = coordinatePowers width model.Order
@@ -276,19 +279,20 @@ let private correctedImage (model: BiasPolynomialModel) (image: Image<'T>) mask 
         let zPowers = coordinatePowers model.Depth model.Order
         let zIndex = int z
 
-        for y in 0 .. int height - 1 do
-            for x in 0 .. int width - 1 do
-                let input = pixels[x, y] |> toDouble
+        for y in 0 .. heightI - 1 do
+            for x in 0 .. widthI - 1 do
+                let i = flatIndex2 widthI x y
+                let input = pixels[i] |> toDouble
                 let includePixel =
                     match maskPixels with
                     | None -> true
-                    | Some maskValues -> maskValues[x, y] <> 0uy
+                    | Some maskValues -> maskValues[i] <> 0uy
                 let value =
                     if includePixel then input - evaluateValues terms coefficients xPowers yPowers zPowers x y zIndex
                     else input
-                output[int x, int y] <- value
+                output[i] <- value
 
-        Image<float>.ofArray2D(output, "correctBias", image.index)
+        Image<float>.ofFlatArray([ width; height ], output, "correctBias", image.index)
     finally
         image.decRefCount()
         mask |> Option.iter (fun (maskImage: Image<uint8>) -> maskImage.decRefCount())

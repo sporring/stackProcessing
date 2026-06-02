@@ -39,6 +39,25 @@ module InternalHelpers =
     val scalarComponentByteSize<'T> : int
     val getConstBuffer<'T> : image: itk.simple.Image -> nativeint
     val copyScalarPixels: image: itk.simple.Image -> pixelCount: int -> 'T array
+    val inline flatIndex2:
+      width: ^a -> x: ^d -> y: ^b -> 'e
+        when (^b or ^a) : (static member ( * ) : ^b * ^a -> ^c) and
+             (^c or ^d) : (static member (+) : ^c * ^d -> 'e)
+    val inline flatIndex3:
+      width: ^a -> height: ^e -> x: ^h -> y: ^f -> z: ^d -> 'i
+        when (^b or ^a) : (static member ( * ) : ^b * ^a -> ^g) and
+             (^c or ^f) : (static member (+) : ^c * ^f -> ^b) and
+             (^d or ^e) : (static member ( * ) : ^d * ^e -> ^c) and
+             (^g or ^h) : (static member (+) : ^g * ^h -> 'i)
+    val inline flatIndex4:
+      width: ^a ->
+        height: ^i -> depth: ^g -> x: ^l -> y: ^j -> z: ^h -> t: ^f -> 'm
+        when (^b or ^a) : (static member ( * ) : ^b * ^a -> ^k) and
+             (^c or ^j) : (static member (+) : ^c * ^j -> ^b) and
+             (^d or ^i) : (static member ( * ) : ^d * ^i -> ^c) and
+             (^e or ^h) : (static member (+) : ^e * ^h -> ^d) and
+             (^f or ^g) : (static member ( * ) : ^f * ^g -> ^e) and
+             (^k or ^l) : (static member (+) : ^k * ^l -> 'm)
     val importScalarImage:
       size: uint list -> pixels: 'T array -> itk.simple.Image
     val private deepCopyItkImage: itkImg: itk.simple.Image -> itk.simple.Image
@@ -143,6 +162,7 @@ type Image<'T when 'T: equality> =
     static member (~~~) : f: Image<'S> -> Image<'S> when 'S: equality
     static member
       Pow: f1: Image<'S> * f2: Image<'S> -> Image<'S> when 'S: equality
+    static member private canUseFlatScalar: im: Image<'T> -> bool
     static member
       constant2D: width: uint * height: uint * value: 'T * ?name: string *
                   ?index: int -> Image<'T>
@@ -150,6 +170,8 @@ type Image<'T when 'T: equality> =
       coordinateAxis2D: width: uint * height: uint * axis: int * ?name: string *
                         ?index: int -> Image<'T>
     static member eq: f1: Image<'S> * f2: Image<'S> -> bool when 'S: equality
+    static member
+      private flatCoords: size: uint list -> offset: int -> uint list
     static member fold: f: ('S -> 'T -> 'S) -> acc0: 'S -> im1: Image<'T> -> 'S
     static member
       fold2: f: ('S -> 'T -> 'T -> 'S) ->
@@ -223,6 +245,9 @@ type Image<'T when 'T: equality> =
     static member
       ofFileVector: filename: string * ?optionalName: string *
                     ?optionalIndex: int -> Image<'S list> when 'S: equality
+    static member
+      ofFlatArray: size: uint list * pixels: 'T array * ?name: string *
+                   ?index: int -> Image<'T>
     static member
       ofImageList: images: Image<'S> list -> Image<'S list> when 'S: equality
     static member
@@ -322,6 +347,7 @@ type Image<'T when 'T: equality> =
     member toFile: filename: string * ?optionalFormat: string -> unit
     member toFileComplex: filename: string * ?optionalFormat: string -> unit
     member toFileVector: filename: string * ?optionalFormat: string -> unit
+    member toFlatArray: unit -> 'T array
     member toFloat: unit -> Image<float>
     member toFloat32: unit -> Image<float32>
     member toImageList: unit -> Image<'S> list when 'S: equality
@@ -552,6 +578,10 @@ val bilateral:
 val gradientMagnitude: img: Image.Image<'T> -> Image.Image<'T> when 'T: equality
 val sobelEdge: img: Image.Image<'T> -> Image.Image<'T> when 'T: equality
 val laplacian: img: Image.Image<'T> -> Image.Image<'T> when 'T: equality
+val smoothingRecursiveGaussian:
+  sigma: float -> img: Image.Image<'T> -> Image.Image<'T> when 'T: equality
+val laplacianRecursiveGaussian:
+  sigma: float -> img: Image.Image<'T> -> Image.Image<'T> when 'T: equality
 val equalImage:
   a: Image.Image<'T> -> b: Image.Image<'T> -> Image.Image<uint8>
     when 'T: equality

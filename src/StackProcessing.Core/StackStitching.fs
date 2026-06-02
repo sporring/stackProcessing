@@ -6,6 +6,7 @@ open SlimPipeline
 open StackCore
 open StackManifest
 open Image
+open Image.InternalHelpers
 
 type StitchPlanItem =
     { Id: string
@@ -188,12 +189,14 @@ let stitchManifestImages<'T when 'T: equality>
             item, stackFiles path item.Suffix)
 
     let mapper (outputZ: int) =
-        let values = Array2D.zeroCreate<'T> (int width) (int height)
-        let sliceCache = Collections.Generic.Dictionary<string * int, Image<'T>>()
+        let widthI = int width
+        let heightI = int height
+        let values = Array.zeroCreate<'T> (widthI * heightI)
+        let sliceCache = Collections.Generic.Dictionary<string * int, 'T[]>()
 
-        let getSlice (itemId: string) (files: string[]) (z: int) : Image<'T> option =
+        let getSlice (itemId: string) (files: string[]) (z: int) : 'T[] option =
             let key = (itemId, z)
-            let mutable cached = Unchecked.defaultof<Image<'T>>
+            let mutable cached = Unchecked.defaultof<'T[]>
             if sliceCache.TryGetValue(key, &cached) then
                 Some cached
             else
@@ -201,12 +204,16 @@ let stitchManifestImages<'T when 'T: equality>
                     None
                 else
                     let slice = Image<'T>.ofFile(files[z])
-                    sliceCache[key] <- slice
-                    Some slice
+                    try
+                        let pixels = slice.toFlatArray()
+                        sliceCache[key] <- pixels
+                        Some pixels
+                    finally
+                        slice.decRefCount()
 
         try
-            for y in 0 .. int height - 1 do
-                for x in 0 .. int width - 1 do
+            for y in 0 .. heightI - 1 do
+                for x in 0 .. widthI - 1 do
                     let worldX = plan.Origin[0] + float x * plan.Spacing[0]
                     let worldY = plan.Origin[1] + float y * plan.Spacing[1]
                     let worldZ = plan.Origin[2] + float outputZ * plan.Spacing[2]
@@ -229,17 +236,17 @@ let stitchManifestImages<'T when 'T: equality>
                             | Some sourceSlice ->
                                 let weight = borderWeight blendBorderVoxels item.Size sx sy sz
                                 if weight > 0.0 then
-                                    valueSum <- valueSum + weight * Convert.ToDouble(box sourceSlice[ix, iy])
+                                    let itemWidth = int item.Size[0]
+                                    valueSum <- valueSum + weight * Convert.ToDouble(box sourceSlice[flatIndex2 itemWidth ix iy])
                                     weightSum <- weightSum + weight
                             | None -> ()
 
                     if weightSum > 0.0 then
-                        values[x, y] <- convertFromDouble<'T> (valueSum / weightSum)
+                        values[flatIndex2 widthI x y] <- convertFromDouble<'T> (valueSum / weightSum)
 
-            Image<'T>.ofArray2D(values, $"stitch[{outputZ}]", outputZ)
+            Image<'T>.ofFlatArray([ width; height ], values, $"stitch[{outputZ}]", outputZ)
         finally
-            for slice in sliceCache.Values do
-                slice.decRefCount()
+            sliceCache.Clear()
 
     let transition = ProfileTransition.create Unit Streaming
     let memoryNeed = fun _ -> Image<'T>.memoryEstimate width height

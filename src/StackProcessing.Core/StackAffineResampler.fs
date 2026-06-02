@@ -4,6 +4,7 @@ open System
 open System.Collections.Generic
 open System.IO
 open FSharp.Control
+open Image.InternalHelpers
 open SlimPipeline
 open TinyLinAlg
 open StackIO
@@ -42,7 +43,7 @@ let inline packKey (cx:int) (cy:int) (cz:int) : int64 =
     (int64 cx <<< 42) ||| (int64 cy <<< 21) ||| (int64 cz)
 
 type ChunkData<'T> =
-    { Pixels: 'T[,,]
+    { Pixels: 'T[]
       Width: int
       Height: int
       Depth: int }
@@ -55,17 +56,19 @@ module ChunkCache =
     let private readChunkData<'T when 'T: equality> inputDir suffix cx cy cz =
         let image = _readChunk<'T> inputDir suffix cx cy cz
         try
-            let pixels =
-                if image.GetDimensions() = 2u then
-                    let plane = image.toArray2D()
-                    Array3D.init (Array2D.length1 plane) (Array2D.length2 plane) 1 (fun x y _ -> plane[x, y])
-                else
-                    image.toArray3D()
+            let size = image.GetSize() |> List.map int
+            let width = size[0]
+            let height = size[1]
+            let depth =
+                match image.GetDimensions() with
+                | 2u -> 1
+                | 3u -> size[2]
+                | dim -> invalidOp $"readChunkData expects 2D or 3D chunks, got {dim}D."
 
-            { Pixels = pixels
-              Width = Array3D.length1 pixels
-              Height = Array3D.length2 pixels
-              Depth = Array3D.length3 pixels }
+            { Pixels = image.toFlatArray()
+              Width = width
+              Height = height
+              Depth = depth }
         finally
             image.decRefCount()
 
@@ -108,7 +111,7 @@ let getVoxel (inputDir: string) (suffix: string) (winsz:int) (background: 'T) (x
     if lx < 0 || ly < 0 || lz < 0 || lx >= ch.Width || ly >= ch.Height || lz >= ch.Depth then
         background // shouldn't happen if your chunk loader sizes match the image, but safe
     else
-        ch.Pixels[lx, ly, lz]
+        ch.Pixels[flatIndex3 ch.Width ch.Height lx ly lz]
 
 // -------------------------
 // Trilinear interpolation
@@ -250,17 +253,17 @@ let resampleAffineFromChunks (inputDir: string) (suffix: string) (lerp: 'T->'T->
             let pIn00k  = affinePoint affOutToIn pOut00k
             let c00k    = physicalToContIndex inG invInDir pIn00k
 
-            let slice = Array2D.zeroCreate<'T> outG.W outG.H
+            let slice = Array.zeroCreate<'T> (outG.W * outG.H)
 
             let mutable rowStart = c00k
             for j in 0 .. outG.H - 1 do
                 let mutable c = rowStart
                 for i in 0 .. outG.W - 1 do
-                    slice[i,j] <- trilinearSample inputDir suffix winsz inG.W inG.H inG.D background lerp c cache
+                    slice[flatIndex2 outG.W i j] <- trilinearSample inputDir suffix winsz inG.W inG.H inG.D background lerp c cache
                     c <- add c stepI_in_cont
                 rowStart <- add rowStart stepJ_in_cont
 
-            yield (k, Image<'T>.ofArray2D(slice, $"resampleAffine[{k}]", k))
+            yield (k, Image<'T>.ofFlatArray([ uint outG.W; uint outG.H ], slice, $"resampleAffine[{k}]", k))
     }
 
 let resampleAffine

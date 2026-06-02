@@ -134,17 +134,22 @@ let private pixelToFloat<'T> (value: 'T) =
     Convert.ToDouble(value)
 
 let private blendImages<'T when 'T: equality> (t: float) (a: Image<'T>) (b: Image<'T>) =
-    let aPixels = a.toArray2D()
-    let bPixels = b.toArray2D()
-    let width = aPixels.GetLength(0)
-    let height = aPixels.GetLength(1)
-    let arr =
-        Array2D.init width height (fun x y ->
-            let av = pixelToFloat aPixels[x, y]
-            let bv = pixelToFloat bPixels[x, y]
-            convertFromFloat<'T> ((1.0 - t) * av + t * bv))
+    let width = int (a.GetWidth())
+    let height = int (a.GetHeight())
+    if b.GetWidth() <> uint width || b.GetHeight() <> uint height then
+        invalidArg "b" $"blendImages expects matching slice sizes, got {a.GetWidth()}x{a.GetHeight()} and {b.GetWidth()}x{b.GetHeight()}."
 
-    Image<'T>.ofArray2D(arr, "resampleZLinear")
+    let aPixels = a.toFlatArray()
+    let bPixels = b.toFlatArray()
+    let output = Array.zeroCreate<'T> aPixels.Length
+    let mutable i = 0
+    while i < output.Length do
+        let av = pixelToFloat aPixels[i]
+        let bv = pixelToFloat bPixels[i]
+        output[i] <- convertFromFloat<'T> ((1.0 - t) * av + t * bv)
+        i <- i + 1
+
+    Image<'T>.ofFlatArray([ uint width; uint height ], output, "resampleZLinear")
 
 let private resampleXYStage<'T when 'T: equality> outputWidth outputHeight spacingX spacingY interpolation =
     let mapper (image: Image<'T>) =
@@ -972,11 +977,11 @@ let histogramEstimate<'T when 'T: equality and 'T: comparison> down estimatorNam
                         try
                             let width = int (image.GetWidth())
                             let height = int (image.GetHeight())
-                            let pixels = image.toArray2D()
+                            let pixels = image.toFlatArray()
 
                             for y in 0 .. step .. height - 1 do
                                 for x in 0 .. step .. width - 1 do
-                                    let value = pixels[x, y]
+                                    let value = pixels[flatIndex2 width x y]
                                     histogram <- histogram |> addHistogramValue value
 
                                     if samples % 2UL = 0UL then
@@ -1088,13 +1093,14 @@ let histogramEqualization<'T, 'H when 'T: equality and 'H: comparison> (histogra
         try
             let width = int (image.GetWidth())
             let height = int (image.GetHeight())
-            let pixels = image.toArray2D()
-            let output =
-                Array2D.init width height (fun x y ->
-                    pixels[x, y]
-                    |> histogramKeyToFloat
-                    |> lookup)
-                |> Image<float>.ofArray2D
+            let pixels = image.toFlatArray()
+            let outputPixels = Array.zeroCreate<float> pixels.Length
+            let mutable i = 0
+            while i < pixels.Length do
+                outputPixels[i] <- pixels[i] |> histogramKeyToFloat |> lookup
+                i <- i + 1
+
+            let output = Image<float>.ofFlatArray([ uint width; uint height ], outputPixels, "histogramEqualization", image.index)
 
             output.index <- image.index
             output
@@ -1146,11 +1152,11 @@ let sumProjection<'T when 'T: equality> transformName : Stage<Image<'T>, Image<f
                             try
                                 let width = int (image.GetWidth())
                                 let height = int (image.GetHeight())
-                                let pixels = image.toArray2D()
+                                let pixels = image.toFlatArray()
                                 let accumulator =
                                     match state with
                                     | None ->
-                                        Some(width, height, Array2D.zeroCreate<float> width height)
+                                        Some(width, height, Array.zeroCreate<float> (width * height))
                                     | Some(expectedWidth, expectedHeight, values) ->
                                         if expectedWidth <> width || expectedHeight <> height then
                                             invalidOp $"sumProjection requires constant x-y slice size; got {width}x{height}, expected {expectedWidth}x{expectedHeight}."
@@ -1161,7 +1167,8 @@ let sumProjection<'T when 'T: equality> transformName : Stage<Image<'T>, Image<f
                                 | Some(_, _, values) ->
                                     for y in 0 .. height - 1 do
                                         for x in 0 .. width - 1 do
-                                            values[x, y] <- values[x, y] + transform (Convert.ToDouble pixels[x, y])
+                                            let i = flatIndex2 width x y
+                                            values[i] <- values[i] + transform (Convert.ToDouble pixels[i])
                                     return accumulator
                             finally
                                 image.decRefCount()
@@ -1171,8 +1178,8 @@ let sumProjection<'T when 'T: equality> transformName : Stage<Image<'T>, Image<f
             match state with
             | None ->
                 return raise (InvalidOperationException "sumProjection cannot reduce an empty image stream.")
-            | Some(_, _, values) ->
-                let image = Image<float>.ofArray2D(values, "sumProjection")
+            | Some(width, height, values) ->
+                let image = Image<float>.ofFlatArray([ uint width; uint height ], values, "sumProjection")
                 image.index <- 0
                 return image
         }
@@ -1196,11 +1203,11 @@ let volume xUnit yUnit zUnit : Stage<Image<uint8>, float> =
         try
             let width = int (image.GetWidth())
             let height = int (image.GetHeight())
-            let pixels = image.toArray2D()
+            let pixels = image.toFlatArray()
             let mutable foreground = 0UL
             for y in 0 .. height - 1 do
                 for x in 0 .. width - 1 do
-                    match pixels[x, y] with
+                    match pixels[flatIndex2 width x y] with
                     | 0uy -> ()
                     | 1uy -> foreground <- foreground + 1UL
                     | value ->
@@ -1567,7 +1574,7 @@ let private dilateLineSlice width height (window: FlatSlice[]) center dx dy dz l
                 let yy = y + t * dy
                 let zz = centerIndex + t * dz
                 if xx >= 0 && xx < width && yy >= 0 && yy < height && zz >= 0 && zz < window.Length then
-                    if window[zz].Pixels[yy * width + xx] = 1uy then
+                    if window[zz].Pixels[flatIndex2 width xx yy] = 1uy then
                         found <- true
                 t <- t + 1
             if found then
@@ -1590,7 +1597,7 @@ let private erodeLineSlice width height (window: FlatSlice[]) center dx dy dz le
                 let xx = x + t * dx
                 let yy = y + t * dy
                 let zz = centerIndex + t * dz
-                if xx < 0 || xx >= width || yy < 0 || yy >= height || zz < 0 || zz >= window.Length || window[zz].Pixels[yy * width + xx] <> 1uy then
+                if xx < 0 || xx >= width || yy < 0 || yy >= height || zz < 0 || zz >= window.Length || window[zz].Pixels[flatIndex2 width xx yy] <> 1uy then
                     inside <- false
                 t <- t + 1
             if inside then

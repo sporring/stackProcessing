@@ -5,6 +5,7 @@ open System.Collections.Generic
 open System.Globalization
 open FSharp.Control
 open Image
+open Image.InternalHelpers
 open SlimPipeline
 open StackCore
 open StackPoints
@@ -201,14 +202,14 @@ let private fitPolynomial2D order (image: Image<'T>) =
     let n = terms.Length
     let normal = Array2D.zeroCreate<float> n n
     let right = Array.zeroCreate<float> n
-    let pixels = image.toArray2D()
+    let pixels = image.toFlatArray()
     let xPowers = coordinatePowers width order
     let yPowers = coordinatePowers height order
 
     for y in 0 .. int height - 1 do
         for x in 0 .. int width - 1 do
             let values = basis2DValues terms xPowers yPowers x y
-            let intensity = pixels[x, y] |> toDouble
+            let intensity = pixels[flatIndex2 (int width) x y] |> toDouble
             for row in 0 .. n - 1 do
                 right[row] <- right[row] + values[row] * intensity
                 for col in 0 .. n - 1 do
@@ -231,53 +232,38 @@ let serialPolynomialBiasCorrect<'T when 'T: equality> order : Stage<Image<'T>, I
                 let width = image.GetWidth()
                 let height = image.GetHeight()
                 let terms, xPowers, yPowers, pixels, coefficients = fitPolynomial2D order image
-                let output = Array2D.zeroCreate<'T> (int width) (int height)
+                let widthI = int width
+                let heightI = int height
+                let output = Array.zeroCreate<'T> (widthI * heightI)
 
-                for y in 0 .. int height - 1 do
-                    for x in 0 .. int width - 1 do
+                for y in 0 .. heightI - 1 do
+                    for x in 0 .. widthI - 1 do
+                        let i = flatIndex2 widthI x y
                         let corrected =
-                            (pixels[x, y] |> toDouble)
+                            (pixels[i] |> toDouble)
                             - evalPolynomial2DValues terms coefficients xPowers yPowers x y
-                        output[x, y] <- fromDouble<'T> corrected
+                        output[i] <- fromDouble<'T> corrected
 
-                Image<'T>.ofArray2D(output, "serialPolynomialBiasCorrect", image.index)
+                Image<'T>.ofFlatArray([ width; height ], output, "serialPolynomialBiasCorrect", image.index)
             finally
                 image.decRefCount())
         id
         id
-
-let private gaussianKernel sigma =
-    let radius = max 1 (int (ceil (3.0 * sigma)))
-    let weights =
-        [| for i in -radius .. radius -> exp (-0.5 * (float i / sigma) ** 2.0) |]
-    let sum = Array.sum weights
-    radius, weights |> Array.map (fun value -> value / sum)
 
 let private imageToArray (image: Image<'T>) =
     image.toArray2D()
     |> Array2D.map toDouble
 
 let private blur2D sigma (source: double[,]) =
-    let radius, kernel = gaussianKernel sigma
-    let width = source.GetLength(0)
-    let height = source.GetLength(1)
-    let tmp = Array2D.zeroCreate<float> width height
-    let output = Array2D.zeroCreate<float> width height
-    let clamp lo hi value = min hi (max lo value)
-
-    for y in 0 .. height - 1 do
-        for x in 0 .. width - 1 do
-            tmp[x, y] <-
-                [ -radius .. radius ]
-                |> List.sumBy (fun dx -> kernel[dx + radius] * source[clamp 0 (width - 1) (x + dx), y])
-
-    for y in 0 .. height - 1 do
-        for x in 0 .. width - 1 do
-            output[x, y] <-
-                [ -radius .. radius ]
-                |> List.sumBy (fun dy -> kernel[dy + radius] * tmp[x, clamp 0 (height - 1) (y + dy)])
-
-    output
+    let image = Image<float>.ofArray2D(source, "blur2D.input")
+    try
+        let smoothed = ImageFunctions.smoothingRecursiveGaussian sigma image
+        try
+            smoothed.toArray2D()
+        finally
+            smoothed.decRefCount()
+    finally
+        image.decRefCount()
 
 let private strictMaximum2D (response: double[,]) x y =
     let value = response[x, y]
@@ -972,27 +958,6 @@ let private transformForSlice manifest slice =
     |> Option.map _.Matrix
     |> Option.defaultValue identityMatrix
 
-let private sampleBilinear background (pixels: 'T[,]) x y =
-    let width = Array2D.length1 pixels
-    let height = Array2D.length2 pixels
-    if x < 0.0 || y < 0.0 || x > float (width - 1) || y > float (height - 1) then
-        background
-    else
-        let x0 = int (floor x)
-        let y0 = int (floor y)
-        let x1 = min (width - 1) (x0 + 1)
-        let y1 = min (height - 1) (y0 + 1)
-        let tx = x - float x0
-        let ty = y - float y0
-        let v00 = pixels[x0, y0] |> toDouble
-        let v10 = pixels[x1, y0] |> toDouble
-        let v01 = pixels[x0, y1] |> toDouble
-        let v11 = pixels[x1, y1] |> toDouble
-        (1.0 - tx) * (1.0 - ty) * v00
-        + tx * (1.0 - ty) * v10
-        + (1.0 - tx) * ty * v01
-        + tx * ty * v11
-
 let private manifestBounds (manifest: SerialSliceManifest) =
     let width = float manifest.Width
     let height = float manifest.Height
@@ -1090,17 +1055,21 @@ let private applyManifestSlice (manifest: SerialSliceManifest) (geometry: Serial
 
         let matrix = transformForSlice manifest image.index
         let inverse = invertMatrix matrix
-        let output = Array2D.zeroCreate<'T> (int geometry.Width) (int geometry.Height)
-        let pixels = image.toArray2D()
 
-        for y in 0u .. geometry.Height - 1u do
-            for x in 0u .. geometry.Width - 1u do
-                let referenceX = float x + geometry.MinX
-                let referenceY = float y + geometry.MinY
-                let inputX, inputY = transformPoint inverse referenceX referenceY
-                output[int x, int y] <- sampleBilinear background pixels inputX inputY |> fromDouble<'T>
+        use transform = new itk.simple.AffineTransform(2u)
+        transform.SetMatrix([ inverse[0][0]; inverse[0][1]; inverse[1][0]; inverse[1][1] ] |> toVectorFloat64)
+        transform.SetTranslation([ inverse[0][2]; inverse[1][2] ] |> toVectorFloat64)
 
-        Image<'T>.ofArray2D(output, "serialApplyTrans", image.index)
+        use filter = new itk.simple.ResampleImageFilter()
+        filter.SetSize([ geometry.Width; geometry.Height ] |> toVectorUInt32)
+        filter.SetOutputOrigin([ geometry.MinX; geometry.MinY ] |> toVectorFloat64)
+        filter.SetOutputSpacing([ 1.0; 1.0 ] |> toVectorFloat64)
+        filter.SetOutputDirection([ 1.0; 0.0; 0.0; 1.0 ] |> toVectorFloat64)
+        filter.SetInterpolator(itk.simple.InterpolatorEnum.sitkLinear)
+        filter.SetDefaultPixelValue(toDouble background)
+        filter.SetTransform(transform)
+
+        Image<'T>.ofSimpleITKNDispose(filter.Execute(image.toSimpleITK()), "serialApplyTrans", image.index)
     finally
         image.decRefCount()
 

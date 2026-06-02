@@ -1240,7 +1240,7 @@ val serialEstBoundingBox<'T when 'T: equality> :
                   StackSerialSections.SerialVolumeGeometry> when 'T: equality
 
 val serialApplyTrans<'T when 'T: equality> :
-  (float ->
+  (obj ->
      StackSerialSections.SerialVolumeGeometry option ->
      StackCore.Stage<(StackCore.Image<'T> *
                       StackSerialSections.SerialSliceManifest),
@@ -1256,7 +1256,7 @@ val serialTransManifest<'T when 'T: equality> :
 
 val serialApplyManifestInBoundingBox<'T when 'T: equality> :
   (StackSerialSections.SerialSliceManifest ->
-     float -> StackCore.Stage<StackCore.Image<'T>,StackCore.Image<'T>>)
+     obj -> StackCore.Stage<StackCore.Image<'T>,StackCore.Image<'T>>)
     when 'T: equality
 
 val quantiles:

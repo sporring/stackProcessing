@@ -142,6 +142,15 @@ module InternalHelpers = // internal
         Buffer.BlockCopy(bytes, 0, pixels, 0, byteCount)
         pixels
 
+    let inline flatIndex2 width x y =
+        y * width + x
+
+    let inline flatIndex3 width height x y z =
+        (z * height + y) * width + x
+
+    let inline flatIndex4 width height depth x y z t =
+        ((t * depth + z) * height + y) * width + x
+
     let importScalarImage<'T> (size: uint list) (pixels: 'T[]) =
         use importer = new itk.simple.ImportImageFilter()
         importer.SetSize(size |> toVectorUInt32)
@@ -738,6 +747,34 @@ type Image<'T when 'T : equality>(sz: uint list, ?optionalNumberComponents: uint
         let index = defaultArg optionalIndex this.index
         Image<'T>.ofSimpleITK(this.toSimpleITK(), name, index)
 
+    member this.toFlatArray () : 'T[] =
+        if this.GetNumberOfComponentsPerPixel() <> 1u then
+            invalidOp $"toFlatArray: expected a scalar image, got {this.GetNumberOfComponentsPerPixel()} components per pixel."
+        if not isScalarImportSupported<'T> then
+            invalidOp $"toFlatArray: unsupported scalar buffer pixel type {typeof<'T>.Name}."
+        if this.Image.GetPixelID() <> fromType<'T> then
+            invalidOp $"toFlatArray: expected {fromType<'T>} image buffer, got {this.Image.GetPixelID()}."
+
+        let pixelCount =
+            this.GetSize()
+            |> List.fold (fun acc value -> acc * int value) 1
+        copyScalarPixels<'T> this.Image pixelCount
+
+    static member ofFlatArray (size: uint list, pixels: 'T[], ?name: string, ?index: int) : Image<'T> =
+        if size.Length <> 2 && size.Length <> 3 then
+            invalidArg "size" "ofFlatArray supports 2D and 3D scalar images."
+        if not isScalarImportSupported<'T> then
+            invalidArg "pixels" $"ofFlatArray: unsupported scalar buffer pixel type {typeof<'T>.Name}."
+        let expected =
+            size
+            |> List.fold (fun acc value -> acc * int value) 1
+        if pixels.Length <> expected then
+            invalidArg "pixels" $"ofFlatArray: expected {expected} pixels for size {size}, got {pixels.Length}."
+
+        let _name = defaultArg name ""
+        let _index = defaultArg index 0
+        Image<'T>.ofSimpleITKNDispose(importScalarImage size pixels, _name, _index)
+
     member this.castTo<'S when 'S: equality> () : Image<'S> = Image<'S>.ofSimpleITK(this.toSimpleITK(),"cast",this.index)
     member this.toUInt8 ()   : Image<uint8>   = Image<uint8>.ofSimpleITK(this.toSimpleITK(),"toUInt8",this.index)
     member this.toInt8 ()    : Image<int8>    = Image<int8>.ofSimpleITK(this.toSimpleITK(),"toInt8",this.index)
@@ -988,7 +1025,7 @@ type Image<'T when 'T : equality>(sz: uint list, ?optionalNumberComponents: uint
             let width = sz[0]
             let height = sz[1]
             let pixels = copyScalarPixels<'T> this.Image (width * height)
-            Array2D.init width height (fun x y -> pixels[y * width + x])
+            Array2D.init width height (fun x y -> pixels[flatIndex2 width x y])
         else
             Array2D.init sz[0] sz[1] (fun i0 i1 -> this.Get([uint i0; uint i1]))
 
@@ -1048,7 +1085,7 @@ type Image<'T when 'T : equality>(sz: uint list, ?optionalNumberComponents: uint
             let height = sz[1]
             let depth = sz[2]
             let pixels = copyScalarPixels<'T> this.Image (width * height * depth)
-            Array3D.init width height depth (fun x y z -> pixels[(z * height + y) * width + x])
+            Array3D.init width height depth (fun x y z -> pixels[flatIndex3 width height x y z])
         else
             Array3D.init sz[0] sz[1] sz[2] (fun i0 i1 i2 -> this.Get([uint i0; uint i1; uint i2]))
 
@@ -1060,7 +1097,7 @@ type Image<'T when 'T : equality>(sz: uint list, ?optionalNumberComponents: uint
             let depth = sz[2]
             let length = sz[3]
             let pixels = copyScalarPixels<'T> this.Image (width * height * depth * length)
-            Array4D.init width height depth length (fun x y z t -> pixels[((t * depth + z) * height + y) * width + x])
+            Array4D.init width height depth length (fun x y z t -> pixels[flatIndex4 width height depth x y z t])
         else
             Array4D.init sz[0] sz[1] sz[2] sz[3] (fun i0 i1 i2 i3 -> this.Get([uint i0; uint i1; uint i2; uint i3]))
 
@@ -1269,172 +1306,179 @@ type Image<'T when 'T : equality>(sz: uint list, ?optionalNumberComponents: uint
         (filter.GetMinimum(),filter.GetMaximum())
 
     // Collection type
+    static member private canUseFlatScalar (im: Image<'T>) =
+        isScalarImportSupported<'T>
+        && im.GetNumberOfComponentsPerPixel() = 1u
+        && im.Image.GetPixelID() = fromType<'T>
+        && (im.GetDimensions() = 2u || im.GetDimensions() = 3u)
+
+    static member private flatCoords (size: uint list) (offset: int) =
+        let rec loop remaining value acc =
+            match remaining with
+            | [] -> List.rev acc
+            | dim :: tail ->
+                let d = int dim
+                let coord = value % d
+                loop tail (value / d) (uint coord :: acc)
+        loop size offset []
+
     static member map (f:'T->'T) (im1: Image<'T>) : Image<'T> =
-        match im1.GetDimensions() with
-        | 2u ->
-            im1.toArray2D()
-            |> Array2D.map f
-            |> fun values -> Image<'T>.ofArray2D(values, "map", im1.index)
-        | 3u ->
-            im1.toArray3D()
-            |> Array3D.map f
-            |> fun values -> Image<'T>.ofArray3D(values, "map", im1.index)
-        | 4u ->
-            let values = im1.toArray4D()
-            Array4D.init (values.GetLength 0) (values.GetLength 1) (values.GetLength 2) (values.GetLength 3) (fun i0 i1 i2 i3 ->
-                f values[i0, i1, i2, i3])
-            |> fun output -> Image<'T>.ofArray4D(output, "map", im1.index)
-        | _ ->
-            let sz = im1.GetSize()
-            let comp = im1.GetNumberOfComponentsPerPixel()
-            let im = new Image<'T>(sz,comp)
-            sz
-            |> flatIndices
-            |> Seq.iter (fun idx -> im1.Get idx |> f |> (im.Set idx))
-            im
+        if Image<'T>.canUseFlatScalar im1 then
+            let values = im1.toFlatArray()
+            let output = Array.map f values
+            Image<'T>.ofFlatArray(im1.GetSize(), output, "map", im1.index)
+        else
+            match im1.GetDimensions() with
+            | 4u ->
+                let values = im1.toArray4D()
+                Array4D.init (values.GetLength 0) (values.GetLength 1) (values.GetLength 2) (values.GetLength 3) (fun i0 i1 i2 i3 ->
+                    f values[i0, i1, i2, i3])
+                |> fun output -> Image<'T>.ofArray4D(output, "map", im1.index)
+            | _ ->
+                let sz = im1.GetSize()
+                let comp = im1.GetNumberOfComponentsPerPixel()
+                let im = new Image<'T>(sz,comp)
+                sz
+                |> flatIndices
+                |> Seq.iter (fun idx -> im1.Get idx |> f |> (im.Set idx))
+                im
 
     static member mapi (f:uint list->'T->'T) (im1: Image<'T>) : Image<'T> =
-        match im1.GetDimensions() with
-        | 2u ->
-            let values = im1.toArray2D()
-            Array2D.init (values.GetLength 0) (values.GetLength 1) (fun i0 i1 ->
-                f [ uint i0; uint i1 ] values[i0, i1])
-            |> fun output -> Image<'T>.ofArray2D(output, "mapi", im1.index)
-        | 3u ->
-            let values = im1.toArray3D()
-            Array3D.init (values.GetLength 0) (values.GetLength 1) (values.GetLength 2) (fun i0 i1 i2 ->
-                f [ uint i0; uint i1; uint i2 ] values[i0, i1, i2])
-            |> fun output -> Image<'T>.ofArray3D(output, "mapi", im1.index)
-        | 4u ->
-            let values = im1.toArray4D()
-            Array4D.init (values.GetLength 0) (values.GetLength 1) (values.GetLength 2) (values.GetLength 3) (fun i0 i1 i2 i3 ->
-                f [ uint i0; uint i1; uint i2; uint i3 ] values[i0, i1, i2, i3])
-            |> fun output -> Image<'T>.ofArray4D(output, "mapi", im1.index)
-        | _ ->
-            let sz = im1.GetSize()
-            let comp = im1.GetNumberOfComponentsPerPixel()
-            let im = new Image<'T>(sz,comp)
-            sz
-            |> flatIndices
-            |> Seq.iter (fun idx -> im1.Get idx |> f idx |> (im.Set idx))
-            im
+        if Image<'T>.canUseFlatScalar im1 then
+            let size = im1.GetSize()
+            let values = im1.toFlatArray()
+            let output = Array.init values.Length (fun i -> f (Image<'T>.flatCoords size i) values[i])
+            Image<'T>.ofFlatArray(size, output, "mapi", im1.index)
+        else
+            match im1.GetDimensions() with
+            | 4u ->
+                let values = im1.toArray4D()
+                Array4D.init (values.GetLength 0) (values.GetLength 1) (values.GetLength 2) (values.GetLength 3) (fun i0 i1 i2 i3 ->
+                    f [ uint i0; uint i1; uint i2; uint i3 ] values[i0, i1, i2, i3])
+                |> fun output -> Image<'T>.ofArray4D(output, "mapi", im1.index)
+            | _ ->
+                let sz = im1.GetSize()
+                let comp = im1.GetNumberOfComponentsPerPixel()
+                let im = new Image<'T>(sz,comp)
+                sz
+                |> flatIndices
+                |> Seq.iter (fun idx -> im1.Get idx |> f idx |> (im.Set idx))
+                im
 
     static member iter (f:'T->unit) (im1: Image<'T>) : unit = 
-        match im1.GetDimensions() with
-        | 2u -> im1.toArray2D() |> Seq.cast<'T> |> Seq.iter f
-        | 3u -> im1.toArray3D() |> Seq.cast<'T> |> Seq.iter f
-        | 4u -> im1.toArray4D() |> Seq.cast<'T> |> Seq.iter f
-        | _ ->
-            let sz = im1.GetSize()
-            sz
-            |> flatIndices
-            |> Seq.iter (fun idx -> im1.Get idx |> f)
+        if Image<'T>.canUseFlatScalar im1 then
+            let values = im1.toFlatArray()
+            Array.iter f values
+        else
+            match im1.GetDimensions() with
+            | 4u ->
+                let values = im1.toArray4D()
+                for i0 in 0 .. values.GetLength 0 - 1 do
+                    for i1 in 0 .. values.GetLength 1 - 1 do
+                        for i2 in 0 .. values.GetLength 2 - 1 do
+                            for i3 in 0 .. values.GetLength 3 - 1 do
+                                f values[i0, i1, i2, i3]
+            | _ ->
+                let sz = im1.GetSize()
+                sz
+                |> flatIndices
+                |> Seq.iter (fun idx -> im1.Get idx |> f)
 
     static member iteri (f:uint list->'T->unit) (im1: Image<'T>) : unit = 
-        match im1.GetDimensions() with
-        | 2u ->
-            let values = im1.toArray2D()
-            for i0 in 0 .. values.GetLength 0 - 1 do
-                for i1 in 0 .. values.GetLength 1 - 1 do
-                    f [ uint i0; uint i1 ] values[i0, i1]
-        | 3u ->
-            let values = im1.toArray3D()
-            for i0 in 0 .. values.GetLength 0 - 1 do
-                for i1 in 0 .. values.GetLength 1 - 1 do
-                    for i2 in 0 .. values.GetLength 2 - 1 do
-                        f [ uint i0; uint i1; uint i2 ] values[i0, i1, i2]
-        | 4u ->
-            let values = im1.toArray4D()
-            for i0 in 0 .. values.GetLength 0 - 1 do
-                for i1 in 0 .. values.GetLength 1 - 1 do
-                    for i2 in 0 .. values.GetLength 2 - 1 do
-                        for i3 in 0 .. values.GetLength 3 - 1 do
-                            f [ uint i0; uint i1; uint i2; uint i3 ] values[i0, i1, i2, i3]
-        | _ ->
-            let sz = im1.GetSize()
-            sz
-            |> flatIndices
-            |> Seq.iter (fun idx -> im1.Get idx |> f idx)
+        if Image<'T>.canUseFlatScalar im1 then
+            let size = im1.GetSize()
+            let values = im1.toFlatArray()
+            let mutable i = 0
+            while i < values.Length do
+                f (Image<'T>.flatCoords size i) values[i]
+                i <- i + 1
+        else
+            match im1.GetDimensions() with
+            | 4u ->
+                let values = im1.toArray4D()
+                for i0 in 0 .. values.GetLength 0 - 1 do
+                    for i1 in 0 .. values.GetLength 1 - 1 do
+                        for i2 in 0 .. values.GetLength 2 - 1 do
+                            for i3 in 0 .. values.GetLength 3 - 1 do
+                                f [ uint i0; uint i1; uint i2; uint i3 ] values[i0, i1, i2, i3]
+            | _ ->
+                let sz = im1.GetSize()
+                sz
+                |> flatIndices
+                |> Seq.iter (fun idx -> im1.Get idx |> f idx)
 
     static member fold (f:'S->'T->'S) (acc0: 'S) (im1: Image<'T>) : 'S = 
-        match im1.GetDimensions() with
-        | 2u -> im1.toArray2D() |> Seq.cast<'T> |> Seq.fold f acc0
-        | 3u -> im1.toArray3D() |> Seq.cast<'T> |> Seq.fold f acc0
-        | 4u -> im1.toArray4D() |> Seq.cast<'T> |> Seq.fold f acc0
-        | _ ->
-            let sz = im1.GetSize()
-            sz
-            |> flatIndices
-            |> Seq.fold (fun acc idx -> im1.Get idx |> f acc) acc0
+        if Image<'T>.canUseFlatScalar im1 then
+            let values = im1.toFlatArray()
+            Array.fold f acc0 values
+        else
+            match im1.GetDimensions() with
+            | 4u ->
+                let values = im1.toArray4D()
+                let mutable acc = acc0
+                for i0 in 0 .. values.GetLength 0 - 1 do
+                    for i1 in 0 .. values.GetLength 1 - 1 do
+                        for i2 in 0 .. values.GetLength 2 - 1 do
+                            for i3 in 0 .. values.GetLength 3 - 1 do
+                                acc <- f acc values[i0, i1, i2, i3]
+                acc
+            | _ ->
+                let sz = im1.GetSize()
+                sz
+                |> flatIndices
+                |> Seq.fold (fun acc idx -> im1.Get idx |> f acc) acc0
 
     static member fold2 (f:'S->'T->'T->'S) (acc0: 'S) (im1: Image<'T>) (im2: Image<'T>) : 'S = 
         let sz1 = im1.GetSize()
         let sz2 = im2.GetSize()
         if List.exists2 (<>) sz1 sz2 then failwith "[Image.fold2] cannot fold over 2 images of unequal sizes"
-        match im1.GetDimensions(), im2.GetDimensions() with
-        | 2u, 2u ->
-            let v1 = im1.toArray2D()
-            let v2 = im2.toArray2D()
-            let mutable acc = acc0
-            for i0 in 0 .. v1.GetLength 0 - 1 do
-                for i1 in 0 .. v1.GetLength 1 - 1 do
-                    acc <- f acc v1[i0, i1] v2[i0, i1]
-            acc
-        | 3u, 3u ->
-            let v1 = im1.toArray3D()
-            let v2 = im2.toArray3D()
-            let mutable acc = acc0
-            for i0 in 0 .. v1.GetLength 0 - 1 do
-                for i1 in 0 .. v1.GetLength 1 - 1 do
-                    for i2 in 0 .. v1.GetLength 2 - 1 do
-                        acc <- f acc v1[i0, i1, i2] v2[i0, i1, i2]
-            acc
-        | 4u, 4u ->
-            let v1 = im1.toArray4D()
-            let v2 = im2.toArray4D()
-            let mutable acc = acc0
-            for i0 in 0 .. v1.GetLength 0 - 1 do
-                for i1 in 0 .. v1.GetLength 1 - 1 do
-                    for i2 in 0 .. v1.GetLength 2 - 1 do
-                        for i3 in 0 .. v1.GetLength 3 - 1 do
-                            acc <- f acc v1[i0, i1, i2, i3] v2[i0, i1, i2, i3]
-            acc
-        | _ ->
-            sz1
-            |> flatIndices
-            |> Seq.fold (fun acc idx -> (im1.Get idx, im2.Get idx) ||> f acc) acc0
+        if Image<'T>.canUseFlatScalar im1 && Image<'T>.canUseFlatScalar im2 then
+            let v1 = im1.toFlatArray()
+            let v2 = im2.toFlatArray()
+            Array.fold2 f acc0 v1 v2
+        else
+            match im1.GetDimensions(), im2.GetDimensions() with
+            | 4u, 4u ->
+                let v1 = im1.toArray4D()
+                let v2 = im2.toArray4D()
+                let mutable acc = acc0
+                for i0 in 0 .. v1.GetLength 0 - 1 do
+                    for i1 in 0 .. v1.GetLength 1 - 1 do
+                        for i2 in 0 .. v1.GetLength 2 - 1 do
+                            for i3 in 0 .. v1.GetLength 3 - 1 do
+                                acc <- f acc v1[i0, i1, i2, i3] v2[i0, i1, i2, i3]
+                acc
+            | _ ->
+                sz1
+                |> flatIndices
+                |> Seq.fold (fun acc idx -> (im1.Get idx, im2.Get idx) ||> f acc) acc0
 
     static member foldi (f:uint list->'S->'T->'S) (acc0: 'S) (im1: Image<'T>) : 'S =
-        match im1.GetDimensions() with
-        | 2u ->
-            let values = im1.toArray2D()
+        if Image<'T>.canUseFlatScalar im1 then
+            let size = im1.GetSize()
+            let values = im1.toFlatArray()
             let mutable acc = acc0
-            for i0 in 0 .. values.GetLength 0 - 1 do
-                for i1 in 0 .. values.GetLength 1 - 1 do
-                    acc <- f [ uint i0; uint i1 ] acc values[i0, i1]
+            let mutable i = 0
+            while i < values.Length do
+                acc <- f (Image<'T>.flatCoords size i) acc values[i]
+                i <- i + 1
             acc
-        | 3u ->
-            let values = im1.toArray3D()
-            let mutable acc = acc0
-            for i0 in 0 .. values.GetLength 0 - 1 do
-                for i1 in 0 .. values.GetLength 1 - 1 do
-                    for i2 in 0 .. values.GetLength 2 - 1 do
-                        acc <- f [ uint i0; uint i1; uint i2 ] acc values[i0, i1, i2]
-            acc
-        | 4u ->
-            let values = im1.toArray4D()
-            let mutable acc = acc0
-            for i0 in 0 .. values.GetLength 0 - 1 do
-                for i1 in 0 .. values.GetLength 1 - 1 do
-                    for i2 in 0 .. values.GetLength 2 - 1 do
-                        for i3 in 0 .. values.GetLength 3 - 1 do
-                            acc <- f [ uint i0; uint i1; uint i2; uint i3 ] acc values[i0, i1, i2, i3]
-            acc
-        | _ ->
-            let sz = im1.GetSize()
-            sz
-            |> flatIndices
-            |> Seq.fold (fun acc idx -> im1.Get idx |> f idx acc) acc0
+        else
+            match im1.GetDimensions() with
+            | 4u ->
+                let values = im1.toArray4D()
+                let mutable acc = acc0
+                for i0 in 0 .. values.GetLength 0 - 1 do
+                    for i1 in 0 .. values.GetLength 1 - 1 do
+                        for i2 in 0 .. values.GetLength 2 - 1 do
+                            for i3 in 0 .. values.GetLength 3 - 1 do
+                                acc <- f [ uint i0; uint i1; uint i2; uint i3 ] acc values[i0, i1, i2, i3]
+                acc
+            | _ ->
+                let sz = im1.GetSize()
+                sz
+                |> flatIndices
+                |> Seq.fold (fun acc idx -> im1.Get idx |> f idx acc) acc0
 
     static member zip (imLst: Image<'T> list) : Image<'T list> =
         let nComp = imLst.Length
@@ -1561,11 +1605,10 @@ type Image<'T when 'T : equality>(sz: uint list, ?optionalNumberComponents: uint
 
     member this.CompareTo(other: Image<'T>) =
         let diff : Image<'T> = this - other
-        let pixels = diff.toArray2D() |> Seq.cast<obj>
 
         let sum =
-            pixels
-            |> Seq.sumBy System.Convert.ToDouble
+            diff
+            |> Image.fold (fun acc value -> acc + System.Convert.ToDouble(value)) 0.0
 
         if sum < 0.0 then -1
         elif sum > 0.0 then 1

@@ -262,6 +262,22 @@ let sobelEdge (img: Image<'T>) : Image<'T> =
 let laplacian (img: Image<'T>) : Image<'T> =
     makeUnaryImageOperator "laplacian" (fun () -> new itk.simple.LaplacianImageFilter()) (fun f x -> f.Execute(x)) img
 
+let smoothingRecursiveGaussian (sigma: float) (img: Image<'T>) : Image<'T> =
+    makeUnaryImageOperatorWith
+        "smoothingRecursiveGaussian"
+        (fun () -> new itk.simple.SmoothingRecursiveGaussianImageFilter())
+        (fun f -> f.SetSigma(max sigma 0.01))
+        (fun f x -> f.Execute(x))
+        img
+
+let laplacianRecursiveGaussian (sigma: float) (img: Image<'T>) : Image<'T> =
+    makeUnaryImageOperatorWith
+        "laplacianRecursiveGaussian"
+        (fun () -> new itk.simple.LaplacianRecursiveGaussianImageFilter())
+        (fun f -> f.SetSigma(max sigma 0.01))
+        (fun f x -> f.Execute(x))
+        img
+
 let equalImage (a: Image<'T>) (b: Image<'T>) : Image<uint8> =
     use filter = new itk.simple.EqualImageFilter()
     imageFromTemporarySimpleITK "equalImage" a.index (filter.Execute(a.toSimpleITK(), b.toSimpleITK()))
@@ -622,13 +638,13 @@ let binaryDilateSphericalNative (radius: uint) (img: Image<uint8>) : Image<uint8
                     let dx, dy, _dz = offsets[i]
                     let xx = x + dx
                     let yy = y + dy
-                    if xx >= 0 && xx < width && yy >= 0 && yy < height && input[yy * width + xx] = 1uy then
+                    if xx >= 0 && xx < width && yy >= 0 && yy < height && input[flatIndex2 width xx yy] = 1uy then
                         found <- true
                     else
                         i <- i + 1
 
                 if found then
-                    output[y * width + x] <- 1uy
+                    output[flatIndex2 width x y] <- 1uy
 
         Image<uint8>.ofSimpleITKNDispose(importScalarImage (img.GetSize()) output, "binaryDilateSphericalNative", img.index)
     else
@@ -649,13 +665,13 @@ let binaryDilateSphericalNative (radius: uint) (img: Image<uint8>) : Image<uint8
                         let xx = x + dx
                         let yy = y + dy
                         let zz = z + dz
-                        if xx >= 0 && xx < width && yy >= 0 && yy < height && zz >= 0 && zz < depth && input[zz * plane + yy * width + xx] = 1uy then
+                        if xx >= 0 && xx < width && yy >= 0 && yy < height && zz >= 0 && zz < depth && input[flatIndex3 width height xx yy zz] = 1uy then
                             found <- true
                         else
                             i <- i + 1
 
                     if found then
-                        output[z * plane + y * width + x] <- 1uy
+                        output[flatIndex3 width height x y z] <- 1uy
 
         Image<uint8>.ofSimpleITKNDispose(importScalarImage (img.GetSize()) output, "binaryDilateSphericalNative", img.index)
 
@@ -754,7 +770,7 @@ let private lineStarts3D width height depth dx dy dz =
     let starts = ResizeArray<int * int * int>()
     let add x y z =
         if x >= 0 && x < width && y >= 0 && y < height && z >= 0 && z < depth then
-            let key = z * width * height + y * width + x
+            let key = flatIndex3 width height x y z
             if seen.Add key then
                 starts.Add(x, y, z)
 
@@ -805,7 +821,7 @@ let private lineDilate3D (width: int) (height: int) (depth: int) (input: uint8[]
         let mutable count = 0
 
         while x >= 0 && x < width && y >= 0 && y < height && z >= 0 && z < depth do
-            let index = z * plane + y * width + x
+            let index = flatIndex3 width height x y z
             indices[count] <- index
             line[count] <- input[index]
             count <- count + 1
@@ -836,7 +852,7 @@ let private lineErode3D (width: int) (height: int) (depth: int) (input: uint8[])
                     let xx = x + t * dx
                     let yy = y + t * dy
                     let zz = z + t * dz
-                    if xx < 0 || xx >= width || yy < 0 || yy >= height || zz < 0 || zz >= depth || input[zz * plane + yy * width + xx] <> 1uy then
+                    if xx < 0 || xx >= width || yy < 0 || yy >= height || zz < 0 || zz >= depth || input[flatIndex3 width height xx yy zz] <> 1uy then
                         inside <- false
                     t <- t + 1
                 if inside then
@@ -872,7 +888,7 @@ let private lineDilate3DRange
 
         while x >= 0 && x < width && y >= 0 && y < height && z >= 0 && z < depth do
             if z >= inputValidLow && z <= inputValidHigh then
-                let index = z * plane + y * width + x
+                let index = flatIndex3 width height x y z
                 indices[count] <- index
                 zValues[count] <- z
                 line[count] <- input[index]
@@ -1372,16 +1388,36 @@ let addComputeStats (s1: ImageStats) (s2: ImageStats): ImageStats =
 
 
 let unique (img: Image<'T>) : 'T list when 'T : comparison =
-    img.toArray2D()            // 'T [,]
-    |> Seq.cast<'T>            // flatten to a seq<'T>
-    |> Set.ofSeq               // remove duplicates
-    |> Set.toList              // back to an ordered list
+    img
+    |> Image.fold (fun acc value -> Set.add value acc) Set.empty
+    |> Set.toList
 
 let private imageValues (img: Image<'T>) : 'T seq =
     match img.GetDimensions() with
-    | 2u -> img.toArray2D() |> Seq.cast<'T>
-    | 3u -> img.toArray3D() |> Seq.cast<'T>
-    | 4u -> img.toArray4D() |> Seq.cast<'T>
+    | 2u ->
+        seq {
+            let values = img.toArray2D()
+            for i0 in 0 .. values.GetLength 0 - 1 do
+                for i1 in 0 .. values.GetLength 1 - 1 do
+                    yield values[i0, i1]
+        }
+    | 3u ->
+        seq {
+            let values = img.toArray3D()
+            for i0 in 0 .. values.GetLength 0 - 1 do
+                for i1 in 0 .. values.GetLength 1 - 1 do
+                    for i2 in 0 .. values.GetLength 2 - 1 do
+                        yield values[i0, i1, i2]
+        }
+    | 4u ->
+        seq {
+            let values = img.toArray4D()
+            for i0 in 0 .. values.GetLength 0 - 1 do
+                for i1 in 0 .. values.GetLength 1 - 1 do
+                    for i2 in 0 .. values.GetLength 2 - 1 do
+                        for i3 in 0 .. values.GetLength 3 - 1 do
+                            yield values[i0, i1, i2, i3]
+        }
     | _ -> Image.fold (fun acc value -> value :: acc) [] img |> List.rev :> seq<'T>
     
 let private valuesFromImages bins (images: Image<'T> list) operation =
@@ -1642,18 +1678,25 @@ let momentsThreshold (img: Image<'T>) : Image<uint8> =
 let generateCoordinateAxis (axis: int) (size: int list) : Image<uint32> =
     match size with
     | [ width; height ] ->
-        Array2D.init width height (fun x y ->
-            if axis = 0 then uint32 x
-            elif axis = 1 then uint32 y
-            else invalidArg "axis" $"Axis {axis} is outside a 2D image.")
-        |> fun values -> Image<uint32>.ofArray2D(values, "generateCoordinateAxis")
+        let values = Array.zeroCreate<uint32> (width * height)
+        for y in 0 .. height - 1 do
+            for x in 0 .. width - 1 do
+                values[flatIndex2 width x y] <-
+                    if axis = 0 then uint32 x
+                    elif axis = 1 then uint32 y
+                    else invalidArg "axis" $"Axis {axis} is outside a 2D image."
+        Image<uint32>.ofFlatArray([ uint width; uint height ], values, "generateCoordinateAxis")
     | [ width; height; depth ] ->
-        Array3D.init width height depth (fun x y z ->
-            if axis = 0 then uint32 x
-            elif axis = 1 then uint32 y
-            elif axis = 2 then uint32 z
-            else invalidArg "axis" $"Axis {axis} is outside a 3D image.")
-        |> fun values -> Image<uint32>.ofArray3D(values, "generateCoordinateAxis")
+        let values = Array.zeroCreate<uint32> (width * height * depth)
+        for z in 0 .. depth - 1 do
+            for y in 0 .. height - 1 do
+                for x in 0 .. width - 1 do
+                    values[flatIndex3 width height x y z] <-
+                        if axis = 0 then uint32 x
+                        elif axis = 1 then uint32 y
+                        elif axis = 2 then uint32 z
+                        else invalidArg "axis" $"Axis {axis} is outside a 3D image."
+        Image<uint32>.ofFlatArray([ uint width; uint height; uint depth ], values, "generateCoordinateAxis")
     | _ ->
         failwith $"Unsupported dimensionality {size.Length}"
 
@@ -1948,17 +1991,30 @@ let vectorDot (a: Image<float list>) (b: Image<float list>) : Image<float> =
     try
         match a.GetDimensions() with
         | 2u ->
-            let av = aComponents |> List.map (fun comp -> comp.toArray2D())
-            let bv = bComponents |> List.map (fun comp -> comp.toArray2D())
-            Array2D.init (av.Head.GetLength 0) (av.Head.GetLength 1) (fun x y ->
-                List.zip av bv |> List.sumBy (fun (aValues, bValues) -> aValues[x, y] * bValues[x, y]))
-            |> fun output -> Image<float>.ofArray2D(output, "vectorDot", a.index)
+            let width = int (a.GetWidth())
+            let height = int (a.GetHeight())
+            let av = aComponents |> List.map (fun comp -> comp.toFlatArray()) |> List.toArray
+            let bv = bComponents |> List.map (fun comp -> comp.toFlatArray()) |> List.toArray
+            let output = Array.zeroCreate<float> (width * height)
+            for i in 0 .. output.Length - 1 do
+                let mutable sum = 0.0
+                for c in 0 .. av.Length - 1 do
+                    sum <- sum + av[c][i] * bv[c][i]
+                output[i] <- sum
+            Image<float>.ofFlatArray([ uint width; uint height ], output, "vectorDot", a.index)
         | 3u ->
-            let av = aComponents |> List.map (fun comp -> comp.toArray3D())
-            let bv = bComponents |> List.map (fun comp -> comp.toArray3D())
-            Array3D.init (av.Head.GetLength 0) (av.Head.GetLength 1) (av.Head.GetLength 2) (fun x y z ->
-                List.zip av bv |> List.sumBy (fun (aValues, bValues) -> aValues[x, y, z] * bValues[x, y, z]))
-            |> fun output -> Image<float>.ofArray3D(output, "vectorDot", a.index)
+            let width = int (a.GetWidth())
+            let height = int (a.GetHeight())
+            let depth = int (a.GetDepth())
+            let av = aComponents |> List.map (fun comp -> comp.toFlatArray()) |> List.toArray
+            let bv = bComponents |> List.map (fun comp -> comp.toFlatArray()) |> List.toArray
+            let output = Array.zeroCreate<float> (width * height * depth)
+            for i in 0 .. output.Length - 1 do
+                let mutable sum = 0.0
+                for c in 0 .. av.Length - 1 do
+                    sum <- sum + av[c][i] * bv[c][i]
+                output[i] <- sum
+            Image<float>.ofFlatArray([ uint width; uint height; uint depth ], output, "vectorDot", a.index)
         | dims ->
             failwith $"vectorDot: only 2D and 3D images are supported, got {dims}D"
     finally
@@ -1972,21 +2028,31 @@ let vectorCross3D (a: Image<float list>) (b: Image<float list>) : Image<float li
 
     let aComponents = a.toImageList()
     let bComponents = b.toImageList()
-    let make2D (ax: float[,]) (ay: float[,]) (az: float[,]) (bx: float[,]) (by: float[,]) (bz: float[,]) =
-        [ Array2D.init (ax.GetLength 0) (ax.GetLength 1) (fun x y -> ay[x, y] * bz[x, y] - az[x, y] * by[x, y]) |> fun values -> Image<float>.ofArray2D(values, "vectorCross3D", a.index)
-          Array2D.init (ax.GetLength 0) (ax.GetLength 1) (fun x y -> az[x, y] * bx[x, y] - ax[x, y] * bz[x, y]) |> fun values -> Image<float>.ofArray2D(values, "vectorCross3D", a.index)
-          Array2D.init (ax.GetLength 0) (ax.GetLength 1) (fun x y -> ax[x, y] * by[x, y] - ay[x, y] * bx[x, y]) |> fun values -> Image<float>.ofArray2D(values, "vectorCross3D", a.index) ]
-    let make3D (ax: float[,,]) (ay: float[,,]) (az: float[,,]) (bx: float[,,]) (by: float[,,]) (bz: float[,,]) =
-        [ Array3D.init (ax.GetLength 0) (ax.GetLength 1) (ax.GetLength 2) (fun x y z -> ay[x, y, z] * bz[x, y, z] - az[x, y, z] * by[x, y, z]) |> fun values -> Image<float>.ofArray3D(values, "vectorCross3D", a.index)
-          Array3D.init (ax.GetLength 0) (ax.GetLength 1) (ax.GetLength 2) (fun x y z -> az[x, y, z] * bx[x, y, z] - ax[x, y, z] * bz[x, y, z]) |> fun values -> Image<float>.ofArray3D(values, "vectorCross3D", a.index)
-          Array3D.init (ax.GetLength 0) (ax.GetLength 1) (ax.GetLength 2) (fun x y z -> ax[x, y, z] * by[x, y, z] - ay[x, y, z] * bx[x, y, z]) |> fun values -> Image<float>.ofArray3D(values, "vectorCross3D", a.index) ]
     try
         let resultComponents =
             match aComponents, bComponents, a.GetDimensions() with
             | [ ax; ay; az ], [ bx; by; bz ], 2u ->
-                make2D (ax.toArray2D()) (ay.toArray2D()) (az.toArray2D()) (bx.toArray2D()) (by.toArray2D()) (bz.toArray2D())
+                let size = [ a.GetWidth(); a.GetHeight() ]
+                let ax = ax.toFlatArray()
+                let ay = ay.toFlatArray()
+                let az = az.toFlatArray()
+                let bx = bx.toFlatArray()
+                let by = by.toFlatArray()
+                let bz = bz.toFlatArray()
+                [ Array.init ax.Length (fun i -> ay[i] * bz[i] - az[i] * by[i]) |> fun values -> Image<float>.ofFlatArray(size, values, "vectorCross3D", a.index)
+                  Array.init ax.Length (fun i -> az[i] * bx[i] - ax[i] * bz[i]) |> fun values -> Image<float>.ofFlatArray(size, values, "vectorCross3D", a.index)
+                  Array.init ax.Length (fun i -> ax[i] * by[i] - ay[i] * bx[i]) |> fun values -> Image<float>.ofFlatArray(size, values, "vectorCross3D", a.index) ]
             | [ ax; ay; az ], [ bx; by; bz ], 3u ->
-                make3D (ax.toArray3D()) (ay.toArray3D()) (az.toArray3D()) (bx.toArray3D()) (by.toArray3D()) (bz.toArray3D())
+                let size = [ a.GetWidth(); a.GetHeight(); a.GetDepth() ]
+                let ax = ax.toFlatArray()
+                let ay = ay.toFlatArray()
+                let az = az.toFlatArray()
+                let bx = bx.toFlatArray()
+                let by = by.toFlatArray()
+                let bz = bz.toFlatArray()
+                [ Array.init ax.Length (fun i -> ay[i] * bz[i] - az[i] * by[i]) |> fun values -> Image<float>.ofFlatArray(size, values, "vectorCross3D", a.index)
+                  Array.init ax.Length (fun i -> az[i] * bx[i] - ax[i] * bz[i]) |> fun values -> Image<float>.ofFlatArray(size, values, "vectorCross3D", a.index)
+                  Array.init ax.Length (fun i -> ax[i] * by[i] - ay[i] * bx[i]) |> fun values -> Image<float>.ofFlatArray(size, values, "vectorCross3D", a.index) ]
             | _, _, dims ->
                 failwith $"vectorCross3D: only 2D and 3D images are supported, got {dims}D"
         composeVectorAndRelease resultComponents
@@ -2019,15 +2085,28 @@ let vectorAngleTo (reference: float list) (img: Image<float list>) : Image<float
     try
         match img.GetDimensions() with
         | 2u ->
-            let values = components |> List.map (fun comp -> comp.toArray2D())
-            Array2D.init (values.Head.GetLength 0) (values.Head.GetLength 1) (fun x y ->
-                values |> Seq.map (fun comp -> comp[x, y]) |> angle)
-            |> fun output -> Image<float>.ofArray2D(output, "vectorAngleTo", img.index)
+            let width = int (img.GetWidth())
+            let height = int (img.GetHeight())
+            let values = components |> List.map (fun comp -> comp.toFlatArray()) |> List.toArray
+            let output = Array.zeroCreate<float> (width * height)
+            let tmp = Array.zeroCreate<float> values.Length
+            for i in 0 .. output.Length - 1 do
+                for c in 0 .. values.Length - 1 do
+                    tmp[c] <- values[c][i]
+                output[i] <- angle tmp
+            Image<float>.ofFlatArray([ uint width; uint height ], output, "vectorAngleTo", img.index)
         | 3u ->
-            let values = components |> List.map (fun comp -> comp.toArray3D())
-            Array3D.init (values.Head.GetLength 0) (values.Head.GetLength 1) (values.Head.GetLength 2) (fun x y z ->
-                values |> Seq.map (fun comp -> comp[x, y, z]) |> angle)
-            |> fun output -> Image<float>.ofArray3D(output, "vectorAngleTo", img.index)
+            let width = int (img.GetWidth())
+            let height = int (img.GetHeight())
+            let depth = int (img.GetDepth())
+            let values = components |> List.map (fun comp -> comp.toFlatArray()) |> List.toArray
+            let output = Array.zeroCreate<float> (width * height * depth)
+            let tmp = Array.zeroCreate<float> values.Length
+            for i in 0 .. output.Length - 1 do
+                for c in 0 .. values.Length - 1 do
+                    tmp[c] <- values[c][i]
+                output[i] <- angle tmp
+            Image<float>.ofFlatArray([ uint width; uint height; uint depth ], output, "vectorAngleTo", img.index)
         | dims ->
             failwith $"vectorAngleTo: only 2D and 3D images are supported, got {dims}D"
     finally
@@ -2038,25 +2117,20 @@ let structureTensorOuterProduct (gradient: Image<float list>) : Image<float list
         invalidArg "gradient" $"structureTensorOuterProduct: expected a 3-component gradient image, got {gradient.GetNumberOfComponentsPerPixel()} components."
 
     let components = gradient.toImageList()
-    let make2D (gx: float[,]) (gy: float[,]) (gz: float[,]) =
-        [ Array2D.init (gx.GetLength 0) (gx.GetLength 1) (fun x y -> gx[x, y] * gx[x, y]) |> fun values -> Image<float>.ofArray2D(values, "structureTensorOuterProduct", gradient.index)
-          Array2D.init (gx.GetLength 0) (gx.GetLength 1) (fun x y -> gx[x, y] * gy[x, y]) |> fun values -> Image<float>.ofArray2D(values, "structureTensorOuterProduct", gradient.index)
-          Array2D.init (gx.GetLength 0) (gx.GetLength 1) (fun x y -> gx[x, y] * gz[x, y]) |> fun values -> Image<float>.ofArray2D(values, "structureTensorOuterProduct", gradient.index)
-          Array2D.init (gx.GetLength 0) (gx.GetLength 1) (fun x y -> gy[x, y] * gy[x, y]) |> fun values -> Image<float>.ofArray2D(values, "structureTensorOuterProduct", gradient.index)
-          Array2D.init (gx.GetLength 0) (gx.GetLength 1) (fun x y -> gy[x, y] * gz[x, y]) |> fun values -> Image<float>.ofArray2D(values, "structureTensorOuterProduct", gradient.index)
-          Array2D.init (gx.GetLength 0) (gx.GetLength 1) (fun x y -> gz[x, y] * gz[x, y]) |> fun values -> Image<float>.ofArray2D(values, "structureTensorOuterProduct", gradient.index) ]
-    let make3D (gx: float[,,]) (gy: float[,,]) (gz: float[,,]) =
-        [ Array3D.init (gx.GetLength 0) (gx.GetLength 1) (gx.GetLength 2) (fun x y z -> gx[x, y, z] * gx[x, y, z]) |> fun values -> Image<float>.ofArray3D(values, "structureTensorOuterProduct", gradient.index)
-          Array3D.init (gx.GetLength 0) (gx.GetLength 1) (gx.GetLength 2) (fun x y z -> gx[x, y, z] * gy[x, y, z]) |> fun values -> Image<float>.ofArray3D(values, "structureTensorOuterProduct", gradient.index)
-          Array3D.init (gx.GetLength 0) (gx.GetLength 1) (gx.GetLength 2) (fun x y z -> gx[x, y, z] * gz[x, y, z]) |> fun values -> Image<float>.ofArray3D(values, "structureTensorOuterProduct", gradient.index)
-          Array3D.init (gx.GetLength 0) (gx.GetLength 1) (gx.GetLength 2) (fun x y z -> gy[x, y, z] * gy[x, y, z]) |> fun values -> Image<float>.ofArray3D(values, "structureTensorOuterProduct", gradient.index)
-          Array3D.init (gx.GetLength 0) (gx.GetLength 1) (gx.GetLength 2) (fun x y z -> gy[x, y, z] * gz[x, y, z]) |> fun values -> Image<float>.ofArray3D(values, "structureTensorOuterProduct", gradient.index)
-          Array3D.init (gx.GetLength 0) (gx.GetLength 1) (gx.GetLength 2) (fun x y z -> gz[x, y, z] * gz[x, y, z]) |> fun values -> Image<float>.ofArray3D(values, "structureTensorOuterProduct", gradient.index) ]
+    let makeFlat size (gx: float[]) (gy: float[]) (gz: float[]) =
+        [ Array.init gx.Length (fun i -> gx[i] * gx[i]) |> fun values -> Image<float>.ofFlatArray(size, values, "structureTensorOuterProduct", gradient.index)
+          Array.init gx.Length (fun i -> gx[i] * gy[i]) |> fun values -> Image<float>.ofFlatArray(size, values, "structureTensorOuterProduct", gradient.index)
+          Array.init gx.Length (fun i -> gx[i] * gz[i]) |> fun values -> Image<float>.ofFlatArray(size, values, "structureTensorOuterProduct", gradient.index)
+          Array.init gx.Length (fun i -> gy[i] * gy[i]) |> fun values -> Image<float>.ofFlatArray(size, values, "structureTensorOuterProduct", gradient.index)
+          Array.init gx.Length (fun i -> gy[i] * gz[i]) |> fun values -> Image<float>.ofFlatArray(size, values, "structureTensorOuterProduct", gradient.index)
+          Array.init gx.Length (fun i -> gz[i] * gz[i]) |> fun values -> Image<float>.ofFlatArray(size, values, "structureTensorOuterProduct", gradient.index) ]
     try
         let resultComponents =
             match components, gradient.GetDimensions() with
-            | [ gx; gy; gz ], 2u -> make2D (gx.toArray2D()) (gy.toArray2D()) (gz.toArray2D())
-            | [ gx; gy; gz ], 3u -> make3D (gx.toArray3D()) (gy.toArray3D()) (gz.toArray3D())
+            | [ gx; gy; gz ], 2u ->
+                makeFlat [ gradient.GetWidth(); gradient.GetHeight() ] (gx.toFlatArray()) (gy.toFlatArray()) (gz.toFlatArray())
+            | [ gx; gy; gz ], 3u ->
+                makeFlat [ gradient.GetWidth(); gradient.GetHeight(); gradient.GetDepth() ] (gx.toFlatArray()) (gy.toFlatArray()) (gz.toFlatArray())
             | _, dims -> failwith $"structureTensorOuterProduct: only 2D and 3D images are supported, got {dims}D"
         composeVectorAndRelease resultComponents
     finally
@@ -2574,30 +2648,10 @@ let inverseFFTXYFloat32 (image: Image<ComplexFloat32>) : Image<ComplexFloat32> =
     |> fun recovered -> Image<ComplexFloat32>.ofComplexFloat32Array2D(recovered, "inverseFFTXYFloat32", image.index)
 
 let realPart (image: Image<System.Numerics.Complex>) : Image<float> =
-    match image.GetDimensions() with
-    | 2u ->
-        let values = image.toComplexArray2D()
-        Array2D.init (values.GetLength 0) (values.GetLength 1) (fun x y -> values[x, y].Real)
-        |> fun real -> Image<float>.ofArray2D(real, "realPart", image.index)
-    | 3u ->
-        let values = image.toComplexArray3D()
-        Array3D.init (values.GetLength 0) (values.GetLength 1) (values.GetLength 2) (fun x y z -> values[x, y, z].Real)
-        |> fun real -> Image<float>.ofArray3D(real, "realPart", image.index)
-    | dims ->
-        failwith $"realPart: only 2D and 3D images are supported, got {dims}D"
+    imageFromTemporarySimpleITK<float> "realPart" image.index (extractComplexRealImage (image.toSimpleITK()))
 
 let realPartFloat32 (image: Image<ComplexFloat32>) : Image<float32> =
-    match image.GetDimensions() with
-    | 2u ->
-        let values = image.toComplexFloat32Array2D()
-        Array2D.init (values.GetLength 0) (values.GetLength 1) (fun x y -> values[x, y].Real)
-        |> fun real -> Image<float32>.ofArray2D(real, "realPartFloat32", image.index)
-    | 3u ->
-        let values = image.toComplexFloat32Array3D()
-        Array3D.init (values.GetLength 0) (values.GetLength 1) (values.GetLength 2) (fun x y z -> values[x, y, z].Real)
-        |> fun real -> Image<float32>.ofArray3D(real, "realPartFloat32", image.index)
-    | dims ->
-        failwith $"realPartFloat32: only 2D and 3D images are supported, got {dims}D"
+    imageFromTemporarySimpleITK<float32> "realPartFloat32" image.index (extractComplexRealImage (image.toSimpleITK()))
 
 let inverseFFTXYReal (image: Image<System.Numerics.Complex>) : Image<float> =
     if image.GetDimensions() <> 2u then

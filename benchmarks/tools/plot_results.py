@@ -257,7 +257,7 @@ def plot_by_size(rows: list[dict[str, object]], output_dir: Path, pixel_type: st
     xticks, xticklabels = volume_ticks(rows)
 
     for ax, (operation, parameter) in zip(axes.flat, representatives):
-        if operation == "connectedComponents" and pixel_type == "UInt8" and metric == "peak":
+        if operation == "connectedComponents" and pixel_type == "UInt8":
             lmip_windows = {
                 "256x256x256": "window=256",
                 "512x512x512": "window=64",

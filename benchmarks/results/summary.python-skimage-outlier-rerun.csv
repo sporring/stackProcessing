@@ -1,0 +1,2 @@
+backend,operation,pixelType,shape,parameter,n,successes,medianWallSeconds,meanWallSeconds,medianInternalSeconds,meanInternalSeconds,medianWrapperOverheadSeconds,meanWrapperOverheadSeconds,medianPeakRssMiB,meanPeakRssMiB
+python-skimage-scipy,median,UInt16,1024x1024x1024,radius=3,2,2,2041.729914125,2041.729914125,2037.789680646,2037.789680646,3.940233479,3.940233479,2859.453,2859.453

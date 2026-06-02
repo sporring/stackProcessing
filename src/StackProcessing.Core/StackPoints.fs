@@ -5,6 +5,7 @@ open System.Globalization
 open System.IO
 open System.Text
 open FSharp.Control
+open Image.InternalHelpers
 open SlimPipeline
 open StackCore
 open TinyLinAlg
@@ -303,54 +304,26 @@ let private imageToVolume (images: Image<'T> list) =
 
         images
         |> List.iteri (fun z image ->
-            let pixels = image.toArray2D()
+            let pixels = image.toFlatArray()
             for y in 0 .. height - 1 do
                 for x in 0 .. width - 1 do
-                    volume[x, y, z] <- Convert.ToDouble(pixels[x, y], invariant))
+                    volume[x, y, z] <- Convert.ToDouble(pixels[flatIndex2 width x y], invariant))
 
         volume
-
-let private gaussianKernel sigma =
-    let sigma = max sigma 0.01
-    let radius = max 1 (int (ceil (3.0 * sigma)))
-    let kernel =
-        [| for offset in -radius .. radius ->
-            let x = float offset
-            exp (-(x * x) / (2.0 * sigma * sigma)) |]
-    let sum = kernel |> Array.sum
-    kernel |> Array.map (fun value -> value / sum), radius
 
 let private clamp lo hi value =
     if value < lo then lo elif value > hi then hi else value
 
-let private blur1D axis (kernel: double[]) radius (source: double[,,]) =
-    let width = source.GetLength(0)
-    let height = source.GetLength(1)
-    let depth = source.GetLength(2)
-    let result = Array3D.zeroCreate<double> width height depth
-
-    for z in 0 .. depth - 1 do
-        for y in 0 .. height - 1 do
-            for x in 0 .. width - 1 do
-                let mutable sum = 0.0
-                for k in -radius .. radius do
-                    let weight = kernel[k + radius]
-                    let sx, sy, sz =
-                        match axis with
-                        | 0 -> clamp 0 (width - 1) (x + k), y, z
-                        | 1 -> x, clamp 0 (height - 1) (y + k), z
-                        | _ -> x, y, clamp 0 (depth - 1) (z + k)
-                    sum <- sum + weight * source[sx, sy, sz]
-                result[x, y, z] <- sum
-
-    result
-
-let private gaussianBlur3D sigma source =
-    let kernel, radius = gaussianKernel sigma
-    source
-    |> blur1D 0 kernel radius
-    |> blur1D 1 kernel radius
-    |> blur1D 2 kernel radius
+let private gaussianBlur3D sigma (source: double[,,]) =
+    let image = Image<float>.ofArray3D(source, "gaussianBlur3D.input")
+    try
+        let smoothed = ImageFunctions.smoothingRecursiveGaussian sigma image
+        try
+            smoothed.toArray3D()
+        finally
+            smoothed.decRefCount()
+    finally
+        image.decRefCount()
 
 let private central (source: double[,,]) x y z axis =
     let width = source.GetLength(0)

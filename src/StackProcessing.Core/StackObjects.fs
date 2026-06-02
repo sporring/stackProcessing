@@ -3,6 +3,7 @@ module StackObjects
 open System
 open System.Collections.Generic
 open FSharp.Control
+open Image.InternalHelpers
 open SlimPipeline
 open StackCore
 open StackPoints
@@ -119,7 +120,7 @@ let private zNeighborOffsets connectivity =
                for dx in -1 .. 1 -> dx, dy |]
 
 let private connectedComponents2D connectivity z width height (isForeground: int -> int -> bool) =
-    let visited = Array2D.create width height false
+    let visited = Array.zeroCreate<bool> (width * height)
     let offsets = xyNeighborOffsets connectivity
     let components = ResizeArray<SliceComponent>()
     let queue = Queue<int * int>()
@@ -127,8 +128,9 @@ let private connectedComponents2D connectivity z width height (isForeground: int
 
     for y in 0 .. height - 1 do
         for x in 0 .. width - 1 do
-            if isForeground x y && not visited[x, y] then
-                visited[x, y] <- true
+            let i = flatIndex2 width x y
+            if isForeground x y && not visited[i] then
+                visited[i] <- true
                 queue.Enqueue(x, y)
 
                 let points = ResizeArray<Position3D<int>>()
@@ -144,9 +146,11 @@ let private connectedComponents2D connectivity z width height (isForeground: int
                     for dx, dy in offsets do
                         let nx = cx + dx
                         let ny = cy + dy
-                        if nx >= 0 && nx < width && ny >= 0 && ny < height && isForeground nx ny && not visited[nx, ny] then
-                            visited[nx, ny] <- true
-                            queue.Enqueue(nx, ny)
+                        if nx >= 0 && nx < width && ny >= 0 && ny < height then
+                            let ni = flatIndex2 width nx ny
+                            if isForeground nx ny && not visited[ni] then
+                                visited[ni] <- true
+                                queue.Enqueue(nx, ny)
 
                 components.Add
                     { Id = nextId
@@ -230,12 +234,12 @@ let private processSlice connectivity ((stateNextLabel, active): uint64 * Map<ui
     let height = int (image.GetHeight())
     let z = image.index
     let zOffsets = zNeighborOffsets connectivity
-    let pixels = image.toArray2D()
+    let pixels = image.toFlatArray()
     // This deliberately uses a small streaming F# flood-fill. If object streaming becomes a bottleneck,
     // compare it with a slab-local implementation that delegates labeling to SimpleITK and keeps this
     // frontier-carry/early-emit logic around the slab labels.
     let components =
-        connectedComponents2D connectivity z width height (fun x y -> foreground pixels[x, y])
+        connectedComponents2D connectivity z width height (fun x y -> foreground pixels[flatIndex2 width x y])
 
     let activeNodes = active |> Map.toList |> List.map (fst >> Active)
     let localNodes = components |> List.map (fun objectComponent -> Local objectComponent.Id)
@@ -332,25 +336,25 @@ let streamConnectedObjects<'T when 'T: equality> connectivity : Stage<Image<'T>,
     Stage.fromPipe name (ProfileTransition.create Streaming Streaming) id id pipe
 
 let private copyBinaryImage (image: Image<uint8>) =
-    let copy = image.toArray2D() |> Image<uint8>.ofArray2D
+    let copy = Image<uint8>.ofFlatArray(image.GetSize(), image.toFlatArray())
     copy.index <- image.index
     copy
 
 let private invertedBinaryImage (image: Image<uint8>) =
-    let pixels = image.toArray2D()
-    let width = Array2D.length1 pixels
-    let height = Array2D.length2 pixels
+    let pixels = image.toFlatArray()
+    let width = int (image.GetWidth())
+    let height = int (image.GetHeight())
     let inverted =
-        Array2D.init width height (fun x y -> if pixels[x, y] = 0uy then 1uy else 0uy)
-        |> Image<uint8>.ofArray2D
+        Array.map (fun value -> if value = 0uy then 1uy else 0uy) pixels
+        |> fun values -> Image<uint8>.ofFlatArray([ uint width; uint height ], values)
     inverted.index <- image.index
     inverted
 
-let private paintObjectValue value (buffer: SortedDictionary<int, uint8[,]>) (object: StreamedObject) =
+let private paintObjectValue width value (buffer: SortedDictionary<int, uint8[]>) (object: StreamedObject) =
     for position in object.Positions do
         match buffer.TryGetValue position.Z with
         | true, pixels ->
-            pixels[position.X, position.Y] <- value
+            pixels[flatIndex2 width position.X position.Y] <- value
         | false, _ ->
             invalidOp $"Cannot edit completed object label {object.Label}; buffered slice {position.Z} has already been emitted."
 
@@ -360,7 +364,7 @@ let private touchesXYBoundary width height (object: StreamedObject) =
     || object.Bounds.MaxX >= width - 1
     || object.Bounds.MaxY >= height - 1
 
-let private emitBufferedThrough cutoff (buffer: SortedDictionary<int, uint8[,]>) =
+let private emitBufferedThrough width height cutoff (buffer: SortedDictionary<int, uint8[]>) =
     seq {
         let mutable emitting = true
 
@@ -368,7 +372,7 @@ let private emitBufferedThrough cutoff (buffer: SortedDictionary<int, uint8[,]>)
             let z = buffer.Keys |> Seq.head
 
             if z <= cutoff then
-                let image = Image<uint8>.ofArray2D(buffer[z])
+                let image = Image<uint8>.ofFlatArray([ uint width; uint height ], buffer[z])
                 image.index <- z
                 buffer.Remove z |> ignore
                 yield image
@@ -387,7 +391,7 @@ let private bufferedBinaryComponentEdit
 
     let apply _debug (input: AsyncSeq<Image<uint8>>) =
         asyncSeq {
-            let buffer = SortedDictionary<int, uint8[,]>()
+            let buffer = SortedDictionary<int, uint8[]>()
             let mutable state = 1UL, Map.empty<uint64, ActiveObject>
             let mutable width = None
             let mutable height = None
@@ -413,7 +417,7 @@ let private bufferedBinaryComponentEdit
                         invalidOp $"{name} requires a stream with constant x-y slice size."
 
                     let bufferedIndex = image.index
-                    buffer[bufferedIndex] <- image.toArray2D()
+                    buffer[bufferedIndex] <- image.toFlatArray()
 
                     let componentInput = componentImage image
                     let nextState, completed =
@@ -427,7 +431,7 @@ let private bufferedBinaryComponentEdit
 
                     for object in completed do
                         if object.Size <= maximumVolume && not (isProtectedComponent currentWidth currentHeight firstZ None object) then
-                            paintObjectValue targetValue buffer object
+                            paintObjectValue currentWidth targetValue buffer object
 
                     let _, active = state
                     let cutoff =
@@ -440,7 +444,7 @@ let private bufferedBinaryComponentEdit
                             |> Seq.min
                             |> fun minActiveZ -> minActiveZ - 1
 
-                    for image in emitBufferedThrough cutoff buffer do
+                    for image in emitBufferedThrough currentWidth currentHeight cutoff buffer do
                         yield image
                 else
                     more <- false
@@ -457,9 +461,9 @@ let private bufferedBinaryComponentEdit
                 let currentHeight = height |> Option.defaultValue 0
 
                 if object.Size <= maximumVolume && not (isProtectedComponent currentWidth currentHeight firstZ lastZ object) then
-                    paintObjectValue targetValue buffer object
+                    paintObjectValue currentWidth targetValue buffer object
 
-            for image in emitBufferedThrough Int32.MaxValue buffer do
+            for image in emitBufferedThrough (width |> Option.defaultValue 0) (height |> Option.defaultValue 0) Int32.MaxValue buffer do
                 yield image
         }
 
@@ -505,15 +509,15 @@ let private paintObjectBatch width height (objects: StreamedObject list) =
     |> List.groupBy _.Z
     |> List.sortBy fst
     |> List.map (fun (z, positions) ->
-        let pixels = Array2D.zeroCreate<uint8> width height
+        let pixels = Array.zeroCreate<uint8> (width * height)
 
         for position in positions do
             if position.X < 0 || position.X >= width || position.Y < 0 || position.Y >= height then
                 invalidOp $"Object position ({position.X},{position.Y},{position.Z}) is outside the requested paint image size {width}x{height}."
 
-            pixels[position.X, position.Y] <- 1uy
+            pixels[flatIndex2 width position.X position.Y] <- 1uy
 
-        let image = Image<uint8>.ofArray2D pixels
+        let image = Image<uint8>.ofFlatArray([ uint width; uint height ], pixels)
         image.index <- z
         image)
 
@@ -532,7 +536,7 @@ let private paintObjectCropped (object: StreamedObject) =
         |> List.groupBy _.Z
         |> List.sortBy fst
         |> List.map (fun (z, positions) ->
-            let pixels = Array2D.zeroCreate<uint8> width height
+            let pixels = Array.zeroCreate<uint8> (width * height)
 
             for position in positions do
                 let x = position.X - object.Bounds.MinX
@@ -541,9 +545,9 @@ let private paintObjectCropped (object: StreamedObject) =
                 if x < 0 || x >= width || y < 0 || y >= height then
                     invalidOp $"Object position ({position.X},{position.Y},{position.Z}) is outside its bounding box."
 
-                pixels[x, y] <- 1uy
+                pixels[flatIndex2 width x y] <- 1uy
 
-            let image = Image<uint8>.ofArray2D pixels
+            let image = Image<uint8>.ofFlatArray([ uint width; uint height ], pixels)
             image.index <- z - object.Bounds.MinZ
             image)
 

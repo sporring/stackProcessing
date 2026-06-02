@@ -9,6 +9,7 @@ open System.Threading
 open System.Threading.Tasks
 open BitMiracle.LibTiff.Classic
 open FSharp.Control
+open Image.InternalHelpers
 open StackCore
 open PureHDF
 open PureHDF.Selections
@@ -191,21 +192,15 @@ let private nullableParallelChunks maxParallelChunks =
     else
         Nullable<int>()
 
-let private array3DOfZarrBytes<'T> (width: int) (height: int) (depth: int) (bytes: byte[]) =
+let private flatArrayOfZarrBytes<'T> (width: int) (height: int) (depth: int) (bytes: byte[]) =
     if typeof<'T> = typeof<uint8> then
-        let arr =
-            Array3D.init width height depth (fun x y z ->
-                bytes[(z * height + y) * width + x] |> box |> unbox<'T>)
-
-        arr
+        Array.init (width * height * depth) (fun i ->
+            bytes[i] |> box |> unbox<'T>)
     elif typeof<'T> = typeof<uint16> then
-        let arr =
-            Array3D.init width height depth (fun x y z ->
-                let offset = ((z * height + y) * width + x) * 2
-                let value = uint16 bytes[offset] ||| (uint16 bytes[offset + 1] <<< 8)
-                value |> box |> unbox<'T>)
-
-        arr
+        Array.init (width * height * depth) (fun i ->
+            let offset = i * 2
+            let value = uint16 bytes[offset] ||| (uint16 bytes[offset + 1] <<< 8)
+            value |> box |> unbox<'T>)
     else
         zarrDataType<'T> () |> ignore
         failwith "unreachable"
@@ -217,12 +212,12 @@ let private zarrSlabImageAs<'T when 'T: equality> (dataType: string) width heigh
         cast
 
     if String.Equals(dataType, "uint8", StringComparison.OrdinalIgnoreCase) then
-        array3DOfZarrBytes<uint8> width height depth bytes
-        |> fun arr -> Image<uint8>.ofArray3D(arr, name)
+        flatArrayOfZarrBytes<uint8> width height depth bytes
+        |> fun pixels -> Image<uint8>.ofFlatArray([ uint width; uint height; uint depth ], pixels, name)
         |> castNative
     elif String.Equals(dataType, "uint16", StringComparison.OrdinalIgnoreCase) then
-        array3DOfZarrBytes<uint16> width height depth bytes
-        |> fun arr -> Image<uint16>.ofArray3D(arr, name)
+        flatArrayOfZarrBytes<uint16> width height depth bytes
+        |> fun pixels -> Image<uint16>.ofFlatArray([ uint width; uint height; uint depth ], pixels, name)
         |> castNative
     else
         failwith $"ZarrNET image IO currently supports UInt8 and UInt16 scalar datasets, but dataset type was {dataType}."
@@ -308,14 +303,18 @@ let private readHdfSlabNative<'Native, 'T when 'Native: equality and 'T: equalit
 
     let selection = HyperslabSelection(rank, starts, blocks)
     let source = dataset.Read<'Native[,,]>(selection, AllSelection(), blocks) :> Array
-    let arr =
-        Array3D.init sizeX sizeY zCount (fun x y z ->
+    let pixels =
+        Array.init (sizeX * sizeY * zCount) (fun i ->
+            let x = i % sizeX
+            let yz = i / sizeX
+            let y = yz % sizeY
+            let z = yz / sizeY
             let indices = Array.zeroCreate<int> rank
             indices[frameAxis] <- z
             indices[yAxis] <- y
             indices[xAxis] <- x
             source.GetValue(indices) |> unbox<'Native>)
-    let nativeImage = Image<'Native>.ofArray3D(arr, name)
+    let nativeImage = Image<'Native>.ofFlatArray([ uint sizeX; uint sizeY; uint zCount ], pixels, name)
     let cast = nativeImage.castTo<'T>()
     nativeImage.decRefCount()
     cast
