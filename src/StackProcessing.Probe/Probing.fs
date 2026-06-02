@@ -1465,10 +1465,12 @@ let private bottomUpGraphTemplates config =
     let ignoreFeature = "Ignore"
 
     let emptyTemplate name description =
+        let zero = zeroNode "UInt8" 1u 1u 1u
+
         { Name = name
           Description = description
           Features = [ "intercept" ]
-          Graph = { Version = 1; Nodes = [||]; Edges = [||] } }
+          Graph = graphForLinearPipeline name [ zero; ignoreNode ] }
 
     let templateWithSink name description sinkFeature nodes sink =
         { Name = name
@@ -1524,10 +1526,11 @@ let private bottomUpGraphTemplates config =
         [ "float32", "Float32", readFloat32
           "float64", "Float64", readFloat ]
 
-    let sourceLayer =
-        [| yield emptyTemplate "bottomup-00-empty" "Empty graph for process startup/shutdown intercept."
+    let emptyLayer =
+        [| emptyTemplate "bottomup-00-empty" "Empty graph for process startup/shutdown intercept." |]
 
-           let mutable index = 1
+    let sourceLayer =
+        [| let mutable index = 1
            for pixelType in bottomUpIoPixelTypes do
                let typeKey = pixelType.ToLowerInvariant()
                let zero = zeroNode pixelType config.Shape.Width config.Shape.Height config.Depth
@@ -2151,7 +2154,8 @@ let private bottomUpGraphTemplates config =
                  "measure", "MeasureObjects", []
                  "sizes", "ObjectSizeStats", [] ] |]
 
-    [| "01-starters", sourceLayer
+    [| "00-empty", emptyLayer
+       "01-starters", sourceLayer
        "02-io-casts", readCastLayer
        "02-sources", syntheticSourcesLayer
        "03-simple-unary", simpleUnaryLayer

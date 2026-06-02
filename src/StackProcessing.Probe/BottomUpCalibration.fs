@@ -40,7 +40,7 @@ let private usage () =
     printfn "  --repeat N              Repeat emitted probe runs. Defaults to 3."
     printfn "  -j, --jobs N            Run up to N emitted probe graphs at once. Defaults to 1."
     printfn "  --layers N              Number of bottom-up layers to run. Defaults to all."
-    printfn "  --phase NAME            Probe phase: io, io-cast, sources, singleton, window-slab, neighbourhood, geometry, fourier, keypoints, dependency, reducers, or all."
+    printfn "  --phase NAME            Probe phase: empty, io, io-cast, sources, singleton, window-slab, neighbourhood, geometry, fourier, keypoints, dependency, reducers, or all."
     printfn "  --phases LIST           Comma-separated phases. Defaults to all."
     printfn "  --member LIST           Restrict generated probe graphs by graph/member/operator name."
     printfn "  --keep-tmp              Do not clear repository tmp before starting."
@@ -185,6 +185,7 @@ let private shapeName (shape: ProbeProbing.ImageSize) =
 
 let private phaseForLayer layerName =
     match layerName with
+    | "00-empty" -> "empty"
     | "01-starters" -> "io"
     | "02-io-casts" -> "io-cast"
     | "02-sources" -> "sources"
@@ -202,6 +203,7 @@ let private phaseForLayer layerName =
 let private normalizePhase (value: string) =
     match value.Trim().ToLowerInvariant().Replace("_", "-") with
     | "all" -> Some "all"
+    | "empty" | "intercept" | "startup" | "process" | "process-overhead" -> Some "empty"
     | "io" | "read-write" | "readwrite" -> Some "io"
     | "io-cast" | "io-casts" | "read-cast" | "readcast" | "conversion" | "conversions" -> Some "io-cast"
     | "sources" | "source" -> Some "sources"
@@ -370,7 +372,7 @@ let rec private parseArgs options args =
         match parsePhases value with
         | Some phases -> parseArgs { options with Phases = phases } rest
         | None ->
-            eprintfn "bottom-up: --phases expects io,io-cast,sources,singleton,window-slab,neighbourhood,geometry,fourier,keypoints,dependency,reducers, or all"
+            eprintfn "bottom-up: --phases expects empty,io,io-cast,sources,singleton,window-slab,neighbourhood,geometry,fourier,keypoints,dependency,reducers, or all"
             Error 2
     | "--member" :: value :: rest
     | "--members" :: value :: rest

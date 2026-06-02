@@ -84,6 +84,8 @@ dotnet src/StackProcessing.Probe/bin/Debug/net10.0/StackProcessing.Probe.dll <co
 
 Avoid `dotnet run` for cost-model evidence. Even with `--no-build`, it still goes through the SDK/project runner and can add unpredictable fixed overhead to short probe rows. That overhead is not part of StackProcessing's execution model and should not be fitted as operator cost. The same rule applies to Studio-generated pipelines once compiled: run the built artifact that represents the workflow, not a project-runner convenience command.
 
+Probe measurements should be measurements of DSL-shaped StackProcessing programs. Studio graphs are useful for proposing, visualizing, and editing candidate workflows, but the calibration evidence should come from the source-stage-sink DSL program executed by the compiled Probe DLL. This keeps the fitted terms anchored to the same execution path that the optimizer is meant to reason about.
+
 Use `-j 1` for timing runs. Parallel probe graphs compete for CPU, memory bandwidth, disk IO, and SimpleITK worker threads, which makes the evidence noisier.
 
 Prefer the current larger shapes:
@@ -126,7 +128,7 @@ mv measurements/stackprocessing-probe.jsonl measurements/archive/stackprocessing
 The current calibration ladder is:
 
 ```text
-io -> io-cast -> sources -> singleton -> neighbourhood -> geometry -> fourier -> keypoints -> dependency -> reducers
+empty -> io -> io-cast -> sources -> singleton -> neighbourhood -> geometry -> fourier -> keypoints -> dependency -> reducers
 ```
 
 There is also a `window-slab` family for measuring scaffolding such as window-to-slab, slab-to-window, and singleton-on-slab behaviour. It is useful for implementation experiments, but it is not part of the implicit `--up-to` fit ladder unless requested explicitly.
@@ -135,6 +137,7 @@ Typical families:
 
 | Family | Purpose |
 | ------ | ------- |
+| `empty` | Process/runtime intercept for a source-to-sink DSL scaffold with only a tiny source and the empty stage. |
 | `io` | Read/write behaviour by format, pixel type, and shape. |
 | `io-cast` | Explicit and implicit read/cast combinations. |
 | `sources` | Synthetic source stages such as zero, noise, and coordinate images. |
@@ -145,7 +148,26 @@ Typical families:
 
 ## Standard Collect/Fit/Inspect Loop
 
-For a ladder step, run:
+Start with the empty DSL scaffold. This anchors fixed process/runtime overhead before reads, writes, or stack-sized generated image streams enter the fit:
+
+```bash
+caffeinate -dimsu dotnet src/StackProcessing.Probe/bin/Debug/net10.0/StackProcessing.Probe.dll \
+  collect --family empty \
+  --shape 64x64x64 \
+  --noisy-type Float32 --repeat 6 -j 1
+
+dotnet src/StackProcessing.Probe/bin/Debug/net10.0/StackProcessing.Probe.dll \
+  fit --up-to empty \
+  --shape 64x64x64 \
+  --model-output models/fitted/stackprocessing.operator-cost.json
+
+dotnet src/StackProcessing.Probe/bin/Debug/net10.0/StackProcessing.Probe.dll \
+  inspect --max-step empty --min-repeats 6 \
+  --shape 64x64x64 \
+  --suggest tmp/inspect/empty-request.json
+```
+
+The `climb` command applies this same convention automatically: `empty` is collected with a single small safe shape, while subsequent families use the configured shape list. Then add IO:
 
 ```bash
 caffeinate -dimsu dotnet src/StackProcessing.Probe/bin/Debug/net10.0/StackProcessing.Probe.dll \
@@ -263,11 +285,12 @@ caffeinate -dimsu dotnet src/StackProcessing.Probe/bin/Debug/net10.0/StackProces
   --repeat 6 --min-repeats 6 --max-request-rounds 3 -j 1
 ```
 
-By default, `climb` starts at `io`, walks the implicit ladder, performs one initial `collect --family`, then repeats `fit`, `inspect`, and `collect --request` until the step converges or plateaus. It cleans generated probe scratch between accepted or plateaued families while keeping the durable measurement store and fitted model.
+By default, `climb` starts at `empty`, walks the implicit ladder, performs one initial `collect --family`, then repeats `fit`, `inspect`, and `collect --request` until the step converges or plateaus. It cleans generated probe scratch between accepted or plateaued families while keeping the durable measurement store and fitted model.
 
 Recommended ladder:
 
 ```text
+empty
 io
 io-cast
 sources

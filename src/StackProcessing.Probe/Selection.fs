@@ -9,7 +9,8 @@ type EvidenceSelector =
       Shapes: string list }
 
 let ladder =
-    [ "io"
+    [ "empty"
+      "io"
       "io-cast"
       "sources"
       "singleton"
@@ -45,6 +46,7 @@ let parseShapes value =
 let normalizeFamily (value: string) =
     match value.Trim().ToLowerInvariant().Replace("_", "-") with
     | "all" -> Some "all"
+    | "empty" | "intercept" | "startup" | "process" | "process-overhead" -> Some "empty"
     | "io" | "read-write" | "readwrite" -> Some "io"
     | "io-cast" | "io-casts" | "read-cast" | "readcast" | "conversion" | "conversions" -> Some "io-cast"
     | "sources" | "source" -> Some "sources"
@@ -84,7 +86,8 @@ let familiesUpTo maxStep =
 
 let familyForRowId (rowId: string) =
     let text = rowId.ToLowerInvariant()
-    if text.Contains("01-starters") then Some "io"
+    if text.Contains("00-empty") || text.Contains("bottomup-00-empty") then Some "empty"
+    elif text.Contains("01-starters") then Some "io"
     elif text.Contains("02-io-casts") then Some "io-cast"
     elif text.Contains("02-sources") then Some "sources"
     elif text.Contains("03-simple-unary") || text.Contains("05-intensity-and-additive") then Some "singleton"

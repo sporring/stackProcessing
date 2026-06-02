@@ -28,7 +28,7 @@ let private usage () =
     printfn ""
     printfn "Selection:"
     printfn "  --all                 Collect every ladder family."
-    printfn "  --family LIST         Collect families, e.g. io,io-cast,singleton."
+    printfn "  --family LIST         Collect families, e.g. empty,io,io-cast,singleton."
     printfn "  --member LIST         Collect member/operator probes, e.g. SmoothWGauss."
     printfn "  --request PATH        Execute an inspect-generated collection request."
     printfn ""
@@ -67,7 +67,7 @@ let rec private parseArgs options args =
         match ProbeSelection.parseFamilies value with
         | Some families -> parseArgs { options with Families = options.Families @ families } rest
         | None ->
-            eprintfn "collect: --family expects io,io-cast,singleton,window-slab,neighbourhood,geometry,fourier,keypoints,dependency,reducers, or all"
+            eprintfn "collect: --family expects empty,io,io-cast,singleton,window-slab,neighbourhood,geometry,fourier,keypoints,dependency,reducers, or all"
             Error 2
     | "--member" :: value :: rest
     | "--members" :: value :: rest

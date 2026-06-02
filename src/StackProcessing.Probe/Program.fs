@@ -28,7 +28,7 @@ let private usage () =
     printfn "  dotnet src/StackProcessing.Probe/bin/Debug/net10.0/StackProcessing.Probe.dll samples --repeat 3"
     printfn "  dotnet src/StackProcessing.Probe/bin/Debug/net10.0/StackProcessing.Probe.dll samples --json --extra-json-root tmp/probingGraphs"
     printfn "  dotnet src/StackProcessing.Probe/bin/Debug/net10.0/StackProcessing.Probe.dll analysis --extra-json-root tmp/probingGraphs"
-    printfn "  dotnet src/StackProcessing.Probe/bin/Debug/net10.0/StackProcessing.Probe.dll collect --family io --repeat 6"
+    printfn "  dotnet src/StackProcessing.Probe/bin/Debug/net10.0/StackProcessing.Probe.dll collect --family empty --repeat 6"
     printfn "  dotnet src/StackProcessing.Probe/bin/Debug/net10.0/StackProcessing.Probe.dll fit --up-to io-cast"
     printfn "  dotnet src/StackProcessing.Probe/bin/Debug/net10.0/StackProcessing.Probe.dll inspect --max-step singleton"
     printfn "  dotnet src/StackProcessing.Probe/bin/Debug/net10.0/StackProcessing.Probe.dll climb --through singleton"

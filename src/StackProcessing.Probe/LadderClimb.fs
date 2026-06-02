@@ -221,6 +221,12 @@ let private shapesArgs options =
     | [] -> []
     | shapes -> [ "--shapes"; String.concat "," shapes ]
 
+let private familyShapesArgs family options =
+    if family = "empty" then
+        [ "--shape"; "64x64x64" ]
+    else
+        shapesArgs options
+
 let private optionalInspectArgs options =
     [ match options.MinTimeR2 with
       | Some value -> yield "--min-time-r2"; yield value.ToString("G17", CultureInfo.InvariantCulture)
@@ -277,7 +283,7 @@ let private climbFamily root options family =
            "--repeat"; string options.Repeat
            "-j"; string options.Jobs
            "--noisy-type"; options.NoisyType ]
-         @ shapesArgs options
+         @ familyShapesArgs family options
          @ options.ExtraCollectArgs)
 
     let rec loop requestRounds previousSignature repeatedCount =
@@ -320,7 +326,11 @@ let private climbFamily root options family =
                 "plateau:repeated-request"
             else
                 printfn "climb request round %d/%d for %s: %s" (requestRounds + 1) options.MaxRequestRounds family request.Reason
-                runStep family "collect" [ "--request"; requestPath; "-j"; string options.Jobs ]
+                runStep
+                    family
+                    "collect"
+                    ([ "--request"; requestPath; "-j"; string options.Jobs ]
+                     @ familyShapesArgs family options)
                 loop (requestRounds + 1) (Some signature) repeatedCount
 
     let status = loop 0 None 0

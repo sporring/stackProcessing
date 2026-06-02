@@ -25,7 +25,7 @@ let private usage () =
     printfn "  --measurement-store PATH  Measurement JSONL store. Defaults to measurements/stackprocessing-probe.jsonl."
     printfn "  --output PATH             Fit diagnostics directory. Defaults to tmp/fit."
     printfn "  --model-output PATH       Fitted model path. Defaults to models/fitted/stackprocessing.operator-cost.json."
-    printfn "  --family LIST             Families to fit, e.g. io,io-cast."
+    printfn "  --family LIST             Families to fit, e.g. empty,io,io-cast."
     printfn "  --up-to FAMILY            Fit ladder families through FAMILY."
     printfn "  --fixed-through FAMILY    Fit FAMILY and earlier first, then hold those coefficients fixed."
     printfn "  --member LIST             Restrict to operator/member ids."
@@ -65,7 +65,7 @@ let rec private parseArgs options args =
         match ProbeSelection.parseFamilies value with
         | Some families -> parseArgs { options with Selector = { options.Selector with Families = families; UpTo = None } } rest
         | None ->
-            eprintfn "fit: --family expects io,io-cast,singleton,window-slab,neighbourhood,geometry,fourier,keypoints,dependency,reducers, or all"
+            eprintfn "fit: --family expects empty,io,io-cast,singleton,window-slab,neighbourhood,geometry,fourier,keypoints,dependency,reducers, or all"
             Error 2
     | "--up-to" :: value :: rest
     | "--max-step" :: value :: rest ->
