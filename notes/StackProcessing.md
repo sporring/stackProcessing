@@ -135,6 +135,19 @@ Examples include:
 
 The raw image algorithms generally live in `ImageFunctions`, while the lifted streaming stages live in `StackImageFunctions`.
 
+## Flat-Buffer Hot Paths
+
+Several Core algorithms use custom managed loops rather than a single SimpleITK filter. In those paths the preferred internal representation is now a flat scalar array obtained with `Image<'T>.toFlatArray()` and returned with `Image<'T>.ofFlatArray(...)`.
+
+The rule of thumb is:
+
+- stay in `Image<'T>` and call an `ImageFunctions`/SimpleITK wrapper when the operation is naturally a whole-image filter;
+- use `toFlatArray` for random access, interpolation, pixel-wise synthesis, line scans, or other custom loops;
+- use `flatIndex2`, `flatIndex3`, and `flatIndex4` from `Image.InternalHelpers` instead of repeating `y * width + x` or `(z * height + y) * width + x` by hand;
+- avoid `Array2D.init` or `Array3D.init` when the result immediately becomes an `Image<'T>`.
+
+This cleanup keeps the public DSL unchanged. It only changes the implementation of hot modules such as affine resampling, stitching, bias correction, object tracking, serial-section preprocessing, and selected ImageFunctions helpers so they cross the SimpleITK boundary once per image/chunk instead of once per pixel or once through an avoidable multidimensional temporary.
+
 ## Streaming Binary Morphology
 
 Binary dilation has two implementations with deliberately different roles:

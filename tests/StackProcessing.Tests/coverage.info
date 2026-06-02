@@ -1120,219 +1120,218 @@ BRDA:965,798,1,0
 BRDA:969,698,0,0
 BRDA:969,698,1,0
 BRDA:965,798,0,0
-FN:977,Image/Image`1<System.Byte> ImageFunctions::binaryDilateZonohedralNative(System.UInt32,Image/Image`1<System.Byte>)
+FN:978,Image/Image`1<System.Byte> ImageFunctions::binaryDilateZonohedralNative(System.UInt32,Image/Image`1<System.Byte>)
 FNDA:2,Image/Image`1<System.Byte> ImageFunctions::binaryDilateZonohedralNative(System.UInt32,Image/Image`1<System.Byte>)
-DA:978,2
-DA:979,0
-DA:981,2
+DA:979,2
+DA:980,0
 DA:982,2
 DA:983,2
 DA:984,2
-DA:986,2
-DA:987,10
-DA:988,6
-DA:990,2
-BRDA:978,8,0,0
-BRDA:978,8,1,2
-BRDA:987,188,1,6
-BRDA:987,188,0,2
-FN:994,Image/Image`1<System.Byte> ImageFunctions::binaryErodeZonohedralNative(System.UInt32,Image/Image`1<System.Byte>)
+DA:985,2
+DA:987,2
+DA:988,10
+DA:989,6
+DA:991,2
+BRDA:979,8,0,0
+BRDA:979,8,1,2
+BRDA:988,188,1,6
+BRDA:988,188,0,2
+FN:995,Image/Image`1<System.Byte> ImageFunctions::binaryErodeZonohedralNative(System.UInt32,Image/Image`1<System.Byte>)
 FNDA:2,Image/Image`1<System.Byte> ImageFunctions::binaryErodeZonohedralNative(System.UInt32,Image/Image`1<System.Byte>)
-DA:995,2
-DA:996,0
-DA:998,2
+DA:996,2
+DA:997,0
 DA:999,2
 DA:1000,2
 DA:1001,2
-DA:1003,2
-DA:1004,10
-DA:1005,6
-DA:1007,2
-BRDA:995,8,0,0
-BRDA:995,8,1,2
-BRDA:1004,188,1,6
-BRDA:1004,188,0,2
-FN:1010,Microsoft.FSharp.Core.FSharpFunc`2<Image/Image`1<System.Byte>,Image/Image`1<System.Byte>> ImageFunctions::binaryOpening(System.UInt32)
+DA:1002,2
+DA:1004,2
+DA:1005,10
+DA:1006,6
+DA:1008,2
+BRDA:996,8,0,0
+BRDA:996,8,1,2
+BRDA:1005,188,1,6
+BRDA:1005,188,0,2
+FN:1011,Microsoft.FSharp.Core.FSharpFunc`2<Image/Image`1<System.Byte>,Image/Image`1<System.Byte>> ImageFunctions::binaryOpening(System.UInt32)
 FNDA:2,Microsoft.FSharp.Core.FSharpFunc`2<Image/Image`1<System.Byte>,Image/Image`1<System.Byte>> ImageFunctions::binaryOpening(System.UInt32)
-DA:1011,2
 DA:1012,2
-DA:1013,11
-DA:1014,2
-DA:1015,11
+DA:1013,2
+DA:1014,11
+DA:1015,2
 DA:1016,11
 DA:1017,11
 DA:1018,11
-DA:1019,13
-FN:1022,Microsoft.FSharp.Core.FSharpFunc`2<Image/Image`1<System.Byte>,Image/Image`1<System.Byte>> ImageFunctions::binaryClosing(System.UInt32)
+DA:1019,11
+DA:1020,13
+FN:1023,Microsoft.FSharp.Core.FSharpFunc`2<Image/Image`1<System.Byte>,Image/Image`1<System.Byte>> ImageFunctions::binaryClosing(System.UInt32)
 FNDA:2,Microsoft.FSharp.Core.FSharpFunc`2<Image/Image`1<System.Byte>,Image/Image`1<System.Byte>> ImageFunctions::binaryClosing(System.UInt32)
-DA:1023,2
 DA:1024,2
-DA:1025,11
-DA:1026,2
-DA:1027,11
+DA:1025,2
+DA:1026,11
+DA:1027,2
 DA:1028,11
-DA:1029,2
-DA:1030,11
-DA:1031,13
-FN:1033,Microsoft.FSharp.Core.FSharpFunc`2<Image/Image`1<T>,Image/Image`1<T>> ImageFunctions::grayscaleErode(System.UInt32)
+DA:1029,11
+DA:1030,2
+DA:1031,11
+DA:1032,13
+FN:1034,Microsoft.FSharp.Core.FSharpFunc`2<Image/Image`1<T>,Image/Image`1<T>> ImageFunctions::grayscaleErode(System.UInt32)
 FNDA:1,Microsoft.FSharp.Core.FSharpFunc`2<Image/Image`1<T>,Image/Image`1<T>> ImageFunctions::grayscaleErode(System.UInt32)
-DA:1034,1
 DA:1035,1
-DA:1036,3
+DA:1036,1
 DA:1037,3
-DA:1038,4
-FN:1040,Microsoft.FSharp.Core.FSharpFunc`2<Image/Image`1<T>,Image/Image`1<T>> ImageFunctions::grayscaleDilate(System.UInt32)
+DA:1038,3
+DA:1039,4
+FN:1041,Microsoft.FSharp.Core.FSharpFunc`2<Image/Image`1<T>,Image/Image`1<T>> ImageFunctions::grayscaleDilate(System.UInt32)
 FNDA:1,Microsoft.FSharp.Core.FSharpFunc`2<Image/Image`1<T>,Image/Image`1<T>> ImageFunctions::grayscaleDilate(System.UInt32)
-DA:1041,1
 DA:1042,1
-DA:1043,3
+DA:1043,1
 DA:1044,3
-DA:1045,4
-FN:1047,Microsoft.FSharp.Core.FSharpFunc`2<Image/Image`1<T>,Image/Image`1<T>> ImageFunctions::grayscaleOpening(System.UInt32)
+DA:1045,3
+DA:1046,4
+FN:1048,Microsoft.FSharp.Core.FSharpFunc`2<Image/Image`1<T>,Image/Image`1<T>> ImageFunctions::grayscaleOpening(System.UInt32)
 FNDA:1,Microsoft.FSharp.Core.FSharpFunc`2<Image/Image`1<T>,Image/Image`1<T>> ImageFunctions::grayscaleOpening(System.UInt32)
-DA:1048,1
 DA:1049,1
-DA:1050,3
+DA:1050,1
 DA:1051,3
-DA:1052,4
-FN:1054,Microsoft.FSharp.Core.FSharpFunc`2<Image/Image`1<T>,Image/Image`1<T>> ImageFunctions::grayscaleClosing(System.UInt32)
+DA:1052,3
+DA:1053,4
+FN:1055,Microsoft.FSharp.Core.FSharpFunc`2<Image/Image`1<T>,Image/Image`1<T>> ImageFunctions::grayscaleClosing(System.UInt32)
 FNDA:1,Microsoft.FSharp.Core.FSharpFunc`2<Image/Image`1<T>,Image/Image`1<T>> ImageFunctions::grayscaleClosing(System.UInt32)
-DA:1055,1
 DA:1056,1
-DA:1057,3
+DA:1057,1
 DA:1058,3
-DA:1059,4
-FN:1061,Microsoft.FSharp.Core.FSharpFunc`2<Image/Image`1<T>,Image/Image`1<T>> ImageFunctions::whiteTopHat(System.UInt32)
+DA:1059,3
+DA:1060,4
+FN:1062,Microsoft.FSharp.Core.FSharpFunc`2<Image/Image`1<T>,Image/Image`1<T>> ImageFunctions::whiteTopHat(System.UInt32)
 FNDA:1,Microsoft.FSharp.Core.FSharpFunc`2<Image/Image`1<T>,Image/Image`1<T>> ImageFunctions::whiteTopHat(System.UInt32)
-DA:1062,1
 DA:1063,1
-DA:1064,3
+DA:1064,1
 DA:1065,3
-DA:1066,4
-FN:1068,Microsoft.FSharp.Core.FSharpFunc`2<Image/Image`1<T>,Image/Image`1<T>> ImageFunctions::blackTopHat(System.UInt32)
+DA:1066,3
+DA:1067,4
+FN:1069,Microsoft.FSharp.Core.FSharpFunc`2<Image/Image`1<T>,Image/Image`1<T>> ImageFunctions::blackTopHat(System.UInt32)
 FNDA:1,Microsoft.FSharp.Core.FSharpFunc`2<Image/Image`1<T>,Image/Image`1<T>> ImageFunctions::blackTopHat(System.UInt32)
-DA:1069,1
 DA:1070,1
-DA:1071,3
+DA:1071,1
 DA:1072,3
-DA:1073,4
-FN:1075,Microsoft.FSharp.Core.FSharpFunc`2<Image/Image`1<T>,Image/Image`1<T>> ImageFunctions::morphologicalGradient(System.UInt32)
+DA:1073,3
+DA:1074,4
+FN:1076,Microsoft.FSharp.Core.FSharpFunc`2<Image/Image`1<T>,Image/Image`1<T>> ImageFunctions::morphologicalGradient(System.UInt32)
 FNDA:1,Microsoft.FSharp.Core.FSharpFunc`2<Image/Image`1<T>,Image/Image`1<T>> ImageFunctions::morphologicalGradient(System.UInt32)
-DA:1076,1
 DA:1077,1
-DA:1078,3
+DA:1078,1
 DA:1079,3
-DA:1080,4
-FN:1083,Image/Image`1<System.Byte> ImageFunctions::binaryFillHoles(Image/Image`1<System.Byte>)
+DA:1080,3
+DA:1081,4
+FN:1084,Image/Image`1<System.Byte> ImageFunctions::binaryFillHoles(Image/Image`1<System.Byte>)
 FNDA:0,Image/Image`1<System.Byte> ImageFunctions::binaryFillHoles(Image/Image`1<System.Byte>)
-DA:1084,0
 DA:1085,0
-FN:1087,Microsoft.FSharp.Core.FSharpFunc`2<Image/Image`1<System.Byte>,Image/Image`1<System.Byte>> ImageFunctions::binaryContour(System.Boolean)
+DA:1086,0
+FN:1088,Microsoft.FSharp.Core.FSharpFunc`2<Image/Image`1<System.Byte>,Image/Image`1<System.Byte>> ImageFunctions::binaryContour(System.Boolean)
 FNDA:3,Microsoft.FSharp.Core.FSharpFunc`2<Image/Image`1<System.Byte>,Image/Image`1<System.Byte>> ImageFunctions::binaryContour(System.Boolean)
-DA:1088,3
 DA:1089,3
 DA:1090,3
 DA:1091,3
-DA:1092,6
-FN:1094,Image/Image`1<System.Byte> ImageFunctions::binaryThinning(Image/Image`1<System.Byte>)
+DA:1092,3
+DA:1093,6
+FN:1095,Image/Image`1<System.Byte> ImageFunctions::binaryThinning(Image/Image`1<System.Byte>)
 FNDA:0,Image/Image`1<System.Byte> ImageFunctions::binaryThinning(Image/Image`1<System.Byte>)
-DA:1095,0
 DA:1096,0
-FN:1098,Microsoft.FSharp.Core.FSharpFunc`2<Image/Image`1<System.Byte>,Image/Image`1<System.Byte>> ImageFunctions::binaryMedian(System.UInt32)
+DA:1097,0
+FN:1099,Microsoft.FSharp.Core.FSharpFunc`2<Image/Image`1<System.Byte>,Image/Image`1<System.Byte>> ImageFunctions::binaryMedian(System.UInt32)
 FNDA:3,Microsoft.FSharp.Core.FSharpFunc`2<Image/Image`1<System.Byte>,Image/Image`1<System.Byte>> ImageFunctions::binaryMedian(System.UInt32)
-DA:1099,3
 DA:1100,3
 DA:1101,3
 DA:1102,3
-DA:1103,6
-FN:1105,Microsoft.FSharp.Core.FSharpFunc`2<Image/Image`1<System.Byte>,Image/Image`1<System.Byte>> ImageFunctions::binaryOpeningByReconstruction(System.UInt32,System.Boolean)
+DA:1103,3
+DA:1104,6
+FN:1106,Microsoft.FSharp.Core.FSharpFunc`2<Image/Image`1<System.Byte>,Image/Image`1<System.Byte>> ImageFunctions::binaryOpeningByReconstruction(System.UInt32,System.Boolean)
 FNDA:0,Microsoft.FSharp.Core.FSharpFunc`2<Image/Image`1<System.Byte>,Image/Image`1<System.Byte>> ImageFunctions::binaryOpeningByReconstruction(System.UInt32,System.Boolean)
-DA:1106,0
 DA:1107,0
 DA:1108,0
 DA:1109,0
 DA:1110,0
 DA:1111,0
 DA:1112,0
-FN:1114,Microsoft.FSharp.Core.FSharpFunc`2<Image/Image`1<System.Byte>,Image/Image`1<System.Byte>> ImageFunctions::binaryClosingByReconstruction(System.UInt32,System.Boolean)
+DA:1113,0
+FN:1115,Microsoft.FSharp.Core.FSharpFunc`2<Image/Image`1<System.Byte>,Image/Image`1<System.Byte>> ImageFunctions::binaryClosingByReconstruction(System.UInt32,System.Boolean)
 FNDA:0,Microsoft.FSharp.Core.FSharpFunc`2<Image/Image`1<System.Byte>,Image/Image`1<System.Byte>> ImageFunctions::binaryClosingByReconstruction(System.UInt32,System.Boolean)
-DA:1115,0
 DA:1116,0
 DA:1117,0
 DA:1118,0
 DA:1119,0
 DA:1120,0
 DA:1121,0
-FN:1123,Image/Image`1<System.Byte> ImageFunctions::binaryReconstructionByDilation(System.Boolean,Image/Image`1<System.Byte>,Image/Image`1<System.Byte>)
+DA:1122,0
+FN:1124,Image/Image`1<System.Byte> ImageFunctions::binaryReconstructionByDilation(System.Boolean,Image/Image`1<System.Byte>,Image/Image`1<System.Byte>)
 FNDA:0,Image/Image`1<System.Byte> ImageFunctions::binaryReconstructionByDilation(System.Boolean,Image/Image`1<System.Byte>,Image/Image`1<System.Byte>)
-DA:1124,0
 DA:1125,0
 DA:1126,0
-FN:1128,Image/Image`1<System.Byte> ImageFunctions::binaryReconstructionByErosion(System.Boolean,Image/Image`1<System.Byte>,Image/Image`1<System.Byte>)
+DA:1127,0
+FN:1129,Image/Image`1<System.Byte> ImageFunctions::binaryReconstructionByErosion(System.Boolean,Image/Image`1<System.Byte>,Image/Image`1<System.Byte>)
 FNDA:0,Image/Image`1<System.Byte> ImageFunctions::binaryReconstructionByErosion(System.Boolean,Image/Image`1<System.Byte>,Image/Image`1<System.Byte>)
-DA:1129,0
 DA:1130,0
 DA:1131,0
-FN:1133,Microsoft.FSharp.Core.FSharpFunc`2<Image/Image`1<System.Byte>,Image/Image`1<System.Byte>> ImageFunctions::votingBinaryHoleFilling(System.UInt32,System.UInt32)
+DA:1132,0
+FN:1134,Microsoft.FSharp.Core.FSharpFunc`2<Image/Image`1<System.Byte>,Image/Image`1<System.Byte>> ImageFunctions::votingBinaryHoleFilling(System.UInt32,System.UInt32)
 FNDA:0,Microsoft.FSharp.Core.FSharpFunc`2<Image/Image`1<System.Byte>,Image/Image`1<System.Byte>> ImageFunctions::votingBinaryHoleFilling(System.UInt32,System.UInt32)
-DA:1134,0
 DA:1135,0
 DA:1136,0
 DA:1137,0
 DA:1138,0
 DA:1139,0
 DA:1140,0
-FN:1148,ImageFunctions/ConnectedComponentsResult ImageFunctions::connectedComponents(Image/Image`1<System.Byte>)
+DA:1141,0
+FN:1149,ImageFunctions/ConnectedComponentsResult ImageFunctions::connectedComponents(Image/Image`1<System.Byte>)
 FNDA:9,ImageFunctions/ConnectedComponentsResult ImageFunctions::connectedComponents(Image/Image`1<System.Byte>)
-DA:1149,9
 DA:1150,9
 DA:1151,9
-FN:1154,Microsoft.FSharp.Core.FSharpFunc`2<Image/Image`1<T>,Image/Image`1<T>> ImageFunctions::relabelComponents(System.UInt32)
+DA:1152,9
+FN:1155,Microsoft.FSharp.Core.FSharpFunc`2<Image/Image`1<T>,Image/Image`1<T>> ImageFunctions::relabelComponents(System.UInt32)
 FNDA:2,Microsoft.FSharp.Core.FSharpFunc`2<Image/Image`1<T>,Image/Image`1<T>> ImageFunctions::relabelComponents(System.UInt32)
-DA:1155,2
 DA:1156,2
 DA:1157,2
 DA:1158,2
-DA:1159,4
-FN:1190,Microsoft.FSharp.Collections.FSharpMap`2<System.Int64,ImageFunctions/LabelShapeStatistics> ImageFunctions::labelShapeStatistics(Image/Image`1<T>)
+DA:1159,2
+DA:1160,4
+FN:1191,Microsoft.FSharp.Collections.FSharpMap`2<System.Int64,ImageFunctions/LabelShapeStatistics> ImageFunctions::labelShapeStatistics(Image/Image`1<T>)
 FNDA:1,Microsoft.FSharp.Collections.FSharpMap`2<System.Int64,ImageFunctions/LabelShapeStatistics> ImageFunctions::labelShapeStatistics(Image/Image`1<T>)
-DA:1191,1
 DA:1192,1
 DA:1193,1
 DA:1194,1
-DA:1195,2
+DA:1195,1
 DA:1196,2
 DA:1197,2
-DA:1198,4
+DA:1198,2
 DA:1199,4
-DA:1200,2
+DA:1200,4
 DA:1201,2
 DA:1202,2
-DA:1203,4
-DA:1204,2
+DA:1203,2
+DA:1204,4
 DA:1205,2
 DA:1206,2
 DA:1207,2
 DA:1208,2
-DA:1209,4
+DA:1209,2
 DA:1210,4
 DA:1211,4
 DA:1212,4
-DA:1213,2
+DA:1213,4
 DA:1214,2
 DA:1215,2
-DA:1216,4
+DA:1216,2
 DA:1217,4
 DA:1218,4
-DA:1219,2
+DA:1219,4
 DA:1220,2
 DA:1221,2
 DA:1222,2
-DA:1223,1
+DA:1223,2
 DA:1224,1
-FN:1244,Microsoft.FSharp.Collections.FSharpMap`2<System.Int64,ImageFunctions/LabelIntensityStatistics> ImageFunctions::labelIntensityStatistics(Image/Image`1<L>,Image/Image`1<T>)
+DA:1225,1
+FN:1245,Microsoft.FSharp.Collections.FSharpMap`2<System.Int64,ImageFunctions/LabelIntensityStatistics> ImageFunctions::labelIntensityStatistics(Image/Image`1<L>,Image/Image`1<T>)
 FNDA:0,Microsoft.FSharp.Collections.FSharpMap`2<System.Int64,ImageFunctions/LabelIntensityStatistics> ImageFunctions::labelIntensityStatistics(Image/Image`1<L>,Image/Image`1<T>)
-DA:1245,0
 DA:1246,0
 DA:1247,0
 DA:1248,0
@@ -1353,9 +1352,9 @@ DA:1262,0
 DA:1263,0
 DA:1264,0
 DA:1265,0
-FN:1278,ImageFunctions/LabelOverlapMeasures ImageFunctions::labelOverlapMeasures(Image/Image`1<T>,Image/Image`1<T>)
+DA:1266,0
+FN:1279,ImageFunctions/LabelOverlapMeasures ImageFunctions::labelOverlapMeasures(Image/Image`1<T>,Image/Image`1<T>)
 FNDA:0,ImageFunctions/LabelOverlapMeasures ImageFunctions::labelOverlapMeasures(Image/Image`1<T>,Image/Image`1<T>)
-DA:1279,0
 DA:1280,0
 DA:1281,0
 DA:1282,0
@@ -1365,110 +1364,110 @@ DA:1285,0
 DA:1286,0
 DA:1287,0
 DA:1288,0
-FN:1290,Microsoft.FSharp.Core.FSharpFunc`2<Image/Image`1<T>,Image/Image`1<T>> ImageFunctions::labelContour(System.Boolean)
+DA:1289,0
+FN:1291,Microsoft.FSharp.Core.FSharpFunc`2<Image/Image`1<T>,Image/Image`1<T>> ImageFunctions::labelContour(System.Boolean)
 FNDA:1,Microsoft.FSharp.Core.FSharpFunc`2<Image/Image`1<T>,Image/Image`1<T>> ImageFunctions::labelContour(System.Boolean)
-DA:1291,1
 DA:1292,1
-DA:1293,3
+DA:1293,1
 DA:1294,3
-DA:1295,4
-FN:1297,Microsoft.FSharp.Core.FSharpFunc`2<Image/Image`1<T>,Image/Image`1<T>> ImageFunctions::changeLabel(System.Double,System.Double)
+DA:1295,3
+DA:1296,4
+FN:1298,Microsoft.FSharp.Core.FSharpFunc`2<Image/Image`1<T>,Image/Image`1<T>> ImageFunctions::changeLabel(System.Double,System.Double)
 FNDA:1,Microsoft.FSharp.Core.FSharpFunc`2<Image/Image`1<T>,Image/Image`1<T>> ImageFunctions::changeLabel(System.Double,System.Double)
-DA:1298,1
 DA:1299,1
-DA:1300,3
-DA:1301,1
-DA:1302,3
+DA:1300,1
+DA:1301,3
+DA:1302,1
 DA:1303,3
 DA:1304,3
-DA:1305,4
-FN:1308,Image/Image`1<System.Double> ImageFunctions::signedDistanceMap(System.Byte,System.Byte,Image/Image`1<System.Byte>)
+DA:1305,3
+DA:1306,4
+FN:1309,Image/Image`1<System.Double> ImageFunctions::signedDistanceMap(System.Byte,System.Byte,Image/Image`1<System.Byte>)
 FNDA:7,Image/Image`1<System.Double> ImageFunctions::signedDistanceMap(System.Byte,System.Byte,Image/Image`1<System.Byte>)
-DA:1309,7
 DA:1310,7
 DA:1311,7
 DA:1312,7
 DA:1313,7
 DA:1314,7
-FN:1316,Image/Image`1<System.Double> ImageFunctions::bandSignedDistanceMap(System.UInt32,Image/Image`1<System.Byte>)
+DA:1315,7
+FN:1317,Image/Image`1<System.Double> ImageFunctions::bandSignedDistanceMap(System.UInt32,Image/Image`1<System.Byte>)
 FNDA:7,Image/Image`1<System.Double> ImageFunctions::bandSignedDistanceMap(System.UInt32,Image/Image`1<System.Byte>)
-DA:1317,7
-DA:1318,0
-DA:1320,7
-DA:1321,8153
-DA:1324,7
+DA:1318,7
+DA:1319,0
+DA:1321,7
+DA:1322,8153
 DA:1325,7
 DA:1326,7
 DA:1327,7
-DA:1329,7
+DA:1328,7
 DA:1330,7
-DA:1331,8153
-DA:1332,7
+DA:1331,7
+DA:1332,8153
 DA:1333,7
-BRDA:1317,2,0,0
-BRDA:1317,2,1,7
-FN:1336,Microsoft.FSharp.Core.FSharpFunc`2<Image/Image`1<T>,Image/Image`1<T>> ImageFunctions::watershed(System.Double)
+DA:1334,7
+BRDA:1318,2,0,0
+BRDA:1318,2,1,7
+FN:1337,Microsoft.FSharp.Core.FSharpFunc`2<Image/Image`1<T>,Image/Image`1<T>> ImageFunctions::watershed(System.Double)
 FNDA:0,Microsoft.FSharp.Core.FSharpFunc`2<Image/Image`1<T>,Image/Image`1<T>> ImageFunctions::watershed(System.Double)
-DA:1337,0
 DA:1338,0
 DA:1339,0
 DA:1340,0
 DA:1341,0
 DA:1342,0
 DA:1343,0
-FN:1357,ImageFunctions/ImageStats ImageFunctions::computeStats(Image/Image`1<T>)
+DA:1344,0
+FN:1358,ImageFunctions/ImageStats ImageFunctions::computeStats(Image/Image`1<T>)
 FNDA:25,ImageFunctions/ImageStats ImageFunctions::computeStats(Image/Image`1<T>)
-DA:1358,25
 DA:1359,25
 DA:1360,25
-DA:1361,50
-DA:1362,25
+DA:1361,25
+DA:1362,50
 DA:1363,25
 DA:1364,25
 DA:1365,25
 DA:1366,25
 DA:1367,25
 DA:1368,25
-FN:1371,ImageFunctions/ImageStats ImageFunctions::addComputeStats(ImageFunctions/ImageStats,ImageFunctions/ImageStats)
+DA:1369,25
+FN:1372,ImageFunctions/ImageStats ImageFunctions::addComputeStats(ImageFunctions/ImageStats,ImageFunctions/ImageStats)
 FNDA:120,ImageFunctions/ImageStats ImageFunctions::addComputeStats(ImageFunctions/ImageStats,ImageFunctions/ImageStats)
-DA:1372,120
-DA:1373,24
+DA:1373,120
 DA:1374,24
 DA:1375,24
 DA:1376,24
 DA:1377,24
 DA:1378,24
 DA:1379,24
-DA:1380,48
-DA:1381,24
+DA:1380,24
+DA:1381,48
 DA:1382,24
 DA:1383,24
 DA:1384,24
 DA:1385,24
 DA:1386,24
 DA:1387,24
-FN:1390,Microsoft.FSharp.Collections.FSharpList`1<T> ImageFunctions::unique(Image/Image`1<T>)
+DA:1388,24
+FN:1391,Microsoft.FSharp.Collections.FSharpList`1<T> ImageFunctions::unique(Image/Image`1<T>)
 FNDA:0,Microsoft.FSharp.Collections.FSharpList`1<T> ImageFunctions::unique(Image/Image`1<T>)
-DA:1391,0
 DA:1392,0
 DA:1393,0
-FN:1395,System.Collections.Generic.IEnumerable`1<T> ImageFunctions::imageValues(Image/Image`1<T>)
+DA:1394,0
+FN:1396,System.Collections.Generic.IEnumerable`1<T> ImageFunctions::imageValues(Image/Image`1<T>)
 FNDA:25,System.Collections.Generic.IEnumerable`1<T> ImageFunctions::imageValues(Image/Image`1<T>)
-DA:1396,25
-DA:1398,24
+DA:1397,25
 DA:1399,24
-DA:1400,288
-DA:1401,2904
-DA:1402,2256
-DA:1403,24
-DA:1405,1
+DA:1400,24
+DA:1401,288
+DA:1402,2904
+DA:1403,2256
+DA:1404,24
 DA:1406,1
-DA:1407,15
-DA:1408,180
-DA:1409,2160
-DA:1410,1728
-DA:1411,1
-DA:1413,0
+DA:1407,1
+DA:1408,15
+DA:1409,180
+DA:1410,2160
+DA:1411,1728
+DA:1412,1
 DA:1414,0
 DA:1415,0
 DA:1416,0
@@ -1477,37 +1476,37 @@ DA:1418,0
 DA:1419,0
 DA:1420,0
 DA:1421,0
-BRDA:1396,9,1,24
-BRDA:1396,9,2,1
-BRDA:1396,9,3,0
-BRDA:1396,9,0,0
-FN:1423,Microsoft.FSharp.Collections.FSharpList`1<System.Double> ImageFunctions::valuesFromImages(System.UInt32,Microsoft.FSharp.Collections.FSharpList`1<Image/Image`1<T>>,a)
+DA:1422,0
+BRDA:1397,9,1,24
+BRDA:1397,9,2,1
+BRDA:1397,9,3,0
+BRDA:1397,9,0,0
+FN:1424,Microsoft.FSharp.Collections.FSharpList`1<System.Double> ImageFunctions::valuesFromImages(System.UInt32,Microsoft.FSharp.Collections.FSharpList`1<Image/Image`1<T>>,a)
 FNDA:0,Microsoft.FSharp.Collections.FSharpList`1<System.Double> ImageFunctions::valuesFromImages(System.UInt32,Microsoft.FSharp.Collections.FSharpList`1<Image/Image`1<T>>,a)
-DA:1424,0
 DA:1425,0
 DA:1426,0
 DA:1427,0
-DA:1431,0
+DA:1428,0
 DA:1432,0
 DA:1433,0
 DA:1434,0
 DA:1435,0
-DA:1437,0
+DA:1436,0
 DA:1438,0
 DA:1439,0
-BRDA:1424,3,0,0
-BRDA:1424,3,1,0
-BRDA:1426,63,0,0
-BRDA:1426,63,1,0
-BRDA:1437,150,0,0
-BRDA:1437,150,1,0
-FN:1441,System.Tuple`4<System.Double,System.Double,System.Double,System.UInt64[]> ImageFunctions::binnedHistogram(System.UInt32,Microsoft.FSharp.Collections.FSharpList`1<System.Double>)
+DA:1440,0
+BRDA:1425,3,0,0
+BRDA:1425,3,1,0
+BRDA:1427,63,0,0
+BRDA:1427,63,1,0
+BRDA:1438,150,0,0
+BRDA:1438,150,1,0
+FN:1442,System.Tuple`4<System.Double,System.Double,System.Double,System.UInt64[]> ImageFunctions::binnedHistogram(System.UInt32,Microsoft.FSharp.Collections.FSharpList`1<System.Double>)
 FNDA:0,System.Tuple`4<System.Double,System.Double,System.Double,System.UInt64[]> ImageFunctions::binnedHistogram(System.UInt32,Microsoft.FSharp.Collections.FSharpList`1<System.Double>)
-DA:1442,0
 DA:1443,0
 DA:1444,0
 DA:1445,0
-DA:1447,0
+DA:1446,0
 DA:1448,0
 DA:1449,0
 DA:1450,0
@@ -1521,112 +1520,112 @@ DA:1457,0
 DA:1458,0
 DA:1459,0
 DA:1460,0
-BRDA:1442,10,1,0
-BRDA:1442,10,0,0
-BRDA:1442,111,1,0
-BRDA:1442,86,0,0
-BRDA:1442,86,1,0
-BRDA:1442,111,0,0
-BRDA:1443,131,1,0
-BRDA:1443,131,0,0
-BRDA:1443,236,1,0
-BRDA:1443,211,0,0
-BRDA:1443,211,1,0
-BRDA:1443,236,0,0
-BRDA:1444,249,0,0
-BRDA:1444,249,1,0
-BRDA:1459,458,1,0
-BRDA:1453,354,0,0
-BRDA:1453,354,1,0
-BRDA:1457,384,0,0
-BRDA:1457,384,1,0
-BRDA:1458,410,0,0
-BRDA:1458,410,1,0
-BRDA:1459,458,0,0
-FN:1462,Microsoft.FSharp.Collections.FSharpList`1<System.Tuple`2<System.Double,System.UInt64>> ImageFunctions::orderedHistogramValues(Microsoft.FSharp.Collections.FSharpMap`2<T,System.UInt64>,a)
+DA:1461,0
+BRDA:1443,10,1,0
+BRDA:1443,10,0,0
+BRDA:1443,111,1,0
+BRDA:1443,86,0,0
+BRDA:1443,86,1,0
+BRDA:1443,111,0,0
+BRDA:1444,131,1,0
+BRDA:1444,131,0,0
+BRDA:1444,236,1,0
+BRDA:1444,211,0,0
+BRDA:1444,211,1,0
+BRDA:1444,236,0,0
+BRDA:1445,249,0,0
+BRDA:1445,249,1,0
+BRDA:1460,458,1,0
+BRDA:1454,354,0,0
+BRDA:1454,354,1,0
+BRDA:1458,384,0,0
+BRDA:1458,384,1,0
+BRDA:1459,410,0,0
+BRDA:1459,410,1,0
+BRDA:1460,458,0,0
+FN:1463,Microsoft.FSharp.Collections.FSharpList`1<System.Tuple`2<System.Double,System.UInt64>> ImageFunctions::orderedHistogramValues(Microsoft.FSharp.Collections.FSharpMap`2<T,System.UInt64>,a)
 FNDA:4,Microsoft.FSharp.Collections.FSharpList`1<System.Tuple`2<System.Double,System.UInt64>> ImageFunctions::orderedHistogramValues(Microsoft.FSharp.Collections.FSharpMap`2<T,System.UInt64>,a)
-DA:1463,4
-DA:1464,0
-DA:1467,4
+DA:1464,4
+DA:1465,0
 DA:1468,4
 DA:1469,4
-DA:1470,8
-DA:1471,0
-DA:1472,4
-DA:1473,12
-DA:1474,4
-DA:1476,4
-DA:1477,0
-DA:1479,4
-BRDA:1463,7,0,0
-BRDA:1463,7,1,4
-BRDA:1476,104,0,0
-BRDA:1476,104,1,4
-FN:1481,System.Double ImageFunctions::otsuThresholdFromHistogram(Microsoft.FSharp.Collections.FSharpMap`2<T,System.UInt64>)
+DA:1470,4
+DA:1471,8
+DA:1472,0
+DA:1473,4
+DA:1474,12
+DA:1475,4
+DA:1477,4
+DA:1478,0
+DA:1480,4
+BRDA:1464,7,0,0
+BRDA:1464,7,1,4
+BRDA:1477,104,0,0
+BRDA:1477,104,1,4
+FN:1482,System.Double ImageFunctions::otsuThresholdFromHistogram(Microsoft.FSharp.Collections.FSharpMap`2<T,System.UInt64>)
 FNDA:2,System.Double ImageFunctions::otsuThresholdFromHistogram(Microsoft.FSharp.Collections.FSharpMap`2<T,System.UInt64>)
-DA:1482,2
 DA:1483,2
-DA:1484,0
-DA:1486,4
-DA:1487,8
-DA:1488,2
+DA:1484,2
+DA:1485,0
+DA:1487,4
+DA:1488,8
 DA:1489,2
 DA:1490,2
 DA:1491,2
-DA:1493,4
-DA:1494,2
+DA:1492,2
+DA:1494,4
 DA:1495,2
 DA:1496,2
 DA:1497,2
-DA:1498,6
-DA:1499,2
+DA:1498,2
+DA:1499,6
 DA:1500,2
 DA:1501,2
 DA:1502,2
 DA:1503,2
 DA:1504,2
 DA:1505,2
-DA:1507,2
-BRDA:1483,20,0,2
-BRDA:1483,35,0,0
-BRDA:1483,20,1,2
-BRDA:1483,35,1,2
-BRDA:1486,90,0,0
-BRDA:1486,90,1,2
-BRDA:1486,168,1,4
-BRDA:1486,168,0,2
-BRDA:1487,189,0,0
-BRDA:1487,189,1,2
-BRDA:1487,287,1,4
-BRDA:1487,287,0,2
-BRDA:1493,358,0,2
-BRDA:1493,600,1,2
-BRDA:1498,433,0,2
-BRDA:1498,433,1,0
-BRDA:1498,453,0,2
-BRDA:1501,497,0,2
-BRDA:1501,497,1,0
-BRDA:1502,541,0,2
-BRDA:1502,541,1,0
-BRDA:1498,453,1,0
-BRDA:1493,358,1,2
-BRDA:1493,600,0,2
-FN:1509,System.Double ImageFunctions::otsuThresholdFromImages(System.UInt32,Microsoft.FSharp.Collections.FSharpList`1<Image/Image`1<a>>)
+DA:1506,2
+DA:1508,2
+BRDA:1484,20,0,2
+BRDA:1484,35,0,0
+BRDA:1484,20,1,2
+BRDA:1484,35,1,2
+BRDA:1487,90,0,0
+BRDA:1487,90,1,2
+BRDA:1487,168,1,4
+BRDA:1487,168,0,2
+BRDA:1488,189,0,0
+BRDA:1488,189,1,2
+BRDA:1488,287,1,4
+BRDA:1488,287,0,2
+BRDA:1494,358,0,2
+BRDA:1494,600,1,2
+BRDA:1499,433,0,2
+BRDA:1499,433,1,0
+BRDA:1499,453,0,2
+BRDA:1502,497,0,2
+BRDA:1502,497,1,0
+BRDA:1503,541,0,2
+BRDA:1503,541,1,0
+BRDA:1499,453,1,0
+BRDA:1494,358,1,2
+BRDA:1494,600,0,2
+FN:1510,System.Double ImageFunctions::otsuThresholdFromImages(System.UInt32,Microsoft.FSharp.Collections.FSharpList`1<Image/Image`1<a>>)
 FNDA:0,System.Double ImageFunctions::otsuThresholdFromImages(System.UInt32,Microsoft.FSharp.Collections.FSharpList`1<Image/Image`1<a>>)
-DA:1510,0
 DA:1511,0
 DA:1512,0
 DA:1513,0
-DA:1515,0
+DA:1514,0
 DA:1516,0
-DA:1518,0
+DA:1517,0
 DA:1519,0
 DA:1520,0
-DA:1522,0
+DA:1521,0
 DA:1523,0
 DA:1524,0
 DA:1525,0
-DA:1527,0
+DA:1526,0
 DA:1528,0
 DA:1529,0
 DA:1530,0
@@ -1638,76 +1637,76 @@ DA:1535,0
 DA:1536,0
 DA:1537,0
 DA:1538,0
-DA:1540,0
-BRDA:1512,57,0,0
-BRDA:1512,57,1,0
-BRDA:1516,82,0,0
-BRDA:1516,82,1,0
-BRDA:1516,140,1,0
-BRDA:1516,140,0,0
-BRDA:1520,175,0,0
-BRDA:1520,175,1,0
-BRDA:1520,239,1,0
-BRDA:1520,239,0,0
-BRDA:1527,294,0,0
-BRDA:1527,496,1,0
-BRDA:1532,362,0,0
-BRDA:1532,362,1,0
-BRDA:1532,382,0,0
-BRDA:1535,423,0,0
-BRDA:1535,423,1,0
-BRDA:1536,467,0,0
-BRDA:1536,467,1,0
-BRDA:1532,382,1,0
-BRDA:1527,294,1,0
-BRDA:1527,496,0,0
-FN:1543,Image/Image`1<System.Byte> ImageFunctions::otsuThreshold(Image/Image`1<T>)
+DA:1539,0
+DA:1541,0
+BRDA:1513,57,0,0
+BRDA:1513,57,1,0
+BRDA:1517,82,0,0
+BRDA:1517,82,1,0
+BRDA:1517,140,1,0
+BRDA:1517,140,0,0
+BRDA:1521,175,0,0
+BRDA:1521,175,1,0
+BRDA:1521,239,1,0
+BRDA:1521,239,0,0
+BRDA:1528,294,0,0
+BRDA:1528,496,1,0
+BRDA:1533,362,0,0
+BRDA:1533,362,1,0
+BRDA:1533,382,0,0
+BRDA:1536,423,0,0
+BRDA:1536,423,1,0
+BRDA:1537,467,0,0
+BRDA:1537,467,1,0
+BRDA:1533,382,1,0
+BRDA:1528,294,1,0
+BRDA:1528,496,0,0
+FN:1544,Image/Image`1<System.Byte> ImageFunctions::otsuThreshold(Image/Image`1<T>)
 FNDA:0,Image/Image`1<System.Byte> ImageFunctions::otsuThreshold(Image/Image`1<T>)
-DA:1544,0
 DA:1545,0
 DA:1546,0
 DA:1547,0
 DA:1548,0
 DA:1549,0
 DA:1550,0
-FN:1553,Image/Image`1<System.Byte> ImageFunctions::otsuMultiThreshold(System.Byte,Image/Image`1<T>)
+DA:1551,0
+FN:1554,Image/Image`1<System.Byte> ImageFunctions::otsuMultiThreshold(System.Byte,Image/Image`1<T>)
 FNDA:0,Image/Image`1<System.Byte> ImageFunctions::otsuMultiThreshold(System.Byte,Image/Image`1<T>)
-DA:1554,0
 DA:1555,0
 DA:1556,0
-FN:1559,System.Double ImageFunctions::momentsThresholdFromHistogram(Microsoft.FSharp.Collections.FSharpMap`2<T,System.UInt64>)
+DA:1557,0
+FN:1560,System.Double ImageFunctions::momentsThresholdFromHistogram(Microsoft.FSharp.Collections.FSharpMap`2<T,System.UInt64>)
 FNDA:2,System.Double ImageFunctions::momentsThresholdFromHistogram(Microsoft.FSharp.Collections.FSharpMap`2<T,System.UInt64>)
-DA:1560,2
 DA:1561,2
-DA:1562,0
-DA:1564,4
-DA:1570,2
+DA:1562,2
+DA:1563,0
+DA:1565,4
 DA:1571,2
 DA:1572,2
 DA:1573,2
 DA:1574,2
-DA:1576,2
-DA:1577,0
-DA:1579,2
+DA:1575,2
+DA:1577,2
+DA:1578,0
 DA:1580,2
 DA:1581,2
-DA:1583,2
-DA:1584,0
-DA:1586,2
+DA:1582,2
+DA:1584,2
+DA:1585,0
 DA:1587,2
 DA:1588,2
 DA:1589,2
-DA:1591,2
-DA:1592,0
-DA:1594,6
-DA:1595,2
+DA:1590,2
+DA:1592,2
+DA:1593,0
+DA:1595,6
 DA:1596,2
 DA:1597,2
 DA:1598,2
-DA:1600,6
-DA:1601,4
+DA:1599,2
+DA:1601,6
 DA:1602,4
-DA:1603,2
+DA:1603,4
 DA:1604,2
 DA:1605,2
 DA:1606,2
@@ -1715,102 +1714,102 @@ DA:1607,2
 DA:1608,2
 DA:1609,2
 DA:1610,2
-DA:1612,2
-BRDA:1561,20,0,2
-BRDA:1561,35,0,0
-BRDA:1561,20,1,2
-BRDA:1561,35,1,2
-BRDA:1564,90,0,0
-BRDA:1564,90,1,2
-BRDA:1564,168,1,4
-BRDA:1564,168,0,2
-BRDA:1576,282,0,0
-BRDA:1576,282,1,2
-BRDA:1583,352,0,0
-BRDA:1583,352,1,2
-BRDA:1591,428,0,0
-BRDA:1591,428,1,2
-BRDA:1600,546,0,4
-BRDA:1600,676,1,4
-BRDA:1602,586,0,2
-BRDA:1604,602,0,2
-BRDA:1606,616,0,2
-BRDA:1606,616,1,0
-BRDA:1604,602,1,0
-BRDA:1602,586,1,2
-BRDA:1600,546,1,2
-BRDA:1600,676,0,2
-FN:1614,System.Double ImageFunctions::momentsThresholdFromImages(System.UInt32,Microsoft.FSharp.Collections.FSharpList`1<Image/Image`1<a>>)
+DA:1611,2
+DA:1613,2
+BRDA:1562,20,0,2
+BRDA:1562,35,0,0
+BRDA:1562,20,1,2
+BRDA:1562,35,1,2
+BRDA:1565,90,0,0
+BRDA:1565,90,1,2
+BRDA:1565,168,1,4
+BRDA:1565,168,0,2
+BRDA:1577,282,0,0
+BRDA:1577,282,1,2
+BRDA:1584,352,0,0
+BRDA:1584,352,1,2
+BRDA:1592,428,0,0
+BRDA:1592,428,1,2
+BRDA:1601,546,0,4
+BRDA:1601,676,1,4
+BRDA:1603,586,0,2
+BRDA:1605,602,0,2
+BRDA:1607,616,0,2
+BRDA:1607,616,1,0
+BRDA:1605,602,1,0
+BRDA:1603,586,1,2
+BRDA:1601,546,1,2
+BRDA:1601,676,0,2
+FN:1615,System.Double ImageFunctions::momentsThresholdFromImages(System.UInt32,Microsoft.FSharp.Collections.FSharpList`1<Image/Image`1<a>>)
 FNDA:0,System.Double ImageFunctions::momentsThresholdFromImages(System.UInt32,Microsoft.FSharp.Collections.FSharpList`1<Image/Image`1<a>>)
-DA:1615,0
 DA:1616,0
 DA:1617,0
 DA:1618,0
-DA:1620,0
+DA:1619,0
 DA:1621,0
-DA:1628,0
+DA:1622,0
 DA:1629,0
 DA:1630,0
 DA:1631,0
 DA:1632,0
-DA:1634,0
+DA:1633,0
 DA:1635,0
-DA:1637,0
+DA:1636,0
 DA:1638,0
 DA:1639,0
-DA:1641,0
+DA:1640,0
 DA:1642,0
-DA:1644,0
+DA:1643,0
 DA:1645,0
 DA:1646,0
 DA:1647,0
-DA:1649,0
+DA:1648,0
 DA:1650,0
-DA:1652,0
+DA:1651,0
 DA:1653,0
 DA:1654,0
 DA:1655,0
 DA:1656,0
-DA:1658,0
+DA:1657,0
 DA:1659,0
 DA:1660,0
 DA:1661,0
 DA:1662,0
 DA:1663,0
-DA:1665,0
-BRDA:1617,57,0,0
-BRDA:1617,57,1,0
-BRDA:1621,82,0,0
-BRDA:1621,82,1,0
-BRDA:1621,140,1,0
-BRDA:1621,140,0,0
-BRDA:1634,254,0,0
-BRDA:1634,254,1,0
-BRDA:1641,338,0,0
-BRDA:1641,338,1,0
-BRDA:1649,428,0,0
-BRDA:1649,428,1,0
-BRDA:1658,549,0,0
-BRDA:1658,609,1,0
-BRDA:1659,558,0,0
-BRDA:1661,581,0,0
-BRDA:1661,581,1,0
-BRDA:1659,558,1,0
-BRDA:1658,549,1,0
-BRDA:1658,609,0,0
-FN:1667,Image/Image`1<System.Byte> ImageFunctions::momentsThreshold(Image/Image`1<T>)
+DA:1664,0
+DA:1666,0
+BRDA:1618,57,0,0
+BRDA:1618,57,1,0
+BRDA:1622,82,0,0
+BRDA:1622,82,1,0
+BRDA:1622,140,1,0
+BRDA:1622,140,0,0
+BRDA:1635,254,0,0
+BRDA:1635,254,1,0
+BRDA:1642,338,0,0
+BRDA:1642,338,1,0
+BRDA:1650,428,0,0
+BRDA:1650,428,1,0
+BRDA:1659,549,0,0
+BRDA:1659,609,1,0
+BRDA:1660,558,0,0
+BRDA:1662,581,0,0
+BRDA:1662,581,1,0
+BRDA:1660,558,1,0
+BRDA:1659,549,1,0
+BRDA:1659,609,0,0
+FN:1668,Image/Image`1<System.Byte> ImageFunctions::momentsThreshold(Image/Image`1<T>)
 FNDA:0,Image/Image`1<System.Byte> ImageFunctions::momentsThreshold(Image/Image`1<T>)
-DA:1668,0
 DA:1669,0
 DA:1670,0
 DA:1671,0
 DA:1672,0
 DA:1673,0
 DA:1674,0
-FN:1678,Image/Image`1<System.UInt32> ImageFunctions::generateCoordinateAxis(System.Int32,Microsoft.FSharp.Collections.FSharpList`1<System.Int32>)
+DA:1675,0
+FN:1679,Image/Image`1<System.UInt32> ImageFunctions::generateCoordinateAxis(System.Int32,Microsoft.FSharp.Collections.FSharpList`1<System.Int32>)
 FNDA:0,Image/Image`1<System.UInt32> ImageFunctions::generateCoordinateAxis(System.Int32,Microsoft.FSharp.Collections.FSharpList`1<System.Int32>)
-DA:1679,0
-DA:1681,0
+DA:1680,0
 DA:1682,0
 DA:1683,0
 DA:1684,0
@@ -1818,7 +1817,7 @@ DA:1685,0
 DA:1686,0
 DA:1687,0
 DA:1688,0
-DA:1690,0
+DA:1689,0
 DA:1691,0
 DA:1692,0
 DA:1693,0
@@ -1828,105 +1827,105 @@ DA:1696,0
 DA:1697,0
 DA:1698,0
 DA:1699,0
-DA:1701,0
-BRDA:1679,8,0,0
-BRDA:1679,26,0,0
-BRDA:1679,49,0,0
-BRDA:1679,49,1,0
-BRDA:1682,120,0,0
-BRDA:1682,254,1,0
-BRDA:1683,138,0,0
-BRDA:1683,240,1,0
-BRDA:1685,152,0,0
-BRDA:1685,152,1,0
-BRDA:1686,162,0,0
-BRDA:1686,162,1,0
-BRDA:1683,138,1,0
-BRDA:1683,240,0,0
-BRDA:1682,120,1,0
-BRDA:1682,254,0,0
-BRDA:1679,69,0,0
-BRDA:1691,349,0,0
-BRDA:1691,560,1,0
-BRDA:1692,367,0,0
-BRDA:1692,543,1,0
-BRDA:1693,385,0,0
-BRDA:1693,526,1,0
-BRDA:1695,428,0,0
-BRDA:1695,428,1,0
-BRDA:1696,438,0,0
-BRDA:1696,438,1,0
-BRDA:1697,448,0,0
-BRDA:1697,448,1,0
-BRDA:1693,385,1,0
-BRDA:1693,526,0,0
-BRDA:1692,367,1,0
-BRDA:1692,543,0,0
-BRDA:1691,349,1,0
-BRDA:1691,560,0,0
-BRDA:1679,8,1,0
-BRDA:1679,26,1,0
-BRDA:1679,69,1,0
-FN:1710,Microsoft.FSharp.Collections.FSharpMap`2<T,System.UInt64> ImageFunctions::histogram(Image/Image`1<T>)
+DA:1700,0
+DA:1702,0
+BRDA:1680,8,0,0
+BRDA:1680,26,0,0
+BRDA:1680,49,0,0
+BRDA:1680,49,1,0
+BRDA:1683,120,0,0
+BRDA:1683,254,1,0
+BRDA:1684,138,0,0
+BRDA:1684,240,1,0
+BRDA:1686,152,0,0
+BRDA:1686,152,1,0
+BRDA:1687,162,0,0
+BRDA:1687,162,1,0
+BRDA:1684,138,1,0
+BRDA:1684,240,0,0
+BRDA:1683,120,1,0
+BRDA:1683,254,0,0
+BRDA:1680,69,0,0
+BRDA:1692,349,0,0
+BRDA:1692,560,1,0
+BRDA:1693,367,0,0
+BRDA:1693,543,1,0
+BRDA:1694,385,0,0
+BRDA:1694,526,1,0
+BRDA:1696,428,0,0
+BRDA:1696,428,1,0
+BRDA:1697,438,0,0
+BRDA:1697,438,1,0
+BRDA:1698,448,0,0
+BRDA:1698,448,1,0
+BRDA:1694,385,1,0
+BRDA:1694,526,0,0
+BRDA:1693,367,1,0
+BRDA:1693,543,0,0
+BRDA:1692,349,1,0
+BRDA:1692,560,0,0
+BRDA:1680,8,1,0
+BRDA:1680,26,1,0
+BRDA:1680,69,1,0
+FN:1711,Microsoft.FSharp.Collections.FSharpMap`2<T,System.UInt64> ImageFunctions::histogram(Image/Image`1<T>)
 FNDA:50,Microsoft.FSharp.Collections.FSharpMap`2<T,System.UInt64> ImageFunctions::histogram(Image/Image`1<T>)
-DA:1711,50
-FN:1713,Microsoft.FSharp.Collections.FSharpMap`2<System.Double,System.UInt64> ImageFunctions::histogramFixedBins(System.Double,System.Double,System.UInt32,Image/Image`1<T>)
+DA:1712,50
+FN:1714,Microsoft.FSharp.Collections.FSharpMap`2<System.Double,System.UInt64> ImageFunctions::histogramFixedBins(System.Double,System.Double,System.UInt32,Image/Image`1<T>)
 FNDA:0,Microsoft.FSharp.Collections.FSharpMap`2<System.Double,System.UInt64> ImageFunctions::histogramFixedBins(System.Double,System.Double,System.UInt32,Image/Image`1<T>)
-DA:1714,0
 DA:1715,0
-DA:1718,0
+DA:1716,0
 DA:1719,0
-DA:1721,0
+DA:1720,0
 DA:1722,0
 DA:1723,0
 DA:1724,0
-DA:1729,0
+DA:1725,0
 DA:1730,0
 DA:1731,0
-DA:1745,0
-BRDA:1714,2,0,0
-BRDA:1714,2,1,0
-BRDA:1718,28,0,0
-BRDA:1718,28,1,0
-BRDA:1722,63,0,0
-BRDA:1722,63,1,0
-BRDA:1729,110,0,0
-BRDA:1729,110,1,0
-BRDA:1729,164,1,0
-BRDA:1729,164,0,0
-FN:1747,Microsoft.FSharp.Collections.FSharpMap`2<T,System.UInt64> ImageFunctions::addHistogram(Microsoft.FSharp.Collections.FSharpMap`2<T,System.UInt64>,Microsoft.FSharp.Collections.FSharpMap`2<T,System.UInt64>)
+DA:1732,0
+DA:1746,0
+BRDA:1715,2,0,0
+BRDA:1715,2,1,0
+BRDA:1719,28,0,0
+BRDA:1719,28,1,0
+BRDA:1723,63,0,0
+BRDA:1723,63,1,0
+BRDA:1730,110,0,0
+BRDA:1730,110,1,0
+BRDA:1730,164,1,0
+BRDA:1730,164,0,0
+FN:1748,Microsoft.FSharp.Collections.FSharpMap`2<T,System.UInt64> ImageFunctions::addHistogram(Microsoft.FSharp.Collections.FSharpMap`2<T,System.UInt64>,Microsoft.FSharp.Collections.FSharpMap`2<T,System.UInt64>)
 FNDA:24,Microsoft.FSharp.Collections.FSharpMap`2<T,System.UInt64> ImageFunctions::addHistogram(Microsoft.FSharp.Collections.FSharpMap`2<T,System.UInt64>,Microsoft.FSharp.Collections.FSharpMap`2<T,System.UInt64>)
-DA:1748,24
 DA:1749,24
-DA:1750,41
+DA:1750,24
 DA:1751,41
 DA:1752,41
 DA:1753,41
 DA:1754,41
 DA:1755,41
-DA:1756,24
+DA:1756,41
 DA:1757,24
-FN:1759,Microsoft.FSharp.Collections.FSharpList`1<System.Tuple`2<T,S>> ImageFunctions::map2pairs(Microsoft.FSharp.Collections.FSharpMap`2<T,S>)
+DA:1758,24
+FN:1760,Microsoft.FSharp.Collections.FSharpList`1<System.Tuple`2<T,S>> ImageFunctions::map2pairs(Microsoft.FSharp.Collections.FSharpMap`2<T,S>)
 FNDA:0,Microsoft.FSharp.Collections.FSharpList`1<System.Tuple`2<T,S>> ImageFunctions::map2pairs(Microsoft.FSharp.Collections.FSharpMap`2<T,S>)
-DA:1760,0
-FN:1765,Microsoft.FSharp.Collections.FSharpList`1<System.Tuple`2<System.Double,System.Double>> ImageFunctions::pairs2floats(Microsoft.FSharp.Collections.FSharpList`1<System.Tuple`2<T,S>>)
+DA:1761,0
+FN:1766,Microsoft.FSharp.Collections.FSharpList`1<System.Tuple`2<System.Double,System.Double>> ImageFunctions::pairs2floats(Microsoft.FSharp.Collections.FSharpList`1<System.Tuple`2<T,S>>)
 FNDA:0,Microsoft.FSharp.Collections.FSharpList`1<System.Tuple`2<System.Double,System.Double>> ImageFunctions::pairs2floats(Microsoft.FSharp.Collections.FSharpList`1<System.Tuple`2<T,S>>)
-DA:1766,0
-FN:1771,Microsoft.FSharp.Collections.FSharpList`1<System.Tuple`2<System.Int32,System.Int32>> ImageFunctions::pairs2ints(Microsoft.FSharp.Collections.FSharpList`1<System.Tuple`2<T,S>>)
+DA:1767,0
+FN:1772,Microsoft.FSharp.Collections.FSharpList`1<System.Tuple`2<System.Int32,System.Int32>> ImageFunctions::pairs2ints(Microsoft.FSharp.Collections.FSharpList`1<System.Tuple`2<T,S>>)
 FNDA:0,Microsoft.FSharp.Collections.FSharpList`1<System.Tuple`2<System.Int32,System.Int32>> ImageFunctions::pairs2ints(Microsoft.FSharp.Collections.FSharpList`1<System.Tuple`2<T,S>>)
-DA:1772,0
-FN:1774,Microsoft.FSharp.Collections.FSharpList`1<System.Double> ImageFunctions::quantilesFromHistogram(Microsoft.FSharp.Collections.FSharpList`1<System.Double>,Microsoft.FSharp.Collections.FSharpMap`2<T,System.UInt64>)
+DA:1773,0
+FN:1775,Microsoft.FSharp.Collections.FSharpList`1<System.Double> ImageFunctions::quantilesFromHistogram(Microsoft.FSharp.Collections.FSharpList`1<System.Double>,Microsoft.FSharp.Collections.FSharpMap`2<T,System.UInt64>)
 FNDA:0,Microsoft.FSharp.Collections.FSharpList`1<System.Double> ImageFunctions::quantilesFromHistogram(Microsoft.FSharp.Collections.FSharpList`1<System.Double>,Microsoft.FSharp.Collections.FSharpMap`2<T,System.UInt64>)
-DA:1775,0
 DA:1776,0
-DA:1778,0
+DA:1777,0
 DA:1779,0
 DA:1780,0
-DA:1783,0
+DA:1781,0
 DA:1784,0
 DA:1785,0
 DA:1786,0
-DA:1788,0
+DA:1787,0
 DA:1789,0
 DA:1790,0
 DA:1791,0
@@ -1939,249 +1938,249 @@ DA:1797,0
 DA:1798,0
 DA:1799,0
 DA:1800,0
-BRDA:1775,7,0,0
-BRDA:1775,7,1,0
-BRDA:1779,48,0,0
-BRDA:1779,48,1,0
-FN:1802,Image/Image`1<T> ImageFunctions::retainNoNoise(Image/Image`1<T>)
+DA:1801,0
+BRDA:1776,7,0,0
+BRDA:1776,7,1,0
+BRDA:1780,48,0,0
+BRDA:1780,48,1,0
+FN:1803,Image/Image`1<T> ImageFunctions::retainNoNoise(Image/Image`1<T>)
 FNDA:26,Image/Image`1<T> ImageFunctions::retainNoNoise(Image/Image`1<T>)
-DA:1803,26
 DA:1804,26
-FN:1806,Microsoft.FSharp.Core.FSharpFunc`2<Image/Image`1<T>,Image/Image`1<T>> ImageFunctions::addNormalNoise(System.Double,System.Double)
+DA:1805,26
+FN:1807,Microsoft.FSharp.Core.FSharpFunc`2<Image/Image`1<T>,Image/Image`1<T>> ImageFunctions::addNormalNoise(System.Double,System.Double)
 FNDA:4,Microsoft.FSharp.Core.FSharpFunc`2<Image/Image`1<T>,Image/Image`1<T>> ImageFunctions::addNormalNoise(System.Double,System.Double)
-DA:1807,4
 DA:1808,4
-DA:1810,0
+DA:1809,4
 DA:1811,0
 DA:1812,0
 DA:1813,0
 DA:1814,0
 DA:1815,0
 DA:1816,0
-BRDA:1807,11,0,4
-BRDA:1807,11,1,0
-FN:1818,Microsoft.FSharp.Core.FSharpFunc`2<Image/Image`1<T>,Image/Image`1<T>> ImageFunctions::addSaltAndPepperNoise(System.Double)
+DA:1817,0
+BRDA:1808,11,0,4
+BRDA:1808,11,1,0
+FN:1819,Microsoft.FSharp.Core.FSharpFunc`2<Image/Image`1<T>,Image/Image`1<T>> ImageFunctions::addSaltAndPepperNoise(System.Double)
 FNDA:2,Microsoft.FSharp.Core.FSharpFunc`2<Image/Image`1<T>,Image/Image`1<T>> ImageFunctions::addSaltAndPepperNoise(System.Double)
-DA:1819,2
 DA:1820,2
-DA:1822,0
+DA:1821,2
 DA:1823,0
 DA:1824,0
 DA:1825,0
 DA:1826,0
-BRDA:1819,11,0,2
-BRDA:1819,11,1,0
-FN:1828,Microsoft.FSharp.Core.FSharpFunc`2<Image/Image`1<T>,Image/Image`1<T>> ImageFunctions::addShotNoise(System.Double)
+DA:1827,0
+BRDA:1820,11,0,2
+BRDA:1820,11,1,0
+FN:1829,Microsoft.FSharp.Core.FSharpFunc`2<Image/Image`1<T>,Image/Image`1<T>> ImageFunctions::addShotNoise(System.Double)
 FNDA:2,Microsoft.FSharp.Core.FSharpFunc`2<Image/Image`1<T>,Image/Image`1<T>> ImageFunctions::addShotNoise(System.Double)
-DA:1829,2
 DA:1830,2
-DA:1832,0
+DA:1831,2
 DA:1833,0
 DA:1834,0
 DA:1835,0
 DA:1836,0
-BRDA:1829,11,0,2
-BRDA:1829,11,1,0
-FN:1838,Microsoft.FSharp.Core.FSharpFunc`2<Image/Image`1<T>,Image/Image`1<T>> ImageFunctions::addSpeckleNoise(System.Double)
+DA:1837,0
+BRDA:1830,11,0,2
+BRDA:1830,11,1,0
+FN:1839,Microsoft.FSharp.Core.FSharpFunc`2<Image/Image`1<T>,Image/Image`1<T>> ImageFunctions::addSpeckleNoise(System.Double)
 FNDA:2,Microsoft.FSharp.Core.FSharpFunc`2<Image/Image`1<T>,Image/Image`1<T>> ImageFunctions::addSpeckleNoise(System.Double)
-DA:1839,2
 DA:1840,2
-DA:1842,0
+DA:1841,2
 DA:1843,0
 DA:1844,0
 DA:1845,0
 DA:1846,0
-BRDA:1839,11,0,2
-BRDA:1839,11,1,0
-FN:1848,Image/Image`1<System.Byte> ImageFunctions::threshold(System.Double,System.Double,Image/Image`1<T>)
+DA:1847,0
+BRDA:1840,11,0,2
+BRDA:1840,11,1,0
+FN:1849,Image/Image`1<System.Byte> ImageFunctions::threshold(System.Double,System.Double,Image/Image`1<T>)
 FNDA:53,Image/Image`1<System.Byte> ImageFunctions::threshold(System.Double,System.Double,Image/Image`1<T>)
-DA:1849,53
 DA:1850,53
 DA:1851,53
 DA:1852,53
 DA:1853,53
-FN:1855,Image/Image`1<Microsoft.FSharp.Collections.FSharpList`1<T>> ImageFunctions::toVectorImage(Microsoft.FSharp.Collections.FSharpList`1<Image/Image`1<T>>)
+DA:1854,53
+FN:1856,Image/Image`1<Microsoft.FSharp.Collections.FSharpList`1<T>> ImageFunctions::toVectorImage(Microsoft.FSharp.Collections.FSharpList`1<Image/Image`1<T>>)
 FNDA:5,Image/Image`1<Microsoft.FSharp.Collections.FSharpList`1<T>> ImageFunctions::toVectorImage(Microsoft.FSharp.Collections.FSharpList`1<Image/Image`1<T>>)
-DA:1856,5
-FN:1858,Image/Image`1<Microsoft.FSharp.Collections.FSharpList`1<T>> ImageFunctions::composeVectorAndRelease(Microsoft.FSharp.Collections.FSharpList`1<Image/Image`1<T>>)
+DA:1857,5
+FN:1859,Image/Image`1<Microsoft.FSharp.Collections.FSharpList`1<T>> ImageFunctions::composeVectorAndRelease(Microsoft.FSharp.Collections.FSharpList`1<Image/Image`1<T>>)
 FNDA:19,Image/Image`1<Microsoft.FSharp.Collections.FSharpList`1<T>> ImageFunctions::composeVectorAndRelease(Microsoft.FSharp.Collections.FSharpList`1<Image/Image`1<T>>)
-DA:1859,19
 DA:1860,19
 DA:1861,19
-DA:1862,139
-BRDA:1862,60,1,101
-BRDA:1862,60,0,19
-FN:1864,Image/Image`1<Microsoft.FSharp.Collections.FSharpList`1<System.Double>> ImageFunctions::mapScalarComponentsAndCompose(Microsoft.FSharp.Core.FSharpFunc`2<Image/Image`1<System.Double>,Image/Image`1<System.Double>>,Image/Image`1<Microsoft.FSharp.Collections.FSharpList`1<System.Double>>)
+DA:1862,19
+DA:1863,139
+BRDA:1863,60,1,101
+BRDA:1863,60,0,19
+FN:1865,Image/Image`1<Microsoft.FSharp.Collections.FSharpList`1<System.Double>> ImageFunctions::mapScalarComponentsAndCompose(Microsoft.FSharp.Core.FSharpFunc`2<Image/Image`1<System.Double>,Image/Image`1<System.Double>>,Image/Image`1<Microsoft.FSharp.Collections.FSharpList`1<System.Double>>)
 FNDA:1,Image/Image`1<Microsoft.FSharp.Collections.FSharpList`1<System.Double>> ImageFunctions::mapScalarComponentsAndCompose(Microsoft.FSharp.Core.FSharpFunc`2<Image/Image`1<System.Double>,Image/Image`1<System.Double>>,Image/Image`1<Microsoft.FSharp.Collections.FSharpList`1<System.Double>>)
-DA:1865,1
-DA:1866,2
-DA:1867,4
-DA:1868,1
-BRDA:1867,73,1,2
-BRDA:1867,73,0,1
-FN:1870,Image/Image`1<System.Double> ImageFunctions::scalarMapArray(System.String,Microsoft.FSharp.Core.FSharpFunc`2<System.Double,System.Double>,Image/Image`1<System.Double>)
+DA:1866,1
+DA:1867,2
+DA:1868,4
+DA:1869,1
+BRDA:1868,73,1,2
+BRDA:1868,73,0,1
+FN:1871,Image/Image`1<System.Double> ImageFunctions::scalarMapArray(System.String,Microsoft.FSharp.Core.FSharpFunc`2<System.Double,System.Double>,Image/Image`1<System.Double>)
 FNDA:2,Image/Image`1<System.Double> ImageFunctions::scalarMapArray(System.String,Microsoft.FSharp.Core.FSharpFunc`2<System.Double,System.Double>,Image/Image`1<System.Double>)
-DA:1871,2
-DA:1873,2
+DA:1872,2
 DA:1874,2
-DA:1875,4
-DA:1877,0
+DA:1875,2
+DA:1876,4
 DA:1878,0
 DA:1879,0
-DA:1881,0
-BRDA:1871,10,1,2
-BRDA:1871,10,2,0
-BRDA:1871,10,0,0
-FN:1883,Image/Image`1<T> ImageFunctions::vectorElement(System.UInt32,Image/Image`1<Microsoft.FSharp.Collections.FSharpList`1<T>>)
+DA:1880,0
+DA:1882,0
+BRDA:1872,10,1,2
+BRDA:1872,10,2,0
+BRDA:1872,10,0,0
+FN:1884,Image/Image`1<T> ImageFunctions::vectorElement(System.UInt32,Image/Image`1<Microsoft.FSharp.Collections.FSharpList`1<T>>)
 FNDA:1,Image/Image`1<T> ImageFunctions::vectorElement(System.UInt32,Image/Image`1<Microsoft.FSharp.Collections.FSharpList`1<T>>)
-DA:1884,1
 DA:1885,1
-DA:1886,3
-DA:1887,0
-DA:1889,1
+DA:1886,1
+DA:1887,3
+DA:1888,0
 DA:1890,1
 DA:1891,1
-BRDA:1886,12,0,0
-BRDA:1886,12,1,1
-BRDA:1886,26,0,0
-BRDA:1886,26,1,1
-FN:1893,Image/Image`1<Microsoft.FSharp.Collections.FSharpList`1<T>> ImageFunctions::vectorRange(System.UInt32,System.UInt32,Image/Image`1<Microsoft.FSharp.Collections.FSharpList`1<T>>)
+DA:1892,1
+BRDA:1887,12,0,0
+BRDA:1887,12,1,1
+BRDA:1887,26,0,0
+BRDA:1887,26,1,1
+FN:1894,Image/Image`1<Microsoft.FSharp.Collections.FSharpList`1<T>> ImageFunctions::vectorRange(System.UInt32,System.UInt32,Image/Image`1<Microsoft.FSharp.Collections.FSharpList`1<T>>)
 FNDA:5,Image/Image`1<Microsoft.FSharp.Collections.FSharpList`1<T>> ImageFunctions::vectorRange(System.UInt32,System.UInt32,Image/Image`1<Microsoft.FSharp.Collections.FSharpList`1<T>>)
-DA:1894,5
 DA:1895,5
 DA:1896,5
 DA:1897,5
-DA:1898,0
-DA:1899,15
-DA:1900,0
-DA:1902,5
-DA:1903,15
-DA:1904,5
+DA:1898,5
+DA:1899,0
+DA:1900,15
+DA:1901,0
+DA:1903,5
+DA:1904,15
 DA:1905,5
 DA:1906,5
 DA:1907,5
 DA:1908,5
-DA:1909,70
-BRDA:1897,14,0,0
-BRDA:1897,14,1,5
-BRDA:1899,42,0,0
-BRDA:1899,42,1,5
-BRDA:1899,55,0,0
-BRDA:1899,55,1,5
-BRDA:1909,266,1,60
-BRDA:1909,266,0,5
-FN:1911,System.Void ImageFunctions::requireThreeComponents(a,Image/Image`1<Microsoft.FSharp.Collections.FSharpList`1<T>>)
+DA:1909,5
+DA:1910,70
+BRDA:1898,14,0,0
+BRDA:1898,14,1,5
+BRDA:1900,42,0,0
+BRDA:1900,42,1,5
+BRDA:1900,55,0,0
+BRDA:1900,55,1,5
+BRDA:1910,266,1,60
+BRDA:1910,266,0,5
+FN:1912,System.Void ImageFunctions::requireThreeComponents(a,Image/Image`1<Microsoft.FSharp.Collections.FSharpList`1<T>>)
 FNDA:2,System.Void ImageFunctions::requireThreeComponents(a,Image/Image`1<Microsoft.FSharp.Collections.FSharpList`1<T>>)
-DA:1912,2
-DA:1913,0
-BRDA:1912,8,0,0
-BRDA:1912,8,1,2
-FN:1915,System.Byte ImageFunctions::clampByte(System.Double)
+DA:1913,2
+DA:1914,0
+BRDA:1913,8,0,0
+BRDA:1913,8,1,2
+FN:1916,System.Byte ImageFunctions::clampByte(System.Double)
 FNDA:8,System.Byte ImageFunctions::clampByte(System.Double)
-DA:1916,8
-DA:1917,6
-DA:1918,2
-BRDA:1916,11,0,2
-BRDA:1916,11,1,4
-BRDA:1917,26,0,2
-BRDA:1917,26,1,2
-FN:1920,Image/Image`1<Microsoft.FSharp.Collections.FSharpList`1<System.Byte>> ImageFunctions::vector3ToColor(System.Double,System.Double,Image/Image`1<Microsoft.FSharp.Collections.FSharpList`1<System.Double>>)
+DA:1917,8
+DA:1918,6
+DA:1919,2
+BRDA:1917,11,0,2
+BRDA:1917,11,1,4
+BRDA:1918,26,0,2
+BRDA:1918,26,1,2
+FN:1921,Image/Image`1<Microsoft.FSharp.Collections.FSharpList`1<System.Byte>> ImageFunctions::vector3ToColor(System.Double,System.Double,Image/Image`1<Microsoft.FSharp.Collections.FSharpList`1<System.Double>>)
 FNDA:1,Image/Image`1<Microsoft.FSharp.Collections.FSharpList`1<System.Byte>> ImageFunctions::vector3ToColor(System.Double,System.Double,Image/Image`1<Microsoft.FSharp.Collections.FSharpList`1<System.Double>>)
-DA:1921,1
 DA:1922,1
-DA:1923,0
-DA:1925,1
+DA:1923,1
+DA:1924,0
 DA:1926,1
-DA:1928,1
+DA:1927,1
 DA:1929,1
-DA:1930,3
-DA:1931,1
-DA:1932,3
-DA:1933,15
-DA:1934,6
-DA:1935,1
-DA:1936,0
+DA:1930,1
+DA:1931,3
+DA:1932,1
+DA:1933,3
+DA:1934,15
+DA:1935,6
+DA:1936,1
 DA:1937,0
 DA:1938,0
-DA:1939,1
+DA:1939,0
 DA:1940,1
-DA:1941,5
-DA:1942,1
-BRDA:1922,15,0,0
-BRDA:1922,15,1,1
-BRDA:1941,136,1,3
-BRDA:1941,136,0,1
-FN:1944,Image/Image`1<Microsoft.FSharp.Collections.FSharpList`1<System.Double>> ImageFunctions::colorToVector3(System.Double,System.Double,Image/Image`1<Microsoft.FSharp.Collections.FSharpList`1<System.Byte>>)
+DA:1941,1
+DA:1942,5
+DA:1943,1
+BRDA:1923,15,0,0
+BRDA:1923,15,1,1
+BRDA:1942,136,1,3
+BRDA:1942,136,0,1
+FN:1945,Image/Image`1<Microsoft.FSharp.Collections.FSharpList`1<System.Double>> ImageFunctions::colorToVector3(System.Double,System.Double,Image/Image`1<Microsoft.FSharp.Collections.FSharpList`1<System.Byte>>)
 FNDA:1,Image/Image`1<Microsoft.FSharp.Collections.FSharpList`1<System.Double>> ImageFunctions::colorToVector3(System.Double,System.Double,Image/Image`1<Microsoft.FSharp.Collections.FSharpList`1<System.Byte>>)
-DA:1945,1
 DA:1946,1
-DA:1947,0
-DA:1949,1
+DA:1947,1
+DA:1948,0
 DA:1950,1
-DA:1952,1
+DA:1951,1
 DA:1953,1
-DA:1954,3
-DA:1955,1
-DA:1956,3
-DA:1957,9
-DA:1958,6
-DA:1959,1
-DA:1960,0
+DA:1954,1
+DA:1955,3
+DA:1956,1
+DA:1957,3
+DA:1958,9
+DA:1959,6
+DA:1960,1
 DA:1961,0
 DA:1962,0
-DA:1963,1
+DA:1963,0
 DA:1964,1
-DA:1965,5
-DA:1966,1
-BRDA:1946,15,0,0
-BRDA:1946,15,1,1
-BRDA:1965,136,1,3
-BRDA:1965,136,0,1
-FN:1968,Image/Image`1<Microsoft.FSharp.Collections.FSharpList`1<System.Double>> ImageFunctions::appendVectorElement(Image/Image`1<Microsoft.FSharp.Collections.FSharpList`1<System.Double>>,Image/Image`1<System.Double>)
+DA:1965,1
+DA:1966,5
+DA:1967,1
+BRDA:1947,15,0,0
+BRDA:1947,15,1,1
+BRDA:1966,136,1,3
+BRDA:1966,136,0,1
+FN:1969,Image/Image`1<Microsoft.FSharp.Collections.FSharpList`1<System.Double>> ImageFunctions::appendVectorElement(Image/Image`1<Microsoft.FSharp.Collections.FSharpList`1<System.Double>>,Image/Image`1<System.Double>)
 FNDA:4,Image/Image`1<Microsoft.FSharp.Collections.FSharpList`1<System.Double>> ImageFunctions::appendVectorElement(Image/Image`1<Microsoft.FSharp.Collections.FSharpList`1<System.Double>>,Image/Image`1<System.Double>)
-DA:1969,4
-DA:1970,0
-DA:1972,4
+DA:1970,4
+DA:1971,0
 DA:1973,4
 DA:1974,4
 DA:1975,4
-DA:1976,16
-BRDA:1969,30,0,0
-BRDA:1969,30,1,4
-BRDA:1976,202,1,8
-BRDA:1976,202,0,4
-FN:1978,Image/Image`1<Microsoft.FSharp.Collections.FSharpList`1<System.Double>> ImageFunctions::mapVectorElements(Microsoft.FSharp.Core.FSharpFunc`2<System.Double,System.Double>,Image/Image`1<Microsoft.FSharp.Collections.FSharpList`1<System.Double>>)
+DA:1976,4
+DA:1977,16
+BRDA:1970,30,0,0
+BRDA:1970,30,1,4
+BRDA:1977,202,1,8
+BRDA:1977,202,0,4
+FN:1979,Image/Image`1<Microsoft.FSharp.Collections.FSharpList`1<System.Double>> ImageFunctions::mapVectorElements(Microsoft.FSharp.Core.FSharpFunc`2<System.Double,System.Double>,Image/Image`1<Microsoft.FSharp.Collections.FSharpList`1<System.Double>>)
 FNDA:1,Image/Image`1<Microsoft.FSharp.Collections.FSharpList`1<System.Double>> ImageFunctions::mapVectorElements(Microsoft.FSharp.Core.FSharpFunc`2<System.Double,System.Double>,Image/Image`1<Microsoft.FSharp.Collections.FSharpList`1<System.Double>>)
-DA:1979,1
-FN:1981,System.Void ImageFunctions::ensureMatchingVectorImages(a,Image/Image`1<Microsoft.FSharp.Collections.FSharpList`1<System.Double>>,Image/Image`1<Microsoft.FSharp.Collections.FSharpList`1<System.Double>>)
+DA:1980,1
+FN:1982,System.Void ImageFunctions::ensureMatchingVectorImages(a,Image/Image`1<Microsoft.FSharp.Collections.FSharpList`1<System.Double>>,Image/Image`1<Microsoft.FSharp.Collections.FSharpList`1<System.Double>>)
 FNDA:2,System.Void ImageFunctions::ensureMatchingVectorImages(a,Image/Image`1<Microsoft.FSharp.Collections.FSharpList`1<System.Double>>,Image/Image`1<Microsoft.FSharp.Collections.FSharpList`1<System.Double>>)
-DA:1982,2
-DA:1983,0
-DA:1984,2
-DA:1985,0
-BRDA:1982,30,0,0
-BRDA:1982,30,1,2
-BRDA:1984,132,0,0
-BRDA:1984,132,1,2
-FN:1987,Image/Image`1<System.Double> ImageFunctions::vectorDot(Image/Image`1<Microsoft.FSharp.Collections.FSharpList`1<System.Double>>,Image/Image`1<Microsoft.FSharp.Collections.FSharpList`1<System.Double>>)
+DA:1983,2
+DA:1984,0
+DA:1985,2
+DA:1986,0
+BRDA:1983,30,0,0
+BRDA:1983,30,1,2
+BRDA:1985,132,0,0
+BRDA:1985,132,1,2
+FN:1988,Image/Image`1<System.Double> ImageFunctions::vectorDot(Image/Image`1<Microsoft.FSharp.Collections.FSharpList`1<System.Double>>,Image/Image`1<Microsoft.FSharp.Collections.FSharpList`1<System.Double>>)
 FNDA:1,Image/Image`1<System.Double> ImageFunctions::vectorDot(Image/Image`1<Microsoft.FSharp.Collections.FSharpList`1<System.Double>>,Image/Image`1<Microsoft.FSharp.Collections.FSharpList`1<System.Double>>)
-DA:1988,1
 DA:1989,1
 DA:1990,1
 DA:1991,1
 DA:1992,1
-DA:1994,1
+DA:1993,1
 DA:1995,1
-DA:1996,6
+DA:1996,1
 DA:1997,6
-DA:1998,1
-DA:1999,6
-DA:2000,4
-DA:2001,20
-DA:2002,12
-DA:2003,4
-DA:2004,1
-DA:2006,0
+DA:1998,6
+DA:1999,1
+DA:2000,6
+DA:2001,4
+DA:2002,20
+DA:2003,12
+DA:2004,4
+DA:2005,1
 DA:2007,0
 DA:2008,0
 DA:2009,0
@@ -2193,45 +2192,45 @@ DA:2014,0
 DA:2015,0
 DA:2016,0
 DA:2017,0
-DA:2019,0
-DA:2020,1
-DA:2021,5
+DA:2018,0
+DA:2020,0
+DA:2021,1
 DA:2022,5
-BRDA:1992,38,1,1
-BRDA:1999,232,1,4
-BRDA:2001,207,1,12
-BRDA:2001,207,0,4
-BRDA:1999,232,0,1
-BRDA:1992,38,2,0
-BRDA:2012,474,1,0
-BRDA:2014,449,1,0
-BRDA:2014,449,0,0
-BRDA:2012,474,0,0
-BRDA:1992,38,0,0
-BRDA:2021,644,1,3
-BRDA:2021,644,0,1
-BRDA:2022,704,1,3
-BRDA:2022,704,0,1
-FN:2024,Image/Image`1<Microsoft.FSharp.Collections.FSharpList`1<System.Double>> ImageFunctions::vectorCross3D(Image/Image`1<Microsoft.FSharp.Collections.FSharpList`1<System.Double>>,Image/Image`1<Microsoft.FSharp.Collections.FSharpList`1<System.Double>>)
+DA:2023,5
+BRDA:1993,38,1,1
+BRDA:2000,232,1,4
+BRDA:2002,207,1,12
+BRDA:2002,207,0,4
+BRDA:2000,232,0,1
+BRDA:1993,38,2,0
+BRDA:2013,474,1,0
+BRDA:2015,449,1,0
+BRDA:2015,449,0,0
+BRDA:2013,474,0,0
+BRDA:1993,38,0,0
+BRDA:2022,644,1,3
+BRDA:2022,644,0,1
+BRDA:2023,704,1,3
+BRDA:2023,704,0,1
+FN:2025,Image/Image`1<Microsoft.FSharp.Collections.FSharpList`1<System.Double>> ImageFunctions::vectorCross3D(Image/Image`1<Microsoft.FSharp.Collections.FSharpList`1<System.Double>>,Image/Image`1<Microsoft.FSharp.Collections.FSharpList`1<System.Double>>)
 FNDA:1,Image/Image`1<Microsoft.FSharp.Collections.FSharpList`1<System.Double>> ImageFunctions::vectorCross3D(Image/Image`1<Microsoft.FSharp.Collections.FSharpList`1<System.Double>>,Image/Image`1<Microsoft.FSharp.Collections.FSharpList`1<System.Double>>)
-DA:2025,1
 DA:2026,1
-DA:2027,0
-DA:2029,1
+DA:2027,1
+DA:2028,0
 DA:2030,1
 DA:2031,1
-DA:2033,1
-DA:2035,1
+DA:2032,1
+DA:2034,1
 DA:2036,1
 DA:2037,1
 DA:2038,1
 DA:2039,1
 DA:2040,1
 DA:2041,1
-DA:2042,8
-DA:2043,7
-DA:2044,8
-DA:2046,0
+DA:2042,1
+DA:2043,8
+DA:2044,7
+DA:2045,8
 DA:2047,0
 DA:2048,0
 DA:2049,0
@@ -2241,71 +2240,71 @@ DA:2052,0
 DA:2053,0
 DA:2054,0
 DA:2055,0
-DA:2057,0
-DA:2058,1
+DA:2056,0
+DA:2058,0
 DA:2059,1
-DA:2060,5
+DA:2060,1
 DA:2061,5
-BRDA:2026,21,0,0
-BRDA:2026,21,1,1
-BRDA:2033,121,0,1
-BRDA:2033,147,0,1
-BRDA:2033,173,0,1
-BRDA:2033,199,0,1
-BRDA:2033,216,0,1
-BRDA:2033,242,0,1
-BRDA:2033,265,0,1
-BRDA:2033,288,0,1
-BRDA:2033,288,1,0
-BRDA:2033,265,1,0
-BRDA:2033,242,1,0
-BRDA:2033,216,1,0
-BRDA:2033,199,1,0
-BRDA:2033,173,1,0
-BRDA:2033,147,1,0
-BRDA:2033,121,1,0
-BRDA:2033,299,1,1
-BRDA:2042,591,0,0
-BRDA:2042,591,1,1
-BRDA:2042,711,1,4
-BRDA:2042,711,0,1
-BRDA:2043,775,0,0
-BRDA:2043,775,1,1
-BRDA:2043,897,1,4
-BRDA:2043,897,0,1
-BRDA:2044,963,0,0
-BRDA:2044,963,1,1
-BRDA:2044,1087,1,4
-BRDA:2044,1087,0,1
-BRDA:2033,299,2,0
-BRDA:2053,1330,0,0
-BRDA:2053,1330,1,0
-BRDA:2053,1450,1,0
-BRDA:2053,1450,0,0
-BRDA:2054,1514,0,0
-BRDA:2054,1514,1,0
-BRDA:2054,1636,1,0
-BRDA:2054,1636,0,0
-BRDA:2055,1702,0,0
-BRDA:2055,1702,1,0
-BRDA:2055,1826,1,0
-BRDA:2055,1826,0,0
-BRDA:2033,299,0,0
-BRDA:2060,2023,1,3
-BRDA:2060,2023,0,1
-BRDA:2061,2083,1,3
-BRDA:2061,2083,0,1
-FN:2063,Image/Image`1<System.Double> ImageFunctions::vectorAngleTo(Microsoft.FSharp.Collections.FSharpList`1<System.Double>,Image/Image`1<Microsoft.FSharp.Collections.FSharpList`1<System.Double>>)
+DA:2062,5
+BRDA:2027,21,0,0
+BRDA:2027,21,1,1
+BRDA:2034,121,0,1
+BRDA:2034,147,0,1
+BRDA:2034,173,0,1
+BRDA:2034,199,0,1
+BRDA:2034,216,0,1
+BRDA:2034,242,0,1
+BRDA:2034,265,0,1
+BRDA:2034,288,0,1
+BRDA:2034,288,1,0
+BRDA:2034,265,1,0
+BRDA:2034,242,1,0
+BRDA:2034,216,1,0
+BRDA:2034,199,1,0
+BRDA:2034,173,1,0
+BRDA:2034,147,1,0
+BRDA:2034,121,1,0
+BRDA:2034,299,1,1
+BRDA:2043,591,0,0
+BRDA:2043,591,1,1
+BRDA:2043,711,1,4
+BRDA:2043,711,0,1
+BRDA:2044,775,0,0
+BRDA:2044,775,1,1
+BRDA:2044,897,1,4
+BRDA:2044,897,0,1
+BRDA:2045,963,0,0
+BRDA:2045,963,1,1
+BRDA:2045,1087,1,4
+BRDA:2045,1087,0,1
+BRDA:2034,299,2,0
+BRDA:2054,1330,0,0
+BRDA:2054,1330,1,0
+BRDA:2054,1450,1,0
+BRDA:2054,1450,0,0
+BRDA:2055,1514,0,0
+BRDA:2055,1514,1,0
+BRDA:2055,1636,1,0
+BRDA:2055,1636,0,0
+BRDA:2056,1702,0,0
+BRDA:2056,1702,1,0
+BRDA:2056,1826,1,0
+BRDA:2056,1826,0,0
+BRDA:2034,299,0,0
+BRDA:2061,2023,1,3
+BRDA:2061,2023,0,1
+BRDA:2062,2083,1,3
+BRDA:2062,2083,0,1
+FN:2064,Image/Image`1<System.Double> ImageFunctions::vectorAngleTo(Microsoft.FSharp.Collections.FSharpList`1<System.Double>,Image/Image`1<Microsoft.FSharp.Collections.FSharpList`1<System.Double>>)
 FNDA:0,Image/Image`1<System.Double> ImageFunctions::vectorAngleTo(Microsoft.FSharp.Collections.FSharpList`1<System.Double>,Image/Image`1<Microsoft.FSharp.Collections.FSharpList`1<System.Double>>)
-DA:2064,0
 DA:2065,0
-DA:2067,0
+DA:2066,0
 DA:2068,0
 DA:2069,0
-DA:2084,0
+DA:2070,0
 DA:2085,0
 DA:2086,0
-DA:2088,0
+DA:2087,0
 DA:2089,0
 DA:2090,0
 DA:2091,0
@@ -2315,7 +2314,7 @@ DA:2094,0
 DA:2095,0
 DA:2096,0
 DA:2097,0
-DA:2099,0
+DA:2098,0
 DA:2100,0
 DA:2101,0
 DA:2102,0
@@ -2326,91 +2325,91 @@ DA:2106,0
 DA:2107,0
 DA:2108,0
 DA:2109,0
-DA:2111,0
+DA:2110,0
 DA:2112,0
 DA:2113,0
-BRDA:2064,13,0,0
-BRDA:2064,13,1,0
-BRDA:2067,101,0,0
-BRDA:2067,101,1,0
-BRDA:2067,179,1,0
-BRDA:2067,179,0,0
-BRDA:2068,211,0,0
-BRDA:2068,211,1,0
-BRDA:2086,268,1,0
-BRDA:2093,439,1,0
-BRDA:2094,399,1,0
-BRDA:2094,399,0,0
-BRDA:2093,439,0,0
-BRDA:2086,268,2,0
-BRDA:2105,659,1,0
-BRDA:2106,619,1,0
-BRDA:2106,619,0,0
-BRDA:2105,659,0,0
-BRDA:2086,268,0,0
-BRDA:2113,829,1,0
-BRDA:2113,829,0,0
-FN:2115,Image/Image`1<Microsoft.FSharp.Collections.FSharpList`1<System.Double>> ImageFunctions::structureTensorOuterProduct(Image/Image`1<Microsoft.FSharp.Collections.FSharpList`1<System.Double>>)
+DA:2114,0
+BRDA:2065,13,0,0
+BRDA:2065,13,1,0
+BRDA:2068,101,0,0
+BRDA:2068,101,1,0
+BRDA:2068,179,1,0
+BRDA:2068,179,0,0
+BRDA:2069,211,0,0
+BRDA:2069,211,1,0
+BRDA:2087,268,1,0
+BRDA:2094,439,1,0
+BRDA:2095,399,1,0
+BRDA:2095,399,0,0
+BRDA:2094,439,0,0
+BRDA:2087,268,2,0
+BRDA:2106,659,1,0
+BRDA:2107,619,1,0
+BRDA:2107,619,0,0
+BRDA:2106,659,0,0
+BRDA:2087,268,0,0
+BRDA:2114,829,1,0
+BRDA:2114,829,0,0
+FN:2116,Image/Image`1<Microsoft.FSharp.Collections.FSharpList`1<System.Double>> ImageFunctions::structureTensorOuterProduct(Image/Image`1<Microsoft.FSharp.Collections.FSharpList`1<System.Double>>)
 FNDA:15,Image/Image`1<Microsoft.FSharp.Collections.FSharpList`1<System.Double>> ImageFunctions::structureTensorOuterProduct(Image/Image`1<Microsoft.FSharp.Collections.FSharpList`1<System.Double>>)
-DA:2116,15
-DA:2117,0
-DA:2119,15
-DA:2127,15
-DA:2129,15
-DA:2131,15
-DA:2133,0
+DA:2117,15
+DA:2118,0
+DA:2120,15
+DA:2128,15
+DA:2130,15
+DA:2132,15
 DA:2134,0
-DA:2135,15
+DA:2135,0
 DA:2136,15
-DA:2137,75
-BRDA:2116,8,0,0
-BRDA:2116,8,1,15
-BRDA:2129,107,0,15
-BRDA:2129,133,0,15
-BRDA:2129,156,0,15
-BRDA:2129,179,0,15
-BRDA:2129,179,1,0
-BRDA:2129,156,1,0
-BRDA:2129,133,1,0
-BRDA:2129,107,1,0
-BRDA:2129,190,1,15
-BRDA:2129,190,2,0
-BRDA:2129,190,0,0
-BRDA:2137,573,1,45
-BRDA:2137,573,0,15
-FN:2139,Image/Image`1<Microsoft.FSharp.Collections.FSharpList`1<System.Double>> ImageFunctions::smoothVectorElements3D(System.Double,Image/Image`1<Microsoft.FSharp.Collections.FSharpList`1<System.Double>>)
+DA:2137,15
+DA:2138,75
+BRDA:2117,8,0,0
+BRDA:2117,8,1,15
+BRDA:2130,107,0,15
+BRDA:2130,133,0,15
+BRDA:2130,156,0,15
+BRDA:2130,179,0,15
+BRDA:2130,179,1,0
+BRDA:2130,156,1,0
+BRDA:2130,133,1,0
+BRDA:2130,107,1,0
+BRDA:2130,190,1,15
+BRDA:2130,190,2,0
+BRDA:2130,190,0,0
+BRDA:2138,573,1,45
+BRDA:2138,573,0,15
+FN:2140,Image/Image`1<Microsoft.FSharp.Collections.FSharpList`1<System.Double>> ImageFunctions::smoothVectorElements3D(System.Double,Image/Image`1<Microsoft.FSharp.Collections.FSharpList`1<System.Double>>)
 FNDA:5,Image/Image`1<Microsoft.FSharp.Collections.FSharpList`1<System.Double>> ImageFunctions::smoothVectorElements3D(System.Double,Image/Image`1<Microsoft.FSharp.Collections.FSharpList`1<System.Double>>)
-DA:2140,5
-DA:2141,0
-DA:2142,5
-DA:2143,0
-DA:2146,15
-DA:2147,5
-DA:2149,5
-DA:2151,5
+DA:2141,5
+DA:2142,0
+DA:2143,5
+DA:2144,0
+DA:2147,15
+DA:2148,5
+DA:2150,5
 DA:2152,5
-DA:2153,35
-DA:2154,5
+DA:2153,5
+DA:2154,35
 DA:2155,5
 DA:2156,5
 DA:2157,5
-DA:2158,40
+DA:2158,5
 DA:2159,40
-BRDA:2140,8,0,0
-BRDA:2140,8,1,5
-BRDA:2142,77,0,0
-BRDA:2142,77,1,5
-BRDA:2146,137,0,5
-BRDA:2146,137,1,0
-BRDA:2158,274,1,30
-BRDA:2158,274,0,5
-BRDA:2159,335,1,30
-BRDA:2159,335,0,5
-FN:2161,Microsoft.FSharp.Collections.FSharpList`1<Image/Image`1<Microsoft.FSharp.Collections.FSharpList`1<System.Double>>> ImageFunctions::structureTensorEigenImages(Image/Image`1<Microsoft.FSharp.Collections.FSharpList`1<System.Double>>)
+DA:2160,40
+BRDA:2141,8,0,0
+BRDA:2141,8,1,5
+BRDA:2143,77,0,0
+BRDA:2143,77,1,5
+BRDA:2147,137,0,5
+BRDA:2147,137,1,0
+BRDA:2159,274,1,30
+BRDA:2159,274,0,5
+BRDA:2160,335,1,30
+BRDA:2160,335,0,5
+FN:2162,Microsoft.FSharp.Collections.FSharpList`1<Image/Image`1<Microsoft.FSharp.Collections.FSharpList`1<System.Double>>> ImageFunctions::structureTensorEigenImages(Image/Image`1<Microsoft.FSharp.Collections.FSharpList`1<System.Double>>)
 FNDA:0,Microsoft.FSharp.Collections.FSharpList`1<Image/Image`1<Microsoft.FSharp.Collections.FSharpList`1<System.Double>>> ImageFunctions::structureTensorEigenImages(Image/Image`1<Microsoft.FSharp.Collections.FSharpList`1<System.Double>>)
-DA:2162,0
 DA:2163,0
-DA:2165,0
+DA:2164,0
 DA:2166,0
 DA:2167,0
 DA:2168,0
@@ -2418,7 +2417,7 @@ DA:2169,0
 DA:2170,0
 DA:2171,0
 DA:2172,0
-DA:2174,0
+DA:2173,0
 DA:2175,0
 DA:2176,0
 DA:2177,0
@@ -2448,7 +2447,7 @@ DA:2200,0
 DA:2201,0
 DA:2202,0
 DA:2203,0
-DA:2205,0
+DA:2204,0
 DA:2206,0
 DA:2207,0
 DA:2208,0
@@ -2456,7 +2455,7 @@ DA:2209,0
 DA:2210,0
 DA:2211,0
 DA:2212,0
-DA:2214,0
+DA:2213,0
 DA:2215,0
 DA:2216,0
 DA:2217,0
@@ -2469,7 +2468,7 @@ DA:2223,0
 DA:2224,0
 DA:2225,0
 DA:2226,0
-DA:2228,0
+DA:2227,0
 DA:2229,0
 DA:2230,0
 DA:2231,0
@@ -2494,105 +2493,105 @@ DA:2249,0
 DA:2250,0
 DA:2251,0
 DA:2252,0
-DA:2259,0
+DA:2253,0
 DA:2260,0
 DA:2261,0
 DA:2262,0
-DA:2264,0
+DA:2263,0
 DA:2265,0
 DA:2266,0
-DA:2268,0
-BRDA:2162,8,0,0
-BRDA:2162,8,1,0
-BRDA:2165,74,0,0
-BRDA:2174,159,0,0
-BRDA:2174,708,1,0
-BRDA:2175,177,0,0
-BRDA:2175,691,1,0
-BRDA:2188,350,1,0
-BRDA:2188,350,0,0
-BRDA:2192,385,0,0
-BRDA:2192,406,0,0
-BRDA:2192,432,0,0
-BRDA:2192,458,0,0
-BRDA:2192,385,1,0
-BRDA:2192,406,1,0
-BRDA:2192,432,1,0
-BRDA:2192,458,1,0
-BRDA:2175,177,1,0
-BRDA:2175,691,0,0
-BRDA:2174,159,1,0
-BRDA:2174,708,0,0
-BRDA:2165,74,1,0
-BRDA:2209,859,0,0
-BRDA:2212,884,0,0
-BRDA:2212,905,0,0
-BRDA:2212,931,0,0
-BRDA:2212,957,0,0
-BRDA:2212,980,0,0
-BRDA:2212,1003,0,0
-BRDA:2212,1003,1,0
-BRDA:2212,980,1,0
-BRDA:2212,957,1,0
-BRDA:2212,931,1,0
-BRDA:2212,905,1,0
-BRDA:2212,884,1,0
-BRDA:2212,1026,0,0
-BRDA:2223,1274,1,0
-BRDA:2223,1274,0,0
-BRDA:2224,1334,1,0
-BRDA:2224,1334,0,0
-BRDA:2225,1394,1,0
-BRDA:2225,1394,0,0
-BRDA:2226,1454,1,0
-BRDA:2226,1454,0,0
-BRDA:2228,1478,0,0
-BRDA:2228,2153,1,0
-BRDA:2229,1496,0,0
-BRDA:2229,2136,1,0
-BRDA:2230,1514,0,0
-BRDA:2230,2119,1,0
-BRDA:2237,1715,1,0
-BRDA:2237,1715,0,0
-BRDA:2241,1750,0,0
-BRDA:2241,1771,0,0
-BRDA:2241,1797,0,0
-BRDA:2241,1823,0,0
-BRDA:2241,1750,1,0
-BRDA:2241,1771,1,0
-BRDA:2241,1797,1,0
-BRDA:2241,1823,1,0
-BRDA:2230,1514,1,0
-BRDA:2230,2119,0,0
-BRDA:2229,1496,1,0
-BRDA:2229,2136,0,0
-BRDA:2228,1478,1,0
-BRDA:2228,2153,0,0
-BRDA:2212,1026,1,0
-BRDA:2266,2366,1,0
-BRDA:2266,2366,0,0
-BRDA:2209,859,1,0
-FN:2270,Microsoft.FSharp.Collections.FSharpList`1<System.Double> ImageFunctions::tensorEigenMatrixValues(System.Double,System.Double,System.Double,System.Double,System.Double,System.Double)
+DA:2267,0
+DA:2269,0
+BRDA:2163,8,0,0
+BRDA:2163,8,1,0
+BRDA:2166,74,0,0
+BRDA:2175,159,0,0
+BRDA:2175,708,1,0
+BRDA:2176,177,0,0
+BRDA:2176,691,1,0
+BRDA:2189,350,1,0
+BRDA:2189,350,0,0
+BRDA:2193,385,0,0
+BRDA:2193,406,0,0
+BRDA:2193,432,0,0
+BRDA:2193,458,0,0
+BRDA:2193,385,1,0
+BRDA:2193,406,1,0
+BRDA:2193,432,1,0
+BRDA:2193,458,1,0
+BRDA:2176,177,1,0
+BRDA:2176,691,0,0
+BRDA:2175,159,1,0
+BRDA:2175,708,0,0
+BRDA:2166,74,1,0
+BRDA:2210,859,0,0
+BRDA:2213,884,0,0
+BRDA:2213,905,0,0
+BRDA:2213,931,0,0
+BRDA:2213,957,0,0
+BRDA:2213,980,0,0
+BRDA:2213,1003,0,0
+BRDA:2213,1003,1,0
+BRDA:2213,980,1,0
+BRDA:2213,957,1,0
+BRDA:2213,931,1,0
+BRDA:2213,905,1,0
+BRDA:2213,884,1,0
+BRDA:2213,1026,0,0
+BRDA:2224,1274,1,0
+BRDA:2224,1274,0,0
+BRDA:2225,1334,1,0
+BRDA:2225,1334,0,0
+BRDA:2226,1394,1,0
+BRDA:2226,1394,0,0
+BRDA:2227,1454,1,0
+BRDA:2227,1454,0,0
+BRDA:2229,1478,0,0
+BRDA:2229,2153,1,0
+BRDA:2230,1496,0,0
+BRDA:2230,2136,1,0
+BRDA:2231,1514,0,0
+BRDA:2231,2119,1,0
+BRDA:2238,1715,1,0
+BRDA:2238,1715,0,0
+BRDA:2242,1750,0,0
+BRDA:2242,1771,0,0
+BRDA:2242,1797,0,0
+BRDA:2242,1823,0,0
+BRDA:2242,1750,1,0
+BRDA:2242,1771,1,0
+BRDA:2242,1797,1,0
+BRDA:2242,1823,1,0
+BRDA:2231,1514,1,0
+BRDA:2231,2119,0,0
+BRDA:2230,1496,1,0
+BRDA:2230,2136,0,0
+BRDA:2229,1478,1,0
+BRDA:2229,2153,0,0
+BRDA:2213,1026,1,0
+BRDA:2267,2366,1,0
+BRDA:2267,2366,0,0
+BRDA:2210,859,1,0
+FN:2271,Microsoft.FSharp.Collections.FSharpList`1<System.Double> ImageFunctions::tensorEigenMatrixValues(System.Double,System.Double,System.Double,System.Double,System.Double,System.Double)
 FNDA:375,Microsoft.FSharp.Collections.FSharpList`1<System.Double> ImageFunctions::tensorEigenMatrixValues(System.Double,System.Double,System.Double,System.Double,System.Double,System.Double)
-DA:2271,375
 DA:2272,375
 DA:2273,375
 DA:2274,375
 DA:2275,375
-DA:2276,750
-DA:2278,375
-DA:2279,1500
-DA:2280,375
-FN:2282,Image/Image`1<Microsoft.FSharp.Collections.FSharpList`1<System.Double>> ImageFunctions::structureTensorEigenMatrix(Image/Image`1<Microsoft.FSharp.Collections.FSharpList`1<System.Double>>)
+DA:2276,375
+DA:2277,750
+DA:2279,375
+DA:2280,1500
+DA:2281,375
+FN:2283,Image/Image`1<Microsoft.FSharp.Collections.FSharpList`1<System.Double>> ImageFunctions::structureTensorEigenMatrix(Image/Image`1<Microsoft.FSharp.Collections.FSharpList`1<System.Double>>)
 FNDA:15,Image/Image`1<Microsoft.FSharp.Collections.FSharpList`1<System.Double>> ImageFunctions::structureTensorEigenMatrix(Image/Image`1<Microsoft.FSharp.Collections.FSharpList`1<System.Double>>)
-DA:2283,15
-DA:2284,0
-DA:2286,15
+DA:2284,15
+DA:2285,0
 DA:2287,15
 DA:2288,15
-DA:2289,90
-DA:2290,450
-DA:2291,375
+DA:2289,15
+DA:2290,90
+DA:2291,450
 DA:2292,375
 DA:2293,375
 DA:2294,375
@@ -2600,14 +2599,14 @@ DA:2295,375
 DA:2296,375
 DA:2297,375
 DA:2298,375
-DA:2299,5250
-DA:2300,4500
-DA:2301,15
-DA:2302,0
+DA:2299,375
+DA:2300,5250
+DA:2301,4500
+DA:2302,15
 DA:2303,0
 DA:2304,0
 DA:2305,0
-DA:2307,0
+DA:2306,0
 DA:2308,0
 DA:2309,0
 DA:2310,0
@@ -2633,527 +2632,527 @@ DA:2329,0
 DA:2330,0
 DA:2331,0
 DA:2332,0
-DA:2334,0
+DA:2333,0
 DA:2335,0
 DA:2336,0
-DA:2338,0
-BRDA:2283,8,0,0
-BRDA:2283,8,1,15
-BRDA:2286,74,0,15
-BRDA:2289,126,0,75
-BRDA:2289,296,1,75
-BRDA:2290,149,0,375
-BRDA:2290,279,1,375
-BRDA:2299,265,1,4500
-BRDA:2299,265,0,375
-BRDA:2290,149,1,75
-BRDA:2290,279,0,75
-BRDA:2289,126,1,15
-BRDA:2289,296,0,15
-BRDA:2286,74,1,0
-BRDA:2302,337,0,0
-BRDA:2305,362,0,0
-BRDA:2305,383,0,0
-BRDA:2305,409,0,0
-BRDA:2305,435,0,0
-BRDA:2305,458,0,0
-BRDA:2305,481,0,0
-BRDA:2305,481,1,0
-BRDA:2305,458,1,0
-BRDA:2305,435,1,0
-BRDA:2305,409,1,0
-BRDA:2305,383,1,0
-BRDA:2305,362,1,0
-BRDA:2305,504,0,0
-BRDA:2316,753,1,0
-BRDA:2316,753,0,0
-BRDA:2317,777,0,0
-BRDA:2317,997,1,0
-BRDA:2318,795,0,0
-BRDA:2318,980,1,0
-BRDA:2319,813,0,0
-BRDA:2319,963,1,0
-BRDA:2328,949,1,0
-BRDA:2328,949,0,0
-BRDA:2319,813,1,0
-BRDA:2319,963,0,0
-BRDA:2318,795,1,0
-BRDA:2318,980,0,0
-BRDA:2317,777,1,0
-BRDA:2317,997,0,0
-BRDA:2305,504,1,0
-BRDA:2336,1147,1,0
-BRDA:2336,1147,0,0
-BRDA:2302,337,1,0
-FN:2340,Image/Image`1<T> ImageFunctions::stack(Microsoft.FSharp.Collections.FSharpList`1<Image/Image`1<T>>)
+DA:2337,0
+DA:2339,0
+BRDA:2284,8,0,0
+BRDA:2284,8,1,15
+BRDA:2287,74,0,15
+BRDA:2290,126,0,75
+BRDA:2290,296,1,75
+BRDA:2291,149,0,375
+BRDA:2291,279,1,375
+BRDA:2300,265,1,4500
+BRDA:2300,265,0,375
+BRDA:2291,149,1,75
+BRDA:2291,279,0,75
+BRDA:2290,126,1,15
+BRDA:2290,296,0,15
+BRDA:2287,74,1,0
+BRDA:2303,337,0,0
+BRDA:2306,362,0,0
+BRDA:2306,383,0,0
+BRDA:2306,409,0,0
+BRDA:2306,435,0,0
+BRDA:2306,458,0,0
+BRDA:2306,481,0,0
+BRDA:2306,481,1,0
+BRDA:2306,458,1,0
+BRDA:2306,435,1,0
+BRDA:2306,409,1,0
+BRDA:2306,383,1,0
+BRDA:2306,362,1,0
+BRDA:2306,504,0,0
+BRDA:2317,753,1,0
+BRDA:2317,753,0,0
+BRDA:2318,777,0,0
+BRDA:2318,997,1,0
+BRDA:2319,795,0,0
+BRDA:2319,980,1,0
+BRDA:2320,813,0,0
+BRDA:2320,963,1,0
+BRDA:2329,949,1,0
+BRDA:2329,949,0,0
+BRDA:2320,813,1,0
+BRDA:2320,963,0,0
+BRDA:2319,795,1,0
+BRDA:2319,980,0,0
+BRDA:2318,777,1,0
+BRDA:2318,997,0,0
+BRDA:2306,504,1,0
+BRDA:2337,1147,1,0
+BRDA:2337,1147,0,0
+BRDA:2303,337,1,0
+FN:2341,Image/Image`1<T> ImageFunctions::stack(Microsoft.FSharp.Collections.FSharpList`1<Image/Image`1<T>>)
 FNDA:263,Image/Image`1<T> ImageFunctions::stack(Microsoft.FSharp.Collections.FSharpList`1<Image/Image`1<T>>)
-DA:2341,263
-DA:2342,0
-DA:2344,263
-DA:2345,1907
-DA:2346,0
-DA:2347,263
-DA:2348,254
+DA:2342,263
+DA:2343,0
+DA:2345,263
+DA:2346,1907
+DA:2347,0
+DA:2348,263
 DA:2349,254
 DA:2350,254
-DA:2351,1100
-DA:2352,254
+DA:2351,254
+DA:2352,1100
 DA:2353,254
 DA:2354,254
 DA:2355,254
 DA:2356,254
 DA:2357,254
-DA:2358,508
+DA:2358,254
 DA:2359,508
-DA:2360,254
+DA:2360,508
 DA:2361,254
 DA:2362,254
 DA:2363,254
 DA:2364,254
-DA:2365,1100
+DA:2365,254
 DA:2366,1100
 DA:2367,1100
 DA:2368,1100
 DA:2369,1100
 DA:2370,1100
-DA:2371,1354
-DA:2372,762
-DA:2373,254
-DA:2374,1608
-DA:2376,9
-DA:2377,18
-BRDA:2341,8,1,0
-BRDA:2341,8,0,263
-BRDA:2345,69,0,0
-BRDA:2345,69,1,263
-BRDA:2347,91,0,254
-BRDA:2352,231,1,1100
-BRDA:2351,171,0,0
-BRDA:2351,171,1,1100
-BRDA:2352,231,0,254
-BRDA:2371,440,1,1100
-BRDA:2371,440,0,254
-BRDA:2347,91,1,9
-FN:2379,Image/Image`1<T> ImageFunctions::extractSub(Microsoft.FSharp.Collections.FSharpList`1<System.UInt32>,Microsoft.FSharp.Collections.FSharpList`1<System.UInt32>,Image/Image`1<T>)
+DA:2371,1100
+DA:2372,1354
+DA:2373,762
+DA:2374,254
+DA:2375,1608
+DA:2377,9
+DA:2378,18
+BRDA:2342,8,1,0
+BRDA:2342,8,0,263
+BRDA:2346,69,0,0
+BRDA:2346,69,1,263
+BRDA:2348,91,0,254
+BRDA:2353,231,1,1100
+BRDA:2352,171,0,0
+BRDA:2352,171,1,1100
+BRDA:2353,231,0,254
+BRDA:2372,440,1,1100
+BRDA:2372,440,0,254
+BRDA:2348,91,1,9
+FN:2380,Image/Image`1<T> ImageFunctions::extractSub(Microsoft.FSharp.Collections.FSharpList`1<System.UInt32>,Microsoft.FSharp.Collections.FSharpList`1<System.UInt32>,Image/Image`1<T>)
 FNDA:18,Image/Image`1<T> ImageFunctions::extractSub(Microsoft.FSharp.Collections.FSharpList`1<System.UInt32>,Microsoft.FSharp.Collections.FSharpList`1<System.UInt32>,Image/Image`1<T>)
-DA:2380,18
-DA:2381,0
-DA:2382,18
-DA:2383,0
-DA:2384,90
-DA:2385,72
-DA:2386,0
-DA:2388,18
-DA:2389,54
-DA:2390,72
-DA:2391,18
-BRDA:2380,13,0,0
-BRDA:2380,13,1,18
-BRDA:2382,85,0,0
-BRDA:2382,85,1,18
-BRDA:2385,133,0,0
-BRDA:2385,133,1,18
-FN:2393,Image/Image`1<a> ImageFunctions::extractSlice(System.UInt32,System.Int32,Image/Image`1<T>)
+DA:2381,18
+DA:2382,0
+DA:2383,18
+DA:2384,0
+DA:2385,90
+DA:2386,72
+DA:2387,0
+DA:2389,18
+DA:2390,54
+DA:2391,72
+DA:2392,18
+BRDA:2381,13,0,0
+BRDA:2381,13,1,18
+BRDA:2383,85,0,0
+BRDA:2383,85,1,18
+BRDA:2386,133,0,0
+BRDA:2386,133,1,18
+FN:2394,Image/Image`1<a> ImageFunctions::extractSlice(System.UInt32,System.Int32,Image/Image`1<T>)
 FNDA:1178,Image/Image`1<a> ImageFunctions::extractSlice(System.UInt32,System.Int32,Image/Image`1<T>)
-DA:2394,1178
-DA:2395,0
-DA:2396,1178
+DA:2395,1178
+DA:2396,0
 DA:2397,1178
-DA:2399,1178
-DA:2400,1186
-DA:2401,1170
-DA:2402,3534
+DA:2398,1178
+DA:2400,1178
+DA:2401,1186
+DA:2402,1170
 DA:2403,3534
-DA:2404,1178
+DA:2404,3534
 DA:2405,1178
-BRDA:2394,8,0,0
-BRDA:2394,8,1,1178
-BRDA:2399,39,0,0
-BRDA:2399,39,1,1178
-BRDA:2400,113,0,8
-BRDA:2400,113,1,1170
-FN:2407,Microsoft.FSharp.Collections.FSharpList`1<Image/Image`1<T>> ImageFunctions::unstack(System.UInt32,Image/Image`1<T>)
+DA:2406,1178
+BRDA:2395,8,0,0
+BRDA:2395,8,1,1178
+BRDA:2400,39,0,0
+BRDA:2400,39,1,1178
+BRDA:2401,113,0,8
+BRDA:2401,113,1,1170
+FN:2408,Microsoft.FSharp.Collections.FSharpList`1<Image/Image`1<T>> ImageFunctions::unstack(System.UInt32,Image/Image`1<T>)
 FNDA:252,Microsoft.FSharp.Collections.FSharpList`1<Image/Image`1<T>> ImageFunctions::unstack(System.UInt32,Image/Image`1<T>)
-DA:2408,252
-DA:2409,504
-DA:2410,1365
-DA:2411,252
-FN:2413,Microsoft.FSharp.Collections.FSharpList`1<Image/Image`1<T>> ImageFunctions::unstackSkipNTakeM(System.UInt32,System.UInt32,Image/Image`1<T>)
+DA:2409,252
+DA:2410,504
+DA:2411,1365
+DA:2412,252
+FN:2414,Microsoft.FSharp.Collections.FSharpList`1<Image/Image`1<T>> ImageFunctions::unstackSkipNTakeM(System.UInt32,System.UInt32,Image/Image`1<T>)
 FNDA:18,Microsoft.FSharp.Collections.FSharpList`1<Image/Image`1<T>> ImageFunctions::unstackSkipNTakeM(System.UInt32,System.UInt32,Image/Image`1<T>)
-DA:2414,18
 DA:2415,18
-DA:2416,0
-DA:2417,36
-DA:2418,18
+DA:2416,18
+DA:2417,0
+DA:2418,36
 DA:2419,18
-DA:2420,0
-DA:2421,69
-DA:2422,18
-BRDA:2415,12,0,0
-BRDA:2415,12,1,18
-BRDA:2418,85,0,0
-BRDA:2418,85,1,18
-BRDA:2419,103,0,0
-BRDA:2419,103,1,18
-FN:2425,ImageFunctions/FileInfo ImageFunctions::getFileInfo(System.String)
+DA:2420,18
+DA:2421,0
+DA:2422,69
+DA:2423,18
+BRDA:2416,12,0,0
+BRDA:2416,12,1,18
+BRDA:2419,85,0,0
+BRDA:2419,85,1,18
+BRDA:2420,103,0,0
+BRDA:2420,103,1,18
+FN:2426,ImageFunctions/FileInfo ImageFunctions::getFileInfo(System.String)
 FNDA:109,ImageFunctions/FileInfo ImageFunctions::getFileInfo(System.String)
-DA:2426,109
 DA:2427,109
 DA:2428,109
 DA:2429,109
 DA:2430,109
-DA:2431,218
+DA:2431,109
 DA:2432,218
-DA:2433,109
+DA:2433,218
 DA:2434,109
-FN:2444,System.Collections.Generic.IEnumerable`1<System.Collections.Generic.IEnumerable`1<System.Double>> ImageFunctions::toSeqSeq(Image/Image`1<T>)
+DA:2435,109
+FN:2445,System.Collections.Generic.IEnumerable`1<System.Collections.Generic.IEnumerable`1<System.Double>> ImageFunctions::toSeqSeq(Image/Image`1<T>)
 FNDA:0,System.Collections.Generic.IEnumerable`1<System.Collections.Generic.IEnumerable`1<System.Double>> ImageFunctions::toSeqSeq(Image/Image`1<T>)
-DA:2445,0
 DA:2446,0
 DA:2447,0
 DA:2448,0
 DA:2449,0
-FN:2451,Image/Image`1<a> ImageFunctions::permuteAxes(Microsoft.FSharp.Collections.FSharpList`1<System.UInt32>,Image/Image`1<T>)
+DA:2450,0
+FN:2452,Image/Image`1<a> ImageFunctions::permuteAxes(Microsoft.FSharp.Collections.FSharpList`1<System.UInt32>,Image/Image`1<T>)
 FNDA:10,Image/Image`1<a> ImageFunctions::permuteAxes(Microsoft.FSharp.Collections.FSharpList`1<System.UInt32>,Image/Image`1<T>)
-DA:2452,10
-DA:2453,30
-DA:2454,10
-FN:2457,Image/Image`1<System.Numerics.Complex> ImageFunctions::FFTXY(Image/Image`1<T>)
+DA:2453,10
+DA:2454,30
+DA:2455,10
+FN:2458,Image/Image`1<System.Numerics.Complex> ImageFunctions::FFTXY(Image/Image`1<T>)
 FNDA:2,Image/Image`1<System.Numerics.Complex> ImageFunctions::FFTXY(Image/Image`1<T>)
-DA:2458,2
-DA:2459,0
-DA:2460,2
+DA:2459,2
+DA:2460,0
 DA:2461,2
 DA:2462,2
 DA:2463,2
-BRDA:2458,8,0,0
-BRDA:2458,8,1,2
-FN:2465,Image/Image`1<Image/ComplexFloat32> ImageFunctions::FFTXYFloat32(Image/Image`1<T>)
+DA:2464,2
+BRDA:2459,8,0,0
+BRDA:2459,8,1,2
+FN:2466,Image/Image`1<Image/ComplexFloat32> ImageFunctions::FFTXYFloat32(Image/Image`1<T>)
 FNDA:0,Image/Image`1<Image/ComplexFloat32> ImageFunctions::FFTXYFloat32(Image/Image`1<T>)
-DA:2466,0
 DA:2467,0
 DA:2468,0
 DA:2469,0
 DA:2470,0
 DA:2471,0
-BRDA:2466,8,0,0
-BRDA:2466,8,1,0
-FN:2473,System.Numerics.Complex[] ImageFunctions::dftLine(System.Boolean,System.Numerics.Complex[])
+DA:2472,0
+BRDA:2467,8,0,0
+BRDA:2467,8,1,0
+FN:2474,System.Numerics.Complex[] ImageFunctions::dftLine(System.Boolean,System.Numerics.Complex[])
 FNDA:16,System.Numerics.Complex[] ImageFunctions::dftLine(System.Boolean,System.Numerics.Complex[])
-DA:2474,16
 DA:2475,16
-DA:2476,32
+DA:2476,16
 DA:2477,32
-DA:2478,16
+DA:2478,32
 DA:2479,16
-DA:2480,64
-DA:2481,80
-DA:2483,16
-DA:2484,32
-DA:2485,96
-DA:2486,64
-DA:2487,48
-BRDA:2476,9,0,12
-BRDA:2476,9,1,4
-BRDA:2477,36,0,12
-BRDA:2477,36,1,4
-BRDA:2483,97,0,0
-BRDA:2483,97,1,16
-BRDA:2483,217,1,32
-BRDA:2483,217,0,16
-FN:2489,System.Numerics.Complex[0...,0...] ImageFunctions::directionalDftComplex2D(System.UInt32,System.Boolean,System.Numerics.Complex[0...,0...])
+DA:2480,16
+DA:2481,64
+DA:2482,80
+DA:2484,16
+DA:2485,32
+DA:2486,96
+DA:2487,64
+DA:2488,48
+BRDA:2477,9,0,12
+BRDA:2477,9,1,4
+BRDA:2478,36,0,12
+BRDA:2478,36,1,4
+BRDA:2484,97,0,0
+BRDA:2484,97,1,16
+BRDA:2484,217,1,32
+BRDA:2484,217,0,16
+FN:2490,System.Numerics.Complex[0...,0...] ImageFunctions::directionalDftComplex2D(System.UInt32,System.Boolean,System.Numerics.Complex[0...,0...])
 FNDA:4,System.Numerics.Complex[0...,0...] ImageFunctions::directionalDftComplex2D(System.UInt32,System.Boolean,System.Numerics.Complex[0...,0...])
-DA:2490,4
 DA:2491,4
 DA:2492,4
-DA:2494,4
-DA:2496,6
-DA:2497,24
-DA:2498,12
-DA:2499,8
-DA:2501,6
-DA:2502,24
-DA:2503,12
-DA:2504,8
-DA:2506,0
-DA:2508,4
-BRDA:2494,26,1,2
-BRDA:2496,54,0,4
-BRDA:2496,233,1,4
-BRDA:2497,68,0,0
-BRDA:2497,68,1,4
-BRDA:2497,92,0,0
-BRDA:2497,92,1,4
-BRDA:2497,123,0,8
-BRDA:2497,123,1,4
-BRDA:2498,187,0,8
-BRDA:2498,220,1,8
-BRDA:2498,187,1,4
-BRDA:2498,220,0,4
-BRDA:2496,54,1,2
-BRDA:2496,233,0,2
-BRDA:2494,26,2,2
-BRDA:2501,256,0,4
-BRDA:2501,436,1,4
-BRDA:2502,270,0,0
-BRDA:2502,270,1,4
-BRDA:2502,294,0,0
-BRDA:2502,294,1,4
-BRDA:2502,325,0,8
-BRDA:2502,325,1,4
-BRDA:2503,389,0,8
-BRDA:2503,422,1,8
-BRDA:2503,389,1,4
-BRDA:2503,422,0,4
-BRDA:2501,256,1,2
-BRDA:2501,436,0,2
-BRDA:2494,26,0,0
-FN:2510,System.Numerics.Complex[0...,0...,0...] ImageFunctions::directionalDftComplex3D(System.UInt32,System.Boolean,System.Numerics.Complex[0...,0...,0...])
+DA:2493,4
+DA:2495,4
+DA:2497,6
+DA:2498,24
+DA:2499,12
+DA:2500,8
+DA:2502,6
+DA:2503,24
+DA:2504,12
+DA:2505,8
+DA:2507,0
+DA:2509,4
+BRDA:2495,26,1,2
+BRDA:2497,54,0,4
+BRDA:2497,233,1,4
+BRDA:2498,68,0,0
+BRDA:2498,68,1,4
+BRDA:2498,92,0,0
+BRDA:2498,92,1,4
+BRDA:2498,123,0,8
+BRDA:2498,123,1,4
+BRDA:2499,187,0,8
+BRDA:2499,220,1,8
+BRDA:2499,187,1,4
+BRDA:2499,220,0,4
+BRDA:2497,54,1,2
+BRDA:2497,233,0,2
+BRDA:2495,26,2,2
+BRDA:2502,256,0,4
+BRDA:2502,436,1,4
+BRDA:2503,270,0,0
+BRDA:2503,270,1,4
+BRDA:2503,294,0,0
+BRDA:2503,294,1,4
+BRDA:2503,325,0,8
+BRDA:2503,325,1,4
+BRDA:2504,389,0,8
+BRDA:2504,422,1,8
+BRDA:2504,389,1,4
+BRDA:2504,422,0,4
+BRDA:2502,256,1,2
+BRDA:2502,436,0,2
+BRDA:2495,26,0,0
+FN:2511,System.Numerics.Complex[0...,0...,0...] ImageFunctions::directionalDftComplex3D(System.UInt32,System.Boolean,System.Numerics.Complex[0...,0...,0...])
 FNDA:8,System.Numerics.Complex[0...,0...,0...] ImageFunctions::directionalDftComplex3D(System.UInt32,System.Boolean,System.Numerics.Complex[0...,0...,0...])
-DA:2511,8
 DA:2512,8
 DA:2513,8
 DA:2514,8
-DA:2516,8
-DA:2518,0
+DA:2515,8
+DA:2517,8
 DA:2519,0
 DA:2520,0
 DA:2521,0
 DA:2522,0
-DA:2524,0
+DA:2523,0
 DA:2525,0
 DA:2526,0
 DA:2527,0
 DA:2528,0
-DA:2530,16
+DA:2529,0
 DA:2531,16
-DA:2532,48
-DA:2533,24
-DA:2534,16
-DA:2536,0
-DA:2538,8
-BRDA:2516,35,1,0
-BRDA:2518,69,0,0
-BRDA:2518,287,1,0
-BRDA:2519,86,0,0
-BRDA:2519,270,1,0
-BRDA:2520,100,0,0
-BRDA:2520,100,1,0
-BRDA:2520,124,0,0
-BRDA:2520,124,1,0
-BRDA:2520,155,0,0
-BRDA:2520,155,1,0
-BRDA:2521,221,0,0
-BRDA:2521,256,1,0
-BRDA:2521,221,1,0
-BRDA:2521,256,0,0
-BRDA:2519,86,1,0
-BRDA:2519,270,0,0
-BRDA:2518,69,1,0
-BRDA:2518,287,0,0
-BRDA:2516,35,2,0
-BRDA:2524,310,0,0
-BRDA:2524,528,1,0
-BRDA:2525,327,0,0
-BRDA:2525,511,1,0
-BRDA:2526,341,0,0
-BRDA:2526,341,1,0
-BRDA:2526,365,0,0
-BRDA:2526,365,1,0
-BRDA:2526,396,0,0
-BRDA:2526,396,1,0
-BRDA:2527,462,0,0
-BRDA:2527,497,1,0
-BRDA:2527,462,1,0
-BRDA:2527,497,0,0
-BRDA:2525,327,1,0
-BRDA:2525,511,0,0
-BRDA:2524,310,1,0
-BRDA:2524,528,0,0
-BRDA:2516,35,3,8
-BRDA:2530,551,0,8
-BRDA:2530,769,1,8
-BRDA:2531,568,0,8
-BRDA:2531,752,1,8
-BRDA:2532,582,0,0
-BRDA:2532,582,1,8
-BRDA:2532,606,0,0
-BRDA:2532,606,1,8
-BRDA:2532,637,0,16
-BRDA:2532,637,1,8
-BRDA:2533,703,0,16
-BRDA:2533,738,1,16
-BRDA:2533,703,1,8
-BRDA:2533,738,0,8
-BRDA:2531,568,1,8
-BRDA:2531,752,0,8
-BRDA:2530,551,1,8
-BRDA:2530,769,0,8
-BRDA:2516,35,0,0
-FN:2540,System.Numerics.Complex ImageFunctions::toComplex64(Image/ComplexFloat32)
+DA:2532,16
+DA:2533,48
+DA:2534,24
+DA:2535,16
+DA:2537,0
+DA:2539,8
+BRDA:2517,35,1,0
+BRDA:2519,69,0,0
+BRDA:2519,287,1,0
+BRDA:2520,86,0,0
+BRDA:2520,270,1,0
+BRDA:2521,100,0,0
+BRDA:2521,100,1,0
+BRDA:2521,124,0,0
+BRDA:2521,124,1,0
+BRDA:2521,155,0,0
+BRDA:2521,155,1,0
+BRDA:2522,221,0,0
+BRDA:2522,256,1,0
+BRDA:2522,221,1,0
+BRDA:2522,256,0,0
+BRDA:2520,86,1,0
+BRDA:2520,270,0,0
+BRDA:2519,69,1,0
+BRDA:2519,287,0,0
+BRDA:2517,35,2,0
+BRDA:2525,310,0,0
+BRDA:2525,528,1,0
+BRDA:2526,327,0,0
+BRDA:2526,511,1,0
+BRDA:2527,341,0,0
+BRDA:2527,341,1,0
+BRDA:2527,365,0,0
+BRDA:2527,365,1,0
+BRDA:2527,396,0,0
+BRDA:2527,396,1,0
+BRDA:2528,462,0,0
+BRDA:2528,497,1,0
+BRDA:2528,462,1,0
+BRDA:2528,497,0,0
+BRDA:2526,327,1,0
+BRDA:2526,511,0,0
+BRDA:2525,310,1,0
+BRDA:2525,528,0,0
+BRDA:2517,35,3,8
+BRDA:2531,551,0,8
+BRDA:2531,769,1,8
+BRDA:2532,568,0,8
+BRDA:2532,752,1,8
+BRDA:2533,582,0,0
+BRDA:2533,582,1,8
+BRDA:2533,606,0,0
+BRDA:2533,606,1,8
+BRDA:2533,637,0,16
+BRDA:2533,637,1,8
+BRDA:2534,703,0,16
+BRDA:2534,738,1,16
+BRDA:2534,703,1,8
+BRDA:2534,738,0,8
+BRDA:2532,568,1,8
+BRDA:2532,752,0,8
+BRDA:2531,551,1,8
+BRDA:2531,769,0,8
+BRDA:2517,35,0,0
+FN:2541,System.Numerics.Complex ImageFunctions::toComplex64(Image/ComplexFloat32)
 FNDA:0,System.Numerics.Complex ImageFunctions::toComplex64(Image/ComplexFloat32)
-DA:2541,0
-FN:2543,Image/ComplexFloat32 ImageFunctions::toComplex32(System.Numerics.Complex)
+DA:2542,0
+FN:2544,Image/ComplexFloat32 ImageFunctions::toComplex32(System.Numerics.Complex)
 FNDA:0,Image/ComplexFloat32 ImageFunctions::toComplex32(System.Numerics.Complex)
-DA:2544,0
-FN:2546,Image/ComplexFloat32[0...,0...] ImageFunctions::directionalDftComplexFloat322D(System.UInt32,System.Boolean,Image/ComplexFloat32[0...,0...])
+DA:2545,0
+FN:2547,Image/ComplexFloat32[0...,0...] ImageFunctions::directionalDftComplexFloat322D(System.UInt32,System.Boolean,Image/ComplexFloat32[0...,0...])
 FNDA:0,Image/ComplexFloat32[0...,0...] ImageFunctions::directionalDftComplexFloat322D(System.UInt32,System.Boolean,Image/ComplexFloat32[0...,0...])
-DA:2547,0
 DA:2548,0
 DA:2549,0
 DA:2550,0
-FN:2552,Image/ComplexFloat32[0...,0...,0...] ImageFunctions::directionalDftComplexFloat323D(System.UInt32,System.Boolean,Image/ComplexFloat32[0...,0...,0...])
+DA:2551,0
+FN:2553,Image/ComplexFloat32[0...,0...,0...] ImageFunctions::directionalDftComplexFloat323D(System.UInt32,System.Boolean,Image/ComplexFloat32[0...,0...,0...])
 FNDA:0,Image/ComplexFloat32[0...,0...,0...] ImageFunctions::directionalDftComplexFloat323D(System.UInt32,System.Boolean,Image/ComplexFloat32[0...,0...,0...])
-DA:2553,0
 DA:2554,0
 DA:2555,0
 DA:2556,0
-FN:2559,Image/Image`1<System.Numerics.Complex> ImageFunctions::directionalFFT(System.UInt32,Image/Image`1<T>)
+DA:2557,0
+FN:2560,Image/Image`1<System.Numerics.Complex> ImageFunctions::directionalFFT(System.UInt32,Image/Image`1<T>)
 FNDA:0,Image/Image`1<System.Numerics.Complex> ImageFunctions::directionalFFT(System.UInt32,Image/Image`1<T>)
-DA:2560,0
 DA:2561,0
 DA:2562,0
 DA:2563,0
 DA:2564,0
 DA:2565,0
 DA:2566,0
-DA:2568,0
+DA:2567,0
 DA:2569,0
 DA:2570,0
-DA:2572,0
+DA:2571,0
 DA:2573,0
 DA:2574,0
-DA:2576,0
+DA:2575,0
 DA:2577,0
 DA:2578,0
-BRDA:2561,10,0,0
-BRDA:2561,10,1,0
-BRDA:2566,115,1,0
-BRDA:2566,115,2,0
-BRDA:2566,115,0,0
-FN:2580,Image/Image`1<Image/ComplexFloat32> ImageFunctions::directionalFFTFloat32(System.UInt32,Image/Image`1<T>)
+DA:2579,0
+BRDA:2562,10,0,0
+BRDA:2562,10,1,0
+BRDA:2567,115,1,0
+BRDA:2567,115,2,0
+BRDA:2567,115,0,0
+FN:2581,Image/Image`1<Image/ComplexFloat32> ImageFunctions::directionalFFTFloat32(System.UInt32,Image/Image`1<T>)
 FNDA:0,Image/Image`1<Image/ComplexFloat32> ImageFunctions::directionalFFTFloat32(System.UInt32,Image/Image`1<T>)
-DA:2581,0
 DA:2582,0
 DA:2583,0
 DA:2584,0
 DA:2585,0
-DA:2587,0
+DA:2586,0
 DA:2588,0
-DA:2590,0
+DA:2589,0
 DA:2591,0
 DA:2592,0
-DA:2594,0
+DA:2593,0
 DA:2595,0
 DA:2596,0
-DA:2598,0
+DA:2597,0
 DA:2599,0
 DA:2600,0
-BRDA:2582,10,0,0
-BRDA:2582,10,1,0
-BRDA:2588,115,1,0
-BRDA:2588,115,2,0
-BRDA:2588,115,0,0
-FN:2602,Image/Image`1<System.Numerics.Complex> ImageFunctions::directionalFFTComplex(System.UInt32,System.Boolean,Image/Image`1<System.Numerics.Complex>)
+DA:2601,0
+BRDA:2583,10,0,0
+BRDA:2583,10,1,0
+BRDA:2589,115,1,0
+BRDA:2589,115,2,0
+BRDA:2589,115,0,0
+FN:2603,Image/Image`1<System.Numerics.Complex> ImageFunctions::directionalFFTComplex(System.UInt32,System.Boolean,Image/Image`1<System.Numerics.Complex>)
 FNDA:8,Image/Image`1<System.Numerics.Complex> ImageFunctions::directionalFFTComplex(System.UInt32,System.Boolean,Image/Image`1<System.Numerics.Complex>)
-DA:2603,8
 DA:2604,8
-DA:2605,0
-DA:2607,8
-DA:2609,0
+DA:2605,8
+DA:2606,0
+DA:2608,8
 DA:2610,0
-DA:2612,16
-DA:2613,8
-DA:2615,0
-BRDA:2604,10,0,0
-BRDA:2604,10,1,8
-BRDA:2607,73,1,0
-BRDA:2607,73,2,8
-BRDA:2607,73,0,0
-FN:2617,Image/Image`1<Image/ComplexFloat32> ImageFunctions::directionalFFTComplexFloat32(System.UInt32,System.Boolean,Image/Image`1<Image/ComplexFloat32>)
+DA:2611,0
+DA:2613,16
+DA:2614,8
+DA:2616,0
+BRDA:2605,10,0,0
+BRDA:2605,10,1,8
+BRDA:2608,73,1,0
+BRDA:2608,73,2,8
+BRDA:2608,73,0,0
+FN:2618,Image/Image`1<Image/ComplexFloat32> ImageFunctions::directionalFFTComplexFloat32(System.UInt32,System.Boolean,Image/Image`1<Image/ComplexFloat32>)
 FNDA:0,Image/Image`1<Image/ComplexFloat32> ImageFunctions::directionalFFTComplexFloat32(System.UInt32,System.Boolean,Image/Image`1<Image/ComplexFloat32>)
-DA:2618,0
 DA:2619,0
 DA:2620,0
-DA:2622,0
-DA:2624,0
+DA:2621,0
+DA:2623,0
 DA:2625,0
-DA:2627,0
+DA:2626,0
 DA:2628,0
-DA:2630,0
-BRDA:2619,10,0,0
-BRDA:2619,10,1,0
-BRDA:2622,73,1,0
-BRDA:2622,73,2,0
-BRDA:2622,73,0,0
-FN:2632,Image/Image`1<System.Numerics.Complex> ImageFunctions::inverseFFTXY(Image/Image`1<System.Numerics.Complex>)
+DA:2629,0
+DA:2631,0
+BRDA:2620,10,0,0
+BRDA:2620,10,1,0
+BRDA:2623,73,1,0
+BRDA:2623,73,2,0
+BRDA:2623,73,0,0
+FN:2633,Image/Image`1<System.Numerics.Complex> ImageFunctions::inverseFFTXY(Image/Image`1<System.Numerics.Complex>)
 FNDA:2,Image/Image`1<System.Numerics.Complex> ImageFunctions::inverseFFTXY(Image/Image`1<System.Numerics.Complex>)
-DA:2633,2
-DA:2634,0
-DA:2636,2
+DA:2634,2
+DA:2635,0
 DA:2637,2
 DA:2638,2
-DA:2639,4
-BRDA:2633,8,0,0
-BRDA:2633,8,1,2
-FN:2641,Image/Image`1<Image/ComplexFloat32> ImageFunctions::inverseFFTXYFloat32(Image/Image`1<Image/ComplexFloat32>)
+DA:2639,2
+DA:2640,4
+BRDA:2634,8,0,0
+BRDA:2634,8,1,2
+FN:2642,Image/Image`1<Image/ComplexFloat32> ImageFunctions::inverseFFTXYFloat32(Image/Image`1<Image/ComplexFloat32>)
 FNDA:0,Image/Image`1<Image/ComplexFloat32> ImageFunctions::inverseFFTXYFloat32(Image/Image`1<Image/ComplexFloat32>)
-DA:2642,0
 DA:2643,0
-DA:2645,0
+DA:2644,0
 DA:2646,0
 DA:2647,0
 DA:2648,0
-BRDA:2642,8,0,0
-BRDA:2642,8,1,0
-FN:2650,Image/Image`1<System.Double> ImageFunctions::realPart(Image/Image`1<System.Numerics.Complex>)
+DA:2649,0
+BRDA:2643,8,0,0
+BRDA:2643,8,1,0
+FN:2651,Image/Image`1<System.Double> ImageFunctions::realPart(Image/Image`1<System.Numerics.Complex>)
 FNDA:2,Image/Image`1<System.Double> ImageFunctions::realPart(Image/Image`1<System.Numerics.Complex>)
-DA:2651,2
-FN:2653,Image/Image`1<System.Single> ImageFunctions::realPartFloat32(Image/Image`1<Image/ComplexFloat32>)
+DA:2652,2
+FN:2654,Image/Image`1<System.Single> ImageFunctions::realPartFloat32(Image/Image`1<Image/ComplexFloat32>)
 FNDA:0,Image/Image`1<System.Single> ImageFunctions::realPartFloat32(Image/Image`1<Image/ComplexFloat32>)
-DA:2654,0
-FN:2656,Image/Image`1<System.Double> ImageFunctions::inverseFFTXYReal(Image/Image`1<System.Numerics.Complex>)
+DA:2655,0
+FN:2657,Image/Image`1<System.Double> ImageFunctions::inverseFFTXYReal(Image/Image`1<System.Numerics.Complex>)
 FNDA:0,Image/Image`1<System.Double> ImageFunctions::inverseFFTXYReal(Image/Image`1<System.Numerics.Complex>)
-DA:2657,0
 DA:2658,0
-DA:2660,0
+DA:2659,0
 DA:2661,0
 DA:2662,0
 DA:2663,0
-BRDA:2657,8,0,0
-BRDA:2657,8,1,0
-FN:2665,Image/Image`1<System.Numerics.Complex> ImageFunctions::shiftFFT(Image/Image`1<System.Numerics.Complex>)
+DA:2664,0
+BRDA:2658,8,0,0
+BRDA:2658,8,1,0
+FN:2666,Image/Image`1<System.Numerics.Complex> ImageFunctions::shiftFFT(Image/Image`1<System.Numerics.Complex>)
 FNDA:1,Image/Image`1<System.Numerics.Complex> ImageFunctions::shiftFFT(Image/Image`1<System.Numerics.Complex>)
-DA:2666,1
-DA:2668,0
+DA:2667,1
 DA:2669,0
 DA:2670,0
 DA:2671,0
 DA:2672,0
 DA:2673,0
-DA:2675,1
+DA:2674,0
 DA:2676,1
 DA:2677,1
 DA:2678,1
 DA:2679,1
-DA:2680,9
+DA:2680,1
 DA:2681,9
 DA:2682,9
-DA:2683,2
-DA:2685,0
-BRDA:2666,10,1,0
-BRDA:2666,10,2,1
-BRDA:2666,10,0,0
-FN:2687,Image/Image`1<Image/ComplexFloat32> ImageFunctions::shiftFFTFloat32(Image/Image`1<Image/ComplexFloat32>)
+DA:2683,9
+DA:2684,2
+DA:2686,0
+BRDA:2667,10,1,0
+BRDA:2667,10,2,1
+BRDA:2667,10,0,0
+FN:2688,Image/Image`1<Image/ComplexFloat32> ImageFunctions::shiftFFTFloat32(Image/Image`1<Image/ComplexFloat32>)
 FNDA:0,Image/Image`1<Image/ComplexFloat32> ImageFunctions::shiftFFTFloat32(Image/Image`1<Image/ComplexFloat32>)
-DA:2688,0
-DA:2690,0
+DA:2689,0
 DA:2691,0
 DA:2692,0
 DA:2693,0
 DA:2694,0
 DA:2695,0
-DA:2697,0
+DA:2696,0
 DA:2698,0
 DA:2699,0
 DA:2700,0
@@ -3162,10 +3161,11 @@ DA:2702,0
 DA:2703,0
 DA:2704,0
 DA:2705,0
-DA:2707,0
-BRDA:2688,10,1,0
-BRDA:2688,10,2,0
-BRDA:2688,10,0,0
+DA:2706,0
+DA:2708,0
+BRDA:2689,10,1,0
+BRDA:2689,10,2,0
+BRDA:2689,10,0,0
 FN:538,Image/Image`1<System.Double> ImageFunctions/derivative@539::Invoke(System.UInt32)
 FNDA:63,Image/Image`1<System.Double> ImageFunctions/derivative@539::Invoke(System.UInt32)
 DA:539,63
@@ -3193,130 +3193,130 @@ BRDA:772,79,0,1176
 BRDA:774,128,0,1176
 BRDA:774,128,1,0
 BRDA:772,79,1,0
-FN:1428,System.Double ImageFunctions/toFloat@1429T::Invoke(b)
-FNDA:0,System.Double ImageFunctions/toFloat@1429T::Invoke(b)
-DA:1429,0
-FN:1565,System.Double ImageFunctions/moment@1566::Invoke(System.Double)
-FNDA:6,System.Double ImageFunctions/moment@1566::Invoke(System.Double)
-DA:1566,6
-DA:1567,18
-DA:1568,12
-BRDA:1567,15,0,0
-BRDA:1567,15,1,6
-BRDA:1567,115,1,12
-BRDA:1567,115,0,6
-FN:1623,System.Double ImageFunctions/Pipe #1 stage #1 at line 1624@1624::Invoke(System.Int32,System.UInt64)
-FNDA:0,System.Double ImageFunctions/Pipe #1 stage #1 at line 1624@1624::Invoke(System.Int32,System.UInt64)
-DA:1624,0
-FN:1622,System.Double ImageFunctions/moment@1623-1::Invoke(System.Double)
-FNDA:0,System.Double ImageFunctions/moment@1623-1::Invoke(System.Double)
-DA:1623,0
+FN:1429,System.Double ImageFunctions/toFloat@1430T::Invoke(b)
+FNDA:0,System.Double ImageFunctions/toFloat@1430T::Invoke(b)
+DA:1430,0
+FN:1566,System.Double ImageFunctions/moment@1567::Invoke(System.Double)
+FNDA:6,System.Double ImageFunctions/moment@1567::Invoke(System.Double)
+DA:1567,6
+DA:1568,18
+DA:1569,12
+BRDA:1568,15,0,0
+BRDA:1568,15,1,6
+BRDA:1568,115,1,12
+BRDA:1568,115,0,6
+FN:1624,System.Double ImageFunctions/Pipe #1 stage #1 at line 1625@1625::Invoke(System.Int32,System.UInt64)
+FNDA:0,System.Double ImageFunctions/Pipe #1 stage #1 at line 1625@1625::Invoke(System.Int32,System.UInt64)
 DA:1625,0
+FN:1623,System.Double ImageFunctions/moment@1624-1::Invoke(System.Double)
+FNDA:0,System.Double ImageFunctions/moment@1624-1::Invoke(System.Double)
+DA:1624,0
 DA:1626,0
-BRDA:1625,28,0,0
-BRDA:1625,28,1,0
-BRDA:1625,90,1,0
-BRDA:1625,90,0,0
-FN:1705,Microsoft.FSharp.Core.FSharpOption`1<System.UInt64> ImageFunctions/addValue@1705-1::Invoke(Microsoft.FSharp.Core.FSharpOption`1<System.UInt64>)
-FNDA:3984,Microsoft.FSharp.Core.FSharpOption`1<System.UInt64> ImageFunctions/addValue@1705-1::Invoke(Microsoft.FSharp.Core.FSharpOption`1<System.UInt64>)
+DA:1627,0
+BRDA:1626,28,0,0
+BRDA:1626,28,1,0
+BRDA:1626,90,1,0
+BRDA:1626,90,0,0
+FN:1706,Microsoft.FSharp.Core.FSharpOption`1<System.UInt64> ImageFunctions/addValue@1706-1::Invoke(Microsoft.FSharp.Core.FSharpOption`1<System.UInt64>)
+FNDA:3984,Microsoft.FSharp.Core.FSharpOption`1<System.UInt64> ImageFunctions/addValue@1706-1::Invoke(Microsoft.FSharp.Core.FSharpOption`1<System.UInt64>)
+DA:1707,3984
+DA:1708,3941
+DA:1709,43
+BRDA:1707,3,1,3941
+BRDA:1707,3,0,43
+FN:1705,Microsoft.FSharp.Collections.FSharpMap`2<a,System.UInt64> ImageFunctions/addValue@1705T::Invoke(Microsoft.FSharp.Collections.FSharpMap`2<a,System.UInt64>,a)
+FNDA:3984,Microsoft.FSharp.Collections.FSharpMap`2<a,System.UInt64> ImageFunctions/addValue@1705T::Invoke(Microsoft.FSharp.Collections.FSharpMap`2<a,System.UInt64>,a)
 DA:1706,3984
-DA:1707,3941
-DA:1708,43
-BRDA:1706,3,1,3941
-BRDA:1706,3,0,43
-FN:1704,Microsoft.FSharp.Collections.FSharpMap`2<a,System.UInt64> ImageFunctions/addValue@1704T::Invoke(Microsoft.FSharp.Collections.FSharpMap`2<a,System.UInt64>,a)
-FNDA:3984,Microsoft.FSharp.Collections.FSharpMap`2<a,System.UInt64> ImageFunctions/addValue@1704T::Invoke(Microsoft.FSharp.Collections.FSharpMap`2<a,System.UInt64>,a)
-DA:1705,3984
-DA:1709,3984
-FN:1725,System.Double ImageFunctions/leftEdge@1726::Invoke(System.Int32)
-FNDA:0,System.Double ImageFunctions/leftEdge@1726::Invoke(System.Int32)
-DA:1726,0
-FN:1742,Microsoft.FSharp.Core.FSharpOption`1<System.UInt64> ImageFunctions/addValue@1743-3::Invoke(Microsoft.FSharp.Core.FSharpOption`1<System.UInt64>)
-FNDA:0,Microsoft.FSharp.Core.FSharpOption`1<System.UInt64> ImageFunctions/addValue@1743-3::Invoke(Microsoft.FSharp.Core.FSharpOption`1<System.UInt64>)
-DA:1743,0
-BRDA:1743,3,1,0
-BRDA:1743,3,0,0
-FN:1733,Microsoft.FSharp.Collections.FSharpMap`2<System.Double,System.UInt64> ImageFunctions/addValue@1734-2::Invoke(Microsoft.FSharp.Collections.FSharpMap`2<System.Double,System.UInt64>,T)
-FNDA:0,Microsoft.FSharp.Collections.FSharpMap`2<System.Double,System.UInt64> ImageFunctions/addValue@1734-2::Invoke(Microsoft.FSharp.Collections.FSharpMap`2<System.Double,System.UInt64>,T)
-DA:1734,0
+DA:1710,3984
+FN:1726,System.Double ImageFunctions/leftEdge@1727::Invoke(System.Int32)
+FNDA:0,System.Double ImageFunctions/leftEdge@1727::Invoke(System.Int32)
+DA:1727,0
+FN:1743,Microsoft.FSharp.Core.FSharpOption`1<System.UInt64> ImageFunctions/addValue@1744-3::Invoke(Microsoft.FSharp.Core.FSharpOption`1<System.UInt64>)
+FNDA:0,Microsoft.FSharp.Core.FSharpOption`1<System.UInt64> ImageFunctions/addValue@1744-3::Invoke(Microsoft.FSharp.Core.FSharpOption`1<System.UInt64>)
+DA:1744,0
+BRDA:1744,3,1,0
+BRDA:1744,3,0,0
+FN:1734,Microsoft.FSharp.Collections.FSharpMap`2<System.Double,System.UInt64> ImageFunctions/addValue@1735-2::Invoke(Microsoft.FSharp.Collections.FSharpMap`2<System.Double,System.UInt64>,T)
+FNDA:0,Microsoft.FSharp.Collections.FSharpMap`2<System.Double,System.UInt64> ImageFunctions/addValue@1735-2::Invoke(Microsoft.FSharp.Collections.FSharpMap`2<System.Double,System.UInt64>,T)
 DA:1735,0
 DA:1736,0
-DA:1738,0
+DA:1737,0
 DA:1739,0
 DA:1740,0
-DA:1742,0
-BRDA:1735,19,0,0
-BRDA:1735,19,1,0
-BRDA:1735,32,0,0
-BRDA:1735,32,1,0
-BRDA:1739,61,0,0
-BRDA:1739,61,1,0
-BRDA:1739,80,0,0
-BRDA:1739,80,1,0
-FN:2071,System.Double ImageFunctions/angle@2072::Invoke(System.Collections.Generic.IEnumerable`1<System.Double>)
-FNDA:0,System.Double ImageFunctions/angle@2072::Invoke(System.Collections.Generic.IEnumerable`1<System.Double>)
-DA:2072,0
+DA:1741,0
+DA:1743,0
+BRDA:1736,19,0,0
+BRDA:1736,19,1,0
+BRDA:1736,32,0,0
+BRDA:1736,32,1,0
+BRDA:1740,61,0,0
+BRDA:1740,61,1,0
+BRDA:1740,80,0,0
+BRDA:1740,80,1,0
+FN:2072,System.Double ImageFunctions/angle@2073::Invoke(System.Collections.Generic.IEnumerable`1<System.Double>)
+FNDA:0,System.Double ImageFunctions/angle@2073::Invoke(System.Collections.Generic.IEnumerable`1<System.Double>)
 DA:2073,0
 DA:2074,0
-DA:2077,0
+DA:2075,0
 DA:2078,0
 DA:2079,0
 DA:2080,0
 DA:2081,0
 DA:2082,0
-BRDA:2072,51,1,0
-BRDA:2072,51,0,0
-BRDA:2073,108,0,0
-BRDA:2073,108,1,0
-BRDA:2078,204,1,0
-BRDA:2078,204,0,0
-FN:2120,System.Double ImageFunctions/Pipe #1 input at line 2121@2121::Invoke(System.Int32)
-FNDA:435,System.Double ImageFunctions/Pipe #1 input at line 2121@2121::Invoke(System.Int32)
-DA:2121,435
-FN:2121,System.Double ImageFunctions/Pipe #2 input at line 2122@2122::Invoke(System.Int32)
-FNDA:420,System.Double ImageFunctions/Pipe #2 input at line 2122@2122::Invoke(System.Int32)
-DA:2122,420
-FN:2122,System.Double ImageFunctions/Pipe #3 input at line 2123@2123::Invoke(System.Int32)
-FNDA:420,System.Double ImageFunctions/Pipe #3 input at line 2123@2123::Invoke(System.Int32)
+DA:2083,0
+BRDA:2073,51,1,0
+BRDA:2073,51,0,0
+BRDA:2074,108,0,0
+BRDA:2074,108,1,0
+BRDA:2079,204,1,0
+BRDA:2079,204,0,0
+FN:2121,System.Double ImageFunctions/Pipe #1 input at line 2122@2122::Invoke(System.Int32)
+FNDA:435,System.Double ImageFunctions/Pipe #1 input at line 2122@2122::Invoke(System.Int32)
+DA:2122,435
+FN:2122,System.Double ImageFunctions/Pipe #2 input at line 2123@2123::Invoke(System.Int32)
+FNDA:420,System.Double ImageFunctions/Pipe #2 input at line 2123@2123::Invoke(System.Int32)
 DA:2123,420
-FN:2123,System.Double ImageFunctions/Pipe #4 input at line 2124@2124::Invoke(System.Int32)
-FNDA:420,System.Double ImageFunctions/Pipe #4 input at line 2124@2124::Invoke(System.Int32)
+FN:2123,System.Double ImageFunctions/Pipe #3 input at line 2124@2124::Invoke(System.Int32)
+FNDA:420,System.Double ImageFunctions/Pipe #3 input at line 2124@2124::Invoke(System.Int32)
 DA:2124,420
-FN:2124,System.Double ImageFunctions/Pipe #5 input at line 2125@2125::Invoke(System.Int32)
-FNDA:420,System.Double ImageFunctions/Pipe #5 input at line 2125@2125::Invoke(System.Int32)
+FN:2124,System.Double ImageFunctions/Pipe #4 input at line 2125@2125::Invoke(System.Int32)
+FNDA:420,System.Double ImageFunctions/Pipe #4 input at line 2125@2125::Invoke(System.Int32)
 DA:2125,420
-FN:2125,System.Double ImageFunctions/Pipe #6 input at line 2126@2126::Invoke(System.Int32)
-FNDA:435,System.Double ImageFunctions/Pipe #6 input at line 2126@2126::Invoke(System.Int32)
-DA:2126,435
-FN:2144,System.UInt32 ImageFunctions/roundFloatToUint@2145::Invoke(System.Double)
-FNDA:5,System.UInt32 ImageFunctions/roundFloatToUint@2145::Invoke(System.Double)
-DA:2145,5
-FN:2255,Image/Image`1<System.Double> ImageFunctions/Pipe #1 stage #1 at line 2256@2256::Invoke(System.Double[0...,0...,0...])
-FNDA:0,Image/Image`1<System.Double> ImageFunctions/Pipe #1 stage #1 at line 2256@2256::Invoke(System.Double[0...,0...,0...])
-DA:2256,0
-FN:2254,Image/Image`1<Microsoft.FSharp.Collections.FSharpList`1<System.Double>> ImageFunctions/compose@2255::Invoke(System.String,Microsoft.FSharp.Collections.FSharpList`1<System.Double[0...,0...,0...]>)
-FNDA:0,Image/Image`1<Microsoft.FSharp.Collections.FSharpList`1<System.Double>> ImageFunctions/compose@2255::Invoke(System.String,Microsoft.FSharp.Collections.FSharpList`1<System.Double[0...,0...,0...]>)
-DA:2255,0
+FN:2125,System.Double ImageFunctions/Pipe #5 input at line 2126@2126::Invoke(System.Int32)
+FNDA:420,System.Double ImageFunctions/Pipe #5 input at line 2126@2126::Invoke(System.Int32)
+DA:2126,420
+FN:2126,System.Double ImageFunctions/Pipe #6 input at line 2127@2127::Invoke(System.Int32)
+FNDA:435,System.Double ImageFunctions/Pipe #6 input at line 2127@2127::Invoke(System.Int32)
+DA:2127,435
+FN:2145,System.UInt32 ImageFunctions/roundFloatToUint@2146::Invoke(System.Double)
+FNDA:5,System.UInt32 ImageFunctions/roundFloatToUint@2146::Invoke(System.Double)
+DA:2146,5
+FN:2256,Image/Image`1<System.Double> ImageFunctions/Pipe #1 stage #1 at line 2257@2257::Invoke(System.Double[0...,0...,0...])
+FNDA:0,Image/Image`1<System.Double> ImageFunctions/Pipe #1 stage #1 at line 2257@2257::Invoke(System.Double[0...,0...,0...])
 DA:2257,0
-FN:2437,System.Double ImageFunctions/toFloat@2438-1::Invoke(System.Object)
-FNDA:0,System.Double ImageFunctions/toFloat@2438-1::Invoke(System.Object)
-DA:2438,0
+FN:2255,Image/Image`1<Microsoft.FSharp.Collections.FSharpList`1<System.Double>> ImageFunctions/compose@2256::Invoke(System.String,Microsoft.FSharp.Collections.FSharpList`1<System.Double[0...,0...,0...]>)
+FNDA:0,Image/Image`1<Microsoft.FSharp.Collections.FSharpList`1<System.Double>> ImageFunctions/compose@2256::Invoke(System.String,Microsoft.FSharp.Collections.FSharpList`1<System.Double[0...,0...,0...]>)
+DA:2256,0
+DA:2258,0
+FN:2438,System.Double ImageFunctions/toFloat@2439-1::Invoke(System.Object)
+FNDA:0,System.Double ImageFunctions/toFloat@2439-1::Invoke(System.Object)
 DA:2439,0
 DA:2440,0
 DA:2441,0
 DA:2442,0
 DA:2443,0
 DA:2444,0
-BRDA:2438,13,0,0
-BRDA:2438,26,0,0
-BRDA:2438,39,0,0
-BRDA:2438,54,0,0
-BRDA:2438,13,1,0
-BRDA:2438,26,1,0
-BRDA:2438,39,1,0
-BRDA:2438,54,1,0
-BRDA:2438,69,0,0
-BRDA:2438,69,1,0
+DA:2445,0
+BRDA:2439,13,0,0
+BRDA:2439,26,0,0
+BRDA:2439,39,0,0
+BRDA:2439,54,0,0
+BRDA:2439,13,1,0
+BRDA:2439,26,1,0
+BRDA:2439,39,1,0
+BRDA:2439,54,1,0
+BRDA:2439,69,0,0
+BRDA:2439,69,1,0
 FN:343,ImageFunctions/ResampleInterpolation ImageFunctions/ResampleInterpolationModule::parse(System.String)
 FNDA:2,ImageFunctions/ResampleInterpolation ImageFunctions/ResampleInterpolationModule::parse(System.String)
 DA:344,2
@@ -16518,8 +16518,8 @@ BRDA:2117,63,0,1
 BRDA:2117,63,1,0
 BRDA:2118,94,0,1
 BRDA:2118,94,1,0
-FN:2200,System.Void StackIO::_writeSlabChunks(System.Boolean,System.String,System.String,System.UInt32,System.UInt32,System.UInt32,System.Int32,Image/Image`1<T>)
-FNDA:18,System.Void StackIO::_writeSlabChunks(System.Boolean,System.String,System.String,System.UInt32,System.UInt32,System.UInt32,System.Int32,Image/Image`1<T>)
+FN:2200,System.Void StackIO::writeSlabChunks(System.Boolean,System.String,System.String,System.UInt32,System.UInt32,System.UInt32,System.Int32,Image/Image`1<T>)
+FNDA:18,System.Void StackIO::writeSlabChunks(System.Boolean,System.String,System.String,System.UInt32,System.UInt32,System.UInt32,System.Int32,Image/Image`1<T>)
 DA:2201,18
 DA:2202,18
 DA:2203,58
@@ -16566,19 +16566,19 @@ DA:2223,8
 DA:2224,8
 DA:2226,16
 DA:2227,8
+DA:2240,24
 DA:2241,24
-DA:2242,24
+DA:2249,8
 DA:2250,8
 DA:2251,8
 DA:2252,8
 DA:2253,8
 DA:2254,8
-DA:2255,8
-DA:2256,10
-DA:2257,13
+DA:2255,10
+DA:2256,13
+DA:2258,8
 DA:2259,8
 DA:2260,8
-DA:2261,8
 BRDA:2220,23,0,0
 BRDA:2220,23,1,8
 BRDA:2220,41,0,4
@@ -16595,126 +16595,127 @@ BRDA:2221,163,0,0
 BRDA:2221,163,1,8
 BRDA:2223,201,0,4
 BRDA:2223,201,1,4
-FN:2263,SlimPipeline/Stage`2<Image/Image`1<T>,Image/Image`1<T>> StackIO::writeChunks(System.String,System.String,System.UInt32,System.UInt32,System.UInt32)
+FN:2262,SlimPipeline/Stage`2<Image/Image`1<T>,Image/Image`1<T>> StackIO::writeChunks(System.String,System.String,System.UInt32,System.UInt32,System.UInt32)
 FNDA:8,SlimPipeline/Stage`2<Image/Image`1<T>,Image/Image`1<T>> StackIO::writeChunks(System.String,System.String,System.UInt32,System.UInt32,System.UInt32)
-DA:2264,8
-FN:2266,System.Void StackIO::writeVolumeAsChunks(System.Boolean,System.String,System.String,System.UInt32,System.UInt32,System.UInt32,Image/Image`1<T>)
+DA:2263,8
+FN:2265,System.Void StackIO::writeVolumeAsChunks(System.Boolean,System.String,System.String,System.UInt32,System.UInt32,System.UInt32,Image/Image`1<T>)
 FNDA:1,System.Void StackIO::writeVolumeAsChunks(System.Boolean,System.String,System.String,System.UInt32,System.UInt32,System.UInt32,Image/Image`1<T>)
+DA:2266,1
 DA:2267,1
-DA:2268,1
-DA:2269,3
+DA:2268,3
+DA:2269,2
 DA:2270,2
 DA:2271,2
 DA:2272,2
 DA:2273,2
-DA:2274,2
-BRDA:2269,149,1,2
-BRDA:2270,30,0,0
-BRDA:2270,30,1,2
-BRDA:2269,149,0,1
-FN:2276,System.Tuple`2<Image/Image`1<T>,StackIO/ChunkInfo> StackIO::readChunkVolume(System.String,System.String)
+BRDA:2268,149,1,2
+BRDA:2269,30,0,0
+BRDA:2269,30,1,2
+BRDA:2268,149,0,1
+FN:2275,System.Tuple`2<Image/Image`1<T>,StackIO/ChunkInfo> StackIO::readChunkVolume(System.String,System.String)
 FNDA:1,System.Tuple`2<Image/Image`1<T>,StackIO/ChunkInfo> StackIO::readChunkVolume(System.String,System.String)
+DA:2276,1
 DA:2277,1
-DA:2278,1
+DA:2278,3
 DA:2279,3
-DA:2280,3
-DA:2281,1
-DA:2282,4
-DA:2283,1
-BRDA:2278,25,0,0
-BRDA:2278,25,1,1
-BRDA:2279,89,1,2
-BRDA:2279,89,0,1
-BRDA:2282,165,1,2
-BRDA:2282,165,0,1
-FN:2285,Image/Image`1<T> StackIO::readChunkColumn(System.String,System.String,StackIO/ChunkInfo,System.Int32,System.Int32)
+DA:2280,1
+DA:2281,4
+DA:2282,1
+BRDA:2277,25,0,0
+BRDA:2277,25,1,1
+BRDA:2278,89,1,2
+BRDA:2278,89,0,1
+BRDA:2281,165,1,2
+BRDA:2281,165,0,1
+FN:2284,Image/Image`1<T> StackIO::readChunkColumn(System.String,System.String,StackIO/ChunkInfo,System.Int32,System.Int32)
 FNDA:8,Image/Image`1<T> StackIO::readChunkColumn(System.String,System.String,StackIO/ChunkInfo,System.Int32,System.Int32)
-DA:2286,8
+DA:2285,8
+DA:2286,24
 DA:2287,24
-DA:2288,24
-DA:2290,8
-DA:2291,32
-DA:2292,8
-BRDA:2286,17,0,0
-BRDA:2286,17,1,8
-BRDA:2287,82,1,16
-BRDA:2287,82,0,8
-BRDA:2291,158,1,16
-BRDA:2291,158,0,8
-FN:2294,System.Void StackIO::writeChunkColumn(System.Boolean,System.String,System.String,System.Int32,System.Int32,System.UInt32,Image/Image`1<T>)
+DA:2289,8
+DA:2290,32
+DA:2291,8
+BRDA:2285,17,0,0
+BRDA:2285,17,1,8
+BRDA:2286,82,1,16
+BRDA:2286,82,0,8
+BRDA:2290,158,1,16
+BRDA:2290,158,0,8
+FN:2293,System.Void StackIO::writeChunkColumn(System.Boolean,System.String,System.String,System.Int32,System.Int32,System.UInt32,Image/Image`1<T>)
 FNDA:8,System.Void StackIO::writeChunkColumn(System.Boolean,System.String,System.String,System.Int32,System.Int32,System.UInt32,Image/Image`1<T>)
+DA:2294,8
 DA:2295,8
-DA:2296,8
-DA:2298,24
+DA:2297,24
+DA:2298,16
 DA:2299,16
 DA:2300,16
 DA:2301,16
 DA:2302,16
 DA:2303,16
 DA:2304,16
-DA:2305,16
-BRDA:2298,207,1,16
-BRDA:2299,30,0,0
-BRDA:2299,30,1,16
-BRDA:2302,129,0,0
-BRDA:2302,129,1,16
-BRDA:2298,207,0,8
-FN:2307,System.Void StackIO::chunkedFFTAlongZCore(System.Boolean,System.Boolean,System.String,System.String,System.String,a,b,System.UInt32)
+BRDA:2297,207,1,16
+BRDA:2298,30,0,0
+BRDA:2298,30,1,16
+BRDA:2301,129,0,0
+BRDA:2301,129,1,16
+BRDA:2297,207,0,8
+FN:2306,System.Void StackIO::chunkedFFTAlongZCore(System.Boolean,System.Boolean,System.String,System.String,System.String,a,b,System.UInt32)
 FNDA:2,System.Void StackIO::chunkedFFTAlongZCore(System.Boolean,System.Boolean,System.String,System.String,System.String,a,b,System.UInt32)
-DA:2308,2
-DA:2309,4
+DA:2307,2
+DA:2308,4
+DA:2310,2
 DA:2311,2
-DA:2312,2
-DA:2314,6
-DA:2315,12
+DA:2313,6
+DA:2314,12
+DA:2315,8
 DA:2316,8
 DA:2317,8
 DA:2318,8
 DA:2319,8
-DA:2320,8
-BRDA:2308,7,0,0
-BRDA:2308,7,1,2
-BRDA:2312,49,0,0
-BRDA:2312,49,1,2
-BRDA:2314,83,0,4
-BRDA:2314,195,1,4
-BRDA:2315,108,0,8
-BRDA:2315,181,1,8
-BRDA:2315,108,1,4
-BRDA:2315,181,0,4
-BRDA:2314,83,1,2
-BRDA:2314,195,0,2
-FN:2322,System.Void StackIO::chunkedFFTAlongZ(System.Boolean,System.String,System.String,System.String,a,b,System.UInt32)
+BRDA:2307,7,0,0
+BRDA:2307,7,1,2
+BRDA:2311,49,0,0
+BRDA:2311,49,1,2
+BRDA:2313,83,0,4
+BRDA:2313,195,1,4
+BRDA:2314,108,0,8
+BRDA:2314,181,1,8
+BRDA:2314,108,1,4
+BRDA:2314,181,0,4
+BRDA:2313,83,1,2
+BRDA:2313,195,0,2
+FN:2321,System.Void StackIO::chunkedFFTAlongZ(System.Boolean,System.String,System.String,System.String,a,b,System.UInt32)
 FNDA:1,System.Void StackIO::chunkedFFTAlongZ(System.Boolean,System.String,System.String,System.String,a,b,System.UInt32)
-DA:2323,1
-FN:2325,System.Void StackIO::chunkedInvFFTAlongZ(System.Boolean,System.String,System.String,System.String,a,b,System.UInt32)
+DA:2322,1
+FN:2324,System.Void StackIO::chunkedInvFFTAlongZ(System.Boolean,System.String,System.String,System.String,a,b,System.UInt32)
 FNDA:1,System.Void StackIO::chunkedInvFFTAlongZ(System.Boolean,System.String,System.String,System.String,a,b,System.UInt32)
-DA:2326,1
-FN:2328,System.Void StackIO::chunkedShiftFFT(System.Boolean,System.String,System.String,System.String,System.UInt32,System.UInt32,System.UInt32)
+DA:2325,1
+FN:2327,System.Void StackIO::chunkedShiftFFT(System.Boolean,System.String,System.String,System.String,System.UInt32,System.UInt32,System.UInt32)
 FNDA:1,System.Void StackIO::chunkedShiftFFT(System.Boolean,System.String,System.String,System.String,System.UInt32,System.UInt32,System.UInt32)
-DA:2329,1
-DA:2330,2
+DA:2328,1
+DA:2329,2
+DA:2330,1
 DA:2331,1
 DA:2332,1
 DA:2333,1
 DA:2334,1
-DA:2335,1
-BRDA:2329,7,0,0
-BRDA:2329,7,1,1
-FN:2337,SlimPipeline/Stage`2<Microsoft.FSharp.Core.Unit,Image/Image`1<T>> StackIO::readChunksAsSlices(System.String,System.String,System.String)
+BRDA:2328,7,0,0
+BRDA:2328,7,1,1
+FN:2336,SlimPipeline/Stage`2<Microsoft.FSharp.Core.Unit,Image/Image`1<T>> StackIO::readChunksAsSlices(System.String,System.String,System.String)
 FNDA:3,SlimPipeline/Stage`2<Microsoft.FSharp.Core.Unit,Image/Image`1<T>> StackIO::readChunksAsSlices(System.String,System.String,System.String)
-DA:2338,3
-DA:2341,6
+DA:2337,3
+DA:2340,6
+DA:2341,3
 DA:2342,3
 DA:2343,3
-DA:2344,3
+DA:2344,6
 DA:2345,6
 DA:2346,6
 DA:2347,6
-DA:2348,6
-DA:2349,3
-FN:2358,SlimPipeline/Stage`2<Image/Image`1<S>,Image/Image`1<T>> StackIO::chunkedVolumeOperation(System.String,SlimPipeline/Stage`2<Image/Image`1<S>,Image/Image`1<I>>,Microsoft.FSharp.Core.FSharpFunc`2<System.Boolean,Microsoft.FSharp.Core.FSharpFunc`2<System.String,Microsoft.FSharp.Core.FSharpFunc`2<System.String,Microsoft.FSharp.Core.FSharpFunc`2<System.String,Microsoft.FSharp.Core.FSharpFunc`2<System.UInt32,Microsoft.FSharp.Core.FSharpFunc`2<System.UInt32,Microsoft.FSharp.Core.FSharpFunc`2<System.UInt32,Microsoft.FSharp.Core.Unit>>>>>>>,System.UInt32,System.UInt32,System.UInt32)
+DA:2348,3
+FN:2357,SlimPipeline/Stage`2<Image/Image`1<S>,Image/Image`1<T>> StackIO::chunkedVolumeOperation(System.String,SlimPipeline/Stage`2<Image/Image`1<S>,Image/Image`1<I>>,Microsoft.FSharp.Core.FSharpFunc`2<System.Boolean,Microsoft.FSharp.Core.FSharpFunc`2<System.String,Microsoft.FSharp.Core.FSharpFunc`2<System.String,Microsoft.FSharp.Core.FSharpFunc`2<System.String,Microsoft.FSharp.Core.FSharpFunc`2<System.UInt32,Microsoft.FSharp.Core.FSharpFunc`2<System.UInt32,Microsoft.FSharp.Core.FSharpFunc`2<System.UInt32,Microsoft.FSharp.Core.Unit>>>>>>>,System.UInt32,System.UInt32,System.UInt32)
 FNDA:3,SlimPipeline/Stage`2<Image/Image`1<S>,Image/Image`1<T>> StackIO::chunkedVolumeOperation(System.String,SlimPipeline/Stage`2<Image/Image`1<S>,Image/Image`1<I>>,Microsoft.FSharp.Core.FSharpFunc`2<System.Boolean,Microsoft.FSharp.Core.FSharpFunc`2<System.String,Microsoft.FSharp.Core.FSharpFunc`2<System.String,Microsoft.FSharp.Core.FSharpFunc`2<System.String,Microsoft.FSharp.Core.FSharpFunc`2<System.UInt32,Microsoft.FSharp.Core.FSharpFunc`2<System.UInt32,Microsoft.FSharp.Core.FSharpFunc`2<System.UInt32,Microsoft.FSharp.Core.Unit>>>>>>>,System.UInt32,System.UInt32,System.UInt32)
+DA:2358,3
 DA:2359,3
 DA:2360,3
 DA:2361,3
@@ -16722,19 +16723,18 @@ DA:2362,3
 DA:2363,3
 DA:2364,3
 DA:2365,3
-DA:2366,3
+DA:2369,3
 DA:2370,3
 DA:2371,3
 DA:2372,3
 DA:2373,3
 DA:2374,3
-DA:2375,3
-BRDA:2364,103,0,0
-BRDA:2364,103,1,3
-BRDA:2365,126,0,0
-BRDA:2365,126,1,3
-BRDA:2366,149,0,0
-BRDA:2366,149,1,3
+BRDA:2363,103,0,0
+BRDA:2363,103,1,3
+BRDA:2364,126,0,0
+BRDA:2364,126,1,3
+BRDA:2365,149,0,0
+BRDA:2365,149,1,3
 FN:63,StackProcessingCost/Fitting/OperatorEstimateContext StackIO/context@63T::Invoke(a)
 FNDA:1,StackProcessingCost/Fitting/OperatorEstimateContext StackIO/context@63T::Invoke(a)
 DA:64,1
@@ -17478,27 +17478,27 @@ BRDA:2230,20,1,8
 FN:2238,Microsoft.FSharp.Collections.FSharpList`1<Image/Image`1<T>> StackIO/mapper@2239-44::Invoke(System.Boolean,System.Int64,SlimPipeline/Window`1<Image/Image`1<T>>)
 FNDA:16,Microsoft.FSharp.Collections.FSharpList`1<Image/Image`1<T>> StackIO/mapper@2239-44::Invoke(System.Boolean,System.Int64,SlimPipeline/Window`1<Image/Image`1<T>>)
 DA:2239,16
-FN:2243,System.UInt64 StackIO/memoryNeed@2244-19::Invoke(System.UInt64)
-FNDA:30,System.UInt64 StackIO/memoryNeed@2244-19::Invoke(System.UInt64)
+FN:2242,System.UInt64 StackIO/memoryNeed@2243-19::Invoke(System.UInt64)
+FNDA:30,System.UInt64 StackIO/memoryNeed@2243-19::Invoke(System.UInt64)
+DA:2243,30
 DA:2244,30
-DA:2245,30
+DA:2245,10
 DA:2246,10
 DA:2247,10
-DA:2248,10
-BRDA:2248,113,0,10
-BRDA:2248,113,1,0
-FN:2338,System.UInt64 StackIO/memoryNeed@2339-20T::Invoke(a)
-FNDA:0,System.UInt64 StackIO/memoryNeed@2339-20T::Invoke(a)
-DA:2339,0
-FN:2339,System.UInt64 StackIO/elementTransformation@2340-17T::Invoke(a)
-FNDA:18,System.UInt64 StackIO/elementTransformation@2340-17T::Invoke(a)
-DA:2340,18
-FN:2366,System.UInt64 StackIO/memoryNeed@2367-21T::Invoke(a)
-FNDA:0,System.UInt64 StackIO/memoryNeed@2367-21T::Invoke(a)
-DA:2367,0
-FN:2367,System.UInt64 StackIO/elementTransformation@2368-18T::Invoke(a)
-FNDA:3,System.UInt64 StackIO/elementTransformation@2368-18T::Invoke(a)
-DA:2368,3
+BRDA:2247,113,0,10
+BRDA:2247,113,1,0
+FN:2337,System.UInt64 StackIO/memoryNeed@2338-20T::Invoke(a)
+FNDA:0,System.UInt64 StackIO/memoryNeed@2338-20T::Invoke(a)
+DA:2338,0
+FN:2338,System.UInt64 StackIO/elementTransformation@2339-17T::Invoke(a)
+FNDA:18,System.UInt64 StackIO/elementTransformation@2339-17T::Invoke(a)
+DA:2339,18
+FN:2365,System.UInt64 StackIO/memoryNeed@2366-21T::Invoke(a)
+FNDA:0,System.UInt64 StackIO/memoryNeed@2366-21T::Invoke(a)
+DA:2366,0
+FN:2366,System.UInt64 StackIO/elementTransformation@2367-18T::Invoke(a)
+FNDA:3,System.UInt64 StackIO/elementTransformation@2367-18T::Invoke(a)
+DA:2367,3
 FN:1875,System.Void <StartupCode$StackProcessing-Core>.$StackIO::.cctor()
 FNDA:1,System.Void <StartupCode$StackProcessing-Core>.$StackIO::.cctor()
 DA:1876,1
@@ -23259,10 +23259,10 @@ FNDA:0,System.Collections.Generic.IAsyncEnumerable`1<S> SlimPipeline/Pipe/apply@
 DA:232,0
 DA:233,0
 FN:264,System.Boolean SlimPipeline/Pipe/ensureAvailable@265-2::Invoke(Microsoft.FSharp.Core.Unit)
-FNDA:440,System.Boolean SlimPipeline/Pipe/ensureAvailable@265-2::Invoke(Microsoft.FSharp.Core.Unit)
-DA:265,440
-BRDA:265,17,0,128
-BRDA:265,17,1,28
+FNDA:439,System.Boolean SlimPipeline/Pipe/ensureAvailable@265-2::Invoke(Microsoft.FSharp.Core.Unit)
+DA:265,439
+BRDA:265,17,0,127
+BRDA:265,17,1,29
 FN:266,Microsoft.FSharp.Control.FSharpAsync`1<Microsoft.FSharp.Core.Unit> SlimPipeline/Pipe/ensureAvailable@267-4::Invoke(System.Boolean)
 FNDA:52,Microsoft.FSharp.Control.FSharpAsync`1<Microsoft.FSharp.Core.Unit> SlimPipeline/Pipe/ensureAvailable@267-4::Invoke(System.Boolean)
 DA:267,52
@@ -23283,8 +23283,8 @@ DA:275,76
 DA:276,76
 DA:277,38
 DA:278,38
-BRDA:274,26,0,8
-BRDA:274,26,1,68
+BRDA:274,26,0,10
+BRDA:274,26,1,66
 BRDA:276,53,0,38
 BRDA:276,53,1,38
 FN:296,Microsoft.FSharp.Control.FSharpAsync`1<Microsoft.FSharp.Core.Unit> SlimPipeline/Pipe/loop@297-4::Invoke(Microsoft.FSharp.Core.Unit)

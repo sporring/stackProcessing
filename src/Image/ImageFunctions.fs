@@ -613,7 +613,7 @@ let private sphericalOffsets dimensions (radius: uint) =
 
 /// CPU implementation of binary dilation with a digital spherical structuring element.
 ///
-/// This is intended as an experimental native baseline beside the SimpleITK implementation.
+/// This native implementation is kept as a direct spherical-footprint reference beside the SimpleITK implementation.
 /// It uses the same binary convention as <c>binaryDilate</c>: foreground pixels have value 1
 /// and the output contains only 0/1 values. The footprint follows SimpleITK's <c>sitkBall</c>
 /// convention so results can be compared directly.
@@ -970,10 +970,11 @@ let binaryDilateZonohedralValidSlicesNative (radius: uint) (outputStart: uint) (
                     else first.index + z
                 yield Image<uint8>.ofSimpleITKNDispose(importScalarImage [ uint width; uint height ] slice, "binaryDilateZonohedralValidSlicesNative", index) ]
 
-/// Experimental binary dilation using Jensen et al.'s zonohedral best approximation of a spherical structuring element.
+/// Binary dilation using Jensen et al.'s zonohedral best approximation of a spherical structuring element.
 ///
 /// The approximation is represented as a composition of line dilations in the 13 directions used by
-/// Gorpho/pygorpho. It is only a 3D experimental baseline for now.
+/// Gorpho/pygorpho. The native line scans are useful for streaming because valid output slices can be
+/// computed from a z-window without materializing the full slab output.
 let binaryDilateZonohedralNative (radius: uint) (img: Image<uint8>) : Image<uint8> =
     if img.GetDimensions() <> 3u then
         invalidArg "img" $"binaryDilateZonohedralNative supports 3D images, got {img.GetDimensions()}D."
@@ -989,7 +990,7 @@ let binaryDilateZonohedralNative (radius: uint) (img: Image<uint8>) : Image<uint
 
     Image<uint8>.ofSimpleITKNDispose(importScalarImage (img.GetSize()) current, "binaryDilateZonohedralNative", img.index)
 
-/// Experimental binary erosion using the same zonohedral approximation as
+/// Binary erosion using the same zonohedral approximation as
 /// <c>binaryDilateZonohedralNative</c>.
 let binaryErodeZonohedralNative (radius: uint) (img: Image<uint8>) : Image<uint8> =
     if img.GetDimensions() <> 3u then

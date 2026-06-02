@@ -128,8 +128,20 @@ Preferred paths:
 - `Image<'T>.ofArray3D`
 - `Image<'T>.toArray2D`
 - `Image<'T>.toArray3D`
+- `Image<'T>.ofFlatArray`
+- `Image<'T>.toFlatArray`
 
 For supported scalar types these use SimpleITK buffer access/import paths where possible, avoiding per-pixel `Get` and `Set` calls.
+
+The flat-array helpers are the preferred path for new hot loops. They keep the same SimpleITK bulk-copy boundary, but avoid the extra `Array2D`/`Array3D` wrapper and its multidimensional indexer overhead. Use the inline helpers from `Image.InternalHelpers` for indexing:
+
+```fsharp
+let i2 = flatIndex2 width x y
+let i3 = flatIndex3 width height x y z
+let i4 = flatIndex4 width height depth x y z t
+```
+
+This convention is intentionally simple: x is the fastest-moving coordinate, then y, then z. If an operation immediately turns an `Array2D` or `Array3D` back into an `Image<'T>`, prefer building the flat output array directly and returning it with `Image<'T>.ofFlatArray`.
 
 Scalar pixel access through:
 
@@ -163,7 +175,7 @@ Main groups:
 
 StackProcessing.Core lifts many of these functions into streaming `Stage`s, adding reference-count handling, memory models, and cost terms.
 
-Binary morphology now also contains native experimental paths for spherical approximations. `binaryDilateZonohedralNative`, `binaryErodeZonohedralNative`, and the valid-slice helpers use a composition of one-dimensional line operations rather than a dense ball footprint. These functions are still Image-level operations over materialized images or explicit slice windows; StackProcessing.Core is responsible for turning the same idea into streaming stages with release-aware window handling.
+Binary morphology now also contains native paths for spherical approximations. `binaryDilateZonohedralNative`, `binaryErodeZonohedralNative`, and the valid-slice helpers use a composition of one-dimensional line operations rather than a dense ball footprint. These functions are still Image-level operations over materialized images or explicit slice windows; StackProcessing.Core is responsible for turning the same idea into streaming stages with release-aware window handling.
 
 ## Complex And Vector Images
 
@@ -242,7 +254,7 @@ dotnet test tests/Image.Tests/Image.Tests.fsproj
 
 ## Performance Guidance
 
-Use SimpleITK filter wrappers for whole-image operations. Use bulk array conversion for custom hot loops. Avoid per-pixel `Image.Get`/`Image.Set` in performance-sensitive code unless the operation is sparse or diagnostic.
+Use SimpleITK filter wrappers for whole-image operations. Use bulk array conversion for custom hot loops. Prefer flat arrays over `Array2D`/`Array3D` when the operation is immediately rewrapped as an image or when the loop is in a measured hot path. Avoid per-pixel `Image.Get`/`Image.Set` in performance-sensitive code unless the operation is sparse or diagnostic.
 
 The most important practical rule:
 

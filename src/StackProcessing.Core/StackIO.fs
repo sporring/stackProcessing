@@ -2197,7 +2197,7 @@ let writeNexus<'T when 'T: equality>
     Stage.mapi $"writeNexus \"{outputPath}:{datasetPath}\"" mapper memoryNeed id
     |> withCostModel (StageCostModel.create memoryModel timeCostModel)
 
-let _writeSlabChunks (debug: bool) (outputDir: string) (suffix: string) (width: uint) (height: uint) (winSz: uint) (k: int) (stack: Image<'T>) =
+let private writeSlabChunks (debug: bool) (outputDir: string) (suffix: string) (width: uint) (height: uint) (winSz: uint) (k: int) (stack: Image<'T>) =
     let chunksX = (stack.GetWidth() + width - 1u) / width
     let chunksY = (stack.GetHeight() + height - 1u) / height
     for i in 0u .. chunksX - 1u do
@@ -2229,15 +2229,14 @@ let private writeChunksCore<'T when 'T: equality> (outputDir: string) (suffix: s
         cleaned.Force()
         if stack.GetDimensions() = 2u then
             let slab = ImageFunctions.stack [ stack ]
-            _writeSlabChunks debug outputDir suffix width height 1u (int k) slab
+            writeSlabChunks debug outputDir suffix width height 1u (int k) slab
             slab.decRefCount()
         else
-            _writeSlabChunks debug outputDir suffix width height winSz (int k) stack
+            writeSlabChunks debug outputDir suffix width height winSz (int k) stack
         stack.incRefCount() //to make sure volFctToLstFctReleaseAfter doesn't release it.
         stack
     let mapper (debug: bool) (idx: int64) (window: Window<Image<'T>>) =
         volFctToWindowFctReleaseAfterDebug debug (f debug idx) 1u pad stride window
-    //let mapper (debug: bool) (idx: int64) = fun stack -> _writeSlabChunks debug outputDir suffix width height winSz (int idx) stack; stack
     let btUint8 = typeof<uint8>|>Image.getBytesPerComponent |> uint64
     let btUint64 = typeof<uint64> |> Image.getBytesPerComponent |> uint64
     let memoryNeed nPixels = 
@@ -2269,7 +2268,7 @@ let writeVolumeAsChunks debug outputDir suffix chunkX chunkY chunkZ (volume: Ima
     while k < depth do
         let last = min (depth - 1u) (k + chunkZ - 1u)
         let slab = ImageFunctions.extractSub [ 0u; 0u; k ] [ volume.GetWidth() - 1u; volume.GetHeight() - 1u; last ] volume
-        _writeSlabChunks debug outputDir suffix chunkX chunkY (last - k + 1u) (int (k / chunkZ)) slab
+        writeSlabChunks debug outputDir suffix chunkX chunkY (last - k + 1u) (int (k / chunkZ)) slab
         slab.decRefCount()
         k <- k + chunkZ
 
