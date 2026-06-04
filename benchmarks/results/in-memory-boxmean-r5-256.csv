@@ -1,0 +1,10 @@
+backend,variant,pixelType,shape,radius,repeat,exitCode,seconds,managedAllocatedBytes,error
+"arraypool","rollingx-boxmean","UInt8","256x256x256","5","1","0","3.643059400","376",""
+"arraypool","separable-rolling-boxmean","UInt8","256x256x256","5","1","0","0.288212800","376",""
+"simpleitk","BoxMeanImageFilter","UInt8","256x256x256","5","1","0","0.141518900","600",""
+"arraypool","rollingx-boxmean","UInt16","256x256x256","5","1","0","3.518462200","712",""
+"arraypool","separable-rolling-boxmean","UInt16","256x256x256","5","1","0","0.174923100","712",""
+"simpleitk","BoxMeanImageFilter","UInt16","256x256x256","5","1","0","0.127884400","792",""
+"arraypool","rollingx-boxmean","Float32","256x256x256","5","1","0","3.533298500","1072",""
+"arraypool","separable-rolling-boxmean","Float32","256x256x256","5","1","0","0.226383200","1048",""
+"simpleitk","BoxMeanImageFilter","Float32","256x256x256","5","1","0","0.151306900","1128",""

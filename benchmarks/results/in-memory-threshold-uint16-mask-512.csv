@@ -1,0 +1,13 @@
+backend,variant,pixelType,shape,threshold,repeat,exitCode,seconds,managedAllocatedBytes,error
+"arraypool-itk","import-return-threshold-export","UInt16","512x512x512","128","1","0","0.124017200","134224136",""
+"simpleitk","BinaryThresholdImageFilter","UInt16","512x512x512","128","1","0","0.069439100","264",""
+"arraypool","arraypool-loop","UInt16","512x512x512","128","1","0","0.094541200","40",""
+"arraypool","arraypool-while","UInt16","512x512x512","128","1","0","0.088992100","40",""
+"arraypool","arraypool-while-aggressive","UInt16","512x512x512","128","1","0","0.087767000","40",""
+"arraypool","arraypool-nativeptr","UInt16","512x512x512","128","1","0","0.060670900","40",""
+"arraypool","arraypool-span","UInt16","512x512x512","128","1","0","0.087591800","40",""
+"arraypool","arraypool-bool-while","UInt16","512x512x512","128","1","0","0.098089700","712",""
+"arraypool","arraypool-uint16mask-max-while","UInt16","512x512x512","128","1","0","0.106630200","1048",""
+"arraypool","arraypool-uint16mask-max-vector","UInt16","512x512x512","128","1","0","0.017286700","1048",""
+"arraypool","arraypool-uint16mask-one-while","UInt16","512x512x512","128","1","0","0.092205400","1048",""
+"arraypool","arraypool-uint16mask-one-vector","UInt16","512x512x512","128","1","0","0.018337800","1048",""

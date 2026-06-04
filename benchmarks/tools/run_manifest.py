@@ -82,7 +82,7 @@ def filter_cases(cases, pixel_types, shapes, operations, parameters):
 
 def backend_supports_case(backend, case):
     if backend == "stackprocessing-zarr":
-        return case["pixelType"] in {"UInt8", "UInt16", "Float32"} and case["operation"] != "connectedComponents"
+        return case["pixelType"] in {"UInt8", "UInt16"} and case["operation"] != "connectedComponents"
     if backend == "python-dask-omezarr":
         return case["operation"] != "connectedComponents"
     return True

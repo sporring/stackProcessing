@@ -33,7 +33,7 @@ Generate:
 
 Run:
   dotnet run --project benchmarks/StackProcessing.Benchmarks -- run --operation copy|threshold|convolve|median|dilate|connectedComponents --pixel-type UInt8|UInt16|Float32 --input DIR --output DIR [--radius N] [--kernel-size N] [--threshold X] [--window N] [--available-memory BYTES]
-  dotnet run --project benchmarks/StackProcessing.Benchmarks -- run-zarr --operation copy|threshold|convolve|median|dilate --pixel-type UInt8|UInt16|Float32 --shape WxHxD --input ZARR --output ZARR [--radius N] [--kernel-size N] [--threshold X] [--available-memory BYTES]
+  dotnet run --project benchmarks/StackProcessing.Benchmarks -- run-zarr --operation copy|threshold|convolve|median|dilate --pixel-type UInt8|UInt16 --shape WxHxD --input ZARR --output ZARR [--radius N] [--kernel-size N] [--threshold X] [--available-memory BYTES]
 
 ArrayPool experiment:
   dotnet run --project benchmarks/StackProcessing.Benchmarks -- run-arraypool --operation copy|threshold|connectedComponents --pixel-type UInt8|UInt16|Float32 --input DIR --output DIR [--threshold X]
@@ -614,7 +614,7 @@ let private runZarr opts =
         match pixelType with
         | UInt8 -> runZarrTyped<uint8> operation shape input output radius kernelSize thresholdValue availableMemory
         | UInt16 -> runZarrTyped<uint16> operation shape input output radius kernelSize thresholdValue availableMemory
-        | Float32 -> runZarrTyped<float32> operation shape input output radius kernelSize thresholdValue availableMemory
+        | Float32 -> failwith "StackProcessing-Zarr currently supports UInt8 and UInt16 only. Float32 is part of the Zarr standard, but the current ZarrNET-backed writer path is not compatible enough to benchmark here."
     stopwatch.Stop()
     writeInternalSeconds stopwatch.Elapsed
     exitCode

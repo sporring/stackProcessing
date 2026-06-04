@@ -1,0 +1,7 @@
+backend,variant,pixelType,shape,repeat,exitCode,seconds,managedAllocatedBytes,error
+"arraypool","flat-insertion-3x3x3","UInt8","256x256x256","1","0","2.113860600","1976",""
+"simpleitk","MedianImageFilter-3x3x3","UInt8","256x256x256","1","0","0.354149600","600",""
+"arraypool","flat-insertion-3x3x3","UInt16","256x256x256","1","0","1.211156900","2000",""
+"simpleitk","MedianImageFilter-3x3x3","UInt16","256x256x256","1","0","0.205644600","456",""
+"arraypool","flat-insertion-3x3x3","Float32","256x256x256","1","0","2.030046900","2416",""
+"simpleitk","MedianImageFilter-3x3x3","Float32","256x256x256","1","0","0.323037000","792",""

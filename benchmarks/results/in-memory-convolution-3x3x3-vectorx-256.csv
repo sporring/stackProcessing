@@ -1,0 +1,12 @@
+backend,variant,pixelType,shape,repeat,exitCode,seconds,managedAllocatedBytes,error
+"arraypool","flat-interior-3x3x3","UInt8","256x256x256","1","0","0.374445700","376",""
+"arraypool","flat-unrolled-3x3x3","UInt8","256x256x256","1","0","0.270222900","1920",""
+"simpleitk","ConvolutionImageFilter-3x3x3","UInt8","256x256x256","1","0","0.125027700","600",""
+"arraypool","flat-interior-3x3x3","UInt16","256x256x256","1","0","0.355217300","376",""
+"arraypool","flat-unrolled-3x3x3","UInt16","256x256x256","1","0","0.274470800","1920",""
+"arraypool","flat-vectorx-3x3x3","UInt16","256x256x256","1","0","0.055035700","1920",""
+"simpleitk","ConvolutionImageFilter-3x3x3","UInt16","256x256x256","1","0","0.143934600","456",""
+"arraypool","flat-interior-3x3x3","Float32","256x256x256","1","0","0.385219200","736",""
+"arraypool","flat-unrolled-3x3x3","Float32","256x256x256","1","0","0.259874200","2256",""
+"arraypool","flat-vectorx-3x3x3","Float32","256x256x256","1","0","0.093997200","2256",""
+"simpleitk","ConvolutionImageFilter-3x3x3","Float32","256x256x256","1","0","0.115546500","792",""

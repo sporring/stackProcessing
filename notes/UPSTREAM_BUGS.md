@@ -39,6 +39,8 @@ This is a running list of issues we have encountered in dependencies while devel
   - We observed files named `log.txt` and a Windows-style path fragment `C:\Users\Public\biolog.txt` being created relative to the current directory or application base directory.
   - StackProcessing currently works around this in `StackIO.suppressZarrNetDebugLogging` by deleting those files and setting ZarrNET private static debug counters (`s_writeDebugCount`, `s_readDebugCount`, and local filesystem store `s_debugCount`) high enough to suppress further logging.
   - A minimal upstream report should check whether these logs are intentional, whether logging can be disabled through public API/configuration, and whether Windows absolute paths are being treated as relative filenames on non-Windows platforms.
+  - A modest first pull request could simply remove these unconditional filesystem writes, or guard them behind an explicit debug option. The test case should create a small array, write it, read it back, and assert that no `log.txt` or `C:\Users\Public\biolog.txt` side files appear in the working directory or application directory on macOS/Linux.
+  - This would be a good low-risk first contribution before proposing broader dtype support such as `float32` and complex arrays.
 
 ## MATLAB
 

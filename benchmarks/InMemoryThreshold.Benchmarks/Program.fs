@@ -6,6 +6,9 @@ open System.IO
 open System.Numerics
 open System.Runtime.CompilerServices
 open System.Runtime.InteropServices
+open Microsoft.FSharp.NativeInterop
+
+#nowarn "9"
 
 type PixelType =
     | UInt8
@@ -138,6 +141,33 @@ let private thresholdUInt8While threshold (input: uint8[]) (output: uint8[]) len
         output[i] <- if input[i] >= threshold then 255uy else 0uy
         i <- i + 1
 
+let private thresholdUInt8BoolWhile threshold (input: uint8[]) (output: bool[]) length =
+    let mutable i = 0
+    while i < length do
+        output[i] <- input[i] >= threshold
+        i <- i + 1
+
+[<MethodImpl(MethodImplOptions.AggressiveOptimization)>]
+let private thresholdUInt8WhileOptimized threshold (input: uint8[]) (output: uint8[]) length =
+    let mutable i = 0
+    while i < length do
+        output[i] <- if input[i] >= threshold then 255uy else 0uy
+        i <- i + 1
+
+let private thresholdUInt8NativePtr threshold (input: uint8[]) (output: uint8[]) length =
+    let inputHandle = GCHandle.Alloc(input, GCHandleType.Pinned)
+    let outputHandle = GCHandle.Alloc(output, GCHandleType.Pinned)
+    try
+        let inputPtr = NativePtr.ofNativeInt<uint8> (inputHandle.AddrOfPinnedObject())
+        let outputPtr = NativePtr.ofNativeInt<uint8> (outputHandle.AddrOfPinnedObject())
+        let mutable i = 0
+        while i < length do
+            NativePtr.set outputPtr i (if NativePtr.get inputPtr i >= threshold then 255uy else 0uy)
+            i <- i + 1
+    finally
+        inputHandle.Free()
+        outputHandle.Free()
+
 let private thresholdUInt8Vector (threshold: byte) (input: uint8[]) (output: uint8[]) length =
     let width = Vector<byte>.Count
     let thresholdVector = Vector<byte>(threshold)
@@ -162,6 +192,75 @@ let private thresholdUInt16While threshold (input: uint16[]) (output: uint8[]) l
         output[i] <- if input[i] >= threshold then 255uy else 0uy
         i <- i + 1
 
+let private thresholdUInt16BoolWhile threshold (input: uint16[]) (output: bool[]) length =
+    let mutable i = 0
+    while i < length do
+        output[i] <- input[i] >= threshold
+        i <- i + 1
+
+let private thresholdUInt16ToUInt16MaxWhile threshold (input: uint16[]) (output: uint16[]) length =
+    let mutable i = 0
+    while i < length do
+        output[i] <- if input[i] >= threshold then UInt16.MaxValue else 0us
+        i <- i + 1
+
+let private thresholdUInt16ToUInt16OneWhile threshold (input: uint16[]) (output: uint16[]) length =
+    let mutable i = 0
+    while i < length do
+        output[i] <- if input[i] >= threshold then 1us else 0us
+        i <- i + 1
+
+[<MethodImpl(MethodImplOptions.AggressiveOptimization)>]
+let private thresholdUInt16WhileOptimized threshold (input: uint16[]) (output: uint8[]) length =
+    let mutable i = 0
+    while i < length do
+        output[i] <- if input[i] >= threshold then 255uy else 0uy
+        i <- i + 1
+
+let private thresholdUInt16NativePtr threshold (input: uint16[]) (output: uint8[]) length =
+    let inputHandle = GCHandle.Alloc(input, GCHandleType.Pinned)
+    let outputHandle = GCHandle.Alloc(output, GCHandleType.Pinned)
+    try
+        let inputPtr = NativePtr.ofNativeInt<uint16> (inputHandle.AddrOfPinnedObject())
+        let outputPtr = NativePtr.ofNativeInt<uint8> (outputHandle.AddrOfPinnedObject())
+        let mutable i = 0
+        while i < length do
+            NativePtr.set outputPtr i (if NativePtr.get inputPtr i >= threshold then 255uy else 0uy)
+            i <- i + 1
+    finally
+        inputHandle.Free()
+        outputHandle.Free()
+
+let private thresholdUInt16ToUInt16MaxVector (threshold: uint16) (input: uint16[]) (output: uint16[]) length =
+    let width = Vector<uint16>.Count
+    let thresholdVector = Vector<uint16>(threshold)
+    let mutable i = 0
+    let vectorEnd = length - (length % width)
+    while i < vectorEnd do
+        let values = Vector<uint16>(input, i)
+        let mask = Vector.GreaterThanOrEqual(values, thresholdVector)
+        mask.CopyTo(output, i)
+        i <- i + width
+    while i < length do
+        output[i] <- if input[i] >= threshold then UInt16.MaxValue else 0us
+        i <- i + 1
+
+let private thresholdUInt16ToUInt16OneVector (threshold: uint16) (input: uint16[]) (output: uint16[]) length =
+    let width = Vector<uint16>.Count
+    let thresholdVector = Vector<uint16>(threshold)
+    let oneVector = Vector<uint16>(1us)
+    let mutable i = 0
+    let vectorEnd = length - (length % width)
+    while i < vectorEnd do
+        let values = Vector<uint16>(input, i)
+        let mask = Vector.GreaterThanOrEqual(values, thresholdVector)
+        let normalized = Vector.BitwiseAnd(mask, oneVector)
+        normalized.CopyTo(output, i)
+        i <- i + width
+    while i < length do
+        output[i] <- if input[i] >= threshold then 1us else 0us
+        i <- i + 1
+
 let private thresholdFloat32Array threshold (input: float32[]) (output: uint8[]) length =
     for i in 0 .. length - 1 do
         output[i] <- if input[i] >= threshold then 255uy else 0uy
@@ -171,6 +270,45 @@ let private thresholdFloat32While threshold (input: float32[]) (output: uint8[])
     while i < length do
         output[i] <- if input[i] >= threshold then 255uy else 0uy
         i <- i + 1
+
+let private thresholdFloat32BoolWhile threshold (input: float32[]) (output: bool[]) length =
+    let mutable i = 0
+    while i < length do
+        output[i] <- input[i] >= threshold
+        i <- i + 1
+
+let private thresholdFloat32ToFloat32AllBitsWhile threshold (input: float32[]) (output: float32[]) length =
+    let mutable i = 0
+    while i < length do
+        output[i] <- if input[i] >= threshold then -1.0f else 0.0f
+        i <- i + 1
+
+let private thresholdFloat32ToFloat32OneWhile threshold (input: float32[]) (output: float32[]) length =
+    let mutable i = 0
+    while i < length do
+        output[i] <- if input[i] >= threshold then 1.0f else 0.0f
+        i <- i + 1
+
+[<MethodImpl(MethodImplOptions.AggressiveOptimization)>]
+let private thresholdFloat32WhileOptimized threshold (input: float32[]) (output: uint8[]) length =
+    let mutable i = 0
+    while i < length do
+        output[i] <- if input[i] >= threshold then 255uy else 0uy
+        i <- i + 1
+
+let private thresholdFloat32NativePtr threshold (input: float32[]) (output: uint8[]) length =
+    let inputHandle = GCHandle.Alloc(input, GCHandleType.Pinned)
+    let outputHandle = GCHandle.Alloc(output, GCHandleType.Pinned)
+    try
+        let inputPtr = NativePtr.ofNativeInt<float32> (inputHandle.AddrOfPinnedObject())
+        let outputPtr = NativePtr.ofNativeInt<uint8> (outputHandle.AddrOfPinnedObject())
+        let mutable i = 0
+        while i < length do
+            NativePtr.set outputPtr i (if NativePtr.get inputPtr i >= threshold then 255uy else 0uy)
+            i <- i + 1
+    finally
+        inputHandle.Free()
+        outputHandle.Free()
 
 let private thresholdFloat32Vector (threshold: float32) (input: float32[]) (output: uint8[]) length =
     let width = Vector<float32>.Count
@@ -187,6 +325,40 @@ let private thresholdFloat32Vector (threshold: float32) (input: float32[]) (outp
         i <- i + width
     while i < length do
         output[i] <- if input[i] >= threshold then 255uy else 0uy
+        i <- i + 1
+
+let private thresholdFloat32ToFloat32AllBitsVector (threshold: float32) (input: float32[]) (output: float32[]) length =
+    let width = Vector<float32>.Count
+    let thresholdVector = Vector<float32>(threshold)
+    let trueVector = Vector<float32>(-1.0f)
+    let falseVector = Vector<float32>(0.0f)
+    let mutable i = 0
+    let vectorEnd = length - (length % width)
+    while i < vectorEnd do
+        let values = Vector<float32>(input, i)
+        let mask = Vector.GreaterThanOrEqual(values, thresholdVector)
+        let selected = Vector.ConditionalSelect(mask, trueVector, falseVector)
+        selected.CopyTo(output, i)
+        i <- i + width
+    while i < length do
+        output[i] <- if input[i] >= threshold then -1.0f else 0.0f
+        i <- i + 1
+
+let private thresholdFloat32ToFloat32OneVector (threshold: float32) (input: float32[]) (output: float32[]) length =
+    let width = Vector<float32>.Count
+    let thresholdVector = Vector<float32>(threshold)
+    let trueVector = Vector<float32>(1.0f)
+    let falseVector = Vector<float32>(0.0f)
+    let mutable i = 0
+    let vectorEnd = length - (length % width)
+    while i < vectorEnd do
+        let values = Vector<float32>(input, i)
+        let mask = Vector.GreaterThanOrEqual(values, thresholdVector)
+        let selected = Vector.ConditionalSelect(mask, trueVector, falseVector)
+        selected.CopyTo(output, i)
+        i <- i + width
+    while i < length do
+        output[i] <- if input[i] >= threshold then 1.0f else 0.0f
         i <- i + 1
 
 let private thresholdUInt8Span threshold (input: Span<uint8>) (output: Span<uint8>) =
@@ -220,12 +392,45 @@ let private makeFilter threshold =
     filter.SetOutsideValue(0uy)
     filter
 
+type private ThresholdRuntime(threshold: float) =
+    let filter = makeFilter threshold
+
+    member _.Execute(image: itk.simple.Image) =
+        filter.Execute(image)
+
+    interface IDisposable with
+        member _.Dispose() =
+            filter.Dispose()
+
 let private measureItk (image: itk.simple.Image) threshold =
     use filter = makeFilter threshold
     use warmup = filter.Execute(image)
     measure (fun () ->
         use result = filter.Execute(image)
         if result.GetSize().Count = 0 then
+            failwith "unreachable")
+
+let private measureFilterLifecycleCreateEachTime iterations (image: itk.simple.Image) threshold =
+    use warmupFilter = makeFilter threshold
+    use warmup = warmupFilter.Execute(image)
+    measure (fun () ->
+        let mutable checksum = 0UL
+        for _ in 1 .. iterations do
+            use filter = makeFilter threshold
+            use result = filter.Execute(image)
+            checksum <- checksum + uint64 (result.GetSize().Count)
+        if checksum = 0UL then
+            failwith "unreachable")
+
+let private measureFilterLifecycleRuntime iterations (image: itk.simple.Image) threshold =
+    use runtime = new ThresholdRuntime(threshold)
+    use warmup = runtime.Execute(image)
+    measure (fun () ->
+        let mutable checksum = 0UL
+        for _ in 1 .. iterations do
+            use result = runtime.Execute(image)
+            checksum <- checksum + uint64 (result.GetSize().Count)
+        if checksum = 0UL then
             failwith "unreachable")
 
 let private measureArrayPoolItkRoundtrip<'T> shape fill threshold =
@@ -295,6 +500,39 @@ let private withPooledBuffers<'T> shape name fill body =
         ArrayPool<'T>.Shared.Return(input, RuntimeHelpers.IsReferenceOrContainsReferences<'T>())
         ArrayPool<uint8>.Shared.Return(output)
 
+let private withPooledBuffersAndBoolMask<'T> shape fill body =
+    let length = requireIntLength shape
+    let input = ArrayPool<'T>.Shared.Rent(length)
+    let boolOutput = ArrayPool<bool>.Shared.Rent(length)
+    try
+        fill input length
+        body length input boolOutput
+    finally
+        ArrayPool<'T>.Shared.Return(input, RuntimeHelpers.IsReferenceOrContainsReferences<'T>())
+        ArrayPool<bool>.Shared.Return(boolOutput)
+
+let private withPooledUInt16Mask shape body =
+    let length = requireIntLength shape
+    let input = ArrayPool<uint16>.Shared.Rent(length)
+    let output = ArrayPool<uint16>.Shared.Rent(length)
+    try
+        fillUInt16 input length
+        body length input output
+    finally
+        ArrayPool<uint16>.Shared.Return(input)
+        ArrayPool<uint16>.Shared.Return(output)
+
+let private withPooledFloat32Mask shape body =
+    let length = requireIntLength shape
+    let input = ArrayPool<float32>.Shared.Rent(length)
+    let output = ArrayPool<float32>.Shared.Rent(length)
+    try
+        fillFloat32 input length
+        body length input output
+    finally
+        ArrayPool<float32>.Shared.Return(input)
+        ArrayPool<float32>.Shared.Return(output)
+
 let private runCase pixelType shape threshold repeat =
     let shapeName = shapeText shape
     let addItkRow pixelName input rows =
@@ -314,6 +552,8 @@ let private runCase pixelType shape threshold repeat =
             let rows =
                 [ "arraypool-loop", fun () -> thresholdUInt8Array typedThreshold input output length
                   "arraypool-while", fun () -> thresholdUInt8While typedThreshold input output length
+                  "arraypool-while-aggressive", fun () -> thresholdUInt8WhileOptimized typedThreshold input output length
+                  "arraypool-nativeptr", fun () -> thresholdUInt8NativePtr typedThreshold input output length
                   "arraypool-vector", fun () -> thresholdUInt8Vector typedThreshold input output length
                   "arraypool-span", fun () -> thresholdUInt8Span typedThreshold (input.AsSpan(0, length)) (output.AsSpan(0, length)) ]
                 |> measureArrayActions "UInt8" shapeName threshold repeat
@@ -324,13 +564,19 @@ let private runCase pixelType shape threshold repeat =
                     successful "arraypool-itk" "import-return-threshold-export" "UInt8" shapeName threshold repeat seconds allocated
                 with ex ->
                     failed "arraypool-itk" "import-return-threshold-export" "UInt8" shapeName threshold repeat ex
-            roundtripRow :: rows)
+            let boolRows =
+                withPooledBuffersAndBoolMask<uint8> shape fillUInt8 (fun boolLength boolInput boolOutput ->
+                    [ "arraypool-bool-while", fun () -> thresholdUInt8BoolWhile typedThreshold boolInput boolOutput boolLength ]
+                    |> measureArrayActions "UInt8" shapeName threshold repeat)
+            roundtripRow :: (rows @ boolRows))
     | UInt16 ->
         withPooledBuffers<uint16> shape "UInt16" fillUInt16 (fun length input output ->
             let typedThreshold = uint16 threshold
             let rows =
                 [ "arraypool-loop", fun () -> thresholdUInt16Array typedThreshold input output length
                   "arraypool-while", fun () -> thresholdUInt16While typedThreshold input output length
+                  "arraypool-while-aggressive", fun () -> thresholdUInt16WhileOptimized typedThreshold input output length
+                  "arraypool-nativeptr", fun () -> thresholdUInt16NativePtr typedThreshold input output length
                   "arraypool-span", fun () -> thresholdUInt16Span typedThreshold (input.AsSpan(0, length)) (output.AsSpan(0, length)) ]
                 |> measureArrayActions "UInt16" shapeName threshold repeat
                 |> addItkRow "UInt16" input
@@ -340,13 +586,26 @@ let private runCase pixelType shape threshold repeat =
                     successful "arraypool-itk" "import-return-threshold-export" "UInt16" shapeName threshold repeat seconds allocated
                 with ex ->
                     failed "arraypool-itk" "import-return-threshold-export" "UInt16" shapeName threshold repeat ex
-            roundtripRow :: rows)
+            let boolRows =
+                withPooledBuffersAndBoolMask<uint16> shape fillUInt16 (fun boolLength boolInput boolOutput ->
+                    [ "arraypool-bool-while", fun () -> thresholdUInt16BoolWhile typedThreshold boolInput boolOutput boolLength ]
+                    |> measureArrayActions "UInt16" shapeName threshold repeat)
+            let uint16MaskRows =
+                withPooledUInt16Mask shape (fun maskLength maskInput maskOutput ->
+                    [ "arraypool-uint16mask-max-while", fun () -> thresholdUInt16ToUInt16MaxWhile typedThreshold maskInput maskOutput maskLength
+                      "arraypool-uint16mask-max-vector", fun () -> thresholdUInt16ToUInt16MaxVector typedThreshold maskInput maskOutput maskLength
+                      "arraypool-uint16mask-one-while", fun () -> thresholdUInt16ToUInt16OneWhile typedThreshold maskInput maskOutput maskLength
+                      "arraypool-uint16mask-one-vector", fun () -> thresholdUInt16ToUInt16OneVector typedThreshold maskInput maskOutput maskLength ]
+                    |> measureArrayActions "UInt16" shapeName threshold repeat)
+            roundtripRow :: (rows @ boolRows @ uint16MaskRows))
     | Float32 ->
         withPooledBuffers<float32> shape "Float32" fillFloat32 (fun length input output ->
             let typedThreshold = float32 threshold
             let rows =
                 [ "arraypool-loop", fun () -> thresholdFloat32Array typedThreshold input output length
                   "arraypool-while", fun () -> thresholdFloat32While typedThreshold input output length
+                  "arraypool-while-aggressive", fun () -> thresholdFloat32WhileOptimized typedThreshold input output length
+                  "arraypool-nativeptr", fun () -> thresholdFloat32NativePtr typedThreshold input output length
                   "arraypool-vector", fun () -> thresholdFloat32Vector typedThreshold input output length
                   "arraypool-span", fun () -> thresholdFloat32Span typedThreshold (input.AsSpan(0, length)) (output.AsSpan(0, length)) ]
                 |> measureArrayActions "Float32" shapeName threshold repeat
@@ -357,7 +616,44 @@ let private runCase pixelType shape threshold repeat =
                     successful "arraypool-itk" "import-return-threshold-export" "Float32" shapeName threshold repeat seconds allocated
                 with ex ->
                     failed "arraypool-itk" "import-return-threshold-export" "Float32" shapeName threshold repeat ex
-            roundtripRow :: rows)
+            let boolRows =
+                withPooledBuffersAndBoolMask<float32> shape fillFloat32 (fun boolLength boolInput boolOutput ->
+                    [ "arraypool-bool-while", fun () -> thresholdFloat32BoolWhile typedThreshold boolInput boolOutput boolLength ]
+                    |> measureArrayActions "Float32" shapeName threshold repeat)
+            let float32MaskRows =
+                withPooledFloat32Mask shape (fun maskLength maskInput maskOutput ->
+                    [ "arraypool-float32mask-allbits-while", fun () -> thresholdFloat32ToFloat32AllBitsWhile typedThreshold maskInput maskOutput maskLength
+                      "arraypool-float32mask-allbits-vector", fun () -> thresholdFloat32ToFloat32AllBitsVector typedThreshold maskInput maskOutput maskLength
+                      "arraypool-float32mask-one-while", fun () -> thresholdFloat32ToFloat32OneWhile typedThreshold maskInput maskOutput maskLength
+                      "arraypool-float32mask-one-vector", fun () -> thresholdFloat32ToFloat32OneVector typedThreshold maskInput maskOutput maskLength ]
+                    |> measureArrayActions "Float32" shapeName threshold repeat)
+            roundtripRow :: (rows @ boolRows @ float32MaskRows))
+
+let private runFilterLifecycleFor<'T> pixelName fill shape threshold repeat iterations =
+    let shapeName = shapeText shape
+    let length = requireIntLength shape
+    let input = ArrayPool<'T>.Shared.Rent(length)
+    try
+        fill input length
+        use image = importedImage<'T> shape input
+        [ try
+              let seconds, allocated = measureFilterLifecycleCreateEachTime iterations image threshold
+              successful "simpleitk" "create-dispose-filter-per-execute" pixelName shapeName threshold repeat seconds allocated
+          with ex ->
+              failed "simpleitk" "create-dispose-filter-per-execute" pixelName shapeName threshold repeat ex
+          try
+              let seconds, allocated = measureFilterLifecycleRuntime iterations image threshold
+              successful "simpleitk" "reuse-threshold-runtime-filter" pixelName shapeName threshold repeat seconds allocated
+          with ex ->
+              failed "simpleitk" "reuse-threshold-runtime-filter" pixelName shapeName threshold repeat ex ]
+    finally
+        ArrayPool<'T>.Shared.Return(input, RuntimeHelpers.IsReferenceOrContainsReferences<'T>())
+
+let private runFilterLifecycleCase pixelType shape threshold repeat iterations =
+    match pixelType with
+    | UInt8 -> runFilterLifecycleFor<uint8> "UInt8" fillUInt8 shape threshold repeat iterations
+    | UInt16 -> runFilterLifecycleFor<uint16> "UInt16" fillUInt16 shape threshold repeat iterations
+    | Float32 -> runFilterLifecycleFor<float32> "Float32" fillFloat32 shape threshold repeat iterations
 
 let private writeRows output rows =
     let exists = File.Exists output
@@ -382,6 +678,7 @@ let private writeRows output rows =
 let private usage () =
     printfn "In-memory threshold benchmark"
     printfn "  dotnet run --project benchmarks/InMemoryThreshold.Benchmarks -- --output tmp/in-memory-threshold.csv --shapes 128x128x128,256x256x256,1024x1024x1024 --pixel-types UInt8,UInt16,Float32 --repeat 3 --threshold 128"
+    printfn "  dotnet run --project benchmarks/InMemoryThreshold.Benchmarks -- --mode filter-lifecycle --output tmp/filter-lifecycle.csv --shapes 1024x1024x1 --pixel-types UInt8 --repeat 3 --iterations 1024 --threshold 128"
 
 [<EntryPoint>]
 let main args =
@@ -392,8 +689,9 @@ let main args =
             0
         else
             let output = optional "output" "benchmarks/results/in-memory-threshold.csv" opts
+            let mode = optional "mode" "threshold" opts
             let shapes =
-                optional "shapes" "128x128x128,256x256x256,1024x1024x1024" opts
+                optional "shapes" (if mode = "filter-lifecycle" then "1024x1024x1" else "128x128x128,256x256x256,1024x1024x1024") opts
                 |> fun text -> text.Split(',', StringSplitOptions.RemoveEmptyEntries ||| StringSplitOptions.TrimEntries)
                 |> Array.map parseShape
             let pixelTypes =
@@ -401,6 +699,7 @@ let main args =
                 |> fun text -> text.Split(',', StringSplitOptions.RemoveEmptyEntries ||| StringSplitOptions.TrimEntries)
                 |> Array.map parsePixelType
             let repeat = optional "repeat" "3" opts |> int
+            let iterations = optional "iterations" "1024" opts |> int
             let threshold = optional "threshold" "128" opts |> fun text -> Double.Parse(text, invariant)
 
             Directory.CreateDirectory(Path.GetDirectoryName(Path.GetFullPath(output))) |> ignore
@@ -409,7 +708,10 @@ let main args =
                     for r in 1 .. repeat do
                         let rows =
                             try
-                                runCase pixelType shape threshold r
+                                match mode with
+                                | "threshold" -> runCase pixelType shape threshold r
+                                | "filter-lifecycle" -> runFilterLifecycleCase pixelType shape threshold r iterations
+                                | _ -> invalidArg "mode" $"Unsupported mode '{mode}'."
                             with ex ->
                                 let pixelName = string pixelType
                                 [ failed "setup" "allocate-import" pixelName (shapeText shape) threshold r ex ]
