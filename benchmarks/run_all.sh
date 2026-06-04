@@ -9,7 +9,7 @@ Run the comparative benchmark workflow end-to-end:
   1. Generate deterministic TIFF-stack inputs.
   2. Build selected compiled benchmark backends before measurement.
   3. Run selected baseline TIFF-stack backends.
-  4. Optionally convert inputs and run Dask/OME-Zarr special cases.
+  4. Optionally convert inputs and run StackProcessing/Dask OME-Zarr special cases.
   5. Summarize raw measurements.
 
 Options:
@@ -18,10 +18,10 @@ Options:
   --repeat-end N          Last repeat index to run. Defaults to --repeat.
   --backends LIST         Comma-separated baseline backends.
                           Defaults to stackprocessing,python-skimage-scipy,cpp-itk,matlab.
-                          Valid baseline backends: stackprocessing,stackprocessing-arraypool,stackprocessing-arraypool-slice,stackprocessing-arraypool-slice-reuse,stackprocessing-byte-slice-reuse,stackprocessing-byte-float32-slice-reuse,python-skimage-scipy,cpp-itk,matlab.
-  --include-special       Also run python-dask-omezarr special cases.
+                          Valid baseline backends: stackprocessing,stackprocessing-arraypool,stackprocessing-arraypool-slice,stackprocessing-arraypool-slice-reuse,stackprocessing-byte-slice-reuse,stackprocessing-byte-float32-slice-reuse,stackprocessing-zarr,python-skimage-scipy,cpp-itk,matlab.
+  --include-special       Also run StackProcessing-Zarr and python-dask-omezarr special cases.
   --cases PATH            Baseline cases CSV. Defaults to benchmarks/config/cases.csv.
-  --special-cases PATH    Special cases CSV. Defaults to benchmarks/config/special-cases.csv.
+  --special-cases PATH    Special cases CSV for OME-Zarr conversion and Dask. Defaults to benchmarks/config/cases.csv.
   --pixel-types LIST      Optional comma-separated pixel type filter, for example UInt8 or UInt8,Float32.
   --shapes LIST           Optional comma-separated shape filter, for example 256x256x256.
   --operations LIST       Optional comma-separated operation filter, for example median,dilate.
@@ -63,7 +63,7 @@ repeat_end=""
 backends="stackprocessing,python-skimage-scipy,cpp-itk,matlab"
 include_special=0
 cases="benchmarks/config/cases.csv"
-special_cases="benchmarks/config/special-cases.csv"
+special_cases="benchmarks/config/cases.csv"
 pixel_types=""
 shapes=""
 operations=""
@@ -235,12 +235,15 @@ run_cmd() {
   fi
 }
 
-IFS=',' read -r -a backend_array <<< "$backends"
+backend_array=()
+if [[ -n "$backends" ]]; then
+  IFS=',' read -r -a backend_array <<< "$backends"
+fi
 
 has_backend() {
   local candidate="$1"
   local backend
-  for backend in "${backend_array[@]}"; do
+  for backend in ${backend_array[@]+"${backend_array[@]}"}; do
     if [[ "$backend" == "$candidate" ]]; then
       return 0
     fi
@@ -248,9 +251,9 @@ has_backend() {
   return 1
 }
 
-for backend in "${backend_array[@]}"; do
+for backend in ${backend_array[@]+"${backend_array[@]}"}; do
   case "$backend" in
-    stackprocessing|stackprocessing-arraypool|stackprocessing-arraypool-slice|stackprocessing-arraypool-slice-reuse|stackprocessing-byte-slice-reuse|stackprocessing-byte-float32-slice-reuse|python-skimage-scipy|cpp-itk|matlab)
+    stackprocessing|stackprocessing-arraypool|stackprocessing-arraypool-slice|stackprocessing-arraypool-slice-reuse|stackprocessing-byte-slice-reuse|stackprocessing-byte-float32-slice-reuse|stackprocessing-zarr|python-skimage-scipy|cpp-itk|matlab)
       ;;
     "")
       continue
@@ -263,7 +266,7 @@ for backend in "${backend_array[@]}"; do
 done
 
 if [[ "$skip_builds" -eq 0 ]]; then
-  if [[ "$skip_inputs" -eq 0 ]] || has_backend stackprocessing || has_backend stackprocessing-arraypool || has_backend stackprocessing-arraypool-slice || has_backend stackprocessing-arraypool-slice-reuse || has_backend stackprocessing-byte-slice-reuse || has_backend stackprocessing-byte-float32-slice-reuse; then
+  if [[ "$skip_inputs" -eq 0 ]] || has_backend stackprocessing || has_backend stackprocessing-zarr || has_backend stackprocessing-arraypool || has_backend stackprocessing-arraypool-slice || has_backend stackprocessing-arraypool-slice-reuse || has_backend stackprocessing-byte-slice-reuse || has_backend stackprocessing-byte-float32-slice-reuse; then
     run_cmd dotnet build benchmarks/StackProcessing.Benchmarks/StackProcessing.Benchmarks.fsproj --nologo
   fi
   if has_backend cpp-itk || [[ "$build_itk" -eq 1 ]]; then
@@ -286,7 +289,7 @@ if [[ "$skip_inputs" -eq 0 ]]; then
   run_cmd "${input_args[@]}"
 fi
 
-for backend in "${backend_array[@]}"; do
+for backend in ${backend_array[@]+"${backend_array[@]}"}; do
   [[ -z "$backend" ]] && continue
 
   manifest_args=(
@@ -339,7 +342,8 @@ for backend in "${backend_array[@]}"; do
 done
 
 if [[ "$include_special" -eq 1 ]]; then
-  python3 - "$special_cases" "$input_root" "$omezarr_root" "$dry_run" "$pixel_types" "$shapes" <<'PY'
+  if [[ "$skip_inputs" -eq 0 ]]; then
+    python3 - "$special_cases" "$input_root" "$omezarr_root" "$dry_run" "$pixel_types" "$shapes" <<'PY'
 import csv
 import subprocess
 import sys
@@ -377,6 +381,57 @@ for pixel_type, shape in seen:
         if completed.returncode != 0:
             raise SystemExit(completed.returncode)
 PY
+  else
+    echo "Skipping OME-Zarr input conversion because --skip-inputs was supplied."
+  fi
+
+  special_args=(
+    python3 benchmarks/tools/run_manifest.py
+    --cases "$special_cases"
+    --backend stackprocessing-zarr
+    --results "$results"
+    --input-root "$omezarr_root"
+    --output-root "$output_root"
+    --repeat "$repeat"
+    --stackprocessing-dll "$stackprocessing_dll"
+  )
+  if [[ -n "$pixel_types" ]]; then
+    special_args+=(--pixel-types "$pixel_types")
+  fi
+  if [[ -n "$shapes" ]]; then
+    special_args+=(--shapes "$shapes")
+  fi
+  if [[ -n "$operations" ]]; then
+    special_args+=(--operations "$operations")
+  else
+    special_args+=(--operations threshold,median)
+  fi
+  if [[ -n "$parameters" ]]; then
+    special_args+=(--parameters "$parameters")
+  fi
+  if [[ -n "$repeat_start" ]]; then
+    special_args+=(--repeat-start "$repeat_start")
+  fi
+  if [[ -n "$repeat_end" ]]; then
+    special_args+=(--repeat-end "$repeat_end")
+  fi
+  if [[ "$dry_run" -eq 1 ]]; then
+    special_args+=(--dry-run)
+  fi
+  if [[ "$keep_outputs" -eq 1 ]]; then
+    special_args+=(--keep-outputs)
+  fi
+  if [[ "$skip_existing" -eq 1 ]]; then
+    special_args+=(--skip-existing)
+  fi
+  if [[ "$dry_run" -eq 1 ]]; then
+    printf '+'
+    printf ' %q' "${special_args[@]}"
+    printf '\n'
+    "${special_args[@]}"
+  else
+    run_cmd "${special_args[@]}"
+  fi
 
   special_args=(
     python3 benchmarks/tools/run_manifest.py
@@ -395,6 +450,8 @@ PY
   fi
   if [[ -n "$operations" ]]; then
     special_args+=(--operations "$operations")
+  else
+    special_args+=(--operations threshold,median)
   fi
   if [[ -n "$parameters" ]]; then
     special_args+=(--parameters "$parameters")
@@ -410,6 +467,9 @@ PY
   fi
   if [[ "$keep_outputs" -eq 1 ]]; then
     special_args+=(--keep-outputs)
+  fi
+  if [[ "$skip_existing" -eq 1 ]]; then
+    special_args+=(--skip-existing)
   fi
   if [[ "$dry_run" -eq 1 ]]; then
     printf '+'

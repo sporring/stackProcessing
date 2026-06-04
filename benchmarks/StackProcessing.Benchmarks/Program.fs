@@ -33,6 +33,7 @@ Generate:
 
 Run:
   dotnet run --project benchmarks/StackProcessing.Benchmarks -- run --operation copy|threshold|convolve|median|dilate|connectedComponents --pixel-type UInt8|UInt16|Float32 --input DIR --output DIR [--radius N] [--kernel-size N] [--threshold X] [--window N] [--available-memory BYTES]
+  dotnet run --project benchmarks/StackProcessing.Benchmarks -- run-zarr --operation copy|threshold|convolve|median|dilate --pixel-type UInt8|UInt16|Float32 --shape WxHxD --input ZARR --output ZARR [--radius N] [--kernel-size N] [--threshold X] [--available-memory BYTES]
 
 ArrayPool experiment:
   dotnet run --project benchmarks/StackProcessing.Benchmarks -- run-arraypool --operation copy|threshold|connectedComponents --pixel-type UInt8|UInt16|Float32 --input DIR --output DIR [--threshold X]
@@ -556,6 +557,68 @@ let private runConvolveTyped<'T when 'T: equality> input output kernelSize avail
         kernel.decRefCount()
     0
 
+let private runZarrTyped<'T when 'T: equality> operation shape input output radius kernelSize thresholdValue availableMemory =
+    ensureCleanDirectory output
+    let src = benchmarkSource availableMemory
+    let readInput () =
+        src
+        |> readZarrSlab<'T> input 16u 0 0 0 0 0
+
+    match operation with
+    | "copy" ->
+        readInput ()
+        >=> writeZarr output "benchmark" shape.Depth 256u 256u 16u 1.0 1.0 1.0 0
+        |> sink
+    | "threshold" ->
+        readInput ()
+        >=> threshold thresholdValue infinity
+        >=> writeZarr output "benchmark" shape.Depth 256u 256u 16u 1.0 1.0 1.0 0
+        |> sink
+    | "median" ->
+        readInput ()
+        >=> smoothWMedian<'T> radius None
+        >=> writeZarr output "benchmark" shape.Depth 256u 256u 16u 1.0 1.0 1.0 0
+        |> sink
+    | "convolve" ->
+        let kernel = uniformKernel3D kernelSize
+        try
+            readInput ()
+            >=> cast<'T, float>
+            >=> convolve kernel None None None
+            >=> cast<float, 'T>
+            >=> writeZarr output "benchmark" shape.Depth 256u 256u 16u 1.0 1.0 1.0 0
+            |> sink
+        finally
+            kernel.decRefCount()
+    | "dilate" ->
+        readInput ()
+        >=> threshold 128.0 infinity
+        >=> dilateZonohedral radius None
+        >=> writeZarr output "benchmark" shape.Depth 256u 256u 16u 1.0 1.0 1.0 0
+        |> sink
+    | _ -> failwith $"unsupported Zarr operation '{operation}'"
+    0
+
+let private runZarr opts =
+    let operation = require "operation" opts
+    let pixelType = require "pixel-type" opts |> parsePixelType
+    let shape = require "shape" opts |> parseShape
+    let input = require "input" opts
+    let output = require "output" opts
+    let radius = optional "radius" "1" opts |> UInt32.Parse
+    let kernelSize = optional "kernel-size" "3" opts |> UInt32.Parse
+    let thresholdValue = optional "threshold" "128" opts |> fun s -> Double.Parse(s, invariant)
+    let availableMemory = optional "available-memory" (string (1024UL * 1024UL * 1024UL * 1024UL)) opts |> UInt64.Parse
+    let stopwatch = Stopwatch.StartNew()
+    let exitCode =
+        match pixelType with
+        | UInt8 -> runZarrTyped<uint8> operation shape input output radius kernelSize thresholdValue availableMemory
+        | UInt16 -> runZarrTyped<uint16> operation shape input output radius kernelSize thresholdValue availableMemory
+        | Float32 -> runZarrTyped<float32> operation shape input output radius kernelSize thresholdValue availableMemory
+    stopwatch.Stop()
+    writeInternalSeconds stopwatch.Elapsed
+    exitCode
+
 let private runConnectedComponents input output windowSize availableMemory =
     ensureCleanDirectory output
     let window = max 1u windowSize
@@ -586,7 +649,7 @@ let private runConnectedComponents input output windowSize availableMemory =
                 |> drain
 
             src
-            |> readRange<uint64> (depth - 1u) (-1) 0u tmp tmpSuffix
+            |> readRange<uint64> 0u 1 (depth - 1u) tmp tmpSuffix
             >=> updateConnectedComponents (Some window) table
             >=> cast<uint64, uint8>
             >=> writeSlabSlices output ".tiff" 1u
@@ -903,6 +966,7 @@ let main args =
         | [| |] -> usage ()
         | _ when args[0] = "generate" -> args[1..] |> parseArgs |> generate
         | _ when args[0] = "run" -> args[1..] |> parseArgs |> run
+        | _ when args[0] = "run-zarr" -> args[1..] |> parseArgs |> runZarr
         | _ when args[0] = "run-arraypool" -> args[1..] |> parseArgs |> runArrayPool
         | _ when args[0] = "run-arraypool-slice" -> args[1..] |> parseArgs |> runArrayPoolSlice
         | _ when args[0] = "run-arraypool-slice-reuse" -> args[1..] |> parseArgs |> runArrayPoolSliceReuse

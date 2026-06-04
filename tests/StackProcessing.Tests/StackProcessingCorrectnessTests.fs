@@ -82,6 +82,26 @@ let private makeSeparatedBinaryComponentsVolume () =
         if crossingSlabComponent || laterComponent then 255uy else 0uy)
     |> Image<uint8>.ofArray3D
 
+let private makeSplitMergeSplitComponentVolume () =
+    Array3D.init 8 8 6 (fun x y z ->
+        let slab0Branches =
+            z <= 1 &&
+            y = 2 &&
+            (x = 1 || x = 5)
+
+        let slab1Bridge =
+            z >= 2 && z <= 3 &&
+            y = 2 &&
+            x >= 1 && x <= 5
+
+        let slab2Branches =
+            z >= 4 &&
+            y = 2 &&
+            (x = 1 || x = 5)
+
+        if slab0Branches || slab1Bridge || slab2Branches then 255uy else 0uy)
+    |> Image<uint8>.ofArray3D
+
 let private makeAveragingKernel () =
     Array3D.create 3 3 3 (single (1.0 / 27.0))
     |> Image<float32>.ofArray3D
@@ -170,6 +190,32 @@ let private compareImages name tolerance inputDir outputDir (expected: Image<'T>
     Expect.isLessThan maxDiff tolerance $"{name}: streaming result should match direct 3D result. Max difference: {maxDiff}; tolerance: {tolerance}. Input slices: {inputDir}; output slices: {outputDir}."
 
     keepTempDirs
+
+let private assertSameLabelPartition name (expected: Image<uint64>) (actual: Image<uint64>) =
+    Expect.equal (actual.GetSize()) (expected.GetSize()) $"{name}: label volumes should have the same size."
+
+    let expectedPixels = expected.toFlatArray()
+    let actualPixels = actual.toFlatArray()
+    let expectedToActual = Collections.Generic.Dictionary<uint64, uint64>()
+    let actualToExpected = Collections.Generic.Dictionary<uint64, uint64>()
+
+    for i in 0 .. expectedPixels.Length - 1 do
+        let e = expectedPixels[i]
+        let a = actualPixels[i]
+        Expect.equal (a = 0UL) (e = 0UL) $"{name}: foreground/background mismatch at flat index {i}."
+
+        if e <> 0UL then
+            let mutable existingActual = 0UL
+            if expectedToActual.TryGetValue(e, &existingActual) then
+                Expect.equal a existingActual $"{name}: expected label {e} maps to inconsistent actual labels."
+            else
+                expectedToActual.[e] <- a
+
+            let mutable existingExpected = 0UL
+            if actualToExpected.TryGetValue(a, &existingExpected) then
+                Expect.equal e existingExpected $"{name}: actual label {a} merges distinct expected labels."
+            else
+                actualToExpected.[a] <- e
 
 let private runSlicePipeline name suffix (input: Image<'In>) (stage: Stage<Image<'In>, Image<'Out>>) =
     let inputDir = tempDirectory $"{name}-input"
@@ -969,6 +1015,49 @@ let stackProcessingCorrectnessSuite =
                 expectedLabelsOpt |> Option.iter (fun image -> image.decRefCount())
                 volume.decRefCount()
                 if Directory.Exists inputDir then Directory.Delete(inputDir, true)
+
+        testCase "streamed connected component graph relabel pass handles split-merge-split slabs" <| fun _ ->
+            let inputDir = tempDirectory "connected-component-graph-input"
+            let labelDir = tempDirectory "connected-component-graph-labels"
+            let outputDir = tempDirectory "connected-component-graph-output"
+            let suffix = ".tiff"
+            let labelSuffix = ".mha"
+            let windowSize = 2u
+            let volume = makeSplitMergeSplitComponentVolume ()
+            let mutable expectedLabelsOpt : Image<uint64> option = None
+            let mutable actualLabelsOpt : Image<uint64> option = None
+
+            try
+                writeVolumeAsSlices inputDir suffix volume
+
+                let table =
+                    source (2UL * 1024UL * 1024UL * 1024UL)
+                    |> read<uint8> inputDir suffix
+                    >=> connectedComponents (Some windowSize)
+                    >=> teeFst (writeSlabSlices labelDir labelSuffix windowSize)
+                    >=> makeConnectedComponentLabelTranslationTable (Some windowSize)
+                    |> drain
+
+                source (2UL * 1024UL * 1024UL * 1024UL)
+                |> readRange<uint64> 0u 1 (volume.GetDepth() - 1u) labelDir labelSuffix
+                >=> updateConnectedComponents (Some windowSize) table
+                >=> writeSlabSlices outputDir labelSuffix 1u
+                |> sink
+
+                let actualLabels = readVolumeFromSlices<uint64> outputDir labelSuffix
+                actualLabelsOpt <- Some actualLabels
+
+                let expectedLabels = (ImageFunctions.connectedComponents volume).Labels
+                expectedLabelsOpt <- Some expectedLabels
+
+                assertSameLabelPartition "connected-component-graph-relabel" expectedLabels actualLabels
+            finally
+                actualLabelsOpt |> Option.iter (fun image -> image.decRefCount())
+                expectedLabelsOpt |> Option.iter (fun image -> image.decRefCount())
+                volume.decRefCount()
+                if Directory.Exists inputDir then Directory.Delete(inputDir, true)
+                if Directory.Exists labelDir then Directory.Delete(labelDir, true)
+                if Directory.Exists outputDir then Directory.Delete(outputDir, true)
 
         testCase "streamed relabelComponents matches direct 3D relabeling for one full window" <| fun _ ->
             let suffix = ".mha"

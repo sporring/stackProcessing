@@ -1320,6 +1320,21 @@ let private writeNodeWithSuffix name suffix =
       "output", outputPathForProbe name
       "suffix", suffix ]
 
+let private writeZarrNode name depth =
+    "write",
+    "Write",
+    [ "format", "OME-Zarr"
+      "output", outputPathForProbe name
+      "name", "benchmark"
+      "depth", string depth
+      "chunkX", "256"
+      "chunkY", "256"
+      "chunkZ", "16"
+      "physicalSizeX", "1.0"
+      "physicalSizeY", "1.0"
+      "physicalSizeZ", "1.0"
+      "maxConcurrentWrites", "0" ]
+
 let private ignoreNode =
     "ignore", "Ignore", []
 
@@ -1331,6 +1346,11 @@ let private zeroNode pixelType width height depth =
       "width", string width
       "height", string height
       "depth", string depth ]
+
+let private emptyNode =
+    "empty",
+    "Empty",
+    [ "availableMemory", string availableMemory + "UL" ]
 
 let private coordinateNode axis width height depth =
     "source",
@@ -1349,6 +1369,20 @@ let private readNodeFromWithSuffix input pixelType suffix =
       "format", "Image stack"
       "input", input
       "suffix", suffix ]
+
+let private readZarrNode input pixelType =
+    "read",
+    "Read",
+    [ "availableMemory", string availableMemory + "UL"
+      "type", pixelType
+      "format", "OME-Zarr"
+      "input", input
+      "slabDepth", "16"
+      "multiscaleIndex", "0"
+      "datasetIndex", "0"
+      "timepoint", "0"
+      "channel", "0"
+      "maxParallelChunks", "0" ]
 
 let private readNodeFrom input pixelType =
     readNodeFromWithSuffix input pixelType ".tiff"
@@ -1371,8 +1405,11 @@ let private bottomUpIoPixelTypes =
 let private bottomUpTiffPixelTypes =
     Set.ofList [ "UInt8"; "Int8"; "UInt16"; "Int16"; "Float32" ]
 
+let private bottomUpComplexPixelTypes =
+    [ "ComplexFloat32"; "ComplexFloat64" ]
+
 let private bottomUpMhaPixelTypes =
-    Set.ofList (bottomUpIoPixelTypes @ [ "Complex" ])
+    Set.ofList (bottomUpIoPixelTypes @ bottomUpComplexPixelTypes)
 
 let private bottomUpSupportedFormats pixelType =
     [ if bottomUpTiffPixelTypes.Contains pixelType then
@@ -1462,15 +1499,14 @@ let private bottomUpGraphTemplates config =
     let sizeSuffix = sizeName config.Shape
     let writeFeatureFor suffix = $"Write:format=Image stack:suffix={suffix}:depth=1:chunkX=64:chunkY=64:chunkZ=8:maxConcurrentWrites=0:frameAxis=0"
     let writeFeature = writeFeatureFor ".tiff"
+    let writeZarrFeature = "Write:format=OME-Zarr:depth=1:chunkX=256:chunkY=256:chunkZ=16:maxConcurrentWrites=0"
     let ignoreFeature = "Ignore"
 
     let emptyTemplate name description =
-        let zero = zeroNode "UInt8" 1u 1u 1u
-
         { Name = name
           Description = description
           Features = [ "intercept" ]
-          Graph = graphForLinearPipeline name [ zero; ignoreNode ] }
+          Graph = graphForLinearPipeline name [ emptyNode ] }
 
     let templateWithSink name description sinkFeature nodes sink =
         { Name = name
@@ -1486,6 +1522,9 @@ let private bottomUpGraphTemplates config =
 
     let writeTemplateWithSuffix name description suffix nodes =
         templateWithSink name description (writeFeatureFor suffix) nodes (writeNodeWithSuffix name suffix)
+
+    let writeZarrTemplate name description depth nodes =
+        templateWithSink name description writeZarrFeature nodes (writeZarrNode name depth)
 
     let writeUInt8Template name description nodes outputType =
         if outputType = "UInt8" then
@@ -1569,28 +1608,51 @@ let private bottomUpGraphTemplates config =
                            [ read ]
                    index <- index + 1
 
-           match config.TypedFormatInputs |> Map.tryFind ("Complex", ".mha") with
-           | Some complexInput ->
-               let typeKey = "complex"
-               let suffix = ".mha"
-               let formatKey = formatLabel suffix
-               let read = readNodeFromWithSuffix complexInput "Complex" suffix
+               if pixelType = "UInt8" || pixelType = "UInt16" then
+                   match config.TypedFormatInputs |> Map.tryFind (pixelType, ".zarr") with
+                   | Some zarrInput ->
+                       let formatKey = "zarr"
+                       let read = readZarrNode zarrInput pixelType
 
-               yield
-                   ignoreTemplate
-                       (sprintf "bottomup-%02d-read-%s-%s-ignore-%s" index typeKey formatKey sizeSuffix)
-                       "Complex .mha read consumed without writing."
-                       [ read ]
-               index <- index + 1
+                       yield
+                           ignoreTemplate
+                               (sprintf "bottomup-%02d-read-%s-%s-ignore-%s" index typeKey formatKey sizeSuffix)
+                               $"{pixelType} OME-Zarr read consumed without writing."
+                               [ read ]
+                       index <- index + 1
 
-               yield
-                   writeTemplateWithSuffix
-                       (sprintf "bottomup-%02d-read-%s-%s-write-%s" index typeKey formatKey sizeSuffix)
-                       "Complex .mha read then write."
-                       suffix
-                       [ read ]
-               index <- index + 1
-           | None -> () |]
+                       yield
+                           writeZarrTemplate
+                               (sprintf "bottomup-%02d-read-%s-%s-write-%s" index typeKey formatKey sizeSuffix)
+                               $"{pixelType} OME-Zarr read then write."
+                               config.Depth
+                               [ read ]
+                       index <- index + 1
+                   | None -> ()
+
+           for complexPixelType in bottomUpComplexPixelTypes do
+               match config.TypedFormatInputs |> Map.tryFind (complexPixelType, ".mha") with
+               | Some complexInput ->
+                   let typeKey = complexPixelType.ToLowerInvariant()
+                   let suffix = ".mha"
+                   let formatKey = formatLabel suffix
+                   let read = readNodeFromWithSuffix complexInput complexPixelType suffix
+
+                   yield
+                       ignoreTemplate
+                           (sprintf "bottomup-%02d-read-%s-%s-ignore-%s" index typeKey formatKey sizeSuffix)
+                           $"{complexPixelType} .mha read consumed without writing."
+                           [ read ]
+                   index <- index + 1
+
+                   yield
+                       writeTemplateWithSuffix
+                           (sprintf "bottomup-%02d-read-%s-%s-write-%s" index typeKey formatKey sizeSuffix)
+                           $"{complexPixelType} .mha read then write."
+                           suffix
+                           [ read ]
+                   index <- index + 1
+               | None -> () |]
 
     let readCastLayer =
         let castPairs =
@@ -2647,7 +2709,26 @@ let private createTypedMovingBoxesWithSuffix pixelType suffix size output =
     | "Float64" -> createMovingBoxesWithSuffix<float> 255.0 size output suffix
     | _ -> failwithf "Unsupported IO probe input type '%s'." pixelType
 
-let private createComplexMovingBoxes size output =
+let private createTypedMovingBoxesZarr pixelType size output =
+    cleanDirectory output
+
+    match pixelType with
+    | "UInt8" ->
+        source availableMemory
+        |> zero<uint8> size.Width size.Height size.Depth
+        >=> addNormalNoise 128.0 50.0
+        >=> writeZarr output "benchmark" size.Depth 256u 256u 16u 1.0 1.0 1.0 0
+        |> sink
+    | "UInt16" ->
+        source availableMemory
+        |> zero<uint16> size.Width size.Height size.Depth
+        >=> addNormalNoise 2048.0 512.0
+        >=> writeZarr output "benchmark" size.Depth 256u 256u 16u 1.0 1.0 1.0 0
+        |> sink
+    | _ ->
+        failwithf "Zarr Probe input generation currently supports UInt8 and UInt16, but was '%s'." pixelType
+
+let private createComplexMovingBoxesFloat64 size output =
     cleanDirectory output
 
     let boxSize = max 4 (int size.Width / 4)
@@ -2670,6 +2751,33 @@ let private createComplexMovingBoxes size output =
 
         let image =
             Image.Image<System.Numerics.Complex>.ofComplexArray2D(values, "complexMovingBoxes", int z)
+        let fileName = Path.Combine(output, sprintf "image_%03d.mha" z)
+        image.toFileComplex(fileName)
+        image.decRefCount()
+
+let private createComplexMovingBoxesFloat32 size output =
+    cleanDirectory output
+
+    let boxSize = max 4 (int size.Width / 4)
+
+    for z in 0u .. size.Depth - 1u do
+        let phase = 2.0 * Math.PI * float z / float size.Depth
+        let dx = int z % max 1 (int size.Width)
+        let dy = int ((z * 3u) % max 1u size.Height)
+        let values =
+            Array2D.init (int size.Width) (int size.Height) (fun x y ->
+                let inBox =
+                    x >= dx
+                    && x < min (int size.Width) (dx + boxSize)
+                    && y >= dy
+                    && y < min (int size.Height) (dy + boxSize)
+                if inBox then
+                    Image.ComplexFloat32(float32 (Math.Cos phase), float32 (Math.Sin phase))
+                else
+                    Image.ComplexFloat32.Zero)
+
+        let image =
+            Image.Image<Image.ComplexFloat32>.ofComplexFloat32Array2D(values, "complexMovingBoxesFloat32", int z)
         let fileName = Path.Combine(output, sprintf "image_%03d.mha" z)
         image.toFileComplex(fileName)
         image.decRefCount()
@@ -2700,6 +2808,18 @@ let createBottomUpInputsForShape (imageSize: ImageSize) (noisyPixelType: string)
                 (pixelType, suffix), output))
         |> Map.ofList
 
+    let zarrFormatInputs =
+        [ "UInt8"; "UInt16" ]
+        |> List.map (fun pixelType ->
+            let output =
+                Path.Combine(typedInputRoot, pixelType.ToLowerInvariant(), "zarr").Replace('\\', '/')
+            createTypedMovingBoxesZarr pixelType imageSize output
+            (pixelType, ".zarr"), output)
+        |> Map.ofList
+
+    let typedFormatInputs =
+        Map.fold (fun acc key value -> Map.add key value acc) typedFormatInputs zarrFormatInputs
+
     let typedInputs =
         bottomUpIoPixelTypes
         |> List.choose (fun pixelType ->
@@ -2709,17 +2829,23 @@ let createBottomUpInputsForShape (imageSize: ImageSize) (noisyPixelType: string)
             |> Option.map (fun output -> pixelType, output))
         |> Map.ofList
 
-    let complexInput =
-        Path.Combine(typedInputRoot, "complex").Replace('\\', '/')
-    createComplexMovingBoxes imageSize complexInput
+    let complexFloat32Input =
+        Path.Combine(typedInputRoot, "complexfloat32").Replace('\\', '/')
+    createComplexMovingBoxesFloat32 imageSize complexFloat32Input
+
+    let complexFloat64Input =
+        Path.Combine(typedInputRoot, "complexfloat64").Replace('\\', '/')
+    createComplexMovingBoxesFloat64 imageSize complexFloat64Input
 
     let typedInputs =
         typedInputs
-        |> Map.add "Complex" complexInput
+        |> Map.add "ComplexFloat32" complexFloat32Input
+        |> Map.add "ComplexFloat64" complexFloat64Input
 
     let typedFormatInputs =
         typedFormatInputs
-        |> Map.add ("Complex", ".mha") complexInput
+        |> Map.add ("ComplexFloat32", ".mha") complexFloat32Input
+        |> Map.add ("ComplexFloat64", ".mha") complexFloat64Input
 
     { Shape = imageSize
       Depth = imageSize.Depth

@@ -25,6 +25,14 @@ def array_path(root):
     return Path(root) / "0"
 
 
+def image_volume(arr):
+    if arr.ndim == 5:
+        return arr[0, 0, :, :, :]
+    if arr.ndim == 3:
+        return arr
+    raise RuntimeError(f"expected a 3D or singleton 5D OME-Zarr array, got shape {arr.shape}")
+
+
 def process(arr, args):
     if args.operation == "copy":
         return arr
@@ -72,7 +80,7 @@ def process(arr, args):
     raise ValueError(args.operation)
 
 
-def write_ome_metadata(root, arr):
+def write_ome_metadata(root):
     try:
         import zarr
     except ImportError as exc:
@@ -83,6 +91,8 @@ def write_ome_metadata(root, arr):
         {
             "version": "0.4",
             "axes": [
+                {"name": "t", "type": "time"},
+                {"name": "c", "type": "channel"},
                 {"name": "z", "type": "space"},
                 {"name": "y", "type": "space"},
                 {"name": "x", "type": "space"},
@@ -105,9 +115,10 @@ def main():
     output_array.parent.mkdir(parents=True, exist_ok=True)
 
     arr = da.from_zarr(str(input_array))
-    out = process(arr, args)
-    out.to_zarr(str(output_array), overwrite=True)
-    write_ome_metadata(output_root, out)
+    out = process(image_volume(arr), args)
+    out5 = out[None, None, :, :, :]
+    out5.to_zarr(str(output_array), overwrite=True)
+    write_ome_metadata(output_root)
     write_internal_seconds(time.perf_counter() - start)
 
 

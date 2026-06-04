@@ -190,7 +190,8 @@ let private discoverGraphsInRoot samplesRoot scanRoot outputDir buildDir include
         (includeTmp || not (relative.StartsWith("tmp/", StringComparison.OrdinalIgnoreCase)))
         && not (parts |> Array.exists (fun part ->
             part.Equals("bin", StringComparison.OrdinalIgnoreCase)
-            || part.Equals("obj", StringComparison.OrdinalIgnoreCase)))
+            || part.Equals("obj", StringComparison.OrdinalIgnoreCase)
+            || part.Equals("outputs", StringComparison.OrdinalIgnoreCase)))
         && not (relative.StartsWith("RunAll/", StringComparison.OrdinalIgnoreCase))
         && not (relative.StartsWith("RunJson/", StringComparison.OrdinalIgnoreCase)))
     |> Seq.map (fun path ->

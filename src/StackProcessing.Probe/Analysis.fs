@@ -394,6 +394,9 @@ let private stripGeneratedSessionPrefix (rowId: string) =
     else
         rowId
 
+let private isEmptyAnchorRow (rowId: string) =
+    rowId.IndexOf("bottomup-00-empty", StringComparison.OrdinalIgnoreCase) >= 0
+
 let private discoverGraphsInRoot (samplesRoot: string) (scanRoot: string) includeTmp namePrefix =
     Directory.EnumerateFiles(scanRoot, "*.json", SearchOption.AllDirectories)
     |> Seq.filter (fun path ->
@@ -405,7 +408,8 @@ let private discoverGraphsInRoot (samplesRoot: string) (scanRoot: string) includ
         && not (relative.StartsWith("RunJson/", StringComparison.OrdinalIgnoreCase))
         && not (parts |> Array.exists (fun part ->
             part.Equals("bin", StringComparison.OrdinalIgnoreCase)
-            || part.Equals("obj", StringComparison.OrdinalIgnoreCase))))
+            || part.Equals("obj", StringComparison.OrdinalIgnoreCase)
+            || part.Equals("outputs", StringComparison.OrdinalIgnoreCase))))
     |> Seq.sort
     |> Seq.map (fun path ->
         let relative = relativePath scanRoot path
@@ -420,13 +424,16 @@ let private discoverGraphsInRoot (samplesRoot: string) (scanRoot: string) includ
                 namePrefix.TrimEnd('/') + "/" + localRowId
         let graph = PipelineGraphStorage.load path
         let features =
-            graph.Nodes
-            |> Array.filter (fun node -> not (ignoredTimingFunctionIds.Contains node.FunctionId))
-            |> Array.map featureKey
-            |> Array.distinct
-            |> Array.sort
-            |> Array.map (fun feature -> feature, 1.0)
-            |> Map.ofArray
+            if isEmptyAnchorRow rowId then
+                Map.empty
+            else
+                graph.Nodes
+                |> Array.filter (fun node -> not (ignoredTimingFunctionIds.Contains node.FunctionId))
+                |> Array.map featureKey
+                |> Array.distinct
+                |> Array.sort
+                |> Array.map (fun feature -> feature, 1.0)
+                |> Map.ofArray
 
         { RowId = rowId
           Source = "runJson"
@@ -1192,7 +1199,8 @@ let rec private normalizePixelType (value: string) =
         | "int64" -> Some "Int64"
         | "single" | "float32" -> Some "Float32"
         | "double" | "float" | "float64" -> Some "Float64"
-        | "complex" -> Some "Complex"
+        | "complex" | "complex64" | "complexfloat64" -> Some "ComplexFloat64"
+        | "complex32" | "complexfloat32" -> Some "ComplexFloat32"
         | other -> Some other
 
 let private pixelTypeBytes (pixelType: string) =
@@ -1213,7 +1221,8 @@ let private pixelTypeBytes (pixelType: string) =
     | "uint16" | "int16" -> Some 2UL
     | "uint32" | "int32" | "single" | "float32" -> Some 4UL
     | "uint64" | "int64" | "double" | "float" | "float64" -> Some 8UL
-    | "complex" -> Some 16UL
+    | "complex32" | "complexfloat32" -> Some 8UL
+    | "complex" | "complex64" | "complexfloat64" -> Some 16UL
     | _ -> None
 
 let private splitPixelTypeFormat (pixelType: string) =
@@ -1587,18 +1596,21 @@ let private writeOutputs (options: Options) (rows: AnalysisRow list) =
                             measurement.SourcePath
 
                     let runtimeTerms =
-                        measurement.RuntimeCostTerms
-                        |> List.map (fun term ->
-                            { StageName = term.StageName
-                              InputLength = term.InputLength
-                              OutputLength = term.OutputLength
-                              Multiplicity = term.Multiplicity
-                              MemoryPeakBytes = term.MemoryPeakBytes
-                              Tags =
-                                term.Tags
-                                |> Map.toArray
-                                |> Array.map (fun (key, value) -> { Key = key; Value = value }) })
-                        |> List.toArray
+                        if isEmptyAnchorRow measurement.RowId then
+                            [||]
+                        else
+                            measurement.RuntimeCostTerms
+                            |> List.map (fun term ->
+                                { StageName = term.StageName
+                                  InputLength = term.InputLength
+                                  OutputLength = term.OutputLength
+                                  Multiplicity = term.Multiplicity
+                                  MemoryPeakBytes = term.MemoryPeakBytes
+                                  Tags =
+                                    term.Tags
+                                    |> Map.toArray
+                                    |> Array.map (fun (key, value) -> { Key = key; Value = value }) })
+                            |> List.toArray
 
                     let features =
                         row.FeatureValues
@@ -1657,7 +1669,7 @@ let private writeOutputs (options: Options) (rows: AnalysisRow list) =
                         else
                             measurement.SourcePath
 
-                    match measurement.RuntimeCostTerms with
+                    match if isEmptyAnchorRow measurement.RowId then [] else measurement.RuntimeCostTerms with
                     | _ :: _ ->
                         let measurement = { measurement with SourcePath = sourcePath }
                         let featureMetadata =

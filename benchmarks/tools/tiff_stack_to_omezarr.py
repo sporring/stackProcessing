@@ -32,7 +32,7 @@ def parse_args():
     parser.add_argument("--output", required=True)
     parser.add_argument("--shape", required=True, type=parse_shape)
     parser.add_argument("--pixel-type", required=True, choices=["UInt8", "UInt16", "Float32"])
-    parser.add_argument("--chunk-shape", default="16x256x256", help="ZxYxX chunks")
+    parser.add_argument("--chunk-shape", default="16x256x256", help="ZxYxX chunks; time and channel chunks are singleton")
     return parser.parse_args()
 
 
@@ -56,6 +56,8 @@ def write_ome_metadata(root):
         {
             "version": "0.4",
             "axes": [
+                {"name": "t", "type": "time"},
+                {"name": "c", "type": "channel"},
                 {"name": "z", "type": "space"},
                 {"name": "y", "type": "space"},
                 {"name": "x", "type": "space"},
@@ -79,18 +81,18 @@ def main():
     output_root.mkdir(parents=True, exist_ok=True)
 
     array_path = output_root / "0"
-    chunks = parse_chunk_shape(args.chunk_shape)
+    z_chunk, y_chunk, x_chunk = parse_chunk_shape(args.chunk_shape)
     arr = zarr.open(
         str(array_path),
         mode="w",
-        shape=(depth, height, width),
-        chunks=chunks,
+        shape=(1, 1, depth, height, width),
+        chunks=(1, 1, z_chunk, y_chunk, x_chunk),
         dtype=dtype_for(args.pixel_type),
     )
 
     for z, path in enumerate(paths):
         img = tifffile.imread(path)
-        arr[z, :, :] = img.astype(dtype_for(args.pixel_type), copy=False)
+        arr[0, 0, z, :, :] = img.astype(dtype_for(args.pixel_type), copy=False)
 
     write_ome_metadata(output_root)
 

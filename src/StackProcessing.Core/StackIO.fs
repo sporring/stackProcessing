@@ -183,8 +183,10 @@ let private zarrDataType<'T> () =
         "uint8"
     elif typeof<'T> = typeof<uint16> then
         "uint16"
+    elif typeof<'T> = typeof<float32> then
+        "float32"
     else
-        failwith $"ZarrNET image IO currently supports UInt8 and UInt16 scalar images, but was {typeof<'T>.Name}."
+        failwith $"ZarrNET image IO currently supports UInt8, UInt16, and Float32 scalar images, but was {typeof<'T>.Name}."
 
 let private nullableParallelChunks maxParallelChunks =
     if maxParallelChunks > 0 then
@@ -201,6 +203,10 @@ let private flatArrayOfZarrBytes<'T> (width: int) (height: int) (depth: int) (by
             let offset = i * 2
             let value = uint16 bytes[offset] ||| (uint16 bytes[offset + 1] <<< 8)
             value |> box |> unbox<'T>)
+    elif typeof<'T> = typeof<float32> then
+        let pixels = Array.zeroCreate<float32> (width * height * depth)
+        Buffer.BlockCopy(bytes, 0, pixels, 0, pixels.Length * sizeof<float32>)
+        pixels |> box :?> 'T[]
     else
         zarrDataType<'T> () |> ignore
         failwith "unreachable"
@@ -219,8 +225,12 @@ let private zarrSlabImageAs<'T when 'T: equality> (dataType: string) width heigh
         flatArrayOfZarrBytes<uint16> width height depth bytes
         |> fun pixels -> Image<uint16>.ofFlatArray([ uint width; uint height; uint depth ], pixels, name)
         |> castNative
+    elif String.Equals(dataType, "float32", StringComparison.OrdinalIgnoreCase) then
+        flatArrayOfZarrBytes<float32> width height depth bytes
+        |> fun pixels -> Image<float32>.ofFlatArray([ uint width; uint height; uint depth ], pixels, name)
+        |> castNative
     else
-        failwith $"ZarrNET image IO currently supports UInt8 and UInt16 scalar datasets, but dataset type was {dataType}."
+        failwith $"ZarrNET image IO currently supports UInt8, UInt16, and Float32 scalar datasets, but dataset type was {dataType}."
 
 let private openZarrResolutionLevel (path: string) multiscaleIndex datasetIndex : ResolutionLevelNode =
     suppressZarrNetDebugLogging ()
@@ -1336,8 +1346,9 @@ let readZarrSlabStacked<'T when 'T: equality>
     if channel < 0 || channel >= sizeC then
         invalidArg "channel" $"Channel {channel} is outside the Zarr channel range 0..{sizeC - 1}."
     if not (String.Equals(level.DataType, "uint8", StringComparison.OrdinalIgnoreCase)
-            || String.Equals(level.DataType, "uint16", StringComparison.OrdinalIgnoreCase)) then
-        failwith $"ZarrNET image IO currently supports UInt8 and UInt16 scalar datasets, but dataset type was {level.DataType}."
+            || String.Equals(level.DataType, "uint16", StringComparison.OrdinalIgnoreCase)
+            || String.Equals(level.DataType, "float32", StringComparison.OrdinalIgnoreCase)) then
+        failwith $"ZarrNET image IO currently supports UInt8, UInt16, and Float32 scalar datasets, but dataset type was {level.DataType}."
 
     let slabDepth = max 1u slabDepth |> int
     let depth = (sizeZ + slabDepth - 1) / slabDepth |> uint64
@@ -1434,8 +1445,9 @@ let readZarrRandom<'T when 'T: equality>
     if channel < 0 || channel >= sizeC then
         invalidArg "channel" $"Channel {channel} is outside the Zarr channel range 0..{sizeC - 1}."
     if not (String.Equals(level.DataType, "uint8", StringComparison.OrdinalIgnoreCase)
-            || String.Equals(level.DataType, "uint16", StringComparison.OrdinalIgnoreCase)) then
-        failwith $"ZarrNET image IO currently supports UInt8 and UInt16 scalar datasets, but dataset type was {level.DataType}."
+            || String.Equals(level.DataType, "uint16", StringComparison.OrdinalIgnoreCase)
+            || String.Equals(level.DataType, "float32", StringComparison.OrdinalIgnoreCase)) then
+        failwith $"ZarrNET image IO currently supports UInt8, UInt16, and Float32 scalar datasets, but dataset type was {level.DataType}."
 
     let selected = randomIndices count sizeZ
     let elementBytes =
@@ -1519,8 +1531,9 @@ let readZarrRange<'T when 'T: equality>
     if channel < 0 || channel >= sizeC then
         invalidArg "channel" $"Channel {channel} is outside the Zarr channel range 0..{sizeC - 1}."
     if not (String.Equals(level.DataType, "uint8", StringComparison.OrdinalIgnoreCase)
-            || String.Equals(level.DataType, "uint16", StringComparison.OrdinalIgnoreCase)) then
-        failwith $"ZarrNET image IO currently supports UInt8 and UInt16 scalar datasets, but dataset type was {level.DataType}."
+            || String.Equals(level.DataType, "uint16", StringComparison.OrdinalIgnoreCase)
+            || String.Equals(level.DataType, "float32", StringComparison.OrdinalIgnoreCase)) then
+        failwith $"ZarrNET image IO currently supports UInt8, UInt16, and Float32 scalar datasets, but dataset type was {level.DataType}."
 
     let selected = rangeIndices first step last sizeZ
     let elementBytes =

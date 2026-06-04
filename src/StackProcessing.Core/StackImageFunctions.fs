@@ -2155,15 +2155,17 @@ let private makeConnectedComponentLocalRelabels slabCounts boundaryEquivalences 
 
     let rootLabels = Dictionary<ComponentLabelKey, uint64>()
 
-    // Reverse relabelling reads labelled slabs from the end of the stack, so
-    // crossing components use the latest/default-largest label as canonical.
+    // The sparse boundary graph may connect slab-local labels through an
+    // arbitrary history of splits and joins. Use the earliest/default-smallest
+    // label in each connected set as the canonical id; the final relabel pass
+    // can then stream forward and simply apply this resolved graph.
     touched
     |> Seq.iter (fun ((slabIndex, label) as key) ->
         let root = unionFind.Find key
         let candidate = defaultComponentLabel bases slabIndex label
         let mutable existing = 0UL
         if rootLabels.TryGetValue(root, &existing) then
-            if candidate > existing then
+            if candidate < existing then
                 rootLabels.[root] <- candidate
         else
             rootLabels.[root] <- candidate)
@@ -2299,10 +2301,10 @@ let makeConnectedComponentTranslationTable winSz : Stage<Image<uint64> * uint64,
                 else
                     rootLabels.[root] <- candidate)
 
-        // Emit later slabs first. This gives the second pass a reverse-ordered
-        // translation table, matching the direction in which slab supersets are
-        // resolved when temporary label slices are read back from the end.
-        [ for slabIndex, objectCount in slabCounts |> Map.toList |> List.sortByDescending fst do
+        // Emit slabs in stream order. Equivalence closure has already been
+        // resolved on the sparse boundary graph, so relabelling is a forward
+        // map over stored provisional labels rather than a discovery pass.
+        [ for slabIndex, objectCount in slabCounts |> Map.toList |> List.sortBy fst do
               yield slabIndex, 0UL, 0UL
               for label in 1UL .. objectCount do
                   let root = unionFind.Find(slabIndex, label)

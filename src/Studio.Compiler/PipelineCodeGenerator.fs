@@ -207,7 +207,8 @@ module PipelineCodeGenerator =
         | "Int64" -> "int64"
         | "Float32" -> "float32"
         | "Float64" -> "float"
-        | "Complex" -> "System.Numerics.Complex"
+        | "Complex" | "ComplexFloat64" -> "System.Numerics.Complex"
+        | "ComplexFloat32" -> "Image.ComplexFloat32"
         | _ -> suffix
 
     let private pixelTypeNameFromParameter key defaultType (node: SavedNode) =
@@ -961,6 +962,9 @@ module PipelineCodeGenerator =
                 ">=> imHistogram ()"
 
         match node.FunctionId with
+        | "Empty" ->
+            let availableMemory = parameterValue "availableMemory"
+            "|> empty" |> sourcePrefix availableMemory
         | "Zero" ->
             let availableMemory = parameterValue "availableMemory"
             let pixelType = pixelTypeNameFromParameter "type" "Float64" node
@@ -2342,7 +2346,8 @@ module PipelineCodeGenerator =
                 | "WriteCSV"
                 | "ImHistogram"
                 | "ShowImage"
-                | "Ignore" -> true
+                | "Ignore"
+                | "Empty" -> true
                 | _ -> false
 
             let appendSinkIfTerminalWrite (node: SavedNode) expression =

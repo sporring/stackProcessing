@@ -181,7 +181,8 @@ let rec private normalizePixelType (value: string) =
         | "int64" -> Some "Int64"
         | "single" | "float32" -> Some "Float32"
         | "double" | "float" | "float64" -> Some "Float64"
-        | "complex" -> Some "Complex"
+        | "complex" | "complex64" | "complexfloat64" -> Some "ComplexFloat64"
+        | "complex32" | "complexfloat32" -> Some "ComplexFloat32"
         | other -> Some other
 
 let private pixelTypeBytes (pixelType: string) =
@@ -202,7 +203,8 @@ let private pixelTypeBytes (pixelType: string) =
     | "uint16" | "int16" -> Some 2UL
     | "uint32" | "int32" | "single" | "float32" -> Some 4UL
     | "uint64" | "int64" | "double" | "float" | "float64" -> Some 8UL
-    | "complex" -> Some 16UL
+    | "complex32" | "complexfloat32" -> Some 8UL
+    | "complex" | "complex64" | "complexfloat64" -> Some 16UL
     | _ -> None
 
 let private splitPixelTypeFormat (pixelType: string) =
@@ -603,7 +605,19 @@ let selectorMatchesRecord selector (record: ProbeAnalysis.StoredMeasurementRecor
     && ProbeSelection.selectorMatchesMembers selector (membersOfRecord record)
     && ProbeSelection.selectorMatchesShape selector record.RowId
 
+let private isEmptyAnchorRow (rowId: string) =
+    rowId.IndexOf("bottomup-00-empty", StringComparison.OrdinalIgnoreCase) >= 0
+
 let evidenceRowsFromRecord (record: ProbeAnalysis.StoredMeasurementRecord) =
+    if isEmptyAnchorRow record.RowId then
+        let context = contextFromInputJson record
+        record.Features
+        |> Array.toList
+        |> List.filter (fun feature ->
+            let metadata = parseFeatureMetadata feature.Key
+            String.Equals(metadata.Operator, "intercept", StringComparison.OrdinalIgnoreCase))
+        |> List.map (featureEvidenceRow context record)
+    else
     let featureMetadata =
         record.Features
         |> Array.toList

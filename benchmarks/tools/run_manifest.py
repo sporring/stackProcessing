@@ -26,6 +26,7 @@ def parse_args():
             "stackprocessing-arraypool-slice-reuse",
             "stackprocessing-byte-slice-reuse",
             "stackprocessing-byte-float32-slice-reuse",
+            "stackprocessing-zarr",
             "python-skimage-scipy",
             "cpp-itk",
             "matlab",
@@ -79,6 +80,14 @@ def filter_cases(cases, pixel_types, shapes, operations, parameters):
     ]
 
 
+def backend_supports_case(backend, case):
+    if backend == "stackprocessing-zarr":
+        return case["pixelType"] in {"UInt8", "UInt16", "Float32"} and case["operation"] != "connectedComponents"
+    if backend == "python-dask-omezarr":
+        return case["operation"] != "connectedComponents"
+    return True
+
+
 def input_dir(args, case):
     return Path(args.input_root) / f"{case['pixelType']}_{case['shape']}"
 
@@ -128,6 +137,8 @@ def backend_command(args, case, repeat):
         return ["dotnet", args.stackprocessing_dll, "run-byte-slice-reuse"] + common + params
     if args.backend == "stackprocessing-byte-float32-slice-reuse":
         return ["dotnet", args.stackprocessing_dll, "run-byte-float32-slice-reuse"] + common + params
+    if args.backend == "stackprocessing-zarr":
+        return ["dotnet", args.stackprocessing_dll, "run-zarr"] + common + ["--shape", case["shape"]] + params
     if args.backend == "python-skimage-scipy":
         return ["python3", str(ROOT / "benchmarks/python-skimage-scipy/bench.py")] + common + params
     if args.backend == "python-dask-omezarr":
@@ -269,7 +280,11 @@ def main():
         print("run_manifest.py: repeat range must satisfy 1 <= --repeat-start <= --repeat-end", file=sys.stderr)
         return 2
 
-    cases = filter_cases(read_cases(args.cases), args.pixel_types, args.shapes, args.operations, args.parameters)
+    cases = [
+        case
+        for case in filter_cases(read_cases(args.cases), args.pixel_types, args.shapes, args.operations, args.parameters)
+        if backend_supports_case(args.backend, case)
+    ]
     if not cases:
         print(
             "run_manifest.py: no cases matched "
