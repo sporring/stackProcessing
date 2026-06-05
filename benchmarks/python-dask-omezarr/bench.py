@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 import argparse
+import json
 import os
 import shutil
 import time
@@ -23,6 +24,19 @@ def parse_args():
 
 def array_path(root):
     return Path(root) / "0"
+
+
+def input_codecs(root):
+    metadata = array_path(root) / "zarr.json"
+    if not metadata.exists():
+        return None
+    with metadata.open() as handle:
+        return json.load(handle).get("codecs")
+
+
+def input_is_uncompressed(root):
+    codecs = input_codecs(root)
+    return bool(codecs) and all(codec.get("name") == "bytes" for codec in codecs)
 
 
 def image_volume(arr):
@@ -117,7 +131,8 @@ def main():
     arr = da.from_zarr(str(input_array))
     out = process(image_volume(arr), args)
     out5 = out[None, None, :, :, :]
-    out5.to_zarr(str(output_array), overwrite=True)
+    zarr_kwargs = {"compressors": []} if input_is_uncompressed(args.input) else {}
+    out5.to_zarr(str(output_array), overwrite=True, **zarr_kwargs)
     write_ome_metadata(output_root)
     write_internal_seconds(time.perf_counter() - start)
 

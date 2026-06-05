@@ -47,6 +47,12 @@ def parse_args():
     parser.add_argument("--shape", required=True, type=parse_shape)
     parser.add_argument("--pixel-type", required=True, choices=["UInt8", "UInt16", "Float32"])
     parser.add_argument("--chunk-shape", required=True, type=parse_chunk_shape, help="ZxYxX chunks")
+    parser.add_argument(
+        "--codec",
+        choices=["default", "none"],
+        default="default",
+        help="Zarr codec pipeline. 'none' writes only the required bytes codec.",
+    )
     parser.add_argument("--force", action="store_true")
     return parser.parse_args()
 
@@ -74,6 +80,12 @@ def main() -> int:
     width, height, depth = args.shape
     z_chunk, y_chunk, x_chunk = args.chunk_shape
     dtype = dtype_for(args.pixel_type)
+    codecs = None
+    if args.codec == "none":
+        if dtype == np.uint8:
+            codecs = [{"name": "bytes"}]
+        else:
+            codecs = [{"name": "bytes", "configuration": {"endian": "little"}}]
 
     output_root = Path(args.output)
     if output_root.exists():
@@ -89,6 +101,7 @@ def main() -> int:
         shape=(1, 1, depth, height, width),
         chunks=(1, 1, z_chunk, y_chunk, x_chunk),
         dtype=dtype,
+        codecs=codecs,
     )
 
     for z0 in range(0, depth, z_chunk):

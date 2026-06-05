@@ -166,3 +166,125 @@ StackProcessing/Zarr.NET desired:
 ```
 
 For `1024^3` threshold, the chunk-region API already gives good memory behaviour, but speed is still limited by per-region overhead and missing SIMD for wider types. A direct chunk API should reduce that overhead while keeping the memory bound close to one or a few chunks.
+
+## Hot path issues found during StackProcessing benchmarks
+
+The first direct chunk API experiments in StackProcessing showed good memory
+behaviour, but a later byte-backed `Chunk<T>` implementation unexpectedly lost
+roughly a factor of two in copy and threshold benchmarks. A focused in-memory
+microbenchmark isolated the native processing kernel:
+
+```text
+typed array -> threshold -> byte output
+byte[] -> MemoryMarshal.Cast<byte,T> -> threshold -> byte output
+```
+
+For `uint16`, the byte-backed span path was essentially identical to typed
+arrays. For `float32`, it was only about 7--8% slower. For `uint8` with
+`Vector<byte>`, it was indistinguishable. This suggests that byte-backed chunk
+storage and typed span views are not the cause of the larger benchmark
+regression.
+
+Inspection of the local Zarr.NET implementation pointed to three more likely
+hot-path issues.
+
+### 1. Decoded chunk writes always do a round-trip decode
+
+In `ZarrArray.WriteChunkAsync`, the decoded write path encodes the supplied
+chunk, then immediately decodes the encoded bytes again before writing:
+
+```csharp
+var encoded = await _pipeline.EncodeAsync(decodedData, ct).ConfigureAwait(false);
+
+try
+{
+    var roundTrip = await _pipeline.DecodeAsync(encoded, ct).ConfigureAwait(false);
+    // debug logging only
+}
+catch (Exception ex)
+{
+    // debug logging only
+}
+
+await _store.WriteAsync(key, encoded, ct).ConfigureAwait(false);
+```
+
+For the benchmark OME-Zarr arrays, the codec pipeline is:
+
+```json
+[
+  { "name": "bytes", "configuration": { "endian": "little" } },
+  { "name": "zstd", "configuration": { "level": 0, "checksum": false } }
+]
+```
+
+Thus every decoded write pays:
+
+```text
+decoded bytes -> zstd encode -> zstd decode again -> filesystem write
+```
+
+The round-trip decode is useful as a diagnostic, but it should not be paid in
+the normal write hot path. It should either be removed, placed behind an
+explicit validation/debug option, or compiled out of release builds.
+
+### 2. Decoded write requires an exact-size `byte[]`
+
+`WriteChunkDecodedAsync` currently accepts only `byte[]` and checks
+`decodedData.Length` against the exact full chunk byte count:
+
+```csharp
+if (decodedData.Length != expectedBytes)
+    throw new ArgumentException(...);
+```
+
+This is clear and safe for ordinary arrays, but awkward for `ArrayPool<byte>`,
+because rented arrays may be larger than the requested logical length. To use
+pooled output safely, the API needs an overload such as:
+
+```csharp
+Task WriteChunkDecodedAsync(
+    ZarrChunkRef chunk,
+    ReadOnlyMemory<byte> decodedData,
+    CancellationToken ct = default);
+```
+
+or:
+
+```csharp
+Task WriteChunkDecodedAsync(
+    ZarrChunkRef chunk,
+    ArraySegment<byte> decodedData,
+    CancellationToken ct = default);
+```
+
+The implementation should validate the logical memory length, not the physical
+array length. Once the returned task completes, callers should be able to reuse
+or return the buffer. This is compatible with the Zarr standard: the standard
+defines the stored bytes and metadata, not the lifetime or ownership model of
+the caller's temporary buffer.
+
+### 3. Zstd level 0 appears to be clamped to level 1
+
+The benchmark metadata uses `zstd` with `level: 0`, but `ZstdCodec` currently
+constructs the compressor as:
+
+```csharp
+_level = Math.Clamp(level, 1, 22);
+```
+
+This silently turns level 0 into level 1. If `ZstdSharp` supports level 0, it
+would be better to preserve it. If it does not, the behaviour should be
+documented explicitly, because Python/Zarr may be writing or measuring a
+different compression level.
+
+## Suggested Zarr.NET changes before rerunning benchmarks
+
+1. Remove or guard the round-trip decode in `WriteChunkAsync`.
+2. Add a decoded chunk write overload accepting `ReadOnlyMemory<byte>` or
+   `ArraySegment<byte>`.
+3. Ensure the store write path consumes/copies the supplied memory before the
+   returned task completes, so callers can return pooled buffers safely.
+4. Revisit zstd level handling, especially level 0.
+5. Keep the chunk API as the public low-level route, since StackProcessing needs
+   to compare chunk-native execution fairly against Python/Dask-Zarr.

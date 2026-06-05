@@ -2,6 +2,7 @@ module StackCore
 
 open SlimPipeline // Core processing model
 open System
+open System.Runtime.InteropServices
 
 // Whole-slice stages should do their pixel work in managed arrays and cross
 // the ITK boundary once per slice. Per-pixel Image.Get/setter calls are kept
@@ -29,14 +30,95 @@ type ChunkLayout =
       Components: uint }
 
 type ChunkStorage<'T when 'T: equality> =
-    | ImageChunk of Image<'T>
-    | ArrayChunk of 'T[,,]
+    { Bytes: byte[]
+      ByteLength: int
+      Release: unit -> unit }
 
 type Chunk<'T when 'T: equality> =
     { Index: ChunkIndex
       Origin: uint64 * uint64 * uint64
       Size: uint64 * uint64 * uint64
-      Data: ChunkStorage<'T> }
+      BufferSize: uint64 * uint64 * uint64
+      Storage: ChunkStorage<'T> }
+
+module Chunk =
+    let inline private volume (width, height, depth) =
+        width * height * depth
+
+    let private elementBytes<'T>() =
+        Image.getBytesPerComponent typeof<'T> |> uint64
+
+    let createOwnedBytes<'T when 'T: equality> index origin size bufferSize (bytes: byte[]) release : Chunk<'T> =
+        let expected = volume bufferSize * elementBytes<'T>()
+        if uint64 bytes.LongLength < expected then
+            invalidArg "bytes" $"Chunk byte buffer length was {bytes.LongLength}, expected at least {expected} for {typeof<'T>.Name}."
+
+        { Index = index
+          Origin = origin
+          Size = size
+          BufferSize = bufferSize
+          Storage = { Bytes = bytes; ByteLength = int expected; Release = release } }
+
+    let createBytes<'T when 'T: equality> index origin size bufferSize (bytes: byte[]) : Chunk<'T> =
+        createOwnedBytes<'T> index origin size bufferSize bytes ignore
+
+    let createOwned index origin size bufferSize (data: 'T[]) release : Chunk<'T> =
+        let byteCount = data.LongLength * int64 (elementBytes<'T>())
+        let bytes = Array.zeroCreate<byte> (int byteCount)
+        Buffer.BlockCopy(data, 0, bytes, 0, bytes.Length)
+        createOwnedBytes<'T> index origin size bufferSize bytes release
+
+    let create index origin size bufferSize (data: 'T[]) : Chunk<'T> =
+        createOwned index origin size bufferSize data ignore
+
+    let bytes chunk =
+        if chunk.Storage.ByteLength = chunk.Storage.Bytes.Length then
+            chunk.Storage.Bytes
+        else
+            chunk.Storage.Bytes[0 .. chunk.Storage.ByteLength - 1]
+
+    let memory chunk =
+        chunk.Storage.Bytes.AsMemory(0, chunk.Storage.ByteLength)
+
+    let span<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> (chunk: Chunk<'T>) =
+        MemoryMarshal.Cast<byte, 'T>(chunk.Storage.Bytes.AsSpan(0, chunk.Storage.ByteLength))
+
+    let data<'T when 'T: equality> (chunk: Chunk<'T>) =
+        let elementBytes = elementBytes<'T>() |> int
+        let data = Array.zeroCreate<'T> (chunk.Storage.ByteLength / elementBytes)
+        Buffer.BlockCopy(chunk.Storage.Bytes, 0, data, 0, chunk.Storage.ByteLength)
+        data
+
+    let release chunk =
+        chunk.Storage.Release()
+
+    let validElementCount chunk =
+        volume chunk.Size
+
+    let bufferElementCount chunk =
+        volume chunk.BufferSize
+
+    let inline flatIndex (width: int) (height: int) (x: int) (y: int) (z: int) =
+        (z * height + y) * width + x
+
+    let inline flatIndexInBuffer chunk x y z =
+        let width, height, _depth = chunk.BufferSize
+        flatIndex (int width) (int height) x y z
+
+    let map (f: 'T -> 'U) (chunk: Chunk<'T>) =
+        let input = data chunk
+        let output = Array.zeroCreate<'U> input.Length
+
+        let mutable i = 0
+        while i < input.Length do
+            output[i] <- f input[i]
+            i <- i + 1
+
+        create chunk.Index chunk.Origin chunk.Size chunk.BufferSize output
+
+    let copy chunk =
+        let copied = data chunk |> Array.copy
+        create chunk.Index chunk.Origin chunk.Size chunk.BufferSize copied
 
 type Point2D =
     { X: float

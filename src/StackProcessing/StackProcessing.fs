@@ -14,6 +14,7 @@ type ChunkIndex = StackCore.ChunkIndex
 type ChunkLayout = StackCore.ChunkLayout
 type ChunkStorage<'T when 'T: equality> = StackCore.ChunkStorage<'T>
 type Chunk<'T when 'T: equality> = StackCore.Chunk<'T>
+module Chunk = StackCore.Chunk
 //type Slice<'S when 'S: equality> = Slice.Slice<'S>
 type Image<'S when 'S: equality> = Image.Image<'S>
 type ImageFacts = Image.ImageFacts

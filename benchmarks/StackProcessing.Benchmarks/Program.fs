@@ -6,6 +6,8 @@ open System.IO
 open System.Numerics
 open System.Runtime.CompilerServices
 open System.Runtime.InteropServices
+open System.Text.Json
+open System.Text.Json.Nodes
 open BitMiracle.LibTiff.Classic
 open StackProcessing
 open ZarrNET.Core
@@ -42,6 +44,7 @@ Run:
   dotnet run --project benchmarks/StackProcessing.Benchmarks -- run-zarr --operation copy|threshold|convolve|median|dilate --pixel-type UInt8|UInt16|Float32 --shape WxHxD --input ZARR --output ZARR [--radius N] [--kernel-size N] [--threshold X] [--available-memory BYTES]
   dotnet run --project benchmarks/StackProcessing.Benchmarks -- run-zarr-direct-copy --pixel-type UInt8|UInt16|Float32 --shape WxHxD --input ZARR --output ZARR
   dotnet run --project benchmarks/StackProcessing.Benchmarks -- run-zarr-direct-threshold --pixel-type UInt8|UInt16|Float32 --shape WxHxD --input ZARR --output ZARR [--threshold X]
+  dotnet run --project benchmarks/StackProcessing.Benchmarks -- run-zarr-direct-threshold-raw --pixel-type UInt8|UInt16|Float32 --shape WxHxD --input ZARR --output ZARR [--threshold X]
   dotnet run --project benchmarks/StackProcessing.Benchmarks -- run-zarr-chunk-copy --pixel-type UInt8|UInt16|Float32 --shape WxHxD --input ZARR --output ZARR [--available-memory BYTES]
   dotnet run --project benchmarks/StackProcessing.Benchmarks -- run-zarr-readonly --pixel-type UInt8|UInt16|Float32 --input ZARR [--available-memory BYTES]
   dotnet run --project benchmarks/StackProcessing.Benchmarks -- run-zarr-writeonly --pixel-type UInt8|UInt16|Float32 --shape WxHxD --output ZARR [--available-memory BYTES]
@@ -737,6 +740,48 @@ let private zarrChunkLookup (array: ZarrArray) =
     |> Array.map (fun chunk -> zarrChunkCoordKey chunk, chunk)
     |> dict
 
+let private zarrXyzTriple (values: int64[]) =
+    if values.Length >= 5 then
+        uint64 values[4], uint64 values[3], uint64 values[2]
+    elif values.Length = 3 then
+        uint64 values[2], uint64 values[1], uint64 values[0]
+    else
+        failwith $"Expected a 3D or TCZYX Zarr chunk coordinate/shape, got rank {values.Length}."
+
+let private zarrChunkIndex (chunk: ZarrChunkRef) : ChunkIndex =
+    let x, y, z = zarrXyzTriple chunk.ChunkCoord
+    int x, int y, int z
+
+let private zarrChunkBufferSize (array: ZarrArray) =
+    array.Metadata.ChunkShape
+    |> Array.map int64
+    |> zarrXyzTriple
+
+let private bytesPerPixelType pixelType =
+    match pixelType with
+    | UInt8 -> 1
+    | UInt16 -> 2
+    | Float32 -> 4
+
+let private chunkFromDecodedBytes<'T when 'T: equality> (array: ZarrArray) (chunkRef: ZarrChunkRef) (decoded: byte[]) : Chunk<'T> =
+    StackCore.Chunk.createBytes<'T>
+        (zarrChunkIndex chunkRef)
+        (zarrXyzTriple chunkRef.Origin)
+        (zarrXyzTriple chunkRef.Shape)
+        (zarrChunkBufferSize array)
+        decoded
+
+let private decodedBytesFromChunk<'T when 'T: equality> (chunk: Chunk<'T>) =
+    StackCore.Chunk.bytes chunk
+
+let private decodedByteChunk (array: ZarrArray) (chunkRef: ZarrChunkRef) (decoded: byte[]) : Chunk<byte> =
+    StackCore.Chunk.createBytes<byte>
+        (zarrChunkIndex chunkRef)
+        (zarrXyzTriple chunkRef.Origin)
+        (zarrXyzTriple chunkRef.Shape)
+        (zarrChunkBufferSize array)
+        decoded
+
 let private validateZarrArrayType (array: ZarrArray) dataType =
     if not (String.Equals(array.Metadata.DataType.TypeString, dataType, StringComparison.OrdinalIgnoreCase)) then
         failwith $"Input Zarr type was {array.Metadata.DataType.TypeString}, but benchmark requested {dataType}."
@@ -780,6 +825,25 @@ let private createOmeZarrWriter output dataType (shape: Shape) =
     OmeZarrWriter.CreateAsync(output, descriptor, Threading.CancellationToken.None)
     |> runTask
 
+let private alignOutputZarrCodecsWithInput input output =
+    let inputMetadataPath = Path.Combine(input, "0", "zarr.json")
+    let outputMetadataPath = Path.Combine(output, "0", "zarr.json")
+    let inputMetadata = JsonNode.Parse(File.ReadAllText(inputMetadataPath))
+    let outputMetadata = JsonNode.Parse(File.ReadAllText(outputMetadataPath))
+
+    match inputMetadata, outputMetadata with
+    | null, _ -> failwith $"Could not parse input Zarr metadata at {inputMetadataPath}."
+    | _, null -> failwith $"Could not parse output Zarr metadata at {outputMetadataPath}."
+    | inputJson, outputJson ->
+        let codecs = inputJson["codecs"]
+        if isNull codecs then
+            outputJson["codecs"] <- JsonArray()
+        else
+            outputJson["codecs"] <- JsonNode.Parse(codecs.ToJsonString())
+
+        let options = JsonSerializerOptions(WriteIndented = true)
+        File.WriteAllText(outputMetadataPath, outputJson.ToJsonString(options))
+
 let private runZarrDirectCopy opts =
     let pixelType = require "pixel-type" opts |> parsePixelType
     let shape = require "shape" opts |> parseShape
@@ -794,6 +858,7 @@ let private runZarrDirectCopy opts =
     validateZarrArrayType inputArray dataType
 
     let writer = createOmeZarrWriter output dataType shape
+    alignOutputZarrCodecsWithInput input output
 
     try
         let outputArray = openZarrArray output
@@ -821,8 +886,75 @@ let private runZarrDirectCopy opts =
     writeInternalSeconds stopwatch.Elapsed
     0
 
-let private thresholdByteRegionSimd (thresholdValue: double) (input: byte[]) =
-    let output = Array.zeroCreate<byte> input.Length
+let private thresholdByteChunkSimdInto (thresholdValue: double) (input: Chunk<byte>) (output: byte[]) =
+    let inputData = StackCore.Chunk.bytes input
+    let threshold = byte (Math.Clamp(Math.Ceiling(thresholdValue), 0.0, 255.0))
+    let thresholdVector = Vector<byte>(threshold)
+    let oneVector = Vector<byte>(1uy)
+    let width = Vector<byte>.Count
+    let mutable i = 0
+    let vectorLimit = inputData.Length - (inputData.Length % width)
+    while i < vectorLimit do
+        let values = Vector<byte>(inputData, i)
+        let mask = Vector.GreaterThanOrEqual(values, thresholdVector)
+        Vector.BitwiseAnd(mask, oneVector).CopyTo(output, i)
+        i <- i + width
+
+    while i < inputData.Length do
+        output[i] <- if inputData[i] >= threshold then 1uy else 0uy
+        i <- i + 1
+    inputData.Length
+
+let private thresholdUInt16ChunkToByteInto (thresholdValue: double) (input: Chunk<uint16>) (output: byte[]) =
+    let values: Span<uint16> = StackCore.Chunk.span input
+    let threshold = uint16 (Math.Clamp(Math.Ceiling(thresholdValue), 0.0, float UInt16.MaxValue))
+    let mutable i = 0
+    while i < values.Length do
+        output[i] <- if values[i] >= threshold then 1uy else 0uy
+        i <- i + 1
+    values.Length
+
+let private thresholdFloat32ChunkToByteInto (thresholdValue: double) (input: Chunk<float32>) (output: byte[]) =
+    let values: Span<float32> = StackCore.Chunk.span input
+    let threshold = float32 thresholdValue
+    let mutable i = 0
+    while i < values.Length do
+        output[i] <- if values[i] >= threshold then 1uy else 0uy
+        i <- i + 1
+    values.Length
+
+let private thresholdDecodedChunkToPooledByteChunk (pixelType: PixelType) (thresholdValue: double) (array: ZarrArray) (chunkRef: ZarrChunkRef) (decoded: byte[]) =
+    let outputLength =
+        match pixelType with
+        | UInt8 -> decoded.Length
+        | UInt16 -> decoded.Length / sizeof<uint16>
+        | Float32 -> decoded.Length / sizeof<float32>
+    let output = ArrayPool<byte>.Shared.Rent(outputLength)
+    let outputChunk written =
+        if written <> outputLength then
+            failwith $"Threshold wrote {written} bytes, expected {outputLength}."
+        StackCore.Chunk.createOwnedBytes<byte>
+            (zarrChunkIndex chunkRef)
+            (zarrXyzTriple chunkRef.Origin)
+            (zarrXyzTriple chunkRef.Shape)
+            (zarrChunkBufferSize array)
+            output
+            (fun () -> ArrayPool<byte>.Shared.Return(output))
+    match pixelType with
+    | UInt8 ->
+        let chunk = decodedByteChunk array chunkRef decoded
+        let written = thresholdByteChunkSimdInto thresholdValue chunk output
+        outputChunk written
+    | UInt16 ->
+        let chunk = chunkFromDecodedBytes<uint16> array chunkRef decoded
+        let written = thresholdUInt16ChunkToByteInto thresholdValue chunk output
+        outputChunk written
+    | Float32 ->
+        let chunk = chunkFromDecodedBytes<float32> array chunkRef decoded
+        let written = thresholdFloat32ChunkToByteInto thresholdValue chunk output
+        outputChunk written
+
+let private thresholdUInt8DecodedBytesSimdInto (thresholdValue: double) (input: byte[]) (output: byte[]) =
     let threshold = byte (Math.Clamp(Math.Ceiling(thresholdValue), 0.0, 255.0))
     let thresholdVector = Vector<byte>(threshold)
     let oneVector = Vector<byte>(1uy)
@@ -838,33 +970,41 @@ let private thresholdByteRegionSimd (thresholdValue: double) (input: byte[]) =
     while i < input.Length do
         output[i] <- if input[i] >= threshold then 1uy else 0uy
         i <- i + 1
-    output
+    input.Length
 
-let private thresholdUInt16RegionToByte (thresholdValue: double) (input: byte[]) =
+let private thresholdUInt16DecodedBytesInto (thresholdValue: double) (input: byte[]) (output: byte[]) =
     let values = MemoryMarshal.Cast<byte, uint16>(input.AsSpan())
-    let output = Array.zeroCreate<byte> values.Length
     let threshold = uint16 (Math.Clamp(Math.Ceiling(thresholdValue), 0.0, float UInt16.MaxValue))
     let mutable i = 0
     while i < values.Length do
         output[i] <- if values[i] >= threshold then 1uy else 0uy
         i <- i + 1
-    output
+    values.Length
 
-let private thresholdFloat32RegionToByte (thresholdValue: double) (input: byte[]) =
+let private thresholdFloat32DecodedBytesInto (thresholdValue: double) (input: byte[]) (output: byte[]) =
     let values = MemoryMarshal.Cast<byte, float32>(input.AsSpan())
-    let output = Array.zeroCreate<byte> values.Length
     let threshold = float32 thresholdValue
     let mutable i = 0
     while i < values.Length do
         output[i] <- if values[i] >= threshold then 1uy else 0uy
         i <- i + 1
-    output
+    values.Length
 
-let private thresholdRegionToByte pixelType thresholdValue (input: byte[]) =
-    match pixelType with
-    | UInt8 -> thresholdByteRegionSimd thresholdValue input
-    | UInt16 -> thresholdUInt16RegionToByte thresholdValue input
-    | Float32 -> thresholdFloat32RegionToByte thresholdValue input
+let private thresholdDecodedBytesToPooledByteMemoryRaw (pixelType: PixelType) (thresholdValue: double) (decoded: byte[]) =
+    let outputLength =
+        match pixelType with
+        | UInt8 -> decoded.Length
+        | UInt16 -> decoded.Length / sizeof<uint16>
+        | Float32 -> decoded.Length / sizeof<float32>
+    let output = ArrayPool<byte>.Shared.Rent(outputLength)
+    let written =
+        match pixelType with
+        | UInt8 -> thresholdUInt8DecodedBytesSimdInto thresholdValue decoded output
+        | UInt16 -> thresholdUInt16DecodedBytesInto thresholdValue decoded output
+        | Float32 -> thresholdFloat32DecodedBytesInto thresholdValue decoded output
+    if written <> outputLength then
+        failwith $"Raw threshold wrote {written} bytes, expected {outputLength}."
+    output, outputLength
 
 let private runZarrDirectThreshold opts =
     let pixelType = require "pixel-type" opts |> parsePixelType
@@ -881,6 +1021,7 @@ let private runZarrDirectThreshold opts =
     validateZarrArrayType inputArray dataType
 
     let writer = createOmeZarrWriter output "uint8" shape
+    alignOutputZarrCodecsWithInput input output
 
     try
         let outputArray = openZarrArray output
@@ -890,9 +1031,53 @@ let private runZarrDirectThreshold opts =
             let decoded =
                 inputArray.ReadChunkDecodedAsync(inputChunk, Threading.CancellationToken.None)
                 |> runTask
-            let thresholded = thresholdRegionToByte pixelType thresholdValue decoded
-            outputArray.WriteChunkDecodedAsync(outputChunk, thresholded, Threading.CancellationToken.None)
-            |> runUnitTask
+            let thresholded =
+                thresholdDecodedChunkToPooledByteChunk pixelType thresholdValue inputArray inputChunk decoded
+            try
+                outputArray.WriteChunkDecodedAsync(outputChunk, StackCore.Chunk.memory thresholded, Threading.CancellationToken.None)
+                |> runUnitTask
+            finally
+                StackCore.Chunk.release thresholded
+    finally
+        writer.DisposeAsync().AsTask()
+        |> runUnitTask
+
+    stopwatch.Stop()
+    writeInternalSeconds stopwatch.Elapsed
+    0
+
+let private runZarrDirectThresholdRaw opts =
+    let pixelType = require "pixel-type" opts |> parsePixelType
+    let shape = require "shape" opts |> parseShape
+    let input = require "input" opts
+    let output = require "output" opts
+    let thresholdValue = optional "threshold" "128" opts |> fun s -> Double.Parse(s, invariant)
+
+    ensureCleanDirectory output
+
+    let stopwatch = Stopwatch.StartNew()
+    let inputArray = openZarrArray input
+    let dataType = zarrDataType pixelType
+    validateZarrArrayType inputArray dataType
+
+    let writer = createOmeZarrWriter output "uint8" shape
+    alignOutputZarrCodecsWithInput input output
+
+    try
+        let outputArray = openZarrArray output
+        let outputChunks = zarrChunkLookup outputArray
+        for inputChunk in collectZarrChunks inputArray do
+            let outputChunk = outputChunks[zarrChunkCoordKey inputChunk]
+            let decoded =
+                inputArray.ReadChunkDecodedAsync(inputChunk, Threading.CancellationToken.None)
+                |> runTask
+            let thresholded, thresholdedLength =
+                thresholdDecodedBytesToPooledByteMemoryRaw pixelType thresholdValue decoded
+            try
+                outputArray.WriteChunkDecodedAsync(outputChunk, thresholded.AsMemory(0, thresholdedLength), Threading.CancellationToken.None)
+                |> runUnitTask
+            finally
+                ArrayPool<byte>.Shared.Return(thresholded)
     finally
         writer.DisposeAsync().AsTask()
         |> runUnitTask
@@ -1321,6 +1506,7 @@ let main args =
         | _ when args[0] = "run-zarr" -> args[1..] |> parseArgs |> runZarr
         | _ when args[0] = "run-zarr-direct-copy" -> args[1..] |> parseArgs |> runZarrDirectCopy
         | _ when args[0] = "run-zarr-direct-threshold" -> args[1..] |> parseArgs |> runZarrDirectThreshold
+        | _ when args[0] = "run-zarr-direct-threshold-raw" -> args[1..] |> parseArgs |> runZarrDirectThresholdRaw
         | _ when args[0] = "run-zarr-chunk-copy" -> args[1..] |> parseArgs |> runZarrChunkCopy
         | _ when args[0] = "run-zarr-readonly" -> args[1..] |> parseArgs |> runZarrReadOnly
         | _ when args[0] = "run-zarr-writeonly" -> args[1..] |> parseArgs |> runZarrWriteOnly

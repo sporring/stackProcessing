@@ -373,6 +373,51 @@ let private thresholdFloat32Span threshold (input: Span<float32>) (output: Span<
     for i in 0 .. input.Length - 1 do
         output[i] <- if input[i] >= threshold then 255uy else 0uy
 
+let private thresholdUInt8OneWhile threshold (input: uint8[]) (output: uint8[]) length =
+    let mutable i = 0
+    while i < length do
+        output[i] <- if input[i] >= threshold then 1uy else 0uy
+        i <- i + 1
+
+let private thresholdUInt8OneVector (threshold: byte) (input: uint8[]) (output: uint8[]) length =
+    let width = Vector<byte>.Count
+    let thresholdVector = Vector<byte>(threshold)
+    let oneVector = Vector<byte>(1uy)
+    let mutable i = 0
+    let vectorEnd = length - (length % width)
+    while i < vectorEnd do
+        let values = Vector<byte>(input, i)
+        let mask = Vector.GreaterThanOrEqual(values, thresholdVector)
+        Vector.BitwiseAnd(mask, oneVector).CopyTo(output, i)
+        i <- i + width
+    while i < length do
+        output[i] <- if input[i] >= threshold then 1uy else 0uy
+        i <- i + 1
+
+let private thresholdUInt16OneWhile threshold (input: uint16[]) (output: uint8[]) length =
+    let mutable i = 0
+    while i < length do
+        output[i] <- if input[i] >= threshold then 1uy else 0uy
+        i <- i + 1
+
+let private thresholdUInt16OneSpan threshold (input: Span<uint16>) (output: Span<uint8>) =
+    let mutable i = 0
+    while i < input.Length do
+        output[i] <- if input[i] >= threshold then 1uy else 0uy
+        i <- i + 1
+
+let private thresholdFloat32OneWhile threshold (input: float32[]) (output: uint8[]) length =
+    let mutable i = 0
+    while i < length do
+        output[i] <- if input[i] >= threshold then 1uy else 0uy
+        i <- i + 1
+
+let private thresholdFloat32OneSpan threshold (input: Span<float32>) (output: Span<uint8>) =
+    let mutable i = 0
+    while i < input.Length do
+        output[i] <- if input[i] >= threshold then 1uy else 0uy
+        i <- i + 1
+
 let private measure action =
     GC.Collect()
     GC.WaitForPendingFinalizers()
@@ -655,6 +700,76 @@ let private runFilterLifecycleCase pixelType shape threshold repeat iterations =
     | UInt16 -> runFilterLifecycleFor<uint16> "UInt16" fillUInt16 shape threshold repeat iterations
     | Float32 -> runFilterLifecycleFor<float32> "Float32" fillFloat32 shape threshold repeat iterations
 
+let private typedArrayToBytes<'T> (length: int) (input: 'T[]) =
+    let byteCount = length * Marshal.SizeOf<'T>()
+    let bytes = ArrayPool<byte>.Shared.Rent(byteCount)
+    Buffer.BlockCopy(input, 0, bytes, 0, byteCount)
+    bytes, byteCount
+
+let private runChunkStorageUInt8 shape threshold repeat =
+    let shapeName = shapeText shape
+    let length = requireIntLength shape
+    let input = ArrayPool<uint8>.Shared.Rent(length)
+    let output = ArrayPool<uint8>.Shared.Rent(length)
+    try
+        fillUInt8 input length
+        let typedThreshold = byte threshold
+        [ "typed-array-direct-while-0-1", fun () -> thresholdUInt8OneWhile typedThreshold input output length
+          "typed-array-direct-vector-0-1", fun () -> thresholdUInt8OneVector typedThreshold input output length
+          "byte-backed-span-vector-0-1", fun () -> thresholdUInt8OneVector typedThreshold input output length ]
+        |> measureArrayActions "UInt8" shapeName threshold repeat
+    finally
+        ArrayPool<uint8>.Shared.Return(input)
+        ArrayPool<uint8>.Shared.Return(output)
+
+let private runChunkStorageUInt16 shape threshold repeat =
+    let shapeName = shapeText shape
+    let length = requireIntLength shape
+    let input = ArrayPool<uint16>.Shared.Rent(length)
+    let output = ArrayPool<uint8>.Shared.Rent(length)
+    let mutable inputBytesOpt: byte[] option = None
+    try
+        fillUInt16 input length
+        let inputBytes, byteCount = typedArrayToBytes length input
+        inputBytesOpt <- Some inputBytes
+        let typedThreshold = uint16 threshold
+        [ "typed-array-direct-while-0-1", fun () -> thresholdUInt16OneWhile typedThreshold input output length
+          "byte-backed-span-while-0-1", fun () ->
+              let inputSpan = MemoryMarshal.Cast<byte, uint16>(inputBytes.AsSpan(0, byteCount))
+              thresholdUInt16OneSpan typedThreshold inputSpan (output.AsSpan(0, length)) ]
+        |> measureArrayActions "UInt16" shapeName threshold repeat
+    finally
+        ArrayPool<uint16>.Shared.Return(input)
+        ArrayPool<uint8>.Shared.Return(output)
+        inputBytesOpt |> Option.iter ArrayPool<byte>.Shared.Return
+
+let private runChunkStorageFloat32 shape threshold repeat =
+    let shapeName = shapeText shape
+    let length = requireIntLength shape
+    let input = ArrayPool<float32>.Shared.Rent(length)
+    let output = ArrayPool<uint8>.Shared.Rent(length)
+    let mutable inputBytesOpt: byte[] option = None
+    try
+        fillFloat32 input length
+        let inputBytes, byteCount = typedArrayToBytes length input
+        inputBytesOpt <- Some inputBytes
+        let typedThreshold = float32 threshold
+        [ "typed-array-direct-while-0-1", fun () -> thresholdFloat32OneWhile typedThreshold input output length
+          "byte-backed-span-while-0-1", fun () ->
+              let inputSpan = MemoryMarshal.Cast<byte, float32>(inputBytes.AsSpan(0, byteCount))
+              thresholdFloat32OneSpan typedThreshold inputSpan (output.AsSpan(0, length)) ]
+        |> measureArrayActions "Float32" shapeName threshold repeat
+    finally
+        ArrayPool<float32>.Shared.Return(input)
+        ArrayPool<uint8>.Shared.Return(output)
+        inputBytesOpt |> Option.iter ArrayPool<byte>.Shared.Return
+
+let private runChunkStorageCase pixelType shape threshold repeat =
+    match pixelType with
+    | UInt8 -> runChunkStorageUInt8 shape threshold repeat
+    | UInt16 -> runChunkStorageUInt16 shape threshold repeat
+    | Float32 -> runChunkStorageFloat32 shape threshold repeat
+
 let private writeRows output rows =
     let exists = File.Exists output
     use writer = new StreamWriter(output, append = true)
@@ -679,6 +794,7 @@ let private usage () =
     printfn "In-memory threshold benchmark"
     printfn "  dotnet run --project benchmarks/InMemoryThreshold.Benchmarks -- --output tmp/in-memory-threshold.csv --shapes 128x128x128,256x256x256,1024x1024x1024 --pixel-types UInt8,UInt16,Float32 --repeat 3 --threshold 128"
     printfn "  dotnet run --project benchmarks/InMemoryThreshold.Benchmarks -- --mode filter-lifecycle --output tmp/filter-lifecycle.csv --shapes 1024x1024x1 --pixel-types UInt8 --repeat 3 --iterations 1024 --threshold 128"
+    printfn "  dotnet benchmarks/InMemoryThreshold.Benchmarks/bin/Release/net10.0/InMemoryThreshold.Benchmarks.dll --mode chunk-storage --output tmp/chunk-storage-threshold.csv --shapes 256x256x256,512x512x512 --pixel-types UInt8,UInt16,Float32 --repeat 3 --threshold 128"
 
 [<EntryPoint>]
 let main args =
@@ -711,6 +827,7 @@ let main args =
                                 match mode with
                                 | "threshold" -> runCase pixelType shape threshold r
                                 | "filter-lifecycle" -> runFilterLifecycleCase pixelType shape threshold r iterations
+                                | "chunk-storage" -> runChunkStorageCase pixelType shape threshold r
                                 | _ -> invalidArg "mode" $"Unsupported mode '{mode}'."
                             with ex ->
                                 let pixelName = string pixelType
