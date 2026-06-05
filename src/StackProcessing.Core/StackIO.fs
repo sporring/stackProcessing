@@ -183,8 +183,10 @@ let private zarrDataType<'T> () =
         "uint8"
     elif typeof<'T> = typeof<uint16> then
         "uint16"
+    elif typeof<'T> = typeof<float32> then
+        "float32"
     else
-        failwith $"ZarrNET image IO currently supports UInt8 and UInt16 scalar images, but was {typeof<'T>.Name}."
+        failwith $"ZarrNET image IO currently supports UInt8, UInt16, and Float32 scalar images, but was {typeof<'T>.Name}."
 
 let private nullableParallelChunks maxParallelChunks =
     if maxParallelChunks > 0 then
@@ -192,15 +194,29 @@ let private nullableParallelChunks maxParallelChunks =
     else
         Nullable<int>()
 
+let private blockCopyZarrBytes<'T> elementCount expectedBytes (bytes: byte[]) =
+    if bytes.Length < expectedBytes then
+        invalidArg "bytes" $"Zarr byte payload is too short for {elementCount} {typeof<'T>.Name} values: expected {expectedBytes}, got {bytes.Length}."
+
+    let pixels = Array.zeroCreate<'T> elementCount
+    Buffer.BlockCopy(bytes, 0, pixels, 0, expectedBytes)
+    pixels
+
 let private flatArrayOfZarrBytes<'T> (width: int) (height: int) (depth: int) (bytes: byte[]) =
+    let elementCount = width * height * depth
+
     if typeof<'T> = typeof<uint8> then
-        Array.init (width * height * depth) (fun i ->
-            bytes[i] |> box |> unbox<'T>)
+        blockCopyZarrBytes<uint8> elementCount elementCount bytes
+        |> box
+        |> unbox<'T[]>
     elif typeof<'T> = typeof<uint16> then
-        Array.init (width * height * depth) (fun i ->
-            let offset = i * 2
-            let value = uint16 bytes[offset] ||| (uint16 bytes[offset + 1] <<< 8)
-            value |> box |> unbox<'T>)
+        blockCopyZarrBytes<uint16> elementCount (elementCount * 2) bytes
+        |> box
+        |> unbox<'T[]>
+    elif typeof<'T> = typeof<float32> then
+        blockCopyZarrBytes<float32> elementCount (elementCount * 4) bytes
+        |> box
+        |> unbox<'T[]>
     else
         zarrDataType<'T> () |> ignore
         failwith "unreachable"
@@ -219,8 +235,12 @@ let private zarrSlabImageAs<'T when 'T: equality> (dataType: string) width heigh
         flatArrayOfZarrBytes<uint16> width height depth bytes
         |> fun pixels -> Image<uint16>.ofFlatArray([ uint width; uint height; uint depth ], pixels, name)
         |> castNative
+    elif String.Equals(dataType, "float32", StringComparison.OrdinalIgnoreCase) then
+        flatArrayOfZarrBytes<float32> width height depth bytes
+        |> fun pixels -> Image<float32>.ofFlatArray([ uint width; uint height; uint depth ], pixels, name)
+        |> castNative
     else
-        failwith $"ZarrNET image IO currently supports UInt8 and UInt16 scalar datasets, but dataset type was {dataType}."
+        failwith $"ZarrNET image IO currently supports UInt8, UInt16, and Float32 scalar datasets, but dataset type was {dataType}."
 
 let private openZarrResolutionLevel (path: string) multiscaleIndex datasetIndex : ResolutionLevelNode =
     suppressZarrNetDebugLogging ()
@@ -288,6 +308,35 @@ let private hdfDatasetChunks (dataset: IH5Dataset) =
         |> Array.map int
         |> Array.toList
 
+let private flatArrayOfHdfSource<'Native> rank frameAxis yAxis xAxis sizeX sizeY zCount (source: 'Native[,,]) =
+    let elementCount = sizeX * sizeY * zCount
+
+    if rank = 3 && frameAxis = 0 && yAxis = 1 && xAxis = 2 then
+        let pixels = Array.zeroCreate<'Native> elementCount
+        let byteCount = elementCount * (typeof<'Native> |> Image.getBytesPerComponent |> int)
+        Buffer.BlockCopy(source, 0, pixels, 0, byteCount)
+        pixels
+    else
+        let sourceArray = source :> Array
+        Array.init elementCount (fun i ->
+            let x = i % sizeX
+            let yz = i / sizeX
+            let y = yz % sizeY
+            let z = yz / sizeY
+            let indices = Array.zeroCreate<int> rank
+            indices[frameAxis] <- z
+            indices[yAxis] <- y
+            indices[xAxis] <- x
+            sourceArray.GetValue(indices) |> unbox<'Native>)
+
+let private castOrReuseNativeImage<'Native, 'T when 'Native: equality and 'T: equality> (nativeImage: Image<'Native>) =
+    if typeof<'Native> = typeof<'T> then
+        nativeImage |> box :?> Image<'T>
+    else
+        let cast = nativeImage.castTo<'T>()
+        nativeImage.decRefCount()
+        cast
+
 let private readHdfSlabNative<'Native, 'T when 'Native: equality and 'T: equality>
     (dataset: IH5Dataset)
     rank
@@ -302,22 +351,10 @@ let private readHdfSlabNative<'Native, 'T when 'Native: equality and 'T: equalit
     name =
 
     let selection = HyperslabSelection(rank, starts, blocks)
-    let source = dataset.Read<'Native[,,]>(selection, AllSelection(), blocks) :> Array
-    let pixels =
-        Array.init (sizeX * sizeY * zCount) (fun i ->
-            let x = i % sizeX
-            let yz = i / sizeX
-            let y = yz % sizeY
-            let z = yz / sizeY
-            let indices = Array.zeroCreate<int> rank
-            indices[frameAxis] <- z
-            indices[yAxis] <- y
-            indices[xAxis] <- x
-            source.GetValue(indices) |> unbox<'Native>)
+    let source = dataset.Read<'Native[,,]>(selection, AllSelection(), blocks)
+    let pixels = flatArrayOfHdfSource<'Native> rank frameAxis yAxis xAxis sizeX sizeY zCount source
     let nativeImage = Image<'Native>.ofFlatArray([ uint sizeX; uint sizeY; uint zCount ], pixels, name)
-    let cast = nativeImage.castTo<'T>()
-    nativeImage.decRefCount()
-    cast
+    castOrReuseNativeImage<'Native, 'T> nativeImage
 
 let private hdfSlabImageAs<'T when 'T: equality>
     (dataset: IH5Dataset)
@@ -1336,8 +1373,9 @@ let readZarrSlabStacked<'T when 'T: equality>
     if channel < 0 || channel >= sizeC then
         invalidArg "channel" $"Channel {channel} is outside the Zarr channel range 0..{sizeC - 1}."
     if not (String.Equals(level.DataType, "uint8", StringComparison.OrdinalIgnoreCase)
-            || String.Equals(level.DataType, "uint16", StringComparison.OrdinalIgnoreCase)) then
-        failwith $"ZarrNET image IO currently supports UInt8 and UInt16 scalar datasets, but dataset type was {level.DataType}."
+            || String.Equals(level.DataType, "uint16", StringComparison.OrdinalIgnoreCase)
+            || String.Equals(level.DataType, "float32", StringComparison.OrdinalIgnoreCase)) then
+        failwith $"ZarrNET image IO currently supports UInt8, UInt16, and Float32 scalar datasets, but dataset type was {level.DataType}."
 
     let slabDepth = max 1u slabDepth |> int
     let depth = (sizeZ + slabDepth - 1) / slabDepth |> uint64
@@ -1434,8 +1472,9 @@ let readZarrRandom<'T when 'T: equality>
     if channel < 0 || channel >= sizeC then
         invalidArg "channel" $"Channel {channel} is outside the Zarr channel range 0..{sizeC - 1}."
     if not (String.Equals(level.DataType, "uint8", StringComparison.OrdinalIgnoreCase)
-            || String.Equals(level.DataType, "uint16", StringComparison.OrdinalIgnoreCase)) then
-        failwith $"ZarrNET image IO currently supports UInt8 and UInt16 scalar datasets, but dataset type was {level.DataType}."
+            || String.Equals(level.DataType, "uint16", StringComparison.OrdinalIgnoreCase)
+            || String.Equals(level.DataType, "float32", StringComparison.OrdinalIgnoreCase)) then
+        failwith $"ZarrNET image IO currently supports UInt8, UInt16, and Float32 scalar datasets, but dataset type was {level.DataType}."
 
     let selected = randomIndices count sizeZ
     let elementBytes =
@@ -1519,8 +1558,9 @@ let readZarrRange<'T when 'T: equality>
     if channel < 0 || channel >= sizeC then
         invalidArg "channel" $"Channel {channel} is outside the Zarr channel range 0..{sizeC - 1}."
     if not (String.Equals(level.DataType, "uint8", StringComparison.OrdinalIgnoreCase)
-            || String.Equals(level.DataType, "uint16", StringComparison.OrdinalIgnoreCase)) then
-        failwith $"ZarrNET image IO currently supports UInt8 and UInt16 scalar datasets, but dataset type was {level.DataType}."
+            || String.Equals(level.DataType, "uint16", StringComparison.OrdinalIgnoreCase)
+            || String.Equals(level.DataType, "float32", StringComparison.OrdinalIgnoreCase)) then
+        failwith $"ZarrNET image IO currently supports UInt8, UInt16, and Float32 scalar datasets, but dataset type was {level.DataType}."
 
     let selected = rangeIndices first step last sizeZ
     let elementBytes =
@@ -2097,6 +2137,125 @@ let writeZarr<'T when 'T: equality>
     Stage.mapi $"writeZarr \"{outputPath}\"" mapper memoryNeed id
     |> withCostModel (StageCostModel.create memoryModel timeCostModel)
 
+let private bytesOfScalarImage<'T when 'T: equality> (image: Image<'T>) =
+    if image.GetNumberOfComponentsPerPixel() <> 1u then
+        invalidArg "image" $"Expected a scalar image, got {image.GetNumberOfComponentsPerPixel()} components per pixel."
+
+    let pixels = image.toFlatArray()
+    let byteCount = pixels.Length * int (Image.getBytesPerComponent typeof<'T>)
+    let bytes = Array.zeroCreate<byte> byteCount
+    Buffer.BlockCopy(pixels, 0, bytes, 0, byteCount)
+    bytes
+
+let writeZarrSlab<'T when 'T: equality>
+    (outputPath: string)
+    (name: string)
+    (depth: uint)
+    (chunkX: uint)
+    (chunkY: uint)
+    (chunkZ: uint)
+    (physicalSizeX: float)
+    (physicalSizeY: float)
+    (physicalSizeZ: float)
+    (maxConcurrentWrites: int)
+    : Stage<Image<'T>, Image<'T>> =
+
+    suppressZarrNetDebugLogging ()
+
+    let dataType = zarrDataType<'T> ()
+    let mutable writer: OmeZarrWriter option = None
+    let mutable level: ResolutionLevelNode option = None
+    let depth = int depth
+    let chunkX = max 1u chunkX |> int
+    let chunkY = max 1u chunkY |> int
+    let chunkZ = max 1u chunkZ |> int
+
+    let createWriter (image: Image<'T>) =
+        let descriptor =
+            BioImageDescriptor(
+                int (image.GetWidth()),
+                int (image.GetHeight()),
+                ZCT(depth, 1, 1),
+                Name = name,
+                DataType = dataType,
+                ChunkX = chunkX,
+                ChunkY = chunkY,
+                ChunkZ = chunkZ,
+                ChunkC = 1,
+                ChunkT = 1,
+                PhysicalSizeX = physicalSizeX,
+                PhysicalSizeY = physicalSizeY,
+                PhysicalSizeZ = physicalSizeZ)
+
+        let created =
+            OmeZarrWriter.CreateAsync(outputPath, descriptor, CancellationToken.None)
+            |> runTask
+        deleteZarrNetDebugLogs ()
+
+        if maxConcurrentWrites > 0 then
+            OmeZarrWriter.MaxConcurrentWrites <- maxConcurrentWrites
+
+        writer <- Some created
+        level <- Some(openZarrResolutionLevel outputPath 0 0)
+        created
+
+    let mapper (debug: bool) (idx: int64) (image: Image<'T>) =
+        if depth <= 0 then
+            invalidArg "depth" "writeZarrSlab depth must be positive."
+        if image.GetDimensions() <> 3u then
+            failwith $"writeZarrSlab expects a stream of 3D slab images, but got {image.GetDimensions()}D."
+
+        let zStart = int idx * chunkZ
+        let zCount = int (image.GetDepth())
+        let zStop = zStart + zCount
+        if zStop > depth then
+            failwith $"writeZarrSlab received slab {idx} ending at z={zStop}, but the declared depth is {depth}."
+
+        let zarrLevel =
+            match level with
+            | Some level -> level
+            | None ->
+                createWriter image |> ignore
+                level.Value
+
+        let slabBytes = bytesOfScalarImage image
+        let region =
+            PixelRegion(
+                [| 0L; 0L; int64 zStart; 0L; 0L |],
+                [| 1L; 1L; int64 zStop; int64 (image.GetHeight()); int64 (image.GetWidth()) |])
+
+        if debug then
+            printfn "[writeZarrSlab] Saved z %d..%d to %s as %s" zStart (zStop - 1) outputPath (friendlyImageTypeName image)
+
+        zarrLevel.WriteRegionAsync(region, slabBytes, CancellationToken.None)
+        |> runUnitTask
+        deleteZarrNetDebugLogs ()
+
+        if zStop = depth then
+            match writer with
+            | Some zarrWriter ->
+                zarrWriter.DisposeAsync().AsTask()
+                |> runUnitTask
+                writer <- None
+                level <- None
+                deleteZarrNetDebugLogs ()
+            | None -> ()
+
+        image
+
+    let memoryNeed = id
+    let memoryModel = StageMemoryModel.fromSinglePeak Iter memoryNeed
+    let timeCostModel =
+        imageIoCost<'T>
+            "write"
+            Iter
+            $"writeZarrSlab.{typeof<'T>.Name}"
+            (fun input -> inputValue input |> imageBytes<'T>)
+            (fun _ -> 1UL)
+
+    Stage.mapi $"writeZarrSlab \"{outputPath}\"" mapper memoryNeed id
+    |> withCostModel (StageCostModel.create memoryModel timeCostModel)
+
 let writeNexus<'T when 'T: equality>
     (outputPath: string)
     (datasetPath: string)
@@ -2153,16 +2312,24 @@ let writeNexus<'T when 'T: equality>
 
         let width = int (image.GetWidth())
         let height = int (image.GetHeight())
-        let plane = image.toArray2D()
+        let plane = image.toFlatArray()
         let memDims = Array.zeroCreate<int> 3
         memDims[frameAxis] <- 1
         memDims[yAxis] <- height
         memDims[xAxis] <- width
 
         let data =
-            Array3D.init memDims[0] memDims[1] memDims[2] (fun a b c ->
-                let indices = [| a; b; c |]
-                plane[indices[xAxis], indices[yAxis]])
+            if frameAxis = 0 && yAxis = 1 && xAxis = 2 then
+                let block = Array3D.zeroCreate<'T> 1 height width
+                let byteCount = width * height * (typeof<'T> |> Image.getBytesPerComponent |> int)
+                Buffer.BlockCopy(plane, 0, block, 0, byteCount)
+                block
+            else
+                Array3D.init memDims[0] memDims[1] memDims[2] (fun a b c ->
+                    let indices = [| a; b; c |]
+                    let x = indices[xAxis]
+                    let y = indices[yAxis]
+                    plane[y * width + x])
 
         let fileStarts = Array.zeroCreate<uint64> 3
         let blocks = Array.zeroCreate<uint64> 3

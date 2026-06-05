@@ -134,6 +134,7 @@ let write = StackIO.write
 let writeThrough = StackIO.write
 let writeVolume<'T when 'T: equality> = StackIO.writeVolume<'T>
 let writeZarr = StackIO.writeZarr
+let writeZarrSlab = StackIO.writeZarrSlab
 let writeNexus = StackIO.writeNexus
 let writeChunks = StackIO.writeChunks
 let writeSlabSlices<'T when 'T: equality> = StackIO.writeSlabSlices<'T>
@@ -362,6 +363,8 @@ let connectedComponentsFullVolumeFits = StackImageFunctions.connectedComponentsF
 let relabelComponents = StackImageFunctions.relabelComponents
 let signedDistanceBand = StackImageFunctions.signedDistanceBand
 let threshold = StackImageFunctions.threshold
+let slicesToSlabs<'T when 'T: equality> chunkDepth =
+    StackCore.window chunkDepth 0u chunkDepth --> StackCore.windowToSlab<'T>
 let windowToSlab<'T when 'T: equality> = StackCore.windowToSlab<'T>
 let windowToSlabWithRange<'T when 'T: equality> = StackCore.windowToSlabWithRange<'T>
 let mapSlabWithStage<'S, 'T when 'S: equality and 'T: equality> = StackCore.mapSlabWithStage<'S, 'T>

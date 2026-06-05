@@ -463,6 +463,18 @@ val writeZarr:
      float -> int -> StackCore.Stage<StackCore.Image<'a>,StackCore.Image<'a>>)
     when 'a: equality
 
+val writeZarrSlab:
+  (string ->
+     string ->
+     uint ->
+     uint ->
+     uint ->
+     uint ->
+     float ->
+     float ->
+     float -> int -> StackCore.Stage<StackCore.Image<'a>,StackCore.Image<'a>>)
+    when 'a: equality
+
 val writeNexus:
   (string ->
      string ->
@@ -1412,6 +1424,10 @@ val threshold:
   (float -> float -> StackCore.Stage<StackCore.Image<'a>,StackCore.Image<uint8>>)
     when 'a: equality
 
+val slicesToSlabs<'T when 'T: equality> :
+  (uint -> StackCore.Stage<StackCore.Image<'T>,StackCore.Image<'T>>)
+    when 'T: equality
+
 val windowToSlab<'T when 'T: equality> :
   StackCore.Stage<StackCore.Window<StackCore.Image<'T>>,StackCore.Image<'T>>
     when 'T: equality
@@ -1583,4 +1599,3 @@ val permuteAxes:
   (uint * uint * uint ->
      uint -> StackCore.Stage<StackCore.Image<'a>,StackCore.Image<'a>>)
     when 'a: equality
-

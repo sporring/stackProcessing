@@ -27,6 +27,7 @@ def parse_args():
             "stackprocessing-byte-slice-reuse",
             "stackprocessing-byte-float32-slice-reuse",
             "stackprocessing-zarr",
+            "stackprocessing-zarr-direct",
             "python-skimage-scipy",
             "cpp-itk",
             "matlab",
@@ -82,7 +83,9 @@ def filter_cases(cases, pixel_types, shapes, operations, parameters):
 
 def backend_supports_case(backend, case):
     if backend == "stackprocessing-zarr":
-        return case["pixelType"] in {"UInt8", "UInt16"} and case["operation"] != "connectedComponents"
+        return case["pixelType"] in {"UInt8", "UInt16", "Float32"} and case["operation"] != "connectedComponents"
+    if backend == "stackprocessing-zarr-direct":
+        return case["pixelType"] in {"UInt8", "UInt16", "Float32"} and case["operation"] == "copy"
     if backend == "python-dask-omezarr":
         return case["operation"] != "connectedComponents"
     return True
@@ -139,6 +142,8 @@ def backend_command(args, case, repeat):
         return ["dotnet", args.stackprocessing_dll, "run-byte-float32-slice-reuse"] + common + params
     if args.backend == "stackprocessing-zarr":
         return ["dotnet", args.stackprocessing_dll, "run-zarr"] + common + ["--shape", case["shape"]] + params
+    if args.backend == "stackprocessing-zarr-direct":
+        return ["dotnet", args.stackprocessing_dll, "run-zarr-direct-copy"] + common + ["--shape", case["shape"]]
     if args.backend == "python-skimage-scipy":
         return ["python3", str(ROOT / "benchmarks/python-skimage-scipy/bench.py")] + common + params
     if args.backend == "python-dask-omezarr":

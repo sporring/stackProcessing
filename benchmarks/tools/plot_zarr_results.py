@@ -10,9 +10,10 @@ import shutil
 from pathlib import Path
 
 
-BACKENDS = ["stackprocessing-zarr", "python-dask-omezarr"]
+BACKENDS = ["stackprocessing-zarr", "stackprocessing-zarr-direct", "python-dask-omezarr"]
 BACKEND_LABELS = {
     "stackprocessing-zarr": "StackProcessing-Zarr",
+    "stackprocessing-zarr-direct": "StackProcessing-Zarr direct",
     "python-dask-omezarr": "Python/Dask-Zarr",
 }
 PIXEL_TYPES = ["UInt8", "UInt16", "Float32"]
@@ -20,6 +21,10 @@ PIXEL_LABELS = {"UInt8": "uint8", "UInt16": "uint16", "Float32": "float32"}
 COLORS = {
     ("stackprocessing-zarr", "UInt8"): "#1f77b4",
     ("stackprocessing-zarr", "UInt16"): "#0b4f8a",
+    ("stackprocessing-zarr", "Float32"): "#5dade2",
+    ("stackprocessing-zarr-direct", "UInt8"): "#17becf",
+    ("stackprocessing-zarr-direct", "UInt16"): "#0e7c86",
+    ("stackprocessing-zarr-direct", "Float32"): "#76d7ea",
     ("python-dask-omezarr", "UInt8"): "#e15759",
     ("python-dask-omezarr", "UInt16"): "#b22222",
     ("python-dask-omezarr", "Float32"): "#7f1d1d",
@@ -72,7 +77,7 @@ def load_rows(path: Path) -> list[dict[str, object]]:
         for row in csv.DictReader(handle):
             if row["backend"] not in BACKENDS:
                 continue
-            if row["operation"] not in {"threshold", "median"}:
+            if row["operation"] not in {"copy", "threshold", "median"}:
                 continue
 
             internal = finite_float(row.get("medianInternalSeconds", ""))
@@ -116,6 +121,7 @@ def setup_matplotlib():
 
 def panel_specs() -> list[tuple[str, str, str]]:
     return [
+        ("copy", "none", "copy"),
         ("threshold", "threshold=128", "threshold"),
         ("median", "radius=1", "median r=1"),
         ("median", "radius=2", "median r=2"),
@@ -141,7 +147,7 @@ def figure_name(metric: str) -> str:
 
 def plot_metric(rows: list[dict[str, object]], output_dir: Path, metric: str) -> Path:
     plt = setup_matplotlib()
-    fig, axes = plt.subplots(2, 2, figsize=(8.4, 5.8), sharex=True)
+    fig, axes = plt.subplots(2, 3, figsize=(10.2, 5.8), sharex=True)
     axes_flat = list(axes.flat)
     shapes = sorted({str(row["shape"]) for row in rows}, key=shape_voxels)
     ticks = [shape_voxels(shape) for shape in shapes]
@@ -185,6 +191,9 @@ def plot_metric(rows: list[dict[str, object]], output_dir: Path, metric: str) ->
         ax.grid(True, which="major", alpha=0.25)
         ax.grid(True, which="minor", axis="y", alpha=0.12)
         ax.set_ylabel(metric_label(metric))
+
+    for ax in axes_flat[len(panel_specs()):]:
+        ax.axis("off")
 
     for ax in axes[-1, :]:
         ax.set_xlabel("input volume")
