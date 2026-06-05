@@ -286,17 +286,21 @@ type ChunkLayout =
       Components: uint }
 
 type ChunkStorage<'T> =
-    | ImageChunk of Image<'T>
-    | ArrayChunk of 'T[,,]
+    { Bytes: byte[]
+      ByteLength: int
+      Release: unit -> unit }
 
 type Chunk<'T> =
     { Index: ChunkIndex
       Origin: uint64 * uint64 * uint64
       Size: uint64 * uint64 * uint64
-      Data: ChunkStorage<'T> }
+      BufferSize: uint64 * uint64 * uint64
+      Storage: ChunkStorage<'T> }
 ```
 
-The storage choice is explicit. `ImageChunk` is for workflows that should stay close to Image/SimpleITK operations or file IO. `ArrayChunk` is for random access, interpolation, and managed hot loops where per-pixel SimpleITK access would be too expensive.
+The current storage is byte-backed, with a logical byte length and a release callback. This is deliberate. Zarr.NET decodes chunks as byte buffers, and simple chunk-local operations can often operate directly on those decoded bytes using typed span views or portable `System.Numerics.Vector<T>` loops. `ByteLength` distinguishes the logical payload from the physical rented buffer length, which matters when buffers come from `ArrayPool<byte>` and may be larger than the requested payload. `Release` lets chunk ownership sit next to the buffer so pooled memory can be returned promptly after the stage has written or discarded the chunk.
+
+Typed access is provided by helpers such as `Chunk.memory`, `Chunk.span<'T>`, and `Chunk.data`. Prefer `memory` or typed spans in hot Zarr paths; `data` copies to a managed typed array and is mainly for compatibility or non-hot code.
 
 Some older implementation pieces still use related local forms:
 
@@ -316,10 +320,10 @@ Slab<'T>
     small adjacent z-neighbourhood packed as one Image<'T>
 
 Chunk<'T>
-    bounded 3D block with explicit storage, origin, size, and index
+    bounded 3D block with explicit origin, size, logical byte payload, and release ownership
 ```
 
-The chunk type is intentionally minimal at present. It is a structural placeholder for the next cleanup: making affine resampling and FFT-like multi-pass algorithms expose their memory shape through typed chunk streams rather than hidden temporary directories.
+The chunk type is still intentionally small, but it is no longer only a placeholder. The direct OME-Zarr copy and threshold benchmarks use chunk-native paths: decoded chunk bytes are streamed, processed with 1D/SIMD loops when useful, and written back without first forming slabs. Neighbourhood operators still use slabs/windows because they need z-context, but FFT-like and affine-resampling workflows are good candidates for more complete typed chunk streams.
 
 ## Internal And Public Composition
 

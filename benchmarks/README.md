@@ -272,6 +272,30 @@ cmake -S benchmarks/cpp-itk -B benchmarks/cpp-itk/build
 cmake --build benchmarks/cpp-itk/build --config Release
 ```
 
+For the report-facing OME-Zarr figures, the current Zarr special case uses
+uncompressed Zarr v3 chunks (`bytes` codec only) to stress raw chunk IO and halo
+layout rather than compression. The combined raw and summary files are:
+
+```text
+benchmarks/results/raw.zarr-none.csv
+benchmarks/results/summary.zarr-none.csv
+```
+
+The corresponding figures are generated with:
+
+```bash
+python3 benchmarks/tools/plot_zarr_results.py \
+  --summary benchmarks/results/summary.zarr-none.csv \
+  --output-dir benchmarks/results/figures \
+  --latex-dir notes/LMIP_Optimiser_and_Studio/figures
+
+python3 benchmarks/tools/run_zarr_halo_comparison.py --codec none
+python3 benchmarks/tools/plot_zarr_halo_comparison.py \
+  --input tmp/zarr-halo-comparison-none.csv \
+  --output-dir benchmarks/results/figures \
+  --latex-dir notes/LMIP_Optimiser_and_Studio/figures
+```
+
 ## Notes on Fairness
 
 - All tools read the same TIFF stack and write a TIFF stack.

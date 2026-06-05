@@ -31,6 +31,12 @@ def parse_args():
     parser.add_argument("--output-root", default=str(ROOT / "tmp/benchmarks/output-zarr-halo"))
     parser.add_argument("--results", default=str(ROOT / "tmp/zarr-halo-comparison.csv"))
     parser.add_argument(
+        "--codec",
+        choices=["default", "none"],
+        default="default",
+        help="Zarr codec pipeline for generated inputs.",
+    )
+    parser.add_argument(
         "--stackprocessing-dll",
         default=str(ROOT / "benchmarks/StackProcessing.Benchmarks/bin/Release/net10.0/StackProcessing.Benchmarks.dll"),
     )
@@ -71,6 +77,8 @@ def generate_input(args, chunk_side: int) -> Path:
         args.pixel_type,
         "--chunk-shape",
         f"{chunk_side}x{chunk_side}x{chunk_side}",
+        "--codec",
+        args.codec,
         "--force",
     ]
     code = run(command)

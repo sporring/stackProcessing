@@ -1,5 +1,10 @@
 # Array-Backed Image Experiment
 
+See also `notes/ArrayPoolZarrSimdRestartNotes.md` for the current restart
+summary after the later OME-Zarr, `Chunk<>`, `Vector<T>`, SIMD, and ArrayPool
+experiments. The notes below record the earlier slice/image replacement
+experiments and should be read as historical context.
+
 ## Motivation
 
 StackProcessing currently uses `Image<'T>` as a SimpleITK-backed image wrapper. This is a good bridge to ITK algorithms, but it makes SimpleITK the default storage representation even when the operation is naturally array-based. The recent TIFF slice reader and streaming morphology work suggests that some overhead comes from repeatedly crossing this boundary:
