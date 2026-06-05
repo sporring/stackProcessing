@@ -667,7 +667,7 @@ let generatorSuite =
                 |> PipelineCodeGenerator.generateSavedGraph
 
             Expect.stringContains code "let ChunkInfo0 = getZarrInfo \"input.zarr\" 0 1" "GetZarrInfo should generate a metadata binding."
-            Expect.stringContains code "|> readZarrSlab<uint16> \"input.zarr\" 8u 0 1 2 3 4" "Read with OME-Zarr format should generate the Zarr slab reader."
+            Expect.stringContains code "|> readZarrSlab<uint16> \"input.zarr\" 0 1 2 3 4" "Read with OME-Zarr format should generate the Zarr slab reader."
             Expect.stringContains code ">=> writeZarr \"output.zarr\" ChunkInfo0.topLeftInfo.componentType 32u 16u 17u 8u 0.5 0.5 2.0 2" "Write with OME-Zarr target should accept linked Zarr metadata."
             Expect.stringContains code "|> sink" "Terminal Zarr Write should be sunk."
 
@@ -715,7 +715,7 @@ let generatorSuite =
                 |> PipelineCodeGenerator.generateSavedGraph
 
             Expect.stringContains code "let ChunkInfo0 = getNexusInfo \"scan.h5\" \"/entry/data/data\" 0 1 2" "GetNexusInfo should generate a metadata binding."
-            Expect.stringContains code "|> readNexusSlab<uint16> \"scan.h5\" \"/entry/data/data\" 8u 0 1 2" "Read with NeXus/HDF5 format should generate the NeXus slab reader."
+            Expect.stringContains code "|> readNexusSlab<uint16> \"scan.h5\" \"/entry/data/data\" 0 1 2" "Read with NeXus/HDF5 format should generate the NeXus slab reader."
             Expect.stringContains code ">=> writeZarr \"output.zarr\" \"converted\" ChunkInfo0.size[2] 16u 17u 8u 1.0 1.0 1.0 0" "Write with OME-Zarr target should accept linked NeXus metadata."
 
         testCase "write nexus target lowers to writeNexus" <| fun _ ->

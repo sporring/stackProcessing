@@ -481,7 +481,7 @@ let viewModelSuite =
 
             Expect.sequenceEqual
                 (visibleParameterKeys readNode)
-                [ "availableMemory"; "type"; "format"; "input"; "slabDepth"; "datasetPath"; "frameAxis"; "yAxis"; "xAxis" ]
+                [ "availableMemory"; "type"; "format"; "input"; "datasetPath"; "frameAxis"; "yAxis"; "xAxis" ]
                 "NeXus read should show only HDF5-specific parameters."
 
         testCase "imported expand adapts output ports from connected record type" <| fun _ ->

@@ -545,7 +545,7 @@ module private SourceImageNode =
         | ("Read" | "ReadSlab"), "OME-Zarr" ->
             Set.union common zarr
         | ("Read" | "ReadSlab"), "NeXus/HDF5" ->
-            Set.union common nexus
+            Set.union common nexus |> Set.remove "slabDepth"
         | _ ->
             state.Parameters
             |> Seq.map _.Key

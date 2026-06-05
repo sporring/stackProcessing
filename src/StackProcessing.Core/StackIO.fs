@@ -1215,6 +1215,12 @@ let getZarrInfo (path: string) (multiscaleIndex: int) (datasetIndex: int) : Chun
       size = fileInfo.size
       topLeftInfo = fileInfo }
 
+let private zarrChunkDepthFromInfo (chunkInfo: ChunkInfo) =
+    match chunkInfo.chunks with
+    | _t :: _c :: z :: _y :: _x :: _ -> max 1u (uint z)
+    | z :: _y :: _x :: _ -> max 1u (uint z)
+    | _ -> 1u
+
 let getNexusInfo (path: string) (datasetPath: string) (frameAxis: int) (yAxis: int) (xAxis: int) : ChunkInfo =
     use file = H5File.OpenRead(path)
     let dataset = file.Dataset(datasetPath)
@@ -1235,6 +1241,12 @@ let getNexusInfo (path: string) (datasetPath: string) (frameAxis: int) (yAxis: i
     { chunks = chunks
       size = fileInfo.size
       topLeftInfo = fileInfo }
+
+let private nexusFrameChunkDepth (info: ChunkInfo) (frameAxis: int) =
+    info.chunks
+    |> List.tryItem frameAxis
+    |> Option.map (fun z -> max 1u (uint z))
+    |> Option.defaultValue 1u
 
 let getChunkFilename (path: string) (suffix: string) (i: int) (j: int) (k: int) =
     Path.Combine(path, sprintf "chunk%d_%d_%d%s" i j k suffix)
@@ -1350,7 +1362,7 @@ let readSlabAsWindows<'T when 'T: equality> (inputDir: string) (suffix: string) 
 let readSlab<'T when 'T: equality> (inputDir: string) (suffix: string) (pl: Plan<unit, unit>) : Plan<unit, Image<'T>> =
     pl |> readSlabAsWindows<'T> inputDir suffix >=> flattenList ()
 
-let readZarrSlabStacked<'T when 'T: equality>
+let private readZarrSlabStackedWithDepth<'T when 'T: equality>
     (path: string)
     (slabDepth: uint)
     (multiscaleIndex: int)
@@ -1433,7 +1445,21 @@ let readZarrSlabStacked<'T when 'T: equality>
     |> Plan.withRuntimeOptionsFrom pl
     |> Plan.withSourcePeek sourcePeek
 
-let readZarrSlab<'T when 'T: equality>
+let readZarrSlabStacked<'T when 'T: equality>
+    (path: string)
+    (multiscaleIndex: int)
+    (datasetIndex: int)
+    (timepoint: int)
+    (channel: int)
+    (maxParallelChunks: int)
+    (pl: Plan<unit, unit>)
+    : Plan<unit, Image<'T>> =
+
+    let slabDepth = getZarrInfo path multiscaleIndex datasetIndex |> zarrChunkDepthFromInfo
+    pl
+    |> readZarrSlabStackedWithDepth<'T> path slabDepth multiscaleIndex datasetIndex timepoint channel maxParallelChunks
+
+let private readZarrSlabWithDepth<'T when 'T: equality>
     (path: string)
     (slabDepth: uint)
     (multiscaleIndex: int)
@@ -1445,7 +1471,22 @@ let readZarrSlab<'T when 'T: equality>
     : Plan<unit, Image<'T>> =
 
     pl
-    |> readZarrSlabStacked<'T> path slabDepth multiscaleIndex datasetIndex timepoint channel maxParallelChunks
+    |> readZarrSlabStackedWithDepth<'T> path slabDepth multiscaleIndex datasetIndex timepoint channel maxParallelChunks
+    >=> (slabToWindow<'T> --> windowItems ())
+    >=> flattenList ()
+
+let readZarrSlab<'T when 'T: equality>
+    (path: string)
+    (multiscaleIndex: int)
+    (datasetIndex: int)
+    (timepoint: int)
+    (channel: int)
+    (maxParallelChunks: int)
+    (pl: Plan<unit, unit>)
+    : Plan<unit, Image<'T>> =
+
+    pl
+    |> readZarrSlabStacked<'T> path multiscaleIndex datasetIndex timepoint channel maxParallelChunks
     >=> (slabToWindow<'T> --> windowItems ())
     >=> flattenList ()
 
@@ -1622,7 +1663,7 @@ let readZarrRange<'T when 'T: equality>
     |> Plan.withRuntimeOptionsFrom pl
     |> Plan.withSourcePeek sourcePeek
 
-let readNexusSlabStacked<'T when 'T: equality>
+let private readNexusSlabStackedWithDepth<'T when 'T: equality>
     (path: string)
     (datasetPath: string)
     (slabDepth: uint)
@@ -1710,7 +1751,23 @@ let readNexusSlabStacked<'T when 'T: equality>
     |> Plan.withRuntimeOptionsFrom pl
     |> Plan.withSourcePeek sourcePeek
 
-let readNexusSlab<'T when 'T: equality>
+let readNexusSlabStacked<'T when 'T: equality>
+    (path: string)
+    (datasetPath: string)
+    (frameAxis: int)
+    (yAxis: int)
+    (xAxis: int)
+    (pl: Plan<unit, unit>)
+    : Plan<unit, Image<'T>> =
+
+    let slabDepth =
+        getNexusInfo path datasetPath frameAxis yAxis xAxis
+        |> fun info -> nexusFrameChunkDepth info frameAxis
+
+    pl
+    |> readNexusSlabStackedWithDepth<'T> path datasetPath slabDepth frameAxis yAxis xAxis
+
+let private readNexusSlabWithDepth<'T when 'T: equality>
     (path: string)
     (datasetPath: string)
     (slabDepth: uint)
@@ -1721,7 +1778,21 @@ let readNexusSlab<'T when 'T: equality>
     : Plan<unit, Image<'T>> =
 
     pl
-    |> readNexusSlabStacked<'T> path datasetPath slabDepth frameAxis yAxis xAxis
+    |> readNexusSlabStackedWithDepth<'T> path datasetPath slabDepth frameAxis yAxis xAxis
+    >=> (slabToWindow<'T> --> windowItems ())
+    >=> flattenList ()
+
+let readNexusSlab<'T when 'T: equality>
+    (path: string)
+    (datasetPath: string)
+    (frameAxis: int)
+    (yAxis: int)
+    (xAxis: int)
+    (pl: Plan<unit, unit>)
+    : Plan<unit, Image<'T>> =
+
+    pl
+    |> readNexusSlabStacked<'T> path datasetPath frameAxis yAxis xAxis
     >=> (slabToWindow<'T> --> windowItems ())
     >=> flattenList ()
 
@@ -2147,13 +2218,12 @@ let private bytesOfScalarImage<'T when 'T: equality> (image: Image<'T>) =
     Buffer.BlockCopy(pixels, 0, bytes, 0, byteCount)
     bytes
 
-let writeZarrSlab<'T when 'T: equality>
+let private writeZarrSlabStage<'T when 'T: equality>
     (outputPath: string)
     (name: string)
     (depth: uint)
     (chunkX: uint)
     (chunkY: uint)
-    (chunkZ: uint)
     (physicalSizeX: float)
     (physicalSizeY: float)
     (physicalSizeZ: float)
@@ -2168,9 +2238,11 @@ let writeZarrSlab<'T when 'T: equality>
     let depth = int depth
     let chunkX = max 1u chunkX |> int
     let chunkY = max 1u chunkY |> int
-    let chunkZ = max 1u chunkZ |> int
+    let mutable slabChunkZ: int option = None
 
     let createWriter (image: Image<'T>) =
+        let chunkZ = max 1u (image.GetDepth()) |> int
+        slabChunkZ <- Some chunkZ
         let descriptor =
             BioImageDescriptor(
                 int (image.GetWidth()),
@@ -2205,6 +2277,10 @@ let writeZarrSlab<'T when 'T: equality>
         if image.GetDimensions() <> 3u then
             failwith $"writeZarrSlab expects a stream of 3D slab images, but got {image.GetDimensions()}D."
 
+        let chunkZ =
+            match slabChunkZ with
+            | Some chunkZ -> chunkZ
+            | None -> max 1u (image.GetDepth()) |> int
         let zStart = int idx * chunkZ
         let zCount = int (image.GetDepth())
         let zStop = zStart + zCount
@@ -2255,6 +2331,49 @@ let writeZarrSlab<'T when 'T: equality>
 
     Stage.mapi $"writeZarrSlab \"{outputPath}\"" mapper memoryNeed id
     |> withCostModel (StageCostModel.create memoryModel timeCostModel)
+
+let private sourcePeekUInt<'S, 'T> (key: string) (pl: Plan<'S, 'T>) =
+    match pl.sourcePeek with
+    | Some sourcePeek ->
+        match sourcePeek.Shape |> Map.tryFind key with
+        | Some value ->
+            match UInt32.TryParse(value) with
+            | true, parsed -> parsed
+            | false, _ -> failwith $"Source metadata field '{key}' has value '{value}', which is not a uint32."
+        | None ->
+            failwith $"Source metadata does not contain field '{key}'. Use the explicit writer when the output shape is not inherited from the input."
+    | None ->
+        failwith "Source metadata is unavailable. Use the explicit writer when the output shape is not inherited from a metadata-carrying source."
+
+let writeZarrSlabNamed<'S, 'T when 'T: equality>
+    (outputPath: string)
+    (name: string)
+    (chunkX: uint)
+    (chunkY: uint)
+    (physicalSizeX: float)
+    (physicalSizeY: float)
+    (physicalSizeZ: float)
+    (maxConcurrentWrites: int)
+    (pl: Plan<'S, Image<'T>>)
+    : Plan<'S, Image<'T>> =
+
+    let depth = sourcePeekUInt "depth" pl
+    pl
+    >=> writeZarrSlabStage outputPath name depth chunkX chunkY physicalSizeX physicalSizeY physicalSizeZ maxConcurrentWrites
+
+let writeZarrSlab<'S, 'T when 'T: equality>
+    (outputPath: string)
+    (chunkX: uint)
+    (chunkY: uint)
+    (physicalSizeX: float)
+    (physicalSizeY: float)
+    (physicalSizeZ: float)
+    (maxConcurrentWrites: int)
+    (pl: Plan<'S, Image<'T>>)
+    : Plan<'S, Image<'T>> =
+
+    pl
+    |> writeZarrSlabNamed outputPath "image" chunkX chunkY physicalSizeX physicalSizeY physicalSizeZ maxConcurrentWrites
 
 let writeNexus<'T when 'T: equality>
     (outputPath: string)
@@ -2363,6 +2482,147 @@ let writeNexus<'T when 'T: equality>
 
     Stage.mapi $"writeNexus \"{outputPath}:{datasetPath}\"" mapper memoryNeed id
     |> withCostModel (StageCostModel.create memoryModel timeCostModel)
+
+let private hdfBlockOfSlab<'T when 'T: equality> frameAxis yAxis xAxis (image: Image<'T>) =
+    let width = int (image.GetWidth())
+    let height = int (image.GetHeight())
+    let depth = int (image.GetDepth())
+    let pixels = image.toFlatArray()
+
+    if frameAxis = 0 && yAxis = 1 && xAxis = 2 then
+        let block = Array3D.zeroCreate<'T> depth height width
+        let byteCount = width * height * depth * (typeof<'T> |> Image.getBytesPerComponent |> int)
+        Buffer.BlockCopy(pixels, 0, block, 0, byteCount)
+        block
+    else
+        let memDims = Array.zeroCreate<int> 3
+        memDims[frameAxis] <- depth
+        memDims[yAxis] <- height
+        memDims[xAxis] <- width
+
+        Array3D.init memDims[0] memDims[1] memDims[2] (fun a b c ->
+            let indices = [| a; b; c |]
+            let z = indices[frameAxis]
+            let y = indices[yAxis]
+            let x = indices[xAxis]
+            pixels[(z * height + y) * width + x])
+
+let private writeNexusSlabStage<'T when 'T: equality>
+    (outputPath: string)
+    (datasetPath: string)
+    (depth: uint)
+    (chunkX: uint)
+    (chunkY: uint)
+    (frameAxis: int)
+    (yAxis: int)
+    (xAxis: int)
+    : Stage<Image<'T>, Image<'T>> =
+
+    hdfDataType<'T> () |> ignore
+    validateHdfAxes 3 frameAxis yAxis xAxis
+
+    let depth = int depth
+    let chunkX = max 1u chunkX |> uint32
+    let chunkY = max 1u chunkY |> uint32
+    let mutable chunkZ: int option = None
+    let mutable writer: H5NativeWriter option = None
+    let mutable dataset: H5Dataset<'T[,,]> option = None
+
+    let createWriter (image: Image<'T>) =
+        if depth <= 0 then
+            invalidArg "depth" "writeNexusSlab depth must be positive."
+        if image.GetDimensions() <> 3u then
+            failwith $"writeNexusSlab expects a stream of 3D slab images, but got {image.GetDimensions()}D."
+
+        let slabDepth = max 1u (image.GetDepth()) |> int
+        chunkZ <- Some slabDepth
+
+        let fileDims = Array.zeroCreate<uint64> 3
+        let chunks = Array.zeroCreate<uint32> 3
+        fileDims[frameAxis] <- uint64 depth
+        fileDims[yAxis] <- uint64 (image.GetHeight())
+        fileDims[xAxis] <- uint64 (image.GetWidth())
+        chunks[frameAxis] <- min (uint32 slabDepth) (uint32 depth)
+        chunks[yAxis] <- min chunkY (uint32 (image.GetHeight()))
+        chunks[xAxis] <- min chunkX (uint32 (image.GetWidth()))
+
+        let file = H5File()
+        let createdDataset = H5Dataset<'T[,,]>(fileDims, chunks = chunks)
+        addHdfDatasetPath file datasetPath createdDataset
+        let createdWriter = file.BeginWrite(filePath = outputPath)
+        writer <- Some createdWriter
+        dataset <- Some createdDataset
+        createdWriter, createdDataset
+
+    let mapper (debug: bool) (idx: int64) (image: Image<'T>) =
+        if image.GetDimensions() <> 3u then
+            failwith $"writeNexusSlab expects a stream of 3D slab images, but got {image.GetDimensions()}D."
+
+        let hdfWriter, hdfDataset =
+            match writer, dataset with
+            | Some hdfWriter, Some hdfDataset -> hdfWriter, hdfDataset
+            | _ -> createWriter image
+
+        let slabDepth =
+            match chunkZ with
+            | Some chunkZ -> chunkZ
+            | None -> max 1u (image.GetDepth()) |> int
+
+        let zStart = int idx * slabDepth
+        let zCount = int (image.GetDepth())
+        let zStop = zStart + zCount
+
+        if zStop > depth then
+            failwith $"writeNexusSlab received slab {idx} ending at z={zStop}, but the declared depth is {depth}."
+
+        let data = hdfBlockOfSlab frameAxis yAxis xAxis image
+        let fileStarts = Array.zeroCreate<uint64> 3
+        let blocks = Array.zeroCreate<uint64> 3
+        fileStarts[frameAxis] <- uint64 zStart
+        blocks[frameAxis] <- uint64 zCount
+        blocks[yAxis] <- uint64 (image.GetHeight())
+        blocks[xAxis] <- uint64 (image.GetWidth())
+        let fileSelection = HyperslabSelection(3, fileStarts, blocks)
+
+        if debug then
+            printfn "[writeNexusSlab] Saved frames %d..%d to %s:%s as %s" zStart (zStop - 1) outputPath datasetPath (friendlyImageTypeName image)
+
+        hdfWriter.Write(hdfDataset, data, AllSelection(), fileSelection)
+
+        if zStop = depth then
+            hdfWriter.Dispose()
+            writer <- None
+            dataset <- None
+
+        image
+
+    let memoryNeed = id
+    let memoryModel = StageMemoryModel.fromSinglePeak Iter memoryNeed
+    let timeCostModel =
+        imageIoCost<'T>
+            "write"
+            Iter
+            $"writeNexusSlab.{typeof<'T>.Name}"
+            (fun input -> inputValue input |> imageBytes<'T>)
+            (fun _ -> 1UL)
+
+    Stage.mapi $"writeNexusSlab \"{outputPath}:{datasetPath}\"" mapper memoryNeed id
+    |> withCostModel (StageCostModel.create memoryModel timeCostModel)
+
+let writeNexusSlab<'S, 'T when 'T: equality>
+    (outputPath: string)
+    (datasetPath: string)
+    (chunkX: uint)
+    (chunkY: uint)
+    (frameAxis: int)
+    (yAxis: int)
+    (xAxis: int)
+    (pl: Plan<'S, Image<'T>>)
+    : Plan<'S, Image<'T>> =
+
+    let depth = sourcePeekUInt "depth" pl
+    pl
+    >=> writeNexusSlabStage outputPath datasetPath depth chunkX chunkY frameAxis yAxis xAxis
 
 let private writeSlabChunks (debug: bool) (outputDir: string) (suffix: string) (width: uint) (height: uint) (winSz: uint) (k: int) (stack: Image<'T>) =
     let chunksX = (stack.GetWidth() + width - 1u) / width

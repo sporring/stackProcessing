@@ -1136,9 +1136,9 @@ module PipelineCodeGenerator =
             let xAxis = parameterValue "xAxis"
             match format with
             | "OME-Zarr" ->
-                $"|> readZarrSlab<{pixelType}> {input} {slabDepth} {multiscaleIndex} {datasetIndex} {timepoint} {channel} {maxParallelChunks}" |> sourcePrefix availableMemory
+                $"|> readZarrSlab<{pixelType}> {input} {multiscaleIndex} {datasetIndex} {timepoint} {channel} {maxParallelChunks}" |> sourcePrefix availableMemory
             | "NeXus/HDF5" ->
-                $"|> readNexusSlab<{pixelType}> {input} {datasetPath} {slabDepth} {frameAxis} {yAxis} {xAxis}" |> sourcePrefix availableMemory
+                $"|> readNexusSlab<{pixelType}> {input} {datasetPath} {frameAxis} {yAxis} {xAxis}" |> sourcePrefix availableMemory
             | _ ->
                 $"|> readSlab<{pixelType}> {input} {suffix}" |> sourcePrefix availableMemory
         | "ReadPointSet" ->
@@ -1166,9 +1166,9 @@ module PipelineCodeGenerator =
                 let volumeInput = $"(volumeFilePath {input} {suffix})"
                 $"|> readVolume<{pixelType}> {volumeInput}" |> sourcePrefix availableMemory
             | "OME-Zarr" ->
-                $"|> readZarrSlab<{pixelType}> {input} {slabDepth} {multiscaleIndex} {datasetIndex} {timepoint} {channel} {maxParallelChunks}" |> sourcePrefix availableMemory
+                $"|> readZarrSlab<{pixelType}> {input} {multiscaleIndex} {datasetIndex} {timepoint} {channel} {maxParallelChunks}" |> sourcePrefix availableMemory
             | "NeXus/HDF5" ->
-                $"|> readNexusSlab<{pixelType}> {input} {datasetPath} {slabDepth} {frameAxis} {yAxis} {xAxis}" |> sourcePrefix availableMemory
+                $"|> readNexusSlab<{pixelType}> {input} {datasetPath} {frameAxis} {yAxis} {xAxis}" |> sourcePrefix availableMemory
             | _ ->
                 $"|> read<{pixelType}> {input} {suffix}" |> sourcePrefix availableMemory
         | "Resize" ->

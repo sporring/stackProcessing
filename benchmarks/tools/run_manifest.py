@@ -83,9 +83,9 @@ def filter_cases(cases, pixel_types, shapes, operations, parameters):
 
 def backend_supports_case(backend, case):
     if backend == "stackprocessing-zarr":
-        return case["pixelType"] in {"UInt8", "UInt16", "Float32"} and case["operation"] != "connectedComponents"
+        return case["pixelType"] in {"UInt8", "UInt16", "Float32"} and case["operation"] == "median"
     if backend == "stackprocessing-zarr-direct":
-        return case["pixelType"] in {"UInt8", "UInt16", "Float32"} and case["operation"] == "copy"
+        return case["pixelType"] in {"UInt8", "UInt16", "Float32"} and case["operation"] in {"copy", "threshold"}
     if backend == "python-dask-omezarr":
         return case["operation"] != "connectedComponents"
     return True
@@ -143,7 +143,8 @@ def backend_command(args, case, repeat):
     if args.backend == "stackprocessing-zarr":
         return ["dotnet", args.stackprocessing_dll, "run-zarr"] + common + ["--shape", case["shape"]] + params
     if args.backend == "stackprocessing-zarr-direct":
-        return ["dotnet", args.stackprocessing_dll, "run-zarr-direct-copy"] + common + ["--shape", case["shape"]]
+        command = "run-zarr-direct-copy" if case["operation"] == "copy" else "run-zarr-direct-threshold"
+        return ["dotnet", args.stackprocessing_dll, command] + common + ["--shape", case["shape"]] + params
     if args.backend == "python-skimage-scipy":
         return ["python3", str(ROOT / "benchmarks/python-skimage-scipy/bench.py")] + common + params
     if args.backend == "python-dask-omezarr":

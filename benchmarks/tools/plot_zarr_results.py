@@ -13,7 +13,7 @@ from pathlib import Path
 BACKENDS = ["stackprocessing-zarr", "stackprocessing-zarr-direct", "python-dask-omezarr"]
 BACKEND_LABELS = {
     "stackprocessing-zarr": "StackProcessing-Zarr",
-    "stackprocessing-zarr-direct": "StackProcessing-Zarr direct",
+    "stackprocessing-zarr-direct": "StackProcessing-Zarr",
     "python-dask-omezarr": "Python/Dask-Zarr",
 }
 PIXEL_TYPES = ["UInt8", "UInt16", "Float32"]
@@ -22,9 +22,9 @@ COLORS = {
     ("stackprocessing-zarr", "UInt8"): "#1f77b4",
     ("stackprocessing-zarr", "UInt16"): "#0b4f8a",
     ("stackprocessing-zarr", "Float32"): "#5dade2",
-    ("stackprocessing-zarr-direct", "UInt8"): "#17becf",
-    ("stackprocessing-zarr-direct", "UInt16"): "#0e7c86",
-    ("stackprocessing-zarr-direct", "Float32"): "#76d7ea",
+    ("stackprocessing-zarr-direct", "UInt8"): "#1f77b4",
+    ("stackprocessing-zarr-direct", "UInt16"): "#0b4f8a",
+    ("stackprocessing-zarr-direct", "Float32"): "#5dade2",
     ("python-dask-omezarr", "UInt8"): "#e15759",
     ("python-dask-omezarr", "UInt16"): "#b22222",
     ("python-dask-omezarr", "Float32"): "#7f1d1d",
@@ -79,6 +79,10 @@ def load_rows(path: Path) -> list[dict[str, object]]:
                 continue
             if row["operation"] not in {"copy", "threshold", "median"}:
                 continue
+            if row["backend"] == "stackprocessing-zarr" and row["operation"] in {"copy", "threshold"}:
+                continue
+            if row["backend"] == "stackprocessing-zarr-direct" and row["operation"] == "median":
+                continue
 
             internal = finite_float(row.get("medianInternalSeconds", ""))
             peak = finite_float(row.get("medianPeakRssMiB", ""))
@@ -119,10 +123,11 @@ def setup_matplotlib():
     return plt
 
 
-def panel_specs() -> list[tuple[str, str, str]]:
+def panel_specs() -> list[tuple[str, str, str] | None]:
     return [
         ("copy", "none", "copy"),
         ("threshold", "threshold=128", "threshold"),
+        None,
         ("median", "radius=1", "median r=1"),
         ("median", "radius=2", "median r=2"),
         ("median", "radius=3", "median r=3"),
@@ -154,7 +159,13 @@ def plot_metric(rows: list[dict[str, object]], output_dir: Path, metric: str) ->
     tick_labels = [shape_label(shape) for shape in shapes]
 
     handles_by_label = {}
-    for ax, (operation, parameter, title) in zip(axes_flat, panel_specs()):
+    specs = panel_specs()
+    for ax, spec in zip(axes_flat, specs):
+        if spec is None:
+            ax.axis("off")
+            continue
+
+        operation, parameter, title = spec
         panel_rows = [
             row
             for row in rows
@@ -192,7 +203,7 @@ def plot_metric(rows: list[dict[str, object]], output_dir: Path, metric: str) ->
         ax.grid(True, which="minor", axis="y", alpha=0.12)
         ax.set_ylabel(metric_label(metric))
 
-    for ax in axes_flat[len(panel_specs()):]:
+    for ax in axes_flat[len(specs):]:
         ax.axis("off")
 
     for ax in axes[-1, :]:

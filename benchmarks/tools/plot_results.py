@@ -162,6 +162,14 @@ def draw_sequence(backends: list[str], draw_last: str | None = None) -> list[str
     return [backend for backend in backends if backend != draw_last] + [draw_last]
 
 
+def wrapper_family_backend(backend: str) -> str:
+    if backend in {"stackprocessing-zarr", "stackprocessing-zarr-direct"}:
+        return "stackprocessing"
+    if backend == "python-dask-omezarr":
+        return "python-skimage-scipy"
+    return backend
+
+
 def setup_matplotlib():
     try:
         import matplotlib
@@ -382,6 +390,7 @@ def plot_complexity_scaling(rows: list[dict[str, object]], output_dir: Path, pix
 
 def plot_memory_time_scatter(rows: list[dict[str, object]], output_dir: Path):
     plt = setup_matplotlib()
+    rows = [dict(row, backend=wrapper_family_backend(str(row["backend"]))) for row in rows]
     fig, axes = plt.subplots(1, 3, figsize=(7.8, 3.2), sharey=True)
     shapes = ["256x256x256", "512x512x512", "1024x1024x1024"]
     backends = backend_sequence(rows)
@@ -436,7 +445,7 @@ def plot_memory_time_scatter(rows: list[dict[str, object]], output_dir: Path):
 
 def plot_wrapper_overhead(rows: list[dict[str, object]], output_dir: Path):
     plt = setup_matplotlib()
-    rows = [row for row in rows if row["wrapper"] is not None]
+    rows = [dict(row, backend=wrapper_family_backend(str(row["backend"]))) for row in rows if row["wrapper"] is not None]
     backends = backend_sequence(rows)
     fig, axes = plt.subplots(1, 2, figsize=(7.8, 3.4))
 

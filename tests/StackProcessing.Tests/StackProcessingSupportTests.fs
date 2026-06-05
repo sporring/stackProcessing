@@ -2135,15 +2135,15 @@ let stackProcessingSupportSuite =
 
                 rereadSlabs <-
                     source (2UL * 1024UL * 1024UL * 1024UL)
-                    |> readZarrSlabStacked<uint8> zarrPath 2u 0 0 0 0 0
+                    |> readZarrSlabStacked<uint8> zarrPath 0 0 0 0 0
                     |> drainList
 
-                Expect.equal rereadSlabs.Length 2 "readZarrSlabStacked should emit one stacked slab per requested z block."
-                Expect.equal (rereadSlabs[0].GetSize()) [ 5u; 4u; 2u ] "The first Zarr slab should retain x/y and requested z depth."
+                Expect.equal rereadSlabs.Length 2 "readZarrSlabStacked should emit one stacked slab per storage z chunk."
+                Expect.equal (rereadSlabs[0].GetSize()) [ 5u; 4u; 2u ] "The first Zarr slab should retain x/y and storage z chunk depth."
 
                 rereadSlices <-
                     source (2UL * 1024UL * 1024UL * 1024UL)
-                    |> readZarrSlab<uint8> zarrPath 2u 0 0 0 0 0
+                    |> readZarrSlab<uint8> zarrPath 0 0 0 0 0
                     |> drainList
 
                 Expect.equal rereadSlices.Length 4 "readZarrSlab should unstack slabs into a normal slice stream."
@@ -2152,7 +2152,7 @@ let stackProcessingSupportSuite =
 
                 let castSlices =
                     source (2UL * 1024UL * 1024UL * 1024UL)
-                    |> readZarrSlab<float32> zarrPath 2u 0 0 0 0 0
+                    |> readZarrSlab<float32> zarrPath 0 0 0 0 0
                     |> drainList
 
                 try
@@ -2186,15 +2186,15 @@ let stackProcessingSupportSuite =
 
                 rereadSlabs <-
                     source (2UL * 1024UL * 1024UL * 1024UL)
-                    |> readNexusSlabStacked<uint16> nexusPath datasetPath 2u 0 1 2
+                    |> readNexusSlabStacked<uint16> nexusPath datasetPath 0 1 2
                     |> drainList
 
-                Expect.equal rereadSlabs.Length 2 "readNexusSlabStacked should emit one stacked slab per requested frame block."
-                Expect.equal (rereadSlabs[0].GetSize()) [ 5u; 3u; 2u ] "The first NeXus slab should retain x/y and requested z depth."
+                Expect.equal rereadSlabs.Length 1 "readNexusSlabStacked should emit stacked slabs using the dataset frame-axis chunk depth."
+                Expect.equal (rereadSlabs[0].GetSize()) [ 5u; 3u; 4u ] "The NeXus slab should retain x/y and inferred z depth."
 
                 rereadSlices <-
                     source (2UL * 1024UL * 1024UL * 1024UL)
-                    |> readNexusSlab<uint16> nexusPath datasetPath 2u 0 1 2
+                    |> readNexusSlab<uint16> nexusPath datasetPath 0 1 2
                     |> drainList
 
                 Expect.equal rereadSlices.Length 4 "readNexusSlab should unstack slabs into a normal slice stream."
@@ -2203,7 +2203,7 @@ let stackProcessingSupportSuite =
 
                 let castSlices =
                     source (2UL * 1024UL * 1024UL * 1024UL)
-                    |> readNexusSlab<float32> nexusPath datasetPath 2u 0 1 2
+                    |> readNexusSlab<float32> nexusPath datasetPath 0 1 2
                     |> drainList
 
                 try
@@ -2241,7 +2241,7 @@ let stackProcessingSupportSuite =
 
                 rereadSlices <-
                     source (2UL * 1024UL * 1024UL * 1024UL)
-                    |> readNexusSlab<uint16> nexusPath datasetPath 2u 0 1 2
+                    |> readNexusSlab<uint16> nexusPath datasetPath 0 1 2
                     |> drainList
 
                 Expect.equal rereadSlices.Length 4 "writeNexus output should be readable by readNexusSlab."
@@ -2251,6 +2251,42 @@ let stackProcessingSupportSuite =
                 disposeImages rereadSlices
                 disposeImages slices
                 deleteDirectory inputDir
+                deleteDirectory rootDir
+
+        testCase "writeNexusSlab writes inferred-depth HDF5 detector slabs incrementally" <| fun _ ->
+            let rootDir = tempDirectory "nexus-slab-write"
+            let inputPath = Path.Combine(rootDir, "input.h5")
+            let outputPath = Path.Combine(rootDir, "written-slabs.h5")
+            let datasetPath = "/entry/data/data"
+            let data =
+                Array3D.init 4 3 5 (fun z y x -> uint16 (x + 10 * y + 100 * z))
+            let mutable writtenSlabs: Image<uint16> list = []
+            let mutable rereadSlices: Image<uint16> list = []
+
+            try
+                writeNexusStack inputPath datasetPath data
+
+                writtenSlabs <-
+                    source (2UL * 1024UL * 1024UL * 1024UL)
+                    |> readNexusSlabStacked<uint16> inputPath datasetPath 0 1 2
+                    |> writeNexusSlab outputPath datasetPath 5u 3u 0 1 2
+                    |> drainList
+
+                let info = getNexusInfo outputPath datasetPath 0 1 2
+                Expect.equal info.size [ 5UL; 3UL; 4UL ] "writeNexusSlab metadata should expose x/y/z image size."
+
+                rereadSlices <-
+                    source (2UL * 1024UL * 1024UL * 1024UL)
+                    |> readNexusSlab<uint16> outputPath datasetPath 0 1 2
+                    |> drainList
+
+                Expect.equal writtenSlabs.Length 1 "The contiguous test input should be forwarded as one inferred slab."
+                Expect.equal rereadSlices.Length 4 "writeNexusSlab output should be readable by readNexusSlab."
+                let pixels = rereadSlices[3].toArray2D()
+                Expect.equal pixels[4, 2] (uint16 (4 + 10 * 2 + 100 * 3)) "writeNexusSlab should preserve pixel values."
+            finally
+                disposeImages writtenSlabs
+                disposeImages rereadSlices
                 deleteDirectory rootDir
 
         testCase "resize changes x y z size while preserving first coordinate" <| fun _ ->
