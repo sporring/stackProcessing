@@ -18,6 +18,35 @@ Each backend should measure the same user-visible task, with the same input stac
 - `matlab`: MATLAB script using Image Processing Toolbox, invoked as `matlab -batch`.
 - `python-dask-omezarr`: special-case chunk-native Dask/OME-Zarr implementation.
 
+There is also a deliberately narrow `stackprocessing-libtiff-direct-copy`
+backend for copy-only TIFF IO tests. It bypasses `Image<'T>` and SimpleITK,
+requires uncompressed scalar TIFF slices, rents one page buffer with
+`ArrayPool<byte>`, lets LibTiff decode scanlines into that buffer when possible,
+and writes uncompressed TIFF output. Use it to compare the lower bound of
+StackProcessing-owned LibTiff slice IO against `python-skimage-scipy` copy.
+The sibling `stackprocessing-libtiff-strip-copy` backend is stricter and faster:
+it requires one uncompressed strip per slice and uses LibTiff
+`ReadEncodedStrip`/`WriteEncodedStrip` to move a whole slice at a time.
+The `stackprocessing-libtiff-raw-strip-copy` variant is narrower still: it
+requires native-endian uncompressed stripped scalar TIFFs and uses
+`ReadRawStrip`/`WriteRawStrip`, bypassing LibTiff's decoded pixel staging path.
+The `stackprocessing-native-libtiff-raw-strip-copy` backend tests native
+`libtiff` through a tiny fixed-signature C shim in `native-libtiff-shim/`.
+`run_all.sh` builds that shim automatically on macOS/Linux when `pkg-config
+libtiff-4` is available. Windows should use the same shim idea via a proper
+CMake/vcpkg or per-RID native asset path before this graduates beyond
+benchmarking.
+The `stackprocessing-tifflibrary-raw-strip-copy` backend tests the MIT-licensed
+managed TiffLibrary package. It uses TiffLibrary's low-level content reader and
+writer APIs with a rented `ArrayPool<byte>` page buffer, bypassing decoded pixel
+conversion for the same uncompressed scalar raw-copy case.
+The `stackprocessing-imagesharp-copy` backend tests ImageSharp's high-level TIFF
+load/save path with no compression for UInt8 and UInt16 grayscale slices. It is
+included as a compatibility-oriented managed baseline, not as an ArrayPool/raw
+buffer path. ImageSharp uses the Six Labors Split License; ImageSharp 4.0 and
+newer direct dependencies also require a Six Labors license at build time, so
+this benchmark currently pins a 3.x package.
+
 ## Initial Operation Set
 
 The first benchmark set avoids operations that demonstrate StackProcessing-specific mechanics directly. It focuses on common image-analysis tasks:
@@ -122,6 +151,17 @@ bash benchmarks/run_all.sh \
   --repeat 3 \
   --backends python-skimage-scipy \
   --pixel-types UInt8
+```
+
+For the direct uncompressed LibTiff copy baseline against Python:
+
+```bash
+bash benchmarks/run_all.sh \
+  --repeat 3 \
+  --backends stackprocessing-libtiff-raw-strip-copy,python-skimage-scipy \
+  --operations copy \
+  --pixel-types UInt8,UInt16,Float32 \
+  --shapes 256x256x256
 ```
 
 The pixel-type filter is comma-separated, for example `--pixel-types UInt8,Float32`.

@@ -6,21 +6,66 @@ from pathlib import Path
 
 import numpy as np
 import scipy.ndimage as ndi
+import tifffile
 from skimage import io, measure, morphology
 
 
 def parse_args():
     parser = argparse.ArgumentParser(description="scikit-image/SciPy TIFF-stack benchmark backend.")
-    parser.add_argument("--operation", required=True, choices=["copy", "threshold", "convolve", "median", "dilate", "connectedComponents"])
+    parser.add_argument("--operation", required=True, choices=["copy", "threshold", "thresholdKernel", "thresholdKernelInType", "convolve", "median", "dilate", "connectedComponents"])
     parser.add_argument("--pixel-type", required=True, choices=["UInt8", "UInt16", "Float32"])
-    parser.add_argument("--input", required=True)
-    parser.add_argument("--output", required=True)
+    parser.add_argument("--input")
+    parser.add_argument("--output")
+    parser.add_argument("--shape", default="256x256x256")
     parser.add_argument("--radius", type=int, default=1)
     parser.add_argument("--kernel-size", type=int, default=3)
     parser.add_argument("--threshold", type=float, default=128.0)
     parser.add_argument("--window", type=int, default=16)
     parser.add_argument("--mode", choices=["3d", "slice"], default="3d")
     return parser.parse_args()
+
+
+def parse_shape(value):
+    parts = value.lower().split("x")
+    if len(parts) != 3:
+        raise ValueError(f"shape must be WxHxD, got {value!r}")
+    return tuple(int(part) for part in parts)
+
+
+def dtype_for_pixel_type(pixel_type):
+    if pixel_type == "UInt8":
+        return np.uint8
+    if pixel_type == "UInt16":
+        return np.uint16
+    if pixel_type == "Float32":
+        return np.float32
+    raise ValueError(pixel_type)
+
+
+def make_kernel_stack(args):
+    width, height, depth = parse_shape(args.shape)
+    dtype = dtype_for_pixel_type(args.pixel_type)
+    values = np.arange(width * height * depth, dtype=np.uint64)
+    if dtype == np.float32:
+        values = np.mod(values, 256).astype(np.float32)
+    else:
+        values = values.astype(dtype, copy=False)
+    return values.reshape((depth, height, width))
+
+
+def run_threshold_kernel(args):
+    stack = make_kernel_stack(args)
+    start = time.perf_counter()
+    if args.operation == "thresholdKernel":
+        out = (stack >= args.threshold).astype(np.uint8)
+    else:
+        out = (stack >= args.threshold).astype(stack.dtype)
+    elapsed = time.perf_counter() - start
+    if out.size:
+        checksum = int(out.reshape(-1)[0]) + int(out.reshape(-1)[out.size // 2]) + int(out.reshape(-1)[-1])
+        if checksum == -1:
+            print(checksum)
+    write_internal_seconds(elapsed)
 
 
 def read_stack(input_dir):
@@ -37,7 +82,7 @@ def write_stack(paths, output_dir, stack):
     for old in output.glob("*.tif*"):
         old.unlink()
     for z, source_path in enumerate(paths):
-        io.imsave(output / source_path.name, stack[z], check_contrast=False)
+        tifffile.imwrite(output / source_path.name, stack[z], compression=None)
 
 
 def per_slice(stack, func):
@@ -85,6 +130,13 @@ def process(stack, args):
 
 def main():
     args = parse_args()
+    if args.operation in {"thresholdKernel", "thresholdKernelInType"}:
+        run_threshold_kernel(args)
+        return
+
+    if not args.input or not args.output:
+        raise ValueError("--input and --output are required unless using a kernel-only operation")
+
     start = time.perf_counter()
     paths, stack = read_stack(args.input)
     out = process(stack, args)

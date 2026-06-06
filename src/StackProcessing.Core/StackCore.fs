@@ -2,6 +2,8 @@ module StackCore
 
 open SlimPipeline // Core processing model
 open System
+open System.Buffers
+open System.Runtime.CompilerServices
 open System.Runtime.InteropServices
 
 // Whole-slice stages should do their pixel work in managed arrays and cross
@@ -20,8 +22,6 @@ type Slab<'T when 'T: equality> =
     { Image: Image<'T>
       EmitRange: uint * uint }
 
-type ChunkIndex = int * int * int
-
 type ChunkLayout =
     { VolumeSize: uint64 * uint64 * uint64
       ChunkSize: uint64 * uint64 * uint64
@@ -29,96 +29,143 @@ type ChunkLayout =
       PixelType: string
       Components: uint }
 
-type ChunkStorage<'T when 'T: equality> =
-    { Bytes: byte[]
-      ByteLength: int
-      Release: unit -> unit }
+type ChunkIndex = int * int * int
 
 type Chunk<'T when 'T: equality> =
-    { Index: ChunkIndex
-      Origin: uint64 * uint64 * uint64
-      Size: uint64 * uint64 * uint64
-      BufferSize: uint64 * uint64 * uint64
-      Storage: ChunkStorage<'T> }
+    { Size: uint64 * uint64 * uint64
+      Bytes: byte[]
+      ByteLength: int
+      Release: unit -> unit
+      RefCount: int ref }
 
 module Chunk =
-    let inline private volume (width, height, depth) =
-        width * height * depth
-
-    let private elementBytes<'T>() =
-        Image.getBytesPerComponent typeof<'T> |> uint64
-
-    let createOwnedBytes<'T when 'T: equality> index origin size bufferSize (bytes: byte[]) release : Chunk<'T> =
-        let expected = volume bufferSize * elementBytes<'T>()
-        if uint64 bytes.LongLength < expected then
-            invalidArg "bytes" $"Chunk byte buffer length was {bytes.LongLength}, expected at least {expected} for {typeof<'T>.Name}."
-
-        { Index = index
-          Origin = origin
-          Size = size
-          BufferSize = bufferSize
-          Storage = { Bytes = bytes; ByteLength = int expected; Release = release } }
-
-    let createBytes<'T when 'T: equality> index origin size bufferSize (bytes: byte[]) : Chunk<'T> =
-        createOwnedBytes<'T> index origin size bufferSize bytes ignore
-
-    let createOwned index origin size bufferSize (data: 'T[]) release : Chunk<'T> =
-        let byteCount = data.LongLength * int64 (elementBytes<'T>())
-        let bytes = Array.zeroCreate<byte> (int byteCount)
-        Buffer.BlockCopy(data, 0, bytes, 0, bytes.Length)
-        createOwnedBytes<'T> index origin size bufferSize bytes release
-
-    let create index origin size bufferSize (data: 'T[]) : Chunk<'T> =
-        createOwned index origin size bufferSize data ignore
-
-    let bytes chunk =
-        if chunk.Storage.ByteLength = chunk.Storage.Bytes.Length then
-            chunk.Storage.Bytes
-        else
-            chunk.Storage.Bytes[0 .. chunk.Storage.ByteLength - 1]
-
-    let memory chunk =
-        chunk.Storage.Bytes.AsMemory(0, chunk.Storage.ByteLength)
+    let create<'T when 'T: equality> size : Chunk<'T> =
+        let width, height, depth = size
+        let expected = width * height * depth * (Unsafe.SizeOf<'T>() |> uint64)
+        if expected > uint64 Int32.MaxValue then
+            invalidArg "size" $"Chunk byte buffer length must fit in Int32 for ArrayPool<byte>; got {expected}."
+        let bytes = ArrayPool<byte>.Shared.Rent(int expected)
+        { Size = size
+          Bytes = bytes
+          ByteLength = int expected
+          Release = fun () -> ArrayPool<byte>.Shared.Return(bytes)
+          RefCount = ref 1 }
 
     let span<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> (chunk: Chunk<'T>) =
-        MemoryMarshal.Cast<byte, 'T>(chunk.Storage.Bytes.AsSpan(0, chunk.Storage.ByteLength))
+        MemoryMarshal.Cast<byte, 'T>(chunk.Bytes.AsSpan(0, chunk.ByteLength))
 
-    let data<'T when 'T: equality> (chunk: Chunk<'T>) =
-        let elementBytes = elementBytes<'T>() |> int
-        let data = Array.zeroCreate<'T> (chunk.Storage.ByteLength / elementBytes)
-        Buffer.BlockCopy(chunk.Storage.Bytes, 0, data, 0, chunk.Storage.ByteLength)
-        data
+    let incRef chunk =
+        lock chunk.RefCount (fun () ->
+            if chunk.RefCount.Value <= 0 then
+                invalidOp "Cannot increment a released chunk."
+            chunk.RefCount.Value <- chunk.RefCount.Value + 1)
+        chunk
 
-    let release chunk =
-        chunk.Storage.Release()
+    let decRef chunk =
+        let shouldRelease =
+            lock chunk.RefCount (fun () ->
+                chunk.RefCount.Value <- chunk.RefCount.Value - 1
+                if chunk.RefCount.Value = 0 then
+                    true
+                elif chunk.RefCount.Value < 0 then
+                    invalidOp "Chunk.decRef called after the chunk was already released."
+                else
+                    false)
+        if shouldRelease then
+            chunk.Release()
 
-    let validElementCount chunk =
-        volume chunk.Size
-
-    let bufferElementCount chunk =
-        volume chunk.BufferSize
-
-    let inline flatIndex (width: int) (height: int) (x: int) (y: int) (z: int) =
+    let inline toIndex (width: int) (height: int) (x: int) (y: int) (z: int) =
         (z * height + y) * width + x
 
-    let inline flatIndexInBuffer chunk x y z =
-        let width, height, _depth = chunk.BufferSize
-        flatIndex (int width) (int height) x y z
+    let inline ofIndex (width: int) (height: int) (index: int) =
+        let plane = width * height
+        let z = index / plane
+        let remainder = index - z * plane
+        let y = remainder / width
+        let x = remainder - y * width
+        x, y, z
 
-    let map (f: 'T -> 'U) (chunk: Chunk<'T>) =
-        let input = data chunk
-        let output = Array.zeroCreate<'U> input.Length
-
+    let iter (f: 'T -> unit) (chunk: Chunk<'T>) =
+        let inputSpan = span<'T> chunk
         let mutable i = 0
-        while i < input.Length do
-            output[i] <- f input[i]
+        while i < inputSpan.Length do
+            f inputSpan[i]
             i <- i + 1
 
-        create chunk.Index chunk.Origin chunk.Size chunk.BufferSize output
+    let iteri (f: int -> 'T -> unit) (chunk: Chunk<'T>) =
+        let inputSpan = span<'T> chunk
+        let mutable i = 0
+        while i < inputSpan.Length do
+            f i inputSpan[i]
+            i <- i + 1
 
-    let copy chunk =
-        let copied = data chunk |> Array.copy
-        create chunk.Index chunk.Origin chunk.Size chunk.BufferSize copied
+    let mapInto (f: 'T -> 'U) (input: Chunk<'T>) (output: Chunk<'U>) =
+        let inputSpan = span<'T> input
+        let outputSpan = span<'U> output
+        if outputSpan.Length < inputSpan.Length then
+            invalidArg "output" $"Chunk.mapInto output has capacity for {outputSpan.Length} {typeof<'U>.Name} elements, expected at least {inputSpan.Length}."
+
+        let mutable i = 0
+        while i < inputSpan.Length do
+            outputSpan[i] <- f inputSpan[i]
+            i <- i + 1
+
+    let map (f: 'T -> 'U) (chunk: Chunk<'T>) =
+        let output = create<'U> chunk.Size
+        try
+            mapInto f chunk output
+            output
+        with
+        | ex ->
+            decRef output
+            reraise()
+
+    let mapi (f: int -> 'T -> 'U) (chunk: Chunk<'T>) =
+        let inputSpan = span<'T> chunk
+        let output = create<'U> chunk.Size
+        try
+            let outputSpan = span<'U> output
+            let mutable i = 0
+            while i < inputSpan.Length do
+                outputSpan[i] <- f i inputSpan[i]
+                i <- i + 1
+            output
+        with
+        | ex ->
+            decRef output
+            reraise()
+
+    let fold (folder: 'State -> 'T -> 'State) (state: 'State) (chunk: Chunk<'T>) =
+        let inputSpan = span<'T> chunk
+        let mutable acc = state
+        let mutable i = 0
+        while i < inputSpan.Length do
+            acc <- folder acc inputSpan[i]
+            i <- i + 1
+        acc
+
+    let foldi (folder: 'State -> int -> 'T -> 'State) (state: 'State) (chunk: Chunk<'T>) =
+        let inputSpan = span<'T> chunk
+        let mutable acc = state
+        let mutable i = 0
+        while i < inputSpan.Length do
+            acc <- folder acc i inputSpan[i]
+            i <- i + 1
+        acc
+
+    let histogram<'T when 'T: equality and 'T: comparison and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> (chunk: Chunk<'T>) =
+        let values = span<'T> chunk
+        let mutable counts = Map.empty<'T, uint64>
+        let mutable i = 0
+        while i < values.Length do
+            let value = values[i]
+            counts <-
+                counts
+                |> Map.change value (function
+                    | Some count -> Some(count + 1UL)
+                    | None -> Some 1UL)
+            i <- i + 1
+        counts
 
 type Point2D =
     { X: float

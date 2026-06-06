@@ -24,8 +24,6 @@ type ChunkIndex = StackCore.ChunkIndex
 
 type ChunkLayout = StackCore.ChunkLayout
 
-type ChunkStorage<'T when 'T: equality> = StackCore.ChunkStorage<'T>
-
 type Chunk<'T when 'T: equality> = StackCore.Chunk<'T>
 
 type Image<'S when 'S: equality> = Image.Image<'S>
@@ -492,6 +490,17 @@ val writeNexus:
      int ->
      int -> int -> StackCore.Stage<StackCore.Image<'a>,StackCore.Image<'a>>)
     when 'a: equality
+
+val writeNexusSlab:
+  (string ->
+     string ->
+     uint ->
+     uint ->
+     int ->
+     int ->
+     int ->
+     SlimPipeline.Plan<'a,StackCore.Image<'b>> ->
+     SlimPipeline.Plan<'a,StackCore.Image<'b>>) when 'b: equality
 
 val writeChunks:
   (string ->
@@ -1607,4 +1616,3 @@ val permuteAxes:
   (uint * uint * uint ->
      uint -> StackCore.Stage<StackCore.Image<'a>,StackCore.Image<'a>>)
     when 'a: equality
-

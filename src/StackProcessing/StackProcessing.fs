@@ -12,7 +12,6 @@ type Window<'T> = SlimPipeline.Window<'T>
 type Slab<'T when 'T: equality> = StackCore.Slab<'T>
 type ChunkIndex = StackCore.ChunkIndex
 type ChunkLayout = StackCore.ChunkLayout
-type ChunkStorage<'T when 'T: equality> = StackCore.ChunkStorage<'T>
 type Chunk<'T when 'T: equality> = StackCore.Chunk<'T>
 module Chunk = StackCore.Chunk
 //type Slice<'S when 'S: equality> = Slice.Slice<'S>

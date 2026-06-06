@@ -25,4 +25,8 @@
   <ItemGroup Condition="$([MSBuild]::IsOSPlatform('OSX'))">
     <None Include="../../lib/libSimpleITKCSharpNative.dylib" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
+  <ItemGroup>
+    <PackageReference Include="SixLabors.ImageSharp" Version="3.1.11" />
+    <PackageReference Include="TiffLibrary" Version="0.6.65" />
+  </ItemGroup>
 </Project>

@@ -1,4 +1,5 @@
 #include <algorithm>
+#include <array>
 #include <chrono>
 #include <cstdlib>
 #include <cstdint>
@@ -23,11 +24,14 @@
 
 namespace fs = std::filesystem;
 
+static void writeInternalSeconds(std::chrono::duration<double> elapsed);
+
 struct Options {
   std::string operation;
   std::string pixelType;
   fs::path input;
   fs::path output;
+  std::string shape = "256x256x256";
   unsigned radius = 1;
   double threshold = 128.0;
   unsigned kernelSize = 3;
@@ -49,14 +53,32 @@ static Options parseOptions(int argc, char** argv) {
   options.pixelType = argValue(argc, argv, "--pixel-type");
   options.input = argValue(argc, argv, "--input");
   options.output = argValue(argc, argv, "--output");
+  options.shape = argValue(argc, argv, "--shape", "256x256x256");
   options.radius = static_cast<unsigned>(std::stoul(argValue(argc, argv, "--radius", "1")));
   options.threshold = std::stod(argValue(argc, argv, "--threshold", "128"));
   options.kernelSize = static_cast<unsigned>(std::stoul(argValue(argc, argv, "--kernel-size", "3")));
   options.window = static_cast<unsigned>(std::stoul(argValue(argc, argv, "--window", "16")));
-  if (options.operation.empty() || options.pixelType.empty() || options.input.empty() || options.output.empty()) {
-    throw std::runtime_error("required arguments: --operation --pixel-type --input --output");
+  if (options.operation.empty() || options.pixelType.empty()) {
+    throw std::runtime_error("required arguments: --operation --pixel-type");
+  }
+  if (options.operation != "thresholdKernel" && options.operation != "thresholdKernelInType" && (options.input.empty() || options.output.empty())) {
+    throw std::runtime_error("required arguments for IO operations: --input --output");
   }
   return options;
+}
+
+static std::array<unsigned, 3> parseShape(const std::string& shape) {
+  std::array<unsigned, 3> result{};
+  std::size_t start = 0;
+  for (std::size_t i = 0; i < 3; ++i) {
+    const auto end = (i == 2) ? std::string::npos : shape.find('x', start);
+    if (end == std::string::npos && i != 2) {
+      throw std::runtime_error("shape must be WxHxD");
+    }
+    result[i] = static_cast<unsigned>(std::stoul(shape.substr(start, end - start)));
+    start = end + 1;
+  }
+  return result;
 }
 
 template <typename T>
@@ -136,6 +158,35 @@ static typename itk::Image<T, 3>::Pointer readVolume(const std::vector<fs::path>
   return volume;
 }
 
+template <typename T>
+static typename itk::Image<T, 3>::Pointer makeKernelVolume(const std::string& shapeText) {
+  using Image3 = itk::Image<T, 3>;
+  const auto parsed = parseShape(shapeText);
+
+  typename Image3::SizeType volumeSize;
+  volumeSize[0] = parsed[0];
+  volumeSize[1] = parsed[1];
+  volumeSize[2] = parsed[2];
+
+  typename Image3::IndexType volumeStart;
+  volumeStart.Fill(0);
+  typename Image3::RegionType volumeRegion;
+  volumeRegion.SetIndex(volumeStart);
+  volumeRegion.SetSize(volumeSize);
+
+  auto volume = Image3::New();
+  volume->SetRegions(volumeRegion);
+  volume->Allocate();
+
+  const auto pixels = static_cast<std::size_t>(volumeSize[0]) * static_cast<std::size_t>(volumeSize[1]) * static_cast<std::size_t>(volumeSize[2]);
+  T* buffer = volume->GetBufferPointer();
+  for (std::size_t i = 0; i < pixels; ++i) {
+    buffer[i] = static_cast<T>(i & 0xFFu);
+  }
+
+  return volume;
+}
+
 template <typename Image3>
 static void writeVolumeSlices(typename Image3::Pointer volume, const fs::path& output, const std::vector<fs::path>& inputNames) {
   using Image2 = itk::Image<typename Image3::PixelType, 2>;
@@ -200,6 +251,36 @@ static void runTyped(const Options& options) {
   using Image = itk::Image<T, 3>;
   using Mask = itk::Image<std::uint8_t, 3>;
   using Label = itk::Image<std::uint64_t, 3>;
+
+  if (options.operation == "thresholdKernel") {
+    using Threshold = itk::BinaryThresholdImageFilter<Image, Mask>;
+    auto input = makeKernelVolume<T>(options.shape);
+    auto filter = Threshold::New();
+    filter->SetInput(input);
+    filter->SetLowerThreshold(static_cast<T>(options.threshold));
+    filter->SetUpperThreshold(itk::NumericTraits<T>::max());
+    filter->SetInsideValue(1);
+    filter->SetOutsideValue(0);
+    const auto start = std::chrono::steady_clock::now();
+    filter->Update();
+    writeInternalSeconds(std::chrono::steady_clock::now() - start);
+    return;
+  }
+
+  if (options.operation == "thresholdKernelInType") {
+    using Threshold = itk::BinaryThresholdImageFilter<Image, Image>;
+    auto input = makeKernelVolume<T>(options.shape);
+    auto filter = Threshold::New();
+    filter->SetInput(input);
+    filter->SetLowerThreshold(static_cast<T>(options.threshold));
+    filter->SetUpperThreshold(itk::NumericTraits<T>::max());
+    filter->SetInsideValue(static_cast<T>(1));
+    filter->SetOutsideValue(static_cast<T>(0));
+    const auto start = std::chrono::steady_clock::now();
+    filter->Update();
+    writeInternalSeconds(std::chrono::steady_clock::now() - start);
+    return;
+  }
 
   fs::create_directories(options.output);
   for (const auto& entry : fs::directory_iterator(options.output)) {
@@ -323,7 +404,9 @@ int main(int argc, char** argv) {
     } else {
       throw std::runtime_error("unsupported pixel type: " + options.pixelType);
     }
-    writeInternalSeconds(std::chrono::steady_clock::now() - start);
+    if (options.operation != "thresholdKernel" && options.operation != "thresholdKernelInType") {
+      writeInternalSeconds(std::chrono::steady_clock::now() - start);
+    }
     return 0;
   } catch (const std::exception& ex) {
     std::cerr << ex.what() << std::endl;

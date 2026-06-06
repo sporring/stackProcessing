@@ -8,6 +8,7 @@ open System.Runtime.CompilerServices
 open System.Runtime.InteropServices
 open System.Text.Json
 open System.Text.Json.Nodes
+open System.Threading.Tasks
 open BitMiracle.LibTiff.Classic
 open StackProcessing
 open ZarrNET.Core
@@ -45,6 +46,8 @@ Run:
   dotnet run --project benchmarks/StackProcessing.Benchmarks -- run-zarr-direct-copy --pixel-type UInt8|UInt16|Float32 --shape WxHxD --input ZARR --output ZARR
   dotnet run --project benchmarks/StackProcessing.Benchmarks -- run-zarr-direct-threshold --pixel-type UInt8|UInt16|Float32 --shape WxHxD --input ZARR --output ZARR [--threshold X]
   dotnet run --project benchmarks/StackProcessing.Benchmarks -- run-zarr-direct-threshold-raw --pixel-type UInt8|UInt16|Float32 --shape WxHxD --input ZARR --output ZARR [--threshold X]
+  dotnet run --project benchmarks/StackProcessing.Benchmarks -- run-zarr-direct-threshold-intype --pixel-type UInt8|UInt16|Float32 --shape WxHxD --input ZARR --output ZARR [--threshold X]
+  dotnet run --project benchmarks/StackProcessing.Benchmarks -- run-zarr-direct-threshold-hotloop --pixel-type UInt8|UInt16|Float32 --input ZARR --variant byte-mask-one|byte-intype-max|byte-intype-one|typed-intype-max|typed-intype-one|typed-copy-intype-max|typed-copy-intype-one [--iterations N] [--threshold X]
   dotnet run --project benchmarks/StackProcessing.Benchmarks -- run-zarr-chunk-copy --pixel-type UInt8|UInt16|Float32 --shape WxHxD --input ZARR --output ZARR [--available-memory BYTES]
   dotnet run --project benchmarks/StackProcessing.Benchmarks -- run-zarr-readonly --pixel-type UInt8|UInt16|Float32 --input ZARR [--available-memory BYTES]
   dotnet run --project benchmarks/StackProcessing.Benchmarks -- run-zarr-writeonly --pixel-type UInt8|UInt16|Float32 --shape WxHxD --output ZARR [--available-memory BYTES]
@@ -55,6 +58,18 @@ ArrayPool experiment:
   dotnet run --project benchmarks/StackProcessing.Benchmarks -- run-arraypool-slice-reuse --operation copy|threshold --pixel-type UInt8|UInt16|Float32 --input DIR --output DIR [--threshold X]
   dotnet run --project benchmarks/StackProcessing.Benchmarks -- run-byte-slice-reuse --operation copy|threshold --pixel-type UInt8 --input DIR --output DIR [--threshold X]
   dotnet run --project benchmarks/StackProcessing.Benchmarks -- run-byte-float32-slice-reuse --operation copy|threshold --pixel-type Float32 --input DIR --output DIR [--threshold X]
+  dotnet run --project benchmarks/StackProcessing.Benchmarks -- run-libtiff-direct-copy --operation copy --pixel-type UInt8|UInt16|Float32 --input DIR --output DIR
+  dotnet run --project benchmarks/StackProcessing.Benchmarks -- run-libtiff-direct-threshold --operation threshold --pixel-type UInt8|UInt16|Float32 --input DIR --output DIR [--threshold X]
+  dotnet run --project benchmarks/StackProcessing.Benchmarks -- run-libtiff-direct-threshold-intype --operation threshold --pixel-type UInt8|UInt16|Float32 --input DIR --output DIR [--threshold X]
+  dotnet run --project benchmarks/StackProcessing.Benchmarks -- run-libtiff-direct-threshold-hotloop --pixel-type UInt8|UInt16|Float32 --input DIR --variant byte-mask-one|byte-intype-max|byte-intype-one|typed-intype-max|typed-intype-one|typed-copy-intype-max|typed-copy-intype-one [--iterations N] [--threshold X]
+  dotnet run --project benchmarks/StackProcessing.Benchmarks -- run-threshold-kernel --pixel-type UInt8|UInt16|Float32 --shape WxHxD --output-type mask|intype [--threshold X]
+  dotnet run --project benchmarks/StackProcessing.Benchmarks -- run-libtiff-strip-copy --operation copy --pixel-type UInt8|UInt16|Float32 --input DIR --output DIR
+  dotnet run --project benchmarks/StackProcessing.Benchmarks -- run-libtiff-raw-strip-copy --operation copy --pixel-type UInt8|UInt16|Float32 --input DIR --output DIR
+  dotnet run --project benchmarks/StackProcessing.Benchmarks -- run-native-libtiff-raw-strip-copy --operation copy --pixel-type UInt8|UInt16|Float32 --input DIR --output DIR
+  dotnet run --project benchmarks/StackProcessing.Benchmarks -- run-tifflibrary-raw-strip-copy --operation copy --pixel-type UInt8|UInt16|Float32 --input DIR --output DIR
+  dotnet run --project benchmarks/StackProcessing.Benchmarks -- run-imagesharp-copy --operation copy --pixel-type UInt8|UInt16 --input DIR --output DIR
+  dotnet run --project benchmarks/StackProcessing.Benchmarks -- run-libtiff-direct-readonly --pixel-type UInt8|UInt16|Float32 --input DIR
+  dotnet run --project benchmarks/StackProcessing.Benchmarks -- run-libtiff-direct-writeonly --pixel-type UInt8|UInt16|Float32 --input DIR --output DIR
 """
     |> printfn "%s"
     0
@@ -166,6 +181,12 @@ let private scalarTiffLayout<'T> () =
     elif t = typeof<float32> then 32, SampleFormat.IEEEFP, 4
     else
         invalidArg "T" $"ArrayPool benchmark supports UInt8, UInt16, and Float32 TIFF stacks; got {t.Name}."
+
+let private scalarTiffLayoutForPixelType pixelType =
+    match pixelType with
+    | UInt8 -> 8, SampleFormat.UINT, 1
+    | UInt16 -> 16, SampleFormat.UINT, 2
+    | Float32 -> 32, SampleFormat.IEEEFP, 4
 
 let private tiffFieldInt (tiff: Tiff) tag fallback =
     let field = tiff.GetField(tag)
@@ -290,6 +311,515 @@ let private inspectTiffSlice<'T> fileName =
 
     let rowBytes = int width * expectedBytesPerSample
     width, height, rowBytes, max rowBytes (tiff.ScanlineSize())
+
+let private compressionName (compression: Compression) =
+    compression.ToString()
+
+[<Struct; StructLayout(LayoutKind.Sequential)>]
+type private NativeTiffInfo =
+    val mutable Width: uint32
+    val mutable Height: uint32
+    val mutable RowsPerStrip: uint32
+    val mutable Strips: uint32
+    val mutable BitsPerSample: uint16
+    val mutable SampleFormat: uint16
+    val mutable SamplesPerPixel: uint16
+    val mutable PlanarConfig: uint16
+    val mutable Compression: uint16
+    val mutable IsTiled: int32
+    val mutable IsByteSwapped: int32
+    val mutable PageBytes: uint64
+    val mutable RawPageBytes: uint64
+
+module private NativeLibTiff =
+    [<Literal>]
+    let Ok = 0
+
+    [<Literal>]
+    let CompressionNone = 1us
+
+    [<Literal>]
+    let PlanarConfigContig = 1us
+
+    [<Literal>]
+    let SampleFormatUInt = 1us
+
+    [<Literal>]
+    let SampleFormatIeeeFp = 3us
+
+    [<DllImport("sp_libtiff_shim", EntryPoint = "sp_tiff_read_info", CallingConvention = CallingConvention.Cdecl, CharSet = CharSet.Ansi)>]
+    extern int readInfo(string path, NativeTiffInfo& info)
+
+    [<DllImport("sp_libtiff_shim", EntryPoint = "sp_tiff_read_raw_page", CallingConvention = CallingConvention.Cdecl, CharSet = CharSet.Ansi)>]
+    extern int readRawPage(string path, byte[] buffer, UIntPtr capacity, uint64& bytesRead)
+
+    [<DllImport("sp_libtiff_shim", EntryPoint = "sp_tiff_write_raw_page", CallingConvention = CallingConvention.Cdecl, CharSet = CharSet.Ansi)>]
+    extern int writeRawPage(string path, byte[] buffer, UIntPtr count, uint32 width, uint32 height, uint16 bitsPerSample, uint16 sampleFormat)
+
+    let describeStatus status =
+        match status with
+        | 0 -> "ok"
+        | -1 -> "open failed"
+        | -2 -> "missing required field"
+        | -3 -> "unsupported layout"
+        | -4 -> "buffer too small"
+        | -5 -> "I/O failed"
+        | -6 -> "size overflow"
+        | _ -> $"native libtiff shim error {status}"
+
+    let failStatus operation fileName status =
+        invalidOp $"Native libtiff {operation} failed for '{fileName}': {describeStatus status}."
+
+let private scalarNativeTiffLayoutForPixelType pixelType =
+    match pixelType with
+    | UInt8 -> 8us, NativeLibTiff.SampleFormatUInt, 1
+    | UInt16 -> 16us, NativeLibTiff.SampleFormatUInt, 2
+    | Float32 -> 32us, NativeLibTiff.SampleFormatIeeeFp, 4
+
+let private scalarTiffLibraryLayoutForPixelType pixelType =
+    match pixelType with
+    | UInt8 -> 8us, 1us, 1
+    | UInt16 -> 16us, 1us, 2
+    | Float32 -> 32us, 3us, 4
+
+let private awaitTask (task: System.Threading.Tasks.Task<'T>) =
+    task.GetAwaiter().GetResult()
+
+let private awaitUnitTask (task: System.Threading.Tasks.Task) =
+    task.GetAwaiter().GetResult()
+
+let private awaitValueTask (task: ValueTask<'T>) =
+    task.GetAwaiter().GetResult()
+
+let private awaitUnitValueTask (task: ValueTask) =
+    task.GetAwaiter().GetResult()
+
+let private inspectOpenDirectTiffSlice pixelType fileName (tiff: Tiff) =
+    let expectedBits, expectedFormat, expectedBytesPerSample = scalarTiffLayoutForPixelType pixelType
+
+    let width = uint (tiffFieldInt tiff TiffTag.IMAGEWIDTH 0)
+    let height = uint (tiffFieldInt tiff TiffTag.IMAGELENGTH 0)
+    if width = 0u || height = 0u then
+        invalidOp $"TIFF slice '{fileName}' has invalid page dimensions {width}x{height}."
+
+    let bitsPerSample = tiffFieldIntDefaulted tiff TiffTag.BITSPERSAMPLE 1
+    let samplesPerPixel = tiffFieldIntDefaulted tiff TiffTag.SAMPLESPERPIXEL 1
+    if samplesPerPixel <> 1 then
+        invalidOp $"TIFF slice '{fileName}' has {samplesPerPixel} samples per pixel; the direct LibTiff copy benchmark expects scalar images."
+
+    let sampleFormat =
+        tiffFieldIntDefaulted tiff TiffTag.SAMPLEFORMAT (int SampleFormat.UINT)
+        |> enum<SampleFormat>
+
+    if bitsPerSample <> expectedBits || sampleFormat <> expectedFormat then
+        invalidOp $"Input slice '{fileName}' does not match {pixelType}: got {bitsPerSample}-bit {sampleFormat}."
+
+    let compression =
+        tiffFieldIntDefaulted tiff TiffTag.COMPRESSION (int Compression.NONE)
+        |> enum<Compression>
+
+    if compression <> Compression.NONE then
+        invalidOp $"Input slice '{fileName}' is compressed with {compressionName compression}; the direct LibTiff copy benchmark is intentionally uncompressed."
+
+    let rowBytes = int width * expectedBytesPerSample
+    width, height, rowBytes, max rowBytes (tiff.ScanlineSize())
+
+let private inspectOpenStripTiffSlice pixelType fileName (tiff: Tiff) =
+    let width, height, rowBytes, _scanlineSize = inspectOpenDirectTiffSlice pixelType fileName tiff
+    if tiff.IsTiled() then
+        invalidOp $"Input slice '{fileName}' is tiled; the strip LibTiff copy benchmark expects stripped TIFF slices."
+
+    let planarConfig =
+        tiffFieldIntDefaulted tiff TiffTag.PLANARCONFIG (int PlanarConfig.CONTIG)
+        |> enum<PlanarConfig>
+
+    if planarConfig <> PlanarConfig.CONTIG then
+        invalidOp $"Input slice '{fileName}' has planar configuration {planarConfig}; the strip LibTiff copy benchmark expects contiguous scalar images."
+
+    let strips = tiff.NumberOfStrips()
+    if strips < 1 then
+        invalidOp $"Input slice '{fileName}' has no readable strips."
+
+    let rowsPerStrip = uint (tiffFieldIntDefaulted tiff TiffTag.ROWSPERSTRIP (int height))
+    if rowsPerStrip = 0u then
+        invalidOp $"Input slice '{fileName}' has invalid ROWSPERSTRIP=0."
+
+    let stripBytes = tiff.StripSize()
+    let pageBytes = rowBytes * int height
+    if stripBytes <= 0 then
+        invalidOp $"Input slice '{fileName}' has invalid decoded strip size {stripBytes}."
+
+    width, height, rowBytes, pageBytes, strips, stripBytes, rowsPerStrip
+
+let private inspectOpenRawStripTiffSlice pixelType fileName (tiff: Tiff) =
+    let width, height, rowBytes, pageBytes, strips, _stripBytes, rowsPerStrip = inspectOpenStripTiffSlice pixelType fileName tiff
+    if tiff.IsByteSwapped() then
+        invalidOp $"Input slice '{fileName}' has non-native byte order; the raw-strip LibTiff copy benchmark bypasses byte swapping."
+
+    let rawStripSizes =
+        Array.init strips (fun strip ->
+            let size = tiff.RawStripSize(strip)
+            if size <= 0L then
+                invalidOp $"Input slice '{fileName}' has invalid raw strip size {size} for strip {strip}."
+            if size > int64 Int32.MaxValue then
+                invalidOp $"Input slice '{fileName}' has raw strip {strip} larger than Int32.MaxValue bytes."
+            int size)
+
+    let rawPageBytes = rawStripSizes |> Array.sum
+    if rawPageBytes <> pageBytes then
+        invalidOp $"Input slice '{fileName}' has {rawPageBytes} raw strip bytes, expected {pageBytes} decoded bytes for an uncompressed scalar page."
+
+    width, height, rowBytes, pageBytes, strips, rawStripSizes, rowsPerStrip
+
+let private inspectDirectTiffSlice pixelType fileName =
+    use tiff = Tiff.Open(fileName, "r")
+    if isNull tiff then
+        invalidOp $"Could not open '{fileName}' for TIFF reading."
+
+    inspectOpenDirectTiffSlice pixelType fileName tiff
+
+let private readDirectByteTiffSliceInto pixelType fileName expectedWidth expectedHeight expectedRowBytes (pageBuffer: byte[]) (scratch: byte[]) =
+    use tiff = Tiff.Open(fileName, "r")
+    if isNull tiff then
+        invalidOp $"Could not open '{fileName}' for TIFF reading."
+
+    let width, height, rowBytes, scanlineSize = inspectOpenDirectTiffSlice pixelType fileName tiff
+    if width <> expectedWidth || height <> expectedHeight then
+        invalidOp $"Input slice '{fileName}' has shape {width}x{height}, expected {expectedWidth}x{expectedHeight}."
+    if rowBytes <> expectedRowBytes then
+        invalidOp $"Input slice '{fileName}' has {rowBytes} logical bytes per row, expected {expectedRowBytes}."
+    if pageBuffer.Length < rowBytes * int height then
+        invalidArg "pageBuffer" $"Direct TIFF page buffer too small: need {rowBytes * int height}, got {pageBuffer.Length}."
+    if scratch.Length < scanlineSize then
+        invalidArg "scratch" $"Direct TIFF scratch buffer too small: need {scanlineSize}, got {scratch.Length}."
+
+    if scanlineSize <= rowBytes then
+        for row in 0 .. int expectedHeight - 1 do
+            if not (tiff.ReadScanline(pageBuffer, row * rowBytes, row, int16 0)) then
+                invalidOp $"Failed to read TIFF scanline {row} from '{fileName}'."
+    else
+        for row in 0 .. int expectedHeight - 1 do
+            if not (tiff.ReadScanline(scratch, row)) then
+                invalidOp $"Failed to read TIFF scanline {row} from '{fileName}'."
+            Buffer.BlockCopy(scratch, 0, pageBuffer, row * rowBytes, rowBytes)
+
+let private writeDirectByteTiffPage pixelType fileName width height rowBytes (pageBuffer: byte[]) =
+    let bitsPerSample, sampleFormat, bytesPerSample = scalarTiffLayoutForPixelType pixelType
+    if rowBytes <> int width * bytesPerSample then
+        invalidArg "rowBytes" $"Expected {int width * bytesPerSample} row bytes for {pixelType}, got {rowBytes}."
+
+    use tiff = Tiff.Open(fileName, ImageIO.tiffWriteMode fileName)
+    if isNull tiff then
+        invalidOp $"Could not open '{fileName}' for TIFF writing."
+
+    tiff.SetField(TiffTag.IMAGEWIDTH, int width) |> ignore
+    tiff.SetField(TiffTag.IMAGELENGTH, int height) |> ignore
+    tiff.SetField(TiffTag.SAMPLESPERPIXEL, 1) |> ignore
+    tiff.SetField(TiffTag.BITSPERSAMPLE, bitsPerSample) |> ignore
+    tiff.SetField(TiffTag.SAMPLEFORMAT, sampleFormat) |> ignore
+    tiff.SetField(TiffTag.PHOTOMETRIC, Photometric.MINISBLACK) |> ignore
+    tiff.SetField(TiffTag.PLANARCONFIG, PlanarConfig.CONTIG) |> ignore
+    tiff.SetField(TiffTag.ROWSPERSTRIP, int height) |> ignore
+    tiff.SetField(TiffTag.COMPRESSION, Compression.NONE) |> ignore
+
+    for row in 0 .. int height - 1 do
+        if not (tiff.WriteScanline(pageBuffer, row * rowBytes, row, int16 0)) then
+            invalidOp $"Failed to write TIFF scanline {row} to '{fileName}'."
+
+    if not (tiff.WriteDirectory()) then
+        invalidOp $"Failed to write TIFF directory to '{fileName}'."
+
+let private readEncodedStripTiffSliceInto pixelType fileName expectedWidth expectedHeight expectedRowBytes expectedPageBytes expectedStrips (pageBuffer: byte[]) =
+    use tiff = Tiff.Open(fileName, "r")
+    if isNull tiff then
+        invalidOp $"Could not open '{fileName}' for TIFF reading."
+
+    let width, height, rowBytes, pageBytes, strips, stripBytes, _rowsPerStrip = inspectOpenStripTiffSlice pixelType fileName tiff
+    if width <> expectedWidth || height <> expectedHeight then
+        invalidOp $"Input slice '{fileName}' has shape {width}x{height}, expected {expectedWidth}x{expectedHeight}."
+    if rowBytes <> expectedRowBytes || pageBytes <> expectedPageBytes then
+        invalidOp $"Input slice '{fileName}' layout changed: rowBytes={rowBytes}, pageBytes={pageBytes}; expected {expectedRowBytes}, {expectedPageBytes}."
+    if strips <> expectedStrips then
+        invalidOp $"Input slice '{fileName}' has {strips} strips, expected {expectedStrips}."
+    if pageBuffer.Length < pageBytes then
+        invalidArg "pageBuffer" $"Direct TIFF page buffer too small: need {pageBytes}, got {pageBuffer.Length}."
+
+    let mutable offset = 0
+    for strip in 0 .. strips - 1 do
+        let remaining = pageBytes - offset
+        let requested = min stripBytes remaining
+        let bytesRead = tiff.ReadEncodedStrip(strip, pageBuffer, offset, requested)
+        if bytesRead < 0 then
+            invalidOp $"ReadEncodedStrip failed for strip {strip} from '{fileName}'."
+        if bytesRead > remaining then
+            invalidOp $"ReadEncodedStrip read {bytesRead} decoded bytes for strip {strip} from '{fileName}', but only {remaining} bytes remain."
+        offset <- offset + bytesRead
+
+    if offset <> pageBytes then
+        invalidOp $"Decoded strip reads produced {offset} bytes from '{fileName}', expected {pageBytes}."
+
+let private writeEncodedStripTiffPage pixelType fileName width height rowBytes pageBytes strips stripBytes rowsPerStrip (pageBuffer: byte[]) =
+    let bitsPerSample, sampleFormat, bytesPerSample = scalarTiffLayoutForPixelType pixelType
+    if rowBytes <> int width * bytesPerSample then
+        invalidArg "rowBytes" $"Expected {int width * bytesPerSample} row bytes for {pixelType}, got {rowBytes}."
+    if pageBytes <> rowBytes * int height then
+        invalidArg "pageBytes" $"Expected {rowBytes * int height} page bytes for {pixelType}, got {pageBytes}."
+    if strips < 1 then
+        invalidArg "strips" "Expected at least one output strip."
+    if stripBytes < 1 then
+        invalidArg "stripBytes" "Expected positive output strip byte count."
+
+    use tiff = Tiff.Open(fileName, ImageIO.tiffWriteMode fileName)
+    if isNull tiff then
+        invalidOp $"Could not open '{fileName}' for TIFF writing."
+
+    tiff.SetField(TiffTag.IMAGEWIDTH, int width) |> ignore
+    tiff.SetField(TiffTag.IMAGELENGTH, int height) |> ignore
+    tiff.SetField(TiffTag.SAMPLESPERPIXEL, 1) |> ignore
+    tiff.SetField(TiffTag.BITSPERSAMPLE, bitsPerSample) |> ignore
+    tiff.SetField(TiffTag.SAMPLEFORMAT, sampleFormat) |> ignore
+    tiff.SetField(TiffTag.PHOTOMETRIC, Photometric.MINISBLACK) |> ignore
+    tiff.SetField(TiffTag.PLANARCONFIG, PlanarConfig.CONTIG) |> ignore
+    tiff.SetField(TiffTag.ROWSPERSTRIP, int rowsPerStrip) |> ignore
+    tiff.SetField(TiffTag.COMPRESSION, Compression.NONE) |> ignore
+
+    let mutable offset = 0
+    for strip in 0 .. strips - 1 do
+        let remaining = pageBytes - offset
+        let count = min stripBytes remaining
+        let written = tiff.WriteEncodedStrip(strip, pageBuffer, offset, count)
+        if written < 0 then
+            invalidOp $"Failed to write encoded TIFF strip {strip} to '{fileName}'."
+        offset <- offset + count
+
+    if offset <> pageBytes then
+        invalidOp $"Wrote {offset} decoded strip bytes to '{fileName}', expected {pageBytes}."
+
+    if not (tiff.WriteDirectory()) then
+        invalidOp $"Failed to write TIFF directory to '{fileName}'."
+
+let private readRawStripTiffSliceInto pixelType fileName expectedWidth expectedHeight expectedRowBytes expectedPageBytes expectedStrips expectedRawStripSizes (pageBuffer: byte[]) =
+    use tiff = Tiff.Open(fileName, "r")
+    if isNull tiff then
+        invalidOp $"Could not open '{fileName}' for TIFF reading."
+
+    let width, height, rowBytes, pageBytes, strips, rawStripSizes, _rowsPerStrip = inspectOpenRawStripTiffSlice pixelType fileName tiff
+    if width <> expectedWidth || height <> expectedHeight then
+        invalidOp $"Input slice '{fileName}' has shape {width}x{height}, expected {expectedWidth}x{expectedHeight}."
+    if rowBytes <> expectedRowBytes || pageBytes <> expectedPageBytes then
+        invalidOp $"Input slice '{fileName}' layout changed: rowBytes={rowBytes}, pageBytes={pageBytes}; expected {expectedRowBytes}, {expectedPageBytes}."
+    if strips <> expectedStrips then
+        invalidOp $"Input slice '{fileName}' has {strips} strips, expected {expectedStrips}."
+    if rawStripSizes <> expectedRawStripSizes then
+        invalidOp $"Input slice '{fileName}' raw strip layout changed."
+    if pageBuffer.Length < pageBytes then
+        invalidArg "pageBuffer" $"Raw-strip TIFF page buffer too small: need {pageBytes}, got {pageBuffer.Length}."
+
+    let mutable offset = 0
+    for strip in 0 .. strips - 1 do
+        let count = rawStripSizes[strip]
+        let bytesRead = tiff.ReadRawStrip(strip, pageBuffer, offset, count)
+        if bytesRead < 0 then
+            invalidOp $"ReadRawStrip failed for strip {strip} from '{fileName}'."
+        if bytesRead <> count then
+            invalidOp $"ReadRawStrip read {bytesRead} bytes for strip {strip} from '{fileName}', expected {count}."
+        offset <- offset + count
+
+    if offset <> pageBytes then
+        invalidOp $"Raw strip reads produced {offset} bytes from '{fileName}', expected {pageBytes}."
+
+let private writeRawStripTiffPage pixelType fileName width height rowBytes pageBytes (pageBuffer: byte[]) =
+    let bitsPerSample, sampleFormat, bytesPerSample = scalarTiffLayoutForPixelType pixelType
+    if rowBytes <> int width * bytesPerSample then
+        invalidArg "rowBytes" $"Expected {int width * bytesPerSample} row bytes for {pixelType}, got {rowBytes}."
+    if pageBytes <> rowBytes * int height then
+        invalidArg "pageBytes" $"Expected {rowBytes * int height} page bytes for {pixelType}, got {pageBytes}."
+
+    use tiff = Tiff.Open(fileName, ImageIO.tiffWriteMode fileName)
+    if isNull tiff then
+        invalidOp $"Could not open '{fileName}' for TIFF writing."
+
+    tiff.SetField(TiffTag.IMAGEWIDTH, int width) |> ignore
+    tiff.SetField(TiffTag.IMAGELENGTH, int height) |> ignore
+    tiff.SetField(TiffTag.SAMPLESPERPIXEL, 1) |> ignore
+    tiff.SetField(TiffTag.BITSPERSAMPLE, bitsPerSample) |> ignore
+    tiff.SetField(TiffTag.SAMPLEFORMAT, sampleFormat) |> ignore
+    tiff.SetField(TiffTag.PHOTOMETRIC, Photometric.MINISBLACK) |> ignore
+    tiff.SetField(TiffTag.PLANARCONFIG, PlanarConfig.CONTIG) |> ignore
+    tiff.SetField(TiffTag.ROWSPERSTRIP, int height) |> ignore
+    tiff.SetField(TiffTag.COMPRESSION, Compression.NONE) |> ignore
+
+    let written = tiff.WriteRawStrip(0, pageBuffer, 0, pageBytes)
+    if written < 0 then
+        invalidOp $"Failed to write raw TIFF strip to '{fileName}'."
+    if written <> pageBytes then
+        invalidOp $"WriteRawStrip wrote {written} bytes to '{fileName}', expected {pageBytes}."
+
+    if not (tiff.WriteDirectory()) then
+        invalidOp $"Failed to write TIFF directory to '{fileName}'."
+
+let private readNativeTiffInfo pixelType fileName =
+    let mutable info = NativeTiffInfo()
+    let status = NativeLibTiff.readInfo(fileName, &info)
+    if status <> NativeLibTiff.Ok then
+        NativeLibTiff.failStatus "read-info" fileName status
+
+    let expectedBits, expectedSampleFormat, expectedBytesPerSample = scalarNativeTiffLayoutForPixelType pixelType
+    if info.Width = 0u || info.Height = 0u then
+        invalidOp $"Native libtiff saw invalid page dimensions {info.Width}x{info.Height} for '{fileName}'."
+    if info.BitsPerSample <> expectedBits || info.SampleFormat <> expectedSampleFormat then
+        invalidOp $"Native libtiff input slice '{fileName}' does not match {pixelType}: got {info.BitsPerSample}-bit sample-format {info.SampleFormat}."
+    if info.SamplesPerPixel <> 1us then
+        invalidOp $"Native libtiff input slice '{fileName}' has {info.SamplesPerPixel} samples per pixel; expected scalar images."
+    if info.PlanarConfig <> NativeLibTiff.PlanarConfigContig then
+        invalidOp $"Native libtiff input slice '{fileName}' has planar configuration {info.PlanarConfig}; expected contiguous scalar images."
+    if info.Compression <> NativeLibTiff.CompressionNone then
+        invalidOp $"Native libtiff input slice '{fileName}' is compressed with code {info.Compression}; expected uncompressed TIFF."
+    if info.IsTiled <> 0 then
+        invalidOp $"Native libtiff input slice '{fileName}' is tiled; expected stripped TIFF."
+    if info.IsByteSwapped <> 0 then
+        invalidOp $"Native libtiff input slice '{fileName}' has non-native byte order; raw-strip copy bypasses byte swapping."
+    if info.PageBytes <> info.RawPageBytes then
+        invalidOp $"Native libtiff input slice '{fileName}' has {info.RawPageBytes} raw strip bytes but {info.PageBytes} logical page bytes."
+    if info.PageBytes > uint64 Int32.MaxValue then
+        invalidOp $"Native libtiff input slice '{fileName}' has a page larger than Int32.MaxValue bytes."
+
+    let rowBytes = int info.Width * expectedBytesPerSample
+    let expectedPageBytes = rowBytes * int info.Height
+    if uint64 expectedPageBytes <> info.PageBytes then
+        invalidOp $"Native libtiff input slice '{fileName}' has inconsistent page size {info.PageBytes}; expected {expectedPageBytes}."
+
+    info, rowBytes, expectedBytesPerSample
+
+let private readNativeRawTiffSliceInto pixelType fileName expectedWidth expectedHeight expectedRowBytes expectedPageBytes (pageBuffer: byte[]) =
+    let info, rowBytes, _bytesPerSample = readNativeTiffInfo pixelType fileName
+    if info.Width <> expectedWidth || info.Height <> expectedHeight then
+        invalidOp $"Native libtiff input slice '{fileName}' has shape {info.Width}x{info.Height}, expected {expectedWidth}x{expectedHeight}."
+    if rowBytes <> expectedRowBytes || int info.PageBytes <> expectedPageBytes then
+        invalidOp $"Native libtiff input slice '{fileName}' layout changed: rowBytes={rowBytes}, pageBytes={info.PageBytes}; expected {expectedRowBytes}, {expectedPageBytes}."
+    if pageBuffer.Length < expectedPageBytes then
+        invalidArg "pageBuffer" $"Native libtiff page buffer too small: need {expectedPageBytes}, got {pageBuffer.Length}."
+
+    let mutable bytesRead = 0UL
+    let status = NativeLibTiff.readRawPage(fileName, pageBuffer, UIntPtr(uint64 expectedPageBytes), &bytesRead)
+    if status <> NativeLibTiff.Ok then
+        NativeLibTiff.failStatus "read-raw-page" fileName status
+    if bytesRead <> uint64 expectedPageBytes then
+        invalidOp $"Native libtiff read {bytesRead} bytes from '{fileName}', expected {expectedPageBytes}."
+
+let private writeNativeRawTiffPage pixelType fileName width height pageBytes (pageBuffer: byte[]) =
+    let bitsPerSample, sampleFormat, _bytesPerSample = scalarNativeTiffLayoutForPixelType pixelType
+    if pageBuffer.Length < pageBytes then
+        invalidArg "pageBuffer" $"Native libtiff page buffer too small: need {pageBytes}, got {pageBuffer.Length}."
+
+    let status = NativeLibTiff.writeRawPage(fileName, pageBuffer, UIntPtr(uint64 pageBytes), width, height, bitsPerSample, sampleFormat)
+    if status <> NativeLibTiff.Ok then
+        NativeLibTiff.failStatus "write-raw-page" fileName status
+
+let private inspectTiffLibraryTags pixelType (fileName: string) (reader: TiffLibrary.TiffFileReader) (tagReader: TiffLibrary.TiffTagReader) =
+    let expectedBits, expectedSampleFormat, expectedBytesPerSample = scalarTiffLibraryLayoutForPixelType pixelType
+    let width64 = TiffLibrary.TiffTagReaderExtensions.ReadImageWidth(tagReader)
+    let height64 = TiffLibrary.TiffTagReaderExtensions.ReadImageLength(tagReader)
+    if width64 = 0UL || height64 = 0UL || width64 > uint64 Int32.MaxValue || height64 > uint64 Int32.MaxValue then
+        invalidOp $"TiffLibrary saw invalid page dimensions {width64}x{height64} for '{fileName}'."
+
+    let bitsPerSample = TiffLibrary.TiffTagReaderExtensions.ReadBitsPerSample(tagReader).GetFirstOrDefault()
+    let samplesPerPixel = TiffLibrary.TiffTagReaderExtensions.ReadSamplesPerPixel(tagReader)
+    let sampleFormatValues = tagReader.ReadShortField(TiffLibrary.TiffTag.SampleFormat)
+    let sampleFormat = if sampleFormatValues.IsEmpty then 1us else sampleFormatValues.GetFirstOrDefault()
+    let compression = TiffLibrary.TiffTagReaderExtensions.ReadCompression(tagReader)
+    let planarConfig = TiffLibrary.TiffTagReaderExtensions.ReadPlanarConfiguration(tagReader)
+
+    if bitsPerSample <> expectedBits || sampleFormat <> expectedSampleFormat then
+        invalidOp $"TiffLibrary input slice '{fileName}' does not match {pixelType}: got {bitsPerSample}-bit sample-format {sampleFormat}."
+    if samplesPerPixel <> 1us then
+        invalidOp $"TiffLibrary input slice '{fileName}' has {samplesPerPixel} samples per pixel; expected scalar images."
+    if compression <> TiffLibrary.TiffCompression.NoCompression then
+        invalidOp $"TiffLibrary input slice '{fileName}' is compressed with {compression}; expected uncompressed TIFF."
+    if planarConfig <> TiffLibrary.TiffPlanarConfiguration.Chunky then
+        invalidOp $"TiffLibrary input slice '{fileName}' has planar configuration {planarConfig}; expected chunky scalar images."
+    if expectedBytesPerSample > 1 && reader.IsLittleEndian <> BitConverter.IsLittleEndian then
+        invalidOp $"TiffLibrary input slice '{fileName}' has non-native byte order; raw-strip copy bypasses byte swapping."
+
+    let stripOffsets = TiffLibrary.TiffTagReaderExtensions.ReadStripOffsets(tagReader)
+    let stripByteCounts = TiffLibrary.TiffTagReaderExtensions.ReadStripByteCounts(tagReader)
+    if stripOffsets.Count <> stripByteCounts.Count || stripOffsets.Count < 1 then
+        invalidOp $"TiffLibrary input slice '{fileName}' has invalid strip offset/count layout."
+
+    let mutable rawPageBytes64 = 0UL
+    for i in 0 .. stripByteCounts.Count - 1 do
+        rawPageBytes64 <- rawPageBytes64 + stripByteCounts[i]
+
+    let width = uint32 width64
+    let height = uint32 height64
+    let rowBytes = int width * expectedBytesPerSample
+    let pageBytes = rowBytes * int height
+    if rawPageBytes64 <> uint64 pageBytes then
+        invalidOp $"TiffLibrary input slice '{fileName}' has {rawPageBytes64} raw strip bytes but {pageBytes} logical page bytes."
+
+    width, height, rowBytes, pageBytes, stripOffsets, stripByteCounts
+
+let private readTiffLibraryInfo pixelType (fileName: string) =
+    use reader: TiffLibrary.TiffFileReader = TiffLibrary.TiffFileReader.Open(fileName)
+    let ifd = reader.ReadImageFileDirectory()
+    use fieldReader = reader.CreateFieldReader()
+    let tagReader = TiffLibrary.TiffTagReader(fieldReader, ifd)
+    inspectTiffLibraryTags pixelType fileName reader tagReader
+
+let private readTiffLibraryRawSliceInto pixelType (fileName: string) expectedWidth expectedHeight expectedRowBytes expectedPageBytes expectedStrips (pageBuffer: byte[]) =
+    use reader: TiffLibrary.TiffFileReader = TiffLibrary.TiffFileReader.Open(fileName)
+    let ifd = reader.ReadImageFileDirectory()
+    use fieldReader = reader.CreateFieldReader()
+    use contentReader = reader.CreateContentReader()
+    let tagReader = TiffLibrary.TiffTagReader(fieldReader, ifd)
+    let width, height, rowBytes, pageBytes, stripOffsets, stripByteCounts = inspectTiffLibraryTags pixelType fileName reader tagReader
+    if width <> expectedWidth || height <> expectedHeight then
+        invalidOp $"TiffLibrary input slice '{fileName}' has shape {width}x{height}, expected {expectedWidth}x{expectedHeight}."
+    if rowBytes <> expectedRowBytes || pageBytes <> expectedPageBytes then
+        invalidOp $"TiffLibrary input slice '{fileName}' layout changed: rowBytes={rowBytes}, pageBytes={pageBytes}; expected {expectedRowBytes}, {expectedPageBytes}."
+    if stripOffsets.Count <> expectedStrips then
+        invalidOp $"TiffLibrary input slice '{fileName}' has {stripOffsets.Count} strips, expected {expectedStrips}."
+    if pageBuffer.Length < expectedPageBytes then
+        invalidArg "pageBuffer" $"TiffLibrary page buffer too small: need {expectedPageBytes}, got {pageBuffer.Length}."
+
+    let mutable offset = 0
+    for strip in 0 .. stripOffsets.Count - 1 do
+        let byteCount64 = stripByteCounts[strip]
+        if byteCount64 > uint64 Int32.MaxValue then
+            invalidOp $"TiffLibrary input slice '{fileName}' strip {strip} is larger than Int32.MaxValue bytes."
+        let byteCount = int byteCount64
+        let bytesRead = contentReader.Read(TiffLibrary.TiffStreamOffset(int64 stripOffsets[strip]), pageBuffer.AsMemory(offset, byteCount))
+        if bytesRead <> byteCount then
+            invalidOp $"TiffLibrary read {bytesRead} bytes from strip {strip} in '{fileName}', expected {byteCount}."
+        offset <- offset + byteCount
+
+    if offset <> expectedPageBytes then
+        invalidOp $"TiffLibrary raw strip reads produced {offset} bytes from '{fileName}', expected {expectedPageBytes}."
+
+let private writeTiffLibraryRawPage pixelType (fileName: string) width height pageBytes (pageBuffer: byte[]) =
+    let bitsPerSample, sampleFormat, _bytesPerSample = scalarTiffLibraryLayoutForPixelType pixelType
+    if pageBuffer.Length < pageBytes then
+        invalidArg "pageBuffer" $"TiffLibrary page buffer too small: need {pageBytes}, got {pageBuffer.Length}."
+    if pageBytes > Int32.MaxValue then
+        invalidOp $"TiffLibrary output page too large for one standard strip: {pageBytes} bytes."
+
+    use writer: TiffLibrary.TiffFileWriter = TiffLibrary.TiffFileWriter.OpenAsync(fileName, useBigTiff = false) |> awaitTask
+    let stripOffset = writer.WriteAlignedBytesAsync(pageBuffer.AsMemory(0, pageBytes)) |> awaitTask
+    use ifdWriter = writer.CreateImageFileDirectory()
+    ifdWriter.WriteTagAsync(TiffLibrary.TiffTag.ImageWidth, TiffLibrary.TiffValueCollection.Single(uint32 width)) |> awaitUnitValueTask
+    ifdWriter.WriteTagAsync(TiffLibrary.TiffTag.ImageLength, TiffLibrary.TiffValueCollection.Single(uint32 height)) |> awaitUnitValueTask
+    ifdWriter.WriteTagAsync(TiffLibrary.TiffTag.BitsPerSample, TiffLibrary.TiffValueCollection.Single(bitsPerSample)) |> awaitUnitValueTask
+    ifdWriter.WriteTagAsync(TiffLibrary.TiffTag.SampleFormat, TiffLibrary.TiffValueCollection.Single(sampleFormat)) |> awaitUnitValueTask
+    ifdWriter.WriteTagAsync(TiffLibrary.TiffTag.Compression, TiffLibrary.TiffValueCollection.Single(uint16 TiffLibrary.TiffCompression.NoCompression)) |> awaitUnitValueTask
+    ifdWriter.WriteTagAsync(TiffLibrary.TiffTag.PhotometricInterpretation, TiffLibrary.TiffValueCollection.Single(uint16 TiffLibrary.TiffPhotometricInterpretation.BlackIsZero)) |> awaitUnitValueTask
+    ifdWriter.WriteTagAsync(TiffLibrary.TiffTag.SamplesPerPixel, TiffLibrary.TiffValueCollection.Single(1us)) |> awaitUnitValueTask
+    ifdWriter.WriteTagAsync(TiffLibrary.TiffTag.PlanarConfiguration, TiffLibrary.TiffValueCollection.Single(uint16 TiffLibrary.TiffPlanarConfiguration.Chunky)) |> awaitUnitValueTask
+    ifdWriter.WriteTagAsync(TiffLibrary.TiffTag.RowsPerStrip, TiffLibrary.TiffValueCollection.Single(uint32 height)) |> awaitUnitValueTask
+    ifdWriter.WriteTagAsync(TiffLibrary.TiffTag.StripOffsets, TiffLibrary.TiffValueCollection.Single(uint32 stripOffset.Offset)) |> awaitUnitValueTask
+    ifdWriter.WriteTagAsync(TiffLibrary.TiffTag.StripByteCounts, TiffLibrary.TiffValueCollection.Single(uint32 pageBytes)) |> awaitUnitValueTask
+    let ifdOffset = ifdWriter.FlushAsync() |> awaitTask
+    writer.SetFirstImageFileDirectoryOffset(ifdOffset)
+    writer.FlushAsync() |> awaitUnitTask
 
 let private readArrayPoolTiffSliceInto<'T> fileName expectedWidth expectedHeight rowBytes (scanline: byte[]) (slice: PooledVolume<'T>) =
     use tiff = Tiff.Open(fileName, "r")
@@ -763,24 +1293,44 @@ let private bytesPerPixelType pixelType =
     | UInt16 -> 2
     | Float32 -> 4
 
+let private chunkElementBytes<'T>() =
+    match typeof<'T> with
+    | t when t = typeof<byte> -> 1UL
+    | t when t = typeof<uint8> -> 1UL
+    | t when t = typeof<uint16> -> 2UL
+    | t when t = typeof<float32> -> 4UL
+    | t -> invalidArg "T" $"Unsupported benchmark chunk type {t.Name}."
+
+let private createBenchmarkByteChunk<'T when 'T: equality> size (bytes: byte[]) release : Chunk<'T> =
+    let width, height, depth = size
+    let expected = width * height * depth * chunkElementBytes<'T>()
+    if expected > uint64 Int32.MaxValue then
+        invalidArg "size" $"Benchmark chunk byte length must fit in Int32; got {expected}."
+    if uint64 bytes.LongLength < expected then
+        invalidArg "bytes" $"Benchmark chunk byte buffer length was {bytes.LongLength}, expected at least {expected}."
+    { Size = size
+      Bytes = bytes
+      ByteLength = int expected
+      Release = release
+      RefCount = ref 1 }
+
 let private chunkFromDecodedBytes<'T when 'T: equality> (array: ZarrArray) (chunkRef: ZarrChunkRef) (decoded: byte[]) : Chunk<'T> =
-    StackCore.Chunk.createBytes<'T>
-        (zarrChunkIndex chunkRef)
-        (zarrXyzTriple chunkRef.Origin)
-        (zarrXyzTriple chunkRef.Shape)
+    createBenchmarkByteChunk<'T>
         (zarrChunkBufferSize array)
         decoded
+        ignore
 
 let private decodedBytesFromChunk<'T when 'T: equality> (chunk: Chunk<'T>) =
-    StackCore.Chunk.bytes chunk
+    if chunk.ByteLength = chunk.Bytes.Length then
+        chunk.Bytes
+    else
+        chunk.Bytes[0 .. chunk.ByteLength - 1]
 
 let private decodedByteChunk (array: ZarrArray) (chunkRef: ZarrChunkRef) (decoded: byte[]) : Chunk<byte> =
-    StackCore.Chunk.createBytes<byte>
-        (zarrChunkIndex chunkRef)
-        (zarrXyzTriple chunkRef.Origin)
-        (zarrXyzTriple chunkRef.Shape)
+    createBenchmarkByteChunk<byte>
         (zarrChunkBufferSize array)
         decoded
+        ignore
 
 let private validateZarrArrayType (array: ZarrArray) dataType =
     if not (String.Equals(array.Metadata.DataType.TypeString, dataType, StringComparison.OrdinalIgnoreCase)) then
@@ -887,23 +1437,24 @@ let private runZarrDirectCopy opts =
     0
 
 let private thresholdByteChunkSimdInto (thresholdValue: double) (input: Chunk<byte>) (output: byte[]) =
-    let inputData = StackCore.Chunk.bytes input
+    let inputData = input.Bytes
+    let inputLength = input.ByteLength
     let threshold = byte (Math.Clamp(Math.Ceiling(thresholdValue), 0.0, 255.0))
     let thresholdVector = Vector<byte>(threshold)
-    let oneVector = Vector<byte>(1uy)
+    let onVector = Vector<byte>(1uy)
     let width = Vector<byte>.Count
     let mutable i = 0
-    let vectorLimit = inputData.Length - (inputData.Length % width)
+    let vectorLimit = inputLength - (inputLength % width)
     while i < vectorLimit do
         let values = Vector<byte>(inputData, i)
         let mask = Vector.GreaterThanOrEqual(values, thresholdVector)
-        Vector.BitwiseAnd(mask, oneVector).CopyTo(output, i)
+        Vector.BitwiseAnd(mask, onVector).CopyTo(output, i)
         i <- i + width
 
-    while i < inputData.Length do
+    while i < inputLength do
         output[i] <- if inputData[i] >= threshold then 1uy else 0uy
         i <- i + 1
-    inputData.Length
+    inputLength
 
 let private thresholdUInt16ChunkToByteInto (thresholdValue: double) (input: Chunk<uint16>) (output: byte[]) =
     let values: Span<uint16> = StackCore.Chunk.span input
@@ -933,10 +1484,7 @@ let private thresholdDecodedChunkToPooledByteChunk (pixelType: PixelType) (thres
     let outputChunk written =
         if written <> outputLength then
             failwith $"Threshold wrote {written} bytes, expected {outputLength}."
-        StackCore.Chunk.createOwnedBytes<byte>
-            (zarrChunkIndex chunkRef)
-            (zarrXyzTriple chunkRef.Origin)
-            (zarrXyzTriple chunkRef.Shape)
+        createBenchmarkByteChunk<byte>
             (zarrChunkBufferSize array)
             output
             (fun () -> ArrayPool<byte>.Shared.Return(output))
@@ -972,6 +1520,307 @@ let private thresholdUInt8DecodedBytesSimdInto (thresholdValue: double) (input: 
         i <- i + 1
     input.Length
 
+let private thresholdUInt8PageMaxSimdInto (thresholdValue: double) inputLength (input: byte[]) (output: byte[]) =
+    let threshold = byte (Math.Clamp(Math.Ceiling(thresholdValue), 0.0, 255.0))
+    let thresholdVector = Vector<byte>(threshold)
+    let width = Vector<byte>.Count
+    let mutable i = 0
+    let vectorLimit = inputLength - (inputLength % width)
+    while i < vectorLimit do
+        let values = Vector<byte>(input, i)
+        Vector.GreaterThanOrEqual(values, thresholdVector).CopyTo(output, i)
+        i <- i + width
+
+    while i < inputLength do
+        output[i] <- if input[i] >= threshold then 255uy else 0uy
+        i <- i + 1
+
+[<MethodImpl(MethodImplOptions.AggressiveOptimization)>]
+let private thresholdUInt8PageSimdInto (thresholdValue: double) inputLength (input: byte[]) (output: byte[]) =
+    let threshold = byte (Math.Clamp(Math.Ceiling(thresholdValue), 0.0, 255.0))
+    let thresholdVector = Vector<byte>(threshold)
+    let onVector = Vector<byte>(1uy)
+    let width = Vector<byte>.Count
+    let mutable i = 0
+    let vectorLimit = inputLength - (inputLength % width)
+    while i < vectorLimit do
+        let values = Vector<byte>(input, i)
+        let mask = Vector.GreaterThanOrEqual(values, thresholdVector)
+        Vector.BitwiseAnd(mask, onVector).CopyTo(output, i)
+        i <- i + width
+
+    while i < inputLength do
+        output[i] <- if input[i] >= threshold then 1uy else 0uy
+        i <- i + 1
+
+[<MethodImpl(MethodImplOptions.AggressiveOptimization)>]
+let private thresholdUInt16PageSimdInto (thresholdValue: double) inputLength (input: byte[]) (output: byte[]) =
+    let pixels = inputLength / sizeof<uint16>
+    let values = MemoryMarshal.Cast<byte, uint16>(input.AsSpan(0, inputLength))
+    let threshold = uint16 (Math.Clamp(Math.Ceiling(thresholdValue), 0.0, float UInt16.MaxValue))
+    let thresholdVector = Vector<uint16>(threshold)
+    let onVector = Vector<uint16>(1us)
+    let vectorWidth = Vector<uint16>.Count
+    let mutable i = 0
+    while i <= pixels - (2 * vectorWidth) do
+        let loMask =
+            Vector.BitwiseAnd(
+                Vector.GreaterThanOrEqual(Vector<uint16>(values.Slice(i, vectorWidth)), thresholdVector),
+                onVector)
+        let hiMask =
+            Vector.BitwiseAnd(
+                Vector.GreaterThanOrEqual(Vector<uint16>(values.Slice(i + vectorWidth, vectorWidth)), thresholdVector),
+                onVector)
+        Vector.Narrow(loMask, hiMask).CopyTo(output, i)
+        i <- i + (2 * vectorWidth)
+
+    while i < pixels do
+        output[i] <- if values[i] >= threshold then 1uy else 0uy
+        i <- i + 1
+
+[<MethodImpl(MethodImplOptions.AggressiveOptimization)>]
+let private thresholdFloat32PageSimdInto (thresholdValue: double) inputLength (input: byte[]) (output: byte[]) =
+    let pixels = inputLength / sizeof<float32>
+    let values = MemoryMarshal.Cast<byte, float32>(input.AsSpan(0, inputLength))
+    let threshold = float32 thresholdValue
+    let mutable i = 0
+    while i < pixels do
+        output[i] <- if values[i] >= threshold then 1uy else 0uy
+        i <- i + 1
+
+let private thresholdDirectPageSimdInto pixelType thresholdValue inputLength input output =
+    match pixelType with
+    | UInt8 -> thresholdUInt8PageSimdInto thresholdValue inputLength input output
+    | UInt16 -> thresholdUInt16PageSimdInto thresholdValue inputLength input output
+    | Float32 -> thresholdFloat32PageSimdInto thresholdValue inputLength input output
+
+let private thresholdUInt8PageInTypeSimdInto (thresholdValue: double) inputLength (input: byte[]) (output: byte[]) =
+    thresholdUInt8PageSimdInto thresholdValue inputLength input output
+
+[<MethodImpl(MethodImplOptions.AggressiveOptimization)>]
+let private thresholdUInt16PageInTypeMaxSimdInto (thresholdValue: double) inputLength (input: byte[]) (output: byte[]) =
+    let pixels = inputLength / sizeof<uint16>
+    let values = MemoryMarshal.Cast<byte, uint16>(input.AsSpan(0, inputLength))
+    let result = MemoryMarshal.Cast<byte, uint16>(output.AsSpan(0, inputLength))
+    let threshold = uint16 (Math.Clamp(Math.Ceiling(thresholdValue), 0.0, float UInt16.MaxValue))
+    let thresholdVector = Vector<uint16>(threshold)
+    let width = Vector<uint16>.Count
+    let mutable i = 0
+    let vectorLimit = pixels - (pixels % width)
+    while i < vectorLimit do
+        let mask = Vector.GreaterThanOrEqual(Vector<uint16>(values.Slice(i, width)), thresholdVector)
+        mask.CopyTo(result.Slice(i, width))
+        i <- i + width
+
+    while i < pixels do
+        result[i] <- if values[i] >= threshold then UInt16.MaxValue else 0us
+        i <- i + 1
+
+[<MethodImpl(MethodImplOptions.AggressiveOptimization)>]
+let private thresholdUInt16PageInTypeSimdInto (thresholdValue: double) inputLength (input: byte[]) (output: byte[]) =
+    let pixels = inputLength / sizeof<uint16>
+    let values = MemoryMarshal.Cast<byte, uint16>(input.AsSpan(0, inputLength))
+    let result = MemoryMarshal.Cast<byte, uint16>(output.AsSpan(0, inputLength))
+    let threshold = uint16 (Math.Clamp(Math.Ceiling(thresholdValue), 0.0, float UInt16.MaxValue))
+    let thresholdVector = Vector<uint16>(threshold)
+    let onVector = Vector<uint16>(1us)
+    let width = Vector<uint16>.Count
+    let mutable i = 0
+    let vectorLimit = pixels - (pixels % width)
+    while i < vectorLimit do
+        let mask =
+            Vector.BitwiseAnd(
+                Vector.GreaterThanOrEqual(Vector<uint16>(values.Slice(i, width)), thresholdVector),
+                onVector)
+        mask.CopyTo(result.Slice(i, width))
+        i <- i + width
+
+    while i < pixels do
+        result[i] <- if values[i] >= threshold then 1us else 0us
+        i <- i + 1
+
+[<MethodImpl(MethodImplOptions.AggressiveOptimization)>]
+let private thresholdFloat32PageInTypeMaxVectorInto (thresholdValue: double) inputLength (input: byte[]) (output: byte[]) =
+    let pixels = inputLength / sizeof<float32>
+    let values = MemoryMarshal.Cast<byte, float32>(input.AsSpan(0, inputLength))
+    let result = MemoryMarshal.Cast<byte, float32>(output.AsSpan(0, inputLength))
+    let threshold = float32 thresholdValue
+    let thresholdVector = Vector<float32>(threshold)
+    let trueVector = Vector<float32>(-1.0f)
+    let falseVector = Vector<float32>(0.0f)
+    let width = Vector<float32>.Count
+    let mutable i = 0
+    let vectorLimit = pixels - (pixels % width)
+    while i < vectorLimit do
+        let valuesVector = Vector<float32>(values.Slice(i, width))
+        let mask = Vector.GreaterThanOrEqual(valuesVector, thresholdVector)
+        Vector.ConditionalSelect(mask, trueVector, falseVector).CopyTo(result.Slice(i, width))
+        i <- i + width
+
+    while i < pixels do
+        result[i] <- if values[i] >= threshold then -1.0f else 0.0f
+        i <- i + 1
+
+[<MethodImpl(MethodImplOptions.AggressiveOptimization)>]
+let private thresholdFloat32PageInTypeOneVectorInto (thresholdValue: double) inputLength (input: byte[]) (output: byte[]) =
+    let pixels = inputLength / sizeof<float32>
+    let values = MemoryMarshal.Cast<byte, float32>(input.AsSpan(0, inputLength))
+    let result = MemoryMarshal.Cast<byte, float32>(output.AsSpan(0, inputLength))
+    let threshold = float32 thresholdValue
+    let thresholdVector = Vector<float32>(threshold)
+    let trueVector = Vector<float32>(1.0f)
+    let falseVector = Vector<float32>(0.0f)
+    let width = Vector<float32>.Count
+    let mutable i = 0
+    let vectorLimit = pixels - (pixels % width)
+    while i < vectorLimit do
+        let valuesVector = Vector<float32>(values.Slice(i, width))
+        let mask = Vector.GreaterThanOrEqual(valuesVector, thresholdVector)
+        Vector.ConditionalSelect(mask, trueVector, falseVector).CopyTo(result.Slice(i, width))
+        i <- i + width
+
+    while i < pixels do
+        result[i] <- if values[i] >= threshold then 1.0f else 0.0f
+        i <- i + 1
+
+[<MethodImpl(MethodImplOptions.AggressiveOptimization)>]
+let private thresholdFloat32PageInTypeInto (thresholdValue: double) inputLength (input: byte[]) (output: byte[]) =
+    let pixels = inputLength / sizeof<float32>
+    let values = MemoryMarshal.Cast<byte, float32>(input.AsSpan(0, inputLength))
+    let result = MemoryMarshal.Cast<byte, float32>(output.AsSpan(0, inputLength))
+    let threshold = float32 thresholdValue
+    let mutable i = 0
+    while i < pixels do
+        result[i] <- if values[i] >= threshold then 1.0f else 0.0f
+        i <- i + 1
+
+let private thresholdDirectPageInTypeInto pixelType thresholdValue inputLength input output =
+    match pixelType with
+    | UInt8 -> thresholdUInt8PageInTypeSimdInto thresholdValue inputLength input output
+    | UInt16 -> thresholdUInt16PageInTypeSimdInto thresholdValue inputLength input output
+    | Float32 -> thresholdFloat32PageInTypeInto thresholdValue inputLength input output
+
+[<MethodImpl(MethodImplOptions.AggressiveOptimization)>]
+let private thresholdTypedUInt8MaxVector (thresholdValue: double) length (input: byte[]) (output: byte[]) =
+    thresholdUInt8PageMaxSimdInto thresholdValue length input output
+
+[<MethodImpl(MethodImplOptions.AggressiveOptimization)>]
+let private thresholdTypedUInt8OneVector (thresholdValue: double) length (input: byte[]) (output: byte[]) =
+    thresholdUInt8PageSimdInto thresholdValue length input output
+
+[<MethodImpl(MethodImplOptions.AggressiveOptimization)>]
+let private thresholdTypedUInt16MaxVector (thresholdValue: double) length (input: uint16[]) (output: uint16[]) =
+    let threshold = uint16 (Math.Clamp(Math.Ceiling(thresholdValue), 0.0, float UInt16.MaxValue))
+    let thresholdVector = Vector<uint16>(threshold)
+    let width = Vector<uint16>.Count
+    let mutable i = 0
+    let vectorLimit = length - (length % width)
+    while i < vectorLimit do
+        Vector.GreaterThanOrEqual(Vector<uint16>(input, i), thresholdVector).CopyTo(output, i)
+        i <- i + width
+    while i < length do
+        output[i] <- if input[i] >= threshold then UInt16.MaxValue else 0us
+        i <- i + 1
+
+[<MethodImpl(MethodImplOptions.AggressiveOptimization)>]
+let private thresholdTypedUInt16OneVector (thresholdValue: double) length (input: uint16[]) (output: uint16[]) =
+    let threshold = uint16 (Math.Clamp(Math.Ceiling(thresholdValue), 0.0, float UInt16.MaxValue))
+    let thresholdVector = Vector<uint16>(threshold)
+    let oneVector = Vector<uint16>(1us)
+    let width = Vector<uint16>.Count
+    let mutable i = 0
+    let vectorLimit = length - (length % width)
+    while i < vectorLimit do
+        let mask = Vector.GreaterThanOrEqual(Vector<uint16>(input, i), thresholdVector)
+        Vector.BitwiseAnd(mask, oneVector).CopyTo(output, i)
+        i <- i + width
+    while i < length do
+        output[i] <- if input[i] >= threshold then 1us else 0us
+        i <- i + 1
+
+[<MethodImpl(MethodImplOptions.AggressiveOptimization)>]
+let private thresholdTypedFloat32MaxVector (thresholdValue: double) length (input: float32[]) (output: float32[]) =
+    let threshold = float32 thresholdValue
+    let thresholdVector = Vector<float32>(threshold)
+    let trueVector = Vector<float32>(-1.0f)
+    let falseVector = Vector<float32>(0.0f)
+    let width = Vector<float32>.Count
+    let mutable i = 0
+    let vectorLimit = length - (length % width)
+    while i < vectorLimit do
+        let mask = Vector.GreaterThanOrEqual(Vector<float32>(input, i), thresholdVector)
+        Vector.ConditionalSelect(mask, trueVector, falseVector).CopyTo(output, i)
+        i <- i + width
+    while i < length do
+        output[i] <- if input[i] >= threshold then -1.0f else 0.0f
+        i <- i + 1
+
+[<MethodImpl(MethodImplOptions.AggressiveOptimization)>]
+let private thresholdTypedFloat32OneVector (thresholdValue: double) length (input: float32[]) (output: float32[]) =
+    let threshold = float32 thresholdValue
+    let thresholdVector = Vector<float32>(threshold)
+    let trueVector = Vector<float32>(1.0f)
+    let falseVector = Vector<float32>(0.0f)
+    let width = Vector<float32>.Count
+    let mutable i = 0
+    let vectorLimit = length - (length % width)
+    while i < vectorLimit do
+        let mask = Vector.GreaterThanOrEqual(Vector<float32>(input, i), thresholdVector)
+        Vector.ConditionalSelect(mask, trueVector, falseVector).CopyTo(output, i)
+        i <- i + width
+    while i < length do
+        output[i] <- if input[i] >= threshold then 1.0f else 0.0f
+        i <- i + 1
+
+let private fillThresholdKernelInput pixelType inputLength (input: byte[]) =
+    match pixelType with
+    | UInt8 ->
+        for i in 0 .. inputLength - 1 do
+            input[i] <- byte (i &&& 0xFF)
+    | UInt16 ->
+        let values = MemoryMarshal.Cast<byte, uint16>(input.AsSpan(0, inputLength))
+        for i in 0 .. values.Length - 1 do
+            values[i] <- uint16 (i &&& 0xFFFF)
+    | Float32 ->
+        let values = MemoryMarshal.Cast<byte, float32>(input.AsSpan(0, inputLength))
+        for i in 0 .. values.Length - 1 do
+            values[i] <- float32 (i &&& 0xFF)
+
+let private runThresholdKernel opts =
+    let pixelType = require "pixel-type" opts |> parsePixelType
+    let shape = require "shape" opts |> parseShape
+    let outputType = optional "output-type" "mask" opts
+    let thresholdValue = optional "threshold" "128" opts |> fun s -> Double.Parse(s, invariant)
+    let pixels = int shape.Width * int shape.Height * int shape.Depth
+    let _bitsPerSample, _sampleFormat, bytesPerSample = scalarTiffLayoutForPixelType pixelType
+    let inputLength = pixels * bytesPerSample
+    let outputLength =
+        match outputType with
+        | "mask" -> pixels
+        | "intype" -> inputLength
+        | other -> invalidArg "output-type" $"Expected output-type mask or intype; got '{other}'."
+
+    let input = ArrayPool<byte>.Shared.Rent(inputLength)
+    let output = ArrayPool<byte>.Shared.Rent(outputLength)
+    try
+        fillThresholdKernelInput pixelType inputLength input
+        let stopwatch = Stopwatch.StartNew()
+        match outputType with
+        | "mask" -> thresholdDirectPageSimdInto pixelType thresholdValue inputLength input output
+        | "intype" -> thresholdDirectPageInTypeInto pixelType thresholdValue inputLength input output
+        | _ -> ()
+        stopwatch.Stop()
+        writeInternalSeconds stopwatch.Elapsed
+        let mutable checksum = 0
+        if outputLength > 0 then
+            checksum <- checksum + int output[0] + int output[outputLength / 2] + int output[outputLength - 1]
+        if checksum = Int32.MinValue then
+            printfn "%d" checksum
+        0
+    finally
+        ArrayPool<byte>.Shared.Return(output)
+        ArrayPool<byte>.Shared.Return(input)
+
 let private thresholdUInt16DecodedBytesInto (thresholdValue: double) (input: byte[]) (output: byte[]) =
     let values = MemoryMarshal.Cast<byte, uint16>(input.AsSpan())
     let threshold = uint16 (Math.Clamp(Math.Ceiling(thresholdValue), 0.0, float UInt16.MaxValue))
@@ -1006,6 +1855,14 @@ let private thresholdDecodedBytesToPooledByteMemoryRaw (pixelType: PixelType) (t
         failwith $"Raw threshold wrote {written} bytes, expected {outputLength}."
     output, outputLength
 
+let private thresholdDecodedBytesToPooledInTypeMemory (pixelType: PixelType) (thresholdValue: double) (decoded: byte[]) =
+    let output = ArrayPool<byte>.Shared.Rent(decoded.Length)
+    match pixelType with
+    | UInt8 -> thresholdUInt8PageSimdInto thresholdValue decoded.Length decoded output
+    | UInt16 -> thresholdUInt16PageInTypeSimdInto thresholdValue decoded.Length decoded output
+    | Float32 -> thresholdFloat32PageInTypeOneVectorInto thresholdValue decoded.Length decoded output
+    output, decoded.Length
+
 let private runZarrDirectThreshold opts =
     let pixelType = require "pixel-type" opts |> parsePixelType
     let shape = require "shape" opts |> parseShape
@@ -1034,10 +1891,50 @@ let private runZarrDirectThreshold opts =
             let thresholded =
                 thresholdDecodedChunkToPooledByteChunk pixelType thresholdValue inputArray inputChunk decoded
             try
-                outputArray.WriteChunkDecodedAsync(outputChunk, StackCore.Chunk.memory thresholded, Threading.CancellationToken.None)
+                outputArray.WriteChunkDecodedAsync(outputChunk, thresholded.Bytes.AsMemory(0, thresholded.ByteLength), Threading.CancellationToken.None)
                 |> runUnitTask
             finally
-                StackCore.Chunk.release thresholded
+                StackCore.Chunk.decRef thresholded
+    finally
+        writer.DisposeAsync().AsTask()
+        |> runUnitTask
+
+    stopwatch.Stop()
+    writeInternalSeconds stopwatch.Elapsed
+    0
+
+let private runZarrDirectThresholdInType opts =
+    let pixelType = require "pixel-type" opts |> parsePixelType
+    let shape = require "shape" opts |> parseShape
+    let input = require "input" opts
+    let output = require "output" opts
+    let thresholdValue = optional "threshold" "128" opts |> fun s -> Double.Parse(s, invariant)
+
+    ensureCleanDirectory output
+
+    let stopwatch = Stopwatch.StartNew()
+    let inputArray = openZarrArray input
+    let dataType = zarrDataType pixelType
+    validateZarrArrayType inputArray dataType
+
+    let writer = createOmeZarrWriter output dataType shape
+    alignOutputZarrCodecsWithInput input output
+
+    try
+        let outputArray = openZarrArray output
+        let outputChunks = zarrChunkLookup outputArray
+        for inputChunk in collectZarrChunks inputArray do
+            let outputChunk = outputChunks[zarrChunkCoordKey inputChunk]
+            let decoded =
+                inputArray.ReadChunkDecodedAsync(inputChunk, Threading.CancellationToken.None)
+                |> runTask
+            let thresholded, thresholdedLength =
+                thresholdDecodedBytesToPooledInTypeMemory pixelType thresholdValue decoded
+            try
+                outputArray.WriteChunkDecodedAsync(outputChunk, thresholded.AsMemory(0, thresholdedLength), Threading.CancellationToken.None)
+                |> runUnitTask
+            finally
+                ArrayPool<byte>.Shared.Return(thresholded)
     finally
         writer.DisposeAsync().AsTask()
         |> runUnitTask
@@ -1496,6 +2393,812 @@ let private runByteFloat32SliceReuse opts =
         outputPage |> Option.iter ArrayPool<byte>.Shared.Return
         ArrayPool<byte>.Shared.Return(inputPage)
 
+let private runLibTiffDirectCopy opts =
+    let operation = require "operation" opts
+    let pixelType = require "pixel-type" opts |> parsePixelType
+    let input = require "input" opts
+    let output = require "output" opts
+
+    if operation <> "copy" then
+        failwith $"Direct LibTiff backend is intentionally copy-only; got '{operation}'."
+
+    let stopwatch = Stopwatch.StartNew()
+    let files = stackTiffFiles input
+    if files.Length = 0 then
+        invalidOp $"No TIFF files found in input stack directory: {input}"
+
+    let width, height, rowBytes, scanlineSize = inspectDirectTiffSlice pixelType files[0]
+    let pageBytes = rowBytes * int height
+    let page = ArrayPool<byte>.Shared.Rent(pageBytes)
+    let scratch = ArrayPool<byte>.Shared.Rent(scanlineSize)
+
+    ensureCleanDirectory output
+    try
+        for i in 0 .. files.Length - 1 do
+            readDirectByteTiffSliceInto pixelType files[i] width height rowBytes page scratch
+            writeDirectByteTiffPage pixelType (outputFile output i) width height rowBytes page
+
+        stopwatch.Stop()
+        writeInternalSeconds stopwatch.Elapsed
+        0
+    finally
+        ArrayPool<byte>.Shared.Return(scratch)
+        ArrayPool<byte>.Shared.Return(page)
+
+let private runLibTiffDirectThreshold opts =
+    let operation = require "operation" opts
+    let pixelType = require "pixel-type" opts |> parsePixelType
+    let input = require "input" opts
+    let output = require "output" opts
+    let thresholdValue = optional "threshold" "128" opts |> fun s -> Double.Parse(s, invariant)
+
+    if operation <> "threshold" then
+        failwith $"Direct LibTiff threshold backend is intentionally threshold-only; got '{operation}'."
+
+    let stopwatch = Stopwatch.StartNew()
+    let files = stackTiffFiles input
+    if files.Length = 0 then
+        invalidOp $"No TIFF files found in input stack directory: {input}"
+
+    let width, height, rowBytes, scanlineSize = inspectDirectTiffSlice pixelType files[0]
+    let pageBytes = rowBytes * int height
+    let maskBytes = int width * int height
+    let page = ArrayPool<byte>.Shared.Rent(pageBytes)
+    let scratch = ArrayPool<byte>.Shared.Rent(scanlineSize)
+    let mask = ArrayPool<byte>.Shared.Rent(maskBytes)
+
+    ensureCleanDirectory output
+    try
+        for i in 0 .. files.Length - 1 do
+            readDirectByteTiffSliceInto pixelType files[i] width height rowBytes page scratch
+            thresholdDirectPageSimdInto pixelType thresholdValue pageBytes page mask
+            writeDirectByteTiffPage UInt8 (outputFile output i) width height (int width) mask
+
+        stopwatch.Stop()
+        writeInternalSeconds stopwatch.Elapsed
+        0
+    finally
+        ArrayPool<byte>.Shared.Return(mask)
+        ArrayPool<byte>.Shared.Return(scratch)
+        ArrayPool<byte>.Shared.Return(page)
+
+let private runLibTiffDirectThresholdInType opts =
+    let operation = require "operation" opts
+    let pixelType = require "pixel-type" opts |> parsePixelType
+    let input = require "input" opts
+    let output = require "output" opts
+    let thresholdValue = optional "threshold" "128" opts |> fun s -> Double.Parse(s, invariant)
+
+    if operation <> "threshold" then
+        failwith $"Direct LibTiff in-type threshold backend is intentionally threshold-only; got '{operation}'."
+
+    let stopwatch = Stopwatch.StartNew()
+    let files = stackTiffFiles input
+    if files.Length = 0 then
+        invalidOp $"No TIFF files found in input stack directory: {input}"
+
+    let width, height, rowBytes, scanlineSize = inspectDirectTiffSlice pixelType files[0]
+    let pageBytes = rowBytes * int height
+    let page = ArrayPool<byte>.Shared.Rent(pageBytes)
+    let outputPage = ArrayPool<byte>.Shared.Rent(pageBytes)
+    let scratch = ArrayPool<byte>.Shared.Rent(scanlineSize)
+
+    ensureCleanDirectory output
+    try
+        for i in 0 .. files.Length - 1 do
+            readDirectByteTiffSliceInto pixelType files[i] width height rowBytes page scratch
+            thresholdDirectPageInTypeInto pixelType thresholdValue pageBytes page outputPage
+            writeDirectByteTiffPage pixelType (outputFile output i) width height rowBytes outputPage
+
+        stopwatch.Stop()
+        writeInternalSeconds stopwatch.Elapsed
+        0
+    finally
+        ArrayPool<byte>.Shared.Return(scratch)
+        ArrayPool<byte>.Shared.Return(outputPage)
+        ArrayPool<byte>.Shared.Return(page)
+
+let private runTimedHotLoop iterations (action: unit -> unit) (checksum: unit -> int) =
+    action()
+    GC.Collect()
+    GC.WaitForPendingFinalizers()
+    GC.Collect()
+    let stopwatch = Stopwatch.StartNew()
+    for _ in 1 .. iterations do
+        action()
+    stopwatch.Stop()
+    let checksumValue = checksum()
+    if checksumValue = Int32.MinValue then
+        printfn "%d" checksumValue
+    writeInternalSeconds stopwatch.Elapsed
+    printfn "totalSeconds=%s perIterationSeconds=%s checksum=%d" (stopwatch.Elapsed.TotalSeconds.ToString("F9", invariant)) ((stopwatch.Elapsed.TotalSeconds / float iterations).ToString("F9", invariant)) checksumValue
+    0
+
+let private runLibTiffDirectThresholdHotLoop opts =
+    let pixelType = require "pixel-type" opts |> parsePixelType
+    let input = require "input" opts
+    let variant = optional "variant" "byte-intype-max" opts
+    let thresholdValue = optional "threshold" "128" opts |> fun s -> Double.Parse(s, invariant)
+    let iterations = optional "iterations" "1000" opts |> int
+    if iterations < 1 then
+        invalidArg "iterations" "Expected at least one iteration."
+
+    let files = stackTiffFiles input
+    if files.Length = 0 then
+        invalidOp $"No TIFF files found in input stack directory: {input}"
+
+    let width, height, rowBytes, scanlineSize = inspectDirectTiffSlice pixelType files[0]
+    let pageBytes = rowBytes * int height
+    let pixels = int width * int height
+    let page = ArrayPool<byte>.Shared.Rent(pageBytes)
+    let scratch = ArrayPool<byte>.Shared.Rent(scanlineSize)
+
+    try
+        readDirectByteTiffSliceInto pixelType files[0] width height rowBytes page scratch
+        match pixelType, variant with
+        | UInt8, "byte-mask-max" ->
+            let output = ArrayPool<byte>.Shared.Rent(pixels)
+            try
+                runTimedHotLoop iterations
+                    (fun () -> thresholdUInt8PageMaxSimdInto thresholdValue pixels page output)
+                    (fun () -> int output[0] + int output[pixels / 2] + int output[pixels - 1])
+            finally
+                ArrayPool<byte>.Shared.Return(output)
+        | UInt8, "byte-mask-one"
+        | UInt8, "byte-intype-one"
+        | UInt8, "typed-intype-one" ->
+            let output = ArrayPool<byte>.Shared.Rent(pixels)
+            try
+                runTimedHotLoop iterations
+                    (fun () -> thresholdUInt8PageSimdInto thresholdValue pixels page output)
+                    (fun () -> int output[0] + int output[pixels / 2] + int output[pixels - 1])
+            finally
+                ArrayPool<byte>.Shared.Return(output)
+        | UInt8, "byte-intype-max"
+        | UInt8, "typed-intype-max" ->
+            let output = ArrayPool<byte>.Shared.Rent(pixels)
+            try
+                runTimedHotLoop iterations
+                    (fun () -> thresholdUInt8PageMaxSimdInto thresholdValue pixels page output)
+                    (fun () -> int output[0] + int output[pixels / 2] + int output[pixels - 1])
+            finally
+                ArrayPool<byte>.Shared.Return(output)
+        | UInt8, "typed-copy-intype-max" ->
+            let typedInput = ArrayPool<byte>.Shared.Rent(pixels)
+            let output = ArrayPool<byte>.Shared.Rent(pixels)
+            try
+                runTimedHotLoop iterations
+                    (fun () ->
+                        Buffer.BlockCopy(page, 0, typedInput, 0, pixels)
+                        thresholdTypedUInt8MaxVector thresholdValue pixels typedInput output)
+                    (fun () -> int output[0] + int output[pixels / 2] + int output[pixels - 1])
+            finally
+                ArrayPool<byte>.Shared.Return(output)
+                ArrayPool<byte>.Shared.Return(typedInput)
+        | UInt8, "typed-copy-intype-one" ->
+            let typedInput = ArrayPool<byte>.Shared.Rent(pixels)
+            let output = ArrayPool<byte>.Shared.Rent(pixels)
+            try
+                runTimedHotLoop iterations
+                    (fun () ->
+                        Buffer.BlockCopy(page, 0, typedInput, 0, pixels)
+                        thresholdTypedUInt8OneVector thresholdValue pixels typedInput output)
+                    (fun () -> int output[0] + int output[pixels / 2] + int output[pixels - 1])
+            finally
+                ArrayPool<byte>.Shared.Return(output)
+                ArrayPool<byte>.Shared.Return(typedInput)
+        | UInt16, "byte-mask-one" ->
+            let output = ArrayPool<byte>.Shared.Rent(pixels)
+            try
+                runTimedHotLoop iterations
+                    (fun () -> thresholdUInt16PageSimdInto thresholdValue pageBytes page output)
+                    (fun () -> int output[0] + int output[pixels / 2] + int output[pixels - 1])
+            finally
+                ArrayPool<byte>.Shared.Return(output)
+        | UInt16, "byte-intype-max" ->
+            let output = ArrayPool<byte>.Shared.Rent(pageBytes)
+            try
+                runTimedHotLoop iterations
+                    (fun () -> thresholdUInt16PageInTypeMaxSimdInto thresholdValue pageBytes page output)
+                    (fun () ->
+                        let values = MemoryMarshal.Cast<byte, uint16>(output.AsSpan(0, pageBytes))
+                        int values[0] + int values[pixels / 2] + int values[pixels - 1])
+            finally
+                ArrayPool<byte>.Shared.Return(output)
+        | UInt16, "byte-intype-one" ->
+            let output = ArrayPool<byte>.Shared.Rent(pageBytes)
+            try
+                runTimedHotLoop iterations
+                    (fun () -> thresholdUInt16PageInTypeSimdInto thresholdValue pageBytes page output)
+                    (fun () ->
+                        let values = MemoryMarshal.Cast<byte, uint16>(output.AsSpan(0, pageBytes))
+                        int values[0] + int values[pixels / 2] + int values[pixels - 1])
+            finally
+                ArrayPool<byte>.Shared.Return(output)
+        | UInt16, "typed-intype-max" ->
+            let typedInput = ArrayPool<uint16>.Shared.Rent(pixels)
+            let output = ArrayPool<uint16>.Shared.Rent(pixels)
+            try
+                Buffer.BlockCopy(page, 0, typedInput, 0, pageBytes)
+                runTimedHotLoop iterations
+                    (fun () -> thresholdTypedUInt16MaxVector thresholdValue pixels typedInput output)
+                    (fun () -> int output[0] + int output[pixels / 2] + int output[pixels - 1])
+            finally
+                ArrayPool<uint16>.Shared.Return(output)
+                ArrayPool<uint16>.Shared.Return(typedInput)
+        | UInt16, "typed-intype-one" ->
+            let typedInput = ArrayPool<uint16>.Shared.Rent(pixels)
+            let output = ArrayPool<uint16>.Shared.Rent(pixels)
+            try
+                Buffer.BlockCopy(page, 0, typedInput, 0, pageBytes)
+                runTimedHotLoop iterations
+                    (fun () -> thresholdTypedUInt16OneVector thresholdValue pixels typedInput output)
+                    (fun () -> int output[0] + int output[pixels / 2] + int output[pixels - 1])
+            finally
+                ArrayPool<uint16>.Shared.Return(output)
+                ArrayPool<uint16>.Shared.Return(typedInput)
+        | UInt16, "typed-copy-intype-max" ->
+            let typedInput = ArrayPool<uint16>.Shared.Rent(pixels)
+            let output = ArrayPool<uint16>.Shared.Rent(pixels)
+            try
+                runTimedHotLoop iterations
+                    (fun () ->
+                        Buffer.BlockCopy(page, 0, typedInput, 0, pageBytes)
+                        thresholdTypedUInt16MaxVector thresholdValue pixels typedInput output)
+                    (fun () -> int output[0] + int output[pixels / 2] + int output[pixels - 1])
+            finally
+                ArrayPool<uint16>.Shared.Return(output)
+                ArrayPool<uint16>.Shared.Return(typedInput)
+        | UInt16, "typed-copy-intype-one" ->
+            let typedInput = ArrayPool<uint16>.Shared.Rent(pixels)
+            let output = ArrayPool<uint16>.Shared.Rent(pixels)
+            try
+                runTimedHotLoop iterations
+                    (fun () ->
+                        Buffer.BlockCopy(page, 0, typedInput, 0, pageBytes)
+                        thresholdTypedUInt16OneVector thresholdValue pixels typedInput output)
+                    (fun () -> int output[0] + int output[pixels / 2] + int output[pixels - 1])
+            finally
+                ArrayPool<uint16>.Shared.Return(output)
+                ArrayPool<uint16>.Shared.Return(typedInput)
+        | Float32, "byte-mask-one" ->
+            let output = ArrayPool<byte>.Shared.Rent(pixels)
+            try
+                runTimedHotLoop iterations
+                    (fun () -> thresholdFloat32PageSimdInto thresholdValue pageBytes page output)
+                    (fun () -> int output[0] + int output[pixels / 2] + int output[pixels - 1])
+            finally
+                ArrayPool<byte>.Shared.Return(output)
+        | Float32, "byte-intype-max" ->
+            let output = ArrayPool<byte>.Shared.Rent(pageBytes)
+            try
+                runTimedHotLoop iterations
+                    (fun () -> thresholdFloat32PageInTypeMaxVectorInto thresholdValue pageBytes page output)
+                    (fun () ->
+                        let values = MemoryMarshal.Cast<byte, float32>(output.AsSpan(0, pageBytes))
+                        int values[0] + int values[pixels / 2] + int values[pixels - 1])
+            finally
+                ArrayPool<byte>.Shared.Return(output)
+        | Float32, "byte-intype-one" ->
+            let output = ArrayPool<byte>.Shared.Rent(pageBytes)
+            try
+                runTimedHotLoop iterations
+                    (fun () -> thresholdFloat32PageInTypeOneVectorInto thresholdValue pageBytes page output)
+                    (fun () ->
+                        let values = MemoryMarshal.Cast<byte, float32>(output.AsSpan(0, pageBytes))
+                        int values[0] + int values[pixels / 2] + int values[pixels - 1])
+            finally
+                ArrayPool<byte>.Shared.Return(output)
+        | Float32, "typed-intype-max" ->
+            let typedInput = ArrayPool<float32>.Shared.Rent(pixels)
+            let output = ArrayPool<float32>.Shared.Rent(pixels)
+            try
+                Buffer.BlockCopy(page, 0, typedInput, 0, pageBytes)
+                runTimedHotLoop iterations
+                    (fun () -> thresholdTypedFloat32MaxVector thresholdValue pixels typedInput output)
+                    (fun () -> int output[0] + int output[pixels / 2] + int output[pixels - 1])
+            finally
+                ArrayPool<float32>.Shared.Return(output)
+                ArrayPool<float32>.Shared.Return(typedInput)
+        | Float32, "typed-intype-one" ->
+            let typedInput = ArrayPool<float32>.Shared.Rent(pixels)
+            let output = ArrayPool<float32>.Shared.Rent(pixels)
+            try
+                Buffer.BlockCopy(page, 0, typedInput, 0, pageBytes)
+                runTimedHotLoop iterations
+                    (fun () -> thresholdTypedFloat32OneVector thresholdValue pixels typedInput output)
+                    (fun () -> int output[0] + int output[pixels / 2] + int output[pixels - 1])
+            finally
+                ArrayPool<float32>.Shared.Return(output)
+                ArrayPool<float32>.Shared.Return(typedInput)
+        | Float32, "typed-copy-intype-max" ->
+            let typedInput = ArrayPool<float32>.Shared.Rent(pixels)
+            let output = ArrayPool<float32>.Shared.Rent(pixels)
+            try
+                runTimedHotLoop iterations
+                    (fun () ->
+                        Buffer.BlockCopy(page, 0, typedInput, 0, pageBytes)
+                        thresholdTypedFloat32MaxVector thresholdValue pixels typedInput output)
+                    (fun () -> int output[0] + int output[pixels / 2] + int output[pixels - 1])
+            finally
+                ArrayPool<float32>.Shared.Return(output)
+                ArrayPool<float32>.Shared.Return(typedInput)
+        | Float32, "typed-copy-intype-one" ->
+            let typedInput = ArrayPool<float32>.Shared.Rent(pixels)
+            let output = ArrayPool<float32>.Shared.Rent(pixels)
+            try
+                runTimedHotLoop iterations
+                    (fun () ->
+                        Buffer.BlockCopy(page, 0, typedInput, 0, pageBytes)
+                        thresholdTypedFloat32OneVector thresholdValue pixels typedInput output)
+                    (fun () -> int output[0] + int output[pixels / 2] + int output[pixels - 1])
+            finally
+                ArrayPool<float32>.Shared.Return(output)
+                ArrayPool<float32>.Shared.Return(typedInput)
+        | _, unsupported ->
+            invalidArg "variant" $"Unsupported hotloop variant '{unsupported}' for {pixelType}."
+    finally
+        ArrayPool<byte>.Shared.Return(scratch)
+        ArrayPool<byte>.Shared.Return(page)
+
+let private runZarrDirectThresholdHotLoop opts =
+    let pixelType = require "pixel-type" opts |> parsePixelType
+    let input = require "input" opts
+    let variant = optional "variant" "byte-intype-max" opts
+    let thresholdValue = optional "threshold" "128" opts |> fun s -> Double.Parse(s, invariant)
+    let iterations = optional "iterations" "1000" opts |> int
+    if iterations < 1 then
+        invalidArg "iterations" "Expected at least one iteration."
+
+    let inputArray = openZarrArray input
+    let dataType = zarrDataType pixelType
+    validateZarrArrayType inputArray dataType
+
+    let chunks = collectZarrChunks inputArray
+    if chunks.Length = 0 then
+        invalidOp $"No Zarr chunks found in input array: {input}"
+
+    let decoded =
+        inputArray.ReadChunkDecodedAsync(chunks[0], Threading.CancellationToken.None)
+        |> runTask
+
+    let bytesPerSample = bytesPerPixelType pixelType
+    let pageBytes = decoded.Length
+    let pixels = pageBytes / bytesPerSample
+    if pixels < 1 || pixels * bytesPerSample <> pageBytes then
+        invalidOp $"Decoded Zarr chunk byte length {pageBytes} is not valid for {pixelType}."
+
+    printfn "chunkCoord=%s chunkBytes=%d pixels=%d" (zarrChunkCoordKey chunks[0]) pageBytes pixels
+
+    match pixelType, variant with
+    | UInt8, "byte-mask-max"
+    | UInt8, "byte-intype-max"
+    | UInt8, "typed-intype-max" ->
+        let output = ArrayPool<byte>.Shared.Rent(pixels)
+        try
+            runTimedHotLoop iterations
+                (fun () -> thresholdUInt8PageMaxSimdInto thresholdValue pixels decoded output)
+                (fun () -> int output[0] + int output[pixels / 2] + int output[pixels - 1])
+        finally
+            ArrayPool<byte>.Shared.Return(output)
+    | UInt8, "byte-mask-one"
+    | UInt8, "byte-intype-one"
+    | UInt8, "typed-intype-one" ->
+        let output = ArrayPool<byte>.Shared.Rent(pixels)
+        try
+            runTimedHotLoop iterations
+                (fun () -> thresholdUInt8PageSimdInto thresholdValue pixels decoded output)
+                (fun () -> int output[0] + int output[pixels / 2] + int output[pixels - 1])
+        finally
+            ArrayPool<byte>.Shared.Return(output)
+    | UInt8, "typed-copy-intype-max" ->
+        let typedInput = ArrayPool<byte>.Shared.Rent(pixels)
+        let output = ArrayPool<byte>.Shared.Rent(pixels)
+        try
+            runTimedHotLoop iterations
+                (fun () ->
+                    Buffer.BlockCopy(decoded, 0, typedInput, 0, pixels)
+                    thresholdTypedUInt8MaxVector thresholdValue pixels typedInput output)
+                (fun () -> int output[0] + int output[pixels / 2] + int output[pixels - 1])
+        finally
+            ArrayPool<byte>.Shared.Return(output)
+            ArrayPool<byte>.Shared.Return(typedInput)
+    | UInt8, "typed-copy-intype-one" ->
+        let typedInput = ArrayPool<byte>.Shared.Rent(pixels)
+        let output = ArrayPool<byte>.Shared.Rent(pixels)
+        try
+            runTimedHotLoop iterations
+                (fun () ->
+                    Buffer.BlockCopy(decoded, 0, typedInput, 0, pixels)
+                    thresholdTypedUInt8OneVector thresholdValue pixels typedInput output)
+                (fun () -> int output[0] + int output[pixels / 2] + int output[pixels - 1])
+        finally
+            ArrayPool<byte>.Shared.Return(output)
+            ArrayPool<byte>.Shared.Return(typedInput)
+    | UInt16, "byte-mask-one" ->
+        let output = ArrayPool<byte>.Shared.Rent(pixels)
+        try
+            runTimedHotLoop iterations
+                (fun () -> thresholdUInt16PageSimdInto thresholdValue pageBytes decoded output)
+                (fun () -> int output[0] + int output[pixels / 2] + int output[pixels - 1])
+        finally
+            ArrayPool<byte>.Shared.Return(output)
+    | UInt16, "byte-intype-max" ->
+        let output = ArrayPool<byte>.Shared.Rent(pageBytes)
+        try
+            runTimedHotLoop iterations
+                (fun () -> thresholdUInt16PageInTypeMaxSimdInto thresholdValue pageBytes decoded output)
+                (fun () ->
+                    let values = MemoryMarshal.Cast<byte, uint16>(output.AsSpan(0, pageBytes))
+                    int values[0] + int values[pixels / 2] + int values[pixels - 1])
+        finally
+            ArrayPool<byte>.Shared.Return(output)
+    | UInt16, "byte-intype-one" ->
+        let output = ArrayPool<byte>.Shared.Rent(pageBytes)
+        try
+            runTimedHotLoop iterations
+                (fun () -> thresholdUInt16PageInTypeSimdInto thresholdValue pageBytes decoded output)
+                (fun () ->
+                    let values = MemoryMarshal.Cast<byte, uint16>(output.AsSpan(0, pageBytes))
+                    int values[0] + int values[pixels / 2] + int values[pixels - 1])
+        finally
+            ArrayPool<byte>.Shared.Return(output)
+    | UInt16, "typed-intype-max" ->
+        let typedInput = ArrayPool<uint16>.Shared.Rent(pixels)
+        let output = ArrayPool<uint16>.Shared.Rent(pixels)
+        try
+            Buffer.BlockCopy(decoded, 0, typedInput, 0, pageBytes)
+            runTimedHotLoop iterations
+                (fun () -> thresholdTypedUInt16MaxVector thresholdValue pixels typedInput output)
+                (fun () -> int output[0] + int output[pixels / 2] + int output[pixels - 1])
+        finally
+            ArrayPool<uint16>.Shared.Return(output)
+            ArrayPool<uint16>.Shared.Return(typedInput)
+    | UInt16, "typed-intype-one" ->
+        let typedInput = ArrayPool<uint16>.Shared.Rent(pixels)
+        let output = ArrayPool<uint16>.Shared.Rent(pixels)
+        try
+            Buffer.BlockCopy(decoded, 0, typedInput, 0, pageBytes)
+            runTimedHotLoop iterations
+                (fun () -> thresholdTypedUInt16OneVector thresholdValue pixels typedInput output)
+                (fun () -> int output[0] + int output[pixels / 2] + int output[pixels - 1])
+        finally
+            ArrayPool<uint16>.Shared.Return(output)
+            ArrayPool<uint16>.Shared.Return(typedInput)
+    | UInt16, "typed-copy-intype-max" ->
+        let typedInput = ArrayPool<uint16>.Shared.Rent(pixels)
+        let output = ArrayPool<uint16>.Shared.Rent(pixels)
+        try
+            runTimedHotLoop iterations
+                (fun () ->
+                    Buffer.BlockCopy(decoded, 0, typedInput, 0, pageBytes)
+                    thresholdTypedUInt16MaxVector thresholdValue pixels typedInput output)
+                (fun () -> int output[0] + int output[pixels / 2] + int output[pixels - 1])
+        finally
+            ArrayPool<uint16>.Shared.Return(output)
+            ArrayPool<uint16>.Shared.Return(typedInput)
+    | UInt16, "typed-copy-intype-one" ->
+        let typedInput = ArrayPool<uint16>.Shared.Rent(pixels)
+        let output = ArrayPool<uint16>.Shared.Rent(pixels)
+        try
+            runTimedHotLoop iterations
+                (fun () ->
+                    Buffer.BlockCopy(decoded, 0, typedInput, 0, pageBytes)
+                    thresholdTypedUInt16OneVector thresholdValue pixels typedInput output)
+                (fun () -> int output[0] + int output[pixels / 2] + int output[pixels - 1])
+        finally
+            ArrayPool<uint16>.Shared.Return(output)
+            ArrayPool<uint16>.Shared.Return(typedInput)
+    | Float32, "byte-mask-one" ->
+        let output = ArrayPool<byte>.Shared.Rent(pixels)
+        try
+            runTimedHotLoop iterations
+                (fun () -> thresholdFloat32PageSimdInto thresholdValue pageBytes decoded output)
+                (fun () -> int output[0] + int output[pixels / 2] + int output[pixels - 1])
+        finally
+            ArrayPool<byte>.Shared.Return(output)
+    | Float32, "byte-intype-max" ->
+        let output = ArrayPool<byte>.Shared.Rent(pageBytes)
+        try
+            runTimedHotLoop iterations
+                (fun () -> thresholdFloat32PageInTypeMaxVectorInto thresholdValue pageBytes decoded output)
+                (fun () ->
+                    let values = MemoryMarshal.Cast<byte, float32>(output.AsSpan(0, pageBytes))
+                    int values[0] + int values[pixels / 2] + int values[pixels - 1])
+        finally
+            ArrayPool<byte>.Shared.Return(output)
+    | Float32, "byte-intype-one" ->
+        let output = ArrayPool<byte>.Shared.Rent(pageBytes)
+        try
+            runTimedHotLoop iterations
+                (fun () -> thresholdFloat32PageInTypeOneVectorInto thresholdValue pageBytes decoded output)
+                (fun () ->
+                    let values = MemoryMarshal.Cast<byte, float32>(output.AsSpan(0, pageBytes))
+                    int values[0] + int values[pixels / 2] + int values[pixels - 1])
+        finally
+            ArrayPool<byte>.Shared.Return(output)
+    | Float32, "typed-intype-max" ->
+        let typedInput = ArrayPool<float32>.Shared.Rent(pixels)
+        let output = ArrayPool<float32>.Shared.Rent(pixels)
+        try
+            Buffer.BlockCopy(decoded, 0, typedInput, 0, pageBytes)
+            runTimedHotLoop iterations
+                (fun () -> thresholdTypedFloat32MaxVector thresholdValue pixels typedInput output)
+                (fun () -> int output[0] + int output[pixels / 2] + int output[pixels - 1])
+        finally
+            ArrayPool<float32>.Shared.Return(output)
+            ArrayPool<float32>.Shared.Return(typedInput)
+    | Float32, "typed-intype-one" ->
+        let typedInput = ArrayPool<float32>.Shared.Rent(pixels)
+        let output = ArrayPool<float32>.Shared.Rent(pixels)
+        try
+            Buffer.BlockCopy(decoded, 0, typedInput, 0, pageBytes)
+            runTimedHotLoop iterations
+                (fun () -> thresholdTypedFloat32OneVector thresholdValue pixels typedInput output)
+                (fun () -> int output[0] + int output[pixels / 2] + int output[pixels - 1])
+        finally
+            ArrayPool<float32>.Shared.Return(output)
+            ArrayPool<float32>.Shared.Return(typedInput)
+    | Float32, "typed-copy-intype-max" ->
+        let typedInput = ArrayPool<float32>.Shared.Rent(pixels)
+        let output = ArrayPool<float32>.Shared.Rent(pixels)
+        try
+            runTimedHotLoop iterations
+                (fun () ->
+                    Buffer.BlockCopy(decoded, 0, typedInput, 0, pageBytes)
+                    thresholdTypedFloat32MaxVector thresholdValue pixels typedInput output)
+                (fun () -> int output[0] + int output[pixels / 2] + int output[pixels - 1])
+        finally
+            ArrayPool<float32>.Shared.Return(output)
+            ArrayPool<float32>.Shared.Return(typedInput)
+    | Float32, "typed-copy-intype-one" ->
+        let typedInput = ArrayPool<float32>.Shared.Rent(pixels)
+        let output = ArrayPool<float32>.Shared.Rent(pixels)
+        try
+            runTimedHotLoop iterations
+                (fun () ->
+                    Buffer.BlockCopy(decoded, 0, typedInput, 0, pageBytes)
+                    thresholdTypedFloat32OneVector thresholdValue pixels typedInput output)
+                (fun () -> int output[0] + int output[pixels / 2] + int output[pixels - 1])
+        finally
+            ArrayPool<float32>.Shared.Return(output)
+            ArrayPool<float32>.Shared.Return(typedInput)
+    | _, unsupported ->
+        invalidArg "variant" $"Unsupported Zarr hotloop variant '{unsupported}' for {pixelType}."
+
+let private runLibTiffStripCopy opts =
+    let operation = require "operation" opts
+    let pixelType = require "pixel-type" opts |> parsePixelType
+    let input = require "input" opts
+    let output = require "output" opts
+
+    if operation <> "copy" then
+        failwith $"Direct LibTiff strip backend is intentionally copy-only; got '{operation}'."
+
+    let stopwatch = Stopwatch.StartNew()
+    let files = stackTiffFiles input
+    if files.Length = 0 then
+        invalidOp $"No TIFF files found in input stack directory: {input}"
+
+    use first = Tiff.Open(files[0], "r")
+    if isNull first then
+        invalidOp $"Could not open '{files[0]}' for TIFF reading."
+
+    let width, height, rowBytes, pageBytes, strips, stripBytes, rowsPerStrip = inspectOpenStripTiffSlice pixelType files[0] first
+    let page = ArrayPool<byte>.Shared.Rent(pageBytes)
+
+    ensureCleanDirectory output
+    try
+        for i in 0 .. files.Length - 1 do
+            readEncodedStripTiffSliceInto pixelType files[i] width height rowBytes pageBytes strips page
+            writeEncodedStripTiffPage pixelType (outputFile output i) width height rowBytes pageBytes strips stripBytes rowsPerStrip page
+
+        stopwatch.Stop()
+        writeInternalSeconds stopwatch.Elapsed
+        0
+    finally
+        ArrayPool<byte>.Shared.Return(page)
+
+let private runLibTiffRawStripCopy opts =
+    let operation = require "operation" opts
+    let pixelType = require "pixel-type" opts |> parsePixelType
+    let input = require "input" opts
+    let output = require "output" opts
+
+    if operation <> "copy" then
+        failwith $"Raw-strip LibTiff backend is intentionally copy-only; got '{operation}'."
+
+    let stopwatch = Stopwatch.StartNew()
+    let files = stackTiffFiles input
+    if files.Length = 0 then
+        invalidOp $"No TIFF files found in input stack directory: {input}"
+
+    use first = Tiff.Open(files[0], "r")
+    if isNull first then
+        invalidOp $"Could not open '{files[0]}' for TIFF reading."
+
+    let width, height, rowBytes, pageBytes, strips, rawStripSizes, _rowsPerStrip = inspectOpenRawStripTiffSlice pixelType files[0] first
+    let page = ArrayPool<byte>.Shared.Rent(pageBytes)
+
+    ensureCleanDirectory output
+    try
+        for i in 0 .. files.Length - 1 do
+            readRawStripTiffSliceInto pixelType files[i] width height rowBytes pageBytes strips rawStripSizes page
+            writeRawStripTiffPage pixelType (outputFile output i) width height rowBytes pageBytes page
+
+        stopwatch.Stop()
+        writeInternalSeconds stopwatch.Elapsed
+        0
+    finally
+        ArrayPool<byte>.Shared.Return(page)
+
+let private runNativeLibTiffRawStripCopy opts =
+    let operation = require "operation" opts
+    let pixelType = require "pixel-type" opts |> parsePixelType
+    let input = require "input" opts
+    let output = require "output" opts
+
+    if operation <> "copy" then
+        failwith $"Native raw-strip LibTiff backend is intentionally copy-only; got '{operation}'."
+
+    try
+        let stopwatch = Stopwatch.StartNew()
+        let files = stackTiffFiles input
+        if files.Length = 0 then
+            invalidOp $"No TIFF files found in input stack directory: {input}"
+
+        let info, rowBytes, _bytesPerSample = readNativeTiffInfo pixelType files[0]
+        let pageBytes = int info.PageBytes
+        let page = ArrayPool<byte>.Shared.Rent(pageBytes)
+
+        ensureCleanDirectory output
+        try
+            for i in 0 .. files.Length - 1 do
+                readNativeRawTiffSliceInto pixelType files[i] info.Width info.Height rowBytes pageBytes page
+                writeNativeRawTiffPage pixelType (outputFile output i) info.Width info.Height pageBytes page
+
+            stopwatch.Stop()
+            writeInternalSeconds stopwatch.Elapsed
+            0
+        finally
+            ArrayPool<byte>.Shared.Return(page)
+    with
+    | :? DllNotFoundException as ex ->
+        invalidOp $"Could not load native libtiff shim 'sp_libtiff_shim'. Build it first, for example: bash benchmarks/native-libtiff-shim/build-unix.sh. Loader detail: {ex.Message}"
+    | :? EntryPointNotFoundException as ex ->
+        invalidOp $"Native libtiff shim is missing an expected entry point. Rebuild benchmarks/native-libtiff-shim. Loader detail: {ex.Message}"
+
+let private runTiffLibraryRawStripCopy opts =
+    let operation = require "operation" opts
+    let pixelType = require "pixel-type" opts |> parsePixelType
+    let input = require "input" opts
+    let output = require "output" opts
+
+    if operation <> "copy" then
+        failwith $"TiffLibrary raw-strip backend is intentionally copy-only; got '{operation}'."
+
+    let stopwatch = Stopwatch.StartNew()
+    let files = stackTiffFiles input
+    if files.Length = 0 then
+        invalidOp $"No TIFF files found in input stack directory: {input}"
+
+    let width, height, rowBytes, pageBytes, _stripOffsets, stripByteCounts = readTiffLibraryInfo pixelType files[0]
+    let page = ArrayPool<byte>.Shared.Rent(pageBytes)
+
+    ensureCleanDirectory output
+    try
+        for i in 0 .. files.Length - 1 do
+            readTiffLibraryRawSliceInto pixelType files[i] width height rowBytes pageBytes stripByteCounts.Count page
+            writeTiffLibraryRawPage pixelType (outputFile output i) width height pageBytes page
+
+        stopwatch.Stop()
+        writeInternalSeconds stopwatch.Elapsed
+        0
+    finally
+        ArrayPool<byte>.Shared.Return(page)
+
+let private imageSharpDecoderOptions () =
+    SixLabors.ImageSharp.Formats.DecoderOptions(
+        SkipMetadata = true,
+        MaxFrames = 1u)
+
+let private imageSharpTiffEncoder bitsPerPixel =
+    SixLabors.ImageSharp.Formats.Tiff.TiffEncoder(
+        Compression = Nullable(SixLabors.ImageSharp.Formats.Tiff.Constants.TiffCompression.None),
+        BitsPerPixel = Nullable(bitsPerPixel),
+        PhotometricInterpretation = Nullable(SixLabors.ImageSharp.Formats.Tiff.Constants.TiffPhotometricInterpretation.BlackIsZero),
+        SkipMetadata = true)
+
+let private runImageSharpCopyAs<'TPixel when 'TPixel : unmanaged and 'TPixel :> SixLabors.ImageSharp.PixelFormats.IPixel<'TPixel>> bitsPerPixel (files: string array) output =
+    let decoderOptions = imageSharpDecoderOptions ()
+    let encoder = imageSharpTiffEncoder bitsPerPixel
+
+    for i in 0 .. files.Length - 1 do
+        use stream = File.OpenRead(files[i])
+        use image = SixLabors.ImageSharp.Image.Load<'TPixel>(decoderOptions, stream)
+        use outputStream = File.Create(outputFile output i)
+        image.Save(outputStream, encoder)
+
+let private runImageSharpCopy opts =
+    let operation = require "operation" opts
+    let pixelType = require "pixel-type" opts |> parsePixelType
+    let input = require "input" opts
+    let output = require "output" opts
+
+    if operation <> "copy" then
+        failwith $"ImageSharp backend is intentionally copy-only; got '{operation}'."
+
+    let files = stackTiffFiles input
+    if files.Length = 0 then
+        invalidOp $"No TIFF files found in input stack directory: {input}"
+
+    ensureCleanDirectory output
+    let stopwatch = Stopwatch.StartNew()
+    match pixelType with
+    | UInt8 ->
+        runImageSharpCopyAs<SixLabors.ImageSharp.PixelFormats.L8> SixLabors.ImageSharp.Formats.Tiff.TiffBitsPerPixel.Bit8 files output
+    | UInt16 ->
+        runImageSharpCopyAs<SixLabors.ImageSharp.PixelFormats.L16> SixLabors.ImageSharp.Formats.Tiff.TiffBitsPerPixel.Bit16 files output
+    | Float32 ->
+        failwith "ImageSharp copy benchmark currently supports UInt8 and UInt16 grayscale only; Float32 grayscale would not be a like-for-like TIFF copy through the public encoder."
+
+    stopwatch.Stop()
+    writeInternalSeconds stopwatch.Elapsed
+    0
+
+let private runLibTiffDirectReadOnly opts =
+    let pixelType = require "pixel-type" opts |> parsePixelType
+    let input = require "input" opts
+
+    let stopwatch = Stopwatch.StartNew()
+    let files = stackTiffFiles input
+    if files.Length = 0 then
+        invalidOp $"No TIFF files found in input stack directory: {input}"
+
+    let width, height, rowBytes, scanlineSize = inspectDirectTiffSlice pixelType files[0]
+    let pageBytes = rowBytes * int height
+    let page = ArrayPool<byte>.Shared.Rent(pageBytes)
+    let scratch = ArrayPool<byte>.Shared.Rent(scanlineSize)
+
+    try
+        for i in 0 .. files.Length - 1 do
+            readDirectByteTiffSliceInto pixelType files[i] width height rowBytes page scratch
+
+        stopwatch.Stop()
+        writeInternalSeconds stopwatch.Elapsed
+        0
+    finally
+        ArrayPool<byte>.Shared.Return(scratch)
+        ArrayPool<byte>.Shared.Return(page)
+
+let private runLibTiffDirectWriteOnly opts =
+    let pixelType = require "pixel-type" opts |> parsePixelType
+    let input = require "input" opts
+    let output = require "output" opts
+
+    let files = stackTiffFiles input
+    if files.Length = 0 then
+        invalidOp $"No TIFF files found in input stack directory: {input}"
+
+    let width, height, rowBytes, _scanlineSize = inspectDirectTiffSlice pixelType files[0]
+    let pageBytes = rowBytes * int height
+    let page = ArrayPool<byte>.Shared.Rent(pageBytes)
+
+    ensureCleanDirectory output
+    try
+        for i in 0 .. pageBytes - 1 do
+            page[i] <- byte (i &&& 0xFF)
+
+        let stopwatch = Stopwatch.StartNew()
+        for i in 0 .. files.Length - 1 do
+            writeDirectByteTiffPage pixelType (outputFile output i) width height rowBytes page
+
+        stopwatch.Stop()
+        writeInternalSeconds stopwatch.Elapsed
+        0
+    finally
+        ArrayPool<byte>.Shared.Return(page)
+
 [<EntryPoint>]
 let main args =
     try
@@ -1507,6 +3210,8 @@ let main args =
         | _ when args[0] = "run-zarr-direct-copy" -> args[1..] |> parseArgs |> runZarrDirectCopy
         | _ when args[0] = "run-zarr-direct-threshold" -> args[1..] |> parseArgs |> runZarrDirectThreshold
         | _ when args[0] = "run-zarr-direct-threshold-raw" -> args[1..] |> parseArgs |> runZarrDirectThresholdRaw
+        | _ when args[0] = "run-zarr-direct-threshold-intype" -> args[1..] |> parseArgs |> runZarrDirectThresholdInType
+        | _ when args[0] = "run-zarr-direct-threshold-hotloop" -> args[1..] |> parseArgs |> runZarrDirectThresholdHotLoop
         | _ when args[0] = "run-zarr-chunk-copy" -> args[1..] |> parseArgs |> runZarrChunkCopy
         | _ when args[0] = "run-zarr-readonly" -> args[1..] |> parseArgs |> runZarrReadOnly
         | _ when args[0] = "run-zarr-writeonly" -> args[1..] |> parseArgs |> runZarrWriteOnly
@@ -1515,6 +3220,18 @@ let main args =
         | _ when args[0] = "run-arraypool-slice-reuse" -> args[1..] |> parseArgs |> runArrayPoolSliceReuse
         | _ when args[0] = "run-byte-slice-reuse" -> args[1..] |> parseArgs |> runByteSliceReuse
         | _ when args[0] = "run-byte-float32-slice-reuse" -> args[1..] |> parseArgs |> runByteFloat32SliceReuse
+        | _ when args[0] = "run-libtiff-direct-copy" -> args[1..] |> parseArgs |> runLibTiffDirectCopy
+        | _ when args[0] = "run-libtiff-direct-threshold" -> args[1..] |> parseArgs |> runLibTiffDirectThreshold
+        | _ when args[0] = "run-libtiff-direct-threshold-intype" -> args[1..] |> parseArgs |> runLibTiffDirectThresholdInType
+        | _ when args[0] = "run-libtiff-direct-threshold-hotloop" -> args[1..] |> parseArgs |> runLibTiffDirectThresholdHotLoop
+        | _ when args[0] = "run-threshold-kernel" -> args[1..] |> parseArgs |> runThresholdKernel
+        | _ when args[0] = "run-libtiff-strip-copy" -> args[1..] |> parseArgs |> runLibTiffStripCopy
+        | _ when args[0] = "run-libtiff-raw-strip-copy" -> args[1..] |> parseArgs |> runLibTiffRawStripCopy
+        | _ when args[0] = "run-native-libtiff-raw-strip-copy" -> args[1..] |> parseArgs |> runNativeLibTiffRawStripCopy
+        | _ when args[0] = "run-tifflibrary-raw-strip-copy" -> args[1..] |> parseArgs |> runTiffLibraryRawStripCopy
+        | _ when args[0] = "run-imagesharp-copy" -> args[1..] |> parseArgs |> runImageSharpCopy
+        | _ when args[0] = "run-libtiff-direct-readonly" -> args[1..] |> parseArgs |> runLibTiffDirectReadOnly
+        | _ when args[0] = "run-libtiff-direct-writeonly" -> args[1..] |> parseArgs |> runLibTiffDirectWriteOnly
         | _ -> usage ()
     with ex ->
         fail ex.Message
