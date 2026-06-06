@@ -190,11 +190,6 @@ type Point2D =
 
 type Polygon2D = Point2D list
 
-let getMem () =
-    System.GC.Collect()
-    System.GC.WaitForPendingFinalizers()
-    System.GC.Collect()
-
 let imageResourceOps<'S when 'S: equality> : ResourceOps<Image<'S>> =
     { Retain = fun image -> image.incRefCount()
       Release = fun image -> image.decRefCount()

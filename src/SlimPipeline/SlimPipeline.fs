@@ -590,6 +590,7 @@ module private Pipe =
     let parallelCollect
         name
         (windowSize: int)
+        (batchSize: int)
         (stride: int)
         (pad: int)
         (zeroMaker: int -> 'S -> 'S)
@@ -597,7 +598,8 @@ module private Pipe =
         : Pipe<'S, 'T>
         =
         ParallelValidation.windowSize windowSize
-        let workers = windowSize
+        ParallelValidation.windowSize batchSize
+        let workers = batchSize
         if stride < 1 then
             invalidArg "stride" $"Pipe.parallelCollect requires a positive stride, got {stride}."
 
@@ -631,6 +633,7 @@ module private Pipe =
     let parallelMap
         name
         (windowSize: int)
+        (batchSize: int)
         (stride: int)
         (pad: int)
         (zeroMaker: int -> 'S -> 'S)
@@ -640,6 +643,7 @@ module private Pipe =
         parallelCollect
             name
             windowSize
+            batchSize
             stride
             pad
             zeroMaker
@@ -1731,6 +1735,7 @@ module Stage =
     let parallelCollect
         name
         (windowSize: int)
+        (batchSize: int)
         (stride: int)
         (pad: int)
         (zeroMaker: int -> 'S -> 'S)
@@ -1739,7 +1744,7 @@ module Stage =
         elementTransformation
         : Stage<'S, 'T>
         =
-        let build () = Pipe.parallelCollect name windowSize stride pad zeroMaker mapper
+        let build () = Pipe.parallelCollect name windowSize batchSize stride pad zeroMaker mapper
         let transition = ProfileTransition.create Streaming Streaming
         createWithModel
             name
@@ -1752,6 +1757,7 @@ module Stage =
     let parallelMap
         name
         (windowSize: int)
+        (batchSize: int)
         (stride: int)
         (pad: int)
         (zeroMaker: int -> 'S -> 'S)
@@ -1760,7 +1766,7 @@ module Stage =
         elementTransformation
         : Stage<'S, 'T>
         =
-        let build () = Pipe.parallelMap name windowSize stride pad zeroMaker mapper
+        let build () = Pipe.parallelMap name windowSize batchSize stride pad zeroMaker mapper
         let transition = ProfileTransition.create Streaming Streaming
         createWithModel
             name

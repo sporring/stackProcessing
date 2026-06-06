@@ -19,6 +19,14 @@ let private runStageList (stage: SlimPipeline.Stage<'S, 'T>) (items: 'S seq) =
     |> AsyncSeq.toListAsync
     |> Async.RunSynchronously
 
+let private chunkFromPixels width height (pixels: uint8[]) =
+    let chunk = Chunk.create<uint8> (uint64 width, uint64 height, 1UL)
+    let values = Chunk.span<uint8> chunk
+    if values.Length <> pixels.Length then
+        invalidArg "pixels" $"Expected {values.Length} pixels, got {pixels.Length}."
+    pixels.CopyTo(values)
+    chunk
+
 let chunkSuite =
     testList "Chunk" [
         testCase "create rents byte-backed storage with typed span over requested size" <| fun _ ->
@@ -436,6 +444,7 @@ let chunkSuite =
                     "parallel-window-sums"
                     3
                     3
+                    3
                     0
                     (fun _ item -> item)
                     (fun _ window -> [ window.Items |> List.sum ])
@@ -445,6 +454,78 @@ let chunkSuite =
             let results = runStageList stage [ 1; 2; 3; 4; 5; 6; 7; 8 ]
 
             Expect.equal results [ 6; 15; 15 ] "parallelCollect should cover full non-overlapping windows plus the trailing partial window."
+
+        testCase "parallelCollect separates rolling window size from parallel batch size" <| fun _ ->
+            let stage =
+                Stage.parallelCollect
+                    "parallel-rolling-window-sums"
+                    3
+                    2
+                    1
+                    0
+                    (fun _ item -> item)
+                    (fun _ window -> [ window.Items |> List.sum ])
+                    (fun _ -> 1UL)
+                    id
+
+            let results = runStageList stage [ 1; 2; 3; 4; 5 ]
+
+            Expect.equal results [ 6; 9; 12; 9 ] "parallelCollect should keep rolling-window semantics while batching windows separately."
+
+        testCase "ChunkFunctions.binaryDilateZonohedral expands a UInt8 mask through chunk slices" <| fun _ ->
+            let width = 3
+            let height = 3
+            let depth = 3
+            let plane = width * height
+            let chunks =
+                [ for z in 0 .. depth - 1 ->
+                    let pixels = Array.zeroCreate<uint8> plane
+                    if z = 1 then
+                        pixels[1 * width + 1] <- 1uy
+                    chunkFromPixels width height pixels ]
+
+            let outputs = runStageList (ChunkFunctions.binaryDilateZonohedral 1u) chunks
+            try
+                Expect.equal outputs.Length depth "Chunk zonohedral dilation should preserve slice count."
+
+                for z in 0 .. depth - 1 do
+                    let values = Chunk.span<uint8> outputs[z]
+                    for y in 0 .. height - 1 do
+                        for x in 0 .. width - 1 do
+                            let expected =
+                                if x <= 1 && y >= 1 && y <= 2 && z <= 1 then 1uy else 0uy
+                            Expect.equal values[y * width + x] expected $"Unexpected dilation value at ({x},{y},{z})."
+            finally
+                outputs |> List.iter Chunk.decRef
+
+        testCase "ChunkFunctions.binaryDilateZonohedralParallel matches the serial chunk dilation" <| fun _ ->
+            let width = 5
+            let height = 4
+            let depth = 6
+            let plane = width * height
+
+            let makeChunks () =
+                [ for z in 0 .. depth - 1 ->
+                    let pixels = Array.zeroCreate<uint8> plane
+                    if z = 1 then
+                        pixels[1 * width + 2] <- 1uy
+                    if z = 3 then
+                        pixels[2 * width + 3] <- 1uy
+                    chunkFromPixels width height pixels ]
+
+            let serialOutputs = runStageList (ChunkFunctions.binaryDilateZonohedral 1u) (makeChunks ())
+            let parallelOutputs = runStageList (ChunkFunctions.binaryDilateZonohedralParallel 1u 3) (makeChunks ())
+
+            try
+                Expect.equal parallelOutputs.Length serialOutputs.Length "Parallel chunk dilation should preserve the serial output count."
+
+                for z in 0 .. serialOutputs.Length - 1 do
+                    let serialValues = (Chunk.span<uint8> serialOutputs[z]).ToArray()
+                    let parallelValues = (Chunk.span<uint8> parallelOutputs[z]).ToArray()
+                    Expect.sequenceEqual parallelValues serialValues $"Parallel chunk dilation should match serial output slice {z}."
+            finally
+                parallelOutputs |> List.iter Chunk.decRef
+                serialOutputs |> List.iter Chunk.decRef
 
         testCase "ChunkFunctions.histogramLeftEdgesReducer serially reduces compatible binned chunk histograms" <| fun _ ->
             let releaseCount = ref 0

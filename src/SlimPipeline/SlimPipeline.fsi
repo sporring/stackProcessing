@@ -670,6 +670,7 @@ module Stage =
     val parallelCollect:
       name: string ->
         windowSize: int ->
+        batchSize: int ->
         stride: int ->
         pad: int ->
         zeroMaker: (int -> 'S -> 'S) ->
@@ -679,6 +680,7 @@ module Stage =
     val parallelMap:
       name: string ->
         windowSize: int ->
+        batchSize: int ->
         stride: int ->
         pad: int ->
         zeroMaker: (int -> 'S -> 'S) ->

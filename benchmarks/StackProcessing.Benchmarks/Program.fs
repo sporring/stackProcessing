@@ -63,6 +63,7 @@ ArrayPool experiment:
   dotnet run --project benchmarks/StackProcessing.Benchmarks -- run-libtiff-direct-threshold-intype --operation threshold --pixel-type UInt8|UInt16|Float32 --input DIR --output DIR [--threshold X]
   dotnet run --project benchmarks/StackProcessing.Benchmarks -- run-libtiff-direct-threshold-hotloop --pixel-type UInt8|UInt16|Float32 --input DIR --variant byte-mask-one|byte-intype-max|byte-intype-one|typed-intype-max|typed-intype-one|typed-copy-intype-max|typed-copy-intype-one [--iterations N] [--threshold X]
   dotnet run --project benchmarks/StackProcessing.Benchmarks -- run-chunk-histogram --pixel-type UInt8|UInt16|Float32 --input DIR --variant dense|sparse|leftedges [--window-size N] [--bins N] [--available-memory BYTES]
+  dotnet run --project benchmarks/StackProcessing.Benchmarks -- run-chunk-dilate --input DIR --output DIR [--radius N] [--threshold X] [--workers N] [--available-memory BYTES]
   dotnet run --project benchmarks/StackProcessing.Benchmarks -- run-threshold-kernel --pixel-type UInt8|UInt16|Float32 --shape WxHxD --output-type mask|intype [--threshold X]
   dotnet run --project benchmarks/StackProcessing.Benchmarks -- run-libtiff-strip-copy --operation copy --pixel-type UInt8|UInt16|Float32 --input DIR --output DIR
   dotnet run --project benchmarks/StackProcessing.Benchmarks -- run-libtiff-raw-strip-copy --operation copy --pixel-type UInt8|UInt16|Float32 --input DIR --output DIR
@@ -1089,6 +1090,28 @@ let private runBinaryDilateTyped<'T when 'T: equality> input output radius avail
     >=> threshold 128.0 infinity
     >=> dilateZonohedral radius None
     >=> write output ".tiff"
+    |> sink
+    0
+
+let private runChunkBinaryDilate input output radius thresholdValue workers availableMemory =
+    ensureCleanDirectory output
+    let thresholdByte =
+        if thresholdValue < 0.0 || thresholdValue > 255.0 then
+            invalidArg "threshold" $"Chunk binary dilation threshold must be in [0,255], got {thresholdValue}."
+        uint8 thresholdValue
+    if workers < 1 then
+        invalidArg "workers" $"Chunk binary dilation expects at least one worker/window, got {workers}."
+    let dilation =
+        if workers = 1 then
+            ChunkFunctions.binaryDilateZonohedral radius
+        else
+            ChunkFunctions.binaryDilateZonohedralParallel radius workers
+    let src = benchmarkSource availableMemory
+    src
+    |> readChunkSlices<uint8> input ".tiff"
+    >=> ChunkFunctions.thresholdBinary thresholdByte
+    >=> dilation
+    >=> writeChunkSlices<uint8> output ".tiff"
     |> sink
     0
 
@@ -2183,6 +2206,20 @@ let private runChunkHistogram opts =
         | "leftedges", Float32 -> runChunkHistogramLeftEdgesTyped<float32> input availableMemory bins
         | other, _ -> failwith $"Unsupported chunk histogram variant '{other}'. Expected dense, sparse, or leftedges."
 
+    stopwatch.Stop()
+    writeInternalSeconds stopwatch.Elapsed
+    exitCode
+
+let private runChunkDilate opts =
+    let input = require "input" opts
+    let output = require "output" opts
+    let radius = optional "radius" "1" opts |> UInt32.Parse
+    let thresholdValue = optional "threshold" "128" opts |> fun s -> Double.Parse(s, invariant)
+    let workers = optional "workers" "1" opts |> Int32.Parse
+    let availableMemory = optional "available-memory" (string (1024UL * 1024UL * 1024UL * 1024UL)) opts |> UInt64.Parse
+
+    let stopwatch = Stopwatch.StartNew()
+    let exitCode = runChunkBinaryDilate input output radius thresholdValue workers availableMemory
     stopwatch.Stop()
     writeInternalSeconds stopwatch.Elapsed
     exitCode
@@ -3291,6 +3328,7 @@ let main args =
         | _ when args[0] = "run-libtiff-direct-threshold-intype" -> args[1..] |> parseArgs |> runLibTiffDirectThresholdInType
         | _ when args[0] = "run-libtiff-direct-threshold-hotloop" -> args[1..] |> parseArgs |> runLibTiffDirectThresholdHotLoop
         | _ when args[0] = "run-chunk-histogram" -> args[1..] |> parseArgs |> runChunkHistogram
+        | _ when args[0] = "run-chunk-dilate" -> args[1..] |> parseArgs |> runChunkDilate
         | _ when args[0] = "run-threshold-kernel" -> args[1..] |> parseArgs |> runThresholdKernel
         | _ when args[0] = "run-libtiff-strip-copy" -> args[1..] |> parseArgs |> runLibTiffStripCopy
         | _ when args[0] = "run-libtiff-raw-strip-copy" -> args[1..] |> parseArgs |> runLibTiffRawStripCopy
