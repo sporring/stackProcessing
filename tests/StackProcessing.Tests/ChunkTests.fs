@@ -1,6 +1,10 @@
 module Tests.ChunkTests
 
+open System
+open System.Runtime.InteropServices
 open Expecto
+open FSharp.Control
+open SlimPipeline
 open StackCore
 
 let private manualChunk size bytes byteLength release =
@@ -9,6 +13,11 @@ let private manualChunk size bytes byteLength release =
       ByteLength = byteLength
       Release = release
       RefCount = ref 1 }
+
+let private runStageList (stage: SlimPipeline.Stage<'S, 'T>) (items: 'S seq) =
+    (stage.Build()).Apply false (AsyncSeq.ofSeq items)
+    |> AsyncSeq.toListAsync
+    |> Async.RunSynchronously
 
 let chunkSuite =
     testList "Chunk" [
@@ -150,9 +159,308 @@ let chunkSuite =
                         9uy, 1UL
                     ]
 
-                Expect.equal (Chunk.histogram chunk) expected "histogram should count repeated values."
+                Expect.equal (ChunkFunctions.histogram chunk) expected "histogram should count repeated values."
             finally
                 Chunk.decRef chunk
+
+        testCase "histogramDense counts UInt8 values with dense byte bins" <| fun _ ->
+            let chunk = Chunk.create<uint8> (5UL, 1UL, 1UL)
+            try
+                let values = Chunk.span<uint8> chunk
+                values[0] <- 255uy
+                values[1] <- 0uy
+                values[2] <- 255uy
+                values[3] <- 7uy
+                values[4] <- 0uy
+
+                let expected = Map.ofList [ 0uy, 2UL; 7uy, 1UL; 255uy, 2UL ]
+                Expect.equal (ChunkFunctions.histogramDense chunk) expected "histogramDense should count dense byte bins."
+            finally
+                Chunk.decRef chunk
+
+        testCase "histogramDense counts UInt16 values with dense UInt16 bins" <| fun _ ->
+            let chunk = Chunk.create<uint16> (5UL, 1UL, 1UL)
+            try
+                let values = Chunk.span<uint16> chunk
+                values[0] <- 65535us
+                values[1] <- 0us
+                values[2] <- 512us
+                values[3] <- 65535us
+                values[4] <- 512us
+
+                let expected = Map.ofList [ 0us, 1UL; 512us, 2UL; 65535us, 2UL ]
+                Expect.equal (ChunkFunctions.histogramDense chunk) expected "histogramDense should count dense UInt16 bins."
+            finally
+                Chunk.decRef chunk
+
+        testCase "histogramDense preserves signed integer abscissae" <| fun _ ->
+            let chunk8 = Chunk.create<int8> (4UL, 1UL, 1UL)
+            let chunk16 = Chunk.create<int16> (4UL, 1UL, 1UL)
+            try
+                let values8 = Chunk.span<int8> chunk8
+                values8[0] <- SByte.MinValue
+                values8[1] <- -1y
+                values8[2] <- -1y
+                values8[3] <- SByte.MaxValue
+
+                let expected8 = Map.ofList [ SByte.MinValue, 1UL; -1y, 2UL; SByte.MaxValue, 1UL ]
+                Expect.equal (ChunkFunctions.histogramDense chunk8) expected8 "histogramDense should return original int8 values, not shifted dense indices."
+
+                let values16 = Chunk.span<int16> chunk16
+                values16[0] <- Int16.MinValue
+                values16[1] <- -17s
+                values16[2] <- -17s
+                values16[3] <- Int16.MaxValue
+
+                let expected16 = Map.ofList [ Int16.MinValue, 1UL; -17s, 2UL; Int16.MaxValue, 1UL ]
+                Expect.equal (ChunkFunctions.histogramDense chunk16) expected16 "histogramDense should return original int16 values, not shifted dense indices."
+            finally
+                Chunk.decRef chunk16
+                Chunk.decRef chunk8
+
+        testCase "histogramDense rejects non-small-integer chunks" <| fun _ ->
+            let chunk = Chunk.create<float32> (1UL, 1UL, 1UL)
+            try
+                Expect.throws (fun () -> ChunkFunctions.histogramDense chunk |> ignore) "histogramDense should reject floating-point chunks."
+            finally
+                Chunk.decRef chunk
+
+        testCase "histogramLeftEdges bins values and puts underflow in first bin" <| fun _ ->
+            let chunk = Chunk.create<float32> (8UL, 1UL, 1UL)
+            try
+                let values = Chunk.span<float32> chunk
+                values[0] <- -10.0f
+                values[1] <- 0.0f
+                values[2] <- 0.9f
+                values[3] <- 1.0f
+                values[4] <- 1.5f
+                values[5] <- 2.0f
+                values[6] <- 100.0f
+                values[7] <- Single.NaN
+
+                let expected =
+                    Map.ofList [
+                        0.0, 3UL
+                        1.0, 2UL
+                        2.0, 2UL
+                    ]
+
+                Expect.equal (ChunkFunctions.histogramLeftEdges [ 0.0; 1.0; 2.0 ] chunk) expected "left-edge histogram should clamp underflow to first bin and overflow to last bin."
+            finally
+                Chunk.decRef chunk
+
+        testCase "histogramLeftEdges rejects empty non-finite and unsorted edges" <| fun _ ->
+            let chunk = Chunk.create<uint8> (1UL, 1UL, 1UL)
+            try
+                Expect.throws (fun () -> ChunkFunctions.histogramLeftEdges [] chunk |> ignore) "Empty edge lists should be rejected."
+                Expect.throws (fun () -> ChunkFunctions.histogramLeftEdges [ 0.0; Double.NaN ] chunk |> ignore) "NaN edges should be rejected."
+                Expect.throws (fun () -> ChunkFunctions.histogramLeftEdges [ 1.0; 1.0 ] chunk |> ignore) "Duplicate edges should be rejected."
+                Expect.throws (fun () -> ChunkFunctions.histogramLeftEdges [ 2.0; 1.0 ] chunk |> ignore) "Descending edges should be rejected."
+            finally
+                Chunk.decRef chunk
+
+        testCase "ChunkFunctions.histogram counts byte-backed values directly" <| fun _ ->
+            let bytes = Array.zeroCreate<byte> 6
+            bytes[0] <- 3uy
+            bytes[1] <- 1uy
+            bytes[2] <- 3uy
+            bytes[3] <- 9uy
+            bytes[4] <- 1uy
+            bytes[5] <- 3uy
+
+            let expected = Map.ofList [ 1uy, 2UL; 3uy, 3UL; 9uy, 1UL ]
+            Expect.equal (ChunkFunctions.histogramBytes<uint8> bytes bytes.Length) expected "ChunkFunctions.histogramBytes should count values from the valid byte prefix."
+
+        testCase "ChunkFunctions.histogramDense preserves signed abscissae from byte storage" <| fun _ ->
+            let values = [| Int16.MinValue; -2s; -2s; 0s; Int16.MaxValue |]
+            let bytes = MemoryMarshal.AsBytes(values.AsSpan()).ToArray()
+
+            let expected =
+                Map.ofList [
+                    Int16.MinValue, 1UL
+                    -2s, 2UL
+                    0s, 1UL
+                    Int16.MaxValue, 1UL
+                ]
+
+            Expect.equal (ChunkFunctions.histogramDenseBytes<int16> bytes bytes.Length) expected "Dense histograms should expose original signed bin values, not shifted storage indices."
+
+        testCase "ChunkFunctions.addDenseInto adds compatible dense count arrays" <| fun _ ->
+            let target = ChunkFunctions.UInt8Counts [| 1UL; 2UL; 3UL |]
+            let source = ChunkFunctions.UInt8Counts [| 10UL; 20UL; 30UL |]
+
+            ChunkFunctions.addDenseInto target source
+
+            match target with
+            | ChunkFunctions.UInt8Counts counts ->
+                Expect.sequenceEqual counts [| 11UL; 22UL; 33UL |] "Dense add should mutate the target counts."
+            | _ ->
+                failtest "Expected UInt8 dense counts."
+
+            Expect.throws (fun () -> ChunkFunctions.addDenseInto target (ChunkFunctions.Int8Counts [| 1UL; 2UL; 3UL |])) "Dense add should reject incompatible integer domains."
+
+        testCase "ChunkFunctions.histogramDenseCounts returns implicit-abscissa dense counts" <| fun _ ->
+            let chunk = Chunk.create<int8> (4UL, 1UL, 1UL)
+            try
+                let values = Chunk.span<int8> chunk
+                values[0] <- SByte.MinValue
+                values[1] <- -1y
+                values[2] <- -1y
+                values[3] <- SByte.MaxValue
+
+                match ChunkFunctions.histogramDenseCounts chunk with
+                | ChunkFunctions.Int8Counts counts ->
+                    Expect.equal counts[0] 1UL "Int8.MinValue should live at dense index 0."
+                    Expect.equal counts[127] 2UL "-1 should live at dense index 127."
+                    Expect.equal counts[128] 0UL "Zero should not have been observed."
+                    Expect.equal counts[255] 1UL "Int8.MaxValue should live at dense index 255."
+                | _ ->
+                    failtest "Expected Int8 dense counts."
+            finally
+                Chunk.decRef chunk
+
+        testCase "ChunkFunctions.histogramLeftEdges includes empty bin abscissae" <| fun _ ->
+            let values = [| -10.0f; 0.5f; 100.0f |]
+            let bytes = MemoryMarshal.AsBytes(values.AsSpan()).ToArray()
+
+            let expected =
+                Map.ofList [
+                    0.0, 2UL
+                    10.0, 0UL
+                    20.0, 1UL
+                ]
+
+            Expect.equal (ChunkFunctions.histogramLeftEdgesBytes<float32> [ 0.0; 10.0; 20.0 ] bytes bytes.Length) expected "Left-edge histograms should keep all edge abscissae, including zero-count bins."
+
+        testCase "ChunkFunctions.addLeftEdgesInto adds only compatible left-edge histograms" <| fun _ ->
+            let target: ChunkFunctions.LeftEdgeHistogram =
+                { ChunkFunctions.LeftEdges = [| 0.0; 10.0; 20.0 |]
+                  Counts = [| 1UL; 2UL; 3UL |] }
+
+            let source: ChunkFunctions.LeftEdgeHistogram =
+                { ChunkFunctions.LeftEdges = [| 0.0; 10.0; 20.0 |]
+                  Counts = [| 10UL; 20UL; 30UL |] }
+
+            ChunkFunctions.addLeftEdgesInto target source
+            Expect.sequenceEqual target.Counts [| 11UL; 22UL; 33UL |] "Left-edge add should mutate the target counts when edges match exactly."
+
+            let incompatible: ChunkFunctions.LeftEdgeHistogram =
+                { ChunkFunctions.LeftEdges = [| 0.0; 5.0; 20.0 |]
+                  Counts = [| 1UL; 1UL; 1UL |] }
+
+            Expect.throws (fun () -> ChunkFunctions.addLeftEdgesInto target incompatible) "Left-edge add should reject incompatible edge arrays."
+
+        testCase "ChunkFunctions.histogramLeftEdgeCounts returns reusable edge and count arrays" <| fun _ ->
+            let chunk = Chunk.create<float32> (3UL, 1UL, 1UL)
+            try
+                let values = Chunk.span<float32> chunk
+                values[0] <- -1.0f
+                values[1] <- 11.0f
+                values[2] <- 99.0f
+
+                let histogram = ChunkFunctions.histogramLeftEdgeCounts [ 0.0; 10.0; 20.0 ] chunk
+                Expect.sequenceEqual histogram.LeftEdges [| 0.0; 10.0; 20.0 |] "Left-edge count histograms should preserve explicit abscissae."
+                Expect.sequenceEqual histogram.Counts [| 1UL; 1UL; 1UL |] "Left-edge count histograms should store ordinates in a reusable count array."
+            finally
+                Chunk.decRef chunk
+
+        testCase "ChunkFunctions dictionary helpers merge sparse histograms" <| fun _ ->
+            let target = System.Collections.Generic.Dictionary<int, uint64>()
+            target[1] <- 2UL
+            target[3] <- 4UL
+
+            let source = System.Collections.Generic.Dictionary<int, uint64>()
+            source[1] <- 5UL
+            source[2] <- 7UL
+
+            ChunkFunctions.addDictionaryInto target source
+            Expect.equal (ChunkFunctions.dictionaryToMap target) (Map.ofList [ 1, 7UL; 2, 7UL; 3, 4UL ]) "Sparse dictionary add should update existing bins and add new bins."
+
+        testCase "ChunkFunctions.histogramReducer serially reduces sparse chunk histograms and releases chunks" <| fun _ ->
+            let releaseCount = ref 0
+            let chunk1 = manualChunk (3UL, 1UL, 1UL) [| 1uy; 2uy; 1uy |] 3 (fun () -> releaseCount.Value <- releaseCount.Value + 1)
+            let chunk2 = manualChunk (4UL, 1UL, 1UL) [| 2uy; 3uy; 3uy; 3uy |] 4 (fun () -> releaseCount.Value <- releaseCount.Value + 1)
+
+            let results = runStageList (ChunkFunctions.histogramReducer<uint8> ()) [ chunk1; chunk2 ]
+
+            Expect.equal results.Length 1 "Histogram reducer should emit one final histogram."
+            Expect.equal results[0].Counts (Map.ofList [ 1uy, 2UL; 2uy, 2UL; 3uy, 3UL ]) "Sparse chunk histogram reducer should merge all chunk counts."
+            Expect.equal releaseCount.Value 2 "Histogram reducer should decRef every consumed chunk."
+            Expect.equal chunk1.RefCount.Value 0 "First consumed chunk should have ref count zero."
+            Expect.equal chunk2.RefCount.Value 0 "Second consumed chunk should have ref count zero."
+
+        testCase "ChunkFunctions.histogramDenseReducer serially reduces dense chunk histograms" <| fun _ ->
+            let releaseCount = ref 0
+            let chunk1 = manualChunk (3UL, 1UL, 1UL) [| 0uy; 255uy; 255uy |] 3 (fun () -> releaseCount.Value <- releaseCount.Value + 1)
+            let chunk2 = manualChunk (2UL, 1UL, 1UL) [| 7uy; 255uy |] 2 (fun () -> releaseCount.Value <- releaseCount.Value + 1)
+
+            let results = runStageList (ChunkFunctions.histogramDenseReducer<uint8> ()) [ chunk1; chunk2 ]
+
+            Expect.equal results.Length 1 "Dense histogram reducer should emit one final histogram."
+            Expect.equal results[0].Counts (Map.ofList [ 0uy, 1UL; 7uy, 1UL; 255uy, 3UL ]) "Dense chunk histogram reducer should add compatible dense count arrays."
+            Expect.equal releaseCount.Value 2 "Dense histogram reducer should decRef every consumed chunk."
+
+        testCase "ChunkFunctions.histogramReducerParallel reduces sparse chunk histograms with window size two" <| fun _ ->
+            let releaseCount = ref 0
+            let chunks =
+                [ manualChunk (3UL, 1UL, 1UL) [| 1uy; 2uy; 1uy |] 3 (fun () -> releaseCount.Value <- releaseCount.Value + 1)
+                  manualChunk (2UL, 1UL, 1UL) [| 2uy; 4uy |] 2 (fun () -> releaseCount.Value <- releaseCount.Value + 1)
+                  manualChunk (4UL, 1UL, 1UL) [| 4uy; 4uy; 8uy; 8uy |] 4 (fun () -> releaseCount.Value <- releaseCount.Value + 1)
+                  manualChunk (1UL, 1UL, 1UL) [| 8uy |] 1 (fun () -> releaseCount.Value <- releaseCount.Value + 1)
+                  manualChunk (2UL, 1UL, 1UL) [| 1uy; 8uy |] 2 (fun () -> releaseCount.Value <- releaseCount.Value + 1) ]
+
+            let results = runStageList (ChunkFunctions.histogramReducerParallel<uint8> 2) chunks
+
+            Expect.equal results.Length 1 "Parallel sparse histogram reducer should emit one final histogram."
+            Expect.equal results[0].Counts (Map.ofList [ 1uy, 3UL; 2uy, 2UL; 4uy, 3UL; 8uy, 4UL ]) "Parallel sparse histogram reducer should merge worker dictionaries."
+            Expect.equal releaseCount.Value chunks.Length "Parallel sparse histogram reducer should decRef every consumed chunk."
+
+        testCase "ChunkFunctions.histogramDenseReducerParallel reduces dense chunk histograms with window size two" <| fun _ ->
+            let releaseCount = ref 0
+            let chunks =
+                [ manualChunk (3UL, 1UL, 1UL) [| 0uy; 255uy; 255uy |] 3 (fun () -> releaseCount.Value <- releaseCount.Value + 1)
+                  manualChunk (2UL, 1UL, 1UL) [| 7uy; 255uy |] 2 (fun () -> releaseCount.Value <- releaseCount.Value + 1)
+                  manualChunk (3UL, 1UL, 1UL) [| 7uy; 7uy; 0uy |] 3 (fun () -> releaseCount.Value <- releaseCount.Value + 1)
+                  manualChunk (1UL, 1UL, 1UL) [| 42uy |] 1 (fun () -> releaseCount.Value <- releaseCount.Value + 1)
+                  manualChunk (2UL, 1UL, 1UL) [| 42uy; 255uy |] 2 (fun () -> releaseCount.Value <- releaseCount.Value + 1) ]
+
+            let results = runStageList (ChunkFunctions.histogramDenseReducerParallel<uint8> 2) chunks
+
+            Expect.equal results.Length 1 "Parallel dense histogram reducer should emit one final histogram."
+            Expect.equal results[0].Counts (Map.ofList [ 0uy, 2UL; 7uy, 3UL; 42uy, 2UL; 255uy, 4UL ]) "Parallel dense histogram reducer should merge worker count arrays."
+            Expect.equal releaseCount.Value chunks.Length "Parallel dense histogram reducer should decRef every consumed chunk."
+
+        testCase "parallelCollect maps non-overlapping windows and collects emitted items" <| fun _ ->
+            let stage =
+                Stage.parallelCollect
+                    "parallel-window-sums"
+                    3
+                    3
+                    0
+                    (fun _ item -> item)
+                    (fun _ window -> [ window.Items |> List.sum ])
+                    (fun _ -> 1UL)
+                    id
+
+            let results = runStageList stage [ 1; 2; 3; 4; 5; 6; 7; 8 ]
+
+            Expect.equal results [ 6; 15; 15 ] "parallelCollect should cover full non-overlapping windows plus the trailing partial window."
+
+        testCase "ChunkFunctions.histogramLeftEdgesReducer serially reduces compatible binned chunk histograms" <| fun _ ->
+            let releaseCount = ref 0
+            let values1 = [| -1.0f; 0.5f; 11.0f |]
+            let values2 = [| 19.0f; 20.0f; 99.0f |]
+            let bytes1 = MemoryMarshal.AsBytes(values1.AsSpan()).ToArray()
+            let bytes2 = MemoryMarshal.AsBytes(values2.AsSpan()).ToArray()
+            let chunk1 = manualChunk (3UL, 1UL, 1UL) bytes1 bytes1.Length (fun () -> releaseCount.Value <- releaseCount.Value + 1)
+            let chunk2 = manualChunk (3UL, 1UL, 1UL) bytes2 bytes2.Length (fun () -> releaseCount.Value <- releaseCount.Value + 1)
+
+            let results = runStageList (ChunkFunctions.histogramLeftEdgesReducer<float32> [ 0.0; 10.0; 20.0 ]) [ chunk1; chunk2 ]
+
+            Expect.equal results.Length 1 "Left-edge histogram reducer should emit one final histogram."
+            Expect.equal results[0].Counts (Map.ofList [ 0.0, 2UL; 10.0, 2UL; 20.0, 2UL ]) "Left-edge chunk histogram reducer should add compatible ordinate arrays."
+            Expect.equal results[0].Binning (Some(FixedEdges(0.0, 20.0, 3u))) "Left-edge reducer should preserve bin metadata."
+            Expect.equal releaseCount.Value 2 "Left-edge histogram reducer should decRef every consumed chunk."
 
         testCase "toIndex and ofIndex are inverse for row-major xyz indexing" <| fun _ ->
             let width = 5

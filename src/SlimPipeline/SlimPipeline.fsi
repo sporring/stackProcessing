@@ -61,6 +61,14 @@ type Pipe<'S,'T> =
         (bool -> FSharp.Control.AsyncSeq<'S> -> FSharp.Control.AsyncSeq<'T>)
       Profile: Profile
     }
+type MonoidFolder<'Item, 'State, 'Result> =
+    {
+      Create: (unit -> 'State)
+      AddItemInto: ('State -> 'Item -> unit)
+      MergeInto: ('State -> 'State -> unit)
+      Finish: ('State -> 'Result)
+      ReleaseItem: ('Item -> unit)
+    }
 module private Pipe =
     type TeeSide =
         | Left
@@ -652,6 +660,31 @@ module Stage =
     val cast:
       name: string -> f: ('S -> 'T) -> memoryNeed: MemoryNeed -> Stage<'S,'T>
         when 'S: equality and 'T: equality
+    val parallelReduce:
+      name: string ->
+        windowSize: int ->
+        folder: MonoidFolder<'Item,'State,'Result> ->
+        profile: Profile ->
+        memoryNeed: MemoryNeed ->
+        elementTransformation: ElementTransformation -> Stage<'Item,'Result>
+    val parallelCollect:
+      name: string ->
+        windowSize: int ->
+        stride: int ->
+        pad: int ->
+        zeroMaker: (int -> 'S -> 'S) ->
+        mapper: (bool -> Window<'S> -> 'T list) ->
+        memoryNeed: MemoryNeed ->
+        elementTransformation: ElementTransformation -> Stage<'S,'T>
+    val parallelMap:
+      name: string ->
+        windowSize: int ->
+        stride: int ->
+        pad: int ->
+        zeroMaker: (int -> 'S -> 'S) ->
+        mapper: (bool -> Window<'S> -> 'T) ->
+        memoryNeed: MemoryNeed ->
+        elementTransformation: ElementTransformation -> Stage<'S,'T>
 type Plan<'S,'T> =
     {
       stage: Stage<'S,'T> option

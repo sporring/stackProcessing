@@ -19,6 +19,14 @@ as a restart checklist rather than as a polished design document.
 - For 1024^3 uncompressed copy/threshold, StackProcessing-Zarr is faster and
   lower-memory than Python/Dask-Zarr, but the runtime gap narrows for large
   float32 thresholding because raw IO dominates.
+- A first chunk-only TIFF pipeline now exists. BitMiracle/libtiff.net reads
+  scanlines directly into StackProcessing-owned `ArrayPool<byte>` buffers,
+  exposes them as `Chunk<'T>`, and returns the buffers through `Chunk.decRef`.
+  The same chunk path can write TIFF slices back out.
+- Chunk-native histogram reducers are now the first complete non-image pipeline:
+  `readChunkSlices -> ChunkFunctions.histogram...Reducer -> compact histogram`.
+  Dense and sparse variants both work serially and through the new native
+  parallel reducer.
 - Median filtering remains the meaningful neighbourhood comparison. Dask uses
   3D `map_overlap`; StackProcessing uses z-stream windows/slabs. The halo
   layout and task/chunk granularity dominate more than the file format alone.
@@ -28,21 +36,56 @@ as a restart checklist rather than as a polished design document.
 The current `StackCore.Chunk<'T>` stores:
 
 ```fsharp
-type ChunkStorage<'T> =
-    { Bytes: byte[]
+type Chunk<'T when 'T: equality> =
+    { Size: uint64 * uint64 * uint64
+      Bytes: byte[]
       ByteLength: int
-      Release: unit -> unit }
+      Release: unit -> unit
+      RefCount: int ref }
 ```
 
 The distinction between physical array length and logical byte length is
 essential. `ArrayPool<byte>.Rent(n)` may return a larger buffer. Hot paths should
-use `Chunk.memory` or `Chunk.span<'T>` so only the logical payload is read or
-written. Returning the underlying `byte[]` directly is only safe when its length
-equals `ByteLength`.
+use `Chunk.span<'T>` or byte spans over `Bytes[0..ByteLength)` so only the
+logical payload is read or written. Returning the underlying `byte[]` directly
+is only safe when its length equals `ByteLength`.
 
 Ownership belongs next to the buffer. A chunk stage that rents memory should
 wrap the release action in the chunk and release it immediately after the write
-or after the downstream consumer no longer needs it.
+or after the downstream consumer no longer needs it. `Chunk.incRef` and
+`Chunk.decRef` are intentionally explicit: `decRef` means the caller releases
+its claim, not necessarily that the buffer is returned immediately.
+
+## Chunk-native parallelization
+
+The chunk histogram experiments introduced a small native parallel layer:
+
+- `Stage.parallelReduce` splits a stream into non-overlapping windows,
+  creates worker-local accumulators, folds each worker's share of the window,
+  and merges the worker states into the final reducer state.
+- `Stage.parallelMap` covers independent window maps.
+- `Stage.parallelCollect` is the corresponding shape for neighbourhood-like
+  operators that emit zero, one, or many outputs per input window.
+
+The important design choice is that parallelism is expressed in StackProcessing
+terms: window size is also the worker count; windows have explicit size,
+stride, and padding; chunks have explicit
+ownership; reducers define how to create, update, merge, finish, and release
+items. This keeps `ArrayPool` lifetimes local and avoids shared mutable
+structures in hot loops. For histograms, dense reducers use worker-local count
+arrays and vector-friendly adders, while sparse reducers use worker-local
+dictionaries and merge them afterwards rather than updating one concurrent
+dictionary from all workers.
+
+This is related to `AsyncSeq` parallel map helpers, but it is not only a wrapper
+around them. `AsyncSeq.mapAsyncParallel` variants are useful for ordinary async
+maps, especially when IO or independent latency dominates. The StackProcessing
+parallel reducers need additional domain structure: deterministic window
+geometry, bounded in-flight chunks, `Chunk.decRef` at the correct ownership
+boundary, worker-local reducer states, and a final merge. Ordered versus
+unordered output is also an algorithmic choice: unordered parallel maps are only
+transparent for consumers that do not care about stream order, or for reducers
+whose merge operation is commutative as well as associative.
 
 ## SIMD and flat loops
 
@@ -117,4 +160,3 @@ expected time win.
 - Re-run Zarr direct copy/threshold on uncompressed 512^3 and 1024^3 only.
 - Add a poison-on-return AsyncSeq test for pooled slice/window/slab lifetimes.
 - Only then start replacing more `ImageFunctions` singleton operations.
-

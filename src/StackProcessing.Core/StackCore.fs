@@ -31,12 +31,43 @@ type ChunkLayout =
 
 type ChunkIndex = int * int * int
 
+// Equality is identity-like: chunks are owned storage handles, not structural values.
+[<CustomEquality; NoComparison>]
 type Chunk<'T when 'T: equality> =
     { Size: uint64 * uint64 * uint64
       Bytes: byte[]
       ByteLength: int
       Release: unit -> unit
       RefCount: int ref }
+
+    override this.Equals(other) =
+        match other with
+        | :? Chunk<'T> as other -> obj.ReferenceEquals(this.RefCount, other.RefCount)
+        | _ -> false
+
+    override this.GetHashCode() =
+        RuntimeHelpers.GetHashCode(this.RefCount)
+
+type HistogramBinning =
+    | FixedEdges of firstLeftEdge: float * lastLeftEdge: float * bins: uint32
+    | FixedWidth of binWidth: uint64
+
+type Histogram<'T when 'T: comparison> =
+    { Counts: Map<'T, uint64>
+      Binning: HistogramBinning option }
+
+module Histogram =
+    let ofMap counts =
+        { Counts = counts
+          Binning = None }
+
+    let withFixedEdges firstLeftEdge lastLeftEdge bins counts =
+        { Counts = counts
+          Binning = Some(FixedEdges(firstLeftEdge, lastLeftEdge, bins)) }
+
+    let withFixedWidth binWidth counts =
+        { Counts = counts
+          Binning = Some(FixedWidth binWidth) }
 
 module Chunk =
     let create<'T when 'T: equality> size : Chunk<'T> =
@@ -153,46 +184,11 @@ module Chunk =
             i <- i + 1
         acc
 
-    let histogram<'T when 'T: equality and 'T: comparison and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> (chunk: Chunk<'T>) =
-        let values = span<'T> chunk
-        let mutable counts = Map.empty<'T, uint64>
-        let mutable i = 0
-        while i < values.Length do
-            let value = values[i]
-            counts <-
-                counts
-                |> Map.change value (function
-                    | Some count -> Some(count + 1UL)
-                    | None -> Some 1UL)
-            i <- i + 1
-        counts
-
 type Point2D =
     { X: float
       Y: float }
 
 type Polygon2D = Point2D list
-
-type HistogramBinning =
-    | FixedEdges of firstLeftEdge: float * lastLeftEdge: float * bins: uint32
-    | FixedWidth of binWidth: uint64
-
-type Histogram<'T when 'T: comparison> =
-    { Counts: Map<'T, uint64>
-      Binning: HistogramBinning option }
-
-module Histogram =
-    let ofMap counts =
-        { Counts = counts
-          Binning = None }
-
-    let withFixedEdges firstLeftEdge lastLeftEdge bins counts =
-        { Counts = counts
-          Binning = Some(FixedEdges(firstLeftEdge, lastLeftEdge, bins)) }
-
-    let withFixedWidth binWidth counts =
-        { Counts = counts
-          Binning = Some(FixedWidth binWidth) }
 
 let getMem () =
     System.GC.Collect()

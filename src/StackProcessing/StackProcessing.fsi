@@ -314,6 +314,12 @@ val readSlab<'T when 'T: equality> :
      SlimPipeline.Plan<unit,unit> -> SlimPipeline.Plan<unit,StackCore.Image<'T>>)
     when 'T: equality
 
+val readChunkSlices<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> System.ValueType> :
+  (string ->
+     string ->
+     SlimPipeline.Plan<unit,unit> -> SlimPipeline.Plan<unit,StackCore.Chunk<'T>>)
+    when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> System.ValueType
+
 val readZarrSlabStacked<'T when 'T: equality> :
   (string ->
      int ->
@@ -441,6 +447,10 @@ val write:
 val writeThrough:
   (string -> string -> StackCore.Stage<StackCore.Image<'a>,StackCore.Image<'a>>)
     when 'a: equality
+
+val writeChunkSlices<'T when 'T: equality> :
+  (string -> string -> StackCore.Stage<StackCore.Chunk<'T>,unit>)
+    when 'T: equality
 
 val writeVolume<'T when 'T: equality> :
   (string -> StackCore.Stage<StackCore.Image<'T>,unit>) when 'T: equality

@@ -42,6 +42,7 @@
 
     <ItemGroup>
         <Compile Include="StackCore.fs" />
+        <Compile Include="ChunkFunctions.fs" />
         <Compile Include="StackOptimizer.fs" />
         <Compile Include="StackCharts.fs" />
         <Compile Include="StackIO.fs" />

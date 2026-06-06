@@ -62,6 +62,7 @@ ArrayPool experiment:
   dotnet run --project benchmarks/StackProcessing.Benchmarks -- run-libtiff-direct-threshold --operation threshold --pixel-type UInt8|UInt16|Float32 --input DIR --output DIR [--threshold X]
   dotnet run --project benchmarks/StackProcessing.Benchmarks -- run-libtiff-direct-threshold-intype --operation threshold --pixel-type UInt8|UInt16|Float32 --input DIR --output DIR [--threshold X]
   dotnet run --project benchmarks/StackProcessing.Benchmarks -- run-libtiff-direct-threshold-hotloop --pixel-type UInt8|UInt16|Float32 --input DIR --variant byte-mask-one|byte-intype-max|byte-intype-one|typed-intype-max|typed-intype-one|typed-copy-intype-max|typed-copy-intype-one [--iterations N] [--threshold X]
+  dotnet run --project benchmarks/StackProcessing.Benchmarks -- run-chunk-histogram --pixel-type UInt8|UInt16|Float32 --input DIR --variant dense|sparse|leftedges [--window-size N] [--bins N] [--available-memory BYTES]
   dotnet run --project benchmarks/StackProcessing.Benchmarks -- run-threshold-kernel --pixel-type UInt8|UInt16|Float32 --shape WxHxD --output-type mask|intype [--threshold X]
   dotnet run --project benchmarks/StackProcessing.Benchmarks -- run-libtiff-strip-copy --operation copy --pixel-type UInt8|UInt16|Float32 --input DIR --output DIR
   dotnet run --project benchmarks/StackProcessing.Benchmarks -- run-libtiff-raw-strip-copy --operation copy --pixel-type UInt8|UInt16|Float32 --input DIR --output DIR
@@ -2121,6 +2122,71 @@ let private run opts =
     writeInternalSeconds stopwatch.Elapsed
     exitCode
 
+let private ensureNonEmptyHistogram<'T when 'T: comparison> label (histogram: StackCore.Histogram<'T>) =
+    if Map.isEmpty histogram.Counts then
+        invalidOp $"{label} produced an empty histogram."
+
+let private runChunkHistogramDenseTyped<'T when 'T: equality and 'T: comparison and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> input availableMemory windowSize =
+    let histogram =
+        benchmarkSource availableMemory
+        |> readChunkSlices<'T> input ".tiff"
+        >=> if windowSize > 1 then ChunkFunctions.histogramDenseReducerParallel<'T> windowSize else ChunkFunctions.histogramDenseReducer<'T> ()
+        |> drain
+
+    ensureNonEmptyHistogram "chunk dense histogram" histogram
+    0
+
+let private runChunkHistogramSparseTyped<'T when 'T: equality and 'T: comparison and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> input availableMemory windowSize =
+    let histogram =
+        benchmarkSource availableMemory
+        |> readChunkSlices<'T> input ".tiff"
+        >=> if windowSize > 1 then ChunkFunctions.histogramReducerParallel<'T> windowSize else ChunkFunctions.histogramReducer<'T> ()
+        |> drain
+
+    ensureNonEmptyHistogram "chunk sparse histogram" histogram
+    0
+
+let private runChunkHistogramLeftEdgesTyped<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> input availableMemory bins =
+    let leftEdges = [ for bin in 0 .. max 1 bins - 1 -> float bin ]
+    let histogram =
+        benchmarkSource availableMemory
+        |> readChunkSlices<'T> input ".tiff"
+        >=> ChunkFunctions.histogramLeftEdgesReducer<'T> leftEdges
+        |> drain
+
+    ensureNonEmptyHistogram "chunk left-edge histogram" histogram
+    0
+
+let private runChunkHistogram opts =
+    let pixelType = require "pixel-type" opts |> parsePixelType
+    let input = require "input" opts
+    let variant = optional "variant" "dense" opts
+    let bins = optional "bins" "256" opts |> Int32.Parse
+    let windowSize =
+        if opts.ContainsKey "window-size" then
+            optional "window-size" "1" opts |> Int32.Parse
+        else
+            optional "workers" "1" opts |> Int32.Parse
+    let availableMemory = optional "available-memory" (string (1024UL * 1024UL * 1024UL * 1024UL)) opts |> UInt64.Parse
+
+    let stopwatch = Stopwatch.StartNew()
+    let exitCode =
+        match variant, pixelType with
+        | "dense", UInt8 -> runChunkHistogramDenseTyped<uint8> input availableMemory windowSize
+        | "dense", UInt16 -> runChunkHistogramDenseTyped<uint16> input availableMemory windowSize
+        | "dense", Float32 -> failwith "Dense chunk histograms are defined for integer pixel types up to 16 bits; use --variant sparse or --variant leftedges for Float32."
+        | "sparse", UInt8 -> runChunkHistogramSparseTyped<uint8> input availableMemory windowSize
+        | "sparse", UInt16 -> runChunkHistogramSparseTyped<uint16> input availableMemory windowSize
+        | "sparse", Float32 -> runChunkHistogramSparseTyped<float32> input availableMemory windowSize
+        | "leftedges", UInt8 -> runChunkHistogramLeftEdgesTyped<uint8> input availableMemory bins
+        | "leftedges", UInt16 -> runChunkHistogramLeftEdgesTyped<uint16> input availableMemory bins
+        | "leftedges", Float32 -> runChunkHistogramLeftEdgesTyped<float32> input availableMemory bins
+        | other, _ -> failwith $"Unsupported chunk histogram variant '{other}'. Expected dense, sparse, or leftedges."
+
+    stopwatch.Stop()
+    writeInternalSeconds stopwatch.Elapsed
+    exitCode
+
 let private runArrayPoolTyped<'T when 'T: equality> operation input output thresholdValue =
     let volume = readArrayPoolTiffStack<'T> input
     try
@@ -3224,6 +3290,7 @@ let main args =
         | _ when args[0] = "run-libtiff-direct-threshold" -> args[1..] |> parseArgs |> runLibTiffDirectThreshold
         | _ when args[0] = "run-libtiff-direct-threshold-intype" -> args[1..] |> parseArgs |> runLibTiffDirectThresholdInType
         | _ when args[0] = "run-libtiff-direct-threshold-hotloop" -> args[1..] |> parseArgs |> runLibTiffDirectThresholdHotLoop
+        | _ when args[0] = "run-chunk-histogram" -> args[1..] |> parseArgs |> runChunkHistogram
         | _ when args[0] = "run-threshold-kernel" -> args[1..] |> parseArgs |> runThresholdKernel
         | _ when args[0] = "run-libtiff-strip-copy" -> args[1..] |> parseArgs |> runLibTiffStripCopy
         | _ when args[0] = "run-libtiff-raw-strip-copy" -> args[1..] |> parseArgs |> runLibTiffRawStripCopy

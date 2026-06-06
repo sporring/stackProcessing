@@ -51,6 +51,15 @@ let private parseArgs (args: string array) =
 let private optional name fallback (opts: Map<string,string>) =
     opts.TryFind name |> Option.defaultValue fallback
 
+let private optionalBool name fallback (opts: Map<string,string>) =
+    opts.TryFind name
+    |> Option.map (fun value ->
+        match value.Trim().ToLowerInvariant() with
+        | "1" | "true" | "yes" | "y" -> true
+        | "0" | "false" | "no" | "n" -> false
+        | _ -> invalidArg name $"Expected a boolean value for --{name}, got '{value}'.")
+    |> Option.defaultValue fallback
+
 let private parseShape (text: string) =
     let parts = text.Split('x', StringSplitOptions.RemoveEmptyEntries)
     if parts.Length <> 3 then invalidArg "shape" $"Expected WxHxD shape, got '{text}'."
@@ -1382,77 +1391,125 @@ let private imageSizeList shape =
 let private chunkSize shape =
     uint64 shape.Width, uint64 shape.Height, uint64 shape.Depth
 
-let private measureHistogramUInt8 shape threshold repeat =
+let private measureHistogramUInt8 includeImageFunctions shape threshold repeat =
     let shapeName = shapeText shape
     let length = requireIntLength shape
     let pixels = Array.zeroCreate<uint8> length
     fillUInt8 pixels length
     let image = Image.Image<uint8>.ofFlatArray(imageSizeList shape, pixels, "histogram-benchmark")
     let chunk = StackCore.Chunk.create<uint8> (chunkSize shape)
+    let leftEdges16 = [ for edge in 0 .. 16 .. 240 -> float edge ]
+    let leftEdges256 = [ for edge in 0 .. 255 -> float edge ]
     try
         let values = StackCore.Chunk.span<uint8> chunk
         for i in 0 .. values.Length - 1 do
             values[i] <- pixels[i]
-        [ "imagefunctions-histogram", fun () ->
-              let histogram = ImageFunctions.histogram image
-              if Map.isEmpty histogram then invalidOp "ImageFunctions.histogram returned an empty histogram."
-          "chunk-histogram", fun () ->
-              let histogram = StackCore.Chunk.histogram chunk
-              if Map.isEmpty histogram then invalidOp "Chunk.histogram returned an empty histogram." ]
+        let baselineActions =
+            if includeImageFunctions then
+                [ "imagefunctions-histogram", fun () ->
+                      let histogram = ImageFunctions.histogram image
+                      if Map.isEmpty histogram then invalidOp "ImageFunctions.histogram returned an empty histogram." ]
+            else
+                []
+
+        let chunkActions =
+            [ "chunk-histogram-dense", fun () ->
+                  let histogram = ChunkFunctions.histogramDense chunk
+                  if Map.isEmpty histogram then invalidOp "ChunkFunctions.histogramDense returned an empty histogram."
+              "chunk-histogram-leftedges-16", fun () ->
+                  let histogram = ChunkFunctions.histogramLeftEdges leftEdges16 chunk
+                  if Map.isEmpty histogram then invalidOp "ChunkFunctions.histogramLeftEdges returned an empty histogram."
+              "chunk-histogram-leftedges-256", fun () ->
+                  let histogram = ChunkFunctions.histogramLeftEdges leftEdges256 chunk
+                  if Map.isEmpty histogram then invalidOp "ChunkFunctions.histogramLeftEdges returned an empty histogram." ]
+
+        baselineActions @ chunkActions
         |> measureActions "histogram" "UInt8" shapeName threshold repeat
     finally
         StackCore.Chunk.decRef chunk
         image.decRefCount()
 
-let private measureHistogramUInt16 shape threshold repeat =
+let private measureHistogramUInt16 includeImageFunctions shape threshold repeat =
     let shapeName = shapeText shape
     let length = requireIntLength shape
     let pixels = Array.zeroCreate<uint16> length
     fillUInt16 pixels length
     let image = Image.Image<uint16>.ofFlatArray(imageSizeList shape, pixels, "histogram-benchmark")
     let chunk = StackCore.Chunk.create<uint16> (chunkSize shape)
+    let leftEdges256 = [ for edge in 0 .. 256 .. 65280 -> float edge ]
+    let leftEdges4096 = [ for edge in 0 .. 4096 .. 61440 -> float edge ]
     try
         let values = StackCore.Chunk.span<uint16> chunk
         for i in 0 .. values.Length - 1 do
             values[i] <- pixels[i]
-        [ "imagefunctions-histogram", fun () ->
-              let histogram = ImageFunctions.histogram image
-              if Map.isEmpty histogram then invalidOp "ImageFunctions.histogram returned an empty histogram."
-          "chunk-histogram", fun () ->
-              let histogram = StackCore.Chunk.histogram chunk
-              if Map.isEmpty histogram then invalidOp "Chunk.histogram returned an empty histogram." ]
+        let baselineActions =
+            if includeImageFunctions then
+                [ "imagefunctions-histogram", fun () ->
+                      let histogram = ImageFunctions.histogram image
+                      if Map.isEmpty histogram then invalidOp "ImageFunctions.histogram returned an empty histogram." ]
+            else
+                []
+
+        let chunkActions =
+            [ "chunk-histogram-dense", fun () ->
+                  let histogram = ChunkFunctions.histogramDense chunk
+                  if Map.isEmpty histogram then invalidOp "ChunkFunctions.histogramDense returned an empty histogram."
+              "chunk-histogram-leftedges-256", fun () ->
+                  let histogram = ChunkFunctions.histogramLeftEdges leftEdges256 chunk
+                  if Map.isEmpty histogram then invalidOp "ChunkFunctions.histogramLeftEdges returned an empty histogram."
+              "chunk-histogram-leftedges-4096", fun () ->
+                  let histogram = ChunkFunctions.histogramLeftEdges leftEdges4096 chunk
+                  if Map.isEmpty histogram then invalidOp "ChunkFunctions.histogramLeftEdges returned an empty histogram." ]
+
+        baselineActions @ chunkActions
         |> measureActions "histogram" "UInt16" shapeName threshold repeat
     finally
         StackCore.Chunk.decRef chunk
         image.decRefCount()
 
-let private measureHistogramFloat32 shape threshold repeat =
+let private measureHistogramFloat32 includeImageFunctions shape threshold repeat =
     let shapeName = shapeText shape
     let length = requireIntLength shape
     let pixels = Array.zeroCreate<float32> length
     fillFloat32 pixels length
     let image = Image.Image<float32>.ofFlatArray(imageSizeList shape, pixels, "histogram-benchmark")
     let chunk = StackCore.Chunk.create<float32> (chunkSize shape)
+    let leftEdges16 = [ for edge in 0 .. 16 .. 240 -> float edge ]
+    let leftEdges256 = [ for edge in 0 .. 255 -> float edge ]
     try
         let values = StackCore.Chunk.span<float32> chunk
         for i in 0 .. values.Length - 1 do
             values[i] <- pixels[i]
-        [ "imagefunctions-histogram", fun () ->
-              let histogram = ImageFunctions.histogram image
-              if Map.isEmpty histogram then invalidOp "ImageFunctions.histogram returned an empty histogram."
-          "chunk-histogram", fun () ->
-              let histogram = StackCore.Chunk.histogram chunk
-              if Map.isEmpty histogram then invalidOp "Chunk.histogram returned an empty histogram." ]
+        let baselineActions =
+            if includeImageFunctions then
+                [ "imagefunctions-histogram", fun () ->
+                      let histogram = ImageFunctions.histogram image
+                      if Map.isEmpty histogram then invalidOp "ImageFunctions.histogram returned an empty histogram." ]
+            else
+                []
+
+        let chunkActions =
+            [ "chunk-histogram-sparse", fun () ->
+                  let histogram = ChunkFunctions.histogram chunk
+                  if Map.isEmpty histogram then invalidOp "ChunkFunctions.histogram returned an empty histogram."
+              "chunk-histogram-leftedges-16", fun () ->
+                  let histogram = ChunkFunctions.histogramLeftEdges leftEdges16 chunk
+                  if Map.isEmpty histogram then invalidOp "ChunkFunctions.histogramLeftEdges returned an empty histogram."
+              "chunk-histogram-leftedges-256", fun () ->
+                  let histogram = ChunkFunctions.histogramLeftEdges leftEdges256 chunk
+                  if Map.isEmpty histogram then invalidOp "ChunkFunctions.histogramLeftEdges returned an empty histogram." ]
+
+        baselineActions @ chunkActions
         |> measureActions "histogram" "Float32" shapeName threshold repeat
     finally
         StackCore.Chunk.decRef chunk
         image.decRefCount()
 
-let private runHistogramCase pixelType shape threshold repeat =
+let private runHistogramCase includeImageFunctions pixelType shape threshold repeat =
     match pixelType with
-    | UInt8 -> measureHistogramUInt8 shape threshold repeat
-    | UInt16 -> measureHistogramUInt16 shape threshold repeat
-    | Float32 -> measureHistogramFloat32 shape threshold repeat
+    | UInt8 -> measureHistogramUInt8 includeImageFunctions shape threshold repeat
+    | UInt16 -> measureHistogramUInt16 includeImageFunctions shape threshold repeat
+    | Float32 -> measureHistogramFloat32 includeImageFunctions shape threshold repeat
 
 let private writeRows output rows =
     let exists = File.Exists output
@@ -1484,7 +1541,7 @@ let private usage () =
     printfn "  dotnet benchmarks/InMemoryThreshold.Benchmarks/bin/Release/net10.0/InMemoryThreshold.Benchmarks.dll --mode map-style-slicewise --output tmp/map-style-slicewise-threshold.csv --shapes 256x256x256,512x512x512 --pixel-types UInt8,UInt16,Float32 --repeat 3 --threshold 128"
     printfn "  dotnet benchmarks/InMemoryThreshold.Benchmarks/bin/Release/net10.0/InMemoryThreshold.Benchmarks.dll --mode image-class --output tmp/image-class-threshold.csv --shapes 256x256x256,512x512x512 --pixel-types UInt8,UInt16,Float32 --repeat 3 --threshold 128"
     printfn "  dotnet benchmarks/InMemoryThreshold.Benchmarks/bin/Release/net10.0/InMemoryThreshold.Benchmarks.dll --mode image-class-slicewise --output tmp/image-class-slicewise-threshold.csv --shapes 256x256x256,512x512x512 --pixel-types UInt8,UInt16,Float32 --repeat 3 --threshold 128"
-    printfn "  dotnet benchmarks/InMemoryThreshold.Benchmarks/bin/Release/net10.0/InMemoryThreshold.Benchmarks.dll --mode histogram --output tmp/chunk-histogram.csv --shapes 256x256x256,512x512x512 --pixel-types UInt8,UInt16,Float32 --repeat 3"
+    printfn "  dotnet benchmarks/InMemoryThreshold.Benchmarks/bin/Release/net10.0/InMemoryThreshold.Benchmarks.dll --mode histogram --include-imagefunctions false --output tmp/chunk-histogram.csv --shapes 256x256x256,512x512x512 --pixel-types UInt8,UInt16,Float32 --repeat 3"
 
 [<EntryPoint>]
 let main args =
@@ -1507,6 +1564,7 @@ let main args =
             let repeat = optional "repeat" "3" opts |> int
             let iterations = optional "iterations" "1024" opts |> int
             let threshold = optional "threshold" "128" opts |> fun text -> Double.Parse(text, invariant)
+            let includeImageFunctions = optionalBool "include-imagefunctions" true opts
 
             Directory.CreateDirectory(Path.GetDirectoryName(Path.GetFullPath(output))) |> ignore
             for shape in shapes do
@@ -1523,7 +1581,7 @@ let main args =
                                 | "map-style-slicewise" -> runMapStyleSliceWiseCase pixelType shape threshold r
                                 | "image-class" -> runImageClassCase pixelType shape threshold r
                                 | "image-class-slicewise" -> runImageClassSliceWiseCase pixelType shape threshold r
-                                | "histogram" -> runHistogramCase pixelType shape threshold r
+                                | "histogram" -> runHistogramCase includeImageFunctions pixelType shape threshold r
                                 | _ -> invalidArg "mode" $"Unsupported mode '{mode}'."
                             with ex ->
                                 let pixelName = string pixelType

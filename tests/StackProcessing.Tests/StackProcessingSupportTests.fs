@@ -2398,6 +2398,61 @@ let stackProcessingSupportSuite =
                 disposeImages slices
                 deleteDirectory inputDir
 
+        testCase "Chunk readChunkSlices feeds dense histogram reducer from TIFF ArrayPool storage" <| fun _ ->
+            let inputDir = tempDirectory "chunk-histogram-input"
+            let suffix = ".tiff"
+            let slices =
+                [ array2D [ [ 0uy; 1uy ]; [ 1uy; 2uy ] ] |> Image<uint8>.ofArray2D
+                  array2D [ [ 2uy; 2uy ]; [ 3uy; 3uy ] ] |> Image<uint8>.ofArray2D ]
+
+            try
+                writeSlices inputDir suffix slices
+
+                let actual =
+                    source (2UL * 1024UL * 1024UL * 1024UL)
+                    |> readChunkSlices<uint8> inputDir suffix
+                    >=> ChunkFunctions.histogramDenseReducer<uint8> ()
+                    |> drain
+
+                Expect.equal actual.Counts (Map.ofList [ 0uy, 1UL; 1uy, 2UL; 2uy, 3UL; 3uy, 2UL ]) "Chunk dense histogram should fold pixels read directly into pooled slice chunks."
+            finally
+                disposeImages slices
+                deleteDirectory inputDir
+
+        testCase "Chunk readChunkSlices and writeChunkSlices round-trip TIFF slices" <| fun _ ->
+            let inputDir = tempDirectory "chunk-tiff-input"
+            let outputDir = tempDirectory "chunk-tiff-output"
+            let suffix = ".tiff"
+            let slices =
+                [ array2D [ [ 4uy; 5uy; 6uy ]; [ 7uy; 8uy; 9uy ] ] |> Image<uint8>.ofArray2D
+                  array2D [ [ 10uy; 11uy; 12uy ]; [ 13uy; 14uy; 15uy ] ] |> Image<uint8>.ofArray2D ]
+            let mutable reread: Image<uint8> list = []
+
+            try
+                writeSlices inputDir suffix slices
+
+                let written =
+                    source (2UL * 1024UL * 1024UL * 1024UL)
+                    |> readChunkSlices<uint8> inputDir suffix
+                    >=> writeChunkSlices<uint8> outputDir suffix
+                    |> drainList
+
+                Expect.hasLength written 2 "writeChunkSlices should emit one completion per consumed chunk."
+
+                reread <-
+                    source (2UL * 1024UL * 1024UL * 1024UL)
+                    |> read<uint8> outputDir suffix
+                    |> drainList
+
+                Expect.hasLength reread 2 "Chunk-written TIFF stack should be readable as normal images."
+                Expect.equal (reread[0].toArray2D()) (slices[0].toArray2D()) "First chunk-written slice should match the source pixels."
+                Expect.equal (reread[1].toArray2D()) (slices[1].toArray2D()) "Second chunk-written slice should match the source pixels."
+            finally
+                disposeImages reread
+                disposeImages slices
+                deleteDirectory inputDir
+                deleteDirectory outputDir
+
         testCase "histogramEqualization streams Float64 CDF values from an estimated 3D histogram" <| fun _ ->
             let input =
                 array2D [ [ 0uy; 10uy ]; [ 15uy; 20uy ] ]

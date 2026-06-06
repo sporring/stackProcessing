@@ -42,7 +42,7 @@ type Chunk<'T> = StackCore.Chunk<'T>
 type Image<'T> = Image.Image<'T>
 ```
 
-Core also contains a first-class `Chunk<'T>` representation for block-backed workflows. It currently provides a type-level hook beside `Window<'T>` and `Slab<'T>`; older path-based chunk machinery is still used by some implementations while the chunk-native interface matures.
+Core also contains a first-class `Chunk<'T>` representation for block-backed workflows. Chunks now form a working ArrayPool-backed path beside `Window<'T>` and `Slab<'T>`: TIFF slices can be read directly into StackProcessing-owned chunk buffers, processed without becoming `Image<'T>`, and released through explicit reference counting.
 
 It also re-exports the main composition and execution functions:
 
@@ -273,11 +273,9 @@ This lets StackProcessing apply ordinary image stages to local 3D slabs while st
 
 Chunks are the block-oriented counterpart to windows and slabs. A window is a z-neighbourhood in the active stream, and a slab is a small 3D image assembled from adjacent streamed slices. A chunk is a bounded 3D block from a larger volume or chunked backing store.
 
-`StackCore` defines the high-level chunk shape:
+`StackCore` separates external layout from owned chunk payload:
 
 ```fsharp
-type ChunkIndex = int * int * int
-
 type ChunkLayout =
     { VolumeSize: uint64 * uint64 * uint64
       ChunkSize: uint64 * uint64 * uint64
@@ -285,30 +283,39 @@ type ChunkLayout =
       PixelType: string
       Components: uint }
 
-type ChunkStorage<'T> =
-    { Bytes: byte[]
+type Chunk<'T when 'T: equality> =
+    { Size: uint64 * uint64 * uint64
+      Bytes: byte[]
       ByteLength: int
-      Release: unit -> unit }
-
-type Chunk<'T> =
-    { Index: ChunkIndex
-      Origin: uint64 * uint64 * uint64
-      Size: uint64 * uint64 * uint64
-      BufferSize: uint64 * uint64 * uint64
-      Storage: ChunkStorage<'T> }
+      Release: unit -> unit
+      RefCount: int ref }
 ```
 
-The current storage is byte-backed, with a logical byte length and a release callback. This is deliberate. Zarr.NET decodes chunks as byte buffers, and simple chunk-local operations can often operate directly on those decoded bytes using typed span views or portable `System.Numerics.Vector<T>` loops. `ByteLength` distinguishes the logical payload from the physical rented buffer length, which matters when buffers come from `ArrayPool<byte>` and may be larger than the requested payload. `Release` lets chunk ownership sit next to the buffer so pooled memory can be returned promptly after the stage has written or discarded the chunk.
+`ChunkLayout` describes an external tiling scheme. `Chunk<'T>` itself is deliberately smaller: it is an owned byte buffer plus logical payload size and release semantics. Spatial position is kept outside the payload when needed, for example as a `(chunk, index)` pair. This keeps the chunk close to a value-like data block and prevents storage-format layout details from creeping into every chunk-local algorithm.
 
-Typed access is provided by helpers such as `Chunk.memory`, `Chunk.span<'T>`, and `Chunk.data`. Prefer `memory` or typed spans in hot Zarr paths; `data` copies to a managed typed array and is mainly for compatibility or non-hot code.
+The current storage is byte-backed, with a logical byte length and a release callback. This is deliberate. Zarr.NET and TIFF readers both naturally move bytes, and simple chunk-local operations can often operate directly on those bytes using typed span views or portable `System.Numerics.Vector<T>` loops. `ByteLength` distinguishes the logical payload from the physical rented buffer length, which matters when buffers come from `ArrayPool<byte>` and may be larger than the requested payload. `Release` lets chunk ownership sit next to the buffer so pooled memory can be returned promptly after the stage has written or discarded the chunk.
 
-Some older implementation pieces still use related local forms:
+Typed access is provided by helpers such as `Chunk.span<'T>`. Higher-order chunk helpers such as `iter`, `iteri`, `map`, `mapi`, `fold`, and `foldi` operate over the logical payload and preserve the ArrayPool ownership convention. `map` rents a new chunk; `mapInto` writes into caller-provided chunk storage and is mainly for creation-style hot paths where ownership is already clear.
 
-- `ChunkInfo` describes existing on-disk chunk layouts.
-- `ChunkData<'T>` is the current in-memory cached representation used by chunk-backed affine resampling.
-- path-based chunk folders are still used by the existing FFT/inverse FFT implementation.
+`ChunkFunctions` contains chunk-native algorithms and reducers. The first complete chunk-only pipeline is the TIFF histogram path:
 
-Chunks are useful when an operation cannot be expressed as a simple forward stream of z-windows. For example, affine resampling may need to fetch source voxels from several spatial blocks while producing one output slice. In that case StackProcessing writes or reads bounded chunks, caches only the blocks needed for the current work, and avoids materializing the full input volume.
+```fsharp
+source availableMemory
+|> readChunkSlices<uint16> "../data/stack" ".tiff"
+>=> ChunkFunctions.histogramDenseReducer<uint16> ()
+|> drain
+```
+
+or, with native worker-local parallel reduction:
+
+```fsharp
+source availableMemory
+|> readChunkSlices<uint16> "../data/stack" ".tiff"
+>=> ChunkFunctions.histogramDenseReducerParallel<uint16> 4
+|> drain
+```
+
+This path reads scanlines directly into StackProcessing-owned `ArrayPool<byte>` buffers, exposes the payload as `Chunk<'T>`, folds chunk histograms into compact dense or sparse states, and calls `Chunk.decRef` when each chunk has been consumed. A corresponding `writeChunkSlices` path writes chunk payloads back to TIFF and returns the buffers.
 
 Conceptually:
 
@@ -320,10 +327,26 @@ Slab<'T>
     small adjacent z-neighbourhood packed as one Image<'T>
 
 Chunk<'T>
-    bounded 3D block with explicit origin, size, logical byte payload, and release ownership
+    owned 1D byte payload with typed spans, logical length, and explicit release
 ```
 
-The chunk type is still intentionally small, but it is no longer only a placeholder. The direct OME-Zarr copy and threshold benchmarks use chunk-native paths: decoded chunk bytes are streamed, processed with 1D/SIMD loops when useful, and written back without first forming slabs. Neighbourhood operators still use slabs/windows because they need z-context, but FFT-like and affine-resampling workflows are good candidates for more complete typed chunk streams.
+The direct OME-Zarr copy/threshold benchmarks and the TIFF histogram reducer now show the intended direction: if an operation is naturally a flat 1D map/fold over pixels, it can stay in native F# chunk space and avoid SimpleITK image construction. Neighbourhood operators still usually use windows or slabs because they need z-context, while future layout-changing or window-of-window operators can combine chunks with the new parallel collection structure.
+
+## Native Parallel Helpers
+
+The chunk histogram experiments also introduced general StackProcessing-native parallel helpers:
+
+```fsharp
+Stage.parallelReduce
+Stage.parallelMap
+Stage.parallelCollect
+```
+
+For these helpers, the window size is also the worker count. `Stage.parallelReduce` is the reducer case. Its pipe groups the input stream into non-overlapping windows, gives each worker a local accumulator, folds the worker's items, merges the worker states, and releases chunk inputs at the defined ownership boundary. Histograms use this through `ChunkFunctions.histogramDenseReducerParallel` and `ChunkFunctions.histogramReducerParallel`. Dense histograms merge count arrays; sparse histograms merge dictionaries after local accumulation, avoiding a shared `ConcurrentDictionary` in the hot loop.
+
+`Stage.parallelMap` maps whole windows. `Stage.parallelCollect` covers the shape needed by future neighbourhood work: a window can emit zero, one, or many results, and the collected outputs are emitted in a controlled order.
+
+These helpers overlap with `AsyncSeq` ordered and unordered parallel map variants, but they carry StackProcessing-specific execution semantics. They know about window size, stride, padding, stream order, bounded in-flight resources, and explicit `Chunk.decRef`. Plain `AsyncSeq.mapAsyncParallel` is still useful for ordinary async work, but a chunk reducer needs worker-local state and a merge contract; unordered variants are only transparent when downstream order does not matter or when the reducer merge is both associative and commutative.
 
 ## Internal And Public Composition
 

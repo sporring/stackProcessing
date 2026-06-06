@@ -138,6 +138,114 @@ let private canReadDirectTiffStack<'T> suffix =
 let private canWriteDirectTiffStack<'T> suffix =
     isTiffStackSuffix suffix && ImageIO.supportsDirectTiffWrite<'T>
 
+let private ensureDirectTiffChunkRead<'T> suffix =
+    if not (canReadDirectTiffStack<'T> suffix) then
+        invalidArg "suffix" $"readChunkSlices currently supports direct scalar TIFF stacks for UInt8, Int8, UInt16, Int16, Float32, and Float64; got suffix '{suffix}' and type {typeof<'T>.Name}."
+
+let private ensureDirectTiffChunkWrite<'T> suffix =
+    if not (canWriteDirectTiffStack<'T> suffix) then
+        invalidArg "suffix" $"writeChunkSlices currently supports direct scalar TIFF stack output for UInt8, Int8, UInt16, Int16, and Float32; got suffix '{suffix}' and type {typeof<'T>.Name}."
+
+let private inspectChunkTiffSlice<'T> fileName =
+    let expectedBits, expectedFormat, expectedBytesPerSample = ImageIO.tiffPixelLayout<'T> ()
+    use tiff = Tiff.Open(fileName, "r")
+    if isNull tiff then
+        invalidOp $"Could not open '{fileName}' for TIFF reading."
+
+    let width = uint (ImageIO.tiffFieldInt tiff TiffTag.IMAGEWIDTH 0)
+    let height = uint (ImageIO.tiffFieldInt tiff TiffTag.IMAGELENGTH 0)
+    if width = 0u || height = 0u then
+        invalidOp $"TIFF slice '{fileName}' has invalid page dimensions {width}x{height}."
+
+    let bitsPerSample = ImageIO.tiffFieldIntDefaulted tiff TiffTag.BITSPERSAMPLE 1
+    let samplesPerPixel = ImageIO.tiffFieldIntDefaulted tiff TiffTag.SAMPLESPERPIXEL 1
+    ImageIO.validateTiffSamples samplesPerPixel
+
+    let sampleFormat =
+        ImageIO.tiffFieldIntDefaulted tiff TiffTag.SAMPLEFORMAT (int SampleFormat.UINT)
+        |> enum<SampleFormat>
+
+    if bitsPerSample <> expectedBits || sampleFormat <> expectedFormat then
+        invalidOp $"Input slice '{fileName}' does not match {typeof<'T>.Name}: got {bitsPerSample}-bit {sampleFormat}."
+
+    width, height, int width * expectedBytesPerSample, max (int width * expectedBytesPerSample) (tiff.ScanlineSize())
+
+let private readChunkTiffSlice<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> fileName =
+    use tiff = Tiff.Open(fileName, "r")
+    if isNull tiff then
+        invalidOp $"Could not open '{fileName}' for TIFF reading."
+
+    let expectedBits, expectedFormat, expectedBytesPerSample = ImageIO.tiffPixelLayout<'T> ()
+    let width = uint (ImageIO.tiffFieldInt tiff TiffTag.IMAGEWIDTH 0)
+    let height = uint (ImageIO.tiffFieldInt tiff TiffTag.IMAGELENGTH 0)
+    if width = 0u || height = 0u then
+        invalidOp $"TIFF slice '{fileName}' has invalid page dimensions {width}x{height}."
+
+    let bitsPerSample = ImageIO.tiffFieldIntDefaulted tiff TiffTag.BITSPERSAMPLE 1
+    let samplesPerPixel = ImageIO.tiffFieldIntDefaulted tiff TiffTag.SAMPLESPERPIXEL 1
+    ImageIO.validateTiffSamples samplesPerPixel
+
+    let sampleFormat =
+        ImageIO.tiffFieldIntDefaulted tiff TiffTag.SAMPLEFORMAT (int SampleFormat.UINT)
+        |> enum<SampleFormat>
+
+    if bitsPerSample <> expectedBits || sampleFormat <> expectedFormat then
+        invalidOp $"Input slice '{fileName}' does not match {typeof<'T>.Name}: got {bitsPerSample}-bit {sampleFormat}."
+
+    let rowBytes = int width * expectedBytesPerSample
+    let scanlineSize = max rowBytes (tiff.ScanlineSize())
+    let chunk = Chunk.create<'T> (uint64 width, uint64 height, 1UL)
+    try
+        if scanlineSize <= rowBytes then
+            for row in 0 .. int height - 1 do
+                if not (tiff.ReadScanline(chunk.Bytes, row * rowBytes, row, int16 0)) then
+                    invalidOp $"Failed to read TIFF scanline {row} from '{fileName}'."
+        else
+            let scratch = System.Buffers.ArrayPool<byte>.Shared.Rent(scanlineSize)
+            try
+                for row in 0 .. int height - 1 do
+                    if not (tiff.ReadScanline(scratch, row)) then
+                        invalidOp $"Failed to read TIFF scanline {row} from '{fileName}'."
+                    Buffer.BlockCopy(scratch, 0, chunk.Bytes, row * rowBytes, rowBytes)
+            finally
+                System.Buffers.ArrayPool<byte>.Shared.Return(scratch)
+        chunk
+    with
+    | ex ->
+        Chunk.decRef chunk
+        reraise()
+
+let private writeChunkTiffSlice<'T when 'T: equality> fileName (chunk: Chunk<'T>) =
+    let bitsPerSample, sampleFormat, bytesPerSample = ImageIO.tiffPixelLayout<'T> ()
+    let width, height, depth = chunk.Size
+    if depth <> 1UL then
+        invalidArg "chunk" $"writeChunkSlices expects 2D slice chunks with depth 1, got {chunk.Size}."
+
+    let rowBytes = int width * bytesPerSample
+    if chunk.ByteLength < rowBytes * int height then
+        invalidArg "chunk" $"Chunk byte length {chunk.ByteLength} is smaller than the TIFF page payload {rowBytes * int height}."
+
+    use tiff = Tiff.Open(fileName, ImageIO.tiffWriteMode fileName)
+    if isNull tiff then
+        invalidOp $"Could not open '{fileName}' for TIFF writing."
+
+    tiff.SetField(TiffTag.IMAGEWIDTH, int width) |> ignore
+    tiff.SetField(TiffTag.IMAGELENGTH, int height) |> ignore
+    tiff.SetField(TiffTag.SAMPLESPERPIXEL, 1) |> ignore
+    tiff.SetField(TiffTag.BITSPERSAMPLE, bitsPerSample) |> ignore
+    tiff.SetField(TiffTag.SAMPLEFORMAT, sampleFormat) |> ignore
+    tiff.SetField(TiffTag.PHOTOMETRIC, Photometric.MINISBLACK) |> ignore
+    tiff.SetField(TiffTag.PLANARCONFIG, PlanarConfig.CONTIG) |> ignore
+    tiff.SetField(TiffTag.ROWSPERSTRIP, int height) |> ignore
+    tiff.SetField(TiffTag.COMPRESSION, Compression.NONE) |> ignore
+
+    for row in 0 .. int height - 1 do
+        if not (tiff.WriteScanline(chunk.Bytes, row * rowBytes, row, int16 0)) then
+            invalidOp $"Failed to write TIFF scanline {row} to '{fileName}'."
+
+    if not (tiff.WriteDirectory()) then
+        invalidOp $"Failed to write TIFF directory to '{fileName}'."
+
 let private runTask (task: Task<'T>) : 'T =
     task.GetAwaiter().GetResult()
 
@@ -527,6 +635,56 @@ let getFilenames (inputDir: string) (suffix: string) (filter: string[]->string[]
     let length = depth
     Plan.createWithOptimizer stage pl.memAvail memPeak memPerElem length pl.debug pl.optimize
     |> Plan.withRuntimeOptionsFrom pl
+
+let readChunkSlices<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> inputDir suffix (pl: Plan<unit, unit>) : Plan<unit, Chunk<'T>> =
+    let name = "readChunkSlices"
+    ensureDirectTiffChunkRead<'T> suffix
+    let files = getStackFiles inputDir suffix
+    if files.Length = 0 then
+        stopWithInputError $"No {suffixDescription suffix} files found in input stack directory: {inputDir}"
+
+    let width, height, rowBytes, scanlineSize = inspectChunkTiffSlice<'T> files[0]
+    let elementBytes = uint64 rowBytes * uint64 height
+    let sourcePeek =
+        SourcePeek.create
+            name
+            elementBytes
+            (Some(uint64 files.Length))
+            (Map.ofList
+                [ "kind", "chunk-tiff-slices"
+                  "inputDir", inputDir
+                  "suffix", suffix
+                  "width", string width
+                  "height", string height
+                  "depth", string files.Length
+                  "pixelType", typeof<'T>.Name
+                  "scanlineSize", string scanlineSize ])
+
+    let mapper (i: int) =
+        let fileName = files[i]
+        if pl.debug then
+            printfn $"[{name}] Reading chunk slice {i}: {fileName} as {typeof<'T>.Name}"
+        let chunk = readChunkTiffSlice<'T> fileName
+        let chunkWidth, chunkHeight, _ = chunk.Size
+        if chunkWidth <> uint64 width || chunkHeight <> uint64 height then
+            Chunk.decRef chunk
+            invalidOp $"Input slice '{fileName}' has shape {chunkWidth}x{chunkHeight}, expected {width}x{height}."
+        chunk
+
+    let transition = ProfileTransition.create Unit Streaming
+    let memoryNeed _ = elementBytes
+    let elementTransformation _ = uint64 width * uint64 height
+    let memoryModel = StageMemoryModel.fromSinglePeak Source memoryNeed
+    let timeCostModel =
+        StageTimeCostModel.ioRead Source (Some $"readChunkSlices.{typeof<'T>.Name}") (fun _ -> elementBytes) (fun _ -> 1UL)
+    let stage =
+        Stage.init name (uint files.Length) mapper transition memoryNeed elementTransformation
+        |> withCostModel (StageCostModel.create memoryModel timeCostModel)
+        |> Some
+
+    Plan.createWithOptimizer stage pl.memAvail elementBytes elementBytes (uint64 files.Length) pl.debug pl.optimize
+    |> Plan.withRuntimeOptionsFrom pl
+    |> Plan.withSourcePeek sourcePeek
 
 let private isTiffVolumePath (filename: string) =
     match Path.GetExtension(filename).ToLowerInvariant() with
@@ -2039,6 +2197,34 @@ let write<'T when 'T: equality> (outputDir: string) (suffix: string) : Stage<Ima
             suffix
             fallbackTimeCostModel.Estimate
     Stage.mapi $"write \"{outputDir}/*{suffix}\"" mapper memoryNeed id
+    |> withCostModel (StageCostModel.create memoryModel timeCostModel)
+
+let writeChunkSlices<'T when 'T: equality> (outputDir: string) (suffix: string) : Stage<Chunk<'T>, unit> =
+    ensureDirectTiffChunkWrite<'T> suffix
+    Directory.CreateDirectory(outputDir) |> ignore
+    let cleaned = lazy (cleanImageSeriesFiles outputDir suffix)
+
+    let mapper (debug: bool) (idx: int64) (chunk: Chunk<'T>) =
+        cleaned.Force()
+        let fileName = Path.Combine(outputDir, sprintf "image_%03d%s" idx suffix)
+        try
+            if debug then
+                printfn $"[writeChunkSlices] Saved chunk slice {idx} to {fileName} as {typeof<'T>.Name}"
+            writeChunkTiffSlice<'T> fileName chunk
+        finally
+            Chunk.decRef chunk
+
+    let memoryNeed = id
+    let memoryModel = StageMemoryModel.fromSinglePeak Iter memoryNeed
+    let timeCostModel =
+        imageIoCost<'T>
+            "write"
+            Iter
+            $"writeChunkSlices.{suffixCostLabel suffix}.{typeof<'T>.Name}"
+            (fun input -> inputValue input)
+            (fun _ -> 1UL)
+
+    Stage.mapi $"writeChunkSlices \"{outputDir}/*{suffix}\"" mapper memoryNeed id
     |> withCostModel (StageCostModel.create memoryModel timeCostModel)
 
 let writeSlabSlices<'T when 'T: equality> (outputDir: string) (suffix: string) (_winSz: uint) : Stage<Image<'T>, Image<'T>> =
