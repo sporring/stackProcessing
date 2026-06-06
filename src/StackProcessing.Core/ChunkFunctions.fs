@@ -23,11 +23,46 @@ type private ChunkSlice =
     { Index: int
       Chunk: Chunk<uint8> }
 
+type private TypedChunkSlice<'T when 'T: equality> =
+    { Index: int
+      Chunk: Chunk<'T> }
+
+type private LineSamplePlan =
+    { Z: int
+      XShift: int
+      YShift: int
+      XStart: int
+      XStop: int
+      YStart: int
+      YStop: int }
+
+type private LinePlan =
+    { Left: int
+      Right: int
+      Samples: LineSamplePlan[]
+      ErodeXStart: int
+      ErodeXStop: int
+      ErodeYStart: int
+      ErodeYStop: int }
+
+type private KernelTap =
+    { WindowZ: int
+      Dx: int
+      Dy: int
+      Weight: float32 }
+
+type private KernelPlan =
+    { Width: int
+      Height: int
+      Depth: int
+      PadX: int
+      PadY: int
+      PadZ: int
+      Taps: KernelTap[]
+      UniformDivisor: int option }
+
 let private binaryBackground = 0uy
 let private binaryForeground = 1uy
-
-let private flatIndex2 width x y =
-    y * width + x
 
 let private lineHalo dz length =
     let left = length - length / 2 - 1
@@ -44,6 +79,11 @@ let private zeroChunk width height =
     clearChunk chunk
     chunk
 
+let private zeroChunkTyped<'T when 'T: equality> width height =
+    let chunk = Chunk.create<'T> (uint64 width, uint64 height, 1UL)
+    chunk.Bytes.AsSpan(0, chunk.ByteLength).Clear()
+    chunk
+
 let private validateSliceChunk width height (chunk: Chunk<uint8>) =
     let chunkWidth, chunkHeight, chunkDepth = chunk.Size
     if chunkDepth <> 1UL then
@@ -51,13 +91,22 @@ let private validateSliceChunk width height (chunk: Chunk<uint8>) =
     if chunkWidth <> uint64 width || chunkHeight <> uint64 height then
         invalidArg "chunk" $"Chunk binary dilation expects chunks of size {width}x{height}x1, got {chunk.Size}."
 
-let private orSpanIntoRange (target: Span<byte>) targetStart (source: ReadOnlySpan<byte>) sourceStart count =
+let private validateTypedSliceChunk<'T when 'T: equality> operatorName width height (chunk: Chunk<'T>) =
+    let chunkWidth, chunkHeight, chunkDepth = chunk.Size
+    if chunkDepth <> 1UL then
+        invalidArg "chunk" $"Chunk {operatorName} expects 2D slice chunks with depth 1, got {chunk.Size}."
+    if chunkWidth <> uint64 width || chunkHeight <> uint64 height then
+        invalidArg "chunk" $"Chunk {operatorName} expects chunks of size {width}x{height}x1, got {chunk.Size}."
+
+let private orSpanIntoRange (target: Span<byte>) targetStart (source: Span<byte>) sourceStart count =
     let vectorWidth = Vector<byte>.Count
     let vectorEnd = count - (count % vectorWidth)
     let mutable i = 0
     while i < vectorEnd do
-        let targetSlice: ReadOnlySpan<byte> = target.Slice(targetStart + i, vectorWidth)
-        let sourceSlice: ReadOnlySpan<byte> = source.Slice(sourceStart + i, vectorWidth)
+        let mutable targetPart = target.Slice(targetStart + i, vectorWidth)
+        let mutable sourcePart = source.Slice(sourceStart + i, vectorWidth)
+        let targetSlice = MemoryMarshal.CreateReadOnlySpan(&MemoryMarshal.GetReference(targetPart), vectorWidth)
+        let sourceSlice = MemoryMarshal.CreateReadOnlySpan(&MemoryMarshal.GetReference(sourcePart), vectorWidth)
         let destination: Span<byte> = target.Slice(targetStart + i, vectorWidth)
         let targetVector = MemoryMarshal.Read<Vector<byte>>(targetSlice)
         let sourceVector = MemoryMarshal.Read<Vector<byte>>(sourceSlice)
@@ -68,13 +117,15 @@ let private orSpanIntoRange (target: Span<byte>) targetStart (source: ReadOnlySp
         target[targetStart + i] <- target[targetStart + i] ||| source[sourceStart + i]
         i <- i + 1
 
-let private andSpanIntoRange (target: Span<byte>) targetStart (source: ReadOnlySpan<byte>) sourceStart count =
+let private andSpanIntoRange (target: Span<byte>) targetStart (source: Span<byte>) sourceStart count =
     let vectorWidth = Vector<byte>.Count
     let vectorEnd = count - (count % vectorWidth)
     let mutable i = 0
     while i < vectorEnd do
-        let targetSlice: ReadOnlySpan<byte> = target.Slice(targetStart + i, vectorWidth)
-        let sourceSlice: ReadOnlySpan<byte> = source.Slice(sourceStart + i, vectorWidth)
+        let mutable targetPart = target.Slice(targetStart + i, vectorWidth)
+        let mutable sourcePart = source.Slice(sourceStart + i, vectorWidth)
+        let targetSlice = MemoryMarshal.CreateReadOnlySpan(&MemoryMarshal.GetReference(targetPart), vectorWidth)
+        let sourceSlice = MemoryMarshal.CreateReadOnlySpan(&MemoryMarshal.GetReference(sourcePart), vectorWidth)
         let destination: Span<byte> = target.Slice(targetStart + i, vectorWidth)
         let targetVector = MemoryMarshal.Read<Vector<byte>>(targetSlice)
         let sourceVector = MemoryMarshal.Read<Vector<byte>>(sourceSlice)
@@ -84,6 +135,56 @@ let private andSpanIntoRange (target: Span<byte>) targetStart (source: ReadOnlyS
     while i < count do
         target[targetStart + i] <- target[targetStart + i] &&& source[sourceStart + i]
         i <- i + 1
+
+let private createLinePlan width height center dx dy dz length windowLength =
+    let left = length - length / 2 - 1
+    let right = length / 2
+    let samples = ResizeArray<LineSamplePlan>(length)
+    let mutable erodeXStart = 0
+    let mutable erodeXStop = width
+    let mutable erodeYStart = 0
+    let mutable erodeYStop = height
+
+    let mutable t = -left
+    while t <= right do
+        let xShift = t * dx
+        let yShift = t * dy
+        let z = center + t * dz
+        let xStart = max 0 (-xShift)
+        let xStop = min width (width - xShift)
+        let yStart = max 0 (-yShift)
+        let yStop = min height (height - yShift)
+        let valid = z >= 0 && z < windowLength && xStop > xStart && yStop > yStart
+
+        if valid then
+            samples.Add(
+                { Z = z
+                  XShift = xShift
+                  YShift = yShift
+                  XStart = xStart
+                  XStop = xStop
+                  YStart = yStart
+                  YStop = yStop }
+            )
+            erodeXStart <- max erodeXStart xStart
+            erodeXStop <- min erodeXStop xStop
+            erodeYStart <- max erodeYStart yStart
+            erodeYStop <- min erodeYStop yStop
+        else
+            erodeXStart <- 0
+            erodeXStop <- 0
+            erodeYStart <- 0
+            erodeYStop <- 0
+
+        t <- t + 1
+
+    { Left = left
+      Right = right
+      Samples = samples.ToArray()
+      ErodeXStart = erodeXStart
+      ErodeXStop = erodeXStop
+      ErodeYStart = erodeYStart
+      ErodeYStop = erodeYStop }
 
 let private tryDilateLineChunkSliceSimd width height (window: ChunkSlice[]) center dx dy dz left right (outputPixels: Span<byte>) =
     if dy = 0 && dz = 0 && abs dx = 1 then
@@ -186,34 +287,24 @@ let private tryErodeLineChunkSliceSimd width height (window: ChunkSlice[]) cente
     else
         false
 
-let private dilateLineChunkSlice width height (window: ChunkSlice[]) center dx dy dz length =
+let private dilateLineChunkSlice width height (window: ChunkSlice[]) center dx dy dz length (plan: LinePlan) =
     let output = Chunk.create<uint8> (uint64 width, uint64 height, 1UL)
     try
         clearChunk output
         let outputPixels = Chunk.span<uint8> output
-        let left = length - length / 2 - 1
-        let right = length / 2
 
-        if tryDilateLineChunkSliceSimd width height window center dx dy dz left right outputPixels then
+        if tryDilateLineChunkSliceSimd width height window center dx dy dz plan.Left plan.Right outputPixels then
             output
         else
-
-            for y in 0 .. height - 1 do
-                let row = y * width
-                for x in 0 .. width - 1 do
-                    let mutable found = false
-                    let mutable t = -left
-                    while not found && t <= right do
-                        let xx = x + t * dx
-                        let yy = y + t * dy
-                        let zz = center + t * dz
-                        if xx >= 0 && xx < width && yy >= 0 && yy < height && zz >= 0 && zz < window.Length then
-                            let inputPixels = Chunk.span<uint8> window[zz].Chunk
-                            if inputPixels[flatIndex2 width xx yy] = binaryForeground then
-                                found <- true
-                        t <- t + 1
-                    if found then
-                        outputPixels[row + x] <- binaryForeground
+            for sample in plan.Samples do
+                let inputPixels = Chunk.span<uint8> window[sample.Z].Chunk
+                for y in sample.YStart .. sample.YStop - 1 do
+                    orSpanIntoRange
+                        outputPixels
+                        (y * width + sample.XStart)
+                        inputPixels
+                        ((y + sample.YShift) * width + sample.XStart + sample.XShift)
+                        (sample.XStop - sample.XStart)
 
             output
     with
@@ -221,36 +312,29 @@ let private dilateLineChunkSlice width height (window: ChunkSlice[]) center dx d
         Chunk.decRef output
         reraise()
 
-let private erodeLineChunkSlice width height (window: ChunkSlice[]) center dx dy dz length =
+let private erodeLineChunkSlice width height (window: ChunkSlice[]) center dx dy dz length (plan: LinePlan) =
     let output = Chunk.create<uint8> (uint64 width, uint64 height, 1UL)
     try
         clearChunk output
         let outputPixels = Chunk.span<uint8> output
-        let left = length - length / 2 - 1
-        let right = length / 2
 
-        if tryErodeLineChunkSliceSimd width height window center dx dy dz left right outputPixels then
+        if tryErodeLineChunkSliceSimd width height window center dx dy dz plan.Left plan.Right outputPixels then
             output
         else
+            if plan.ErodeXStop > plan.ErodeXStart && plan.ErodeYStop > plan.ErodeYStart then
+                let count = plan.ErodeXStop - plan.ErodeXStart
+                for y in plan.ErodeYStart .. plan.ErodeYStop - 1 do
+                    outputPixels.Slice(y * width + plan.ErodeXStart, count).Fill(binaryForeground)
 
-            for y in 0 .. height - 1 do
-                let row = y * width
-                for x in 0 .. width - 1 do
-                    let mutable inside = true
-                    let mutable t = -left
-                    while inside && t <= right do
-                        let xx = x + t * dx
-                        let yy = y + t * dy
-                        let zz = center + t * dz
-                        if xx < 0 || xx >= width || yy < 0 || yy >= height || zz < 0 || zz >= window.Length then
-                            inside <- false
-                        else
-                            let inputPixels = Chunk.span<uint8> window[zz].Chunk
-                            if inputPixels[flatIndex2 width xx yy] <> binaryForeground then
-                                inside <- false
-                        t <- t + 1
-                    if inside then
-                        outputPixels[row + x] <- binaryForeground
+                for sample in plan.Samples do
+                    let inputPixels = Chunk.span<uint8> window[sample.Z].Chunk
+                    for y in plan.ErodeYStart .. plan.ErodeYStop - 1 do
+                        andSpanIntoRange
+                            outputPixels
+                            (y * width + plan.ErodeXStart)
+                            inputPixels
+                            ((y + sample.YShift) * width + plan.ErodeXStart + sample.XShift)
+                            count
 
             output
     with
@@ -277,6 +361,480 @@ let private retainWindow (queue: ResizeArray<ChunkSlice>) start length =
 let private releaseWindow (window: ChunkSlice[]) =
     for item in window do
         Chunk.decRef item.Chunk
+
+let private retainTypedWindow (queue: ResizeArray<TypedChunkSlice<'T>>) start length =
+    let window = Array.zeroCreate<TypedChunkSlice<'T>> length
+    let mutable retained = 0
+    try
+        for i in 0 .. length - 1 do
+            let item = queue[start + i]
+            Chunk.incRef item.Chunk |> ignore
+            window[i] <- item
+            retained <- retained + 1
+        window
+    with
+    | _ ->
+        for i in 0 .. retained - 1 do
+            Chunk.decRef window[i].Chunk
+        reraise()
+
+let private releaseTypedWindow (window: TypedChunkSlice<'T>[]) =
+    for item in window do
+        Chunk.decRef item.Chunk
+
+let private createKernelPlan (kernel: float32[,,]) =
+    let width = kernel.GetLength(0)
+    let height = kernel.GetLength(1)
+    let depth = kernel.GetLength(2)
+    if width < 1 || height < 1 || depth < 1 then
+        invalidArg "kernel" "Chunk convolution expects a non-empty kernel."
+    if width % 2 = 0 || height % 2 = 0 || depth % 2 = 0 then
+        invalidArg "kernel" $"Chunk convolution expects odd kernel dimensions, got {width}x{height}x{depth}."
+
+    let padX = width / 2
+    let padY = height / 2
+    let padZ = depth / 2
+    let taps = ResizeArray<KernelTap>(width * height * depth)
+
+    for z in 0 .. depth - 1 do
+        for y in 0 .. height - 1 do
+            for x in 0 .. width - 1 do
+                let weight = kernel[x, y, z]
+                if weight <> 0.0f then
+                    taps.Add(
+                        { WindowZ = z
+                          Dx = x - padX
+                          Dy = y - padY
+                          Weight = weight }
+                    )
+
+    let uniformDivisor =
+        let expectedCount = width * height * depth
+        if taps.Count = expectedCount then
+            let expectedWeight = 1.0f / float32 expectedCount
+            let mutable equal = true
+            let mutable i = 0
+            while equal && i < taps.Count do
+                equal <- abs (taps[i].Weight - expectedWeight) <= Single.Epsilon
+                i <- i + 1
+            if equal then Some expectedCount else None
+        else
+            None
+
+    { Width = width
+      Height = height
+      Depth = depth
+      PadX = padX
+      PadY = padY
+      PadZ = padZ
+      Taps = taps.ToArray()
+      UniformDivisor = uniformDivisor }
+
+let inline private clampRoundToByte (value: float32) =
+    if Single.IsNaN value || value <= 0.0f then
+        0uy
+    elif value >= 255.0f then
+        255uy
+    else
+        uint8 (MathF.Round value)
+
+let inline private clampRoundToSByte (value: float32) =
+    if Single.IsNaN value then
+        0y
+    elif value <= float32 SByte.MinValue then
+        SByte.MinValue
+    elif value >= float32 SByte.MaxValue then
+        SByte.MaxValue
+    else
+        int8 (MathF.Round value)
+
+let inline private clampRoundToUInt16 (value: float32) =
+    if Single.IsNaN value || value <= 0.0f then
+        0us
+    elif value >= 65535.0f then
+        65535us
+    else
+        uint16 (MathF.Round value)
+
+let inline private clampRoundToInt16 (value: float32) =
+    if Single.IsNaN value then
+        0s
+    elif value <= float32 Int16.MinValue then
+        Int16.MinValue
+    elif value >= float32 Int16.MaxValue then
+        Int16.MaxValue
+    else
+        int16 (MathF.Round value)
+
+let inline private clampRoundToInt32 (value: float32) =
+    if Single.IsNaN value then
+        0
+    elif value <= float32 Int32.MinValue then
+        Int32.MinValue
+    elif value >= float32 Int32.MaxValue then
+        Int32.MaxValue
+    else
+        int32 (MathF.Round value)
+
+let private byteVectorToSingleVectors (source: ReadOnlySpan<byte>) =
+    let bytes = MemoryMarshal.Read<Vector<byte>>(source)
+    let mutable lo16 = Vector<uint16>.Zero
+    let mutable hi16 = Vector<uint16>.Zero
+    Vector.Widen(bytes, &lo16, &hi16)
+    let mutable loLo32 = Vector<uint32>.Zero
+    let mutable loHi32 = Vector<uint32>.Zero
+    let mutable hiLo32 = Vector<uint32>.Zero
+    let mutable hiHi32 = Vector<uint32>.Zero
+    Vector.Widen(lo16, &loLo32, &loHi32)
+    Vector.Widen(hi16, &hiLo32, &hiHi32)
+    Vector.ConvertToSingle(loLo32), Vector.ConvertToSingle(loHi32), Vector.ConvertToSingle(hiLo32), Vector.ConvertToSingle(hiHi32)
+
+let private uint16VectorToSingleVectors (source: ReadOnlySpan<uint16>) =
+    let values = Vector<uint16>(source)
+    let mutable lo32 = Vector<uint32>.Zero
+    let mutable hi32 = Vector<uint32>.Zero
+    Vector.Widen(values, &lo32, &hi32)
+    Vector.ConvertToSingle(lo32), Vector.ConvertToSingle(hi32)
+
+let private int8VectorToSingleVectors (source: ReadOnlySpan<sbyte>) =
+    let values = Vector<sbyte>(source)
+    let mutable lo16 = Vector<int16>.Zero
+    let mutable hi16 = Vector<int16>.Zero
+    Vector.Widen(values, &lo16, &hi16)
+    let mutable loLo32 = Vector<int32>.Zero
+    let mutable loHi32 = Vector<int32>.Zero
+    let mutable hiLo32 = Vector<int32>.Zero
+    let mutable hiHi32 = Vector<int32>.Zero
+    Vector.Widen(lo16, &loLo32, &loHi32)
+    Vector.Widen(hi16, &hiLo32, &hiHi32)
+    Vector.ConvertToSingle(loLo32), Vector.ConvertToSingle(loHi32), Vector.ConvertToSingle(hiLo32), Vector.ConvertToSingle(hiHi32)
+
+let private int16VectorToSingleVectors (source: ReadOnlySpan<int16>) =
+    let values = Vector<int16>(source)
+    let mutable lo32 = Vector<int32>.Zero
+    let mutable hi32 = Vector<int32>.Zero
+    Vector.Widen(values, &lo32, &hi32)
+    Vector.ConvertToSingle(lo32), Vector.ConvertToSingle(hi32)
+
+let private convolvePixelFloat32 width height (plan: KernelPlan) (window: TypedChunkSlice<'T>[]) x y =
+    let mutable acc = 0.0f
+    for tap in plan.Taps do
+        let sy = y + tap.Dy
+        let sx = x + tap.Dx
+        if sx >= 0 && sx < width && sy >= 0 && sy < height then
+            let source = MemoryMarshal.Cast<byte, float32>(window[tap.WindowZ].Chunk.Bytes.AsSpan(0, window[tap.WindowZ].Chunk.ByteLength))
+            acc <- acc + source[sy * width + sx] * tap.Weight
+    acc
+
+let private convolveFloat32Slice width height (plan: KernelPlan) (window: TypedChunkSlice<'T>[]) (output: Chunk<'T>) =
+    let outputPixels = MemoryMarshal.Cast<byte, float32>(output.Bytes.AsSpan(0, output.ByteLength))
+    let vectorWidth = Vector<float32>.Count
+    let vectorEnd = width - plan.PadX - vectorWidth
+
+    for y in 0 .. height - 1 do
+        let mutable x = 0
+        while x < width do
+            if x >= plan.PadX && x <= vectorEnd then
+                let mutable acc = Vector<float32>.Zero
+                for tap in plan.Taps do
+                    let sy = y + tap.Dy
+                    if sy >= 0 && sy < height then
+                        let source = MemoryMarshal.Cast<byte, float32>(window[tap.WindowZ].Chunk.Bytes.AsSpan(0, window[tap.WindowZ].Chunk.ByteLength))
+                        let sourceIndex = sy * width + x + tap.Dx
+                        let mutable sourcePart = source.Slice(sourceIndex, vectorWidth)
+                        let sourceSlice = MemoryMarshal.CreateReadOnlySpan(&MemoryMarshal.GetReference(sourcePart), vectorWidth)
+                        acc <- acc + Vector<float32>(sourceSlice) * Vector<float32>(tap.Weight)
+                acc.CopyTo(outputPixels.Slice(y * width + x, vectorWidth))
+                x <- x + vectorWidth
+            else
+                outputPixels[y * width + x] <- convolvePixelFloat32 width height plan window x y
+                x <- x + 1
+
+let private convolveUInt8Slice width height (plan: KernelPlan) (window: TypedChunkSlice<'T>[]) (output: Chunk<'T>) =
+    let outputPixels = MemoryMarshal.Cast<byte, uint8>(output.Bytes.AsSpan(0, output.ByteLength))
+    let scalarPixel x y =
+        let mutable acc = 0.0f
+        for tap in plan.Taps do
+            let sy = y + tap.Dy
+            let sx = x + tap.Dx
+            if sx >= 0 && sx < width && sy >= 0 && sy < height then
+                let source = window[tap.WindowZ].Chunk.Bytes.AsSpan(0, window[tap.WindowZ].Chunk.ByteLength)
+                acc <- acc + float32 source[sy * width + sx] * tap.Weight
+        clampRoundToByte acc
+
+    match plan.UniformDivisor with
+    | Some divisor when plan.Taps.Length * 255 <= int UInt16.MaxValue ->
+        let byteVectorWidth = Vector<byte>.Count
+        let halfVectorWidth = Vector<uint16>.Count
+        let vectorEnd = width - plan.PadX - byteVectorWidth
+        let loBuffer: uint16[] = Array.zeroCreate halfVectorWidth
+        let hiBuffer: uint16[] = Array.zeroCreate halfVectorWidth
+        let divisorF = float32 divisor
+
+        for y in 0 .. height - 1 do
+            let mutable x = 0
+            while x < width do
+                if x >= plan.PadX && x <= vectorEnd then
+                    let mutable loAcc = Vector<uint16>.Zero
+                    let mutable hiAcc = Vector<uint16>.Zero
+
+                    for tap in plan.Taps do
+                        let sy = y + tap.Dy
+                        if sy >= 0 && sy < height then
+                            let source = window[tap.WindowZ].Chunk.Bytes.AsSpan(0, window[tap.WindowZ].Chunk.ByteLength)
+                            let sourceIndex = sy * width + x + tap.Dx
+                            let sourceVector = Vector<byte>(source.Slice(sourceIndex, byteVectorWidth))
+                            let mutable lo = Vector<uint16>.Zero
+                            let mutable hi = Vector<uint16>.Zero
+                            Vector.Widen(sourceVector, &lo, &hi)
+                            loAcc <- loAcc + lo
+                            hiAcc <- hiAcc + hi
+
+                    loAcc.CopyTo(loBuffer)
+                    hiAcc.CopyTo(hiBuffer)
+
+                    let rowOffset = y * width + x
+                    for i in 0 .. halfVectorWidth - 1 do
+                        outputPixels[rowOffset + i] <- clampRoundToByte (float32 loBuffer[i] / divisorF)
+                        outputPixels[rowOffset + halfVectorWidth + i] <- clampRoundToByte (float32 hiBuffer[i] / divisorF)
+
+                    x <- x + byteVectorWidth
+                else
+                    outputPixels[y * width + x] <- scalarPixel x y
+                    x <- x + 1
+    | _ ->
+        for y in 0 .. height - 1 do
+            for x in 0 .. width - 1 do
+                outputPixels[y * width + x] <- scalarPixel x y
+
+let private convolveUInt16Slice width height (plan: KernelPlan) (window: TypedChunkSlice<'T>[]) (output: Chunk<'T>) =
+    let outputPixels = MemoryMarshal.Cast<byte, uint16>(output.Bytes.AsSpan(0, output.ByteLength))
+    for y in 0 .. height - 1 do
+        for x in 0 .. width - 1 do
+            let mutable acc = 0.0f
+            for tap in plan.Taps do
+                let sy = y + tap.Dy
+                let sx = x + tap.Dx
+                if sx >= 0 && sx < width && sy >= 0 && sy < height then
+                    let source = MemoryMarshal.Cast<byte, uint16>(window[tap.WindowZ].Chunk.Bytes.AsSpan(0, window[tap.WindowZ].Chunk.ByteLength))
+                    acc <- acc + float32 source[sy * width + sx] * tap.Weight
+            outputPixels[y * width + x] <- clampRoundToUInt16 acc
+
+let private convolveInt32Slice width height (plan: KernelPlan) (window: TypedChunkSlice<'T>[]) (output: Chunk<'T>) =
+    let outputPixels = MemoryMarshal.Cast<byte, int32>(output.Bytes.AsSpan(0, output.ByteLength))
+    for y in 0 .. height - 1 do
+        for x in 0 .. width - 1 do
+            let mutable acc = 0.0f
+            for tap in plan.Taps do
+                let sy = y + tap.Dy
+                let sx = x + tap.Dx
+                if sx >= 0 && sx < width && sy >= 0 && sy < height then
+                    let source = MemoryMarshal.Cast<byte, int32>(window[tap.WindowZ].Chunk.Bytes.AsSpan(0, window[tap.WindowZ].Chunk.ByteLength))
+                    acc <- acc + float32 source[sy * width + sx] * tap.Weight
+            outputPixels[y * width + x] <- clampRoundToInt32 acc
+
+let private convolveFixedKernelSlice<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType>
+    width
+    height
+    (plan: KernelPlan)
+    (window: TypedChunkSlice<'T>[])
+    =
+    let output = Chunk.create<'T> (uint64 width, uint64 height, 1UL)
+    try
+        output.Bytes.AsSpan(0, output.ByteLength).Clear()
+        let t = typeof<'T>
+        if t = typeof<float32> then
+            convolveFloat32Slice width height plan window output
+        elif t = typeof<uint8> then
+            convolveUInt8Slice width height plan window output
+        elif t = typeof<uint16> then
+            convolveUInt16Slice width height plan window output
+        elif t = typeof<int32> then
+            convolveInt32Slice width height plan window output
+        else
+            invalidArg "T" $"Chunk convolution currently supports UInt8, UInt16, Int32, and Float32 chunks, got {t.Name}."
+        output
+    with
+    | _ ->
+        Chunk.decRef output
+        reraise()
+
+let private chunkConvolveFixedKernelStage<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType>
+    (kernel: float32[,,])
+    batchSize
+    =
+    if batchSize < 1 then
+        invalidArg "batchSize" $"Chunk convolution expects a positive batch size, got {batchSize}."
+
+    let plan = createKernelPlan kernel
+    let windowLength = plan.Depth
+    let memoryNeed nPixels =
+        uint64 (windowLength + batchSize) * nPixels * uint64 (Marshal.SizeOf<'T>())
+
+    let transition = ProfileTransition.create Streaming Streaming
+    let memoryModel = StageMemoryModel.fromSinglePeak Map memoryNeed
+    let suffix = if batchSize = 1 then "" else $".parallel{batchSize}"
+
+    let apply (_debug: bool) (input: AsyncSeq<Chunk<'T>>) =
+        asyncSeq {
+            let queue = ResizeArray<TypedChunkSlice<'T>>()
+            let mutable width = 0
+            let mutable height = 0
+            let mutable initialized = false
+            let mutable realCount = 0
+            let mutable emittedCount = 0
+            let mutable lastIndex = -1
+
+            let addPadding index =
+                let chunk = zeroChunkTyped<'T> width height
+                queue.Add({ Index = index; Chunk = chunk })
+
+            let ensureInitialized (chunk: Chunk<'T>) =
+                let chunkWidth, chunkHeight, chunkDepth = chunk.Size
+                if chunkDepth <> 1UL then
+                    invalidArg "chunk" $"Chunk convolution expects 2D slice chunks with depth 1, got {chunk.Size}."
+
+                if not initialized then
+                    width <- int chunkWidth
+                    height <- int chunkHeight
+                    if width <= 0 || height <= 0 then
+                        invalidArg "chunk" $"Chunk convolution expects positive slice dimensions, got {chunk.Size}."
+                    for i in plan.PadZ .. -1 .. 1 do
+                        addPadding -i
+                    initialized <- true
+                else
+                    validateTypedSliceChunk "convolution" width height chunk
+
+            let releasePrefix count =
+                for _ in 1 .. count do
+                    let removed = queue[0]
+                    queue.RemoveAt(0)
+                    Chunk.decRef removed.Chunk
+
+            let tryProcessBatch draining =
+                if initialized then
+                    let remainingRealOutputs = realCount - emittedCount
+                    let availableWindows = queue.Count - windowLength + 1
+                    let availableOutputs = min remainingRealOutputs availableWindows
+                    let batchCount =
+                        if draining then
+                            min batchSize availableOutputs
+                        elif availableOutputs >= batchSize then
+                            batchSize
+                        else
+                            0
+
+                    if batchCount > 0 then
+                        let windows = Array.zeroCreate<TypedChunkSlice<'T>[]> batchCount
+                        let releasedWindows = Array.zeroCreate<bool> batchCount
+                        let outputs = Array.zeroCreate<Chunk<'T>> batchCount
+                        try
+                            for i in 0 .. batchCount - 1 do
+                                windows[i] <- retainTypedWindow queue i windowLength
+
+                            if batchCount = 1 then
+                                try
+                                    outputs[0] <- convolveFixedKernelSlice width height plan windows[0]
+                                finally
+                                    releaseTypedWindow windows[0]
+                                    releasedWindows[0] <- true
+                            else
+                                Parallel.For(
+                                    0,
+                                    batchCount,
+                                    fun i ->
+                                        try
+                                            outputs[i] <- convolveFixedKernelSlice width height plan windows[i]
+                                        finally
+                                            releaseTypedWindow windows[i]
+                                            releasedWindows[i] <- true
+                                )
+                                |> ignore
+
+                            releasePrefix batchCount
+                            emittedCount <- emittedCount + batchCount
+                            Some outputs
+                        with
+                        | _ ->
+                            for i in 0 .. windows.Length - 1 do
+                                if not releasedWindows[i] && not (isNull (box windows[i])) then
+                                    releaseTypedWindow windows[i]
+                            for i in 0 .. outputs.Length - 1 do
+                                if not (isNull (box outputs[i])) then
+                                    Chunk.decRef outputs[i]
+                            reraise()
+                    else
+                        None
+                else
+                    None
+
+            let emitAvailable () =
+                seq {
+                    let mutable keepGoing = true
+                    while keepGoing do
+                        match tryProcessBatch false with
+                        | Some outputs ->
+                            for output in outputs do
+                                yield output
+                        | None ->
+                            keepGoing <- false
+                }
+
+            let drainAvailable () =
+                seq {
+                    let mutable keepGoing = true
+                    while keepGoing do
+                        match tryProcessBatch true with
+                        | Some outputs ->
+                            for output in outputs do
+                                yield output
+                        | None ->
+                            keepGoing <- false
+                }
+
+            try
+                for chunk in input do
+                    ensureInitialized chunk
+                    queue.Add({ Index = realCount; Chunk = chunk })
+                    lastIndex <- realCount
+                    realCount <- realCount + 1
+
+                    for output in emitAvailable () do
+                        yield output
+
+                if initialized then
+                    for i in 1 .. plan.PadZ do
+                        addPadding (lastIndex + i)
+                        for output in emitAvailable () do
+                            yield output
+                    for output in drainAvailable () do
+                        yield output
+            finally
+                for item in queue do
+                    Chunk.decRef item.Chunk
+                queue.Clear()
+        }
+
+    Stage.fromAsyncSeq
+        $"chunkConvolveFixedKernel{suffix}.{typeof<'T>.Name}.{plan.Width}x{plan.Height}x{plan.Depth}"
+        apply
+        transition
+        memoryModel
+        id
+
+let convolveFixedKernel<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType>
+    kernel
+    : Stage<Chunk<'T>, Chunk<'T>> =
+    chunkConvolveFixedKernelStage<'T> kernel 1
+
+let convolveFixedKernelParallel<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType>
+    kernel
+    windowSize
+    : Stage<Chunk<'T>, Chunk<'T>> =
+    if windowSize <= 1 then
+        convolveFixedKernel<'T> kernel
+    else
+        chunkConvolveFixedKernelStage<'T> kernel windowSize
 
 let private chunkZonohedralLineStage
     operationName
@@ -308,6 +866,7 @@ let private chunkZonohedralLineStage
             let mutable realCount = 0
             let mutable emittedCount = 0
             let mutable lastIndex = -1
+            let mutable linePlan = Unchecked.defaultof<LinePlan>
 
             let addPadding index =
                 let chunk = zeroChunk width height
@@ -325,6 +884,7 @@ let private chunkZonohedralLineStage
                         invalidArg "chunk" $"Chunk zonohedral {operationName} expects positive slice dimensions, got {chunk.Size}."
                     for i in prePad .. -1 .. 1 do
                         addPadding -i
+                    linePlan <- createLinePlan width height prePad dx dy dz length lineWindowLength
                     initialized <- true
                 else
                     validateSliceChunk width height chunk
@@ -357,7 +917,7 @@ let private chunkZonohedralLineStage
 
                             if batchCount = 1 then
                                 try
-                                    outputs[0] <- lineOperator width height windows[0] prePad dx dy dz length
+                                    outputs[0] <- lineOperator width height windows[0] prePad dx dy dz length linePlan
                                 finally
                                     releaseWindow windows[0]
                                     releasedWindows[0] <- true
@@ -367,7 +927,7 @@ let private chunkZonohedralLineStage
                                     batchCount,
                                     fun i ->
                                         try
-                                            outputs[i] <- lineOperator width height windows[i] prePad dx dy dz length
+                                            outputs[i] <- lineOperator width height windows[i] prePad dx dy dz length linePlan
                                         finally
                                             releaseWindow windows[i]
                                             releasedWindows[i] <- true
@@ -505,6 +1065,165 @@ let thresholdBinary (threshold: uint8) : Stage<Chunk<uint8>, Chunk<uint8>> =
             Chunk.decRef chunk
 
     Stage.map $"chunkThresholdBinary.{threshold}" mapper id id
+
+let private castChunkToFloat32<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> (chunk: Chunk<'T>) =
+    let output = Chunk.create<float32> chunk.Size
+    try
+        let outputPixels = Chunk.span<float32> output
+        let t = typeof<'T>
+        if t = typeof<float32> then
+            let inputPixels = MemoryMarshal.Cast<byte, float32>(chunk.Bytes.AsSpan(0, chunk.ByteLength))
+            inputPixels.CopyTo(outputPixels)
+        elif t = typeof<uint8> then
+            let inputPixels = chunk.Bytes.AsSpan(0, chunk.ByteLength)
+            let byteVectorWidth = Vector<byte>.Count
+            let floatVectorWidth = Vector<float32>.Count
+            let vectorEnd = inputPixels.Length - (inputPixels.Length % byteVectorWidth)
+            let mutable i = 0
+            while i < vectorEnd do
+                let mutable inputPart = inputPixels.Slice(i, byteVectorWidth)
+                let inputSlice = MemoryMarshal.CreateReadOnlySpan(&MemoryMarshal.GetReference(inputPart), byteVectorWidth)
+                let a, b, c, d = byteVectorToSingleVectors inputSlice
+                a.CopyTo(outputPixels.Slice(i, floatVectorWidth))
+                b.CopyTo(outputPixels.Slice(i + floatVectorWidth, floatVectorWidth))
+                c.CopyTo(outputPixels.Slice(i + 2 * floatVectorWidth, floatVectorWidth))
+                d.CopyTo(outputPixels.Slice(i + 3 * floatVectorWidth, floatVectorWidth))
+                i <- i + byteVectorWidth
+            while i < inputPixels.Length do
+                outputPixels[i] <- float32 inputPixels[i]
+                i <- i + 1
+        elif t = typeof<int8> then
+            let inputPixels = MemoryMarshal.Cast<byte, sbyte>(chunk.Bytes.AsSpan(0, chunk.ByteLength))
+            let int8VectorWidth = Vector<sbyte>.Count
+            let floatVectorWidth = Vector<float32>.Count
+            let vectorEnd = inputPixels.Length - (inputPixels.Length % int8VectorWidth)
+            let mutable i = 0
+            while i < vectorEnd do
+                let mutable inputPart = inputPixels.Slice(i, int8VectorWidth)
+                let inputSlice = MemoryMarshal.CreateReadOnlySpan(&MemoryMarshal.GetReference(inputPart), int8VectorWidth)
+                let a, b, c, d = int8VectorToSingleVectors inputSlice
+                a.CopyTo(outputPixels.Slice(i, floatVectorWidth))
+                b.CopyTo(outputPixels.Slice(i + floatVectorWidth, floatVectorWidth))
+                c.CopyTo(outputPixels.Slice(i + 2 * floatVectorWidth, floatVectorWidth))
+                d.CopyTo(outputPixels.Slice(i + 3 * floatVectorWidth, floatVectorWidth))
+                i <- i + int8VectorWidth
+            while i < inputPixels.Length do
+                outputPixels[i] <- float32 inputPixels[i]
+                i <- i + 1
+        elif t = typeof<uint16> then
+            let inputPixels = MemoryMarshal.Cast<byte, uint16>(chunk.Bytes.AsSpan(0, chunk.ByteLength))
+            let uint16VectorWidth = Vector<uint16>.Count
+            let floatVectorWidth = Vector<float32>.Count
+            let vectorEnd = inputPixels.Length - (inputPixels.Length % uint16VectorWidth)
+            let mutable i = 0
+            while i < vectorEnd do
+                let mutable inputPart = inputPixels.Slice(i, uint16VectorWidth)
+                let inputSlice = MemoryMarshal.CreateReadOnlySpan(&MemoryMarshal.GetReference(inputPart), uint16VectorWidth)
+                let a, b = uint16VectorToSingleVectors inputSlice
+                a.CopyTo(outputPixels.Slice(i, floatVectorWidth))
+                b.CopyTo(outputPixels.Slice(i + floatVectorWidth, floatVectorWidth))
+                i <- i + uint16VectorWidth
+            while i < inputPixels.Length do
+                outputPixels[i] <- float32 inputPixels[i]
+                i <- i + 1
+        elif t = typeof<int16> then
+            let inputPixels = MemoryMarshal.Cast<byte, int16>(chunk.Bytes.AsSpan(0, chunk.ByteLength))
+            let int16VectorWidth = Vector<int16>.Count
+            let floatVectorWidth = Vector<float32>.Count
+            let vectorEnd = inputPixels.Length - (inputPixels.Length % int16VectorWidth)
+            let mutable i = 0
+            while i < vectorEnd do
+                let mutable inputPart = inputPixels.Slice(i, int16VectorWidth)
+                let inputSlice = MemoryMarshal.CreateReadOnlySpan(&MemoryMarshal.GetReference(inputPart), int16VectorWidth)
+                let a, b = int16VectorToSingleVectors inputSlice
+                a.CopyTo(outputPixels.Slice(i, floatVectorWidth))
+                b.CopyTo(outputPixels.Slice(i + floatVectorWidth, floatVectorWidth))
+                i <- i + int16VectorWidth
+            while i < inputPixels.Length do
+                outputPixels[i] <- float32 inputPixels[i]
+                i <- i + 1
+        elif t = typeof<int32> then
+            let inputPixels = MemoryMarshal.Cast<byte, int32>(chunk.Bytes.AsSpan(0, chunk.ByteLength))
+            let vectorWidth = Vector<int32>.Count
+            let vectorEnd = inputPixels.Length - (inputPixels.Length % vectorWidth)
+            let mutable i = 0
+            while i < vectorEnd do
+                Vector.ConvertToSingle(Vector<int32>(inputPixels.Slice(i, vectorWidth))).CopyTo(outputPixels.Slice(i, vectorWidth))
+                i <- i + vectorWidth
+            while i < inputPixels.Length do
+                outputPixels[i] <- float32 inputPixels[i]
+                i <- i + 1
+        else
+            invalidArg "T" $"ChunkFunctions.castToFloat32 supports Int8, UInt8, Int16, UInt16, Int32, and Float32 chunks, got {t.Name}."
+        output
+    with
+    | _ ->
+        Chunk.decRef output
+        reraise()
+
+let castToFloat32<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> : Stage<Chunk<'T>, Chunk<float32>> =
+    let mapper _debug chunk =
+        try
+            castChunkToFloat32 chunk
+        finally
+            Chunk.decRef chunk
+
+    Stage.map $"chunkCastToFloat32.{typeof<'T>.Name}" mapper id id
+
+let private castFloat32ChunkTo<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> (chunk: Chunk<float32>) =
+    let output = Chunk.create<'T> chunk.Size
+    try
+        let inputPixels = Chunk.span<float32> chunk
+        let t = typeof<'T>
+        if t = typeof<float32> then
+            let outputPixels = MemoryMarshal.Cast<byte, float32>(output.Bytes.AsSpan(0, output.ByteLength))
+            inputPixels.CopyTo(outputPixels)
+        elif t = typeof<uint8> then
+            let outputPixels = output.Bytes.AsSpan(0, output.ByteLength)
+            let mutable i = 0
+            while i < inputPixels.Length do
+                outputPixels[i] <- clampRoundToByte inputPixels[i]
+                i <- i + 1
+        elif t = typeof<int8> then
+            let outputPixels = MemoryMarshal.Cast<byte, sbyte>(output.Bytes.AsSpan(0, output.ByteLength))
+            let mutable i = 0
+            while i < inputPixels.Length do
+                outputPixels[i] <- clampRoundToSByte inputPixels[i]
+                i <- i + 1
+        elif t = typeof<uint16> then
+            let outputPixels = MemoryMarshal.Cast<byte, uint16>(output.Bytes.AsSpan(0, output.ByteLength))
+            let mutable i = 0
+            while i < inputPixels.Length do
+                outputPixels[i] <- clampRoundToUInt16 inputPixels[i]
+                i <- i + 1
+        elif t = typeof<int16> then
+            let outputPixels = MemoryMarshal.Cast<byte, int16>(output.Bytes.AsSpan(0, output.ByteLength))
+            let mutable i = 0
+            while i < inputPixels.Length do
+                outputPixels[i] <- clampRoundToInt16 inputPixels[i]
+                i <- i + 1
+        elif t = typeof<int32> then
+            let outputPixels = MemoryMarshal.Cast<byte, int32>(output.Bytes.AsSpan(0, output.ByteLength))
+            let mutable i = 0
+            while i < inputPixels.Length do
+                outputPixels[i] <- clampRoundToInt32 inputPixels[i]
+                i <- i + 1
+        else
+            invalidArg "T" $"ChunkFunctions.castFromFloat32 supports Int8, UInt8, Int16, UInt16, Int32, and Float32 chunks, got {t.Name}."
+        output
+    with
+    | _ ->
+        Chunk.decRef output
+        reraise()
+
+let castFromFloat32<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> : Stage<Chunk<float32>, Chunk<'T>> =
+    let mapper _debug chunk =
+        try
+            castFloat32ChunkTo<'T> chunk
+        finally
+            Chunk.decRef chunk
+
+    Stage.map $"chunkCastFromFloat32.{typeof<'T>.Name}" mapper id id
 
 let addCountsInto (target: uint64[]) (source: uint64[]) =
     if target.Length <> source.Length then
@@ -837,8 +1556,7 @@ let histogramReducer<'T when 'T: equality and 'T: comparison and 'T: (new: unit 
             let counts = Dictionary<'T, uint64>()
             for chunk in input do
                 try
-                    let chunkCounts = histogramDictionary chunk
-                    addDictionaryInto counts chunkCounts
+                    addChunkIntoDictionary counts chunk
                 finally
                     Chunk.decRef chunk
             return counts |> dictionaryToMap |> Histogram.ofMap
@@ -873,10 +1591,13 @@ let histogramDenseReducer<'T when 'T: equality and 'T: comparison and 'T: (new: 
             let mutable accumulator: DenseHistogram option = None
             for chunk in input do
                 try
-                    let chunkCounts = histogramDenseCounts chunk
                     match accumulator with
-                    | None -> accumulator <- Some chunkCounts
-                    | Some target -> addDenseInto target chunkCounts
+                    | None ->
+                        let counts = emptyDenseCounts<'T> ()
+                        addDenseChunkInto<'T> counts chunk
+                        accumulator <- Some counts
+                    | Some target ->
+                        addDenseChunkInto<'T> target chunk
                 finally
                     Chunk.decRef chunk
 

@@ -58,7 +58,6 @@ let supportsDirectTiffRead<'T> =
     || t = typeof<uint16>
     || t = typeof<int16>
     || t = typeof<float32>
-    || t = typeof<float>
 
 let supportsDirectTiffWrite<'T> =
     let t = typeof<'T>
@@ -67,6 +66,7 @@ let supportsDirectTiffWrite<'T> =
     || t = typeof<uint16>
     || t = typeof<int16>
     || t = typeof<float32>
+    || t = typeof<float>
 
 let tiffWriteMode (filename: string) =
     let ext = Path.GetExtension(filename).ToLowerInvariant()

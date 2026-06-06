@@ -22,6 +22,13 @@ type PixelType =
     | UInt16
     | Float32
 
+type ChunkConvolvePixelType =
+    | ChunkUInt8
+    | ChunkInt8
+    | ChunkUInt16
+    | ChunkInt16
+    | ChunkFloat32
+
 type Shape =
     { Width: uint
       Height: uint
@@ -64,6 +71,7 @@ ArrayPool experiment:
   dotnet run --project benchmarks/StackProcessing.Benchmarks -- run-libtiff-direct-threshold-hotloop --pixel-type UInt8|UInt16|Float32 --input DIR --variant byte-mask-one|byte-intype-max|byte-intype-one|typed-intype-max|typed-intype-one|typed-copy-intype-max|typed-copy-intype-one [--iterations N] [--threshold X]
   dotnet run --project benchmarks/StackProcessing.Benchmarks -- run-chunk-histogram --pixel-type UInt8|UInt16|Float32 --input DIR --variant dense|sparse|leftedges [--window-size N] [--bins N] [--available-memory BYTES]
   dotnet run --project benchmarks/StackProcessing.Benchmarks -- run-chunk-dilate --input DIR --output DIR [--radius N] [--threshold X] [--workers N] [--available-memory BYTES]
+  dotnet run --project benchmarks/StackProcessing.Benchmarks -- run-chunk-convolve --pixel-type UInt8|Int8|UInt16|Int16|Float32 --input DIR --output DIR [--kernel-size N] [--workers N] [--available-memory BYTES]
   dotnet run --project benchmarks/StackProcessing.Benchmarks -- run-threshold-kernel --pixel-type UInt8|UInt16|Float32 --shape WxHxD --output-type mask|intype [--threshold X]
   dotnet run --project benchmarks/StackProcessing.Benchmarks -- run-libtiff-strip-copy --operation copy --pixel-type UInt8|UInt16|Float32 --input DIR --output DIR
   dotnet run --project benchmarks/StackProcessing.Benchmarks -- run-libtiff-raw-strip-copy --operation copy --pixel-type UInt8|UInt16|Float32 --input DIR --output DIR
@@ -117,6 +125,15 @@ let private parsePixelType value =
     | "UInt16" | "uint16" -> UInt16
     | "Float32" | "float32" -> Float32
     | _ -> failwith $"unsupported pixel type '{value}'"
+
+let private parseChunkConvolvePixelType value =
+    match value with
+    | "UInt8" | "uint8" -> ChunkUInt8
+    | "Int8" | "int8" -> ChunkInt8
+    | "UInt16" | "uint16" -> ChunkUInt16
+    | "Int16" | "int16" -> ChunkInt16
+    | "Float32" | "float32" -> ChunkFloat32
+    | _ -> failwith $"unsupported chunk convolve pixel type '{value}'"
 
 let private zarrDataType pixelType =
     match pixelType with
@@ -179,10 +196,12 @@ let private rentVolume<'T> width height depth name =
 let private scalarTiffLayout<'T> () =
     let t = typeof<'T>
     if t = typeof<uint8> then 8, SampleFormat.UINT, 1
+    elif t = typeof<int8> then 8, SampleFormat.INT, 1
     elif t = typeof<uint16> then 16, SampleFormat.UINT, 2
+    elif t = typeof<int16> then 16, SampleFormat.INT, 2
     elif t = typeof<float32> then 32, SampleFormat.IEEEFP, 4
     else
-        invalidArg "T" $"ArrayPool benchmark supports UInt8, UInt16, and Float32 TIFF stacks; got {t.Name}."
+        invalidArg "T" $"ArrayPool benchmark supports UInt8, Int8, UInt16, Int16, and Float32 TIFF stacks; got {t.Name}."
 
 let private scalarTiffLayoutForPixelType pixelType =
     match pixelType with
@@ -230,9 +249,12 @@ let private readTiffPageBytes (fileName: string) =
 
     let actualBytesPerSample =
         match sampleFormat, bitsPerSample with
-        | SampleFormat.UINT, 8 -> 1
-        | SampleFormat.UINT, 16 -> 2
+        | SampleFormat.UINT, 8
+        | SampleFormat.INT, 8 -> 1
+        | SampleFormat.UINT, 16
+        | SampleFormat.INT, 16 -> 2
         | SampleFormat.IEEEFP, 32 -> 4
+        | SampleFormat.IEEEFP, 64 -> 8
         | _ -> invalidOp $"Unsupported TIFF scalar layout in '{fileName}': {bitsPerSample}-bit {sampleFormat}."
 
     let rowBytes = int width * actualBytesPerSample
@@ -345,6 +367,9 @@ module private NativeLibTiff =
 
     [<Literal>]
     let SampleFormatUInt = 1us
+
+    [<Literal>]
+    let SampleFormatInt = 2us
 
     [<Literal>]
     let SampleFormatIeeeFp = 3us
@@ -1121,6 +1146,11 @@ let private uniformKernel3D (kernelSize: uint) =
     Array3D.create (int size) (int size) (int size) value
     |> fun values -> Image<float>.ofArray3D(values, name = $"uniformKernel{size}")
 
+let private uniformKernel3DFloat32 (kernelSize: uint) =
+    let size = max 1u kernelSize
+    let value = 1.0f / float32 (size * size * size)
+    Array3D.create (int size) (int size) (int size) value
+
 let private runConvolveTyped<'T when 'T: equality> input output kernelSize availableMemory =
     ensureCleanDirectory output
     let kernel = uniformKernel3D kernelSize
@@ -1135,6 +1165,48 @@ let private runConvolveTyped<'T when 'T: equality> input output kernelSize avail
         |> sink
     finally
         kernel.decRefCount()
+    0
+
+let private runChunkConvolveTyped<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType>
+    input
+    output
+    kernelSize
+    workers
+    availableMemory
+    =
+    ensureCleanDirectory output
+    if workers < 1 then
+        invalidArg "workers" $"Chunk convolution expects at least one worker/window, got {workers}."
+
+    let src = benchmarkSource availableMemory
+    if typeof<'T> = typeof<float32> then
+        let kernel = uniformKernel3DFloat32 kernelSize
+        let convolution =
+            if workers = 1 then
+                ChunkFunctions.convolveFixedKernel<float32> kernel
+            else
+                ChunkFunctions.convolveFixedKernelParallel<float32> kernel workers
+
+        src
+        |> readChunkSlices<float32> input ".tiff"
+        >=> convolution
+        >=> writeChunkSlices<float32> output ".tiff"
+        |> sink
+    else
+        let kernel = uniformKernel3DFloat32 kernelSize
+        let convolution =
+            if workers = 1 then
+                ChunkFunctions.convolveFixedKernel<float32> kernel
+            else
+                ChunkFunctions.convolveFixedKernelParallel<float32> kernel workers
+
+        src
+        |> readChunkSlices<'T> input ".tiff"
+        >=> ChunkFunctions.castToFloat32<'T>
+        >=> convolution
+        >=> ChunkFunctions.castFromFloat32<'T>
+        >=> writeChunkSlices<'T> output ".tiff"
+        |> sink
     0
 
 let private zarrChunkMedianSlab<'T when 'T: equality> radius chunkZ : Stage<Image<'T>, Image<'T>> =
@@ -1321,7 +1393,10 @@ let private chunkElementBytes<'T>() =
     match typeof<'T> with
     | t when t = typeof<byte> -> 1UL
     | t when t = typeof<uint8> -> 1UL
+    | t when t = typeof<int8> -> 1UL
     | t when t = typeof<uint16> -> 2UL
+    | t when t = typeof<int16> -> 2UL
+    | t when t = typeof<int32> -> 4UL
     | t when t = typeof<float32> -> 4UL
     | t -> invalidArg "T" $"Unsupported benchmark chunk type {t.Name}."
 
@@ -2220,6 +2295,27 @@ let private runChunkDilate opts =
 
     let stopwatch = Stopwatch.StartNew()
     let exitCode = runChunkBinaryDilate input output radius thresholdValue workers availableMemory
+    stopwatch.Stop()
+    writeInternalSeconds stopwatch.Elapsed
+    exitCode
+
+let private runChunkConvolve opts =
+    let pixelType = require "pixel-type" opts |> parseChunkConvolvePixelType
+    let input = require "input" opts
+    let output = require "output" opts
+    let kernelSize = optional "kernel-size" "3" opts |> UInt32.Parse
+    let workers = optional "workers" "1" opts |> Int32.Parse
+    let availableMemory = optional "available-memory" (string (1024UL * 1024UL * 1024UL * 1024UL)) opts |> UInt64.Parse
+
+    let stopwatch = Stopwatch.StartNew()
+    let exitCode =
+        match pixelType with
+        | ChunkUInt8 -> runChunkConvolveTyped<uint8> input output kernelSize workers availableMemory
+        | ChunkInt8 -> runChunkConvolveTyped<int8> input output kernelSize workers availableMemory
+        | ChunkUInt16 -> runChunkConvolveTyped<uint16> input output kernelSize workers availableMemory
+        | ChunkInt16 -> runChunkConvolveTyped<int16> input output kernelSize workers availableMemory
+        | ChunkFloat32 -> runChunkConvolveTyped<float32> input output kernelSize workers availableMemory
+
     stopwatch.Stop()
     writeInternalSeconds stopwatch.Elapsed
     exitCode
@@ -3329,6 +3425,7 @@ let main args =
         | _ when args[0] = "run-libtiff-direct-threshold-hotloop" -> args[1..] |> parseArgs |> runLibTiffDirectThresholdHotLoop
         | _ when args[0] = "run-chunk-histogram" -> args[1..] |> parseArgs |> runChunkHistogram
         | _ when args[0] = "run-chunk-dilate" -> args[1..] |> parseArgs |> runChunkDilate
+        | _ when args[0] = "run-chunk-convolve" -> args[1..] |> parseArgs |> runChunkConvolve
         | _ when args[0] = "run-threshold-kernel" -> args[1..] |> parseArgs |> runThresholdKernel
         | _ when args[0] = "run-libtiff-strip-copy" -> args[1..] |> parseArgs |> runLibTiffStripCopy
         | _ when args[0] = "run-libtiff-raw-strip-copy" -> args[1..] |> parseArgs |> runLibTiffRawStripCopy

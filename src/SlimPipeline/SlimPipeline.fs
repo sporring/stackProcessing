@@ -548,36 +548,43 @@ module private Pipe =
         let reducer debug (input: AsyncSeq<'Item>) =
             async {
                 let locals = Array.init workers (fun _ -> folder.Create())
-                let windowPipe =
-                    window
-                        $"{name}.windows"
-                        (uint windowSize)
-                        0u
-                        (fun _ item -> item)
-                        (uint windowSize)
+                if workers = 1 then
+                    for item in input do
+                        try
+                            folder.AddItemInto locals[0] item
+                        finally
+                            folder.ReleaseItem item
+                else
+                    let windowPipe =
+                        window
+                            $"{name}.windows"
+                            (uint windowSize)
+                            0u
+                            (fun _ item -> item)
+                            (uint windowSize)
 
-                let processWindow (items: 'Item list) =
-                    if items.Length > 0 then
-                        Parallel.For(
-                            0,
-                            workers,
-                            fun worker ->
-                                let rec loop index remaining =
-                                    match remaining with
-                                    | [] -> ()
-                                    | item :: rest ->
-                                        if index % workers = worker then
-                                            try
-                                                folder.AddItemInto locals[worker] item
-                                            finally
-                                                folder.ReleaseItem item
-                                        loop (index + 1) rest
+                    let processWindow (items: 'Item list) =
+                        if items.Length > 0 then
+                            Parallel.For(
+                                0,
+                                workers,
+                                fun worker ->
+                                    let rec loop index remaining =
+                                        match remaining with
+                                        | [] -> ()
+                                        | item :: rest ->
+                                            if index % workers = worker then
+                                                try
+                                                    folder.AddItemInto locals[worker] item
+                                                finally
+                                                    folder.ReleaseItem item
+                                            loop (index + 1) rest
 
-                                loop 0 items)
-                        |> ignore
+                                    loop 0 items)
+                            |> ignore
 
-                for window in windowPipe.Apply debug input do
-                    processWindow window.Items
+                    for window in windowPipe.Apply debug input do
+                        processWindow window.Items
 
                 for worker in 1 .. workers - 1 do
                     folder.MergeInto locals[0] locals[worker]

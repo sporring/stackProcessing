@@ -27,6 +27,38 @@ let private chunkFromPixels width height (pixels: uint8[]) =
     pixels.CopyTo(values)
     chunk
 
+let private chunkFromInt8Pixels width height (pixels: int8[]) =
+    let chunk = Chunk.create<int8> (uint64 width, uint64 height, 1UL)
+    let values = Chunk.span<int8> chunk
+    if values.Length <> pixels.Length then
+        invalidArg "pixels" $"Expected {values.Length} pixels, got {pixels.Length}."
+    pixels.CopyTo(values)
+    chunk
+
+let private chunkFromInt16Pixels width height (pixels: int16[]) =
+    let chunk = Chunk.create<int16> (uint64 width, uint64 height, 1UL)
+    let values = Chunk.span<int16> chunk
+    if values.Length <> pixels.Length then
+        invalidArg "pixels" $"Expected {values.Length} pixels, got {pixels.Length}."
+    pixels.CopyTo(values)
+    chunk
+
+let private chunkFromFloat32Pixels width height (pixels: float32[]) =
+    let chunk = Chunk.create<float32> (uint64 width, uint64 height, 1UL)
+    let values = Chunk.span<float32> chunk
+    if values.Length <> pixels.Length then
+        invalidArg "pixels" $"Expected {values.Length} pixels, got {pixels.Length}."
+    pixels.CopyTo(values)
+    chunk
+
+let private chunkFromInt32Pixels width height (pixels: int32[]) =
+    let chunk = Chunk.create<int32> (uint64 width, uint64 height, 1UL)
+    let values = Chunk.span<int32> chunk
+    if values.Length <> pixels.Length then
+        invalidArg "pixels" $"Expected {values.Length} pixels, got {pixels.Length}."
+    pixels.CopyTo(values)
+    chunk
+
 let chunkSuite =
     testList "Chunk" [
         testCase "create rents byte-backed storage with typed span over requested size" <| fun _ ->
@@ -471,6 +503,120 @@ let chunkSuite =
             let results = runStageList stage [ 1; 2; 3; 4; 5 ]
 
             Expect.equal results [ 6; 9; 12; 9 ] "parallelCollect should keep rolling-window semantics while batching windows separately."
+
+        testCase "ChunkFunctions.convolveFixedKernel applies a z-window kernel to UInt8 slices" <| fun _ ->
+            let kernel = Array3D.zeroCreate<float32> 1 1 3
+            kernel[0, 0, 0] <- 1.0f
+            kernel[0, 0, 1] <- 2.0f
+            kernel[0, 0, 2] <- 3.0f
+
+            let chunks =
+                [ chunkFromPixels 1 1 [| 10uy |]
+                  chunkFromPixels 1 1 [| 20uy |]
+                  chunkFromPixels 1 1 [| 30uy |] ]
+
+            let outputs = runStageList (ChunkFunctions.convolveFixedKernel<uint8> kernel) chunks
+            try
+                Expect.equal outputs.Length 3 "Chunk convolution should preserve slice count for same-size zero-boundary convolution."
+                let values = outputs |> List.map (fun chunk -> (Chunk.span<uint8> chunk)[0])
+                Expect.sequenceEqual values [ 80uy; 140uy; 80uy ] "Chunk convolution should use zero padding before the first and after the last slice."
+                chunks |> List.iter (fun chunk -> Expect.equal chunk.RefCount.Value 0 "Convolution should release consumed input chunks.")
+            finally
+                outputs |> List.iter Chunk.decRef
+
+        testCase "ChunkFunctions.convolveFixedKernelParallel matches serial float32 convolution" <| fun _ ->
+            let width = 40
+            let height = 3
+            let depth = 5
+            let kernel = Array3D.zeroCreate<float32> 3 1 3
+            kernel[0, 0, 0] <- 0.125f
+            kernel[1, 0, 1] <- 0.5f
+            kernel[2, 0, 2] <- 0.25f
+
+            let makeChunks () =
+                [ for z in 0 .. depth - 1 ->
+                    [| for y in 0 .. height - 1 do
+                           for x in 0 .. width - 1 do
+                               float32 (z * 1000 + y * width + x) |]
+                    |> chunkFromFloat32Pixels width height ]
+
+            let serialOutputs = runStageList (ChunkFunctions.convolveFixedKernel<float32> kernel) (makeChunks ())
+            let parallelOutputs = runStageList (ChunkFunctions.convolveFixedKernelParallel<float32> kernel 3) (makeChunks ())
+
+            try
+                Expect.equal parallelOutputs.Length serialOutputs.Length "Parallel chunk convolution should preserve the serial output count."
+
+                for z in 0 .. serialOutputs.Length - 1 do
+                    let serialValues = (Chunk.span<float32> serialOutputs[z]).ToArray()
+                    let parallelValues = (Chunk.span<float32> parallelOutputs[z]).ToArray()
+                    Expect.sequenceEqual parallelValues serialValues $"Parallel chunk convolution should match serial output slice {z}."
+            finally
+                parallelOutputs |> List.iter Chunk.decRef
+                serialOutputs |> List.iter Chunk.decRef
+
+        testCase "ChunkFunctions castToFloat32 widens signed and unsigned integer chunk spans" <| fun _ ->
+            let width = 2 * System.Numerics.Vector<byte>.Count + 3
+            let bytes = [| for i in 0 .. width - 1 -> uint8 ((i * 7) % 251) |]
+            let signedBytes = [| for i in 0 .. width - 1 -> int8 ((i % 101) - 50) |]
+            let uint8Chunk = chunkFromPixels width 1 bytes
+            let int8Chunk = chunkFromInt8Pixels width 1 signedBytes
+            let uint16Chunk = Chunk.create<uint16> (uint64 width, 1UL, 1UL)
+            let int16Chunk = Chunk.create<int16> (uint64 width, 1UL, 1UL)
+            try
+                let uint16Values = Chunk.span<uint16> uint16Chunk
+                let int16Values = Chunk.span<int16> int16Chunk
+                for i in 0 .. width - 1 do
+                    uint16Values[i] <- uint16 (i * 257)
+                    int16Values[i] <- int16 (i * 257 - 30000)
+                let expectedUInt16 = uint16Values.ToArray() |> Array.map float32
+                let expectedInt16 = int16Values.ToArray() |> Array.map float32
+
+                let uint8Output = runStageList ChunkFunctions.castToFloat32<uint8> [ uint8Chunk ]
+                let int8Output = runStageList ChunkFunctions.castToFloat32<int8> [ int8Chunk ]
+                let uint16Output = runStageList ChunkFunctions.castToFloat32<uint16> [ uint16Chunk ]
+                let int16Output = runStageList ChunkFunctions.castToFloat32<int16> [ int16Chunk ]
+                try
+                    Expect.sequenceEqual ((Chunk.span<float32> uint8Output[0]).ToArray()) (bytes |> Array.map float32) "UInt8 cast should widen all byte values to Float32."
+                    Expect.sequenceEqual ((Chunk.span<float32> int8Output[0]).ToArray()) (signedBytes |> Array.map float32) "Int8 cast should preserve negative values while widening to Float32."
+                    Expect.sequenceEqual ((Chunk.span<float32> uint16Output[0]).ToArray()) expectedUInt16 "UInt16 cast should widen all UInt16 values to Float32."
+                    Expect.sequenceEqual ((Chunk.span<float32> int16Output[0]).ToArray()) expectedInt16 "Int16 cast should preserve signed values while widening to Float32."
+                finally
+                    uint8Output |> List.iter Chunk.decRef
+                    int8Output |> List.iter Chunk.decRef
+                    uint16Output |> List.iter Chunk.decRef
+                    int16Output |> List.iter Chunk.decRef
+            finally
+                if uint8Chunk.RefCount.Value > 0 then Chunk.decRef uint8Chunk
+                if int8Chunk.RefCount.Value > 0 then Chunk.decRef int8Chunk
+                if uint16Chunk.RefCount.Value > 0 then Chunk.decRef uint16Chunk
+                if int16Chunk.RefCount.Value > 0 then Chunk.decRef int16Chunk
+
+        testCase "ChunkFunctions castFromFloat32 narrows signed integer chunks" <| fun _ ->
+            let input = chunkFromFloat32Pixels 4 1 [| -200.0f; -5.4f; 12.6f; 200.0f |]
+            let output = runStageList ChunkFunctions.castFromFloat32<int8> [ input ]
+            try
+                Expect.sequenceEqual ((Chunk.span<int8> output[0]).ToArray()) [| SByte.MinValue; -5y; 13y; SByte.MaxValue |] "Int8 narrowing should round and clamp signed values."
+            finally
+                output |> List.iter Chunk.decRef
+
+        testCase "ChunkFunctions.convolveFixedKernel supports Int32 chunks" <| fun _ ->
+            let kernel = Array3D.zeroCreate<float32> 1 1 3
+            kernel[0, 0, 0] <- 1.0f
+            kernel[0, 0, 1] <- 2.0f
+            kernel[0, 0, 2] <- 3.0f
+
+            let chunks =
+                [ chunkFromInt32Pixels 1 1 [| -10 |]
+                  chunkFromInt32Pixels 1 1 [| 20 |]
+                  chunkFromInt32Pixels 1 1 [| -30 |] ]
+
+            let outputs = runStageList (ChunkFunctions.convolveFixedKernel<int32> kernel) chunks
+            try
+                let values = outputs |> List.map (fun chunk -> (Chunk.span<int32> chunk)[0])
+                Expect.sequenceEqual values [ 40; -60; -40 ] "Int32 chunk convolution should preserve signed output values."
+                chunks |> List.iter (fun chunk -> Expect.equal chunk.RefCount.Value 0 "Convolution should release consumed Int32 input chunks.")
+            finally
+                outputs |> List.iter Chunk.decRef
 
         testCase "ChunkFunctions.binaryDilateZonohedral expands a UInt8 mask through chunk slices" <| fun _ ->
             let width = 3
