@@ -23,6 +23,9 @@ type private ChunkSlice =
     { Index: int
       Chunk: Chunk<uint8> }
 
+let private binaryBackground = 0uy
+let private binaryForeground = 1uy
+
 let private flatIndex2 width x y =
     y * width + x
 
@@ -48,6 +51,141 @@ let private validateSliceChunk width height (chunk: Chunk<uint8>) =
     if chunkWidth <> uint64 width || chunkHeight <> uint64 height then
         invalidArg "chunk" $"Chunk binary dilation expects chunks of size {width}x{height}x1, got {chunk.Size}."
 
+let private orSpanIntoRange (target: Span<byte>) targetStart (source: ReadOnlySpan<byte>) sourceStart count =
+    let vectorWidth = Vector<byte>.Count
+    let vectorEnd = count - (count % vectorWidth)
+    let mutable i = 0
+    while i < vectorEnd do
+        let targetSlice: ReadOnlySpan<byte> = target.Slice(targetStart + i, vectorWidth)
+        let sourceSlice: ReadOnlySpan<byte> = source.Slice(sourceStart + i, vectorWidth)
+        let destination: Span<byte> = target.Slice(targetStart + i, vectorWidth)
+        let targetVector = MemoryMarshal.Read<Vector<byte>>(targetSlice)
+        let sourceVector = MemoryMarshal.Read<Vector<byte>>(sourceSlice)
+        let mutable result: Vector<byte> = Vector.BitwiseOr(targetVector, sourceVector)
+        MemoryMarshal.Write(destination, &result)
+        i <- i + vectorWidth
+    while i < count do
+        target[targetStart + i] <- target[targetStart + i] ||| source[sourceStart + i]
+        i <- i + 1
+
+let private andSpanIntoRange (target: Span<byte>) targetStart (source: ReadOnlySpan<byte>) sourceStart count =
+    let vectorWidth = Vector<byte>.Count
+    let vectorEnd = count - (count % vectorWidth)
+    let mutable i = 0
+    while i < vectorEnd do
+        let targetSlice: ReadOnlySpan<byte> = target.Slice(targetStart + i, vectorWidth)
+        let sourceSlice: ReadOnlySpan<byte> = source.Slice(sourceStart + i, vectorWidth)
+        let destination: Span<byte> = target.Slice(targetStart + i, vectorWidth)
+        let targetVector = MemoryMarshal.Read<Vector<byte>>(targetSlice)
+        let sourceVector = MemoryMarshal.Read<Vector<byte>>(sourceSlice)
+        let mutable result: Vector<byte> = Vector.BitwiseAnd(targetVector, sourceVector)
+        MemoryMarshal.Write(destination, &result)
+        i <- i + vectorWidth
+    while i < count do
+        target[targetStart + i] <- target[targetStart + i] &&& source[sourceStart + i]
+        i <- i + 1
+
+let private tryDilateLineChunkSliceSimd width height (window: ChunkSlice[]) center dx dy dz left right (outputPixels: Span<byte>) =
+    if dy = 0 && dz = 0 && abs dx = 1 then
+        for y in 0 .. height - 1 do
+            let row = y * width
+            let mutable t = -left
+            while t <= right do
+                let shift = t * dx
+                let xStart = max 0 (-shift)
+                let xStop = min width (width - shift)
+                if xStop > xStart then
+                    let inputPixels = Chunk.span<uint8> window[center].Chunk
+                    orSpanIntoRange outputPixels (row + xStart) inputPixels (row + xStart + shift) (xStop - xStart)
+                t <- t + 1
+        true
+    elif dx = 0 && dz = 0 && abs dy = 1 then
+        let mutable t = -left
+        while t <= right do
+            let shift = t * dy
+            let yStart = max 0 (-shift)
+            let yStop = min height (height - shift)
+            if yStop > yStart then
+                let inputPixels = Chunk.span<uint8> window[center].Chunk
+                for y in yStart .. yStop - 1 do
+                    orSpanIntoRange outputPixels (y * width) inputPixels ((y + shift) * width) width
+            t <- t + 1
+        true
+    elif dx = 0 && dy = 0 && abs dz = 1 then
+        let mutable t = -left
+        while t <= right do
+            let zz = center + t * dz
+            if zz >= 0 && zz < window.Length then
+                let inputPixels = Chunk.span<uint8> window[zz].Chunk
+                orSpanIntoRange outputPixels 0 inputPixels 0 outputPixels.Length
+            t <- t + 1
+        true
+    else
+        false
+
+let private tryErodeLineChunkSliceSimd width height (window: ChunkSlice[]) center dx dy dz left right (outputPixels: Span<byte>) =
+    if dy = 0 && dz = 0 && abs dx = 1 then
+        let mutable xStart = 0
+        let mutable xStop = width
+        let mutable t = -left
+        while t <= right do
+            let shift = t * dx
+            xStart <- max xStart (max 0 (-shift))
+            xStop <- min xStop (min width (width - shift))
+            t <- t + 1
+
+        if xStop > xStart then
+            for y in 0 .. height - 1 do
+                outputPixels.Slice(y * width + xStart, xStop - xStart).Fill(binaryForeground)
+
+            let inputPixels = Chunk.span<uint8> window[center].Chunk
+            t <- -left
+            while t <= right do
+                let shift = t * dx
+                for y in 0 .. height - 1 do
+                    let row = y * width
+                    andSpanIntoRange outputPixels (row + xStart) inputPixels (row + xStart + shift) (xStop - xStart)
+                t <- t + 1
+        true
+    elif dx = 0 && dz = 0 && abs dy = 1 then
+        let mutable yStart = 0
+        let mutable yStop = height
+        let mutable t = -left
+        while t <= right do
+            let shift = t * dy
+            yStart <- max yStart (max 0 (-shift))
+            yStop <- min yStop (min height (height - shift))
+            t <- t + 1
+
+        if yStop > yStart then
+            for y in yStart .. yStop - 1 do
+                outputPixels.Slice(y * width, width).Fill(binaryForeground)
+
+            let inputPixels = Chunk.span<uint8> window[center].Chunk
+            t <- -left
+            while t <= right do
+                let shift = t * dy
+                for y in yStart .. yStop - 1 do
+                    andSpanIntoRange outputPixels (y * width) inputPixels ((y + shift) * width) width
+                t <- t + 1
+        true
+    elif dx = 0 && dy = 0 && abs dz = 1 then
+        outputPixels.Fill(binaryForeground)
+        let mutable t = -left
+        let mutable valid = true
+        while valid && t <= right do
+            let zz = center + t * dz
+            if zz < 0 || zz >= window.Length then
+                outputPixels.Clear()
+                valid <- false
+            else
+                let inputPixels = Chunk.span<uint8> window[zz].Chunk
+                andSpanIntoRange outputPixels 0 inputPixels 0 outputPixels.Length
+            t <- t + 1
+        true
+    else
+        false
+
 let private dilateLineChunkSlice width height (window: ChunkSlice[]) center dx dy dz length =
     let output = Chunk.create<uint8> (uint64 width, uint64 height, 1UL)
     try
@@ -56,24 +194,65 @@ let private dilateLineChunkSlice width height (window: ChunkSlice[]) center dx d
         let left = length - length / 2 - 1
         let right = length / 2
 
-        for y in 0 .. height - 1 do
-            let row = y * width
-            for x in 0 .. width - 1 do
-                let mutable found = false
-                let mutable t = -left
-                while not found && t <= right do
-                    let xx = x + t * dx
-                    let yy = y + t * dy
-                    let zz = center + t * dz
-                    if xx >= 0 && xx < width && yy >= 0 && yy < height && zz >= 0 && zz < window.Length then
-                        let inputPixels = Chunk.span<uint8> window[zz].Chunk
-                        if inputPixels[flatIndex2 width xx yy] = 1uy then
-                            found <- true
-                    t <- t + 1
-                if found then
-                    outputPixels[row + x] <- 1uy
+        if tryDilateLineChunkSliceSimd width height window center dx dy dz left right outputPixels then
+            output
+        else
 
-        output
+            for y in 0 .. height - 1 do
+                let row = y * width
+                for x in 0 .. width - 1 do
+                    let mutable found = false
+                    let mutable t = -left
+                    while not found && t <= right do
+                        let xx = x + t * dx
+                        let yy = y + t * dy
+                        let zz = center + t * dz
+                        if xx >= 0 && xx < width && yy >= 0 && yy < height && zz >= 0 && zz < window.Length then
+                            let inputPixels = Chunk.span<uint8> window[zz].Chunk
+                            if inputPixels[flatIndex2 width xx yy] = binaryForeground then
+                                found <- true
+                        t <- t + 1
+                    if found then
+                        outputPixels[row + x] <- binaryForeground
+
+            output
+    with
+    | _ ->
+        Chunk.decRef output
+        reraise()
+
+let private erodeLineChunkSlice width height (window: ChunkSlice[]) center dx dy dz length =
+    let output = Chunk.create<uint8> (uint64 width, uint64 height, 1UL)
+    try
+        clearChunk output
+        let outputPixels = Chunk.span<uint8> output
+        let left = length - length / 2 - 1
+        let right = length / 2
+
+        if tryErodeLineChunkSliceSimd width height window center dx dy dz left right outputPixels then
+            output
+        else
+
+            for y in 0 .. height - 1 do
+                let row = y * width
+                for x in 0 .. width - 1 do
+                    let mutable inside = true
+                    let mutable t = -left
+                    while inside && t <= right do
+                        let xx = x + t * dx
+                        let yy = y + t * dy
+                        let zz = center + t * dz
+                        if xx < 0 || xx >= width || yy < 0 || yy >= height || zz < 0 || zz >= window.Length then
+                            inside <- false
+                        else
+                            let inputPixels = Chunk.span<uint8> window[zz].Chunk
+                            if inputPixels[flatIndex2 width xx yy] <> binaryForeground then
+                                inside <- false
+                        t <- t + 1
+                    if inside then
+                        outputPixels[row + x] <- binaryForeground
+
+            output
     with
     | _ ->
         Chunk.decRef output
@@ -99,111 +278,26 @@ let private releaseWindow (window: ChunkSlice[]) =
     for item in window do
         Chunk.decRef item.Chunk
 
-let private chunkZonohedralLineStage operationName operatorName radius (lineIndex: int) (dx: int, dy: int, dz: int, length: int) =
-    let prePad, postPad = lineHalo dz length
-    let windowLength = prePad + 1 + postPad
-    let memoryNeed nPixels =
-        uint64 (windowLength + 1) * nPixels
-
-    let transition = ProfileTransition.create Streaming Streaming
-    let memoryModel = StageMemoryModel.fromSinglePeak Map memoryNeed
-
-    let apply (_debug: bool) (input: AsyncSeq<Chunk<uint8>>) =
-        asyncSeq {
-            let queue = ResizeArray<ChunkSlice>()
-            let mutable width = 0
-            let mutable height = 0
-            let mutable initialized = false
-            let mutable realCount = 0
-            let mutable emittedCount = 0
-            let mutable lastIndex = -1
-
-            let addPadding index =
-                let chunk = zeroChunk width height
-                queue.Add({ Index = index; Chunk = chunk })
-
-            let ensureInitialized (chunk: Chunk<uint8>) =
-                let chunkWidth, chunkHeight, chunkDepth = chunk.Size
-                if chunkDepth <> 1UL then
-                    invalidArg "chunk" $"Chunk zonohedral {operationName} expects 2D slice chunks with depth 1, got {chunk.Size}."
-
-                if not initialized then
-                    width <- int chunkWidth
-                    height <- int chunkHeight
-                    if width <= 0 || height <= 0 then
-                        invalidArg "chunk" $"Chunk zonohedral {operationName} expects positive slice dimensions, got {chunk.Size}."
-                    for i in prePad .. -1 .. 1 do
-                        addPadding -i
-                    initialized <- true
-                else
-                    validateSliceChunk width height chunk
-
-            let releaseRemoved () =
-                let removed = queue[0]
-                queue.RemoveAt(0)
-                Chunk.decRef removed.Chunk
-
-            let tryEmit () =
-                if initialized && queue.Count >= windowLength && emittedCount < realCount then
-                    let window = retainWindow queue 0 windowLength
-                    try
-                        let output = dilateLineChunkSlice width height window prePad dx dy dz length
-                        releaseRemoved()
-                        emittedCount <- emittedCount + 1
-                        Some output
-                    finally
-                        releaseWindow window
-                else
-                    None
-
-            try
-                for chunk in input do
-                    ensureInitialized chunk
-                    queue.Add({ Index = realCount; Chunk = chunk })
-                    lastIndex <- realCount
-                    realCount <- realCount + 1
-
-                    match tryEmit () with
-                    | Some output -> yield output
-                    | None -> ()
-
-                if initialized then
-                    for i in 1 .. postPad do
-                        addPadding (lastIndex + i)
-                        match tryEmit () with
-                        | Some output -> yield output
-                        | None -> ()
-            finally
-                for item in queue do
-                    Chunk.decRef item.Chunk
-                queue.Clear()
-        }
-
-    Stage.fromAsyncSeq
-        $"chunkBinary{operatorName}Zonohedral.line{lineIndex}"
-        apply
-        transition
-        memoryModel
-        id
-
-let private chunkZonohedralLineStageParallel
+let private chunkZonohedralLineStage
     operationName
     operatorName
+    lineOperator
     radius
-    windowSize
+    batchSize
     (lineIndex: int)
     (dx: int, dy: int, dz: int, length: int)
     =
-    if windowSize < 1 then
-        invalidArg "windowSize" $"Chunk zonohedral parallel {operationName} expects a positive window size, got {windowSize}."
+    if batchSize < 1 then
+        invalidArg "batchSize" $"Chunk zonohedral {operationName} expects a positive batch size, got {batchSize}."
 
     let prePad, postPad = lineHalo dz length
     let lineWindowLength = prePad + 1 + postPad
     let memoryNeed nPixels =
-        uint64 (lineWindowLength + windowSize) * nPixels
+        uint64 (lineWindowLength + batchSize) * nPixels
 
     let transition = ProfileTransition.create Streaming Streaming
     let memoryModel = StageMemoryModel.fromSinglePeak Map memoryNeed
+    let suffix = if batchSize = 1 then "" else $".parallel{batchSize}"
 
     let apply (_debug: bool) (input: AsyncSeq<Chunk<uint8>>) =
         asyncSeq {
@@ -248,9 +342,9 @@ let private chunkZonohedralLineStageParallel
                     let availableOutputs = min remainingRealOutputs availableWindows
                     let batchCount =
                         if draining then
-                            min windowSize availableOutputs
-                        elif availableOutputs >= windowSize then
-                            windowSize
+                            min batchSize availableOutputs
+                        elif availableOutputs >= batchSize then
+                            batchSize
                         else
                             0
                     if batchCount > 0 then
@@ -261,17 +355,24 @@ let private chunkZonohedralLineStageParallel
                             for i in 0 .. batchCount - 1 do
                                 windows[i] <- retainWindow queue i lineWindowLength
 
-                            Parallel.For(
-                                0,
-                                batchCount,
-                                fun i ->
-                                    try
-                                        outputs[i] <- dilateLineChunkSlice width height windows[i] prePad dx dy dz length
-                                    finally
-                                        releaseWindow windows[i]
-                                        releasedWindows[i] <- true
-                            )
-                            |> ignore
+                            if batchCount = 1 then
+                                try
+                                    outputs[0] <- lineOperator width height windows[0] prePad dx dy dz length
+                                finally
+                                    releaseWindow windows[0]
+                                    releasedWindows[0] <- true
+                            else
+                                Parallel.For(
+                                    0,
+                                    batchCount,
+                                    fun i ->
+                                        try
+                                            outputs[i] <- lineOperator width height windows[i] prePad dx dy dz length
+                                        finally
+                                            releaseWindow windows[i]
+                                            releasedWindows[i] <- true
+                                )
+                                |> ignore
 
                             releasePrefix batchCount
                             emittedCount <- emittedCount + batchCount
@@ -338,7 +439,7 @@ let private chunkZonohedralLineStageParallel
         }
 
     Stage.fromAsyncSeq
-        $"chunkBinary{operatorName}Zonohedral.parallel{windowSize}.line{lineIndex}"
+        $"chunkBinary{operatorName}Zonohedral{suffix}.line{lineIndex}"
         apply
         transition
         memoryModel
@@ -350,7 +451,7 @@ let binaryDilateZonohedral radius : Stage<Chunk<uint8>, Chunk<uint8>> =
         Stage.map "chunkBinaryDilateZonohedral.identity" (fun _ chunk -> chunk) id id
     else
         lines
-        |> Array.mapi (chunkZonohedralLineStage "dilation" "Dilate" radius)
+        |> Array.mapi (chunkZonohedralLineStage "dilation" "Dilate" dilateLineChunkSlice radius 1)
         |> Array.fold Stage.compose (Stage.map "chunkBinaryDilateZonohedral.start" (fun _ chunk -> chunk) id id)
 
 let binaryDilateZonohedralParallel radius windowSize : Stage<Chunk<uint8>, Chunk<uint8>> =
@@ -361,13 +462,45 @@ let binaryDilateZonohedralParallel radius windowSize : Stage<Chunk<uint8>, Chunk
         binaryDilateZonohedral radius
     else
         lines
-        |> Array.mapi (chunkZonohedralLineStageParallel "dilation" "Dilate" radius windowSize)
+        |> Array.mapi (chunkZonohedralLineStage "dilation" "Dilate" dilateLineChunkSlice radius windowSize)
         |> Array.fold Stage.compose (Stage.map $"chunkBinaryDilateZonohedral.parallel{windowSize}.start" (fun _ chunk -> chunk) id id)
+
+let binaryErodeZonohedral radius : Stage<Chunk<uint8>, Chunk<uint8>> =
+    let lines = ImageFunctions.zonohedralBestLines radius
+    if lines.Length = 0 then
+        Stage.map "chunkBinaryErodeZonohedral.identity" (fun _ chunk -> chunk) id id
+    else
+        lines
+        |> Array.mapi (chunkZonohedralLineStage "erosion" "Erode" erodeLineChunkSlice radius 1)
+        |> Array.fold Stage.compose (Stage.map "chunkBinaryErodeZonohedral.start" (fun _ chunk -> chunk) id id)
+
+let binaryErodeZonohedralParallel radius windowSize : Stage<Chunk<uint8>, Chunk<uint8>> =
+    let lines = ImageFunctions.zonohedralBestLines radius
+    if lines.Length = 0 then
+        Stage.map "chunkBinaryErodeZonohedralParallel.identity" (fun _ chunk -> chunk) id id
+    elif windowSize <= 1 then
+        binaryErodeZonohedral radius
+    else
+        lines
+        |> Array.mapi (chunkZonohedralLineStage "erosion" "Erode" erodeLineChunkSlice radius windowSize)
+        |> Array.fold Stage.compose (Stage.map $"chunkBinaryErodeZonohedral.parallel{windowSize}.start" (fun _ chunk -> chunk) id id)
+
+let binaryOpeningZonohedral radius : Stage<Chunk<uint8>, Chunk<uint8>> =
+    Stage.compose (binaryErodeZonohedral radius) (binaryDilateZonohedral radius)
+
+let binaryOpeningZonohedralParallel radius windowSize : Stage<Chunk<uint8>, Chunk<uint8>> =
+    Stage.compose (binaryErodeZonohedralParallel radius windowSize) (binaryDilateZonohedralParallel radius windowSize)
+
+let binaryClosingZonohedral radius : Stage<Chunk<uint8>, Chunk<uint8>> =
+    Stage.compose (binaryDilateZonohedral radius) (binaryErodeZonohedral radius)
+
+let binaryClosingZonohedralParallel radius windowSize : Stage<Chunk<uint8>, Chunk<uint8>> =
+    Stage.compose (binaryDilateZonohedralParallel radius windowSize) (binaryErodeZonohedralParallel radius windowSize)
 
 let thresholdBinary (threshold: uint8) : Stage<Chunk<uint8>, Chunk<uint8>> =
     let mapper _debug chunk =
         try
-            Chunk.map (fun value -> if value >= threshold then 1uy else 0uy) chunk
+            Chunk.map (fun value -> if value >= threshold then binaryForeground else binaryBackground) chunk
         finally
             Chunk.decRef chunk
 
@@ -716,20 +849,23 @@ let histogramReducer<'T when 'T: equality and 'T: comparison and 'T: (new: unit 
 let histogramReducerParallel<'T when 'T: equality and 'T: comparison and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType>
     windowSize
     =
-    let folder: MonoidFolder<Chunk<'T>, Dictionary<'T, uint64>, Histogram<'T>> =
-        { Create = fun () -> Dictionary<'T, uint64>()
-          AddItemInto = fun counts chunk -> addChunkIntoDictionary counts chunk
-          MergeInto = fun target source -> addDictionaryInto target source
-          Finish = fun counts -> counts |> dictionaryToMap |> Histogram.ofMap
-          ReleaseItem = Chunk.decRef }
+    if windowSize <= 1 then
+        histogramReducer<'T> ()
+    else
+        let folder: MonoidFolder<Chunk<'T>, Dictionary<'T, uint64>, Histogram<'T>> =
+            { Create = fun () -> Dictionary<'T, uint64>()
+              AddItemInto = fun counts chunk -> addChunkIntoDictionary counts chunk
+              MergeInto = fun target source -> addDictionaryInto target source
+              Finish = fun counts -> counts |> dictionaryToMap |> Histogram.ofMap
+              ReleaseItem = Chunk.decRef }
 
-    Stage.parallelReduce
-        $"chunkHistogramParallel.{typeof<'T>.Name}.window{windowSize}"
-        windowSize
-        folder
-        Streaming
-        (fun _ -> 0UL)
-        (fun _ -> 1UL)
+        Stage.parallelReduce
+            $"chunkHistogramParallel.{typeof<'T>.Name}.window{windowSize}"
+            windowSize
+            folder
+            Streaming
+            (fun _ -> 0UL)
+            (fun _ -> 1UL)
 
 let histogramDenseReducer<'T when 'T: equality and 'T: comparison and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> () =
     let reducer _debug (input: AsyncSeq<Chunk<'T>>) =
@@ -757,24 +893,27 @@ let histogramDenseReducer<'T when 'T: equality and 'T: comparison and 'T: (new: 
 let histogramDenseReducerParallel<'T when 'T: equality and 'T: comparison and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType>
     windowSize
     =
-    let folder: MonoidFolder<Chunk<'T>, DenseHistogram, Histogram<'T>> =
-        { Create = emptyDenseCounts<'T>
-          AddItemInto = fun counts chunk -> addDenseChunkInto<'T> counts chunk
-          MergeInto = addDenseInto
-          Finish =
-            fun counts ->
-                counts
-                |> denseToMap<'T>
-                |> Histogram.ofMap
-          ReleaseItem = Chunk.decRef }
+    if windowSize <= 1 then
+        histogramDenseReducer<'T> ()
+    else
+        let folder: MonoidFolder<Chunk<'T>, DenseHistogram, Histogram<'T>> =
+            { Create = emptyDenseCounts<'T>
+              AddItemInto = fun counts chunk -> addDenseChunkInto<'T> counts chunk
+              MergeInto = addDenseInto
+              Finish =
+                fun counts ->
+                    counts
+                    |> denseToMap<'T>
+                    |> Histogram.ofMap
+              ReleaseItem = Chunk.decRef }
 
-    Stage.parallelReduce
-        $"chunkHistogramDenseParallel.{typeof<'T>.Name}.window{windowSize}"
-        windowSize
-        folder
-        Streaming
-        (fun _ -> uint64 windowSize * 524288UL)
-        (fun _ -> 1UL)
+        Stage.parallelReduce
+            $"chunkHistogramDenseParallel.{typeof<'T>.Name}.window{windowSize}"
+            windowSize
+            folder
+            Streaming
+            (fun _ -> uint64 windowSize * 524288UL)
+            (fun _ -> 1UL)
 
 let histogramLeftEdgesReducer<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> leftEdges =
     let edges = validateLeftEdges leftEdges

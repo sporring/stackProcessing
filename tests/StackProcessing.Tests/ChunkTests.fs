@@ -527,6 +527,76 @@ let chunkSuite =
                 parallelOutputs |> List.iter Chunk.decRef
                 serialOutputs |> List.iter Chunk.decRef
 
+        testCase "ChunkFunctions.binaryErodeZonohedral erodes a UInt8 mask through chunk slices" <| fun _ ->
+            let width = 3
+            let height = 3
+            let depth = 3
+            let plane = width * height
+            let chunks =
+                [ for _z in 0 .. depth - 1 ->
+                    Array.create plane 1uy
+                    |> chunkFromPixels width height ]
+
+            let outputs = runStageList (ChunkFunctions.binaryErodeZonohedral 1u) chunks
+            try
+                Expect.equal outputs.Length depth "Chunk zonohedral erosion should preserve slice count."
+
+                for z in 0 .. depth - 1 do
+                    let values = Chunk.span<uint8> outputs[z]
+                    for y in 0 .. height - 1 do
+                        for x in 0 .. width - 1 do
+                            let expected =
+                                if x <= 1 && y >= 1 && z <= 1 then 1uy else 0uy
+                            Expect.equal values[y * width + x] expected $"Unexpected erosion value at ({x},{y},{z})."
+            finally
+                outputs |> List.iter Chunk.decRef
+
+        testCase "ChunkFunctions parallel morphology stages match serial chunk morphology" <| fun _ ->
+            let width = 5
+            let height = 4
+            let depth = 6
+            let plane = width * height
+
+            let makeChunks () =
+                [ for z in 0 .. depth - 1 ->
+                    let pixels = Array.zeroCreate<uint8> plane
+                    for y in 1 .. 2 do
+                        for x in 1 .. 3 do
+                            if z >= 1 && z <= 4 then
+                                pixels[y * width + x] <- 1uy
+                    if z = 2 then
+                        pixels[0] <- 1uy
+                    chunkFromPixels width height pixels ]
+
+            let compareStages name serialStage parallelStage =
+                let serialOutputs = runStageList serialStage (makeChunks ())
+                let parallelOutputs = runStageList parallelStage (makeChunks ())
+                try
+                    Expect.equal parallelOutputs.Length serialOutputs.Length $"{name} should preserve the serial output count."
+
+                    for z in 0 .. serialOutputs.Length - 1 do
+                        let serialValues = (Chunk.span<uint8> serialOutputs[z]).ToArray()
+                        let parallelValues = (Chunk.span<uint8> parallelOutputs[z]).ToArray()
+                        Expect.sequenceEqual parallelValues serialValues $"{name} parallel output should match serial output slice {z}."
+                finally
+                    parallelOutputs |> List.iter Chunk.decRef
+                    serialOutputs |> List.iter Chunk.decRef
+
+            compareStages
+                "erosion"
+                (ChunkFunctions.binaryErodeZonohedral 1u)
+                (ChunkFunctions.binaryErodeZonohedralParallel 1u 3)
+
+            compareStages
+                "opening"
+                (ChunkFunctions.binaryOpeningZonohedral 1u)
+                (ChunkFunctions.binaryOpeningZonohedralParallel 1u 3)
+
+            compareStages
+                "closing"
+                (ChunkFunctions.binaryClosingZonohedral 1u)
+                (ChunkFunctions.binaryClosingZonohedralParallel 1u 3)
+
         testCase "ChunkFunctions.histogramLeftEdgesReducer serially reduces compatible binned chunk histograms" <| fun _ ->
             let releaseCount = ref 0
             let values1 = [| -1.0f; 0.5f; 11.0f |]
