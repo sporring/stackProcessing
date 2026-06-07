@@ -53,6 +53,11 @@ BACKEND_MARKERS = {
     "python-skimage-scipy": "^",
     "matlab": "D",
 }
+ZARR_BACKENDS = {
+    "python-dask-omezarr",
+    "stackprocessing-zarr",
+    "stackprocessing-zarr-direct",
+}
 
 
 def parse_args():
@@ -130,6 +135,8 @@ def load_rows(path: Path) -> list[dict[str, object]]:
     rows: list[dict[str, object]] = []
     with path.open(newline="") as handle:
         for row in csv.DictReader(handle):
+            if row.get("backend") in ZARR_BACKENDS:
+                continue
             internal = finite_float(row.get("medianInternalSeconds", ""))
             wall = finite_float(row.get("medianWallSeconds", ""))
             wrapper = finite_float(row.get("medianWrapperOverheadSeconds", ""))

@@ -9,4 +9,13 @@
 \f0\fs28 \cf2 \expnd0\expndtw0\kerning0
 Which functions are we missing wrt. standard microscope and synchrotron image analysis pipelines (Hasse, eurobioimaging, globias, etc.)\
 \
-the Chunk<> datatype is still only superficially included. Is now the time to make it a fully fletched member? I'm guessing it would fit well with copy and the non-neighbourhood operations.}
+\
+Improve ph-median code, extend to bigger types.\
+\
+Please update convolution to use parallelCollect like dilation. It presently has a custom queue before the parallelCollect shape had settled; it manually does the same conceptual job: pad a rolling z-window, retain chunks, batch windows, run workers, release prefixes, emit in order. Dilation was later aligned more directly with the window-of-windows collector idea, so it is closer to the abstraction we want.\
+\
+Please run threshold through parallelCollect and test various number of workers\
+\
+Should all figure 8 and later be parallel?\
+\
+}

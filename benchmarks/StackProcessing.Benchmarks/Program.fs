@@ -1107,6 +1107,26 @@ let private runTyped<'T when 'T: equality> operation input output radius thresho
     | _ -> failwith $"unsupported operation '{operation}'"
     0
 
+let private runChunkCopyTyped<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> input output availableMemory =
+    ensureCleanDirectory output
+    let src = benchmarkSource availableMemory
+    src
+    |> readChunkSlices<'T> input ".tiff"
+    >=> writeChunkSlices<'T> output ".tiff"
+    |> sink
+    0
+
+let private runChunkThresholdTyped<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> input output thresholdValue availableMemory =
+    ensureCleanDirectory output
+    let src = benchmarkSource availableMemory
+    src
+    |> readChunkSlices<'T> input ".tiff"
+    >=> ChunkFunctions.thresholdNative<'T> thresholdValue
+    >=> ChunkFunctions.castToUInt8<'T>
+    >=> writeChunkSlices<uint8> output ".tiff"
+    |> sink
+    0
+
 let private runBinaryDilateTyped<'T when 'T: equality> input output radius availableMemory =
     ensureCleanDirectory output
     let src = benchmarkSource availableMemory
@@ -2205,6 +2225,12 @@ let private run opts =
     let stopwatch = Stopwatch.StartNew()
     let exitCode =
         match operation, pixelType with
+        | "copy", UInt8 -> runChunkCopyTyped<uint8> input output availableMemory
+        | "copy", UInt16 -> runChunkCopyTyped<uint16> input output availableMemory
+        | "copy", Float32 -> runChunkCopyTyped<float32> input output availableMemory
+        | "threshold", UInt8 -> runChunkThresholdTyped<uint8> input output thresholdValue availableMemory
+        | "threshold", UInt16 -> runChunkThresholdTyped<uint16> input output thresholdValue availableMemory
+        | "threshold", Float32 -> runChunkThresholdTyped<float32> input output thresholdValue availableMemory
         | "convolve", UInt8 -> runConvolveTyped<uint8> input output kernelSize availableMemory
         | "convolve", UInt16 -> runConvolveTyped<uint16> input output kernelSize availableMemory
         | "convolve", Float32 -> runConvolveTyped<float32> input output kernelSize availableMemory

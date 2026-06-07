@@ -836,6 +836,228 @@ let convolveFixedKernelParallel<'T when 'T: equality and 'T: (new: unit -> 'T) a
     else
         chunkConvolveFixedKernelStage<'T> kernel windowSize
 
+let private addUInt16HistogramInto (target: uint16[]) targetStart (source: uint16[]) sourceStart =
+    let width = Vector<uint16>.Count
+    let vectorEnd = 256 - (256 % width)
+    let mutable i = 0
+    while i < vectorEnd do
+        let targetVector = Vector<uint16>(target, targetStart + i)
+        let sourceVector = Vector<uint16>(source, sourceStart + i)
+        (targetVector + sourceVector).CopyTo(target, targetStart + i)
+        i <- i + width
+    while i < 256 do
+        target[targetStart + i] <- target[targetStart + i] + source[sourceStart + i]
+        i <- i + 1
+
+let private subtractUInt16HistogramFrom (target: uint16[]) targetStart (source: uint16[]) sourceStart =
+    let width = Vector<uint16>.Count
+    let vectorEnd = 256 - (256 % width)
+    let mutable i = 0
+    while i < vectorEnd do
+        let targetVector = Vector<uint16>(target, targetStart + i)
+        let sourceVector = Vector<uint16>(source, sourceStart + i)
+        (targetVector - sourceVector).CopyTo(target, targetStart + i)
+        i <- i + width
+    while i < 256 do
+        target[targetStart + i] <- target[targetStart + i] - source[sourceStart + i]
+        i <- i + 1
+
+let private clearUInt16Histogram (histogram: uint16[]) =
+    Array.Clear(histogram, 0, histogram.Length)
+
+let private medianFromUInt16Histogram totalCount (histogram: uint16[]) =
+    let target = totalCount / 2 + 1
+    let mutable cumulative = 0
+    let mutable value = 0
+    while value < 255 && cumulative < target do
+        cumulative <- cumulative + int histogram[value]
+        if cumulative < target then
+            value <- value + 1
+    uint8 value
+
+let private buildZHistogramsUInt8 width height (window: ChunkSlice[]) =
+    let pixelCount = width * height
+    if pixelCount > Int32.MaxValue / 256 then
+        invalidArg "window" $"UInt8 PH median dense z-histogram would exceed Int32 indexing for {width}x{height} slices."
+
+    let zHistograms = Array.zeroCreate<uint16> (pixelCount * 256)
+    for item in window do
+        let inputPixels = Chunk.span<uint8> item.Chunk
+        let mutable p = 0
+        while p < pixelCount do
+            let index = p * 256 + int inputPixels[p]
+            zHistograms[index] <- zHistograms[index] + 1us
+            p <- p + 1
+    zHistograms
+
+let private addZRowToYHistograms width (zHistograms: uint16[]) y (yHistograms: uint16[]) =
+    let mutable x = 0
+    while x < width do
+        let sourceStart = (y * width + x) * 256
+        let targetStart = x * 256
+        addUInt16HistogramInto yHistograms targetStart zHistograms sourceStart
+        x <- x + 1
+
+let private subtractZRowFromYHistograms width (zHistograms: uint16[]) y (yHistograms: uint16[]) =
+    let mutable x = 0
+    while x < width do
+        let sourceStart = (y * width + x) * 256
+        let targetStart = x * 256
+        subtractUInt16HistogramFrom yHistograms targetStart zHistograms sourceStart
+        x <- x + 1
+
+let private addZeroZRowToYHistograms width windowLength (yHistograms: uint16[]) =
+    let mutable x = 0
+    while x < width do
+        let targetStart = x * 256
+        yHistograms[targetStart] <- yHistograms[targetStart] + uint16 windowLength
+        x <- x + 1
+
+let private subtractZeroZRowFromYHistograms width windowLength (yHistograms: uint16[]) =
+    let mutable x = 0
+    while x < width do
+        let targetStart = x * 256
+        yHistograms[targetStart] <- yHistograms[targetStart] - uint16 windowLength
+        x <- x + 1
+
+let private addYColumnToKernelHistogram (kernelHistogram: uint16[]) (yHistograms: uint16[]) x =
+    addUInt16HistogramInto kernelHistogram 0 yHistograms (x * 256)
+
+let private subtractYColumnFromKernelHistogram (kernelHistogram: uint16[]) (yHistograms: uint16[]) x =
+    subtractUInt16HistogramFrom kernelHistogram 0 yHistograms (x * 256)
+
+let private medianPerreaultHebertUInt8DenseSlice width height radius (window: ChunkSlice[]) =
+    let windowLength = 2 * radius + 1
+    let totalCount = windowLength * windowLength * windowLength
+    if totalCount > int UInt16.MaxValue then
+        invalidArg "radius" $"UInt8 dense PH median first version stores counts as UInt16 and supports at most {UInt16.MaxValue} samples; got {totalCount}."
+
+    let output = Chunk.create<uint8> (uint64 width, uint64 height, 1UL)
+    try
+        let outputPixels = Chunk.span<uint8> output
+        let zHistograms = buildZHistogramsUInt8 width height window
+        let yHistograms = Array.zeroCreate<uint16> (width * 256)
+        let kernelHistogram = Array.zeroCreate<uint16> 256
+        let zeroYColumnCount = uint16 (windowLength * windowLength)
+
+        let addYRow y =
+            if y >= 0 && y < height then
+                addZRowToYHistograms width zHistograms y yHistograms
+            else
+                addZeroZRowToYHistograms width windowLength yHistograms
+
+        let subtractYRow y =
+            if y >= 0 && y < height then
+                subtractZRowFromYHistograms width zHistograms y yHistograms
+            else
+                subtractZeroZRowFromYHistograms width windowLength yHistograms
+
+        for yy in -radius .. radius do
+            addYRow yy
+
+        for y in 0 .. height - 1 do
+            clearUInt16Histogram kernelHistogram
+
+            for xx in -radius .. radius do
+                if xx >= 0 && xx < width then
+                    addYColumnToKernelHistogram kernelHistogram yHistograms xx
+                else
+                    kernelHistogram[0] <- kernelHistogram[0] + zeroYColumnCount
+
+            let rowOffset = y * width
+            for x in 0 .. width - 1 do
+                outputPixels[rowOffset + x] <- medianFromUInt16Histogram totalCount kernelHistogram
+
+                if x < width - 1 then
+                    let leaving = x - radius
+                    let entering = x + radius + 1
+                    if leaving >= 0 && leaving < width then
+                        subtractYColumnFromKernelHistogram kernelHistogram yHistograms leaving
+                    else
+                        kernelHistogram[0] <- kernelHistogram[0] - zeroYColumnCount
+
+                    if entering >= 0 && entering < width then
+                        addYColumnToKernelHistogram kernelHistogram yHistograms entering
+                    else
+                        kernelHistogram[0] <- kernelHistogram[0] + zeroYColumnCount
+
+            if y < height - 1 then
+                subtractYRow (y - radius)
+                addYRow (y + radius + 1)
+
+        output
+    with
+    | _ ->
+        Chunk.decRef output
+        reraise()
+
+let medianPerreaultHebertUInt8Dense radius : Stage<Chunk<uint8>, Chunk<uint8>> =
+    if radius < 0 then
+        invalidArg "radius" $"UInt8 PH median expects a non-negative radius, got {radius}."
+
+    let windowLength = 2 * radius + 1
+    let memoryNeed nPixels =
+        // Full-slice z histograms: nPixels * 256 UInt16 counts, plus one output slice and row/kernel histograms.
+        nPixels * 512UL + nPixels + uint64 windowLength * nPixels
+
+    let zeroMaker _index (source: Chunk<uint8>) =
+        let width, height, depth = source.Size
+        if depth <> 1UL then
+            invalidArg "source" $"Chunk PH median expects 2D slice chunks with depth 1, got {source.Size}."
+        zeroChunk (int width) (int height)
+
+    let mapper _debug (window: Window<Chunk<uint8>>) =
+        let releaseConsumed () =
+            window.Items
+            |> List.truncate (int window.ReleaseCount)
+            |> List.iter Chunk.decRef
+
+        try
+            let emitStart, emitCount = window.EmitRange
+            if emitCount = 0u then
+                releaseConsumed ()
+                []
+            else
+                let chunks = window.Items |> List.toArray
+                if chunks.Length <> windowLength then
+                    invalidArg "window" $"Chunk PH median expected window length {windowLength}, got {chunks.Length}."
+
+                let first = chunks[0]
+                let chunkWidth, chunkHeight, chunkDepth = first.Size
+                if chunkDepth <> 1UL then
+                    invalidArg "window" $"Chunk PH median expects 2D slice chunks with depth 1, got {first.Size}."
+
+                let width = int chunkWidth
+                let height = int chunkHeight
+                if width <= 0 || height <= 0 then
+                    invalidArg "window" $"Chunk PH median expects positive slice dimensions, got {first.Size}."
+
+                let windowItems: ChunkSlice[] =
+                    chunks
+                    |> Array.mapi (fun index chunk ->
+                        validateSliceChunk width height chunk
+                        { Index = index
+                          Chunk = chunk })
+
+                let output = medianPerreaultHebertUInt8DenseSlice width height radius windowItems
+                releaseConsumed ()
+                [ output ]
+        with
+        | _ ->
+            releaseConsumed ()
+            reraise()
+
+    Stage.parallelCollect
+        $"chunkMedianPerreaultHebertUInt8Dense.radius{radius}"
+        windowLength
+        1
+        1
+        radius
+        zeroMaker
+        mapper
+        memoryNeed
+        id
+
 let private chunkZonohedralLineStage
     operationName
     operatorName
@@ -1065,6 +1287,135 @@ let thresholdBinary (threshold: uint8) : Stage<Chunk<uint8>, Chunk<uint8>> =
             Chunk.decRef chunk
 
     Stage.map $"chunkThresholdBinary.{threshold}" mapper id id
+
+let private thresholdNativeChunk<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> (threshold: double) (chunk: Chunk<'T>) =
+    let output = Chunk.create<'T> chunk.Size
+    try
+        let t = typeof<'T>
+        if t = typeof<uint8> then
+            let threshold = byte (Math.Clamp(Math.Ceiling(threshold), 0.0, 255.0))
+            let inputPixels = chunk.Bytes.AsSpan(0, chunk.ByteLength)
+            let outputPixels = output.Bytes.AsSpan(0, output.ByteLength)
+            let mutable i = 0
+            while i < inputPixels.Length do
+                outputPixels[i] <- if inputPixels[i] >= threshold then 1uy else 0uy
+                i <- i + 1
+        elif t = typeof<int8> then
+            let threshold = sbyte (Math.Clamp(Math.Ceiling(threshold), float SByte.MinValue, float SByte.MaxValue))
+            let inputPixels = MemoryMarshal.Cast<byte, sbyte>(chunk.Bytes.AsSpan(0, chunk.ByteLength))
+            let outputPixels = MemoryMarshal.Cast<byte, sbyte>(output.Bytes.AsSpan(0, output.ByteLength))
+            let mutable i = 0
+            while i < inputPixels.Length do
+                outputPixels[i] <- if inputPixels[i] >= threshold then 1y else 0y
+                i <- i + 1
+        elif t = typeof<uint16> then
+            let threshold = uint16 (Math.Clamp(Math.Ceiling(threshold), 0.0, float UInt16.MaxValue))
+            let inputPixels = MemoryMarshal.Cast<byte, uint16>(chunk.Bytes.AsSpan(0, chunk.ByteLength))
+            let outputPixels = MemoryMarshal.Cast<byte, uint16>(output.Bytes.AsSpan(0, output.ByteLength))
+            let mutable i = 0
+            while i < inputPixels.Length do
+                outputPixels[i] <- if inputPixels[i] >= threshold then 1us else 0us
+                i <- i + 1
+        elif t = typeof<int16> then
+            let threshold = int16 (Math.Clamp(Math.Ceiling(threshold), float Int16.MinValue, float Int16.MaxValue))
+            let inputPixels = MemoryMarshal.Cast<byte, int16>(chunk.Bytes.AsSpan(0, chunk.ByteLength))
+            let outputPixels = MemoryMarshal.Cast<byte, int16>(output.Bytes.AsSpan(0, output.ByteLength))
+            let mutable i = 0
+            while i < inputPixels.Length do
+                outputPixels[i] <- if inputPixels[i] >= threshold then 1s else 0s
+                i <- i + 1
+        elif t = typeof<int32> then
+            let threshold = int32 (Math.Clamp(Math.Ceiling(threshold), float Int32.MinValue, float Int32.MaxValue))
+            let inputPixels = MemoryMarshal.Cast<byte, int32>(chunk.Bytes.AsSpan(0, chunk.ByteLength))
+            let outputPixels = MemoryMarshal.Cast<byte, int32>(output.Bytes.AsSpan(0, output.ByteLength))
+            let mutable i = 0
+            while i < inputPixels.Length do
+                outputPixels[i] <- if inputPixels[i] >= threshold then 1 else 0
+                i <- i + 1
+        elif t = typeof<float32> then
+            let threshold = float32 threshold
+            let inputPixels = MemoryMarshal.Cast<byte, float32>(chunk.Bytes.AsSpan(0, chunk.ByteLength))
+            let outputPixels = MemoryMarshal.Cast<byte, float32>(output.Bytes.AsSpan(0, output.ByteLength))
+            let mutable i = 0
+            while i < inputPixels.Length do
+                outputPixels[i] <- if inputPixels[i] >= threshold then 1.0f else 0.0f
+                i <- i + 1
+        else
+            invalidArg "T" $"ChunkFunctions.thresholdNative supports Int8, UInt8, Int16, UInt16, Int32, and Float32 chunks, got {t.Name}."
+        output
+    with
+    | _ ->
+        Chunk.decRef output
+        reraise()
+
+let thresholdNative<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType>
+    (threshold: double)
+    : Stage<Chunk<'T>, Chunk<'T>> =
+    let mapper _debug chunk =
+        try
+            thresholdNativeChunk threshold chunk
+        finally
+            Chunk.decRef chunk
+
+    Stage.map $"chunkThresholdNative.{typeof<'T>.Name}.{threshold}" mapper id id
+
+let private castChunkToUInt8<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> (chunk: Chunk<'T>) =
+    let output = Chunk.create<uint8> chunk.Size
+    try
+        let t = typeof<'T>
+        let outputPixels = output.Bytes.AsSpan(0, output.ByteLength)
+        if t = typeof<uint8> then
+            chunk.Bytes.AsSpan(0, chunk.ByteLength).CopyTo(outputPixels)
+        elif t = typeof<int8> then
+            let inputPixels = MemoryMarshal.Cast<byte, sbyte>(chunk.Bytes.AsSpan(0, chunk.ByteLength))
+            let mutable i = 0
+            while i < inputPixels.Length do
+                let value = inputPixels[i]
+                outputPixels[i] <- if value <= 0y then 0uy else uint8 value
+                i <- i + 1
+        elif t = typeof<uint16> then
+            let inputPixels = MemoryMarshal.Cast<byte, uint16>(chunk.Bytes.AsSpan(0, chunk.ByteLength))
+            let mutable i = 0
+            while i < inputPixels.Length do
+                let value = inputPixels[i]
+                outputPixels[i] <- if value >= 255us then 255uy else uint8 value
+                i <- i + 1
+        elif t = typeof<int16> then
+            let inputPixels = MemoryMarshal.Cast<byte, int16>(chunk.Bytes.AsSpan(0, chunk.ByteLength))
+            let mutable i = 0
+            while i < inputPixels.Length do
+                let value = inputPixels[i]
+                outputPixels[i] <- if value <= 0s then 0uy elif value >= 255s then 255uy else uint8 value
+                i <- i + 1
+        elif t = typeof<int32> then
+            let inputPixels = MemoryMarshal.Cast<byte, int32>(chunk.Bytes.AsSpan(0, chunk.ByteLength))
+            let mutable i = 0
+            while i < inputPixels.Length do
+                let value = inputPixels[i]
+                outputPixels[i] <- if value <= 0 then 0uy elif value >= 255 then 255uy else uint8 value
+                i <- i + 1
+        elif t = typeof<float32> then
+            let inputPixels = MemoryMarshal.Cast<byte, float32>(chunk.Bytes.AsSpan(0, chunk.ByteLength))
+            let mutable i = 0
+            while i < inputPixels.Length do
+                outputPixels[i] <- clampRoundToByte inputPixels[i]
+                i <- i + 1
+        else
+            invalidArg "T" $"ChunkFunctions.castToUInt8 supports Int8, UInt8, Int16, UInt16, Int32, and Float32 chunks, got {t.Name}."
+        output
+    with
+    | _ ->
+        Chunk.decRef output
+        reraise()
+
+let castToUInt8<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> : Stage<Chunk<'T>, Chunk<uint8>> =
+    let mapper _debug chunk =
+        try
+            castChunkToUInt8 chunk
+        finally
+            Chunk.decRef chunk
+
+    Stage.map $"chunkCastToUInt8.{typeof<'T>.Name}" mapper id id
 
 let private castChunkToFloat32<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> (chunk: Chunk<'T>) =
     let output = Chunk.create<float32> chunk.Size
