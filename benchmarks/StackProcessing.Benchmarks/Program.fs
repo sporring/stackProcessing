@@ -1229,6 +1229,19 @@ let private runChunkConvolveTyped<'T when 'T: equality and 'T: (new: unit -> 'T)
         |> sink
     0
 
+let private runChunkMedianPhUInt8 input output radius availableMemory =
+    ensureCleanDirectory output
+    if radius > uint32 Int32.MaxValue then
+        invalidArg "radius" $"PH median radius must fit in Int32, got {radius}."
+
+    let src = benchmarkSource availableMemory
+    src
+    |> readChunkSlices<uint8> input ".tiff"
+    >=> ChunkFunctions.medianPerreaultHebertUInt8Dense (int radius)
+    >=> writeChunkSlices<uint8> output ".tiff"
+    |> sink
+    0
+
 let private zarrChunkMedianSlab<'T when 'T: equality> radius chunkZ : Stage<Image<'T>, Image<'T>> =
     let radius = max 0u radius
     let kernelDepth = 2u * radius + 1u
@@ -2231,6 +2244,8 @@ let private run opts =
         | "threshold", UInt8 -> runChunkThresholdTyped<uint8> input output thresholdValue availableMemory
         | "threshold", UInt16 -> runChunkThresholdTyped<uint16> input output thresholdValue availableMemory
         | "threshold", Float32 -> runChunkThresholdTyped<float32> input output thresholdValue availableMemory
+        | "median-ph", UInt8 -> runChunkMedianPhUInt8 input output radius availableMemory
+        | "median-ph", _ -> failwith "median-ph benchmark is currently defined for UInt8 chunks only"
         | "convolve", UInt8 -> runConvolveTyped<uint8> input output kernelSize availableMemory
         | "convolve", UInt16 -> runConvolveTyped<uint16> input output kernelSize availableMemory
         | "convolve", Float32 -> runConvolveTyped<float32> input output kernelSize availableMemory

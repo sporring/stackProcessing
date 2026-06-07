@@ -3,7 +3,7 @@ function bench_stack(varargin)
 % Example:
 %   bench_stack("operation","threshold","pixelType","UInt8","input","in","output","out")
 
-args = struct("operation", "", "pixelType", "", "input", "", "output", "", "radius", 1, "kernelSize", 3, "threshold", 128, "window", 16);
+args = struct("operation", "", "pixelType", "", "input", "", "output", "", "radius", 1, "kernelSize", 3, "threshold", 128, "window", 16, "kernelMode", "uniform");
 for k = 1:2:numel(varargin)
     key = char(varargin{k});
     value = varargin{k + 1};
@@ -45,7 +45,13 @@ switch char(args.operation)
         out = uint8(volume >= numericArg(args.threshold));
     case "convolve"
         kernelSize = max(1, numericArg(args.kernelSize));
-        kernel = ones(kernelSize, kernelSize, kernelSize, "double") ./ (kernelSize ^ 3);
+        if string(args.kernelMode) == "random"
+            rng(1, "twister");
+            kernel = randn(kernelSize, kernelSize, kernelSize, "double");
+        else
+            kernel = ones(kernelSize, kernelSize, kernelSize, "double") ./ (kernelSize ^ 3);
+        end
+        disp("convn kernel size: " + mat2str(size(kernel)) + ", mode: " + string(args.kernelMode));
         out = cast(convn(double(volume), kernel, "same"), class(volume));
     case "median"
         out = medfilt3(volume, [kernelSize kernelSize kernelSize], "symmetric");
