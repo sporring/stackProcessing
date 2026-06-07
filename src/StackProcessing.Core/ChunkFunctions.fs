@@ -382,6 +382,14 @@ let private releaseTypedWindow (window: TypedChunkSlice<'T>[]) =
     for item in window do
         Chunk.decRef item.Chunk
 
+type private RetainedTypedWindow<'T when 'T: equality> =
+    { Width: int
+      Height: int
+      Items: TypedChunkSlice<'T>[] }
+
+let private releaseRetainedTypedWindow (window: RetainedTypedWindow<'T>) =
+    releaseTypedWindow window.Items
+
 let private createKernelPlan (kernel: float32[,,]) =
     let width = kernel.GetLength(0)
     let height = kernel.GetLength(1)
@@ -670,157 +678,102 @@ let private chunkConvolveFixedKernelStage<'T when 'T: equality and 'T: (new: uni
     let windowLength = plan.Depth
     let memoryNeed nPixels =
         uint64 (windowLength + batchSize) * nPixels * uint64 (Marshal.SizeOf<'T>())
-
-    let transition = ProfileTransition.create Streaming Streaming
-    let memoryModel = StageMemoryModel.fromSinglePeak Map memoryNeed
     let suffix = if batchSize = 1 then "" else $".parallel{batchSize}"
+    let stageName = $"chunkConvolveFixedKernel{suffix}.{typeof<'T>.Name}.{plan.Width}x{plan.Height}x{plan.Depth}"
 
-    let apply (_debug: bool) (input: AsyncSeq<Chunk<'T>>) =
-        asyncSeq {
-            let queue = ResizeArray<TypedChunkSlice<'T>>()
-            let mutable width = 0
-            let mutable height = 0
-            let mutable initialized = false
-            let mutable realCount = 0
-            let mutable emittedCount = 0
-            let mutable lastIndex = -1
+    let zeroMaker _index (source: Chunk<'T>) =
+        let width, height, depth = source.Size
+        if depth <> 1UL then
+            invalidArg "source" $"Chunk convolution expects 2D slice chunks with depth 1, got {source.Size}."
+        zeroChunkTyped<'T> (int width) (int height)
 
-            let addPadding index =
-                let chunk = zeroChunkTyped<'T> width height
-                queue.Add({ Index = index; Chunk = chunk })
+    let releaseConsumed (window: Window<Chunk<'T>>) =
+        let emitStart, emitCount = window.EmitRange
+        if emitCount = 0u then
+            window.Items |> List.iter Chunk.decRef
+        else
+            window.Items
+            |> List.truncate (int window.ReleaseCount)
+            |> List.iter Chunk.decRef
 
-            let ensureInitialized (chunk: Chunk<'T>) =
-                let chunkWidth, chunkHeight, chunkDepth = chunk.Size
-                if chunkDepth <> 1UL then
-                    invalidArg "chunk" $"Chunk convolution expects 2D slice chunks with depth 1, got {chunk.Size}."
+    let retainWindow _debug (window: Window<Chunk<'T>>) =
+        let emitStart, emitCount = window.EmitRange
+        if emitCount = 0u then
+            releaseConsumed window
+            None
+        else
+            let chunks = window.Items |> List.toArray
+            if chunks.Length <> windowLength then
+                releaseConsumed window
+                invalidArg "window" $"Chunk convolution expected window length {windowLength}, got {chunks.Length}."
 
-                if not initialized then
-                    width <- int chunkWidth
-                    height <- int chunkHeight
-                    if width <= 0 || height <= 0 then
-                        invalidArg "chunk" $"Chunk convolution expects positive slice dimensions, got {chunk.Size}."
-                    for i in plan.PadZ .. -1 .. 1 do
-                        addPadding -i
-                    initialized <- true
-                else
-                    validateTypedSliceChunk "convolution" width height chunk
+            let first = chunks[0]
+            let chunkWidth, chunkHeight, chunkDepth = first.Size
+            if chunkDepth <> 1UL then
+                releaseConsumed window
+                invalidArg "window" $"Chunk convolution expects 2D slice chunks with depth 1, got {first.Size}."
 
-            let releasePrefix count =
-                for _ in 1 .. count do
-                    let removed = queue[0]
-                    queue.RemoveAt(0)
-                    Chunk.decRef removed.Chunk
+            let width = int chunkWidth
+            let height = int chunkHeight
+            if width <= 0 || height <= 0 then
+                releaseConsumed window
+                invalidArg "window" $"Chunk convolution expects positive slice dimensions, got {first.Size}."
 
-            let tryProcessBatch draining =
-                if initialized then
-                    let remainingRealOutputs = realCount - emittedCount
-                    let availableWindows = queue.Count - windowLength + 1
-                    let availableOutputs = min remainingRealOutputs availableWindows
-                    let batchCount =
-                        if draining then
-                            min batchSize availableOutputs
-                        elif availableOutputs >= batchSize then
-                            batchSize
-                        else
-                            0
-
-                    if batchCount > 0 then
-                        let windows = Array.zeroCreate<TypedChunkSlice<'T>[]> batchCount
-                        let releasedWindows = Array.zeroCreate<bool> batchCount
-                        let outputs = Array.zeroCreate<Chunk<'T>> batchCount
-                        try
-                            for i in 0 .. batchCount - 1 do
-                                windows[i] <- retainTypedWindow queue i windowLength
-
-                            if batchCount = 1 then
-                                try
-                                    outputs[0] <- convolveFixedKernelSlice width height plan windows[0]
-                                finally
-                                    releaseTypedWindow windows[0]
-                                    releasedWindows[0] <- true
-                            else
-                                Parallel.For(
-                                    0,
-                                    batchCount,
-                                    fun i ->
-                                        try
-                                            outputs[i] <- convolveFixedKernelSlice width height plan windows[i]
-                                        finally
-                                            releaseTypedWindow windows[i]
-                                            releasedWindows[i] <- true
-                                )
-                                |> ignore
-
-                            releasePrefix batchCount
-                            emittedCount <- emittedCount + batchCount
-                            Some outputs
-                        with
-                        | _ ->
-                            for i in 0 .. windows.Length - 1 do
-                                if not releasedWindows[i] && not (isNull (box windows[i])) then
-                                    releaseTypedWindow windows[i]
-                            for i in 0 .. outputs.Length - 1 do
-                                if not (isNull (box outputs[i])) then
-                                    Chunk.decRef outputs[i]
-                            reraise()
-                    else
-                        None
-                else
-                    None
-
-            let emitAvailable () =
-                seq {
-                    let mutable keepGoing = true
-                    while keepGoing do
-                        match tryProcessBatch false with
-                        | Some outputs ->
-                            for output in outputs do
-                                yield output
-                        | None ->
-                            keepGoing <- false
-                }
-
-            let drainAvailable () =
-                seq {
-                    let mutable keepGoing = true
-                    while keepGoing do
-                        match tryProcessBatch true with
-                        | Some outputs ->
-                            for output in outputs do
-                                yield output
-                        | None ->
-                            keepGoing <- false
-                }
-
+            let items = Array.zeroCreate<TypedChunkSlice<'T>> chunks.Length
+            let mutable retained = 0
             try
-                for chunk in input do
-                    ensureInitialized chunk
-                    queue.Add({ Index = realCount; Chunk = chunk })
-                    lastIndex <- realCount
-                    realCount <- realCount + 1
+                for i in 0 .. chunks.Length - 1 do
+                    validateTypedSliceChunk "convolution" width height chunks[i]
+                    Chunk.incRef chunks[i] |> ignore
+                    items[i] <- { Index = i; Chunk = chunks[i] }
+                    retained <- retained + 1
 
-                    for output in emitAvailable () do
-                        yield output
+                releaseConsumed window
+                Some { Width = width; Height = height; Items = items }
+            with
+            | _ ->
+                for i in 0 .. retained - 1 do
+                    Chunk.decRef items[i].Chunk
+                window.Items |> List.iter Chunk.decRef
+                reraise()
 
-                if initialized then
-                    for i in 1 .. plan.PadZ do
-                        addPadding (lastIndex + i)
-                        for output in emitAvailable () do
-                            yield output
-                    for output in drainAvailable () do
-                        yield output
+    let convolveRetained _debug (window: Window<RetainedTypedWindow<'T>>) =
+        match window.Items with
+        | [ retained ] ->
+            try
+                [ convolveFixedKernelSlice retained.Width retained.Height plan retained.Items ]
             finally
-                for item in queue do
-                    Chunk.decRef item.Chunk
-                queue.Clear()
-        }
+                releaseRetainedTypedWindow retained
+        | items ->
+            for retained in items do
+                releaseRetainedTypedWindow retained
+            invalidArg "window" $"Chunk convolution expected singleton retained windows, got {items.Length}."
 
-    Stage.fromAsyncSeq
-        $"chunkConvolveFixedKernel{suffix}.{typeof<'T>.Name}.{plan.Width}x{plan.Height}x{plan.Depth}"
-        apply
-        transition
-        memoryModel
-        id
+    let windowStage =
+        Stage.window $"{stageName}.window" (uint windowLength) (uint plan.PadZ) zeroMaker 1u
+
+    let retainStage =
+        Stage.choose
+            $"{stageName}.retain"
+            retainWindow
+            ignore
+            memoryNeed
+            id
+
+    let computeStage =
+        Stage.parallelCollect
+            $"{stageName}.parallelCollect"
+            1
+            batchSize
+            1
+            0
+            (fun _ retained -> retained)
+            convolveRetained
+            memoryNeed
+            id
+
+    Stage.compose windowStage retainStage
+    |> fun stage -> Stage.compose stage computeStage
 
 let convolveFixedKernel<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType>
     kernel
