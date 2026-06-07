@@ -52,7 +52,8 @@ switch char(args.operation)
             kernel = ones(kernelSize, kernelSize, kernelSize, "double") ./ (kernelSize ^ 3);
         end
         disp("convn kernel size: " + mat2str(size(kernel)) + ", mode: " + string(args.kernelMode));
-        out = cast(convn(double(volume), kernel, "same"), class(volume));
+        computeVolume = double(volume);
+        out = cast(convn(computeVolume, kernel, "same"), class(volume));
     case "median"
         out = medfilt3(volume, [kernelSize kernelSize kernelSize], "symmetric");
     case "dilate"

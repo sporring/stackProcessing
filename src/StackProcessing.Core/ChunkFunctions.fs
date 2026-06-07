@@ -1359,6 +1359,36 @@ let thresholdNative<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struc
 
     Stage.map $"chunkThresholdNative.{typeof<'T>.Name}.{threshold}" mapper id id
 
+let thresholdNativeParallelCollect<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType>
+    (threshold: double)
+    (workers: int)
+    : Stage<Chunk<'T>, Chunk<'T>> =
+    if workers < 1 then
+        invalidArg "workers" $"ChunkFunctions.thresholdNativeParallelCollect expects at least one worker, got {workers}."
+
+    let mapper _debug (window: Window<Chunk<'T>>) =
+        match window.Items with
+        | [ chunk ] ->
+            try
+                [ thresholdNativeChunk threshold chunk ]
+            finally
+                Chunk.decRef chunk
+        | items ->
+            for chunk in items do
+                Chunk.decRef chunk
+            invalidArg "window" $"ChunkFunctions.thresholdNativeParallelCollect expects singleton windows, got {items.Length} items."
+
+    Stage.parallelCollect
+        $"chunkThresholdNative.parallelCollect.{typeof<'T>.Name}.{threshold}.workers{workers}"
+        1
+        workers
+        1
+        0
+        (fun _ chunk -> chunk)
+        mapper
+        id
+        id
+
 let private castChunkToUInt8<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> (chunk: Chunk<'T>) =
     let output = Chunk.create<uint8> chunk.Size
     try

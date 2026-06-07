@@ -613,26 +613,30 @@ module private Pipe =
         let apply debug (input: AsyncSeq<'S>) =
             asyncSeq {
                 let windowPipe = window name (uint windowSize) (uint pad) zeroMaker (uint stride)
-                let batch = ResizeArray<Window<'S>>(workers)
+                if workers = 1 then
+                    for window in windowPipe.Apply debug input do
+                        yield! mapper debug window |> AsyncSeq.ofSeq
+                else
+                    let batch = ResizeArray<Window<'S>>(workers)
 
-                let processBatch () =
-                    let windows = batch.ToArray()
-                    batch.Clear()
-                    let outputs = Array.zeroCreate<'T list> windows.Length
-                    Parallel.For(
-                        0,
-                        windows.Length,
-                        fun i -> outputs[i] <- mapper debug windows[i])
-                    |> ignore
-                    outputs |> Seq.collect (fun items -> items)
+                    let processBatch () =
+                        let windows = batch.ToArray()
+                        batch.Clear()
+                        let outputs = Array.zeroCreate<'T list> windows.Length
+                        Parallel.For(
+                            0,
+                            windows.Length,
+                            fun i -> outputs[i] <- mapper debug windows[i])
+                        |> ignore
+                        outputs |> Seq.collect (fun items -> items)
 
-                for window in windowPipe.Apply debug input do
-                    batch.Add window
-                    if batch.Count = workers then
+                    for window in windowPipe.Apply debug input do
+                        batch.Add window
+                        if batch.Count = workers then
+                            yield! processBatch() |> AsyncSeq.ofSeq
+
+                    if batch.Count > 0 then
                         yield! processBatch() |> AsyncSeq.ofSeq
-
-                if batch.Count > 0 then
-                    yield! processBatch() |> AsyncSeq.ofSeq
             }
 
         create name apply Streaming

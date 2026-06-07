@@ -37,3 +37,7 @@ benchmarks/results/raw.before-chunk-copy-threshold-mainplots.csv
 benchmarks/results/raw.before-chunk-dilate-mainplots.csv
 benchmarks/results/raw.before-clean-chunk-dilate-mainplots.csv
 benchmarks/results/raw.before-matlab-convolve-rerun.csv
+benchmarks/results/raw.before-matlab-convolve-random-kernel.csv
+benchmarks/results/raw.before-matlab-convolve-uniform-materialized-double.csv
+benchmarks/results/summary.before-uint8-workers3-update.csv
+tmp.m

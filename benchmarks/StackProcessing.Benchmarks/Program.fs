@@ -69,6 +69,7 @@ ArrayPool experiment:
   dotnet run --project benchmarks/StackProcessing.Benchmarks -- run-libtiff-direct-threshold --operation threshold --pixel-type UInt8|UInt16|Float32 --input DIR --output DIR [--threshold X]
   dotnet run --project benchmarks/StackProcessing.Benchmarks -- run-libtiff-direct-threshold-intype --operation threshold --pixel-type UInt8|UInt16|Float32 --input DIR --output DIR [--threshold X]
   dotnet run --project benchmarks/StackProcessing.Benchmarks -- run-libtiff-direct-threshold-hotloop --pixel-type UInt8|UInt16|Float32 --input DIR --variant byte-mask-one|byte-intype-max|byte-intype-one|typed-intype-max|typed-intype-one|typed-copy-intype-max|typed-copy-intype-one [--iterations N] [--threshold X]
+  dotnet run --project benchmarks/StackProcessing.Benchmarks -- run-chunk-threshold-parallel --pixel-type UInt8|UInt16|Float32 --input DIR --output DIR [--threshold X] [--workers N] [--available-memory BYTES]
   dotnet run --project benchmarks/StackProcessing.Benchmarks -- run-chunk-histogram --pixel-type UInt8|UInt16|Float32 --input DIR --variant dense|sparse|leftedges [--window-size N] [--bins N] [--available-memory BYTES]
   dotnet run --project benchmarks/StackProcessing.Benchmarks -- run-chunk-dilate --input DIR --output DIR [--radius N] [--threshold X] [--workers N] [--available-memory BYTES]
   dotnet run --project benchmarks/StackProcessing.Benchmarks -- run-chunk-convolve --pixel-type UInt8|Int8|UInt16|Int16|Float32 --input DIR --output DIR [--kernel-size N] [--workers N] [--available-memory BYTES]
@@ -1122,6 +1123,17 @@ let private runChunkThresholdTyped<'T when 'T: equality and 'T: (new: unit -> 'T
     src
     |> readChunkSlices<'T> input ".tiff"
     >=> ChunkFunctions.thresholdNative<'T> thresholdValue
+    >=> ChunkFunctions.castToUInt8<'T>
+    >=> writeChunkSlices<uint8> output ".tiff"
+    |> sink
+    0
+
+let private runChunkThresholdParallelCollectTyped<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> input output thresholdValue workers availableMemory =
+    ensureCleanDirectory output
+    let src = benchmarkSource availableMemory
+    src
+    |> readChunkSlices<'T> input ".tiff"
+    >=> ChunkFunctions.thresholdNativeParallelCollect<'T> thresholdValue workers
     >=> ChunkFunctions.castToUInt8<'T>
     >=> writeChunkSlices<uint8> output ".tiff"
     |> sink
@@ -2326,6 +2338,28 @@ let private runChunkHistogram opts =
     writeInternalSeconds stopwatch.Elapsed
     exitCode
 
+let private runChunkThresholdParallelCollect opts =
+    let pixelType = require "pixel-type" opts |> parsePixelType
+    let input = require "input" opts
+    let output = require "output" opts
+    let thresholdValue = optional "threshold" "128" opts |> fun s -> Double.Parse(s, invariant)
+    let workers = optional "workers" "1" opts |> Int32.Parse
+    let availableMemory = optional "available-memory" (string (1024UL * 1024UL * 1024UL * 1024UL)) opts |> UInt64.Parse
+
+    if workers < 1 then
+        invalidArg "workers" $"Chunk threshold parallelCollect expects at least one worker/window, got {workers}."
+
+    let stopwatch = Stopwatch.StartNew()
+    let exitCode =
+        match pixelType with
+        | UInt8 -> runChunkThresholdParallelCollectTyped<uint8> input output thresholdValue workers availableMemory
+        | UInt16 -> runChunkThresholdParallelCollectTyped<uint16> input output thresholdValue workers availableMemory
+        | Float32 -> runChunkThresholdParallelCollectTyped<float32> input output thresholdValue workers availableMemory
+
+    stopwatch.Stop()
+    writeInternalSeconds stopwatch.Elapsed
+    exitCode
+
 let private runChunkDilate opts =
     let input = require "input" opts
     let output = require "output" opts
@@ -3464,6 +3498,7 @@ let main args =
         | _ when args[0] = "run-libtiff-direct-threshold" -> args[1..] |> parseArgs |> runLibTiffDirectThreshold
         | _ when args[0] = "run-libtiff-direct-threshold-intype" -> args[1..] |> parseArgs |> runLibTiffDirectThresholdInType
         | _ when args[0] = "run-libtiff-direct-threshold-hotloop" -> args[1..] |> parseArgs |> runLibTiffDirectThresholdHotLoop
+        | _ when args[0] = "run-chunk-threshold-parallel" -> args[1..] |> parseArgs |> runChunkThresholdParallelCollect
         | _ when args[0] = "run-chunk-histogram" -> args[1..] |> parseArgs |> runChunkHistogram
         | _ when args[0] = "run-chunk-dilate" -> args[1..] |> parseArgs |> runChunkDilate
         | _ when args[0] = "run-chunk-convolve" -> args[1..] |> parseArgs |> runChunkConvolve

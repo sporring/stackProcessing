@@ -106,24 +106,30 @@ def write_summary(path: Path, rows: list[dict[str, object]]) -> None:
 def plot(summary: list[dict[str, object]], output_dir: Path) -> None:
     plt = setup_matplotlib()
     output_dir.mkdir(parents=True, exist_ok=True)
-    points = sorted(summary, key=lambda row: int(row["workers"]))
+    grouped: dict[str, list[dict[str, object]]] = defaultdict(list)
+    for row in summary:
+        grouped[str(row["shape"])].append(row)
 
     for metric, ylabel, output_name in [
         ("medianInternalSeconds", "median internal seconds", "chunk-convolve-float32-1024-k7-parallel-runtime.pdf"),
         ("medianPeakRssMiB", "median peak RSS (MiB)", "chunk-convolve-float32-1024-k7-parallel-memory.pdf"),
     ]:
         fig, ax = plt.subplots(figsize=(4.9, 3.1))
-        ax.plot(
-            [int(row["workers"]) for row in points],
-            [float(row[metric]) for row in points],
-            marker="o",
-            linewidth=1.4,
-            color="#1f77b4",
-        )
+        for shape, points in sorted(grouped.items(), key=lambda item: int(item[0].split("x")[0])):
+            ordered = sorted(points, key=lambda row: int(row["workers"]))
+            size = shape.split("x")[0]
+            ax.plot(
+                [int(row["workers"]) for row in ordered],
+                [float(row[metric]) for row in ordered],
+                marker="o",
+                linewidth=1.4,
+                label=f"{size}^3",
+            )
         ax.set_xlabel("worker windows")
         ax.set_ylabel(ylabel)
         ax.set_xticks([1, 2, 3, 4])
         ax.grid(True, alpha=0.25)
+        ax.legend(frameon=False)
         fig.tight_layout()
         fig.savefig(output_dir / output_name)
         plt.close(fig)
