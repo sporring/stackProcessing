@@ -1249,7 +1249,87 @@ let private runChunkMedianPhUInt8 input output radius availableMemory =
     let src = benchmarkSource availableMemory
     src
     |> readChunkSlices<uint8> input ".tiff"
-    >=> ChunkFunctions.medianPerreaultHebertUInt8Dense (int radius)
+    >=> ChunkFunctions.medianPerreaultHebertUInt8DenseRolling (int radius)
+    >=> writeChunkSlices<uint8> output ".tiff"
+    |> sink
+    0
+
+let private runChunkMedianPhYBandsUInt8 input output radius workers availableMemory =
+    ensureCleanDirectory output
+    if radius > uint32 Int32.MaxValue then
+        invalidArg "radius" $"PH median radius must fit in Int32, got {radius}."
+    if workers < 1 then
+        invalidArg "workers" $"PH median y-band worker count must be at least 1, got {workers}."
+
+    let src = benchmarkSource availableMemory
+    src
+    |> readChunkSlices<uint8> input ".tiff"
+    >=> ChunkFunctions.medianPerreaultHebertUInt8DenseRollingYBands (int radius) workers
+    >=> writeChunkSlices<uint8> output ".tiff"
+    |> sink
+    0
+
+let private runChunkMedianPhXFirstUInt8 input output radius availableMemory =
+    ensureCleanDirectory output
+    if radius > uint32 Int32.MaxValue then
+        invalidArg "radius" $"PH median radius must fit in Int32, got {radius}."
+
+    let src = benchmarkSource availableMemory
+    src
+    |> readChunkSlices<uint8> input ".tiff"
+    >=> ChunkFunctions.medianPerreaultHebertUInt8DenseXFirstMaterialized (int radius)
+    >=> writeChunkSlices<uint8> output ".tiff"
+    |> sink
+    0
+
+let private runChunkMedianPhXBlockUInt8 input output radius availableMemory =
+    ensureCleanDirectory output
+    if radius > uint32 Int32.MaxValue then
+        invalidArg "radius" $"PH median radius must fit in Int32, got {radius}."
+
+    let src = benchmarkSource availableMemory
+    src
+    |> readChunkSlices<uint8> input ".tiff"
+    >=> ChunkFunctions.medianPerreaultHebertUInt8DenseXBlock (int radius)
+    >=> writeChunkSlices<uint8> output ".tiff"
+    |> sink
+    0
+
+let private runChunkMedianPhXTransposeUInt8 input output radius availableMemory =
+    ensureCleanDirectory output
+    if radius > uint32 Int32.MaxValue then
+        invalidArg "radius" $"PH median radius must fit in Int32, got {radius}."
+
+    let src = benchmarkSource availableMemory
+    src
+    |> readChunkSlices<uint8> input ".tiff"
+    >=> ChunkFunctions.medianPerreaultHebertUInt8DenseRollingTransposedXBlock (int radius)
+    >=> writeChunkSlices<uint8> output ".tiff"
+    |> sink
+    0
+
+let private runChunkMedianPhTreeUInt8 input output radius availableMemory =
+    ensureCleanDirectory output
+    if radius > uint32 Int32.MaxValue then
+        invalidArg "radius" $"PH median radius must fit in Int32, got {radius}."
+
+    let src = benchmarkSource availableMemory
+    src
+    |> readChunkSlices<uint8> input ".tiff"
+    >=> ChunkFunctions.medianPerreaultHebertUInt8DenseRollingTree (int radius)
+    >=> writeChunkSlices<uint8> output ".tiff"
+    |> sink
+    0
+
+let private runChunkMedianPhBlockedZUInt8 input output radius availableMemory =
+    ensureCleanDirectory output
+    if radius > uint32 Int32.MaxValue then
+        invalidArg "radius" $"PH median radius must fit in Int32, got {radius}."
+
+    let src = benchmarkSource availableMemory
+    src
+    |> readChunkSlices<uint8> input ".tiff"
+    >=> ChunkFunctions.medianPerreaultHebertUInt8DenseRollingBlockedZ (int radius)
     >=> writeChunkSlices<uint8> output ".tiff"
     |> sink
     0
@@ -2258,6 +2338,18 @@ let private run opts =
         | "threshold", Float32 -> runChunkThresholdTyped<float32> input output thresholdValue availableMemory
         | "median-ph", UInt8 -> runChunkMedianPhUInt8 input output radius availableMemory
         | "median-ph", _ -> failwith "median-ph benchmark is currently defined for UInt8 chunks only"
+        | "median-ph-ybands", UInt8 -> runChunkMedianPhYBandsUInt8 input output radius (int windowSize) availableMemory
+        | "median-ph-ybands", _ -> failwith "median-ph-ybands benchmark is currently defined for UInt8 chunks only"
+        | "median-ph-xfirst", UInt8 -> runChunkMedianPhXFirstUInt8 input output radius availableMemory
+        | "median-ph-xfirst", _ -> failwith "median-ph-xfirst benchmark is currently defined for UInt8 chunks only"
+        | "median-ph-xblock", UInt8 -> runChunkMedianPhXBlockUInt8 input output radius availableMemory
+        | "median-ph-xblock", _ -> failwith "median-ph-xblock benchmark is currently defined for UInt8 chunks only"
+        | "median-ph-xtranspose", UInt8 -> runChunkMedianPhXTransposeUInt8 input output radius availableMemory
+        | "median-ph-xtranspose", _ -> failwith "median-ph-xtranspose benchmark is currently defined for UInt8 chunks only"
+        | "median-ph-tree", UInt8 -> runChunkMedianPhTreeUInt8 input output radius availableMemory
+        | "median-ph-tree", _ -> failwith "median-ph-tree benchmark is currently defined for UInt8 chunks only"
+        | "median-ph-blockedz", UInt8 -> runChunkMedianPhBlockedZUInt8 input output radius availableMemory
+        | "median-ph-blockedz", _ -> failwith "median-ph-blockedz benchmark is currently defined for UInt8 chunks only"
         | "convolve", UInt8 -> runConvolveTyped<uint8> input output kernelSize availableMemory
         | "convolve", UInt16 -> runConvolveTyped<uint16> input output kernelSize availableMemory
         | "convolve", Float32 -> runConvolveTyped<float32> input output kernelSize availableMemory

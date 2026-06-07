@@ -554,6 +554,81 @@ let chunkSuite =
                 parallelOutputs |> List.iter Chunk.decRef
                 serialOutputs |> List.iter Chunk.decRef
 
+        testCase "ChunkFunctions rolling PH median matches dense PH median" <| fun _ ->
+            let width = 5
+            let height = 4
+            let depth = 6
+            let radius = 1
+
+            let makeChunks () =
+                [ for z in 0 .. depth - 1 ->
+                    [| for y in 0 .. height - 1 do
+                           for x in 0 .. width - 1 do
+                               uint8 ((z * 37 + y * 11 + x * 7 + (x * y)) % 251) |]
+                    |> chunkFromPixels width height ]
+
+            let denseInputs = makeChunks ()
+            let rollingInputs = makeChunks ()
+            let treeInputs = makeChunks ()
+            let blockedZInputs = makeChunks ()
+            let transposedInputs = makeChunks ()
+            let xFirstInputs = makeChunks ()
+            let xBlockInputs = makeChunks ()
+            let yBandInputs = makeChunks ()
+            let denseOutputs = runStageList (ChunkFunctions.medianPerreaultHebertUInt8Dense radius) denseInputs
+            let rollingOutputs = runStageList (ChunkFunctions.medianPerreaultHebertUInt8DenseRolling radius) rollingInputs
+            let treeOutputs = runStageList (ChunkFunctions.medianPerreaultHebertUInt8DenseRollingTree radius) treeInputs
+            let blockedZOutputs = runStageList (ChunkFunctions.medianPerreaultHebertUInt8DenseRollingBlockedZ radius) blockedZInputs
+            let transposedOutputs = runStageList (ChunkFunctions.medianPerreaultHebertUInt8DenseRollingTransposedXBlock radius) transposedInputs
+            let xFirstOutputs = runStageList (ChunkFunctions.medianPerreaultHebertUInt8DenseXFirstMaterialized radius) xFirstInputs
+            let xBlockOutputs = runStageList (ChunkFunctions.medianPerreaultHebertUInt8DenseXBlock radius) xBlockInputs
+            let yBandOutputs = runStageList (ChunkFunctions.medianPerreaultHebertUInt8DenseRollingYBands radius 3) yBandInputs
+
+            try
+                Expect.equal rollingOutputs.Length denseOutputs.Length "Rolling PH median should preserve the dense PH output count."
+                Expect.equal treeOutputs.Length denseOutputs.Length "Tree PH median should preserve the dense PH output count."
+                Expect.equal blockedZOutputs.Length denseOutputs.Length "Blocked-z PH median should preserve the dense PH output count."
+                Expect.equal transposedOutputs.Length denseOutputs.Length "Transposed x-block PH median should preserve the dense PH output count."
+                Expect.equal xFirstOutputs.Length denseOutputs.Length "X-first PH median should preserve the dense PH output count."
+                Expect.equal xBlockOutputs.Length denseOutputs.Length "X-block PH median should preserve the dense PH output count."
+                Expect.equal yBandOutputs.Length denseOutputs.Length "Y-band PH median should preserve the dense PH output count."
+                Expect.equal rollingOutputs.Length depth "Rolling PH median should emit one slice per input slice."
+
+                for z in 0 .. denseOutputs.Length - 1 do
+                    let denseValues = (Chunk.span<uint8> denseOutputs[z]).ToArray()
+                    let rollingValues = (Chunk.span<uint8> rollingOutputs[z]).ToArray()
+                    let treeValues = (Chunk.span<uint8> treeOutputs[z]).ToArray()
+                    let blockedZValues = (Chunk.span<uint8> blockedZOutputs[z]).ToArray()
+                    let transposedValues = (Chunk.span<uint8> transposedOutputs[z]).ToArray()
+                    let xFirstValues = (Chunk.span<uint8> xFirstOutputs[z]).ToArray()
+                    let xBlockValues = (Chunk.span<uint8> xBlockOutputs[z]).ToArray()
+                    let yBandValues = (Chunk.span<uint8> yBandOutputs[z]).ToArray()
+                    Expect.sequenceEqual rollingValues denseValues $"Rolling PH median should match dense PH output slice {z}."
+                    Expect.sequenceEqual treeValues denseValues $"Tree PH median should match dense PH output slice {z}."
+                    Expect.sequenceEqual blockedZValues denseValues $"Blocked-z PH median should match dense PH output slice {z}."
+                    Expect.sequenceEqual transposedValues denseValues $"Transposed x-block PH median should match dense PH output slice {z}."
+                    Expect.sequenceEqual xFirstValues denseValues $"X-first PH median should match dense PH output slice {z}."
+                    Expect.sequenceEqual xBlockValues denseValues $"X-block PH median should match dense PH output slice {z}."
+                    Expect.sequenceEqual yBandValues denseValues $"Y-band PH median should match dense PH output slice {z}."
+
+                denseInputs |> List.iter (fun chunk -> Expect.equal chunk.RefCount.Value 0 "Dense PH median should release consumed input chunks.")
+                rollingInputs |> List.iter (fun chunk -> Expect.equal chunk.RefCount.Value 0 "Rolling PH median should release consumed input chunks.")
+                treeInputs |> List.iter (fun chunk -> Expect.equal chunk.RefCount.Value 0 "Tree PH median should release consumed input chunks.")
+                blockedZInputs |> List.iter (fun chunk -> Expect.equal chunk.RefCount.Value 0 "Blocked-z PH median should release consumed input chunks.")
+                transposedInputs |> List.iter (fun chunk -> Expect.equal chunk.RefCount.Value 0 "Transposed x-block PH median should release consumed input chunks.")
+                xFirstInputs |> List.iter (fun chunk -> Expect.equal chunk.RefCount.Value 0 "X-first PH median should release consumed input chunks.")
+                xBlockInputs |> List.iter (fun chunk -> Expect.equal chunk.RefCount.Value 0 "X-block PH median should release consumed input chunks.")
+                yBandInputs |> List.iter (fun chunk -> Expect.equal chunk.RefCount.Value 0 "Y-band PH median should release consumed input chunks.")
+            finally
+                yBandOutputs |> List.iter Chunk.decRef
+                xBlockOutputs |> List.iter Chunk.decRef
+                xFirstOutputs |> List.iter Chunk.decRef
+                transposedOutputs |> List.iter Chunk.decRef
+                blockedZOutputs |> List.iter Chunk.decRef
+                treeOutputs |> List.iter Chunk.decRef
+                rollingOutputs |> List.iter Chunk.decRef
+                denseOutputs |> List.iter Chunk.decRef
+
         testCase "ChunkFunctions castToFloat32 widens signed and unsigned integer chunk spans" <| fun _ ->
             let width = 2 * System.Numerics.Vector<byte>.Count + 3
             let bytes = [| for i in 0 .. width - 1 -> uint8 ((i * 7) % 251) |]
