@@ -3018,6 +3018,272 @@ let binaryClosingZonohedral radius : Stage<Chunk<uint8>, Chunk<uint8>> =
 let binaryClosingZonohedralParallel radius windowSize : Stage<Chunk<uint8>, Chunk<uint8>> =
     Stage.compose (binaryDilateZonohedralParallel radius windowSize) (binaryErodeZonohedralParallel radius windowSize)
 
+let chunkElementBytes<'T> =
+    Marshal.SizeOf<'T>()
+
+let chunkMemoryNeed<'T> nPixels =
+    nPixels * uint64 (chunkElementBytes<'T>)
+
+let releaseUnaryChunk name f memoryNeed : Stage<Chunk<'T>, Chunk<'U>> =
+    let mapper _debug chunk =
+        try
+            f chunk
+        finally
+            Chunk.decRef chunk
+
+    Stage.map name mapper memoryNeed id
+
+let validateSameSize name (a: Chunk<'T>) (b: Chunk<'U>) =
+    if a.Size <> b.Size then
+        invalidArg "b" $"ChunkFunctions.{name} expects chunks with identical sizes, got {a.Size} and {b.Size}."
+
+let map2Chunk<'T, 'U, 'V when 'T: equality and 'U: equality and 'V: equality
+                                and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType
+                                and 'U: (new: unit -> 'U) and 'U: struct and 'U :> ValueType
+                                and 'V: (new: unit -> 'V) and 'V: struct and 'V :> ValueType>
+    name
+    f
+    (a: Chunk<'T>)
+    (b: Chunk<'U>) =
+    validateSameSize name a b
+    let output = Chunk.create<'V> a.Size
+    try
+        let aSpan = Chunk.span<'T> a
+        let bSpan = Chunk.span<'U> b
+        let outputSpan = Chunk.span<'V> output
+        let mutable i = 0
+        while i < aSpan.Length do
+            outputSpan[i] <- f aSpan[i] bSpan[i]
+            i <- i + 1
+        output
+    with
+    | _ ->
+        Chunk.decRef output
+        reraise()
+
+let releaseBinaryChunk name f memoryNeed : Stage<Chunk<'T> * Chunk<'U>, Chunk<'V>> =
+    let mapper _debug (a, b) =
+        try
+            f a b
+        finally
+            Chunk.decRef a
+            Chunk.decRef b
+
+    Stage.map name mapper memoryNeed id
+
+let copy<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> : Stage<Chunk<'T>, Chunk<'T>> =
+    let mapper chunk =
+        let output = Chunk.create<'T> chunk.Size
+        try
+            chunk.Bytes.AsSpan(0, chunk.ByteLength).CopyTo(output.Bytes.AsSpan(0, output.ByteLength))
+            output
+        with
+        | _ ->
+            Chunk.decRef output
+            reraise()
+
+    releaseUnaryChunk $"chunkCopy.{typeof<'T>.Name}" mapper (fun n -> 2UL * chunkMemoryNeed<'T> n)
+
+let inline map<'T, 'U when 'T: equality and 'U: equality
+                         and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType
+                         and 'U: (new: unit -> 'U) and 'U: struct and 'U :> ValueType>
+    name
+    f
+    : Stage<Chunk<'T>, Chunk<'U>> =
+    releaseUnaryChunk name (Chunk.map f) (fun n -> n * uint64 (chunkElementBytes<'T> + chunkElementBytes<'U>))
+
+let inline map2<'T, 'U, 'V when 'T: equality and 'U: equality and 'V: equality
+                              and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType
+                              and 'U: (new: unit -> 'U) and 'U: struct and 'U :> ValueType
+                              and 'V: (new: unit -> 'V) and 'V: struct and 'V :> ValueType>
+    name
+    f
+    : Stage<Chunk<'T> * Chunk<'U>, Chunk<'V>> =
+    releaseBinaryChunk name (map2Chunk name f) (fun n -> n * uint64 (chunkElementBytes<'T> + chunkElementBytes<'U> + chunkElementBytes<'V>))
+
+let inline sum<'T when 'T: equality
+                    and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType
+                    and 'T: (static member ( + ) : 'T * 'T -> 'T)
+                    and 'T: (static member Zero : 'T)> (chunk: Chunk<'T>) : 'T =
+    Chunk.fold (fun acc value -> acc + value) LanguagePrimitives.GenericZero chunk
+
+let inline prod<'T when 'T: equality
+                     and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType
+                     and 'T: (static member ( * ) : 'T * 'T -> 'T)
+                     and 'T: (static member One : 'T)> (chunk: Chunk<'T>) : 'T =
+    Chunk.fold (fun acc value -> acc * value) LanguagePrimitives.GenericOne chunk
+
+let inline minMax<'T when 'T: equality and 'T: comparison
+                       and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> (chunk: Chunk<'T>) =
+    let values = Chunk.span<'T> chunk
+    if values.Length = 0 then
+        invalidArg "chunk" "ChunkFunctions.minMax cannot reduce an empty chunk."
+    let mutable mn = values[0]
+    let mutable mx = values[0]
+    let mutable i = 1
+    while i < values.Length do
+        let value = values[i]
+        if value < mn then mn <- value
+        if value > mx then mx <- value
+        i <- i + 1
+    mn, mx
+
+let inline getMinMax chunk = minMax chunk
+
+let inline addScalar value =
+    map $"chunkAddScalar.{typeof<'T>.Name}" (fun (x: 'T) -> x + value)
+
+let inline scalarAdd value = addScalar value
+
+let inline subScalar value =
+    map $"chunkSubScalar.{typeof<'T>.Name}" (fun (x: 'T) -> x - value)
+
+let inline scalarSub value =
+    map $"chunkScalarSub.{typeof<'T>.Name}" (fun (x: 'T) -> value - x)
+
+let inline mulScalar value =
+    map $"chunkMulScalar.{typeof<'T>.Name}" (fun (x: 'T) -> x * value)
+
+let inline scalarMul value = mulScalar value
+
+let inline divScalar value =
+    map $"chunkDivScalar.{typeof<'T>.Name}" (fun (x: 'T) -> x / value)
+
+let inline scalarDiv value =
+    map $"chunkScalarDiv.{typeof<'T>.Name}" (fun (x: 'T) -> value / x)
+
+let inline add<'T when 'T: equality
+                    and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType
+                    and 'T: (static member ( + ) : 'T * 'T -> 'T)> =
+    map2< 'T, 'T, 'T> $"chunkAdd.{typeof<'T>.Name}" (fun a b -> a + b)
+
+let inline subtract<'T when 'T: equality
+                         and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType
+                         and 'T: (static member ( - ) : 'T * 'T -> 'T)> =
+    map2< 'T, 'T, 'T> $"chunkSubtract.{typeof<'T>.Name}" (fun a b -> a - b)
+
+let inline multiply<'T when 'T: equality
+                         and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType
+                         and 'T: (static member ( * ) : 'T * 'T -> 'T)> =
+    map2< 'T, 'T, 'T> $"chunkMultiply.{typeof<'T>.Name}" (fun a b -> a * b)
+
+let inline divide<'T when 'T: equality
+                       and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType
+                       and 'T: (static member ( / ) : 'T * 'T -> 'T)> =
+    map2< 'T, 'T, 'T> $"chunkDivide.{typeof<'T>.Name}" (fun a b -> a / b)
+
+let inline equal<'T when 'T: equality
+                      and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> =
+    map2< 'T, 'T, uint8> $"chunkEqual.{typeof<'T>.Name}" (fun a b -> if a = b then binaryForeground else binaryBackground)
+
+let inline notEqual<'T when 'T: equality
+                         and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> =
+    map2< 'T, 'T, uint8> $"chunkNotEqual.{typeof<'T>.Name}" (fun a b -> if a <> b then binaryForeground else binaryBackground)
+
+let inline greater<'T when 'T: equality and 'T: comparison
+                        and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> =
+    map2< 'T, 'T, uint8> $"chunkGreater.{typeof<'T>.Name}" (fun a b -> if a > b then binaryForeground else binaryBackground)
+
+let inline greaterEqual<'T when 'T: equality and 'T: comparison
+                             and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> =
+    map2< 'T, 'T, uint8> $"chunkGreaterEqual.{typeof<'T>.Name}" (fun a b -> if a >= b then binaryForeground else binaryBackground)
+
+let inline less<'T when 'T: equality and 'T: comparison
+                     and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> =
+    map2< 'T, 'T, uint8> $"chunkLess.{typeof<'T>.Name}" (fun a b -> if a < b then binaryForeground else binaryBackground)
+
+let inline lessEqual<'T when 'T: equality and 'T: comparison
+                          and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> =
+    map2< 'T, 'T, uint8> $"chunkLessEqual.{typeof<'T>.Name}" (fun a b -> if a <= b then binaryForeground else binaryBackground)
+
+let private maskBinaryByte name op =
+    releaseBinaryChunk name (fun a b -> map2Chunk name op a b) (fun n -> 3UL * n)
+
+let maskAnd : Stage<Chunk<uint8> * Chunk<uint8>, Chunk<uint8>> =
+    maskBinaryByte "chunkMaskAnd" (fun a b -> a &&& b)
+
+let maskOr : Stage<Chunk<uint8> * Chunk<uint8>, Chunk<uint8>> =
+    maskBinaryByte "chunkMaskOr" (fun a b -> a ||| b)
+
+let maskXor : Stage<Chunk<uint8> * Chunk<uint8>, Chunk<uint8>> =
+    maskBinaryByte "chunkMaskXor" (fun a b -> a ^^^ b)
+
+let maskNot : Stage<Chunk<uint8>, Chunk<uint8>> =
+    map "chunkMaskNot" (fun value -> if value = binaryBackground then binaryForeground else binaryBackground)
+
+let mask<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType>
+    (outsideValue: 'T)
+    : Stage<Chunk<'T> * Chunk<uint8>, Chunk<'T>> =
+    map2 $"chunkMask.{typeof<'T>.Name}" (fun value maskValue -> if maskValue = binaryBackground then outsideValue else value)
+
+let private mapFloat32Vector name (scalarOp: float32 -> float32) (vectorOp: Vector<float32> -> Vector<float32>) chunk =
+    let output = Chunk.create<float32> chunk.Size
+    try
+        let input = Chunk.span<float32> chunk
+        let outputSpan = Chunk.span<float32> output
+        let width = Vector<float32>.Count
+        let vectorEnd = input.Length - (input.Length % width)
+        let mutable i = 0
+        while i < vectorEnd do
+            let result = vectorOp (Vector<float32>(input.Slice(i, width)))
+            result.CopyTo(outputSpan.Slice(i, width))
+            i <- i + width
+        while i < input.Length do
+            outputSpan[i] <- scalarOp input[i]
+            i <- i + 1
+        output
+    with
+    | _ ->
+        Chunk.decRef output
+        reraise()
+
+let private float32UnaryStage name (scalarOp: float32 -> float32) (vectorOp: Vector<float32> -> Vector<float32>) =
+    releaseUnaryChunk name (mapFloat32Vector name scalarOp vectorOp) (fun n -> 2UL * chunkMemoryNeed<float32> n)
+
+let absFloat32 : Stage<Chunk<float32>, Chunk<float32>> =
+    float32UnaryStage "chunkAbsFloat32" abs (fun v -> Vector.Abs(v))
+
+let sqrtFloat32 : Stage<Chunk<float32>, Chunk<float32>> =
+    float32UnaryStage "chunkSqrtFloat32" sqrt (fun v -> Vector.SquareRoot(v))
+
+let squareFloat32 : Stage<Chunk<float32>, Chunk<float32>> =
+    float32UnaryStage "chunkSquareFloat32" (fun x -> x * x) (fun (v: Vector<float32>) -> v * v)
+
+let shiftScaleFloat32 (shift: double) (scale: double) : Stage<Chunk<float32>, Chunk<float32>> =
+    let shiftV = Vector<float32>(float32 shift)
+    let scaleV = Vector<float32>(float32 scale)
+    float32UnaryStage $"chunkShiftScaleFloat32.{shift}.{scale}" (fun x -> (x + float32 shift) * float32 scale) (fun (v: Vector<float32>) -> (v + shiftV) * scaleV)
+
+let clampFloat32 (lower: double) (upper: double) : Stage<Chunk<float32>, Chunk<float32>> =
+    let lowerF = float32 lower
+    let upperF = float32 upper
+    let lowerV = Vector<float32>(lowerF)
+    let upperV = Vector<float32>(upperF)
+    float32UnaryStage $"chunkClampFloat32.{lower}.{upper}" (fun x -> min upperF (max lowerF x)) (fun (v: Vector<float32>) -> Vector.Min(upperV, Vector.Max(lowerV, v)))
+
+let intensityWindowFloat32 (windowMinimum: double) (windowMaximum: double) (outputMinimum: double) (outputMaximum: double) : Stage<Chunk<float32>, Chunk<float32>> =
+    if windowMaximum = windowMinimum then
+        invalidArg "windowMaximum" "ChunkFunctions.intensityWindowFloat32 requires a non-zero input window width."
+    let scale = (outputMaximum - outputMinimum) / (windowMaximum - windowMinimum)
+    let scalar x =
+        if x <= float32 windowMinimum then float32 outputMinimum
+        elif x >= float32 windowMaximum then float32 outputMaximum
+        else float32 outputMinimum + (x - float32 windowMinimum) * float32 scale
+
+    let minV = Vector<float32>(float32 windowMinimum)
+    let maxV = Vector<float32>(float32 windowMaximum)
+    let outMinV = Vector<float32>(float32 outputMinimum)
+    let outMaxV = Vector<float32>(float32 outputMaximum)
+    let scaleV = Vector<float32>(float32 scale)
+    let vector (v: Vector<float32>) =
+        Vector.Min(outMaxV, Vector.Max(outMinV, outMinV + (v - minV) * scaleV))
+
+    float32UnaryStage $"chunkIntensityWindowFloat32.{windowMinimum}.{windowMaximum}.{outputMinimum}.{outputMaximum}" scalar vector
+
+let invertIntensityFloat32 (maximum: double) : Stage<Chunk<float32>, Chunk<float32>> =
+    let maximumV = Vector<float32>(float32 maximum)
+    float32UnaryStage $"chunkInvertIntensityFloat32.{maximum}" (fun x -> float32 maximum - x) (fun (v: Vector<float32>) -> maximumV - v)
+
 let thresholdBinary (threshold: uint8) : Stage<Chunk<uint8>, Chunk<uint8>> =
     let mapper _debug chunk =
         try
@@ -3344,6 +3610,35 @@ let castFromFloat32<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struc
             Chunk.decRef chunk
 
     Stage.map $"chunkCastFromFloat32.{typeof<'T>.Name}" mapper id id
+
+let shiftScale<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> shift scale : Stage<Chunk<'T>, Chunk<'T>> =
+    if typeof<'T> = typeof<float32> then
+        unbox (box (shiftScaleFloat32 shift scale))
+    else
+        Stage.compose (castToFloat32<'T>) (Stage.compose (shiftScaleFloat32 shift scale) (castFromFloat32<'T>))
+
+let clamp<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> lower upper : Stage<Chunk<'T>, Chunk<'T>> =
+    if typeof<'T> = typeof<float32> then
+        unbox (box (clampFloat32 lower upper))
+    else
+        Stage.compose (castToFloat32<'T>) (Stage.compose (clampFloat32 lower upper) (castFromFloat32<'T>))
+
+let intensityWindow<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType>
+    windowMinimum
+    windowMaximum
+    outputMinimum
+    outputMaximum
+    : Stage<Chunk<'T>, Chunk<'T>> =
+    if typeof<'T> = typeof<float32> then
+        unbox (box (intensityWindowFloat32 windowMinimum windowMaximum outputMinimum outputMaximum))
+    else
+        Stage.compose (castToFloat32<'T>) (Stage.compose (intensityWindowFloat32 windowMinimum windowMaximum outputMinimum outputMaximum) (castFromFloat32<'T>))
+
+let invertIntensity<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> maximum : Stage<Chunk<'T>, Chunk<'T>> =
+    if typeof<'T> = typeof<float32> then
+        unbox (box (invertIntensityFloat32 maximum))
+    else
+        Stage.compose (castToFloat32<'T>) (Stage.compose (invertIntensityFloat32 maximum) (castFromFloat32<'T>))
 
 let addCountsInto (target: uint64[]) (source: uint64[]) =
     if target.Length <> source.Length then

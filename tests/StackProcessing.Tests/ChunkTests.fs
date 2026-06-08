@@ -181,6 +181,80 @@ let chunkSuite =
             finally
                 Chunk.decRef chunk
 
+        testCase "ofImage and toImageWith bridge scalar image buffers through Chunk storage" <| fun _ ->
+            let image = Image<float32>.ofFlatArray([ 2u; 2u ], [| 1.0f; 2.0f; 3.0f; 4.0f |], "chunkBridge", 17)
+            let chunk = Chunk.ofImage image
+            let roundTrip = Chunk.toImageWith "chunkBridge.roundTrip" 19 chunk
+            try
+                Expect.equal chunk.Size (2UL, 2UL, 1UL) "ofImage should represent a 2D image as a depth-1 chunk."
+                Expect.sequenceEqual ((Chunk.span<float32> chunk).ToArray()) [| 1.0f; 2.0f; 3.0f; 4.0f |] "ofImage should copy image pixels into the valid chunk span."
+                Expect.equal (roundTrip.GetSize()) [ 2u; 2u ] "toImageWith should convert depth-1 chunks back to 2D images."
+                Expect.equal roundTrip.index 19 "toImageWith should carry the requested index."
+                Expect.sequenceEqual (roundTrip.toFlatArray()) [| 1.0f; 2.0f; 3.0f; 4.0f |] "toImageWith should preserve scalar pixel values."
+            finally
+                roundTrip.decRefCount()
+                Chunk.decRef chunk
+                image.decRefCount()
+
+        testCase "ChunkFunctions scalar arithmetic and pair arithmetic release inputs" <| fun _ ->
+            let scalarInput = chunkFromInt32Pixels 4 1 [| 1; 2; 3; 4 |]
+            let scalarOutput = runStageList (ChunkFunctions.addScalar 10) [ scalarInput ]
+            try
+                Expect.equal scalarInput.RefCount.Value 0 "Scalar arithmetic should release the consumed input chunk."
+                Expect.equal scalarOutput.Length 1 "Scalar arithmetic should emit one chunk."
+                Expect.sequenceEqual ((Chunk.span<int32> scalarOutput[0]).ToArray()) [| 11; 12; 13; 14 |] "addScalar should transform every element."
+            finally
+                scalarOutput |> List.iter Chunk.decRef
+
+            let left = chunkFromFloat32Pixels 3 1 [| 1.0f; 2.0f; 3.0f |]
+            let right = chunkFromFloat32Pixels 3 1 [| 10.0f; 20.0f; 30.0f |]
+            let pairOutput = runStageList (ChunkFunctions.add<float32>) [ left, right ]
+            try
+                Expect.equal left.RefCount.Value 0 "Pair arithmetic should release the left input chunk."
+                Expect.equal right.RefCount.Value 0 "Pair arithmetic should release the right input chunk."
+                Expect.sequenceEqual ((Chunk.span<float32> pairOutput[0]).ToArray()) [| 11.0f; 22.0f; 33.0f |] "add should combine matching elements."
+            finally
+                pairOutput |> List.iter Chunk.decRef
+
+        testCase "ChunkFunctions comparisons and mask operations produce UInt8 binary chunks" <| fun _ ->
+            let left = chunkFromInt16Pixels 4 1 [| 1s; 5s; 7s; 9s |]
+            let right = chunkFromInt16Pixels 4 1 [| 1s; 6s; 6s; 10s |]
+            let greater = runStageList (ChunkFunctions.greater<int16>) [ left, right ]
+            try
+                Expect.sequenceEqual ((Chunk.span<uint8> greater[0]).ToArray()) [| 0uy; 0uy; 1uy; 0uy |] "greater should emit 0/1 mask values."
+            finally
+                greater |> List.iter Chunk.decRef
+
+            let maskA = chunkFromPixels 4 1 [| 1uy; 0uy; 1uy; 0uy |]
+            let maskB = chunkFromPixels 4 1 [| 1uy; 1uy; 0uy; 0uy |]
+            let anded = runStageList ChunkFunctions.maskAnd [ maskA, maskB ]
+            try
+                Expect.sequenceEqual ((Chunk.span<uint8> anded[0]).ToArray()) [| 1uy; 0uy; 0uy; 0uy |] "maskAnd should preserve the 0/1 binary convention."
+            finally
+                anded |> List.iter Chunk.decRef
+
+            let maskC = chunkFromPixels 4 1 [| 1uy; 0uy; 2uy; 0uy |]
+            let notted = runStageList ChunkFunctions.maskNot [ maskC ]
+            try
+                Expect.sequenceEqual ((Chunk.span<uint8> notted[0]).ToArray()) [| 0uy; 1uy; 0uy; 1uy |] "maskNot should map zero to one and any non-zero value to zero."
+            finally
+                notted |> List.iter Chunk.decRef
+
+        testCase "ChunkFunctions Float32 intensity stages use span-sized outputs" <| fun _ ->
+            let shiftedInput = chunkFromFloat32Pixels 4 1 [| -1.0f; 0.0f; 1.0f; 2.0f |]
+            let shifted = runStageList (ChunkFunctions.shiftScaleFloat32 (1.0: double) (2.0: double)) [ shiftedInput ]
+            try
+                Expect.sequenceEqual ((Chunk.span<float32> shifted[0]).ToArray()) [| 0.0f; 2.0f; 4.0f; 6.0f |] "shiftScaleFloat32 should apply (x + shift) * scale."
+            finally
+                shifted |> List.iter Chunk.decRef
+
+            let windowInput = chunkFromFloat32Pixels 4 1 [| -10.0f; 0.0f; 5.0f; 10.0f |]
+            let windowed = runStageList (ChunkFunctions.intensityWindowFloat32 (0.0: double) (10.0: double) (0.0: double) (1.0: double)) [ windowInput ]
+            try
+                Expect.sequenceEqual ((Chunk.span<float32> windowed[0]).ToArray()) [| 0.0f; 0.0f; 0.5f; 1.0f |] "intensityWindowFloat32 should clamp and scale the configured window."
+            finally
+                windowed |> List.iter Chunk.decRef
+
         testCase "histogram counts chunk values" <| fun _ ->
             let chunk = Chunk.create<uint8> (6UL, 1UL, 1UL)
             try

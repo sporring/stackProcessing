@@ -184,6 +184,40 @@ module Chunk =
             i <- i + 1
         acc
 
+    let ofImage<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> (image: Image<'T>) =
+        let chunkSize =
+            match image.GetSize() with
+            | [ width; height ] -> uint64 width, uint64 height, 1UL
+            | [ width; height; depth ] -> uint64 width, uint64 height, uint64 depth
+            | size -> invalidArg "image" $"Chunk.ofImage supports 2D and 3D scalar images, got size {size}."
+
+        let chunk = create<'T> chunkSize
+        try
+            let pixels = image.toFlatArray()
+            pixels.CopyTo(span<'T> chunk)
+            chunk
+        with
+        | _ ->
+            decRef chunk
+            reraise()
+
+    let toImageWith<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType>
+        (name: string)
+        (index: int)
+        (chunk: Chunk<'T>)
+        : Image<'T> =
+        let width, height, depth = chunk.Size
+        let size =
+            if depth = 1UL then
+                [ uint width; uint height ]
+            else
+                [ uint width; uint height; uint depth ]
+
+        Image<'T>.ofFlatArray(size, (span<'T> chunk).ToArray(), name, index)
+
+    let toImage<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> (chunk: Chunk<'T>) =
+        toImageWith "chunk.toImage" 0 chunk
+
 type Point2D =
     { X: float
       Y: float }
