@@ -218,6 +218,49 @@ module Chunk =
     let toImage<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> (chunk: Chunk<'T>) =
         toImageWith "chunk.toImage" 0 chunk
 
+    let toSlabWith<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType>
+        (name: string)
+        (window: Window<Chunk<'T>>)
+        : Slab<'T> =
+        match window.Items with
+        | [] ->
+            invalidArg "window" "Chunk.toSlab requires a non-empty chunk window."
+        | chunks ->
+            let images =
+                chunks
+                |> List.mapi (fun index chunk -> toImageWith $"{name}.slice{index}" index chunk)
+
+            try
+                { Image = ImageFunctions.stack images
+                  EmitRange = window.EmitRange }
+            finally
+                images |> List.iter (fun image -> image.decRefCount())
+
+    let toSlab<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> (window: Window<Chunk<'T>>) =
+        toSlabWith "chunk.toSlab" window
+
+    let ofSlab<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> (slab: Slab<'T>) =
+        let start, count = slab.EmitRange
+        if count = 0u then
+            []
+        elif slab.Image.GetDimensions() = 2u then
+            if start <> 0u || count <> 1u then
+                invalidArg "slab" $"Chunk.ofSlab can emit only slice 0 from a 2D slab, got range ({start}, {count})."
+            [ ofImage slab.Image ]
+        elif slab.Image.GetDimensions() = 3u then
+            let depth = slab.Image.GetDepth()
+            if start + count > depth then
+                invalidArg "slab" $"Chunk.ofSlab emit range ({start}, {count}) exceeds slab depth {depth}."
+
+            [ for z in int start .. int (start + count) - 1 do
+                let slice = ImageFunctions.extractSlice 2u z slab.Image
+                try
+                    yield ofImage slice
+                finally
+                    slice.decRefCount() ]
+        else
+            invalidArg "slab" $"Chunk.ofSlab supports 2D and 3D scalar slab images, got {slab.Image.GetDimensions()}D."
+
 type Point2D =
     { X: float
       Y: float }

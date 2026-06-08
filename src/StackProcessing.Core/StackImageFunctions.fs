@@ -2257,9 +2257,10 @@ let makeConnectedComponentTranslationTable winSz : Stage<Image<uint64> * uint64,
     let winSz = effectiveWindowSize name 1u winSz
 
     let addBoundaryEquivalences (boundaryEquivalences: ResizeArray<uint * uint64 * uint64>) (unionFind: ComponentLabelUnionFind) previousSlab (previous: Image<uint64>) (current: Image<uint64>) =
+        let seen = HashSet<uint64 * uint64>()
         Image.fold2
             (fun () p1 p2 ->
-                if p1 <> 0UL && p2 <> 0UL then
+                if p1 <> 0UL && p2 <> 0UL && seen.Add(p1, p2) then
                     boundaryEquivalences.Add(previousSlab, p1, p2)
                     unionFind.Union((previousSlab, p1), (previousSlab + 1u, p2)))
             ()
@@ -2386,9 +2387,10 @@ let makeConnectedComponentLabelTranslationTable winSz : Stage<Image<uint64> * ui
     let winSz = effectiveWindowSize name 1u winSz
 
     let addBoundaryEquivalences (boundaryEquivalences: ResizeArray<uint * uint64 * uint64>) previousSlab (previous: Image<uint64>) (current: Image<uint64>) =
+        let seen = HashSet<uint64 * uint64>()
         Image.fold2
             (fun () p1 p2 ->
-                if p1 <> 0UL && p2 <> 0UL then
+                if p1 <> 0UL && p2 <> 0UL && seen.Add(p1, p2) then
                     boundaryEquivalences.Add(previousSlab, p1, p2))
             ()
             previous

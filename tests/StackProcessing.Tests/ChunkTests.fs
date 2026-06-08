@@ -43,6 +43,14 @@ let private chunkFromInt16Pixels width height (pixels: int16[]) =
     pixels.CopyTo(values)
     chunk
 
+let private chunkFromUInt16Pixels width height (pixels: uint16[]) =
+    let chunk = Chunk.create<uint16> (uint64 width, uint64 height, 1UL)
+    let values = Chunk.span<uint16> chunk
+    if values.Length <> pixels.Length then
+        invalidArg "pixels" $"Expected {values.Length} pixels, got {pixels.Length}."
+    pixels.CopyTo(values)
+    chunk
+
 let private chunkFromFloat32Pixels width height (pixels: float32[]) =
     let chunk = Chunk.create<float32> (uint64 width, uint64 height, 1UL)
     let values = Chunk.span<float32> chunk
@@ -195,6 +203,28 @@ let chunkSuite =
                 roundTrip.decRefCount()
                 Chunk.decRef chunk
                 image.decRefCount()
+
+        testCase "toSlab and ofSlab bridge chunk windows through emitted slab slices" <| fun _ ->
+            let chunks =
+                [ for z in 0 .. 2 ->
+                    [| for i in 0 .. 3 -> uint16 (z * 10 + i) |]
+                    |> chunkFromUInt16Pixels 2 2 ]
+            let window =
+                { Items = chunks
+                  EmitRange = 1u, 1u
+                  ReleaseCount = 1u }
+            let slab = Chunk.toSlabWith "chunkSlabBridge" window
+            let outputs = Chunk.ofSlab slab
+            try
+                Expect.equal (slab.Image.GetSize()) [ 2u; 2u; 3u ] "toSlab should stack 2D slice chunks into a 3D slab image."
+                Expect.equal outputs.Length 1 "ofSlab should emit only the requested slice range."
+                Expect.equal outputs[0].Size (2UL, 2UL, 1UL) "ofSlab should return 2D emitted slices as depth-1 chunks."
+                Expect.sequenceEqual ((Chunk.span<uint16> outputs[0]).ToArray()) [| 10us; 11us; 12us; 13us |] "ofSlab should preserve the emitted center slice pixels."
+                chunks |> List.iter (fun chunk -> Expect.equal chunk.RefCount.Value 1 "Bridge helpers should not own or release source chunks.")
+            finally
+                outputs |> List.iter Chunk.decRef
+                slab.Image.decRefCount()
+                chunks |> List.iter Chunk.decRef
 
         testCase "ChunkFunctions scalar arithmetic and pair arithmetic release inputs" <| fun _ ->
             let scalarInput = chunkFromInt32Pixels 4 1 [| 1; 2; 3; 4 |]
@@ -702,6 +732,151 @@ let chunkSuite =
                 treeOutputs |> List.iter Chunk.decRef
                 rollingOutputs |> List.iter Chunk.decRef
                 denseOutputs |> List.iter Chunk.decRef
+
+        testCase "ChunkFunctions nth-element median stages match sorted zero-padded reference" <| fun _ ->
+            let width = 5
+            let height = 4
+            let depth = 5
+            let radius = 1
+            let windowLength = 2 * radius + 1
+            let sampleCount = windowLength * windowLength * windowLength
+            let medianIndex = sampleCount / 2
+
+            let inline reference zero (sliceValues: _[][]) =
+                [ for z in 0 .. depth - 1 ->
+                    [| for y in 0 .. height - 1 do
+                           for x in 0 .. width - 1 do
+                               let values =
+                                   [| for dz in -radius .. radius do
+                                          for dy in -radius .. radius do
+                                              for dx in -radius .. radius do
+                                                  let zz = z + dz
+                                                  let yy = y + dy
+                                                  let xx = x + dx
+                                                  if zz >= 0 && zz < depth && yy >= 0 && yy < height && xx >= 0 && xx < width then
+                                                      yield sliceValues[zz][yy * width + xx]
+                                                  else
+                                                      yield zero |]
+                               Array.sortInPlace values
+                               yield values[medianIndex] |] ]
+
+            let uint16Slices =
+                [| for z in 0 .. depth - 1 ->
+                    [| for y in 0 .. height - 1 do
+                           for x in 0 .. width - 1 ->
+                               uint16 ((z * 1009 + y * 211 + x * 17 + x * y * 13) % 65521) |] |]
+            let uint8Slices =
+                [| for z in 0 .. depth - 1 ->
+                    [| for y in 0 .. height - 1 do
+                           for x in 0 .. width - 1 ->
+                               uint8 ((z * 101 + y * 29 + x * 17 + x * y * 7) % 251) |] |]
+            let int16Slices =
+                [| for z in 0 .. depth - 1 ->
+                    [| for y in 0 .. height - 1 do
+                           for x in 0 .. width - 1 ->
+                               int16 (((z * 997 + y * 127 + x * 23 + x * y * 11) % 60001) - 30000) |] |]
+            let float32Slices =
+                [| for z in 0 .. depth - 1 ->
+                    [| for y in 0 .. height - 1 do
+                           for x in 0 .. width - 1 ->
+                               float32 ((z * 997 + y * 127 + x * 23 + x * y * 11) % 60001) / 7.0f - 3000.0f |] |]
+
+            let uint8QuickInputs = uint8Slices |> Array.map (chunkFromPixels width height) |> Array.toList
+            let uint16Inputs = uint16Slices |> Array.map (chunkFromUInt16Pixels width height) |> Array.toList
+            let int16Inputs = int16Slices |> Array.map (chunkFromInt16Pixels width height) |> Array.toList
+            let float32Inputs = float32Slices |> Array.map (chunkFromFloat32Pixels width height) |> Array.toList
+            let uint8QuickOutputs = runStageList (ChunkFunctions.medianQuickselectUInt8 radius) uint8QuickInputs
+            let uint16Outputs = runStageList (ChunkFunctions.medianNthElementUInt16 radius) uint16Inputs
+            let int16Outputs = runStageList (ChunkFunctions.medianNthElementInt16 radius) int16Inputs
+            let float32Outputs = runStageList (ChunkFunctions.medianNthElementFloat32 radius) float32Inputs
+            let uint16QuickInputs = uint16Slices |> Array.map (chunkFromUInt16Pixels width height) |> Array.toList
+            let uint16QuickParallelInputs = uint16Slices |> Array.map (chunkFromUInt16Pixels width height) |> Array.toList
+            let uint16SortInputs = uint16Slices |> Array.map (chunkFromUInt16Pixels width height) |> Array.toList
+            let uint16SortParallelInputs = uint16Slices |> Array.map (chunkFromUInt16Pixels width height) |> Array.toList
+            let int16QuickInputs = int16Slices |> Array.map (chunkFromInt16Pixels width height) |> Array.toList
+            let uint16QuickOutputs = runStageList (ChunkFunctions.medianQuickselectUInt16 radius) uint16QuickInputs
+            let uint16QuickParallelOutputs = runStageList (ChunkFunctions.medianQuickselectUInt16ParallelCollect radius 3) uint16QuickParallelInputs
+            let uint16SortOutputs = runStageList (ChunkFunctions.medianSortUInt16 radius) uint16SortInputs
+            let uint16SortParallelOutputs = runStageList (ChunkFunctions.medianSortUInt16ParallelCollect radius 3) uint16SortParallelInputs
+            let int16QuickOutputs = runStageList (ChunkFunctions.medianQuickselectInt16 radius) int16QuickInputs
+
+            try
+                let expectedUInt8 = reference 0uy uint8Slices
+                let expectedUInt16 = reference 0us uint16Slices
+                let expectedInt16 = reference 0s int16Slices
+                let expectedFloat32 = reference 0.0f float32Slices
+
+                Expect.equal uint8QuickOutputs.Length depth "UInt8 quickselect median should emit one slice per input slice."
+                Expect.equal uint16Outputs.Length depth "UInt16 nth-element median should emit one slice per input slice."
+                Expect.equal int16Outputs.Length depth "Int16 nth-element median should emit one slice per input slice."
+                Expect.equal float32Outputs.Length depth "Float32 nth-element median should emit one slice per input slice."
+                Expect.equal uint16QuickOutputs.Length depth "UInt16 quickselect median should emit one slice per input slice."
+                Expect.equal uint16QuickParallelOutputs.Length depth "Parallel UInt16 quickselect median should emit one slice per input slice."
+                Expect.equal uint16SortOutputs.Length depth "UInt16 sort median should emit one slice per input slice."
+                Expect.equal uint16SortParallelOutputs.Length depth "Parallel UInt16 sort median should emit one slice per input slice."
+                Expect.equal int16QuickOutputs.Length depth "Int16 quickselect median should emit one slice per input slice."
+
+                for z in 0 .. depth - 1 do
+                    Expect.sequenceEqual ((Chunk.span<uint8> uint8QuickOutputs[z]).ToArray()) expectedUInt8[z] $"UInt8 quickselect median should match reference slice {z}."
+                    Expect.sequenceEqual ((Chunk.span<uint16> uint16Outputs[z]).ToArray()) expectedUInt16[z] $"UInt16 nth-element median should match reference slice {z}."
+                    Expect.sequenceEqual ((Chunk.span<int16> int16Outputs[z]).ToArray()) expectedInt16[z] $"Int16 nth-element median should match reference slice {z}."
+                    Expect.sequenceEqual ((Chunk.span<float32> float32Outputs[z]).ToArray()) expectedFloat32[z] $"Float32 nth-element median should match reference slice {z}."
+                    Expect.sequenceEqual ((Chunk.span<uint16> uint16QuickOutputs[z]).ToArray()) expectedUInt16[z] $"UInt16 quickselect median should match reference slice {z}."
+                    Expect.sequenceEqual ((Chunk.span<uint16> uint16QuickParallelOutputs[z]).ToArray()) expectedUInt16[z] $"Parallel UInt16 quickselect median should match reference slice {z}."
+                    Expect.sequenceEqual ((Chunk.span<uint16> uint16SortOutputs[z]).ToArray()) expectedUInt16[z] $"UInt16 sort median should match reference slice {z}."
+                    Expect.sequenceEqual ((Chunk.span<uint16> uint16SortParallelOutputs[z]).ToArray()) expectedUInt16[z] $"Parallel UInt16 sort median should match reference slice {z}."
+                    Expect.sequenceEqual ((Chunk.span<int16> int16QuickOutputs[z]).ToArray()) expectedInt16[z] $"Int16 quickselect median should match reference slice {z}."
+
+                uint8QuickInputs |> List.iter (fun chunk -> Expect.equal chunk.RefCount.Value 0 "UInt8 quickselect median should release consumed input chunks.")
+                uint16Inputs |> List.iter (fun chunk -> Expect.equal chunk.RefCount.Value 0 "UInt16 nth-element median should release consumed input chunks.")
+                int16Inputs |> List.iter (fun chunk -> Expect.equal chunk.RefCount.Value 0 "Int16 nth-element median should release consumed input chunks.")
+                float32Inputs |> List.iter (fun chunk -> Expect.equal chunk.RefCount.Value 0 "Float32 nth-element median should release consumed input chunks.")
+                uint16QuickInputs |> List.iter (fun chunk -> Expect.equal chunk.RefCount.Value 0 "UInt16 quickselect median should release consumed input chunks.")
+                uint16QuickParallelInputs |> List.iter (fun chunk -> Expect.equal chunk.RefCount.Value 0 "Parallel UInt16 quickselect median should release consumed input chunks.")
+                uint16SortInputs |> List.iter (fun chunk -> Expect.equal chunk.RefCount.Value 0 "UInt16 sort median should release consumed input chunks.")
+                uint16SortParallelInputs |> List.iter (fun chunk -> Expect.equal chunk.RefCount.Value 0 "Parallel UInt16 sort median should release consumed input chunks.")
+                int16QuickInputs |> List.iter (fun chunk -> Expect.equal chunk.RefCount.Value 0 "Int16 quickselect median should release consumed input chunks.")
+            finally
+                int16QuickOutputs |> List.iter Chunk.decRef
+                uint16SortParallelOutputs |> List.iter Chunk.decRef
+                uint16SortOutputs |> List.iter Chunk.decRef
+                uint16QuickParallelOutputs |> List.iter Chunk.decRef
+                uint16QuickOutputs |> List.iter Chunk.decRef
+                float32Outputs |> List.iter Chunk.decRef
+                int16Outputs |> List.iter Chunk.decRef
+                uint16Outputs |> List.iter Chunk.decRef
+                uint8QuickOutputs |> List.iter Chunk.decRef
+
+        testCase "ChunkFunctions ITK-wrapped median parallelCollect matches one-worker wrapper" <| fun _ ->
+            let width = 5
+            let height = 4
+            let depth = 5
+            let radius = 1
+
+            let makeInputs () =
+                [ for z in 0 .. depth - 1 ->
+                    [| for y in 0 .. height - 1 do
+                           for x in 0 .. width - 1 ->
+                               uint16 ((z * 1009 + y * 211 + x * 17 + x * y * 13) % 65521) |]
+                    |> chunkFromUInt16Pixels width height ]
+
+            let serialInputs = makeInputs ()
+            let parallelInputs = makeInputs ()
+            let serialOutputs = runStageList (ChunkFunctions.medianItkWrapped<uint16> radius) serialInputs
+            let parallelOutputs = runStageList (ChunkFunctions.medianItkWrappedParallelCollect<uint16> radius 3) parallelInputs
+
+            try
+                Expect.equal serialOutputs.Length depth "ITK-wrapped median should emit one slice per input slice."
+                Expect.equal parallelOutputs.Length serialOutputs.Length "Parallel ITK-wrapped median should preserve serial output count."
+
+                for z in 0 .. depth - 1 do
+                    Expect.sequenceEqual ((Chunk.span<uint16> parallelOutputs[z]).ToArray()) ((Chunk.span<uint16> serialOutputs[z]).ToArray()) $"Parallel ITK-wrapped median should match one-worker slice {z}."
+
+                serialInputs |> List.iter (fun chunk -> Expect.equal chunk.RefCount.Value 0 "One-worker ITK-wrapped median should release consumed input chunks.")
+                parallelInputs |> List.iter (fun chunk -> Expect.equal chunk.RefCount.Value 0 "Parallel ITK-wrapped median should release consumed input chunks.")
+            finally
+                parallelOutputs |> List.iter Chunk.decRef
+                serialOutputs |> List.iter Chunk.decRef
 
         testCase "ChunkFunctions castToFloat32 widens signed and unsigned integer chunk spans" <| fun _ ->
             let width = 2 * System.Numerics.Vector<byte>.Count + 3

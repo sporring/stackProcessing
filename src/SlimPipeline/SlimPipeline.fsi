@@ -61,7 +61,7 @@ type Pipe<'S,'T> =
         (bool -> FSharp.Control.AsyncSeq<'S> -> FSharp.Control.AsyncSeq<'T>)
       Profile: Profile
     }
-type MonoidFolder<'Item, 'State, 'Result> =
+type MonoidFolder<'Item,'State,'Result> =
     {
       Create: (unit -> 'State)
       AddItemInto: ('State -> 'Item -> unit)
@@ -69,6 +69,8 @@ type MonoidFolder<'Item, 'State, 'Result> =
       Finish: ('State -> 'Result)
       ReleaseItem: ('Item -> unit)
     }
+module private ParallelValidation =
+    val windowSize: value: int -> unit
 module private Pipe =
     type TeeSide =
         | Left
@@ -136,6 +138,27 @@ module private Pipe =
     val collect: name: string -> mapper: ('S -> 'T list) -> Pipe<'S,'T>
     val flatten: name: string -> Pipe<'T list,'T>
     val flattenWindow: name: string -> Pipe<Window<'T>,'T>
+    val parallelReduce:
+      name: string ->
+        windowSize: int ->
+        folder: MonoidFolder<'Item,'State,'Result> ->
+        profile: Profile -> Pipe<'Item,'Result>
+    val parallelCollect:
+      name: string ->
+        windowSize: int ->
+        batchSize: int ->
+        stride: int ->
+        pad: int ->
+        zeroMaker: (int -> 'S -> 'S) ->
+        mapper: (bool -> Window<'S> -> 'T list) -> Pipe<'S,'T>
+    val parallelMap:
+      name: string ->
+        windowSize: int ->
+        batchSize: int ->
+        stride: int ->
+        pad: int ->
+        zeroMaker: (int -> 'S -> 'S) ->
+        mapper: (bool -> Window<'S> -> 'T) -> Pipe<'S,'T>
     val ignore: clean: ('T -> unit) -> Pipe<'T,unit>
     val ignorePairs:
       cleanFst: ('S -> unit) * cleanSnd: ('T -> unit) -> Pipe<('S * 'T),unit>

@@ -10,5 +10,11 @@
   "files.watcherExclude": {
     "**/bin/**": true,
     "**/obj/**": true
+  },
+  "[latex]": {
+    "editor.wordWrap": "on"
+  },
+  "[tex]": {
+    "editor.wordWrap": "on"
   }
 }

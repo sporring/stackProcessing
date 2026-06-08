@@ -314,11 +314,14 @@ val readSlab<'T when 'T: equality> :
      SlimPipeline.Plan<unit,unit> -> SlimPipeline.Plan<unit,StackCore.Image<'T>>)
     when 'T: equality
 
-val readChunkSlices<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> System.ValueType> :
+val readChunkSlices<'T
+                      when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and
+                           'T :> System.ValueType> :
   (string ->
      string ->
      SlimPipeline.Plan<unit,unit> -> SlimPipeline.Plan<unit,StackCore.Chunk<'T>>)
-    when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> System.ValueType
+    when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and
+         'T :> System.ValueType
 
 val readZarrSlabStacked<'T when 'T: equality> :
   (string ->
@@ -1626,3 +1629,4 @@ val permuteAxes:
   (uint * uint * uint ->
      uint -> StackCore.Stage<StackCore.Image<'a>,StackCore.Image<'a>>)
     when 'a: equality
+

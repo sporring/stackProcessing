@@ -1334,6 +1334,93 @@ let private runChunkMedianPhBlockedZUInt8 input output radius availableMemory =
     |> sink
     0
 
+let private runChunkMedianItkWrappedTyped<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType>
+    input
+    output
+    radius
+    workers
+    availableMemory
+    =
+    ensureCleanDirectory output
+    if radius > uint32 Int32.MaxValue then
+        invalidArg "radius" $"Chunk ITK-wrapped median radius must fit in Int32, got {radius}."
+    if workers < 1 then
+        invalidArg "workers" $"Chunk ITK-wrapped median worker count must be at least 1, got {workers}."
+
+    let src = benchmarkSource availableMemory
+    src
+    |> readChunkSlices<'T> input ".tiff"
+    >=> ChunkFunctions.medianItkWrappedParallelCollect<'T> (int radius) workers
+    >=> writeChunkSlices<'T> output ".tiff"
+    |> sink
+    0
+
+let private runChunkMedianQuickselectUInt16 input output radius workers availableMemory =
+    ensureCleanDirectory output
+    if radius > uint32 Int32.MaxValue then
+        invalidArg "radius" $"Chunk quickselect median radius must fit in Int32, got {radius}."
+    if workers < 1 then
+        invalidArg "workers" $"Chunk quickselect median worker count must be at least 1, got {workers}."
+
+    let src = benchmarkSource availableMemory
+    src
+    |> readChunkSlices<uint16> input ".tiff"
+    >=> ChunkFunctions.medianQuickselectUInt16ParallelCollect (int radius) workers
+    >=> writeChunkSlices<uint16> output ".tiff"
+    |> sink
+    0
+
+let private runChunkMedianSortUInt16 input output radius workers availableMemory =
+    ensureCleanDirectory output
+    if radius > uint32 Int32.MaxValue then
+        invalidArg "radius" $"Chunk sort median radius must fit in Int32, got {radius}."
+    if workers < 1 then
+        invalidArg "workers" $"Chunk sort median worker count must be at least 1, got {workers}."
+
+    let src = benchmarkSource availableMemory
+    src
+    |> readChunkSlices<uint16> input ".tiff"
+    >=> ChunkFunctions.medianSortUInt16ParallelCollect (int radius) workers
+    >=> writeChunkSlices<uint16> output ".tiff"
+    |> sink
+    0
+
+let private runChunkMedianNativeNthUInt16 input output radius workers availableMemory =
+    ensureCleanDirectory output
+    if radius > uint32 Int32.MaxValue then
+        invalidArg "radius" $"Chunk native nth_element median radius must fit in Int32, got {radius}."
+    if workers < 1 then
+        invalidArg "workers" $"Chunk native nth_element median worker count must be at least 1, got {workers}."
+
+    let src = benchmarkSource availableMemory
+    src
+    |> readChunkSlices<uint16> input ".tiff"
+    >=> ChunkFunctions.medianNativeNthElementUInt16ParallelCollect (int radius) workers
+    >=> writeChunkSlices<uint16> output ".tiff"
+    |> sink
+    0
+
+let private runChunkMedianNativeNthUInt8 input output radius workers availableMemory =
+    ensureCleanDirectory output
+    if radius > uint32 Int32.MaxValue then
+        invalidArg "radius" $"Chunk native nth_element median radius must fit in Int32, got {radius}."
+    if workers < 1 then
+        invalidArg "workers" $"Chunk native nth_element median worker count must be at least 1, got {workers}."
+
+    let src = benchmarkSource availableMemory
+    src
+    |> readChunkSlices<uint8> input ".tiff"
+    >=> ChunkFunctions.medianNativeNthElementUInt8ParallelCollect (int radius) workers
+    >=> writeChunkSlices<uint8> output ".tiff"
+    |> sink
+    0
+
+let private runChunkMedianStandardUInt8 input output radius availableMemory =
+    if radius < 2u || radius > 40u then
+        runChunkMedianNativeNthUInt8 input output radius 3 availableMemory
+    else
+        runChunkMedianPhYBandsUInt8 input output radius 3 availableMemory
+
 let private zarrChunkMedianSlab<'T when 'T: equality> radius chunkZ : Stage<Image<'T>, Image<'T>> =
     let radius = max 0u radius
     let kernelDepth = 2u * radius + 1u
@@ -2336,6 +2423,7 @@ let private run opts =
         | "threshold", UInt8 -> runChunkThresholdTyped<uint8> input output thresholdValue availableMemory
         | "threshold", UInt16 -> runChunkThresholdTyped<uint16> input output thresholdValue availableMemory
         | "threshold", Float32 -> runChunkThresholdTyped<float32> input output thresholdValue availableMemory
+        | "median", UInt8 -> runChunkMedianStandardUInt8 input output radius availableMemory
         | "median-ph", UInt8 -> runChunkMedianPhUInt8 input output radius availableMemory
         | "median-ph", _ -> failwith "median-ph benchmark is currently defined for UInt8 chunks only"
         | "median-ph-ybands", UInt8 -> runChunkMedianPhYBandsUInt8 input output radius (int windowSize) availableMemory
@@ -2350,6 +2438,16 @@ let private run opts =
         | "median-ph-tree", _ -> failwith "median-ph-tree benchmark is currently defined for UInt8 chunks only"
         | "median-ph-blockedz", UInt8 -> runChunkMedianPhBlockedZUInt8 input output radius availableMemory
         | "median-ph-blockedz", _ -> failwith "median-ph-blockedz benchmark is currently defined for UInt8 chunks only"
+        | "median-itk-chunk", UInt8 -> runChunkMedianItkWrappedTyped<uint8> input output radius (int windowSize) availableMemory
+        | "median-itk-chunk", UInt16 -> runChunkMedianItkWrappedTyped<uint16> input output radius (int windowSize) availableMemory
+        | "median-itk-chunk", Float32 -> runChunkMedianItkWrappedTyped<float32> input output radius (int windowSize) availableMemory
+        | "median-quickselect", UInt16 -> runChunkMedianQuickselectUInt16 input output radius (int windowSize) availableMemory
+        | "median-quickselect", _ -> failwith "median-quickselect benchmark is currently defined for UInt16 chunks only"
+        | "median-sort", UInt16 -> runChunkMedianSortUInt16 input output radius (int windowSize) availableMemory
+        | "median-sort", _ -> failwith "median-sort benchmark is currently defined for UInt16 chunks only"
+        | "median-native-nth", UInt8 -> runChunkMedianNativeNthUInt8 input output radius (int windowSize) availableMemory
+        | "median-native-nth", UInt16 -> runChunkMedianNativeNthUInt16 input output radius (int windowSize) availableMemory
+        | "median-native-nth", _ -> failwith "median-native-nth benchmark is currently defined for UInt8 and UInt16 chunks only"
         | "convolve", UInt8 -> runConvolveTyped<uint8> input output kernelSize availableMemory
         | "convolve", UInt16 -> runConvolveTyped<uint16> input output kernelSize availableMemory
         | "convolve", Float32 -> runConvolveTyped<float32> input output kernelSize availableMemory

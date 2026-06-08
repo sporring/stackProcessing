@@ -3,6 +3,7 @@ module ChunkFunctions
 open System
 open System.Collections.Generic
 open System.Numerics
+open System.IO
 open System.Runtime.InteropServices
 open System.Threading.Tasks
 open FSharp.Control
@@ -26,6 +27,36 @@ type private ChunkSlice =
 type private TypedChunkSlice<'T when 'T: equality> =
     { Index: int
       Chunk: Chunk<'T> }
+
+module private NativeMedian =
+    [<Literal>]
+    let LibraryPath = "tmp/libspnth.dylib"
+
+    [<DllImport(LibraryPath, EntryPoint = "sp_median_uint16_nth_slab")>]
+    extern void medianUInt16NthSlab(
+        nativeint slices,
+        nativeint output,
+        int width,
+        int height,
+        int windowLength,
+        int radius,
+        int outputStart,
+        int outputCount)
+
+    [<DllImport(LibraryPath, EntryPoint = "sp_median_uint8_nth_slab")>]
+    extern void medianUInt8NthSlab(
+        nativeint slices,
+        nativeint output,
+        int width,
+        int height,
+        int windowLength,
+        int radius,
+        int outputStart,
+        int outputCount)
+
+    let ensureAvailable () =
+        if not (File.Exists LibraryPath) then
+            invalidOp $"Native median helper was not found at {LibraryPath}. Build it with: clang++ -O3 -std=c++17 -dynamiclib tmp/sp_nth_element_native.cpp -o tmp/libspnth.dylib"
 
 type private LineSamplePlan =
     { Z: int
@@ -996,6 +1027,505 @@ let private medianFromLaneMajorUInt16Histogram totalCount lanes (histogram: uint
         if cumulative < target then
             value <- value + 1
     uint8 value
+
+let private countLessEqualUInt16Span (span: ReadOnlySpan<uint16>) (pivot: uint16) =
+    let vectorWidth = Vector<uint16>.Count
+    let vectorEnd = span.Length - (span.Length % vectorWidth)
+    let pivotVector = Vector<uint16>(pivot)
+    let mutable count = 0
+    let mutable i = 0
+    while i < vectorEnd do
+        let mask = Vector.LessThanOrEqual(Vector<uint16>(span.Slice(i, vectorWidth)), pivotVector)
+        let mutable lane = 0
+        while lane < vectorWidth do
+            if mask[lane] <> 0us then
+                count <- count + 1
+            lane <- lane + 1
+        i <- i + vectorWidth
+    while i < span.Length do
+        if span[i] <= pivot then
+            count <- count + 1
+        i <- i + 1
+    count
+
+let private countLessEqualInt16Span (span: ReadOnlySpan<int16>) (pivot: int16) =
+    let vectorWidth = Vector<int16>.Count
+    let vectorEnd = span.Length - (span.Length % vectorWidth)
+    let pivotVector = Vector<int16>(pivot)
+    let mutable count = 0
+    let mutable i = 0
+    while i < vectorEnd do
+        let mask = Vector.LessThanOrEqual(Vector<int16>(span.Slice(i, vectorWidth)), pivotVector)
+        let mutable lane = 0
+        while lane < vectorWidth do
+            if mask[lane] <> 0s then
+                count <- count + 1
+            lane <- lane + 1
+        i <- i + vectorWidth
+    while i < span.Length do
+        if span[i] <= pivot then
+            count <- count + 1
+        i <- i + 1
+    count
+
+let private countLessEqualUInt16Window width height radius windowLength (window: Chunk<uint16>[]) x y (pivot: uint16) =
+    let mutable count = 0
+    let mutable validCount = 0
+    let xStart = max 0 (x - radius)
+    let xStop = min width (x + radius + 1)
+    let xCount = xStop - xStart
+    let mutable z = 0
+    while z < windowLength do
+        let pixels = Chunk.span<uint16> window[z]
+        let mutable yy = y - radius
+        while yy <= y + radius do
+            if yy >= 0 && yy < height && xCount > 0 then
+                let row = pixels.Slice(yy * width + xStart, xCount)
+                let rowReadOnly = MemoryMarshal.CreateReadOnlySpan(&MemoryMarshal.GetReference(row), row.Length)
+                count <- count + countLessEqualUInt16Span rowReadOnly pivot
+                validCount <- validCount + xCount
+            yy <- yy + 1
+        z <- z + 1
+    count + (windowLength * windowLength * windowLength - validCount)
+
+let private countLessEqualInt16Window width height radius windowLength (window: Chunk<int16>[]) x y (pivot: int16) =
+    let mutable count = 0
+    let mutable validCount = 0
+    let xStart = max 0 (x - radius)
+    let xStop = min width (x + radius + 1)
+    let xCount = xStop - xStart
+    let mutable z = 0
+    while z < windowLength do
+        let pixels = Chunk.span<int16> window[z]
+        let mutable yy = y - radius
+        while yy <= y + radius do
+            if yy >= 0 && yy < height && xCount > 0 then
+                let row = pixels.Slice(yy * width + xStart, xCount)
+                let rowReadOnly = MemoryMarshal.CreateReadOnlySpan(&MemoryMarshal.GetReference(row), row.Length)
+                count <- count + countLessEqualInt16Span rowReadOnly pivot
+                validCount <- validCount + xCount
+            yy <- yy + 1
+        z <- z + 1
+    let zeroPaddingCount = windowLength * windowLength * windowLength - validCount
+    if pivot >= 0s then count + zeroPaddingCount else count
+
+let private kthUInt16ByVectorRank width height radius windowLength window x y k =
+    let mutable lo = 0
+    let mutable hi = int UInt16.MaxValue
+    while lo < hi do
+        let mid = lo + (hi - lo) / 2
+        let rank = countLessEqualUInt16Window width height radius windowLength window x y (uint16 mid)
+        if rank > k then hi <- mid else lo <- mid + 1
+    uint16 lo
+
+let private kthInt16ByVectorRank width height radius windowLength window x y k =
+    let mutable lo = int Int16.MinValue
+    let mutable hi = int Int16.MaxValue
+    while lo < hi do
+        let mid = lo + (hi - lo) / 2
+        let rank = countLessEqualInt16Window width height radius windowLength window x y (int16 mid)
+        if rank > k then hi <- mid else lo <- mid + 1
+    int16 lo
+
+let private selectKFloat32InPlace (values: float32[]) length k =
+    let swap i j =
+        let tmp = values[i]
+        values[i] <- values[j]
+        values[j] <- tmp
+
+    let mutable left = 0
+    let mutable right = length - 1
+    let mutable result = 0.0f
+    let mutable found = false
+    while not found do
+        if left = right then
+            result <- values[left]
+            found <- true
+        else
+            let pivot = values[left + (right - left) / 2]
+            let mutable lt = left
+            let mutable i = left
+            let mutable gt = right
+            while i <= gt do
+                let value = values[i]
+                if value < pivot then
+                    swap lt i
+                    lt <- lt + 1
+                    i <- i + 1
+                elif value > pivot then
+                    swap i gt
+                    gt <- gt - 1
+                else
+                    i <- i + 1
+            if k < lt then
+                right <- lt - 1
+            elif k > gt then
+                left <- gt + 1
+            else
+                result <- values[k]
+                found <- true
+    result
+
+let private selectKUInt8InPlace (values: uint8[]) length k =
+    let swap i j =
+        let tmp = values[i]
+        values[i] <- values[j]
+        values[j] <- tmp
+
+    let mutable left = 0
+    let mutable right = length - 1
+    let mutable result = 0uy
+    let mutable found = false
+    while not found do
+        if left = right then
+            result <- values[left]
+            found <- true
+        else
+            let pivot = values[left + (right - left) / 2]
+            let mutable lt = left
+            let mutable i = left
+            let mutable gt = right
+            while i <= gt do
+                let value = values[i]
+                if value < pivot then
+                    swap lt i
+                    lt <- lt + 1
+                    i <- i + 1
+                elif value > pivot then
+                    swap i gt
+                    gt <- gt - 1
+                else
+                    i <- i + 1
+            if k < lt then
+                right <- lt - 1
+            elif k > gt then
+                left <- gt + 1
+            else
+                result <- values[k]
+                found <- true
+    result
+
+let private fillUInt8WindowScratch width height radius windowLength (window: Chunk<uint8>[]) x y (scratch: uint8[]) =
+    let mutable index = 0
+    let mutable z = 0
+    while z < windowLength do
+        let pixels = Chunk.span<uint8> window[z]
+        let mutable yy = y - radius
+        while yy <= y + radius do
+            let mutable xx = x - radius
+            while xx <= x + radius do
+                scratch[index] <-
+                    if xx >= 0 && xx < width && yy >= 0 && yy < height then
+                        pixels[yy * width + xx]
+                    else
+                        0uy
+                index <- index + 1
+                xx <- xx + 1
+            yy <- yy + 1
+        z <- z + 1
+
+let private fillFloat32WindowScratch width height radius windowLength (window: Chunk<float32>[]) x y (scratch: float32[]) =
+    let mutable index = 0
+    let mutable z = 0
+    while z < windowLength do
+        let pixels = Chunk.span<float32> window[z]
+        let mutable yy = y - radius
+        while yy <= y + radius do
+            let mutable xx = x - radius
+            while xx <= x + radius do
+                scratch[index] <-
+                    if xx >= 0 && xx < width && yy >= 0 && yy < height then
+                        pixels[yy * width + xx]
+                    else
+                        0.0f
+                index <- index + 1
+                xx <- xx + 1
+            yy <- yy + 1
+        z <- z + 1
+
+let private selectKUInt16InPlace (values: uint16[]) length k =
+    let swap i j =
+        let tmp = values[i]
+        values[i] <- values[j]
+        values[j] <- tmp
+
+    let medianOfThree left right =
+        let mid = (left + right) >>> 1
+        if values[mid] < values[left] then
+            swap left mid
+        if values[right] < values[left] then
+            swap left right
+        if values[right] < values[mid] then
+            swap mid right
+        values[mid]
+
+    let mutable left = 0
+    let mutable right = length - 1
+    let mutable result = 0us
+    let mutable found = false
+    while not found do
+        if left = right then
+            result <- values[left]
+            found <- true
+        else
+            let pivot = medianOfThree left right
+            let mutable lt = left
+            let mutable i = left
+            let mutable gt = right
+            while i <= gt do
+                let value = values[i]
+                if value < pivot then
+                    swap lt i
+                    lt <- lt + 1
+                    i <- i + 1
+                elif value > pivot then
+                    swap i gt
+                    gt <- gt - 1
+                else
+                    i <- i + 1
+            if k < lt then
+                right <- lt - 1
+            elif k > gt then
+                left <- gt + 1
+            else
+                result <- values[k]
+                found <- true
+    result
+
+let private selectKInt16InPlace (values: int16[]) length k =
+    let swap i j =
+        let tmp = values[i]
+        values[i] <- values[j]
+        values[j] <- tmp
+
+    let mutable left = 0
+    let mutable right = length - 1
+    let mutable result = 0s
+    let mutable found = false
+    while not found do
+        if left = right then
+            result <- values[left]
+            found <- true
+        else
+            let pivot = values[left + (right - left) / 2]
+            let mutable lt = left
+            let mutable i = left
+            let mutable gt = right
+            while i <= gt do
+                let value = values[i]
+                if value < pivot then
+                    swap lt i
+                    lt <- lt + 1
+                    i <- i + 1
+                elif value > pivot then
+                    swap i gt
+                    gt <- gt - 1
+                else
+                    i <- i + 1
+            if k < lt then
+                right <- lt - 1
+            elif k > gt then
+                left <- gt + 1
+            else
+                result <- values[k]
+                found <- true
+    result
+
+let private fillUInt16WindowScratch width height radius windowLength (window: Chunk<uint16>[]) x y (scratch: uint16[]) =
+    let mutable index = 0
+    let mutable z = 0
+    while z < windowLength do
+        let pixels = Chunk.span<uint16> window[z]
+        let mutable yy = y - radius
+        while yy <= y + radius do
+            let mutable xx = x - radius
+            while xx <= x + radius do
+                scratch[index] <-
+                    if xx >= 0 && xx < width && yy >= 0 && yy < height then
+                        pixels[yy * width + xx]
+                    else
+                        0us
+                index <- index + 1
+                xx <- xx + 1
+            yy <- yy + 1
+        z <- z + 1
+
+let private fillInt16WindowScratch width height radius windowLength (window: Chunk<int16>[]) x y (scratch: int16[]) =
+    let mutable index = 0
+    let mutable z = 0
+    while z < windowLength do
+        let pixels = Chunk.span<int16> window[z]
+        let mutable yy = y - radius
+        while yy <= y + radius do
+            let mutable xx = x - radius
+            while xx <= x + radius do
+                scratch[index] <-
+                    if xx >= 0 && xx < width && yy >= 0 && yy < height then
+                        pixels[yy * width + xx]
+                    else
+                        0s
+                index <- index + 1
+                xx <- xx + 1
+            yy <- yy + 1
+        z <- z + 1
+
+let private medianQuickselectUInt8Slice width height radius (window: Chunk<uint8>[]) =
+    let windowLength = 2 * radius + 1
+    let totalCount = windowLength * windowLength * windowLength
+    let medianIndex = totalCount / 2
+    let output = Chunk.create<uint8> (uint64 width, uint64 height, 1UL)
+    try
+        let outputPixels = Chunk.span<uint8> output
+        let scratch = Array.zeroCreate<uint8> totalCount
+        let mutable y = 0
+        while y < height do
+            let rowOffset = y * width
+            let mutable x = 0
+            while x < width do
+                fillUInt8WindowScratch width height radius windowLength window x y scratch
+                outputPixels[rowOffset + x] <- selectKUInt8InPlace scratch totalCount medianIndex
+                x <- x + 1
+            y <- y + 1
+        output
+    with
+    | _ ->
+        Chunk.decRef output
+        reraise()
+
+let private medianNthElementUInt16Slice width height radius (window: Chunk<uint16>[]) =
+    let windowLength = 2 * radius + 1
+    let totalCount = windowLength * windowLength * windowLength
+    let medianIndex = totalCount / 2
+    let output = Chunk.create<uint16> (uint64 width, uint64 height, 1UL)
+    try
+        let outputPixels = Chunk.span<uint16> output
+        let mutable y = 0
+        while y < height do
+            let rowOffset = y * width
+            let mutable x = 0
+            while x < width do
+                outputPixels[rowOffset + x] <- kthUInt16ByVectorRank width height radius windowLength window x y medianIndex
+                x <- x + 1
+            y <- y + 1
+        output
+    with
+    | _ ->
+        Chunk.decRef output
+        reraise()
+
+let private medianQuickselectUInt16Slice width height radius (window: Chunk<uint16>[]) =
+    let windowLength = 2 * radius + 1
+    let totalCount = windowLength * windowLength * windowLength
+    let medianIndex = totalCount / 2
+    let output = Chunk.create<uint16> (uint64 width, uint64 height, 1UL)
+    try
+        let outputPixels = Chunk.span<uint16> output
+        let scratch = Array.zeroCreate<uint16> totalCount
+        let mutable y = 0
+        while y < height do
+            let rowOffset = y * width
+            let mutable x = 0
+            while x < width do
+                fillUInt16WindowScratch width height radius windowLength window x y scratch
+                outputPixels[rowOffset + x] <- selectKUInt16InPlace scratch totalCount medianIndex
+                x <- x + 1
+            y <- y + 1
+        output
+    with
+    | _ ->
+        Chunk.decRef output
+        reraise()
+
+let private medianSortUInt16Slice width height radius (window: Chunk<uint16>[]) =
+    let windowLength = 2 * radius + 1
+    let totalCount = windowLength * windowLength * windowLength
+    let medianIndex = totalCount / 2
+    let output = Chunk.create<uint16> (uint64 width, uint64 height, 1UL)
+    try
+        let outputPixels = Chunk.span<uint16> output
+        let scratch = Array.zeroCreate<uint16> totalCount
+        let mutable y = 0
+        while y < height do
+            let rowOffset = y * width
+            let mutable x = 0
+            while x < width do
+                fillUInt16WindowScratch width height radius windowLength window x y scratch
+                Array.sortInPlace scratch
+                outputPixels[rowOffset + x] <- scratch[medianIndex]
+                x <- x + 1
+            y <- y + 1
+        output
+    with
+    | _ ->
+        Chunk.decRef output
+        reraise()
+
+let private medianQuickselectInt16Slice width height radius (window: Chunk<int16>[]) =
+    let windowLength = 2 * radius + 1
+    let totalCount = windowLength * windowLength * windowLength
+    let medianIndex = totalCount / 2
+    let output = Chunk.create<int16> (uint64 width, uint64 height, 1UL)
+    try
+        let outputPixels = Chunk.span<int16> output
+        let scratch = Array.zeroCreate<int16> totalCount
+        let mutable y = 0
+        while y < height do
+            let rowOffset = y * width
+            let mutable x = 0
+            while x < width do
+                fillInt16WindowScratch width height radius windowLength window x y scratch
+                outputPixels[rowOffset + x] <- selectKInt16InPlace scratch totalCount medianIndex
+                x <- x + 1
+            y <- y + 1
+        output
+    with
+    | _ ->
+        Chunk.decRef output
+        reraise()
+
+let private medianNthElementInt16Slice width height radius (window: Chunk<int16>[]) =
+    let windowLength = 2 * radius + 1
+    let totalCount = windowLength * windowLength * windowLength
+    let medianIndex = totalCount / 2
+    let output = Chunk.create<int16> (uint64 width, uint64 height, 1UL)
+    try
+        let outputPixels = Chunk.span<int16> output
+        let mutable y = 0
+        while y < height do
+            let rowOffset = y * width
+            let mutable x = 0
+            while x < width do
+                outputPixels[rowOffset + x] <- kthInt16ByVectorRank width height radius windowLength window x y medianIndex
+                x <- x + 1
+            y <- y + 1
+        output
+    with
+    | _ ->
+        Chunk.decRef output
+        reraise()
+
+let private medianNthElementFloat32Slice width height radius (window: Chunk<float32>[]) =
+    let windowLength = 2 * radius + 1
+    let totalCount = windowLength * windowLength * windowLength
+    let medianIndex = totalCount / 2
+    let output = Chunk.create<float32> (uint64 width, uint64 height, 1UL)
+    try
+        let outputPixels = Chunk.span<float32> output
+        let scratch = Array.zeroCreate<float32> totalCount
+        let mutable y = 0
+        while y < height do
+            let rowOffset = y * width
+            let mutable x = 0
+            while x < width do
+                fillFloat32WindowScratch width height radius windowLength window x y scratch
+                outputPixels[rowOffset + x] <- selectKFloat32InPlace scratch totalCount medianIndex
+                x <- x + 1
+            y <- y + 1
+        output
+    with
+    | _ ->
+        Chunk.decRef output
+        reraise()
 
 let private buildZHistogramsUInt8 width height (window: seq<Chunk<uint8>>) =
     let pixelCount = width * height
@@ -2133,6 +2663,409 @@ let medianPerreaultHebertUInt8DenseRolling radius : Stage<Chunk<uint8>, Chunk<ui
         memoryModel
         id
 
+let private medianNativeNthSlice<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType>
+    (invokeNative: nativeint -> nativeint -> int -> int -> int -> int -> int -> int -> unit)
+    width
+    height
+    radius
+    (window: Chunk<'T>[])
+    =
+    NativeMedian.ensureAvailable ()
+
+    let output = Chunk.create<'T> (uint64 width, uint64 height, 1UL)
+    let handles = Array.zeroCreate<GCHandle> window.Length
+    let mutable retainedHandles = 0
+    let mutable outputHandle = Unchecked.defaultof<GCHandle>
+    let mutable outputPinned = false
+    let mutable pointerHandle = Unchecked.defaultof<GCHandle>
+    let mutable pointersPinned = false
+    try
+        try
+            let pointers = Array.zeroCreate<nativeint> window.Length
+            for i in 0 .. window.Length - 1 do
+                handles[i] <- GCHandle.Alloc(window[i].Bytes, GCHandleType.Pinned)
+                retainedHandles <- retainedHandles + 1
+                pointers[i] <- handles[i].AddrOfPinnedObject()
+
+            outputHandle <- GCHandle.Alloc(output.Bytes, GCHandleType.Pinned)
+            outputPinned <- true
+            pointerHandle <- GCHandle.Alloc(pointers, GCHandleType.Pinned)
+            pointersPinned <- true
+
+            invokeNative
+                (pointerHandle.AddrOfPinnedObject())
+                (outputHandle.AddrOfPinnedObject())
+                width
+                height
+                window.Length
+                radius
+                radius
+                1
+
+            output
+        with
+        | _ ->
+            Chunk.decRef output
+            reraise()
+    finally
+        if pointersPinned then
+            pointerHandle.Free()
+        if outputPinned then
+            outputHandle.Free()
+        for i in 0 .. retainedHandles - 1 do
+            handles[i].Free()
+
+let private medianNativeUInt8NthSlice width height radius (window: Chunk<uint8>[]) =
+    medianNativeNthSlice<uint8>
+        (fun slices output width height windowLength radius outputStart outputCount ->
+            NativeMedian.medianUInt8NthSlab(slices, output, width, height, windowLength, radius, outputStart, outputCount))
+        width
+        height
+        radius
+        window
+
+let private medianNativeUInt16NthSlice width height radius (window: Chunk<uint16>[]) =
+    medianNativeNthSlice<uint16>
+        (fun slices output width height windowLength radius outputStart outputCount ->
+            NativeMedian.medianUInt16NthSlab(slices, output, width, height, windowLength, radius, outputStart, outputCount))
+        width
+        height
+        radius
+        window
+
+let private medianNthElementStage<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType>
+    name
+    radius
+    (sliceMedian: int -> int -> int -> Chunk<'T>[] -> Chunk<'T>)
+    : Stage<Chunk<'T>, Chunk<'T>> =
+    if radius < 0 then
+        invalidArg "radius" $"{name} expects a non-negative radius, got {radius}."
+
+    let windowLength = 2 * radius + 1
+    let memoryNeed nPixels =
+        uint64 (windowLength + 1) * nPixels * uint64 (Marshal.SizeOf<'T>())
+
+    let transition = ProfileTransition.create Streaming Streaming
+    let memoryModel = StageMemoryModel.fromSinglePeak Map memoryNeed
+
+    let apply (_debug: bool) (input: AsyncSeq<Chunk<'T>>) =
+        asyncSeq {
+            let queue = ResizeArray<Chunk<'T>>()
+            let mutable width = 0
+            let mutable height = 0
+            let mutable initialized = false
+            let mutable realCount = 0
+            let mutable emittedCount = 0
+
+            let addPadding () =
+                queue.Add(zeroChunkTyped<'T> width height)
+
+            let ensureInitialized (chunk: Chunk<'T>) =
+                let chunkWidth, chunkHeight, chunkDepth = chunk.Size
+                if chunkDepth <> 1UL then
+                    invalidArg "chunk" $"{name} expects 2D slice chunks with depth 1, got {chunk.Size}."
+
+                if not initialized then
+                    width <- int chunkWidth
+                    height <- int chunkHeight
+                    if width <= 0 || height <= 0 then
+                        invalidArg "chunk" $"{name} expects positive slice dimensions, got {chunk.Size}."
+                    for _ in 1 .. radius do
+                        addPadding ()
+                    initialized <- true
+                else
+                    validateTypedSliceChunk<'T> name width height chunk
+
+            let emitCurrent () =
+                let window = Array.zeroCreate<Chunk<'T>> windowLength
+                let mutable i = 0
+                while i < windowLength do
+                    window[i] <- queue[i]
+                    i <- i + 1
+                let output = sliceMedian width height radius window
+                emittedCount <- emittedCount + 1
+                output
+
+            let advanceToNewestWindow () =
+                let leaving = queue[0]
+                queue.RemoveAt(0)
+                Chunk.decRef leaving
+
+            let tryEmitAfterAppend () =
+                seq {
+                    if initialized && emittedCount < realCount then
+                        if queue.Count = windowLength then
+                            yield emitCurrent ()
+                        elif queue.Count = windowLength + 1 then
+                            advanceToNewestWindow ()
+                            yield emitCurrent ()
+                }
+
+            try
+                for chunk in input do
+                    ensureInitialized chunk
+                    queue.Add chunk
+                    realCount <- realCount + 1
+
+                    for output in tryEmitAfterAppend () do
+                        yield output
+
+                if initialized then
+                    while emittedCount < realCount do
+                        addPadding ()
+                        for output in tryEmitAfterAppend () do
+                            yield output
+            finally
+                for chunk in queue do
+                    Chunk.decRef chunk
+                queue.Clear()
+        }
+
+    Stage.fromAsyncSeq
+        $"{name}.radius{radius}"
+        apply
+        transition
+        memoryModel
+        id
+
+let private medianNthElementParallelCollectStage<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType>
+    name
+    radius
+    workers
+    (sliceMedian: int -> int -> int -> Chunk<'T>[] -> Chunk<'T>)
+    : Stage<Chunk<'T>, Chunk<'T>> =
+    if workers < 1 then
+        invalidArg "workers" $"{name} expects at least one worker, got {workers}."
+    if workers = 1 then
+        medianNthElementStage<'T> name radius sliceMedian
+    else
+        if radius < 0 then
+            invalidArg "radius" $"{name} expects a non-negative radius, got {radius}."
+
+        let windowLength = 2 * radius + 1
+        let memoryNeed nPixels =
+            uint64 (windowLength + workers + 1) * nPixels * uint64 (Marshal.SizeOf<'T>())
+
+        let transition = ProfileTransition.create Streaming Streaming
+        let memoryModel = StageMemoryModel.fromSinglePeak Map memoryNeed
+
+        let apply (_debug: bool) (input: AsyncSeq<Chunk<'T>>) =
+            asyncSeq {
+                let queue = ResizeArray<TypedChunkSlice<'T>>()
+                let mutable width = 0
+                let mutable height = 0
+                let mutable initialized = false
+                let mutable realCount = 0
+                let mutable emittedCount = 0
+                let mutable lastIndex = -1
+
+                let addPadding index =
+                    let chunk = zeroChunkTyped<'T> width height
+                    queue.Add({ Index = index; Chunk = chunk })
+
+                let ensureInitialized (chunk: Chunk<'T>) =
+                    let chunkWidth, chunkHeight, chunkDepth = chunk.Size
+                    if chunkDepth <> 1UL then
+                        invalidArg "chunk" $"{name} expects 2D slice chunks with depth 1, got {chunk.Size}."
+
+                    if not initialized then
+                        width <- int chunkWidth
+                        height <- int chunkHeight
+                        if width <= 0 || height <= 0 then
+                            invalidArg "chunk" $"{name} expects positive slice dimensions, got {chunk.Size}."
+                        for i in radius .. -1 .. 1 do
+                            addPadding -i
+                        initialized <- true
+                    else
+                        validateTypedSliceChunk<'T> name width height chunk
+
+                let releasePrefix count =
+                    for _ in 1 .. count do
+                        let removed = queue[0]
+                        queue.RemoveAt(0)
+                        Chunk.decRef removed.Chunk
+
+                let tryProcessBatch draining =
+                    if initialized then
+                        let remainingRealOutputs = realCount - emittedCount
+                        let availableWindows = queue.Count - windowLength + 1
+                        let availableOutputs = min remainingRealOutputs availableWindows
+                        let batchCount =
+                            if draining then
+                                min workers availableOutputs
+                            elif availableOutputs >= workers then
+                                workers
+                            else
+                                0
+
+                        if batchCount > 0 then
+                            let windows = Array.zeroCreate<TypedChunkSlice<'T>[]> batchCount
+                            let releasedWindows = Array.zeroCreate<bool> batchCount
+                            let outputs = Array.zeroCreate<Chunk<'T>> batchCount
+                            try
+                                for i in 0 .. batchCount - 1 do
+                                    windows[i] <- retainTypedWindow queue i windowLength
+
+                                Parallel.For(
+                                    0,
+                                    batchCount,
+                                    fun i ->
+                                        try
+                                            let chunks = windows[i] |> Array.map _.Chunk
+                                            outputs[i] <- sliceMedian width height radius chunks
+                                        finally
+                                            releaseTypedWindow windows[i]
+                                            releasedWindows[i] <- true)
+                                |> ignore
+
+                                releasePrefix batchCount
+                                emittedCount <- emittedCount + batchCount
+                                Some outputs
+                            with
+                            | _ ->
+                                for i in 0 .. windows.Length - 1 do
+                                    if not releasedWindows[i] && not (isNull (box windows[i])) then
+                                        releaseTypedWindow windows[i]
+                                for i in 0 .. outputs.Length - 1 do
+                                    if not (isNull (box outputs[i])) then
+                                        Chunk.decRef outputs[i]
+                                reraise()
+                        else
+                            None
+                    else
+                        None
+
+                let emitAvailable () =
+                    seq {
+                        let mutable keepGoing = true
+                        while keepGoing do
+                            match tryProcessBatch false with
+                            | Some outputs ->
+                                for output in outputs do
+                                    yield output
+                            | None ->
+                                keepGoing <- false
+                    }
+
+                let drainAvailable () =
+                    seq {
+                        let mutable keepGoing = true
+                        while keepGoing do
+                            match tryProcessBatch true with
+                            | Some outputs ->
+                                for output in outputs do
+                                    yield output
+                            | None ->
+                                keepGoing <- false
+                    }
+
+                try
+                    for chunk in input do
+                        ensureInitialized chunk
+                        queue.Add({ Index = realCount; Chunk = chunk })
+                        lastIndex <- realCount
+                        realCount <- realCount + 1
+
+                        for output in emitAvailable () do
+                            yield output
+
+                    if initialized then
+                        for i in 1 .. radius do
+                            addPadding (lastIndex + i)
+                            for output in emitAvailable () do
+                                yield output
+                        for output in drainAvailable () do
+                            yield output
+                finally
+                    for item in queue do
+                        Chunk.decRef item.Chunk
+                    queue.Clear()
+            }
+
+        Stage.fromAsyncSeq
+            $"{name}.parallelCollect.radius{radius}.workers{workers}"
+            apply
+            transition
+            memoryModel
+            id
+
+let medianNthElementUInt16 radius : Stage<Chunk<uint16>, Chunk<uint16>> =
+    medianNthElementStage<uint16> "chunkMedianNthElementUInt16" radius medianNthElementUInt16Slice
+
+let medianNthElementInt16 radius : Stage<Chunk<int16>, Chunk<int16>> =
+    medianNthElementStage<int16> "chunkMedianNthElementInt16" radius medianNthElementInt16Slice
+
+let medianNthElementFloat32 radius : Stage<Chunk<float32>, Chunk<float32>> =
+    medianNthElementStage<float32> "chunkMedianNthElementFloat32" radius medianNthElementFloat32Slice
+
+let medianQuickselectUInt8 radius : Stage<Chunk<uint8>, Chunk<uint8>> =
+    medianNthElementStage<uint8> "chunkMedianQuickselectUInt8" radius medianQuickselectUInt8Slice
+
+let medianQuickselectUInt16 radius : Stage<Chunk<uint16>, Chunk<uint16>> =
+    medianNthElementStage<uint16> "chunkMedianQuickselectUInt16" radius medianQuickselectUInt16Slice
+
+let medianQuickselectUInt16ParallelCollect radius workers : Stage<Chunk<uint16>, Chunk<uint16>> =
+    medianNthElementParallelCollectStage<uint16> "chunkMedianQuickselectUInt16" radius workers medianQuickselectUInt16Slice
+
+let medianSortUInt16 radius : Stage<Chunk<uint16>, Chunk<uint16>> =
+    medianNthElementStage<uint16> "chunkMedianSortUInt16" radius medianSortUInt16Slice
+
+let medianSortUInt16ParallelCollect radius workers : Stage<Chunk<uint16>, Chunk<uint16>> =
+    medianNthElementParallelCollectStage<uint16> "chunkMedianSortUInt16" radius workers medianSortUInt16Slice
+
+let medianNativeNthElementUInt8 radius : Stage<Chunk<uint8>, Chunk<uint8>> =
+    medianNthElementStage<uint8> "chunkMedianNativeNthElementUInt8" radius medianNativeUInt8NthSlice
+
+let medianNativeNthElementUInt8ParallelCollect radius workers : Stage<Chunk<uint8>, Chunk<uint8>> =
+    medianNthElementParallelCollectStage<uint8> "chunkMedianNativeNthElementUInt8" radius workers medianNativeUInt8NthSlice
+
+let medianNativeNthElementUInt16 radius : Stage<Chunk<uint16>, Chunk<uint16>> =
+    medianNthElementStage<uint16> "chunkMedianNativeNthElementUInt16" radius medianNativeUInt16NthSlice
+
+let medianNativeNthElementUInt16ParallelCollect radius workers : Stage<Chunk<uint16>, Chunk<uint16>> =
+    medianNthElementParallelCollectStage<uint16> "chunkMedianNativeNthElementUInt16" radius workers medianNativeUInt16NthSlice
+
+let medianQuickselectInt16 radius : Stage<Chunk<int16>, Chunk<int16>> =
+    medianNthElementStage<int16> "chunkMedianQuickselectInt16" radius medianQuickselectInt16Slice
+
+let private medianItkWrappedSlice<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType>
+    width
+    height
+    radius
+    (window: Chunk<'T>[])
+    =
+    let chunkWindow =
+        { Items = window |> Array.toList
+          EmitRange = uint radius, 1u
+          ReleaseCount = 0u }
+
+    let slab = Chunk.toSlabWith $"chunkMedianItkWrapped.radius{radius}" chunkWindow
+    try
+        let medianImage = ImageFunctions.median (uint radius) slab.Image
+        try
+            match Chunk.ofSlab { Image = medianImage; EmitRange = slab.EmitRange } with
+            | [ output ] -> output
+            | outputs ->
+                outputs |> List.iter Chunk.decRef
+                invalidOp $"Chunk ITK-wrapped median expected exactly one emitted slice, got {outputs.Length}."
+        finally
+            medianImage.decRefCount()
+    finally
+        slab.Image.decRefCount()
+
+let medianItkWrappedParallelCollect<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType>
+    radius
+    workers
+    : Stage<Chunk<'T>, Chunk<'T>> =
+    medianNthElementParallelCollectStage<'T>
+        $"chunkMedianItkWrapped.{typeof<'T>.Name}"
+        radius
+        workers
+        medianItkWrappedSlice<'T>
+
+let medianItkWrapped<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> radius : Stage<Chunk<'T>, Chunk<'T>> =
+    medianItkWrappedParallelCollect<'T> radius 1
+
 let private medianPerreaultHebertUInt8DenseRollingByteBinsYBands radius workers : Stage<Chunk<uint8>, Chunk<uint8>> =
     if radius < 0 then
         invalidArg "radius" $"UInt8 rolling PH median byte-bin y-band version expects a non-negative radius, got {radius}."
@@ -3174,27 +4107,27 @@ let inline divide<'T when 'T: equality
 
 let inline equal<'T when 'T: equality
                       and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> =
-    map2< 'T, 'T, uint8> $"chunkEqual.{typeof<'T>.Name}" (fun a b -> if a = b then binaryForeground else binaryBackground)
+    map2< 'T, 'T, uint8> $"chunkEqual.{typeof<'T>.Name}" (fun a b -> if a = b then 1uy else 0uy)
 
 let inline notEqual<'T when 'T: equality
                          and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> =
-    map2< 'T, 'T, uint8> $"chunkNotEqual.{typeof<'T>.Name}" (fun a b -> if a <> b then binaryForeground else binaryBackground)
+    map2< 'T, 'T, uint8> $"chunkNotEqual.{typeof<'T>.Name}" (fun a b -> if a <> b then 1uy else 0uy)
 
 let inline greater<'T when 'T: equality and 'T: comparison
                         and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> =
-    map2< 'T, 'T, uint8> $"chunkGreater.{typeof<'T>.Name}" (fun a b -> if a > b then binaryForeground else binaryBackground)
+    map2< 'T, 'T, uint8> $"chunkGreater.{typeof<'T>.Name}" (fun a b -> if a > b then 1uy else 0uy)
 
 let inline greaterEqual<'T when 'T: equality and 'T: comparison
                              and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> =
-    map2< 'T, 'T, uint8> $"chunkGreaterEqual.{typeof<'T>.Name}" (fun a b -> if a >= b then binaryForeground else binaryBackground)
+    map2< 'T, 'T, uint8> $"chunkGreaterEqual.{typeof<'T>.Name}" (fun a b -> if a >= b then 1uy else 0uy)
 
 let inline less<'T when 'T: equality and 'T: comparison
                      and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> =
-    map2< 'T, 'T, uint8> $"chunkLess.{typeof<'T>.Name}" (fun a b -> if a < b then binaryForeground else binaryBackground)
+    map2< 'T, 'T, uint8> $"chunkLess.{typeof<'T>.Name}" (fun a b -> if a < b then 1uy else 0uy)
 
 let inline lessEqual<'T when 'T: equality and 'T: comparison
                           and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> =
-    map2< 'T, 'T, uint8> $"chunkLessEqual.{typeof<'T>.Name}" (fun a b -> if a <= b then binaryForeground else binaryBackground)
+    map2< 'T, 'T, uint8> $"chunkLessEqual.{typeof<'T>.Name}" (fun a b -> if a <= b then 1uy else 0uy)
 
 let private maskBinaryByte name op =
     releaseBinaryChunk name (fun a b -> map2Chunk name op a b) (fun n -> 3UL * n)

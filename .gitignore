@@ -41,3 +41,4 @@ benchmarks/results/raw.before-matlab-convolve-random-kernel.csv
 benchmarks/results/raw.before-matlab-convolve-uniform-materialized-double.csv
 benchmarks/results/summary.before-uint8-workers3-update.csv
 tmp.m
+benchmarks/results/raw.before-connectedcomponents-dedup.csv
