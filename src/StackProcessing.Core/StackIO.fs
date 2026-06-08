@@ -140,11 +140,11 @@ let private canWriteDirectTiffStack<'T> suffix =
 
 let private ensureDirectTiffChunkRead<'T> suffix =
     if not (canReadDirectTiffStack<'T> suffix) then
-        invalidArg "suffix" $"readChunkSlices currently supports direct scalar TIFF stacks for UInt8, Int8, UInt16, Int16, Float32, and Float64; got suffix '{suffix}' and type {typeof<'T>.Name}."
+        invalidArg "suffix" $"readChunkSlices currently supports direct scalar TIFF stacks for UInt8, Int8, UInt16, Int16, Int32, Float32, and Float64; got suffix '{suffix}' and type {typeof<'T>.Name}."
 
 let private ensureDirectTiffChunkWrite<'T> suffix =
     if not (canWriteDirectTiffStack<'T> suffix) then
-        invalidArg "suffix" $"writeChunkSlices currently supports direct scalar TIFF stack output for UInt8, Int8, UInt16, Int16, and Float32; got suffix '{suffix}' and type {typeof<'T>.Name}."
+        invalidArg "suffix" $"writeChunkSlices currently supports direct scalar TIFF stack output for UInt8, Int8, UInt16, Int16, Int32, and Float32; got suffix '{suffix}' and type {typeof<'T>.Name}."
 
 let private inspectChunkTiffSlice<'T> fileName =
     let expectedBits, expectedFormat, expectedBytesPerSample = ImageIO.tiffPixelLayout<'T> ()
@@ -2168,8 +2168,8 @@ let private cleanChunkFiles outputDir suffix =
 let write<'T when 'T: equality> (outputDir: string) (suffix: string) : Stage<Image<'T>, Image<'T>> =
     let t = typeof<'T>
     if (icompare suffix ".tif" || icompare suffix ".tiff") 
-        && not (t = typeof<uint8> || t = typeof<uint8 list> || t = typeof<int8> || t = typeof<uint16> || t = typeof<int16> || t = typeof<float32>) then
-        failwith $"[write] tiff images only supports (u)int8, (u)int16 and float32 but was {t.Name}" 
+        && not (t = typeof<uint8> || t = typeof<uint8 list> || t = typeof<int8> || t = typeof<uint16> || t = typeof<int16> || t = typeof<int32> || t = typeof<float32>) then
+        failwith $"[write] tiff images only supports (u)int8, (u)int16, int32 and float32 but was {t.Name}" 
     Directory.CreateDirectory(outputDir) |> ignore
     let cleaned = lazy (cleanImageSeriesFiles outputDir suffix)
     let mapper (debug: bool) (idx: int64) (image: Image<'T>) =

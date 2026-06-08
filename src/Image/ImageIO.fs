@@ -46,10 +46,11 @@ let tiffPixelLayout<'T> () =
     elif t = typeof<int8> then 8, SampleFormat.INT, 1
     elif t = typeof<uint16> then 16, SampleFormat.UINT, 2
     elif t = typeof<int16> then 16, SampleFormat.INT, 2
+    elif t = typeof<int32> then 32, SampleFormat.INT, 4
     elif t = typeof<float32> then 32, SampleFormat.IEEEFP, 4
     elif t = typeof<float> then 64, SampleFormat.IEEEFP, 8
     else
-        invalidArg "T" $"TIFF scalar IO currently supports UInt8, Int8, UInt16, Int16, Float32, and Float64 images; got {t.Name}."
+        invalidArg "T" $"TIFF scalar IO currently supports UInt8, Int8, UInt16, Int16, Int32, Float32, and Float64 images; got {t.Name}."
 
 let supportsDirectTiffRead<'T> =
     let t = typeof<'T>
@@ -57,6 +58,7 @@ let supportsDirectTiffRead<'T> =
     || t = typeof<int8>
     || t = typeof<uint16>
     || t = typeof<int16>
+    || t = typeof<int32>
     || t = typeof<float32>
 
 let supportsDirectTiffWrite<'T> =
@@ -65,6 +67,7 @@ let supportsDirectTiffWrite<'T> =
     || t = typeof<int8>
     || t = typeof<uint16>
     || t = typeof<int16>
+    || t = typeof<int32>
     || t = typeof<float32>
     || t = typeof<float>
 

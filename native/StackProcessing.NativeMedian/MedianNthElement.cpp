@@ -102,4 +102,46 @@ void sp_median_uint16_nth_slab(
         output_count);
 }
 
+void sp_median_int32_nth_slab(
+    const int32_t* const* slices,
+    int32_t* output,
+    int width,
+    int height,
+    int window_length,
+    int radius,
+    int output_start,
+    int output_count)
+{
+    median_nth_slab<int32_t>(
+        slices,
+        output,
+        width,
+        height,
+        window_length,
+        radius,
+        output_start,
+        output_count);
+}
+
+void sp_median_float32_nth_slab(
+    const float* const* slices,
+    float* output,
+    int width,
+    int height,
+    int window_length,
+    int radius,
+    int output_start,
+    int output_count)
+{
+    median_nth_slab<float>(
+        slices,
+        output,
+        width,
+        height,
+        window_length,
+        radius,
+        output_start,
+        output_count);
+}
+
 }

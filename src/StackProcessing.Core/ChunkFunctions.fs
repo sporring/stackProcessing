@@ -54,9 +54,31 @@ module private NativeMedian =
         int outputStart,
         int outputCount)
 
+    [<DllImport(LibraryPath, EntryPoint = "sp_median_int32_nth_slab")>]
+    extern void medianInt32NthSlab(
+        nativeint slices,
+        nativeint output,
+        int width,
+        int height,
+        int windowLength,
+        int radius,
+        int outputStart,
+        int outputCount)
+
+    [<DllImport(LibraryPath, EntryPoint = "sp_median_float32_nth_slab")>]
+    extern void medianFloat32NthSlab(
+        nativeint slices,
+        nativeint output,
+        int width,
+        int height,
+        int windowLength,
+        int radius,
+        int outputStart,
+        int outputCount)
+
     let ensureAvailable () =
         if not (File.Exists LibraryPath) then
-            invalidOp $"Native median helper was not found at {LibraryPath}. Build it with: clang++ -O3 -std=c++17 -dynamiclib tmp/sp_nth_element_native.cpp -o tmp/libspnth.dylib"
+            invalidOp $"Native median helper was not found at {LibraryPath}. Build it with: clang++ -O3 -std=c++17 -dynamiclib native/StackProcessing.NativeMedian/MedianNthElement.cpp -o tmp/libspnth.dylib"
 
 type private LineSamplePlan =
     { Z: int
@@ -2733,6 +2755,24 @@ let private medianNativeUInt16NthSlice width height radius (window: Chunk<uint16
         radius
         window
 
+let private medianNativeInt32NthSlice width height radius (window: Chunk<int32>[]) =
+    medianNativeNthSlice<int32>
+        (fun slices output width height windowLength radius outputStart outputCount ->
+            NativeMedian.medianInt32NthSlab(slices, output, width, height, windowLength, radius, outputStart, outputCount))
+        width
+        height
+        radius
+        window
+
+let private medianNativeFloat32NthSlice width height radius (window: Chunk<float32>[]) =
+    medianNativeNthSlice<float32>
+        (fun slices output width height windowLength radius outputStart outputCount ->
+            NativeMedian.medianFloat32NthSlab(slices, output, width, height, windowLength, radius, outputStart, outputCount))
+        width
+        height
+        radius
+        window
+
 let private medianNthElementStage<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType>
     name
     radius
@@ -3024,6 +3064,18 @@ let medianNativeNthElementUInt16 radius : Stage<Chunk<uint16>, Chunk<uint16>> =
 
 let medianNativeNthElementUInt16ParallelCollect radius workers : Stage<Chunk<uint16>, Chunk<uint16>> =
     medianNthElementParallelCollectStage<uint16> "chunkMedianNativeNthElementUInt16" radius workers medianNativeUInt16NthSlice
+
+let medianNativeNthElementInt32 radius : Stage<Chunk<int32>, Chunk<int32>> =
+    medianNthElementStage<int32> "chunkMedianNativeNthElementInt32" radius medianNativeInt32NthSlice
+
+let medianNativeNthElementInt32ParallelCollect radius workers : Stage<Chunk<int32>, Chunk<int32>> =
+    medianNthElementParallelCollectStage<int32> "chunkMedianNativeNthElementInt32" radius workers medianNativeInt32NthSlice
+
+let medianNativeNthElementFloat32 radius : Stage<Chunk<float32>, Chunk<float32>> =
+    medianNthElementStage<float32> "chunkMedianNativeNthElementFloat32" radius medianNativeFloat32NthSlice
+
+let medianNativeNthElementFloat32ParallelCollect radius workers : Stage<Chunk<float32>, Chunk<float32>> =
+    medianNthElementParallelCollectStage<float32> "chunkMedianNativeNthElementFloat32" radius workers medianNativeFloat32NthSlice
 
 let medianQuickselectInt16 radius : Stage<Chunk<int16>, Chunk<int16>> =
     medianNthElementStage<int16> "chunkMedianQuickselectInt16" radius medianQuickselectInt16Slice
