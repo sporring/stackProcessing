@@ -20,6 +20,7 @@ open ZarrNET.Core.Zarr.Store
 type PixelType =
     | UInt8
     | UInt16
+    | UInt32
     | Int32
     | Float32
 
@@ -46,7 +47,7 @@ let private usage () =
 StackProcessing benchmark runner
 
 Generate:
-  dotnet run --project benchmarks/StackProcessing.Benchmarks -- generate --output DIR --shape 512x512x64 --pixel-type UInt8|UInt16|Int32|Float32 [--pattern ramp|binary]
+  dotnet run --project benchmarks/StackProcessing.Benchmarks -- generate --output DIR --shape 512x512x64 --pixel-type UInt8|UInt16|UInt32|Int32|Float32 [--pattern ramp|binary]
 
 Run:
   dotnet run --project benchmarks/StackProcessing.Benchmarks -- run --operation copy|threshold|convolve|median|median-native-nth|dilate|connectedComponents --pixel-type UInt8|UInt16|Int32|Float32 --input DIR --output DIR [--radius N] [--kernel-size N] [--threshold X] [--window N] [--available-memory BYTES]
@@ -72,6 +73,7 @@ ArrayPool experiment:
   dotnet run --project benchmarks/StackProcessing.Benchmarks -- run-libtiff-direct-threshold-hotloop --pixel-type UInt8|UInt16|Float32 --input DIR --variant byte-mask-one|byte-intype-max|byte-intype-one|typed-intype-max|typed-intype-one|typed-copy-intype-max|typed-copy-intype-one [--iterations N] [--threshold X]
   dotnet run --project benchmarks/StackProcessing.Benchmarks -- run-chunk-threshold-parallel --pixel-type UInt8|UInt16|Float32 --input DIR --output DIR [--threshold X] [--workers N] [--available-memory BYTES]
   dotnet run --project benchmarks/StackProcessing.Benchmarks -- run-chunk-histogram --pixel-type UInt8|UInt16|Float32 --input DIR --variant dense|sparse|leftedges [--window-size N] [--bins N] [--available-memory BYTES]
+  dotnet run --project benchmarks/StackProcessing.Benchmarks -- run-chunk-connected-components --input DIR [--output DIR] [--threshold X] [--available-memory BYTES]
   dotnet run --project benchmarks/StackProcessing.Benchmarks -- run-chunk-dilate --input DIR --output DIR [--radius N] [--threshold X] [--workers N] [--available-memory BYTES]
   dotnet run --project benchmarks/StackProcessing.Benchmarks -- run-chunk-convolve --pixel-type UInt8|Int8|UInt16|Int16|Float32 --input DIR --output DIR [--kernel-size N] [--workers N] [--available-memory BYTES]
   dotnet run --project benchmarks/StackProcessing.Benchmarks -- run-threshold-kernel --pixel-type UInt8|UInt16|Float32 --shape WxHxD --output-type mask|intype [--threshold X]
@@ -125,6 +127,7 @@ let private parsePixelType value =
     match value with
     | "UInt8" | "uint8" -> UInt8
     | "UInt16" | "uint16" -> UInt16
+    | "UInt32" | "uint32" -> UInt32
     | "Int32" | "int32" | "Int" | "int" -> Int32
     | "Float32" | "float32" -> Float32
     | _ -> failwith $"unsupported pixel type '{value}'"
@@ -142,6 +145,7 @@ let private zarrDataType pixelType =
     match pixelType with
     | UInt8 -> "uint8"
     | UInt16 -> "uint16"
+    | UInt32 -> "uint32"
     | Int32 -> "int32"
     | Float32 -> "float32"
 
@@ -212,6 +216,7 @@ let private scalarTiffLayoutForPixelType pixelType =
     match pixelType with
     | UInt8 -> 8, SampleFormat.UINT, 1
     | UInt16 -> 16, SampleFormat.UINT, 2
+    | UInt32 -> 32, SampleFormat.UINT, 4
     | Int32 -> 32, SampleFormat.INT, 4
     | Float32 -> 32, SampleFormat.IEEEFP, 4
 
@@ -1093,6 +1098,18 @@ let private generateInt32 pattern shape outputDir =
         ImageIO.writeTiffSliceFile (outputFile outputDir (int z)) img
         img.decRefCount()
 
+let private generateUInt32 pattern shape outputDir =
+    ensureCleanDirectory outputDir
+    for z in 0u .. shape.Depth - 1u do
+        let arr =
+            Array2D.init (int shape.Width) (int shape.Height) (fun x y ->
+                match pattern with
+                | "binary" -> if (x + y + int z) % 7 = 0 then 255u else 0u
+                | _ -> uint32 ((x * 3 + y * 5 + int z * 11) % 256))
+        let img = Image<uint32>.ofArray2D(arr, name = "input", index = int z)
+        ImageIO.writeTiffSliceFile (outputFile outputDir (int z)) img
+        img.decRefCount()
+
 let private generate opts =
     let shape = require "shape" opts |> parseShape
     let pixelType = require "pixel-type" opts |> parsePixelType
@@ -1101,6 +1118,7 @@ let private generate opts =
     match pixelType with
     | UInt8 -> generateUInt8 pattern shape output
     | UInt16 -> generateUInt16 pattern shape output
+    | UInt32 -> generateUInt32 pattern shape output
     | Int32 -> generateInt32 pattern shape output
     | Float32 -> generateFloat32 pattern shape output
     0
@@ -1193,6 +1211,54 @@ let private runChunkBinaryDilate input output radius thresholdValue workers avai
     |> sink
     0
 
+let private runChunkConnectedComponents input output thresholdValue windowSize workers availableMemory =
+    let thresholdByte =
+        if thresholdValue < 0.0 || thresholdValue > 255.0 then
+            invalidArg "threshold" $"Chunk connected components threshold must be in [0,255], got {thresholdValue}."
+        uint8 thresholdValue
+
+    if workers < 1 then
+        invalidArg "workers" $"Chunk connected components expects at least one worker, got {workers}."
+    windowSize |> Option.iter (fun value ->
+        if value < 1 then
+            invalidArg "window" $"Chunk connected components expects a positive window size, got {value}.")
+
+    let mutable checksum = 0UL
+    let consumeLabels _debug _index (chunk: StackCore.Chunk<uint32>) =
+        let labels = StackCore.Chunk.span<uint32> chunk
+        let mutable i = 0
+        while i < labels.Length do
+            checksum <- checksum ^^^ uint64 labels[i]
+            i <- i + 1
+        StackCore.Chunk.decRef chunk
+
+    let labelStage =
+        match windowSize with
+        | Some size -> ChunkFunctions.connectedComponentsSauf3DUInt8UInt32ParallelCollect size workers
+        | None -> ChunkFunctions.connectedComponentsSauf3DUInt8UInt32 ()
+
+    let src = benchmarkSource availableMemory
+    let labeled =
+        src
+        |> readChunkSlices<uint8> input ".tiff"
+        >=> ChunkFunctions.thresholdBinary thresholdByte
+        >=> labelStage
+
+    match output with
+    | Some outputDir ->
+        ensureCleanDirectory outputDir
+        labeled
+        >=> writeChunkSlices<uint32> outputDir ".tiff"
+        |> sink
+    | None ->
+        labeled
+        >=> SlimPipeline.Stage.consumeWith "consumeChunkConnectedComponents" consumeLabels id
+        |> sink
+
+    if checksum = UInt64.MaxValue then
+        printfn "unreachable checksum guard: %d" checksum
+    0
+
 let private uniformKernel3D (kernelSize: uint) =
     let size = max 1u kernelSize
     let value = 1.0 / float (size * size * size)
@@ -1225,6 +1291,7 @@ let private runChunkConvolveTyped<'T when 'T: equality and 'T: (new: unit -> 'T)
     output
     kernelSize
     workers
+    native
     availableMemory
     =
     ensureCleanDirectory output
@@ -1235,23 +1302,48 @@ let private runChunkConvolveTyped<'T when 'T: equality and 'T: (new: unit -> 'T)
     if typeof<'T> = typeof<float32> then
         let kernel = uniformKernel3DFloat32 kernelSize
         let convolution =
-            if workers = 1 then
-                ChunkFunctions.convolveFixedKernel<float32> kernel
+            if native then
+                if workers = 1 then
+                    ChunkFunctions.convolveFixedKernelNativeFloat32 kernel
+                else
+                    ChunkFunctions.convolveFixedKernelNativeFloat32Parallel kernel workers
             else
-                ChunkFunctions.convolveFixedKernelParallel<float32> kernel workers
+                if workers = 1 then
+                    ChunkFunctions.convolveFixedKernel<float32> kernel
+                else
+                    ChunkFunctions.convolveFixedKernelParallel<float32> kernel workers
 
         src
         |> readChunkSlices<float32> input ".tiff"
         >=> convolution
         >=> writeChunkSlices<float32> output ".tiff"
         |> sink
-    else
+    elif typeof<'T> = typeof<uint8> && native then
         let kernel = uniformKernel3DFloat32 kernelSize
         let convolution =
             if workers = 1 then
-                ChunkFunctions.convolveFixedKernel<float32> kernel
+                ChunkFunctions.convolveFixedKernelNativeUInt8 kernel
             else
-                ChunkFunctions.convolveFixedKernelParallel<float32> kernel workers
+                ChunkFunctions.convolveFixedKernelNativeUInt8Parallel kernel workers
+
+        src
+        |> readChunkSlices<uint8> input ".tiff"
+        >=> convolution
+        >=> writeChunkSlices<uint8> output ".tiff"
+        |> sink
+    else
+        let kernel = uniformKernel3DFloat32 kernelSize
+        let convolution =
+            if native then
+                if workers = 1 then
+                    ChunkFunctions.convolveFixedKernelNativeFloat32 kernel
+                else
+                    ChunkFunctions.convolveFixedKernelNativeFloat32Parallel kernel workers
+            else
+                if workers = 1 then
+                    ChunkFunctions.convolveFixedKernel<float32> kernel
+                else
+                    ChunkFunctions.convolveFixedKernelParallel<float32> kernel workers
 
         src
         |> readChunkSlices<'T> input ".tiff"
@@ -2635,22 +2727,37 @@ let private runChunkDilate opts =
     writeInternalSeconds stopwatch.Elapsed
     exitCode
 
+let private runChunkConnectedComponentsCommand opts =
+    let input = require "input" opts
+    let output = opts |> Map.tryFind "output"
+    let thresholdValue = optional "threshold" "128" opts |> fun s -> Double.Parse(s, invariant)
+    let windowSize = opts |> Map.tryFind "window" |> Option.map Int32.Parse
+    let workers = optional "workers" "1" opts |> Int32.Parse
+    let availableMemory = optional "available-memory" (string (1024UL * 1024UL * 1024UL * 1024UL)) opts |> UInt64.Parse
+
+    let stopwatch = Stopwatch.StartNew()
+    let exitCode = runChunkConnectedComponents input output thresholdValue windowSize workers availableMemory
+    stopwatch.Stop()
+    writeInternalSeconds stopwatch.Elapsed
+    exitCode
+
 let private runChunkConvolve opts =
     let pixelType = require "pixel-type" opts |> parseChunkConvolvePixelType
     let input = require "input" opts
     let output = require "output" opts
     let kernelSize = optional "kernel-size" "3" opts |> UInt32.Parse
     let workers = optional "workers" "1" opts |> Int32.Parse
+    let native = optional "native" "false" opts |> Boolean.Parse
     let availableMemory = optional "available-memory" (string (1024UL * 1024UL * 1024UL * 1024UL)) opts |> UInt64.Parse
 
     let stopwatch = Stopwatch.StartNew()
     let exitCode =
         match pixelType with
-        | ChunkUInt8 -> runChunkConvolveTyped<uint8> input output kernelSize workers availableMemory
-        | ChunkInt8 -> runChunkConvolveTyped<int8> input output kernelSize workers availableMemory
-        | ChunkUInt16 -> runChunkConvolveTyped<uint16> input output kernelSize workers availableMemory
-        | ChunkInt16 -> runChunkConvolveTyped<int16> input output kernelSize workers availableMemory
-        | ChunkFloat32 -> runChunkConvolveTyped<float32> input output kernelSize workers availableMemory
+        | ChunkUInt8 -> runChunkConvolveTyped<uint8> input output kernelSize workers native availableMemory
+        | ChunkInt8 -> runChunkConvolveTyped<int8> input output kernelSize workers native availableMemory
+        | ChunkUInt16 -> runChunkConvolveTyped<uint16> input output kernelSize workers native availableMemory
+        | ChunkInt16 -> runChunkConvolveTyped<int16> input output kernelSize workers native availableMemory
+        | ChunkFloat32 -> runChunkConvolveTyped<float32> input output kernelSize workers native availableMemory
 
     stopwatch.Stop()
     writeInternalSeconds stopwatch.Elapsed
@@ -3766,6 +3873,7 @@ let main args =
         | _ when args[0] = "run-libtiff-direct-threshold-hotloop" -> args[1..] |> parseArgs |> runLibTiffDirectThresholdHotLoop
         | _ when args[0] = "run-chunk-threshold-parallel" -> args[1..] |> parseArgs |> runChunkThresholdParallelCollect
         | _ when args[0] = "run-chunk-histogram" -> args[1..] |> parseArgs |> runChunkHistogram
+        | _ when args[0] = "run-chunk-connected-components" -> args[1..] |> parseArgs |> runChunkConnectedComponentsCommand
         | _ when args[0] = "run-chunk-dilate" -> args[1..] |> parseArgs |> runChunkDilate
         | _ when args[0] = "run-chunk-convolve" -> args[1..] |> parseArgs |> runChunkConvolve
         | _ when args[0] = "run-threshold-kernel" -> args[1..] |> parseArgs |> runThresholdKernel

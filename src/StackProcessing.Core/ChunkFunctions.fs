@@ -28,9 +28,13 @@ type private TypedChunkSlice<'T when 'T: equality> =
     { Index: int
       Chunk: Chunk<'T> }
 
+type private ConnectedComponentChunkWindow =
+    { LabelChunks: Chunk<uint32> list
+      ObjectCount: uint32 }
+
 module private NativeMedian =
     [<Literal>]
-    let LibraryPath = "tmp/libspnth.dylib"
+    let LibraryPath = "spnth"
 
     [<DllImport(LibraryPath, EntryPoint = "sp_median_uint16_nth_slab")>]
     extern void medianUInt16NthSlab(
@@ -76,9 +80,55 @@ module private NativeMedian =
         int outputStart,
         int outputCount)
 
+    [<DllImport(LibraryPath, EntryPoint = "sp_convolve_float32_slab")>]
+    extern void convolveFloat32Slab(
+        nativeint slices,
+        nativeint output,
+        nativeint kernel,
+        int width,
+        int height,
+        int windowLength,
+        int kernelWidth,
+        int kernelHeight,
+        int kernelDepth,
+        int outputStart,
+        int outputCount)
+
+    [<DllImport(LibraryPath, EntryPoint = "sp_convolve_float32_slices")>]
+    extern void convolveFloat32Slices(
+        nativeint slices,
+        nativeint outputs,
+        nativeint kernel,
+        int width,
+        int height,
+        int windowLength,
+        int kernelWidth,
+        int kernelHeight,
+        int kernelDepth,
+        int outputStart,
+        int outputCount)
+
+    [<DllImport(LibraryPath, EntryPoint = "sp_convolve_uint8_slices")>]
+    extern void convolveUInt8Slices(
+        nativeint slices,
+        nativeint outputs,
+        nativeint kernel,
+        int width,
+        int height,
+        int windowLength,
+        int kernelWidth,
+        int kernelHeight,
+        int kernelDepth,
+        int outputStart,
+        int outputCount)
+
     let ensureAvailable () =
-        if not (File.Exists LibraryPath) then
-            invalidOp $"Native median helper was not found at {LibraryPath}. Build it with: clang++ -O3 -std=c++17 -dynamiclib native/StackProcessing.NativeMedian/MedianNthElement.cpp -o tmp/libspnth.dylib"
+        let mutable handle = nativeint 0
+        let searchPath = Nullable(DllImportSearchPath.AssemblyDirectory)
+        if NativeLibrary.TryLoad(LibraryPath, typeof<DenseHistogram>.Assembly, searchPath, &handle) then
+            NativeLibrary.Free(handle)
+        else
+            invalidOp "Native median helper 'spnth' was not found. Build it with native/StackProcessing.NativeMedian/build.sh so the platform library is placed in the solution lib directory and copied to the application output."
 
 type private LineSamplePlan =
     { Z: int
@@ -150,6 +200,421 @@ let private validateTypedSliceChunk<'T when 'T: equality> operatorName width hei
         invalidArg "chunk" $"Chunk {operatorName} expects 2D slice chunks with depth 1, got {chunk.Size}."
     if chunkWidth <> uint64 width || chunkHeight <> uint64 height then
         invalidArg "chunk" $"Chunk {operatorName} expects chunks of size {width}x{height}x1, got {chunk.Size}."
+
+let private validateConnectedComponentsSlice width height (chunk: Chunk<uint8>) =
+    let chunkWidth, chunkHeight, chunkDepth = chunk.Size
+    if chunkDepth <> 1UL then
+        invalidArg "chunk" $"Chunk connected components expects 2D slice chunks with depth 1, got {chunk.Size}."
+    if chunkWidth <> uint64 width || chunkHeight <> uint64 height then
+        invalidArg "chunk" $"Chunk connected components expects chunks of size {width}x{height}x1, got {chunk.Size}."
+
+let private labelConnectedComponentsSliceSauf3DArrayUf width height (unionFind: DenseUInt32UnionFind) nextLabel (previousLabels: Chunk<uint32> option) (inputChunk: Chunk<uint8>) =
+    let outputChunk = Chunk.create<uint32> inputChunk.Size
+    try
+        let inputSpan = Chunk.span<uint8> inputChunk
+        let outputSpan = Chunk.span<uint32> outputChunk
+        let mutable nextLabel = nextLabel
+
+        let inline mergeCandidate candidate selected =
+            if candidate = 0u then
+                selected
+            elif selected = 0u then
+                candidate
+            else
+                if selected <> candidate then
+                    unionFind.UnionWithoutCompression(selected, candidate)
+                selected
+
+        match previousLabels with
+        | Some previousChunk ->
+            let previousSpan = Chunk.span<uint32> previousChunk
+            let mutable y = 0
+            while y < height do
+                let row = y * width
+                let mutable x = 0
+                while x < width do
+                    let i = row + x
+                    if inputSpan[i] <> binaryBackground then
+                        let mutable selected = 0u
+                        if x > 0 then selected <- mergeCandidate outputSpan[i - 1] selected
+                        if y > 0 then selected <- mergeCandidate outputSpan[i - width] selected
+                        selected <- mergeCandidate previousSpan[i] selected
+                        if selected = 0u then
+                            selected <- nextLabel
+                            unionFind.Add selected
+                            if nextLabel = UInt32.MaxValue then
+                                invalidOp "Chunk connected components exhausted UInt32 labels."
+                            nextLabel <- nextLabel + 1u
+                        outputSpan[i] <- selected
+                    else
+                        outputSpan[i] <- 0u
+                    x <- x + 1
+                y <- y + 1
+        | None ->
+            let mutable y = 0
+            while y < height do
+                let row = y * width
+                let mutable x = 0
+                while x < width do
+                    let i = row + x
+                    if inputSpan[i] <> binaryBackground then
+                        let mutable selected = 0u
+                        if x > 0 then selected <- mergeCandidate outputSpan[i - 1] selected
+                        if y > 0 then selected <- mergeCandidate outputSpan[i - width] selected
+                        if selected = 0u then
+                            selected <- nextLabel
+                            unionFind.Add selected
+                            if nextLabel = UInt32.MaxValue then
+                                invalidOp "Chunk connected components exhausted UInt32 labels."
+                            nextLabel <- nextLabel + 1u
+                        outputSpan[i] <- selected
+                    else
+                        outputSpan[i] <- 0u
+                    x <- x + 1
+                y <- y + 1
+
+        outputChunk, nextLabel
+    with
+    | _ ->
+        Chunk.decRef outputChunk
+        reraise()
+
+let private compactConnectedComponentLabelsArrayUf (unionFind: DenseUInt32UnionFind) nextLabel (labels: ResizeArray<Chunk<uint32>>) =
+    if nextLabel > uint32 Int32.MaxValue then
+        invalidOp $"Chunk connected components compact relabel requires provisional labels to fit in Int32; got {nextLabel - 1u}."
+
+    let rootCompacts = Array.zeroCreate<uint32> (int nextLabel)
+    let labelCompacts = Array.zeroCreate<uint32> (int nextLabel)
+    let mutable nextCompact = 1u
+
+    let mutable label = 1u
+    while label < nextLabel do
+        let root = unionFind.Find label
+        let rootIndex = int root
+        let mutable compact = rootCompacts[rootIndex]
+        if compact = 0u then
+            compact <- nextCompact
+            rootCompacts[rootIndex] <- compact
+            if nextCompact = UInt32.MaxValue then
+                invalidOp "Chunk connected components exhausted compact UInt32 labels."
+            nextCompact <- nextCompact + 1u
+        labelCompacts[int label] <- compact
+        label <- label + 1u
+
+    for chunk in labels do
+        let outputSpan = Chunk.span<uint32> chunk
+        let mutable i = 0
+        while i < outputSpan.Length do
+            let label = outputSpan[i]
+            if label <> 0u then
+                outputSpan[i] <- labelCompacts[int label]
+            i <- i + 1
+
+    nextCompact - 1u
+
+let private labelConnectedComponentChunkWindow (inputChunks: Chunk<uint8> list) =
+    let labels = ResizeArray<Chunk<uint32>>()
+    let unionFind = DenseUInt32UnionFind(1024)
+    let mutable previousLabels : Chunk<uint32> option = None
+    let mutable width = 0
+    let mutable height = 0
+    let mutable initialized = false
+    let mutable nextLabel = 1u
+
+    let releaseLabels () =
+        for chunk in labels do
+            if chunk.RefCount.Value > 0 then
+                Chunk.decRef chunk
+
+    try
+        for inputChunk in inputChunks do
+            let outputChunk =
+                try
+                    if not initialized then
+                        let chunkWidth, chunkHeight, chunkDepth = inputChunk.Size
+                        if chunkDepth <> 1UL then
+                            invalidArg "chunk" $"Chunk connected components expects 2D slice chunks with depth 1, got {inputChunk.Size}."
+                        if chunkWidth > uint64 Int32.MaxValue || chunkHeight > uint64 Int32.MaxValue then
+                            invalidArg "chunk" $"Chunk connected components dimensions must fit in Int32, got {inputChunk.Size}."
+                        width <- int chunkWidth
+                        height <- int chunkHeight
+                        initialized <- true
+                    else
+                        validateConnectedComponentsSlice width height inputChunk
+
+                    let outputChunk, updatedNextLabel =
+                        labelConnectedComponentsSliceSauf3DArrayUf width height unionFind nextLabel previousLabels inputChunk
+                    nextLabel <- updatedNextLabel
+                    outputChunk
+                finally
+                    Chunk.decRef inputChunk
+
+            labels.Add outputChunk
+            previousLabels <- Some outputChunk
+
+        let objectCount = compactConnectedComponentLabelsArrayUf unionFind nextLabel labels
+        { LabelChunks = labels |> Seq.toList
+          ObjectCount = objectCount }
+    with
+    | _ ->
+        releaseLabels ()
+        reraise()
+
+let private stitchConnectedComponentChunkWindows (windows: ResizeArray<ConnectedComponentChunkWindow>) =
+    let bases = Array.zeroCreate<uint32> windows.Count
+    let mutable nextBase = 1u
+    for i in 0 .. windows.Count - 1 do
+        bases[i] <- nextBase
+        let count = windows[i].ObjectCount
+        if count > UInt32.MaxValue - nextBase then
+            invalidOp "Chunk connected components exhausted UInt32 labels while stitching windows."
+        nextBase <- nextBase + count
+
+    let totalLabels = nextBase
+    if totalLabels > uint32 Int32.MaxValue then
+        invalidOp $"Chunk connected components stitch requires global labels to fit in Int32; got {totalLabels - 1u}."
+
+    let unionFind = DenseUInt32UnionFind(int totalLabels)
+    for label in 1u .. totalLabels - 1u do
+        unionFind.Add label
+
+    let inline globalLabel windowIndex localLabel =
+        if localLabel = 0u then
+            0u
+        else
+            bases[windowIndex] + localLabel - 1u
+
+    for windowIndex in 1 .. windows.Count - 1 do
+        match windows[windowIndex - 1].LabelChunks |> List.tryLast, windows[windowIndex].LabelChunks |> List.tryHead with
+        | Some previousLast, Some currentFirst ->
+            let previousSpan = Chunk.span<uint32> previousLast
+            let currentSpan = Chunk.span<uint32> currentFirst
+            if previousSpan.Length <> currentSpan.Length then
+                invalidOp "Chunk connected components cannot stitch windows with mismatched boundary slice sizes."
+            let mutable i = 0
+            while i < previousSpan.Length do
+                let previousLabel = previousSpan[i]
+                let currentLabel = currentSpan[i]
+                if previousLabel <> 0u && currentLabel <> 0u then
+                    unionFind.UnionWithoutCompression(
+                        globalLabel (windowIndex - 1) previousLabel,
+                        globalLabel windowIndex currentLabel)
+                i <- i + 1
+        | _ -> ()
+
+    let rootCompacts = Array.zeroCreate<uint32> (int totalLabels)
+    let globalCompacts = Array.zeroCreate<uint32> (int totalLabels)
+    let mutable nextCompact = 1u
+    let mutable label = 1u
+    while label < totalLabels do
+        let root = unionFind.Find label
+        let mutable compact = rootCompacts[int root]
+        if compact = 0u then
+            compact <- nextCompact
+            rootCompacts[int root] <- compact
+            if nextCompact = UInt32.MaxValue then
+                invalidOp "Chunk connected components exhausted compact UInt32 labels while stitching windows."
+            nextCompact <- nextCompact + 1u
+        globalCompacts[int label] <- compact
+        label <- label + 1u
+
+    for windowIndex in 0 .. windows.Count - 1 do
+        for chunk in windows[windowIndex].LabelChunks do
+            let labels = Chunk.span<uint32> chunk
+            let mutable i = 0
+            while i < labels.Length do
+                let localLabel = labels[i]
+                if localLabel <> 0u then
+                    labels[i] <- globalCompacts[int (globalLabel windowIndex localLabel)]
+                i <- i + 1
+
+    nextCompact - 1u
+
+let private splitChunkWindow workers (inputChunks: Chunk<uint8> list) =
+    let count = inputChunks.Length
+    let partitions = min workers count
+    let baseSize = count / partitions
+    let remainder = count % partitions
+    let pieces = ResizeArray<Chunk<uint8> list>(partitions)
+    let mutable remaining = inputChunks
+
+    for partition in 0 .. partitions - 1 do
+        let size = baseSize + if partition < remainder then 1 else 0
+        let piece = remaining |> List.take size
+        pieces.Add piece
+        remaining <- remaining |> List.skip size
+
+    pieces
+
+let private releaseConnectedComponentChunkWindow (window: ConnectedComponentChunkWindow) =
+    for chunk in window.LabelChunks do
+        if chunk.RefCount.Value > 0 then
+            Chunk.decRef chunk
+
+let private labelConnectedComponentChunkWindowParallel workers (inputChunks: Chunk<uint8> list) =
+    if workers <= 1 || inputChunks.Length <= 1 then
+        labelConnectedComponentChunkWindow inputChunks
+    else
+        let pieces = splitChunkWindow workers inputChunks
+        let results = Array.zeroCreate<ConnectedComponentChunkWindow> pieces.Count
+
+        try
+            Parallel.For(
+                0,
+                pieces.Count,
+                fun i ->
+                    results[i] <- labelConnectedComponentChunkWindow pieces[i])
+            |> ignore
+
+            let windows = ResizeArray<ConnectedComponentChunkWindow>(results)
+            let objectCount = stitchConnectedComponentChunkWindows windows
+            let labels =
+                results
+                |> Seq.collect (fun window -> window.LabelChunks)
+                |> Seq.toList
+
+            { LabelChunks = labels
+              ObjectCount = objectCount }
+        with
+        | _ ->
+            for window in results do
+                if not (isNull (box window)) then
+                    releaseConnectedComponentChunkWindow window
+            reraise()
+
+let connectedComponentsSauf3DUInt8UInt32ArrayUf () : Stage<Chunk<uint8>, Chunk<uint32>> =
+    let name = "chunkConnectedComponentsSauf3DUInt8UInt32ArrayUf"
+
+    let apply _debug (input: AsyncSeq<Chunk<uint8>>) =
+        asyncSeq {
+            let labels = ResizeArray<Chunk<uint32>>()
+            let unionFind = DenseUInt32UnionFind(1024)
+            let mutable previousLabels : Chunk<uint32> option = None
+            let mutable width = 0
+            let mutable height = 0
+            let mutable initialized = false
+            let mutable nextLabel = 1u
+
+            let releaseRetainedOutputs () =
+                for chunk in labels do
+                    if chunk.RefCount.Value > 0 then
+                        Chunk.decRef chunk
+
+            try
+                for inputChunk in input do
+                    let outputChunk =
+                        try
+                            if not initialized then
+                                let chunkWidth, chunkHeight, chunkDepth = inputChunk.Size
+                                if chunkDepth <> 1UL then
+                                    invalidArg "chunk" $"Chunk connected components expects 2D slice chunks with depth 1, got {inputChunk.Size}."
+                                if chunkWidth > uint64 Int32.MaxValue || chunkHeight > uint64 Int32.MaxValue then
+                                    invalidArg "chunk" $"Chunk connected components dimensions must fit in Int32, got {inputChunk.Size}."
+                                width <- int chunkWidth
+                                height <- int chunkHeight
+                                initialized <- true
+                            else
+                                validateConnectedComponentsSlice width height inputChunk
+
+                            let outputChunk, updatedNextLabel =
+                                labelConnectedComponentsSliceSauf3DArrayUf width height unionFind nextLabel previousLabels inputChunk
+                            nextLabel <- updatedNextLabel
+                            outputChunk
+                        finally
+                            Chunk.decRef inputChunk
+
+                    labels.Add outputChunk
+                    previousLabels <- Some outputChunk
+
+                compactConnectedComponentLabelsArrayUf unionFind nextLabel labels |> ignore
+
+                for chunk in labels do
+                    yield chunk
+            with
+            | ex ->
+                releaseRetainedOutputs ()
+                raise ex
+        }
+
+    let memoryNeed nPixels =
+        nPixels * (uint64 sizeof<uint8> + uint64 sizeof<uint32>)
+
+    Stage.fromAsyncSeq name apply (ProfileTransition.create Streaming Streaming) (StageMemoryModel.fromSinglePeak Reduce memoryNeed) id
+    |> Stage.withSliceCardinality (SlimPipeline.Domain SlimPipeline.SliceDomain.preserve)
+
+let connectedComponentsSauf3DUInt8UInt32 () : Stage<Chunk<uint8>, Chunk<uint32>> =
+    connectedComponentsSauf3DUInt8UInt32ArrayUf ()
+
+let connectedComponentsSauf3DUInt8UInt32ParallelCollect windowSize workers : Stage<Chunk<uint8>, Chunk<uint32>> =
+    if windowSize < 1 then
+        invalidArg "windowSize" $"Chunk connected components parallelCollect expects positive window size, got {windowSize}."
+    if workers < 1 then
+        invalidArg "workers" $"Chunk connected components parallelCollect expects at least one worker, got {workers}."
+
+    let name = $"chunkConnectedComponentsSauf3DUInt8UInt32.slabWindow.window{windowSize}.workers{workers}"
+
+    let windowStage =
+        Stage.window
+            $"{name}.windowed"
+            (uint windowSize)
+            0u
+            (fun _ chunk -> chunk)
+            (uint windowSize)
+
+    let labelSlabStage =
+        Stage.map
+            $"{name}.labelSlab"
+            (fun _debug (window: Window<Chunk<uint8>>) ->
+                labelConnectedComponentChunkWindowParallel workers window.Items)
+            (fun nPixels -> nPixels * uint64 windowSize * (uint64 sizeof<uint8> + uint64 sizeof<uint32>))
+            id
+
+    let stitchApply _debug (input: AsyncSeq<ConnectedComponentChunkWindow>) =
+        asyncSeq {
+            let slabs = ResizeArray<ConnectedComponentChunkWindow>()
+
+            let releaseSlabs () =
+                for slab in slabs do
+                    releaseConnectedComponentChunkWindow slab
+
+            try
+                for slab in input do
+                    slabs.Add slab
+
+                stitchConnectedComponentChunkWindows slabs |> ignore
+
+                for slab in slabs do
+                    for chunk in slab.LabelChunks do
+                        yield chunk
+            with
+            | ex ->
+                releaseSlabs ()
+                raise ex
+        }
+
+    let stitchStage =
+        Stage.fromAsyncSeq
+            $"{name}.stitchSlabs"
+            stitchApply
+            (ProfileTransition.create Streaming Streaming)
+            (StageMemoryModel.fromSinglePeak Reduce id)
+            id
+
+    windowStage --> labelSlabStage --> stitchStage
+    |> Stage.withSliceCardinality (SlimPipeline.Domain SlimPipeline.SliceDomain.preserve)
+
+let connectedComponentsSauf3DUInt8 () : Stage<Chunk<uint8>, Chunk<uint64>> =
+    connectedComponentsSauf3DUInt8UInt32 ()
+    --> Stage.map
+            "chunkConnectedComponentsSauf3DUInt8.widenUInt64"
+            (fun _ chunk ->
+                try
+                    Chunk.map uint64 chunk
+                finally
+                    Chunk.decRef chunk)
+            (fun nPixels -> nPixels * uint64 sizeof<uint64>)
+            id
+    |> Stage.withSliceCardinality (SlimPipeline.Domain SlimPipeline.SliceDomain.preserve)
 
 let private orSpanIntoRange (target: Span<byte>) targetStart (source: Span<byte>) sourceStart count =
     let vectorWidth = Vector<byte>.Count
@@ -435,14 +900,6 @@ let private releaseTypedWindow (window: TypedChunkSlice<'T>[]) =
     for item in window do
         Chunk.decRef item.Chunk
 
-type private RetainedTypedWindow<'T when 'T: equality> =
-    { Width: int
-      Height: int
-      Items: TypedChunkSlice<'T>[] }
-
-let private releaseRetainedTypedWindow (window: RetainedTypedWindow<'T>) =
-    releaseTypedWindow window.Items
-
 let private createKernelPlan (kernel: float32[,,]) =
     let width = kernel.GetLength(0)
     let height = kernel.GetLength(1)
@@ -720,6 +1177,155 @@ let private convolveFixedKernelSlice<'T when 'T: equality and 'T: (new: unit -> 
         Chunk.decRef output
         reraise()
 
+let private flattenKernelForNative (kernel: float32[,,]) =
+    let width = kernel.GetLength(0)
+    let height = kernel.GetLength(1)
+    let depth = kernel.GetLength(2)
+    let values = Array.zeroCreate<float32> (width * height * depth)
+    let mutable i = 0
+    for z in 0 .. depth - 1 do
+        for y in 0 .. height - 1 do
+            for x in 0 .. width - 1 do
+                values[i] <- kernel[x, y, z]
+                i <- i + 1
+    values
+
+let private convolveNativeFloat32Slices width height (plan: KernelPlan) (nativeKernel: float32[]) outputStart outputCount (window: Chunk<float32>[]) =
+    NativeMedian.ensureAvailable ()
+
+    let outputs =
+        Array.init outputCount (fun _ -> Chunk.create<float32> (uint64 width, uint64 height, 1UL))
+
+    let inputHandles = Array.zeroCreate<GCHandle> window.Length
+    let outputHandles = Array.zeroCreate<GCHandle> outputs.Length
+    let mutable retainedInputHandles = 0
+    let mutable retainedOutputHandles = 0
+    let mutable inputPointerHandle = Unchecked.defaultof<GCHandle>
+    let mutable inputPointersPinned = false
+    let mutable outputPointerHandle = Unchecked.defaultof<GCHandle>
+    let mutable outputPointersPinned = false
+    let mutable kernelHandle = Unchecked.defaultof<GCHandle>
+    let mutable kernelPinned = false
+
+    try
+        try
+            let inputPointers = Array.zeroCreate<nativeint> window.Length
+            for i in 0 .. window.Length - 1 do
+                inputHandles[i] <- GCHandle.Alloc(window[i].Bytes, GCHandleType.Pinned)
+                retainedInputHandles <- retainedInputHandles + 1
+                inputPointers[i] <- inputHandles[i].AddrOfPinnedObject()
+
+            let outputPointers = Array.zeroCreate<nativeint> outputs.Length
+            for i in 0 .. outputs.Length - 1 do
+                outputHandles[i] <- GCHandle.Alloc(outputs[i].Bytes, GCHandleType.Pinned)
+                retainedOutputHandles <- retainedOutputHandles + 1
+                outputPointers[i] <- outputHandles[i].AddrOfPinnedObject()
+
+            inputPointerHandle <- GCHandle.Alloc(inputPointers, GCHandleType.Pinned)
+            inputPointersPinned <- true
+            outputPointerHandle <- GCHandle.Alloc(outputPointers, GCHandleType.Pinned)
+            outputPointersPinned <- true
+            kernelHandle <- GCHandle.Alloc(nativeKernel, GCHandleType.Pinned)
+            kernelPinned <- true
+
+            NativeMedian.convolveFloat32Slices(
+                inputPointerHandle.AddrOfPinnedObject(),
+                outputPointerHandle.AddrOfPinnedObject(),
+                kernelHandle.AddrOfPinnedObject(),
+                width,
+                height,
+                window.Length,
+                plan.Width,
+                plan.Height,
+                plan.Depth,
+                outputStart,
+                outputCount)
+
+            outputs |> Array.toList
+        with
+        | _ ->
+            outputs |> Array.iter Chunk.decRef
+            reraise()
+    finally
+        if kernelPinned then
+            kernelHandle.Free()
+        if outputPointersPinned then
+            outputPointerHandle.Free()
+        if inputPointersPinned then
+            inputPointerHandle.Free()
+        for i in 0 .. retainedOutputHandles - 1 do
+            outputHandles[i].Free()
+        for i in 0 .. retainedInputHandles - 1 do
+            inputHandles[i].Free()
+
+let private convolveNativeUInt8Slices width height (plan: KernelPlan) (nativeKernel: float32[]) outputStart outputCount (window: Chunk<uint8>[]) =
+    NativeMedian.ensureAvailable ()
+
+    let outputs =
+        Array.init outputCount (fun _ -> Chunk.create<uint8> (uint64 width, uint64 height, 1UL))
+
+    let inputHandles = Array.zeroCreate<GCHandle> window.Length
+    let outputHandles = Array.zeroCreate<GCHandle> outputs.Length
+    let mutable retainedInputHandles = 0
+    let mutable retainedOutputHandles = 0
+    let mutable inputPointerHandle = Unchecked.defaultof<GCHandle>
+    let mutable inputPointersPinned = false
+    let mutable outputPointerHandle = Unchecked.defaultof<GCHandle>
+    let mutable outputPointersPinned = false
+    let mutable kernelHandle = Unchecked.defaultof<GCHandle>
+    let mutable kernelPinned = false
+
+    try
+        try
+            let inputPointers = Array.zeroCreate<nativeint> window.Length
+            for i in 0 .. window.Length - 1 do
+                inputHandles[i] <- GCHandle.Alloc(window[i].Bytes, GCHandleType.Pinned)
+                retainedInputHandles <- retainedInputHandles + 1
+                inputPointers[i] <- inputHandles[i].AddrOfPinnedObject()
+
+            let outputPointers = Array.zeroCreate<nativeint> outputs.Length
+            for i in 0 .. outputs.Length - 1 do
+                outputHandles[i] <- GCHandle.Alloc(outputs[i].Bytes, GCHandleType.Pinned)
+                retainedOutputHandles <- retainedOutputHandles + 1
+                outputPointers[i] <- outputHandles[i].AddrOfPinnedObject()
+
+            inputPointerHandle <- GCHandle.Alloc(inputPointers, GCHandleType.Pinned)
+            inputPointersPinned <- true
+            outputPointerHandle <- GCHandle.Alloc(outputPointers, GCHandleType.Pinned)
+            outputPointersPinned <- true
+            kernelHandle <- GCHandle.Alloc(nativeKernel, GCHandleType.Pinned)
+            kernelPinned <- true
+
+            NativeMedian.convolveUInt8Slices(
+                inputPointerHandle.AddrOfPinnedObject(),
+                outputPointerHandle.AddrOfPinnedObject(),
+                kernelHandle.AddrOfPinnedObject(),
+                width,
+                height,
+                window.Length,
+                plan.Width,
+                plan.Height,
+                plan.Depth,
+                outputStart,
+                outputCount)
+
+            outputs |> Array.toList
+        with
+        | _ ->
+            outputs |> Array.iter Chunk.decRef
+            reraise()
+    finally
+        if kernelPinned then
+            kernelHandle.Free()
+        if outputPointersPinned then
+            outputPointerHandle.Free()
+        if inputPointersPinned then
+            inputPointerHandle.Free()
+        for i in 0 .. retainedOutputHandles - 1 do
+            outputHandles[i].Free()
+        for i in 0 .. retainedInputHandles - 1 do
+            inputHandles[i].Free()
+
 let private chunkConvolveFixedKernelStage<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType>
     (kernel: float32[,,])
     batchSize
@@ -741,7 +1347,7 @@ let private chunkConvolveFixedKernelStage<'T when 'T: equality and 'T: (new: uni
         zeroChunkTyped<'T> (int width) (int height)
 
     let releaseConsumed (window: Window<Chunk<'T>>) =
-        let emitStart, emitCount = window.EmitRange
+        let _emitStart, emitCount = window.EmitRange
         if emitCount = 0u then
             window.Items |> List.iter Chunk.decRef
         else
@@ -749,67 +1355,259 @@ let private chunkConvolveFixedKernelStage<'T when 'T: equality and 'T: (new: uni
             |> List.truncate (int window.ReleaseCount)
             |> List.iter Chunk.decRef
 
-    let retainWindow _debug (window: Window<Chunk<'T>>) =
-        let emitStart, emitCount = window.EmitRange
+    let retainWindowRefs _debug (window: Window<Chunk<'T>>) =
+        window.Items |> List.iter (Chunk.incRef >> ignore)
+        releaseConsumed window
+        window
+
+    let releaseWindowRefs (window: Window<Chunk<'T>>) =
+        window.Items |> List.iter Chunk.decRef
+
+    let convolveWindow (retained: Window<Chunk<'T>>) =
+        let _emitStart, emitCount = retained.EmitRange
         if emitCount = 0u then
-            releaseConsumed window
-            None
+            []
         else
-            let chunks = window.Items |> List.toArray
+            let chunks = retained.Items |> List.toArray
             if chunks.Length <> windowLength then
-                releaseConsumed window
                 invalidArg "window" $"Chunk convolution expected window length {windowLength}, got {chunks.Length}."
 
             let first = chunks[0]
             let chunkWidth, chunkHeight, chunkDepth = first.Size
             if chunkDepth <> 1UL then
-                releaseConsumed window
                 invalidArg "window" $"Chunk convolution expects 2D slice chunks with depth 1, got {first.Size}."
 
             let width = int chunkWidth
             let height = int chunkHeight
             if width <= 0 || height <= 0 then
-                releaseConsumed window
                 invalidArg "window" $"Chunk convolution expects positive slice dimensions, got {first.Size}."
 
-            let items = Array.zeroCreate<TypedChunkSlice<'T>> chunks.Length
-            let mutable retained = 0
-            try
-                for i in 0 .. chunks.Length - 1 do
+            let items =
+                Array.init chunks.Length (fun i ->
                     validateTypedSliceChunk "convolution" width height chunks[i]
-                    Chunk.incRef chunks[i] |> ignore
-                    items[i] <- { Index = i; Chunk = chunks[i] }
-                    retained <- retained + 1
+                    { Index = i; Chunk = chunks[i] })
 
-                releaseConsumed window
-                Some { Width = width; Height = height; Items = items }
-            with
-            | _ ->
-                for i in 0 .. retained - 1 do
-                    Chunk.decRef items[i].Chunk
-                window.Items |> List.iter Chunk.decRef
-                reraise()
+            [ convolveFixedKernelSlice width height plan items ]
 
-    let convolveRetained _debug (window: Window<RetainedTypedWindow<'T>>) =
+    let convolveRetained _debug (window: Window<Window<Chunk<'T>>>) =
         match window.Items with
-        | [ retained ] ->
+        | [ retainedWindow ] ->
             try
-                [ convolveFixedKernelSlice retained.Width retained.Height plan retained.Items ]
+                convolveWindow retainedWindow
             finally
-                releaseRetainedTypedWindow retained
+                releaseWindowRefs retainedWindow
         | items ->
-            for retained in items do
-                releaseRetainedTypedWindow retained
+            for retainedWindow in items do
+                releaseWindowRefs retainedWindow
             invalidArg "window" $"Chunk convolution expected singleton retained windows, got {items.Length}."
 
     let windowStage =
         Stage.window $"{stageName}.window" (uint windowLength) (uint plan.PadZ) zeroMaker 1u
 
     let retainStage =
-        Stage.choose
+        Stage.map
             $"{stageName}.retain"
-            retainWindow
-            ignore
+            retainWindowRefs
+            memoryNeed
+            id
+
+    let computeStage =
+        Stage.parallelCollect
+            $"{stageName}.parallelCollect"
+            1
+            batchSize
+            1
+            0
+            (fun _ retained -> retained)
+            convolveRetained
+            memoryNeed
+            id
+
+    Stage.compose windowStage retainStage
+    |> fun stage -> Stage.compose stage computeStage
+
+let private chunkConvolveFixedKernelNativeFloat32Stage
+    (kernel: float32[,,])
+    batchSize
+    =
+    if batchSize < 1 then
+        invalidArg "batchSize" $"Native chunk convolution expects a positive batch size, got {batchSize}."
+
+    let plan = createKernelPlan kernel
+    let nativeKernel = flattenKernelForNative kernel
+    let outputBatchSize = batchSize
+    let windowLength = plan.Depth + outputBatchSize - 1
+    let memoryNeed nPixels =
+        uint64 (windowLength + batchSize) * nPixels * uint64 sizeof<float32>
+    let suffix = if batchSize = 1 then "" else $".parallel{batchSize}"
+    let stageName = $"chunkConvolveFixedKernelNativeFloat32{suffix}.{plan.Width}x{plan.Height}x{plan.Depth}"
+
+    let zeroMaker _index (source: Chunk<float32>) =
+        let width, height, depth = source.Size
+        if depth <> 1UL then
+            invalidArg "source" $"Native chunk convolution expects 2D slice chunks with depth 1, got {source.Size}."
+        zeroChunkTyped<float32> (int width) (int height)
+
+    let releaseConsumed (window: Window<Chunk<float32>>) =
+        let _emitStart, emitCount = window.EmitRange
+        if emitCount = 0u then
+            window.Items |> List.iter Chunk.decRef
+        else
+            window.Items
+            |> List.truncate (int window.ReleaseCount)
+            |> List.iter Chunk.decRef
+
+    let retainWindowRefs _debug (window: Window<Chunk<float32>>) =
+        window.Items |> List.iter (Chunk.incRef >> ignore)
+        releaseConsumed window
+        window
+
+    let releaseWindowRefs (window: Window<Chunk<float32>>) =
+        window.Items |> List.iter Chunk.decRef
+
+    let convolveWindow (retained: Window<Chunk<float32>>) =
+        let emitStart, emitCount = retained.EmitRange
+        if emitCount = 0u then
+            []
+        else
+            let chunks = retained.Items |> List.toArray
+            if chunks.Length < int emitStart + int emitCount then
+                invalidArg "window" $"Native chunk convolution expected enough slices for emit range {retained.EmitRange}, got {chunks.Length}."
+
+            let first = chunks[0]
+            let chunkWidth, chunkHeight, chunkDepth = first.Size
+            if chunkDepth <> 1UL then
+                invalidArg "window" $"Native chunk convolution expects 2D slice chunks with depth 1, got {first.Size}."
+
+            let width = int chunkWidth
+            let height = int chunkHeight
+            if width <= 0 || height <= 0 then
+                invalidArg "window" $"Native chunk convolution expects positive slice dimensions, got {first.Size}."
+
+            for chunk in chunks do
+                validateTypedSliceChunk "native convolution" width height chunk
+
+            convolveNativeFloat32Slices width height plan nativeKernel (int emitStart) (int emitCount) chunks
+
+    let convolveRetained _debug (window: Window<Window<Chunk<float32>>>) =
+        match window.Items with
+        | [ retainedWindow ] ->
+            try
+                convolveWindow retainedWindow
+            finally
+                releaseWindowRefs retainedWindow
+        | items ->
+            for retainedWindow in items do
+                releaseWindowRefs retainedWindow
+            invalidArg "window" $"Native chunk convolution expected singleton retained windows, got {items.Length}."
+
+    let windowStage =
+        Stage.window $"{stageName}.window" (uint windowLength) (uint plan.PadZ) zeroMaker (uint outputBatchSize)
+
+    let retainStage =
+        Stage.map
+            $"{stageName}.retain"
+            retainWindowRefs
+            memoryNeed
+            id
+
+    let computeStage =
+        Stage.parallelCollect
+            $"{stageName}.parallelCollect"
+            1
+            batchSize
+            1
+            0
+            (fun _ retained -> retained)
+            convolveRetained
+            memoryNeed
+            id
+
+    Stage.compose windowStage retainStage
+    |> fun stage -> Stage.compose stage computeStage
+
+let private chunkConvolveFixedKernelNativeUInt8Stage
+    (kernel: float32[,,])
+    batchSize
+    =
+    if batchSize < 1 then
+        invalidArg "batchSize" $"Native UInt8 chunk convolution expects a positive batch size, got {batchSize}."
+
+    let plan = createKernelPlan kernel
+    let nativeKernel = flattenKernelForNative kernel
+    let outputBatchSize = batchSize
+    let windowLength = plan.Depth + outputBatchSize - 1
+    let memoryNeed nPixels =
+        uint64 (windowLength + batchSize) * nPixels
+    let suffix = if batchSize = 1 then "" else $".parallel{batchSize}"
+    let stageName = $"chunkConvolveFixedKernelNativeUInt8{suffix}.{plan.Width}x{plan.Height}x{plan.Depth}"
+
+    let zeroMaker _index (source: Chunk<uint8>) =
+        let width, height, depth = source.Size
+        if depth <> 1UL then
+            invalidArg "source" $"Native UInt8 chunk convolution expects 2D slice chunks with depth 1, got {source.Size}."
+        zeroChunkTyped<uint8> (int width) (int height)
+
+    let releaseConsumed (window: Window<Chunk<uint8>>) =
+        let _emitStart, emitCount = window.EmitRange
+        if emitCount = 0u then
+            window.Items |> List.iter Chunk.decRef
+        else
+            window.Items
+            |> List.truncate (int window.ReleaseCount)
+            |> List.iter Chunk.decRef
+
+    let retainWindowRefs _debug (window: Window<Chunk<uint8>>) =
+        window.Items |> List.iter (Chunk.incRef >> ignore)
+        releaseConsumed window
+        window
+
+    let releaseWindowRefs (window: Window<Chunk<uint8>>) =
+        window.Items |> List.iter Chunk.decRef
+
+    let convolveWindow (retained: Window<Chunk<uint8>>) =
+        let emitStart, emitCount = retained.EmitRange
+        if emitCount = 0u then
+            []
+        else
+            let chunks = retained.Items |> List.toArray
+            if chunks.Length < int emitStart + int emitCount then
+                invalidArg "window" $"Native UInt8 chunk convolution expected enough slices for emit range {retained.EmitRange}, got {chunks.Length}."
+
+            let first = chunks[0]
+            let chunkWidth, chunkHeight, chunkDepth = first.Size
+            if chunkDepth <> 1UL then
+                invalidArg "window" $"Native UInt8 chunk convolution expects 2D slice chunks with depth 1, got {first.Size}."
+
+            let width = int chunkWidth
+            let height = int chunkHeight
+            if width <= 0 || height <= 0 then
+                invalidArg "window" $"Native UInt8 chunk convolution expects positive slice dimensions, got {first.Size}."
+
+            for chunk in chunks do
+                validateTypedSliceChunk "native UInt8 convolution" width height chunk
+
+            convolveNativeUInt8Slices width height plan nativeKernel (int emitStart) (int emitCount) chunks
+
+    let convolveRetained _debug (window: Window<Window<Chunk<uint8>>>) =
+        match window.Items with
+        | [ retainedWindow ] ->
+            try
+                convolveWindow retainedWindow
+            finally
+                releaseWindowRefs retainedWindow
+        | items ->
+            for retainedWindow in items do
+                releaseWindowRefs retainedWindow
+            invalidArg "window" $"Native UInt8 chunk convolution expected singleton retained windows, got {items.Length}."
+
+    let windowStage =
+        Stage.window $"{stageName}.window" (uint windowLength) (uint plan.PadZ) zeroMaker (uint outputBatchSize)
+
+    let retainStage =
+        Stage.map
+            $"{stageName}.retain"
+            retainWindowRefs
             memoryNeed
             id
 
@@ -841,6 +1639,34 @@ let convolveFixedKernelParallel<'T when 'T: equality and 'T: (new: unit -> 'T) a
         convolveFixedKernel<'T> kernel
     else
         chunkConvolveFixedKernelStage<'T> kernel windowSize
+
+let convolveFixedKernelNativeFloat32
+    kernel
+    : Stage<Chunk<float32>, Chunk<float32>> =
+    chunkConvolveFixedKernelNativeFloat32Stage kernel 1
+
+let convolveFixedKernelNativeFloat32Parallel
+    kernel
+    windowSize
+    : Stage<Chunk<float32>, Chunk<float32>> =
+    if windowSize <= 1 then
+        convolveFixedKernelNativeFloat32 kernel
+    else
+        chunkConvolveFixedKernelNativeFloat32Stage kernel windowSize
+
+let convolveFixedKernelNativeUInt8
+    kernel
+    : Stage<Chunk<uint8>, Chunk<uint8>> =
+    chunkConvolveFixedKernelNativeUInt8Stage kernel 1
+
+let convolveFixedKernelNativeUInt8Parallel
+    kernel
+    windowSize
+    : Stage<Chunk<uint8>, Chunk<uint8>> =
+    if windowSize <= 1 then
+        convolveFixedKernelNativeUInt8 kernel
+    else
+        chunkConvolveFixedKernelNativeUInt8Stage kernel windowSize
 
 let private addUInt16HistogramInto (target: uint16[]) targetStart (source: uint16[]) sourceStart =
     let width = Vector<uint16>.Count

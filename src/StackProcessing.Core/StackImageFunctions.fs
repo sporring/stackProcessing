@@ -2078,49 +2078,39 @@ type ConnectedComponentTranslationTable =
 type private ComponentLabelKey = uint * uint64
 
 type private ComponentLabelUnionFind() =
-    let parent = Dictionary<ComponentLabelKey, ComponentLabelKey>()
-    let rank = Dictionary<ComponentLabelKey, byte>()
+    let ids = Dictionary<ComponentLabelKey, uint32>()
+    let keys = ResizeArray<ComponentLabelKey>()
+    let unionFind = DenseUInt32UnionFind(1024)
 
-    member _.Add(key: ComponentLabelKey) =
-        if not (parent.ContainsKey key) then
-            parent.[key] <- key
-            rank.[key] <- 0uy
+    member private _.IdFor(key: ComponentLabelKey) =
+        let mutable id = 0u
+        if ids.TryGetValue(key, &id) then
+            id
+        else
+            let next = keys.Count + 1
+            if next = Int32.MaxValue then
+                invalidOp "Connected-component boundary union-find exhausted Int32-backed dense ids."
+            id <- uint32 next
+            ids.[key] <- id
+            keys.Add key
+            unionFind.Add id
+            id
+
+    member this.Add(key: ComponentLabelKey) =
+        this.IdFor key |> ignore
 
     member this.Find(key: ComponentLabelKey) =
-        let mutable p = Unchecked.defaultof<ComponentLabelKey>
-
-        if not (parent.TryGetValue(key, &p)) then
-            parent.[key] <- key
-            rank.[key] <- 0uy
-            key
-        elif p = key then
-            key
-        else
-            let root = this.Find p
-            parent.[key] <- root
-            root
+        let rootId = this.IdFor key |> unionFind.Find
+        keys[int rootId - 1]
 
     member this.Union(left: ComponentLabelKey, right: ComponentLabelKey) =
-        let leftRoot = this.Find left
-        let rightRoot = this.Find right
-
-        if leftRoot <> rightRoot then
-            let leftRank = rank.[leftRoot]
-            let rightRank = rank.[rightRoot]
-
-            if leftRank < rightRank then
-                parent.[leftRoot] <- rightRoot
-            elif leftRank > rightRank then
-                parent.[rightRoot] <- leftRoot
-            elif leftRoot < rightRoot then
-                parent.[rightRoot] <- leftRoot
-                rank.[leftRoot] <- leftRank + 1uy
-            else
-                parent.[leftRoot] <- rightRoot
-                rank.[rightRoot] <- rightRank + 1uy
+        let leftId = this.IdFor left
+        let rightId = this.IdFor right
+        if leftId <> rightId then
+            unionFind.Union(leftId, rightId)
 
     member _.Keys =
-        parent.Keys :> seq<ComponentLabelKey>
+        ids.Keys :> seq<ComponentLabelKey>
 
 let private slabBaseLabels slabCounts =
     let _, _, bases =

@@ -226,6 +226,82 @@ let chunkSuite =
                 slab.Image.decRefCount()
                 chunks |> List.iter Chunk.decRef
 
+        testCase "ChunkFunctions connectedComponentsSauf3DUInt8 labels 6-connected foreground across slices" <| fun _ ->
+            let width = 4
+            let height = 3
+            let inputs =
+                [ [| 1uy; 0uy; 0uy; 0uy;
+                      1uy; 0uy; 1uy; 0uy;
+                      0uy; 0uy; 1uy; 0uy |]
+                  [| 0uy; 0uy; 0uy; 0uy;
+                      1uy; 0uy; 0uy; 0uy;
+                      0uy; 0uy; 1uy; 0uy |]
+                  [| 0uy; 0uy; 0uy; 0uy;
+                      0uy; 0uy; 0uy; 0uy;
+                      0uy; 0uy; 1uy; 255uy |] ]
+                |> List.map (chunkFromPixels width height)
+
+            let outputs = runStageList (ChunkFunctions.connectedComponentsSauf3DUInt8 ()) inputs
+
+            try
+                Expect.equal outputs.Length 3 "Chunk SAUF connected components should emit one UInt64 label slice per input slice."
+
+                let expected =
+                    [ [| 1UL; 0UL; 0UL; 0UL;
+                         1UL; 0UL; 2UL; 0UL;
+                         0UL; 0UL; 2UL; 0UL |]
+                      [| 0UL; 0UL; 0UL; 0UL;
+                         1UL; 0UL; 0UL; 0UL;
+                         0UL; 0UL; 2UL; 0UL |]
+                      [| 0UL; 0UL; 0UL; 0UL;
+                         0UL; 0UL; 0UL; 0UL;
+                         0UL; 0UL; 2UL; 2UL |] ]
+
+                for z in 0 .. outputs.Length - 1 do
+                    Expect.sequenceEqual ((Chunk.span<uint64> outputs[z]).ToArray()) expected[z] $"Chunk SAUF labels should match expected slice {z}."
+
+                inputs |> List.iter (fun chunk -> Expect.equal chunk.RefCount.Value 0 "Chunk SAUF connected components should release consumed input chunks.")
+            finally
+                outputs |> List.iter Chunk.decRef
+
+        testCase "ChunkFunctions connectedComponentsSauf3DUInt8UInt32ParallelCollect stitches labels across subwindows" <| fun _ ->
+            let width = 4
+            let height = 3
+            let inputs =
+                [ [| 1uy; 0uy; 0uy; 0uy;
+                      1uy; 0uy; 1uy; 0uy;
+                      0uy; 0uy; 1uy; 0uy |]
+                  [| 0uy; 0uy; 0uy; 0uy;
+                      1uy; 0uy; 0uy; 0uy;
+                      0uy; 0uy; 1uy; 0uy |]
+                  [| 0uy; 0uy; 0uy; 0uy;
+                      0uy; 0uy; 0uy; 0uy;
+                      0uy; 0uy; 1uy; 255uy |] ]
+                |> List.map (chunkFromPixels width height)
+
+            let outputs = runStageList (ChunkFunctions.connectedComponentsSauf3DUInt8UInt32ParallelCollect 2 2) inputs
+
+            try
+                Expect.equal outputs.Length 3 "ParallelCollect SAUF should emit one UInt32 label slice per input slice."
+
+                let expected =
+                    [ [| 1u; 0u; 0u; 0u;
+                         1u; 0u; 2u; 0u;
+                         0u; 0u; 2u; 0u |]
+                      [| 0u; 0u; 0u; 0u;
+                         1u; 0u; 0u; 0u;
+                         0u; 0u; 2u; 0u |]
+                      [| 0u; 0u; 0u; 0u;
+                         0u; 0u; 0u; 0u;
+                         0u; 0u; 2u; 2u |] ]
+
+                for z in 0 .. outputs.Length - 1 do
+                    Expect.sequenceEqual ((Chunk.span<uint32> outputs[z]).ToArray()) expected[z] $"ParallelCollect SAUF labels should match expected slice {z}."
+
+                inputs |> List.iter (fun chunk -> Expect.equal chunk.RefCount.Value 0 "ParallelCollect SAUF should release consumed input chunks.")
+            finally
+                outputs |> List.iter Chunk.decRef
+
         testCase "ChunkFunctions scalar arithmetic and pair arithmetic release inputs" <| fun _ ->
             let scalarInput = chunkFromInt32Pixels 4 1 [| 1; 2; 3; 4 |]
             let scalarOutput = runStageList (ChunkFunctions.addScalar 10) [ scalarInput ]
@@ -657,6 +733,70 @@ let chunkSuite =
             finally
                 parallelOutputs |> List.iter Chunk.decRef
                 serialOutputs |> List.iter Chunk.decRef
+
+        testCase "ChunkFunctions.convolveFixedKernelNativeFloat32Parallel matches managed float32 convolution" <| fun _ ->
+            let width = 9
+            let height = 4
+            let depth = 5
+            let kernel = Array3D.zeroCreate<float32> 3 3 3
+            kernel[0, 0, 0] <- 0.125f
+            kernel[2, 0, 1] <- -0.25f
+            kernel[1, 1, 1] <- 0.75f
+            kernel[0, 2, 2] <- 0.375f
+
+            let makeChunks () =
+                [ for z in 0 .. depth - 1 ->
+                    [| for y in 0 .. height - 1 do
+                           for x in 0 .. width - 1 do
+                               float32 (z * 100 + y * width + x) / 10.0f |]
+                    |> chunkFromFloat32Pixels width height ]
+
+            let managedOutputs = runStageList (ChunkFunctions.convolveFixedKernel<float32> kernel) (makeChunks ())
+            let nativeOutputs = runStageList (ChunkFunctions.convolveFixedKernelNativeFloat32Parallel kernel 2) (makeChunks ())
+
+            try
+                Expect.equal nativeOutputs.Length managedOutputs.Length "Native chunk convolution should preserve the managed output count."
+
+                for z in 0 .. managedOutputs.Length - 1 do
+                    let managedValues = (Chunk.span<float32> managedOutputs[z]).ToArray()
+                    let nativeValues = (Chunk.span<float32> nativeOutputs[z]).ToArray()
+                    Expect.equal nativeValues.Length managedValues.Length $"Native chunk convolution should preserve slice length {z}."
+                    for i in 0 .. managedValues.Length - 1 do
+                        Expect.floatClose Accuracy.low (float nativeValues[i]) (float managedValues[i]) $"Native chunk convolution should match managed output slice {z}, pixel {i}."
+            finally
+                nativeOutputs |> List.iter Chunk.decRef
+                managedOutputs |> List.iter Chunk.decRef
+
+        testCase "ChunkFunctions.convolveFixedKernelNativeUInt8Parallel matches managed UInt8 convolution" <| fun _ ->
+            let width = 11
+            let height = 5
+            let depth = 6
+            let kernel = Array3D.zeroCreate<float32> 3 3 3
+            kernel[0, 0, 0] <- 0.125f
+            kernel[2, 0, 1] <- -0.25f
+            kernel[1, 1, 1] <- 0.75f
+            kernel[0, 2, 2] <- 0.375f
+
+            let makeChunks () =
+                [ for z in 0 .. depth - 1 ->
+                    [| for y in 0 .. height - 1 do
+                           for x in 0 .. width - 1 do
+                               uint8 ((z * 41 + y * 17 + x * 9 + x * y) % 256) |]
+                    |> chunkFromPixels width height ]
+
+            let managedOutputs = runStageList (ChunkFunctions.convolveFixedKernel<uint8> kernel) (makeChunks ())
+            let nativeOutputs = runStageList (ChunkFunctions.convolveFixedKernelNativeUInt8Parallel kernel 3) (makeChunks ())
+
+            try
+                Expect.equal nativeOutputs.Length managedOutputs.Length "Native UInt8 chunk convolution should preserve the managed output count."
+
+                for z in 0 .. managedOutputs.Length - 1 do
+                    let managedValues = (Chunk.span<uint8> managedOutputs[z]).ToArray()
+                    let nativeValues = (Chunk.span<uint8> nativeOutputs[z]).ToArray()
+                    Expect.sequenceEqual nativeValues managedValues $"Native UInt8 chunk convolution should match managed output slice {z}."
+            finally
+                nativeOutputs |> List.iter Chunk.decRef
+                managedOutputs |> List.iter Chunk.decRef
 
         testCase "ChunkFunctions rolling PH median matches dense PH median" <| fun _ ->
             let width = 5

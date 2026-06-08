@@ -69,6 +69,93 @@ module Histogram =
         { Counts = counts
           Binning = Some(FixedWidth binWidth) }
 
+type internal DenseUInt32UnionFind(initialCapacity: int) =
+    let mutable parent = Array.zeroCreate<uint32> (max 2 initialCapacity)
+    let mutable rank = Array.zeroCreate<byte> parent.Length
+
+    member private _.Ensure(label: uint32) =
+        let index = int label
+        if index >= parent.Length then
+            let mutable newLength = parent.Length * 2
+            while index >= newLength do
+                newLength <- newLength * 2
+            Array.Resize(&parent, newLength)
+            Array.Resize(&rank, newLength)
+
+    member this.Add(label: uint32) =
+        this.Ensure label
+        let index = int label
+        if parent[index] = 0u then
+            parent[index] <- label
+
+    member this.Find(label: uint32) =
+        this.Ensure label
+        let mutable current = label
+        let mutable currentIndex = int current
+        if parent[currentIndex] = 0u then
+            parent[currentIndex] <- current
+        while parent[currentIndex] <> current do
+            current <- parent[currentIndex]
+            currentIndex <- int current
+        let root = current
+        let mutable node = label
+        let mutable nodeIndex = int node
+        while parent[nodeIndex] <> root do
+            let next = parent[nodeIndex]
+            parent[nodeIndex] <- root
+            node <- next
+            nodeIndex <- int node
+        root
+
+    member this.Union(left: uint32, right: uint32) =
+        let leftRoot = this.Find left
+        let rightRoot = this.Find right
+        if leftRoot <> rightRoot then
+            let leftIndex = int leftRoot
+            let rightIndex = int rightRoot
+            let leftRank = rank[leftIndex]
+            let rightRank = rank[rightIndex]
+            if leftRank < rightRank then
+                parent[leftIndex] <- rightRoot
+            elif leftRank > rightRank then
+                parent[rightIndex] <- leftRoot
+            elif leftRoot < rightRoot then
+                parent[rightIndex] <- leftRoot
+                rank[leftIndex] <- leftRank + 1uy
+            else
+                parent[leftIndex] <- rightRoot
+                rank[rightIndex] <- rightRank + 1uy
+
+    member private this.RootWithoutCompression(label: uint32) =
+        this.Ensure label
+        let mutable current = label
+        let mutable currentIndex = int current
+        if parent[currentIndex] = 0u then
+            parent[currentIndex] <- current
+        while parent[currentIndex] <> current do
+            current <- parent[currentIndex]
+            currentIndex <- int current
+        current
+
+    member this.UnionWithoutCompression(left: uint32, right: uint32) =
+        let leftRoot = this.RootWithoutCompression left
+        let rightRoot = this.RootWithoutCompression right
+        if leftRoot <> rightRoot then
+            let leftIndex = int leftRoot
+            let rightIndex = int rightRoot
+            let leftRank = rank[leftIndex]
+            let rightRank = rank[rightIndex]
+            if leftRank < rightRank then
+                parent[leftIndex] <- rightRoot
+            elif leftRank > rightRank then
+                parent[rightIndex] <- leftRoot
+            elif leftRoot < rightRoot then
+                parent[rightIndex] <- leftRoot
+                rank[leftIndex] <- leftRank + 1uy
+            else
+                parent[leftIndex] <- rightRoot
+                rank[rightIndex] <- rightRank + 1uy
+
 module Chunk =
     let create<'T when 'T: equality> size : Chunk<'T> =
         let width, height, depth = size

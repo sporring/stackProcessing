@@ -140,11 +140,11 @@ let private canWriteDirectTiffStack<'T> suffix =
 
 let private ensureDirectTiffChunkRead<'T> suffix =
     if not (canReadDirectTiffStack<'T> suffix) then
-        invalidArg "suffix" $"readChunkSlices currently supports direct scalar TIFF stacks for UInt8, Int8, UInt16, Int16, Int32, Float32, and Float64; got suffix '{suffix}' and type {typeof<'T>.Name}."
+        invalidArg "suffix" $"readChunkSlices currently supports direct scalar TIFF stacks for UInt8, Int8, UInt16, Int16, UInt32, Int32, Float32, and Float64; got suffix '{suffix}' and type {typeof<'T>.Name}."
 
 let private ensureDirectTiffChunkWrite<'T> suffix =
     if not (canWriteDirectTiffStack<'T> suffix) then
-        invalidArg "suffix" $"writeChunkSlices currently supports direct scalar TIFF stack output for UInt8, Int8, UInt16, Int16, Int32, and Float32; got suffix '{suffix}' and type {typeof<'T>.Name}."
+        invalidArg "suffix" $"writeChunkSlices currently supports direct scalar TIFF stack output for UInt8, Int8, UInt16, Int16, UInt32, Int32, and Float32; got suffix '{suffix}' and type {typeof<'T>.Name}."
 
 let private inspectChunkTiffSlice<'T> fileName =
     let expectedBits, expectedFormat, expectedBytesPerSample = ImageIO.tiffPixelLayout<'T> ()

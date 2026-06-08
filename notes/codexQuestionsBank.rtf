@@ -9,5 +9,36 @@
 \f0\fs28 \cf2 \expnd0\expndtw0\kerning0
 Which functions are we missing wrt. standard microscope and synchrotron image analysis pipelines (Hasse, eurobioimaging, globias, etc.)\
 \
-Improve ph-median code, extend to bigger types.\
+\
+Interior/border splitting in c++ convolve was somewhat of a win. Is that also something we should add to median and connected components?\
+\
+\
+Please check that the other ParallelCollect/Reduce do not use the Choose but Iter version\
+\
+\
+Please update tex with a description of the new Connected Component and c++ convolution.\
+\
+Please make int8, uint16/int16, int, float 32 with float32 kernels version of the c++-convolve \
+ \
+Please update ChunkFunctions with missing stuff from the Image project: \
+\
+\pard\pardeftab720\partightenfactor0
+\cf2 - please add general Chunk<> operators like Image-simple-itk: Padding, crop, squeeze, concatenate\
+\pard\pardeftab720\partightenfactor0
+\cf2 \
+- please add the missing Geometric and resampling operations remain Image/ITK paths:\
+  `euler2DTransform`, `euler2DRotate`, `resample2D`, affine resampling, axis permutation, and\
+  other coordinate-space operations from Image and ImageFunctions. For transform and resample, I believe Zarr would be a natural temporary format. Focussing on uint8/int8, uint16,int16, int, and float32 is fine for now.\
+\pard\pardeftab720\partightenfactor0
+\cf2 \
+\pard\pardeftab720\partightenfactor0
+\cf2 - please implement single-axis convolution convolveX, -Y and -Z, e.g. for fast derivatives by finite differences, and separable convolution.\
+\
+- Please make version of image-simple-itk\'92s \
+  bilateral, gradient magnitude, Sobel, Laplacian, Separable Gaussian convolution, Gaussian derivatives\
+\
+- Please add versions of the noise generators: \
+  normal, salt-and-pepper, shot, and speckle noise.\
+\
+And then update notes documentation, tex, and in particular, ChunkBackboneStageGaps.md\
 }
